@@ -14,13 +14,13 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
-	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/util/arbmath"
+	chainifaces "github.com/offchainlabs/nitro/util/interfaces"
 )
 
-func testContractDeployment(t *testing.T, ctx context.Context, client *ethclient.Client, contractCode []byte, accountInfo *AccountInfo, expectedEstimateGasError error) {
+func testContractDeployment(t *testing.T, ctx context.Context, client chainifaces.EthereumReadWriter, contractCode []byte, accountInfo *AccountInfo, expectedEstimateGasError error) {
 	// First, we need to make the "deploy code" which returns the contractCode to be deployed
 	deployCode := []byte{
 		0x7F, // PUSH32

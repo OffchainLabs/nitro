@@ -9,10 +9,10 @@ import (
 	"fmt"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/ethclient"
 
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/util/headerreader"
+	chainifaces "github.com/offchainlabs/nitro/util/interfaces"
 	"github.com/offchainlabs/nitro/util/signature"
 )
 
@@ -121,7 +121,7 @@ func CreateDAReaderAndWriter(
 	ctx context.Context,
 	config *DataAvailabilityConfig,
 	dataSigner signature.DataSignerFunc,
-	l1Reader *ethclient.Client,
+	l1Reader chainifaces.EthereumReadWriter,
 	sequencerInboxAddr common.Address,
 ) (DataAvailabilityServiceWriter, DataAvailabilityServiceReader, *KeysetFetcher, *LifecycleManager, error) {
 	if !config.Enable {

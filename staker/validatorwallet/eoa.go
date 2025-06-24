@@ -10,10 +10,10 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/ethclient"
 
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
 	"github.com/offchainlabs/nitro/solgen/go/challenge_legacy_gen"
+	chainifaces "github.com/offchainlabs/nitro/util/interfaces"
 )
 
 // EOA is a ValidatorWallet that uses an Externally Owned Account to sign transactions.
@@ -21,12 +21,12 @@ import (
 // as opposed to a smart contract wallet where the smart contract authorizes transactions.
 type EOA struct {
 	auth        *bind.TransactOpts
-	client      *ethclient.Client
+	client      chainifaces.EthereumReadWriter
 	dataPoster  *dataposter.DataPoster
 	getExtraGas func() uint64
 }
 
-func NewEOA(dataPoster *dataposter.DataPoster, l1Client *ethclient.Client, getExtraGas func() uint64) (*EOA, error) {
+func NewEOA(dataPoster *dataposter.DataPoster, l1Client chainifaces.EthereumReadWriter, getExtraGas func() uint64) (*EOA, error) {
 	return &EOA{
 		auth:        dataPoster.Auth(),
 		client:      l1Client,
@@ -51,7 +51,7 @@ func (w *EOA) TxSenderAddress() *common.Address {
 	return &w.auth.From
 }
 
-func (w *EOA) L1Client() *ethclient.Client {
+func (w *EOA) L1Client() chainifaces.EthereumReadWriter {
 	return w.client
 }
 

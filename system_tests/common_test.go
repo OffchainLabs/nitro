@@ -1358,7 +1358,7 @@ func AddValNode(t *testing.T, ctx context.Context, nodeConfig *arbnode.Config, u
 	configByValidationNode(nodeConfig, valStack)
 }
 
-func createTestL1BlockChain(t *testing.T, l1info info, withClientWrapper bool) (info, simulated.Client, *simulated.Backend, *ClientWrapper) {
+func createTestL1BlockChain(t *testing.T, l1info info, withClientWrapper bool) (info, chainifaces.EthereumReadWriter, *simulated.Backend, *ClientWrapper) {
 	if l1info == nil {
 		l1info = NewL1TestInfo(t)
 	}
@@ -1688,7 +1688,7 @@ func Create2ndNodeWithConfig(
 	initMessage *arbostypes.ParsedInitMessage,
 	wasmCacheTag uint32,
 	useExecutionClientOnly bool,
-) (*ethclient.Client, *arbnode.Node) {
+) (chainifaces.EthereumReadWriter, *arbnode.Node) {
 	if nodeConfig == nil {
 		nodeConfig = arbnode.ConfigDefaultL1NonSequencerTest()
 	}
@@ -1777,7 +1777,7 @@ func authorizeDASKeyset(
 	ctx context.Context,
 	dasSignerKey *blsSignatures.PublicKey,
 	l1info info,
-	l1client *ethclient.Client,
+	l1client chainifaces.EthereumReadWriter,
 ) {
 	if dasSignerKey == nil {
 		return

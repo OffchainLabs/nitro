@@ -17,7 +17,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/eth"
 	"github.com/ethereum/go-ethereum/eth/filters"
-	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
@@ -33,6 +32,7 @@ import (
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/dbutil"
 	"github.com/offchainlabs/nitro/util/headerreader"
+	chainifaces "github.com/offchainlabs/nitro/util/interfaces"
 )
 
 type StylusTargetConfig struct {
@@ -211,7 +211,7 @@ func CreateExecutionNode(
 	stack *node.Node,
 	chainDB ethdb.Database,
 	l2BlockChain *core.BlockChain,
-	l1client *ethclient.Client,
+	l1client chainifaces.EthereumReadWriter,
 	configFetcher ConfigFetcher,
 	syncTillBlock uint64,
 ) (*ExecutionNode, error) {

@@ -15,7 +15,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/ethclient"
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/blsSignatures"
@@ -25,6 +24,7 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/headerreader"
+	chainifaces "github.com/offchainlabs/nitro/util/interfaces"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
@@ -32,7 +32,7 @@ func startLocalDASServer(
 	t *testing.T,
 	ctx context.Context,
 	dataDir string,
-	l1client *ethclient.Client,
+	l1client chainifaces.EthereumReadWriter,
 	seqInboxAddress common.Address,
 ) (*http.Server, *blsSignatures.PublicKey, das.BackendConfig, *das.RestfulDasServer, string) {
 	keyDir := t.TempDir()
@@ -158,7 +158,7 @@ func TestDASRekey(t *testing.T) {
 	checkBatchPosting(t, ctx, builder.L1.Client, builder.L2.Client, builder.L1Info, builder.L2Info, big.NewInt(2e12), l2B.Client)
 }
 
-func checkBatchPosting(t *testing.T, ctx context.Context, l1client, l2clientA *ethclient.Client, l1info, l2info info, expectedBalance *big.Int, l2ClientsToCheck ...*ethclient.Client) {
+func checkBatchPosting(t *testing.T, ctx context.Context, l1client, l2clientA chainifaces.EthereumReadWriter, l1info, l2info info, expectedBalance *big.Int, l2ClientsToCheck ...chainifaces.EthereumReadWriter) {
 	tx := l2info.PrepareTx("Owner", "User2", l2info.TransferGas, big.NewInt(1e12), nil)
 	err := l2clientA.SendTransaction(ctx, tx)
 	Require(t, err)

@@ -15,7 +15,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state/pruner"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
@@ -34,6 +33,7 @@ import (
 	boldstaker "github.com/offchainlabs/nitro/staker/bold"
 	legacystaker "github.com/offchainlabs/nitro/staker/legacy"
 	multiprotocolstaker "github.com/offchainlabs/nitro/staker/multi_protocol"
+	chainifaces "github.com/offchainlabs/nitro/util/interfaces"
 )
 
 type importantRoots struct {
@@ -88,7 +88,7 @@ func (r *importantRoots) addHeader(header *types.Header, overwrite bool) error {
 var hashListRegex = regexp.MustCompile("^(0x)?[0-9a-fA-F]{64}(,(0x)?[0-9a-fA-F]{64})*$")
 
 // Finds important roots to retain while proving
-func findImportantRoots(ctx context.Context, chainDb ethdb.Database, stack *node.Node, initConfig *conf.InitConfig, cacheConfig *core.CacheConfig, persistentConfig *conf.PersistentConfig, l1Client *ethclient.Client, rollupAddrs chaininfo.RollupAddresses, validatorRequired bool) ([]common.Hash, error) {
+func findImportantRoots(ctx context.Context, chainDb ethdb.Database, stack *node.Node, initConfig *conf.InitConfig, cacheConfig *core.CacheConfig, persistentConfig *conf.PersistentConfig, l1Client chainifaces.EthereumReadWriter, rollupAddrs chaininfo.RollupAddresses, validatorRequired bool) ([]common.Hash, error) {
 	chainConfig := gethexec.TryReadStoredChainConfig(chainDb)
 	if chainConfig == nil {
 		return nil, errors.New("database doesn't have a chain config (was this node initialized?)")
@@ -228,7 +228,7 @@ func findImportantRoots(ctx context.Context, chainDb ethdb.Database, stack *node
 	return roots.roots, nil
 }
 
-func getLatestConfirmedHash(ctx context.Context, rollupAddrs chaininfo.RollupAddresses, l1Client *ethclient.Client) (common.Hash, error) {
+func getLatestConfirmedHash(ctx context.Context, rollupAddrs chaininfo.RollupAddresses, l1Client chainifaces.EthereumReadWriter) (common.Hash, error) {
 	callOpts := bind.CallOpts{
 		Context:     ctx,
 		BlockNumber: big.NewInt(int64(rpc.FinalizedBlockNumber)),
@@ -278,7 +278,7 @@ func getLatestConfirmedHash(ctx context.Context, rollupAddrs chaininfo.RollupAdd
 	}
 }
 
-func PruneChainDb(ctx context.Context, chainDb ethdb.Database, stack *node.Node, initConfig *conf.InitConfig, cacheConfig *core.CacheConfig, persistentConfig *conf.PersistentConfig, l1Client *ethclient.Client, rollupAddrs chaininfo.RollupAddresses, validatorRequired bool) error {
+func PruneChainDb(ctx context.Context, chainDb ethdb.Database, stack *node.Node, initConfig *conf.InitConfig, cacheConfig *core.CacheConfig, persistentConfig *conf.PersistentConfig, l1Client chainifaces.EthereumReadWriter, rollupAddrs chaininfo.RollupAddresses, validatorRequired bool) error {
 	if cacheConfig.StateScheme == rawdb.PathScheme {
 		return nil
 	}

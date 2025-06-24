@@ -53,6 +53,7 @@ import (
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/contracts"
 	"github.com/offchainlabs/nitro/util/headerreader"
+	chainifaces "github.com/offchainlabs/nitro/util/interfaces"
 	"github.com/offchainlabs/nitro/util/redisutil"
 	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/signature"
@@ -419,7 +420,7 @@ func getL1Reader(
 	ctx context.Context,
 	config *Config,
 	configFetcher ConfigFetcher,
-	l1client *ethclient.Client,
+	l1client chainifaces.EthereumReadWriter,
 ) (*headerreader.HeaderReader, error) {
 	var l1Reader *headerreader.HeaderReader
 	if config.ParentChainReader.Enable {
@@ -456,7 +457,7 @@ func getBroadcastServer(
 
 func getBPVerifier(
 	deployInfo *chaininfo.RollupAddresses,
-	l1client *ethclient.Client,
+	l1client chainifaces.EthereumReadWriter,
 ) (*contracts.AddressVerifier, error) {
 	var bpVerifier *contracts.AddressVerifier
 	if deployInfo != nil && l1client != nil {
@@ -538,7 +539,7 @@ func getBlockMetadataFetcher(
 
 func getDelayedBridgeAndSequencerInbox(
 	deployInfo *chaininfo.RollupAddresses,
-	l1client *ethclient.Client,
+	l1client chainifaces.EthereumReadWriter,
 ) (*DelayedBridge, *SequencerInbox, error) {
 	if deployInfo == nil {
 		return nil, nil, errors.New("deployinfo is nil")
@@ -564,7 +565,7 @@ func getDAS(
 	l1Reader *headerreader.HeaderReader,
 	deployInfo *chaininfo.RollupAddresses,
 	dataSigner signature.DataSignerFunc,
-	l1client *ethclient.Client,
+	l1client chainifaces.EthereumReadWriter,
 	stack *node.Node,
 ) (daprovider.Writer, func(), []daprovider.Reader, error) {
 	if config.DAProvider.Enable && config.DataAvailability.Enable {
@@ -646,7 +647,7 @@ func getInboxTrackerAndReader(
 	dapReaders []daprovider.Reader,
 	config *Config,
 	configFetcher ConfigFetcher,
-	l1client *ethclient.Client,
+	l1client chainifaces.EthereumReadWriter,
 	l1Reader *headerreader.HeaderReader,
 	deployInfo *chaininfo.RollupAddresses,
 	delayedBridge *DelayedBridge,
@@ -726,7 +727,7 @@ func getStaker(
 	txOptsValidator *bind.TransactOpts,
 	syncMonitor *SyncMonitor,
 	parentChainID *big.Int,
-	l1client *ethclient.Client,
+	l1client chainifaces.EthereumReadWriter,
 	deployInfo *chaininfo.RollupAddresses,
 	txStreamer *TransactionStreamer,
 	inboxTracker *InboxTracker,
@@ -1023,7 +1024,7 @@ func createNodeImpl(
 	arbDb ethdb.Database,
 	configFetcher ConfigFetcher,
 	l2Config *params.ChainConfig,
-	l1client *ethclient.Client,
+	l1client chainifaces.EthereumReadWriter,
 	deployInfo *chaininfo.RollupAddresses,
 	txOptsValidator *bind.TransactOpts,
 	txOptsBatchPoster *bind.TransactOpts,
@@ -1162,7 +1163,7 @@ func createNodeImpl(
 	}, nil
 }
 
-func FindBlockContainingBatchCount(ctx context.Context, bridgeAddress common.Address, l1Client *ethclient.Client, parentChainAssertionBlock uint64, batchCount uint64) (uint64, error) {
+func FindBlockContainingBatchCount(ctx context.Context, bridgeAddress common.Address, l1Client chainifaces.EthereumReadWriter, parentChainAssertionBlock uint64, batchCount uint64) (uint64, error) {
 	bridge, err := bridgegen.NewIBridge(bridgeAddress, l1Client)
 	if err != nil {
 		return 0, err
@@ -1285,7 +1286,7 @@ func CreateNodeFullExecutionClient(
 	arbDb ethdb.Database,
 	configFetcher ConfigFetcher,
 	l2Config *params.ChainConfig,
-	l1client *ethclient.Client,
+	l1client chainifaces.EthereumReadWriter,
 	deployInfo *chaininfo.RollupAddresses,
 	txOptsValidator *bind.TransactOpts,
 	txOptsBatchPoster *bind.TransactOpts,

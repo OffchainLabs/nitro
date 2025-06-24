@@ -14,7 +14,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/arbutil"
@@ -24,6 +23,7 @@ import (
 	"github.com/offchainlabs/nitro/staker/txbuilder"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/headerreader"
+	chainifaces "github.com/offchainlabs/nitro/util/interfaces"
 	"github.com/offchainlabs/nitro/validator"
 )
 
@@ -48,7 +48,7 @@ type L1Validator struct {
 	rollup         *RollupWatcher
 	rollupAddress  common.Address
 	validatorUtils *rollup_legacy_gen.ValidatorUtils
-	client         *ethclient.Client
+	client         chainifaces.EthereumReadWriter
 	builder        *txbuilder.Builder
 	wallet         ValidatorWalletInterface
 	callOpts       bind.CallOpts
@@ -60,7 +60,7 @@ type L1Validator struct {
 }
 
 func NewL1Validator(
-	client *ethclient.Client,
+	client chainifaces.EthereumReadWriter,
 	wallet ValidatorWalletInterface,
 	validatorUtilsAddress common.Address,
 	rollupAddress common.Address,

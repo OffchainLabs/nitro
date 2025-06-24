@@ -15,7 +15,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
-	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/rpc"
@@ -26,6 +25,7 @@ import (
 	"github.com/offchainlabs/nitro/daprovider/das"
 	"github.com/offchainlabs/nitro/daprovider/das/dasutil"
 	"github.com/offchainlabs/nitro/util/headerreader"
+	chainifaces "github.com/offchainlabs/nitro/util/interfaces"
 	"github.com/offchainlabs/nitro/util/signature"
 )
 
@@ -77,7 +77,7 @@ func fetchJWTSecret(fileName string) ([]byte, error) {
 	return nil, errors.New("JWT secret file not found")
 }
 
-func NewServer(ctx context.Context, config *ServerConfig, dataSigner signature.DataSignerFunc, l1Client *ethclient.Client, l1Reader *headerreader.HeaderReader, sequencerInboxAddr common.Address) (*http.Server, func(), error) {
+func NewServer(ctx context.Context, config *ServerConfig, dataSigner signature.DataSignerFunc, l1Client chainifaces.EthereumReadWriter, l1Reader *headerreader.HeaderReader, sequencerInboxAddr common.Address) (*http.Server, func(), error) {
 	var err error
 	var daWriter das.DataAvailabilityServiceWriter
 	var daReader das.DataAvailabilityServiceReader

@@ -10,17 +10,17 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/ethclient"
 
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
+	chainifaces "github.com/offchainlabs/nitro/util/interfaces"
 )
 
 // NoOp validator wallet is used for watchtower mode.
 type NoOp struct {
-	l1Client *ethclient.Client
+	l1Client chainifaces.EthereumReadWriter
 }
 
-func NewNoOp(l1Client *ethclient.Client) *NoOp {
+func NewNoOp(l1Client chainifaces.EthereumReadWriter) *NoOp {
 	return &NoOp{
 		l1Client: l1Client,
 	}
@@ -44,7 +44,7 @@ func (*NoOp) TimeoutChallenges(ctx context.Context, challenges []uint64, challen
 	return nil, errors.New("no op validator wallet cannot timeout challenges")
 }
 
-func (n *NoOp) L1Client() *ethclient.Client { return n.l1Client }
+func (n *NoOp) L1Client() chainifaces.EthereumReadWriter { return n.l1Client }
 
 func (*NoOp) TestTransactions(ctx context.Context, txs []*types.Transaction) error {
 	return nil

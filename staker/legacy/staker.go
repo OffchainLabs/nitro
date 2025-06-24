@@ -18,7 +18,6 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/rpc"
@@ -31,6 +30,7 @@ import (
 	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/headerreader"
+	chainifaces "github.com/offchainlabs/nitro/util/interfaces"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
 )
@@ -287,7 +287,7 @@ type ValidatorWalletInterface interface {
 	// Address must be able to be called concurrently with other functions
 	AddressOrZero() common.Address
 	TxSenderAddress() *common.Address
-	L1Client() *ethclient.Client
+	L1Client() chainifaces.EthereumReadWriter
 	TestTransactions(context.Context, []*types.Transaction) error
 	ExecuteTransactions(context.Context, []*types.Transaction, common.Address) (*types.Transaction, error)
 	TimeoutChallenges(context.Context, []uint64, common.Address) (*types.Transaction, error)

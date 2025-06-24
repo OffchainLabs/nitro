@@ -7,6 +7,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/rpc"
 )
 
 type EthereumReader interface {
@@ -23,6 +24,9 @@ type EthereumReader interface {
 	ethereum.PendingContractCaller
 	ethereum.ChainIDReader
 	ethereum.TransactionReader
+	ethereum.ChainSyncReader
+	Close()
+	Client() rpc.ClientInterface
 	CallContractAtHash(ctx context.Context, msg ethereum.CallMsg, blockHash common.Hash) ([]byte, error)
 	TransactionSender(ctx context.Context, tx *types.Transaction, block common.Hash, index uint) (common.Address, error)
 }

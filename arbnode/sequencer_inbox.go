@@ -15,11 +15,11 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/ethclient"
 
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
+	chainifaces "github.com/offchainlabs/nitro/util/interfaces"
 )
 
 var sequencerBridgeABI *abi.ABI
@@ -53,10 +53,10 @@ type SequencerInbox struct {
 	con       *bridgegen.SequencerInbox
 	address   common.Address
 	fromBlock int64
-	client    *ethclient.Client
+	client    chainifaces.EthereumReadWriter
 }
 
-func NewSequencerInbox(client *ethclient.Client, addr common.Address, fromBlock int64) (*SequencerInbox, error) {
+func NewSequencerInbox(client chainifaces.EthereumReadWriter, addr common.Address, fromBlock int64) (*SequencerInbox, error) {
 	con, err := bridgegen.NewSequencerInbox(addr, client)
 	if err != nil {
 		return nil, err
@@ -112,7 +112,7 @@ type SequencerInboxBatch struct {
 	serialized             []byte // nil if serialization isn't cached yet
 }
 
-func (m *SequencerInboxBatch) getSequencerData(ctx context.Context, client *ethclient.Client) ([]byte, error) {
+func (m *SequencerInboxBatch) getSequencerData(ctx context.Context, client chainifaces.EthereumReadWriter) ([]byte, error) {
 	switch m.dataLocation {
 	case batchDataTxInput:
 		data, err := arbutil.GetLogEmitterTxData(ctx, client, m.rawLog)
@@ -174,7 +174,7 @@ func (m *SequencerInboxBatch) getSequencerData(ctx context.Context, client *ethc
 	}
 }
 
-func (m *SequencerInboxBatch) Serialize(ctx context.Context, client *ethclient.Client) ([]byte, error) {
+func (m *SequencerInboxBatch) Serialize(ctx context.Context, client chainifaces.EthereumReadWriter) ([]byte, error) {
 	if m.serialized != nil {
 		return m.serialized, nil
 	}

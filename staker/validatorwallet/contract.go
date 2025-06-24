@@ -17,7 +17,6 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 
@@ -25,6 +24,7 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/rollup_legacy_gen"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/headerreader"
+	chainifaces "github.com/offchainlabs/nitro/util/interfaces"
 )
 
 var (
@@ -339,7 +339,7 @@ func (v *Contract) TimeoutChallenges(ctx context.Context, challenges []uint64, c
 	return v.dataPoster.PostSimpleTransaction(ctx, *v.Address(), data, gas, common.Big0)
 }
 
-func (v *Contract) L1Client() *ethclient.Client {
+func (v *Contract) L1Client() chainifaces.EthereumReadWriter {
 	return v.l1Reader.Client()
 }
 

@@ -16,13 +16,13 @@ import (
 	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcastclient"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/headerreader"
+	chainifaces "github.com/offchainlabs/nitro/util/interfaces"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
@@ -92,7 +92,7 @@ type InboxReader struct {
 	delayedBridge  *DelayedBridge
 	sequencerInbox *SequencerInbox
 	caughtUpChan   chan struct{}
-	client         *ethclient.Client
+	client         chainifaces.EthereumReadWriter
 	l1Reader       *headerreader.HeaderReader
 
 	// Atomic
@@ -100,7 +100,7 @@ type InboxReader struct {
 	lastReadBatchCount atomic.Uint64
 }
 
-func NewInboxReader(tracker *InboxTracker, client *ethclient.Client, l1Reader *headerreader.HeaderReader, firstMessageBlock *big.Int, delayedBridge *DelayedBridge, sequencerInbox *SequencerInbox, config InboxReaderConfigFetcher) (*InboxReader, error) {
+func NewInboxReader(tracker *InboxTracker, client chainifaces.EthereumReadWriter, l1Reader *headerreader.HeaderReader, firstMessageBlock *big.Int, delayedBridge *DelayedBridge, sequencerInbox *SequencerInbox, config InboxReaderConfigFetcher) (*InboxReader, error) {
 	err := config().Validate()
 	if err != nil {
 		return nil, err

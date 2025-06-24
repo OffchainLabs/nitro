@@ -10,11 +10,11 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/daprovider/das/dastree"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
+	chainifaces "github.com/offchainlabs/nitro/util/interfaces"
 	"github.com/offchainlabs/nitro/util/pretty"
 )
 
@@ -42,7 +42,7 @@ type KeysetFetcher struct {
 	keysetCache      syncedKeysetCache
 }
 
-func NewKeysetFetcher(l1client *ethclient.Client, seqInboxAddr common.Address) (*KeysetFetcher, error) {
+func NewKeysetFetcher(l1client chainifaces.EthereumReadWriter, seqInboxAddr common.Address) (*KeysetFetcher, error) {
 	seqInbox, err := bridgegen.NewSequencerInbox(seqInboxAddr, l1client)
 	if err != nil {
 		return nil, err

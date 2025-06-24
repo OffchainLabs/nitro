@@ -16,9 +16,8 @@ import (
 
 	"github.com/alicebob/miniredis/v2"
 
-	"github.com/ethereum/go-ethereum/ethclient"
-
 	"github.com/offchainlabs/nitro/arbnode"
+	chainifaces "github.com/offchainlabs/nitro/util/interfaces"
 	"github.com/offchainlabs/nitro/util/redisutil"
 )
 
@@ -237,7 +236,7 @@ func TestRedisForwarder(t *testing.T) {
 	forwardingClient := TestClientForwarding.Client
 
 	var seqNodes []*arbnode.Node
-	var seqClients []*ethclient.Client
+	var seqClients []chainifaces.EthereumReadWriter
 	for _, path := range nodePaths {
 		testClientSeq, _ := createSequencer(t, builder, path, redisUrl)
 		seqNodes = append(seqNodes, testClientSeq.ConsensusNode)

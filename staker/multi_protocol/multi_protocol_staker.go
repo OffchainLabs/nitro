@@ -7,7 +7,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
 
@@ -18,6 +17,7 @@ import (
 	legacystaker "github.com/offchainlabs/nitro/staker/legacy"
 	"github.com/offchainlabs/nitro/staker/txbuilder"
 	"github.com/offchainlabs/nitro/util/headerreader"
+	chainifaces "github.com/offchainlabs/nitro/util/interfaces"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
@@ -182,7 +182,7 @@ func (m *MultiProtocolStaker) StopAndWait() {
 	m.StopWaiter.StopAndWait()
 }
 
-func IsBoldActive(callOpts *bind.CallOpts, bridge *bridgegen.IBridge, l1Backend *ethclient.Client) (bool, common.Address, error) {
+func IsBoldActive(callOpts *bind.CallOpts, bridge *bridgegen.IBridge, l1Backend chainifaces.EthereumReadWriter) (bool, common.Address, error) {
 	var addr common.Address
 	rollupAddress, err := bridge.Rollup(callOpts)
 	if err != nil {

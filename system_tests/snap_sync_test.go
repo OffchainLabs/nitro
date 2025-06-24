@@ -12,12 +12,12 @@ import (
 
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/util"
+	chainifaces "github.com/offchainlabs/nitro/util/interfaces"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
@@ -114,7 +114,7 @@ func TestSnapSync(t *testing.T) {
 func waitForBlockToCatchupToMessageCount(
 	ctx context.Context,
 	t *testing.T,
-	client *ethclient.Client,
+	client chainifaces.EthereumReadWriter,
 	finalMessageCount uint64,
 ) {
 	for {
@@ -131,7 +131,7 @@ func waitForBlockToCatchupToMessageCount(
 	}
 }
 
-func waitForBlocksToCatchup(ctx context.Context, t *testing.T, clientA *ethclient.Client, clientB *ethclient.Client) {
+func waitForBlocksToCatchup(ctx context.Context, t *testing.T, clientA chainifaces.EthereumReadWriter, clientB chainifaces.EthereumReadWriter) {
 	for {
 		select {
 		case <-ctx.Done():
