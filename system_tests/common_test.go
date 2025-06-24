@@ -209,9 +209,9 @@ var TestSequencerConfig = gethexec.SequencerConfig{
 	EnableProfiling:              false,
 }
 
-func ExecConfigDefaultNonSequencerTest(t *testing.T) *gethexec.Config {
+func ExecConfigDefaultNonSequencerTest(t *testing.T, stateScheme string) *gethexec.Config {
 	config := gethexec.ConfigDefault
-	config.Caching.StateScheme = env.GetTestStateScheme()
+	config.Caching.StateScheme = stateScheme
 	config.ParentChainReader = headerreader.TestConfig
 	config.Sequencer.Enable = false
 	config.Forwarder = DefaultTestForwarderConfig
@@ -223,9 +223,9 @@ func ExecConfigDefaultNonSequencerTest(t *testing.T) *gethexec.Config {
 	return &config
 }
 
-func ExecConfigDefaultTest(t *testing.T) *gethexec.Config {
+func ExecConfigDefaultTest(t *testing.T, stateScheme string) *gethexec.Config {
 	config := gethexec.ConfigDefault
-	config.Caching.StateScheme = env.GetTestStateScheme()
+	config.Caching.StateScheme = stateScheme
 	config.Sequencer = TestSequencerConfig
 	config.ParentChainReader = headerreader.TestConfig
 	config.ForwardingTarget = "null"
@@ -259,6 +259,7 @@ type NodeBuilder struct {
 	isSequencer                 bool
 	takeOwnership               bool
 	withL1                      bool
+	defaultDbScheme             string
 	addresses                   *chaininfo.RollupAddresses
 	l3Addresses                 *chaininfo.RollupAddresses
 	initMessage                 *arbostypes.ParsedInitMessage
@@ -314,7 +315,7 @@ func L3NitroConfigDefaultTest(t *testing.T) *NitroConfig {
 	return &NitroConfig{
 		chainConfig:   chainConfig,
 		nodeConfig:    arbnode.ConfigDefaultL1Test(),
-		execConfig:    ExecConfigDefaultTest(t),
+		execConfig:    ExecConfigDefaultTest(t, rawdb.HashScheme),
 		stackConfig:   testhelpers.CreateStackConfigForTest(t.TempDir()),
 		valnodeConfig: &valnodeConfig,
 
@@ -347,7 +348,11 @@ func (b *NodeBuilder) DefaultConfig(t *testing.T, withL1 bool) *NodeBuilder {
 	b.l2StackConfig = testhelpers.CreateStackConfigForTest(b.dataDir)
 	cp := valnode.TestValidationConfig
 	b.valnodeConfig = &cp
-	b.execConfig = ExecConfigDefaultTest(t)
+	b.defaultDbScheme = rawdb.HashScheme
+	if *testflag.StateSchemeFlag == rawdb.PathScheme || *testflag.StateSchemeFlag == rawdb.HashScheme {
+		b.defaultDbScheme = *testflag.StateSchemeFlag
+	}
+	b.execConfig = ExecConfigDefaultTest(t, b.defaultDbScheme)
 	b.l3Config = L3NitroConfigDefaultTest(t)
 	b.useFreezer = true
 	return b
@@ -405,6 +410,25 @@ func (b *NodeBuilder) WithStylusLongTermCache(enabled bool) *NodeBuilder {
 func (b *NodeBuilder) WithDelayBuffer(threshold uint64) *NodeBuilder {
 	b.delayBufferThreshold = threshold
 	return b
+}
+
+func (b *NodeBuilder) RequireScheme(t *testing.T, scheme string) *NodeBuilder {
+	if testflag.StateSchemeFlag != nil && *testflag.StateSchemeFlag != "" && *testflag.StateSchemeFlag != scheme {
+		t.Skip("skipping because db scheme is set and not ", scheme)
+	}
+	if b.defaultDbScheme != scheme && b.execConfig != nil {
+		b.execConfig.Caching.StateScheme = scheme
+		Require(t, b.execConfig.Validate())
+	}
+	b.defaultDbScheme = scheme
+	return b
+}
+
+func (b *NodeBuilder) ExecConfigDefaultTest(t *testing.T, sequencer bool) *gethexec.Config {
+	if sequencer {
+		ExecConfigDefaultTest(t, b.defaultDbScheme)
+	}
+	return ExecConfigDefaultNonSequencerTest(t, b.defaultDbScheme)
 }
 
 // WithL1ClientWrapper creates a ClientWrapper for the L1 RPC client before passing it to the L2 node.
@@ -527,8 +551,19 @@ func (b *NodeBuilder) CheckConfig(t *testing.T) {
 	if b.nodeConfig == nil {
 		b.nodeConfig = arbnode.ConfigDefaultL1Test()
 	}
+	if b.nodeConfig.ValidatorRequired() {
+		// validation currently requires hash
+		b.RequireScheme(t, rawdb.HashScheme)
+	}
+	if b.defaultDbScheme == "" {
+		b.defaultDbScheme = env.GetTestStateScheme()
+	}
 	if b.execConfig == nil {
-		b.execConfig = ExecConfigDefaultTest(t)
+		b.execConfig = b.ExecConfigDefaultTest(t, true)
+	}
+	if b.execConfig.Caching.Archive {
+		// archive currently requires hash
+		b.RequireScheme(t, rawdb.HashScheme)
 	}
 	if b.L1Info == nil {
 		b.L1Info = NewL1TestInfo(t)
@@ -1604,7 +1639,7 @@ func createNonL1BlockChainWithStackConfig(
 		stackConfig = testhelpers.CreateStackConfigForTest(dataDir)
 	}
 	if execConfig == nil {
-		execConfig = ExecConfigDefaultTest(t)
+		execConfig = ExecConfigDefaultTest(t, env.GetTestStateScheme())
 	}
 	Require(t, execConfig.Validate())
 
@@ -1638,7 +1673,7 @@ func createNonL1BlockChainWithStackConfig(
 		}
 	}
 	coreCacheConfig := gethexec.DefaultCacheConfigFor(stack, &execConfig.Caching)
-	blockchain, err := gethexec.WriteOrTestBlockChain(chainDb, coreCacheConfig, initReader, chainConfig, arbOSInit, nil, initMessage, ExecConfigDefaultTest(t).TxLookupLimit, 0)
+	blockchain, err := gethexec.WriteOrTestBlockChain(chainDb, coreCacheConfig, initReader, chainConfig, arbOSInit, nil, initMessage, gethexec.ConfigDefault.TxLookupLimit, 0)
 	Require(t, err)
 
 	return info, stack, chainDb, arbDb, blockchain
@@ -1700,7 +1735,7 @@ func Create2ndNodeWithConfig(
 		nodeConfig = arbnode.ConfigDefaultL1NonSequencerTest()
 	}
 	if execConfig == nil {
-		execConfig = ExecConfigDefaultNonSequencerTest(t)
+		t.Fatal("should not be nil")
 	}
 	Require(t, execConfig.Validate())
 
@@ -1737,7 +1772,7 @@ func Create2ndNodeWithConfig(
 		tracer, err = tracers.LiveDirectory.New(execConfig.VmTrace.TracerName, json.RawMessage(execConfig.VmTrace.JSONConfig))
 		Require(t, err)
 	}
-	blockchain, err := gethexec.WriteOrTestBlockChain(chainDb, coreCacheConfig, initReader, chainConfig, nil, tracer, initMessage, ExecConfigDefaultTest(t).TxLookupLimit, 0)
+	blockchain, err := gethexec.WriteOrTestBlockChain(chainDb, coreCacheConfig, initReader, chainConfig, nil, tracer, initMessage, execConfig.TxLookupLimit, 0)
 	Require(t, err)
 
 	AddValNodeIfNeeded(t, ctx, nodeConfig, true, "", valnodeConfig.Wasm.RootPath)

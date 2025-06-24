@@ -10,7 +10,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/eth/tracers/native"
 	"github.com/ethereum/go-ethereum/params"
@@ -92,8 +91,6 @@ func gasDimensionTestSetup(t *testing.T, expectRevert bool) (
 	ctx, cancel = context.WithCancel(context.Background())
 	builder = NewNodeBuilder(ctx).DefaultConfig(t, true).DontParalellise()
 	builder.execConfig.Caching.Archive = true
-	// For now Archive node should use HashScheme
-	builder.execConfig.Caching.StateScheme = rawdb.HashScheme
 	if expectRevert {
 		builder.execConfig.Sequencer.MaxRevertGasReject = 0
 	}

@@ -136,7 +136,7 @@ func testChallengeProtocolBOLDVirtualBlocks(t *testing.T, wrongAtFirstVirtual bo
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithBoldDeployment()
 
 	// Block validation requires db hash scheme
-	builder.execConfig.Caching.StateScheme = rawdb.HashScheme
+	builder.RequireScheme(t, rawdb.HashDB)
 	builder.nodeConfig.BlockValidator.Enable = true
 	builder.valnodeConfig.UseJit = false
 
