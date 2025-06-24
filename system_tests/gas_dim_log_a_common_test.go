@@ -89,7 +89,7 @@ func gasDimensionTestSetup(t *testing.T, expectRevert bool) (
 ) {
 	t.Helper()
 	ctx, cancel = context.WithCancel(context.Background())
-	builder = NewNodeBuilder(ctx).DefaultConfig(t, true).DontParalellise()
+	builder = NewNodeBuilder(ctx).DefaultConfig(t, true)
 	builder.execConfig.Caching.Archive = true
 	if expectRevert {
 		builder.execConfig.Sequencer.MaxRevertGasReject = 0
