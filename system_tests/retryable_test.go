@@ -48,7 +48,7 @@ func retryableSetup(t *testing.T, modifyNodeConfig ...func(*NodeBuilder)) (
 	func(),
 ) {
 	ctx, cancel := context.WithCancel(context.Background())
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).DontParalellise()
 	for _, f := range modifyNodeConfig {
 		f(builder)
 	}
