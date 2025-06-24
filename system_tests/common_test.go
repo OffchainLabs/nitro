@@ -31,7 +31,6 @@ import (
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
-	"github.com/ethereum/go-ethereum/accounts/keystore"
 	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
@@ -41,15 +40,13 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/ethereum/go-ethereum/eth"
-	"github.com/ethereum/go-ethereum/eth/catalyst"
 	"github.com/ethereum/go-ethereum/eth/downloader"
 	"github.com/ethereum/go-ethereum/eth/ethconfig"
-	"github.com/ethereum/go-ethereum/eth/filters"
 	"github.com/ethereum/go-ethereum/eth/tracers"
 	_ "github.com/ethereum/go-ethereum/eth/tracers/js"
 	_ "github.com/ethereum/go-ethereum/eth/tracers/native"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/ethereum/go-ethereum/ethclient/simulated"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
@@ -109,8 +106,8 @@ type SecondNodeParams struct {
 
 type TestClient struct {
 	ctx           context.Context
-	Client        *ethclient.Client
-	L1Backend     *eth.Ethereum
+	Client        EthereumWriter
+	L1Backend     *simulated.Backend
 	Stack         *node.Node
 	ConsensusNode *arbnode.Node
 	ExecNode      *gethexec.ExecutionNode
@@ -120,16 +117,28 @@ type TestClient struct {
 	cleanup func()
 }
 
+type EthereumReader interface {
+	ethereum.ChainReader
+	ethereum.ChainStateReader
+	ethereum.TransactionReader
+}
+
+type EthereumWriter interface {
+	EthereumReader
+	ethereum.TransactionSender
+	bind.ContractBackend
+}
+
 func NewTestClient(ctx context.Context) *TestClient {
 	return &TestClient{ctx: ctx}
 }
 
-func (tc *TestClient) SendSignedTx(t *testing.T, l2Client *ethclient.Client, transaction *types.Transaction, lInfo info) *types.Receipt {
+func (tc *TestClient) SendSignedTx(t *testing.T, l2Client EthereumWriter, transaction *types.Transaction, lInfo info) *types.Receipt {
 	t.Helper()
 	return SendSignedTxViaL1(t, tc.ctx, lInfo, tc.Client, l2Client, transaction)
 }
 
-func (tc *TestClient) SendUnsignedTx(t *testing.T, l2Client *ethclient.Client, transaction *types.Transaction, lInfo info) *types.Receipt {
+func (tc *TestClient) SendUnsignedTx(t *testing.T, l2Client EthereumWriter, transaction *types.Transaction, lInfo info) *types.Receipt {
 	t.Helper()
 	return SendUnsignedTxViaL1(t, tc.ctx, lInfo, tc.Client, l2Client, transaction)
 }
@@ -555,7 +564,7 @@ func (b *NodeBuilder) BuildL1(t *testing.T) {
 		t.Fatal(err)
 	}
 	b.L1 = NewTestClient(b.ctx)
-	b.L1Info, b.L1.Client, b.L1.L1Backend, b.L1.Stack, b.L1.ClientWrapper = createTestL1BlockChain(t, b.L1Info, b.withL1ClientWrapper)
+	b.L1Info, b.L1.Client, b.L1.L1Backend, b.L1.ClientWrapper = createTestL1BlockChain(t, b.L1Info, b.withL1ClientWrapper)
 	locator, err := server_common.NewMachineLocator(b.valnodeConfig.Wasm.RootPath)
 	Require(t, err)
 	b.addresses, b.initMessage = deployOnParentChain(
@@ -969,11 +978,12 @@ func (b *NodeBuilder) BridgeBalance(t *testing.T, account string, amount *big.In
 	return BridgeBalance(t, account, amount, b.L1Info, b.L2Info, b.L1.Client, b.L2.Client, b.ctx)
 }
 
-func SendWaitTestTransactions(t *testing.T, ctx context.Context, client *ethclient.Client, txs []*types.Transaction) []*types.Receipt {
+func SendWaitTestTransactions(t *testing.T, ctx context.Context, client EthereumWriter, txs []*types.Transaction) []*types.Receipt {
 	t.Helper()
 	receipts := make([]*types.Receipt, len(txs))
 	for _, tx := range txs {
-		Require(t, client.SendTransaction(ctx, tx))
+		err := client.SendTransaction(ctx, tx)
+		Require(t, err)
 	}
 	for i, tx := range txs {
 		var err error
@@ -984,14 +994,14 @@ func SendWaitTestTransactions(t *testing.T, ctx context.Context, client *ethclie
 }
 
 func TransferBalance(
-	t *testing.T, from, to string, amount *big.Int, l2info info, client *ethclient.Client, ctx context.Context,
+	t *testing.T, from, to string, amount *big.Int, l2info info, client EthereumWriter, ctx context.Context,
 ) (*types.Transaction, *types.Receipt) {
 	t.Helper()
 	return TransferBalanceTo(t, from, l2info.GetAddress(to), amount, l2info, client, ctx)
 }
 
 func TransferBalanceTo(
-	t *testing.T, from string, to common.Address, amount *big.Int, l2info info, client *ethclient.Client, ctx context.Context,
+	t *testing.T, from string, to common.Address, amount *big.Int, l2info info, client EthereumWriter, ctx context.Context,
 ) (*types.Transaction, *types.Receipt) {
 	t.Helper()
 	tx := l2info.PrepareTxTo(from, &to, l2info.TransferGas, amount, nil)
@@ -1004,7 +1014,7 @@ func TransferBalanceTo(
 
 // if l2client is not nil - will wait until balance appears in l2
 func BridgeBalance(
-	t *testing.T, account string, amount *big.Int, l1info info, l2info info, l1client *ethclient.Client, l2client *ethclient.Client, ctx context.Context,
+	t *testing.T, account string, amount *big.Int, l1info info, l2info info, l1client EthereumWriter, l2client EthereumWriter, ctx context.Context,
 ) (*types.Transaction, *types.Receipt) {
 	t.Helper()
 
@@ -1064,7 +1074,7 @@ func BridgeBalance(
 func AdvanceL1(
 	t *testing.T,
 	ctx context.Context,
-	l1client *ethclient.Client,
+	l1client EthereumWriter,
 	l1info *BlockchainTestInfo,
 	numBlocks int,
 ) {
@@ -1125,8 +1135,8 @@ func SendSignedTxViaL1(
 	t *testing.T,
 	ctx context.Context,
 	l1info *BlockchainTestInfo,
-	l1client *ethclient.Client,
-	l2client *ethclient.Client,
+	l1client EthereumWriter,
+	l2client EthereumWriter,
 	delayedTx *types.Transaction,
 ) *types.Receipt {
 	delayedInboxContract, err := bridgegen.NewInbox(l1info.GetAddress("Inbox"), l1client)
@@ -1151,8 +1161,8 @@ func SendUnsignedTxViaL1(
 	t *testing.T,
 	ctx context.Context,
 	l1info *BlockchainTestInfo,
-	l1client *ethclient.Client,
-	l2client *ethclient.Client,
+	l1client EthereumWriter,
+	l2client EthereumWriter,
 	templateTx *types.Transaction,
 ) *types.Receipt {
 	delayedInboxContract, err := bridgegen.NewInbox(l1info.GetAddress("Inbox"), l1client)
@@ -1193,13 +1203,13 @@ func SendUnsignedTxViaL1(
 	return receipt
 }
 
-func GetBaseFee(t *testing.T, client *ethclient.Client, ctx context.Context) *big.Int {
+func GetBaseFee(t *testing.T, client EthereumReader, ctx context.Context) *big.Int {
 	header, err := client.HeaderByNumber(ctx, nil)
 	Require(t, err)
 	return header.BaseFee
 }
 
-func GetBaseFeeAt(t *testing.T, client *ethclient.Client, ctx context.Context, blockNum *big.Int) *big.Int {
+func GetBaseFeeAt(t *testing.T, client EthereumReader, ctx context.Context, blockNum *big.Int) *big.Int {
 	header, err := client.HeaderByNumber(ctx, blockNum)
 	Require(t, err)
 	return header.BaseFee
@@ -1359,21 +1369,25 @@ func AddValNode(t *testing.T, ctx context.Context, nodeConfig *arbnode.Config, u
 	configByValidationNode(nodeConfig, valStack)
 }
 
-func createTestL1BlockChain(t *testing.T, l1info info, withClientWrapper bool) (info, *ethclient.Client, *eth.Ethereum, *node.Node, *ClientWrapper) {
+func createTestL1BlockChain(t *testing.T, l1info info, withClientWrapper bool) (info, simulated.Client, *simulated.Backend, *ClientWrapper) {
 	if l1info == nil {
 		l1info = NewL1TestInfo(t)
 	}
-	stackConfig := testhelpers.CreateStackConfigForTest(t.TempDir())
+	stackConfig := testhelpers.CreateStackConfigForTest("") // Empty data dir if using simulated backend.
+	rpcPort := getRandomPort(t)
+	stackConfig.HTTPModules = []string{"eth"}
+	stackConfig.HTTPHost = "localhost"
+	stackConfig.HTTPPort = rpcPort
 	l1info.GenerateAccount("Faucet")
 
 	chainConfig := chaininfo.ArbitrumDevTestChainConfig()
 	chainConfig.ArbitrumChainParams = params.ArbitrumChainParams{}
 
-	stack, err := node.New(stackConfig)
-	Require(t, err)
+	// stack, err := node.New(stackConfig)
+	// Require(t, err)
 
-	nodeConf := ethconfig.Defaults
-	nodeConf.NetworkId = chainConfig.ChainID.Uint64()
+	ethConf := ethconfig.Defaults
+	ethConf.NetworkId = chainConfig.ChainID.Uint64()
 	faucetAddr := l1info.GetAddress("Faucet")
 	l1Genesis := core.DeveloperGenesisBlock(15_000_000, &faucetAddr)
 	infoGenesis := l1info.GetGenesisAlloc()
@@ -1381,47 +1395,50 @@ func createTestL1BlockChain(t *testing.T, l1info info, withClientWrapper bool) (
 		l1Genesis.Alloc[acct] = info
 	}
 	l1Genesis.BaseFee = big.NewInt(50 * params.GWei)
-	nodeConf.Genesis = l1Genesis
-	nodeConf.Miner.Etherbase = l1info.GetAddress("Faucet")
-	nodeConf.Miner.PendingFeeRecipient = l1info.GetAddress("Faucet")
-	nodeConf.SyncMode = downloader.FullSync
+	ethConf.Genesis = l1Genesis
+	ethConf.Miner.Etherbase = l1info.GetAddress("Faucet")
+	ethConf.Miner.PendingFeeRecipient = l1info.GetAddress("Faucet")
+	ethConf.SyncMode = downloader.FullSync
 
-	l1backend, err := eth.New(stack, &nodeConf)
-	Require(t, err)
+	l1backend := simulated.NewBackend(infoGenesis, func(nConf *node.Config, eConf *ethconfig.Config) {
+		*eConf = ethConf
+		*nConf = *stackConfig
+	})
 
-	simBeacon, err := catalyst.NewSimulatedBeacon(0, common.Address{}, l1backend)
-	Require(t, err)
-	catalyst.RegisterSimulatedBeaconAPIs(stack, simBeacon)
-	stack.RegisterLifecycle(simBeacon)
+	// l1backend, err := eth.New(stack, &nodeConf)
+	// Require(t, err)
 
-	tempKeyStore := keystore.NewKeyStore(t.TempDir(), keystore.LightScryptN, keystore.LightScryptP)
-	faucetAccount, err := tempKeyStore.ImportECDSA(l1info.Accounts["Faucet"].PrivateKey, "passphrase")
-	Require(t, err)
-	Require(t, tempKeyStore.Unlock(faucetAccount, "passphrase"))
-	l1backend.AccountManager().AddBackend(tempKeyStore)
+	// simBeacon, err := catalyst.NewSimulatedBeacon(0, common.Address{}, l1backend)
+	// Require(t, err)
+	// catalyst.RegisterSimulatedBeaconAPIs(stack, simBeacon)
+	// stack.RegisterLifecycle(simBeacon)
 
-	stack.RegisterLifecycle(&lifecycle{stop: func() error {
-		return l1backend.Stop()
-	}})
+	// tempKeyStore := keystore.NewKeyStore(t.TempDir(), keystore.LightScryptN, keystore.LightScryptP)
+	// faucetAccount, err := tempKeyStore.ImportECDSA(l1info.Accounts["Faucet"].PrivateKey, "passphrase")
+	// Require(t, err)
+	// Require(t, tempKeyStore.Unlock(faucetAccount, "passphrase"))
+	// l1backend.AccountManager().AddBackend(tempKeyStore)
 
-	stack.RegisterAPIs([]rpc.API{{
-		Namespace: "eth",
-		Service:   filters.NewFilterAPI(filters.NewFilterSystem(l1backend.APIBackend, filters.Config{})),
-	}})
-	stack.RegisterAPIs(tracers.APIs(l1backend.APIBackend))
+	// stack.RegisterLifecycle(&lifecycle{stop: func() error {
+	// 	return l1backend.Stop()
+	// }})
 
-	Require(t, stack.Start())
+	// stack.RegisterAPIs([]rpc.API{{
+	// 	Namespace: "eth",
+	// 	Service:   filters.NewFilterAPI(filters.NewFilterSystem(l1backend.APIBackend, filters.Config{})),
+	// }})
+	// stack.RegisterAPIs(tracers.APIs(l1backend.APIBackend))
 
-	var rpcClient rpc.ClientInterface = stack.Attach()
+	// Require(t, stack.Start())
+
 	var clientWrapper *ClientWrapper
 	if withClientWrapper {
-		clientWrapper = NewClientWrapper(rpcClient, l1info)
-		rpcClient = clientWrapper
+		conn, err := rpc.DialHTTP("http://" + stackConfig.HTTPEndpoint())
+		Require(t, err)
+		clientWrapper = NewClientWrapper(conn, l1info)
 	}
 
-	l1Client := ethclient.NewClient(rpcClient)
-
-	return l1info, l1Client, l1backend, stack, clientWrapper
+	return l1info, l1backend.Client(), l1backend, clientWrapper
 }
 
 func getInitMessage(ctx context.Context, t *testing.T, parentChainClient *ethclient.Client, addresses *chaininfo.RollupAddresses) *arbostypes.ParsedInitMessage {
@@ -1449,7 +1466,7 @@ func deployOnParentChain(
 	t *testing.T,
 	ctx context.Context,
 	parentChainInfo info,
-	parentChainClient *ethclient.Client,
+	parentChainClient EthereumWriter,
 	parentChainReaderConfig *headerreader.Config,
 	chainConfig *params.ChainConfig,
 	wasmModuleRoot common.Hash,
@@ -1754,7 +1771,7 @@ func Create2ndNodeWithConfig(
 	return chainClient, currentNode
 }
 
-func GetBalance(t *testing.T, ctx context.Context, client *ethclient.Client, account common.Address) *big.Int {
+func GetBalance(t *testing.T, ctx context.Context, client EthereumReader, account common.Address) *big.Int {
 	t.Helper()
 	balance, err := client.BalanceAt(ctx, account, nil)
 	Require(t, err, "could not get balance")
@@ -1896,7 +1913,7 @@ func getDeadlineTimeout(t *testing.T, defaultTimeout time.Duration) time.Duratio
 	return timeout
 }
 
-func deployBigMap(t *testing.T, ctx context.Context, auth bind.TransactOpts, client *ethclient.Client,
+func deployBigMap(t *testing.T, ctx context.Context, auth bind.TransactOpts, client EthereumWriter,
 ) (common.Address, *localgen.BigMap) {
 	addr, tx, bigMap, err := localgen.DeployBigMap(&auth, client)
 	Require(t, err, "could not deploy BigMap.sol contract")
@@ -1906,7 +1923,7 @@ func deployBigMap(t *testing.T, ctx context.Context, auth bind.TransactOpts, cli
 }
 
 func deploySimple(
-	t *testing.T, ctx context.Context, auth bind.TransactOpts, client *ethclient.Client,
+	t *testing.T, ctx context.Context, auth bind.TransactOpts, client EthereumWriter,
 ) (common.Address, *localgen.Simple) {
 	addr, tx, simple, err := localgen.DeploySimple(&auth, client)
 	Require(t, err, "could not deploy Simple.sol contract")

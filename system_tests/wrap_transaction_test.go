@@ -24,7 +24,7 @@ import (
 	"github.com/offchainlabs/nitro/util/headerreader"
 )
 
-func GetPendingBlockNumber(ctx context.Context, client *ethclient.Client) (*big.Int, error) {
+func GetPendingBlockNumber(ctx context.Context, client EthereumReader) (*big.Int, error) {
 	// Attempt to get the block number from ArbSys, if it exists
 	arbSys, err := precompilesgen.NewArbSys(common.BigToAddress(big.NewInt(100)), client)
 	if err != nil {
@@ -39,7 +39,7 @@ func GetPendingBlockNumber(ctx context.Context, client *ethclient.Client) (*big.
 }
 
 // Will wait until txhash is in the blockchain and return its receipt
-func WaitForTx(ctxinput context.Context, client *ethclient.Client, txhash common.Hash, timeout time.Duration) (*types.Receipt, error) {
+func WaitForTx(ctxinput context.Context, client EthereumReader, txhash common.Hash, timeout time.Duration) (*types.Receipt, error) {
 	ctx, cancel := context.WithTimeout(ctxinput, timeout)
 	defer cancel()
 
@@ -77,11 +77,11 @@ func WaitForTx(ctxinput context.Context, client *ethclient.Client, txhash common
 	}
 }
 
-func EnsureTxSucceeded(ctx context.Context, client *ethclient.Client, tx *types.Transaction) (*types.Receipt, error) {
+func EnsureTxSucceeded(ctx context.Context, client EthereumReader, tx *types.Transaction) (*types.Receipt, error) {
 	return EnsureTxSucceededWithTimeout(ctx, client, tx, time.Second*5)
 }
 
-func EnsureTxSucceededWithTimeout(ctx context.Context, client *ethclient.Client, tx *types.Transaction, timeout time.Duration) (*types.Receipt, error) {
+func EnsureTxSucceededWithTimeout(ctx context.Context, client EthereumReader, tx *types.Transaction, timeout time.Duration) (*types.Receipt, error) {
 	receipt, err := WaitForTx(ctx, client, tx.Hash(), timeout)
 	if err != nil {
 		return nil, fmt.Errorf("waitFoxTx (tx=%s) got: %w", tx.Hash().Hex(), err)
