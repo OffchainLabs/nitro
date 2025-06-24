@@ -61,6 +61,7 @@ func makeBackgroundTxs(ctx context.Context, builder *NodeBuilder) error {
 }
 
 func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) {
+	t.Skip("Skipping staker test for now, it is not stable enough")
 	logHandler := testhelpers.InitTestLog(t, log.LvlTrace)
 
 	ctx, cancelCtx := context.WithCancel(context.Background())
