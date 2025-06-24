@@ -21,7 +21,7 @@ type SubmittedEspressoTx struct {
 	Hash        string
 	Pos         []MessageIndex
 	Payload     []byte
-	SubmittedAt time.Time
+	SubmittedAt time.Time `rlp:"optional"`
 }
 
 func BuildRawHotShotPayload(
