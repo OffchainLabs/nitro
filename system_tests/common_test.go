@@ -1394,32 +1394,6 @@ func createTestL1BlockChain(t *testing.T, l1info info, withClientWrapper bool) (
 		*nConf = *stackConfig
 	})
 
-	// l1backend, err := eth.New(stack, &nodeConf)
-	// Require(t, err)
-
-	// simBeacon, err := catalyst.NewSimulatedBeacon(0, common.Address{}, l1backend)
-	// Require(t, err)
-	// catalyst.RegisterSimulatedBeaconAPIs(stack, simBeacon)
-	// stack.RegisterLifecycle(simBeacon)
-
-	// tempKeyStore := keystore.NewKeyStore(t.TempDir(), keystore.LightScryptN, keystore.LightScryptP)
-	// faucetAccount, err := tempKeyStore.ImportECDSA(l1info.Accounts["Faucet"].PrivateKey, "passphrase")
-	// Require(t, err)
-	// Require(t, tempKeyStore.Unlock(faucetAccount, "passphrase"))
-	// l1backend.AccountManager().AddBackend(tempKeyStore)
-
-	// stack.RegisterLifecycle(&lifecycle{stop: func() error {
-	// 	return l1backend.Stop()
-	// }})
-
-	// stack.RegisterAPIs([]rpc.API{{
-	// 	Namespace: "eth",
-	// 	Service:   filters.NewFilterAPI(filters.NewFilterSystem(l1backend.APIBackend, filters.Config{})),
-	// }})
-	// stack.RegisterAPIs(tracers.APIs(l1backend.APIBackend))
-
-	// Require(t, stack.Start())
-
 	var clientWrapper *ClientWrapper
 	if withClientWrapper {
 		conn, err := rpc.DialHTTP("http://" + stackConfig.HTTPEndpoint())
@@ -1967,7 +1941,7 @@ func deployContract(
 }
 
 func sendContractCall(
-	t *testing.T, ctx context.Context, to common.Address, client *ethclient.Client, data []byte,
+	t *testing.T, ctx context.Context, to common.Address, client chainifaces.EthereumReadWriter, data []byte,
 ) []byte {
 	t.Helper()
 	msg := ethereum.CallMsg{

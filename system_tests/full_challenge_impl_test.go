@@ -16,7 +16,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
@@ -31,11 +30,12 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/yulgen"
 	"github.com/offchainlabs/nitro/staker"
 	legacystaker "github.com/offchainlabs/nitro/staker/legacy"
+	chainifaces "github.com/offchainlabs/nitro/util/interfaces"
 	"github.com/offchainlabs/nitro/validator"
 	"github.com/offchainlabs/nitro/validator/server_common"
 )
 
-func DeployOneStepProofEntry(t *testing.T, ctx context.Context, auth *bind.TransactOpts, client *ethclient.Client) common.Address {
+func DeployOneStepProofEntry(t *testing.T, ctx context.Context, auth *bind.TransactOpts, client chainifaces.EthereumReadWriter) common.Address {
 	osp0, tx, _, err := osp_legacy_gen.DeployOneStepProver0(auth, client)
 	Require(t, err)
 	_, err = EnsureTxSucceeded(ctx, client, tx)
@@ -68,7 +68,7 @@ func CreateChallenge(
 	t *testing.T,
 	ctx context.Context,
 	auth *bind.TransactOpts,
-	client *ethclient.Client,
+	client chainifaces.EthereumReadWriter,
 	ospEntry common.Address,
 	sequencerInbox common.Address,
 	delayedBridge common.Address,
@@ -140,7 +140,7 @@ func writeTxToBatch(writer io.Writer, tx *types.Transaction) error {
 
 const makeBatch_MsgsPerBatch = int64(5)
 
-func makeBatch(t *testing.T, l2Node *arbnode.Node, l2Info *BlockchainTestInfo, backend *ethclient.Client, sequencer *bind.TransactOpts, seqInbox *mocks_legacy_gen.SequencerInboxStub, seqInboxAddr common.Address, modStep int64) {
+func makeBatch(t *testing.T, l2Node *arbnode.Node, l2Info *BlockchainTestInfo, backend chainifaces.EthereumReadWriter, sequencer *bind.TransactOpts, seqInbox *mocks_legacy_gen.SequencerInboxStub, seqInboxAddr common.Address, modStep int64) {
 	ctx := context.Background()
 
 	batchBuffer := bytes.NewBuffer([]byte{})
@@ -176,7 +176,7 @@ func makeBatch(t *testing.T, l2Node *arbnode.Node, l2Info *BlockchainTestInfo, b
 	Require(t, err, "failed to get batch metadata after adding batch:")
 }
 
-func confirmLatestBlock(ctx context.Context, t *testing.T, l1Info *BlockchainTestInfo, backend *ethclient.Client) {
+func confirmLatestBlock(ctx context.Context, t *testing.T, l1Info *BlockchainTestInfo, backend chainifaces.EthereumReadWriter) {
 	t.Helper()
 	// With SimulatedBeacon running in on-demand block production mode, the
 	// finalized block is considered to be be the nearest multiple of 32 less
@@ -188,7 +188,7 @@ func confirmLatestBlock(ctx context.Context, t *testing.T, l1Info *BlockchainTes
 	}
 }
 
-func setupSequencerInboxStub(ctx context.Context, t *testing.T, l1Info *BlockchainTestInfo, l1Client *ethclient.Client, chainConfig *params.ChainConfig) (common.Address, *mocks_legacy_gen.SequencerInboxStub, common.Address) {
+func setupSequencerInboxStub(ctx context.Context, t *testing.T, l1Info *BlockchainTestInfo, l1Client chainifaces.EthereumReadWriter, chainConfig *params.ChainConfig) (common.Address, *mocks_legacy_gen.SequencerInboxStub, common.Address) {
 	txOpts := l1Info.GetDefaultTransactOpts("deployer", ctx)
 	bridgeAddr, tx, bridge, err := mocks_legacy_gen.DeployBridgeUnproxied(&txOpts, l1Client)
 	Require(t, err)

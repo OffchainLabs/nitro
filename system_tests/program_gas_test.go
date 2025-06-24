@@ -15,12 +15,12 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/eth/tracers/logger"
-	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/solgen/go/localgen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
+	chainifaces "github.com/offchainlabs/nitro/util/interfaces"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
@@ -282,7 +282,7 @@ func setupGasCostTest(t *testing.T) *NodeBuilder {
 }
 
 // deployEvmContract deploys an Evm contract and return its address.
-func deployEvmContract(t *testing.T, ctx context.Context, auth bind.TransactOpts, client *ethclient.Client, metadata *bind.MetaData) common.Address {
+func deployEvmContract(t *testing.T, ctx context.Context, auth bind.TransactOpts, client chainifaces.EthereumReadWriter, metadata *bind.MetaData) common.Address {
 	t.Helper()
 	parsed, err := metadata.GetAbi()
 	Require(t, err)

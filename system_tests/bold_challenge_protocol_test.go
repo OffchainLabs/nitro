@@ -54,6 +54,7 @@ import (
 	"github.com/offchainlabs/nitro/staker/bold"
 	"github.com/offchainlabs/nitro/statetransfer"
 	"github.com/offchainlabs/nitro/util"
+	chainifaces "github.com/offchainlabs/nitro/util/interfaces"
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 	"github.com/offchainlabs/nitro/validator/server_arb"
@@ -498,7 +499,7 @@ func testChallengeProtocolBOLD(t *testing.T, spawnerOpts ...server_arb.SpawnerOp
 }
 
 // Every 3 seconds, send an L1 transaction to keep the chain moving.
-func keepChainMoving(t *testing.T, ctx context.Context, l1Info *BlockchainTestInfo, client *ethclient.Client) {
+func keepChainMoving(t *testing.T, ctx context.Context, l1Info *BlockchainTestInfo, client chainifaces.EthereumReadWriter) {
 	delay := time.Second * 3
 	for {
 		select {
@@ -533,8 +534,8 @@ func createTestNodeOnL1ForBoldProtocol(
 	rollupStackConf setup.RollupStackConfig,
 	l2infoIn info,
 ) (
-	l2info info, currentNode *arbnode.Node, l2client *ethclient.Client, l2stack *node.Node,
-	l1info info, l1backend *eth.Ethereum, l1client *ethclient.Client, l1stack *node.Node,
+	l2info info, currentNode *arbnode.Node, l2client chainifaces.EthereumReadWriter, l2stack *node.Node,
+	l1info info, l1backend *eth.Ethereum, l1client chainifaces.EthereumReadWriter, l1stack *node.Node,
 	assertionChain *solimpl.AssertionChain, stakeTokenAddr common.Address,
 ) {
 	if nodeConfig == nil {
@@ -674,7 +675,7 @@ func deployContractsOnly(
 	t *testing.T,
 	ctx context.Context,
 	l1info info,
-	backend *ethclient.Client,
+	backend chainifaces.EthereumReadWriter,
 	chainId *big.Int,
 	rollupStackConf setup.RollupStackConfig,
 	stakeToken common.Address,
@@ -790,7 +791,7 @@ func create2ndNodeWithConfigForBoldProtocol(
 	stackConfig *node.Config,
 	rollupStackConf setup.RollupStackConfig,
 	stakeTokenAddr common.Address,
-) (*ethclient.Client, *arbnode.Node, *solimpl.AssertionChain) {
+) (chainifaces.EthereumReadWriter, *arbnode.Node, *solimpl.AssertionChain) {
 	fatalErrChan := make(chan error, 10)
 	l1rpcClient := l1stack.Attach()
 	l1client := ethclient.NewClient(l1rpcClient)
@@ -884,7 +885,7 @@ func makeBoldBatch(
 	t *testing.T,
 	l2Node *arbnode.Node,
 	l2Info *BlockchainTestInfo,
-	backend *ethclient.Client,
+	backend chainifaces.EthereumReadWriter,
 	sequencer *bind.TransactOpts,
 	seqInbox *bridgegen.SequencerInbox,
 	seqInboxAddr common.Address,

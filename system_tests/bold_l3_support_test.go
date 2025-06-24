@@ -15,7 +15,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
 	solimpl "github.com/offchainlabs/bold/chain-abstraction/sol-implementation"
@@ -29,6 +28,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/solgen/go/localgen"
 	"github.com/offchainlabs/nitro/staker/bold"
+	chainifaces "github.com/offchainlabs/nitro/util/interfaces"
 )
 
 func TestL3ChallengeProtocolBOLD(t *testing.T) {
@@ -162,7 +162,7 @@ func TestL3ChallengeProtocolBOLD(t *testing.T) {
 	}
 }
 
-func fundL3Staker(t *testing.T, ctx context.Context, builder *NodeBuilder, l2Client *ethclient.Client, name string) {
+func fundL3Staker(t *testing.T, ctx context.Context, builder *NodeBuilder, l2Client chainifaces.EthereumReadWriter, name string) {
 	balance := big.NewInt(params.Ether)
 	balance.Mul(balance, big.NewInt(100))
 	TransferBalance(t, "Faucet", name, balance, builder.L2Info, l2Client, ctx)

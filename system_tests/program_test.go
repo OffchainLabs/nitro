@@ -26,7 +26,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
 	_ "github.com/ethereum/go-ethereum/eth/tracers/js"
-	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
@@ -42,6 +41,7 @@ import (
 	pgen "github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/colors"
+	chainifaces "github.com/offchainlabs/nitro/util/interfaces"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 	"github.com/offchainlabs/nitro/validator/valnode"
 )
@@ -1758,7 +1758,7 @@ func readWasmFile(t *testing.T, file string) ([]byte, []byte) {
 }
 
 func deployWasm(
-	t *testing.T, ctx context.Context, auth bind.TransactOpts, l2client *ethclient.Client, file string,
+	t *testing.T, ctx context.Context, auth bind.TransactOpts, l2client chainifaces.EthereumReadWriter, file string,
 ) common.Address {
 	name := strings.TrimSuffix(filepath.Base(file), filepath.Ext(file))
 	wasm, _ := readWasmFile(t, file)
@@ -1773,7 +1773,7 @@ func activateWasm(
 	t *testing.T,
 	ctx context.Context,
 	auth bind.TransactOpts,
-	l2client *ethclient.Client,
+	l2client chainifaces.EthereumReadWriter,
 	program common.Address,
 	name string,
 ) {
@@ -1874,7 +1874,7 @@ func multicallAppendClearCache(args []byte) []byte {
 }
 
 func assertStorageAt(
-	t *testing.T, ctx context.Context, l2client *ethclient.Client, contract common.Address, key, value common.Hash,
+	t *testing.T, ctx context.Context, l2client chainifaces.EthereumReadWriter, contract common.Address, key, value common.Hash,
 ) {
 	t.Helper()
 	storedBytes, err := l2client.StorageAt(ctx, contract, key, nil)

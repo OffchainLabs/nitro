@@ -46,6 +46,7 @@ import (
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/colors"
 	"github.com/offchainlabs/nitro/util/containers"
+	chainifaces "github.com/offchainlabs/nitro/util/interfaces"
 	"github.com/offchainlabs/nitro/util/redisutil"
 	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
@@ -1304,7 +1305,7 @@ func TestTimeboostSequencerFeed_ExpressLaneAuction_InnerPayloadNoncesAreRespecte
 
 // verifyTimeboostedCorrectness is used to check if the timeboosted byte array in both the sequencer's tx streamer and the client node's tx streamer (which is connected
 // to the sequencer feed) is accurate, i.e it represents correctly whether a tx is timeboosted or not
-func verifyTimeboostedCorrectness(t *testing.T, ctx context.Context, user string, tNode *arbnode.Node, tClient *ethclient.Client, isTimeboosted bool, userTx *types.Transaction, userTxBlockNum uint64) {
+func verifyTimeboostedCorrectness(t *testing.T, ctx context.Context, user string, tNode *arbnode.Node, tClient chainifaces.EthereumReadWriter, isTimeboosted bool, userTx *types.Transaction, userTxBlockNum uint64) {
 	blockMetadataOfBlock, err := tNode.TxStreamer.BlockMetadataAtMessageIndex(arbutil.MessageIndex(userTxBlockNum))
 	Require(t, err)
 	if len(blockMetadataOfBlock) == 0 {
@@ -1336,7 +1337,7 @@ func verifyTimeboostedCorrectness(t *testing.T, ctx context.Context, user string
 	}
 }
 
-func placeBidsAndDecideWinner(t *testing.T, ctx context.Context, seqClient *ethclient.Client, seqInfo *BlockchainTestInfo, auctionContract *express_lane_auctiongen.ExpressLaneAuction, winner, loser string, winnerBidderClient, loserBidderClient *timeboost.BidderClient, roundDuration time.Duration) {
+func placeBidsAndDecideWinner(t *testing.T, ctx context.Context, seqClient chainifaces.EthereumReadWriter, seqInfo *BlockchainTestInfo, auctionContract *express_lane_auctiongen.ExpressLaneAuction, winner, loser string, winnerBidderClient, loserBidderClient *timeboost.BidderClient, roundDuration time.Duration) {
 	t.Helper()
 
 	rawRoundTimingInfo, err := auctionContract.RoundTimingInfo(&bind.CallOpts{})
@@ -1379,7 +1380,7 @@ func placeBidsAndDecideWinner(t *testing.T, ctx context.Context, seqClient *ethc
 	}
 }
 
-func verifyControllerAdvantage(t *testing.T, ctx context.Context, seqClient *ethclient.Client, controllerClient *expressLaneClient, seqInfo *BlockchainTestInfo, controller, otherUser string) {
+func verifyControllerAdvantage(t *testing.T, ctx context.Context, seqClient chainifaces.EthereumReadWriter, controllerClient *expressLaneClient, seqInfo *BlockchainTestInfo, controller, otherUser string) {
 	t.Helper()
 
 	// During the express lane around, controller sends txs always 150ms later than otherUser, but otherUser's
@@ -1831,7 +1832,7 @@ func setupExpressLaneAuction(
 func awaitAuctionResolved(
 	t *testing.T,
 	ctx context.Context,
-	client *ethclient.Client,
+	client chainifaces.EthereumReadWriter,
 	contract *express_lane_auctiongen.ExpressLaneAuction,
 ) (common.Address, uint64) {
 	fromBlock, err := client.BlockNumber(ctx)
@@ -1878,7 +1879,7 @@ type expressLaneClient struct {
 	roundTimingInfo     timeboost.RoundTimingInfo
 	auctionContractAddr common.Address
 	client              *rpc.Client
-	ethClient           *ethclient.Client
+	ethClient           chainifaces.EthereumReadWriter
 	sequence            uint64
 }
 

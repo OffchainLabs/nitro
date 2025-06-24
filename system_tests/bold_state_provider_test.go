@@ -13,13 +13,13 @@ import (
 	"testing"
 	"time"
 
+	chainifaces "github.com/offchainlabs/nitro/util/interfaces"
 	"github.com/offchainlabs/nitro/validator/server_common"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
@@ -346,7 +346,7 @@ func TestChallengeProtocolBOLD_StateProvider(t *testing.T) {
 	})
 }
 
-func setupBoldStateProvider(t *testing.T, ctx context.Context, blockChallengeHeight uint64) (*arbnode.Node, *BlockchainTestInfo, *BlockchainTestInfo, *node.Node, *ethclient.Client, *bold.BOLDStateProvider, *staker.BlockValidator) {
+func setupBoldStateProvider(t *testing.T, ctx context.Context, blockChallengeHeight uint64) (*arbnode.Node, *BlockchainTestInfo, *BlockchainTestInfo, *node.Node, chainifaces.EthereumReadWriter, *bold.BOLDStateProvider, *staker.BlockValidator) {
 	var transferGas = util.NormalizeL2GasForL1GasInitial(800_000, params.GWei) // include room for aggregator L1 costs
 	l2chainConfig := chaininfo.ArbitrumDevTestChainConfig()
 	l2info := NewBlockChainTestInfo(
