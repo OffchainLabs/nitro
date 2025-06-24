@@ -126,10 +126,14 @@ jobs:
         run: ./scripts/build-brotli.sh -w -d
 
       - name: Build
-        run: make build test-go-deps -j
+        env:
+          CARGO_BUILD_JOBS: 2
+        run: make build test-go-deps -j2
 
       - name: Build all lint dependencies
-        run: make -j build-node-deps
+        env:
+          CARGO_BUILD_JOBS: 2
+        run: make -j2 build-node-deps
       
       # TODO: re-enable
       # - name: Lint
