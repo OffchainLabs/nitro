@@ -593,18 +593,3 @@ func setupParseDelayedMessagesTest(t *testing.T) (*bridgegen.IBridgeMessageDeliv
 	require.NoError(t, err)
 	return event, packedLog
 }
-
-type mockReceiptFetcher struct {
-	receipts []*types.Receipt
-	err      error
-}
-
-func (m *mockReceiptFetcher) ReceiptForTransactionIndex(
-	_ context.Context,
-	idx uint,
-) (*types.Receipt, error) {
-	if m.err != nil {
-		return nil, m.err
-	}
-	return m.receipts[idx], nil
-}
