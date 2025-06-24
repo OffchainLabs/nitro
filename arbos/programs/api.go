@@ -4,7 +4,6 @@
 package programs
 
 import (
-	"github.com/offchainlabs/nitro/callstack"
 	"strconv"
 
 	"github.com/holiman/uint256"
@@ -15,6 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos/util"
+	"github.com/offchainlabs/nitro/callstack"
 	am "github.com/offchainlabs/nitro/util/arbmath"
 )
 

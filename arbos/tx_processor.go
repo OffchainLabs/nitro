@@ -6,7 +6,6 @@ package arbos
 import (
 	"errors"
 	"fmt"
-	"github.com/offchainlabs/nitro/callstack"
 	"math/big"
 
 	"github.com/holiman/uint256"
@@ -23,6 +22,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbos/retryables"
 	"github.com/offchainlabs/nitro/arbos/util"
+	"github.com/offchainlabs/nitro/callstack"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
 

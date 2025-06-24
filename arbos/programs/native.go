@@ -22,7 +22,6 @@ import "C"
 import (
 	"errors"
 	"fmt"
-	"github.com/offchainlabs/nitro/callstack"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
@@ -36,6 +35,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/callstack"
 )
 
 type u8 = C.uint8_t

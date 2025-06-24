@@ -34,6 +34,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/execution/gethexec"
+	"github.com/offchainlabs/nitro/execution/nethexec"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 	"github.com/offchainlabs/nitro/util/testhelpers/env"
 )
@@ -442,6 +443,7 @@ func TestOpenInitializeChainDbIncompatibleStateScheme(t *testing.T) {
 		nil,
 		&nodeConfig.Persistent,
 		l1Client,
+		nethexec.FakeRemoteExecutionRpcClient{},
 		chaininfo.RollupAddresses{},
 	)
 	Require(t, err)
@@ -460,6 +462,7 @@ func TestOpenInitializeChainDbIncompatibleStateScheme(t *testing.T) {
 		nil,
 		&nodeConfig.Persistent,
 		l1Client,
+		nethexec.FakeRemoteExecutionRpcClient{},
 		chaininfo.RollupAddresses{},
 	)
 	Require(t, err)
@@ -479,6 +482,7 @@ func TestOpenInitializeChainDbIncompatibleStateScheme(t *testing.T) {
 		nil,
 		&nodeConfig.Persistent,
 		l1Client,
+		nethexec.FakeRemoteExecutionRpcClient{},
 		chaininfo.RollupAddresses{},
 	)
 	if !strings.Contains(err.Error(), "incompatible state scheme, stored: path, provided: hash") {
@@ -616,6 +620,7 @@ func TestOpenInitializeChainDbEmptyInit(t *testing.T) {
 		nil,
 		&nodeConfig.Persistent,
 		l1Client,
+		nethexec.FakeRemoteExecutionRpcClient{},
 		chaininfo.RollupAddresses{},
 	)
 	Require(t, err)

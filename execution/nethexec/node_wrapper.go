@@ -82,10 +82,10 @@ func (w *NodeWrapper) Reorg(count arbutil.MessageIndex, newMessages []arbostypes
 }
 
 func (w *NodeWrapper) HeadMessageIndex() containers.PromiseInterface[arbutil.MessageIndex] {
-	//start := time.Now()
-	//log.Info("NodeWrapper: HeadMessageIndex")
+	// start := time.Now()
+	// log.Info("NodeWrapper: HeadMessageIndex")
 	result := w.ExecutionNode.HeadMessageIndex()
-	//log.Info("NodeWrapper: HeadMessageIndex completed", "elapsed", time.Since(start))
+	// log.Info("NodeWrapper: HeadMessageIndex completed", "elapsed", time.Since(start))
 	return result
 }
 
@@ -114,10 +114,10 @@ func (w *NodeWrapper) BlockNumberToMessageIndex(blockNum uint64) containers.Prom
 }
 
 func (w *NodeWrapper) SetFinalityData(ctx context.Context, finalityData *arbutil.FinalityData, finalizedFinalityData *arbutil.FinalityData, validatedFinalityData *arbutil.FinalityData) containers.PromiseInterface[struct{}] {
-	//start := time.Now()
-	//log.Info("NodeWrapper: SetFinalityData")
+	// start := time.Now()
+	// log.Info("NodeWrapper: SetFinalityData")
 	result := w.ExecutionNode.SetFinalityData(ctx, finalityData, finalizedFinalityData, validatedFinalityData)
-	//log.Info("NodeWrapper: SetFinalityData completed", "elapsed", time.Since(start))
+	// log.Info("NodeWrapper: SetFinalityData completed", "elapsed", time.Since(start))
 	return result
 }
 
@@ -185,10 +185,10 @@ func (w *NodeWrapper) SequenceDelayedMessage(message *arbostypes.L1IncomingMessa
 }
 
 func (w *NodeWrapper) NextDelayedMessageNumber() (uint64, error) {
-	//start := time.Now()
-	//log.Info("NodeWrapper: NextDelayedMessageNumber")
+	// start := time.Now()
+	// log.Info("NodeWrapper: NextDelayedMessageNumber")
 	result, err := w.ExecutionNode.NextDelayedMessageNumber()
-	//log.Info("NodeWrapper: NextDelayedMessageNumber completed", "result", result, "err", err, "elapsed", time.Since(start))
+	// log.Info("NodeWrapper: NextDelayedMessageNumber completed", "result", result, "err", err, "elapsed", time.Since(start))
 	return result, err
 }
 

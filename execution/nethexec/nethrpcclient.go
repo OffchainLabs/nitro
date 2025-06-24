@@ -3,19 +3,25 @@ package nethexec
 import (
 	"context"
 	"fmt"
-	"github.com/ethereum/go-ethereum/log"
-	"github.com/ethereum/go-ethereum/rpc"
-	"github.com/offchainlabs/nitro/arbos/arbostypes"
-	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/offchainlabs/nitro/execution"
 	"math/big"
 	"net/http"
 	"os"
 	"strconv"
 	"time"
+
+	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/rpc"
+
+	"github.com/offchainlabs/nitro/arbos/arbostypes"
+	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/execution"
 )
 
 var defaultUrl = "http://localhost:20545"
+
+type RemoteExecutionRpcClient interface {
+	DigestInitMessage(ctx context.Context, initialL1BaseFee *big.Int, serializedChainConfig []byte) *execution.MessageResult
+}
 
 type NethRpcClient struct {
 	client *rpc.Client
@@ -29,7 +35,7 @@ type MessageParams struct {
 }
 
 type InitializeMessageParams struct {
-	InitialL1BaseFee      *big.Int `json:"initialL1BaseFee""`
+	InitialL1BaseFee      *big.Int `json:"initialL1BaseFee"`
 	SerializedChainConfig []byte   `json:"serializedChainConfig"`
 }
 
@@ -110,4 +116,10 @@ func (c *NethRpcClient) DigestInitMessage(ctx context.Context, initialL1BaseFee 
 	}
 
 	return &result
+}
+
+type FakeRemoteExecutionRpcClient struct{}
+
+func (c FakeRemoteExecutionRpcClient) DigestInitMessage(ctx context.Context, initialL1BaseFee *big.Int, serializedChainConfig []byte) *execution.MessageResult {
+	return nil
 }

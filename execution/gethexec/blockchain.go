@@ -3,9 +3,6 @@ package gethexec
 import (
 	"errors"
 	"fmt"
-	"github.com/ethereum/go-ethereum/core/state"
-	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/ethereum/go-ethereum/triedb"
 	"os"
 	"strings"
 	"time"
@@ -15,13 +12,16 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
+	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/eth/ethconfig"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/ethereum/go-ethereum/triedb"
 
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
@@ -172,7 +172,7 @@ func WriteOrTestGenblock(chainDb ethdb.Database, cacheConfig *core.CacheConfig, 
 	log.Info("Address 0xA4B05FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF hash", crypto.Keccak256Hash(arbosAccountAddress.Bytes()).String())
 
 	log.Info("Precompiles hashes")
-	for addr, _ := range arbosState.PrecompileMinArbOSVersions {
+	for addr := range arbosState.PrecompileMinArbOSVersions {
 		log.Info("Address 0xA4B05FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF hash", crypto.Keccak256Hash(addr.Bytes()).String())
 	}
 
