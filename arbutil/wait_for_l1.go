@@ -13,7 +13,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
-	"github.com/ethereum/go-ethereum/ethclient"
 	chainifaces "github.com/offchainlabs/nitro/util/interfaces"
 )
 
@@ -83,7 +82,7 @@ func DetailTxError(ctx context.Context, client chainifaces.EthereumReadWriter, t
 	return fmt.Errorf("SendTxAsCall got: %w for tx hash %v", err, tx.Hash())
 }
 
-func DetailTxErrorUsingCallMsg(ctx context.Context, client *ethclient.Client, txHash common.Hash, txRes *types.Receipt, callMsg ethereum.CallMsg) error {
+func DetailTxErrorUsingCallMsg(ctx context.Context, client chainifaces.EthereumReadWriter, txHash common.Hash, txRes *types.Receipt, callMsg ethereum.CallMsg) error {
 	// Re-execute the transaction as a call to get a better error
 	if ctx.Err() != nil {
 		return ctx.Err()

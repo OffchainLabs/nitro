@@ -2,6 +2,7 @@ package chainifaces
 
 import (
 	"context"
+	"math/big"
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -25,6 +26,7 @@ type EthereumReader interface {
 	ethereum.ChainIDReader
 	ethereum.TransactionReader
 	ethereum.ChainSyncReader
+	BlobBaseFee(ctx context.Context) (*big.Int, error)
 	Close()
 	Client() rpc.ClientInterface
 	CallContractAtHash(ctx context.Context, msg ethereum.CallMsg, blockHash common.Hash) ([]byte, error)

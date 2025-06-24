@@ -19,7 +19,6 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/arbutil"
@@ -28,6 +27,7 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/headerreader"
+	chainifaces "github.com/offchainlabs/nitro/util/interfaces"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
@@ -247,7 +247,7 @@ func FindDASDataFromLog(
 	inboxContract *bridgegen.SequencerInbox,
 	deliveredEvent *bridgegen.SequencerInboxSequencerBatchDelivered,
 	inboxAddr common.Address,
-	l1Client *ethclient.Client,
+	l1Client chainifaces.EthereumReadWriter,
 	batchDeliveredLog types.Log) ([]byte, error) {
 	data := []byte{}
 	if deliveredEvent.DataLocation == uint8(batchDataSeparateEvent) {
