@@ -569,7 +569,7 @@ func (b *NodeBuilder) BuildL1(t *testing.T) {
 		b.deployBold,
 		b.delayBufferThreshold,
 	)
-	b.L1.cleanup = func() { requireClose(t, b.L1.Stack) }
+	b.L1.cleanup = func() {}
 }
 
 func buildOnParentChain(
@@ -1372,9 +1372,6 @@ func createTestL1BlockChain(t *testing.T, l1info info, withClientWrapper bool) (
 	chainConfig := chaininfo.ArbitrumDevTestChainConfig()
 	chainConfig.ArbitrumChainParams = params.ArbitrumChainParams{}
 
-	// stack, err := node.New(stackConfig)
-	// Require(t, err)
-
 	ethConf := ethconfig.Defaults
 	ethConf.NetworkId = chainConfig.ChainID.Uint64()
 	faucetAddr := l1info.GetAddress("Faucet")
@@ -1401,7 +1398,23 @@ func createTestL1BlockChain(t *testing.T, l1info info, withClientWrapper bool) (
 		clientWrapper = NewClientWrapper(conn, l1info)
 	}
 
-	return l1info, l1backend.Client(), l1backend, clientWrapper
+	return l1info, &committerClient{
+		EthereumReadWriter: l1backend.Client(),
+		sim:                l1backend,
+	}, l1backend, clientWrapper
+}
+
+type committerClient struct {
+	chainifaces.EthereumReadWriter
+	sim *simulated.Backend
+}
+
+func (cc *committerClient) SendTransaction(ctx context.Context, tx *types.Transaction) error {
+	if err := cc.EthereumReadWriter.SendTransaction(ctx, tx); err != nil {
+		return err
+	}
+	cc.sim.Commit()
+	return nil
 }
 
 func getInitMessage(ctx context.Context, t *testing.T, parentChainClient chainifaces.EthereumReadWriter, addresses *chaininfo.RollupAddresses) *arbostypes.ParsedInitMessage {
