@@ -139,7 +139,7 @@ func NewTransactionStreamer(
 		streamer.trackBlockMetadataFrom = trackBlockMetadataFrom
 	}
 	if config().SyncTillBlock != 0 {
-		syncTillMessage, err := exec.BlockNumberToMessageIndex(config().TrackBlockMetadataFrom).Await(ctx)
+		syncTillMessage, err := exec.BlockNumberToMessageIndex(config().SyncTillBlock).Await(ctx)
 		if err != nil {
 			return nil, err
 		}
