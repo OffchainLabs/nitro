@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
 
@@ -16,7 +15,6 @@ import (
 // This test calls the ArbBlockNumber function on the ArbSys precompile
 // which calls SLOAD inside the precompile, for this test
 func TestDimLogArbSysBlockNumberForSload(t *testing.T) {
-	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cleanup()
 	defer cancel()
@@ -54,7 +52,6 @@ func TestDimLogActivateProgramForSstoreAndCall(t *testing.T) {
 		func(builder *NodeBuilder) {
 			// Match gasDimensionTestSetup settings
 			builder.execConfig.Caching.Archive = true
-			builder.execConfig.Caching.StateScheme = rawdb.HashScheme
 			builder.execConfig.Sequencer.MaxRevertGasReject = 0
 			builder.WithArbOSVersion(params.MaxArbosVersionSupported)
 		},
