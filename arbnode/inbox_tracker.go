@@ -760,7 +760,7 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client *ethclien
 	}
 	multiplexer := arbstate.NewInboxMultiplexer(backend, prevbatchmeta.DelayedMessageCount, t.dapReaders, daprovider.KeysetValidate)
 	batchMessageCounts := make(map[uint64]arbutil.MessageIndex)
-	currentpos := prevbatchmeta.MessageCount + 1
+	currentPos := prevbatchmeta.MessageCount + 1
 	for {
 		if len(backend.batches) == 0 {
 			break
@@ -771,8 +771,8 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client *ethclien
 			return err
 		}
 		messages = append(messages, *msg)
-		batchMessageCounts[batchSeqNum] = currentpos
-		currentpos += 1
+		batchMessageCounts[batchSeqNum] = currentPos
+		currentPos += 1
 	}
 
 	lastBatchMeta := prevbatchmeta

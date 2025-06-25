@@ -40,7 +40,7 @@ import (
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/pubsub"
 	"github.com/offchainlabs/nitro/solgen/go/express_lane_auctiongen"
-	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
+	"github.com/offchainlabs/nitro/solgen/go/localgen"
 	"github.com/offchainlabs/nitro/timeboost"
 	"github.com/offchainlabs/nitro/timeboost/bindings"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -323,7 +323,7 @@ func testTxsHandlingDuringSequencerSwap(t *testing.T, dueToCrash bool) {
 	Require(t, err)
 
 	// Set reader and writer coordinators for redis
-	redisCoordinatorGetter, err := redisutil.NewRedisCoordinator(builderSeq.nodeConfig.SeqCoordinator.RedisUrl)
+	redisCoordinatorGetter, err := redisutil.NewRedisCoordinator(builderSeq.nodeConfig.SeqCoordinator.RedisUrl, builderSeq.nodeConfig.SeqCoordinator.RedisQuorumSize)
 	Require(t, err)
 	currentChosen, err := redisCoordinatorGetter.CurrentChosenSequencer(ctx)
 	Require(t, err)
@@ -1095,7 +1095,7 @@ func TestTimeboostBulkBlockMetadataAPI(t *testing.T) {
 // 	Require(t, err)
 
 // 	time.Sleep(time.Second) // Wait for controller to change on the sequencer side
-// 	// Check that now Alice's tx gets priority since she's the controller after bob transfered it
+// 	// Check that now Alice's tx gets priority since she's the controller after bob transferred it
 // 	verifyControllerAdvantage(t, ctx, seqClient, aliceExpressLaneClient, seqInfo, "Alice", "Bob")
 
 // 	// Alice and Bob submit bids and Alice wins for the next round
@@ -1608,7 +1608,7 @@ func setupExpressLaneAuction(
 		t.Fatal(err)
 	}
 
-	proxyAddr, tx, _, err := mocksgen.DeploySimpleProxy(&ownerOpts, seqClient, auctionContractAddr)
+	proxyAddr, tx, _, err := localgen.DeploySimpleProxy(&ownerOpts, seqClient, auctionContractAddr)
 	Require(t, err)
 	if _, err = bind.WaitMined(ctx, seqClient, tx); err != nil {
 		t.Fatal(err)
@@ -1748,7 +1748,7 @@ func setupExpressLaneAuction(
 	stack, err := node.New(&stackConf)
 	Require(t, err)
 	cfg := &timeboost.BidValidatorConfig{
-		SequencerEndpoint:      fmt.Sprintf("http://localhost:%d", seqPort),
+		RpcEndpoint:            fmt.Sprintf("http://localhost:%d", seqPort),
 		AuctionContractAddress: proxyAddr.Hex(),
 		RedisURL:               redisURL,
 		ProducerConfig:         pubsub.TestProducerConfig,

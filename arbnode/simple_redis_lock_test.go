@@ -121,3 +121,63 @@ func TestRedisLockAny(t *testing.T) {
 func TestRedisLockAnyBg(t *testing.T) {
 	simpleRedisLockTest(t, "abg", -1, true)
 }
+
+func TestAttemptLockAndPeriodicallyRefreshIt(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	redisKey := test_redisKey_prefix + "PeriodicallyRefreshed"
+	redisUrl := redisutil.CreateTestRedis(ctx, t)
+	redisClient, err := redisutil.RedisClientFromURL(redisUrl)
+	Require(t, err)
+	Require(t, redisClient.Del(ctx, redisKey).Err())
+
+	conf := &redislock.SimpleCfg{
+		Enable:          true,
+		LockoutDuration: 3 * time.Second,
+		RefreshDuration: 1 * time.Second,
+		Key:             redisKey,
+		BackgroundLock:  true,
+	}
+	confFetcher := func() *redislock.SimpleCfg { return conf }
+
+	lock1, err := redislock.NewSimple(redisClient, confFetcher, prepareTrue)
+	Require(t, err)
+
+	release := make(chan struct{})
+	gotLock := lock1.AttemptLockAndPeriodicallyRefreshIt(ctx, release)
+	if !gotLock {
+		t.Fatal("lock not obtained")
+	}
+
+	// still locked after LockoutDuration
+	time.Sleep(7 * time.Second)
+	if !lock1.Locked() {
+		t.Fatal("lock not held after 7 seconds")
+	}
+
+	// another redislock instance should not be able to obtain the lock
+	lock2, err := redislock.NewSimple(redisClient, confFetcher, prepareTrue)
+	Require(t, err)
+	gotLock = lock2.AttemptLockAndPeriodicallyRefreshIt(ctx, make(chan struct{}))
+	if gotLock {
+		t.Fatal("lock obtained when it should not have been")
+	}
+
+	// releases the lock
+	release <- struct{}{}
+	time.Sleep(100 * time.Millisecond)
+	if lock1.Locked() {
+		t.Fatal("lock not released")
+	}
+
+	// another redislock instance should be able to obtain the lock
+	gotLock = lock2.AttemptLockAndPeriodicallyRefreshIt(ctx, release)
+	if !gotLock {
+		t.Fatal("lock not obtained")
+	}
+
+	release <- struct{}{}
+}

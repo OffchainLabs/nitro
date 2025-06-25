@@ -192,17 +192,18 @@ func DelegatedStakingConfigAddOptions(prefix string, f *flag.FlagSet) {
 
 type BOLDStaker struct {
 	stopwaiter.StopWaiter
-	config                  *BoldConfig
-	chalManager             *challengemanager.Manager
-	blockValidator          *staker.BlockValidator
-	statelessBlockValidator *staker.StatelessBlockValidator
-	rollupAddress           common.Address
-	l1Reader                *headerreader.HeaderReader
-	client                  protocol.ChainBackend
-	callOpts                bind.CallOpts
-	wallet                  legacystaker.ValidatorWalletInterface
-	stakedNotifiers         []legacystaker.LatestStakedNotifier
-	confirmedNotifiers      []legacystaker.LatestConfirmedNotifier
+	config             *BoldConfig
+	chalManager        *challengemanager.Manager
+	blockValidator     *staker.BlockValidator
+	rollupAddress      common.Address
+	l1Reader           *headerreader.HeaderReader
+	client             protocol.ChainBackend
+	callOpts           bind.CallOpts
+	wallet             legacystaker.ValidatorWalletInterface
+	stakedNotifiers    []legacystaker.LatestStakedNotifier
+	confirmedNotifiers []legacystaker.LatestConfirmedNotifier
+	inboxTracker       staker.InboxTrackerInterface
+	inboxStreamer      staker.TransactionStreamerInterface
 }
 
 func NewBOLDStaker(
@@ -219,6 +220,9 @@ func NewBOLDStaker(
 	wallet legacystaker.ValidatorWalletInterface,
 	stakedNotifiers []legacystaker.LatestStakedNotifier,
 	confirmedNotifiers []legacystaker.LatestConfirmedNotifier,
+	inboxTracker staker.InboxTrackerInterface,
+	inboxStreamer staker.TransactionStreamerInterface,
+	inboxReader staker.InboxReaderInterface,
 	dapValidator daprovider.Validator,
 ) (*BOLDStaker, error) {
 	if err := config.Validate(); err != nil {
@@ -237,22 +241,23 @@ func NewBOLDStaker(
 	}
 
 	wrappedClient := util.NewBackendWrapper(l1Reader.Client(), rpc.LatestBlockNumber)
-	manager, err := newBOLDChallengeManager(ctx, stack, rollupAddress, txOpts, l1Reader, wrappedClient, blockValidator, statelessBlockValidator, config, dataPoster, proofEnhancer)
+	manager, err := newBOLDChallengeManager(ctx, stack, rollupAddress, txOpts, l1Reader, wrappedClient, blockValidator, statelessBlockValidator, config, dataPoster, inboxTracker, inboxStreamer, inboxReader, proofEnhancer)
 	if err != nil {
 		return nil, err
 	}
 	return &BOLDStaker{
-		config:                  config,
-		chalManager:             manager,
-		blockValidator:          blockValidator,
-		statelessBlockValidator: statelessBlockValidator,
-		rollupAddress:           rollupAddress,
-		l1Reader:                l1Reader,
-		client:                  wrappedClient,
-		callOpts:                callOpts,
-		wallet:                  wallet,
-		stakedNotifiers:         stakedNotifiers,
-		confirmedNotifiers:      confirmedNotifiers,
+		config:             config,
+		chalManager:        manager,
+		blockValidator:     blockValidator,
+		rollupAddress:      rollupAddress,
+		l1Reader:           l1Reader,
+		client:             wrappedClient,
+		callOpts:           callOpts,
+		wallet:             wallet,
+		stakedNotifiers:    stakedNotifiers,
+		confirmedNotifiers: confirmedNotifiers,
+		inboxTracker:       inboxTracker,
+		inboxStreamer:      inboxStreamer,
 	}, nil
 }
 
@@ -358,7 +363,7 @@ func (b *BOLDStaker) getLatestState(ctx context.Context, confirmed bool) (arbuti
 	if err != nil {
 		return 0, nil, fmt.Errorf("error getting latest %s: %w", assertionType, err)
 	}
-	caughtUp, count, err := staker.GlobalStateToMsgCount(b.statelessBlockValidator.InboxTracker(), b.statelessBlockValidator.InboxStreamer(), validator.GoGlobalState(globalState))
+	caughtUp, count, err := staker.GlobalStateToMsgCount(b.inboxTracker, b.inboxStreamer, validator.GoGlobalState(globalState))
 	if err != nil {
 		if errors.Is(err, staker.ErrGlobalStateNotInChain) {
 			return 0, nil, fmt.Errorf("latest %s assertion of %v not yet in our node: %w", assertionType, globalState, err)
@@ -371,7 +376,7 @@ func (b *BOLDStaker) getLatestState(ctx context.Context, confirmed bool) (arbuti
 		return 0, nil, nil
 	}
 
-	processedCount, err := b.statelessBlockValidator.InboxStreamer().GetProcessedMessageCount()
+	processedCount, err := b.inboxStreamer.GetProcessedMessageCount()
 	if err != nil {
 		return 0, nil, err
 	}
@@ -424,6 +429,9 @@ func newBOLDChallengeManager(
 	statelessBlockValidator *staker.StatelessBlockValidator,
 	config *BoldConfig,
 	dataPoster *dataposter.DataPoster,
+	inboxTracker staker.InboxTrackerInterface,
+	inboxStreamer staker.TransactionStreamerInterface,
+	inboxReader staker.InboxReaderInterface,
 	proofEnhancer server_arb.ProofEnhancer,
 ) (*challengemanager.Manager, error) {
 	// Initializes the BOLD contract bindings and the assertion chain abstraction.
@@ -515,6 +523,9 @@ func newBOLDChallengeManager(
 		blockChallengeLeafHeight,
 		&config.StateProviderConfig,
 		machineHashesPath,
+		inboxTracker,
+		inboxStreamer,
+		inboxReader,
 		proofEnhancer,
 	)
 	if err != nil {

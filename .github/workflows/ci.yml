@@ -13,7 +13,7 @@ on:
 jobs:
   test:
     name: Go Tests
-    runs-on: ubuntu-8
+    runs-on: arbitrator-ci
 
     # Creates a redis container for redis tests
     services:
@@ -44,7 +44,7 @@ jobs:
           cache-dependency-path: '**/yarn.lock'
 
       - name: Install go
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v5
         with:
           go-version: 1.23.x
 
@@ -126,16 +126,17 @@ jobs:
         run: ./scripts/build-brotli.sh -w -d
 
       - name: Build
-        run: make build test-go-deps -j
+        run: make build test-go-deps -j8
 
       - name: Build all lint dependencies
-        run: make -j build-node-deps
+        run: make -j8 build-node-deps
 
       - name: Lint
-        uses: golangci/golangci-lint-action@v3
+        uses: golangci/golangci-lint-action@v8
         with:
           version: latest
-          skip-pkg-cache: true
+          skip-cache: true
+          skip-save-cache: true
       - name: Custom Lint
         run: |
           go run ./linters ./...

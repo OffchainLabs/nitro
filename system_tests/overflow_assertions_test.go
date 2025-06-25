@@ -14,6 +14,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/offchainlabs/nitro/validator/server_common"
+
 	"github.com/ccoveille/go-safecast"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -91,6 +93,8 @@ func TestOverflowAssertions(t *testing.T) {
 	_, valStack := createTestValidationNode(t, ctx, &valCfg)
 	blockValidatorConfig := staker.TestBlockValidatorConfig
 
+	locator, err := server_common.NewMachineLocator(valCfg.Wasm.RootPath)
+	Require(t, err)
 	stateless, err := staker.NewStatelessBlockValidator(
 		l2node.InboxReader,
 		l2node.InboxTracker,
@@ -100,7 +104,7 @@ func TestOverflowAssertions(t *testing.T) {
 		nil,
 		StaticFetcherFrom(t, &blockValidatorConfig),
 		valStack,
-		valCfg.Wasm.RootPath,
+		locator.LatestWasmModuleRoot(),
 	)
 	Require(t, err)
 	err = stateless.Start(ctx)
@@ -127,6 +131,9 @@ func TestOverflowAssertions(t *testing.T) {
 			CheckBatchFinality:     false,
 		},
 		goodDir,
+		l2node.InboxTracker,
+		l2node.TxStreamer,
+		l2node.InboxReader,
 	)
 	Require(t, err)
 

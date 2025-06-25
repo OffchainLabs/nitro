@@ -40,6 +40,7 @@ import (
 	legacystaker "github.com/offchainlabs/nitro/staker/legacy"
 	"github.com/offchainlabs/nitro/staker/validatorwallet"
 	"github.com/offchainlabs/nitro/util"
+	"github.com/offchainlabs/nitro/validator/server_common"
 	"github.com/offchainlabs/nitro/validator/valnode"
 )
 
@@ -234,7 +235,7 @@ func setupFastConfirmation(ctx context.Context, t *testing.T) (*NodeBuilder, *le
 	if err != nil {
 		t.Fatalf("Error creating validator dataposter: %v", err)
 	}
-	valWallet, err := validatorwallet.NewContract(dp, nil, l2node.DeployInfo.ValidatorWalletCreator, l2node.DeployInfo.Rollup, l2node.L1Reader, &l1auth, 0, func(common.Address) {}, func() uint64 { return valConfig.ExtraGas })
+	valWallet, err := validatorwallet.NewContract(dp, nil, l2node.DeployInfo.ValidatorWalletCreator, l2node.L1Reader, &l1auth, 0, func(common.Address) {}, func() uint64 { return valConfig.ExtraGas })
 	Require(t, err)
 	valConfig.Strategy = "MakeNodes"
 
@@ -264,6 +265,8 @@ func setupFastConfirmation(ctx context.Context, t *testing.T) (*NodeBuilder, *le
 	_, valStack := createTestValidationNode(t, ctx, &valnode.TestValidationConfig)
 	blockValidatorConfig := staker.TestBlockValidatorConfig
 
+	locator, err := server_common.NewMachineLocator(valnode.TestValidationConfig.Wasm.RootPath)
+	Require(t, err)
 	stateless, err := staker.NewStatelessBlockValidator(
 		l2node.InboxReader,
 		l2node.InboxTracker,
@@ -273,7 +276,7 @@ func setupFastConfirmation(ctx context.Context, t *testing.T) (*NodeBuilder, *le
 		nil,
 		StaticFetcherFrom(t, &blockValidatorConfig),
 		valStack,
-		valnode.TestValidationConfig.Wasm.RootPath,
+		locator.LatestWasmModuleRoot(),
 	)
 	Require(t, err)
 	err = stateless.Start(ctx)
@@ -290,6 +293,10 @@ func setupFastConfirmation(ctx context.Context, t *testing.T) (*NodeBuilder, *le
 		nil,
 		nil,
 		l2node.DeployInfo.ValidatorUtils,
+		l2node.DeployInfo.Rollup,
+		l2node.InboxTracker,
+		l2node.TxStreamer,
+		l2node.InboxReader,
 		nil,
 	)
 	Require(t, err)
@@ -422,7 +429,7 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Error creating validator dataposter: %v", err)
 	}
-	valWalletA, err := validatorwallet.NewContract(dpA, nil, l2nodeA.DeployInfo.ValidatorWalletCreator, l2nodeA.DeployInfo.Rollup, l2nodeA.L1Reader, &l1authA, 0, func(common.Address) {}, func() uint64 { return valConfigA.ExtraGas })
+	valWalletA, err := validatorwallet.NewContract(dpA, nil, l2nodeA.DeployInfo.ValidatorWalletCreator, l2nodeA.L1Reader, &l1authA, 0, func(common.Address) {}, func() uint64 { return valConfigA.ExtraGas })
 	Require(t, err)
 	valConfigA.Strategy = "MakeNodes"
 
@@ -453,6 +460,8 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 	_, valStack := createTestValidationNode(t, ctx, &valnode.TestValidationConfig)
 	blockValidatorConfig := staker.TestBlockValidatorConfig
 
+	locator, err := server_common.NewMachineLocator(valnode.TestValidationConfig.Wasm.RootPath)
+	Require(t, err)
 	statelessA, err := staker.NewStatelessBlockValidator(
 		l2nodeA.InboxReader,
 		l2nodeA.InboxTracker,
@@ -462,7 +471,7 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 		nil,
 		StaticFetcherFrom(t, &blockValidatorConfig),
 		valStack,
-		valnode.TestValidationConfig.Wasm.RootPath,
+		locator.LatestWasmModuleRoot(),
 	)
 	Require(t, err)
 	err = statelessA.Start(ctx)
@@ -479,6 +488,10 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 		nil,
 		nil,
 		l2nodeA.DeployInfo.ValidatorUtils,
+		l2nodeA.DeployInfo.Rollup,
+		l2nodeA.InboxTracker,
+		l2nodeA.TxStreamer,
+		l2nodeA.InboxReader,
 		nil,
 	)
 	Require(t, err)
@@ -501,7 +514,7 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Error creating validator dataposter: %v", err)
 	}
-	valWalletB, err := validatorwallet.NewEOA(dpB, l2nodeB.DeployInfo.Rollup, l2nodeB.L1Reader.Client(), func() uint64 { return 0 })
+	valWalletB, err := validatorwallet.NewEOA(dpB, l2nodeB.L1Reader.Client(), func() uint64 { return 0 })
 	Require(t, err)
 	valConfigB := legacystaker.TestL1ValidatorConfig
 	valConfigB.EnableFastConfirmation = true
@@ -515,7 +528,7 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 		nil,
 		StaticFetcherFrom(t, &blockValidatorConfig),
 		valStack,
-		valnode.TestValidationConfig.Wasm.RootPath,
+		locator.LatestWasmModuleRoot(),
 	)
 	Require(t, err)
 	err = statelessB.Start(ctx)
@@ -532,6 +545,10 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 		nil,
 		nil,
 		l2nodeB.DeployInfo.ValidatorUtils,
+		l2nodeB.DeployInfo.Rollup,
+		l2nodeB.InboxTracker,
+		l2nodeB.TxStreamer,
+		l2nodeB.InboxReader,
 		nil,
 	)
 	Require(t, err)

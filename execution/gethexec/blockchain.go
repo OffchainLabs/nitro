@@ -44,6 +44,7 @@ type CachingConfig struct {
 	DisableStylusCacheMetricsCollection bool          `koanf:"disable-stylus-cache-metrics-collection"`
 	StateScheme                         string        `koanf:"state-scheme"`
 	StateHistory                        uint64        `koanf:"state-history"`
+	EnablePreimages                     bool          `koanf:"enable-preimages"`
 }
 
 func CachingConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -65,6 +66,7 @@ func CachingConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".disable-stylus-cache-metrics-collection", DefaultCachingConfig.DisableStylusCacheMetricsCollection, "disable metrics collection for the stylus cache")
 	f.String(prefix+".state-scheme", DefaultCachingConfig.StateScheme, "scheme to use for state trie storage (hash, path)")
 	f.Uint64(prefix+".state-history", DefaultCachingConfig.StateHistory, "number of recent blocks to retain state history for (path state-scheme only)")
+	f.Bool(prefix+".enable-preimages", DefaultCachingConfig.EnablePreimages, "enable recording of preimages")
 }
 
 func getStateHistory(maxBlockSpeed time.Duration) uint64 {
@@ -109,7 +111,7 @@ func DefaultCacheConfigFor(stack *node.Node, cachingConfig *CachingConfig) *core
 		TriesInMemory:                      cachingConfig.BlockCount,
 		TrieRetention:                      cachingConfig.BlockAge,
 		SnapshotLimit:                      cachingConfig.SnapshotCache,
-		Preimages:                          baseConf.Preimages,
+		Preimages:                          baseConf.Preimages || cachingConfig.EnablePreimages,
 		SnapshotRestoreMaxGas:              cachingConfig.SnapshotRestoreGasLimit,
 		HeadRewindBlocksLimit:              cachingConfig.HeadRewindBlocksLimit,
 		MaxNumberOfBlocksToSkipStateSaving: cachingConfig.MaxNumberOfBlocksToSkipStateSaving,
@@ -136,7 +138,7 @@ func (c *CachingConfig) Validate() error {
 	return c.validateStateScheme()
 }
 
-func WriteOrTestGenblock(chainDb ethdb.Database, cacheConfig *core.CacheConfig, initData statetransfer.InitDataReader, chainConfig *params.ChainConfig, initMessage *arbostypes.ParsedInitMessage, accountsPerSync uint) error {
+func WriteOrTestGenblock(chainDb ethdb.Database, cacheConfig *core.CacheConfig, initData statetransfer.InitDataReader, chainConfig *params.ChainConfig, genesisArbOSInit *params.ArbOSInit, initMessage *arbostypes.ParsedInitMessage, accountsPerSync uint) error {
 	EmptyHash := common.Hash{}
 	prevHash := EmptyHash
 	blockNumber, err := initData.GetNextBlockNumber()
@@ -144,6 +146,7 @@ func WriteOrTestGenblock(chainDb ethdb.Database, cacheConfig *core.CacheConfig, 
 		return err
 	}
 	storedGenHash := rawdb.ReadCanonicalHash(chainDb, blockNumber)
+	// #nosec G115
 	timestamp := uint64(0)
 	if blockNumber > 0 {
 		prevHash = rawdb.ReadCanonicalHash(chainDb, blockNumber-1)
@@ -156,7 +159,7 @@ func WriteOrTestGenblock(chainDb ethdb.Database, cacheConfig *core.CacheConfig, 
 		}
 		timestamp = prevHeader.Time
 	}
-	stateRoot, err := arbosState.InitializeArbosInDatabase(chainDb, cacheConfig, initData, chainConfig, initMessage, timestamp, accountsPerSync)
+	stateRoot, err := arbosState.InitializeArbosInDatabase(chainDb, cacheConfig, initData, chainConfig, genesisArbOSInit, initMessage, timestamp, accountsPerSync)
 	if err != nil {
 		return err
 	}
@@ -240,6 +243,7 @@ func WriteOrTestBlockChain(
 	cacheConfig *core.CacheConfig,
 	initData statetransfer.InitDataReader,
 	chainConfig *params.ChainConfig,
+	genesisArbOSInit *params.ArbOSInit,
 	tracer *tracing.Hooks,
 	initMessage *arbostypes.ParsedInitMessage,
 	txLookupLimit uint64,
@@ -253,7 +257,7 @@ func WriteOrTestBlockChain(
 		return GetBlockChain(chainDb, cacheConfig, chainConfig, tracer, txLookupLimit)
 	}
 
-	err := WriteOrTestGenblock(chainDb, cacheConfig, initData, chainConfig, initMessage, accountsPerSync)
+	err := WriteOrTestGenblock(chainDb, cacheConfig, initData, chainConfig, genesisArbOSInit, initMessage, accountsPerSync)
 	if err != nil {
 		return nil, err
 	}
