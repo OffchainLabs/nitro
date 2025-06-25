@@ -51,7 +51,6 @@ var oneEth = arbmath.UintToBig(1e18)
 var allWasmTargets = []string{string(rawdb.TargetWavm), string(rawdb.TargetArm64), string(rawdb.TargetAmd64), string(rawdb.TargetHost)}
 
 func TestProgramKeccak(t *testing.T) {
-	t.Parallel()
 	t.Run("WithDefaultWasmTargets", func(t *testing.T) {
 		keccakTest(t, true)
 	})
@@ -163,7 +162,6 @@ func keccakTest(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder)) {
 }
 
 func TestProgramActivateTwice(t *testing.T) {
-	t.Parallel()
 	t.Run("WithDefaultWasmTargets", func(t *testing.T) {
 		testActivateTwice(t, true)
 	})
@@ -270,7 +268,6 @@ func testActivateTwice(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder)
 }
 
 func TestStylusUpgrade(t *testing.T) {
-	t.Parallel()
 	testStylusUpgrade(t, true)
 }
 
@@ -366,7 +363,6 @@ func testStylusUpgrade(t *testing.T, jit bool) {
 }
 
 func TestProgramErrors(t *testing.T) {
-	t.Parallel()
 	errorTest(t, true)
 }
 
@@ -408,7 +404,6 @@ func errorTest(t *testing.T, jit bool) {
 }
 
 func TestProgramStorage(t *testing.T) {
-	t.Parallel()
 	storageTest(t, true)
 }
 
@@ -509,7 +504,6 @@ func transientStorageTest(t *testing.T, jit bool) {
 }
 
 func TestProgramMath(t *testing.T) {
-	t.Parallel()
 	fastMathTest(t, true)
 }
 
@@ -537,7 +531,6 @@ func fastMathTest(t *testing.T, jit bool) {
 }
 
 func TestProgramCalls(t *testing.T) {
-	t.Parallel()
 	testCalls(t, true)
 }
 
@@ -752,7 +745,6 @@ func testCalls(t *testing.T, jit bool) {
 }
 
 func TestProgramReturnData(t *testing.T) {
-	t.Parallel()
 	testReturnData(t, true)
 }
 
@@ -805,12 +797,10 @@ func testReturnData(t *testing.T, jit bool) {
 }
 
 func TestProgramLogs(t *testing.T) {
-	t.Parallel()
 	testLogs(t, true, false)
 }
 
 func TestProgramLogsWithTracing(t *testing.T) {
-	t.Parallel()
 	testLogs(t, true, true)
 }
 
@@ -919,7 +909,6 @@ func testLogs(t *testing.T, jit, tracing bool) {
 }
 
 func TestProgramCreate(t *testing.T) {
-	t.Parallel()
 	testCreate(t, true)
 }
 
@@ -1015,9 +1004,11 @@ func testCreate(t *testing.T, jit bool) {
 }
 
 func TestProgramInfiniteLoopShouldCauseErrOutOfGas(t *testing.T) {
-	t.Parallel()
-	testInfiniteLoopCausesErrOutOfGas(t, true)
 	testInfiniteLoopCausesErrOutOfGas(t, false)
+}
+
+func TestProgramInfiniteLoopShouldCauseErrOutOfGas_Jit(t *testing.T) {
+	testInfiniteLoopCausesErrOutOfGas(t, true)
 }
 
 func testInfiniteLoopCausesErrOutOfGas(t *testing.T, jit bool) {
@@ -1040,7 +1031,6 @@ func testInfiniteLoopCausesErrOutOfGas(t *testing.T, jit bool) {
 }
 
 func TestProgramMemory(t *testing.T) {
-	t.Parallel()
 	testMemory(t, true)
 }
 
@@ -1198,7 +1188,6 @@ func testMemory(t *testing.T, jit bool) {
 }
 
 func TestProgramActivateFails(t *testing.T) {
-	t.Parallel()
 	testActivateFails(t, true)
 }
 
@@ -1237,7 +1226,6 @@ func testActivateFails(t *testing.T, jit bool) {
 }
 
 func TestProgramSdkStorage(t *testing.T) {
-	t.Parallel()
 	testSdkStorage(t, true)
 }
 
@@ -1302,7 +1290,7 @@ func TestStylusPrecompileMethodsSimple(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).DontParalellise()
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -1433,7 +1421,6 @@ func TestStylusPrecompileMethodsSimple(t *testing.T) {
 }
 
 func TestProgramActivationLogs(t *testing.T) {
-	t.Parallel()
 	builder, auth, cleanup := setupProgramTest(t, true)
 	l2client := builder.L2.Client
 	ctx := builder.ctx
@@ -1473,7 +1460,6 @@ func TestProgramActivationLogs(t *testing.T) {
 }
 
 func TestProgramEarlyExit(t *testing.T) {
-	t.Parallel()
 	testEarlyExit(t, true)
 }
 
@@ -1684,7 +1670,10 @@ func testReturnDataCost(t *testing.T, arbosVersion uint64) {
 }
 
 func TestReturnDataCost(t *testing.T) {
-	testReturnDataCost(t, params.ArbosVersion_Stylus)
+	testReturnDataCost(t, params.ArbosVersion_StylusFixes)
+}
+
+func TestReturnDataCost_StylusFixes(t *testing.T) {
 	testReturnDataCost(t, params.ArbosVersion_StylusFixes)
 }
 
@@ -1693,7 +1682,7 @@ func setupProgramTest(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder))
 ) {
 	ctx, cancel := context.WithCancel(context.Background())
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).DontParalellise()
 
 	for _, opt := range builderOpts {
 		opt(builder)
@@ -1701,7 +1690,7 @@ func setupProgramTest(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder))
 
 	// setupProgramTest is being called by tests that validate blocks.
 	// For now validation only works with HashScheme set.
-	builder.execConfig.Caching.StateScheme = rawdb.HashScheme
+	builder.RequireScheme(t, rawdb.HashScheme)
 	builder.nodeConfig.BlockValidator.Enable = false
 	builder.nodeConfig.Staker.Enable = true
 	builder.nodeConfig.BatchPoster.Enable = true
