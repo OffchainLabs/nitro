@@ -170,6 +170,9 @@ func callDebugTraceTransactionWithLogger(
 	var result json.RawMessage
 	err := rpcClient.CallContext(ctx, &result, "debug_traceTransaction", txHash, map[string]interface{}{
 		"tracer": "txGasDimensionLogger",
+		"tracerConfig": map[string]interface{}{
+			"debug": true,
+		},
 	})
 	Require(t, err)
 
