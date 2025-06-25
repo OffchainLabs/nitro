@@ -74,8 +74,7 @@ func TestOverflowAssertions(t *testing.T) {
 		UseBlobs:               true,
 	}
 
-	_, l2node, _, _, l1info, _, l1client, l1stack, assertionChain, _ := createTestNodeOnL1ForBoldProtocol(t, ctx, true, nil, l2chainConfig, nil, sconf, l2info)
-	defer requireClose(t, l1stack)
+	_, l2node, _, _, l1info, _, l1client, _, assertionChain, _ := createTestNodeOnL1ForBoldProtocol(t, ctx, true, nil, l2chainConfig, nil, sconf, l2info)
 	defer l2node.StopAndWait()
 
 	// Make sure we shut down test functionality before the rest of the node
