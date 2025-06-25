@@ -81,7 +81,7 @@ func fetchReceiptFromBlock(
 				return nil, fmt.Errorf("invalid key path in node")
 			}
 			// Check if it is a leaf or extension node.
-			leafKey := extractKeyNibbles(keyPath)
+			key := extractKeyNibbles(keyPath)
 			expectedPath := make([]byte, 0)
 			expectedPath = append(expectedPath, currentPath...)
 			expectedPath = append(expectedPath, leafKey...)
