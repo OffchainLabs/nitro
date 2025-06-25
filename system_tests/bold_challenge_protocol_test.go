@@ -22,8 +22,8 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/eth"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/ethereum/go-ethereum/ethclient/simulated"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
@@ -116,7 +116,6 @@ func testChallengeProtocolBOLD(t *testing.T, spawnerOpts ...server_arb.SpawnerOp
 		sconf,
 		l2info,
 	)
-	defer requireClose(t, l1stack)
 	defer l2nodeA.StopAndWait()
 
 	// Make sure we shut down test functionality before the rest of the node
@@ -535,7 +534,7 @@ func createTestNodeOnL1ForBoldProtocol(
 	l2infoIn info,
 ) (
 	l2info info, currentNode *arbnode.Node, l2client chainifaces.EthereumReadWriter, l2stack *node.Node,
-	l1info info, l1backend *eth.Ethereum, l1client chainifaces.EthereumReadWriter, l1stack *node.Node,
+	l1info info, l1backend *simulated.Backend, l1client chainifaces.EthereumReadWriter, l1stack *node.Node,
 	assertionChain *solimpl.AssertionChain, stakeTokenAddr common.Address,
 ) {
 	if nodeConfig == nil {
@@ -548,7 +547,7 @@ func createTestNodeOnL1ForBoldProtocol(
 	nodeConfig.BatchPoster.DataPoster.MaxMempoolTransactions = 18
 	fatalErrChan := make(chan error, 10)
 	withoutClientWrapper := false
-	l1info, l1client, l1backend, l1stack, _ = createTestL1BlockChain(t, nil, withoutClientWrapper)
+	l1info, l1client, l1backend, _ = createTestL1BlockChain(t, nil, withoutClientWrapper)
 	var l2chainDb ethdb.Database
 	var l2arbDb ethdb.Database
 	var l2blockchain *core.BlockChain

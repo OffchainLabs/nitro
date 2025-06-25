@@ -869,7 +869,7 @@ func (b *NodeBuilder) RestartL2Node(t *testing.T) {
 	var sequencerTxOpts *bind.TransactOpts
 	var validatorTxOpts *bind.TransactOpts
 	var dataSigner signature.DataSignerFunc
-	var l1Client *ethclient.Client
+	var l1Client chainifaces.EthereumReadWriter
 	if b.withL1 {
 		sequencerTxOptsNP := b.L1Info.GetDefaultTransactOpts("Sequencer", b.ctx)
 		sequencerTxOpts = &sequencerTxOptsNP
