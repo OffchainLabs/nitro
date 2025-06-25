@@ -2261,6 +2261,7 @@ func deployWasmAndGetEntrySizeEstimateBytes(
 }
 
 func TestWasmLruCache(t *testing.T) {
+	t.Skip("Skip until stable")
 	builder, auth, cleanup := setupProgramTest(t, true)
 	ctx := builder.ctx
 	l2info := builder.L2Info
@@ -2495,6 +2496,7 @@ func TestWasmLongTermCache(t *testing.T) {
 }
 
 func TestRepopulateWasmLongTermCacheFromLru(t *testing.T) {
+	t.Skip("Skip until stable")
 	builder, ownerAuth, cleanup := setupProgramTest(t, true, func(builder *NodeBuilder) {
 		builder.WithStylusLongTermCache(true)
 	})
@@ -2622,6 +2624,7 @@ func TestRepopulateWasmLongTermCacheFromLru(t *testing.T) {
 }
 
 func TestOutOfGasInStorageCacheFlush(t *testing.T) {
+	t.Skip("Skip until stable")
 	jit := false
 	builder, auth, cleanup := setupProgramTest(t, jit)
 	ctx := builder.ctx

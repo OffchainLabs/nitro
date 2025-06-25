@@ -1204,25 +1204,6 @@ func GetBaseFeeAt(t *testing.T, client chainifaces.EthereumReadWriter, ctx conte
 	return header.BaseFee
 }
 
-type lifecycle struct {
-	start func() error
-	stop  func() error
-}
-
-func (l *lifecycle) Start() error {
-	if l.start != nil {
-		return l.start()
-	}
-	return nil
-}
-
-func (l *lifecycle) Stop() error {
-	if l.start != nil {
-		return l.stop()
-	}
-	return nil
-}
-
 type staticNodeConfigFetcher struct {
 	config *arbnode.Config
 }
@@ -1407,13 +1388,16 @@ func createTestL1BlockChain(t *testing.T, l1info info, withClientWrapper bool) (
 type committerClient struct {
 	chainifaces.EthereumReadWriter
 	sim *simulated.Backend
+	sync.Mutex
 }
 
 func (cc *committerClient) SendTransaction(ctx context.Context, tx *types.Transaction) error {
 	if err := cc.EthereumReadWriter.SendTransaction(ctx, tx); err != nil {
 		return err
 	}
+	cc.Lock()
 	cc.sim.Commit()
+	cc.Unlock()
 	return nil
 }
 
@@ -1750,11 +1734,6 @@ func GetBalance(t *testing.T, ctx context.Context, client chainifaces.EthereumRe
 	balance, err := client.BalanceAt(ctx, account, nil)
 	Require(t, err, "could not get balance")
 	return balance
-}
-
-func requireClose(t *testing.T, s *node.Node, text ...interface{}) {
-	t.Helper()
-	Require(t, s.Close(), text...)
 }
 
 func authorizeDASKeyset(

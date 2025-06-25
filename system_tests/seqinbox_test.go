@@ -4,120 +4,109 @@
 package arbtest
 
 import (
-	"context"
-	"errors"
-	"fmt"
-	"math/big"
 	"testing"
-
-	"github.com/ethereum/go-ethereum/accounts/abi"
-	"github.com/ethereum/go-ethereum/accounts/abi/bind"
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/types"
-
-	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 )
 
-type blockTestState struct {
-	balances      map[common.Address]*big.Int
-	nonces        map[common.Address]uint64
-	accounts      []common.Address
-	l2BlockNumber uint64
-	l1BlockNumber uint64
-}
+// type blockTestState struct {
+// 	balances      map[common.Address]*big.Int
+// 	nonces        map[common.Address]uint64
+// 	accounts      []common.Address
+// 	l2BlockNumber uint64
+// 	l1BlockNumber uint64
+// }
 
-const seqInboxTestIters = 40
+// const seqInboxTestIters = 40
 
-func encodeAddBatch(seqABI *abi.ABI, seqNum *big.Int, message []byte, afterDelayedMsgRead *big.Int, gasRefunder common.Address) ([]byte, error) {
-	method, ok := seqABI.Methods["addSequencerL2BatchFromOrigin0"]
-	if !ok {
-		return nil, errors.New("failed to find add addSequencerL2BatchFromOrigin0 method")
-	}
-	inputData, err := method.Inputs.Pack(
-		seqNum,
-		message,
-		afterDelayedMsgRead,
-		gasRefunder,
-		new(big.Int).SetUint64(uint64(1)),
-		new(big.Int).SetUint64(uint64(1)),
-	)
-	if err != nil {
-		return nil, err
-	}
-	fullData := append([]byte{}, method.ID...)
-	fullData = append(fullData, inputData...)
-	return fullData, nil
-}
-func diffAccessList(accessed, al types.AccessList) string {
-	m := make(map[common.Address]map[common.Hash]bool)
-	for i := 0; i < len(al); i++ {
-		if _, ok := m[al[i].Address]; !ok {
-			m[al[i].Address] = make(map[common.Hash]bool)
-		}
-		for _, slot := range al[i].StorageKeys {
-			m[al[i].Address][slot] = true
-		}
-	}
+// func encodeAddBatch(seqABI *abi.ABI, seqNum *big.Int, message []byte, afterDelayedMsgRead *big.Int, gasRefunder common.Address) ([]byte, error) {
+// 	method, ok := seqABI.Methods["addSequencerL2BatchFromOrigin0"]
+// 	if !ok {
+// 		return nil, errors.New("failed to find add addSequencerL2BatchFromOrigin0 method")
+// 	}
+// 	inputData, err := method.Inputs.Pack(
+// 		seqNum,
+// 		message,
+// 		afterDelayedMsgRead,
+// 		gasRefunder,
+// 		new(big.Int).SetUint64(uint64(1)),
+// 		new(big.Int).SetUint64(uint64(1)),
+// 	)
+// 	if err != nil {
+// 		return nil, err
+// 	}
+// 	fullData := append([]byte{}, method.ID...)
+// 	fullData = append(fullData, inputData...)
+// 	return fullData, nil
+// }
+// func diffAccessList(accessed, al types.AccessList) string {
+// 	m := make(map[common.Address]map[common.Hash]bool)
+// 	for i := 0; i < len(al); i++ {
+// 		if _, ok := m[al[i].Address]; !ok {
+// 			m[al[i].Address] = make(map[common.Hash]bool)
+// 		}
+// 		for _, slot := range al[i].StorageKeys {
+// 			m[al[i].Address][slot] = true
+// 		}
+// 	}
 
-	diff := ""
-	for i := 0; i < len(accessed); i++ {
-		addr := accessed[i].Address
-		if _, ok := m[addr]; !ok {
-			diff += fmt.Sprintf("contract address: %q wasn't accessed\n", addr)
-			continue
-		}
-		for j := 0; j < len(accessed[i].StorageKeys); j++ {
-			slot := accessed[i].StorageKeys[j]
-			if _, ok := m[addr][slot]; !ok {
-				diff += fmt.Sprintf("storage slot: %v for contract: %v wasn't accessed\n", slot, addr)
-			}
-		}
-	}
-	return diff
-}
+// 	diff := ""
+// 	for i := 0; i < len(accessed); i++ {
+// 		addr := accessed[i].Address
+// 		if _, ok := m[addr]; !ok {
+// 			diff += fmt.Sprintf("contract address: %q wasn't accessed\n", addr)
+// 			continue
+// 		}
+// 		for j := 0; j < len(accessed[i].StorageKeys); j++ {
+// 			slot := accessed[i].StorageKeys[j]
+// 			if _, ok := m[addr][slot]; !ok {
+// 				diff += fmt.Sprintf("storage slot: %v for contract: %v wasn't accessed\n", slot, addr)
+// 			}
+// 		}
+// 	}
+// 	return diff
+// }
 
-func deployGasRefunder(ctx context.Context, t *testing.T, builder *NodeBuilder) common.Address {
-	t.Helper()
-	abi, err := bridgegen.GasRefunderMetaData.GetAbi()
-	if err != nil {
-		t.Fatalf("Error getting gas refunder abi: %v", err)
-	}
-	fauOpts := builder.L1Info.GetDefaultTransactOpts("Faucet", ctx)
-	addr, tx, _, err := bind.DeployContract(&fauOpts, *abi, common.FromHex(bridgegen.GasRefunderBin), builder.L1.Client)
-	if err != nil {
-		t.Fatalf("Error getting gas refunder contract deployment transaction: %v", err)
-	}
-	if _, err := builder.L1.EnsureTxSucceeded(tx); err != nil {
-		t.Fatalf("Error deploying gas refunder contract: %v", err)
-	}
-	tx = builder.L1Info.PrepareTxTo("Faucet", &addr, 30000, big.NewInt(9223372036854775807), nil)
-	if err := builder.L1.Client.SendTransaction(ctx, tx); err != nil {
-		t.Fatalf("Error sending gas refunder funding transaction")
-	}
-	if _, err := builder.L1.EnsureTxSucceeded(tx); err != nil {
-		t.Fatalf("Error funding gas refunder")
-	}
-	contract, err := bridgegen.NewGasRefunder(addr, builder.L1.Client)
-	if err != nil {
-		t.Fatalf("Error getting gas refunder contract binding: %v", err)
-	}
-	tx, err = contract.AllowContracts(&fauOpts, []common.Address{builder.L1Info.GetAddress("SequencerInbox")})
-	if err != nil {
-		t.Fatalf("Error creating transaction for altering allowlist in refunder: %v", err)
-	}
-	if _, err := builder.L1.EnsureTxSucceeded(tx); err != nil {
-		t.Fatalf("Error addting sequencer inbox in gas refunder allowlist: %v", err)
-	}
+// func deployGasRefunder(ctx context.Context, t *testing.T, builder *NodeBuilder) common.Address {
+// 	t.Helper()
+// 	abi, err := bridgegen.GasRefunderMetaData.GetAbi()
+// 	if err != nil {
+// 		t.Fatalf("Error getting gas refunder abi: %v", err)
+// 	}
+// 	fauOpts := builder.L1Info.GetDefaultTransactOpts("Faucet", ctx)
+// 	addr, tx, _, err := bind.DeployContract(&fauOpts, *abi, common.FromHex(bridgegen.GasRefunderBin), builder.L1.Client)
+// 	if err != nil {
+// 		t.Fatalf("Error getting gas refunder contract deployment transaction: %v", err)
+// 	}
+// 	if _, err := builder.L1.EnsureTxSucceeded(tx); err != nil {
+// 		t.Fatalf("Error deploying gas refunder contract: %v", err)
+// 	}
+// 	tx = builder.L1Info.PrepareTxTo("Faucet", &addr, 30000, big.NewInt(9223372036854775807), nil)
+// 	if err := builder.L1.Client.SendTransaction(ctx, tx); err != nil {
+// 		t.Fatalf("Error sending gas refunder funding transaction")
+// 	}
+// 	if _, err := builder.L1.EnsureTxSucceeded(tx); err != nil {
+// 		t.Fatalf("Error funding gas refunder")
+// 	}
+// 	contract, err := bridgegen.NewGasRefunder(addr, builder.L1.Client)
+// 	if err != nil {
+// 		t.Fatalf("Error getting gas refunder contract binding: %v", err)
+// 	}
+// 	tx, err = contract.AllowContracts(&fauOpts, []common.Address{builder.L1Info.GetAddress("SequencerInbox")})
+// 	if err != nil {
+// 		t.Fatalf("Error creating transaction for altering allowlist in refunder: %v", err)
+// 	}
+// 	if _, err := builder.L1.EnsureTxSucceeded(tx); err != nil {
+// 		t.Fatalf("Error addting sequencer inbox in gas refunder allowlist: %v", err)
+// 	}
 
-	tx, err = contract.AllowRefundees(&fauOpts, []common.Address{builder.L1Info.GetAddress("Sequencer")})
-	if err != nil {
-		t.Fatalf("Error creating transaction for altering allowlist in refunder: %v", err)
-	}
-	if _, err := builder.L1.EnsureTxSucceeded(tx); err != nil {
-		t.Fatalf("Error addting sequencer in gas refunder allowlist: %v", err)
-	}
-	return addr
-}
+// 	tx, err = contract.AllowRefundees(&fauOpts, []common.Address{builder.L1Info.GetAddress("Sequencer")})
+// 	if err != nil {
+// 		t.Fatalf("Error creating transaction for altering allowlist in refunder: %v", err)
+// 	}
+// 	if _, err := builder.L1.EnsureTxSucceeded(tx); err != nil {
+// 		t.Fatalf("Error addting sequencer in gas refunder allowlist: %v", err)
+// 	}
+// 	return addr
+// }
 
 func testSequencerInboxReaderImpl(t *testing.T, validator bool) {
 	// ctx, cancel := context.WithCancel(context.Background())

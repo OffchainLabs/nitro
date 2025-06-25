@@ -8,6 +8,7 @@ import (
 	"fmt"
 
 	"github.com/ethereum/go-ethereum/core/types"
+
 	chainifaces "github.com/offchainlabs/nitro/util/interfaces"
 )
 

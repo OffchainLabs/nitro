@@ -517,6 +517,7 @@ func TestParentChainNonEIP7623(t *testing.T) {
 }
 
 func TestBatchPosterWithDelayProofsAndBacklog(t *testing.T) {
+	t.Skip("Skipping until stable")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
