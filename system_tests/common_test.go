@@ -1411,7 +1411,7 @@ func createTestL1BlockChain(t *testing.T, l1info info, withClientWrapper bool) (
 	if l1info == nil {
 		l1info = NewL1TestInfo(t)
 	}
-	stackConfig := testhelpers.CreateStackConfigForTest(t.TempDir())
+	stackConfig := testhelpers.CreateStackConfigForTest("")
 	l1info.GenerateAccount("Faucet")
 
 	chainConfig := chaininfo.ArbitrumDevTestChainConfig()
