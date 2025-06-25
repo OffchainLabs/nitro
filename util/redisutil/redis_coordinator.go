@@ -138,9 +138,11 @@ func (rc *RedisCoordinator) GetPriorities(ctx context.Context) ([]string, error)
 // GetLiveliness returns a list of sequencers that have their liveliness set to OK
 func (rc *RedisCoordinator) GetLiveliness(ctx context.Context) ([]string, error) {
 	var livelinessList []string
-	cursor := uint64(0)
+	var keySlice []string
+	var cursor uint64
+	var err error
 	for {
-		keySlice, cursor, err := rc.Client.Scan(ctx, cursor, WANTS_LOCKOUT_KEY_PREFIX+"*", 0).Result()
+		keySlice, cursor, err = rc.Client.Scan(ctx, cursor, WANTS_LOCKOUT_KEY_PREFIX+"*", 0).Result()
 		if err != nil {
 			return []string{}, err
 		}
