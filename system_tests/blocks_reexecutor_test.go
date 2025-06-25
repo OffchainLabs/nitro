@@ -23,7 +23,9 @@ func testBlocksReExecutorModes(t *testing.T, onMultipleRanges bool) {
 	defer cancel()
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
-	builder.execConfig.Caching.StateScheme = rawdb.HashScheme
+	// For now PathDB is not supported
+	builder.RequireScheme(t, rawdb.HashScheme)
+
 	// This allows us to see reexecution of multiple ranges
 	if onMultipleRanges {
 		builder.execConfig.Caching.Archive = true
