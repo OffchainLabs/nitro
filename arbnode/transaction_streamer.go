@@ -1349,7 +1349,8 @@ func (s *TransactionStreamer) ExecuteNextMsg(ctx context.Context) bool {
 		return false
 	}
 
-	if execHeadMsgIdx >= consensusHeadMsgIdx || execHeadMsgIdx >= s.syncTillMessage {
+	if execHeadMsgIdx >= consensusHeadMsgIdx ||
+		(s.syncTillMessage > 0 && execHeadMsgIdx >= s.syncTillMessage) {
 		return false
 	}
 	msgIdxToExecute := execHeadMsgIdx + 1
