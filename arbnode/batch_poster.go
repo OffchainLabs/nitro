@@ -1656,10 +1656,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 		return false, fmt.Errorf("batch was reverted, not posting any more batches")
 	}
 	if b.streamer.EspressoKeyManager != nil {
-		registered, err := b.streamer.EspressoKeyManager.HasRegistered()
-		if err != nil {
-			return false, err
-		}
+		registered := b.streamer.EspressoKeyManager.HasRegistered()
 		if !registered {
 			return false, fmt.Errorf("ephemeral keys are not yet registed in Espresso TEE Contract")
 		}

@@ -23,7 +23,7 @@ const (
 )
 
 type EspressoKeyManagerInterface interface {
-	HasRegistered() (bool, error)
+	HasRegistered() bool
 	Register(getAttestationFunc func([]byte) ([]byte, error)) error
 	GetCurrentKey() *ecdsa.PublicKey
 	SignHotShotPayload(message []byte) ([]byte, error)
@@ -75,8 +75,12 @@ func NewEspressoKeyManager(espressoTEEVerifierCaller espressotee.EspressoTEEVeri
 		panic("Max txn wait time cannot be more than 5 minutes")
 	}
 
-	if registerSignerConfig.RetryDelay > 20*time.Second {
-		panic("Retry delay cannot be more than 20 seconds")
+	if registerSignerConfig.RetryReadContractDelay > 20*time.Second {
+		panic("Retry read contract delay cannot be more than 20 seconds")
+	}
+
+	if registerSignerConfig.RetryBaseFeeDelay > 3*time.Minute {
+		panic("Retry getting base fee delay cannot be more than 3 minutes")
 	}
 
 	return &EspressoKeyManager{
@@ -90,13 +94,19 @@ func NewEspressoKeyManager(espressoTEEVerifierCaller espressotee.EspressoTEEVeri
 		registerSignerOpts: espressotee.EspressoRegisterSignerOpts{
 			MaxTxnWaitTime:                registerSignerConfig.MaxTxnWaitTime,
 			MaxRetries:                    int(registerSignerConfig.MaxRetries),
-			RetryDelay:                    registerSignerConfig.RetryDelay,
+			RetryBaseFeeDelay:             registerSignerConfig.RetryBaseFeeDelay,
+			RetryReadContractDelay:        registerSignerConfig.RetryReadContractDelay,
 			GasLimitBufferIncreasePercent: registerSignerConfig.GasLimitBufferIncreasePercent,
+			MaxBaseFee:                    registerSignerConfig.MaxBaseFee,
 		},
 	}
 }
 
-func (k *EspressoKeyManager) HasRegistered() (bool, error) {
+func (k *EspressoKeyManager) HasRegistered() bool {
+	return k.hasRegistered
+}
+
+func (k *EspressoKeyManager) VerifyRegistered() (bool, error) {
 	if k.hasRegistered {
 		return true, nil
 	}
@@ -105,22 +115,11 @@ func (k *EspressoKeyManager) HasRegistered() (bool, error) {
 		panic("failed to get public key")
 	}
 	signerAddr := crypto.PubkeyToAddress(*pubKey)
-	for i := 0; i < k.registerSignerOpts.MaxRetries; i++ {
-		ok, err := k.espressoTEEVerifierCaller.RegisteredSigners(signerAddr, uint8(k.teeType))
-		if err != nil {
-			return false, err
-		}
-
-		if ok {
-			return ok, nil
-		}
-
-		if i < k.registerSignerOpts.MaxRetries-1 {
-			log.Info("address not registered in contract again, retrying...")
-			time.Sleep(k.registerSignerOpts.RetryDelay)
-		}
+	ok, err := k.espressoTEEVerifierCaller.RegisteredSigners(signerAddr, uint8(k.teeType), k.registerSignerOpts)
+	if err != nil {
+		return false, err
 	}
-	return false, nil
+	return ok, nil
 }
 
 /*
@@ -181,17 +180,19 @@ func (k *EspressoKeyManager) Register(getAttestationFunc func([]byte) ([]byte, e
 	}
 
 	signerAddr := crypto.PubkeyToAddress(*k.pubKey)
-	log.Info("Register signer succeeded", "signer address", signerAddr.Hex())
+	log.Info("Register signer transaction sent", "signer address", signerAddr.Hex())
 
 	// Verify our address is actually registered in contract
-	hasRegistered, err := k.HasRegistered()
+	hasRegistered, err := k.VerifyRegistered()
 	if err != nil {
 		return err
 	}
 	if !hasRegistered {
-		return errors.New("address is not registered in contract")
+		return errors.New("address is not registered in contract even after successful transaction and retries")
 	}
+
 	k.hasRegistered = true
+	log.Info("Signer registration confirmed on-chain")
 	return nil
 }
 

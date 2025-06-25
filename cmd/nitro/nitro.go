@@ -513,7 +513,8 @@ func mainImpl() int {
 		return 1
 	}
 
-	if l2BlockChain.Config().ArbitrumChainParams.DataAvailabilityCommittee != nodeConfig.Node.DataAvailability.Enable {
+	// Data availability committee can be enabled only if the node is not an espresso caff node
+	if l2BlockChain.Config().ArbitrumChainParams.DataAvailabilityCommittee != nodeConfig.Node.DataAvailability.Enable && !nodeConfig.Node.EspressoCaffNode.Enable {
 		flag.Usage()
 		log.Error(fmt.Sprintf("data availability service usage for this chain is set to %v but --node.data-availability.enable is set to %v", l2BlockChain.Config().ArbitrumChainParams.DataAvailabilityCommittee, nodeConfig.Node.DataAvailability.Enable))
 		return 1

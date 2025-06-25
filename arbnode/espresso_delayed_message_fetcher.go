@@ -25,7 +25,7 @@ var (
 )
 
 type DelayedMessageFetcherInterface interface {
-	reset(parentChainBlockNumber uint64, seqNum uint64)
+	reset(seqNum uint64)
 	getDelayedMessageCountAtBlock(blockNumber uint64) (uint64, error)
 	processDelayedMessage(messageWithMetadataAndPos *espressostreamer.MessageWithMetadataAndPos) (*espressostreamer.MessageWithMetadataAndPos, error)
 }
@@ -50,17 +50,9 @@ func NewDelayedMessageFetcher(
 	waitForFinalization bool,
 	waitForConfirmations bool,
 	requiredBlockDepth uint64,
+	fromBlock uint64,
 ) *DelayedMessageFetcher {
-	var fromBlock uint64
-	fromBlock, err := readCurrentL1BlockFromDb(db)
-	if err != nil {
-		log.Crit("failed to read l1 block from db", "err", err)
-		return nil
-	}
 
-	if fromBlock == 0 {
-		fromBlock = delayedBridge.fromBlock
-	}
 	delayedCount, err := readDelayedMessageCount(db)
 	if err != nil && !dbutil.IsErrNotFound(err) {
 		log.Crit("failed to read delayed message count from db", "err", err)
@@ -84,8 +76,7 @@ func NewDelayedMessageFetcher(
 	}
 }
 
-func (f *DelayedMessageFetcher) reset(parentChainBlockNumber uint64, seqNum uint64) {
-	f.fromBlock = parentChainBlockNumber
+func (f *DelayedMessageFetcher) reset(seqNum uint64) {
 	f.delayedCount = seqNum
 }
 
@@ -103,11 +94,13 @@ func (f *DelayedMessageFetcher) getDelayedMessage(index uint64) (*arbostypes.L1I
 	// Check if the delayed message at index exists in the database
 	msg, err := f.readDelayedMessage(index)
 	if err != nil && !dbutil.IsErrNotFound(err) {
+		log.Error("Failed to read delayed message", "err", err, "msg", msg)
 		return nil, err
 	}
 	// If the delayed message already exists in the database and we have already processed it
 	// the parent block number then we can just return the message
 	if msg != nil && f.fromBlock >= msg.ParentChainBlockNumber {
+		log.Debug("Delayed message already exists in the database and we have already processed it", "msg", msg.ParentChainBlockNumber, "fromBlock", f.fromBlock)
 		return msg.Message, nil
 	}
 
@@ -122,6 +115,8 @@ func (f *DelayedMessageFetcher) getDelayedMessage(index uint64) (*arbostypes.L1I
 		return nil, fmt.Errorf("l1 block number %d is less than from block %d", currL1, f.fromBlock)
 	}
 
+	log.Debug("Current L1 block and from block:", "currL1", currL1, "fromBlock", f.fromBlock)
+
 	startBlock := f.fromBlock
 	endBlock := currL1
 	hasFound := false
@@ -132,13 +127,15 @@ func (f *DelayedMessageFetcher) getDelayedMessage(index uint64) (*arbostypes.L1I
 	for startBlock <= endBlock && !hasFound {
 		from := big.NewInt(0).SetUint64(startBlock)
 		to := big.NewInt(0).SetUint64(startBlock + f.blocksToRead)
+
+		log.Debug("Looking for delayed messages from range", "from", from, "to", to)
 		msgs, err := f.delayedBridge.LookupMessagesInRange(context.Background(), from, to, nil)
 		if err != nil {
+			log.Error("Failed to lookup delayed messages", "err", err)
 			return nil, err
 		}
 		for _, msg := range msgs {
 			seqNum, err := msg.Message.Header.SeqNum()
-
 			if err != nil {
 				return nil, err
 			}
@@ -165,6 +162,7 @@ func (f *DelayedMessageFetcher) getDelayedMessage(index uint64) (*arbostypes.L1I
 
 	err = storeCurrentL1Block(batch, f.fromBlock)
 	if err != nil {
+		log.Error("Failed to store current L1 block", "err", err)
 		return nil, err
 	}
 
@@ -179,8 +177,10 @@ func (f *DelayedMessageFetcher) getDelayedMessage(index uint64) (*arbostypes.L1I
 
 	result, err := f.readDelayedMessage(index)
 	if err != nil {
+		log.Error("Failed to read delayed message", "err", err)
 		return nil, err
 	}
+
 	return result.Message, nil
 }
 
@@ -206,12 +206,14 @@ func (f *DelayedMessageFetcher) processDelayedMessage(messageWithMetadataAndPos 
 		if err != nil {
 			return messageWithMetadataAndPos, err
 		}
+
 		if !isDelayedMessageWithinSafetyTolerance {
 			return messageWithMetadataAndPos, fmt.Errorf("delayed message was not within safety tolerance parameters, the node needs to wait until it is")
 		}
 		f.delayedCount++
 		err = storeDelayedMessageCount(f.db, f.delayedCount)
 		if err != nil {
+			log.Error("Failed to store delayed message count", "err", err)
 			return messageWithMetadataAndPos, err
 		}
 	}
@@ -256,6 +258,7 @@ func (f *DelayedMessageFetcher) isDelayedMessageWithinSafetyTolerance(message *e
 
 	} else {
 		// If we haven't configured a safety strategy, every delayed message is valid to include in the nodes state.
+		log.Debug("No safety strategy configured, every delayed message is valid")
 		return true, nil
 	}
 
