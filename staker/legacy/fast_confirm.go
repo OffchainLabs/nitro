@@ -243,6 +243,6 @@ func (f *FastConfirmSafe) checkApprovedHashAndExecTransaction(ctx context.Contex
 		}
 		return true, nil
 	}
-	log.Info("Not enough Safe tx approvals yet to fast confirm", "safeHash", common.BytesToHash(safeTxHash[:]), "approved", approvedHashCount, "threshold", f.threshold, "self", f.wallet.Address())
+	log.Info("Not enough Safe tx approvals yet to fast confirm", "safeHash", common.BytesToHash(safeTxHash[:]).Hex(), "approved", approvedHashCount, "threshold", f.threshold, "self", f.wallet.Address())
 	return false, nil
 }
