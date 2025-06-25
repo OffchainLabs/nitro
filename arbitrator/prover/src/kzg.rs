@@ -2,9 +2,7 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 use arbutil::Bytes32;
-use c_kzg::{
-    KzgSettings, BYTES_PER_BLOB, FIELD_ELEMENTS_PER_BLOB,
-};
+use c_kzg::{KzgSettings, BYTES_PER_BLOB, FIELD_ELEMENTS_PER_BLOB};
 use eyre::{ensure, Result, WrapErr};
 use num::BigUint;
 use sha2::{Digest, Sha256};
@@ -40,7 +38,8 @@ pub fn prove_kzg_preimage(
     );
     let blob =
         c_kzg::Blob::from_bytes(preimage).wrap_err("Failed to generate KZG blob from preimage")?;
-    let commitment = ETHEREUM_KZG_SETTINGS.blob_to_kzg_commitment(&blob)
+    let commitment = ETHEREUM_KZG_SETTINGS
+        .blob_to_kzg_commitment(&blob)
         .wrap_err("Failed to generate KZG commitment from blob")?;
     let mut expected_hash: Bytes32 = Sha256::digest(&*commitment).into();
     expected_hash[0] = 1;
@@ -70,9 +69,9 @@ pub fn prove_kzg_preimage(
     let mut padded_z_bytes = [0u8; 32];
     padded_z_bytes[32 - z_bytes.len()..].copy_from_slice(&z_bytes);
     let z_bytes = c_kzg::Bytes32::from(padded_z_bytes);
-    let (kzg_proof, proven_y) =
-        ETHEREUM_KZG_SETTINGS.compute_kzg_proof(&blob, &z_bytes)
-            .wrap_err("Failed to generate KZG proof from blob and z")?;
+    let (kzg_proof, proven_y) = ETHEREUM_KZG_SETTINGS
+        .compute_kzg_proof(&blob, &z_bytes)
+        .wrap_err("Failed to generate KZG proof from blob and z")?;
     if !proving_past_end {
         ensure!(
             *proven_y == preimage[offset_usize..offset_usize + 32],
