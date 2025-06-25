@@ -30,7 +30,6 @@ jobs:
         run: |
           status_state="pending"
           declare -Ar exceptions=(
-            [contracts]=origin/develop
             [contracts-legacy]=origin/v2-main
             [nitro-testnode]=origin/master
             [bold]=origin/main
