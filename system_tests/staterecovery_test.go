@@ -21,8 +21,6 @@ func TestRectreateMissingStates(t *testing.T) {
 	defer cancel()
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
 	builder.execConfig.Caching.Archive = true
-	// For now Archive node should use HashScheme
-	builder.execConfig.Caching.StateScheme = rawdb.HashScheme
 	builder.execConfig.Caching.MaxNumberOfBlocksToSkipStateSaving = 16
 	builder.execConfig.Caching.SnapshotCache = 0 // disable snapshots
 	_ = builder.Build(t)

@@ -106,7 +106,7 @@ type SequencerInboxBatch struct {
 	AfterDelayedAcc        common.Hash
 	AfterDelayedCount      uint64
 	TimeBounds             bridgegen.IBridgeTimeBounds
-	rawLog                 types.Log
+	RawLog                 types.Log
 	DataLocation           BatchDataLocation
 	BridgeAddress          common.Address
 	Serialized             []byte // nil if serialization isn't cached yet
@@ -115,7 +115,7 @@ type SequencerInboxBatch struct {
 func (m *SequencerInboxBatch) getSequencerData(ctx context.Context, client *ethclient.Client) ([]byte, error) {
 	switch m.DataLocation {
 	case BatchDataTxInput:
-		data, err := arbutil.GetLogEmitterTxData(ctx, client, m.rawLog)
+		data, err := arbutil.GetLogEmitterTxData(ctx, client, m.RawLog)
 		if err != nil {
 			return nil, err
 		}
@@ -157,7 +157,7 @@ func (m *SequencerInboxBatch) getSequencerData(ctx context.Context, client *ethc
 		// No data when in a force inclusion batch
 		return nil, nil
 	case BatchDataBlobHashes:
-		tx, err := arbutil.GetLogTransaction(ctx, client, m.rawLog)
+		tx, err := arbutil.GetLogTransaction(ctx, client, m.RawLog)
 		if err != nil {
 			return nil, err
 		}
@@ -249,7 +249,7 @@ func (i *SequencerInbox) LookupBatchesInRange(ctx context.Context, from, to *big
 			AfterInboxAcc:          parsedLog.AfterAcc,
 			AfterDelayedAcc:        parsedLog.DelayedAcc,
 			AfterDelayedCount:      parsedLog.AfterDelayedMessagesRead.Uint64(),
-			rawLog:                 log,
+			RawLog:                 log,
 			TimeBounds:             parsedLog.TimeBounds,
 			DataLocation:           BatchDataLocation(parsedLog.DataLocation),
 			BridgeAddress:          log.Address,
