@@ -21,7 +21,6 @@ import (
 )
 
 func testTwoNodesLong(t *testing.T, dasModeStr string) {
-	t.Parallel()
 	largeLoops := 8
 	avgL2MsgsPerLoop := 30
 	avgDelayedMessagesPerLoop := 10
