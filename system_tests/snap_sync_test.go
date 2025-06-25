@@ -30,7 +30,8 @@ func TestSnapSync(t *testing.T) {
 
 	// 1st node with sequencer, stays up all the time.
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).DontParalellise()
-	builder.execConfig.Caching.StateScheme = rawdb.HashScheme
+	// only supported for hash scheme
+	builder.RequireScheme(t, rawdb.HashScheme)
 	builder.L2Info = NewBlockChainTestInfo(
 		t,
 		types.NewArbitrumSigner(types.NewLondonSigner(builder.chainConfig.ChainID)), big.NewInt(l2pricing.InitialBaseFeeWei*2),

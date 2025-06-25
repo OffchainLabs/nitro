@@ -19,6 +19,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode"
 	chainifaces "github.com/offchainlabs/nitro/util/interfaces"
 	"github.com/offchainlabs/nitro/util/redisutil"
+	"github.com/offchainlabs/nitro/util/testhelpers/env"
 )
 
 var transferAmount = big.NewInt(1e12) // amount of ether to use for transactions in tests
@@ -39,7 +40,7 @@ func TestStaticForwarder(t *testing.T) {
 	clientA := builder.L2.Client
 
 	nodeConfigB := arbnode.ConfigDefaultL1Test()
-	execConfigB := ExecConfigDefaultTest(t)
+	execConfigB := ExecConfigDefaultTest(t, env.GetTestStateScheme())
 	execConfigB.Sequencer.Enable = false
 	nodeConfigB.Sequencer = false
 	nodeConfigB.DelayedSequencer.Enable = false
@@ -110,7 +111,7 @@ func createForwardingNode(t *testing.T, builder *NodeBuilder, ipcPath string, re
 	nodeConfig.Sequencer = false
 	nodeConfig.DelayedSequencer.Enable = false
 	nodeConfig.BatchPoster.Enable = false
-	execConfig := ExecConfigDefaultTest(t)
+	execConfig := builder.ExecConfigDefaultTest(t, true)
 	execConfig.Sequencer.Enable = false
 	execConfig.Forwarder.RedisUrl = redisUrl
 	execConfig.ForwardingTarget = fallbackPath

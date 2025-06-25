@@ -18,7 +18,6 @@ import (
 	"net/http"
 	"os"
 	"reflect"
-	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -59,7 +58,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
-	"github.com/offchainlabs/nitro/arbos/util"
+	arbosutil "github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/blsSignatures"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
@@ -75,6 +74,7 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/solgen/go/upgrade_executorgen"
 	"github.com/offchainlabs/nitro/statetransfer"
+	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	chainifaces "github.com/offchainlabs/nitro/util/interfaces"
@@ -207,9 +207,9 @@ var TestSequencerConfig = gethexec.SequencerConfig{
 	EnableProfiling:              false,
 }
 
-func ExecConfigDefaultNonSequencerTest(t *testing.T) *gethexec.Config {
+func ExecConfigDefaultNonSequencerTest(t *testing.T, stateScheme string) *gethexec.Config {
 	config := gethexec.ConfigDefault
-	config.Caching.StateScheme = env.GetTestStateScheme()
+	config.Caching.StateScheme = stateScheme
 	config.ParentChainReader = headerreader.TestConfig
 	config.Sequencer.Enable = false
 	config.Forwarder = DefaultTestForwarderConfig
@@ -221,9 +221,9 @@ func ExecConfigDefaultNonSequencerTest(t *testing.T) *gethexec.Config {
 	return &config
 }
 
-func ExecConfigDefaultTest(t *testing.T) *gethexec.Config {
+func ExecConfigDefaultTest(t *testing.T, stateScheme string) *gethexec.Config {
 	config := gethexec.ConfigDefault
-	config.Caching.StateScheme = env.GetTestStateScheme()
+	config.Caching.StateScheme = stateScheme
 	config.Sequencer = TestSequencerConfig
 	config.ParentChainReader = headerreader.TestConfig
 	config.ForwardingTarget = "null"
@@ -257,6 +257,7 @@ type NodeBuilder struct {
 	isSequencer                 bool
 	takeOwnership               bool
 	withL1                      bool
+	defaultDbScheme             string
 	addresses                   *chaininfo.RollupAddresses
 	l3Addresses                 *chaininfo.RollupAddresses
 	initMessage                 *arbostypes.ParsedInitMessage
@@ -312,7 +313,7 @@ func L3NitroConfigDefaultTest(t *testing.T) *NitroConfig {
 	return &NitroConfig{
 		chainConfig:   chainConfig,
 		nodeConfig:    arbnode.ConfigDefaultL1Test(),
-		execConfig:    ExecConfigDefaultTest(t),
+		execConfig:    ExecConfigDefaultTest(t, rawdb.HashScheme),
 		stackConfig:   testhelpers.CreateStackConfigForTest(t.TempDir()),
 		valnodeConfig: &valnodeConfig,
 
@@ -345,7 +346,11 @@ func (b *NodeBuilder) DefaultConfig(t *testing.T, withL1 bool) *NodeBuilder {
 	b.l2StackConfig = testhelpers.CreateStackConfigForTest(b.dataDir)
 	cp := valnode.TestValidationConfig
 	b.valnodeConfig = &cp
-	b.execConfig = ExecConfigDefaultTest(t)
+	b.defaultDbScheme = rawdb.HashScheme
+	if *testflag.StateSchemeFlag == rawdb.PathScheme || *testflag.StateSchemeFlag == rawdb.HashScheme {
+		b.defaultDbScheme = *testflag.StateSchemeFlag
+	}
+	b.execConfig = ExecConfigDefaultTest(t, b.defaultDbScheme)
 	b.l3Config = L3NitroConfigDefaultTest(t)
 	b.useFreezer = true
 	return b
@@ -405,6 +410,25 @@ func (b *NodeBuilder) WithDelayBuffer(threshold uint64) *NodeBuilder {
 	return b
 }
 
+func (b *NodeBuilder) RequireScheme(t *testing.T, scheme string) *NodeBuilder {
+	if testflag.StateSchemeFlag != nil && *testflag.StateSchemeFlag != "" && *testflag.StateSchemeFlag != scheme {
+		t.Skip("skipping because db scheme is set and not ", scheme)
+	}
+	if b.defaultDbScheme != scheme && b.execConfig != nil {
+		b.execConfig.Caching.StateScheme = scheme
+		Require(t, b.execConfig.Validate())
+	}
+	b.defaultDbScheme = scheme
+	return b
+}
+
+func (b *NodeBuilder) ExecConfigDefaultTest(t *testing.T, sequencer bool) *gethexec.Config {
+	if sequencer {
+		ExecConfigDefaultTest(t, b.defaultDbScheme)
+	}
+	return ExecConfigDefaultNonSequencerTest(t, b.defaultDbScheme)
+}
+
 // WithL1ClientWrapper creates a ClientWrapper for the L1 RPC client before passing it to the L2 node.
 func (b *NodeBuilder) WithL1ClientWrapper(t *testing.T) *NodeBuilder {
 	if !b.withL1 {
@@ -442,7 +466,7 @@ func initTestCollection() {
 	}
 	globalCollection = &testCollection{}
 	globalCollection.cond = sync.NewCond(&sync.Mutex{})
-	room := int64(runtime.NumCPU())
+	room := int64(util.GoMaxProcs())
 	if room < 2 {
 		room = 2
 	}
@@ -525,8 +549,19 @@ func (b *NodeBuilder) CheckConfig(t *testing.T) {
 	if b.nodeConfig == nil {
 		b.nodeConfig = arbnode.ConfigDefaultL1Test()
 	}
+	if b.nodeConfig.ValidatorRequired() {
+		// validation currently requires hash
+		b.RequireScheme(t, rawdb.HashScheme)
+	}
+	if b.defaultDbScheme == "" {
+		b.defaultDbScheme = env.GetTestStateScheme()
+	}
 	if b.execConfig == nil {
-		b.execConfig = ExecConfigDefaultTest(t)
+		b.execConfig = b.ExecConfigDefaultTest(t, true)
+	}
+	if b.execConfig.Caching.Archive {
+		// archive currently requires hash
+		b.RequireScheme(t, rawdb.HashScheme)
 	}
 	if b.L1Info == nil {
 		b.L1Info = NewL1TestInfo(t)
@@ -831,7 +866,19 @@ func (b *NodeBuilder) RestartL2Node(t *testing.T) {
 	feedErrChan := make(chan error, 10)
 	locator, err := server_common.NewMachineLocator(b.valnodeConfig.Wasm.RootPath)
 	Require(t, err)
-	currentNode, err := arbnode.CreateNodeFullExecutionClient(b.ctx, stack, execNode, execNode, execNode, execNode, arbDb, NewFetcherFromConfig(b.nodeConfig), blockchain.Config(), nil, nil, nil, nil, nil, feedErrChan, big.NewInt(1337), nil, locator.LatestWasmModuleRoot())
+	var sequencerTxOpts *bind.TransactOpts
+	var validatorTxOpts *bind.TransactOpts
+	var dataSigner signature.DataSignerFunc
+	var l1Client *ethclient.Client
+	if b.withL1 {
+		sequencerTxOptsNP := b.L1Info.GetDefaultTransactOpts("Sequencer", b.ctx)
+		sequencerTxOpts = &sequencerTxOptsNP
+		validatorTxOptsNP := b.L1Info.GetDefaultTransactOpts("Validator", b.ctx)
+		validatorTxOpts = &validatorTxOptsNP
+		dataSigner = signature.DataSignerFromPrivateKey(b.L1Info.GetInfoWithPrivKey("Sequencer").PrivateKey)
+		l1Client = b.L1.Client
+	}
+	currentNode, err := arbnode.CreateNodeFullExecutionClient(b.ctx, stack, execNode, execNode, execNode, execNode, arbDb, NewFetcherFromConfig(b.nodeConfig), blockchain.Config(), l1Client, b.addresses, validatorTxOpts, sequencerTxOpts, dataSigner, feedErrChan, big.NewInt(1337), nil, locator.LatestWasmModuleRoot())
 	Require(t, err)
 
 	Require(t, currentNode.Start(b.ctx))
@@ -1158,7 +1205,7 @@ func SendUnsignedTxViaL1(
 	Require(t, err)
 
 	usertxopts := l1info.GetDefaultTransactOpts("User", ctx)
-	remapped := util.RemapL1Address(usertxopts.From)
+	remapped := arbosutil.RemapL1Address(usertxopts.From)
 	nonce, err := l2client.NonceAt(ctx, remapped, nil)
 	Require(t, err)
 
@@ -1322,6 +1369,7 @@ func AddValNode(t *testing.T, ctx context.Context, nodeConfig *arbnode.Config, u
 	conf := valnode.TestValidationConfig
 	conf.UseJit = useJit
 	conf.Wasm.RootPath = wasmRootDir
+	DontWaitAndRun(ctx, 2, t.Name())
 	// Enable redis streams when URL is specified
 	if redisURL != "" {
 		conf.Arbitrator.RedisValidationServerConfig = rediscons.TestValidationServerConfig
@@ -1568,7 +1616,7 @@ func createNonL1BlockChainWithStackConfig(
 		stackConfig = testhelpers.CreateStackConfigForTest(dataDir)
 	}
 	if execConfig == nil {
-		execConfig = ExecConfigDefaultTest(t)
+		execConfig = ExecConfigDefaultTest(t, env.GetTestStateScheme())
 	}
 	Require(t, execConfig.Validate())
 
@@ -1602,7 +1650,7 @@ func createNonL1BlockChainWithStackConfig(
 		}
 	}
 	coreCacheConfig := gethexec.DefaultCacheConfigFor(stack, &execConfig.Caching)
-	blockchain, err := gethexec.WriteOrTestBlockChain(chainDb, coreCacheConfig, initReader, chainConfig, arbOSInit, nil, initMessage, ExecConfigDefaultTest(t).TxLookupLimit, 0)
+	blockchain, err := gethexec.WriteOrTestBlockChain(chainDb, coreCacheConfig, initReader, chainConfig, arbOSInit, nil, initMessage, gethexec.ConfigDefault.TxLookupLimit, 0)
 	Require(t, err)
 
 	return info, stack, chainDb, arbDb, blockchain
@@ -1664,7 +1712,7 @@ func Create2ndNodeWithConfig(
 		nodeConfig = arbnode.ConfigDefaultL1NonSequencerTest()
 	}
 	if execConfig == nil {
-		execConfig = ExecConfigDefaultNonSequencerTest(t)
+		t.Fatal("should not be nil")
 	}
 	Require(t, execConfig.Validate())
 
@@ -1699,7 +1747,7 @@ func Create2ndNodeWithConfig(
 		tracer, err = tracers.LiveDirectory.New(execConfig.VmTrace.TracerName, json.RawMessage(execConfig.VmTrace.JSONConfig))
 		Require(t, err)
 	}
-	blockchain, err := gethexec.WriteOrTestBlockChain(chainDb, coreCacheConfig, initReader, chainConfig, nil, tracer, initMessage, ExecConfigDefaultTest(t).TxLookupLimit, 0)
+	blockchain, err := gethexec.WriteOrTestBlockChain(chainDb, coreCacheConfig, initReader, chainConfig, nil, tracer, initMessage, execConfig.TxLookupLimit, 0)
 	Require(t, err)
 
 	AddValNodeIfNeeded(t, ctx, nodeConfig, true, "", valnodeConfig.Wasm.RootPath)
@@ -2002,7 +2050,7 @@ func getExecNode(t *testing.T, node *arbnode.Node) *gethexec.ExecutionNode {
 }
 
 func logParser[T any](t *testing.T, source string, name string) func(*types.Log) *T {
-	parser := util.NewLogParser[T](source, name)
+	parser := arbosutil.NewLogParser[T](source, name)
 	return func(log *types.Log) *T {
 		t.Helper()
 		event, err := parser(log)

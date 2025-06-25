@@ -17,6 +17,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/util/testhelpers/env"
 )
 
 func generateBlocks(t *testing.T, ctx context.Context, builder *NodeBuilder, testClient2ndNode *TestClient, transactions int) {
@@ -143,7 +144,7 @@ func TestFinalityDataWaitForBlockValidator(t *testing.T) {
 	defer cleanup()
 
 	nodeConfig2ndNode := arbnode.ConfigDefaultL1NonSequencerTest()
-	execConfig2ndNode := ExecConfigDefaultTest(t)
+	execConfig2ndNode := ExecConfigDefaultTest(t, env.GetTestStateScheme())
 	testClient2ndNode, cleanup2ndNode := builder.Build2ndNode(t, &SecondNodeParams{nodeConfig: nodeConfig2ndNode, execConfig: execConfig2ndNode})
 	defer cleanup2ndNode()
 
@@ -287,7 +288,7 @@ func TestFinalityAfterReorg(t *testing.T) {
 	defer cleanup()
 
 	nodeConfig2ndNode := arbnode.ConfigDefaultL1NonSequencerTest()
-	execConfig2ndNode := ExecConfigDefaultTest(t)
+	execConfig2ndNode := ExecConfigDefaultTest(t, env.GetTestStateScheme())
 	testClient2ndNode, cleanup2ndNode := builder.Build2ndNode(t, &SecondNodeParams{nodeConfig: nodeConfig2ndNode, execConfig: execConfig2ndNode})
 	defer cleanup2ndNode()
 
@@ -341,7 +342,7 @@ func TestSetFinalityBlockHashMismatch(t *testing.T) {
 	defer cleanup()
 
 	nodeConfig2ndNode := arbnode.ConfigDefaultL1NonSequencerTest()
-	execConfig2ndNode := ExecConfigDefaultTest(t)
+	execConfig2ndNode := ExecConfigDefaultTest(t, env.GetTestStateScheme())
 	testClient2ndNode, cleanup2ndNode := builder.Build2ndNode(t, &SecondNodeParams{nodeConfig: nodeConfig2ndNode, execConfig: execConfig2ndNode})
 	defer cleanup2ndNode()
 
@@ -385,7 +386,7 @@ func TestFinalityDataNodeOutOfSync(t *testing.T) {
 	defer cleanup()
 
 	nodeConfig2ndNode := arbnode.ConfigDefaultL1NonSequencerTest()
-	execConfig2ndNode := ExecConfigDefaultTest(t)
+	execConfig2ndNode := builder.ExecConfigDefaultTest(t, true)
 	testClient2ndNode, cleanup2ndNode := builder.Build2ndNode(t, &SecondNodeParams{nodeConfig: nodeConfig2ndNode, execConfig: execConfig2ndNode})
 	defer cleanup2ndNode()
 

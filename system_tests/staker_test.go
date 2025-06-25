@@ -46,6 +46,7 @@ import (
 
 func makeBackgroundTxs(ctx context.Context, builder *NodeBuilder) error {
 	for i := uint64(0); ctx.Err() == nil; i++ {
+		time.Sleep(time.Millisecond * 100)
 		builder.L2Info.Accounts["BackgroundUser"].Nonce.Store(i)
 		tx := builder.L2Info.PrepareTx("BackgroundUser", "BackgroundUser", builder.L2Info.TransferGas, common.Big0, nil)
 		err := builder.L2.Client.SendTransaction(ctx, tx)
@@ -83,7 +84,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	)
 
 	// For now validation only works with HashScheme set
-	builder.execConfig.Caching.StateScheme = rawdb.HashScheme
+	builder.RequireScheme(t, rawdb.HashScheme)
 
 	builder.nodeConfig.BatchPoster.MaxDelay = -1000 * time.Hour
 	cleanupA := builder.Build(t)

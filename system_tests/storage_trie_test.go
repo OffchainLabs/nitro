@@ -25,7 +25,7 @@ func TestStorageTrie(t *testing.T) {
 
 	// This test tests validates blocks at the end.
 	// For now, validation only works with HashScheme set.
-	builder.execConfig.Caching.StateScheme = rawdb.HashScheme
+	builder.RequireScheme(t, rawdb.HashScheme)
 	builder.nodeConfig.BlockValidator.Enable = false
 	builder.nodeConfig.Staker.Enable = true
 	builder.nodeConfig.BatchPoster.Enable = true

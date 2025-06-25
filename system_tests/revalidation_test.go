@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
 
@@ -24,7 +23,6 @@ func TestRevalidationForSpecifiedRange(t *testing.T) {
 
 	// 1st node with sequencer, stays up all the time.
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).DontParalellise()
-	builder.execConfig.Caching.StateScheme = rawdb.HashScheme
 	builder.nodeConfig.BlockValidator.Enable = true
 	builder.L2Info = NewBlockChainTestInfo(
 		t,
