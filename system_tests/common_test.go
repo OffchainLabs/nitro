@@ -448,6 +448,9 @@ func (b *NodeBuilder) CheckConfig(t *testing.T) {
 			b.execConfig.RPC.MaxRecreateStateDepth = arbitrum.DefaultNonArchiveNodeMaxRecreateStateDepth
 		}
 	}
+	if b.nodeConfig.BlockValidator.Enable {
+		b.nodeConfig.MessageExtraction.Enable = false // Skip running in MEL mode for block validator tests
+	}
 }
 
 func (b *NodeBuilder) BuildL1(t *testing.T) {

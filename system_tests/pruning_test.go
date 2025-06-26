@@ -46,6 +46,7 @@ func testPruning(t *testing.T, mode string, pruneParallelStorageTraversal bool) 
 	defer cancel()
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder.nodeConfig.MessageExtraction.Enable = false
 	// PathScheme prunes the state trie by itself, so only HashScheme should be tested
 	builder.execConfig.Caching.StateScheme = rawdb.HashScheme
 	_ = builder.Build(t)

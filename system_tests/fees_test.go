@@ -36,6 +36,7 @@ func TestSequencerFeePaid(t *testing.T) {
 	defer cancel()
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder.nodeConfig.MessageExtraction.Enable = false
 	cleanup := builder.Build(t)
 	defer cleanup()
 

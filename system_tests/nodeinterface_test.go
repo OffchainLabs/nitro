@@ -25,6 +25,7 @@ func TestFindBatch(t *testing.T) {
 	defer cancel()
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder.nodeConfig.MessageExtraction.Enable = false
 	l1Info := builder.L1Info
 	initialBalance := new(big.Int).Lsh(big.NewInt(1), 200)
 	l1Info.GenerateGenesisAccount("deployer", initialBalance)

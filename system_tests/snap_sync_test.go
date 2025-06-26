@@ -29,6 +29,7 @@ func TestSnapSync(t *testing.T) {
 
 	// 1st node with sequencer, stays up all the time.
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder.nodeConfig.MessageExtraction.Enable = false
 	builder.execConfig.Caching.StateScheme = rawdb.HashScheme
 	builder.L2Info = NewBlockChainTestInfo(
 		t,
