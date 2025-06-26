@@ -32,8 +32,10 @@ func TestMelDatabase(t *testing.T) {
 	headMelState := &meltypes.State{
 		ParentChainBlockNumber: 2,
 		ParentChainBlockHash:   common.MaxHash,
+		BatchCount:             1,
 	}
 	require.NoError(t, melDb.SaveState(ctx, headMelState))
+	require.NoError(t, melDb.SaveBatchMetas(ctx, headMelState, []*meltypes.BatchMetadata{{ParentChainBlock: 2}}))
 
 	headMelStateBlockNum, err := melDb.GetHeadMelStateBlockNum()
 	require.NoError(t, err)
@@ -50,7 +52,6 @@ func TestMelDatabase(t *testing.T) {
 	checkMelState()
 	melState, err = melDb.State(ctx, headMelState.ParentChainBlockNumber)
 	checkMelState()
-
 }
 
 func TestMelDatabaseReadAndWriteDelayedMessages(t *testing.T) {

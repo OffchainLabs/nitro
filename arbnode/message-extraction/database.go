@@ -35,7 +35,9 @@ func NewDatabase(db ethdb.Database) *Database {
 
 // initializeSeenUnreadDelayedMetaDeque is to be only called by the Start fsm step of MEL
 func (d *Database) initializeSeenUnreadDelayedMetaDeque(ctx context.Context, state *meltypes.State, finalizedBlock uint64) error {
-	if state.DelayedMessagedSeen == state.DelayedMessagesRead && state.ParentChainBlockNumber <= finalizedBlock {
+	if state.DelayedMessagedSeen == state.DelayedMessagesRead &&
+		(state.DelayedMessagedSeen == 0 || // this is the first mel state so no need to initialize deque even if the state isnt finalized yet. TODO: during upgrade we would want the initial mel state's parentchainblocknumber to be finalized
+			state.ParentChainBlockNumber <= finalizedBlock) {
 		return nil
 	}
 	// To make the deque reorg resistant we will need to add more delayedMeta even though those messages are `Read`
@@ -173,6 +175,40 @@ func (d *Database) setMelState(batch ethdb.KeyValueWriter, parentChainBlockNumbe
 		return err
 	}
 	return nil
+}
+
+func (d *Database) SaveBatchMetas(ctx context.Context, state *meltypes.State, batchMetas []*meltypes.BatchMetadata) error {
+	dbBatch := d.db.NewBatch()
+	if state.BatchCount < uint64(len(batchMetas)) {
+		return fmt.Errorf("mel state's BatchCount: %d is lower than number of batchMetadata: %d queued to be added", state.BatchCount, len(batchMetas))
+	}
+	firstPos := state.BatchCount - uint64(len(batchMetas))
+	for i, batchMetadata := range batchMetas {
+		key := dbKey(dbschema.MelSequencerBatchMetaPrefix, firstPos+uint64(i)) // #nosec G115
+		batchMetadataBytes, err := rlp.EncodeToBytes(*batchMetadata)
+		if err != nil {
+			return err
+		}
+		err = dbBatch.Put(key, batchMetadataBytes)
+		if err != nil {
+			return err
+		}
+
+	}
+	return dbBatch.Write()
+}
+
+func (d *Database) fetchBatchMetadata(seqNum uint64) (*meltypes.BatchMetadata, error) {
+	key := dbKey(dbschema.MelSequencerBatchMetaPrefix, seqNum)
+	batchMetadataBytes, err := d.db.Get(key)
+	if err != nil {
+		return nil, err
+	}
+	var batchMetadata meltypes.BatchMetadata
+	if err = rlp.DecodeBytes(batchMetadataBytes, &batchMetadata); err != nil {
+		return nil, err
+	}
+	return &batchMetadata, nil
 }
 
 // SaveState should exclusively be called for saving the recently generated "head" MEL state

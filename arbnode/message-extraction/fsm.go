@@ -54,6 +54,7 @@ type saveMessages struct {
 	postState        *meltypes.State
 	messages         []*arbostypes.MessageWithMetadata
 	delayedMessages  []*meltypes.DelayedInboxMessage
+	batchMetas       []*meltypes.BatchMetadata
 }
 
 type reorgToOldBlock struct {

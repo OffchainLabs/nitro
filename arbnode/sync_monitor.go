@@ -2,6 +2,7 @@ package arbnode
 
 import (
 	"context"
+	"math/big"
 	"sync"
 	"time"
 
@@ -9,7 +10,9 @@ import (
 
 	"github.com/ethereum/go-ethereum/log"
 
+	mel "github.com/offchainlabs/nitro/arbnode/message-extraction"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
@@ -20,6 +23,10 @@ type SyncMonitor struct {
 	txStreamer  *TransactionStreamer
 	coordinator *SeqCoordinator
 	initialized bool
+
+	msgExtractor   *mel.MessageExtractor
+	l1Reader       *headerreader.HeaderReader
+	sequencerInbox *SequencerInbox
 
 	syncTargetLock sync.Mutex
 	nextSyncTarget arbutil.MessageIndex
@@ -48,7 +55,10 @@ func SyncMonitorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Duration(prefix+".msg-lag", DefaultSyncMonitorConfig.MsgLag, "allowed msg lag while still considered in sync")
 }
 
-func (s *SyncMonitor) Initialize(inboxReader *InboxReader, txStreamer *TransactionStreamer, coordinator *SeqCoordinator) {
+func (s *SyncMonitor) Initialize(msgExtractor *mel.MessageExtractor, inboxReader *InboxReader, txStreamer *TransactionStreamer, coordinator *SeqCoordinator, l1Reader *headerreader.HeaderReader, sequencerInbox *SequencerInbox) {
+	s.msgExtractor = msgExtractor
+	s.l1Reader = l1Reader
+	s.sequencerInbox = sequencerInbox
 	s.inboxReader = inboxReader
 	s.txStreamer = txStreamer
 	s.coordinator = coordinator
@@ -56,7 +66,7 @@ func (s *SyncMonitor) Initialize(inboxReader *InboxReader, txStreamer *Transacti
 }
 
 func (s *SyncMonitor) updateSyncTarget(ctx context.Context) time.Duration {
-	nextSyncTarget, err := s.maxMessageCount()
+	nextSyncTarget, err := s.maxMessageCount(ctx)
 	s.syncTargetLock.Lock()
 	defer s.syncTargetLock.Unlock()
 	if err == nil {
@@ -78,13 +88,16 @@ func (s *SyncMonitor) SyncTargetMessageCount() arbutil.MessageIndex {
 }
 
 func (s *SyncMonitor) GetFinalizedMsgCount(ctx context.Context) (arbutil.MessageIndex, error) {
+	if s.msgExtractor != nil {
+		return s.msgExtractor.GetFinalizedMsgCount(ctx)
+	}
 	if s.inboxReader != nil && s.inboxReader.l1Reader != nil {
 		return s.inboxReader.GetFinalizedMsgCount(ctx)
 	}
 	return 0, nil
 }
 
-func (s *SyncMonitor) maxMessageCount() (arbutil.MessageIndex, error) {
+func (s *SyncMonitor) maxMessageCount(ctx context.Context) (arbutil.MessageIndex, error) {
 	msgCount, err := s.txStreamer.GetMessageCount()
 	if err != nil {
 		return 0, err
@@ -95,7 +108,13 @@ func (s *SyncMonitor) maxMessageCount() (arbutil.MessageIndex, error) {
 		msgCount = pending
 	}
 
-	if s.inboxReader != nil {
+	if s.msgExtractor != nil {
+		melMsgCount, err := s.msgExtractor.GetMsgCount(ctx)
+		if err != nil {
+			return msgCount, err
+		}
+		msgCount = max(msgCount, melMsgCount)
+	} else if s.inboxReader != nil {
 		batchProcessed := s.inboxReader.GetLastReadBatchCount()
 
 		if batchProcessed > 0 {
@@ -142,7 +161,32 @@ func (s *SyncMonitor) FullSyncProgressMap() map[string]interface{} {
 
 	res["feedPendingMessageCount"] = s.txStreamer.FeedPendingMessageCount()
 
-	if s.inboxReader != nil {
+	if s.msgExtractor != nil {
+		headMelState, err := s.msgExtractor.GetHeadState(s.GetContext())
+		if err != nil {
+			log.Error("Error getting head state from mel", "err", err)
+			res["batchMetadataError"] = err.Error()
+		} else {
+			batchSeen, err := s.sequencerInbox.GetBatchCount(s.GetContext(), new(big.Int).SetUint64(headMelState.ParentChainBlockNumber+1))
+			if err != nil {
+				log.Error("SequencerInbox GetBatchCount error", "err", err)
+			}
+			res["batchSeen"] = batchSeen
+			res["batchProcessed"] = headMelState.BatchCount
+			res["messageOfProcessedBatch"] = headMelState.MsgCount
+		}
+
+		if s.l1Reader != nil {
+			header, err := s.l1Reader.LastHeaderWithError()
+			if err != nil {
+				res["lastL1HeaderErr"] = err
+			}
+			if header != nil {
+				res["lastL1BlockNum"] = header.Number
+				res["lastl1BlockHash"] = header.Hash()
+			}
+		}
+	} else if s.inboxReader != nil {
 		batchSeen := s.inboxReader.GetLastSeenBatchCount()
 		res["batchSeen"] = batchSeen
 
@@ -217,7 +261,24 @@ func (s *SyncMonitor) Synced() bool {
 		return false
 	}
 
-	if s.inboxReader != nil {
+	if s.msgExtractor != nil {
+		headMelState, err := s.msgExtractor.GetHeadState(s.GetContext())
+		if err != nil {
+			log.Error("Error getting head state from mel", "err", err)
+			return false
+		}
+		batchSeen, err := s.sequencerInbox.GetBatchCount(s.GetContext(), new(big.Int).SetUint64(headMelState.ParentChainBlockNumber+1))
+		if err != nil {
+			log.Error("SequencerInbox GetBatchCount error", "err", err)
+			return false
+		}
+		if batchSeen == 0 {
+			return false
+		}
+		if headMelState.BatchCount < batchSeen {
+			return false
+		}
+	} else if s.inboxReader != nil {
 		batchSeen := s.inboxReader.GetLastSeenBatchCount()
 		if batchSeen == 0 {
 			return false
