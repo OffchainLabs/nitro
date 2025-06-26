@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"math/big"
 	"testing"
 
@@ -10,10 +9,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/ethereum/go-ethereum/trie"
-
-	"github.com/offchainlabs/nitro/arbutil"
 )
 
 func TestFetchTransactionsForBlockHeader_DynamicFeeTxs(t *testing.T) {
@@ -79,56 +74,4 @@ func TestFetchTransactionsForBlockHeader_LegacyTxs(t *testing.T) {
 		require.Equal(t, txes[i].Hash(), tx.Hash())
 		require.Equal(t, uint64(i), tx.Nonce()) // #nosec G115
 	}
-}
-
-type mockPreimageResolver struct {
-	preimages map[common.Hash][]byte
-}
-
-func (m *mockPreimageResolver) ResolveTypedPreimage(preimageType arbutil.PreimageType, hash common.Hash) ([]byte, error) {
-	if preimage, exists := m.preimages[hash]; exists {
-		return preimage, nil
-	}
-	return nil, fmt.Errorf("preimage not found for hash: %s", hash.Hex())
-}
-
-// Implements a hasher that captures preimages of hashes as it computes them.
-type preimageRecordingHasher struct {
-	trie      *trie.StackTrie
-	preimages map[common.Hash][]byte
-}
-
-func newRecordingHasher() *preimageRecordingHasher {
-	h := &preimageRecordingHasher{
-		preimages: make(map[common.Hash][]byte),
-	}
-	// OnTrieNode callback captures all trie nodes.
-	onTrieNode := func(path []byte, hash common.Hash, blob []byte) {
-		// Deep copy the blob since the callback warns contents may change, so this is required.
-		h.preimages[hash] = common.CopyBytes(blob)
-	}
-
-	h.trie = trie.NewStackTrie(onTrieNode)
-	return h
-}
-
-func (h *preimageRecordingHasher) Reset() {
-	onTrieNode := func(path []byte, hash common.Hash, blob []byte) {
-		h.preimages[hash] = common.CopyBytes(blob)
-	}
-	h.trie = trie.NewStackTrie(onTrieNode)
-}
-
-func (h *preimageRecordingHasher) Update(key, value []byte) error {
-	valueHash := crypto.Keccak256Hash(value)
-	h.preimages[valueHash] = common.CopyBytes(value)
-	return h.trie.Update(key, value)
-}
-
-func (h *preimageRecordingHasher) Hash() common.Hash {
-	return h.trie.Hash()
-}
-
-func (h *preimageRecordingHasher) GetPreimages() map[common.Hash][]byte {
-	return h.preimages
 }
