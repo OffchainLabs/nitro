@@ -14,12 +14,11 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 
 	"github.com/offchainlabs/nitro/arbos/util"
-	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
+	"github.com/offchainlabs/nitro/solgen/go/localgen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 )
 
 func TestAliasing(t *testing.T) {
-	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -32,7 +31,7 @@ func TestAliasing(t *testing.T) {
 	builder.L2.TransferBalanceTo(t, "Owner", util.RemapL1Address(user.From), big.NewInt(1e18), builder.L2Info)
 
 	simpleAddr, simple := builder.L2.DeploySimple(t, auth)
-	simpleContract, err := abi.JSON(strings.NewReader(mocksgen.SimpleABI))
+	simpleContract, err := abi.JSON(strings.NewReader(localgen.SimpleABI))
 	Require(t, err)
 
 	// Test direct calls

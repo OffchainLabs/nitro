@@ -15,25 +15,32 @@ import (
 // RedisClientFromURL creates a new Redis client based on the provided URL.
 // The URL scheme can be either `redis` or `redis+sentinel`.
 func RedisClientFromURL(redisUrl string) (redis.UniversalClient, error) {
+	client, _, err := RedisClientWithSentinelMasterNameFromURL(redisUrl)
+	return client, err
+}
+
+// RedisClientWithSentinelMasterNameFromURL creates a new Redis client based on the provided URL.
+// If URL scheme is `redis+sentinel`, it returns the sentinel master name as well.
+func RedisClientWithSentinelMasterNameFromURL(redisUrl string) (redis.UniversalClient, string, error) {
 	if redisUrl == "" {
-		return nil, nil
+		return nil, "", nil
 	}
 	u, err := url.Parse(redisUrl)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	if u.Scheme == "redis+sentinel" {
 		redisOptions, err := parseFailoverRedisUrl(redisUrl)
 		if err != nil {
-			return nil, err
+			return nil, "", err
 		}
-		return redis.NewFailoverClient(redisOptions), nil
+		return redis.NewFailoverClient(redisOptions), redisOptions.MasterName, nil
 	}
 	redisOptions, err := redis.ParseURL(redisUrl)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
-	return redis.NewClient(redisOptions), nil
+	return redis.NewClient(redisOptions), "", nil
 }
 
 // Designed using https://github.com/redis/go-redis/blob/a8590e987945b7ba050569cc3b94b8ece49e99e3/options.go#L283 as reference

@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
 
@@ -23,8 +22,7 @@ func TestRevalidationForSpecifiedRange(t *testing.T) {
 	var transferGas = util.NormalizeL2GasForL1GasInitial(800_000, params.GWei) // include room for aggregator L1 costs
 
 	// 1st node with sequencer, stays up all the time.
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
-	builder.execConfig.Caching.StateScheme = rawdb.HashScheme
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).DontParalellise()
 	builder.nodeConfig.BlockValidator.Enable = true
 	builder.L2Info = NewBlockChainTestInfo(
 		t,

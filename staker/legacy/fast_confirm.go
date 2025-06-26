@@ -29,6 +29,7 @@ type FastConfirmSafe struct {
 	builder                   *txbuilder.Builder
 	wallet                    ValidatorWalletInterface
 	l1Reader                  *headerreader.HeaderReader
+	rollupAddress             common.Address
 }
 
 func NewFastConfirmSafe(
@@ -37,11 +38,13 @@ func NewFastConfirmSafe(
 	builder *txbuilder.Builder,
 	wallet ValidatorWalletInterface,
 	l1Reader *headerreader.HeaderReader,
+	rollupAddress common.Address,
 ) (*FastConfirmSafe, error) {
 	fastConfirmSafe := &FastConfirmSafe{
-		builder:  builder,
-		wallet:   wallet,
-		l1Reader: l1Reader,
+		builder:       builder,
+		wallet:        wallet,
+		l1Reader:      l1Reader,
+		rollupAddress: rollupAddress,
 	}
 	safe, err := contractsgen.NewSafe(fastConfirmSafeAddress, wallet.L1Client())
 	if err != nil {
@@ -92,7 +95,7 @@ func (f *FastConfirmSafe) tryFastConfirmation(ctx context.Context, blockHash com
 	// Hash of the safe transaction.
 	safeTxHash, err := f.safe.GetTransactionHash(
 		callOpts,
-		f.wallet.RollupAddress(),
+		f.rollupAddress,
 		big.NewInt(0),
 		fastConfirmCallData,
 		0,
@@ -224,7 +227,7 @@ func (f *FastConfirmSafe) checkApprovedHashAndExecTransaction(ctx context.Contex
 		log.Info("Executing Safe tx to fast confirm", "safeHash", common.BytesToHash(safeTxHash[:]))
 		_, err := f.safe.ExecTransaction(
 			f.builder.Auth(ctx),
-			f.wallet.RollupAddress(),
+			f.rollupAddress,
 			big.NewInt(0),
 			fastConfirmCallData,
 			0,
@@ -240,6 +243,6 @@ func (f *FastConfirmSafe) checkApprovedHashAndExecTransaction(ctx context.Contex
 		}
 		return true, nil
 	}
-	log.Info("Not enough Safe tx approvals yet to fast confirm", "safeHash", common.BytesToHash(safeTxHash[:]), "approved", approvedHashCount, "threshold", f.threshold, "self", f.wallet.Address())
+	log.Info("Not enough Safe tx approvals yet to fast confirm", "safeHash", common.BytesToHash(safeTxHash[:]).Hex(), "approved", approvedHashCount, "threshold", f.threshold, "self", f.wallet.Address())
 	return false, nil
 }

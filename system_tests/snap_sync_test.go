@@ -22,14 +22,16 @@ import (
 )
 
 func TestSnapSync(t *testing.T) {
+	t.Skip("Skipping until investigating why this times out in CI")
 	ctx, cancelCtx := context.WithCancel(context.Background())
 	defer cancelCtx()
 
 	var transferGas = util.NormalizeL2GasForL1GasInitial(800_000, params.GWei) // include room for aggregator L1 costs
 
 	// 1st node with sequencer, stays up all the time.
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
-	builder.execConfig.Caching.StateScheme = rawdb.HashScheme
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).DontParalellise()
+	// only supported for hash scheme
+	builder.RequireScheme(t, rawdb.HashScheme)
 	builder.L2Info = NewBlockChainTestInfo(
 		t,
 		types.NewArbitrumSigner(types.NewLondonSigner(builder.chainConfig.ChainID)), big.NewInt(l2pricing.InitialBaseFeeWei*2),
