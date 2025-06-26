@@ -224,7 +224,7 @@ func GetBlockChain(
 	cacheConfig *core.CacheConfig,
 	chainConfig *params.ChainConfig,
 	tracer *tracing.Hooks,
-	txLookupLimit uint64,
+	txLookupLimit int64,
 ) (*core.BlockChain, error) {
 	engine := arbos.Engine{
 		IsSequencer: true,
@@ -235,7 +235,12 @@ func GetBlockChain(
 		Tracer:                  tracer,
 	}
 
-	return core.NewBlockChain(chainDb, cacheConfig, chainConfig, nil, nil, engine, vmConfig, &txLookupLimit)
+	var txLookup *uint64
+	if txLookupLimit > 0 {
+		limit := uint64(txLookupLimit)
+		txLookup = &limit
+	}
+	return core.NewBlockChain(chainDb, cacheConfig, chainConfig, nil, nil, engine, vmConfig, txLookup)
 }
 
 func WriteOrTestBlockChain(
@@ -246,7 +251,7 @@ func WriteOrTestBlockChain(
 	genesisArbOSInit *params.ArbOSInit,
 	tracer *tracing.Hooks,
 	initMessage *arbostypes.ParsedInitMessage,
-	txLookupLimit uint64,
+	txLookupLimit int64,
 	accountsPerSync uint,
 ) (*core.BlockChain, error) {
 	emptyBlockChain := rawdb.ReadHeadHeader(chainDb) == nil

@@ -95,7 +95,7 @@ type Config struct {
 	SecondaryForwardingTarget   []string            `koanf:"secondary-forwarding-target"`
 	Caching                     CachingConfig       `koanf:"caching"`
 	RPC                         arbitrum.Config     `koanf:"rpc"`
-	TxLookupLimit               uint64              `koanf:"tx-lookup-limit"`
+	TxLookupLimit               int64               `koanf:"tx-lookup-limit"`
 	EnablePrefetchBlock         bool                `koanf:"enable-prefetch-block"`
 	SyncMonitor                 SyncMonitorConfig   `koanf:"sync-monitor"`
 	StylusTarget                StylusTargetConfig  `koanf:"stylus-target"`
@@ -144,7 +144,7 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet) {
 	TxPreCheckerConfigAddOptions(prefix+".tx-pre-checker", f)
 	CachingConfigAddOptions(prefix+".caching", f)
 	SyncMonitorConfigAddOptions(prefix+".sync-monitor", f)
-	f.Uint64(prefix+".tx-lookup-limit", ConfigDefault.TxLookupLimit, "retain the ability to lookup transactions by hash for the past N blocks (0 = all blocks)")
+	f.Int64(prefix+".tx-lookup-limit", ConfigDefault.TxLookupLimit, "retain the ability to lookup transactions by hash for the past N blocks (0 = all blocks, -1 = disable tx indexer)")
 	f.Bool(prefix+".enable-prefetch-block", ConfigDefault.EnablePrefetchBlock, "enable prefetching of blocks")
 	StylusTargetConfigAddOptions(prefix+".stylus-target", f)
 	f.Uint64(prefix+".block-metadata-api-cache-size", ConfigDefault.BlockMetadataApiCacheSize, "size (in bytes) of lru cache storing the blockMetadata to service arb_getRawBlockMetadata")
