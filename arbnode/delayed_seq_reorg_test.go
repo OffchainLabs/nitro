@@ -81,7 +81,7 @@ func TestSequencerReorgFromDelayed(t *testing.T) {
 		RawLog:                 types.Log{},
 		DataLocation:           0,
 		BridgeAddress:          [20]byte{},
-		serialized:             serializedInitMsgBatch,
+		Serialized:             serializedInitMsgBatch,
 	}
 	serializedUserMsgBatch := make([]byte, 40)
 	binary.BigEndian.PutUint64(serializedUserMsgBatch[32:], 2)
@@ -97,7 +97,7 @@ func TestSequencerReorgFromDelayed(t *testing.T) {
 		RawLog:                 types.Log{},
 		DataLocation:           0,
 		BridgeAddress:          [20]byte{},
-		serialized:             serializedUserMsgBatch,
+		Serialized:             serializedUserMsgBatch,
 	}
 	emptyBatch := &SequencerInboxBatch{
 		BlockHash:              [32]byte{},
@@ -111,7 +111,7 @@ func TestSequencerReorgFromDelayed(t *testing.T) {
 		RawLog:                 types.Log{},
 		DataLocation:           0,
 		BridgeAddress:          [20]byte{},
-		serialized:             serializedUserMsgBatch,
+		Serialized:             serializedUserMsgBatch,
 	}
 	err = tracker.AddSequencerBatches(ctx, nil, []*SequencerInboxBatch{initMsgBatch, userMsgBatch, emptyBatch})
 	Require(t, err)
@@ -197,7 +197,7 @@ func TestSequencerReorgFromDelayed(t *testing.T) {
 		RawLog:                 types.Log{},
 		DataLocation:           0,
 		BridgeAddress:          [20]byte{},
-		serialized:             serializedInitMsgBatch,
+		Serialized:             serializedInitMsgBatch,
 	}
 	err = tracker.AddSequencerBatches(ctx, nil, []*SequencerInboxBatch{emptyBatch})
 	Require(t, err)
@@ -281,7 +281,7 @@ func TestSequencerReorgFromLastDelayedMsg(t *testing.T) {
 		RawLog:                 types.Log{},
 		DataLocation:           0,
 		BridgeAddress:          [20]byte{},
-		serialized:             serializedInitMsgBatch,
+		Serialized:             serializedInitMsgBatch,
 	}
 	serializedUserMsgBatch := make([]byte, 40)
 	binary.BigEndian.PutUint64(serializedUserMsgBatch[32:], 2)
@@ -297,7 +297,7 @@ func TestSequencerReorgFromLastDelayedMsg(t *testing.T) {
 		RawLog:                 types.Log{},
 		DataLocation:           0,
 		BridgeAddress:          [20]byte{},
-		serialized:             serializedUserMsgBatch,
+		Serialized:             serializedUserMsgBatch,
 	}
 	emptyBatch := &SequencerInboxBatch{
 		BlockHash:              [32]byte{},
@@ -311,7 +311,7 @@ func TestSequencerReorgFromLastDelayedMsg(t *testing.T) {
 		RawLog:                 types.Log{},
 		DataLocation:           0,
 		BridgeAddress:          [20]byte{},
-		serialized:             serializedUserMsgBatch,
+		Serialized:             serializedUserMsgBatch,
 	}
 	err = tracker.AddSequencerBatches(ctx, nil, []*SequencerInboxBatch{initMsgBatch, userMsgBatch, emptyBatch})
 	Require(t, err)
@@ -426,7 +426,7 @@ func TestSequencerReorgFromLastDelayedMsg(t *testing.T) {
 		RawLog:                 types.Log{},
 		DataLocation:           0,
 		BridgeAddress:          [20]byte{},
-		serialized:             serializedInitMsgBatch,
+		Serialized:             serializedInitMsgBatch,
 	}
 	err = tracker.AddSequencerBatches(ctx, nil, []*SequencerInboxBatch{emptyBatch})
 	Require(t, err)
