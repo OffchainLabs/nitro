@@ -295,6 +295,7 @@ func startBoldChallengeManager(t *testing.T, ctx context.Context, builder *NodeB
 		node.ConsensusNode.InboxTracker,
 		node.ConsensusNode.TxStreamer,
 		node.ConsensusNode.InboxReader,
+		nil,
 	)
 	Require(t, err)
 
