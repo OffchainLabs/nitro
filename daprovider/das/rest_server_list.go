@@ -62,7 +62,7 @@ func restfulServerURLsFromList(
 		return nil, err
 	}
 	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("recieved error response (%d) fetching online-url-list at %s", resp.StatusCode, listUrl)
+		return nil, fmt.Errorf("received error response (%d) fetching online-url-list at %s", resp.StatusCode, listUrl)
 	}
 	scanner := bufio.NewScanner(resp.Body)
 	scanner.Split(bufio.ScanWords)
