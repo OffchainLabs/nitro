@@ -942,7 +942,6 @@ func TestDimTxOpCallCodeWarmPayingContractFundedMemExpansion(t *testing.T) {
 // This tests a call that does another call,
 // specifically a CALL that then does a DELEGATECALL
 func TestDimTxOpCallNestedCall(t *testing.T) {
-	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
