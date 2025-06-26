@@ -74,8 +74,8 @@ func NewMultiProtocolStaker(
 	inboxStreamer staker.TransactionStreamerInterface,
 	inboxTracker staker.InboxTrackerInterface,
 	inboxReader staker.InboxReaderInterface,
-	fatalErr chan<- error,
 	dapValidator daprovider.Validator,
+	fatalErr chan<- error,
 ) (*MultiProtocolStaker, error) {
 	if err := legacyConfig().Validate(); err != nil {
 		return nil, err
