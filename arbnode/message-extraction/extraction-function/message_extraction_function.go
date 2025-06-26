@@ -13,6 +13,7 @@ import (
 	meltypes "github.com/offchainlabs/nitro/arbnode/message-extraction/types"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/daprovider"
 )
 
@@ -55,7 +56,7 @@ func ExtractMessages(
 	delayedMsgDatabase DelayedMessageDatabase,
 	receiptFetcher ReceiptFetcher,
 	txsFetcher TransactionsFetcher,
-) (*meltypes.State, []*arbostypes.MessageWithMetadata, []*meltypes.DelayedInboxMessage, error) {
+) (*meltypes.State, []*arbostypes.MessageWithMetadata, []*meltypes.DelayedInboxMessage, []*meltypes.BatchMetadata, error) {
 	return extractMessagesImpl(
 		ctx,
 		inputState,
@@ -92,13 +93,13 @@ func extractMessagesImpl(
 	extractBatchMessages batchMsgExtractionFunc,
 	parseSequencerMessage sequencerMessageParserFunc,
 	parseBatchPostingReport batchPostingReportParserFunc,
-) (*meltypes.State, []*arbostypes.MessageWithMetadata, []*meltypes.DelayedInboxMessage, error) {
+) (*meltypes.State, []*arbostypes.MessageWithMetadata, []*meltypes.DelayedInboxMessage, []*meltypes.BatchMetadata, error) {
 
 	state := inputState.Clone()
 	// Clones the state to avoid mutating the input pointer in case of errors.
 	// Check parent chain block hash linkage.
 	if state.ParentChainBlockHash != parentChainHeader.ParentHash {
-		return nil, nil, nil, fmt.Errorf(
+		return nil, nil, nil, nil, fmt.Errorf(
 			"parent chain block hash in MEL state does not match incoming block's parent hash: expected %s, got %s",
 			state.ParentChainPreviousBlockHash.Hex(),
 			parentChainHeader.ParentHash.Hex(),
@@ -120,7 +121,7 @@ func extractMessagesImpl(
 		eventUnpacker,
 	)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 	delayedMessages, err := lookupDelayedMsgs(
 		ctx,
@@ -130,7 +131,7 @@ func extractMessagesImpl(
 		txsFetcher,
 	)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 	// Update the delayed message accumulator in the MEL state.
 	batchPostingReports := make([]*meltypes.DelayedInboxMessage, 0)
@@ -142,27 +143,28 @@ func extractMessagesImpl(
 			batchPostingReports = append(batchPostingReports, delayed)
 		}
 		if err = state.AccumulateDelayedMessage(delayed); err != nil {
-			return nil, nil, nil, err
+			return nil, nil, nil, nil, err
 		}
 		state.DelayedMessagedSeen += 1
 	}
 	if len(delayedMessages) > 0 {
 		// Only need to calculate partials once, after all the delayed messages are `seen`
 		if err := state.GenerateDelayedMessageMerklePartials(); err != nil {
-			return nil, nil, nil, err
+			return nil, nil, nil, nil, err
 		}
 	}
 
 	// Batch posting reports are included in the same transaction as a batch, so there should
 	// always be the same number of reports as there are batches.
 	if len(batchPostingReports) != len(batches) {
-		return nil, nil, nil, fmt.Errorf(
+		return nil, nil, nil, nil, fmt.Errorf(
 			"batch posting reports %d do not match the number of batches %d",
 			len(batchPostingReports),
 			len(batches),
 		)
 	}
 
+	var batchMetas []*meltypes.BatchMetadata
 	var messages []*arbostypes.MessageWithMetadata
 	for i, batch := range batches {
 		batchTx := batchTxs[i]
@@ -175,18 +177,18 @@ func extractMessagesImpl(
 			receiptFetcher,
 		)
 		if err != nil {
-			return nil, nil, nil, err
+			return nil, nil, nil, nil, err
 		}
 
 		batchPostReport := batchPostingReports[i]
 		if batchPostReport.Message.Header.Kind != arbostypes.L1MessageType_Initialize {
 			_, _, batchHash, _, _, _, err := parseBatchPostingReport(bytes.NewReader(batchPostReport.Message.L2msg))
 			if err != nil {
-				return nil, nil, nil, fmt.Errorf("failed to parse batch posting report: %w", err)
+				return nil, nil, nil, nil, fmt.Errorf("failed to parse batch posting report: %w", err)
 			}
 			gotHash := crypto.Keccak256Hash(serialized)
 			if gotHash != batchHash {
-				return nil, nil, nil, fmt.Errorf(
+				return nil, nil, nil, nil, fmt.Errorf(
 					"batch data hash incorrect %v (wanted %v for batch %v)",
 					gotHash,
 					batchHash,
@@ -198,7 +200,7 @@ func extractMessagesImpl(
 			// Fill in the batch gas cost into the batch posting report.
 			batchPostReport.Message.BatchGasCost = &gas
 		} else if !(inputState.DelayedMessagedSeen == 0 && i == 0 && delayedMessages[i] == batchPostReport) {
-			return nil, nil, nil, errors.New("encountered initialize message that is not the first delayed message and the first batch ")
+			return nil, nil, nil, nil, errors.New("encountered initialize message that is not the first delayed message and the first batch ")
 		}
 
 		rawSequencerMsg, err := parseSequencerMessage(
@@ -210,7 +212,7 @@ func extractMessagesImpl(
 			daprovider.KeysetValidate,
 		)
 		if err != nil {
-			return nil, nil, nil, err
+			return nil, nil, nil, nil, err
 		}
 		messagesInBatch, err := extractBatchMessages(
 			ctx,
@@ -219,7 +221,7 @@ func extractMessagesImpl(
 			delayedMsgDatabase,
 		)
 		if err != nil {
-			return nil, nil, nil, err
+			return nil, nil, nil, nil, err
 		}
 		for _, msg := range messagesInBatch {
 			messages = append(messages, msg)
@@ -227,6 +229,11 @@ func extractMessagesImpl(
 			state = state.AccumulateMessage(msg)
 		}
 		state.BatchCount += 1
+		batchMetas = append(batchMetas, &meltypes.BatchMetadata{
+			MessageCount:        arbutil.MessageIndex(state.MsgCount),
+			DelayedMessageCount: state.DelayedMessagesRead,
+			ParentChainBlock:    state.ParentChainBlockNumber,
+		})
 	}
-	return state, messages, delayedMessages, nil
+	return state, messages, delayedMessages, batchMetas, nil
 }

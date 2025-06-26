@@ -38,7 +38,7 @@ func TestExtractMessages(t *testing.T) {
 			ParentChainBlockHash: common.HexToHash("0x5678"),
 		}
 		melState.SetSeenUnreadDelayedMetaDeque(&meltypes.DelayedMetaDeque{})
-		_, _, _, err := ExtractMessages(
+		_, _, _, _, err := ExtractMessages(
 			ctx,
 			melState,
 			block.Header(),
@@ -74,7 +74,7 @@ func TestExtractMessages(t *testing.T) {
 			return nil, nil, nil, errors.New("failed to lookup batches")
 		}
 		txsFetcher := &mockTxsFetcher{}
-		_, _, _, err := extractMessagesImpl(
+		_, _, _, _, err := extractMessagesImpl(
 			ctx,
 			melState,
 			block.Header(),
@@ -127,7 +127,7 @@ func TestExtractMessages(t *testing.T) {
 		}
 
 		txsFetcher := &mockTxsFetcher{}
-		_, _, _, err := extractMessagesImpl(
+		_, _, _, _, err := extractMessagesImpl(
 			ctx,
 			melState,
 			block.Header(),
@@ -192,7 +192,7 @@ func TestExtractMessages(t *testing.T) {
 		}
 
 		txsFetcher := &mockTxsFetcher{}
-		_, _, _, err := extractMessagesImpl(
+		_, _, _, _, err := extractMessagesImpl(
 			ctx,
 			melState,
 			block.Header(),
@@ -268,7 +268,7 @@ func TestExtractMessages(t *testing.T) {
 		) ([]byte, error) {
 			return nil, errors.New("serialization error")
 		}
-		_, _, _, err := extractMessagesImpl(
+		_, _, _, _, err := extractMessagesImpl(
 			ctx,
 			melState,
 			block.Header(),
@@ -349,7 +349,7 @@ func TestExtractMessages(t *testing.T) {
 		) (*big.Int, common.Address, common.Hash, uint64, *big.Int, uint64, error) {
 			return nil, common.Address{}, common.Hash{}, 0, nil, 0, errors.New("batch posting report parsing error")
 		}
-		_, _, _, err := extractMessagesImpl(
+		_, _, _, _, err := extractMessagesImpl(
 			ctx,
 			melState,
 			block.Header(),
@@ -430,7 +430,7 @@ func TestExtractMessages(t *testing.T) {
 		) (*big.Int, common.Address, common.Hash, uint64, *big.Int, uint64, error) {
 			return nil, common.Address{}, common.Hash{}, 0, nil, 0, nil
 		}
-		_, _, _, err := extractMessagesImpl(
+		_, _, _, _, err := extractMessagesImpl(
 			ctx,
 			melState,
 			block.Header(),
@@ -521,7 +521,7 @@ func TestExtractMessages(t *testing.T) {
 		) (*arbstate.SequencerMessage, error) {
 			return nil, errors.New("failed to parse sequencer message")
 		}
-		_, _, _, err := extractMessagesImpl(
+		_, _, _, _, err := extractMessagesImpl(
 			ctx,
 			melState,
 			block.Header(),
@@ -620,7 +620,7 @@ func TestExtractMessages(t *testing.T) {
 		) ([]*arbostypes.MessageWithMetadata, error) {
 			return nil, errors.New("failed to extract batch messages")
 		}
-		_, _, _, err := extractMessagesImpl(
+		_, _, _, _, err := extractMessagesImpl(
 			ctx,
 			melState,
 			block.Header(),
@@ -736,7 +736,7 @@ func TestExtractMessages(t *testing.T) {
 				},
 			}, nil
 		}
-		postState, messages, delayedMessages, err := extractMessagesImpl(
+		postState, messages, delayedMessages, batchMetas, err := extractMessagesImpl(
 			ctx,
 			melState,
 			block.Header(),
@@ -757,5 +757,6 @@ func TestExtractMessages(t *testing.T) {
 		require.Equal(t, uint64(1), postState.DelayedMessagedSeen)
 		require.Len(t, messages, 2)
 		require.Len(t, delayedMessages, 1)
+		require.Len(t, batchMetas, 1)
 	})
 }
