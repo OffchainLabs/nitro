@@ -7,7 +7,10 @@ package arbtest
 
 import (
 	"context"
+	"fmt"
 	"math/big"
+	"net"
+	"net/http"
 	"os"
 	"strings"
 	"testing"
@@ -33,6 +36,8 @@ import (
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/daprovider/daclient"
+	"github.com/offchainlabs/nitro/daprovider/referenceda"
+	dapserver "github.com/offchainlabs/nitro/daprovider/server"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/staker/bold"
@@ -48,6 +53,38 @@ func TestChallengeProtocolBOLDCustomDASetup(t *testing.T) {
 	testChallengeProtocolBOLDCustomDA(t)
 }
 
+// createReferenceDAProviderServer creates and starts a ReferenceDA provider server with automatic port selection
+func createReferenceDAProviderServer(t *testing.T, ctx context.Context) (*http.Server, string) {
+	// Create ReferenceDA components
+	reader := referenceda.NewReader()
+	writer := referenceda.NewWriter()
+	validator := referenceda.NewValidator()
+
+	// Create server config with automatic port selection
+	serverConfig := &dapserver.ServerConfig{
+		Addr:               "127.0.0.1",
+		Port:               0, // 0 means automatic port selection
+		EnableDAWriter:     true,
+		ServerTimeouts:     dapserver.DefaultServerConfig.ServerTimeouts,
+		RPCServerBodyLimit: dapserver.DefaultServerConfig.RPCServerBodyLimit,
+	}
+
+	// Create the provider server
+	server, err := dapserver.NewServerWithDAPProvider(ctx, serverConfig, reader, writer, validator)
+	Require(t, err)
+
+	// Extract the actual address with port
+	// The server.Addr contains "http://" prefix, we need to strip it
+	serverAddr := strings.TrimPrefix(server.Addr, "http://")
+
+	// Create the full URL for client connection
+	serverURL := fmt.Sprintf("http://%s", serverAddr)
+
+	t.Logf("Started ReferenceDA provider server at %s", serverURL)
+
+	return server, serverURL
+}
+
 func testChallengeProtocolBOLDCustomDA(t *testing.T, spawnerOpts ...server_arb.SpawnerOption) {
 	goodDir, err := os.MkdirTemp("", "good_*")
 	Require(t, err)
@@ -59,6 +96,15 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, spawnerOpts ...server_arb.S
 	})
 	ctx, cancelCtx := context.WithCancel(context.Background())
 	defer cancelCtx()
+
+	// Create and start ReferenceDA provider server for node A
+	providerServerA, providerURLNodeA := createReferenceDAProviderServer(t, ctx)
+	t.Cleanup(func() {
+		if err := providerServerA.Shutdown(context.Background()); err != nil {
+			t.Logf("Error shutting down provider server A: %v", err)
+		}
+	})
+
 	var transferGas = util.NormalizeL2GasForL1GasInitial(800_000, params.GWei) // include room for aggregator L1 costs
 	l2chainConfig := chaininfo.ArbitrumDevTestChainConfig()
 	l2info := NewBlockChainTestInfo(
@@ -80,8 +126,7 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, spawnerOpts ...server_arb.S
 	nodeConfigA := arbnode.ConfigDefaultL1Test()
 	nodeConfigA.DA.Mode = "external"
 	nodeConfigA.DA.ExternalProvider.Enable = true
-	// TODO: Replace with actual external DA provider URL once available
-	nodeConfigA.DA.ExternalProvider.RPC.URL = "http://placeholder-da-provider-a:8080"
+	nodeConfigA.DA.ExternalProvider.RPC.URL = providerURLNodeA
 
 	_, l2nodeA, _, _, l1info, _, l1client, l1stack, assertionChain, stakeTokenAddr := createTestNodeOnL1ForBoldProtocol(
 		t,
@@ -201,8 +246,7 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, spawnerOpts ...server_arb.S
 	// Create DA validators for both nodes
 	daClientConfigA := func() *rpcclient.ClientConfig {
 		return &rpcclient.ClientConfig{
-			URL: "http://placeholder-da-provider-a:8080",
-			// Add other config fields as needed when real DA provider is available
+			URL: providerURLNodeA,
 		}
 	}
 	daClientA, err := daclient.NewClient(ctx, daClientConfigA)
