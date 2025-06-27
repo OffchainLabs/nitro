@@ -9,7 +9,6 @@ import (
 // This test calls the Keccak wasm program directly
 // which calls SLOAD inside the wasm for "free"
 func TestDimLogStylusKeccakForSload(t *testing.T) {
-	t.Parallel()
 	builder, auth, cleanup := setupProgramTest(t, true, gasDimPrecompileBuilderOpts()...)
 	ctx := builder.ctx
 	l2client := builder.L2.Client
@@ -50,7 +49,6 @@ func TestDimLogStylusKeccakForSload(t *testing.T) {
 // flow from non-stylus to stylus
 // inside stylus, we call SLOAD for "free"
 func TestDimLogStylusKeccakForSloadFromProxy(t *testing.T) {
-	t.Parallel()
 	builder, auth, cleanup := setupProgramTest(t, true, gasDimPrecompileBuilderOpts()...)
 	ctx := builder.ctx
 	l2client := builder.L2.Client

@@ -37,6 +37,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
+	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
@@ -44,7 +45,6 @@ import (
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/sharedmetrics"
@@ -1011,17 +1011,16 @@ func (s *ExecutionEngine) digestMessageWithBlockMutex(msgIdxToDigest arbutil.Mes
 			timestamp = time.Unix(int64(timestampInt), 0)
 			timeUntilUpgrade = time.Until(timestamp)
 		}
-		maxSupportedVersion := chaininfo.ArbitrumDevTestChainConfig().ArbitrumChainParams.InitialArbOSVersion
 		logLevel := log.Warn
 		if timeUntilUpgrade < time.Hour*24 {
 			logLevel = log.Error
 		}
-		if version > maxSupportedVersion {
+		if version > params.MaxArbosVersionSupported {
 			logLevel(
 				"you need to update your node to the latest version before this scheduled ArbOS upgrade",
 				"timeUntilUpgrade", timeUntilUpgrade,
 				"upgradeScheduledFor", timestamp,
-				"maxSupportedArbosVersion", maxSupportedVersion,
+				"maxSupportedArbosVersion", params.MaxArbosVersionSupported,
 				"pendingArbosUpgradeVersion", version,
 			)
 		}

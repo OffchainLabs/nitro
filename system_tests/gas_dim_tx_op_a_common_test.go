@@ -28,7 +28,6 @@ type OpcodeSumTraceResult = native.TxGasDimensionByOpcodeExecutionResult
 // used for a transaction as the TX receipt, for
 // computation-only opcodes.
 func TestDimTxOpComputationOnlyOpcodes(t *testing.T) {
-	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -45,6 +44,8 @@ func TestDimTxOpComputationOnlyOpcodes(t *testing.T) {
 // #########################################################################################################
 // #########################################################################################################
 
+// helper function that automates calling debug_traceTransaction with the txGasDimensionByOpcode tracer
+// and does some minimal validation of the result
 func callDebugTraceTransactionWithTxGasDimensionByOpcodeTracer(
 	t *testing.T,
 	ctx context.Context,
@@ -57,6 +58,9 @@ func callDebugTraceTransactionWithTxGasDimensionByOpcodeTracer(
 	var result json.RawMessage
 	err := rpcClient.CallContext(ctx, &result, "debug_traceTransaction", txHash, map[string]interface{}{
 		"tracer": "txGasDimensionByOpcode",
+		"tracerConfig": map[string]interface{}{
+			"debug": true,
+		},
 	})
 	Require(t, err)
 
