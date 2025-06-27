@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"os"
 	"slices"
 	"testing"
 
@@ -158,5 +159,65 @@ func TestSerdeSubmittedEspressoTx(t *testing.T) {
 
 	if !bytes.Equal(submiitedTx.Payload, expected.Payload) {
 		t.Error("failed to check payload")
+	}
+}
+
+func TestSerdeSubmittedEspressoTxBackwardCompatibility(t *testing.T) {
+	// This test ensures that we can deserialize the old SubmittedEspressoTx, which did not have
+	// the `SubmittedAt` field, into the new struct. It uses a static RLP-encoded artifact
+	// generated from the old struct definition. See testdata/old_submitted_espresso_tx.md for details.
+	type OldSubmittedEspressoTx struct {
+		Hash    string
+		Pos     []MessageIndex
+		Payload []byte
+	}
+
+	// This represents the original data that was used to create the RLP artifact.
+	oldSubmittedTx := OldSubmittedEspressoTx{
+		Hash:    "0x1234",
+		Pos:     []MessageIndex{MessageIndex(10)},
+		Payload: []byte{0, 1, 2, 3},
+	}
+
+	b, err := os.ReadFile("testdata/old_submitted_espresso_tx.rlp")
+	if err != nil {
+		t.Fatalf("Failed to read RLP artifact: %v", err)
+	}
+
+	// First, validate that the artifact correctly decodes to the old struct format.
+	var decodedOldTx OldSubmittedEspressoTx
+	if err := rlp.DecodeBytes(b, &decodedOldTx); err != nil {
+		t.Fatalf("Failed to decode artifact into OldSubmittedEspressoTx: %v", err)
+	}
+	if decodedOldTx.Hash != oldSubmittedTx.Hash {
+		t.Errorf("Hash mismatch in old struct: got %v, want %v", decodedOldTx.Hash, oldSubmittedTx.Hash)
+	}
+	if len(decodedOldTx.Pos) != 1 || decodedOldTx.Pos[0] != oldSubmittedTx.Pos[0] {
+		t.Errorf("Pos mismatch in old struct: got %v, want %v", decodedOldTx.Pos, oldSubmittedTx.Pos)
+	}
+	if !bytes.Equal(decodedOldTx.Payload, oldSubmittedTx.Payload) {
+		t.Errorf("Payload mismatch in old struct: got %x, want %x", decodedOldTx.Payload, oldSubmittedTx.Payload)
+	}
+
+	// Now, decode the same artifact into the new struct to test backward compatibility.
+	var expected SubmittedEspressoTx
+	if err := rlp.DecodeBytes(b, &expected); err != nil {
+		t.Fatalf("Failed to decode artifact into new SubmittedEspressoTx: %v", err)
+	}
+
+	if oldSubmittedTx.Hash != expected.Hash {
+		t.Errorf("Failed to check hash after decoding, got %v, want %v", expected.Hash, oldSubmittedTx.Hash)
+	}
+
+	if len(expected.Pos) != 1 || oldSubmittedTx.Pos[0] != expected.Pos[0] {
+		t.Errorf("Pos mismatch: got %v, want %v", expected.Pos, oldSubmittedTx.Pos)
+	}
+
+	if !bytes.Equal(oldSubmittedTx.Payload, expected.Payload) {
+		t.Errorf("Payload mismatch: got %x, want %x", expected.Payload, oldSubmittedTx.Payload)
+	}
+
+	if !expected.SubmittedAt.IsZero() {
+		t.Errorf("Expected SubmittedAt to be zero after decoding old data, but got %v", expected.SubmittedAt)
 	}
 }
