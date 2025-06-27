@@ -32,7 +32,7 @@ import (
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: DELEGATECALL to a cold, no-code address, no memory expansion.
-func TestDimTxOpDelegateCallColdNoCodeMemUnchanged(t *testing.T) {
+func TestDimExDelegateCallColdNoCodeMemUnchanged(t *testing.T) {
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -42,13 +42,13 @@ func TestDimTxOpDelegateCallColdNoCodeMemUnchanged(t *testing.T) {
 
 	receipt := callOnContractWithOneArg(t, builder, auth, delegateCaller.TestDelegateCallEmptyCold, emptyAccountAddress)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxExTraceAndCheck(t, ctx, builder, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: DELEGATECALL to a warm, no-code address, no memory expansion.
-func TestDimTxOpDelegateCallWarmNoCodeMemUnchanged(t *testing.T) {
+func TestDimExDelegateCallWarmNoCodeMemUnchanged(t *testing.T) {
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -58,13 +58,13 @@ func TestDimTxOpDelegateCallWarmNoCodeMemUnchanged(t *testing.T) {
 
 	receipt := callOnContractWithOneArg(t, builder, auth, delegateCaller.TestDelegateCallEmptyWarm, emptyAccountAddress)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxExTraceAndCheck(t, ctx, builder, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: DELEGATECALL to a cold contract address, no memory expansion.
-func TestDimTxOpDelegateCallColdContractMemUnchanged(t *testing.T) {
+func TestDimExDelegateCallColdContractMemUnchanged(t *testing.T) {
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -74,13 +74,13 @@ func TestDimTxOpDelegateCallColdContractMemUnchanged(t *testing.T) {
 
 	receipt := callOnContractWithOneArg(t, builder, auth, delegateCaller.TestDelegateCallNonEmptyCold, delegateCalleeAddress)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxExTraceAndCheck(t, ctx, builder, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: DELEGATECALL to a warm contract address, no memory expansion.
-func TestDimTxOpDelegateCallWarmContractMemUnchanged(t *testing.T) {
+func TestDimExDelegateCallWarmContractMemUnchanged(t *testing.T) {
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -90,14 +90,14 @@ func TestDimTxOpDelegateCallWarmContractMemUnchanged(t *testing.T) {
 
 	receipt := callOnContractWithOneArg(t, builder, auth, delegateCaller.TestDelegateCallNonEmptyWarm, delegateCalleeAddress)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxExTraceAndCheck(t, ctx, builder, receipt)
 
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: DELEGATECALL to a cold, no-code address, with memory expansion.
-func TestDimTxOpDelegateCallColdNoCodeMemExpansion(t *testing.T) {
+func TestDimExDelegateCallColdNoCodeMemExpansion(t *testing.T) {
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -107,13 +107,13 @@ func TestDimTxOpDelegateCallColdNoCodeMemExpansion(t *testing.T) {
 
 	receipt := callOnContractWithOneArg(t, builder, auth, delegateCaller.TestDelegateCallEmptyColdMemExpansion, emptyAccountAddress)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxExTraceAndCheck(t, ctx, builder, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: DELEGATECALL to a warm, no-code address, with memory expansion.
-func TestDimTxOpDelegateCallWarmNoCodeMemExpansion(t *testing.T) {
+func TestDimExDelegateCallWarmNoCodeMemExpansion(t *testing.T) {
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -123,13 +123,13 @@ func TestDimTxOpDelegateCallWarmNoCodeMemExpansion(t *testing.T) {
 
 	receipt := callOnContractWithOneArg(t, builder, auth, delegateCaller.TestDelegateCallEmptyWarmMemExpansion, emptyAccountAddress)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxExTraceAndCheck(t, ctx, builder, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: DELEGATECALL to a cold contract address, with memory expansion.
-func TestDimTxOpDelegateCallColdContractMemExpansion(t *testing.T) {
+func TestDimExDelegateCallColdContractMemExpansion(t *testing.T) {
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -139,13 +139,13 @@ func TestDimTxOpDelegateCallColdContractMemExpansion(t *testing.T) {
 
 	receipt := callOnContractWithOneArg(t, builder, auth, delegateCaller.TestDelegateCallNonEmptyColdMemExpansion, delegateCalleeAddress)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxExTraceAndCheck(t, ctx, builder, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: DELEGATECALL to a warm contract address, with memory expansion.
-func TestDimTxOpDelegateCallWarmContractMemExpansion(t *testing.T) {
+func TestDimExDelegateCallWarmContractMemExpansion(t *testing.T) {
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -155,13 +155,13 @@ func TestDimTxOpDelegateCallWarmContractMemExpansion(t *testing.T) {
 
 	receipt := callOnContractWithOneArg(t, builder, auth, delegateCaller.TestDelegateCallNonEmptyWarmMemExpansion, delegateCalleeAddress)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxExTraceAndCheck(t, ctx, builder, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: STATICCALL to a cold, no-code address, no memory expansion.
-func TestDimTxOpStaticCallColdNoCodeMemUnchanged(t *testing.T) {
+func TestDimExStaticCallColdNoCodeMemUnchanged(t *testing.T) {
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -171,13 +171,13 @@ func TestDimTxOpStaticCallColdNoCodeMemUnchanged(t *testing.T) {
 
 	receipt := callOnContractWithOneArg(t, builder, auth, staticCaller.TestStaticCallEmptyCold, emptyAccountAddress)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxExTraceAndCheck(t, ctx, builder, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: STATICCALL to a warm, no-code address, no memory expansion.
-func TestDimTxOpStaticCallWarmNoCodeMemUnchanged(t *testing.T) {
+func TestDimExStaticCallWarmNoCodeMemUnchanged(t *testing.T) {
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -187,13 +187,13 @@ func TestDimTxOpStaticCallWarmNoCodeMemUnchanged(t *testing.T) {
 
 	receipt := callOnContractWithOneArg(t, builder, auth, staticCaller.TestStaticCallEmptyWarm, emptyAccountAddress)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxExTraceAndCheck(t, ctx, builder, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: STATICCALL to a cold contract address, no memory expansion.
-func TestDimTxOpStaticCallColdContractMemUnchanged(t *testing.T) {
+func TestDimExStaticCallColdContractMemUnchanged(t *testing.T) {
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -202,13 +202,13 @@ func TestDimTxOpStaticCallColdContractMemUnchanged(t *testing.T) {
 	staticCalleeAddress, _ := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployStaticCallee)
 	receipt := callOnContractWithOneArg(t, builder, auth, staticCaller.TestStaticCallNonEmptyCold, staticCalleeAddress)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxExTraceAndCheck(t, ctx, builder, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: STATICCALL to a warm contract address, no memory expansion.
-func TestDimTxOpStaticCallWarmContractMemUnchanged(t *testing.T) {
+func TestDimExStaticCallWarmContractMemUnchanged(t *testing.T) {
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -217,13 +217,13 @@ func TestDimTxOpStaticCallWarmContractMemUnchanged(t *testing.T) {
 	staticCalleeAddress, _ := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployStaticCallee)
 	receipt := callOnContractWithOneArg(t, builder, auth, staticCaller.TestStaticCallNonEmptyWarm, staticCalleeAddress)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxExTraceAndCheck(t, ctx, builder, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: STATICCALL to a cold, no-code address, with memory expansion.
-func TestDimTxOpStaticCallColdNoCodeMemExpansion(t *testing.T) {
+func TestDimExStaticCallColdNoCodeMemExpansion(t *testing.T) {
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -233,13 +233,13 @@ func TestDimTxOpStaticCallColdNoCodeMemExpansion(t *testing.T) {
 
 	receipt := callOnContractWithOneArg(t, builder, auth, staticCaller.TestStaticCallEmptyColdMemExpansion, emptyAccountAddress)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxExTraceAndCheck(t, ctx, builder, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: STATICCALL to a warm, no-code address, with memory expansion.
-func TestDimTxOpStaticCallWarmNoCodeMemExpansion(t *testing.T) {
+func TestDimExStaticCallWarmNoCodeMemExpansion(t *testing.T) {
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -249,13 +249,13 @@ func TestDimTxOpStaticCallWarmNoCodeMemExpansion(t *testing.T) {
 
 	receipt := callOnContractWithOneArg(t, builder, auth, staticCaller.TestStaticCallEmptyWarmMemExpansion, emptyAccountAddress)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxExTraceAndCheck(t, ctx, builder, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: STATICCALL to a cold contract address, with memory expansion.
-func TestDimTxOpStaticCallColdContractMemExpansion(t *testing.T) {
+func TestDimExStaticCallColdContractMemExpansion(t *testing.T) {
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -264,13 +264,13 @@ func TestDimTxOpStaticCallColdContractMemExpansion(t *testing.T) {
 	staticCalleeAddress, _ := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployStaticCallee)
 	receipt := callOnContractWithOneArg(t, builder, auth, staticCaller.TestStaticCallNonEmptyColdMemExpansion, staticCalleeAddress)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxExTraceAndCheck(t, ctx, builder, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: STATICCALL to a warm contract address, with memory expansion.
-func TestDimTxOpStaticCallWarmContractMemExpansion(t *testing.T) {
+func TestDimExStaticCallWarmContractMemExpansion(t *testing.T) {
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -279,5 +279,5 @@ func TestDimTxOpStaticCallWarmContractMemExpansion(t *testing.T) {
 	staticCalleeAddress, _ := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployStaticCallee)
 	receipt := callOnContractWithOneArg(t, builder, auth, staticCaller.TestStaticCallNonEmptyWarmMemExpansion, staticCalleeAddress)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxExTraceAndCheck(t, ctx, builder, receipt)
 }

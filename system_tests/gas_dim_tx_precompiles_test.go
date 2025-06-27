@@ -12,7 +12,7 @@ import (
 )
 
 // this test calls the ArbBlockNumber function on the ArbSys precompile
-func TestDimTxOpArbSysBlockNumberForSload(t *testing.T) {
+func TestDimExArbSysBlockNumberForSload(t *testing.T) {
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cleanup()
 	defer cancel()
@@ -24,13 +24,13 @@ func TestDimTxOpArbSysBlockNumberForSload(t *testing.T) {
 
 	_, receipt := callOnContract(t, builder, auth, precompileTestContract.TestArbSysArbBlockNumber)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxExTraceAndCheck(t, ctx, builder, receipt)
 }
 
 // this test calls a testActivateProgram function on a test contract
 // that in turn calls ActivateProgram on the ArbWasm precompile
 // this tests that the logic for counting gas works from a proxy contract
-func TestDimTxOpArbWasmActivateProgramForSstoreAndCallFromProxy(t *testing.T) {
+func TestDimExArbWasmActivateProgramForSstoreAndCallFromProxy(t *testing.T) {
 	builder, auth, cleanup := setupProgramTest(t, false, gasDimPrecompileBuilderOpts()...)
 	ctx := builder.ctx
 	l2client := builder.L2.Client
@@ -52,12 +52,12 @@ func TestDimTxOpArbWasmActivateProgramForSstoreAndCallFromProxy(t *testing.T) {
 	receipt, err := EnsureTxSucceeded(ctx, l2client, tx)
 	Require(t, err)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxExTraceAndCheck(t, ctx, builder, receipt)
 }
 
 // this test calls the ActivateProgram function on the ArbWasm precompile
 // which calls SSTORE and CALL inside the precompile, for this test
-func TestDimTxOpActivateProgramForSstoreAndCall(t *testing.T) {
+func TestDimExActivateProgramForSstoreAndCall(t *testing.T) {
 	builder, auth, cleanup := setupProgramTest(t, false, gasDimPrecompileBuilderOpts()...)
 	ctx := builder.ctx
 	l2client := builder.L2.Client
@@ -77,7 +77,7 @@ func TestDimTxOpActivateProgramForSstoreAndCall(t *testing.T) {
 	receipt, err := EnsureTxSucceeded(ctx, l2client, tx)
 	Require(t, err)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxExTraceAndCheck(t, ctx, builder, receipt)
 }
 
 // ******************************************************

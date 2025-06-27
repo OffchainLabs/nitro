@@ -26,7 +26,7 @@ import (
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: SSTORE cold slot from 0 to 0 (no state change).
-func TestDimTxOpSstoreColdZeroToZero(t *testing.T) {
+func TestDimExSstoreColdZeroToZero(t *testing.T) {
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -34,13 +34,13 @@ func TestDimTxOpSstoreColdZeroToZero(t *testing.T) {
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeploySstore)
 	_, receipt := callOnContract(t, builder, auth, contract.SstoreColdZeroToZero)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxExTraceAndCheck(t, ctx, builder, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: SSTORE cold slot from 0 to non-zero (state growth).
-func TestDimTxOpSstoreColdZeroToNonZeroValue(t *testing.T) {
+func TestDimExSstoreColdZeroToNonZeroValue(t *testing.T) {
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -48,13 +48,13 @@ func TestDimTxOpSstoreColdZeroToNonZeroValue(t *testing.T) {
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeploySstore)
 	_, receipt := callOnContract(t, builder, auth, contract.SstoreColdZeroToNonZero)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxExTraceAndCheck(t, ctx, builder, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: SSTORE cold slot from non-zero to 0 (state cleanup with refund).
-func TestDimTxOpSstoreColdNonZeroValueToZero(t *testing.T) {
+func TestDimExSstoreColdNonZeroValueToZero(t *testing.T) {
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -62,13 +62,13 @@ func TestDimTxOpSstoreColdNonZeroValueToZero(t *testing.T) {
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeploySstore)
 	_, receipt := callOnContract(t, builder, auth, contract.SstoreColdNonZeroValueToZero)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxExTraceAndCheck(t, ctx, builder, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: SSTORE cold slot from non-zero to same non-zero value (no state change).
-func TestDimTxOpSstoreColdNonZeroToSameNonZeroValue(t *testing.T) {
+func TestDimExSstoreColdNonZeroToSameNonZeroValue(t *testing.T) {
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -76,13 +76,13 @@ func TestDimTxOpSstoreColdNonZeroToSameNonZeroValue(t *testing.T) {
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeploySstore)
 	_, receipt := callOnContract(t, builder, auth, contract.SstoreColdNonZeroToSameNonZeroValue)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxExTraceAndCheck(t, ctx, builder, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: SSTORE cold slot from non-zero to different non-zero value (state update).
-func TestDimTxOpSstoreColdNonZeroToDifferentNonZeroValue(t *testing.T) {
+func TestDimExSstoreColdNonZeroToDifferentNonZeroValue(t *testing.T) {
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -90,13 +90,13 @@ func TestDimTxOpSstoreColdNonZeroToDifferentNonZeroValue(t *testing.T) {
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeploySstore)
 	_, receipt := callOnContract(t, builder, auth, contract.SstoreColdNonZeroToDifferentNonZeroValue)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxExTraceAndCheck(t, ctx, builder, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: SSTORE warm slot from 0 to 0 (no state change).
-func TestDimTxOpSstoreWarmZeroToZero(t *testing.T) {
+func TestDimExSstoreWarmZeroToZero(t *testing.T) {
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -104,13 +104,13 @@ func TestDimTxOpSstoreWarmZeroToZero(t *testing.T) {
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeploySstore)
 	_, receipt := callOnContract(t, builder, auth, contract.SstoreWarmZeroToZero)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxExTraceAndCheck(t, ctx, builder, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: SSTORE warm slot from 0 to non-zero (state growth).
-func TestDimTxOpSstoreWarmZeroToNonZeroValue(t *testing.T) {
+func TestDimExSstoreWarmZeroToNonZeroValue(t *testing.T) {
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -118,13 +118,13 @@ func TestDimTxOpSstoreWarmZeroToNonZeroValue(t *testing.T) {
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeploySstore)
 	_, receipt := callOnContract(t, builder, auth, contract.SstoreWarmZeroToNonZeroValue)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxExTraceAndCheck(t, ctx, builder, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: SSTORE warm slot from non-zero to 0 (state cleanup with refund).
-func TestDimTxOpSstoreWarmNonZeroValueToZero(t *testing.T) {
+func TestDimExSstoreWarmNonZeroValueToZero(t *testing.T) {
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -132,13 +132,13 @@ func TestDimTxOpSstoreWarmNonZeroValueToZero(t *testing.T) {
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeploySstore)
 	_, receipt := callOnContract(t, builder, auth, contract.SstoreWarmNonZeroValueToZero)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxExTraceAndCheck(t, ctx, builder, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: SSTORE warm slot from non-zero to same non-zero value (no state change).
-func TestDimTxOpSstoreWarmNonZeroToSameNonZeroValue(t *testing.T) {
+func TestDimExSstoreWarmNonZeroToSameNonZeroValue(t *testing.T) {
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -146,13 +146,13 @@ func TestDimTxOpSstoreWarmNonZeroToSameNonZeroValue(t *testing.T) {
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeploySstore)
 	_, receipt := callOnContract(t, builder, auth, contract.SstoreWarmNonZeroToSameNonZeroValue)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxExTraceAndCheck(t, ctx, builder, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: SSTORE warm slot from non-zero to different non-zero value (state update).
-func TestDimTxOpSstoreWarmNonZeroToDifferentNonZeroValue(t *testing.T) {
+func TestDimExSstoreWarmNonZeroToDifferentNonZeroValue(t *testing.T) {
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -160,13 +160,13 @@ func TestDimTxOpSstoreWarmNonZeroToDifferentNonZeroValue(t *testing.T) {
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeploySstore)
 	_, receipt := callOnContract(t, builder, auth, contract.SstoreWarmNonZeroToDifferentNonZeroValue)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxExTraceAndCheck(t, ctx, builder, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: Multiple SSTORE operations on warm slot: non-zero -> non-zero -> different non-zero.
-func TestDimTxOpSstoreMultipleWarmNonZeroToNonZeroToNonZero(t *testing.T) {
+func TestDimExSstoreMultipleWarmNonZeroToNonZeroToNonZero(t *testing.T) {
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -174,13 +174,13 @@ func TestDimTxOpSstoreMultipleWarmNonZeroToNonZeroToNonZero(t *testing.T) {
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeploySstore)
 	_, receipt := callOnContract(t, builder, auth, contract.SstoreMultipleWarmNonZeroToNonZeroToNonZero)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxExTraceAndCheck(t, ctx, builder, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: Multiple SSTORE operations on warm slot: non-zero -> non-zero -> same non-zero (with refund).
-func TestDimTxOpSstoreMultipleWarmNonZeroToNonZeroToSameNonZero(t *testing.T) {
+func TestDimExSstoreMultipleWarmNonZeroToNonZeroToSameNonZero(t *testing.T) {
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -188,13 +188,13 @@ func TestDimTxOpSstoreMultipleWarmNonZeroToNonZeroToSameNonZero(t *testing.T) {
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeploySstore)
 	_, receipt := callOnContract(t, builder, auth, contract.SstoreMultipleWarmNonZeroToNonZeroToSameNonZero)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxExTraceAndCheck(t, ctx, builder, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: Multiple SSTORE operations on warm slot: non-zero -> zero -> non-zero (refund adjustment).
-func TestDimTxOpSstoreMultipleWarmNonZeroToZeroToNonZero(t *testing.T) {
+func TestDimExSstoreMultipleWarmNonZeroToZeroToNonZero(t *testing.T) {
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -202,13 +202,13 @@ func TestDimTxOpSstoreMultipleWarmNonZeroToZeroToNonZero(t *testing.T) {
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeploySstore)
 	_, receipt := callOnContract(t, builder, auth, contract.SstoreMultipleWarmNonZeroToZeroToNonZero)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxExTraceAndCheck(t, ctx, builder, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: Multiple SSTORE operations on warm slot: non-zero -> zero -> same non-zero (refund adjustment).
-func TestDimTxOpSstoreMultipleWarmNonZeroToZeroToSameNonZero(t *testing.T) {
+func TestDimExSstoreMultipleWarmNonZeroToZeroToSameNonZero(t *testing.T) {
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -216,13 +216,13 @@ func TestDimTxOpSstoreMultipleWarmNonZeroToZeroToSameNonZero(t *testing.T) {
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeploySstore)
 	_, receipt := callOnContract(t, builder, auth, contract.SstoreMultipleWarmNonZeroToZeroToSameNonZero)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxExTraceAndCheck(t, ctx, builder, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: Multiple SSTORE operations on warm slot: zero -> non-zero -> different non-zero.
-func TestDimTxOpSstoreMultipleWarmZeroToNonZeroToNonZero(t *testing.T) {
+func TestDimExSstoreMultipleWarmZeroToNonZeroToNonZero(t *testing.T) {
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -230,13 +230,13 @@ func TestDimTxOpSstoreMultipleWarmZeroToNonZeroToNonZero(t *testing.T) {
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeploySstore)
 	_, receipt := callOnContract(t, builder, auth, contract.SstoreMultipleWarmZeroToNonZeroToNonZero)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxExTraceAndCheck(t, ctx, builder, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: Multiple SSTORE operations on warm slot: zero -> non-zero -> zero (with refund).
-func TestDimTxOpSstoreMultipleWarmZeroToNonZeroBackToZero(t *testing.T) {
+func TestDimExSstoreMultipleWarmZeroToNonZeroBackToZero(t *testing.T) {
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -244,5 +244,5 @@ func TestDimTxOpSstoreMultipleWarmZeroToNonZeroBackToZero(t *testing.T) {
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeploySstore)
 	_, receipt := callOnContract(t, builder, auth, contract.SstoreMultipleWarmZeroToNonZeroBackToZero)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxExTraceAndCheck(t, ctx, builder, receipt)
 }

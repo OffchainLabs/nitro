@@ -8,7 +8,7 @@ import (
 
 // This test runs the tracer on a transaction that includes a call to a
 // stylus contract.
-func TestDimTxOpStylus(t *testing.T) {
+func TestDimExStylus(t *testing.T) {
 	builder, auth, cleanup := setupProgramTest(t, true, gasDimPrecompileBuilderOpts()...)
 	ctx := builder.ctx
 	l2client := builder.L2.Client
@@ -25,13 +25,13 @@ func TestDimTxOpStylus(t *testing.T) {
 	receipt, err := EnsureTxSucceeded(ctx, l2client, tx)
 	Require(t, err)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxExTraceAndCheck(t, ctx, builder, receipt)
 }
 
 // This test calls the Keccak wasm program indirectly via
 // a proxy solidity contract in the EVM, testing the
 // flow from non-stylus to stylus
-func TestDimTxOpStylusKeccakForSloadFromProxy(t *testing.T) {
+func TestDimExStylusKeccakForSloadFromProxy(t *testing.T) {
 	builder, auth, cleanup := setupProgramTest(t, true, gasDimPrecompileBuilderOpts()...)
 	ctx := builder.ctx
 	l2client := builder.L2.Client
@@ -46,5 +46,5 @@ func TestDimTxOpStylusKeccakForSloadFromProxy(t *testing.T) {
 	receipt, err := EnsureTxSucceeded(ctx, l2client, tx)
 	Require(t, err)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxExTraceAndCheck(t, ctx, builder, receipt)
 }

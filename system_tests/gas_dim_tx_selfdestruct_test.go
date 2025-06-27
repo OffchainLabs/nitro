@@ -35,7 +35,7 @@ import (
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: SELFDESTRUCT to a cold, virgin address, no value transfer.
-func TestDimTxOpSelfdestructColdNoTransferVirgin(t *testing.T) {
+func TestDimExSelfdestructColdNoTransferVirgin(t *testing.T) {
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -46,13 +46,13 @@ func TestDimTxOpSelfdestructColdNoTransferVirgin(t *testing.T) {
 	// call selfDestructor.warmSelfDestructor(0xdeadbeef)
 	receipt := callOnContractWithOneArg(t, builder, auth, selfDestructor.SelfDestruct, emptyAccountAddress)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxExTraceAndCheck(t, ctx, builder, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: SELFDESTRUCT to a cold, funded address, no value transfer.
-func TestDimTxOpSelfdestructColdNoTransferFunded(t *testing.T) {
+func TestDimExSelfdestructColdNoTransferFunded(t *testing.T) {
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -67,13 +67,13 @@ func TestDimTxOpSelfdestructColdNoTransferFunded(t *testing.T) {
 	// call selfDestructor.warmSelfDestructor(payableCounterAddress)
 	receipt := callOnContractWithOneArg(t, builder, auth, selfDestructor.SelfDestruct, payableCounterAddress)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxExTraceAndCheck(t, ctx, builder, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: SELFDESTRUCT to a cold, virgin address with value transfer.
-func TestDimTxOpSelfdestructColdPayingVirgin(t *testing.T) {
+func TestDimExSelfdestructColdPayingVirgin(t *testing.T) {
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -87,13 +87,13 @@ func TestDimTxOpSelfdestructColdPayingVirgin(t *testing.T) {
 	// call selfDestructor.SelfDestruct(emptyAccountAddress) - which is cold
 	receipt := callOnContractWithOneArg(t, builder, auth, selfDestructor.SelfDestruct, emptyAccountAddress)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxExTraceAndCheck(t, ctx, builder, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: SELFDESTRUCT to a cold, funded address with value transfer.
-func TestDimTxOpSelfdestructColdPayingFunded(t *testing.T) {
+func TestDimExSelfdestructColdPayingFunded(t *testing.T) {
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -108,13 +108,13 @@ func TestDimTxOpSelfdestructColdPayingFunded(t *testing.T) {
 	// call selfDestructor.SelfDestruct(emptyAccountAddress) - which is cold
 	receipt := callOnContractWithOneArg(t, builder, auth, selfDestructor.SelfDestruct, emptyAccount)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxExTraceAndCheck(t, ctx, builder, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: SELFDESTRUCT to a warm, virgin address, no value transfer.
-func TestDimTxOpSelfdestructWarmNoTransferVirgin(t *testing.T) {
+func TestDimExSelfdestructWarmNoTransferVirgin(t *testing.T) {
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -125,13 +125,13 @@ func TestDimTxOpSelfdestructWarmNoTransferVirgin(t *testing.T) {
 	// call selfDestructor.warmSelfDestructor(0xdeadbeef)
 	receipt := callOnContractWithOneArg(t, builder, auth, selfDestructor.WarmEmptySelfDestructor, emptyAccountAddress)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxExTraceAndCheck(t, ctx, builder, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: SELFDESTRUCT to a warm, funded address, no value transfer.
-func TestDimTxOpSelfdestructWarmNoTransferFunded(t *testing.T) {
+func TestDimExSelfdestructWarmNoTransferFunded(t *testing.T) {
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -146,13 +146,13 @@ func TestDimTxOpSelfdestructWarmNoTransferFunded(t *testing.T) {
 	// call selfDestructor.warmSelfDestructor(payableCounterAddress)
 	receipt := callOnContractWithOneArg(t, builder, auth, selfDestructor.WarmSelfDestructor, payableCounterAddress)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxExTraceAndCheck(t, ctx, builder, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: SELFDESTRUCT to a warm, virgin address with value transfer.
-func TestDimTxOpSelfdestructWarmPayingVirgin(t *testing.T) {
+func TestDimExSelfdestructWarmPayingVirgin(t *testing.T) {
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -166,13 +166,13 @@ func TestDimTxOpSelfdestructWarmPayingVirgin(t *testing.T) {
 	// call selfDestructor.warmSelfDestructor(0xdeadbeef)
 	receipt := callOnContractWithOneArg(t, builder, auth, selfDestructor.WarmEmptySelfDestructor, emptyAccountAddress)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxExTraceAndCheck(t, ctx, builder, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: SELFDESTRUCT to a warm, funded address with value transfer.
-func TestDimTxOpSelfdestructWarmPayingFunded(t *testing.T) {
+func TestDimExSelfdestructWarmPayingFunded(t *testing.T) {
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -188,5 +188,5 @@ func TestDimTxOpSelfdestructWarmPayingFunded(t *testing.T) {
 	// call selfDestructor.warmSelfDestructor(payableCounterAddress)
 	receipt := callOnContractWithOneArg(t, builder, auth, selfDestructor.WarmSelfDestructor, payableCounterAddress)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxExTraceAndCheck(t, ctx, builder, receipt)
 }
