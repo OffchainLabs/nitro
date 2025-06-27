@@ -9,7 +9,6 @@ import (
 	"context"
 	"fmt"
 	"math/big"
-	"net"
 	"net/http"
 	"os"
 	"strings"
@@ -20,6 +19,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
 	solimpl "github.com/offchainlabs/bold/chain-abstraction/sol-implementation"
@@ -35,6 +35,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
+	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/daprovider/daclient"
 	"github.com/offchainlabs/nitro/daprovider/referenceda"
 	dapserver "github.com/offchainlabs/nitro/daprovider/server"
@@ -105,6 +106,34 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, spawnerOpts ...server_arb.S
 		}
 	})
 
+	// Create evil DA provider for node B
+	evilProvider := NewEvilDAProvider()
+
+	// Create DA server for node B with evil provider
+	serverConfig := &dapserver.ServerConfig{
+		Addr:               "127.0.0.1",
+		Port:               0, // automatic port selection
+		EnableDAWriter:     true,
+		ServerTimeouts:     dapserver.DefaultServerConfig.ServerTimeouts,
+		RPCServerBodyLimit: dapserver.DefaultServerConfig.RPCServerBodyLimit,
+	}
+
+	// Note: We can use a regular writer since both nodes share the singleton storage
+	writer := referenceda.NewWriter()
+	providerServerB, err := dapserver.NewServerWithDAPProvider(ctx, serverConfig, evilProvider, writer, evilProvider)
+	Require(t, err)
+
+	// Extract the actual address with port
+	providerURLNodeB := strings.TrimPrefix(providerServerB.Addr, "http://")
+	providerURLNodeB = fmt.Sprintf("http://%s", providerURLNodeB)
+	t.Logf("Started evil DA provider server at %s", providerURLNodeB)
+
+	t.Cleanup(func() {
+		if err := providerServerB.Shutdown(context.Background()); err != nil {
+			t.Logf("Error shutting down provider server B: %v", err)
+		}
+	})
+
 	var transferGas = util.NormalizeL2GasForL1GasInitial(800_000, params.GWei) // include room for aggregator L1 costs
 	l2chainConfig := chaininfo.ArbitrumDevTestChainConfig()
 	l2info := NewBlockChainTestInfo(
@@ -152,8 +181,7 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, spawnerOpts ...server_arb.S
 	l2nodeConfig := arbnode.ConfigDefaultL1Test()
 	l2nodeConfig.DA.Mode = "external"
 	l2nodeConfig.DA.ExternalProvider.Enable = true
-	// TODO: Replace with actual external DA provider URL once available
-	l2nodeConfig.DA.ExternalProvider.RPC.URL = "http://placeholder-da-provider-b:8080"
+	l2nodeConfig.DA.ExternalProvider.RPC.URL = providerURLNodeB
 
 	_, l2nodeB, _ := create2ndNodeWithConfigForBoldProtocol(
 		t,
@@ -254,8 +282,7 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, spawnerOpts ...server_arb.S
 
 	daClientConfigB := func() *rpcclient.ClientConfig {
 		return &rpcclient.ClientConfig{
-			URL: "http://placeholder-da-provider-b:8080",
-			// Add other config fields as needed when real DA provider is available
+			URL: providerURLNodeB,
 		}
 	}
 	daClientB, err := daclient.NewClient(ctx, daClientConfigB)
@@ -371,22 +398,49 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, spawnerOpts ...server_arb.S
 	_, err = evilUpgradeExec.ExecuteCall(&evilRollupOwnerOpts, evilSeqInbox, data)
 	Require(t, err)
 
+	// Create DA writers for both nodes
+	daWriterA := referenceda.NewWriter()
+
 	totalMessagesPosted := int64(0)
 	numMessagesPerBatch := int64(5)
 	divergeAt := int64(-1)
-	makeBoldBatch(t, l2nodeA, l2info, l1client, &sequencerTxOpts, honestSeqInboxBinding, honestSeqInbox, numMessagesPerBatch, divergeAt)
-	l2info.Accounts["Owner"].Nonce.Store(0)
-	makeBoldBatch(t, l2nodeB, l2info, l1client, &sequencerTxOpts, evilSeqInboxBinding, evilSeqInbox, numMessagesPerBatch, divergeAt)
+
+	// First batch - no divergence
+	goodBatchData := createBoldBatchData(t, l2info, numMessagesPerBatch, divergeAt)
+
+	// Post good batch through node A's DA and get certificate
+	certificate := postBatchWithDA(t, l2nodeA, l1client, &sequencerTxOpts,
+		honestSeqInboxBinding, honestSeqInbox, goodBatchData, daWriterA)
+
+	// Post same certificate to node B's sequencer inbox
+	// Since there's no divergence yet, evil provider will just pass through
+	postBatchWithExistingCertificate(t, l2nodeB, l1client, &sequencerTxOpts,
+		evilSeqInboxBinding, evilSeqInbox, certificate)
+
 	totalMessagesPosted += numMessagesPerBatch
 
-	// Next, we post another batch, this time containing more messages.
+	// Next, we post another batch, this time with divergence.
 	// We diverge at message index 5 within the evil node's batch.
 	l2info.Accounts["Owner"].Nonce.Store(5)
 	numMessagesPerBatch = int64(10)
-	makeBoldBatch(t, l2nodeA, l2info, l1client, &sequencerTxOpts, honestSeqInboxBinding, honestSeqInbox, numMessagesPerBatch, divergeAt)
-	l2info.Accounts["Owner"].Nonce.Store(5)
-	divergeAt = int64(5)
-	makeBoldBatch(t, l2nodeB, l2info, l1client, &sequencerTxOpts, evilSeqInboxBinding, evilSeqInbox, numMessagesPerBatch, divergeAt)
+
+	// Create both good and evil batch data
+	goodBatchData2 := createBoldBatchData(t, l2info, numMessagesPerBatch, -1) // No divergence
+	evilBatchData2 := createBoldBatchData(t, l2info, numMessagesPerBatch, 5)  // Diverge at index 5
+
+	// Post good batch through node A and get certificate
+	certificate2 := postBatchWithDA(t, l2nodeA, l1client, &sequencerTxOpts,
+		honestSeqInboxBinding, honestSeqInbox, goodBatchData2, daWriterA)
+
+	// Configure evil mapping BEFORE node B processes the certificate
+	certHash := crypto.Keccak256Hash(certificate2)
+	evilProvider.SetMapping(certHash, evilBatchData2)
+
+	// Post same certificate to node B's sequencer inbox
+	// Now the evil provider will return different data
+	postBatchWithExistingCertificate(t, l2nodeB, l1client, &sequencerTxOpts,
+		evilSeqInboxBinding, evilSeqInbox, certificate2)
+
 	totalMessagesPosted += numMessagesPerBatch
 
 	bcA, err := l2nodeA.InboxTracker.GetBatchCount()
