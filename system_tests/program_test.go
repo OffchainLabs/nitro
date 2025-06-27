@@ -1682,7 +1682,7 @@ func setupProgramTest(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder))
 ) {
 	ctx, cancel := context.WithCancel(context.Background())
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).DontParalellise()
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
 
 	for _, opt := range builderOpts {
 		opt(builder)
@@ -2260,10 +2260,13 @@ func deployWasmAndGetEntrySizeEstimateBytes(
 	return programAddress, entrySizeEstimateBytes
 }
 
-// TestWasmLruCache shouldn't be run in parallel as it targets global Wasm LRU Cache,
-// programs.ClearWasmLruCache is called in the test.
 func TestWasmLruCache(t *testing.T) {
-	builder, auth, cleanup := setupProgramTest(t, true)
+	builder, auth, cleanup := setupProgramTest(t, true, func(b *NodeBuilder) {
+		// TestWasmLruCache shouldn't be run in parallel as it targets global Wasm LRU Cache,
+		// programs.ClearWasmLruCache is called in the test.
+		b.DontParalellise()
+	})
+
 	ctx := builder.ctx
 	l2info := builder.L2Info
 	l2client := builder.L2.Client
@@ -2358,10 +2361,12 @@ func checkLruCacheMetrics(t *testing.T, expected programs.WasmLruCacheMetrics) {
 	}
 }
 
-// TestWasmLongTermCache shouldn't be run in parallel as it targets global Wasm Long Term Cache,
-// programs.ClearWasmLongTermCache is called in the test.
 func TestWasmLongTermCache(t *testing.T) {
-	builder, ownerAuth, cleanup := setupProgramTest(t, true)
+	builder, ownerAuth, cleanup := setupProgramTest(t, true, func(b *NodeBuilder) {
+		// TestWasmLongTermCache shouldn't be run in parallel as it targets global Wasm Long Term Cache,
+		// programs.ClearWasmLongTermCache is called in the test.
+		b.DontParalellise()
+	})
 	ctx := builder.ctx
 	l2info := builder.L2Info
 	l2client := builder.L2.Client
@@ -2496,10 +2501,12 @@ func TestWasmLongTermCache(t *testing.T) {
 	})
 }
 
-// TestRepopulateWasmLongTermCacheFromLru shouldn't be run in parallel as it targets global Wasm Long Term Cache and Wasm LRU Cache,
-// programs.ClearWasmLongTermCache and programs.ClearWasmLruCache are called in the test.o
 func TestRepopulateWasmLongTermCacheFromLru(t *testing.T) {
-	builder, ownerAuth, cleanup := setupProgramTest(t, true)
+	builder, ownerAuth, cleanup := setupProgramTest(t, true, func(b *NodeBuilder) {
+		// TestRepopulateWasmLongTermCacheFromLru shouldn't be run in parallel as it targets global Wasm Long Term Cache and Wasm LRU Cache,
+		// programs.ClearWasmLongTermCache and programs.ClearWasmLruCache are called in the test.o
+		b.DontParalellise()
+	})
 	ctx := builder.ctx
 	l2info := builder.L2Info
 	l2client := builder.L2.Client
