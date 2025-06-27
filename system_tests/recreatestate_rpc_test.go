@@ -24,6 +24,7 @@ import (
 
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/util"
+	"github.com/offchainlabs/nitro/util/testhelpers/env"
 )
 
 func makeSomeTransfers(t *testing.T, ctx context.Context, builder *NodeBuilder, txCount uint64) {
@@ -40,14 +41,12 @@ func makeSomeTransfers(t *testing.T, ctx context.Context, builder *NodeBuilder, 
 	}
 }
 
-func prepareNodeWithHistory(t *testing.T, ctx context.Context, execConfig *gethexec.Config, txCount uint64) (*NodeBuilder, func()) {
+func buildWithHistory(t *testing.T, ctx context.Context, builder *NodeBuilder, blockCount uint64) func() {
 	t.Helper()
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
-	builder.execConfig = execConfig
 	cleanup := builder.Build(t)
 	builder.L2Info.GenerateAccount("User2")
-	makeSomeTransfers(t, ctx, builder, txCount)
-	return builder, cleanup
+	makeSomeTransfers(t, ctx, builder, blockCount)
+	return cleanup
 }
 
 func fillHeaderCache(t *testing.T, bc *core.BlockChain, from, to uint64) {
@@ -97,19 +96,17 @@ func removeStatesFromDb(t *testing.T, bc *core.BlockChain, db ethdb.Database, fr
 func TestRecreateStateForRPCNoDepthLimit(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	execConfig := ExecConfigDefaultTest(t)
-	execConfig.RPC.MaxRecreateStateDepth = arbitrum.InfiniteMaxRecreateStateDepth
-	execConfig.Sequencer.MaxBlockSpeed = 0
-	execConfig.Sequencer.MaxTxDataSize = 150 // 1 test tx ~= 110
-	execConfig.Caching.Archive = true
-	// For now Archive node should use HashScheme
-	execConfig.Caching.StateScheme = rawdb.HashScheme
-	execConfig.Caching.SnapshotCache = 0 // disable snapshots
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder.execConfig.RPC.MaxRecreateStateDepth = arbitrum.InfiniteMaxRecreateStateDepth
+	builder.execConfig.Sequencer.MaxBlockSpeed = 0
+	builder.execConfig.Sequencer.MaxTxDataSize = 150 // 1 test tx ~= 110
+	builder.execConfig.Caching.Archive = true
+	builder.execConfig.Caching.SnapshotCache = 0 // disable snapshots
 	// disable trie/Database.cleans cache, so as states removed from ChainDb won't be cached there
-	execConfig.Caching.TrieCleanCache = 0
-	execConfig.Caching.MaxNumberOfBlocksToSkipStateSaving = 0
-	execConfig.Caching.MaxAmountOfGasToSkipStateSaving = 0
-	builder, cancelNode := prepareNodeWithHistory(t, ctx, execConfig, 32)
+	builder.execConfig.Caching.TrieCleanCache = 0
+	builder.execConfig.Caching.MaxNumberOfBlocksToSkipStateSaving = 0
+	builder.execConfig.Caching.MaxAmountOfGasToSkipStateSaving = 0
+	cancelNode := buildWithHistory(t, ctx, builder, 32)
 	defer cancelNode()
 	execNode, l2client := builder.L2.ExecNode, builder.L2.Client
 	bc := execNode.Backend.ArbInterface().BlockChain()
@@ -136,18 +133,16 @@ func TestRecreateStateForRPCBigEnoughDepthLimit(t *testing.T) {
 	defer cancel()
 	// #nosec G115
 	depthGasLimit := int64(256 * util.NormalizeL2GasForL1GasInitial(800_000, params.GWei))
-	execConfig := ExecConfigDefaultTest(t)
-	execConfig.RPC.MaxRecreateStateDepth = depthGasLimit
-	execConfig.Sequencer.MaxBlockSpeed = 0
-	execConfig.Sequencer.MaxTxDataSize = 150 // 1 test tx ~= 110
-	execConfig.Caching.Archive = true
-	// For now Archive node should use HashScheme
-	execConfig.Caching.StateScheme = rawdb.HashScheme
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder.execConfig.RPC.MaxRecreateStateDepth = depthGasLimit
+	builder.execConfig.Sequencer.MaxBlockSpeed = 0
+	builder.execConfig.Sequencer.MaxTxDataSize = 150 // 1 test tx ~= 110
+	builder.execConfig.Caching.Archive = true
 	// disable trie/Database.cleans cache, so as states removed from ChainDb won't be cached there
-	execConfig.Caching.TrieCleanCache = 0
-	execConfig.Caching.MaxNumberOfBlocksToSkipStateSaving = 0
-	execConfig.Caching.MaxAmountOfGasToSkipStateSaving = 0
-	builder, cancelNode := prepareNodeWithHistory(t, ctx, execConfig, 32)
+	builder.execConfig.Caching.TrieCleanCache = 0
+	builder.execConfig.Caching.MaxNumberOfBlocksToSkipStateSaving = 0
+	builder.execConfig.Caching.MaxAmountOfGasToSkipStateSaving = 0
+	cancelNode := buildWithHistory(t, ctx, builder, 32)
 	defer cancelNode()
 	execNode, l2client := builder.L2.ExecNode, builder.L2.Client
 	bc := execNode.Backend.ArbInterface().BlockChain()
@@ -173,18 +168,16 @@ func TestRecreateStateForRPCBigEnoughDepthLimit(t *testing.T) {
 func TestRecreateStateForRPCDepthLimitExceeded(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	execConfig := ExecConfigDefaultTest(t)
-	execConfig.RPC.MaxRecreateStateDepth = int64(200)
-	execConfig.Sequencer.MaxBlockSpeed = 0
-	execConfig.Sequencer.MaxTxDataSize = 150 // 1 test tx ~= 110
-	execConfig.Caching.Archive = true
-	// For now Archive node should use HashScheme
-	execConfig.Caching.StateScheme = rawdb.HashScheme
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder.execConfig.RPC.MaxRecreateStateDepth = int64(200)
+	builder.execConfig.Sequencer.MaxBlockSpeed = 0
+	builder.execConfig.Sequencer.MaxTxDataSize = 150 // 1 test tx ~= 110
+	builder.execConfig.Caching.Archive = true
 	// disable trie/Database.cleans cache, so as states removed from ChainDb won't be cached there
-	execConfig.Caching.TrieCleanCache = 0
-	execConfig.Caching.MaxNumberOfBlocksToSkipStateSaving = 0
-	execConfig.Caching.MaxAmountOfGasToSkipStateSaving = 0
-	builder, cancelNode := prepareNodeWithHistory(t, ctx, execConfig, 32)
+	builder.execConfig.Caching.TrieCleanCache = 0
+	builder.execConfig.Caching.MaxNumberOfBlocksToSkipStateSaving = 0
+	builder.execConfig.Caching.MaxAmountOfGasToSkipStateSaving = 0
+	cancelNode := buildWithHistory(t, ctx, builder, 32)
 	defer cancelNode()
 	execNode, l2client := builder.L2.ExecNode, builder.L2.Client
 	bc := execNode.Backend.ArbInterface().BlockChain()
@@ -210,18 +203,17 @@ func TestRecreateStateForRPCMissingBlockParent(t *testing.T) {
 	var headerCacheLimit uint64 = 512
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	execConfig := ExecConfigDefaultTest(t)
-	execConfig.RPC.MaxRecreateStateDepth = arbitrum.InfiniteMaxRecreateStateDepth
-	execConfig.Sequencer.MaxBlockSpeed = 0
-	execConfig.Sequencer.MaxTxDataSize = 150 // 1 test tx ~= 110
-	execConfig.Caching.Archive = true
-	// For now Archive node should use HashScheme
-	execConfig.Caching.StateScheme = rawdb.HashScheme
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+
+	builder.execConfig.RPC.MaxRecreateStateDepth = arbitrum.InfiniteMaxRecreateStateDepth
+	builder.execConfig.Sequencer.MaxBlockSpeed = 0
+	builder.execConfig.Sequencer.MaxTxDataSize = 150 // 1 test tx ~= 110
+	builder.execConfig.Caching.Archive = true
 	// disable trie/Database.cleans cache, so as states removed from ChainDb won't be cached there
-	execConfig.Caching.TrieCleanCache = 0
-	execConfig.Caching.MaxNumberOfBlocksToSkipStateSaving = 0
-	execConfig.Caching.MaxAmountOfGasToSkipStateSaving = 0
-	builder, cancelNode := prepareNodeWithHistory(t, ctx, execConfig, headerCacheLimit+5)
+	builder.execConfig.Caching.TrieCleanCache = 0
+	builder.execConfig.Caching.MaxNumberOfBlocksToSkipStateSaving = 0
+	builder.execConfig.Caching.MaxAmountOfGasToSkipStateSaving = 0
+	cancelNode := buildWithHistory(t, ctx, builder, headerCacheLimit+5)
 	defer cancelNode()
 	execNode, l2client := builder.L2.ExecNode, builder.L2.Client
 	bc := execNode.Backend.ArbInterface().BlockChain()
@@ -257,19 +249,17 @@ func TestRecreateStateForRPCMissingBlockParent(t *testing.T) {
 func TestRecreateStateForRPCBeyondGenesis(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
 
-	execConfig := ExecConfigDefaultTest(t)
-	execConfig.RPC.MaxRecreateStateDepth = arbitrum.InfiniteMaxRecreateStateDepth
-	execConfig.Sequencer.MaxBlockSpeed = 0
-	execConfig.Sequencer.MaxTxDataSize = 150 // 1 test tx ~= 110
-	execConfig.Caching.Archive = true
-	// For now Archive node should use HashScheme
-	execConfig.Caching.StateScheme = rawdb.HashScheme
+	builder.execConfig.RPC.MaxRecreateStateDepth = arbitrum.InfiniteMaxRecreateStateDepth
+	builder.execConfig.Sequencer.MaxBlockSpeed = 0
+	builder.execConfig.Sequencer.MaxTxDataSize = 150 // 1 test tx ~= 110
+	builder.execConfig.Caching.Archive = true
 	// disable trie/Database.cleans cache, so as states removed from ChainDb won't be cached there
-	execConfig.Caching.TrieCleanCache = 0
-	execConfig.Caching.MaxNumberOfBlocksToSkipStateSaving = 0
-	execConfig.Caching.MaxAmountOfGasToSkipStateSaving = 0
-	builder, cancelNode := prepareNodeWithHistory(t, ctx, execConfig, 32)
+	builder.execConfig.Caching.TrieCleanCache = 0
+	builder.execConfig.Caching.MaxNumberOfBlocksToSkipStateSaving = 0
+	builder.execConfig.Caching.MaxAmountOfGasToSkipStateSaving = 0
+	cancelNode := buildWithHistory(t, ctx, builder, 32)
 	execNode, l2client := builder.L2.ExecNode, builder.L2.Client
 	defer cancelNode()
 	bc := execNode.Backend.ArbInterface().BlockChain()
@@ -296,19 +286,18 @@ func TestRecreateStateForRPCBlockNotFoundWhileRecreating(t *testing.T) {
 	var blockCacheLimit uint64 = 256
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	execConfig := ExecConfigDefaultTest(t)
-	execConfig.RPC.MaxRecreateStateDepth = arbitrum.InfiniteMaxRecreateStateDepth
-	execConfig.Sequencer.MaxBlockSpeed = 0
-	execConfig.Sequencer.MaxTxDataSize = 150 // 1 test tx ~= 110
-	execConfig.Caching.Archive = true
-	// For now Archive node should use HashScheme
-	execConfig.Caching.StateScheme = rawdb.HashScheme
-	// disable trie/Database.cleans cache, so as states removed from ChainDb won't be cached there
-	execConfig.Caching.TrieCleanCache = 0
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
 
-	execConfig.Caching.MaxNumberOfBlocksToSkipStateSaving = 0
-	execConfig.Caching.MaxAmountOfGasToSkipStateSaving = 0
-	builder, cancelNode := prepareNodeWithHistory(t, ctx, execConfig, blockCacheLimit+4)
+	builder.execConfig.RPC.MaxRecreateStateDepth = arbitrum.InfiniteMaxRecreateStateDepth
+	builder.execConfig.Sequencer.MaxBlockSpeed = 0
+	builder.execConfig.Sequencer.MaxTxDataSize = 150 // 1 test tx ~= 110
+	builder.execConfig.Caching.Archive = true
+	// disable trie/Database.cleans cache, so as states removed from ChainDb won't be cached there
+	builder.execConfig.Caching.TrieCleanCache = 0
+
+	builder.execConfig.Caching.MaxNumberOfBlocksToSkipStateSaving = 0
+	builder.execConfig.Caching.MaxAmountOfGasToSkipStateSaving = 0
+	cancelNode := buildWithHistory(t, ctx, builder, blockCacheLimit+4)
 	execNode, l2client := builder.L2.ExecNode, builder.L2.Client
 	defer cancelNode()
 	bc := execNode.Backend.ArbInterface().BlockChain()
@@ -340,22 +329,19 @@ func TestRecreateStateForRPCBlockNotFoundWhileRecreating(t *testing.T) {
 }
 
 func testSkippingSavingStateAndRecreatingAfterRestart(t *testing.T, cacheConfig *gethexec.CachingConfig, txCount int) {
-	t.Parallel()
 	maxRecreateStateDepth := int64(30 * 1000 * 1000)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-
-	execConfig := ExecConfigDefaultTest(t)
-	execConfig.RPC.MaxRecreateStateDepth = maxRecreateStateDepth
-	execConfig.Sequencer.MaxBlockSpeed = 0
-	execConfig.Sequencer.MaxTxDataSize = 150 // 1 test tx ~= 110
-	execConfig.Caching = *cacheConfig
-
-	skipBlocks := execConfig.Caching.MaxNumberOfBlocksToSkipStateSaving
-	skipGas := execConfig.Caching.MaxAmountOfGasToSkipStateSaving
-
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
-	builder.execConfig = execConfig
+
+	builder.execConfig.RPC.MaxRecreateStateDepth = maxRecreateStateDepth
+	builder.execConfig.Sequencer.MaxBlockSpeed = 0
+	builder.execConfig.Sequencer.MaxTxDataSize = 150 // 1 test tx ~= 110
+	builder.execConfig.Caching = *cacheConfig
+
+	skipBlocks := cacheConfig.MaxNumberOfBlocksToSkipStateSaving
+	skipGas := cacheConfig.MaxAmountOfGasToSkipStateSaving
+
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -449,8 +435,6 @@ func testSkippingSavingStateAndRecreatingAfterRestart(t *testing.T, cacheConfig 
 func TestSkippingSavingStateAndRecreatingAfterRestart(t *testing.T) {
 	cacheConfig := gethexec.DefaultCachingConfig
 	cacheConfig.Archive = true
-	// For now Archive node should use HashScheme
-	cacheConfig.StateScheme = rawdb.HashScheme
 	cacheConfig.SnapshotCache = 0 // disable snapshots
 	cacheConfig.BlockAge = 0      // use only Caching.BlockCount to keep only last N blocks in dirties cache, no matter how new they are
 
@@ -497,7 +481,9 @@ func TestSkippingSavingStateAndRecreatingAfterRestart(t *testing.T) {
 func testGettingState(t *testing.T, execConfig *gethexec.Config) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	builder, cancelNode := prepareNodeWithHistory(t, ctx, execConfig, 16)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder.execConfig = execConfig
+	cancelNode := buildWithHistory(t, ctx, builder, 16)
 	execNode := builder.L2.ExecNode
 	defer cancelNode()
 	bc := execNode.Backend.ArbInterface().BlockChain()
@@ -549,7 +535,7 @@ func testGettingState(t *testing.T, execConfig *gethexec.Config) {
 }
 
 func TestGettingState(t *testing.T) {
-	execConfig := ExecConfigDefaultTest(t)
+	execConfig := ExecConfigDefaultTest(t, env.GetTestStateScheme())
 	execConfig.Caching.SnapshotCache = 0 // disable snapshots
 	execConfig.Caching.BlockAge = 0      // use only Caching.BlockCount to keep only last N blocks in dirties cache, no matter how new they are
 	execConfig.Sequencer.MaxBlockSpeed = 0
@@ -558,10 +544,8 @@ func TestGettingState(t *testing.T) {
 		testGettingState(t, execConfig)
 	})
 
-	execConfig = ExecConfigDefaultTest(t)
+	execConfig = ExecConfigDefaultTest(t, env.GetTestStateScheme())
 	execConfig.Caching.Archive = true
-	// For now Archive node should use HashScheme
-	execConfig.Caching.StateScheme = rawdb.HashScheme
 	execConfig.Caching.MaxNumberOfBlocksToSkipStateSaving = 128
 	execConfig.Caching.BlockCount = 128
 	execConfig.Caching.SnapshotCache = 0 // disable snapshots
@@ -581,8 +565,6 @@ func TestStateAndHeaderForRecentBlock(t *testing.T) {
 	defer cancel()
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
 	builder.execConfig.Caching.Archive = true
-	// For now Archive node should use HashScheme
-	builder.execConfig.Caching.StateScheme = rawdb.HashScheme
 	builder.execConfig.RPC.MaxRecreateStateDepth = 0
 	cleanup := builder.Build(t)
 	defer cleanup()

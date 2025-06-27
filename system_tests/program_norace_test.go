@@ -19,7 +19,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
+	"github.com/offchainlabs/nitro/solgen/go/localgen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/colors"
@@ -106,7 +106,6 @@ func validateBlockRange(
 }
 
 func TestProgramEvmData(t *testing.T) {
-	t.Parallel()
 	testEvmData(t, true)
 }
 
@@ -127,7 +126,7 @@ func testEvmData(t *testing.T, jit bool) {
 	}
 	burnArbGas, _ := util.NewCallParser(precompilesgen.ArbosTestABI, "burnArbGas")
 
-	_, tx, mock, err := mocksgen.DeployProgramTest(&auth, l2client)
+	_, tx, mock, err := localgen.DeployProgramTest(&auth, l2client)
 	ensure(tx, err)
 
 	evmDataGas := uint64(1000000000)

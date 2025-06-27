@@ -91,7 +91,7 @@ func (s *ValidationServer) Start(ctx_in context.Context) {
 				}
 				select {
 				case <-ctx.Done():
-					log.Info("Context done while checking redis stream existance", "error", ctx.Err().Error())
+					log.Info("Context done while checking redis stream existence", "error", ctx.Err().Error())
 					return
 				case <-time.After(time.Millisecond * 100):
 				}

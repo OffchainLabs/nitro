@@ -6,6 +6,7 @@ linters:
     - gocritic
     - gosec
     - nilerr
+    - misspell
   settings:
     errcheck:
       check-type-assertions: true
