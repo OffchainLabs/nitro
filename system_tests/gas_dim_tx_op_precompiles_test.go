@@ -3,7 +3,6 @@ package arbtest
 import (
 	"testing"
 
-	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
 
@@ -14,7 +13,6 @@ import (
 
 // this test calls the ArbBlockNumber function on the ArbSys precompile
 func TestDimTxOpArbSysBlockNumberForSload(t *testing.T) {
-	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cleanup()
 	defer cancel()
@@ -33,7 +31,6 @@ func TestDimTxOpArbSysBlockNumberForSload(t *testing.T) {
 // that in turn calls ActivateProgram on the ArbWasm precompile
 // this tests that the logic for counting gas works from a proxy contract
 func TestDimTxOpArbWasmActivateProgramForSstoreAndCallFromProxy(t *testing.T) {
-	t.Parallel()
 	builder, auth, cleanup := setupProgramTest(t, false, gasDimPrecompileBuilderOpts()...)
 	ctx := builder.ctx
 	l2client := builder.L2.Client
@@ -61,7 +58,6 @@ func TestDimTxOpArbWasmActivateProgramForSstoreAndCallFromProxy(t *testing.T) {
 // this test calls the ActivateProgram function on the ArbWasm precompile
 // which calls SSTORE and CALL inside the precompile, for this test
 func TestDimTxOpActivateProgramForSstoreAndCall(t *testing.T) {
-	t.Parallel()
 	builder, auth, cleanup := setupProgramTest(t, false, gasDimPrecompileBuilderOpts()...)
 	ctx := builder.ctx
 	l2client := builder.L2.Client
@@ -92,7 +88,6 @@ func gasDimPrecompileBuilderOpts() []func(*NodeBuilder) {
 	builderOpts := func(builder *NodeBuilder) {
 		// Match gasDimensionTestSetup settings
 		builder.execConfig.Caching.Archive = true
-		builder.execConfig.Caching.StateScheme = rawdb.HashScheme
 		builder.execConfig.Sequencer.MaxRevertGasReject = 0
 		builder.WithArbOSVersion(params.MaxArbosVersionSupported)
 	}
