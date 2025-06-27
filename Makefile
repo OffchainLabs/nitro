@@ -230,22 +230,22 @@ test-go: .make/test-go
 
 .PHONY: test-go-challenge
 test-go-challenge: test-go-deps
-	gotestsum --format short-verbose --no-color=false -- -timeout 120m ./system_tests/... -run TestChallenge -tags challengetest
+	.github/workflows/gotestsum.sh --timeout 120m --run TestChallenge --tags challengetest --nolog
 	@printf $(done)
 
 .PHONY: test-go-stylus
 test-go-stylus: test-go-deps
-	gotestsum --format short-verbose --no-color=false -- -timeout 120m ./system_tests/... -run TestProgramArbitrator -tags stylustest
+	.github/workflows/gotestsum.sh --timeout 120m --run TestProgramArbitrator --tags stylustest --nolog
 	@printf $(done)
 
 .PHONY: test-go-redis
 test-go-redis: test-go-deps
-	gotestsum --format short-verbose --no-color=false -- -p 1 -run TestRedis ./system_tests/... ./arbnode/... -- --test_redis=redis://localhost:6379/0
+	.github/workflows/gotestsum.sh --timeout 120m --run TestRedis --nolog -- --test_redis=redis://localhost:6379/0
 	@printf $(done)
 
 .PHONY: test-go-gas-dimensions
 test-go-gas-dimensions: test-go-deps
-	gotestsum --format short-verbose --no-color=false -- -timeout 120m ./system_tests/... -run "TestDim(Log|TxOp)" -tags gasdimensionstest
+	.github/workflows/gotestsum.sh --timeout 120m --run "TestDim(Log|TxOp)" --tags gasdimensionstest --nolog
 	@printf $(done)
 
 .PHONY: test-gen-proofs
@@ -589,7 +589,7 @@ contracts/test/prover/proofs/%.json: $(arbitrator_cases)/%.wasm $(prover_bin)
 	@touch $@
 
 .make/test-go: $(DEP_PREDICATE) $(go_source) build-node-deps test-go-deps $(ORDER_ONLY_PREDICATE) .make
-	gotestsum --format short-verbose --no-color=false
+	.github/workflows/gotestsum.sh --timeout 120m --nolog
 	@touch $@
 
 .make/test-rust: $(DEP_PREDICATE) wasm-ci-build $(ORDER_ONLY_PREDICATE) .make
