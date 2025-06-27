@@ -32,10 +32,12 @@ import (
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
+	"github.com/offchainlabs/nitro/daprovider/daclient"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/staker/bold"
 	"github.com/offchainlabs/nitro/util"
+	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/validator/server_arb"
 	"github.com/offchainlabs/nitro/validator/server_common"
 	"github.com/offchainlabs/nitro/validator/valnode"
@@ -74,11 +76,18 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, spawnerOpts ...server_arb.S
 		MinimumAssertionPeriod: 0,
 	}
 
+	// Configure external DA for node A
+	nodeConfigA := arbnode.ConfigDefaultL1Test()
+	nodeConfigA.DA.Mode = "external"
+	nodeConfigA.DA.ExternalProvider.Enable = true
+	// TODO: Replace with actual external DA provider URL once available
+	nodeConfigA.DA.ExternalProvider.RPC.URL = "http://placeholder-da-provider-a:8080"
+
 	_, l2nodeA, _, _, l1info, _, l1client, l1stack, assertionChain, stakeTokenAddr := createTestNodeOnL1ForBoldProtocol(
 		t,
 		ctx,
 		true,
-		nil,
+		nodeConfigA,
 		l2chainConfig,
 		nil,
 		sconf,
@@ -94,7 +103,13 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, spawnerOpts ...server_arb.S
 
 	go keepChainMoving(t, ctx, l1info, l1client)
 
+	// Configure external DA for node B
 	l2nodeConfig := arbnode.ConfigDefaultL1Test()
+	l2nodeConfig.DA.Mode = "external"
+	l2nodeConfig.DA.ExternalProvider.Enable = true
+	// TODO: Replace with actual external DA provider URL once available
+	l2nodeConfig.DA.ExternalProvider.RPC.URL = "http://placeholder-da-provider-b:8080"
+
 	_, l2nodeB, _ := create2ndNodeWithConfigForBoldProtocol(
 		t,
 		ctx,
@@ -183,6 +198,34 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, spawnerOpts ...server_arb.S
 	Require(t, blockValidatorB.Initialize(ctx))
 	Require(t, blockValidatorB.Start(ctx))
 
+	// Create DA validators for both nodes
+	daClientConfigA := func() *rpcclient.ClientConfig {
+		return &rpcclient.ClientConfig{
+			URL: "http://placeholder-da-provider-a:8080",
+			// Add other config fields as needed when real DA provider is available
+		}
+	}
+	daClientA, err := daclient.NewClient(ctx, daClientConfigA)
+	Require(t, err)
+
+	daClientConfigB := func() *rpcclient.ClientConfig {
+		return &rpcclient.ClientConfig{
+			URL: "http://placeholder-da-provider-b:8080",
+			// Add other config fields as needed when real DA provider is available
+		}
+	}
+	daClientB, err := daclient.NewClient(ctx, daClientConfigB)
+	Require(t, err)
+
+	// Create ProofEnhancers from DA validators
+	proofEnhancerA := server_arb.NewProofEnhancementManager()
+	customDAEnhancerA := server_arb.NewCustomDAProofEnhancer(daClientA)
+	proofEnhancerA.RegisterEnhancer(server_arb.MarkerCustomDARead, customDAEnhancerA)
+
+	proofEnhancerB := server_arb.NewProofEnhancementManager()
+	customDAEnhancerB := server_arb.NewCustomDAProofEnhancer(daClientB)
+	proofEnhancerB.RegisterEnhancer(server_arb.MarkerCustomDARead, customDAEnhancerB)
+
 	stateManager, err := bold.NewBOLDStateProvider(
 		blockValidatorA,
 		statelessA,
@@ -196,7 +239,7 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, spawnerOpts ...server_arb.S
 		l2nodeA.InboxTracker,
 		l2nodeA.TxStreamer,
 		l2nodeA.InboxReader,
-		nil,
+		proofEnhancerA,
 	)
 	Require(t, err)
 
@@ -213,7 +256,7 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, spawnerOpts ...server_arb.S
 		l2nodeB.InboxTracker,
 		l2nodeB.TxStreamer,
 		l2nodeB.InboxReader,
-		nil,
+		proofEnhancerB,
 	)
 	Require(t, err)
 
