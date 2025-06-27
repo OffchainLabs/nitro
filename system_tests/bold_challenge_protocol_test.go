@@ -51,6 +51,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/execution/gethexec"
+	"github.com/offchainlabs/nitro/solgen/go/ospgen"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/staker/bold"
 	"github.com/offchainlabs/nitro/statetransfer"
@@ -723,22 +724,72 @@ func deployContractsOnly(
 	Require(t, err)
 	cfg.ChainConfig = string(config)
 
-	// TODO: Deploy ReferenceDAProofValidator when enableCustomDA is true
-	// 1. Deploy ReferenceDAProofValidator here
-	// 2. Pass it through the deployment chain to use when deploying OneStepProverHostIo
-	if enableCustomDA {
-		t.Log("WARNING: Custom DA is enabled but not yet supported in deployment")
-	}
+	var addresses *setup.RollupAddresses
 
-	addresses, err := setup.DeployFullRollupStack(
-		ctx,
-		butil.NewBackendWrapper(backend, rpc.LatestBlockNumber),
-		&l1TransactionOpts,
-		l1info.GetAddress("Sequencer"),
-		cfg,
-		rollupStackConf,
-	)
-	Require(t, err)
+	if enableCustomDA {
+		t.Log("Deploying ReferenceDAProofValidator and custom OSP for custom DA")
+
+		// Deploy ReferenceDAProofValidator
+		refDAValidatorAddr, tx, _, err := ospgen.DeployReferenceDAProofValidator(&l1TransactionOpts, backend)
+		Require(t, err)
+		_, err = EnsureTxSucceeded(ctx, backend, tx)
+		Require(t, err)
+		t.Logf("Deployed ReferenceDAProofValidator at %s", refDAValidatorAddr.Hex())
+
+		// Deploy custom OneStepProverHostIo with the ReferenceDAProofValidator
+		ospHostIoAddr, tx, _, err := ospgen.DeployOneStepProverHostIo(&l1TransactionOpts, backend, refDAValidatorAddr)
+		Require(t, err)
+		_, err = EnsureTxSucceeded(ctx, backend, tx)
+		Require(t, err)
+		t.Logf("Deployed custom OneStepProverHostIo at %s", ospHostIoAddr.Hex())
+
+		// Deploy the other OSP contracts
+		osp0Addr, tx, _, err := ospgen.DeployOneStepProver0(&l1TransactionOpts, backend)
+		Require(t, err)
+		_, err = EnsureTxSucceeded(ctx, backend, tx)
+		Require(t, err)
+
+		ospMemAddr, tx, _, err := ospgen.DeployOneStepProverMemory(&l1TransactionOpts, backend)
+		Require(t, err)
+		_, err = EnsureTxSucceeded(ctx, backend, tx)
+		Require(t, err)
+
+		ospMathAddr, tx, _, err := ospgen.DeployOneStepProverMath(&l1TransactionOpts, backend)
+		Require(t, err)
+		_, err = EnsureTxSucceeded(ctx, backend, tx)
+		Require(t, err)
+
+		// Deploy custom OneStepProofEntry with all the OSP contracts
+		customOspAddr, tx, _, err := ospgen.DeployOneStepProofEntry(&l1TransactionOpts, backend, osp0Addr, ospMemAddr, ospMathAddr, ospHostIoAddr)
+		Require(t, err)
+		_, err = EnsureTxSucceeded(ctx, backend, tx)
+		Require(t, err)
+		t.Logf("Deployed custom OneStepProofEntry at %s", customOspAddr.Hex())
+
+		// Deploy using the custom OSP
+		rollupStackConf.CustomOsp = customOspAddr
+		addresses, err = setup.DeployFullRollupStack(
+			ctx,
+			butil.NewBackendWrapper(backend, rpc.LatestBlockNumber),
+			&l1TransactionOpts,
+			l1info.GetAddress("Sequencer"),
+			cfg,
+			rollupStackConf,
+		)
+		Require(t, err)
+
+		t.Log("Successfully deployed with custom OneStepProofEntry for custom DA support")
+	} else {
+		addresses, err = setup.DeployFullRollupStack(
+			ctx,
+			butil.NewBackendWrapper(backend, rpc.LatestBlockNumber),
+			&l1TransactionOpts,
+			l1info.GetAddress("Sequencer"),
+			cfg,
+			rollupStackConf,
+		)
+		Require(t, err)
+	}
 
 	asserter := l1info.GetDefaultTransactOpts("Asserter", ctx)
 	evilAsserter := l1info.GetDefaultTransactOpts("EvilAsserter", ctx)
