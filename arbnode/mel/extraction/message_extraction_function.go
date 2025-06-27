@@ -1,4 +1,4 @@
-package extractionfunction
+package melextraction
 
 import (
 	"context"
@@ -6,7 +6,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 
 	"github.com/offchainlabs/nitro/arbnode"
-	meltypes "github.com/offchainlabs/nitro/arbnode/message-extraction/types"
+	"github.com/offchainlabs/nitro/arbnode/mel"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/daprovider"
 )
@@ -15,7 +15,7 @@ import (
 type DelayedMessageDatabase interface {
 	ReadDelayedMessage(
 		ctx context.Context,
-		state *meltypes.State,
+		state *mel.State,
 		index uint64,
 	) (*arbnode.DelayedInboxMessage, error)
 }
@@ -35,11 +35,11 @@ type ReceiptFetcher interface {
 // through a replay binary, and should also compile to WAVM in addition to running in native mode.
 func ExtractMessages(
 	ctx context.Context,
-	inputState *meltypes.State,
+	inputState *mel.State,
 	parentChainBlock *types.Block,
 	dataProviders []daprovider.Reader,
 	delayedMsgDatabase DelayedMessageDatabase,
 	receiptFetcher ReceiptFetcher,
-) (*meltypes.State, []*arbostypes.MessageWithMetadata, []*arbnode.DelayedInboxMessage, error) {
+) (*mel.State, []*arbostypes.MessageWithMetadata, []*arbnode.DelayedInboxMessage, error) {
 	return nil, nil, nil, nil
 }

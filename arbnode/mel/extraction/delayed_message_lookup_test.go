@@ -1,4 +1,4 @@
-package extractionfunction
+package melextraction
 
 import (
 	"context"
@@ -14,7 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum/trie"
 
 	"github.com/offchainlabs/nitro/arbnode"
-	meltypes "github.com/offchainlabs/nitro/arbnode/message-extraction/types"
+	"github.com/offchainlabs/nitro/arbnode/mel"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 )
@@ -22,7 +22,7 @@ import (
 func Test_parseDelayedMessagesFromBlock(t *testing.T) {
 	ctx := context.Background()
 	delayedMsgPostingAddr := common.BytesToAddress([]byte("deadbeef"))
-	melState := &meltypes.State{
+	melState := &mel.State{
 		DelayedMessagePostingTargetAddress: delayedMsgPostingAddr,
 	}
 

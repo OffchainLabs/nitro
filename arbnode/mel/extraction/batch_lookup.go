@@ -1,4 +1,4 @@
-package extractionfunction
+package melextraction
 
 import (
 	"context"
@@ -9,7 +9,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 
 	"github.com/offchainlabs/nitro/arbnode"
-	meltypes "github.com/offchainlabs/nitro/arbnode/message-extraction/types"
+	"github.com/offchainlabs/nitro/arbnode/mel"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 )
 
@@ -19,7 +19,7 @@ type eventUnpacker interface {
 
 func parseBatchesFromBlock(
 	ctx context.Context,
-	melState *meltypes.State,
+	melState *mel.State,
 	parentChainBlock *types.Block,
 	receiptFetcher ReceiptFetcher,
 	eventUnpacker eventUnpacker,
