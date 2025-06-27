@@ -16,7 +16,7 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/gas_dimensionsgen"
 )
 
-type OpcodeSumTraceResult = native.TxGasDimensionByOpcodeExecutionResult
+type OpcodeSumTraceResult = native.TxGasDimensionExecutionResult
 
 // #########################################################################################################
 // #########################################################################################################
@@ -27,7 +27,7 @@ type OpcodeSumTraceResult = native.TxGasDimensionByOpcodeExecutionResult
 // this test tests if the tracer calculates the same gas
 // used for a transaction as the TX receipt, for
 // computation-only opcodes.
-func TestDimTxOpComputationOnlyOpcodes(t *testing.T) {
+func TestDimExComputationOnlyOpcodes(t *testing.T) {
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -35,7 +35,7 @@ func TestDimTxOpComputationOnlyOpcodes(t *testing.T) {
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployCounter)
 	_, receipt := callOnContract(t, builder, auth, contract.NoSpecials)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxExTraceAndCheck(t, ctx, builder, receipt)
 }
 
 // #########################################################################################################
@@ -44,9 +44,9 @@ func TestDimTxOpComputationOnlyOpcodes(t *testing.T) {
 // #########################################################################################################
 // #########################################################################################################
 
-// helper function that automates calling debug_traceTransaction with the txGasDimensionByOpcode tracer
+// helper function that automates calling debug_traceTransaction with the txGasDimension tracer
 // and does some minimal validation of the result
-func callDebugTraceTransactionWithTxGasDimensionByOpcodeTracer(
+func callDebugTraceTransactionWithTxGasDimensionTracer(
 	t *testing.T,
 	ctx context.Context,
 	builder *NodeBuilder,
@@ -57,7 +57,7 @@ func callDebugTraceTransactionWithTxGasDimensionByOpcodeTracer(
 	rpcClient := builder.L2.ConsensusNode.Stack.Attach()
 	var result json.RawMessage
 	err := rpcClient.CallContext(ctx, &result, "debug_traceTransaction", txHash, map[string]interface{}{
-		"tracer": "txGasDimensionByOpcode",
+		"tracer": "txGasDimension",
 		"tracerConfig": map[string]interface{}{
 			"debug": true,
 		},
@@ -90,15 +90,12 @@ func callDebugTraceTransactionWithTxGasDimensionByOpcodeTracer(
 	if traceResult.TxHash != txHashHex {
 		Fatal(t, "Expected txHash %s, got %s", txHashHex, traceResult.TxHash)
 	}
-	if len(traceResult.Dimensions) == 0 {
-		Fatal(t, "Expected non-empty dimension summary map")
-	}
 	return traceResult
 }
 
 func sumUpDimensionalGasCosts(
 	t *testing.T,
-	gasesByDimension map[string]native.GasesByDimension,
+	gasesByDimension native.GasesByDimension,
 	intrinsicGas uint64,
 	adjustedRefund uint64,
 	rootIsPrecompileAdjustment uint64,
@@ -107,10 +104,8 @@ func sumUpDimensionalGasCosts(
 	t.Helper()
 	oneDimensionSum = intrinsicGas + rootIsPrecompileAdjustment + rootIsStylusAdjustment
 	allDimensionsSum = intrinsicGas + rootIsPrecompileAdjustment + rootIsStylusAdjustment
-	for _, gasByDimension := range gasesByDimension {
-		oneDimensionSum += gasByDimension.OneDimensionalGasCost
-		allDimensionsSum += gasByDimension.Computation + gasByDimension.StateAccess + gasByDimension.StateGrowth + gasByDimension.HistoryGrowth
-	}
+	oneDimensionSum += gasesByDimension.OneDimensionalGasCost
+	allDimensionsSum += gasesByDimension.Computation + gasesByDimension.StateAccess + gasesByDimension.StateGrowth + gasesByDimension.HistoryGrowth
 	if adjustedRefund > oneDimensionSum {
 		Fatal(t, "adjustedRefund should never be greater than oneDimensionSum: %d > %d", adjustedRefund, oneDimensionSum)
 	}
@@ -122,9 +117,9 @@ func sumUpDimensionalGasCosts(
 	return oneDimensionSum, allDimensionsSum
 }
 
-// basically all of the TxOp tests do the same checks, the only difference is the setup.
-func TxOpTraceAndCheck(t *testing.T, ctx context.Context, builder *NodeBuilder, receipt *types.Receipt) {
-	traceResult := callDebugTraceTransactionWithTxGasDimensionByOpcodeTracer(t, ctx, builder, receipt.TxHash)
+// basically all of the TxEx tests do the same checks, the only difference is the setup.
+func TxExTraceAndCheck(t *testing.T, ctx context.Context, builder *NodeBuilder, receipt *types.Receipt) {
+	traceResult := callDebugTraceTransactionWithTxGasDimensionTracer(t, ctx, builder, receipt.TxHash)
 
 	if receipt.Status != traceResult.Status {
 		Fatal(t, "Transaction success/failure status mismatch", receipt.Status, traceResult.Status)

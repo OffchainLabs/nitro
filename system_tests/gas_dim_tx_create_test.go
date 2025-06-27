@@ -26,7 +26,7 @@ import (
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: CREATE operation with no value transfer and no memory expansion.
-func TestDimTxOpCreateNoTransferMemUnchanged(t *testing.T) {
+func TestDimExCreateNoTransferMemUnchanged(t *testing.T) {
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -35,13 +35,13 @@ func TestDimTxOpCreateNoTransferMemUnchanged(t *testing.T) {
 
 	_, receipt := callOnContract(t, builder, auth, creator.CreateNoTransferMemUnchanged)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxExTraceAndCheck(t, ctx, builder, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: CREATE operation with no value transfer and memory expansion.
-func TestDimTxOpCreateNoTransferMemExpansion(t *testing.T) {
+func TestDimExCreateNoTransferMemExpansion(t *testing.T) {
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -50,13 +50,13 @@ func TestDimTxOpCreateNoTransferMemExpansion(t *testing.T) {
 
 	_, receipt := callOnContract(t, builder, auth, creator.CreateNoTransferMemExpansion)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxExTraceAndCheck(t, ctx, builder, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: CREATE operation with value transfer and no memory expansion.
-func TestDimTxOpCreatePayingMemUnchanged(t *testing.T) {
+func TestDimExCreatePayingMemUnchanged(t *testing.T) {
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -67,13 +67,13 @@ func TestDimTxOpCreatePayingMemUnchanged(t *testing.T) {
 
 	_, receipt := callOnContract(t, builder, auth, creator.CreatePayableMemUnchanged)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxExTraceAndCheck(t, ctx, builder, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: CREATE operation with value transfer and memory expansion.
-func TestDimTxOpCreatePayingMemExpansion(t *testing.T) {
+func TestDimExCreatePayingMemExpansion(t *testing.T) {
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -84,7 +84,7 @@ func TestDimTxOpCreatePayingMemExpansion(t *testing.T) {
 
 	_, receipt := callOnContract(t, builder, auth, creator.CreatePayableMemExpansion)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxExTraceAndCheck(t, ctx, builder, receipt)
 }
 
 // #########################################################################################################
@@ -94,7 +94,7 @@ func TestDimTxOpCreatePayingMemExpansion(t *testing.T) {
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: CREATE2 operation with no value transfer and no memory expansion.
-func TestDimTxOpCreate2NoTransferMemUnchanged(t *testing.T) {
+func TestDimExCreate2NoTransferMemUnchanged(t *testing.T) {
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -103,13 +103,13 @@ func TestDimTxOpCreate2NoTransferMemUnchanged(t *testing.T) {
 
 	receipt := callOnContractWithOneArg(t, builder, auth, creator.CreateTwoNoTransferMemUnchanged, [32]byte{0x13, 0x37})
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxExTraceAndCheck(t, ctx, builder, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: CREATE2 operation with no value transfer and memory expansion.
-func TestDimTxOpCreate2NoTransferMemExpansion(t *testing.T) {
+func TestDimExCreate2NoTransferMemExpansion(t *testing.T) {
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -118,13 +118,13 @@ func TestDimTxOpCreate2NoTransferMemExpansion(t *testing.T) {
 
 	receipt := callOnContractWithOneArg(t, builder, auth, creator.CreateTwoNoTransferMemExpansion, [32]byte{0x13, 0x37})
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxExTraceAndCheck(t, ctx, builder, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: CREATE2 operation with value transfer and no memory expansion.
-func TestDimTxOpCreate2PayingMemUnchanged(t *testing.T) {
+func TestDimExCreate2PayingMemUnchanged(t *testing.T) {
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -133,13 +133,13 @@ func TestDimTxOpCreate2PayingMemUnchanged(t *testing.T) {
 
 	receipt := callOnContractWithOneArg(t, builder, auth, creator.CreateTwoNoTransferMemUnchanged, [32]byte{0x13, 0x37})
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxExTraceAndCheck(t, ctx, builder, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: CREATE2 operation with value transfer and memory expansion.
-func TestDimTxOpCreate2PayingMemExpansion(t *testing.T) {
+func TestDimExCreate2PayingMemExpansion(t *testing.T) {
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -150,5 +150,5 @@ func TestDimTxOpCreate2PayingMemExpansion(t *testing.T) {
 
 	receipt := callOnContractWithOneArg(t, builder, auth, creator.CreateTwoPayableMemExpansion, [32]byte{0x13, 0x37})
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxExTraceAndCheck(t, ctx, builder, receipt)
 }

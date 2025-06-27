@@ -26,7 +26,7 @@ import (
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: EXTCODECOPY with cold code access, no memory expansion.
 // Expected: 2600 gas total (100 computation + 2500 state access + minimum word cost).
-func TestDimTxOpExtCodeCopyColdMemUnchanged(t *testing.T) {
+func TestDimExExtCodeCopyColdMemUnchanged(t *testing.T) {
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -34,14 +34,14 @@ func TestDimTxOpExtCodeCopyColdMemUnchanged(t *testing.T) {
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployExtCodeCopy)
 	_, receipt := callOnContract(t, builder, auth, contract.ExtCodeCopyColdNoMemExpansion)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxExTraceAndCheck(t, ctx, builder, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: EXTCODECOPY with cold code access and memory expansion.
 // Expected: 2600 gas + memory expansion cost (100 computation + 2500 state access + minimum word cost + memory expansion).
-func TestDimTxOpExtCodeCopyColdMemExpansion(t *testing.T) {
+func TestDimExExtCodeCopyColdMemExpansion(t *testing.T) {
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -49,14 +49,14 @@ func TestDimTxOpExtCodeCopyColdMemExpansion(t *testing.T) {
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployExtCodeCopy)
 	_, receipt := callOnContract(t, builder, auth, contract.ExtCodeCopyColdMemExpansion)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxExTraceAndCheck(t, ctx, builder, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: EXTCODECOPY with warm code access, no memory expansion.
 // Expected: 100 gas total (100 computation + minimum word cost).
-func TestDimTxOpExtCodeCopyWarmMemUnchanged(t *testing.T) {
+func TestDimExExtCodeCopyWarmMemUnchanged(t *testing.T) {
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -64,14 +64,14 @@ func TestDimTxOpExtCodeCopyWarmMemUnchanged(t *testing.T) {
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployExtCodeCopy)
 	_, receipt := callOnContract(t, builder, auth, contract.ExtCodeCopyWarmNoMemExpansion)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxExTraceAndCheck(t, ctx, builder, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: EXTCODECOPY with warm code access and memory expansion.
 // Expected: 100 gas + memory expansion cost (100 computation + minimum word cost + memory expansion).
-func TestDimTxOpExtCodeCopyWarmMemExpansion(t *testing.T) {
+func TestDimExExtCodeCopyWarmMemExpansion(t *testing.T) {
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -79,5 +79,5 @@ func TestDimTxOpExtCodeCopyWarmMemExpansion(t *testing.T) {
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployExtCodeCopy)
 	_, receipt := callOnContract(t, builder, auth, contract.ExtCodeCopyWarmMemExpansion)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxExTraceAndCheck(t, ctx, builder, receipt)
 }

@@ -18,7 +18,7 @@ import (
 // it should cause the tx to have a failure
 // but the tracer should not fail
 // and the gas should still make sense
-func TestDimTxOpInvalid(t *testing.T) {
+func TestDimExInvalid(t *testing.T) {
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -51,13 +51,13 @@ func TestDimTxOpInvalid(t *testing.T) {
 	CheckEqual(t, receipt.Status, types.ReceiptStatusFailed)
 
 	// Check the trace result
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxExTraceAndCheck(t, ctx, builder, receipt)
 }
 
 // this test tests a transaction that has a revert
 // but the revert does not stop the entire transaction
 // execution, it's inside a try/catch
-func TestDimTxOpRevertInTryCatch(t *testing.T) {
+func TestDimExRevertInTryCatch(t *testing.T) {
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -65,14 +65,14 @@ func TestDimTxOpRevertInTryCatch(t *testing.T) {
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployInvalid)
 	_, receipt := callOnContract(t, builder, auth, contract.RevertInTryCatch)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxExTraceAndCheck(t, ctx, builder, receipt)
 }
 
 // this test tests a transaction that has a revert
 // but the revert does not stop the entire transaction
 // execution, it's inside a try/catch
 // and the revert has a memory expansion
-func TestDimTxOpRevertInTryCatchWithMemoryExpansion(t *testing.T) {
+func TestDimExRevertInTryCatchWithMemoryExpansion(t *testing.T) {
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -80,14 +80,14 @@ func TestDimTxOpRevertInTryCatchWithMemoryExpansion(t *testing.T) {
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployInvalid)
 	_, receipt := callOnContract(t, builder, auth, contract.RevertInTryCatchWithMemoryExpansion)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxExTraceAndCheck(t, ctx, builder, receipt)
 }
 
 // this test should force the revert opcode to be used
 // the tx should fail
 // but the tracer should not fail
 // and the gas should still make sense
-func TestDimTxOpRevert(t *testing.T) {
+func TestDimExRevert(t *testing.T) {
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, true)
 	defer cancel()
 	defer cleanup()
@@ -117,14 +117,14 @@ func TestDimTxOpRevert(t *testing.T) {
 	CheckEqual(t, receipt.Status, types.ReceiptStatusFailed)
 
 	// Check the trace result
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxExTraceAndCheck(t, ctx, builder, receipt)
 }
 
 // this test should force the revert opcode to be used
 // the tx should fail
 // but the tracer should not fail
 // and the gas should still make sense
-func TestDimTxOpRevertWithMessage(t *testing.T) {
+func TestDimExRevertWithMessage(t *testing.T) {
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, true)
 	defer cancel()
 	defer cleanup()
@@ -154,10 +154,10 @@ func TestDimTxOpRevertWithMessage(t *testing.T) {
 	CheckEqual(t, receipt.Status, types.ReceiptStatusFailed)
 
 	// Check the trace result
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxExTraceAndCheck(t, ctx, builder, receipt)
 }
 
-func TestDimTxOpRevertWithMemoryExpansion(t *testing.T) {
+func TestDimExRevertWithMemoryExpansion(t *testing.T) {
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, true)
 	defer cancel()
 	defer cleanup()
@@ -187,14 +187,14 @@ func TestDimTxOpRevertWithMemoryExpansion(t *testing.T) {
 	CheckEqual(t, receipt.Status, types.ReceiptStatusFailed)
 
 	// Check the trace result
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxExTraceAndCheck(t, ctx, builder, receipt)
 }
 
 // this test will cause an invalid jump destination error
 // the transaction should fail
 // but the tracer should not fail
 // and the gas should still make sense
-func TestDimTxOpInvalidJump(t *testing.T) {
+func TestDimExInvalidJump(t *testing.T) {
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -214,5 +214,5 @@ func TestDimTxOpInvalidJump(t *testing.T) {
 	receipt := EnsureTxFailed(t, ctx, builder.L2.Client, tx)
 
 	CheckEqual(t, receipt.Status, types.ReceiptStatusFailed)
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxExTraceAndCheck(t, ctx, builder, receipt)
 }
