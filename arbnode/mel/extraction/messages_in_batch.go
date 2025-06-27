@@ -40,7 +40,7 @@ func extractMessagesInBatch(
 	var msg *arbostypes.MessageWithMetadata
 	var err error
 	for {
-		if hasSegmentsRemaining(params) {
+		if isLastSegment(params) {
 			break
 		}
 		msg, params, err = extractArbosMessage(ctx, params)
@@ -59,7 +59,7 @@ func extractMessagesInBatch(
 	return messages, nil
 }
 
-func hasSegmentsRemaining(p *arbosExtractionParams) bool {
+func isLastSegment(p *arbosExtractionParams) bool {
 	// we issue delayed messages until reaching afterDelayedMessages
 	if p.melState.DelayedMessagesRead < p.seqMsg.AfterDelayedMessages {
 		return false
@@ -147,8 +147,8 @@ func extractArbosMessage(
 		blockNumber = seqMsg.MaxL1Block
 	}
 	if segmentNum >= uint64(len(seqMsg.Segments)) {
-		// After end of batch there might be "virtual" delayedMsgSegments
-		log.Debug("Reading virtual delayed message segment")
+		// after end of batch there might be "virtual" delayedMsgSegments
+		log.Warn("reading virtual delayed message segment")
 		segment = []byte{arbstate.BatchSegmentKindDelayedMessages}
 	} else {
 		segment = seqMsg.Segments[segmentNum]

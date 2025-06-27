@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"github.com/offchainlabs/bold/containers/fsm"
-	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbnode/mel"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 )
@@ -53,7 +52,7 @@ type processNextBlock struct {
 type saveMessages struct {
 	postState       *mel.State
 	messages        []*arbostypes.MessageWithMetadata
-	delayedMessages []*arbnode.DelayedInboxMessage
+	delayedMessages []*mel.DelayedInboxMessage
 }
 
 // An action that transitions the FSM to the reorging state.
