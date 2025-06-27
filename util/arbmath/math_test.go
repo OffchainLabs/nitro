@@ -230,6 +230,29 @@ func TestSaturatingNeg(t *testing.T) {
 	}
 }
 
+func TestApproxExpBasisPoints(t *testing.T) {
+	tests := []struct {
+		input    Bips
+		expected Bips
+	}{
+		{0, 10000},
+		{500, 10512},
+		{-500, 9512},
+		{2000, 12214},
+		{10000, 27083}, // e^1 ≈ 2.7183
+		{20000, 70000}, // e^2 ≈ 7.3890
+	}
+
+	for _, tc := range tests {
+		t.Run(fmt.Sprintf("ApproxExp(%d) = %d", tc.input, tc.expected), func(t *testing.T) {
+			result := ApproxExpBasisPoints(tc.input, 4)
+			if result != tc.expected {
+				t.Errorf("ApproxExpBasisPoints(%d) = %d: expected %d", tc.input, result, tc.expected)
+			}
+		})
+	}
+}
+
 func Fail(t *testing.T, printables ...interface{}) {
 	t.Helper()
 	testhelpers.FailImpl(t, printables...)
