@@ -1,5 +1,5 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbtest
 
@@ -67,6 +67,7 @@ func TestRedisSeqCoordinatorPriorities(t *testing.T) {
 		builder.nodeConfig.SeqCoordinator.MyUrl = nodeNames[nodeNum]
 		builder.L2Info = l2Info
 		builder.dataDir = t.TempDir() // set new data dir for each node
+		builder.l2StackConfig = testhelpers.CreateStackConfigForTest(builder.dataDir)
 		builder.Build(t)
 		testNodes[nodeNum] = builder.L2
 	}
@@ -219,6 +220,7 @@ func TestRedisSeqCoordinatorPriorities(t *testing.T) {
 			sequencedMesssages++
 		}
 
+		lastSequencer := currentSequencer
 		if currentSequencer == len(testNodes)-1 {
 			addNodes = true
 		}
@@ -244,15 +246,18 @@ func TestRedisSeqCoordinatorPriorities(t *testing.T) {
 			if sequencer != -1 {
 				sequencedMesssages++
 			}
-			if sequencer == -1 ||
-				(addNodes && (sequencer == currentSequencer+1)) {
-				time.Sleep(builder.nodeConfig.SeqCoordinator.LockoutDuration / 5)
-				continue
-			}
 			if sequencer == currentSequencer {
 				break
 			}
-			Fatal(t, "unexpected sequencer", "expected", currentSequencer, "got", sequencer, "messages", sequencedMesssages)
+			if addNodes && sequencer != lastSequencer {
+				// adding nodes - can only be the new or prev node (others have lower prio)
+				Fatal(t, "unexpected sequencer", "expected", currentSequencer, "got", sequencer, "messages", sequencedMesssages, "last", lastSequencer, "adding", addNodes)
+			}
+			if !addNodes && sequencer < lastSequencer {
+				// removing nodes - could be any other live node, intermittently
+				Fatal(t, "unexpected sequencer", "expected", currentSequencer, "got", sequencer, "messages", sequencedMesssages, "last", lastSequencer, "adding", addNodes)
+			}
+			time.Sleep(builder.nodeConfig.SeqCoordinator.LockoutDuration / 5)
 		}
 
 		// all nodes get messages

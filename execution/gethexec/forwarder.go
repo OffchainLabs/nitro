@@ -1,5 +1,5 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package gethexec
 
@@ -148,6 +148,7 @@ func (f *TxForwarder) PublishTransaction(inctx context.Context, tx *types.Transa
 			return err
 		}
 	}
+	log.Error("Failed to publish transaction to any of the forwarding targets", "numTargets", len(f.rpcClients))
 	return errors.New("failed to publish transaction to any of the forwarding targets")
 }
 
@@ -166,6 +167,7 @@ func (f *TxForwarder) PublishExpressLaneTransaction(inctx context.Context, msg *
 			return err
 		}
 	}
+	log.Error("Failed to publish transaction to any of the forwarding targets", "numTargets", len(f.rpcClients))
 	return errors.New("failed to publish transaction to any of the forwarding targets")
 }
 
@@ -192,6 +194,7 @@ func (f *TxForwarder) PublishAuctionResolutionTransaction(inctx context.Context,
 			return err
 		}
 	}
+	log.Error("Failed to publish transaction to any of the forwarding targets", "numTargets", len(f.rpcClients))
 	return errors.New("failed to publish transaction to any of the forwarding targets")
 }
 

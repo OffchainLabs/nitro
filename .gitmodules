@@ -1,6 +1,7 @@
 [submodule "go-ethereum"]
 	path = go-ethereum
-	url = https://github.com/Layr-Labs/nitro-go-ethereum.git
+	url = https://github.com/Layr-Labs/nitro-go-ethereum
+	branch = eigenda-3.1-rebase
 [submodule "fastcache"]
 	path = fastcache
 	url = https://github.com/OffchainLabs/fastcache.git
@@ -16,11 +17,11 @@
 [submodule "contracts"]
 	path = contracts
 	url = https://github.com/Layr-Labs/nitro-contracts.git
-	branch = eigenda-v3.1.3
+	commit = 7b76a5e74dbcd42fd9826b4d093d1f8fb75f74ab
 [submodule "nitro-testnode"]
 	path = nitro-testnode
 	url = https://github.com/Layr-Labs/nitro-testnode.git
-	branch = eigenda-v3.1.3
+	branch = v3-upstream-merge
 [submodule "arbitrator/rust-kzg-bn254"]
 	path = arbitrator/rust-kzg-bn254
 	url = https://github.com/Layr-Labs/rust-kzg-bn254.git
@@ -31,6 +32,7 @@
 [submodule "bold"]
 	path = bold
 	url = https://github.com/Layr-Labs/bold.git
+	commit = 82e28a894e7f8233e135dc2f342989d20162e06f
 [submodule "arbitrator/langs/rust"]
 	path = arbitrator/langs/rust
 	url = https://github.com/OffchainLabs/stylus-sdk-rs.git
@@ -43,3 +45,7 @@
 [submodule "safe-smart-account"]
 	path = safe-smart-account
 	url = https://github.com/safe-global/safe-smart-account.git
+[submodule "contracts-legacy"]
+	path = contracts-legacy
+	url = https://github.com/Layr-Labs/nitro-contracts.git
+	commit = ece63f6c3a37d2645573f747bdd3cd6209697f2b

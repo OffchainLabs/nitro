@@ -1,5 +1,5 @@
 // Copyright 2021-2024, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbos
 
@@ -117,7 +117,7 @@ type ConditionalOptionsForTx []*arbitrum_types.ConditionalOptions
 type SequencingHooks struct {
 	TxErrors                []error                                                                                                                                                                 // This can be unset
 	DiscardInvalidTxsEarly  bool                                                                                                                                                                    // This can be unset
-	PreTxFilter             func(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, *arbitrum_types.ConditionalOptions, common.Address, *L1Info) error // This has to be set
+	PreTxFilter             func(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, *arbitrum_types.ConditionalOptions, common.Address, *L1Info) error // This has to be set. Writes to *state.StateDB object should be avoided to prevent invalid state from permeating
 	PostTxFilter            func(*types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult) error                                    // This has to be set
 	BlockFilter             func(*types.Header, *state.StateDB, types.Transactions, types.Receipts) error                                                                                           // This can be unset
 	ConditionalOptionsForTx []*arbitrum_types.ConditionalOptions                                                                                                                                    // This can be unset
@@ -144,10 +144,10 @@ func ProduceBlock(
 	lastBlockHeader *types.Header,
 	statedb *state.StateDB,
 	chainContext core.ChainContext,
-	chainConfig *params.ChainConfig,
 	isMsgForPrefetch bool,
 	runMode core.MessageRunMode,
 ) (*types.Block, types.Receipts, error) {
+	chainConfig := chainContext.Config()
 	txes, err := ParseL2Transactions(message, chainConfig.ChainID)
 	if err != nil {
 		log.Warn("error parsing incoming message", "err", err)
@@ -156,7 +156,7 @@ func ProduceBlock(
 
 	hooks := NoopSequencingHooks()
 	return ProduceBlockAdvanced(
-		message.Header, txes, delayedMessagesRead, lastBlockHeader, statedb, chainContext, chainConfig, hooks, isMsgForPrefetch, runMode,
+		message.Header, txes, delayedMessagesRead, lastBlockHeader, statedb, chainContext, hooks, isMsgForPrefetch, runMode,
 	)
 }
 
@@ -168,7 +168,6 @@ func ProduceBlockAdvanced(
 	lastBlockHeader *types.Header,
 	statedb *state.StateDB,
 	chainContext core.ChainContext,
-	chainConfig *params.ChainConfig,
 	sequencingHooks *SequencingHooks,
 	isMsgForPrefetch bool,
 	runMode core.MessageRunMode,
@@ -191,8 +190,9 @@ func ProduceBlockAdvanced(
 		l1Timestamp:   l1Header.Timestamp,
 	}
 
+	chainConfig := chainContext.Config()
+
 	header := createNewHeader(lastBlockHeader, l1Info, arbState, chainConfig)
-	signer := types.MakeSigner(chainConfig, header.Number, header.Time)
 	// Note: blockGasLeft will diverge from the actual gas left during execution in the event of invalid txs,
 	// but it's only used as block-local representation limiting the amount of work done in a block.
 	blockGasLeft, _ := arbState.L2PricingState().PerBlockGasLimit()
@@ -254,6 +254,7 @@ func ProduceBlockAdvanced(
 		var sender common.Address
 		var dataGas uint64 = 0
 		preTxHeaderGasUsed := header.GasUsed
+		signer := types.MakeSigner(chainConfig, header.Number, header.Time, arbState.ArbOSVersion())
 		receipt, result, err := (func() (*types.Receipt, *core.ExecutionResult, error) {
 			// If we've done too much work in this block, discard the tx as early as possible
 			if blockGasLeft < params.TxGas && isUserTx {
@@ -265,11 +266,13 @@ func ProduceBlockAdvanced(
 				return nil, nil, err
 			}
 
+			// Writes to statedb object should be avoided to prevent invalid state from permeating as statedb snapshot is not taken
 			if err = hooks.PreTxFilter(chainConfig, header, statedb, arbState, tx, options, sender, l1Info); err != nil {
 				return nil, nil, err
 			}
 
 			// Additional pre-transaction validity check
+			// Writes to statedb object should be avoided to prevent invalid state from permeating as statedb snapshot is not taken
 			if err = extraPreTxFilter(chainConfig, header, statedb, arbState, tx, options, sender, l1Info); err != nil {
 				return nil, nil, err
 			}
@@ -312,16 +315,15 @@ func ProduceBlockAdvanced(
 			statedb.SetTxContext(tx.Hash(), len(receipts)) // the number of successful state transitions
 
 			gasPool := gethGas
+			blockContext := core.NewEVMBlockContext(header, chainContext, &header.Coinbase)
+			evm := vm.NewEVM(blockContext, statedb, chainConfig, vm.Config{})
 			receipt, result, err := core.ApplyTransactionWithResultFilter(
-				chainConfig,
-				chainContext,
-				&header.Coinbase,
+				evm,
 				&gasPool,
 				statedb,
 				header,
 				tx,
 				&header.GasUsed,
-				vm.Config{},
 				runMode,
 				func(result *core.ExecutionResult) error {
 					return hooks.PostTxFilter(header, statedb, arbState, tx, sender, dataGas, result)
@@ -504,7 +506,7 @@ func ProduceBlockAdvanced(
 }
 
 // Also sets header.Root
-func FinalizeBlock(header *types.Header, txs types.Transactions, statedb *state.StateDB, chainConfig *params.ChainConfig) {
+func FinalizeBlock(header *types.Header, txs types.Transactions, statedb vm.StateDB, chainConfig *params.ChainConfig) {
 	if header != nil {
 		if header.Number.Uint64() < chainConfig.ArbitrumChainParams.GenesisBlockNum {
 			panic("cannot finalize blocks before genesis")

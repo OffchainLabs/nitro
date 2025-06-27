@@ -1,5 +1,5 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 // race detection makes things slow and miss timeouts
 //go:build !race
@@ -101,7 +101,7 @@ func testTwoNodesLong(t *testing.T, dasModeStr string) {
 		}
 
 		// adding multiple messages in the same Add with local=true to get them in the same L1 block
-		errs := builder.L1.L1Backend.TxPool().Add(l1Txs, true, false)
+		errs := builder.L1.L1Backend.TxPool().Add(l1Txs, false)
 		for _, err := range errs {
 			if err != nil {
 				Fatal(t, err)

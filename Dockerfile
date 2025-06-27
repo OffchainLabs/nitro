@@ -24,13 +24,16 @@ RUN apt-get update && \
 FROM scratch AS brotli-library-export
 COPY --from=brotli-library-builder /workspace/install/ /
 
-FROM node:18-bookworm-slim as contracts-builder
+FROM node:18-bookworm-slim AS contracts-builder
 RUN apt-get update && \
     apt-get install -y git python3 make g++ curl
 RUN curl -L https://foundry.paradigm.xyz | bash && . ~/.bashrc && ~/.foundry/bin/foundryup -i 1.0.0
 WORKDIR /workspace
+COPY contracts-legacy/package.json contracts-legacy/yarn.lock contracts-legacy/
+RUN cd contracts-legacy && yarn install
 COPY contracts/package.json contracts/yarn.lock contracts/
 RUN cd contracts && yarn install
+COPY contracts-legacy contracts-legacy/
 COPY contracts contracts/
 COPY safe-smart-account safe-smart-account/
 RUN cd safe-smart-account && yarn install
@@ -79,13 +82,17 @@ COPY ./gethhook ./gethhook
 COPY ./blsSignatures ./blsSignatures
 COPY ./cmd/chaininfo ./cmd/chaininfo
 COPY ./cmd/replay ./cmd/replay
-COPY ./das/dastree ./das/dastree
+COPY ./daprovider ./daprovider
+COPY ./daprovider/das/dasutil ./daprovider/das/dasutil
+COPY ./daprovider/das/dastree ./daprovider/das/dastree
 COPY ./eigenda ./eigenda
 COPY ./precompiles ./precompiles
 COPY ./statetransfer ./statetransfer
 COPY ./util ./util
 COPY ./wavmio ./wavmio
 COPY ./zeroheavy ./zeroheavy
+COPY ./contracts-legacy/package.json ./contracts-legacy/yarn.lock ./contracts-legacy/
+COPY ./contracts-legacy/src/precompiles/ ./contracts-legacy/src/precompiles/
 COPY ./contracts/src/precompiles/ ./contracts/src/precompiles/
 COPY ./contracts/package.json ./contracts/yarn.lock ./contracts/
 COPY ./safe-smart-account ./safe-smart-account
@@ -96,6 +103,7 @@ COPY scripts/remove_reference_types.sh scripts/
 COPY --from=brotli-wasm-export / target/
 COPY --from=contracts-builder workspace/contracts/build/contracts/src/precompiles/ contracts/build/contracts/src/precompiles/
 COPY --from=contracts-builder workspace/contracts/node_modules/@offchainlabs/upgrade-executor/build/contracts/src/UpgradeExecutor.sol/UpgradeExecutor.json contracts/
+COPY --from=contracts-builder workspace/contracts-legacy/build/contracts/src/precompiles/ contracts-legacy/build/contracts/src/precompiles/
 COPY --from=contracts-builder workspace/.make/ .make/
 RUN PATH="$PATH:/usr/local/go/bin" NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-wasm-bin
 
@@ -146,7 +154,6 @@ COPY arbitrator/prover/benches arbitrator/prover/benches
 COPY arbitrator/bench/Cargo.toml arbitrator/bench/
 COPY arbitrator/jit/Cargo.toml arbitrator/jit/
 COPY arbitrator/rust-kzg-bn254 arbitrator/rust-kzg-bn254
-
 COPY arbitrator/stylus/Cargo.toml arbitrator/stylus/
 COPY arbitrator/tools/wasmer arbitrator/tools/wasmer
 COPY arbitrator/wasm-libraries/user-host-trait/Cargo.toml arbitrator/wasm-libraries/user-host-trait/Cargo.toml
@@ -167,7 +174,6 @@ COPY arbitrator/prover arbitrator/prover
 COPY arbitrator/wasm-libraries arbitrator/wasm-libraries
 COPY arbitrator/jit arbitrator/jit
 COPY arbitrator/rust-kzg-bn254 arbitrator/rust-kzg-bn254
-
 COPY arbitrator/stylus arbitrator/stylus
 COPY --from=brotli-wasm-export / target/
 COPY scripts/build-brotli.sh scripts/
@@ -200,15 +206,14 @@ COPY ./Makefile ./
 COPY ./arbitrator ./arbitrator
 COPY ./solgen ./solgen
 COPY ./contracts ./contracts
+COPY ./contracts-legacy ./contracts-legacy
 COPY ./safe-smart-account ./safe-smart-account
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-replay-env
 
 FROM debian:bookworm-slim AS machine-versions
 RUN apt-get update && apt-get install -y unzip wget curl
 WORKDIR /workspace/machines
-
 # Download WAVM machines
-# no fetch since these replay artifacts are only used for backwards compatibility for vanilla Arbitrum One and Nova
 COPY ./scripts/download-machine.sh .
 COPY ./scripts/download-machine-eigenda.sh .
 #RUN ./download-machine.sh consensus-v1-rc1 0xbb9d58e9527566138b682f3a207c0976d5359837f6e330f4017434cca983ff41
@@ -229,10 +234,12 @@ COPY ./scripts/download-machine-eigenda.sh .
 #RUN ./download-machine.sh consensus-v11 0xf4389b835497a910d7ba3ebfb77aa93da985634f3c052de1290360635be40c4a
 #RUN ./download-machine.sh consensus-v11.1 0x68e4fe5023f792d4ef584796c84d710303a5e12ea02d6e37e2b5e9c4332507c4
 #RUN ./download-machine.sh consensus-v20 0x8b104a2e80ac6165dc58b9048de12f301d70b02a0ab51396c22b4b4b802a16a4
-# RUN ./download-machine.sh consensus-v30 0xb0de9cb89e4d944ae6023a3b62276e54804c242fd8c4c2d8e6cc4450f5fa8b1b && true
-# RUN ./download-machine.sh consensus-v31 0x260f5fa5c3176a856893642e149cf128b5a8de9f828afec8d11184415dd8dc69
-RUN ./download-machine.sh consensus-v32 0x184884e1eb9fefdc158f6c8ac912bb183bf3cf83f0090317e0bc4ac5860baa39
-RUN ./download-machine-eigenda.sh consensus-eigenda-v32 0x951009942c00b5bd0abec233174fe33fadf7cd5013d17b042f9b28b3b00b469c
+#RUN ./download-machine.sh consensus-v30 0xb0de9cb89e4d944ae6023a3b62276e54804c242fd8c4c2d8e6cc4450f5fa8b1b && true
+#RUN ./download-machine.sh consensus-v31 0x260f5fa5c3176a856893642e149cf128b5a8de9f828afec8d11184415dd8dc69
+#RUN ./download-machine.sh consensus-v32 0x184884e1eb9fefdc158f6c8ac912bb183bf3cf83f0090317e0bc4ac5860baa39
+#RUN ./download-machine.sh consensus-v40-rc.1 0x6dae396b0b7644a2d63b4b22e6452b767aa6a04b6778dadebdd74aa40f40a5c5
+#RUN ./download-machine.sh consensus-v40-rc.2 0xa8206be13d53e456c7ab061d94bab5b229d674ac57ffe7281216479a8820fcc0
+RUN ./download-machine.sh consensus-v40 0xdb698a2576298f25448bc092e52cf13b1e24141c997135d70f217d674bbeb69a
 RUN ./download-machine-eigenda.sh consensus-eigenda-v32.1 0x04a297cdd13254c4c6c26388915d416286daf22f3a20e3ebee10400a3129dd17
 
 FROM golang:1.23.1-bookworm AS node-builder
@@ -255,6 +262,8 @@ COPY . ./
 COPY --from=contracts-builder workspace/contracts/build/ contracts/build/
 COPY --from=contracts-builder workspace/contracts/out/ contracts/out/
 COPY --from=contracts-builder workspace/contracts/node_modules/@offchainlabs/upgrade-executor/build/contracts/src/UpgradeExecutor.sol/UpgradeExecutor.json contracts/node_modules/@offchainlabs/upgrade-executor/build/contracts/src/UpgradeExecutor.sol/
+COPY --from=contracts-builder workspace/contracts-legacy/build/ contracts-legacy/build/
+COPY --from=contracts-builder workspace/contracts-legacy/out/ contracts-legacy/out/
 COPY --from=contracts-builder workspace/safe-smart-account/build/ safe-smart-account/build/
 COPY --from=contracts-builder workspace/.make/ .make/
 COPY --from=prover-header-export / target/
@@ -309,13 +318,13 @@ USER user
 WORKDIR /home/user/
 ENTRYPOINT [ "/usr/local/bin/nitro" ]
 
-## Fetch the old nitro-node release
-FROM offchainlabs/nitro-node:v3.2.1-d81324d AS nitro-legacy
+FROM offchainlabs/nitro-node:v2.3.4-rc.5-b4cc111 AS nitro-legacy
 
 FROM nitro-node-slim AS nitro-node
 USER root
 COPY --from=prover-export /bin/jit                        /usr/local/bin/
 COPY --from=node-builder  /workspace/target/bin/daserver  /usr/local/bin/
+COPY --from=node-builder  /workspace/target/bin/daprovider  /usr/local/bin/
 COPY --from=node-builder  /workspace/target/bin/autonomous-auctioneer  /usr/local/bin/
 COPY --from=node-builder  /workspace/target/bin/bidder-client  /usr/local/bin/
 COPY --from=node-builder  /workspace/target/bin/datool    /usr/local/bin/
@@ -338,8 +347,6 @@ FROM nitro-node AS nitro-node-validator
 USER root
 COPY --from=nitro-legacy /usr/local/bin/nitro-val /home/user/nitro-legacy/bin/nitro-val
 COPY --from=nitro-legacy /usr/local/bin/jit /home/user/nitro-legacy/bin/jit
-
-
 RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
     apt-get install -y xxd netcat-traditional && \

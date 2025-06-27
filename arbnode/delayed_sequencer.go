@@ -1,5 +1,5 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbnode
 
@@ -19,6 +19,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/execution"
+	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
@@ -252,6 +253,10 @@ func (d *DelayedSequencer) run(ctx context.Context) {
 			return
 		}
 		if err := d.trySequence(ctx, latestHeader); err != nil {
+			if errors.Is(err, gethexec.ExecutionEngineBlockCreationStopped) {
+				log.Info("stopping block creation in delayed sequencer because execution engine has stopped")
+				return
+			}
 			log.Error("Delayed sequencer error", "err", err)
 		}
 	}

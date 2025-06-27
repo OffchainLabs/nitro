@@ -7,7 +7,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/offchainlabs/nitro/arbstate/daprovider"
+	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/arbutil"
 )
 
@@ -19,7 +19,7 @@ type readerForEigenDA struct {
 	readerEigenDA EigenDAReader
 }
 
-func (d *readerForEigenDA) IsValidHeaderByte(headerByte byte) bool {
+func (d *readerForEigenDA) IsValidHeaderByte(ctx context.Context, headerByte byte) bool {
 	return IsEigenDAMessageHeaderByte(headerByte)
 }
 
@@ -28,10 +28,15 @@ func (d *readerForEigenDA) RecoverPayloadFromBatch(
 	batchNum uint64,
 	batchBlockHash common.Hash,
 	sequencerMsg []byte,
-	preimageRecorder daprovider.PreimageRecorder,
+	preimages daprovider.PreimagesMap,
 	validateSeqMsg bool,
-) ([]byte, error) {
-	return RecoverPayloadFromEigenDABatch(ctx, sequencerMsg[sequencerMsgOffset:], d.readerEigenDA, preimageRecorder, "binary")
+) ([]byte, daprovider.PreimagesMap, error) {
+	if preimages == nil {
+		preimages = make(daprovider.PreimagesMap)
+	}
+	preimageRecorder := daprovider.RecordPreimagesTo(preimages)
+	payload, err := RecoverPayloadFromEigenDABatch(ctx, sequencerMsg[sequencerMsgOffset:], d.readerEigenDA, preimageRecorder, "binary")
+	return payload, preimages, err
 }
 
 func RecoverPayloadFromEigenDABatch(ctx context.Context,

@@ -21,6 +21,7 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/arbnode/dataposter/externalsignertest"
+	"github.com/offchainlabs/nitro/arbnode/parent"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
@@ -208,6 +209,11 @@ func TestFeeAndTipCaps_EnoughBalance_NoBacklog_NoUnconfirmed_BlobTx(t *testing.T
 			From: common.Address{},
 		},
 		maxFeeCapExpression: expression,
+		parentChainID:       big.NewInt(1337),
+		parentChain: &parent.ParentChain{
+			ChainID:  big.NewInt(1337),
+			L1Reader: nil,
+		},
 	}
 
 	ctx := context.Background()
@@ -339,6 +345,11 @@ func TestFeeAndTipCaps_RBF_RisingBlobFee_FallingBaseFee(t *testing.T) {
 			From: common.Address{},
 		},
 		maxFeeCapExpression: expression,
+		parentChainID:       big.NewInt(1337),
+		parentChain: &parent.ParentChain{
+			ChainID:  big.NewInt(1337),
+			L1Reader: nil,
+		},
 	}
 
 	ctx := context.Background()

@@ -10,6 +10,7 @@ check_missing_value() {
 timeout=""
 tags=""
 run=""
+test_state_scheme=""
 race=false
 cover=false
 while [[ $# -gt 0 ]]; do
@@ -32,6 +33,12 @@ while [[ $# -gt 0 ]]; do
       run=$1
       shift
       ;;
+    --test_state_scheme)
+      shift
+      check_missing_value $# "$1" "--test_state_scheme"
+      test_state_scheme=$1
+      shift
+      ;;
     --race)
       race=true
       shift
@@ -50,7 +57,6 @@ done
 packages=$(go list ./...)
 for package in $packages; do
   cmd="stdbuf -oL gotestsum --format short-verbose --packages=\"$package\" --rerun-fails=2 --no-color=false --"
-
   if [ "$timeout" != "" ]; then
     cmd="$cmd -timeout $timeout"
   fi
@@ -69,6 +75,12 @@ for package in $packages; do
 
   if [ "$cover" == true ]; then
     cmd="$cmd -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/..."
+  fi
+
+  if [ "$test_state_scheme" != "" ]; then
+      cmd="$cmd -args -- --test_state_scheme=$test_state_scheme --test_loglevel=8"
+  else
+      cmd="$cmd -args -- --test_loglevel=8" # Use error log level, which is the value 8 in the slog level enum for tests.
   fi
 
   cmd="$cmd > >(stdbuf -oL tee -a full.log | grep -vE \"INFO|seal\")"

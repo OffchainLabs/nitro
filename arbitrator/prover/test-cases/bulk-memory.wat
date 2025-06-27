@@ -1,5 +1,5 @@
 ;; Copyright 2023, Offchain Labs, Inc.
-;; For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
+;; For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 (module
     (import "env" "wavm_halt_and_set_finished" (func $halt))

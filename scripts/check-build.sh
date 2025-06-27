@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # This script checks the prerequisites for building Arbitrum Nitro locally.
 
 # Color codes
@@ -138,4 +138,3 @@ else
 fi
 
 exit $EXIT_CODE
-

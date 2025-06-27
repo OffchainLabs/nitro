@@ -1,6 +1,7 @@
 package timeboost
 
 import (
+	"encoding/hex"
 	"fmt"
 	"io/fs"
 	"os"
@@ -120,7 +121,7 @@ func (d *SqliteDatabase) InsertBid(b *ValidatedBid) error {
 		"AuctionContractAddress": b.AuctionContractAddress.Hex(),
 		"Round":                  b.Round,
 		"Amount":                 b.Amount.String(),
-		"Signature":              b.Signature,
+		"Signature":              hex.EncodeToString(b.Signature),
 	}
 	_, err := d.sqlDB.NamedExec(query, params)
 	if err != nil {
@@ -132,12 +133,25 @@ func (d *SqliteDatabase) InsertBid(b *ValidatedBid) error {
 func (d *SqliteDatabase) GetBids(maxDbRows int) ([]*SqliteDatabaseBid, uint64, error) {
 	d.lock.Lock()
 	defer d.lock.Unlock()
+
+	// First check if there are any bids at all
+	var count int
+	if err := d.sqlDB.Get(&count, "SELECT COUNT(*) FROM Bids"); err != nil {
+		return nil, 0, fmt.Errorf("failed to check if bids exist: %w", err)
+	}
+
+	// If no bids exist, return empty result
+	if count == 0 {
+		return []*SqliteDatabaseBid{}, 0, nil
+	}
+
 	var maxRound uint64
 	query := `SELECT MAX(Round) FROM Bids`
 	err := d.sqlDB.Get(&maxRound, query)
 	if err != nil {
 		return nil, 0, fmt.Errorf("failed to fetch maxRound from bids: %w", err)
 	}
+
 	var sqlDBbids []*SqliteDatabaseBid
 	if maxDbRows == 0 {
 		if err := d.sqlDB.Select(&sqlDBbids, "SELECT * FROM Bids WHERE Round < ? ORDER BY Round ASC", maxRound); err != nil {

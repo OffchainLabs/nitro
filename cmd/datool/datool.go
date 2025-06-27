@@ -1,5 +1,5 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package main
 
@@ -23,12 +23,12 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/crypto"
 
-	"github.com/offchainlabs/nitro/arbstate/daprovider"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
-	"github.com/offchainlabs/nitro/das"
-	"github.com/offchainlabs/nitro/das/dastree"
+	"github.com/offchainlabs/nitro/daprovider/das"
+	"github.com/offchainlabs/nitro/daprovider/das/dastree"
+	"github.com/offchainlabs/nitro/daprovider/das/dasutil"
 	"github.com/offchainlabs/nitro/util/signature"
 )
 
@@ -160,7 +160,7 @@ func startClientStore(args []string) error {
 	}
 
 	ctx := context.Background()
-	var cert *daprovider.DataAvailabilityCertificate
+	var cert *dasutil.DataAvailabilityCertificate
 
 	if config.RandomMessageSize > 0 {
 		message := make([]byte, config.RandomMessageSize)
@@ -181,7 +181,7 @@ func startClientStore(args []string) error {
 		return err
 	}
 
-	serializedCert := daprovider.Serialize(cert)
+	serializedCert := dasutil.Serialize(cert)
 	fmt.Printf("Hex Encoded Cert: %s\n", hexutil.Encode(serializedCert))
 	fmt.Printf("Hex Encoded Data Hash: %s\n", hexutil.Encode(cert.DataHash[:]))
 

@@ -1,5 +1,5 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbtest
 
@@ -12,6 +12,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/triedb"
 
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
@@ -28,22 +29,19 @@ func FuzzPrecompiles(f *testing.F) {
 
 	f.Fuzz(func(t *testing.T, precompileSelector byte, methodSelector byte, input []byte) {
 		// Create a StateDB
-		sdb, err := state.New(common.Hash{}, state.NewDatabase(rawdb.NewMemoryDatabase()), nil)
+		sdb, err := state.New(common.Hash{}, state.NewDatabase(triedb.NewDatabase(rawdb.NewMemoryDatabase(), nil), nil))
 		if err != nil {
 			panic(err)
 		}
 		burner := burn.NewSystemBurner(nil, false)
 		chainConfig := chaininfo.ArbitrumDevTestChainConfig()
-		_, err = arbosState.InitializeArbosState(sdb, burner, chainConfig, arbostypes.TestInitMessage)
+		_, err = arbosState.InitializeArbosState(sdb, burner, chainConfig, nil, arbostypes.TestInitMessage)
 		if err != nil {
 			panic(err)
 		}
 
 		// Create an EVM
 		gp := core.GasPool(fuzzGas)
-		txContext := vm.TxContext{
-			GasPrice: common.Big1,
-		}
 		blockContext := vm.BlockContext{
 			CanTransfer: core.CanTransfer,
 			Transfer:    core.Transfer,
@@ -55,7 +53,7 @@ func FuzzPrecompiles(f *testing.F) {
 			GasLimit:    fuzzGas,
 			BaseFee:     common.Big1,
 		}
-		evm := vm.NewEVM(blockContext, txContext, sdb, chainConfig, vm.Config{})
+		evm := vm.NewEVM(blockContext, sdb, chainConfig, vm.Config{})
 
 		// Pick a precompile address based on the first byte of the input
 		var addr common.Address

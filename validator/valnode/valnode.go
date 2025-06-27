@@ -77,6 +77,7 @@ type ValidationNode struct {
 	config     ValidationConfigFetcher
 	arbSpawner *server_arb.ArbitratorSpawner
 	jitSpawner *server_jit.JitSpawner
+	serverAPI  *ExecServerAPI
 
 	redisConsumer *redis.ValidationServer
 }
@@ -137,7 +138,7 @@ func CreateValidationNode(configFetcher ValidationConfigFetcher, stack *node.Nod
 	}}
 	stack.RegisterAPIs(valAPIs)
 
-	return &ValidationNode{configFetcher, arbSpawner, jitSpawner, redisConsumer}, nil
+	return &ValidationNode{configFetcher, arbSpawner, jitSpawner, serverAPI, redisConsumer}, nil
 }
 
 func (v *ValidationNode) Start(ctx context.Context) error {
@@ -152,7 +153,19 @@ func (v *ValidationNode) Start(ctx context.Context) error {
 	if v.redisConsumer != nil {
 		v.redisConsumer.Start(ctx)
 	}
+	v.serverAPI.Start(ctx) // starting cleanup of stale execRuns
 	return nil
+}
+
+func (v *ValidationNode) Stop() {
+	if v.redisConsumer != nil {
+		v.redisConsumer.StopOnly()
+	}
+	v.arbSpawner.Stop()
+	if v.jitSpawner != nil {
+		v.jitSpawner.Stop()
+	}
+	v.serverAPI.StopAndWait() // cleanup of all execRuns
 }
 
 func (v *ValidationNode) GetExec() validator.ExecutionSpawner {

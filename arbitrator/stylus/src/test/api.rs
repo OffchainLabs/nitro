@@ -1,5 +1,5 @@
 // Copyright 2022, Offchain Labs, Inc.
-// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 use crate::{native, run::RunProgram};
 use arbutil::{
@@ -180,7 +180,12 @@ impl EvmApi<VecReader> for TestEvmApi {
         unimplemented!()
     }
 
-    fn account_code(&mut self, _address: Bytes20, _gas_left: Gas) -> (VecReader, Gas) {
+    fn account_code(
+        &mut self,
+        _arbos_version: u64,
+        _address: Bytes20,
+        _gas_left: Gas,
+    ) -> (VecReader, Gas) {
         unimplemented!()
     }
 

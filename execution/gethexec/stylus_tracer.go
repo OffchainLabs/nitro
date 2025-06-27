@@ -1,5 +1,5 @@
 // Copyright 2024, Offchain Labs, Inc.
-// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package gethexec
 
@@ -17,6 +17,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/eth/tracers"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/util/containers"
 )
@@ -69,7 +70,7 @@ var nestsHostios = map[string]bool{
 	"static_call_contract":   true,
 }
 
-func newStylusTracer(ctx *tracers.Context, _ json.RawMessage) (*tracers.Tracer, error) {
+func newStylusTracer(ctx *tracers.Context, _ json.RawMessage, _ *params.ChainConfig) (*tracers.Tracer, error) {
 	t := &stylusTracer{
 		open:  containers.NewStack[HostioTraceInfo](),
 		stack: containers.NewStack[*containers.Stack[HostioTraceInfo]](),

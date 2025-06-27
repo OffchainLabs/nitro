@@ -1,5 +1,5 @@
 // Copyright 2023-2024, Offchain Labs, Inc.
-// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 use crate::{Bytes20, Bytes32};
 use api::Gas;
@@ -76,6 +76,7 @@ pub const GASPRICE_GAS: Gas = GAS_QUICK_STEP;
 pub const ORIGIN_GAS: Gas = GAS_QUICK_STEP;
 
 pub const ARBOS_VERSION_STYLUS_CHARGING_FIXES: u64 = 32;
+pub const ARBOS_VERSION_STYLUS_LAST_CODE_CACHE_FIX: u64 = 40;
 
 #[derive(Clone, Copy, Debug, Default)]
 #[repr(C)]

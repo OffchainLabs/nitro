@@ -1,5 +1,5 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package main
 
@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/ecdsa"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -31,21 +32,21 @@ import (
 	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
+	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/eth/tracers"
 	_ "github.com/ethereum/go-ethereum/eth/tracers/js"
+	_ "github.com/ethereum/go-ethereum/eth/tracers/live"
 	_ "github.com/ethereum/go-ethereum/eth/tracers/native"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/graphql"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/ethereum/go-ethereum/metrics"
-	"github.com/ethereum/go-ethereum/metrics/exp"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbnode/resourcemanager"
-	"github.com/offchainlabs/nitro/arbstate/daprovider"
 	"github.com/offchainlabs/nitro/arbutil"
 	blocksreexecutor "github.com/offchainlabs/nitro/blocks_reexecutor"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
@@ -53,8 +54,8 @@ import (
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
-	"github.com/offchainlabs/nitro/das"
-	"github.com/offchainlabs/nitro/eigenda"
+	"github.com/offchainlabs/nitro/daprovider"
+	"github.com/offchainlabs/nitro/daprovider/das"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	_ "github.com/offchainlabs/nitro/execution/nodeInterface"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
@@ -143,28 +144,6 @@ func main() {
 	os.Exit(mainImpl())
 }
 
-// Checks metrics and PProf flag, runs them if enabled.
-// Note: they are separate so one can enable/disable them as they wish, the only
-// requirement is that they can't run on the same address and port.
-func startMetrics(cfg *NodeConfig) error {
-	mAddr := fmt.Sprintf("%v:%v", cfg.MetricsServer.Addr, cfg.MetricsServer.Port)
-	pAddr := fmt.Sprintf("%v:%v", cfg.PprofCfg.Addr, cfg.PprofCfg.Port)
-	if cfg.Metrics && !metrics.Enabled {
-		return fmt.Errorf("metrics must be enabled via command line by adding --metrics, json config has no effect")
-	}
-	if cfg.Metrics && cfg.PProf && mAddr == pAddr {
-		return fmt.Errorf("metrics and pprof cannot be enabled on the same address:port: %s", mAddr)
-	}
-	if cfg.Metrics {
-		go metrics.CollectProcessMetrics(cfg.MetricsServer.UpdateInterval)
-		exp.Setup(fmt.Sprintf("%v:%v", cfg.MetricsServer.Addr, cfg.MetricsServer.Port))
-	}
-	if cfg.PProf {
-		genericconf.StartPprof(pAddr)
-	}
-	return nil
-}
-
 // Returns the exit code
 func mainImpl() int {
 	ctx, cancelFunc := context.WithCancel(context.Background())
@@ -184,9 +163,6 @@ func mainImpl() int {
 	nodeConfig.Auth.Apply(&stackConf)
 	nodeConfig.IPC.Apply(&stackConf)
 	nodeConfig.GraphQL.Apply(&stackConf)
-	if nodeConfig.WS.ExposeAll {
-		stackConf.WSModules = append(stackConf.WSModules, "personal")
-	}
 	stackConf.P2P.ListenAddr = ""
 	stackConf.P2P.NoDial = true
 	stackConf.P2P.NoDiscovery = true
@@ -239,7 +215,7 @@ func mainImpl() int {
 		log.Error("Sequencer coordinator must be enabled with parent chain reader, try starting node with --parent-chain.connection.url")
 		return 1
 	}
-	if nodeConfig.Execution.Sequencer.Enable && !nodeConfig.Execution.Sequencer.Dangerous.Timeboost.Enable && nodeConfig.Node.TransactionStreamer.TrackBlockMetadataFrom != 0 {
+	if nodeConfig.Execution.Sequencer.Enable && !nodeConfig.Execution.Sequencer.Timeboost.Enable && nodeConfig.Node.TransactionStreamer.TrackBlockMetadataFrom != 0 {
 		log.Warn("Sequencer node's track-block-metadata-from is set but timeboost is not enabled")
 	}
 
@@ -417,7 +393,13 @@ func mainImpl() int {
 		}
 	}
 
-	if err := startMetrics(nodeConfig); err != nil {
+	err = util.StartMetricsAndPProf(&util.MetricsPProfOpts{
+		Metrics:       nodeConfig.Metrics,
+		MetricsServer: nodeConfig.MetricsServer,
+		PProf:         nodeConfig.PProf,
+		PprofCfg:      nodeConfig.PprofCfg,
+	})
+	if err != nil {
 		log.Error("Error starting metrics", "error", err)
 		return 1
 	}
@@ -441,7 +423,18 @@ func mainImpl() int {
 		}
 	}
 
-	chainDb, l2BlockChain, err := openInitializeChainDb(ctx, stack, nodeConfig, new(big.Int).SetUint64(nodeConfig.Chain.ID), gethexec.DefaultCacheConfigFor(stack, &nodeConfig.Execution.Caching), &nodeConfig.Execution.StylusTarget, &nodeConfig.Persistent, l1Client, rollupAddrs)
+	traceConfig := nodeConfig.Execution.VmTrace
+	var tracer *tracing.Hooks
+	if traceConfig.TracerName != "" {
+		tracer, err = tracers.LiveDirectory.New(traceConfig.TracerName, json.RawMessage(traceConfig.JSONConfig))
+		if err != nil {
+			log.Error("custom tracer error:", "name", traceConfig.TracerName, "err", err)
+			return 1
+		}
+		log.Info("enabling custom tracer", "name", traceConfig.TracerName)
+	}
+
+	chainDb, l2BlockChain, err := openInitializeChainDb(ctx, stack, nodeConfig, new(big.Int).SetUint64(nodeConfig.Chain.ID), gethexec.DefaultCacheConfigFor(stack, &nodeConfig.Execution.Caching), &nodeConfig.Execution.StylusTarget, tracer, &nodeConfig.Persistent, l1Client, rollupAddrs)
 	if l2BlockChain != nil {
 		deferFuncs = append(deferFuncs, func() { l2BlockChain.Stop() })
 	}
@@ -532,15 +525,19 @@ func mainImpl() int {
 		l2BlockChain,
 		l1Client,
 		func() *gethexec.Config { return &liveNodeConfig.Get().Execution },
+		liveNodeConfig.Get().Node.TransactionStreamer.SyncTillBlock,
 	)
 	if err != nil {
 		log.Error("failed to create execution node", "err", err)
 		return 1
 	}
 
-	currentNode, err := arbnode.CreateNode(
+	currentNode, err := arbnode.CreateNodeFullExecutionClient(
 		ctx,
 		stack,
+		execNode,
+		execNode,
+		execNode,
 		execNode,
 		arbDb,
 		&NodeConfigFetcher{liveNodeConfig},
@@ -553,6 +550,7 @@ func mainImpl() int {
 		fatalErrChan,
 		new(big.Int).SetUint64(nodeConfig.ParentChain.ID),
 		blobReader,
+		liveNodeConfig.Get().Validation.Wasm.RootPath,
 	)
 	if err != nil {
 		log.Error("failed to create node", "err", err)
@@ -571,7 +569,7 @@ func mainImpl() int {
 		res, err := seqInbox.MaxDataSize(&bind.CallOpts{Context: ctx})
 		if err == nil {
 			seqInboxMaxDataSize = int(res.Int64())
-		} else if !headerreader.ExecutionRevertedRegexp.MatchString(err.Error()) {
+		} else if !headerreader.IsExecutionReverted(err) {
 			log.Error("error fetching MaxDataSize from sequencer inbox", "err", err)
 			return 1
 		}
@@ -590,17 +588,6 @@ func mainImpl() int {
 	// otherwise it maybe best to expose the max supported batch size from the disperser directly
 	// to ensure dynamically adaptability within the rollup.
 	if nodeConfig.Node.BatchPoster.Enable && nodeConfig.Node.EigenDA.Enable {
-		if nodeConfig.Node.BatchPoster.MaxEigenDABatchSize > eigenda.MaxBatchSize {
-			log.Error("batchPoster's MaxEigenDABatchSize too large.", "MaxEigenDABatchSize", eigenda.MaxBatchSize)
-			return 1
-		}
-
-		if !nodeConfig.Node.BatchPoster.EnableEigenDAFailover && !nodeConfig.Node.Dangerous.DisableBlobReader {
-			log.Error("4844 must be disabled if using EigenDA without failover enabled")
-			return 1
-		}
-	}
-	if nodeConfig.Execution.Sequencer.Enable {
 		// Validate MaxTxDataSize to be at least 5kB below the batch poster's MaxSize to allow space for headers and such.
 		if nodeConfig.Execution.Sequencer.MaxTxDataSize > nodeConfig.Node.BatchPoster.MaxSize-5000 {
 			log.Error("sequencer's MaxTxDataSize too large compared to the batchPoster's MaxSize")
@@ -689,6 +676,7 @@ func mainImpl() int {
 			fatalErrChan <- fmt.Errorf("error starting validator node: %w", err)
 		} else {
 			log.Info("validation node started")
+			defer valNode.Stop()
 		}
 	}
 	if err == nil {
@@ -712,19 +700,9 @@ func mainImpl() int {
 		}
 	}
 
-	execNodeConfig := execNode.ConfigFetcher()
-	if execNodeConfig.Sequencer.Enable && execNodeConfig.Sequencer.Dangerous.Timeboost.Enable {
-		err := execNode.Sequencer.InitializeExpressLaneService(
-			execNode.Backend.APIBackend(),
-			execNode.FilterSystem,
-			common.HexToAddress(execNodeConfig.Sequencer.Dangerous.Timeboost.AuctionContractAddress),
-			common.HexToAddress(execNodeConfig.Sequencer.Dangerous.Timeboost.AuctioneerAddress),
-			execNodeConfig.Sequencer.Dangerous.Timeboost.EarlySubmissionGrace,
-		)
-		if err != nil {
-			log.Error("failed to create express lane service", "err", err)
-		}
-		execNode.Sequencer.StartExpressLaneService(ctx)
+	err = execNode.InitializeTimeboost(ctx, chainInfo.ChainConfig)
+	if err != nil {
+		fatalErrChan <- fmt.Errorf("error intializing timeboost: %w", err)
 	}
 
 	err = nil
@@ -1044,6 +1022,10 @@ func applyChainParameters(k *koanf.Koanf, chainId uint64, chainName string, l2Ch
 	}
 	// 0 is default for any chain unless specified in the chain_defaults
 	chainDefaults["node.transaction-streamer.track-block-metadata-from"] = chainInfo.TrackBlockMetadataFrom
+	chainDefaults["node.block-metadata-fetcher.source.url"] = chainInfo.BlockMetadataUrl
+	if chainInfo.TrackBlockMetadataFrom > 0 && chainInfo.BlockMetadataUrl != "" {
+		chainDefaults["node.block-metadata-fetcher.enable"] = true
+	}
 	err = k.Load(confmap.Provider(chainDefaults, "."), nil)
 	if err != nil {
 		return err

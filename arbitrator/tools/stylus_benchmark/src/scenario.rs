@@ -1,5 +1,5 @@
 // Copyright 2021-2025, Offchain Labs, Inc.
-// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 use crate::scenarios::{
     br, br_if, br_table, call, call_indirect, convert, data_type::DataType, global_get, global_set,

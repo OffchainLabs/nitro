@@ -1,5 +1,5 @@
 // Copyright 2023-2024, Offchain Labs, Inc.
-// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 use crate::{
     evm::{
@@ -265,7 +265,7 @@ impl<D: DataReader, H: RequestHandler<D>> EvmApi<D> for EvmApiRequestor<D, H> {
         (res.try_into().unwrap(), cost)
     }
 
-    fn account_code(&mut self, address: Bytes20, gas_left: Gas) -> (D, Gas) {
+    fn account_code(&mut self, arbos_version: u64, address: Bytes20, gas_left: Gas) -> (D, Gas) {
         if let Some((stored_address, data)) = self.last_code.as_ref() {
             if address == *stored_address {
                 return (data.clone(), Gas(0));
@@ -276,7 +276,11 @@ impl<D: DataReader, H: RequestHandler<D>> EvmApi<D> for EvmApiRequestor<D, H> {
         req.extend(gas_left.to_be_bytes());
 
         let (_, data, cost) = self.request(EvmApiMethod::AccountCode, req);
-        self.last_code = Some((address, data.clone()));
+        if !data.slice().is_empty()
+            || arbos_version < super::ARBOS_VERSION_STYLUS_LAST_CODE_CACHE_FIX
+        {
+            self.last_code = Some((address, data.clone()));
+        }
         (data, cost)
     }
 

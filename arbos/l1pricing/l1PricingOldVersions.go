@@ -1,5 +1,5 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package l1pricing
 
@@ -8,6 +8,7 @@ import (
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/params"
 
@@ -120,7 +121,7 @@ func (ps *L1PricingState) _preversion10_UpdateForBatchPosterSpending(
 		return err
 	}
 	err = util.TransferBalance(
-		&L1PricerFundsPoolAddress, &payRewardsTo, paymentForRewards, evm, scenario, "batchPosterReward",
+		&L1PricerFundsPoolAddress, &payRewardsTo, paymentForRewards, evm, scenario, tracing.BalanceChangeTransferBatchposterReward,
 	)
 	if err != nil {
 		return err
@@ -142,7 +143,7 @@ func (ps *L1PricingState) _preversion10_UpdateForBatchPosterSpending(
 			return err
 		}
 		err = util.TransferBalance(
-			&L1PricerFundsPoolAddress, &addrToPay, balanceToTransfer, evm, scenario, "batchPosterRefund",
+			&L1PricerFundsPoolAddress, &addrToPay, balanceToTransfer, evm, scenario, tracing.BalanceChangeTransferBatchposterRefund,
 		)
 		if err != nil {
 			return err
@@ -299,7 +300,7 @@ func (ps *L1PricingState) _preVersion2_UpdateForBatchPosterSpending(
 		return err
 	}
 	err = util.TransferBalance(
-		&L1PricerFundsPoolAddress, &payRewardsTo, paymentForRewards, evm, scenario, "batchPosterReward",
+		&L1PricerFundsPoolAddress, &payRewardsTo, paymentForRewards, evm, scenario, tracing.BalanceChangeTransferBatchposterReward,
 	)
 	if err != nil {
 		return err
@@ -330,7 +331,7 @@ func (ps *L1PricingState) _preVersion2_UpdateForBatchPosterSpending(
 				return err
 			}
 			err = util.TransferBalance(
-				&L1PricerFundsPoolAddress, &addrToPay, balanceToTransfer, evm, scenario, "batchPosterRefund",
+				&L1PricerFundsPoolAddress, &addrToPay, balanceToTransfer, evm, scenario, tracing.BalanceChangeTransferBatchposterRefund,
 			)
 			if err != nil {
 				return err

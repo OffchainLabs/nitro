@@ -1,5 +1,5 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package validatorwallet
 
@@ -22,7 +22,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
-	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
+	"github.com/offchainlabs/nitro/solgen/go/rollup_legacy_gen"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/headerreader"
 )
@@ -34,13 +34,13 @@ var (
 )
 
 func init() {
-	parsedValidator, err := abi.JSON(strings.NewReader(rollupgen.ValidatorWalletABI))
+	parsedValidator, err := abi.JSON(strings.NewReader(rollup_legacy_gen.ValidatorWalletABI))
 	if err != nil {
 		panic(err)
 	}
 	validatorABI = parsedValidator
 
-	parsedValidatorWalletCreator, err := abi.JSON(strings.NewReader(rollupgen.ValidatorWalletCreatorABI))
+	parsedValidatorWalletCreator, err := abi.JSON(strings.NewReader(rollup_legacy_gen.ValidatorWalletCreatorABI))
 	if err != nil {
 		panic(err)
 	}
@@ -49,14 +49,14 @@ func init() {
 }
 
 type Contract struct {
-	con                     *rollupgen.ValidatorWallet
+	con                     *rollup_legacy_gen.ValidatorWallet
 	address                 atomic.Pointer[common.Address]
 	onWalletCreated         func(common.Address)
 	l1Reader                *headerreader.HeaderReader
 	auth                    *bind.TransactOpts
 	walletFactoryAddr       common.Address
 	rollupFromBlock         int64
-	rollup                  *rollupgen.RollupUserLogic
+	rollup                  *rollup_legacy_gen.RollupUserLogic
 	rollupAddress           common.Address
 	challengeManagerAddress common.Address
 	dataPoster              *dataposter.DataPoster
@@ -66,15 +66,15 @@ type Contract struct {
 
 func NewContract(dp *dataposter.DataPoster, address *common.Address, walletFactoryAddr, rollupAddress common.Address, l1Reader *headerreader.HeaderReader, auth *bind.TransactOpts, rollupFromBlock int64, onWalletCreated func(common.Address),
 	getExtraGas func() uint64) (*Contract, error) {
-	var con *rollupgen.ValidatorWallet
+	var con *rollup_legacy_gen.ValidatorWallet
 	if address != nil {
 		var err error
-		con, err = rollupgen.NewValidatorWallet(*address, l1Reader.Client())
+		con, err = rollup_legacy_gen.NewValidatorWallet(*address, l1Reader.Client())
 		if err != nil {
 			return nil, err
 		}
 	}
-	rollup, err := rollupgen.NewRollupUserLogic(rollupAddress, l1Reader.Client())
+	rollup, err := rollup_legacy_gen.NewRollupUserLogic(rollupAddress, l1Reader.Client())
 	if err != nil {
 		return nil, err
 	}
@@ -226,7 +226,7 @@ func (v *Contract) populateWallet(ctx context.Context, createIfMissing bool) err
 			v.onWalletCreated(*addr)
 		}
 	}
-	con, err := rollupgen.NewValidatorWallet(*v.Address(), v.l1Reader.Client())
+	con, err := rollup_legacy_gen.NewValidatorWallet(*v.Address(), v.l1Reader.Client())
 	if err != nil {
 		return err
 	}
@@ -422,7 +422,7 @@ func GetValidatorWalletContract(
 	transactAuth := dataPoster.Auth()
 
 	// TODO: If we just save a mapping in the wallet creator we won't need log search
-	walletCreator, err := rollupgen.NewValidatorWalletCreator(validatorWalletFactoryAddr, client)
+	walletCreator, err := rollup_legacy_gen.NewValidatorWalletCreator(validatorWalletFactoryAddr, client)
 	if err != nil {
 		return nil, err
 	}

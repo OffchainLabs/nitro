@@ -1,5 +1,5 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbos
 
@@ -51,7 +51,7 @@ func TestRetryableLifecycle(t *testing.T) {
 	}
 	proveReapingDoesNothing := func() {
 		stateCheck(t, statedb, false, "reaping had an effect", func() {
-			evm := vm.NewEVM(vm.BlockContext{}, vm.TxContext{}, statedb, &params.ChainConfig{}, vm.Config{})
+			evm := vm.NewEVM(vm.BlockContext{}, statedb, &params.ChainConfig{}, vm.Config{})
 			Require(t, retryableState.TryToReapOneRetryable(currentTime, evm, util.TracingDuringEVM))
 		})
 	}
@@ -108,7 +108,7 @@ func TestRetryableLifecycle(t *testing.T) {
 	for range ids {
 		// check that our reap pricing is reflective of the true cost
 		gasBefore := burner.Burned()
-		evm := vm.NewEVM(vm.BlockContext{}, vm.TxContext{}, statedb, &params.ChainConfig{}, vm.Config{})
+		evm := vm.NewEVM(vm.BlockContext{}, statedb, &params.ChainConfig{}, vm.Config{})
 		Require(t, retryableState.TryToReapOneRetryable(currentTime, evm, util.TracingDuringEVM))
 		gasBurnedToReap := burner.Burned() - gasBefore
 		if gasBurnedToReap != retryables.RetryableReapPrice {
@@ -130,7 +130,7 @@ func TestRetryableLifecycle(t *testing.T) {
 		}
 
 		gasBefore := burner.Burned()
-		evm := vm.NewEVM(vm.BlockContext{}, vm.TxContext{}, statedb, &params.ChainConfig{}, vm.Config{})
+		evm := vm.NewEVM(vm.BlockContext{}, statedb, &params.ChainConfig{}, vm.Config{})
 		Require(t, retryableState.TryToReapOneRetryable(currentTime, evm, util.TracingDuringEVM))
 		gasBurnedToReapAndDelete := burner.Burned() - gasBefore
 		if gasBurnedToReapAndDelete <= retryables.RetryableReapPrice {
@@ -176,7 +176,7 @@ func TestRetryableCleanup(t *testing.T) {
 	stateCheck(t, statedb, false, "state has changed", func() {
 		_, err := retryableState.CreateRetryable(id, timeout, from, &to, callvalue, beneficiary, calldata)
 		Require(t, err)
-		evm := vm.NewEVM(vm.BlockContext{}, vm.TxContext{}, statedb, &params.ChainConfig{}, vm.Config{})
+		evm := vm.NewEVM(vm.BlockContext{}, statedb, &params.ChainConfig{}, vm.Config{})
 		Require(t, retryableState.TryToReapOneRetryable(timestamp, evm, util.TracingDuringEVM))
 		cleared, err := retryableState.TimeoutQueue.Shift()
 		Require(t, err)

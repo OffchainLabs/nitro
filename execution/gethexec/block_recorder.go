@@ -157,7 +157,6 @@ func (r *BlockRecorder) RecordBlockCreation(
 			prevHeader,
 			recordingdb,
 			chaincontext,
-			chainConfig,
 			false,
 			core.MessageReplayMode,
 		)

@@ -1,5 +1,5 @@
 // Copyright 2022-2024, Offchain Labs, Inc.
-// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 use crate::{
     cache::InitCache,
@@ -140,10 +140,21 @@ impl<D: DataReader, E: EvmApi<D>> NativeInstance<D, E> {
         config: StylusConfig,
         target: Target,
     ) -> Result<Self> {
+        let wat_or_wasm = std::fs::read(path)?;
+        Self::from_bytes(wat_or_wasm, evm_api, evm_data, compile, config, target)
+    }
+
+    pub fn from_bytes(
+        bytes: impl AsRef<[u8]>,
+        evm_api: E,
+        evm_data: EvmData,
+        compile: &CompileConfig,
+        config: StylusConfig,
+        target: Target,
+    ) -> Result<Self> {
         let env = WasmEnv::new(compile.clone(), Some(config), evm_api, evm_data);
         let store = env.compile.store(target);
-        let wat_or_wasm = std::fs::read(path)?;
-        let module = Module::new(&store, wat_or_wasm)?;
+        let module = Module::new(&store, bytes)?;
         Self::from_module(module, store, env)
     }
 
