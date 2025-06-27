@@ -1,4 +1,4 @@
-package extractionfunction
+package melextraction
 
 import (
 	"context"
@@ -14,7 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/trie"
 
-	meltypes "github.com/offchainlabs/nitro/arbnode/message-extraction/types"
+	"github.com/offchainlabs/nitro/arbnode/mel"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/daprovider"
@@ -34,10 +34,10 @@ func TestExtractMessages(t *testing.T) {
 			trie.NewStackTrie(nil),
 		)
 		txsFetcher := &mockTxsFetcher{}
-		melState := &meltypes.State{
+		melState := &mel.State{
 			ParentChainBlockHash: common.HexToHash("0x5678"),
 		}
-		melState.SetSeenUnreadDelayedMetaDeque(&meltypes.DelayedMetaDeque{})
+		melState.SetSeenUnreadDelayedMetaDeque(&mel.DelayedMetaDeque{})
 		_, _, _, err := ExtractMessages(
 			ctx,
 			melState,
@@ -59,18 +59,18 @@ func TestExtractMessages(t *testing.T) {
 			nil,
 			trie.NewStackTrie(nil),
 		)
-		melState := &meltypes.State{
+		melState := &mel.State{
 			ParentChainBlockHash: prevParentBlockHash,
 		}
-		melState.SetSeenUnreadDelayedMetaDeque(&meltypes.DelayedMetaDeque{})
+		melState.SetSeenUnreadDelayedMetaDeque(&mel.DelayedMetaDeque{})
 		lookupBatches := func(
 			ctx context.Context,
-			melState *meltypes.State,
+			melState *mel.State,
 			parentChainBlock *types.Header,
 			txsFetcher TransactionsFetcher,
 			receiptFetcher ReceiptFetcher,
 			eventUnpacker eventUnpacker,
-		) ([]*meltypes.SequencerInboxBatch, []*types.Transaction, []uint, error) {
+		) ([]*mel.SequencerInboxBatch, []*types.Transaction, []uint, error) {
 			return nil, nil, nil, errors.New("failed to lookup batches")
 		}
 		txsFetcher := &mockTxsFetcher{}
@@ -102,27 +102,27 @@ func TestExtractMessages(t *testing.T) {
 			nil,
 			trie.NewStackTrie(nil),
 		)
-		melState := &meltypes.State{
+		melState := &mel.State{
 			ParentChainBlockHash: prevParentBlockHash,
 		}
-		melState.SetSeenUnreadDelayedMetaDeque(&meltypes.DelayedMetaDeque{})
+		melState.SetSeenUnreadDelayedMetaDeque(&mel.DelayedMetaDeque{})
 		lookupBatches := func(
 			ctx context.Context,
-			melState *meltypes.State,
+			melState *mel.State,
 			parentChainBlock *types.Header,
 			txsFetcher TransactionsFetcher,
 			receiptFetcher ReceiptFetcher,
 			eventUnpacker eventUnpacker,
-		) ([]*meltypes.SequencerInboxBatch, []*types.Transaction, []uint, error) {
+		) ([]*mel.SequencerInboxBatch, []*types.Transaction, []uint, error) {
 			return nil, nil, nil, nil
 		}
 		lookupDelayedMsgs := func(
 			ctx context.Context,
-			melState *meltypes.State,
+			melState *mel.State,
 			parentChainBlock *types.Header,
 			receiptFetcher ReceiptFetcher,
 			txsFetcher TransactionsFetcher,
-		) ([]*meltypes.DelayedInboxMessage, error) {
+		) ([]*mel.DelayedInboxMessage, error) {
 			return nil, errors.New("failed to lookup delayed messages")
 		}
 
@@ -155,28 +155,28 @@ func TestExtractMessages(t *testing.T) {
 			nil,
 			trie.NewStackTrie(nil),
 		)
-		melState := &meltypes.State{
+		melState := &mel.State{
 			ParentChainBlockHash: prevParentBlockHash,
 		}
-		melState.SetSeenUnreadDelayedMetaDeque(&meltypes.DelayedMetaDeque{})
+		melState.SetSeenUnreadDelayedMetaDeque(&mel.DelayedMetaDeque{})
 		lookupBatches := func(
 			ctx context.Context,
-			melState *meltypes.State,
+			melState *mel.State,
 			parentChainBlock *types.Header,
 			txFetcher TransactionsFetcher,
 			receiptFetcher ReceiptFetcher,
 			eventUnpacker eventUnpacker,
-		) ([]*meltypes.SequencerInboxBatch, []*types.Transaction, []uint, error) {
+		) ([]*mel.SequencerInboxBatch, []*types.Transaction, []uint, error) {
 			return nil, nil, nil, nil
 		}
 		lookupDelayedMsgs := func(
 			ctx context.Context,
-			melState *meltypes.State,
+			melState *mel.State,
 			parentChainBlock *types.Header,
 			receiptFetcher ReceiptFetcher,
 			txsFetcher TransactionsFetcher,
-		) ([]*meltypes.DelayedInboxMessage, error) {
-			delayedMsgs := []*meltypes.DelayedInboxMessage{
+		) ([]*mel.DelayedInboxMessage, error) {
+			delayedMsgs := []*mel.DelayedInboxMessage{
 				{
 					Message: &arbostypes.L1IncomingMessage{
 						L2msg: []byte("foobar"),
@@ -220,19 +220,19 @@ func TestExtractMessages(t *testing.T) {
 			nil,
 			trie.NewStackTrie(nil),
 		)
-		melState := &meltypes.State{
+		melState := &mel.State{
 			ParentChainBlockHash: prevParentBlockHash,
 		}
-		melState.SetSeenUnreadDelayedMetaDeque(&meltypes.DelayedMetaDeque{})
+		melState.SetSeenUnreadDelayedMetaDeque(&mel.DelayedMetaDeque{})
 		lookupBatches := func(
 			ctx context.Context,
-			melState *meltypes.State,
+			melState *mel.State,
 			parentChainBlock *types.Header,
 			txsFetcher TransactionsFetcher,
 			receiptFetcher ReceiptFetcher,
 			eventUnpacker eventUnpacker,
-		) ([]*meltypes.SequencerInboxBatch, []*types.Transaction, []uint, error) {
-			batches := []*meltypes.SequencerInboxBatch{
+		) ([]*mel.SequencerInboxBatch, []*types.Transaction, []uint, error) {
+			batches := []*mel.SequencerInboxBatch{
 				{},
 			}
 			txs := []*types.Transaction{{}}
@@ -241,12 +241,12 @@ func TestExtractMessages(t *testing.T) {
 		}
 		lookupDelayedMsgs := func(
 			ctx context.Context,
-			melState *meltypes.State,
+			melState *mel.State,
 			parentChainBlock *types.Header,
 			receiptFetcher ReceiptFetcher,
 			txsFetcher TransactionsFetcher,
-		) ([]*meltypes.DelayedInboxMessage, error) {
-			delayedMsgs := []*meltypes.DelayedInboxMessage{
+		) ([]*mel.DelayedInboxMessage, error) {
+			delayedMsgs := []*mel.DelayedInboxMessage{
 				{
 					Message: &arbostypes.L1IncomingMessage{
 						L2msg: []byte("foobar"),
@@ -261,7 +261,7 @@ func TestExtractMessages(t *testing.T) {
 			return delayedMsgs, nil
 		}
 		serializer := func(ctx context.Context,
-			batch *meltypes.SequencerInboxBatch,
+			batch *mel.SequencerInboxBatch,
 			tx *types.Transaction,
 			txIndex uint,
 			receiptFetcher ReceiptFetcher,
@@ -296,19 +296,19 @@ func TestExtractMessages(t *testing.T) {
 			nil,
 			trie.NewStackTrie(nil),
 		)
-		melState := &meltypes.State{
+		melState := &mel.State{
 			ParentChainBlockHash: prevParentBlockHash,
 		}
-		melState.SetSeenUnreadDelayedMetaDeque(&meltypes.DelayedMetaDeque{})
+		melState.SetSeenUnreadDelayedMetaDeque(&mel.DelayedMetaDeque{})
 		lookupBatches := func(
 			ctx context.Context,
-			melState *meltypes.State,
+			melState *mel.State,
 			parentChainBlock *types.Header,
 			txsFetcher TransactionsFetcher,
 			receiptFetcher ReceiptFetcher,
 			eventUnpacker eventUnpacker,
-		) ([]*meltypes.SequencerInboxBatch, []*types.Transaction, []uint, error) {
-			batches := []*meltypes.SequencerInboxBatch{
+		) ([]*mel.SequencerInboxBatch, []*types.Transaction, []uint, error) {
+			batches := []*mel.SequencerInboxBatch{
 				{},
 			}
 			txs := []*types.Transaction{{}}
@@ -317,12 +317,12 @@ func TestExtractMessages(t *testing.T) {
 		}
 		lookupDelayedMsgs := func(
 			ctx context.Context,
-			melState *meltypes.State,
+			melState *mel.State,
 			parentChainBlock *types.Header,
 			receiptFetcher ReceiptFetcher,
 			txsFetcher TransactionsFetcher,
-		) ([]*meltypes.DelayedInboxMessage, error) {
-			delayedMsgs := []*meltypes.DelayedInboxMessage{
+		) ([]*mel.DelayedInboxMessage, error) {
+			delayedMsgs := []*mel.DelayedInboxMessage{
 				{
 					Message: &arbostypes.L1IncomingMessage{
 						L2msg: []byte("foobar"),
@@ -337,7 +337,7 @@ func TestExtractMessages(t *testing.T) {
 			return delayedMsgs, nil
 		}
 		serializer := func(ctx context.Context,
-			batch *meltypes.SequencerInboxBatch,
+			batch *mel.SequencerInboxBatch,
 			tx *types.Transaction,
 			txIndex uint,
 			receiptFetcher ReceiptFetcher,
@@ -377,19 +377,19 @@ func TestExtractMessages(t *testing.T) {
 			nil,
 			trie.NewStackTrie(nil),
 		)
-		melState := &meltypes.State{
+		melState := &mel.State{
 			ParentChainBlockHash: prevParentBlockHash,
 		}
-		melState.SetSeenUnreadDelayedMetaDeque(&meltypes.DelayedMetaDeque{})
+		melState.SetSeenUnreadDelayedMetaDeque(&mel.DelayedMetaDeque{})
 		lookupBatches := func(
 			ctx context.Context,
-			melState *meltypes.State,
+			melState *mel.State,
 			parentChainBlock *types.Header,
 			txFetcher TransactionsFetcher,
 			receiptFetcher ReceiptFetcher,
 			eventUnpacker eventUnpacker,
-		) ([]*meltypes.SequencerInboxBatch, []*types.Transaction, []uint, error) {
-			batches := []*meltypes.SequencerInboxBatch{
+		) ([]*mel.SequencerInboxBatch, []*types.Transaction, []uint, error) {
+			batches := []*mel.SequencerInboxBatch{
 				{},
 			}
 			txs := []*types.Transaction{{}}
@@ -398,12 +398,12 @@ func TestExtractMessages(t *testing.T) {
 		}
 		lookupDelayedMsgs := func(
 			ctx context.Context,
-			melState *meltypes.State,
+			melState *mel.State,
 			parentChainBlock *types.Header,
 			receiptFetcher ReceiptFetcher,
 			txsFetcher TransactionsFetcher,
-		) ([]*meltypes.DelayedInboxMessage, error) {
-			delayedMsgs := []*meltypes.DelayedInboxMessage{
+		) ([]*mel.DelayedInboxMessage, error) {
+			delayedMsgs := []*mel.DelayedInboxMessage{
 				{
 					Message: &arbostypes.L1IncomingMessage{
 						L2msg: []byte("foobar"),
@@ -418,7 +418,7 @@ func TestExtractMessages(t *testing.T) {
 			return delayedMsgs, nil
 		}
 		serializer := func(ctx context.Context,
-			batch *meltypes.SequencerInboxBatch,
+			batch *mel.SequencerInboxBatch,
 			tx *types.Transaction,
 			txIndex uint,
 			receiptFetcher ReceiptFetcher,
@@ -458,19 +458,19 @@ func TestExtractMessages(t *testing.T) {
 			nil,
 			trie.NewStackTrie(nil),
 		)
-		melState := &meltypes.State{
+		melState := &mel.State{
 			ParentChainBlockHash: prevParentBlockHash,
 		}
-		melState.SetSeenUnreadDelayedMetaDeque(&meltypes.DelayedMetaDeque{})
+		melState.SetSeenUnreadDelayedMetaDeque(&mel.DelayedMetaDeque{})
 		lookupBatches := func(
 			ctx context.Context,
-			melState *meltypes.State,
+			melState *mel.State,
 			parentChainBlock *types.Header,
 			txsFetcher TransactionsFetcher,
 			receiptFetcher ReceiptFetcher,
 			eventUnpacker eventUnpacker,
-		) ([]*meltypes.SequencerInboxBatch, []*types.Transaction, []uint, error) {
-			batches := []*meltypes.SequencerInboxBatch{
+		) ([]*mel.SequencerInboxBatch, []*types.Transaction, []uint, error) {
+			batches := []*mel.SequencerInboxBatch{
 				{},
 			}
 			txs := []*types.Transaction{{}}
@@ -479,12 +479,12 @@ func TestExtractMessages(t *testing.T) {
 		}
 		lookupDelayedMsgs := func(
 			ctx context.Context,
-			melState *meltypes.State,
+			melState *mel.State,
 			parentChainBlock *types.Header,
 			receiptFetcher ReceiptFetcher,
 			txsFetcher TransactionsFetcher,
-		) ([]*meltypes.DelayedInboxMessage, error) {
-			delayedMsgs := []*meltypes.DelayedInboxMessage{
+		) ([]*mel.DelayedInboxMessage, error) {
+			delayedMsgs := []*mel.DelayedInboxMessage{
 				{
 					Message: &arbostypes.L1IncomingMessage{
 						L2msg: []byte("foobar"),
@@ -499,7 +499,7 @@ func TestExtractMessages(t *testing.T) {
 			return delayedMsgs, nil
 		}
 		serializer := func(ctx context.Context,
-			batch *meltypes.SequencerInboxBatch,
+			batch *mel.SequencerInboxBatch,
 			tx *types.Transaction,
 			txIndex uint,
 			receiptFetcher ReceiptFetcher,
@@ -549,19 +549,19 @@ func TestExtractMessages(t *testing.T) {
 			nil,
 			trie.NewStackTrie(nil),
 		)
-		melState := &meltypes.State{
+		melState := &mel.State{
 			ParentChainBlockHash: prevParentBlockHash,
 		}
-		melState.SetSeenUnreadDelayedMetaDeque(&meltypes.DelayedMetaDeque{})
+		melState.SetSeenUnreadDelayedMetaDeque(&mel.DelayedMetaDeque{})
 		lookupBatches := func(
 			ctx context.Context,
-			melState *meltypes.State,
+			melState *mel.State,
 			parentChainBlock *types.Header,
 			txsFetcher TransactionsFetcher,
 			receiptFetcher ReceiptFetcher,
 			eventUnpacker eventUnpacker,
-		) ([]*meltypes.SequencerInboxBatch, []*types.Transaction, []uint, error) {
-			batches := []*meltypes.SequencerInboxBatch{
+		) ([]*mel.SequencerInboxBatch, []*types.Transaction, []uint, error) {
+			batches := []*mel.SequencerInboxBatch{
 				{},
 			}
 			txs := []*types.Transaction{{}}
@@ -570,12 +570,12 @@ func TestExtractMessages(t *testing.T) {
 		}
 		lookupDelayedMsgs := func(
 			ctx context.Context,
-			melState *meltypes.State,
+			melState *mel.State,
 			parentChainBlock *types.Header,
 			receiptFetcher ReceiptFetcher,
 			txsFetcher TransactionsFetcher,
-		) ([]*meltypes.DelayedInboxMessage, error) {
-			delayedMsgs := []*meltypes.DelayedInboxMessage{
+		) ([]*mel.DelayedInboxMessage, error) {
+			delayedMsgs := []*mel.DelayedInboxMessage{
 				{
 					Message: &arbostypes.L1IncomingMessage{
 						L2msg: []byte("foobar"),
@@ -590,7 +590,7 @@ func TestExtractMessages(t *testing.T) {
 			return delayedMsgs, nil
 		}
 		serializer := func(ctx context.Context,
-			batch *meltypes.SequencerInboxBatch,
+			batch *mel.SequencerInboxBatch,
 			tx *types.Transaction,
 			txIndex uint,
 			receiptFetcher ReceiptFetcher,
@@ -614,7 +614,7 @@ func TestExtractMessages(t *testing.T) {
 		}
 		extractBatchMessages := func(
 			ctx context.Context,
-			melState *meltypes.State,
+			melState *mel.State,
 			seqMsg *arbstate.SequencerMessage,
 			delayedMsgDB DelayedMessageDatabase,
 		) ([]*arbostypes.MessageWithMetadata, error) {
@@ -648,19 +648,19 @@ func TestExtractMessages(t *testing.T) {
 			nil,
 			trie.NewStackTrie(nil),
 		)
-		melState := &meltypes.State{
+		melState := &mel.State{
 			ParentChainBlockHash: prevParentBlockHash,
 		}
-		melState.SetSeenUnreadDelayedMetaDeque(&meltypes.DelayedMetaDeque{})
+		melState.SetSeenUnreadDelayedMetaDeque(&mel.DelayedMetaDeque{})
 		lookupBatches := func(
 			ctx context.Context,
-			melState *meltypes.State,
+			melState *mel.State,
 			parentChainBlock *types.Header,
 			txsFetcher TransactionsFetcher,
 			receiptFetcher ReceiptFetcher,
 			eventUnpacker eventUnpacker,
-		) ([]*meltypes.SequencerInboxBatch, []*types.Transaction, []uint, error) {
-			batches := []*meltypes.SequencerInboxBatch{
+		) ([]*mel.SequencerInboxBatch, []*types.Transaction, []uint, error) {
+			batches := []*mel.SequencerInboxBatch{
 				{},
 			}
 			txs := []*types.Transaction{{}}
@@ -669,12 +669,12 @@ func TestExtractMessages(t *testing.T) {
 		}
 		lookupDelayedMsgs := func(
 			ctx context.Context,
-			melState *meltypes.State,
+			melState *mel.State,
 			parentChainBlock *types.Header,
 			receiptFetcher ReceiptFetcher,
 			txsFetcher TransactionsFetcher,
-		) ([]*meltypes.DelayedInboxMessage, error) {
-			delayedMsgs := []*meltypes.DelayedInboxMessage{
+		) ([]*mel.DelayedInboxMessage, error) {
+			delayedMsgs := []*mel.DelayedInboxMessage{
 				{
 					Message: &arbostypes.L1IncomingMessage{
 						L2msg: []byte("foobar"),
@@ -689,7 +689,7 @@ func TestExtractMessages(t *testing.T) {
 			return delayedMsgs, nil
 		}
 		serializer := func(ctx context.Context,
-			batch *meltypes.SequencerInboxBatch,
+			batch *mel.SequencerInboxBatch,
 			tx *types.Transaction,
 			txIndex uint,
 			receiptFetcher ReceiptFetcher,
@@ -713,7 +713,7 @@ func TestExtractMessages(t *testing.T) {
 		}
 		extractBatchMessages := func(
 			ctx context.Context,
-			melState *meltypes.State,
+			melState *mel.State,
 			seqMsg *arbstate.SequencerMessage,
 			delayedMsgDB DelayedMessageDatabase,
 		) ([]*arbostypes.MessageWithMetadata, error) {

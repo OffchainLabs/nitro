@@ -1,4 +1,4 @@
-package meltypes
+package mel
 
 import (
 	"context"

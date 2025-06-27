@@ -1,4 +1,4 @@
-package extractionfunction
+package melextraction
 
 import (
 	"context"
@@ -11,14 +11,14 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 
 	"github.com/offchainlabs/nitro/arbcompress"
-	meltypes "github.com/offchainlabs/nitro/arbnode/message-extraction/types"
+	"github.com/offchainlabs/nitro/arbnode/mel"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbstate"
 )
 
 func Test_extractMessagesInBatch(t *testing.T) {
 	ctx := context.Background()
-	melState := &meltypes.State{
+	melState := &mel.State{
 		DelayedMessagesRead: 0,
 	}
 	seqMsg := &arbstate.SequencerMessage{
@@ -28,7 +28,7 @@ func Test_extractMessagesInBatch(t *testing.T) {
 		},
 	}
 	mockDB := &mockDelayedMessageDB{
-		DelayedMessages: map[uint64]*meltypes.DelayedInboxMessage{
+		DelayedMessages: map[uint64]*mel.DelayedInboxMessage{
 			0: {
 				Message: &arbostypes.L1IncomingMessage{
 					L2msg: []byte("foobar"),
@@ -60,7 +60,7 @@ func Test_extractArbosMessage(t *testing.T) {
 		require.NoError(t, err)
 		encodedTimestampAdvance, err := rlp.EncodeToBytes(uint64(50))
 		require.NoError(t, err)
-		melState := &meltypes.State{}
+		melState := &mel.State{}
 		seqMsg := &arbstate.SequencerMessage{
 			Segments: [][]byte{
 				append([]byte{arbstate.BatchSegmentKindAdvanceTimestamp}, encodedTimestampAdvance...),
@@ -88,7 +88,7 @@ func Test_extractArbosMessage(t *testing.T) {
 		require.NoError(t, err)
 		encodedBlockNum, err := rlp.EncodeToBytes(uint64(20))
 		require.NoError(t, err)
-		melState := &meltypes.State{}
+		melState := &mel.State{}
 		seqMsg := &arbstate.SequencerMessage{
 			Segments: [][]byte{
 				append([]byte{arbstate.BatchSegmentKindAdvanceL1BlockNumber}, encodedBlockNum...),
@@ -117,7 +117,7 @@ func Test_extractArbosMessage(t *testing.T) {
 		require.NoError(t, err)
 		encodedTimestampAdvance := make([]byte, 8)
 		binary.BigEndian.PutUint64(encodedTimestampAdvance, 50)
-		melState := &meltypes.State{}
+		melState := &mel.State{}
 		seqMsg := &arbstate.SequencerMessage{
 			Segments: [][]byte{
 				append([]byte{arbstate.BatchSegmentKindAdvanceTimestamp}, encodedTimestampAdvance...),
@@ -140,7 +140,7 @@ func Test_extractArbosMessage(t *testing.T) {
 		require.Equal(t, msg.Message.L2msg, []byte("foobar"))
 	})
 	t.Run("delayed message segment greater than what has been read", func(t *testing.T) {
-		melState := &meltypes.State{
+		melState := &mel.State{
 			DelayedMessagesRead: 1,
 		}
 		seqMsg := &arbstate.SequencerMessage{
@@ -163,7 +163,7 @@ func Test_extractArbosMessage(t *testing.T) {
 		require.Equal(t, arbostypes.InvalidL1Message, msg.Message)
 	})
 	t.Run("gets error fetching delayed message from database", func(t *testing.T) {
-		melState := &meltypes.State{
+		melState := &mel.State{
 			DelayedMessagesRead: 0,
 		}
 		seqMsg := &arbstate.SequencerMessage{
@@ -188,7 +188,7 @@ func Test_extractArbosMessage(t *testing.T) {
 		require.ErrorContains(t, err, "oops")
 	})
 	t.Run("gets nil delayed message from database", func(t *testing.T) {
-		melState := &meltypes.State{
+		melState := &mel.State{
 			DelayedMessagesRead: 0,
 		}
 		seqMsg := &arbstate.SequencerMessage{
@@ -198,7 +198,7 @@ func Test_extractArbosMessage(t *testing.T) {
 			},
 		}
 		mockDB := &mockDelayedMessageDB{
-			DelayedMessages: map[uint64]*meltypes.DelayedInboxMessage{},
+			DelayedMessages: map[uint64]*mel.DelayedInboxMessage{},
 		}
 		params := &arbosExtractionParams{
 			melState:         melState,
@@ -213,7 +213,7 @@ func Test_extractArbosMessage(t *testing.T) {
 		require.ErrorContains(t, err, "no more delayed messages in db")
 	})
 	t.Run("reading delayed message OK", func(t *testing.T) {
-		melState := &meltypes.State{
+		melState := &mel.State{
 			DelayedMessagesRead: 0,
 		}
 		seqMsg := &arbstate.SequencerMessage{
@@ -223,7 +223,7 @@ func Test_extractArbosMessage(t *testing.T) {
 			},
 		}
 		mockDB := &mockDelayedMessageDB{
-			DelayedMessages: map[uint64]*meltypes.DelayedInboxMessage{
+			DelayedMessages: map[uint64]*mel.DelayedInboxMessage{
 				0: {
 					Message: &arbostypes.L1IncomingMessage{
 						L2msg: []byte("foobar"),
@@ -255,7 +255,7 @@ func Test_isLastSegment(t *testing.T) {
 		{
 			name: "less than after delayed messages",
 			p: &arbosExtractionParams{
-				melState: &meltypes.State{
+				melState: &mel.State{
 					DelayedMessagesRead: 1,
 				},
 				seqMsg: &arbstate.SequencerMessage{
@@ -269,7 +269,7 @@ func Test_isLastSegment(t *testing.T) {
 		{
 			name: "first segment is zero and next one is brotli message",
 			p: &arbosExtractionParams{
-				melState: &meltypes.State{
+				melState: &mel.State{
 					DelayedMessagesRead: 1,
 				},
 				seqMsg: &arbstate.SequencerMessage{
@@ -283,7 +283,7 @@ func Test_isLastSegment(t *testing.T) {
 		{
 			name: "segment is delayed message kind",
 			p: &arbosExtractionParams{
-				melState: &meltypes.State{
+				melState: &mel.State{
 					DelayedMessagesRead: 1,
 				},
 				seqMsg: &arbstate.SequencerMessage{
@@ -297,7 +297,7 @@ func Test_isLastSegment(t *testing.T) {
 		{
 			name: "is last segment",
 			p: &arbosExtractionParams{
-				melState: &meltypes.State{
+				melState: &mel.State{
 					DelayedMessagesRead: 1,
 				},
 				seqMsg: &arbstate.SequencerMessage{
@@ -322,15 +322,15 @@ func Test_isLastSegment(t *testing.T) {
 
 type mockDelayedMessageDB struct {
 	DelayedMessagesRead uint64
-	DelayedMessages     map[uint64]*meltypes.DelayedInboxMessage
+	DelayedMessages     map[uint64]*mel.DelayedInboxMessage
 	err                 error
 }
 
 func (m *mockDelayedMessageDB) ReadDelayedMessage(
 	_ context.Context,
-	_ *meltypes.State,
+	_ *mel.State,
 	delayedMsgsRead uint64,
-) (*meltypes.DelayedInboxMessage, error) {
+) (*mel.DelayedInboxMessage, error) {
 	if m.err != nil {
 		return nil, m.err
 	}

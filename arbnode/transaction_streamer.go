@@ -27,7 +27,7 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 
 	dbschema "github.com/offchainlabs/nitro/arbnode/db-schema"
-	mel "github.com/offchainlabs/nitro/arbnode/message-extraction"
+	melrunner "github.com/offchainlabs/nitro/arbnode/mel/runner"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcastclient"
@@ -69,7 +69,7 @@ type TransactionStreamer struct {
 	coordinator     *SeqCoordinator
 	broadcastServer *broadcaster.Broadcaster
 	inboxReader     *InboxReader
-	msgExtractor    *mel.MessageExtractor
+	msgExtractor    *melrunner.MessageExtractor
 	delayedBridge   *DelayedBridge
 
 	trackBlockMetadataFrom arbutil.MessageIndex
@@ -198,7 +198,7 @@ func (s *TransactionStreamer) SetInboxReaders(inboxReader *InboxReader, delayedB
 	s.delayedBridge = delayedBridge
 }
 
-func (s *TransactionStreamer) SetMsgExtractor(msgExtractor *mel.MessageExtractor) {
+func (s *TransactionStreamer) SetMsgExtractor(msgExtractor *melrunner.MessageExtractor) {
 	if s.Started() {
 		panic("trying to set inbox reader after start")
 	}

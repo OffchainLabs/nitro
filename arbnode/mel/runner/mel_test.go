@@ -1,4 +1,4 @@
-package mel
+package melrunner
 
 import (
 	"context"
@@ -15,7 +15,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/rpc"
 
-	meltypes "github.com/offchainlabs/nitro/arbnode/message-extraction/types"
+	"github.com/offchainlabs/nitro/arbnode/mel"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/daprovider"
@@ -72,7 +72,7 @@ func TestMessageExtractor(t *testing.T) {
 
 		// Expect that we can now transition to the process
 		// next block state.
-		melState := &meltypes.State{
+		melState := &mel.State{
 			Version:                42,
 			ParentChainBlockNumber: 1,
 		}
@@ -141,13 +141,13 @@ func (m *mockMessageConsumer) PushMessages(ctx context.Context, firstMsgIdx uint
 }
 
 type mockInitialStateFetcher struct {
-	state     *meltypes.State
+	state     *mel.State
 	returnErr error
 }
 
 func (m *mockInitialStateFetcher) FetchInitialState(
 	_ context.Context, _ common.Hash, _ uint64,
-) (*meltypes.State, error) {
+) (*mel.State, error) {
 	if m.returnErr != nil {
 		return nil, m.returnErr
 	}

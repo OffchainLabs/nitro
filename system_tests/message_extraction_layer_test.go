@@ -19,8 +19,8 @@ import (
 	"github.com/offchainlabs/bold/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbnode"
-	mel "github.com/offchainlabs/nitro/arbnode/message-extraction"
-	meltypes "github.com/offchainlabs/nitro/arbnode/message-extraction/types"
+	"github.com/offchainlabs/nitro/arbnode/mel"
+	melrunner "github.com/offchainlabs/nitro/arbnode/mel/runner"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/merkleAccumulator"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -65,10 +65,10 @@ func TestMessageExtractionLayer_SequencerBatchMessageEquivalence(t *testing.T) {
 		time.Sleep(500 * time.Millisecond)
 	}
 
-	melDB := mel.NewDatabase(builder.L2.ConsensusNode.ArbDB)
+	melDB := melrunner.NewDatabase(builder.L2.ConsensusNode.ArbDB)
 	Require(t, melDB.SaveState(ctx, melState)) // save head mel state
 	mockMsgConsumer := &mockMELDB{savedMsgs: make([]*arbostypes.MessageWithMetadata, 0)}
-	extractor, err := mel.NewMessageExtractor(
+	extractor, err := melrunner.NewMessageExtractor(
 		l1Reader.Client(),
 		builder.addresses,
 		melDB,
@@ -103,7 +103,7 @@ func TestMessageExtractionLayer_SequencerBatchMessageEquivalence(t *testing.T) {
 		// If the extractor FSM has been in the ProcessingNextBlock state twice in a row, without error, it means
 		// it has caught up to the latest (or configured safe/finalized) parent chain block. We can
 		// exit the loop here and assert information about MEL.
-		if prevFSMState == mel.ProcessingNextBlock && newFSMState == mel.ProcessingNextBlock {
+		if prevFSMState == melrunner.ProcessingNextBlock && newFSMState == melrunner.ProcessingNextBlock {
 			break
 		}
 	}
@@ -200,10 +200,10 @@ func TestMessageExtractionLayer_SequencerBatchMessageEquivalence_Blobs(t *testin
 	l1Reader.Start(ctx)
 	defer l1Reader.StopAndWait()
 
-	melDB := mel.NewDatabase(builder.L2.ConsensusNode.ArbDB)
+	melDB := melrunner.NewDatabase(builder.L2.ConsensusNode.ArbDB)
 	Require(t, melDB.SaveState(ctx, melState)) // save head mel state
 	mockMsgConsumer := &mockMELDB{savedMsgs: make([]*arbostypes.MessageWithMetadata, 0)}
-	extractor, err := mel.NewMessageExtractor(
+	extractor, err := melrunner.NewMessageExtractor(
 		l1Reader.Client(),
 		builder.addresses,
 		melDB,
@@ -239,7 +239,7 @@ func TestMessageExtractionLayer_SequencerBatchMessageEquivalence_Blobs(t *testin
 		// If the extractor FSM has been in the ProcessingNextBlock state twice in a row, without error, it means
 		// it has caught up to the latest (or configured safe/finalized) parent chain block. We can
 		// exit the loop here and assert information about MEL.
-		if prevFSMState == mel.ProcessingNextBlock && newFSMState == mel.ProcessingNextBlock {
+		if prevFSMState == melrunner.ProcessingNextBlock && newFSMState == melrunner.ProcessingNextBlock {
 			break
 		}
 	}
@@ -289,13 +289,13 @@ func TestMessageExtractionLayer_SequencerBatchMessageEquivalence_Blobs(t *testin
 	// Start from 1 to ignore the init message.
 	readAcc, err := merkleAccumulator.NewNonpersistentMerkleAccumulatorFromPartials(nil)
 	Require(t, err)
-	readHelperState := &meltypes.State{DelayedMessagedSeen: 1}
-	readHelperState.SetSeenUnreadDelayedMetaDeque(&meltypes.DelayedMetaDeque{})
+	readHelperState := &mel.State{DelayedMessagedSeen: 1}
+	readHelperState.SetSeenUnreadDelayedMetaDeque(&mel.DelayedMetaDeque{})
 	readHelperState.SetReadDelayedMsgsAcc(readAcc)
 	for i := uint64(1); i < numDelayedMessages; i++ {
 		fromInboxTracker, err := builder.L2.ConsensusNode.InboxTracker.GetDelayedMessage(ctx, i)
 		Require(t, err)
-		Require(t, readHelperState.AccumulateDelayedMessage(&meltypes.DelayedInboxMessage{Message: fromInboxTracker}))
+		Require(t, readHelperState.AccumulateDelayedMessage(&mel.DelayedInboxMessage{Message: fromInboxTracker}))
 		readHelperState.DelayedMessagedSeen++
 		fromMelDB, err := melDB.ReadDelayedMessage(ctx, readHelperState, i)
 		Require(t, err)
@@ -341,10 +341,10 @@ func TestMessageExtractionLayer_DelayedMessageEquivalence_Simple(t *testing.T) {
 	l1Reader.Start(ctx)
 	defer l1Reader.StopAndWait()
 
-	melDB := mel.NewDatabase(builder.L2.ConsensusNode.ArbDB)
+	melDB := melrunner.NewDatabase(builder.L2.ConsensusNode.ArbDB)
 	Require(t, melDB.SaveState(ctx, melState)) // save head mel state
 	mockMsgConsumer := &mockMELDB{savedMsgs: make([]*arbostypes.MessageWithMetadata, 0)}
-	extractor, err := mel.NewMessageExtractor(
+	extractor, err := melrunner.NewMessageExtractor(
 		l1Reader.Client(),
 		builder.addresses,
 		melDB,
@@ -364,7 +364,7 @@ func TestMessageExtractionLayer_DelayedMessageEquivalence_Simple(t *testing.T) {
 		// If the extractor FSM has been in the ProcessingNextBlock state twice in a row, without error, it means
 		// it has caught up to the latest (or configured safe/finalized) parent chain block. We can
 		// exit the loop here and assert information about MEL.
-		if prevFSMState == mel.ProcessingNextBlock && newFSMState == mel.ProcessingNextBlock {
+		if prevFSMState == melrunner.ProcessingNextBlock && newFSMState == melrunner.ProcessingNextBlock {
 			break
 		}
 	}
@@ -387,13 +387,13 @@ func TestMessageExtractionLayer_DelayedMessageEquivalence_Simple(t *testing.T) {
 	// Start from 1 to ignore the init message.
 	readAcc, err := merkleAccumulator.NewNonpersistentMerkleAccumulatorFromPartials(nil)
 	Require(t, err)
-	readHelperState := &meltypes.State{DelayedMessagedSeen: 1}
-	readHelperState.SetSeenUnreadDelayedMetaDeque(&meltypes.DelayedMetaDeque{})
+	readHelperState := &mel.State{DelayedMessagedSeen: 1}
+	readHelperState.SetSeenUnreadDelayedMetaDeque(&mel.DelayedMetaDeque{})
 	readHelperState.SetReadDelayedMsgsAcc(readAcc)
 	for i := uint64(1); i < numDelayedMessages; i++ {
 		fromInboxTracker, err := builder.L2.ConsensusNode.InboxTracker.GetDelayedMessage(ctx, i)
 		Require(t, err)
-		Require(t, readHelperState.AccumulateDelayedMessage(&meltypes.DelayedInboxMessage{Message: fromInboxTracker}))
+		Require(t, readHelperState.AccumulateDelayedMessage(&mel.DelayedInboxMessage{Message: fromInboxTracker}))
 		readHelperState.DelayedMessagedSeen++
 		fromMelDB, err := melDB.ReadDelayedMessage(ctx, readHelperState, i)
 		Require(t, err)
@@ -422,7 +422,7 @@ func TestMessageExtractionLayer_DelayedMessageEquivalence_Simple(t *testing.T) {
 		}
 		newFSMState := extractor.CurrentFSMState()
 		// After reorg rewinding is done in the SavingMessages step, break
-		if prevFSMState == mel.SavingMessages && newFSMState == mel.ProcessingNextBlock {
+		if prevFSMState == melrunner.SavingMessages && newFSMState == melrunner.ProcessingNextBlock {
 			break
 		}
 	}
@@ -641,11 +641,11 @@ func TestMessageExtractionLayer_UseArbDBForStoringDelayedMessages(t *testing.T) 
 	l1Reader.Start(ctx)
 	defer l1Reader.StopAndWait()
 
-	melDB := mel.NewDatabase(builder.L2.ConsensusNode.ArbDB)
+	melDB := melrunner.NewDatabase(builder.L2.ConsensusNode.ArbDB)
 	Require(t, melDB.SaveState(ctx, melState)) // save head mel state
 	// TODO: tx streamer to be used here when ready to run the node using mel thus replacing inbox reader-tracker code
 	mockMsgConsumer := &mockMELDB{savedMsgs: make([]*arbostypes.MessageWithMetadata, 0)}
-	extractor, err := mel.NewMessageExtractor(
+	extractor, err := melrunner.NewMessageExtractor(
 		l1Reader.Client(),
 		builder.addresses,
 		melDB,
@@ -665,7 +665,7 @@ func TestMessageExtractionLayer_UseArbDBForStoringDelayedMessages(t *testing.T) 
 		// If the extractor FSM has been in the ProcessingNextBlock state twice in a row, without error, it means
 		// it has caught up to the latest (or configured safe/finalized) parent chain block. We can
 		// exit the loop here and assert information about MEL.
-		if prevFSMState == mel.ProcessingNextBlock && newFSMState == mel.ProcessingNextBlock {
+		if prevFSMState == melrunner.ProcessingNextBlock && newFSMState == melrunner.ProcessingNextBlock {
 			break
 		}
 	}
@@ -719,9 +719,9 @@ func TestMessageExtractionLayer_UseArbDBForStoringDelayedMessages(t *testing.T) 
 
 type mockMELDB struct {
 	savedMsgs        []*arbostypes.MessageWithMetadata
-	savedDelayedMsgs []*meltypes.DelayedInboxMessage
-	savedStates      map[uint64]*meltypes.State
-	lastState        *meltypes.State
+	savedDelayedMsgs []*mel.DelayedInboxMessage
+	savedStates      map[uint64]*mel.State
+	lastState        *mel.State
 }
 
 func (m *mockMELDB) PushMessages(ctx context.Context, firstMsgIdx uint64, messages []*arbostypes.MessageWithMetadata) error {
@@ -732,7 +732,7 @@ func (m *mockMELDB) PushMessages(ctx context.Context, firstMsgIdx uint64, messag
 func (m *mockMELDB) State(
 	ctx context.Context,
 	parentChainBlockNumber uint64,
-) (*meltypes.State, error) {
+) (*mel.State, error) {
 	state, ok := m.savedStates[parentChainBlockNumber]
 	if !ok {
 		return nil, errors.New("state not found")
@@ -742,7 +742,7 @@ func (m *mockMELDB) State(
 
 func (m *mockMELDB) SaveState(
 	ctx context.Context,
-	state *meltypes.State,
+	state *mel.State,
 ) error {
 	m.savedStates[state.ParentChainBlockNumber] = state
 	m.lastState = state
@@ -751,7 +751,7 @@ func (m *mockMELDB) SaveState(
 
 func (m *mockMELDB) FetchInitialState(
 	ctx context.Context, parentChainBlockHash common.Hash, _ uint64,
-) (*meltypes.State, error) {
+) (*mel.State, error) {
 	if m.lastState.ParentChainBlockHash != parentChainBlockHash {
 		return nil, fmt.Errorf("parentChainBlockHash of db doesnt match the hash queried by initialStateFetcher")
 	}
@@ -760,17 +760,17 @@ func (m *mockMELDB) FetchInitialState(
 
 func (m *mockMELDB) SaveDelayedMessages(
 	ctx context.Context,
-	state *meltypes.State,
-	delayedMessages []*meltypes.DelayedInboxMessage,
+	state *mel.State,
+	delayedMessages []*mel.DelayedInboxMessage,
 ) error {
 	m.savedDelayedMsgs = append(m.savedDelayedMsgs, delayedMessages...)
 	return nil
 }
 func (m *mockMELDB) ReadDelayedMessage(
 	ctx context.Context,
-	_ *meltypes.State,
+	_ *mel.State,
 	index uint64,
-) (*meltypes.DelayedInboxMessage, error) {
+) (*mel.DelayedInboxMessage, error) {
 	if index == 0 {
 		return nil, errors.New("index cannot be 0")
 	}
@@ -787,7 +787,7 @@ func createInitialMELState(
 	ctx context.Context,
 	addrs *chaininfo.RollupAddresses,
 	client *ethclient.Client,
-) *meltypes.State {
+) *mel.State {
 	// Create an initial MEL state from the latest confirmed assertion.
 	rollup, err := rollupgen.NewRollupUserLogic(addrs.Rollup, client)
 	Require(t, err)
@@ -807,7 +807,7 @@ func createInitialMELState(
 	Require(t, err)
 
 	// TODO: Construct the correct MEL state from the latest confirmed assertion.
-	return &meltypes.State{
+	return &mel.State{
 		Version:                            0,
 		BatchPostingTargetAddress:          addrs.SequencerInbox,
 		DelayedMessagePostingTargetAddress: addrs.Bridge,
