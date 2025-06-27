@@ -40,7 +40,7 @@ func extractMessagesInBatch(
 	var msg *arbostypes.MessageWithMetadata
 	var err error
 	for {
-		if isLastSegment(params) {
+		if hasSegmentsRemaining(params) {
 			break
 		}
 		msg, params, err = extractArbosMessage(ctx, params)
@@ -59,7 +59,7 @@ func extractMessagesInBatch(
 	return messages, nil
 }
 
-func isLastSegment(p *arbosExtractionParams) bool {
+func hasSegmentsRemaining(p *arbosExtractionParams) bool {
 	// we issue delayed messages until reaching afterDelayedMessages
 	if p.melState.DelayedMessagesRead < p.seqMsg.AfterDelayedMessages {
 		return false

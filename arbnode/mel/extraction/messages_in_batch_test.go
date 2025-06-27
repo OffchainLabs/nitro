@@ -296,7 +296,7 @@ func Test_extractArbosMessage(t *testing.T) {
 	}
 }
 
-func Test_isLastSegment(t *testing.T) {
+func Test_hasSegmentsRemaining(t *testing.T) {
 	tests := []struct {
 		name     string
 		p        *arbosExtractionParams
@@ -362,7 +362,7 @@ func Test_isLastSegment(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			result := isLastSegment(test.p)
+			result := hasSegmentsRemaining(test.p)
 			if result != test.expected {
 				t.Errorf("expected %v, got %v", test.expected, result)
 			}
