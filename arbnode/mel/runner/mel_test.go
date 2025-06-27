@@ -1,4 +1,4 @@
-package mel
+package melrunner
 
 import (
 	"context"
@@ -14,14 +14,14 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 
 	"github.com/offchainlabs/nitro/arbnode"
-	meltypes "github.com/offchainlabs/nitro/arbnode/message-extraction/types"
+	"github.com/offchainlabs/nitro/arbnode/mel"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/daprovider"
 )
 
 var _ ParentChainReader = (*mockParentChainReader)(nil)
-var _ meltypes.StateDatabase = (*mockMELDB)(nil)
+var _ mel.StateDatabase = (*mockMELDB)(nil)
 
 func TestMessageExtractor(t *testing.T) {
 	ctx := context.Background()
@@ -63,7 +63,7 @@ func TestMessageExtractor(t *testing.T) {
 
 		// Expect that we can now transition to the process
 		// next block state.
-		melState := &meltypes.State{
+		melState := &mel.State{
 			Version:                42,
 			ParentChainBlockNumber: 0,
 		}
@@ -106,13 +106,13 @@ func TestMessageExtractor(t *testing.T) {
 }
 
 type mockInitialStateFetcher struct {
-	state     *meltypes.State
+	state     *mel.State
 	returnErr error
 }
 
 func (m *mockInitialStateFetcher) GetState(
 	_ context.Context, _ common.Hash,
-) (*meltypes.State, error) {
+) (*mel.State, error) {
 	if m.returnErr != nil {
 		return nil, m.returnErr
 	}
@@ -176,13 +176,13 @@ type mockMELDB struct {
 func (m *mockMELDB) State(
 	_ context.Context,
 	_ common.Hash,
-) (*meltypes.State, error) {
+) (*mel.State, error) {
 	return nil, errors.New("unimplemented")
 }
 
 func (m *mockMELDB) SaveState(
 	_ context.Context,
-	_ *meltypes.State,
+	_ *mel.State,
 	_ []*arbostypes.MessageWithMetadata,
 ) error {
 	return nil
@@ -190,14 +190,14 @@ func (m *mockMELDB) SaveState(
 
 func (m *mockMELDB) SaveDelayedMessages(
 	_ context.Context,
-	_ *meltypes.State,
+	_ *mel.State,
 	_ []*arbnode.DelayedInboxMessage,
 ) error {
 	return nil
 }
 func (m *mockMELDB) ReadDelayedMessage(
 	_ context.Context,
-	_ *meltypes.State,
+	_ *mel.State,
 	_ uint64,
 ) (*arbnode.DelayedInboxMessage, error) {
 	return nil, errors.New("unimplemented")

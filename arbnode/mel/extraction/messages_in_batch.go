@@ -1,4 +1,4 @@
-package extractionfunction
+package melextraction
 
 import (
 	"bytes"
@@ -10,7 +10,7 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 
 	"github.com/offchainlabs/nitro/arbcompress"
-	meltypes "github.com/offchainlabs/nitro/arbnode/message-extraction/types"
+	"github.com/offchainlabs/nitro/arbnode/mel"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbstate"
@@ -22,7 +22,7 @@ import (
 // virtual segment in encountered.
 func extractMessagesInBatch(
 	ctx context.Context,
-	melState *meltypes.State,
+	melState *mel.State,
 	seqMsg *arbstate.SequencerMessage,
 	delayedMsgDB DelayedMessageDatabase,
 ) ([]*arbostypes.MessageWithMetadata, error) {
@@ -81,7 +81,7 @@ func isLastSegment(p *arbosExtractionParams) bool {
 }
 
 type arbosExtractionParams struct {
-	melState         *meltypes.State
+	melState         *mel.State
 	seqMsg           *arbstate.SequencerMessage
 	delayedMsgDB     DelayedMessageDatabase
 	targetSubMessage uint64
