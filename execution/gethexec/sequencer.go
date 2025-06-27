@@ -181,7 +181,7 @@ var DefaultSequencerConfig = SequencerConfig{
 	MaxTxDataSize:                95000,
 	NonceFailureCacheSize:        1024,
 	NonceFailureCacheExpiry:      time.Second,
-	ExpectedSurplusGasPriceMode:  "CalldataPrice",
+	ExpectedSurplusGasPriceMode:  "BlobPrice",
 	ExpectedSurplusSoftThreshold: "default",
 	ExpectedSurplusHardThreshold: "default",
 	EnableProfiling:              false,
