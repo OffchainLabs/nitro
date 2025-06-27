@@ -3,11 +3,16 @@ package util
 import (
 	"runtime"
 
-	_ "go.uber.org/automaxprocs"
+	"go.uber.org/automaxprocs/maxprocs"
 )
 
-// Automaxprocs automatically set GOMAXPROCS to match Linux container CPU quota.
-// So we are wrapping it here to make sure we do not call it anywhere else without importing automaxprocs.
+func init() {
+	// Disable maxprocs logs
+	_, _ = maxprocs.Set(maxprocs.Logger(func(_ string, _ ...any) {}))
+}
+
+// GoMaxProcs wraps runtime.GOMAXPROCS here to ensure that maxprocs.Set()
+// is always called first.
 func GoMaxProcs() int {
 	return runtime.GOMAXPROCS(-1)
 }
