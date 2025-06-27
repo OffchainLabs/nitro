@@ -56,7 +56,6 @@ var (
 	conditionalTxAcceptedBySequencerCounter = metrics.NewRegisteredCounter("arb/sequencer/conditionaltx/accepted", nil)
 	l1GasPriceGauge                         = metrics.NewRegisteredGauge("arb/sequencer/l1gasprice", nil)
 	callDataUnitsBacklogGauge               = metrics.NewRegisteredGauge("arb/sequencer/calldataunitsbacklog", nil)
-	unusedL1GasChargeGauge                  = metrics.NewRegisteredGauge("arb/sequencer/unusedl1gascharge", nil)
 	currentSurplusGauge                     = metrics.NewRegisteredGauge("arb/sequencer/currentsurplus", nil)
 	expectedSurplusGauge                    = metrics.NewRegisteredGauge("arb/sequencer/expectedsurplus", nil)
 )
@@ -74,6 +73,7 @@ type SequencerConfig struct {
 	MaxTxDataSize                int             `koanf:"max-tx-data-size" reload:"hot"`
 	NonceFailureCacheSize        int             `koanf:"nonce-failure-cache-size" reload:"hot"`
 	NonceFailureCacheExpiry      time.Duration   `koanf:"nonce-failure-cache-expiry" reload:"hot"`
+	ExpectedSurplusGasPriceMode  string          `koanf:"expected-surplus-gas-price-mode"`
 	ExpectedSurplusSoftThreshold string          `koanf:"expected-surplus-soft-threshold" reload:"hot"`
 	ExpectedSurplusHardThreshold string          `koanf:"expected-surplus-hard-threshold" reload:"hot"`
 	EnableProfiling              bool            `koanf:"enable-profiling" reload:"hot"`
@@ -85,7 +85,6 @@ type SequencerConfig struct {
 
 type DangerousConfig struct {
 	DisableSeqInboxMaxDataSizeCheck bool `koanf:"disable-seq-inbox-max-data-size-check"`
-	DisableBlobBaseFeeCheck         bool `koanf:"disable-blob-base-fee-check"`
 }
 
 type TimeboostConfig struct {
@@ -123,15 +122,21 @@ func (c *SequencerConfig) Validate() error {
 			return fmt.Errorf("sequencer sender whitelist entry \"%v\" is not a valid address", address)
 		}
 	}
+	if c.ExpectedSurplusGasPriceMode != "CalldataPrice" &&
+		c.ExpectedSurplusGasPriceMode != "BlobPrice" &&
+		c.ExpectedSurplusGasPriceMode != "CalldataPrice7623" {
+		return fmt.Errorf("undefined expected-surplus-gas-price-mode: %s", c.ExpectedSurplusGasPriceMode)
+	}
+
 	var err error
 	if c.ExpectedSurplusSoftThreshold != "default" {
 		if c.expectedSurplusSoftThreshold, err = strconv.Atoi(c.ExpectedSurplusSoftThreshold); err != nil {
-			return fmt.Errorf("invalid expected-surplus-soft-threshold value provided in batchposter config %w", err)
+			return fmt.Errorf("invalid expected-surplus-soft-threshold value provided in sequencer config %w", err)
 		}
 	}
 	if c.ExpectedSurplusHardThreshold != "default" {
 		if c.expectedSurplusHardThreshold, err = strconv.Atoi(c.ExpectedSurplusHardThreshold); err != nil {
-			return fmt.Errorf("invalid expected-surplus-hard-threshold value provided in batchposter config %w", err)
+			return fmt.Errorf("invalid expected-surplus-hard-threshold value provided in sequencer config %w", err)
 		}
 	}
 	if c.expectedSurplusSoftThreshold < c.expectedSurplusHardThreshold {
@@ -176,6 +181,7 @@ var DefaultSequencerConfig = SequencerConfig{
 	MaxTxDataSize:                95000,
 	NonceFailureCacheSize:        1024,
 	NonceFailureCacheExpiry:      time.Second,
+	ExpectedSurplusGasPriceMode:  "CalldataPrice",
 	ExpectedSurplusSoftThreshold: "default",
 	ExpectedSurplusHardThreshold: "default",
 	EnableProfiling:              false,
@@ -185,7 +191,6 @@ var DefaultSequencerConfig = SequencerConfig{
 
 var DefaultDangerousConfig = DangerousConfig{
 	DisableSeqInboxMaxDataSizeCheck: false,
-	DisableBlobBaseFeeCheck:         false,
 }
 
 func SequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -204,6 +209,7 @@ func SequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Int(prefix+".max-tx-data-size", DefaultSequencerConfig.MaxTxDataSize, "maximum transaction size the sequencer will accept")
 	f.Int(prefix+".nonce-failure-cache-size", DefaultSequencerConfig.NonceFailureCacheSize, "number of transactions with too high of a nonce to keep in memory while waiting for their predecessor")
 	f.Duration(prefix+".nonce-failure-cache-expiry", DefaultSequencerConfig.NonceFailureCacheExpiry, "maximum amount of time to wait for a predecessor before rejecting a tx with nonce too high")
+	f.String(prefix+".expected-surplus-gas-price-mode", DefaultSequencerConfig.ExpectedSurplusGasPriceMode, "gas price setting to be used in calculating estimated surplus. Allowed values- CalldataPrice, BlobPrice and CalldataPrice7523")
 	f.String(prefix+".expected-surplus-soft-threshold", DefaultSequencerConfig.ExpectedSurplusSoftThreshold, "if expected surplus is lower than this value, warnings are posted")
 	f.String(prefix+".expected-surplus-hard-threshold", DefaultSequencerConfig.ExpectedSurplusHardThreshold, "if expected surplus is lower than this value, new incoming transactions will be denied")
 	f.Bool(prefix+".enable-profiling", DefaultSequencerConfig.EnableProfiling, "enable CPU profiling and tracing")
@@ -224,7 +230,6 @@ func TimeboostAddOptions(prefix string, f *flag.FlagSet) {
 
 func DangerousAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".disable-seq-inbox-max-data-size-check", DefaultDangerousConfig.DisableSeqInboxMaxDataSizeCheck, "DANGEROUS! disables nitro checks on sequencer MaxTxDataSize against the sequencer inbox MaxDataSize")
-	f.Bool(prefix+".disable-blob-base-fee-check", DefaultDangerousConfig.DisableBlobBaseFeeCheck, "DANGEROUS! disables nitro checks on sequencer for blob base fee")
 }
 
 type txQueueItem struct {
@@ -1348,35 +1353,42 @@ func (s *Sequencer) updateExpectedSurplus(ctx context.Context) (int64, error) {
 	if err != nil {
 		return 0, fmt.Errorf("error encountered getting latest header from l1reader while updating expectedSurplus: %w", err)
 	}
-	l1GasPrice := header.BaseFee.Uint64()
-	if header.BlobGasUsed != nil && !s.config().Dangerous.DisableBlobBaseFeeCheck {
-		if header.ExcessBlobGas != nil {
-			blobFeePerByte, err := s.l1Reader.Client().BlobBaseFee(ctx)
-			if err != nil {
-				return 0, fmt.Errorf("error encountered getting blob base fee while updating expectedSurplus: %w", err)
-			}
-			blobFeePerByte.Mul(blobFeePerByte, blobTxBlobGasPerBlob)
-			blobFeePerByte.Div(blobFeePerByte, usableBytesInBlob)
-			if l1GasPrice > blobFeePerByte.Uint64()/16 {
-				l1GasPrice = blobFeePerByte.Uint64() / 16
-			}
+	l1GasPrice := header.BaseFee.Int64()
+
+	// #nosec G115
+	backlogCallDataUnits := int64(s.execEngine.backlogCallDataUnits())
+	var backlogCost int64 // tx's cached calldata units are already scaled by TxDataNonZeroGasEIP2028 = 16, so we divide them by 16 while calculating cost for blobs and for EIP7623 pricing accordingly
+	switch s.config().ExpectedSurplusGasPriceMode {
+	case "CalldataPrice":
+		backlogCost = backlogCallDataUnits * header.BaseFee.Int64()
+	case "BlobPrice":
+		if header.BlobGasUsed == nil || header.ExcessBlobGas == nil {
+			return 0, errors.New("expected surplus calculation is set to use blob price but latest parent chain header has BlobGasUsed or ExcessBlobGas as nil")
 		}
+		blobFeePerByte, err := s.l1Reader.Client().BlobBaseFee(ctx)
+		if err != nil {
+			return 0, fmt.Errorf("error encountered getting blob base fee while updating expectedSurplus: %w", err)
+		}
+		blobFeePerByte.Mul(blobFeePerByte, blobTxBlobGasPerBlob)
+		blobFeePerByte.Div(blobFeePerByte, usableBytesInBlob)
+		l1GasPrice = blobFeePerByte.Int64() / 16
+		backlogCost = (backlogCallDataUnits * blobFeePerByte.Int64()) / 16
+	case "CalldataPrice7623":
+		l1GasPrice = (header.BaseFee.Int64() * 40) / 16
+		backlogCost = (backlogCallDataUnits * header.BaseFee.Int64() * 40) / 16
+	default:
+		return 0, fmt.Errorf("unrecognized ExpectedSurplusGasPriceMode: %s", s.config().ExpectedSurplusGasPriceMode)
 	}
+
 	surplus, err := s.execEngine.getL1PricingSurplus()
 	if err != nil {
 		return 0, fmt.Errorf("error encountered getting l1 pricing surplus while updating expectedSurplus: %w", err)
 	}
-	// #nosec G115
-	backlogL1GasCharged := int64(s.execEngine.backlogL1GasCharged())
-	// #nosec G115
-	backlogCallDataUnits := int64(s.execEngine.backlogCallDataUnits())
-	// #nosec G115
-	expectedSurplus := int64(surplus) + backlogL1GasCharged - backlogCallDataUnits*int64(l1GasPrice)
+	expectedSurplus := surplus - backlogCost
+
 	// update metrics
-	// #nosec G115
-	l1GasPriceGauge.Update(int64(l1GasPrice))
+	l1GasPriceGauge.Update(l1GasPrice)
 	callDataUnitsBacklogGauge.Update(backlogCallDataUnits)
-	unusedL1GasChargeGauge.Update(backlogL1GasCharged)
 	currentSurplusGauge.Update(surplus)
 	expectedSurplusGauge.Update(expectedSurplus)
 	config := s.config()
