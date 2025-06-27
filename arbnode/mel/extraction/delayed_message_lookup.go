@@ -1,4 +1,4 @@
-package extractionfunction
+package melextraction
 
 import (
 	"bytes"
@@ -13,21 +13,27 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 
-	"github.com/offchainlabs/nitro/arbnode"
-	meltypes "github.com/offchainlabs/nitro/arbnode/message-extraction/types"
+	"github.com/offchainlabs/nitro/arbnode/mel"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 )
 
 func parseDelayedMessagesFromBlock(
 	ctx context.Context,
-	melState *meltypes.State,
-	parentChainBlockNum *big.Int,
-	parentChainBlockTxs []*types.Transaction,
+	melState *mel.State,
+	parentChainHeader *types.Header,
 	receiptFetcher ReceiptFetcher,
-) ([]*arbnode.DelayedInboxMessage, error) {
-	msgScaffolds := make([]*arbnode.DelayedInboxMessage, 0)
+	txsFetcher TransactionsFetcher,
+) ([]*mel.DelayedInboxMessage, error) {
+	msgScaffolds := make([]*mel.DelayedInboxMessage, 0)
 	messageDeliveredEvents := make([]*bridgegen.IBridgeMessageDelivered, 0)
+	parentChainBlockTxs, err := txsFetcher.TransactionsByHeader(
+		ctx,
+		parentChainHeader.Hash(),
+	)
+	if err != nil {
+		return nil, err
+	}
 	for i, tx := range parentChainBlockTxs {
 		if tx.To() == nil {
 			continue
@@ -51,7 +57,7 @@ func parseDelayedMessagesFromBlock(
 			continue
 		}
 		delayedMessageScaffolds, parsedLogs, err := delayedMessageScaffoldsFromLogs(
-			parentChainBlockNum,
+			parentChainHeader.Number,
 			relevantLogs,
 		)
 		if err != nil {
@@ -72,12 +78,15 @@ func parseDelayedMessagesFromBlock(
 	}
 	messageData := make(map[common.Hash][]byte)
 	for i, tx := range parentChainBlockTxs {
-		if tx.To() == nil {
-			continue
-		}
-		_, ok := inboxAddressSet[*tx.To()]
-		if !ok {
-			continue
+		// TODO: remove this temporary work around for handling init message, i.e skipping the check when msgCount==0
+		if melState.MsgCount != 0 {
+			if tx.To() == nil {
+				continue
+			}
+			_, ok := inboxAddressSet[*tx.To()]
+			if !ok {
+				continue
+			}
 		}
 		txIndex := uint(i) // #nosec G115
 		receipt, err := receiptFetcher.ReceiptForTransactionIndex(ctx, txIndex)
@@ -122,7 +131,7 @@ func parseDelayedMessagesFromBlock(
 
 func delayedMessageScaffoldsFromLogs(
 	parentChainBlockNum *big.Int, logs []*types.Log,
-) ([]*arbnode.DelayedInboxMessage, []*bridgegen.IBridgeMessageDelivered, error) {
+) ([]*mel.DelayedInboxMessage, []*bridgegen.IBridgeMessageDelivered, error) {
 	if len(logs) == 0 {
 		return nil, nil, nil
 	}
@@ -131,7 +140,7 @@ func delayedMessageScaffoldsFromLogs(
 	// First, do a pass over the logs to extract message delivered events, which
 	// contain an inbox address and a message index.
 	for _, ethLog := range logs {
-		if ethLog == nil {
+		if ethLog == nil || len(ethLog.Topics) == 0 || ethLog.Topics[0] != iBridgeABI.Events["MessageDelivered"].ID {
 			continue
 		}
 		event := new(bridgegen.IBridgeMessageDelivered)
@@ -143,14 +152,14 @@ func delayedMessageScaffoldsFromLogs(
 
 	// A list of delayed messages that do not have nil L2msg data within, which
 	// will be filled in later after another pass over logs.
-	delayedMessageScaffolds := make([]*arbnode.DelayedInboxMessage, 0, len(parsedLogs))
+	delayedMessageScaffolds := make([]*mel.DelayedInboxMessage, 0, len(parsedLogs))
 
 	// Next, we construct the messages themselves from the parsed logs.
 	for _, parsedLog := range parsedLogs {
 		msgKey := common.BigToHash(parsedLog.MessageIndex)
 		_ = msgKey
 		requestId := common.BigToHash(parsedLog.MessageIndex)
-		msg := &arbnode.DelayedInboxMessage{
+		msg := &mel.DelayedInboxMessage{
 			BlockHash:      parsedLog.Raw.BlockHash,
 			BeforeInboxAcc: parsedLog.BeforeInboxAcc,
 			Message: &arbostypes.L1IncomingMessage{
@@ -209,7 +218,7 @@ func parseDelayedMessage(
 	}
 }
 
-type sortableMessageList []*arbnode.DelayedInboxMessage
+type sortableMessageList []*mel.DelayedInboxMessage
 
 func (l sortableMessageList) Len() int {
 	return len(l)

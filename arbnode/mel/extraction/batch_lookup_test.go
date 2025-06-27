@@ -1,4 +1,4 @@
-package extractionfunction
+package melextraction
 
 import (
 	"context"
@@ -13,8 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/trie"
 
-	"github.com/offchainlabs/nitro/arbnode"
-	meltypes "github.com/offchainlabs/nitro/arbnode/message-extraction/types"
+	"github.com/offchainlabs/nitro/arbnode/mel"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 )
 
@@ -35,7 +34,8 @@ func Test_parseBatchesFromBlock(t *testing.T) {
 		batches, txs, txIndices, err := parseBatchesFromBlock(
 			ctx,
 			nil,
-			block,
+			block.Header(),
+			&mockTxsFetcher{},
 			nil,
 			nil,
 		)
@@ -59,6 +59,9 @@ func Test_parseBatchesFromBlock(t *testing.T) {
 		blockBody := &types.Body{
 			Transactions: []*types.Transaction{tx},
 		}
+		txsFetcher := &mockTxsFetcher{
+			txs: []*types.Transaction{tx},
+		}
 		block := types.NewBlock(
 			blockHeader,
 			blockBody,
@@ -67,8 +70,9 @@ func Test_parseBatchesFromBlock(t *testing.T) {
 		)
 		batches, txs, txIndices, err := parseBatchesFromBlock(
 			ctx,
-			nil,
-			block,
+			&mel.State{MsgCount: 1},
+			block.Header(),
+			txsFetcher,
 			nil,
 			nil,
 		)
@@ -93,19 +97,24 @@ func Test_parseBatchesFromBlock(t *testing.T) {
 		blockBody := &types.Body{
 			Transactions: []*types.Transaction{tx},
 		}
+		txsFetcher := &mockTxsFetcher{
+			txs: []*types.Transaction{tx},
+		}
 		block := types.NewBlock(
 			blockHeader,
 			blockBody,
 			nil,
 			trie.NewStackTrie(nil),
 		)
-		melState := &meltypes.State{
+		melState := &mel.State{
 			BatchPostingTargetAddress: batchPostingTargetAddr,
+			MsgCount:                  1,
 		}
 		batches, txs, txIndices, err := parseBatchesFromBlock(
 			ctx,
 			melState,
-			block,
+			block.Header(),
+			txsFetcher,
 			nil,
 			nil,
 		)
@@ -129,13 +138,16 @@ func Test_parseBatchesFromBlock(t *testing.T) {
 		blockBody := &types.Body{
 			Transactions: []*types.Transaction{tx},
 		}
+		txsFetcher := &mockTxsFetcher{
+			txs: []*types.Transaction{tx},
+		}
 		block := types.NewBlock(
 			blockHeader,
 			blockBody,
 			nil,
 			trie.NewStackTrie(nil),
 		)
-		melState := &meltypes.State{
+		melState := &mel.State{
 			BatchPostingTargetAddress: batchPostingTargetAddr,
 		}
 		receiptFetcher := &mockReceiptFetcher{
@@ -145,7 +157,8 @@ func Test_parseBatchesFromBlock(t *testing.T) {
 		_, _, _, err := parseBatchesFromBlock(
 			ctx,
 			melState,
-			block,
+			block.Header(),
+			txsFetcher,
 			receiptFetcher,
 			nil,
 		)
@@ -166,6 +179,9 @@ func Test_parseBatchesFromBlock(t *testing.T) {
 		blockBody := &types.Body{
 			Transactions: []*types.Transaction{tx},
 		}
+		txsFetcher := &mockTxsFetcher{
+			txs: []*types.Transaction{tx},
+		}
 		receipt := &types.Receipt{
 			Logs: []*types.Log{},
 		}
@@ -176,7 +192,7 @@ func Test_parseBatchesFromBlock(t *testing.T) {
 			receipts,
 			trie.NewStackTrie(nil),
 		)
-		melState := &meltypes.State{
+		melState := &mel.State{
 			BatchPostingTargetAddress: batchPostingTargetAddr,
 		}
 		receiptFetcher := &mockReceiptFetcher{
@@ -186,7 +202,8 @@ func Test_parseBatchesFromBlock(t *testing.T) {
 		batches, txs, txIndices, err := parseBatchesFromBlock(
 			ctx,
 			melState,
-			block,
+			block.Header(),
+			txsFetcher,
 			receiptFetcher,
 			nil,
 		)
@@ -224,17 +241,21 @@ func Test_parseBatchesFromBlock(t *testing.T) {
 			receipts,
 			trie.NewStackTrie(nil),
 		)
-		melState := &meltypes.State{
+		melState := &mel.State{
 			BatchPostingTargetAddress: batchPostingTargetAddr,
 		}
 		receiptFetcher := &mockReceiptFetcher{
 			receipts: receipts,
 			err:      nil,
 		}
+		txsFetcher := &mockTxsFetcher{
+			txs: []*types.Transaction{tx},
+		}
 		batches, txs, txIndices, err := parseBatchesFromBlock(
 			ctx,
 			melState,
-			block,
+			block.Header(),
+			txsFetcher,
 			receiptFetcher,
 			nil,
 		)
@@ -273,7 +294,7 @@ func Test_parseBatchesFromBlock(t *testing.T) {
 			receipts,
 			trie.NewStackTrie(nil),
 		)
-		melState := &meltypes.State{
+		melState := &mel.State{
 			BatchPostingTargetAddress: batchPostingTargetAddr,
 		}
 		receiptFetcher := &mockReceiptFetcher{
@@ -285,10 +306,14 @@ func Test_parseBatchesFromBlock(t *testing.T) {
 			idx:    0,
 			err:    errors.New("oops event unpacking error"),
 		}
+		txsFetcher := &mockTxsFetcher{
+			txs: []*types.Transaction{tx},
+		}
 		_, _, _, err := parseBatchesFromBlock(
 			ctx,
 			melState,
-			block,
+			block.Header(),
+			txsFetcher,
 			receiptFetcher,
 			eventUnpacker,
 		)
@@ -324,7 +349,7 @@ func Test_parseBatchesFromBlock(t *testing.T) {
 			receipts,
 			trie.NewStackTrie(nil),
 		)
-		melState := &meltypes.State{
+		melState := &mel.State{
 			BatchPostingTargetAddress: batchPostingTargetAddr,
 		}
 		receiptFetcher := &mockReceiptFetcher{
@@ -335,10 +360,14 @@ func Test_parseBatchesFromBlock(t *testing.T) {
 			events: []*bridgegen.SequencerInboxSequencerBatchDelivered{event},
 			idx:    0,
 		}
+		txsFetcher := &mockTxsFetcher{
+			txs: []*types.Transaction{tx},
+		}
 		batches, txs, txIndices, err := parseBatchesFromBlock(
 			ctx,
 			melState,
-			block,
+			block.Header(),
+			txsFetcher,
 			receiptFetcher,
 			eventUnpacker,
 		)
@@ -404,7 +433,7 @@ func Test_parseBatchesFromBlock_outOfOrderBatches(t *testing.T) {
 		receipts,
 		trie.NewStackTrie(nil),
 	)
-	melState := &meltypes.State{
+	melState := &mel.State{
 		BatchPostingTargetAddress: batchPostingTargetAddr,
 	}
 	receiptFetcher := &mockReceiptFetcher{
@@ -418,10 +447,14 @@ func Test_parseBatchesFromBlock_outOfOrderBatches(t *testing.T) {
 		},
 		idx: 0,
 	}
+	txsFetcher := &mockTxsFetcher{
+		txs: []*types.Transaction{tx1, tx2},
+	}
 	_, _, _, err := parseBatchesFromBlock(
 		ctx,
 		melState,
-		block,
+		block.Header(),
+		txsFetcher,
 		receiptFetcher,
 		eventUnpacker,
 	)
@@ -431,7 +464,7 @@ func Test_parseBatchesFromBlock_outOfOrderBatches(t *testing.T) {
 func setupParseBatchesTest(t *testing.T, seqNumber *big.Int) (
 	*bridgegen.SequencerInboxSequencerBatchDelivered,
 	[]byte,
-	*arbnode.SequencerInboxBatch,
+	*mel.SequencerInboxBatch,
 ) {
 	event := &bridgegen.SequencerInboxSequencerBatchDelivered{
 		BatchSequenceNumber:      seqNumber,
@@ -458,7 +491,7 @@ func setupParseBatchesTest(t *testing.T, seqNumber *big.Int) (
 		event.DataLocation,
 	)
 	require.NoError(t, err)
-	wantedBatch := &arbnode.SequencerInboxBatch{
+	wantedBatch := &mel.SequencerInboxBatch{
 		SequenceNumber:    event.BatchSequenceNumber.Uint64(),
 		BeforeInboxAcc:    event.BeforeAcc,
 		AfterInboxAcc:     event.AfterAcc,
@@ -487,6 +520,21 @@ func (m *mockEventUnpacker) unpackLogTo(
 	*ev = *m.events[m.idx]
 	m.idx += 1
 	return nil
+}
+
+type mockTxsFetcher struct {
+	txs types.Transactions
+	err error
+}
+
+func (m *mockTxsFetcher) TransactionsByHeader(
+	ctx context.Context,
+	parentChainHeaderHash common.Hash,
+) (types.Transactions, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
+	return m.txs, nil
 }
 
 type mockReceiptFetcher struct {
