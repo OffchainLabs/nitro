@@ -7,6 +7,7 @@ package arbtest
 
 import (
 	"context"
+	"encoding/binary"
 	"sync"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -87,15 +88,37 @@ func (e *EvilDAProvider) RecoverPayloadFromBatch(
 	return e.reader.RecoverPayloadFromBatch(ctx, batchNum, batchBlockHash, sequencerMsg, preimages, validateSeqMsg)
 }
 
-// GenerateProof delegates to underlying validator
-// TODO: Implement evil proof generation for certificates with evil data mappings
+// GenerateProof generates proof for evil data if configured, otherwise delegates
 func (e *EvilDAProvider) GenerateProof(
 	ctx context.Context,
 	preimageType arbutil.PreimageType,
 	hash common.Hash,
 	offset uint64,
 ) ([]byte, error) {
-	// For now, just delegate to underlying validator
-	// If needed, we could intercept here too for evil data proofs
+	if preimageType != arbutil.CustomDAPreimageType {
+		return e.validator.GenerateProof(ctx, preimageType, hash, offset)
+	}
+
+	// Check if we have evil data for this certificate hash
+	e.mu.RLock()
+	evilData, hasEvil := e.evilMappings[hash]
+	e.mu.RUnlock()
+
+	if hasEvil {
+		// Generate proof for evil data
+		// Format: [Version(1), PreimageSize(8), PreimageData(variable)]
+		proof := make([]byte, 1+8+len(evilData))
+		proof[0] = 1 // Version
+		binary.BigEndian.PutUint64(proof[1:9], uint64(len(evilData)))
+		copy(proof[9:], evilData)
+
+		log.Debug("EvilDAProvider generating evil proof",
+			"hash", hash.Hex(),
+			"evilDataSize", len(evilData))
+
+		return proof, nil
+	}
+
+	// No evil mapping, delegate to underlying validator
 	return e.validator.GenerateProof(ctx, preimageType, hash, offset)
 }

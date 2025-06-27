@@ -49,8 +49,7 @@ import (
 	"github.com/offchainlabs/nitro/validator/valnode"
 )
 
-func TestChallengeProtocolBOLDCustomDASetup(t *testing.T) {
-	// Simple test to verify ReferenceDAProofValidator deployment
+func TestChallengeProtocolBOLDCustomDA(t *testing.T) {
 	testChallengeProtocolBOLDCustomDA(t)
 }
 
