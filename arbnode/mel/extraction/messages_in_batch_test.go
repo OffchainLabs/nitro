@@ -17,7 +17,7 @@ import (
 	"github.com/offchainlabs/nitro/arbstate"
 )
 
-func Test_extractMessagesInBatch(t *testing.T) {
+func Test_extractMessagesInBatch_delayedMessages(t *testing.T) {
 	ctx := context.Background()
 	melState := &mel.State{
 		DelayedMessagesRead: 0,

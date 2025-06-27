@@ -147,8 +147,8 @@ func extractArbosMessage(
 		blockNumber = seqMsg.MaxL1Block
 	}
 	if segmentNum >= uint64(len(seqMsg.Segments)) {
-		// after end of batch there might be "virtual" delayedMsgSegments
-		log.Warn("reading virtual delayed message segment")
+		// After end of batch there might be "virtual" delayedMsgSegments
+		log.Debug("Reading virtual delayed message segment")
 		segment = []byte{arbstate.BatchSegmentKindDelayedMessages}
 	} else {
 		segment = seqMsg.Segments[segmentNum]
