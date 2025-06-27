@@ -35,7 +35,6 @@ import (
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
-	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/daprovider/daclient"
 	"github.com/offchainlabs/nitro/daprovider/referenceda"
 	dapserver "github.com/offchainlabs/nitro/daprovider/server"
@@ -85,6 +84,34 @@ func createReferenceDAProviderServer(t *testing.T, ctx context.Context) (*http.S
 	return server, serverURL
 }
 
+// createEvilDAProviderServer creates and starts a DA provider server with an evil provider that can return different data
+func createEvilDAProviderServer(t *testing.T, ctx context.Context) (*http.Server, string, *EvilDAProvider) {
+	// Create evil DA provider
+	evilProvider := NewEvilDAProvider()
+
+	// Create server config with automatic port selection
+	serverConfig := &dapserver.ServerConfig{
+		Addr:               "127.0.0.1",
+		Port:               0, // automatic port selection
+		EnableDAWriter:     true,
+		ServerTimeouts:     dapserver.DefaultServerConfig.ServerTimeouts,
+		RPCServerBodyLimit: dapserver.DefaultServerConfig.RPCServerBodyLimit,
+	}
+
+	// Note: We can use a regular writer since both nodes share the singleton storage
+	writer := referenceda.NewWriter()
+	server, err := dapserver.NewServerWithDAPProvider(ctx, serverConfig, evilProvider, writer, evilProvider)
+	Require(t, err)
+
+	// Extract the actual address with port
+	serverAddr := strings.TrimPrefix(server.Addr, "http://")
+	serverURL := fmt.Sprintf("http://%s", serverAddr)
+
+	t.Logf("Started evil DA provider server at %s", serverURL)
+
+	return server, serverURL, evilProvider
+}
+
 func testChallengeProtocolBOLDCustomDA(t *testing.T, spawnerOpts ...server_arb.SpawnerOption) {
 	goodDir, err := os.MkdirTemp("", "good_*")
 	Require(t, err)
@@ -105,28 +132,8 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, spawnerOpts ...server_arb.S
 		}
 	})
 
-	// Create evil DA provider for node B
-	evilProvider := NewEvilDAProvider()
-
-	// Create DA server for node B with evil provider
-	serverConfig := &dapserver.ServerConfig{
-		Addr:               "127.0.0.1",
-		Port:               0, // automatic port selection
-		EnableDAWriter:     true,
-		ServerTimeouts:     dapserver.DefaultServerConfig.ServerTimeouts,
-		RPCServerBodyLimit: dapserver.DefaultServerConfig.RPCServerBodyLimit,
-	}
-
-	// Note: We can use a regular writer since both nodes share the singleton storage
-	writer := referenceda.NewWriter()
-	providerServerB, err := dapserver.NewServerWithDAPProvider(ctx, serverConfig, evilProvider, writer, evilProvider)
-	Require(t, err)
-
-	// Extract the actual address with port
-	providerURLNodeB := strings.TrimPrefix(providerServerB.Addr, "http://")
-	providerURLNodeB = fmt.Sprintf("http://%s", providerURLNodeB)
-	t.Logf("Started evil DA provider server at %s", providerURLNodeB)
-
+	// Create and start evil DA provider server for node B
+	providerServerB, providerURLNodeB, evilProvider := createEvilDAProviderServer(t, ctx)
 	t.Cleanup(func() {
 		if err := providerServerB.Shutdown(context.Background()); err != nil {
 			t.Logf("Error shutting down provider server B: %v", err)
@@ -521,7 +528,7 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, spawnerOpts ...server_arb.S
 		nil, // Api db
 	)
 
-	evilProvider := l2stateprovider.NewHistoryCommitmentProvider(
+	evilHistoryProvider := l2stateprovider.NewHistoryCommitmentProvider(
 		stateManagerB,
 		stateManagerB,
 		stateManagerB,
@@ -556,7 +563,7 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, spawnerOpts ...server_arb.S
 
 	managerB, err := challengemanager.NewChallengeStack(
 		chainB,
-		evilProvider,
+		evilHistoryProvider,
 		evilStackOpts...,
 	)
 	Require(t, err)
