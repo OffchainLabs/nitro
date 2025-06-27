@@ -41,24 +41,24 @@ type StylusTargetConfig struct {
 	Host       string   `koanf:"host"`
 	ExtraArchs []string `koanf:"extra-archs"`
 
-	wasmTargets []ethdb.WasmTarget
+	wasmTargets []rawdb.WasmTarget
 }
 
-func (c *StylusTargetConfig) WasmTargets() []ethdb.WasmTarget {
+func (c *StylusTargetConfig) WasmTargets() []rawdb.WasmTarget {
 	return c.wasmTargets
 }
 
 func (c *StylusTargetConfig) Validate() error {
-	targetsSet := make(map[ethdb.WasmTarget]bool, len(c.ExtraArchs))
+	targetsSet := make(map[rawdb.WasmTarget]bool, len(c.ExtraArchs))
 	for _, arch := range c.ExtraArchs {
-		target := ethdb.WasmTarget(arch)
+		target := rawdb.WasmTarget(arch)
 		if !rawdb.IsSupportedWasmTarget(target) {
 			return fmt.Errorf("unsupported architecture: %v, possible values: %s, %s, %s, %s", arch, rawdb.TargetWavm, rawdb.TargetArm64, rawdb.TargetAmd64, rawdb.TargetHost)
 		}
 		targetsSet[target] = true
 	}
 	targetsSet[rawdb.LocalTarget()] = true
-	targets := make([]ethdb.WasmTarget, 0, len(c.ExtraArchs)+1)
+	targets := make([]rawdb.WasmTarget, 0, len(c.ExtraArchs)+1)
 	for target := range targetsSet {
 		targets = append(targets, target)
 	}
