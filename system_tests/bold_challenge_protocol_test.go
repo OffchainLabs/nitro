@@ -722,6 +722,14 @@ func deployContractsOnly(
 	config, err := json.Marshal(chaininfo.ArbitrumDevTestChainConfig())
 	Require(t, err)
 	cfg.ChainConfig = string(config)
+
+	// TODO: Deploy ReferenceDAProofValidator when enableCustomDA is true
+	// 1. Deploy ReferenceDAProofValidator here
+	// 2. Pass it through the deployment chain to use when deploying OneStepProverHostIo
+	if enableCustomDA {
+		t.Log("WARNING: Custom DA is enabled but not yet supported in deployment")
+	}
+
 	addresses, err := setup.DeployFullRollupStack(
 		ctx,
 		butil.NewBackendWrapper(backend, rpc.LatestBlockNumber),
