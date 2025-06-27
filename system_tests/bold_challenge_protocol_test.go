@@ -49,6 +49,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
+	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/staker/bold"
@@ -887,6 +888,78 @@ func create2ndNodeWithConfigForBoldProtocol(
 	return l2client, l2node, assertionChain
 }
 
+// createBoldBatchData creates the compressed batch data
+func createBoldBatchData(
+	t *testing.T,
+	l2Info *BlockchainTestInfo,
+	numMessages int64,
+	divergeAtIndex int64,
+) []byte {
+	batchBuffer := bytes.NewBuffer([]byte{})
+	for i := int64(0); i < numMessages; i++ {
+		value := i
+		if i == divergeAtIndex {
+			value++
+		}
+		err := writeTxToBatchBold(batchBuffer, l2Info.PrepareTx("Owner", "Destination", 1000000, big.NewInt(value), []byte{}))
+		Require(t, err)
+	}
+	compressed, err := arbcompress.CompressWell(batchBuffer.Bytes())
+	Require(t, err)
+	return compressed
+}
+
+// postBatchToL1 posts a message to the sequencer inbox
+func postBatchToL1(
+	t *testing.T,
+	ctx context.Context,
+	backend *ethclient.Client,
+	sequencer *bind.TransactOpts,
+	seqInbox *bridgegen.SequencerInbox,
+	message []byte,
+) *types.Receipt {
+	seqNum := new(big.Int).Lsh(common.Big1, 256)
+	seqNum.Sub(seqNum, common.Big1)
+
+	tx, err := seqInbox.AddSequencerL2BatchFromOrigin8f111f3c(
+		sequencer, seqNum, message, big.NewInt(1), common.Address{}, big.NewInt(0), big.NewInt(0),
+	)
+	Require(t, err)
+
+	receipt, err := EnsureTxSucceeded(ctx, backend, tx)
+	Require(t, err)
+
+	return receipt
+}
+
+// syncBatchToNode waits for batch to appear on L1 and adds it to the node's tracker
+func syncBatchToNode(
+	t *testing.T,
+	ctx context.Context,
+	backend *ethclient.Client,
+	l2Node *arbnode.Node,
+	seqInboxAddr common.Address,
+	receipt *types.Receipt,
+) {
+	nodeSeqInbox, err := arbnode.NewSequencerInbox(backend, seqInboxAddr, 0)
+	Require(t, err)
+
+	batches, err := nodeSeqInbox.LookupBatchesInRange(ctx, receipt.BlockNumber, receipt.BlockNumber)
+	Require(t, err)
+
+	if len(batches) == 0 {
+		Fatal(t, "batch not found after AddSequencerL2BatchFromOrigin")
+	}
+
+	err = l2Node.InboxTracker.AddSequencerBatches(ctx, backend, batches)
+	Require(t, err)
+
+	// Optional: log batch metadata
+	batchMetaData, err := l2Node.InboxTracker.GetBatchMetadata(batches[0].SequenceNumber)
+	log.Info("Batch metadata", "md", batchMetaData)
+	Require(t, err, "failed to get batch metadata after adding batch:")
+}
+
 func makeBoldBatch(
 	t *testing.T,
 	l2Node *arbnode.Node,
@@ -900,38 +973,66 @@ func makeBoldBatch(
 ) {
 	ctx := context.Background()
 
-	batchBuffer := bytes.NewBuffer([]byte{})
-	for i := int64(0); i < numMessages; i++ {
-		value := i
-		if i == divergeAtIndex {
-			value++
-		}
-		err := writeTxToBatchBold(batchBuffer, l2Info.PrepareTx("Owner", "Destination", 1000000, big.NewInt(value), []byte{}))
-		Require(t, err)
-	}
-	compressed, err := arbcompress.CompressWell(batchBuffer.Bytes())
-	Require(t, err)
+	// Create batch data
+	compressed := createBoldBatchData(t, l2Info, numMessages, divergeAtIndex)
 	message := append([]byte{0}, compressed...)
 
-	seqNum := new(big.Int).Lsh(common.Big1, 256)
-	seqNum.Sub(seqNum, common.Big1)
-	tx, err := seqInbox.AddSequencerL2BatchFromOrigin8f111f3c(sequencer, seqNum, message, big.NewInt(1), common.Address{}, big.NewInt(0), big.NewInt(0))
-	Require(t, err)
-	receipt, err := EnsureTxSucceeded(ctx, backend, tx)
+	// Post to L1
+	receipt := postBatchToL1(t, ctx, backend, sequencer, seqInbox, message)
+
+	// Sync to node
+	syncBatchToNode(t, ctx, backend, l2Node, seqInboxAddr, receipt)
+}
+
+// postBatchWithDA posts a batch through DA and returns the certificate
+func postBatchWithDA(
+	t *testing.T,
+	l2Node *arbnode.Node,
+	backend *ethclient.Client,
+	sequencer *bind.TransactOpts,
+	seqInbox *bridgegen.SequencerInbox,
+	seqInboxAddr common.Address,
+	batchData []byte,
+	daWriter daprovider.Writer,
+) []byte {
+	ctx := context.Background()
+
+	// Store data in DA provider
+	certificate, err := daWriter.Store(ctx, batchData, 3600, false)
 	Require(t, err)
 
-	nodeSeqInbox, err := arbnode.NewSequencerInbox(backend, seqInboxAddr, 0)
-	Require(t, err)
-	batches, err := nodeSeqInbox.LookupBatchesInRange(ctx, receipt.BlockNumber, receipt.BlockNumber)
-	Require(t, err)
-	if len(batches) == 0 {
-		Fatal(t, "batch not found after AddSequencerL2BatchFromOrigin")
-	}
-	err = l2Node.InboxTracker.AddSequencerBatches(ctx, backend, batches)
-	Require(t, err)
-	batchMetaData, err := l2Node.InboxTracker.GetBatchMetadata(batches[0].SequenceNumber)
-	log.Info("Batch metadata", "md", batchMetaData)
-	Require(t, err, "failed to get batch metadata after adding batch:")
+	// Create message with CustomDA header and certificate
+	message := append([]byte{daprovider.CustomDAMessageHeaderFlag}, certificate...)
+
+	// Post to L1
+	receipt := postBatchToL1(t, ctx, backend, sequencer, seqInbox, message)
+
+	// Sync to node
+	syncBatchToNode(t, ctx, backend, l2Node, seqInboxAddr, receipt)
+
+	return certificate
+}
+
+// postBatchWithExistingCertificate posts a batch using an existing certificate
+func postBatchWithExistingCertificate(
+	t *testing.T,
+	l2Node *arbnode.Node,
+	backend *ethclient.Client,
+	sequencer *bind.TransactOpts,
+	seqInbox *bridgegen.SequencerInbox,
+	seqInboxAddr common.Address,
+	certificate []byte,
+) {
+	ctx := context.Background()
+
+	// Create message with CustomDA header and existing certificate
+	message := append([]byte{daprovider.CustomDAMessageHeaderFlag}, certificate...)
+
+	// Post to L1
+	receipt := postBatchToL1(t, ctx, backend, sequencer, seqInbox, message)
+
+	// Sync to node
+	syncBatchToNode(t, ctx, backend, l2Node, seqInboxAddr, receipt)
 }
 
 func writeTxToBatchBold(writer io.Writer, tx *types.Transaction) error {
