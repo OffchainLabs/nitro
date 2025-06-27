@@ -9,9 +9,9 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rpc"
-
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/execution"
@@ -37,6 +37,17 @@ type MessageParams struct {
 type InitializeMessageParams struct {
 	InitialL1BaseFee      *big.Int `json:"initialL1BaseFee"`
 	SerializedChainConfig []byte   `json:"serializedChainConfig"`
+}
+
+type SetFinalityDataParams struct {
+	SafeFinalityData      *RpcFinalityData `json:"safeFinalityData,omitempty"`
+	FinalizedFinalityData *RpcFinalityData `json:"finalizedFinalityData,omitempty"`
+	ValidatedFinalityData *RpcFinalityData `json:"validatedFinalityData,omitempty"`
+}
+
+type RpcFinalityData struct {
+	MsgIdx    uint64      `json:"msgIdx"`
+	BlockHash common.Hash `json:"blockHash"`
 }
 
 func NewNethRpcClient() (*NethRpcClient, error) {
@@ -122,4 +133,37 @@ type FakeRemoteExecutionRpcClient struct{}
 
 func (c FakeRemoteExecutionRpcClient) DigestInitMessage(ctx context.Context, initialL1BaseFee *big.Int, serializedChainConfig []byte) *execution.MessageResult {
 	return nil
+}
+
+func (c *NethRpcClient) SetFinalityData(ctx context.Context, safeFinalityData *arbutil.FinalityData, finalizedFinalityData *arbutil.FinalityData, validatedFinalityData *arbutil.FinalityData) error {
+	params := SetFinalityDataParams{
+		SafeFinalityData:      convertToRpcFinalityData(safeFinalityData),
+		FinalizedFinalityData: convertToRpcFinalityData(finalizedFinalityData),
+		ValidatedFinalityData: convertToRpcFinalityData(validatedFinalityData),
+	}
+
+	log.Info("Making JSON-RPC call to SetFinalityData",
+		"url", c.url,
+		"safeFinalityData", safeFinalityData,
+		"finalizedFinalityData", finalizedFinalityData,
+		"validatedFinalityData", validatedFinalityData)
+
+	var result interface{}
+	err := c.client.CallContext(ctx, &result, "SetFinalityData", params)
+	if err != nil {
+		log.Error("Failed to call SetFinalityData", "error", err)
+		return err
+	}
+
+	return nil
+}
+
+func convertToRpcFinalityData(data *arbutil.FinalityData) *RpcFinalityData {
+	if data == nil {
+		return nil
+	}
+	return &RpcFinalityData{
+		MsgIdx:    uint64(data.MsgIdx),
+		BlockHash: data.BlockHash,
+	}
 }

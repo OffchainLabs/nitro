@@ -21,11 +21,6 @@ import (
 	"time"
 
 	"github.com/cockroachdb/pebble"
-	"github.com/knadh/koanf"
-	"github.com/knadh/koanf/providers/confmap"
-	flag "github.com/spf13/pflag"
-	"github.com/syndtr/goleveldb/leveldb"
-
 	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/accounts/keystore"
@@ -44,7 +39,8 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
-
+	"github.com/knadh/koanf"
+	"github.com/knadh/koanf/providers/confmap"
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbnode/resourcemanager"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -72,6 +68,8 @@ import (
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/validator/server_common"
 	"github.com/offchainlabs/nitro/validator/valnode"
+	flag "github.com/spf13/pflag"
+	"github.com/syndtr/goleveldb/leveldb"
 )
 
 func printSampleUsage(name string) {
@@ -542,7 +540,16 @@ func mainImpl() int {
 		log.Error("failed to create machine locator: %w", err)
 	}
 
-	execNode := nethexec.NewNodeWrapper(gethNode, nethRpcClient)
+	// Create execution node based on external execution setting
+	var execNode nethexec.FullExecutionClient
+
+	if nethexec.IsExternalExecutionEnabled() {
+		execNode = nethexec.NewNodeWrapper(gethNode, nethRpcClient)
+		log.Info("Using NodeWrapper with external execution enabled")
+	} else {
+		execNode = gethNode
+		log.Info("Using gethNode directly (external execution disabled)")
+	}
 
 	currentNode, err := arbnode.CreateNodeFullExecutionClient(
 		ctx,
@@ -676,7 +683,7 @@ func mainImpl() int {
 
 	gqlConf := nodeConfig.GraphQL
 	if gqlConf.Enable {
-		if err := graphql.New(stack, execNode.Backend.APIBackend(), execNode.FilterSystem, gqlConf.CORSDomain, gqlConf.VHosts); err != nil {
+		if err := graphql.New(stack, gethNode.Backend.APIBackend(), gethNode.FilterSystem, gqlConf.CORSDomain, gqlConf.VHosts); err != nil {
 			log.Error("failed to register the GraphQL service", "err", err)
 			return 1
 		}
@@ -712,7 +719,7 @@ func mainImpl() int {
 		}
 	}
 
-	err = execNode.InitializeTimeboost(ctx, chainInfo.ChainConfig)
+	err = gethNode.InitializeTimeboost(ctx, chainInfo.ChainConfig)
 	if err != nil {
 		fatalErrChan <- fmt.Errorf("error intializing timeboost: %w", err)
 	}
