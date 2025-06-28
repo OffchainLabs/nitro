@@ -569,8 +569,11 @@ func createTestNodeOnL1ForBoldProtocol(
 	l1info.GenerateAccount("Asserter")
 	l1info.GenerateAccount("EvilAsserter")
 
+	startingBal := big.NewInt(params.Ether)
+	startingBal.Mul(startingBal, big.NewInt(100))
+
 	SendWaitTestTransactions(t, ctx, l1client, []*types.Transaction{
-		l1info.PrepareTx("Faucet", "RollupOwner", 30000, big.NewInt(9223372036854775807), nil),
+		l1info.PrepareTx("Faucet", "RollupOwner", 30000, startingBal, nil),
 		l1info.PrepareTx("Faucet", "Sequencer", 30000, big.NewInt(9223372036854775807), nil),
 		l1info.PrepareTx("Faucet", "User", 30000, big.NewInt(9223372036854775807), nil),
 		l1info.PrepareTx("Faucet", "Asserter", 30000, big.NewInt(9223372036854775807), nil),
