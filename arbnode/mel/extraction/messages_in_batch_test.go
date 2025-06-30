@@ -6,27 +6,24 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/stretchr/testify/require"
-
 	"github.com/ethereum/go-ethereum/rlp"
-
 	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbnode/mel"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/stretchr/testify/require"
 )
 
-func Test_extractMessagesInBatch_delayedMessages(t *testing.T) {
+func Test_messagesFromBatchSegments_delayedMessages(t *testing.T) {
 	ctx := context.Background()
 	melState := &mel.State{
 		DelayedMessagesRead: 0,
 	}
 	seqMsg := &arbstate.SequencerMessage{
 		AfterDelayedMessages: 2,
-		Segments: [][]byte{
-			{}, {},
-		},
+		Segments:             [][]byte{}, // No segments, but the
+		// sequencer message says that we must read 2 delayed messages.
 	}
 	mockDB := &mockDelayedMessageDB{
 		DelayedMessages: map[uint64]*arbnode.DelayedInboxMessage{
@@ -42,7 +39,7 @@ func Test_extractMessagesInBatch_delayedMessages(t *testing.T) {
 			},
 		},
 	}
-	msgs, err := extractMessagesInBatch(
+	msgs, err := messagesFromBatchSegments(
 		ctx,
 		melState,
 		seqMsg,
@@ -54,9 +51,7 @@ func Test_extractMessagesInBatch_delayedMessages(t *testing.T) {
 	require.Equal(t, msgs[1].Message.L2msg, []byte("barfoo"))
 }
 
-func Test_extractArbosMessage(t *testing.T) {
-	ctx := context.Background()
-
+func Test_messagesFromBatchSegments(t *testing.T) {
 	tests := []struct {
 		name            string
 		setupSegments   func() [][]byte
@@ -158,7 +153,9 @@ func Test_extractArbosMessage(t *testing.T) {
 		{
 			name: "delayed message segment greater than what has been read",
 			setupSegments: func() [][]byte {
-				return [][]byte{{}}
+				return [][]byte{
+					[]byte{arbstate.BatchSegmentKindDelayedMessages},
+				}
 			},
 			setupMelState: func() *mel.State {
 				return &mel.State{
@@ -260,7 +257,6 @@ func Test_extractArbosMessage(t *testing.T) {
 			},
 		},
 	}
-
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			segments := tt.setupSegments()
@@ -268,18 +264,12 @@ func Test_extractArbosMessage(t *testing.T) {
 			seqMsg := tt.setupSeqMsg(segments)
 			mockDB := tt.setupMockDB()
 
-			params := &arbosExtractionParams{
-				melState:         melState,
-				seqMsg:           seqMsg,
-				delayedMsgDB:     mockDB,
-				targetSubMessage: 0,
-				segmentNum:       0,
-				blockNumber:      0,
-				timestamp:        0,
-			}
-
-			msg, _, err := extractArbosMessage(ctx, params)
-
+			msgs, err := messagesFromBatchSegments(
+				context.Background(),
+				melState,
+				seqMsg,
+				mockDB,
+			)
 			if tt.wantErr {
 				require.Error(t, err)
 				if tt.wantErrContains != "" {
@@ -290,81 +280,8 @@ func Test_extractArbosMessage(t *testing.T) {
 
 			require.NoError(t, err)
 			if tt.validateResult != nil {
-				tt.validateResult(t, msg)
-			}
-		})
-	}
-}
-
-func Test_hasSegmentsRemaining(t *testing.T) {
-	tests := []struct {
-		name     string
-		p        *arbosExtractionParams
-		expected bool
-	}{
-		{
-			name: "less than after delayed messages",
-			p: &arbosExtractionParams{
-				melState: &mel.State{
-					DelayedMessagesRead: 1,
-				},
-				seqMsg: &arbstate.SequencerMessage{
-					AfterDelayedMessages: 2,
-					Segments:             [][]byte{{0}, {0}},
-				},
-				segmentNum: 0,
-			},
-			expected: false,
-		},
-		{
-			name: "first segment is zero and next one is brotli message",
-			p: &arbosExtractionParams{
-				melState: &mel.State{
-					DelayedMessagesRead: 1,
-				},
-				seqMsg: &arbstate.SequencerMessage{
-					AfterDelayedMessages: 1,
-					Segments:             [][]byte{{}, {arbstate.BatchSegmentKindL2MessageBrotli}},
-				},
-				segmentNum: 0,
-			},
-			expected: false,
-		},
-		{
-			name: "segment is delayed message kind",
-			p: &arbosExtractionParams{
-				melState: &mel.State{
-					DelayedMessagesRead: 1,
-				},
-				seqMsg: &arbstate.SequencerMessage{
-					AfterDelayedMessages: 1,
-					Segments:             [][]byte{{}, {arbstate.BatchSegmentKindDelayedMessages}},
-				},
-				segmentNum: 0,
-			},
-			expected: false,
-		},
-		{
-			name: "is last segment",
-			p: &arbosExtractionParams{
-				melState: &mel.State{
-					DelayedMessagesRead: 1,
-				},
-				seqMsg: &arbstate.SequencerMessage{
-					AfterDelayedMessages: 1,
-					Segments:             [][]byte{{}, {}},
-				},
-				segmentNum: 0,
-			},
-			expected: true,
-		},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			result := hasSegmentsRemaining(test.p)
-			if result != test.expected {
-				t.Errorf("expected %v, got %v", test.expected, result)
+				require.Equal(t, 1, len(msgs), "Expected exactly one message for this test")
+				tt.validateResult(t, msgs[0])
 			}
 		})
 	}
