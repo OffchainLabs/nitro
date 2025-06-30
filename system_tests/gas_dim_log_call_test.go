@@ -1719,3 +1719,35 @@ func TestDimLogCallCodeWarmPayingContractFundedMemExpansion(t *testing.T) {
 	checkGasDimensionsMatch(t, expected, callLog)
 	checkGasDimensionsEqualOneDimensionalGas(t, callLog)
 }
+
+// This tests a call that does another call,
+// specifically a CALL that then does a DELEGATECALL
+// and we check that the gas dimensions are correct
+// for the parent.
+func TestDimLogNestedCall(t *testing.T) {
+	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
+	defer cancel()
+	defer cleanup()
+
+	_, caller := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployNestedCall)
+	calleeAddress, _ := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployNestedTarget)
+
+	receipt := callOnContractWithOneArg(t, builder, auth, caller.Entrypoint, calleeAddress)
+
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	callLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "CALL")
+
+	var callChildExecutionCost uint64 = 25921 // from the struct logger output
+
+	expected := ExpectedGasCosts{
+		OneDimensionalGasCost: params.WarmStorageReadCostEIP2929,
+		Computation:           params.WarmStorageReadCostEIP2929,
+		StateAccess:           0,
+		StateGrowth:           0,
+		HistoryGrowth:         0,
+		StateGrowthRefund:     0,
+		ChildExecutionCost:    callChildExecutionCost,
+	}
+	checkGasDimensionsMatch(t, expected, callLog)
+	checkGasDimensionsEqualOneDimensionalGas(t, callLog)
+}

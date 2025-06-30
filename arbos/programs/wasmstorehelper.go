@@ -10,13 +10,14 @@ import (
 	"fmt"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/log"
 )
 
 // SaveActiveProgramToWasmStore is used to save active stylus programs to wasm store during rebuilding
-func (p Programs) SaveActiveProgramToWasmStore(statedb *state.StateDB, codeHash common.Hash, code []byte, time uint64, debugMode bool, rebuildingStartBlockTime uint64) error {
+func (p Programs) SaveActiveProgramToWasmStore(statedb *state.StateDB, codeHash common.Hash, code []byte, time uint64, debugMode bool, rebuildingStartBlockTime uint64, targets []rawdb.WasmTarget) error {
 	progParams, err := p.Params()
 	if err != nil {
 		return err
@@ -43,7 +44,6 @@ func (p Programs) SaveActiveProgramToWasmStore(statedb *state.StateDB, codeHash 
 		return err
 	}
 
-	targets := statedb.Database().WasmTargets()
 	// If already in wasm store then return early
 	_, err = statedb.TryGetActivatedAsmMap(targets, moduleHash)
 	if err == nil {
@@ -63,13 +63,13 @@ func (p Programs) SaveActiveProgramToWasmStore(statedb *state.StateDB, codeHash 
 	// We know program is activated, so it must be in correct version and not use too much memory
 	// Empty program address is supplied because we dont have access to this during rebuilding of wasm store
 	moduleActivationMandatory := false
-	info, asmMap, err := activateProgramInternal(common.Address{}, codeHash, wasm, progParams.PageLimit, program.version, zeroArbosVersion, debugMode, &zeroGas, targets, moduleActivationMandatory)
+	info, asmMap, err := activateProgramInternal(common.Address{}, codeHash, wasm, progParams.PageLimit, program.version, zeroArbosVersion, debugMode, &zeroGas, core.NewMessageCommitContext(targets), moduleActivationMandatory)
 	if err != nil {
 		log.Error("failed to reactivate program while rebuilding wasm store", "expected moduleHash", moduleHash, "err", err)
 		return fmt.Errorf("failed to reactivate program while rebuilding wasm store: %w", err)
 	}
 
-	if info.moduleHash != moduleHash {
+	if info != nil && info.moduleHash != moduleHash {
 		log.Error("failed to reactivate program while rebuilding wasm store", "expected moduleHash", moduleHash, "got", info.moduleHash)
 		return fmt.Errorf("failed to reactivate program while rebuilding wasm store, expected ModuleHash: %v", moduleHash)
 	}
