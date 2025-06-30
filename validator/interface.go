@@ -4,7 +4,7 @@ import (
 	"context"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/ethdb"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 
 	"github.com/offchainlabs/nitro/util/containers"
 )
@@ -15,7 +15,7 @@ type ValidationSpawner interface {
 	Start(context.Context) error
 	Stop()
 	Name() string
-	StylusArchs() []ethdb.WasmTarget
+	StylusArchs() []rawdb.WasmTarget
 	Room() int
 }
 
