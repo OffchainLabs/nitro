@@ -23,6 +23,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/gethhook"
 	"github.com/offchainlabs/nitro/statetransfer"
+	"github.com/offchainlabs/nitro/util"
 )
 
 type CachingConfig struct {
@@ -45,6 +46,7 @@ type CachingConfig struct {
 	StateScheme                         string        `koanf:"state-scheme"`
 	StateHistory                        uint64        `koanf:"state-history"`
 	EnablePreimages                     bool          `koanf:"enable-preimages"`
+	TxIndexerThreads                    int           `koanf:"tx-indexer-threads"`
 }
 
 func CachingConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -67,6 +69,7 @@ func CachingConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".state-scheme", DefaultCachingConfig.StateScheme, "scheme to use for state trie storage (hash, path)")
 	f.Uint64(prefix+".state-history", DefaultCachingConfig.StateHistory, "number of recent blocks to retain state history for (path state-scheme only)")
 	f.Bool(prefix+".enable-preimages", DefaultCachingConfig.EnablePreimages, "enable recording of preimages")
+	f.Int(prefix+".tx-indexer-threads", DefaultCachingConfig.TxIndexerThreads, "TODO")
 }
 
 func getStateHistory(maxBlockSpeed time.Duration) uint64 {
@@ -92,6 +95,7 @@ var DefaultCachingConfig = CachingConfig{
 	StylusLRUCacheCapacity:             256,
 	StateScheme:                        rawdb.HashScheme,
 	StateHistory:                       getStateHistory(DefaultSequencerConfig.MaxBlockSpeed),
+	TxIndexerThreads:                   util.GoMaxProcs(),
 }
 
 // TODO remove stack from parameters as it is no longer needed here
@@ -116,6 +120,7 @@ func DefaultCacheConfigFor(stack *node.Node, cachingConfig *CachingConfig) *core
 		HeadRewindBlocksLimit:              cachingConfig.HeadRewindBlocksLimit,
 		MaxNumberOfBlocksToSkipStateSaving: cachingConfig.MaxNumberOfBlocksToSkipStateSaving,
 		MaxAmountOfGasToSkipStateSaving:    cachingConfig.MaxAmountOfGasToSkipStateSaving,
+		TxIndexerThreads:                   cachingConfig.TxIndexerThreads,
 		StateScheme:                        cachingConfig.StateScheme,
 		StateHistory:                       cachingConfig.StateHistory,
 	}
