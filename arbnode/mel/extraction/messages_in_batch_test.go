@@ -156,7 +156,7 @@ func Test_messagesFromBatchSegments(t *testing.T) {
 			name: "delayed message segment greater than what has been read",
 			setupSegments: func() [][]byte {
 				return [][]byte{
-					[]byte{arbstate.BatchSegmentKindDelayedMessages},
+					{arbstate.BatchSegmentKindDelayedMessages},
 				}
 			},
 			setupMelState: func() *mel.State {
