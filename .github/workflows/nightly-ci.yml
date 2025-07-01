@@ -156,7 +156,7 @@ jobs:
         if: matrix.test-mode == 'race'
         run: |
           echo "Running tests with Hash Scheme" >> full.log
-          GOMAXPROCS=10 ${{ github.workspace }}/.github/workflows/gotestsum.sh --race --timeout 60m --test_state_scheme hash
+          ${{ github.workspace }}/.github/workflows/gotestsum.sh --race --timeout 90m --test_state_scheme hash --parallelise=false
 
       - name: run challenge tests
         if: matrix.test-mode == 'challenge'
