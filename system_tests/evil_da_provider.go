@@ -63,25 +63,32 @@ func (e *EvilDAProvider) RecoverPayloadFromBatch(
 	// Check if this is a CustomDA message and extract certificate
 	if len(sequencerMsg) > 40 && daprovider.IsCustomDAMessageHeaderByte(sequencerMsg[40]) {
 		certificate := sequencerMsg[40:]
-		certHash := crypto.Keccak256Hash(certificate)
 
-		e.mu.RLock()
-		if evilData, exists := e.evilMappings[certHash]; exists {
-			e.mu.RUnlock()
+		// Certificate format: [0x01 header byte][32 bytes SHA256]
+		if len(certificate) >= 33 && certificate[0] == 0x01 {
+			// Extract data hash (SHA256) from certificate
+			dataHash := common.BytesToHash(certificate[1:33])
 
-			// Record preimages with evil data
-			if preimages != nil {
-				preimageRecorder := daprovider.RecordPreimagesTo(preimages)
-				preimageRecorder(certHash, evilData, arbutil.CustomDAPreimageType)
+			e.mu.RLock()
+			if evilData, exists := e.evilMappings[dataHash]; exists {
+				e.mu.RUnlock()
+
+				// Record preimages with evil data
+				if preimages != nil {
+					preimageRecorder := daprovider.RecordPreimagesTo(preimages)
+					// Use keccak256 of certificate for preimage recording
+					certKeccak := crypto.Keccak256Hash(certificate)
+					preimageRecorder(certKeccak, evilData, arbutil.CustomDAPreimageType)
+				}
+
+				log.Info("EvilDAProvider returning evil data",
+					"dataHash", dataHash.Hex(),
+					"evilDataSize", len(evilData))
+
+				return evilData, preimages, nil
 			}
-
-			log.Debug("EvilDAProvider returning evil data",
-				"certHash", certHash.Hex(),
-				"evilDataSize", len(evilData))
-
-			return evilData, preimages, nil
+			e.mu.RUnlock()
 		}
-		e.mu.RUnlock()
 	}
 
 	// Fall back to underlying reader for non-evil certificates
@@ -92,33 +99,43 @@ func (e *EvilDAProvider) RecoverPayloadFromBatch(
 func (e *EvilDAProvider) GenerateProof(
 	ctx context.Context,
 	preimageType arbutil.PreimageType,
-	hash common.Hash,
+	certHash common.Hash,
 	offset uint64,
+	certificate []byte,
 ) ([]byte, error) {
 	if preimageType != arbutil.CustomDAPreimageType {
-		return e.validator.GenerateProof(ctx, preimageType, hash, offset)
+		return e.validator.GenerateProof(ctx, preimageType, certHash, offset, certificate)
 	}
 
-	// Check if we have evil data for this certificate hash
-	e.mu.RLock()
-	evilData, hasEvil := e.evilMappings[hash]
-	e.mu.RUnlock()
+	// Extract SHA256 hash from certificate to check for evil mapping
+	if len(certificate) == 33 && certificate[0] == 0x01 {
+		// Extract data hash (SHA256) from certificate
+		dataHash := common.BytesToHash(certificate[1:33])
 
-	if hasEvil {
-		// Generate proof for evil data
-		// Format: [Version(1), PreimageSize(8), PreimageData(variable)]
-		proof := make([]byte, 1+8+len(evilData))
-		proof[0] = 1 // Version
-		binary.BigEndian.PutUint64(proof[1:9], uint64(len(evilData)))
-		copy(proof[9:], evilData)
+		e.mu.RLock()
+		evilData, hasEvil := e.evilMappings[dataHash]
+		e.mu.RUnlock()
 
-		log.Debug("EvilDAProvider generating evil proof",
-			"hash", hash.Hex(),
-			"evilDataSize", len(evilData))
+		if hasEvil {
+			// Generate proof with evil data
+			// Format: [Version(1), CertificateSize(8), Certificate, PreimageSize(8), PreimageData]
+			certLen := len(certificate)
+			proof := make([]byte, 1+8+certLen+8+len(evilData))
+			proof[0] = 1 // Version
+			binary.BigEndian.PutUint64(proof[1:9], uint64(certLen))
+			copy(proof[9:9+certLen], certificate)
+			binary.BigEndian.PutUint64(proof[9+certLen:9+certLen+8], uint64(len(evilData)))
+			copy(proof[9+certLen+8:], evilData)
 
-		return proof, nil
+			log.Debug("EvilDAProvider generating evil proof",
+				"certHash", certHash.Hex(),
+				"dataHash", dataHash.Hex(),
+				"evilDataSize", len(evilData))
+
+			return proof, nil
+		}
 	}
 
 	// No evil mapping, delegate to underlying validator
-	return e.validator.GenerateProof(ctx, preimageType, hash, offset)
+	return e.validator.GenerateProof(ctx, preimageType, certHash, offset, certificate)
 }

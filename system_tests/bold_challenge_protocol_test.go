@@ -968,7 +968,9 @@ func createBoldBatchData(
 	}
 	compressed, err := arbcompress.CompressWell(batchBuffer.Bytes())
 	Require(t, err)
-	return compressed
+
+	// Add brotli header byte (0x00) to indicate this is a compressed batch
+	return append([]byte{0}, compressed...)
 }
 
 // postBatchToL1 posts a message to the sequencer inbox
@@ -1035,9 +1037,8 @@ func makeBoldBatch(
 ) {
 	ctx := context.Background()
 
-	// Create batch data
-	compressed := createBoldBatchData(t, l2Info, numMessages, divergeAtIndex)
-	message := append([]byte{0}, compressed...)
+	// Create compressed batch data
+	message := createBoldBatchData(t, l2Info, numMessages, divergeAtIndex)
 
 	// Post to L1
 	receipt := postBatchToL1(t, ctx, backend, sequencer, seqInbox, message)
@@ -1063,8 +1064,8 @@ func postBatchWithDA(
 	certificate, err := daWriter.Store(ctx, batchData, 3600, false)
 	Require(t, err)
 
-	// Create message with CustomDA header and certificate
-	message := append([]byte{daprovider.CustomDAMessageHeaderFlag}, certificate...)
+	// Certificate already contains the CustomDA header flag
+	message := certificate
 
 	// Post to L1
 	receipt := postBatchToL1(t, ctx, backend, sequencer, seqInbox, message)
@@ -1087,8 +1088,8 @@ func postBatchWithExistingCertificate(
 ) {
 	ctx := context.Background()
 
-	// Create message with CustomDA header and existing certificate
-	message := append([]byte{daprovider.CustomDAMessageHeaderFlag}, certificate...)
+	// Certificate already contains the CustomDA header flag
+	message := certificate
 
 	// Post to L1
 	receipt := postBatchToL1(t, ctx, backend, sequencer, seqInbox, message)

@@ -168,11 +168,11 @@ func (s *Server) Store(
 	return &daclient.StoreResult{SerializedDACert: serializedDACert}, nil
 }
 
-func (s *Server) GenerateProof(ctx context.Context, preimageType uint8, hash common.Hash, offset hexutil.Uint64) (hexutil.Bytes, error) {
+func (s *Server) GenerateProof(ctx context.Context, preimageType uint8, certHash common.Hash, offset hexutil.Uint64, certificate hexutil.Bytes) (hexutil.Bytes, error) {
 	if s.validator == nil {
 		return nil, errors.New("validator not available")
 	}
-	proof, err := s.validator.GenerateProof(ctx, arbutil.PreimageType(preimageType), hash, uint64(offset))
+	proof, err := s.validator.GenerateProof(ctx, arbutil.PreimageType(preimageType), certHash, uint64(offset), certificate)
 	if err != nil {
 		return nil, err
 	}

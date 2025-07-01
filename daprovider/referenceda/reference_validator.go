@@ -24,30 +24,38 @@ func NewValidator() *Validator {
 }
 
 // GenerateProof creates a proof for ReferenceDA
-// Format: [Version(1), PreimageSize(8), PreimageData(variable)]
-func (v *Validator) GenerateProof(ctx context.Context, preimageType arbutil.PreimageType, hash common.Hash, offset uint64) ([]byte, error) {
+// Format: [Version(1), CertificateSize(8), Certificate, PreimageSize(8), PreimageData]
+func (v *Validator) GenerateProof(ctx context.Context, preimageType arbutil.PreimageType, certHash common.Hash, offset uint64, certificate []byte) ([]byte, error) {
 	if preimageType != arbutil.CustomDAPreimageType {
 		return nil, fmt.Errorf("unsupported preimage type: %v", preimageType)
 	}
 
-	// Convert common.Hash to [32]byte for storage lookup
-	var hash32 [32]byte
-	copy(hash32[:], hash[:])
+	// Extract SHA256 hash from certificate
+	// Certificate format: [0x01 header byte][32 bytes SHA256]
+	if len(certificate) != 33 || certificate[0] != 0x01 {
+		return nil, fmt.Errorf("invalid certificate format, expected 33 bytes with 0x01 header")
+	}
 
-	// Get preimage from storage
-	preimage, err := v.storage.GetByHash(ctx, hash)
+	// Extract data hash (SHA256) from certificate
+	dataHash := common.BytesToHash(certificate[1:33])
+
+	// Get preimage from storage using SHA256 hash
+	preimage, err := v.storage.GetByHash(ctx, dataHash)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get preimage: %w", err)
 	}
 	if preimage == nil {
-		return nil, fmt.Errorf("preimage not found for hash %x", hash)
+		return nil, fmt.Errorf("preimage not found for hash %x", dataHash)
 	}
 
-	// Build proof: [Version(1), PreimageSize(8), PreimageData]
-	proof := make([]byte, 1+8+len(preimage))
+	// Build proof: [Version(1), CertificateSize(8), Certificate, PreimageSize(8), PreimageData]
+	certLen := len(certificate)
+	proof := make([]byte, 1+8+certLen+8+len(preimage))
 	proof[0] = 1 // Version
-	binary.BigEndian.PutUint64(proof[1:9], uint64(len(preimage)))
-	copy(proof[9:], preimage)
+	binary.BigEndian.PutUint64(proof[1:9], uint64(certLen))
+	copy(proof[9:9+certLen], certificate)
+	binary.BigEndian.PutUint64(proof[9+certLen:9+certLen+8], uint64(len(preimage)))
+	copy(proof[9+certLen+8:], preimage)
 
 	return proof, nil
 }

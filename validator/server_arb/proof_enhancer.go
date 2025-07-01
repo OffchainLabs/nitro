@@ -3,6 +3,8 @@ package server_arb
 import (
 	"context"
 	"fmt"
+
+	"github.com/offchainlabs/nitro/arbutil"
 )
 
 const (
@@ -17,7 +19,7 @@ const (
 type ProofEnhancer interface {
 	// EnhanceProof checks if enhancement is needed and applies it
 	// Returns the enhanced proof or the original if no enhancement needed
-	EnhanceProof(ctx context.Context, proof []byte) ([]byte, error)
+	EnhanceProof(ctx context.Context, messageNum arbutil.MessageIndex, proof []byte) ([]byte, error)
 }
 
 // ProofEnhancementManager manages multiple proof enhancers by marker type
@@ -38,7 +40,7 @@ func (m *ProofEnhancementManager) RegisterEnhancer(marker byte, enhancer ProofEn
 }
 
 // EnhanceProof implements ProofEnhancer interface
-func (m *ProofEnhancementManager) EnhanceProof(ctx context.Context, proof []byte) ([]byte, error) {
+func (m *ProofEnhancementManager) EnhanceProof(ctx context.Context, messageNum arbutil.MessageIndex, proof []byte) ([]byte, error) {
 	if len(proof) == 0 {
 		return proof, nil
 	}
@@ -65,5 +67,5 @@ func (m *ProofEnhancementManager) EnhanceProof(ctx context.Context, proof []byte
 	enhancedProof[0] &= ^byte(ProofEnhancementFlag)
 
 	// Let specific enhancer handle the proof
-	return enhancer.EnhanceProof(ctx, enhancedProof)
+	return enhancer.EnhanceProof(ctx, messageNum, enhancedProof)
 }

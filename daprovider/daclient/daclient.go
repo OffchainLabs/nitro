@@ -116,11 +116,12 @@ type GenerateProofResult struct {
 func (c *Client) GenerateProof(
 	ctx context.Context,
 	preimageType arbutil.PreimageType,
-	hash common.Hash,
+	certHash common.Hash,
 	offset uint64,
+	certificate []byte,
 ) ([]byte, error) {
 	var generateProofResult GenerateProofResult
-	if err := c.CallContext(ctx, &generateProofResult, "daprovider_generateProof", hexutil.Uint64(preimageType), hash, hexutil.Uint64(offset)); err != nil {
+	if err := c.CallContext(ctx, &generateProofResult, "daprovider_generateProof", hexutil.Uint64(preimageType), certHash, hexutil.Uint64(offset), hexutil.Bytes(certificate)); err != nil {
 		return nil, fmt.Errorf("error returned from daprovider_generateProof rpc method, err: %w", err)
 	}
 	return generateProofResult.Proof, nil

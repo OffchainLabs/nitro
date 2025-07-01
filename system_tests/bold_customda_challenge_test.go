@@ -1,4 +1,4 @@
-// Copyright 2023, Offchain Labs, Inc.
+// Copyright 2025, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 //go:build challengetest && !race
@@ -17,9 +17,9 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
 	solimpl "github.com/offchainlabs/bold/chain-abstraction/sol-implementation"
@@ -296,11 +296,11 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, spawnerOpts ...server_arb.S
 
 	// Create ProofEnhancers from DA validators
 	proofEnhancerA := server_arb.NewProofEnhancementManager()
-	customDAEnhancerA := server_arb.NewCustomDAProofEnhancer(daClientA)
+	customDAEnhancerA := server_arb.NewCustomDAProofEnhancer(daClientA, l2nodeA.InboxTracker, l2nodeA.InboxReader)
 	proofEnhancerA.RegisterEnhancer(server_arb.MarkerCustomDARead, customDAEnhancerA)
 
 	proofEnhancerB := server_arb.NewProofEnhancementManager()
-	customDAEnhancerB := server_arb.NewCustomDAProofEnhancer(daClientB)
+	customDAEnhancerB := server_arb.NewCustomDAProofEnhancer(daClientB, l2nodeB.InboxTracker, l2nodeB.InboxReader)
 	proofEnhancerB.RegisterEnhancer(server_arb.MarkerCustomDARead, customDAEnhancerB)
 
 	stateManager, err := bold.NewBOLDStateProvider(
@@ -439,8 +439,8 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, spawnerOpts ...server_arb.S
 		honestSeqInboxBinding, honestSeqInbox, goodBatchData2, daWriterA)
 
 	// Configure evil mapping BEFORE node B processes the certificate
-	certHash := crypto.Keccak256Hash(certificate2)
-	evilProvider.SetMapping(certHash, evilBatchData2)
+	dataHash := common.Hash(certificate2[1:33])
+	evilProvider.SetMapping(dataHash, evilBatchData2)
 
 	// Post same certificate to node B's sequencer inbox
 	// Now the evil provider will return different data

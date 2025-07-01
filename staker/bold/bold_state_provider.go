@@ -519,7 +519,7 @@ func (s *BOLDStateProvider) CollectProof(
 
 	// Apply proof enhancement if configured
 	if s.proofEnhancer != nil {
-		return s.proofEnhancer.EnhanceProof(ctx, baseProof)
+		return s.proofEnhancer.EnhanceProof(ctx, messageNum, baseProof)
 	}
 
 	return baseProof, nil

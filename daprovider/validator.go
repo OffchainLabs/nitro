@@ -23,5 +23,7 @@ type Validator interface {
 	// GenerateProof generates a proof for a specific preimage at a given offset
 	// The proof format depends on the implementation and must be compatible with
 	// the Solidity ICustomDAValidator contract
-	GenerateProof(ctx context.Context, preimageType arbutil.PreimageType, hash common.Hash, offset uint64) ([]byte, error)
+	// For CustomDA preimages, certificate contains the DA certificate (e.g., [0x01][32-byte hash])
+	// certHash is the keccak256 hash of the certificate
+	GenerateProof(ctx context.Context, preimageType arbutil.PreimageType, certHash common.Hash, offset uint64, certificate []byte) ([]byte, error)
 }

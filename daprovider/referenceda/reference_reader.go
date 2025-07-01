@@ -61,6 +61,12 @@ func (r *Reader) RecoverPayloadFromBatch(
 	var sha256Hash common.Hash
 	copy(sha256Hash[:], certificate[1:33])
 
+	log.Debug("ReferenceDA reader extracting hash",
+		"certificateLen", len(certificate),
+		"certificateHeader", fmt.Sprintf("0x%x", certificate[0]),
+		"sha256Hash", sha256Hash.Hex(),
+		"certificateHex", fmt.Sprintf("0x%x", certificate))
+
 	// Retrieve the data from storage using the hash
 	payload, err := r.storage.GetByHash(ctx, sha256Hash)
 	if err != nil {
