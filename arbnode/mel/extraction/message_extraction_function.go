@@ -68,7 +68,7 @@ func ExtractMessages(
 		parseBatchesFromBlock,
 		parseDelayedMessagesFromBlock,
 		serializeBatch,
-		extractMessagesInBatch,
+		messagesFromBatchSegments,
 		arbstate.ParseSequencerMessage,
 		arbostypes.ParseBatchPostingReportMessageFields,
 	)
