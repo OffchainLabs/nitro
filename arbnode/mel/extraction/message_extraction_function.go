@@ -138,7 +138,7 @@ func extractMessagesImpl(
 		// If this message is a batch posting report, we save it for later
 		// use in this function once we extract messages from batches and
 		// need to fill in their batch posting report.
-		if delayed.Message.Header.Kind == arbostypes.L1MessageType_BatchPostingReport || delayed.Message.Header.Kind == arbostypes.L1MessageType_Initialize { // Lets consider the init message as a batch posting report, since its seen as a batch as well, we can later ignore filling its batchGasCost anyway
+		if delayed.Message.Header.Kind == arbostypes.L1MessageType_BatchPostingReport || delayed.Message.Header.Kind == arbostypes.L1MessageType_Initialize { // Let's consider the init message as a batch posting report, since it is seen as a batch as well, we can later ignore filling its batchGasCost anyway
 			batchPostingReports = append(batchPostingReports, delayed)
 		}
 		if err = state.AccumulateDelayedMessage(delayed); err != nil {
