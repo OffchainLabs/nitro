@@ -29,7 +29,7 @@ jobs:
       matrix:
         test-mode: [race, legacychallenge, long, challenge, l3challenge]
 
-    if: github.event_name == 'schedule' && github.ref == 'refs/heads/master'
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'schedule' && github.ref == 'refs/heads/master')
     
     steps:
       - name: Checkout
@@ -156,7 +156,7 @@ jobs:
         if: matrix.test-mode == 'race'
         run: |
           echo "Running tests with Hash Scheme" >> full.log
-          ${{ github.workspace }}/.github/workflows/gotestsum.sh --race --timeout 60m --test_state_scheme hash
+          GOMAXPROCS=2 ${{ github.workspace }}/.github/workflows/gotestsum.sh --race --timeout 60m --test_state_scheme hash
 
       - name: run challenge tests
         if: matrix.test-mode == 'challenge'
