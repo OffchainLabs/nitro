@@ -35,6 +35,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
+	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/daprovider/daclient"
 	"github.com/offchainlabs/nitro/daprovider/referenceda"
 	dapserver "github.com/offchainlabs/nitro/daprovider/server"
@@ -224,13 +225,35 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, spawnerOpts ...server_arb.S
 
 	locator, err := server_common.NewMachineLocator(valCfg.Wasm.RootPath)
 	Require(t, err)
+
+	// Create DA validators for both nodes
+	daClientConfigA := func() *rpcclient.ClientConfig {
+		return &rpcclient.ClientConfig{
+			URL: providerURLNodeA,
+		}
+	}
+	daClientA, err := daclient.NewClient(ctx, daClientConfigA)
+	Require(t, err)
+
+	daClientConfigB := func() *rpcclient.ClientConfig {
+		return &rpcclient.ClientConfig{
+			URL: providerURLNodeB,
+		}
+	}
+	daClientB, err := daclient.NewClient(ctx, daClientConfigB)
+	Require(t, err)
+
+	// Create DA readers for validators
+	dapReadersA := []daprovider.Reader{daClientA}
+	dapReadersB := []daprovider.Reader{daClientB}
+
 	statelessA, err := staker.NewStatelessBlockValidator(
 		l2nodeA.InboxReader,
 		l2nodeA.InboxTracker,
 		l2nodeA.TxStreamer,
 		l2nodeA.ExecutionRecorder,
 		l2nodeA.ArbDB,
-		nil,
+		dapReadersA,
 		StaticFetcherFrom(t, &blockValidatorConfig),
 		valStack,
 		locator.LatestWasmModuleRoot(),
@@ -246,7 +269,7 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, spawnerOpts ...server_arb.S
 		l2nodeB.TxStreamer,
 		l2nodeB.ExecutionRecorder,
 		l2nodeB.ArbDB,
-		nil,
+		dapReadersB,
 		StaticFetcherFrom(t, &blockValidatorConfig),
 		valStackB,
 		locator.LatestWasmModuleRoot(),
@@ -276,23 +299,6 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, spawnerOpts ...server_arb.S
 	Require(t, err)
 	Require(t, blockValidatorB.Initialize(ctx))
 	Require(t, blockValidatorB.Start(ctx))
-
-	// Create DA validators for both nodes
-	daClientConfigA := func() *rpcclient.ClientConfig {
-		return &rpcclient.ClientConfig{
-			URL: providerURLNodeA,
-		}
-	}
-	daClientA, err := daclient.NewClient(ctx, daClientConfigA)
-	Require(t, err)
-
-	daClientConfigB := func() *rpcclient.ClientConfig {
-		return &rpcclient.ClientConfig{
-			URL: providerURLNodeB,
-		}
-	}
-	daClientB, err := daclient.NewClient(ctx, daClientConfigB)
-	Require(t, err)
 
 	// Create ProofEnhancers from DA validators
 	proofEnhancerA := server_arb.NewProofEnhancementManager()
@@ -607,6 +613,7 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, spawnerOpts ...server_arb.S
 				if address == l1info.GetDefaultTransactOpts("Asserter", ctx).From {
 					t.Log("Honest party won OSP, impossible for evil party to win if honest party continues")
 					Require(t, it.Close())
+					time.Sleep(5 * time.Second)
 					return
 				}
 			}
