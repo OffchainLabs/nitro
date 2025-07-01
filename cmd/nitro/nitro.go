@@ -576,7 +576,7 @@ func mainImpl() int {
 	}
 	// If batchPoster is enabled, validate MaxSize to be at least 10kB below the sequencer inbox’s maxDataSize if the data availability service is not enabled.
 	// The 10kB gap is because its possible for the batch poster to exceed its MaxSize limit and produce batches of slightly larger size.
-	if nodeConfig.Node.BatchPoster.Enable && !nodeConfig.Node.DataAvailability.Enable {
+	if nodeConfig.Node.BatchPoster.Enable && (!nodeConfig.Node.DataAvailability.Enable || !nodeConfig.Node.EigenDA.Enable) {
 		if nodeConfig.Node.BatchPoster.MaxSize > seqInboxMaxDataSize-10000 {
 			log.Error("batchPoster's MaxSize is too large")
 			return 1
