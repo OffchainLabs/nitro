@@ -203,6 +203,8 @@ jobs:
         uses: actions/checkout@v4
         with:
           submodules: true
+          fetch-depth: 10           // Will cover most PRs
+          persist-credentials: true // In case changed-files requires deeper depth
           
       - name: Check changed files
         id: changed-files
