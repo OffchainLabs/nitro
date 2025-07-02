@@ -63,6 +63,27 @@ Config validations are categorized into three types, each with a designated loca
 6. [Node creation proceeds]
 ```
 
+## Implementation Status
+
+As of this implementation:
+
+✅ **Component-Level Validations**: Most components already implement `Validate()` methods
+- `MessagePrunerConfig.Validate()` - Added as example
+- `BatchPosterConfig.Validate()` - Existing
+- `MaintenanceConfig.Validate()` - Existing  
+- `InboxReaderConfig.Validate()` - Existing
+- And others...
+
+✅ **Cross-Component Validations**: Implemented in `NodeConfig.Validate()`
+- Validator + path scheme compatibility check - Existing
+- Archive mode + message pruner warning - Added
+
+✅ **Runtime Validations**: Properly placed in `createNodeImpl()`
+- Database connectivity checks
+- L1 client connectivity
+- External service initialization
+- Resource allocation
+
 ## Guidelines
 
 ### DO:
@@ -96,3 +117,11 @@ This methodology provides:
 - **Maintainability**: Validations are logically grouped and easy to find
 - **Testability**: Each validation type can be tested independently
 - **User Experience**: Users get validation feedback at the appropriate time
+
+## Examples in Code
+
+See:
+- `arbnode/message_pruner.go` - Component-level validation example
+- `cmd/nitro/nitro.go` - Cross-component validation examples
+- `arbnode/node.go` - Runtime validation examples during node creation
+- Tests in `arbnode/message_pruner_test.go` and `cmd/nitro/config_test.go`
