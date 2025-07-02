@@ -47,6 +47,7 @@ type CachingConfig struct {
 	StateHistory                        uint64        `koanf:"state-history"`
 	EnablePreimages                     bool          `koanf:"enable-preimages"`
 	TxIndexerThreads                    int           `koanf:"tx-indexer-threads"`
+	TxIndexerMinBatchDelay              time.Duration `koanf:"tx-indexer-min-batch-delay"`
 }
 
 func CachingConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -70,6 +71,7 @@ func CachingConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Uint64(prefix+".state-history", DefaultCachingConfig.StateHistory, "number of recent blocks to retain state history for (path state-scheme only)")
 	f.Bool(prefix+".enable-preimages", DefaultCachingConfig.EnablePreimages, "enable recording of preimages")
 	f.Int(prefix+".tx-indexer-threads", DefaultCachingConfig.TxIndexerThreads, "TODO")
+	f.Duration(prefix+".tx-indexer-min-batch-delay", DefaultCachingConfig.TxIndexerMinBatchDelay, "")
 }
 
 func getStateHistory(maxBlockSpeed time.Duration) uint64 {
@@ -96,6 +98,7 @@ var DefaultCachingConfig = CachingConfig{
 	StateScheme:                        rawdb.HashScheme,
 	StateHistory:                       getStateHistory(DefaultSequencerConfig.MaxBlockSpeed),
 	TxIndexerThreads:                   util.GoMaxProcs(),
+	TxIndexerMinBatchDelay:             200 * time.Millisecond,
 }
 
 // TODO remove stack from parameters as it is no longer needed here
@@ -121,6 +124,7 @@ func DefaultCacheConfigFor(stack *node.Node, cachingConfig *CachingConfig) *core
 		MaxNumberOfBlocksToSkipStateSaving: cachingConfig.MaxNumberOfBlocksToSkipStateSaving,
 		MaxAmountOfGasToSkipStateSaving:    cachingConfig.MaxAmountOfGasToSkipStateSaving,
 		TxIndexerThreads:                   cachingConfig.TxIndexerThreads,
+		TxIndexerMinBatchDelay:             cachingConfig.TxIndexerMinBatchDelay,
 		StateScheme:                        cachingConfig.StateScheme,
 		StateHistory:                       cachingConfig.StateHistory,
 	}
