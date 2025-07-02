@@ -22,7 +22,6 @@ import (
 )
 
 func TestSnapSync(t *testing.T) {
-	t.Skip("Skipping until investigating why this times out in CI")
 	ctx, cancelCtx := context.WithCancel(context.Background())
 	defer cancelCtx()
 
@@ -180,6 +179,7 @@ func createTransactionTillBatchCount(ctx context.Context, t *testing.T, builder 
 		if count > finalCount {
 			break
 		}
+		time.Sleep(100 * time.Millisecond) // give some time for other components (reader/tracker) to read the batches from L1
 	}
 }
 
