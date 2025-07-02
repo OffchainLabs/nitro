@@ -120,10 +120,6 @@ func (d *DB) AncientDatadir() (string, error) {
 	return "", errors.New("unimplemented")
 }
 
-func (d *DB) WasmDataBase() (ethdb.KeyValueStore, uint32) {
-	panic("unimplemented")
-}
-
-func (d *DB) WasmTargets() []ethdb.WasmTarget {
+func (d *DB) WasmDataBase() ethdb.KeyValueStore {
 	panic("unimplemented")
 }

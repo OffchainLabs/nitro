@@ -103,7 +103,10 @@ type ExecutionEngine struct {
 	prefetchBlock bool
 
 	cachedL1PriceData *L1PriceData
-	syncTillBlock     uint64
+
+	wasmTargets []rawdb.WasmTarget
+
+	syncTillBlock uint64
 }
 
 func NewL1PriceData() *L1PriceData {
@@ -204,6 +207,7 @@ func (s *ExecutionEngine) Initialize(rustCacheCapacityMB uint32, targetConfig *S
 	if err := PopulateStylusTargetCache(targetConfig); err != nil {
 		return fmt.Errorf("error populating stylus target cache: %w", err)
 	}
+	s.wasmTargets = targetConfig.WasmTargets()
 	return nil
 }
 
@@ -311,7 +315,7 @@ func (s *ExecutionEngine) Reorg(msgIdxOfFirstMsgToAdd arbutil.MessageIndex, newM
 		s.bc.SetFinalized(nil)
 	}
 
-	tag := s.bc.StateCache().WasmCacheTag()
+	tag := core.NewMessageCommitContext(nil).WasmCacheTag() // we don't pass any targets, we just want the tag
 	// reorg Rust-side VM state
 	C.stylus_reorg_vm(C.uint64_t(lastBlockNumToKeep), C.uint32_t(tag))
 
@@ -578,7 +582,7 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 		s.bc,
 		hooks,
 		false,
-		core.MessageCommitMode,
+		core.NewMessageCommitContext(s.wasmTargets),
 	)
 	if err != nil {
 		return nil, err
@@ -766,9 +770,11 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 	statedb.StartPrefetcher("TransactionStreamer", witness)
 	defer statedb.StopPrefetcher()
 
-	runMode := core.MessageCommitMode
+	var runCtx *core.MessageRunContext
 	if isMsgForPrefetch {
-		runMode = core.MessageReplayMode
+		runCtx = core.NewMessagePrefetchContext()
+	} else {
+		runCtx = core.NewMessageCommitContext(s.wasmTargets)
 	}
 	block, receipts, err := arbos.ProduceBlock(
 		msg.Message,
@@ -777,7 +783,7 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 		statedb,
 		s.bc,
 		isMsgForPrefetch,
-		runMode,
+		runCtx,
 	)
 
 	return block, statedb, receipts, err
