@@ -17,6 +17,71 @@ import (
 	"github.com/offchainlabs/nitro/arbstate"
 )
 
+func Test_messagesFromBatchSegments_expectedFieldBounds_simple(t *testing.T) {
+	compressedData, _ := arbcompress.CompressWell([]byte("foobar"))
+	adv1, _ := rlp.EncodeToBytes(uint64(7))
+	adv2, _ := rlp.EncodeToBytes(uint64(3))
+	segments := [][]byte{
+		append([]byte{arbstate.BatchSegmentKindAdvanceTimestamp}, adv1...),
+		append([]byte{arbstate.BatchSegmentKindAdvanceTimestamp}, adv2...),
+		append([]byte{arbstate.BatchSegmentKindL2MessageBrotli}, compressedData...),
+	}
+	ctx := context.Background()
+	melState := &mel.State{
+		DelayedMessagesRead: 0,
+	}
+	seqMsg := &arbstate.SequencerMessage{
+		Segments:     segments,
+		MinTimestamp: 10,
+		MaxTimestamp: 20,
+	}
+	mockDB := &mockDelayedMessageDB{}
+	msgs, err := messagesFromBatchSegments(
+		ctx,
+		melState,
+		seqMsg,
+		mockDB,
+	)
+	require.NoError(t, err)
+	require.Len(t, msgs, 1)
+	require.Equal(t, msgs[0].Message.L2msg, []byte("foobar"))
+	require.Equal(t, msgs[0].Message.Header.Timestamp, uint64(10))
+}
+
+func Test_messagesFromBatchSegments_expectedFieldBounds_complex(t *testing.T) {
+	compressedData, _ := arbcompress.CompressWell([]byte("foobar"))
+	adv1, _ := rlp.EncodeToBytes(uint64(7))
+	adv2, _ := rlp.EncodeToBytes(uint64(3))
+	segments := [][]byte{
+		append([]byte{arbstate.BatchSegmentKindAdvanceTimestamp}, adv1...),
+		append([]byte{arbstate.BatchSegmentKindL2MessageBrotli}, compressedData...),
+		append([]byte{arbstate.BatchSegmentKindAdvanceTimestamp}, adv2...),
+		append([]byte{arbstate.BatchSegmentKindL2MessageBrotli}, compressedData...),
+	}
+	ctx := context.Background()
+	melState := &mel.State{
+		DelayedMessagesRead: 0,
+	}
+	seqMsg := &arbstate.SequencerMessage{
+		Segments:     segments,
+		MinTimestamp: 10,
+		MaxTimestamp: 20,
+	}
+	mockDB := &mockDelayedMessageDB{}
+	msgs, err := messagesFromBatchSegments(
+		ctx,
+		melState,
+		seqMsg,
+		mockDB,
+	)
+	require.NoError(t, err)
+	require.Len(t, msgs, 2)
+	require.Equal(t, msgs[0].Message.L2msg, []byte("foobar"))
+	require.Equal(t, msgs[0].Message.Header.Timestamp, uint64(10))
+	require.Equal(t, msgs[1].Message.L2msg, []byte("foobar"))
+	require.Equal(t, msgs[1].Message.Header.Timestamp, uint64(10))
+}
+
 func Test_messagesFromBatchSegments_delayedMessages(t *testing.T) {
 	ctx := context.Background()
 	melState := &mel.State{
