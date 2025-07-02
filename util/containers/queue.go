@@ -3,7 +3,7 @@
 
 package containers
 
-// Queue of an arbitrary type backed by a slice which is shrinked when it grows too large
+// Queue of an arbitrary type backed by a slice which is shrunk when it grows too large
 type Queue[T any] struct {
 	slice []T
 }

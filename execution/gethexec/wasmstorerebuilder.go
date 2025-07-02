@@ -54,7 +54,7 @@ func WriteToKeyValueStore[T any](store ethdb.KeyValueStore, key []byte, val T) e
 // RebuildWasmStore function runs a loop looking at every codehash in diskDb, checking if its an activated stylus contract and
 // saving it to wasm store if it doesnt already exists. When errored it logs them and silently returns
 //
-// It stores the status of rebuilding to wasm store by updating the codehash (of the latest sucessfully checked contract) in
+// It stores the status of rebuilding to wasm store by updating the codehash (of the latest successfully checked contract) in
 // RebuildingPositionKey after every second of work.
 //
 // It also stores a special value that is only set once when rebuilding commenced in RebuildingStartBlockHashKey as the block
@@ -67,6 +67,7 @@ func RebuildWasmStore(ctx context.Context, wasmStore ethdb.KeyValueStore, chainD
 	if err := PopulateStylusTargetCache(targetConfig); err != nil {
 		return fmt.Errorf("error populating stylus target cache: %w", err)
 	}
+	targets := targetConfig.WasmTargets()
 
 	latestHeader := l2Blockchain.CurrentBlock()
 	// Attempt to get state at the start block when rebuilding commenced, if not available (in case of non-archival nodes) use latest state
@@ -93,7 +94,7 @@ func RebuildWasmStore(ctx context.Context, wasmStore ethdb.KeyValueStore, chainD
 		codeHash := common.BytesToHash(codeHashBytes)
 		code := iter.Value()
 		if state.IsStylusProgram(code) {
-			if err := programs.SaveActiveProgramToWasmStore(stateDb, codeHash, code, latestHeader.Time, l2Blockchain.Config().DebugMode(), rebuildingStartHeader.Time); err != nil {
+			if err := programs.SaveActiveProgramToWasmStore(stateDb, codeHash, code, latestHeader.Time, l2Blockchain.Config().DebugMode(), rebuildingStartHeader.Time, targets); err != nil {
 				return fmt.Errorf("error while rebuilding of wasm store, aborting rebuilding: %w", err)
 			}
 		}

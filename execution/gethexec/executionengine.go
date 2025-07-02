@@ -37,6 +37,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
+	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
@@ -44,7 +45,6 @@ import (
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/sharedmetrics"
@@ -103,7 +103,10 @@ type ExecutionEngine struct {
 	prefetchBlock bool
 
 	cachedL1PriceData *L1PriceData
-	syncTillBlock     uint64
+
+	wasmTargets []rawdb.WasmTarget
+
+	syncTillBlock uint64
 }
 
 func NewL1PriceData() *L1PriceData {
@@ -204,6 +207,7 @@ func (s *ExecutionEngine) Initialize(rustCacheCapacityMB uint32, targetConfig *S
 	if err := PopulateStylusTargetCache(targetConfig); err != nil {
 		return fmt.Errorf("error populating stylus target cache: %w", err)
 	}
+	s.wasmTargets = targetConfig.WasmTargets()
 	return nil
 }
 
@@ -311,7 +315,7 @@ func (s *ExecutionEngine) Reorg(msgIdxOfFirstMsgToAdd arbutil.MessageIndex, newM
 		s.bc.SetFinalized(nil)
 	}
 
-	tag := s.bc.StateCache().WasmCacheTag()
+	tag := core.NewMessageCommitContext(nil).WasmCacheTag() // we don't pass any targets, we just want the tag
 	// reorg Rust-side VM state
 	C.stylus_reorg_vm(C.uint64_t(lastBlockNumToKeep), C.uint32_t(tag))
 
@@ -578,7 +582,7 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 		s.bc,
 		hooks,
 		false,
-		core.MessageCommitMode,
+		core.NewMessageCommitContext(s.wasmTargets),
 	)
 	if err != nil {
 		return nil, err
@@ -766,9 +770,11 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 	statedb.StartPrefetcher("TransactionStreamer", witness)
 	defer statedb.StopPrefetcher()
 
-	runMode := core.MessageCommitMode
+	var runCtx *core.MessageRunContext
 	if isMsgForPrefetch {
-		runMode = core.MessageReplayMode
+		runCtx = core.NewMessagePrefetchContext()
+	} else {
+		runCtx = core.NewMessageCommitContext(s.wasmTargets)
 	}
 	block, receipts, err := arbos.ProduceBlock(
 		msg.Message,
@@ -777,7 +783,7 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 		statedb,
 		s.bc,
 		isMsgForPrefetch,
-		runMode,
+		runCtx,
 	)
 
 	return block, statedb, receipts, err
@@ -1005,17 +1011,16 @@ func (s *ExecutionEngine) digestMessageWithBlockMutex(msgIdxToDigest arbutil.Mes
 			timestamp = time.Unix(int64(timestampInt), 0)
 			timeUntilUpgrade = time.Until(timestamp)
 		}
-		maxSupportedVersion := chaininfo.ArbitrumDevTestChainConfig().ArbitrumChainParams.InitialArbOSVersion
 		logLevel := log.Warn
 		if timeUntilUpgrade < time.Hour*24 {
 			logLevel = log.Error
 		}
-		if version > maxSupportedVersion {
+		if version > params.MaxArbosVersionSupported {
 			logLevel(
 				"you need to update your node to the latest version before this scheduled ArbOS upgrade",
 				"timeUntilUpgrade", timeUntilUpgrade,
 				"upgradeScheduledFor", timestamp,
-				"maxSupportedArbosVersion", maxSupportedVersion,
+				"maxSupportedArbosVersion", params.MaxArbosVersionSupported,
 				"pendingArbosUpgradeVersion", version,
 			)
 		}

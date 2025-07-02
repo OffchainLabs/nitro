@@ -8,7 +8,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
-	"github.com/ethereum/go-ethereum/ethdb"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/staker"
@@ -55,7 +55,7 @@ func (a *BlockValidatorDebugAPI) ValidateMessageNumber(
 	return result, err
 }
 
-func (a *BlockValidatorDebugAPI) ValidationInputsAt(ctx context.Context, msgNum hexutil.Uint64, target ethdb.WasmTarget,
+func (a *BlockValidatorDebugAPI) ValidationInputsAt(ctx context.Context, msgNum hexutil.Uint64, target rawdb.WasmTarget,
 ) (server_api.InputJSON, error) {
 	return a.val.ValidationInputsAt(ctx, arbutil.MessageIndex(msgNum), target)
 }

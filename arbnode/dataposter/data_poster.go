@@ -1315,7 +1315,7 @@ type ExternalSignerCfg struct {
 	// API method name (e.g. eth_signTransaction).
 	Method string `koanf:"method"`
 	// (Optional) Path to the external signer root CA certificate.
-	// This allows us to use self-signed certificats on the external signer.
+	// This allows us to use self-signed certificates on the external signer.
 	RootCA string `koanf:"root-ca"`
 	// (Optional) Client certificate for mtls.
 	ClientCert string `koanf:"client-cert"`
