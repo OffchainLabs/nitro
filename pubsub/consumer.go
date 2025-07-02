@@ -47,10 +47,14 @@ var TestConsumerConfig = ConsumerConfig{
 var ErrAlreadySet = errors.New("redis key already set")
 
 func ConsumerConfigAddOptions(prefix string, f *pflag.FlagSet) {
-	f.Duration(prefix+".response-entry-timeout", DefaultConsumerConfig.ResponseEntryTimeout, "timeout for response entry")
-	f.Duration(prefix+".idletime-to-autoclaim", DefaultConsumerConfig.IdletimeToAutoclaim, "After a message spends this amount of time in PEL (Pending Entries List i.e claimed by another consumer but not Acknowledged) it will be allowed to be autoclaimed by other consumers. This option should be set to the same value for all consumers and producers.")
-	f.Bool(prefix+".retry", DefaultConsumerConfig.Retry, "enables autoclaim for this consumer, if set to false this consumer will not check messages from PEL (Pending Entries List)")
-	f.Int64(prefix+".max-retry-count", DefaultConsumerConfig.MaxRetryCount, "number of message retries after which this consumer will set an error response and Acknowledge the message (-1 = no limit)")
+	ConsumerConfigAddOptionsWithDefaults(prefix, f, DefaultConsumerConfig)
+}
+
+func ConsumerConfigAddOptionsWithDefaults(prefix string, f *pflag.FlagSet, defaultConfig ConsumerConfig) {
+	f.Duration(prefix+".response-entry-timeout", defaultConfig.ResponseEntryTimeout, "timeout for response entry")
+	f.Duration(prefix+".idletime-to-autoclaim", defaultConfig.IdletimeToAutoclaim, "After a message spends this amount of time in PEL (Pending Entries List i.e claimed by another consumer but not Acknowledged) it will be allowed to be autoclaimed by other consumers. This option should be set to the same value for all consumers and producers.")
+	f.Bool(prefix+".retry", defaultConfig.Retry, "enables autoclaim for this consumer, if set to false this consumer will not check messages from PEL (Pending Entries List)")
+	f.Int64(prefix+".max-retry-count", defaultConfig.MaxRetryCount, "number of message retries after which this consumer will set an error response and Acknowledge the message (-1 = no limit)")
 }
 
 // Consumer implements a consumer for redis stream provides heartbeat to

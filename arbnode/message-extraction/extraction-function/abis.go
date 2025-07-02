@@ -11,7 +11,9 @@ var inboxMessageDeliveredID common.Hash
 var inboxMessageFromOriginID common.Hash
 var iBridgeABI *abi.ABI
 var iInboxABI *abi.ABI
+var seqInboxABI *abi.ABI
 var iDelayedMessageProviderABI *abi.ABI
+var batchDeliveredID common.Hash
 
 func init() {
 	var err error
@@ -32,4 +34,13 @@ func init() {
 		panic(err)
 	}
 	iInboxABI = parsedIInboxABI
+	sequencerBridgeABI, err := bridgegen.SequencerInboxMetaData.GetAbi()
+	if err != nil {
+		panic(err)
+	}
+	batchDeliveredID = sequencerBridgeABI.Events["SequencerBatchDelivered"].ID
+	seqInboxABI, err = bridgegen.SequencerInboxMetaData.GetAbi()
+	if err != nil {
+		panic(err)
+	}
 }
