@@ -325,6 +325,7 @@ COPY --from=node-builder  /workspace/target/bin/daserver  /usr/local/bin/
 COPY --from=node-builder  /workspace/target/bin/daprovider  /usr/local/bin/
 COPY --from=node-builder  /workspace/target/bin/autonomous-auctioneer  /usr/local/bin/
 COPY --from=node-builder  /workspace/target/bin/bidder-client  /usr/local/bin/
+COPY --from=node-builder  /workspace/target/bin/el-proxy  /usr/local/bin/
 COPY --from=node-builder  /workspace/target/bin/datool    /usr/local/bin/
 COPY --from=nitro-legacy /home/user/target/machines /home/user/nitro-legacy/machines
 RUN rm -rf /workspace/target/legacy-machines/latest
