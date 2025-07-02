@@ -285,3 +285,48 @@ func Fail(t *testing.T, printables ...interface{}) {
 	t.Helper()
 	testhelpers.FailImpl(t, printables...)
 }
+
+func TestValidationMethodology(t *testing.T) {
+	t.Run("ComponentLevelValidation", func(t *testing.T) {
+		// Test MessagePruner component-level validation
+		config := NodeConfigDefault
+		
+		// Test invalid prune interval
+		config.Node.MessagePruner.Enable = true
+		config.Node.MessagePruner.PruneInterval = -1 * time.Second
+		
+		err := config.Node.MessagePruner.Validate()
+		if err == nil {
+			t.Error("Expected validation error for negative prune interval")
+		}
+		
+		// Test valid configuration
+		config.Node.MessagePruner.PruneInterval = time.Minute
+		err = config.Node.MessagePruner.Validate()
+		if err != nil {
+			t.Errorf("Unexpected validation error for valid config: %v", err)
+		}
+	})
+	
+	t.Run("CrossComponentValidation", func(t *testing.T) {
+		// Test cross-component validation in NodeConfig.Validate()
+		config := NodeConfigDefault
+		
+		// Test validator required with path scheme (existing validation)
+		config.Node.BlockValidator.Enable = true
+		config.Execution.Caching.StateScheme = "path"
+		
+		err := config.Validate()
+		if err == nil {
+			t.Error("Expected validation error for validator required with path scheme")
+		}
+		
+		// Reset to valid state
+		config = NodeConfigDefault
+		config.Execution.Caching.StateScheme = "hash"
+		err = config.Validate()
+		if err != nil {
+			t.Errorf("Unexpected validation error for valid config: %v", err)
+		}
+	})
+}

@@ -40,6 +40,13 @@ type MessagePrunerConfig struct {
 	MinBatchesLeft uint64        `koanf:"min-batches-left" reload:"hot"`
 }
 
+func (c *MessagePrunerConfig) Validate() error {
+	if c.Enable && c.PruneInterval <= 0 {
+		return fmt.Errorf("message pruner prune-interval must be positive when pruning is enabled")
+	}
+	return nil
+}
+
 type MessagePrunerConfigFetcher func() *MessagePrunerConfig
 
 var DefaultMessagePrunerConfig = MessagePrunerConfig{

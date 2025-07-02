@@ -883,6 +883,12 @@ func (c *NodeConfig) Validate() error {
 	if c.Node.ValidatorRequired() && (c.Execution.Caching.StateScheme == rawdb.PathScheme) {
 		return errors.New("path cannot be used as execution.caching.state-scheme when validator is required")
 	}
+
+	// Cross-component validation for archive mode consistency
+	if c.Execution.Caching.Archive && c.Node.MessagePruner.Enable {
+		log.Warn("message pruner is enabled but archive mode is also enabled - consider disabling message pruner for full archive functionality")
+	}
+
 	return c.Persistent.Validate()
 }
 

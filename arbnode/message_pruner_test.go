@@ -6,6 +6,7 @@ package arbnode
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/ethdb"
@@ -116,4 +117,36 @@ func checkDbKeys(t *testing.T, endCount uint64, db ethdb.Database, prefix []byte
 			}
 		}
 	}
+}
+
+func TestMessagePrunerConfigValidation(t *testing.T) {
+	t.Run("ValidConfig", func(t *testing.T) {
+		config := DefaultMessagePrunerConfig
+		err := config.Validate()
+		if err != nil {
+			t.Errorf("Expected no error for valid config, got: %v", err)
+		}
+	})
+	
+	t.Run("DisabledPrunerWithInvalidInterval", func(t *testing.T) {
+		config := MessagePrunerConfig{
+			Enable:        false,
+			PruneInterval: -1 * time.Second, // Invalid, but should be ignored when disabled
+		}
+		err := config.Validate()
+		if err != nil {
+			t.Errorf("Expected no error for disabled pruner with invalid interval, got: %v", err)
+		}
+	})
+	
+	t.Run("EnabledPrunerWithInvalidInterval", func(t *testing.T) {
+		config := MessagePrunerConfig{
+			Enable:        true,
+			PruneInterval: -1 * time.Second, // Invalid
+		}
+		err := config.Validate()
+		if err == nil {
+			t.Error("Expected error for enabled pruner with invalid interval")
+		}
+	})
 }
