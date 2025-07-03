@@ -58,7 +58,7 @@ func TestSnapSync(t *testing.T) {
 	// Create transactions till batch count is 10
 	createTransactionTillBatchCount(ctx, t, builder, 10)
 	// Wait for nodeB to sync up to the first node
-	waitForBlocksToCatchup(ctx, t, builder.L2.Client, nodeB.Client)
+	waitForBlocksToCatchup(ctx, t, builder.L2.Client, nodeB.Client, 10*time.Minute)
 
 	// Create a config with snap sync enabled and same database directory as the 2nd node
 	nodeConfig := createNodeConfigWithSnapSync(t, builder)
@@ -131,7 +131,7 @@ func waitForBlockToCatchupToMessageCount(
 	}
 }
 
-func waitForBlocksToCatchup(ctx context.Context, t *testing.T, clientA *ethclient.Client, clientB *ethclient.Client) {
+func waitForBlocksToCatchup(ctx context.Context, t *testing.T, clientA *ethclient.Client, clientB *ethclient.Client, limit time.Duration) {
 	for {
 		select {
 		case <-ctx.Done():
@@ -144,6 +144,8 @@ func waitForBlocksToCatchup(ctx context.Context, t *testing.T, clientA *ethclien
 			if headerA.Number.Cmp(headerB.Number) == 0 {
 				return
 			}
+		case <-time.After(limit):
+			t.Fatal("waitForBlocksToCatchup didnt finish")
 		}
 	}
 }
@@ -167,7 +169,8 @@ func waitForBatchCountToCatchup(ctx context.Context, t *testing.T, inboxTrackerA
 }
 
 func createTransactionTillBatchCount(ctx context.Context, t *testing.T, builder *NodeBuilder, finalCount uint64) {
-	for {
+	// Limit number of txs created to finalCount*1000
+	for i := uint64(0); i < finalCount*1000; i++ {
 		Require(t, ctx.Err())
 		tx := builder.L2Info.PrepareTx("Faucet", "BackgroundUser", builder.L2Info.TransferGas, big.NewInt(1), nil)
 		err := builder.L2.Client.SendTransaction(ctx, tx)
@@ -177,10 +180,11 @@ func createTransactionTillBatchCount(ctx context.Context, t *testing.T, builder 
 		count, err := builder.L2.ConsensusNode.InboxTracker.GetBatchCount()
 		Require(t, err)
 		if count > finalCount {
-			break
+			return
 		}
 		time.Sleep(100 * time.Millisecond) // give some time for other components (reader/tracker) to read the batches from L1
 	}
+	t.Fatal("createTransactionTillBatchCount didnt finish")
 }
 
 func createNodeConfigWithSnapSync(t *testing.T, builder *NodeBuilder) *arbnode.Config {
