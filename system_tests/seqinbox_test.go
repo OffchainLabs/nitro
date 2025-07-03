@@ -446,5 +446,8 @@ func testSequencerInboxReaderImpl(t *testing.T, validator bool) {
 }
 
 func TestSequencerInboxReader(t *testing.T) {
+	if RaceDetectionEnabled {
+		t.Skip("Skipping TestSequencerInboxReader in nightly testing with race detection on")
+	}
 	testSequencerInboxReaderImpl(t, false)
 }

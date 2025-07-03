@@ -26,6 +26,8 @@ import (
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
+var RaceDetectionEnabled = false
+
 func blockIsEmpty(block *types.Block) bool {
 	for _, tx := range block.Transactions() {
 		if tx.Type() != types.ArbitrumInternalTxType {

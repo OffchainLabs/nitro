@@ -9,6 +9,8 @@ import (
 	"testing"
 )
 
+var RaceDetectionEnabled = true
+
 // used in program test
 func validateBlocks(
 	t *testing.T, start uint64, jit bool, builder *NodeBuilder,
