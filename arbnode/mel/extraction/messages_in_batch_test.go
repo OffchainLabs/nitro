@@ -11,7 +11,6 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 
 	"github.com/offchainlabs/nitro/arbcompress"
-	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbnode/mel"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbstate"
@@ -93,7 +92,7 @@ func Test_messagesFromBatchSegments_delayedMessages(t *testing.T) {
 		// sequencer message says that we must read 2 delayed messages.
 	}
 	mockDB := &mockDelayedMessageDB{
-		DelayedMessages: map[uint64]*arbnode.DelayedInboxMessage{
+		DelayedMessages: map[uint64]*mel.DelayedInboxMessage{
 			0: {
 				Message: &arbostypes.L1IncomingMessage{
 					L2msg: []byte("foobar"),
@@ -285,7 +284,7 @@ func Test_messagesFromBatchSegments(t *testing.T) {
 			},
 			setupMockDB: func() *mockDelayedMessageDB {
 				return &mockDelayedMessageDB{
-					DelayedMessages: map[uint64]*arbnode.DelayedInboxMessage{},
+					DelayedMessages: map[uint64]*mel.DelayedInboxMessage{},
 				}
 			},
 			wantErr:         true,
@@ -309,7 +308,7 @@ func Test_messagesFromBatchSegments(t *testing.T) {
 			},
 			setupMockDB: func() *mockDelayedMessageDB {
 				return &mockDelayedMessageDB{
-					DelayedMessages: map[uint64]*arbnode.DelayedInboxMessage{
+					DelayedMessages: map[uint64]*mel.DelayedInboxMessage{
 						0: {
 							Message: &arbostypes.L1IncomingMessage{
 								L2msg: []byte("foobar"),
@@ -356,7 +355,7 @@ func Test_messagesFromBatchSegments(t *testing.T) {
 
 type mockDelayedMessageDB struct {
 	DelayedMessagesRead uint64
-	DelayedMessages     map[uint64]*arbnode.DelayedInboxMessage
+	DelayedMessages     map[uint64]*mel.DelayedInboxMessage
 	err                 error
 }
 
@@ -364,7 +363,7 @@ func (m *mockDelayedMessageDB) ReadDelayedMessage(
 	_ context.Context,
 	_ *mel.State,
 	delayedMsgsRead uint64,
-) (*arbnode.DelayedInboxMessage, error) {
+) (*mel.DelayedInboxMessage, error) {
 	if m.err != nil {
 		return nil, m.err
 	}
