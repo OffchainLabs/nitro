@@ -14,6 +14,13 @@ type DelayedMetaDeque struct {
 	initMsg *DelayedInboxMessage
 }
 
+func NewDelayedMetaDeque() *DelayedMetaDeque {
+	return &DelayedMetaDeque{
+		deque:   make([]*DelayedMeta, 0),
+		initMsg: nil,
+	}
+}
+
 func (d *DelayedMetaDeque) Len() int                           { return len(d.deque) }
 func (d *DelayedMetaDeque) GetByPos(index uint64) *DelayedMeta { return d.deque[index] } // Used for testing purposes
 

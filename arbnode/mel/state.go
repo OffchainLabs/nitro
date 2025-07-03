@@ -160,6 +160,9 @@ func (s *State) AccumulateDelayedMessage(msg *DelayedInboxMessage) error {
 	if err != nil {
 		return err
 	}
+	if s.seenUnreadDelayedMetaDeque == nil {
+		s.seenUnreadDelayedMetaDeque = NewDelayedMetaDeque()
+	}
 	s.seenUnreadDelayedMetaDeque.Add(&DelayedMeta{
 		Index:                       s.DelayedMessagedSeen,
 		MerkleRoot:                  merkleRoot,
