@@ -98,9 +98,9 @@ for package in $packages; do
   fi
 
 	if [ "$log" == true ]; then
-			cmd="$cmd > >(stdbuf -oL tee -a full.log | grep -vE \"INFO|seal\")"
+			cmd="$cmd > >(stdbuf -oL tee -a full.log | grep -vE \"DEBUG|TRACE|INFO|seal\")"
 	else
-			cmd="$cmd | grep -vE \"INFO|seal\""
+			cmd="$cmd | grep -vE \"DEBUG|TRACE|INFO|seal\""
 	fi
 
   echo ""
