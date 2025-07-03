@@ -8,7 +8,7 @@ import (
 
 func init() {
 	// Disable maxprocs logs
-	_, _ = maxprocs.Set(maxprocs.Logger(func(_ string, _ ...any) {}))
+	_, _ = maxprocs.Set()
 }
 
 // GoMaxProcs wraps runtime.GOMAXPROCS here to ensure that maxprocs.Set()
