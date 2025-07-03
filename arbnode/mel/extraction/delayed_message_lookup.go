@@ -1,4 +1,4 @@
-package extractionfunction
+package melextraction
 
 import (
 	"bytes"
@@ -14,14 +14,14 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 
 	"github.com/offchainlabs/nitro/arbnode"
-	meltypes "github.com/offchainlabs/nitro/arbnode/message-extraction/types"
+	"github.com/offchainlabs/nitro/arbnode/mel"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 )
 
 func parseDelayedMessagesFromBlock(
 	ctx context.Context,
-	melState *meltypes.State,
+	melState *mel.State,
 	parentChainBlockNum *big.Int,
 	parentChainBlockTxs []*types.Transaction,
 	receiptFetcher ReceiptFetcher,
