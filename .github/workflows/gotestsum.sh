@@ -11,6 +11,7 @@ timeout=""
 tags=""
 run=""
 test_state_scheme=""
+log=true
 race=false
 cover=false
 while [[ $# -gt 0 ]]; do
@@ -47,6 +48,10 @@ while [[ $# -gt 0 ]]; do
       cover=true
       shift
       ;;
+		--nolog)
+			log=false
+			shift
+			;;
     *)
       echo "Invalid argument: $1"
       exit 1
@@ -83,7 +88,11 @@ for package in $packages; do
       cmd="$cmd -args -- --test_loglevel=8" # Use error log level, which is the value 8 in the slog level enum for tests.
   fi
 
-  cmd="$cmd > >(stdbuf -oL tee -a full.log | grep -vE \"INFO|seal\")"
+	if [ "$log" == true ]; then
+			cmd="$cmd > >(stdbuf -oL tee -a full.log | grep -vE \"INFO|seal\")"
+	else
+			cmd="$cmd | grep -vE \"INFO|seal\""
+	fi
 
   echo ""
   echo running tests for "$package"
