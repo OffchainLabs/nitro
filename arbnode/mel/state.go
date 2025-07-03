@@ -138,9 +138,9 @@ func (s *State) Clone() *State {
 	}
 }
 
-func (s *State) AccumulateMessage(msg *arbostypes.MessageWithMetadata) *State {
+func (s *State) AccumulateMessage(msg *arbostypes.MessageWithMetadata) error {
 	// TODO: Unimplemented.
-	return s
+	return nil
 }
 
 func (s *State) AccumulateDelayedMessage(msg *DelayedInboxMessage) error {
