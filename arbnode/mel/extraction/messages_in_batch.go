@@ -106,23 +106,12 @@ func messageFromSegment(
 		} else if kind == arbstate.BatchSegmentKindAdvanceL1BlockNumber {
 			blockNumber += advancing
 		}
-
-		// Next, we constrain the bounds.
-		if timestamp < seqMsg.MinTimestamp {
-			timestamp = seqMsg.MinTimestamp
-		} else if timestamp > seqMsg.MaxTimestamp {
-			timestamp = seqMsg.MaxTimestamp
-		}
-		if blockNumber < seqMsg.MinL1Block {
-			blockNumber = seqMsg.MinL1Block
-		} else if blockNumber > seqMsg.MaxL1Block {
-			blockNumber = seqMsg.MaxL1Block
-		}
 		return nil, blockNumber, timestamp, nil
 	} else if kind == arbstate.BatchSegmentKindL2Message || kind == arbstate.BatchSegmentKindL2MessageBrotli {
 		segment = segment[1:]
-		msg := decompressBrotliMessage(
+		msg := produceL2Message(
 			kind,
+			seqMsg,
 			segment,
 			blockNumber,
 			timestamp,
@@ -149,13 +138,25 @@ func messageFromSegment(
 	}
 }
 
-func decompressBrotliMessage(
+func produceL2Message(
 	kind byte,
+	seqMsg *arbstate.SequencerMessage,
 	segment []byte,
 	blockNumber uint64,
 	timestamp uint64,
 	delayedMessagesRead uint64,
 ) *arbostypes.MessageWithMetadata {
+	// We constrain the bounds of the timestamp and block number.
+	if timestamp < seqMsg.MinTimestamp {
+		timestamp = seqMsg.MinTimestamp
+	} else if timestamp > seqMsg.MaxTimestamp {
+		timestamp = seqMsg.MaxTimestamp
+	}
+	if blockNumber < seqMsg.MinL1Block {
+		blockNumber = seqMsg.MinL1Block
+	} else if blockNumber > seqMsg.MaxL1Block {
+		blockNumber = seqMsg.MaxL1Block
+	}
 	seg := segment
 	if kind == arbstate.BatchSegmentKindL2MessageBrotli {
 		decompressed, err := arbcompress.Decompress(segment, arbostypes.MaxL2MessageSize)
