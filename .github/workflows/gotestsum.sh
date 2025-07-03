@@ -11,6 +11,7 @@ timeout=""
 tags=""
 run=""
 test_state_scheme=""
+dont_parallelise=false
 log=true
 race=false
 cover=false
@@ -40,6 +41,10 @@ while [[ $# -gt 0 ]]; do
       test_state_scheme=$1
       shift
       ;;
+    --dont_parallelise)
+      dont_parallelise=true
+      shift
+      ;;
     --race)
       race=true
       shift
@@ -61,7 +66,7 @@ done
 
 packages=$(go list ./...)
 for package in $packages; do
-  cmd="stdbuf -oL gotestsum --format short-verbose --packages=\"$package\" --rerun-fails=2 --no-color=false --"
+  cmd="stdbuf -oL gotestsum --format short-verbose --packages=\"$package\" --rerun-fails=2 --rerun-fails-max-failures=30 --no-color=false --"
   if [ "$timeout" != "" ]; then
     cmd="$cmd -timeout $timeout"
   fi
@@ -88,10 +93,14 @@ for package in $packages; do
       cmd="$cmd -args -- --test_loglevel=8" # Use error log level, which is the value 8 in the slog level enum for tests.
   fi
 
+  if [ "$dont_parallelise" == true ]; then
+    cmd="$cmd --parallelise=false"
+  fi
+
 	if [ "$log" == true ]; then
-			cmd="$cmd > >(stdbuf -oL tee -a full.log | grep -vE \"INFO|seal\")"
+			cmd="$cmd > >(stdbuf -oL tee -a full.log | grep -vE \"DEBUG|TRACE|INFO|seal\")"
 	else
-			cmd="$cmd | grep -vE \"INFO|seal\""
+			cmd="$cmd | grep -vE \"DEBUG|TRACE|INFO|seal\""
 	fi
 
   echo ""

@@ -333,6 +333,9 @@ func (b *NodeBuilder) DefaultConfig(t *testing.T, withL1 bool) *NodeBuilder {
 	// most used values across current tests are set here as default
 	b.withL1 = withL1
 	b.parallelise = true
+	if testflag.Parallelise != nil {
+		b.parallelise = *testflag.Parallelise
+	}
 	if withL1 {
 		b.isSequencer = true
 		b.nodeConfig = arbnode.ConfigDefaultL1Test()
