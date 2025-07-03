@@ -12,14 +12,14 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 
-	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/arbnode/mel"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 )
 
 func Test_serializeBatch(t *testing.T) {
 	ctx := context.Background()
 	t.Run("batch data retrieval fails", func(t *testing.T) {
-		batch := &arbnode.SequencerInboxBatch{
+		batch := &mel.SequencerInboxBatch{
 			TimeBounds: bridgegen.IBridgeTimeBounds{
 				MinTimestamp:   1,
 				MaxTimestamp:   2,
@@ -27,7 +27,7 @@ func Test_serializeBatch(t *testing.T) {
 				MaxBlockNumber: 4,
 			},
 			AfterDelayedCount: 1,
-			DataLocation:      arbnode.BatchDataLocation(99),
+			DataLocation:      mel.BatchDataLocation(99),
 		}
 		_, err := serializeBatch(ctx, batch, nil, 0, nil)
 		require.ErrorContains(t, err, "invalid data location")
@@ -44,7 +44,7 @@ func Test_serializeBatch(t *testing.T) {
 			},
 		}
 		tx := types.NewTx(txData)
-		batch := &arbnode.SequencerInboxBatch{
+		batch := &mel.SequencerInboxBatch{
 			TimeBounds: bridgegen.IBridgeTimeBounds{
 				MinTimestamp:   1,
 				MaxTimestamp:   2,
@@ -52,7 +52,7 @@ func Test_serializeBatch(t *testing.T) {
 				MaxBlockNumber: 4,
 			},
 			AfterDelayedCount: 1,
-			DataLocation:      arbnode.BatchDataBlobHashes,
+			DataLocation:      mel.BatchDataBlobHashes,
 		}
 		serialized, err := serializeBatch(ctx, batch, tx, 0, nil)
 		require.NoError(t, err)
@@ -74,8 +74,8 @@ func Test_getSequencerBatchData(t *testing.T) {
 	t.Run("invalid data location", func(t *testing.T) {
 		_, err := getSequencerBatchData(
 			ctx,
-			&arbnode.SequencerInboxBatch{
-				DataLocation: arbnode.BatchDataLocation(99),
+			&mel.SequencerInboxBatch{
+				DataLocation: mel.BatchDataLocation(99),
 			},
 			nil,
 			0,
@@ -86,8 +86,8 @@ func Test_getSequencerBatchData(t *testing.T) {
 	t.Run("arbnode.BatchDataNone", func(t *testing.T) {
 		data, err := getSequencerBatchData(
 			ctx,
-			&arbnode.SequencerInboxBatch{
-				DataLocation: arbnode.BatchDataNone,
+			&mel.SequencerInboxBatch{
+				DataLocation: mel.BatchDataNone,
 			},
 			nil,
 			0,
@@ -107,8 +107,8 @@ func Test_getSequencerBatchData(t *testing.T) {
 		tx := types.NewTx(txData)
 		_, err := getSequencerBatchData(
 			ctx,
-			&arbnode.SequencerInboxBatch{
-				DataLocation: arbnode.BatchDataBlobHashes,
+			&mel.SequencerInboxBatch{
+				DataLocation: mel.BatchDataBlobHashes,
 			},
 			tx,
 			0,
@@ -128,8 +128,8 @@ func Test_getSequencerBatchData(t *testing.T) {
 		tx = types.NewTx(txData)
 		data, err := getSequencerBatchData(
 			ctx,
-			&arbnode.SequencerInboxBatch{
-				DataLocation: arbnode.BatchDataBlobHashes,
+			&mel.SequencerInboxBatch{
+				DataLocation: mel.BatchDataBlobHashes,
 			},
 			tx,
 			0,
@@ -163,8 +163,8 @@ func Test_getSequencerBatchData(t *testing.T) {
 		tx := types.NewTx(txData)
 		_, err = getSequencerBatchData(
 			ctx,
-			&arbnode.SequencerInboxBatch{
-				DataLocation: arbnode.BatchDataTxInput,
+			&mel.SequencerInboxBatch{
+				DataLocation: mel.BatchDataTxInput,
 			},
 			tx,
 			0,
@@ -183,8 +183,8 @@ func Test_getSequencerBatchData(t *testing.T) {
 		tx = types.NewTx(txData)
 		data, err := getSequencerBatchData(
 			ctx,
-			&arbnode.SequencerInboxBatch{
-				DataLocation: arbnode.BatchDataTxInput,
+			&mel.SequencerInboxBatch{
+				DataLocation: mel.BatchDataTxInput,
 			},
 			tx,
 			0,
@@ -215,8 +215,8 @@ func Test_getSequencerBatchData(t *testing.T) {
 		}
 		_, err := getSequencerBatchData(
 			ctx,
-			&arbnode.SequencerInboxBatch{
-				DataLocation: arbnode.BatchDataSeparateEvent,
+			&mel.SequencerInboxBatch{
+				DataLocation: mel.BatchDataSeparateEvent,
 			},
 			tx,
 			0,
@@ -230,8 +230,8 @@ func Test_getSequencerBatchData(t *testing.T) {
 		}
 		_, err = getSequencerBatchData(
 			ctx,
-			&arbnode.SequencerInboxBatch{
-				DataLocation: arbnode.BatchDataSeparateEvent,
+			&mel.SequencerInboxBatch{
+				DataLocation: mel.BatchDataSeparateEvent,
 			},
 			tx,
 			0,
@@ -254,8 +254,8 @@ func Test_getSequencerBatchData(t *testing.T) {
 		}
 		_, err = getSequencerBatchData(
 			ctx,
-			&arbnode.SequencerInboxBatch{
-				DataLocation: arbnode.BatchDataSeparateEvent,
+			&mel.SequencerInboxBatch{
+				DataLocation: mel.BatchDataSeparateEvent,
 			},
 			tx,
 			0,
@@ -285,9 +285,9 @@ func Test_getSequencerBatchData(t *testing.T) {
 		}
 		_, err = getSequencerBatchData(
 			ctx,
-			&arbnode.SequencerInboxBatch{
+			&mel.SequencerInboxBatch{
 				BridgeAddress: bridgeAddr,
-				DataLocation:  arbnode.BatchDataSeparateEvent,
+				DataLocation:  mel.BatchDataSeparateEvent,
 			},
 			tx,
 			0,
@@ -320,10 +320,10 @@ func Test_getSequencerBatchData(t *testing.T) {
 		}
 		data, err := getSequencerBatchData(
 			ctx,
-			&arbnode.SequencerInboxBatch{
+			&mel.SequencerInboxBatch{
 				SequenceNumber: 1,
 				BridgeAddress:  bridgeAddr,
-				DataLocation:   arbnode.BatchDataSeparateEvent,
+				DataLocation:   mel.BatchDataSeparateEvent,
 			},
 			tx,
 			0,

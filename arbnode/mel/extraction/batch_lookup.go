@@ -8,7 +8,6 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/core/types"
 
-	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbnode/mel"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 )
@@ -20,19 +19,27 @@ type eventUnpacker interface {
 func parseBatchesFromBlock(
 	ctx context.Context,
 	melState *mel.State,
-	parentChainBlock *types.Block,
+	parentChainHeader *types.Header,
+	txsFetcher TransactionsFetcher,
 	receiptFetcher ReceiptFetcher,
 	eventUnpacker eventUnpacker,
-) ([]*arbnode.SequencerInboxBatch, []*types.Transaction, []uint, error) {
-	allBatches := make([]*arbnode.SequencerInboxBatch, 0)
+) ([]*mel.SequencerInboxBatch, []*types.Transaction, []uint, error) {
+	allBatches := make([]*mel.SequencerInboxBatch, 0)
 	allBatchTxs := make([]*types.Transaction, 0)
 	allBatchTxIndices := make([]uint, 0)
-	for i, tx := range parentChainBlock.Transactions() {
-		if tx.To() == nil {
-			continue
-		}
-		if *tx.To() != melState.BatchPostingTargetAddress {
-			continue
+	parentChainBlockTxs, err := txsFetcher.TransactionsByHeader(ctx, parentChainHeader.Hash())
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to fetch transactions for parent chain block %v: %w", parentChainHeader.Hash(), err)
+	}
+	for i, tx := range parentChainBlockTxs {
+		// TODO: remove this temporary work around for handling init message, i.e skipping the check when msgCount==0
+		if melState.MsgCount != 0 {
+			if tx.To() == nil {
+				continue
+			}
+			if *tx.To() != melState.BatchPostingTargetAddress {
+				continue
+			}
 		}
 		// Fetch the receipts for the transaction to get the logs.
 		txIndex := uint(i) // #nosec G115
@@ -43,7 +50,7 @@ func parseBatchesFromBlock(
 		if len(receipt.Logs) == 0 {
 			continue
 		}
-		batches := make([]*arbnode.SequencerInboxBatch, 0, len(receipt.Logs))
+		batches := make([]*mel.SequencerInboxBatch, 0, len(receipt.Logs))
 		txs := make([]*types.Transaction, 0, len(receipt.Logs))
 		txIndices := make([]uint, 0, len(receipt.Logs))
 		var lastSeqNum *uint64
@@ -69,7 +76,7 @@ func parseBatchesFromBlock(
 				}
 			}
 			lastSeqNum = &seqNum
-			batch := &arbnode.SequencerInboxBatch{
+			batch := &mel.SequencerInboxBatch{
 				BlockHash:              log.BlockHash,
 				ParentChainBlockNumber: log.BlockNumber,
 				SequenceNumber:         seqNum,
@@ -79,7 +86,7 @@ func parseBatchesFromBlock(
 				AfterDelayedCount:      event.AfterDelayedMessagesRead.Uint64(),
 				RawLog:                 *log,
 				TimeBounds:             event.TimeBounds,
-				DataLocation:           arbnode.BatchDataLocation(event.DataLocation),
+				DataLocation:           mel.BatchDataLocation(event.DataLocation),
 				BridgeAddress:          log.Address,
 			}
 			batches = append(batches, batch)
