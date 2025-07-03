@@ -7,14 +7,18 @@ import (
 	"math/big"
 	"time"
 
+	"github.com/spf13/pflag"
+
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/bold/containers/fsm"
 	"github.com/offchainlabs/nitro/arbnode/mel"
 	melextraction "github.com/offchainlabs/nitro/arbnode/mel/extraction"
+	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
@@ -24,7 +28,27 @@ import (
 // the extractor service stop waiter will wait for this duration before trying to act again.
 const defaultRetryInterval = time.Second
 
+type MessageExtractionConfig struct {
+	Enable        bool          `koanf:"enable"`
+	RetryInterval time.Duration `koanf:"retry-interval"`
+}
+
+func (c *MessageExtractionConfig) Validate() error {
+	return nil
+}
+
+var DefaultMessageExtractionConfig = MessageExtractionConfig{
+	Enable:        false,
+	RetryInterval: defaultRetryInterval,
+}
+
+func MessageExtractionConfigAddOptions(prefix string, f *pflag.FlagSet) {
+	f.Bool(prefix+".enable", DefaultMessageExtractionConfig.Enable, "enable message extraction service")
+	f.Duration(prefix+".retry-interval", DefaultMessageExtractionConfig.RetryInterval, "wait time before retring upon a failure")
+}
+
 type ParentChainReader interface {
+	HeaderByNumber(ctx context.Context, number *big.Int) (*types.Header, error)
 	BlockByNumber(ctx context.Context, number *big.Int) (*types.Block, error)
 	BlockByHash(ctx context.Context, hash common.Hash) (*types.Block, error)
 	HeaderByHash(ctx context.Context, hash common.Hash) (*types.Header, error)
@@ -37,9 +61,10 @@ type ParentChainReader interface {
 type MessageExtractor struct {
 	stopwaiter.StopWaiter
 	parentChainReader         ParentChainReader
-	initialStateFetcher       mel.StateFetcher
+	initialStateFetcher       mel.InitialStateFetcher
 	addrs                     *chaininfo.RollupAddresses
-	melDB                     mel.StateDatabase
+	melDB                     *Database
+	msgConsumer               mel.MessageConsumer
 	dataProviders             []daprovider.Reader
 	startParentChainBlockHash common.Hash
 	fsm                       *fsm.Fsm[action, FSMState]
@@ -52,8 +77,9 @@ type MessageExtractor struct {
 func NewMessageExtractor(
 	parentChainReader ParentChainReader,
 	rollupAddrs *chaininfo.RollupAddresses,
-	initialStateFetcher mel.StateFetcher,
-	melDB mel.StateDatabase,
+	initialStateFetcher mel.InitialStateFetcher,
+	melDB *Database,
+	msgConsumer mel.MessageConsumer,
 	dataProviders []daprovider.Reader,
 	startParentChainBlockHash common.Hash,
 	retryInterval time.Duration,
@@ -70,6 +96,7 @@ func NewMessageExtractor(
 		addrs:                     rollupAddrs,
 		initialStateFetcher:       initialStateFetcher,
 		melDB:                     melDB,
+		msgConsumer:               msgConsumer,
 		dataProviders:             dataProviders,
 		startParentChainBlockHash: startParentChainBlockHash,
 		fsm:                       fsm,
@@ -150,8 +177,92 @@ func (m *MessageExtractor) CurrentFSMState() FSMState {
 	return m.fsm.Current().State
 }
 
+func (m *MessageExtractor) getStateByRPCBlockNum(ctx context.Context, blockNum rpc.BlockNumber) (*mel.State, error) {
+	blk, err := m.parentChainReader.HeaderByNumber(ctx, big.NewInt(blockNum.Int64()))
+	if err != nil {
+		return nil, err
+	}
+	headMelStateBlockNum, err := m.melDB.GetHeadMelStateBlockNum()
+	if err != nil {
+		return nil, err
+	}
+	state, err := m.melDB.State(ctx, min(headMelStateBlockNum, blk.Number.Uint64()))
+	if err != nil {
+		return nil, err
+	}
+	return state, nil
+}
+
+func (m *MessageExtractor) GetSafeMsgCount(ctx context.Context) (arbutil.MessageIndex, error) {
+	state, err := m.getStateByRPCBlockNum(ctx, rpc.SafeBlockNumber)
+	if err != nil {
+		return 0, err
+	}
+	return arbutil.MessageIndex(state.MsgCount), nil
+}
+
+func (m *MessageExtractor) GetFinalizedMsgCount(ctx context.Context) (arbutil.MessageIndex, error) {
+	state, err := m.getStateByRPCBlockNum(ctx, rpc.FinalizedBlockNumber)
+	if err != nil {
+		return 0, err
+	}
+	return arbutil.MessageIndex(state.MsgCount), nil
+}
+
+func (m *MessageExtractor) GetMsgCount(ctx context.Context) (uint64, error) {
+	headState, err := m.melDB.GetHeadMelState(ctx)
+	if err != nil {
+		return 0, err
+	}
+	return headState.MsgCount, nil
+}
+
+func (d *MessageExtractor) GetDelayedMessage(index uint64) (*mel.DelayedInboxMessage, error) {
+	return d.melDB.fetchDelayedMessage(index)
+}
+
+func (m *MessageExtractor) GetDelayedCount(ctx context.Context, block uint64) (uint64, error) {
+	var state *mel.State
+	var err error
+	if block == 0 {
+		state, err = m.melDB.GetHeadMelState(ctx)
+	} else {
+		state, err = m.melDB.State(ctx, block)
+	}
+	if err != nil {
+		return 0, err
+	}
+	return state.DelayedMessagedSeen, nil
+}
+
+func (m *MessageExtractor) GetBatchMetadata(ctx context.Context, seqNum uint64) (mel.BatchMetadata, error) {
+	headState, err := m.melDB.GetHeadMelState(ctx)
+	if err != nil {
+		return mel.BatchMetadata{}, err
+	}
+	if headState.BatchCount < seqNum+1 {
+		return mel.BatchMetadata{}, fmt.Errorf("mel hasn't caught up to the seq inbox batch count on chain. melBatchCount: %d, seqInboxBatchCount: %d", headState.BatchCount, seqNum+1)
+	}
+	if headState.BatchCount > seqNum+1 {
+		return mel.BatchMetadata{}, fmt.Errorf("mel batch count exceeds seq inbox batch count on chain, impossible situation. melBatchCount: %d, seqInboxBatchCount: %d", headState.BatchCount, seqNum+1)
+	}
+	return mel.BatchMetadata{
+		MessageCount:        arbutil.MessageIndex(headState.MsgCount),
+		DelayedMessageCount: headState.DelayedMessagesRead,
+	}, nil
+}
+
+func (m *MessageExtractor) GetBatchCount(ctx context.Context) (uint64, error) {
+	headState, err := m.melDB.GetHeadMelState(ctx)
+	if err != nil {
+		return 0, err
+	}
+	return headState.BatchCount, nil
+}
+
 // Ticks the message extractor FSM and performs the action associated with the current state,
 // such as processing the next block, saving messages, or handling reorgs.
+// Question: do we want to make this private? System tests currently use it, but I believe this should only ever be called by start
 func (m *MessageExtractor) Act(ctx context.Context) (time.Duration, error) {
 	current := m.fsm.Current()
 	switch current.State {
@@ -172,13 +283,23 @@ func (m *MessageExtractor) Act(ctx context.Context) (time.Duration, error) {
 				err,
 			)
 		}
+		// Finalized block number is used in FetchInitialState to initialize seenUnreadDelayedMetaDeque
+		finalizedBlk, err := m.parentChainReader.BlockByNumber(ctx, big.NewInt(rpc.FinalizedBlockNumber.Int64()))
+		if err != nil {
+			return m.retryInterval, err
+		}
 		// Fetch the initial state for MEL from a state fetcher interface by parent chain block hash.
-		melState, err := m.initialStateFetcher.GetState(
+		melState, err := m.initialStateFetcher.FetchInitialState(
 			ctx,
 			m.startParentChainBlockHash,
+			finalizedBlk.NumberU64(),
 		)
 		if err != nil {
 			return m.retryInterval, err
+		}
+		// Initialize seenUnreadDelayedMetaDeque if its nil
+		if melState.GetSeenUnreadDelayedMetaDeque() == nil {
+			melState.SetSeenUnreadDelayedMetaDeque(&mel.DelayedMetaDeque{})
 		}
 		// Begin the next FSM state immediately.
 		return 0, m.fsm.Do(processNextBlock{
@@ -186,7 +307,7 @@ func (m *MessageExtractor) Act(ctx context.Context) (time.Duration, error) {
 		})
 	// `ProcessingNextBlock` is the state responsible for processing the next block
 	// in the parent chain and extracting messages from it. It uses the
-	// `extractionfunction` package to extract messages and delayed messages
+	// `melextraction` package to extract messages and delayed messages
 	// from the parent chain block. The FSM will transition to the `SavingMessages`
 	// state after successfully extracting messages.
 	case ProcessingNextBlock:
@@ -196,6 +317,9 @@ func (m *MessageExtractor) Act(ctx context.Context) (time.Duration, error) {
 			return m.retryInterval, fmt.Errorf("invalid action: %T", current.SourceEvent)
 		}
 		preState := processAction.melState
+		if preState.GetSeenUnreadDelayedMetaDeque() == nil { // Safety check to avoid panics in the later codepath
+			return m.retryInterval, errors.New("detected nil seenUnreadDelayedMetaDeque of melState, shouldnt be possible")
+		}
 
 		parentChainBlock, err := m.parentChainReader.BlockByNumber(
 			ctx,
@@ -209,6 +333,25 @@ func (m *MessageExtractor) Act(ctx context.Context) (time.Duration, error) {
 				return m.retryInterval, nil
 			} else {
 				return m.retryInterval, err
+			}
+		}
+		if parentChainBlock.ParentHash() != preState.ParentChainBlockHash {
+			log.Info("MEL detected L1 reorg", "block", preState.ParentChainBlockNumber) // Log level is Info because L1 reorgs are a common occurrence
+			return 0, m.fsm.Do(reorgToOldBlock{
+				melState: preState,
+			})
+		}
+		finalizedBlk, err := m.parentChainReader.HeaderByNumber(ctx, big.NewInt(rpc.FinalizedBlockNumber.Int64()))
+		if err != nil {
+			log.Error("Error fetching FinalizedBlockNumber from parent chain, clearing of read and finalized delayedMeta from the SeenUnreadDelayedMetaDeque will be retried again later", "err", err)
+		}
+		if preState.ParentChainBlockNumber <= finalizedBlk.Number.Uint64() {
+			preState.GetSeenUnreadDelayedMetaDeque().ClearReadAndFinalized(preState.DelayedMessagesRead)
+		} else {
+			if finalizedMelState, err := m.melDB.State(ctx, finalizedBlk.Number.Uint64()); err != nil {
+				log.Error("Error fetching melState corresponding to FinalizedBlockNumber from parent chain, clearing of read and finalized delayedMeta from the SeenUnreadDelayedMetaDeque will be retried again later", "err", err)
+			} else {
+				preState.GetSeenUnreadDelayedMetaDeque().ClearReadAndFinalized(finalizedMelState.DelayedMessagesRead)
 			}
 		}
 		// Creates a receipt fetcher for the specific parent chain block, to be used
@@ -229,9 +372,10 @@ func (m *MessageExtractor) Act(ctx context.Context) (time.Duration, error) {
 		}
 		// Begin the next FSM state immediately.
 		return 0, m.fsm.Do(saveMessages{
-			postState:       postState,
-			messages:        msgs,
-			delayedMessages: delayedMsgs,
+			preStateMsgCount: preState.MsgCount,
+			postState:        postState,
+			messages:         msgs,
+			delayedMessages:  delayedMsgs,
 		})
 	// `SavingMessages` is the state responsible for saving the extracted messages
 	// and delayed messages to the database. It stores data in the node's consensus database
@@ -244,12 +388,14 @@ func (m *MessageExtractor) Act(ctx context.Context) (time.Duration, error) {
 		if !ok {
 			return m.retryInterval, fmt.Errorf("invalid action: %T", current.SourceEvent)
 		}
-		// TODO: Use a DB batch to ensure these writes atomic, so if one fails, nothing will be persisted.
-		// The ArbDB batcher has support for this.
 		if err := m.melDB.SaveDelayedMessages(ctx, saveAction.postState, saveAction.delayedMessages); err != nil {
 			return m.retryInterval, err
 		}
-		if err := m.melDB.SaveState(ctx, saveAction.postState, saveAction.messages); err != nil {
+		if err := m.msgConsumer.PushMessages(ctx, saveAction.preStateMsgCount, saveAction.messages); err != nil {
+			return m.retryInterval, err
+		}
+		if err := m.melDB.SaveState(ctx, saveAction.postState); err != nil {
+			log.Error("Error saving messages from MessageExtractor to MessageConsumer", "err", err)
 			return m.retryInterval, err
 		}
 		return 0, m.fsm.Do(processNextBlock{
@@ -260,8 +406,25 @@ func (m *MessageExtractor) Act(ctx context.Context) (time.Duration, error) {
 	// specified block. The FSM will transition to the `ProcessingNextBlock` state
 	// based on this old state after the reorg is handled.
 	case Reorging:
-		// TODO: Implement reorging logic.
-		return m.retryInterval, fmt.Errorf("reorg state not implemented")
+		reorgAction, ok := current.SourceEvent.(reorgToOldBlock)
+		if !ok {
+			return m.retryInterval, fmt.Errorf("invalid action: %T", current.SourceEvent)
+		}
+		currentDirtyState := reorgAction.melState
+		if currentDirtyState.ParentChainBlockNumber == 0 {
+			return m.retryInterval, errors.New("invalid reorging stage, ParentChainBlockNumber of current mel state has reached 0")
+		}
+		previousState, err := m.melDB.State(ctx, currentDirtyState.ParentChainBlockNumber-1)
+		if err != nil {
+			return m.retryInterval, err
+		}
+		// Adjust seenUnreadDelayedMetaDeque
+		seenUnreadDelayedMetaDeque := currentDirtyState.GetSeenUnreadDelayedMetaDeque()
+		seenUnreadDelayedMetaDeque.ClearReorged(previousState.DelayedMessagedSeen)
+		previousState.SetSeenUnreadDelayedMetaDeque(seenUnreadDelayedMetaDeque)
+		return 0, m.fsm.Do(processNextBlock{
+			melState: previousState,
+		})
 	default:
 		return m.retryInterval, fmt.Errorf("invalid state: %s", current.State)
 	}
