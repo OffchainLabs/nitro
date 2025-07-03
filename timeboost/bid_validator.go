@@ -251,7 +251,7 @@ func (bv *BidValidator) Start(ctx_in context.Context) {
 				}
 
 				log.Info("Reserve price updated", "old", currentReservePrice.String(), "new", rp.String())
-				bv.setReservePrice(rp)
+				bv.SetReservePrice(rp)
 
 			case <-auctionCloseTicker.c:
 				bv.Lock()
@@ -292,7 +292,8 @@ func (bv *BidValidatorAPI) SubmitBid(ctx context.Context, bid *JsonBid) error {
 	return nil
 }
 
-func (bv *BidValidator) setReservePrice(p *big.Int) {
+// SetReservePrice is exported for testing eth_call validation
+func (bv *BidValidator) SetReservePrice(p *big.Int) {
 	bv.reservePriceLock.Lock()
 	defer bv.reservePriceLock.Unlock()
 	bv.reservePrice = p
