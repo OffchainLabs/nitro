@@ -1,4 +1,4 @@
-package mel
+package melrunner
 
 import (
 	"context"
@@ -13,8 +13,8 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/bold/containers/fsm"
-	extractionfunction "github.com/offchainlabs/nitro/arbnode/message-extraction/extraction-function"
-	meltypes "github.com/offchainlabs/nitro/arbnode/message-extraction/types"
+	"github.com/offchainlabs/nitro/arbnode/mel"
+	melextraction "github.com/offchainlabs/nitro/arbnode/mel/extraction"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
@@ -36,9 +36,9 @@ type ParentChainReader interface {
 type MessageExtractor struct {
 	stopwaiter.StopWaiter
 	parentChainReader         ParentChainReader
-	initialStateFetcher       meltypes.StateFetcher
+	initialStateFetcher       mel.StateFetcher
 	addrs                     *chaininfo.RollupAddresses
-	melDB                     meltypes.StateDatabase
+	melDB                     mel.StateDatabase
 	dataProviders             []daprovider.Reader
 	startParentChainBlockHash common.Hash
 	fsm                       *fsm.Fsm[action, FSMState]
@@ -51,8 +51,8 @@ type MessageExtractor struct {
 func NewMessageExtractor(
 	parentChainReader ParentChainReader,
 	rollupAddrs *chaininfo.RollupAddresses,
-	initialStateFetcher meltypes.StateFetcher,
-	melDB meltypes.StateDatabase,
+	initialStateFetcher mel.StateFetcher,
+	melDB mel.StateDatabase,
 	dataProviders []daprovider.Reader,
 	startParentChainBlockHash common.Hash,
 	retryInterval time.Duration,
@@ -190,7 +190,7 @@ func (m *MessageExtractor) Act(ctx context.Context) (time.Duration, error) {
 		// Creates a receipt fetcher for the specific parent chain block, to be used
 		// by the message extraction function.
 		receiptFetcher := newBlockReceiptFetcher(m.parentChainReader, parentChainBlock)
-		postState, msgs, delayedMsgs, err := extractionfunction.ExtractMessages(
+		postState, msgs, delayedMsgs, err := melextraction.ExtractMessages(
 			ctx,
 			preState,
 			parentChainBlock,
