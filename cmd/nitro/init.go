@@ -626,7 +626,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 				if err := dbutil.UnfinishedConversionCheck(wasmDb); err != nil {
 					return nil, nil, fmt.Errorf("wasm unfinished database conversion check error: %w", err)
 				}
-				chainDb := rawdb.WrapDatabaseWithWasm(chainData, wasmDb, 1, targetConfig.WasmTargets())
+				chainDb := rawdb.WrapDatabaseWithWasm(chainData, wasmDb)
 				_, err = rawdb.ParseStateScheme(cacheConfig.StateScheme, chainDb)
 				if err != nil {
 					return nil, nil, err
@@ -702,7 +702,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 	if err := validateOrUpgradeWasmStoreSchemaVersion(wasmDb); err != nil {
 		return nil, nil, err
 	}
-	chainDb := rawdb.WrapDatabaseWithWasm(chainData, wasmDb, 1, targetConfig.WasmTargets())
+	chainDb := rawdb.WrapDatabaseWithWasm(chainData, wasmDb)
 	_, err = rawdb.ParseStateScheme(cacheConfig.StateScheme, chainDb)
 	if err != nil {
 		return nil, nil, err

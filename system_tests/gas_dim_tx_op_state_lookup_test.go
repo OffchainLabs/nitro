@@ -26,7 +26,6 @@ import (
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: BALANCE operation on a cold address (not in access list).
 func TestDimTxOpBalanceCold(t *testing.T) {
-	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -41,7 +40,6 @@ func TestDimTxOpBalanceCold(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: BALANCE operation on a warm address (in access list).
 func TestDimTxOpBalanceWarm(t *testing.T) {
-	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -60,7 +58,6 @@ func TestDimTxOpBalanceWarm(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: EXTCODESIZE operation on a cold address (not in access list).
 func TestDimTxOpExtCodeSizeCold(t *testing.T) {
-	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -75,7 +72,6 @@ func TestDimTxOpExtCodeSizeCold(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: EXTCODESIZE operation on a warm address (in access list).
 func TestDimTxOpExtCodeSizeWarm(t *testing.T) {
-	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -94,7 +90,6 @@ func TestDimTxOpExtCodeSizeWarm(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: EXTCODEHASH operation on a cold address (not in access list).
 func TestDimTxOpExtCodeHashCold(t *testing.T) {
-	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -109,7 +104,6 @@ func TestDimTxOpExtCodeHashCold(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: EXTCODEHASH operation on a warm address (in access list).
 func TestDimTxOpExtCodeHashWarm(t *testing.T) {
-	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -130,7 +124,6 @@ func TestDimTxOpExtCodeHashWarm(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: SLOAD operation on a cold storage slot (not previously accessed).
 func TestDimTxOpSloadCold(t *testing.T) {
-	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -145,7 +138,6 @@ func TestDimTxOpSloadCold(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: SLOAD operation on a warm storage slot (previously accessed).
 func TestDimTxOpSloadWarm(t *testing.T) {
-	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
