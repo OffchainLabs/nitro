@@ -17,8 +17,6 @@ const InitialSpeedLimitPerSecondV6 = 7000000
 const InitialPerBlockGasLimitV6 uint64 = 32 * 1000000
 const InitialMinimumBaseFeeWei = params.GWei / 10
 const InitialBaseFeeWei = InitialMinimumBaseFeeWei
-const InitialGasPoolSeconds = 10 * 60
-const InitialRateEstimateInertia = 60
 const InitialPricingInertia = 102
 const InitialBacklogTolerance = 10
 
