@@ -1,11 +1,10 @@
-package meltypes
+package mel
 
 import (
 	"context"
 
 	"github.com/ethereum/go-ethereum/common"
 
-	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 )
 
@@ -24,6 +23,7 @@ type State struct {
 	MessageAccumulator                 common.Hash
 	DelayedMessageAccumulator          common.Hash
 	MsgCount                           uint64
+	BatchCount                         uint64
 	DelayedMessagesRead                uint64
 	DelayedMessagedSeen                uint64
 }
@@ -43,13 +43,13 @@ type StateDatabase interface {
 	SaveDelayedMessages(
 		ctx context.Context,
 		state *State,
-		delayedMessages []*arbnode.DelayedInboxMessage,
+		delayedMessages []*DelayedInboxMessage,
 	) error
 	ReadDelayedMessage(
 		ctx context.Context,
 		state *State,
 		index uint64,
-	) (*arbnode.DelayedInboxMessage, error)
+	) (*DelayedInboxMessage, error)
 }
 
 // Defines an interface for fetching a MEL state by parent chain block hash.
@@ -90,12 +90,12 @@ func (s *State) Clone() *State {
 	}
 }
 
-func (s *State) AccumulateMessage(msg *arbostypes.MessageWithMetadata) *State {
+func (s *State) AccumulateMessage(msg *arbostypes.MessageWithMetadata) error {
 	// TODO: Unimplemented.
-	return s
+	return nil
 }
 
-func (s *State) AccumulateDelayedMessage(msg *arbnode.DelayedInboxMessage) *State {
+func (s *State) AccumulateDelayedMessage(msg *DelayedInboxMessage) error {
 	// TODO: Unimplemented.
-	return s
+	return nil
 }
