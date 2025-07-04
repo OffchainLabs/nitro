@@ -438,6 +438,7 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, spawnerOpts ...server_arb.S
 
 	// Create both good and evil batch data
 	goodBatchData2 := createBoldBatchData(t, l2info, numMessagesPerBatch, -1) // No divergence
+	l2info.Accounts["Owner"].Nonce.Store(5)                                   // reset our tracking of owner nonce
 	evilBatchData2 := createBoldBatchData(t, l2info, numMessagesPerBatch, 5)  // Diverge at index 5
 
 	// Post good batch through node A and get certificate
