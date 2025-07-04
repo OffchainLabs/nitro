@@ -431,6 +431,30 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, spawnerOpts ...server_arb.S
 
 	totalMessagesPosted += numMessagesPerBatch
 
+	// Log first batch messages (batch 0 - appears to be non-CustomDA initial batch)
+	t.Logf("\n======== BATCH 0 (initial non-CustomDA batch) ========")
+	// Wait a bit for nodes to process
+	time.Sleep(100 * time.Millisecond)
+
+	// Get and log batch 0 from both nodes
+	msgA0, _, err := l2nodeA.InboxReader.GetSequencerMessageBytes(ctx, 0)
+	if err != nil {
+		t.Logf("Error getting batch 0 from node A: %v", err)
+	} else {
+		PrintSequencerInboxMessage(t, "Node A (Honest) - Batch 0", msgA0)
+	}
+
+	msgB0, _, err := l2nodeB.InboxReader.GetSequencerMessageBytes(ctx, 0)
+	if err != nil {
+		t.Logf("Error getting batch 0 from node B: %v", err)
+	} else {
+		PrintSequencerInboxMessage(t, "Node B (Evil) - Batch 0", msgB0)
+	}
+
+	if msgA0 != nil && msgB0 != nil {
+		CompareSequencerInboxMessages(t, msgA0, msgB0)
+	}
+
 	// Next, we post another batch, this time with divergence.
 	// We diverge at message index 5 within the evil node's batch.
 	l2info.Accounts["Owner"].Nonce.Store(5)
@@ -456,6 +480,51 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, spawnerOpts ...server_arb.S
 
 	totalMessagesPosted += numMessagesPerBatch
 
+	// Log second batch messages (batch 1 - first CustomDA batch without divergence)
+	t.Logf("\n======== BATCH 1 (first CustomDA batch - no divergence) ========")
+	// Wait a bit for nodes to process
+	time.Sleep(100 * time.Millisecond)
+
+	// Get and log batch 1 from both nodes
+	msgA1, _, err := l2nodeA.InboxReader.GetSequencerMessageBytes(ctx, 1)
+	if err != nil {
+		t.Logf("Error getting batch 1 from node A: %v", err)
+	} else {
+		PrintSequencerInboxMessage(t, "Node A (Honest) - Batch 1", msgA1)
+	}
+
+	msgB1, _, err := l2nodeB.InboxReader.GetSequencerMessageBytes(ctx, 1)
+	if err != nil {
+		t.Logf("Error getting batch 1 from node B: %v", err)
+	} else {
+		PrintSequencerInboxMessage(t, "Node B (Evil) - Batch 1", msgB1)
+	}
+
+	if msgA1 != nil && msgB1 != nil {
+		CompareSequencerInboxMessages(t, msgA1, msgB1)
+	}
+
+	// Log third batch messages (batch 2 - second CustomDA batch with divergence)
+	t.Logf("\n======== BATCH 2 (second CustomDA batch - WITH DIVERGENCE) ========")
+	// Get and log batch 2 from both nodes
+	msgA2, _, err := l2nodeA.InboxReader.GetSequencerMessageBytes(ctx, 2)
+	if err != nil {
+		t.Logf("Error getting batch 2 from node A: %v", err)
+	} else {
+		PrintSequencerInboxMessage(t, "Node A (Honest) - Batch 2", msgA2)
+	}
+
+	msgB2, _, err := l2nodeB.InboxReader.GetSequencerMessageBytes(ctx, 2)
+	if err != nil {
+		t.Logf("Error getting batch 2 from node B: %v", err)
+	} else {
+		PrintSequencerInboxMessage(t, "Node B (Evil) - Batch 2", msgB2)
+	}
+
+	if msgA2 != nil && msgB2 != nil {
+		CompareSequencerInboxMessages(t, msgA2, msgB2)
+	}
+
 	bcA, err := l2nodeA.InboxTracker.GetBatchCount()
 	Require(t, err)
 	bcB, err := l2nodeB.InboxTracker.GetBatchCount()
@@ -465,7 +534,7 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, spawnerOpts ...server_arb.S
 	msgB, err := l2nodeB.InboxTracker.GetBatchMessageCount(bcB - 1)
 	Require(t, err)
 
-	t.Logf("Node A batch count %d, msgs %d", bcA, msgA)
+	t.Logf("\nNode A batch count %d, msgs %d", bcA, msgA)
 	t.Logf("Node B batch count %d, msgs %d", bcB, msgB)
 
 	// Wait for both nodes' chains to catch up.
