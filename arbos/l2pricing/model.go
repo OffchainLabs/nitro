@@ -20,9 +20,6 @@ const InitialBaseFeeWei = InitialMinimumBaseFeeWei
 const InitialPricingInertia = 102
 const InitialBacklogTolerance = 10
 
-var InitialGasPoolTargetBips = arbmath.PercentToBips(80)
-var InitialGasPoolWeightBips = arbmath.PercentToBips(60)
-
 func (ps *L2PricingState) AddToGasPool(gas int64) error {
 	backlog, err := ps.GasBacklog()
 	if err != nil {
