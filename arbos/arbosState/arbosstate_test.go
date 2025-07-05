@@ -16,7 +16,11 @@ import (
 )
 
 func TestStorageOpenFromEmpty(t *testing.T) {
-	NewArbosMemoryBackedArbOSState()
+	state, err := NewArbosMemoryBackedArbOSState()
+	Require(t, err)
+	if state == nil {
+		Fail(t, "NewArbosMemoryBackedArbOSState() returned nil state")
+	}
 }
 
 func TestMemoryBackingEvmStorage(t *testing.T) {
