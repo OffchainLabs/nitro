@@ -207,7 +207,7 @@ jobs:
           path: full.log
 
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v2
+        uses: codecov/codecov-action@v5
         if: matrix.test-mode == 'defaults'
         with:
           fail_ci_if_error: false
