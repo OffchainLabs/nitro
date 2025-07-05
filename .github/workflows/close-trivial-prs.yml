@@ -10,15 +10,15 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       pull-requests: write
+      issues: write
 
     steps:
       - name: Fetch CONTRIBUTING.md snippet
         id: snippet
         env:
           REPO: ${{ github.repository }}
-          REF: ${{ github.sha }}
         run: |
-          SNIPPET=$(curl -sSfL "https://raw.githubusercontent.com/${REPO}/${REF}/CONTRIBUTING.md" \
+          SNIPPET=$(curl -sSfL "https://raw.githubusercontent.com/${REPO}/refs/heads/master/CONTRIBUTING.md" \
             | sed -n '/<!-- start-trivial-prs -->/,/<!-- end-trivial-prs -->/p' \
             | sed '/<!--.*-->/d')
 
