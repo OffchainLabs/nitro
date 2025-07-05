@@ -19,7 +19,7 @@ jobs:
           REPO: ${{ github.repository }}
           REF: ${{ github.sha }}
         run: |
-          SNIPPET=$(curl -sSfL "https://raw.githubusercontent.com/${REPO}/${REF}/CONTRIBUTING.md" \
+          SNIPPET=$(curl -sSfL "https://raw.githubusercontent.com/${REPO}/refs/heads/master/CONTRIBUTING.md" \
             | sed -n '/<!-- start-trivial-prs -->/,/<!-- end-trivial-prs -->/p' \
             | sed '/<!--.*-->/d')
 
