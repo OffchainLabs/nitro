@@ -10,6 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       pull-requests: write
+      issues: write
 
     steps:
       - name: Fetch CONTRIBUTING.md snippet
