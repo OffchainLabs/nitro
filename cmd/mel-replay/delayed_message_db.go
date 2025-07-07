@@ -72,7 +72,7 @@ func (d *delayedMessageDatabase) ReadDelayedMessage(
 	}
 	delayedMessage := new(mel.DelayedInboxMessage)
 	if err = rlp.Decode(bytes.NewBuffer(delayedMsgBytes), &delayedMessage); err != nil {
-		return nil, fmt.Errorf("failed to decode delayed message at index %d: %w", msgIndex, err)
+		return nil, fmt.Errorf("failed to decode delayed message at index %d: %w", originalMsgIndex, err)
 	}
 	return delayedMessage, nil
 }
