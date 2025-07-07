@@ -1238,7 +1238,14 @@ func (n *Node) OnConfigReload(_ *Config, _ *Config) error {
 }
 
 func registerAPIs(currentNode *Node, stack *node.Node) {
-	var apis []rpc.API
+	apis := []rpc.API{{
+		Namespace: "synd",
+		Version:   "1.0",
+		Service: &SyndAPI{
+			recorder:      currentNode.ExecutionRecorder.(*gethexec.ExecutionNode).Recorder,
+			inboxStreamer: currentNode.TxStreamer,
+		},
+	}}
 	if currentNode.BlockValidator != nil {
 		apis = append(apis, rpc.API{
 			Namespace: "arb",

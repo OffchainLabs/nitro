@@ -2,6 +2,7 @@ package gethexec
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"testing"
@@ -11,6 +12,7 @@ import (
 	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
@@ -93,6 +95,116 @@ func stateLogFunc(targetHeader *types.Header) arbitrum.StateBuildingLogFunction 
 			log.Info("Setting up validation", "stage", stage, "current", header.Number, "target", targetHeader.Number)
 		}
 	}
+}
+
+func (r *BlockRecorder) RecordBlocks(
+	ctx context.Context,
+	// pos is the start message index, i.e. the start block number
+	pos arbutil.MessageIndex,
+	// the first msg is at index pos+1 and used to derive block pos+1
+	// the last msg is at index pos+len(msgs) and used to derive block pos+len(msgs)
+	msgs []*arbostypes.MessageWithMetadata,
+) (*execution.RecordResult, error) {
+	if len(msgs) == 0 {
+		return nil, errors.New("msgs cannot be empty")
+	}
+
+	blockNum := r.execEngine.MessageIndexToBlockNumber(pos)
+	header := r.execEngine.bc.GetHeaderByNumber(uint64(blockNum))
+	if header == nil {
+		return nil, fmt.Errorf("pos %d header not found", pos)
+	}
+
+	recordingdb, chaincontext, recordingKV, err := r.recordingDatabase.PrepareRecording(ctx, header, stateLogFunc(header))
+	if err != nil {
+		return nil, err
+	}
+	defer r.recordingDatabase.Dereference(header)
+
+	chainConfig := r.execEngine.bc.Config()
+
+	for _, msg := range msgs {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		// Get the chain ID, both to validate and because the replay binary also gets the chain ID,
+		// so we need to populate the recordingdb with preimages for retrieving the chain ID.
+		if header != nil {
+			initialArbosState, err := arbosState.OpenSystemArbosState(recordingdb, nil, true)
+			if err != nil {
+				return nil, fmt.Errorf("error opening initial ArbOS state: %w", err)
+			}
+			chainId, err := initialArbosState.ChainId()
+			if err != nil {
+				return nil, fmt.Errorf("error getting chain ID from initial ArbOS state: %w", err)
+			}
+			if chainId.Cmp(chainConfig.ChainID) != 0 {
+				return nil, fmt.Errorf("unexpected chain ID %r in ArbOS state, expected %r", chainId, chainConfig.ChainID)
+			}
+			genesisNum, err := initialArbosState.GenesisBlockNum()
+			if err != nil {
+				return nil, fmt.Errorf("error getting genesis block number from initial ArbOS state: %w", err)
+			}
+			_, err = initialArbosState.ChainConfig()
+			if err != nil {
+				return nil, fmt.Errorf("error getting chain config from initial ArbOS state: %w", err)
+			}
+			expectedNum := chainConfig.ArbitrumChainParams.GenesisBlockNum
+			if genesisNum != expectedNum {
+				return nil, fmt.Errorf("unexpected genesis block number %v in ArbOS state, expected %v", genesisNum, expectedNum)
+			}
+		}
+
+		block, _, err := arbos.ProduceBlock(
+			msg.Message,
+			msg.DelayedMessagesRead,
+			header,
+			recordingdb,
+			chaincontext,
+			false,
+			core.MessageReplayMode,
+		)
+		if err != nil {
+			fmt.Println("failed to produce block: ", header.Number.Uint64())
+			return nil, err
+		}
+		header = block.Header()
+
+		// first commit statedb changes to the triedb
+		result, err := recordingdb.Commit(block.NumberU64(), true, false)
+		if err != nil {
+			return nil, err
+		}
+
+		// make sure the state root matches
+		if result != header.Root {
+			return nil, fmt.Errorf("bad commit root hash expected %v, got %v", header.Root, result)
+		}
+
+		// finally create a new statedb at the new state root using the same triedb and recordingkv
+		recordingdb, err = state.NewRecording(header.Root, recordingdb.Database())
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// check we got the canonical hash
+	canonicalHash := r.execEngine.bc.GetCanonicalHash(blockNum + uint64(len(msgs)))
+	if canonicalHash != header.Hash() {
+		return nil, fmt.Errorf("Blockhash doesn't match when recording got %v canonical %v", header.Hash(), canonicalHash)
+	}
+
+	preimages, err := r.recordingDatabase.PreimagesFromRecording(chaincontext, recordingKV)
+	if err != nil {
+		return nil, err
+	}
+
+	return &execution.RecordResult{
+		Pos:       pos + arbutil.MessageIndex(len(msgs)),
+		BlockHash: header.Hash(),
+		Preimages: preimages,
+		UserWasms: recordingdb.UserWasms(),
+	}, nil
 }
 
 // If msg is nil, this will record block creation up to the point where message would be accessed (for a "too far" proof)
