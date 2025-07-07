@@ -1,7 +1,7 @@
 name: Close trivial PRs
 
 on:
-  pull_request:
+  pull_request_target:
     types: [labeled]
 
 jobs:
@@ -10,7 +10,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       pull-requests: write
-      issues: write
 
     steps:
       - name: Fetch CONTRIBUTING.md snippet
