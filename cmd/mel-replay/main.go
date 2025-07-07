@@ -15,7 +15,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rlp"
-	extractionfunction "github.com/offchainlabs/nitro/arbnode/message-extraction/extraction-function"
+	melextraction "github.com/offchainlabs/nitro/arbnode/mel/extraction"
 	meltypes "github.com/offchainlabs/nitro/arbnode/message-extraction/types"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/gethhook"
@@ -94,7 +94,7 @@ func main() {
 			header:           header,
 			preimageResolver: resolver,
 		}
-		postState, _, _, err := extractionfunction.ExtractMessages(
+		postState, _, _, err := melextraction.ExtractMessages(
 			ctx,
 			currentState,
 			header,

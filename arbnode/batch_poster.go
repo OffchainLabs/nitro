@@ -36,8 +36,8 @@ import (
 	"github.com/offchainlabs/bold/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
-	mel "github.com/offchainlabs/nitro/arbnode/message-extraction"
-	meltypes "github.com/offchainlabs/nitro/arbnode/message-extraction/types"
+	"github.com/offchainlabs/nitro/arbnode/mel"
+	melrunner "github.com/offchainlabs/nitro/arbnode/mel/runner"
 	"github.com/offchainlabs/nitro/arbnode/parent"
 	"github.com/offchainlabs/nitro/arbnode/redislock"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
@@ -98,7 +98,7 @@ type BatchPoster struct {
 	stopwaiter.StopWaiter
 	l1Reader           *headerreader.HeaderReader
 	inbox              *InboxTracker
-	msgExtractor       *mel.MessageExtractor
+	msgExtractor       *melrunner.MessageExtractor
 	streamer           *TransactionStreamer
 	arbOSVersionGetter execution.ExecutionBatchPoster
 	config             BatchPosterConfigFetcher
@@ -324,7 +324,7 @@ type BatchPosterOpts struct {
 	DataPosterDB  ethdb.Database
 	L1Reader      *headerreader.HeaderReader
 	Inbox         *InboxTracker
-	MsgExtractor  *mel.MessageExtractor
+	MsgExtractor  *melrunner.MessageExtractor
 	Streamer      *TransactionStreamer
 	VersionGetter execution.ExecutionBatchPoster
 	SyncMonitor   *SyncMonitor
@@ -851,7 +851,7 @@ func (b *BatchPoster) getBatchPosterPosition(ctx context.Context, blockNum *big.
 		return nil, fmt.Errorf("error getting latest batch count: %w", err)
 	}
 	inboxBatchCount := bigInboxBatchCount.Uint64()
-	var prevBatchMeta meltypes.BatchMetadata
+	var prevBatchMeta mel.BatchMetadata
 	if inboxBatchCount > 0 {
 		var err error
 		if b.msgExtractor != nil {

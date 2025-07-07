@@ -1,4 +1,4 @@
-package extractionfunction
+package melextraction
 
 import (
 	"bytes"
@@ -13,19 +13,19 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 
-	meltypes "github.com/offchainlabs/nitro/arbnode/message-extraction/types"
+	"github.com/offchainlabs/nitro/arbnode/mel"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 )
 
 func parseDelayedMessagesFromBlock(
 	ctx context.Context,
-	melState *meltypes.State,
+	melState *mel.State,
 	parentChainHeader *types.Header,
 	receiptFetcher ReceiptFetcher,
 	txsFetcher TransactionsFetcher,
-) ([]*meltypes.DelayedInboxMessage, error) {
-	msgScaffolds := make([]*meltypes.DelayedInboxMessage, 0)
+) ([]*mel.DelayedInboxMessage, error) {
+	msgScaffolds := make([]*mel.DelayedInboxMessage, 0)
 	messageDeliveredEvents := make([]*bridgegen.IBridgeMessageDelivered, 0)
 	parentChainBlockTxs, err := txsFetcher.TransactionsByHeader(
 		ctx,
@@ -131,7 +131,7 @@ func parseDelayedMessagesFromBlock(
 
 func delayedMessageScaffoldsFromLogs(
 	parentChainBlockNum *big.Int, logs []*types.Log,
-) ([]*meltypes.DelayedInboxMessage, []*bridgegen.IBridgeMessageDelivered, error) {
+) ([]*mel.DelayedInboxMessage, []*bridgegen.IBridgeMessageDelivered, error) {
 	if len(logs) == 0 {
 		return nil, nil, nil
 	}
@@ -152,14 +152,14 @@ func delayedMessageScaffoldsFromLogs(
 
 	// A list of delayed messages that do not have nil L2msg data within, which
 	// will be filled in later after another pass over logs.
-	delayedMessageScaffolds := make([]*meltypes.DelayedInboxMessage, 0, len(parsedLogs))
+	delayedMessageScaffolds := make([]*mel.DelayedInboxMessage, 0, len(parsedLogs))
 
 	// Next, we construct the messages themselves from the parsed logs.
 	for _, parsedLog := range parsedLogs {
 		msgKey := common.BigToHash(parsedLog.MessageIndex)
 		_ = msgKey
 		requestId := common.BigToHash(parsedLog.MessageIndex)
-		msg := &meltypes.DelayedInboxMessage{
+		msg := &mel.DelayedInboxMessage{
 			BlockHash:      parsedLog.Raw.BlockHash,
 			BeforeInboxAcc: parsedLog.BeforeInboxAcc,
 			Message: &arbostypes.L1IncomingMessage{
@@ -218,7 +218,7 @@ func parseDelayedMessage(
 	}
 }
 
-type sortableMessageList []*meltypes.DelayedInboxMessage
+type sortableMessageList []*mel.DelayedInboxMessage
 
 func (l sortableMessageList) Len() int {
 	return len(l)

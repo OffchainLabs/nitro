@@ -1,4 +1,4 @@
-package extractionfunction
+package melextraction
 
 import (
 	"context"
@@ -13,7 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/trie"
 
-	meltypes "github.com/offchainlabs/nitro/arbnode/message-extraction/types"
+	"github.com/offchainlabs/nitro/arbnode/mel"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 )
@@ -21,7 +21,7 @@ import (
 func Test_parseDelayedMessagesFromBlock(t *testing.T) {
 	ctx := context.Background()
 	delayedMsgPostingAddr := common.BytesToAddress([]byte("deadbeef"))
-	melState := &meltypes.State{
+	melState := &mel.State{
 		MsgCount:                           1,
 		DelayedMessagePostingTargetAddress: delayedMsgPostingAddr,
 	}
@@ -563,7 +563,7 @@ func Test_parseMessageScaffoldsFromLogs(t *testing.T) {
 func Test_sortableMessageList(t *testing.T) {
 	hash1 := common.BigToHash(big.NewInt(1))
 	hash2 := common.BigToHash(big.NewInt(2))
-	messages := []*meltypes.DelayedInboxMessage{
+	messages := []*mel.DelayedInboxMessage{
 		{
 			Message: &arbostypes.L1IncomingMessage{
 				Header: &arbostypes.L1IncomingMessageHeader{

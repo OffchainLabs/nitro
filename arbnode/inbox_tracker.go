@@ -20,7 +20,7 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 
 	dbschema "github.com/offchainlabs/nitro/arbnode/db-schema"
-	meltypes "github.com/offchainlabs/nitro/arbnode/message-extraction/types"
+	"github.com/offchainlabs/nitro/arbnode/mel"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -45,7 +45,7 @@ type InboxTracker struct {
 	snapSyncConfig SnapSyncConfig
 
 	batchMetaMutex sync.Mutex
-	batchMeta      *containers.LruCache[uint64, meltypes.BatchMetadata]
+	batchMeta      *containers.LruCache[uint64, mel.BatchMetadata]
 }
 
 func NewInboxTracker(db ethdb.Database, txStreamer *TransactionStreamer, dapReaders []daprovider.Reader, snapSyncConfig SnapSyncConfig) (*InboxTracker, error) {
@@ -53,7 +53,7 @@ func NewInboxTracker(db ethdb.Database, txStreamer *TransactionStreamer, dapRead
 		db:             db,
 		txStreamer:     txStreamer,
 		dapReaders:     dapReaders,
-		batchMeta:      containers.NewLruCache[uint64, meltypes.BatchMetadata](1000),
+		batchMeta:      containers.NewLruCache[uint64, mel.BatchMetadata](1000),
 		snapSyncConfig: snapSyncConfig,
 	}
 	return tracker, nil
@@ -165,7 +165,7 @@ func (t *InboxTracker) GetDelayedCount() (uint64, error) {
 	return count, nil
 }
 
-func (t *InboxTracker) GetBatchMetadata(seqNum uint64) (meltypes.BatchMetadata, error) {
+func (t *InboxTracker) GetBatchMetadata(seqNum uint64) (mel.BatchMetadata, error) {
 	t.batchMetaMutex.Lock()
 	defer t.batchMetaMutex.Unlock()
 	metadata, exist := t.batchMeta.Get(seqNum)
@@ -175,18 +175,18 @@ func (t *InboxTracker) GetBatchMetadata(seqNum uint64) (meltypes.BatchMetadata, 
 	key := dbKey(dbschema.SequencerBatchMetaPrefix, seqNum)
 	hasKey, err := t.db.Has(key)
 	if err != nil {
-		return meltypes.BatchMetadata{}, err
+		return mel.BatchMetadata{}, err
 	}
 	if !hasKey {
-		return meltypes.BatchMetadata{}, fmt.Errorf("%w: no metadata for batch %d", AccumulatorNotFoundErr, seqNum)
+		return mel.BatchMetadata{}, fmt.Errorf("%w: no metadata for batch %d", AccumulatorNotFoundErr, seqNum)
 	}
 	data, err := t.db.Get(key)
 	if err != nil {
-		return meltypes.BatchMetadata{}, err
+		return mel.BatchMetadata{}, err
 	}
 	err = rlp.DecodeBytes(data, &metadata)
 	if err != nil {
-		return meltypes.BatchMetadata{}, err
+		return mel.BatchMetadata{}, err
 	}
 	t.batchMeta.Add(seqNum, metadata)
 	return metadata, nil
@@ -404,7 +404,7 @@ func (t *InboxTracker) GetDelayedMessageBytes(ctx context.Context, seqNum uint64
 	return msg.Serialize()
 }
 
-func (t *InboxTracker) AddDelayedMessages(messages []*meltypes.DelayedInboxMessage) error {
+func (t *InboxTracker) AddDelayedMessages(messages []*mel.DelayedInboxMessage) error {
 	var nextAcc common.Hash
 	firstDelayedMsgToKeep := uint64(0)
 	if len(messages) == 0 {
@@ -614,7 +614,7 @@ func (t *InboxTracker) setDelayedCountReorgAndWriteBatch(batch ethdb.Batch, firs
 
 type multiplexerBackend struct {
 	batchSeqNum           uint64
-	batches               []*meltypes.SequencerInboxBatch
+	batches               []*mel.SequencerInboxBatch
 	positionWithinMessage uint64
 
 	ctx    context.Context
@@ -658,9 +658,9 @@ func (b *multiplexerBackend) ReadDelayedInbox(seqNum uint64) (*arbostypes.L1Inco
 
 var delayedMessagesMismatch = errors.New("sequencer batch delayed messages missing or different")
 
-func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client *ethclient.Client, batches []*meltypes.SequencerInboxBatch) error {
+func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client *ethclient.Client, batches []*mel.SequencerInboxBatch) error {
 	var nextAcc common.Hash
-	var prevbatchmeta meltypes.BatchMetadata
+	var prevbatchmeta mel.BatchMetadata
 	sequenceNumberToKeep := uint64(0)
 	if len(batches) == 0 {
 		return nil
@@ -676,7 +676,7 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client *ethclien
 			}
 			if batches[0].SequenceNumber+1 == sequenceNumberToKeep {
 				nextAcc = batches[0].AfterInboxAcc
-				prevbatchmeta = meltypes.BatchMetadata{
+				prevbatchmeta = mel.BatchMetadata{
 					Accumulator:         batches[0].AfterInboxAcc,
 					DelayedMessageCount: batches[0].AfterDelayedCount,
 					MessageCount:        arbutil.MessageIndex(t.snapSyncConfig.PrevBatchMessageCount),
@@ -771,9 +771,9 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client *ethclien
 	}
 
 	lastBatchMeta := prevbatchmeta
-	batchMetas := make(map[uint64]meltypes.BatchMetadata, len(batches))
+	batchMetas := make(map[uint64]mel.BatchMetadata, len(batches))
 	for _, batch := range batches {
-		meta := meltypes.BatchMetadata{
+		meta := mel.BatchMetadata{
 			Accumulator:         batch.AfterInboxAcc,
 			DelayedMessageCount: batch.AfterDelayedCount,
 			MessageCount:        batchMessageCounts[batch.SequenceNumber],
@@ -896,7 +896,7 @@ func (t *InboxTracker) ReorgBatchesTo(count uint64) error {
 	t.mutex.Lock()
 	defer t.mutex.Unlock()
 
-	var prevBatchMeta meltypes.BatchMetadata
+	var prevBatchMeta mel.BatchMetadata
 	if count > 0 {
 		var err error
 		prevBatchMeta, err = t.GetBatchMetadata(count - 1)

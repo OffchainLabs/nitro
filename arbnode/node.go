@@ -30,8 +30,8 @@ import (
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	dbschema "github.com/offchainlabs/nitro/arbnode/db-schema"
-	mel "github.com/offchainlabs/nitro/arbnode/message-extraction"
-	meltypes "github.com/offchainlabs/nitro/arbnode/message-extraction/types"
+	"github.com/offchainlabs/nitro/arbnode/mel"
+	melrunner "github.com/offchainlabs/nitro/arbnode/mel/runner"
 	"github.com/offchainlabs/nitro/arbnode/resourcemanager"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -63,27 +63,27 @@ import (
 )
 
 type Config struct {
-	Sequencer                bool                           `koanf:"sequencer"`
-	ParentChainReader        headerreader.Config            `koanf:"parent-chain-reader" reload:"hot"`
-	InboxReader              InboxReaderConfig              `koanf:"inbox-reader" reload:"hot"`
-	DelayedSequencer         DelayedSequencerConfig         `koanf:"delayed-sequencer" reload:"hot"`
-	BatchPoster              BatchPosterConfig              `koanf:"batch-poster" reload:"hot"`
-	MessagePruner            MessagePrunerConfig            `koanf:"message-pruner" reload:"hot"`
-	MessageExtraction        mel.MessageExtractionConfig    `koanf:"message-extraction" reload:"hot"`
-	BlockValidator           staker.BlockValidatorConfig    `koanf:"block-validator" reload:"hot"`
-	Feed                     broadcastclient.FeedConfig     `koanf:"feed" reload:"hot"`
-	Staker                   legacystaker.L1ValidatorConfig `koanf:"staker" reload:"hot"`
-	Bold                     boldstaker.BoldConfig          `koanf:"bold"`
-	SeqCoordinator           SeqCoordinatorConfig           `koanf:"seq-coordinator"`
-	DataAvailability         das.DataAvailabilityConfig     `koanf:"data-availability"`
-	DAProvider               daclient.ClientConfig          `koanf:"da-provider" reload:"hot"`
-	SyncMonitor              SyncMonitorConfig              `koanf:"sync-monitor"`
-	Dangerous                DangerousConfig                `koanf:"dangerous"`
-	TransactionStreamer      TransactionStreamerConfig      `koanf:"transaction-streamer" reload:"hot"`
-	Maintenance              MaintenanceConfig              `koanf:"maintenance" reload:"hot"`
-	ResourceMgmt             resourcemanager.Config         `koanf:"resource-mgmt" reload:"hot"`
-	BlockMetadataFetcher     BlockMetadataFetcherConfig     `koanf:"block-metadata-fetcher" reload:"hot"`
-	ConsensusExecutionSyncer ConsensusExecutionSyncerConfig `koanf:"consensus-execution-syncer"`
+	Sequencer                bool                              `koanf:"sequencer"`
+	ParentChainReader        headerreader.Config               `koanf:"parent-chain-reader" reload:"hot"`
+	InboxReader              InboxReaderConfig                 `koanf:"inbox-reader" reload:"hot"`
+	DelayedSequencer         DelayedSequencerConfig            `koanf:"delayed-sequencer" reload:"hot"`
+	BatchPoster              BatchPosterConfig                 `koanf:"batch-poster" reload:"hot"`
+	MessagePruner            MessagePrunerConfig               `koanf:"message-pruner" reload:"hot"`
+	MessageExtraction        melrunner.MessageExtractionConfig `koanf:"message-extraction" reload:"hot"`
+	BlockValidator           staker.BlockValidatorConfig       `koanf:"block-validator" reload:"hot"`
+	Feed                     broadcastclient.FeedConfig        `koanf:"feed" reload:"hot"`
+	Staker                   legacystaker.L1ValidatorConfig    `koanf:"staker" reload:"hot"`
+	Bold                     boldstaker.BoldConfig             `koanf:"bold"`
+	SeqCoordinator           SeqCoordinatorConfig              `koanf:"seq-coordinator"`
+	DataAvailability         das.DataAvailabilityConfig        `koanf:"data-availability"`
+	DAProvider               daclient.ClientConfig             `koanf:"da-provider" reload:"hot"`
+	SyncMonitor              SyncMonitorConfig                 `koanf:"sync-monitor"`
+	Dangerous                DangerousConfig                   `koanf:"dangerous"`
+	TransactionStreamer      TransactionStreamerConfig         `koanf:"transaction-streamer" reload:"hot"`
+	Maintenance              MaintenanceConfig                 `koanf:"maintenance" reload:"hot"`
+	ResourceMgmt             resourcemanager.Config            `koanf:"resource-mgmt" reload:"hot"`
+	BlockMetadataFetcher     BlockMetadataFetcherConfig        `koanf:"block-metadata-fetcher" reload:"hot"`
+	ConsensusExecutionSyncer ConsensusExecutionSyncerConfig    `koanf:"consensus-execution-syncer"`
 	// SnapSyncConfig is only used for testing purposes, these should not be configured in production.
 	SnapSyncTest SnapSyncConfig
 }
@@ -146,7 +146,7 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feed
 	DelayedSequencerConfigAddOptions(prefix+".delayed-sequencer", f)
 	BatchPosterConfigAddOptions(prefix+".batch-poster", f)
 	MessagePrunerConfigAddOptions(prefix+".message-pruner", f)
-	mel.MessageExtractionConfigAddOptions(prefix+".message-extraction", f)
+	melrunner.MessageExtractionConfigAddOptions(prefix+".message-extraction", f)
 	staker.BlockValidatorConfigAddOptions(prefix+".block-validator", f)
 	broadcastclient.FeedConfigAddOptions(prefix+".feed", f, feedInputEnable, feedOutputEnable)
 	legacystaker.L1ValidatorConfigAddOptions(prefix+".staker", f)
@@ -173,7 +173,7 @@ var ConfigDefault = Config{
 	BlockValidator:           staker.DefaultBlockValidatorConfig,
 	Feed:                     broadcastclient.FeedConfigDefault,
 	Staker:                   legacystaker.DefaultL1ValidatorConfig,
-	MessageExtraction:        mel.DefaultMessageExtractionConfig,
+	MessageExtraction:        melrunner.DefaultMessageExtractionConfig,
 	Bold:                     boldstaker.DefaultBoldConfig,
 	SeqCoordinator:           DefaultSeqCoordinatorConfig,
 	DataAvailability:         das.DefaultDataAvailabilityConfig,
@@ -270,7 +270,7 @@ type Node struct {
 	TxStreamer               *TransactionStreamer
 	DeployInfo               *chaininfo.RollupAddresses
 	BlobReader               daprovider.BlobReader
-	MessageExtractor         *mel.MessageExtractor
+	MessageExtractor         *melrunner.MessageExtractor
 	InboxReader              *InboxReader
 	InboxTracker             *InboxTracker
 	DelayedSequencer         *DelayedSequencer
@@ -713,11 +713,11 @@ func getMessageExtractor(
 	arbDb ethdb.Database,
 	txStreamer *TransactionStreamer,
 	dapReaders []daprovider.Reader,
-) (*mel.MessageExtractor, error) {
+) (*melrunner.MessageExtractor, error) {
 	if !config.MessageExtraction.Enable {
 		return nil, nil
 	}
-	melDB := mel.NewDatabase(arbDb)
+	melDB := melrunner.NewDatabase(arbDb)
 	initialState, err := createInitialMELState(ctx, deployInfo, l1client)
 	if err != nil {
 		return nil, err
@@ -725,7 +725,7 @@ func getMessageExtractor(
 	if err = melDB.SaveState(ctx, initialState); err != nil {
 		return nil, fmt.Errorf("failed to save initial mel state: %w", err)
 	}
-	msgExtractor, err := mel.NewMessageExtractor(
+	msgExtractor, err := melrunner.NewMessageExtractor(
 		l1client,
 		deployInfo,
 		melDB, // MEL db can also act as the initial state fetcher.
@@ -746,7 +746,7 @@ func createInitialMELState(
 	ctx context.Context,
 	deployInfo *chaininfo.RollupAddresses,
 	client *ethclient.Client,
-) (*meltypes.State, error) {
+) (*mel.State, error) {
 	// Create an initial MEL state from the latest confirmed assertion.
 	startBlock, err := client.BlockByNumber(ctx, new(big.Int).SetUint64(deployInfo.DeployedAt-1))
 	if err != nil {
@@ -756,7 +756,7 @@ func createInitialMELState(
 	if err != nil {
 		return nil, err
 	}
-	return &meltypes.State{
+	return &mel.State{
 		Version:                            0,
 		BatchPostingTargetAddress:          deployInfo.SequencerInbox,
 		DelayedMessagePostingTargetAddress: deployInfo.Bridge,
@@ -980,7 +980,7 @@ func getBatchPoster(
 	dapWriter daprovider.Writer,
 	l1Reader *headerreader.HeaderReader,
 	inboxTracker *InboxTracker,
-	msgExtractor *mel.MessageExtractor,
+	msgExtractor *melrunner.MessageExtractor,
 	txStreamer *TransactionStreamer,
 	exec execution.ExecutionBatchPoster,
 	arbDb ethdb.Database,
@@ -1034,7 +1034,7 @@ func getBatchPoster(
 func getDelayedSequencer(
 	l1Reader *headerreader.HeaderReader,
 	inboxReader *InboxReader,
-	msgExtractor *mel.MessageExtractor,
+	msgExtractor *melrunner.MessageExtractor,
 	delayedBridge *DelayedBridge,
 	exec execution.ExecutionSequencer,
 	configFetcher ConfigFetcher,

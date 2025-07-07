@@ -1,4 +1,4 @@
-package extractionfunction
+package melextraction
 
 import (
 	"github.com/ethereum/go-ethereum/accounts/abi"
@@ -43,4 +43,5 @@ func init() {
 		panic(err)
 	}
 	iInboxABI = parsedIInboxABI
+	batchDeliveredID = sequencerBridgeABI.Events["SequencerBatchDelivered"].ID
 }

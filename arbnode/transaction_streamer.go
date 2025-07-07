@@ -27,7 +27,7 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 
 	dbschema "github.com/offchainlabs/nitro/arbnode/db-schema"
-	mel "github.com/offchainlabs/nitro/arbnode/message-extraction"
+	melrunner "github.com/offchainlabs/nitro/arbnode/mel/runner"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcastclient"
@@ -69,10 +69,11 @@ type TransactionStreamer struct {
 	coordinator     *SeqCoordinator
 	broadcastServer *broadcaster.Broadcaster
 	inboxReader     *InboxReader
-	msgExtractor    *mel.MessageExtractor
+	msgExtractor    *melrunner.MessageExtractor
 	delayedBridge   *DelayedBridge
 
 	trackBlockMetadataFrom arbutil.MessageIndex
+	syncTillMessage        arbutil.MessageIndex
 }
 
 type TransactionStreamerConfig struct {
@@ -140,6 +141,17 @@ func NewTransactionStreamer(
 		}
 		streamer.trackBlockMetadataFrom = trackBlockMetadataFrom
 	}
+	if config().SyncTillBlock != 0 {
+		syncTillMessage, err := exec.BlockNumberToMessageIndex(config().SyncTillBlock).Await(ctx)
+		if err != nil {
+			return nil, err
+		}
+		streamer.syncTillMessage = syncTillMessage
+		msgCount, err := streamer.GetMessageCount()
+		if err == nil && msgCount >= streamer.syncTillMessage {
+			log.Info("Node has all mesages", "sync-till-block", config().SyncTillBlock)
+		}
+	}
 	return streamer, nil
 }
 
@@ -198,7 +210,7 @@ func (s *TransactionStreamer) SetInboxReaders(inboxReader *InboxReader, delayedB
 	s.delayedBridge = delayedBridge
 }
 
-func (s *TransactionStreamer) SetMsgExtractor(msgExtractor *mel.MessageExtractor) {
+func (s *TransactionStreamer) SetMsgExtractor(msgExtractor *melrunner.MessageExtractor) {
 	if s.Started() {
 		panic("trying to set inbox reader after start")
 	}
@@ -1213,7 +1225,7 @@ func (s *TransactionStreamer) broadcastMessages(
 // The mutex must be held, and firstMsgIdx must be the latest message count.
 // `batch` may be nil, which initializes a new batch. The batch is closed out in this function.
 func (s *TransactionStreamer) writeMessages(firstMsgIdx arbutil.MessageIndex, messages []arbostypes.MessageWithMetadataAndBlockInfo, batch ethdb.Batch) error {
-	if s.config().SyncTillBlock > 0 && uint64(firstMsgIdx) > s.config().SyncTillBlock {
+	if s.syncTillMessage > 0 && firstMsgIdx > s.syncTillMessage {
 		return broadcastclient.TransactionStreamerBlockCreationStopped
 	}
 	if batch == nil {
@@ -1367,7 +1379,8 @@ func (s *TransactionStreamer) ExecuteNextMsg(ctx context.Context) bool {
 		return false
 	}
 
-	if execHeadMsgIdx >= consensusHeadMsgIdx {
+	if execHeadMsgIdx >= consensusHeadMsgIdx ||
+		(s.syncTillMessage > 0 && execHeadMsgIdx >= s.syncTillMessage) {
 		return false
 	}
 	msgIdxToExecute := execHeadMsgIdx + 1
@@ -1421,10 +1434,6 @@ func (s *TransactionStreamer) ExecuteNextMsg(ctx context.Context) bool {
 }
 
 func (s *TransactionStreamer) executeMessages(ctx context.Context, ignored struct{}) time.Duration {
-	if s.config().SyncTillBlock > 0 && s.prevHeadMsgIdx != nil && uint64(*s.prevHeadMsgIdx) >= s.config().SyncTillBlock {
-		log.Info("stopping block creation in transaction streamer", "syncTillBlock", s.config().SyncTillBlock)
-		return s.config().ExecuteMessageLoopDelay
-	}
 	if s.ExecuteNextMsg(ctx) {
 		return 0
 	}

@@ -1,4 +1,4 @@
-package meltypes
+package mel
 
 import "github.com/ethereum/go-ethereum/common"
 
@@ -16,11 +16,12 @@ type DelayedMetaDeque struct {
 
 func NewDelayedMetaDeque() *DelayedMetaDeque {
 	return &DelayedMetaDeque{
-		deque: make([]*DelayedMeta, 0),
+		deque:   make([]*DelayedMeta, 0),
+		initMsg: nil,
 	}
 }
 
-func (d *DelayedMetaDeque) Len() int                           { return len(d.deque) }   // Used for testing purposes
+func (d *DelayedMetaDeque) Len() int                           { return len(d.deque) }
 func (d *DelayedMetaDeque) GetByPos(index uint64) *DelayedMeta { return d.deque[index] } // Used for testing purposes
 
 func (d *DelayedMetaDeque) Add(item *DelayedMeta) {

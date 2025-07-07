@@ -1,4 +1,4 @@
-package mel
+package melrunner
 
 import (
 	"context"
@@ -14,7 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 
 	dbschema "github.com/offchainlabs/nitro/arbnode/db-schema"
-	meltypes "github.com/offchainlabs/nitro/arbnode/message-extraction/types"
+	"github.com/offchainlabs/nitro/arbnode/mel"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/merkleAccumulator"
 )
@@ -29,7 +29,7 @@ func TestMelDatabase(t *testing.T) {
 	arbDb := rawdb.NewMemoryDatabase()
 	melDb := NewDatabase(arbDb)
 
-	headMelState := &meltypes.State{
+	headMelState := &mel.State{
 		ParentChainBlockNumber: 2,
 		ParentChainBlockHash:   common.MaxHash,
 	}
@@ -39,7 +39,7 @@ func TestMelDatabase(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, headMelStateBlockNum == headMelState.ParentChainBlockNumber)
 
-	var melState *meltypes.State
+	var melState *mel.State
 	checkMelState := func() {
 		require.NoError(t, err)
 		if !reflect.DeepEqual(melState, headMelState) {
@@ -67,7 +67,7 @@ func TestMelDatabaseReadAndWriteDelayedMessages(t *testing.T) {
 	melDb := NewDatabase(arbDb)
 
 	delayedRequestId := common.BigToHash(common.Big1)
-	delayedMsg := &meltypes.DelayedInboxMessage{
+	delayedMsg := &mel.DelayedInboxMessage{
 		BlockHash: [32]byte{},
 		Message: &arbostypes.L1IncomingMessage{
 			Header: &arbostypes.L1IncomingMessageHeader{
@@ -80,13 +80,13 @@ func TestMelDatabaseReadAndWriteDelayedMessages(t *testing.T) {
 			},
 		},
 	}
-	state := &meltypes.State{}
-	state.SetSeenUnreadDelayedMetaDeque(&meltypes.DelayedMetaDeque{})
+	state := &mel.State{}
+	state.SetSeenUnreadDelayedMetaDeque(&mel.DelayedMetaDeque{})
 	state.SetReadDelayedMsgsAcc(merkleAccumulator.NewNonpersistentMerkleAccumulator())
 	require.NoError(t, state.AccumulateDelayedMessage(delayedMsg)) // Initialize seenUnreadDelayedMetaDeque
 	state.DelayedMessagedSeen++
 
-	require.NoError(t, melDb.SaveDelayedMessages(ctx, state, []*meltypes.DelayedInboxMessage{delayedMsg}))
+	require.NoError(t, melDb.SaveDelayedMessages(ctx, state, []*mel.DelayedInboxMessage{delayedMsg}))
 	have, err := melDb.ReadDelayedMessage(ctx, state, 0)
 	require.NoError(t, err)
 
@@ -107,16 +107,16 @@ func TestMelDelayedMessagesAccumulation(t *testing.T) {
 
 	// Add genesis melState
 	var err error
-	genesis := &meltypes.State{
+	genesis := &mel.State{
 		ParentChainBlockNumber: 1,
 	}
 	require.NoError(t, melDb.SaveState(ctx, genesis))
 
 	numDelayed := 5
-	var delayedMsgs []*meltypes.DelayedInboxMessage
+	var delayedMsgs []*mel.DelayedInboxMessage
 	for i := int64(1); i <= int64(numDelayed); i++ {
 		requestID := common.BigToHash(big.NewInt(i))
-		delayedMsgs = append(delayedMsgs, &meltypes.DelayedInboxMessage{
+		delayedMsgs = append(delayedMsgs, &mel.DelayedInboxMessage{
 			BlockHash: [32]byte{},
 			Message: &arbostypes.L1IncomingMessage{
 				Header: &arbostypes.L1IncomingMessageHeader{
@@ -132,7 +132,7 @@ func TestMelDelayedMessagesAccumulation(t *testing.T) {
 	}
 
 	// Initializes seenUnreadDelayedMetaDeque
-	genesis.SetSeenUnreadDelayedMetaDeque(&meltypes.DelayedMetaDeque{})
+	genesis.SetSeenUnreadDelayedMetaDeque(&mel.DelayedMetaDeque{})
 	require.NoError(t, err)
 	state := genesis.Clone() // Should clone empty initialized seenUnreadDelayedMetaDeque
 	state.ParentChainBlockNumber++
@@ -174,7 +174,7 @@ func TestMelFetchInitialStateAndSeenUnreadDelayedMetaDeque(t *testing.T) {
 	melDb := NewDatabase(arbDb)
 
 	// Add genesis melState
-	genesis := &meltypes.State{
+	genesis := &mel.State{
 		ParentChainBlockNumber: 1,
 		DelayedMessagedSeen:    1,
 		DelayedMessagesRead:    1,
@@ -182,10 +182,10 @@ func TestMelFetchInitialStateAndSeenUnreadDelayedMetaDeque(t *testing.T) {
 	require.NoError(t, melDb.SaveState(ctx, genesis))
 
 	numMelStates := 5
-	var delayedMsgs []*meltypes.DelayedInboxMessage
+	var delayedMsgs []*mel.DelayedInboxMessage
 	for i := int64(1); i <= int64(numMelStates)*5; i++ {
 		requestID := common.BigToHash(big.NewInt(i))
-		delayedMsgs = append(delayedMsgs, &meltypes.DelayedInboxMessage{
+		delayedMsgs = append(delayedMsgs, &mel.DelayedInboxMessage{
 			BlockHash: [32]byte{},
 			Message: &arbostypes.L1IncomingMessage{
 				Header: &arbostypes.L1IncomingMessageHeader{
@@ -201,11 +201,11 @@ func TestMelFetchInitialStateAndSeenUnreadDelayedMetaDeque(t *testing.T) {
 	}
 
 	// Simulate a node seeing 25 delayed messages but reading none
-	var melStates []*meltypes.State
+	var melStates []*mel.State
 	head := genesis
 	// #nosec G115
 	for i := uint64(0); i < uint64(numMelStates); i++ {
-		state := &meltypes.State{
+		state := &mel.State{
 			ParentChainBlockNumber: i + 2,
 			ParentChainBlockHash:   common.BigToHash(new(big.Int).SetUint64(i + 2)),
 			DelayedMessagedSeen:    head.DelayedMessagedSeen + 5,
@@ -235,7 +235,7 @@ func TestMelFetchInitialStateAndSeenUnreadDelayedMetaDeque(t *testing.T) {
 	}
 
 	// Intermediary melState to verify that finalized read delayed messages are added to seenUnreadDelayedMetaDeque
-	state = &meltypes.State{
+	state = &mel.State{
 		ParentChainBlockNumber: 7,
 		ParentChainBlockHash:   common.BigToHash(new(big.Int).SetUint64(7)),
 		DelayedMessagedSeen:    26,
@@ -244,7 +244,7 @@ func TestMelFetchInitialStateAndSeenUnreadDelayedMetaDeque(t *testing.T) {
 	require.NoError(t, melDb.SaveState(ctx, state))
 
 	// Advance head state indicating that we have read 10 delayed messages
-	newHeadState := &meltypes.State{
+	newHeadState := &mel.State{
 		ParentChainBlockNumber: 8,
 		ParentChainBlockHash:   common.BigToHash(new(big.Int).SetUint64(8)),
 		DelayedMessagedSeen:    26,

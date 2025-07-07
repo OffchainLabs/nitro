@@ -16,7 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
 
-	meltypes "github.com/offchainlabs/nitro/arbnode/message-extraction/types"
+	"github.com/offchainlabs/nitro/arbnode/mel"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
@@ -88,9 +88,9 @@ func (i *SequencerInbox) GetAccumulator(ctx context.Context, sequenceNumber uint
 	return acc, err
 }
 
-func getSequencerDataFromBatch(ctx context.Context, batch *meltypes.SequencerInboxBatch, client *ethclient.Client) ([]byte, error) {
+func getSequencerDataFromBatch(ctx context.Context, batch *mel.SequencerInboxBatch, client *ethclient.Client) ([]byte, error) {
 	switch batch.DataLocation {
-	case meltypes.BatchDataTxInput:
+	case mel.BatchDataTxInput:
 		data, err := arbutil.GetLogEmitterTxData(ctx, client, batch.RawLog)
 		if err != nil {
 			return nil, err
@@ -105,7 +105,7 @@ func getSequencerDataFromBatch(ctx context.Context, batch *meltypes.SequencerInb
 			return nil, errors.New("args[\"data\"] not a byte array")
 		}
 		return dataBytes, nil
-	case meltypes.BatchDataSeparateEvent:
+	case mel.BatchDataSeparateEvent:
 		var numberAsHash common.Hash
 		binary.BigEndian.PutUint64(numberAsHash[(32-8):], batch.SequenceNumber)
 		query := ethereum.FilterQuery{
@@ -129,10 +129,10 @@ func getSequencerDataFromBatch(ctx context.Context, batch *meltypes.SequencerInb
 			return nil, err
 		}
 		return event.Data, nil
-	case meltypes.BatchDataNone:
+	case mel.BatchDataNone:
 		// No data when in a force inclusion batch
 		return nil, nil
-	case meltypes.BatchDataBlobHashes:
+	case mel.BatchDataBlobHashes:
 		tx, err := arbutil.GetLogTransaction(ctx, client, batch.RawLog)
 		if err != nil {
 			return nil, err
@@ -150,7 +150,7 @@ func getSequencerDataFromBatch(ctx context.Context, batch *meltypes.SequencerInb
 	}
 }
 
-func SerializeSequencerInboxBatch(ctx context.Context, batch *meltypes.SequencerInboxBatch, client *ethclient.Client) ([]byte, error) {
+func SerializeSequencerInboxBatch(ctx context.Context, batch *mel.SequencerInboxBatch, client *ethclient.Client) ([]byte, error) {
 	if batch.Serialized != nil {
 		return batch.Serialized, nil
 	}
@@ -182,7 +182,7 @@ func SerializeSequencerInboxBatch(ctx context.Context, batch *meltypes.Sequencer
 	return fullData, nil
 }
 
-func (i *SequencerInbox) LookupBatchesInRange(ctx context.Context, from, to *big.Int) ([]*meltypes.SequencerInboxBatch, error) {
+func (i *SequencerInbox) LookupBatchesInRange(ctx context.Context, from, to *big.Int) ([]*mel.SequencerInboxBatch, error) {
 	query := ethereum.FilterQuery{
 		FromBlock: from,
 		ToBlock:   to,
@@ -193,7 +193,7 @@ func (i *SequencerInbox) LookupBatchesInRange(ctx context.Context, from, to *big
 	if err != nil {
 		return nil, err
 	}
-	messages := make([]*meltypes.SequencerInboxBatch, 0, len(logs))
+	messages := make([]*mel.SequencerInboxBatch, 0, len(logs))
 	var lastSeqNum *uint64
 	for _, log := range logs {
 		if log.Topics[0] != batchDeliveredID {
@@ -217,7 +217,7 @@ func (i *SequencerInbox) LookupBatchesInRange(ctx context.Context, from, to *big
 			}
 		}
 		lastSeqNum = &seqNum
-		batch := &meltypes.SequencerInboxBatch{
+		batch := &mel.SequencerInboxBatch{
 			BlockHash:              log.BlockHash,
 			ParentChainBlockNumber: log.BlockNumber,
 			SequenceNumber:         seqNum,
@@ -227,7 +227,7 @@ func (i *SequencerInbox) LookupBatchesInRange(ctx context.Context, from, to *big
 			AfterDelayedCount:      parsedLog.AfterDelayedMessagesRead.Uint64(),
 			RawLog:                 log,
 			TimeBounds:             parsedLog.TimeBounds,
-			DataLocation:           meltypes.BatchDataLocation(parsedLog.DataLocation),
+			DataLocation:           mel.BatchDataLocation(parsedLog.DataLocation),
 			BridgeAddress:          log.Address,
 		}
 		messages = append(messages, batch)

@@ -1,4 +1,4 @@
-package extractionfunction
+package melextraction
 
 import (
 	"context"
@@ -9,14 +9,14 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 
-	meltypes "github.com/offchainlabs/nitro/arbnode/message-extraction/types"
+	"github.com/offchainlabs/nitro/arbnode/mel"
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 )
 
 func serializeBatch(
 	ctx context.Context,
-	batch *meltypes.SequencerInboxBatch,
+	batch *mel.SequencerInboxBatch,
 	tx *types.Transaction,
 	txIndex uint,
 	receiptFetcher ReceiptFetcher,
@@ -60,14 +60,14 @@ func serializeBatch(
 
 func getSequencerBatchData(
 	ctx context.Context,
-	batch *meltypes.SequencerInboxBatch,
+	batch *mel.SequencerInboxBatch,
 	tx *types.Transaction,
 	txIndex uint,
 	receiptFetcher ReceiptFetcher,
 ) ([]byte, error) {
 	addSequencerL2BatchFromOriginCallABI := seqInboxABI.Methods["addSequencerL2BatchFromOrigin0"]
 	switch batch.DataLocation {
-	case meltypes.BatchDataTxInput:
+	case mel.BatchDataTxInput:
 		data := tx.Data()
 		if len(data) < 4 {
 			return nil, errors.New("transaction data too short")
@@ -81,9 +81,11 @@ func getSequencerBatchData(
 			return nil, errors.New("args[\"data\"] not a byte array")
 		}
 		return dataBytes, nil
-	case meltypes.BatchDataSeparateEvent:
+	case mel.BatchDataSeparateEvent:
 		sequencerBatchDataABI := seqInboxABI.Events["SequencerBatchData"].ID
 		var numberAsHash common.Hash
+		// we want to convert a batch sequencer number which is a uint64 into a big-endian byte slice of size 32,
+		// so the last 8 bytes of that slice will contain the serialized batch.SequenceNumber
 		binary.BigEndian.PutUint64(numberAsHash[(32-8):], batch.SequenceNumber)
 		receipt, err := receiptFetcher.ReceiptForTransactionIndex(ctx, txIndex)
 		if err != nil {
@@ -106,10 +108,10 @@ func getSequencerBatchData(
 			return nil, err
 		}
 		return event.Data, nil
-	case meltypes.BatchDataNone:
+	case mel.BatchDataNone:
 		// No data when in a force inclusion batch
 		return nil, nil
-	case meltypes.BatchDataBlobHashes:
+	case mel.BatchDataBlobHashes:
 		if len(tx.BlobHashes()) == 0 {
 			return nil, fmt.Errorf("blob batch transaction %v has no blobs", tx.Hash())
 		}

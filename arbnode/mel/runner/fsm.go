@@ -1,10 +1,10 @@
-package mel
+package melrunner
 
 import (
 	"fmt"
 
 	"github.com/offchainlabs/bold/containers/fsm"
-	meltypes "github.com/offchainlabs/nitro/arbnode/message-extraction/types"
+	"github.com/offchainlabs/nitro/arbnode/mel"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 )
 
@@ -45,19 +45,19 @@ type backToStart struct{}
 
 // An action that transitions the FSM to the processing next block state.
 type processNextBlock struct {
-	melState *meltypes.State
+	melState *mel.State
 }
 
 // An action that transitions the FSM to the saving messages state.
 type saveMessages struct {
 	preStateMsgCount uint64
-	postState        *meltypes.State
+	postState        *mel.State
 	messages         []*arbostypes.MessageWithMetadata
-	delayedMessages  []*meltypes.DelayedInboxMessage
+	delayedMessages  []*mel.DelayedInboxMessage
 }
 
 type reorgToOldBlock struct {
-	melState *meltypes.State
+	melState *mel.State
 }
 
 func (backToStart) String() string {

@@ -5,53 +5,23 @@ import (
 	"math/big"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/stretchr/testify/require"
 )
 
-func TestFetchTransactionsForBlockHeader_LegacyTxs(t *testing.T) {
+func TestFetchTransactionsForBlockHeader_DynamicFeeTxs(t *testing.T) {
 	ctx := context.Background()
-	total := 1
+	total := uint64(42)
 	txes := make([]*types.Transaction, total)
-	for i := 0; i < total; i++ {
-		txes[i] = types.NewTransaction(uint64(i), common.Address{}, big.NewInt(0), 21000, big.NewInt(1), nil)
-	}
-	hasher := newRecordingHasher()
-	txsRoot := types.DeriveSha(types.Transactions(txes), hasher)
-	header := &types.Header{
-		TxHash: txsRoot,
-	}
-	preimages := hasher.GetPreimages()
-	mockPreimageResolver := &mockPreimageResolver{
-		preimages: preimages,
-	}
-	txsFetcher := &txsFetcherForBlock{
-		header:           header,
-		preimageResolver: mockPreimageResolver,
-	}
-	fetched, err := txsFetcher.TransactionsByHeader(ctx, header.Hash())
-	require.NoError(t, err)
-	require.Len(t, fetched, total)
-	for i, tx := range fetched {
-		require.Equal(t, txes[i].Hash(), tx.Hash())
-		require.Equal(t, uint64(i), tx.Nonce())
-	}
-}
-
-func TestFetchTransactionsForBlockHeader(t *testing.T) {
-	ctx := context.Background()
-	total := 1
-	txes := make([]*types.Transaction, total)
-	for i := 0; i < total; i++ {
+	for i := uint64(0); i < total; i++ {
 		txData := types.DynamicFeeTx{
-			Nonce:     uint64(i),
+			Nonce:     i,
 			To:        nil,
 			Gas:       21000,
+			GasTipCap: big.NewInt(1),
 			GasFeeCap: big.NewInt(1),
-			GasTipCap: big.NewInt(0),
-			Value:     big.NewInt(0),
-			Data:      nil,
 		}
 		txes[i] = types.NewTx(&txData)
 	}
@@ -70,9 +40,38 @@ func TestFetchTransactionsForBlockHeader(t *testing.T) {
 	}
 	fetched, err := txsFetcher.TransactionsByHeader(ctx, header.Hash())
 	require.NoError(t, err)
-	require.Len(t, fetched, total)
+	require.True(t, uint64(len(fetched)) == total) // #nosec G115
 	for i, tx := range fetched {
 		require.Equal(t, txes[i].Hash(), tx.Hash())
-		require.Equal(t, uint64(i), tx.Nonce())
+		require.Equal(t, uint64(i), tx.Nonce()) // #nosec G115
+	}
+}
+
+func TestFetchTransactionsForBlockHeader_LegacyTxs(t *testing.T) {
+	ctx := context.Background()
+	total := uint64(42)
+	txes := make([]*types.Transaction, total)
+	for i := uint64(0); i < total; i++ {
+		txes[i] = types.NewTransaction(i, common.Address{}, big.NewInt(0), 21000, big.NewInt(1), nil)
+	}
+	hasher := newRecordingHasher()
+	txsRoot := types.DeriveSha(types.Transactions(txes), hasher)
+	header := &types.Header{
+		TxHash: txsRoot,
+	}
+	preimages := hasher.GetPreimages()
+	mockPreimageResolver := &mockPreimageResolver{
+		preimages: preimages,
+	}
+	txsFetcher := &txsFetcherForBlock{
+		header:           header,
+		preimageResolver: mockPreimageResolver,
+	}
+	fetched, err := txsFetcher.TransactionsByHeader(ctx, header.Hash())
+	require.NoError(t, err)
+	require.True(t, uint64(len(fetched)) == total) // #nosec G115
+	for i, tx := range fetched {
+		require.Equal(t, txes[i].Hash(), tx.Hash())
+		require.Equal(t, uint64(i), tx.Nonce()) // #nosec G115
 	}
 }

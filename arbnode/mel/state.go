@@ -1,4 +1,4 @@
-package meltypes
+package mel
 
 import (
 	"context"
@@ -138,9 +138,9 @@ func (s *State) Clone() *State {
 	}
 }
 
-func (s *State) AccumulateMessage(msg *arbostypes.MessageWithMetadata) *State {
+func (s *State) AccumulateMessage(msg *arbostypes.MessageWithMetadata) error {
 	// TODO: Unimplemented.
-	return s
+	return nil
 }
 
 func (s *State) AccumulateDelayedMessage(msg *DelayedInboxMessage) error {
@@ -159,6 +159,9 @@ func (s *State) AccumulateDelayedMessage(msg *DelayedInboxMessage) error {
 	merkleRoot, err := s.seenDelayedMsgsAcc.Root()
 	if err != nil {
 		return err
+	}
+	if s.seenUnreadDelayedMetaDeque == nil {
+		s.seenUnreadDelayedMetaDeque = NewDelayedMetaDeque()
 	}
 	s.seenUnreadDelayedMetaDeque.Add(&DelayedMeta{
 		Index:                       s.DelayedMessagedSeen,

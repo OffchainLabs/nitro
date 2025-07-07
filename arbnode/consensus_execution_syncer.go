@@ -12,7 +12,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/log"
 
-	mel "github.com/offchainlabs/nitro/arbnode/message-extraction"
+	melrunner "github.com/offchainlabs/nitro/arbnode/mel/runner"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/execution/gethexec"
@@ -39,7 +39,7 @@ type ConsensusExecutionSyncer struct {
 	config func() *ConsensusExecutionSyncerConfig
 
 	inboxReader    *InboxReader
-	msgExtractor   *mel.MessageExtractor
+	msgExtractor   *melrunner.MessageExtractor
 	execClient     execution.ExecutionClient
 	blockValidator *staker.BlockValidator
 	txStreamer     *TransactionStreamer
@@ -48,7 +48,7 @@ type ConsensusExecutionSyncer struct {
 func NewConsensusExecutionSyncer(
 	config func() *ConsensusExecutionSyncerConfig,
 	inboxReader *InboxReader,
-	msgExtractor *mel.MessageExtractor,
+	msgExtractor *melrunner.MessageExtractor,
 	execClient execution.ExecutionClient,
 	blockValidator *staker.BlockValidator,
 	txStreamer *TransactionStreamer,
