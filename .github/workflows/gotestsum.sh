@@ -11,7 +11,6 @@ timeout=""
 tags=""
 run=""
 test_state_scheme=""
-dont_parallelise=false
 log=true
 race=false
 cover=false
@@ -39,10 +38,6 @@ while [[ $# -gt 0 ]]; do
       shift
       check_missing_value $# "$1" "--test_state_scheme"
       test_state_scheme=$1
-      shift
-      ;;
-    --dont_parallelise)
-      dont_parallelise=true
       shift
       ;;
     --race)
@@ -91,10 +86,6 @@ for package in $packages; do
       cmd="$cmd -args -- --test_state_scheme=$test_state_scheme --test_loglevel=8"
   else
       cmd="$cmd -args -- --test_loglevel=8" # Use error log level, which is the value 8 in the slog level enum for tests.
-  fi
-
-  if [ "$dont_parallelise" == true ]; then
-    cmd="$cmd --parallelise=false"
   fi
 
 	if [ "$log" == true ]; then

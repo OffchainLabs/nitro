@@ -20,7 +20,6 @@ var (
 	RunsFlag                                      = fs.String("runs", "", "Number of runs for test")
 	LoggingFlag                                   = fs.String("logging", "", "Enable logging")
 	CompileFlag                                   = fs.String("test_compile", "", "[STORE|LOAD] to allow store/load in compile test")
-	Parallelise                                   = fs.Bool("parallelise", true, "Whether to use builder's parallelise functionality")
 )
 
 // This is a workaround for the fact that we can only pass flags to the package in which they are defined.
