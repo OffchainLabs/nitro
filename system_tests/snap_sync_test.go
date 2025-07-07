@@ -131,6 +131,7 @@ func waitForBlockToCatchupToMessageCount(
 	}
 }
 
+// waitForBlocksToCatchup has a time "limit" factor to limit running this function forever in weird cases such as running with race detection in nightly CI
 func waitForBlocksToCatchup(ctx context.Context, t *testing.T, clientA *ethclient.Client, clientB *ethclient.Client, limit time.Duration) {
 	for {
 		select {
@@ -169,8 +170,9 @@ func waitForBatchCountToCatchup(ctx context.Context, t *testing.T, inboxTrackerA
 }
 
 func createTransactionTillBatchCount(ctx context.Context, t *testing.T, builder *NodeBuilder, finalCount uint64) {
-	// Limit number of txs created to finalCount*1000
-	for i := uint64(0); i < finalCount*1000; i++ {
+	// We run the loop for 6000 iterations ~ maximum of 10 minutes of run time before failing. This is to avoid
+	// running this function forever in weird cases such as running with race detection in nightly CI
+	for i := uint64(0); i < 6000; i++ {
 		Require(t, ctx.Err())
 		tx := builder.L2Info.PrepareTx("Faucet", "BackgroundUser", builder.L2Info.TransferGas, big.NewInt(1), nil)
 		err := builder.L2.Client.SendTransaction(ctx, tx)
