@@ -33,12 +33,12 @@ func NewDatabase(db ethdb.Database) *Database {
 	return &Database{db}
 }
 
-// initializeDelayedMetaBacklog is to be only called by the Start fsm step of MEL
-func (d *Database) initializeDelayedMetaBacklog(ctx context.Context, state *mel.State, finalizedBlock uint64) error {
+// initializeDelayedMessageBacklog is to be only called by the Start fsm step of MEL
+func (d *Database) initializeDelayedMessageBacklog(ctx context.Context, state *mel.State, finalizedBlock uint64) error {
 	if state.DelayedMessagedSeen == state.DelayedMessagesRead && state.ParentChainBlockNumber <= finalizedBlock {
 		return nil // in this case initialization of backlog is handled later in the Start fsm step of mel runner
 	}
-	// To make the delayedMetaBacklog reorg resistant we will need to add more delayedMeta even though those messages are `Read`
+	// To make the delayedMessageBacklog reorg resistant we will need to add more delayedMeta even though those messages are `Read`
 	// this is only relevant if the current head Mel state's ParentChainBlockNumber is not yet finalized
 	targetDelayedMessagesRead := state.DelayedMessagesRead
 	if finalizedBlock > 0 && state.ParentChainBlockNumber > finalizedBlock {
@@ -90,7 +90,7 @@ func (d *Database) initializeDelayedMetaBacklog(ctx context.Context, state *mel.
 		}
 	}
 	// Accumulator is now at the step we need, hence we start creating DelayedMeta for all the delayed messages that are seen but not read
-	delayedMetaBacklog := mel.NewDelayedMetaBacklog()
+	delayedMessageBacklog := mel.NewDelayedMessageBacklog()
 	for index := targetDelayedMessagesRead; index < state.DelayedMessagedSeen; index++ {
 		msg, err := d.fetchDelayedMessage(index)
 		if err != nil {
@@ -104,13 +104,13 @@ func (d *Database) initializeDelayedMetaBacklog(ctx context.Context, state *mel.
 		if err != nil {
 			return err
 		}
-		delayedMetaBacklog.Add(&mel.DelayedMeta{
+		delayedMessageBacklog.Add(&mel.DelayedMeta{
 			Index:                       index,
 			MerkleRoot:                  merkleRoot,
 			MelStateParentChainBlockNum: delayedMsgIndexToParentChainBlockNum[index],
 		})
 	}
-	state.SetDelayedMetaBacklog(delayedMetaBacklog)
+	state.SetDelayedMessageBacklog(delayedMessageBacklog)
 	return nil
 }
 
@@ -132,7 +132,7 @@ func (d *Database) FetchInitialState(ctx context.Context, parentChainBlockHash c
 	if state.ParentChainBlockHash != parentChainBlockHash {
 		return nil, fmt.Errorf("head mel state's parentChainBlockHash in db: %v doesnt match the given parentChainBlockHash: %v ", state.ParentChainBlockHash, parentChainBlockHash)
 	}
-	if err = d.initializeDelayedMetaBacklog(ctx, state, finalizedBlock); err != nil {
+	if err = d.initializeDelayedMessageBacklog(ctx, state, finalizedBlock); err != nil {
 		return nil, err
 	}
 	return state, nil
@@ -223,7 +223,7 @@ func (d *Database) SaveDelayedMessages(ctx context.Context, state *mel.State, de
 }
 
 func (d *Database) checkAgainstAccumulator(ctx context.Context, state *mel.State, msg *mel.DelayedInboxMessage, index uint64) (bool, error) {
-	delayedMeta := state.GetDelayedMetaBacklog().GetByIndex(index)
+	delayedMeta := state.GetDelayedMessageBacklog().GetByIndex(index)
 	acc := state.GetReadDelayedMsgsAcc()
 	if acc == nil {
 		melStateParentChainBlockNum := delayedMeta.MelStateParentChainBlockNum
@@ -274,8 +274,8 @@ func (d *Database) fetchDelayedMessage(index uint64) (*mel.DelayedInboxMessage, 
 
 func (d *Database) ReadDelayedMessage(ctx context.Context, state *mel.State, index uint64) (*mel.DelayedInboxMessage, error) {
 	if index == 0 { // Init message
-		// This message cannot be found in the database as it is supposed to be seen and read in the same block, so we persist that in DelayedMetaBacklog
-		return state.GetDelayedMetaBacklog().GetInitMsg(), nil
+		// This message cannot be found in the database as it is supposed to be seen and read in the same block, so we persist that in DelayedMessageBacklog
+		return state.GetDelayedMessageBacklog().GetInitMsg(), nil
 	}
 	delayed, err := d.fetchDelayedMessage(index)
 	if err != nil {

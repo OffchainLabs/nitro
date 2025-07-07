@@ -9,7 +9,7 @@ type DelayedMeta struct {
 	MelStateParentChainBlockNum uint64
 }
 
-// DelayedMetaBacklog is a data structure that holds a deque containing meta data related to delayed messages that are currently SEEN by MEL
+// DelayedMessageBacklog is a data structure that holds a deque containing meta data related to delayed messages that are currently SEEN by MEL
 // but not yet READ. This enables verification of correctness of delayed messages read from the database, i.e each MEL state has the
 // DelayedMessageMerklePartials field that holds merkle partials array after all the delayed messages SEEN while constructing the state are
 // accumulated into the merkle accumulator. Hence to prove while READing a delayed MSG that it was part of this merkle accumulator- we would
@@ -18,7 +18,7 @@ type DelayedMeta struct {
 // created when that MSG was first SEEN
 //
 // This is to be initialized in the FetchInitialState function of InitialStateFetcher. If not, then Start fsm step of MEL runner initializes it
-type DelayedMetaBacklog struct {
+type DelayedMessageBacklog struct {
 	// If deque grows past this capacity,
 	// trim the read and finalized delayedMeta
 	cap     int
@@ -26,32 +26,32 @@ type DelayedMetaBacklog struct {
 	initMsg *DelayedInboxMessage
 }
 
-func NewDelayedMetaBacklog() *DelayedMetaBacklog {
-	return &DelayedMetaBacklog{
+func NewDelayedMessageBacklog() *DelayedMessageBacklog {
+	return &DelayedMessageBacklog{
 		deque:   make([]*DelayedMeta, 0),
 		initMsg: nil,
 	}
 }
 
-func (d *DelayedMetaBacklog) Len() int                           { return len(d.deque) }   // Used for testing purposes
-func (d *DelayedMetaBacklog) GetByPos(index uint64) *DelayedMeta { return d.deque[index] } // Used for testing purposes
+func (d *DelayedMessageBacklog) Len() int                           { return len(d.deque) }   // Used for testing purposes
+func (d *DelayedMessageBacklog) GetByPos(index uint64) *DelayedMeta { return d.deque[index] } // Used for testing purposes
 
-func (d *DelayedMetaBacklog) SetTargetCapacity(cap int) { d.cap = cap }
+func (d *DelayedMessageBacklog) SetTargetCapacity(cap int) { d.cap = cap }
 
-func (d *DelayedMetaBacklog) Add(item *DelayedMeta) {
+func (d *DelayedMessageBacklog) Add(item *DelayedMeta) {
 	d.deque = append(d.deque, item)
 }
 
 // Used exclusively while reading the init message
-func (d *DelayedMetaBacklog) SetInitMsg(msg *DelayedInboxMessage) { d.initMsg = msg }
-func (d *DelayedMetaBacklog) GetInitMsg() *DelayedInboxMessage    { return d.initMsg }
+func (d *DelayedMessageBacklog) SetInitMsg(msg *DelayedInboxMessage) { d.initMsg = msg }
+func (d *DelayedMessageBacklog) GetInitMsg() *DelayedInboxMessage    { return d.initMsg }
 
-func (d *DelayedMetaBacklog) GetByIndex(index uint64) *DelayedMeta {
+func (d *DelayedMessageBacklog) GetByIndex(index uint64) *DelayedMeta {
 	pos := index - d.deque[0].Index
 	return d.deque[pos]
 }
 
-func (d *DelayedMetaBacklog) Clone() *DelayedMetaBacklog {
+func (d *DelayedMessageBacklog) Clone() *DelayedMessageBacklog {
 	var deque []*DelayedMeta
 	for _, item := range d.deque {
 		merkleRoot := common.Hash{}
@@ -62,11 +62,11 @@ func (d *DelayedMetaBacklog) Clone() *DelayedMetaBacklog {
 			MelStateParentChainBlockNum: item.MelStateParentChainBlockNum,
 		})
 	}
-	return &DelayedMetaBacklog{d.cap, deque, nil} // Init msg should only be read once, no need to persist it
+	return &DelayedMessageBacklog{d.cap, deque, nil} // Init msg should only be read once, no need to persist it
 }
 
-// Reorg trims the DelayedMetaBacklog from right upto the given DelayedMessagedSeen count from the current valid state
-func (d *DelayedMetaBacklog) Reorg(newDelayedMessagedSeen uint64) {
+// Reorg trims the DelayedMessageBacklog from right upto the given DelayedMessagedSeen count from the current valid state
+func (d *DelayedMessageBacklog) Reorg(newDelayedMessagedSeen uint64) {
 	if len(d.deque) == 0 {
 		return
 	}
@@ -77,12 +77,12 @@ func (d *DelayedMetaBacklog) Reorg(newDelayedMessagedSeen uint64) {
 	}
 }
 
-// Clear trims the DelayedMetaBacklog from left, such that the item is only removed if the corresponding delayed message is
-// read and the MelStateParentChainBlockNum is finalized- this is to make DelayedMetaBacklog as reorg resistant as possible
+// Clear trims the DelayedMessageBacklog from left, such that the item is only removed if the corresponding delayed message is
+// read and the MelStateParentChainBlockNum is finalized- this is to make DelayedMessageBacklog as reorg resistant as possible
 //
 // This function takes a fetcher instead of finalizedDelayedMessagesRead directly, since getting the finalizedDelayedMessagesRead
 // can be a costly operation and should only be used when deque grows past the backlog's target capacity
-func (d *DelayedMetaBacklog) Clear(finalizedDelayedMessagesReadFetcher func() uint64) {
+func (d *DelayedMessageBacklog) Clear(finalizedDelayedMessagesReadFetcher func() uint64) {
 	if len(d.deque) <= d.cap {
 		return
 	}

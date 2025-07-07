@@ -81,9 +81,9 @@ func TestMelDatabaseReadAndWriteDelayedMessages(t *testing.T) {
 		},
 	}
 	state := &mel.State{}
-	state.SetDelayedMetaBacklog(&mel.DelayedMetaBacklog{})
+	state.SetDelayedMessageBacklog(&mel.DelayedMessageBacklog{})
 	state.SetReadDelayedMsgsAcc(merkleAccumulator.NewNonpersistentMerkleAccumulator())
-	require.NoError(t, state.AccumulateDelayedMessage(delayedMsg)) // Initialize delayedMetaBacklog
+	require.NoError(t, state.AccumulateDelayedMessage(delayedMsg)) // Initialize delayedMessageBacklog
 	state.DelayedMessagedSeen++
 
 	require.NoError(t, melDb.SaveDelayedMessages(ctx, state, []*mel.DelayedInboxMessage{delayedMsg}))
@@ -131,10 +131,10 @@ func TestMelDelayedMessagesAccumulation(t *testing.T) {
 		})
 	}
 
-	// Initializes delayedMetaBacklog
-	genesis.SetDelayedMetaBacklog(&mel.DelayedMetaBacklog{})
+	// Initializes delayedMessageBacklog
+	genesis.SetDelayedMessageBacklog(&mel.DelayedMessageBacklog{})
 	require.NoError(t, err)
-	state := genesis.Clone() // Should clone empty initialized delayedMetaBacklog
+	state := genesis.Clone() // Should clone empty initialized delayedMessageBacklog
 	state.ParentChainBlockNumber++
 
 	// See 3 delayed messages and accumulate them
@@ -163,7 +163,7 @@ func TestMelDelayedMessagesAccumulation(t *testing.T) {
 	require.True(t, err.Error() == "delayed message message not part of the mel state accumulator")
 }
 
-func TestMelFetchInitialStateAndDelayedMetaBacklog(t *testing.T) {
+func TestMelFetchInitialStateAndDelayedMessageBacklog(t *testing.T) {
 	t.Parallel()
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -222,9 +222,9 @@ func TestMelFetchInitialStateAndDelayedMetaBacklog(t *testing.T) {
 
 	require.True(t, state.DelayedMessagedSeen == uint64(numMelStates)*5+1) // #nosec G115
 	require.True(t, state.DelayedMessagesRead == 1)
-	delayedMetaBacklog := state.GetDelayedMetaBacklog()
-	require.True(t, delayedMetaBacklog != nil)
-	require.True(t, delayedMetaBacklog.Len() == 25)
+	delayedMessageBacklog := state.GetDelayedMessageBacklog()
+	require.True(t, delayedMessageBacklog != nil)
+	require.True(t, delayedMessageBacklog.Len() == 25)
 
 	// Lets read the delayed messages and verify their correctness against accumulator and that they match with what we stored
 	// we read against the latest melState
@@ -234,7 +234,7 @@ func TestMelFetchInitialStateAndDelayedMetaBacklog(t *testing.T) {
 		require.True(t, reflect.DeepEqual(haveDelayed, wantDelayed))
 	}
 
-	// Intermediary melState to verify that finalized read delayed messages are added to delayedMetaBacklog
+	// Intermediary melState to verify that finalized read delayed messages are added to delayedMessageBacklog
 	state = &mel.State{
 		ParentChainBlockNumber: 7,
 		ParentChainBlockHash:   common.BigToHash(new(big.Int).SetUint64(7)),
@@ -251,29 +251,29 @@ func TestMelFetchInitialStateAndDelayedMetaBacklog(t *testing.T) {
 		DelayedMessagesRead:    13,
 	}
 	require.NoError(t, melDb.SaveState(ctx, newHeadState))
-	// We provide FetchInitialState the current finalized block as 7 and verify that the fetched state has delayedMetaBacklog that will hold
+	// We provide FetchInitialState the current finalized block as 7 and verify that the fetched state has delayedMessageBacklog that will hold
 	// delayedMeta for indexes below the DelayedMessagesRead as those have not been finalized yet!
 	newState, err := melDb.FetchInitialState(ctx, newHeadState.ParentChainBlockHash, 7)
 	require.NoError(t, err)
-	delayedMetaBacklog = newState.GetDelayedMetaBacklog()
-	require.True(t, delayedMetaBacklog != nil)
+	delayedMessageBacklog = newState.GetDelayedMessageBacklog()
+	require.True(t, delayedMessageBacklog != nil)
 	// Notice that instead of having seenUnread list from delayed index 13 to 25 inclusive we will have it from 7 to 25 as only till block=7 the chain has finalized and that block has DelayedMessagesRead=7
-	require.True(t, delayedMetaBacklog.Len() == 19)
+	require.True(t, delayedMessageBacklog.Len() == 19)
 
 	for i := uint64(7); i < newHeadState.DelayedMessagedSeen; i++ {
-		require.True(t, delayedMetaBacklog.GetByIndex(i).Index == i)                                                       // sanity check
-		require.True(t, delayedMetaBacklog.GetByIndex(i).MelStateParentChainBlockNum == uint64(math.Ceil(float64(i)/5))+1) // sanity check
+		require.True(t, delayedMessageBacklog.GetByIndex(i).Index == i)                                                       // sanity check
+		require.True(t, delayedMessageBacklog.GetByIndex(i).MelStateParentChainBlockNum == uint64(math.Ceil(float64(i)/5))+1) // sanity check
 	}
 
 	// Now lets verify that advancing the finalized block number will trim the read but not finalized delayedMeta while keeping the unread ones
-	delayedMetaBacklog.Clear(func() uint64 { return newHeadState.DelayedMessagesRead })
-	require.True(t, delayedMetaBacklog.Len() == int(newHeadState.DelayedMessagedSeen-newHeadState.DelayedMessagesRead)) // #nosec G115
-	require.True(t, delayedMetaBacklog.GetByPos(0).Index == newHeadState.DelayedMessagesRead)
+	delayedMessageBacklog.Clear(func() uint64 { return newHeadState.DelayedMessagesRead })
+	require.True(t, delayedMessageBacklog.Len() == int(newHeadState.DelayedMessagedSeen-newHeadState.DelayedMessagesRead)) // #nosec G115
+	require.True(t, delayedMessageBacklog.GetByPos(0).Index == newHeadState.DelayedMessagesRead)
 
 	// Verify that Reorg handling works as expected
-	// Move DelayedMessagesRead manually ahead in delayedMetaBacklog by marking the meta's as `Read`
+	// Move DelayedMessagesRead manually ahead in delayedMessageBacklog by marking the meta's as `Read`
 	newSeen := newHeadState.DelayedMessagedSeen - 5 // move back seen by a certain value too
-	delayedMetaBacklog.Reorg(newSeen)
-	// as delayedMetaBacklog hasnt updated with new finalized info, its starting elements remain unchanged, just that the right parts are trimmed till (newSeen-1) delayed index
-	require.True(t, delayedMetaBacklog.Len() == int(newSeen-newHeadState.DelayedMessagesRead)) // #nosec G115
+	delayedMessageBacklog.Reorg(newSeen)
+	// as delayedMessageBacklog hasnt updated with new finalized info, its starting elements remain unchanged, just that the right parts are trimmed till (newSeen-1) delayed index
+	require.True(t, delayedMessageBacklog.Len() == int(newSeen-newHeadState.DelayedMessagesRead)) // #nosec G115
 }

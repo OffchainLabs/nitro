@@ -55,7 +55,7 @@ func TestMessageExtractionLayer_SequencerBatchMessageEquivalence(t *testing.T) {
 	l1Reader.Start(ctx)
 	defer l1Reader.StopAndWait()
 
-	// Wait for headMelState to be finalized to avoid initializing delayed meta backlog
+	// Wait for headMelState to be finalized to avoid initializing delayed message backlog
 	for {
 		latestFinalized, err := l1Reader.Client().BlockByNumber(ctx, big.NewInt(rpc.FinalizedBlockNumber.Int64()))
 		Require(t, err)
@@ -291,7 +291,7 @@ func TestMessageExtractionLayer_SequencerBatchMessageEquivalence_Blobs(t *testin
 	readAcc, err := merkleAccumulator.NewNonpersistentMerkleAccumulatorFromPartials(nil)
 	Require(t, err)
 	readHelperState := &mel.State{DelayedMessagedSeen: 1}
-	readHelperState.SetDelayedMetaBacklog(&mel.DelayedMetaBacklog{})
+	readHelperState.SetDelayedMessageBacklog(&mel.DelayedMessageBacklog{})
 	readHelperState.SetReadDelayedMsgsAcc(readAcc)
 	for i := uint64(1); i < numDelayedMessages; i++ {
 		fromInboxTracker, err := builder.L2.ConsensusNode.InboxTracker.GetDelayedMessage(ctx, i)
@@ -389,7 +389,7 @@ func TestMessageExtractionLayer_DelayedMessageEquivalence_Simple(t *testing.T) {
 	readAcc, err := merkleAccumulator.NewNonpersistentMerkleAccumulatorFromPartials(nil)
 	Require(t, err)
 	readHelperState := &mel.State{DelayedMessagedSeen: 1}
-	readHelperState.SetDelayedMetaBacklog(&mel.DelayedMetaBacklog{})
+	readHelperState.SetDelayedMessageBacklog(&mel.DelayedMessageBacklog{})
 	readHelperState.SetReadDelayedMsgsAcc(readAcc)
 	for i := uint64(1); i < numDelayedMessages; i++ {
 		fromInboxTracker, err := builder.L2.ConsensusNode.InboxTracker.GetDelayedMessage(ctx, i)

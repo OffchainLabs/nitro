@@ -29,9 +29,9 @@ import (
 const defaultRetryInterval = time.Second
 
 type MessageExtractionConfig struct {
-	Enable                     bool          `koanf:"enable"`
-	RetryInterval              time.Duration `koanf:"retry-interval"`
-	DelayedMetaBacklogCapacity int           `koanf:"delayed-meta-backlog-capacity"`
+	Enable                        bool          `koanf:"enable"`
+	RetryInterval                 time.Duration `koanf:"retry-interval"`
+	DelayedMessageBacklogCapacity int           `koanf:"delayed-message-backlog-capacity"`
 }
 
 func (c *MessageExtractionConfig) Validate() error {
@@ -39,15 +39,15 @@ func (c *MessageExtractionConfig) Validate() error {
 }
 
 var DefaultMessageExtractionConfig = MessageExtractionConfig{
-	Enable:                     false,
-	RetryInterval:              defaultRetryInterval,
-	DelayedMetaBacklogCapacity: 100, // TODO: right default? setting to a lower value means more calls to l1reader
+	Enable:                        false,
+	RetryInterval:                 defaultRetryInterval,
+	DelayedMessageBacklogCapacity: 100, // TODO: right default? setting to a lower value means more calls to l1reader
 }
 
 func MessageExtractionConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultMessageExtractionConfig.Enable, "enable message extraction service")
 	f.Duration(prefix+".retry-interval", DefaultMessageExtractionConfig.RetryInterval, "wait time before retring upon a failure")
-	f.Int(prefix+".delayed-meta-backlog-capacity", DefaultMessageExtractionConfig.DelayedMetaBacklogCapacity, "target capacity of the delayed meta backlog")
+	f.Int(prefix+".delayed-message-backlog-capacity", DefaultMessageExtractionConfig.DelayedMessageBacklogCapacity, "target capacity of the delayed message backlog")
 }
 
 type ParentChainReader interface {
@@ -288,7 +288,7 @@ func (m *MessageExtractor) Act(ctx context.Context) (time.Duration, error) {
 				err,
 			)
 		}
-		// Finalized block number is used in FetchInitialState to initialize delayedMetaBacklog
+		// Finalized block number is used in FetchInitialState to initialize delayedMessageBacklog
 		finalizedBlk, err := m.parentChainReader.HeaderByNumber(ctx, big.NewInt(rpc.FinalizedBlockNumber.Int64()))
 		if err != nil {
 			return m.retryInterval, err
@@ -302,12 +302,12 @@ func (m *MessageExtractor) Act(ctx context.Context) (time.Duration, error) {
 		if err != nil {
 			return m.retryInterval, err
 		}
-		// Initialize delayedMetaBacklog if its nil
-		if melState.GetDelayedMetaBacklog() == nil {
-			melState.SetDelayedMetaBacklog(&mel.DelayedMetaBacklog{})
+		// Initialize delayedMessageBacklog if its nil
+		if melState.GetDelayedMessageBacklog() == nil {
+			melState.SetDelayedMessageBacklog(&mel.DelayedMessageBacklog{})
 		}
-		// Set target capacity of delayedMetaBacklog
-		melState.GetDelayedMetaBacklog().SetTargetCapacity(m.config.DelayedMetaBacklogCapacity)
+		// Set target capacity of delayedMessageBacklog
+		melState.GetDelayedMessageBacklog().SetTargetCapacity(m.config.DelayedMessageBacklogCapacity)
 		// Begin the next FSM state immediately.
 		return 0, m.fsm.Do(processNextBlock{
 			melState: melState,
@@ -324,8 +324,8 @@ func (m *MessageExtractor) Act(ctx context.Context) (time.Duration, error) {
 			return m.retryInterval, fmt.Errorf("invalid action: %T", current.SourceEvent)
 		}
 		preState := processAction.melState
-		if preState.GetDelayedMetaBacklog() == nil { // Safety check to avoid panics in the later codepath
-			return m.retryInterval, errors.New("detected nil delayedMetaBacklog of melState, shouldnt be possible")
+		if preState.GetDelayedMessageBacklog() == nil { // Safety check to avoid panics in the later codepath
+			return m.retryInterval, errors.New("detected nil delayedMessageBacklog of melState, shouldnt be possible")
 		}
 
 		parentChainBlock, err := m.parentChainReader.BlockByNumber(
@@ -348,10 +348,10 @@ func (m *MessageExtractor) Act(ctx context.Context) (time.Duration, error) {
 				melState: preState,
 			})
 		}
-		preState.GetDelayedMetaBacklog().Clear(func() uint64 {
+		preState.GetDelayedMessageBacklog().Clear(func() uint64 {
 			finalizedState, err := m.getStateByRPCBlockNum(ctx, rpc.FinalizedBlockNumber)
 			if err != nil {
-				log.Error("Error fetching melState corresponding to FinalizedBlockNumber from parent chain, clearing of read and finalized delayedMeta from the DelayedMetaBacklog will be retried again later", "err", err)
+				log.Error("Error fetching melState corresponding to FinalizedBlockNumber from parent chain, clearing of read and finalized delayedMeta from the DelayedMessageBacklog will be retried again later", "err", err)
 				return 0
 			}
 			return finalizedState.DelayedMessagesRead
@@ -420,10 +420,10 @@ func (m *MessageExtractor) Act(ctx context.Context) (time.Duration, error) {
 		if err != nil {
 			return m.retryInterval, err
 		}
-		// Adjust delayedMetaBacklog
-		delayedMetaBacklog := currentDirtyState.GetDelayedMetaBacklog()
-		delayedMetaBacklog.Reorg(previousState.DelayedMessagedSeen)
-		previousState.SetDelayedMetaBacklog(delayedMetaBacklog)
+		// Adjust delayedMessageBacklog
+		delayedMessageBacklog := currentDirtyState.GetDelayedMessageBacklog()
+		delayedMessageBacklog.Reorg(previousState.DelayedMessagedSeen)
+		previousState.SetDelayedMessageBacklog(delayedMessageBacklog)
 		return 0, m.fsm.Do(processNextBlock{
 			melState: previousState,
 		})
