@@ -70,6 +70,8 @@ struct Opts {
     #[structopt(long)]
     last_send_root: Option<String>,
     #[structopt(long)]
+    mel_state_root: Option<String>,
+    #[structopt(long)]
     inbox: Vec<PathBuf>,
     #[structopt(long)]
     delayed_inbox: Vec<PathBuf>,
@@ -87,6 +89,13 @@ struct Opts {
     skip_until_host_io: bool,
     #[structopt(long)]
     max_steps: Option<u64>,
+    /// Options for WAVM binary generation.
+    #[structopt(long, default_value = "module_root.txt")]
+    module_root_filename: String,
+    #[structopt(long, default_value = "machine.wavm.br")]
+    brotli_wavm_machine_filename: String,
+    #[structopt(long, default_value = "until-host-io-state.bin")]
+    until_hostio_bin_filename: String,
     // JSON inputs supercede any of the command-line inputs which could
     // be specified in the JSON file.
     #[structopt(long)]
@@ -156,15 +165,15 @@ fn main() -> Result<()> {
     }
 
     if let Some(output_path) = opts.generate_binaries {
-        let mut module_root_file = File::create(output_path.join("module-root.txt"))?;
+        let mut module_root_file = File::create(output_path.join(opts.module_root_filename))?;
         writeln!(module_root_file, "0x{}", mach.get_modules_root())?;
         module_root_file.flush()?;
 
-        mach.serialize_binary(output_path.join("machine.wavm.br"))?;
+        mach.serialize_binary(output_path.join(opts.brotli_wavm_machine_filename))?;
         while !mach.next_instruction_is_host_io() {
             mach.step_n(1)?;
         }
-        mach.serialize_state(output_path.join("until-host-io-state.bin"))?;
+        mach.serialize_state(output_path.join(opts.until_hostio_bin_filename))?;
 
         return Ok(());
     }
@@ -544,10 +553,11 @@ fn initialize_machine(opts: &Opts) -> eyre::Result<Machine> {
 
         let last_block_hash = decode_hex_arg(&opts.last_block_hash, "--last-block-hash")?;
         let last_send_root = decode_hex_arg(&opts.last_send_root, "--last-send-root")?;
+        let mel_state_root = decode_hex_arg(&opts.mel_state_root, "--mel-state-root")?;
 
         let global_state = GlobalState {
             u64_vals: [opts.inbox_position, opts.position_within_message],
-            bytes32_vals: [last_block_hash, last_send_root],
+            bytes32_vals: [last_block_hash, last_send_root, mel_state_root],
         };
 
         Machine::from_paths(

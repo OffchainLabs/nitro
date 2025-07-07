@@ -44,7 +44,7 @@ func main() {
 	log.SetDefault(log.NewLogger(glogger))
 
 	startMelRoot := melwavmio.GetStartMELRoot()
-	endMelRoot := melwavmio.GetEndMELRoot()
+	endParentChainBlockHash := melwavmio.GetEndParentChainBlockHash()
 
 	startStateBytes, err := melwavmio.ResolveTypedPreimage(
 		arbutil.Keccak256PreimageType,
@@ -58,18 +58,6 @@ func main() {
 		panic(fmt.Errorf("error decoding start MEL state: %w", err))
 	}
 
-	endStateBytes, err := melwavmio.ResolveTypedPreimage(
-		arbutil.Keccak256PreimageType,
-		endMelRoot,
-	)
-	if err != nil {
-		panic(fmt.Errorf("error resolving preimage: %w", err))
-	}
-	endState := new(mel.State)
-	if err := rlp.Decode(bytes.NewBuffer(endStateBytes), &endState); err != nil {
-		panic(fmt.Errorf("error decoding start MEL state: %w", err))
-	}
-
 	// Extract the relevant header hashes in the range from the
 	// block hash of the start MEL state to the end parent chain block hash.
 	// This is done by walking backwards from the end parent chain block hash
@@ -77,7 +65,7 @@ func main() {
 	// only connected by parent linkages.
 	blockHeaderHashes := walkBackwards(
 		startState.ParentChainBlockHash,
-		endState.ParentChainBlockHash,
+		endParentChainBlockHash,
 	)
 	currentState := startState
 
@@ -121,14 +109,7 @@ func main() {
 		panic(fmt.Errorf("error encoding final MEL state: %w", err))
 	}
 	computedEndMelRoot := crypto.Keccak256Hash(encodedFinalState)
-	if computedEndMelRoot != endMelRoot {
-		panic(fmt.Errorf(
-			"computed end MEL root %s does not match expected end MEL root %s",
-			computedEndMelRoot.Hex(),
-			endMelRoot.Hex(),
-		))
-	}
-	melwavmio.SetEndMELRoot(endMelRoot)
+	melwavmio.SetEndMELRoot(computedEndMelRoot)
 	melwavmio.StubFinal()
 }
 

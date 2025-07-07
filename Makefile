@@ -56,6 +56,7 @@ color_reset = "\e[0;0m"
 done = "%bdone!%b\n" $(color_pink) $(color_reset)
 
 replay_wasm=$(output_latest)/replay.wasm
+mel_replay_wasm=$(output_latest)/mel_replay.wasm
 
 arb_brotli_files = $(wildcard arbitrator/brotli/src/*.* arbitrator/brotli/src/*/*.* arbitrator/brotli/*.toml arbitrator/brotli/*.rs) .make/cbrotli-lib .make/cbrotli-wasm
 
@@ -196,7 +197,13 @@ build-prover-bin: $(prover_bin)
 build-jit: $(arbitrator_jit)
 
 .PHONY: build-replay-env
-build-replay-env: $(prover_bin) $(arbitrator_jit) $(arbitrator_wasm_libs) $(replay_wasm) $(output_latest)/machine.wavm.br
+build-replay-env: $(prover_bin) $(arbitrator_jit) $(arbitrator_wasm_libs) $(replay_wasm) $(output_latest)/machine.wavm.br $(mel_replay_wasm) $(output_latest)/mel_machine.wavm.br
+
+.PHONY: build-mel-replay-env
+build-mel-replay-env: $(mel_replay_wasm) $(output_latest)/mel_machine.wavm.br
+
+.PHONY: build-mel-wasm-bin  
+build-mel-wasm-bin: $(mel_replay_wasm)
 
 .PHONY: build-wasm-libs
 build-wasm-libs: $(arbitrator_wasm_libs)
@@ -355,6 +362,11 @@ $(replay_wasm): $(DEP_PREDICATE) $(go_source) .make/solgen
 	GOOS=wasip1 GOARCH=wasm go build -o $@ ./cmd/replay/...
 	./scripts/remove_reference_types.sh $@
 
+$(mel_replay_wasm): $(DEP_PREDICATE) $(go_source) .make/solgen
+	mkdir -p `dirname $(mel_replay_wasm)`
+	GOOS=wasip1 GOARCH=wasm go build -o $@ ./cmd/mel-replay/...
+	./scripts/remove_reference_types.sh $@
+
 $(prover_bin): $(DEP_PREDICATE) $(rust_prover_files)
 	mkdir -p `dirname $(prover_bin)`
 	cargo build --manifest-path arbitrator/Cargo.toml --release --bin prover ${CARGOFLAGS}
@@ -461,6 +473,10 @@ $(output_latest)/forward_stub.wasm: $(DEP_PREDICATE) $(wasm_lib_forward) .make/m
 
 $(output_latest)/machine.wavm.br: $(DEP_PREDICATE) $(prover_bin) $(arbitrator_wasm_libs) $(replay_wasm)
 	$(prover_bin) $(replay_wasm) --generate-binaries $(output_latest) \
+	$(patsubst %,-l $(output_latest)/%.wasm, forward soft-float wasi_stub host_io user_host arbcompress program_exec)
+
+$(output_latest)/mel_machine.wavm.br: $(DEP_PREDICATE) $(prover_bin) $(arbitrator_wasm_libs) $(mel_replay_wasm)
+	$(prover_bin) $(mel_replay_wasm) --generate-binaries $(output_latest) --until-hostio-bin-filename="mel-until-host-io-state.bin" --brotli-wavm-machine-filename="mel_machine.wavm.br" --module-root-filename="mel_module_root.txt" \
 	$(patsubst %,-l $(output_latest)/%.wasm, forward soft-float wasi_stub host_io user_host arbcompress program_exec)
 
 $(arbitrator_cases)/%.wasm: $(arbitrator_cases)/%.wat
