@@ -454,7 +454,7 @@ func (s *ExecutionEngine) resequenceReorgedMessages(messages []*arbostypes.Messa
 			log.Warn("skipping non-standard sequencer message found from reorg", "header", header)
 			continue
 		}
-		txes, err := arbos.ParseL2Transactions(msg.Message, s.bc.Config().ChainID)
+		txes, err := arbos.ParseL2Transactions(msg.Message, s.bc.Config().ChainID, s.bc.Config().ArbitrumChainParams.Syndicate)
 		if err != nil {
 			log.Warn("failed to parse sequencer message found from reorg", "err", err)
 			continue

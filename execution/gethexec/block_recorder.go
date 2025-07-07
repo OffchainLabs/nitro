@@ -2,7 +2,10 @@ package gethexec
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"reflect"
 	"sync"
 	"testing"
 
@@ -11,9 +14,11 @@ import (
 	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
@@ -95,8 +100,167 @@ func stateLogFunc(targetHeader *types.Header) arbitrum.StateBuildingLogFunction 
 	}
 }
 
-// If msg is nil, this will record block creation up to the point where message would be accessed (for a "too far" proof)
-// If keepreference == true, reference to state of prevHeader is added (no reference added if an error is returned)
+// RecordBlocks records the execution of a sequence of messages into blocks.
+// This method processes messages sequentially, producing blocks and collecting
+// preimage data for validation purposes. It maintains state consistency and
+// validates chain configuration throughout the recording process.
+//
+// The method performs the following steps:
+// 1. Validates input parameters and retrieves the starting block header
+// 2. Prepares the recording database with the initial state
+// 3. Processes each message to produce blocks
+// 4. Validates chain configuration and state consistency
+// 5. Collects preimage data for verification
+//
+// Parameters:
+//   - ctx: Context for cancellation and timeout control
+//   - pos: The starting message index (0-based)
+//   - msgs: Array of messages to process (first message at index pos+1)
+//
+// Returns a RecordResult containing the final position, block hash, and preimage data.
+func (r *BlockRecorder) RecordBlocks(
+	ctx context.Context,
+	// pos is the start message index, i.e. the start block number
+	pos arbutil.MessageIndex,
+	// the first msg is at index pos+1 and used to derive block pos+1
+	// the last msg is at index pos+len(msgs) and used to derive block pos+len(msgs)
+	msgs []*arbostypes.MessageWithMetadata,
+) (*execution.RecordResult, error) {
+	// Validate input parameters
+	if len(msgs) == 0 {
+		return nil, errors.New("cannot record blocks: message array is empty")
+	}
+
+	// Get the block number corresponding to the starting message index
+	blockNum := r.execEngine.MessageIndexToBlockNumber(pos)
+	header := r.execEngine.bc.GetHeaderByNumber(uint64(blockNum))
+	if header == nil {
+		return nil, fmt.Errorf("header not found for message index %d (block %d)", pos, blockNum)
+	}
+
+	// Prepare the recording database with the initial state
+	recordingdb, chaincontext, recordingKV, err := r.recordingDatabase.PrepareRecording(ctx, header, stateLogFunc(header))
+	if err != nil {
+		return nil, fmt.Errorf("failed to prepare recording database: %w", err)
+	}
+	defer r.recordingDatabase.Dereference(header)
+
+	// Process each message to produce blocks
+	for i, msg := range msgs {
+		if err := ctx.Err(); err != nil {
+			return nil, fmt.Errorf("context cancelled while processing message %d: %w", i, err)
+		}
+
+		// Validate chain configuration
+		if err := validateChainConfiguration(recordingdb, chaincontext.Config()); err != nil {
+			return nil, fmt.Errorf("chain configuration validation failed: %w", err)
+		}
+
+		// Produce block from the message
+		block, _, err := arbos.ProduceBlock(
+			msg.Message,
+			msg.DelayedMessagesRead,
+			header,
+			recordingdb,
+			chaincontext,
+			false,
+			core.MessageReplayMode,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to produce block %d from message: %w", header.Number.Uint64(), err)
+		}
+		header = block.Header()
+
+		// Commit state changes to the trie database
+		result, err := recordingdb.Commit(block.NumberU64(), true, false)
+		if err != nil {
+			return nil, fmt.Errorf("failed to commit state for block %d: %w", block.NumberU64(), err)
+		}
+
+		// Validate that the committed state root matches the block header
+		if result != header.Root {
+			return nil, fmt.Errorf("state root mismatch for block %d: expected %v, got %v", block.NumberU64(), header.Root, result)
+		}
+
+		// Create new state database at the new state root
+		recordingdb, err = state.NewRecording(header.Root, recordingdb.Database())
+		if err != nil {
+			return nil, fmt.Errorf("failed to create new recording state for block %d: %w", block.NumberU64(), err)
+		}
+	}
+
+	// Validate that the final block hash matches the canonical chain
+	canonicalHash := r.execEngine.bc.GetCanonicalHash(blockNum + uint64(len(msgs)))
+	if canonicalHash != header.Hash() {
+		return nil, fmt.Errorf("block hash mismatch: recorded %v, canonical %v", header.Hash(), canonicalHash)
+	}
+
+	// Collect preimage data from the recording
+	preimages, err := r.recordingDatabase.PreimagesFromRecording(chaincontext, recordingKV)
+	if err != nil {
+		return nil, fmt.Errorf("failed to collect preimage data: %w", err)
+	}
+
+	return &execution.RecordResult{
+		Pos:       pos + arbutil.MessageIndex(len(msgs)),
+		BlockHash: header.Hash(),
+		Preimages: preimages,
+		UserWasms: recordingdb.UserWasms(),
+	}, nil
+}
+
+// validateChainConfiguration validates that the ArbOS state matches the expected chain configuration.
+// This includes checking the chain ID, genesis block number, and chain config parameters.
+// This validation is important for ensuring consistency between the recording database and the main chain.
+func validateChainConfiguration(recordingdb *state.StateDB, chainConfig *params.ChainConfig) error {
+	initialArbosState, err := arbosState.OpenSystemArbosState(recordingdb, nil, true)
+	if err != nil {
+		return fmt.Errorf("failed to open initial ArbOS state: %w", err)
+	}
+
+	// Validate chain ID
+	chainId, err := initialArbosState.ChainId()
+	if err != nil {
+		return fmt.Errorf("failed to get chain ID from ArbOS state: %w", err)
+	}
+	if chainId.Cmp(chainConfig.ChainID) != 0 {
+		return fmt.Errorf("chain ID mismatch: got %v, expected %v", chainId, chainConfig.ChainID)
+	}
+
+	// Validate genesis block number
+	genesisNum, err := initialArbosState.GenesisBlockNum()
+	if err != nil {
+		return fmt.Errorf("failed to get genesis block number from ArbOS state: %w", err)
+	}
+	expectedNum := chainConfig.ArbitrumChainParams.GenesisBlockNum
+	if genesisNum != expectedNum {
+		return fmt.Errorf("genesis block number mismatch: got %v, expected %v", genesisNum, expectedNum)
+	}
+
+	// Validate chain config
+	returnedConfigBytes, err := initialArbosState.ChainConfig()
+	if err != nil {
+		return fmt.Errorf("failed to get chain config from ArbOS state: %w", err)
+	}
+
+	// Unmarshal the chain config
+	returnedConfig := new(params.ChainConfig)
+	if err := json.Unmarshal(returnedConfigBytes, returnedConfig); err != nil {
+		return fmt.Errorf("failed to unmarshal chain config: %w", err)
+	}
+
+	// Ignore initial arbos version & chain owner - they are only used for the genesis block
+	returnedConfig.ArbitrumChainParams.InitialArbOSVersion = chainConfig.ArbitrumChainParams.InitialArbOSVersion
+	returnedConfig.ArbitrumChainParams.InitialChainOwner = chainConfig.ArbitrumChainParams.InitialChainOwner
+
+	// Compare the returned config with the expected config
+	if !reflect.DeepEqual(returnedConfig, chainConfig) {
+		return fmt.Errorf("chain config mismatch: got %+v, expected %+v", returnedConfig, chainConfig)
+	}
+
+	return nil
+}
+
 func (r *BlockRecorder) RecordBlockCreation(
 	ctx context.Context,
 	pos arbutil.MessageIndex,

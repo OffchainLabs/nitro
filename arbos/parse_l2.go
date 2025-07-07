@@ -14,18 +14,20 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
+	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
-func ParseL2Transactions(msg *arbostypes.L1IncomingMessage, chainId *big.Int) (types.Transactions, error) {
+func ParseL2Transactions(msg *arbostypes.L1IncomingMessage, chainId *big.Int, syndicate bool) (types.Transactions, error) {
 	if len(msg.L2msg) > arbostypes.MaxL2MessageSize {
 		// ignore the message if l2msg is too large
 		return nil, errors.New("message too large")
 	}
 	switch msg.Header.Kind {
 	case arbostypes.L1MessageType_L2Message:
-		return parseL2Message(bytes.NewReader(msg.L2msg), msg.Header.Poster, msg.Header.Timestamp, msg.Header.RequestId, chainId, 0)
+		syndicateBatch := syndicate && msg.Header.Poster == l1pricing.BatchPosterAddress && msg.Header.RequestId == nil
+		return parseL2Message(bytes.NewReader(msg.L2msg), msg.Header.Poster, msg.Header.Timestamp, msg.Header.RequestId, chainId, 0, syndicateBatch)
 	case arbostypes.L1MessageType_Initialize:
 		return nil, errors.New("ParseL2Transactions encounted initialize message (should've been handled explicitly at genesis)")
 	case arbostypes.L1MessageType_EndOfBlock:
@@ -107,7 +109,7 @@ func parseTimeOrPanic(format string, value string) time.Time {
 
 var HeartbeatsDisabledAt = uint64(parseTimeOrPanic(time.RFC1123, "Mon, 08 Aug 2022 16:00:00 GMT").Unix())
 
-func parseL2Message(rd io.Reader, poster common.Address, timestamp uint64, requestId *common.Hash, chainId *big.Int, depth int) (types.Transactions, error) {
+func parseL2Message(rd io.Reader, poster common.Address, timestamp uint64, requestId *common.Hash, chainId *big.Int, depth int, syndicateBatch bool) (types.Transactions, error) {
 	var l2KindBuf [1]byte
 	if _, err := rd.Read(l2KindBuf[:]); err != nil {
 		return nil, err
@@ -115,12 +117,31 @@ func parseL2Message(rd io.Reader, poster common.Address, timestamp uint64, reque
 
 	switch l2KindBuf[0] {
 	case L2MessageKind_UnsignedUserTx:
+		if syndicateBatch {
+			var err error
+			poster, err = util.AddressFromReader(rd)
+			if err != nil {
+				return nil, fmt.Errorf("failed to parse syndicate poster: %w", err)
+			}
+		}
 		tx, err := parseUnsignedTx(rd, poster, requestId, chainId, L2MessageKind_UnsignedUserTx)
 		if err != nil {
 			return nil, err
 		}
 		return types.Transactions{tx}, nil
 	case L2MessageKind_ContractTx:
+		if syndicateBatch {
+			var err error
+			poster, err = util.AddressFromReader(rd)
+			if err != nil {
+				return nil, fmt.Errorf("failed to parse syndicate poster: %w", err)
+			}
+			id, err := util.HashFromReader(rd)
+			if err != nil {
+				return nil, fmt.Errorf("failed to parse syndicate request id: %w", err)
+			}
+			requestId = &id
+		}
 		tx, err := parseUnsignedTx(rd, poster, requestId, chainId, L2MessageKind_ContractTx)
 		if err != nil {
 			return nil, err
@@ -147,12 +168,17 @@ func parseL2Message(rd io.Reader, poster common.Address, timestamp uint64, reque
 				subRequestId := crypto.Keccak256Hash(requestId[:], arbmath.U256Bytes(index))
 				nextRequestId = &subRequestId
 			}
-			nestedSegments, err := parseL2Message(bytes.NewReader(nextMsg), poster, timestamp, nextRequestId, chainId, depth+1)
+			nestedSegments, err := parseL2Message(bytes.NewReader(nextMsg), poster, timestamp, nextRequestId, chainId, depth+1, syndicateBatch)
+			// ignore invalid batch txs if the chain is a syndicate chain. they may optionally be pruned by the translator as well.
 			if err != nil {
-				return nil, err
+				if !syndicateBatch {
+					return nil, err
+				}
+				log.Warn("ignoring invalid l2 message", "err", err)
+			} else {
+				segments = append(segments, nestedSegments...)
+				index.Add(index, big.NewInt(1))
 			}
-			segments = append(segments, nestedSegments...)
-			index.Add(index, big.NewInt(1))
 		}
 	case L2MessageKind_SignedTx:
 		newTx := new(types.Transaction)

@@ -1,6 +1,6 @@
 [submodule "go-ethereum"]
 	path = go-ethereum
-	url = https://github.com/Layr-Labs/nitro-go-ethereum
+	url = https://github.com/SyndicateProtocol/go-ethereum
 	branch = eigenda-3.1-rebase
 [submodule "fastcache"]
 	path = fastcache
