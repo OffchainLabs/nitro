@@ -121,7 +121,7 @@ func (c *Client) GenerateProof(
 	certificate []byte,
 ) ([]byte, error) {
 	var generateProofResult GenerateProofResult
-	if err := c.CallContext(ctx, &generateProofResult, "daprovider_generateProof", hexutil.Uint64(preimageType), certHash, hexutil.Uint64(offset), hexutil.Bytes(certificate)); err != nil {
+	if err := c.CallContext(ctx, &generateProofResult, "daprovider_generateProof", hexutil.Uint(preimageType), certHash, hexutil.Uint64(offset), hexutil.Bytes(certificate)); err != nil {
 		return nil, fmt.Errorf("error returned from daprovider_generateProof rpc method, err: %w", err)
 	}
 	return generateProofResult.Proof, nil

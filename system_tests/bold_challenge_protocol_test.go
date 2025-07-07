@@ -49,7 +49,6 @@ import (
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
-	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/solgen/go/ospgen"
 	"github.com/offchainlabs/nitro/staker"
@@ -1039,57 +1038,6 @@ func makeBoldBatch(
 
 	// Create compressed batch data
 	message := createBoldBatchData(t, l2Info, numMessages, divergeAtIndex)
-
-	// Post to L1
-	receipt := postBatchToL1(t, ctx, backend, sequencer, seqInbox, message)
-
-	// Sync to node
-	syncBatchToNode(t, ctx, backend, l2Node, seqInboxAddr, receipt)
-}
-
-// postBatchWithDA posts a batch through DA and returns the certificate
-func postBatchWithDA(
-	t *testing.T,
-	l2Node *arbnode.Node,
-	backend *ethclient.Client,
-	sequencer *bind.TransactOpts,
-	seqInbox *bridgegen.SequencerInbox,
-	seqInboxAddr common.Address,
-	batchData []byte,
-	daWriter daprovider.Writer,
-) []byte {
-	ctx := context.Background()
-
-	// Store data in DA provider
-	certificate, err := daWriter.Store(ctx, batchData, 3600, false)
-	Require(t, err)
-
-	// Certificate already contains the CustomDA header flag
-	message := certificate
-
-	// Post to L1
-	receipt := postBatchToL1(t, ctx, backend, sequencer, seqInbox, message)
-
-	// Sync to node
-	syncBatchToNode(t, ctx, backend, l2Node, seqInboxAddr, receipt)
-
-	return certificate
-}
-
-// postBatchWithExistingCertificate posts a batch using an existing certificate
-func postBatchWithExistingCertificate(
-	t *testing.T,
-	l2Node *arbnode.Node,
-	backend *ethclient.Client,
-	sequencer *bind.TransactOpts,
-	seqInbox *bridgegen.SequencerInbox,
-	seqInboxAddr common.Address,
-	certificate []byte,
-) {
-	ctx := context.Background()
-
-	// Certificate already contains the CustomDA header flag
-	message := certificate
 
 	// Post to L1
 	receipt := postBatchToL1(t, ctx, backend, sequencer, seqInbox, message)

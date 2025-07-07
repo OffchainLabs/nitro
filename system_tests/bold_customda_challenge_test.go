@@ -6,6 +6,7 @@
 package arbtest
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"math/big"
@@ -20,6 +21,8 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
 	solimpl "github.com/offchainlabs/bold/chain-abstraction/sol-implementation"
@@ -42,8 +45,11 @@ import (
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/staker/bold"
+	"github.com/offchainlabs/nitro/statetransfer"
 	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/rpcclient"
+	"github.com/offchainlabs/nitro/util/signature"
+	"github.com/offchainlabs/nitro/util/testhelpers"
 	"github.com/offchainlabs/nitro/validator/server_arb"
 	"github.com/offchainlabs/nitro/validator/server_common"
 	"github.com/offchainlabs/nitro/validator/valnode"
@@ -85,6 +91,35 @@ func createReferenceDAProviderServer(t *testing.T, ctx context.Context) (*http.S
 	return server, serverURL
 }
 
+// postBatchWithDA posts a batch through DA and returns the certificate
+func postBatchWithDA(
+	t *testing.T,
+	l2Node *arbnode.Node,
+	backend *ethclient.Client,
+	sequencer *bind.TransactOpts,
+	seqInbox *bridgegen.SequencerInbox,
+	seqInboxAddr common.Address,
+	batchData []byte,
+	daWriter daprovider.Writer,
+) []byte {
+	ctx := context.Background()
+
+	// Store data in DA provider
+	certificate, err := daWriter.Store(ctx, batchData, 3600, false)
+	Require(t, err)
+
+	// Certificate already contains the CustomDA header flag
+	message := certificate
+
+	// Post to L1
+	receipt := postBatchToL1(t, ctx, backend, sequencer, seqInbox, message)
+
+	// Sync to node
+	syncBatchToNode(t, ctx, backend, l2Node, seqInboxAddr, receipt)
+
+	return certificate
+}
+
 // createEvilDAProviderServer creates and starts a DA provider server with an evil provider that can return different data
 func createEvilDAProviderServer(t *testing.T, ctx context.Context) (*http.Server, string, *EvilDAProvider) {
 	// Create evil DA provider
@@ -111,6 +146,82 @@ func createEvilDAProviderServer(t *testing.T, ctx context.Context) (*http.Server
 	t.Logf("Started evil DA provider server at %s", serverURL)
 
 	return server, serverURL, evilProvider
+}
+
+// createNodeBWithSharedContracts creates a second node that uses the same contracts as the first node
+func createNodeBWithSharedContracts(
+	t *testing.T,
+	ctx context.Context,
+	first *arbnode.Node,
+	l1stack *node.Node,
+	l1info *BlockchainTestInfo,
+	l2InitData *statetransfer.ArbosInitializationInfo,
+	nodeConfig *arbnode.Config,
+	stackConfig *node.Config,
+	rollupStackConf setup.RollupStackConfig,
+	stakeTokenAddr common.Address,
+	l1client *ethclient.Client,
+	assertionChain *solimpl.AssertionChain,
+) (*ethclient.Client, *arbnode.Node) {
+	fatalErrChan := make(chan error, 10)
+
+	firstExec, ok := first.ExecutionClient.(*gethexec.ExecutionNode)
+	if !ok {
+		Fatal(t, "not geth execution node")
+	}
+	chainConfig := firstExec.ArbInterface.BlockChain().Config()
+
+	// Use the same addresses as the first node
+	addresses := first.DeployInfo
+
+	if nodeConfig == nil {
+		nodeConfig = arbnode.ConfigDefaultL1NonSequencerTest()
+	}
+	nodeConfig.ParentChainReader.OldHeaderTimeout = 10 * time.Minute
+	nodeConfig.BatchPoster.DataPoster.MaxMempoolTransactions = 18
+	if stackConfig == nil {
+		stackConfig = testhelpers.CreateStackConfigForTest(t.TempDir())
+	}
+	l2stack, err := node.New(stackConfig)
+	Require(t, err)
+
+	l2chainDb, err := l2stack.OpenDatabase("chaindb", 0, 0, "", false)
+	Require(t, err)
+	l2arbDb, err := l2stack.OpenDatabase("arbdb", 0, 0, "", false)
+	Require(t, err)
+
+	AddValNodeIfNeeded(t, ctx, nodeConfig, true, "", "")
+
+	dataSigner := signature.DataSignerFromPrivateKey(l1info.GetInfoWithPrivKey("Sequencer").PrivateKey)
+	txOpts := l1info.GetDefaultTransactOpts("Sequencer", ctx)
+
+	initReader := statetransfer.NewMemoryInitDataReader(l2InitData)
+	initMessage := getInitMessage(ctx, t, l1client, first.DeployInfo)
+
+	execConfig := ExecConfigDefaultNonSequencerTest(t)
+	Require(t, execConfig.Validate())
+	execConfig.Caching.StateScheme = rawdb.HashScheme
+	coreCacheConfig := gethexec.DefaultCacheConfigFor(l2stack, &execConfig.Caching)
+	l2blockchain, err := gethexec.WriteOrTestBlockChain(l2chainDb, coreCacheConfig, initReader, chainConfig, nil, nil, initMessage, execConfig.TxLookupLimit, 0)
+	Require(t, err)
+
+	execConfigFetcher := func() *gethexec.Config { return execConfig }
+	execNode, err := gethexec.CreateExecutionNode(ctx, l2stack, l2chainDb, l2blockchain, l1client, execConfigFetcher, 0)
+	Require(t, err)
+	l1ChainId, err := l1client.ChainID(ctx)
+	Require(t, err)
+	locator, err := server_common.NewMachineLocator("")
+	Require(t, err)
+
+	// Create node using the same addresses as the first node
+	l2node, err := arbnode.CreateNodeFullExecutionClient(ctx, l2stack, execNode, execNode, execNode, execNode, l2arbDb, NewFetcherFromConfig(nodeConfig), l2blockchain.Config(), l1client, addresses, &txOpts, &txOpts, dataSigner, fatalErrChan, l1ChainId, nil /* blob reader */, locator.LatestWasmModuleRoot())
+	Require(t, err)
+
+	l2client := ClientForStack(t, l2stack)
+
+	StartWatchChanErr(t, ctx, fatalErrChan, l2node)
+
+	return l2client, l2node
 }
 
 func testChallengeProtocolBOLDCustomDA(t *testing.T, spawnerOpts ...server_arb.SpawnerOption) {
@@ -190,7 +301,8 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, spawnerOpts ...server_arb.S
 	l2nodeConfig.DA.ExternalProvider.Enable = true
 	l2nodeConfig.DA.ExternalProvider.RPC.URL = providerURLNodeB
 
-	_, l2nodeB, _ := create2ndNodeWithConfigForBoldProtocol(
+	// Create node B using the same contracts as node A
+	l2clientB, l2nodeB := createNodeBWithSharedContracts(
 		t,
 		ctx,
 		l2nodeA,
@@ -201,9 +313,11 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, spawnerOpts ...server_arb.S
 		nil,
 		sconf,
 		stakeTokenAddr,
-		true,
+		l1client,
+		assertionChain,
 	)
 	defer l2nodeB.StopAndWait()
+	_ = l2clientB // suppress unused variable warning
 
 	genesisA, err := l2nodeA.ExecutionClient.ResultAtMessageIndex(0).Await(ctx)
 	Require(t, err)
@@ -374,19 +488,15 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, spawnerOpts ...server_arb.S
 	l2info.GenerateAccount("Destination")
 	sequencerTxOpts := l1info.GetDefaultTransactOpts("Sequencer", ctx)
 
-	honestSeqInbox := l1info.GetAddress("SequencerInbox")
-	evilSeqInbox := l1info.GetAddress("EvilSequencerInbox")
-	honestSeqInboxBinding, err := bridgegen.NewSequencerInbox(honestSeqInbox, l1client)
-	Require(t, err)
-	evilSeqInboxBinding, err := bridgegen.NewSequencerInbox(evilSeqInbox, l1client)
+	seqInbox := l1info.GetAddress("SequencerInbox")
+	seqInboxBinding, err := bridgegen.NewSequencerInbox(seqInbox, l1client)
 	Require(t, err)
 
-	// Post batches to the honest and evil sequencer inbox that are internally equal.
-	// This means the honest and evil sequencer inboxes will agree with all messages in the batch.
+	// Post batches to the shared sequencer inbox
 	seqInboxABI, err := abi.JSON(strings.NewReader(bridgegen.SequencerInboxABI))
 	Require(t, err)
 
-	honestUpgradeExec, err := mocksgen.NewUpgradeExecutorMock(l1info.GetAddress("UpgradeExecutor"), l1client)
+	upgradeExec, err := mocksgen.NewUpgradeExecutorMock(l1info.GetAddress("UpgradeExecutor"), l1client)
 	Require(t, err)
 	data, err := seqInboxABI.Pack(
 		"setIsBatchPoster",
@@ -394,20 +504,8 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, spawnerOpts ...server_arb.S
 		true,
 	)
 	Require(t, err)
-	honestRollupOwnerOpts := l1info.GetDefaultTransactOpts("RollupOwner", ctx)
-	_, err = honestUpgradeExec.ExecuteCall(&honestRollupOwnerOpts, honestSeqInbox, data)
-	Require(t, err)
-
-	evilUpgradeExec, err := mocksgen.NewUpgradeExecutorMock(l1info.GetAddress("EvilUpgradeExecutor"), l1client)
-	Require(t, err)
-	data, err = seqInboxABI.Pack(
-		"setIsBatchPoster",
-		sequencerTxOpts.From,
-		true,
-	)
-	Require(t, err)
-	evilRollupOwnerOpts := l1info.GetDefaultTransactOpts("RollupOwner", ctx)
-	_, err = evilUpgradeExec.ExecuteCall(&evilRollupOwnerOpts, evilSeqInbox, data)
+	rollupOwnerOpts := l1info.GetDefaultTransactOpts("RollupOwner", ctx)
+	_, err = upgradeExec.ExecuteCall(&rollupOwnerOpts, seqInbox, data)
 	Require(t, err)
 
 	// Create DA writers for both nodes
@@ -421,13 +519,11 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, spawnerOpts ...server_arb.S
 	goodBatchData := createBoldBatchData(t, l2info, numMessagesPerBatch, divergeAt)
 
 	// Post good batch through node A's DA and get certificate
-	certificate := postBatchWithDA(t, l2nodeA, l1client, &sequencerTxOpts,
-		honestSeqInboxBinding, honestSeqInbox, goodBatchData, daWriterA)
+	_ = postBatchWithDA(t, l2nodeA, l1client, &sequencerTxOpts,
+		seqInboxBinding, seqInbox, goodBatchData, daWriterA)
 
-	// Post same certificate to node B's sequencer inbox
-	// Since there's no divergence yet, evil provider will just pass through
-	postBatchWithExistingCertificate(t, l2nodeB, l1client, &sequencerTxOpts,
-		evilSeqInboxBinding, evilSeqInbox, certificate)
+	// Both nodes will read this certificate from the shared sequencer inbox
+	// Since there's no divergence yet, both will get the same data
 
 	totalMessagesPosted += numMessagesPerBatch
 
@@ -441,18 +537,21 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, spawnerOpts ...server_arb.S
 	if err != nil {
 		t.Logf("Error getting batch 0 from node A: %v", err)
 	} else {
-		PrintSequencerInboxMessage(t, "Node A (Honest) - Batch 0", msgA0)
+		PrintSequencerInboxMessage(t, "Node A - Batch 0", msgA0)
 	}
 
 	msgB0, _, err := l2nodeB.InboxReader.GetSequencerMessageBytes(ctx, 0)
 	if err != nil {
 		t.Logf("Error getting batch 0 from node B: %v", err)
-	} else {
-		PrintSequencerInboxMessage(t, "Node B (Evil) - Batch 0", msgB0)
 	}
 
+	// Verify messages are identical with shared inbox
 	if msgA0 != nil && msgB0 != nil {
-		CompareSequencerInboxMessages(t, msgA0, msgB0)
+		if !bytes.Equal(msgA0, msgB0) {
+			t.Errorf("Batch 0: Messages should be identical with shared inbox")
+		} else {
+			t.Logf("✓ Batch 0: Messages are identical (as expected with shared inbox)")
+		}
 	}
 
 	// Next, we post another batch, this time with divergence.
@@ -465,18 +564,25 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, spawnerOpts ...server_arb.S
 	l2info.Accounts["Owner"].Nonce.Store(5)                                   // reset our tracking of owner nonce
 	evilBatchData2 := createBoldBatchData(t, l2info, numMessagesPerBatch, 5)  // Diverge at index 5
 
-	// Post good batch through node A and get certificate
-	certificate2 := postBatchWithDA(t, l2nodeA, l1client, &sequencerTxOpts,
-		honestSeqInboxBinding, honestSeqInbox, goodBatchData2, daWriterA)
+	// First, store good batch in DA to get certificate
+	certificate2, err := daWriterA.Store(ctx, goodBatchData2, 3600, false)
+	Require(t, err)
 
-	// Configure evil mapping BEFORE node B processes the certificate
-	dataHash := common.Hash(certificate2[1:33])
-	evilProvider.SetMapping(dataHash, evilBatchData2)
+	// Extract the hash from the certificate (bytes 1-33 are the SHA256 hash)
+	certHash := common.Hash(certificate2[1:33])
 
-	// Post same certificate to node B's sequencer inbox
-	// Now the evil provider will return different data
-	postBatchWithExistingCertificate(t, l2nodeB, l1client, &sequencerTxOpts,
-		evilSeqInboxBinding, evilSeqInbox, certificate2)
+	// Configure evil provider BEFORE posting to L1
+	evilProvider.SetMapping(certHash, evilBatchData2)
+
+	// Now post the certificate to L1 and sync to both nodes
+	receipt := postBatchToL1(t, ctx, l1client, &sequencerTxOpts, seqInboxBinding, certificate2)
+	syncBatchToNode(t, ctx, l1client, l2nodeA, seqInbox, receipt)
+	syncBatchToNode(t, ctx, l1client, l2nodeB, seqInbox, receipt)
+
+	// Both nodes will read the same certificate from shared sequencer inbox
+	// But when they dereference it:
+	// - Node A: DA provider returns goodBatchData2
+	// - Node B: Evil DA provider returns evilBatchData2
 
 	totalMessagesPosted += numMessagesPerBatch
 
@@ -490,18 +596,21 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, spawnerOpts ...server_arb.S
 	if err != nil {
 		t.Logf("Error getting batch 1 from node A: %v", err)
 	} else {
-		PrintSequencerInboxMessage(t, "Node A (Honest) - Batch 1", msgA1)
+		PrintSequencerInboxMessage(t, "Node A - Batch 1", msgA1)
 	}
 
 	msgB1, _, err := l2nodeB.InboxReader.GetSequencerMessageBytes(ctx, 1)
 	if err != nil {
 		t.Logf("Error getting batch 1 from node B: %v", err)
-	} else {
-		PrintSequencerInboxMessage(t, "Node B (Evil) - Batch 1", msgB1)
 	}
 
+	// Verify messages are identical with shared inbox
 	if msgA1 != nil && msgB1 != nil {
-		CompareSequencerInboxMessages(t, msgA1, msgB1)
+		if !bytes.Equal(msgA1, msgB1) {
+			t.Errorf("Batch 1: Messages should be identical with shared inbox")
+		} else {
+			t.Logf("✓ Batch 1: Messages are identical (as expected with shared inbox)")
+		}
 	}
 
 	// Log third batch messages (batch 2 - second CustomDA batch with divergence)
@@ -511,18 +620,22 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, spawnerOpts ...server_arb.S
 	if err != nil {
 		t.Logf("Error getting batch 2 from node A: %v", err)
 	} else {
-		PrintSequencerInboxMessage(t, "Node A (Honest) - Batch 2", msgA2)
+		PrintSequencerInboxMessage(t, "Node A - Batch 2", msgA2)
 	}
 
 	msgB2, _, err := l2nodeB.InboxReader.GetSequencerMessageBytes(ctx, 2)
 	if err != nil {
 		t.Logf("Error getting batch 2 from node B: %v", err)
-	} else {
-		PrintSequencerInboxMessage(t, "Node B (Evil) - Batch 2", msgB2)
 	}
 
+	// Verify messages are identical with shared inbox
 	if msgA2 != nil && msgB2 != nil {
-		CompareSequencerInboxMessages(t, msgA2, msgB2)
+		if !bytes.Equal(msgA2, msgB2) {
+			t.Errorf("Batch 2: Messages should be identical with shared inbox")
+		} else {
+			t.Logf("✓ Batch 2: Messages are identical (as expected with shared inbox)")
+			t.Logf("  Note: DA provider will return different data for same certificate!")
+		}
 	}
 
 	bcA, err := l2nodeA.InboxTracker.GetBatchCount()
