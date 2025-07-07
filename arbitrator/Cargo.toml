@@ -13,7 +13,6 @@ exclude = [
         "stylus/tests/",
         "tools/wasmer/",
         "tools/stylus_benchmark",
-        "tools/machine_runner",
 ]
 resolver = "2"
 
