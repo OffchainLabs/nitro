@@ -1,0 +1,18 @@
+syntax = "proto3";
+
+option go_package = "gethexec/";
+
+package gethexec;
+
+message Transaction {
+    bytes encoded_txn = 1;
+    bytes address = 2;
+    uint64 timestamp = 3;
+}
+
+message InclusionList {
+    repeated Transaction encoded_txns = 1;
+    uint64 round = 2;
+    uint64 consensus_timestamp = 3;
+    uint64 delayed_messages_read = 4;
+}

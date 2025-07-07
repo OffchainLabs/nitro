@@ -83,14 +83,15 @@ type Config struct {
 	// SnapSyncConfig is only used for testing purposes, these should not be configured in production.
 	SnapSyncTest SnapSyncConfig
 
-	EspressoCaffNode EspressoCaffNodeConfig `koanf:"espresso-caff-node"`
+	EspressoCaffNode   EspressoCaffNodeConfig            `koanf:"espresso-caff-node"`
+	TimeboostSequencer gethexec.TimeboostSequencerConfig `koanf:"timeboost-sequencer" reload:"hot"`
 }
 
 func (c *Config) Validate() error {
 	if c.ParentChainReader.Enable && c.Sequencer && !c.DelayedSequencer.Enable {
 		log.Warn("delayed sequencer is not enabled, despite sequencer and l1 reader being enabled")
 	}
-	if c.DelayedSequencer.Enable && !c.Sequencer {
+	if c.DelayedSequencer.Enable && (!c.Sequencer && !c.TimeboostSequencer.Enable) {
 		return errors.New("cannot enable delayed sequencer without enabling sequencer")
 	}
 	if c.InboxReader.ReadMode != "latest" {
@@ -100,8 +101,11 @@ func (c *Config) Validate() error {
 		c.Feed.Output.Enable = false
 		c.Feed.Input.URL = []string{}
 	}
-	if c.EspressoCaffNode.Enable && (c.Sequencer || c.DelayedSequencer.Enable || c.SeqCoordinator.Enable) {
+	if c.EspressoCaffNode.Enable && (c.Sequencer || c.DelayedSequencer.Enable || c.SeqCoordinator.Enable || c.TimeboostSequencer.Enable) {
 		return errors.New("cannot start a Caff node with any sequencer enabled")
+	}
+	if c.TimeboostSequencer.Enable && (c.Sequencer || c.SeqCoordinator.Enable || c.EspressoCaffNode.Enable) {
+		return errors.New("cannot start a timeboost sequencer with any other sequencer enabled")
 	}
 	if err := c.BlockValidator.Validate(); err != nil {
 		return err
@@ -158,6 +162,7 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feed
 	resourcemanager.ConfigAddOptions(prefix+".resource-mgmt", f)
 	BlockMetadataFetcherConfigAddOptions(prefix+".block-metadata-fetcher", f)
 	ConsensusExecutionSyncerConfigAddOptions(prefix+".consensus-execution-syncer", f)
+	gethexec.TimeboostSequencerConfigAddOptions(prefix+".timeboost-sequencer", f)
 }
 
 var ConfigDefault = Config{
@@ -182,6 +187,7 @@ var ConfigDefault = Config{
 	Maintenance:              DefaultMaintenanceConfig,
 	ConsensusExecutionSyncer: DefaultConsensusExecutionSyncerConfig,
 	SnapSyncTest:             DefaultSnapSyncConfig,
+	TimeboostSequencer:       gethexec.DefaultTimeboostSequencerConfig,
 }
 
 func ConfigDefaultL1Test() *Config {
@@ -191,6 +197,7 @@ func ConfigDefaultL1Test() *Config {
 	config.SeqCoordinator = TestSeqCoordinatorConfig
 	config.Sequencer = true
 	config.Dangerous.NoSequencerCoordinator = true
+	TimeboostSequencer * gethexec.TimeboostSequencer
 
 	return config
 }
@@ -286,7 +293,8 @@ type Node struct {
 	ctx                      context.Context
 	ConsensusExecutionSyncer *ConsensusExecutionSyncer
 
-	EspressoCaffNode *EspressoCaffNode
+	EspressoCaffNode   *EspressoCaffNode
+	TimeboostSequencer *gethexec.TimeboostSequencer
 }
 
 type SnapSyncConfig struct {
@@ -1205,6 +1213,18 @@ func createNodeImpl(
 		return nil, err
 	}
 
+	var timeboostSequencer *gethexec.TimeboostSequencer
+	if configFetcher.Get().TimeboostSequencer.Enable {
+		exec, ok := exec.(*gethexec.ExecutionNode)
+		if !ok {
+			log.Crit("Timeboost sequencer is enabled but execution client is not a gethexec.ExecutionNode")
+		}
+		timeboostSequencer, err = gethexec.NewTimeboostSequencer(exec.ExecEngine, l1Reader, func() *gethexec.TimeboostSequencerConfig { return &configFetcher.Get().TimeboostSequencer })
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	consensusExecutionSyncerConfigFetcher := func() *ConsensusExecutionSyncerConfig {
 		return &configFetcher.Get().ConsensusExecutionSyncer
 	}
@@ -1238,6 +1258,7 @@ func createNodeImpl(
 		configFetcher:            configFetcher,
 		ctx:                      ctx,
 		ConsensusExecutionSyncer: consensusExecutionSyncer,
+		TimeboostSequencer: timeboostSequencer
 	}, nil
 }
 

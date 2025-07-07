@@ -87,6 +87,8 @@ jobs:
         uses: actions/checkout@v4
         with:
           submodules: recursive
+      - name: Install protobuf compiler
+        run: sudo apt-get install -y protobuf-compiler
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
