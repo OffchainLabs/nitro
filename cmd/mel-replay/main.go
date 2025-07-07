@@ -34,6 +34,11 @@ func (w *wavmPreimageResolver) ResolveTypedPreimage(
 	return melwavmio.ResolveTypedPreimage(preimageType, hash)
 }
 
+// Runs a replay binary of message extraction for Arbitrum chains. Given a start and end parent chain
+// block hash, this program will extract all block header hashes in that range, and then run the
+// message extraction algorithm over those block headers, starting from a starting MEL state and processing
+// block headers one-by-one. At the end, a final MEL state is produced, and its hash is set into the
+// machine using a wavmio method.
 func main() {
 	melwavmio.StubInit()
 	gethhook.RequireHookedGeth()
@@ -46,6 +51,7 @@ func main() {
 	startMelRoot := melwavmio.GetStartMELRoot()
 	endParentChainBlockHash := melwavmio.GetEndParentChainBlockHash()
 
+	// Fetches start MEL state from the start MEL root.
 	startStateBytes, err := melwavmio.ResolveTypedPreimage(
 		arbutil.Keccak256PreimageType,
 		startMelRoot,
@@ -113,6 +119,7 @@ func main() {
 	melwavmio.StubFinal()
 }
 
+// Extracts all block header hashes in the range from startHash to endHash.
 func walkBackwards(
 	startHash,
 	endHash common.Hash,
@@ -130,6 +137,7 @@ func walkBackwards(
 	return headerHashes
 }
 
+// Gets a block header by its hash using the preimage resolver.
 func getHeaderByHash(hash common.Hash) *types.Header {
 	enc, err := melwavmio.ResolveTypedPreimage(arbutil.Keccak256PreimageType, hash)
 	if err != nil {
