@@ -21,7 +21,7 @@ type State struct {
 	ParentChainBlockHash               common.Hash
 	ParentChainPreviousBlockHash       common.Hash
 	MessageAccumulator                 common.Hash
-	DelayedMessageAccumulator          common.Hash
+	DelayedMessagesSeenRoot            common.Hash
 	MsgCount                           uint64
 	BatchCount                         uint64
 	DelayedMessagesRead                uint64
@@ -45,6 +45,10 @@ type StateDatabase interface {
 		state *State,
 		delayedMessages []*DelayedInboxMessage,
 	) error
+	DelayedMessageDatabase
+}
+
+type DelayedMessageDatabase interface {
 	ReadDelayedMessage(
 		ctx context.Context,
 		state *State,
@@ -73,7 +77,7 @@ func (s *State) Clone() *State {
 	copy(parentChainHash[:], s.ParentChainBlockHash[:])
 	copy(parentChainPrevHash[:], s.ParentChainPreviousBlockHash[:])
 	copy(msgAcc[:], s.MessageAccumulator[:])
-	copy(delayedMsgAcc[:], s.DelayedMessageAccumulator[:])
+	copy(delayedMsgAcc[:], s.DelayedMessagesSeenRoot[:])
 	return &State{
 		Version:                            s.Version,
 		ParentChainId:                      s.ParentChainId,
@@ -83,7 +87,7 @@ func (s *State) Clone() *State {
 		ParentChainBlockHash:               parentChainHash,
 		ParentChainPreviousBlockHash:       parentChainPrevHash,
 		MessageAccumulator:                 msgAcc,
-		DelayedMessageAccumulator:          delayedMsgAcc,
+		DelayedMessagesSeenRoot:            delayedMsgAcc,
 		MsgCount:                           s.MsgCount,
 		DelayedMessagesRead:                s.DelayedMessagesRead,
 		DelayedMessagedSeen:                s.DelayedMessagedSeen,
