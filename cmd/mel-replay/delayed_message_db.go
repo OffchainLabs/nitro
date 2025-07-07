@@ -23,6 +23,7 @@ func (d *delayedMessageDatabase) ReadDelayedMessage(
 	state *mel.State,
 	msgIndex uint64,
 ) (*mel.DelayedInboxMessage, error) {
+	originalMsgIndex := msgIndex
 	totalMsgsSeen := state.DelayedMessagedSeen
 	if totalMsgsSeen == 0 {
 		return nil, errors.New("no delayed messages available")
