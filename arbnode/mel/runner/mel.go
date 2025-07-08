@@ -214,6 +214,14 @@ func (m *MessageExtractor) GetFinalizedMsgCount(ctx context.Context) (arbutil.Me
 	return arbutil.MessageIndex(state.MsgCount), nil
 }
 
+func (m *MessageExtractor) GetFinalizedDelayedMessagesRead(ctx context.Context) (uint64, error) {
+	state, err := m.getStateByRPCBlockNum(ctx, rpc.FinalizedBlockNumber)
+	if err != nil {
+		return 0, err
+	}
+	return state.DelayedMessagesRead, nil
+}
+
 func (m *MessageExtractor) GetMsgCount(ctx context.Context) (uint64, error) {
 	headState, err := m.melDB.GetHeadMelState(ctx)
 	if err != nil {
@@ -288,26 +296,20 @@ func (m *MessageExtractor) Act(ctx context.Context) (time.Duration, error) {
 				err,
 			)
 		}
-		// Finalized block number is used in FetchInitialState to initialize delayedMessageBacklog
-		finalizedBlk, err := m.parentChainReader.HeaderByNumber(ctx, big.NewInt(rpc.FinalizedBlockNumber.Int64()))
-		if err != nil {
-			return m.retryInterval, err
-		}
 		// Fetch the initial state for MEL from a state fetcher interface by parent chain block hash.
 		melState, err := m.initialStateFetcher.FetchInitialState(
 			ctx,
 			m.startParentChainBlockHash,
-			finalizedBlk.Number.Uint64(),
 		)
 		if err != nil {
 			return m.retryInterval, err
 		}
-		// Initialize delayedMessageBacklog if its nil
-		if melState.GetDelayedMessageBacklog() == nil {
-			melState.SetDelayedMessageBacklog(&mel.DelayedMessageBacklog{})
+		// Initialize delayedMessageBacklog and add it to the melState
+		delayedMessageBacklog := NewDelayedMessageBacklog(m.config.DelayedMessageBacklogCapacity, m.GetFinalizedDelayedMessagesRead)
+		if err = delayedMessageBacklog.Initialize(m.GetContext(), m.melDB, melState); err != nil {
+			return m.retryInterval, err
 		}
-		// Set target capacity of delayedMessageBacklog
-		melState.GetDelayedMessageBacklog().SetTargetCapacity(m.config.DelayedMessageBacklogCapacity)
+		melState.SetDelayedMessageBacklog(delayedMessageBacklog)
 		// Begin the next FSM state immediately.
 		return 0, m.fsm.Do(processNextBlock{
 			melState: melState,
@@ -324,10 +326,6 @@ func (m *MessageExtractor) Act(ctx context.Context) (time.Duration, error) {
 			return m.retryInterval, fmt.Errorf("invalid action: %T", current.SourceEvent)
 		}
 		preState := processAction.melState
-		if preState.GetDelayedMessageBacklog() == nil { // Safety check to avoid panics in the later codepath
-			return m.retryInterval, errors.New("detected nil delayedMessageBacklog of melState, shouldnt be possible")
-		}
-
 		parentChainBlock, err := m.parentChainReader.BlockByNumber(
 			ctx,
 			new(big.Int).SetUint64(preState.ParentChainBlockNumber+1),
@@ -348,14 +346,6 @@ func (m *MessageExtractor) Act(ctx context.Context) (time.Duration, error) {
 				melState: preState,
 			})
 		}
-		preState.GetDelayedMessageBacklog().Clear(func() uint64 {
-			finalizedState, err := m.getStateByRPCBlockNum(ctx, rpc.FinalizedBlockNumber)
-			if err != nil {
-				log.Error("Error fetching melState corresponding to FinalizedBlockNumber from parent chain, clearing of read and finalized delayedMeta from the DelayedMessageBacklog will be retried again later", "err", err)
-				return 0
-			}
-			return finalizedState.DelayedMessagesRead
-		})
 		// Creates a receipt fetcher for the specific parent chain block, to be used
 		// by the message extraction function.
 		receiptFetcher := newBlockReceiptFetcher(m.parentChainReader, parentChainBlock)
@@ -420,10 +410,10 @@ func (m *MessageExtractor) Act(ctx context.Context) (time.Duration, error) {
 		if err != nil {
 			return m.retryInterval, err
 		}
-		// Adjust delayedMessageBacklog
-		delayedMessageBacklog := currentDirtyState.GetDelayedMessageBacklog()
-		delayedMessageBacklog.Reorg(previousState.DelayedMessagedSeen)
-		previousState.SetDelayedMessageBacklog(delayedMessageBacklog)
+		// This adjusts delayedMessageBacklog
+		if err := currentDirtyState.ReorgTo(previousState); err != nil {
+			return m.retryInterval, err
+		}
 		return 0, m.fsm.Do(processNextBlock{
 			melState: previousState,
 		})

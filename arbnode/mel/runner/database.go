@@ -33,87 +33,6 @@ func NewDatabase(db ethdb.Database) *Database {
 	return &Database{db}
 }
 
-// initializeDelayedMessageBacklog is to be only called by the Start fsm step of MEL
-func (d *Database) initializeDelayedMessageBacklog(ctx context.Context, state *mel.State, finalizedBlock uint64) error {
-	if state.DelayedMessagedSeen == state.DelayedMessagesRead && state.ParentChainBlockNumber <= finalizedBlock {
-		return nil // in this case initialization of backlog is handled later in the Start fsm step of mel runner
-	}
-	// To make the delayedMessageBacklog reorg resistant we will need to add more delayedMeta even though those messages are `Read`
-	// this is only relevant if the current head Mel state's ParentChainBlockNumber is not yet finalized
-	targetDelayedMessagesRead := state.DelayedMessagesRead
-	if finalizedBlock > 0 && state.ParentChainBlockNumber > finalizedBlock {
-		finalizedMelState, err := d.State(ctx, finalizedBlock)
-		if err != nil {
-			return err
-		}
-		targetDelayedMessagesRead = finalizedMelState.DelayedMessagesRead
-	}
-	// We first find the melState whose DelayedMessagedSeen is just before the targetDelayedMessagesRead, so that we can construct a merkleAccumulator
-	// thats relevant to us
-	var err error
-	var prev *mel.State
-	delayedMsgIndexToParentChainBlockNum := make(map[uint64]uint64)
-	curr := state
-	for i := state.ParentChainBlockNumber - 1; i > 0; i-- {
-		prev, err = d.State(ctx, i)
-		if err != nil {
-			return err
-		}
-		if curr.DelayedMessagedSeen > prev.DelayedMessagedSeen { // Meaning the 'curr' melState has seen some delayed messages
-			for j := prev.DelayedMessagedSeen; j < curr.DelayedMessagedSeen; j++ {
-				delayedMsgIndexToParentChainBlockNum[j] = curr.ParentChainBlockNumber
-			}
-		}
-		if prev.DelayedMessagedSeen <= targetDelayedMessagesRead {
-			break
-		}
-		curr = prev
-	}
-	if prev == nil {
-		return nil
-	}
-	acc, err := merkleAccumulator.NewNonpersistentMerkleAccumulatorFromPartials(
-		mel.ToPtrSlice(prev.DelayedMessageMerklePartials),
-	)
-	if err != nil {
-		return err
-	}
-	// We then walk forward the merkleAccumulator till targetDelayedMessagesRead
-	for index := prev.DelayedMessagedSeen; index < targetDelayedMessagesRead; index++ {
-		msg, err := d.fetchDelayedMessage(index)
-		if err != nil {
-			return err
-		}
-		_, err = acc.Append(msg.Hash())
-		if err != nil {
-			return err
-		}
-	}
-	// Accumulator is now at the step we need, hence we start creating DelayedMeta for all the delayed messages that are seen but not read
-	delayedMessageBacklog := mel.NewDelayedMessageBacklog()
-	for index := targetDelayedMessagesRead; index < state.DelayedMessagedSeen; index++ {
-		msg, err := d.fetchDelayedMessage(index)
-		if err != nil {
-			return err
-		}
-		_, err = acc.Append(msg.Hash())
-		if err != nil {
-			return err
-		}
-		merkleRoot, err := acc.Root()
-		if err != nil {
-			return err
-		}
-		delayedMessageBacklog.Add(&mel.DelayedMeta{
-			Index:                       index,
-			MerkleRoot:                  merkleRoot,
-			MelStateParentChainBlockNum: delayedMsgIndexToParentChainBlockNum[index],
-		})
-	}
-	state.SetDelayedMessageBacklog(delayedMessageBacklog)
-	return nil
-}
-
 func (d *Database) GetHeadMelState(ctx context.Context) (*mel.State, error) {
 	headMelStateBlockNum, err := d.GetHeadMelStateBlockNum()
 	if err != nil {
@@ -123,7 +42,7 @@ func (d *Database) GetHeadMelState(ctx context.Context) (*mel.State, error) {
 }
 
 // FetchInitialState method of the StateFetcher interface is implemented by the database as it would be used after the initial fetch
-func (d *Database) FetchInitialState(ctx context.Context, parentChainBlockHash common.Hash, finalizedBlock uint64) (*mel.State, error) {
+func (d *Database) FetchInitialState(ctx context.Context, parentChainBlockHash common.Hash) (*mel.State, error) {
 	state, err := d.GetHeadMelState(ctx)
 	if err != nil {
 		return nil, err
@@ -131,9 +50,6 @@ func (d *Database) FetchInitialState(ctx context.Context, parentChainBlockHash c
 	// We check if our current head mel state corresponds to this parentChainBlockHash
 	if state.ParentChainBlockHash != parentChainBlockHash {
 		return nil, fmt.Errorf("head mel state's parentChainBlockHash in db: %v doesnt match the given parentChainBlockHash: %v ", state.ParentChainBlockHash, parentChainBlockHash)
-	}
-	if err = d.initializeDelayedMessageBacklog(ctx, state, finalizedBlock); err != nil {
-		return nil, err
 	}
 	return state, nil
 }
@@ -223,10 +139,12 @@ func (d *Database) SaveDelayedMessages(ctx context.Context, state *mel.State, de
 }
 
 func (d *Database) checkAgainstAccumulator(ctx context.Context, state *mel.State, msg *mel.DelayedInboxMessage, index uint64) (bool, error) {
-	delayedMeta := state.GetDelayedMessageBacklog().GetByIndex(index)
+	wantMerkleRoot, melStateParentChainBlockNum, err := state.GetDelayedMessageBacklog().Get(index)
+	if err != nil {
+		return false, err
+	}
 	acc := state.GetReadDelayedMsgsAcc()
 	if acc == nil {
-		melStateParentChainBlockNum := delayedMeta.MelStateParentChainBlockNum
 		targetState, err := d.State(ctx, melStateParentChainBlockNum-1)
 		if err != nil {
 			return false, err
@@ -248,7 +166,7 @@ func (d *Database) checkAgainstAccumulator(ctx context.Context, state *mel.State
 		}
 		state.SetReadDelayedMsgsAcc(acc)
 	}
-	_, err := acc.Append(msg.Hash())
+	_, err = acc.Append(msg.Hash())
 	if err != nil {
 		return false, err
 	}
@@ -256,7 +174,7 @@ func (d *Database) checkAgainstAccumulator(ctx context.Context, state *mel.State
 	if err != nil {
 		return false, err
 	}
-	return merkleRoot == delayedMeta.MerkleRoot, nil
+	return merkleRoot == wantMerkleRoot, nil
 }
 
 func (d *Database) fetchDelayedMessage(index uint64) (*mel.DelayedInboxMessage, error) {

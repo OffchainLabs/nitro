@@ -31,10 +31,8 @@ type State struct {
 	DelayedMessagedSeen                uint64
 	DelayedMessageMerklePartials       []common.Hash `rlp:"optional"`
 
-	// delayedMessageBacklog represents the deque containing DelayedMeta that hold metadata relating to delayed messages that have been seen but not yet read,
-	// deque is trimmed from left after the corresponding delayed messages are read and its melStateParentChainBlockNum is finalized,
-	// trimmed from right in case of a reorg by the Reorging fsm step one melstate at a time
-	delayedMessageBacklog *DelayedMessageBacklog // this is initialized in FetchInitialState and is never `nil` from then onwards
+	// delayedMessageBacklog is initialized once in the Start fsm step of mel runner and is persisted across all future states
+	delayedMessageBacklog DelayedMessageBacklog
 
 	// seen and read DelayedMsgsAcc are MerkleAccumulators that reset after the current melstate is finished generating, to prevent stale validations
 	seenDelayedMsgsAcc *merkleAccumulator.MerkleAccumulator
@@ -78,17 +76,20 @@ type MessageConsumer interface {
 }
 
 // Defines an interface for fetching a MEL state by parent chain block hash.
-//
-// If the initial implementation is melDB then the melState's delayedMessageBacklog will be
-// initialized automatically but for non-melDB implementations:
-//   - either DelayedMessagesSeen must equal DelayedMessagesRead
-//     (OR)
-//   - delayedMessageBacklog must be manually initialized using SetDelayedMessageBacklog
 type InitialStateFetcher interface {
-	// FetchInitialState should initialize delayedMessageBacklog in case the initial state's DelayedMessagedSeen is ahead of DelayedMessagedRead
 	FetchInitialState(
-		ctx context.Context, parentChainBlockHash common.Hash, finalizedBlock uint64,
+		ctx context.Context, parentChainBlockHash common.Hash,
 	) (*State, error)
+}
+
+// DelayedMessageBacklog is an interface exposing needed methods of the corresponding data structure defined in melrunner
+type DelayedMessageBacklog interface {
+	Clone() DelayedMessageBacklog
+	Add(index uint64, merkleRoot common.Hash, parentChainBlockNum uint64) error
+	Get(index uint64) (common.Hash, uint64, error)
+	SetInitMsg(msg *DelayedInboxMessage)
+	GetInitMsg() *DelayedInboxMessage
+	Reorg(newDelayedMessagedSeen uint64) error
 }
 
 func (s *State) Hash() common.Hash {
@@ -116,7 +117,7 @@ func (s *State) Clone() *State {
 		copy(clone[:], partial[:])
 		delayedMessageMerklePartials = append(delayedMessageMerklePartials, clone)
 	}
-	var delayedMessageBacklog *DelayedMessageBacklog
+	var delayedMessageBacklog DelayedMessageBacklog
 	if s.delayedMessageBacklog != nil {
 		delayedMessageBacklog = s.delayedMessageBacklog.Clone()
 	}
@@ -164,11 +165,9 @@ func (s *State) AccumulateDelayedMessage(msg *DelayedInboxMessage) error {
 	if s.delayedMessageBacklog == nil {
 		return fmt.Errorf("delayedMessageBacklog of the state is nil. ParentChainBlockNumber: %d", s.ParentChainBlockNumber)
 	}
-	s.delayedMessageBacklog.Add(&DelayedMeta{
-		Index:                       s.DelayedMessagedSeen,
-		MerkleRoot:                  merkleRoot,
-		MelStateParentChainBlockNum: s.ParentChainBlockNumber,
-	})
+	if err := s.delayedMessageBacklog.Add(s.DelayedMessagedSeen, merkleRoot, s.ParentChainBlockNumber); err != nil {
+		return err
+	}
 	// Found init message
 	if s.DelayedMessagedSeen == 0 {
 		s.delayedMessageBacklog.SetInitMsg(msg)
@@ -193,12 +192,21 @@ func (s *State) SetReadDelayedMsgsAcc(acc *merkleAccumulator.MerkleAccumulator) 
 	s.readDelayedMsgsAcc = acc
 }
 
-func (s *State) GetDelayedMessageBacklog() *DelayedMessageBacklog {
+func (s *State) GetDelayedMessageBacklog() DelayedMessageBacklog {
 	return s.delayedMessageBacklog
 }
 
-func (s *State) SetDelayedMessageBacklog(delayedMessageBacklog *DelayedMessageBacklog) {
+func (s *State) SetDelayedMessageBacklog(delayedMessageBacklog DelayedMessageBacklog) {
 	s.delayedMessageBacklog = delayedMessageBacklog
+}
+
+func (s *State) ReorgTo(newState *State) error {
+	delayedMessageBacklog := s.GetDelayedMessageBacklog()
+	if err := delayedMessageBacklog.Reorg(newState.DelayedMessagedSeen); err != nil {
+		return err
+	}
+	newState.SetDelayedMessageBacklog(delayedMessageBacklog)
+	return nil
 }
 
 func ToPtrSlice[T any](list []T) []*T {
