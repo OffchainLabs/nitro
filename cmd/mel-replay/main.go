@@ -6,6 +6,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"os"
@@ -13,13 +14,16 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/crypto/kzg4844"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rlp"
 
 	"github.com/offchainlabs/nitro/arbnode/mel"
 	melextraction "github.com/offchainlabs/nitro/arbnode/mel/extraction"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/gethhook"
+	"github.com/offchainlabs/nitro/wavmio"
 	melwavmio "github.com/offchainlabs/nitro/wavmio/mel"
 )
 
@@ -32,6 +36,55 @@ type wavmPreimageResolver struct{}
 func (w *wavmPreimageResolver) ResolveTypedPreimage(
 	preimageType arbutil.PreimageType, hash common.Hash) ([]byte, error) {
 	return melwavmio.ResolveTypedPreimage(preimageType, hash)
+}
+
+type BlobPreimageReader struct {
+}
+
+func (r *BlobPreimageReader) GetBlobs(
+	ctx context.Context,
+	batchBlockHash common.Hash,
+	versionedHashes []common.Hash,
+) ([]kzg4844.Blob, error) {
+	var blobs []kzg4844.Blob
+	for _, h := range versionedHashes {
+		var blob kzg4844.Blob
+		preimage, err := wavmio.ResolveTypedPreimage(arbutil.EthVersionedHashPreimageType, h)
+		if err != nil {
+			return nil, err
+		}
+		if len(preimage) != len(blob) {
+			return nil, fmt.Errorf("for blob %v got back preimage of length %v but expected blob length %v", h, len(preimage), len(blob))
+		}
+		copy(blob[:], preimage)
+		blobs = append(blobs, blob)
+	}
+	return blobs, nil
+}
+
+func (r *BlobPreimageReader) Initialize(ctx context.Context) error {
+	return nil
+}
+
+// To generate:
+// key, _ := crypto.HexToECDSA("0000000000000000000000000000000000000000000000000000000000000001")
+// sig, _ := crypto.Sign(make([]byte, 32), key)
+// println(hex.EncodeToString(sig))
+const sampleSignature = "a0b37f8fba683cc68f6574cd43b39f0343a50008bf6ccea9d13231d9e7e2e1e411edc8d307254296264aebfc3dc76cd8b668373a072fd64665b50000e9fcce5201"
+
+// We call this early to populate the secp256k1 ecc basepoint cache in the cached early machine state.
+// That means we don't need to re-compute it for every block.
+func populateEcdsaCaches() {
+	signature, err := hex.DecodeString(sampleSignature)
+	if err != nil {
+		log.Warn("failed to decode sample signature to populate ECDSA cache", "err", err)
+		return
+	}
+	_, err = crypto.Ecrecover(make([]byte, 32), signature)
+	if err != nil {
+		log.Warn("failed to recover signature to populate ECDSA cache", "err", err)
+		return
+	}
 }
 
 // Runs a replay binary of message extraction for Arbitrum chains. Given a start and end parent chain
@@ -47,6 +100,10 @@ func main() {
 		log.NewTerminalHandler(io.Writer(os.Stderr), false))
 	glogger.Verbosity(log.LevelError)
 	log.SetDefault(log.NewLogger(glogger))
+
+	populateEcdsaCaches()
+
+	dapReaders := []daprovider.Reader{daprovider.NewReaderForBlobReader(&BlobPreimageReader{})}
 
 	startMelRoot := melwavmio.GetStartMELRoot()
 	endParentChainBlockHash := melwavmio.GetEndParentChainBlockHash()
@@ -97,7 +154,7 @@ func main() {
 			ctx,
 			currentState,
 			header,
-			nil, // TODO: Provide da readers here.
+			dapReaders,
 			delayedMsgDatabase,
 			receiptFetcher,
 			txsFetcher,
