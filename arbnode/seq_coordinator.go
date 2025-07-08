@@ -42,7 +42,7 @@ type SeqCoordinator struct {
 	stopwaiter.StopWaiter
 
 	redisCoordinatorMutex sync.RWMutex
-	redisCoordinator      redisutil.RedisCoordinator
+	redisCoordinator      *redisutil.RedisCoordinator
 	prevRedisCoordinator  *redisutil.RedisCoordinator
 	prevRedisMessageCount arbutil.MessageIndex
 
@@ -172,7 +172,7 @@ func NewSeqCoordinator(
 		return nil, err
 	}
 	coordinator := &SeqCoordinator{
-		redisCoordinator: *redisCoordinator,
+		redisCoordinator: redisCoordinator,
 		sync:             sync,
 		streamer:         streamer,
 		sequencer:        sequencer,
@@ -196,14 +196,14 @@ func (c *SeqCoordinator) SetDelayedSequencer(delayedSequencer *DelayedSequencer)
 func (c *SeqCoordinator) RedisCoordinator() *redisutil.RedisCoordinator {
 	c.redisCoordinatorMutex.RLock()
 	defer c.redisCoordinatorMutex.RUnlock()
-	return &c.redisCoordinator
+	return c.redisCoordinator
 }
 
 func (c *SeqCoordinator) setRedisCoordinator(redisCoordinator *redisutil.RedisCoordinator) {
 	c.redisCoordinatorMutex.Lock()
 	defer c.redisCoordinatorMutex.Unlock()
-	c.prevRedisCoordinator = &c.redisCoordinator
-	c.redisCoordinator = *redisCoordinator
+	c.prevRedisCoordinator = c.redisCoordinator
+	c.redisCoordinator = redisCoordinator
 }
 
 func StandaloneSeqCoordinatorInvalidateMsgIndex(ctx context.Context, redisClient redis.UniversalClient, keyConfig string, msgIndex arbutil.MessageIndex) error {
