@@ -51,7 +51,7 @@ func TestRevalidationForSpecifiedRange(t *testing.T) {
 	// Create transactions till batch count is 15
 	createTransactionTillBatchCount(ctx, t, builder, 15)
 	// Wait for nodeB to sync up to the first node
-	waitForBlocksToCatchup(ctx, t, builder.L2.Client, nodeB.Client)
+	waitForBlocksToCatchup(ctx, t, builder.L2.Client, nodeB.Client, 10*time.Minute)
 
 	// Create a config with revalidation range and same database directory as the 2nd node
 	nodeConfig := createNodeConfigWithRevalidationRange(builder)
