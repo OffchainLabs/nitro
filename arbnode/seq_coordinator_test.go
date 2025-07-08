@@ -128,7 +128,7 @@ func TestRedisSeqCoordinatorAtomic(t *testing.T) {
 		redisCoordinator, err := redisutil.NewRedisCoordinator(config.RedisUrl, config.RedisQuorumSize)
 		Require(t, err)
 		coordinator := &SeqCoordinator{
-			redisCoordinator: *redisCoordinator,
+			redisCoordinator: redisCoordinator,
 			config:           config,
 			signer:           nullSigner,
 		}
@@ -184,7 +184,7 @@ func TestSeqCoordinatorDeletesFinalizedMessages(t *testing.T) {
 	redisCoordinator, err := redisutil.NewRedisCoordinator(config.RedisUrl, config.RedisQuorumSize)
 	Require(t, err)
 	coordinator := &SeqCoordinator{
-		redisCoordinator: *redisCoordinator,
+		redisCoordinator: redisCoordinator,
 		config:           config,
 		signer:           nullSigner,
 	}
@@ -275,7 +275,7 @@ func TestSeqCoordinatorAddsBlockMetadata(t *testing.T) {
 	redisCoordinator, err := redisutil.NewRedisCoordinator(config.RedisUrl, config.RedisQuorumSize)
 	Require(t, err)
 	coordinator := &SeqCoordinator{
-		redisCoordinator: *redisCoordinator,
+		redisCoordinator: redisCoordinator,
 		config:           config,
 		signer:           nullSigner,
 	}
