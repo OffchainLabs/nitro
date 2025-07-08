@@ -90,7 +90,7 @@ struct Opts {
     #[structopt(long)]
     max_steps: Option<u64>,
     /// Options for WAVM binary generation.
-    #[structopt(long, default_value = "module_root.txt")]
+    #[structopt(long, default_value = "module-root.txt")]
     module_root_filename: String,
     #[structopt(long, default_value = "machine.wavm.br")]
     brotli_wavm_machine_filename: String,
