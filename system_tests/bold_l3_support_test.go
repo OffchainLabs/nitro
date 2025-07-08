@@ -40,6 +40,7 @@ func TestL3ChallengeProtocolBOLD(t *testing.T) {
 
 	// Block validation requires db hash scheme.
 	builder.execConfig.Caching.StateScheme = rawdb.HashScheme
+	builder.execConfig.RPC.StateScheme = rawdb.HashScheme
 	builder.nodeConfig.BlockValidator.Enable = true
 	builder.nodeConfig.Staker.Enable = true
 	builder.nodeConfig.Staker.Strategy = "MakeNodes"
@@ -53,6 +54,7 @@ func TestL3ChallengeProtocolBOLD(t *testing.T) {
 	defer cleanupL1AndL2()
 
 	builder.l3Config.execConfig.Caching.StateScheme = rawdb.HashScheme
+	builder.l3Config.execConfig.RPC.StateScheme = rawdb.HashScheme
 	builder.l3Config.nodeConfig.Staker.Enable = true
 	builder.l3Config.nodeConfig.BlockValidator.Enable = true
 	builder.l3Config.nodeConfig.Staker.Strategy = "MakeNodes"

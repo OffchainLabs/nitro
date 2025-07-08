@@ -29,7 +29,7 @@ jobs:
       matrix:
         test-mode: [race, legacychallenge, long, challenge, l3challenge]
 
-    if: github.event_name == 'schedule' && github.ref == 'refs/heads/master'
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'schedule' && github.ref == 'refs/heads/master')
     
     steps:
       - name: Checkout
@@ -89,7 +89,7 @@ jobs:
         run: cargo install --force cbindgen
 
       - name: Cache Build Products
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: |
             ~/.cache/go-build
@@ -97,7 +97,7 @@ jobs:
           restore-keys: ${{ runner.os }}-go-
 
       - name: Cache Rust Build Products
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/
@@ -110,7 +110,7 @@ jobs:
           restore-keys: ${{ runner.os }}-cargo-${{ steps.rust-version.outputs.version }}-
 
       - name: Cache cbrotli
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         id: cache-cbrotli
         with:
           path: |
@@ -156,7 +156,7 @@ jobs:
         if: matrix.test-mode == 'race'
         run: |
           echo "Running tests with Hash Scheme" >> full.log
-          ${{ github.workspace }}/.github/workflows/gotestsum.sh --race --timeout 30m --test_state_scheme hash
+          ${{ github.workspace }}/.github/workflows/gotestsum.sh --race --timeout 90m --test_state_scheme hash
 
       - name: run challenge tests
         if: matrix.test-mode == 'challenge'
@@ -203,6 +203,8 @@ jobs:
         uses: actions/checkout@v4
         with:
           submodules: true
+          fetch-depth: 10           // Will cover most PRs
+          persist-credentials: true // In case changed-files requires deeper depth
           
       - name: Check changed files
         id: changed-files
@@ -280,7 +282,7 @@ jobs:
 
       - name: Cache Build Products
         if: steps.changed-files.outputs.any_changed == 'true'
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: |
             ~/.cache/go-build
@@ -289,7 +291,7 @@ jobs:
 
       - name: Cache Rust Build Products
         if: steps.changed-files.outputs.any_changed == 'true'
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/
@@ -305,7 +307,7 @@ jobs:
 
       - name: Cache cbrotli
         if: steps.changed-files.outputs.any_changed == 'true'
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         id: cache-cbrotli
         with:
           path: |

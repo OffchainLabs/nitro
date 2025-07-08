@@ -49,7 +49,6 @@ const (
 // Therefore we expect the one dimensional gas cost to be
 // 375, computation to be 375, and all other gas dimensions to be 0
 func TestDimLogLog0TopicsOnlyMemUnchanged(t *testing.T) {
-	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -83,7 +82,6 @@ func TestDimLogLog0TopicsOnlyMemUnchanged(t *testing.T) {
 // Therefore we expect the one dimensional gas cost to be 375 + the data gas cost,
 // computation to be 375, the history growth to be 8 * 7, and all other gas dimensions to be 0
 func TestDimLogLog0ExtraDataMemUnchanged(t *testing.T) {
-	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -157,7 +155,6 @@ func TestDimLogLog1TopicsOnlyMemUnchanged(t *testing.T) {
 // computation to be 375 + 119, the state access to be 0, the state growth to be 0,
 // the history growth to be 256 + 8 * 9, and the state growth refund to be 0
 func TestDimLogLog1ExtraDataMemUnchanged(t *testing.T) {
-	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -194,7 +191,6 @@ func TestDimLogLog1ExtraDataMemUnchanged(t *testing.T) {
 // computation to be 375 + 2 * 119, the state access to be 0, the state growth to be 0,
 // the history growth to be 2 * 256, and the state growth refund to be 0
 func TestDimLogLog2TopicsOnlyMemUnchanged(t *testing.T) {
-	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -233,7 +229,6 @@ func TestDimLogLog2TopicsOnlyMemUnchanged(t *testing.T) {
 // the state access to be 0, the state growth to be 0,
 // the history growth to be 2 * 256 + 32*8, and the state growth refund to be 0
 func TestDimLogLog2ExtraDataMemUnchanged(t *testing.T) {
-	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -270,7 +265,6 @@ func TestDimLogLog2ExtraDataMemUnchanged(t *testing.T) {
 // computation to be 375 + 3 * 119, the state access to be 0, the state growth to be 0,
 // the history growth to be 3 * 256, and the state growth refund to be 0
 func TestDimLogLog3TopicsOnlyMemUnchanged(t *testing.T) {
-	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -309,7 +303,6 @@ func TestDimLogLog3TopicsOnlyMemUnchanged(t *testing.T) {
 // the state access to be 0, the state growth to be 0,
 // the history growth to be 3 * 256 + 32*8, and the state growth refund to be 0
 func TestDimLogLog3ExtraDataMemUnchanged(t *testing.T) {
-	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -346,7 +339,6 @@ func TestDimLogLog3ExtraDataMemUnchanged(t *testing.T) {
 // computation to be 375 + 4 * 119, the state access to be 0, the state growth to be 0,
 // the history growth to be 4 * 256, and the state growth refund to be 0
 func TestDimLogLog4TopicsOnlyMemUnchanged(t *testing.T) {
-	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -385,7 +377,6 @@ func TestDimLogLog4TopicsOnlyMemUnchanged(t *testing.T) {
 // the state access to be 0, the state growth to be 0,
 // the history growth to be 4 * 256 + 32*8, and the state growth refund to be 0
 func TestDimLogLog4ExtraDataMemUnchanged(t *testing.T) {
-	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -443,7 +434,6 @@ var logNMemoryExpansionCost uint64 = 6
 // we expect the state access to be 0, the state growth to be 0,
 // the history growth to be 64*8, and the state growth refund to be 0
 func TestDimLogLog0ExtraDataMemExpansion(t *testing.T) {
-	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -484,7 +474,6 @@ func TestDimLogLog0ExtraDataMemExpansion(t *testing.T) {
 // computation to be 375 + 119 + 6, the state access to be 0, the state growth to be 0,
 // the history growth to be 256 + 8 * 64, and the state growth refund to be 0
 func TestDimLogLog1ExtraDataMemExpansion(t *testing.T) {
-	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -526,7 +515,6 @@ func TestDimLogLog1ExtraDataMemExpansion(t *testing.T) {
 // computation to be 375 + 2*119 + 6, the state access to be 0, the state growth to be 0,
 // the history growth to be 2*256 + 8 * 64, and the state growth refund to be 0
 func TestDimLogLog2ExtraDataMemExpansion(t *testing.T) {
-	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -568,7 +556,6 @@ func TestDimLogLog2ExtraDataMemExpansion(t *testing.T) {
 // computation to be 375 + 3*119 + 6, the state access to be 0, the state growth to be 0,
 // the history growth to be 3*256 + 8 * 64, and the state growth refund to be 0
 func TestDimLogLog3ExtraDataMemExpansion(t *testing.T) {
-	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -610,7 +597,6 @@ func TestDimLogLog3ExtraDataMemExpansion(t *testing.T) {
 // computation to be 375 + 4*119 + 6, the state access to be 0, the state growth to be 0,
 // the history growth to be 4*256 + 8 * 64, and the state growth refund to be 0
 func TestDimLogLog4ExtraDataMemExpansion(t *testing.T) {
-	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()

@@ -31,8 +31,8 @@ const INVALID_URL string = "<?INVALID-URL?>"
 
 type RedisCoordinator struct {
 	Client                                redis.UniversalClient
-	firstSequencerWantingLockoutErrorTime time.Time // Time of the first error logged for no sequencer wanting the lockout.
-	lastLockoutErrorLogTime               time.Time // Add this field to track when we last logged lockout errors.
+	firstSequencerWantingLockoutErrorTime atomic.Int64 // Time of the first error logged for no sequencer wanting the lockout.
+	lastLockoutErrorLogTime               atomic.Int64 // Add this field to track when we last logged lockout errors.
 
 	// If Client is a sentinel client,
 	sentinelMaster string // The master name of the sentinel client.
@@ -74,8 +74,8 @@ func (c *RedisCoordinator) RecommendSequencerWantingLockout(ctx context.Context)
 		}
 		// We found a sequencer that wants the lockout, so we reset the last time we observed the error
 		// to a value of zero for logging purposes below.
-		c.firstSequencerWantingLockoutErrorTime = time.Time{}
-		c.lastLockoutErrorLogTime = time.Time{} // Reset log throttling timer when state changes.
+		c.firstSequencerWantingLockoutErrorTime.Store(0)
+		c.lastLockoutErrorLogTime.Store(0) // Reset log throttling timer when state changes.
 		return url, nil
 	}
 
@@ -88,15 +88,16 @@ func (c *RedisCoordinator) RecommendSequencerWantingLockout(ctx context.Context)
 		level("no sequencer appears to want the lockout on redis", args...)
 	}
 
-	if c.firstSequencerWantingLockoutErrorTime.IsZero() {
-		c.firstSequencerWantingLockoutErrorTime = time.Now()
-		c.lastLockoutErrorLogTime = time.Now()
+	if c.firstSequencerWantingLockoutErrorTime.Load() == 0 {
+		now := time.Now().UnixMilli()
+		c.firstSequencerWantingLockoutErrorTime.Store(now)
+		c.lastLockoutErrorLogTime.Store(now)
 		logMessage(log.Debug)
 	} else {
-		elapsedTime := time.Since(c.firstSequencerWantingLockoutErrorTime)
+		elapsedTime := time.Since(time.UnixMilli(c.firstSequencerWantingLockoutErrorTime.Load()))
 		// Only log if it's been at least 5 seconds since the last log,
 		// as these logs would otherwise be spammed at a high rate when they occur.
-		if time.Since(c.lastLockoutErrorLogTime) >= 5*time.Second {
+		if time.Since(time.UnixMilli(c.lastLockoutErrorLogTime.Load())) >= 5*time.Second {
 			if elapsedTime > 20*time.Second {
 				logMessage(log.Error)
 			} else if elapsedTime > 10*time.Second {
@@ -104,7 +105,7 @@ func (c *RedisCoordinator) RecommendSequencerWantingLockout(ctx context.Context)
 			} else {
 				logMessage(log.Debug)
 			}
-			c.lastLockoutErrorLogTime = time.Now() // Update last log time.
+			c.lastLockoutErrorLogTime.Store(time.Now().UnixMilli()) // Update last log time.
 		}
 	}
 	return "", nil
@@ -138,9 +139,11 @@ func (rc *RedisCoordinator) GetPriorities(ctx context.Context) ([]string, error)
 // GetLiveliness returns a list of sequencers that have their liveliness set to OK
 func (rc *RedisCoordinator) GetLiveliness(ctx context.Context) ([]string, error) {
 	var livelinessList []string
-	cursor := uint64(0)
+	var cursor uint64
 	for {
-		keySlice, cursor, err := rc.Client.Scan(ctx, cursor, WANTS_LOCKOUT_KEY_PREFIX+"*", 0).Result()
+		var keySlice []string
+		var err error
+		keySlice, cursor, err = rc.Client.Scan(ctx, cursor, WANTS_LOCKOUT_KEY_PREFIX+"*", 0).Result()
 		if err != nil {
 			return []string{}, err
 		}
