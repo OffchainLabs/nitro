@@ -2,7 +2,6 @@ use arbutil::Bytes32;
 use serde::Deserialize;
 use serde_json;
 use serde_with::base64::Base64;
-use serde_with::skip_serializing_none;
 use serde_with::As;
 use serde_with::DisplayFromStr;
 use std::{
@@ -70,7 +69,6 @@ pub struct BatchInfo {
     pub data_b64: Vec<u8>,
 }
 
-#[skip_serializing_none]
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct StartState {
@@ -92,7 +90,6 @@ pub struct StartState {
 ///
 /// Note: It is important to change this file whenever the go JSON
 /// serialization changes.
-#[skip_serializing_none]
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct FileData {
