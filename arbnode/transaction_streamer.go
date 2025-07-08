@@ -1891,7 +1891,7 @@ func (s *TransactionStreamer) pollSubmittedTransactionForFinality(ctx context.Co
 		err = s.checkEspressoLiveness()
 		if err != nil {
 			if ctx.Err() != nil {
-				return 0
+				return s.espressoTxnsPollingInterval
 			}
 			logLevel := getLogLevel(err)
 			logLevel("error checking escape hatch, will retry", "err", err)
@@ -1902,14 +1902,14 @@ func (s *TransactionStreamer) pollSubmittedTransactionForFinality(ctx context.Co
 	err = s.checkSubmittedTransactionForFinality(ctx)
 	if err != nil {
 		if ctx.Err() != nil {
-			return 0
+			return s.espressoTxnsPollingInterval
 		}
 		logLevel := getLogLevel(err)
 		logLevel("error polling finality, will retry", "err", err)
 		return retryRate
 	}
 	espressoMerkleProofEphemeralErrorHandler.Reset()
-	return 0
+	return s.espressoTxnsPollingInterval
 }
 
 /**
@@ -1935,7 +1935,7 @@ func (s *TransactionStreamer) pollToResubmitEspressoTransactions(ctx context.Con
 	s.espressoTxnsStateInsertionMutex.Lock()
 	defer s.espressoTxnsStateInsertionMutex.Unlock()
 
-	retryRate := s.espressoTxnsPollingInterval * 50
+	retryRate := s.espressoTxnsPollingInterval * 2
 	submittedTxns, err := s.getEspressoSubmittedTxns()
 	if err != nil {
 		log.Warn("resubmitting espresso transactions failed: unable to get submitted transactions, will retry: %w", err)
