@@ -11,6 +11,7 @@ import (
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 
 	"github.com/offchainlabs/nitro/arbnode/mel"
@@ -20,7 +21,6 @@ import (
 )
 
 var _ ParentChainReader = (*mockParentChainReader)(nil)
-var _ mel.StateDatabase = (*mockMELDB)(nil)
 
 func TestMessageExtractor(t *testing.T) {
 	t.Skip("Skipping as requires more MEL items merged in before it fully works")
@@ -35,11 +35,15 @@ func TestMessageExtractor(t *testing.T) {
 		},
 	}
 	initialStateFetcher := &mockInitialStateFetcher{}
+	arbDb := rawdb.NewMemoryDatabase()
+	melDb := NewDatabase(arbDb)
+	messageConsumer := &mockMessageConsumer{}
 	extractor, err := NewMessageExtractor(
 		parentChainReader,
 		&chaininfo.RollupAddresses{},
 		initialStateFetcher,
-		&mockMELDB{},
+		melDb,
+		messageConsumer,
 		[]daprovider.Reader{},
 		common.Hash{},
 		0,
@@ -105,12 +109,18 @@ func TestMessageExtractor(t *testing.T) {
 	})
 }
 
+type mockMessageConsumer struct{ returnErr error }
+
+func (m *mockMessageConsumer) PushMessages(ctx context.Context, firstMsgIdx uint64, messages []*arbostypes.MessageWithMetadata) error {
+	return m.returnErr
+}
+
 type mockInitialStateFetcher struct {
 	state     *mel.State
 	returnErr error
 }
 
-func (m *mockInitialStateFetcher) GetState(
+func (m *mockInitialStateFetcher) FetchInitialState(
 	_ context.Context, _ common.Hash,
 ) (*mel.State, error) {
 	if m.returnErr != nil {
@@ -179,37 +189,4 @@ func (m *mockParentChainReader) TransactionReceipt(ctx context.Context, txHash c
 	}
 	// Mock implementation, return a dummy receipt
 	return &types.Receipt{}, nil
-}
-
-type mockMELDB struct {
-}
-
-func (m *mockMELDB) State(
-	_ context.Context,
-	_ common.Hash,
-) (*mel.State, error) {
-	return nil, errors.New("unimplemented")
-}
-
-func (m *mockMELDB) SaveState(
-	_ context.Context,
-	_ *mel.State,
-	_ []*arbostypes.MessageWithMetadata,
-) error {
-	return nil
-}
-
-func (m *mockMELDB) SaveDelayedMessages(
-	_ context.Context,
-	_ *mel.State,
-	_ []*mel.DelayedInboxMessage,
-) error {
-	return nil
-}
-func (m *mockMELDB) ReadDelayedMessage(
-	_ context.Context,
-	_ *mel.State,
-	_ uint64,
-) (*mel.DelayedInboxMessage, error) {
-	return nil, errors.New("unimplemented")
 }

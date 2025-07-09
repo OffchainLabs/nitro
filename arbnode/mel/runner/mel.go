@@ -37,9 +37,10 @@ type ParentChainReader interface {
 type MessageExtractor struct {
 	stopwaiter.StopWaiter
 	parentChainReader         ParentChainReader
-	initialStateFetcher       mel.StateFetcher
+	initialStateFetcher       mel.InitialStateFetcher
 	addrs                     *chaininfo.RollupAddresses
-	melDB                     mel.StateDatabase
+	melDB                     *Database
+	msgConsumer               mel.MessageConsumer
 	dataProviders             []daprovider.Reader
 	startParentChainBlockHash common.Hash
 	fsm                       *fsm.Fsm[action, FSMState]
@@ -52,8 +53,9 @@ type MessageExtractor struct {
 func NewMessageExtractor(
 	parentChainReader ParentChainReader,
 	rollupAddrs *chaininfo.RollupAddresses,
-	initialStateFetcher mel.StateFetcher,
-	melDB mel.StateDatabase,
+	initialStateFetcher mel.InitialStateFetcher,
+	melDB *Database,
+	msgConsumer mel.MessageConsumer,
 	dataProviders []daprovider.Reader,
 	startParentChainBlockHash common.Hash,
 	retryInterval time.Duration,
@@ -70,6 +72,7 @@ func NewMessageExtractor(
 		addrs:                     rollupAddrs,
 		initialStateFetcher:       initialStateFetcher,
 		melDB:                     melDB,
+		msgConsumer:               msgConsumer,
 		dataProviders:             dataProviders,
 		startParentChainBlockHash: startParentChainBlockHash,
 		fsm:                       fsm,
@@ -173,7 +176,7 @@ func (m *MessageExtractor) Act(ctx context.Context) (time.Duration, error) {
 			)
 		}
 		// Fetch the initial state for MEL from a state fetcher interface by parent chain block hash.
-		melState, err := m.initialStateFetcher.GetState(
+		melState, err := m.initialStateFetcher.FetchInitialState(
 			ctx,
 			m.startParentChainBlockHash,
 		)
@@ -229,9 +232,10 @@ func (m *MessageExtractor) Act(ctx context.Context) (time.Duration, error) {
 		}
 		// Begin the next FSM state immediately.
 		return 0, m.fsm.Do(saveMessages{
-			postState:       postState,
-			messages:        msgs,
-			delayedMessages: delayedMsgs,
+			preStateMsgCount: preState.MsgCount,
+			postState:        postState,
+			messages:         msgs,
+			delayedMessages:  delayedMsgs,
 		})
 	// `SavingMessages` is the state responsible for saving the extracted messages
 	// and delayed messages to the database. It stores data in the node's consensus database
@@ -244,12 +248,14 @@ func (m *MessageExtractor) Act(ctx context.Context) (time.Duration, error) {
 		if !ok {
 			return m.retryInterval, fmt.Errorf("invalid action: %T", current.SourceEvent)
 		}
-		// TODO: Use a DB batch to ensure these writes atomic, so if one fails, nothing will be persisted.
-		// The ArbDB batcher has support for this.
 		if err := m.melDB.SaveDelayedMessages(ctx, saveAction.postState, saveAction.delayedMessages); err != nil {
 			return m.retryInterval, err
 		}
-		if err := m.melDB.SaveState(ctx, saveAction.postState, saveAction.messages); err != nil {
+		if err := m.msgConsumer.PushMessages(ctx, saveAction.preStateMsgCount, saveAction.messages); err != nil {
+			return m.retryInterval, err
+		}
+		if err := m.melDB.SaveState(ctx, saveAction.postState); err != nil {
+			log.Error("Error saving messages from MessageExtractor to MessageConsumer", "err", err)
 			return m.retryInterval, err
 		}
 		return 0, m.fsm.Do(processNextBlock{
