@@ -245,7 +245,7 @@ func GetBlockChain(
 	}
 
 	var txLookup *uint64
-	if txLookupLimit > 0 {
+	if txLookupLimit >= 0 {
 		limit := uint64(txLookupLimit)
 		txLookup = &limit
 	}
