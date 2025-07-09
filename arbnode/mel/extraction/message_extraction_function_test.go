@@ -189,7 +189,6 @@ func createMelState(parentHash common.Hash) *mel.State {
 	melState := &mel.State{
 		ParentChainBlockHash: parentHash,
 	}
-	melState.SetDelayedMessageBacklog(&mel.DelayedMessageBacklog{})
 	return melState
 }
 

@@ -2,6 +2,8 @@ package mel
 
 import (
 	"context"
+	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -15,6 +17,32 @@ func TestDelayedMessageBacklog(t *testing.T) {
 	numEntries := uint64(25)
 	for i := uint64(0); i < numEntries; i++ {
 		require.NoError(t, backlog.Add(&DelayedMessageBacklogEntry{Index: i}))
+	}
+
+	// Test that clone works
+	cloned := backlog.clone()
+	if !reflect.DeepEqual(backlog, cloned) {
+		t.Fatal("cloned doesnt match original")
+	}
+
+	// Test failures with Get
+	// Entry not found
+	_, err := backlog.Get(numEntries + 1)
+	if err == nil {
+		t.Fatal("backlog Get function should've errored for an invalid index query")
+	}
+	if !strings.Contains(err.Error(), "out of bounds") {
+		t.Fatalf("unexpected error: %s", err.Error())
+	}
+	// Index mismatch
+	failIndex := uint64(3)
+	backlog.entries[failIndex].Index = failIndex + 1 // shouldnt match
+	_, err = backlog.Get(failIndex)
+	if err == nil {
+		t.Fatal("backlog Get function should've errored for an invalid entry in the backlog")
+	}
+	if !strings.Contains(err.Error(), "index mismatch in the delayed message backlog entry") {
+		t.Fatalf("unexpected error: %s", err.Error())
 	}
 
 	// Verify that advancing the finalizedAndRead will trim the delayedMessageBacklogEntry while keeping the unread ones

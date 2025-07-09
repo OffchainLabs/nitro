@@ -2,7 +2,6 @@ package mel
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
@@ -152,20 +151,19 @@ func (s *State) AccumulateDelayedMessage(msg *DelayedInboxMessage) error {
 	if err != nil {
 		return err
 	}
-	if s.delayedMessageBacklog == nil {
-		return fmt.Errorf("delayedMessageBacklog of the state is nil. ParentChainBlockNumber: %d", s.ParentChainBlockNumber)
-	}
-	if err := s.delayedMessageBacklog.Add(
-		&DelayedMessageBacklogEntry{
-			Index:                       s.DelayedMessagedSeen,
-			MerkleRoot:                  merkleRoot,
-			MelStateParentChainBlockNum: s.ParentChainBlockNumber,
-		}); err != nil {
-		return err
-	}
-	// Found init message
-	if s.DelayedMessagedSeen == 0 {
-		s.delayedMessageBacklog.setInitMsg(msg)
+	if s.delayedMessageBacklog != nil {
+		if err := s.delayedMessageBacklog.Add(
+			&DelayedMessageBacklogEntry{
+				Index:                       s.DelayedMessagedSeen,
+				MerkleRoot:                  merkleRoot,
+				MelStateParentChainBlockNum: s.ParentChainBlockNumber,
+			}); err != nil {
+			return err
+		}
+		// Found init message
+		if s.DelayedMessagedSeen == 0 {
+			s.delayedMessageBacklog.setInitMsg(msg)
+		}
 	}
 	return nil
 }

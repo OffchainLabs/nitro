@@ -326,6 +326,9 @@ func (m *MessageExtractor) Act(ctx context.Context) (time.Duration, error) {
 			return m.retryInterval, fmt.Errorf("invalid action: %T", current.SourceEvent)
 		}
 		preState := processAction.melState
+		if preState.GetDelayedMessageBacklog() == nil { // Safety check since its relevant for native mode
+			return m.retryInterval, errors.New("detected nil DelayedMessageBacklog of melState, shouldnt be possible")
+		}
 		parentChainBlock, err := m.parentChainReader.BlockByNumber(
 			ctx,
 			new(big.Int).SetUint64(preState.ParentChainBlockNumber+1),
