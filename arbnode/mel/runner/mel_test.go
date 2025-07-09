@@ -24,7 +24,6 @@ import (
 var _ ParentChainReader = (*mockParentChainReader)(nil)
 
 func TestMessageExtractor(t *testing.T) {
-	t.Skip("Skipping as requires more MEL items merged in before it fully works")
 	ctx := context.Background()
 	emptyblk1 := types.NewBlock(&types.Header{Number: common.Big2}, nil, nil, nil)
 	emptyblk2 := types.NewBlock(&types.Header{Number: common.Big3}, nil, nil, nil)
@@ -54,6 +53,7 @@ func TestMessageExtractor(t *testing.T) {
 		common.Hash{},
 		0,
 	)
+	extractor.StopWaiter.Start(ctx, extractor)
 	require.NoError(t, err)
 	require.True(t, extractor.CurrentFSMState() == Start)
 
@@ -174,7 +174,7 @@ func (m *mockParentChainReader) BlockByNumber(ctx context.Context, number *big.I
 		return nil, m.returnErr
 	}
 	if number.Int64() == rpc.FinalizedBlockNumber.Int64() {
-		return types.NewBlock(&types.Header{Number: common.Big0}, nil, nil, nil), nil
+		return types.NewBlock(&types.Header{Number: big.NewInt(1e10)}, nil, nil, nil), nil // Assume all parent chain blocks are finalized to prevent issues dealing with delayed message backlog, it is tested separately
 	}
 	block, ok := m.blocks[common.BigToHash(number)]
 	if !ok {
