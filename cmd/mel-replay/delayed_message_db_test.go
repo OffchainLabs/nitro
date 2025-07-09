@@ -19,14 +19,6 @@ var _ mel.DelayedMessageDatabase = (*delayedMessageDatabase)(nil)
 
 func TestReadDelayedMessage(t *testing.T) {
 	ctx := context.Background()
-	t.Run("no delayed messages", func(t *testing.T) {
-		db := &delayedMessageDatabase{}
-		state := &mel.State{
-			DelayedMessagedSeen: 0,
-		}
-		_, err := db.ReadDelayedMessage(ctx, state, 0)
-		require.ErrorContains(t, err, "no delayed messages available")
-	})
 	t.Run("message index out of range", func(t *testing.T) {
 		db := &delayedMessageDatabase{}
 		state := &mel.State{
@@ -39,24 +31,22 @@ func TestReadDelayedMessage(t *testing.T) {
 		// If there is only a single delayed message in the
 		// Merkle tree, then it should be easy to retrieve as a preimage
 		// lookup of the root itself.
-		msg, msgHash := buildDelayedMessage(t, 100, []byte("foobar"))
-		encodedMsg, err := rlp.EncodeToBytes(msg)
-		require.NoError(t, err)
-		resolver := &mockPreimageResolver{
-			preimages: map[common.Hash][]byte{
-				msgHash: encodedMsg,
-			},
+		messages := []*mel.DelayedInboxMessage{
+			buildDelayedMessage(t, 100, []byte("foobar")),
 		}
-		db := &delayedMessageDatabase{
-			preimageResolver: resolver,
-		}
+
+		preimages, root := buildMerkleTree(t, messages)
+
+		resolver := &mockPreimageResolver{preimages: preimages}
+		db := &delayedMessageDatabase{preimageResolver: resolver}
 		state := &mel.State{
 			DelayedMessagedSeen:     1,
-			DelayedMessagesSeenRoot: msgHash,
+			DelayedMessagesSeenRoot: root,
 		}
-		retrievedMsg, err := db.ReadDelayedMessage(ctx, state, 0)
+
+		msg, err := db.ReadDelayedMessage(ctx, state, uint64(0)) // #nosec G115
 		require.NoError(t, err)
-		require.Equal(t, []byte("foobar"), retrievedMsg.Message.L2msg)
+		require.Equal(t, []byte("foobar"), msg.Message.L2msg)
 	})
 	t.Run("Merkle tree with 2 levels can fetch left or right delayed message", func(t *testing.T) {
 		// We have a Merkle tree for delayed messages that looks like this:
@@ -69,40 +59,27 @@ func TestReadDelayedMessage(t *testing.T) {
 		// If we want to fetch delayed message at index 0, we should get A,
 		// and if we want to fetch delayed message at index 1, we should get B
 		// through our algorithm.
-		msgA, msgAHash := buildDelayedMessage(t, 1, []byte("a"))
-		msgB, msgBHash := buildDelayedMessage(t, 2, []byte("b"))
-
-		encodedMsgA, err := rlp.EncodeToBytes(msgA)
-		require.NoError(t, err)
-		encodedMsgB, err := rlp.EncodeToBytes(msgB)
-		require.NoError(t, err)
-
-		rootPreimage := make([]byte, 0, 64)
-		rootPreimage = append(rootPreimage, msgAHash[:]...)
-		rootPreimage = append(rootPreimage, msgBHash[:]...)
-		root := crypto.Keccak256Hash(msgAHash[:], msgBHash[:])
-
-		resolver := &mockPreimageResolver{
-			preimages: map[common.Hash][]byte{
-				msgAHash: encodedMsgA,
-				msgBHash: encodedMsgB,
-				root:     rootPreimage,
-			},
+		messages := []*mel.DelayedInboxMessage{
+			buildDelayedMessage(t, 1, []byte("a")),
+			buildDelayedMessage(t, 2, []byte("b")),
 		}
-		db := &delayedMessageDatabase{
-			preimageResolver: resolver,
-		}
+
+		preimages, root := buildMerkleTree(t, messages)
+
+		resolver := &mockPreimageResolver{preimages: preimages}
+		db := &delayedMessageDatabase{preimageResolver: resolver}
 		state := &mel.State{
 			DelayedMessagedSeen:     2,
 			DelayedMessagesSeenRoot: root,
 		}
-		retrievedMsg, err := db.ReadDelayedMessage(ctx, state, 0)
-		require.NoError(t, err)
-		require.Equal(t, []byte("a"), retrievedMsg.Message.L2msg)
 
-		retrievedMsg, err = db.ReadDelayedMessage(ctx, state, 1)
-		require.NoError(t, err)
-		require.Equal(t, []byte("b"), retrievedMsg.Message.L2msg)
+		// Test each message
+		expectedData := [][]byte{[]byte("a"), []byte("b")}
+		for i, expected := range expectedData {
+			msg, err := db.ReadDelayedMessage(ctx, state, uint64(i)) // #nosec G115
+			require.NoError(t, err)
+			require.Equal(t, expected, msg.Message.L2msg)
+		}
 	})
 	t.Run("Merkle tree with 3 levels can fetch specific delayed messages", func(t *testing.T) {
 		// We have a Merkle tree for delayed messages that looks like this:
@@ -114,67 +91,29 @@ func TestReadDelayedMessage(t *testing.T) {
 		//  A         B        C         D
 		//
 		// We should be able to fetch A, B, C, or D.
-		msgA, msgAHash := buildDelayedMessage(t, 1, []byte("a"))
-		msgB, msgBHash := buildDelayedMessage(t, 2, []byte("b"))
-		msgC, msgCHash := buildDelayedMessage(t, 3, []byte("c"))
-		msgD, msgDHash := buildDelayedMessage(t, 4, []byte("d"))
-
-		encodedMsgA, err := rlp.EncodeToBytes(msgA)
-		require.NoError(t, err)
-		encodedMsgB, err := rlp.EncodeToBytes(msgB)
-		require.NoError(t, err)
-		encodedMsgC, err := rlp.EncodeToBytes(msgC)
-		require.NoError(t, err)
-		encodedMsgD, err := rlp.EncodeToBytes(msgD)
-		require.NoError(t, err)
-
-		middleLeftPreimage := make([]byte, 0, 64)
-		middleLeftPreimage = append(middleLeftPreimage, msgAHash[:]...)
-		middleLeftPreimage = append(middleLeftPreimage, msgBHash[:]...)
-		middleRightPreimage := make([]byte, 0, 64)
-		middleRightPreimage = append(middleRightPreimage, msgCHash[:]...)
-		middleRightPreimage = append(middleRightPreimage, msgDHash[:]...)
-		middleLeftRoot := crypto.Keccak256Hash(msgAHash[:], msgBHash[:])
-		middleRightRoot := crypto.Keccak256Hash(msgCHash[:], msgDHash[:])
-
-		rootPreimage := make([]byte, 0, 64)
-		rootPreimage = append(rootPreimage, middleLeftRoot[:]...)
-		rootPreimage = append(rootPreimage, middleRightRoot[:]...)
-		root := crypto.Keccak256Hash(middleLeftRoot[:], middleRightRoot[:])
-
-		resolver := &mockPreimageResolver{
-			preimages: map[common.Hash][]byte{
-				msgAHash:        encodedMsgA,
-				msgBHash:        encodedMsgB,
-				msgCHash:        encodedMsgC,
-				msgDHash:        encodedMsgD,
-				middleLeftRoot:  middleLeftPreimage,
-				middleRightRoot: middleRightPreimage,
-				root:            rootPreimage,
-			},
+		messages := []*mel.DelayedInboxMessage{
+			buildDelayedMessage(t, 1, []byte("a")),
+			buildDelayedMessage(t, 2, []byte("b")),
+			buildDelayedMessage(t, 3, []byte("c")),
+			buildDelayedMessage(t, 4, []byte("d")),
 		}
-		db := &delayedMessageDatabase{
-			preimageResolver: resolver,
-		}
+
+		preimages, root := buildMerkleTree(t, messages)
+
+		resolver := &mockPreimageResolver{preimages: preimages}
+		db := &delayedMessageDatabase{preimageResolver: resolver}
 		state := &mel.State{
 			DelayedMessagedSeen:     4,
 			DelayedMessagesSeenRoot: root,
 		}
-		retrievedMsg, err := db.ReadDelayedMessage(ctx, state, 0)
-		require.NoError(t, err)
-		require.Equal(t, []byte("a"), retrievedMsg.Message.L2msg)
 
-		retrievedMsg, err = db.ReadDelayedMessage(ctx, state, 1)
-		require.NoError(t, err)
-		require.Equal(t, []byte("b"), retrievedMsg.Message.L2msg)
-
-		retrievedMsg, err = db.ReadDelayedMessage(ctx, state, 2)
-		require.NoError(t, err)
-		require.Equal(t, []byte("c"), retrievedMsg.Message.L2msg)
-
-		retrievedMsg, err = db.ReadDelayedMessage(ctx, state, 3)
-		require.NoError(t, err)
-		require.Equal(t, []byte("d"), retrievedMsg.Message.L2msg)
+		// Test each message
+		expectedData := [][]byte{[]byte("a"), []byte("b"), []byte("c"), []byte("d")}
+		for i, expected := range expectedData {
+			msg, err := db.ReadDelayedMessage(ctx, state, uint64(i)) // #nosec G115
+			require.NoError(t, err)
+			require.Equal(t, expected, msg.Message.L2msg)
+		}
 	})
 }
 
@@ -204,10 +143,10 @@ func TestNextPowerOfTwo(t *testing.T) {
 }
 
 func buildDelayedMessage(
-	t *testing.T,
+	_ *testing.T,
 	blockNumber uint64,
 	msgData []byte,
-) (*mel.DelayedInboxMessage, common.Hash) {
+) *mel.DelayedInboxMessage {
 	msg := &mel.DelayedInboxMessage{
 		ParentChainBlockNumber: blockNumber,
 		Message: &arbostypes.L1IncomingMessage{
@@ -217,7 +156,37 @@ func buildDelayedMessage(
 			L2msg: msgData,
 		},
 	}
-	encoded, err := rlp.EncodeToBytes(msg)
-	require.NoError(t, err)
-	return msg, crypto.Keccak256Hash(encoded)
+	return msg
+}
+
+func buildMerkleTree(t *testing.T, messages []*mel.DelayedInboxMessage) (map[common.Hash][]byte, common.Hash) {
+	preimages := make(map[common.Hash][]byte)
+	// Encode messages and get leaf hashes.
+	leafHashes := make([]common.Hash, len(messages))
+	for i, msg := range messages {
+		encoded, err := rlp.EncodeToBytes(msg)
+		require.NoError(t, err)
+		hash := crypto.Keccak256Hash(encoded)
+		preimages[hash] = encoded
+		leafHashes[i] = hash
+	}
+	// Build tree bottom-up
+	currentLevel := leafHashes
+	for len(currentLevel) > 1 {
+		nextLevel := make([]common.Hash, 0, len(currentLevel)/2)
+
+		for i := 0; i < len(currentLevel); i += 2 {
+			left := currentLevel[i]
+			right := currentLevel[i+1] // Assumes even number of leaves
+
+			preimage := make([]byte, 0)
+			preimage = append(preimage, left[:]...)
+			preimage = append(preimage, right[:]...)
+			parent := crypto.Keccak256Hash(left[:], right[:])
+			preimages[parent] = preimage
+			nextLevel = append(nextLevel, parent)
+		}
+		currentLevel = nextLevel
+	}
+	return preimages, currentLevel[0]
 }

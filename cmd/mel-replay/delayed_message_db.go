@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"math/bits"
 
@@ -25,9 +24,6 @@ func (d *delayedMessageDatabase) ReadDelayedMessage(
 ) (*mel.DelayedInboxMessage, error) {
 	originalMsgIndex := msgIndex
 	totalMsgsSeen := state.DelayedMessagedSeen
-	if totalMsgsSeen == 0 {
-		return nil, errors.New("no delayed messages available")
-	}
 	if msgIndex >= totalMsgsSeen {
 		return nil, fmt.Errorf("index %d out of range, total delayed messages seen: %d", msgIndex, totalMsgsSeen)
 	}
