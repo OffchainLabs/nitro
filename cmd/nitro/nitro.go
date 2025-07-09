@@ -956,9 +956,10 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 		nodeConfig.Node.MessagePruner.Enable = false
 	}
 
-	if nodeConfig.Execution.Caching.Archive && nodeConfig.Execution.TxLookupLimit != 0 {
+	if nodeConfig.Execution.Caching.Archive && (!nodeConfig.Execution.TxIndexer.Enable || nodeConfig.Execution.TxIndexer.TxLookupLimit != 0) {
 		log.Info("retaining ability to lookup full transaction history as archive mode is enabled")
-		nodeConfig.Execution.TxLookupLimit = 0
+		nodeConfig.Execution.TxIndexer.Enable = true
+		nodeConfig.Execution.TxIndexer.TxLookupLimit = 0
 	}
 
 	err = nodeConfig.Validate()

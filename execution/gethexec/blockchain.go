@@ -23,7 +23,6 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/gethhook"
 	"github.com/offchainlabs/nitro/statetransfer"
-	"github.com/offchainlabs/nitro/util"
 )
 
 type CachingConfig struct {
@@ -46,8 +45,6 @@ type CachingConfig struct {
 	StateScheme                         string        `koanf:"state-scheme"`
 	StateHistory                        uint64        `koanf:"state-history"`
 	EnablePreimages                     bool          `koanf:"enable-preimages"`
-	TxIndexerThreads                    int           `koanf:"tx-indexer-threads"`
-	TxIndexerMinBatchDelay              time.Duration `koanf:"tx-indexer-min-batch-delay"`
 }
 
 func CachingConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -70,8 +67,6 @@ func CachingConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".state-scheme", DefaultCachingConfig.StateScheme, "scheme to use for state trie storage (hash, path)")
 	f.Uint64(prefix+".state-history", DefaultCachingConfig.StateHistory, "number of recent blocks to retain state history for (path state-scheme only)")
 	f.Bool(prefix+".enable-preimages", DefaultCachingConfig.EnablePreimages, "enable recording of preimages")
-	f.Int(prefix+".tx-indexer-threads", DefaultCachingConfig.TxIndexerThreads, "TODO")
-	f.Duration(prefix+".tx-indexer-min-batch-delay", DefaultCachingConfig.TxIndexerMinBatchDelay, "")
 }
 
 func getStateHistory(maxBlockSpeed time.Duration) uint64 {
@@ -97,8 +92,6 @@ var DefaultCachingConfig = CachingConfig{
 	StylusLRUCacheCapacity:             256,
 	StateScheme:                        rawdb.HashScheme,
 	StateHistory:                       getStateHistory(DefaultSequencerConfig.MaxBlockSpeed),
-	TxIndexerThreads:                   util.GoMaxProcs(),
-	TxIndexerMinBatchDelay:             200 * time.Millisecond,
 }
 
 // TODO remove stack from parameters as it is no longer needed here
@@ -123,8 +116,6 @@ func DefaultCacheConfigFor(stack *node.Node, cachingConfig *CachingConfig) *core
 		HeadRewindBlocksLimit:              cachingConfig.HeadRewindBlocksLimit,
 		MaxNumberOfBlocksToSkipStateSaving: cachingConfig.MaxNumberOfBlocksToSkipStateSaving,
 		MaxAmountOfGasToSkipStateSaving:    cachingConfig.MaxAmountOfGasToSkipStateSaving,
-		TxIndexerThreads:                   cachingConfig.TxIndexerThreads,
-		TxIndexerMinBatchDelay:             cachingConfig.TxIndexerMinBatchDelay,
 		StateScheme:                        cachingConfig.StateScheme,
 		StateHistory:                       cachingConfig.StateHistory,
 	}
@@ -233,7 +224,7 @@ func GetBlockChain(
 	cacheConfig *core.CacheConfig,
 	chainConfig *params.ChainConfig,
 	tracer *tracing.Hooks,
-	txLookupLimit int64,
+	txIndexerConfig *TxIndexerConfig,
 ) (*core.BlockChain, error) {
 	engine := arbos.Engine{
 		IsSequencer: true,
@@ -244,12 +235,15 @@ func GetBlockChain(
 		Tracer:                  tracer,
 	}
 
-	var txLookup *uint64
-	if txLookupLimit >= 0 {
-		limit := uint64(txLookupLimit)
-		txLookup = &limit
+	var coreTxIndexerConfig *core.TxIndexerConfig // nil if disabled
+	if txIndexerConfig.Enable {
+		coreTxIndexerConfig = &core.TxIndexerConfig{
+			Limit:         txIndexerConfig.TxLookupLimit,
+			Threads:       txIndexerConfig.Threads,
+			MinBatchDelay: txIndexerConfig.MinBatchDelay,
+		}
 	}
-	return core.NewBlockChain(chainDb, cacheConfig, chainConfig, nil, nil, engine, vmConfig, txLookup)
+	return core.NewBlockChain(chainDb, cacheConfig, chainConfig, nil, nil, engine, vmConfig, coreTxIndexerConfig)
 }
 
 func WriteOrTestBlockChain(
@@ -260,7 +254,7 @@ func WriteOrTestBlockChain(
 	genesisArbOSInit *params.ArbOSInit,
 	tracer *tracing.Hooks,
 	initMessage *arbostypes.ParsedInitMessage,
-	txLookupLimit int64,
+	txIndexerConfig *TxIndexerConfig,
 	accountsPerSync uint,
 ) (*core.BlockChain, error) {
 	emptyBlockChain := rawdb.ReadHeadHeader(chainDb) == nil
@@ -268,7 +262,7 @@ func WriteOrTestBlockChain(
 		// When using path scheme, and the stored state trie is not empty,
 		// WriteOrTestGenBlock is not able to recover EmptyRootHash state trie node.
 		// In that case Nitro doesn't test genblock, but just returns the BlockChain.
-		return GetBlockChain(chainDb, cacheConfig, chainConfig, tracer, txLookupLimit)
+		return GetBlockChain(chainDb, cacheConfig, chainConfig, tracer, txIndexerConfig)
 	}
 
 	err := WriteOrTestGenblock(chainDb, cacheConfig, initData, chainConfig, genesisArbOSInit, initMessage, accountsPerSync)
@@ -279,7 +273,7 @@ func WriteOrTestBlockChain(
 	if err != nil {
 		return nil, err
 	}
-	return GetBlockChain(chainDb, cacheConfig, chainConfig, tracer, txLookupLimit)
+	return GetBlockChain(chainDb, cacheConfig, chainConfig, tracer, txIndexerConfig)
 }
 
 func init() {

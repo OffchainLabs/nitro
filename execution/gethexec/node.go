@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"sort"
 	"sync/atomic"
+	"time"
 
 	flag "github.com/spf13/pflag"
 
@@ -29,6 +30,7 @@ import (
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
+	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/dbutil"
@@ -85,6 +87,27 @@ func StylusTargetConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.StringSlice(prefix+".extra-archs", DefaultStylusTargetConfig.ExtraArchs, fmt.Sprintf("Comma separated list of extra architectures to cross-compile stylus program to and cache in wasm store (additionally to local target). Currently must include at least %s. (supported targets: %s, %s, %s, %s)", rawdb.TargetWavm, rawdb.TargetWavm, rawdb.TargetArm64, rawdb.TargetAmd64, rawdb.TargetHost))
 }
 
+type TxIndexerConfig struct {
+	Enable        bool          `koanf:"enable"`
+	TxLookupLimit uint64        `koanf:"tx-lookup-limit"`
+	Threads       int           `koanf:"threads"`
+	MinBatchDelay time.Duration `koanf:"min-batch-delay"`
+}
+
+var DefaultTxIndexerConfig = TxIndexerConfig{
+	Enable:        true,
+	TxLookupLimit: 126_230_400, // 1 year at 4 blocks per second
+	Threads:       util.GoMaxProcs(),
+	MinBatchDelay: time.Second,
+}
+
+func TxIndexerConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.Bool(prefix+".enable", DefaultTxIndexerConfig.Enable, "enables transaction indexer")
+	f.Uint64(prefix+".tx-lookup-limit", DefaultTxIndexerConfig.TxLookupLimit, "retain the ability to lookup transactions by hash for the past N blocks (0 = all blocks)")
+	f.Int(prefix+".threads", DefaultTxIndexerConfig.Threads, "the number of threads used to read blocks during indexing/unindexing of historical transactions")
+	f.Duration(prefix+".min-batch-delay", DefaultTxIndexerConfig.MinBatchDelay, "minimum delay between indexing/unindexing batches of historical transactions; the bigger the delay, the more blocks fit into the batches")
+}
+
 type Config struct {
 	ParentChainReader           headerreader.Config `koanf:"parent-chain-reader" reload:"hot"`
 	Sequencer                   SequencerConfig     `koanf:"sequencer" reload:"hot"`
@@ -95,7 +118,7 @@ type Config struct {
 	SecondaryForwardingTarget   []string            `koanf:"secondary-forwarding-target"`
 	Caching                     CachingConfig       `koanf:"caching"`
 	RPC                         arbitrum.Config     `koanf:"rpc"`
-	TxLookupLimit               int64               `koanf:"tx-lookup-limit"`
+	TxIndexer                   TxIndexerConfig     `koanf:"tx-indexer"`
 	EnablePrefetchBlock         bool                `koanf:"enable-prefetch-block"`
 	SyncMonitor                 SyncMonitorConfig   `koanf:"sync-monitor"`
 	StylusTarget                StylusTargetConfig  `koanf:"stylus-target"`
@@ -135,6 +158,7 @@ func (c *Config) Validate() error {
 
 func ConfigAddOptions(prefix string, f *flag.FlagSet) {
 	arbitrum.ConfigAddOptions(prefix+".rpc", f)
+	TxIndexerConfigAddOptions(prefix+".tx-indexer", f)
 	SequencerConfigAddOptions(prefix+".sequencer", f)
 	headerreader.AddOptions(prefix+".parent-chain-reader", f)
 	BlockRecorderConfigAddOptions(prefix+".recording-database", f)
@@ -144,7 +168,6 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet) {
 	TxPreCheckerConfigAddOptions(prefix+".tx-pre-checker", f)
 	CachingConfigAddOptions(prefix+".caching", f)
 	SyncMonitorConfigAddOptions(prefix+".sync-monitor", f)
-	f.Int64(prefix+".tx-lookup-limit", ConfigDefault.TxLookupLimit, "retain the ability to lookup transactions by hash for the past N blocks (0 = all blocks, -1 = disable tx indexer)")
 	f.Bool(prefix+".enable-prefetch-block", ConfigDefault.EnablePrefetchBlock, "enable prefetching of blocks")
 	StylusTargetConfigAddOptions(prefix+".stylus-target", f)
 	f.Uint64(prefix+".block-metadata-api-cache-size", ConfigDefault.BlockMetadataApiCacheSize, "size (in bytes) of lru cache storing the blockMetadata to service arb_getRawBlockMetadata")
@@ -169,13 +192,13 @@ func LiveTracingConfigAddOptions(prefix string, f *flag.FlagSet) {
 
 var ConfigDefault = Config{
 	RPC:                         arbitrum.DefaultConfig,
+	TxIndexer:                   DefaultTxIndexerConfig,
 	Sequencer:                   DefaultSequencerConfig,
 	ParentChainReader:           headerreader.DefaultConfig,
 	RecordingDatabase:           DefaultBlockRecorderConfig,
 	ForwardingTarget:            "",
 	SecondaryForwardingTarget:   []string{},
 	TxPreChecker:                DefaultTxPreCheckerConfig,
-	TxLookupLimit:               126_230_400, // 1 year at 4 blocks per second
 	Caching:                     DefaultCachingConfig,
 	Forwarder:                   DefaultNodeForwarderConfig,
 	EnablePrefetchBlock:         true,
