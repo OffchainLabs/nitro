@@ -55,7 +55,7 @@ func TestMessageExtractionLayer_SequencerBatchMessageEquivalence(t *testing.T) {
 	l1Reader.Start(ctx)
 	defer l1Reader.StopAndWait()
 
-	// Wait for headMelState to be finalized to avoid initializing seen unread deque
+	// Wait for headMelState to be finalized to avoid initializing delayed message backlog
 	for {
 		latestFinalized, err := l1Reader.Client().BlockByNumber(ctx, big.NewInt(rpc.FinalizedBlockNumber.Int64()))
 		Require(t, err)
@@ -80,6 +80,7 @@ func TestMessageExtractionLayer_SequencerBatchMessageEquivalence(t *testing.T) {
 		0,
 	)
 	Require(t, err)
+	extractor.StopWaiter.Start(ctx, extractor)
 
 	// Create various L2 transactions and wait for them to be included in a batch
 	// as compressed messages submitted to the sequencer inbox.
@@ -215,6 +216,7 @@ func TestMessageExtractionLayer_SequencerBatchMessageEquivalence_Blobs(t *testin
 		0,
 	)
 	Require(t, err)
+	extractor.StopWaiter.Start(ctx, extractor)
 
 	// Post a blob batch with a bunch of txs
 	initialBatchCount := GetBatchCount(t, builder)
@@ -291,7 +293,7 @@ func TestMessageExtractionLayer_SequencerBatchMessageEquivalence_Blobs(t *testin
 	readAcc, err := merkleAccumulator.NewNonpersistentMerkleAccumulatorFromPartials(nil)
 	Require(t, err)
 	readHelperState := &mel.State{DelayedMessagedSeen: 1}
-	readHelperState.SetSeenUnreadDelayedMetaDeque(&mel.DelayedMetaDeque{})
+	readHelperState.SetDelayedMessageBacklog(&mel.DelayedMessageBacklog{})
 	readHelperState.SetReadDelayedMsgsAcc(readAcc)
 	for i := uint64(1); i < numDelayedMessages; i++ {
 		fromInboxTracker, err := builder.L2.ConsensusNode.InboxTracker.GetDelayedMessage(ctx, i)
@@ -356,6 +358,7 @@ func TestMessageExtractionLayer_DelayedMessageEquivalence_Simple(t *testing.T) {
 		0,
 	)
 	Require(t, err)
+	extractor.StopWaiter.Start(ctx, extractor)
 
 	for {
 		prevFSMState := extractor.CurrentFSMState()
@@ -389,7 +392,7 @@ func TestMessageExtractionLayer_DelayedMessageEquivalence_Simple(t *testing.T) {
 	readAcc, err := merkleAccumulator.NewNonpersistentMerkleAccumulatorFromPartials(nil)
 	Require(t, err)
 	readHelperState := &mel.State{DelayedMessagedSeen: 1}
-	readHelperState.SetSeenUnreadDelayedMetaDeque(&mel.DelayedMetaDeque{})
+	readHelperState.SetDelayedMessageBacklog(&mel.DelayedMessageBacklog{})
 	readHelperState.SetReadDelayedMsgsAcc(readAcc)
 	for i := uint64(1); i < numDelayedMessages; i++ {
 		fromInboxTracker, err := builder.L2.ConsensusNode.InboxTracker.GetDelayedMessage(ctx, i)
@@ -657,6 +660,7 @@ func TestMessageExtractionLayer_UseArbDBForStoringDelayedMessages(t *testing.T) 
 		0,
 	)
 	Require(t, err)
+	extractor.StopWaiter.Start(ctx, extractor)
 
 	for {
 		prevFSMState := extractor.CurrentFSMState()
@@ -692,8 +696,12 @@ func TestMessageExtractionLayer_UseArbDBForStoringDelayedMessages(t *testing.T) 
 		)
 	}
 
-	newInitialState, err := melDB.FetchInitialState(ctx, lastState.ParentChainBlockHash, 0)
+	newInitialState, err := melDB.FetchInitialState(ctx, lastState.ParentChainBlockHash)
 	Require(t, err)
+	delayedMessageBacklog := mel.NewDelayedMessageBacklog(ctx, 100, extractor.GetFinalizedDelayedMessagesRead)
+	err = melrunner.InitializeDelayedMessageBacklog(ctx, delayedMessageBacklog, melDB, newInitialState, extractor.GetFinalizedDelayedMessagesRead)
+	Require(t, err)
+	newInitialState.SetDelayedMessageBacklog(delayedMessageBacklog)
 	for i := newInitialState.DelayedMessagesRead; i < newInitialState.DelayedMessagedSeen; i++ {
 		// Validates the pending unread delayed messages via accumulator
 		delayedMsgSavedByMel, err := melDB.ReadDelayedMessage(ctx, newInitialState, newInitialState.DelayedMessagesRead)

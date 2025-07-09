@@ -30,10 +30,8 @@ type State struct {
 	DelayedMessagedSeen                uint64
 	DelayedMessageMerklePartials       []common.Hash `rlp:"optional"`
 
-	// seenUnreadDelayedMetaDeque represents the deque containing DelayedMeta that hold metadata relating to delayed messages that have been seen but not yet read
-	// queue is trimmed from left by pruner function defined on the state, after corresponding delayed message is read and its melStateParentChainBlockNum is finalized
-	// trimmed from right in case of a reorg by the Reorging fsm step one melstate at a time
-	seenUnreadDelayedMetaDeque *DelayedMetaDeque // this is initialized in FetchInitialState and is never `nil` from then onwards
+	// delayedMessageBacklog is initialized once in the Start fsm step of mel runner and is persisted across all future states
+	delayedMessageBacklog *DelayedMessageBacklog
 
 	// seen and read DelayedMsgsAcc are MerkleAccumulators that reset after the current melstate is finished generating, to prevent stale validations
 	seenDelayedMsgsAcc *merkleAccumulator.MerkleAccumulator
@@ -77,16 +75,9 @@ type MessageConsumer interface {
 }
 
 // Defines an interface for fetching a MEL state by parent chain block hash.
-//
-// If the initial implementation is melDB then the melState's seenUnreadDelayedMetaDeque will be
-// initialized automatically but for non-melDB implementations:
-//   - either DelayedMessagesSeen must equal DelayedMessagesRead
-//     (OR)
-//   - seenUnreadDelayedMetaDeque must be manually initialized using SetSeenUnreadDelayedMetaDeque
 type InitialStateFetcher interface {
-	// FetchInitialState should initialize seenUnreadDelayedMetaDeque in case the initial state's DelayedMessagedSeen is ahead of DelayedMessagedRead
 	FetchInitialState(
-		ctx context.Context, parentChainBlockHash common.Hash, finalizedBlock uint64,
+		ctx context.Context, parentChainBlockHash common.Hash,
 	) (*State, error)
 }
 
@@ -115,9 +106,9 @@ func (s *State) Clone() *State {
 		copy(clone[:], partial[:])
 		delayedMessageMerklePartials = append(delayedMessageMerklePartials, clone)
 	}
-	var seenUnreadDelayedMetaDeque *DelayedMetaDeque
-	if s.seenUnreadDelayedMetaDeque != nil {
-		seenUnreadDelayedMetaDeque = s.seenUnreadDelayedMetaDeque.Clone()
+	var delayedMessageBacklog *DelayedMessageBacklog
+	if s.delayedMessageBacklog != nil {
+		delayedMessageBacklog = s.delayedMessageBacklog.clone()
 	}
 	return &State{
 		Version:                            s.Version,
@@ -134,7 +125,7 @@ func (s *State) Clone() *State {
 		DelayedMessagesRead:                s.DelayedMessagesRead,
 		DelayedMessagedSeen:                s.DelayedMessagedSeen,
 		DelayedMessageMerklePartials:       delayedMessageMerklePartials,
-		seenUnreadDelayedMetaDeque:         seenUnreadDelayedMetaDeque,
+		delayedMessageBacklog:              delayedMessageBacklog,
 	}
 }
 
@@ -160,17 +151,19 @@ func (s *State) AccumulateDelayedMessage(msg *DelayedInboxMessage) error {
 	if err != nil {
 		return err
 	}
-	if s.seenUnreadDelayedMetaDeque == nil {
-		s.seenUnreadDelayedMetaDeque = NewDelayedMetaDeque()
-	}
-	s.seenUnreadDelayedMetaDeque.Add(&DelayedMeta{
-		Index:                       s.DelayedMessagedSeen,
-		MerkleRoot:                  merkleRoot,
-		MelStateParentChainBlockNum: s.ParentChainBlockNumber,
-	})
-	// Found init message
-	if s.DelayedMessagedSeen == 0 {
-		s.seenUnreadDelayedMetaDeque.SetInitMsg(msg)
+	if s.delayedMessageBacklog != nil {
+		if err := s.delayedMessageBacklog.Add(
+			&DelayedMessageBacklogEntry{
+				Index:                       s.DelayedMessagedSeen,
+				MerkleRoot:                  merkleRoot,
+				MelStateParentChainBlockNum: s.ParentChainBlockNumber,
+			}); err != nil {
+			return err
+		}
+		// Found init message
+		if s.DelayedMessagedSeen == 0 {
+			s.delayedMessageBacklog.setInitMsg(msg)
+		}
 	}
 	return nil
 }
@@ -192,12 +185,21 @@ func (s *State) SetReadDelayedMsgsAcc(acc *merkleAccumulator.MerkleAccumulator) 
 	s.readDelayedMsgsAcc = acc
 }
 
-func (s *State) GetSeenUnreadDelayedMetaDeque() *DelayedMetaDeque {
-	return s.seenUnreadDelayedMetaDeque
+func (s *State) GetDelayedMessageBacklog() *DelayedMessageBacklog {
+	return s.delayedMessageBacklog
 }
 
-func (s *State) SetSeenUnreadDelayedMetaDeque(seenUnreadDelayedMetaDeque *DelayedMetaDeque) {
-	s.seenUnreadDelayedMetaDeque = seenUnreadDelayedMetaDeque
+func (s *State) SetDelayedMessageBacklog(delayedMessageBacklog *DelayedMessageBacklog) {
+	s.delayedMessageBacklog = delayedMessageBacklog
+}
+
+func (s *State) ReorgTo(newState *State) error {
+	delayedMessageBacklog := s.delayedMessageBacklog
+	if err := delayedMessageBacklog.reorg(newState.DelayedMessagedSeen); err != nil {
+		return err
+	}
+	newState.delayedMessageBacklog = delayedMessageBacklog
+	return nil
 }
 
 func ToPtrSlice[T any](list []T) []*T {

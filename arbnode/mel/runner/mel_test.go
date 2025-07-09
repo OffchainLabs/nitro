@@ -147,7 +147,7 @@ type mockInitialStateFetcher struct {
 }
 
 func (m *mockInitialStateFetcher) FetchInitialState(
-	_ context.Context, _ common.Hash, _ uint64,
+	_ context.Context, _ common.Hash,
 ) (*mel.State, error) {
 	if m.returnErr != nil {
 		return nil, m.returnErr
