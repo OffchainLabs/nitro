@@ -305,8 +305,8 @@ func (m *MessageExtractor) Act(ctx context.Context) (time.Duration, error) {
 			return m.retryInterval, err
 		}
 		// Initialize delayedMessageBacklog and add it to the melState
-		delayedMessageBacklog := NewDelayedMessageBacklog(m.config.DelayedMessageBacklogCapacity, m.GetFinalizedDelayedMessagesRead)
-		if err = delayedMessageBacklog.Initialize(m.GetContext(), m.melDB, melState); err != nil {
+		delayedMessageBacklog := mel.NewDelayedMessageBacklog(m.GetContext(), m.config.DelayedMessageBacklogCapacity, m.GetFinalizedDelayedMessagesRead)
+		if err = InitializeDelayedMessageBacklog(ctx, delayedMessageBacklog, m.melDB, melState, m.GetFinalizedDelayedMessagesRead); err != nil {
 			return m.retryInterval, err
 		}
 		melState.SetDelayedMessageBacklog(delayedMessageBacklog)

@@ -139,13 +139,13 @@ func (d *Database) SaveDelayedMessages(ctx context.Context, state *mel.State, de
 }
 
 func (d *Database) checkAgainstAccumulator(ctx context.Context, state *mel.State, msg *mel.DelayedInboxMessage, index uint64) (bool, error) {
-	wantMerkleRoot, melStateParentChainBlockNum, err := state.GetDelayedMessageBacklog().Get(index)
+	delayedMeta, err := state.GetDelayedMessageBacklog().Get(index)
 	if err != nil {
 		return false, err
 	}
 	acc := state.GetReadDelayedMsgsAcc()
 	if acc == nil {
-		targetState, err := d.State(ctx, melStateParentChainBlockNum-1)
+		targetState, err := d.State(ctx, delayedMeta.MelStateParentChainBlockNum-1)
 		if err != nil {
 			return false, err
 		}
@@ -174,7 +174,7 @@ func (d *Database) checkAgainstAccumulator(ctx context.Context, state *mel.State
 	if err != nil {
 		return false, err
 	}
-	return merkleRoot == wantMerkleRoot, nil
+	return merkleRoot == delayedMeta.MerkleRoot, nil
 }
 
 func (d *Database) fetchDelayedMessage(index uint64) (*mel.DelayedInboxMessage, error) {

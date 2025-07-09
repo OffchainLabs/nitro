@@ -32,7 +32,7 @@ type State struct {
 	DelayedMessageMerklePartials       []common.Hash `rlp:"optional"`
 
 	// delayedMessageBacklog is initialized once in the Start fsm step of mel runner and is persisted across all future states
-	delayedMessageBacklog DelayedMessageBacklog
+	delayedMessageBacklog *DelayedMessageBacklog
 
 	// seen and read DelayedMsgsAcc are MerkleAccumulators that reset after the current melstate is finished generating, to prevent stale validations
 	seenDelayedMsgsAcc *merkleAccumulator.MerkleAccumulator
@@ -82,16 +82,6 @@ type InitialStateFetcher interface {
 	) (*State, error)
 }
 
-// DelayedMessageBacklog is an interface exposing needed methods of the corresponding data structure defined in melrunner
-type DelayedMessageBacklog interface {
-	Clone() DelayedMessageBacklog
-	Add(index uint64, merkleRoot common.Hash, parentChainBlockNum uint64) error
-	Get(index uint64) (common.Hash, uint64, error)
-	SetInitMsg(msg *DelayedInboxMessage)
-	GetInitMsg() *DelayedInboxMessage
-	Reorg(newDelayedMessagedSeen uint64) error
-}
-
 func (s *State) Hash() common.Hash {
 	return common.Hash{}
 }
@@ -117,9 +107,9 @@ func (s *State) Clone() *State {
 		copy(clone[:], partial[:])
 		delayedMessageMerklePartials = append(delayedMessageMerklePartials, clone)
 	}
-	var delayedMessageBacklog DelayedMessageBacklog
+	var delayedMessageBacklog *DelayedMessageBacklog
 	if s.delayedMessageBacklog != nil {
-		delayedMessageBacklog = s.delayedMessageBacklog.Clone()
+		delayedMessageBacklog = s.delayedMessageBacklog.clone()
 	}
 	return &State{
 		Version:                            s.Version,
@@ -165,12 +155,17 @@ func (s *State) AccumulateDelayedMessage(msg *DelayedInboxMessage) error {
 	if s.delayedMessageBacklog == nil {
 		return fmt.Errorf("delayedMessageBacklog of the state is nil. ParentChainBlockNumber: %d", s.ParentChainBlockNumber)
 	}
-	if err := s.delayedMessageBacklog.Add(s.DelayedMessagedSeen, merkleRoot, s.ParentChainBlockNumber); err != nil {
+	if err := s.delayedMessageBacklog.Add(
+		&DelayedMessageBacklogEntry{
+			Index:                       s.DelayedMessagedSeen,
+			MerkleRoot:                  merkleRoot,
+			MelStateParentChainBlockNum: s.ParentChainBlockNumber,
+		}); err != nil {
 		return err
 	}
 	// Found init message
 	if s.DelayedMessagedSeen == 0 {
-		s.delayedMessageBacklog.SetInitMsg(msg)
+		s.delayedMessageBacklog.setInitMsg(msg)
 	}
 	return nil
 }
@@ -192,20 +187,20 @@ func (s *State) SetReadDelayedMsgsAcc(acc *merkleAccumulator.MerkleAccumulator) 
 	s.readDelayedMsgsAcc = acc
 }
 
-func (s *State) GetDelayedMessageBacklog() DelayedMessageBacklog {
+func (s *State) GetDelayedMessageBacklog() *DelayedMessageBacklog {
 	return s.delayedMessageBacklog
 }
 
-func (s *State) SetDelayedMessageBacklog(delayedMessageBacklog DelayedMessageBacklog) {
+func (s *State) SetDelayedMessageBacklog(delayedMessageBacklog *DelayedMessageBacklog) {
 	s.delayedMessageBacklog = delayedMessageBacklog
 }
 
 func (s *State) ReorgTo(newState *State) error {
-	delayedMessageBacklog := s.GetDelayedMessageBacklog()
-	if err := delayedMessageBacklog.Reorg(newState.DelayedMessagedSeen); err != nil {
+	delayedMessageBacklog := s.delayedMessageBacklog
+	if err := delayedMessageBacklog.reorg(newState.DelayedMessagedSeen); err != nil {
 		return err
 	}
-	newState.SetDelayedMessageBacklog(delayedMessageBacklog)
+	newState.delayedMessageBacklog = delayedMessageBacklog
 	return nil
 }
 

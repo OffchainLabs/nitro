@@ -189,18 +189,9 @@ func createMelState(parentHash common.Hash) *mel.State {
 	melState := &mel.State{
 		ParentChainBlockHash: parentHash,
 	}
-	melState.SetDelayedMessageBacklog(&dummyBacklog{})
+	melState.SetDelayedMessageBacklog(&mel.DelayedMessageBacklog{})
 	return melState
 }
-
-type dummyBacklog struct{}
-
-func (d *dummyBacklog) SetInitMsg(*mel.DelayedInboxMessage)     {}
-func (d *dummyBacklog) Clone() mel.DelayedMessageBacklog        { return d }
-func (d *dummyBacklog) Add(uint64, common.Hash, uint64) error   { return nil }
-func (d *dummyBacklog) GetInitMsg() *mel.DelayedInboxMessage    { return nil }
-func (d *dummyBacklog) Reorg(uint64) error                      { return nil }
-func (d *dummyBacklog) Get(uint64) (common.Hash, uint64, error) { return common.Hash{}, 0, nil }
 
 func createBlockHeader(parentHash common.Hash) *types.Header {
 	return &types.Header{

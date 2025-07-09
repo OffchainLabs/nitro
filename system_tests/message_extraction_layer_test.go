@@ -293,7 +293,7 @@ func TestMessageExtractionLayer_SequencerBatchMessageEquivalence_Blobs(t *testin
 	readAcc, err := merkleAccumulator.NewNonpersistentMerkleAccumulatorFromPartials(nil)
 	Require(t, err)
 	readHelperState := &mel.State{DelayedMessagedSeen: 1}
-	readHelperState.SetDelayedMessageBacklog(&melrunner.DelayedMessageBacklog{})
+	readHelperState.SetDelayedMessageBacklog(&mel.DelayedMessageBacklog{})
 	readHelperState.SetReadDelayedMsgsAcc(readAcc)
 	for i := uint64(1); i < numDelayedMessages; i++ {
 		fromInboxTracker, err := builder.L2.ConsensusNode.InboxTracker.GetDelayedMessage(ctx, i)
@@ -392,7 +392,7 @@ func TestMessageExtractionLayer_DelayedMessageEquivalence_Simple(t *testing.T) {
 	readAcc, err := merkleAccumulator.NewNonpersistentMerkleAccumulatorFromPartials(nil)
 	Require(t, err)
 	readHelperState := &mel.State{DelayedMessagedSeen: 1}
-	readHelperState.SetDelayedMessageBacklog(&melrunner.DelayedMessageBacklog{})
+	readHelperState.SetDelayedMessageBacklog(&mel.DelayedMessageBacklog{})
 	readHelperState.SetReadDelayedMsgsAcc(readAcc)
 	for i := uint64(1); i < numDelayedMessages; i++ {
 		fromInboxTracker, err := builder.L2.ConsensusNode.InboxTracker.GetDelayedMessage(ctx, i)
@@ -698,8 +698,8 @@ func TestMessageExtractionLayer_UseArbDBForStoringDelayedMessages(t *testing.T) 
 
 	newInitialState, err := melDB.FetchInitialState(ctx, lastState.ParentChainBlockHash)
 	Require(t, err)
-	delayedMessageBacklog := melrunner.NewDelayedMessageBacklog(100, extractor.GetFinalizedDelayedMessagesRead)
-	err = delayedMessageBacklog.Initialize(ctx, melDB, newInitialState)
+	delayedMessageBacklog := mel.NewDelayedMessageBacklog(ctx, 100, extractor.GetFinalizedDelayedMessagesRead)
+	err = melrunner.InitializeDelayedMessageBacklog(ctx, delayedMessageBacklog, melDB, newInitialState, extractor.GetFinalizedDelayedMessagesRead)
 	Require(t, err)
 	newInitialState.SetDelayedMessageBacklog(delayedMessageBacklog)
 	for i := newInitialState.DelayedMessagesRead; i < newInitialState.DelayedMessagedSeen; i++ {
