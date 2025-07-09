@@ -44,7 +44,7 @@ func TestReadDelayedMessage(t *testing.T) {
 			DelayedMessagesSeenRoot: root,
 		}
 
-		msg, err := db.ReadDelayedMessage(ctx, state, uint64(0))
+		msg, err := db.ReadDelayedMessage(ctx, state, uint64(0)) // #nosec G115
 		require.NoError(t, err)
 		require.Equal(t, []byte("foobar"), msg.Message.L2msg)
 	})
@@ -76,7 +76,7 @@ func TestReadDelayedMessage(t *testing.T) {
 		// Test each message
 		expectedData := [][]byte{[]byte("a"), []byte("b")}
 		for i, expected := range expectedData {
-			msg, err := db.ReadDelayedMessage(ctx, state, uint64(i))
+			msg, err := db.ReadDelayedMessage(ctx, state, uint64(i)) // #nosec G115
 			require.NoError(t, err)
 			require.Equal(t, expected, msg.Message.L2msg)
 		}
@@ -110,7 +110,7 @@ func TestReadDelayedMessage(t *testing.T) {
 		// Test each message
 		expectedData := [][]byte{[]byte("a"), []byte("b"), []byte("c"), []byte("d")}
 		for i, expected := range expectedData {
-			msg, err := db.ReadDelayedMessage(ctx, state, uint64(i))
+			msg, err := db.ReadDelayedMessage(ctx, state, uint64(i)) // #nosec G115
 			require.NoError(t, err)
 			require.Equal(t, expected, msg.Message.L2msg)
 		}
@@ -179,7 +179,9 @@ func buildMerkleTree(t *testing.T, messages []*mel.DelayedInboxMessage) (map[com
 			left := currentLevel[i]
 			right := currentLevel[i+1] // Assumes even number of leaves
 
-			preimage := append(left[:], right[:]...)
+			preimage := make([]byte, 0)
+			preimage = append(preimage, left[:]...)
+			preimage = append(preimage, right[:]...)
 			parent := crypto.Keccak256Hash(left[:], right[:])
 			preimages[parent] = preimage
 			nextLevel = append(nextLevel, parent)
