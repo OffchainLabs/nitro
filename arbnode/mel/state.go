@@ -28,9 +28,19 @@ type State struct {
 	DelayedMessagedSeen                uint64
 }
 
+// DelayedMessageDatabase can read delayed messages by their global index.
+type DelayedMessageDatabase interface {
+	ReadDelayedMessage(
+		ctx context.Context,
+		state *State,
+		index uint64,
+	) (*DelayedInboxMessage, error)
+}
+
 // Defines a basic interface for MEL, including saving states, messages,
 // and delayed messages to a database.
 type StateDatabase interface {
+	DelayedMessageDatabase
 	State(
 		ctx context.Context,
 		parentChainBlockHash common.Hash,
@@ -45,15 +55,6 @@ type StateDatabase interface {
 		state *State,
 		delayedMessages []*DelayedInboxMessage,
 	) error
-	DelayedMessageDatabase
-}
-
-type DelayedMessageDatabase interface {
-	ReadDelayedMessage(
-		ctx context.Context,
-		state *State,
-		index uint64,
-	) (*DelayedInboxMessage, error)
 }
 
 // Defines an interface for fetching a MEL state by parent chain block hash.
@@ -71,13 +72,13 @@ func (s *State) Clone() *State {
 	parentChainHash := common.Hash{}
 	parentChainPrevHash := common.Hash{}
 	msgAcc := common.Hash{}
-	delayedMsgAcc := common.Hash{}
+	delayedMsgSeenRoot := common.Hash{}
 	copy(batchPostingTarget[:], s.BatchPostingTargetAddress[:])
 	copy(delayedMessageTarget[:], s.DelayedMessagePostingTargetAddress[:])
 	copy(parentChainHash[:], s.ParentChainBlockHash[:])
 	copy(parentChainPrevHash[:], s.ParentChainPreviousBlockHash[:])
 	copy(msgAcc[:], s.MessageAccumulator[:])
-	copy(delayedMsgAcc[:], s.DelayedMessagesSeenRoot[:])
+	copy(delayedMsgSeenRoot[:], s.DelayedMessagesSeenRoot[:])
 	return &State{
 		Version:                            s.Version,
 		ParentChainId:                      s.ParentChainId,
@@ -87,7 +88,7 @@ func (s *State) Clone() *State {
 		ParentChainBlockHash:               parentChainHash,
 		ParentChainPreviousBlockHash:       parentChainPrevHash,
 		MessageAccumulator:                 msgAcc,
-		DelayedMessagesSeenRoot:            delayedMsgAcc,
+		DelayedMessagesSeenRoot:            delayedMsgSeenRoot,
 		MsgCount:                           s.MsgCount,
 		DelayedMessagesRead:                s.DelayedMessagesRead,
 		DelayedMessagedSeen:                s.DelayedMessagedSeen,
