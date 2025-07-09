@@ -2,6 +2,7 @@ package melrunner
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -56,45 +57,10 @@ func (d *DelayedMessageBacklog) Initialize(ctx context.Context, db *Database, st
 	// To make the delayedMessageBacklog reorg resistant we will need to add more delayedMessageBacklogEntry even though those messages are `Read`
 	// this is only relevant if the current head Mel state's ParentChainBlockNumber is not yet finalized
 	targetDelayedMessagesRead := min(state.DelayedMessagesRead, finalizedDelayedMessagesRead)
-	// We first find the melState whose DelayedMessagedSeen is just before the targetDelayedMessagesRead, so that we can construct a merkleAccumulator
-	// thats relevant to us
-	var prev *mel.State
-	delayedMsgIndexToParentChainBlockNum := make(map[uint64]uint64)
-	curr := state
-	for i := state.ParentChainBlockNumber - 1; i > 0; i-- {
-		prev, err = db.State(ctx, i)
-		if err != nil {
-			return err
-		}
-		if curr.DelayedMessagedSeen > prev.DelayedMessagedSeen { // Meaning the 'curr' melState has seen some delayed messages
-			for j := prev.DelayedMessagedSeen; j < curr.DelayedMessagedSeen; j++ {
-				delayedMsgIndexToParentChainBlockNum[j] = curr.ParentChainBlockNumber
-			}
-		}
-		if prev.DelayedMessagedSeen <= targetDelayedMessagesRead {
-			break
-		}
-		curr = prev
-	}
-	if prev == nil {
-		return nil
-	}
-	acc, err := merkleAccumulator.NewNonpersistentMerkleAccumulatorFromPartials(
-		mel.ToPtrSlice(prev.DelayedMessageMerklePartials),
-	)
+	// Get the merkleAccumulator that has accumulated delayed messages up until the position=targetDelayedMessagesRead
+	acc, delayedMsgIndexToParentChainBlockNum, err := getMerkleAccumulatorAt(ctx, targetDelayedMessagesRead, db, state)
 	if err != nil {
 		return err
-	}
-	// We then walk forward the merkleAccumulator till targetDelayedMessagesRead
-	for index := prev.DelayedMessagedSeen; index < targetDelayedMessagesRead; index++ {
-		msg, err := db.fetchDelayedMessage(index)
-		if err != nil {
-			return err
-		}
-		_, err = acc.Append(msg.Hash())
-		if err != nil {
-			return err
-		}
 	}
 	// Accumulator is now at the step we need, hence we start creating DelayedMessageBacklogEntry for all the delayed messages that are seen but not read
 	for index := targetDelayedMessagesRead; index < state.DelayedMessagedSeen; index++ {
@@ -117,6 +83,53 @@ func (d *DelayedMessageBacklog) Initialize(ctx context.Context, db *Database, st
 	return nil
 }
 
+// getMerkleAccumulatorAt returns a merkle accumulator that has accumulated messages up until a given targetDelayedMessagesRead index
+func getMerkleAccumulatorAt(ctx context.Context, targetDelayedMessagesRead uint64, db *Database, state *mel.State) (*merkleAccumulator.MerkleAccumulator, map[uint64]uint64, error) {
+	// We first find the melState whose DelayedMessagedSeen is just before the targetDelayedMessagesRead
+	// so that we can construct a merkleAccumulator that is relevant to us
+	var prev *mel.State
+	var err error
+	delayedMsgIndexToParentChainBlockNum := make(map[uint64]uint64)
+	curr := state
+	for i := state.ParentChainBlockNumber - 1; i > 0; i-- {
+		prev, err = db.State(ctx, i)
+		if err != nil {
+			return nil, nil, err
+		}
+		if curr.DelayedMessagedSeen > prev.DelayedMessagedSeen { // Meaning the 'curr' melState has seen some delayed messages
+			for j := prev.DelayedMessagedSeen; j < curr.DelayedMessagedSeen; j++ {
+				delayedMsgIndexToParentChainBlockNum[j] = curr.ParentChainBlockNumber
+			}
+		}
+		if prev.DelayedMessagedSeen <= targetDelayedMessagesRead {
+			break
+		}
+		curr = prev
+	}
+	if prev == nil {
+		return nil, nil, fmt.Errorf("could not find relevant mel state while creating merkle accumulator while initializing backlog. targetDelayedMessagesRead: %d, state.delayedSeen: %d, state.delayedRead: %d",
+			targetDelayedMessagesRead, state.DelayedMessagedSeen, state.DelayedMessagesRead)
+	}
+	acc, err := merkleAccumulator.NewNonpersistentMerkleAccumulatorFromPartials(
+		mel.ToPtrSlice(prev.DelayedMessageMerklePartials),
+	)
+	if err != nil {
+		return nil, nil, err
+	}
+	// We then walk forward the merkleAccumulator till targetDelayedMessagesRead
+	for index := prev.DelayedMessagedSeen; index < targetDelayedMessagesRead; index++ {
+		msg, err := db.fetchDelayedMessage(index)
+		if err != nil {
+			return nil, nil, err
+		}
+		_, err = acc.Append(msg.Hash())
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+	return acc, delayedMsgIndexToParentChainBlockNum, nil
+}
+
 // Add takes values of a DelayedMessageBacklogEntry and adds it to the backlog given the entry succeeds validation. It also attempts trimming of backlog if capacity is reached
 func (d *DelayedMessageBacklog) Add(index uint64, merkleRoot common.Hash, parentChainBlockNum uint64) error {
 	if len(d.entries) > 0 {
@@ -129,13 +142,36 @@ func (d *DelayedMessageBacklog) Add(index uint64, merkleRoot common.Hash, parent
 	return d.clear()
 }
 
+// clear removes from backlog (if exceeds capacity) the entries that correspond to the delayed messages that are both READ and belong to finalized parent chain blocks
+func (d *DelayedMessageBacklog) clear() error {
+	if len(d.entries) <= d.capacity {
+		return nil
+	}
+	if d.finalizedAndReadIndexFetcher != nil {
+		finalizedDelayedMessagesRead, err := d.finalizedAndReadIndexFetcher(d.ctx)
+		if err != nil {
+			log.Error("Unable to trim finalized and read delayed messages from DelayedMessageBacklog, will be retried later", "err", err)
+			return nil // we should not interrupt delayed messages accumulation if we cannot trim the backlog, since its not high priority
+		}
+		if finalizedDelayedMessagesRead > d.entries[0].Index {
+			leftTrimPos := min(finalizedDelayedMessagesRead-d.entries[0].Index, uint64(len(d.entries)))
+			d.entries = d.entries[leftTrimPos:]
+		}
+	}
+	return nil
+}
+
 func (d *DelayedMessageBacklog) Get(index uint64) (common.Hash, uint64, error) {
+	if len(d.entries) == 0 {
+		return common.Hash{}, 0, errors.New("delayed message backlog is empty")
+	}
 	if index < d.entries[0].Index || index > d.entries[len(d.entries)-1].Index {
 		return common.Hash{}, 0, fmt.Errorf("queried index: %d out of bounds, delayed message backlog's starting index: %d, ending index: %d", index, d.entries[0].Index, d.entries[len(d.entries)-1].Index)
 	}
-	entry := d.entries[index-d.entries[0].Index]
+	pos := index - d.entries[0].Index
+	entry := d.entries[pos]
 	if entry.Index != index {
-		return common.Hash{}, 0, fmt.Errorf("index mismatch in the backlog entry. Queried index: %d, backlog entry's index: %d", index, entry.Index)
+		return common.Hash{}, 0, fmt.Errorf("index mismatch in the delayed message backlog entry. Queried index: %d, backlog entry's index: %d", index, entry.Index)
 	}
 	return entry.MerkleRoot, entry.MelStateParentChainBlockNum, nil
 }
@@ -167,25 +203,6 @@ func (d *DelayedMessageBacklog) Reorg(newDelayedMessagedSeen uint64) error {
 		d.entries = d.entries[:rightTrimPos]
 	} else {
 		d.entries = make([]*DelayedMessageBacklogEntry, 0)
-	}
-	return nil
-}
-
-// clear removes from backlog (if exceeds capacity) the entries that correspond to the delayed messages that are both READ and belong to finalized parent chain blocks
-func (d *DelayedMessageBacklog) clear() error {
-	if len(d.entries) <= d.capacity {
-		return nil
-	}
-	if d.finalizedAndReadIndexFetcher != nil {
-		finalizedDelayedMessagesRead, err := d.finalizedAndReadIndexFetcher(d.ctx)
-		if err != nil {
-			log.Error("Unable to trim finalized and read delayed messages from DelayedMessageBacklog, will be retried later", "err", err)
-			return nil // we should not interrupt delayed messages accumulation if we cannot trim the backlog, since its not high priority
-		}
-		if finalizedDelayedMessagesRead > d.entries[0].Index {
-			leftTrimPos := min(finalizedDelayedMessagesRead-d.entries[0].Index, uint64(len(d.entries)))
-			d.entries = d.entries[leftTrimPos:]
-		}
 	}
 	return nil
 }
