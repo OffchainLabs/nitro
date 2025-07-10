@@ -104,7 +104,7 @@ var DefaultTxIndexerConfig = TxIndexerConfig{
 func TxIndexerConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultTxIndexerConfig.Enable, "enables transaction indexer")
 	f.Uint64(prefix+".tx-lookup-limit", DefaultTxIndexerConfig.TxLookupLimit, "retain the ability to lookup transactions by hash for the past N blocks (0 = all blocks)")
-	f.Int(prefix+".threads", DefaultTxIndexerConfig.Threads, "number of threads used to read blocks during indexing/unindexing of historical transactions")
+	f.Int(prefix+".threads", DefaultTxIndexerConfig.Threads, "number of threads used to RLP decode blocks during indexing/unindexing of historical transactions")
 	f.Duration(prefix+".min-batch-delay", DefaultTxIndexerConfig.MinBatchDelay, "minimum delay between transaction indexing/unindexing batches; the bigger the delay, the more blocks can be included in each batch")
 }
 

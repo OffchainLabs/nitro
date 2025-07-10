@@ -243,7 +243,7 @@ func GetBlockChain(
 			MinBatchDelay: txIndexerConfig.MinBatchDelay,
 		}
 	}
-	return core.NewBlockChain(chainDb, cacheConfig, chainConfig, nil, nil, engine, vmConfig, coreTxIndexerConfig)
+	return core.NewBlockChainExtended(chainDb, cacheConfig, chainConfig, nil, nil, engine, vmConfig, coreTxIndexerConfig)
 }
 
 func WriteOrTestBlockChain(
