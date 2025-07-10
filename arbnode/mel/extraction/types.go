@@ -64,14 +64,14 @@ type sequencerMessageParserFunc func(
 	data []byte,
 	dapReaders []daprovider.Reader,
 	keysetValidationMode daprovider.KeysetValidationMode,
-) (*arbstate.SequencerMessage, error)
+) (*arbstate.SequencerBatch, error)
 
 // Defines a function that can extract messages from a batch.
 // See: extractMessagesFromBatch.
 type batchMsgExtractionFunc func(
 	ctx context.Context,
 	melState *mel.State,
-	seqMsg *arbstate.SequencerMessage,
+	seqMsg *arbstate.SequencerBatch,
 	delayedMsgDB DelayedMessageDatabase,
 ) ([]*arbostypes.MessageWithMetadata, error)
 
