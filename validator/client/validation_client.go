@@ -13,7 +13,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
-	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/node"
@@ -33,7 +32,7 @@ type ValidationClient struct {
 	stopwaiter.StopWaiter
 	client          *rpcclient.RpcClient
 	name            string
-	stylusArchs     []ethdb.WasmTarget
+	stylusArchs     []rawdb.WasmTarget
 	room            atomic.Int32
 	wasmModuleRoots []common.Hash
 }
@@ -42,7 +41,7 @@ func NewValidationClient(config rpcclient.ClientConfigFetcher, stack *node.Node)
 	return &ValidationClient{
 		client:      rpcclient.NewRpcClient(config, stack),
 		name:        "not started",
-		stylusArchs: []ethdb.WasmTarget{"not started"},
+		stylusArchs: []rawdb.WasmTarget{"not started"},
 	}
 }
 
@@ -69,20 +68,20 @@ func (c *ValidationClient) Start(ctx context.Context) error {
 	if len(name) == 0 {
 		return errors.New("couldn't read name from server")
 	}
-	var stylusArchs []ethdb.WasmTarget
+	var stylusArchs []rawdb.WasmTarget
 	if err := c.client.CallContext(ctx, &stylusArchs, server_api.Namespace+"_stylusArchs"); err != nil {
 		var rpcError rpc.Error
 		ok := errors.As(err, &rpcError)
 		if !ok || rpcError.ErrorCode() != -32601 {
 			return fmt.Errorf("could not read stylus arch from server: %w", err)
 		}
-		stylusArchs = []ethdb.WasmTarget{ethdb.WasmTarget("pre-stylus")} // invalid, will fail if trying to validate block with stylus
+		stylusArchs = []rawdb.WasmTarget{rawdb.WasmTarget("pre-stylus")} // invalid, will fail if trying to validate block with stylus
 	} else {
 		if len(stylusArchs) == 0 {
 			return fmt.Errorf("could not read stylus archs from validation server")
 		}
 		for _, stylusArch := range stylusArchs {
-			if !rawdb.IsSupportedWasmTarget(ethdb.WasmTarget(stylusArch)) && stylusArch != "mock" {
+			if !rawdb.IsSupportedWasmTarget(rawdb.WasmTarget(stylusArch)) && stylusArch != "mock" {
 				return fmt.Errorf("unsupported stylus architecture: %v", stylusArch)
 			}
 		}
@@ -120,11 +119,11 @@ func (c *ValidationClient) WasmModuleRoots() ([]common.Hash, error) {
 	return nil, errors.New("not started")
 }
 
-func (c *ValidationClient) StylusArchs() []ethdb.WasmTarget {
+func (c *ValidationClient) StylusArchs() []rawdb.WasmTarget {
 	if c.Started() {
 		return c.stylusArchs
 	}
-	return []ethdb.WasmTarget{"not started"}
+	return []rawdb.WasmTarget{"not started"}
 }
 
 func (c *ValidationClient) Stop() {
