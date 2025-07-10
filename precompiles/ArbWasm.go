@@ -1,10 +1,11 @@
 // Copyright 2022-2024, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package precompiles
 
 import (
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/vm"
 	gethparams "github.com/ethereum/go-ethereum/params"
 
@@ -35,13 +36,12 @@ func (con ArbWasm) ActivateProgram(c ctx, evm mech, value huge, program addr) (u
 	debug := evm.ChainConfig().DebugMode()
 	runMode := c.txProcessor.RunMode()
 	programs := c.State.Programs()
-	arbosVersion := c.State.ArbOSVersion()
 
 	// charge a fixed cost up front to begin activation
 	if err := c.Burn(1659168); err != nil {
 		return 0, nil, err
 	}
-	version, codeHash, moduleHash, dataFee, takeAllGas, err := programs.ActivateProgram(evm, program, arbosVersion, runMode, debug)
+	version, codeHash, moduleHash, dataFee, takeAllGas, err := programs.ActivateProgram(evm, program, runMode, debug)
 	if takeAllGas {
 		_ = c.BurnOut()
 	}
@@ -83,11 +83,11 @@ func (con ArbWasm) payActivationDataFee(c ctx, evm mech, value, dataFee huge) er
 	repay := arbmath.BigSub(value, dataFee)
 
 	// transfer the fee to the network account, and the rest back to the user
-	err = util.TransferBalance(&con.Address, &network, dataFee, evm, scenario, "activate")
+	err = util.TransferBalance(&con.Address, &network, dataFee, evm, scenario, tracing.BalanceChangeTransferActivationFee)
 	if err != nil {
 		return err
 	}
-	return util.TransferBalance(&con.Address, &c.caller, repay, evm, scenario, "reimburse")
+	return util.TransferBalance(&con.Address, &c.caller, repay, evm, scenario, tracing.BalanceChangeTransferActivationReimburse)
 }
 
 // Gets the latest stylus version

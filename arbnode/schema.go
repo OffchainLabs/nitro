@@ -1,5 +1,5 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbnode
 
@@ -15,15 +15,16 @@ var (
 	sequencerBatchMetaPrefix            []byte = []byte("s") // maps a batch sequence number to BatchMetadata
 	delayedSequencedPrefix              []byte = []byte("a") // maps a delayed message count to the first sequencer batch sequence number with this delayed count
 
-	messageCountKey              []byte = []byte("_messageCount")                // contains the current message count
-	lastPrunedMessageKey         []byte = []byte("_lastPrunedMessageKey")        // contains the last pruned message key
-	lastPrunedDelayedMessageKey  []byte = []byte("_lastPrunedDelayedMessageKey") // contains the last pruned RLP delayed message key
-	delayedMessageCountKey       []byte = []byte("_delayedMessageCount")         // contains the current delayed message count
-	sequencerBatchCountKey       []byte = []byte("_sequencerBatchCount")         // contains the current sequencer message count
-	dbSchemaVersion              []byte = []byte("_schemaVersion")               // contains a uint64 representing the database schema version
-	espressoSubmittedTxns        []byte = []byte("_espressoSubmittedTxns")       // contains the hash and pos of the submitted transactions
-	espressoPendingTxnsPositions []byte = []byte("_espressoPendingTxnsPos")      // contains the index of the pending txns that need to be submitted to espresso
-	espressoLastConfirmedPos     []byte = []byte("_espressoLastConfirmedPos")    // contains the position of the last confirmed message
+	messageCountKey             []byte = []byte("_messageCount")                // contains the current message count
+	lastPrunedMessageKey        []byte = []byte("_lastPrunedMessageKey")        // contains the last pruned message key
+	lastPrunedDelayedMessageKey []byte = []byte("_lastPrunedDelayedMessageKey") // contains the last pruned RLP delayed message key
+	delayedMessageCountKey      []byte = []byte("_delayedMessageCount")         // contains the current delayed message count
+	sequencerBatchCountKey      []byte = []byte("_sequencerBatchCount")         // contains the current sequencer message count
+	dbSchemaVersion             []byte = []byte("_schemaVersion")               // contains a uint64 representing the database schema version
+
+	espressoSubmittedTxns        []byte = []byte("_espressoSubmittedTxns")    // contains the hash and pos of the submitted transactions
+	espressoPendingTxnsPositions []byte = []byte("_espressoPendingTxnsPos")   // contains the index of the pending txns that need to be submitted to espresso
+	espressoLastConfirmedPos     []byte = []byte("_espressoLastConfirmedPos") // contains the position of the last confirmed message
 )
 
 const currentDbSchemaVersion uint64 = 1

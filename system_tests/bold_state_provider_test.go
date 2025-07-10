@@ -1,10 +1,7 @@
 // Copyright 2023, Offchain Labs, Inc.
-// For license information, see https://github.com/offchainlabs/bold/blob/main/LICENSE
-
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 //go:build challengetest && !race
-
 package arbtest
-
 import (
 	"context"
 	"errors"
@@ -12,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/offchainlabs/nitro/validator/server_common"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -39,7 +38,6 @@ import (
 	mockmanager "github.com/offchainlabs/bold/testing/mocks/state-provider"
 	"github.com/offchainlabs/bold/testing/setup"
 )
-
 func TestChallengeProtocolBOLD_Bisections(t *testing.T) {
 	t.Parallel()
 	ctx, cancelCtx := context.WithCancel(context.Background())
@@ -154,9 +152,8 @@ func TestChallengeProtocolBOLD_Bisections(t *testing.T) {
 		Fatal(t, "wrong commitment")
 	}
 }
-
 func TestChallengeProtocolBOLD_StateProvider(t *testing.T) {
-	// t.Parallel()
+	t.Parallel()
 	ctx, cancelCtx := context.WithCancel(context.Background())
 	defer cancelCtx()
 	maxNumBlocks := uint64(1 << 14)
@@ -290,7 +287,7 @@ func TestChallengeProtocolBOLD_StateProvider(t *testing.T) {
 		}
 
 		// Check if we agree with the last posted batch to the inbox.
-		result, err := l2node.TxStreamer.ResultAtCount(totalMessageCount)
+		result, err := l2node.TxStreamer.ResultAtMessageIndex(totalMessageCount - 1)
 		Require(t, err)
 		_ = result
 
@@ -343,7 +340,6 @@ func TestChallengeProtocolBOLD_StateProvider(t *testing.T) {
 		}
 	})
 }
-
 func setupBoldStateProvider(t *testing.T, ctx context.Context, blockChallengeHeight uint64) (*arbnode.Node, *BlockchainTestInfo, *BlockchainTestInfo, *node.Node, *ethclient.Client, *bold.BOLDStateProvider, *staker.BlockValidator) {
 	var transferGas = util.NormalizeL2GasForL1GasInitial(800_000, params.GWei) // include room for aggregator L1 costs
 	l2chainConfig := chaininfo.ArbitrumDevTestChainConfig()
@@ -358,6 +354,7 @@ func setupBoldStateProvider(t *testing.T, ctx context.Context, blockChallengeHei
 	sconf := setup.RollupStackConfig{
 		UseMockBridge:          false,
 		UseMockOneStepProver:   false,
+		UseBlobs:               true,
 		MinimumAssertionPeriod: 0,
 	}
 
@@ -376,15 +373,18 @@ func setupBoldStateProvider(t *testing.T, ctx context.Context, blockChallengeHei
 	_, valStack := createTestValidationNode(t, ctx, &valnode.TestValidationConfig)
 	blockValidatorConfig := staker.TestBlockValidatorConfig
 
+	locator, err := server_common.NewMachineLocator(valnode.TestValidationConfig.Wasm.RootPath)
+	Require(t, err)
 	stateless, err := staker.NewStatelessBlockValidator(
 		l2node.InboxReader,
 		l2node.InboxTracker,
 		l2node.TxStreamer,
-		l2node.Execution,
+		l2node.ExecutionRecorder,
 		l2node.ArbDB,
 		nil,
 		StaticFetcherFrom(t, &blockValidatorConfig),
 		valStack,
+		locator.LatestWasmModuleRoot(),
 	)
 	Require(t, err)
 	Require(t, stateless.Start(ctx))
@@ -411,6 +411,9 @@ func setupBoldStateProvider(t *testing.T, ctx context.Context, blockChallengeHei
 			CheckBatchFinality:     false,
 		},
 		dir,
+		l2node.InboxTracker,
+		l2node.TxStreamer,
+		l2node.InboxReader,
 	)
 	Require(t, err)
 

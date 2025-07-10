@@ -3,13 +3,13 @@ package execution
 import (
 	"context"
 	"errors"
-	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/state"
 
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/util/containers"
 )
 
 type MessageResult struct {
@@ -24,18 +24,29 @@ type RecordResult struct {
 	UserWasms state.UserWasms
 }
 
+type InboxBatch struct {
+	BatchNum uint64
+	Found    bool
+}
+
 var ErrRetrySequencer = errors.New("please retry transaction")
 var ErrSequencerInsertLockTaken = errors.New("insert lock taken")
 
 // always needed
 type ExecutionClient interface {
-	DigestMessage(num arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, msgForPrefetch *arbostypes.MessageWithMetadata) (*MessageResult, error)
-	Reorg(count arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadataAndBlockInfo, oldMessages []*arbostypes.MessageWithMetadata) ([]*MessageResult, error)
-	HeadMessageNumber() (arbutil.MessageIndex, error)
-	HeadMessageNumberSync(t *testing.T) (arbutil.MessageIndex, error)
-	ResultAtPos(pos arbutil.MessageIndex) (*MessageResult, error)
-	MessageIndexToBlockNumber(messageNum arbutil.MessageIndex) uint64
-	BlockNumberToMessageIndex(blockNum uint64) (arbutil.MessageIndex, error)
+	DigestMessage(msgIdx arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, msgForPrefetch *arbostypes.MessageWithMetadata) containers.PromiseInterface[*MessageResult]
+	Reorg(msgIdxOfFirstMsgToAdd arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadataAndBlockInfo, oldMessages []*arbostypes.MessageWithMetadata) containers.PromiseInterface[[]*MessageResult]
+	HeadMessageIndex() containers.PromiseInterface[arbutil.MessageIndex]
+	ResultAtMessageIndex(msgIdx arbutil.MessageIndex) containers.PromiseInterface[*MessageResult]
+	MessageIndexToBlockNumber(messageNum arbutil.MessageIndex) containers.PromiseInterface[uint64]
+	BlockNumberToMessageIndex(blockNum uint64) containers.PromiseInterface[arbutil.MessageIndex]
+	SetFinalityData(ctx context.Context, safeFinalityData *arbutil.FinalityData, finalizedFinalityData *arbutil.FinalityData, validatedFinalityData *arbutil.FinalityData) containers.PromiseInterface[struct{}]
+	MarkFeedStart(to arbutil.MessageIndex) containers.PromiseInterface[struct{}]
+
+	Maintenance() containers.PromiseInterface[struct{}]
+
+	Start(ctx context.Context) error
+	StopAndWait()
 }
 
 // needed for validators / stakers
@@ -57,46 +68,32 @@ type ExecutionSequencer interface {
 	ForwardTo(url string) error
 	SequenceDelayedMessage(message *arbostypes.L1IncomingMessage, delayedSeqNum uint64) error
 	NextDelayedMessageNumber() (uint64, error)
-	MarkFeedStart(to arbutil.MessageIndex)
-	Synced() bool
-	FullSyncProgressMap() map[string]interface{}
+	Synced(ctx context.Context) bool
+	FullSyncProgressMap(ctx context.Context) map[string]interface{}
 }
 
-type FullExecutionClient interface {
-	ExecutionClient
-	ExecutionRecorder
-	ExecutionSequencer
-
-	Start(ctx context.Context) error
-	StopAndWait()
-
-	Maintenance() error
-
-	ArbOSVersionForMessageNumber(messageNum arbutil.MessageIndex) (uint64, error)
+// needed for batch poster
+type ExecutionBatchPoster interface {
+	ArbOSVersionForMessageIndex(msgIdx arbutil.MessageIndex) (uint64, error)
 }
 
 // not implemented in execution, used as input
 // BatchFetcher is required for any execution node
 type BatchFetcher interface {
-	FindInboxBatchContainingMessage(message arbutil.MessageIndex) (uint64, bool, error)
-	GetBatchParentChainBlock(seqNum uint64) (uint64, error)
+	FindInboxBatchContainingMessage(message arbutil.MessageIndex) containers.PromiseInterface[InboxBatch]
+	GetBatchParentChainBlock(seqNum uint64) containers.PromiseInterface[uint64]
 }
 
 type ConsensusInfo interface {
-	Synced() bool
-	FullSyncProgressMap() map[string]interface{}
-	SyncTargetMessageCount() arbutil.MessageIndex
-	BlockMetadataAtCount(count arbutil.MessageIndex) (common.BlockMetadata, error)
-
-	// TODO: switch from pulling to pushing safe/finalized
-	GetSafeMsgCount(ctx context.Context) (arbutil.MessageIndex, error)
-	GetFinalizedMsgCount(ctx context.Context) (arbutil.MessageIndex, error)
-	ValidatedMessageCount() (arbutil.MessageIndex, error)
+	Synced() containers.PromiseInterface[bool]
+	FullSyncProgressMap() containers.PromiseInterface[map[string]interface{}]
+	SyncTargetMessageCount() containers.PromiseInterface[arbutil.MessageIndex]
+	BlockMetadataAtMessageIndex(msgIdx arbutil.MessageIndex) containers.PromiseInterface[common.BlockMetadata]
 }
 
 type ConsensusSequencer interface {
-	WriteMessageFromSequencer(pos arbutil.MessageIndex, msgWithMeta arbostypes.MessageWithMetadata, msgResult MessageResult, blockMetadata common.BlockMetadata) error
-	ExpectChosenSequencer() error
+	WriteMessageFromSequencer(msgIdx arbutil.MessageIndex, msgWithMeta arbostypes.MessageWithMetadata, msgResult MessageResult, blockMetadata common.BlockMetadata) containers.PromiseInterface[struct{}]
+	ExpectChosenSequencer() containers.PromiseInterface[struct{}]
 }
 
 type FullConsensusClient interface {

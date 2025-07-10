@@ -43,7 +43,6 @@ TestChallengeToFailedTooFar
 TestTwoNodesLong
 TestStylusOpcodeTraceEquivalence
 TestGettingState
-TestEmptyCliConfig
 TestBatchPosterDelayBufferDisabled
 
 # These tests are skipped because of invalid long paths of temporary directory
@@ -55,6 +54,7 @@ TestArbTraceForwarding
 TestIpcRpc
 TestRedisForwarder
 TestRedisForwarderFallbackNoRedis
+TestRequestForwardingToArchiveNodes
 TestStaticForwarder
 
 # This test is failing and it is a bit complicated.
@@ -64,3 +64,7 @@ TestChallengeProtocolBOLDFirstVirtualBlock
 # These tests are specific to Espresso and we have a dedicated
 # CI workflow for them. See: .github/workflows/espresso-e2e.yml
 TestEspresso
+
+# These tests are resource consuming. They will crash the github runner
+TestDimLogSstoreMultipleWarmZeroToNonZeroToNonZero
+TestDimTxOpCallColdPayingContractFundedMemUnchanged

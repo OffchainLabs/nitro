@@ -1,14 +1,11 @@
 // Copyright 2021-2025, Offchain Labs, Inc.
-// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
-
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 mod benchmark;
 mod scenario;
 mod scenarios;
-
 use clap::{Parser, ValueEnum};
 use scenario::Scenario;
 use std::path::PathBuf;
-
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 struct Args {
@@ -18,13 +15,11 @@ struct Args {
     #[arg(short, long)]
     scenario: Option<Scenario>,
 }
-
 fn handle_scenario(scenario: Scenario, output_wat_dir_path: Option<PathBuf>) -> eyre::Result<()> {
     println!("Benchmarking {:?}", scenario);
     let wat = scenario::generate_wat(scenario, output_wat_dir_path);
     benchmark::benchmark(wat)
 }
-
 fn main() -> eyre::Result<()> {
     let args = Args::parse();
 
@@ -42,3 +37,5 @@ fn main() -> eyre::Result<()> {
         }
     }
 }
+// Copyright 2021-2025, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE

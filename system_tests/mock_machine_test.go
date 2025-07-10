@@ -1,6 +1,5 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
-
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 package arbtest
 
 import (
@@ -24,13 +23,17 @@ func NewIncorrectIntermediateMachine(inner server_arb.MachineInterface, incorrec
 		incorrectStep:    incorrectStep,
 	}
 }
-
 func (m *IncorrectIntermediateMachine) CloneMachineInterface() server_arb.MachineInterface {
 	return &IncorrectIntermediateMachine{
 		MachineInterface: m.MachineInterface.CloneMachineInterface(),
 		incorrectStep:    m.incorrectStep,
 	}
 }
+
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
+// IncorrectIntermediateMachine will report an incorrect hash while running from incorrectStep onwards.
+// However, it'll reach the correct final hash and global state once finished.
 
 func (m *IncorrectIntermediateMachine) Hash() common.Hash {
 	h := m.MachineInterface.Hash()

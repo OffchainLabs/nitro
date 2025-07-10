@@ -1,5 +1,5 @@
 // Copyright 2023-2024, Offchain Labs, Inc.
-// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package valnode
 
@@ -81,6 +81,9 @@ func NewExecutionServerAPI(valSpawner validator.ValidationSpawner, execution val
 }
 
 func (a *ExecServerAPI) CreateExecutionRun(ctx context.Context, wasmModuleRoot common.Hash, jsonInput *server_api.InputJSON, useBoldMachineOptional *bool) (uint64, error) {
+	if a.Stopped() {
+		return 0, errors.New("ExecServerAPI is stopped")
+	}
 	input, err := server_api.ValidationInputFromJson(jsonInput)
 	if err != nil {
 		return 0, err
@@ -101,16 +104,13 @@ func (a *ExecServerAPI) CreateExecutionRun(ctx context.Context, wasmModuleRoot c
 	return newId, nil
 }
 
-func (a *ExecServerAPI) LatestWasmModuleRoot(ctx context.Context) (common.Hash, error) {
-	return a.execSpawner.LatestWasmModuleRoot().Await(ctx)
-}
-
 func (a *ExecServerAPI) removeOldRuns(ctx context.Context) time.Duration {
 	oldestKept := time.Now().Add(-1 * a.config().ExecutionRunTimeout)
 	a.runIdLock.Lock()
 	defer a.runIdLock.Unlock()
 	for id, entry := range a.runs {
 		if entry.accessed.Before(oldestKept) {
+			entry.run.Close()
 			delete(a.runs, id)
 		}
 	}
@@ -122,9 +122,21 @@ func (a *ExecServerAPI) Start(ctx_in context.Context) {
 	a.CallIteratively(a.removeOldRuns)
 }
 
+func (a *ExecServerAPI) StopAndWait() {
+	a.StopWaiter.StopAndWait()
+	a.runIdLock.Lock()
+	defer a.runIdLock.Unlock()
+	for _, entry := range a.runs {
+		entry.run.Close()
+	}
+}
+
 var errRunNotFound error = errors.New("run not found")
 
 func (a *ExecServerAPI) getRun(id uint64) (validator.ExecutionRun, error) {
+	if a.Stopped() {
+		return nil, errRunNotFound
+	}
 	a.runIdLock.Lock()
 	defer a.runIdLock.Unlock()
 	entry := a.runs[id]
@@ -200,12 +212,10 @@ func (a *ExecServerAPI) CheckAlive(ctx context.Context, execid uint64) error {
 }
 
 func (a *ExecServerAPI) CloseExec(execid uint64) {
-	a.runIdLock.Lock()
-	defer a.runIdLock.Unlock()
-	run, found := a.runs[execid]
-	if !found {
-		return
+	run, err := a.getRun(execid)
+	if err != nil {
+		return // means not found
 	}
-	run.run.Close()
+	run.Close()
 	delete(a.runs, execid)
 }

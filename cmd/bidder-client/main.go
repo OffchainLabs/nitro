@@ -55,7 +55,7 @@ func mainImpl() error {
 	if bidderClientConfig.DepositGwei > 0 {
 		err = bidderClient.Deposit(ctx, big.NewInt(int64(bidderClientConfig.DepositGwei)*1_000_000_000))
 		if err == nil {
-			log.Info("Depsoit successful")
+			log.Info("Deposit successful")
 		}
 		return err
 	}

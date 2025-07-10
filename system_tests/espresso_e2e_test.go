@@ -53,11 +53,11 @@ func runEspresso() func() {
 		"espresso-dev-node",
 	}
 	invocation = append(invocation, nodes...)
-	procees := exec.Command("docker", invocation...)
-	procees.Dir = workingDir
+	proceeds := exec.Command("docker", invocation...)
+	proceeds.Dir = workingDir
 
 	go func() {
-		if err := procees.Run(); err != nil {
+		if err := proceeds.Run(); err != nil {
 			panic(err)
 		}
 	}()

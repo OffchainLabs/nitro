@@ -1,5 +1,5 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package broadcastclient
 
@@ -38,6 +38,8 @@ var (
 	sourcesConnectedGauge    = metrics.NewRegisteredGauge("arb/feed/sources/connected", nil)
 	sourcesDisconnectedGauge = metrics.NewRegisteredGauge("arb/feed/sources/disconnected", nil)
 )
+
+var TransactionStreamerBlockCreationStopped = errors.New("block creation stopped in transaction streamer")
 
 type FeedConfig struct {
 	Output wsbroadcastserver.BroadcasterConfig `koanf:"output" reload:"hot"`
@@ -139,6 +141,7 @@ type BroadcastClient struct {
 
 	retrying                        bool
 	shuttingDown                    bool
+	firstReconnectAttempt           bool
 	confirmedSequenceNumberListener chan arbutil.MessageIndex
 	txStreamer                      TransactionStreamerInterface
 	fatalErrChan                    chan error
@@ -175,6 +178,7 @@ func NewBroadcastClient(
 		fatalErrChan:                    fatalErrChan,
 		sigVerifier:                     sigVerifier,
 		adjustCount:                     adjustCount,
+		firstReconnectAttempt:           true,
 	}, err
 }
 
@@ -359,6 +363,7 @@ func (bc *BroadcastClient) connect(ctx context.Context, nextSeqNum arbutil.Messa
 	bc.connMutex.Lock()
 	bc.conn = conn
 	bc.compression = compressionNegotiated
+	bc.firstReconnectAttempt = true
 	bc.connMutex.Unlock()
 	log.Info("Feed connected", "feedServerVersion", feedServerVersion, "chainId", chainId, "requestedSeqNum", nextSeqNum)
 
@@ -371,6 +376,8 @@ func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
 		sourcesDisconnectedGauge.Inc(1)
 		backoffDuration := bc.config().ReconnectInitialBackoff
 		flateReader := wsbroadcastserver.NewFlateReader()
+		// Log should be error instead of debug if first attempt fails
+		lastConnectionResetByPeerErrorTime := time.Now().Add(-2 * time.Minute)
 		for {
 			select {
 			case <-ctx.Done():
@@ -391,6 +398,13 @@ func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
 					log.Error("Server connection timed out without receiving data", "url", bc.websocketUrl, "err", err)
 				} else if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
 					log.Warn("readData returned EOF", "url", bc.websocketUrl, "opcode", int(op), "err", err)
+				} else if strings.Contains(err.Error(), "connection reset by peer") {
+					logLevel := log.Warn
+					if time.Since(lastConnectionResetByPeerErrorTime) <= time.Minute {
+						logLevel = log.Error
+					}
+					lastConnectionResetByPeerErrorTime = time.Now()
+					logLevel("error calling readData", "url", bc.websocketUrl, "opcode", int(op), "err", err)
 				} else {
 					log.Error("error calling readData", "url", bc.websocketUrl, "opcode", int(op), "err", err)
 				}
@@ -401,6 +415,14 @@ func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
 					sourcesDisconnectedGauge.Inc(1)
 				}
 				_ = bc.conn.Close()
+
+				// Skip backoff for first reconnection attempt
+				if bc.firstReconnectAttempt {
+					bc.firstReconnectAttempt = false
+					log.Info("First reconnection attempt, skipping backoff", "url", bc.websocketUrl)
+					earlyFrameData = bc.retryConnect(ctx)
+					continue
+				}
 				timer := time.NewTimer(backoffDuration)
 				if backoffDuration < bc.config().ReconnectMaximumBackoff {
 					backoffDuration *= 2
@@ -429,6 +451,7 @@ func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
 					sourcesDisconnectedGauge.Dec(1)
 					sourcesConnectedGauge.Inc(1)
 					bc.adjustCount(1)
+					bc.firstReconnectAttempt = true
 				}
 				if len(res.Messages) > 0 {
 					log.Debug("received batch item", "count", len(res.Messages), "first seq", res.Messages[0].SequenceNumber)
@@ -455,6 +478,10 @@ func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
 							bc.nextSeqNum = message.SequenceNumber + 1
 						}
 						if err := bc.txStreamer.AddBroadcastMessages(res.Messages); err != nil {
+							if errors.Is(err, TransactionStreamerBlockCreationStopped) {
+								log.Info("stopping block creation in broadcast client because transaction streamer has stopped")
+								return
+							}
 							log.Error("Error adding message from Sequencer Feed", "err", err)
 						}
 					}
@@ -479,7 +506,7 @@ func (bc *BroadcastClient) isShuttingDown() bool {
 
 func (bc *BroadcastClient) retryConnect(ctx context.Context) io.Reader {
 	maxWaitDuration := 15 * time.Second
-	waitDuration := 500 * time.Millisecond
+	var waitDuration time.Duration = 0 // Don't wait for first reconnect
 	bc.retrying = true
 
 	for !bc.isShuttingDown() {

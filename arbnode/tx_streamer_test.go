@@ -78,6 +78,11 @@ func TestWriteOversizedMessages(t *testing.T) {
 
 	txStreamer := &TransactionStreamer{
 		db: arbDb,
+		config: func() *TransactionStreamerConfig {
+			return &TransactionStreamerConfig{
+				SyncTillBlock: 0,
+			}
+		},
 	}
 	txStreamer.StopWaiter.Start(ctx, txStreamer)
 

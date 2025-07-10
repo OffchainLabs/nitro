@@ -1,5 +1,5 @@
 // Copyright 2022-2024, Offchain Labs, Inc.
-// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 use ruint2::Uint;
@@ -18,9 +18,9 @@ use std::{
 )]
 #[repr(u8)]
 pub enum PreimageType {
-    Keccak256,
-    Sha2_256,
-    EthVersionedHash,
+    Keccak256 = 0,
+    Sha2_256 = 1,
+    EthVersionedHash = 2,
 }
 
 /// cbindgen:field-names=[bytes]
@@ -99,7 +99,7 @@ impl FromStr for Bytes32 {
 
         // Ensure the decoded bytes is exactly 32 bytes
         if decoded_bytes.len() != 32 {
-            return Err("Hex string too long for Bytes32");
+            return Err("Hex string must decode to exactly 32 bytes");
         }
 
         // Create a 32-byte array and fill it with the decoded bytes.
@@ -284,6 +284,17 @@ mod test {
     #[test]
     fn test_bytes32() {
         let b = Bytes32::from(0x12345678u32);
+        let expected = [
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0x12, 0x34, 0x56, 0x78,
+        ];
+        assert_eq!(b, Bytes32(expected));
+    }
+
+    #[test]
+    fn test_bytes32_from_usize() {
+        let val: usize = 0x12345678;
+        let b = Bytes32::from(val);
         let expected = [
             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
             0x12, 0x34, 0x56, 0x78,

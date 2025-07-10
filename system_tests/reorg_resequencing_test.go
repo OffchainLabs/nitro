@@ -1,8 +1,5 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
-
-//go:build cionly
-// +build cionly
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbtest
 
@@ -18,15 +15,6 @@ import (
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
-// This is a flaky test.
-// During a reorg:
-// 1. TransactionStreamer, holding insertionMutex lock, calls ExecutionEngine, which then adds old messages to a channel.
-// After that, and before releasing the lock, TransactionStreamer does more computations.
-// 2. Asynchronously, ExecutionEngine reads from this channel and calls TransactionStreamer,
-// which expects that insertionMutex is free in order to succeed.
-//
-// If step 1 is still executing when Execution calls TransactionStreamer in step 2 then this error happens:
-// 'failed to re-sequence old user message removed by reorg err="insert lock taken"'
 func TestReorgResequencing(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
@@ -36,7 +24,7 @@ func TestReorgResequencing(t *testing.T) {
 	cleanup := builder.Build(t)
 	defer cleanup()
 
-	startMsgCount, err := builder.L2.ConsensusNode.TxStreamer.GetMessageCount()
+	startHeadMsgIdx, err := builder.L2.ConsensusNode.TxStreamer.GetHeadMessageIndex()
 	Require(t, err)
 
 	builder.L2Info.GenerateAccount("Intermediate")
@@ -62,17 +50,18 @@ func TestReorgResequencing(t *testing.T) {
 	}
 	verifyBalances("before reorg")
 
-	err = builder.L2.ConsensusNode.TxStreamer.ReorgTo(startMsgCount)
+	err = builder.L2.ConsensusNode.TxStreamer.ReorgAt(startHeadMsgIdx + 1)
 	Require(t, err)
 
-	_, err = builder.L2.ExecNode.ExecEngine.HeadMessageNumberSync(t)
+	_, err = builder.L2.ExecNode.ExecEngine.HeadMessageIndexSync(t)
 	Require(t, err)
 
 	verifyBalances("after empty reorg")
-	compareAllMsgResultsFromConsensusAndExecution(t, builder.L2, "after empty reorg")
+	compareAllMsgResultsFromConsensusAndExecution(t, ctx, builder.L2, "after empty reorg")
 
-	prevMessage, err := builder.L2.ConsensusNode.TxStreamer.GetMessage(startMsgCount - 1)
+	prevMessage, err := builder.L2.ConsensusNode.TxStreamer.GetMessage(startHeadMsgIdx)
 	Require(t, err)
+	// #nosec G115
 	delayedIndexHash := common.BigToHash(big.NewInt(int64(prevMessage.DelayedMessagesRead)))
 	newMessage := &arbostypes.L1IncomingMessage{
 		Header: &arbostypes.L1IncomingMessageHeader{
@@ -85,26 +74,27 @@ func TestReorgResequencing(t *testing.T) {
 		},
 		L2msg: append(builder.L2Info.GetAddress("User4").Bytes(), arbmath.Uint64ToU256Bytes(params.Ether)...),
 	}
-	err = builder.L2.ConsensusNode.TxStreamer.AddMessages(startMsgCount, true, []arbostypes.MessageWithMetadata{{
+	nextHeadMsgIdx := startHeadMsgIdx + 1
+	err = builder.L2.ConsensusNode.TxStreamer.AddMessages(nextHeadMsgIdx, true, []arbostypes.MessageWithMetadata{{
 		Message:             newMessage,
 		DelayedMessagesRead: prevMessage.DelayedMessagesRead + 1,
 	}}, nil)
 	Require(t, err)
 
-	_, err = builder.L2.ExecNode.ExecEngine.HeadMessageNumberSync(t)
+	_, err = builder.L2.ExecNode.ExecEngine.HeadMessageIndexSync(t)
 	Require(t, err)
 
 	accountsWithBalance = append(accountsWithBalance, "User4")
 
 	verifyBalances("after reorg with new deposit")
-	compareAllMsgResultsFromConsensusAndExecution(t, builder.L2, "after reorg with new deposit")
+	compareAllMsgResultsFromConsensusAndExecution(t, ctx, builder.L2, "after reorg with new deposit")
 
-	err = builder.L2.ConsensusNode.TxStreamer.ReorgTo(startMsgCount)
+	err = builder.L2.ConsensusNode.TxStreamer.ReorgAt(startHeadMsgIdx + 1)
 	Require(t, err)
 
-	_, err = builder.L2.ExecNode.ExecEngine.HeadMessageNumberSync(t)
+	_, err = builder.L2.ExecNode.ExecEngine.HeadMessageIndexSync(t)
 	Require(t, err)
 
 	verifyBalances("after second empty reorg")
-	compareAllMsgResultsFromConsensusAndExecution(t, builder.L2, "after second empty reorg")
+	compareAllMsgResultsFromConsensusAndExecution(t, ctx, builder.L2, "after second empty reorg")
 }

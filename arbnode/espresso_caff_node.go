@@ -238,7 +238,6 @@ func (n *EspressoCaffNode) createBlock(ctx context.Context) (returnValue bool) {
 		lastBlockHeader,
 		statedb,
 		n.executionEngine.Bc(),
-		n.executionEngine.Bc().Config(),
 		false,
 		core.MessageReplayMode)
 

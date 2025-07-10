@@ -1,8 +1,6 @@
 // Copyright 2024, Offchain Labs, Inc.
-// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
-
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 #![no_main]
-
 use stylus_sdk::{
     abi::Bytes,
     alloy_primitives::{Address, B256, U256},
@@ -13,19 +11,15 @@ use stylus_sdk::{
     types::AddressVM,
 };
 extern crate alloc;
-
 #[cfg(target_arch = "wasm32")]
 #[global_allocator]
 static ALLOC: mini_alloc::MiniAlloc = mini_alloc::MiniAlloc::INIT;
-
 sol_storage! {
     #[entrypoint]
     pub struct HostioTest {
     }
 }
-
 type Result<T> = std::result::Result<T, Vec<u8>>;
-
 // These are not available as hostios in the sdk, so we import them directly.
 #[link(wasm_import_module = "vm_hooks")]
 extern "C" {
@@ -38,7 +32,6 @@ extern "C" {
     fn transient_store_bytes32(key: *const u8, value: *const u8);
     fn exit_early(status: u32);
 }
-
 #[external]
 impl HostioTest {
     fn exit_early() -> Result<()> {
@@ -238,3 +231,6 @@ impl HostioTest {
     fn read_args_three_args(_arg1: U256, _arg2: U256, _arg3: U256) {
     }
 }
+// Copyright 2024, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
+// These are not available as hostios in the sdk, so we import them directly.

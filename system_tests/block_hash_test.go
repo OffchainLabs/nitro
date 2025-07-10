@@ -1,5 +1,5 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbtest
 
@@ -9,7 +9,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 
-	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
+	"github.com/offchainlabs/nitro/solgen/go/localgen"
 )
 
 func TestBlockHash(t *testing.T) {
@@ -23,7 +23,7 @@ func TestBlockHash(t *testing.T) {
 
 	auth := builder.L2Info.GetDefaultTransactOpts("Faucet", ctx)
 
-	_, _, simple, err := mocksgen.DeploySimple(&auth, builder.L2.Client)
+	_, _, simple, err := localgen.DeploySimple(&auth, builder.L2.Client)
 	Require(t, err)
 
 	_, err = simple.CheckBlockHashes(&bind.CallOpts{Context: ctx})

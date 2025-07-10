@@ -1,5 +1,5 @@
 // Copyright 2022, Offchain Labs, Inc.
-// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 use crate::{native, run::RunProgram};
 use arbutil::{
@@ -99,34 +99,34 @@ impl EvmApi<VecReader> for TestEvmApi {
     /// Simulates a contract call.
     /// Note: this call function is for testing purposes only and deviates from onchain behavior.
     fn contract_call(
-        &mut self,
-        contract: Bytes20,
-        calldata: &[u8],
-        _gas_left: Gas,
-        gas_req: Gas,
-        _value: Bytes32,
-    ) -> (u32, Gas, UserOutcomeKind) {
-        let compile = self.compile.clone();
-        let evm_data = self.evm_data;
-        let config = *self.configs.lock().get(&contract).unwrap();
-        let gas = gas_req; // Not consensus behavior
+    &mut self,
+    contract: Bytes20,
+    calldata: &[u8],
+    _gas_left: Gas,
+    gas_req: Gas,
+    _value: Bytes32,
+) -> (u32, Gas, UserOutcomeKind) {
+    let compile = self.compile.clone();
+    let evm_data = self.evm_data;
+    let config = *self.configs.lock().get(&contract).unwrap();
+    let gas = gas_req; // Not consensus behavior
 
-        let mut native = unsafe {
-            let contracts = self.contracts.lock();
-            let module = contracts.get(&contract).unwrap();
-            TestInstance::deserialize(module, compile, self.clone(), evm_data).unwrap()
-        };
+    let mut native = unsafe {
+        let contracts = self.contracts.lock();
+        let module = contracts.get(&contract).unwrap();
+        TestInstance::deserialize(module, compile, self.clone(), evm_data).unwrap()
+    };
 
-        let ink = config.pricing.gas_to_ink(gas);
-        let outcome = native.run_main(calldata, config, ink).unwrap();
-        let (status, outs) = outcome.into_data();
-        let outs_len = outs.len() as u32;
+    let ink = config.pricing.gas_to_ink(gas);
+    let outcome = native.run_main(calldata, config, ink).unwrap();
+    let (status, outs) = outcome.into_data();
+    let outs_len = outs.len() as u32;
 
-        let ink_left: Ink = native.ink_left().into();
-        let gas_left = config.pricing.ink_to_gas(ink_left);
-        *self.write_result.lock() = outs;
-        (outs_len, gas - gas_left, status)
-    }
+    let ink_left: Ink = native.ink_left().into();
+    let gas_left = config.pricing.ink_to_gas(ink_left);
+    *self.write_result.lock() = outs;
+    (outs_len, gas - gas_left, status)
+}
 
     fn delegate_call(
         &mut self,
@@ -180,7 +180,12 @@ impl EvmApi<VecReader> for TestEvmApi {
         unimplemented!()
     }
 
-    fn account_code(&mut self, _address: Bytes20, _gas_left: Gas) -> (VecReader, Gas) {
+    fn account_code(
+        &mut self,
+        _arbos_version: u64,
+        _address: Bytes20,
+        _gas_left: Gas,
+    ) -> (VecReader, Gas) {
         unimplemented!()
     }
 

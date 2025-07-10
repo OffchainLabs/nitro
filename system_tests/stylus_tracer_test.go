@@ -1,5 +1,5 @@
 // Copyright 2024, Offchain Labs, Inc.
-// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbtest
 
@@ -13,7 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/vm"
 
 	"github.com/offchainlabs/nitro/execution/gethexec"
-	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
+	"github.com/offchainlabs/nitro/solgen/go/localgen"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
@@ -41,7 +41,7 @@ func TestStylusTracer(t *testing.T) {
 
 	// Deploy contracts
 	stylusMulticall := deployWasm(t, ctx, auth, l2client, rustFile("multicall"))
-	evmMulticall, tx, _, err := mocksgen.DeployMultiCallTest(&auth, builder.L2.Client)
+	evmMulticall, tx, _, err := localgen.DeployMultiCallTest(&auth, builder.L2.Client)
 	Require(t, err, "deploy evm multicall")
 	_, err = EnsureTxSucceeded(ctx, l2client, tx)
 	Require(t, err, "ensure evm multicall deployment")
@@ -50,7 +50,7 @@ func TestStylusTracer(t *testing.T) {
 	key := testhelpers.RandomHash()
 	value := testhelpers.RandomHash()
 	loadStoreArgs := multicallEmptyArgs()
-	loadStoreArgs = multicallAppendStore(loadStoreArgs, key, value, false)
+	loadStoreArgs = multicallAppendStore(loadStoreArgs, key, value, false, false)
 	loadStoreArgs = multicallAppendLoad(loadStoreArgs, key, false)
 	callArgs := argsForMulticall(vm.CALL, stylusMulticall, nil, []byte{0})
 	evmCall := argsForMulticall(vm.CALL, evmMulticall, nil, []byte{0})

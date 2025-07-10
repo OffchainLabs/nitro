@@ -1,5 +1,5 @@
 // Copyright 2023-2024, Offchain Labs, Inc.
-// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package programs
 
@@ -14,7 +14,6 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos/util"
-	"github.com/offchainlabs/nitro/util/arbmath"
 	am "github.com/offchainlabs/nitro/util/arbmath"
 )
 
@@ -75,6 +74,7 @@ func newApiClosures(
 	}
 	setTrieSlots := func(data []byte, gasLeft *uint64) apiStatus {
 		isOutOfGas := false
+		recording := db.Recording()
 		for len(data) > 0 {
 			key := common.BytesToHash(data[:32])
 			value := common.BytesToHash(data[32:64])
@@ -87,11 +87,11 @@ func newApiClosures(
 			cost := vm.WasmStateStoreCost(db, actingAddress, key, value)
 			if cost > *gasLeft {
 				*gasLeft = 0
-				if db.Deterministic() {
-					isOutOfGas = true
+				isOutOfGas = true
+				if recording {
 					continue
 				}
-				return OutOfGas
+				break
 			}
 			*gasLeft -= cost
 			db.SetState(actingAddress, key, value)
@@ -154,11 +154,11 @@ func newApiClosures(
 
 		switch opcode {
 		case vm.CALL:
-			ret, returnGas, err = evm.Call(scope.Contract, contract, input, gas, value)
+			ret, returnGas, err = evm.Call(scope.Contract.Address(), contract, input, gas, value)
 		case vm.DELEGATECALL:
-			ret, returnGas, err = evm.DelegateCall(scope.Contract, contract, input, gas)
+			ret, returnGas, err = evm.DelegateCall(scope.Contract.Caller(), scope.Contract.Address(), contract, input, gas, scope.Contract.Value())
 		case vm.STATICCALL:
-			ret, returnGas, err = evm.StaticCall(scope.Contract, contract, input, gas)
+			ret, returnGas, err = evm.StaticCall(scope.Contract.Address(), contract, input, gas)
 		default:
 			panic("unsupported call type: " + opcode.String())
 		}
@@ -210,9 +210,9 @@ func newApiClosures(
 		var suberr error
 
 		if opcode == vm.CREATE {
-			res, addr, returnGas, suberr = evm.Create(contract, code, gas, endowment)
+			res, addr, returnGas, suberr = evm.Create(contract.Address(), code, gas, endowment)
 		} else {
-			res, addr, returnGas, suberr = evm.Create2(contract, code, gas, endowment, salt)
+			res, addr, returnGas, suberr = evm.Create2(contract.Address(), code, gas, endowment, salt)
 		}
 		if suberr != nil {
 			addr = zeroAddr
@@ -224,7 +224,7 @@ func newApiClosures(
 			res = nil // returnData is only provided in the revert case (opCreate)
 		}
 		interpreter.SetReturnData(res)
-		cost := arbmath.SaturatingUSub(startGas, returnGas+one64th) // user gets 1/64th back
+		cost := am.SaturatingUSub(startGas, returnGas+one64th) // user gets 1/64th back
 		return addr, res, cost, nil
 	}
 	emitLog := func(topics []common.Hash, data []byte) error {

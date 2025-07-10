@@ -1,5 +1,5 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package util
 
@@ -31,15 +31,6 @@ type TracingInfo struct {
 	storageCache *storageCache
 }
 
-// holds an address to satisfy core/vm's ContractRef() interface
-type addressHolder struct {
-	addr common.Address
-}
-
-func (a addressHolder) Address() common.Address {
-	return a.addr
-}
-
 func NewTracingInfo(evm *vm.EVM, from, to common.Address, scenario TracingScenario) *TracingInfo {
 	if evm.Config.Tracer == nil {
 		return nil
@@ -47,7 +38,7 @@ func NewTracingInfo(evm *vm.EVM, from, to common.Address, scenario TracingScenar
 	return &TracingInfo{
 		Tracer:       evm.Config.Tracer,
 		Scenario:     scenario,
-		Contract:     vm.NewContract(addressHolder{to}, addressHolder{from}, uint256.NewInt(0), 0),
+		Contract:     vm.NewContract(to, from, uint256.NewInt(0), 0, evm.JumpDests()),
 		Depth:        evm.Depth(),
 		storageCache: newStorageCache(),
 	}
@@ -89,7 +80,7 @@ func (info *TracingInfo) MockCall(input []byte, gas uint64, from, to common.Addr
 	tracer := info.Tracer
 	depth := info.Depth
 
-	contract := vm.NewContract(addressHolder{to}, addressHolder{from}, uint256.MustFromBig(amount), gas)
+	contract := vm.NewContract(to, from, uint256.MustFromBig(amount), gas, info.Contract.Jumpdest())
 
 	scope := &vm.ScopeContext{
 		Memory: TracingMemoryFromBytes(input),

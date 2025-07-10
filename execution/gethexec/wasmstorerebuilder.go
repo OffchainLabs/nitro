@@ -1,5 +1,5 @@
 // Copyright 2021-2024, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package gethexec
 
@@ -54,7 +54,7 @@ func WriteToKeyValueStore[T any](store ethdb.KeyValueStore, key []byte, val T) e
 // RebuildWasmStore function runs a loop looking at every codehash in diskDb, checking if its an activated stylus contract and
 // saving it to wasm store if it doesnt already exists. When errored it logs them and silently returns
 //
-// It stores the status of rebuilding to wasm store by updating the codehash (of the latest sucessfully checked contract) in
+// It stores the status of rebuilding to wasm store by updating the codehash (of the latest successfully checked contract) in
 // RebuildingPositionKey after every second of work.
 //
 // It also stores a special value that is only set once when rebuilding commenced in RebuildingStartBlockHashKey as the block
@@ -71,10 +71,10 @@ func RebuildWasmStore(ctx context.Context, wasmStore ethdb.KeyValueStore, chainD
 	latestHeader := l2Blockchain.CurrentBlock()
 	// Attempt to get state at the start block when rebuilding commenced, if not available (in case of non-archival nodes) use latest state
 	rebuildingStartHeader := l2Blockchain.GetHeaderByHash(rebuildingStartBlockHash)
-	stateDb, _, err = arbitrum.StateAndHeaderFromHeader(ctx, chainDb, l2Blockchain, maxRecreateStateDepth, rebuildingStartHeader, nil)
+	stateDb, _, err = arbitrum.StateAndHeaderFromHeader(ctx, chainDb, l2Blockchain, maxRecreateStateDepth, rebuildingStartHeader, nil, nil)
 	if err != nil {
 		log.Info("Error getting state at start block of rebuilding wasm store, attempting rebuilding with latest state", "err", err)
-		stateDb, _, err = arbitrum.StateAndHeaderFromHeader(ctx, chainDb, l2Blockchain, maxRecreateStateDepth, latestHeader, nil)
+		stateDb, _, err = arbitrum.StateAndHeaderFromHeader(ctx, chainDb, l2Blockchain, maxRecreateStateDepth, latestHeader, nil, nil)
 		if err != nil {
 			return fmt.Errorf("error getting state at latest block, aborting rebuilding: %w", err)
 		}

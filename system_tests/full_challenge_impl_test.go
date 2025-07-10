@@ -1,5 +1,5 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbtest
 
@@ -8,7 +8,6 @@ import (
 	"context"
 	"io"
 	"math/big"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -18,7 +17,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
-	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
@@ -27,10 +25,10 @@ import (
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbstate"
-	"github.com/offchainlabs/nitro/solgen/go/challengegen"
+	"github.com/offchainlabs/nitro/solgen/go/challenge_legacy_gen"
 	"github.com/offchainlabs/nitro/solgen/go/espressogen"
-	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
-	"github.com/offchainlabs/nitro/solgen/go/ospgen"
+	"github.com/offchainlabs/nitro/solgen/go/mocks_legacy_gen"
+	"github.com/offchainlabs/nitro/solgen/go/osp_legacy_gen"
 	"github.com/offchainlabs/nitro/solgen/go/yulgen"
 	"github.com/offchainlabs/nitro/staker"
 	legacystaker "github.com/offchainlabs/nitro/staker/legacy"
@@ -39,27 +37,27 @@ import (
 )
 
 func DeployOneStepProofEntry(t *testing.T, ctx context.Context, auth *bind.TransactOpts, client *ethclient.Client) common.Address {
-	osp0, tx, _, err := ospgen.DeployOneStepProver0(auth, client)
+	osp0, tx, _, err := osp_legacy_gen.DeployOneStepProver0(auth, client)
 	Require(t, err)
 	_, err = EnsureTxSucceeded(ctx, client, tx)
 	Require(t, err)
 
-	ospMem, tx, _, err := ospgen.DeployOneStepProverMemory(auth, client)
+	ospMem, tx, _, err := osp_legacy_gen.DeployOneStepProverMemory(auth, client)
 	Require(t, err)
 	_, err = EnsureTxSucceeded(ctx, client, tx)
 	Require(t, err)
 
-	ospMath, tx, _, err := ospgen.DeployOneStepProverMath(auth, client)
+	ospMath, tx, _, err := osp_legacy_gen.DeployOneStepProverMath(auth, client)
 	Require(t, err)
 	_, err = EnsureTxSucceeded(ctx, client, tx)
 	Require(t, err)
 
-	ospHostIo, tx, _, err := ospgen.DeployOneStepProverHostIo(auth, client)
+	ospHostIo, tx, _, err := osp_legacy_gen.DeployOneStepProverHostIo(auth, client)
 	Require(t, err)
 	_, err = EnsureTxSucceeded(ctx, client, tx)
 	Require(t, err)
 
-	ospEntry, tx, _, err := ospgen.DeployOneStepProofEntry(auth, client, osp0, ospMem, ospMath, ospHostIo)
+	ospEntry, tx, _, err := osp_legacy_gen.DeployOneStepProofEntry(auth, client, osp0, ospMem, ospMath, ospHostIo)
 	Require(t, err)
 	_, err = EnsureTxSucceeded(ctx, client, tx)
 	Require(t, err)
@@ -81,19 +79,19 @@ func CreateChallenge(
 	numBlocks uint64,
 	asserter common.Address,
 	challenger common.Address,
-) (*mocksgen.MockResultReceiver, common.Address) {
-	challengeManagerLogic, tx, _, err := challengegen.DeployChallengeManager(auth, client)
+) (*mocks_legacy_gen.MockResultReceiver, common.Address) {
+	challengeManagerLogic, tx, _, err := challenge_legacy_gen.DeployChallengeManager(auth, client)
 	Require(t, err)
 	_, err = EnsureTxSucceeded(ctx, client, tx)
 	Require(t, err)
-	challengeManagerAddr, tx, _, err := mocksgen.DeploySimpleProxy(auth, client, challengeManagerLogic)
+	challengeManagerAddr, tx, _, err := mocks_legacy_gen.DeploySimpleProxy(auth, client, challengeManagerLogic)
 	Require(t, err)
 	_, err = EnsureTxSucceeded(ctx, client, tx)
 	Require(t, err)
-	challengeManager, err := challengegen.NewChallengeManager(challengeManagerAddr, client)
+	challengeManager, err := challenge_legacy_gen.NewChallengeManager(challengeManagerAddr, client)
 	Require(t, err)
 
-	resultReceiverAddr, _, resultReceiver, err := mocksgen.DeployMockResultReceiver(auth, client, challengeManagerAddr)
+	resultReceiverAddr, _, resultReceiver, err := mocks_legacy_gen.DeployMockResultReceiver(auth, client, challengeManagerAddr)
 	Require(t, err)
 	tx, err = challengeManager.Initialize(auth, resultReceiverAddr, sequencerInbox, delayedBridge, ospEntry)
 	Require(t, err)
@@ -106,7 +104,7 @@ func CreateChallenge(
 			legacystaker.StatusFinished,
 			legacystaker.StatusFinished,
 		},
-		[2]mocksgen.GlobalState{
+		[2]mocks_legacy_gen.GlobalState{
 			{
 				Bytes32Vals: [2][32]byte{startGlobalState.BlockHash, startGlobalState.SendRoot},
 				U64Vals:     [2]uint64{startGlobalState.Batch, startGlobalState.PosInBatch},
@@ -143,7 +141,7 @@ func writeTxToBatch(writer io.Writer, tx *types.Transaction) error {
 
 const makeBatch_MsgsPerBatch = int64(5)
 
-func makeBatch(t *testing.T, l2Node *arbnode.Node, l2Info *BlockchainTestInfo, backend *ethclient.Client, sequencer *bind.TransactOpts, seqInbox *mocksgen.SequencerInboxStub, seqInboxAddr common.Address, modStep int64) {
+func makeBatch(t *testing.T, l2Node *arbnode.Node, l2Info *BlockchainTestInfo, backend *ethclient.Client, sequencer *bind.TransactOpts, seqInbox *mocks_legacy_gen.SequencerInboxStub, seqInboxAddr common.Address, modStep int64) {
 	ctx := context.Background()
 
 	batchBuffer := bytes.NewBuffer([]byte{})
@@ -191,9 +189,9 @@ func confirmLatestBlock(ctx context.Context, t *testing.T, l1Info *BlockchainTes
 	}
 }
 
-func setupSequencerInboxStub(ctx context.Context, t *testing.T, l1Info *BlockchainTestInfo, l1Client *ethclient.Client, chainConfig *params.ChainConfig) (common.Address, *mocksgen.SequencerInboxStub, common.Address) {
+func setupSequencerInboxStub(ctx context.Context, t *testing.T, l1Info *BlockchainTestInfo, l1Client *ethclient.Client, chainConfig *params.ChainConfig) (common.Address, *mocks_legacy_gen.SequencerInboxStub, common.Address) {
 	txOpts := l1Info.GetDefaultTransactOpts("deployer", ctx)
-	bridgeAddr, tx, bridge, err := mocksgen.DeployBridgeUnproxied(&txOpts, l1Client)
+	bridgeAddr, tx, bridge, err := mocks_legacy_gen.DeployBridgeUnproxied(&txOpts, l1Client)
 	Require(t, err)
 	_, err = EnsureTxSucceeded(ctx, l1Client, tx)
 	Require(t, err)
@@ -201,7 +199,7 @@ func setupSequencerInboxStub(ctx context.Context, t *testing.T, l1Info *Blockcha
 	Require(t, err)
 	_, err = EnsureTxSucceeded(ctx, l1Client, tx)
 	Require(t, err)
-	timeBounds := mocksgen.ISequencerInboxMaxTimeVariation{
+	timeBounds := mocks_legacy_gen.ISequencerInboxMaxTimeVariation{
 		DelayBlocks:   big.NewInt(10000),
 		FutureBlocks:  big.NewInt(10000),
 		DelaySeconds:  big.NewInt(10000),
@@ -214,7 +212,7 @@ func setupSequencerInboxStub(ctx context.Context, t *testing.T, l1Info *Blockcha
 	_, err = EnsureTxSucceeded(ctx, l1Client, tx)
 	Require(t, err)
 
-	seqInboxAddr, tx, seqInbox, err := mocksgen.DeploySequencerInboxStub(
+	seqInboxAddr, tx, seqInbox, err := mocks_legacy_gen.DeploySequencerInboxStub(
 		&txOpts,
 		l1Client,
 		bridgeAddr,
@@ -244,11 +242,6 @@ func setupSequencerInboxStub(ctx context.Context, t *testing.T, l1Info *Blockcha
 }
 
 func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, challengeMsgIdx int64, wasmRootDir string) {
-	glogger := log.NewGlogHandler(
-		log.NewTerminalHandler(io.Writer(os.Stderr), false))
-	glogger.Verbosity(log.LvlInfo)
-	log.SetDefault(log.NewLogger(glogger))
-
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -394,7 +387,9 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, chall
 
 	confirmLatestBlock(ctx, t, l1Info, l1Backend)
 
-	asserterValidator, err := staker.NewStatelessBlockValidator(asserterL2.InboxReader, asserterL2.InboxTracker, asserterL2.TxStreamer, asserterExec.Recorder, asserterL2.ArbDB, nil, StaticFetcherFrom(t, &conf.BlockValidator), valStack)
+	locator, err := server_common.NewMachineLocator(builder.valnodeConfig.Wasm.RootPath)
+	Require(t, err)
+	asserterValidator, err := staker.NewStatelessBlockValidator(asserterL2.InboxReader, asserterL2.InboxTracker, asserterL2.TxStreamer, asserterExec.Recorder, asserterL2.ArbDB, nil, StaticFetcherFrom(t, &conf.BlockValidator), valStack, locator.LatestWasmModuleRoot())
 	if err != nil {
 		Fatal(t, err)
 	}
@@ -407,11 +402,11 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, chall
 		Fatal(t, err)
 	}
 	defer asserterValidator.Stop()
-	asserterManager, err := legacystaker.NewChallengeManager(ctx, l1Backend, &asserterTxOpts, asserterTxOpts.From, challengeManagerAddr, 1, asserterValidator, 0, 0)
+	asserterManager, err := legacystaker.NewChallengeManager(ctx, l1Backend, &asserterTxOpts, asserterTxOpts.From, challengeManagerAddr, 1, asserterValidator, 0, 0, asserterL2.InboxTracker, asserterL2.TxStreamer)
 	if err != nil {
 		Fatal(t, err)
 	}
-	challengerValidator, err := staker.NewStatelessBlockValidator(challengerL2.InboxReader, challengerL2.InboxTracker, challengerL2.TxStreamer, challengerExec.Recorder, challengerL2.ArbDB, nil, StaticFetcherFrom(t, &conf.BlockValidator), valStack)
+	challengerValidator, err := staker.NewStatelessBlockValidator(challengerL2.InboxReader, challengerL2.InboxTracker, challengerL2.TxStreamer, challengerExec.Recorder, challengerL2.ArbDB, nil, StaticFetcherFrom(t, &conf.BlockValidator), valStack, locator.LatestWasmModuleRoot())
 	if err != nil {
 		Fatal(t, err)
 	}
@@ -424,7 +419,7 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, chall
 		Fatal(t, err)
 	}
 	defer challengerValidator.Stop()
-	challengerManager, err := legacystaker.NewChallengeManager(ctx, l1Backend, &challengerTxOpts, challengerTxOpts.From, challengeManagerAddr, 1, challengerValidator, 0, 0)
+	challengerManager, err := legacystaker.NewChallengeManager(ctx, l1Backend, &challengerTxOpts, challengerTxOpts.From, challengeManagerAddr, 1, challengerValidator, 0, 0, challengerL2.InboxTracker, challengerL2.TxStreamer)
 	if err != nil {
 		Fatal(t, err)
 	}

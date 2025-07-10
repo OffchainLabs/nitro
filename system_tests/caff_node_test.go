@@ -416,7 +416,7 @@ func TestEspressoCaffNodeUnfinalizedDelayedMessages(t *testing.T) {
 func RequireErr(t *testing.T, err error, expectedError error) {
 	t.Helper()
 	if err == nil {
-		log.Error("expected an error to occurr", "expected error", expectedError)
+		log.Error("expected an error to occur", "expected error", expectedError)
 		t.Fatal(err, expectedError)
 	}
 }

@@ -1,5 +1,5 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbtest
 
@@ -35,11 +35,11 @@ func TestMeaninglessBatchReorg(t *testing.T) {
 		if i >= 500 {
 			Fatal(t, "Failed to read batch from L1")
 		}
-		msgNum, err := builder.L2.ExecNode.ExecEngine.HeadMessageNumber()
+		msgIdx, err := builder.L2.ExecNode.ExecEngine.HeadMessageIndex()
 		Require(t, err)
-		if msgNum == 1 {
+		if msgIdx == 1 {
 			break
-		} else if msgNum > 1 {
+		} else if msgIdx > 1 {
 			Fatal(t, "More than two batches in test?")
 		}
 		time.Sleep(10 * time.Millisecond)
@@ -61,7 +61,7 @@ func TestMeaninglessBatchReorg(t *testing.T) {
 		builder.L1.TransferBalance(t, "Faucet", "Faucet", common.Big1, builder.L1Info)
 	}
 
-	compareAllMsgResultsFromConsensusAndExecution(t, builder.L2, "before reorg")
+	compareAllMsgResultsFromConsensusAndExecution(t, ctx, builder.L2, "before reorg")
 
 	parentBlock := builder.L1.L1Backend.BlockChain().GetBlockByNumber(batchReceipt.BlockNumber.Uint64() - 1)
 	err = builder.L1.L1Backend.BlockChain().ReorgToOldBlock(parentBlock)
@@ -106,5 +106,5 @@ func TestMeaninglessBatchReorg(t *testing.T) {
 		Fatal(t, "L2 block hash changed")
 	}
 
-	compareAllMsgResultsFromConsensusAndExecution(t, builder.L2, "after reorg")
+	compareAllMsgResultsFromConsensusAndExecution(t, ctx, builder.L2, "after reorg")
 }

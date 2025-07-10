@@ -1,6 +1,5 @@
 // Copyright 2021-2025, Offchain Labs, Inc.
-// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
-
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 use arbutil::evm::{api::Ink, EvmData};
 use core::time::Duration;
 use jit::machine::WasmEnv;
@@ -9,12 +8,9 @@ use prover::programs::{config::CompileConfig, config::PricingParams, prelude::St
 use std::str;
 use stylus::native;
 use wasmer::Target;
-
 const EVM_API_METHOD_REQ_OFFSET: u32 = 0x10000000;
-
 const NUMBER_OF_BENCHMARK_RUNS: u32 = 7;
 const NUMBER_OF_TOP_AND_BOTTOM_RUNS_TO_DISCARD: u32 = 2;
-
 fn check_result(req_type: u32, req_data: &Vec<u8>) {
     let _ = match str::from_utf8(req_data) {
         Ok(v) => v,
@@ -30,7 +26,6 @@ fn check_result(req_type: u32, req_data: &Vec<u8>) {
         _ => panic!("ErrExecutionReverted user unknown"),
     }
 }
-
 fn run(compiled_module: Vec<u8>) -> (Duration, Ink) {
     let calldata = Vec::from([0u8; 32]);
     let evm_data = EvmData::default();
@@ -68,7 +63,6 @@ fn run(compiled_module: Vec<u8>) -> (Duration, Ink) {
 
     (msg.benchmark.elapsed_total, msg.benchmark.ink_total)
 }
-
 pub fn benchmark(wat: Vec<u8>) -> eyre::Result<()> {
     let wasm = wasmer::wat2wasm(&wat)?;
 
@@ -103,3 +97,5 @@ pub fn benchmark(wat: Vec<u8>) -> eyre::Result<()> {
 
     Ok(())
 }
+// Copyright 2021-2025, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE

@@ -17,17 +17,9 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  free-disk-space:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Free Disk Space (Ubuntu)
-        uses: jlumbroso/free-disk-space@main
-        with:
-          tool-cache: true
   test:
-    needs: free-disk-space
     name: Go Tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-8core
 
     # Creates a redis container for redis tests
     services:
@@ -39,37 +31,42 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        test-mode: [defaults, race, challenge, stylus, long]
+        test-mode: [defaults, pathdb, challenge, stylus, l3challenge]
 
     steps:
+      # - name: Free Disk Space (Ubuntu)
+      #   uses: jlumbroso/free-disk-space@main
+      #   with:
+      #     tool-cache: true
+
       - name: Checkout
         uses: actions/checkout@v4
         with:
           submodules: recursive
 
-      - uses: cargo-bins/cargo-binstall@main
-      - name: Make more disk space available on public runner
-        run: |
-          # rmz seems to be faster at deleting files than rm
-          cargo binstall -y --version 2.2.0 rmz
-          sudo mv /home/runner/.cargo/bin/rmz /usr/local/bin/rmz
+      # - uses: cargo-bins/cargo-binstall@main
+      # - name: Make more disk space available on public runner
+      #   run: |
+      #     # rmz seems to be faster at deleting files than rm
+      #     cargo binstall -y --version 2.2.0 rmz
+      #     sudo mv /home/runner/.cargo/bin/rmz /usr/local/bin/rmz
 
-          echo "Available storage before:"
-          sudo df -h
-          echo
-          sudo rmz -f /usr/share/dotnet
-          sudo rmz -f /usr/share/swift
-          sudo rmz -f /usr/share/gradle-*
-          sudo rmz -f /usr/share/az_*
-          sudo rmz -f /usr/local/lib/android
-          sudo rmz -f /opt/ghc
-          sudo rmz -f /opt/az
-          sudo rmz -f /opt/pipx
-          sudo rmz -f /opt/google
-          sudo rmz -f /opt/microsoft
-          echo "Available storage after:"
-          sudo df -h
-          echo
+      #     echo "Available storage before:"
+      #     sudo df -h
+      #     echo
+      #     sudo rmz -f /usr/share/dotnet
+      #     sudo rmz -f /usr/share/swift
+      #     sudo rmz -f /usr/share/gradle-*
+      #     sudo rmz -f /usr/share/az_*
+      #     sudo rmz -f /usr/local/lib/android
+      #     sudo rmz -f /opt/ghc
+      #     sudo rmz -f /opt/az
+      #     sudo rmz -f /opt/pipx
+      #     sudo rmz -f /opt/google
+      #     sudo rmz -f /opt/microsoft
+      #     echo "Available storage after:"
+      #     sudo df -h
+      #     echo
 
       - name: Install dependencies
         run: >
@@ -87,14 +84,14 @@ jobs:
           gotestsum_version: v1.12.0
 
       - name: Setup nodejs
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           node-version: "18"
           cache: "yarn"
           cache-dependency-path: "**/yarn.lock"
 
       - name: Install go
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v5
         with:
           go-version: 1.23.x
 
@@ -107,41 +104,43 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         id: install-rust
         with:
-          toolchain: "1.81.0"
-          targets: "wasm32-wasi, wasm32-unknown-unknown"
-          components: "llvm-tools-preview, rustfmt, clippy"
-  
+          toolchain: '1.84.1'
+          targets: 'wasm32-wasip1, wasm32-unknown-unknown'
+          components: 'llvm-tools-preview, rustfmt, clippy'
+
       - name: Install rust nightly
         uses: dtolnay/rust-toolchain@nightly
         id: install-rust-nightly
         with:
-          toolchain: "nightly-2024-10-06"
-          targets: "wasm32-wasi, wasm32-unknown-unknown"
-          components: "rust-src, rustfmt, clippy"
-
-      - name: Install cbindgen
-        run: cargo install cbindgen
+          toolchain: 'nightly-2025-02-14'
+          targets: 'wasm32-wasip1, wasm32-unknown-unknown'
+          components: 'rust-src, rustfmt, clippy'
 
       - name: Set STYLUS_NIGHTLY_VER environment variable
         run: echo "STYLUS_NIGHTLY_VER=+$(rustup toolchain list | grep '^nightly' | head -n1 | cut -d' ' -f1)" >> "$GITHUB_ENV"
 
+      - name: Get Rust version
+        id: rust-version
+        run: echo "version=$(rustc --version | cut -d' ' -f2)" >> $GITHUB_OUTPUT
+
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
+        with:
+          cache: false
 
       - name: Install cbindgen
         run: cargo install --force cbindgen
 
       - name: Cache Build Products
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: |
-            ~/go/pkg/mod
             ~/.cache/go-build
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}-${{ matrix.test-mode }}
-          restore-keys: ${{ runner.os }}-go-
+          key: ${{ runner.os }}-go-${{ matrix.test-mode }}-${{ hashFiles('**/go.sum') }}
+          restore-keys: ${{ runner.os }}-go-${{ matrix.test-mode }}-
 
       - name: Cache Rust Build Products
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/
@@ -154,7 +153,7 @@ jobs:
           restore-keys: ${{ runner.os }}-cargo-${{ steps.install-rust.outputs.rustc_hash }}-
 
       - name: Cache cbrotli
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         id: cache-cbrotli
         with:
           path: |
@@ -163,8 +162,7 @@ jobs:
             target/lib/libbrotlicommon-static.a
             target/lib/libbrotlienc-static.a
             target/lib/libbrotlidec-static.a
-          key: ${{ runner.os }}-brotli-${{ hashFiles('scripts/build-brotli.sh') }}-${{ hashFiles('.github/workflows/arbitrator-ci.yaml') }}-${{ matrix.test-mode }}
-          restore-keys: ${{ runner.os }}-brotli-
+          key: ${{ runner.os }}-brotli-${{ matrix.test-mode }}-${{ hashFiles('scripts/build-brotli.sh') }}-${{ hashFiles('.github/workflows/arbitrator-ci.yaml') }}
 
       - name: Build cbrotli-local
         if: steps.cache-cbrotli.outputs.cache-hit != 'true'
@@ -175,16 +173,17 @@ jobs:
         run: ./scripts/build-brotli.sh -w -d
 
       - name: Build
-        run: make build test-go-deps -j
+        run: make build test-go-deps -j8
 
       - name: Build all lint dependencies
-        run: make -j build-node-deps
+        run: make -j8 build-node-deps
 
       - name: Lint
-        uses: golangci/golangci-lint-action@v3
+        uses: golangci/golangci-lint-action@v8
         with:
-          version: v1.63
-          skip-pkg-cache: true
+          version: latest
+          skip-cache: true
+          skip-save-cache: true
       - name: Custom Lint
         run: |
           go run ./linters ./...
@@ -199,49 +198,35 @@ jobs:
           echo "LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$GITHUB_WORKSPACE/target/lib" >> "$GITHUB_ENV"
 
       - name: run tests without race detection and path state scheme
-        if: matrix.test-mode == 'defaults'
-        shell: bash
-        env:
-          TEST_STATE_SCHEME: path
+        if: matrix.test-mode == 'pathdb'
         run: |
           echo "Running tests with Path Scheme" >> full.log
-          ${{ github.workspace }}/scripts/espresso-run-test-ci
+          ${{ github.workspace }}/.github/workflows/gotestsum.sh --tags cionly --timeout 30m --test_state_scheme path
 
       - name: run tests without race detection and hash state scheme
         if: matrix.test-mode == 'defaults'
-        shell: bash
-        env:
-          TEST_STATE_SCHEME: hash
         run: |
           echo "Running tests with Hash Scheme" >> full.log
-          ${{ github.workspace }}/scripts/espresso-run-test-ci
-
-      - name: run tests with race detection and hash state scheme
-        if: matrix.test-mode == 'race'
-        shell: bash
-        env:
-          TEST_STATE_SCHEME: hash
-        run: |
-          echo "Running tests with Hash Scheme" >> full.log
-          ${{ github.workspace }}/scripts/espresso-run-test-ci -race
+          ${{ github.workspace }}/.github/workflows/gotestsum.sh --tags cionly --timeout 30m --test_state_scheme hash
 
       - name: run redis tests
         if: matrix.test-mode == 'defaults'
-        shell: bash
         run: |
           echo "Running redis tests" >> full.log
-          TEST_REDIS=redis://localhost:6379/0 ${{ github.workspace }}/scripts/espresso-run-test-ci -p 1 -run TestRedis ./arbnode/... ./system_tests/...
-
+          skip_tests=$(grep -vE '^\s*#|^\s*$' ci_skip_tests | tr '\n' '|' | sed 's/|$//')
+          gotestsum --format short-verbose -- -p 1 -run TestRedis -skip "$skip_tests" ./arbnode/... ./system_tests/... -coverprofile=coverage-redis.txt -covermode=atomic -coverpkg=./... -- --test_redis=redis://localhost:6379/0
+      
       - name: create block input json file
         if: matrix.test-mode == 'defaults'
         run: |
-          gotestsum --format short-verbose -- -run TestProgramStorage$ ./system_tests/... --count 1 --recordBlockInputs.WithBaseDir="${{ github.workspace }}/target" --recordBlockInputs.WithTimestampDirEnabled=false --recordBlockInputs.WithBlockIdInFileNameEnabled=false
+          gotestsum --format short-verbose -- -run TestProgramStorage$ ./system_tests/... --count 1 -- --recordBlockInputs.enable=true --recordBlockInputs.WithBaseDir="${{ github.workspace }}/target" --recordBlockInputs.WithTimestampDirEnabled=false --recordBlockInputs.WithBlockIdInFileNameEnabled=false
+      
       - name: run arbitrator prover on block input json
         if: matrix.test-mode == 'defaults'
         run: |
           make build-prover-bin
           target/bin/prover target/machines/latest/machine.wavm.br -b --json-inputs="${{ github.workspace }}/target/TestProgramStorage/block_inputs.json"
-
+      
       - name: run jit prover on block input json
         if: matrix.test-mode == 'defaults'
         run: |
@@ -251,21 +236,18 @@ jobs:
             exit 1
           fi
 
-      - name: run challenge tests
+      - name: build challenge tests
         if: matrix.test-mode == 'challenge'
-        shell: bash
         run: |
-          scripts/espresso-run-test-ci -run=TestChallenge -tags=challengetest
+          go test -tags challengetest ./... -run=^$ -v
+
+      - name: run L3 challenge tests
+        if: matrix.test-mode == 'l3challenge'
+        run: ${{ github.workspace }}/.github/workflows/gotestsum.sh --tags challengetest --run TestL3Challenge --timeout 120m --cover
 
       - name: run stylus tests
         if: matrix.test-mode == 'stylus'
         run: ${{ github.workspace }}/.github/workflows/gotestsum.sh --tags stylustest --run TestProgramArbitrator --timeout 60m --cover
-
-      - name: run long stylus tests
-        if: matrix.test-mode == 'long'
-        shell: bash
-        run: |
-          scripts/espresso-run-test-ci -tags=stylustest -run=TestProgramArbitrator
 
       - name: Archive detailed run log
         uses: actions/upload-artifact@v4

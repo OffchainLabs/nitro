@@ -1,5 +1,5 @@
 // Copyright 2023, Offchain Labs, Inc.
-// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 use arbutil::evm::api::Gas;
 
@@ -31,20 +31,20 @@ impl MemoryModel {
 
     /// Determines the gas cost of allocating `new` pages given `open` are active and `ever` have ever been.
     pub fn gas_cost(&self, new: u16, open: u16, ever: u16) -> Gas {
-        let new_open = open.saturating_add(new);
-        let new_ever = ever.max(new_open);
+    let new_open = open.saturating_add(new);
+    let new_ever = ever.max(new_open);
 
-        // free until expansion beyond the first few
-        if new_ever <= self.free_pages {
-            return Gas(0);
-        }
-
-        let credit = |pages: u16| pages.saturating_sub(self.free_pages);
-        let adding = credit(new_open).saturating_sub(credit(open)) as u64;
-        let linear = adding.saturating_mul(self.page_gas.into());
-        let expand = Self::exp(new_ever) - Self::exp(ever);
-        Gas(linear.saturating_add(expand))
+    // free until expansion beyond the first few
+    if new_ever <= self.free_pages {
+        return Gas(0);
     }
+
+    let credit = |pages: u16| pages.saturating_sub(self.free_pages);
+    let adding = credit(new_open).saturating_sub(credit(open)) as u64;
+    let linear = adding.saturating_mul(self.page_gas.into());
+    let expand = Self::exp(new_ever) - Self::exp(ever);
+    Gas(linear.saturating_add(expand))
+}
 
     fn exp(pages: u16) -> u64 {
         MEMORY_EXPONENTS

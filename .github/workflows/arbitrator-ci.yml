@@ -13,7 +13,7 @@ on:
   pull_request:
     paths:
       - 'arbitrator/**'
-      - 'contracts'
+      - 'contracts/**'
       - '.github/workflows/arbitrator-ci.yml'
       - 'Makefile'
   push:
@@ -65,7 +65,7 @@ jobs:
           go build -o /usr/local/bin/geth ./cmd/geth
 
       - name: Setup nodejs
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           node-version: '18'
           cache: 'yarn'
@@ -75,23 +75,27 @@ jobs:
         uses: dtolnay/rust-toolchain@nightly
         id: install-rust-nightly
         with:
-          toolchain: 'nightly-2024-10-06'
-          targets: 'wasm32-wasi, wasm32-unknown-unknown'
+          toolchain: 'nightly-2025-02-14'
+          targets: 'wasm32-wasip1, wasm32-unknown-unknown'
           components: 'rust-src, rustfmt, clippy'
 
       - name: Install rust stable
         id: install-rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: '1.80.1'
-          targets: 'wasm32-wasi, wasm32-unknown-unknown'
+          toolchain: '1.84.1'
+          targets: 'wasm32-wasip1, wasm32-unknown-unknown'
           components: 'llvm-tools-preview, rustfmt, clippy'
 
       - name: Set STYLUS_NIGHTLY_VER environment variable
         run: echo "STYLUS_NIGHTLY_VER=+$(rustup toolchain list | grep '^nightly' | head -n1 | cut -d' ' -f1)" >> "$GITHUB_ENV"
 
+      - name: Get Rust version
+        id: rust-version
+        run: echo "version=$(rustc --version | cut -d' ' -f2)" >> $GITHUB_OUTPUT
+
       - name: Cache Rust intermediate build products
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/bin/
@@ -100,14 +104,14 @@ jobs:
             ~/.cargo/git/db/
             arbitrator/target/
             arbitrator/wasm-libraries/target/
-          key: ${{ runner.os }}-cargo-${{ steps.install-rust.outputs.rustc_hash }}-full-${{ hashFiles('arbitrator/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-${{ steps.rust-version.outputs.version }}-full-${{ hashFiles('arbitrator/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-${{ steps.install-rust.outputs.rustc_hash }}-full-
-            ${{ runner.os }}-cargo-${{ steps.install-rust.outputs.rustc_hash }}-
+            ${{ runner.os }}-cargo-${{ steps.rust-version.outputs.version }}-full-
+            ${{ runner.os }}-cargo-${{ steps.rust-version.outputs.version }}-
 
       - name: Cache wabt build
         id: cache-wabt
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: ~/wabt-prefix
           key: ${{ runner.os }}-wabt-${{ env.WABT_VERSION }}
@@ -127,10 +131,12 @@ jobs:
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
         with:
+          cache: false
+        with:
           version: nightly
 
       - name: Cache cbrotli
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         id: cache-cbrotli
         with:
           path: |
@@ -139,8 +145,8 @@ jobs:
             target/lib/libbrotlicommon-static.a
             target/lib/libbrotlienc-static.a
             target/lib/libbrotlidec-static.a
-          key: ${{ runner.os }}-brotli-3-${{ hashFiles('scripts/build-brotli.sh') }}-${{ hashFiles('.github/workflows/arbitrator-ci.yaml') }}
-          restore-keys: ${{ runner.os }}-brotli-2-
+          key: ${{ runner.os }}-brotli-${{ hashFiles('scripts/build-brotli.sh') }}-${{ hashFiles('.github/workflows/arbitrator-ci.yaml') }}-arbitrator
+          restore-keys: ${{ runner.os }}-brotli-${{ hashFiles('scripts/build-brotli.sh') }}-${{ hashFiles('.github/workflows/arbitrator-ci.yaml') }}
 
       - name: Build cbrotli-local
         if: steps.cache-cbrotli.outputs.cache-hit != 'true'
@@ -155,7 +161,6 @@ jobs:
           # This is the name of the cache folder.
           # The cache folder will be placed in the build directory,
           #  so make sure it doesn't conflict with anything!
-          actions-cache-folder: 'emsdk-cache'
           no-cache: true
 
       - name: Build cbrotli-wasm
@@ -180,8 +185,8 @@ jobs:
       - name: Rustfmt
         run: cargo fmt -p arbutil -p prover -p jit -p stylus --manifest-path arbitrator/Cargo.toml -- --check
 
-      - name: Rustfmt - langs/rust
-        run: cargo fmt --all --manifest-path arbitrator/langs/rust/Cargo.toml -- --check
+      - name: Rustfmt - tools/stylus_benchmark
+        run: cargo fmt --all --manifest-path arbitrator/tools/stylus_benchmark/Cargo.toml -- --check
 
       - name: Rustfmt - tools/stylus_benchmark
         run: cargo fmt --all --manifest-path arbitrator/tools/stylus_benchmark/Cargo.toml -- --check
@@ -197,7 +202,8 @@ jobs:
       - name: Run proof validation tests
         run: |
           npm install --global yarn
-          cd contracts
+          cd contracts-legacy
+          cp -r ../contracts/test/prover/proofs/* ./test/prover/proofs
           yarn install
           yarn build
           yarn build:forge:yul

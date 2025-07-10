@@ -1,5 +1,5 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package gethexec
 
@@ -67,7 +67,7 @@ func AddOptionsForForwarderConfigImpl(prefix string, defaultConfig *ForwarderCon
 	f.Duration(prefix+".connection-timeout", defaultConfig.ConnectionTimeout, "total time to wait before cancelling connection")
 	f.Duration(prefix+".idle-connection-timeout", defaultConfig.IdleConnectionTimeout, "time until idle connections are closed")
 	f.Int(prefix+".max-idle-connections", defaultConfig.MaxIdleConnections, "maximum number of idle connections to keep open")
-	f.String(prefix+".redis-url", defaultConfig.RedisUrl, "the Redis URL to recomend target via")
+	f.String(prefix+".redis-url", defaultConfig.RedisUrl, "the Redis URL to recommend target via")
 	f.Duration(prefix+".update-interval", defaultConfig.UpdateInterval, "forwarding target update interval")
 	f.Duration(prefix+".retry-interval", defaultConfig.RetryInterval, "minimal time between update retries")
 }
@@ -148,6 +148,7 @@ func (f *TxForwarder) PublishTransaction(inctx context.Context, tx *types.Transa
 			return err
 		}
 	}
+	log.Error("Failed to publish transaction to any of the forwarding targets", "numTargets", len(f.rpcClients))
 	return errors.New("failed to publish transaction to any of the forwarding targets")
 }
 
@@ -166,6 +167,7 @@ func (f *TxForwarder) PublishExpressLaneTransaction(inctx context.Context, msg *
 			return err
 		}
 	}
+	log.Error("Failed to publish transaction to any of the forwarding targets", "numTargets", len(f.rpcClients))
 	return errors.New("failed to publish transaction to any of the forwarding targets")
 }
 
@@ -192,6 +194,7 @@ func (f *TxForwarder) PublishAuctionResolutionTransaction(inctx context.Context,
 			return err
 		}
 	}
+	log.Error("Failed to publish transaction to any of the forwarding targets", "numTargets", len(f.rpcClients))
 	return errors.New("failed to publish transaction to any of the forwarding targets")
 }
 
@@ -373,7 +376,7 @@ func (f *RedisTxForwarder) CheckHealth(ctx context.Context) error {
 // not thread safe vs update and itself
 func (f *RedisTxForwarder) Initialize(ctx context.Context) error {
 	var err error
-	f.redisCoordinator, err = redisutil.NewRedisCoordinator(f.config.RedisUrl)
+	f.redisCoordinator, err = redisutil.NewRedisCoordinator(f.config.RedisUrl, 1)
 	if err != nil {
 		return fmt.Errorf("unable to create redis coordinator: %w", err)
 	}

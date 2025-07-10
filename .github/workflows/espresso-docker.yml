@@ -27,15 +27,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  free-disk-space:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Free Disk Space (Ubuntu)
-        uses: jlumbroso/free-disk-space@main
-        with:
-          tool-cache: true
   docker_build:
-    needs: free-disk-space
     strategy:
       matrix:
         platform: [linux/amd64, linux/arm64]
@@ -47,6 +39,11 @@ jobs:
     runs-on: ${{ matrix.platform == 'linux/amd64' && 'ubuntu-latest' || 'buildjet-8vcpu-ubuntu-2204-arm' }}
 
     steps:
+      - name: Free Disk Space (Ubuntu)
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: true
+
       - uses: cargo-bins/cargo-binstall@main
         if: ${{ runner.arch != 'ARM64' }}
 

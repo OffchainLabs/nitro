@@ -1,5 +1,5 @@
 // Copyright 2022-2024, Offchain Labs, Inc.
-// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 //go:build wasm
 // +build wasm
@@ -23,13 +23,13 @@ import (
 
 type addr = common.Address
 type hash = common.Hash
-
-// rust types
 type u8 = uint8
 type u16 = uint16
 type u32 = uint32
 type u64 = uint64
 type usize = uintptr
+
+// rust types
 
 // opaque types
 type rustVec byte
@@ -132,7 +132,7 @@ func startProgram(module uint32) uint32
 //go:wasmimport programs send_response
 func sendResponse(req_id uint32) uint32
 
-func getLocalAsm(statedb vm.StateDB, moduleHash common.Hash, addressForLogging common.Address, code []byte, codeHash common.Hash, pagelimit uint16, time uint64, debugMode bool, program Program) ([]byte, error) {
+func getLocalAsm(statedb vm.StateDB, moduleHash common.Hash, addressForLogging common.Address, code []byte, codeHash common.Hash, maxWasmSize uint32, pagelimit uint16, time uint64, debugMode bool, program Program) ([]byte, error) {
 	return nil, nil
 }
 

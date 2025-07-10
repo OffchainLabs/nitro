@@ -1,5 +1,5 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 // race detection makes things slow and miss timeouts
 //go:build !race
@@ -18,7 +18,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 
-	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
+	"github.com/offchainlabs/nitro/solgen/go/localgen"
 )
 
 func TestBloom(t *testing.T) {
@@ -38,7 +38,7 @@ func TestBloom(t *testing.T) {
 	ownerTxOpts := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
 	ownerTxOpts.Context = ctx
 	_, simple := builder.L2.DeploySimple(t, ownerTxOpts)
-	simpleABI, err := mocksgen.SimpleMetaData.GetAbi()
+	simpleABI, err := localgen.SimpleMetaData.GetAbi()
 	Require(t, err)
 
 	countsNum := 800

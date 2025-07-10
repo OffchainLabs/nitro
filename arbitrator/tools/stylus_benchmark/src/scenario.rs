@@ -1,6 +1,5 @@
 // Copyright 2021-2025, Offchain Labs, Inc.
-// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
-
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 use crate::scenarios::{
     br, br_if, br_table, call, call_indirect, convert, data_type::DataType, global_get, global_set,
     if_op, instruction_with_1_arg_1_return, instruction_with_2_args_1_return, load, local_get,
@@ -10,7 +9,6 @@ use clap::ValueEnum;
 use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
-
 #[derive(ValueEnum, Copy, Clone, PartialEq, Eq, Debug)]
 #[clap(rename_all = "PascalCase")]
 pub enum Scenario {
@@ -92,13 +90,11 @@ pub enum Scenario {
     LocalTee,
     Select,
 }
-
 trait ScenarioWatGenerator {
     fn write_specific_wat_beginning(&self, wat: &mut Vec<u8>);
     fn write_specific_exported_func_beginning(&self, wat: &mut Vec<u8>);
     fn write_wat_ops(&self, wat: &mut Vec<u8>, number_of_ops_per_loop_iteration: usize);
 }
-
 impl ScenarioWatGenerator for Scenario {
     fn write_specific_wat_beginning(&self, wat: &mut Vec<u8>) {
         match self {
@@ -519,12 +515,10 @@ impl ScenarioWatGenerator for Scenario {
         }
     }
 }
-
 // Programs to be benchmarked have a loop in which several similar operations are executed.
 // The number of operations per loop is chosen to be large enough so the overhead related to the loop is negligible,
 // but not too large to avoid a big program size.
 // Keeping a small program size is important to better use CPU cache, trying to keep the code in the cache.
-
 fn write_common_wat_beginning(wat: &mut Vec<u8>) {
     wat.write_all(b"(module\n").unwrap();
     wat.write_all(b"    (import \"debug\" \"start_benchmark\" (func $start_benchmark))\n")
@@ -539,6 +533,12 @@ fn write_common_wat_beginning(wat: &mut Vec<u8>) {
     wat.write_all(b"    (global $ops_counter (mut i32) (i32.const 0))\n")
         .unwrap();
 }
+// Copyright 2021-2025, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
+// Programs to be benchmarked have a loop in which several similar operations are executed.
+// The number of operations per loop is chosen to be large enough so the overhead related to the loop is negligible,
+// but not too large to avoid a big program size.
+// Keeping a small program size is important to better use CPU cache, trying to keep the code in the cache.
 
 fn write_exported_func_beginning(wat: &mut Vec<u8>) {
     wat.write_all(b"    (func (export \"user_entrypoint\") (param i32) (result i32)\n")

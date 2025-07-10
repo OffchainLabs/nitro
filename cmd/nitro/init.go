@@ -1,5 +1,5 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package main
 
@@ -18,7 +18,6 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -29,6 +28,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
+	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/ethdb"
@@ -45,11 +45,43 @@ import (
 	"github.com/offchainlabs/nitro/cmd/staterecovery"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/statetransfer"
+	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/dbutil"
 )
 
 var notFoundError = errors.New("file not found")
+
+// Based on https://github.com/wasmerio/wasmer/blob/6de934035a4b34c2878552320f058862faea4651/lib/types/src/serialize.rs#L16
+const WasmerSerializeVersion = 8
+
+func initializeAndDownloadInit(ctx context.Context, initConfig *conf.InitConfig, stack *node.Node) (string, func(), error) {
+	cleanUpTmp := func() {}
+	if initConfig.DownloadPath == "" {
+		tmpPath := filepath.Join(stack.InstanceDir(), "tmp")
+		_, err := os.Stat(tmpPath)
+		if err == nil {
+			return "", cleanUpTmp, fmt.Errorf("tmp directory for downloading init file already exists")
+		}
+		if !os.IsNotExist(err) {
+			return "", cleanUpTmp, fmt.Errorf("error checking if tmp directory for downloading init file already exists: %w", err)
+		}
+		if err := os.MkdirAll(tmpPath, os.ModePerm); err != nil {
+			return "", cleanUpTmp, fmt.Errorf("failed to create tmp directory for downloading init file: %w", err)
+		}
+		initConfig.DownloadPath = tmpPath
+		cleanUpTmp = func() {
+			if err := os.RemoveAll(tmpPath); err != nil {
+				log.Error("Failed to clean up tmp directory after downloading init file", "err", err)
+			}
+		}
+	}
+	initFile, err := downloadInit(ctx, initConfig)
+	if err != nil {
+		return "", cleanUpTmp, err
+	}
+	return initFile, cleanUpTmp, nil
+}
 
 func downloadInit(ctx context.Context, initConfig *conf.InitConfig) (string, error) {
 	if initConfig.Url == "" {
@@ -426,9 +458,7 @@ func extractSnapshot(archive string, location string, importWasm bool) error {
 	return nil
 }
 
-// removes all entries with keys prefixed with prefixes and of length used in initial version of wasm store schema
-func purgeVersion0WasmStoreEntries(db ethdb.Database) error {
-	prefixes, keyLength := rawdb.DeprecatedPrefixesV0()
+func deleteWasmEntries(db ethdb.Database, prefixes [][]byte, checkKeyLength bool, expectedKeyLength int) error {
 	batch := db.NewBatch()
 	notMatchingLengthKeyLogged := false
 	for _, prefix := range prefixes {
@@ -436,7 +466,7 @@ func purgeVersion0WasmStoreEntries(db ethdb.Database) error {
 		defer it.Release()
 		for it.Next() {
 			key := it.Key()
-			if len(key) != keyLength {
+			if checkKeyLength && len(key) != expectedKeyLength {
 				if !notMatchingLengthKeyLogged {
 					log.Warn("Found key with deprecated prefix but not matching length, skipping removal. (this warning is logged only once)", "key", key)
 					notMatchingLengthKeyLogged = true
@@ -468,6 +498,32 @@ func purgeVersion0WasmStoreEntries(db ethdb.Database) error {
 	return nil
 }
 
+func validateOrUpgradeWasmerSerializeVersion(db ethdb.Database) error {
+	if !databaseIsEmpty(db) {
+		versionInDB, err := rawdb.ReadWasmerSerializeVersion(db)
+		if err != nil {
+			if dbutil.IsErrNotFound(err) {
+				versionInDB = 0
+			} else {
+				return fmt.Errorf("Failed to retrieve wasmer serialize version: %w", err)
+			}
+		}
+		if versionInDB != WasmerSerializeVersion {
+			log.Warn("Detected wasmer serialize version %v, expected version %v - removing old wasm entries", versionInDB, WasmerSerializeVersion)
+			prefixes := rawdb.WasmPrefixesExceptWavm()
+			if err := deleteWasmEntries(db, prefixes, false, 0); err != nil {
+				return fmt.Errorf("Failed to purge wasm entries: %w", err)
+			}
+			log.Info("Wasm entries successfully removed.")
+			err = rawdb.WriteWasmerSerializeVersion(db, WasmerSerializeVersion)
+			if err != nil {
+				return fmt.Errorf("Failed to write wasmer serialize version: %w", err)
+			}
+		}
+	}
+	return nil
+}
+
 // if db is not empty, validates if wasm database schema version matches current version
 // otherwise persists current version
 func validateOrUpgradeWasmStoreSchemaVersion(db ethdb.Database) error {
@@ -486,7 +542,8 @@ func validateOrUpgradeWasmStoreSchemaVersion(db ethdb.Database) error {
 		// special step for upgrading from version 0 - remove all entries added in version 0
 		if version[0] == 0 {
 			log.Warn("Detected wasm store schema version 0 - removing all old wasm store entries")
-			if err := purgeVersion0WasmStoreEntries(db); err != nil {
+			prefixes, keyLength := rawdb.DeprecatedPrefixesV0()
+			if err := deleteWasmEntries(db, prefixes, true, keyLength); err != nil {
 				return fmt.Errorf("Failed to purge wasm store version 0 entries: %w", err)
 			}
 			log.Info("Wasm store schama version 0 entries successfully removed.")
@@ -541,7 +598,7 @@ func rebuildLocalWasm(ctx context.Context, config *gethexec.Config, l2BlockChain
 	return chainDb, l2BlockChain, nil
 }
 
-func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeConfig, chainId *big.Int, cacheConfig *core.CacheConfig, targetConfig *gethexec.StylusTargetConfig, persistentConfig *conf.PersistentConfig, l1Client *ethclient.Client, rollupAddrs chaininfo.RollupAddresses) (ethdb.Database, *core.BlockChain, error) {
+func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeConfig, chainId *big.Int, cacheConfig *core.CacheConfig, targetConfig *gethexec.StylusTargetConfig, tracer *tracing.Hooks, persistentConfig *conf.PersistentConfig, l1Client *ethclient.Client, rollupAddrs chaininfo.RollupAddresses) (ethdb.Database, *core.BlockChain, error) {
 	if !config.Init.Force {
 		if readOnlyDb, err := stack.OpenDatabaseWithFreezerWithExtraOptions("l2chaindata", 0, 0, config.Persistent.Ancient, "l2chaindata/", true, persistentConfig.Pebble.ExtraOptions("l2chaindata")); err == nil {
 			if chainConfig := gethexec.TryReadStoredChainConfig(readOnlyDb); chainConfig != nil {
@@ -563,6 +620,9 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 				if err := validateOrUpgradeWasmStoreSchemaVersion(wasmDb); err != nil {
 					return nil, nil, err
 				}
+				if err := validateOrUpgradeWasmerSerializeVersion(wasmDb); err != nil {
+					return nil, nil, err
+				}
 				if err := dbutil.UnfinishedConversionCheck(wasmDb); err != nil {
 					return nil, nil, fmt.Errorf("wasm unfinished database conversion check error: %w", err)
 				}
@@ -575,7 +635,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 				if err != nil {
 					return chainDb, nil, fmt.Errorf("error pruning: %w", err)
 				}
-				l2BlockChain, err := gethexec.GetBlockChain(chainDb, cacheConfig, chainConfig, config.Execution.TxLookupLimit)
+				l2BlockChain, err := gethexec.GetBlockChain(chainDb, cacheConfig, chainConfig, tracer, config.Execution.TxLookupLimit)
 				if err != nil {
 					return chainDb, nil, err
 				}
@@ -617,7 +677,8 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 		return nil, nil, err
 	}
 
-	initFile, err := downloadInit(ctx, &config.Init)
+	initFile, cleanUpTmp, err := initializeAndDownloadInit(ctx, &config.Init, stack)
+	defer cleanUpTmp()
 	if err != nil {
 		return nil, nil, err
 	}
@@ -688,6 +749,38 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 	}
 
 	var chainConfig *params.ChainConfig
+	var genesisArbOSInit *params.ArbOSInit
+
+	if config.Init.GenesisJsonFile != "" {
+		if initDataReader != nil {
+			return chainDb, nil, errors.New("multiple init methods supplied")
+		}
+		genesisJson, err := os.ReadFile(config.Init.GenesisJsonFile)
+		if err != nil {
+			return chainDb, nil, err
+		}
+		var gen core.Genesis
+		if err := json.Unmarshal(genesisJson, &gen); err != nil {
+			return chainDb, nil, err
+		}
+		var accounts []statetransfer.AccountInitializationInfo
+		for address, account := range gen.Alloc {
+			accounts = append(accounts, statetransfer.AccountInitializationInfo{
+				Addr:       address,
+				EthBalance: account.Balance,
+				Nonce:      account.Nonce,
+				ContractInfo: &statetransfer.AccountInitContractInfo{
+					Code:            account.Code,
+					ContractStorage: account.Storage,
+				},
+			})
+		}
+		initDataReader = statetransfer.NewMemoryInitDataReader(&statetransfer.ArbosInitializationInfo{
+			Accounts: accounts,
+		})
+		chainConfig = gen.Config
+		genesisArbOSInit = gen.ArbOSInit
+	}
 
 	if config.Init.GenesisJsonFile != "" {
 		if initDataReader != nil {
@@ -726,7 +819,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 		if chainConfig == nil {
 			return chainDb, nil, errors.New("no --init.* mode supplied and chain data not in expected directory")
 		}
-		l2BlockChain, err = gethexec.GetBlockChain(chainDb, cacheConfig, chainConfig, config.Execution.TxLookupLimit)
+		l2BlockChain, err = gethexec.GetBlockChain(chainDb, cacheConfig, chainConfig, tracer, config.Execution.TxLookupLimit)
 		if err != nil {
 			return chainDb, nil, err
 		}
@@ -825,11 +918,12 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 		if !emptyBlockChain && (cacheConfig.StateScheme == rawdb.PathScheme) && config.Init.Force {
 			return chainDb, nil, errors.New("It is not possible to force init with non-empty blockchain when using path scheme")
 		}
-		l2BlockChain, err = gethexec.WriteOrTestBlockChain(chainDb, cacheConfig, initDataReader, chainConfig, parsedInitMessage, config.Execution.TxLookupLimit, config.Init.AccountsPerSync)
+		l2BlockChain, err = gethexec.WriteOrTestBlockChain(chainDb, cacheConfig, initDataReader, chainConfig, genesisArbOSInit, tracer, parsedInitMessage, config.Execution.TxLookupLimit, config.Init.AccountsPerSync)
 		if err != nil {
 			return chainDb, nil, err
 		}
 	}
+
 	txIndexWg.Wait()
 	err = chainDb.Sync()
 	if err != nil {
@@ -884,7 +978,7 @@ func testUpdateTxIndex(chainDb ethdb.Database, chainConfig *params.ChainConfig, 
 	}
 
 	var localWg sync.WaitGroup
-	threads := runtime.NumCPU()
+	threads := util.GoMaxProcs()
 	var failedTxIndiciesMutex sync.Mutex
 	failedTxIndicies := make(map[common.Hash]uint64)
 	for thread := 0; thread < threads; thread++ {

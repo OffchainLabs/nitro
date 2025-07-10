@@ -1,5 +1,5 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbtest
 
@@ -17,7 +17,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
 
-	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
+	"github.com/offchainlabs/nitro/solgen/go/localgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/colors"
 	"github.com/offchainlabs/nitro/util/testhelpers"
@@ -43,7 +43,7 @@ func TestSequencerRejection(t *testing.T) {
 
 	auth := builderSeq.L2Info.GetDefaultTransactOpts("Owner", ctx)
 	simpleAddr, _ := builderSeq.L2.DeploySimple(t, auth)
-	simpleAbi, err := mocksgen.SimpleMetaData.GetAbi()
+	simpleAbi, err := localgen.SimpleMetaData.GetAbi()
 	Require(t, err)
 	noopId := simpleAbi.Methods["noop"].ID
 	revertId := simpleAbi.Methods["pleaseRevert"].ID

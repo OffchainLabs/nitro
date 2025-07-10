@@ -1,5 +1,5 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbtest
 
@@ -34,11 +34,11 @@ func TestContractTxDeploy(t *testing.T) {
 	builder.L2.TransferBalanceTo(t, "Faucet", from, big.NewInt(1e18), builder.L2Info)
 
 	for stateNonce := uint64(0); stateNonce < 2; stateNonce++ {
-		pos, err := builder.L2.ConsensusNode.TxStreamer.GetMessageCount()
+		msgCount, err := builder.L2.ConsensusNode.TxStreamer.GetMessageCount()
 		Require(t, err)
 		var delayedMessagesRead uint64
-		if pos > 0 {
-			lastMessage, err := builder.L2.ConsensusNode.TxStreamer.GetMessage(pos - 1)
+		if msgCount > 0 {
+			lastMessage, err := builder.L2.ConsensusNode.TxStreamer.GetMessage(msgCount - 1)
 			Require(t, err)
 			delayedMessagesRead = lastMessage.DelayedMessagesRead
 		}
@@ -71,7 +71,7 @@ func TestContractTxDeploy(t *testing.T) {
 		l2Msg = append(l2Msg, arbmath.U256Bytes(contractTx.Value)...)
 		l2Msg = append(l2Msg, contractTx.Data...)
 
-		err = builder.L2.ConsensusNode.TxStreamer.AddMessages(pos, true, []arbostypes.MessageWithMetadata{
+		err = builder.L2.ConsensusNode.TxStreamer.AddMessages(msgCount, true, []arbostypes.MessageWithMetadata{
 			{
 				Message: &arbostypes.L1IncomingMessage{
 					Header: &arbostypes.L1IncomingMessageHeader{

@@ -1,5 +1,5 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package precompiles
 
@@ -8,6 +8,7 @@ import (
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/params"
 
@@ -113,9 +114,34 @@ func (con *ArbSys) SendTxToL1(c ctx, evm mech, value huge, destination addr, cal
 	if err != nil {
 		return nil, err
 	}
+	arbosState := c.State
+
+	if arbosState.ArbOSVersion() >= params.ArbosVersion_41 && value.BitLen() != 0 {
+		// As of ArbOS 41, the concept of "native token owners" was introduced.
+		// Native token owners are accounts that are allowed to mint and burn
+		// the chain's native token to and from their own address.
+		//
+		// Without the "mint" and "burn" functionality, a "bridge" contract on
+		// the parent chain (L1) locks up funds equivalent to all the funds on
+		// the child chain, so it is always safe to withdraw funds from the
+		// child chain to the parent chain.
+		//
+		// With the "mint" and "burn" functionality, a "bridge" contract on
+		// the parent chain can become under collateralized because the native
+		// token owners can mint funds on the child chain without putting
+		// funds into the bridge contract. So, it is not safe to withdraw funds
+		// from the child chain to the parent chain in the normal way.
+		numOwners, err := arbosState.NativeTokenOwners().Size()
+		if err != nil {
+			return nil, err
+		}
+		if numOwners > 0 {
+			return nil, errors.New("not allowed to send value when native token owners exist")
+		}
+	}
+
 	bigL1BlockNum := arbmath.UintToBig(l1BlockNum)
 
-	arbosState := c.State
 	var t big.Int
 	t.SetUint64(evm.Context.Time)
 	sendHash, err := arbosState.KeccakHash(
@@ -142,7 +168,7 @@ func (con *ArbSys) SendTxToL1(c ctx, evm mech, value huge, destination addr, cal
 	}
 
 	// burn the callvalue, which was previously deposited to this precompile's account
-	if err := util.BurnBalance(&con.Address, value, evm, util.TracingDuringEVM, "withdraw"); err != nil {
+	if err := util.BurnBalance(&con.Address, value, evm, util.TracingDuringEVM, tracing.BalanceDecreaseWithdrawToL1); err != nil {
 		return nil, err
 	}
 

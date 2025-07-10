@@ -1,5 +1,5 @@
 ;; Copyright 2023, Offchain Labs, Inc.
-;; For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
+;; For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 (module
     (import "vm_hooks" "storage_load_bytes32" (func $storage_load_bytes32 (param i32 i32)))

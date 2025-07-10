@@ -1,5 +1,5 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package conf
 
@@ -9,12 +9,13 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"runtime"
 	"time"
 
 	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/ethdb/pebble"
+
+	"github.com/offchainlabs/nitro/util"
 )
 
 type PersistentConfig struct {
@@ -118,8 +119,8 @@ type PebbleConfig struct {
 }
 
 var PebbleConfigDefault = PebbleConfig{
-	SyncMode:                 false, // use NO-SYNC mode, see: https://github.com/ethereum/go-ethereum/issues/29819
-	MaxConcurrentCompactions: runtime.NumCPU(),
+	SyncMode:                 false, // use NO-SYNC mode, see: https://github.com/ethereum/go-ethereum/issues/29819, // use NO-SYNC mode, see: https://github.com/ethereum/go-ethereum/issues/29819
+	MaxConcurrentCompactions: util.GoMaxProcs(),
 	Experimental:             PebbleExperimentalConfigDefault,
 }
 

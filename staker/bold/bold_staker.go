@@ -1,5 +1,5 @@
 // Copyright 2023-2024, Offchain Labs, Inc.
-// For license information, see https://github.com/offchainlabs/nitro/blob/main/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 package bold
 
 import (
@@ -51,7 +51,6 @@ func init() {
 }
 
 type BoldConfig struct {
-	Enable   bool   `koanf:"enable"`
 	Strategy string `koanf:"strategy"`
 	// How often to post assertions onchain.
 	AssertionPostingInterval time.Duration `koanf:"assertion-posting-interval"`
@@ -73,10 +72,16 @@ type BoldConfig struct {
 	DelegatedStaking                    DelegatedStakingConfig `koanf:"delegated-staking"`
 	RPCBlockNumber                      string                 `koanf:"rpc-block-number"`
 	EnableFastConfirmation              bool                   `koanf:"enable-fast-confirmation"`
+	ParentChainBlockTime                time.Duration          `koanf:"parent-chain-block-time"`
 	// How long to wait since parent assertion was created to post a new assertion
 	MinimumGapToParentAssertion time.Duration `koanf:"minimum-gap-to-parent-assertion"`
 	strategy                    legacystaker.StakerStrategy
 	blockNum                    rpc.BlockNumber
+	Enable                      bool `koanf:"enable"`
+	// How often to post assertions onchain.
+	// How often to scan for newly created assertions onchain.
+	// How often to confirm assertions onchain.
+	// How long to wait since parent assertion was created to post a new assertion
 }
 
 func (c *BoldConfig) Validate() error {
@@ -123,30 +128,33 @@ var DefaultStateProviderConfig = StateProviderConfig{
 	CheckBatchFinality:     true,
 	MachineLeavesCachePath: "machine-hashes-cache",
 }
-
 var DefaultBoldConfig = BoldConfig{
-	Enable:                              false,
-	Strategy:                            "Watchtower",
-	AssertionPostingInterval:            time.Minute * 15,
-	AssertionScanningInterval:           time.Minute,
-	AssertionConfirmingInterval:         time.Minute,
-	MinimumGapToParentAssertion:         time.Minute, // Correct default?
+	Strategy:                    "Watchtower",
+	AssertionPostingInterval:    time.Minute * 15,
+	AssertionScanningInterval:   time.Minute,
+	AssertionConfirmingInterval: time.Minute,
+	MinimumGapToParentAssertion: time.Minute,
+	// Correct default?,
 	API:                                 false,
 	APIHost:                             "127.0.0.1",
 	APIPort:                             9393,
 	APIDBPath:                           "bold-api-db",
 	TrackChallengeParentAssertionHashes: []string{},
-	CheckStakerSwitchInterval:           time.Minute, // Every minute, check if the Nitro node staker should switch to using BOLD.
-	StateProviderConfig:                 DefaultStateProviderConfig,
-	StartValidationFromStaked:           true,
-	AutoDeposit:                         true,
-	AutoIncreaseAllowance:               true,
-	DelegatedStaking:                    DefaultDelegatedStakingConfig,
-	RPCBlockNumber:                      "finalized",
-	MaxGetLogBlocks:                     5000,
-	EnableFastConfirmation:              false,
+	CheckStakerSwitchInterval:           time.Minute,
+	// Every minute, check if the Nitro node staker should switch to using BOLD.,
+	StateProviderConfig:       DefaultStateProviderConfig,
+	StartValidationFromStaked: true,
+	AutoDeposit:               true,
+	AutoIncreaseAllowance:     true,
+	DelegatedStaking:          DefaultDelegatedStakingConfig,
+	ParentChainBlockTime:      time.Second * 12,
+	RPCBlockNumber:            "finalized",
+	EnableFastConfirmation:    false,
+	MaxGetLogBlocks:           5000,
+	Enable:                    false,
+	// Correct default?,
+	// Every minute, check if the Nitro node staker should switch to using BOLD.,
 }
-
 var BoldModes = map[legacystaker.StakerStrategy]boldtypes.Mode{
 	legacystaker.WatchtowerStrategy:   boldtypes.WatchTowerMode,
 	legacystaker.DefensiveStrategy:    boldtypes.DefensiveMode,
@@ -155,7 +163,6 @@ var BoldModes = map[legacystaker.StakerStrategy]boldtypes.Mode{
 }
 
 func BoldConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.Bool(prefix+".enable", DefaultBoldConfig.Enable, "enable bold challenge protocol")
 	f.String(prefix+".strategy", DefaultBoldConfig.Strategy, "define the bold validator staker strategy, either watchtower, defensive, stakeLatest, or makeNodes")
 	f.String(prefix+".rpc-block-number", DefaultBoldConfig.RPCBlockNumber, "define the block number to use for reading data onchain, either latest, safe, or finalized")
 	f.Int64(prefix+".max-get-log-blocks", DefaultBoldConfig.MaxGetLogBlocks, "maximum size for chunk of blocks when using get logs rpc")
@@ -164,6 +171,7 @@ func BoldConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Duration(prefix+".assertion-confirming-interval", DefaultBoldConfig.AssertionConfirmingInterval, "confirm assertion interval")
 	f.Duration(prefix+".minimum-gap-to-parent-assertion", DefaultBoldConfig.MinimumGapToParentAssertion, "minimum duration to wait since the parent assertion was created to post a new assertion")
 	f.Duration(prefix+".check-staker-switch-interval", DefaultBoldConfig.CheckStakerSwitchInterval, "how often to check if staker can switch to bold")
+	f.Duration(prefix+".parent-chain-block-time", DefaultBoldConfig.ParentChainBlockTime, "the average block time of the parent chain where assertions are posted")
 	f.Bool(prefix+".api", DefaultBoldConfig.API, "enable api")
 	f.String(prefix+".api-host", DefaultBoldConfig.APIHost, "bold api host")
 	f.Uint16(prefix+".api-port", DefaultBoldConfig.APIPort, "bold api port")
@@ -176,13 +184,11 @@ func BoldConfigAddOptions(prefix string, f *flag.FlagSet) {
 	DelegatedStakingConfigAddOptions(prefix+".delegated-staking", f)
 	f.Bool(prefix+".enable-fast-confirmation", DefaultBoldConfig.EnableFastConfirmation, "enable fast confirmation")
 }
-
 func StateProviderConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".validator-name", DefaultStateProviderConfig.ValidatorName, "name identifier for cosmetic purposes")
 	f.Bool(prefix+".check-batch-finality", DefaultStateProviderConfig.CheckBatchFinality, "check batch finality")
 	f.String(prefix+".machine-leaves-cache-path", DefaultStateProviderConfig.MachineLeavesCachePath, "path to machine cache")
 }
-
 func DelegatedStakingConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultDelegatedStakingConfig.Enable, "enable delegated staking by having the validator call newStake on startup")
 	f.String(prefix+".custom-withdrawal-address", DefaultDelegatedStakingConfig.CustomWithdrawalAddress, "enable a custom withdrawal address for staking on the rollup contract, useful for delegated stakers")
@@ -190,17 +196,18 @@ func DelegatedStakingConfigAddOptions(prefix string, f *flag.FlagSet) {
 
 type BOLDStaker struct {
 	stopwaiter.StopWaiter
-	config                  *BoldConfig
-	chalManager             *challengemanager.Manager
-	blockValidator          *staker.BlockValidator
-	statelessBlockValidator *staker.StatelessBlockValidator
-	rollupAddress           common.Address
-	l1Reader                *headerreader.HeaderReader
-	client                  protocol.ChainBackend
-	callOpts                bind.CallOpts
-	wallet                  legacystaker.ValidatorWalletInterface
-	stakedNotifiers         []legacystaker.LatestStakedNotifier
-	confirmedNotifiers      []legacystaker.LatestConfirmedNotifier
+	config             *BoldConfig
+	chalManager        *challengemanager.Manager
+	blockValidator     *staker.BlockValidator
+	rollupAddress      common.Address
+	l1Reader           *headerreader.HeaderReader
+	client             protocol.ChainBackend
+	callOpts           bind.CallOpts
+	wallet             legacystaker.ValidatorWalletInterface
+	stakedNotifiers    []legacystaker.LatestStakedNotifier
+	confirmedNotifiers []legacystaker.LatestConfirmedNotifier
+	inboxTracker       staker.InboxTrackerInterface
+	inboxStreamer      staker.TransactionStreamerInterface
 }
 
 func NewBOLDStaker(
@@ -217,27 +224,31 @@ func NewBOLDStaker(
 	wallet legacystaker.ValidatorWalletInterface,
 	stakedNotifiers []legacystaker.LatestStakedNotifier,
 	confirmedNotifiers []legacystaker.LatestConfirmedNotifier,
+	inboxTracker staker.InboxTrackerInterface,
+	inboxStreamer staker.TransactionStreamerInterface,
+	inboxReader staker.InboxReaderInterface,
 ) (*BOLDStaker, error) {
 	if err := config.Validate(); err != nil {
 		return nil, err
 	}
 	wrappedClient := util.NewBackendWrapper(l1Reader.Client(), rpc.LatestBlockNumber)
-	manager, err := newBOLDChallengeManager(ctx, stack, rollupAddress, txOpts, l1Reader, wrappedClient, blockValidator, statelessBlockValidator, config, dataPoster)
+	manager, err := newBOLDChallengeManager(ctx, stack, rollupAddress, txOpts, l1Reader, wrappedClient, blockValidator, statelessBlockValidator, config, dataPoster, inboxTracker, inboxStreamer, inboxReader)
 	if err != nil {
 		return nil, err
 	}
 	return &BOLDStaker{
-		config:                  config,
-		chalManager:             manager,
-		blockValidator:          blockValidator,
-		statelessBlockValidator: statelessBlockValidator,
-		rollupAddress:           rollupAddress,
-		l1Reader:                l1Reader,
-		client:                  wrappedClient,
-		callOpts:                callOpts,
-		wallet:                  wallet,
-		stakedNotifiers:         stakedNotifiers,
-		confirmedNotifiers:      confirmedNotifiers,
+		config:             config,
+		chalManager:        manager,
+		blockValidator:     blockValidator,
+		rollupAddress:      rollupAddress,
+		l1Reader:           l1Reader,
+		client:             wrappedClient,
+		callOpts:           callOpts,
+		wallet:             wallet,
+		stakedNotifiers:    stakedNotifiers,
+		confirmedNotifiers: confirmedNotifiers,
+		inboxTracker:       inboxTracker,
+		inboxStreamer:      inboxStreamer,
 	}, nil
 }
 
@@ -271,7 +282,7 @@ func (b *BOLDStaker) Initialize(ctx context.Context) error {
 			}
 			latestStaked = latestConfirmed
 		}
-		assertion, err := readBoldAssertionCreationInfo(
+		assertion, err := ReadBoldAssertionCreationInfo(
 			ctx,
 			rollupUserLogic,
 			b.client,
@@ -287,6 +298,48 @@ func (b *BOLDStaker) Initialize(ctx context.Context) error {
 	return nil
 }
 
+func (b *BOLDStaker) getLatestState(ctx context.Context, confirmed bool) (arbutil.MessageIndex, *validator.GoGlobalState, error) {
+	var globalState protocol.GoGlobalState
+	var err error
+	if confirmed {
+		globalState, err = b.chalManager.LatestConfirmedState(ctx)
+	} else {
+		globalState, err = b.chalManager.LatestAgreedState(ctx)
+	}
+	var assertionType string
+	if confirmed {
+		assertionType = "confirmed"
+	} else {
+		assertionType = "agreed"
+	}
+	if err != nil {
+		return 0, nil, fmt.Errorf("error getting latest %s: %w", assertionType, err)
+	}
+	caughtUp, count, err := staker.GlobalStateToMsgCount(b.inboxTracker, b.inboxStreamer, validator.GoGlobalState(globalState))
+	if err != nil {
+		if errors.Is(err, staker.ErrGlobalStateNotInChain) {
+			return 0, nil, fmt.Errorf("latest %s assertion of %v not yet in our node: %w", assertionType, globalState, err)
+		}
+		return 0, nil, fmt.Errorf("error getting message count: %w", err)
+	}
+
+	if !caughtUp {
+		log.Info(fmt.Sprintf("latest %s assertion not yet in our node", assertionType), "state", globalState)
+		return 0, nil, nil
+	}
+
+	processedCount, err := b.inboxStreamer.GetProcessedMessageCount()
+	if err != nil {
+		return 0, nil, err
+	}
+
+	if processedCount < count {
+		log.Info("execution catching up to rollup", "rollupCount", count, "processedCount", processedCount)
+		return 0, nil, nil
+	}
+
+	return count, (*validator.GoGlobalState)(&globalState), nil
+}
 func (b *BOLDStaker) Start(ctxIn context.Context) {
 	b.StopWaiter.Start(ctxIn, b)
 	b.chalManager.Start(ctxIn)
@@ -325,55 +378,10 @@ func (b *BOLDStaker) Start(ctxIn context.Context) {
 		return b.config.AssertionPostingInterval
 	})
 }
-
-func (b *BOLDStaker) getLatestState(ctx context.Context, confirmed bool) (arbutil.MessageIndex, *validator.GoGlobalState, error) {
-	var globalState protocol.GoGlobalState
-	var err error
-	if confirmed {
-		globalState, err = b.chalManager.LatestConfirmedState(ctx)
-	} else {
-		globalState, err = b.chalManager.LatestAgreedState(ctx)
-	}
-	var assertionType string
-	if confirmed {
-		assertionType = "confirmed"
-	} else {
-		assertionType = "agreed"
-	}
-	if err != nil {
-		return 0, nil, fmt.Errorf("error getting latest %s: %w", assertionType, err)
-	}
-	caughtUp, count, err := staker.GlobalStateToMsgCount(b.statelessBlockValidator.InboxTracker(), b.statelessBlockValidator.InboxStreamer(), validator.GoGlobalState(globalState))
-	if err != nil {
-		if errors.Is(err, staker.ErrGlobalStateNotInChain) {
-			return 0, nil, fmt.Errorf("latest %s assertion of %v not yet in our node: %w", assertionType, globalState, err)
-		}
-		return 0, nil, fmt.Errorf("error getting message count: %w", err)
-	}
-
-	if !caughtUp {
-		log.Info(fmt.Sprintf("latest %s assertion not yet in our node", assertionType), "state", globalState)
-		return 0, nil, nil
-	}
-
-	processedCount, err := b.statelessBlockValidator.InboxStreamer().GetProcessedMessageCount()
-	if err != nil {
-		return 0, nil, err
-	}
-
-	if processedCount < count {
-		log.Info("execution catching up to rollup", "rollupCount", count, "processedCount", processedCount)
-		return 0, nil, nil
-	}
-
-	return count, (*validator.GoGlobalState)(&globalState), nil
-}
-
 func (b *BOLDStaker) StopAndWait() {
 	b.chalManager.StopAndWait()
 	b.StopWaiter.StopAndWait()
 }
-
 func (b *BOLDStaker) updateBlockValidatorModuleRoot(ctx context.Context) error {
 	if b.blockValidator == nil {
 		return nil
@@ -388,7 +396,6 @@ func (b *BOLDStaker) updateBlockValidatorModuleRoot(ctx context.Context) error {
 	}
 	return b.blockValidator.SetCurrentWasmModuleRoot(moduleRoot)
 }
-
 func (b *BOLDStaker) getCallOpts(ctx context.Context) *bind.CallOpts {
 	opts := b.callOpts
 	opts.Context = ctx
@@ -409,6 +416,9 @@ func newBOLDChallengeManager(
 	statelessBlockValidator *staker.StatelessBlockValidator,
 	config *BoldConfig,
 	dataPoster *dataposter.DataPoster,
+	inboxTracker staker.InboxTrackerInterface,
+	inboxStreamer staker.TransactionStreamerInterface,
+	inboxReader staker.InboxReaderInterface,
 ) (*challengemanager.Manager, error) {
 	// Initializes the BOLD contract bindings and the assertion chain abstraction.
 	rollupBindings, err := boldrollup.NewRollupUserLogic(rollupAddress, client)
@@ -425,6 +435,7 @@ func newBOLDChallengeManager(
 	}
 	assertionChainOpts := []solimpl.Opt{
 		solimpl.WithRpcHeadBlockNumber(config.blockNum),
+		solimpl.WithParentChainBlockCreationTime(config.ParentChainBlockTime),
 	}
 	if config.DelegatedStaking.Enable && config.DelegatedStaking.CustomWithdrawalAddress != "" {
 		withdrawalAddr := common.HexToAddress(config.DelegatedStaking.CustomWithdrawalAddress)
@@ -498,6 +509,9 @@ func newBOLDChallengeManager(
 		blockChallengeLeafHeight,
 		&config.StateProviderConfig,
 		machineHashesPath,
+		inboxTracker,
+		inboxStreamer,
+		inboxReader,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("could not create state manager: %w", err)
@@ -531,6 +545,7 @@ func newBOLDChallengeManager(
 		challengemanager.StackWithMinimumGapToParentAssertion(config.MinimumGapToParentAssertion),
 		challengemanager.StackWithTrackChallengeParentAssertionHashes(config.TrackChallengeParentAssertionHashes),
 		challengemanager.StackWithHeaderProvider(l1Reader),
+		challengemanager.StackWithAverageBlockCreationTime(config.ParentChainBlockTime),
 		challengemanager.StackWithSyncMaxGetLogBlocks(config.MaxGetLogBlocks),
 	}
 	if config.API {
@@ -560,13 +575,10 @@ func newBOLDChallengeManager(
 	}
 	return manager, nil
 }
-
-// Read the creation info for an assertion by looking up its creation
-// event from the rollup contracts.
-func readBoldAssertionCreationInfo(
+func ReadBoldAssertionCreationInfo(
 	ctx context.Context,
 	rollup *boldrollup.RollupUserLogic,
-	client bind.ContractFilterer,
+	client bind.ContractBackend,
 	rollupAddress common.Address,
 	assertionHash common.Hash,
 ) (*protocol.AssertionCreatedInfo, error) {
@@ -616,6 +628,10 @@ func readBoldAssertionCreationInfo(
 		return nil, err
 	}
 	afterState := parsedLog.Assertion.AfterState
+	creationL1Block, err := arbutil.CorrespondingL1BlockNumber(ctx, client, ethLog.BlockNumber)
+	if err != nil {
+		return nil, err
+	}
 	return &protocol.AssertionCreatedInfo{
 		ConfirmPeriodBlocks: parsedLog.ConfirmPeriodBlocks,
 		RequiredStake:       parsedLog.RequiredStake,
@@ -628,6 +644,19 @@ func readBoldAssertionCreationInfo(
 		WasmModuleRoot:      parsedLog.WasmModuleRoot,
 		ChallengeManager:    parsedLog.ChallengeManager,
 		TransactionHash:     ethLog.TxHash,
-		CreationL1Block:     ethLog.BlockNumber,
+		CreationParentBlock: ethLog.BlockNumber,
+		CreationL1Block:     creationL1Block,
 	}, nil
 }
+
+// Read the creation info for an assertion by looking up its creation
+// event from the rollup contracts.
+// Copyright 2023-2024, Offchain Labs, Inc.
+// For license information, see https://github.com/offchainlabs/nitro/blob/main/LICENSE
+// Initialize Updates the block validator module root.
+// And updates the init state of the block validator if block validator has not started yet.
+// Sets up a BOLD challenge manager implementation by providing it with
+// its necessary dependencies and configuration. The challenge manager can then be started, as it
+// implements the StopWaiter pattern as part of the Nitro validator.
+// Read the creation info for an assertion by looking up its creation
+// event from the rollup contracts.
