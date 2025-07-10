@@ -37,7 +37,7 @@ type InboxBackend interface {
 	ReadDelayedInbox(seqNum uint64) (*arbostypes.L1IncomingMessage, error)
 }
 
-type SequencerBatch struct {
+type SequencerMessage struct {
 	MinTimestamp         uint64
 	MaxTimestamp         uint64
 	MinL1Block           uint64
@@ -50,11 +50,11 @@ const MaxDecompressedLen int = 1024 * 1024 * 16 // 16 MiB
 const maxZeroheavyDecompressedLen = 101*MaxDecompressedLen/100 + 64
 const MaxSegmentsPerSequencerMessage = 100 * 1024
 
-func ParseSequencerMessage(ctx context.Context, batchNum uint64, batchBlockHash common.Hash, data []byte, dapReaders []daprovider.Reader, keysetValidationMode daprovider.KeysetValidationMode) (*SequencerBatch, error) {
+func ParseSequencerMessage(ctx context.Context, batchNum uint64, batchBlockHash common.Hash, data []byte, dapReaders []daprovider.Reader, keysetValidationMode daprovider.KeysetValidationMode) (*SequencerMessage, error) {
 	if len(data) < 40 {
 		return nil, errors.New("sequencer message missing L1 header")
 	}
-	parsedMsg := &SequencerBatch{
+	parsedMsg := &SequencerMessage{
 		MinTimestamp:         binary.BigEndian.Uint64(data[:8]),
 		MaxTimestamp:         binary.BigEndian.Uint64(data[8:16]),
 		MinL1Block:           binary.BigEndian.Uint64(data[16:24]),
@@ -166,7 +166,7 @@ type inboxMultiplexer struct {
 	backend                   InboxBackend
 	delayedMessagesRead       uint64
 	dapReaders                []daprovider.Reader
-	cachedSequencerMessage    *SequencerBatch
+	cachedSequencerMessage    *SequencerMessage
 	cachedSequencerMessageNum uint64
 	cachedSegmentNum          uint64
 	cachedSegmentTimestamp    uint64
