@@ -29,7 +29,7 @@ func Test_messagesFromBatchSegments_expectedFieldBounds_simple(t *testing.T) {
 	melState := &mel.State{
 		DelayedMessagesRead: 0,
 	}
-	seqMsg := &arbstate.SequencerBatch{
+	seqMsg := &arbstate.SequencerMessage{
 		Segments:     segments,
 		MinTimestamp: 10,
 		MaxTimestamp: 20,
@@ -61,7 +61,7 @@ func Test_messagesFromBatchSegments_expectedFieldBounds_complex(t *testing.T) {
 	melState := &mel.State{
 		DelayedMessagesRead: 0,
 	}
-	seqMsg := &arbstate.SequencerBatch{
+	seqMsg := &arbstate.SequencerMessage{
 		Segments:     segments,
 		MinTimestamp: 10,
 		MaxTimestamp: 20,
@@ -86,7 +86,7 @@ func Test_messagesFromBatchSegments_delayedMessages(t *testing.T) {
 	melState := &mel.State{
 		DelayedMessagesRead: 0,
 	}
-	seqMsg := &arbstate.SequencerBatch{
+	seqMsg := &arbstate.SequencerMessage{
 		AfterDelayedMessages: 2,
 		Segments:             [][]byte{}, // No segments, but the
 		// sequencer message says that we must read 2 delayed messages.
@@ -122,7 +122,7 @@ func Test_messagesFromBatchSegments(t *testing.T) {
 		name            string
 		setupSegments   func() [][]byte
 		setupMelState   func() *mel.State
-		setupSeqMsg     func(segments [][]byte) *arbstate.SequencerBatch
+		setupSeqMsg     func(segments [][]byte) *arbstate.SequencerMessage
 		setupMockDB     func() *mockDelayedMessageDB
 		wantErr         bool
 		wantErrContains string
@@ -141,8 +141,8 @@ func Test_messagesFromBatchSegments(t *testing.T) {
 			setupMelState: func() *mel.State {
 				return &mel.State{}
 			},
-			setupSeqMsg: func(segments [][]byte) *arbstate.SequencerBatch {
-				return &arbstate.SequencerBatch{
+			setupSeqMsg: func(segments [][]byte) *arbstate.SequencerMessage {
+				return &arbstate.SequencerMessage{
 					Segments:     segments,
 					MinTimestamp: 0,
 					MaxTimestamp: 1_000_000,
@@ -170,8 +170,8 @@ func Test_messagesFromBatchSegments(t *testing.T) {
 			setupMelState: func() *mel.State {
 				return &mel.State{}
 			},
-			setupSeqMsg: func(segments [][]byte) *arbstate.SequencerBatch {
-				return &arbstate.SequencerBatch{
+			setupSeqMsg: func(segments [][]byte) *arbstate.SequencerMessage {
+				return &arbstate.SequencerMessage{
 					Segments:     segments,
 					MinTimestamp: 0,
 					MaxTimestamp: 1_000_000,
@@ -201,8 +201,8 @@ func Test_messagesFromBatchSegments(t *testing.T) {
 			setupMelState: func() *mel.State {
 				return &mel.State{}
 			},
-			setupSeqMsg: func(segments [][]byte) *arbstate.SequencerBatch {
-				return &arbstate.SequencerBatch{
+			setupSeqMsg: func(segments [][]byte) *arbstate.SequencerMessage {
+				return &arbstate.SequencerMessage{
 					Segments:     segments,
 					MinTimestamp: 0,
 					MaxTimestamp: 1_000_000,
@@ -228,8 +228,8 @@ func Test_messagesFromBatchSegments(t *testing.T) {
 					DelayedMessagesRead: 1,
 				}
 			},
-			setupSeqMsg: func(segments [][]byte) *arbstate.SequencerBatch {
-				return &arbstate.SequencerBatch{
+			setupSeqMsg: func(segments [][]byte) *arbstate.SequencerMessage {
+				return &arbstate.SequencerMessage{
 					AfterDelayedMessages: 1,
 					Segments:             segments,
 				}
@@ -252,8 +252,8 @@ func Test_messagesFromBatchSegments(t *testing.T) {
 					DelayedMessagesRead: 0,
 				}
 			},
-			setupSeqMsg: func(segments [][]byte) *arbstate.SequencerBatch {
-				return &arbstate.SequencerBatch{
+			setupSeqMsg: func(segments [][]byte) *arbstate.SequencerMessage {
+				return &arbstate.SequencerMessage{
 					AfterDelayedMessages: 1,
 					Segments:             segments,
 				}
@@ -276,8 +276,8 @@ func Test_messagesFromBatchSegments(t *testing.T) {
 					DelayedMessagesRead: 0,
 				}
 			},
-			setupSeqMsg: func(segments [][]byte) *arbstate.SequencerBatch {
-				return &arbstate.SequencerBatch{
+			setupSeqMsg: func(segments [][]byte) *arbstate.SequencerMessage {
+				return &arbstate.SequencerMessage{
 					AfterDelayedMessages: 1,
 					Segments:             segments,
 				}
@@ -300,8 +300,8 @@ func Test_messagesFromBatchSegments(t *testing.T) {
 					DelayedMessagesRead: 0,
 				}
 			},
-			setupSeqMsg: func(segments [][]byte) *arbstate.SequencerBatch {
-				return &arbstate.SequencerBatch{
+			setupSeqMsg: func(segments [][]byte) *arbstate.SequencerMessage {
+				return &arbstate.SequencerMessage{
 					AfterDelayedMessages: 1,
 					Segments:             segments,
 				}

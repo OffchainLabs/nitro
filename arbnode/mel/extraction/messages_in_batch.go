@@ -25,7 +25,7 @@ import (
 func messagesFromBatchSegments(
 	ctx context.Context,
 	melState *mel.State,
-	seqMsg *arbstate.SequencerBatch,
+	seqMsg *arbstate.SequencerMessage,
 	delayedMsgDB DelayedMessageDatabase,
 ) ([]*arbostypes.MessageWithMetadata, error) {
 	messages := make([]*arbostypes.MessageWithMetadata, 0)
@@ -83,7 +83,7 @@ func messageFromSegment(
 	ctx context.Context,
 	melState *mel.State,
 	delayedMsgDB DelayedMessageDatabase,
-	seqMsg *arbstate.SequencerBatch,
+	seqMsg *arbstate.SequencerMessage,
 	segmentIdx int,
 	segment []byte,
 	timestamp uint64,
@@ -140,7 +140,7 @@ func messageFromSegment(
 
 func produceL2Message(
 	kind byte,
-	seqMsg *arbstate.SequencerBatch,
+	seqMsg *arbstate.SequencerMessage,
 	segment []byte,
 	blockNumber uint64,
 	timestamp uint64,
@@ -188,7 +188,7 @@ func produceL2Message(
 func extractDelayedMessageFromSegment(
 	ctx context.Context,
 	melState *mel.State,
-	seqMsg *arbstate.SequencerBatch,
+	seqMsg *arbstate.SequencerMessage,
 	delayedMsgDB DelayedMessageDatabase,
 ) (*arbostypes.MessageWithMetadata, error) {
 	if melState.DelayedMessagesRead >= seqMsg.AfterDelayedMessages {

@@ -88,13 +88,14 @@ func TestReadDelayedMessage(t *testing.T) {
 		//       /                \
 		//   hash(A++B)        hash(C++D)
 		//   /       \          /       \
-		//  A         B        C        EMPTY
+		//  A         B        C         D
 		//
-		// We should be able to fetch A, B, C.
+		// We should be able to fetch A, B, C, or D.
 		messages := []*mel.DelayedInboxMessage{
 			buildDelayedMessage(t, 1, []byte("a")),
 			buildDelayedMessage(t, 2, []byte("b")),
 			buildDelayedMessage(t, 3, []byte("c")),
+			buildDelayedMessage(t, 4, []byte("d")),
 		}
 
 		preimages, root := buildMerkleTree(t, messages)
@@ -102,12 +103,12 @@ func TestReadDelayedMessage(t *testing.T) {
 		resolver := &mockPreimageResolver{preimages: preimages}
 		db := &delayedMessageDatabase{preimageResolver: resolver}
 		state := &mel.State{
-			DelayedMessagedSeen:     3,
+			DelayedMessagedSeen:     4,
 			DelayedMessagesSeenRoot: root,
 		}
 
 		// Test each message
-		expectedData := [][]byte{[]byte("a"), []byte("b"), []byte("c")}
+		expectedData := [][]byte{[]byte("a"), []byte("b"), []byte("c"), []byte("d")}
 		for i, expected := range expectedData {
 			msg, err := db.ReadDelayedMessage(ctx, state, uint64(i)) // #nosec G115
 			require.NoError(t, err)
@@ -160,6 +161,7 @@ func buildDelayedMessage(
 
 func buildMerkleTree(t *testing.T, messages []*mel.DelayedInboxMessage) (map[common.Hash][]byte, common.Hash) {
 	preimages := make(map[common.Hash][]byte)
+	// Encode messages and get leaf hashes.
 	leafHashes := make([]common.Hash, len(messages))
 	for i, msg := range messages {
 		encoded, err := rlp.EncodeToBytes(msg)
@@ -168,20 +170,14 @@ func buildMerkleTree(t *testing.T, messages []*mel.DelayedInboxMessage) (map[com
 		preimages[hash] = encoded
 		leafHashes[i] = hash
 	}
-
+	// Build tree bottom-up
 	currentLevel := leafHashes
 	for len(currentLevel) > 1 {
-		nextLevel := make([]common.Hash, 0, (len(currentLevel)+1)/2)
+		nextLevel := make([]common.Hash, 0, len(currentLevel)/2)
 
 		for i := 0; i < len(currentLevel); i += 2 {
 			left := currentLevel[i]
-			var right common.Hash
-
-			if i+1 < len(currentLevel) {
-				right = currentLevel[i+1]
-			} else {
-				right = common.Hash{}
-			}
+			right := currentLevel[i+1] // Assumes even number of leaves
 
 			preimage := make([]byte, 0)
 			preimage = append(preimage, left[:]...)
