@@ -224,7 +224,7 @@ func GetBlockChain(
 	cacheConfig *core.CacheConfig,
 	chainConfig *params.ChainConfig,
 	tracer *tracing.Hooks,
-	txLookupLimit uint64,
+	txIndexerConfig *TxIndexerConfig,
 ) (*core.BlockChain, error) {
 	engine := arbos.Engine{
 		IsSequencer: true,
@@ -235,7 +235,15 @@ func GetBlockChain(
 		Tracer:                  tracer,
 	}
 
-	return core.NewBlockChain(chainDb, cacheConfig, chainConfig, nil, nil, engine, vmConfig, &txLookupLimit)
+	var coreTxIndexerConfig *core.TxIndexerConfig // nil if disabled
+	if txIndexerConfig.Enable {
+		coreTxIndexerConfig = &core.TxIndexerConfig{
+			Limit:         txIndexerConfig.TxLookupLimit,
+			Threads:       txIndexerConfig.Threads,
+			MinBatchDelay: txIndexerConfig.MinBatchDelay,
+		}
+	}
+	return core.NewBlockChainExtended(chainDb, cacheConfig, chainConfig, nil, nil, engine, vmConfig, coreTxIndexerConfig)
 }
 
 func WriteOrTestBlockChain(
@@ -246,7 +254,7 @@ func WriteOrTestBlockChain(
 	genesisArbOSInit *params.ArbOSInit,
 	tracer *tracing.Hooks,
 	initMessage *arbostypes.ParsedInitMessage,
-	txLookupLimit uint64,
+	txIndexerConfig *TxIndexerConfig,
 	accountsPerSync uint,
 ) (*core.BlockChain, error) {
 	emptyBlockChain := rawdb.ReadHeadHeader(chainDb) == nil
@@ -254,7 +262,7 @@ func WriteOrTestBlockChain(
 		// When using path scheme, and the stored state trie is not empty,
 		// WriteOrTestGenBlock is not able to recover EmptyRootHash state trie node.
 		// In that case Nitro doesn't test genblock, but just returns the BlockChain.
-		return GetBlockChain(chainDb, cacheConfig, chainConfig, tracer, txLookupLimit)
+		return GetBlockChain(chainDb, cacheConfig, chainConfig, tracer, txIndexerConfig)
 	}
 
 	err := WriteOrTestGenblock(chainDb, cacheConfig, initData, chainConfig, genesisArbOSInit, initMessage, accountsPerSync)
@@ -265,7 +273,7 @@ func WriteOrTestBlockChain(
 	if err != nil {
 		return nil, err
 	}
-	return GetBlockChain(chainDb, cacheConfig, chainConfig, tracer, txLookupLimit)
+	return GetBlockChain(chainDb, cacheConfig, chainConfig, tracer, txIndexerConfig)
 }
 
 func init() {
