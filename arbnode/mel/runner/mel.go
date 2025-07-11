@@ -230,6 +230,14 @@ func (m *MessageExtractor) GetMsgCount(ctx context.Context) (uint64, error) {
 	return headState.MsgCount, nil
 }
 
+func (m *MessageExtractor) GetStateByParentChainBlockHash(ctx context.Context, parentChainBlockHash common.Hash) (*mel.State, error) {
+	parentChainHeader, err := m.parentChainReader.HeaderByHash(ctx, parentChainBlockHash)
+	if err != nil {
+		return nil, err
+	}
+	return m.melDB.State(ctx, parentChainHeader.Number.Uint64())
+}
+
 func (d *MessageExtractor) GetDelayedMessage(index uint64) (*mel.DelayedInboxMessage, error) {
 	return d.melDB.fetchDelayedMessage(index)
 }
