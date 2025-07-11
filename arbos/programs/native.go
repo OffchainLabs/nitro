@@ -231,10 +231,8 @@ func activateProgramInternal(
 	return info, asmMap, err
 }
 
-// getLocalAsm gets asm for local target and recompiles it if not found.
-// Existence of asms for other configured targets is checked and also recompiled if not found (other targets are needed for multi-target recording).
-func getLocalAsm(statedb vm.StateDB, moduleHash common.Hash, addressForLogging common.Address, code []byte, codehash common.Hash, maxWasmSize uint32, pagelimit uint16, time uint64, debugMode bool, program Program, runCtx *core.MessageRunContext) ([]byte, error) {
-	localTarget := rawdb.LocalTarget()
+// getCompiledProgram gets compiled wasm for all targets and recompiles missing ones.
+func getCompiledProgram(statedb vm.StateDB, moduleHash common.Hash, addressForLogging common.Address, code []byte, codehash common.Hash, maxWasmSize uint32, pagelimit uint16, time uint64, debugMode bool, program Program, runCtx *core.MessageRunContext) (map[rawdb.WasmTarget][]byte, error) {
 	targets := runCtx.WasmTargets()
 	// even though we need only asm for local target, make sure that all configured targets are available as they are needed during multi-target recording of a program call
 	asmMap, missingTargets, err := statedb.ActivatedAsmMap(targets, moduleHash)
@@ -245,13 +243,7 @@ func getLocalAsm(statedb vm.StateDB, moduleHash common.Hash, addressForLogging c
 		return nil, err
 	}
 	if len(missingTargets) == 0 {
-		if localAsm, ok := asmMap[localTarget]; ok {
-			return localAsm, nil
-		} else {
-			// shouldn't happen as the targets should always include local target, try to recover either way
-			log.Warn("missing entry for local target in asm map read", "targets", targets, "localTarget", localTarget)
-			missingTargets = append(missingTargets, localTarget)
-		}
+		return asmMap, nil
 	}
 
 	// addressForLogging may be empty or may not correspond to the code, so we need to be careful to use the code passed in separately
@@ -301,16 +293,7 @@ func getLocalAsm(statedb vm.StateDB, moduleHash common.Hash, addressForLogging c
 			return nil, err
 		}
 	}
-	asm, exists := asmMap[localTarget]
-	if !exists {
-		var availableTargets []rawdb.WasmTarget
-		for target := range asmMap {
-			availableTargets = append(availableTargets, target)
-		}
-		log.Error("failed to reactivate program - missing asm for local target", "address", addressForLogging, "local target", localTarget, "available targets", availableTargets)
-		return nil, fmt.Errorf("failed to reactivate program - missing asm for local target, address: %v, local target: %v, available targets: %v", addressForLogging, localTarget, availableTargets)
-	}
-	return asm, nil
+	return asmMap, nil
 }
 
 func callProgram(
@@ -386,12 +369,17 @@ func handleReqImpl(apiId usize, req_type u32, data *rustSlice, costPtr *u64, out
 func cacheProgram(db vm.StateDB, module common.Hash, program Program, addressForLogging common.Address, code []byte, codehash common.Hash, params *StylusParams, debug bool, time uint64, runCtx *core.MessageRunContext) {
 	if runCtx.IsCommitMode() {
 		// address is only used for logging
-		asm, err := getLocalAsm(db, module, addressForLogging, code, codehash, params.MaxWasmSize, params.PageLimit, time, debug, program, runCtx)
-		if err != nil {
-			panic("unable to recreate wasm")
+		asmMap, err := getCompiledProgram(db, module, addressForLogging, code, codehash, params.MaxWasmSize, params.PageLimit, time, debug, program, runCtx)
+		var ok bool
+		var localAsm []byte
+		if asmMap != nil {
+			localAsm, ok = asmMap[rawdb.LocalTarget()]
+		}
+		if err != nil || !ok {
+			panic(fmt.Sprintf("failed to get compiled program for caching, program: %v, local target missing: %v, err: %v", addressForLogging.Hex(), ok, err))
 		}
 		tag := runCtx.WasmCacheTag()
-		state.CacheWasmRust(asm, module, program.version, tag, debug)
+		state.CacheWasmRust(localAsm, module, program.version, tag, debug)
 		db.RecordCacheWasm(state.CacheWasm{ModuleHash: module, Version: program.version, Tag: tag, Debug: debug})
 	}
 }
