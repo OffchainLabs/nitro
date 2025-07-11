@@ -73,8 +73,8 @@ func (e *CustomDAProofEnhancer) EnhanceProof(ctx context.Context, messageNum arb
 		return nil, fmt.Errorf("proof too short for CustomDA enhancement: %d bytes", len(proof))
 	}
 
-	// The entire proof is of variable length, so we work backwards from the marker to find
-	// the parts of the proof added by serialize_proof() for CustomDA ReadPreImage.
+	// The entire proof is of variable length, so we work backwards from
+	// final marker byte to find all the marker data added by serialize_proof() for CustomDA ReadPreImage.
 	markerPos := len(proof) - 1
 	offsetPos := markerPos - 8
 	certKeccak256Pos := offsetPos - 32
@@ -101,22 +101,26 @@ func (e *CustomDAProofEnhancer) EnhanceProof(ctx context.Context, messageNum arb
 		return nil, fmt.Errorf("failed to generate custom DA proof: %w", err)
 	}
 
-	// Build standardized enhanced proof format:
-	// [...proof..., certKeccak256(32), offset(8), certSize(8), certificate, customProof]
+	// Build standard CustomDA proof preamble:
+	// [...proof..., certSize(8), certificate, customProof]
+	// We're dropping the CustomDA marker data (certKeccak256, offset, marker byte) from the original proof.
+	// It was only needed here to call GenerateProof above, the same information is
+	// available to the OSP in the instruction arguments.
 	certSize := uint64(len(certificate))
-	enhancedProof := make([]byte, offsetPos+8+8+len(certificate)+len(customProof))
+	markerDataStart := certKeccak256Pos // Start of CustomDA marker data that we'll drop
+	enhancedProof := make([]byte, markerDataStart+8+len(certificate)+len(customProof))
 
-	// Copy original proof including certKeccak256 and offset
-	copy(enhancedProof, proof[:offsetPos+8])
+	// Copy original proof up to the CustomDA marker data
+	copy(enhancedProof, proof[:markerDataStart])
 
 	// Add certSize
-	binary.BigEndian.PutUint64(enhancedProof[offsetPos+8:], certSize)
+	binary.BigEndian.PutUint64(enhancedProof[markerDataStart:], certSize)
 
 	// Add certificate
-	copy(enhancedProof[offsetPos+16:], certificate)
+	copy(enhancedProof[markerDataStart+8:], certificate)
 
 	// Add custom proof
-	copy(enhancedProof[offsetPos+16+len(certificate):], customProof)
+	copy(enhancedProof[markerDataStart+8+len(certificate):], customProof)
 
 	return enhancedProof, nil
 }
