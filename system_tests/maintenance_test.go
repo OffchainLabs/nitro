@@ -42,12 +42,25 @@ func TestMaintenance(t *testing.T) {
 	err := l2rpc.CallContext(ctx, nil, "maintenance_trigger")
 	Require(t, err)
 
-	time.Sleep(3 * time.Second)
+	finished := false
+	for range 100 {
+		if logHandler.WasLogged("Execution is not running maintenance anymore, maintenance completed successfully") {
+			finished = true
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	if !finished {
+		t.Fatal("Maintenance did not complete successfully from Consensus perspective")
+	}
+
+	maintenanceStatus, err := builder.L2.ExecNode.MaintenanceStatus().Await(ctx)
+	Require(t, err)
+	if maintenanceStatus == nil || maintenanceStatus.IsRunning {
+		t.Fatal("Maintenance is still running")
+	}
 
 	if !logHandler.WasLogged("Flushed trie db through maintenance completed successfully") {
-		t.Fatal("Expected log message not found")
-	}
-	if !logHandler.WasLogged("Execution is not running maintenance anymore, maintenance completed successfully") {
 		t.Fatal("Expected log message not found")
 	}
 
