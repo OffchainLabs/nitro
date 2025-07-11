@@ -21,16 +21,26 @@ type State struct {
 	ParentChainBlockHash               common.Hash
 	ParentChainPreviousBlockHash       common.Hash
 	MessageAccumulator                 common.Hash
-	DelayedMessageAccumulator          common.Hash
+	DelayedMessagesSeenRoot            common.Hash
 	MsgCount                           uint64
 	BatchCount                         uint64
 	DelayedMessagesRead                uint64
 	DelayedMessagedSeen                uint64
 }
 
+// DelayedMessageDatabase can read delayed messages by their global index.
+type DelayedMessageDatabase interface {
+	ReadDelayedMessage(
+		ctx context.Context,
+		state *State,
+		index uint64,
+	) (*DelayedInboxMessage, error)
+}
+
 // Defines a basic interface for MEL, including saving states, messages,
 // and delayed messages to a database.
 type StateDatabase interface {
+	DelayedMessageDatabase
 	State(
 		ctx context.Context,
 		parentChainBlockNumber uint64,
@@ -44,15 +54,6 @@ type StateDatabase interface {
 		state *State,
 		delayedMessages []*DelayedInboxMessage,
 	) error
-	DelayedMessageDatabase
-}
-
-type DelayedMessageDatabase interface {
-	ReadDelayedMessage(
-		ctx context.Context,
-		state *State,
-		index uint64,
-	) (*DelayedInboxMessage, error)
 }
 
 // MessageConsumer is an interface to be implemented by readers of MEL such as transaction streamer of the nitro node
@@ -79,13 +80,13 @@ func (s *State) Clone() *State {
 	parentChainHash := common.Hash{}
 	parentChainPrevHash := common.Hash{}
 	msgAcc := common.Hash{}
-	delayedMsgAcc := common.Hash{}
+	delayedMsgSeenRoot := common.Hash{}
 	copy(batchPostingTarget[:], s.BatchPostingTargetAddress[:])
 	copy(delayedMessageTarget[:], s.DelayedMessagePostingTargetAddress[:])
 	copy(parentChainHash[:], s.ParentChainBlockHash[:])
 	copy(parentChainPrevHash[:], s.ParentChainPreviousBlockHash[:])
 	copy(msgAcc[:], s.MessageAccumulator[:])
-	copy(delayedMsgAcc[:], s.DelayedMessageAccumulator[:])
+	copy(delayedMsgSeenRoot[:], s.DelayedMessagesSeenRoot[:])
 	return &State{
 		Version:                            s.Version,
 		ParentChainId:                      s.ParentChainId,
@@ -95,7 +96,7 @@ func (s *State) Clone() *State {
 		ParentChainBlockHash:               parentChainHash,
 		ParentChainPreviousBlockHash:       parentChainPrevHash,
 		MessageAccumulator:                 msgAcc,
-		DelayedMessageAccumulator:          delayedMsgAcc,
+		DelayedMessagesSeenRoot:            delayedMsgSeenRoot,
 		MsgCount:                           s.MsgCount,
 		DelayedMessagesRead:                s.DelayedMessagesRead,
 		DelayedMessagedSeen:                s.DelayedMessagedSeen,
