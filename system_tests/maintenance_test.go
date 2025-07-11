@@ -42,7 +42,7 @@ func TestMaintenance(t *testing.T) {
 	err := l2rpc.CallContext(ctx, nil, "maintenance_trigger")
 	Require(t, err)
 
-	time.Sleep(12 * time.Second)
+	time.Sleep(3 * time.Second)
 
 	if !logHandler.WasLogged("Flushed trie db through maintenance completed successfully") {
 		t.Fatal("Expected log message not found")

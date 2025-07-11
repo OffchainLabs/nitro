@@ -249,7 +249,7 @@ func (mr *MaintenanceRunner) attemptMaintenance(ctx context.Context) error {
 }
 
 func (mr *MaintenanceRunner) waitMaintenanceToComplete(ctx context.Context) {
-	ticker := time.NewTicker(5 * time.Second)
+	ticker := time.NewTicker(1 * time.Second)
 	for {
 		select {
 		case <-ctx.Done():
