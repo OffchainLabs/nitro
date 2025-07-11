@@ -376,7 +376,7 @@ func cacheProgram(db vm.StateDB, module common.Hash, program Program, addressFor
 			localAsm, ok = asmMap[rawdb.LocalTarget()]
 		}
 		if err != nil || !ok {
-			panic(fmt.Sprintf("failed to get compiled program for caching, program: %v, local target missing: %v, err: %v", addressForLogging.Hex(), ok, err))
+			panic(fmt.Sprintf("failed to get compiled program for caching, program: %v, local target missing: %v, err: %v", addressForLogging.Hex(), !ok, err))
 		}
 		tag := runCtx.WasmCacheTag()
 		state.CacheWasmRust(localAsm, module, program.version, tag, debug)
