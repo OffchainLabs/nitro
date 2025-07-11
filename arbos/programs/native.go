@@ -336,7 +336,10 @@ func callProgram(
 
 	if runCtx.IsRecording() {
 		if stateDb, ok := db.(*state.StateDB); ok {
-			stateDb.RecordProgram(runCtx.WasmTargets(), moduleHash)
+			if err := stateDb.RecordProgram(runCtx.WasmTargets(), moduleHash); err != nil {
+				log.Error("failed to record program: %w", err)
+				panic(fmt.Sprintf("failed to record program: %v", err))
+			}
 		}
 	}
 
