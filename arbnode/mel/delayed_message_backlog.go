@@ -12,14 +12,14 @@ import (
 // DelayedMessageBacklogEntry contains metadata relating to delayed messages required for merkle-tree verification
 type DelayedMessageBacklogEntry struct {
 	Index                       uint64
-	MerkleRoot                  common.Hash
+	MsgHash                     common.Hash
 	MelStateParentChainBlockNum uint64
 }
 
 // DelayedMessageBacklog is a data structure that holds metadata related to delayed messages that have been SEEN by MEL but not yet READ.
-// This enables verification of delayed messages read from a database against a Merkle root in the MEL state. The MEL state also contains
-// compact witnesses of a Merkle tree representing all seen delayed messages. To prove that a delayed message is part of this Merkle tree,
-// this data structure can be used to verify Merkle proofs against the MEL state.
+// This enables verification of delayed messages read from a database against the current Merkle root of the head MEL state. The MEL state
+// also contains compact witnesses of a Merkle tree representing all seen delayed messages. To prove that a delayed message is part of
+// this Merkle tree, this data structure can be used to verify Merkle proofs against the MEL state.
 type DelayedMessageBacklog struct {
 	ctx                          context.Context
 	capacity                     int // 0 = no trimming
@@ -105,14 +105,16 @@ func (d *DelayedMessageBacklog) reorg(newDelayedMessagedSeen uint64) error {
 	return nil
 }
 
+// TODO: backlog impl can be optimized by only every calling clone when we add delayed messages. Or Add can
+// updated to use dirties that will be added to `entries` after backlog is finalized in SavingMessages fsm step
 func (d *DelayedMessageBacklog) clone() *DelayedMessageBacklog {
 	var deque []*DelayedMessageBacklogEntry
 	for _, item := range d.entries {
-		merkleRoot := common.Hash{}
-		copy(merkleRoot[:], item.MerkleRoot[:])
+		msgHash := common.Hash{}
+		copy(msgHash[:], item.MsgHash[:])
 		deque = append(deque, &DelayedMessageBacklogEntry{
 			Index:                       item.Index,
-			MerkleRoot:                  merkleRoot,
+			MsgHash:                     msgHash,
 			MelStateParentChainBlockNum: item.MelStateParentChainBlockNum,
 		})
 	}

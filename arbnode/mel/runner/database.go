@@ -139,42 +139,68 @@ func (d *Database) SaveDelayedMessages(ctx context.Context, state *mel.State, de
 }
 
 func (d *Database) checkAgainstAccumulator(ctx context.Context, state *mel.State, msg *mel.DelayedInboxMessage, index uint64) (bool, error) {
-	delayedMeta, err := state.GetDelayedMessageBacklog().Get(index)
+	delayedMessageBacklog := state.GetDelayedMessageBacklog()
+	delayedMeta, err := delayedMessageBacklog.Get(index)
 	if err != nil {
 		return false, err
 	}
-	acc := state.GetReadDelayedMsgsAcc()
-	if acc == nil {
-		targetState, err := d.State(ctx, delayedMeta.MelStateParentChainBlockNum-1)
+	preReadCount := state.GetReadCountFromBacklog()
+	if index < preReadCount {
+		// Delayed message has already been verified with a merkle root, we just need to verify that the hash matches
+		if msg.Hash() != delayedMeta.MsgHash {
+			return false, nil
+		}
+		return true, nil
+	}
+	targetState, err := d.State(ctx, delayedMeta.MelStateParentChainBlockNum-1)
+	if err != nil {
+		return false, err
+	}
+	acc, err := merkleAccumulator.NewNonpersistentMerkleAccumulatorFromPartials(
+		mel.ToPtrSlice(targetState.DelayedMessageMerklePartials),
+	)
+	if err != nil {
+		return false, err
+	}
+	for i := targetState.DelayedMessagedSeen; i < index; i++ {
+		delayed, err := d.fetchDelayedMessage(i)
 		if err != nil {
 			return false, err
 		}
-		if acc, err = merkleAccumulator.NewNonpersistentMerkleAccumulatorFromPartials(
-			mel.ToPtrSlice(targetState.DelayedMessageMerklePartials),
-		); err != nil {
+		_, err = acc.Append(delayed.Hash())
+		if err != nil {
 			return false, err
 		}
-		for i := targetState.DelayedMessagedSeen; i < index; i++ {
-			delayed, err := d.fetchDelayedMessage(i)
-			if err != nil {
-				return false, err
-			}
-			_, err = acc.Append(delayed.Hash())
-			if err != nil {
-				return false, err
-			}
-		}
-		state.SetReadDelayedMsgsAcc(acc)
 	}
+	// Accumulate this message
 	_, err = acc.Append(msg.Hash())
 	if err != nil {
 		return false, err
 	}
-	merkleRoot, err := acc.Root()
+	// Accumulate rest of the message-hashes in backlog
+	for i := index + 1; i < state.DelayedMessagedSeen; i++ {
+		backlogEntry, err := delayedMessageBacklog.Get(i)
+		if err != nil {
+			return false, err
+		}
+		_, err = acc.Append(backlogEntry.MsgHash)
+		if err != nil {
+			return false, err
+		}
+	}
+	have, err := acc.Root()
 	if err != nil {
 		return false, err
 	}
-	return merkleRoot == delayedMeta.MerkleRoot, nil
+	want, err := state.GetSeenDelayedMsgsAcc().Root()
+	if err != nil {
+		return false, err
+	}
+	if have == want {
+		state.SetReadCountFromBacklog(state.DelayedMessagedSeen) // meaning all messages from index to state.DelayedMessagedSeen-1 inclusive have been pre-read
+		return true, nil
+	}
+	return false, nil
 }
 
 func (d *Database) fetchDelayedMessage(index uint64) (*mel.DelayedInboxMessage, error) {

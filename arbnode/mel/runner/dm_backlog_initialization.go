@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/offchainlabs/nitro/arbnode/mel"
-	"github.com/offchainlabs/nitro/arbos/merkleAccumulator"
 )
 
 // InitializeDelayedMessageBacklog is to be only called by the Start fsm step of MEL. This function fills the backlog based on the seen and read count from the given mel state
@@ -25,30 +24,29 @@ func InitializeDelayedMessageBacklog(ctx context.Context, d *mel.DelayedMessageB
 	// To make the delayedMessageBacklog reorg resistant we will need to add more delayedMessageBacklogEntry even though those messages are `Read`
 	// this is only relevant if the current head Mel state's ParentChainBlockNumber is not yet finalized
 	targetDelayedMessagesRead := min(state.DelayedMessagesRead, finalizedDelayedMessagesRead)
-	// Get the merkleAccumulator that has accumulated delayed messages up until the position=targetDelayedMessagesRead
-	acc, delayedMsgIndexToParentChainBlockNum, err := getMerkleAccumulatorAt(ctx, targetDelayedMessagesRead, db, state)
+	delayedMsgIndexToParentChainBlockNum, err := indexToParentChainBlockMap(ctx, targetDelayedMessagesRead, db, state)
 	if err != nil {
 		return err
 	}
-	// Accumulator is now at the step we need, hence we start creating DelayedMessageBacklogEntry for all the delayed messages that are seen but not read
+	if uint64(len(delayedMsgIndexToParentChainBlockNum)) < state.DelayedMessagedSeen-targetDelayedMessagesRead {
+		return fmt.Errorf("number of mappings from index to ParentChainBlockNum: %d are insufficient, needed atleast: %d", uint64(len(delayedMsgIndexToParentChainBlockNum)), state.DelayedMessagedSeen-targetDelayedMessagesRead)
+	}
+
+	// Create DelayedMessageBacklogEntry for all the delayed messages that are seen but not read
 	for index := targetDelayedMessagesRead; index < state.DelayedMessagedSeen; index++ {
 		msg, err := db.fetchDelayedMessage(index)
 		if err != nil {
 			return err
 		}
-		_, err = acc.Append(msg.Hash())
-		if err != nil {
-			return err
-		}
-		merkleRoot, err := acc.Root()
-		if err != nil {
-			return err
+		melStateParentChainBlockNum, ok := delayedMsgIndexToParentChainBlockNum[index]
+		if !ok {
+			return fmt.Errorf("delayed index: %d not found in the mapping of index to ParentChainBlockNum", index)
 		}
 		if err := d.Add(
 			&mel.DelayedMessageBacklogEntry{
 				Index:                       index,
-				MerkleRoot:                  merkleRoot,
-				MelStateParentChainBlockNum: delayedMsgIndexToParentChainBlockNum[index],
+				MsgHash:                     msg.Hash(),
+				MelStateParentChainBlockNum: melStateParentChainBlockNum,
 			}); err != nil {
 			return err
 		}
@@ -56,10 +54,8 @@ func InitializeDelayedMessageBacklog(ctx context.Context, d *mel.DelayedMessageB
 	return nil
 }
 
-// getMerkleAccumulatorAt returns a merkle accumulator that has accumulated messages up until a given targetDelayedMessagesRead index
-func getMerkleAccumulatorAt(ctx context.Context, targetDelayedMessagesRead uint64, db *Database, state *mel.State) (*merkleAccumulator.MerkleAccumulator, map[uint64]uint64, error) {
+func indexToParentChainBlockMap(ctx context.Context, targetDelayedMessagesRead uint64, db *Database, state *mel.State) (map[uint64]uint64, error) {
 	// We first find the melState whose DelayedMessagedSeen is just before the targetDelayedMessagesRead
-	// so that we can construct a merkleAccumulator that is relevant to us
 	var prev *mel.State
 	var err error
 	delayedMsgIndexToParentChainBlockNum := make(map[uint64]uint64)
@@ -67,7 +63,7 @@ func getMerkleAccumulatorAt(ctx context.Context, targetDelayedMessagesRead uint6
 	for i := state.ParentChainBlockNumber - 1; i > 0; i-- {
 		prev, err = db.State(ctx, i)
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		if curr.DelayedMessagedSeen > prev.DelayedMessagedSeen { // Meaning the 'curr' melState has seen some delayed messages
 			for j := prev.DelayedMessagedSeen; j < curr.DelayedMessagedSeen; j++ {
@@ -79,26 +75,5 @@ func getMerkleAccumulatorAt(ctx context.Context, targetDelayedMessagesRead uint6
 		}
 		curr = prev
 	}
-	if prev == nil {
-		return nil, nil, fmt.Errorf("could not find relevant mel state while creating merkle accumulator while initializing backlog. targetDelayedMessagesRead: %d, state.delayedSeen: %d, state.delayedRead: %d",
-			targetDelayedMessagesRead, state.DelayedMessagedSeen, state.DelayedMessagesRead)
-	}
-	acc, err := merkleAccumulator.NewNonpersistentMerkleAccumulatorFromPartials(
-		mel.ToPtrSlice(prev.DelayedMessageMerklePartials),
-	)
-	if err != nil {
-		return nil, nil, err
-	}
-	// We then walk forward the merkleAccumulator till targetDelayedMessagesRead
-	for index := prev.DelayedMessagedSeen; index < targetDelayedMessagesRead; index++ {
-		msg, err := db.fetchDelayedMessage(index)
-		if err != nil {
-			return nil, nil, err
-		}
-		_, err = acc.Append(msg.Hash())
-		if err != nil {
-			return nil, nil, err
-		}
-	}
-	return acc, delayedMsgIndexToParentChainBlockNum, nil
+	return delayedMsgIndexToParentChainBlockNum, nil
 }

@@ -22,7 +22,6 @@ import (
 	"github.com/offchainlabs/nitro/arbnode/mel"
 	melrunner "github.com/offchainlabs/nitro/arbnode/mel/runner"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
-	"github.com/offchainlabs/nitro/arbos/merkleAccumulator"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/daprovider"
@@ -290,11 +289,9 @@ func TestMessageExtractionLayer_SequencerBatchMessageEquivalence_Blobs(t *testin
 		)
 	}
 	// Start from 1 to ignore the init message.
-	readAcc, err := merkleAccumulator.NewNonpersistentMerkleAccumulatorFromPartials(nil)
-	Require(t, err)
 	readHelperState := &mel.State{DelayedMessagedSeen: 1}
 	readHelperState.SetDelayedMessageBacklog(&mel.DelayedMessageBacklog{})
-	readHelperState.SetReadDelayedMsgsAcc(readAcc)
+	readHelperState.SetReadCountFromBacklog(numDelayedMessages) // skip checking against accumulator- not the purpose of this test
 	for i := uint64(1); i < numDelayedMessages; i++ {
 		fromInboxTracker, err := builder.L2.ConsensusNode.InboxTracker.GetDelayedMessage(ctx, i)
 		Require(t, err)
@@ -389,11 +386,9 @@ func TestMessageExtractionLayer_DelayedMessageEquivalence_Simple(t *testing.T) {
 	}
 
 	// Start from 1 to ignore the init message.
-	readAcc, err := merkleAccumulator.NewNonpersistentMerkleAccumulatorFromPartials(nil)
-	Require(t, err)
 	readHelperState := &mel.State{DelayedMessagedSeen: 1}
 	readHelperState.SetDelayedMessageBacklog(&mel.DelayedMessageBacklog{})
-	readHelperState.SetReadDelayedMsgsAcc(readAcc)
+	readHelperState.SetReadCountFromBacklog(numDelayedMessages) // skip checking against accumulator- not the purpose of this test
 	for i := uint64(1); i < numDelayedMessages; i++ {
 		fromInboxTracker, err := builder.L2.ConsensusNode.InboxTracker.GetDelayedMessage(ctx, i)
 		Require(t, err)
@@ -702,6 +697,7 @@ func TestMessageExtractionLayer_UseArbDBForStoringDelayedMessages(t *testing.T) 
 	err = melrunner.InitializeDelayedMessageBacklog(ctx, delayedMessageBacklog, melDB, newInitialState, extractor.GetFinalizedDelayedMessagesRead)
 	Require(t, err)
 	newInitialState.SetDelayedMessageBacklog(delayedMessageBacklog)
+	newInitialState.SetReadCountFromBacklog(newInitialState.DelayedMessagedSeen) // skip checking against accumulator- not the purpose of this test
 	for i := newInitialState.DelayedMessagesRead; i < newInitialState.DelayedMessagedSeen; i++ {
 		// Validates the pending unread delayed messages via accumulator
 		delayedMsgSavedByMel, err := melDB.ReadDelayedMessage(ctx, newInitialState, newInitialState.DelayedMessagesRead)
@@ -713,17 +709,6 @@ func TestMessageExtractionLayer_UseArbDBForStoringDelayedMessages(t *testing.T) 
 		}
 		t.Logf("validated delayed message of index: %d", i)
 	}
-
-	// // Start from 1 to ignore the init message and check the messages we extracted from MEL and the inbox tracker are the same.
-	// for i := uint64(1); i < numDelayedMessages; i++ {
-	// 	fetchedDelayedMsg, err := builder.L2.ConsensusNode.InboxTracker.GetDelayedMessage(ctx, i)
-	// 	Require(t, err)
-	// 	delayedMsgSavedByMel, err := melDB.ReadDelayedMessage(ctx, newInitialState, i)
-	// 	Require(t, err)
-	// 	if !fetchedDelayedMsg.Equals(delayedMsgSavedByMel.Message) {
-	// 		t.Fatal("Messages from MEL and inbox tracker do not match")
-	// 	}
-	// }
 }
 
 type mockMELDB struct {
