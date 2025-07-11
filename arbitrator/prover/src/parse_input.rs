@@ -76,6 +76,8 @@ pub struct StartState {
     pub block_hash: Vec<u8>,
     #[serde(with = "prefixed_hex")]
     pub send_root: Vec<u8>,
+    #[serde(with = "prefixed_hex")]
+    pub mel_root: Vec<u8>,
     pub batch: u64,
     pub pos_in_batch: u64,
 }
@@ -102,6 +104,8 @@ pub struct FileData {
     pub start_state: StartState,
     #[serde(with = "As::<HashMap<DisplayFromStr, HashMap<DisplayFromStr, Base64>>>")]
     pub user_wasms: HashMap<String, HashMap<Bytes32, UserWasm>>,
+    #[serde(with = "prefixed_hex")]
+    pub end_parent_chain_block_hash: Vec<u8>,
 }
 
 impl FileData {
