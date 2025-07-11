@@ -44,11 +44,10 @@ func (e *CustomDAProofEnhancer) EnhanceProof(ctx context.Context, messageNum arb
 		return nil, fmt.Errorf("Couldn't find batch for message #%d to enhance proof", messageNum)
 	}
 
-	sequencerMessage, sequencerMessageHash, err := e.inboxReader.GetSequencerMessageBytes(ctx, batchContainingMessage)
+	sequencerMessage, _, err := e.inboxReader.GetSequencerMessageBytes(ctx, batchContainingMessage)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get sequencer message for batch %d: %w", batchContainingMessage, err)
 	}
-	_ = sequencerMessageHash // silence unused variable warning
 
 	// Extract and validate certificate from sequencer message
 	if len(sequencerMessage) < 41 {
@@ -74,6 +73,8 @@ func (e *CustomDAProofEnhancer) EnhanceProof(ctx context.Context, messageNum arb
 		return nil, fmt.Errorf("proof too short for CustomDA enhancement: %d bytes", len(proof))
 	}
 
+	// The entire proof is of variable length, so we work backwards from the marker to find
+	// the parts of the proof added by serialize_proof() for CustomDA ReadPreImage.
 	markerPos := len(proof) - 1
 	offsetPos := markerPos - 8
 	certKeccak256Pos := offsetPos - 32
@@ -100,22 +101,22 @@ func (e *CustomDAProofEnhancer) EnhanceProof(ctx context.Context, messageNum arb
 		return nil, fmt.Errorf("failed to generate custom DA proof: %w", err)
 	}
 
-	// Build enhanced proof format:
-	// [original proof][certKeccak256][offset][customProof]
-	// Note: certificate is now included inside customProof
-	enhancedProof := make([]byte, certKeccak256Pos+32+8+len(customProof))
+	// Build standardized enhanced proof format:
+	// [...proof..., certKeccak256(32), offset(8), certSize(8), certificate, customProof]
+	certSize := uint64(len(certificate))
+	enhancedProof := make([]byte, offsetPos+8+8+len(certificate)+len(customProof))
 
-	// Copy original proof up to hash position
-	copy(enhancedProof, proof[:certKeccak256Pos])
+	// Copy original proof including certKeccak256 and offset
+	copy(enhancedProof, proof[:offsetPos+8])
 
-	// Add certKeccak256
-	copy(enhancedProof[certKeccak256Pos:], certKeccak256[:])
+	// Add certSize
+	binary.BigEndian.PutUint64(enhancedProof[offsetPos+8:], certSize)
 
-	// Add offset
-	binary.BigEndian.PutUint64(enhancedProof[certKeccak256Pos+32:], offset)
+	// Add certificate
+	copy(enhancedProof[offsetPos+16:], certificate)
 
-	// Add custom proof (which now contains the certificate)
-	copy(enhancedProof[certKeccak256Pos+40:], customProof)
+	// Add custom proof
+	copy(enhancedProof[offsetPos+16+len(certificate):], customProof)
 
 	return enhancedProof, nil
 }

@@ -172,6 +172,7 @@ func (s *Server) GenerateProof(ctx context.Context, preimageType hexutil.Uint, c
 	if s.validator == nil {
 		return nil, errors.New("validator not available")
 	}
+	// #nosec G115
 	proof, err := s.validator.GenerateProof(ctx, arbutil.PreimageType(uint8(preimageType)), certHash, uint64(offset), certificate)
 	if err != nil {
 		return nil, err

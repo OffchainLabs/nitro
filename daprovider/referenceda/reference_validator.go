@@ -24,7 +24,8 @@ func NewValidator() *Validator {
 }
 
 // GenerateProof creates a proof for ReferenceDA
-// Format: [Version(1), CertificateSize(8), Certificate, PreimageSize(8), PreimageData]
+// The proof enhancer will prepend the standardized header [certKeccak256, offset, certSize, certificate]
+// So we only need to return the custom data: [Version(1), PreimageSize(8), PreimageData]
 func (v *Validator) GenerateProof(ctx context.Context, preimageType arbutil.PreimageType, certHash common.Hash, offset uint64, certificate []byte) ([]byte, error) {
 	if preimageType != arbutil.CustomDAPreimageType {
 		return nil, fmt.Errorf("unsupported preimage type: %v", preimageType)
@@ -48,14 +49,12 @@ func (v *Validator) GenerateProof(ctx context.Context, preimageType arbutil.Prei
 		return nil, fmt.Errorf("preimage not found for hash %x", dataHash)
 	}
 
-	// Build proof: [Version(1), CertificateSize(8), Certificate, PreimageSize(8), PreimageData]
-	certLen := len(certificate)
-	proof := make([]byte, 1+8+certLen+8+len(preimage))
+	// Build custom proof data: [Version(1), PreimageSize(8), PreimageData]
+	// The certificate is NOT included here as it's already in the standardized header
+	proof := make([]byte, 1+8+len(preimage))
 	proof[0] = 1 // Version
-	binary.BigEndian.PutUint64(proof[1:9], uint64(certLen))
-	copy(proof[9:9+certLen], certificate)
-	binary.BigEndian.PutUint64(proof[9+certLen:9+certLen+8], uint64(len(preimage)))
-	copy(proof[9+certLen+8:], preimage)
+	binary.BigEndian.PutUint64(proof[1:9], uint64(len(preimage)))
+	copy(proof[9:], preimage)
 
 	return proof, nil
 }

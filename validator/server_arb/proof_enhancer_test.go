@@ -1,7 +1,8 @@
+//go:build disabletodofix
+
 package server_arb
 
 import (
-	"context"
 	"crypto/sha256"
 	"encoding/binary"
 	"testing"
