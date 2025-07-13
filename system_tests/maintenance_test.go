@@ -46,6 +46,7 @@ func TestMaintenance(t *testing.T) {
 	for range 100 {
 		if logHandler.WasLogged("Execution is not running maintenance anymore, maintenance completed successfully") {
 			finished = true
+			break
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
@@ -56,7 +57,10 @@ func TestMaintenance(t *testing.T) {
 
 	maintenanceStatus, err := builder.L2.ExecNode.MaintenanceStatus().Await(ctx)
 	Require(t, err)
-	if maintenanceStatus == nil || maintenanceStatus.IsRunning {
+	if maintenanceStatus == nil {
+		t.Fatal("Maintenance returned nil")
+	}
+	if maintenanceStatus.IsRunning {
 		t.Fatal("Maintenance is still running")
 	}
 
