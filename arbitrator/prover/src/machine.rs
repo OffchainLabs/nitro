@@ -802,7 +802,7 @@ impl From<Function> for FunctionSerdeAll {
 // bytes32 - send_root
 // uint64 - inbox_position
 // uint64 - position_within_message
-pub const GLOBAL_STATE_BYTES32_NUM: usize = 2;
+pub const GLOBAL_STATE_BYTES32_NUM: usize = 3;
 pub const GLOBAL_STATE_U64_NUM: usize = 2;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -816,9 +816,8 @@ impl GlobalState {
     fn hash(&self) -> Bytes32 {
         let mut h = Keccak256::new();
         h.update("Global state:");
-        for item in self.bytes32_vals {
-            h.update(item)
-        }
+        h.update(self.bytes32_vals[0]);
+        h.update(self.bytes32_vals[1]);
         for item in self.u64_vals {
             h.update(item.to_be_bytes())
         }
@@ -827,9 +826,8 @@ impl GlobalState {
 
     fn serialize(&self) -> Vec<u8> {
         let mut data = Vec::new();
-        for item in self.bytes32_vals {
-            data.extend(item)
-        }
+        data.extend(self.bytes32_vals[0]);
+        data.extend(self.bytes32_vals[1]);
         for item in self.u64_vals {
             data.extend(item.to_be_bytes())
         }
@@ -988,6 +986,7 @@ pub struct Machine {
     inbox_contents: HashMap<(InboxIdentifier, u64), Vec<u8>>,
     first_too_far: u64, // Not part of machine hash
     preimage_resolver: PreimageResolverWrapper,
+    end_parent_chain_block_hash: Bytes32,
     /// Linkable Stylus modules in compressed form. Not part of the machine hash.
     stylus_modules: HashMap<Bytes32, Vec<u8>>,
     initial_hash: Bytes32,
@@ -1558,6 +1557,7 @@ impl Machine {
             preimage_resolver: PreimageResolverWrapper::new(preimage_resolver),
             stylus_modules: HashMap::default(),
             initial_hash: Bytes32::default(),
+            end_parent_chain_block_hash: Bytes32::default(),
             context: 0,
             debug_info,
         };
@@ -1590,6 +1590,7 @@ impl Machine {
             preimage_resolver: PreimageResolverWrapper::new(Arc::new(|_, _, _| None)),
             stylus_modules: Default::default(),
             initial_hash: Default::default(),
+            end_parent_chain_block_hash: Bytes32::default(),
             context: Default::default(),
             debug_info: Default::default(),
         }
@@ -1644,6 +1645,7 @@ impl Machine {
             preimage_resolver: PreimageResolverWrapper::new(get_empty_preimage_resolver()),
             stylus_modules: HashMap::default(),
             initial_hash: Bytes32::default(),
+            end_parent_chain_block_hash: Bytes32::default(),
             context: 0,
             debug_info: false,
         };
@@ -2465,6 +2467,15 @@ impl Machine {
                         self.global_state.u64_vals[idx] = val
                     }
                 }
+                // Opcode::GetEndParentChainBlockHash => {
+                //     let ptr = value_stack.pop().unwrap().assume_u32();
+                //     if !module
+                //         .memory
+                //         .store_slice_aligned(ptr.into(), &*self.end_parent_chain_block_hash)
+                //     {
+                //         error!();
+                //     }
+                // }
                 Opcode::ReadPreImage => {
                     let offset = value_stack.pop().unwrap().assume_u32();
                     let ptr = value_stack.pop().unwrap().assume_u32();
@@ -2728,6 +2739,7 @@ impl Machine {
 
         if let Some(merkle) = &self.modules_merkle {
             for (i, module) in self.modules.iter().enumerate() {
+                println!("Module {}: {}", i, hex::encode(module.hash()));
                 merkle.set(i, module.hash());
             }
             Cow::Borrowed(merkle)
@@ -3185,6 +3197,10 @@ impl Machine {
 
     pub fn set_global_state(&mut self, gs: GlobalState) {
         self.global_state = gs;
+    }
+
+    pub fn set_end_parent_chain_block_hash(&mut self, hash: Bytes32) {
+        self.end_parent_chain_block_hash = hash;
     }
 
     pub fn set_preimage_resolver(&mut self, resolver: PreimageResolver) {

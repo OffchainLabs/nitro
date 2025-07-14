@@ -33,7 +33,7 @@ pub fn prepare_machine(preimages: PathBuf, machines: PathBuf) -> eyre::Result<Ma
     let block_hash: Bytes32 = block_hash.into();
     let send_root: [u8; 32] = data.start_state.send_root.try_into().unwrap();
     let send_root: Bytes32 = send_root.into();
-    let bytes32_vals: [Bytes32; 2] = [block_hash, send_root];
+    let bytes32_vals: [Bytes32; 3] = [block_hash, send_root, Bytes32::default()];
     let u64_vals: [u64; 2] = [data.start_state.batch, data.start_state.pos_in_batch];
     let start_state = GlobalState {
         bytes32_vals,
