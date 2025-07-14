@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/rlp"
 
@@ -29,19 +28,6 @@ func (d *Database) GetHeadMelState(ctx context.Context) (*mel.State, error) {
 		return nil, fmt.Errorf("error getting HeadMelStateBlockNum from database: %w", err)
 	}
 	return d.State(ctx, headMelStateBlockNum)
-}
-
-// FetchInitialState method of the StateFetcher interface is implemented by the database as it would be used after the initial fetch
-func (d *Database) FetchInitialState(ctx context.Context, parentChainBlockHash common.Hash) (*mel.State, error) {
-	state, err := d.GetHeadMelState(ctx)
-	if err != nil {
-		return nil, err
-	}
-	// We check if our current head mel state corresponds to this parentChainBlockHash
-	if state.ParentChainBlockHash != parentChainBlockHash {
-		return nil, fmt.Errorf("head mel state's parentChainBlockHash in db: %v does not match the given parentChainBlockHash: %v ", state.ParentChainBlockHash, parentChainBlockHash)
-	}
-	return state, nil
 }
 
 // SaveState should exclusively be called for saving the recently generated "head" MEL state
