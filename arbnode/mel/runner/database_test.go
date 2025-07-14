@@ -80,7 +80,6 @@ func TestMelDatabaseReadAndWriteDelayedMessages(t *testing.T) {
 	}
 	state := &mel.State{}
 	state.SetDelayedMessageBacklog(&mel.DelayedMessageBacklog{})
-	// state.SetReadDelayedMsgsAcc(merkleAccumulator.NewNonpersistentMerkleAccumulator())
 	require.NoError(t, state.AccumulateDelayedMessage(delayedMsg)) // Initialize delayedMessageBacklog
 	state.DelayedMessagedSeen++
 
