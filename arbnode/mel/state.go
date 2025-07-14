@@ -22,8 +22,8 @@ type State struct {
 	DelayedMessagePostingTargetAddress common.Address
 	ParentChainBlockHash               common.Hash
 	ParentChainPreviousBlockHash       common.Hash
-	DelayedMessagesSeenRoot            common.Hash
 	MessageAccumulator                 common.Hash
+	DelayedMessagesSeenRoot            common.Hash
 	MsgCount                           uint64
 	BatchCount                         uint64
 	DelayedMessagesRead                uint64
@@ -38,9 +38,19 @@ type State struct {
 	readDelayedMsgsAcc *merkleAccumulator.MerkleAccumulator
 }
 
+// DelayedMessageDatabase can read delayed messages by their global index.
+type DelayedMessageDatabase interface {
+	ReadDelayedMessage(
+		ctx context.Context,
+		state *State,
+		index uint64,
+	) (*DelayedInboxMessage, error)
+}
+
 // Defines a basic interface for MEL, including saving states, messages,
 // and delayed messages to a database.
 type StateDatabase interface {
+	DelayedMessageDatabase
 	State(
 		ctx context.Context,
 		parentChainBlockNumber uint64,
@@ -54,15 +64,6 @@ type StateDatabase interface {
 		state *State,
 		delayedMessages []*DelayedInboxMessage,
 	) error
-	DelayedMessageDatabase
-}
-
-type DelayedMessageDatabase interface {
-	ReadDelayedMessage(
-		ctx context.Context,
-		state *State,
-		index uint64,
-	) (*DelayedInboxMessage, error)
 }
 
 // MessageConsumer is an interface to be implemented by readers of MEL such as transaction streamer of the nitro node
@@ -93,12 +94,12 @@ func (s *State) Clone() *State {
 	parentChainHash := common.Hash{}
 	parentChainPrevHash := common.Hash{}
 	msgAcc := common.Hash{}
-	delayedMsgAcc := common.Hash{}
+	delayedMsgSeenRoot := common.Hash{}
 	copy(batchPostingTarget[:], s.BatchPostingTargetAddress[:])
 	copy(delayedMessageTarget[:], s.DelayedMessagePostingTargetAddress[:])
 	copy(parentChainHash[:], s.ParentChainBlockHash[:])
 	copy(parentChainPrevHash[:], s.ParentChainPreviousBlockHash[:])
-	copy(delayedMsgAcc[:], s.DelayedMessagesSeenRoot[:])
+	copy(delayedMsgSeenRoot[:], s.DelayedMessagesSeenRoot[:])
 	copy(msgAcc[:], s.MessageAccumulator[:])
 	var delayedMessageMerklePartials []common.Hash
 	for _, partial := range s.DelayedMessageMerklePartials {
@@ -118,8 +119,8 @@ func (s *State) Clone() *State {
 		DelayedMessagePostingTargetAddress: delayedMessageTarget,
 		ParentChainBlockHash:               parentChainHash,
 		ParentChainPreviousBlockHash:       parentChainPrevHash,
-		DelayedMessagesSeenRoot:            delayedMsgAcc,
 		MessageAccumulator:                 msgAcc,
+		DelayedMessagesSeenRoot:            delayedMsgSeenRoot,
 		MsgCount:                           s.MsgCount,
 		BatchCount:                         s.BatchCount,
 		DelayedMessagesRead:                s.DelayedMessagesRead,
