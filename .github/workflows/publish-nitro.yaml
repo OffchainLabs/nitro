@@ -19,7 +19,7 @@ permissions:
 jobs:
   docker:
     name: Build and Push Nitro image
-    runs-on: vip-large-01
+    runs-on: shared-large-01
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
