@@ -26,7 +26,7 @@ import (
 type EvilDAProvider struct {
 	reader       daprovider.Reader
 	validator    daprovider.Validator
-	evilMappings map[common.Hash][]byte // certHash -> evil data
+	evilMappings map[common.Hash][]byte // sha256 dataHash -> evil data
 	mu           sync.RWMutex
 }
 

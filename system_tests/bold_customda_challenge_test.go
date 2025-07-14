@@ -8,6 +8,7 @@ package arbtest
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"math/big"
 	"net/http"
@@ -21,6 +22,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
@@ -55,8 +57,16 @@ import (
 	"github.com/offchainlabs/nitro/validator/valnode"
 )
 
-func TestChallengeProtocolBOLDCustomDA(t *testing.T) {
-	testChallengeProtocolBOLDCustomDA(t)
+// Test with evil data but good certificate
+// Evil validator will fail at OSP with "Invalid preimage hash"
+func TestChallengeProtocolBOLDCustomDA_EvilDataGoodCert(t *testing.T) {
+	testChallengeProtocolBOLDCustomDA(t, EvilDataGoodCert)
+}
+
+// Test with evil data and evil certificate
+// Evil validator will fail at OSP with "WRONG_CERTIFICATE_HASH"
+func TestChallengeProtocolBOLDCustomDA_EvilDataEvilCert(t *testing.T) {
+	testChallengeProtocolBOLDCustomDA(t, EvilDataEvilCert)
 }
 
 // createReferenceDAProviderServer creates and starts a ReferenceDA provider server with automatic port selection
@@ -224,7 +234,7 @@ func createNodeBWithSharedContracts(
 	return l2client, l2node
 }
 
-func testChallengeProtocolBOLDCustomDA(t *testing.T, spawnerOpts ...server_arb.SpawnerOption) {
+func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, spawnerOpts ...server_arb.SpawnerOption) {
 	goodDir, err := os.MkdirTemp("", "good_*")
 	Require(t, err)
 	evilDir, err := os.MkdirTemp("", "evil_*")
@@ -235,6 +245,13 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, spawnerOpts ...server_arb.S
 	})
 	ctx, cancelCtx := context.WithCancel(context.Background())
 	defer cancelCtx()
+
+	switch evilStrategy {
+	case EvilDataGoodCert:
+		t.Log("Testing EvilDataGoodCert strategy: Evil data with good certificate")
+	case EvilDataEvilCert:
+		t.Log("Testing EvilDataEvilCert strategy: Evil data with evil certificate (matching)")
+	}
 
 	// Create and start ReferenceDA provider server for node A
 	providerServerA, providerURLNodeA := createReferenceDAProviderServer(t, ctx)
@@ -421,7 +438,15 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, spawnerOpts ...server_arb.S
 
 	proofEnhancerB := server_arb.NewProofEnhancementManager()
 	customDAEnhancerB := server_arb.NewCustomDAProofEnhancer(daClientB, l2nodeB.InboxTracker, l2nodeB.InboxReader)
-	proofEnhancerB.RegisterEnhancer(server_arb.MarkerCustomDARead, customDAEnhancerB)
+
+	// For EvilDataEvilCert strategy, wrap the enhancer to inject evil certificates
+	var evilEnhancer *EvilCustomDAProofEnhancer
+	if evilStrategy == EvilDataEvilCert {
+		evilEnhancer = NewEvilCustomDAProofEnhancer(customDAEnhancerB)
+		proofEnhancerB.RegisterEnhancer(server_arb.MarkerCustomDARead, evilEnhancer)
+	} else {
+		proofEnhancerB.RegisterEnhancer(server_arb.MarkerCustomDARead, customDAEnhancerB)
+	}
 
 	stateManager, err := bold.NewBOLDStateProvider(
 		blockValidatorA,
@@ -569,10 +594,23 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, spawnerOpts ...server_arb.S
 	Require(t, err)
 
 	// Extract the hash from the certificate (bytes 1-33 are the SHA256 hash)
-	certHash := common.Hash(certificate2[1:33])
+	dataHash := common.Hash(certificate2[1:33])
 
 	// Configure evil provider BEFORE posting to L1
-	evilProvider.SetMapping(certHash, evilBatchData2)
+	evilProvider.SetMapping(dataHash, evilBatchData2)
+
+	// For EvilDataEvilCert strategy, also configure the evil enhancer
+	if evilStrategy == EvilDataEvilCert && evilEnhancer != nil {
+		// Create evil certificate that matches evil data
+		evilCert := make([]byte, 33)
+		evilCert[0] = 0x01
+		evilSHA256 := sha256.Sum256(evilBatchData2)
+		copy(evilCert[1:], evilSHA256[:])
+
+		// Configure evil enhancer to use evil certificate
+		goodCertKeccak := crypto.Keccak256Hash(certificate2)
+		evilEnhancer.SetMapping(goodCertKeccak, evilCert)
+	}
 
 	// Now post the certificate to L1 and sync to both nodes
 	receipt := postBatchToL1(t, ctx, l1client, &sequencerTxOpts, seqInboxBinding, certificate2)
