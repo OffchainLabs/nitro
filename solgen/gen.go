@@ -98,6 +98,10 @@ func main() {
 			continue
 		}
 
+		if strings.Contains(path, "precompiles") {
+			continue
+		}
+
 		dir, file := filepath.Split(path)
 		dir, _ = filepath.Split(dir[:len(dir)-1])
 		_, module := filepath.Split(dir[:len(dir)-1])
@@ -212,6 +216,34 @@ func main() {
 			log.Fatal("failed to parse contract", name, err)
 		}
 		localModInfo.addArtifact(HardHatArtifact{
+			ContractName: name,
+			Abi:          artifact.Abi,
+			Bytecode:     artifact.Bytecode.Object,
+		})
+	}
+
+	precompilesFilePaths, err := filepath.Glob(filepath.Join(parent, "contracts-local", "out", "precompiles", "*.sol", "*.json"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	precompilesModInfo := modules["precompilesgen"]
+	if precompilesModInfo == nil {
+		precompilesModInfo = &moduleInfo{}
+		modules["precompilesgen"] = precompilesModInfo
+	}
+	for _, path := range precompilesFilePaths {
+		_, file := filepath.Split(path)
+		name := file[:len(file)-5]
+
+		data, err := os.ReadFile(path)
+		if err != nil {
+			log.Fatal("could not read", path, "for contract", name, err)
+		}
+		artifact := FoundryArtifact{}
+		if err := json.Unmarshal(data, &artifact); err != nil {
+			log.Fatal("failed to parse contract", name, err)
+		}
+		precompilesModInfo.addArtifact(HardHatArtifact{
 			ContractName: name,
 			Abi:          artifact.Abi,
 			Bytecode:     artifact.Bytecode.Object,
