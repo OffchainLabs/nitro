@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - main
+  release:
+    types: [published]
   workflow_dispatch:
 
 env:
@@ -36,5 +38,11 @@ jobs:
 
       - name: Build and push Nitro image
         run: |
-          docker buildx build --target nitro-node-slim --platform linux/amd64 -t ${{ env.GITHUB_REGISTRY }}/${REPO_LOWER}/nitro:latest .
-          docker push ${{ env.GITHUB_REGISTRY }}/${REPO_LOWER}/nitro:latest
+          if [[ "${{ github.event_name }}" == "release" ]]; then
+            TAG="${{ github.event.release.tag_name }}"
+          else
+            TAG="latest"
+          fi
+          
+          docker buildx build --target nitro-node-slim --platform linux/amd64 -t ${{ env.GITHUB_REGISTRY }}/${REPO_LOWER}/nitro:${TAG} .
+          docker push ${{ env.GITHUB_REGISTRY }}/${REPO_LOWER}/nitro:${TAG}
