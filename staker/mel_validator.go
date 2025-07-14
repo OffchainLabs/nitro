@@ -3,7 +3,6 @@ package staker
 import (
 	"context"
 	"errors"
-	"fmt"
 	"sync"
 	"time"
 
@@ -119,14 +118,15 @@ func (v *MELValidator) isCaughtUp(ctx context.Context) (bool, error) {
 	if melMsgCount < requiredMsgCount {
 		return false, nil
 	}
-	melState, err := v.messageExtractor.GetStateByParentChainBlockHash(ctx, v.lastValidGS.BlockHash)
-	if err != nil {
-		return false, err
-	}
-	melStateRoot := melState.Hash()
-	if melStateRoot != v.lastValidGS.MELStateRoot {
-		return false, fmt.Errorf("melstate root: %v doesnt match the one in db: %v", v.lastValidGS.MELStateRoot, melStateRoot)
-	}
+	// TODO: uncomment after MELStateRoot is added to GS
+	// melState, err := v.messageExtractor.GetStateByParentChainBlockHash(ctx, v.lastValidGS.BlockHash)
+	// if err != nil {
+	// 	return false, err
+	// }
+	// melStateRoot := melState.Hash()
+	// if melStateRoot != v.lastValidGS.MELStateRoot {
+	// 	return false, fmt.Errorf("melstate root: %v doesnt match the one in db: %v", v.lastValidGS.MELStateRoot, melStateRoot)
+	// }
 	return true, nil
 }
 
