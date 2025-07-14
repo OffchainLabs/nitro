@@ -85,6 +85,7 @@ type SequencerConfig struct {
 
 type DangerousConfig struct {
 	DisableSeqInboxMaxDataSizeCheck bool `koanf:"disable-seq-inbox-max-data-size-check"`
+	DisableBlobBaseFeeCheck         bool `koanf:"disable-blob-base-fee-check"`
 }
 
 type TimeboostConfig struct {
@@ -230,6 +231,7 @@ func TimeboostAddOptions(prefix string, f *flag.FlagSet) {
 
 func DangerousAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".disable-seq-inbox-max-data-size-check", DefaultDangerousConfig.DisableSeqInboxMaxDataSizeCheck, "DANGEROUS! disables nitro checks on sequencer MaxTxDataSize against the sequencer inbox MaxDataSize")
+	f.Bool(prefix+".disable-blob-base-fee-check", DefaultDangerousConfig.DisableBlobBaseFeeCheck, "DANGEROUS! disables nitro checks on sequencer for blob base fee")
 }
 
 type txQueueItem struct {
@@ -1362,17 +1364,22 @@ func (s *Sequencer) updateExpectedSurplus(ctx context.Context) (int64, error) {
 	case "CalldataPrice":
 		backlogCost = backlogCallDataUnits * header.BaseFee.Int64()
 	case "BlobPrice":
-		if header.BlobGasUsed == nil || header.ExcessBlobGas == nil {
-			return 0, errors.New("expected surplus calculation is set to use blob price but latest parent chain header has BlobGasUsed or ExcessBlobGas as nil")
+		if s.config().Dangerous.DisableBlobBaseFeeCheck {
+			log.Warn("expected surplus calculation is set to use blob price but --execution.sequencer.dangerous.disable-blob-base-fee-check is set, falling back to calldata price model")
+			backlogCost = backlogCallDataUnits * header.BaseFee.Int64()
+		} else {
+			if header.BlobGasUsed == nil || header.ExcessBlobGas == nil {
+				return 0, errors.New("expected surplus calculation is set to use blob price but latest parent chain header has BlobGasUsed or ExcessBlobGas as nil")
+			}
+			blobFeePerByte, err := s.l1Reader.Client().BlobBaseFee(ctx)
+			if err != nil {
+				return 0, fmt.Errorf("error encountered getting blob base fee while updating expectedSurplus: %w", err)
+			}
+			blobFeePerByte.Mul(blobFeePerByte, blobTxBlobGasPerBlob)
+			blobFeePerByte.Div(blobFeePerByte, usableBytesInBlob)
+			l1GasPrice = blobFeePerByte.Int64() / 16
+			backlogCost = (backlogCallDataUnits * blobFeePerByte.Int64()) / 16
 		}
-		blobFeePerByte, err := s.l1Reader.Client().BlobBaseFee(ctx)
-		if err != nil {
-			return 0, fmt.Errorf("error encountered getting blob base fee while updating expectedSurplus: %w", err)
-		}
-		blobFeePerByte.Mul(blobFeePerByte, blobTxBlobGasPerBlob)
-		blobFeePerByte.Div(blobFeePerByte, usableBytesInBlob)
-		l1GasPrice = blobFeePerByte.Int64() / 16
-		backlogCost = (backlogCallDataUnits * blobFeePerByte.Int64()) / 16
 	case "CalldataPrice7623":
 		l1GasPrice = (header.BaseFee.Int64() * 40) / 16
 		backlogCost = (backlogCallDataUnits * header.BaseFee.Int64() * 40) / 16
