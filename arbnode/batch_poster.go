@@ -775,12 +775,14 @@ func (b *BatchPoster) checkEspressoValidation() bool {
 		return false // if we get an error we can't validate
 	}
 
-	// This message has passed the espresso verification
-	if lastConfirmed != nil && b.building.msgCount-1 <= *lastConfirmed {
-		return true
+	if lastConfirmed == nil {
+		return false
 	}
-	// If we aren't skipping validation for this batch, or we can't validate the proofs, we need to retry.
-	return false
+
+	log.Info("last confirmed pos in check espresso validation", "lastConfirmedPos", *lastConfirmed)
+
+	// This message has passed the espresso verification
+	return b.building.msgCount-1 <= *lastConfirmed
 }
 
 type txInfo struct {
