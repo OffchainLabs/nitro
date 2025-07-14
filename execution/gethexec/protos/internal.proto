@@ -1,0 +1,12 @@
+syntax = "proto3";
+
+option go_package = "gethexec/";
+
+package internal;
+
+import "google/protobuf/empty.proto";
+import "execution/gethexec/protos/block.proto";
+
+service InternalApi {
+    rpc SubmitBlock (block.Block) returns (google.protobuf.Empty) {}
+}

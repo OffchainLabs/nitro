@@ -1,0 +1,39 @@
+{
+  "keyset": [
+    {
+      "sailfish_address": "node0:8000",
+      "decrypt_address": "node0:10000",
+      "certifier_address": "node0:11000",
+      "internal_address": "node0:5000",
+      "signing_key": "qkoZ7xPFuTjNpKmn3SyWL2Y6WLm89wi9jNkDuu9KefXv",
+      "dh_key": "JCriD5gjwBBvJRX6XsVeM6SZCqJVpjeMSdWUmyWsB6fG",
+      "enc_key": "8shQ2jx13sU9x2BHchmjGDtMq9x7VBE1okyRYuAifa8YdaP8rtZaf3xeARSWadr9ABU",
+      "private": {
+        "signing_key": "9xTovKuXbwvBxk56Vb5Rs8rQ8e4zYuDueVMzU8Dp2X4X",
+        "dh_key": "HvQwBVK7idXEHsWxjDLtjewSqtTy3quG2SABsX1V4eew",
+        "dec_share": "kCg6ctxoCcjtnX9ATbdXR85KoPJ6M74yzYfdTee3cMf8qM",
+        "dec_key": "AbtRhN1rvGzZjeqmuZo8HQDNvH6YUEfJjPhDWCZFjM29E"
+      },
+      "nitro_addr": "host.docker.internal:55000"
+    },
+    {
+      "sailfish_address": "node1:8001",
+      "decrypt_address": "node1:10001",
+      "certifier_address": "node1:11001",
+      "internal_address": "node1:5001",
+      "signing_key": "28y18s4egBUnxoLSJY8vCYXV8KXaKYysD6tUen7syFyPt",
+      "dh_key": "2wkSkQr7f3H5rXHjbo2YTBsyZ6kaKZKzatRB4ZFm8aMx",
+      "enc_key": "8snAicyAEjCvD3MnEZaSsgxXPGQBGDp8yKroaeCAFA1Kz8RGUcGNfJjqemuKC42Nf9U",
+      "private": {
+        "signing_key": "ELRLgE3jPkErc6cmp1gQjveku2gvvGCgAYEFS1tvJhEx",
+        "dh_key": "2WWHd5cL3t281CUwA3ysiqLh1iK7UZf6hLQkAqAYj2W5",
+        "dec_share": "jTwqWYdKHfPr6JaU1jdGxCCTArKqFi21TURkuibQx4jm5A",
+        "dec_key": "AdvSYbrGgJrJRsXAvUQAG3cqmD8hQ4VAhyFEp1qXPgjKg"
+      }
+    }
+  ],
+  "dec_keyset": {
+    "pubkey": "8sz9Bu5ECvR42x69tBm2W8GaaMrm1LQnm9rmT3EL5EdbPP3TqrLUyoUkxBzpCzPy4Vu",
+    "combkey": "y7D4UxEgJtRshdYfZu1NY4RyJxAzjjf3AGhf4AihP4epZffaoYRjFeCEaD9uCjNJVCDPZmjwnfB6v1gyZmrQsiCT5PDcHNzS7qfxP8GatiFes3nUs3xTxQLThqvrfdEv3S48jArK75FJoPRk5cKEBodTv1BVKu3GNgYHmcK731MKTJoMS16ukYxrSKg7KxzeQCZwBcamW1YQpVkHqbkvVif8wekSxfpz3CGrw2WKadzVbK1x1pUDFTrtSZU2eyTKVvrW4YJ2zKPm5FYXTaYMJqRXkyBFnvfR9NxgLHq6i5AuArTxrD772Rs1YX8bXu9fR4nLHt14SUJAGqf"
+  }
+}

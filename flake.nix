@@ -162,6 +162,8 @@
                   vendorHash = "sha256-nGI/Bd6eMEoY0sBwWEtyhFowHVvwLKjbT4yfzFz6Z3E=";
                   subPackages = [ "cmd/protoc-gen-go" ];
                 })
+                protoc-gen-go-grpc
+                grpcurl 
 
                 # Node
                 nodejs

@@ -2,7 +2,7 @@ syntax = "proto3";
 
 option go_package = "gethexec/";
 
-package gethexec;
+package inclusion;
 
 message Transaction {
     bytes encoded_txn = 1;
@@ -12,7 +12,7 @@ message Transaction {
 
 message InclusionList {
     repeated Transaction encoded_txns = 1;
-    uint64 round = 2;
-    uint64 consensus_timestamp = 3;
-    uint64 delayed_messages_read = 4;
+    uint64 round                      = 2;
+    uint64 consensus_timestamp        = 3;
+    uint64 delayed_messages_read      = 4;
 }

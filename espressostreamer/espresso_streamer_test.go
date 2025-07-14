@@ -316,6 +316,10 @@ func (m *mockEspressoClient) SubmitTransaction(ctx context.Context, tx espressoC
 	panic("not implemented")
 }
 
+func (m *mockEspressoClient) FetchExplorerTransactionByHash(ctx context.Context, hash *types.TaggedBase64) (types.ExplorerTransactionQueryData, error) {
+	panic("not implemented")
+}
+
 // To generate test scripts for the mock clients, we can create a list of test blocks that we can iterate through and set as the call and return values.
 func GetTestBlocks() []TestBlock {
 	var data []TestBlock

@@ -1,0 +1,66 @@
+services:
+  node0:
+    image: ghcr.io/espressosystems/timeboost:20250711
+    command:
+      [
+        "/app/timeboost",
+        "--id", "0",
+        "--rpc-port", "8800",
+        "--metrics-port", "9000",
+        "--keyset-file", "/app/timeboost-keyset.json",
+        "--stamp", "/tmp/timeboost.stamp"
+      ]
+    environment:
+      - RUST_LOG=timeboost=info,sailfish=error,cliquenet=error
+      - TIMEBOOST_SAILFISH_PORT=8000
+      - TIMEBOOST_DECRYPT_PORT=10000
+      - TIMEBOOST_CERTIFIER_PORT=11000
+      - TIMEBOOST_RPC_PORT=8800
+      - TIMEBOOST_METRICS_PORT=9000
+    ports:
+      - "8000:8000"
+      - "10000:10000"
+      - "8800:8800"
+      - "11000:11000"
+      - "9000:9000"
+      - "5000:5000"
+    volumes:
+      - ./timeboost-keyset.json:/app/timeboost-keyset.json
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - timeboost
+  node1:
+    image: ghcr.io/espressosystems/timeboost:20250711
+    command:
+      [
+        "/app/timeboost",
+        "--id", "1",
+        "--rpc-port", "8801",
+        "--metrics-port", "9001",
+        "--keyset-file", "/app/timeboost-keyset.json",
+        "--stamp", "/tmp/timeboost.stamp"
+      ]
+    environment:
+      - RUST_LOG=timeboost=info,sailfish=error,cliquenet=error
+      - TIMEBOOST_SAILFISH_PORT=8001
+      - TIMEBOOST_DECRYPT_PORT=10001
+      - TIMEBOOST_CERTIFIER_PORT=11001
+      - TIMEBOOST_RPC_PORT=8801
+      - TIMEBOOST_METRICS_PORT=9001
+    ports:
+      - "8001:8001"
+      - "10001:10001"
+      - "8801:8801"
+      - "11001:11001"
+      - "9001:9001"
+    volumes:
+      - ./timeboost-keyset.json:/app/timeboost-keyset.json
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - timeboost
+networks:
+  timeboost:
+    driver: bridge
+    name: timeboost

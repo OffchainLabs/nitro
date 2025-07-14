@@ -2,19 +2,18 @@ package arbtest
 
 import (
 	"context"
-	"encoding/binary"
 	"fmt"
 	"math"
 	"math/big"
-	"net"
 	"testing"
 	"time"
 
-	"google.golang.org/protobuf/proto"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 
 	"github.com/ethereum/go-ethereum/core/types"
 
-	gethexec "github.com/offchainlabs/nitro/execution/gethexec/inclusion_list"
+	gethexec "github.com/offchainlabs/nitro/execution/gethexec/protos"
 )
 
 // Acknowledgement flag that timeboost will wait for to know sequencer processed
@@ -68,6 +67,7 @@ func createL1AndL2NodeForTimeboost(
 	builder.nodeConfig.TimeboostSequencer.ParentChainFinalizationTime = 20 * time.Minute
 	builder.nodeConfig.TimeboostSequencer.MaxAcceptableTimestampDelta = time.Hour
 	builder.nodeConfig.TimeboostSequencer.EnableProfiling = false
+	builder.nodeConfig.TimeboostSequencer.TimeboostBridgeConfig.InternalTimeboostGrpcUrl = "localhost:5000"
 
 	cleanup := builder.Build(t)
 
@@ -117,77 +117,15 @@ func GenerateInclusionLists(t *testing.T, users []string, builder *NodeBuilder, 
 
 func SendInclusionLists(t *testing.T, incls []*gethexec.InclusionList) {
 	// Connect to the default port of listener
-	conn, err := net.Dial("tcp", "localhost:55000")
-	if err != nil {
-		t.Fatalf("Error connecting: %v", err)
-	}
-	defer conn.Close()
+	grpcConn, err := grpc.NewClient("localhost:55000", grpc.WithTransportCredentials(insecure.NewCredentials()))
+	Require(t, err)
+	grpcClient := gethexec.NewForwardApiClient(grpcConn)
+	defer grpcConn.Close()
 
 	// Iterate over each inclusion list
-	for i, incl := range incls {
-		// Encode via protobuf
-		inclBytes, err := proto.Marshal(incl)
-		Require(t, err)
-
-		// Calculate and write the size of the encoded inclusion list first
-		len := len(inclBytes)
-		if len < 0 || len > math.MaxUint32 {
-			t.Fatalf("Invalid len %d", len)
-		}
-		length := uint32(len)
-		lengthBuf := make([]byte, 4)
-		binary.BigEndian.PutUint32(lengthBuf, length)
-		_, err = conn.Write(lengthBuf)
-		Require(t, err)
-
-		// Rudely interrupt the connection
-		if i == 2 || i == 3 {
-			err := conn.Close()
-			Require(t, err)
-			// Wait some time
-			time.Sleep(2 * time.Second)
-
-			// Reconnect and resend
-			conn, err = net.Dial("tcp", "localhost:55000")
-			Require(t, err)
-			_, err = conn.Write(lengthBuf)
-			Require(t, err)
-		}
-
-		// Now that listener knows the length in bytes to read, send inclusion list over
-		_, err = conn.Write(inclBytes)
-		Require(t, err)
-
-		// Rudely interrupt the connection after succesfully writing size and inclusion list
-		if i == 5 {
-			err := conn.Close()
-			Require(t, err)
-			// Wait some time
-			time.Sleep(1 * time.Second)
-
-			// Reconnect and resend
-			conn, err = net.Dial("tcp", "localhost:55000")
-			Require(t, err)
-
-			_, err = conn.Write(lengthBuf)
-			Require(t, err)
-
-			_, err = conn.Write(inclBytes)
-			Require(t, err)
-		}
-
-		// Timeboost is expecting an acknowledgment from the server
-		// So it knows if it needs to resend the inclusion list or can send the next one
-		ackBuffer := make([]byte, 1)
-		n, err := conn.Read(ackBuffer)
-		Require(t, err)
-		if n != 1 {
-			t.Fatalf("Expected to read 1 byte, read %d\n", n)
-		}
-		if ackBuffer[0] != ACK_FLAG {
-			t.Fatalf("Unexpected response byte: 0x%02x, expected 0xc0\n", ackBuffer[0])
-		}
-
+	for _, incl := range incls {
+		// Send via grpc
+		_, err := grpcClient.SubmitInclusionList(context.Background(), incl)
 		Require(t, err)
 	}
 }
