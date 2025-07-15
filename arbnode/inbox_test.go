@@ -8,7 +8,6 @@ import (
 	"encoding/binary"
 	"math/big"
 	"math/rand"
-	"sync"
 	"testing"
 	"time"
 
@@ -165,8 +164,7 @@ func NewTransactionStreamerForTest(t *testing.T, ctx context.Context, ownerAddre
 		Fail(t, err)
 	}
 	execSeq := &execClientWrapper{execEngine, t}
-	insertionMutex := &sync.Mutex{}
-	inbox, err := NewTransactionStreamer(ctx, arbDb, bc.Config(), execSeq, nil, nil, make(chan error, 1), transactionStreamerConfigFetcher, &DefaultSnapSyncConfig, insertionMutex)
+	inbox, err := NewTransactionStreamer(ctx, arbDb, bc.Config(), execSeq, nil, nil, make(chan error, 1), transactionStreamerConfigFetcher, &DefaultSnapSyncConfig)
 	if err != nil {
 		Fail(t, err)
 	}
