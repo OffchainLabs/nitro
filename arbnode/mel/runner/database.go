@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	"github.com/ethereum/go-ethereum/ethdb"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rlp"
 
 	dbschema "github.com/offchainlabs/nitro/arbnode/db-schema"
@@ -145,6 +146,11 @@ func (d *Database) fetchDelayedMessage(index uint64) (*mel.DelayedInboxMessage, 
 	return &delayed, nil
 }
 
+// checkAgainstAccumulator is used to validate the fetched delayed inbox message from the database that is currently being READ. We do this by first checking
+// if the message has already been pre-read via state.GetReadCountFromBacklog(), if it is then we simply check that the message hashes match. Else, we create a new
+// merkle accumulator that has accumulated messages till the position 'index' and then accumulate all the messages in the backlog i.e pre-reading them and we
+// update the readCountFromBacklog of the state accordingly. The optimization is done as it is unfeasible to store merkle partials for each delayed inbox message
+// and accumulate all the future seen but not read messages every single time
 func (d *Database) checkAgainstAccumulator(ctx context.Context, state *mel.State, msg *mel.DelayedInboxMessage, index uint64) (bool, error) {
 	delayedMessageBacklog := state.GetDelayedMessageBacklog()
 	delayedMeta, err := delayedMessageBacklog.Get(index)
@@ -199,7 +205,17 @@ func (d *Database) checkAgainstAccumulator(ctx context.Context, state *mel.State
 	if err != nil {
 		return false, err
 	}
-	want, err := state.GetSeenDelayedMsgsAcc().Root()
+	seenAcc := state.GetSeenDelayedMsgsAcc()
+	if seenAcc == nil {
+		log.Debug("Initializing MelState's seenDelayedMsgsAcc, needed for validation")
+		// This is very low cost hence better to reconstruct seenDelayedMsgsAcc from fresh partals instead of risking using a dirty acc
+		seenAcc, err = merkleAccumulator.NewNonpersistentMerkleAccumulatorFromPartials(mel.ToPtrSlice(state.DelayedMessageMerklePartials))
+		if err != nil {
+			return false, err
+		}
+		state.SetSeenDelayedMsgsAcc(seenAcc)
+	}
+	want, err := seenAcc.Root()
 	if err != nil {
 		return false, err
 	}
