@@ -55,7 +55,7 @@ type TransactionStreamer struct {
 	config         TransactionStreamerConfigFetcher
 	snapSyncConfig *SnapSyncConfig
 
-	insertionMutex     *sync.Mutex // cannot be acquired while reorgMutex is held
+	insertionMutex     sync.Mutex // cannot be acquired while reorgMutex is held
 	reorgMutex         sync.RWMutex
 	newMessageNotifier chan struct{}
 
@@ -118,7 +118,6 @@ func NewTransactionStreamer(
 	fatalErrChan chan<- error,
 	config TransactionStreamerConfigFetcher,
 	snapSyncConfig *SnapSyncConfig,
-	insertionMutex *sync.Mutex,
 ) (*TransactionStreamer, error) {
 	streamer := &TransactionStreamer{
 		execClient:         execClient,
@@ -130,7 +129,6 @@ func NewTransactionStreamer(
 		fatalErrChan:       fatalErrChan,
 		config:             config,
 		snapSyncConfig:     snapSyncConfig,
-		insertionMutex:     insertionMutex,
 	}
 	err := streamer.cleanupInconsistentState()
 	if err != nil {
@@ -1471,8 +1469,43 @@ func (s *TransactionStreamer) backfillTrackersForMissingBlockMetadata(ctx contex
 	}
 }
 
+func (s *TransactionStreamer) triggerSequencing(ctx context.Context) time.Duration {
+	startSequencingTime := time.Now()
+
+	s.insertionMutex.Lock()
+	defer s.insertionMutex.Unlock()
+
+	if err := s.ExpectChosenSequencer(); err != nil {
+		log.Debug("Not active sequencer, retrying", "err", err)
+		return 50 * time.Millisecond
+	}
+
+	sequencedMsg, timeToWaitUntilNextSequencing := s.execSequencer.StartSequencing(ctx)
+	if sequencedMsg != nil {
+		err := s.WriteSequencedMsg(sequencedMsg)
+		if err != nil {
+			log.Error("Error writing sequenced message", "err", err)
+			s.execSequencer.EndSequencing(ctx, err)
+			return 0
+		}
+
+		err = s.execSequencer.AppendLastSequencedBlock()
+		if err != nil {
+			log.Error("Error appending last sequenced block", "err", err)
+			s.execSequencer.EndSequencing(ctx, err)
+			return 0
+		}
+	}
+
+	s.execSequencer.EndSequencing(ctx, nil)
+	return time.Until(startSequencingTime.Add(timeToWaitUntilNextSequencing))
+}
+
 func (s *TransactionStreamer) Start(ctxIn context.Context) error {
 	s.StopWaiter.Start(ctxIn, s)
 	s.LaunchThread(s.backfillTrackersForMissingBlockMetadata)
+	if s.execSequencer != nil {
+		s.CallIteratively(s.triggerSequencing)
+	}
 	return stopwaiter.CallIterativelyWith[struct{}](&s.StopWaiterSafe, s.executeMessages, s.newMessageNotifier)
 }
