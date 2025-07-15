@@ -502,7 +502,7 @@ func validateOrUpgradeWasmerSerializeVersion(db ethdb.Database) error {
 	if !databaseIsEmpty(db) {
 		versionInDB, err := rawdb.ReadWasmerSerializeVersion(db)
 		if err != nil {
-			if dbutil.IsErrNotFound(err) {
+			if rawdb.IsDbErrNotFound(err) {
 				versionInDB = 0
 			} else {
 				return fmt.Errorf("Failed to retrieve wasmer serialize version: %w", err)
@@ -530,7 +530,7 @@ func validateOrUpgradeWasmStoreSchemaVersion(db ethdb.Database) error {
 	if !databaseIsEmpty(db) {
 		version, err := rawdb.ReadWasmSchemaVersion(db)
 		if err != nil {
-			if dbutil.IsErrNotFound(err) {
+			if rawdb.IsDbErrNotFound(err) {
 				version = []byte{0}
 			} else {
 				return fmt.Errorf("Failed to retrieve wasm schema version: %w", err)

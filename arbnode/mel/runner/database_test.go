@@ -44,8 +44,6 @@ func TestMelDatabase(t *testing.T) {
 			t.Fatal("unexpected melState retrieved via GetState using parentChainBlockHash")
 		}
 	}
-	melState, err = melDb.FetchInitialState(ctx, headMelState.ParentChainBlockHash)
-	checkMelState()
 	melState, err = melDb.State(ctx, headMelState.ParentChainBlockNumber)
 	checkMelState()
 
