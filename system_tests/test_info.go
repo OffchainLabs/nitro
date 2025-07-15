@@ -275,3 +275,54 @@ func (b *BlockchainTestInfo) PrepareTxTo(
 	}
 	return b.SignTxAs(from, txData)
 }
+
+func (b *BlockchainTestInfo) PrepareTxWithInvalidNonce(from, to string, gas uint64, value *big.Int, data []byte, higher bool) *types.Transaction {
+	b.T.Helper()
+	addr := b.GetAddress(to)
+	b.T.Helper()
+	info := b.GetInfoWithPrivKey(from)
+	txNonce := info.Nonce.Add(1) - 1
+	if value == nil {
+		value = common.Big0
+	}
+	if higher {
+		txNonce = txNonce + 1
+	} else {
+		txNonce = txNonce - 1
+	}
+	txData := &types.DynamicFeeTx{
+		To:        &addr,
+		Gas:       gas,
+		GasFeeCap: new(big.Int).Set(b.GasPrice),
+		Value:     value,
+		Nonce:     txNonce,
+		Data:      data,
+	}
+	return b.SignTxAs(from, txData)
+}
+
+func (b *BlockchainTestInfo) PrepareTxWithInvalidGasFee(from, to string, gas uint64, value *big.Int, data []byte) *types.Transaction {
+	b.T.Helper()
+	addr := b.GetAddress(to)
+	b.T.Helper()
+	info := b.GetInfoWithPrivKey(from)
+	txNonce := info.Nonce.Add(1) - 1
+	if value == nil {
+		value = common.Big0
+	}
+
+	gasPrice := new(big.Int).Set(b.GasPrice)
+
+	// Reduce the gas fee by half
+	gasPrice = gasPrice.Div(gasPrice, big.NewInt(4))
+
+	txData := &types.DynamicFeeTx{
+		To:        &addr,
+		Gas:       gas,
+		GasFeeCap: gasPrice,
+		Value:     value,
+		Nonce:     txNonce,
+		Data:      data,
+	}
+	return b.SignTxAs(from, txData)
+}

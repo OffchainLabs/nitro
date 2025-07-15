@@ -158,7 +158,7 @@ func TestEspressoTimeboostSequencerE2E(t *testing.T) {
 	defer valNodeCleanup()
 	// In future, we also need to create a version of
 	// delayed sequencer for timeboost
-	builder, cleanup := createL1AndL2NodeForTimeboost(ctx, t, true, false)
+	builder, cleanup := createL1AndL2NodeForTimeboost(ctx, t, true)
 	defer cleanup()
 
 	err := waitForL1Node(ctx)
