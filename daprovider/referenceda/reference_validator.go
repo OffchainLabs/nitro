@@ -58,3 +58,29 @@ func (v *Validator) GenerateProof(ctx context.Context, preimageType arbutil.Prei
 
 	return proof, nil
 }
+
+// GenerateCertificateValidityProof implements Validator for ReferenceDA
+func (v *Validator) GenerateCertificateValidityProof(ctx context.Context, preimageType arbutil.PreimageType, certificate []byte) ([]byte, error) {
+	// ReferenceDA implementation returns:
+	// - claimedValid (1 byte): 1 if valid, 0 if invalid
+	// - version (1 byte): 0x01 for version 1
+	//
+	// This simple implementation only includes a version byte after the validity claim.
+	// Other DA providers can return more complex validity proofs that include additional
+	// verification data such as cryptographic signatures, merkle proofs, or other
+	// authentication mechanisms. The OSP will pass this entire proof to validateCertificate.
+
+	// Validate certificate format:
+	// - Must be exactly 33 bytes (1 byte prefix + 32 bytes hash)
+	// - First byte must be 0x01 (ReferenceDA marker)
+	if len(certificate) != 33 {
+		return []byte{0, 0x01}, nil // Invalid certificate, version 1
+	}
+
+	if certificate[0] != 0x01 {
+		return []byte{0, 0x01}, nil // Invalid certificate, version 1
+	}
+
+	// Certificate is valid
+	return []byte{1, 0x01}, nil // Valid certificate, version 1
+}

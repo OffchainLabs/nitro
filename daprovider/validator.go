@@ -26,4 +26,8 @@ type Validator interface {
 	// For CustomDA preimages, certificate contains the DA certificate (e.g., [0x01][32-byte hash])
 	// certHash is the keccak256 hash of the certificate
 	GenerateProof(ctx context.Context, preimageType arbutil.PreimageType, certHash common.Hash, offset uint64, certificate []byte) ([]byte, error)
+
+	// GenerateCertificateValidityProof generates a proof of certificate validity
+	// Returns a proof that includes whether the certificate is valid according to the DA system rules
+	GenerateCertificateValidityProof(ctx context.Context, preimageType arbutil.PreimageType, certificate []byte) ([]byte, error)
 }

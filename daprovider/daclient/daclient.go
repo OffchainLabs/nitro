@@ -126,3 +126,20 @@ func (c *Client) GenerateProof(
 	}
 	return generateProofResult.Proof, nil
 }
+
+// GenerateCertificateValidityProofResult is the result struct that data availability providers should use to respond with validity proof
+type GenerateCertificateValidityProofResult struct {
+	Proof hexutil.Bytes `json:"proof,omitempty"`
+}
+
+func (c *Client) GenerateCertificateValidityProof(
+	ctx context.Context,
+	preimageType arbutil.PreimageType,
+	certificate []byte,
+) ([]byte, error) {
+	var generateCertificateValidityProofResult GenerateCertificateValidityProofResult
+	if err := c.CallContext(ctx, &generateCertificateValidityProofResult, "daprovider_generateCertificateValidityProof", hexutil.Uint(preimageType), hexutil.Bytes(certificate)); err != nil {
+		return nil, fmt.Errorf("error returned from daprovider_generateCertificateValidityProof rpc method, err: %w", err)
+	}
+	return generateCertificateValidityProofResult.Proof, nil
+}
