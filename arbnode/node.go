@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"math/big"
 	"strings"
-	"sync"
 
 	"github.com/spf13/pflag"
 
@@ -289,7 +288,6 @@ type Node struct {
 	configFetcher            ConfigFetcher
 	ctx                      context.Context
 	ConsensusExecutionSyncer *ConsensusExecutionSyncer
-	SequencerTriggerer       *SequencerTriggerer
 }
 
 type SnapSyncConfig struct {
@@ -891,10 +889,9 @@ func getTransactionStreamer(
 	broadcastServer *broadcaster.Broadcaster,
 	configFetcher ConfigFetcher,
 	fatalErrChan chan error,
-	insertionMutex *sync.Mutex,
 ) (*TransactionStreamer, error) {
 	transactionStreamerConfigFetcher := func() *TransactionStreamerConfig { return &configFetcher.Get().TransactionStreamer }
-	txStreamer, err := NewTransactionStreamer(ctx, arbDb, l2Config, execClient, execSequencer, broadcastServer, fatalErrChan, transactionStreamerConfigFetcher, &configFetcher.Get().SnapSyncTest, insertionMutex)
+	txStreamer, err := NewTransactionStreamer(ctx, arbDb, l2Config, execClient, execSequencer, broadcastServer, fatalErrChan, transactionStreamerConfigFetcher, &configFetcher.Get().SnapSyncTest)
 	if err != nil {
 		return nil, err
 	}
@@ -1046,17 +1043,6 @@ func getDelayedSequencer(
 	return delayedSequencer, nil
 }
 
-func getSequencerTriggerer(
-	execSequencer execution.ExecutionSequencer,
-	txStreamer *TransactionStreamer,
-	insertionMutex *sync.Mutex,
-) *SequencerTriggerer {
-	if execSequencer == nil {
-		return nil
-	}
-	return NewSequencerTriggerer(execSequencer, txStreamer, insertionMutex)
-}
-
 func getNodeParentChainReaderDisabled(
 	ctx context.Context,
 	arbDb ethdb.Database,
@@ -1073,7 +1059,6 @@ func getNodeParentChainReaderDisabled(
 	syncMonitor *SyncMonitor,
 	configFetcher ConfigFetcher,
 	blockMetadataFetcher *BlockMetadataFetcher,
-	sequencerTriggerer *SequencerTriggerer,
 ) *Node {
 	// Create ConsensusExecutionSyncer even in L2-only mode to push sync data
 	consensusExecutionSyncerConfigFetcher := func() *ConsensusExecutionSyncerConfig {
@@ -1115,7 +1100,6 @@ func getNodeParentChainReaderDisabled(
 		ctx:                      ctx,
 		blockMetadataFetcher:     blockMetadataFetcher,
 		ConsensusExecutionSyncer: consensusExecutionSyncer,
-		SequencerTriggerer:       sequencerTriggerer,
 	}
 }
 
@@ -1158,9 +1142,7 @@ func createNodeImpl(
 		return nil, err
 	}
 
-	insertionMutex := &sync.Mutex{}
-
-	txStreamer, err := getTransactionStreamer(ctx, arbDb, l2Config, executionClient, executionSequencer, broadcastServer, configFetcher, fatalErrChan, insertionMutex)
+	txStreamer, err := getTransactionStreamer(ctx, arbDb, l2Config, executionClient, executionSequencer, broadcastServer, configFetcher, fatalErrChan)
 	if err != nil {
 		return nil, err
 	}
@@ -1190,10 +1172,8 @@ func createNodeImpl(
 		return nil, err
 	}
 
-	sequencerTriggerer := getSequencerTriggerer(executionSequencer, txStreamer, insertionMutex)
-
 	if !config.ParentChainReader.Enable {
-		return getNodeParentChainReaderDisabled(ctx, arbDb, stack, executionClient, executionSequencer, executionRecorder, txStreamer, blobReader, broadcastServer, broadcastClients, coordinator, maintenanceRunner, syncMonitor, configFetcher, blockMetadataFetcher, sequencerTriggerer), nil
+		return getNodeParentChainReaderDisabled(ctx, arbDb, stack, executionClient, executionSequencer, executionRecorder, txStreamer, blobReader, broadcastServer, broadcastClients, coordinator, maintenanceRunner, syncMonitor, configFetcher, blockMetadataFetcher), nil
 	}
 
 	delayedBridge, sequencerInbox, err := getDelayedBridgeAndSequencerInbox(deployInfo, l1client)
@@ -1269,7 +1249,6 @@ func createNodeImpl(
 		configFetcher:            configFetcher,
 		ctx:                      ctx,
 		ConsensusExecutionSyncer: consensusExecutionSyncer,
-		SequencerTriggerer:       sequencerTriggerer,
 	}, nil
 }
 
@@ -1549,9 +1528,6 @@ func (n *Node) Start(ctx context.Context) error {
 	if n.ConsensusExecutionSyncer != nil {
 		n.ConsensusExecutionSyncer.Start(ctx)
 	}
-	if n.SequencerTriggerer != nil {
-		n.SequencerTriggerer.Start(ctx)
-	}
 	return nil
 }
 
@@ -1574,9 +1550,6 @@ func (n *Node) StopAndWait() {
 		n.SeqCoordinator.PrepareForShutdown()
 	}
 	n.Stack.StopRPC() // does nothing if not running
-	if n.SequencerTriggerer != nil {
-		n.SequencerTriggerer.StopAndWait()
-	}
 	if n.DelayedSequencer != nil && n.DelayedSequencer.Started() {
 		n.DelayedSequencer.StopAndWait()
 	}
