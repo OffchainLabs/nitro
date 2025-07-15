@@ -19,6 +19,7 @@ import (
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
+// lint:require-exhaustive-initialization
 type ConsumerConfig struct {
 	// Timeout of result entry in Redis.
 	ResponseEntryTimeout time.Duration `koanf:"response-entry-timeout"`
