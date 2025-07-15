@@ -13,7 +13,8 @@ func TestDelayedMessageBacklog(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	backlog := NewDelayedMessageBacklog(ctx, 0, nil)
+	backlog, err := NewDelayedMessageBacklog(ctx, 1, func(ctx context.Context) (uint64, error) { return 0, nil }, WithUnboundedCapacity)
+	require.NoError(t, err)
 	numEntries := uint64(25)
 	for i := uint64(0); i < numEntries; i++ {
 		require.NoError(t, backlog.Add(&DelayedMessageBacklogEntry{Index: i}))
@@ -27,7 +28,7 @@ func TestDelayedMessageBacklog(t *testing.T) {
 
 	// Test failures with Get
 	// Entry not found
-	_, err := backlog.Get(numEntries + 1)
+	_, err = backlog.Get(numEntries + 1)
 	if err == nil {
 		t.Fatal("backlog Get function should've errored for an invalid index query")
 	}
