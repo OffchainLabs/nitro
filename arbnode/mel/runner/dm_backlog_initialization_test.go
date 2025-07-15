@@ -79,9 +79,9 @@ func TestDelayedMessageBacklogInitialization(t *testing.T) {
 	require.NoError(t, InitializeDelayedMessageBacklog(ctx, delayedMessageBacklog, melDb, state, nil))
 	require.True(t, delayedMessageBacklog.Len() == 25)
 	state.SetDelayedMessageBacklog(delayedMessageBacklog)
+	state.SetReadCountFromBacklog(state.DelayedMessagedSeen) // skip checking against accumulator- not the purpose of this test
 
-	// Lets read the delayed messages and verify their correctness against accumulator and that they match with what we stored
-	// we read against the latest melState
+	// Lets read the delayed messages and verify that they match with what we stored
 	for i, wantDelayed := range delayedMsgs {
 		haveDelayed, err := melDb.ReadDelayedMessage(ctx, state, uint64(i+1)) // #nosec G115
 		require.NoError(t, err)

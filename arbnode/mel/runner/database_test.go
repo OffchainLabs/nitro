@@ -15,7 +15,6 @@ import (
 	dbschema "github.com/offchainlabs/nitro/arbnode/db-schema"
 	"github.com/offchainlabs/nitro/arbnode/mel"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
-	"github.com/offchainlabs/nitro/arbos/merkleAccumulator"
 )
 
 func TestMelDatabase(t *testing.T) {
@@ -81,7 +80,6 @@ func TestMelDatabaseReadAndWriteDelayedMessages(t *testing.T) {
 	}
 	state := &mel.State{}
 	state.SetDelayedMessageBacklog(&mel.DelayedMessageBacklog{})
-	state.SetReadDelayedMsgsAcc(merkleAccumulator.NewNonpersistentMerkleAccumulator())
 	require.NoError(t, state.AccumulateDelayedMessage(delayedMsg)) // Initialize delayedMessageBacklog
 	state.DelayedMessagedSeen++
 

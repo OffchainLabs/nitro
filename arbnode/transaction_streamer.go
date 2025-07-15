@@ -21,6 +21,7 @@ import (
 	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
@@ -36,7 +37,6 @@ import (
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/util/arbmath"
-	"github.com/offchainlabs/nitro/util/dbutil"
 	"github.com/offchainlabs/nitro/util/sharedmetrics"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
@@ -538,7 +538,7 @@ func (s *TransactionStreamer) getMessageWithMetadataAndBlockInfo(msgIdx arbutil.
 			return nil, err
 		}
 		blockHash = blockHashDBVal.BlockHash
-	} else if !dbutil.IsErrNotFound(err) {
+	} else if !rawdb.IsDbErrNotFound(err) {
 		return nil, err
 	}
 
@@ -702,7 +702,7 @@ func (s *TransactionStreamer) AddBroadcastMessages(feedMessages []*m.BroadcastFe
 	if broadcastFirstMsgIdx > 0 {
 		_, err := s.GetMessage(broadcastFirstMsgIdx - 1)
 		if err != nil {
-			if !dbutil.IsErrNotFound(err) {
+			if !rawdb.IsDbErrNotFound(err) {
 				return err
 			}
 			// Message before current message doesn't exist in database, so don't add current messages yet
@@ -1264,7 +1264,7 @@ func (s *TransactionStreamer) BlockMetadataAtMessageIndex(msgIdx arbutil.Message
 	key := dbKey(dbschema.BlockMetadataInputFeedPrefix, uint64(msgIdx))
 	blockMetadata, err := s.db.Get(key)
 	if err != nil {
-		if dbutil.IsErrNotFound(err) {
+		if rawdb.IsDbErrNotFound(err) {
 			return nil, nil
 		}
 		return nil, err
@@ -1281,7 +1281,7 @@ func (s *TransactionStreamer) ResultAtMessageIndex(msgIdx arbutil.MessageIndex) 
 		if err == nil {
 			return &msgResult, nil
 		}
-	} else if !dbutil.IsErrNotFound(err) {
+	} else if !rawdb.IsDbErrNotFound(err) {
 		return nil, err
 	}
 	log.Info(FailedToGetMsgResultFromDB, "msgIdx", msgIdx)
@@ -1463,7 +1463,7 @@ func (s *TransactionStreamer) backfillTrackersForMissingBlockMetadata(ctx contex
 			if err == nil {
 				return true
 			}
-			if !dbutil.IsErrNotFound(err) {
+			if !rawdb.IsDbErrNotFound(err) {
 				log.Error("Error reading key in arbDB while back-filling trackers for missing blockMetadata", "key", key, "err", err)
 			}
 			return false
