@@ -68,14 +68,14 @@ while getopts "n:s:t:c:D:wldhf" option; do
     esac
 done
 
-if ! $BUILD_WASM && ! $BUILD_LOCAL && ! $BUILD_SOFT; then
+if ! $BUILD_WASM && ! $BUILD_LOCAL && ! $BUILD_SOFTFLOAT; then
     usage
     exit
 fi
 
 if [ ! -d "$TARGET_DIR" ]; then
-    mkdir -p "${TARGET_DIR}lib"
-    ln -s "lib" "${TARGET_DIR}lib64" # Fedora build
+    mkdir -p "${TARGET_DIR}/lib"
+    ln -s "lib" "${TARGET_DIR}/lib64" # Fedora build
 fi
 TARGET_DIR_ABS=$(cd -P "$TARGET_DIR"; pwd)
 
