@@ -237,6 +237,10 @@ func NewBOLDStaker(
 			server_arb.MarkerCustomDARead,
 			server_arb.NewCustomDAProofEnhancer(dapValidator, inboxTracker, inboxReader),
 		)
+		enhancerManager.RegisterEnhancer(
+			server_arb.MarkerCustomDAValidate,
+			server_arb.NewValidatePreimageProofEnhancer(dapValidator, inboxTracker, inboxReader),
+		)
 		proofEnhancer = enhancerManager
 	}
 

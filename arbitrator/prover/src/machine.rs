@@ -3203,6 +3203,26 @@ impl Machine {
                     out!(module.memory.get_leaf_data(idx));
                     out!(mem_merkle.prove(idx).unwrap_or_default());
                 }
+
+                // Check if this is a CustomDA ValidatePreimage that needs enhancement
+                let preimage_type = value_stack.get(value_stack.len() - 2).unwrap().assume_u32();
+                if let Ok(preimage_ty) =
+                    PreimageType::try_from(u8::try_from(preimage_type).unwrap_or(255))
+                {
+                    if preimage_ty == PreimageType::CustomDA {
+                        // Signal that this proof needs enhancement
+                        data[0] |= 0x80;
+
+                        // Load the hash from memory
+                        if let Some(hash) = module.memory.load_32_byte_aligned(ptr.into()) {
+                            // Append hash for the enhancer to use
+                            data.extend(hash.0);
+
+                            // Append marker to identify this as CustomDA ValidatePreimage
+                            data.push(0xDB);
+                        }
+                    }
+                }
             }
             _ => {}
         }

@@ -12,7 +12,8 @@ const (
 	ProofEnhancementFlag = 0x80
 
 	// Marker bytes for different enhancement types
-	MarkerCustomDARead = 0xDA
+	MarkerCustomDARead     = 0xDA
+	MarkerCustomDAValidate = 0xDB
 )
 
 // ProofEnhancer enhances one-step proofs with additional data
@@ -51,7 +52,7 @@ func (m *ProofEnhancementManager) EnhanceProof(ctx context.Context, messageNum a
 	}
 
 	// Find marker at end of proof
-	if len(proof) < 42 { // Minimum size: machine status + ... + hash(32) + offset(8) + marker(1)
+	if len(proof) < 1 { // Need at least the marker byte
 		return nil, fmt.Errorf("proof too short for enhancement: %d bytes", len(proof))
 	}
 
