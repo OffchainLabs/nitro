@@ -191,7 +191,7 @@ func (d *DelayedSequencer) enqueueWithoutLockout(ctx context.Context, lastBlockH
 			return fmt.Errorf("inbox reader at delayed message %v db accumulator %v doesn't match delayed bridge accumulator %v at L1 block %v", pos-1, lastDelayedAcc, delayedBridgeAcc, finalized)
 		}
 		d.exec.EnqueueDelayedMessages(messages, startPos)
-		log.Info("DelayedSequencer: Sequenced", "msgnum", len(messages), "startpos", startPos)
+		log.Info("Delayed messages enqueued", "msgnum", len(messages), "startpos", startPos)
 	}
 
 	return nil
