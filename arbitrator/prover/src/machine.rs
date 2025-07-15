@@ -2465,6 +2465,7 @@ impl Machine {
                         self.global_state.u64_vals[idx] = val
                     }
                 }
+                Opcode::GetEndParentChainBlockHash => {}
                 Opcode::ReadPreImage => {
                     let offset = value_stack.pop().unwrap().assume_u32();
                     let ptr = value_stack.pop().unwrap().assume_u32();

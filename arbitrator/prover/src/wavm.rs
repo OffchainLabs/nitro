@@ -155,6 +155,8 @@ pub enum Opcode {
     GetGlobalStateU64,
     /// Sets u64 in global state
     SetGlobalStateU64,
+    /// Used for MEL.
+    GetEndParentChainBlockHash,
     /// Reads the preimage of a hash in-place into the pointer on the stack at an offset
     ReadPreImage,
     /// Reads the current inbox message into the pointer on the stack at an offset
@@ -288,6 +290,7 @@ impl Opcode {
             Opcode::NewCoThread => 0x8030,
             Opcode::PopCoThread => 0x8031,
             Opcode::SwitchThread => 0x8032,
+            Opcode::GetEndParentChainBlockHash => 0x8033,
         }
     }
 
@@ -300,6 +303,7 @@ impl Opcode {
                 | Opcode::SetGlobalStateU64
                 | Opcode::ReadPreImage
                 | Opcode::ReadInboxMessage
+                | Opcode::GetEndParentChainBlockHash
         )
     }
 }
