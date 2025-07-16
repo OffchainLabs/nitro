@@ -17,24 +17,23 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
 
-	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
+	"github.com/offchainlabs/nitro/solgen/go/localgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/colors"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
 func TestSequencerRejection(t *testing.T) {
-	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	feedErrChan := make(chan error, 10)
-	builderSeq := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	builderSeq := NewNodeBuilder(ctx).DefaultConfig(t, false).DontParalellise()
 	builderSeq.nodeConfig.Feed.Output = *newBroadcasterConfigTest()
 	cleanupSeq := builderSeq.Build(t)
 	defer cleanupSeq()
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false).DontParalellise()
 	builder.takeOwnership = false
 	port := testhelpers.AddrTCPPort(builderSeq.L2.ConsensusNode.BroadcastServer.ListenerAddr(), t)
 	builder.nodeConfig.Feed.Input = *newBroadcastClientConfigTest(port)
@@ -43,7 +42,7 @@ func TestSequencerRejection(t *testing.T) {
 
 	auth := builderSeq.L2Info.GetDefaultTransactOpts("Owner", ctx)
 	simpleAddr, _ := builderSeq.L2.DeploySimple(t, auth)
-	simpleAbi, err := mocksgen.SimpleMetaData.GetAbi()
+	simpleAbi, err := localgen.SimpleMetaData.GetAbi()
 	Require(t, err)
 	noopId := simpleAbi.Methods["noop"].ID
 	revertId := simpleAbi.Methods["pleaseRevert"].ID

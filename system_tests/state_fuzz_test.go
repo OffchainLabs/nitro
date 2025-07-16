@@ -38,7 +38,7 @@ func BuildBlock(
 	chainContext core.ChainContext,
 	inbox arbstate.InboxBackend,
 	seqBatch []byte,
-	runMode core.MessageRunMode,
+	runCtx *core.MessageRunContext,
 ) (*types.Block, error) {
 	var delayedMessagesRead uint64
 	if lastBlockHeader != nil {
@@ -66,7 +66,7 @@ func BuildBlock(
 	}
 
 	block, _, err := arbos.ProduceBlock(
-		l1Message, delayedMessagesRead, lastBlockHeader, statedb, chainContext, false, runMode,
+		l1Message, delayedMessagesRead, lastBlockHeader, statedb, chainContext, false, runCtx,
 	)
 	return block, err
 }
@@ -136,7 +136,7 @@ func (c noopChainContext) GetHeader(common.Hash, uint64) *types.Header {
 }
 
 func FuzzStateTransition(f *testing.F) {
-	f.Fuzz(func(t *testing.T, compressSeqMsg bool, seqMsg []byte, delayedMsg []byte, runModeSeed uint8) {
+	f.Fuzz(func(t *testing.T, compressSeqMsg bool, seqMsg []byte, delayedMsg []byte, targetsSeed uint8, runCtxSeed uint8) {
 		if len(seqMsg) > 0 && daprovider.IsL1AuthenticatedMessageHeaderByte(seqMsg[0]) {
 			return
 		}
@@ -198,9 +198,40 @@ func FuzzStateTransition(f *testing.F) {
 			positionWithinMessage: 0,
 			delayedMessages:       delayedMessages,
 		}
-		numberOfMessageRunModes := uint8(core.MessageReplayMode) + 1 // TODO update number of run modes when new mode is added
-		runMode := core.MessageRunMode(runModeSeed % numberOfMessageRunModes)
-		_, err = BuildBlock(statedb, genesis.Header(), noopChainContext{chainConfig: chaininfo.ArbitrumDevTestChainConfig()}, inbox, seqBatch, runMode)
+
+		localTarget := rawdb.LocalTarget()
+		targets := []rawdb.WasmTarget{localTarget}
+		if targetsSeed&1 != 0 {
+			targets = append(targets, rawdb.TargetWavm)
+		}
+		if targetsSeed&2 != 0 && localTarget != rawdb.TargetArm64 {
+			targets = append(targets, rawdb.TargetArm64)
+		}
+		if targetsSeed&4 != 0 && localTarget != rawdb.TargetAmd64 {
+			targets = append(targets, rawdb.TargetAmd64)
+		}
+		if targetsSeed&8 != 0 && localTarget != rawdb.TargetHost {
+			targets = append(targets, rawdb.TargetHost)
+		}
+
+		runCtxNumber := runCtxSeed % 6
+		var runCtx *core.MessageRunContext
+		switch runCtxNumber {
+		case 0:
+			runCtx = core.NewMessageCommitContext(targets)
+		case 1:
+			runCtx = core.NewMessageReplayContext()
+		case 2:
+			runCtx = core.NewMessageRecordingContext(targets)
+		case 3:
+			runCtx = core.NewMessagePrefetchContext()
+		case 4:
+			runCtx = core.NewMessageEthcallContext()
+		case 5:
+			runCtx = core.NewMessageGasEstimationContext()
+		}
+
+		_, err = BuildBlock(statedb, genesis.Header(), noopChainContext{chainConfig: chaininfo.ArbitrumDevTestChainConfig()}, inbox, seqBatch, runCtx)
 		if err != nil {
 			// With the fixed header it shouldn't be possible to read a delayed message,
 			// and no other type of error should be possible.

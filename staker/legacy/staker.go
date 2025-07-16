@@ -287,12 +287,10 @@ type ValidatorWalletInterface interface {
 	// Address must be able to be called concurrently with other functions
 	AddressOrZero() common.Address
 	TxSenderAddress() *common.Address
-	RollupAddress() common.Address
-	ChallengeManagerAddress() common.Address
 	L1Client() *ethclient.Client
 	TestTransactions(context.Context, []*types.Transaction) error
 	ExecuteTransactions(context.Context, []*types.Transaction, common.Address) (*types.Transaction, error)
-	TimeoutChallenges(context.Context, []uint64) (*types.Transaction, error)
+	TimeoutChallenges(context.Context, []uint64, common.Address) (*types.Transaction, error)
 	CanBatchTxs() bool
 	AuthIfEoa() *bind.TransactOpts
 	Start(context.Context)
@@ -311,14 +309,18 @@ func NewStaker(
 	stakedNotifiers []LatestStakedNotifier,
 	confirmedNotifiers []LatestConfirmedNotifier,
 	validatorUtilsAddress common.Address,
+	rollupAddress common.Address,
+	inboxTracker staker.InboxTrackerInterface,
+	inboxStreamer staker.TransactionStreamerInterface,
+	inboxReader staker.InboxReaderInterface,
 	fatalErr chan<- error,
 ) (*Staker, error) {
 	if err := config().Validate(); err != nil {
 		return nil, err
 	}
 	client := l1Reader.Client()
-	val, err := NewL1Validator(client, wallet, validatorUtilsAddress, config().GasRefunder(), callOpts,
-		statelessBlockValidator.InboxTracker(), statelessBlockValidator.InboxStreamer(), blockValidator)
+	val, err := NewL1Validator(client, wallet, validatorUtilsAddress, rollupAddress, config().GasRefunder(), callOpts,
+		inboxTracker, inboxStreamer, blockValidator)
 	if err != nil {
 		return nil, err
 	}
@@ -335,7 +337,7 @@ func NewStaker(
 		config:                  config,
 		highGasBlocksBuffer:     big.NewInt(config().PostingStrategy.HighGasDelayBlocks),
 		lastActCalledBlock:      nil,
-		inboxReader:             statelessBlockValidator.InboxReader(),
+		inboxReader:             inboxReader,
 		statelessBlockValidator: statelessBlockValidator,
 		fatalErr:                fatalErr,
 		inactiveValidatedNodes:  inactiveValidatedNodes,
@@ -374,6 +376,9 @@ func (s *Staker) Initialize(ctx context.Context) error {
 		// #nosec G115
 		stakerLatestStakedNodeGauge.Update(int64(latestStaked))
 		if latestStaked == 0 {
+			if s.config().EnableFastConfirmation {
+				return errors.New("staker: fast confirmation enabled at genesis")
+			}
 			return nil
 		}
 
@@ -427,6 +432,7 @@ func (s *Staker) setupFastConfirmation(ctx context.Context) error {
 		s.builder,
 		s.wallet,
 		s.l1Reader,
+		s.rollupAddress,
 	)
 	if err != nil {
 		// Unknown while loading the safe contract.
@@ -977,16 +983,22 @@ func (s *Staker) handleConflict(ctx context.Context, info *StakerInfo) error {
 			return fmt.Errorf("error getting latest confirmed creation block: %w", err)
 		}
 
+		challengeManagerAddress, err := s.rollup.ChallengeManager(&bind.CallOpts{Context: ctx})
+		if err != nil {
+			return fmt.Errorf("error getting challenge manager address: %w", err)
+		}
 		newChallengeManager, err := NewChallengeManager(
 			ctx,
 			s.client,
 			s.builder.Auth(context.TODO()),
 			*s.builder.WalletAddress(),
-			s.wallet.ChallengeManagerAddress(),
+			challengeManagerAddress,
 			*info.CurrentChallenge,
 			s.statelessBlockValidator,
 			latestConfirmedCreated,
 			s.config().ConfirmationBlocks,
+			s.inboxTracker,
+			s.txStreamer,
 		)
 		if err != nil {
 			return fmt.Errorf("error creating challenge manager: %w", err)

@@ -12,7 +12,7 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/accounts/abi/abigen"
 )
 
 type HardHatArtifact struct {
@@ -98,6 +98,10 @@ func main() {
 			continue
 		}
 
+		if strings.Contains(path, "precompiles") {
+			continue
+		}
+
 		dir, file := filepath.Split(path)
 		dir, _ = filepath.Split(dir[:len(dir)-1])
 		_, module := filepath.Split(dir[:len(dir)-1])
@@ -132,6 +136,11 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	yulFilePathsGasDimensions, err := filepath.Glob(filepath.Join(parent, "contracts-local", "out", "gas-dimensions-yul", "*.yul", "*.json"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	yulFilePaths = append(yulFilePaths, yulFilePathsGasDimensions...)
 	yulModInfo := modules["yulgen"]
 	if yulModInfo == nil {
 		yulModInfo = &moduleInfo{}
@@ -157,7 +166,91 @@ func main() {
 		})
 	}
 
-	// add upgrade executor module which is not compiled locally, but imported from 'nitro-contracts' depedencies
+	gasDimensionsFilePaths, err := filepath.Glob(filepath.Join(parent, "contracts-local", "out", "gas-dimensions", "*.sol", "*.json"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	gasDimensionsModInfo := modules["gas_dimensionsgen"]
+	if gasDimensionsModInfo == nil {
+		gasDimensionsModInfo = &moduleInfo{}
+		modules["gas_dimensionsgen"] = gasDimensionsModInfo
+	}
+	for _, path := range gasDimensionsFilePaths {
+		_, file := filepath.Split(path)
+		name := file[:len(file)-5]
+
+		data, err := os.ReadFile(path)
+		if err != nil {
+			log.Fatal("could not read", path, "for contract", name, err)
+		}
+		artifact := FoundryArtifact{}
+		if err := json.Unmarshal(data, &artifact); err != nil {
+			log.Fatal("failed to parse contract", name, err)
+		}
+		gasDimensionsModInfo.addArtifact(HardHatArtifact{
+			ContractName: name,
+			Abi:          artifact.Abi,
+			Bytecode:     artifact.Bytecode.Object,
+		})
+	}
+
+	localFilePaths, err := filepath.Glob(filepath.Join(parent, "contracts-local", "out", "src", "*.sol", "*.json"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	localModInfo := modules["localgen"]
+	if localModInfo == nil {
+		localModInfo = &moduleInfo{}
+		modules["localgen"] = localModInfo
+	}
+	for _, path := range localFilePaths {
+		_, file := filepath.Split(path)
+		name := file[:len(file)-5]
+
+		data, err := os.ReadFile(path)
+		if err != nil {
+			log.Fatal("could not read", path, "for contract", name, err)
+		}
+		artifact := FoundryArtifact{}
+		if err := json.Unmarshal(data, &artifact); err != nil {
+			log.Fatal("failed to parse contract", name, err)
+		}
+		localModInfo.addArtifact(HardHatArtifact{
+			ContractName: name,
+			Abi:          artifact.Abi,
+			Bytecode:     artifact.Bytecode.Object,
+		})
+	}
+
+	precompilesFilePaths, err := filepath.Glob(filepath.Join(parent, "contracts-local", "out", "precompiles", "*.sol", "*.json"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	precompilesModInfo := modules["precompilesgen"]
+	if precompilesModInfo == nil {
+		precompilesModInfo = &moduleInfo{}
+		modules["precompilesgen"] = precompilesModInfo
+	}
+	for _, path := range precompilesFilePaths {
+		_, file := filepath.Split(path)
+		name := file[:len(file)-5]
+
+		data, err := os.ReadFile(path)
+		if err != nil {
+			log.Fatal("could not read", path, "for contract", name, err)
+		}
+		artifact := FoundryArtifact{}
+		if err := json.Unmarshal(data, &artifact); err != nil {
+			log.Fatal("failed to parse contract", name, err)
+		}
+		precompilesModInfo.addArtifact(HardHatArtifact{
+			ContractName: name,
+			Abi:          artifact.Abi,
+			Bytecode:     artifact.Bytecode.Object,
+		})
+	}
+
+	// add upgrade executor module which is not compiled locally, but imported from 'nitro-contracts' dependencies
 	upgExecutorPath := filepath.Join(parent, "contracts", "node_modules", "@offchainlabs", "upgrade-executor", "build", "contracts", "src", "UpgradeExecutor.sol", "UpgradeExecutor.json")
 	_, err = os.Stat(upgExecutorPath)
 	if !os.IsNotExist(err) {
@@ -180,13 +273,12 @@ func main() {
 
 	for module, info := range modules {
 
-		code, err := bind.Bind(
+		code, err := abigen.Bind(
 			info.contractNames,
 			info.abis,
 			info.bytecodes,
 			nil,
 			module,
-			bind.LangGo,
 			nil,
 			nil,
 		)

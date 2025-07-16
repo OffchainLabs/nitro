@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"math/big"
 	"math/rand"
+	"strings"
 	"testing"
 	"time"
 
@@ -134,11 +135,10 @@ func deployGasRefunder(ctx context.Context, t *testing.T, builder *NodeBuilder) 
 }
 
 func testSequencerInboxReaderImpl(t *testing.T, validator bool) {
-	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).DontParalellise()
 	if validator {
 		builder.nodeConfig.BlockValidator.Enable = true
 	}
@@ -222,7 +222,10 @@ func testSequencerInboxReaderImpl(t *testing.T, validator bool) {
 			builder.L1Info.GetInfoWithPrivKey("Faucet").Nonce.Store(currNonce)
 			for j := uint64(0); j < blocksToPad; j++ {
 				tx := builder.L1Info.PrepareTx("Faucet", "User", 30000, big.NewInt(1e12), nil)
-				Require(t, builder.L1.Client.SendTransaction(ctx, tx))
+				err = builder.L1.Client.SendTransaction(ctx, tx)
+				if err != nil && !strings.Contains(err.Error(), "already known") {
+					t.Fatalf("error sending txs to create padding for reorg: %s", err.Error())
+				}
 				_, _ = builder.L1.EnsureTxSucceeded(tx)
 			}
 			currentHeader, err = builder.L1.Client.HeaderByNumber(ctx, nil)

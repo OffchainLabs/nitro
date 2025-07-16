@@ -63,6 +63,7 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	legacystaker "github.com/offchainlabs/nitro/staker/legacy"
 	"github.com/offchainlabs/nitro/staker/validatorwallet"
+	nitroutil "github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/colors"
 	"github.com/offchainlabs/nitro/util/dbutil"
 	"github.com/offchainlabs/nitro/util/headerreader"
@@ -199,6 +200,7 @@ func mainImpl() int {
 	}
 
 	log.Info("Running Arbitrum nitro node", "revision", vcsRevision, "vcs.time", vcsTime)
+	log.Info("Resources detected", "GOMAXPROCS", nitroutil.GoMaxProcs())
 
 	if nodeConfig.Node.Dangerous.NoL1Listener {
 		nodeConfig.Node.ParentChainReader.Enable = false
@@ -224,7 +226,7 @@ func mainImpl() int {
 	var l1TransactionOptsBatchPoster *bind.TransactOpts
 	// If sequencer and signing is enabled or batchposter is enabled without
 	// external signing sequencer will need a key.
-	sequencerNeedsKey := (nodeConfig.Node.Sequencer && !nodeConfig.Node.Feed.Output.DisableSigning) ||
+	sequencerNeedsKey := (nodeConfig.Node.Sequencer && nodeConfig.Node.Feed.Output.Signed) ||
 		(nodeConfig.Node.BatchPoster.Enable && (nodeConfig.Node.BatchPoster.DataPoster.ExternalSigner.URL == "" || nodeConfig.Node.DataAvailability.Enable))
 	validatorNeedsKey := nodeConfig.Node.Staker.OnlyCreateWalletContract ||
 		(nodeConfig.Node.Staker.Enable && !strings.EqualFold(nodeConfig.Node.Staker.Strategy, "watchtower") && nodeConfig.Node.Staker.DataPoster.ExternalSigner.URL == "")
@@ -531,9 +533,13 @@ func mainImpl() int {
 		log.Error("failed to create execution node", "err", err)
 		return 1
 	}
-	locator, err := server_common.NewMachineLocator(liveNodeConfig.Get().Validation.Wasm.RootPath)
-	if err != nil {
-		log.Error("failed to create machine locator: %w", err)
+	var wasmModuleRoot common.Hash
+	if liveNodeConfig.Get().Node.ValidatorRequired() {
+		locator, err := server_common.NewMachineLocator(liveNodeConfig.Get().Validation.Wasm.RootPath)
+		if err != nil {
+			log.Error("failed to create machine locator: %w", err)
+		}
+		wasmModuleRoot = locator.LatestWasmModuleRoot()
 	}
 
 	currentNode, err := arbnode.CreateNodeFullExecutionClient(
@@ -554,7 +560,7 @@ func mainImpl() int {
 		fatalErrChan,
 		new(big.Int).SetUint64(nodeConfig.ParentChain.ID),
 		blobReader,
-		locator.LatestWasmModuleRoot(),
+		wasmModuleRoot,
 	)
 	if err != nil {
 		log.Error("failed to create node", "err", err)
@@ -1102,7 +1108,7 @@ func checkWasmModuleRootCompatibility(ctx context.Context, wasmConfig valnode.Wa
 		for _, root := range allowedWasmModuleRoots {
 			bytes, err := hex.DecodeString(strings.TrimPrefix(root, "0x"))
 			if err == nil {
-				if common.HexToHash(root) == common.BytesToHash(bytes) {
+				if common.BytesToHash(bytes) == moduleRoot {
 					moduleRootMatched = true
 					break
 				}

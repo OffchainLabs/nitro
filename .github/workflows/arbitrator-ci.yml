@@ -28,7 +28,7 @@ env:
 jobs:
   arbitrator:
     name: Run Arbitrator tests
-    runs-on: ubuntu-8
+    runs-on: arbitrator-ci
     steps:
       - name: Setup tmate session
         uses: mxschmitt/action-tmate@v3
@@ -48,7 +48,7 @@ jobs:
           sudo ln -s /usr/bin/wasm-ld-14 /usr/local/bin/wasm-ld
 
       - name: Install go
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v5
         with:
           go-version: 1.23.x
 

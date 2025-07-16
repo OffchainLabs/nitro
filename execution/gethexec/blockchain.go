@@ -46,6 +46,7 @@ type CachingConfig struct {
 	DisableStylusCacheMetricsCollection bool          `koanf:"disable-stylus-cache-metrics-collection"`
 	StateScheme                         string        `koanf:"state-scheme"`
 	StateHistory                        uint64        `koanf:"state-history"`
+	EnablePreimages                     bool          `koanf:"enable-preimages"`
 }
 
 func CachingConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -69,6 +70,7 @@ func CachingConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".disable-stylus-cache-metrics-collection", DefaultCachingConfig.DisableStylusCacheMetricsCollection, "disable metrics collection for the stylus cache")
 	f.String(prefix+".state-scheme", DefaultCachingConfig.StateScheme, "scheme to use for state trie storage (hash, path)")
 	f.Uint64(prefix+".state-history", DefaultCachingConfig.StateHistory, "number of recent blocks to retain state history for (path state-scheme only)")
+	f.Bool(prefix+".enable-preimages", DefaultCachingConfig.EnablePreimages, "enable recording of preimages")
 }
 
 func getStateHistory(maxBlockSpeed time.Duration) uint64 {
@@ -117,7 +119,7 @@ func DefaultCacheConfigFor(stack *node.Node, cachingConfig *CachingConfig) *core
 		TrieCapBatchSize:                   cachingConfig.TrieCapBatchSize,
 		TrieCommitBatchSize:                cachingConfig.TrieCommitBatchSize,
 		SnapshotLimit:                      cachingConfig.SnapshotCache,
-		Preimages:                          baseConf.Preimages,
+		Preimages:                          baseConf.Preimages || cachingConfig.EnablePreimages,
 		SnapshotRestoreMaxGas:              cachingConfig.SnapshotRestoreGasLimit,
 		HeadRewindBlocksLimit:              cachingConfig.HeadRewindBlocksLimit,
 		MaxNumberOfBlocksToSkipStateSaving: cachingConfig.MaxNumberOfBlocksToSkipStateSaving,

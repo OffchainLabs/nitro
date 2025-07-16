@@ -21,6 +21,7 @@ import (
 	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
@@ -34,7 +35,6 @@ import (
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/util/arbmath"
-	"github.com/offchainlabs/nitro/util/dbutil"
 	"github.com/offchainlabs/nitro/util/sharedmetrics"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
@@ -70,6 +70,7 @@ type TransactionStreamer struct {
 	delayedBridge   *DelayedBridge
 
 	trackBlockMetadataFrom arbutil.MessageIndex
+	syncTillMessage        arbutil.MessageIndex
 }
 
 type TransactionStreamerConfig struct {
@@ -136,6 +137,17 @@ func NewTransactionStreamer(
 			return nil, err
 		}
 		streamer.trackBlockMetadataFrom = trackBlockMetadataFrom
+	}
+	if config().SyncTillBlock != 0 {
+		syncTillMessage, err := exec.BlockNumberToMessageIndex(config().SyncTillBlock).Await(ctx)
+		if err != nil {
+			return nil, err
+		}
+		streamer.syncTillMessage = syncTillMessage
+		msgCount, err := streamer.GetMessageCount()
+		if err == nil && msgCount >= streamer.syncTillMessage {
+			log.Info("Node has all mesages", "sync-till-block", config().SyncTillBlock)
+		}
 	}
 	return streamer, nil
 }
@@ -504,7 +516,7 @@ func (s *TransactionStreamer) getMessageWithMetadataAndBlockInfo(msgIdx arbutil.
 			return nil, err
 		}
 		blockHash = blockHashDBVal.BlockHash
-	} else if !dbutil.IsErrNotFound(err) {
+	} else if !rawdb.IsDbErrNotFound(err) {
 		return nil, err
 	}
 
@@ -668,7 +680,7 @@ func (s *TransactionStreamer) AddBroadcastMessages(feedMessages []*m.BroadcastFe
 	if broadcastFirstMsgIdx > 0 {
 		_, err := s.GetMessage(broadcastFirstMsgIdx - 1)
 		if err != nil {
-			if !dbutil.IsErrNotFound(err) {
+			if !rawdb.IsDbErrNotFound(err) {
 				return err
 			}
 			// Message before current message doesn't exist in database, so don't add current messages yet
@@ -1183,7 +1195,7 @@ func (s *TransactionStreamer) broadcastMessages(
 // The mutex must be held, and firstMsgIdx must be the latest message count.
 // `batch` may be nil, which initializes a new batch. The batch is closed out in this function.
 func (s *TransactionStreamer) writeMessages(firstMsgIdx arbutil.MessageIndex, messages []arbostypes.MessageWithMetadataAndBlockInfo, batch ethdb.Batch) error {
-	if s.config().SyncTillBlock > 0 && uint64(firstMsgIdx) > s.config().SyncTillBlock {
+	if s.syncTillMessage > 0 && firstMsgIdx > s.syncTillMessage {
 		return broadcastclient.TransactionStreamerBlockCreationStopped
 	}
 	if batch == nil {
@@ -1222,7 +1234,7 @@ func (s *TransactionStreamer) BlockMetadataAtMessageIndex(msgIdx arbutil.Message
 	key := dbKey(blockMetadataInputFeedPrefix, uint64(msgIdx))
 	blockMetadata, err := s.db.Get(key)
 	if err != nil {
-		if dbutil.IsErrNotFound(err) {
+		if rawdb.IsDbErrNotFound(err) {
 			return nil, nil
 		}
 		return nil, err
@@ -1239,7 +1251,7 @@ func (s *TransactionStreamer) ResultAtMessageIndex(msgIdx arbutil.MessageIndex) 
 		if err == nil {
 			return &msgResult, nil
 		}
-	} else if !dbutil.IsErrNotFound(err) {
+	} else if !rawdb.IsDbErrNotFound(err) {
 		return nil, err
 	}
 	log.Info(FailedToGetMsgResultFromDB, "msgIdx", msgIdx)
@@ -1337,7 +1349,8 @@ func (s *TransactionStreamer) ExecuteNextMsg(ctx context.Context) bool {
 		return false
 	}
 
-	if execHeadMsgIdx >= consensusHeadMsgIdx {
+	if execHeadMsgIdx >= consensusHeadMsgIdx ||
+		(s.syncTillMessage > 0 && execHeadMsgIdx >= s.syncTillMessage) {
 		return false
 	}
 	msgIdxToExecute := execHeadMsgIdx + 1
@@ -1391,10 +1404,6 @@ func (s *TransactionStreamer) ExecuteNextMsg(ctx context.Context) bool {
 }
 
 func (s *TransactionStreamer) executeMessages(ctx context.Context, ignored struct{}) time.Duration {
-	if s.config().SyncTillBlock > 0 && s.prevHeadMsgIdx != nil && uint64(*s.prevHeadMsgIdx) >= s.config().SyncTillBlock {
-		log.Info("stopping block creation in transaction streamer", "syncTillBlock", s.config().SyncTillBlock)
-		return s.config().ExecuteMessageLoopDelay
-	}
 	if s.ExecuteNextMsg(ctx) {
 		return 0
 	}
@@ -1424,7 +1433,7 @@ func (s *TransactionStreamer) backfillTrackersForMissingBlockMetadata(ctx contex
 			if err == nil {
 				return true
 			}
-			if !dbutil.IsErrNotFound(err) {
+			if !rawdb.IsDbErrNotFound(err) {
 				log.Error("Error reading key in arbDB while back-filling trackers for missing blockMetadata", "key", key, "err", err)
 			}
 			return false

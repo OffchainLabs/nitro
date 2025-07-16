@@ -13,7 +13,7 @@ on:
 jobs:
   test:
     name: Go Tests
-    runs-on: ubuntu-8
+    runs-on: arbitrator-ci
 
     # Creates a redis container for redis tests
     services:
@@ -126,10 +126,10 @@ jobs:
         run: ./scripts/build-brotli.sh -w -d
 
       - name: Build
-        run: make build test-go-deps -j
+        run: make build test-go-deps -j8
 
       - name: Build all lint dependencies
-        run: make -j build-node-deps
+        run: make -j8 build-node-deps
 
       - name: Lint
         uses: golangci/golangci-lint-action@v8
@@ -153,13 +153,13 @@ jobs:
         if: matrix.test-mode == 'pathdb'
         run: |
           echo "Running tests with Path Scheme" >> full.log
-          ${{ github.workspace }}/.github/workflows/gotestsum.sh --tags cionly --timeout 20m --cover --test_state_scheme path
+          ${{ github.workspace }}/.github/workflows/gotestsum.sh --tags cionly --timeout 90m --cover --test_state_scheme path
 
       - name: run tests without race detection and hash state scheme
         if: matrix.test-mode == 'defaults'
         run: |
           echo "Running tests with Hash Scheme" >> full.log
-          ${{ github.workspace }}/.github/workflows/gotestsum.sh --tags cionly --timeout 20m --test_state_scheme hash
+          ${{ github.workspace }}/.github/workflows/gotestsum.sh --tags cionly --timeout 60m --test_state_scheme hash
 
       - name: run redis tests
         if: matrix.test-mode == 'defaults'

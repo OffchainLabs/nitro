@@ -5,7 +5,11 @@ package arbmath
 
 import "math/big"
 
+// Bips (basis points) are used to represent percentages as integers.
 type Bips int64
+
+// UBips (unsigned basis points) are used to represent percentages as
+// unsigned integers.
 type UBips uint64
 
 const OneInBips Bips = 10000
