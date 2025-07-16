@@ -84,13 +84,13 @@ func (s *State) Clone() *State {
 	parentChainHash := common.Hash{}
 	parentChainPrevHash := common.Hash{}
 	msgAcc := common.Hash{}
-	delayedMsgAcc := common.Hash{}
+	delayedMsgSeenRoot := common.Hash{}
 	copy(batchPostingTarget[:], s.BatchPostingTargetAddress[:])
 	copy(delayedMessageTarget[:], s.DelayedMessagePostingTargetAddress[:])
 	copy(parentChainHash[:], s.ParentChainBlockHash[:])
 	copy(parentChainPrevHash[:], s.ParentChainPreviousBlockHash[:])
-	copy(delayedMsgAcc[:], s.DelayedMessagesSeenRoot[:])
 	copy(msgAcc[:], s.MessageAccumulator[:])
+	copy(delayedMsgSeenRoot[:], s.DelayedMessagesSeenRoot[:])
 	var delayedMessageMerklePartials []common.Hash
 	for _, partial := range s.DelayedMessageMerklePartials {
 		clone := common.Hash{}
@@ -109,8 +109,8 @@ func (s *State) Clone() *State {
 		DelayedMessagePostingTargetAddress: delayedMessageTarget,
 		ParentChainBlockHash:               parentChainHash,
 		ParentChainPreviousBlockHash:       parentChainPrevHash,
-		DelayedMessagesSeenRoot:            delayedMsgAcc,
 		MessageAccumulator:                 msgAcc,
+		DelayedMessagesSeenRoot:            delayedMsgSeenRoot,
 		MsgCount:                           s.MsgCount,
 		BatchCount:                         s.BatchCount,
 		DelayedMessagesRead:                s.DelayedMessagesRead,
