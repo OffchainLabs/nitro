@@ -20,6 +20,7 @@ import (
 type GoGlobalState struct {
 	BlockHash  common.Hash `json:"blockHash"`
 	SendRoot   common.Hash `json:"sendRoot"`
+	MELRoot    common.Hash `json:"melRoot"`
 	Batch      uint64      `json:"batch"`
 	PosInBatch uint64      `json:"positionInBatch"`
 }
