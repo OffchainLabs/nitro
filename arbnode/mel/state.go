@@ -76,13 +76,6 @@ type MessageConsumer interface {
 	) error
 }
 
-// Defines an interface for fetching a MEL state by parent chain block hash.
-type InitialStateFetcher interface {
-	FetchInitialState(
-		ctx context.Context, parentChainBlockHash common.Hash,
-	) (*State, error)
-}
-
 func (s *State) Hash() common.Hash {
 	return common.Hash{}
 }

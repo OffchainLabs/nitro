@@ -65,7 +65,6 @@ type MessageExtractor struct {
 	stopwaiter.StopWaiter
 	config                    *MessageExtractionConfig
 	parentChainReader         ParentChainReader
-	initialStateFetcher       mel.InitialStateFetcher
 	addrs                     *chaininfo.RollupAddresses
 	melDB                     *Database
 	msgConsumer               mel.MessageConsumer
@@ -81,7 +80,6 @@ type MessageExtractor struct {
 func NewMessageExtractor(
 	parentChainReader ParentChainReader,
 	rollupAddrs *chaininfo.RollupAddresses,
-	initialStateFetcher mel.InitialStateFetcher,
 	melDB *Database,
 	msgConsumer mel.MessageConsumer,
 	dataProviders []daprovider.Reader,
@@ -98,7 +96,6 @@ func NewMessageExtractor(
 	return &MessageExtractor{
 		parentChainReader:         parentChainReader,
 		addrs:                     rollupAddrs,
-		initialStateFetcher:       initialStateFetcher,
 		melDB:                     melDB,
 		msgConsumer:               msgConsumer,
 		dataProviders:             dataProviders,
@@ -296,13 +293,14 @@ func (m *MessageExtractor) Act(ctx context.Context) (time.Duration, error) {
 				err,
 			)
 		}
-		// Fetch the initial state for MEL from a state fetcher interface by parent chain block hash.
-		melState, err := m.initialStateFetcher.FetchInitialState(
-			ctx,
-			m.startParentChainBlockHash,
-		)
+		// Start from the latest MEL state we have in the database
+		melState, err := m.melDB.GetHeadMelState(ctx)
 		if err != nil {
 			return m.retryInterval, err
+		}
+		// We check if our current head mel state corresponds to this parentChainBlockHash
+		if melState.ParentChainBlockHash != m.startParentChainBlockHash {
+			return m.retryInterval, fmt.Errorf("head mel state's parentChainBlockHash in db: %v does not match the given parentChainBlockHash: %v ", melState.ParentChainBlockHash, m.startParentChainBlockHash)
 		}
 		// Initialize delayedMessageBacklog and add it to the melState
 		delayedMessageBacklog := mel.NewDelayedMessageBacklog(m.GetContext(), m.config.DelayedMessageBacklogCapacity, m.GetFinalizedDelayedMessagesRead)

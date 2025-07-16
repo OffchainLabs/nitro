@@ -728,7 +728,6 @@ func getMessageExtractor(
 	msgExtractor, err := melrunner.NewMessageExtractor(
 		l1client,
 		deployInfo,
-		melDB, // MEL db can also act as the initial state fetcher.
 		melDB,
 		txStreamer,
 		dapReaders,

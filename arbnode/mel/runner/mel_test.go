@@ -39,14 +39,12 @@ func TestMessageExtractor(t *testing.T) {
 	parentChainReader.blocks[emptyblk2.Hash()] = emptyblk2
 	parentChainReader.blocks[common.BigToHash(common.Big2)] = emptyblk1
 	parentChainReader.blocks[common.BigToHash(common.Big3)] = emptyblk2
-	initialStateFetcher := &mockInitialStateFetcher{}
 	arbDb := rawdb.NewMemoryDatabase()
 	melDb := NewDatabase(arbDb)
 	messageConsumer := &mockMessageConsumer{}
 	extractor, err := NewMessageExtractor(
 		parentChainReader,
 		&chaininfo.RollupAddresses{},
-		initialStateFetcher,
 		melDb,
 		messageConsumer,
 		[]daprovider.Reader{},
@@ -67,9 +65,8 @@ func TestMessageExtractor(t *testing.T) {
 		require.True(t, extractor.CurrentFSMState() == Start)
 		parentChainReader.returnErr = nil
 
-		initialStateFetcher.returnErr = errors.New("failed to get state")
 		_, err = extractor.Act(ctx)
-		require.ErrorContains(t, err, "failed to get state")
+		require.ErrorContains(t, err, "error getting HeadMelStateBlockNum from database: not found")
 
 		// Expect that we can now transition to the process
 		// next block state.
@@ -78,14 +75,13 @@ func TestMessageExtractor(t *testing.T) {
 			ParentChainBlockNumber: 1,
 		}
 		require.NoError(t, melDb.SaveState(ctx, melState))
-		initialStateFetcher.returnErr = nil
-		initialStateFetcher.state = melState
 		_, err = extractor.Act(ctx)
 		require.NoError(t, err)
 
 		require.True(t, extractor.CurrentFSMState() == ProcessingNextBlock)
 		processBlockAction, ok := extractor.fsm.Current().SourceEvent.(processNextBlock)
 		require.True(t, ok)
+		melState.SetDelayedMessageBacklog(processBlockAction.melState.GetDelayedMessageBacklog())
 		require.Equal(t, processBlockAction.melState, melState)
 	})
 	t.Run("ProcessingNextBlock", func(t *testing.T) {
@@ -139,20 +135,6 @@ type mockMessageConsumer struct{ returnErr error }
 
 func (m *mockMessageConsumer) PushMessages(ctx context.Context, firstMsgIdx uint64, messages []*arbostypes.MessageWithMetadata) error {
 	return m.returnErr
-}
-
-type mockInitialStateFetcher struct {
-	state     *mel.State
-	returnErr error
-}
-
-func (m *mockInitialStateFetcher) FetchInitialState(
-	_ context.Context, _ common.Hash,
-) (*mel.State, error) {
-	if m.returnErr != nil {
-		return nil, m.returnErr
-	}
-	return m.state, nil
 }
 
 type mockParentChainReader struct {

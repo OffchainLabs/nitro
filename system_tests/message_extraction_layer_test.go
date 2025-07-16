@@ -72,7 +72,6 @@ func TestMessageExtractionLayer_SequencerBatchMessageEquivalence(t *testing.T) {
 		l1Reader.Client(),
 		builder.addresses,
 		melDB,
-		melDB,
 		mockMsgConsumer,
 		nil, // TODO: Provide da readers here.
 		melState.ParentChainBlockHash,
@@ -207,7 +206,6 @@ func TestMessageExtractionLayer_SequencerBatchMessageEquivalence_Blobs(t *testin
 	extractor, err := melrunner.NewMessageExtractor(
 		l1Reader.Client(),
 		builder.addresses,
-		melDB,
 		melDB,
 		mockMsgConsumer,
 		[]daprovider.Reader{daprovider.NewReaderForBlobReader(builder.L1.blobReader)},
@@ -347,7 +345,6 @@ func TestMessageExtractionLayer_DelayedMessageEquivalence_Simple(t *testing.T) {
 	extractor, err := melrunner.NewMessageExtractor(
 		l1Reader.Client(),
 		builder.addresses,
-		melDB,
 		melDB,
 		mockMsgConsumer,
 		nil, // TODO: Provide da readers here.
@@ -647,7 +644,6 @@ func TestMessageExtractionLayer_UseArbDBForStoringDelayedMessages(t *testing.T) 
 	extractor, err := melrunner.NewMessageExtractor(
 		l1Reader.Client(),
 		builder.addresses,
-		melDB,
 		melDB,
 		mockMsgConsumer,
 		nil, // TODO: Provide da readers here.
