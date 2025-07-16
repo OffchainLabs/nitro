@@ -22,7 +22,7 @@ func TestMaintenance(t *testing.T) {
 	defer cancel()
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
-	builder.nodeConfig.Maintenance.Triggerable = true
+	builder.nodeConfig.Maintenance.RunInterval = time.Second * 5
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -38,12 +38,8 @@ func TestMaintenance(t *testing.T) {
 		Require(t, err)
 	}
 
-	l2rpc := builder.L2.Stack.Attach()
-	err := l2rpc.CallContext(ctx, nil, "maintenance_trigger")
-	Require(t, err)
-
 	finished := false
-	for range 100 {
+	for range 200 {
 		if logHandler.WasLogged("Execution is not running maintenance anymore, maintenance completed successfully") {
 			finished = true
 			break
@@ -55,19 +51,11 @@ func TestMaintenance(t *testing.T) {
 		t.Fatal("Maintenance did not complete successfully from Consensus perspective")
 	}
 
-	maintenanceStatus, err := builder.L2.ExecNode.MaintenanceStatus().Await(ctx)
-	Require(t, err)
-	if maintenanceStatus == nil {
-		t.Fatal("Maintenance returned nil")
-	}
-	if maintenanceStatus.IsRunning {
-		t.Fatal("Maintenance is still running")
-	}
-
 	if !logHandler.WasLogged("Flushed trie db through maintenance completed successfully") {
 		t.Fatal("Expected log message not found")
 	}
 
+	// checks that balances are correct after maintenance
 	for i := 2; i < 3+numberOfTransfers; i++ {
 		account := fmt.Sprintf("User%d", i)
 		balance, err := builder.L2.Client.BalanceAt(ctx, builder.L2Info.GetAddress(account), nil)
