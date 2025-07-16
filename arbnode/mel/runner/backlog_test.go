@@ -49,6 +49,7 @@ func TestDelayedMessageBacklogInitialization(t *testing.T) {
 					RequestId:   &requestID,
 					L1BaseFee:   common.Big0,
 				},
+				L2msg: []byte{},
 			},
 		})
 	}

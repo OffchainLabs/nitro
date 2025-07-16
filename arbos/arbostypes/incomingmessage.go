@@ -57,7 +57,7 @@ func (h L1IncomingMessageHeader) SeqNum() (uint64, error) {
 
 type L1IncomingMessage struct {
 	Header *L1IncomingMessageHeader `json:"header"`
-	L2msg  []byte                   `json:"l2Msg" rlp:"optional"` // Question= it wasnt tested before if L2msg is nil then rlp decoding correctly decodes it as nil as well, does adding it now make this a breaking change?
+	L2msg  []byte                   `json:"l2Msg"`
 
 	// Only used for `L1MessageType_BatchPostingReport`
 	BatchGasCost *uint64 `json:"batchGasCost,omitempty" rlp:"optional"`
