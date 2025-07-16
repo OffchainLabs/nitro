@@ -85,14 +85,15 @@ func ValidationInputToJson(entry *validator.ValidationInput) *InputJSON {
 		jsonPreimagesMap[ty] = jsonapi.NewPreimagesMapJson(preimages)
 	}
 	res := &InputJSON{
-		Id:            entry.Id,
-		HasDelayedMsg: entry.HasDelayedMsg,
-		DelayedMsgNr:  entry.DelayedMsgNr,
-		DelayedMsgB64: base64.StdEncoding.EncodeToString(entry.DelayedMsg),
-		StartState:    entry.StartState,
-		PreimagesB64:  jsonPreimagesMap,
-		UserWasms:     make(map[rawdb.WasmTarget]map[common.Hash]string),
-		DebugChain:    entry.DebugChain,
+		Id:                      entry.Id,
+		HasDelayedMsg:           entry.HasDelayedMsg,
+		DelayedMsgNr:            entry.DelayedMsgNr,
+		DelayedMsgB64:           base64.StdEncoding.EncodeToString(entry.DelayedMsg),
+		StartState:              entry.StartState,
+		PreimagesB64:            jsonPreimagesMap,
+		UserWasms:               make(map[rawdb.WasmTarget]map[common.Hash]string),
+		DebugChain:              entry.DebugChain,
+		EndParentChainBlockHash: common.Hash{},
 	}
 	for _, binfo := range entry.BatchInfo {
 		encData := base64.StdEncoding.EncodeToString(binfo.Data)
