@@ -65,8 +65,8 @@ type InputJSON struct {
 	StartState              validator.GoGlobalState
 	UserWasms               map[rawdb.WasmTarget]map[common.Hash]string
 	DebugChain              bool
-	MaxUserWasmSize         uint64 `json:"max-user-wasmSize,omitempty"`
-	EndParentChainBlockHash common.Hash
+	MaxUserWasmSize         uint64      `json:"max-user-wasmSize,omitempty"`
+	EndParentChainBlockHash common.Hash `json:"omitempty"`
 }
 
 // Marshal returns the JSON encoding of the InputJSON.
