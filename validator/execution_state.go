@@ -15,7 +15,7 @@ import (
 type GoGlobalState struct {
 	BlockHash  common.Hash
 	SendRoot   common.Hash
-	MelRoot    common.Hash
+	MELRoot    common.Hash
 	Batch      uint64
 	PosInBatch uint64
 }

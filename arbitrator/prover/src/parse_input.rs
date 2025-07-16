@@ -76,7 +76,7 @@ pub struct StartState {
     pub block_hash: Vec<u8>,
     #[serde(with = "prefixed_hex")]
     pub send_root: Vec<u8>,
-    #[serde(with = "prefixed_hex")]
+    #[serde(with = "prefixed_hex", rename = "MELRoot")]
     pub mel_root: Vec<u8>,
     pub batch: u64,
     pub pos_in_batch: u64,
