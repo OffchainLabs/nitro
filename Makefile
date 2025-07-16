@@ -197,7 +197,7 @@ build-prover-bin: $(prover_bin)
 build-jit: $(arbitrator_jit)
 
 .PHONY: build-replay-env
-build-replay-env: $(prover_bin) $(arbitrator_jit) $(arbitrator_wasm_libs) $(replay_wasm) $(output_latest)/machine.wavm.br $(mel_replay_wasm) $(output_latest)/mel_machine.wavm.br
+build-replay-env: $(prover_bin) $(arbitrator_jit) $(arbitrator_wasm_libs) $(replay_wasm) $(output_latest)/machine.wavm.br
 
 .PHONY: build-mel-replay-env
 build-mel-replay-env: $(mel_replay_wasm) $(output_latest)/mel_machine.wavm.br
