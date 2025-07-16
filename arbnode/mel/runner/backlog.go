@@ -9,7 +9,6 @@ import (
 
 // InitializeDelayedMessageBacklog is to be only called by the Start fsm step of MEL. This function fills the backlog based on the seen and read count from the given mel state
 func InitializeDelayedMessageBacklog(ctx context.Context, d *mel.DelayedMessageBacklog, db *Database, state *mel.State, finalizedAndReadIndexFetcher func(context.Context) (uint64, error)) error {
-	// d.ctx = ctx
 	finalizedDelayedMessagesRead := state.DelayedMessagesRead // Assume to be finalized, then update if needed
 	var err error
 	if finalizedAndReadIndexFetcher != nil {

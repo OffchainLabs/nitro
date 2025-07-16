@@ -93,8 +93,8 @@ func (s *State) Clone() *State {
 	copy(delayedMessageTarget[:], s.DelayedMessagePostingTargetAddress[:])
 	copy(parentChainHash[:], s.ParentChainBlockHash[:])
 	copy(parentChainPrevHash[:], s.ParentChainPreviousBlockHash[:])
-	copy(delayedMsgSeenRoot[:], s.DelayedMessagesSeenRoot[:])
 	copy(msgAcc[:], s.MessageAccumulator[:])
+	copy(delayedMsgSeenRoot[:], s.DelayedMessagesSeenRoot[:])
 	var delayedMessageMerklePartials []common.Hash
 	for _, partial := range s.DelayedMessageMerklePartials {
 		clone := common.Hash{}
@@ -172,6 +172,10 @@ func (s *State) GenerateDelayedMessageMerklePartials() error {
 
 func (s *State) GetSeenDelayedMsgsAcc() *merkleAccumulator.MerkleAccumulator {
 	return s.seenDelayedMsgsAcc
+}
+
+func (s *State) SetSeenDelayedMsgsAcc(acc *merkleAccumulator.MerkleAccumulator) {
+	s.seenDelayedMsgsAcc = acc
 }
 
 func (s *State) GetDelayedMessageBacklog() *DelayedMessageBacklog {
