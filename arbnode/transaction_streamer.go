@@ -1913,101 +1913,99 @@ func (s *TransactionStreamer) ResubmitEspressoTransactions(ctx context.Context, 
 
 func (s *TransactionStreamer) submitEspressoTransactions(ctx context.Context) error {
 	s.espressoPendingTxnPosMutex.Lock()
+	defer s.espressoPendingTxnPosMutex.Unlock()
 
 	pendingTxnsPos, err := s.getEspressoPendingTxnsPos()
 	if err != nil {
-		s.espressoPendingTxnPosMutex.Unlock()
 		return err
 	}
-	if len(pendingTxnsPos) > 0 {
-		fetcher := func(pos arbutil.MessageIndex) ([]byte, error) {
-			msg, err := s.GetMessage(pos)
+
+	if len(pendingTxnsPos) <= 0 {
+		return nil
+	}
+	fetcher := func(pos arbutil.MessageIndex) ([]byte, error) {
+		msg, err := s.GetMessage(pos)
+		if err != nil {
+			return nil, err
+		}
+		if pos > 1 {
+			prevMsg, err := s.GetMessage(pos - 1)
 			if err != nil {
 				return nil, err
 			}
-			if pos > 1 {
-				prevMsg, err := s.GetMessage(pos - 1)
-				if err != nil {
-					return nil, err
-				}
-				if prevMsg.DelayedMessagesRead+1 == msg.DelayedMessagesRead {
-					// This message is a delayed message, and it should not be included
-					// in the hotshot payload. The caff node is supposed to fetch the delayed message
-					// from L1.
-					// setting `msg.Message` to `nil` will cause a rlp decode/encode error
-					// so we set `L2msg` to an empty byte slice instead
-					msg.Message.L2msg = []byte{}
-				}
+			if prevMsg.DelayedMessagesRead+1 == msg.DelayedMessagesRead {
+				// This message is a delayed message, and it should not be included
+				// in the hotshot payload. The caff node is supposed to fetch the delayed message
+				// from L1.
+				// setting `msg.Message` to `nil` will cause a rlp decode/encode error
+				// so we set `L2msg` to an empty byte slice instead
+				msg.Message.L2msg = []byte{}
 			}
-			b, err := rlp.EncodeToBytes(msg)
-			if err != nil {
-				return nil, err
-			}
-			return b, nil
 		}
-		payload, msgCnt := arbutil.BuildRawHotShotPayload(pendingTxnsPos, fetcher, s.espressoMaxTransactionSize)
-		batch := s.db.NewBatch()
-		submittedPos := pendingTxnsPos[:msgCnt]
-		pendingTxnsPos = pendingTxnsPos[msgCnt:]
-
-		err = s.setEspressoPendingTxnsPos(batch, pendingTxnsPos)
-
+		b, err := rlp.EncodeToBytes(msg)
 		if err != nil {
-			s.espressoPendingTxnPosMutex.Unlock()
-			return fmt.Errorf("failed to set the pending txn list in the db batch: %w", err)
+			return nil, err
 		}
-		s.espressoPendingTxnPosMutex.Unlock()
-		if msgCnt == 0 {
-			return fmt.Errorf("failed to build the hotshot transaction: a large message has exceeded the size limit or failed to get a message from storage")
-		}
+		return b, nil
+	}
+	payload, msgCnt := arbutil.BuildRawHotShotPayload(pendingTxnsPos, fetcher, s.espressoMaxTransactionSize)
+	batch := s.db.NewBatch()
+	submittedPos := pendingTxnsPos[:msgCnt]
+	pendingTxnsPos = pendingTxnsPos[msgCnt:]
 
-		payload, err = arbutil.SignHotShotPayload(payload, s.EspressoKeyManager.SignHotShotPayload)
-		if err != nil {
-			return fmt.Errorf("failed to sign the hotshot payload %w", err)
-		}
+	err = s.setEspressoPendingTxnsPos(batch, pendingTxnsPos)
 
-		log.Info("submitting transaction to hotshot for finalization")
+	if err != nil {
+		return fmt.Errorf("failed to set the pending txn list in the db batch: %w", err)
+	}
+	if msgCnt == 0 {
+		return fmt.Errorf("failed to build the hotshot transaction: a large message has exceeded the size limit or failed to get a message from storage")
+	}
 
-		submittedAt := time.Now()
-		// Note: same key should not be used for two namespaces for this to work
-		hash, err := s.espressoClient.SubmitTransaction(ctx, espressoTypes.Transaction{
-			Payload:   payload,
-			Namespace: s.chainConfig.ChainID.Uint64(),
-		})
+	payload, err = arbutil.SignHotShotPayload(payload, s.EspressoKeyManager.SignHotShotPayload)
+	if err != nil {
+		return fmt.Errorf("failed to sign the hotshot payload %w", err)
+	}
 
-		if err != nil {
-			return fmt.Errorf("failed to submit transaction to espresso: %w", err)
-		}
+	log.Info("submitting transaction to hotshot for finalization")
 
-		s.espressoSubmittedTxnsMutex.Lock()
-		defer s.espressoSubmittedTxnsMutex.Unlock()
+	submittedAt := time.Now()
+	// Note: same key should not be used for two namespaces for this to work
+	hash, err := s.espressoClient.SubmitTransaction(ctx, espressoTypes.Transaction{
+		Payload:   payload,
+		Namespace: s.chainConfig.ChainID.Uint64(),
+	})
 
-		submittedTxns, err := s.getEspressoSubmittedTxns()
-		if err != nil {
-			return fmt.Errorf("failed to get the submitted txns: %w", err)
-		}
-		tx := arbutil.SubmittedEspressoTx{
-			Hash:        hash.String(),
-			Pos:         submittedPos,
-			Payload:     payload,
-			SubmittedAt: submittedAt,
-		}
-		if submittedTxns == nil {
-			submittedTxns = []arbutil.SubmittedEspressoTx{tx}
-		} else {
-			submittedTxns = append(submittedTxns, tx)
-		}
+	if err != nil {
+		return fmt.Errorf("failed to submit transaction to espresso: %w", err)
+	}
 
-		if err = s.setEspressoSubmittedTxns(batch, submittedTxns); err != nil {
-			return fmt.Errorf("failed to set espresso submitted txns: %w", err)
-		}
+	s.espressoSubmittedTxnsMutex.Lock()
+	defer s.espressoSubmittedTxnsMutex.Unlock()
 
-		err = batch.Write()
-		if err != nil {
-			return fmt.Errorf("failed to write to db: %w", err)
-		}
+	submittedTxns, err := s.getEspressoSubmittedTxns()
+	if err != nil {
+		return fmt.Errorf("failed to get the submitted txns: %w", err)
+	}
+	tx := arbutil.SubmittedEspressoTx{
+		Hash:        hash.String(),
+		Pos:         submittedPos,
+		Payload:     payload,
+		SubmittedAt: submittedAt,
+	}
+	if submittedTxns == nil {
+		submittedTxns = []arbutil.SubmittedEspressoTx{tx}
 	} else {
-		s.espressoPendingTxnPosMutex.Unlock()
+		submittedTxns = append(submittedTxns, tx)
+	}
+
+	if err = s.setEspressoSubmittedTxns(batch, submittedTxns); err != nil {
+		return fmt.Errorf("failed to set espresso submitted txns: %w", err)
+	}
+
+	err = batch.Write()
+	if err != nil {
+		return fmt.Errorf("failed to write to db: %w", err)
 	}
 	return nil
 }
