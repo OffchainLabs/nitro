@@ -5,9 +5,11 @@ import (
 	"fmt"
 
 	espresso_client "github.com/EspressoSystems/espresso-network/sdks/go/client"
+
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/params"
+
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/broadcaster"
 	"github.com/offchainlabs/nitro/execution"

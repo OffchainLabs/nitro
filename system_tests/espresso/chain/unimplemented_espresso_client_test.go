@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	espresso_common "github.com/EspressoSystems/espresso-network/sdks/go/types/common"
+
 	"github.com/offchainlabs/nitro/system_tests/espresso/chain"
 )
 
@@ -45,55 +46,55 @@ func TestUnimplementedExecutionClient(t *testing.T) {
 
 	t.Run("FetchHeaderByHeight", func(t *testing.T) {
 		expectPanicWithErrorEspressoClientUnimplementedMethod(t, func() {
-			client.FetchHeaderByHeight(context.Background(), 0)
+			_, _ = client.FetchHeaderByHeight(context.Background(), 0)
 		}, "FetchHeaderByHeight")
 	})
 
 	t.Run("FetchHeadersByRange", func(t *testing.T) {
 		expectPanicWithErrorEspressoClientUnimplementedMethod(t, func() {
-			client.FetchHeadersByRange(context.Background(), 0, 1)
+			_, _ = client.FetchHeadersByRange(context.Background(), 0, 1)
 		}, "FetchHeadersByRange")
 	})
 
 	t.Run("FetchLatestBlockHeight", func(t *testing.T) {
 		expectPanicWithErrorEspressoClientUnimplementedMethod(t, func() {
-			client.FetchLatestBlockHeight(context.Background())
+			_, _ = client.FetchLatestBlockHeight(context.Background())
 		}, "FetchLatestBlockHeight")
 	})
 
 	t.Run("FetchRawHeaderByHeight", func(t *testing.T) {
 		expectPanicWithErrorEspressoClientUnimplementedMethod(t, func() {
-			client.FetchRawHeaderByHeight(context.Background(), 0)
+			_, _ = client.FetchRawHeaderByHeight(context.Background(), 0)
 		}, "FetchRawHeaderByHeight")
 	})
 
 	t.Run("FetchTransactionByHash", func(t *testing.T) {
 		expectPanicWithErrorEspressoClientUnimplementedMethod(t, func() {
-			client.FetchTransactionByHash(context.Background(), nil)
+			_, _ = client.FetchTransactionByHash(context.Background(), nil)
 		}, "FetchTransactionByHash")
 	})
 
 	t.Run("FetchTransactionsInBlock", func(t *testing.T) {
 		expectPanicWithErrorEspressoClientUnimplementedMethod(t, func() {
-			client.FetchTransactionsInBlock(context.Background(), 0, 0)
+			_, _ = client.FetchTransactionsInBlock(context.Background(), 0, 0)
 		}, "FetchTransactionsInBlock")
 	})
 
 	t.Run("FetchVidCommonByHeight", func(t *testing.T) {
 		expectPanicWithErrorEspressoClientUnimplementedMethod(t, func() {
-			client.FetchVidCommonByHeight(context.Background(), 0)
+			_, _ = client.FetchVidCommonByHeight(context.Background(), 0)
 		}, "FetchVidCommonByHeight")
 	})
 
 	t.Run("SubmitTransaction", func(t *testing.T) {
 		expectPanicWithErrorEspressoClientUnimplementedMethod(t, func() {
-			client.SubmitTransaction(context.Background(), espresso_common.Transaction{})
+			_, _ = client.SubmitTransaction(context.Background(), espresso_common.Transaction{})
 		}, "SubmitTransaction")
 	})
 
 	t.Run("FetchExplorerTransactionByHash", func(t *testing.T) {
 		expectPanicWithErrorEspressoClientUnimplementedMethod(t, func() {
-			client.FetchExplorerTransactionByHash(context.Background(), nil)
+			_, _ = client.FetchExplorerTransactionByHash(context.Background(), nil)
 		}, "FetchExplorerTransactionByHash")
 	})
 }

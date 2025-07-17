@@ -43,25 +43,25 @@ func TestUnimplementedExecutionClient(t *testing.T) {
 
 	t.Run("FetchMerkleRoot", func(t *testing.T) {
 		expectPanicWithErrorLightClientUnimplementedMethod(t, func() {
-			client.FetchMerkleRoot(0, nil)
+			_, _ = client.FetchMerkleRoot(0, nil)
 		}, "FetchMerkleRoot")
 	})
 
 	t.Run("IsHotShotLive", func(t *testing.T) {
 		expectPanicWithErrorLightClientUnimplementedMethod(t, func() {
-			client.IsHotShotLive(0)
+			_, _ = client.IsHotShotLive(0)
 		}, "IsHotShotLive")
 	})
 
 	t.Run("IsHotShotLiveAtHeight", func(t *testing.T) {
 		expectPanicWithErrorLightClientUnimplementedMethod(t, func() {
-			client.IsHotShotLiveAtHeight(0, 0)
+			_, _ = client.IsHotShotLiveAtHeight(0, 0)
 		}, "IsHotShotLiveAtHeight")
 	})
 
 	t.Run("ValidatedHeight", func(t *testing.T) {
 		expectPanicWithErrorLightClientUnimplementedMethod(t, func() {
-			client.ValidatedHeight()
+			_, _, _ = client.ValidatedHeight()
 		}, "ValidatedHeight")
 	})
 }

@@ -5,6 +5,7 @@ import (
 
 	espresso_light_client "github.com/EspressoSystems/espresso-network/sdks/go/light-client"
 	"github.com/EspressoSystems/espresso-network/sdks/go/types/common"
+
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 )
 

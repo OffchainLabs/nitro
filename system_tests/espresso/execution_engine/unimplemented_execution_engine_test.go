@@ -80,19 +80,19 @@ func TestUnimplementedExecutionClient(t *testing.T) {
 
 	t.Run("ResultAtMessageIndex", func(t *testing.T) {
 		expectPanicWithErrorExecutionClientUnimplementedMethod(t, func() {
-			client.ResultAtMessageIndex(0)
+			_ = client.ResultAtMessageIndex(0)
 		}, "ResultAtMessageIndex")
 	})
 
 	t.Run("SetFinalityData", func(t *testing.T) {
 		expectPanicWithErrorExecutionClientUnimplementedMethod(t, func() {
-			client.SetFinalityData(context.Background(), nil, nil, nil)
+			_ = client.SetFinalityData(context.Background(), nil, nil, nil)
 		}, "SetFinalityData")
 	})
 
 	t.Run("Start", func(t *testing.T) {
 		expectPanicWithErrorExecutionClientUnimplementedMethod(t, func() {
-			client.Start(context.Background())
+			_ = client.Start(context.Background())
 		}, "Start")
 	})
 
@@ -104,7 +104,7 @@ func TestUnimplementedExecutionClient(t *testing.T) {
 
 	t.Run("DigestMessage", func(t *testing.T) {
 		expectPanicWithErrorExecutionClientUnimplementedMethod(t, func() {
-			client.DigestMessage(0, nil, nil)
+			_ = client.DigestMessage(0, nil, nil)
 		}, "DigestMessage")
 	})
 }

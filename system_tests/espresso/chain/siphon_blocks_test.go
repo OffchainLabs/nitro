@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"errors"
 	"fmt"
 	"testing"
 
 	espresso_client "github.com/EspressoSystems/espresso-network/sdks/go/client"
 	espresso_common "github.com/EspressoSystems/espresso-network/sdks/go/types/common"
+
 	"github.com/offchainlabs/nitro/system_tests/espresso/chain"
 )
 
@@ -39,20 +41,20 @@ func TestSiphonBlocksWithTransactions(t *testing.T) {
 	tx := generatePayloadOfSize(5_000)
 
 	txnHash, err := mockClient.SubmitTransaction(ctx, generatePayloadOfSize(5_000))
-	if have, want := err, (error)(nil); have != want {
+	if have, want := err, (error)(nil); errors.Is(have, want) {
 		t.Fatalf("expected no error submitting transaction 1:\nhave:\n\t%v\nwant:\n\t%v", have, want)
 	}
 
 	mockClient.Advance()
 
 	transactionDetails, err := siphonClient.FetchTransactionByHash(ctx, txnHash)
-	if have, want := err, (error)(nil); have != want {
+	if have, want := err, (error)(nil); errors.Is(have, want) {
 		t.Fatalf("expected no error fetching transaction by hash:\nhave:\n\t\"%v\"\nwant:\n\t\"%v\"", have, want)
 	}
 
 	// Fetch transactions in block
 	_, err = siphonClient.FetchTransactionsInBlock(ctx, transactionDetails.BlockHeight, tx.Namespace)
-	if have, want := err, (error)(nil); have != want {
+	if have, want := err, (error)(nil); errors.Is(have, want) {
 		t.Fatalf("expected no error fetching transactions in block:\nhave:\n\t%v\nwant:\n\t%v", have, want)
 	}
 

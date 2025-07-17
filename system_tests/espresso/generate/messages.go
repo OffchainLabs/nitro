@@ -4,12 +4,15 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"time"
 
 	espresso_client "github.com/EspressoSystems/espresso-network/sdks/go/client"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/rlp"
+
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -103,7 +106,7 @@ func (g simpleGenerator) GenerateMessage(
 	i arbutil.MessageIndex,
 ) Message {
 	msgData := make([]byte, g.size)
-	rand.Read(msgData) // Fill msgData with random bytes
+	_, _ = rand.Read(msgData) // Fill msgData with random bytes
 	// We write the index to the message data
 	// This can help to identify when debugging issues
 	binary.BigEndian.PutUint64(msgData, uint64(i))
@@ -184,10 +187,10 @@ func GenerateNMessages(
 	ctx context.Context,
 	generator MessageGenerator,
 	ch chan<- Message,
-	n int,
+	n arbutil.MessageIndex,
 ) {
 	defer close(ch)
-	GenerateMessagesFromTo(ctx, generator, ch, 0, arbutil.MessageIndex(n))
+	GenerateMessagesFromTo(ctx, generator, ch, 0, n)
 }
 
 // WriteMessagesToSequencerAtInterval is a function that is meant to be run in
@@ -220,7 +223,7 @@ func WriteMessagesToSequencerAtInterval(
 				msg.msgWithMeta,
 				msg.msgResult,
 				msg.blockMetadata,
-			), error(nil); have != want {
+			), error(nil); !errors.Is(have, want) {
 				panic(fmt.Sprintf(
 					"encountered error while writing message from sequencer:\nhave:\n\t\"%v\"\nwant:\n\t\"%v\"",
 					have, want,
@@ -248,7 +251,7 @@ func ConvertEspressoTransactionsInBlockToMessages(
 
 		for _, message := range messages {
 			var messageWithMetadata arbostypes.MessageWithMetadata
-			if have, want := rlp.DecodeBytes(message, &messageWithMetadata), error(nil); have != want {
+			if have, want := rlp.DecodeBytes(message, &messageWithMetadata), error(nil); !errors.Is(have, want) {
 				return nil, fmt.Errorf("encountered error while decoding message: %w", have)
 			}
 

@@ -99,7 +99,8 @@ func (m *MockEspressoChain) Advance() {
 	m.BlockHeightStore[height] = block
 	m.BlockHashStore[blockTag.String()] = block
 
-	for i, tx := range block.Transactions {
+	for i, l := uint64(0), uint64(len(block.Transactions)); i < l; i++ {
+		tx := block.Transactions[i]
 		txTag, err := TransactionTaggedBase64(tx)
 		if err != nil {
 			panic(fmt.Sprintf("failed to create tagged base64 for transaction: %v", err))

@@ -2,12 +2,15 @@ package espresso_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
 
 	espresso_client "github.com/EspressoSystems/espresso-network/sdks/go/client"
+
 	"github.com/ethereum/go-ethereum/common"
+
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/system_tests/espresso/chain"
@@ -56,7 +59,7 @@ func TestTransactionStreamerEspressoThroughput(t *testing.T) {
 		),
 	)
 
-	if have, want := err, error(nil); have != want {
+	if have, want := err, error(nil); !errors.Is(have, want) {
 		t.Fatalf("encountered error while creating mock transaction streamer environment:\nhave:\n\t\"%v\"\nwant:\n\t\"%v\"", have, want)
 	}
 
@@ -79,7 +82,7 @@ func TestTransactionStreamerEspressoThroughput(t *testing.T) {
 
 	start := time.Now()
 	// Start the TransactionStreamer, so that processing begins
-	if have, want := streamer.Start(runCtx), error(nil); have != want {
+	if have, want := streamer.Start(runCtx), error(nil); !errors.Is(have, want) {
 		t.Fatalf("encountered error while starting TransactionStreamer:\nhave:\n\t\"%v\"\nwant:\n\t\"%v\"", have, want)
 	}
 
@@ -94,7 +97,7 @@ func TestTransactionStreamerEspressoThroughput(t *testing.T) {
 		blockWithTx := <-blocksWithTransactionsCh
 
 		messages, err := generate.ConvertEspressoTransactionsInBlockToMessages(blockWithTx)
-		if have, want := err, error(nil); have != want {
+		if have, want := err, error(nil); !errors.Is(have, want) {
 			t.Fatalf("encountered error while converting transactions in block to messages:\nhave:\n\t\"%v\"\nwant:\n\t\"%v\"", have, want)
 		}
 

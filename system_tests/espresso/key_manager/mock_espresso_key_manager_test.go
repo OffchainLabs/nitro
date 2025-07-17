@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/ethereum/go-ethereum/crypto"
+
 	"github.com/offchainlabs/nitro/system_tests/espresso/key_manager"
 )
 
@@ -20,8 +21,8 @@ type fakeRandReader struct{}
 // only be used for testing purposes.
 func (f *fakeRandReader) Read(p []byte) (n int, err error) {
 	// Fill the byte slice with a simple pattern, for deterministic output.
-	for i := range p {
-		p[i] = uint8(i % 256)
+	for i, l, b := uint64(0), uint64(len(p)), uint8(0); i < l; i, b = i+1, b+1 {
+		p[i] = b
 	}
 
 	return len(p), nil

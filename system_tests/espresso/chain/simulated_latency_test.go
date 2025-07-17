@@ -6,6 +6,7 @@ import (
 	"time"
 
 	espresso_common "github.com/EspressoSystems/espresso-network/sdks/go/types/common"
+
 	"github.com/offchainlabs/nitro/system_tests/espresso/chain"
 )
 
@@ -32,25 +33,25 @@ func TestSimulatedLatency(t *testing.T) {
 
 	t.Run("FetchTransactionsInBlock", func(t *testing.T) {
 		expectDelay(t, delay, func() {
-			latencyClient.FetchTransactionsInBlock(context.Background(), 1, 1)
+			_, _ = latencyClient.FetchTransactionsInBlock(context.Background(), 1, 1)
 		})
 	})
 
 	t.Run("FetchTransactionByHash", func(t *testing.T) {
 		expectDelay(t, delay, func() {
-			latencyClient.FetchTransactionByHash(context.Background(), nil)
+			_, _ = latencyClient.FetchTransactionByHash(context.Background(), nil)
 		})
 	})
 
 	t.Run("SubmitTransaction", func(t *testing.T) {
 		expectDelay(t, delay, func() {
-			latencyClient.SubmitTransaction(context.Background(), espresso_common.Transaction{})
+			_, _ = latencyClient.SubmitTransaction(context.Background(), espresso_common.Transaction{})
 		})
 	})
 
 	t.Run("FetchExplorerTransactionByHash", func(t *testing.T) {
 		expectDelay(t, delay, func() {
-			latencyClient.FetchExplorerTransactionByHash(context.Background(), nil)
+			_, _ = latencyClient.FetchExplorerTransactionByHash(context.Background(), nil)
 		})
 	})
 }

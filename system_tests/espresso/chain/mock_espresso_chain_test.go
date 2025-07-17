@@ -8,6 +8,7 @@ import (
 
 	tagged_base64 "github.com/EspressoSystems/espresso-network/sdks/go/tagged-base64"
 	espresso_common "github.com/EspressoSystems/espresso-network/sdks/go/types/common"
+
 	"github.com/offchainlabs/nitro/system_tests/espresso/chain"
 )
 

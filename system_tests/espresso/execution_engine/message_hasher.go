@@ -5,6 +5,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	geth_crypo "github.com/ethereum/go-ethereum/crypto"
+
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 )
 
@@ -54,10 +55,10 @@ var _ MessageHasher = KeccakHasher{}
 // HashMessageWithMetadata implements MessageHasher
 func (h KeccakHasher) HashMessageWithMetadata(msg *arbostypes.MessageWithMetadata) common.Hash {
 	keccak := geth_crypo.NewKeccakState()
-	keccak.Write([]byte{msg.Message.Header.Kind})
-	keccak.Write(msg.Message.L2msg)
+	_, _ = keccak.Write([]byte{msg.Message.Header.Kind})
+	_, _ = keccak.Write(msg.Message.L2msg)
 	var hash common.Hash
-	keccak.Read(hash[:])
+	_, _ = keccak.Read(hash[:])
 	return hash
 }
 
