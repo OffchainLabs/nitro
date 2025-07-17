@@ -66,7 +66,7 @@ type InputJSON struct {
 	UserWasms               map[rawdb.WasmTarget]map[common.Hash]string
 	DebugChain              bool
 	MaxUserWasmSize         uint64      `json:"max-user-wasmSize,omitempty"`
-	EndParentChainBlockHash common.Hash `json:"omitempty"`
+	EndParentChainBlockHash common.Hash `json:"EndParentChainBlockHash,omitempty"`
 }
 
 // Marshal returns the JSON encoding of the InputJSON.
