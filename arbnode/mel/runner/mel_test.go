@@ -11,6 +11,7 @@ import (
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 
 	"github.com/offchainlabs/nitro/arbnode/mel"
@@ -20,7 +21,6 @@ import (
 )
 
 var _ ParentChainReader = (*mockParentChainReader)(nil)
-var _ mel.StateDatabase = (*mockMELDB)(nil)
 
 func TestMessageExtractor(t *testing.T) {
 	t.Skip("Skipping as requires more MEL items merged in before it fully works")
@@ -34,12 +34,14 @@ func TestMessageExtractor(t *testing.T) {
 			{}: {},
 		},
 	}
-	initialStateFetcher := &mockInitialStateFetcher{}
+	arbDb := rawdb.NewMemoryDatabase()
+	melDb := NewDatabase(arbDb)
+	messageConsumer := &mockMessageConsumer{}
 	extractor, err := NewMessageExtractor(
 		parentChainReader,
 		&chaininfo.RollupAddresses{},
-		initialStateFetcher,
-		&mockMELDB{},
+		melDb,
+		messageConsumer,
 		[]daprovider.Reader{},
 		common.Hash{},
 		0,
@@ -57,9 +59,8 @@ func TestMessageExtractor(t *testing.T) {
 		require.True(t, extractor.CurrentFSMState() == Start)
 		parentChainReader.returnErr = nil
 
-		initialStateFetcher.returnErr = errors.New("failed to get state")
 		_, err = extractor.Act(ctx)
-		require.ErrorContains(t, err, "failed to get state")
+		require.ErrorContains(t, err, "error getting HeadMelStateBlockNum from database: not found")
 
 		// Expect that we can now transition to the process
 		// next block state.
@@ -67,8 +68,7 @@ func TestMessageExtractor(t *testing.T) {
 			Version:                42,
 			ParentChainBlockNumber: 0,
 		}
-		initialStateFetcher.returnErr = nil
-		initialStateFetcher.state = melState
+		require.NoError(t, melDb.SaveState(ctx, melState))
 		_, err = extractor.Act(ctx)
 		require.NoError(t, err)
 
@@ -105,18 +105,10 @@ func TestMessageExtractor(t *testing.T) {
 	})
 }
 
-type mockInitialStateFetcher struct {
-	state     *mel.State
-	returnErr error
-}
+type mockMessageConsumer struct{ returnErr error }
 
-func (m *mockInitialStateFetcher) GetState(
-	_ context.Context, _ common.Hash,
-) (*mel.State, error) {
-	if m.returnErr != nil {
-		return nil, m.returnErr
-	}
-	return m.state, nil
+func (m *mockMessageConsumer) PushMessages(ctx context.Context, firstMsgIdx uint64, messages []*arbostypes.MessageWithMetadata) error {
+	return m.returnErr
 }
 
 type mockParentChainReader struct {
@@ -179,37 +171,4 @@ func (m *mockParentChainReader) TransactionReceipt(ctx context.Context, txHash c
 	}
 	// Mock implementation, return a dummy receipt
 	return &types.Receipt{}, nil
-}
-
-type mockMELDB struct {
-}
-
-func (m *mockMELDB) State(
-	_ context.Context,
-	_ common.Hash,
-) (*mel.State, error) {
-	return nil, errors.New("unimplemented")
-}
-
-func (m *mockMELDB) SaveState(
-	_ context.Context,
-	_ *mel.State,
-	_ []*arbostypes.MessageWithMetadata,
-) error {
-	return nil
-}
-
-func (m *mockMELDB) SaveDelayedMessages(
-	_ context.Context,
-	_ *mel.State,
-	_ []*mel.DelayedInboxMessage,
-) error {
-	return nil
-}
-func (m *mockMELDB) ReadDelayedMessage(
-	_ context.Context,
-	_ *mel.State,
-	_ uint64,
-) (*mel.DelayedInboxMessage, error) {
-	return nil, errors.New("unimplemented")
 }

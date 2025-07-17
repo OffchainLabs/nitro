@@ -43,12 +43,11 @@ type StateDatabase interface {
 	DelayedMessageDatabase
 	State(
 		ctx context.Context,
-		parentChainBlockHash common.Hash,
+		parentChainBlockNumber uint64,
 	) (*State, error)
 	SaveState(
 		ctx context.Context,
 		state *State,
-		messages []*arbostypes.MessageWithMetadata,
 	) error
 	SaveDelayedMessages(
 		ctx context.Context,
@@ -57,11 +56,13 @@ type StateDatabase interface {
 	) error
 }
 
-// Defines an interface for fetching a MEL state by parent chain block hash.
-type StateFetcher interface {
-	GetState(
-		ctx context.Context, parentChainBlockHash common.Hash,
-	) (*State, error)
+// MessageConsumer is an interface to be implemented by readers of MEL such as transaction streamer of the nitro node
+type MessageConsumer interface {
+	PushMessages(
+		ctx context.Context,
+		firstMsgIdx uint64,
+		messages []*arbostypes.MessageWithMetadata,
+	) error
 }
 
 // Performs a deep clone of the state struct to prevent any unintended

@@ -128,7 +128,7 @@ func NewTransactionStreamerForTest(t *testing.T, ctx context.Context, ownerAddre
 	initReader := statetransfer.NewMemoryInitDataReader(&initData)
 
 	cacheConfig := core.DefaultCacheConfigWithScheme(env.GetTestStateScheme())
-	bc, err := gethexec.WriteOrTestBlockChain(chainDb, cacheConfig, initReader, chainConfig, nil, nil, arbostypes.TestInitMessage, gethexec.ConfigDefault.TxLookupLimit, 0)
+	bc, err := gethexec.WriteOrTestBlockChain(chainDb, cacheConfig, initReader, chainConfig, nil, nil, arbostypes.TestInitMessage, &gethexec.ConfigDefault.TxIndexer, 0)
 
 	if err != nil {
 		Fail(t, err)
