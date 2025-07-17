@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"time"
 
+	espresso_client "github.com/EspressoSystems/espresso-network/sdks/go/client"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -226,4 +228,33 @@ func WriteMessagesToSequencerAtInterval(
 			}
 		}
 	}
+}
+
+// ConvertEspressoTransactionsInBlockToMessages is a helper function that converts
+// Espresso transactions in a block to messages with metadata.
+func ConvertEspressoTransactionsInBlockToMessages(
+	blockWithTx espresso_client.TransactionsInBlock,
+) ([]arbostypes.MessageWithMetadata, error) {
+	messagesWithMetadata := make([]arbostypes.MessageWithMetadata, 0, len(blockWithTx.Transactions))
+
+	for _, tx := range blockWithTx.Transactions {
+		// We can parse the transactions to get the messages
+		// This is a mock function that simulates the parsing of the transaction
+		// In a real scenario, this would be replaced with the actual parsing logic
+		_, _, _, messages, err := arbutil.ParseHotShotPayload(tx)
+		if err != nil {
+			return nil, fmt.Errorf("encountered error while parsing transaction: %w", err)
+		}
+
+		for _, message := range messages {
+			var messageWithMetadata arbostypes.MessageWithMetadata
+			if have, want := rlp.DecodeBytes(message, &messageWithMetadata), error(nil); have != want {
+				return nil, fmt.Errorf("encountered error while decoding message: %w", have)
+			}
+
+			messagesWithMetadata = append(messagesWithMetadata, messageWithMetadata)
+		}
+	}
+
+	return messagesWithMetadata, nil
 }
