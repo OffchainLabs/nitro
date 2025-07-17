@@ -58,8 +58,8 @@ var (
 	txCountHistogram           = metrics.NewRegisteredHistogram("arb/block/transactions/count", nil, metrics.NewBoundedHistogramSample())
 	txGasUsedHistogram         = metrics.NewRegisteredHistogram("arb/block/transactions/gasused", nil, metrics.NewBoundedHistogramSample())
 	gasUsedSinceStartupCounter = metrics.NewRegisteredCounter("arb/gas_used", nil)
-	blockExecutionTimer        = metrics.NewRegisteredTimer("arb/block/execution", nil)
-	blockWriteToDbTimer        = metrics.NewRegisteredTimer("arb/block/writetodb", nil)
+	blockExecutionTimer        = metrics.NewRegisteredHistogram("arb/block/execution", nil, metrics.NewBoundedHistogramSample())
+	blockWriteToDbTimer        = metrics.NewRegisteredHistogram("arb/block/writetodb", nil, metrics.NewBoundedHistogramSample())
 )
 
 var ExecutionEngineBlockCreationStopped = errors.New("block creation stopped in execution engine")
@@ -573,7 +573,7 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 		return nil, err
 	}
 	blockCalcTime := time.Since(startTime)
-	blockExecutionTimer.Update(blockCalcTime)
+	blockExecutionTimer.Update(blockCalcTime.Nanoseconds())
 	if len(hooks.TxErrors) != len(txes) {
 		return nil, fmt.Errorf("unexpected number of error results: %v vs number of txes %v", len(hooks.TxErrors), len(txes))
 	}
@@ -685,7 +685,7 @@ func (s *ExecutionEngine) sequenceDelayedMessageWithBlockMutex(message *arbostyp
 		return nil, err
 	}
 	blockCalcTime := time.Since(startTime)
-	blockExecutionTimer.Update(blockCalcTime)
+	blockExecutionTimer.Update(blockCalcTime.Nanoseconds())
 
 	msgResult, err := s.resultFromHeader(block.Header())
 	if err != nil {
@@ -796,7 +796,7 @@ func (s *ExecutionEngine) appendBlock(block *types.Block, statedb *state.StateDB
 			return errors.New("geth rejected block as non-canonical")
 		}
 	}
-	blockWriteToDbTimer.Update(time.Since(startTime))
+	blockWriteToDbTimer.Update(time.Since(startTime).Nanoseconds())
 	baseFeeGauge.Update(block.BaseFee().Int64())
 	txCountHistogram.Update(int64(len(block.Transactions()) - 1))
 	var blockGasused uint64
@@ -956,7 +956,7 @@ func (s *ExecutionEngine) digestMessageWithBlockMutex(msgIdxToDigest arbutil.Mes
 		return nil, err
 	}
 	blockCalcTime := time.Since(startTime)
-	blockExecutionTimer.Update(blockCalcTime)
+	blockExecutionTimer.Update(blockCalcTime.Nanoseconds())
 
 	err = s.appendBlock(block, statedb, receipts, blockCalcTime)
 	if err != nil {

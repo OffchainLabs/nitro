@@ -36,8 +36,8 @@ var (
 	HTTPHeaderFeedClientVersion       = textproto.CanonicalMIMEHeaderKey("Arbitrum-Feed-Client-Version")
 	HTTPHeaderRequestedSequenceNumber = textproto.CanonicalMIMEHeaderKey("Arbitrum-Requested-Sequence-Number")
 	HTTPHeaderChainId                 = textproto.CanonicalMIMEHeaderKey("Arbitrum-Chain-Id")
-	upgradeToWSTimer                  = metrics.NewRegisteredTimer("arb/feed/clients/upgrade/duration", nil)
-	startWithHeaderTimer              = metrics.NewRegisteredTimer("arb/feed/clients/start/duration", nil)
+	upgradeToWSTimer                  = metrics.NewRegisteredHistogram("arb/feed/clients/upgrade/duration", nil, metrics.NewBoundedHistogramSample())
+	startWithHeaderTimer              = metrics.NewRegisteredHistogram("arb/feed/clients/start/duration", nil, metrics.NewBoundedHistogramSample())
 )
 
 const (
@@ -210,7 +210,7 @@ func (s *WSBroadcastServer) Start(ctx context.Context) error {
 	startTime := time.Now()
 	err := s.StartWithHeader(ctx, header)
 	elapsed := time.Since(startTime)
-	startWithHeaderTimer.Update(elapsed)
+	startWithHeaderTimer.Update(elapsed.Nanoseconds())
 	return err
 }
 
@@ -329,7 +329,7 @@ func (s *WSBroadcastServer) StartWithHeader(ctx context.Context, header ws.Hands
 		startTime := time.Now()
 		_, err = upgrader.Upgrade(conn)
 		elapsed := time.Since(startTime)
-		upgradeToWSTimer.Update(elapsed)
+		upgradeToWSTimer.Update(elapsed.Nanoseconds())
 
 		if err != nil {
 			if err.Error() != "" {
