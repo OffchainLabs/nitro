@@ -1,0 +1,149 @@
+package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+
+	flag "github.com/spf13/pflag"
+
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/core/rawdb"
+	"github.com/ethereum/go-ethereum/ethdb"
+	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/params"
+
+	"github.com/offchainlabs/nitro/arbos/arbosState"
+	"github.com/offchainlabs/nitro/arbos/arbostypes"
+	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
+	"github.com/offchainlabs/nitro/execution/gethexec"
+	"github.com/offchainlabs/nitro/statetransfer"
+)
+
+func main() {
+	if err := mainImpl(); err != nil {
+		log.Error("Error running genesis generator", "error", err)
+		os.Exit(1)
+	}
+}
+
+func mainImpl() error {
+	args := os.Args[1:]
+	f := flag.NewFlagSet("", flag.ContinueOnError)
+
+	ConfigAddOptions(f)
+
+	k, err := confighelpers.BeginCommonParse(f, args)
+	if err != nil {
+		return fmt.Errorf("failed to parse flags: %w", err)
+	}
+
+	err = confighelpers.ApplyOverrides(f, k)
+	if err != nil {
+		return fmt.Errorf("failed to apply overrides: %w", err)
+	}
+
+	var config Config
+	if err := confighelpers.EndCommonParse(k, &config); err != nil {
+		return fmt.Errorf("failed to parse config: %w", err)
+	}
+
+	if config.GenesisJsonFile == "" {
+		return fmt.Errorf("genesis JSON file must be specified")
+	}
+	genesisJson, err := os.ReadFile(config.GenesisJsonFile)
+	if err != nil {
+		return fmt.Errorf("failed to read genesis JSON file %s: %w", config.GenesisJsonFile, err)
+	}
+	var gen core.Genesis
+	if err := json.Unmarshal(genesisJson, &gen); err != nil {
+		return fmt.Errorf("failed to unmarshal genesis JSON: %w", err)
+	}
+	var accounts []statetransfer.AccountInitializationInfo
+	for address, account := range gen.Alloc {
+		accounts = append(accounts, statetransfer.AccountInitializationInfo{
+			Addr:       address,
+			EthBalance: account.Balance,
+			Nonce:      account.Nonce,
+			ContractInfo: &statetransfer.AccountInitContractInfo{
+				Code:            account.Code,
+				ContractStorage: account.Storage,
+			},
+		})
+	}
+	initDataReader := statetransfer.NewMemoryInitDataReader(&statetransfer.ArbosInitializationInfo{
+		Accounts: accounts,
+	})
+	chainConfig := gen.Config
+	genesisArbOSInit := gen.ArbOSInit
+	serializedChainConfig, err := json.Marshal(chainConfig)
+	if err != nil {
+		return fmt.Errorf("failed to serialize chain config: %w", err)
+	}
+	parsedInitMessage := &arbostypes.ParsedInitMessage{
+		ChainId:               chainConfig.ChainID,
+		InitialL1BaseFee:      arbostypes.DefaultInitialL1BaseFee,
+		ChainConfig:           chainConfig,
+		SerializedChainConfig: serializedChainConfig,
+	}
+	genesisHash, err := generateGenesisHash(rawdb.NewMemoryDatabase(),
+		gethexec.DefaultCacheConfigFor(&config.Caching),
+		initDataReader,
+		chainConfig,
+		genesisArbOSInit,
+		parsedInitMessage,
+		config.AccountsPerSync,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to generate genesis hash: %w", err)
+	}
+	fmt.Printf("Genesis block hash: %s\n", genesisHash.Hex())
+	return nil
+}
+
+func generateGenesisHash(chainDb ethdb.Database, cacheConfig *core.CacheConfig, initData statetransfer.InitDataReader, chainConfig *params.ChainConfig, genesisArbOSInit *params.ArbOSInit, initMessage *arbostypes.ParsedInitMessage, accountsPerSync uint) (common.Hash, error) {
+	EmptyHash := common.Hash{}
+	prevHash := EmptyHash
+	blockNumber, err := initData.GetNextBlockNumber()
+	if err != nil {
+		return common.Hash{}, err
+	}
+	timestamp := uint64(0)
+	if blockNumber > 0 {
+		prevHash = rawdb.ReadCanonicalHash(chainDb, blockNumber-1)
+		if prevHash == EmptyHash {
+			return common.Hash{}, fmt.Errorf("block number %d not found in database", chainDb)
+		}
+		prevHeader := rawdb.ReadHeader(chainDb, prevHash, blockNumber-1)
+		if prevHeader == nil {
+			return common.Hash{}, fmt.Errorf("block header for block %d not found in database", chainDb)
+		}
+		timestamp = prevHeader.Time
+	}
+	stateRoot, err := arbosState.InitializeArbosInDatabase(chainDb, cacheConfig, initData, chainConfig, genesisArbOSInit, initMessage, timestamp, accountsPerSync)
+	if err != nil {
+		return common.Hash{}, err
+	}
+
+	return arbosState.MakeGenesisBlock(prevHash, blockNumber, timestamp, stateRoot, chainConfig).Hash(), nil
+}
+
+type Config struct {
+	Caching         gethexec.CachingConfig `koanf:"caching"`
+	GenesisJsonFile string                 `koanf:"genesis-json-file"`
+	AccountsPerSync uint                   `koanf:"accounts-per-sync"`
+}
+
+var ConfigDefault = Config{
+	Caching:         gethexec.DefaultCachingConfig,
+	GenesisJsonFile: "",
+	AccountsPerSync: 100000,
+}
+
+func ConfigAddOptions(f *flag.FlagSet) {
+	gethexec.CachingConfigAddOptions("caching", f)
+	f.String("genesis-json-file", ConfigDefault.GenesisJsonFile, "path for genesis json file")
+	f.Uint("accounts-per-sync", ConfigDefault.AccountsPerSync, "during init - sync database every X accounts. Lower value for low-memory systems. 0 disables.")
+
+}
