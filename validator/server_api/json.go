@@ -56,16 +56,17 @@ type Request struct {
 }
 
 type InputJSON struct {
-	Id              uint64
-	HasDelayedMsg   bool
-	DelayedMsgNr    uint64
-	PreimagesB64    map[arbutil.PreimageType]*jsonapi.PreimagesMapJson
-	BatchInfo       []BatchInfoJson
-	DelayedMsgB64   string
-	StartState      validator.GoGlobalState
-	UserWasms       map[rawdb.WasmTarget]map[common.Hash]string
-	DebugChain      bool
-	MaxUserWasmSize uint64 `json:"max-user-wasmSize,omitempty"`
+	Id                      uint64
+	HasDelayedMsg           bool
+	DelayedMsgNr            uint64
+	PreimagesB64            map[arbutil.PreimageType]*jsonapi.PreimagesMapJson
+	BatchInfo               []BatchInfoJson
+	DelayedMsgB64           string
+	StartState              validator.GoGlobalState
+	UserWasms               map[rawdb.WasmTarget]map[common.Hash]string
+	DebugChain              bool
+	MaxUserWasmSize         uint64      `json:"max-user-wasmSize,omitempty"`
+	EndParentChainBlockHash common.Hash `json:"EndParentChainBlockHash,omitempty"`
 }
 
 // Marshal returns the JSON encoding of the InputJSON.
@@ -84,14 +85,15 @@ func ValidationInputToJson(entry *validator.ValidationInput) *InputJSON {
 		jsonPreimagesMap[ty] = jsonapi.NewPreimagesMapJson(preimages)
 	}
 	res := &InputJSON{
-		Id:            entry.Id,
-		HasDelayedMsg: entry.HasDelayedMsg,
-		DelayedMsgNr:  entry.DelayedMsgNr,
-		DelayedMsgB64: base64.StdEncoding.EncodeToString(entry.DelayedMsg),
-		StartState:    entry.StartState,
-		PreimagesB64:  jsonPreimagesMap,
-		UserWasms:     make(map[rawdb.WasmTarget]map[common.Hash]string),
-		DebugChain:    entry.DebugChain,
+		Id:                      entry.Id,
+		HasDelayedMsg:           entry.HasDelayedMsg,
+		DelayedMsgNr:            entry.DelayedMsgNr,
+		DelayedMsgB64:           base64.StdEncoding.EncodeToString(entry.DelayedMsg),
+		StartState:              entry.StartState,
+		PreimagesB64:            jsonPreimagesMap,
+		UserWasms:               make(map[rawdb.WasmTarget]map[common.Hash]string),
+		DebugChain:              entry.DebugChain,
+		EndParentChainBlockHash: common.Hash{},
 	}
 	for _, binfo := range entry.BatchInfo {
 		encData := base64.StdEncoding.EncodeToString(binfo.Data)
