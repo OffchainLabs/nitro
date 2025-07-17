@@ -29,16 +29,19 @@ type MaintenanceRunner struct {
 }
 
 type MaintenanceConfig struct {
+	Enable      bool                `koanf:"enable" reload:"hot"`
 	RunInterval time.Duration       `koanf:"run-interval" reload:"hot"`
 	Lock        redislock.SimpleCfg `koanf:"lock" reload:"hot"`
 }
 
 func MaintenanceConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.Bool(prefix+".enable", DefaultMaintenanceConfig.Enable, "enable maintenance runner")
 	f.Duration(prefix+".run-interval", DefaultMaintenanceConfig.RunInterval, "how often to run maintenance")
 	redislock.AddConfigOptions(prefix+".lock", f)
 }
 
 var DefaultMaintenanceConfig = MaintenanceConfig{
+	Enable:      false,
 	RunInterval: time.Minute,
 	Lock:        redislock.DefaultCfg,
 }
@@ -60,6 +63,10 @@ func (mr *MaintenanceRunner) Start(ctxIn context.Context) {
 
 func (mr *MaintenanceRunner) maybeRunMaintenance(ctx context.Context) time.Duration {
 	config := mr.config()
+	if !config.Enable {
+		log.Debug("maintenance is disabled, skipping")
+		return config.RunInterval
+	}
 
 	shouldTriggerMaintenance, err := mr.exec.ShouldTriggerMaintenance().Await(mr.GetContext())
 	if err != nil {
