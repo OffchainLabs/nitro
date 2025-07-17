@@ -10,7 +10,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/log"
 
-	mel "github.com/offchainlabs/nitro/arbnode/message-extraction"
+	melrunner "github.com/offchainlabs/nitro/arbnode/mel/runner"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
@@ -24,7 +24,7 @@ type SyncMonitor struct {
 	coordinator *SeqCoordinator
 	initialized bool
 
-	msgExtractor   *mel.MessageExtractor
+	msgExtractor   *melrunner.MessageExtractor
 	l1Reader       *headerreader.HeaderReader
 	sequencerInbox *SequencerInbox
 
@@ -55,7 +55,7 @@ func SyncMonitorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Duration(prefix+".msg-lag", DefaultSyncMonitorConfig.MsgLag, "allowed msg lag while still considered in sync")
 }
 
-func (s *SyncMonitor) Initialize(msgExtractor *mel.MessageExtractor, inboxReader *InboxReader, txStreamer *TransactionStreamer, coordinator *SeqCoordinator, l1Reader *headerreader.HeaderReader, sequencerInbox *SequencerInbox) {
+func (s *SyncMonitor) Initialize(msgExtractor *melrunner.MessageExtractor, inboxReader *InboxReader, txStreamer *TransactionStreamer, coordinator *SeqCoordinator, l1Reader *headerreader.HeaderReader, sequencerInbox *SequencerInbox) {
 	s.msgExtractor = msgExtractor
 	s.l1Reader = l1Reader
 	s.sequencerInbox = sequencerInbox

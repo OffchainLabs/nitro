@@ -1,4 +1,4 @@
-package extractionfunction
+package melextraction
 
 import (
 	"context"
@@ -8,7 +8,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/core/types"
 
-	meltypes "github.com/offchainlabs/nitro/arbnode/message-extraction/types"
+	"github.com/offchainlabs/nitro/arbnode/mel"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 )
 
@@ -18,13 +18,13 @@ type eventUnpacker interface {
 
 func parseBatchesFromBlock(
 	ctx context.Context,
-	melState *meltypes.State,
+	melState *mel.State,
 	parentChainHeader *types.Header,
 	txsFetcher TransactionsFetcher,
 	receiptFetcher ReceiptFetcher,
 	eventUnpacker eventUnpacker,
-) ([]*meltypes.SequencerInboxBatch, []*types.Transaction, []uint, error) {
-	allBatches := make([]*meltypes.SequencerInboxBatch, 0)
+) ([]*mel.SequencerInboxBatch, []*types.Transaction, []uint, error) {
+	allBatches := make([]*mel.SequencerInboxBatch, 0)
 	allBatchTxs := make([]*types.Transaction, 0)
 	allBatchTxIndices := make([]uint, 0)
 	parentChainBlockTxs, err := txsFetcher.TransactionsByHeader(ctx, parentChainHeader.Hash())
@@ -50,7 +50,7 @@ func parseBatchesFromBlock(
 		if len(receipt.Logs) == 0 {
 			continue
 		}
-		batches := make([]*meltypes.SequencerInboxBatch, 0, len(receipt.Logs))
+		batches := make([]*mel.SequencerInboxBatch, 0, len(receipt.Logs))
 		txs := make([]*types.Transaction, 0, len(receipt.Logs))
 		txIndices := make([]uint, 0, len(receipt.Logs))
 		var lastSeqNum *uint64
@@ -76,7 +76,7 @@ func parseBatchesFromBlock(
 				}
 			}
 			lastSeqNum = &seqNum
-			batch := &meltypes.SequencerInboxBatch{
+			batch := &mel.SequencerInboxBatch{
 				BlockHash:              log.BlockHash,
 				ParentChainBlockNumber: log.BlockNumber,
 				SequenceNumber:         seqNum,
@@ -86,7 +86,7 @@ func parseBatchesFromBlock(
 				AfterDelayedCount:      event.AfterDelayedMessagesRead.Uint64(),
 				RawLog:                 *log,
 				TimeBounds:             event.TimeBounds,
-				DataLocation:           meltypes.BatchDataLocation(event.DataLocation),
+				DataLocation:           mel.BatchDataLocation(event.DataLocation),
 				BridgeAddress:          log.Address,
 			}
 			batches = append(batches, batch)

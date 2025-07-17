@@ -1,4 +1,4 @@
-package meltypes
+package mel
 
 import (
 	"context"
@@ -22,27 +22,36 @@ type State struct {
 	DelayedMessagePostingTargetAddress common.Address
 	ParentChainBlockHash               common.Hash
 	ParentChainPreviousBlockHash       common.Hash
-	DelayedMessagesSeenRoot            common.Hash
 	MessageAccumulator                 common.Hash
+	DelayedMessagesSeenRoot            common.Hash
 	MsgCount                           uint64
 	BatchCount                         uint64
 	DelayedMessagesRead                uint64
 	DelayedMessagedSeen                uint64
 	DelayedMessageMerklePartials       []common.Hash `rlp:"optional"`
 
-	// seenUnreadDelayedMetaDeque represents the deque containing DelayedMeta that hold metadata relating to delayed messages that have been seen but not yet read
-	// queue is trimmed from left by pruner function defined on the state, after corresponding delayed message is read and its melStateParentChainBlockNum is finalized
-	// trimmed from right in case of a reorg by the Reorging fsm step one melstate at a time
-	seenUnreadDelayedMetaDeque *DelayedMetaDeque // this is initialized in FetchInitialState and is never `nil` from then onwards
+	delayedMessageBacklog *DelayedMessageBacklog // delayedMessageBacklog is initialized once in the Start fsm step of mel runner and is persisted across all future states
+	readCountFromBacklog  uint64                 // delayed messages with index lower than this count have been pre-read and we have hashes for them in-memory for verification
 
-	// seen and read DelayedMsgsAcc are MerkleAccumulators that reset after the current melstate is finished generating, to prevent stale validations
+	// seenDelayedMsgsAcc is MerkleAccumulator that accumulates delayed messages seen
+	// from parent chain. It resets after the current melstate is finished generating
+	// and is reinitialized using appropriate DelayedMessageMerklePartials of the state
 	seenDelayedMsgsAcc *merkleAccumulator.MerkleAccumulator
-	readDelayedMsgsAcc *merkleAccumulator.MerkleAccumulator
+}
+
+// DelayedMessageDatabase can read delayed messages by their global index.
+type DelayedMessageDatabase interface {
+	ReadDelayedMessage(
+		ctx context.Context,
+		state *State,
+		index uint64,
+	) (*DelayedInboxMessage, error)
 }
 
 // Defines a basic interface for MEL, including saving states, messages,
 // and delayed messages to a database.
 type StateDatabase interface {
+	DelayedMessageDatabase
 	State(
 		ctx context.Context,
 		parentChainBlockNumber uint64,
@@ -56,15 +65,6 @@ type StateDatabase interface {
 		state *State,
 		delayedMessages []*DelayedInboxMessage,
 	) error
-	DelayedMessageDatabase
-}
-
-type DelayedMessageDatabase interface {
-	ReadDelayedMessage(
-		ctx context.Context,
-		state *State,
-		index uint64,
-	) (*DelayedInboxMessage, error)
 }
 
 // MessageConsumer is an interface to be implemented by readers of MEL such as transaction streamer of the nitro node
@@ -74,20 +74,6 @@ type MessageConsumer interface {
 		firstMsgIdx uint64,
 		messages []*arbostypes.MessageWithMetadata,
 	) error
-}
-
-// Defines an interface for fetching a MEL state by parent chain block hash.
-//
-// If the initial implementation is melDB then the melState's seenUnreadDelayedMetaDeque will be
-// initialized automatically but for non-melDB implementations:
-//   - either DelayedMessagesSeen must equal DelayedMessagesRead
-//     (OR)
-//   - seenUnreadDelayedMetaDeque must be manually initialized using SetSeenUnreadDelayedMetaDeque
-type InitialStateFetcher interface {
-	// FetchInitialState should initialize seenUnreadDelayedMetaDeque in case the initial state's DelayedMessagedSeen is ahead of DelayedMessagedRead
-	FetchInitialState(
-		ctx context.Context, parentChainBlockHash common.Hash, finalizedBlock uint64,
-	) (*State, error)
 }
 
 func (s *State) Hash() common.Hash {
@@ -102,22 +88,22 @@ func (s *State) Clone() *State {
 	parentChainHash := common.Hash{}
 	parentChainPrevHash := common.Hash{}
 	msgAcc := common.Hash{}
-	delayedMsgAcc := common.Hash{}
+	delayedMsgSeenRoot := common.Hash{}
 	copy(batchPostingTarget[:], s.BatchPostingTargetAddress[:])
 	copy(delayedMessageTarget[:], s.DelayedMessagePostingTargetAddress[:])
 	copy(parentChainHash[:], s.ParentChainBlockHash[:])
 	copy(parentChainPrevHash[:], s.ParentChainPreviousBlockHash[:])
-	copy(delayedMsgAcc[:], s.DelayedMessagesSeenRoot[:])
 	copy(msgAcc[:], s.MessageAccumulator[:])
+	copy(delayedMsgSeenRoot[:], s.DelayedMessagesSeenRoot[:])
 	var delayedMessageMerklePartials []common.Hash
 	for _, partial := range s.DelayedMessageMerklePartials {
 		clone := common.Hash{}
 		copy(clone[:], partial[:])
 		delayedMessageMerklePartials = append(delayedMessageMerklePartials, clone)
 	}
-	var seenUnreadDelayedMetaDeque *DelayedMetaDeque
-	if s.seenUnreadDelayedMetaDeque != nil {
-		seenUnreadDelayedMetaDeque = s.seenUnreadDelayedMetaDeque.Clone()
+	var delayedMessageBacklog *DelayedMessageBacklog
+	if s.delayedMessageBacklog != nil {
+		delayedMessageBacklog = s.delayedMessageBacklog.clone()
 	}
 	return &State{
 		Version:                            s.Version,
@@ -127,20 +113,21 @@ func (s *State) Clone() *State {
 		DelayedMessagePostingTargetAddress: delayedMessageTarget,
 		ParentChainBlockHash:               parentChainHash,
 		ParentChainPreviousBlockHash:       parentChainPrevHash,
-		DelayedMessagesSeenRoot:            delayedMsgAcc,
 		MessageAccumulator:                 msgAcc,
+		DelayedMessagesSeenRoot:            delayedMsgSeenRoot,
 		MsgCount:                           s.MsgCount,
 		BatchCount:                         s.BatchCount,
 		DelayedMessagesRead:                s.DelayedMessagesRead,
 		DelayedMessagedSeen:                s.DelayedMessagedSeen,
 		DelayedMessageMerklePartials:       delayedMessageMerklePartials,
-		seenUnreadDelayedMetaDeque:         seenUnreadDelayedMetaDeque,
+		delayedMessageBacklog:              delayedMessageBacklog,
+		readCountFromBacklog:               s.readCountFromBacklog,
 	}
 }
 
-func (s *State) AccumulateMessage(msg *arbostypes.MessageWithMetadata) *State {
+func (s *State) AccumulateMessage(msg *arbostypes.MessageWithMetadata) error {
 	// TODO: Unimplemented.
-	return s
+	return nil
 }
 
 func (s *State) AccumulateDelayedMessage(msg *DelayedInboxMessage) error {
@@ -153,21 +140,23 @@ func (s *State) AccumulateDelayedMessage(msg *DelayedInboxMessage) error {
 		}
 		s.seenDelayedMsgsAcc = acc
 	}
-	if _, err := s.seenDelayedMsgsAcc.Append(msg.Hash()); err != nil {
+	msgHash := msg.Hash()
+	if _, err := s.seenDelayedMsgsAcc.Append(msgHash); err != nil {
 		return err
 	}
-	merkleRoot, err := s.seenDelayedMsgsAcc.Root()
-	if err != nil {
-		return err
-	}
-	s.seenUnreadDelayedMetaDeque.Add(&DelayedMeta{
-		Index:                       s.DelayedMessagedSeen,
-		MerkleRoot:                  merkleRoot,
-		MelStateParentChainBlockNum: s.ParentChainBlockNumber,
-	})
-	// Found init message
-	if s.DelayedMessagedSeen == 0 {
-		s.seenUnreadDelayedMetaDeque.SetInitMsg(msg)
+	if s.delayedMessageBacklog != nil {
+		if err := s.delayedMessageBacklog.Add(
+			&DelayedMessageBacklogEntry{
+				Index:                       s.DelayedMessagedSeen,
+				MsgHash:                     msgHash,
+				MelStateParentChainBlockNum: s.ParentChainBlockNumber,
+			}); err != nil {
+			return err
+		}
+		// Found init message
+		if s.DelayedMessagedSeen == 0 {
+			s.delayedMessageBacklog.setInitMsg(msg)
+		}
 	}
 	return nil
 }
@@ -181,20 +170,34 @@ func (s *State) GenerateDelayedMessageMerklePartials() error {
 	return nil
 }
 
-func (s *State) GetReadDelayedMsgsAcc() *merkleAccumulator.MerkleAccumulator {
-	return s.readDelayedMsgsAcc
+func (s *State) GetSeenDelayedMsgsAcc() *merkleAccumulator.MerkleAccumulator {
+	return s.seenDelayedMsgsAcc
 }
 
-func (s *State) SetReadDelayedMsgsAcc(acc *merkleAccumulator.MerkleAccumulator) {
-	s.readDelayedMsgsAcc = acc
+func (s *State) SetSeenDelayedMsgsAcc(acc *merkleAccumulator.MerkleAccumulator) {
+	s.seenDelayedMsgsAcc = acc
 }
 
-func (s *State) GetSeenUnreadDelayedMetaDeque() *DelayedMetaDeque {
-	return s.seenUnreadDelayedMetaDeque
+func (s *State) GetDelayedMessageBacklog() *DelayedMessageBacklog {
+	return s.delayedMessageBacklog
 }
 
-func (s *State) SetSeenUnreadDelayedMetaDeque(seenUnreadDelayedMetaDeque *DelayedMetaDeque) {
-	s.seenUnreadDelayedMetaDeque = seenUnreadDelayedMetaDeque
+func (s *State) SetDelayedMessageBacklog(delayedMessageBacklog *DelayedMessageBacklog) {
+	s.delayedMessageBacklog = delayedMessageBacklog
+}
+
+func (s *State) GetReadCountFromBacklog() uint64      { return s.readCountFromBacklog }
+func (s *State) SetReadCountFromBacklog(count uint64) { s.readCountFromBacklog = count }
+
+func (s *State) ReorgTo(newState *State) error {
+	delayedMessageBacklog := s.delayedMessageBacklog
+	if err := delayedMessageBacklog.reorg(newState.DelayedMessagedSeen); err != nil {
+		return err
+	}
+	newState.delayedMessageBacklog = delayedMessageBacklog
+	// Reset the pre-read delayed messages count since they havent been verified against latest state's merkle root
+	newState.readCountFromBacklog = 0
+	return nil
 }
 
 func ToPtrSlice[T any](list []T) []*T {

@@ -18,8 +18,8 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 
-	mel "github.com/offchainlabs/nitro/arbnode/message-extraction"
-	meltypes "github.com/offchainlabs/nitro/arbnode/message-extraction/types"
+	"github.com/offchainlabs/nitro/arbnode/mel"
+	melrunner "github.com/offchainlabs/nitro/arbnode/mel/runner"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/execution/gethexec"
@@ -33,7 +33,7 @@ type DelayedSequencer struct {
 	bridge                   *DelayedBridge
 	inbox                    *InboxTracker
 	reader                   *InboxReader
-	msgExtractor             *mel.MessageExtractor
+	msgExtractor             *melrunner.MessageExtractor
 	exec                     execution.ExecutionSequencer
 	coordinator              *SeqCoordinator
 	waitingForFinalizedBlock *uint64
@@ -76,7 +76,7 @@ var TestDelayedSequencerConfig = DelayedSequencerConfig{
 	RescanInterval:      time.Millisecond * 100,
 }
 
-func NewDelayedSequencer(l1Reader *headerreader.HeaderReader, reader *InboxReader, msgExtractor *mel.MessageExtractor, delayedBridge *DelayedBridge, exec execution.ExecutionSequencer, coordinator *SeqCoordinator, config DelayedSequencerConfigFetcher) (*DelayedSequencer, error) {
+func NewDelayedSequencer(l1Reader *headerreader.HeaderReader, reader *InboxReader, msgExtractor *melrunner.MessageExtractor, delayedBridge *DelayedBridge, exec execution.ExecutionSequencer, coordinator *SeqCoordinator, config DelayedSequencerConfigFetcher) (*DelayedSequencer, error) {
 	var d *DelayedSequencer
 	if msgExtractor != nil {
 		d = &DelayedSequencer{
@@ -184,7 +184,7 @@ func (d *DelayedSequencer) sequenceWithoutLockout(ctx context.Context, lastBlock
 		}
 		if lastDelayedAcc != (common.Hash{}) {
 			// Ensure that there hasn't been a reorg and this message follows the last
-			fullMsg := meltypes.DelayedInboxMessage{
+			fullMsg := mel.DelayedInboxMessage{
 				BeforeInboxAcc:         lastDelayedAcc,
 				Message:                msg,
 				ParentChainBlockNumber: parentChainBlockNumber,

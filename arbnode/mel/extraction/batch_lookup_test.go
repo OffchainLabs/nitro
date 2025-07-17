@@ -1,4 +1,4 @@
-package extractionfunction
+package melextraction
 
 import (
 	"context"
@@ -13,7 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/trie"
 
-	meltypes "github.com/offchainlabs/nitro/arbnode/message-extraction/types"
+	"github.com/offchainlabs/nitro/arbnode/mel"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 )
 
@@ -70,7 +70,7 @@ func Test_parseBatchesFromBlock(t *testing.T) {
 		)
 		batches, txs, txIndices, err := parseBatchesFromBlock(
 			ctx,
-			&meltypes.State{MsgCount: 1},
+			&mel.State{MsgCount: 1},
 			block.Header(),
 			txsFetcher,
 			nil,
@@ -106,7 +106,7 @@ func Test_parseBatchesFromBlock(t *testing.T) {
 			nil,
 			trie.NewStackTrie(nil),
 		)
-		melState := &meltypes.State{
+		melState := &mel.State{
 			BatchPostingTargetAddress: batchPostingTargetAddr,
 			MsgCount:                  1,
 		}
@@ -147,7 +147,7 @@ func Test_parseBatchesFromBlock(t *testing.T) {
 			nil,
 			trie.NewStackTrie(nil),
 		)
-		melState := &meltypes.State{
+		melState := &mel.State{
 			BatchPostingTargetAddress: batchPostingTargetAddr,
 		}
 		receiptFetcher := &mockReceiptFetcher{
@@ -192,7 +192,7 @@ func Test_parseBatchesFromBlock(t *testing.T) {
 			receipts,
 			trie.NewStackTrie(nil),
 		)
-		melState := &meltypes.State{
+		melState := &mel.State{
 			BatchPostingTargetAddress: batchPostingTargetAddr,
 		}
 		receiptFetcher := &mockReceiptFetcher{
@@ -241,7 +241,7 @@ func Test_parseBatchesFromBlock(t *testing.T) {
 			receipts,
 			trie.NewStackTrie(nil),
 		)
-		melState := &meltypes.State{
+		melState := &mel.State{
 			BatchPostingTargetAddress: batchPostingTargetAddr,
 		}
 		receiptFetcher := &mockReceiptFetcher{
@@ -294,7 +294,7 @@ func Test_parseBatchesFromBlock(t *testing.T) {
 			receipts,
 			trie.NewStackTrie(nil),
 		)
-		melState := &meltypes.State{
+		melState := &mel.State{
 			BatchPostingTargetAddress: batchPostingTargetAddr,
 		}
 		receiptFetcher := &mockReceiptFetcher{
@@ -349,7 +349,7 @@ func Test_parseBatchesFromBlock(t *testing.T) {
 			receipts,
 			trie.NewStackTrie(nil),
 		)
-		melState := &meltypes.State{
+		melState := &mel.State{
 			BatchPostingTargetAddress: batchPostingTargetAddr,
 		}
 		receiptFetcher := &mockReceiptFetcher{
@@ -433,7 +433,7 @@ func Test_parseBatchesFromBlock_outOfOrderBatches(t *testing.T) {
 		receipts,
 		trie.NewStackTrie(nil),
 	)
-	melState := &meltypes.State{
+	melState := &mel.State{
 		BatchPostingTargetAddress: batchPostingTargetAddr,
 	}
 	receiptFetcher := &mockReceiptFetcher{
@@ -464,7 +464,7 @@ func Test_parseBatchesFromBlock_outOfOrderBatches(t *testing.T) {
 func setupParseBatchesTest(t *testing.T, seqNumber *big.Int) (
 	*bridgegen.SequencerInboxSequencerBatchDelivered,
 	[]byte,
-	*meltypes.SequencerInboxBatch,
+	*mel.SequencerInboxBatch,
 ) {
 	event := &bridgegen.SequencerInboxSequencerBatchDelivered{
 		BatchSequenceNumber:      seqNumber,
@@ -491,7 +491,7 @@ func setupParseBatchesTest(t *testing.T, seqNumber *big.Int) (
 		event.DataLocation,
 	)
 	require.NoError(t, err)
-	wantedBatch := &meltypes.SequencerInboxBatch{
+	wantedBatch := &mel.SequencerInboxBatch{
 		SequenceNumber:    event.BatchSequenceNumber.Uint64(),
 		BeforeInboxAcc:    event.BeforeAcc,
 		AfterInboxAcc:     event.AfterAcc,

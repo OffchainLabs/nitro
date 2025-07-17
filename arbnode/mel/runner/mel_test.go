@@ -1,4 +1,4 @@
-package mel
+package melrunner
 
 import (
 	"context"
@@ -15,7 +15,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/rpc"
 
-	meltypes "github.com/offchainlabs/nitro/arbnode/message-extraction/types"
+	"github.com/offchainlabs/nitro/arbnode/mel"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/daprovider"
@@ -25,7 +25,8 @@ var _ ParentChainReader = (*mockParentChainReader)(nil)
 
 func TestMessageExtractor(t *testing.T) {
 	ctx := context.Background()
-	emptyblk1 := types.NewBlock(&types.Header{Number: common.Big2}, nil, nil, nil)
+	emptyblk0 := types.NewBlock(&types.Header{Number: common.Big1}, nil, nil, nil)
+	emptyblk1 := types.NewBlock(&types.Header{Number: common.Big2, ParentHash: emptyblk0.Hash()}, nil, nil, nil)
 	emptyblk2 := types.NewBlock(&types.Header{Number: common.Big3}, nil, nil, nil)
 	parentChainReader := &mockParentChainReader{
 		blocks: map[common.Hash]*types.Block{
@@ -37,54 +38,52 @@ func TestMessageExtractor(t *testing.T) {
 	}
 	parentChainReader.blocks[emptyblk1.Hash()] = emptyblk1
 	parentChainReader.blocks[emptyblk2.Hash()] = emptyblk2
+	parentChainReader.blocks[common.BigToHash(common.Big1)] = emptyblk0
 	parentChainReader.blocks[common.BigToHash(common.Big2)] = emptyblk1
 	parentChainReader.blocks[common.BigToHash(common.Big3)] = emptyblk2
-	initialStateFetcher := &mockInitialStateFetcher{}
 	arbDb := rawdb.NewMemoryDatabase()
 	melDb := NewDatabase(arbDb)
 	messageConsumer := &mockMessageConsumer{}
 	extractor, err := NewMessageExtractor(
 		parentChainReader,
 		&chaininfo.RollupAddresses{},
-		initialStateFetcher,
 		melDb,
 		messageConsumer,
 		[]daprovider.Reader{},
-		common.Hash{},
 		0,
 	)
+	extractor.StopWaiter.Start(ctx, extractor)
 	require.NoError(t, err)
 	require.True(t, extractor.CurrentFSMState() == Start)
 
 	t.Run("Start", func(t *testing.T) {
 		// Expect that an error in the initial state of the FSM
 		// will cause the FSM to return to the start state.
+		_, err = extractor.Act(ctx)
+		require.ErrorContains(t, err, "error getting HeadMelStateBlockNum from database: not found")
+
+		// Expect that we can now transition to the process
+		// next block state.
+		melState := &mel.State{
+			Version:                42,
+			ParentChainBlockNumber: 1,
+			ParentChainBlockHash:   emptyblk0.Hash(),
+		}
+		require.NoError(t, melDb.SaveState(ctx, melState))
+
 		parentChainReader.returnErr = errors.New("oops")
 		_, err := extractor.Act(ctx)
 		require.ErrorContains(t, err, "oops")
 
 		require.True(t, extractor.CurrentFSMState() == Start)
 		parentChainReader.returnErr = nil
-
-		initialStateFetcher.returnErr = errors.New("failed to get state")
-		_, err = extractor.Act(ctx)
-		require.ErrorContains(t, err, "failed to get state")
-
-		// Expect that we can now transition to the process
-		// next block state.
-		melState := &meltypes.State{
-			Version:                42,
-			ParentChainBlockNumber: 1,
-		}
-		require.NoError(t, melDb.SaveState(ctx, melState))
-		initialStateFetcher.returnErr = nil
-		initialStateFetcher.state = melState
 		_, err = extractor.Act(ctx)
 		require.NoError(t, err)
 
 		require.True(t, extractor.CurrentFSMState() == ProcessingNextBlock)
 		processBlockAction, ok := extractor.fsm.Current().SourceEvent.(processNextBlock)
 		require.True(t, ok)
+		melState.SetDelayedMessageBacklog(processBlockAction.melState.GetDelayedMessageBacklog())
 		require.Equal(t, processBlockAction.melState, melState)
 	})
 	t.Run("ProcessingNextBlock", func(t *testing.T) {
@@ -140,20 +139,6 @@ func (m *mockMessageConsumer) PushMessages(ctx context.Context, firstMsgIdx uint
 	return m.returnErr
 }
 
-type mockInitialStateFetcher struct {
-	state     *meltypes.State
-	returnErr error
-}
-
-func (m *mockInitialStateFetcher) FetchInitialState(
-	_ context.Context, _ common.Hash, _ uint64,
-) (*meltypes.State, error) {
-	if m.returnErr != nil {
-		return nil, m.returnErr
-	}
-	return m.state, nil
-}
-
 type mockParentChainReader struct {
 	blocks    map[common.Hash]*types.Block
 	headers   map[common.Hash]*types.Header
@@ -173,7 +158,7 @@ func (m *mockParentChainReader) BlockByNumber(ctx context.Context, number *big.I
 		return nil, m.returnErr
 	}
 	if number.Int64() == rpc.FinalizedBlockNumber.Int64() {
-		return types.NewBlock(&types.Header{Number: common.Big0}, nil, nil, nil), nil
+		return types.NewBlock(&types.Header{Number: big.NewInt(1e10)}, nil, nil, nil), nil // Assume all parent chain blocks are finalized to prevent issues dealing with delayed message backlog, it is tested separately
 	}
 	block, ok := m.blocks[common.BigToHash(number)]
 	if !ok {
