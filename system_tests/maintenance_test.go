@@ -35,20 +35,10 @@ func checkMaintenanceRun(t *testing.T, builder *NodeBuilder, ctx context.Context
 	// it is a hot reloadable config, which is set to false by default
 	builder.nodeConfig.Maintenance.Enable = true
 
-	finished := false
-	for range 200 {
-		builder.L2.ConsensusNode.MaintenanceRunner.MaybeRunMaintenance(ctx)
-		if logHandler.WasLogged("Execution is not running maintenance anymore, maintenance completed successfully") {
-			finished = true
-			break
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
-
-	if !finished {
+	builder.L2.ConsensusNode.MaintenanceRunner.MaybeRunMaintenance(ctx)
+	if !logHandler.WasLogged("Execution is not running maintenance anymore, maintenance completed successfully") {
 		t.Fatal("Maintenance did not complete successfully from Consensus perspective")
 	}
-
 	if !logHandler.WasLogged("Flushed trie db through maintenance completed successfully") {
 		t.Fatal("Expected log message not found")
 	}
