@@ -281,7 +281,6 @@ func (m *MessageExtractor) Act(ctx context.Context) (time.Duration, error) {
 	// the `ProcessingNextBlock` state after successfully fetching the initial
 	// MEL state struct for the message extraction process.
 	case Start:
-		// TODO: Start from the latest MEL state we have in the database if it exists as the first step.
 		// Check if the specified start block hash exists in the parent chain.
 		if _, err := m.parentChainReader.HeaderByHash(
 			ctx,
