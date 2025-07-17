@@ -25,7 +25,8 @@ var _ ParentChainReader = (*mockParentChainReader)(nil)
 
 func TestMessageExtractor(t *testing.T) {
 	ctx := context.Background()
-	emptyblk1 := types.NewBlock(&types.Header{Number: common.Big2}, nil, nil, nil)
+	emptyblk0 := types.NewBlock(&types.Header{Number: common.Big1}, nil, nil, nil)
+	emptyblk1 := types.NewBlock(&types.Header{Number: common.Big2, ParentHash: emptyblk0.Hash()}, nil, nil, nil)
 	emptyblk2 := types.NewBlock(&types.Header{Number: common.Big3}, nil, nil, nil)
 	parentChainReader := &mockParentChainReader{
 		blocks: map[common.Hash]*types.Block{
@@ -37,6 +38,7 @@ func TestMessageExtractor(t *testing.T) {
 	}
 	parentChainReader.blocks[emptyblk1.Hash()] = emptyblk1
 	parentChainReader.blocks[emptyblk2.Hash()] = emptyblk2
+	parentChainReader.blocks[common.BigToHash(common.Big1)] = emptyblk0
 	parentChainReader.blocks[common.BigToHash(common.Big2)] = emptyblk1
 	parentChainReader.blocks[common.BigToHash(common.Big3)] = emptyblk2
 	arbDb := rawdb.NewMemoryDatabase()
@@ -57,13 +59,6 @@ func TestMessageExtractor(t *testing.T) {
 	t.Run("Start", func(t *testing.T) {
 		// Expect that an error in the initial state of the FSM
 		// will cause the FSM to return to the start state.
-		parentChainReader.returnErr = errors.New("oops")
-		_, err := extractor.Act(ctx)
-		require.ErrorContains(t, err, "oops")
-
-		require.True(t, extractor.CurrentFSMState() == Start)
-		parentChainReader.returnErr = nil
-
 		_, err = extractor.Act(ctx)
 		require.ErrorContains(t, err, "error getting HeadMelStateBlockNum from database: not found")
 
@@ -72,8 +67,16 @@ func TestMessageExtractor(t *testing.T) {
 		melState := &mel.State{
 			Version:                42,
 			ParentChainBlockNumber: 1,
+			ParentChainBlockHash:   emptyblk0.Hash(),
 		}
 		require.NoError(t, melDb.SaveState(ctx, melState))
+
+		parentChainReader.returnErr = errors.New("oops")
+		_, err := extractor.Act(ctx)
+		require.ErrorContains(t, err, "oops")
+
+		require.True(t, extractor.CurrentFSMState() == Start)
+		parentChainReader.returnErr = nil
 		_, err = extractor.Act(ctx)
 		require.NoError(t, err)
 
