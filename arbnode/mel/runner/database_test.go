@@ -51,7 +51,6 @@ func TestMelDatabase(t *testing.T) {
 
 func TestMelDatabaseReadAndWriteDelayedMessages(t *testing.T) {
 	// Simple test for writing and reading of delayed messages.
-	// TODO: write a separate detailed test after delayed messages accumulation logic is implemented
 	t.Parallel()
 
 	ctx, cancel := context.WithCancel(context.Background())

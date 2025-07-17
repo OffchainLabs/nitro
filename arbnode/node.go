@@ -731,7 +731,6 @@ func getMessageExtractor(
 		melDB,
 		txStreamer,
 		dapReaders,
-		initialState.ParentChainBlockHash,
 		config.MessageExtraction.RetryInterval,
 	)
 	if err != nil {

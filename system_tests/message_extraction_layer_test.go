@@ -74,7 +74,6 @@ func TestMessageExtractionLayer_SequencerBatchMessageEquivalence(t *testing.T) {
 		melDB,
 		mockMsgConsumer,
 		nil, // TODO: Provide da readers here.
-		melState.ParentChainBlockHash,
 		0,
 	)
 	Require(t, err)
@@ -209,7 +208,6 @@ func TestMessageExtractionLayer_SequencerBatchMessageEquivalence_Blobs(t *testin
 		melDB,
 		mockMsgConsumer,
 		[]daprovider.Reader{daprovider.NewReaderForBlobReader(builder.L1.blobReader)},
-		melState.ParentChainBlockHash,
 		0,
 	)
 	Require(t, err)
@@ -348,7 +346,6 @@ func TestMessageExtractionLayer_DelayedMessageEquivalence_Simple(t *testing.T) {
 		melDB,
 		mockMsgConsumer,
 		nil, // TODO: Provide da readers here.
-		melState.ParentChainBlockHash,
 		0,
 	)
 	Require(t, err)
@@ -407,8 +404,34 @@ func TestMessageExtractionLayer_DelayedMessageEquivalence_Simple(t *testing.T) {
 	reorgToBlock, err := builder.L1.Client.BlockByHash(ctx, reorgToBlockHash)
 	Require(t, err)
 	Require(t, builder.L1.L1Backend.BlockChain().ReorgToOldBlock(reorgToBlock))
-
 	AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, 6)
+
+	// Before checking if reorg handling works as intended, verify that starting a new message extractor will detect a reorg too and correctly transitions to Reorging step
+	newExtractor, err := melrunner.NewMessageExtractor(
+		l1Reader.Client(),
+		builder.addresses,
+		melDB,
+		mockMsgConsumer,
+		nil,
+		0,
+	)
+	Require(t, err)
+	newExtractor.StopWaiter.Start(ctx, extractor)
+	for {
+		prevFSMState := newExtractor.CurrentFSMState()
+		_, err = newExtractor.Act(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		newFSMState := newExtractor.CurrentFSMState()
+		// After reorg rewinding is done in the SavingMessages step, break
+		if prevFSMState == melrunner.Start && newFSMState == melrunner.Reorging {
+			break
+		} else {
+			t.Fatalf("new message extractor upon start did not transition to Reorging step. prevFSMState: %s, newFSMState: %s", prevFSMState.String(), newFSMState.String())
+		}
+	}
+
 	// Check if ReorgingToOldBlock fsm state works as intended
 	for {
 		prevFSMState := extractor.CurrentFSMState()
@@ -647,7 +670,6 @@ func TestMessageExtractionLayer_UseArbDBForStoringDelayedMessages(t *testing.T) 
 		melDB,
 		mockMsgConsumer,
 		nil, // TODO: Provide da readers here.
-		melState.ParentChainBlockHash,
 		0,
 	)
 	Require(t, err)

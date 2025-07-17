@@ -17,10 +17,10 @@ import (
 
 // Database holds an ethdb.Database underneath and implements StateDatabase interface defined in 'mel'
 type Database struct {
-	db ethdb.Database
+	db ethdb.KeyValueStore
 }
 
-func NewDatabase(db ethdb.Database) *Database {
+func NewDatabase(db ethdb.KeyValueStore) *Database {
 	return &Database{db}
 }
 

@@ -48,7 +48,6 @@ func TestMessageExtractor(t *testing.T) {
 		melDb,
 		messageConsumer,
 		[]daprovider.Reader{},
-		common.Hash{},
 		0,
 	)
 	extractor.StopWaiter.Start(ctx, extractor)

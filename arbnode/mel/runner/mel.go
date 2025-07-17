@@ -63,15 +63,14 @@ type ParentChainReader interface {
 // blocks one by one to transform them into messages for the execution layer.
 type MessageExtractor struct {
 	stopwaiter.StopWaiter
-	config                    *MessageExtractionConfig
-	parentChainReader         ParentChainReader
-	addrs                     *chaininfo.RollupAddresses
-	melDB                     *Database
-	msgConsumer               mel.MessageConsumer
-	dataProviders             []daprovider.Reader
-	startParentChainBlockHash common.Hash
-	fsm                       *fsm.Fsm[action, FSMState]
-	retryInterval             time.Duration
+	config            *MessageExtractionConfig
+	parentChainReader ParentChainReader
+	addrs             *chaininfo.RollupAddresses
+	melDB             *Database
+	msgConsumer       mel.MessageConsumer
+	dataProviders     []daprovider.Reader
+	fsm               *fsm.Fsm[action, FSMState]
+	retryInterval     time.Duration
 }
 
 // Creates a message extractor instance with the specified parameters,
@@ -83,7 +82,6 @@ func NewMessageExtractor(
 	melDB *Database,
 	msgConsumer mel.MessageConsumer,
 	dataProviders []daprovider.Reader,
-	startParentChainBlockHash common.Hash,
 	retryInterval time.Duration,
 ) (*MessageExtractor, error) {
 	if retryInterval == 0 {
@@ -94,15 +92,14 @@ func NewMessageExtractor(
 		return nil, err
 	}
 	return &MessageExtractor{
-		parentChainReader:         parentChainReader,
-		addrs:                     rollupAddrs,
-		melDB:                     melDB,
-		msgConsumer:               msgConsumer,
-		dataProviders:             dataProviders,
-		startParentChainBlockHash: startParentChainBlockHash,
-		fsm:                       fsm,
-		retryInterval:             retryInterval,
-		config:                    &DefaultMessageExtractionConfig, //TODO: remove retryInterval as a struct instead use config
+		parentChainReader: parentChainReader,
+		addrs:             rollupAddrs,
+		melDB:             melDB,
+		msgConsumer:       msgConsumer,
+		dataProviders:     dataProviders,
+		fsm:               fsm,
+		retryInterval:     retryInterval,
+		config:            &DefaultMessageExtractionConfig, //TODO: remove retryInterval as a struct instead use config
 	}, nil
 }
 
@@ -281,25 +278,10 @@ func (m *MessageExtractor) Act(ctx context.Context) (time.Duration, error) {
 	// the `ProcessingNextBlock` state after successfully fetching the initial
 	// MEL state struct for the message extraction process.
 	case Start:
-		// Check if the specified start block hash exists in the parent chain.
-		if _, err := m.parentChainReader.HeaderByHash(
-			ctx,
-			m.startParentChainBlockHash,
-		); err != nil {
-			return m.retryInterval, fmt.Errorf(
-				"failed to get start block by hash %s from parent chain: %w",
-				m.startParentChainBlockHash,
-				err,
-			)
-		}
 		// Start from the latest MEL state we have in the database
 		melState, err := m.melDB.GetHeadMelState(ctx)
 		if err != nil {
 			return m.retryInterval, err
-		}
-		// We check if our current head mel state corresponds to this parentChainBlockHash
-		if melState.ParentChainBlockHash != m.startParentChainBlockHash {
-			return m.retryInterval, fmt.Errorf("head mel state's parentChainBlockHash in db: %v does not match the given parentChainBlockHash: %v ", melState.ParentChainBlockHash, m.startParentChainBlockHash)
 		}
 		// Initialize delayedMessageBacklog and add it to the melState
 		delayedMessageBacklog, err := mel.NewDelayedMessageBacklog(m.GetContext(), m.config.DelayedMessageBacklogCapacity, m.GetFinalizedDelayedMessagesRead)
@@ -310,6 +292,18 @@ func (m *MessageExtractor) Act(ctx context.Context) (time.Duration, error) {
 			return m.retryInterval, err
 		}
 		melState.SetDelayedMessageBacklog(delayedMessageBacklog)
+		// Start mel state is now ready. Check if the state's parent chain block hash exists in the parent chain
+		startBlock, err := m.parentChainReader.HeaderByNumber(ctx, new(big.Int).SetUint64(melState.ParentChainBlockNumber))
+		if err != nil {
+			return m.retryInterval, fmt.Errorf("failed to get start parent chain block: %d corresponding to head mel state from parent chain: %w", melState.ParentChainBlockNumber, err)
+		}
+		// We check if our head mel state's parentChainBlockHash matches the one on-chain, if it doesnt then we detected a reorg
+		if melState.ParentChainBlockHash != startBlock.Hash() {
+			log.Info("MEL detected L1 reorg at the start", "block", melState.ParentChainBlockNumber, "parentChainBlockHash", melState.ParentChainBlockHash, "onchainParentChainBlockHash", startBlock.Hash()) // Log level is Info because L1 reorgs are a common occurrence
+			return 0, m.fsm.Do(reorgToOldBlock{
+				melState: melState,
+			})
+		}
 		// Begin the next FSM state immediately.
 		return 0, m.fsm.Do(processNextBlock{
 			melState: melState,
