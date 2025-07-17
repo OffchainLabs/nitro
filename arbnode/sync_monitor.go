@@ -3,6 +3,7 @@ package arbnode
 import (
 	"context"
 	"math/big"
+	"strings"
 	"sync"
 	"time"
 
@@ -174,7 +175,11 @@ func (s *SyncMonitor) FullSyncProgressMap() map[string]interface{} {
 		} else {
 			batchSeen, err := s.sequencerInbox.GetBatchCount(s.GetContext(), new(big.Int).SetUint64(headMelState.ParentChainBlockNumber+1))
 			if err != nil {
-				log.Error("SequencerInbox GetBatchCount error", "err", err)
+				if strings.Contains(err.Error(), "header not found") {
+					batchSeen = headMelState.BatchCount
+				} else {
+					log.Error("SequencerInbox GetBatchCount error", "err", err)
+				}
 			}
 			res["batchSeen"] = batchSeen
 			res["batchProcessed"] = headMelState.BatchCount
@@ -274,8 +279,11 @@ func (s *SyncMonitor) Synced() bool {
 		}
 		batchSeen, err := s.sequencerInbox.GetBatchCount(s.GetContext(), new(big.Int).SetUint64(headMelState.ParentChainBlockNumber+1))
 		if err != nil {
-			log.Error("SequencerInbox GetBatchCount error", "err", err)
-			return false
+			if strings.Contains(err.Error(), "header not found") {
+				batchSeen = headMelState.BatchCount
+			} else {
+				log.Error("SequencerInbox GetBatchCount error", "err", err)
+			}
 		}
 		if batchSeen == 0 {
 			return false
