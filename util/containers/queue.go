@@ -1,9 +1,9 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package containers
 
-// Queue of an arbitrary type backed by a slice which is shrinked when it grows too large
+// Queue of an arbitrary type backed by a slice which is shrunk when it grows too large
 type Queue[T any] struct {
 	slice []T
 }

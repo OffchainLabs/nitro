@@ -1,5 +1,5 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbtest
 
@@ -7,26 +7,21 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
-	"io"
-	"log/slog"
 	"math/big"
 	"net"
 	"net/http"
-	"os"
-	"strconv"
 	"testing"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
-	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/blsSignatures"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
-	"github.com/offchainlabs/nitro/das"
+	"github.com/offchainlabs/nitro/daprovider/das"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/headerreader"
@@ -196,7 +191,7 @@ func checkBatchPosting(t *testing.T, ctx context.Context, l1client, l2clientA *e
 }
 
 func TestDASComplexConfigAndRestMirror(t *testing.T) {
-	initTest(t)
+	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -306,24 +301,6 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 	Require(t, err)
 }
 
-func enableLogging(logLvl int) {
-	glogger := log.NewGlogHandler(
-		log.NewTerminalHandler(io.Writer(os.Stderr), false))
-	glogger.Verbosity(slog.Level(logLvl))
-	log.SetDefault(log.NewLogger(glogger))
-}
-
-func initTest(t *testing.T) {
-	t.Parallel()
-	loggingStr := os.Getenv("LOGGING")
-	if len(loggingStr) > 0 {
-		var err error
-		logLvl, err := strconv.Atoi(loggingStr)
-		Require(t, err, "Failed to parse string")
-		enableLogging(logLvl)
-	}
-}
-
 func TestDASBatchPosterFallback(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -348,7 +325,6 @@ func TestDASBatchPosterFallback(t *testing.T) {
 	builder.nodeConfig.DataAvailability.RestAggregator.Enable = true
 	builder.nodeConfig.DataAvailability.RestAggregator.Urls = []string{restServerUrl}
 	builder.nodeConfig.DataAvailability.ParentChainNodeURL = "none"
-	builder.nodeConfig.DAPreference = []string{"anytrust"}
 	builder.nodeConfig.BatchPoster.DisableDapFallbackStoreDataOnChain = true // Disable DAS fallback
 	builder.nodeConfig.BatchPoster.ErrorDelay = time.Millisecond * 250       // Increase error delay because we expect errors
 	builder.L2Info = NewArbTestInfo(t, builder.chainConfig.ChainID)

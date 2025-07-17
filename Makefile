@@ -1,5 +1,5 @@
 # Copyright 2021-2024, Offchain Labs, Inc.
-# For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
+# For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 # Docker builds mess up file timestamps. Then again, in docker builds we never
 # have to update an existing file. So - for docker, convert all dependencies
@@ -194,6 +194,8 @@ else
 	export LD_LIBRARY_PATH := $(shell pwd)/target/lib:$LD_LIBRARY_PATH
 endif
 
+CBROTLI_WASM_BUILD_ARGS ?=-d
+
 # user targets
 .PHONY: build-espresso-crypto-lib
 build-espresso-crypto-lib:
@@ -209,7 +211,7 @@ all: build build-replay-env test-gen-proofs
 	@touch .make/all
 
 .PHONY: build
-build: $(patsubst %,$(output_root)/bin/%, nitro deploy relay daserver autonomous-auctioneer bidder-client datool mockexternalsigner seq-coordinator-invalidate nitro-val seq-coordinator-manager dbconv)
+build: $(patsubst %,$(output_root)/bin/%, nitro deploy relay daprovider daserver autonomous-auctioneer bidder-client datool mockexternalsigner seq-coordinator-invalidate nitro-val seq-coordinator-manager dbconv)
 	@printf $(done)
 
 .PHONY: build-node-deps
@@ -280,7 +282,12 @@ test-go-stylus: test-go-deps
 
 .PHONY: test-go-redis
 test-go-redis: test-go-deps
-	TEST_REDIS=redis://localhost:6379/0 gotestsum --format short-verbose --no-color=false -- -p 1 -run TestRedis ./system_tests/... ./arbnode/...
+	gotestsum --format short-verbose --no-color=false -- -p 1 -run TestRedis ./system_tests/... ./arbnode/... -- --test_redis=redis://localhost:6379/0
+	@printf $(done)
+
+.PHONY: test-go-gas-dimensions
+test-go-gas-dimensions: test-go-deps
+	gotestsum --format short-verbose --no-color=false -- -timeout 120m ./system_tests/... -run "TestDim(Log|TxOp)" -tags gasdimensionstest
 	@printf $(done)
 
 .PHONY: test-gen-proofs
@@ -319,6 +326,7 @@ clean:
 	rm -rf arbitrator/wasm-testsuite/tests
 	rm -rf $(output_root)
 	rm -f contracts/test/prover/proofs/*.json contracts/test/prover/spec-proofs/*.json
+	rm -f contracts-legacy/test/prover/proofs/*.json contracts-legacy/test/prover/spec-proofs/*.json
 	rm -rf arbitrator/target
 	rm -rf arbitrator/wasm-libraries/target
 	rm -f arbitrator/wasm-libraries/soft-float/soft-float.wasm
@@ -329,6 +337,8 @@ clean:
 	rm -rf arbitrator/stylus/tests/*/target/ arbitrator/stylus/tests/*/*.wasm
 	rm -rf brotli/buildfiles
 	@rm -rf contracts/build contracts/cache solgen/go/
+	@rm -rf contracts-legacy/build contracts-legacy/cache
+	@rm -rf contracts-local/out contracts-local/forge-cache
 	@rm -f .make/*
 	rm -rf brotli/buildfiles
 	@rm -f $(output_root)/lib/$(espresso_crypto_filename)
@@ -354,6 +364,9 @@ $(output_root)/bin/deploy: $(DEP_PREDICATE) build-node-deps
 
 $(output_root)/bin/relay: $(DEP_PREDICATE) build-node-deps
 	go build $(GOLANG_PARAMS) -o $@ "$(CURDIR)/cmd/relay"
+
+$(output_root)/bin/daprovider: $(DEP_PREDICATE) build-node-deps
+	go build $(GOLANG_PARAMS) -o $@ "$(CURDIR)/cmd/daprovider"
 
 $(output_root)/bin/daserver: $(DEP_PREDICATE) build-node-deps
 	go build $(GOLANG_PARAMS) -o $@ "$(CURDIR)/cmd/daserver"
@@ -504,80 +517,67 @@ $(stylus_test_dir)/%.wasm: $(stylus_test_dir)/%.b $(stylus_lang_bf)
 
 $(stylus_test_keccak_wasm): $(stylus_test_keccak_src)
 	$(cargo_nightly) --manifest-path $< --release --config $(stylus_cargo)
-	wasm2wat $@ > $@.wat #removing reference types
-	wat2wasm $@.wat -o $@
+	./scripts/remove_reference_types.sh $@
 	@touch -c $@ # cargo might decide to not rebuild the binary
 
 $(stylus_test_keccak-100_wasm): $(stylus_test_keccak-100_src)
 	$(cargo_nightly) --manifest-path $< --release --config $(stylus_cargo)
-	wasm2wat $@ > $@.wat #removing reference types
-	wat2wasm $@.wat -o $@
+	./scripts/remove_reference_types.sh $@
 	@touch -c $@ # cargo might decide to not rebuild the binary
 
 $(stylus_test_fallible_wasm): $(stylus_test_fallible_src)
 	$(cargo_nightly) --manifest-path $< --release --config $(stylus_cargo)
-	wasm2wat $@ > $@.wat #removing reference types
-	wat2wasm $@.wat -o $@
+	./scripts/remove_reference_types.sh $@
 	@touch -c $@ # cargo might decide to not rebuild the binary
 
 $(stylus_test_storage_wasm): $(stylus_test_storage_src)
 	$(cargo_nightly) --manifest-path $< --release --config $(stylus_cargo)
-	wasm2wat $@ > $@.wat #removing reference types
-	wat2wasm $@.wat -o $@
+	./scripts/remove_reference_types.sh $@
 	@touch -c $@ # cargo might decide to not rebuild the binary
 
 $(stylus_test_multicall_wasm): $(stylus_test_multicall_src)
 	$(cargo_nightly) --manifest-path $< --release --config $(stylus_cargo)
-	wasm2wat $@ > $@.wat #removing reference types
-	wat2wasm $@.wat -o $@
+	./scripts/remove_reference_types.sh $@
 	@touch -c $@ # cargo might decide to not rebuild the binary
 
 $(stylus_test_log_wasm): $(stylus_test_log_src)
 	$(cargo_nightly) --manifest-path $< --release --config $(stylus_cargo)
-	wasm2wat $@ > $@.wat #removing reference types
-	wat2wasm $@.wat -o $@
+	./scripts/remove_reference_types.sh $@
 	@touch -c $@ # cargo might decide to not rebuild the binary
 
 $(stylus_test_create_wasm): $(stylus_test_create_src)
 	$(cargo_nightly) --manifest-path $< --release --config $(stylus_cargo)
-	wasm2wat $@ > $@.wat #removing reference types
-	wat2wasm $@.wat -o $@
+	./scripts/remove_reference_types.sh $@
 	@touch -c $@ # cargo might decide to not rebuild the binary
 
 $(stylus_test_math_wasm): $(stylus_test_math_src)
 	$(cargo_nightly) --manifest-path $< --release --config $(stylus_cargo)
-	wasm2wat $@ > $@.wat #removing reference types
-	wat2wasm $@.wat -o $@
+	./scripts/remove_reference_types.sh $@
 	@touch -c $@ # cargo might decide to not rebuild the binary
 
 $(stylus_test_evm-data_wasm): $(stylus_test_evm-data_src)
 	$(cargo_nightly) --manifest-path $< --release --config $(stylus_cargo)
-	wasm2wat $@ > $@.wat #removing reference types
-	wat2wasm $@.wat -o $@
+	./scripts/remove_reference_types.sh $@
 	@touch -c $@ # cargo might decide to not rebuild the binary
 
 $(stylus_test_read-return-data_wasm): $(stylus_test_read-return-data_src)
 	$(cargo_nightly) --manifest-path $< --release --config $(stylus_cargo)
-	wasm2wat $@ > $@.wat #removing reference types
-	wat2wasm $@.wat -o $@
+	./scripts/remove_reference_types.sh $@
 	@touch -c $@ # cargo might decide to not rebuild the binary
 
 $(stylus_test_sdk-storage_wasm): $(stylus_test_sdk-storage_src)
 	$(cargo_nightly) --manifest-path $< --release --config $(stylus_cargo)
-	wasm2wat $@ > $@.wat #removing reference types
-	wat2wasm $@.wat -o $@
+	./scripts/remove_reference_types.sh $@
 	@touch -c $@ # cargo might decide to not rebuild the binary
 
 $(stylus_test_erc20_wasm): $(stylus_test_erc20_src)
 	$(cargo_nightly) --manifest-path $< --release --config $(stylus_cargo)
-	wasm2wat $@ > $@.wat #removing reference types
-	wat2wasm $@.wat -o $@
+	./scripts/remove_reference_types.sh $@
 	@touch -c $@ # cargo might decide to not rebuild the binary
 
 $(stylus_test_hostio-test_wasm): $(stylus_test_hostio-test_src)
 	$(cargo_nightly) --manifest-path $< --release --config $(stylus_cargo)
-	wasm2wat $@ > $@.wat #removing reference types
-	wat2wasm $@.wat -o $@
+	./scripts/remove_reference_types.sh $@
 	@touch -c $@ # cargo might decide to not rebuild the binary
 
 contracts/test/prover/proofs/float%.json: $(arbitrator_cases)/float%.wasm $(prover_bin) $(output_latest)/soft-float.wasm
@@ -634,7 +634,6 @@ contracts/test/prover/proofs/%.json: $(arbitrator_cases)/%.wasm $(prover_bin)
 	golangci-lint run --disable-all -E gofmt --fix
 	cargo fmt -p arbutil -p prover -p jit -p stylus --manifest-path arbitrator/Cargo.toml -- --check
 	cargo fmt --all --manifest-path arbitrator/wasm-testsuite/Cargo.toml -- --check
-	cargo fmt --all --manifest-path arbitrator/langs/rust/Cargo.toml -- --check
 	yarn --cwd contracts prettier:solidity
 	@touch $@
 
@@ -651,14 +650,20 @@ contracts/test/prover/proofs/%.json: $(arbitrator_cases)/%.wasm $(prover_bin)
 	go run solgen/gen.go
 	@touch $@
 
-.make/solidity: $(DEP_PREDICATE) safe-smart-account/contracts/*/*.sol safe-smart-account/contracts/*.sol contracts/src/*/*.sol .make/yarndeps $(ORDER_ONLY_PREDICATE) .make
+.make/solidity: $(DEP_PREDICATE) contracts/src/*/*.sol contracts-legacy/src/*/*.sol contracts-local/src/*/*.sol contracts-local/gas-dimensions/src/*.sol .make/yarndeps $(ORDER_ONLY_PREDICATE) .make
 	yarn --cwd safe-smart-account build
-	yarn --cwd contracts build:all
+	yarn --cwd contracts build
+	yarn --cwd contracts build:forge:yul
+	yarn --cwd contracts-legacy build
+	yarn --cwd contracts-legacy build:forge:yul
+	make -C contracts-local build
 	@touch $@
 
-.make/yarndeps: $(DEP_PREDICATE) contracts/package.json contracts/yarn.lock $(ORDER_ONLY_PREDICATE) .make
+.make/yarndeps: $(DEP_PREDICATE) */package.json */yarn.lock $(ORDER_ONLY_PREDICATE) .make
 	yarn --cwd safe-smart-account install
 	yarn --cwd contracts install
+	yarn --cwd contracts-legacy install
+	make -C contracts-local install
 	@touch $@
 
 .make/cbrotli-lib: $(DEP_PREDICATE) $(ORDER_ONLY_PREDICATE) .make

@@ -1,5 +1,5 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbtest
 
@@ -12,6 +12,8 @@ import (
 	"sync/atomic"
 	"testing"
 
+	hdwallet "github.com/miguelmota/go-ethereum-hdwallet"
+
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -21,8 +23,6 @@ import (
 
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/statetransfer"
-
-	hdwallet "github.com/miguelmota/go-ethereum-hdwallet"
 	"github.com/offchainlabs/nitro/util"
 )
 
@@ -32,6 +32,20 @@ type AccountInfo struct {
 	Address    common.Address
 	PrivateKey *ecdsa.PrivateKey
 	Nonce      atomic.Uint64
+}
+
+type StructLogRes struct {
+	Pc            uint64             `json:"pc"`
+	Op            string             `json:"op"`
+	Gas           uint64             `json:"gas"`
+	GasCost       uint64             `json:"gasCost"`
+	Depth         int                `json:"depth"`
+	Error         string             `json:"error"`
+	Stack         *[]string          `json:"stack"`
+	ReturnData    string             `json:"returnData"`
+	Memory        *[]string          `json:"memory"`
+	Storage       *map[string]string `json:"storage"`
+	RefundCounter uint64             `json:"refund"`
 }
 
 type BlockchainTestInfo struct {
@@ -176,7 +190,6 @@ func (b *BlockchainTestInfo) SetFullAccountInfo(name string, info *AccountInfo) 
 
 func (b *BlockchainTestInfo) GetAddress(name string) common.Address {
 	b.T.Helper()
-
 	info, ok := b.Accounts[name]
 	if !ok {
 		b.T.Fatal("not found account: ", name)
@@ -254,6 +267,7 @@ func (b *BlockchainTestInfo) PrepareTxTo(
 	txData := &types.DynamicFeeTx{
 		To:        to,
 		Gas:       gas,
+		GasTipCap: new(big.Int).Set(b.GasPrice),
 		GasFeeCap: new(big.Int).Set(b.GasPrice),
 		Value:     value,
 		Nonce:     txNonce,

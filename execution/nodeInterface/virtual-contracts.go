@@ -1,5 +1,5 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package nodeInterface
 
@@ -88,7 +88,7 @@ func init() {
 				return msg, nil, nil
 			}
 
-			evm := backend.GetEVM(ctx, msg, statedb, header, &vm.Config{NoBaseFee: true}, blockCtx)
+			evm := backend.GetEVM(ctx, statedb, header, &vm.Config{NoBaseFee: true}, blockCtx)
 			go func() {
 				<-ctx.Done()
 				evm.Cancel()

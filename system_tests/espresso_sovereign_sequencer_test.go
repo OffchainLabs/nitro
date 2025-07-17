@@ -19,7 +19,6 @@ func createL1AndL2Node(
 	blobsEnabled bool,
 ) (*NodeBuilder, func()) {
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
-	builder.useL1StackConfig = true // Do not overwrite the L1 stack config when building
 	builder.l1StackConfig.HTTPPort = 8545
 	builder.l1StackConfig.WSPort = 8546
 	builder.l1StackConfig.HTTPHost = "0.0.0.0"
@@ -30,6 +29,7 @@ func createL1AndL2Node(
 	builder.l2StackConfig.HTTPPort = 8945
 	builder.l2StackConfig.HTTPHost = "0.0.0.0"
 	builder.l2StackConfig.IPCPath = tmpPath(t, "test.ipc")
+	builder.useL1StackConfig = true
 
 	// poster config
 	builder.nodeConfig.BatchPoster.Enable = true

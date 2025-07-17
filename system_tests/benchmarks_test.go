@@ -1,5 +1,5 @@
 // Copyright 2022-2023, Offchain Labs, Inc.
-// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 //go:build benchmarks
 // +build benchmarks
@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
+	"github.com/offchainlabs/nitro/solgen/go/localgen"
 )
 
 func TestBenchmarkGas(t *testing.T) {
@@ -33,9 +33,9 @@ func TestBenchmarkGas(t *testing.T) {
 	auth := l2info.GetDefaultTransactOpts("Faucet", ctx)
 	auth.GasLimit = 32000000
 
-	var programTest *mocksgen.Benchmarks
+	var programTest *localgen.Benchmarks
 	timed(t, "deploy", func() {
-		_, _, contract, err := mocksgen.DeployBenchmarks(&auth, l2client)
+		_, _, contract, err := localgen.DeployBenchmarks(&auth, l2client)
 		Require(t, err)
 		programTest = contract
 	})

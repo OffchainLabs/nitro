@@ -1,5 +1,5 @@
 // Copyright 2024, Offchain Labs, Inc.
-// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 #![no_main]
 
@@ -220,8 +220,7 @@ impl HostioTest {
         }
     }
 
-    fn write_result_empty() {
-    }
+    fn write_result_empty() {}
 
     fn write_result(size: U256) -> Result<Vec<u32>> {
         let size: usize = size.try_into().unwrap();
@@ -229,12 +228,9 @@ impl HostioTest {
         Ok(data)
     }
 
-    fn read_args_no_args() {
-    }
+    fn read_args_no_args() {}
 
-    fn read_args_one_arg(_arg1: U256) {
-    }
+    fn read_args_one_arg(_arg1: U256) {}
 
-    fn read_args_three_args(_arg1: U256, _arg2: U256, _arg3: U256) {
-    }
+    fn read_args_three_args(_arg1: U256, _arg2: U256, _arg3: U256) {}
 }

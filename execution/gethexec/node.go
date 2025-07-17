@@ -7,7 +7,6 @@ import (
 	"reflect"
 	"sort"
 	"sync/atomic"
-	"testing"
 
 	flag "github.com/spf13/pflag"
 
@@ -31,6 +30,7 @@ import (
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/dbutil"
 	"github.com/offchainlabs/nitro/util/headerreader"
 )
@@ -101,6 +101,7 @@ type Config struct {
 	StylusTarget                StylusTargetConfig  `koanf:"stylus-target"`
 	BlockMetadataApiCacheSize   uint64              `koanf:"block-metadata-api-cache-size"`
 	BlockMetadataApiBlocksLimit uint64              `koanf:"block-metadata-api-blocks-limit"`
+	VmTrace                     LiveTracingConfig   `koanf:"vmtrace"`
 
 	forwardingTarget string
 }
@@ -126,6 +127,9 @@ func (c *Config) Validate() error {
 	if err := c.StylusTarget.Validate(); err != nil {
 		return err
 	}
+	if err := c.RPC.Validate(); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -145,6 +149,22 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet) {
 	StylusTargetConfigAddOptions(prefix+".stylus-target", f)
 	f.Uint64(prefix+".block-metadata-api-cache-size", ConfigDefault.BlockMetadataApiCacheSize, "size (in bytes) of lru cache storing the blockMetadata to service arb_getRawBlockMetadata")
 	f.Uint64(prefix+".block-metadata-api-blocks-limit", ConfigDefault.BlockMetadataApiBlocksLimit, "maximum number of blocks allowed to be queried for blockMetadata per arb_getRawBlockMetadata query. Enabled by default, set 0 to disable the limit")
+	LiveTracingConfigAddOptions(prefix+".vmtrace", f)
+}
+
+type LiveTracingConfig struct {
+	TracerName string `koanf:"tracer-name"`
+	JSONConfig string `koanf:"json-config"`
+}
+
+var DefaultLiveTracingConfig = LiveTracingConfig{
+	TracerName: "",
+	JSONConfig: "{}",
+}
+
+func LiveTracingConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.String(prefix+".tracer-name", DefaultLiveTracingConfig.TracerName, "(experimental) Name of tracer which should record internal VM operations (costly)")
+	f.String(prefix+".json-config", DefaultLiveTracingConfig.JSONConfig, "(experimental) Tracer configuration in JSON format")
 }
 
 var ConfigDefault = Config{
@@ -162,6 +182,7 @@ var ConfigDefault = Config{
 	StylusTarget:                DefaultStylusTargetConfig,
 	BlockMetadataApiCacheSize:   100 * 1024 * 1024,
 	BlockMetadataApiBlocksLimit: 100,
+	VmTrace:                     DefaultLiveTracingConfig,
 }
 
 type ConfigFetcher func() *Config
@@ -192,9 +213,10 @@ func CreateExecutionNode(
 	l2BlockChain *core.BlockChain,
 	l1client *ethclient.Client,
 	configFetcher ConfigFetcher,
+	syncTillBlock uint64,
 ) (*ExecutionNode, error) {
 	config := configFetcher()
-	execEngine, err := NewExecutionEngine(l2BlockChain)
+	execEngine, err := NewExecutionEngine(l2BlockChain, syncTillBlock)
 	if config.EnablePrefetchBlock {
 		execEngine.EnablePrefetchBlock()
 	}
@@ -341,8 +363,9 @@ func CreateExecutionNode(
 
 }
 
-func (n *ExecutionNode) MarkFeedStart(to arbutil.MessageIndex) {
+func (n *ExecutionNode) MarkFeedStart(to arbutil.MessageIndex) containers.PromiseInterface[struct{}] {
 	n.ExecEngine.MarkFeedStart(to)
+	return containers.NewReadyPromise(struct{}{}, nil)
 }
 
 func (n *ExecutionNode) Initialize(ctx context.Context) error {
@@ -417,17 +440,14 @@ func (n *ExecutionNode) StopAndWait() {
 	// }
 }
 
-func (n *ExecutionNode) DigestMessage(num arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, msgForPrefetch *arbostypes.MessageWithMetadata) (*execution.MessageResult, error) {
-	return n.ExecEngine.DigestMessage(num, msg, msgForPrefetch)
+func (n *ExecutionNode) DigestMessage(num arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, msgForPrefetch *arbostypes.MessageWithMetadata) containers.PromiseInterface[*execution.MessageResult] {
+	return containers.NewReadyPromise(n.ExecEngine.DigestMessage(num, msg, msgForPrefetch))
 }
-func (n *ExecutionNode) Reorg(count arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadataAndBlockInfo, oldMessages []*arbostypes.MessageWithMetadata) ([]*execution.MessageResult, error) {
-	return n.ExecEngine.Reorg(count, newMessages, oldMessages)
+func (n *ExecutionNode) Reorg(newHeadMsgIdx arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadataAndBlockInfo, oldMessages []*arbostypes.MessageWithMetadata) containers.PromiseInterface[[]*execution.MessageResult] {
+	return containers.NewReadyPromise(n.ExecEngine.Reorg(newHeadMsgIdx, newMessages, oldMessages))
 }
-func (n *ExecutionNode) HeadMessageNumber() (arbutil.MessageIndex, error) {
-	return n.ExecEngine.HeadMessageNumber()
-}
-func (n *ExecutionNode) HeadMessageNumberSync(t *testing.T) (arbutil.MessageIndex, error) {
-	return n.ExecEngine.HeadMessageNumberSync(t)
+func (n *ExecutionNode) HeadMessageIndex() containers.PromiseInterface[arbutil.MessageIndex] {
+	return containers.NewReadyPromise(n.ExecEngine.HeadMessageIndex())
 }
 func (n *ExecutionNode) NextDelayedMessageNumber() (uint64, error) {
 	return n.ExecEngine.NextDelayedMessageNumber()
@@ -435,11 +455,11 @@ func (n *ExecutionNode) NextDelayedMessageNumber() (uint64, error) {
 func (n *ExecutionNode) SequenceDelayedMessage(message *arbostypes.L1IncomingMessage, delayedSeqNum uint64) error {
 	return n.ExecEngine.SequenceDelayedMessage(message, delayedSeqNum)
 }
-func (n *ExecutionNode) ResultAtPos(pos arbutil.MessageIndex) (*execution.MessageResult, error) {
-	return n.ExecEngine.ResultAtPos(pos)
+func (n *ExecutionNode) ResultAtMessageIndex(msgIdx arbutil.MessageIndex) containers.PromiseInterface[*execution.MessageResult] {
+	return containers.NewReadyPromise(n.ExecEngine.ResultAtMessageIndex(msgIdx))
 }
-func (n *ExecutionNode) ArbOSVersionForMessageNumber(messageNum arbutil.MessageIndex) (uint64, error) {
-	return n.ExecEngine.ArbOSVersionForMessageNumber(messageNum)
+func (n *ExecutionNode) ArbOSVersionForMessageIndex(msgIdx arbutil.MessageIndex) (uint64, error) {
+	return n.ExecEngine.ArbOSVersionForMessageIndex(msgIdx)
 }
 
 func (n *ExecutionNode) RecordBlockCreation(
@@ -481,28 +501,41 @@ func (n *ExecutionNode) SetConsensusClient(consensus execution.FullConsensusClie
 	n.SyncMonitor.SetConsensusInfo(consensus)
 }
 
-func (n *ExecutionNode) MessageIndexToBlockNumber(messageNum arbutil.MessageIndex) uint64 {
-	return n.ExecEngine.MessageIndexToBlockNumber(messageNum)
+func (n *ExecutionNode) MessageIndexToBlockNumber(messageNum arbutil.MessageIndex) containers.PromiseInterface[uint64] {
+	blockNum := n.ExecEngine.MessageIndexToBlockNumber(messageNum)
+	return containers.NewReadyPromise(blockNum, nil)
 }
-func (n *ExecutionNode) BlockNumberToMessageIndex(blockNum uint64) (arbutil.MessageIndex, error) {
-	return n.ExecEngine.BlockNumberToMessageIndex(blockNum)
+func (n *ExecutionNode) BlockNumberToMessageIndex(blockNum uint64) containers.PromiseInterface[arbutil.MessageIndex] {
+	return containers.NewReadyPromise(n.ExecEngine.BlockNumberToMessageIndex(blockNum))
 }
 
-func (n *ExecutionNode) Maintenance() error {
+func (n *ExecutionNode) Maintenance() containers.PromiseInterface[struct{}] {
 	trieCapLimitBytes := arbmath.SaturatingUMul(uint64(n.ConfigFetcher().Caching.TrieCapLimit), 1024*1024)
 	err := n.ExecEngine.Maintenance(trieCapLimitBytes)
 	if err != nil {
-		return err
+		return containers.NewReadyPromise(struct{}{}, err)
 	}
-	return n.ChainDB.Compact(nil, nil)
+
+	err = n.ChainDB.Compact(nil, nil)
+	return containers.NewReadyPromise(struct{}{}, err)
 }
 
-func (n *ExecutionNode) Synced() bool {
-	return n.SyncMonitor.Synced()
+func (n *ExecutionNode) Synced(ctx context.Context) bool {
+	return n.SyncMonitor.Synced(ctx)
 }
 
-func (n *ExecutionNode) FullSyncProgressMap() map[string]interface{} {
-	return n.SyncMonitor.FullSyncProgressMap()
+func (n *ExecutionNode) FullSyncProgressMap(ctx context.Context) map[string]interface{} {
+	return n.SyncMonitor.FullSyncProgressMap(ctx)
+}
+
+func (n *ExecutionNode) SetFinalityData(
+	ctx context.Context,
+	safeFinalityData *arbutil.FinalityData,
+	finalizedFinalityData *arbutil.FinalityData,
+	validatedFinalityData *arbutil.FinalityData,
+) containers.PromiseInterface[struct{}] {
+	err := n.SyncMonitor.SetFinalityData(ctx, safeFinalityData, finalizedFinalityData, validatedFinalityData)
+	return containers.NewReadyPromise(struct{}{}, err)
 }
 
 func (n *ExecutionNode) InitializeTimeboost(ctx context.Context, chainConfig *params.ChainConfig) error {

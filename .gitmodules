@@ -1,3 +1,6 @@
+[submodule "go-ethereum"]
+	path = go-ethereum
+	url = https://github.com/OffchainLabs/go-ethereum.git
 [submodule "fastcache"]
 	path = fastcache
 	url = https://github.com/OffchainLabs/fastcache.git
@@ -9,8 +12,8 @@
 	url = https://github.com/google/brotli.git
 [submodule "contracts"]
 	path = contracts
-	url = https://github.com/EspressoSystems/nitro-contracts.git
-	branch = release-v2.1.3-celestia-409085b
+	url = https://github.com/celestiaorg/nitro-contracts.git
+	branch = celestia-v3.1.0
 [submodule "arbitrator/wasm-testsuite/testsuite"]
 	path = arbitrator/wasm-testsuite/testsuite
 	url = https://github.com/WebAssembly/testsuite.git
@@ -19,12 +22,11 @@
 	url = https://github.com/OffchainLabs/wasmer.git
 [submodule "nitro-testnode"]
 	path = nitro-testnode
-	url = https://github.com/EspressoSystems/nitro-testnode.git
-	branch = celestia-integration
+	url = https://github.com/celestiaorg/nitro-testnode.git
 [submodule "bold"]
 	path = bold
 	url = https://github.com/EspressoSystems/bold.git
-	branch = release-v3.5.6-celestia-a6b9969
+	branch = celestia-v3.1.0
 [submodule "arbitrator/langs/rust"]
 	path = arbitrator/langs/rust
 	url = https://github.com/OffchainLabs/stylus-sdk-rs.git
@@ -37,6 +39,12 @@
 [submodule "safe-smart-account"]
 	path = safe-smart-account
 	url = https://github.com/safe-global/safe-smart-account.git
-[submodule "go-ethereum"]
-	path = go-ethereum
-	url = https://github.com/OffchainLabs/go-ethereum.git
+[submodule "contracts-legacy"]
+	path = contracts-legacy
+	url = https://github.com/OffchainLabs/nitro-contracts.git
+[submodule "contracts-local/lib/openzeppelin-contracts"]
+	path = contracts-local/lib/openzeppelin-contracts
+	url = https://github.com/OpenZeppelin/openzeppelin-contracts
+[submodule "contracts-local/src/precompiles"]
+	path = contracts-local/src/precompiles
+	url = https://github.com/OffchainLabs/nitro-precompile-interfaces.git

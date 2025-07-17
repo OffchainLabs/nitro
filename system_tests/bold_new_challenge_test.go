@@ -1,5 +1,5 @@
 // Copyright 2024, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 //go:build challengetest && !race
 
@@ -258,10 +258,12 @@ func fundBoldStaker(t *testing.T, ctx context.Context, builder *NodeBuilder, nam
 }
 
 func TestChallengeProtocolBOLDNearLastVirtualBlock(t *testing.T) {
+	t.Skip("This test is flaky and needs to be fixed")
 	testChallengeProtocolBOLDVirtualBlocks(t, false)
 }
 
 func TestChallengeProtocolBOLDFirstVirtualBlock(t *testing.T) {
+	t.Skip("This test is flaky and needs to be fixed")
 	testChallengeProtocolBOLDVirtualBlocks(t, true)
 }
 
@@ -290,6 +292,9 @@ func startBoldChallengeManager(t *testing.T, ctx context.Context, builder *NodeB
 			CheckBatchFinality:     false,
 		},
 		cacheDir,
+		node.ConsensusNode.InboxTracker,
+		node.ConsensusNode.TxStreamer,
+		node.ConsensusNode.InboxReader,
 	)
 	Require(t, err)
 

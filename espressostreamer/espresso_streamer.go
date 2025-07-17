@@ -63,9 +63,8 @@ type EspressoStreamer struct {
 	messageWithMetadataAndPos []*MessageWithMetadataAndPos
 	espressoSGXVerifier       espressotee.EspressoSGXVerifierInterface
 
-	messageLock            sync.Mutex
-	retryTime              time.Duration
-	hotshotPollingInterval time.Duration
+	messageLock sync.Mutex
+	retryTime   time.Duration
 
 	PerfRecorder    *PerfRecorder
 	batchPosterAddr common.Address

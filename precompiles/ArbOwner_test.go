@@ -1,5 +1,5 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package precompiles
 
@@ -170,6 +170,41 @@ func TestArbOwner(t *testing.T) {
 	Require(t, err)
 	if l2BaseFee.Cmp(retrievedL2BaseFee) != 0 {
 		Fail(t, "Expected", l2BaseFee, "got", retrievedL2BaseFee)
+	}
+
+	params, err := state.Programs().Params()
+	Require(t, err)
+	maxWasmSize := params.MaxWasmSize
+	want := 128 * 1024 // Initial maxWasmSize
+	if maxWasmSize != uint32(want) {
+		Fail(t, "Got", maxWasmSize, "want", want)
+	}
+
+	want = 256 * 1024
+	params.MaxWasmSize = uint32(want)
+	if err := params.Save(); err != nil {
+		Fail(t, err)
+	}
+	params, err = state.Programs().Params()
+	Require(t, err)
+	maxWasmSize = params.MaxWasmSize
+	if maxWasmSize != uint32(want) {
+		Fail(t, "Got", maxWasmSize, "want", want)
+	}
+
+	pubPrec := &ArbOwnerPublic{}
+
+	cdpi, err := pubPrec.IsCalldataPriceIncreaseEnabled(callCtx, evm)
+	Require(t, err)
+	if cdpi {
+		Fail(t)
+	}
+	err = prec.SetCalldataPriceIncrease(callCtx, evm, true)
+	Require(t, err)
+	cdpi, err = pubPrec.IsCalldataPriceIncreaseEnabled(callCtx, evm)
+	Require(t, err)
+	if !cdpi {
+		Fail(t)
 	}
 }
 

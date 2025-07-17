@@ -6,23 +6,112 @@ import (
 	"fmt"
 	"math/big"
 	"testing"
+	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/state"
+	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/eth"
 	"github.com/ethereum/go-ethereum/eth/gasestimator"
 	"github.com/ethereum/go-ethereum/eth/tracers"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
 
+	"github.com/offchainlabs/nitro/arbos/arbosState"
+	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbos/retryables"
+	"github.com/offchainlabs/nitro/arbos/util"
+	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/solgen/go/node_interfacegen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/util/colors"
 )
+
+var (
+	txsSeenByTracer    map[common.Hash]struct{}
+	blocksSeenByTracer uint64
+)
+
+type testTracer struct{}
+
+func newTestTracer(_ json.RawMessage) (*tracing.Hooks, error) {
+	t := &testTracer{}
+	return &tracing.Hooks{
+		OnTxStart:    t.OnTxStart,
+		OnBlockStart: t.OnBlockStart,
+		OnBlockEnd:   t.OnBlockEnd,
+	}, nil
+}
+
+func (t *testTracer) OnTxStart(vm *tracing.VMContext, tx *types.Transaction, from common.Address) {
+	if from != types.ArbosAddress {
+		txsSeenByTracer[tx.Hash()] = struct{}{}
+	}
+	log.Info("TestTracerLogging", "txHash", tx.Hash(), "from", from)
+}
+
+func (t *testTracer) OnBlockStart(ev tracing.BlockEvent) {
+	blocksSeenByTracer++
+	log.Info("TestTracerLogging OnBlockStart")
+}
+
+func (t *testTracer) OnBlockEnd(err error) {
+	log.Info("TestTracerLogging OnBlockEnd")
+}
+
+// TestLiveTracingInNode: currently live tracing is only available when building a 2nd node
+func TestLiveTracingInNode(t *testing.T) {
+	txsSeenByTracer = make(map[common.Hash]struct{})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	builder.L2Info.GenerateAccount("User")
+	user := builder.L2Info.GetDefaultTransactOpts("User", ctx)
+
+	// Create transactions to progress blockchain
+	var err error
+	var lastTx *types.Transaction
+	numTxs := 20
+	txs := make(map[common.Hash]struct{})
+	for i := 0; i < numTxs; i++ {
+		lastTx, _ = builder.L2.TransferBalanceTo(t, "Owner", util.RemapL1Address(user.From), big.NewInt(1e18), builder.L2Info)
+		txs[lastTx.Hash()] = struct{}{}
+	}
+
+	// Start second node with live tracing
+	execConfig := builder.execConfig
+	execConfig.VmTrace = gethexec.LiveTracingConfig{TracerName: "testTracer"}
+	tracers.LiveDirectory.Register("testTracer", newTestTracer)
+	testClientB, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{execConfig: execConfig})
+	defer cleanupB()
+
+	// Wait for second node to catchup
+	_, err = WaitForTx(ctx, testClientB.Client, lastTx.Hash(), time.Second*5)
+	Require(t, err)
+	if len(txsSeenByTracer) != numTxs {
+		t.Fatalf("unexpected number of txs seen by testTracer. Want: %d, Got: %d", numTxs, len(txsSeenByTracer))
+	}
+	for txHash := range txs {
+		if _, ok := txsSeenByTracer[txHash]; !ok {
+			t.Fatalf("transaction: %s not seen by testTracer", txHash.String())
+		}
+	}
+
+	totalBlocks, err := testClientB.Client.BlockNumber(ctx)
+	Require(t, err)
+	if blocksSeenByTracer != totalBlocks {
+		t.Fatalf("unexpected number of txs seen by testTracer. Want: %d, Got: %d", totalBlocks, blocksSeenByTracer)
+	}
+}
 
 func TestDebugAPI(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
@@ -52,6 +141,8 @@ func TestDebugAPI(t *testing.T) {
 	arbSys, err := precompilesgen.NewArbSys(types.ArbSysAddress, builder.L2.Client)
 	Require(t, err)
 	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
+	withdrawalValue := big.NewInt(1000000000)
+	auth.Value = withdrawalValue
 	tx, err := arbSys.SendTxToL1(&auth, common.Address{}, []byte{})
 	Require(t, err)
 	receipt, err := builder.L2.EnsureTxSucceeded(tx)
@@ -60,10 +151,49 @@ func TestDebugAPI(t *testing.T) {
 		Fatal(t, "Unexpected number of logs", len(receipt.Logs))
 	}
 
-	var result json.RawMessage
-	flatCallTracer := "flatCallTracer"
-	err = l2rpc.CallContext(ctx, &result, "debug_traceTransaction", tx.Hash(), &tracers.TraceConfig{Tracer: &flatCallTracer})
+	// Use JS tracer
+	js := `{
+		"onBalanceChange": function(balanceChange) { 
+			if (!this.balanceChanges) {
+				this.balanceChanges = [];
+			}
+			this.balanceChanges.push({
+				addr: balanceChange.addr,
+				prev: balanceChange.prev,
+				new: balanceChange.new,
+				reason: balanceChange.reason
+        	});
+		},
+		"result": function() { return this.balanceChanges || []; },
+		"fault":  function() { return this.names; },
+		names: []
+	}`
+	type balanceChangeJS struct {
+		Addr   common.Address `json:"addr"`
+		Prev   big.Int        `json:"prev"`
+		New    big.Int        `json:"new"`
+		Reason string         `json:"reason"`
+	}
+	var jsTrace []balanceChangeJS
+	err = l2rpc.CallContext(ctx, &jsTrace, "debug_traceTransaction", tx.Hash(), &tracers.TraceConfig{Tracer: &js})
 	Require(t, err)
+	found := false
+	for _, balChange := range jsTrace {
+		if balChange.Reason == tracing.BalanceDecreaseWithdrawToL1.Str() &&
+			balChange.Addr == types.ArbSysAddress &&
+			balChange.Prev.Cmp(withdrawalValue) == 0 &&
+			balChange.New.Cmp(common.Big0) == 0 {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("balanceChanges in tracing via js tracer didn't register withdrawal of funds to L1")
+	}
+
+	var result json.RawMessage
+	err = l2rpc.CallContext(ctx, &result, "debug_traceTransaction", tx.Hash(), &tracers.TraceConfig{Tracer: &js})
+	Require(t, err)
+	colors.PrintGrey("balance changes: ", string(result))
 }
 
 type account struct {
@@ -184,7 +314,7 @@ func TestArbTxTypesTracingPrestateTracerAndCallTracer(t *testing.T) {
 		Fatal(t, "Faucet account not found in the result of prestate tracer")
 	}
 	// Nonce shouldn't exist (in this case defaults to 0) in the Post map of the trace in DiffMode
-	if l2Tx.SkipAccountChecks() && result.Post[faucetAddr].Nonce != 0 {
+	if l2Tx.SkipNonceChecks() && result.Post[faucetAddr].Nonce != 0 {
 		Fatal(t, "Faucet account's nonce should remain unchanged ")
 	}
 	if !arbmath.BigEquals(result.Pre[faucetAddr].Balance.ToInt(), oldBalance) {
@@ -319,5 +449,56 @@ func TestArbTxTypesTracingPrestateTracerAndCallTracer(t *testing.T) {
 	}
 	if !arbmath.BigEquals(result.Post[user2Address].Balance.ToInt(), callValue) {
 		Fatal(t, "Unexpected final balance of User2")
+	}
+}
+
+func TestPrestateTracerRegistersArbitrumStorage(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
+	arbOwner, err := precompilesgen.NewArbOwner(common.HexToAddress("0x70"), builder.L2.Client)
+	Require(t, err, "could not bind ArbOwner contract")
+
+	// Schedule a noop upgrade
+	tx, err := arbOwner.ScheduleArbOSUpgrade(&auth, 1, 1)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	statedb, err := builder.L2.ExecNode.Backend.ArbInterface().BlockChain().State()
+	Require(t, err)
+	burner := burn.NewSystemBurner(nil, false)
+	arbosSt, err := arbosState.OpenArbosState(statedb, burner)
+	Require(t, err)
+
+	l2rpc := builder.L2.Stack.Attach()
+	var result map[common.Address]*account
+	prestateTracer := "prestateTracer"
+	err = l2rpc.CallContext(ctx, &result, "debug_traceTransaction", tx.Hash(), &tracers.TraceConfig{Tracer: &prestateTracer})
+	Require(t, err)
+
+	// ArbOSVersion and BrotliCompressionLevel storage slots should be accessed by arbos so we check if the current values of these appear in the prestateTrace
+	arbOSVersionHash := common.BigToHash(new(big.Int).SetUint64(arbosSt.ArbOSVersion()))
+	bcl, err := arbosSt.BrotliCompressionLevel()
+	Require(t, err)
+	bclHash := common.BigToHash(new(big.Int).SetUint64(bcl))
+
+	if _, ok := result[types.ArbosStateAddress]; !ok {
+		t.Fatal("ArbosStateAddress storage accesses not logged in the prestateTracer's trace")
+	}
+
+	found := 0
+	for _, val := range result[types.ArbosStateAddress].Storage {
+		if val == arbOSVersionHash || val == bclHash {
+			found++
+		}
+	}
+	if found != 2 {
+		t.Fatal("ArbosStateAddress storage accesses for ArbOSVersion and BrotliCompressionLevel not logged in the prestateTracer's trace")
 	}
 }

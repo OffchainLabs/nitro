@@ -1,5 +1,5 @@
 // Copyright 2022-2024, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 //go:build !wasm
 // +build !wasm
@@ -233,7 +233,7 @@ func activateProgramInternal(
 	return info, asmMap, err
 }
 
-func getLocalAsm(statedb vm.StateDB, moduleHash common.Hash, addressForLogging common.Address, code []byte, codehash common.Hash, pagelimit uint16, time uint64, debugMode bool, program Program) ([]byte, error) {
+func getLocalAsm(statedb vm.StateDB, moduleHash common.Hash, addressForLogging common.Address, code []byte, codehash common.Hash, maxWasmSize uint32, pagelimit uint16, time uint64, debugMode bool, program Program) ([]byte, error) {
 	localTarget := rawdb.LocalTarget()
 	localAsm, err := statedb.TryGetActivatedAsm(localTarget, moduleHash)
 	if err == nil && len(localAsm) > 0 {
@@ -241,7 +241,7 @@ func getLocalAsm(statedb vm.StateDB, moduleHash common.Hash, addressForLogging c
 	}
 
 	// addressForLogging may be empty or may not correspond to the code, so we need to be careful to use the code passed in separately
-	wasm, err := getWasmFromContractCode(code)
+	wasm, err := getWasmFromContractCode(code, maxWasmSize)
 	if err != nil {
 		log.Error("Failed to reactivate program: getWasm", "address", addressForLogging, "expected moduleHash", moduleHash, "err", err)
 		return nil, fmt.Errorf("failed to reactivate program address: %v err: %w", addressForLogging, err)
@@ -276,7 +276,7 @@ func getLocalAsm(statedb vm.StateDB, moduleHash common.Hash, addressForLogging c
 		}
 	} else {
 		// program activated recently, possibly in this eth_call
-		// store it to statedb. It will be stored to database if statedb is commited
+		// store it to statedb. It will be stored to database if statedb is committed
 		statedb.ActivateWasm(moduleHash, asmMap)
 	}
 	asm, exists := asmMap[localTarget]
@@ -359,7 +359,7 @@ func handleReqImpl(apiId usize, req_type u32, data *rustSlice, costPtr *u64, out
 func cacheProgram(db vm.StateDB, module common.Hash, program Program, addressForLogging common.Address, code []byte, codehash common.Hash, params *StylusParams, debug bool, time uint64, runMode core.MessageRunMode) {
 	if runMode == core.MessageCommitMode {
 		// address is only used for logging
-		asm, err := getLocalAsm(db, module, addressForLogging, code, codehash, params.PageLimit, time, debug, program)
+		asm, err := getLocalAsm(db, module, addressForLogging, code, codehash, params.MaxWasmSize, params.PageLimit, time, debug, program)
 		if err != nil {
 			panic("unable to recreate wasm")
 		}

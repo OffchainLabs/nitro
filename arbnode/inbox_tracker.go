@@ -1,5 +1,5 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbnode
 
@@ -21,10 +21,10 @@ import (
 
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbstate"
-	"github.com/offchainlabs/nitro/arbstate/daprovider"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcaster"
 	m "github.com/offchainlabs/nitro/broadcaster/message"
+	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/util/containers"
 )
@@ -301,13 +301,13 @@ func (t *InboxTracker) PopulateFeedBacklog(broadcastServer *broadcaster.Broadcas
 			return fmt.Errorf("error getting message %v: %w", seqNum, err)
 		}
 
-		msgResult, err := t.txStreamer.ResultAtCount(seqNum + 1)
+		msgResult, err := t.txStreamer.ResultAtMessageIndex(seqNum)
 		var blockHash *common.Hash
 		if err == nil {
 			blockHash = &msgResult.BlockHash
 		}
 
-		blockMetadata, err := t.txStreamer.BlockMetadataAtCount(seqNum + 1)
+		blockMetadata, err := t.txStreamer.BlockMetadataAtMessageIndex(seqNum)
 		if err != nil {
 			log.Warn("Error getting blockMetadata byte array from tx streamer", "err", err)
 		}
@@ -606,15 +606,15 @@ func (t *InboxTracker) setDelayedCountReorgAndWriteBatch(batch ethdb.Batch, firs
 	if err := t.deleteBatchMetadataStartingAt(batch, count); err != nil {
 		return err
 	}
-	var prevMesssageCount arbutil.MessageIndex
+	var prevMessageCount arbutil.MessageIndex
 	if count > 0 {
-		prevMesssageCount, err = t.GetBatchMessageCount(count - 1)
+		prevMessageCount, err = t.GetBatchMessageCount(count - 1)
 		if err != nil {
 			return err
 		}
 	}
 	// Writes batch
-	return t.txStreamer.ReorgToAndEndBatch(batch, prevMesssageCount)
+	return t.txStreamer.ReorgAtAndEndBatch(batch, prevMessageCount)
 }
 
 type multiplexerBackend struct {
@@ -760,7 +760,7 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client *ethclien
 	}
 	multiplexer := arbstate.NewInboxMultiplexer(backend, prevbatchmeta.DelayedMessageCount, t.dapReaders, daprovider.KeysetValidate)
 	batchMessageCounts := make(map[uint64]arbutil.MessageIndex)
-	currentpos := prevbatchmeta.MessageCount + 1
+	currentPos := prevbatchmeta.MessageCount + 1
 	for {
 		if len(backend.batches) == 0 {
 			break
@@ -771,8 +771,8 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client *ethclien
 			return err
 		}
 		messages = append(messages, *msg)
-		batchMessageCounts[batchSeqNum] = currentpos
-		currentpos += 1
+		batchMessageCounts[batchSeqNum] = currentPos
+		currentPos += 1
 	}
 
 	lastBatchMeta := prevbatchmeta
@@ -936,5 +936,5 @@ func (t *InboxTracker) ReorgBatchesTo(count uint64) error {
 		return err
 	}
 	log.Info("InboxTracker", "SequencerBatchCount", count)
-	return t.txStreamer.ReorgToAndEndBatch(dbBatch, prevBatchMeta.MessageCount)
+	return t.txStreamer.ReorgAtAndEndBatch(dbBatch, prevBatchMeta.MessageCount)
 }

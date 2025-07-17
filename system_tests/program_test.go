@@ -1,5 +1,5 @@
 // Copyright 2022-2024, Offchain Labs, Inc.
-// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbtest
 
@@ -32,11 +32,13 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbcompress"
+	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/execution/gethexec"
-	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
+	"github.com/offchainlabs/nitro/solgen/go/localgen"
+	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	pgen "github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/colors"
@@ -152,7 +154,7 @@ func keccakTest(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder)) {
 	}
 
 	// do a mutating call for proving's sake
-	_, tx, mock, err := mocksgen.DeployProgramTest(&auth, l2client)
+	_, tx, mock, err := localgen.DeployProgramTest(&auth, l2client)
 	ensure(tx, err)
 	ensure(mock.CallKeccak(&auth, programAddress, args))
 	ensure(mock.CallKeccak(&auth, otherAddressSameCode, args))
@@ -236,12 +238,12 @@ func testActivateTwice(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder)
 	// mechanisms for creating calldata
 	activateProgram, _ := util.NewCallParser(pgen.ArbWasmABI, "activateProgram")
 	legacyError, _ := util.NewCallParser(pgen.ArbDebugABI, "legacyError")
-	callKeccak, _ := util.NewCallParser(mocksgen.ProgramTestABI, "callKeccak")
+	callKeccak, _ := util.NewCallParser(localgen.ProgramTestABI, "callKeccak")
 	pack := func(data []byte, err error) []byte {
 		Require(t, err)
 		return data
 	}
-	mockAddr, tx, _, err := mocksgen.DeployProgramTest(&auth, l2client)
+	mockAddr, tx, _, err := localgen.DeployProgramTest(&auth, l2client)
 	ensure(tx, err)
 
 	// Successfully activate, but then revert
@@ -527,7 +529,7 @@ func fastMathTest(t *testing.T, jit bool) {
 
 	program := deployWasm(t, ctx, auth, l2client, rustFile("math"))
 
-	_, tx, mock, err := mocksgen.DeployProgramTest(&auth, l2client)
+	_, tx, mock, err := localgen.DeployProgramTest(&auth, l2client)
 	ensure(tx, err)
 	ensure(mock.MathTest(&auth, program))
 
@@ -588,7 +590,7 @@ func testCalls(t *testing.T, jit bool) {
 
 	storeAddr := deployWasm(t, ctx, auth, l2client, rustFile("storage"))
 	keccakAddr := deployWasm(t, ctx, auth, l2client, rustFile("keccak"))
-	mockAddr, tx, _, err := mocksgen.DeployProgramTest(&auth, l2client)
+	mockAddr, tx, _, err := localgen.DeployProgramTest(&auth, l2client)
 	ensure(tx, err)
 
 	colors.PrintGrey("multicall.wasm ", callsAddr)
@@ -684,7 +686,7 @@ func testCalls(t *testing.T, jit bool) {
 	burnArbGas, _ := util.NewCallParser(pgen.ArbosTestABI, "burnArbGas")
 	customRevert, _ := util.NewCallParser(pgen.ArbDebugABI, "customRevert")
 	legacyError, _ := util.NewCallParser(pgen.ArbDebugABI, "legacyError")
-	callKeccak, _ := util.NewCallParser(mocksgen.ProgramTestABI, "callKeccak")
+	callKeccak, _ := util.NewCallParser(localgen.ProgramTestABI, "callKeccak")
 	pack := func(data []byte, err error) []byte {
 		Require(t, err)
 		return data
@@ -1002,7 +1004,7 @@ func testCreate(t *testing.T, jit bool) {
 	revertArgs = append(revertArgs, common.BigToHash(startValue).Bytes()...)
 	revertArgs = append(revertArgs, deployContractInitCode(revertData, true)...)
 
-	_, tx, mock, err := mocksgen.DeployProgramTest(&auth, l2client)
+	_, tx, mock, err := localgen.DeployProgramTest(&auth, l2client)
 	ensure(tx, err)
 	auth.Value = startValue
 	ensure(mock.CheckRevertData(&auth, createAddr, revertArgs, revertData))
@@ -1256,7 +1258,7 @@ func testSdkStorage(t *testing.T, jit bool) {
 		return receipt
 	}
 
-	solidity, tx, mock, err := mocksgen.DeploySdkStorage(&auth, l2client)
+	solidity, tx, mock, err := localgen.DeploySdkStorage(&auth, l2client)
 	ensure(tx, err)
 	tx, err = mock.Populate(&auth)
 	receipt := ensure(tx, err)
@@ -1491,7 +1493,7 @@ func testEarlyExit(t *testing.T, jit bool) {
 		Require(t, err)
 	}
 
-	_, tx, mock, err := mocksgen.DeployProgramTest(&auth, l2client)
+	_, tx, mock, err := localgen.DeployProgramTest(&auth, l2client)
 	ensure(tx, err)
 
 	// revert with the following data
@@ -1564,7 +1566,7 @@ func TestProgramCacheManager(t *testing.T) {
 	codehash := crypto.Keccak256Hash(wasm)
 
 	// try to manage the cache without authorization
-	manager, tx, mock, err := mocksgen.DeploySimpleCacheManager(&ownerAuth, l2client)
+	manager, tx, mock, err := localgen.DeploySimpleCacheManager(&ownerAuth, l2client)
 	ensure(tx, err)
 	denytx(mock.CacheProgram(&userAuth, program))
 	denytx(mock.EvictProgram(&userAuth, program))
@@ -1846,10 +1848,13 @@ func multicallEmptyArgs() []byte {
 	return []byte{0} // number of actions
 }
 
-func multicallAppendStore(args []byte, key, value common.Hash, emitLog bool) []byte {
+func multicallAppendStore(args []byte, key, value common.Hash, emitLog bool, notFlush bool) []byte {
 	var action byte = 0x10
 	if emitLog {
 		action |= 0x08
+	}
+	if notFlush {
+		action |= 0x02
 	}
 	args[0] += 1
 	args = binary.BigEndian.AppendUint32(args, 1+64) // length
@@ -1868,6 +1873,14 @@ func multicallAppendLoad(args []byte, key common.Hash, emitLog bool) []byte {
 	args = binary.BigEndian.AppendUint32(args, 1+32) // length
 	args = append(args, action)
 	args = append(args, key.Bytes()...)
+	return args
+}
+
+func multicallAppendClearCache(args []byte) []byte {
+	var action byte = 0x20
+	args[0] += 1
+	args = binary.BigEndian.AppendUint32(args, 1) // length
+	args = append(args, action)
 	return args
 }
 
@@ -1899,7 +1912,7 @@ func waitForSequencer(t *testing.T, builder *NodeBuilder, block uint64) {
 		Require(t, err)
 		meta, err := builder.L2.ConsensusNode.InboxTracker.GetBatchMetadata(batchCount - 1)
 		Require(t, err)
-		msgExecuted, err := builder.L2.ExecNode.ExecEngine.HeadMessageNumber()
+		msgExecuted, err := builder.L2.ExecNode.ExecEngine.HeadMessageIndex()
 		Require(t, err)
 		return msgExecuted+1 >= msgCount && meta.MessageCount >= msgCount
 	})
@@ -2617,4 +2630,103 @@ func TestRepopulateWasmLongTermCacheFromLru(t *testing.T) {
 		Count:     1,
 		SizeBytes: fallibleEntrySize,
 	})
+}
+
+func TestOutOfGasInStorageCacheFlush(t *testing.T) {
+	jit := false
+	builder, auth, cleanup := setupProgramTest(t, jit)
+	ctx := builder.ctx
+	defer cleanup()
+
+	testClient2ndNode, cleanup2ndNode := builder.Build2ndNode(t, &SecondNodeParams{nodeConfig: arbnode.ConfigDefaultL1NonSequencerTest()})
+	defer cleanup2ndNode()
+
+	// Sets l1 data gas to zero
+	arbOwner, err := precompilesgen.NewArbOwner(types.ArbOwnerAddress, builder.L2.Client)
+	Require(t, err)
+	tx, err := arbOwner.SetL1BaseFeeEstimateInertia(&auth, 0)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+	tx, err = arbOwner.SetL1PricingEquilibrationUnits(&auth, big.NewInt(0))
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+	tx, err = arbOwner.SetL1PricingInertia(&auth, 0)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+	tx, err = arbOwner.SetL1PricingRewardRate(&auth, 0)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+	tx, err = arbOwner.SetL1PricePerUnit(&auth, big.NewInt(0))
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+	tx, err = arbOwner.SetPerBatchGasCharge(&auth, 0)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+	tx, err = arbOwner.SetAmortizedCostCapBips(&auth, 0)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	multiAddr := deployWasm(t, ctx, auth, builder.L2.Client, rustFile("multicall"))
+
+	argsMulticall := func(numberOfStores int) []byte {
+		args := multicallEmptyArgs()
+		for i := 0; i < numberOfStores; i++ {
+			key := testhelpers.RandomHash()
+			val := testhelpers.RandomHash()
+			args = multicallAppendStore(args, key, val, false, true)
+		}
+		return args
+	}
+
+	// Successful transaction to multicall
+	args := argsMulticall(50)
+	tx = builder.L2Info.PrepareTxTo("Owner", &multiAddr, uint64(2210000), nil, args)
+	err = builder.L2.Client.SendTransaction(ctx, tx)
+	Require(t, err)
+	receipt, err := builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+	if receipt.GasUsedForL1 != 0 {
+		t.Fatalf("expected 0 gas used, got %d", receipt.GasUsedForL1)
+	}
+	receipt, err = WaitForTx(ctx, testClient2ndNode.Client, tx.Hash(), time.Second*15)
+	Require(t, err)
+	if receipt.GasUsedForL1 != 0 {
+		t.Fatalf("expected 0 gas used, got %d", receipt.GasUsedForL1)
+	}
+
+	// Failed transaction to multicall.
+	// The transaction will fail during storage flush.
+	args = argsMulticall(200)
+	tx = builder.L2Info.PrepareTxTo("Owner", &multiAddr, uint64(2210000), nil, args)
+	err = builder.L2.Client.SendTransaction(ctx, tx)
+	Require(t, err)
+	receipt, err = builder.L2.EnsureTxSucceeded(tx)
+	if err == nil || err.Error() != fmt.Sprintf("out of gas for tx hash %v", tx.Hash().String()) {
+		t.Fatalf("expected out of gas error, got %v", err)
+	}
+	if receipt.GasUsedForL1 != 0 {
+		t.Fatalf("expected 0 gas used, got %d", receipt.GasUsedForL1)
+	}
+	receipt, err = WaitForTx(ctx, testClient2ndNode.Client, tx.Hash(), time.Second*15)
+	Require(t, err)
+	if receipt.GasUsedForL1 != 0 {
+		t.Fatalf("expected 0 gas used, got %d", receipt.GasUsedForL1)
+	}
+	blockNumberFailedTx := receipt.BlockNumber
+
+	wasmModuleRoot := currentRootModule(t)
+	_, _, err = builder.L2.ConsensusNode.StatelessBlockValidator.ValidateResult(
+		ctx,
+		arbutil.MessageIndex(blockNumberFailedTx.Uint64()),
+		false,
+		wasmModuleRoot,
+	)
+	Require(t, err)
 }

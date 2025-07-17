@@ -1,5 +1,5 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package gethexec
 
@@ -52,7 +52,7 @@ func (a *ArbAPI) GetRawBlockMetadata(ctx context.Context, fromBlock, toBlock rpc
 	if a.bulkBlockMetadataFetcher == nil {
 		return nil, errors.New("arb_getRawBlockMetadata is not available")
 	}
-	return a.bulkBlockMetadataFetcher.Fetch(fromBlock, toBlock)
+	return a.bulkBlockMetadataFetcher.Fetch(ctx, fromBlock, toBlock)
 }
 
 type ArbTimeboostAuctioneerAPI struct {
@@ -76,6 +76,9 @@ func NewArbTimeboostAPI(publisher TransactionPublisher) *ArbTimeboostAPI {
 }
 
 func (a *ArbTimeboostAPI) SendExpressLaneTransaction(ctx context.Context, msg *timeboost.JsonExpressLaneSubmission) error {
+	if msg == nil {
+		return errors.New("missing required parameter")
+	}
 	goMsg, err := timeboost.JsonSubmissionToGo(msg)
 	if err != nil {
 		return err
@@ -356,7 +359,7 @@ func (api *ArbTraceForwarderAPI) getFallbackClient() (types.FallbackClient, erro
 	if api.initialized.Load() {
 		return api.fallbackClient, nil
 	}
-	fallbackClient, err := arbitrum.CreateFallbackClient(api.fallbackClientUrl, api.fallbackClientTimeout)
+	fallbackClient, err := arbitrum.CreateFallbackClient(api.fallbackClientUrl, api.fallbackClientTimeout, false)
 	if err != nil {
 		return nil, err
 	}

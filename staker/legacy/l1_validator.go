@@ -1,5 +1,5 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package legacystaker
 
@@ -18,7 +18,8 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
+	"github.com/offchainlabs/nitro/execution"
+	"github.com/offchainlabs/nitro/solgen/go/rollup_legacy_gen"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/staker/txbuilder"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -44,9 +45,9 @@ const (
 )
 
 type L1Validator struct {
-	rollup         *staker.RollupWatcher
+	rollup         *RollupWatcher
 	rollupAddress  common.Address
-	validatorUtils *rollupgen.ValidatorUtils
+	validatorUtils *rollup_legacy_gen.ValidatorUtils
 	client         *ethclient.Client
 	builder        *txbuilder.Builder
 	wallet         ValidatorWalletInterface
@@ -62,6 +63,7 @@ func NewL1Validator(
 	client *ethclient.Client,
 	wallet ValidatorWalletInterface,
 	validatorUtilsAddress common.Address,
+	rollupAddress common.Address,
 	gasRefunder common.Address,
 	callOpts bind.CallOpts,
 	inboxTracker staker.InboxTrackerInterface,
@@ -72,11 +74,11 @@ func NewL1Validator(
 	if err != nil {
 		return nil, err
 	}
-	rollup, err := staker.NewRollupWatcher(wallet.RollupAddress(), wallet.L1Client(), callOpts)
+	rollup, err := NewRollupWatcher(rollupAddress, wallet.L1Client(), callOpts)
 	if err != nil {
 		return nil, err
 	}
-	validatorUtils, err := rollupgen.NewValidatorUtils(
+	validatorUtils, err := rollup_legacy_gen.NewValidatorUtils(
 		validatorUtilsAddress,
 		client,
 	)
@@ -85,7 +87,7 @@ func NewL1Validator(
 	}
 	return &L1Validator{
 		rollup:         rollup,
-		rollupAddress:  wallet.RollupAddress(),
+		rollupAddress:  rollupAddress,
 		validatorUtils: validatorUtils,
 		client:         client,
 		builder:        builder,
@@ -139,10 +141,14 @@ func (v *L1Validator) resolveTimedOutChallenges(ctx context.Context) (*types.Tra
 		return nil, nil
 	}
 	log.Info("timing out challenges", "count", len(challengesToEliminate))
-	return v.wallet.TimeoutChallenges(ctx, challengesToEliminate)
+	challengeManagerAddress, err := v.rollup.ChallengeManager(v.getCallOpts(ctx))
+	if err != nil {
+		return nil, err
+	}
+	return v.wallet.TimeoutChallenges(ctx, challengesToEliminate, challengeManagerAddress)
 }
 
-func (v *L1Validator) resolveNextNode(ctx context.Context, info *staker.StakerInfo, latestConfirmedNode *uint64) (bool, error) {
+func (v *L1Validator) resolveNextNode(ctx context.Context, info *StakerInfo, latestConfirmedNode *uint64) (bool, error) {
 	callOpts := v.getCallOpts(ctx)
 	confirmType, err := v.validatorUtils.CheckDecidableNextNode(callOpts, v.rollupAddress)
 	if err != nil {
@@ -188,7 +194,7 @@ func (v *L1Validator) isRequiredStakeElevated(ctx context.Context) (bool, error)
 	}
 	requiredStake, err := v.rollup.CurrentRequiredStake(callOpts)
 	if err != nil {
-		if headerreader.ExecutionRevertedRegexp.MatchString(err.Error()) {
+		if headerreader.IsExecutionReverted(err) {
 			log.Warn("execution reverted checking if required state is elevated; assuming elevated", "err", err)
 			return true, nil
 		}
@@ -198,7 +204,7 @@ func (v *L1Validator) isRequiredStakeElevated(ctx context.Context) (bool, error)
 }
 
 type createNodeAction struct {
-	assertion         *staker.Assertion
+	assertion         *Assertion
 	prevInboxMaxCount *big.Int
 	hash              common.Hash
 }
@@ -215,7 +221,7 @@ type OurStakerInfo struct {
 	LatestStakedNodeHash common.Hash
 	CanProgress          bool
 	StakeExists          bool
-	*staker.StakerInfo
+	*StakerInfo
 }
 
 func (v *L1Validator) generateNodeAction(
@@ -344,9 +350,12 @@ func (v *L1Validator) generateNodeAction(
 				return nil, false, errors.New("batch not found on L1")
 			}
 		}
-		execResult, err := v.txStreamer.ResultAtCount(validatedCount)
-		if err != nil {
-			return nil, false, err
+		execResult := &execution.MessageResult{}
+		if validatedCount > 0 {
+			execResult, err = v.txStreamer.ResultAtMessageIndex(validatedCount - 1)
+			if err != nil {
+				return nil, false, err
+			}
 		}
 		_, gsPos, err := staker.GlobalStatePositionsAtCount(v.inboxTracker, validatedCount, batchNum)
 		if err != nil {
@@ -503,7 +512,7 @@ func (v *L1Validator) createNewNodeAction(
 		hasSiblingByte[0] = 1
 	}
 	assertionNumBlocks := uint64(validatedCount - startCount)
-	assertion := &staker.Assertion{
+	assertion := &Assertion{
 		BeforeState: startState,
 		AfterState: &validator.ExecutionState{
 			GlobalState:   validatedGS,
@@ -533,7 +542,7 @@ func (v *L1Validator) createNewNodeAction(
 }
 
 // Returns (execution state, inbox max count, L1 block proposed, parent chain block proposed, error)
-func lookupNodeStartState(ctx context.Context, rollup *staker.RollupWatcher, nodeNum uint64, nodeHash common.Hash) (*validator.ExecutionState, *big.Int, uint64, uint64, error) {
+func lookupNodeStartState(ctx context.Context, rollup *RollupWatcher, nodeNum uint64, nodeHash common.Hash) (*validator.ExecutionState, *big.Int, uint64, uint64, error) {
 	if nodeNum == 0 {
 		creationEvent, err := rollup.LookupCreation(ctx)
 		if err != nil {

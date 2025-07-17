@@ -1,5 +1,5 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package staker
 
@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -17,8 +18,8 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
-	"github.com/offchainlabs/nitro/arbstate/daprovider"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/validator"
@@ -30,17 +31,19 @@ import (
 type StatelessBlockValidator struct {
 	config *BlockValidatorConfig
 
-	execSpawners   []validator.ExecutionSpawner
-	redisValidator *redis.ValidationClient
+	execSpawners     []validator.ExecutionSpawner
+	boldExecSpawners []validator.BOLDExecutionSpawner
+	redisValidator   *redis.ValidationClient
 
 	recorder execution.ExecutionRecorder
 
-	inboxReader  InboxReaderInterface
-	inboxTracker InboxTrackerInterface
-	streamer     TransactionStreamerInterface
-	db           ethdb.Database
-	dapReaders   []daprovider.Reader
-	stack        *node.Node
+	inboxReader          InboxReaderInterface
+	inboxTracker         InboxTrackerInterface
+	streamer             TransactionStreamerInterface
+	db                   ethdb.Database
+	dapReaders           []daprovider.Reader
+	stack                *node.Node
+	latestWasmModuleRoot common.Hash
 }
 
 type BlockValidatorRegistrer interface {
@@ -59,8 +62,8 @@ type InboxTrackerInterface interface {
 type TransactionStreamerInterface interface {
 	BlockValidatorRegistrer
 	GetProcessedMessageCount() (arbutil.MessageIndex, error)
-	GetMessage(seqNum arbutil.MessageIndex) (*arbostypes.MessageWithMetadata, error)
-	ResultAtCount(count arbutil.MessageIndex) (*execution.MessageResult, error)
+	GetMessage(msgIdx arbutil.MessageIndex) (*arbostypes.MessageWithMetadata, error)
+	ResultAtMessageIndex(msgIdx arbutil.MessageIndex) (*execution.MessageResult, error)
 	PauseReorgs()
 	ResumeReorgs()
 	ChainConfig() *params.ChainConfig
@@ -137,7 +140,7 @@ type validationEntry struct {
 	// Has batch when created - others could be added on record
 	BatchInfo []validator.BatchInfo
 	// Valid since Ready
-	Preimages  map[arbutil.PreimageType]map[common.Hash][]byte
+	Preimages  daprovider.PreimagesMap
 	UserWasms  state.UserWasms
 	DelayedMsg []byte
 }
@@ -234,8 +237,10 @@ func NewStatelessBlockValidator(
 	dapReaders []daprovider.Reader,
 	config func() *BlockValidatorConfig,
 	stack *node.Node,
+	latestWasmModuleRoot common.Hash,
 ) (*StatelessBlockValidator, error) {
 	var executionSpawners []validator.ExecutionSpawner
+	var boldExecutionSpawners []validator.BOLDExecutionSpawner
 	var redisValClient *redis.ValidationClient
 
 	if config().RedisValidationClientConfig.Enabled() {
@@ -249,24 +254,32 @@ func NewStatelessBlockValidator(
 	for i := range configs {
 		i := i
 		confFetcher := func() *rpcclient.ClientConfig { return &config().ValidationServerConfigs[i] }
-		executionSpawners = append(executionSpawners, validatorclient.NewExecutionClient(confFetcher, stack))
+		executionSpawner := validatorclient.NewExecutionClient(confFetcher, stack)
+		executionSpawners = append(executionSpawners, executionSpawner)
+		boldExecutionSpawners = append(boldExecutionSpawners, validatorclient.NewBOLDExecutionClient(executionSpawner))
 	}
 
 	if len(executionSpawners) == 0 {
 		return nil, errors.New("no enabled execution servers")
 	}
 
+	if latestWasmModuleRoot == (common.Hash{}) {
+		return nil, errors.New("latestWasmModuleRoot not set")
+	}
+
 	return &StatelessBlockValidator{
-		config:         config(),
-		recorder:       recorder,
-		redisValidator: redisValClient,
-		inboxReader:    inboxReader,
-		inboxTracker:   inbox,
-		streamer:       streamer,
-		db:             arbdb,
-		dapReaders:     dapReaders,
-		execSpawners:   executionSpawners,
-		stack:          stack,
+		config:               config(),
+		recorder:             recorder,
+		redisValidator:       redisValClient,
+		inboxReader:          inboxReader,
+		inboxTracker:         inbox,
+		streamer:             streamer,
+		db:                   arbdb,
+		dapReaders:           dapReaders,
+		execSpawners:         executionSpawners,
+		boldExecSpawners:     boldExecutionSpawners,
+		stack:                stack,
+		latestWasmModuleRoot: latestWasmModuleRoot,
 	}, nil
 }
 
@@ -282,20 +295,16 @@ func (v *StatelessBlockValidator) readPostedBatch(ctx context.Context, batchNum 
 	return postedData, err
 }
 
-func (v *StatelessBlockValidator) InboxTracker() InboxTrackerInterface {
-	return v.inboxTracker
+func (v *StatelessBlockValidator) ExecutionSpawners() []validator.ExecutionSpawner {
+	return v.execSpawners
 }
 
 func (v *StatelessBlockValidator) InboxReader() InboxReaderInterface {
 	return v.inboxReader
 }
 
-func (v *StatelessBlockValidator) InboxStreamer() TransactionStreamerInterface {
-	return v.streamer
-}
-
-func (v *StatelessBlockValidator) ExecutionSpawners() []validator.ExecutionSpawner {
-	return v.execSpawners
+func (v *StatelessBlockValidator) BOLDExecutionSpawners() []validator.BOLDExecutionSpawner {
+	return v.boldExecSpawners
 }
 
 func (v *StatelessBlockValidator) DapReaders() []daprovider.Reader {
@@ -318,21 +327,24 @@ func (v *StatelessBlockValidator) readFullBatch(ctx context.Context, batchNum ui
 	if err != nil {
 		return false, nil, err
 	}
-	preimages := make(map[arbutil.PreimageType]map[common.Hash][]byte)
+	preimages := make(daprovider.PreimagesMap)
 	if len(postedData) > 40 {
 		foundDA := false
 		for _, dapReader := range v.dapReaders {
-			if dapReader != nil && dapReader.IsValidHeaderByte(postedData[40]) {
-				preimageRecorder := daprovider.RecordPreimagesTo(preimages)
-				_, err := dapReader.RecoverPayloadFromBatch(ctx, batchNum, batchBlockHash, postedData, preimageRecorder, true)
+			if dapReader != nil && dapReader.IsValidHeaderByte(ctx, postedData[40]) {
+				var err error
+				var preimagesRecorded daprovider.PreimagesMap
+				_, preimagesRecorded, err = dapReader.RecoverPayloadFromBatch(ctx, batchNum, batchBlockHash, postedData, preimages, true)
 				if err != nil {
 					// Matches the way keyset validation was done inside DAS readers i.e logging the error
 					//  But other daproviders might just want to return the error
-					if errors.Is(err, daprovider.ErrSeqMsgValidation) && daprovider.IsDASMessageHeaderByte(postedData[40]) {
+					if strings.Contains(err.Error(), daprovider.ErrSeqMsgValidation.Error()) && daprovider.IsDASMessageHeaderByte(postedData[40]) {
 						log.Error(err.Error())
 					} else {
 						return false, nil, err
 					}
+				} else {
+					preimages = preimagesRecorded
 				}
 				foundDA = true
 				break
@@ -432,22 +444,24 @@ func (v *StatelessBlockValidator) CreateReadyValidationEntry(ctx context.Context
 	if err != nil {
 		return nil, err
 	}
-	result, err := v.streamer.ResultAtCount(pos + 1)
+	result, err := v.streamer.ResultAtMessageIndex(pos)
 	if err != nil {
 		return nil, err
 	}
 	var prevDelayed uint64
+	prevResult := &execution.MessageResult{}
 	if pos > 0 {
 		prev, err := v.streamer.GetMessage(pos - 1)
 		if err != nil {
 			return nil, err
 		}
 		prevDelayed = prev.DelayedMessagesRead
+		prevResult, err = v.streamer.ResultAtMessageIndex(pos - 1)
+		if err != nil {
+			return nil, err
+		}
 	}
-	prevResult, err := v.streamer.ResultAtCount(pos)
-	if err != nil {
-		return nil, err
-	}
+
 	startPos, endPos, err := v.GlobalStatePositionsAtCount(pos + 1)
 	if err != nil {
 		return nil, fmt.Errorf("failed calculating position for validation: %w", err)
@@ -547,19 +561,8 @@ func (v *StatelessBlockValidator) OverrideRecorder(t *testing.T, recorder execut
 	v.recorder = recorder
 }
 
-func (v *StatelessBlockValidator) GetLatestWasmModuleRoot(ctx context.Context) (common.Hash, error) {
-	var lastErr error
-	for _, spawner := range v.execSpawners {
-		var latest common.Hash
-		latest, lastErr = spawner.LatestWasmModuleRoot().Await(ctx)
-		if latest != (common.Hash{}) && lastErr == nil {
-			return latest, nil
-		}
-		if ctx.Err() != nil {
-			return common.Hash{}, ctx.Err()
-		}
-	}
-	return common.Hash{}, fmt.Errorf("couldn't detect latest WasmModuleRoot: %w", lastErr)
+func (v *StatelessBlockValidator) GetLatestWasmModuleRoot() common.Hash {
+	return v.latestWasmModuleRoot
 }
 
 func (v *StatelessBlockValidator) Start(ctx_in context.Context) error {

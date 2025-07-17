@@ -10,6 +10,7 @@ check_missing_value() {
 timeout=""
 tags=""
 run=""
+test_state_scheme=""
 race=false
 cover=false
 while [[ $# -gt 0 ]]; do
@@ -32,12 +33,19 @@ while [[ $# -gt 0 ]]; do
       run=$1
       shift
       ;;
+    --test_state_scheme)
+      shift
+      check_missing_value $# "$1" "--test_state_scheme"
+      test_state_scheme=$1
+      shift
+      ;;
     --race)
       race=true
       shift
       ;;
     --cover)
-      cover=true
+      # Espresso Change: to expedite the CI, we always disable this flag
+      cover=false
       shift
       ;;
     *)
@@ -47,10 +55,24 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+###### Espresso
+# 1. First ensure the library path is set
+export LD_LIBRARY_PATH="${LD_LIBRARY_PATH:-}:$(pwd)/target/lib"
+
+# 2. Verify the library exists
+if [[ ! -f "$(pwd)/target/lib/libespresso_crypto_helper-x86_64-unknown-linux-gnu.so" ]]; then
+    echo "Error: libespresso_crypto_helper-x86_64-unknown-linux-gnu.so not found in $(pwd)/target/lib"
+    exit 1
+fi
+
+skip_tests=$(grep -vE '^\s*#|^\s*$' ci_skip_tests | tr '\n' '|' | sed 's/|$//')
+######
+
+
 packages=$(go list ./...)
 for package in $packages; do
   cmd="stdbuf -oL gotestsum --format short-verbose --packages=\"$package\" --rerun-fails=2 --no-color=false --"
-
+  cmd="$cmd -skip \"$skip_tests\""
   if [ "$timeout" != "" ]; then
     cmd="$cmd -timeout $timeout"
   fi
@@ -71,7 +93,13 @@ for package in $packages; do
     cmd="$cmd -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/..."
   fi
 
-  cmd="$cmd > >(stdbuf -oL tee -a full.log | grep -vE \"INFO|seal\")"
+  if [ "$test_state_scheme" != "" ]; then
+      cmd="$cmd -args -- --test_state_scheme=$test_state_scheme --test_loglevel=8"
+  else
+      cmd="$cmd -args -- --test_loglevel=8" # Use error log level, which is the value 8 in the slog level enum for tests.
+  fi
+
+  cmd="$cmd | grep -vE \"INFO|seal|TRACE|DEBUG\""
 
   echo ""
   echo running tests for "$package"

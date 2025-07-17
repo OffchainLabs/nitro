@@ -1,5 +1,5 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package precompiles
 
@@ -36,6 +36,16 @@ func (con ArbOwnerPublic) IsChainOwner(c ctx, evm mech, addr addr) (bool, error)
 	return c.State.ChainOwners().IsMember(addr)
 }
 
+// IsNativeTokenOwner checks if the account is a native token owner
+func (con ArbOwnerPublic) IsNativeTokenOwner(c ctx, evm mech, addr addr) (bool, error) {
+	return c.State.NativeTokenOwners().IsMember(addr)
+}
+
+// GetAllNativeTokenOwners retrieves the list of native token owners
+func (con ArbOwnerPublic) GetAllNativeTokenOwners(c ctx, evm mech) ([]common.Address, error) {
+	return c.State.NativeTokenOwners().AllMembers(65536)
+}
+
 // GetNetworkFeeAccount gets the network fee collector
 func (con ArbOwnerPublic) GetNetworkFeeAccount(c ctx, evm mech) (addr, error) {
 	return c.State.NetworkFeeAccount()
@@ -65,4 +75,10 @@ func (con ArbOwnerPublic) GetScheduledUpgrade(c ctx, evm mech) (uint64, uint64, 
 		return 0, 0, nil
 	}
 	return version, timestamp, nil
+}
+
+// IsCalldataPriceIncreaseEnabled checks if the increased calldata price feature
+// (EIP-7623) is enabled
+func (con ArbOwnerPublic) IsCalldataPriceIncreaseEnabled(c ctx, _ mech) (bool, error) {
+	return c.State.Features().IsIncreasedCalldataPriceEnabled()
 }

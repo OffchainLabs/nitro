@@ -1,5 +1,5 @@
 // Copyright 2023-2024, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package headerreader
 
@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"os"
 	"path"
+	"sync/atomic"
 	"time"
 
 	"github.com/spf13/pflag"
@@ -32,7 +33,7 @@ type BlobClient struct {
 	ec                 *ethclient.Client
 	beaconUrl          *url.URL
 	secondaryBeaconUrl *url.URL
-	httpClient         *http.Client
+	httpClient         atomic.Pointer[http.Client]
 	authorization      string
 
 	// Filled in in Initialize()
@@ -86,14 +87,15 @@ func NewBlobClient(config BlobClientConfig, ec *ethclient.Client) (*BlobClient, 
 			}
 		}
 	}
-	return &BlobClient{
+	blobClient := &BlobClient{
 		ec:                 ec,
 		beaconUrl:          beaconUrl,
 		secondaryBeaconUrl: secondaryBeaconUrl,
 		authorization:      config.Authorization,
-		httpClient:         &http.Client{},
 		blobDirectory:      config.BlobDirectory,
-	}, nil
+	}
+	blobClient.httpClient.Store(&http.Client{})
+	return blobClient, nil
 }
 
 type fullResult[T any] struct {
@@ -114,7 +116,7 @@ func beaconRequest[T interface{}](b *BlobClient, ctx context.Context, beaconPath
 		if b.authorization != "" {
 			req.Header.Set("Authorization", b.authorization)
 		}
-		resp, err := b.httpClient.Do(req)
+		resp, err := b.httpClient.Load().Do(req)
 		if err != nil {
 			return nil, err
 		}
@@ -170,6 +172,12 @@ func (b *BlobClient) GetBlobs(ctx context.Context, blockHash common.Hash, versio
 	slot := (header.Time - b.genesisTime) / b.secondsPerSlot
 	blobs, err := b.blobSidecars(ctx, slot, versionedHashes)
 	if err != nil {
+		// Creates a new http client to avoid reusing the same transport layer connection in the next request.
+		// This strategy can be useful if there is a network load balancer in front of the beacon chain server.
+		// So supposing that the error is due to a malfunctioning beacon chain node, by creating a new http client
+		// we can potentially connect to a different, and healthy, beacon chain node in the next request.
+		b.httpClient.Store(&http.Client{})
+
 		return nil, fmt.Errorf("error fetching blobs in %d l1 block: %w", header.Number, err)
 	}
 	return blobs, nil

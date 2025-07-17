@@ -36,7 +36,7 @@ fileName="libespresso_crypto_helper-$triple"
 latest_tag=$(curl -s https://api.github.com/repos/EspressoSystems/espresso-network/releases | grep -o 'sdks/go/v[0-9.]*' | head -n 1)
 if [ -z "$latest_tag" ]; then
     echo "ERROR: Could not fetch latest Espresso Go SDK release tag."
-    exit 1
+    latest_tag=sdks/go/v0.2.2
 fi
 echo "using Espresso Go SDK release tag: $latest_tag"
 checksum=$(curl -L "https://github.com/EspressoSystems/espresso-network/releases/download/${latest_tag//\//%2F}/$fileName.sha256")

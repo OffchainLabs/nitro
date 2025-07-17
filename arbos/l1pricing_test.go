@@ -1,16 +1,16 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbos
 
 import (
+	"math"
 	"math/big"
 	"testing"
 
 	"github.com/holiman/uint256"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/vm"
@@ -277,7 +277,7 @@ func _testL1PriceEquilibration(t *testing.T, initialL1BasefeeEstimate *big.Int, 
 		currentPricePerUnit, err := l1p.PricePerUnit()
 		Require(t, err)
 		feesToAdd := arbmath.BigMulByUint(currentPricePerUnit, unitsToAdd)
-		util.MintBalance(&l1PoolAddress, feesToAdd, evm, util.TracingBeforeEVM, "test")
+		util.MintBalance(&l1PoolAddress, feesToAdd, evm, util.TracingBeforeEVM, tracing.BalanceChangeUnspecified)
 		err = l1p.UpdateForBatchPosterSpending(
 			evm.StateDB,
 			evm,
@@ -325,7 +325,7 @@ func newMockEVMForTesting() *vm.EVM {
 		GasLimit:    ^uint64(0),
 		Time:        0,
 	}
-	evm := vm.NewEVM(context, vm.TxContext{}, statedb, chainConfig, vm.Config{})
+	evm := vm.NewEVM(context, statedb, chainConfig, vm.Config{})
 	evm.ProcessingHook = &TxProcessor{}
 	return evm
 }

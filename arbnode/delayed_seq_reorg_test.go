@@ -1,5 +1,5 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbnode
 
@@ -19,7 +19,7 @@ func TestSequencerReorgFromDelayed(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	exec, streamer, db, _ := NewTransactionStreamerForTest(t, common.Address{})
+	exec, streamer, db, _ := NewTransactionStreamerForTest(t, ctx, common.Address{})
 	tracker, err := NewInboxTracker(db, streamer, nil, DefaultSnapSyncConfig)
 	Require(t, err)
 
@@ -219,7 +219,7 @@ func TestSequencerReorgFromLastDelayedMsg(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	exec, streamer, db, _ := NewTransactionStreamerForTest(t, common.Address{})
+	exec, streamer, db, _ := NewTransactionStreamerForTest(t, ctx, common.Address{})
 	tracker, err := NewInboxTracker(db, streamer, nil, DefaultSnapSyncConfig)
 	Require(t, err)
 

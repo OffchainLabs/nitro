@@ -1,5 +1,5 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbtest
 
@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
+	"github.com/offchainlabs/nitro/solgen/go/localgen"
 )
 
 func TestPendingBlockTimeAndNumberAdvance(t *testing.T) {
@@ -22,7 +22,7 @@ func TestPendingBlockTimeAndNumberAdvance(t *testing.T) {
 
 	auth := builder.L2Info.GetDefaultTransactOpts("Faucet", ctx)
 
-	_, _, testTimeAndNr, err := mocksgen.DeployPendingBlkTimeAndNrAdvanceCheck(&auth, builder.L2.Client)
+	_, _, testTimeAndNr, err := localgen.DeployPendingBlkTimeAndNrAdvanceCheck(&auth, builder.L2.Client)
 	Require(t, err)
 
 	time.Sleep(1 * time.Second)
@@ -42,7 +42,7 @@ func TestPendingBlockArbBlockHashReturnsLatest(t *testing.T) {
 
 	auth := builder.L2Info.GetDefaultTransactOpts("Faucet", ctx)
 
-	_, _, pendingBlk, err := mocksgen.DeployPendingBlkTimeAndNrAdvanceCheck(&auth, builder.L2.Client)
+	_, _, pendingBlk, err := localgen.DeployPendingBlkTimeAndNrAdvanceCheck(&auth, builder.L2.Client)
 	Require(t, err)
 
 	header, err := builder.L2.Client.HeaderByNumber(ctx, nil)

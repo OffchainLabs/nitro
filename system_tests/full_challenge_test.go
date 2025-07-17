@@ -1,8 +1,8 @@
 // Copyright 2021-2023, Offchain Labs, Inc.
-// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-//go:build challengetest
-// +build challengetest
+//go:build legacychallengetest
+// +build legacychallengetest
 
 package arbtest
 

@@ -1,5 +1,5 @@
 // Copyright 2023-2024, Offchain Labs, Inc.
-// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 use crate::{evm::user::UserOutcomeKind, Bytes20, Bytes32};
 use eyre::Result;
@@ -130,6 +130,10 @@ macro_rules! derive_math {
                 Self(self.0 - rhs.0)
             }
 
+            pub const fn mul(self, rhs: u64) -> Self {
+                Self(self.0 * rhs)
+            }
+
             pub const fn saturating_add(self, rhs: Self) -> Self {
                 Self(self.0.saturating_add(rhs.0))
             }
@@ -252,7 +256,7 @@ pub trait EvmApi<D: DataReader>: Send + 'static {
 
     /// Returns the code and the access cost in gas.
     /// Analogous to `vm.EXTCODECOPY`.
-    fn account_code(&mut self, address: Bytes20, gas_left: Gas) -> (D, Gas);
+    fn account_code(&mut self, arbos_version: u64, address: Bytes20, gas_left: Gas) -> (D, Gas);
 
     /// Gets the hash of the given address's code.
     /// Returns the hash and the access cost in gas.

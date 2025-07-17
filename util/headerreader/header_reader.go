@@ -1,5 +1,5 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package headerreader
 
@@ -27,7 +27,20 @@ import (
 )
 
 // A regexp matching "execution reverted" errors returned from the parent chain RPC.
-var ExecutionRevertedRegexp = regexp.MustCompile(`(?i)execution reverted|VM execution error\.?`)
+var executionRevertedRegexp = regexp.MustCompile(`(?i)execution reverted|VM execution error\.?`)
+
+// IsExecutionReverted returns true if the error is an "execution reverted" error or if the error is a rpc.Error with ErrorCode 3.
+func IsExecutionReverted(err error) bool {
+	if executionRevertedRegexp.MatchString(err.Error()) {
+		return true
+	}
+	var rpcError rpc.Error
+	ok := errors.As(err, &rpcError)
+	if ok && rpcError.ErrorCode() == 3 {
+		return true
+	}
+	return false
+}
 
 type ArbSysInterface interface {
 	ArbBlockNumber(*bind.CallOpts) (*big.Int, error)

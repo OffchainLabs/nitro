@@ -1,5 +1,5 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package main
 
@@ -24,18 +24,20 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
+	"github.com/ethereum/go-ethereum/triedb"
 
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbstate"
-	"github.com/offchainlabs/nitro/arbstate/daprovider"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
-	"github.com/offchainlabs/nitro/das/celestia/tree"
-	celestiaTypes "github.com/offchainlabs/nitro/das/celestia/types"
-	"github.com/offchainlabs/nitro/das/dastree"
+	"github.com/offchainlabs/nitro/daprovider"
+	"github.com/offchainlabs/nitro/daprovider/celestia/tree"
+	celestiaTypes "github.com/offchainlabs/nitro/daprovider/celestia/types"
+	"github.com/offchainlabs/nitro/daprovider/das/dastree"
+	"github.com/offchainlabs/nitro/daprovider/das/dasutil"
 	"github.com/offchainlabs/nitro/gethhook"
 	"github.com/offchainlabs/nitro/wavmio"
 )
@@ -53,7 +55,13 @@ func getBlockHeaderByHash(hash common.Hash) *types.Header {
 	return header
 }
 
-type WavmChainContext struct{}
+type WavmChainContext struct {
+	chainConfig *params.ChainConfig
+}
+
+func (c WavmChainContext) Config() *params.ChainConfig {
+	return c.chainConfig
+}
 
 func (c WavmChainContext) Engine() consensus.Engine {
 	return arbos.Engine{}
@@ -125,8 +133,8 @@ func (dasReader *PreimageDASReader) HealthCheck(ctx context.Context) error {
 	return nil
 }
 
-func (dasReader *PreimageDASReader) ExpirationPolicy(ctx context.Context) (daprovider.ExpirationPolicy, error) {
-	return daprovider.DiscardImmediately, nil
+func (dasReader *PreimageDASReader) ExpirationPolicy(ctx context.Context) (dasutil.ExpirationPolicy, error) {
+	return dasutil.DiscardImmediately, nil
 }
 
 type BlobPreimageReader struct {
@@ -178,7 +186,7 @@ func (dasReader *PreimageCelestiaReader) Read(ctx context.Context, blobPointer *
 	squareSize := uint64(len(leaves)) / 2
 	// split leaves in half to get row roots
 	rowRoots := leaves[:squareSize]
-	// We get the original data square size, wich is (size_of_the_extended_square / 2)
+	// We get the original data square size, which is (size_of_the_extended_square / 2)
 	odsSize := squareSize / 2
 
 	startRow := blobPointer.Start / odsSize
@@ -310,7 +318,7 @@ func main() {
 	populateEcdsaCaches()
 
 	raw := rawdb.NewDatabase(PreimageDb{})
-	db := state.NewDatabase(raw)
+	db := state.NewDatabase(triedb.NewDatabase(raw, nil), nil)
 
 	lastBlockHash := wavmio.GetLastBlockHash()
 
@@ -345,7 +353,7 @@ func main() {
 			keysetValidationMode = daprovider.KeysetDontValidate
 		}
 		var dapReaders []daprovider.Reader
-		dapReaders = append(dapReaders, daprovider.NewReaderForDAS(&PreimageDASReader{}, &PreimageDASReader{}))
+		dapReaders = append(dapReaders, dasutil.NewReaderForDAS(&PreimageDASReader{}, &PreimageDASReader{}))
 		dapReaders = append(dapReaders, celestiaTypes.NewReaderForCelestia(&PreimageCelestiaReader{}))
 		dapReaders = append(dapReaders, daprovider.NewReaderForBlobReader(&BlobPreimageReader{}))
 		inboxMultiplexer := arbstate.NewInboxMultiplexer(backend, delayedMessagesRead, dapReaders, keysetValidationMode)
@@ -409,8 +417,8 @@ func main() {
 		// to test the integration
 		message := readMessage()
 
-		chainContext := WavmChainContext{}
-		newBlock, _, err = arbos.ProduceBlock(message.Message, message.DelayedMessagesRead, lastBlockHeader, statedb, chainContext, chainConfig, false, core.MessageReplayMode)
+		chainContext := WavmChainContext{chainConfig: chainConfig}
+		newBlock, _, err = arbos.ProduceBlock(message.Message, message.DelayedMessagesRead, lastBlockHeader, statedb, chainContext, false, core.MessageReplayMode)
 		if err != nil {
 			panic(err)
 		}
@@ -432,7 +440,7 @@ func main() {
 			}
 		}
 
-		_, err = arbosState.InitializeArbosState(statedb, burn.NewSystemBurner(nil, false), chainConfig, initMessage)
+		_, err = arbosState.InitializeArbosState(statedb, burn.NewSystemBurner(nil, false), chainConfig, nil, initMessage)
 		if err != nil {
 			panic(fmt.Sprintf("Error initializing ArbOS: %v", err.Error()))
 		}
