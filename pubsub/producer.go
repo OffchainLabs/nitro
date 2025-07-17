@@ -49,6 +49,7 @@ type Producer[Request any, Response any] struct {
 	once sync.Once
 }
 
+// lint:require-exhaustive-initialization
 type ProducerConfig struct {
 	// Interval duration for checking the result set by consumers.
 	CheckResultInterval time.Duration `koanf:"check-result-interval"`
