@@ -472,7 +472,7 @@ func getMaintenanceRunner(
 	configFetcher ConfigFetcher,
 	coordinator *SeqCoordinator,
 	exec execution.ExecutionClient,
-) *MaintenanceRunner {
+) (*MaintenanceRunner, error) {
 	return NewMaintenanceRunner(func() *MaintenanceConfig { return &configFetcher.Get().Maintenance }, coordinator, exec)
 }
 
@@ -1058,7 +1058,10 @@ func createNodeImpl(
 		return nil, err
 	}
 
-	maintenanceRunner := getMaintenanceRunner(configFetcher, coordinator, executionClient)
+	maintenanceRunner, err := getMaintenanceRunner(configFetcher, coordinator, executionClient)
+	if err != nil {
+		return nil, err
+	}
 
 	broadcastClients, err := getBroadcastClients(config, configFetcher, txStreamer, l2Config.ChainID.Uint64(), bpVerifier, fatalErrChan)
 	if err != nil {

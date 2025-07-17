@@ -5,6 +5,7 @@ package arbnode
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	flag "github.com/spf13/pflag"
@@ -48,12 +49,25 @@ var DefaultMaintenanceConfig = MaintenanceConfig{
 
 type MaintenanceConfigFetcher func() *MaintenanceConfig
 
-func NewMaintenanceRunner(config MaintenanceConfigFetcher, seqCoordinator *SeqCoordinator, exec execution.ExecutionClient) *MaintenanceRunner {
-	return &MaintenanceRunner{
+func NewMaintenanceRunner(config MaintenanceConfigFetcher, seqCoordinator *SeqCoordinator, exec execution.ExecutionClient) (*MaintenanceRunner, error) {
+	cfg := config()
+
+	res := &MaintenanceRunner{
 		exec:           exec,
 		config:         config,
 		seqCoordinator: seqCoordinator,
 	}
+
+	if seqCoordinator != nil {
+		c := func() *redislock.SimpleCfg { return &cfg.Lock }
+		r := func() bool { return true } // always ready to lock
+		rl, err := redislock.NewSimple(seqCoordinator.RedisCoordinator().Client, c, r)
+		if err != nil {
+			return nil, fmt.Errorf("creating new simple redis lock: %w", err)
+		}
+		res.lock = rl
+	}
+	return res, nil
 }
 
 func (mr *MaintenanceRunner) Start(ctxIn context.Context) {
