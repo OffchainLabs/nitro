@@ -144,6 +144,11 @@ func (s *SyncMonitor) maxMessageCount(ctx context.Context) (arbutil.MessageIndex
 func (s *SyncMonitor) FullSyncProgressMap() map[string]interface{} {
 	res := make(map[string]interface{})
 
+	if !s.Started() {
+		res["err"] = "notStarted"
+		return res
+	}
+
 	if !s.initialized {
 		res["err"] = "uninitialized"
 		return res
@@ -241,10 +246,10 @@ func (s *SyncMonitor) Start(ctx_in context.Context) {
 }
 
 func (s *SyncMonitor) Synced() bool {
-	if !s.initialized {
+	if !s.Started() {
 		return false
 	}
-	if !s.Started() {
+	if !s.initialized {
 		return false
 	}
 	syncTarget := s.SyncTargetMessageCount()

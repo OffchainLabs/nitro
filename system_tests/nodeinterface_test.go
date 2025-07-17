@@ -24,7 +24,7 @@ func TestFindBatch(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).DontParalellise()
 	builder.nodeConfig.MessageExtraction.Enable = false
 	l1Info := builder.L1Info
 	initialBalance := new(big.Int).Lsh(big.NewInt(1), 200)
@@ -87,7 +87,6 @@ func TestFindBatch(t *testing.T) {
 }
 
 func TestL2BlockRangeForL1(t *testing.T) {
-	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -147,7 +146,6 @@ func TestL2BlockRangeForL1(t *testing.T) {
 }
 
 func TestGetL1Confirmations(t *testing.T) {
-	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 

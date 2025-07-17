@@ -30,6 +30,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/retryables"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
+	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/localgen"
 	"github.com/offchainlabs/nitro/solgen/go/node_interfacegen"
@@ -92,7 +93,7 @@ func retryableSetup(t *testing.T, modifyNodeConfig ...func(*NodeBuilder)) (
 
 	// retryableSetup is being called by tests that validate blocks.
 	// For now validation only works with HashScheme set.
-	builder.execConfig.Caching.StateScheme = rawdb.HashScheme
+	builder.RequireScheme(t, rawdb.HashScheme)
 	builder.nodeConfig.BlockValidator.Enable = false
 	builder.nodeConfig.Staker.Enable = true
 	builder.nodeConfig.BatchPoster.Enable = true
@@ -160,7 +161,6 @@ func TestRetryableNoExist(t *testing.T) {
 }
 
 func TestEstimateRetryableTicketWithNoFundsAndZeroGasPrice(t *testing.T) {
-	t.Parallel()
 	builder, _, _, ctx, teardown := retryableSetup(t)
 	defer teardown()
 
@@ -192,7 +192,6 @@ func TestEstimateRetryableTicketWithNoFundsAndZeroGasPrice(t *testing.T) {
 }
 
 func TestSubmitRetryableImmediateSuccess(t *testing.T) {
-	t.Parallel()
 	builder, delayedInbox, lookupL2Tx, ctx, teardown := retryableSetup(t)
 	defer teardown()
 
@@ -270,7 +269,6 @@ func TestSubmitRetryableImmediateSuccess(t *testing.T) {
 }
 
 func testSubmitRetryableEmptyEscrow(t *testing.T, arbosVersion uint64) {
-	t.Parallel()
 	builder, delayedInbox, lookupL2Tx, ctx, teardown := retryableSetup(t, func(builder *NodeBuilder) {
 		builder.WithArbOSVersion(arbosVersion)
 	})
@@ -359,7 +357,6 @@ func TestSubmitRetryableEmptyEscrowArbOS30(t *testing.T) {
 }
 
 func TestSubmitRetryableFailThenRetry(t *testing.T) {
-	t.Parallel()
 	builder, delayedInbox, lookupL2Tx, ctx, teardown := retryableSetup(t)
 	defer teardown()
 
@@ -516,7 +513,6 @@ func insertRetriables(
 }
 
 func TestSubmitManyRetryableFailThenRetry(t *testing.T) {
-	t.Parallel()
 	builder, delayedInbox, lookupL2Tx, ctx, teardown := retryableSetup(t, func(builder *NodeBuilder) {
 		builder.nodeConfig.MessageExtraction.Enable = false
 	})
@@ -680,8 +676,6 @@ func TestSubmitManyRetryableFailThenRetry(t *testing.T) {
 }
 
 func TestGetLifetime(t *testing.T) {
-	t.Parallel()
-
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -725,7 +719,6 @@ func warpL1Time(t *testing.T, builder *NodeBuilder, ctx context.Context, current
 }
 
 func TestRetryableExpiry(t *testing.T) {
-	t.Parallel()
 	builder, delayedInbox, lookupL2Tx, ctx, teardown := retryableSetup(t)
 	defer teardown()
 
@@ -792,7 +785,6 @@ func TestRetryableExpiry(t *testing.T) {
 }
 
 func TestKeepaliveAndRetryableExpiry(t *testing.T) {
-	t.Parallel()
 	builder, delayedInbox, lookupL2Tx, ctx, teardown := retryableSetup(t)
 	defer teardown()
 
@@ -882,7 +874,6 @@ func TestKeepaliveAndRetryableExpiry(t *testing.T) {
 }
 
 func TestKeepaliveAndCancelRetryable(t *testing.T) {
-	t.Parallel()
 	builder, delayedInbox, lookupL2Tx, ctx, teardown := retryableSetup(t)
 	defer teardown()
 
@@ -971,7 +962,6 @@ func TestKeepaliveAndCancelRetryable(t *testing.T) {
 }
 
 func TestSubmissionGasCosts(t *testing.T) {
-	t.Parallel()
 	builder, delayedInbox, lookupL2Tx, ctx, teardown := retryableSetup(t)
 	defer teardown()
 	infraFeeAddr, networkFeeAddr := setupFeeAddresses(t, ctx, builder)
@@ -1143,7 +1133,6 @@ func waitForL1DelayBlocks(t *testing.T, builder *NodeBuilder) {
 }
 
 func TestDepositETH(t *testing.T) {
-	t.Parallel()
 	builder, delayedInbox, lookupL2Tx, ctx, teardown := retryableSetup(t)
 	defer teardown()
 
@@ -1241,7 +1230,6 @@ func TestArbitrumContractTx(t *testing.T) {
 }
 
 func TestL1FundedUnsignedTransaction(t *testing.T) {
-	t.Parallel()
 	ctx := context.Background()
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
 	cleanup := builder.Build(t)
@@ -1598,7 +1586,7 @@ func elevateL2Basefee(t *testing.T, ctx context.Context, builder *NodeBuilder) {
 	_, err = precompilesgen.NewArbosTest(common.HexToAddress("0x69"), builder.L2.Client)
 	Require(t, err, "failed to deploy ArbosTest")
 
-	burnAmount := ExecConfigDefaultTest(t).RPC.RPCGasCap
+	burnAmount := gethexec.ConfigDefault.RPC.RPCGasCap
 	burnTarget := uint64(5 * l2pricing.InitialSpeedLimitPerSecondV6 * l2pricing.InitialBacklogTolerance)
 	for i := uint64(0); i < (burnTarget+burnAmount)/burnAmount; i++ {
 		burnArbGas := arbosTestAbi.Methods["burnArbGas"]

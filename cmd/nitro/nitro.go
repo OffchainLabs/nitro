@@ -63,6 +63,7 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	legacystaker "github.com/offchainlabs/nitro/staker/legacy"
 	"github.com/offchainlabs/nitro/staker/validatorwallet"
+	nitroutil "github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/colors"
 	"github.com/offchainlabs/nitro/util/dbutil"
 	"github.com/offchainlabs/nitro/util/headerreader"
@@ -199,6 +200,7 @@ func mainImpl() int {
 	}
 
 	log.Info("Running Arbitrum nitro node", "revision", vcsRevision, "vcs.time", vcsTime)
+	log.Info("Resources detected", "GOMAXPROCS", nitroutil.GoMaxProcs())
 
 	if nodeConfig.Node.Dangerous.NoL1Listener {
 		nodeConfig.Node.ParentChainReader.Enable = false
@@ -956,9 +958,10 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 		nodeConfig.Node.MessagePruner.Enable = false
 	}
 
-	if nodeConfig.Execution.Caching.Archive && nodeConfig.Execution.TxLookupLimit != 0 {
+	if nodeConfig.Execution.Caching.Archive && (!nodeConfig.Execution.TxIndexer.Enable || nodeConfig.Execution.TxIndexer.TxLookupLimit != 0) {
 		log.Info("retaining ability to lookup full transaction history as archive mode is enabled")
-		nodeConfig.Execution.TxLookupLimit = 0
+		nodeConfig.Execution.TxIndexer.Enable = true
+		nodeConfig.Execution.TxIndexer.TxLookupLimit = 0
 	}
 
 	err = nodeConfig.Validate()

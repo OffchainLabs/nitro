@@ -48,7 +48,6 @@ const (
 // the callee is virgin (has never been seen before on the network)
 // there is no memory expansion as part of the CALL opcode itself (it writes to memory but stays inside the bounds of the original memory)
 func TestDimLogCallColdNoTransferNoCodeVirginMemUnchanged(t *testing.T) {
-	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -81,7 +80,6 @@ func TestDimLogCallColdNoTransferNoCodeVirginMemUnchanged(t *testing.T) {
 // the callee is virgin (has never been seen before on the network)
 // there is memory expansion, the CALL writes to memory outside the bounds of the original memory
 func TestDimLogCallColdNoTransferNoCodeVirginMemExpansion(t *testing.T) {
-	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -114,7 +112,6 @@ func TestDimLogCallColdNoTransferNoCodeVirginMemExpansion(t *testing.T) {
 // the callee has been funded before (someone sent it money in the past)
 // there is no memory expansion as part of the CALL opcode itself (it writes to memory but stays inside the bounds of the original memory)
 func TestDimLogCallColdNoTransferNoCodeFundedMemUnchanged(t *testing.T) {
-	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -150,7 +147,6 @@ func TestDimLogCallColdNoTransferNoCodeFundedMemUnchanged(t *testing.T) {
 // the callee has been funded before (someone sent it money in the past)
 // there is memory expansion, the CALL writes to memory outside the bounds of the original memory
 func TestDimLogCallColdNoTransferNoCodeFundedMemExpansion(t *testing.T) {
-	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -186,7 +182,6 @@ func TestDimLogCallColdNoTransferNoCodeFundedMemExpansion(t *testing.T) {
 // the callee has been funded before (someone sent it money in the past)
 // there is no memory expansion as part of the CALL opcode itself (it writes to memory but stays inside the bounds of the original memory)
 func TestDimLogCallColdNoTransferContractFundedMemUnchanged(t *testing.T) {
-	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -219,7 +214,6 @@ func TestDimLogCallColdNoTransferContractFundedMemUnchanged(t *testing.T) {
 // the callee has been funded before (someone sent it money in the past)
 // there is memory expansion, the CALL writes to memory outside the bounds of the original memory
 func TestDimLogCallColdNoTransferContractFundedMemExpansion(t *testing.T) {
-	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -252,7 +246,6 @@ func TestDimLogCallColdNoTransferContractFundedMemExpansion(t *testing.T) {
 // the callee is virgin (has never been seen before on the network)
 // there is no memory expansion as part of the CALL opcode itself (it writes to memory but stays inside the bounds of the original memory)
 func TestDimLogCallColdPayingNoCodeVirginMemUnchanged(t *testing.T) {
-	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -1722,6 +1715,38 @@ func TestDimLogCallCodeWarmPayingContractFundedMemExpansion(t *testing.T) {
 		HistoryGrowth:         0,
 		StateGrowthRefund:     0,
 		ChildExecutionCost:    callCodeChildExecutionCost,
+	}
+	checkGasDimensionsMatch(t, expected, callLog)
+	checkGasDimensionsEqualOneDimensionalGas(t, callLog)
+}
+
+// This tests a call that does another call,
+// specifically a CALL that then does a DELEGATECALL
+// and we check that the gas dimensions are correct
+// for the parent.
+func TestDimLogNestedCall(t *testing.T) {
+	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
+	defer cancel()
+	defer cleanup()
+
+	_, caller := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployNestedCall)
+	calleeAddress, _ := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployNestedTarget)
+
+	receipt := callOnContractWithOneArg(t, builder, auth, caller.Entrypoint, calleeAddress)
+
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	callLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "CALL")
+
+	var callChildExecutionCost uint64 = 25921 // from the struct logger output
+
+	expected := ExpectedGasCosts{
+		OneDimensionalGasCost: params.WarmStorageReadCostEIP2929,
+		Computation:           params.WarmStorageReadCostEIP2929,
+		StateAccess:           0,
+		StateGrowth:           0,
+		HistoryGrowth:         0,
+		StateGrowthRefund:     0,
+		ChildExecutionCost:    callChildExecutionCost,
 	}
 	checkGasDimensionsMatch(t, expected, callLog)
 	checkGasDimensionsEqualOneDimensionalGas(t, callLog)

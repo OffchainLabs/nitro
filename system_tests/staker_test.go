@@ -46,6 +46,7 @@ import (
 
 func makeBackgroundTxs(ctx context.Context, builder *NodeBuilder) error {
 	for i := uint64(0); ctx.Err() == nil; i++ {
+		time.Sleep(time.Millisecond * 100)
 		builder.L2Info.Accounts["BackgroundUser"].Nonce.Store(i)
 		tx := builder.L2Info.PrepareTx("BackgroundUser", "BackgroundUser", builder.L2Info.TransferGas, common.Big0, nil)
 		err := builder.L2.Client.SendTransaction(ctx, tx)
@@ -74,7 +75,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	}()
 	var transferGas = util.NormalizeL2GasForL1GasInitial(800_000, params.GWei) // include room for aggregator L1 costs
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).DontParalellise()
 	builder.nodeConfig.MessageExtraction.Enable = false
 	builder.L2Info = NewBlockChainTestInfo(
 		t,
@@ -83,7 +84,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	)
 
 	// For now validation only works with HashScheme set
-	builder.execConfig.Caching.StateScheme = rawdb.HashScheme
+	builder.RequireScheme(t, rawdb.HashScheme)
 
 	builder.nodeConfig.BatchPoster.MaxDelay = -1000 * time.Hour
 	cleanupA := builder.Build(t)
@@ -498,8 +499,6 @@ func TestStakersCooperative(t *testing.T) {
 }
 
 func TestGetValidatorWalletContractWithDataposterOnlyUsedToCreateValidatorWalletContract(t *testing.T) {
-	t.Parallel()
-
 	ctx, cancelCtx := context.WithCancel(context.Background())
 	defer cancelCtx()
 

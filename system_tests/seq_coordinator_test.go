@@ -48,7 +48,7 @@ func TestRedisSeqCoordinatorPriorities(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false).DontParalellise()
 	builder.takeOwnership = false
 	builder.nodeConfig.SeqCoordinator.Enable = true
 	builder.nodeConfig.SeqCoordinator.RedisUrl = redisutil.CreateTestRedis(ctx, t)
@@ -68,6 +68,7 @@ func TestRedisSeqCoordinatorPriorities(t *testing.T) {
 		builder.L2Info = l2Info
 		builder.dataDir = t.TempDir() // set new data dir for each node
 		builder.l2StackConfig = testhelpers.CreateStackConfigForTest(builder.dataDir)
+		builder.parallelise = false
 		builder.Build(t)
 		testNodes[nodeNum] = builder.L2
 	}
@@ -291,7 +292,7 @@ func testCoordinatorMessageSync(t *testing.T, successCase bool) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).DontParalellise()
 	builder.nodeConfig.SeqCoordinator.Enable = true
 	builder.nodeConfig.SeqCoordinator.RedisUrl = redisutil.CreateTestRedis(ctx, t)
 	builder.nodeConfig.BatchPoster.Enable = false

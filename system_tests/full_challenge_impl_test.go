@@ -236,7 +236,7 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, chall
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).DontParalellise()
 	builder.nodeConfig.MessageExtraction.Enable = false
 	initialBalance := new(big.Int).Lsh(big.NewInt(1), 200)
 	l1Info := builder.L1Info
@@ -258,7 +258,7 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, chall
 		mockSpawn, valStack = createMockValidationNode(t, ctx, &builder.valnodeConfig.Arbitrator)
 	} else {
 		// For now validation only works with HashScheme set
-		builder.execConfig.Caching.StateScheme = rawdb.HashScheme
+		builder.RequireScheme(t, rawdb.HashScheme)
 		_, valStack = createTestValidationNode(t, ctx, builder.valnodeConfig)
 	}
 	configByValidationNode(conf, valStack)
