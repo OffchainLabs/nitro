@@ -21,7 +21,7 @@ func TestMaintenance(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false).DontParalellise()
 	builder.nodeConfig.Maintenance.RunInterval = time.Second * 5
 	builder.nodeConfig.Maintenance.Enable = true
 	cleanup := builder.Build(t)
