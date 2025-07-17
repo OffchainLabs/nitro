@@ -15,7 +15,6 @@ import (
 	"github.com/ethereum/go-ethereum/eth/ethconfig"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos"
@@ -94,8 +93,7 @@ var DefaultCachingConfig = CachingConfig{
 	StateHistory:                       getStateHistory(DefaultSequencerConfig.MaxBlockSpeed),
 }
 
-// TODO remove stack from parameters as it is no longer needed here
-func DefaultCacheConfigFor(stack *node.Node, cachingConfig *CachingConfig) *core.CacheConfig {
+func DefaultCacheConfigFor(cachingConfig *CachingConfig) *core.CacheConfig {
 	baseConf := ethconfig.Defaults
 	if cachingConfig.Archive {
 		baseConf = ethconfig.ArchiveDefaults
