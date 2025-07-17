@@ -72,10 +72,11 @@ func NewMaintenanceRunner(config MaintenanceConfigFetcher, seqCoordinator *SeqCo
 
 func (mr *MaintenanceRunner) Start(ctxIn context.Context) {
 	mr.StopWaiter.Start(ctxIn, mr)
-	mr.CallIteratively(mr.maybeRunMaintenance)
+	mr.CallIteratively(mr.MaybeRunMaintenance)
 }
 
-func (mr *MaintenanceRunner) maybeRunMaintenance(ctx context.Context) time.Duration {
+// exported for testing
+func (mr *MaintenanceRunner) MaybeRunMaintenance(ctx context.Context) time.Duration {
 	config := mr.config()
 	if !config.Enable {
 		log.Debug("maintenance is disabled, skipping")
@@ -109,6 +110,7 @@ func (mr *MaintenanceRunner) maybeRunMaintenance(ctx context.Context) time.Durat
 
 	log.Info("Attempting avoiding lockout and handing off")
 	if mr.seqCoordinator.AvoidLockout(ctx) && mr.seqCoordinator.TryToHandoffChosenOne(ctx) {
+		log.Info("Avoided lockout and handed off chosen one")
 		mr.runMaintenance()
 	} else {
 		log.Error("maintenance failed to hand-off chosen one")

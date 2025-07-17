@@ -5,28 +5,20 @@ package arbtest
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/big"
 	"testing"
 	"time"
 
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/redis/go-redis/v9"
 
+	"github.com/offchainlabs/nitro/util/redisutil"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
-func TestMaintenance(t *testing.T) {
-	logHandler := testhelpers.InitTestLog(t, log.LvlTrace)
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, false).DontParalellise()
-	builder.nodeConfig.Maintenance.RunInterval = time.Second * 5
-	builder.nodeConfig.Maintenance.Enable = true
-	cleanup := builder.Build(t)
-	defer cleanup()
-
+func checkMaintenanceRun(t *testing.T, builder *NodeBuilder, ctx context.Context, logHandler *testhelpers.LogHandler) {
 	numberOfTransfers := 10
 	for i := 2; i < 3+numberOfTransfers; i++ {
 		account := fmt.Sprintf("User%d", i)
@@ -39,8 +31,12 @@ func TestMaintenance(t *testing.T) {
 		Require(t, err)
 	}
 
+	// it is a hot reloadable config, which is set to false by default
+	builder.nodeConfig.Maintenance.Enable = true
+
 	finished := false
 	for range 200 {
+		builder.L2.ConsensusNode.MaintenanceRunner.MaybeRunMaintenance(ctx)
 		if logHandler.WasLogged("Execution is not running maintenance anymore, maintenance completed successfully") {
 			finished = true
 			break
@@ -64,5 +60,63 @@ func TestMaintenance(t *testing.T) {
 		if balance.Cmp(big.NewInt(int64(1e12))) != 0 {
 			t.Fatal("Unexpected balance:", balance, "for account:", account)
 		}
+	}
+}
+
+func TestMaintenanceWithoutSeqCoordinator(t *testing.T) {
+	logHandler := testhelpers.InitTestLog(t, log.LvlTrace)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false).DontParalellise()
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	checkMaintenanceRun(t, builder, ctx, logHandler)
+}
+
+func TestMaintenanceWithSeqCoordinator(t *testing.T) {
+	logHandler := testhelpers.InitTestLog(t, log.LvlTrace)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).DontParalellise()
+	builder.nodeConfig.BatchPoster.Enable = false
+	builder.nodeConfig.SeqCoordinator.Enable = true
+	builder.nodeConfig.SeqCoordinator.RedisUrl = redisutil.CreateTestRedis(ctx, t)
+
+	nodeNames := []string{"stdio://A", "stdio://B"}
+	initRedisForTest(t, ctx, builder.nodeConfig.SeqCoordinator.RedisUrl, nodeNames)
+	builder.nodeConfig.SeqCoordinator.MyUrl = nodeNames[0]
+
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	redisClient, err := redisutil.RedisClientFromURL(builder.nodeConfig.SeqCoordinator.RedisUrl)
+	Require(t, err)
+	defer redisClient.Close()
+
+	// wait for sequencerA to become master
+	for {
+		err := redisClient.Get(ctx, redisutil.CHOSENSEQ_KEY).Err()
+		if errors.Is(err, redis.Nil) {
+			time.Sleep(builder.nodeConfig.SeqCoordinator.UpdateInterval)
+			continue
+		}
+		Require(t, err)
+		break
+	}
+
+	nodeConfigDup := *builder.nodeConfig
+	nodeConfigDup.SeqCoordinator.MyUrl = nodeNames[1]
+	_, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{nodeConfig: &nodeConfigDup})
+	defer cleanupB()
+
+	checkMaintenanceRun(t, builder, ctx, logHandler)
+
+	if !logHandler.WasLogged("Avoided lockout and handed off chosen one") {
+		t.Fatal("Expected log message not found")
 	}
 }
