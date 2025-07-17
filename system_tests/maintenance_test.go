@@ -23,6 +23,7 @@ func TestMaintenance(t *testing.T) {
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
 	builder.nodeConfig.Maintenance.RunInterval = time.Second * 5
+	builder.nodeConfig.Maintenance.Enable = true
 	cleanup := builder.Build(t)
 	defer cleanup()
 
