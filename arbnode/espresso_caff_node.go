@@ -264,6 +264,9 @@ func (n *EspressoCaffNode) createBlock(ctx context.Context) (returnValue bool) {
 	}
 
 	n.espressoStreamer.Advance()
+
+	n.executionEngine.Bc().SetFinalized(block.Header())
+	n.executionEngine.Bc().SetSafe(block.Header())
 	n.espressoStreamer.RecordTimeDurationBetweenHotshotAndCurrentBlock(messageWithMetadataAndPos.HotshotHeight, time.Now())
 
 	return true

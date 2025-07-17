@@ -240,6 +240,15 @@ func TestEspressoCaffNode(t *testing.T) {
 	// Send transaction to CaffNode and it should works later
 	err = checkTransferTxOnL2(t, ctx, builderCaffNode, "User17", l2Info)
 	Require(t, err)
+
+	err = rpcClient.CallContext(ctx, nil, "eth_getBlockByNumber", "latest", false)
+	Require(t, err)
+
+	err = rpcClient.CallContext(ctx, nil, "eth_getBlockByNumber", "finalized", false)
+	Require(t, err)
+
+	err = rpcClient.CallContext(ctx, nil, "eth_getBlockByNumber", "safe", false)
+	Require(t, err)
 }
 
 func Setup(t *testing.T) (context.Context, common.Address, info, string, context.CancelFunc, func(), *NodeBuilder, func(), func()) {
