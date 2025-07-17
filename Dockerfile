@@ -30,13 +30,13 @@ RUN apt-get update && \
 RUN curl -L https://foundry.paradigm.xyz | bash && . ~/.bashrc && ~/.foundry/bin/foundryup -i 1.0.0
 WORKDIR /workspace
 COPY contracts-legacy/package.json contracts-legacy/yarn.lock contracts-legacy/
-RUN cd contracts-legacy && yarn install
+RUN cd contracts-legacy && yarn install --network-timeout 100000
 COPY contracts/package.json contracts/yarn.lock contracts/
-RUN cd contracts && yarn install
+RUN cd contracts && yarn install --network-timeout 100000
 COPY contracts-legacy contracts-legacy/
 COPY contracts contracts/
 COPY safe-smart-account safe-smart-account/
-RUN cd safe-smart-account && yarn install
+RUN cd safe-smart-account && yarn install --network-timeout 100000
 COPY Makefile .
 RUN . ~/.bashrc && NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-solidity
 
