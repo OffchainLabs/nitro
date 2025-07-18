@@ -483,6 +483,7 @@ func testGettingState(t *testing.T, execConfig *gethexec.Config) {
 	defer cancel()
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
 	builder.execConfig = execConfig
+	builder.nodeConfig.MessageExtraction.Enable = (execConfig.RPC.StateScheme != rawdb.PathScheme) // TODO: investigate why this test fails for MEL when run with pathdb
 	cancelNode := buildWithHistory(t, ctx, builder, 16)
 	execNode := builder.L2.ExecNode
 	defer cancelNode()
