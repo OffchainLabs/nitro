@@ -225,6 +225,7 @@ func TestFinalityDataPushedFromConsensusToExecution(t *testing.T) {
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
 	builder.nodeConfig.ParentChainReader.UseFinalityData = false
+	builder.nodeConfig.MessageExtraction.Enable = false
 	cleanup := builder.Build(t)
 	defer cleanup()
 
