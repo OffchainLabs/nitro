@@ -24,6 +24,5 @@ system_tests/test-data/*
 .configs/
 system_tests/testdata/*
 arbos/testdata/*
-execution/gethexec/protos/*.pb.go
 
 /.pre-commit-config.yaml

@@ -214,11 +214,6 @@ all: build build-replay-env test-gen-proofs
 build: $(patsubst %,$(output_root)/bin/%, nitro deploy relay daprovider daserver autonomous-auctioneer bidder-client datool mockexternalsigner seq-coordinator-invalidate nitro-val seq-coordinator-manager dbconv)
 	@printf $(done)
 
-.PHONY: proto
-proto: $(PROTO_FILES)
-	protoc --proto_path=$(CURDIR) --go_out=$(CURDIR) --go_opt=paths=source_relative $(PROTO_FILES) \
-	--go-grpc_out=$(CURDIR) --go-grpc_opt=paths=source_relative
-
 .PHONY: build-node-deps
 build-node-deps: $(go_source) build-prover-header build-prover-lib build-jit .make/solgen .make/cbrotli-lib build-espresso-crypto-lib
 

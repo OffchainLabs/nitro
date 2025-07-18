@@ -197,7 +197,6 @@ func ConfigDefaultL1Test() *Config {
 	config.SeqCoordinator = TestSeqCoordinatorConfig
 	config.Sequencer = true
 	config.Dangerous.NoSequencerCoordinator = true
-	TimeboostSequencer * gethexec.TimeboostSequencer
 
 	return config
 }
@@ -1046,6 +1045,30 @@ func getDelayedSequencer(
 	return delayedSequencer, nil
 }
 
+func getTimeboostSequencer(
+	l1Reader *headerreader.HeaderReader,
+	exec execution.ExecutionClient,
+	configFetcher ConfigFetcher,
+) (*gethexec.TimeboostSequencer, error) {
+	log.Info("timeboost sequencer: ", "enable", configFetcher.Get().TimeboostSequencer.Enable)
+	if !configFetcher.Get().TimeboostSequencer.Enable {
+		return nil, nil
+	}
+	if exec == nil {
+		return nil, errors.New("Timeboost sequencer is enabled but execution client is nil")
+	}
+
+	if exec, ok := exec.(*gethexec.ExecutionNode); ok {
+		timeboostSequencer, err := gethexec.NewTimeboostSequencer(exec.ExecEngine, l1Reader, func() *gethexec.TimeboostSequencerConfig { return &configFetcher.Get().TimeboostSequencer })
+		if err != nil {
+			return nil, err
+		}
+		return timeboostSequencer, nil
+	} else {
+		return nil, errors.New("Timeboost sequencer is enabled but execution client is not a gethexec.ExecutionNode")
+	}
+}
+
 func getNodeParentChainReaderDisabled(
 	ctx context.Context,
 	arbDb ethdb.Database,
@@ -1213,16 +1236,9 @@ func createNodeImpl(
 		return nil, err
 	}
 
-	var timeboostSequencer *gethexec.TimeboostSequencer
-	if configFetcher.Get().TimeboostSequencer.Enable {
-		exec, ok := exec.(*gethexec.ExecutionNode)
-		if !ok {
-			log.Crit("Timeboost sequencer is enabled but execution client is not a gethexec.ExecutionNode")
-		}
-		timeboostSequencer, err = gethexec.NewTimeboostSequencer(exec.ExecEngine, l1Reader, func() *gethexec.TimeboostSequencerConfig { return &configFetcher.Get().TimeboostSequencer })
-		if err != nil {
-			return nil, err
-		}
+	timeboostSequencer, err := getTimeboostSequencer(l1Reader, executionClient, configFetcher)
+	if err != nil {
+		return nil, err
 	}
 
 	consensusExecutionSyncerConfigFetcher := func() *ConsensusExecutionSyncerConfig {
@@ -1258,7 +1274,7 @@ func createNodeImpl(
 		configFetcher:            configFetcher,
 		ctx:                      ctx,
 		ConsensusExecutionSyncer: consensusExecutionSyncer,
-		TimeboostSequencer: timeboostSequencer
+		TimeboostSequencer:       timeboostSequencer,
 	}, nil
 }
 
@@ -1545,6 +1561,12 @@ func (n *Node) Start(ctx context.Context) error {
 			return fmt.Errorf("error starting espresso caff node: %w", err)
 		}
 		return nil
+	}
+	if n.TimeboostSequencer != nil {
+		err = n.TimeboostSequencer.Start(ctx)
+		if err != nil {
+			return fmt.Errorf("error starting timeboost sequencer: %w", err)
+		}
 	}
 	// Also make sure to call initialize on the sync monitor after the inbox reader, tx streamer, and block validator are started.
 	// Else sync might call inbox reader or tx streamer before they are started, and it will lead to panic.

@@ -7,6 +7,8 @@ import (
 	"net/url"
 	"time"
 
+	// Protobuf imports for grpc calls
+	protos "github.com/EspressoSystems/timeboost-proto/go-generated"
 	flag "github.com/spf13/pflag"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -17,8 +19,6 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rlp"
 
-	// Protobuf imports for grpc calls
-	protos "github.com/offchainlabs/nitro/execution/gethexec/protos"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 

@@ -8,12 +8,11 @@ import (
 	"testing"
 	"time"
 
+	protos "github.com/EspressoSystems/timeboost-proto/go-generated"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
 	"github.com/ethereum/go-ethereum/core/types"
-
-	gethexec "github.com/offchainlabs/nitro/execution/gethexec/protos"
 )
 
 // Acknowledgement flag that timeboost will wait for to know sequencer processed
@@ -78,8 +77,8 @@ func createL1AndL2NodeForTimeboost(
 	return builder, cleanup
 }
 
-func ConvertTxsToGethexecTxs(t *testing.T, txs []*types.Transaction) []*gethexec.Transaction {
-	var txns []*gethexec.Transaction
+func ConvertTxsToGethexecTxs(t *testing.T, txs []*types.Transaction) []*protos.Transaction {
+	var txns []*protos.Transaction
 	for _, tx := range txs {
 		txBytes, err := tx.MarshalBinary()
 		Require(t, err)
@@ -88,7 +87,7 @@ func ConvertTxsToGethexecTxs(t *testing.T, txs []*types.Transaction) []*gethexec
 		if time < 0 {
 			t.Fatalf("Invalid timestamp %d", time)
 		}
-		protoTx := gethexec.Transaction{
+		protoTx := protos.Transaction{
 			EncodedTxn: txBytes,
 			Address:    []byte{0x00},
 			Timestamp:  uint64(time),
@@ -98,8 +97,8 @@ func ConvertTxsToGethexecTxs(t *testing.T, txs []*types.Transaction) []*gethexec
 	return txns
 }
 
-func GenerateInclusionLists(t *testing.T, users []string, builder *NodeBuilder, numIncls int, transactionsList [][]*types.Transaction) []*gethexec.InclusionList {
-	var incls []*gethexec.InclusionList
+func GenerateInclusionLists(t *testing.T, users []string, builder *NodeBuilder, numIncls int, transactionsList [][]*types.Transaction) []*protos.InclusionList {
+	var incls []*protos.InclusionList
 	// Create given number of inclusion lists
 
 	for i := 0; i < numIncls; i++ {
@@ -108,7 +107,7 @@ func GenerateInclusionLists(t *testing.T, users []string, builder *NodeBuilder, 
 		if i < 0 {
 			t.Fatalf("Invalid index %d", i)
 		}
-		incl := &gethexec.InclusionList{
+		incl := &protos.InclusionList{
 			Round:               uint64(i),
 			ConsensusTimestamp:  uint64(i),
 			EncodedTxns:         txns,
@@ -119,11 +118,11 @@ func GenerateInclusionLists(t *testing.T, users []string, builder *NodeBuilder, 
 	return incls
 }
 
-func SendInclusionLists(t *testing.T, incls []*gethexec.InclusionList) {
+func SendInclusionLists(t *testing.T, incls []*protos.InclusionList) {
 	// Connect to the default port of listener
 	grpcConn, err := grpc.NewClient("localhost:55000", grpc.WithTransportCredentials(insecure.NewCredentials()))
 	Require(t, err)
-	grpcClient := gethexec.NewForwardApiClient(grpcConn)
+	grpcClient := protos.NewForwardApiClient(grpcConn)
 	defer grpcConn.Close()
 
 	// Iterate over each inclusion list
@@ -270,7 +269,7 @@ func TestEspressoTimeboostSequencer(t *testing.T) {
 		SendInclusionLists(t, inclusionLists)
 
 		// Wait for sometime for the block to be produced
-		time.Sleep(time.Second * 60)
+		time.Sleep(time.Second * 20)
 
 		blockNumberAfter, err := builder.L2.Client.BlockNumber(ctx)
 		Require(t, err)
@@ -360,7 +359,7 @@ func TestEspressoTimeboostSequencer(t *testing.T) {
 		SendInclusionLists(t, inclusionLists)
 
 		// Wait for sometime for the block to be produced
-		time.Sleep(time.Second * 120)
+		time.Sleep(time.Second * 20)
 
 		blockNumberAfter, err := builder.L2.Client.BlockNumber(ctx)
 		Require(t, err)
@@ -455,7 +454,7 @@ func TestEspressoTimeboostSequencer(t *testing.T) {
 		SendInclusionLists(t, inclusionLists)
 
 		// Wait for sometime for the block to be produced
-		time.Sleep(time.Second * 60)
+		time.Sleep(time.Second * 20)
 
 		blockNumberAfter, err := builder.L2.Client.BlockNumber(ctx)
 		Require(t, err)
@@ -491,7 +490,7 @@ func TestEspressoTimeboostSequencer(t *testing.T) {
 		SendInclusionLists(t, inclusionLists)
 
 		// Wait for sometime for the block to be produced
-		time.Sleep(time.Second * 60)
+		time.Sleep(time.Second * 20)
 
 		blockNumberAfter, err := builder.L2.Client.BlockNumber(ctx)
 		Require(t, err)
@@ -528,7 +527,7 @@ func TestEspressoTimeboostSequencer(t *testing.T) {
 		SendInclusionLists(t, inclusionLists)
 
 		// Wait for sometime for the block to be produced
-		time.Sleep(time.Second * 60)
+		time.Sleep(time.Second * 20)
 
 		blockNumberAfter, err := builder.L2.Client.BlockNumber(ctx)
 		Require(t, err)

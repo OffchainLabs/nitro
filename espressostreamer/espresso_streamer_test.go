@@ -10,7 +10,6 @@ import (
 
 	espressoClient "github.com/EspressoSystems/espresso-network/sdks/go/client"
 	"github.com/EspressoSystems/espresso-network/sdks/go/types"
-	espressoTypes "github.com/EspressoSystems/espresso-network/sdks/go/types"
 	espressoCommon "github.com/EspressoSystems/espresso-network/sdks/go/types/common"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -292,7 +291,7 @@ func (m *mockEspressoClient) FetchTransactionsInBlock(ctx context.Context, block
 	return args.Get(0).(espressoClient.TransactionsInBlock), args.Error(1)
 }
 
-func (m *mockEspressoClient) FetchHeaderByHeight(ctx context.Context, blockHeight uint64) (espressoTypes.HeaderImpl, error) {
+func (m *mockEspressoClient) FetchHeaderByHeight(ctx context.Context, blockHeight uint64) (types.HeaderImpl, error) {
 	panic("not implemented")
 }
 
@@ -313,10 +312,6 @@ func (m *mockEspressoClient) FetchVidCommonByHeight(ctx context.Context, blockHe
 }
 
 func (m *mockEspressoClient) SubmitTransaction(ctx context.Context, tx espressoCommon.Transaction) (*espressoCommon.TaggedBase64, error) {
-	panic("not implemented")
-}
-
-func (m *mockEspressoClient) FetchExplorerTransactionByHash(ctx context.Context, hash *types.TaggedBase64) (types.ExplorerTransactionQueryData, error) {
 	panic("not implemented")
 }
 

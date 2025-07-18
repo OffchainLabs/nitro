@@ -149,22 +149,6 @@
                 golangci-lint
                 gotestsum
 
-                protobuf
-                (buildGoModule rec {
-                  pname = "protoc-gen-go";
-                  version = "1.5.4"; # Use the latest version or pin to a specific one
-                  src = fetchFromGitHub {
-                  owner = "protocolbuffers";
-                  repo = "protobuf-go";
-                  rev = "v${version}";
-                  sha256 = "sha256-467+AhA3tADBg6+qbTd1SvLW+INL/1QVR8PzfAMYKFA="; # Update this hash
-                };
-                  vendorHash = "sha256-nGI/Bd6eMEoY0sBwWEtyhFowHVvwLKjbT4yfzFz6Z3E=";
-                  subPackages = [ "cmd/protoc-gen-go" ];
-                })
-                protoc-gen-go-grpc
-                grpcurl 
-
                 # Node
                 nodejs
                 yarn

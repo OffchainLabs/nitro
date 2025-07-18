@@ -1,6 +1,6 @@
 services:
   node0:
-    image: ghcr.io/espressosystems/timeboost:20250711
+    image: ghcr.io/espressosystems/timeboost:20250714
     command:
       [
         "/app/timeboost",
@@ -29,9 +29,9 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:
-      - timeboost
+      - nitro-timeboost
   node1:
-    image: ghcr.io/espressosystems/timeboost:20250711
+    image: ghcr.io/espressosystems/timeboost:20250714
     command:
       [
         "/app/timeboost",
@@ -59,8 +59,8 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:
-      - timeboost
+      - nitro-timeboost
 networks:
-  timeboost:
+  nitro-timeboost:
     driver: bridge
-    name: timeboost
+    name: nitro-timeboost
