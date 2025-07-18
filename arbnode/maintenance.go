@@ -30,21 +30,21 @@ type MaintenanceRunner struct {
 }
 
 type MaintenanceConfig struct {
-	Enable      bool                `koanf:"enable" reload:"hot"`
-	RunInterval time.Duration       `koanf:"run-interval" reload:"hot"`
-	Lock        redislock.SimpleCfg `koanf:"lock" reload:"hot"`
+	Enable        bool                `koanf:"enable" reload:"hot"`
+	CheckInterval time.Duration       `koanf:"check-interval" reload:"hot"`
+	Lock          redislock.SimpleCfg `koanf:"lock" reload:"hot"`
 }
 
 func MaintenanceConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultMaintenanceConfig.Enable, "enable maintenance runner")
-	f.Duration(prefix+".run-interval", DefaultMaintenanceConfig.RunInterval, "how often to run maintenance")
+	f.Duration(prefix+".check-interval", DefaultMaintenanceConfig.CheckInterval, "how often to check if maintenance should be run")
 	redislock.AddConfigOptions(prefix+".lock", f)
 }
 
 var DefaultMaintenanceConfig = MaintenanceConfig{
-	Enable:      false,
-	RunInterval: time.Minute,
-	Lock:        redislock.DefaultCfg,
+	Enable:        false,
+	CheckInterval: time.Minute,
+	Lock:          redislock.DefaultCfg,
 }
 
 type MaintenanceConfigFetcher func() *MaintenanceConfig
@@ -80,29 +80,29 @@ func (mr *MaintenanceRunner) MaybeRunMaintenance(ctx context.Context) time.Durat
 	config := mr.config()
 	if !config.Enable {
 		log.Debug("maintenance is disabled, skipping")
-		return config.RunInterval
+		return config.CheckInterval
 	}
 
 	shouldTriggerMaintenance, err := mr.exec.ShouldTriggerMaintenance().Await(mr.GetContext())
 	if err != nil {
 		log.Error("error checking if maintenance should be triggered", "err", err)
-		return config.RunInterval
+		return config.CheckInterval
 	}
 	if !shouldTriggerMaintenance {
 		log.Debug("skipping maintenance, not triggered")
-		return config.RunInterval
+		return config.CheckInterval
 	}
 
 	// If seqCoordinator is nil there is no need to coordinate maintenance running with other sequecers.
 	if mr.seqCoordinator == nil {
 		mr.runMaintenance()
-		return config.RunInterval
+		return config.CheckInterval
 	}
 
 	release := make(chan struct{})
 	if !mr.lock.AttemptLockAndPeriodicallyRefreshIt(ctx, release) {
 		log.Warn("maintenance lock not acquired, skipping maintenance")
-		return config.RunInterval
+		return config.CheckInterval
 	}
 	defer func() {
 		release <- struct{}{}
@@ -117,7 +117,7 @@ func (mr *MaintenanceRunner) MaybeRunMaintenance(ctx context.Context) time.Durat
 	}
 	defer mr.seqCoordinator.SeekLockout(ctx)
 
-	return config.RunInterval
+	return config.CheckInterval
 }
 
 func (mr *MaintenanceRunner) waitMaintenanceToComplete(ctx context.Context) {
