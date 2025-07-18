@@ -323,7 +323,7 @@ func CreateExecutionNode(
 	apis := []rpc.API{{
 		Namespace: "arb",
 		Version:   "1.0",
-		Service:   NewArbAPI(txPublisher, bulkBlockMetadataFetcher),
+		Service:   NewArbAPI(txPublisher, bulkBlockMetadataFetcher, execEngine),
 		Public:    false,
 	}}
 	apis = append(apis, rpc.API{
@@ -532,15 +532,17 @@ func (n *ExecutionNode) BlockNumberToMessageIndex(blockNum uint64) containers.Pr
 	return containers.NewReadyPromise(n.ExecEngine.BlockNumberToMessageIndex(blockNum))
 }
 
-func (n *ExecutionNode) Maintenance() containers.PromiseInterface[struct{}] {
-	trieCapLimitBytes := arbmath.SaturatingUMul(uint64(n.ConfigFetcher().Caching.TrieCapLimit), 1024*1024)
-	err := n.ExecEngine.Maintenance(trieCapLimitBytes)
-	if err != nil {
-		return containers.NewReadyPromise(struct{}{}, err)
-	}
+func (n *ExecutionNode) ShouldTriggerMaintenance() containers.PromiseInterface[bool] {
+	return containers.NewReadyPromise(n.ExecEngine.ShouldTriggerMaintenance(n.ConfigFetcher().Caching.TrieTimeLimitBeforeFlushMaintenance), nil)
+}
+func (n *ExecutionNode) MaintenanceStatus() containers.PromiseInterface[*execution.MaintenanceStatus] {
+	return containers.NewReadyPromise(n.ExecEngine.MaintenanceStatus(), nil)
+}
 
-	err = n.ChainDB.Compact(nil, nil)
-	return containers.NewReadyPromise(struct{}{}, err)
+func (n *ExecutionNode) TriggerMaintenance() containers.PromiseInterface[struct{}] {
+	trieCapLimitBytes := arbmath.SaturatingUMul(uint64(n.ConfigFetcher().Caching.TrieCapLimit), 1024*1024)
+	n.ExecEngine.TriggerMaintenance(trieCapLimitBytes)
+	return containers.NewReadyPromise(struct{}{}, nil)
 }
 
 func (n *ExecutionNode) Synced(ctx context.Context) bool {
