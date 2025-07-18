@@ -13,7 +13,7 @@ import (
 )
 
 type MaintenanceStatus struct {
-	IsRunning bool
+	IsRunning bool `json:"isRunning"`
 }
 
 type MessageResult struct {

@@ -323,7 +323,7 @@ func CreateExecutionNode(
 	apis := []rpc.API{{
 		Namespace: "arb",
 		Version:   "1.0",
-		Service:   NewArbAPI(txPublisher, bulkBlockMetadataFetcher),
+		Service:   NewArbAPI(txPublisher, bulkBlockMetadataFetcher, execEngine),
 		Public:    false,
 	}}
 	apis = append(apis, rpc.API{

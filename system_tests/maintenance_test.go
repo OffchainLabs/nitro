@@ -16,6 +16,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/log"
 
+	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/util/redisutil"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
@@ -52,6 +53,14 @@ func checkMaintenanceRun(t *testing.T, builder *NodeBuilder, ctx context.Context
 		if balance.Cmp(big.NewInt(int64(1e12))) != 0 {
 			t.Fatal("Unexpected balance:", balance, "for account:", account)
 		}
+	}
+
+	l2rpc := builder.L2.Stack.Attach()
+	var maintenanceStatus execution.MaintenanceStatus
+	err := l2rpc.CallContext(ctx, &maintenanceStatus, "arb_maintenanceStatus")
+	Require(t, err)
+	if maintenanceStatus.IsRunning {
+		t.Fatal("Maintenance should not be running")
 	}
 }
 
