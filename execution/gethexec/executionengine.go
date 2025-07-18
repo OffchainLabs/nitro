@@ -1091,7 +1091,7 @@ func (s *ExecutionEngine) ShouldTriggerMaintenance(trieLimitBeforeFlushMaintenan
 	}
 
 	if trieLimitBeforeFlushMaintenance == 0 {
-		return true
+		return false
 	}
 
 	procTimeBeforeFlush, err := s.bc.ProcTimeBeforeFlush()
