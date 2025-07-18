@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"math/big"
 	"testing"
 	"time"
@@ -61,6 +62,7 @@ func TestMaintenanceWithoutSeqCoordinator(t *testing.T) {
 	defer cancel()
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, false).DontParalellise()
+	builder.execConfig.Caching.TrieTimeLimitBeforeFlushMaintenance = time.Duration(math.MaxInt64) // effectively execution will always suggest to run maintenance
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -74,6 +76,7 @@ func TestMaintenanceWithSeqCoordinator(t *testing.T) {
 	defer cancel()
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).DontParalellise()
+	builder.execConfig.Caching.TrieTimeLimitBeforeFlushMaintenance = time.Duration(math.MaxInt64) // effectively execution will always suggest to run maintenance
 	builder.nodeConfig.BatchPoster.Enable = false
 	builder.nodeConfig.SeqCoordinator.Enable = true
 	builder.nodeConfig.SeqCoordinator.RedisUrl = redisutil.CreateTestRedis(ctx, t)
