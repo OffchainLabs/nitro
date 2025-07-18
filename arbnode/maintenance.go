@@ -115,7 +115,7 @@ func (mr *MaintenanceRunner) MaybeRunMaintenance(ctx context.Context) time.Durat
 	} else {
 		log.Error("maintenance failed to hand-off chosen one")
 	}
-	defer mr.seqCoordinator.SeekLockout(ctx)
+	mr.seqCoordinator.SeekLockout(ctx)
 
 	return config.CheckInterval
 }
