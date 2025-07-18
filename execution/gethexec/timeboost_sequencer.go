@@ -369,7 +369,7 @@ func (s *TimeboostSequencer) getL1BlockNumber(ctx context.Context, blockNumber i
 	if block.Time() <= consensusTimestamp-uint64(s.config().ParentChainFinalizationTime.Seconds()) {
 		return block, nil
 	}
-	// Keep going backward only block at a time until we find a block which satifies the constraint
+	// Keep going backward only block at a time until we find a block which satisfies the constraint
 	return s.getL1BlockNumber(ctx, blockNumber-1, consensusTimestamp)
 }
 

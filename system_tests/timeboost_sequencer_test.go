@@ -16,7 +16,7 @@ import (
 )
 
 // Acknowledgement flag that timeboost will wait for to know sequencer processed
-// Inclusion list succesfully
+// Inclusion list successfully
 const ACK_FLAG = 0xc0
 
 func createL1AndL2NodeForTimeboost(

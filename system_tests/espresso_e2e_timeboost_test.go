@@ -215,7 +215,7 @@ func TestEspressoTimeboostSequencerE2E(t *testing.T) {
 	}
 
 	if len(transactions) != len(expectedTxs) {
-		t.Fatalf("expected transcations and block transactions to match. got %d expected txns, got %d block transactions", len(expectedTxs), len(transactions))
+		t.Fatalf("expected transactions and block transactions to match. got %d expected txns, got %d block transactions", len(expectedTxs), len(transactions))
 	}
 
 	for i, tx := range transactions {
