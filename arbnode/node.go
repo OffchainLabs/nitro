@@ -290,6 +290,7 @@ type Node struct {
 	configFetcher            ConfigFetcher
 	ctx                      context.Context
 	ConsensusExecutionSyncer *ConsensusExecutionSyncer
+	sequencerInbox           *SequencerInbox
 }
 
 type SnapSyncConfig struct {
@@ -1251,6 +1252,7 @@ func createNodeImpl(
 		configFetcher:            configFetcher,
 		ctx:                      ctx,
 		ConsensusExecutionSyncer: consensusExecutionSyncer,
+		sequencerInbox:           sequencerInbox,
 	}, nil
 }
 
@@ -1438,13 +1440,10 @@ func (n *Node) Start(ctx context.Context) error {
 			return fmt.Errorf("error initializing feed broadcast server: %w", err)
 		}
 	}
-	if n.InboxTracker != nil && n.BroadcastServer != nil {
-		// Even if the sequencer coordinator will populate this backlog,
-		// we want to make sure it's populated before any clients connect.
-		err = n.InboxTracker.PopulateFeedBacklog(n.BroadcastServer)
-		if err != nil {
-			return fmt.Errorf("error populating feed backlog on startup: %w", err)
-		}
+	// Even if the sequencer coordinator will populate this backlog,
+	// we want to make sure it's populated before any clients connect.
+	if err = n.TxStreamer.PopulateFeedBacklog(ctx); err != nil {
+		return fmt.Errorf("error populating feed backlog on startup: %w", err)
 	}
 	err = n.TxStreamer.Start(ctx)
 	if err != nil {
@@ -1521,7 +1520,13 @@ func (n *Node) Start(ctx context.Context) error {
 	}
 	if n.BroadcastClients != nil {
 		go func() {
-			if n.InboxReader != nil {
+			if n.MessageExtractor != nil {
+				select {
+				case <-n.MessageExtractor.CaughtUp():
+				case <-ctx.Done():
+					return
+				}
+			} else if n.InboxReader != nil {
 				select {
 				case <-n.InboxReader.CaughtUp():
 				case <-ctx.Done():
@@ -1539,7 +1544,7 @@ func (n *Node) Start(ctx context.Context) error {
 	}
 	// Also make sure to call initialize on the sync monitor after the inbox reader, tx streamer, and block validator are started.
 	// Else sync might call inbox reader or tx streamer before they are started, and it will lead to panic.
-	n.SyncMonitor.Initialize(n.InboxReader, n.TxStreamer, n.SeqCoordinator)
+	n.SyncMonitor.Initialize(n.MessageExtractor, n.InboxReader, n.TxStreamer, n.SeqCoordinator, n.L1Reader, n.sequencerInbox)
 	n.SyncMonitor.Start(ctx)
 	if n.ConsensusExecutionSyncer != nil {
 		n.ConsensusExecutionSyncer.Start(ctx)
@@ -1587,6 +1592,9 @@ func (n *Node) StopAndWait() {
 	if n.InboxReader != nil && n.InboxReader.Started() {
 		n.InboxReader.StopAndWait()
 	}
+	if n.MessageExtractor != nil && n.MessageExtractor.Started() {
+		n.MessageExtractor.StopAndWait()
+	}
 	if n.L1Reader != nil && n.L1Reader.Started() {
 		n.L1Reader.StopAndWait()
 	}
@@ -1615,7 +1623,14 @@ func (n *Node) StopAndWait() {
 }
 
 func (n *Node) FindInboxBatchContainingMessage(message arbutil.MessageIndex) containers.PromiseInterface[execution.InboxBatch] {
-	batchNum, found, err := n.InboxTracker.FindInboxBatchContainingMessage(message)
+	var batchNum uint64
+	var found bool
+	var err error
+	if n.MessageExtractor != nil {
+		batchNum, found, err = n.MessageExtractor.FindInboxBatchContainingMessage(n.ctx, message)
+	} else {
+		batchNum, found, err = n.InboxTracker.FindInboxBatchContainingMessage(message)
+	}
 	inboxBatch := execution.InboxBatch{
 		BatchNum: batchNum,
 		Found:    found,
@@ -1624,6 +1639,9 @@ func (n *Node) FindInboxBatchContainingMessage(message arbutil.MessageIndex) con
 }
 
 func (n *Node) GetBatchParentChainBlock(seqNum uint64) containers.PromiseInterface[uint64] {
+	if n.MessageExtractor != nil {
+		return containers.NewReadyPromise(n.MessageExtractor.GetBatchParentChainBlock(seqNum))
+	}
 	return containers.NewReadyPromise(n.InboxTracker.GetBatchParentChainBlock(seqNum))
 }
 

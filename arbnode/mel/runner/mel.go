@@ -71,6 +71,8 @@ type MessageExtractor struct {
 	dataProviders     []daprovider.Reader
 	fsm               *fsm.Fsm[action, FSMState]
 	retryInterval     time.Duration
+	caughtUp          bool
+	caughtUpChan      chan struct{}
 }
 
 // Creates a message extractor instance with the specified parameters,
@@ -100,6 +102,7 @@ func NewMessageExtractor(
 		fsm:               fsm,
 		retryInterval:     retryInterval,
 		config:            &DefaultMessageExtractionConfig, //TODO: remove retryInterval as a struct instead use config
+		caughtUpChan:      make(chan struct{}),
 	}, nil
 }
 
@@ -216,12 +219,16 @@ func (m *MessageExtractor) GetFinalizedDelayedMessagesRead(ctx context.Context) 
 	return state.DelayedMessagesRead, nil
 }
 
-func (m *MessageExtractor) GetMsgCount(ctx context.Context) (uint64, error) {
+func (m *MessageExtractor) GetHeadState(ctx context.Context) (*mel.State, error) {
+	return m.melDB.GetHeadMelState(ctx)
+}
+
+func (m *MessageExtractor) GetMsgCount(ctx context.Context) (arbutil.MessageIndex, error) {
 	headState, err := m.melDB.GetHeadMelState(ctx)
 	if err != nil {
 		return 0, err
 	}
-	return headState.MsgCount, nil
+	return arbutil.MessageIndex(headState.MsgCount), nil
 }
 
 func (d *MessageExtractor) GetDelayedMessage(index uint64) (*mel.DelayedInboxMessage, error) {
@@ -242,21 +249,71 @@ func (m *MessageExtractor) GetDelayedCount(ctx context.Context, block uint64) (u
 	return state.DelayedMessagedSeen, nil
 }
 
-func (m *MessageExtractor) GetBatchMetadata(ctx context.Context, seqNum uint64) (mel.BatchMetadata, error) {
-	headState, err := m.melDB.GetHeadMelState(ctx)
+func (m *MessageExtractor) GetBatchMetadata(seqNum uint64) (mel.BatchMetadata, error) {
+	// TODO: have a check to error if seqNum is less than headMelState.BatchCount
+	batchMetadata, err := m.melDB.fetchBatchMetadata(seqNum)
 	if err != nil {
 		return mel.BatchMetadata{}, err
 	}
-	if headState.BatchCount < seqNum+1 {
-		return mel.BatchMetadata{}, fmt.Errorf("mel hasn't caught up to the seq inbox batch count on chain. melBatchCount: %d, seqInboxBatchCount: %d", headState.BatchCount, seqNum+1)
+	return *batchMetadata, nil
+}
+
+func (m *MessageExtractor) GetBatchMessageCount(seqNum uint64) (arbutil.MessageIndex, error) {
+	metadata, err := m.GetBatchMetadata(seqNum)
+	return metadata.MessageCount, err
+}
+
+func (m *MessageExtractor) GetBatchParentChainBlock(seqNum uint64) (uint64, error) {
+	metadata, err := m.GetBatchMetadata(seqNum)
+	return metadata.ParentChainBlock, err
+}
+
+// err will return unexpected/internal errors
+// bool will be false if batch not found (meaning, block not yet posted on a batch)
+func (m *MessageExtractor) FindInboxBatchContainingMessage(ctx context.Context, pos arbutil.MessageIndex) (uint64, bool, error) {
+	batchCount, err := m.GetBatchCount(ctx)
+	if err != nil {
+		return 0, false, err
 	}
-	if headState.BatchCount > seqNum+1 {
-		return mel.BatchMetadata{}, fmt.Errorf("mel batch count exceeds seq inbox batch count on chain, impossible situation. melBatchCount: %d, seqInboxBatchCount: %d", headState.BatchCount, seqNum+1)
+	low := uint64(0)
+	high := batchCount - 1
+	lastBatchMessageCount, err := m.GetBatchMessageCount(high)
+	if err != nil {
+		return 0, false, err
 	}
-	return mel.BatchMetadata{
-		MessageCount:        arbutil.MessageIndex(headState.MsgCount),
-		DelayedMessageCount: headState.DelayedMessagesRead,
-	}, nil
+	if lastBatchMessageCount <= pos {
+		return 0, false, nil
+	}
+	// Iteration preconditions:
+	// - high >= low
+	// - msgCount(low - 1) <= pos implies low <= target
+	// - msgCount(high) > pos implies high >= target
+	// Therefore, if low == high, then low == high == target
+	for {
+		// Due to integer rounding, mid >= low && mid < high
+		mid := (low + high) / 2
+		count, err := m.GetBatchMessageCount(mid)
+		if err != nil {
+			return 0, false, err
+		}
+		if count < pos {
+			// Must narrow as mid >= low, therefore mid + 1 > low, therefore newLow > oldLow
+			// Keeps low precondition as msgCount(mid) < pos
+			low = mid + 1
+		} else if count == pos {
+			return mid + 1, true, nil
+		} else if count == pos+1 || mid == low { // implied: count > pos
+			return mid, true, nil
+		} else {
+			// implied: count > pos + 1
+			// Must narrow as mid < high, therefore newHigh < oldHigh
+			// Keeps high precondition as msgCount(mid) > pos
+			high = mid
+		}
+		if high == low {
+			return high, true, nil
+		}
+	}
 }
 
 func (m *MessageExtractor) GetBatchCount(ctx context.Context) (uint64, error) {
@@ -265,6 +322,10 @@ func (m *MessageExtractor) GetBatchCount(ctx context.Context) (uint64, error) {
 		return 0, err
 	}
 	return headState.BatchCount, nil
+}
+
+func (m *MessageExtractor) CaughtUp() chan struct{} {
+	return m.caughtUpChan
 }
 
 // Ticks the message extractor FSM and performs the action associated with the current state,
@@ -332,6 +393,14 @@ func (m *MessageExtractor) Act(ctx context.Context) (time.Duration, error) {
 				// If the block with the specified number is not found, it likely has not
 				// been posted yet to the parent chain, so we can retry
 				// without returning an error from the FSM.
+				if !m.caughtUp {
+					if latestBlk, err := m.parentChainReader.HeaderByNumber(ctx, big.NewInt(rpc.LatestBlockNumber.Int64())); err != nil {
+						log.Error("Error fetching LatestBlockNumber from parent chain to determine if mel has caught up", "err", err)
+					} else if latestBlk.Number.Uint64()-preState.ParentChainBlockNumber <= 5 { // tolerance of catching up i.e parent chain might have progressed in the time between the above two function calls
+						m.caughtUp = true
+						close(m.caughtUpChan)
+					}
+				}
 				return m.retryInterval, nil
 			} else {
 				return m.retryInterval, err
@@ -347,7 +416,7 @@ func (m *MessageExtractor) Act(ctx context.Context) (time.Duration, error) {
 		// by the message extraction function.
 		receiptFetcher := newBlockReceiptFetcher(m.parentChainReader, parentChainBlock)
 		txsFetcher := newBlockTxsFetcher(m.parentChainReader, parentChainBlock)
-		postState, msgs, delayedMsgs, err := melextraction.ExtractMessages(
+		postState, msgs, delayedMsgs, batchMetas, err := melextraction.ExtractMessages(
 			ctx,
 			preState,
 			parentChainBlock.Header(),
@@ -365,6 +434,7 @@ func (m *MessageExtractor) Act(ctx context.Context) (time.Duration, error) {
 			postState:        postState,
 			messages:         msgs,
 			delayedMessages:  delayedMsgs,
+			batchMetas:       batchMetas,
 		})
 	// `SavingMessages` is the state responsible for saving the extracted messages
 	// and delayed messages to the database. It stores data in the node's consensus database
@@ -376,6 +446,9 @@ func (m *MessageExtractor) Act(ctx context.Context) (time.Duration, error) {
 		saveAction, ok := current.SourceEvent.(saveMessages)
 		if !ok {
 			return m.retryInterval, fmt.Errorf("invalid action: %T", current.SourceEvent)
+		}
+		if err := m.melDB.SaveBatchMetas(ctx, saveAction.postState, saveAction.batchMetas); err != nil {
+			return m.retryInterval, err
 		}
 		if err := m.melDB.SaveDelayedMessages(ctx, saveAction.postState, saveAction.delayedMessages); err != nil {
 			return m.retryInterval, err

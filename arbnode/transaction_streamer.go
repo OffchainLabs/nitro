@@ -1156,11 +1156,61 @@ func (s *TransactionStreamer) ResumeReorgs() {
 	s.reorgMutex.RUnlock()
 }
 
-func (s *TransactionStreamer) PopulateFeedBacklog() error {
-	if s.broadcastServer == nil || s.inboxReader == nil {
+func (s *TransactionStreamer) PopulateFeedBacklog(ctx context.Context) error {
+	if s.broadcastServer == nil {
 		return nil
 	}
-	return s.inboxReader.tracker.PopulateFeedBacklog(s.broadcastServer)
+	if s.inboxReader != nil {
+		return s.inboxReader.tracker.PopulateFeedBacklog(s.broadcastServer)
+	}
+	if s.msgExtractor == nil {
+		return nil
+	}
+	batchCount, err := s.msgExtractor.GetBatchCount(ctx)
+	if err != nil {
+		return fmt.Errorf("error getting batch count: %w", err)
+	}
+	var startMessage arbutil.MessageIndex
+	if batchCount >= 2 {
+		// As in AddSequencerBatches, we want to keep the most recent batch's messages.
+		// This prevents issues if a user's L1 is a bit behind or an L1 reorg occurs.
+		// `batchCount - 2` is the index of the batch before the last batch.
+		batchIndex := batchCount - 2
+		startMessage, err = s.msgExtractor.GetBatchMessageCount(batchIndex)
+		if err != nil {
+			return fmt.Errorf("error getting batch %v message count: %w", batchIndex, err)
+		}
+	}
+	messageCount, err := s.GetMessageCount()
+	if err != nil {
+		return fmt.Errorf("error getting tx streamer message count: %w", err)
+	}
+	var feedMessages []*m.BroadcastFeedMessage
+	for seqNum := startMessage; seqNum < messageCount; seqNum++ {
+		message, err := s.GetMessage(seqNum)
+		if err != nil {
+			return fmt.Errorf("error getting message %v: %w", seqNum, err)
+		}
+
+		msgResult, err := s.ResultAtMessageIndex(seqNum)
+		var blockHash *common.Hash
+		if err == nil {
+			blockHash = &msgResult.BlockHash
+		}
+
+		blockMetadata, err := s.BlockMetadataAtMessageIndex(seqNum)
+		if err != nil {
+			log.Warn("Error getting blockMetadata byte array from tx streamer", "err", err)
+		}
+
+		feedMessage, err := s.broadcastServer.NewBroadcastFeedMessage(*message, seqNum, blockHash, blockMetadata)
+		if err != nil {
+			return fmt.Errorf("error creating broadcast feed message %v: %w", seqNum, err)
+		}
+		feedMessages = append(feedMessages, feedMessage)
+	}
+	s.broadcastServer.BroadcastFeedMessages(feedMessages)
+	return nil
 }
 
 func (s *TransactionStreamer) writeMessage(msgIdx arbutil.MessageIndex, msg arbostypes.MessageWithMetadataAndBlockInfo, batch ethdb.Batch) error {

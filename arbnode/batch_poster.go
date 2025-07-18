@@ -855,7 +855,7 @@ func (b *BatchPoster) getBatchPosterPosition(ctx context.Context, blockNum *big.
 	if inboxBatchCount > 0 {
 		var err error
 		if b.msgExtractor != nil {
-			prevBatchMeta, err = b.msgExtractor.GetBatchMetadata(ctx, inboxBatchCount-1)
+			prevBatchMeta, err = b.msgExtractor.GetBatchMetadata(inboxBatchCount - 1)
 		} else {
 			prevBatchMeta, err = b.inbox.GetBatchMetadata(inboxBatchCount - 1)
 		}

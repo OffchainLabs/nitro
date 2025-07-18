@@ -43,6 +43,7 @@ func TestMessageExtractionLayer_SequencerBatchMessageEquivalence(t *testing.T) {
 	builder.L2Info.GenerateAccount("User2")
 	builder.nodeConfig.BatchPoster.MaxDelay = time.Hour     // set high max-delay so we can test the delay buffer
 	builder.nodeConfig.BatchPoster.PollInterval = time.Hour // set a high poll interval to avoid continuous polling
+	builder.nodeConfig.MessageExtraction.Enable = false
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -179,6 +180,7 @@ func TestMessageExtractionLayer_SequencerBatchMessageEquivalence_Blobs(t *testin
 	builder.withBlobReader = true
 	builder.nodeConfig.BatchPoster.MaxDelay = time.Hour     // set high max-delay so we can test the delay buffer
 	builder.nodeConfig.BatchPoster.PollInterval = time.Hour // set a high poll interval to avoid continuous polling
+	builder.nodeConfig.MessageExtraction.Enable = false
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -317,6 +319,7 @@ func TestMessageExtractionLayer_DelayedMessageEquivalence_Simple(t *testing.T) {
 	builder.L2Info.GenerateAccount("User2")
 	builder.nodeConfig.BatchPoster.MaxDelay = time.Hour     // set high max-delay so we can test the delay buffer
 	builder.nodeConfig.BatchPoster.PollInterval = time.Hour // set a high poll interval to avoid continuous polling
+	builder.nodeConfig.MessageExtraction.Enable = false
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -638,6 +641,7 @@ func TestMessageExtractionLayer_UseArbDBForStoringDelayedMessages(t *testing.T) 
 		WithDelayBuffer(threshold)
 	builder.nodeConfig.BatchPoster.MaxDelay = time.Hour     // set high max-delay so we can test the delay buffer
 	builder.nodeConfig.BatchPoster.PollInterval = time.Hour // set a high poll interval to avoid continuous polling
+	builder.nodeConfig.MessageExtraction.Enable = false
 	cleanup := builder.Build(t)
 	defer cleanup()
 
