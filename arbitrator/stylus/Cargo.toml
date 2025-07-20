@@ -39,4 +39,4 @@ singlepass_rayon = ["prover/singlepass_rayon", "wasmer-compiler-singlepass/rayon
 rayon = ["prover/rayon"]
 
 [lib]
-crate-type = ["lib", "staticlib"]
+crate-type = ["lib", "cdylib", "staticlib"]
