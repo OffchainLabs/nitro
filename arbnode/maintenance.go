@@ -105,7 +105,10 @@ func (mr *MaintenanceRunner) MaybeRunMaintenance(ctx context.Context) time.Durat
 		return config.CheckInterval
 	}
 	defer func() {
-		release <- struct{}{}
+		select {
+		case release <- struct{}{}:
+		case <-ctx.Done():
+		}
 	}()
 
 	log.Info("Attempting avoiding lockout and handing off")
