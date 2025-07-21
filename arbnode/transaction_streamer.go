@@ -1932,6 +1932,7 @@ func (s *TransactionStreamer) submitEspressoTransactions(ctx context.Context) er
 	if len(pendingTxnsPos) == 0 {
 		return nil
 	}
+
 	fetcher := func(pos arbutil.MessageIndex) ([]byte, error) {
 		msg, err := s.GetMessage(pos)
 		if err != nil {
