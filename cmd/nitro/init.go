@@ -17,7 +17,6 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -320,8 +319,7 @@ func setLatestSnapshotUrl(ctx context.Context, initConfig *conf.InitConfig, chai
 		return fmt.Errorf("failed to get latest file at \"%s\": %w", latestFileUrl, err)
 	}
 	latestFile := strings.TrimSpace(string(latestFileBytes))
-	containsScheme := regexp.MustCompile("https?://")
-	if containsScheme.MatchString(latestFile) {
+	if strings.HasPrefix(latestFile, "http://") || strings.HasPrefix(latestFile, "https://") {
 		initConfig.Url = latestFile
 	} else {
 		initConfig.Url = baseUrl.JoinPath(latestFile).String()
