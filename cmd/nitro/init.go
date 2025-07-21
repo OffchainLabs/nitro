@@ -502,7 +502,7 @@ func validateOrUpgradeWasmerSerializeVersion(db ethdb.Database) error {
 	if !databaseIsEmpty(db) {
 		versionInDB, err := rawdb.ReadWasmerSerializeVersion(db)
 		if err != nil {
-			if dbutil.IsErrNotFound(err) {
+			if rawdb.IsDbErrNotFound(err) {
 				versionInDB = 0
 			} else {
 				return fmt.Errorf("Failed to retrieve wasmer serialize version: %w", err)
@@ -530,7 +530,7 @@ func validateOrUpgradeWasmStoreSchemaVersion(db ethdb.Database) error {
 	if !databaseIsEmpty(db) {
 		version, err := rawdb.ReadWasmSchemaVersion(db)
 		if err != nil {
-			if dbutil.IsErrNotFound(err) {
+			if rawdb.IsDbErrNotFound(err) {
 				version = []byte{0}
 			} else {
 				return fmt.Errorf("Failed to retrieve wasm schema version: %w", err)
@@ -635,7 +635,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 				if err != nil {
 					return chainDb, nil, fmt.Errorf("error pruning: %w", err)
 				}
-				l2BlockChain, err := gethexec.GetBlockChain(chainDb, cacheConfig, chainConfig, tracer, config.Execution.TxLookupLimit)
+				l2BlockChain, err := gethexec.GetBlockChain(chainDb, cacheConfig, chainConfig, tracer, &config.Execution.TxIndexer)
 				if err != nil {
 					return chainDb, nil, err
 				}
@@ -789,7 +789,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 		if chainConfig == nil {
 			return chainDb, nil, errors.New("no --init.* mode supplied and chain data not in expected directory")
 		}
-		l2BlockChain, err = gethexec.GetBlockChain(chainDb, cacheConfig, chainConfig, tracer, config.Execution.TxLookupLimit)
+		l2BlockChain, err = gethexec.GetBlockChain(chainDb, cacheConfig, chainConfig, tracer, &config.Execution.TxIndexer)
 		if err != nil {
 			return chainDb, nil, err
 		}
@@ -888,7 +888,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 		if !emptyBlockChain && (cacheConfig.StateScheme == rawdb.PathScheme) && config.Init.Force {
 			return chainDb, nil, errors.New("It is not possible to force init with non-empty blockchain when using path scheme")
 		}
-		l2BlockChain, err = gethexec.WriteOrTestBlockChain(chainDb, cacheConfig, initDataReader, chainConfig, genesisArbOSInit, tracer, parsedInitMessage, config.Execution.TxLookupLimit, config.Init.AccountsPerSync)
+		l2BlockChain, err = gethexec.WriteOrTestBlockChain(chainDb, cacheConfig, initDataReader, chainConfig, genesisArbOSInit, tracer, parsedInitMessage, &config.Execution.TxIndexer, config.Init.AccountsPerSync)
 		if err != nil {
 			return chainDb, nil, err
 		}
