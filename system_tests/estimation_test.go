@@ -143,8 +143,7 @@ func TestDifficultyForLatestArbOS(t *testing.T) {
 	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
 
 	// deploy a test contract
-	_, _, simple, err := localgen.DeploySimple(&auth, builder.L2.Client)
-	Require(t, err, "could not deploy contract")
+	_, simple := builder.L2.DeploySimple(t, auth)
 
 	tx, err := simple.StoreDifficulty(&auth)
 	Require(t, err)
@@ -169,8 +168,7 @@ func TestDifficultyForArbOSTen(t *testing.T) {
 	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
 
 	// deploy a test contract
-	_, _, simple, err := localgen.DeploySimple(&auth, builder.L2.Client)
-	Require(t, err, "could not deploy contract")
+	_, simple := builder.L2.DeploySimple(t, auth)
 
 	tx, err := simple.StoreDifficulty(&auth)
 	Require(t, err)

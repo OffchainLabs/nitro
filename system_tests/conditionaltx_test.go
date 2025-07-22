@@ -418,12 +418,7 @@ func TestSendRawTransactionConditionalPreCheck(t *testing.T) {
 	builder.L2Info.GenerateAccount("User2")
 
 	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
-	start := time.Now().Unix()
 	contractAddress, simple := builder.L2.DeploySimple(t, auth)
-	if time.Since(time.Unix(start, 0)) > 200*time.Millisecond {
-		start++
-		time.Sleep(time.Until(time.Unix(start, 0)))
-	}
 	tx, err := simple.Increment(&auth)
 	Require(t, err, "failed to call Increment()")
 	_, err = builder.L2.EnsureTxSucceeded(tx)
@@ -435,14 +430,10 @@ func TestSendRawTransactionConditionalPreCheck(t *testing.T) {
 		},
 	}
 	testConditionalTxThatShouldFail(t, ctx, 0, builder.L2Info, rpcClient, options, -32003)
-	time.Sleep(time.Until(time.Unix(start+1, 0)))
+	time.Sleep(time.Second)
 	testConditionalTxThatShouldSucceed(t, ctx, 1, builder.L2Info, rpcClient, options)
+	time.Sleep(time.Second)
 
-	start = time.Now().Unix()
-	if time.Since(time.Unix(start, 0)) > 200*time.Millisecond {
-		start++
-		time.Sleep(time.Until(time.Unix(start, 0)))
-	}
 	tx, err = simple.Increment(&auth)
 	Require(t, err, "failed to call Increment()")
 	_, err = builder.L2.EnsureTxSucceeded(tx)
