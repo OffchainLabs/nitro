@@ -90,6 +90,7 @@ COPY ./statetransfer ./statetransfer
 COPY ./util ./util
 COPY ./wavmio ./wavmio
 COPY ./zeroheavy ./zeroheavy
+COPY ./callstack ./callstack
 COPY ./contracts-legacy/package.json ./contracts-legacy/yarn.lock ./contracts-legacy/
 COPY ./contracts-legacy/src/precompiles/ ./contracts-legacy/src/precompiles/
 COPY ./contracts-local/src/precompiles/ ./contracts-local/src/precompiles/
