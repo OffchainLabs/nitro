@@ -3,6 +3,7 @@ package arbtest
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math/big"
 	"strconv"
 	"strings"
@@ -10,10 +11,14 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum"
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rpc"
+
+	"github.com/offchainlabs/bold/solgen/go/bridgegen"
+	"github.com/offchainlabs/nitro/arbnode"
 )
 
 func createCaffNode(ctx context.Context, t *testing.T, existing *NodeBuilder, dangerous bool) (*NodeBuilder, func(), error) {
@@ -42,11 +47,28 @@ func createCaffNode(ctx context.Context, t *testing.T, existing *NodeBuilder, da
 	nodeConfig.EspressoCaffNode.BatchPosterAddr = "0xb386a74Dcab67b66F8AC07B4f08365d37495Dd23"
 	nodeConfig.EspressoCaffNode.FromBlock = 1
 
+	nodeConfig.EspressoCaffNode.StateChecker = arbnode.StateCheckerConfig{
+		PollingInterval:        time.Second * 1,
+		ErrorToleranceDuration: time.Hour * 1, // Set it to a larger value. That makes the state checker not shut down
+		TrustedNodeUrl:         fmt.Sprintf("http://localhost:%d", 8945),
+	}
+
+	nodeConfig.EspressoCaffNode.ForceInclusionChecker = arbnode.ForceInclusionCheckerConfig{
+		RetryTime:                time.Second * 2,
+		PollingInterval:          time.Second * 1,
+		BlockThresholdTolerance:  20,
+		SecondThresholdTolerance: 200,
+		ErrorToleranceDuration:   time.Minute * 10,
+	}
+
 	// for testing, we can use the same hotshot url for both
 	nodeConfig.EspressoCaffNode.HotShotUrls = []string{hotShotUrl, hotShotUrl, hotShotUrl, hotShotUrl}
 	nodeConfig.EspressoCaffNode.RetryTime = time.Second * 1
 	nodeConfig.EspressoCaffNode.HotshotPollingInterval = time.Millisecond * 100
 	nodeConfig.ParentChainReader.Enable = true
+
+	builder.l2StackConfig.HTTPPort = 8946
+	builder.l2StackConfig.HTTPHost = "0.0.0.0"
 
 	if dangerous {
 		nodeConfig.EspressoCaffNode.Dangerous.IgnoreDatabaseHotshotBlock = true
@@ -249,6 +271,50 @@ func TestEspressoCaffNode(t *testing.T) {
 
 	err = rpcClient.CallContext(ctx, nil, "eth_getBlockByNumber", "safe", false)
 	Require(t, err)
+
+	// start the trusted node
+	trustedPort := 9000
+	trustedCleanup := mockTrustedNode(t, ctx, trustedPort)
+	defer trustedCleanup()
+
+	time.Sleep(10 * time.Second)
+
+	fatalErrChan := make(chan error)
+	// Check the state checker
+	port := builder.l2StackConfig.HTTPPort
+	// Set the trusted node url to the L1 node
+	// This is to simulate the trusted url returning a different block
+	stateChecker := arbnode.NewStateChecker(
+		arbnode.StateCheckerConfig{
+			PollingInterval:        time.Second * 1,
+			TrustedNodeUrl:         fmt.Sprintf("http://localhost:%d", trustedPort),
+			ErrorToleranceDuration: time.Second * 100,
+		},
+		port,
+		fatalErrChan,
+	)
+	// Start the monitoring task without initial checking
+	err = stateChecker.Start(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-fatalErrChan:
+		if err == nil {
+			t.Fatal("expected an error from fatalErrChan, got nil")
+		} else {
+			t.Logf("received error as expected: %v", err)
+		}
+	case <-time.After(30 * time.Second):
+		t.Fatal("did not receive error from fatalErrChan within timeout")
+	}
+}
+
+func mockTrustedNode(t *testing.T, ctx context.Context, port int) func() {
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	builder.l2StackConfig.HTTPPort = port
+	builder.l2StackConfig.HTTPHost = "0.0.0.0"
+	return builder.BuildL2(t)
 }
 
 func Setup(t *testing.T) (context.Context, common.Address, info, string, context.CancelFunc, func(), *NodeBuilder, func(), func()) {
@@ -491,4 +557,88 @@ func TestEspressoCaffNodeDangerousConfig(t *testing.T) {
 	if !strings.Contains(err.Error(), expectedErrMsg) {
 		t.Errorf("Expected error to contain %q, got %q", expectedErrMsg, err.Error())
 	}
+}
+
+func TestEspressoForceInclusionChecker(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	addr := builder.addresses.SequencerInbox
+	seqInbox, err := bridgegen.NewSequencerInbox(addr, builder.L1.Client)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	mockSeqInbox := &MockSeqInbox{
+		MaxDelayBlocks:  big.NewInt(20),
+		MaxDelaySeconds: big.NewInt(200),
+		seqInbox:        seqInbox,
+	}
+
+	config := arbnode.ForceInclusionCheckerConfig{
+		RetryTime:                time.Second * 2,
+		PollingInterval:          time.Second * 1,
+		BlockThresholdTolerance:  20,
+		SecondThresholdTolerance: 200,
+		ErrorToleranceDuration:   time.Minute * 10,
+	}
+
+	delayedBridge, err := arbnode.NewDelayedBridge(builder.L1.Client, builder.addresses.Bridge, builder.addresses.DeployedAt)
+	Require(t, err)
+
+	reader := builder.L2.ConsensusNode.L1Reader
+
+	delayedMessageFetcher := arbnode.NewDelayedMessageFetcher(
+		delayedBridge,
+		reader,
+		builder.L2.ConsensusNode.ArbDB,
+		100,
+		false,
+		false,
+		10,
+		0,
+	)
+
+	fatalErrChan := make(chan error)
+
+	forceInclusionChecker := arbnode.NewForceInclusionChecker(mockSeqInbox, config, reader, delayedMessageFetcher, fatalErrChan)
+	err = forceInclusionChecker.Start(ctx)
+	Require(t, err)
+
+	delayedTx := builder.L2Info.PrepareTx("Faucet", "Owner", 3e7, transferAmount, nil)
+	builder.L1.SendWaitTestTransactions(t, []*types.Transaction{
+		WrapL2ForDelayed(t, delayedTx, builder.L1Info, "Faucet", 100000),
+	})
+
+	select {
+	case err := <-fatalErrChan:
+		if err == nil {
+			t.Fatal("expected an error from fatalErrChan, got nil")
+		} else {
+			t.Logf("received error as expected: %v", err)
+		}
+	case <-time.After(100 * time.Second):
+		t.Fatal("did not receive error from fatalErrChan within timeout")
+	}
+}
+
+// MockSeqInbox is a mock implementation of the sequencer inbox interface,
+// allowing customizable time variation values for testing purposes.
+// This is useful because the real contract hardcodes MaxTimeVariation when deployBold is disabled.
+type MockSeqInbox struct {
+	MaxDelayBlocks  *big.Int
+	MaxDelaySeconds *big.Int
+	seqInbox        *bridgegen.SequencerInbox
+}
+
+func (m *MockSeqInbox) MaxTimeVariation(ctx context.Context) (*big.Int, *big.Int, *big.Int, *big.Int, error) {
+	return m.MaxDelayBlocks, nil, m.MaxDelaySeconds, nil, nil
+}
+
+func (m *MockSeqInbox) TotalDelayedMessagesRead(ctx context.Context) (*big.Int, error) {
+	return m.seqInbox.TotalDelayedMessagesRead(&bind.CallOpts{Context: ctx})
 }

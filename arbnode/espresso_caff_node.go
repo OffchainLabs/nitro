@@ -14,6 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 
+	"github.com/offchainlabs/bold/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/espressostreamer"
 	"github.com/offchainlabs/nitro/espressotee"
@@ -39,6 +40,10 @@ type EspressoCaffNodeConfig struct {
 	RequiredBlockDepth      uint64                  `koanf:"required-block-depth"`
 	BlocksToRead            uint64                  `koanf:"blocks-to-read"`
 	Dangerous               DangerousCaffNodeConfig `koanf:"dangerous"`
+
+	// Force Inclusion Checker
+	ForceInclusionChecker ForceInclusionCheckerConfig `koanf:"force-inclusion-checker"`
+	StateChecker          StateCheckerConfig          `koanf:"state-checker"`
 }
 
 type DangerousCaffNodeConfig struct {
@@ -86,6 +91,9 @@ func EspressoCaffNodeConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Uint64(prefix+".blocks-to-read", DefaultEspressoCaffNodeConfig.BlocksToRead, "Configures the number of blocks to read from the parent chain for delayed messages")
 	f.Uint64(prefix+".from-block", DefaultEspressoCaffNodeConfig.FromBlock, "Configures the block number to start reading delayed messages from")
 	DangerousCaffNodeConfigAddOptions(prefix+".dangerous", f)
+
+	EspressoForceInclusionConfigAddOptions(prefix+".force-inclusion-checker", f)
+	EspressoStateCheckerConfigAddOptions(prefix+".state-checker", f)
 }
 
 func DangerousCaffNodeConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -107,6 +115,9 @@ type EspressoCaffNode struct {
 	delayedMessageFetcher DelayedMessageFetcherInterface
 
 	l1Reader *headerreader.HeaderReader
+
+	forceInclusionChecker *ForceInclusionChecker
+	stateChecker          *StateChecker
 }
 
 func NewEspressoCaffNode(
@@ -117,6 +128,9 @@ func NewEspressoCaffNode(
 	db ethdb.Database,
 	recordPerformance bool,
 	blocksToRead uint64,
+	seqInboxAddr common.Address,
+	fatalErrChan chan error,
+	httpPort int,
 ) *EspressoCaffNode {
 	if !configFetcher().Enable {
 		return nil
@@ -168,6 +182,26 @@ func NewEspressoCaffNode(
 	delayedMessageFetcher := NewDelayedMessageFetcher(delayedBridge, l1Reader, db, blocksToRead,
 		configFetcher().WaitForFinalization, configFetcher().WaitForConfirmations, configFetcher().RequiredBlockDepth, fromBlock)
 
+	seqInbox, err := bridgegen.NewSequencerInbox(seqInboxAddr, l1Reader.Client())
+	if err != nil {
+		log.Crit("failed to create sequencer inbox", "err", err)
+		return nil
+	}
+
+	forceInclusionChecker := NewForceInclusionChecker(
+		&SeqInbox{seqInbox: seqInbox},
+		configFetcher().ForceInclusionChecker,
+		l1Reader,
+		delayedMessageFetcher,
+		fatalErrChan,
+	)
+
+	stateChecker := NewStateChecker(
+		configFetcher().StateChecker,
+		httpPort,
+		fatalErrChan,
+	)
+
 	return &EspressoCaffNode{
 		configFetcher:         configFetcher,
 		executionEngine:       execEngine,
@@ -175,6 +209,8 @@ func NewEspressoCaffNode(
 		espressoStreamer:      espressoStreamer,
 		db:                    db,
 		l1Reader:              l1Reader,
+		forceInclusionChecker: forceInclusionChecker,
+		stateChecker:          stateChecker,
 	}
 }
 

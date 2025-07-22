@@ -704,17 +704,15 @@ func (b *NodeBuilder) BuildEspressoCaffNode(t *testing.T, existing *NodeBuilder)
 	execConfig := b.execConfig
 	execConfigFetcher := func() *gethexec.Config { return execConfig }
 	execNode, err := gethexec.CreateExecutionNode(b.ctx, b.L2.Stack, chainDb, blockchain, nil, execConfigFetcher, 0)
-	if err != nil {
-		return nil, err
-	}
+	Require(t, err)
 
 	fatalErrChan := make(chan error, 10)
+	locator, err := server_common.NewMachineLocator(b.valnodeConfig.Wasm.RootPath)
+	Require(t, err)
 	b.L2.ConsensusNode, err = arbnode.CreateNodeFullExecutionClient(
 		b.ctx, b.L2.Stack, execNode, execNode, execNode, execNode, arbDb, NewFetcherFromConfig(b.nodeConfig), blockchain.Config(),
-		l1Client, deployInfo, nil, nil, nil, fatalErrChan, big.NewInt(1337), nil, common.Hash{})
-	if err != nil {
-		return nil, err
-	}
+		l1Client, deployInfo, nil, nil, nil, fatalErrChan, big.NewInt(1337), nil, locator.LatestWasmModuleRoot())
+	Require(t, err)
 
 	err = b.L2.ConsensusNode.Start(b.ctx)
 	if err != nil {
