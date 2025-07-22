@@ -138,11 +138,12 @@ func TestExtractMessages(t *testing.T) {
 			var postState *mel.State
 			var messages []*arbostypes.MessageWithMetadata
 			var delayedMessages []*mel.DelayedInboxMessage
+			var batchMetas []*mel.BatchMetadata
 			var err error
 
 			if tt.useExtractMessages {
 				// Test the public ExtractMessages function
-				postState, messages, delayedMessages, err = ExtractMessages(
+				postState, messages, delayedMessages, batchMetas, err = ExtractMessages(
 					ctx,
 					melState,
 					header,
@@ -153,7 +154,7 @@ func TestExtractMessages(t *testing.T) {
 				)
 			} else {
 				// Test the internal extractMessagesImpl function
-				postState, messages, delayedMessages, err = extractMessagesImpl(
+				postState, messages, delayedMessages, batchMetas, err = extractMessagesImpl(
 					ctx,
 					melState,
 					header,
@@ -181,6 +182,7 @@ func TestExtractMessages(t *testing.T) {
 			require.Equal(t, tt.expectedDelayedSeen, postState.DelayedMessagedSeen)
 			require.Len(t, messages, tt.expectedMessages)
 			require.Len(t, delayedMessages, tt.expectedDelayedMsgs)
+			require.Len(t, batchMetas, int(postState.BatchCount-melState.BatchCount)) // #nosec G115
 		})
 	}
 }
