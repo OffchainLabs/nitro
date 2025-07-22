@@ -12,6 +12,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/arbutil"
@@ -30,11 +31,11 @@ type EvilDAProvider struct {
 	mu           sync.RWMutex
 }
 
-func NewEvilDAProvider() *EvilDAProvider {
+func NewEvilDAProvider(l1Client *ethclient.Client, validatorAddr common.Address) *EvilDAProvider {
 	// Create fresh ReferenceDA components - they'll all share the singleton storage
 	return &EvilDAProvider{
-		reader:       referenceda.NewReader(),
-		validator:    referenceda.NewValidator(),
+		reader:       referenceda.NewReader(l1Client, validatorAddr),
+		validator:    referenceda.NewValidator(l1Client, validatorAddr),
 		evilMappings: make(map[common.Hash][]byte),
 	}
 }
@@ -64,10 +65,11 @@ func (e *EvilDAProvider) RecoverPayloadFromBatch(
 	if len(sequencerMsg) > 40 && daprovider.IsCustomDAMessageHeaderByte(sequencerMsg[40]) {
 		certificate := sequencerMsg[40:]
 
-		// Certificate format: [0x01 header byte][32 bytes SHA256]
-		if len(certificate) >= 33 && certificate[0] == 0x01 {
+		// Try to deserialize certificate
+		cert, err := referenceda.Deserialize(certificate)
+		if err == nil {
 			// Extract data hash (SHA256) from certificate
-			dataHash := common.BytesToHash(certificate[1:33])
+			dataHash := cert.DataHash
 
 			e.mu.RLock()
 			if evilData, exists := e.evilMappings[dataHash]; exists {
@@ -82,7 +84,7 @@ func (e *EvilDAProvider) RecoverPayloadFromBatch(
 				}
 
 				log.Info("EvilDAProvider returning evil data",
-					"dataHash", dataHash.Hex(),
+					"dataHash", common.Hash(dataHash).Hex(),
 					"evilDataSize", len(evilData))
 
 				return evilData, preimages, nil
@@ -107,10 +109,11 @@ func (e *EvilDAProvider) GenerateProof(
 		return e.validator.GenerateProof(ctx, preimageType, certHash, offset, certificate)
 	}
 
-	// Extract SHA256 hash from certificate to check for evil mapping
-	if len(certificate) == 33 && certificate[0] == 0x01 {
+	// Try to deserialize certificate to check for evil mapping
+	cert, err := referenceda.Deserialize(certificate)
+	if err == nil {
 		// Extract data hash (SHA256) from certificate
-		dataHash := common.BytesToHash(certificate[1:33])
+		dataHash := cert.DataHash
 
 		e.mu.RLock()
 		evilData, hasEvil := e.evilMappings[dataHash]
@@ -129,7 +132,7 @@ func (e *EvilDAProvider) GenerateProof(
 
 			log.Debug("EvilDAProvider generating evil proof",
 				"certHash", certHash.Hex(),
-				"dataHash", dataHash.Hex(),
+				"dataHash", common.Hash(dataHash).Hex(),
 				"evilDataSize", len(evilData))
 
 			return proof, nil
@@ -138,4 +141,11 @@ func (e *EvilDAProvider) GenerateProof(
 
 	// No evil mapping, delegate to underlying validator
 	return e.validator.GenerateProof(ctx, preimageType, certHash, offset, certificate)
+}
+
+// GenerateCertificateValidityProof generates a proof of certificate validity
+func (e *EvilDAProvider) GenerateCertificateValidityProof(ctx context.Context, preimageType arbutil.PreimageType, certificate []byte) ([]byte, error) {
+	// For now, just delegate to the underlying validator
+	// In the future, this could be modified to test evil certificate validity proofs
+	return e.validator.GenerateCertificateValidityProof(ctx, preimageType, certificate)
 }

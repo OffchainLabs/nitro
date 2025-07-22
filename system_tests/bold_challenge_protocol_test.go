@@ -528,20 +528,17 @@ func keepChainMoving(t *testing.T, ctx context.Context, l1Info *BlockchainTestIn
 	}
 }
 
-func createTestNodeOnL1ForBoldProtocol(
+func setupL1ForBoldProtocol(
 	t *testing.T,
 	ctx context.Context,
-	isSequencer bool,
-	nodeConfig *arbnode.Config,
-	chainConfig *params.ChainConfig,
-	_ *node.Config,
 	rollupStackConf setup.RollupStackConfig,
 	l2infoIn info,
+	nodeConfig *arbnode.Config,
+	chainConfig *params.ChainConfig,
 	enableCustomDA bool,
 ) (
-	l2info info, currentNode *arbnode.Node, l2client *ethclient.Client, l2stack *node.Node,
 	l1info info, l1backend *eth.Ethereum, l1client *ethclient.Client, l1stack *node.Node,
-	assertionChain *solimpl.AssertionChain, stakeTokenAddr common.Address,
+	addresses *chaininfo.RollupAddresses, stakeTokenAddr common.Address,
 ) {
 	if nodeConfig == nil {
 		nodeConfig = arbnode.ConfigDefaultL1Test()
@@ -551,12 +548,9 @@ func createTestNodeOnL1ForBoldProtocol(
 		chainConfig = chaininfo.ArbitrumDevTestChainConfig()
 	}
 	nodeConfig.BatchPoster.DataPoster.MaxMempoolTransactions = 18
-	fatalErrChan := make(chan error, 10)
 	withoutClientWrapper := false
 	l1info, l1client, l1backend, l1stack, _ = createTestL1BlockChain(t, nil, withoutClientWrapper)
-	var l2chainDb ethdb.Database
-	var l2arbDb ethdb.Database
-	var l2blockchain *core.BlockChain
+	var l2info info
 	l2info = l2infoIn
 	if l2info == nil {
 		l2info = NewArbTestInfo(t, chainConfig.ChainID)
@@ -601,23 +595,44 @@ func createTestNodeOnL1ForBoldProtocol(
 	Require(t, err)
 	l1TransactionOpts.Value = nil
 
-	addresses := deployContractsOnly(t, ctx, l1info, l1client, chainConfig.ChainID, rollupStackConf, stakeToken, enableCustomDA)
-	rollupUser, err := rollupgen.NewRollupUserLogic(addresses.Rollup, l1client)
-	Require(t, err)
-	chalManagerAddr, err := rollupUser.ChallengeManager(&bind.CallOpts{})
-	Require(t, err)
+	addresses = deployContractsOnly(t, ctx, l1info, l1client, chainConfig.ChainID, rollupStackConf, stakeToken, enableCustomDA)
 	l1info.SetContract("Bridge", addresses.Bridge)
 	l1info.SetContract("SequencerInbox", addresses.SequencerInbox)
 	l1info.SetContract("Inbox", addresses.Inbox)
 	l1info.SetContract("Rollup", addresses.Rollup)
 	l1info.SetContract("UpgradeExecutor", addresses.UpgradeExecutor)
 
+	return l1info, l1backend, l1client, l1stack, addresses, stakeTokenAddr
+}
+
+func createL2NodeForBoldProtocol(
+	t *testing.T,
+	ctx context.Context,
+	isSequencer bool,
+	nodeConfig *arbnode.Config,
+	chainConfig *params.ChainConfig,
+	l2infoIn info,
+	l1info info,
+	l1backend *eth.Ethereum,
+	l1client *ethclient.Client,
+	l1stack *node.Node,
+	addresses *chaininfo.RollupAddresses,
+	stakeTokenAddr common.Address,
+) (
+	l2info info, currentNode *arbnode.Node, l2client *ethclient.Client, l2stack *node.Node,
+	assertionChain *solimpl.AssertionChain,
+) {
+	fatalErrChan := make(chan error, 10)
+
 	execConfig := ExecConfigDefaultNonSequencerTest(t)
 	Require(t, execConfig.Validate())
 	execConfig.Caching.StateScheme = rawdb.HashScheme
 	useWasmCache := uint32(1)
 	initMessage := getInitMessage(ctx, t, l1client, addresses)
-	_, l2stack, l2chainDb, l2arbDb, l2blockchain = createNonL1BlockChainWithStackConfig(t, l2info, "", chainConfig, nil, initMessage, nil, execConfig, useWasmCache, true)
+	var l2chainDb ethdb.Database
+	var l2arbDb ethdb.Database
+	var l2blockchain *core.BlockChain
+	l2info, l2stack, l2chainDb, l2arbDb, l2blockchain = createNonL1BlockChainWithStackConfig(t, l2infoIn, "", chainConfig, nil, initMessage, nil, execConfig, useWasmCache, true)
 	var sequencerTxOptsPtr *bind.TransactOpts
 	var dataSigner signature.DataSignerFunc
 	if isSequencer {
@@ -653,6 +668,12 @@ func createTestNodeOnL1ForBoldProtocol(
 
 	StartWatchChanErr(t, ctx, fatalErrChan, currentNode)
 
+	// Get challenge manager address from rollup contract
+	rollupUser, err := rollupgen.NewRollupUserLogic(addresses.Rollup, l1client)
+	Require(t, err)
+	chalManagerAddr, err := rollupUser.ChallengeManager(&bind.CallOpts{})
+	Require(t, err)
+
 	opts := l1info.GetDefaultTransactOpts("Asserter", ctx)
 	dp, err := arbnode.StakerDataposter(
 		ctx,
@@ -675,6 +696,36 @@ func createTestNodeOnL1ForBoldProtocol(
 	)
 	Require(t, err)
 	assertionChain = assertionChainBindings
+
+	return l2info, currentNode, l2client, l2stack, assertionChain
+}
+
+func createTestNodeOnL1ForBoldProtocol(
+	t *testing.T,
+	ctx context.Context,
+	isSequencer bool,
+	nodeConfig *arbnode.Config,
+	chainConfig *params.ChainConfig,
+	_ *node.Config,
+	rollupStackConf setup.RollupStackConfig,
+	l2infoIn info,
+	enableCustomDA bool,
+) (
+	l2info info, currentNode *arbnode.Node, l2client *ethclient.Client, l2stack *node.Node,
+	l1info info, l1backend *eth.Ethereum, l1client *ethclient.Client, l1stack *node.Node,
+	assertionChain *solimpl.AssertionChain, stakeTokenAddr common.Address,
+) {
+	// First set up L1 and deploy contracts
+	var addresses *chaininfo.RollupAddresses
+	l1info, l1backend, l1client, l1stack, addresses, stakeTokenAddr = setupL1ForBoldProtocol(
+		t, ctx, rollupStackConf, l2infoIn, nodeConfig, chainConfig, enableCustomDA,
+	)
+
+	// Then create L2 node
+	l2info, currentNode, l2client, l2stack, assertionChain = createL2NodeForBoldProtocol(
+		t, ctx, isSequencer, nodeConfig, chainConfig, l2infoIn,
+		l1info, l1backend, l1client, l1stack, addresses, stakeTokenAddr,
+	)
 
 	return
 }
@@ -731,12 +782,17 @@ func deployContractsOnly(
 	if enableCustomDA {
 		t.Log("Deploying ReferenceDAProofValidator and custom OSP for custom DA")
 
-		// Deploy ReferenceDAProofValidator
-		refDAValidatorAddr, tx, _, err := ospgen.DeployReferenceDAProofValidator(&l1TransactionOpts, backend)
+		// Deploy ReferenceDAProofValidator with trusted signers
+		// Create a dedicated DA signer account
+		l1info.GenerateAccount("DASigner")
+		trustedSigners := []common.Address{l1info.GetAddress("DASigner")}
+		refDAValidatorAddr, tx, _, err := ospgen.DeployReferenceDAProofValidator(&l1TransactionOpts, backend, trustedSigners)
 		Require(t, err)
 		_, err = EnsureTxSucceeded(ctx, backend, tx)
 		Require(t, err)
 		t.Logf("Deployed ReferenceDAProofValidator at %s", refDAValidatorAddr.Hex())
+		// Store the validator address so it can be accessed by tests
+		l1info.SetContract("ReferenceDAProofValidator", refDAValidatorAddr)
 
 		// Deploy custom OneStepProverHostIo with the ReferenceDAProofValidator
 		ospHostIoAddr, tx, _, err := ospgen.DeployOneStepProverHostIo(&l1TransactionOpts, backend, refDAValidatorAddr)

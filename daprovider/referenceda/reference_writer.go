@@ -5,23 +5,25 @@ package referenceda
 
 import (
 	"context"
-	"crypto/sha256"
+	"fmt"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 
-	"github.com/offchainlabs/nitro/daprovider"
+	"github.com/offchainlabs/nitro/util/signature"
 )
 
 // Writer implements the daprovider.Writer interface for ReferenceDA
 type Writer struct {
 	storage *InMemoryStorage
+	signer  signature.DataSignerFunc
 }
 
 // NewWriter creates a new ReferenceDA writer
-func NewWriter() *Writer {
+func NewWriter(signer signature.DataSignerFunc) *Writer {
 	return &Writer{
 		storage: GetInMemoryStorage(),
+		signer:  signer,
 	}
 }
 
@@ -31,23 +33,27 @@ func (w *Writer) Store(
 	timeout uint64,
 	disableFallbackStoreDataOnChain bool,
 ) ([]byte, error) {
-	// Calculate SHA256 hash of the message
-	sha256Hash := sha256.Sum256(message)
-	hashKey := common.BytesToHash(sha256Hash[:])
+	if w.signer == nil {
+		return nil, fmt.Errorf("no signer configured")
+	}
 
-	// Store the message in the singleton storage
-	err := w.storage.Store(ctx, message)
+	// Create and sign certificate
+	cert, err := NewCertificate(message, w.signer)
 	if err != nil {
 		return nil, err
 	}
 
-	// Create certificate for the batch (this is what gets stored on-chain)
-	// Format: 1 byte header (CustomDAMessageHeaderFlag) + 32 bytes SHA256 hash
-	certificate := make([]byte, 1+32)
-	certificate[0] = daprovider.CustomDAMessageHeaderFlag
-	copy(certificate[1:33], sha256Hash[:])
+	// Store the message in the singleton storage
+	err = w.storage.Store(ctx, message)
+	if err != nil {
+		return nil, err
+	}
 
-	log.Debug("ReferenceDA batch stored",
+	// Serialize certificate for on-chain storage
+	certificate := cert.Serialize()
+	hashKey := common.BytesToHash(cert.DataHash[:])
+
+	log.Debug("ReferenceDA batch stored with signature",
 		"sha256", hashKey.Hex(),
 		"certificateSize", len(certificate),
 		"batchSize", len(message),

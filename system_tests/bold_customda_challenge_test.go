@@ -70,11 +70,11 @@ func TestChallengeProtocolBOLDCustomDA_EvilDataEvilCert(t *testing.T) {
 }
 
 // createReferenceDAProviderServer creates and starts a ReferenceDA provider server with automatic port selection
-func createReferenceDAProviderServer(t *testing.T, ctx context.Context) (*http.Server, string) {
+func createReferenceDAProviderServer(t *testing.T, ctx context.Context, l1Client *ethclient.Client, validatorAddr common.Address, dataSigner signature.DataSignerFunc) (*http.Server, string) {
 	// Create ReferenceDA components
-	reader := referenceda.NewReader()
-	writer := referenceda.NewWriter()
-	validator := referenceda.NewValidator()
+	reader := referenceda.NewReader(l1Client, validatorAddr)
+	writer := referenceda.NewWriter(dataSigner)
+	validator := referenceda.NewValidator(l1Client, validatorAddr)
 
 	// Create server config with automatic port selection
 	serverConfig := &dapserver.ServerConfig{
@@ -131,9 +131,9 @@ func postBatchWithDA(
 }
 
 // createEvilDAProviderServer creates and starts a DA provider server with an evil provider that can return different data
-func createEvilDAProviderServer(t *testing.T, ctx context.Context) (*http.Server, string, *EvilDAProvider) {
+func createEvilDAProviderServer(t *testing.T, ctx context.Context, l1Client *ethclient.Client, validatorAddr common.Address, dataSigner signature.DataSignerFunc) (*http.Server, string, *EvilDAProvider) {
 	// Create evil DA provider
-	evilProvider := NewEvilDAProvider()
+	evilProvider := NewEvilDAProvider(l1Client, validatorAddr)
 
 	// Create server config with automatic port selection
 	serverConfig := &dapserver.ServerConfig{
@@ -145,7 +145,7 @@ func createEvilDAProviderServer(t *testing.T, ctx context.Context) (*http.Server
 	}
 
 	// Note: We can use a regular writer since both nodes share the singleton storage
-	writer := referenceda.NewWriter()
+	writer := referenceda.NewWriter(dataSigner)
 	server, err := dapserver.NewServerWithDAPProvider(ctx, serverConfig, evilProvider, writer, evilProvider)
 	Require(t, err)
 
@@ -253,22 +253,7 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, 
 		t.Log("Testing EvilDataEvilCert strategy: Evil data with evil certificate (matching)")
 	}
 
-	// Create and start ReferenceDA provider server for node A
-	providerServerA, providerURLNodeA := createReferenceDAProviderServer(t, ctx)
-	t.Cleanup(func() {
-		if err := providerServerA.Shutdown(context.Background()); err != nil {
-			t.Logf("Error shutting down provider server A: %v", err)
-		}
-	})
-
-	// Create and start evil DA provider server for node B
-	providerServerB, providerURLNodeB, evilProvider := createEvilDAProviderServer(t, ctx)
-	t.Cleanup(func() {
-		if err := providerServerB.Shutdown(context.Background()); err != nil {
-			t.Logf("Error shutting down provider server B: %v", err)
-		}
-	})
-
+	// First set up L1 and deploy contracts to get validator address
 	var transferGas = util.NormalizeL2GasForL1GasInitial(800_000, params.GWei) // include room for aggregator L1 costs
 	l2chainConfig := chaininfo.ArbitrumDevTestChainConfig()
 	l2info := NewBlockChainTestInfo(
@@ -286,24 +271,45 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, 
 		MinimumAssertionPeriod: 0,
 	}
 
-	// Configure external DA for node A
+	// Configure external DA (we'll update the URL after creating providers)
 	nodeConfigA := arbnode.ConfigDefaultL1Test()
 	nodeConfigA.DA.Mode = "external"
 	nodeConfigA.DA.ExternalProvider.Enable = true
-	nodeConfigA.DA.ExternalProvider.RPC.URL = providerURLNodeA
 
-	_, l2nodeA, _, _, l1info, _, l1client, l1stack, assertionChain, stakeTokenAddr := createTestNodeOnL1ForBoldProtocol(
-		t,
-		ctx,
-		true,
-		nodeConfigA,
-		l2chainConfig,
-		nil,
-		sconf,
-		l2info,
-		true,
+	// Set up L1 first to get validator address
+	l1info, l1backend, l1client, l1stack, addresses, stakeTokenAddr := setupL1ForBoldProtocol(
+		t, ctx, sconf, l2info, nodeConfigA, l2chainConfig, true, // enableCustomDA
 	)
 	defer requireClose(t, l1stack)
+
+	// Now we can get the validator address and DA signer
+	validatorAddr := l1info.GetAddress("ReferenceDAProofValidator")
+	dataSigner := signature.DataSignerFromPrivateKey(l1info.GetInfoWithPrivKey("DASigner").PrivateKey)
+
+	// Create and start ReferenceDA provider server for node A
+	providerServerA, providerURLNodeA := createReferenceDAProviderServer(t, ctx, l1client, validatorAddr, dataSigner)
+	t.Cleanup(func() {
+		if err := providerServerA.Shutdown(context.Background()); err != nil {
+			t.Logf("Error shutting down provider server A: %v", err)
+		}
+	})
+
+	// Create and start evil DA provider server for node B
+	providerServerB, providerURLNodeB, evilProvider := createEvilDAProviderServer(t, ctx, l1client, validatorAddr, dataSigner)
+	t.Cleanup(func() {
+		if err := providerServerB.Shutdown(context.Background()); err != nil {
+			t.Logf("Error shutting down provider server B: %v", err)
+		}
+	})
+
+	// Now update node config with provider URLs and create L2 nodes
+	nodeConfigA.DA.ExternalProvider.RPC.URL = providerURLNodeA
+
+	// Create L2 node A
+	l2info, l2nodeA, _, _, assertionChain := createL2NodeForBoldProtocol(
+		t, ctx, true, nodeConfigA, l2chainConfig, l2info,
+		l1info, l1backend, l1client, l1stack, addresses, stakeTokenAddr,
+	)
 	defer l2nodeA.StopAndWait()
 
 	// Make sure we shut down test functionality before the rest of the node
@@ -534,7 +540,7 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, 
 	Require(t, err)
 
 	// Create DA writers for both nodes
-	daWriterA := referenceda.NewWriter()
+	daWriterA := referenceda.NewWriter(dataSigner)
 
 	totalMessagesPosted := int64(0)
 	numMessagesPerBatch := int64(5)

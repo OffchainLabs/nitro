@@ -71,16 +71,6 @@ func (e *ValidatePreimageProofEnhancer) EnhanceProof(ctx context.Context, messag
 	}
 	certificate := sequencerMessage[40:]
 
-	// Validate certificate format
-	if len(certificate) < 33 {
-		return nil, fmt.Errorf("certificate too short: expected at least 33 bytes, got %d", len(certificate))
-	}
-
-	if certificate[0] != daprovider.CustomDAMessageHeaderFlag {
-		return nil, fmt.Errorf("invalid certificate header: expected 0x%02x, got 0x%02x",
-			daprovider.CustomDAMessageHeaderFlag, certificate[0])
-	}
-
 	// Verify the certificate hash matches what's requested
 	actualHash := crypto.Keccak256Hash(certificate)
 	if actualHash != common.BytesToHash(certHash[:]) {

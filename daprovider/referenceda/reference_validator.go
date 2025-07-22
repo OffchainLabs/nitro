@@ -8,18 +8,25 @@ import (
 	"encoding/binary"
 	"fmt"
 
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/ethclient"
 
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/solgen/go/ospgen"
 )
 
 type Validator struct {
-	storage *InMemoryStorage
+	storage       *InMemoryStorage
+	l1Client      *ethclient.Client
+	validatorAddr common.Address
 }
 
-func NewValidator() *Validator {
+func NewValidator(l1Client *ethclient.Client, validatorAddr common.Address) *Validator {
 	return &Validator{
-		storage: GetInMemoryStorage(),
+		storage:       GetInMemoryStorage(),
+		l1Client:      l1Client,
+		validatorAddr: validatorAddr,
 	}
 }
 
@@ -31,14 +38,14 @@ func (v *Validator) GenerateProof(ctx context.Context, preimageType arbutil.Prei
 		return nil, fmt.Errorf("unsupported preimage type: %v", preimageType)
 	}
 
-	// Extract SHA256 hash from certificate
-	// Certificate format: [0x01 header byte][32 bytes SHA256]
-	if len(certificate) != 33 || certificate[0] != 0x01 {
-		return nil, fmt.Errorf("invalid certificate format, expected 33 bytes with 0x01 header")
+	// Deserialize certificate to extract data hash
+	cert, err := Deserialize(certificate)
+	if err != nil {
+		return nil, fmt.Errorf("failed to deserialize certificate: %w", err)
 	}
 
 	// Extract data hash (SHA256) from certificate
-	dataHash := common.BytesToHash(certificate[1:33])
+	dataHash := cert.DataHash
 
 	// Get preimage from storage using SHA256 hash
 	preimage, err := v.storage.GetByHash(ctx, dataHash)
@@ -65,22 +72,45 @@ func (v *Validator) GenerateCertificateValidityProof(ctx context.Context, preima
 	// - claimedValid (1 byte): 1 if valid, 0 if invalid
 	// - version (1 byte): 0x01 for version 1
 	//
-	// This simple implementation only includes a version byte after the validity claim.
-	// Other DA providers can return more complex validity proofs that include additional
-	// verification data such as cryptographic signatures, merkle proofs, or other
-	// authentication mechanisms. The OSP will pass this entire proof to validateCertificate.
+	// This validates the certificate signature against trusted signers from the contract.
+	// Invalid certificates (wrong format, untrusted signer) return claimedValid=0.
+	// Only transient errors (like RPC failures) return an error.
 
-	// Validate certificate format:
-	// - Must be exactly 33 bytes (1 byte prefix + 32 bytes hash)
-	// - First byte must be 0x01 (ReferenceDA marker)
-	if len(certificate) != 33 {
+	// Try to deserialize certificate
+	cert, err := Deserialize(certificate)
+	if err != nil {
+		// Certificate is malformed (wrong length, etc.)
+		// We return invalid proof rather than error for validation failures
+		return []byte{0, 0x01}, nil //nolint:nilerr // Invalid certificate, version 1
+	}
+
+	// Create contract binding
+	validator, err := ospgen.NewReferenceDAProofValidator(v.validatorAddr, v.l1Client)
+	if err != nil {
+		// This is a transient error - can't connect to contract
+		return nil, fmt.Errorf("failed to create validator binding: %w", err)
+	}
+
+	// Check if signer is trusted using contract
+	signer, err := cert.RecoverSigner()
+	if err != nil {
+		// Invalid signature - can't recover signer
+		// We return invalid proof rather than error for validation failures
+		return []byte{0, 0x01}, nil //nolint:nilerr // Invalid certificate, version 1
+	}
+
+	// Query contract to check if signer is trusted
+	isTrusted, err := validator.TrustedSigners(&bind.CallOpts{Context: ctx}, signer)
+	if err != nil {
+		// This is a transient error - RPC call failed
+		return nil, fmt.Errorf("failed to check trusted signer: %w", err)
+	}
+
+	if !isTrusted {
+		// Signer is not trusted
 		return []byte{0, 0x01}, nil // Invalid certificate, version 1
 	}
 
-	if certificate[0] != 0x01 {
-		return []byte{0, 0x01}, nil // Invalid certificate, version 1
-	}
-
-	// Certificate is valid
+	// Certificate is valid (signed by trusted signer)
 	return []byte{1, 0x01}, nil // Valid certificate, version 1
 }

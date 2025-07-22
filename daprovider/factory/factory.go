@@ -7,8 +7,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"strings"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 
 	"github.com/offchainlabs/nitro/daprovider"
@@ -45,6 +48,8 @@ type AnyTrustFactory struct {
 type ReferenceDAFactory struct {
 	config       *referenceda.Config
 	enableWriter bool
+	dataSigner   signature.DataSignerFunc
+	l1Client     *ethclient.Client
 }
 
 func NewDAProviderFactory(
@@ -71,6 +76,8 @@ func NewDAProviderFactory(
 		factory := &ReferenceDAFactory{
 			config:       referencedaCfg,
 			enableWriter: enableWriter,
+			dataSigner:   dataSigner,
+			l1Client:     l1Client,
 		}
 		return factory, nil
 	default:
@@ -180,7 +187,11 @@ func (f *ReferenceDAFactory) ValidateConfig() error {
 }
 
 func (f *ReferenceDAFactory) CreateReader(ctx context.Context) (daprovider.Reader, func(), error) {
-	reader := referenceda.NewReader()
+	if f.config.ValidatorContract == "" {
+		return nil, nil, errors.New("validator-contract address not configured for reference DA reader")
+	}
+	validatorAddr := common.HexToAddress(f.config.ValidatorContract)
+	reader := referenceda.NewReader(f.l1Client, validatorAddr)
 	return reader, nil, nil
 }
 
@@ -189,10 +200,39 @@ func (f *ReferenceDAFactory) CreateWriter(ctx context.Context) (daprovider.Write
 		return nil, nil, nil
 	}
 
-	writer := referenceda.NewWriter()
+	if f.dataSigner == nil {
+		// Try to create signer from config
+		var signer signature.DataSignerFunc
+		if f.config.SigningKey.PrivateKey != "" {
+			privKey, err := crypto.HexToECDSA(f.config.SigningKey.PrivateKey)
+			if err != nil {
+				return nil, nil, fmt.Errorf("invalid private key: %w", err)
+			}
+			signer = signature.DataSignerFromPrivateKey(privKey)
+		} else if f.config.SigningKey.KeyFile != "" {
+			keyData, err := os.ReadFile(f.config.SigningKey.KeyFile)
+			if err != nil {
+				return nil, nil, fmt.Errorf("failed to read key file: %w", err)
+			}
+			privKey, err := crypto.HexToECDSA(strings.TrimSpace(string(keyData)))
+			if err != nil {
+				return nil, nil, fmt.Errorf("invalid private key in file: %w", err)
+			}
+			signer = signature.DataSignerFromPrivateKey(privKey)
+		} else {
+			return nil, nil, errors.New("no signing key configured for reference DA writer")
+		}
+		f.dataSigner = signer
+	}
+
+	writer := referenceda.NewWriter(f.dataSigner)
 	return writer, nil, nil
 }
 
 func (f *ReferenceDAFactory) CreateValidator(ctx context.Context) (daprovider.Validator, func(), error) {
-	return referenceda.NewValidator(), nil, nil
+	if f.config.ValidatorContract == "" {
+		return nil, nil, errors.New("validator-contract address not configured for reference DA validator")
+	}
+	validatorAddr := common.HexToAddress(f.config.ValidatorContract)
+	return referenceda.NewValidator(f.l1Client, validatorAddr), nil, nil
 }
