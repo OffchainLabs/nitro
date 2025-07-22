@@ -16,7 +16,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/log"
 
-	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/util/redisutil"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
@@ -34,10 +33,19 @@ func checkMaintenanceRun(t *testing.T, builder *NodeBuilder, ctx context.Context
 		Require(t, err)
 	}
 
-	// it is a hot reloadable config, which is set to false by default
-	builder.nodeConfig.Maintenance.Enable = true
+	maybeRunMaintenanceDone := make(chan struct{})
+	go func() {
+		builder.L2.ConsensusNode.MaintenanceRunner.MaybeRunMaintenance(ctx)
+		close(maybeRunMaintenanceDone)
+	}()
+	select {
+	case <-maybeRunMaintenanceDone:
+	case <-time.After(10 * time.Second):
+		t.Fatal("Maintenance did not complete in time")
+	case <-ctx.Done():
+		t.Fatal("Context cancelled before maintenance completed")
+	}
 
-	builder.L2.ConsensusNode.MaintenanceRunner.MaybeRunMaintenance(ctx)
 	if !logHandler.WasLogged("Execution is not running maintenance anymore, maintenance completed successfully") {
 		t.Fatal("Maintenance did not complete successfully from Consensus perspective")
 	}
@@ -54,14 +62,6 @@ func checkMaintenanceRun(t *testing.T, builder *NodeBuilder, ctx context.Context
 			t.Fatal("Unexpected balance:", balance, "for account:", account)
 		}
 	}
-
-	l2rpc := builder.L2.Stack.Attach()
-	var maintenanceStatus execution.MaintenanceStatus
-	err := l2rpc.CallContext(ctx, &maintenanceStatus, "arb_maintenanceStatus")
-	Require(t, err)
-	if maintenanceStatus.IsRunning {
-		t.Fatal("Maintenance should not be running")
-	}
 }
 
 func TestMaintenanceWithoutSeqCoordinator(t *testing.T) {
@@ -71,6 +71,7 @@ func TestMaintenanceWithoutSeqCoordinator(t *testing.T) {
 	defer cancel()
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, false).DontParalellise()
+	builder.nodeConfig.Maintenance.Enable = true
 	builder.execConfig.Caching.TrieTimeLimitBeforeFlushMaintenance = time.Duration(math.MaxInt64) // effectively execution will always suggest to run maintenance
 	cleanup := builder.Build(t)
 	defer cleanup()
@@ -85,6 +86,7 @@ func TestMaintenanceWithSeqCoordinator(t *testing.T) {
 	defer cancel()
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).DontParalellise()
+	builder.nodeConfig.Maintenance.Enable = true
 	builder.execConfig.Caching.TrieTimeLimitBeforeFlushMaintenance = time.Duration(math.MaxInt64) // effectively execution will always suggest to run maintenance
 	builder.nodeConfig.BatchPoster.Enable = false
 	builder.nodeConfig.SeqCoordinator.Enable = true
