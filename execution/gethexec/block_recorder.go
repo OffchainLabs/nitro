@@ -11,6 +11,7 @@ import (
 	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
@@ -101,8 +102,8 @@ func (r *BlockRecorder) RecordBlockCreation(
 	ctx context.Context,
 	pos arbutil.MessageIndex,
 	msg *arbostypes.MessageWithMetadata,
+	wasmTargets []rawdb.WasmTarget,
 ) (*execution.RecordResult, error) {
-
 	blockNum := r.execEngine.MessageIndexToBlockNumber(pos)
 
 	var prevHeader *types.Header
@@ -158,7 +159,7 @@ func (r *BlockRecorder) RecordBlockCreation(
 			recordingdb,
 			chaincontext,
 			false,
-			core.NewMessageRecordingContext(r.execEngine.wasmTargets),
+			core.NewMessageRecordingContext(wasmTargets),
 		)
 		if err != nil {
 			return nil, err
