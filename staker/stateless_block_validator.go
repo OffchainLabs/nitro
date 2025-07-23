@@ -36,6 +36,8 @@ type StatelessBlockValidator struct {
 	boldExecSpawners []validator.BOLDExecutionSpawner
 	redisValidator   *redis.ValidationClient
 
+	wasmTargets []rawdb.WasmTarget
+
 	recorder execution.ExecutionRecorder
 
 	inboxReader          InboxReaderInterface
@@ -252,12 +254,23 @@ func NewStatelessBlockValidator(
 		}
 	}
 	configs := config().ValidationServerConfigs
+	wasmTargetsSet := make(map[rawdb.WasmTarget]struct{})
 	for i := range configs {
 		i := i
 		confFetcher := func() *rpcclient.ClientConfig { return &config().ValidationServerConfigs[i] }
+
 		executionSpawner := validatorclient.NewExecutionClient(confFetcher, stack)
 		executionSpawners = append(executionSpawners, executionSpawner)
 		boldExecutionSpawners = append(boldExecutionSpawners, validatorclient.NewBOLDExecutionClient(executionSpawner))
+
+		for _, wasmTarget := range executionSpawner.StylusArchs() {
+			wasmTargetsSet[wasmTarget] = struct{}{}
+		}
+	}
+
+	wasmTargets := make([]rawdb.WasmTarget, 0, len(wasmTargetsSet))
+	for wasmTarget := range wasmTargetsSet {
+		wasmTargets = append(wasmTargets, wasmTarget)
 	}
 
 	if len(executionSpawners) == 0 {
@@ -281,6 +294,7 @@ func NewStatelessBlockValidator(
 		boldExecSpawners:     boldExecutionSpawners,
 		stack:                stack,
 		latestWasmModuleRoot: latestWasmModuleRoot,
+		wasmTargets:          wasmTargets,
 	}, nil
 }
 
@@ -374,7 +388,7 @@ func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *
 		return fmt.Errorf("validation entry should be ReadyForRecord, is: %v", e.Stage)
 	}
 	if e.Pos != 0 {
-		recording, err := v.recorder.RecordBlockCreation(ctx, e.Pos, e.msg)
+		recording, err := v.recorder.RecordBlockCreation(ctx, e.Pos, e.msg, v.wasmTargets)
 		if err != nil {
 			return err
 		}

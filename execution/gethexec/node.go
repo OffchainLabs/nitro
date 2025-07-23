@@ -489,8 +489,9 @@ func (n *ExecutionNode) RecordBlockCreation(
 	ctx context.Context,
 	pos arbutil.MessageIndex,
 	msg *arbostypes.MessageWithMetadata,
+	wasmTargets []rawdb.WasmTarget,
 ) (*execution.RecordResult, error) {
-	return n.Recorder.RecordBlockCreation(ctx, pos, msg)
+	return n.Recorder.RecordBlockCreation(ctx, pos, msg, wasmTargets)
 }
 func (n *ExecutionNode) MarkValid(pos arbutil.MessageIndex, resultHash common.Hash) {
 	n.Recorder.MarkValid(pos, resultHash)
