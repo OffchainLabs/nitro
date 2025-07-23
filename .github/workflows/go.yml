@@ -85,7 +85,7 @@ jobs:
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
         with:
-          version: nightly
+          cache: false
 
       - name: Build yul contracts
         run: yarn --cwd contracts build:forge:yul
