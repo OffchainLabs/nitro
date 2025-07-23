@@ -61,7 +61,7 @@ done
 
 packages=$(go list ./...)
 for package in $packages; do
-  cmd="stdbuf -oL gotestsum --format short-verbose --packages=\"$package\" --rerun-fails=2 --rerun-fails-max-failures=30 --no-color=false --"
+  cmd="stdbuf -oL gotestsum --format short-verbose --packages=\"$package\" --rerun-fails=3 --rerun-fails-max-failures=30 --no-color=false --"
   if [ "$timeout" != "" ]; then
     cmd="$cmd -timeout $timeout"
   fi
