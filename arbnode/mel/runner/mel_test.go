@@ -43,7 +43,6 @@ func TestMessageExtractor(t *testing.T) {
 		melDb,
 		messageConsumer,
 		[]daprovider.Reader{},
-		common.Hash{},
 		0,
 	)
 	require.NoError(t, err)
@@ -115,6 +114,14 @@ type mockParentChainReader struct {
 	blocks    map[common.Hash]*types.Block
 	headers   map[common.Hash]*types.Header
 	returnErr error
+}
+
+func (m *mockParentChainReader) HeaderByNumber(ctx context.Context, number *big.Int) (*types.Header, error) {
+	blk, err := m.BlockByNumber(ctx, number)
+	if err != nil {
+		return nil, err
+	}
+	return blk.Header(), err
 }
 
 func (m *mockParentChainReader) BlockByNumber(ctx context.Context, number *big.Int) (*types.Block, error) {
