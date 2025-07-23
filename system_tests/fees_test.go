@@ -1,5 +1,5 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 // these tests seems to consume too much memory with race detection
 // Test randomly fails with L1 gas price estimate should tend toward the basefee
@@ -31,7 +31,6 @@ import (
 )
 
 func TestSequencerFeePaid(t *testing.T) {
-	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 

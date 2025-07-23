@@ -1,5 +1,5 @@
 // Copyright 2023-2024, Offchain Labs, Inc.
-// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package legacystaker
 
@@ -16,7 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/solgen/go/contractsgen"
-	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
+	"github.com/offchainlabs/nitro/solgen/go/rollup_legacy_gen"
 	"github.com/offchainlabs/nitro/staker/txbuilder"
 	"github.com/offchainlabs/nitro/util/headerreader"
 )
@@ -29,6 +29,7 @@ type FastConfirmSafe struct {
 	builder                   *txbuilder.Builder
 	wallet                    ValidatorWalletInterface
 	l1Reader                  *headerreader.HeaderReader
+	rollupAddress             common.Address
 }
 
 func NewFastConfirmSafe(
@@ -37,11 +38,13 @@ func NewFastConfirmSafe(
 	builder *txbuilder.Builder,
 	wallet ValidatorWalletInterface,
 	l1Reader *headerreader.HeaderReader,
+	rollupAddress common.Address,
 ) (*FastConfirmSafe, error) {
 	fastConfirmSafe := &FastConfirmSafe{
-		builder:  builder,
-		wallet:   wallet,
-		l1Reader: l1Reader,
+		builder:       builder,
+		wallet:        wallet,
+		l1Reader:      l1Reader,
+		rollupAddress: rollupAddress,
 	}
 	safe, err := contractsgen.NewSafe(fastConfirmSafeAddress, wallet.L1Client())
 	if err != nil {
@@ -63,7 +66,7 @@ func NewFastConfirmSafe(
 		return nil, fmt.Errorf("calling getThreshold: %w", err)
 	}
 	fastConfirmSafe.threshold = threshold.Uint64()
-	rollupUserLogicAbi, err := rollupgen.RollupUserLogicMetaData.GetAbi()
+	rollupUserLogicAbi, err := rollup_legacy_gen.RollupUserLogicMetaData.GetAbi()
 	if err != nil {
 		return nil, err
 	}
@@ -92,7 +95,7 @@ func (f *FastConfirmSafe) tryFastConfirmation(ctx context.Context, blockHash com
 	// Hash of the safe transaction.
 	safeTxHash, err := f.safe.GetTransactionHash(
 		callOpts,
-		f.wallet.RollupAddress(),
+		f.rollupAddress,
 		big.NewInt(0),
 		fastConfirmCallData,
 		0,
@@ -123,7 +126,7 @@ func (f *FastConfirmSafe) tryFastConfirmation(ctx context.Context, blockHash com
 		return err
 	}
 
-	log.Info("Approving Safe tx hash to fast confirm", "safeHash", safeTxHash, "nodeHash", nodeHash)
+	log.Info("Approving Safe tx hash to fast confirm", "safeHash", common.BytesToHash(safeTxHash[:]), "nodeHash", nodeHash, "self", f.wallet.Address())
 	_, err = f.safe.ApproveHash(f.builder.Auth(ctx), safeTxHash)
 	if err != nil {
 		return err
@@ -221,10 +224,10 @@ func (f *FastConfirmSafe) checkApprovedHashAndExecTransaction(ctx context.Contex
 		}
 	}
 	if approvedHashCount >= f.threshold {
-		log.Info("Executing Safe tx to fast confirm", "safeHash", safeTxHash)
+		log.Info("Executing Safe tx to fast confirm", "safeHash", common.BytesToHash(safeTxHash[:]))
 		_, err := f.safe.ExecTransaction(
 			f.builder.Auth(ctx),
-			f.wallet.RollupAddress(),
+			f.rollupAddress,
 			big.NewInt(0),
 			fastConfirmCallData,
 			0,
@@ -240,6 +243,6 @@ func (f *FastConfirmSafe) checkApprovedHashAndExecTransaction(ctx context.Contex
 		}
 		return true, nil
 	}
-	log.Info("Not enough Safe tx approvals yet to fast confirm", "safeHash", safeTxHash)
+	log.Info("Not enough Safe tx approvals yet to fast confirm", "safeHash", common.BytesToHash(safeTxHash[:]).Hex(), "approved", approvedHashCount, "threshold", f.threshold, "self", f.wallet.Address())
 	return false, nil
 }

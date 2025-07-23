@@ -1,5 +1,5 @@
 // Copyright 2024, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 //go:build challengetest && !race
 
@@ -136,7 +136,7 @@ func testChallengeProtocolBOLDVirtualBlocks(t *testing.T, wrongAtFirstVirtual bo
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithBoldDeployment()
 
 	// Block validation requires db hash scheme
-	builder.execConfig.Caching.StateScheme = rawdb.HashScheme
+	builder.RequireScheme(t, rawdb.HashScheme)
 	builder.nodeConfig.BlockValidator.Enable = true
 	builder.valnodeConfig.UseJit = false
 
@@ -292,6 +292,9 @@ func startBoldChallengeManager(t *testing.T, ctx context.Context, builder *NodeB
 			CheckBatchFinality:     false,
 		},
 		cacheDir,
+		node.ConsensusNode.InboxTracker,
+		node.ConsensusNode.TxStreamer,
+		node.ConsensusNode.InboxReader,
 	)
 	Require(t, err)
 

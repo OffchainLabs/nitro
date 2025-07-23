@@ -1,5 +1,5 @@
 // Copyright 2021-2023, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package dbstorage
 
@@ -10,10 +10,10 @@ import (
 	"fmt"
 	"strconv"
 
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/ethdb"
 
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
-	"github.com/offchainlabs/nitro/util/dbutil"
 )
 
 // Storage implements db based storage for batch poster.
@@ -60,7 +60,7 @@ func (s *Storage) Get(_ context.Context, index uint64) (*storage.QueuedTransacti
 	key := idxToKey(index)
 	value, err := s.db.Get(key)
 	if err != nil {
-		if dbutil.IsErrNotFound(err) {
+		if rawdb.IsDbErrNotFound(err) {
 			return nil, nil
 		}
 		return nil, err
@@ -132,7 +132,7 @@ func (s *Storage) Prune(ctx context.Context, until uint64) error {
 func (s *Storage) valueAt(_ context.Context, key []byte) ([]byte, error) {
 	val, err := s.db.Get(key)
 	if err != nil {
-		if dbutil.IsErrNotFound(err) {
+		if rawdb.IsDbErrNotFound(err) {
 			return s.encDec().Encode((*storage.QueuedTransaction)(nil))
 		}
 		return nil, err
@@ -166,10 +166,10 @@ func (s *Storage) Put(ctx context.Context, index uint64, prev, new *storage.Queu
 		return fmt.Errorf("updating value at: %v: %w", key, err)
 	}
 	lastItemIdx, err := s.lastItemIdx(ctx)
-	if err != nil && !dbutil.IsErrNotFound(err) {
+	if err != nil && !rawdb.IsDbErrNotFound(err) {
 		return err
 	}
-	if dbutil.IsErrNotFound(err) {
+	if rawdb.IsDbErrNotFound(err) {
 		lastItemIdx = []byte{}
 	}
 	if cnt == 0 || bytes.Compare(key, lastItemIdx) > 0 {
@@ -186,7 +186,7 @@ func (s *Storage) Put(ctx context.Context, index uint64, prev, new *storage.Queu
 func (s *Storage) Length(context.Context) (int, error) {
 	val, err := s.db.Get(countKey)
 	if err != nil {
-		if dbutil.IsErrNotFound(err) {
+		if rawdb.IsDbErrNotFound(err) {
 			return 0, nil
 		}
 		return 0, err

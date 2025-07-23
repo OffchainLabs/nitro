@@ -1,5 +1,5 @@
 // Copyright 2022-2024, Offchain Labs, Inc.
-// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbtest
 
@@ -20,7 +20,7 @@ import (
 	"github.com/ethereum/go-ethereum/eth/tracers/logger"
 
 	"github.com/offchainlabs/nitro/arbos/util"
-	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
+	"github.com/offchainlabs/nitro/solgen/go/mocks_legacy_gen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/colors"
 	"github.com/offchainlabs/nitro/util/testhelpers"
@@ -29,6 +29,7 @@ import (
 var skipCheck = []byte("skip")
 
 func checkOpcode(t *testing.T, result logger.ExecutionResult, index int, wantOp vm.OpCode, wantStack ...[]byte) {
+	t.Helper()
 	var structLog StructLogRes
 	err := json.Unmarshal(result.StructLogs[index], &structLog)
 	Require(t, err, "failed to unmarshal structure log")
@@ -445,7 +446,7 @@ func TestStylusOpcodeTraceEquivalence(t *testing.T) {
 	args := multicallEmptyArgs()
 	// We have to load first; otherwise, Stylus optimize-out the load after a store.
 	args = multicallAppendLoad(args, key, true)
-	args = multicallAppendStore(args, key, value, true)
+	args = multicallAppendStore(args, key, value, true, false)
 
 	// Trace recursive call in wasm
 	wasmMulticall := deployWasm(t, ctx, auth, l2client, rustFile("multicall"))
@@ -454,7 +455,7 @@ func TestStylusOpcodeTraceEquivalence(t *testing.T) {
 	wasmResult := sendAndTraceTransaction(t, builder, wasmMulticall, nil, wasmArgs)
 
 	// Trace recursive call in evm
-	evmMulticall, tx, _, err := mocksgen.DeployMultiCallTest(&auth, builder.L2.Client)
+	evmMulticall, tx, _, err := mocks_legacy_gen.DeployMultiCallTest(&auth, builder.L2.Client)
 	Require(t, err)
 	_, err = EnsureTxSucceeded(ctx, l2client, tx)
 	Require(t, err)

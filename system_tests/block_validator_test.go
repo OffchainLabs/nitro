@@ -1,5 +1,5 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 // race detection makes things slow and miss timeouts
 //go:build !race
@@ -25,10 +25,11 @@ import (
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/execution/gethexec"
-	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
+	"github.com/offchainlabs/nitro/solgen/go/localgen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/redisutil"
+	testflag "github.com/offchainlabs/nitro/util/testhelpers/flag"
 	"github.com/offchainlabs/nitro/util/testhelpers/github"
 	"github.com/offchainlabs/nitro/validator/client/redis"
 )
@@ -52,7 +53,6 @@ type Options struct {
 }
 
 func testBlockValidatorSimple(t *testing.T, opts Options) {
-	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -70,7 +70,8 @@ func testBlockValidatorSimple(t *testing.T, opts Options) {
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
 	builder = builder.WithWasmRootDir(opts.wasmRootDir)
 	// For now PathDB is not supported when using block validation
-	builder.execConfig.Caching.StateScheme = rawdb.HashScheme
+	builder.RequireScheme(t, rawdb.HashScheme)
+
 	builder.nodeConfig = l1NodeConfigA
 	builder.chainConfig = chainConfig
 	builder.L2Info = nil
@@ -100,7 +101,7 @@ func testBlockValidatorSimple(t *testing.T, opts Options) {
 
 	perTransfer := big.NewInt(1e12)
 
-	var simple *mocksgen.Simple
+	var simple *localgen.Simple
 	if opts.workload != upgradeArbOs {
 		for i := 0; i < opts.workloadLoops; i++ {
 			var tx *types.Transaction
@@ -155,7 +156,7 @@ func testBlockValidatorSimple(t *testing.T, opts Options) {
 		auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
 		// deploy a test contract
 		var err error
-		_, _, simple, err = mocksgen.DeploySimple(&auth, builder.L2.Client)
+		_, _, simple, err = localgen.DeploySimple(&auth, builder.L2.Client)
 		Require(t, err, "could not deploy contract")
 
 		tx, err := simple.StoreDifficulty(&auth)
@@ -263,6 +264,33 @@ func testBlockValidatorSimple(t *testing.T, opts Options) {
 	}
 }
 
+func TestBlockRecordSimple(t *testing.T) {
+	if !*testflag.RecordBlockInputsEnable {
+		t.Skip("not recording")
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder.nodeConfig.BlockValidator.Enable = true
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	builder.L2Info.GenerateAccount("User2")
+
+	tx := builder.L2Info.PrepareTx("Owner", "User2", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
+
+	err := builder.L2.Client.SendTransaction(ctx, tx)
+	Require(t, err)
+
+	receipt, err := builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	recordBlock(t, receipt.BlockNumber.Uint64(), builder, rawdb.TargetWavm, rawdb.LocalTarget())
+	// give the inbox reader a bit of time to pick up the delayed message
+	time.Sleep(time.Millisecond * 100)
+}
+
 func TestBlockValidatorSimpleOnchainUpgradeArbOs(t *testing.T) {
 	opts := Options{
 		dasModeString: "onchain",
@@ -284,6 +312,9 @@ func TestBlockValidatorSimpleOnchain(t *testing.T) {
 }
 
 func TestBlockValidatorSimpleJITOnchainWithPublishedMachine(t *testing.T) {
+	t.Skip("Fails cause EIP-2935 (part of arbOs 40) is not implemented in the latest published machine i.e Consensus V32")
+	// TODO: Remove this skip when consensus V40 is published
+	// TODO: Make this more robust in the future, so that it can handle if the latest consensus release is behind the arbOS version we want to test.
 	cr, err := github.LatestConsensusRelease(context.Background())
 	Require(t, err)
 	machPath := populateMachineDir(t, cr)
@@ -298,6 +329,9 @@ func TestBlockValidatorSimpleJITOnchainWithPublishedMachine(t *testing.T) {
 }
 
 func TestBlockValidatorSimpleOnchainWithPublishedMachine(t *testing.T) {
+	t.Skip("Fails cause EIP-2935 (part of arbOs 40) is not implemented in the latest published machine i.e Consensus V32")
+	// TODO: Remove this skip when consensus V40 is published
+	// TODO: Make this more robust in the future, so that it can handle if the latest consensus release is behind the arbOS version we want to test.
 	cr, err := github.LatestConsensusRelease(context.Background())
 	Require(t, err)
 	machPath := populateMachineDir(t, cr)

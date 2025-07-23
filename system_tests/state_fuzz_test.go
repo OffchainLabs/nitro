@@ -1,5 +1,5 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbtest
 
@@ -10,7 +10,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math/big"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -26,10 +25,9 @@ import (
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
-	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbstate"
-	"github.com/offchainlabs/nitro/arbstate/daprovider"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
+	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/statetransfer"
 	"github.com/offchainlabs/nitro/util/testhelpers/env"
 )
@@ -38,10 +36,9 @@ func BuildBlock(
 	statedb *state.StateDB,
 	lastBlockHeader *types.Header,
 	chainContext core.ChainContext,
-	chainConfig *params.ChainConfig,
 	inbox arbstate.InboxBackend,
 	seqBatch []byte,
-	runMode core.MessageRunMode,
+	runCtx *core.MessageRunContext,
 ) (*types.Block, error) {
 	var delayedMessagesRead uint64
 	if lastBlockHeader != nil {
@@ -69,7 +66,7 @@ func BuildBlock(
 	}
 
 	block, _, err := arbos.ProduceBlock(
-		l1Message, delayedMessagesRead, lastBlockHeader, statedb, chainContext, false, runMode,
+		l1Message, delayedMessagesRead, lastBlockHeader, statedb, chainContext, false, runCtx,
 	)
 	return block, err
 }
@@ -139,12 +136,12 @@ func (c noopChainContext) GetHeader(common.Hash, uint64) *types.Header {
 }
 
 func FuzzStateTransition(f *testing.F) {
-	f.Fuzz(func(t *testing.T, compressSeqMsg bool, seqMsg []byte, delayedMsg []byte, runModeSeed uint8) {
+	f.Fuzz(func(t *testing.T, compressSeqMsg bool, seqMsg []byte, delayedMsg []byte, targetsSeed uint8, runCtxSeed uint8) {
 		if len(seqMsg) > 0 && daprovider.IsL1AuthenticatedMessageHeaderByte(seqMsg[0]) {
 			return
 		}
 		chainDb := rawdb.NewMemoryDatabase()
-		chainConfig := chaininfo.ArbitrumRollupGoerliTestnetChainConfig()
+		chainConfig := chaininfo.ArbitrumDevTestChainConfig()
 		serializedChainConfig, err := json.Marshal(chainConfig)
 		if err != nil {
 			panic(err)
@@ -161,6 +158,7 @@ func FuzzStateTransition(f *testing.F) {
 			cacheConfig,
 			statetransfer.NewMemoryInitDataReader(&statetransfer.ArbosInitializationInfo{}),
 			chainConfig,
+			nil,
 			initMessage,
 			0,
 			0,
@@ -173,20 +171,7 @@ func FuzzStateTransition(f *testing.F) {
 		if err != nil {
 			panic(err)
 		}
-		genesis := &types.Header{
-			Number:     new(big.Int),
-			Nonce:      types.EncodeNonce(0),
-			Time:       0,
-			ParentHash: common.Hash{},
-			Extra:      []byte("Arbitrum"),
-			GasLimit:   l2pricing.GethBlockGasLimit,
-			GasUsed:    0,
-			BaseFee:    big.NewInt(l2pricing.InitialBaseFeeWei),
-			Difficulty: big.NewInt(1),
-			MixDigest:  common.Hash{},
-			Coinbase:   common.Address{},
-			Root:       stateRoot,
-		}
+		genesis := arbosState.MakeGenesisBlock(common.Hash{}, 0, 0, stateRoot, chainConfig)
 
 		// Append a header to the input (this part is authenticated by L1).
 		// The first 32 bytes encode timestamp and L1 block number bounds.
@@ -213,9 +198,40 @@ func FuzzStateTransition(f *testing.F) {
 			positionWithinMessage: 0,
 			delayedMessages:       delayedMessages,
 		}
-		numberOfMessageRunModes := uint8(core.MessageReplayMode) + 1 // TODO update number of run modes when new mode is added
-		runMode := core.MessageRunMode(runModeSeed % numberOfMessageRunModes)
-		_, err = BuildBlock(statedb, genesis, noopChainContext{chainConfig: chaininfo.ArbitrumOneChainConfig()}, chaininfo.ArbitrumOneChainConfig(), inbox, seqBatch, runMode)
+
+		localTarget := rawdb.LocalTarget()
+		targets := []rawdb.WasmTarget{localTarget}
+		if targetsSeed&1 != 0 {
+			targets = append(targets, rawdb.TargetWavm)
+		}
+		if targetsSeed&2 != 0 && localTarget != rawdb.TargetArm64 {
+			targets = append(targets, rawdb.TargetArm64)
+		}
+		if targetsSeed&4 != 0 && localTarget != rawdb.TargetAmd64 {
+			targets = append(targets, rawdb.TargetAmd64)
+		}
+		if targetsSeed&8 != 0 && localTarget != rawdb.TargetHost {
+			targets = append(targets, rawdb.TargetHost)
+		}
+
+		runCtxNumber := runCtxSeed % 6
+		var runCtx *core.MessageRunContext
+		switch runCtxNumber {
+		case 0:
+			runCtx = core.NewMessageCommitContext(targets)
+		case 1:
+			runCtx = core.NewMessageReplayContext()
+		case 2:
+			runCtx = core.NewMessageRecordingContext(targets)
+		case 3:
+			runCtx = core.NewMessagePrefetchContext()
+		case 4:
+			runCtx = core.NewMessageEthcallContext()
+		case 5:
+			runCtx = core.NewMessageGasEstimationContext()
+		}
+
+		_, err = BuildBlock(statedb, genesis.Header(), noopChainContext{chainConfig: chaininfo.ArbitrumDevTestChainConfig()}, inbox, seqBatch, runCtx)
 		if err != nil {
 			// With the fixed header it shouldn't be possible to read a delayed message,
 			// and no other type of error should be possible.

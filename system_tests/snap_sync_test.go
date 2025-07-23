@@ -1,5 +1,5 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbtest
 
@@ -28,8 +28,9 @@ func TestSnapSync(t *testing.T) {
 	var transferGas = util.NormalizeL2GasForL1GasInitial(800_000, params.GWei) // include room for aggregator L1 costs
 
 	// 1st node with sequencer, stays up all the time.
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
-	builder.execConfig.Caching.StateScheme = rawdb.HashScheme
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).DontParalellise()
+	// only supported for hash scheme
+	builder.RequireScheme(t, rawdb.HashScheme)
 	builder.L2Info = NewBlockChainTestInfo(
 		t,
 		types.NewArbitrumSigner(types.NewLondonSigner(builder.chainConfig.ChainID)), big.NewInt(l2pricing.InitialBaseFeeWei*2),
@@ -57,7 +58,7 @@ func TestSnapSync(t *testing.T) {
 	// Create transactions till batch count is 10
 	createTransactionTillBatchCount(ctx, t, builder, 10)
 	// Wait for nodeB to sync up to the first node
-	waitForBlocksToCatchup(ctx, t, builder.L2.Client, nodeB.Client)
+	waitForBlocksToCatchup(ctx, t, builder.L2.Client, nodeB.Client, 10*time.Minute)
 
 	// Create a config with snap sync enabled and same database directory as the 2nd node
 	nodeConfig := createNodeConfigWithSnapSync(t, builder)
@@ -130,7 +131,8 @@ func waitForBlockToCatchupToMessageCount(
 	}
 }
 
-func waitForBlocksToCatchup(ctx context.Context, t *testing.T, clientA *ethclient.Client, clientB *ethclient.Client) {
+// waitForBlocksToCatchup has a time "limit" factor to limit running this function forever in weird cases such as running with race detection in nightly CI
+func waitForBlocksToCatchup(ctx context.Context, t *testing.T, clientA *ethclient.Client, clientB *ethclient.Client, limit time.Duration) {
 	for {
 		select {
 		case <-ctx.Done():
@@ -143,6 +145,8 @@ func waitForBlocksToCatchup(ctx context.Context, t *testing.T, clientA *ethclien
 			if headerA.Number.Cmp(headerB.Number) == 0 {
 				return
 			}
+		case <-time.After(limit):
+			t.Fatal("waitForBlocksToCatchup didnt finish")
 		}
 	}
 }
@@ -166,7 +170,9 @@ func waitForBatchCountToCatchup(ctx context.Context, t *testing.T, inboxTrackerA
 }
 
 func createTransactionTillBatchCount(ctx context.Context, t *testing.T, builder *NodeBuilder, finalCount uint64) {
-	for {
+	// We run the loop for 6000 iterations ~ maximum of 10 minutes of run time before failing. This is to avoid
+	// running this function forever in weird cases such as running with race detection in nightly CI
+	for i := uint64(0); i < 6000; i++ {
 		Require(t, ctx.Err())
 		tx := builder.L2Info.PrepareTx("Faucet", "BackgroundUser", builder.L2Info.TransferGas, big.NewInt(1), nil)
 		err := builder.L2.Client.SendTransaction(ctx, tx)
@@ -176,9 +182,11 @@ func createTransactionTillBatchCount(ctx context.Context, t *testing.T, builder 
 		count, err := builder.L2.ConsensusNode.InboxTracker.GetBatchCount()
 		Require(t, err)
 		if count > finalCount {
-			break
+			return
 		}
+		time.Sleep(100 * time.Millisecond) // give some time for other components (reader/tracker) to read the batches from L1
 	}
+	t.Fatal("createTransactionTillBatchCount didnt finish")
 }
 
 func createNodeConfigWithSnapSync(t *testing.T, builder *NodeBuilder) *arbnode.Config {

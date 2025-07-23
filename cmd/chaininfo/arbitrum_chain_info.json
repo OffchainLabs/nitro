@@ -8,6 +8,8 @@
     "feed-url": "wss://arb1-feed.arbitrum.io/feed",
     "secondary-feed-url": "wss://arb1-delayed-feed.arbitrum.io/feed,wss://arb1-feed-fallback-1.arbitrum.io/feed,wss://arb1-feed-fallback-2.arbitrum.io/feed,wss://arb1-feed-fallback-3.arbitrum.io/feed,wss://arb1-feed-fallback-4.arbitrum.io/feed,wss://arb1-feed-fallback-5.arbitrum.io/feed",
     "has-genesis-state": true,
+    "block-metadata-url": "https://arb1.arbitrum.io/rpc",
+    "track-block-metadata-from": 327000000,
     "chain-config": {
       "chainId": 42161,
       "homesteadBlock": 0,
@@ -55,6 +57,8 @@
     "sequencer-url": "https://nova.arbitrum.io/rpc",
     "feed-url": "wss://nova-feed.arbitrum.io/feed",
     "das-index-url": "https://nova.arbitrum.io/das-servers",
+    "block-metadata-url": "https://nova.arbitrum.io/rpc",
+    "track-block-metadata-from": 83340000,
     "chain-config": {
       "chainId": 42170,
       "homesteadBlock": 0,
@@ -211,6 +215,7 @@
     "chain-name": "sepolia-rollup",
     "sequencer-url": "https://sepolia-rollup-sequencer.arbitrum.io/rpc",
     "feed-url": "wss://sepolia-rollup.arbitrum.io/feed",
+    "block-metadata-url": "https://sepolia-rollup.arbitrum.io/rpc",
     "track-block-metadata-from": 123000000,
     "chain-config": {
       "chainId": 421614,

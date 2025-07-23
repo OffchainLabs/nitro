@@ -1,5 +1,5 @@
 // Copyright 2021-2024, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package l2pricing
 
@@ -17,13 +17,8 @@ const InitialSpeedLimitPerSecondV6 = 7000000
 const InitialPerBlockGasLimitV6 uint64 = 32 * 1000000
 const InitialMinimumBaseFeeWei = params.GWei / 10
 const InitialBaseFeeWei = InitialMinimumBaseFeeWei
-const InitialGasPoolSeconds = 10 * 60
-const InitialRateEstimateInertia = 60
 const InitialPricingInertia = 102
 const InitialBacklogTolerance = 10
-
-var InitialGasPoolTargetBips = arbmath.PercentToBips(80)
-var InitialGasPoolWeightBips = arbmath.PercentToBips(60)
 
 func (ps *L2PricingState) AddToGasPool(gas int64) error {
 	backlog, err := ps.GasBacklog()
@@ -50,7 +45,7 @@ func (ps *L2PricingState) UpdatePricingModel(l2BaseFee *big.Int, timePassed uint
 	baseFee := minBaseFee
 	if backlog > tolerance*speedLimit {
 		excess := arbmath.SaturatingCast[int64](backlog - tolerance*speedLimit)
-		exponentBips := arbmath.NaturalToBips(excess) / arbmath.SaturatingCast[arbmath.Bips](inertia*speedLimit)
+		exponentBips := arbmath.NaturalToBips(excess) / arbmath.SaturatingCast[arbmath.Bips](arbmath.SaturatingUMul(inertia, speedLimit))
 		baseFee = arbmath.BigMulByBips(minBaseFee, arbmath.ApproxExpBasisPoints(exponentBips, 4))
 	}
 	_ = ps.SetBaseFeeWei(baseFee)

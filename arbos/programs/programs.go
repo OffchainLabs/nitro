@@ -1,5 +1,5 @@
 // Copyright 2022-2024, Offchain Labs, Inc.
-// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package programs
 
@@ -10,6 +10,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
@@ -86,7 +87,7 @@ func (p Programs) CacheManagers() *addressSet.AddressSet {
 	return p.cacheManagers
 }
 
-func (p Programs) ActivateProgram(evm *vm.EVM, address common.Address, runMode core.MessageRunMode, debugMode bool) (
+func (p Programs) ActivateProgram(evm *vm.EVM, address common.Address, runCtx *core.MessageRunContext, debugMode bool) (
 	uint16, common.Hash, common.Hash, *big.Int, bool, error,
 ) {
 	statedb := evm.StateDB
@@ -120,7 +121,7 @@ func (p Programs) ActivateProgram(evm *vm.EVM, address common.Address, runMode c
 	// require the program's footprint not exceed the remaining memory budget
 	pageLimit := am.SaturatingUSub(params.PageLimit, statedb.GetStylusPagesOpen())
 
-	info, err := activateProgram(statedb, address, codeHash, wasm, pageLimit, stylusVersion, p.ArbosVersion, debugMode, burner)
+	info, err := activateProgram(statedb, address, codeHash, wasm, pageLimit, stylusVersion, p.ArbosVersion, debugMode, burner, runCtx)
 	if err != nil {
 		return 0, codeHash, common.Hash{}, nil, true, err
 	}
@@ -132,7 +133,7 @@ func (p Programs) ActivateProgram(evm *vm.EVM, address common.Address, runMode c
 			return 0, codeHash, common.Hash{}, nil, true, err
 		}
 
-		evictProgram(statedb, oldModuleHash, currentVersion, debugMode, runMode, expired)
+		evictProgram(statedb, oldModuleHash, currentVersion, debugMode, runCtx, expired)
 	}
 	if err := p.moduleHashes.Set(codeHash, info.moduleHash); err != nil {
 		return 0, codeHash, common.Hash{}, nil, true, err
@@ -160,25 +161,10 @@ func (p Programs) ActivateProgram(evm *vm.EVM, address common.Address, runMode c
 	// replace the cached asm
 	if cached {
 		code := statedb.GetCode(address)
-		cacheProgram(statedb, info.moduleHash, programData, address, code, codeHash, params, debugMode, time, runMode)
+		cacheProgram(statedb, info.moduleHash, programData, address, code, codeHash, params, debugMode, time, runCtx)
 	}
 
 	return stylusVersion, codeHash, info.moduleHash, dataFee, false, p.setProgram(codeHash, programData)
-}
-
-func runModeToString(runMode core.MessageRunMode) string {
-	switch runMode {
-	case core.MessageCommitMode:
-		return "commit_runmode"
-	case core.MessageGasEstimationMode:
-		return "gas_estimation_runmode"
-	case core.MessageEthcallMode:
-		return "eth_call_runmode"
-	case core.MessageReplayMode:
-		return "replay_runmode"
-	default:
-		return "unknown_runmode"
-	}
 }
 
 func (p Programs) CallProgram(
@@ -188,7 +174,7 @@ func (p Programs) CallProgram(
 	tracingInfo *util.TracingInfo,
 	calldata []byte,
 	reentrant bool,
-	runMode core.MessageRunMode,
+	runCtx *core.MessageRunContext,
 ) ([]byte, error) {
 	evm := interpreter.Evm()
 	contract := scope.Contract
@@ -234,9 +220,14 @@ func (p Programs) CallProgram(
 	statedb.AddStylusPages(program.footprint)
 	defer statedb.SetStylusPagesOpen(open)
 
-	localAsm, err := getLocalAsm(statedb, moduleHash, contract.Address(), contract.Code, contract.CodeHash, params.MaxWasmSize, params.PageLimit, evm.Context.Time, debugMode, program)
-	if err != nil {
-		panic("failed to get local wasm for activated program: " + contract.Address().Hex())
+	asmMap, err := getCompiledProgram(statedb, moduleHash, contract.Address(), contract.Code, contract.CodeHash, params.MaxWasmSize, params.PageLimit, evm.Context.Time, debugMode, program, runCtx)
+	var ok bool
+	var localAsm []byte
+	if asmMap != nil {
+		localAsm, ok = asmMap[rawdb.LocalTarget()]
+	}
+	if err != nil || !ok {
+		panic(fmt.Sprintf("failed to get compiled program for activated program, program: %v, local target missing: %v, err: %v", contract.Address().Hex(), !ok, err))
 	}
 
 	evmData := &EvmData{
@@ -259,27 +250,22 @@ func (p Programs) CallProgram(
 	}
 
 	address := contract.Address()
-	var arbos_tag uint32
-	if runMode == core.MessageCommitMode {
-		arbos_tag = statedb.Database().WasmCacheTag()
-	}
-
-	metrics.GetOrRegisterCounter(fmt.Sprintf("arb/arbos/stylus/program_calls/%s", runModeToString(runMode)), nil).Inc(1)
-	ret, err := callProgram(address, moduleHash, localAsm, scope, interpreter, tracingInfo, calldata, evmData, goParams, model, arbos_tag)
+	metrics.GetOrRegisterCounter(fmt.Sprintf("arb/arbos/stylus/program_calls/%s", runCtx.RunModeMetricName()), nil).Inc(1)
+	ret, err := callProgram(address, moduleHash, localAsm, scope, interpreter, tracingInfo, calldata, evmData, goParams, model, runCtx)
 	if len(ret) > 0 && p.ArbosVersion >= gethParams.ArbosVersion_StylusFixes {
 		// Ensure that return data costs as least as much as it would in the EVM.
 		evmCost := evmMemoryCost(uint64(len(ret)))
 		if startingGas < evmCost {
 			contract.Gas = 0
 			// #nosec G115
-			metrics.GetOrRegisterCounter(fmt.Sprintf("arb/arbos/stylus/gas_used/%s", runModeToString(runMode)), nil).Inc(int64(startingGas))
+			metrics.GetOrRegisterCounter(fmt.Sprintf("arb/arbos/stylus/gas_used/%s", runCtx.RunModeMetricName()), nil).Inc(int64(startingGas))
 			return nil, vm.ErrOutOfGas
 		}
 		maxGasToReturn := startingGas - evmCost
 		contract.Gas = am.MinInt(contract.Gas, maxGasToReturn)
 	}
 	// #nosec G115
-	metrics.GetOrRegisterCounter(fmt.Sprintf("arb/arbos/stylus/gas_used/%s", runModeToString(runMode)), nil).Inc(int64(startingGas - contract.Gas))
+	metrics.GetOrRegisterCounter(fmt.Sprintf("arb/arbos/stylus/gas_used/%s", runCtx.RunModeMetricName()), nil).Inc(int64(startingGas - contract.Gas))
 	return ret, err
 }
 
@@ -417,7 +403,7 @@ func (p Programs) SetProgramCached(
 	cache bool,
 	time uint64,
 	params *StylusParams,
-	runMode core.MessageRunMode,
+	runCtx *core.MessageRunContext,
 	debug bool,
 ) error {
 	program, err := p.getProgram(codeHash, time)
@@ -453,9 +439,9 @@ func (p Programs) SetProgramCached(
 		if err != nil {
 			return err
 		}
-		cacheProgram(db, moduleHash, program, address, code, codeHash, params, debug, time, runMode)
+		cacheProgram(db, moduleHash, program, address, code, codeHash, params, debug, time, runCtx)
 	} else {
-		evictProgram(db, moduleHash, program.version, debug, runMode, expired)
+		evictProgram(db, moduleHash, program.version, debug, runCtx, expired)
 	}
 	program.cached = cache
 	return p.setProgram(codeHash, program)

@@ -1,5 +1,5 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbtest
 
@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"math/big"
 	"math/rand"
+	"strings"
 	"testing"
 	"time"
 
@@ -17,6 +18,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient/gethclient"
 	"github.com/ethereum/go-ethereum/params"
@@ -134,11 +136,10 @@ func deployGasRefunder(ctx context.Context, t *testing.T, builder *NodeBuilder) 
 }
 
 func testSequencerInboxReaderImpl(t *testing.T, validator bool) {
-	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).DontParalellise()
 	if validator {
 		builder.nodeConfig.BlockValidator.Enable = true
 	}
@@ -186,7 +187,7 @@ func testSequencerInboxReaderImpl(t *testing.T, validator bool) {
 		return fmt.Sprintf("Account%v", x)
 	}
 
-	accounts := []string{"ReorgPadding"}
+	var accounts []string
 	for i := 1; i <= (seqInboxTestIters-1)/10; i++ {
 		accounts = append(accounts, fmt.Sprintf("ReorgSacrifice%v", i))
 	}
@@ -212,21 +213,26 @@ func testSequencerInboxReaderImpl(t *testing.T, validator bool) {
 			// The miner usually collects transactions from deleted blocks and puts them in the mempool.
 			// However, this code doesn't run on reorgs larger than 64 blocks for performance reasons.
 			// Therefore, we make a bunch of small blocks to prevent the code from running.
-			padAddr := builder.L1Info.GetAddress("ReorgPadding")
-			for j := uint64(0); j < 70; j++ {
-				rawTx := &types.DynamicFeeTx{
-					To:        &padAddr,
-					Gas:       21000,
-					GasFeeCap: big.NewInt(params.GWei * 100),
-					Value:     new(big.Int),
-					Nonce:     j,
-				}
-				tx := builder.L1Info.SignTxAs("ReorgPadding", rawTx)
-				Require(t, builder.L1.Client.SendTransaction(ctx, tx))
-				_, _ = builder.L1.EnsureTxSucceeded(tx)
-			}
 			reorgTargetNumber := blockStates[reorgTo].l1BlockNumber
 			currentHeader, err := builder.L1.Client.HeaderByNumber(ctx, nil)
+			Require(t, err)
+			blocksToPad := 65 - (currentHeader.Number.Uint64() - reorgTargetNumber)
+
+			currNonce, err := builder.L1.Client.PendingNonceAt(ctx, builder.L1Info.GetAddress("Faucet"))
+			Require(t, err)
+			builder.L1Info.GetInfoWithPrivKey("Faucet").Nonce.Store(currNonce)
+			for j := uint64(0); j < blocksToPad; j++ {
+				tx := builder.L1Info.PrepareTx("Faucet", "User", 30000, big.NewInt(1e12), nil)
+				err = builder.L1.Client.SendTransaction(ctx, tx)
+				if err != nil {
+					if !strings.Contains(err.Error(), "already known") && !strings.Contains(err.Error(), core.ErrNonceTooLow.Error()) {
+						t.Fatalf("error sending txs to create padding for reorg: %s", err.Error())
+					}
+				} else {
+					_, _ = builder.L1.EnsureTxSucceeded(tx)
+				}
+			}
+			currentHeader, err = builder.L1.Client.HeaderByNumber(ctx, nil)
 			Require(t, err)
 			// #nosec G115
 			if currentHeader.Number.Int64()-int64(reorgTargetNumber) < 65 {
@@ -266,7 +272,7 @@ func testSequencerInboxReaderImpl(t *testing.T, validator bool) {
 				source := state.accounts[sourceNum]
 				// #nosec G115
 				amount := new(big.Int).SetUint64(uint64(rand.Int()) % state.balances[source].Uint64())
-				reserveAmount := new(big.Int).SetUint64(l2pricing.InitialBaseFeeWei * 100000000)
+				reserveAmount := new(big.Int).SetUint64(l2pricing.InitialBaseFeeWei * 100000000000)
 				if state.balances[source].Cmp(new(big.Int).Add(amount, reserveAmount)) < 0 {
 					// Leave enough funds for gas
 					amount = big.NewInt(1)
@@ -405,7 +411,7 @@ func testSequencerInboxReaderImpl(t *testing.T, validator bool) {
 		expectedBlockNumber := blockStates[len(blockStates)-1].l2BlockNumber
 		for i := 0; ; i++ {
 			blockNumber := l2Backend.APIBackend().CurrentHeader().Number.Uint64()
-			if blockNumber == expectedBlockNumber {
+			if blockNumber >= expectedBlockNumber {
 				break
 			} else if i >= 1000 {
 				Fatal(t, "timed out waiting for l2 block update; have", blockNumber, "want", expectedBlockNumber)
@@ -448,6 +454,5 @@ func testSequencerInboxReaderImpl(t *testing.T, validator bool) {
 }
 
 func TestSequencerInboxReader(t *testing.T) {
-	t.Skip("diagnose after Stylus merge")
 	testSequencerInboxReaderImpl(t, false)
 }

@@ -1,5 +1,5 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbnode
 
@@ -78,10 +78,10 @@ func TestSequencerReorgFromDelayed(t *testing.T) {
 		AfterDelayedAcc:        initMsgDelayed.AfterInboxAcc(),
 		AfterDelayedCount:      1,
 		TimeBounds:             bridgegen.IBridgeTimeBounds{},
-		rawLog:                 types.Log{},
-		dataLocation:           0,
-		bridgeAddress:          [20]byte{},
-		serialized:             serializedInitMsgBatch,
+		RawLog:                 types.Log{},
+		DataLocation:           0,
+		BridgeAddress:          [20]byte{},
+		Serialized:             serializedInitMsgBatch,
 	}
 	serializedUserMsgBatch := make([]byte, 40)
 	binary.BigEndian.PutUint64(serializedUserMsgBatch[32:], 2)
@@ -94,10 +94,10 @@ func TestSequencerReorgFromDelayed(t *testing.T) {
 		AfterDelayedAcc:        userDelayed2.AfterInboxAcc(),
 		AfterDelayedCount:      3,
 		TimeBounds:             bridgegen.IBridgeTimeBounds{},
-		rawLog:                 types.Log{},
-		dataLocation:           0,
-		bridgeAddress:          [20]byte{},
-		serialized:             serializedUserMsgBatch,
+		RawLog:                 types.Log{},
+		DataLocation:           0,
+		BridgeAddress:          [20]byte{},
+		Serialized:             serializedUserMsgBatch,
 	}
 	emptyBatch := &SequencerInboxBatch{
 		BlockHash:              [32]byte{},
@@ -108,10 +108,10 @@ func TestSequencerReorgFromDelayed(t *testing.T) {
 		AfterDelayedAcc:        userDelayed2.AfterInboxAcc(),
 		AfterDelayedCount:      3,
 		TimeBounds:             bridgegen.IBridgeTimeBounds{},
-		rawLog:                 types.Log{},
-		dataLocation:           0,
-		bridgeAddress:          [20]byte{},
-		serialized:             serializedUserMsgBatch,
+		RawLog:                 types.Log{},
+		DataLocation:           0,
+		BridgeAddress:          [20]byte{},
+		Serialized:             serializedUserMsgBatch,
 	}
 	err = tracker.AddSequencerBatches(ctx, nil, []*SequencerInboxBatch{initMsgBatch, userMsgBatch, emptyBatch})
 	Require(t, err)
@@ -194,10 +194,10 @@ func TestSequencerReorgFromDelayed(t *testing.T) {
 		AfterDelayedAcc:        initMsgDelayed.AfterInboxAcc(),
 		AfterDelayedCount:      1,
 		TimeBounds:             bridgegen.IBridgeTimeBounds{},
-		rawLog:                 types.Log{},
-		dataLocation:           0,
-		bridgeAddress:          [20]byte{},
-		serialized:             serializedInitMsgBatch,
+		RawLog:                 types.Log{},
+		DataLocation:           0,
+		BridgeAddress:          [20]byte{},
+		Serialized:             serializedInitMsgBatch,
 	}
 	err = tracker.AddSequencerBatches(ctx, nil, []*SequencerInboxBatch{emptyBatch})
 	Require(t, err)
@@ -278,10 +278,10 @@ func TestSequencerReorgFromLastDelayedMsg(t *testing.T) {
 		AfterDelayedAcc:        initMsgDelayed.AfterInboxAcc(),
 		AfterDelayedCount:      1,
 		TimeBounds:             bridgegen.IBridgeTimeBounds{},
-		rawLog:                 types.Log{},
-		dataLocation:           0,
-		bridgeAddress:          [20]byte{},
-		serialized:             serializedInitMsgBatch,
+		RawLog:                 types.Log{},
+		DataLocation:           0,
+		BridgeAddress:          [20]byte{},
+		Serialized:             serializedInitMsgBatch,
 	}
 	serializedUserMsgBatch := make([]byte, 40)
 	binary.BigEndian.PutUint64(serializedUserMsgBatch[32:], 2)
@@ -294,10 +294,10 @@ func TestSequencerReorgFromLastDelayedMsg(t *testing.T) {
 		AfterDelayedAcc:        userDelayed2.AfterInboxAcc(),
 		AfterDelayedCount:      3,
 		TimeBounds:             bridgegen.IBridgeTimeBounds{},
-		rawLog:                 types.Log{},
-		dataLocation:           0,
-		bridgeAddress:          [20]byte{},
-		serialized:             serializedUserMsgBatch,
+		RawLog:                 types.Log{},
+		DataLocation:           0,
+		BridgeAddress:          [20]byte{},
+		Serialized:             serializedUserMsgBatch,
 	}
 	emptyBatch := &SequencerInboxBatch{
 		BlockHash:              [32]byte{},
@@ -308,10 +308,10 @@ func TestSequencerReorgFromLastDelayedMsg(t *testing.T) {
 		AfterDelayedAcc:        userDelayed2.AfterInboxAcc(),
 		AfterDelayedCount:      3,
 		TimeBounds:             bridgegen.IBridgeTimeBounds{},
-		rawLog:                 types.Log{},
-		dataLocation:           0,
-		bridgeAddress:          [20]byte{},
-		serialized:             serializedUserMsgBatch,
+		RawLog:                 types.Log{},
+		DataLocation:           0,
+		BridgeAddress:          [20]byte{},
+		Serialized:             serializedUserMsgBatch,
 	}
 	err = tracker.AddSequencerBatches(ctx, nil, []*SequencerInboxBatch{initMsgBatch, userMsgBatch, emptyBatch})
 	Require(t, err)
@@ -423,10 +423,10 @@ func TestSequencerReorgFromLastDelayedMsg(t *testing.T) {
 		AfterDelayedAcc:        initMsgDelayed.AfterInboxAcc(),
 		AfterDelayedCount:      1,
 		TimeBounds:             bridgegen.IBridgeTimeBounds{},
-		rawLog:                 types.Log{},
-		dataLocation:           0,
-		bridgeAddress:          [20]byte{},
-		serialized:             serializedInitMsgBatch,
+		RawLog:                 types.Log{},
+		DataLocation:           0,
+		BridgeAddress:          [20]byte{},
+		Serialized:             serializedInitMsgBatch,
 	}
 	err = tracker.AddSequencerBatches(ctx, nil, []*SequencerInboxBatch{emptyBatch})
 	Require(t, err)

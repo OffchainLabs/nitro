@@ -1,5 +1,5 @@
 // Copyright 2023-2024, Offchain Labs, Inc.
-// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package valnode
 
@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/ethdb"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
@@ -45,7 +45,7 @@ func (a *ValidationServerAPI) WasmModuleRoots() ([]common.Hash, error) {
 	return a.spawner.WasmModuleRoots()
 }
 
-func (a *ValidationServerAPI) StylusArchs() ([]ethdb.WasmTarget, error) {
+func (a *ValidationServerAPI) StylusArchs() ([]rawdb.WasmTarget, error) {
 	return a.spawner.StylusArchs(), nil
 }
 
@@ -102,10 +102,6 @@ func (a *ExecServerAPI) CreateExecutionRun(ctx context.Context, wasmModuleRoot c
 	a.nextId++
 	a.runs[newId] = &execRunEntry{execRun, time.Now()}
 	return newId, nil
-}
-
-func (a *ExecServerAPI) LatestWasmModuleRoot(ctx context.Context) (common.Hash, error) {
-	return a.execSpawner.LatestWasmModuleRoot().Await(ctx)
 }
 
 func (a *ExecServerAPI) removeOldRuns(ctx context.Context) time.Duration {

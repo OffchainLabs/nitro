@@ -1,6 +1,6 @@
 // Copyright 2023, Offchain Labs, Inc.
 // For license information, see
-// https://github.com/offchainlabs/bold/blob/main/LICENSE
+// https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 package bold
 
 import (
@@ -9,14 +9,11 @@ import (
 	"fmt"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/ethereum/go-ethereum/metrics"
 
 	protocol "github.com/offchainlabs/bold/chain-abstraction"
 	"github.com/offchainlabs/bold/containers/option"
@@ -37,14 +34,15 @@ var (
 	_ l2stateprovider.ExecutionProvider       = (*BOLDStateProvider)(nil)
 )
 
-var executionNodeOfflineGauge = metrics.NewRegisteredGauge("arb/state_provider/execution_node_offline", nil)
-
 type BOLDStateProvider struct {
 	validator                *staker.BlockValidator
 	statelessValidator       *staker.StatelessBlockValidator
 	historyCache             challengecache.HistoryCommitmentCacher
 	blockChallengeLeafHeight l2stateprovider.Height
 	stateProviderConfig      *StateProviderConfig
+	inboxTracker             staker.InboxTrackerInterface
+	inboxStreamer            staker.TransactionStreamerInterface
+	inboxReader              staker.InboxReaderInterface
 	sync.RWMutex
 }
 
@@ -54,6 +52,9 @@ func NewBOLDStateProvider(
 	blockChallengeLeafHeight l2stateprovider.Height,
 	stateProviderConfig *StateProviderConfig,
 	machineHashesCachePath string,
+	inboxTracker staker.InboxTrackerInterface,
+	inboxStreamer staker.TransactionStreamerInterface,
+	inboxReader staker.InboxReaderInterface,
 ) (*BOLDStateProvider, error) {
 	historyCache, err := challengecache.New(machineHashesCachePath)
 	if err != nil {
@@ -65,6 +66,9 @@ func NewBOLDStateProvider(
 		historyCache:             historyCache,
 		blockChallengeLeafHeight: blockChallengeLeafHeight,
 		stateProviderConfig:      stateProviderConfig,
+		inboxTracker:             inboxTracker,
+		inboxStreamer:            inboxStreamer,
+		inboxReader:              inboxReader,
 	}
 	return sp, nil
 }
@@ -83,7 +87,7 @@ func (s *BOLDStateProvider) ExecutionStateAfterPreviousState(
 	}
 	batchIndex := maxSeqInboxCount
 	maxNumberOfBlocks := uint64(s.blockChallengeLeafHeight)
-	messageCount, err := s.statelessValidator.InboxTracker().GetBatchMessageCount(batchIndex - 1)
+	messageCount, err := s.inboxTracker.GetBatchMessageCount(batchIndex - 1)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
 			return nil, fmt.Errorf("%w: batch count %d", l2stateprovider.ErrChainCatchingUp, maxSeqInboxCount)
@@ -92,7 +96,7 @@ func (s *BOLDStateProvider) ExecutionStateAfterPreviousState(
 	}
 	var previousMessageCount arbutil.MessageIndex
 	if previousGlobalState.Batch > 0 {
-		previousMessageCount, err = s.statelessValidator.InboxTracker().GetBatchMessageCount(previousGlobalState.Batch - 1)
+		previousMessageCount, err = s.inboxTracker.GetBatchMessageCount(previousGlobalState.Batch - 1)
 		if err != nil {
 			if strings.Contains(err.Error(), "not found") {
 				return nil, fmt.Errorf("%w: batch count %d", l2stateprovider.ErrChainCatchingUp, maxSeqInboxCount)
@@ -105,7 +109,7 @@ func (s *BOLDStateProvider) ExecutionStateAfterPreviousState(
 	maxMessageCount := previousMessageCount + arbutil.MessageIndex(maxNumberOfBlocks)
 	if messageDiffBetweenBatches > maxMessageCount {
 		messageCount = maxMessageCount
-		batchIndex, _, err = s.statelessValidator.InboxTracker().FindInboxBatchContainingMessage(messageCount)
+		batchIndex, _, err = s.inboxTracker.FindInboxBatchContainingMessage(messageCount)
 		if err != nil {
 			return nil, err
 		}
@@ -150,7 +154,7 @@ func (s *BOLDStateProvider) isStateValidatedAndMessageCountPastThreshold(
 	ctx context.Context, gs validator.GoGlobalState, messageCount arbutil.MessageIndex,
 ) (bool, error) {
 	if s.stateProviderConfig.CheckBatchFinality {
-		finalizedMessageCount, err := s.statelessValidator.InboxReader().GetFinalizedMsgCount(ctx)
+		finalizedMessageCount, err := s.inboxReader.GetFinalizedMsgCount(ctx)
 		if err != nil {
 			return false, err
 		}
@@ -192,14 +196,14 @@ func (s *BOLDStateProvider) StatesInBatchRange(
 	var prevBatchMsgCount arbutil.MessageIndex
 	var err error
 	if fromState.Batch > 0 {
-		prevBatchMsgCount, err = s.statelessValidator.InboxTracker().GetBatchMessageCount(uint64(fromState.Batch) - 1)
+		prevBatchMsgCount, err = s.inboxTracker.GetBatchMessageCount(uint64(fromState.Batch) - 1)
 		if err != nil {
 			return nil, nil, err
 		}
 	}
 
 	batchNum := fromState.Batch
-	currBatchMsgCount, err := s.statelessValidator.InboxTracker().GetBatchMessageCount(batchNum)
+	currBatchMsgCount, err := s.inboxTracker.GetBatchMessageCount(batchNum)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -214,7 +218,7 @@ func (s *BOLDStateProvider) StatesInBatchRange(
 		}
 		executionResult := &execution.MessageResult{}
 		if pos > 0 {
-			executionResult, err = s.statelessValidator.InboxStreamer().ResultAtMessageIndex(pos - 1)
+			executionResult, err = s.inboxStreamer.ResultAtMessageIndex(pos - 1)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -238,7 +242,7 @@ func (s *BOLDStateProvider) StatesInBatchRange(
 			// Otherwise, we might try to read too many batches, and hit an error that
 			// the next batch isn't found.
 			if uint64(len(states)) < totalDesiredHashes && batchNum < batchLimit {
-				currBatchMsgCount, err = s.statelessValidator.InboxTracker().GetBatchMessageCount(batchNum)
+				currBatchMsgCount, err = s.inboxTracker.GetBatchMessageCount(batchNum)
 				if err != nil {
 					return nil, nil, err
 				}
@@ -258,7 +262,7 @@ func (s *BOLDStateProvider) findGlobalStateFromMessageCountAndBatch(count arbuti
 	var prevBatchMsgCount arbutil.MessageIndex
 	var err error
 	if batchIndex > 0 {
-		prevBatchMsgCount, err = s.statelessValidator.InboxTracker().GetBatchMessageCount(uint64(batchIndex) - 1)
+		prevBatchMsgCount, err = s.inboxTracker.GetBatchMessageCount(uint64(batchIndex) - 1)
 		if err != nil {
 			return validator.GoGlobalState{}, err
 		}
@@ -267,7 +271,7 @@ func (s *BOLDStateProvider) findGlobalStateFromMessageCountAndBatch(count arbuti
 		}
 	}
 	if count != prevBatchMsgCount {
-		batchMsgCount, err := s.statelessValidator.InboxTracker().GetBatchMessageCount(uint64(batchIndex))
+		batchMsgCount, err := s.inboxTracker.GetBatchMessageCount(uint64(batchIndex))
 		if err != nil {
 			return validator.GoGlobalState{}, err
 		}
@@ -277,7 +281,7 @@ func (s *BOLDStateProvider) findGlobalStateFromMessageCountAndBatch(count arbuti
 	}
 	res := &execution.MessageResult{}
 	if count > 0 {
-		res, err = s.statelessValidator.InboxStreamer().ResultAtMessageIndex(count - 1)
+		res, err = s.inboxStreamer.ResultAtMessageIndex(count - 1)
 		if err != nil {
 			return validator.GoGlobalState{}, fmt.Errorf("%s: could not check if we have result at count %d: %w", s.stateProviderConfig.ValidatorName, count, err)
 		}
@@ -339,7 +343,7 @@ func (s *BOLDStateProvider) CollectMachineHashes(
 	for i, h := range cfg.StepHeights {
 		stepHeights[i] = uint64(h)
 	}
-	messageResult, err := s.statelessValidator.InboxStreamer().ResultAtMessageIndex(messageNum)
+	messageResult, err := s.inboxStreamer.ResultAtMessageIndex(messageNum)
 	if err != nil {
 		return nil, err
 	}
@@ -368,21 +372,19 @@ func (s *BOLDStateProvider) CollectMachineHashes(
 	if err != nil {
 		return nil, err
 	}
-	input, err := entry.ToInput([]ethdb.WasmTarget{rawdb.TargetWavm})
+	input, err := entry.ToInput([]rawdb.WasmTarget{rawdb.TargetWavm})
 	if err != nil {
 		return nil, err
 	}
 	// TODO: Enable Redis streams.
-	wasmModRoot := cfg.AssertionMetadata.WasmModuleRoot
-	execRun, err := s.statelessValidator.ExecutionSpawners()[0].CreateExecutionRun(wasmModRoot, input, true).Await(ctx)
-	if err != nil {
-		return nil, err
-	}
-	defer execRun.Close()
-	ctxCheckAlive, cancelCheckAlive := ctxWithCheckAlive(ctx, execRun)
-	defer cancelCheckAlive()
-	stepLeaves := execRun.GetMachineHashesWithStepSize(uint64(cfg.MachineStartIndex), uint64(cfg.StepSize), cfg.NumDesiredHashes)
-	result, err := stepLeaves.Await(ctxCheckAlive)
+	result, err := s.statelessValidator.BOLDExecutionSpawners()[0].GetMachineHashesWithStepSize(
+		ctx,
+		cfg.AssertionMetadata.WasmModuleRoot,
+		input,
+		uint64(cfg.MachineStartIndex),
+		uint64(cfg.StepSize),
+		cfg.NumDesiredHashes,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -407,7 +409,7 @@ func (s *BOLDStateProvider) messageNum(md *l2stateprovider.AssociatedAssertionMe
 	posInBatch := md.FromState.PosInBatch
 	if bNum > 0 {
 		var err error
-		prevBatchMsgCount, err = s.statelessValidator.InboxTracker().GetBatchMessageCount(uint64(bNum - 1))
+		prevBatchMsgCount, err = s.inboxTracker.GetBatchMessageCount(uint64(bNum - 1))
 		if err != nil {
 			return 0, fmt.Errorf("could not get prevBatchMsgCount at %d: %w", bNum-1, err)
 		}
@@ -418,7 +420,7 @@ func (s *BOLDStateProvider) messageNum(md *l2stateprovider.AssociatedAssertionMe
 // virtualState returns an optional global state.
 //
 // If messageNum is a virtual block or the last real block to which this
-// validator's assertion committed, then this function retuns a global state
+// validator's assertion committed, then this function returns a global state
 // representing that virtual block's finished machine. Otherwise, it returns
 // an Option.None.
 //
@@ -433,14 +435,14 @@ func (s *BOLDStateProvider) messageNum(md *l2stateprovider.AssociatedAssertionMe
 // FINISHED state's hash.
 func (s *BOLDStateProvider) virtualState(msgNum arbutil.MessageIndex, limit l2stateprovider.Batch) (option.Option[validator.GoGlobalState], error) {
 	gs := option.None[validator.GoGlobalState]()
-	limitMsgCount, err := s.statelessValidator.InboxTracker().GetBatchMessageCount(uint64(limit) - 1)
+	limitMsgCount, err := s.inboxTracker.GetBatchMessageCount(uint64(limit) - 1)
 	if err != nil {
 		return gs, fmt.Errorf("could not get limitMsgCount at %d: %w", limit, err)
 	}
 	if msgNum >= limitMsgCount {
 		result := &execution.MessageResult{}
 		if limitMsgCount > 0 {
-			result, err = s.statelessValidator.InboxStreamer().ResultAtMessageIndex(limitMsgCount - 1)
+			result, err = s.inboxStreamer.ResultAtMessageIndex(limitMsgCount - 1)
 			if err != nil {
 				return gs, fmt.Errorf("could not get global state at limitMsgCount %d: %w", limitMsgCount, err)
 			}
@@ -453,40 +455,6 @@ func (s *BOLDStateProvider) virtualState(msgNum arbutil.MessageIndex, limit l2st
 		})
 	}
 	return gs, nil
-}
-
-// CtxWithCheckAlive Creates a context with a check alive routine that will
-// cancel the context if the check alive routine fails.
-func ctxWithCheckAlive(ctxIn context.Context, execRun validator.ExecutionRun) (context.Context, context.CancelFunc) {
-	// Create a context that will cancel if the check alive routine fails.
-	// This is to ensure that we do not have the validator froze indefinitely if
-	// the execution run is no longer alive.
-	ctx, cancel := context.WithCancel(ctxIn)
-	go func() {
-		// Call cancel so that the calling function is canceled if the check alive
-		// routine fails/returns.
-		defer cancel()
-		ticker := time.NewTicker(10 * time.Second)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				// Create a context with a timeout, so that the check alive routine does
-				// not run indefinitely.
-				ctxCheckAliveWithTimeout, cancelCheckAliveWithTimeout := context.WithTimeout(ctx, 5*time.Second)
-				err := execRun.CheckAlive(ctxCheckAliveWithTimeout)
-				if err != nil {
-					executionNodeOfflineGauge.Inc(1)
-					cancelCheckAliveWithTimeout()
-					return
-				}
-				cancelCheckAliveWithTimeout()
-			}
-		}
-	}()
-	return ctx, cancel
 }
 
 // CollectProof collects a one-step proof at a message number and OpcodeIndex.
@@ -522,7 +490,7 @@ func (s *BOLDStateProvider) CollectProof(
 	if err != nil {
 		return nil, err
 	}
-	input, err := entry.ToInput([]ethdb.WasmTarget{rawdb.TargetWavm})
+	input, err := entry.ToInput([]rawdb.WasmTarget{rawdb.TargetWavm})
 	if err != nil {
 		return nil, err
 	}
@@ -535,14 +503,10 @@ func (s *BOLDStateProvider) CollectProof(
 		"machineIndex", machineIndex,
 		"startState", fmt.Sprintf("%+v", input.StartState),
 	)
-	wasmModRoot := assertionMetadata.WasmModuleRoot
-	execRun, err := s.statelessValidator.ExecutionSpawners()[0].CreateExecutionRun(wasmModRoot, input, true).Await(ctx)
-	if err != nil {
-		return nil, err
-	}
-	defer execRun.Close()
-	ctxCheckAlive, cancelCheckAlive := ctxWithCheckAlive(ctx, execRun)
-	defer cancelCheckAlive()
-	oneStepProofPromise := execRun.GetProofAt(uint64(machineIndex))
-	return oneStepProofPromise.Await(ctxCheckAlive)
+	return s.statelessValidator.BOLDExecutionSpawners()[0].GetProofAt(
+		ctx,
+		assertionMetadata.WasmModuleRoot,
+		input,
+		uint64(machineIndex),
+	)
 }

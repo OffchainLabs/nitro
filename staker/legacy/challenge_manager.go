@@ -1,5 +1,5 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package legacystaker
 
@@ -16,12 +16,11 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/offchainlabs/nitro/solgen/go/challengegen"
+	"github.com/offchainlabs/nitro/solgen/go/challenge_legacy_gen"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/validator"
 )
@@ -35,7 +34,7 @@ var challengeBisectedID common.Hash
 var executionChallengeBegunID common.Hash
 
 func init() {
-	parsedChallengeManagerABI, err := challengegen.ChallengeManagerMetaData.GetAbi()
+	parsedChallengeManagerABI, err := challenge_legacy_gen.ChallengeManagerMetaData.GetAbi()
 	if err != nil {
 		panic(err)
 	}
@@ -53,7 +52,7 @@ type ChallengeBackend interface {
 var _ ChallengeBackend = (*staker.ExecutionChallengeBackend)(nil)
 
 type challengeCore struct {
-	con                  *challengegen.ChallengeManager
+	con                  *challenge_legacy_gen.ChallengeManager
 	challengeManagerAddr common.Address
 	challengeIndex       uint64
 	client               bind.ContractBackend
@@ -93,8 +92,10 @@ func NewChallengeManager(
 	val *staker.StatelessBlockValidator,
 	startL1Block uint64,
 	confirmationBlocks int64,
+	inboxTracker staker.InboxTrackerInterface,
+	inboxStreamer staker.TransactionStreamerInterface,
 ) (*ChallengeManager, error) {
-	con, err := challengegen.NewChallengeManager(challengeManagerAddr, l1client)
+	con, err := challenge_legacy_gen.NewChallengeManager(challengeManagerAddr, l1client)
 	if err != nil {
 		return nil, fmt.Errorf("error creating bindgen ChallengeManager: %w", err)
 	}
@@ -130,8 +131,8 @@ func NewChallengeManager(
 	backend, err := NewBlockChallengeBackend(
 		parsedLog,
 		challengeInfo.MaxInboxMessages,
-		val.InboxStreamer(),
-		val.InboxTracker(),
+		inboxStreamer,
+		inboxTracker,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("error creating block challenge backend for challenge %v: %w", challengeIndex, err)
@@ -164,7 +165,7 @@ func NewExecutionChallengeManager(
 	startL1Block uint64,
 	confirmationBlocks int64,
 ) (*ChallengeManager, error) {
-	con, err := challengegen.NewChallengeManager(challengeManagerAddr, l1client)
+	con, err := challenge_legacy_gen.NewChallengeManager(challengeManagerAddr, l1client)
 	if err != nil {
 		return nil, err
 	}
@@ -316,7 +317,7 @@ func (m *ChallengeManager) bisect(ctx context.Context, backend ChallengeBackend,
 	return m.con.BisectExecution(
 		m.auth,
 		m.challengeIndex,
-		challengegen.ChallengeLibSegmentSelection{
+		challenge_legacy_gen.ChallengeLibSegmentSelection{
 			OldSegmentsStart:  oldState.Start,
 			OldSegmentsLength: new(big.Int).Sub(oldState.End, oldState.Start),
 			OldSegments:       oldState.RawSegments,
@@ -451,7 +452,7 @@ func (m *ChallengeManager) IssueOneStepProof(
 	return m.challengeCore.con.OneStepProveExecution(
 		m.challengeCore.auth,
 		m.challengeCore.challengeIndex,
-		challengegen.ChallengeLibSegmentSelection{
+		challenge_legacy_gen.ChallengeLibSegmentSelection{
 			OldSegmentsStart:  oldState.Start,
 			OldSegmentsLength: new(big.Int).Sub(oldState.End, oldState.Start),
 			OldSegments:       oldState.RawSegments,
@@ -471,7 +472,7 @@ func (m *ChallengeManager) createExecutionBackend(ctx context.Context, step uint
 	if err != nil {
 		return fmt.Errorf("error creating validation entry for challenge %v msg %v for execution challenge: %w", m.challengeIndex, initialCount, err)
 	}
-	input, err := entry.ToInput([]ethdb.WasmTarget{rawdb.TargetWavm})
+	input, err := entry.ToInput([]rawdb.WasmTarget{rawdb.TargetWavm})
 	if err != nil {
 		return fmt.Errorf("error getting validation entry input of challenge %v msg %v: %w", m.challengeIndex, initialCount, err)
 	}

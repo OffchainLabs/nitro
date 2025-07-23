@@ -1,5 +1,5 @@
 // Copyright 2024, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package precompiles
 
@@ -57,12 +57,12 @@ func (con ArbWasmCache) setProgramCached(c ctx, evm mech, address addr, codehash
 		return err
 	}
 	debugMode := evm.ChainConfig().DebugMode()
-	txRunMode := c.txProcessor.RunMode()
+	runCtx := c.txProcessor.RunContext()
 	emitEvent := func() error {
 		return con.UpdateProgramCache(c, evm, c.caller, codehash, cached)
 	}
 	return programs.SetProgramCached(
-		emitEvent, evm.StateDB, codehash, address, cached, evm.Context.Time, params, txRunMode, debugMode,
+		emitEvent, evm.StateDB, codehash, address, cached, evm.Context.Time, params, runCtx, debugMode,
 	)
 }
 

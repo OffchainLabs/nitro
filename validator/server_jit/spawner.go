@@ -3,7 +3,6 @@ package server_jit
 import (
 	"context"
 	"fmt"
-	"runtime"
 	"sync/atomic"
 	"time"
 
@@ -11,8 +10,8 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
-	"github.com/ethereum/go-ethereum/ethdb"
 
+	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
 	"github.com/offchainlabs/nitro/validator/server_common"
@@ -78,8 +77,8 @@ func (v *JitSpawner) WasmModuleRoots() ([]common.Hash, error) {
 	return v.locator.ModuleRoots(), nil
 }
 
-func (v *JitSpawner) StylusArchs() []ethdb.WasmTarget {
-	return []ethdb.WasmTarget{rawdb.LocalTarget()}
+func (v *JitSpawner) StylusArchs() []rawdb.WasmTarget {
+	return []rawdb.WasmTarget{rawdb.LocalTarget()}
 }
 
 func (v *JitSpawner) execute(
@@ -113,7 +112,7 @@ func (v *JitSpawner) Launch(entry *validator.ValidationInput, moduleRoot common.
 func (v *JitSpawner) Room() int {
 	avail := v.config().Workers
 	if avail == 0 {
-		avail = runtime.NumCPU()
+		avail = util.GoMaxProcs()
 	}
 	return avail
 }

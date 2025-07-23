@@ -1,5 +1,5 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbtest
 
@@ -62,7 +62,7 @@ func TestP256Verify(t *testing.T) {
 		},
 	} {
 		t.Run(tc.desc, func(t *testing.T) {
-			builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+			builder := NewNodeBuilder(ctx).DefaultConfig(t, false).DontParalellise()
 			builder.chainConfig.ArbitrumChainParams.InitialArbOSVersion = tc.initialVersion
 			cleanup := builder.Build(t)
 			defer cleanup()

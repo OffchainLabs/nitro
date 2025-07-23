@@ -1,5 +1,5 @@
 // Copyright 2021-2024, Offchain Labs, Inc.
-// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbtest
 
@@ -24,8 +24,6 @@ import (
 // They are not a substitute for unit tests, as they don't test the actual functionality of the precompile.
 
 func TestArbAddressTableDoesntRevert(t *testing.T) {
-	t.Parallel()
-
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -78,8 +76,6 @@ func TestArbAddressTableDoesntRevert(t *testing.T) {
 }
 
 func TestArbAggregatorDoesntRevert(t *testing.T) {
-	t.Parallel()
-
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -103,8 +99,6 @@ func TestArbAggregatorDoesntRevert(t *testing.T) {
 }
 
 func TestArbosTestDoesntRevert(t *testing.T) {
-	t.Parallel()
-
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -122,8 +116,6 @@ func TestArbosTestDoesntRevert(t *testing.T) {
 }
 
 func TestArbSysDoesntRevert(t *testing.T) {
-	t.Parallel()
-
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -143,8 +135,6 @@ func TestArbSysDoesntRevert(t *testing.T) {
 }
 
 func TestArbOwnerDoesntRevert(t *testing.T) {
-	t.Parallel()
-
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -183,8 +173,6 @@ func TestArbOwnerDoesntRevert(t *testing.T) {
 }
 
 func TestArbGasInfoDoesntRevert(t *testing.T) {
-	t.Parallel()
-
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -230,8 +218,6 @@ func TestArbGasInfoDoesntRevert(t *testing.T) {
 }
 
 func TestArbRetryableTxDoesntRevert(t *testing.T) {
-	t.Parallel()
-
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 

@@ -1,5 +1,5 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbnode
 
@@ -59,7 +59,15 @@ func (w *execClientWrapper) MarkFeedStart(to arbutil.MessageIndex) containers.Pr
 	return containers.NewReadyPromise(markFeedStartWithReturn(to))
 }
 
-func (w *execClientWrapper) Maintenance() containers.PromiseInterface[struct{}] {
+func (w *execClientWrapper) ShouldTriggerMaintenance() containers.PromiseInterface[bool] {
+	return containers.NewReadyPromise(false, nil)
+}
+
+func (w *execClientWrapper) MaintenanceStatus() containers.PromiseInterface[*execution.MaintenanceStatus] {
+	return containers.NewReadyPromise(&execution.MaintenanceStatus{}, nil)
+}
+
+func (w *execClientWrapper) TriggerMaintenance() containers.PromiseInterface[struct{}] {
 	return containers.NewReadyPromise(struct{}{}, nil)
 }
 
@@ -71,7 +79,12 @@ func (w *execClientWrapper) FullSyncProgressMap(ctx context.Context) map[string]
 	w.t.Error("not supported")
 	return nil
 }
-func (w *execClientWrapper) SetFinalityData(ctx context.Context, finalityData *arbutil.FinalityData) containers.PromiseInterface[struct{}] {
+func (w *execClientWrapper) SetFinalityData(
+	ctx context.Context,
+	safeFinalityData *arbutil.FinalityData,
+	finalizedFinalityData *arbutil.FinalityData,
+	validatedFinalityData *arbutil.FinalityData,
+) containers.PromiseInterface[struct{}] {
 	return containers.NewReadyPromise(struct{}{}, nil)
 }
 
@@ -91,8 +104,8 @@ func (w *execClientWrapper) ResultAtMessageIndex(pos arbutil.MessageIndex) conta
 	return containers.NewReadyPromise(w.ExecutionEngine.ResultAtMessageIndex(pos))
 }
 
-func (w *execClientWrapper) Start(ctx context.Context) containers.PromiseInterface[struct{}] {
-	return containers.NewReadyPromise(struct{}{}, nil)
+func (w *execClientWrapper) Start(ctx context.Context) error {
+	return nil
 }
 
 func (w *execClientWrapper) MessageIndexToBlockNumber(messageNum arbutil.MessageIndex) containers.PromiseInterface[uint64] {
@@ -103,8 +116,7 @@ func (w *execClientWrapper) BlockNumberToMessageIndex(blockNum uint64) container
 	return containers.NewReadyPromise(w.ExecutionEngine.BlockNumberToMessageIndex(blockNum))
 }
 
-func (w *execClientWrapper) StopAndWait() containers.PromiseInterface[struct{}] {
-	return containers.NewReadyPromise(struct{}{}, nil)
+func (w *execClientWrapper) StopAndWait() {
 }
 
 func NewTransactionStreamerForTest(t *testing.T, ctx context.Context, ownerAddress common.Address) (*gethexec.ExecutionEngine, *TransactionStreamer, ethdb.Database, *core.BlockChain) {
@@ -124,14 +136,14 @@ func NewTransactionStreamerForTest(t *testing.T, ctx context.Context, ownerAddre
 	initReader := statetransfer.NewMemoryInitDataReader(&initData)
 
 	cacheConfig := core.DefaultCacheConfigWithScheme(env.GetTestStateScheme())
-	bc, err := gethexec.WriteOrTestBlockChain(chainDb, cacheConfig, initReader, chainConfig, arbostypes.TestInitMessage, gethexec.ConfigDefault.TxLookupLimit, 0)
+	bc, err := gethexec.WriteOrTestBlockChain(chainDb, cacheConfig, initReader, chainConfig, nil, nil, arbostypes.TestInitMessage, &gethexec.ConfigDefault.TxIndexer, 0)
 
 	if err != nil {
 		Fail(t, err)
 	}
 
 	transactionStreamerConfigFetcher := func() *TransactionStreamerConfig { return &DefaultTransactionStreamerConfig }
-	execEngine, err := gethexec.NewExecutionEngine(bc)
+	execEngine, err := gethexec.NewExecutionEngine(bc, 0)
 	if err != nil {
 		Fail(t, err)
 	}

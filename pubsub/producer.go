@@ -142,6 +142,24 @@ func (p *Producer[Request, Response]) checkResponses(ctx context.Context) time.D
 			return 0
 		}
 		checked++
+		// First check if there is an error for this promise
+		errorKey := ErrorKeyFor(p.redisStream, id)
+		errorResponse, err := p.client.Get(ctx, errorKey).Result()
+		if err != nil && !errors.Is(err, redis.Nil) {
+			// If we get an error that is not redis.Nil, then log it and continue.
+			log.Error("Error reading error in redis", "key", errorKey, "error", err)
+			continue
+		}
+		if err == nil {
+			// If we found the error key, then delete it and return the error to the promise and continue.
+			p.client.Del(ctx, errorKey)
+			promise.ProduceError(errors.New(errorResponse))
+			log.Debug("consumer returned error", "error", errorResponse, "msgId", id)
+			errored++
+			delete(p.promises, id)
+			continue
+		}
+		// If we do not find the error key, then check for the result key.
 		resultKey := ResultKeyFor(p.redisStream, id)
 		res, err := p.client.Get(ctx, resultKey).Result()
 		if err != nil {
@@ -151,7 +169,7 @@ func (p *Producer[Request, Response]) checkResponses(ctx context.Context) time.D
 				// The request this producer is waiting for has been past its TTL or is older than current PEL's lower,
 				// so safe to error and stop tracking this promise
 				promise.ProduceError(errors.New("error getting response, request has been waiting for too long"))
-				log.Error("error getting response, request has been waiting past its TTL")
+				log.Debug("request timed out waiting for response", "msgId", id, "allowedOldestId", allowedOldestID)
 				errored++
 				delete(p.promises, id)
 			}

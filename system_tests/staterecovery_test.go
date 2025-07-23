@@ -21,8 +21,6 @@ func TestRectreateMissingStates(t *testing.T) {
 	defer cancel()
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
 	builder.execConfig.Caching.Archive = true
-	// For now Archive node should use HashScheme
-	builder.execConfig.Caching.StateScheme = rawdb.HashScheme
 	builder.execConfig.Caching.MaxNumberOfBlocksToSkipStateSaving = 16
 	builder.execConfig.Caching.SnapshotCache = 0 // disable snapshots
 	_ = builder.Build(t)
@@ -57,11 +55,11 @@ func TestRectreateMissingStates(t *testing.T) {
 		chainDb, err := stack.OpenDatabaseWithExtraOptions("l2chaindata", 0, 0, "l2chaindata/", false, conf.PersistentConfigDefault.Pebble.ExtraOptions("l2chaindata"))
 		Require(t, err)
 		defer chainDb.Close()
-		cachingConfig := TestCachingConfig
+		cachingConfig := gethexec.DefaultCachingConfig
 		// For now Archive node should use HashScheme
 		cachingConfig.StateScheme = rawdb.HashScheme
 		cacheConfig := gethexec.DefaultCacheConfigFor(stack, &cachingConfig)
-		bc, err := gethexec.GetBlockChain(chainDb, cacheConfig, builder.chainConfig, builder.execConfig.TxLookupLimit)
+		bc, err := gethexec.GetBlockChain(chainDb, cacheConfig, builder.chainConfig, nil, &builder.execConfig.TxIndexer)
 		Require(t, err)
 		err = staterecovery.RecreateMissingStates(chainDb, bc, cacheConfig, 1)
 		Require(t, err)

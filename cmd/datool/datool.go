@@ -1,5 +1,5 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package main
 
@@ -23,12 +23,12 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/crypto"
 
-	"github.com/offchainlabs/nitro/arbstate/daprovider"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
-	"github.com/offchainlabs/nitro/das"
-	"github.com/offchainlabs/nitro/das/dastree"
+	"github.com/offchainlabs/nitro/daprovider/das"
+	"github.com/offchainlabs/nitro/daprovider/das/dastree"
+	"github.com/offchainlabs/nitro/daprovider/das/dasutil"
 	"github.com/offchainlabs/nitro/util/signature"
 )
 
@@ -93,6 +93,7 @@ type ClientStoreConfig struct {
 	SigningWalletPassword string        `koanf:"signing-wallet-password"`
 	MaxStoreChunkBodySize int           `koanf:"max-store-chunk-body-size"`
 	EnableChunkedStore    bool          `koanf:"enable-chunked-store"`
+	EnableHTTP2           bool          `koanf:"enable-http2"`
 }
 
 func parseClientStoreConfig(args []string) (*ClientStoreConfig, error) {
@@ -106,6 +107,7 @@ func parseClientStoreConfig(args []string) (*ClientStoreConfig, error) {
 	f.Duration("das-retention-period", 24*time.Hour, "The period which DASes are requested to retain the stored batches.")
 	f.Int("max-store-chunk-body-size", 512*1024, "The maximum HTTP POST body size for a chunked store request")
 	f.Bool("enable-chunked-store", true, "enable data to be sent to DAS in chunks instead of all at once")
+	f.Bool("enable-http2", true, "enable HTTP/2 for DAS connections")
 
 	k, err := confighelpers.BeginCommonParse(f, args)
 	if err != nil {
@@ -154,13 +156,13 @@ func startClientStore(args []string) error {
 		}
 	}
 
-	client, err := das.NewDASRPCClient(config.URL, signer, config.MaxStoreChunkBodySize, config.EnableChunkedStore)
+	client, err := das.NewDASRPCClient(config.URL, signer, config.MaxStoreChunkBodySize, config.EnableChunkedStore, config.EnableHTTP2)
 	if err != nil {
 		return err
 	}
 
 	ctx := context.Background()
-	var cert *daprovider.DataAvailabilityCertificate
+	var cert *dasutil.DataAvailabilityCertificate
 
 	if config.RandomMessageSize > 0 {
 		message := make([]byte, config.RandomMessageSize)
@@ -181,7 +183,7 @@ func startClientStore(args []string) error {
 		return err
 	}
 
-	serializedCert := daprovider.Serialize(cert)
+	serializedCert := dasutil.Serialize(cert)
 	fmt.Printf("Hex Encoded Cert: %s\n", hexutil.Encode(serializedCert))
 	fmt.Printf("Hex Encoded Data Hash: %s\n", hexutil.Encode(cert.DataHash[:]))
 

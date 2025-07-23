@@ -1,6 +1,7 @@
 package util
 
 import (
+	"reflect"
 	"strings"
 	"time"
 
@@ -45,7 +46,7 @@ func (h *EphemeralErrorHandler) LogLevel(err error, currentLogLevel func(msg str
 		return currentLogLevel
 	}
 
-	if *h.FirstOccurrence == (time.Time{}) {
+	if h.FirstOccurrence.Equal((time.Time{})) {
 		*h.FirstOccurrence = time.Now()
 	}
 
@@ -64,4 +65,9 @@ func (h *EphemeralErrorHandler) LogLevel(err error, currentLogLevel func(msg str
 
 func (h *EphemeralErrorHandler) Reset() {
 	*h.FirstOccurrence = time.Time{}
+}
+
+// CompareLogLevels returns true if the logging functions provided are the same
+func CompareLogLevels(f1, f2 func(msg string, ctx ...interface{})) bool {
+	return reflect.ValueOf(f1).Pointer() == reflect.ValueOf(f2).Pointer()
 }

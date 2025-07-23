@@ -1,5 +1,5 @@
 // Copyright 2021-2024, Offchain Labs, Inc.
-// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbmath
 
@@ -400,8 +400,12 @@ func DivCeil[T Unsigned](value, divisor T) T {
 	return value/divisor + 1
 }
 
-// ApproxExpBasisPoints return the Maclaurin series approximation of e^x, where x is denominated in basis points.
-// The quartic polynomial will underestimate e^x by about 5% as x approaches 20000 bips.
+// ApproxExpBasisPoints return the Maclaurin series approximation of e^x, where
+// x is denominated in basis points.
+// The 4th degreee Maclaurin series (for example) is:
+// b*(1 + (x/b) +(x/b)^2 / 2! + (x/b)^3 / 6! + (x/b)^4/4!)
+// The quartic polynomial (accuracy = 4) will underestimate e^x by about 5% as
+// x approaches 20000 bips.
 func ApproxExpBasisPoints(value Bips, accuracy uint64) Bips {
 	input := value
 	negative := value < 0
@@ -411,15 +415,32 @@ func ApproxExpBasisPoints(value Bips, accuracy uint64) Bips {
 	// This cast is safe because input is always positive
 	// #nosec G115
 	x := uint64(input)
-	bips := uint64(OneInBips)
+	b := uint64(OneInBips)
 
-	res := bips + x/accuracy
-	for i := uint64(1); i < accuracy; i++ {
-		res = bips + SaturatingUMul(res, x)/((accuracy-i)*bips)
+	// This is actually an optimization for computing the Maclaurin series
+	// inspired by Horner's method for solving taylor polynomials.
+	// It is used to reduce the number of multiplications and divisions required
+	// to compute the polynomial series by one.
+
+	// Despite the name, this method is not really an approximation of e^x
+	// It is an approximation of b*e^{x/b} Where b is 1 denominated in basis
+	// points.
+	//
+	// Horner's method tells us that this is equivalent to:
+	// b * (1 + x/b * (1 + x/(2*b) * (1 + x/(3*b)))) when accuracy = 4.
+	//
+	// And, if you multiply the b into the parenthesis, you get:
+	// b * (1 + x/b * (1 + x/(2*b) * (1 + x/(3*b))))
+	//      b + x   * (b + x/(2*b) * (b + x/3)))
+	// On the inner-most term, the b cancels out on the top and bottom of the
+	// fraction, so we just use b + x/accuracy to initialize res.
+	res := b + x/accuracy
+	for i := accuracy - 1; i > 0; i-- {
+		res = b + SaturatingUMul(res, x)/(i*b)
 	}
 
 	if negative {
-		return Bips(SaturatingCast[int64](bips * bips / res))
+		return Bips(SaturatingCast[int64](b * b / res))
 	} else {
 		return Bips(SaturatingCast[int64](res))
 	}

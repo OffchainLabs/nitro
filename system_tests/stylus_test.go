@@ -1,5 +1,5 @@
 // Copyright 2023, Offchain Labs, Inc.
-// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 //go:build stylustest && !race
 // +build stylustest,!race
@@ -57,12 +57,10 @@ func TestProgramArbitratorMemory(t *testing.T) {
 }
 
 func TestProgramArbitratorActivateTwice(t *testing.T) {
-	t.Parallel()
 	testActivateTwice(t, false)
 }
 
 func TestProgramArbitratorActivateFails(t *testing.T) {
-	t.Parallel()
 	testActivateFails(t, false)
 }
 

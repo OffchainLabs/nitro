@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 set -e
 
@@ -68,14 +68,14 @@ while getopts "n:s:t:c:D:wldhf" option; do
     esac
 done
 
-if ! $BUILD_WASM && ! $BUILD_LOCAL && ! $BUILD_SOFT; then
+if ! $BUILD_WASM && ! $BUILD_LOCAL && ! $BUILD_SOFTFLOAT; then
     usage
     exit
 fi
 
 if [ ! -d "$TARGET_DIR" ]; then
-    mkdir -p "${TARGET_DIR}lib"
-    ln -s "lib" "${TARGET_DIR}lib64" # Fedora build
+    mkdir -p "${TARGET_DIR}/lib"
+    ln -s "lib" "${TARGET_DIR}/lib64" # Fedora build
 fi
 TARGET_DIR_ABS=$(cd -P "$TARGET_DIR"; pwd)
 
@@ -99,7 +99,7 @@ if $BUILD_WASM; then
     mkdir -p buildfiles/install-wasm
     TEMP_INSTALL_DIR_ABS=$(cd -P buildfiles/install-wasm; pwd)
     cd buildfiles/build-wasm
-    cmake ../../ -DCMAKE_C_COMPILER=emcc -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_FLAGS=-fPIC -DCMAKE_INSTALL_PREFIX="$TEMP_INSTALL_DIR_ABS" -DCMAKE_AR="$(which emar)" -DCMAKE_RANLIB="$(which touch)"
+    cmake ../../ -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DCMAKE_C_COMPILER=emcc -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_FLAGS=-fPIC -DCMAKE_INSTALL_PREFIX="$TEMP_INSTALL_DIR_ABS" -DCMAKE_AR="$(which emar)" -DCMAKE_RANLIB="$(which touch)"
     make -j
     make install
     cp -rv "$TEMP_INSTALL_DIR_ABS/lib" "$TARGET_DIR_ABS/lib-wasm"
@@ -109,7 +109,7 @@ fi
 if $BUILD_LOCAL; then
     mkdir -p buildfiles/build-local
     cd buildfiles/build-local
-    cmake ../../ -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$TARGET_DIR_ABS"
+    cmake ../../ -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$TARGET_DIR_ABS"
     make -j
     make install
     cd ..

@@ -1,6 +1,11 @@
 name: Merge Checks
 
 on:
+  # Using pull_request_target for security. If we had used pull_request, then it
+  # would be possible for malicious actors to create Pull Requests which would
+  # trigger workflows that they could have modified locally to extract secrets.
+  # For this reason, the pins below must be updated and merged in a separate PR
+  # before the PR that changes the actual submodule pins.
   pull_request_target:
     branches: [ master ]
     types: [synchronize, opened, reopened]
@@ -25,11 +30,13 @@ jobs:
         run: |
           status_state="pending"
           declare -Ar exceptions=(
-            [contracts]=origin/v2-main
+            [contracts]=origin/develop
+            [contracts-legacy]=origin/v2-main
             [nitro-testnode]=origin/master
             [bold]=origin/main
             [arbitrator/langs/c]=origin/vm-storage-cache
             [arbitrator/tools/wasmer]=origin/stylus
+            [contracts-local/lib/openzeppelin-contracts]=origin/release-v4.7
           )
           divergent=0
           for mod in `git submodule --quiet foreach 'echo $name'`; do

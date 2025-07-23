@@ -1,5 +1,5 @@
 // Copyright 2023-2024, Offchain Labs, Inc.
-// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 // race detection makes things slow and miss timeouts
 //go:build !race
@@ -29,22 +29,22 @@ import (
 	"github.com/offchainlabs/nitro/arbnode/dataposter/externalsignertest"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
-	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
+	"github.com/offchainlabs/nitro/solgen/go/bridge_legacy_gen"
 	"github.com/offchainlabs/nitro/solgen/go/contractsgen"
 	"github.com/offchainlabs/nitro/solgen/go/node_interfacegen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/solgen/go/proxiesgen"
-	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
+	"github.com/offchainlabs/nitro/solgen/go/rollup_legacy_gen"
 	"github.com/offchainlabs/nitro/solgen/go/upgrade_executorgen"
 	"github.com/offchainlabs/nitro/staker"
 	legacystaker "github.com/offchainlabs/nitro/staker/legacy"
 	"github.com/offchainlabs/nitro/staker/validatorwallet"
 	"github.com/offchainlabs/nitro/util"
+	"github.com/offchainlabs/nitro/validator/server_common"
 	"github.com/offchainlabs/nitro/validator/valnode"
 )
 
 func TestFastConfirmationWithdrawal(t *testing.T) {
-	t.Parallel()
 	ctx, cancelCtx := context.WithCancel(context.Background())
 	defer cancelCtx()
 	builder, stakerA, cleanupBuilder, cleanupBackgroundTx := setupFastConfirmation(ctx, t)
@@ -88,13 +88,13 @@ func TestFastConfirmationWithdrawal(t *testing.T) {
 	Require(t, err)
 	merkleState, err := arbSys.SendMerkleTreeState(&bind.CallOpts{})
 	Require(t, err, "could not get merkle root")
-	bridgeBinding, err := bridgegen.NewBridge(builder.L1Info.GetAddress("Bridge"), builder.L1.Client)
+	bridgeBinding, err := bridge_legacy_gen.NewBridge(builder.L1Info.GetAddress("Bridge"), builder.L1.Client)
 	Require(t, err)
 	outboxAddress, err := bridgeBinding.AllowedOutboxList(&bind.CallOpts{}, big.NewInt(0))
 	Require(t, err)
-	outboxBinding, err := bridgegen.NewOutbox(outboxAddress, builder.L1.Client)
+	outboxBinding, err := bridge_legacy_gen.NewOutbox(outboxAddress, builder.L1.Client)
 	Require(t, err)
-	ouboxAbi, err := bridgegen.AbsOutboxMetaData.GetAbi()
+	ouboxAbi, err := bridge_legacy_gen.AbsOutboxMetaData.GetAbi()
 	Require(t, err, "failed to get abi")
 	outBoxTransactionExecutedTopic := ouboxAbi.Events["OutBoxTransactionExecuted"].ID
 	// Check logs for withdraw event
@@ -148,7 +148,7 @@ func TestFastConfirmation(t *testing.T) {
 	defer cleanupBuilder()
 	defer cleanupBackgroundTx()
 
-	rollup, err := rollupgen.NewRollupAdminLogic(builder.L2.ConsensusNode.DeployInfo.Rollup, builder.L1.Client)
+	rollup, err := rollup_legacy_gen.NewRollupAdminLogic(builder.L2.ConsensusNode.DeployInfo.Rollup, builder.L1.Client)
 	Require(t, err)
 	latestConfirmBeforeAct, err := rollup.LatestConfirmed(&bind.CallOpts{})
 	Require(t, err)
@@ -175,7 +175,7 @@ func setupFastConfirmation(ctx context.Context, t *testing.T) (*NodeBuilder, *le
 	}()
 	var transferGas = util.NormalizeL2GasForL1GasInitial(800_000, params.GWei) // include room for aggregator L1 costs
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithProdConfirmPeriodBlocks()
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithProdConfirmPeriodBlocks().DontParalellise()
 	builder.L2Info = NewBlockChainTestInfo(
 		t,
 		types.NewArbitrumSigner(types.NewLondonSigner(builder.chainConfig.ChainID)), big.NewInt(l2pricing.InitialBaseFeeWei*2),
@@ -207,7 +207,7 @@ func setupFastConfirmation(ctx context.Context, t *testing.T) (*NodeBuilder, *le
 
 	upgradeExecutor, err := upgrade_executorgen.NewUpgradeExecutor(l2node.DeployInfo.UpgradeExecutor, builder.L1.Client)
 	Require(t, err, "unable to bind upgrade executor")
-	rollupABI, err := abi.JSON(strings.NewReader(rollupgen.RollupAdminLogicABI))
+	rollupABI, err := abi.JSON(strings.NewReader(rollup_legacy_gen.RollupAdminLogicABI))
 	Require(t, err, "unable to parse rollup ABI")
 
 	setMinAssertPeriodCalldata, err := rollupABI.Pack("setMinimumAssertionPeriod", big.NewInt(1))
@@ -234,7 +234,7 @@ func setupFastConfirmation(ctx context.Context, t *testing.T) (*NodeBuilder, *le
 	if err != nil {
 		t.Fatalf("Error creating validator dataposter: %v", err)
 	}
-	valWallet, err := validatorwallet.NewContract(dp, nil, l2node.DeployInfo.ValidatorWalletCreator, l2node.DeployInfo.Rollup, l2node.L1Reader, &l1auth, 0, func(common.Address) {}, func() uint64 { return valConfig.ExtraGas })
+	valWallet, err := validatorwallet.NewContract(dp, nil, l2node.DeployInfo.ValidatorWalletCreator, l2node.L1Reader, &l1auth, 0, func(common.Address) {}, func() uint64 { return valConfig.ExtraGas })
 	Require(t, err)
 	valConfig.Strategy = "MakeNodes"
 
@@ -264,6 +264,8 @@ func setupFastConfirmation(ctx context.Context, t *testing.T) (*NodeBuilder, *le
 	_, valStack := createTestValidationNode(t, ctx, &valnode.TestValidationConfig)
 	blockValidatorConfig := staker.TestBlockValidatorConfig
 
+	locator, err := server_common.NewMachineLocator(valnode.TestValidationConfig.Wasm.RootPath)
+	Require(t, err)
 	stateless, err := staker.NewStatelessBlockValidator(
 		l2node.InboxReader,
 		l2node.InboxTracker,
@@ -273,6 +275,7 @@ func setupFastConfirmation(ctx context.Context, t *testing.T) (*NodeBuilder, *le
 		nil,
 		StaticFetcherFrom(t, &blockValidatorConfig),
 		valStack,
+		locator.LatestWasmModuleRoot(),
 	)
 	Require(t, err)
 	err = stateless.Start(ctx)
@@ -289,6 +292,10 @@ func setupFastConfirmation(ctx context.Context, t *testing.T) (*NodeBuilder, *le
 		nil,
 		nil,
 		l2node.DeployInfo.ValidatorUtils,
+		l2node.DeployInfo.Rollup,
+		l2node.InboxTracker,
+		l2node.TxStreamer,
+		l2node.InboxReader,
 		nil,
 	)
 	Require(t, err)
@@ -388,12 +395,12 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 	builder.L1.TransferBalance(t, "Faucet", "ValidatorB", balance, builder.L1Info)
 	l1authB := builder.L1Info.GetDefaultTransactOpts("ValidatorB", ctx)
 
-	rollup, err := rollupgen.NewRollupAdminLogic(l2nodeA.DeployInfo.Rollup, builder.L1.Client)
+	rollup, err := rollup_legacy_gen.NewRollupAdminLogic(l2nodeA.DeployInfo.Rollup, builder.L1.Client)
 	Require(t, err)
 
 	upgradeExecutor, err := upgrade_executorgen.NewUpgradeExecutor(l2nodeA.DeployInfo.UpgradeExecutor, builder.L1.Client)
 	Require(t, err, "unable to bind upgrade executor")
-	rollupABI, err := abi.JSON(strings.NewReader(rollupgen.RollupAdminLogicABI))
+	rollupABI, err := abi.JSON(strings.NewReader(rollup_legacy_gen.RollupAdminLogicABI))
 	Require(t, err, "unable to parse rollup ABI")
 
 	setMinAssertPeriodCalldata, err := rollupABI.Pack("setMinimumAssertionPeriod", big.NewInt(1))
@@ -421,7 +428,7 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Error creating validator dataposter: %v", err)
 	}
-	valWalletA, err := validatorwallet.NewContract(dpA, nil, l2nodeA.DeployInfo.ValidatorWalletCreator, l2nodeA.DeployInfo.Rollup, l2nodeA.L1Reader, &l1authA, 0, func(common.Address) {}, func() uint64 { return valConfigA.ExtraGas })
+	valWalletA, err := validatorwallet.NewContract(dpA, nil, l2nodeA.DeployInfo.ValidatorWalletCreator, l2nodeA.L1Reader, &l1authA, 0, func(common.Address) {}, func() uint64 { return valConfigA.ExtraGas })
 	Require(t, err)
 	valConfigA.Strategy = "MakeNodes"
 
@@ -452,6 +459,8 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 	_, valStack := createTestValidationNode(t, ctx, &valnode.TestValidationConfig)
 	blockValidatorConfig := staker.TestBlockValidatorConfig
 
+	locator, err := server_common.NewMachineLocator(valnode.TestValidationConfig.Wasm.RootPath)
+	Require(t, err)
 	statelessA, err := staker.NewStatelessBlockValidator(
 		l2nodeA.InboxReader,
 		l2nodeA.InboxTracker,
@@ -461,6 +470,7 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 		nil,
 		StaticFetcherFrom(t, &blockValidatorConfig),
 		valStack,
+		locator.LatestWasmModuleRoot(),
 	)
 	Require(t, err)
 	err = statelessA.Start(ctx)
@@ -477,6 +487,10 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 		nil,
 		nil,
 		l2nodeA.DeployInfo.ValidatorUtils,
+		l2nodeA.DeployInfo.Rollup,
+		l2nodeA.InboxTracker,
+		l2nodeA.TxStreamer,
+		l2nodeA.InboxReader,
 		nil,
 	)
 	Require(t, err)
@@ -499,7 +513,7 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Error creating validator dataposter: %v", err)
 	}
-	valWalletB, err := validatorwallet.NewEOA(dpB, l2nodeB.DeployInfo.Rollup, l2nodeB.L1Reader.Client(), func() uint64 { return 0 })
+	valWalletB, err := validatorwallet.NewEOA(dpB, l2nodeB.L1Reader.Client(), func() uint64 { return 0 })
 	Require(t, err)
 	valConfigB := legacystaker.TestL1ValidatorConfig
 	valConfigB.EnableFastConfirmation = true
@@ -513,6 +527,7 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 		nil,
 		StaticFetcherFrom(t, &blockValidatorConfig),
 		valStack,
+		locator.LatestWasmModuleRoot(),
 	)
 	Require(t, err)
 	err = statelessB.Start(ctx)
@@ -529,6 +544,10 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 		nil,
 		nil,
 		l2nodeB.DeployInfo.ValidatorUtils,
+		l2nodeB.DeployInfo.Rollup,
+		l2nodeB.InboxTracker,
+		l2nodeB.TxStreamer,
+		l2nodeB.InboxReader,
 		nil,
 	)
 	Require(t, err)

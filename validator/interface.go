@@ -4,7 +4,7 @@ import (
 	"context"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/ethdb"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 
 	"github.com/offchainlabs/nitro/util/containers"
 )
@@ -15,7 +15,7 @@ type ValidationSpawner interface {
 	Start(context.Context) error
 	Stop()
 	Name() string
-	StylusArchs() []ethdb.WasmTarget
+	StylusArchs() []rawdb.WasmTarget
 	Room() int
 }
 
@@ -27,7 +27,12 @@ type ValidationRun interface {
 type ExecutionSpawner interface {
 	ValidationSpawner
 	CreateExecutionRun(wasmModuleRoot common.Hash, input *ValidationInput, useBoldMachine bool) containers.PromiseInterface[ExecutionRun]
-	LatestWasmModuleRoot() containers.PromiseInterface[common.Hash]
+}
+
+type BOLDExecutionSpawner interface {
+	WasmModuleRoots() ([]common.Hash, error)
+	GetMachineHashesWithStepSize(ctx context.Context, wasmModuleRoot common.Hash, input *ValidationInput, machineStartIndex, stepSize, maxIterations uint64) ([]common.Hash, error)
+	GetProofAt(ctx context.Context, wasmModuleRoot common.Hash, input *ValidationInput, position uint64) ([]byte, error)
 }
 
 type ExecutionRun interface {

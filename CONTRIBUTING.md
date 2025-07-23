@@ -6,8 +6,10 @@ Excited by our work want to get more involved in making Arbitrum more successful
 
 You can explore our [Open Issues](https://github.com/offchainlabs/nitro/issues) or [run a Nitro node](https://docs.arbitrum.io/run-arbitrum-node/run-nitro-dev-node) yourself and suggest improvements. 
 
+<!-- start-trivial-prs -->
 > [!IMPORTANT] 
 > Please, **do not send pull requests for trivial changes**, such as typos, these will be rejected. These types of pull requests incur a cost to reviewers and do not provide much value to the project. If you are unsure, please open an issue first to discuss the change.
+<!-- end-trivial-prs -->
 
 ## Contribution Steps
 
@@ -127,7 +129,7 @@ Save and close the file, then a commit command will appear in the terminal that 
 **17. Update your pull request with the following command.**
 
 ```
-$ git push mynitrorepo feature-in-progress-branch -f
+$ git push mynitrorepo feature-in-progress-branch
 ```
 
 **18.  Finally, again leave a comment to the Core Contributors on the pull request to let them know that the pull request has been updated.**

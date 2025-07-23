@@ -1,5 +1,5 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package legacystaker
 
@@ -16,7 +16,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/execution"
-	"github.com/offchainlabs/nitro/solgen/go/challengegen"
+	"github.com/offchainlabs/nitro/solgen/go/challenge_legacy_gen"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/validator"
 )
@@ -36,12 +36,12 @@ type BlockChallengeBackend struct {
 var _ ChallengeBackend = (*BlockChallengeBackend)(nil)
 
 func NewBlockChallengeBackend(
-	initialState *challengegen.ChallengeManagerInitiatedChallenge,
+	initialState *challenge_legacy_gen.ChallengeManagerInitiatedChallenge,
 	maxBatchesRead uint64,
 	streamer staker.TransactionStreamerInterface,
 	inboxTracker staker.InboxTrackerInterface,
 ) (*BlockChallengeBackend, error) {
-	startGs := validator.GoGlobalStateFromSolidity(initialState.StartState)
+	startGs := validator.GoGlobalStateFromLegacyChallengeSolidity(initialState.StartState)
 
 	var startMsgCount arbutil.MessageIndex
 	if startGs.Batch > 0 {
@@ -68,7 +68,7 @@ func NewBlockChallengeBackend(
 		startGs:                startGs,
 		startPosition:          0,
 		endPosition:            math.MaxUint64,
-		endGs:                  validator.GoGlobalStateFromSolidity(initialState.EndState),
+		endGs:                  validator.GoGlobalStateFromLegacyChallengeSolidity(initialState.EndState),
 		inboxTracker:           inboxTracker,
 		tooFarStartsAtPosition: uint64(endMsgCount - startMsgCount + 1),
 	}, nil
@@ -217,7 +217,7 @@ func (b *BlockChallengeBackend) IssueExecChallenge(
 	return core.con.ChallengeExecution(
 		core.auth,
 		core.challengeIndex,
-		challengegen.ChallengeLibSegmentSelection{
+		challenge_legacy_gen.ChallengeLibSegmentSelection{
 			OldSegmentsStart:  oldState.Start,
 			OldSegmentsLength: new(big.Int).Sub(oldState.End, oldState.Start),
 			OldSegments:       oldState.RawSegments,

@@ -7,11 +7,12 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
 
-	"github.com/offchainlabs/bold/solgen/go/bridgegen"
 	boldrollup "github.com/offchainlabs/bold/solgen/go/rollupgen"
+	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/staker"
 	boldstaker "github.com/offchainlabs/nitro/staker/bold"
 	legacystaker "github.com/offchainlabs/nitro/staker/legacy"
@@ -48,6 +49,9 @@ type MultiProtocolStaker struct {
 	boldConfig              *boldstaker.BoldConfig
 	stakeTokenAddress       common.Address
 	stack                   *node.Node
+	inboxTracker            staker.InboxTrackerInterface
+	inboxStreamer           staker.TransactionStreamerInterface
+	inboxReader             staker.InboxReaderInterface
 }
 
 func NewMultiProtocolStaker(
@@ -61,9 +65,13 @@ func NewMultiProtocolStaker(
 	statelessBlockValidator *staker.StatelessBlockValidator,
 	stakedNotifiers []legacystaker.LatestStakedNotifier,
 	stakeTokenAddress common.Address,
+	rollupAddress common.Address,
 	confirmedNotifiers []legacystaker.LatestConfirmedNotifier,
 	validatorUtilsAddress common.Address,
 	bridgeAddress common.Address,
+	inboxStreamer staker.TransactionStreamerInterface,
+	inboxTracker staker.InboxTrackerInterface,
+	inboxReader staker.InboxReaderInterface,
 	fatalErr chan<- error,
 ) (*MultiProtocolStaker, error) {
 	if err := legacyConfig().Validate(); err != nil {
@@ -82,6 +90,10 @@ func NewMultiProtocolStaker(
 		stakedNotifiers,
 		confirmedNotifiers,
 		validatorUtilsAddress,
+		rollupAddress,
+		inboxTracker,
+		inboxStreamer,
+		inboxReader,
 		fatalErr,
 	)
 	if err != nil {
@@ -106,11 +118,14 @@ func NewMultiProtocolStaker(
 		boldConfig:              boldConfig,
 		stakeTokenAddress:       stakeTokenAddress,
 		stack:                   stack,
+		inboxTracker:            inboxTracker,
+		inboxStreamer:           inboxStreamer,
+		inboxReader:             inboxReader,
 	}, nil
 }
 
 func (m *MultiProtocolStaker) Initialize(ctx context.Context) error {
-	boldActive, rollupAddress, err := m.isBoldActive(ctx)
+	boldActive, rollupAddress, err := IsBoldActive(m.getCallOpts(ctx), m.bridge, m.l1Reader.Client())
 	if err != nil {
 		return err
 	}
@@ -167,14 +182,13 @@ func (m *MultiProtocolStaker) StopAndWait() {
 	m.StopWaiter.StopAndWait()
 }
 
-func (m *MultiProtocolStaker) isBoldActive(ctx context.Context) (bool, common.Address, error) {
+func IsBoldActive(callOpts *bind.CallOpts, bridge *bridgegen.IBridge, l1Backend *ethclient.Client) (bool, common.Address, error) {
 	var addr common.Address
-	callOpts := m.getCallOpts(ctx)
-	rollupAddress, err := m.bridge.Rollup(callOpts)
+	rollupAddress, err := bridge.Rollup(callOpts)
 	if err != nil {
 		return false, addr, err
 	}
-	userLogic, err := boldrollup.NewRollupUserLogic(rollupAddress, m.l1Reader.Client())
+	userLogic, err := boldrollup.NewRollupUserLogic(rollupAddress, l1Backend)
 	if err != nil {
 		return false, addr, err
 	}
@@ -188,7 +202,7 @@ func (m *MultiProtocolStaker) isBoldActive(ctx context.Context) (bool, common.Ad
 }
 
 func (m *MultiProtocolStaker) checkAndSwitchToBoldStaker(ctx context.Context) error {
-	shouldSwitch, rollupAddress, err := m.isBoldActive(ctx)
+	shouldSwitch, rollupAddress, err := IsBoldActive(m.getCallOpts(ctx), m.bridge, m.l1Reader.Client())
 	if err != nil {
 		return err
 	}
@@ -245,6 +259,9 @@ func (m *MultiProtocolStaker) setupBoldStaker(
 		m.wallet,
 		m.stakedNotifiers,
 		m.confirmedNotifiers,
+		m.inboxTracker,
+		m.inboxStreamer,
+		m.inboxReader,
 	)
 	if err != nil {
 		return err

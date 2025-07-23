@@ -38,3 +38,12 @@
 [submodule "safe-smart-account"]
 	path = safe-smart-account
 	url = https://github.com/safe-global/safe-smart-account.git
+[submodule "contracts-legacy"]
+	path = contracts-legacy
+	url = https://github.com/OffchainLabs/nitro-contracts.git
+[submodule "contracts-local/lib/openzeppelin-contracts"]
+	path = contracts-local/lib/openzeppelin-contracts
+	url = https://github.com/OpenZeppelin/openzeppelin-contracts
+[submodule "contracts-local/src/precompiles"]
+	path = contracts-local/src/precompiles
+	url = https://github.com/OffchainLabs/nitro-precompile-interfaces.git

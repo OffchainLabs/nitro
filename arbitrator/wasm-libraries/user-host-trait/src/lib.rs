@@ -1,5 +1,5 @@
 // Copyright 2022-2024, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 use arbutil::{
     benchmark::Benchmark,
@@ -8,10 +8,9 @@ use arbutil::{
         self,
         api::{DataReader, EvmApi, Gas, Ink},
         storage::StorageCache,
-        user::UserOutcomeKind,
         EvmData, ARBOS_VERSION_STYLUS_CHARGING_FIXES,
     },
-    pricing::{self, EVM_API_INK, HOSTIO_INK, PTR_INK},
+    pricing::{hostio, EVM_API_INK},
     Bytes20, Bytes32,
 };
 pub use caller_env::GuestPtr;
@@ -59,6 +58,14 @@ type Address = Bytes20;
 type Wei = Bytes32;
 type U256 = Uint<256, 4>;
 
+pub struct CallInputs {
+    pub contract: Address,
+    pub input: Vec<u8>,
+    pub gas_left: Gas,
+    pub gas_req: Gas,
+    pub value: Option<Wei>,
+}
+
 #[allow(clippy::too_many_arguments)]
 pub trait UserHost<DR: DataReader>: GasMeteredMachine {
     type Err: From<OutOfInkError> + From<Self::MemoryErr> + From<eyre::ErrReport>;
@@ -100,12 +107,36 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
         self.write_slice(ptr, &src.0)
     }
 
+    /// Parses guest pointer types into more structured Rust types to use
+    /// across methods that perform contract calls for better developer ergonomics.
+    fn parse_call_inputs(
+        &mut self,
+        contract: GuestPtr,
+        data: GuestPtr,
+        gas: Gas,
+        data_len: u32,
+        value: Option<GuestPtr>,
+    ) -> Result<CallInputs, Self::Err> {
+        let gas_left = self.gas_left()?;
+        let gas_req = gas.min(gas_left);
+        let contract = self.read_bytes20(contract)?;
+        let input = self.read_slice(data, data_len)?;
+        let value = value.map(|x| self.read_bytes32(x)).transpose()?;
+        Ok(CallInputs {
+            contract,
+            input,
+            gas_left,
+            gas_req,
+            value,
+        })
+    }
+
     /// Reads the program calldata. The semantics are equivalent to that of the EVM's
     /// [`CALLDATA_COPY`] opcode when requesting the entirety of the current call's calldata.
     ///
     /// [`CALLDATA_COPY`]: https://www.evm.codes/#37
     fn read_args(&mut self, ptr: GuestPtr) -> Result<(), Self::Err> {
-        self.buy_ink(HOSTIO_INK)?;
+        self.buy_ink(hostio::READ_ARGS_BASE_INK)?;
         self.pay_for_write(self.args().len() as u32)?;
         self.write_slice(ptr, self.args())?;
         trace!("read_args", self, &[], self.args())
@@ -115,9 +146,9 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
     /// be 0 bytes long. Note that this hostio does not cause the program to exit, which happens
     /// naturally when `user_entrypoint` returns.
     fn write_result(&mut self, ptr: GuestPtr, len: u32) -> Result<(), Self::Err> {
-        self.buy_ink(HOSTIO_INK)?;
+        self.buy_ink(hostio::WRITE_RESULT_BASE_INK)?;
         self.pay_for_read(len)?;
-        self.pay_for_geth_bytes(len)?; // returned after call
+        self.pay_for_read(len)?; // read from geth
         *self.outs() = self.read_slice(ptr, len)?;
         trace!("write_result", self, &*self.outs(), &[])
     }
@@ -145,7 +176,7 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
     ///
     /// [`SLOAD`]: https://www.evm.codes/#54
     fn storage_load_bytes32(&mut self, key: GuestPtr, dest: GuestPtr) -> Result<(), Self::Err> {
-        self.buy_ink(HOSTIO_INK + 2 * PTR_INK)?;
+        self.buy_ink(hostio::STORAGE_LOAD_BASE_INK)?;
         let arbos_version = self.evm_data().arbos_version;
 
         // require for cache-miss case, preserve wrong behavior for old arbos
@@ -177,7 +208,7 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
     ///
     /// [`SSTORE`]: https://www.evm.codes/#55
     fn storage_cache_bytes32(&mut self, key: GuestPtr, value: GuestPtr) -> Result<(), Self::Err> {
-        self.buy_ink(HOSTIO_INK + 2 * PTR_INK)?;
+        self.buy_ink(hostio::STORAGE_CACHE_BASE_INK)?;
         self.require_gas(evm::SSTORE_SENTRY_GAS + StorageCache::REQUIRED_ACCESS_GAS)?; // see operations_acl_arbitrum.go
 
         let key = self.read_bytes32(key)?;
@@ -193,7 +224,7 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
     ///
     /// [`SSTORE`]: https://www.evm.codes/#55
     fn storage_flush_cache(&mut self, clear: bool) -> Result<(), Self::Err> {
-        self.buy_ink(HOSTIO_INK + EVM_API_INK)?;
+        self.buy_ink(hostio::STORAGE_FLUSH_BASE_INK)?;
         self.require_gas(evm::SSTORE_SENTRY_GAS)?; // see operations_acl_arbitrum.go
 
         let gas_left = self.gas_left()?;
@@ -211,7 +242,7 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
     ///
     /// [`TLOAD`]: https://www.evm.codes/#5c
     fn transient_load_bytes32(&mut self, key: GuestPtr, dest: GuestPtr) -> Result<(), Self::Err> {
-        self.buy_ink(HOSTIO_INK + 2 * PTR_INK + EVM_API_INK)?;
+        self.buy_ink(hostio::TRANSIENT_LOAD_BASE_INK)?;
         self.buy_gas(evm::TLOAD_GAS)?;
 
         let key = self.read_bytes32(key)?;
@@ -227,7 +258,7 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
     ///
     /// [`TSTORE`]: https://www.evm.codes/#5d
     fn transient_store_bytes32(&mut self, key: GuestPtr, value: GuestPtr) -> Result<(), Self::Err> {
-        self.buy_ink(HOSTIO_INK + 2 * PTR_INK + EVM_API_INK)?;
+        self.buy_ink(hostio::TRANSIENT_STORE_BASE_INK)?;
         self.buy_gas(evm::TSTORE_GAS)?;
 
         let key = self.read_bytes32(key)?;
@@ -259,11 +290,38 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
         gas: Gas,
         ret_len: GuestPtr,
     ) -> Result<u8, Self::Err> {
-        let value = Some(value);
-        let call = |api: &mut Self::A, contract, data: &_, left, req, value: Option<_>| {
-            api.contract_call(contract, data, left, req, value.unwrap())
-        };
-        self.do_call(contract, data, data_len, value, gas, ret_len, call, "")
+        self.buy_ink(hostio::CALL_CONTRACT_BASE_INK)?;
+        self.pay_for_read(data_len)?;
+        self.pay_for_read(data_len)?; // read from geth
+
+        let CallInputs {
+            contract,
+            input,
+            gas_left,
+            gas_req,
+            value,
+        } = self.parse_call_inputs(contract, data, gas, data_len, Some(value))?;
+
+        let (outs_len, gas_cost, status) =
+            self.evm_api()
+                .contract_call(contract, &input, gas_left, gas_req, value.unwrap());
+
+        self.buy_gas(gas_cost)?;
+        *self.evm_return_data_len() = outs_len;
+        self.write_u32(ret_len, outs_len)?;
+        let status = status as u8;
+
+        if self.evm_data().tracing {
+            let value = value.into_iter().flatten();
+            return trace!(
+                "call_contract",
+                self,
+                [contract, be!(gas), value, &input],
+                [be!(outs_len), be!(status)],
+                status
+            );
+        }
+        Ok(status)
     }
 
     /// Delegate calls the contract at the given address, with the option to limit the amount of
@@ -288,12 +346,37 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
         gas: Gas,
         ret_len: GuestPtr,
     ) -> Result<u8, Self::Err> {
-        let call = |api: &mut Self::A, contract, data: &_, left, req, _| {
-            api.delegate_call(contract, data, left, req)
-        };
-        self.do_call(
-            contract, data, data_len, None, gas, ret_len, call, "delegate",
-        )
+        self.buy_ink(hostio::CALL_CONTRACT_BASE_INK)?;
+        self.pay_for_read(data_len)?;
+        self.pay_for_read(data_len)?; // read from geth
+
+        let CallInputs {
+            contract,
+            input,
+            gas_left,
+            gas_req,
+            ..
+        } = self.parse_call_inputs(contract, data, gas, data_len, None)?;
+
+        let (outs_len, gas_cost, status) = self
+            .evm_api()
+            .delegate_call(contract, &input, gas_left, gas_req);
+
+        self.buy_gas(gas_cost)?;
+        *self.evm_return_data_len() = outs_len;
+        self.write_u32(ret_len, outs_len)?;
+        let status = status as u8;
+
+        if self.evm_data().tracing {
+            return trace!(
+                "delegate_call_contract",
+                self,
+                [contract, be!(gas), &input],
+                [be!(outs_len), be!(status)],
+                status
+            );
+        }
+        Ok(status)
     }
 
     /// Static calls the contract at the given address, with the option to limit the amount of gas
@@ -318,60 +401,32 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
         gas: Gas,
         ret_len: GuestPtr,
     ) -> Result<u8, Self::Err> {
-        let call = |api: &mut Self::A, contract, data: &_, left, req, _| {
-            api.static_call(contract, data, left, req)
-        };
-        self.do_call(contract, data, data_len, None, gas, ret_len, call, "static")
-    }
+        self.buy_ink(hostio::CALL_CONTRACT_BASE_INK)?;
+        self.pay_for_read(data_len)?;
+        self.pay_for_read(data_len)?; // read from geth
 
-    /// Performs one of the supported EVM calls.
-    /// Note that `value` must only be [`Some`] for normal calls.
-    fn do_call<F>(
-        &mut self,
-        contract: GuestPtr,
-        calldata: GuestPtr,
-        calldata_len: u32,
-        value: Option<GuestPtr>,
-        gas: Gas,
-        return_data_len: GuestPtr,
-        call: F,
-        name: &str,
-    ) -> Result<u8, Self::Err>
-    where
-        F: FnOnce(
-            &mut Self::A,
-            Address,
-            &[u8],
-            Gas,
-            Gas,
-            Option<Wei>,
-        ) -> (u32, Gas, UserOutcomeKind),
-    {
-        self.buy_ink(HOSTIO_INK + 3 * PTR_INK + EVM_API_INK)?;
-        self.pay_for_read(calldata_len)?;
-        self.pay_for_geth_bytes(calldata_len)?;
+        let CallInputs {
+            contract,
+            input,
+            gas_left,
+            gas_req,
+            ..
+        } = self.parse_call_inputs(contract, data, gas, data_len, None)?;
 
-        let gas_left = self.gas_left()?;
-        let gas_req = gas.min(gas_left);
-        let contract = self.read_bytes20(contract)?;
-        let input = self.read_slice(calldata, calldata_len)?;
-        let value = value.map(|x| self.read_bytes32(x)).transpose()?;
-        let api = self.evm_api();
+        let (outs_len, gas_cost, status) = self
+            .evm_api()
+            .static_call(contract, &input, gas_left, gas_req);
 
-        let (outs_len, gas_cost, status) = call(api, contract, &input, gas_left, gas_req, value);
         self.buy_gas(gas_cost)?;
         *self.evm_return_data_len() = outs_len;
-        self.write_u32(return_data_len, outs_len)?;
+        self.write_u32(ret_len, outs_len)?;
         let status = status as u8;
 
         if self.evm_data().tracing {
-            let underscore = (!name.is_empty()).then_some("_").unwrap_or_default();
-            let name = format!("{name}{underscore}call_contract");
-            let value = value.into_iter().flatten();
             return trace!(
-                &name,
+                "static_call_contract",
                 self,
-                [contract, be!(gas), value, &input],
+                [contract, be!(gas), &input],
                 [be!(outs_len), be!(status)],
                 status
             );
@@ -402,17 +457,31 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
         contract: GuestPtr,
         revert_data_len: GuestPtr,
     ) -> Result<(), Self::Err> {
-        let call = |api: &mut Self::A, code, value, _, gas| api.create1(code, value, gas);
-        self.do_create(
-            code,
-            code_len,
-            endowment,
-            None,
-            contract,
-            revert_data_len,
-            3 * PTR_INK + EVM_API_INK,
-            call,
+        self.buy_ink(hostio::CREATE1_BASE_INK)?;
+        self.pay_for_read(code_len)?;
+        self.pay_for_read(code_len)?; // read from geth
+
+        let code = self.read_slice(code, code_len)?;
+        let code_copy = self.evm_data().tracing.then(|| code.clone());
+
+        let endowment = self.read_bytes32(endowment)?;
+        let gas = self.gas_left()?;
+        let api = self.evm_api();
+
+        let (result, ret_len, gas_cost) = api.create1(code, endowment, gas);
+        let result = result?;
+
+        self.buy_gas(gas_cost)?;
+        *self.evm_return_data_len() = ret_len;
+        self.write_u32(revert_data_len, ret_len)?;
+        self.write_bytes20(contract, result)?;
+
+        trace!(
             "create1",
+            self,
+            [endowment, code_copy.unwrap()],
+            [result, be!(ret_len)],
+            ()
         )
     }
 
@@ -440,54 +509,19 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
         contract: GuestPtr,
         revert_data_len: GuestPtr,
     ) -> Result<(), Self::Err> {
-        let call = |api: &mut Self::A, code, value, salt: Option<_>, gas| {
-            api.create2(code, value, salt.unwrap(), gas)
-        };
-        self.do_create(
-            code,
-            code_len,
-            endowment,
-            Some(salt),
-            contract,
-            revert_data_len,
-            4 * PTR_INK + EVM_API_INK,
-            call,
-            "create2",
-        )
-    }
-
-    /// Deploys a contract via [`CREATE`] or [`CREATE2`].
-    ///
-    /// [`CREATE`]: https://www.evm.codes/#f0
-    /// [`CREATE2`]: https://www.evm.codes/#f5
-    fn do_create<F>(
-        &mut self,
-        code: GuestPtr,
-        code_len: u32,
-        endowment: GuestPtr,
-        salt: Option<GuestPtr>,
-        contract: GuestPtr,
-        revert_data_len: GuestPtr,
-        cost: Ink,
-        call: F,
-        name: &str,
-    ) -> Result<(), Self::Err>
-    where
-        F: FnOnce(&mut Self::A, Vec<u8>, Bytes32, Option<Wei>, Gas) -> (Result<Address>, u32, Gas),
-    {
-        self.buy_ink(HOSTIO_INK + cost)?;
+        self.buy_ink(hostio::CREATE2_BASE_INK)?;
         self.pay_for_read(code_len)?;
-        self.pay_for_geth_bytes(code_len)?;
+        self.pay_for_read(code_len)?; // read from geth
 
         let code = self.read_slice(code, code_len)?;
         let code_copy = self.evm_data().tracing.then(|| code.clone());
 
         let endowment = self.read_bytes32(endowment)?;
-        let salt = salt.map(|x| self.read_bytes32(x)).transpose()?;
+        let salt = self.read_bytes32(salt)?;
         let gas = self.gas_left()?;
         let api = self.evm_api();
 
-        let (result, ret_len, gas_cost) = call(api, code, endowment, salt, gas);
+        let (result, ret_len, gas_cost) = api.create2(code, endowment, salt, gas);
         let result = result?;
 
         self.buy_gas(gas_cost)?;
@@ -495,9 +529,9 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
         self.write_u32(revert_data_len, ret_len)?;
         self.write_bytes20(contract, result)?;
 
-        let salt = salt.into_iter().flatten();
+        let salt = salt.into_iter();
         trace!(
-            name,
+            "create2",
             self,
             [endowment, salt, code_copy.unwrap()],
             [result, be!(ret_len)],
@@ -518,11 +552,15 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
         offset: u32,
         size: u32,
     ) -> Result<u32, Self::Err> {
-        self.buy_ink(HOSTIO_INK + EVM_API_INK)?;
+        self.buy_ink(hostio::READ_RETURN_DATA_BASE_INK)?;
 
         // pay for only as many bytes as could possibly be written
         let max = self.evm_return_data_len().saturating_sub(offset);
         self.pay_for_write(size.min(max))?;
+        if max == 0 {
+            // no return data, nothing to write
+            return trace!("read_return_data", self, [be!(offset), be!(size)], &[], 0);
+        }
 
         let ret_data = self.evm_api().get_return_data();
         let ret_data = ret_data.slice();
@@ -547,7 +585,7 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
     ///
     /// [`RETURN_DATA_SIZE`]: https://www.evm.codes/#3d
     fn return_data_size(&mut self) -> Result<u32, Self::Err> {
-        self.buy_ink(HOSTIO_INK)?;
+        self.buy_ink(hostio::RETURN_DATA_SIZE_BASE_INK)?;
         let len = *self.evm_return_data_len();
         trace!("return_data_size", self, &[], be!(len), len)
     }
@@ -563,7 +601,7 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
     /// [`LOG3`]: https://www.evm.codes/#a3
     /// [`LOG4`]: https://www.evm.codes/#a4
     fn emit_log(&mut self, data: GuestPtr, len: u32, topics: u32) -> Result<(), Self::Err> {
-        self.buy_ink(HOSTIO_INK + EVM_API_INK)?;
+        self.buy_ink(hostio::EMIT_LOG_BASE_INK)?;
         if topics > 4 || len < topics * 32 {
             Err(eyre!("bad topic data"))?;
         }
@@ -580,7 +618,7 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
     ///
     /// [`BALANCE`]: https://www.evm.codes/#31
     fn account_balance(&mut self, address: GuestPtr, ptr: GuestPtr) -> Result<(), Self::Err> {
-        self.buy_ink(HOSTIO_INK + 2 * PTR_INK + EVM_API_INK)?;
+        self.buy_ink(hostio::ACCOUNT_BALANCE_BASE_INK)?;
         self.require_gas(evm::COLD_ACCOUNT_GAS)?;
         let address = self.read_bytes20(address)?;
 
@@ -603,7 +641,7 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
         size: u32,
         dest: GuestPtr,
     ) -> Result<u32, Self::Err> {
-        self.buy_ink(HOSTIO_INK + EVM_API_INK)?;
+        self.buy_ink(hostio::ACCOUNT_CODE_BASE_INK)?;
         self.require_gas(evm::COLD_ACCOUNT_GAS)?; // not necessary since we also check in Go
 
         let address = self.read_bytes20(address)?;
@@ -636,7 +674,7 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
     ///
     /// [`EXT_CODESIZE`]: https://www.evm.codes/#3B
     fn account_code_size(&mut self, address: GuestPtr) -> Result<u32, Self::Err> {
-        self.buy_ink(HOSTIO_INK + EVM_API_INK)?;
+        self.buy_ink(hostio::ACCOUNT_CODE_SIZE_BASE_INK)?;
         self.require_gas(evm::COLD_ACCOUNT_GAS)?; // not necessary since we also check in Go
         let address = self.read_bytes20(address)?;
         let gas = self.gas_left()?;
@@ -659,7 +697,7 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
     ///
     /// [`EXT_CODEHASH`]: https://www.evm.codes/#3F
     fn account_codehash(&mut self, address: GuestPtr, ptr: GuestPtr) -> Result<(), Self::Err> {
-        self.buy_ink(HOSTIO_INK + 2 * PTR_INK + EVM_API_INK)?;
+        self.buy_ink(hostio::ACCOUNT_CODE_HASH_BASE_INK)?;
         self.require_gas(evm::COLD_ACCOUNT_GAS)?;
         let address = self.read_bytes20(address)?;
 
@@ -674,7 +712,7 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
     ///
     /// [`BASEFEE`]: https://www.evm.codes/#48
     fn block_basefee(&mut self, ptr: GuestPtr) -> Result<(), Self::Err> {
-        self.buy_ink(HOSTIO_INK + PTR_INK)?;
+        self.buy_ink(hostio::BLOCK_BASEFEE_BASE_INK)?;
         self.write_bytes32(ptr, self.evm_data().block_basefee)?;
         trace!("block_basefee", self, &[], self.evm_data().block_basefee)
     }
@@ -683,7 +721,7 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
     /// address. This differs from Ethereum where the validator including the transaction
     /// determines the coinbase.
     fn block_coinbase(&mut self, ptr: GuestPtr) -> Result<(), Self::Err> {
-        self.buy_ink(HOSTIO_INK + PTR_INK)?;
+        self.buy_ink(hostio::BLOCK_COINBASE_BASE_INK)?;
         self.write_bytes20(ptr, self.evm_data().block_coinbase)?;
         trace!("block_coinbase", self, &[], self.evm_data().block_coinbase)
     }
@@ -696,7 +734,7 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
     /// [`GAS_LIMIT`]: https://www.evm.codes/#45
     /// [`The Ethereum Yellow Paper`]: https://ethereum.github.io/yellowpaper/paper.pdf
     fn block_gas_limit(&mut self) -> Result<u64, Self::Err> {
-        self.buy_ink(HOSTIO_INK)?;
+        self.buy_ink(hostio::BLOCK_GAS_LIMIT_BASE_INK)?;
         let limit = self.evm_data().block_gas_limit;
         trace!("block_gas_limit", self, &[], be!(limit), limit)
     }
@@ -707,7 +745,7 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
     ///
     /// [`Block Numbers and Time`]: https://developer.arbitrum.io/time
     fn block_number(&mut self) -> Result<u64, Self::Err> {
-        self.buy_ink(HOSTIO_INK)?;
+        self.buy_ink(hostio::BLOCK_NUMBER_BASE_INK)?;
         let number = self.evm_data().block_number;
         trace!("block_number", self, &[], be!(number), number)
     }
@@ -718,7 +756,7 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
     ///
     /// [`Block Numbers and Time`]: https://developer.arbitrum.io/time
     fn block_timestamp(&mut self) -> Result<u64, Self::Err> {
-        self.buy_ink(HOSTIO_INK)?;
+        self.buy_ink(hostio::BLOCK_TIMESTAMP_BASE_INK)?;
         let timestamp = self.evm_data().block_timestamp;
         trace!("block_timestamp", self, &[], be!(timestamp), timestamp)
     }
@@ -728,7 +766,7 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
     ///
     /// [`CHAIN_ID`]: https://www.evm.codes/#46
     fn chainid(&mut self) -> Result<u64, Self::Err> {
-        self.buy_ink(HOSTIO_INK)?;
+        self.buy_ink(hostio::CHAIN_ID_BASE_INK)?;
         let chainid = self.evm_data().chainid;
         trace!("chainid", self, &[], be!(chainid), chainid)
     }
@@ -738,7 +776,7 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
     ///
     /// [`ADDRESS`]: https://www.evm.codes/#30
     fn contract_address(&mut self, ptr: GuestPtr) -> Result<(), Self::Err> {
-        self.buy_ink(HOSTIO_INK + PTR_INK)?;
+        self.buy_ink(hostio::ADDRESS_BASE_INK)?;
         self.write_bytes20(ptr, self.evm_data().contract_address)?;
         trace!(
             "contract_address",
@@ -753,7 +791,7 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
     ///
     /// [`GAS`]: https://www.evm.codes/#5a
     fn evm_gas_left(&mut self) -> Result<Gas, Self::Err> {
-        self.buy_ink(HOSTIO_INK)?;
+        self.buy_ink(hostio::EVM_GAS_LEFT_BASE_INK)?;
         let gas = self.gas_left()?;
         trace!("evm_gas_left", self, &[], be!(gas), gas)
     }
@@ -765,7 +803,7 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
     /// [`GAS`]: https://www.evm.codes/#5a
     /// [`Ink and Gas`]: https://developer.arbitrum.io/TODO
     fn evm_ink_left(&mut self) -> Result<Ink, Self::Err> {
-        self.buy_ink(HOSTIO_INK)?;
+        self.buy_ink(hostio::EVM_INK_LEFT_BASE_INK)?;
         let ink = self.ink_ready()?;
         trace!("evm_ink_left", self, &[], be!(ink), ink)
     }
@@ -776,7 +814,7 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
     ///
     /// [`DIV`]: https://www.evm.codes/#04
     fn math_div(&mut self, value: GuestPtr, divisor: GuestPtr) -> Result<(), Self::Err> {
-        self.buy_ink(HOSTIO_INK + 3 * PTR_INK + pricing::DIV_INK)?;
+        self.buy_ink(hostio::MATH_DIV_BASE_INK)?;
         let (a, a32) = self.read_u256(value)?;
         let (b, b32) = self.read_u256(divisor)?;
 
@@ -791,7 +829,7 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
     ///
     /// [`MOD`]: https://www.evm.codes/#06
     fn math_mod(&mut self, value: GuestPtr, modulus: GuestPtr) -> Result<(), Self::Err> {
-        self.buy_ink(HOSTIO_INK + 3 * PTR_INK + pricing::DIV_INK)?;
+        self.buy_ink(hostio::MATH_MOD_BASE_INK)?;
         let (a, a32) = self.read_u256(value)?;
         let (b, b32) = self.read_u256(modulus)?;
 
@@ -805,7 +843,7 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
     ///
     /// [`EXP`]: https://www.evm.codes/#0A
     fn math_pow(&mut self, value: GuestPtr, exponent: GuestPtr) -> Result<(), Self::Err> {
-        self.buy_ink(HOSTIO_INK + 3 * PTR_INK)?;
+        self.buy_ink(hostio::MATH_POW_BASE_INK)?;
         let (a, a32) = self.read_u256(value)?;
         let (b, b32) = self.read_u256(exponent)?;
 
@@ -826,7 +864,7 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
         addend: GuestPtr,
         modulus: GuestPtr,
     ) -> Result<(), Self::Err> {
-        self.buy_ink(HOSTIO_INK + 4 * PTR_INK + pricing::ADD_MOD_INK)?;
+        self.buy_ink(hostio::MATH_ADD_MOD_BASE_INK)?;
         let (a, a32) = self.read_u256(value)?;
         let (b, b32) = self.read_u256(addend)?;
         let (c, c32) = self.read_u256(modulus)?;
@@ -847,7 +885,7 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
         multiplier: GuestPtr,
         modulus: GuestPtr,
     ) -> Result<(), Self::Err> {
-        self.buy_ink(HOSTIO_INK + 4 * PTR_INK + pricing::MUL_MOD_INK)?;
+        self.buy_ink(hostio::MATH_MUL_MOD_BASE_INK)?;
         let (a, a32) = self.read_u256(value)?;
         let (b, b32) = self.read_u256(multiplier)?;
         let (c, c32) = self.read_u256(modulus)?;
@@ -859,7 +897,7 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
 
     /// Whether the current call is reentrant.
     fn msg_reentrant(&mut self) -> Result<u32, Self::Err> {
-        self.buy_ink(HOSTIO_INK)?;
+        self.buy_ink(hostio::MSG_REENTRANT_BASE_INK)?;
         let reentrant = self.evm_data().reentrant;
         trace!("msg_reentrant", self, &[], be!(reentrant), reentrant)
     }
@@ -875,7 +913,7 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
     /// [`DELEGATE_CALL`]: https://www.evm.codes/#f4
     /// [aliasing]: https://developer.arbitrum.io/arbos/l1-to-l2-messaging#address-aliasing
     fn msg_sender(&mut self, ptr: GuestPtr) -> Result<(), Self::Err> {
-        self.buy_ink(HOSTIO_INK + PTR_INK)?;
+        self.buy_ink(hostio::MSG_SENDER_BASE_INK)?;
         self.write_bytes20(ptr, self.evm_data().msg_sender)?;
         trace!("msg_sender", self, &[], self.evm_data().msg_sender)
     }
@@ -885,7 +923,7 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
     ///
     /// [`CALLVALUE`]: https://www.evm.codes/#34
     fn msg_value(&mut self, ptr: GuestPtr) -> Result<(), Self::Err> {
-        self.buy_ink(HOSTIO_INK + PTR_INK)?;
+        self.buy_ink(hostio::MSG_VALUE_BASE_INK)?;
         self.write_bytes32(ptr, self.evm_data().msg_value)?;
         trace!("msg_value", self, &[], self.evm_data().msg_value)
     }
@@ -902,7 +940,6 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
         output: GuestPtr,
     ) -> Result<(), Self::Err> {
         self.pay_for_keccak(len)?;
-
         let preimage = self.read_slice(input, len)?;
         let digest = crypto::keccak(&preimage);
         self.write_bytes32(output, digest.into())?;
@@ -914,7 +951,7 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
     ///
     /// [`GAS_PRICE`]: https://www.evm.codes/#3A
     fn tx_gas_price(&mut self, ptr: GuestPtr) -> Result<(), Self::Err> {
-        self.buy_ink(HOSTIO_INK + PTR_INK)?;
+        self.buy_ink(hostio::TX_GAS_PRICE_BASE_INK)?;
         self.write_bytes32(ptr, self.evm_data().tx_gas_price)?;
         trace!("tx_gas_price", self, &[], self.evm_data().tx_gas_price)
     }
@@ -924,7 +961,7 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
     ///
     /// [`Ink and Gas`]: https://developer.arbitrum.io/TODO
     fn tx_ink_price(&mut self) -> Result<u32, Self::Err> {
-        self.buy_ink(HOSTIO_INK)?;
+        self.buy_ink(hostio::TX_INK_PRICE_BASE_INK)?;
         let ink_price = self.pricing().ink_price;
         trace!("tx_ink_price", self, &[], be!(ink_price), ink_price)
     }
@@ -934,7 +971,7 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
     ///
     /// [`ORIGIN`]: https://www.evm.codes/#32
     fn tx_origin(&mut self, ptr: GuestPtr) -> Result<(), Self::Err> {
-        self.buy_ink(HOSTIO_INK + PTR_INK)?;
+        self.buy_ink(hostio::TX_ORIGIN_BASE_INK)?;
         self.write_bytes20(ptr, self.evm_data().tx_origin)?;
         trace!("tx_origin", self, &[], self.evm_data().tx_origin)
     }
@@ -942,7 +979,7 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
     /// Pays for new pages as needed before the memory.grow opcode is invoked.
     fn pay_for_memory_grow(&mut self, pages: u16) -> Result<(), Self::Err> {
         if pages == 0 {
-            self.buy_ink(HOSTIO_INK)?;
+            self.buy_ink(hostio::PAY_FOR_MEMORY_GROW_BASE_INK)?;
             return trace!("pay_for_memory_grow", self, be!(pages), &[]);
         }
         let gas_cost = self.evm_api().add_pages(pages); // no sentry needed since the work happens after the hostio

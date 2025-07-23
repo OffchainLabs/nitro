@@ -21,13 +21,19 @@ import (
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/rpc"
 
+	protocol "github.com/offchainlabs/bold/chain-abstraction"
+	boldrollup "github.com/offchainlabs/bold/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/execution/gethexec"
+	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/staker"
+	boldstaker "github.com/offchainlabs/nitro/staker/bold"
+	legacystaker "github.com/offchainlabs/nitro/staker/legacy"
+	multiprotocolstaker "github.com/offchainlabs/nitro/staker/multi_protocol"
 )
 
 type importantRoots struct {
@@ -114,23 +120,10 @@ func findImportantRoots(ctx context.Context, chainDb ethdb.Database, stack *node
 		if l1Client == nil || reflect.ValueOf(l1Client).IsNil() {
 			return nil, errors.New("an L1 connection is required for validator pruning")
 		}
-		callOpts := bind.CallOpts{
-			Context:     ctx,
-			BlockNumber: big.NewInt(int64(rpc.FinalizedBlockNumber)),
-		}
-		rollup, err := staker.NewRollupWatcher(rollupAddrs.Rollup, l1Client, callOpts)
+		confirmedHash, err := getLatestConfirmedHash(ctx, rollupAddrs, l1Client)
 		if err != nil {
 			return nil, err
 		}
-		latestConfirmedNum, err := rollup.LatestConfirmed(&callOpts)
-		if err != nil {
-			return nil, err
-		}
-		latestConfirmedNode, err := rollup.LookupNode(ctx, latestConfirmedNum)
-		if err != nil {
-			return nil, err
-		}
-		confirmedHash := latestConfirmedNode.Assertion.AfterState.GlobalState.BlockHash
 		confirmedNumber := rawdb.ReadHeaderNumber(chainDb, confirmedHash)
 		var confirmedHeader *types.Header
 		if confirmedNumber != nil {
@@ -165,9 +158,9 @@ func findImportantRoots(ctx context.Context, chainDb ethdb.Database, stack *node
 				log.Warn("missing latest validated block", "hash", lastValidated.GlobalState.BlockHash)
 			}
 		}
-	} else if initConfig.Prune == "full" {
+	} else if initConfig.Prune == "full" || initConfig.Prune == "minimal" {
 		if validatorRequired {
-			return nil, errors.New("refusing to prune to full-node level when validator is enabled (you should prune in validator mode)")
+			return nil, fmt.Errorf("refusing to prune in %s mode when validator is enabled (you should use \"validator\" pruning mode)", initConfig.Prune)
 		}
 	} else if hashListRegex.MatchString(initConfig.Prune) {
 		parts := strings.Split(initConfig.Prune, ",")
@@ -184,8 +177,8 @@ func findImportantRoots(ctx context.Context, chainDb ethdb.Database, stack *node
 	} else {
 		return nil, fmt.Errorf("unknown pruning mode: \"%v\"", initConfig.Prune)
 	}
-	if l1Client != nil {
-		// Find the latest finalized block and add it as a pruning target
+	if initConfig.Prune != "minimal" && l1Client != nil {
+		// in pruning modes other then "minimal", find the latest finalized block and add it as a pruning target
 		l1Block, err := l1Client.BlockByNumber(ctx, big.NewInt(int64(rpc.FinalizedBlockNumber)))
 		if err != nil {
 			return nil, fmt.Errorf("failed to get finalized block: %w", err)
@@ -233,6 +226,56 @@ func findImportantRoots(ctx context.Context, chainDb ethdb.Database, stack *node
 	roots.roots = append(roots.roots, common.Hash{}) // the latest snapshot
 	log.Info("found pruning target blocks", "heights", roots.heights, "roots", roots.roots)
 	return roots.roots, nil
+}
+
+func getLatestConfirmedHash(ctx context.Context, rollupAddrs chaininfo.RollupAddresses, l1Client *ethclient.Client) (common.Hash, error) {
+	callOpts := bind.CallOpts{
+		Context:     ctx,
+		BlockNumber: big.NewInt(int64(rpc.FinalizedBlockNumber)),
+	}
+	bridge, err := bridgegen.NewIBridge(rollupAddrs.Bridge, l1Client)
+	if err != nil {
+		return common.Hash{}, err
+	}
+	isBoldActive, rollupAddress, err := multiprotocolstaker.IsBoldActive(&callOpts, bridge, l1Client)
+	if err != nil {
+		return common.Hash{}, err
+	}
+	if isBoldActive {
+		rollupUserLogic, err := boldrollup.NewRollupUserLogic(rollupAddress, l1Client)
+		if err != nil {
+			return common.Hash{}, err
+		}
+		latestConfirmed, err := rollupUserLogic.LatestConfirmed(&callOpts)
+		if err != nil {
+			return common.Hash{}, err
+		}
+		assertion, err := boldstaker.ReadBoldAssertionCreationInfo(
+			ctx,
+			rollupUserLogic,
+			l1Client,
+			rollupAddress,
+			latestConfirmed,
+		)
+		if err != nil {
+			return common.Hash{}, err
+		}
+		return protocol.GoGlobalStateFromSolidity(assertion.AfterState.GlobalState).BlockHash, nil
+	} else {
+		rollup, err := legacystaker.NewRollupWatcher(rollupAddrs.Rollup, l1Client, callOpts)
+		if err != nil {
+			return common.Hash{}, err
+		}
+		latestConfirmedNum, err := rollup.LatestConfirmed(&callOpts)
+		if err != nil {
+			return common.Hash{}, err
+		}
+		latestConfirmedNode, err := rollup.LookupNode(ctx, latestConfirmedNum)
+		if err != nil {
+			return common.Hash{}, err
+		}
+		return latestConfirmedNode.Assertion.AfterState.GlobalState.BlockHash, nil
+	}
 }
 
 func PruneChainDb(ctx context.Context, chainDb ethdb.Database, stack *node.Node, initConfig *conf.InitConfig, cacheConfig *core.CacheConfig, persistentConfig *conf.PersistentConfig, l1Client *ethclient.Client, rollupAddrs chaininfo.RollupAddresses, validatorRequired bool) error {

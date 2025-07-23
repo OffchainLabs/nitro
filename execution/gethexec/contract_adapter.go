@@ -1,5 +1,5 @@
 // Copyright 2024-2025, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package gethexec
 
@@ -63,7 +63,7 @@ func (a *contractAdapter) CodeAt(ctx context.Context, contract common.Address, b
 }
 
 func (a *contractAdapter) CallContract(ctx context.Context, call ethereum.CallMsg, blockNumber *big.Int) ([]byte, error) {
-	var num rpc.BlockNumber = rpc.LatestBlockNumber
+	var num = rpc.LatestBlockNumber
 	if blockNumber != nil {
 		num = rpc.BlockNumber(blockNumber.Int64())
 	}
@@ -85,8 +85,8 @@ func (a *contractAdapter) CallContract(ctx context.Context, call ethereum.CallMs
 		AccessList:       call.AccessList,
 		SkipNonceChecks:  true,
 		SkipFromEOACheck: true,
-		TxRunMode:        core.MessageEthcallMode, // Indicate this is an eth_call
-		SkipL1Charging:   true,                    // Skip L1 data fees
+		TxRunContext:     core.NewMessageEthcallContext(), // Indicate this is an eth_call
+		SkipL1Charging:   true,                            // Skip L1 data fees
 	}
 
 	evm := a.apiBackend.GetEVM(ctx, state, header, &vm.Config{NoBaseFee: true}, nil)

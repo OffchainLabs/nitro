@@ -1,25 +1,24 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package redisutil
 
 import (
 	"context"
 	"fmt"
-	"os"
 	"testing"
 
 	"github.com/alicebob/miniredis/v2"
 
 	"github.com/offchainlabs/nitro/util/testhelpers"
+	testflag "github.com/offchainlabs/nitro/util/testhelpers/flag"
 )
 
-// CreateTestRedis Provides external redis url, this is only done in TEST_REDIS env,
+// CreateTestRedis Provides external redis url, this is only done with --test_redis flag,
 // else creates a new miniredis and returns its url.
 func CreateTestRedis(ctx context.Context, t testing.TB) string {
-	redisUrl := os.Getenv("TEST_REDIS")
-	if redisUrl != "" {
-		return redisUrl
+	if *testflag.RedisFlag != "" {
+		return *testflag.RedisFlag
 	}
 	redisServer, err := miniredis.Run()
 	testhelpers.RequireImpl(t, err)

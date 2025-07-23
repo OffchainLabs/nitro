@@ -1,5 +1,5 @@
 // Copyright 2023-2024, Offchain Labs, Inc.
-// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package client
 
@@ -13,8 +13,8 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
-	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/rpc"
 
@@ -26,11 +26,13 @@ import (
 	"github.com/offchainlabs/nitro/validator/server_common"
 )
 
+var executionNodeOfflineGauge = metrics.NewRegisteredGauge("arb/state_provider/execution_node_offline", nil)
+
 type ValidationClient struct {
 	stopwaiter.StopWaiter
 	client          *rpcclient.RpcClient
 	name            string
-	stylusArchs     []ethdb.WasmTarget
+	stylusArchs     []rawdb.WasmTarget
 	room            atomic.Int32
 	wasmModuleRoots []common.Hash
 }
@@ -39,7 +41,7 @@ func NewValidationClient(config rpcclient.ClientConfigFetcher, stack *node.Node)
 	return &ValidationClient{
 		client:      rpcclient.NewRpcClient(config, stack),
 		name:        "not started",
-		stylusArchs: []ethdb.WasmTarget{"not started"},
+		stylusArchs: []rawdb.WasmTarget{"not started"},
 	}
 }
 
@@ -66,20 +68,20 @@ func (c *ValidationClient) Start(ctx context.Context) error {
 	if len(name) == 0 {
 		return errors.New("couldn't read name from server")
 	}
-	var stylusArchs []ethdb.WasmTarget
+	var stylusArchs []rawdb.WasmTarget
 	if err := c.client.CallContext(ctx, &stylusArchs, server_api.Namespace+"_stylusArchs"); err != nil {
 		var rpcError rpc.Error
 		ok := errors.As(err, &rpcError)
 		if !ok || rpcError.ErrorCode() != -32601 {
 			return fmt.Errorf("could not read stylus arch from server: %w", err)
 		}
-		stylusArchs = []ethdb.WasmTarget{ethdb.WasmTarget("pre-stylus")} // invalid, will fail if trying to validate block with stylus
+		stylusArchs = []rawdb.WasmTarget{rawdb.WasmTarget("pre-stylus")} // invalid, will fail if trying to validate block with stylus
 	} else {
 		if len(stylusArchs) == 0 {
 			return fmt.Errorf("could not read stylus archs from validation server")
 		}
 		for _, stylusArch := range stylusArchs {
-			if !rawdb.IsSupportedWasmTarget(ethdb.WasmTarget(stylusArch)) && stylusArch != "mock" {
+			if !rawdb.IsSupportedWasmTarget(rawdb.WasmTarget(stylusArch)) && stylusArch != "mock" {
 				return fmt.Errorf("unsupported stylus architecture: %v", stylusArch)
 			}
 		}
@@ -117,11 +119,11 @@ func (c *ValidationClient) WasmModuleRoots() ([]common.Hash, error) {
 	return nil, errors.New("not started")
 }
 
-func (c *ValidationClient) StylusArchs() []ethdb.WasmTarget {
+func (c *ValidationClient) StylusArchs() []rawdb.WasmTarget {
 	if c.Started() {
 		return c.stylusArchs
 	}
-	return []ethdb.WasmTarget{"not started"}
+	return []rawdb.WasmTarget{"not started"}
 }
 
 func (c *ValidationClient) Stop() {
@@ -173,21 +175,84 @@ func (c *ExecutionClient) CreateExecutionRun(
 	})
 }
 
+var _ validator.BOLDExecutionSpawner = (*BOLDExecutionClient)(nil)
+
+type BOLDExecutionClient struct {
+	executionSpawner validator.ExecutionSpawner
+}
+
+func NewBOLDExecutionClient(executionSpawner validator.ExecutionSpawner) *BOLDExecutionClient {
+	return &BOLDExecutionClient{
+		executionSpawner: executionSpawner,
+	}
+}
+
+func (b *BOLDExecutionClient) WasmModuleRoots() ([]common.Hash, error) {
+	return b.executionSpawner.WasmModuleRoots()
+}
+
+func (b *BOLDExecutionClient) GetMachineHashesWithStepSize(ctx context.Context, wasmModuleRoot common.Hash, input *validator.ValidationInput, machineStartIndex, stepSize, maxIterations uint64) ([]common.Hash, error) {
+	execRun, err := b.executionSpawner.CreateExecutionRun(wasmModuleRoot, input, true).Await(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer execRun.Close()
+	ctxCheckAlive, cancelCheckAlive := ctxWithCheckAlive(ctx, execRun)
+	defer cancelCheckAlive()
+	stepLeaves := execRun.GetMachineHashesWithStepSize(machineStartIndex, stepSize, maxIterations)
+	return stepLeaves.Await(ctxCheckAlive)
+}
+
+func (b *BOLDExecutionClient) GetProofAt(ctx context.Context, wasmModuleRoot common.Hash, input *validator.ValidationInput, position uint64) ([]byte, error) {
+	execRun, err := b.executionSpawner.CreateExecutionRun(wasmModuleRoot, input, true).Await(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer execRun.Close()
+	ctxCheckAlive, cancelCheckAlive := ctxWithCheckAlive(ctx, execRun)
+	defer cancelCheckAlive()
+	oneStepProofPromise := execRun.GetProofAt(position)
+	return oneStepProofPromise.Await(ctxCheckAlive)
+}
+
+// CtxWithCheckAlive Creates a context with a check alive routine that will
+// cancel the context if the check alive routine fails.
+func ctxWithCheckAlive(ctxIn context.Context, execRun validator.ExecutionRun) (context.Context, context.CancelFunc) {
+	// Create a context that will cancel if the check alive routine fails.
+	// This is to ensure that we do not have the validator froze indefinitely if
+	// the execution run is no longer alive.
+	ctx, cancel := context.WithCancel(ctxIn)
+	go func() {
+		// Call cancel so that the calling function is canceled if the check alive
+		// routine fails/returns.
+		defer cancel()
+		ticker := time.NewTicker(10 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				// Create a context with a timeout, so that the check alive routine does
+				// not run indefinitely.
+				ctxCheckAliveWithTimeout, cancelCheckAliveWithTimeout := context.WithTimeout(ctx, 5*time.Second)
+				err := execRun.CheckAlive(ctxCheckAliveWithTimeout)
+				if err != nil {
+					executionNodeOfflineGauge.Inc(1)
+					cancelCheckAliveWithTimeout()
+					return
+				}
+				cancelCheckAliveWithTimeout()
+			}
+		}
+	}()
+	return ctx, cancel
+}
+
 type ExecutionClientRun struct {
 	stopwaiter.StopWaiter
 	client *ExecutionClient
 	id     uint64
-}
-
-func (c *ExecutionClient) LatestWasmModuleRoot() containers.PromiseInterface[common.Hash] {
-	return stopwaiter.LaunchPromiseThread[common.Hash](c, func(ctx context.Context) (common.Hash, error) {
-		var res common.Hash
-		err := c.client.CallContext(ctx, &res, server_api.Namespace+"_latestWasmModuleRoot")
-		if err != nil {
-			return common.Hash{}, err
-		}
-		return res, nil
-	})
 }
 
 func (r *ExecutionClientRun) SendKeepAlive(ctx context.Context) time.Duration {

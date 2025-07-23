@@ -1,5 +1,5 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbtest
 
@@ -20,7 +20,6 @@ import (
 )
 
 func TestSequencerParallelNonces(t *testing.T) {
-	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -59,7 +58,6 @@ func TestSequencerParallelNonces(t *testing.T) {
 }
 
 func TestSequencerNonceTooHigh(t *testing.T) {
-	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -86,7 +84,6 @@ func TestSequencerNonceTooHigh(t *testing.T) {
 }
 
 func TestSequencerNonceTooHighQueueFull(t *testing.T) {
-	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 

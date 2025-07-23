@@ -1,5 +1,5 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package legacystaker
 
@@ -26,7 +26,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
-	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
+	"github.com/offchainlabs/nitro/solgen/go/rollup_legacy_gen"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -287,12 +287,10 @@ type ValidatorWalletInterface interface {
 	// Address must be able to be called concurrently with other functions
 	AddressOrZero() common.Address
 	TxSenderAddress() *common.Address
-	RollupAddress() common.Address
-	ChallengeManagerAddress() common.Address
 	L1Client() *ethclient.Client
 	TestTransactions(context.Context, []*types.Transaction) error
 	ExecuteTransactions(context.Context, []*types.Transaction, common.Address) (*types.Transaction, error)
-	TimeoutChallenges(context.Context, []uint64) (*types.Transaction, error)
+	TimeoutChallenges(context.Context, []uint64, common.Address) (*types.Transaction, error)
 	CanBatchTxs() bool
 	AuthIfEoa() *bind.TransactOpts
 	Start(context.Context)
@@ -311,14 +309,18 @@ func NewStaker(
 	stakedNotifiers []LatestStakedNotifier,
 	confirmedNotifiers []LatestConfirmedNotifier,
 	validatorUtilsAddress common.Address,
+	rollupAddress common.Address,
+	inboxTracker staker.InboxTrackerInterface,
+	inboxStreamer staker.TransactionStreamerInterface,
+	inboxReader staker.InboxReaderInterface,
 	fatalErr chan<- error,
 ) (*Staker, error) {
 	if err := config().Validate(); err != nil {
 		return nil, err
 	}
 	client := l1Reader.Client()
-	val, err := NewL1Validator(client, wallet, validatorUtilsAddress, config().GasRefunder(), callOpts,
-		statelessBlockValidator.InboxTracker(), statelessBlockValidator.InboxStreamer(), blockValidator)
+	val, err := NewL1Validator(client, wallet, validatorUtilsAddress, rollupAddress, config().GasRefunder(), callOpts,
+		inboxTracker, inboxStreamer, blockValidator)
 	if err != nil {
 		return nil, err
 	}
@@ -335,7 +337,7 @@ func NewStaker(
 		config:                  config,
 		highGasBlocksBuffer:     big.NewInt(config().PostingStrategy.HighGasDelayBlocks),
 		lastActCalledBlock:      nil,
-		inboxReader:             statelessBlockValidator.InboxReader(),
+		inboxReader:             inboxReader,
 		statelessBlockValidator: statelessBlockValidator,
 		fatalErr:                fatalErr,
 		inactiveValidatedNodes:  inactiveValidatedNodes,
@@ -374,6 +376,9 @@ func (s *Staker) Initialize(ctx context.Context) error {
 		// #nosec G115
 		stakerLatestStakedNodeGauge.Update(int64(latestStaked))
 		if latestStaked == 0 {
+			if s.config().EnableFastConfirmation {
+				return errors.New("staker: fast confirmation enabled at genesis")
+			}
 			return nil
 		}
 
@@ -403,7 +408,7 @@ func (s *Staker) setupFastConfirmation(ctx context.Context) error {
 	}
 	walletAddress := *s.wallet.Address()
 	client := s.l1Reader.Client()
-	rollup, err := rollupgen.NewRollupUserLogic(s.rollupAddress, client)
+	rollup, err := rollup_legacy_gen.NewRollupUserLogic(s.rollupAddress, client)
 	if err != nil {
 		return err
 	}
@@ -427,6 +432,7 @@ func (s *Staker) setupFastConfirmation(ctx context.Context) error {
 		s.builder,
 		s.wallet,
 		s.l1Reader,
+		s.rollupAddress,
 	)
 	if err != nil {
 		// Unknown while loading the safe contract.
@@ -727,7 +733,7 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 	}
 	callOpts := s.getCallOpts(ctx)
 	s.builder.ClearTransactions()
-	var rawInfo *staker.StakerInfo
+	var rawInfo *StakerInfo
 	walletAddressOrZero := s.wallet.AddressOrZero()
 	if walletAddressOrZero != (common.Address{}) {
 		var err error
@@ -963,7 +969,7 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 	return s.builder.ExecuteTransactions(ctx)
 }
 
-func (s *Staker) handleConflict(ctx context.Context, info *staker.StakerInfo) error {
+func (s *Staker) handleConflict(ctx context.Context, info *StakerInfo) error {
 	if info.CurrentChallenge == nil {
 		s.activeChallenge = nil
 		return nil
@@ -977,16 +983,22 @@ func (s *Staker) handleConflict(ctx context.Context, info *staker.StakerInfo) er
 			return fmt.Errorf("error getting latest confirmed creation block: %w", err)
 		}
 
+		challengeManagerAddress, err := s.rollup.ChallengeManager(&bind.CallOpts{Context: ctx})
+		if err != nil {
+			return fmt.Errorf("error getting challenge manager address: %w", err)
+		}
 		newChallengeManager, err := NewChallengeManager(
 			ctx,
 			s.client,
 			s.builder.Auth(context.TODO()),
 			*s.builder.WalletAddress(),
-			s.wallet.ChallengeManagerAddress(),
+			challengeManagerAddress,
 			*info.CurrentChallenge,
 			s.statelessBlockValidator,
 			latestConfirmedCreated,
 			s.config().ConfirmationBlocks,
+			s.inboxTracker,
+			s.txStreamer,
 		)
 		if err != nil {
 			return fmt.Errorf("error creating challenge manager: %w", err)
@@ -1038,7 +1050,7 @@ func (s *Staker) advanceStake(ctx context.Context, info *OurStakerInfo, effectiv
 
 		// We'll return early if we already have a stake
 		if info.StakeExists {
-			_, err = s.rollup.StakeOnNewNode(s.builder.Auth(ctx), action.assertion.AsSolidityStruct(), action.hash, action.prevInboxMaxCount)
+			_, err = s.rollup.StakeOnNewNode(s.builder.Auth(ctx), action.assertion.AsLegacySolidityStruct(), action.hash, action.prevInboxMaxCount)
 			if err != nil {
 				return fmt.Errorf("error staking on new node: %w", err)
 			}
@@ -1052,7 +1064,7 @@ func (s *Staker) advanceStake(ctx context.Context, info *OurStakerInfo, effectiv
 		}
 		_, err = s.rollup.NewStakeOnNewNode(
 			s.builder.AuthWithAmount(ctx, stakeAmount),
-			action.assertion.AsSolidityStruct(),
+			action.assertion.AsLegacySolidityStruct(),
 			action.hash,
 			action.prevInboxMaxCount,
 		)
@@ -1111,7 +1123,7 @@ func (s *Staker) advanceStake(ctx context.Context, info *OurStakerInfo, effectiv
 	}
 }
 
-func (s *Staker) createConflict(ctx context.Context, info *staker.StakerInfo) error {
+func (s *Staker) createConflict(ctx context.Context, info *StakerInfo) error {
 	if info.CurrentChallenge != nil {
 		return nil
 	}
@@ -1196,7 +1208,7 @@ func (s *Staker) Strategy() StakerStrategy {
 	return s.config().StrategyType()
 }
 
-func (s *Staker) Rollup() *staker.RollupWatcher {
+func (s *Staker) Rollup() *RollupWatcher {
 	return s.rollup
 }
 

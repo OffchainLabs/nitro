@@ -138,26 +138,29 @@ func produceMessages(ctx context.Context, msgs []string, producer *Producer[test
 	return promises, nil
 }
 
-func awaitResponses(ctx context.Context, promises []*containers.Promise[testResponse]) ([]string, []int) {
+func awaitResponses(ctx context.Context, promises []*containers.Promise[testResponse]) ([]string, []int, []string) {
 	var (
-		responses []string
-		errs      []int
+		responses  []string
+		errIndexes []int
+		errs       []string
 	)
 	for idx, p := range promises {
 		res, err := p.Await(ctx)
 		if err != nil {
-			errs = append(errs, idx)
+			errIndexes = append(errIndexes, idx)
+			errs = append(errs, err.Error())
 			continue
 		}
 		responses = append(responses, res.Response)
 	}
-	return responses, errs
+	return responses, errIndexes, errs
 }
 
 // consume messages from every consumer except stopped ones.
-func consume(ctx context.Context, t *testing.T, consumers []*Consumer[testRequest, testResponse], gotMessages []map[string]string) [][]string {
+func consume(ctx context.Context, t *testing.T, consumers []*Consumer[testRequest, testResponse], gotMessages []map[string]string) ([][]string, [][]string) {
 	t.Helper()
 	wantResponses := make([][]string, consumersCount)
+	wantErrors := make([][]string, consumersCount)
 	for idx := 0; idx < consumersCount; idx++ {
 		if consumers[idx].Stopped() {
 			continue
@@ -180,7 +183,13 @@ func consume(ctx context.Context, t *testing.T, consumers []*Consumer[testReques
 						continue
 					}
 					gotMessages[idx][res.ID] = res.Value.Request
-					if !res.Value.IsInvalid {
+					if res.Value.IsInvalid {
+						errString := fmt.Sprintf("invalid request: %v", res.ID)
+						if err := c.SetError(ctx, res.ID, errString); err != nil {
+							t.Errorf("Error setting a error: %v", err)
+						}
+						wantErrors[idx] = append(wantErrors[idx], errString)
+					} else {
 						resp := fmt.Sprintf("result for: %v", res.ID)
 						if err := c.SetResult(ctx, res.ID, testResponse{Response: resp}); err != nil {
 							t.Errorf("Error setting a result: %v", err)
@@ -191,7 +200,7 @@ func consume(ctx context.Context, t *testing.T, consumers []*Consumer[testReques
 				}
 			})
 	}
-	return wantResponses
+	return wantResponses, wantErrors
 }
 
 func TestRedisProduceComplex(t *testing.T) {
@@ -291,11 +300,12 @@ func TestRedisProduceComplex(t *testing.T) {
 			}
 
 			time.Sleep(time.Second)
-			wantResponses := consume(ctx, t, consumers, gotMessages)
+			wantResponses, wantErrors := consume(ctx, t, consumers, gotMessages)
 
 			var gotResponses []string
+			var gotErrors []string
 			for i := 0; i < tc.numProducers; i++ {
-				grs, errIndexes := awaitResponses(ctx, promises[i])
+				grs, errIndexes, errs := awaitResponses(ctx, promises[i])
 				if tc.withInvalidEntries {
 					if errIndexes[len(errIndexes)-1]+50 < len(entries[i]) {
 						t.Fatalf("Unexpected number of invalid requests while awaiting responses")
@@ -305,6 +315,7 @@ func TestRedisProduceComplex(t *testing.T) {
 							t.Fatalf("Invalid request' index mismatch want: %d got %d", j*50, idx)
 						}
 					}
+					gotErrors = append(gotErrors, errs...)
 				} else if len(errIndexes) != 0 {
 					t.Fatalf("Error awaiting responses from promises %d: %v", i, errIndexes)
 				}
@@ -337,6 +348,12 @@ func TestRedisProduceComplex(t *testing.T) {
 			wantResp := flatten(wantResponses)
 			if diff := cmp.Diff(wantResp, gotResponses); diff != "" {
 				t.Errorf("Unexpected diff in responses:\n%s\n", diff)
+			}
+
+			sort.Strings(gotErrors)
+			wantErr := flatten(wantErrors)
+			if diff := cmp.Diff(wantErr, gotErrors); diff != "" {
+				t.Errorf("Unexpected diff in errors:\n%s\n", diff)
 			}
 
 			// Check each producers all promises were responded to

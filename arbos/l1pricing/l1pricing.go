@@ -1,5 +1,5 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package l1pricing
 
@@ -21,7 +21,6 @@ import (
 	"github.com/offchainlabs/nitro/arbos/storage"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
-	"github.com/offchainlabs/nitro/util/arbmath"
 	am "github.com/offchainlabs/nitro/util/arbmath"
 )
 
@@ -78,8 +77,8 @@ const (
 )
 
 // one minute at 100000 bytes / sec
-var InitialEquilibrationUnitsV0 = arbmath.UintToBig(60 * params.TxDataNonZeroGasEIP2028 * 100000)
-var InitialEquilibrationUnitsV6 = arbmath.UintToBig(params.TxDataNonZeroGasEIP2028 * 10000000)
+var InitialEquilibrationUnitsV0 = am.UintToBig(60 * params.TxDataNonZeroGasEIP2028 * 100000)
+var InitialEquilibrationUnitsV6 = am.UintToBig(params.TxDataNonZeroGasEIP2028 * 10000000)
 
 func InitializeL1PricingState(sto *storage.Storage, initialRewardsRecipient common.Address, initialL1BaseFee *big.Int) error {
 	bptStorage := sto.OpenCachedSubStorage(BatchPosterTableKey)
@@ -207,8 +206,8 @@ func (ps *L1PricingState) GetL1PricingSurplus() (*big.Int, error) {
 	if err != nil {
 		return nil, err
 	}
-	needFunds := arbmath.BigAdd(fundsDueForRefunds, fundsDueForRewards)
-	return arbmath.BigSub(haveFunds, needFunds), nil
+	needFunds := am.BigAdd(fundsDueForRefunds, fundsDueForRewards)
+	return am.BigSub(haveFunds, needFunds), nil
 }
 
 func (ps *L1PricingState) LastSurplus() (*big.Int, error) {
@@ -542,7 +541,7 @@ var randomNonce = binary.BigEndian.Uint64(crypto.Keccak256([]byte("Nonce"))[:8])
 var randomGasTipCap = new(big.Int).SetBytes(crypto.Keccak256([]byte("GasTipCap"))[:4])
 var randomGasFeeCap = new(big.Int).SetBytes(crypto.Keccak256([]byte("GasFeeCap"))[:4])
 var RandomGas = uint64(binary.BigEndian.Uint32(crypto.Keccak256([]byte("Gas"))[:4]))
-var randV = arbmath.BigMulByUint(chaininfo.ArbitrumOneChainConfig().ChainID, 3)
+var randV = am.BigMulByUint(chaininfo.ArbitrumOneChainConfig().ChainID, 3)
 var randR = crypto.Keccak256Hash([]byte("R")).Big()
 var randS = crypto.Keccak256Hash([]byte("S")).Big()
 
@@ -563,7 +562,7 @@ func makeFakeTxForMessage(message *core.Message) *types.Transaction {
 	}
 	// During gas estimation, we don't want the gas limit variability to change the L1 cost.
 	gas := message.GasLimit
-	if gas == 0 || message.TxRunMode == core.MessageGasEstimationMode {
+	if gas == 0 || message.TxRunContext.IsGasEstimation() {
 		gas = RandomGas
 	}
 	return types.NewTx(&types.DynamicFeeTx{
@@ -591,7 +590,7 @@ func (ps *L1PricingState) PosterDataCost(message *core.Message, poster common.Ad
 	// We'll instead make a fake tx from the message info we do have, and then pad our cost a bit to be safe.
 	tx = makeFakeTxForMessage(message)
 	units := ps.getPosterUnitsWithoutCache(tx, poster, brotliCompressionLevel)
-	units = arbmath.UintMulByBips(units+estimationPaddingUnits, arbmath.OneInBips+estimationPaddingBasisPoints)
+	units = am.UintMulByBips(units+estimationPaddingUnits, am.OneInBips+estimationPaddingBasisPoints)
 	pricePerUnit, _ := ps.PricePerUnit()
 	return am.BigMulByUint(pricePerUnit, units), units
 }

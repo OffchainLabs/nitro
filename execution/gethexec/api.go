@@ -1,5 +1,5 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package gethexec
 
@@ -23,6 +23,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/retryables"
+	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/timeboost"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
@@ -30,18 +31,24 @@ import (
 type ArbAPI struct {
 	txPublisher              TransactionPublisher
 	bulkBlockMetadataFetcher *BulkBlockMetadataFetcher
+	execEngine               *ExecutionEngine
 }
 
-func NewArbAPI(publisher TransactionPublisher, bulkBlockMetadataFetcher *BulkBlockMetadataFetcher) *ArbAPI {
+func NewArbAPI(publisher TransactionPublisher, bulkBlockMetadataFetcher *BulkBlockMetadataFetcher, execEngine *ExecutionEngine) *ArbAPI {
 	return &ArbAPI{
 		txPublisher:              publisher,
 		bulkBlockMetadataFetcher: bulkBlockMetadataFetcher,
+		execEngine:               execEngine,
 	}
 }
 
 type NumberAndBlockMetadata struct {
 	BlockNumber uint64        `json:"blockNumber"`
 	RawMetadata hexutil.Bytes `json:"rawMetadata"`
+}
+
+func (a *ArbAPI) MaintenanceStatus(ctx context.Context) execution.MaintenanceStatus {
+	return *a.execEngine.MaintenanceStatus()
 }
 
 func (a *ArbAPI) CheckPublisherHealth(ctx context.Context) error {
@@ -76,6 +83,9 @@ func NewArbTimeboostAPI(publisher TransactionPublisher) *ArbTimeboostAPI {
 }
 
 func (a *ArbTimeboostAPI) SendExpressLaneTransaction(ctx context.Context, msg *timeboost.JsonExpressLaneSubmission) error {
+	if msg == nil {
+		return errors.New("missing required parameter")
+	}
 	goMsg, err := timeboost.JsonSubmissionToGo(msg)
 	if err != nil {
 		return err
@@ -356,7 +366,7 @@ func (api *ArbTraceForwarderAPI) getFallbackClient() (types.FallbackClient, erro
 	if api.initialized.Load() {
 		return api.fallbackClient, nil
 	}
-	fallbackClient, err := arbitrum.CreateFallbackClient(api.fallbackClientUrl, api.fallbackClientTimeout)
+	fallbackClient, err := arbitrum.CreateFallbackClient(api.fallbackClientUrl, api.fallbackClientTimeout, false)
 	if err != nil {
 		return nil, err
 	}

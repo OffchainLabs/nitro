@@ -2,6 +2,7 @@ package timeboost
 
 import (
 	"context"
+	"encoding/hex"
 	"fmt"
 	"math/big"
 	"sync"
@@ -11,6 +12,7 @@ import (
 	"github.com/redis/go-redis/v9"
 	"github.com/spf13/pflag"
 
+	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -32,28 +34,39 @@ type BidValidatorConfig struct {
 	RedisURL       string                `koanf:"redis-url"`
 	ProducerConfig pubsub.ProducerConfig `koanf:"producer-config"`
 	// Timeout on polling for existence of each redis stream.
-	SequencerEndpoint      string `koanf:"sequencer-endpoint"`
-	AuctionContractAddress string `koanf:"auction-contract-address"`
+	RpcEndpoint             string `koanf:"rpc-endpoint"`
+	AuctionContractAddress  string `koanf:"auction-contract-address"`
+	MaxBidsPerSender        uint8  `koanf:"max-bids-per-sender"`
+	EnableEthcallValidation bool   `koanf:"enable-ethcall-validation"`
+	AuctioneerAddress       string `koanf:"auctioneer-address"`
 }
 
 var DefaultBidValidatorConfig = BidValidatorConfig{
-	Enable:         true,
-	RedisURL:       "",
-	ProducerConfig: pubsub.DefaultProducerConfig,
+	Enable:                  true,
+	RedisURL:                "",
+	ProducerConfig:          pubsub.DefaultProducerConfig,
+	MaxBidsPerSender:        5,
+	EnableEthcallValidation: true,
 }
 
 var TestBidValidatorConfig = BidValidatorConfig{
-	Enable:         true,
-	RedisURL:       "",
-	ProducerConfig: pubsub.TestProducerConfig,
+	Enable:                  true,
+	RedisURL:                "",
+	ProducerConfig:          pubsub.TestProducerConfig,
+	MaxBidsPerSender:        5,
+	EnableEthcallValidation: true,
 }
 
 func BidValidatorConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultBidValidatorConfig.Enable, "enable bid validator")
 	f.String(prefix+".redis-url", DefaultBidValidatorConfig.RedisURL, "url of redis server")
 	pubsub.ProducerAddConfigAddOptions(prefix+".producer-config", f)
-	f.String(prefix+".sequencer-endpoint", DefaultAuctioneerServerConfig.SequencerEndpoint, "sequencer RPC endpoint")
-	f.String(prefix+".auction-contract-address", DefaultAuctioneerServerConfig.AuctionContractAddress, "express lane auction contract address")
+	f.String(prefix+".rpc-endpoint", DefaultBidValidatorConfig.RpcEndpoint, "url of rpc endpoint")
+	f.String(prefix+".auction-contract-address", DefaultBidValidatorConfig.AuctionContractAddress, "express lane auction contract address")
+	f.Uint8(prefix+".max-bids-per-sender", DefaultBidValidatorConfig.MaxBidsPerSender, "maximum number of bids a sender can submit per round")
+	f.Bool(prefix+".enable-ethcall-validation", DefaultBidValidatorConfig.EnableEthcallValidation, "enable eth_call validation of bids")
+	f.String(prefix+".auctioneer-address", DefaultBidValidatorConfig.AuctioneerAddress, "Address of the Timeboost Autonomous Auctioneer required for eth_call validation of bids")
+
 }
 
 type BidValidator struct {
@@ -75,6 +88,9 @@ type BidValidator struct {
 	reservePrice                   *big.Int
 	bidsPerSenderInRound           map[common.Address]uint8
 	maxBidsPerSenderInRound        uint8
+	enableEthcallValidation        bool
+	auctioneerAddr                 common.Address
+	auctionContractAbi             *abi.ABI
 }
 
 func NewBidValidator(
@@ -95,16 +111,16 @@ func NewBidValidator(
 		return nil, err
 	}
 
-	client, err := rpc.DialContext(ctx, cfg.SequencerEndpoint)
+	client, err := rpc.DialContext(ctx, cfg.RpcEndpoint)
 	if err != nil {
 		return nil, err
 	}
-	sequencerClient := ethclient.NewClient(client)
-	chainId, err := sequencerClient.ChainID(ctx)
+	rpcClient := ethclient.NewClient(client)
+	chainId, err := rpcClient.ChainID(ctx)
 	if err != nil {
 		return nil, err
 	}
-	auctionContract, err := express_lane_auctiongen.NewExpressLaneAuction(auctionContractAddr, sequencerClient)
+	auctionContract, err := express_lane_auctiongen.NewExpressLaneAuction(auctionContractAddr, rpcClient)
 	if err != nil {
 		return nil, err
 	}
@@ -129,9 +145,22 @@ func NewBidValidator(
 		return nil, err
 	}
 
+	var auctioneerAddr common.Address
+	var auctionContractAbi *abi.ABI
+	if cfg.EnableEthcallValidation {
+		if cfg.AuctioneerAddress == "" {
+			return nil, fmt.Errorf("auctioneer address cannot be empty, used for eth_call validation of bids")
+		}
+		auctioneerAddr = common.HexToAddress(cfg.AuctioneerAddress)
+		auctionContractAbi, err = express_lane_auctiongen.ExpressLaneAuctionMetaData.GetAbi()
+		if err != nil {
+			return nil, errors.Wrap(err, "getting ExpressLaneAuctionABI")
+		}
+	}
+
 	bidValidator := &BidValidator{
 		chainId:                        chainId,
-		client:                         sequencerClient,
+		client:                         rpcClient,
 		redisClient:                    redisClient,
 		stack:                          stack,
 		auctionContract:                auctionContract,
@@ -142,8 +171,11 @@ func NewBidValidator(
 		reservePrice:                   reservePrice,
 		domainValue:                    domainValue,
 		bidsPerSenderInRound:           make(map[common.Address]uint8),
-		maxBidsPerSenderInRound:        5, // 5 max bids per sender address in a round.
+		maxBidsPerSenderInRound:        cfg.MaxBidsPerSender,
 		producerCfg:                    &cfg.ProducerConfig,
+		enableEthcallValidation:        cfg.EnableEthcallValidation,
+		auctioneerAddr:                 auctioneerAddr,
+		auctionContractAbi:             auctionContractAbi,
 	}
 	api := &BidValidatorAPI{bidValidator}
 	valAPIs := []rpc.API{{
@@ -219,7 +251,7 @@ func (bv *BidValidator) Start(ctx_in context.Context) {
 				}
 
 				log.Info("Reserve price updated", "old", currentReservePrice.String(), "new", rp.String())
-				bv.setReservePrice(rp)
+				bv.SetReservePrice(rp)
 
 			case <-auctionCloseTicker.c:
 				bv.Lock()
@@ -260,7 +292,8 @@ func (bv *BidValidatorAPI) SubmitBid(ctx context.Context, bid *JsonBid) error {
 	return nil
 }
 
-func (bv *BidValidator) setReservePrice(p *big.Int) {
+// SetReservePrice is exported for testing eth_call validation
+func (bv *BidValidator) SetReservePrice(p *big.Int) {
 	bv.reservePriceLock.Lock()
 	defer bv.reservePriceLock.Unlock()
 	bv.reservePrice = p
@@ -270,6 +303,23 @@ func (bv *BidValidator) fetchReservePrice() *big.Int {
 	bv.reservePriceLock.RLock()
 	defer bv.reservePriceLock.RUnlock()
 	return bv.reservePrice
+}
+
+// Check time-related constraints for bid.
+// It's useful to split out to be able to re-check just these contraints after
+// time has elapsed.
+func validateBidTimeConstraints(roundTimingInfo *RoundTimingInfo, bidRound uint64) error {
+	// Check if the bid is intended for upcoming round.
+	upcomingRound := roundTimingInfo.RoundNumber() + 1
+	if bidRound != upcomingRound {
+		return errors.Wrapf(ErrBadRoundNumber, "wanted %d, got %d", upcomingRound, bidRound)
+	}
+
+	// Check if the auction is closed.
+	if roundTimingInfo.isAuctionRoundClosed() {
+		return errors.Wrap(ErrBadRoundNumber, "auction is closed")
+	}
+	return nil
 }
 
 func (bv *BidValidator) validateBid(
@@ -294,15 +344,8 @@ func (bv *BidValidator) validateBid(
 		return nil, errors.Wrapf(ErrWrongChainId, "can not auction for chain id: %d", bid.ChainId)
 	}
 
-	// Check if the bid is intended for upcoming round.
-	upcomingRound := bv.roundTimingInfo.RoundNumber() + 1
-	if bid.Round != upcomingRound {
-		return nil, errors.Wrapf(ErrBadRoundNumber, "wanted %d, got %d", upcomingRound, bid.Round)
-	}
-
-	// Check if the auction is closed.
-	if bv.roundTimingInfo.isAuctionRoundClosed() {
-		return nil, errors.Wrap(ErrBadRoundNumber, "auction is closed")
+	if err := validateBidTimeConstraints(&bv.roundTimingInfo, (uint64)(bid.Round)); err != nil {
+		return nil, err
 	}
 
 	// Check bid is higher than or equal to reserve price.
@@ -322,9 +365,10 @@ func (bv *BidValidator) validateBid(
 	// Signature verification expects the last byte of the signature to have 27 subtracted,
 	// as it represents the recovery ID. If the last byte is greater than or equal to 27, it indicates a recovery ID that hasn't been adjusted yet,
 	// it's needed for internal signature verification logic.
-	if sigItem[len(sigItem)-1] >= 27 {
-		sigItem[len(sigItem)-1] -= 27
+	if sigItem[len(sigItem)-1] != 27 && sigItem[len(sigItem)-1] != 28 {
+		return nil, errors.New("invalid Ethereum signature (V is not 27 or 28)")
 	}
+	sigItem[len(sigItem)-1] -= 27
 
 	bidHash, err := bid.ToEIP712Hash(bv.auctionContractDomainSeparator)
 	if err != nil {
@@ -336,6 +380,9 @@ func (bv *BidValidator) validateBid(
 	}
 	// Check how many bids the bidder has sent in this round and cap according to a limit.
 	bidder := crypto.PubkeyToAddress(*pubkey)
+	if !crypto.VerifySignature(crypto.CompressPubkey(pubkey), bidHash[:], sigItem[:64]) {
+		return nil, errors.New("invalid signature")
+	}
 	bv.Lock()
 	numBids, ok := bv.bidsPerSenderInRound[bidder]
 	if !ok {
@@ -358,6 +405,33 @@ func (bv *BidValidator) validateBid(
 	if depositBal.Cmp(bid.Amount) < 0 {
 		return nil, errors.Wrapf(ErrInsufficientBalance, "bidder %s, onchain balance %#x, bid amount %#x", bidder.Hex(), depositBal, bid.Amount)
 	}
+
+	if bv.enableEthcallValidation {
+		var timeOverride map[string]interface{}
+		if !bv.roundTimingInfo.IsWithinAuctionCloseWindow(time.Now()) {
+			newTimestamp := bv.roundTimingInfo.TimeOfNextRound().Add(-1 * bv.roundTimingInfo.AuctionClosing)
+			timeOverride = map[string]interface{}{
+				"time": fmt.Sprintf("0x%x", newTimestamp.Unix()),
+			}
+		}
+		calldata, err := bv.auctionContractAbi.Pack("resolveSingleBidAuction", bid)
+		if err != nil {
+			return nil, fmt.Errorf("error creating calldata for eth_call bid validation: %w", err)
+		}
+		params := []interface{}{
+			map[string]interface{}{
+				"from": bv.auctioneerAddr.Hex(),
+				"to":   bv.auctionContractAddr.Hex(),
+				"data": "0x" + hex.EncodeToString(calldata),
+			}, nil, nil, timeOverride,
+		}
+		var result string
+		err = bv.client.Client().CallContext(bv.GetContext(), &result, "eth_call", params...)
+		if err != nil {
+			return nil, fmt.Errorf("error validating bid via eth_call auction resolution: %w", err)
+		}
+	}
+
 	vb := &ValidatedBid{
 		ExpressLaneController:  bid.ExpressLaneController,
 		Amount:                 bid.Amount,

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"runtime"
 	"sync/atomic"
 	"time"
 
@@ -12,11 +11,11 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
-	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
@@ -101,16 +100,12 @@ func (s *ArbitratorSpawner) Start(ctx_in context.Context) error {
 	return nil
 }
 
-func (s *ArbitratorSpawner) LatestWasmModuleRoot() containers.PromiseInterface[common.Hash] {
-	return containers.NewReadyPromise(s.locator.LatestWasmModuleRoot(), nil)
-}
-
 func (s *ArbitratorSpawner) WasmModuleRoots() ([]common.Hash, error) {
 	return s.locator.ModuleRoots(), nil
 }
 
-func (s *ArbitratorSpawner) StylusArchs() []ethdb.WasmTarget {
-	return []ethdb.WasmTarget{rawdb.TargetWavm}
+func (s *ArbitratorSpawner) StylusArchs() []rawdb.WasmTarget {
+	return []rawdb.WasmTarget{rawdb.TargetWavm}
 }
 
 func (s *ArbitratorSpawner) Name() string {
@@ -226,7 +221,7 @@ func (v *ArbitratorSpawner) Launch(entry *validator.ValidationInput, moduleRoot 
 func (v *ArbitratorSpawner) Room() int {
 	avail := v.config().Workers
 	if avail == 0 {
-		avail = runtime.NumCPU()
+		avail = util.GoMaxProcs()
 	}
 	return avail
 }

@@ -1,5 +1,5 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbtest
 
@@ -46,7 +46,6 @@ func InitOneContract(prand *testhelpers.PseudoRandomDataSource) (*statetransfer.
 }
 
 func TestInitContract(t *testing.T) {
-	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	expectedSums := make(map[common.Address]*big.Int)

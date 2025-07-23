@@ -1,5 +1,5 @@
 // Copyright 2023-2024, Offchain Labs, Inc.
-// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 use crate::{
     evm::{
@@ -276,7 +276,9 @@ impl<D: DataReader, H: RequestHandler<D>> EvmApi<D> for EvmApiRequestor<D, H> {
         req.extend(gas_left.to_be_bytes());
 
         let (_, data, cost) = self.request(EvmApiMethod::AccountCode, req);
-        if !data.slice().is_empty() || arbos_version < super::ARBOS_VERSION_STYLUS_LAST_CODE_CACHE_FIX {
+        if !data.slice().is_empty()
+            || arbos_version < super::ARBOS_VERSION_STYLUS_LAST_CODE_CACHE_FIX
+        {
             self.last_code = Some((address, data.clone()));
         }
         (data, cost)

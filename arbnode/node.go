@@ -1,5 +1,5 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbnode
 
@@ -9,8 +9,10 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"os"
+	"path"
+	"path/filepath"
 	"strings"
-	"time"
 
 	flag "github.com/spf13/pflag"
 
@@ -29,18 +31,20 @@ import (
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbnode/resourcemanager"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
-	"github.com/offchainlabs/nitro/arbstate/daprovider"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcastclient"
 	"github.com/offchainlabs/nitro/broadcastclients"
 	"github.com/offchainlabs/nitro/broadcaster"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
-	"github.com/offchainlabs/nitro/das"
+	"github.com/offchainlabs/nitro/cmd/genericconf"
+	"github.com/offchainlabs/nitro/daprovider"
+	"github.com/offchainlabs/nitro/daprovider/daclient"
+	"github.com/offchainlabs/nitro/daprovider/das"
+	"github.com/offchainlabs/nitro/daprovider/das/dasserver"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
-	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/staker"
 	boldstaker "github.com/offchainlabs/nitro/staker/bold"
 	legacystaker "github.com/offchainlabs/nitro/staker/legacy"
@@ -55,33 +59,6 @@ import (
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
 
-func GenerateRollupConfig(prod bool, wasmModuleRoot common.Hash, rollupOwner common.Address, chainConfig *params.ChainConfig, serializedChainConfig []byte, loserStakeEscrow common.Address) rollupgen.Config {
-	var confirmPeriod uint64
-	if prod {
-		confirmPeriod = 45818
-	} else {
-		confirmPeriod = 20
-	}
-	return rollupgen.Config{
-		ConfirmPeriodBlocks:      confirmPeriod,
-		ExtraChallengeTimeBlocks: 200,
-		StakeToken:               common.Address{},
-		BaseStake:                big.NewInt(params.Ether),
-		WasmModuleRoot:           wasmModuleRoot,
-		Owner:                    rollupOwner,
-		LoserStakeEscrow:         loserStakeEscrow,
-		ChainId:                  chainConfig.ChainID,
-		// TODO could the ChainConfig be just []byte?
-		ChainConfig: string(serializedChainConfig),
-		SequencerInboxMaxTimeVariation: rollupgen.ISequencerInboxMaxTimeVariation{
-			DelayBlocks:   big.NewInt(60 * 60 * 24 / 15),
-			FutureBlocks:  big.NewInt(12),
-			DelaySeconds:  big.NewInt(60 * 60 * 24),
-			FutureSeconds: big.NewInt(60 * 60),
-		},
-	}
-}
-
 type Config struct {
 	Sequencer                bool                           `koanf:"sequencer"`
 	ParentChainReader        headerreader.Config            `koanf:"parent-chain-reader" reload:"hot"`
@@ -95,6 +72,7 @@ type Config struct {
 	Bold                     boldstaker.BoldConfig          `koanf:"bold"`
 	SeqCoordinator           SeqCoordinatorConfig           `koanf:"seq-coordinator"`
 	DataAvailability         das.DataAvailabilityConfig     `koanf:"data-availability"`
+	DAProvider               daclient.ClientConfig          `koanf:"da-provider" reload:"hot"`
 	SyncMonitor              SyncMonitorConfig              `koanf:"sync-monitor"`
 	Dangerous                DangerousConfig                `koanf:"dangerous"`
 	TransactionStreamer      TransactionStreamerConfig      `koanf:"transaction-streamer" reload:"hot"`
@@ -121,9 +99,6 @@ func (c *Config) Validate() error {
 		c.Feed.Input.URL = []string{}
 	}
 	if err := c.BlockValidator.Validate(); err != nil {
-		return err
-	}
-	if err := c.Maintenance.Validate(); err != nil {
 		return err
 	}
 	if err := c.InboxReader.Validate(); err != nil {
@@ -167,10 +142,12 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feed
 	boldstaker.BoldConfigAddOptions(prefix+".bold", f)
 	SeqCoordinatorConfigAddOptions(prefix+".seq-coordinator", f)
 	das.DataAvailabilityConfigAddNodeOptions(prefix+".data-availability", f)
+	daclient.ClientConfigAddOptions(prefix+".da-provider", f)
 	SyncMonitorConfigAddOptions(prefix+".sync-monitor", f)
 	DangerousConfigAddOptions(prefix+".dangerous", f)
 	TransactionStreamerConfigAddOptions(prefix+".transaction-streamer", f)
 	MaintenanceConfigAddOptions(prefix+".maintenance", f)
+	resourcemanager.ConfigAddOptions(prefix+".resource-mgmt", f)
 	BlockMetadataFetcherConfigAddOptions(prefix+".block-metadata-fetcher", f)
 	ConsensusExecutionSyncerConfigAddOptions(prefix+".consensus-execution-syncer", f)
 }
@@ -188,6 +165,7 @@ var ConfigDefault = Config{
 	Bold:                     boldstaker.DefaultBoldConfig,
 	SeqCoordinator:           DefaultSeqCoordinatorConfig,
 	DataAvailability:         das.DefaultDataAvailabilityConfig,
+	DAProvider:               daclient.DefaultClientConfig,
 	SyncMonitor:              DefaultSyncMonitorConfig,
 	Dangerous:                DefaultDangerousConfig,
 	TransactionStreamer:      DefaultTransactionStreamerConfig,
@@ -292,6 +270,7 @@ type Node struct {
 	BroadcastClients         *broadcastclients.BroadcastClients
 	SeqCoordinator           *SeqCoordinator
 	MaintenanceRunner        *MaintenanceRunner
+	dasServerCloseFn         func()
 	DASLifecycleManager      *das.LifecycleManager
 	SyncMonitor              *SyncMonitor
 	blockMetadataFetcher     *BlockMetadataFetcher
@@ -490,17 +469,11 @@ func getBPVerifier(
 }
 
 func getMaintenanceRunner(
-	arbDb ethdb.Database,
 	configFetcher ConfigFetcher,
 	coordinator *SeqCoordinator,
 	exec execution.ExecutionClient,
 ) (*MaintenanceRunner, error) {
-	dbs := []ethdb.Database{arbDb}
-	maintenanceRunner, err := NewMaintenanceRunner(func() *MaintenanceConfig { return &configFetcher.Get().Maintenance }, coordinator, dbs, exec)
-	if err != nil {
-		return nil, err
-	}
-	return maintenanceRunner, nil
+	return NewMaintenanceRunner(func() *MaintenanceConfig { return &configFetcher.Get().Maintenance }, coordinator, exec)
 }
 
 func getBroadcastClients(
@@ -539,13 +512,14 @@ func getBlockMetadataFetcher(
 	configFetcher ConfigFetcher,
 	arbDb ethdb.Database,
 	exec execution.ExecutionClient,
+	expectedChainId uint64,
 ) (*BlockMetadataFetcher, error) {
 	config := configFetcher.Get()
 
 	var blockMetadataFetcher *BlockMetadataFetcher
 	if config.BlockMetadataFetcher.Enable {
 		var err error
-		blockMetadataFetcher, err = NewBlockMetadataFetcher(ctx, config.BlockMetadataFetcher, arbDb, exec, config.TransactionStreamer.TrackBlockMetadataFrom)
+		blockMetadataFetcher, err = NewBlockMetadataFetcher(ctx, config.BlockMetadataFetcher, arbDb, exec, config.TransactionStreamer.TrackBlockMetadataFrom, expectedChainId)
 		if err != nil {
 			return nil, err
 		}
@@ -582,50 +556,78 @@ func getDAS(
 	deployInfo *chaininfo.RollupAddresses,
 	dataSigner signature.DataSignerFunc,
 	l1client *ethclient.Client,
-) (das.DataAvailabilityServiceWriter, *das.LifecycleManager, []daprovider.Reader, error) {
-	var daWriter das.DataAvailabilityServiceWriter
-	var daReader das.DataAvailabilityServiceReader
-	var dasLifecycleManager *das.LifecycleManager
-	var dasKeysetFetcher *das.KeysetFetcher
-	if config.DataAvailability.Enable {
-		var err error
-		if config.BatchPoster.Enable {
-			daWriter, daReader, dasKeysetFetcher, dasLifecycleManager, err = das.CreateBatchPosterDAS(ctx, &config.DataAvailability, dataSigner, l1client, deployInfo.SequencerInbox)
-			if err != nil {
-				return nil, nil, nil, err
-			}
-		} else {
-			daReader, dasKeysetFetcher, dasLifecycleManager, err = das.CreateDAReaderForNode(ctx, &config.DataAvailability, l1Reader, &deployInfo.SequencerInbox)
-			if err != nil {
-				return nil, nil, nil, err
-			}
+	stack *node.Node,
+) (daprovider.Writer, func(), []daprovider.Reader, error) {
+	if config.DAProvider.Enable && config.DataAvailability.Enable {
+		return nil, nil, nil, errors.New("da-provider and data-availability cannot be enabled together")
+	}
+
+	var err error
+	var daClient *daclient.Client
+	var withDAWriter bool
+	var dasServerCloseFn func()
+	if config.DAProvider.Enable {
+		daClient, err = daclient.NewClient(ctx, func() *rpcclient.ClientConfig { return &config.DAProvider.RPC })
+		if err != nil {
+			return nil, nil, nil, err
 		}
-
-		daReader = das.NewReaderTimeoutWrapper(daReader, config.DataAvailability.RequestTimeout)
-
-		if config.DataAvailability.PanicOnError {
-			if daWriter != nil {
-				daWriter = das.NewWriterPanicWrapper(daWriter)
+		// Only allow dawriter if batchposter is enabled
+		withDAWriter = config.DAProvider.WithWriter && config.BatchPoster.Enable
+	} else if config.DataAvailability.Enable {
+		jwtPath := path.Join(filepath.Dir(stack.InstanceDir()), "dasserver-jwtsecret")
+		if err := genericconf.TryCreatingJWTSecret(jwtPath); err != nil {
+			return nil, nil, nil, fmt.Errorf("error writing ephemeral jwtsecret of dasserver to file: %w", err)
+		}
+		log.Info("Generated ephemeral JWT secret for dasserver", "jwtPath", jwtPath)
+		// JWTSecret is no longer needed, cleanup when returning
+		defer func() {
+			if err := os.Remove(jwtPath); err != nil {
+				log.Error("error deleting generated ephemeral JWT secret of dasserver", "jwtPath", jwtPath)
 			}
-			daReader = das.NewReaderPanicWrapper(daReader)
+		}()
+
+		serverConfig := dasserver.DefaultServerConfig
+		serverConfig.Port = 0 // Initializes server at a random available port
+		serverConfig.DataAvailability = config.DataAvailability
+		serverConfig.EnableDAWriter = config.BatchPoster.Enable
+		serverConfig.JWTSecret = jwtPath
+		withDAWriter = config.BatchPoster.Enable
+		dasServer, closeFn, err := dasserver.NewServer(ctx, &serverConfig, dataSigner, l1client, l1Reader, deployInfo.SequencerInbox)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		clientConfig := rpcclient.DefaultClientConfig
+		clientConfig.URL = dasServer.Addr
+		clientConfig.JWTSecret = jwtPath
+		daClient, err = daclient.NewClient(ctx, func() *rpcclient.ClientConfig { return &clientConfig })
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		dasServerCloseFn = func() {
+			_ = dasServer.Shutdown(ctx)
+			if closeFn != nil {
+				closeFn()
+			}
 		}
 	} else if l2Config.ArbitrumChainParams.DataAvailabilityCommittee {
 		return nil, nil, nil, errors.New("a data availability service is required for this chain, but it was not configured")
 	}
 
 	// We support a nil txStreamer for the pruning code
-	if txStreamer != nil && txStreamer.chainConfig.ArbitrumChainParams.DataAvailabilityCommittee && daReader == nil {
+	if txStreamer != nil && txStreamer.chainConfig.ArbitrumChainParams.DataAvailabilityCommittee && daClient == nil {
 		return nil, nil, nil, errors.New("data availability service required but unconfigured")
 	}
 	var dapReaders []daprovider.Reader
-	if daReader != nil {
-		dapReaders = append(dapReaders, daprovider.NewReaderForDAS(daReader, dasKeysetFetcher))
+	if daClient != nil {
+		dapReaders = append(dapReaders, daClient)
 	}
 	if blobReader != nil {
 		dapReaders = append(dapReaders, daprovider.NewReaderForBlobReader(blobReader))
 	}
-
-	return daWriter, dasLifecycleManager, dapReaders, nil
+	if withDAWriter {
+		return daClient, dasServerCloseFn, dapReaders, nil
+	}
+	return nil, dasServerCloseFn, dapReaders, nil
 }
 
 func getInboxTrackerAndReader(
@@ -719,6 +721,7 @@ func getStaker(
 	deployInfo *chaininfo.RollupAddresses,
 	txStreamer *TransactionStreamer,
 	inboxTracker *InboxTracker,
+	inboxReader *InboxReader,
 	stack *node.Node,
 	fatalErrChan chan error,
 	statelessBlockValidator *staker.StatelessBlockValidator,
@@ -744,7 +747,7 @@ func getStaker(
 		getExtraGas := func() uint64 { return configFetcher.Get().Staker.ExtraGas }
 		// TODO: factor this out into separate helper, and split rest of node
 		// creation into multiple helpers.
-		var wallet legacystaker.ValidatorWalletInterface = validatorwallet.NewNoOp(l1client, deployInfo.Rollup)
+		var wallet legacystaker.ValidatorWalletInterface = validatorwallet.NewNoOp(l1client)
 		if !strings.EqualFold(config.Staker.Strategy, "watchtower") {
 			if config.Staker.UseSmartContractWallet || (txOptsValidator == nil && config.Staker.DataPoster.ExternalSigner.URL == "") {
 				var existingWalletAddress *common.Address
@@ -757,7 +760,7 @@ func getStaker(
 					existingWalletAddress = &tmpAddress
 				}
 				// #nosec G115
-				wallet, err = validatorwallet.NewContract(dp, existingWalletAddress, deployInfo.ValidatorWalletCreator, deployInfo.Rollup, l1Reader, txOptsValidator, int64(deployInfo.DeployedAt), func(common.Address) {}, getExtraGas)
+				wallet, err = validatorwallet.NewContract(dp, existingWalletAddress, deployInfo.ValidatorWalletCreator, l1Reader, txOptsValidator, int64(deployInfo.DeployedAt), func(common.Address) {}, getExtraGas)
 				if err != nil {
 					return nil, nil, common.Address{}, err
 				}
@@ -765,7 +768,7 @@ func getStaker(
 				if len(config.Staker.ContractWalletAddress) > 0 {
 					return nil, nil, common.Address{}, errors.New("validator contract wallet specified but flag to use a smart contract wallet was not specified")
 				}
-				wallet, err = validatorwallet.NewEOA(dp, deployInfo.Rollup, l1client, getExtraGas)
+				wallet, err = validatorwallet.NewEOA(dp, l1client, getExtraGas)
 				if err != nil {
 					return nil, nil, common.Address{}, err
 				}
@@ -778,7 +781,7 @@ func getStaker(
 			confirmedNotifiers = append(confirmedNotifiers, messagePruner)
 		}
 
-		stakerObj, err = multiprotocolstaker.NewMultiProtocolStaker(stack, l1Reader, wallet, bind.CallOpts{}, func() *legacystaker.L1ValidatorConfig { return &configFetcher.Get().Staker }, &configFetcher.Get().Bold, blockValidator, statelessBlockValidator, nil, deployInfo.StakeToken, confirmedNotifiers, deployInfo.ValidatorUtils, deployInfo.Bridge, fatalErrChan)
+		stakerObj, err = multiprotocolstaker.NewMultiProtocolStaker(stack, l1Reader, wallet, bind.CallOpts{}, func() *legacystaker.L1ValidatorConfig { return &configFetcher.Get().Staker }, &configFetcher.Get().Bold, blockValidator, statelessBlockValidator, nil, deployInfo.StakeToken, deployInfo.Rollup, confirmedNotifiers, deployInfo.ValidatorUtils, deployInfo.Bridge, txStreamer, inboxTracker, inboxReader, fatalErrChan)
 		if err != nil {
 			return nil, nil, common.Address{}, err
 		}
@@ -845,6 +848,7 @@ func getStatelessBlockValidator(
 	arbDb ethdb.Database,
 	dapReaders []daprovider.Reader,
 	stack *node.Node,
+	latestWasmModuleRoot common.Hash,
 ) (*staker.StatelessBlockValidator, error) {
 	var err error
 	var statelessBlockValidator *staker.StatelessBlockValidator
@@ -862,12 +866,13 @@ func getStatelessBlockValidator(
 			dapReaders,
 			func() *staker.BlockValidatorConfig { return &configFetcher.Get().BlockValidator },
 			stack,
+			latestWasmModuleRoot,
 		)
 	} else {
 		err = errors.New("no validator url specified")
 	}
 	if err != nil {
-		if config.ValidatorRequired() || config.Staker.Enable {
+		if config.ValidatorRequired() {
 			return nil, fmt.Errorf("%w: failed to init block validator", err)
 		}
 		log.Warn("validation not supported", "err", err)
@@ -882,7 +887,7 @@ func getBatchPoster(
 	config *Config,
 	configFetcher ConfigFetcher,
 	txOptsBatchPoster *bind.TransactOpts,
-	daWriter das.DataAvailabilityServiceWriter,
+	dapWriter daprovider.Writer,
 	l1Reader *headerreader.HeaderReader,
 	inboxTracker *InboxTracker,
 	txStreamer *TransactionStreamer,
@@ -903,9 +908,8 @@ func getBatchPoster(
 		if txOptsBatchPoster == nil && config.BatchPoster.DataPoster.ExternalSigner.URL == "" {
 			return nil, errors.New("batchposter, but no TxOpts")
 		}
-		var dapWriter daprovider.Writer
-		if daWriter != nil {
-			dapWriter = daprovider.NewWriterForDAS(daWriter)
+		if dapWriter != nil && !config.BatchPoster.CheckBatchCorrectness {
+			return nil, errors.New("when da-provider is used by batch-poster for posting, check-batch-correctness needs to be enabled")
 		}
 		var err error
 		batchPoster, err = NewBatchPoster(ctx, &BatchPosterOpts{
@@ -993,7 +997,6 @@ func getNodeParentChainReaderDisabled(
 		BroadcastClients:        broadcastClients,
 		SeqCoordinator:          coordinator,
 		MaintenanceRunner:       maintenanceRunner,
-		DASLifecycleManager:     nil,
 		SyncMonitor:             syncMonitor,
 		configFetcher:           configFetcher,
 		ctx:                     ctx,
@@ -1019,6 +1022,7 @@ func createNodeImpl(
 	fatalErrChan chan error,
 	parentChainID *big.Int,
 	blobReader daprovider.BlobReader,
+	latestWasmModuleRoot common.Hash,
 ) (*Node, error) {
 	config := configFetcher.Get()
 
@@ -1054,7 +1058,7 @@ func createNodeImpl(
 		return nil, err
 	}
 
-	maintenanceRunner, err := getMaintenanceRunner(arbDb, configFetcher, coordinator, executionClient)
+	maintenanceRunner, err := getMaintenanceRunner(configFetcher, coordinator, executionClient)
 	if err != nil {
 		return nil, err
 	}
@@ -1064,7 +1068,7 @@ func createNodeImpl(
 		return nil, err
 	}
 
-	blockMetadataFetcher, err := getBlockMetadataFetcher(ctx, configFetcher, arbDb, executionClient)
+	blockMetadataFetcher, err := getBlockMetadataFetcher(ctx, configFetcher, arbDb, executionClient, l2Config.ChainID.Uint64())
 	if err != nil {
 		return nil, err
 	}
@@ -1078,7 +1082,7 @@ func createNodeImpl(
 		return nil, err
 	}
 
-	daWriter, dasLifecycleManager, dapReaders, err := getDAS(ctx, config, l2Config, txStreamer, blobReader, l1Reader, deployInfo, dataSigner, l1client)
+	dapWriter, dasServerCloseFn, dapReaders, err := getDAS(ctx, config, l2Config, txStreamer, blobReader, l1Reader, deployInfo, dataSigner, l1client, stack)
 	if err != nil {
 		return nil, err
 	}
@@ -1088,7 +1092,7 @@ func createNodeImpl(
 		return nil, err
 	}
 
-	statelessBlockValidator, err := getStatelessBlockValidator(config, configFetcher, inboxReader, inboxTracker, txStreamer, executionRecorder, arbDb, dapReaders, stack)
+	statelessBlockValidator, err := getStatelessBlockValidator(config, configFetcher, inboxReader, inboxTracker, txStreamer, executionRecorder, arbDb, dapReaders, stack, latestWasmModuleRoot)
 	if err != nil {
 		return nil, err
 	}
@@ -1098,12 +1102,12 @@ func createNodeImpl(
 		return nil, err
 	}
 
-	stakerObj, messagePruner, stakerAddr, err := getStaker(ctx, config, configFetcher, arbDb, l1Reader, txOptsValidator, syncMonitor, parentChainID, l1client, deployInfo, txStreamer, inboxTracker, stack, fatalErrChan, statelessBlockValidator, blockValidator)
+	stakerObj, messagePruner, stakerAddr, err := getStaker(ctx, config, configFetcher, arbDb, l1Reader, txOptsValidator, syncMonitor, parentChainID, l1client, deployInfo, txStreamer, inboxTracker, inboxReader, stack, fatalErrChan, statelessBlockValidator, blockValidator)
 	if err != nil {
 		return nil, err
 	}
 
-	batchPoster, err := getBatchPoster(ctx, config, configFetcher, txOptsBatchPoster, daWriter, l1Reader, inboxTracker, txStreamer, executionBatchPoster, arbDb, syncMonitor, deployInfo, parentChainID, dapReaders, stakerAddr)
+	batchPoster, err := getBatchPoster(ctx, config, configFetcher, txOptsBatchPoster, dapWriter, l1Reader, inboxTracker, txStreamer, executionBatchPoster, arbDb, syncMonitor, deployInfo, parentChainID, dapReaders, stakerAddr)
 	if err != nil {
 		return nil, err
 	}
@@ -1116,7 +1120,7 @@ func createNodeImpl(
 	consensusExecutionSyncerConfigFetcher := func() *ConsensusExecutionSyncerConfig {
 		return &configFetcher.Get().ConsensusExecutionSyncer
 	}
-	consensusExecutionSyncer := NewConsensusExecutionSyncer(consensusExecutionSyncerConfigFetcher, inboxReader, executionClient, blockValidator)
+	consensusExecutionSyncer := NewConsensusExecutionSyncer(consensusExecutionSyncerConfigFetcher, inboxReader, executionClient, blockValidator, txStreamer)
 
 	return &Node{
 		ArbDB:                    arbDb,
@@ -1140,7 +1144,7 @@ func createNodeImpl(
 		BroadcastClients:         broadcastClients,
 		SeqCoordinator:           coordinator,
 		MaintenanceRunner:        maintenanceRunner,
-		DASLifecycleManager:      dasLifecycleManager,
+		dasServerCloseFn:         dasServerCloseFn,
 		SyncMonitor:              syncMonitor,
 		blockMetadataFetcher:     blockMetadataFetcher,
 		configFetcher:            configFetcher,
@@ -1221,16 +1225,6 @@ func registerAPIs(currentNode *Node, stack *node.Node) {
 			Public: false,
 		})
 	}
-	if currentNode.MaintenanceRunner != nil {
-		apis = append(apis, rpc.API{
-			Namespace: "maintenance",
-			Version:   "1.0",
-			Service: &MaintenanceAPI{
-				runner: currentNode.MaintenanceRunner,
-			},
-			Public: false,
-		})
-	}
 	stack.RegisterAPIs(apis)
 }
 
@@ -1249,11 +1243,12 @@ func CreateNodeExecutionClient(
 	fatalErrChan chan error,
 	parentChainID *big.Int,
 	blobReader daprovider.BlobReader,
+	latestWasmModuleRoot common.Hash,
 ) (*Node, error) {
 	if executionClient == nil {
 		return nil, errors.New("execution client must be non-nil")
 	}
-	currentNode, err := createNodeImpl(ctx, stack, executionClient, nil, nil, nil, arbDb, configFetcher, l2Config, l1client, deployInfo, txOptsValidator, txOptsBatchPoster, dataSigner, fatalErrChan, parentChainID, blobReader)
+	currentNode, err := createNodeImpl(ctx, stack, executionClient, nil, nil, nil, arbDb, configFetcher, l2Config, l1client, deployInfo, txOptsValidator, txOptsBatchPoster, dataSigner, fatalErrChan, parentChainID, blobReader, latestWasmModuleRoot)
 	if err != nil {
 		return nil, err
 	}
@@ -1279,11 +1274,12 @@ func CreateNodeFullExecutionClient(
 	fatalErrChan chan error,
 	parentChainID *big.Int,
 	blobReader daprovider.BlobReader,
+	latestWasmModuleRoot common.Hash,
 ) (*Node, error) {
 	if (executionClient == nil) || (executionSequencer == nil) || (executionRecorder == nil) || (executionBatchPoster == nil) {
 		return nil, errors.New("execution client, sequencer, recorder, and batch poster must be non-nil")
 	}
-	currentNode, err := createNodeImpl(ctx, stack, executionClient, executionSequencer, executionRecorder, executionBatchPoster, arbDb, configFetcher, l2Config, l1client, deployInfo, txOptsValidator, txOptsBatchPoster, dataSigner, fatalErrChan, parentChainID, blobReader)
+	currentNode, err := createNodeImpl(ctx, stack, executionClient, executionSequencer, executionRecorder, executionBatchPoster, arbDb, configFetcher, l2Config, l1client, deployInfo, txOptsValidator, txOptsBatchPoster, dataSigner, fatalErrChan, parentChainID, blobReader, latestWasmModuleRoot)
 	if err != nil {
 		return nil, err
 	}
@@ -1302,7 +1298,6 @@ func (n *Node) Start(ctx context.Context) error {
 			return fmt.Errorf("error initializing exec client: %w", err)
 		}
 	}
-	n.SyncMonitor.Initialize(n.InboxReader, n.TxStreamer, n.SeqCoordinator)
 	err := n.Stack.Start()
 	if err != nil {
 		return fmt.Errorf("error starting geth stack: %w", err)
@@ -1310,7 +1305,7 @@ func (n *Node) Start(ctx context.Context) error {
 	if execClient != nil {
 		execClient.SetConsensusClient(n)
 	}
-	_, err = n.ExecutionClient.Start(ctx).Await(ctx)
+	err = n.ExecutionClient.Start(ctx)
 	if err != nil {
 		return fmt.Errorf("error starting exec client: %w", err)
 	}
@@ -1425,6 +1420,9 @@ func (n *Node) Start(ctx context.Context) error {
 	if n.configFetcher != nil {
 		n.configFetcher.Start(ctx)
 	}
+	// Also make sure to call initialize on the sync monitor after the inbox reader, tx streamer, and block validator are started.
+	// Else sync might call inbox reader or tx streamer before they are started, and it will lead to panic.
+	n.SyncMonitor.Initialize(n.InboxReader, n.TxStreamer, n.SeqCoordinator)
 	n.SyncMonitor.Start(ctx)
 	if n.ConsensusExecutionSyncer != nil {
 		n.ConsensusExecutionSyncer.Start(ctx)
@@ -1433,6 +1431,9 @@ func (n *Node) Start(ctx context.Context) error {
 }
 
 func (n *Node) StopAndWait() {
+	if n.ConsensusExecutionSyncer != nil {
+		n.ConsensusExecutionSyncer.StopAndWait()
+	}
 	if n.MaintenanceRunner != nil && n.MaintenanceRunner.Started() {
 		n.MaintenanceRunner.StopAndWait()
 	}
@@ -1485,14 +1486,11 @@ func (n *Node) StopAndWait() {
 		n.SeqCoordinator.StopAndWait()
 	}
 	n.SyncMonitor.StopAndWait()
-	if n.DASLifecycleManager != nil {
-		n.DASLifecycleManager.StopAndWaitUntil(2 * time.Second)
+	if n.dasServerCloseFn != nil {
+		n.dasServerCloseFn()
 	}
 	if n.ExecutionClient != nil {
-		_, err := n.ExecutionClient.StopAndWait().Await(n.ctx)
-		if err != nil {
-			log.Error("error stopping execution client", "err", err)
-		}
+		n.ExecutionClient.StopAndWait()
 	}
 	if err := n.Stack.Close(); err != nil {
 		log.Error("error on stack close", "err", err)

@@ -16,6 +16,9 @@ import (
 func ResultKeyFor(streamName, id string) string {
 	return fmt.Sprintf("result-key:%s.%s", streamName, id)
 }
+func ErrorKeyFor(streamName, id string) string {
+	return fmt.Sprintf("error-key:%s.%s.error", streamName, id)
+}
 
 // CreateStream tries to create stream with given name, if it already exists
 // does not return an error.

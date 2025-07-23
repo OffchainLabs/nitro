@@ -27,10 +27,14 @@ COPY --from=brotli-library-builder /workspace/install/ /
 FROM node:18-bookworm-slim AS contracts-builder
 RUN apt-get update && \
     apt-get install -y git python3 make g++ curl
-RUN curl -L https://foundry.paradigm.xyz | bash && . ~/.bashrc && ~/.foundry/bin/foundryup
+RUN curl -L https://foundry.paradigm.xyz | bash && . ~/.bashrc && ~/.foundry/bin/foundryup -i 1.2.3
 WORKDIR /workspace
+COPY contracts-legacy/package.json contracts-legacy/yarn.lock contracts-legacy/
+RUN cd contracts-legacy && yarn install
 COPY contracts/package.json contracts/yarn.lock contracts/
 RUN cd contracts && yarn install
+COPY contracts-legacy contracts-legacy/
+COPY contracts-local contracts-local/
 COPY contracts contracts/
 COPY safe-smart-account safe-smart-account/
 RUN cd safe-smart-account && yarn install
@@ -68,7 +72,7 @@ COPY --from=wasm-libs-builder /workspace/ /
 FROM wasm-base AS wasm-bin-builder
 RUN apt update && apt install -y wabt
 # pinned go version
-RUN curl -L https://golang.org/dl/go1.23.1.linux-`dpkg --print-architecture`.tar.gz | tar -C /usr/local -xzf -
+RUN curl -L https://golang.org/dl/go1.24.5.linux-`dpkg --print-architecture`.tar.gz | tar -C /usr/local -xzf -
 COPY ./Makefile ./go.mod ./go.sum ./
 COPY ./arbcompress ./arbcompress
 COPY ./arbos ./arbos
@@ -78,12 +82,19 @@ COPY ./gethhook ./gethhook
 COPY ./blsSignatures ./blsSignatures
 COPY ./cmd/chaininfo ./cmd/chaininfo
 COPY ./cmd/replay ./cmd/replay
-COPY ./das/dastree ./das/dastree
+COPY ./daprovider ./daprovider
+COPY ./daprovider/das/dasutil ./daprovider/das/dasutil
+COPY ./daprovider/das/dastree ./daprovider/das/dastree
 COPY ./precompiles ./precompiles
 COPY ./statetransfer ./statetransfer
 COPY ./util ./util
 COPY ./wavmio ./wavmio
 COPY ./zeroheavy ./zeroheavy
+COPY ./contracts-legacy/package.json ./contracts-legacy/yarn.lock ./contracts-legacy/
+COPY ./contracts-legacy/src/precompiles/ ./contracts-legacy/src/precompiles/
+COPY ./contracts-local/src/precompiles/ ./contracts-local/src/precompiles/
+COPY ./contracts-local/gas-dimensions/ ./contracts-local/gas-dimensions/
+COPY ./contracts-local/lib/ ./contracts-local/lib/
 COPY ./contracts/src/precompiles/ ./contracts/src/precompiles/
 COPY ./contracts/package.json ./contracts/yarn.lock ./contracts/
 COPY ./safe-smart-account ./safe-smart-account
@@ -92,8 +103,9 @@ COPY ./fastcache ./fastcache
 COPY ./go-ethereum ./go-ethereum
 COPY scripts/remove_reference_types.sh scripts/
 COPY --from=brotli-wasm-export / target/
-COPY --from=contracts-builder workspace/contracts/build/contracts/src/precompiles/ contracts/build/contracts/src/precompiles/
+COPY --from=contracts-builder workspace/contracts-local/out/precompiles/ contracts-local/out/precompiles/
 COPY --from=contracts-builder workspace/contracts/node_modules/@offchainlabs/upgrade-executor/build/contracts/src/UpgradeExecutor.sol/UpgradeExecutor.json contracts/
+COPY --from=contracts-builder workspace/contracts-legacy/build/contracts/src/precompiles/ contracts-legacy/build/contracts/src/precompiles/
 COPY --from=contracts-builder workspace/.make/ .make/
 RUN PATH="$PATH:/usr/local/go/bin" NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-wasm-bin
 
@@ -193,6 +205,8 @@ COPY ./Makefile ./
 COPY ./arbitrator ./arbitrator
 COPY ./solgen ./solgen
 COPY ./contracts ./contracts
+COPY ./contracts-legacy ./contracts-legacy
+COPY ./contracts-local ./contracts-local
 COPY ./safe-smart-account ./safe-smart-account
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-replay-env
 
@@ -222,8 +236,13 @@ COPY ./scripts/download-machine.sh .
 RUN ./download-machine.sh consensus-v30 0xb0de9cb89e4d944ae6023a3b62276e54804c242fd8c4c2d8e6cc4450f5fa8b1b && true
 RUN ./download-machine.sh consensus-v31 0x260f5fa5c3176a856893642e149cf128b5a8de9f828afec8d11184415dd8dc69
 RUN ./download-machine.sh consensus-v32 0x184884e1eb9fefdc158f6c8ac912bb183bf3cf83f0090317e0bc4ac5860baa39
+#RUN ./download-machine.sh consensus-v40-rc.1 0x6dae396b0b7644a2d63b4b22e6452b767aa6a04b6778dadebdd74aa40f40a5c5
+#RUN ./download-machine.sh consensus-v40-rc.2 0xa8206be13d53e456c7ab061d94bab5b229d674ac57ffe7281216479a8820fcc0
+RUN ./download-machine.sh consensus-v42-rc.1 0x1be44d9f74056fc12af97ccbef7a2668bc5c946fe210505957b0a08b954b907f
+RUN ./download-machine.sh consensus-v50-alpha.1 0x28cfd8d81613ce4ebe750e77bfd95d6d95d4f53240488095a11c1ad3a494fa82
+RUN ./download-machine.sh consensus-v40 0xdb698a2576298f25448bc092e52cf13b1e24141c997135d70f217d674bbeb69a
 
-FROM golang:1.23.1-bookworm AS node-builder
+FROM golang:1.24.5-bookworm AS node-builder
 WORKDIR /workspace
 ARG version=""
 ARG datetime=""
@@ -243,6 +262,9 @@ COPY . ./
 COPY --from=contracts-builder workspace/contracts/build/ contracts/build/
 COPY --from=contracts-builder workspace/contracts/out/ contracts/out/
 COPY --from=contracts-builder workspace/contracts/node_modules/@offchainlabs/upgrade-executor/build/contracts/src/UpgradeExecutor.sol/UpgradeExecutor.json contracts/node_modules/@offchainlabs/upgrade-executor/build/contracts/src/UpgradeExecutor.sol/
+COPY --from=contracts-builder workspace/contracts-legacy/build/ contracts-legacy/build/
+COPY --from=contracts-builder workspace/contracts-legacy/out/ contracts-legacy/out/
+COPY --from=contracts-builder workspace/contracts-local/out/ contracts-local/out/
 COPY --from=contracts-builder workspace/safe-smart-account/build/ safe-smart-account/build/
 COPY --from=contracts-builder workspace/.make/ .make/
 COPY --from=prover-header-export / target/
@@ -301,8 +323,10 @@ FROM nitro-node-slim AS nitro-node
 USER root
 COPY --from=prover-export /bin/jit                        /usr/local/bin/
 COPY --from=node-builder  /workspace/target/bin/daserver  /usr/local/bin/
+COPY --from=node-builder  /workspace/target/bin/daprovider  /usr/local/bin/
 COPY --from=node-builder  /workspace/target/bin/autonomous-auctioneer  /usr/local/bin/
 COPY --from=node-builder  /workspace/target/bin/bidder-client  /usr/local/bin/
+COPY --from=node-builder  /workspace/target/bin/el-proxy  /usr/local/bin/
 COPY --from=node-builder  /workspace/target/bin/datool    /usr/local/bin/
 COPY --from=nitro-legacy /home/user/target/machines /home/user/nitro-legacy/machines
 RUN rm -rf /workspace/target/legacy-machines/latest

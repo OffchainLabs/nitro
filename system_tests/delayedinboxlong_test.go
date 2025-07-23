@@ -1,5 +1,5 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 // race detection makes things slow and miss timeouts
 //go:build !race
@@ -18,14 +18,13 @@ import (
 )
 
 func TestDelayInboxLong(t *testing.T) {
-	t.Parallel()
 	addLocalLoops := 3
 	messagesPerAddLocal := 1000
 	messagesPerDelayed := 10
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).DontParalellise()
 	cleanup := builder.Build(t)
 	defer cleanup()
 

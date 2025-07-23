@@ -1,5 +1,5 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package wsbroadcastserver
 
@@ -36,8 +36,8 @@ var (
 	HTTPHeaderFeedClientVersion       = textproto.CanonicalMIMEHeaderKey("Arbitrum-Feed-Client-Version")
 	HTTPHeaderRequestedSequenceNumber = textproto.CanonicalMIMEHeaderKey("Arbitrum-Requested-Sequence-Number")
 	HTTPHeaderChainId                 = textproto.CanonicalMIMEHeaderKey("Arbitrum-Chain-Id")
-	upgradeToWSTimer                  = metrics.NewRegisteredTimer("arb/feed/clients/upgrade/duration", nil)
-	startWithHeaderTimer              = metrics.NewRegisteredTimer("arb/feed/clients/start/duration", nil)
+	upgradeToWSTimer                  = metrics.NewRegisteredHistogram("arb/feed/clients/upgrade/duration", nil, metrics.NewBoundedHistogramSample())
+	startWithHeaderTimer              = metrics.NewRegisteredHistogram("arb/feed/clients/start/duration", nil, metrics.NewBoundedHistogramSample())
 )
 
 const (
@@ -60,7 +60,6 @@ type BroadcasterConfig struct {
 	Workers            int                     `koanf:"workers"`
 	MaxSendQueue       int                     `koanf:"max-send-queue" reload:"hot"`  // reloaded value will affect only new connections
 	RequireVersion     bool                    `koanf:"require-version" reload:"hot"` // reloaded value will affect only future upgrades to websocket
-	DisableSigning     bool                    `koanf:"disable-signing"`
 	LogConnect         bool                    `koanf:"log-connect"`
 	LogDisconnect      bool                    `koanf:"log-disconnect"`
 	EnableCompression  bool                    `koanf:"enable-compression" reload:"hot"`  // if reloaded to false will cause disconnection of clients with enabled compression on next broadcast
@@ -95,7 +94,6 @@ func BroadcasterConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Int(prefix+".workers", DefaultBroadcasterConfig.Workers, "number of threads to reserve for HTTP to WS upgrade")
 	f.Int(prefix+".max-send-queue", DefaultBroadcasterConfig.MaxSendQueue, "maximum number of messages allowed to accumulate before client is disconnected")
 	f.Bool(prefix+".require-version", DefaultBroadcasterConfig.RequireVersion, "don't connect if client version not present")
-	f.Bool(prefix+".disable-signing", DefaultBroadcasterConfig.DisableSigning, "don't sign feed messages")
 	f.Bool(prefix+".log-connect", DefaultBroadcasterConfig.LogConnect, "log every client connect")
 	f.Bool(prefix+".log-disconnect", DefaultBroadcasterConfig.LogDisconnect, "log every client disconnect")
 	f.Bool(prefix+".enable-compression", DefaultBroadcasterConfig.EnableCompression, "enable per message deflate compression support")
@@ -121,7 +119,6 @@ var DefaultBroadcasterConfig = BroadcasterConfig{
 	Workers:            100,
 	MaxSendQueue:       4096,
 	RequireVersion:     false,
-	DisableSigning:     true,
 	LogConnect:         false,
 	LogDisconnect:      false,
 	EnableCompression:  false,
@@ -147,7 +144,6 @@ var DefaultTestBroadcasterConfig = BroadcasterConfig{
 	Workers:            100,
 	MaxSendQueue:       4096,
 	RequireVersion:     false,
-	DisableSigning:     false,
 	LogConnect:         false,
 	LogDisconnect:      false,
 	EnableCompression:  true,
@@ -214,7 +210,7 @@ func (s *WSBroadcastServer) Start(ctx context.Context) error {
 	startTime := time.Now()
 	err := s.StartWithHeader(ctx, header)
 	elapsed := time.Since(startTime)
-	startWithHeaderTimer.Update(elapsed)
+	startWithHeaderTimer.Update(elapsed.Nanoseconds())
 	return err
 }
 
@@ -333,7 +329,7 @@ func (s *WSBroadcastServer) StartWithHeader(ctx context.Context, header ws.Hands
 		startTime := time.Now()
 		_, err = upgrader.Upgrade(conn)
 		elapsed := time.Since(startTime)
-		upgradeToWSTimer.Update(elapsed)
+		upgradeToWSTimer.Update(elapsed.Nanoseconds())
 
 		if err != nil {
 			if err.Error() != "" {

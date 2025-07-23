@@ -2,6 +2,7 @@ package arbtest
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -32,20 +33,21 @@ func countStateEntries(db ethdb.Iteratee) int {
 }
 
 func TestPruning(t *testing.T) {
-	testPruning(t, false)
+	// TODO test "validator" pruning mode - requires latest confirmed
+	for _, mode := range []string{"full", "minimal"} {
+		t.Run(fmt.Sprintf("-%s-mode-without-parallel-storage-traversal", mode), func(t *testing.T) { testPruning(t, mode, false) })
+		t.Run(fmt.Sprintf("-%s-mode-with-parallel-storage-traversal", mode), func(t *testing.T) { testPruning(t, mode, true) })
+	}
 }
 
-func TestPruningPruneParallelStorageTraversal(t *testing.T) {
-	testPruning(t, true)
-}
-
-func testPruning(t *testing.T, pruneParallelStorageTraversal bool) {
+func testPruning(t *testing.T, mode string, pruneParallelStorageTraversal bool) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
 	// PathScheme prunes the state trie by itself, so only HashScheme should be tested
-	builder.execConfig.Caching.StateScheme = rawdb.HashScheme
+	builder.RequireScheme(t, rawdb.HashScheme)
+
 	_ = builder.Build(t)
 	l2cleanupDone := false
 	defer func() {
@@ -98,7 +100,7 @@ func testPruning(t *testing.T, pruneParallelStorageTraversal bool) {
 		}
 
 		initConfig := conf.InitConfigDefault
-		initConfig.Prune = "full"
+		initConfig.Prune = mode
 		initConfig.PruneParallelStorageTraversal = pruneParallelStorageTraversal
 		coreCacheConfig := gethexec.DefaultCacheConfigFor(stack, &builder.execConfig.Caching)
 		persistentConfig := conf.PersistentConfigDefault

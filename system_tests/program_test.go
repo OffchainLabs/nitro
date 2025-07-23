@@ -1,5 +1,5 @@
 // Copyright 2022-2024, Offchain Labs, Inc.
-// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbtest
 
@@ -32,11 +32,13 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbcompress"
+	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/execution/gethexec"
-	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
+	"github.com/offchainlabs/nitro/solgen/go/localgen"
+	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	pgen "github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/colors"
@@ -48,8 +50,9 @@ var oneEth = arbmath.UintToBig(1e18)
 
 var allWasmTargets = []string{string(rawdb.TargetWavm), string(rawdb.TargetArm64), string(rawdb.TargetAmd64), string(rawdb.TargetHost)}
 
+var localTargetOnly = []string{string(rawdb.LocalTarget())}
+
 func TestProgramKeccak(t *testing.T) {
-	t.Parallel()
 	t.Run("WithDefaultWasmTargets", func(t *testing.T) {
 		keccakTest(t, true)
 	})
@@ -62,7 +65,7 @@ func TestProgramKeccak(t *testing.T) {
 
 	t.Run("WithOnlyLocalTarget", func(t *testing.T) {
 		keccakTest(t, true, func(builder *NodeBuilder) {
-			builder.WithExtraArchs([]string{string(rawdb.LocalTarget())})
+			builder.WithExtraArchs(localTargetOnly)
 		})
 	})
 }
@@ -152,7 +155,7 @@ func keccakTest(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder)) {
 	}
 
 	// do a mutating call for proving's sake
-	_, tx, mock, err := mocksgen.DeployProgramTest(&auth, l2client)
+	_, tx, mock, err := localgen.DeployProgramTest(&auth, l2client)
 	ensure(tx, err)
 	ensure(mock.CallKeccak(&auth, programAddress, args))
 	ensure(mock.CallKeccak(&auth, otherAddressSameCode, args))
@@ -161,7 +164,6 @@ func keccakTest(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder)) {
 }
 
 func TestProgramActivateTwice(t *testing.T) {
-	t.Parallel()
 	t.Run("WithDefaultWasmTargets", func(t *testing.T) {
 		testActivateTwice(t, true)
 	})
@@ -236,12 +238,12 @@ func testActivateTwice(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder)
 	// mechanisms for creating calldata
 	activateProgram, _ := util.NewCallParser(pgen.ArbWasmABI, "activateProgram")
 	legacyError, _ := util.NewCallParser(pgen.ArbDebugABI, "legacyError")
-	callKeccak, _ := util.NewCallParser(mocksgen.ProgramTestABI, "callKeccak")
+	callKeccak, _ := util.NewCallParser(localgen.ProgramTestABI, "callKeccak")
 	pack := func(data []byte, err error) []byte {
 		Require(t, err)
 		return data
 	}
-	mockAddr, tx, _, err := mocksgen.DeployProgramTest(&auth, l2client)
+	mockAddr, tx, _, err := localgen.DeployProgramTest(&auth, l2client)
 	ensure(tx, err)
 
 	// Successfully activate, but then revert
@@ -268,7 +270,6 @@ func testActivateTwice(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder)
 }
 
 func TestStylusUpgrade(t *testing.T) {
-	t.Parallel()
 	testStylusUpgrade(t, true)
 }
 
@@ -364,7 +365,6 @@ func testStylusUpgrade(t *testing.T, jit bool) {
 }
 
 func TestProgramErrors(t *testing.T) {
-	t.Parallel()
 	errorTest(t, true)
 }
 
@@ -406,7 +406,6 @@ func errorTest(t *testing.T, jit bool) {
 }
 
 func TestProgramStorage(t *testing.T) {
-	t.Parallel()
 	storageTest(t, true)
 }
 
@@ -507,7 +506,6 @@ func transientStorageTest(t *testing.T, jit bool) {
 }
 
 func TestProgramMath(t *testing.T) {
-	t.Parallel()
 	fastMathTest(t, true)
 }
 
@@ -527,7 +525,7 @@ func fastMathTest(t *testing.T, jit bool) {
 
 	program := deployWasm(t, ctx, auth, l2client, rustFile("math"))
 
-	_, tx, mock, err := mocksgen.DeployProgramTest(&auth, l2client)
+	_, tx, mock, err := localgen.DeployProgramTest(&auth, l2client)
 	ensure(tx, err)
 	ensure(mock.MathTest(&auth, program))
 
@@ -535,7 +533,6 @@ func fastMathTest(t *testing.T, jit bool) {
 }
 
 func TestProgramCalls(t *testing.T) {
-	t.Parallel()
 	testCalls(t, true)
 }
 
@@ -588,7 +585,7 @@ func testCalls(t *testing.T, jit bool) {
 
 	storeAddr := deployWasm(t, ctx, auth, l2client, rustFile("storage"))
 	keccakAddr := deployWasm(t, ctx, auth, l2client, rustFile("keccak"))
-	mockAddr, tx, _, err := mocksgen.DeployProgramTest(&auth, l2client)
+	mockAddr, tx, _, err := localgen.DeployProgramTest(&auth, l2client)
 	ensure(tx, err)
 
 	colors.PrintGrey("multicall.wasm ", callsAddr)
@@ -684,7 +681,7 @@ func testCalls(t *testing.T, jit bool) {
 	burnArbGas, _ := util.NewCallParser(pgen.ArbosTestABI, "burnArbGas")
 	customRevert, _ := util.NewCallParser(pgen.ArbDebugABI, "customRevert")
 	legacyError, _ := util.NewCallParser(pgen.ArbDebugABI, "legacyError")
-	callKeccak, _ := util.NewCallParser(mocksgen.ProgramTestABI, "callKeccak")
+	callKeccak, _ := util.NewCallParser(localgen.ProgramTestABI, "callKeccak")
 	pack := func(data []byte, err error) []byte {
 		Require(t, err)
 		return data
@@ -750,7 +747,6 @@ func testCalls(t *testing.T, jit bool) {
 }
 
 func TestProgramReturnData(t *testing.T) {
-	t.Parallel()
 	testReturnData(t, true)
 }
 
@@ -803,12 +799,10 @@ func testReturnData(t *testing.T, jit bool) {
 }
 
 func TestProgramLogs(t *testing.T) {
-	t.Parallel()
 	testLogs(t, true, false)
 }
 
 func TestProgramLogsWithTracing(t *testing.T) {
-	t.Parallel()
 	testLogs(t, true, true)
 }
 
@@ -917,7 +911,6 @@ func testLogs(t *testing.T, jit, tracing bool) {
 }
 
 func TestProgramCreate(t *testing.T) {
-	t.Parallel()
 	testCreate(t, true)
 }
 
@@ -1002,7 +995,7 @@ func testCreate(t *testing.T, jit bool) {
 	revertArgs = append(revertArgs, common.BigToHash(startValue).Bytes()...)
 	revertArgs = append(revertArgs, deployContractInitCode(revertData, true)...)
 
-	_, tx, mock, err := mocksgen.DeployProgramTest(&auth, l2client)
+	_, tx, mock, err := localgen.DeployProgramTest(&auth, l2client)
 	ensure(tx, err)
 	auth.Value = startValue
 	ensure(mock.CheckRevertData(&auth, createAddr, revertArgs, revertData))
@@ -1013,9 +1006,11 @@ func testCreate(t *testing.T, jit bool) {
 }
 
 func TestProgramInfiniteLoopShouldCauseErrOutOfGas(t *testing.T) {
-	t.Parallel()
-	testInfiniteLoopCausesErrOutOfGas(t, true)
 	testInfiniteLoopCausesErrOutOfGas(t, false)
+}
+
+func TestProgramInfiniteLoopShouldCauseErrOutOfGas_Jit(t *testing.T) {
+	testInfiniteLoopCausesErrOutOfGas(t, true)
 }
 
 func testInfiniteLoopCausesErrOutOfGas(t *testing.T, jit bool) {
@@ -1038,7 +1033,6 @@ func testInfiniteLoopCausesErrOutOfGas(t *testing.T, jit bool) {
 }
 
 func TestProgramMemory(t *testing.T) {
-	t.Parallel()
 	testMemory(t, true)
 }
 
@@ -1196,7 +1190,6 @@ func testMemory(t *testing.T, jit bool) {
 }
 
 func TestProgramActivateFails(t *testing.T) {
-	t.Parallel()
 	testActivateFails(t, true)
 }
 
@@ -1235,7 +1228,6 @@ func testActivateFails(t *testing.T, jit bool) {
 }
 
 func TestProgramSdkStorage(t *testing.T) {
-	t.Parallel()
 	testSdkStorage(t, true)
 }
 
@@ -1256,7 +1248,7 @@ func testSdkStorage(t *testing.T, jit bool) {
 		return receipt
 	}
 
-	solidity, tx, mock, err := mocksgen.DeploySdkStorage(&auth, l2client)
+	solidity, tx, mock, err := localgen.DeploySdkStorage(&auth, l2client)
 	ensure(tx, err)
 	tx, err = mock.Populate(&auth)
 	receipt := ensure(tx, err)
@@ -1431,7 +1423,6 @@ func TestStylusPrecompileMethodsSimple(t *testing.T) {
 }
 
 func TestProgramActivationLogs(t *testing.T) {
-	t.Parallel()
 	builder, auth, cleanup := setupProgramTest(t, true)
 	l2client := builder.L2.Client
 	ctx := builder.ctx
@@ -1471,7 +1462,6 @@ func TestProgramActivationLogs(t *testing.T) {
 }
 
 func TestProgramEarlyExit(t *testing.T) {
-	t.Parallel()
 	testEarlyExit(t, true)
 }
 
@@ -1491,7 +1481,7 @@ func testEarlyExit(t *testing.T, jit bool) {
 		Require(t, err)
 	}
 
-	_, tx, mock, err := mocksgen.DeployProgramTest(&auth, l2client)
+	_, tx, mock, err := localgen.DeployProgramTest(&auth, l2client)
 	ensure(tx, err)
 
 	// revert with the following data
@@ -1564,7 +1554,7 @@ func TestProgramCacheManager(t *testing.T) {
 	codehash := crypto.Keccak256Hash(wasm)
 
 	// try to manage the cache without authorization
-	manager, tx, mock, err := mocksgen.DeploySimpleCacheManager(&ownerAuth, l2client)
+	manager, tx, mock, err := localgen.DeploySimpleCacheManager(&ownerAuth, l2client)
 	ensure(tx, err)
 	denytx(mock.CacheProgram(&userAuth, program))
 	denytx(mock.EvictProgram(&userAuth, program))
@@ -1682,7 +1672,10 @@ func testReturnDataCost(t *testing.T, arbosVersion uint64) {
 }
 
 func TestReturnDataCost(t *testing.T) {
-	testReturnDataCost(t, params.ArbosVersion_Stylus)
+	testReturnDataCost(t, params.ArbosVersion_StylusFixes)
+}
+
+func TestReturnDataCost_StylusFixes(t *testing.T) {
 	testReturnDataCost(t, params.ArbosVersion_StylusFixes)
 }
 
@@ -1699,7 +1692,7 @@ func setupProgramTest(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder))
 
 	// setupProgramTest is being called by tests that validate blocks.
 	// For now validation only works with HashScheme set.
-	builder.execConfig.Caching.StateScheme = rawdb.HashScheme
+	builder.RequireScheme(t, rawdb.HashScheme)
 	builder.nodeConfig.BlockValidator.Enable = false
 	builder.nodeConfig.Staker.Enable = true
 	builder.nodeConfig.BatchPoster.Enable = true
@@ -1846,10 +1839,13 @@ func multicallEmptyArgs() []byte {
 	return []byte{0} // number of actions
 }
 
-func multicallAppendStore(args []byte, key, value common.Hash, emitLog bool) []byte {
+func multicallAppendStore(args []byte, key, value common.Hash, emitLog bool, notFlush bool) []byte {
 	var action byte = 0x10
 	if emitLog {
 		action |= 0x08
+	}
+	if notFlush {
+		action |= 0x02
 	}
 	args[0] += 1
 	args = binary.BigEndian.AppendUint32(args, 1+64) // length
@@ -1868,6 +1864,14 @@ func multicallAppendLoad(args []byte, key common.Hash, emitLog bool) []byte {
 	args = binary.BigEndian.AppendUint32(args, 1+32) // length
 	args = append(args, action)
 	args = append(args, key.Bytes()...)
+	return args
+}
+
+func multicallAppendClearCache(args []byte) []byte {
+	var action byte = 0x20
+	args[0] += 1
+	args = binary.BigEndian.AppendUint32(args, 1) // length
+	args = append(args, action)
 	return args
 }
 
@@ -1925,7 +1929,7 @@ func formatTime(duration time.Duration) string {
 	return fmt.Sprintf("%.2f%s", span, units[unit])
 }
 
-func testWasmRecreate(t *testing.T, builder *NodeBuilder, storeTx *types.Transaction, loadTx *types.Transaction, want []byte) {
+func testWasmRecreate(t *testing.T, builder *NodeBuilder, targetsBefore, targetsAfter []string, numModules int, removeWasmDbBetween bool, storeTx, loadTx *types.Transaction, want []byte) {
 	ctx := builder.ctx
 	l2info := builder.L2Info
 	l2client := builder.L2.Client
@@ -1937,7 +1941,9 @@ func testWasmRecreate(t *testing.T, builder *NodeBuilder, storeTx *types.Transac
 
 	testDir := t.TempDir()
 	nodeBStack := testhelpers.CreateStackConfigForTest(testDir)
-	nodeB, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{stackConfig: nodeBStack})
+	nodeBExecConfigBefore := *builder.execConfig
+	nodeBExecConfigBefore.StylusTarget.ExtraArchs = targetsBefore
+	nodeB, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{stackConfig: nodeBStack, execConfig: &nodeBExecConfigBefore})
 
 	_, err = EnsureTxSucceeded(ctx, nodeB.Client, storeTx)
 	Require(t, err)
@@ -1948,21 +1954,26 @@ func testWasmRecreate(t *testing.T, builder *NodeBuilder, storeTx *types.Transac
 	if !bytes.Equal(result, want) {
 		t.Fatalf("got wrong value, got %x, want %x", result, want)
 	}
+	wasmDb := nodeB.ExecNode.Backend.ArbInterface().BlockChain().StateCache().WasmStore()
+	checkWasmStoreContent(t, wasmDb, nodeBExecConfigBefore.StylusTarget.WasmTargets(), numModules)
 	// close nodeB
 	cleanupB()
 
-	// delete wasm dir of nodeB
-
-	wasmPath := filepath.Join(testDir, "system_tests.test", "wasm")
-	dirContents, err := os.ReadDir(wasmPath)
-	Require(t, err)
-	if len(dirContents) == 0 {
-		Fatal(t, "not contents found before delete")
+	wasmPath := filepath.Join(testDir, nodeBStack.Name, "wasm")
+	if removeWasmDbBetween {
+		// remove wasm dir of nodeB
+		dirContents, err := os.ReadDir(wasmPath)
+		Require(t, err)
+		if len(dirContents) == 0 {
+			Fatal(t, "not contents found before delete")
+		}
+		os.RemoveAll(wasmPath)
 	}
-	os.RemoveAll(wasmPath)
 
 	// recreate nodeB - using same source dir (wasm deleted)
-	nodeB, cleanupB = builder.Build2ndNode(t, &SecondNodeParams{stackConfig: nodeBStack})
+	nodeBExecConfigAfter := *builder.execConfig
+	nodeBExecConfigAfter.StylusTarget.ExtraArchs = targetsAfter
+	nodeB, cleanupB = builder.Build2ndNode(t, &SecondNodeParams{stackConfig: nodeBStack, execConfig: &nodeBExecConfigAfter})
 
 	// test nodeB - sees existing transaction
 	_, err = EnsureTxSucceeded(ctx, nodeB.Client, storeTx)
@@ -1984,16 +1995,85 @@ func testWasmRecreate(t *testing.T, builder *NodeBuilder, storeTx *types.Transac
 	_, err = EnsureTxSucceeded(ctx, nodeB.Client, loadTx)
 	Require(t, err)
 
+	wasmDb = nodeB.ExecNode.Backend.ArbInterface().BlockChain().StateCache().WasmStore()
+	checkWasmStoreContent(t, wasmDb, nodeBExecConfigAfter.StylusTarget.WasmTargets(), numModules)
+
 	cleanupB()
-	dirContents, err = os.ReadDir(wasmPath)
+	dirContents, err := os.ReadDir(wasmPath)
 	Require(t, err)
 	if len(dirContents) == 0 {
-		Fatal(t, "not contents found before delete")
+		Fatal(t, "no contents found before delete")
 	}
 	os.RemoveAll(wasmPath)
 }
 
 func TestWasmRecreate(t *testing.T) {
+	testCases := []struct {
+		name                string
+		removeWasmDbBetween bool
+		targetsBefore       []string
+		targetsAfter        []string
+	}{
+		{
+			name:                "with local target only with wasmdb removal",
+			removeWasmDbBetween: true,
+			targetsBefore:       localTargetOnly,
+			targetsAfter:        localTargetOnly,
+		},
+		{
+			name:                "with local target only without wasmdb removal",
+			removeWasmDbBetween: false,
+			targetsBefore:       localTargetOnly,
+			targetsAfter:        localTargetOnly,
+		},
+		{
+			name:                "with all targets with wasmdb removal",
+			removeWasmDbBetween: true,
+			targetsBefore:       allWasmTargets,
+			targetsAfter:        allWasmTargets,
+		},
+		{
+			name:                "with all targets without wasmdb removal",
+			removeWasmDbBetween: false,
+			targetsBefore:       allWasmTargets,
+			targetsAfter:        allWasmTargets,
+		},
+		{
+			name:                "more targets to recreate with wasmdb removal",
+			removeWasmDbBetween: true,
+			targetsBefore:       localTargetOnly,
+			targetsAfter:        allWasmTargets,
+		},
+		{
+			name:                "more targets to recreate without wasmdb removal",
+			removeWasmDbBetween: false,
+			targetsBefore:       localTargetOnly,
+			targetsAfter:        allWasmTargets,
+		},
+		{
+			name:                "less targets to recreate with wasmdb removal",
+			removeWasmDbBetween: true,
+			targetsBefore:       allWasmTargets,
+			targetsAfter:        localTargetOnly,
+		},
+		{
+			name:                "less targets to recreate without wasmdb removal",
+			removeWasmDbBetween: false,
+			targetsBefore:       allWasmTargets,
+			targetsAfter:        localTargetOnly,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			testWasmRecreateWithCall(t, tc.targetsBefore, tc.targetsAfter, tc.removeWasmDbBetween)
+		})
+		t.Run(tc.name+" with delegate call", func(t *testing.T) {
+			testWasmRecreateWithDelegatecall(t, tc.targetsBefore, tc.targetsAfter, tc.removeWasmDbBetween)
+		})
+	}
+}
+
+func testWasmRecreateWithCall(t *testing.T, targetsBefore, targetsAfter []string, removeWasmDbBetween bool) {
 	builder, auth, cleanup := setupProgramTest(t, true)
 	ctx := builder.ctx
 	l2info := builder.L2Info
@@ -2008,10 +2088,10 @@ func TestWasmRecreate(t *testing.T) {
 	storeTx := l2info.PrepareTxTo("Owner", &storage, l2info.TransferGas, nil, argsForStorageWrite(zero, val))
 	loadTx := l2info.PrepareTxTo("Owner", &storage, l2info.TransferGas, nil, argsForStorageRead(zero))
 
-	testWasmRecreate(t, builder, storeTx, loadTx, val[:])
+	testWasmRecreate(t, builder, localTargetOnly, allWasmTargets, 1, false, storeTx, loadTx, val[:])
 }
 
-func TestWasmRecreateWithDelegatecall(t *testing.T) {
+func testWasmRecreateWithDelegatecall(t *testing.T, targetsBefore, targetsAfter []string, removeWasmDbBetween bool) {
 	builder, auth, cleanup := setupProgramTest(t, true)
 	ctx := builder.ctx
 	l2info := builder.L2Info
@@ -2030,7 +2110,7 @@ func TestWasmRecreateWithDelegatecall(t *testing.T) {
 	data = argsForMulticall(vm.DELEGATECALL, storage, big.NewInt(0), argsForStorageRead(zero))
 	loadTx := l2info.PrepareTxTo("Owner", &multicall, l2info.TransferGas, nil, data)
 
-	testWasmRecreate(t, builder, storeTx, loadTx, val[:])
+	testWasmRecreate(t, builder, localTargetOnly, allWasmTargets, 2, true, storeTx, loadTx, val[:])
 }
 
 // createMapFromDb is used in verifying if wasm store rebuilding works
@@ -2099,7 +2179,7 @@ func TestWasmStoreRebuilding(t *testing.T) {
 	cleanupB()
 
 	// delete wasm dir of nodeB
-	wasmPath := filepath.Join(testDir, "system_tests.test", "wasm")
+	wasmPath := filepath.Join(testDir, nodeBStack.Name, "wasm")
 	dirContents, err := os.ReadDir(wasmPath)
 	Require(t, err)
 	if len(dirContents) == 0 {
@@ -2178,14 +2258,14 @@ func readModuleHashes(t *testing.T, wasmDb ethdb.KeyValueStore) []common.Hash {
 	return modules
 }
 
-func checkWasmStoreContent(t *testing.T, wasmDb ethdb.KeyValueStore, expectedTargets []ethdb.WasmTarget, numModules int) {
+func checkWasmStoreContent(t *testing.T, wasmDb ethdb.KeyValueStore, expectedTargets []rawdb.WasmTarget, numModules int) {
 	t.Helper()
 	modules := readModuleHashes(t, wasmDb)
 	if len(modules) != numModules {
 		t.Fatalf("Unexpected number of module hashes found in wasm store, want: %d, have: %d", numModules, len(modules))
 	}
 	readAsm := func(module common.Hash, target string) []byte {
-		wasmTarget := ethdb.WasmTarget(target)
+		wasmTarget := rawdb.WasmTarget(target)
 		if !rawdb.IsSupportedWasmTarget(wasmTarget) {
 			t.Fatalf("internal test error - unsupported target passed to checkWasmStoreContent: %v", target)
 		}
@@ -2203,7 +2283,7 @@ func checkWasmStoreContent(t *testing.T, wasmDb ethdb.KeyValueStore, expectedTar
 		for _, target := range allWasmTargets {
 			var expected bool
 			for _, expectedTarget := range expectedTargets {
-				if ethdb.WasmTarget(target) == expectedTarget {
+				if rawdb.WasmTarget(target) == expectedTarget {
 					expected = true
 					break
 				}
@@ -2247,8 +2327,10 @@ func deployWasmAndGetEntrySizeEstimateBytes(
 	statedb, err := builder.L2.ExecNode.Backend.ArbInterface().BlockChain().State()
 	Require(t, err, ", wasmName:", wasmName)
 
-	module, err := statedb.TryGetActivatedAsm(rawdb.LocalTarget(), log.ModuleHash)
-	Require(t, err, ", wasmName:", wasmName)
+	module := statedb.ActivatedAsm(rawdb.LocalTarget(), log.ModuleHash)
+	if len(module) == 0 {
+		Fatal(t, "missing asm for local target, wasmName:", wasmName)
+	}
 
 	entrySizeEstimateBytes := programs.GetEntrySizeEstimateBytes(module, log.Version, true)
 	// just a sanity check
@@ -2259,7 +2341,12 @@ func deployWasmAndGetEntrySizeEstimateBytes(
 }
 
 func TestWasmLruCache(t *testing.T) {
-	builder, auth, cleanup := setupProgramTest(t, true)
+	builder, auth, cleanup := setupProgramTest(t, true, func(b *NodeBuilder) {
+		// TestWasmLruCache shouldn't be run in parallel as it targets global Wasm LRU Cache,
+		// programs.ClearWasmLruCache is called in the test.
+		b.DontParalellise()
+	})
+
 	ctx := builder.ctx
 	l2info := builder.L2Info
 	l2client := builder.L2.Client
@@ -2355,8 +2442,10 @@ func checkLruCacheMetrics(t *testing.T, expected programs.WasmLruCacheMetrics) {
 }
 
 func TestWasmLongTermCache(t *testing.T) {
-	builder, ownerAuth, cleanup := setupProgramTest(t, true, func(builder *NodeBuilder) {
-		builder.WithStylusLongTermCache(true)
+	builder, ownerAuth, cleanup := setupProgramTest(t, true, func(b *NodeBuilder) {
+		// TestWasmLongTermCache shouldn't be run in parallel as it targets global Wasm Long Term Cache,
+		// programs.ClearWasmLongTermCache is called in the test.
+		b.DontParalellise()
 	})
 	ctx := builder.ctx
 	l2info := builder.L2Info
@@ -2493,8 +2582,10 @@ func TestWasmLongTermCache(t *testing.T) {
 }
 
 func TestRepopulateWasmLongTermCacheFromLru(t *testing.T) {
-	builder, ownerAuth, cleanup := setupProgramTest(t, true, func(builder *NodeBuilder) {
-		builder.WithStylusLongTermCache(true)
+	builder, ownerAuth, cleanup := setupProgramTest(t, true, func(b *NodeBuilder) {
+		// TestRepopulateWasmLongTermCacheFromLru shouldn't be run in parallel as it targets global Wasm Long Term Cache and Wasm LRU Cache,
+		// programs.ClearWasmLongTermCache and programs.ClearWasmLruCache are called in the test.o
+		b.DontParalellise()
 	})
 	ctx := builder.ctx
 	l2info := builder.L2Info
@@ -2617,4 +2708,103 @@ func TestRepopulateWasmLongTermCacheFromLru(t *testing.T) {
 		Count:     1,
 		SizeBytes: fallibleEntrySize,
 	})
+}
+
+func TestOutOfGasInStorageCacheFlush(t *testing.T) {
+	jit := false
+	builder, auth, cleanup := setupProgramTest(t, jit)
+	ctx := builder.ctx
+	defer cleanup()
+
+	testClient2ndNode, cleanup2ndNode := builder.Build2ndNode(t, &SecondNodeParams{nodeConfig: arbnode.ConfigDefaultL1NonSequencerTest()})
+	defer cleanup2ndNode()
+
+	// Sets l1 data gas to zero
+	arbOwner, err := precompilesgen.NewArbOwner(types.ArbOwnerAddress, builder.L2.Client)
+	Require(t, err)
+	tx, err := arbOwner.SetL1BaseFeeEstimateInertia(&auth, 0)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+	tx, err = arbOwner.SetL1PricingEquilibrationUnits(&auth, big.NewInt(0))
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+	tx, err = arbOwner.SetL1PricingInertia(&auth, 0)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+	tx, err = arbOwner.SetL1PricingRewardRate(&auth, 0)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+	tx, err = arbOwner.SetL1PricePerUnit(&auth, big.NewInt(0))
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+	tx, err = arbOwner.SetPerBatchGasCharge(&auth, 0)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+	tx, err = arbOwner.SetAmortizedCostCapBips(&auth, 0)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	multiAddr := deployWasm(t, ctx, auth, builder.L2.Client, rustFile("multicall"))
+
+	argsMulticall := func(numberOfStores int) []byte {
+		args := multicallEmptyArgs()
+		for i := 0; i < numberOfStores; i++ {
+			key := testhelpers.RandomHash()
+			val := testhelpers.RandomHash()
+			args = multicallAppendStore(args, key, val, false, true)
+		}
+		return args
+	}
+
+	// Successful transaction to multicall
+	args := argsMulticall(50)
+	tx = builder.L2Info.PrepareTxTo("Owner", &multiAddr, uint64(2210000), nil, args)
+	err = builder.L2.Client.SendTransaction(ctx, tx)
+	Require(t, err)
+	receipt, err := builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+	if receipt.GasUsedForL1 != 0 {
+		t.Fatalf("expected 0 gas used, got %d", receipt.GasUsedForL1)
+	}
+	receipt, err = WaitForTx(ctx, testClient2ndNode.Client, tx.Hash(), time.Second*15)
+	Require(t, err)
+	if receipt.GasUsedForL1 != 0 {
+		t.Fatalf("expected 0 gas used, got %d", receipt.GasUsedForL1)
+	}
+
+	// Failed transaction to multicall.
+	// The transaction will fail during storage flush.
+	args = argsMulticall(200)
+	tx = builder.L2Info.PrepareTxTo("Owner", &multiAddr, uint64(2210000), nil, args)
+	err = builder.L2.Client.SendTransaction(ctx, tx)
+	Require(t, err)
+	receipt, err = builder.L2.EnsureTxSucceeded(tx)
+	if err == nil || err.Error() != fmt.Sprintf("out of gas for tx hash %v", tx.Hash().String()) {
+		t.Fatalf("expected out of gas error, got %v", err)
+	}
+	if receipt.GasUsedForL1 != 0 {
+		t.Fatalf("expected 0 gas used, got %d", receipt.GasUsedForL1)
+	}
+	receipt, err = WaitForTx(ctx, testClient2ndNode.Client, tx.Hash(), time.Second*15)
+	Require(t, err)
+	if receipt.GasUsedForL1 != 0 {
+		t.Fatalf("expected 0 gas used, got %d", receipt.GasUsedForL1)
+	}
+	blockNumberFailedTx := receipt.BlockNumber
+
+	wasmModuleRoot := currentRootModule(t)
+	_, _, err = builder.L2.ConsensusNode.StatelessBlockValidator.ValidateResult(
+		ctx,
+		arbutil.MessageIndex(blockNumberFailedTx.Uint64()),
+		false,
+		wasmModuleRoot,
+	)
+	Require(t, err)
 }

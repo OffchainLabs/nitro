@@ -1,5 +1,5 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package precompiles
 
@@ -167,9 +167,9 @@ func newMockEVMForTesting() *vm.EVM {
 	return newMockEVMForTestingWithVersion(nil)
 }
 
-func newMockEVMForTestingWithVersionAndRunMode(version *uint64, runMode core.MessageRunMode) *vm.EVM {
+func newMockEVMForTestingWithVersionAndRunMode(version *uint64, runCtx *core.MessageRunContext) *vm.EVM {
 	evm := newMockEVMForTestingWithVersion(version)
-	evm.ProcessingHook = arbos.NewTxProcessor(evm, &core.Message{TxRunMode: runMode})
+	evm.ProcessingHook = arbos.NewTxProcessor(evm, &core.Message{TxRunContext: runCtx})
 	return evm
 }
 

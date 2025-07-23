@@ -1,5 +1,5 @@
 // Copyright 2024-2025, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package gethexec
 
@@ -10,8 +10,8 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
-	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
@@ -26,6 +26,10 @@ type RoundListener interface {
 	NextRound(round uint64, controller common.Address)
 }
 
+type HeaderProvider interface {
+	HeaderByNumber(ctx context.Context, number rpc.BlockNumber) (*types.Header, error)
+}
+
 // ExpressLaneTracker knows what round it is
 type ExpressLaneTracker struct {
 	stopwaiter.StopWaiter
@@ -34,7 +38,7 @@ type ExpressLaneTracker struct {
 	pollInterval    time.Duration
 	chainConfig     *params.ChainConfig
 
-	apiBackend           *arbitrum.APIBackend
+	headerProvider       HeaderProvider
 	auctionContract      *express_lane_auctiongen.ExpressLaneAuction
 	auctionContractAddr  common.Address
 	earlySubmissionGrace time.Duration
@@ -45,7 +49,7 @@ type ExpressLaneTracker struct {
 func NewExpressLaneTracker(
 	roundTimingInfo timeboost.RoundTimingInfo,
 	pollInterval time.Duration,
-	apiBackend *arbitrum.APIBackend,
+	headerProvider HeaderProvider,
 	auctionContract *express_lane_auctiongen.ExpressLaneAuction,
 	auctionContractAddr common.Address,
 	chainConfig *params.ChainConfig,
@@ -53,7 +57,7 @@ func NewExpressLaneTracker(
 	return &ExpressLaneTracker{
 		roundTimingInfo:      roundTimingInfo,
 		pollInterval:         pollInterval,
-		apiBackend:           apiBackend,
+		headerProvider:       headerProvider,
 		auctionContract:      auctionContract,
 		auctionContractAddr:  auctionContractAddr,
 		earlySubmissionGrace: earlySubmissionGrace,
@@ -70,7 +74,7 @@ func (t *ExpressLaneTracker) Start(ctxIn context.Context) {
 		log.Info("Monitoring express lane auction contract")
 
 		var fromBlock uint64
-		latestBlock, err := t.apiBackend.HeaderByNumber(ctx, rpc.LatestBlockNumber)
+		latestBlock, err := t.headerProvider.HeaderByNumber(ctx, rpc.LatestBlockNumber)
 		if err != nil {
 			log.Error("ExpressLaneService could not get the latest header", "err", err)
 		} else {
@@ -92,7 +96,7 @@ func (t *ExpressLaneTracker) Start(ctxIn context.Context) {
 			case <-ticker.C:
 			}
 
-			latestBlock, err := t.apiBackend.HeaderByNumber(ctx, rpc.LatestBlockNumber)
+			latestBlock, err := t.headerProvider.HeaderByNumber(ctx, rpc.LatestBlockNumber)
 			if err != nil {
 				log.Error("ExpressLaneTracker could not get the latest header", "err", err)
 				continue

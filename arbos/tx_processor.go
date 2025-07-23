@@ -1,5 +1,5 @@
 // Copyright 2021-2024, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbos
 
@@ -16,7 +16,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
-	glog "github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos/arbosState"
@@ -126,10 +125,11 @@ func (p *TxProcessor) ExecuteWASM(scope *vm.ScopeContext, input []byte, interpre
 		tracingInfo,
 		input,
 		reentrant,
-		p.RunMode(),
+		p.RunContext(),
 	)
 }
 
+//nolint:staticcheck
 func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, returnData []byte) {
 	// This hook is called before gas charging and will end the state transition if endTxNow is set to true
 	// Hence, we must charge for any l2 resources if endTxNow is returned true
@@ -149,20 +149,20 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 		if tracer == nil {
 			return func() {}
 		}
-		evm.IncrementDepth() // fake a call
 		from := p.msg.From
 		if tracer.OnEnter != nil {
 			tracer.OnEnter(evm.Depth(), byte(vm.CALL), from, *p.msg.To, p.msg.Data, p.msg.GasLimit, p.msg.Value)
 		}
+		evm.IncrementDepth() // fake a call
 
 		tracingInfo = util.NewTracingInfo(evm, from, *p.msg.To, util.TracingDuringEVM)
 		p.state = arbosState.OpenSystemArbosStateOrPanic(evm.StateDB, tracingInfo, false)
 
 		return func() {
+			evm.DecrementDepth() // fake the return to the first faked call
 			if tracer.OnExit != nil {
 				tracer.OnExit(evm.Depth(), nil, p.state.Burner.Burned(), nil, false)
 			}
-			evm.DecrementDepth() // fake the return to the first faked call
 
 			tracingInfo = util.NewTracingInfo(evm, from, *p.msg.To, util.TracingAfterEVM)
 			p.state = arbosState.OpenSystemArbosStateOrPanic(evm.StateDB, tracingInfo, false)
@@ -189,7 +189,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 	case *types.ArbitrumInternalTx:
 		defer (startTracer())()
 		if p.msg.From != arbosAddress {
-			return false, 0, errors.New("internal tx not from arbAddress"), nil
+			return true, 0, errors.New("internal tx not from arbAddress"), nil
 		}
 		err = ApplyInternalTxUpdate(tx, p.state, evm)
 		return true, 0, err, nil
@@ -232,35 +232,35 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 		}
 
 		// collect the submission fee
-		if err := transfer(&tx.From, &networkFeeAccount, submissionFee, tracing.BalanceChangeDuringEVMExecution); err != nil {
+		if err := transfer(&tx.From, &networkFeeAccount, submissionFee, tracing.BalanceIncreaseNetworkFee); err != nil {
 			// should be impossible as we just checked that they have enough balance for the max submission fee,
 			// and we also checked that the max submission fee is at least the actual submission fee
-			glog.Error("failed to transfer submissionFee", "err", err)
+			log.Error("failed to transfer submissionFee", "err", err)
 			return true, 0, err, nil
 		}
 		withheldSubmissionFee := takeFunds(availableRefund, submissionFee)
 
 		// refund excess submission fee
 		submissionFeeRefund := takeFunds(availableRefund, arbmath.BigSub(tx.MaxSubmissionFee, submissionFee))
-		if err := transfer(&tx.From, &tx.FeeRefundAddr, submissionFeeRefund, tracing.BalanceChangeDuringEVMExecution); err != nil {
+		if err := transfer(&tx.From, &tx.FeeRefundAddr, submissionFeeRefund, tracing.BalanceChangeTransferRetryableExcessRefund); err != nil {
 			// should never happen as from's balance should be at least availableRefund at this point
-			glog.Error("failed to transfer submissionFeeRefund", "err", err)
+			log.Error("failed to transfer submissionFeeRefund", "err", err)
 		}
 
 		// move the callvalue into escrow
-		if callValueErr := transfer(&tx.From, &escrow, tx.RetryValue, tracing.BalanceChangeDuringEVMExecution); callValueErr != nil {
+		if callValueErr := transfer(&tx.From, &escrow, tx.RetryValue, tracing.BalanceChangeEscrowTransfer); callValueErr != nil {
 			// The sender doesn't have enough balance to pay for the retryable's callvalue.
 			// Since we can't create the retryable, we should refund the submission fee.
 			// First, we give the submission fee back to the transaction sender:
-			if err := transfer(&networkFeeAccount, &tx.From, submissionFee, tracing.BalanceChangeDuringEVMExecution); err != nil {
-				glog.Error("failed to refund submissionFee", "err", err)
+			if err := transfer(&networkFeeAccount, &tx.From, submissionFee, tracing.BalanceChangeTransferNetworkRefund); err != nil {
+				log.Error("failed to refund submissionFee", "err", err)
 			}
 			// Then, as limited by availableRefund, we attempt to move the refund to the fee refund address.
 			// If the deposit value was lower than the submission fee, only some (or none) of the submission fee may be moved.
 			// In that case, any amount up to the deposit value will be refunded to the fee refund address,
 			// with the rest remaining in the transaction sender's address (as that's where the funds were pulled from).
-			if err := transfer(&tx.From, &tx.FeeRefundAddr, withheldSubmissionFee, tracing.BalanceChangeDuringEVMExecution); err != nil {
-				glog.Error("failed to refund withheldSubmissionFee", "err", err)
+			if err := transfer(&tx.From, &tx.FeeRefundAddr, withheldSubmissionFee, tracing.BalanceChangeTransferRetryableExcessRefund); err != nil {
+				log.Error("failed to refund withheldSubmissionFee", "err", err)
 			}
 			return true, 0, callValueErr, nil
 		}
@@ -282,7 +282,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 
 		err = EmitTicketCreatedEvent(evm, ticketId)
 		if err != nil {
-			glog.Error("failed to emit TicketCreated event", "err", err)
+			log.Error("failed to emit TicketCreated event", "err", err)
 		}
 
 		balance := statedb.GetBalance(tx.From)
@@ -297,9 +297,9 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 			// or the specified gas limit is below the minimum transaction gas cost.
 			// Either way, attempt to refund the gas costs, since we're not doing the auto-redeem.
 			gasCostRefund := takeFunds(availableRefund, maxGasCost)
-			if err := transfer(&tx.From, &tx.FeeRefundAddr, gasCostRefund, tracing.BalanceChangeDuringEVMExecution); err != nil {
+			if err := transfer(&tx.From, &tx.FeeRefundAddr, gasCostRefund, tracing.BalanceChangeTransferRetryableExcessRefund); err != nil {
 				// should never happen as from's balance should be at least availableRefund at this point
-				glog.Error("failed to transfer gasCostRefund", "err", err)
+				log.Error("failed to transfer gasCostRefund", "err", err)
 			}
 			return true, 0, nil, ticketId.Bytes()
 		}
@@ -316,16 +316,16 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 				infraFee := arbmath.BigMin(minBaseFee, effectiveBaseFee)
 				infraCost := arbmath.BigMulByUint(infraFee, usergas)
 				infraCost = takeFunds(networkCost, infraCost)
-				if err := transfer(&tx.From, &infraFeeAccount, infraCost, tracing.BalanceChangeDuringEVMExecution); err != nil {
-					glog.Error("failed to transfer gas cost to infrastructure fee account", "err", err)
+				if err := transfer(&tx.From, &infraFeeAccount, infraCost, tracing.BalanceIncreaseInfraFee); err != nil {
+					log.Error("failed to transfer gas cost to infrastructure fee account", "err", err)
 					return true, 0, nil, ticketId.Bytes()
 				}
 			}
 		}
 		if arbmath.BigGreaterThan(networkCost, common.Big0) {
-			if err := transfer(&tx.From, &networkFeeAccount, networkCost, tracing.BalanceChangeDuringEVMExecution); err != nil {
+			if err := transfer(&tx.From, &networkFeeAccount, networkCost, tracing.BalanceIncreaseNetworkFee); err != nil {
 				// should be impossible because we just checked the tx.From balance
-				glog.Error("failed to transfer gas cost to network fee account", "err", err)
+				log.Error("failed to transfer gas cost to network fee account", "err", err)
 				return true, 0, nil, ticketId.Bytes()
 			}
 		}
@@ -337,8 +337,8 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 			gasPriceRefund.SetInt64(0)
 		}
 		gasPriceRefund = takeFunds(availableRefund, gasPriceRefund)
-		if err := transfer(&tx.From, &tx.FeeRefundAddr, gasPriceRefund, tracing.BalanceChangeDuringEVMExecution); err != nil {
-			glog.Error("failed to transfer gasPriceRefund", "err", err)
+		if err := transfer(&tx.From, &tx.FeeRefundAddr, gasPriceRefund, tracing.BalanceChangeTransferRetryableExcessRefund); err != nil {
+			log.Error("failed to transfer gasPriceRefund", "err", err)
 		}
 		availableRefund.Add(availableRefund, withheldGasFunds)
 		availableRefund.Add(availableRefund, withheldSubmissionFee)
@@ -370,7 +370,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 			submissionFee,
 		)
 		if err != nil {
-			glog.Error("failed to emit RedeemScheduled event", "err", err)
+			log.Error("failed to emit RedeemScheduled event", "err", err)
 		}
 
 		if tracer := evm.Config.Tracer; tracer != nil {
@@ -378,12 +378,19 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 			if err == nil {
 				tracingInfo.MockCall(redeem, usergas, from, types.ArbRetryableTxAddress, common.Big0)
 			} else {
-				glog.Error("failed to abi-encode auto-redeem", "err", err)
+				log.Error("failed to abi-encode auto-redeem", "err", err)
 			}
 		}
 
 		return true, usergas, nil, ticketId.Bytes()
 	case *types.ArbitrumRetryTx:
+		retryable, err := p.state.RetryableState().OpenRetryable(tx.TicketId, p.evm.Context.Time)
+		if err != nil {
+			return true, 0, err, nil
+		}
+		if retryable == nil {
+			return true, 0, fmt.Errorf("retryable with ticketId: %v not found", tx.TicketId), nil
+		}
 
 		// Transfer callvalue from escrow
 		escrow := retryables.RetryableEscrowAddress(tx.TicketId)
@@ -403,8 +410,8 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 	return false, 0, nil, nil
 }
 
-func GetPosterGas(state *arbosState.ArbosState, baseFee *big.Int, runMode core.MessageRunMode, posterCost *big.Int) uint64 {
-	if runMode == core.MessageGasEstimationMode {
+func GetPosterGas(state *arbosState.ArbosState, baseFee *big.Int, runCtx *core.MessageRunContext, posterCost *big.Int) uint64 {
+	if runCtx.IsGasEstimation() {
 		// Suggest the amount of gas needed for a given amount of ETH is higher in case of congestion.
 		// This will help the user pad the total they'll pay in case the price rises a bit.
 		// Note, reducing the poster cost will increase share the network fee gets, not reduce the total.
@@ -439,13 +446,13 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) (common.Address, err
 	}
 
 	var poster common.Address
-	if !p.msg.TxRunMode.ExecutedOnChain() {
+	if !p.msg.TxRunContext.IsExecutedOnChain() {
 		poster = l1pricing.BatchPosterAddress
 	} else {
 		poster = p.evm.Context.Coinbase
 	}
 
-	if p.msg.TxRunMode.ExecutedOnChain() {
+	if p.msg.TxRunContext.IsExecutedOnChain() {
 		p.msg.SkipL1Charging = false
 	}
 	if basefee.Sign() > 0 && !p.msg.SkipL1Charging {
@@ -460,7 +467,7 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) (common.Address, err
 		if calldataUnits > 0 {
 			p.state.Restrict(p.state.L1PricingState().AddToUnitsSinceUpdate(calldataUnits))
 		}
-		p.posterGas = GetPosterGas(p.state, basefee, p.msg.TxRunMode, posterCost)
+		p.posterGas = GetPosterGas(p.state, basefee, p.msg.TxRunContext, posterCost)
 		p.PosterFee = arbmath.BigMulByUint(basefee, p.posterGas) // round down
 		gasNeededToStartEVM = p.posterGas
 	}
@@ -471,7 +478,7 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) (common.Address, err
 	}
 	*gasRemaining -= gasNeededToStartEVM
 
-	if p.msg.TxRunMode != core.MessageEthcallMode {
+	if !p.msg.TxRunContext.IsEthcall() {
 		// If this is a real tx, limit the amount of computed based on the gas pool.
 		// We do this by charging extra gas, and then refunding it later.
 		gasAvailable, _ := p.state.L2PricingState().PerBlockGasLimit()
@@ -483,8 +490,8 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) (common.Address, err
 	return tipReceipient, nil
 }
 
-func (p *TxProcessor) RunMode() core.MessageRunMode {
-	return p.msg.TxRunMode
+func (p *TxProcessor) RunContext() *core.MessageRunContext {
+	return p.msg.TxRunContext
 }
 
 func (p *TxProcessor) NonrefundableGas() uint64 {
@@ -512,7 +519,7 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 	if underlyingTx != nil && underlyingTx.Type() == types.ArbitrumRetryTxType {
 		inner, _ := underlyingTx.GetInner().(*types.ArbitrumRetryTx)
 		effectiveBaseFee := inner.GasFeeCap
-		if p.msg.TxRunMode.ExecutedOnChain() && !arbmath.BigEquals(effectiveBaseFee, p.evm.Context.BaseFee) {
+		if p.msg.TxRunContext.IsExecutedOnChain() && !arbmath.BigEquals(effectiveBaseFee, p.evm.Context.BaseFee) {
 			log.Error(
 				"ArbitrumRetryTx GasFeeCap doesn't match basefee in commit mode",
 				"txHash", underlyingTx.Hash(),
@@ -682,13 +689,13 @@ func (p *TxProcessor) ScheduledTxes() types.Transactions {
 	chainID := p.evm.ChainConfig().ChainID
 
 	logs := p.evm.StateDB.GetCurrentTxLogs()
-	for _, log := range logs {
-		if log.Address != ArbRetryableTxAddress || log.Topics[0] != RedeemScheduledEventID {
+	for _, l := range logs {
+		if l.Address != ArbRetryableTxAddress || l.Topics[0] != RedeemScheduledEventID {
 			continue
 		}
-		event, err := util.ParseRedeemScheduledLog(log)
+		event, err := util.ParseRedeemScheduledLog(l)
 		if err != nil {
-			glog.Error("Failed to parse RedeemScheduled log", "err", err)
+			log.Error("Failed to parse RedeemScheduled log", "err", err)
 			continue
 		}
 		retryable, err := p.state.RetryableState().OpenRetryable(event.TicketId, time)
@@ -775,8 +782,7 @@ func (p *TxProcessor) MsgIsNonMutating() bool {
 	if p.msg == nil {
 		return false
 	}
-	mode := p.msg.TxRunMode
-	return mode == core.MessageGasEstimationMode || mode == core.MessageEthcallMode
+	return p.msg.TxRunContext.IsNonMutating()
 }
 
 func (p *TxProcessor) IsCalldataPricingIncreaseEnabled() bool {

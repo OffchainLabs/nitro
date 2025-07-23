@@ -1,49 +1,17 @@
 // Copyright 2022-2024, Offchain Labs, Inc.
-// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 use arbutil::Bytes32;
-use c_kzg::{
-    KzgSettings, BYTES_PER_BLOB, BYTES_PER_G1_POINT, BYTES_PER_G2_POINT, FIELD_ELEMENTS_PER_BLOB,
-};
+use c_kzg::{KzgSettings, BYTES_PER_BLOB, FIELD_ELEMENTS_PER_BLOB};
 use eyre::{ensure, Result, WrapErr};
 use num::BigUint;
-use serde::{de::Error as _, Deserialize};
 use sha2::{Digest, Sha256};
 use std::{convert::TryFrom, io::Write};
 
-struct HexBytesParser;
-
-impl<'de, const N: usize> serde_with::DeserializeAs<'de, [u8; N]> for HexBytesParser {
-    fn deserialize_as<D>(deserializer: D) -> Result<[u8; N], D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let s = String::deserialize(deserializer)?;
-        let mut s = s.as_str();
-        if s.starts_with("0x") {
-            s = &s[2..];
-        }
-        let mut bytes = [0; N];
-        match hex::decode_to_slice(s, &mut bytes) {
-            Ok(()) => Ok(bytes),
-            Err(err) => Err(D::Error::custom(err.to_string())),
-        }
-    }
-}
-
-#[derive(Deserialize)]
-struct TrustedSetup {
-    #[serde(with = "serde_with::As::<Vec<HexBytesParser>>")]
-    g1_lagrange: Vec<[u8; BYTES_PER_G1_POINT]>,
-    #[serde(with = "serde_with::As::<Vec<HexBytesParser>>")]
-    g2_monomial: Vec<[u8; BYTES_PER_G2_POINT]>,
-}
-
 lazy_static::lazy_static! {
     pub static ref ETHEREUM_KZG_SETTINGS: KzgSettings = {
-        let trusted_setup = serde_json::from_str::<TrustedSetup>(include_str!("kzg-trusted-setup.json"))
-            .expect("Failed to deserialize Ethereum trusted setup");
-        KzgSettings::load_trusted_setup(&trusted_setup.g1_lagrange, &trusted_setup.g2_monomial)
+        let trusted_setup = include_str!("kzg-trusted-setup.txt");
+        KzgSettings::parse_kzg_trusted_setup(trusted_setup, 0)
             .expect("Failed to load Ethereum trusted setup")
     };
 
@@ -70,7 +38,8 @@ pub fn prove_kzg_preimage(
     );
     let blob =
         c_kzg::Blob::from_bytes(preimage).wrap_err("Failed to generate KZG blob from preimage")?;
-    let commitment = c_kzg::KzgCommitment::blob_to_kzg_commitment(&blob, &ETHEREUM_KZG_SETTINGS)
+    let commitment = ETHEREUM_KZG_SETTINGS
+        .blob_to_kzg_commitment(&blob)
         .wrap_err("Failed to generate KZG commitment from blob")?;
     let mut expected_hash: Bytes32 = Sha256::digest(&*commitment).into();
     expected_hash[0] = 1;
@@ -100,9 +69,9 @@ pub fn prove_kzg_preimage(
     let mut padded_z_bytes = [0u8; 32];
     padded_z_bytes[32 - z_bytes.len()..].copy_from_slice(&z_bytes);
     let z_bytes = c_kzg::Bytes32::from(padded_z_bytes);
-    let (kzg_proof, proven_y) =
-        c_kzg::KzgProof::compute_kzg_proof(&blob, &z_bytes, &ETHEREUM_KZG_SETTINGS)
-            .wrap_err("Failed to generate KZG proof from blob and z")?;
+    let (kzg_proof, proven_y) = ETHEREUM_KZG_SETTINGS
+        .compute_kzg_proof(&blob, &z_bytes)
+        .wrap_err("Failed to generate KZG proof from blob and z")?;
     if !proving_past_end {
         ensure!(
             *proven_y == preimage[offset_usize..offset_usize + 32],
