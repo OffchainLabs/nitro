@@ -1,10 +1,4 @@
-# Build the nitro-node images on ARM64 and AMD64 hosts.
-#
-# The reason for building the ARM image natively instead of with QEMU is that
-# the QEMU build always failed after around 40 minutes. I'm currently not sure
-# why it failed. I did also run into insufficient space issuse on public runners
-# so it's possible this was always the culprit.
-#
+# Build the nitro-node images on  AMD64 hosts.
 # After building, the images are merged together to make a multiplatform image.
 name: Espresso Docker build CI
 run-name: Docker build CI triggered from @${{ github.actor }} of ${{ github.head_ref }}
@@ -13,14 +7,6 @@ on:
   workflow_dispatch:
   merge_group:
   pull_request:
-  push:
-    branches:
-      - master
-      - develop
-      - integration
-      - celestia-integration
-    tags:
-      - "v[0-9]+.[0-9]+.[0-9]+-.*"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -38,20 +24,14 @@ jobs:
     needs: free-disk-space
     strategy:
       matrix:
-        platform: [linux/amd64, linux/arm64]
-        # Don't run arm build on PRs, "exclude:" is processed before "include:",
-        # so we avoid using `include:`.
-        exclude:
-          - platform: ${{ github.event_name == 'pull_request' && 'linux/arm64' }}
+        platform: [linux/amd64]
 
-    runs-on: ${{ matrix.platform == 'linux/amd64' && 'ubuntu-latest' || 'buildjet-8vcpu-ubuntu-2204-arm' }}
+    runs-on: ubuntu-latest
 
     steps:
       - uses: cargo-bins/cargo-binstall@main
-        if: ${{ runner.arch != 'ARM64' }}
 
       - name: Make more disk space available on public runner
-        if: ${{ runner.arch != 'ARM64' }}
         run: |
           # rmz seems to be faster at deleting files than rm
           cargo binstall -y --version 2.2.0 rmz
@@ -96,88 +76,34 @@ jobs:
 
       - name: Login to Github Container Repo
         uses: docker/login-action@v3
-        if: github.event_name != 'pull_request'
         with:
           registry: ghcr.io
           username: ${{ github.repository_owner  }}
           password: ${{ secrets.GITHUB_TOKEN  }}
-
-      - name: Build nitro-node image
-        uses: ./.github/actions/docker-image
-        with:
-          context: .
-          file: Dockerfile
-          images: ghcr.io/espressosystems/nitro-espresso-integration/nitro-node
-          target: nitro-node
-          platforms: ${{ matrix.platform }}
-          push: ${{ github.event_name != 'pull_request' }}
-
-      - name: Check available space after CI run
-        if: "!cancelled()"
-        run: |
-          sudo df -h
-
-  # Merge the AMD64 and ARM64 images into the final (multiplatform) image.
-  #
-  # For documentation refer to
-  # https://docs.docker.com/build/ci/github-actions/multi-platform/#distribute-build-across-multiple-runners
-  # Only building for AMD64
-  merge_into_multiplatform_images:
-    # We only build the ARM images for non-PR builds, so skip this job if we're on PRs.
-    if: github.event_name != 'pull_request'
-    needs:
-      - docker_build
-    strategy:
-      matrix:
-        target: [nitro-node]
-        include:
-          - target: nitro-node
-            image: ghcr.io/espressosystems/nitro-espresso-integration/nitro-node
-
-    runs-on: ubuntu-latest
-    steps:
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Login to Github Container Repo
-        uses: docker/login-action@v2
-        with:
-          registry: ghcr.io
-          username: ${{ github.repository_owner  }}
-          password: ${{ secrets.GITHUB_TOKEN  }}
-
-      - name: Download digest amd64
-        uses: actions/download-artifact@v4
-        with:
-          name: "${{ matrix.target }}-digests-${{ github.run_number }}-amd64"
-          path: "${{ runner.temp }}/${{ matrix.target }}-${{ github.run_number }}-digests"
-
-      - name: Download digest arm64
-        uses: actions/download-artifact@v4
-        with:
-          name: "${{ matrix.target }}-digests-${{ github.run_number }}-arm64"
-          path: "${{ runner.temp }}/${{ matrix.target }}-${{ github.run_number }}-digests"
 
       - name: Docker meta
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ matrix.image }}
+          images: ghcr.io/espressosystems/nitro-espresso-integration/nitro-node
+          tags: |
+            type=ref,event=pr
+            type=ref,event=branch
+            type=ref,event=tag
+            type=sha
 
-      - name: Create manifest list and push
-        working-directory: "${{ runner.temp }}/${{ matrix.target }}-${{ github.run_number }}-digests"
+      - name: Build & push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          target: nitro-node
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+      - name: Check available space after CI run
+        if: "!cancelled()"
         run: |
-          # Count the number of files in the directory
-          file_count=$(find . -type f | wc -l)
-
-          if [ "$file_count" -ne 2 ]; then
-            echo "Should have exactly 2 digests to combine, something went wrong"
-            ls -lah
-            exit 1
-          fi
-
-          docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
-            $(printf '${{ matrix.image }}@sha256:%s ' *)
-      - name: Inspect image
-        run: |
-          docker buildx imagetools inspect ${{ matrix.image }}:${{ steps.meta.outputs.version }}
+          sudo df -h
