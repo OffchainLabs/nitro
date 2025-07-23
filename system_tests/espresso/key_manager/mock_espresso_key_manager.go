@@ -7,12 +7,12 @@ import (
 
 	"github.com/ethereum/go-ethereum/crypto"
 
-	"github.com/offchainlabs/nitro/arbnode"
+	key_manager "github.com/offchainlabs/nitro/espresso/key-manager"
 	"github.com/offchainlabs/nitro/espressotee"
 )
 
 // MockEspressoKeyManager is a mock implementation of the
-// arbnode.EspressoKeyManagerInterface.
+// key_manager.EspressoKeyManagerInterface.
 //
 // It is used for testing purposes and provides a simple implementation
 // of the Espresso key management functionality without requiring a real
@@ -22,8 +22,8 @@ type MockEspressoKeyManager struct {
 }
 
 // Compile time check to ensure that MockEspressoKeyManager implements the
-// arbnode.EspressoKeyManagerInterface.
-var _ arbnode.EspressoKeyManagerInterface = &MockEspressoKeyManager{}
+// key_manager.EspressoKeyManagerInterface.
+var _ key_manager.EspressoKeyManagerInterface = &MockEspressoKeyManager{}
 
 // MockEspressoKeyManagerConfig holds the configuration options for the
 // MockEspressoKeyManager. It governs the customization of the
@@ -74,34 +74,34 @@ func NewMockEspressoKeyManager(options ...MockEspressoKeyManagerOption) *MockEsp
 	}
 }
 
-// GetCurrentKey implements arbnode.EspressoKeyManagerInterface.
+// GetCurrentKey implements key_manager.EspressoKeyManagerInterface.
 func (m *MockEspressoKeyManager) GetCurrentKey() *ecdsa.PublicKey {
 	return &m.Key.PublicKey
 }
 
-// HasRegistered implements arbnode.EspressoKeyManagerInterface.
+// HasRegistered implements key_manager.EspressoKeyManagerInterface.
 func (m *MockEspressoKeyManager) HasRegistered() bool {
 	return false
 }
 
-// Register implements arbnode.EspressoKeyManagerInterface.
+// Register implements key_manager.EspressoKeyManagerInterface.
 func (m *MockEspressoKeyManager) Register(getAttestationFunc func([]byte) ([]byte, error)) error {
 	return nil
 }
 
-// SignBatch implements arbnode.EspressoKeyManagerInterface.
+// SignBatch implements key_manager.EspressoKeyManagerInterface.
 func (m *MockEspressoKeyManager) SignBatch(message []byte) ([]byte, error) {
 	hash := crypto.Keccak256Hash(message)
 	return crypto.Sign(hash.Bytes(), m.Key)
 }
 
-// SignHotShotPayload implements arbnode.EspressoKeyManagerInterface.
+// SignHotShotPayload implements key_manager.EspressoKeyManagerInterface.
 func (m *MockEspressoKeyManager) SignHotShotPayload(message []byte) ([]byte, error) {
 	hash := crypto.Keccak256Hash(message)
 	return crypto.Sign(hash.Bytes(), m.Key)
 }
 
-// TeeType implements arbnode.EspressoKeyManagerInterface.
+// TeeType implements key_manager.EspressoKeyManagerInterface.
 func (m *MockEspressoKeyManager) TeeType() espressotee.TEE {
 	return espressotee.SGX
 }

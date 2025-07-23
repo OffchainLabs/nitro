@@ -48,7 +48,7 @@ func TestTransactionStreamerEspressoThroughput(t *testing.T) {
 	blocksWithTransactionsCh := make(chan espresso_client.TransactionsInBlock, N)
 
 	// Setup the Testing Environment
-	mockEspressoChain, _, streamer, err := transaction_streamer.NewMockTransactionStreamerEnvironment(
+	mockEspressoChain, _, _, streamer, err := transaction_streamer.NewMockTransactionStreamerEnvironment(
 		runCtx,
 		transaction_streamer.AddEspressoClientOptions(func(espressoClient espresso_client.EspressoClient) espresso_client.EspressoClient {
 			return chain.NewSiphonBlocksWithTransactions(espressoClient, blocksWithTransactionsCh)

@@ -21,10 +21,6 @@ var (
 	delayedMessageCountKey      []byte = []byte("_delayedMessageCount")         // contains the current delayed message count
 	sequencerBatchCountKey      []byte = []byte("_sequencerBatchCount")         // contains the current sequencer message count
 	dbSchemaVersion             []byte = []byte("_schemaVersion")               // contains a uint64 representing the database schema version
-
-	espressoSubmittedTxns        []byte = []byte("_espressoSubmittedTxns")    // contains the hash and pos of the submitted transactions
-	espressoPendingTxnsPositions []byte = []byte("_espressoPendingTxnsPos")   // contains the index of the pending txns that need to be submitted to espresso
-	espressoLastConfirmedPos     []byte = []byte("_espressoLastConfirmedPos") // contains the position of the last confirmed message
 )
 
 const currentDbSchemaVersion uint64 = 1
