@@ -28,6 +28,7 @@ type CachingConfig struct {
 	Archive                             bool          `koanf:"archive"`
 	BlockCount                          uint64        `koanf:"block-count"`
 	BlockAge                            time.Duration `koanf:"block-age"`
+	TrieTimeLimitBeforeFlushMaintenance time.Duration `koanf:"trie-time-limit-before-flush-maintenance"`
 	TrieTimeLimit                       time.Duration `koanf:"trie-time-limit"`
 	TrieTimeLimitRandomOffset           time.Duration `koanf:"trie-time-limit-random-offset"`
 	TrieDirtyCache                      int           `koanf:"trie-dirty-cache"`
@@ -50,6 +51,7 @@ func CachingConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".archive", DefaultCachingConfig.Archive, "retain past block state")
 	f.Uint64(prefix+".block-count", DefaultCachingConfig.BlockCount, "minimum number of recent blocks to keep in memory")
 	f.Duration(prefix+".block-age", DefaultCachingConfig.BlockAge, "minimum age of recent blocks to keep in memory")
+	f.Duration(prefix+".trie-time-limit-before-flush-maintenance", DefaultCachingConfig.TrieTimeLimitBeforeFlushMaintenance, "Execution will suggest that maintenance is run if the block processing time required to reach trie-time-limit is smaller or equal than trie-time-limit-before-flush-maintenance")
 	f.Duration(prefix+".trie-time-limit", DefaultCachingConfig.TrieTimeLimit, "maximum block processing time before trie is written to hard-disk")
 	f.Duration(prefix+".trie-time-limit-random-offset", DefaultCachingConfig.TrieTimeLimitRandomOffset, "if greater then 0, the block processing time period of each trie write to hard-disk is shortened by a random value from range [0, trie-time-limit-random-offset)")
 	f.Int(prefix+".trie-dirty-cache", DefaultCachingConfig.TrieDirtyCache, "amount of memory in megabytes to cache state diffs against disk with (larger cache lowers database growth)")
@@ -74,23 +76,24 @@ func getStateHistory(maxBlockSpeed time.Duration) uint64 {
 }
 
 var DefaultCachingConfig = CachingConfig{
-	Archive:                            false,
-	BlockCount:                         128,
-	BlockAge:                           30 * time.Minute,
-	TrieTimeLimit:                      time.Hour,
-	TrieTimeLimitRandomOffset:          0,
-	TrieDirtyCache:                     1024,
-	TrieCleanCache:                     600,
-	TrieCapLimit:                       100,
-	SnapshotCache:                      400,
-	DatabaseCache:                      2048,
-	SnapshotRestoreGasLimit:            300_000_000_000,
-	HeadRewindBlocksLimit:              4 * 7 * 24 * 3600, // 4 blocks per second over 7 days (an arbitrary value, should be greater than the number of blocks between state commits in full node; the state commit period depends both on chain activity and TrieTimeLimit)
-	MaxNumberOfBlocksToSkipStateSaving: 0,
-	MaxAmountOfGasToSkipStateSaving:    0,
-	StylusLRUCacheCapacity:             256,
-	StateScheme:                        rawdb.HashScheme,
-	StateHistory:                       getStateHistory(DefaultSequencerConfig.MaxBlockSpeed),
+	Archive:                             false,
+	BlockCount:                          128,
+	BlockAge:                            30 * time.Minute,
+	TrieTimeLimitBeforeFlushMaintenance: 0,
+	TrieTimeLimit:                       time.Hour,
+	TrieTimeLimitRandomOffset:           0,
+	TrieDirtyCache:                      1024,
+	TrieCleanCache:                      600,
+	TrieCapLimit:                        100,
+	SnapshotCache:                       400,
+	DatabaseCache:                       2048,
+	SnapshotRestoreGasLimit:             300_000_000_000,
+	HeadRewindBlocksLimit:               4 * 7 * 24 * 3600, // 4 blocks per second over 7 days (an arbitrary value, should be greater than the number of blocks between state commits in full node; the state commit period depends both on chain activity and TrieTimeLimit)
+	MaxNumberOfBlocksToSkipStateSaving:  0,
+	MaxAmountOfGasToSkipStateSaving:     0,
+	StylusLRUCacheCapacity:              256,
+	StateScheme:                         rawdb.HashScheme,
+	StateHistory:                        getStateHistory(DefaultSequencerConfig.MaxBlockSpeed),
 }
 
 func DefaultCacheConfigFor(cachingConfig *CachingConfig) *core.CacheConfig {
