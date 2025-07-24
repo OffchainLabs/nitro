@@ -605,7 +605,7 @@ contracts/test/prover/proofs/%.json: $(arbitrator_cases)/%.wasm $(prover_bin)
 	@touch $@
 
 .make/solidity: $(DEP_PREDICATE) safe-smart-account/contracts/*/*.sol safe-smart-account/contracts/*.sol contracts/src/*/*.sol contracts-legacy/src/*/*.sol contracts-local/src/*/*.sol contracts-local/gas-dimensions/src/*.sol .make/yarndeps $(ORDER_ONLY_PREDICATE) .make
-	yarn --cwd safe-smart-account build
+	npm --prefix safe-smart-account run build
 	yarn --cwd contracts build
 	yarn --cwd contracts build:forge:yul
 	yarn --cwd contracts-legacy build
@@ -614,7 +614,7 @@ contracts/test/prover/proofs/%.json: $(arbitrator_cases)/%.wasm $(prover_bin)
 	@touch $@
 
 .make/yarndeps: $(DEP_PREDICATE) */package.json */yarn.lock $(ORDER_ONLY_PREDICATE) .make
-	yarn --cwd safe-smart-account install
+	npm --prefix safe-smart-account install
 	yarn --cwd contracts install
 	yarn --cwd contracts-legacy install
 	make -C contracts-local install
