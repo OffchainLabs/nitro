@@ -254,7 +254,6 @@ func NewStatelessBlockValidator(
 		}
 	}
 	configs := config().ValidationServerConfigs
-	wasmTargetsSet := make(map[rawdb.WasmTarget]struct{})
 	for i := range configs {
 		i := i
 		confFetcher := func() *rpcclient.ClientConfig { return &config().ValidationServerConfigs[i] }
@@ -262,15 +261,6 @@ func NewStatelessBlockValidator(
 		executionSpawner := validatorclient.NewExecutionClient(confFetcher, stack)
 		executionSpawners = append(executionSpawners, executionSpawner)
 		boldExecutionSpawners = append(boldExecutionSpawners, validatorclient.NewBOLDExecutionClient(executionSpawner))
-
-		for _, wasmTarget := range executionSpawner.StylusArchs() {
-			wasmTargetsSet[wasmTarget] = struct{}{}
-		}
-	}
-
-	wasmTargets := make([]rawdb.WasmTarget, 0, len(wasmTargetsSet))
-	for wasmTarget := range wasmTargetsSet {
-		wasmTargets = append(wasmTargets, wasmTarget)
 	}
 
 	if len(executionSpawners) == 0 {
@@ -294,7 +284,6 @@ func NewStatelessBlockValidator(
 		boldExecSpawners:     boldExecutionSpawners,
 		stack:                stack,
 		latestWasmModuleRoot: latestWasmModuleRoot,
-		wasmTargets:          wasmTargets,
 	}, nil
 }
 
@@ -578,11 +567,22 @@ func (v *StatelessBlockValidator) Start(ctx_in context.Context) error {
 			return fmt.Errorf("starting execution spawner: %w", err)
 		}
 	}
+
+	wasmTargetsSet := make(map[rawdb.WasmTarget]struct{})
 	for _, spawner := range v.execSpawners {
 		if err := spawner.Start(ctx_in); err != nil {
 			return err
 		}
+		for _, wasmTarget := range spawner.StylusArchs() {
+			wasmTargetsSet[wasmTarget] = struct{}{}
+		}
 	}
+	wasmTargets := make([]rawdb.WasmTarget, 0)
+	for wasmTarget := range wasmTargetsSet {
+		wasmTargets = append(wasmTargets, wasmTarget)
+	}
+	v.wasmTargets = wasmTargets
+
 	return nil
 }
 
