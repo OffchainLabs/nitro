@@ -232,6 +232,13 @@ func (s *TransactionStreamer) ReorgAt(firstMsgIdxReorged arbutil.MessageIndex) e
 }
 
 func (s *TransactionStreamer) ReorgAtAndEndBatch(batch ethdb.Batch, firstMsgIdxReorged arbutil.MessageIndex) error {
+// IMPORTANT: Always acquire reorgMutex before insertionMutex to avoid potential deadlocks.
+	s.reorgMutex.Lock()
+	defer s.reorgMutex.Unlock()
+
+	s.insertionMutex.Lock()
+	defer s.insertionMutex.Unlock()
+
 	s.insertionMutex.Lock()
 	defer s.insertionMutex.Unlock()
 	err := s.addMessagesAndReorg(batch, firstMsgIdxReorged, nil)
