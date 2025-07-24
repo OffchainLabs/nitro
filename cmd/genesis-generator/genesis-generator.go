@@ -11,6 +11,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
@@ -20,6 +21,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/statetransfer"
+	"github.com/offchainlabs/nitro/validator"
 )
 
 func main() {
@@ -88,7 +90,7 @@ func mainImpl() error {
 		ChainConfig:           chainConfig,
 		SerializedChainConfig: serializedChainConfig,
 	}
-	genesisHash, err := generateGenesisHash(rawdb.NewMemoryDatabase(),
+	genesisBlock, err := generateGenesisBlock(rawdb.NewMemoryDatabase(),
 		gethexec.DefaultCacheConfigFor(&config.Caching),
 		initDataReader,
 		chainConfig,
@@ -99,35 +101,41 @@ func mainImpl() error {
 	if err != nil {
 		return fmt.Errorf("failed to generate genesis hash: %w", err)
 	}
-	fmt.Printf("Genesis block hash: %s\n", genesisHash.Hex())
+	globalState := validator.GoGlobalState{
+		BlockHash:  genesisBlock.Hash(),
+		SendRoot:   genesisBlock.Root(),
+		Batch:      1,
+		PosInBatch: 0,
+	}
+	fmt.Print(globalState)
 	return nil
 }
 
-func generateGenesisHash(chainDb ethdb.Database, cacheConfig *core.CacheConfig, initData statetransfer.InitDataReader, chainConfig *params.ChainConfig, genesisArbOSInit *params.ArbOSInit, initMessage *arbostypes.ParsedInitMessage, accountsPerSync uint) (common.Hash, error) {
+func generateGenesisBlock(chainDb ethdb.Database, cacheConfig *core.CacheConfig, initData statetransfer.InitDataReader, chainConfig *params.ChainConfig, genesisArbOSInit *params.ArbOSInit, initMessage *arbostypes.ParsedInitMessage, accountsPerSync uint) (*types.Block, error) {
 	EmptyHash := common.Hash{}
 	prevHash := EmptyHash
 	blockNumber, err := initData.GetNextBlockNumber()
 	if err != nil {
-		return common.Hash{}, err
+		return nil, err
 	}
 	timestamp := uint64(0)
 	if blockNumber > 0 {
 		prevHash = rawdb.ReadCanonicalHash(chainDb, blockNumber-1)
 		if prevHash == EmptyHash {
-			return common.Hash{}, fmt.Errorf("block number %d not found in database", chainDb)
+			return nil, fmt.Errorf("block number %d not found in database", chainDb)
 		}
 		prevHeader := rawdb.ReadHeader(chainDb, prevHash, blockNumber-1)
 		if prevHeader == nil {
-			return common.Hash{}, fmt.Errorf("block header for block %d not found in database", chainDb)
+			return nil, fmt.Errorf("block header for block %d not found in database", chainDb)
 		}
 		timestamp = prevHeader.Time
 	}
 	stateRoot, err := arbosState.InitializeArbosInDatabase(chainDb, cacheConfig, initData, chainConfig, genesisArbOSInit, initMessage, timestamp, accountsPerSync)
 	if err != nil {
-		return common.Hash{}, err
+		return nil, err
 	}
 
-	return arbosState.MakeGenesisBlock(prevHash, blockNumber, timestamp, stateRoot, chainConfig).Hash(), nil
+	return arbosState.MakeGenesisBlock(prevHash, blockNumber, timestamp, stateRoot, chainConfig), nil
 }
 
 type Config struct {
