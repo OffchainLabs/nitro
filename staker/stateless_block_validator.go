@@ -562,13 +562,17 @@ func (v *StatelessBlockValidator) GetLatestWasmModuleRoot() common.Hash {
 }
 
 func (v *StatelessBlockValidator) Start(ctx_in context.Context) error {
+	wasmTargetsSet := make(map[rawdb.WasmTarget]struct{})
+
 	if v.redisValidator != nil {
 		if err := v.redisValidator.Start(ctx_in); err != nil {
 			return fmt.Errorf("starting execution spawner: %w", err)
 		}
+		for _, wasmTarget := range v.redisValidator.StylusArchs() {
+			wasmTargetsSet[wasmTarget] = struct{}{}
+		}
 	}
 
-	wasmTargetsSet := make(map[rawdb.WasmTarget]struct{})
 	for _, spawner := range v.execSpawners {
 		if err := spawner.Start(ctx_in); err != nil {
 			return err
@@ -577,6 +581,7 @@ func (v *StatelessBlockValidator) Start(ctx_in context.Context) error {
 			wasmTargetsSet[wasmTarget] = struct{}{}
 		}
 	}
+
 	wasmTargets := make([]rawdb.WasmTarget, 0)
 	for wasmTarget := range wasmTargetsSet {
 		wasmTargets = append(wasmTargets, wasmTarget)
