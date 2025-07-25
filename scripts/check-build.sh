@@ -18,7 +18,7 @@ else
     if [[ -f ../go.mod ]]; then
         go_version_needed=$(grep "^go " ../go.mod | awk '{print $2}')
     else
-        go_version_needed="uknown"
+        go_version_needed="unknown"
     fi
 fi
 
