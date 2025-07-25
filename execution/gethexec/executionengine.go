@@ -24,6 +24,7 @@ import (
 	"runtime/pprof"
 	"runtime/trace"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -58,8 +59,8 @@ var (
 	txCountHistogram           = metrics.NewRegisteredHistogram("arb/block/transactions/count", nil, metrics.NewBoundedHistogramSample())
 	txGasUsedHistogram         = metrics.NewRegisteredHistogram("arb/block/transactions/gasused", nil, metrics.NewBoundedHistogramSample())
 	gasUsedSinceStartupCounter = metrics.NewRegisteredCounter("arb/gas_used", nil)
-	blockExecutionTimer        = metrics.NewRegisteredTimer("arb/block/execution", nil)
-	blockWriteToDbTimer        = metrics.NewRegisteredTimer("arb/block/writetodb", nil)
+	blockExecutionTimer        = metrics.NewRegisteredHistogram("arb/block/execution", nil, metrics.NewBoundedHistogramSample())
+	blockWriteToDbTimer        = metrics.NewRegisteredHistogram("arb/block/writetodb", nil, metrics.NewBoundedHistogramSample())
 )
 
 var ExecutionEngineBlockCreationStopped = errors.New("block creation stopped in execution engine")
@@ -105,6 +106,8 @@ type ExecutionEngine struct {
 	wasmTargets []rawdb.WasmTarget
 
 	syncTillBlock uint64
+
+	runningMaintenance atomic.Bool
 }
 
 func NewL1PriceData() *L1PriceData {
@@ -573,7 +576,7 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 		return nil, err
 	}
 	blockCalcTime := time.Since(startTime)
-	blockExecutionTimer.Update(blockCalcTime)
+	blockExecutionTimer.Update(blockCalcTime.Nanoseconds())
 	if len(hooks.TxErrors) != len(txes) {
 		return nil, fmt.Errorf("unexpected number of error results: %v vs number of txes %v", len(hooks.TxErrors), len(txes))
 	}
@@ -685,7 +688,7 @@ func (s *ExecutionEngine) sequenceDelayedMessageWithBlockMutex(message *arbostyp
 		return nil, err
 	}
 	blockCalcTime := time.Since(startTime)
-	blockExecutionTimer.Update(blockCalcTime)
+	blockExecutionTimer.Update(blockCalcTime.Nanoseconds())
 
 	msgResult, err := s.resultFromHeader(block.Header())
 	if err != nil {
@@ -796,7 +799,7 @@ func (s *ExecutionEngine) appendBlock(block *types.Block, statedb *state.StateDB
 			return errors.New("geth rejected block as non-canonical")
 		}
 	}
-	blockWriteToDbTimer.Update(time.Since(startTime))
+	blockWriteToDbTimer.Update(time.Since(startTime).Nanoseconds())
 	baseFeeGauge.Update(block.BaseFee().Int64())
 	txCountHistogram.Update(int64(len(block.Transactions()) - 1))
 	var blockGasused uint64
@@ -956,7 +959,7 @@ func (s *ExecutionEngine) digestMessageWithBlockMutex(msgIdxToDigest arbutil.Mes
 		return nil, err
 	}
 	blockCalcTime := time.Since(startTime)
-	blockExecutionTimer.Update(blockCalcTime)
+	blockExecutionTimer.Update(blockCalcTime.Nanoseconds())
 
 	err = s.appendBlock(block, statedb, receipts, blockCalcTime)
 	if err != nil {
@@ -1082,8 +1085,48 @@ func (s *ExecutionEngine) Start(ctx_in context.Context) {
 	}
 }
 
-func (s *ExecutionEngine) Maintenance(capLimit uint64) error {
-	s.createBlocksMutex.Lock()
-	defer s.createBlocksMutex.Unlock()
-	return s.bc.FlushTrieDB(common.StorageSize(capLimit))
+func (s *ExecutionEngine) ShouldTriggerMaintenance(trieLimitBeforeFlushMaintenance time.Duration) bool {
+	if s.runningMaintenance.Load() {
+		return false
+	}
+
+	procTimeBeforeFlush, err := s.bc.ProcTimeBeforeFlush()
+	if err != nil {
+		log.Error("failed to get time before flush", "err")
+		return false
+	}
+
+	if procTimeBeforeFlush <= trieLimitBeforeFlushMaintenance/2 {
+		log.Warn("Time before flush is too low, maintenance should be triggered soon", "procTimeBeforeFlush", procTimeBeforeFlush)
+	}
+	return procTimeBeforeFlush <= trieLimitBeforeFlushMaintenance
+}
+
+func (s *ExecutionEngine) TriggerMaintenance(capLimit uint64) {
+	if s.runningMaintenance.Swap(true) {
+		log.Info("Maintenance already running, skipping")
+		return
+	}
+
+	// Flushing the trie DB can be a long operation, so we run it in a new thread
+	s.LaunchThread(func(ctx context.Context) {
+		defer s.runningMaintenance.Store(false)
+
+		s.createBlocksMutex.Lock()
+		defer s.createBlocksMutex.Unlock()
+
+		log.Info("Flushing trie db through maintenance, it can take a while")
+		err := s.bc.FlushTrieDB(common.StorageSize(capLimit))
+		if err != nil {
+			log.Error("Failed to flush trie db through maintenance", "err", err)
+		} else {
+			log.Info("Flushed trie db through maintenance completed successfully")
+		}
+	})
+}
+
+func (s *ExecutionEngine) MaintenanceStatus() *execution.MaintenanceStatus {
+	return &execution.MaintenanceStatus{
+		IsRunning: s.runningMaintenance.Load(),
+	}
 }
