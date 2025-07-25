@@ -50,6 +50,7 @@ func MessageExtractionConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Int(prefix+".delayed-message-backlog-capacity", DefaultMessageExtractionConfig.DelayedMessageBacklogCapacity, "target capacity of the delayed message backlog")
 }
 
+// TODO (ganesh): cleanup unused methods from this interface after checking with wasm mode
 type ParentChainReader interface {
 	HeaderByNumber(ctx context.Context, number *big.Int) (*types.Header, error)
 	BlockByNumber(ctx context.Context, number *big.Int) (*types.Block, error)
@@ -57,6 +58,8 @@ type ParentChainReader interface {
 	HeaderByHash(ctx context.Context, hash common.Hash) (*types.Header, error)
 	TransactionInBlock(ctx context.Context, blockHash common.Hash, index uint) (*types.Transaction, error)
 	TransactionReceipt(ctx context.Context, txHash common.Hash) (*types.Receipt, error)
+	TransactionByHash(ctx context.Context, hash common.Hash) (tx *types.Transaction, isPending bool, err error)
+	BlockReceipts(ctx context.Context, blockNrOrHash rpc.BlockNumberOrHash) ([]*types.Receipt, error) // TODO: This is to be replaced by filterLogs method
 }
 
 // Defines a message extraction service for a Nitro node which reads parent chain
@@ -128,51 +131,41 @@ func (m *MessageExtractor) Start(ctxIn context.Context) error {
 	)
 }
 
-// Instantiates a receipt fetcher for a specific parent chain block.
-type blockReceiptFetcher struct {
-	client           ParentChainReader
+type blockLogsAndTxsFetcher struct {
 	parentChainBlock *types.Block
+	blockLogs        []*types.Log
+	logsByTxHash     map[common.Hash][]*types.Log
 }
 
-func newBlockReceiptFetcher(client ParentChainReader, parentChainBlock *types.Block) *blockReceiptFetcher {
-	return &blockReceiptFetcher{
-		client:           client,
-		parentChainBlock: parentChainBlock,
-	}
-}
-
-func (rf *blockReceiptFetcher) ReceiptForTransactionIndex(
-	ctx context.Context,
-	txIndex uint,
-) (*types.Receipt, error) {
-	tx, err := rf.client.TransactionInBlock(ctx, rf.parentChainBlock.Hash(), txIndex)
+func newBlockLogsAndTxsFetcher(ctx context.Context, client ParentChainReader, parentChainBlock *types.Block) (*blockLogsAndTxsFetcher, error) {
+	blockReceipts, err := client.BlockReceipts(ctx, rpc.BlockNumberOrHashWithHash(parentChainBlock.Hash(), false))
 	if err != nil {
 		return nil, err
 	}
-	return rf.client.TransactionReceipt(ctx, tx.Hash())
-}
-
-type blockTxsFetcher struct {
-	client           ParentChainReader
-	parentChainBlock *types.Block
-}
-
-func newBlockTxsFetcher(client ParentChainReader, parentChainBlock *types.Block) *blockTxsFetcher {
-	return &blockTxsFetcher{
-		client:           client,
+	var blockLogs []*types.Log
+	logsByTxHash := make(map[common.Hash][]*types.Log)
+	for _, receipt := range blockReceipts {
+		blockLogs = append(blockLogs, receipt.Logs...)
+		logsByTxHash[receipt.TxHash] = receipt.Logs
+	}
+	return &blockLogsAndTxsFetcher{
 		parentChainBlock: parentChainBlock,
-	}
+		blockLogs:        blockLogs,
+		logsByTxHash:     logsByTxHash,
+	}, nil
 }
 
-func (tf *blockTxsFetcher) TransactionsByHeader(
-	ctx context.Context,
-	parentChainHeaderHash common.Hash,
-) (types.Transactions, error) {
-	blk, err := tf.client.BlockByHash(ctx, parentChainHeaderHash)
-	if err != nil {
-		return nil, err
+// LogsForBlockHash: currently blockLogsFetcher only returns logs from parentChainBlock that was given to it during init, parentChainBlockHash
+// arg will be used later on
+func (f *blockLogsAndTxsFetcher) LogsForBlockHash(ctx context.Context, parentChainBlockHash common.Hash) ([]*types.Log, error) {
+	return f.blockLogs, nil
+}
+
+func (f *blockLogsAndTxsFetcher) LogsForTxHash(ctx context.Context, txHash common.Hash) ([]*types.Log, error) {
+	if _, ok := f.logsByTxHash[txHash]; ok {
+		return f.logsByTxHash[txHash], nil
 	}
-	return blk.Transactions(), nil
+	return nil, fmt.Errorf("logs for tx: %v not found", txHash)
 }
 
 func (m *MessageExtractor) CurrentFSMState() FSMState {
@@ -414,16 +407,18 @@ func (m *MessageExtractor) Act(ctx context.Context) (time.Duration, error) {
 		}
 		// Creates a receipt fetcher for the specific parent chain block, to be used
 		// by the message extraction function.
-		receiptFetcher := newBlockReceiptFetcher(m.parentChainReader, parentChainBlock)
-		txsFetcher := newBlockTxsFetcher(m.parentChainReader, parentChainBlock)
+		blockLogsAndTxsFetcher, err := newBlockLogsAndTxsFetcher(ctx, m.parentChainReader, parentChainBlock)
+		if err != nil {
+			return m.retryInterval, err
+		}
 		postState, msgs, delayedMsgs, batchMetas, err := melextraction.ExtractMessages(
 			ctx,
 			preState,
 			parentChainBlock.Header(),
 			m.dataProviders,
 			m.melDB,
-			receiptFetcher,
-			txsFetcher,
+			m.parentChainReader,
+			blockLogsAndTxsFetcher,
 		)
 		if err != nil {
 			return m.retryInterval, err

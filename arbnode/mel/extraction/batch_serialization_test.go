@@ -29,7 +29,7 @@ func Test_serializeBatch(t *testing.T) {
 			AfterDelayedCount: 1,
 			DataLocation:      mel.BatchDataLocation(99),
 		}
-		_, err := serializeBatch(ctx, batch, nil, 0, nil)
+		_, err := serializeBatch(ctx, batch, nil, nil)
 		require.ErrorContains(t, err, "invalid data location")
 	})
 	t.Run("OK", func(t *testing.T) {
@@ -54,7 +54,7 @@ func Test_serializeBatch(t *testing.T) {
 			AfterDelayedCount: 1,
 			DataLocation:      mel.BatchDataBlobHashes,
 		}
-		serialized, err := serializeBatch(ctx, batch, tx, 0, nil)
+		serialized, err := serializeBatch(ctx, batch, tx, nil)
 		require.NoError(t, err)
 		// Serialization includes 5 uint64 values (8 bytes each) and the full batch
 		// data appended at the end of the batch.
@@ -63,7 +63,7 @@ func Test_serializeBatch(t *testing.T) {
 		require.Equal(t, 105, len(serialized))
 
 		// Expect some caching of serialized data.
-		secondRound, err := serializeBatch(ctx, batch, tx, 0, nil)
+		secondRound, err := serializeBatch(ctx, batch, tx, nil)
 		require.NoError(t, err)
 		require.Equal(t, serialized, secondRound)
 	})
@@ -78,7 +78,6 @@ func Test_getSequencerBatchData(t *testing.T) {
 				DataLocation: mel.BatchDataLocation(99),
 			},
 			nil,
-			0,
 			nil,
 		)
 		require.ErrorContains(t, err, "invalid data location")
@@ -90,7 +89,6 @@ func Test_getSequencerBatchData(t *testing.T) {
 				DataLocation: mel.BatchDataNone,
 			},
 			nil,
-			0,
 			nil,
 		)
 		require.NoError(t, err)
@@ -111,7 +109,6 @@ func Test_getSequencerBatchData(t *testing.T) {
 				DataLocation: mel.BatchDataBlobHashes,
 			},
 			tx,
-			0,
 			nil,
 		)
 		require.ErrorContains(t, err, "has no blobs")
@@ -132,7 +129,6 @@ func Test_getSequencerBatchData(t *testing.T) {
 				DataLocation: mel.BatchDataBlobHashes,
 			},
 			tx,
-			0,
 			nil,
 		)
 		require.NoError(t, err)
@@ -167,7 +163,6 @@ func Test_getSequencerBatchData(t *testing.T) {
 				DataLocation: mel.BatchDataTxInput,
 			},
 			tx,
-			0,
 			nil,
 		)
 		require.ErrorContains(t, err, "transaction data too short")
@@ -187,7 +182,6 @@ func Test_getSequencerBatchData(t *testing.T) {
 				DataLocation: mel.BatchDataTxInput,
 			},
 			tx,
-			0,
 			nil,
 		)
 		require.NoError(t, err)
@@ -209,9 +203,8 @@ func Test_getSequencerBatchData(t *testing.T) {
 				Logs: []*types.Log{},
 			},
 		}
-		receiptFetcher := &mockReceiptFetcher{
-			receipts: receipts,
-			err:      errors.New("oops"),
+		blockLogsFetcher := &mockBlockLogsFetcher{
+			err: errors.New("oops"),
 		}
 		_, err := getSequencerBatchData(
 			ctx,
@@ -219,23 +212,18 @@ func Test_getSequencerBatchData(t *testing.T) {
 				DataLocation: mel.BatchDataSeparateEvent,
 			},
 			tx,
-			0,
-			receiptFetcher,
+			blockLogsFetcher,
 		)
 		require.ErrorContains(t, err, "oops")
 
-		receiptFetcher = &mockReceiptFetcher{
-			receipts: receipts,
-			err:      nil,
-		}
+		blockLogsFetcher = newMockBlockLogsFetcher(receipts)
 		_, err = getSequencerBatchData(
 			ctx,
 			&mel.SequencerInboxBatch{
 				DataLocation: mel.BatchDataSeparateEvent,
 			},
 			tx,
-			0,
-			receiptFetcher,
+			blockLogsFetcher,
 		)
 		require.ErrorContains(t, err, "no logs found")
 
@@ -248,18 +236,14 @@ func Test_getSequencerBatchData(t *testing.T) {
 				},
 			},
 		}
-		receiptFetcher = &mockReceiptFetcher{
-			receipts: receipts,
-			err:      nil,
-		}
+		blockLogsFetcher = newMockBlockLogsFetcher(receipts)
 		_, err = getSequencerBatchData(
 			ctx,
 			&mel.SequencerInboxBatch{
 				DataLocation: mel.BatchDataSeparateEvent,
 			},
 			tx,
-			0,
-			receiptFetcher,
+			blockLogsFetcher,
 		)
 		require.ErrorContains(t, err, "expected to find sequencer batch data")
 
@@ -279,10 +263,7 @@ func Test_getSequencerBatchData(t *testing.T) {
 				},
 			},
 		}
-		receiptFetcher = &mockReceiptFetcher{
-			receipts: receipts,
-			err:      nil,
-		}
+		blockLogsFetcher = newMockBlockLogsFetcher(receipts)
 		_, err = getSequencerBatchData(
 			ctx,
 			&mel.SequencerInboxBatch{
@@ -290,8 +271,7 @@ func Test_getSequencerBatchData(t *testing.T) {
 				DataLocation:  mel.BatchDataSeparateEvent,
 			},
 			tx,
-			0,
-			receiptFetcher,
+			blockLogsFetcher,
 		)
 		require.ErrorContains(t, err, "expected to find only one")
 
@@ -314,10 +294,7 @@ func Test_getSequencerBatchData(t *testing.T) {
 				},
 			},
 		}
-		receiptFetcher = &mockReceiptFetcher{
-			receipts: receipts,
-			err:      nil,
-		}
+		blockLogsFetcher = newMockBlockLogsFetcher(receipts)
 		data, err := getSequencerBatchData(
 			ctx,
 			&mel.SequencerInboxBatch{
@@ -326,8 +303,7 @@ func Test_getSequencerBatchData(t *testing.T) {
 				DataLocation:   mel.BatchDataSeparateEvent,
 			},
 			tx,
-			0,
-			receiptFetcher,
+			blockLogsFetcher,
 		)
 		require.NoError(t, err)
 		require.Equal(t, event.Data, data)
