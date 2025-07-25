@@ -372,12 +372,16 @@ func copyPreimagesInto(dest, source map[arbutil.PreimageType]map[common.Hash][]b
 	}
 }
 
-func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *validationEntry) error {
+func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *validationEntry, targets ...rawdb.WasmTarget) error {
 	if e.Stage != ReadyForRecord {
 		return fmt.Errorf("validation entry should be ReadyForRecord, is: %v", e.Stage)
 	}
 	if e.Pos != 0 {
-		recording, err := v.recorder.RecordBlockCreation(ctx, e.Pos, e.msg, v.wasmTargets)
+		// if not targets is provided then fallback to the targets required by the validators
+		if len(targets) == 0 {
+			targets = v.wasmTargets
+		}
+		recording, err := v.recorder.RecordBlockCreation(ctx, e.Pos, e.msg, targets)
 		if err != nil {
 			return err
 		}
@@ -435,7 +439,7 @@ func (v *StatelessBlockValidator) GlobalStatePositionsAtCount(count arbutil.Mess
 	return GlobalStatePositionsAtCount(v.inboxTracker, count, batch)
 }
 
-func (v *StatelessBlockValidator) CreateReadyValidationEntry(ctx context.Context, pos arbutil.MessageIndex) (*validationEntry, error) {
+func (v *StatelessBlockValidator) CreateReadyValidationEntry(ctx context.Context, pos arbutil.MessageIndex, targets ...rawdb.WasmTarget) (*validationEntry, error) {
 	msg, err := v.streamer.GetMessage(pos)
 	if err != nil {
 		return nil, err
@@ -491,7 +495,7 @@ func (v *StatelessBlockValidator) CreateReadyValidationEntry(ctx context.Context
 	if err != nil {
 		return nil, err
 	}
-	err = v.ValidationEntryRecord(ctx, entry)
+	err = v.ValidationEntryRecord(ctx, entry, targets...)
 	if err != nil {
 		return nil, err
 	}
@@ -542,7 +546,7 @@ func (v *StatelessBlockValidator) ValidateResult(
 }
 
 func (v *StatelessBlockValidator) ValidationInputsAt(ctx context.Context, pos arbutil.MessageIndex, targets ...rawdb.WasmTarget) (server_api.InputJSON, error) {
-	entry, err := v.CreateReadyValidationEntry(ctx, pos)
+	entry, err := v.CreateReadyValidationEntry(ctx, pos, targets...)
 	if err != nil {
 		return server_api.InputJSON{}, err
 	}
