@@ -377,7 +377,7 @@ func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *
 		return fmt.Errorf("validation entry should be ReadyForRecord, is: %v", e.Stage)
 	}
 	if e.Pos != 0 {
-		// if wasmTargets is provided then fallback to the targets required by the validators
+		// if wasmTargets is not provided then fallback to the targets required by the validators
 		if len(wasmTargets) == 0 {
 			wasmTargets = v.wasmTargets
 		}
