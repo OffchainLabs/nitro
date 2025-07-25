@@ -917,7 +917,7 @@ func (s *Sequencer) expireNonceFailures() *time.Timer {
 }
 
 // There's no guarantee that returned tx nonces will be correct
-func (s *Sequencer) precheckNonces(queueItems []txQueueItem, totalBlockSize int) []txQueueItem {
+func (s *Sequencer) precheckNonces(queueItems []txQueueItem) []txQueueItem {
 	config := s.config()
 	bc := s.execEngine.bc
 	latestHeader := bc.CurrentBlock()
@@ -930,20 +930,41 @@ func (s *Sequencer) precheckNonces(queueItems []txQueueItem, totalBlockSize int)
 	arbosVersion := types.DeserializeHeaderExtraInformation(latestHeader).ArbOSFormatVersion
 	signer := types.MakeSigner(bc.Config(), nextHeaderNumber, latestHeader.Time, arbosVersion)
 	outputQueueItems := make([]txQueueItem, 0, len(queueItems))
-	var nextQueueItem *txQueueItem
+	revivedQueueItems := make([]txQueueItem, 0)
+
 	var queueItemsIdx int
+
+	// some tx in queueItems may not be included due to nonce issue; therefore, use a different `totalBlockSize` to allow possible inclusion of revived txs
+	var totalBlockSize int
 	pendingNonces := make(map[common.Address]uint64)
 	for {
 		var queueItem txQueueItem
-		if nextQueueItem != nil {
-			queueItem = *nextQueueItem
-			nextQueueItem = nil
-		} else if queueItemsIdx < len(queueItems) {
+		if queueItemsIdx < len(queueItems) {
 			queueItem = queueItems[queueItemsIdx]
 			queueItemsIdx++
+		} else if len(revivedQueueItems) > 0 {
+			queueItem = revivedQueueItems[0]
+			revivedQueueItems = revivedQueueItems[1:]
+
 		} else {
 			break
 		}
+
+		// this will prevent tx data size overflow
+		if arbmath.SaturatingAdd(totalBlockSize, queueItem.txSize) > config.MaxTxDataSize {
+			s.txRetryQueue.Push(queueItem)
+
+			for i := queueItemsIdx; i < len(queueItems); i++ {
+				s.txRetryQueue.Push(queueItems[i])
+			}
+
+			for j := 0; j < len(revivedQueueItems); j++ {
+				s.txRetryQueue.Push(revivedQueueItems[j])
+			}
+
+			break
+		}
+
 		tx := queueItem.tx
 		sender, err := types.Sender(signer, tx)
 		if err != nil {
@@ -957,6 +978,7 @@ func (s *Sequencer) precheckNonces(queueItems []txQueueItem, totalBlockSize int)
 		}
 		txNonce := tx.Nonce()
 		if txNonce == pendingNonce {
+			totalBlockSize += queueItem.txSize
 			pendingNonces[sender] = txNonce + 1
 			nextKey := addressAndNonce{sender, txNonce + 1}
 			revivingFailure, exists := s.nonceFailures.Get(nextKey)
@@ -969,13 +991,7 @@ func (s *Sequencer) precheckNonces(queueItems []txQueueItem, totalBlockSize int)
 				if err != nil {
 					revivingFailure.queueItem.returnResult(err)
 				} else {
-					if arbmath.SaturatingAdd(totalBlockSize, revivingFailure.queueItem.txSize) > config.MaxTxDataSize {
-						// This tx would be too large to add to this block
-						s.txRetryQueue.Push(revivingFailure.queueItem)
-					} else {
-						nextQueueItem = &revivingFailure.queueItem
-						totalBlockSize += revivingFailure.queueItem.txSize
-					}
+					revivedQueueItems = append(revivedQueueItems, revivingFailure.queueItem)
 				}
 			}
 		} else if txNonce < stateNonce || txNonce > pendingNonce {
@@ -1142,7 +1158,7 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 
 	s.nonceCache.Resize(config.NonceCacheSize) // Would probably be better in a config hook but this is basically free
 	s.nonceCache.BeginNewBlock()
-	queueItems = s.precheckNonces(queueItems, totalBlockSize)
+	queueItems = s.precheckNonces(queueItems)
 	txes := make([]*types.Transaction, len(queueItems))
 	timeboostedTxs := make(map[common.Hash]struct{})
 	hooks := s.makeSequencingHooks()
