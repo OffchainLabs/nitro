@@ -372,16 +372,16 @@ func copyPreimagesInto(dest, source map[arbutil.PreimageType]map[common.Hash][]b
 	}
 }
 
-func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *validationEntry, targets ...rawdb.WasmTarget) error {
+func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *validationEntry, wasmTargets ...rawdb.WasmTarget) error {
 	if e.Stage != ReadyForRecord {
 		return fmt.Errorf("validation entry should be ReadyForRecord, is: %v", e.Stage)
 	}
 	if e.Pos != 0 {
-		// if not targets is provided then fallback to the targets required by the validators
-		if len(targets) == 0 {
-			targets = v.wasmTargets
+		// if wasmTargets is provided then fallback to the targets required by the validators
+		if len(wasmTargets) == 0 {
+			wasmTargets = v.wasmTargets
 		}
-		recording, err := v.recorder.RecordBlockCreation(ctx, e.Pos, e.msg, targets)
+		recording, err := v.recorder.RecordBlockCreation(ctx, e.Pos, e.msg, wasmTargets)
 		if err != nil {
 			return err
 		}
@@ -439,7 +439,7 @@ func (v *StatelessBlockValidator) GlobalStatePositionsAtCount(count arbutil.Mess
 	return GlobalStatePositionsAtCount(v.inboxTracker, count, batch)
 }
 
-func (v *StatelessBlockValidator) CreateReadyValidationEntry(ctx context.Context, pos arbutil.MessageIndex, targets ...rawdb.WasmTarget) (*validationEntry, error) {
+func (v *StatelessBlockValidator) CreateReadyValidationEntry(ctx context.Context, pos arbutil.MessageIndex, wasmTargets ...rawdb.WasmTarget) (*validationEntry, error) {
 	msg, err := v.streamer.GetMessage(pos)
 	if err != nil {
 		return nil, err
@@ -495,7 +495,7 @@ func (v *StatelessBlockValidator) CreateReadyValidationEntry(ctx context.Context
 	if err != nil {
 		return nil, err
 	}
-	err = v.ValidationEntryRecord(ctx, entry, targets...)
+	err = v.ValidationEntryRecord(ctx, entry, wasmTargets...)
 	if err != nil {
 		return nil, err
 	}
@@ -545,12 +545,12 @@ func (v *StatelessBlockValidator) ValidateResult(
 	return true, &entry.End, nil
 }
 
-func (v *StatelessBlockValidator) ValidationInputsAt(ctx context.Context, pos arbutil.MessageIndex, targets ...rawdb.WasmTarget) (server_api.InputJSON, error) {
-	entry, err := v.CreateReadyValidationEntry(ctx, pos, targets...)
+func (v *StatelessBlockValidator) ValidationInputsAt(ctx context.Context, pos arbutil.MessageIndex, wasmTargets ...rawdb.WasmTarget) (server_api.InputJSON, error) {
+	entry, err := v.CreateReadyValidationEntry(ctx, pos, wasmTargets...)
 	if err != nil {
 		return server_api.InputJSON{}, err
 	}
-	input, err := entry.ToInput(targets)
+	input, err := entry.ToInput(wasmTargets)
 	if err != nil {
 		return server_api.InputJSON{}, err
 	}
