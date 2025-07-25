@@ -25,10 +25,11 @@ import (
 // Note: It's safe to create new underlying readers/validators because they all use
 // the same singleton storage instance via GetInMemoryStorage()
 type EvilDAProvider struct {
-	reader       daprovider.Reader
-	validator    daprovider.Validator
-	evilMappings map[common.Hash][]byte // sha256 dataHash -> evil data
-	mu           sync.RWMutex
+	reader                 daprovider.Reader
+	validator              daprovider.Validator
+	evilMappings           map[common.Hash][]byte // sha256 dataHash -> evil data
+	untrustedSignerAddress *common.Address        // Address of untrusted signer to lie about
+	mu                     sync.RWMutex
 }
 
 func NewEvilDAProvider(l1Client *ethclient.Client, validatorAddr common.Address) *EvilDAProvider {
@@ -45,6 +46,20 @@ func (e *EvilDAProvider) SetMapping(certHash common.Hash, evilData []byte) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.evilMappings[certHash] = evilData
+}
+
+// SetUntrustedSignerAddress configures the provider to lie about certificates from this signer
+func (e *EvilDAProvider) SetUntrustedSignerAddress(addr common.Address) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.untrustedSignerAddress = &addr
+}
+
+func (e *EvilDAProvider) GetUntrustedSignerAddress() *common.Address {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.untrustedSignerAddress
+
 }
 
 // IsValidHeaderByte delegates to underlying reader
@@ -91,6 +106,12 @@ func (e *EvilDAProvider) RecoverPayloadFromBatch(
 			}
 			e.mu.RUnlock()
 		}
+	}
+
+	// If the EvilDAProvider is trying to pass off an invalid signer then it shouldn't validate
+	// the cert.
+	if e.GetUntrustedSignerAddress() != nil {
+		validateSeqMsg = false
 	}
 
 	// Fall back to underlying reader for non-evil certificates
@@ -145,7 +166,23 @@ func (e *EvilDAProvider) GenerateProof(
 
 // GenerateCertificateValidityProof generates a proof of certificate validity
 func (e *EvilDAProvider) GenerateCertificateValidityProof(ctx context.Context, preimageType arbutil.PreimageType, certificate []byte) ([]byte, error) {
-	// For now, just delegate to the underlying validator
-	// In the future, this could be modified to test evil certificate validity proofs
+	// Check if we should lie about this certificate
+	cert, err := referenceda.Deserialize(certificate)
+	if err == nil {
+		signer, err := cert.RecoverSigner()
+		if err == nil {
+			untrustedAddr := e.GetUntrustedSignerAddress()
+
+			// If this cert was signed by our known untrusted signer, lie and say it's valid
+			if untrustedAddr != nil && signer == *untrustedAddr {
+				log.Info("EvilDAProvider lying about untrusted certificate validity",
+					"signer", signer.Hex(),
+					"dataHash", common.Hash(cert.DataHash).Hex())
+				return []byte{1, 0x01}, nil // EVIL: claim valid when it's not
+			}
+		}
+	}
+
+	// For all other cases, delegate to underlying validator
 	return e.validator.GenerateCertificateValidityProof(ctx, preimageType, certificate)
 }

@@ -14,9 +14,10 @@ import (
 type EvilStrategy int
 
 const (
-	NoEvil           EvilStrategy = iota // Normal behavior
-	EvilDataGoodCert                     // Wrong data, correct cert
-	EvilDataEvilCert                     // Wrong data, matching evil cert
+	NoEvil              EvilStrategy = iota // Normal behavior
+	EvilDataGoodCert                        // Wrong data, correct cert
+	EvilDataEvilCert                        // Wrong data, matching evil cert
+	UntrustedSignerCert                     // Valid format cert signed by untrusted key
 )
 
 // EvilCustomDAProofEnhancer wraps the standard CustomDAProofEnhancer to inject evil certificates

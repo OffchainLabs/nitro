@@ -1059,6 +1059,7 @@ func syncBatchToNode(
 	l2Node *arbnode.Node,
 	seqInboxAddr common.Address,
 	receipt *types.Receipt,
+	expectedFailure string,
 ) {
 	nodeSeqInbox, err := arbnode.NewSequencerInbox(backend, seqInboxAddr, 0)
 	Require(t, err)
@@ -1071,6 +1072,21 @@ func syncBatchToNode(
 	}
 
 	err = l2Node.InboxTracker.AddSequencerBatches(ctx, backend, batches)
+
+	if expectedFailure != "" {
+		// We expect this sync to fail with a specific error
+		if err == nil {
+			Fatal(t, "Expected inbox sync to fail with error containing '", expectedFailure, "' but it succeeded")
+		}
+		if !strings.Contains(err.Error(), expectedFailure) {
+			Fatal(t, "Expected error containing '", expectedFailure, "' but got: ", err.Error())
+		}
+		// Expected failure occurred
+		t.Logf("✓ Sync failed as expected with: %v", err)
+		return
+	}
+
+	// Normal case - sync should succeed
 	Require(t, err)
 
 	// Optional: log batch metadata
@@ -1099,7 +1115,7 @@ func makeBoldBatch(
 	receipt := postBatchToL1(t, ctx, backend, sequencer, seqInbox, message)
 
 	// Sync to node
-	syncBatchToNode(t, ctx, backend, l2Node, seqInboxAddr, receipt)
+	syncBatchToNode(t, ctx, backend, l2Node, seqInboxAddr, receipt, "")
 }
 
 func writeTxToBatchBold(writer io.Writer, tx *types.Transaction) error {

@@ -14,6 +14,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/offchainlabs/nitro/daprovider/referenceda"
 )
 
 // SequencerInboxHeader represents the decoded header of a sequencer inbox message
@@ -78,6 +79,18 @@ func PrintSequencerInboxMessage(t *testing.T, label string, message []byte) {
 			if len(dataAfterHeader) >= 33 {
 				sha256Hash := common.BytesToHash(dataAfterHeader[1:33])
 				t.Logf("  SHA256 hash: %s", sha256Hash.Hex())
+			}
+			// Try to deserialize and extract signer
+			cert, err := referenceda.Deserialize(dataAfterHeader)
+			if err != nil {
+				t.Logf("  Certificate: Failed to deserialize (%v)", err)
+			} else {
+				signer, err := cert.RecoverSigner()
+				if err != nil {
+					t.Logf("  Signer: Failed to recover (%v)", err)
+				} else {
+					t.Logf("  Signer: %s", signer.Hex())
+				}
 			}
 		} else {
 			t.Logf("  Type: Other (first byte: 0x%02x)", dataAfterHeader[0])

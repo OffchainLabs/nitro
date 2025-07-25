@@ -8,7 +8,6 @@ package arbtest
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
 	"fmt"
 	"math/big"
 	"net/http"
@@ -69,6 +68,12 @@ func TestChallengeProtocolBOLDCustomDA_EvilDataEvilCert(t *testing.T) {
 	testChallengeProtocolBOLDCustomDA(t, EvilDataEvilCert)
 }
 
+// Test with certificate signed by untrusted key
+// Evil validator will lie about certificate validity and will fail at OSP with "CLAIMED_VALID_BUT_INVALID"
+func TestChallengeProtocolBOLDCustomDA_UntrustedSignerCert(t *testing.T) {
+	testChallengeProtocolBOLDCustomDA(t, UntrustedSignerCert)
+}
+
 // createReferenceDAProviderServer creates and starts a ReferenceDA provider server with automatic port selection
 func createReferenceDAProviderServer(t *testing.T, ctx context.Context, l1Client *ethclient.Client, validatorAddr common.Address, dataSigner signature.DataSignerFunc) (*http.Server, string) {
 	// Create ReferenceDA components
@@ -125,13 +130,13 @@ func postBatchWithDA(
 	receipt := postBatchToL1(t, ctx, backend, sequencer, seqInbox, message)
 
 	// Sync to node
-	syncBatchToNode(t, ctx, backend, l2Node, seqInboxAddr, receipt)
+	syncBatchToNode(t, ctx, backend, l2Node, seqInboxAddr, receipt, "")
 
 	return certificate
 }
 
 // createEvilDAProviderServer creates and starts a DA provider server with an evil provider that can return different data
-func createEvilDAProviderServer(t *testing.T, ctx context.Context, l1Client *ethclient.Client, validatorAddr common.Address, dataSigner signature.DataSignerFunc) (*http.Server, string, *EvilDAProvider) {
+func createEvilDAProviderServer(t *testing.T, ctx context.Context, l1Client *ethclient.Client, validatorAddr common.Address) (*http.Server, string, *EvilDAProvider) {
 	// Create evil DA provider
 	evilProvider := NewEvilDAProvider(l1Client, validatorAddr)
 
@@ -144,8 +149,9 @@ func createEvilDAProviderServer(t *testing.T, ctx context.Context, l1Client *eth
 		RPCServerBodyLimit: dapserver.DefaultServerConfig.RPCServerBodyLimit,
 	}
 
-	// Note: We can use a regular writer since both nodes share the singleton storage
-	writer := referenceda.NewWriter(dataSigner)
+	// Use asserting writer to ensure evil provider is never used for writing.
+	// In this test we call the writers directly to have more control over batch posting.
+	writer := &assertingWriter{}
 	server, err := dapserver.NewServerWithDAPProvider(ctx, serverConfig, evilProvider, writer, evilProvider)
 	Require(t, err)
 
@@ -156,6 +162,13 @@ func createEvilDAProviderServer(t *testing.T, ctx context.Context, l1Client *eth
 	t.Logf("Started evil DA provider server at %s", serverURL)
 
 	return server, serverURL, evilProvider
+}
+
+// assertingWriter is a Writer that panics if Store is called
+type assertingWriter struct{}
+
+func (w *assertingWriter) Store(ctx context.Context, message []byte, timeout uint64, disableFallback bool) ([]byte, error) {
+	panic("assertingWriter.Store should never be called - evil provider server should not be used for writing")
 }
 
 // createNodeBWithSharedContracts creates a second node that uses the same contracts as the first node
@@ -251,6 +264,8 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, 
 		t.Log("Testing EvilDataGoodCert strategy: Evil data with good certificate")
 	case EvilDataEvilCert:
 		t.Log("Testing EvilDataEvilCert strategy: Evil data with evil certificate (matching)")
+	case UntrustedSignerCert:
+		t.Log("Testing UntrustedSignerCert strategy: Certificate signed by untrusted key")
 	}
 
 	// First set up L1 and deploy contracts to get validator address
@@ -295,12 +310,32 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, 
 	})
 
 	// Create and start evil DA provider server for node B
-	providerServerB, providerURLNodeB, evilProvider := createEvilDAProviderServer(t, ctx, l1client, validatorAddr, dataSigner)
+	providerServerB, providerURLNodeB, evilProvider := createEvilDAProviderServer(t, ctx, l1client, validatorAddr)
 	t.Cleanup(func() {
 		if err := providerServerB.Shutdown(context.Background()); err != nil {
 			t.Logf("Error shutting down provider server B: %v", err)
 		}
 	})
+
+	// For UntrustedSignerCert, prepare untrusted signer details for later use
+	var untrustedSigner signature.DataSignerFunc
+	if evilStrategy == UntrustedSignerCert {
+		// Create untrusted signer
+		untrustedKey, err := crypto.GenerateKey()
+		Require(t, err)
+		untrustedSigner = signature.DataSignerFromPrivateKey(untrustedKey)
+
+		// Get untrusted signer address for evil provider to recognize
+		untrustedCert, err := referenceda.NewCertificate([]byte{1, 2, 3}, untrustedSigner)
+		Require(t, err)
+		untrustedSignerAddr, err := untrustedCert.RecoverSigner()
+		Require(t, err)
+
+		// Configure evil provider to lie about untrusted cert validity
+		evilProvider.SetUntrustedSignerAddress(untrustedSignerAddr)
+
+		t.Log("UntrustedSignerCert strategy: Will use untrusted signer for second certificate")
+	}
 
 	// Now update node config with provider URLs and create L2 nodes
 	nodeConfigA.DA.ExternalProvider.RPC.URL = providerURLNodeA
@@ -595,33 +630,55 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, 
 	l2info.Accounts["Owner"].Nonce.Store(5)                                   // reset our tracking of owner nonce
 	evilBatchData2 := createBoldBatchData(t, l2info, numMessagesPerBatch, 5)  // Diverge at index 5
 
-	// First, store good batch in DA to get certificate
-	certificate2, err := daWriterA.Store(ctx, goodBatchData2, 3600, false)
+	// Store batch in DA to get certificate
+	var certificate2 []byte
+	if evilStrategy == UntrustedSignerCert {
+		// For UntrustedSignerCert, use a writer with untrusted signer
+		daWriterUntrusted := referenceda.NewWriter(untrustedSigner)
+		certificate2, err = daWriterUntrusted.Store(ctx, goodBatchData2, 3600, false)
+		Require(t, err)
+		t.Log("Created certificate for batch 2 with untrusted signer")
+	} else {
+		// For other strategies, use normal writer
+		certificate2, err = daWriterA.Store(ctx, goodBatchData2, 3600, false)
+		Require(t, err)
+	}
+
+	// Deserialize certificate to extract data hash
+	cert2, err := referenceda.Deserialize(certificate2)
 	Require(t, err)
+	dataHash := common.Hash(cert2.DataHash)
 
-	// Extract the hash from the certificate (bytes 1-33 are the SHA256 hash)
-	dataHash := common.Hash(certificate2[1:33])
-
-	// Configure evil provider BEFORE posting to L1
-	evilProvider.SetMapping(dataHash, evilBatchData2)
+	// Configure evil provider with evil data mapping BEFORE posting to L1
+	if evilStrategy == EvilDataGoodCert || evilStrategy == EvilDataEvilCert {
+		evilProvider.SetMapping(dataHash, evilBatchData2)
+	}
 
 	// For EvilDataEvilCert strategy, also configure the evil enhancer
 	if evilStrategy == EvilDataEvilCert && evilEnhancer != nil {
 		// Create evil certificate that matches evil data
-		evilCert := make([]byte, 33)
-		evilCert[0] = 0x01
-		evilSHA256 := sha256.Sum256(evilBatchData2)
-		copy(evilCert[1:], evilSHA256[:])
+		evilCert, err := referenceda.NewCertificate(evilBatchData2, dataSigner)
+		Require(t, err)
 
 		// Configure evil enhancer to use evil certificate
 		goodCertKeccak := crypto.Keccak256Hash(certificate2)
-		evilEnhancer.SetMapping(goodCertKeccak, evilCert)
+		evilEnhancer.SetMapping(goodCertKeccak, evilCert.Serialize())
 	}
 
 	// Now post the certificate to L1 and sync to both nodes
 	receipt := postBatchToL1(t, ctx, l1client, &sequencerTxOpts, seqInboxBinding, certificate2)
-	syncBatchToNode(t, ctx, l1client, l2nodeA, seqInbox, receipt)
-	syncBatchToNode(t, ctx, l1client, l2nodeB, seqInbox, receipt)
+
+	// For UntrustedSignerCert:
+	// - Node A should fail because it validates certificates correctly
+	// - Node B should succeed because the evil provider lies about certificate validity
+	var expectedFailureA, expectedFailureB string
+	if evilStrategy == UntrustedSignerCert {
+		expectedFailureA = "certificate signed by untrusted signer"
+		expectedFailureB = "" // Evil provider lies about validity, so sync succeeds
+	}
+
+	syncBatchToNode(t, ctx, l1client, l2nodeA, seqInbox, receipt, expectedFailureA)
+	syncBatchToNode(t, ctx, l1client, l2nodeB, seqInbox, receipt, expectedFailureB)
 
 	// Both nodes will read the same certificate from shared sequencer inbox
 	// But when they dereference it:
@@ -665,11 +722,18 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, 
 		t.Logf("Error getting batch 2 from node A: %v", err)
 	} else {
 		PrintSequencerInboxMessage(t, "Node A - Batch 2", msgA2)
+		if evilStrategy == UntrustedSignerCert {
+			t.Logf("  Note: Node A rejected this batch due to untrusted certificate signer")
+		}
 	}
 
 	msgB2, _, err := l2nodeB.InboxReader.GetSequencerMessageBytes(ctx, 2)
 	if err != nil {
 		t.Logf("Error getting batch 2 from node B: %v", err)
+	} else {
+		if evilStrategy == UntrustedSignerCert {
+			PrintSequencerInboxMessage(t, "Node B - Batch 2 (evil provider accepted untrusted cert)", msgB2)
+		}
 	}
 
 	// Verify messages are identical with shared inbox
@@ -678,7 +742,9 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, 
 			t.Errorf("Batch 2: Messages should be identical with shared inbox")
 		} else {
 			t.Logf("✓ Batch 2: Messages are identical (as expected with shared inbox)")
-			t.Logf("  Note: DA provider will return different data for same certificate!")
+			if evilStrategy != UntrustedSignerCert {
+				t.Logf("  Note: DA provider will return different data for same certificate!")
+			}
 		}
 	}
 
@@ -686,6 +752,15 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, 
 	Require(t, err)
 	bcB, err := l2nodeB.InboxTracker.GetBatchCount()
 	Require(t, err)
+
+	// For UntrustedSignerCert, Node A will have one less batch than Node B
+	if evilStrategy == UntrustedSignerCert {
+		if bcA != bcB-1 {
+			t.Errorf("Expected Node A batch count %d to be one less than Node B batch count %d", bcA, bcB)
+		}
+		t.Logf("✓ Node A has %d batches, Node B has %d batches (expected for UntrustedSignerCert)", bcA, bcB)
+	}
+
 	msgA, err := l2nodeA.InboxTracker.GetBatchMessageCount(bcA - 1)
 	Require(t, err)
 	msgB, err := l2nodeB.InboxTracker.GetBatchMessageCount(bcB - 1)
@@ -706,10 +781,25 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, 
 	for {
 		nodeALatest := nodeAExec.Backend.APIBackend().CurrentHeader()
 		nodeBLatest := nodeBExec.Backend.APIBackend().CurrentHeader()
-		isCaughtUp := nodeALatest.Number.Uint64() == uint64(totalMessagesPosted)
-		areEqual := nodeALatest.Number.Uint64() == nodeBLatest.Number.Uint64()
-		if isCaughtUp && areEqual {
-			if nodeALatest.Hash() == nodeBLatest.Hash() {
+
+		var isCaughtUp, shouldDiverge bool
+		if evilStrategy == UntrustedSignerCert {
+			// For UntrustedSignerCert, Node A processes fewer messages
+			// Node A should have totalMessagesPosted - numMessagesPerBatch messages
+			nodeAExpected := uint64(totalMessagesPosted - numMessagesPerBatch)
+			nodeBExpected := uint64(totalMessagesPosted)
+			isCaughtUp = nodeALatest.Number.Uint64() == nodeAExpected && nodeBLatest.Number.Uint64() == nodeBExpected
+			shouldDiverge = true // Nodes should always diverge in this case
+		} else {
+			// For other strategies, both nodes process all messages
+			isCaughtUp = nodeALatest.Number.Uint64() == uint64(totalMessagesPosted)
+			areEqual := nodeALatest.Number.Uint64() == nodeBLatest.Number.Uint64()
+			isCaughtUp = isCaughtUp && areEqual
+			shouldDiverge = true // All strategies should cause divergence
+		}
+
+		if isCaughtUp {
+			if shouldDiverge && nodeALatest.Hash() == nodeBLatest.Hash() {
 				Fatal(t, "node A L2 hash", nodeALatest, "matches node B L2 hash", nodeBLatest)
 			}
 			break
@@ -723,13 +813,19 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, 
 	totalBatches := totalBatchesBig.Uint64()
 
 	// Wait until the validators have validated the batches.
+	// For UntrustedSignerCert, validator A validates one less batch
+	validatorATarget := totalBatches - 1
+	if evilStrategy == UntrustedSignerCert {
+		validatorATarget = totalBatches - 2 // A skips the untrusted cert batch
+	}
+
 	for {
 		lastInfo, err := blockValidatorA.ReadLastValidatedInfo()
 		if lastInfo == nil || err != nil {
 			continue
 		}
-		t.Log(lastInfo.GlobalState.Batch, totalBatches-1)
-		if lastInfo.GlobalState.Batch >= totalBatches-1 {
+		t.Log("Validator A:", lastInfo.GlobalState.Batch, "/", validatorATarget)
+		if lastInfo.GlobalState.Batch >= validatorATarget {
 			break
 		}
 		time.Sleep(time.Millisecond * 200)
@@ -739,7 +835,7 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, 
 		if lastInfo == nil || err != nil {
 			continue
 		}
-		t.Log(lastInfo.GlobalState.Batch, totalBatches-1)
+		t.Log("Validator B:", lastInfo.GlobalState.Batch, "/", totalBatches-1)
 		if lastInfo.GlobalState.Batch >= totalBatches-1 {
 			break
 		}
