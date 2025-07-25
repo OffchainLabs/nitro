@@ -211,3 +211,11 @@ func (m *mockParentChainReader) TransactionReceipt(ctx context.Context, txHash c
 	// Mock implementation, return a dummy receipt
 	return &types.Receipt{}, nil
 }
+
+func (m *mockParentChainReader) TransactionByHash(ctx context.Context, hash common.Hash) (tx *types.Transaction, isPending bool, err error) {
+	return nil, false, nil
+}
+
+func (m *mockParentChainReader) BlockReceipts(ctx context.Context, blockNrOrHash rpc.BlockNumberOrHash) ([]*types.Receipt, error) {
+	return []*types.Receipt{}, nil
+}
