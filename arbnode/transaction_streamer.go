@@ -1287,6 +1287,7 @@ func (s *TransactionStreamer) checkResult(msgIdx arbutil.MessageIndex, msgResult
 	if msgResult.BlockHash != *msgAndBlockInfo.BlockHash {
 		log.Error(
 			BlockHashMismatchLogMsg,
+			"msgIdx", msgIdx,
 			"expected", msgAndBlockInfo.BlockHash,
 			"actual", msgResult.BlockHash,
 		)
