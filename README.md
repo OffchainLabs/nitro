@@ -48,6 +48,12 @@ Arbitrum One successfully migrated from the Classic Arbitrum stack onto Nitro on
 - Docker daemon running
 
 ### Build Steps
+
+0. Clone repository
+```bash
+git clone --recurse-submodules git@github.com:EspressoSystems/nitro-espresso-integration.git 
+```
+
 1. For MacOS Users Only:
 ```bash
 bash ./scripts/build-wasm-on-macos-with-nix
@@ -65,6 +71,11 @@ make build-replay-env
 4. Run E2E tests (ensure Docker is running):
 ```bash
 gotestsum --format standard-verbose --packages="$packages" -- -v -timeout 15m -p 1 ./system_tests/... -run 'TestEspressoE2E'
+```
+
+Alternatively to steps 3 and 4 you can run:
+```bash
+just espresso-tests
 ```
 
 Note: The E2E tests typically take around 10-15 minutes to complete.
