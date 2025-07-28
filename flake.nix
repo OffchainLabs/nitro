@@ -21,16 +21,7 @@
           nodejs = prev.nodejs_18;
           yarn = (prev.yarn.override { inherit nodejs; });
           pnpm = (prev.pnpm.override { inherit nodejs; });
-          golangci-lint = prev.golangci-lint.overrideAttrs (old: rec {
-            version = "1.64.8";
-            src = prev.fetchFromGitHub {
-              owner = "golangci";
-              repo = "golangci-lint";
-              rev = "v${version}";
-              sha256 = "sha256-ODnNBwtfILD0Uy2AKDR/e76ZrdyaOGlCktVUcf9ujy8";
-            };
-            vendorHash = "sha256-/iq7Ju7c2gS7gZn3n+y0kLtPn2Nn8HY/YdqSDYjtEkI=";
-          });
+          golangci-lint = final.callPackage ./golangci-lint.nix {};
         })
         foundry.overlay
       ];
