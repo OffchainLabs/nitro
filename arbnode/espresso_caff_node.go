@@ -118,6 +118,8 @@ type EspressoCaffNode struct {
 
 	forceInclusionChecker *ForceInclusionChecker
 	stateChecker          *StateChecker
+
+	batcherAddrMonitor *BatcherAddrMonitor
 }
 
 func NewEspressoCaffNode(
@@ -155,12 +157,21 @@ func NewEspressoCaffNode(
 	if err != nil {
 		log.Crit("Failed to create hotshot client", "err", err)
 	}
+
+	batcherAddrMonitor := NewBatcherAddrMonitor(
+		[]common.Address{common.HexToAddress(configFetcher().BatchPosterAddr)},
+		db,
+		l1Reader,
+		seqInboxAddr,
+		delayedBridge.fromBlock,
+		configFetcher().FromBlock,
+	)
 	espressoStreamer := espressostreamer.NewEspressoStreamer(configFetcher().Namespace,
 		configFetcher().NextHotshotBlock,
 		sgxVerifier,
 		client,
 		recordPerformance,
-		common.HexToAddress(configFetcher().BatchPosterAddr),
+		batcherAddrMonitor.GetValidAddresses,
 		configFetcher().RetryTime,
 	)
 
@@ -211,6 +222,7 @@ func NewEspressoCaffNode(
 		l1Reader:              l1Reader,
 		forceInclusionChecker: forceInclusionChecker,
 		stateChecker:          stateChecker,
+		batcherAddrMonitor:    batcherAddrMonitor,
 	}
 }
 
@@ -313,6 +325,10 @@ func (n *EspressoCaffNode) Start(ctx context.Context) error {
 	err := n.espressoStreamer.Start(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to start espresso streamer: %w", err)
+	}
+	err = n.batcherAddrMonitor.Start(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to start batcher address monitor: %w", err)
 	}
 
 	// This is +1 because the current block is the block after the last processed block

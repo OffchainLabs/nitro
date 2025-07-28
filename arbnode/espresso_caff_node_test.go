@@ -7,6 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethdb"
 
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
@@ -19,6 +20,13 @@ type MockEspressoStreamer struct {
 
 	delayedPos uint64
 	dbHotShot  uint64
+}
+
+var _ espressostreamer.EspressoStreamerInterface = (*MockEspressoStreamer)(nil)
+
+// SetBatcherAddressesFetcher implements espressostreamer.EspressoStreamerInterface.
+func (m *MockEspressoStreamer) SetBatcherAddressesFetcher(fetcher func(l1Height uint64) []common.Address) {
+	panic("unimplemented")
 }
 
 func (m *MockEspressoStreamer) GetCurrentEarliestHotShotBlockNumber() uint64 {

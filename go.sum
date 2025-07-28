@@ -23,6 +23,8 @@ github.com/DataDog/zstd v1.5.2/go.mod h1:g4AWEaM3yOg3HYfnJ3YIawPnVdXJh9QME85blwS
 github.com/Djarvur/go-err113 v0.0.0-20210108212216-aea10b59be24/go.mod h1:4UJr5HIiMZrwgkSPdsjy2uOQExX/WEILpIrO9UPGuXs=
 github.com/EspressoSystems/espresso-network/sdks/go v0.2.4 h1:+67eNAczRWXUoq+GNuHuIyQC9Uy6wuIe7mcUvMZOa6U=
 github.com/EspressoSystems/espresso-network/sdks/go v0.2.4/go.mod h1:nX/JxG1/Kog2T0B0Gq/KhL0xZJi2GFuanGO8bxka0vM=
+github.com/EspressoSystems/espresso-network/sdks/go v0.2.5 h1:ZC5LEdf7mrLEAbSmxln+5wQ7q+fnNaUB+lLr5A69gNA=
+github.com/EspressoSystems/espresso-network/sdks/go v0.2.5/go.mod h1:nX/JxG1/Kog2T0B0Gq/KhL0xZJi2GFuanGO8bxka0vM=
 github.com/GaijinEntertainment/go-exhaustruct/v2 v2.2.0/go.mod h1:n/vLeA7V+QY84iYAGwMkkUUp9ooeuftMEvaDrSVch+Q=
 github.com/HdrHistogram/hdrhistogram-go v1.1.0/go.mod h1:yDgFjdqOqDEKOvasDdhWNXYg9BVp4O+o5f6V/ehm6Oo=
 github.com/HdrHistogram/hdrhistogram-go v1.1.2/go.mod h1:yDgFjdqOqDEKOvasDdhWNXYg9BVp4O+o5f6V/ehm6Oo=
