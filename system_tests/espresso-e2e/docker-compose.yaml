@@ -1,7 +1,7 @@
 version: "3.9"
 services:
   espresso-dev-node:
-    image: ghcr.io/espressosystems/espresso-sequencer/espresso-dev-node:20250710
+    image: ghcr.io/espressosystems/espresso-sequencer/espresso-dev-node:release-rc-20250623-p2
     ports:
       - "$ESPRESSO_SEQUENCER_API_PORT:$ESPRESSO_SEQUENCER_API_PORT"
       - "$ESPRESSO_BUILDER_PORT:$ESPRESSO_BUILDER_PORT"
