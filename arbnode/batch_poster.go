@@ -1990,7 +1990,10 @@ func (b *BatchPoster) Start(ctxIn context.Context) {
 			logLevel = normalGasEstimationFailedEphemeralErrorHandler.LogLevel(err, logLevel)
 			logLevel = accumulatorNotFoundEphemeralErrorHandler.LogLevel(err, logLevel)
 			logLevel("error posting batch", "err", err)
-			batchPosterFailureCounter.Inc(1)
+			// Only increment batchPosterFailureCounter metric in cases of non-ephemeral errors
+			if util.CompareLogLevels(logLevel, log.Error) {
+				batchPosterFailureCounter.Inc(1)
+			}
 			return b.config().ErrorDelay
 		} else if posted {
 			return 0

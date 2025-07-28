@@ -1,6 +1,6 @@
 module github.com/offchainlabs/nitro
 
-go 1.23.0
+go 1.24.5
 
 replace github.com/VictoriaMetrics/fastcache => ./fastcache
 
@@ -55,7 +55,7 @@ require (
 	go.uber.org/automaxprocs v1.5.2
 	golang.org/x/crypto v0.36.0
 	golang.org/x/sync v0.12.0
-	golang.org/x/sys v0.31.0
+	golang.org/x/sys v0.33.0
 	golang.org/x/term v0.30.0
 	golang.org/x/tools v0.29.0
 	google.golang.org/api v0.187.0
@@ -202,6 +202,6 @@ require (
 	go.opencensus.io v0.24.0 // indirect
 	golang.org/x/mod v0.22.0 // indirect
 	golang.org/x/net v0.38.0 // indirect
-	golang.org/x/oauth2 v0.22.0
+	golang.org/x/oauth2 v0.27.0
 	rsc.io/tmplfunc v0.0.3 // indirect
 )
