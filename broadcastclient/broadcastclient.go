@@ -4,6 +4,7 @@
 package broadcastclient
 
 import (
+	"bufio"
 	"context"
 	"crypto/tls"
 	"encoding/json"
@@ -12,6 +13,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -22,6 +24,7 @@ import (
 	"github.com/gobwas/ws"
 	"github.com/gobwas/ws/wsflate"
 	flag "github.com/spf13/pflag"
+	"golang.org/x/net/proxy"
 
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
@@ -218,6 +221,107 @@ func (bc *BroadcastClient) Start(ctxIn context.Context) {
 	})
 }
 
+// In the case where there is a proxy setup
+// Connect to proxy first, then make request to address through proxy.
+func (bc *BroadcastClient) connectWithProxy(
+	ctx context.Context,
+	dialer net.Dialer,
+	proxyURL *url.URL,
+	addr string,
+) (net.Conn, error) {
+	// Connect to proxy
+	var conn net.Conn
+	var err error
+	switch proxyURL.Scheme {
+	case "https":
+		tlsDialer := &tls.Dialer{
+			Config: &tls.Config{
+				MinVersion: tls.VersionTLS12,
+			},
+		}
+		conn, err = tlsDialer.DialContext(ctx, "tcp4", proxyURL.Host)
+		if err != nil {
+			log.Warn("https proxy tcp4 connection failed, falling back to tcp6", "proxy", proxyURL.Host, "err", err)
+			conn, err = tlsDialer.DialContext(ctx, "tcp6", proxyURL.Host)
+			if err != nil {
+				return nil, err
+			}
+		}
+	case "http":
+		conn, err = dialer.DialContext(ctx, "tcp4", proxyURL.Host)
+		if err != nil {
+			log.Warn("http proxy tcp4 connection failed, falling back to tcp6", "proxy", proxyURL.Host, "err", err)
+			conn, err = dialer.DialContext(ctx, "tcp6", proxyURL.Host)
+			if err != nil {
+				return nil, err
+			}
+		}
+
+	case "socks5":
+		proxyDialer, err := proxy.FromURL(proxyURL, &net.Dialer{})
+		if err != nil {
+			return nil, fmt.Errorf("SOCKS5 setup failed: %w", err)
+		}
+		conn, err = proxyDialer.Dial("tcp4", addr)
+		if err != nil {
+			log.Warn("socks5 proxy tcp4 connection failed, falling back to tcp6", "proxy", proxyURL.Host, "err", err)
+			conn, err = proxyDialer.Dial("tcp6", addr)
+			if err != nil {
+				return nil, err
+			}
+		}
+		return conn, nil
+
+	default:
+		return nil, fmt.Errorf("unsupported proxy scheme: %s", proxyURL.Scheme)
+	}
+
+	// Connect to address through proxy
+	connectReq := &http.Request{
+		Method: "CONNECT",
+		URL:    &url.URL{Opaque: addr},
+		Host:   addr,
+		Header: make(http.Header),
+	}
+	if proxyURL.User != nil {
+		username := proxyURL.User.Username()
+		password, _ := proxyURL.User.Password()
+		connectReq.SetBasicAuth(username, password)
+	}
+
+	if deadline, ok := ctx.Deadline(); ok {
+		if err := conn.SetDeadline(deadline); err != nil {
+			conn.Close()
+			return nil, fmt.Errorf("%s proxy set deadline failed: %w", proxyURL.Scheme, err)
+		}
+		// clear deadline
+		defer func() {
+			if err := conn.SetDeadline(time.Time{}); err != nil {
+				log.Warn("Failed to clear deadline on %s proxy connection: %v", proxyURL.Scheme, err)
+			}
+		}()
+	}
+
+	if err := connectReq.Write(conn); err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("http proxy connect to %s failed: %w", addr, err)
+	}
+
+	// Verify response
+	resp, err := http.ReadResponse(bufio.NewReader(conn), connectReq)
+	if err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("http proxy response error: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		conn.Close()
+		return nil, fmt.Errorf("http proxy refused: %s", resp.Status)
+	}
+
+	return conn, nil
+}
+
 func (bc *BroadcastClient) connect(ctx context.Context, nextSeqNum arbutil.MessageIndex) (io.Reader, error) {
 	if len(bc.websocketUrl) == 0 {
 		// Nothing to do
@@ -288,15 +392,23 @@ func (bc *BroadcastClient) connect(ctx context.Context, nextSeqNum arbutil.Messa
 		Extensions: extensions,
 		NetDial: func(ctx context.Context, network, addr string) (net.Conn, error) {
 			var netDialer net.Dialer
-			// For tcp connections, prefer IPv4 over IPv6 to avoid rate limiting issues
-			if network == "tcp" {
+			if network != "tcp" {
+				return netDialer.DialContext(ctx, network, addr)
+			}
+
+			// Check if we need to connect to proxy
+			req := &http.Request{URL: &url.URL{Scheme: "https", Host: addr}}
+			proxyURL, err := http.ProxyFromEnvironment(req)
+			// If no proxy is setup just connect to the addr
+			if err != nil || proxyURL == nil {
+				// For tcp connections, prefer IPv4 over IPv6 to avoid rate limiting issues
 				conn, err := netDialer.DialContext(ctx, "tcp4", addr)
 				if err == nil {
 					return conn, nil
 				}
 				return netDialer.DialContext(ctx, "tcp6", addr)
 			}
-			return netDialer.DialContext(ctx, network, addr)
+			return bc.connectWithProxy(ctx, netDialer, proxyURL, addr)
 		},
 	}
 
