@@ -28,17 +28,16 @@ jobs:
           submodules: true
 
       - name: Setup node/yarn
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
-          node-version: 18
-          cache: "yarn"
-          cache-dependency-path: "**/contracts/yarn.lock"
+          node-version: '24'
+          cache: 'yarn'
+          cache-dependency-path: "**/yarn.lock"
 
-      - name: Set up Go 1.24
+      - name: Install go
         uses: actions/setup-go@v5
         with:
           go-version: 1.24.x
-        id: go
 
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
