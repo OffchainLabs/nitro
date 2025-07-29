@@ -37,9 +37,9 @@ type ParentChainReader interface {
 type MessageExtractor struct {
 	stopwaiter.StopWaiter
 	parentChainReader         ParentChainReader
-	initialStateFetcher       mel.StateFetcher
 	addrs                     *chaininfo.RollupAddresses
-	melDB                     mel.StateDatabase
+	melDB                     *Database
+	msgConsumer               mel.MessageConsumer
 	dataProviders             []daprovider.Reader
 	startParentChainBlockHash common.Hash
 	fsm                       *fsm.Fsm[action, FSMState]
@@ -52,8 +52,8 @@ type MessageExtractor struct {
 func NewMessageExtractor(
 	parentChainReader ParentChainReader,
 	rollupAddrs *chaininfo.RollupAddresses,
-	initialStateFetcher mel.StateFetcher,
-	melDB mel.StateDatabase,
+	melDB *Database,
+	msgConsumer mel.MessageConsumer,
 	dataProviders []daprovider.Reader,
 	startParentChainBlockHash common.Hash,
 	retryInterval time.Duration,
@@ -68,8 +68,8 @@ func NewMessageExtractor(
 	return &MessageExtractor{
 		parentChainReader:         parentChainReader,
 		addrs:                     rollupAddrs,
-		initialStateFetcher:       initialStateFetcher,
 		melDB:                     melDB,
+		msgConsumer:               msgConsumer,
 		dataProviders:             dataProviders,
 		startParentChainBlockHash: startParentChainBlockHash,
 		fsm:                       fsm,
@@ -160,7 +160,6 @@ func (m *MessageExtractor) Act(ctx context.Context) (time.Duration, error) {
 	// the `ProcessingNextBlock` state after successfully fetching the initial
 	// MEL state struct for the message extraction process.
 	case Start:
-		// TODO: Start from the latest MEL state we have in the database if it exists as the first step.
 		// Check if the specified start block hash exists in the parent chain.
 		if _, err := m.parentChainReader.HeaderByHash(
 			ctx,
@@ -172,13 +171,14 @@ func (m *MessageExtractor) Act(ctx context.Context) (time.Duration, error) {
 				err,
 			)
 		}
-		// Fetch the initial state for MEL from a state fetcher interface by parent chain block hash.
-		melState, err := m.initialStateFetcher.GetState(
-			ctx,
-			m.startParentChainBlockHash,
-		)
+		// Start from the latest MEL state we have in the database
+		melState, err := m.melDB.GetHeadMelState(ctx)
 		if err != nil {
 			return m.retryInterval, err
+		}
+		// We check if our current head mel state corresponds to this parentChainBlockHash
+		if melState.ParentChainBlockHash != m.startParentChainBlockHash {
+			return m.retryInterval, fmt.Errorf("head mel state's parentChainBlockHash in db: %v does not match the given parentChainBlockHash: %v ", melState.ParentChainBlockHash, m.startParentChainBlockHash)
 		}
 		// Begin the next FSM state immediately.
 		return 0, m.fsm.Do(processNextBlock{
@@ -229,9 +229,10 @@ func (m *MessageExtractor) Act(ctx context.Context) (time.Duration, error) {
 		}
 		// Begin the next FSM state immediately.
 		return 0, m.fsm.Do(saveMessages{
-			postState:       postState,
-			messages:        msgs,
-			delayedMessages: delayedMsgs,
+			preStateMsgCount: preState.MsgCount,
+			postState:        postState,
+			messages:         msgs,
+			delayedMessages:  delayedMsgs,
 		})
 	// `SavingMessages` is the state responsible for saving the extracted messages
 	// and delayed messages to the database. It stores data in the node's consensus database
@@ -244,12 +245,14 @@ func (m *MessageExtractor) Act(ctx context.Context) (time.Duration, error) {
 		if !ok {
 			return m.retryInterval, fmt.Errorf("invalid action: %T", current.SourceEvent)
 		}
-		// TODO: Use a DB batch to ensure these writes atomic, so if one fails, nothing will be persisted.
-		// The ArbDB batcher has support for this.
 		if err := m.melDB.SaveDelayedMessages(ctx, saveAction.postState, saveAction.delayedMessages); err != nil {
 			return m.retryInterval, err
 		}
-		if err := m.melDB.SaveState(ctx, saveAction.postState, saveAction.messages); err != nil {
+		if err := m.msgConsumer.PushMessages(ctx, saveAction.preStateMsgCount, saveAction.messages); err != nil {
+			return m.retryInterval, err
+		}
+		if err := m.melDB.SaveState(ctx, saveAction.postState); err != nil {
+			log.Error("Error saving messages from MessageExtractor to MessageConsumer", "err", err)
 			return m.retryInterval, err
 		}
 		return 0, m.fsm.Do(processNextBlock{
