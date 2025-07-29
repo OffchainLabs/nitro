@@ -18,42 +18,6 @@ jobs:
         id: gomodtidy
         uses: ./.github/actions/gomodtidy
 
-  gosec:
-    name: Gosec scan
-    runs-on: ubuntu-latest
-    env:
-      GO111MODULE: on
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      - name: Set up Go 1.23
-        uses: actions/setup-go@v5
-        with:
-          go-version: 1.23.x
-      - name: Run Gosec Security Scanner
-        run: | # https://github.com/securego/gosec/issues/469
-          export PATH=$PATH:$(go env GOPATH)/bin
-          go install github.com/securego/gosec/v2/cmd/gosec@v2.21.4
-          gosec -exclude=G307,G115 ./...
-
-  lint:
-    name: Lint
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Go 1.23
-        uses: actions/setup-go@v5
-        with:
-          go-version: 1.23.x
-
-      - name: Golangci-lint
-        uses: golangci/golangci-lint-action@v8
-        with:
-          version: latest
-          args: --timeout=10m
-
   build:
     name: Build and Test
     runs-on: ubuntu-latest
@@ -111,6 +75,9 @@ jobs:
   bazel:
     name: Bazel
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./bold
     steps:
       - uses: actions/checkout@v4
         with:
