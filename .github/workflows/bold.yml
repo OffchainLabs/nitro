@@ -65,38 +65,3 @@ jobs:
       #  env:
       #    CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
-  bazel:
-    name: Bazel
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: ./bold
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: true
-
-      - uses: bazelbuild/setup-bazelisk@v3
-      - name: Mount bazel cache
-        uses: actions/cache@v3
-        with:
-          path: "~/.cache/bazel"
-          key: bazel
-      - name: build
-        run: bazel build //...
-      - name: test
-        run: bazel test //... --build_manual_tests --test_output=all
-
-      # Foundry is required for end to end tests
-      - name: Install Foundry
-        uses: foundry-rs/foundry-toolchain@v1
-        with:
-          version: nightly
-
-      - name: coverage
-        run: bazel coverage --combined_report=lcov //...
-
-      - name: Upload coverage reports to Codecov
-        uses: codecov/codecov-action@v4
-        env:
-          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
