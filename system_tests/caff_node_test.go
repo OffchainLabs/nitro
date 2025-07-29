@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/mock"
+
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -19,9 +21,16 @@ import (
 
 	"github.com/offchainlabs/bold/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/espressostreamer"
+	"github.com/offchainlabs/nitro/solgen/go/espressogen"
 )
 
-func createCaffNode(ctx context.Context, t *testing.T, existing *NodeBuilder, dangerous bool) (*NodeBuilder, func(), error) {
+func createCaffNode(
+	ctx context.Context,
+	t *testing.T,
+	existing *NodeBuilder,
+	dangerous bool,
+) (*NodeBuilder, func(), error) {
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
 	nodeConfig := builder.nodeConfig
 	execConfig := builder.execConfig
@@ -67,7 +76,7 @@ func createCaffNode(ctx context.Context, t *testing.T, existing *NodeBuilder, da
 	nodeConfig.EspressoCaffNode.HotshotPollingInterval = time.Millisecond * 100
 	nodeConfig.ParentChainReader.Enable = true
 
-	builder.l2StackConfig.HTTPPort = 8946
+	builder.l2StackConfig.HTTPPort = getRandomPort(t)
 	builder.l2StackConfig.HTTPHost = "0.0.0.0"
 
 	if dangerous {
@@ -557,6 +566,81 @@ func TestEspressoCaffNodeDangerousConfig(t *testing.T) {
 	if !strings.Contains(err.Error(), expectedErrMsg) {
 		t.Errorf("Expected error to contain %q, got %q", expectedErrMsg, err.Error())
 	}
+}
+
+type mockSgxTeeVerifier struct {
+	mock.Mock
+
+	time time.Time
+}
+
+func (v *mockSgxTeeVerifier) Verify(opts *bind.CallOpts, attestation []byte, signature [32]byte) (espressogen.EnclaveReport, error) {
+	if time.Since(v.time) < 1*time.Minute {
+		return espressogen.EnclaveReport{}, rpc.HTTPError{StatusCode: 500, Status: "Internal Server Error", Body: []byte("Internal Server Error")}
+	}
+	return espressogen.EnclaveReport{}, nil
+}
+
+func NewMockSgxTeeVerifier() *mockSgxTeeVerifier {
+	return &mockSgxTeeVerifier{
+		time: time.Now(),
+	}
+}
+
+func TestEspressoCaffNodeSGXVerifierShouldRetryWhenEncounterRPCError(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder, cleanup := createL1AndL2Node(ctx, t, true, false)
+	defer cleanup()
+
+	cleanEspresso := runEspresso()
+	defer cleanEspresso()
+
+	// wait for the builder
+	err := waitForEspressoNode(ctx)
+	Require(t, err)
+
+	err = checkTransferTxOnL2(t, ctx, builder.L2, "User14", builder.L2Info)
+	Require(t, err)
+	err = checkTransferTxOnL2(t, ctx, builder.L2, "User15", builder.L2Info)
+	Require(t, err)
+
+	builder2, cleanupCaffNode, err := createCaffNode(ctx, t, builder, false)
+	defer cleanupCaffNode()
+	Require(t, err)
+
+	err = waitForWith(ctx, 10*time.Minute, 10*time.Second, func() bool {
+		balance1 := builder2.L2.GetBalance(t, builder.L2Info.GetAddress("User14"))
+		balance2 := builder2.L2.GetBalance(t, builder.L2Info.GetAddress("User15"))
+		log.Info("waiting for balance", "account", "User14", "balance", balance1, "account", "User15", "balance", balance2)
+		return balance1.Cmp(transferAmount) > 0 && balance2.Cmp(transferAmount) > 0
+	})
+	Require(t, err)
+
+	espressoStreamerInterface := builder2.L2.ConsensusNode.EspressoCaffNode.GetEspressoStreamer()
+	espressoStreamer, ok := espressoStreamerInterface.(*espressostreamer.EspressoStreamer)
+	if !ok {
+		t.Fatal("espresso streamer is not of type EspressoStreamer")
+	}
+
+	err = checkTransferTxOnL2(t, ctx, builder.L2, "User16", builder.L2Info)
+	Require(t, err)
+	err = checkTransferTxOnL2(t, ctx, builder.L2, "User17", builder.L2Info)
+	Require(t, err)
+
+	espressoStreamer.SetSGXVerifier(NewMockSgxTeeVerifier())
+	// Set this will cause the caff node to use the sgx verifier
+	espressoStreamer.SetBatcherAddressesFetcher(func(l1Height uint64) []common.Address { return []common.Address{{}} })
+
+	err = waitForWith(ctx, 10*time.Minute, 10*time.Second, func() bool {
+		balance1 := builder2.L2.GetBalance(t, builder.L2Info.GetAddress("User16"))
+		balance2 := builder2.L2.GetBalance(t, builder.L2Info.GetAddress("User17"))
+		log.Info("waiting for balance", "account", "User16", "balance", balance1, "account", "User17", "balance", balance2)
+		return balance1.Cmp(transferAmount) > 0 && balance2.Cmp(transferAmount) > 0
+	})
+	Require(t, err)
+
 }
 
 func TestEspressoForceInclusionChecker(t *testing.T) {

@@ -28,9 +28,12 @@ import (
 
 const NextHotshotBlockKey = "nextHotshotBlock"
 
-var FailedToFetchTransactionsErr = errors.New("failed to fetch transactions")
-var PayloadHadNoMessagesErr = errors.New("ParseHotShotPayload found no messages, the transaction may be empty")
-var FailedToParseButNeedRetryErr = errors.New("failed to parse hotshot payload, but need retry")
+var (
+	ErrFailedToFetchTransactions  = errors.New("failed to fetch transactions")
+	ErrPayloadHadNoMessages       = errors.New("ParseHotShotPayload found no messages, the transaction may be empty")
+	ErrUserDataHashNot32Bytes     = errors.New("user data hash is not 32 bytes")
+	ErrRetryParsingHotShotPayload = errors.New("failed to parse hotshot payload, but need retry")
+)
 
 type EspressoStreamerInterface interface {
 	Start(ctx context.Context) error
@@ -115,6 +118,7 @@ func NewEspressoStreamer(
 func (s *EspressoStreamer) GetMessageCount() uint64 {
 	return CountUniqueEntries(&s.messageWithMetadataAndPos)
 }
+
 func (s *EspressoStreamer) Reset(currentMessagePos uint64, currentHostshotBlock uint64) {
 	s.currentMessagePos = currentMessagePos
 	s.nextHotshotBlockNum = currentHostshotBlock
@@ -172,7 +176,13 @@ func (s *EspressoStreamer) QueueMessagesFromHotshot(
 	s.messageLock.Lock()
 	defer s.messageLock.Unlock()
 
-	messages, err := fetchNextHotshotBlock(ctx, s.espressoClient, s.nextHotshotBlockNum, parseHotShotPayloadFn, s.namespace)
+	messages, err := fetchNextHotshotBlock(
+		ctx,
+		s.espressoClient,
+		s.nextHotshotBlockNum,
+		parseHotShotPayloadFn,
+		s.namespace,
+	)
 	if err != nil {
 		return err
 	}
@@ -194,7 +204,7 @@ func (s *EspressoStreamer) verifyBatchPosterSignature(signature []byte, userData
 	validAddresses := s.batcherAddressesFetcher(l1Height)
 	if len(validAddresses) == 0 {
 		// No valid addresses right now. Need to catch up
-		return FailedToParseButNeedRetryErr
+		return ErrRetryParsingHotShotPayload
 	}
 	for _, allowed := range validAddresses {
 		if allowed == addr {
@@ -221,10 +231,15 @@ func (s *EspressoStreamer) GetCurrentEarliestHotShotBlockNumber() uint64 {
 /* Verify the attestation quote */
 func (s *EspressoStreamer) verifyLegacy(attestation []byte, signature [32]byte) error {
 	_, err := s.espressoSGXVerifier.Verify(nil, attestation, signature)
-	if err != nil {
-		return fmt.Errorf("call to the espressoTEEVerifier contract failed: %w", err)
+	if err == nil {
+		return nil
 	}
-	return nil
+
+	if !strings.Contains(err.Error(), "execution reverted") {
+		log.Warn("failed to verify sgx attestation quote", "err", err)
+		return ErrRetryParsingHotShotPayload
+	}
+	return err
 }
 
 func (s *EspressoStreamer) parseEspressoTransaction(tx espressoTypes.Bytes, l1Height uint64) ([]*MessageWithMetadataAndPos, error) {
@@ -234,13 +249,11 @@ func (s *EspressoStreamer) parseEspressoTransaction(tx espressoTypes.Bytes, l1He
 		return nil, err
 	}
 	if len(messages) == 0 {
-		return nil, PayloadHadNoMessagesErr
+		return nil, ErrPayloadHadNoMessages
 	}
-	// if attestation verification fails, we should skip this transaction
-	// Parse the messages
 	if len(userDataHash) != 32 {
 		log.Warn("user data hash is not 32 bytes")
-		return nil, fmt.Errorf("user data hash is not 32 bytes")
+		return nil, ErrUserDataHashNot32Bytes
 	}
 
 	userDataHashArr := [32]byte(userDataHash)
@@ -249,7 +262,8 @@ func (s *EspressoStreamer) parseEspressoTransaction(tx espressoTypes.Bytes, l1He
 	err = s.verifyBatchPosterSignature(signature, userDataHashArr, l1Height)
 	if err == nil {
 		success = true
-	} else if strings.Contains(err.Error(), FailedToParseButNeedRetryErr.Error()) {
+	} else if strings.Contains(err.Error(), ErrRetryParsingHotShotPayload.Error()) {
+		log.Warn("retrying to verify batch poster signature", "err", err)
 		return nil, err
 	} else {
 		log.Warn("failed to verify batch poster signature", "err", err)
@@ -341,6 +355,11 @@ func (s *EspressoStreamer) RecordTimeDurationBetweenHotshotAndCurrentBlock(nextH
 	}
 }
 
+// Export this function only for testing purpose
+func (s *EspressoStreamer) SetSGXVerifier(sgxVerifier espressotee.EspressoSGXVerifierInterface) {
+	s.espressoSGXVerifier = sgxVerifier
+}
+
 func (s *EspressoStreamer) SetBatcherAddressesFetcher(fetcher func(l1Height uint64) []common.Address) {
 	s.batcherAddressesFetcher = fetcher
 }
@@ -354,12 +373,12 @@ func fetchNextHotshotBlock(
 ) ([]*MessageWithMetadataAndPos, error) {
 	arbTxns, err := espressoClient.FetchTransactionsInBlock(ctx, nextHotshotBlockNum, namespace)
 	if err != nil {
-		return []*MessageWithMetadataAndPos{}, fmt.Errorf("%w: %w", FailedToFetchTransactionsErr, err)
+		return []*MessageWithMetadataAndPos{}, fmt.Errorf("%w: %w", ErrFailedToFetchTransactions, err)
 	}
 
 	header, err := espressoClient.FetchHeaderByHeight(ctx, nextHotshotBlockNum)
 	if err != nil {
-		return []*MessageWithMetadataAndPos{}, fmt.Errorf("%w: %w", FailedToFetchTransactionsErr, err)
+		return []*MessageWithMetadataAndPos{}, fmt.Errorf("%w: %w", ErrFailedToFetchTransactions, err)
 	}
 
 	l1Height := header.Header.GetL1Finalized().Number
@@ -367,7 +386,7 @@ func fetchNextHotshotBlock(
 
 	for _, tx := range arbTxns.Transactions {
 		messages, err := parseHotShotPayloadFn(tx, l1Height)
-		if err != nil && !strings.Contains(err.Error(), FailedToParseButNeedRetryErr.Error()) {
+		if err != nil && !strings.Contains(err.Error(), ErrRetryParsingHotShotPayload.Error()) {
 			log.Warn("failed to verify espresso transaction", "err", err)
 			continue
 		}
@@ -382,7 +401,7 @@ func fetchNextHotshotBlock(
 func (s *EspressoStreamer) Start(ctxIn context.Context) error {
 	s.StopWaiter.Start(ctxIn, s)
 
-	ephemeralErrorHandler := util.NewEphemeralErrorHandler(3*time.Minute, FailedToFetchTransactionsErr.Error(), 1*time.Minute)
+	ephemeralErrorHandler := util.NewEphemeralErrorHandler(3*time.Minute, ErrFailedToFetchTransactions.Error(), 1*time.Minute)
 	processedHotshotBlocks := 0
 	err := s.CallIterativelySafe(func(ctx context.Context) time.Duration {
 		err := s.QueueMessagesFromHotshot(ctx, s.parseEspressoTransaction)

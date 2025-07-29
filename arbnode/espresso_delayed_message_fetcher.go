@@ -193,7 +193,7 @@ func (f *DelayedMessageFetcher) processDelayedMessage(messageWithMetadataAndPos 
 	}
 	if delayedMessagesRead == f.delayedCount+1 {
 		log.Debug("Getting delayed message", "delayedCount", f.delayedCount)
-		// If this is delayed message, we need to get the message from L1
+		// If this is a delayed message, we need to get the message from the L1
 		// and replace the message in the messageWithMetadataAndPos
 		// Note: here we are using DelayedMessagesRead - 1 because that is the index of the delayed message
 		// that needs to be read
@@ -273,7 +273,6 @@ func (f *DelayedMessageFetcher) isDelayedMessageWithinSafetyTolerance(message *e
 		return true, nil
 	}
 	return false, nil
-
 }
 
 /*
