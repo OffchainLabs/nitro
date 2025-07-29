@@ -24,6 +24,8 @@ import (
 )
 
 type EspressoCaffNodeConfig struct {
+	stopwaiter.StopWaiter
+
 	Enable                  bool                    `koanf:"enable"`
 	HotShotUrls             []string                `koanf:"hotshot-urls"`
 	NextHotshotBlock        uint64                  `koanf:"next-hotshot-block"`
@@ -318,6 +320,10 @@ func (n *EspressoCaffNode) createBlock(ctx context.Context) (returnValue bool) {
 	n.espressoStreamer.RecordTimeDurationBetweenHotshotAndCurrentBlock(messageWithMetadataAndPos.HotshotHeight, time.Now())
 
 	return true
+}
+
+func (n *EspressoCaffNode) GetEspressoStreamer() espressostreamer.EspressoStreamerInterface {
+	return n.espressoStreamer
 }
 
 func (n *EspressoCaffNode) Start(ctx context.Context) error {
