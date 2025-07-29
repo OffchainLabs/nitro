@@ -1,8 +1,0 @@
-load("@rules_go//go:def.bzl", "go_library")
-
-go_library(
-    name = "option",
-    srcs = ["option_type.go"],
-    importpath = "github.com/offchainlabs/bold/containers/option",
-    visibility = ["//visibility:public"],
-)
