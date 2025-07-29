@@ -154,7 +154,7 @@ func newApiClosures(
 
 		switch opcode {
 		case vm.CALL:
-			ret, returnGas, err = evm.Call(scope.Contract.Address(), contract, input, gas, value)
+			ret, returnGas, _, err = evm.Call(scope.Contract.Address(), contract, input, gas, value)
 		case vm.DELEGATECALL:
 			ret, returnGas, err = evm.DelegateCall(scope.Contract.Caller(), scope.Contract.Address(), contract, input, gas, scope.Contract.Value())
 		case vm.STATICCALL:
