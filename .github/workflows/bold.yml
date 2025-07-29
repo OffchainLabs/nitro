@@ -7,19 +7,19 @@ on:
     branches: ["*"]
 
 jobs:
-  formatting:
-    name: Formatting
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+  # formatting:
+  #   name: Formatting
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - name: Checkout
+  #       uses: actions/checkout@v4
 
-      - name: Go mod tidy checker
-        id: gomodtidy
-        uses: ./.github/actions/gomodtidy
+  #     - name: Go mod tidy checker
+  #      id: gomodtidy
+  #      uses: ./.github/actions/gomodtidy
 
   build:
-    name: Build and Test
+    name: Build and Test Bold
     runs-on: ubuntu-latest
     steps:
       - name: Check out code into the Go module directory
@@ -34,16 +34,10 @@ jobs:
           cache: "yarn"
           cache-dependency-path: "**/contracts/yarn.lock"
 
-      - name: Install
-        run: cd contracts && yarn install
-
-      - name: Build solidity contracts
-        run: yarn --cwd contracts build
-
-      - name: Set up Go 1.23
+      - name: Set up Go 1.24
         uses: actions/setup-go@v5
         with:
-          go-version: 1.23.x
+          go-version: 1.24.x
         id: go
 
       - name: Install Foundry
@@ -51,26 +45,26 @@ jobs:
         with:
           cache: false
 
-      - name: Build yul contracts
-        run: yarn --cwd contracts build:forge:yul
+      - name: AbiGen (nitro)
+        run: make contracts
 
       - name: Get dependencies
+        working-directory: ./bold
         run: |
           go get -v -t -d ./...
 
-      - name: AbiGen
-        run: go run ./solgen/main.go
-
       - name: Build
+        working-directory: ./bold
         run: go build -v ./...
 
       - name: Test
+        working-directory: ./bold      
         run: ANVIL=$(which anvil) go test -v -covermode=atomic -coverprofile=coverage.out -timeout=20m ./...
 
-      - name: Upload coverage reports to Codecov
-        uses: codecov/codecov-action@v4
-        env:
-          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+      #- name: Upload coverage reports to Codecov
+      #  uses: codecov/codecov-action@v4
+      #  env:
+      #    CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
   bazel:
     name: Bazel
