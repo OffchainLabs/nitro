@@ -22,13 +22,13 @@ import (
 	cm "github.com/offchainlabs/bold/challenge-manager"
 	"github.com/offchainlabs/bold/challenge-manager/types"
 	retry "github.com/offchainlabs/bold/runtime"
-	"github.com/offchainlabs/bold/solgen/go/bridgegen"
-	"github.com/offchainlabs/bold/solgen/go/mocksgen"
-	"github.com/offchainlabs/bold/solgen/go/rollupgen"
 	challenge_testing "github.com/offchainlabs/bold/testing"
 	"github.com/offchainlabs/bold/testing/casttest"
 	statemanager "github.com/offchainlabs/bold/testing/mocks/state-provider"
 	"github.com/offchainlabs/bold/testing/setup"
+	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
+	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
+	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 )
 
 func TestSkipsProcessingAssertionFromEvilFork(t *testing.T) {

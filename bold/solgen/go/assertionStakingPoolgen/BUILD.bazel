@@ -3,7 +3,7 @@ load("@rules_go//go:def.bzl", "go_library")
 go_library(
     name = "assertionStakingPoolgen",
     srcs = ["assertionStakingPoolgen.go"],
-    importpath = "github.com/offchainlabs/bold/solgen/go/assertionStakingPoolgen",
+    importpath = "github.com/offchainlabs/nitro/solgen/go/assertionStakingPoolgen",
     visibility = ["//visibility:public"],
     deps = [
         "@com_github_ethereum_go_ethereum//:go-ethereum",

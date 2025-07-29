@@ -20,7 +20,7 @@ import (
 	"github.com/offchainlabs/bold/containers/option"
 	l2stateprovider "github.com/offchainlabs/bold/layer2-state-provider"
 	retry "github.com/offchainlabs/bold/runtime"
-	"github.com/offchainlabs/bold/solgen/go/rollupgen"
+	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 )
 
 func (m *Manager) syncAssertions(ctx context.Context) {

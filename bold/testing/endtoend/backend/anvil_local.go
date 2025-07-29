@@ -24,11 +24,11 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 
 	protocol "github.com/offchainlabs/bold/chain-abstraction"
-	"github.com/offchainlabs/bold/solgen/go/mocksgen"
-	"github.com/offchainlabs/bold/solgen/go/rollupgen"
 	challenge_testing "github.com/offchainlabs/bold/testing"
 	"github.com/offchainlabs/bold/testing/setup"
 	"github.com/offchainlabs/bold/util"
+	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
+	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 )
 
 var _ Backend = &AnvilLocal{}

@@ -20,11 +20,11 @@ import (
 	solimpl "github.com/offchainlabs/bold/chain-abstraction/sol-implementation"
 	"github.com/offchainlabs/bold/containers/option"
 	l2stateprovider "github.com/offchainlabs/bold/layer2-state-provider"
-	"github.com/offchainlabs/bold/solgen/go/bridgegen"
-	"github.com/offchainlabs/bold/solgen/go/mocksgen"
-	"github.com/offchainlabs/bold/solgen/go/rollupgen"
 	challenge_testing "github.com/offchainlabs/bold/testing"
 	"github.com/offchainlabs/bold/testing/setup"
+	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
+	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
+	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 )
 
 func TestNewEmptyStake(t *testing.T) {

@@ -20,10 +20,10 @@ import (
 	"github.com/offchainlabs/bold/challenge-manager/types"
 	"github.com/offchainlabs/bold/containers/option"
 	l2stateprovider "github.com/offchainlabs/bold/layer2-state-provider"
-	"github.com/offchainlabs/bold/solgen/go/rollupgen"
 	"github.com/offchainlabs/bold/testing/mocks"
 	"github.com/offchainlabs/bold/testing/setup"
 	customTime "github.com/offchainlabs/bold/time"
+	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 )
 
 var _ = types.RivalHandler(&Manager{})

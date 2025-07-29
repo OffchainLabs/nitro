@@ -15,8 +15,8 @@ import (
 
 	protocol "github.com/offchainlabs/bold/chain-abstraction"
 	retry "github.com/offchainlabs/bold/runtime"
-	"github.com/offchainlabs/bold/solgen/go/contractsgen"
-	"github.com/offchainlabs/bold/solgen/go/rollupgen"
+	"github.com/offchainlabs/nitro/solgen/go/contractsgen"
+	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 )
 
 type FastConfirmSafe struct {

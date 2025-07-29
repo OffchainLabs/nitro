@@ -18,8 +18,8 @@ import (
 	"github.com/offchainlabs/bold/containers/option"
 	"github.com/offchainlabs/bold/containers/threadsafe"
 	l2stateprovider "github.com/offchainlabs/bold/layer2-state-provider"
-	"github.com/offchainlabs/bold/solgen/go/challengeV2gen"
 	"github.com/offchainlabs/bold/testing/mocks"
+	"github.com/offchainlabs/nitro/solgen/go/challengeV2gen"
 )
 
 func simpleAssertionMetadata() *l2stateprovider.AssociatedAssertionMetadata {

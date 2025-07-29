@@ -21,8 +21,8 @@ import (
 	protocol "github.com/offchainlabs/bold/chain-abstraction"
 	"github.com/offchainlabs/bold/containers/option"
 	l2stateprovider "github.com/offchainlabs/bold/layer2-state-provider"
-	"github.com/offchainlabs/bold/solgen/go/rollupgen"
 	"github.com/offchainlabs/bold/state-commitments/history"
+	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 )
 
 var (

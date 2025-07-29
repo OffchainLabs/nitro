@@ -21,8 +21,8 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/bold/containers/option"
-	"github.com/offchainlabs/bold/solgen/go/rollupgen"
 	"github.com/offchainlabs/bold/state-commitments/history"
+	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 )
 
 // ErrCachedTimeSufficient is an error received from the challenge manager smart contract

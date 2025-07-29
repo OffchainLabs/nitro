@@ -25,10 +25,10 @@ import (
 	edgetracker "github.com/offchainlabs/bold/challenge-manager/edge-tracker"
 	"github.com/offchainlabs/bold/containers"
 	"github.com/offchainlabs/bold/containers/option"
-	"github.com/offchainlabs/bold/solgen/go/challengeV2gen"
-	"github.com/offchainlabs/bold/solgen/go/ospgen"
-	"github.com/offchainlabs/bold/solgen/go/rollupgen"
 	"github.com/offchainlabs/bold/state-commitments/history"
+	"github.com/offchainlabs/nitro/solgen/go/challengeV2gen"
+	"github.com/offchainlabs/nitro/solgen/go/ospgen"
+	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 )
 
 var (

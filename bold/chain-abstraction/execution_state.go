@@ -13,8 +13,8 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 
-	"github.com/offchainlabs/bold/solgen/go/challengegen"
-	"github.com/offchainlabs/bold/solgen/go/rollupgen"
+	"github.com/offchainlabs/nitro/solgen/go/challengegen"
+	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 )
 
 type GoGlobalState struct {

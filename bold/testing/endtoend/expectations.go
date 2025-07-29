@@ -17,9 +17,9 @@ import (
 
 	protocol "github.com/offchainlabs/bold/chain-abstraction"
 	retry "github.com/offchainlabs/bold/runtime"
-	"github.com/offchainlabs/bold/solgen/go/challengeV2gen"
-	"github.com/offchainlabs/bold/solgen/go/rollupgen"
 	"github.com/offchainlabs/bold/testing/setup"
+	"github.com/offchainlabs/nitro/solgen/go/challengeV2gen"
+	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 )
 
 // expect is a function that will be called asynchronously to verify some success criteria

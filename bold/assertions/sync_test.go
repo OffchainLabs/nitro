@@ -17,12 +17,12 @@ import (
 
 	protocol "github.com/offchainlabs/bold/chain-abstraction"
 	"github.com/offchainlabs/bold/containers/threadsafe"
-	"github.com/offchainlabs/bold/solgen/go/mocksgen"
-	"github.com/offchainlabs/bold/solgen/go/rollupgen"
 	challenge_testing "github.com/offchainlabs/bold/testing"
 	"github.com/offchainlabs/bold/testing/casttest"
 	statemanager "github.com/offchainlabs/bold/testing/mocks/state-provider"
 	"github.com/offchainlabs/bold/testing/setup"
+	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
+	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 )
 
 func Test_extractAssertionFromEvent(t *testing.T) {

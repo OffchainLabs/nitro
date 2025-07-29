@@ -22,12 +22,12 @@ import (
 	challengemanager "github.com/offchainlabs/bold/challenge-manager"
 	modes "github.com/offchainlabs/bold/challenge-manager/types"
 	l2stateprovider "github.com/offchainlabs/bold/layer2-state-provider"
-	"github.com/offchainlabs/bold/solgen/go/challengeV2gen"
-	"github.com/offchainlabs/bold/solgen/go/rollupgen"
 	butil "github.com/offchainlabs/bold/util"
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
+	"github.com/offchainlabs/nitro/solgen/go/challengeV2gen"
 	"github.com/offchainlabs/nitro/solgen/go/localgen"
+	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/staker/bold"
 )
 

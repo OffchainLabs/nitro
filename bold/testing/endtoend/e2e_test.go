@@ -23,13 +23,13 @@ import (
 	protocol "github.com/offchainlabs/bold/chain-abstraction"
 	cm "github.com/offchainlabs/bold/challenge-manager"
 	"github.com/offchainlabs/bold/challenge-manager/types"
-	"github.com/offchainlabs/bold/solgen/go/bridgegen"
-	"github.com/offchainlabs/bold/solgen/go/mocksgen"
-	"github.com/offchainlabs/bold/solgen/go/rollupgen"
 	challenge_testing "github.com/offchainlabs/bold/testing"
 	"github.com/offchainlabs/bold/testing/endtoend/backend"
 	statemanager "github.com/offchainlabs/bold/testing/mocks/state-provider"
 	"github.com/offchainlabs/bold/testing/setup"
+	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
+	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
+	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 )
 
 type backendKind uint8

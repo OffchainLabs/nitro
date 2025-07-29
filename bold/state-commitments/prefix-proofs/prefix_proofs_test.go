@@ -23,10 +23,10 @@ import (
 	protocol "github.com/offchainlabs/bold/chain-abstraction"
 	"github.com/offchainlabs/bold/containers/option"
 	l2stateprovider "github.com/offchainlabs/bold/layer2-state-provider"
-	"github.com/offchainlabs/bold/solgen/go/mocksgen"
 	prefixproofs "github.com/offchainlabs/bold/state-commitments/prefix-proofs"
 	"github.com/offchainlabs/bold/testing/casttest"
 	statemanager "github.com/offchainlabs/bold/testing/mocks/state-provider"
+	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 )
 
 func TestAppendCompleteSubTree(t *testing.T) {

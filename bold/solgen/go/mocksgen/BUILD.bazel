@@ -3,7 +3,7 @@ load("@rules_go//go:def.bzl", "go_library")
 go_library(
     name = "mocksgen",
     srcs = ["mocksgen.go"],
-    importpath = "github.com/offchainlabs/bold/solgen/go/mocksgen",
+    importpath = "github.com/offchainlabs/nitro/solgen/go/mocksgen",
     visibility = ["//visibility:public"],
     deps = [
         "@com_github_ethereum_go_ethereum//:go-ethereum",

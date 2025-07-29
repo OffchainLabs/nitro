@@ -22,7 +22,7 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 
 	protocol "github.com/offchainlabs/bold/chain-abstraction"
-	boldrollup "github.com/offchainlabs/bold/solgen/go/rollupgen"
+	boldrollup "github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbutil"

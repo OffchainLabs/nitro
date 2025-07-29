@@ -14,8 +14,8 @@ import (
 
 	protocol "github.com/offchainlabs/bold/chain-abstraction"
 	"github.com/offchainlabs/bold/containers/option"
-	"github.com/offchainlabs/bold/solgen/go/challengeV2gen"
-	"github.com/offchainlabs/bold/solgen/go/rollupgen"
+	"github.com/offchainlabs/nitro/solgen/go/challengeV2gen"
+	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 )
 
 // Assertion is a wrapper around the binding to the type

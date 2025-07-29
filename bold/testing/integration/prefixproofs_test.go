@@ -22,10 +22,10 @@ import (
 	protocol "github.com/offchainlabs/bold/chain-abstraction"
 	"github.com/offchainlabs/bold/containers/option"
 	l2stateprovider "github.com/offchainlabs/bold/layer2-state-provider"
-	"github.com/offchainlabs/bold/solgen/go/mocksgen"
 	"github.com/offchainlabs/bold/state-commitments/history"
 	prefixproofs "github.com/offchainlabs/bold/state-commitments/prefix-proofs"
 	statemanager "github.com/offchainlabs/bold/testing/mocks/state-provider"
+	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 )
 
 func TestPrefixProofGeneration(t *testing.T) {

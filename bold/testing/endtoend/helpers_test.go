@@ -20,7 +20,7 @@ import (
 
 	protocol "github.com/offchainlabs/bold/chain-abstraction"
 	solimpl "github.com/offchainlabs/bold/chain-abstraction/sol-implementation"
-	"github.com/offchainlabs/bold/solgen/go/rollupgen"
+	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 )
 
 func setupAssertionChain(

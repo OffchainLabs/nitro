@@ -17,10 +17,10 @@ import (
 	protocol "github.com/offchainlabs/bold/chain-abstraction"
 	cm "github.com/offchainlabs/bold/challenge-manager"
 	"github.com/offchainlabs/bold/challenge-manager/types"
-	"github.com/offchainlabs/bold/solgen/go/mocksgen"
 	challenge_testing "github.com/offchainlabs/bold/testing"
 	statemanager "github.com/offchainlabs/bold/testing/mocks/state-provider"
 	"github.com/offchainlabs/bold/testing/setup"
+	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 )
 
 func TestPostAssertion(t *testing.T) {

@@ -34,8 +34,8 @@ import (
 	l2stateprovider "github.com/offchainlabs/bold/layer2-state-provider"
 	"github.com/offchainlabs/bold/logs/ephemeral"
 	retry "github.com/offchainlabs/bold/runtime"
-	"github.com/offchainlabs/bold/solgen/go/challengeV2gen"
 	"github.com/offchainlabs/bold/util/stopwaiter"
+	"github.com/offchainlabs/nitro/solgen/go/challengeV2gen"
 )
 
 var (

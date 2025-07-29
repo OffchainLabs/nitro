@@ -30,10 +30,10 @@ import (
 	"github.com/offchainlabs/bold/containers/option"
 	"github.com/offchainlabs/bold/containers/threadsafe"
 	retry "github.com/offchainlabs/bold/runtime"
-	"github.com/offchainlabs/bold/solgen/go/bridgegen"
-	"github.com/offchainlabs/bold/solgen/go/mocksgen"
-	"github.com/offchainlabs/bold/solgen/go/rollupgen"
-	"github.com/offchainlabs/bold/solgen/go/testgen"
+	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
+	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
+	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
+	"github.com/offchainlabs/nitro/solgen/go/testgen"
 )
 
 var (
