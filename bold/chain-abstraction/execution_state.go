@@ -13,8 +13,8 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 
-	"github.com/offchainlabs/nitro/solgen/go/challengegen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
+	"github.com/offchainlabs/nitro/solgen/go/stategen"
 )
 
 type GoGlobalState struct {
@@ -54,8 +54,8 @@ func (s GoGlobalState) Hash() common.Hash {
 	return crypto.Keccak256Hash(data)
 }
 
-func (s GoGlobalState) AsSolidityStruct() challengegen.GlobalState {
-	return challengegen.GlobalState{
+func (s GoGlobalState) AsSolidityStruct() stategen.GlobalState {
+	return stategen.GlobalState{
 		Bytes32Vals: [2][32]byte{s.BlockHash, s.SendRoot},
 		U64Vals:     [2]uint64{s.Batch, s.PosInBatch},
 	}
