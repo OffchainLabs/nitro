@@ -1,0 +1,23 @@
+# gazelle:ignore
+load("@gazelle//:def.bzl", "gazelle")
+load("@rules_go//go:def.bzl", "TOOLS_NOGO", "nogo")
+
+# gazelle:prefix github.com/offchainlabs/bold
+gazelle(name = "gazelle")
+
+gazelle(
+    name = "gazelle-update-repos",
+    args = [
+        "-from_file=go.mod",
+        "-to_macro=deps.bzl%go_dependencies",
+        "-prune",
+    ],
+    command = "update-repos",
+)
+
+nogo(
+    name = "nogo",
+    config = ":nogo.json",
+    visibility = ["//visibility:public"],
+    deps = TOOLS_NOGO,
+)

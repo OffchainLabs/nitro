@@ -1,0 +1,23 @@
+load("@rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "server",
+    srcs = [
+        "methods.go",
+        "server.go",
+    ],
+    importpath = "github.com/offchainlabs/bold/api/server",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//api",
+        "//api/backend",
+        "//api/db",
+        "//chain-abstraction:protocol",
+        "//state-commitments/history",
+        "//util/stopwaiter",
+        "@com_github_ethereum_go_ethereum//common",
+        "@com_github_ethereum_go_ethereum//common/hexutil",
+        "@com_github_ethereum_go_ethereum//log",
+        "@com_github_gorilla_mux//:mux",
+    ],
+)

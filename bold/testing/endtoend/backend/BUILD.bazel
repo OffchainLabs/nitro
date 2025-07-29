@@ -1,0 +1,42 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "backend",
+    testonly = 1,
+    srcs = [
+        "anvil_local.go",
+        "anvil_priv_keys.go",
+        "backend.go",
+        "simulated.go",
+    ],
+    importpath = "github.com/offchainlabs/bold/testing/endtoend/backend",
+    visibility = ["//testing/endtoend:__subpackages__"],
+    deps = [
+        "//chain-abstraction:protocol",
+        "//solgen/go/mocksgen",
+        "//solgen/go/rollupgen",
+        "//testing",
+        "//testing/setup:setup_lib",
+        "//util",
+        "@com_github_ethereum_go_ethereum//accounts/abi/bind",
+        "@com_github_ethereum_go_ethereum//common",
+        "@com_github_ethereum_go_ethereum//common/hexutil",
+        "@com_github_ethereum_go_ethereum//core/types",
+        "@com_github_ethereum_go_ethereum//crypto",
+        "@com_github_ethereum_go_ethereum//ethclient",
+        "@com_github_ethereum_go_ethereum//rpc",
+        "@com_github_pkg_errors//:errors",
+    ],
+)
+
+go_test(
+    name = "backend_test",
+    size = "small",
+    srcs = ["anvil_local_test.go"],
+    embed = [":backend"],
+    tags = [
+        "exclusive-if-local",
+        "manual",
+    ],
+    visibility = ["//testing/endtoend:__subpackages__"],
+)

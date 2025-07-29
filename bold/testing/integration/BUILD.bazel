@@ -1,0 +1,22 @@
+load("@rules_go//go:def.bzl", "go_test")
+
+go_test(
+    name = "integration_test",
+    size = "small",
+    srcs = ["prefixproofs_test.go"],
+    deps = [
+        "//chain-abstraction:protocol",
+        "//containers/option",
+        "//layer2-state-provider",
+        "//solgen/go/mocksgen",
+        "//state-commitments/history",
+        "//state-commitments/prefix-proofs",
+        "//testing/mocks/state-provider",
+        "@com_github_ethereum_go_ethereum//accounts/abi/bind",
+        "@com_github_ethereum_go_ethereum//common",
+        "@com_github_ethereum_go_ethereum//core/types",
+        "@com_github_ethereum_go_ethereum//crypto",
+        "@com_github_ethereum_go_ethereum//ethclient/simulated",
+        "@com_github_stretchr_testify//require",
+    ],
+)

@@ -1,0 +1,26 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "legacy",
+    srcs = ["legacy.go"],
+    importpath = "github.com/offchainlabs/bold/state-commitments/legacy",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//state-commitments/inclusion-proofs",
+        "//state-commitments/prefix-proofs",
+        "@com_github_ccoveille_go_safecast//:go-safecast",
+        "@com_github_ethereum_go_ethereum//common",
+    ],
+)
+
+go_test(
+    name = "legacy_test",
+    size = "small",
+    srcs = ["legacy_test.go"],
+    embed = [":legacy"],
+    deps = [
+        "//state-commitments/inclusion-proofs",
+        "@com_github_ethereum_go_ethereum//common",
+        "@com_github_stretchr_testify//require",
+    ],
+)

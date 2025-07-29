@@ -1,0 +1,32 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "threadsafe",
+    srcs = [
+        "lru_map.go",
+        "lru_set.go",
+        "map.go",
+        "set.go",
+        "slice.go",
+    ],
+    importpath = "github.com/offchainlabs/bold/containers/threadsafe",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//containers/option",
+        "@com_github_ethereum_go_ethereum//common/lru",
+        "@com_github_ethereum_go_ethereum//metrics",
+    ],
+)
+
+go_test(
+    name = "threadsafe_test",
+    size = "small",
+    srcs = [
+        "collections_test.go",
+        "map_test.go",
+        "set_test.go",
+        "slice_test.go",
+    ],
+    embed = [":threadsafe"],
+    deps = ["@com_github_stretchr_testify//require"],
+)

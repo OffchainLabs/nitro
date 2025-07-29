@@ -1,0 +1,45 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "state-provider",
+    testonly = 1,
+    srcs = [
+        "execution_engine.go",
+        "history_provider.go",
+        "layer2_state_provider.go",
+    ],
+    importpath = "github.com/offchainlabs/bold/testing/mocks/state-provider",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//api/db",
+        "//chain-abstraction:protocol",
+        "//containers/option",
+        "//layer2-state-provider",
+        "//state-commitments/history",
+        "//testing",
+        "//testing/casttest",
+        "@com_github_ccoveille_go_safecast//:go-safecast",
+        "@com_github_ethereum_go_ethereum//accounts/abi",
+        "@com_github_ethereum_go_ethereum//common",
+    ],
+)
+
+go_test(
+    name = "state-provider_test",
+    size = "small",
+    srcs = [
+        "execution_engine_test.go",
+        "history_provider_test.go",
+        "layer2_state_provider_test.go",
+    ],
+    embed = [":state-provider"],
+    deps = [
+        "//chain-abstraction:protocol",
+        "//containers/option",
+        "//layer2-state-provider",
+        "//testing",
+        "@com_github_ethereum_go_ethereum//common",
+        "@com_github_ethereum_go_ethereum//crypto",
+        "@com_github_stretchr_testify//require",
+    ],
+)

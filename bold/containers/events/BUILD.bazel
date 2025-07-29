@@ -1,0 +1,16 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "events",
+    srcs = ["producer.go"],
+    importpath = "github.com/offchainlabs/bold/containers/events",
+    visibility = ["//visibility:public"],
+)
+
+go_test(
+    name = "events_test",
+    size = "small",
+    srcs = ["producer_test.go"],
+    embed = [":events"],
+    deps = ["@com_github_stretchr_testify//require"],
+)
