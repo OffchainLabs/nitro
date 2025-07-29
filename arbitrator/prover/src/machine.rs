@@ -815,10 +815,17 @@ pub struct GlobalState {
 
 impl GlobalState {
     fn hash(&self) -> Bytes32 {
+        let mut last_non_zero_idx = 0;
+        for (i, &val) in self.bytes32_vals.iter().enumerate() {
+            if val != Bytes32::default() {
+                last_non_zero_idx = i;
+            }
+        }
         let mut h = Keccak256::new();
         h.update("Global state:");
-        h.update(self.bytes32_vals[0]);
-        h.update(self.bytes32_vals[1]);
+        for i in 0..=last_non_zero_idx {
+            h.update(self.bytes32_vals[i]);
+        }
         for item in self.u64_vals {
             h.update(item.to_be_bytes())
         }
@@ -3260,5 +3267,36 @@ impl Machine {
         if frame_stack.len() > 25 {
             print(format!("  ... and {} more", frame_stack.len() - 25).grey());
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    #[test]
+    fn test_global_state_hash() {
+        use super::*;
+
+        let mut gs = GlobalState::default();
+        gs.bytes32_vals[0] = Bytes32::from([1; 32]);
+        gs.bytes32_vals[1] = Bytes32::from([2; 32]);
+        gs.bytes32_vals[2] = Bytes32::default();
+        gs.u64_vals[0] = 42;
+        gs.u64_vals[1] = 43;
+
+        let hash = gs.hash();
+
+        // We prove the global state's hash does not include the
+        // third Bytes32 value which is zero.
+        assert_eq!(
+            hash,
+            Keccak256::new()
+                .chain("Global state:")
+                .chain(gs.bytes32_vals[0])
+                .chain(gs.bytes32_vals[1])
+                .chain(42u64.to_be_bytes())
+                .chain(43u64.to_be_bytes())
+                .finalize()
+                .into()
+        );
     }
 }
