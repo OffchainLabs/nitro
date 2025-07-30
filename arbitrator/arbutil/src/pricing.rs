@@ -6,26 +6,26 @@ use crate::{
     Bytes32,
 };
 
-/// For hostios that may return something.
+/// For Host I/O that may return something.
 pub const HOSTIO_INK: Ink = Ink(8400);
 
-/// For hostios that include pointers.
+/// For Host I/O that include pointers.
 pub const PTR_INK: Ink = Ink(13440).sub(HOSTIO_INK);
 
-/// For hostios that involve an API cost.
+/// For Host I/O that involve an API cost.
 pub const EVM_API_INK: Ink = Ink(59673);
 
-/// For hostios that involve a div or mod.
+/// For Host I/O that involve a div or mod.
 pub const DIV_INK: Ink = Ink(20000);
 
-/// For hostios that involve a mulmod.
+/// For Host I/O that involve a mulmod.
 pub const MUL_MOD_INK: Ink = Ink(24100);
 
-/// For hostios that involve an addmod.
+/// For Host I/O that involve an addmod.
 pub const ADD_MOD_INK: Ink = Ink(21000);
 
-/// Defines the price of each Hostio.
-pub mod hostio {
+/// Defines the price of each Host I/O.
+pub mod host_io {
     pub use super::*;
 
     pub const READ_ARGS_BASE_INK: Ink = HOSTIO_INK;
