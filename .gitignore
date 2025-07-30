@@ -35,8 +35,6 @@ arbos/testdata/*
 # Dependency directories (remove the comment below to include it)
 # vendor/
 .idea
-# bazel stuff
-bazel-*
 #other temporaries
 tmp/*
 .env
