@@ -13,8 +13,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/offchainlabs/nitro/validator/server_common"
-
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -24,14 +22,6 @@ import (
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
 
-	"github.com/offchainlabs/nitro/arbnode"
-	"github.com/offchainlabs/nitro/arbos/l2pricing"
-	"github.com/offchainlabs/nitro/cmd/chaininfo"
-	"github.com/offchainlabs/nitro/staker"
-	"github.com/offchainlabs/nitro/staker/bold"
-	"github.com/offchainlabs/nitro/util"
-	"github.com/offchainlabs/nitro/validator/valnode"
-
 	protocol "github.com/offchainlabs/bold/chain-abstraction"
 	"github.com/offchainlabs/bold/containers/option"
 	l2stateprovider "github.com/offchainlabs/bold/layer2-state-provider"
@@ -40,6 +30,14 @@ import (
 	prefixproofs "github.com/offchainlabs/bold/state-commitments/prefix-proofs"
 	mockmanager "github.com/offchainlabs/bold/testing/mocks/state-provider"
 	"github.com/offchainlabs/bold/testing/setup"
+	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/arbos/l2pricing"
+	"github.com/offchainlabs/nitro/cmd/chaininfo"
+	"github.com/offchainlabs/nitro/staker"
+	"github.com/offchainlabs/nitro/staker/bold"
+	"github.com/offchainlabs/nitro/util"
+	"github.com/offchainlabs/nitro/validator/server_common"
+	"github.com/offchainlabs/nitro/validator/valnode"
 )
 
 func TestChallengeProtocolBOLD_Bisections(t *testing.T) {

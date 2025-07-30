@@ -14,9 +14,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/offchainlabs/nitro/validator/server_common"
-
 	"github.com/ccoveille/go-safecast"
+
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -36,6 +35,7 @@ import (
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/staker/bold"
 	"github.com/offchainlabs/nitro/util"
+	"github.com/offchainlabs/nitro/validator/server_common"
 	"github.com/offchainlabs/nitro/validator/valnode"
 )
 

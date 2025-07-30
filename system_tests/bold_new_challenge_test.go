@@ -18,6 +18,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
+
 	protocol "github.com/offchainlabs/bold/chain-abstraction"
 	solimpl "github.com/offchainlabs/bold/chain-abstraction/sol-implementation"
 	challengemanager "github.com/offchainlabs/bold/challenge-manager"
