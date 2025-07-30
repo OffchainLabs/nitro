@@ -60,8 +60,8 @@ jobs:
         working-directory: ./bold      
         run: ANVIL=$(which anvil) go test -v -covermode=atomic -coverprofile=coverage.out -timeout=20m ./...
 
-      #- name: Upload coverage reports to Codecov
-      #  uses: codecov/codecov-action@v4
-      #  env:
-      #    CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+      - name: Upload coverage reports to Codecov
+        uses: codecov/codecov-action@v4
+        env:
+         CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
