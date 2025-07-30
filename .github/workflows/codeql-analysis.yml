@@ -161,7 +161,7 @@ jobs:
       run: ./scripts/build-brotli.sh -w -d
 
     - name: Build Nitro for CodeQL
-      run: make build -j
+      run: make build
 
     # ℹ️ Command-line programs to run using the OS shell.
     # 📚 See https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions#jobsjob_idstepsrun
