@@ -1,6 +1,6 @@
 // Copyright 2023-2024, Offchain Labs, Inc.
 // For license information, see:
-// https://github.com/offchainlabs/bold/blob/main/LICENSE.md
+// https://github.com/offchainlabs/nitro/blob/master/LICENSE.md
 
 // Package l2stateprovider defines a dependency which provides L2 states and
 // proofs needed for the challenge manager to interact with an Arbitrum chain's

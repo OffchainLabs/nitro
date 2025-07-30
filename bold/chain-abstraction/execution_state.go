@@ -1,6 +1,6 @@
 // Copyright 2023-2024, Offchain Labs, Inc.
 // For license information, see:
-// https://github.com/offchainlabs/bold/blob/main/LICENSE.md
+// https://github.com/offchainlabs/nitro/blob/master/LICENSE.md
 
 // Package protocol a series of interfaces for interacting with Arbitrum chains' rollup
 // and challenge contracts via a developer-friendly, high-level API.

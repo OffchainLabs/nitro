@@ -1,6 +1,6 @@
 // Copyright 2023-2024, Offchain Labs, Inc.
 // For license information, see:
-// https://github.com/offchainlabs/bold/blob/main/LICENSE.md
+// https://github.com/offchainlabs/nitro/blob/master/LICENSE.md
 
 // Package prefixproofs defines utilities for creating Merkle prefix proofs for binary
 // trees. It is used extensively in the challenge protocol for making challenge moves on-chain.

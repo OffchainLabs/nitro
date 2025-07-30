@@ -1,6 +1,6 @@
 // Copyright 2023-2024, Offchain Labs, Inc.
 // For license information, see:
-// https://github.com/offchainlabs/bold/blob/main/LICENSE.md
+// https://github.com/offchainlabs/nitro/blob/master/LICENSE.md
 
 // Package math defines utilities for performing operations critical to the
 // computations performed during a challenge in BOLD.

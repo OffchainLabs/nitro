@@ -1,6 +1,6 @@
 // Copyright 2023-2024, Offchain Labs, Inc.
 // For license information, see:
-// https://github.com/offchainlabs/bold/blob/main/LICENSE.md
+// https://github.com/offchainlabs/nitro/blob/master/LICENSE.md
 
 // Package backend handles the business logic for API data fetching
 // for BOLD challenge information. It is meant to be fairly abstract and

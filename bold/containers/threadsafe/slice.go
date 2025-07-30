@@ -1,6 +1,6 @@
 // Copyright 2023-2024, Offchain Labs, Inc.
 // For license information, see:
-// https://github.com/offchainlabs/bold/blob/main/LICENSE.md
+// https://github.com/offchainlabs/nitro/blob/master/LICENSE.md
 
 // Package threadsafe defines generic, threadsafe analogues of common data structures
 // in Go such as maps, slices, and sets for use in BoLD with an intuitive API.

@@ -1,6 +1,6 @@
 // Copyright 2023-2024, Offchain Labs, Inc.
 // For license information, see:
-// https://github.com/offchainlabs/bold/blob/main/LICENSE.md
+// https://github.com/offchainlabs/nitro/blob/master/LICENSE.md
 
 // Package edgetracker contains the logic for tracking an edge in the challenge manager. It keeps
 // track of edges created and their own state transitions until an eventual confirmation.
