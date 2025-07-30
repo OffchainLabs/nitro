@@ -1,10 +1,13 @@
 name: Go
 
 on:
-  push:
-    branches: [main]
+  workflow_dispatch:
+  merge_group:
   pull_request:
-    branches: ["*"]
+  push:
+    branches:
+      - master
+      - develop
 
 jobs:
   # formatting:
