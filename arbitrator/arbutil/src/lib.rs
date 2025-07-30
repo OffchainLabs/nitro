@@ -16,8 +16,9 @@ pub use color::{Color, DebugColor};
 use num_traits::Unsigned;
 pub use types::{Bytes20, Bytes32, PreimageType};
 
-/// Puts an arbitrary type on the heap.
-/// Note: the type must be later freed or the value will be leaked.
+/// Puts an arbitrary type on the heap, returning a raw pointer to it.
+/// Note: the pointer must be later deallocated to prevent a memory leak,
+/// for example by calling `Box::from_raw`.
 pub fn heapify<T>(value: T) -> *mut T {
     Box::into_raw(Box::new(value))
 }
