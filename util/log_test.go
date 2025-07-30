@@ -2,33 +2,29 @@ package util
 
 import (
 	"errors"
-	"reflect"
 	"testing"
 	"time"
 
 	"github.com/ethereum/go-ethereum/log"
 )
 
-func compareFunctions(f1, f2 func(msg string, ctx ...interface{})) bool {
-	return reflect.ValueOf(f1).Pointer() == reflect.ValueOf(f2).Pointer()
-}
 func TestSimple(t *testing.T) {
 	allErrHandler := NewEphemeralErrorHandler(2500*time.Millisecond, "", time.Second)
 	err := errors.New("sample error")
 	logLevel := allErrHandler.LogLevel(err, log.Error)
-	if !compareFunctions(log.Debug, logLevel) {
+	if !CompareLogLevels(log.Debug, logLevel) {
 		t.Fatalf("incorrect loglevel output. Want: Debug")
 	}
 
 	time.Sleep(1 * time.Second)
 	logLevel = allErrHandler.LogLevel(err, log.Error)
-	if !compareFunctions(log.Warn, logLevel) {
+	if !CompareLogLevels(log.Warn, logLevel) {
 		t.Fatalf("incorrect loglevel output. Want: Warn")
 	}
 
 	time.Sleep(2 * time.Second)
 	logLevel = allErrHandler.LogLevel(err, log.Error)
-	if !compareFunctions(log.Error, logLevel) {
+	if !CompareLogLevels(log.Error, logLevel) {
 		t.Fatalf("incorrect loglevel output. Want: Error")
 	}
 }
@@ -47,24 +43,24 @@ func TestComplex(t *testing.T) {
 	}
 
 	errA := errors.New("this is a sample errorA")
-	if !compareFunctions(log.Warn, chainingErrHandlers(errA)) {
+	if !CompareLogLevels(log.Warn, chainingErrHandlers(errA)) {
 		t.Fatalf("incorrect loglevel output. Want: Warn")
 	}
 	time.Sleep(2 * time.Second)
-	if !compareFunctions(log.Error, chainingErrHandlers(errA)) {
+	if !CompareLogLevels(log.Error, chainingErrHandlers(errA)) {
 		t.Fatalf("incorrect loglevel output. Want: Error")
 	}
 
 	errB := errors.New("this is a sample errorB")
-	if !compareFunctions(log.Warn, chainingErrHandlers(errB)) {
+	if !CompareLogLevels(log.Warn, chainingErrHandlers(errB)) {
 		t.Fatalf("incorrect loglevel output. Want: Warn")
 	}
-	if !compareFunctions(log.Warn, chainingErrHandlers(errA)) {
+	if !CompareLogLevels(log.Warn, chainingErrHandlers(errA)) {
 		t.Fatalf("incorrect loglevel output. Want: Warn")
 	}
 
 	errC := errors.New("random error")
-	if !compareFunctions(log.Error, chainingErrHandlers(errC)) {
+	if !CompareLogLevels(log.Error, chainingErrHandlers(errC)) {
 		t.Fatalf("incorrect loglevel output. Want: Error")
 	}
 }

@@ -23,6 +23,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/retryables"
+	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/timeboost"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
@@ -30,18 +31,24 @@ import (
 type ArbAPI struct {
 	txPublisher              TransactionPublisher
 	bulkBlockMetadataFetcher *BulkBlockMetadataFetcher
+	execEngine               *ExecutionEngine
 }
 
-func NewArbAPI(publisher TransactionPublisher, bulkBlockMetadataFetcher *BulkBlockMetadataFetcher) *ArbAPI {
+func NewArbAPI(publisher TransactionPublisher, bulkBlockMetadataFetcher *BulkBlockMetadataFetcher, execEngine *ExecutionEngine) *ArbAPI {
 	return &ArbAPI{
 		txPublisher:              publisher,
 		bulkBlockMetadataFetcher: bulkBlockMetadataFetcher,
+		execEngine:               execEngine,
 	}
 }
 
 type NumberAndBlockMetadata struct {
 	BlockNumber uint64        `json:"blockNumber"`
 	RawMetadata hexutil.Bytes `json:"rawMetadata"`
+}
+
+func (a *ArbAPI) MaintenanceStatus(ctx context.Context) execution.MaintenanceStatus {
+	return *a.execEngine.MaintenanceStatus()
 }
 
 func (a *ArbAPI) CheckPublisherHealth(ctx context.Context) error {

@@ -105,9 +105,6 @@ func (c *Config) Validate() error {
 	if err := c.BlockValidator.Validate(); err != nil {
 		return err
 	}
-	if err := c.Maintenance.Validate(); err != nil {
-		return err
-	}
 	if err := c.MessageExtraction.Validate(); err != nil {
 		return err
 	}
@@ -483,17 +480,11 @@ func getBPVerifier(
 }
 
 func getMaintenanceRunner(
-	arbDb ethdb.Database,
 	configFetcher ConfigFetcher,
 	coordinator *SeqCoordinator,
 	exec execution.ExecutionClient,
 ) (*MaintenanceRunner, error) {
-	dbs := []ethdb.Database{arbDb}
-	maintenanceRunner, err := NewMaintenanceRunner(func() *MaintenanceConfig { return &configFetcher.Get().Maintenance }, coordinator, dbs, exec)
-	if err != nil {
-		return nil, err
-	}
-	return maintenanceRunner, nil
+	return NewMaintenanceRunner(func() *MaintenanceConfig { return &configFetcher.Get().Maintenance }, coordinator, exec)
 }
 
 func getBroadcastClients(
@@ -1154,7 +1145,7 @@ func createNodeImpl(
 		return nil, err
 	}
 
-	maintenanceRunner, err := getMaintenanceRunner(arbDb, configFetcher, coordinator, executionClient)
+	maintenanceRunner, err := getMaintenanceRunner(configFetcher, coordinator, executionClient)
 	if err != nil {
 		return nil, err
 	}
@@ -1324,16 +1315,6 @@ func registerAPIs(currentNode *Node, stack *node.Node) {
 			Version:   "1.0",
 			Service: &BlockValidatorDebugAPI{
 				val: currentNode.StatelessBlockValidator,
-			},
-			Public: false,
-		})
-	}
-	if currentNode.MaintenanceRunner != nil {
-		apis = append(apis, rpc.API{
-			Namespace: "maintenance",
-			Version:   "1.0",
-			Service: &MaintenanceAPI{
-				runner: currentNode.MaintenanceRunner,
 			},
 			Public: false,
 		})
