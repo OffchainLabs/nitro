@@ -84,7 +84,7 @@ func getSequencerBatchData(
 		// we want to convert a batch sequencer number which is a uint64 into a big-endian byte slice of size 32,
 		// so the last 8 bytes of that slice will contain the serialized batch.SequenceNumber
 		binary.BigEndian.PutUint64(numberAsHash[(32-8):], batch.SequenceNumber)
-		logs, err := logsFetcher.LogsForTxHash(ctx, batch.RawLog.TxHash)
+		logs, err := logsFetcher.LogsForTxIndex(ctx, batch.RawLog.BlockHash, batch.RawLog.TxIndex)
 		if err != nil {
 			return nil, err
 		}

@@ -434,32 +434,35 @@ type mockTxFetcher struct {
 	err error
 }
 
-func (m *mockTxFetcher) TransactionByHash(
+func (m *mockTxFetcher) TransactionByLog(
 	ctx context.Context,
-	hash common.Hash,
-) (*types.Transaction, bool, error) {
+	log *types.Log,
+) (*types.Transaction, error) {
 	if m.err != nil {
-		return nil, false, m.err
+		return nil, m.err
 	}
 	for _, tx := range m.txs {
-		if tx.Hash() == hash {
-			return tx, false, nil
+		if tx.Hash() == log.TxHash {
+			return tx, nil
 		}
 	}
-	return nil, false, fmt.Errorf("tx: %v not found", hash)
+	return nil, fmt.Errorf("tx: %v not found", log.TxHash)
 }
 
 type mockBlockLogsFetcher struct {
-	blockLogs    []*types.Log
-	logsByTxHash map[common.Hash][]*types.Log
-	err          error
+	blockLogs     []*types.Log
+	logsByTxIndex map[common.Hash]map[uint][]*types.Log
+	err           error
 }
 
 func newMockBlockLogsFetcher(blockReceipts []*types.Receipt) *mockBlockLogsFetcher {
-	fetcher := &mockBlockLogsFetcher{logsByTxHash: make(map[common.Hash][]*types.Log)}
+	fetcher := &mockBlockLogsFetcher{logsByTxIndex: make(map[common.Hash]map[uint][]*types.Log)}
 	for _, receipt := range blockReceipts {
 		fetcher.blockLogs = append(fetcher.blockLogs, receipt.Logs...)
-		fetcher.logsByTxHash[receipt.TxHash] = receipt.Logs
+		if _, ok := fetcher.logsByTxIndex[receipt.BlockHash]; !ok {
+			fetcher.logsByTxIndex[receipt.BlockHash] = make(map[uint][]*types.Log)
+		}
+		fetcher.logsByTxIndex[receipt.BlockHash][receipt.TransactionIndex] = receipt.Logs
 	}
 	return fetcher
 }
@@ -471,12 +474,14 @@ func (m *mockBlockLogsFetcher) LogsForBlockHash(ctx context.Context, parentChain
 	return m.blockLogs, nil
 }
 
-func (m *mockBlockLogsFetcher) LogsForTxHash(ctx context.Context, txHash common.Hash) ([]*types.Log, error) {
+func (m *mockBlockLogsFetcher) LogsForTxIndex(ctx context.Context, parentChainBlockHash common.Hash, txIndex uint) ([]*types.Log, error) {
 	if m.err != nil {
 		return nil, m.err
 	}
-	if _, ok := m.logsByTxHash[txHash]; ok {
-		return m.logsByTxHash[txHash], nil
+	if indexMap, ok := m.logsByTxIndex[parentChainBlockHash]; ok {
+		if _, ok := indexMap[txIndex]; ok {
+			return indexMap[txIndex], nil
+		}
 	}
-	return nil, fmt.Errorf("logs for tx: %v not found", txHash)
+	return nil, fmt.Errorf("logs for blockHash: %v and txIndex: %d not found", parentChainBlockHash, txIndex)
 }

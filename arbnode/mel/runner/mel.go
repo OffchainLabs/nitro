@@ -132,9 +132,10 @@ func (m *MessageExtractor) Start(ctxIn context.Context) error {
 }
 
 type blockLogsAndTxsFetcher struct {
+	client           ParentChainReader
 	parentChainBlock *types.Block
 	blockLogs        []*types.Log
-	logsByTxHash     map[common.Hash][]*types.Log
+	logsByTxIndex    map[common.Hash]map[uint][]*types.Log
 }
 
 func newBlockLogsAndTxsFetcher(ctx context.Context, client ParentChainReader, parentChainBlock *types.Block) (*blockLogsAndTxsFetcher, error) {
@@ -143,15 +144,19 @@ func newBlockLogsAndTxsFetcher(ctx context.Context, client ParentChainReader, pa
 		return nil, err
 	}
 	var blockLogs []*types.Log
-	logsByTxHash := make(map[common.Hash][]*types.Log)
+	logsByTxIndex := make(map[common.Hash]map[uint][]*types.Log)
 	for _, receipt := range blockReceipts {
 		blockLogs = append(blockLogs, receipt.Logs...)
-		logsByTxHash[receipt.TxHash] = receipt.Logs
+		if _, ok := logsByTxIndex[receipt.BlockHash]; !ok {
+			logsByTxIndex[receipt.BlockHash] = make(map[uint][]*types.Log)
+		}
+		logsByTxIndex[receipt.BlockHash][receipt.TransactionIndex] = receipt.Logs
 	}
 	return &blockLogsAndTxsFetcher{
+		client:           client,
 		parentChainBlock: parentChainBlock,
 		blockLogs:        blockLogs,
-		logsByTxHash:     logsByTxHash,
+		logsByTxIndex:    logsByTxIndex,
 	}, nil
 }
 
@@ -161,11 +166,21 @@ func (f *blockLogsAndTxsFetcher) LogsForBlockHash(ctx context.Context, parentCha
 	return f.blockLogs, nil
 }
 
-func (f *blockLogsAndTxsFetcher) LogsForTxHash(ctx context.Context, txHash common.Hash) ([]*types.Log, error) {
-	if _, ok := f.logsByTxHash[txHash]; ok {
-		return f.logsByTxHash[txHash], nil
+func (f *blockLogsAndTxsFetcher) LogsForTxIndex(ctx context.Context, parentChainBlockHash common.Hash, txIndex uint) ([]*types.Log, error) {
+	if indexMap, ok := f.logsByTxIndex[parentChainBlockHash]; ok {
+		if _, ok := indexMap[txIndex]; ok {
+			return indexMap[txIndex], nil
+		}
 	}
-	return nil, fmt.Errorf("logs for tx: %v not found", txHash)
+	return nil, fmt.Errorf("logs for blockHash: %v and txIndex: %d not found", parentChainBlockHash, txIndex)
+}
+
+func (f *blockLogsAndTxsFetcher) TransactionByLog(ctx context.Context, log *types.Log) (*types.Transaction, error) {
+	if log == nil {
+		return nil, errors.New("transactionByLog got nil log value")
+	}
+	tx, _, err := f.client.TransactionByHash(ctx, log.TxHash)
+	return tx, err
 }
 
 func (m *MessageExtractor) CurrentFSMState() FSMState {
@@ -417,7 +432,7 @@ func (m *MessageExtractor) Act(ctx context.Context) (time.Duration, error) {
 			parentChainBlock.Header(),
 			m.dataProviders,
 			m.melDB,
-			m.parentChainReader,
+			blockLogsAndTxsFetcher,
 			blockLogsAndTxsFetcher,
 		)
 		if err != nil {

@@ -54,7 +54,7 @@ func parseBatchesFromBlock(
 		}
 		lastSeqNum = &seqNum
 
-		tx, _, err := txFetcher.TransactionByHash(ctx, log.TxHash)
+		tx, err := txFetcher.TransactionByLog(ctx, log)
 		if err != nil {
 			return nil, nil, fmt.Errorf("error fetching tx by hash: %v in parseBatchesFromBlock: %w ", log.TxHash, err)
 		}

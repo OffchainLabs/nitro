@@ -33,18 +33,19 @@ type LogsFetcher interface {
 		ctx context.Context,
 		parentChainBlockHash common.Hash,
 	) ([]*types.Log, error)
-	LogsForTxHash(
+	LogsForTxIndex(
 		ctx context.Context,
-		txHash common.Hash,
+		parentChainBlockHash common.Hash,
+		txIndex uint,
 	) ([]*types.Log, error)
 }
 
 // Defines a method that can fetch transaction of a parent chain block by hash.
 type TransactionFetcher interface {
-	TransactionByHash(
+	TransactionByLog(
 		ctx context.Context,
-		hash common.Hash,
-	) (*types.Transaction, bool, error)
+		log *types.Log,
+	) (*types.Transaction, error)
 }
 
 // ExtractMessages is a pure function that can read a parent chain block and
