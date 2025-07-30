@@ -588,7 +588,7 @@ contracts/test/prover/proofs/%.json: $(arbitrator_cases)/%.wasm $(prover_bin)
 	@touch $@
 
 .make/fmt: $(DEP_PREDICATE) build-node-deps .make/yarndeps $(ORDER_ONLY_PREDICATE) .make
-	gofmt -w .
+	golangci-lint fmt
 	cargo fmt -p arbutil -p prover -p jit -p stylus --manifest-path arbitrator/Cargo.toml -- --check
 	cargo fmt --all --manifest-path arbitrator/wasm-testsuite/Cargo.toml -- --check
 	yarn --cwd contracts prettier:solidity
