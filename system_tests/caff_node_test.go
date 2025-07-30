@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"math/big"
 	"strconv"
 	"strings"
@@ -75,6 +76,7 @@ func createCaffNode(
 	nodeConfig.EspressoCaffNode.RetryTime = time.Second * 1
 	nodeConfig.EspressoCaffNode.HotshotPollingInterval = time.Millisecond * 100
 	nodeConfig.ParentChainReader.Enable = true
+	nodeConfig.EspressoCaffNode.BlocksToRead = 10000
 
 	builder.l2StackConfig.HTTPPort = getRandomPort(t)
 	builder.l2StackConfig.HTTPHost = "0.0.0.0"
@@ -185,7 +187,6 @@ func TestEspressoCaffNode(t *testing.T) {
 
 	cleanEspresso := runEspresso()
 	defer cleanEspresso()
-
 	// wait for the builder
 	err = waitForEspressoNode(ctx)
 	Require(t, err)
@@ -355,6 +356,7 @@ func TestEspressoCaffNodeDelayedMessagesConfirmations(t *testing.T) {
 	defer valNodeCleanup()
 	defer cleanup()
 	defer cleanEspresso()
+
 	// Set caff node config variables
 	builder.nodeConfig.EspressoCaffNode.WaitForConfirmations = true
 	builder.nodeConfig.EspressoCaffNode.RequiredBlockDepth = 6
@@ -373,6 +375,7 @@ func TestEspressoCaffNodeDelayedMessagesConfirmations(t *testing.T) {
 	tx := builder.L1.SendWaitTestTransactions(t, []*types.Transaction{
 		WrapL2ForDelayed(t, delayedTx, builder.L1Info, "Faucet", 100000),
 	})
+
 	// Check the caff node RPC for tx. assert that it is not there.
 	_, _, err = builderCaffNode.Client.TransactionByHash(ctx, tx[0].TxHash)
 	ExpectErr(t, err, ethereum.NotFound)
@@ -408,6 +411,10 @@ func TestEspressoCaffNodeDelayedMessagesFinalized(t *testing.T) {
 	defer valNodeCleanup()
 	defer cleanup()
 	defer cleanEspresso()
+
+	// Wait for l1 node
+	err := waitForL1Node(ctx)
+	Require(t, err)
 
 	// Set caff node config vars
 	builder.nodeConfig.EspressoCaffNode.WaitForConfirmations = false
@@ -556,7 +563,7 @@ func TestEspressoCaffNodeDangerousConfig(t *testing.T) {
 	}
 
 	// The actual error is wrapped in an array, so we need to check for that
-	expectedErrMsg := "No next hotshot block found in database or dangerous.ignore-database-hotshot-block is set to true, please set config.CaffNodeConfig.NextHotshotBlock"
+	expectedErrMsg := "no next hotshot block found in database or dangerous.ignore-database-hotshot-block is set to true, please set config.CaffNodeConfig.NextHotshotBlock"
 
 	if err == nil {
 		t.Fatal("Expected an error but got nil")
@@ -674,6 +681,14 @@ func TestEspressoForceInclusionChecker(t *testing.T) {
 	delayedBridge, err := arbnode.NewDelayedBridge(builder.L1.Client, builder.addresses.Bridge, builder.addresses.DeployedAt)
 	Require(t, err)
 
+	if builder.addresses.DeployedAt > math.MaxInt64 {
+		t.Fatal("deployedAt is greater than max int64")
+	}
+
+	// nolint:all
+	seqInboxInterface, err := arbnode.NewSequencerInbox(builder.L1.Client, builder.addresses.SequencerInbox, int64(builder.addresses.DeployedAt))
+	Require(t, err)
+
 	reader := builder.L2.ConsensusNode.L1Reader
 
 	delayedMessageFetcher := arbnode.NewDelayedMessageFetcher(
@@ -685,6 +700,7 @@ func TestEspressoForceInclusionChecker(t *testing.T) {
 		false,
 		10,
 		0,
+		seqInboxInterface,
 	)
 
 	fatalErrChan := make(chan error)

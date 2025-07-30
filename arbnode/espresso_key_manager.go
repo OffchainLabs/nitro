@@ -205,8 +205,7 @@ func (k *EspressoKeyManager) TeeType() TEE {
 }
 
 func (k *EspressoKeyManager) SignHotShotPayload(message []byte) ([]byte, error) {
-	hash := crypto.Keccak256Hash(message)
-	return k.batchPosterSigner(hash.Bytes())
+	return k.batchPosterSigner(crypto.Keccak256Hash(message).Bytes())
 }
 
 func (k *EspressoKeyManager) SignBatch(message []byte) ([]byte, error) {
