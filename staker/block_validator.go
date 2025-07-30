@@ -685,7 +685,7 @@ func (v *BlockValidator) createNextValidationEntry(ctx context.Context) (bool, e
 		endGS.Batch = v.nextCreateStartGS.Batch + 1
 		endGS.PosInBatch = 0
 	} else {
-		return false, fmt.Errorf("illegal batch msg count %d pos %d batch %d", v.nextCreateBatch.MsgCount, pos, endGS.Batch)
+		return false, fmt.Errorf("illegal batch: batch(%d), msg count(%d), next message pos(%d)", v.nextCreateStartGS.Batch, v.nextCreateBatch.MsgCount, pos+1)
 	}
 	chainConfig := v.streamer.ChainConfig()
 	prevBatchNums, err := msg.Message.PastBatchesRequired()

@@ -604,6 +604,11 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, 
 		t.Logf("Error getting batch 0 from node A: %v", err)
 	} else {
 		PrintSequencerInboxMessage(t, "Node A - Batch 0", msgA0)
+		// Get and log message count
+		msgCount0, err := l2nodeA.InboxTracker.GetBatchMessageCount(0)
+		if err == nil {
+			t.Logf("  Message count after batch 0: %d", msgCount0)
+		}
 	}
 
 	msgB0, _, err := l2nodeB.InboxReader.GetSequencerMessageBytes(ctx, 0)
@@ -669,16 +674,10 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, 
 	receipt := postBatchToL1(t, ctx, l1client, &sequencerTxOpts, seqInboxBinding, certificate2)
 
 	// For UntrustedSignerCert:
-	// - Node A should fail because it validates certificates correctly
+	// - Node A should succeed because it skips the invalid batch
 	// - Node B should succeed because the evil provider lies about certificate validity
-	var expectedFailureA, expectedFailureB string
-	if evilStrategy == UntrustedSignerCert {
-		expectedFailureA = "certificate signed by untrusted signer"
-		expectedFailureB = "" // Evil provider lies about validity, so sync succeeds
-	}
-
-	syncBatchToNode(t, ctx, l1client, l2nodeA, seqInbox, receipt, expectedFailureA)
-	syncBatchToNode(t, ctx, l1client, l2nodeB, seqInbox, receipt, expectedFailureB)
+	syncBatchToNode(t, ctx, l1client, l2nodeA, seqInbox, receipt, "")
+	syncBatchToNode(t, ctx, l1client, l2nodeB, seqInbox, receipt, "")
 
 	// Both nodes will read the same certificate from shared sequencer inbox
 	// But when they dereference it:
@@ -698,6 +697,11 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, 
 		t.Logf("Error getting batch 1 from node A: %v", err)
 	} else {
 		PrintSequencerInboxMessage(t, "Node A - Batch 1", msgA1)
+		// Get and log message count
+		msgCount1, err := l2nodeA.InboxTracker.GetBatchMessageCount(1)
+		if err == nil {
+			t.Logf("  Message count after batch 1: %d", msgCount1)
+		}
 	}
 
 	msgB1, _, err := l2nodeB.InboxReader.GetSequencerMessageBytes(ctx, 1)
@@ -722,6 +726,11 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, 
 		t.Logf("Error getting batch 2 from node A: %v", err)
 	} else {
 		PrintSequencerInboxMessage(t, "Node A - Batch 2", msgA2)
+		// Get and log message count
+		msgCount2A, err := l2nodeA.InboxTracker.GetBatchMessageCount(2)
+		if err == nil {
+			t.Logf("  Message count after batch 2: %d", msgCount2A)
+		}
 		if evilStrategy == UntrustedSignerCert {
 			t.Logf("  Note: Node A rejected this batch due to untrusted certificate signer")
 		}
@@ -733,6 +742,11 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, 
 	} else {
 		if evilStrategy == UntrustedSignerCert {
 			PrintSequencerInboxMessage(t, "Node B - Batch 2 (evil provider accepted untrusted cert)", msgB2)
+			// Get and log message count
+			msgCount2B, err := l2nodeB.InboxTracker.GetBatchMessageCount(2)
+			if err == nil {
+				t.Logf("  Message count after batch 2: %d", msgCount2B)
+			}
 		}
 	}
 

@@ -320,6 +320,7 @@ func (v *StatelessBlockValidator) readFullBatch(ctx context.Context, batchNum ui
 		return false, nil, err
 	}
 	preimages := make(daprovider.PreimagesMap)
+	// TODO reconsider the 40 byte check in light of customda, and the founda flag
 	if len(postedData) > 40 {
 		foundDA := false
 		for _, dapReader := range v.dapReaders {
@@ -328,6 +329,15 @@ func (v *StatelessBlockValidator) readFullBatch(ctx context.Context, batchNum ui
 				var preimagesRecorded daprovider.PreimagesMap
 				_, preimagesRecorded, err = dapReader.RecoverPayloadFromBatch(ctx, batchNum, batchBlockHash, postedData, preimages, true)
 				if err != nil {
+					// Check if this is a certificate validation error
+					if daprovider.IsCertificateValidationError(err) {
+						log.Warn("Skipping batch with invalid certificate in validator",
+							"batch", batchNum,
+							"error", err)
+						// Continue with empty preimages - batch will be treated as empty
+						break
+					}
+
 					// Matches the way keyset validation was done inside DAS readers i.e logging the error
 					//  But other daproviders might just want to return the error
 					if strings.Contains(err.Error(), daprovider.ErrSeqMsgValidation.Error()) && daprovider.IsDASMessageHeaderByte(postedData[40]) {

@@ -768,6 +768,19 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client *ethclien
 		batchSeqNum := backend.batches[0].SequenceNumber
 		msg, err := multiplexer.Pop(ctx)
 		if err != nil {
+			// Check if this is a certificate validation error
+			if daprovider.IsCertificateValidationError(err) {
+				log.Warn("Skipping batch with invalid certificate",
+					"batch", batchSeqNum,
+					"error", err)
+
+				// Record empty batch metadata (keep same message count as previous)
+				batchMessageCounts[batchSeqNum] = currentPos - 1
+
+				// Move to next batch
+				backend.batches = backend.batches[1:]
+				continue
+			}
 			return err
 		}
 		messages = append(messages, *msg)
