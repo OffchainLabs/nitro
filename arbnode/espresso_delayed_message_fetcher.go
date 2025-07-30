@@ -84,6 +84,11 @@ func (d *DelayedMessageFetcher) backfill(ctx context.Context) error {
 		fromBlock = toBlock
 	}
 
+	err = batch.Write()
+	if err != nil {
+		return err
+	}
+
 	log.Info("Backfilled delayed messages")
 	return nil
 }
@@ -148,6 +153,11 @@ func (d *DelayedMessageFetcher) processNewHeader(ctx context.Context, header *ty
 	err = d.getDelayedMessagesInRange(ctx, batch, fromBlock, endBlock)
 	if err != nil {
 		log.Error("failed to get delayed messages in range", "err", err, "fromBlock", fromBlock, "endBlock", endBlock)
+		return err
+	}
+
+	err = batch.Write()
+	if err != nil {
 		return err
 	}
 
@@ -334,10 +344,6 @@ func (d *DelayedMessageFetcher) getDelayedMessagesInRange(ctx context.Context, b
 		return err
 	}
 
-	err = batch.Write()
-	if err != nil {
-		return err
-	}
 	return nil
 }
 
