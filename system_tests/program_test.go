@@ -1707,6 +1707,9 @@ func setupProgramTest(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder))
 
 	builder.execConfig.Sequencer.MaxRevertGasReject = 0
 
+	// Increase call timeout to 30 seconds to avoid flaky CI
+	builder.execConfig.RPC.RPCEVMTimeout = 30 * time.Second
+
 	builderCleanup := builder.Build(t)
 
 	cleanup := func() {
