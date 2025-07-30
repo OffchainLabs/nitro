@@ -18,8 +18,7 @@ func serializeBatch(
 	ctx context.Context,
 	batch *mel.SequencerInboxBatch,
 	tx *types.Transaction,
-	txIndex uint,
-	receiptFetcher ReceiptFetcher,
+	logsFetcher LogsFetcher,
 ) ([]byte, error) {
 	if batch.Serialized != nil {
 		return batch.Serialized, nil
@@ -46,8 +45,7 @@ func serializeBatch(
 		ctx,
 		batch,
 		tx,
-		txIndex,
-		receiptFetcher,
+		logsFetcher,
 	)
 	if err != nil {
 		return nil, err
@@ -62,8 +60,7 @@ func getSequencerBatchData(
 	ctx context.Context,
 	batch *mel.SequencerInboxBatch,
 	tx *types.Transaction,
-	txIndex uint,
-	receiptFetcher ReceiptFetcher,
+	logsFetcher LogsFetcher,
 ) ([]byte, error) {
 	addSequencerL2BatchFromOriginCallABI := seqInboxABI.Methods["addSequencerL2BatchFromOrigin0"]
 	switch batch.DataLocation {
@@ -87,15 +84,15 @@ func getSequencerBatchData(
 		// we want to convert a batch sequencer number which is a uint64 into a big-endian byte slice of size 32,
 		// so the last 8 bytes of that slice will contain the serialized batch.SequenceNumber
 		binary.BigEndian.PutUint64(numberAsHash[(32-8):], batch.SequenceNumber)
-		receipt, err := receiptFetcher.ReceiptForTransactionIndex(ctx, txIndex)
+		logs, err := logsFetcher.LogsForTxIndex(ctx, batch.RawLog.BlockHash, batch.RawLog.TxIndex)
 		if err != nil {
 			return nil, err
 		}
-		if len(receipt.Logs) == 0 {
+		if len(logs) == 0 {
 			return nil, errors.New("no logs found in transaction receipt")
 		}
 		topics := [][]common.Hash{{sequencerBatchDataABI}, {numberAsHash}}
-		filteredLogs := types.FilterLogs(receipt.Logs, nil, nil, []common.Address{batch.BridgeAddress}, topics)
+		filteredLogs := types.FilterLogs(logs, nil, nil, []common.Address{batch.BridgeAddress}, topics)
 		if len(filteredLogs) == 0 {
 			return nil, errors.New("expected to find sequencer batch data")
 		}

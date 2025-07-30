@@ -26,22 +26,26 @@ type DelayedMessageDatabase interface {
 	) (*mel.DelayedInboxMessage, error)
 }
 
-// Defines a method that can fetch the receipt for a specific
-// transaction index in a parent chain block.
-type ReceiptFetcher interface {
-	ReceiptForTransactionIndex(
+// Defines methods that can fetch all the logs of a parent chain block
+// and logs corresponding to a specific transaction in a parent chain block.
+type LogsFetcher interface {
+	LogsForBlockHash(
 		ctx context.Context,
+		parentChainBlockHash common.Hash,
+	) ([]*types.Log, error)
+	LogsForTxIndex(
+		ctx context.Context,
+		parentChainBlockHash common.Hash,
 		txIndex uint,
-	) (*types.Receipt, error)
+	) ([]*types.Log, error)
 }
 
-// Defines a method that can fetch transactions for
-// a parent chain block by its header hash.
-type TransactionsFetcher interface {
-	TransactionsByHeader(
+// Defines a method that can fetch transaction of a parent chain block by hash.
+type TransactionFetcher interface {
+	TransactionByLog(
 		ctx context.Context,
-		parentChainHeaderHash common.Hash,
-	) (types.Transactions, error)
+		log *types.Log,
+	) (*types.Transaction, error)
 }
 
 // ExtractMessages is a pure function that can read a parent chain block and
@@ -54,8 +58,8 @@ func ExtractMessages(
 	parentChainHeader *types.Header,
 	dataProviders []daprovider.Reader,
 	delayedMsgDatabase DelayedMessageDatabase,
-	receiptFetcher ReceiptFetcher,
-	txsFetcher TransactionsFetcher,
+	txFetcher TransactionFetcher,
+	logsFetcher LogsFetcher,
 ) (*mel.State, []*arbostypes.MessageWithMetadata, []*mel.DelayedInboxMessage, []*mel.BatchMetadata, error) {
 	return extractMessagesImpl(
 		ctx,
@@ -63,8 +67,8 @@ func ExtractMessages(
 		parentChainHeader,
 		dataProviders,
 		delayedMsgDatabase,
-		txsFetcher,
-		receiptFetcher,
+		txFetcher,
+		logsFetcher,
 		&logUnpacker{},
 		parseBatchesFromBlock,
 		parseDelayedMessagesFromBlock,
@@ -84,8 +88,8 @@ func extractMessagesImpl(
 	parentChainHeader *types.Header,
 	dataProviders []daprovider.Reader,
 	delayedMsgDatabase DelayedMessageDatabase,
-	txsFetcher TransactionsFetcher,
-	receiptFetcher ReceiptFetcher,
+	txFetcher TransactionFetcher,
+	logsFetcher LogsFetcher,
 	eventUnpacker eventUnpacker,
 	lookupBatches batchLookupFunc,
 	lookupDelayedMsgs delayedMsgLookupFunc,
@@ -112,12 +116,12 @@ func extractMessagesImpl(
 	state.ParentChainPreviousBlockHash = parentChainHeader.ParentHash
 	// Now, check for any logs emitted by the sequencer inbox by txs
 	// included in the parent chain block.
-	batches, batchTxs, batchTxIndices, err := lookupBatches(
+	batches, batchTxs, err := lookupBatches(
 		ctx,
 		state,
 		parentChainHeader,
-		txsFetcher,
-		receiptFetcher,
+		txFetcher,
+		logsFetcher,
 		eventUnpacker,
 	)
 	if err != nil {
@@ -127,8 +131,8 @@ func extractMessagesImpl(
 		ctx,
 		state,
 		parentChainHeader,
-		receiptFetcher,
-		txsFetcher,
+		txFetcher,
+		logsFetcher,
 	)
 	if err != nil {
 		return nil, nil, nil, nil, err
@@ -168,13 +172,11 @@ func extractMessagesImpl(
 	var messages []*arbostypes.MessageWithMetadata
 	for i, batch := range batches {
 		batchTx := batchTxs[i]
-		txIndex := batchTxIndices[i]
 		serialized, err := serialize(
 			ctx,
 			batch,
 			batchTx,
-			txIndex,
-			receiptFetcher,
+			logsFetcher,
 		)
 		if err != nil {
 			return nil, nil, nil, nil, err
