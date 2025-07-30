@@ -2,19 +2,14 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 use siphasher::sip::SipHasher24;
-use std::mem::MaybeUninit;
 use tiny_keccak::{Hasher, Keccak};
 
 pub fn keccak<T: AsRef<[u8]>>(preimage: T) -> [u8; 32] {
-    let mut output = MaybeUninit::<[u8; 32]>::uninit();
+    let mut output = [0u8; 32];
     let mut hasher = Keccak::v256();
     hasher.update(preimage.as_ref());
-
-    // SAFETY: finalize() writes 32 bytes
-    unsafe {
-        hasher.finalize(&mut *output.as_mut_ptr());
-        output.assume_init()
-    }
+    hasher.finalize(&mut output);
+    output
 }
 
 pub fn siphash(preimage: &[u8], key: &[u8; 16]) -> u64 {
