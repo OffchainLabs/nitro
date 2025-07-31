@@ -243,7 +243,11 @@ func (n *EspressoCaffNode) peekMessage(ctx context.Context) (*espressostreamer.M
 	}
 
 	// Check if its a delayed message, if so fetch from the database
-	delayedMessageToProcessIndex := n.executionEngine.Bc().CurrentBlock().Nonce.Uint64()
+	delayedMessageToProcessIndex, err := n.executionEngine.NextDelayedMessageNumber()
+	if err != nil {
+		log.Error("failed to get next delayed message number", "err", err)
+		return nil, err
+	}
 	if delayedMessageToProcessIndex == messageWithMetadataAndPos.MessageWithMeta.DelayedMessagesRead-1 {
 		messageWithMetadataAndPosDelayed, err := n.delayedMessageFetcher.processDelayedMessage(messageWithMetadataAndPos)
 		if err != nil {
@@ -340,6 +344,14 @@ func (n *EspressoCaffNode) Start(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to start batcher address monitor: %w", err)
 	}
+	err = n.forceInclusionChecker.Start(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to start force inclusion checker: %w", err)
+	}
+	err = n.stateChecker.Start(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to start state checker: %w", err)
+	}
 
 	// This is +1 because the current block is the block after the last processed block
 	currentBlockNum := n.executionEngine.Bc().CurrentBlock().Number.Uint64() + 1
@@ -374,11 +386,12 @@ func (n *EspressoCaffNode) Start(ctx context.Context) error {
 	delayedMessagesRead := n.executionEngine.Bc().CurrentBlock().Nonce.Uint64()
 	// we store delayedmessagecount-1 because that is the index of the delayed message
 	// that needs to be read
-	err = n.delayedMessageFetcher.storeDelayedMessageCount(n.db, delayedMessagesRead-1)
+	err = n.delayedMessageFetcher.storeDelayedMessageLatestIndex(n.db, delayedMessagesRead-1)
 	if err != nil {
 		log.Error("failed to store delayed message count", "err", err)
 		return err
 	}
+	log.Debug("stored delayed message count", "delayedMessagesRead", delayedMessagesRead-1)
 
 	// Start the delayed message fetcher
 	started := n.delayedMessageFetcher.Start(ctx)

@@ -91,7 +91,7 @@ func (m *MockEspressoStreamer) ReadNextHotshotBlockFromDb(db ethdb.Database) (ui
 type MockDelayedMessageFetcher struct{}
 
 // This function isn't a proper implementation for the tests, but this gets the test to compile.
-func (m *MockDelayedMessageFetcher) getDelayedMessageCountAtBlock(blockNumber uint64) (uint64, error) {
+func (m *MockDelayedMessageFetcher) getDelayedMessageLatestIndexAtBlock(blockNumber uint64) (uint64, error) {
 	return 1, nil
 }
 
@@ -113,7 +113,7 @@ func (m *MockDelayedMessageFetcher) Start(ctx context.Context) bool {
 	return true
 }
 
-func (m *MockDelayedMessageFetcher) storeDelayedMessageCount(db ethdb.Database, count uint64) error {
+func (m *MockDelayedMessageFetcher) storeDelayedMessageLatestIndex(db ethdb.Database, count uint64) error {
 	return nil
 }
 

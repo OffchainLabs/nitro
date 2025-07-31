@@ -110,7 +110,7 @@ func (f *ForceInclusionChecker) checkIfMessageCanBeForceIncluded(ctx context.Con
 	}
 	log.Debug("Force inclusion tolerance bad block number", "blockNumber", badBlockNumber)
 	// Check the delayed message count at this block number
-	count, err := f.delayedMessageFetcher.getDelayedMessageCountAtBlock(badBlockNumber)
+	count, err := f.delayedMessageFetcher.getDelayedMessageLatestIndexAtBlock(badBlockNumber)
 	if err != nil {
 		return fmt.Errorf("error getting delayed message count at block %d: %w", badBlockNumber, err)
 	}
