@@ -157,7 +157,7 @@ func (m *mockParentChainReader) BlockByNumber(ctx context.Context, number *big.I
 	if m.returnErr != nil {
 		return nil, m.returnErr
 	}
-	if number.Int64() == rpc.FinalizedBlockNumber.Int64() {
+	if number == nil || number.Int64() == rpc.FinalizedBlockNumber.Int64() {
 		return types.NewBlock(&types.Header{Number: big.NewInt(1e10)}, nil, nil, nil), nil // Assume all parent chain blocks are finalized to prevent issues dealing with delayed message backlog, it is tested separately
 	}
 	block, ok := m.blocks[common.BigToHash(number)]
@@ -216,6 +216,6 @@ func (m *mockParentChainReader) TransactionByHash(ctx context.Context, hash comm
 	return nil, false, nil
 }
 
-func (m *mockParentChainReader) BlockReceipts(ctx context.Context, blockNrOrHash rpc.BlockNumberOrHash) ([]*types.Receipt, error) {
-	return []*types.Receipt{}, nil
+func (m *mockParentChainReader) FilterLogs(ctx context.Context, q ethereum.FilterQuery) ([]types.Log, error) {
+	return nil, nil
 }

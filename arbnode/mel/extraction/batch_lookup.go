@@ -32,11 +32,11 @@ func parseBatchesFromBlock(
 	}
 	var lastSeqNum *uint64
 	for _, log := range logs {
-		if log == nil || log.Topics[0] != batchDeliveredID {
+		if log == nil || log.Topics[0] != BatchDeliveredID {
 			continue
 		}
 		event := new(bridgegen.SequencerInboxSequencerBatchDelivered)
-		if err := eventUnpacker.unpackLogTo(event, seqInboxABI, "SequencerBatchDelivered", *log); err != nil {
+		if err := eventUnpacker.unpackLogTo(event, SeqInboxABI, "SequencerBatchDelivered", *log); err != nil {
 			return nil, nil, err
 		}
 		if !event.BatchSequenceNumber.IsUint64() {

@@ -136,7 +136,7 @@ func Test_getSequencerBatchData(t *testing.T) {
 	})
 	t.Run("arbnode.BatchDataTxInput", func(t *testing.T) {
 		msgData := []byte("foobar")
-		addSequencerL2BatchFromOriginCallABI := seqInboxABI.Methods["addSequencerL2BatchFromOrigin0"]
+		addSequencerL2BatchFromOriginCallABI := SeqInboxABI.Methods["addSequencerL2BatchFromOrigin0"]
 		seqNumber := big.NewInt(1)
 		afterDelayedRead := big.NewInt(1)
 		gasRefunder := common.Address{}
@@ -247,7 +247,7 @@ func Test_getSequencerBatchData(t *testing.T) {
 		)
 		require.ErrorContains(t, err, "expected to find sequencer batch data")
 
-		sequencerBatchDataABI := seqInboxABI.Events["SequencerBatchData"].ID
+		sequencerBatchDataABI := SeqInboxABI.Events["SequencerBatchData"].ID
 		bridgeAddr := common.HexToAddress("0x1234567890123456789012345678901234567890")
 		receipts = []*types.Receipt{
 			{
@@ -278,7 +278,7 @@ func Test_getSequencerBatchData(t *testing.T) {
 		event := &bridgegen.SequencerInboxSequencerBatchData{
 			Data: []byte("foobar"),
 		}
-		eventABI := seqInboxABI.Events["SequencerBatchData"]
+		eventABI := SeqInboxABI.Events["SequencerBatchData"]
 		packedLog, err := eventABI.Inputs.NonIndexed().Pack(
 			event.Data,
 		)

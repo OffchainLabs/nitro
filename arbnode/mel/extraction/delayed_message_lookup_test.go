@@ -108,7 +108,7 @@ func Test_parseDelayedMessagesFromBlock(t *testing.T) {
 					Address: delayedMsgPostingAddr,
 					Data:    packedLog,
 					Topics: []common.Hash{
-						iBridgeABI.Events["MessageDelivered"].ID,
+						IBridgeABI.Events["MessageDelivered"].ID,
 						messageIndexBytes,
 						event.BeforeInboxAcc,
 					},
@@ -174,7 +174,7 @@ func Test_parseDelayedMessagesFromBlock(t *testing.T) {
 					Address: delayedMsgPostingAddr,
 					Data:    delayedMsgPackedLog,
 					Topics: []common.Hash{
-						iBridgeABI.Events["MessageDelivered"].ID,
+						IBridgeABI.Events["MessageDelivered"].ID,
 						messageIndexBytes,
 						delayedMsgEvent.BeforeInboxAcc,
 					},
@@ -222,7 +222,7 @@ func Test_parseDelayedMessagesFromBlock(t *testing.T) {
 			BaseFeeL1:       big.NewInt(2),
 			Timestamp:       0,
 		}
-		eventABI := iBridgeABI.Events["MessageDelivered"]
+		eventABI := IBridgeABI.Events["MessageDelivered"]
 		delayedMsgPackedLog, err := eventABI.Inputs.NonIndexed().Pack(
 			delayedMsgEvent.Inbox,
 			delayedMsgEvent.Kind,
@@ -272,7 +272,7 @@ func Test_parseDelayedMessagesFromBlock(t *testing.T) {
 					Address: delayedMsgPostingAddr,
 					Data:    delayedMsgPackedLog,
 					Topics: []common.Hash{
-						iBridgeABI.Events["MessageDelivered"].ID,
+						IBridgeABI.Events["MessageDelivered"].ID,
 						messageIndexBytes,
 						delayedMsgEvent.BeforeInboxAcc,
 					},
@@ -322,7 +322,7 @@ func Test_parseDelayedMessagesFromBlock(t *testing.T) {
 			BaseFeeL1:       big.NewInt(2),
 			Timestamp:       0,
 		}
-		eventABI := iBridgeABI.Events["MessageDelivered"]
+		eventABI := IBridgeABI.Events["MessageDelivered"]
 		delayedMsgPackedLog, err := eventABI.Inputs.NonIndexed().Pack(
 			delayedMsgEvent.Inbox,
 			delayedMsgEvent.Kind,
@@ -365,7 +365,7 @@ func Test_parseDelayedMessagesFromBlock(t *testing.T) {
 					Address: delayedMsgPostingAddr,
 					Data:    delayedMsgPackedLog,
 					Topics: []common.Hash{
-						iBridgeABI.Events["MessageDelivered"].ID,
+						IBridgeABI.Events["MessageDelivered"].ID,
 						messageIndexBytes,
 						delayedMsgEvent.BeforeInboxAcc,
 					},
@@ -414,7 +414,7 @@ func Test_parseDelayedMessagesFromBlock(t *testing.T) {
 			BaseFeeL1:       big.NewInt(2),
 			Timestamp:       0,
 		}
-		eventABI := iBridgeABI.Events["MessageDelivered"]
+		eventABI := IBridgeABI.Events["MessageDelivered"]
 		delayedMsgPackedLog, err := eventABI.Inputs.NonIndexed().Pack(
 			delayedMsgEvent.Inbox,
 			delayedMsgEvent.Kind,
@@ -463,7 +463,7 @@ func Test_parseDelayedMessagesFromBlock(t *testing.T) {
 					Address: delayedMsgPostingAddr,
 					Data:    delayedMsgPackedLog,
 					Topics: []common.Hash{
-						iBridgeABI.Events["MessageDelivered"].ID,
+						IBridgeABI.Events["MessageDelivered"].ID,
 						messageIndexBytes,
 						delayedMsgEvent.BeforeInboxAcc,
 					},
@@ -554,7 +554,7 @@ func setupParseDelayedMessagesTest(t *testing.T) (*bridgegen.IBridgeMessageDeliv
 		BaseFeeL1:       big.NewInt(2),
 		Timestamp:       0,
 	}
-	eventABI := iBridgeABI.Events["MessageDelivered"]
+	eventABI := IBridgeABI.Events["MessageDelivered"]
 	packedLog, err := eventABI.Inputs.NonIndexed().Pack(
 		event.Inbox,
 		event.Kind,

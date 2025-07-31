@@ -710,12 +710,14 @@ func getMessageExtractor(
 		return nil, nil
 	}
 	melDB := melrunner.NewDatabase(arbDb)
-	initialState, err := createInitialMELState(ctx, deployInfo, l1client)
-	if err != nil {
-		return nil, err
-	}
-	if err = melDB.SaveState(ctx, initialState); err != nil {
-		return nil, fmt.Errorf("failed to save initial mel state: %w", err)
+	if _, err := melDB.GetHeadMelState(ctx); err != nil {
+		initialState, err := createInitialMELState(ctx, deployInfo, l1client)
+		if err != nil {
+			return nil, err
+		}
+		if err = melDB.SaveState(ctx, initialState); err != nil {
+			return nil, fmt.Errorf("failed to save initial mel state: %w", err)
+		}
 	}
 	msgExtractor, err := melrunner.NewMessageExtractor(
 		l1client,
