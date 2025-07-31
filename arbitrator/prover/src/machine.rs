@@ -815,17 +815,21 @@ pub struct GlobalState {
 
 impl GlobalState {
     fn hash(&self) -> Bytes32 {
-        let mut last_non_zero_idx = 0;
-        for (i, &val) in self.bytes32_vals.iter().enumerate() {
-            if val != Bytes32::default() {
-                last_non_zero_idx = i;
-            }
-        }
+        // let mut last_non_zero_idx = 0;
+        // for (i, &val) in self.bytes32_vals.iter().enumerate() {
+        //     if val != Bytes32::default() {
+        //         last_non_zero_idx = i;
+        //     }
+        // }
+        // let mut h = Keccak256::new();
+        // h.update("Global state:");
+        // for i in 0..=last_non_zero_idx {
+        //     h.update(self.bytes32_vals[i]);
+        // }
         let mut h = Keccak256::new();
         h.update("Global state:");
-        for i in 0..=last_non_zero_idx {
-            h.update(self.bytes32_vals[i]);
-        }
+        h.update(self.bytes32_vals[0]);
+        h.update(self.bytes32_vals[1]);
         for item in self.u64_vals {
             h.update(item.to_be_bytes())
         }
