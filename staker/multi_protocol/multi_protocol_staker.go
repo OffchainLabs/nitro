@@ -11,8 +11,8 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
 
-	boldrollup "github.com/offchainlabs/bold/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
+	boldrollup "github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/staker"
 	boldstaker "github.com/offchainlabs/nitro/staker/bold"
 	legacystaker "github.com/offchainlabs/nitro/staker/legacy"
