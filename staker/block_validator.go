@@ -50,6 +50,7 @@ var (
 	validatorMsgCountRecordSentGauge         = metrics.NewRegisteredGauge("arb/validator/msg_count_record_sent", nil)
 	validatorMsgCountValidatedGauge          = metrics.NewRegisteredGauge("arb/validator/msg_count_validated", nil)
 	validatorMsgCountLastValidationSentGauge = metrics.NewRegisteredGauge("arb/validator/msg_count_last_validation_sent", nil)
+	validatorSkippedEmptyBatchesCounter      = metrics.NewRegisteredCounter("arb/validator/batches/skipped_empty", nil)
 )
 
 type BlockValidator struct {
@@ -96,6 +97,9 @@ type BlockValidator struct {
 	moduleMutex           sync.Mutex
 	currentWasmModuleRoot common.Hash
 	pendingWasmModuleRoot common.Hash
+
+	// Track empty batches that were skipped (protected by reorgMutex)
+	skippedEmptyBatches map[uint64]struct{}
 
 	// for testing only
 	testingProgressMadeChan  chan struct{}
@@ -332,6 +336,7 @@ func NewBlockValidator(
 		config:                  config,
 		fatalErr:                fatalErr,
 		prevBatchCache:          make(map[uint64][]byte),
+		skippedEmptyBatches:     make(map[uint64]struct{}),
 	}
 	valInputsWriter, err := inputs.NewWriter(
 		inputs.WithBaseDir(ret.stack.InstanceDir()),
@@ -684,6 +689,22 @@ func (v *BlockValidator) createNextValidationEntry(ctx context.Context) (bool, e
 	} else if pos+1 == v.nextCreateBatch.MsgCount {
 		endGS.Batch = v.nextCreateStartGS.Batch + 1
 		endGS.PosInBatch = 0
+	} else if pos == v.nextCreateBatch.MsgCount {
+		// Empty batch detected - same message count as previous
+		log.Info("Empty batch detected, tracking for skip",
+			"batch", v.nextCreateStartGS.Batch,
+			"msgCount", v.nextCreateBatch.MsgCount)
+
+		// Add to skipped batches map (already under reorgMutex)
+		v.skippedEmptyBatches[v.nextCreateStartGS.Batch] = struct{}{}
+
+		// Increment metrics counter
+		validatorSkippedEmptyBatchesCounter.Inc(1)
+
+		// Move to next batch
+		v.nextCreateStartGS.Batch++
+		v.nextCreateBatchReread = true
+		return false, nil
 	} else {
 		return false, fmt.Errorf("illegal batch: batch(%d), msg count(%d), next message pos(%d)", v.nextCreateStartGS.Batch, v.nextCreateBatch.MsgCount, pos+1)
 	}
@@ -726,6 +747,32 @@ func (v *BlockValidator) createNextValidationEntry(ctx context.Context) (bool, e
 	atomicStorePos(&v.createdA, pos+1, validatorMsgCountCreatedGauge)
 	log.Trace("create validation entry: created", "pos", pos)
 	return true, nil
+}
+
+// canSkipBatches checks if all batches between start and end are known empty batches
+// Must be called while holding reorgMutex
+func (v *BlockValidator) canSkipBatches(startBatch, endBatch uint64) bool {
+	if startBatch >= endBatch {
+		return false
+	}
+
+	// Check that all intermediate batches are in the skipped set
+	for batch := startBatch; batch < endBatch; batch++ {
+		if _, exists := v.skippedEmptyBatches[batch]; !exists {
+			return false
+		}
+	}
+	return true
+}
+
+// cleanupSkippedBatches removes entries for batches that are being reorged
+// Must be called while holding reorgMutex
+func (v *BlockValidator) cleanupSkippedBatches(fromBatch uint64) {
+	for batch := range v.skippedEmptyBatches {
+		if batch >= fromBatch {
+			delete(v.skippedEmptyBatches, batch)
+		}
+	}
 }
 
 func (v *BlockValidator) iterativeValidationEntryCreator(ctx context.Context, ignored struct{}) time.Duration {
@@ -891,9 +938,23 @@ func (v *BlockValidator) advanceValidations(ctx context.Context) (*arbutil.Messa
 			return nil, nil
 		}
 		if validationStatus.DoneEntry.Start != v.lastValidGS {
-			log.Warn("Validation entry has wrong start state", "pos", pos, "start", validationStatus.DoneEntry.Start, "expected", v.lastValidGS)
-			validationStatus.Cancel()
-			return &pos, nil
+			// Check if the gap is due to skipped empty batches
+			if v.lastValidGS.Batch < validationStatus.DoneEntry.Start.Batch &&
+				v.lastValidGS.PosInBatch == 0 &&
+				validationStatus.DoneEntry.Start.PosInBatch == 0 &&
+				v.canSkipBatches(v.lastValidGS.Batch, validationStatus.DoneEntry.Start.Batch) {
+				log.Info("Allowing validation gap due to skipped empty batches",
+					"lastBatch", v.lastValidGS.Batch,
+					"nextBatch", validationStatus.DoneEntry.Start.Batch,
+					"skippedCount", validationStatus.DoneEntry.Start.Batch-v.lastValidGS.Batch)
+			} else {
+				log.Error("Validation entry has wrong start state",
+					"pos", pos,
+					"expected", v.lastValidGS,
+					"found", validationStatus.DoneEntry.Start)
+				validationStatus.Cancel()
+				return &pos, nil
+			}
 		}
 		if !validationStatus.DoneEntry.Success {
 			v.possiblyFatal(fmt.Errorf("validation: failed entry pos %d, start %v", pos, validationStatus.DoneEntry.Start))
@@ -1067,6 +1128,18 @@ var ErrValidationCanceled = errors.New("validation of block cancelled")
 
 func (v *BlockValidator) writeLastValidated(gs validator.GoGlobalState, wasmRoots []common.Hash) error {
 	v.lastValidGS = gs
+
+	// Clean up any skipped empty batches that we've now validated past
+	if v.lastValidGS.Batch > 0 {
+		for batch := range v.skippedEmptyBatches {
+			// We've validated up to v.lastValidGS.Batch, so any skipped batches
+			// before this can be safely removed
+			if batch < v.lastValidGS.Batch {
+				delete(v.skippedEmptyBatches, batch)
+			}
+		}
+	}
+
 	info := GlobalStateValidatedInfo{
 		GlobalState: gs,
 		WasmRoots:   wasmRoots,
@@ -1239,6 +1312,11 @@ func (v *BlockValidator) Reorg(ctx context.Context, count arbutil.MessageIndex) 
 	v.nextCreatePrevDelayed = msg.DelayedMessagesRead
 	v.nextCreateBatchReread = true
 	v.prevBatchCache = make(map[uint64][]byte)
+
+	// Clean up skipped batches that might be affected by reorg
+	if v.nextCreateStartGS.Batch > 0 {
+		v.cleanupSkippedBatches(v.nextCreateStartGS.Batch)
+	}
 	countUint64 := uint64(count)
 	v.createdA.Store(countUint64)
 	// under the reorg mutex we don't need atomic access
