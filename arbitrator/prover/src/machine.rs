@@ -24,6 +24,7 @@ use brotli::Dictionary;
 #[cfg(feature = "native")]
 use c_kzg::BYTES_PER_BLOB;
 use digest::Digest;
+use enum_iterator::last;
 use eyre::{bail, ensure, eyre, Result, WrapErr};
 use fnv::FnvHashMap as HashMap;
 use lazy_static::lazy_static;
@@ -817,8 +818,22 @@ impl GlobalState {
     fn hash(&self) -> Bytes32 {
         let mut h = Keccak256::new();
         h.update("Global state:");
-        h.update(self.bytes32_vals[0]);
-        h.update(self.bytes32_vals[1]);
+
+        // Hash at least 2 global state values, with optionally more values
+        // if the last non-zero index is greater than 1.
+        let mut last_non_zero_idx = None;
+        for (i, &val) in self.bytes32_vals.iter().enumerate() {
+            if val != Bytes32::default() {
+                last_non_zero_idx = Some(i);
+            }
+        }
+        let end = match last_non_zero_idx {
+            Some(idx) => std::cmp::max(1, idx),
+            None => 1,
+        };
+        for i in 0..=end {
+            h.update(self.bytes32_vals[i]);
+        }
         for item in self.u64_vals {
             h.update(item.to_be_bytes())
         }
