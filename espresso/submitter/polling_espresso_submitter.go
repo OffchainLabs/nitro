@@ -187,7 +187,7 @@ func (s *PollingEspressoSubmitter) checkSubmittedTransactionForFinality(ctx cont
 	for i, height := range blockHeights {
 		submittedTx := submittedTxns[posArray[i]]
 
-		resp, err := s.espressoClient.FetchTransactionsInBlock(ctx, height, s.chainConfig.ChainID.Uint64())
+		resp, err := s.espressoClient.FetchTransactionsInBlock(ctx, height, s.chainID)
 		if err != nil {
 			log.Warn("Failed to fetch transactions in block referenced in fetch transaction by hash", "height", height, "error", err)
 			// Keep our submitted transaction in the list so we keep checking it
