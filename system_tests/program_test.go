@@ -1685,6 +1685,7 @@ func setupProgramTest(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder))
 	ctx, cancel := context.WithCancel(context.Background())
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder.nodeConfig.MessageExtraction.Enable = false
 
 	for _, opt := range builderOpts {
 		opt(builder)

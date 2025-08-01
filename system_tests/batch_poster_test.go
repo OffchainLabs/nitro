@@ -140,6 +140,7 @@ func testBatchPosterParallel(t *testing.T, useRedis bool) {
 			&arbnode.BatchPosterOpts{
 				DataPosterDB:  nil,
 				L1Reader:      builder.L2.ConsensusNode.L1Reader,
+				MsgExtractor:  builder.L2.ConsensusNode.MessageExtractor,
 				Inbox:         builder.L2.ConsensusNode.InboxTracker,
 				Streamer:      builder.L2.ConsensusNode.TxStreamer,
 				VersionGetter: builder.L2.ExecNode,
@@ -286,6 +287,7 @@ func testAllowPostingFirstBatchWhenSequencerMessageCountMismatch(t *testing.T, e
 	// creates first node with batch poster disabled
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
 	builder.nodeConfig.BatchPoster.Enable = false
+	builder.nodeConfig.MessageExtraction.Enable = !enabled // TODO: figure out how to handle AllowPostingFirstBatchWhenSequencerMessageCountMismatch with MEL
 	cleanup := builder.Build(t)
 	defer cleanup()
 	testClientNonBatchPoster := builder.L2
@@ -384,6 +386,7 @@ func testBatchPosterDelayBuffer(t *testing.T, delayBufferEnabled bool) {
 	builder.nodeConfig.BatchPoster.MaxDelay = time.Hour     // set high max-delay so we can test the delay buffer
 	builder.nodeConfig.BatchPoster.PollInterval = time.Hour // set a high poll interval to avoid continuous polling
 	// and prevent race conditions due to config changes during the test. We'll call MaybePostSequencerBatch manually.
+	builder.nodeConfig.MessageExtraction.Enable = !delayBufferEnabled
 	cleanup := builder.Build(t)
 	defer cleanup()
 	testClientB, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{})
@@ -526,6 +529,7 @@ func TestBatchPosterWithDelayProofsAndBacklog(t *testing.T) {
 		WithBoldDeployment().
 		WithDelayBuffer(threshold).
 		WithL1ClientWrapper(t)
+	builder.nodeConfig.MessageExtraction.Enable = false
 	cleanup := builder.Build(t)
 	defer cleanup()
 

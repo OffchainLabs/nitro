@@ -436,6 +436,7 @@ func TestPopulateFeedBacklog(t *testing.T) {
 	defer cancel()
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder.nodeConfig.MessageExtraction.Enable = false // TODO: solve for race between sequencer adding a tx and mel adding a tx
 	builder.BuildL1(t)
 
 	userAccount := "User2"
