@@ -841,8 +841,20 @@ impl GlobalState {
 
     fn serialize(&self) -> Vec<u8> {
         let mut data = Vec::new();
-        data.extend(self.bytes32_vals[0]);
-        data.extend(self.bytes32_vals[1]);
+
+        let mut last_non_zero_idx = None;
+        for (i, &val) in self.bytes32_vals.iter().enumerate() {
+            if val != Bytes32::default() {
+                last_non_zero_idx = Some(i);
+            }
+        }
+        let end = match last_non_zero_idx {
+            Some(idx) => std::cmp::max(1, idx),
+            None => 1,
+        };
+        for i in 0..=end {
+            data.extend(self.bytes32_vals[i]);
+        }
         for item in self.u64_vals {
             data.extend(item.to_be_bytes())
         }
