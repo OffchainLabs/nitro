@@ -24,8 +24,6 @@ import (
 )
 
 type EspressoCaffNodeConfig struct {
-	stopwaiter.StopWaiter
-
 	Enable                  bool                    `koanf:"enable"`
 	HotShotUrls             []string                `koanf:"hotshot-urls"`
 	NextHotshotBlock        uint64                  `koanf:"next-hotshot-block"`
@@ -132,7 +130,7 @@ func NewEspressoCaffNode(
 	db ethdb.Database,
 	recordPerformance bool,
 	blocksToRead uint64,
-	seqInboxAddr common.Address,
+	sequencerInbox *SequencerInbox,
 	fatalErrChan chan error,
 	httpPort int,
 ) *EspressoCaffNode {
@@ -164,7 +162,7 @@ func NewEspressoCaffNode(
 		[]common.Address{common.HexToAddress(configFetcher().BatchPosterAddr)},
 		db,
 		l1Reader,
-		seqInboxAddr,
+		sequencerInbox.address,
 		delayedBridge.fromBlock,
 		configFetcher().FromBlock,
 	)
@@ -179,7 +177,7 @@ func NewEspressoCaffNode(
 
 	fromBlock := configFetcher().FromBlock
 	if !configFetcher().Dangerous.IgnoreDatabaseFromBlock {
-		fromBlock, err = readCurrentL1BlockFromDb(db)
+		fromBlock, err = readCurrentFromBlockFromDb(db)
 		if err != nil {
 			log.Crit("failed to read l1 block from db", "err", err)
 		}
@@ -193,9 +191,9 @@ func NewEspressoCaffNode(
 	}
 
 	delayedMessageFetcher := NewDelayedMessageFetcher(delayedBridge, l1Reader, db, blocksToRead,
-		configFetcher().WaitForFinalization, configFetcher().WaitForConfirmations, configFetcher().RequiredBlockDepth, fromBlock)
+		configFetcher().WaitForFinalization, configFetcher().WaitForConfirmations, configFetcher().RequiredBlockDepth, fromBlock, sequencerInbox)
 
-	seqInbox, err := bridgegen.NewSequencerInbox(seqInboxAddr, l1Reader.Client())
+	seqInbox, err := bridgegen.NewSequencerInbox(sequencerInbox.address, l1Reader.Client())
 	if err != nil {
 		log.Crit("failed to create sequencer inbox", "err", err)
 		return nil
@@ -244,10 +242,19 @@ func (n *EspressoCaffNode) peekMessage(ctx context.Context) (*espressostreamer.M
 		return nil, nil
 	}
 
-	messageWithMetadataAndPos, err := n.delayedMessageFetcher.processDelayedMessage(messageWithMetadataAndPos)
+	// Check if its a delayed message, if so fetch from the database
+	delayedMessageToProcessIndex, err := n.executionEngine.NextDelayedMessageNumber()
 	if err != nil {
-		log.Error("unable to get the next delayed message", "err", err)
+		log.Error("failed to get next delayed message number", "err", err)
 		return nil, err
+	}
+	if delayedMessageToProcessIndex == messageWithMetadataAndPos.MessageWithMeta.DelayedMessagesRead-1 {
+		messageWithMetadataAndPosDelayed, err := n.delayedMessageFetcher.processDelayedMessage(messageWithMetadataAndPos)
+		if err != nil {
+			log.Error("unable to get the next delayed message", "err", err)
+			return nil, err
+		}
+		return messageWithMetadataAndPosDelayed, nil
 	}
 
 	return messageWithMetadataAndPos, nil
@@ -327,6 +334,7 @@ func (n *EspressoCaffNode) GetEspressoStreamer() espressostreamer.EspressoStream
 }
 
 func (n *EspressoCaffNode) Start(ctx context.Context) error {
+	log.Info("Starting espresso caff node")
 	n.StopWaiter.Start(ctx, n)
 	err := n.espressoStreamer.Start(ctx)
 	if err != nil {
@@ -335,6 +343,14 @@ func (n *EspressoCaffNode) Start(ctx context.Context) error {
 	err = n.batcherAddrMonitor.Start(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to start batcher address monitor: %w", err)
+	}
+	err = n.forceInclusionChecker.Start(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to start force inclusion checker: %w", err)
+	}
+	err = n.stateChecker.Start(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to start state checker: %w", err)
 	}
 
 	// This is +1 because the current block is the block after the last processed block
@@ -356,7 +372,7 @@ func (n *EspressoCaffNode) Start(ctx context.Context) error {
 		// No next hotshot block found, so we need to start from config.CaffNodeConfig.NextHotshotBlock
 		nextHotshotBlock = n.configFetcher().NextHotshotBlock
 		if nextHotshotBlock == 0 {
-			return errors.New("No next hotshot block found in database or dangerous.ignore-database-hotshot-block is set to true, please set config.CaffNodeConfig.NextHotshotBlock")
+			return errors.New("no next hotshot block found in database or dangerous.ignore-database-hotshot-block is set to true, please set config.CaffNodeConfig.NextHotshotBlock")
 		}
 	}
 	// The reason we do the reset here is because database is only initialized after Caff node is initialized
@@ -368,7 +384,22 @@ func (n *EspressoCaffNode) Start(ctx context.Context) error {
 	// Nonce of the previous block is the number of delayed messages read
 	// Check `NextDelayedMessageNumber` in execution node to confirm this
 	delayedMessagesRead := n.executionEngine.Bc().CurrentBlock().Nonce.Uint64()
-	n.delayedMessageFetcher.reset(delayedMessagesRead)
+	// we store delayedmessagecount-1 because that is the index of the delayed message
+	// that needs to be read
+	err = n.delayedMessageFetcher.storeDelayedMessageLatestIndex(n.db, delayedMessagesRead-1)
+	if err != nil {
+		log.Error("failed to store delayed message count", "err", err)
+		return err
+	}
+	log.Debug("stored delayed message count", "delayedMessagesRead", delayedMessagesRead-1)
+
+	// Start the delayed message fetcher
+	started := n.delayedMessageFetcher.Start(ctx)
+	if !started {
+		return fmt.Errorf("failed to start delayed message fetcher")
+	}
+
+	log.Info("started delayed message fetcher")
 
 	err = n.CallIterativelySafe(func(ctx context.Context) time.Duration {
 		madeBlock := n.createBlock(ctx)

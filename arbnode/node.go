@@ -163,6 +163,7 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feed
 	BlockMetadataFetcherConfigAddOptions(prefix+".block-metadata-fetcher", f)
 	ConsensusExecutionSyncerConfigAddOptions(prefix+".consensus-execution-syncer", f)
 	gethexec.TimeboostSequencerConfigAddOptions(prefix+".timeboost-sequencer", f)
+	EspressoCaffNodeConfigAddOptions(prefix+".espresso-caff-node", f)
 }
 
 var ConfigDefault = Config{
@@ -979,7 +980,7 @@ func getEspressoCaffNode(
 	delayedBridge *DelayedBridge,
 	maintenanceRunner *MaintenanceRunner,
 	stack *node.Node,
-	seqInboxAddr common.Address,
+	sequencerInbox *SequencerInbox,
 	fatalErrChan chan error,
 ) (*Node, error) {
 	if config.EspressoCaffNode.Enable {
@@ -992,7 +993,7 @@ func getEspressoCaffNode(
 				arbDb,
 				config.EspressoCaffNode.RecordPerformance,
 				config.EspressoCaffNode.BlocksToRead,
-				seqInboxAddr,
+				sequencerInbox,
 				fatalErrChan,
 				stack.Config().HTTPPort,
 			)
@@ -1198,7 +1199,7 @@ func createNodeImpl(
 		return nil, err
 	}
 
-	caffNode, err := getEspressoCaffNode(ctx, config, configFetcher, arbDb, executionClient, l1Reader, txStreamer, blobReader, broadcastServer, broadcastClients, delayedBridge, maintenanceRunner, stack, deployInfo.SequencerInbox, fatalErrChan)
+	caffNode, err := getEspressoCaffNode(ctx, config, configFetcher, arbDb, executionClient, l1Reader, txStreamer, blobReader, broadcastServer, broadcastClients, delayedBridge, maintenanceRunner, stack, sequencerInbox, fatalErrChan)
 	if err != nil {
 		return nil, err
 	}

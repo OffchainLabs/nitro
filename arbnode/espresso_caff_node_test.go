@@ -2,16 +2,24 @@ package arbnode
 
 import (
 	"context"
+	"math/big"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/ethdb"
+	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
+	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/espressostreamer"
+	"github.com/offchainlabs/nitro/execution/gethexec"
+	"github.com/offchainlabs/nitro/statetransfer"
+	"github.com/offchainlabs/nitro/util/testhelpers/env"
 )
 
 type MockEspressoStreamer struct {
@@ -83,7 +91,7 @@ func (m *MockEspressoStreamer) ReadNextHotshotBlockFromDb(db ethdb.Database) (ui
 type MockDelayedMessageFetcher struct{}
 
 // This function isn't a proper implementation for the tests, but this gets the test to compile.
-func (m *MockDelayedMessageFetcher) getDelayedMessageCountAtBlock(blockNumber uint64) (uint64, error) {
+func (m *MockDelayedMessageFetcher) getDelayedMessageLatestIndexAtBlock(blockNumber uint64) (uint64, error) {
 	return 1, nil
 }
 
@@ -101,11 +109,45 @@ func (m *MockDelayedMessageFetcher) processDelayedMessage(messageWithMetadataAnd
 	return messageWithMetadataAndPos, nil
 }
 
-func (m *MockDelayedMessageFetcher) reset(seqNum uint64) {}
+func (m *MockDelayedMessageFetcher) Start(ctx context.Context) bool {
+	return true
+}
+
+func (m *MockDelayedMessageFetcher) storeDelayedMessageLatestIndex(db ethdb.Database, count uint64) error {
+	return nil
+}
 
 func TestEspressoCaffNodeShouldReadDelayedMessageFromL1(t *testing.T) {
 
 	caffNode := EspressoCaffNode{}
+
+	// create a test execution client
+	chainConfig := chaininfo.ArbitrumDevTestChainConfig()
+
+	initData := statetransfer.ArbosInitializationInfo{
+		Accounts: []statetransfer.AccountInitializationInfo{
+			{
+				Addr:       common.HexToAddress("0x1111111111111111111111111111111111111111"),
+				EthBalance: big.NewInt(params.Ether),
+			},
+		},
+	}
+
+	chainDb := rawdb.NewMemoryDatabase()
+	initReader := statetransfer.NewMemoryInitDataReader(&initData)
+
+	cacheConfig := core.DefaultCacheConfigWithScheme(env.GetTestStateScheme())
+	bc, err := gethexec.WriteOrTestBlockChain(chainDb, cacheConfig, initReader, chainConfig, nil, nil, arbostypes.TestInitMessage, gethexec.ConfigDefault.TxLookupLimit, 0)
+
+	if err != nil {
+		Fail(t, err)
+	}
+
+	execEngine, err := gethexec.NewExecutionEngine(bc, 0)
+	if err != nil {
+		Fail(t, err)
+	}
+	caffNode.executionEngine = execEngine
 	caffNode.espressoStreamer = &MockEspressoStreamer{delayedPos: 3, currPos: 0}
 	caffNode.delayedMessageFetcher = &MockDelayedMessageFetcher{}
 	ctx := context.Background()

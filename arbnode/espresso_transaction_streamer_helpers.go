@@ -12,6 +12,9 @@ import (
 
 	espresso_client "github.com/EspressoSystems/espresso-network/sdks/go/client"
 	espresso_light_client "github.com/EspressoSystems/espresso-network/sdks/go/light-client"
+
+	key_manager "github.com/offchainlabs/nitro/espresso/key-manager"
+	"github.com/offchainlabs/nitro/espresso/submitter"
 )
 
 // TransactionStreamerEspressoConfig is a configuration struct for the
@@ -20,7 +23,7 @@ import (
 type TransactionStreamerEspressoConfig struct {
 	EspressoClient                        espresso_client.EspressoClient
 	LightClientReader                     espresso_light_client.LightClientReaderInterface
-	KeyManager                            EspressoKeyManagerInterface
+	KeyManager                            key_manager.EspressoKeyManagerInterface
 	TxnsPollingInterval                   time.Duration
 	TxnsSendingInterval                   time.Duration
 	TxnsResubmissionInterval              time.Duration
@@ -30,6 +33,9 @@ type TransactionStreamerEspressoConfig struct {
 	MaxTransactionSize                    int64
 	MaxBlockLagBeforeEscapeHatch          uint64
 	InitialFinalizedSequencerMessageCount *big.Int
+
+	SubmitterCreator       func(options ...submitter.EspressoSubmitterConfigOption) (submitter.EspressoSubmitter, error)
+	SubmitterConfiguration []submitter.EspressoSubmitterConfigOption
 }
 
 // TransactionStreamerEspressoOption is a functional option type for configuring
@@ -54,7 +60,7 @@ func WithLightClientReader(lightClientReader espresso_light_client.LightClientRe
 
 // WithKeyManager is a functional option to set the EspressoKeyManagerInterface
 // in the TransactionStreamerEspressoConfig.
-func WithKeyManager(keyManager EspressoKeyManagerInterface) TransactionStreamerEspressoOption {
+func WithKeyManager(keyManager key_manager.EspressoKeyManagerInterface) TransactionStreamerEspressoOption {
 	return func(config *TransactionStreamerEspressoConfig) {
 		config.KeyManager = keyManager
 	}
@@ -143,6 +149,24 @@ func WithMultipleEspressoOptions(options ...TransactionStreamerEspressoOption) T
 	}
 }
 
+// WithTransactionStreamer is an `EspressoSubmitterConfig` option that
+// configures the `EspressoSubmitter` with information provided by the
+// given `TransactionStreamer`.
+//
+// NOTE: This is defined here to avoid circular dependencies between
+// `arbnode/espresso/submitter` and `arbnode`
+func WithTransactionStreamer(
+	streamer *TransactionStreamer,
+) func(config *submitter.EspressoSubmitterConfig) {
+	config := streamer.config()
+	return submitter.WithMultipleOptions(
+		submitter.WithMessageGetter(streamer),
+		submitter.WithChainID(streamer.chainConfig.ChainID.Uint64()),
+		submitter.WithDatabase(streamer.db),
+		submitter.WithAttestationFiles(config.UserDataAttestationFile, config.QuoteFile),
+	)
+}
+
 // applyEspressoOptions is a helper function that applies the provided options
 // to the TransactionStreamerEspressoConfig.
 func applyEspressoOptions(
@@ -168,7 +192,7 @@ func applyEspressoOptions(
 func ConfigureEspressoFields(
 	streamer *TransactionStreamer,
 	options ...TransactionStreamerEspressoOption,
-) {
+) (submitter.EspressoSubmitter, error) {
 	config := TransactionStreamerEspressoConfig{
 		InitialFinalizedSequencerMessageCount: big.NewInt(0),
 		TxnsPollingInterval:                   DefaultBatchPosterConfig.EspressoTxnsPollingInterval,
@@ -177,20 +201,43 @@ func ConfigureEspressoFields(
 		MaxTransactionSize:                    DefaultBatchPosterConfig.EspressoTxSizeLimit,
 		ResubmitEspressoTxDeadline:            DefaultBatchPosterConfig.ResubmitEspressoTxDeadline,
 		UseEscapeHatch:                        DefaultBatchPosterConfig.UseEscapeHatch,
+
+		SubmitterCreator: submitter.NewPollingEspressoSubmitter,
 	}
 
 	applyEspressoOptions(&config, options...)
 
-	streamer.espressoClient = config.EspressoClient
-	streamer.lightClientReader = config.LightClientReader
-	streamer.EspressoKeyManager = config.KeyManager
-	streamer.espressoTxnsPollingInterval = config.TxnsPollingInterval
-	streamer.espressoTxnsSendingInterval = config.TxnsSendingInterval
-	streamer.espressoTxnsResubmissionInterval = config.TxnsResubmissionInterval
-	streamer.resubmitEspressoTxDeadline = config.ResubmitEspressoTxDeadline
-	streamer.UseEscapeHatch = config.UseEscapeHatch
-	streamer.EscapeHatchEnabled = config.EscapeHatchEnabled
-	streamer.espressoMaxTransactionSize = config.MaxTransactionSize
-	streamer.maxBlockLagBeforeEscapeHatch = config.MaxBlockLagBeforeEscapeHatch
-	streamer.InitialFinalizedSequencerMessageCount = config.InitialFinalizedSequencerMessageCount
+	if config.SubmitterCreator == nil {
+		return nil, nil
+	}
+
+	espressoSubmitter, err := config.SubmitterCreator(
+		WithTransactionStreamer(streamer),
+		submitter.WithEspressoClient(config.EspressoClient),
+		submitter.WithLightClientReader(config.LightClientReader),
+		submitter.WithKeyManager(config.KeyManager),
+		submitter.WithTxnsPollingInterval(config.TxnsPollingInterval),
+		submitter.WithTxnsSendingInterval(config.TxnsSendingInterval),
+		submitter.WithTxnsResubmissionInterval(config.TxnsResubmissionInterval),
+		submitter.WithResubmitEspressoTxDeadline(config.ResubmitEspressoTxDeadline),
+		submitter.WithUseEscapeHatch(config.UseEscapeHatch),
+		submitter.WithEscapeHatchEnabled(config.EscapeHatchEnabled),
+		submitter.WithMaxTransactionSize(config.MaxTransactionSize),
+		submitter.WithMaxBlockLagBeforeEscapeHatch(config.MaxBlockLagBeforeEscapeHatch),
+		submitter.WithInitialFinalizedSequencerMessageCount(config.InitialFinalizedSequencerMessageCount),
+		submitter.WithMultipleOptions(config.SubmitterConfiguration...),
+	)
+
+	streamer.espressoSubmitter = espressoSubmitter
+	return espressoSubmitter, err
+}
+
+// GetEspressoSubmitter is a helper function that retrieves the
+// EspressoSubmitter from the TransactionStreamer. This is useful for
+// accessing the EspressoSubmitter without needing to know the internal
+// details of the TransactionStreamer implementation.
+func GetEspressoSubmitter(
+	streamer *TransactionStreamer,
+) submitter.EspressoSubmitter {
+	return streamer.espressoSubmitter
 }

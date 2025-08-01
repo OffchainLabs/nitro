@@ -54,7 +54,7 @@ func NewStateChecker(
 	fatalErrChan chan error,
 ) *StateChecker {
 	if config.TrustedNodeUrl == "" {
-		return nil
+		log.Crit("trusted node url is empty, please configure the state checker")
 	}
 
 	client, err := ethclient.DialContext(context.Background(), config.TrustedNodeUrl)

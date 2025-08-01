@@ -1,4 +1,4 @@
-package arbnode
+package keymanager
 
 import (
 	"crypto/ecdsa"
@@ -15,8 +15,6 @@ import (
 	"github.com/offchainlabs/nitro/util/signature"
 )
 
-type TEE = espressotee.TEE
-
 const (
 	SGX   = espressotee.SGX
 	NITRO = espressotee.NITRO
@@ -28,7 +26,7 @@ type EspressoKeyManagerInterface interface {
 	GetCurrentKey() *ecdsa.PublicKey
 	SignHotShotPayload(message []byte) ([]byte, error)
 	SignBatch(message []byte) ([]byte, error)
-	TeeType() TEE
+	TeeType() espressotee.TEE
 }
 
 var _ EspressoKeyManagerInterface = &EspressoKeyManager{}
@@ -41,13 +39,20 @@ type EspressoKeyManager struct {
 
 	batchPosterSigner  signature.DataSignerFunc
 	dataPoster         *dataposter.DataPoster
-	teeType            TEE
+	teeType            espressotee.TEE
 	registerSignerOpts espressotee.EspressoRegisterSignerOpts
 
 	hasRegistered bool
 }
 
-func NewEspressoKeyManager(espressoTEEVerifierCaller espressotee.EspressoTEEVerifierInterface, espressoNitroTEEVerifier espressotee.EspressoNitroTEEVerifierInterface, dataPoster *dataposter.DataPoster, signerFunc signature.DataSignerFunc, teeType TEE, registerSignerConfig espressotee.EspressoRegisterSignerConfig) *EspressoKeyManager {
+func NewEspressoKeyManager(
+	espressoTEEVerifierCaller espressotee.EspressoTEEVerifierInterface,
+	espressoNitroTEEVerifier espressotee.EspressoNitroTEEVerifierInterface,
+	dataPoster *dataposter.DataPoster,
+	signerFunc signature.DataSignerFunc,
+	teeType espressotee.TEE,
+	registerSignerConfig espressotee.EspressoRegisterSignerConfig,
+) *EspressoKeyManager {
 	// ephemeral key
 	privKey, err := ecdsa.GenerateKey(crypto.S256(), rand.Reader)
 	if err != nil {
@@ -200,13 +205,12 @@ func (k *EspressoKeyManager) GetCurrentKey() *ecdsa.PublicKey {
 	return k.pubKey
 }
 
-func (k *EspressoKeyManager) TeeType() TEE {
+func (k *EspressoKeyManager) TeeType() espressotee.TEE {
 	return k.teeType
 }
 
 func (k *EspressoKeyManager) SignHotShotPayload(message []byte) ([]byte, error) {
-	hash := crypto.Keccak256Hash(message)
-	return k.batchPosterSigner(hash.Bytes())
+	return k.batchPosterSigner(crypto.Keccak256Hash(message).Bytes())
 }
 
 func (k *EspressoKeyManager) SignBatch(message []byte) ([]byte, error) {
