@@ -24,7 +24,6 @@ use brotli::Dictionary;
 #[cfg(feature = "native")]
 use c_kzg::BYTES_PER_BLOB;
 use digest::Digest;
-use enum_iterator::last;
 use eyre::{bail, ensure, eyre, Result, WrapErr};
 use fnv::FnvHashMap as HashMap;
 use lazy_static::lazy_static;
