@@ -818,19 +818,8 @@ impl GlobalState {
         let mut h = Keccak256::new();
         h.update("Global state:");
 
-        // Hash at least 2 global state values, with optionally more values
-        // if the last non-zero index is greater than 1.
-        let mut last_non_zero_idx = None;
-        for (i, &val) in self.bytes32_vals.iter().enumerate() {
-            if val != Bytes32::default() {
-                last_non_zero_idx = Some(i);
-            }
-        }
-        let end = match last_non_zero_idx {
-            Some(idx) => std::cmp::max(1, idx),
-            None => 1,
-        };
-        for i in 0..=end {
+        let end_idx = self.bytes32_last_non_zero_index();
+        for i in 0..=end_idx {
             h.update(self.bytes32_vals[i]);
         }
         for item in self.u64_vals {
@@ -842,23 +831,33 @@ impl GlobalState {
     fn serialize(&self) -> Vec<u8> {
         let mut data = Vec::new();
 
-        let mut last_non_zero_idx = None;
-        for (i, &val) in self.bytes32_vals.iter().enumerate() {
-            if val != Bytes32::default() {
-                last_non_zero_idx = Some(i);
-            }
-        }
-        let end = match last_non_zero_idx {
-            Some(idx) => std::cmp::max(1, idx),
-            None => 1,
-        };
-        for i in 0..=end {
+        let end_idx = self.bytes32_last_non_zero_index();
+        for i in 0..=end_idx {
             data.extend(self.bytes32_vals[i]);
         }
         for item in self.u64_vals {
             data.extend(item.to_be_bytes())
         }
         data
+    }
+
+    /// Finds the last non-zero index in the bytes32 values and returns
+    /// the max of it and 1. This is used to determine how many
+    /// bytes32 values to include in the hash and serialization of a global state,
+    /// and at least the first two values must be included for backwards compatibility.
+    fn bytes32_last_non_zero_index(&self) -> usize {
+        let last_non_zero_idx = self
+            .bytes32_vals
+            .iter()
+            .enumerate()
+            .rev()
+            .find(|(_, &val)| val != Bytes32::default())
+            .map(|(i, _)| i);
+
+        match last_non_zero_idx {
+            Some(idx) => std::cmp::max(1, idx),
+            None => 1,
+        }
     }
 }
 
