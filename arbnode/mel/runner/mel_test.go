@@ -142,6 +142,7 @@ func (m *mockMessageConsumer) PushMessages(ctx context.Context, firstMsgIdx uint
 type mockParentChainReader struct {
 	blocks    map[common.Hash]*types.Block
 	headers   map[common.Hash]*types.Header
+	logs      []*types.Log
 	returnErr error
 }
 
@@ -217,5 +218,10 @@ func (m *mockParentChainReader) TransactionByHash(ctx context.Context, hash comm
 }
 
 func (m *mockParentChainReader) FilterLogs(ctx context.Context, q ethereum.FilterQuery) ([]types.Log, error) {
-	return nil, nil
+	filteredLogs := types.FilterLogs(m.logs, nil, nil, q.Addresses, q.Topics)
+	var result []types.Log
+	for _, log := range filteredLogs {
+		result = append(result, *log)
+	}
+	return result, nil
 }
