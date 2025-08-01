@@ -171,6 +171,8 @@ pub enum Opcode {
     PopCoThread,
     /// switch between main and a cothread
     SwitchThread,
+    /// Gets the end parent chain block hash for MEL
+    GetEndParentChainBlockHash,
 }
 
 impl Opcode {
@@ -288,6 +290,7 @@ impl Opcode {
             Opcode::NewCoThread => 0x8030,
             Opcode::PopCoThread => 0x8031,
             Opcode::SwitchThread => 0x8032,
+            Opcode::GetEndParentChainBlockHash => 0x8033,
         }
     }
 
@@ -300,6 +303,7 @@ impl Opcode {
                 | Opcode::SetGlobalStateU64
                 | Opcode::ReadPreImage
                 | Opcode::ReadInboxMessage
+                | Opcode::GetEndParentChainBlockHash
         )
     }
 }
