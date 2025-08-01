@@ -32,6 +32,7 @@ type MessageExtractionConfig struct {
 	Enable                        bool          `koanf:"enable"`
 	RetryInterval                 time.Duration `koanf:"retry-interval"`
 	DelayedMessageBacklogCapacity int           `koanf:"delayed-message-backlog-capacity"`
+	BlocksToPrefetch              uint64        `koanf:"blocks-to-prefetch" reload:"hot"`
 }
 
 func (c *MessageExtractionConfig) Validate() error {
@@ -42,12 +43,14 @@ var DefaultMessageExtractionConfig = MessageExtractionConfig{
 	Enable:                        false,
 	RetryInterval:                 defaultRetryInterval,
 	DelayedMessageBacklogCapacity: 100, // TODO: right default? setting to a lower value means more calls to l1reader
+	BlocksToPrefetch:              499, // 500 is the eth_getLogs block range limit
 }
 
 func MessageExtractionConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultMessageExtractionConfig.Enable, "enable message extraction service")
 	f.Duration(prefix+".retry-interval", DefaultMessageExtractionConfig.RetryInterval, "wait time before retring upon a failure")
 	f.Int(prefix+".delayed-message-backlog-capacity", DefaultMessageExtractionConfig.DelayedMessageBacklogCapacity, "target capacity of the delayed message backlog")
+	f.Uint64(prefix+".blocks-to-prefetch", DefaultMessageExtractionConfig.BlocksToPrefetch, "the number of blocks to prefetch relevant logs from")
 }
 
 // TODO (ganesh): cleanup unused methods from this interface after checking with wasm mode
@@ -59,7 +62,7 @@ type ParentChainReader interface {
 	TransactionInBlock(ctx context.Context, blockHash common.Hash, index uint) (*types.Transaction, error)
 	TransactionReceipt(ctx context.Context, txHash common.Hash) (*types.Receipt, error)
 	TransactionByHash(ctx context.Context, hash common.Hash) (tx *types.Transaction, isPending bool, err error)
-	BlockReceipts(ctx context.Context, blockNrOrHash rpc.BlockNumberOrHash) ([]*types.Receipt, error) // TODO: This is to be replaced by filterLogs method
+	FilterLogs(ctx context.Context, q ethereum.FilterQuery) ([]types.Log, error)
 }
 
 // Defines a message extraction service for a Nitro node which reads parent chain
@@ -68,6 +71,7 @@ type MessageExtractor struct {
 	stopwaiter.StopWaiter
 	config            *MessageExtractionConfig
 	parentChainReader ParentChainReader
+	logsPreFetcher    *logsFetcher
 	addrs             *chaininfo.RollupAddresses
 	melDB             *Database
 	msgConsumer       mel.MessageConsumer
@@ -131,51 +135,12 @@ func (m *MessageExtractor) Start(ctxIn context.Context) error {
 	)
 }
 
-type blockLogsAndTxsFetcher struct {
-	client           ParentChainReader
-	parentChainBlock *types.Block
-	blockLogs        []*types.Log
-	logsByTxIndex    map[common.Hash]map[uint][]*types.Log
+// txByLogFetcher is wrapper around ParentChainReader to implement TransactionByLog method
+type txByLogFetcher struct {
+	client ParentChainReader
 }
 
-func newBlockLogsAndTxsFetcher(ctx context.Context, client ParentChainReader, parentChainBlock *types.Block) (*blockLogsAndTxsFetcher, error) {
-	blockReceipts, err := client.BlockReceipts(ctx, rpc.BlockNumberOrHashWithHash(parentChainBlock.Hash(), false))
-	if err != nil {
-		return nil, err
-	}
-	var blockLogs []*types.Log
-	logsByTxIndex := make(map[common.Hash]map[uint][]*types.Log)
-	for _, receipt := range blockReceipts {
-		blockLogs = append(blockLogs, receipt.Logs...)
-		if _, ok := logsByTxIndex[receipt.BlockHash]; !ok {
-			logsByTxIndex[receipt.BlockHash] = make(map[uint][]*types.Log)
-		}
-		logsByTxIndex[receipt.BlockHash][receipt.TransactionIndex] = receipt.Logs
-	}
-	return &blockLogsAndTxsFetcher{
-		client:           client,
-		parentChainBlock: parentChainBlock,
-		blockLogs:        blockLogs,
-		logsByTxIndex:    logsByTxIndex,
-	}, nil
-}
-
-// LogsForBlockHash: currently blockLogsFetcher only returns logs from parentChainBlock that was given to it during init, parentChainBlockHash
-// arg will be used later on
-func (f *blockLogsAndTxsFetcher) LogsForBlockHash(ctx context.Context, parentChainBlockHash common.Hash) ([]*types.Log, error) {
-	return f.blockLogs, nil
-}
-
-func (f *blockLogsAndTxsFetcher) LogsForTxIndex(ctx context.Context, parentChainBlockHash common.Hash, txIndex uint) ([]*types.Log, error) {
-	if indexMap, ok := f.logsByTxIndex[parentChainBlockHash]; ok {
-		if _, ok := indexMap[txIndex]; ok {
-			return indexMap[txIndex], nil
-		}
-	}
-	return nil, fmt.Errorf("logs for blockHash: %v and txIndex: %d not found", parentChainBlockHash, txIndex)
-}
-
-func (f *blockLogsAndTxsFetcher) TransactionByLog(ctx context.Context, log *types.Log) (*types.Transaction, error) {
+func (f *txByLogFetcher) TransactionByLog(ctx context.Context, log *types.Log) (*types.Transaction, error) {
 	if log == nil {
 		return nil, errors.New("transactionByLog got nil log value")
 	}
@@ -373,6 +338,8 @@ func (m *MessageExtractor) Act(ctx context.Context) (time.Duration, error) {
 				melState: melState,
 			})
 		}
+		// Initialize logsPreFetcher
+		m.logsPreFetcher = newLogsFetcher(m.parentChainReader, m.config.BlocksToPrefetch)
 		// Begin the next FSM state immediately.
 		return 0, m.fsm.Do(processNextBlock{
 			melState: melState,
@@ -392,7 +359,7 @@ func (m *MessageExtractor) Act(ctx context.Context) (time.Duration, error) {
 		if preState.GetDelayedMessageBacklog() == nil { // Safety check since its relevant for native mode
 			return m.retryInterval, errors.New("detected nil DelayedMessageBacklog of melState, shouldnt be possible")
 		}
-		parentChainBlock, err := m.parentChainReader.BlockByNumber(
+		parentChainBlock, err := m.parentChainReader.HeaderByNumber(
 			ctx,
 			new(big.Int).SetUint64(preState.ParentChainBlockNumber+1),
 		)
@@ -414,26 +381,24 @@ func (m *MessageExtractor) Act(ctx context.Context) (time.Duration, error) {
 				return m.retryInterval, err
 			}
 		}
-		if parentChainBlock.ParentHash() != preState.ParentChainBlockHash {
+		if parentChainBlock.ParentHash != preState.ParentChainBlockHash {
 			log.Info("MEL detected L1 reorg", "block", preState.ParentChainBlockNumber) // Log level is Info because L1 reorgs are a common occurrence
 			return 0, m.fsm.Do(reorgToOldBlock{
 				melState: preState,
 			})
 		}
-		// Creates a receipt fetcher for the specific parent chain block, to be used
-		// by the message extraction function.
-		blockLogsAndTxsFetcher, err := newBlockLogsAndTxsFetcher(ctx, m.parentChainReader, parentChainBlock)
-		if err != nil {
+		// Conditionally prefetch logs for upcoming block/s
+		if err = m.logsPreFetcher.fetch(ctx, preState); err != nil {
 			return m.retryInterval, err
 		}
 		postState, msgs, delayedMsgs, batchMetas, err := melextraction.ExtractMessages(
 			ctx,
 			preState,
-			parentChainBlock.Header(),
+			parentChainBlock,
 			m.dataProviders,
 			m.melDB,
-			blockLogsAndTxsFetcher,
-			blockLogsAndTxsFetcher,
+			&txByLogFetcher{m.parentChainReader},
+			m.logsPreFetcher,
 		)
 		if err != nil {
 			return m.retryInterval, err
@@ -494,6 +459,7 @@ func (m *MessageExtractor) Act(ctx context.Context) (time.Duration, error) {
 		if err := currentDirtyState.ReorgTo(previousState); err != nil {
 			return m.retryInterval, err
 		}
+		m.logsPreFetcher.reset()
 		return 0, m.fsm.Do(processNextBlock{
 			melState: previousState,
 		})

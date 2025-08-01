@@ -62,7 +62,7 @@ func parseDelayedMessagesFromBlock(
 	}
 	messageData := make(map[common.Hash][]byte)
 	topics := [][]common.Hash{
-		{inboxMessageDeliveredID, inboxMessageFromOriginID}, // matches either of these IDs.
+		{InboxMessageDeliveredID, InboxMessageFromOriginID}, // matches either of these IDs.
 		messageIds, // matches any of the message IDs.
 	}
 	filteredInboxMessageLogs := types.FilterLogs(logs, nil, nil, inboxAddressList, topics)
@@ -105,11 +105,11 @@ func delayedMessageScaffoldsFromLogs(
 	// First, do a pass over the logs to extract message delivered events, which
 	// contain an inbox address and a message index.
 	for _, ethLog := range logs {
-		if ethLog == nil || len(ethLog.Topics) == 0 || ethLog.Topics[0] != iBridgeABI.Events["MessageDelivered"].ID {
+		if ethLog == nil || len(ethLog.Topics) == 0 || ethLog.Topics[0] != IBridgeABI.Events["MessageDelivered"].ID {
 			continue
 		}
 		event := new(bridgegen.IBridgeMessageDelivered)
-		if err := unpackLogTo(event, iBridgeABI, "MessageDelivered", *ethLog); err != nil {
+		if err := unpackLogTo(event, IBridgeABI, "MessageDelivered", *ethLog); err != nil {
 			return nil, nil, err
 		}
 		parsedLogs = append(parsedLogs, event)
@@ -154,13 +154,13 @@ func parseDelayedMessage(
 		return nil, nil, nil
 	}
 	switch ethLog.Topics[0] {
-	case inboxMessageDeliveredID:
+	case InboxMessageDeliveredID:
 		event := new(bridgegen.IDelayedMessageProviderInboxMessageDelivered)
 		if err := unpackLogTo(event, iDelayedMessageProviderABI, "InboxMessageDelivered", *ethLog); err != nil {
 			return nil, nil, err
 		}
 		return event.MessageNum, event.Data, nil
-	case inboxMessageFromOriginID:
+	case InboxMessageFromOriginID:
 		event := new(bridgegen.IDelayedMessageProviderInboxMessageDeliveredFromOrigin)
 		if err := unpackLogTo(event, iDelayedMessageProviderABI, "InboxMessageDeliveredFromOrigin", *ethLog); err != nil {
 			return nil, nil, err

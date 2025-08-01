@@ -196,7 +196,7 @@ func Test_parseBatchesFromBlock(t *testing.T) {
 		receipt := &types.Receipt{
 			Logs: []*types.Log{
 				{
-					Topics: []common.Hash{batchDeliveredID},
+					Topics: []common.Hash{BatchDeliveredID},
 					Data:   packedLog,
 				},
 			},
@@ -248,7 +248,7 @@ func Test_parseBatchesFromBlock(t *testing.T) {
 		receipt := &types.Receipt{
 			Logs: []*types.Log{
 				{
-					Topics: []common.Hash{batchDeliveredID},
+					Topics: []common.Hash{BatchDeliveredID},
 					Data:   packedLog,
 					TxHash: tx.Hash(),
 				},
@@ -325,12 +325,12 @@ func Test_parseBatchesFromBlock_outOfOrderBatches(t *testing.T) {
 	receipt := &types.Receipt{
 		Logs: []*types.Log{
 			{
-				Topics: []common.Hash{batchDeliveredID},
+				Topics: []common.Hash{BatchDeliveredID},
 				Data:   packedLog1,
 				TxHash: tx1.Hash(),
 			},
 			{
-				Topics: []common.Hash{batchDeliveredID},
+				Topics: []common.Hash{BatchDeliveredID},
 				Data:   packedLog2,
 				TxHash: tx2.Hash(),
 			},
@@ -387,7 +387,7 @@ func setupParseBatchesTest(t *testing.T, seqNumber *big.Int) (
 		},
 		DataLocation: 1,
 	}
-	eventABI := seqInboxABI.Events["SequencerBatchDelivered"]
+	eventABI := SeqInboxABI.Events["SequencerBatchDelivered"]
 	packedLog, err := eventABI.Inputs.Pack(
 		event.BatchSequenceNumber,
 		event.BeforeAcc,
