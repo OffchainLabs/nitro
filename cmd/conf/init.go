@@ -1,6 +1,7 @@
 package conf
 
 import (
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -125,7 +126,7 @@ func (c *InitConfig) Validate() error {
 		if reorgOption >= 0 {
 			numReorgOptionsSpecified++
 			if numReorgOptionsSpecified > 1 {
-				return fmt.Errorf("at most one init reorg option can be specified")
+				return errors.New("at most one init reorg option can be specified")
 			}
 		}
 	}
