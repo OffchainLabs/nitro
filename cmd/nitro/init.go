@@ -22,9 +22,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/cavaliergopher/grab/v3"
-	"github.com/codeclysm/extract/v3"
-
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
@@ -61,7 +58,7 @@ func initializeAndDownloadInit(ctx context.Context, initConfig *conf.InitConfig,
 		tmpPath := filepath.Join(stack.InstanceDir(), "tmp")
 		_, err := os.Stat(tmpPath)
 		if err == nil {
-			return "", cleanUpTmp, fmt.Errorf("tmp directory for downloading init file already exists")
+			return "", cleanUpTmp, errors.New("tmp directory for downloading init file already exists")
 		}
 		if !os.IsNotExist(err) {
 			return "", cleanUpTmp, fmt.Errorf("error checking if tmp directory for downloading init file already exists: %w", err)
@@ -107,7 +104,7 @@ func downloadInit(ctx context.Context, initConfig *conf.InitConfig) (string, err
 	}
 	file, err := downloadFile(ctx, initConfig, initConfig.Url, checksum)
 	if err != nil && errors.Is(err, notFoundError) {
-		return "", fmt.Errorf("file not found but checksum exists")
+		return "", errors.New("file not found but checksum exists")
 	}
 	return file, err
 }
@@ -209,7 +206,7 @@ func fetchChecksum(ctx context.Context, url string) ([]byte, error) {
 		return nil, fmt.Errorf("error decoding checksum: %w", err)
 	}
 	if len(checksum) != sha256.Size {
-		return nil, fmt.Errorf("invalid checksum length")
+		return nil, errors.New("invalid checksum length")
 	}
 	return checksum, nil
 }
