@@ -28,6 +28,7 @@ import (
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
+// lint:require-exhaustive-initialization
 type Config struct {
 	Enable             bool   `koanf:"enable"`
 	Mode               string `koanf:"mode"`
@@ -87,6 +88,7 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Int(prefix+".trie-clean-limit", DefaultConfig.TrieCleanLimit, "memory allowance (MB) to use for caching trie nodes in memory")
 }
 
+// lint:require-exhaustive-initialization
 type BlocksReExecutor struct {
 	stopwaiter.StopWaiter
 	config       *Config

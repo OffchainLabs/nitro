@@ -37,6 +37,7 @@ type InboxBackend interface {
 	ReadDelayedInbox(seqNum uint64) (*arbostypes.L1IncomingMessage, error)
 }
 
+// lint:require-exhaustive-initialization
 type SequencerMessage struct {
 	MinTimestamp         uint64
 	MaxTimestamp         uint64
@@ -162,6 +163,7 @@ func ParseSequencerMessage(ctx context.Context, batchNum uint64, batchBlockHash 
 	return parsedMsg, nil
 }
 
+// lint:require-exhaustive-initialization
 type inboxMultiplexer struct {
 	backend                   InboxBackend
 	delayedMessagesRead       uint64
