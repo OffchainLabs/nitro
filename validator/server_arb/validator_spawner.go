@@ -11,7 +11,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
-	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 
@@ -108,8 +107,8 @@ func (s *ArbitratorSpawner) WasmModuleRoots() ([]common.Hash, error) {
 	return s.locator.ModuleRoots(), nil
 }
 
-func (s *ArbitratorSpawner) StylusArchs() []ethdb.WasmTarget {
-	return []ethdb.WasmTarget{rawdb.TargetWavm}
+func (s *ArbitratorSpawner) StylusArchs() []rawdb.WasmTarget {
+	return []rawdb.WasmTarget{rawdb.TargetWavm}
 }
 
 func (s *ArbitratorSpawner) Name() string {

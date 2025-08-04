@@ -8,9 +8,9 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/rpc"
 
@@ -62,8 +62,8 @@ func (s *mockSpawner) WasmModuleRoots() ([]common.Hash, error) {
 	return mockWasmModuleRoots, nil
 }
 
-func (s *mockSpawner) StylusArchs() []ethdb.WasmTarget {
-	return []ethdb.WasmTarget{"mock"}
+func (s *mockSpawner) StylusArchs() []rawdb.WasmTarget {
+	return []rawdb.WasmTarget{"mock"}
 }
 
 func (s *mockSpawner) Launch(entry *validator.ValidationInput, moduleRoot common.Hash) validator.ValidationRun {
@@ -203,7 +203,6 @@ func createMockValidationNode(t *testing.T, ctx context.Context, config *server_
 
 // mostly tests translation to/from json and running over network
 func TestValidationServerAPI(t *testing.T) {
-	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	_, validationDefault := createMockValidationNode(t, ctx, nil)
@@ -273,7 +272,6 @@ func TestValidationServerAPI(t *testing.T) {
 }
 
 func TestValidationClientRoom(t *testing.T) {
-	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	mockSpawner, spawnerStack := createMockValidationNode(t, ctx, nil)
@@ -352,7 +350,6 @@ func TestValidationClientRoom(t *testing.T) {
 }
 
 func TestExecutionKeepAlive(t *testing.T) {
-	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	_, validationDefault := createMockValidationNode(t, ctx, nil)

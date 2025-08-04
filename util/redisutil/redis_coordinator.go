@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -29,20 +31,26 @@ const INVALID_URL string = "<?INVALID-URL?>"
 
 type RedisCoordinator struct {
 	Client                                redis.UniversalClient
-	firstSequencerWantingLockoutErrorTime time.Time // Time of the first error logged for no sequencer wanting the lockout.
-	lastLockoutErrorLogTime               time.Time // Add this field to track when we last logged lockout errors.
+	firstSequencerWantingLockoutErrorTime atomic.Int64 // Time of the first error logged for no sequencer wanting the lockout.
+	lastLockoutErrorLogTime               atomic.Int64 // Add this field to track when we last logged lockout errors.
+
+	// If Client is a sentinel client,
+	sentinelMaster string // The master name of the sentinel client.
+	quorumSize     uint64 // Quorum size needed to qualify a redis GET as valid.
 }
 
 func WantsLockoutKeyFor(url string) string { return WANTS_LOCKOUT_KEY_PREFIX + url }
 
-func NewRedisCoordinator(redisUrl string) (*RedisCoordinator, error) {
-	redisClient, err := RedisClientFromURL(redisUrl)
+func NewRedisCoordinator(redisUrl string, quorumSize uint64) (*RedisCoordinator, error) {
+	redisClient, sentinelMaster, err := RedisClientWithSentinelMasterNameFromURL(redisUrl)
 	if err != nil {
 		return nil, err
 	}
 
 	return &RedisCoordinator{
-		Client: redisClient,
+		Client:         redisClient,
+		sentinelMaster: sentinelMaster,
+		quorumSize:     quorumSize,
 	}, nil
 }
 
@@ -66,8 +74,8 @@ func (c *RedisCoordinator) RecommendSequencerWantingLockout(ctx context.Context)
 		}
 		// We found a sequencer that wants the lockout, so we reset the last time we observed the error
 		// to a value of zero for logging purposes below.
-		c.firstSequencerWantingLockoutErrorTime = time.Time{}
-		c.lastLockoutErrorLogTime = time.Time{} // Reset log throttling timer when state changes.
+		c.firstSequencerWantingLockoutErrorTime.Store(0)
+		c.lastLockoutErrorLogTime.Store(0) // Reset log throttling timer when state changes.
 		return url, nil
 	}
 
@@ -80,15 +88,16 @@ func (c *RedisCoordinator) RecommendSequencerWantingLockout(ctx context.Context)
 		level("no sequencer appears to want the lockout on redis", args...)
 	}
 
-	if c.firstSequencerWantingLockoutErrorTime.IsZero() {
-		c.firstSequencerWantingLockoutErrorTime = time.Now()
-		c.lastLockoutErrorLogTime = time.Now()
+	if c.firstSequencerWantingLockoutErrorTime.Load() == 0 {
+		now := time.Now().UnixMilli()
+		c.firstSequencerWantingLockoutErrorTime.Store(now)
+		c.lastLockoutErrorLogTime.Store(now)
 		logMessage(log.Debug)
 	} else {
-		elapsedTime := time.Since(c.firstSequencerWantingLockoutErrorTime)
+		elapsedTime := time.Since(time.UnixMilli(c.firstSequencerWantingLockoutErrorTime.Load()))
 		// Only log if it's been at least 5 seconds since the last log,
 		// as these logs would otherwise be spammed at a high rate when they occur.
-		if time.Since(c.lastLockoutErrorLogTime) >= 5*time.Second {
+		if time.Since(time.UnixMilli(c.lastLockoutErrorLogTime.Load())) >= 5*time.Second {
 			if elapsedTime > 20*time.Second {
 				logMessage(log.Error)
 			} else if elapsedTime > 10*time.Second {
@@ -96,7 +105,7 @@ func (c *RedisCoordinator) RecommendSequencerWantingLockout(ctx context.Context)
 			} else {
 				logMessage(log.Debug)
 			}
-			c.lastLockoutErrorLogTime = time.Now() // Update last log time.
+			c.lastLockoutErrorLogTime.Store(time.Now().UnixMilli()) // Update last log time.
 		}
 	}
 	return "", nil
@@ -130,9 +139,11 @@ func (rc *RedisCoordinator) GetPriorities(ctx context.Context) ([]string, error)
 // GetLiveliness returns a list of sequencers that have their liveliness set to OK
 func (rc *RedisCoordinator) GetLiveliness(ctx context.Context) ([]string, error) {
 	var livelinessList []string
-	cursor := uint64(0)
+	var cursor uint64
 	for {
-		keySlice, cursor, err := rc.Client.Scan(ctx, cursor, WANTS_LOCKOUT_KEY_PREFIX+"*", 0).Result()
+		var keySlice []string
+		var err error
+		keySlice, cursor, err = rc.Client.Scan(ctx, cursor, WANTS_LOCKOUT_KEY_PREFIX+"*", 0).Result()
 		if err != nil {
 			return []string{}, err
 		}
@@ -146,6 +157,77 @@ func (rc *RedisCoordinator) GetLiveliness(ctx context.Context) ([]string, error)
 		livelinessList[i] = url
 	}
 	return livelinessList, nil
+}
+
+// GetIfInQuorum acts as normal redis GET, but also error out if the key is not in the quorum of redis nodes
+// if redis is a sentinel client.
+func (rc *RedisCoordinator) GetIfInQuorum(ctx context.Context, key string) (string, error) {
+	// If redis is not a sentinel client, or if the quorum size is less than 2, no need to check quorum
+	if rc.sentinelMaster == "" || rc.quorumSize < 2 {
+		return rc.Client.Get(ctx, key).Result()
+	}
+
+	// Get the master address and replicas from sentinel
+	masterAddrCmd := redis.NewStringSliceCmd(ctx, "sentinel", "get-master-addr-by-name", rc.sentinelMaster)
+	replicasCmd := redis.NewMapStringStringSliceCmd(ctx, "sentinel", "replicas", rc.sentinelMaster)
+
+	pipe := rc.Client.Pipeline()
+	err := pipe.Process(ctx, masterAddrCmd)
+	if err != nil {
+		return "", err
+	}
+	err = pipe.Process(ctx, replicasCmd)
+	if err != nil {
+		return "", err
+	}
+	// Get the key result as well, so as to avoid another separate call to redis
+	getCmd := pipe.Get(ctx, key)
+	_, err = pipe.Exec(ctx)
+	if err != nil {
+		return "", err
+	}
+	masterAddr, err := masterAddrCmd.Result()
+	if err != nil {
+		return "", err
+	}
+	replicas, err := replicasCmd.Result()
+	if err != nil {
+		return "", err
+	}
+	result, err := getCmd.Result()
+	if err != nil {
+		return "", err
+	}
+	var urls []string
+	urls = append(urls, masterAddr[0]+":"+masterAddr[1])
+	for _, replica := range replicas {
+		urls = append(urls, replica["ip"]+":"+replica["port"])
+	}
+
+	// Check if the key exists in the quorum
+	numKeyOccurrences := atomic.Uint64{}
+	wg := sync.WaitGroup{}
+	for _, url := range urls {
+		wg.Add(1)
+		go func(redisUrl string) {
+			defer wg.Done()
+			r := redis.NewClient(&redis.Options{Addr: redisUrl})
+			defer r.Close()
+			exists, err := r.Exists(ctx, key).Result()
+			if err != nil {
+				log.Warn("Error checking redis key", "key", key, "err", err)
+				return
+			}
+			if exists != 0 {
+				numKeyOccurrences.Add(1)
+			}
+		}(url)
+	}
+	wg.Wait()
+	if numKeyOccurrences.Load() < rc.quorumSize {
+		return "", fmt.Errorf("redis key %s not in quorum, only %d redis nodes have it, wanted quorum size is %d", key, numKeyOccurrences.Load(), rc.quorumSize)
+	}
+	return result, nil
 }
 
 func MessageKeyFor(pos arbutil.MessageIndex) string {

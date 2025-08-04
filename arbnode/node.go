@@ -101,9 +101,6 @@ func (c *Config) Validate() error {
 	if err := c.BlockValidator.Validate(); err != nil {
 		return err
 	}
-	if err := c.Maintenance.Validate(); err != nil {
-		return err
-	}
 	if err := c.InboxReader.Validate(); err != nil {
 		return err
 	}
@@ -472,17 +469,11 @@ func getBPVerifier(
 }
 
 func getMaintenanceRunner(
-	arbDb ethdb.Database,
 	configFetcher ConfigFetcher,
 	coordinator *SeqCoordinator,
 	exec execution.ExecutionClient,
 ) (*MaintenanceRunner, error) {
-	dbs := []ethdb.Database{arbDb}
-	maintenanceRunner, err := NewMaintenanceRunner(func() *MaintenanceConfig { return &configFetcher.Get().Maintenance }, coordinator, dbs, exec)
-	if err != nil {
-		return nil, err
-	}
-	return maintenanceRunner, nil
+	return NewMaintenanceRunner(func() *MaintenanceConfig { return &configFetcher.Get().Maintenance }, coordinator, exec)
 }
 
 func getBroadcastClients(
@@ -730,6 +721,7 @@ func getStaker(
 	deployInfo *chaininfo.RollupAddresses,
 	txStreamer *TransactionStreamer,
 	inboxTracker *InboxTracker,
+	inboxReader *InboxReader,
 	stack *node.Node,
 	fatalErrChan chan error,
 	statelessBlockValidator *staker.StatelessBlockValidator,
@@ -755,7 +747,7 @@ func getStaker(
 		getExtraGas := func() uint64 { return configFetcher.Get().Staker.ExtraGas }
 		// TODO: factor this out into separate helper, and split rest of node
 		// creation into multiple helpers.
-		var wallet legacystaker.ValidatorWalletInterface = validatorwallet.NewNoOp(l1client, deployInfo.Rollup)
+		var wallet legacystaker.ValidatorWalletInterface = validatorwallet.NewNoOp(l1client)
 		if !strings.EqualFold(config.Staker.Strategy, "watchtower") {
 			if config.Staker.UseSmartContractWallet || (txOptsValidator == nil && config.Staker.DataPoster.ExternalSigner.URL == "") {
 				var existingWalletAddress *common.Address
@@ -768,7 +760,7 @@ func getStaker(
 					existingWalletAddress = &tmpAddress
 				}
 				// #nosec G115
-				wallet, err = validatorwallet.NewContract(dp, existingWalletAddress, deployInfo.ValidatorWalletCreator, deployInfo.Rollup, l1Reader, txOptsValidator, int64(deployInfo.DeployedAt), func(common.Address) {}, getExtraGas)
+				wallet, err = validatorwallet.NewContract(dp, existingWalletAddress, deployInfo.ValidatorWalletCreator, l1Reader, txOptsValidator, int64(deployInfo.DeployedAt), func(common.Address) {}, getExtraGas)
 				if err != nil {
 					return nil, nil, common.Address{}, err
 				}
@@ -776,7 +768,7 @@ func getStaker(
 				if len(config.Staker.ContractWalletAddress) > 0 {
 					return nil, nil, common.Address{}, errors.New("validator contract wallet specified but flag to use a smart contract wallet was not specified")
 				}
-				wallet, err = validatorwallet.NewEOA(dp, deployInfo.Rollup, l1client, getExtraGas)
+				wallet, err = validatorwallet.NewEOA(dp, l1client, getExtraGas)
 				if err != nil {
 					return nil, nil, common.Address{}, err
 				}
@@ -789,7 +781,7 @@ func getStaker(
 			confirmedNotifiers = append(confirmedNotifiers, messagePruner)
 		}
 
-		stakerObj, err = multiprotocolstaker.NewMultiProtocolStaker(stack, l1Reader, wallet, bind.CallOpts{}, func() *legacystaker.L1ValidatorConfig { return &configFetcher.Get().Staker }, &configFetcher.Get().Bold, blockValidator, statelessBlockValidator, nil, deployInfo.StakeToken, confirmedNotifiers, deployInfo.ValidatorUtils, deployInfo.Bridge, fatalErrChan)
+		stakerObj, err = multiprotocolstaker.NewMultiProtocolStaker(stack, l1Reader, wallet, bind.CallOpts{}, func() *legacystaker.L1ValidatorConfig { return &configFetcher.Get().Staker }, &configFetcher.Get().Bold, blockValidator, statelessBlockValidator, nil, deployInfo.StakeToken, deployInfo.Rollup, confirmedNotifiers, deployInfo.ValidatorUtils, deployInfo.Bridge, txStreamer, inboxTracker, inboxReader, fatalErrChan)
 		if err != nil {
 			return nil, nil, common.Address{}, err
 		}
@@ -880,7 +872,7 @@ func getStatelessBlockValidator(
 		err = errors.New("no validator url specified")
 	}
 	if err != nil {
-		if config.ValidatorRequired() || config.Staker.Enable {
+		if config.ValidatorRequired() {
 			return nil, fmt.Errorf("%w: failed to init block validator", err)
 		}
 		log.Warn("validation not supported", "err", err)
@@ -1066,7 +1058,7 @@ func createNodeImpl(
 		return nil, err
 	}
 
-	maintenanceRunner, err := getMaintenanceRunner(arbDb, configFetcher, coordinator, executionClient)
+	maintenanceRunner, err := getMaintenanceRunner(configFetcher, coordinator, executionClient)
 	if err != nil {
 		return nil, err
 	}
@@ -1110,7 +1102,7 @@ func createNodeImpl(
 		return nil, err
 	}
 
-	stakerObj, messagePruner, stakerAddr, err := getStaker(ctx, config, configFetcher, arbDb, l1Reader, txOptsValidator, syncMonitor, parentChainID, l1client, deployInfo, txStreamer, inboxTracker, stack, fatalErrChan, statelessBlockValidator, blockValidator)
+	stakerObj, messagePruner, stakerAddr, err := getStaker(ctx, config, configFetcher, arbDb, l1Reader, txOptsValidator, syncMonitor, parentChainID, l1client, deployInfo, txStreamer, inboxTracker, inboxReader, stack, fatalErrChan, statelessBlockValidator, blockValidator)
 	if err != nil {
 		return nil, err
 	}
@@ -1229,16 +1221,6 @@ func registerAPIs(currentNode *Node, stack *node.Node) {
 			Version:   "1.0",
 			Service: &BlockValidatorDebugAPI{
 				val: currentNode.StatelessBlockValidator,
-			},
-			Public: false,
-		})
-	}
-	if currentNode.MaintenanceRunner != nil {
-		apis = append(apis, rpc.API{
-			Namespace: "maintenance",
-			Version:   "1.0",
-			Service: &MaintenanceAPI{
-				runner: currentNode.MaintenanceRunner,
 			},
 			Public: false,
 		})

@@ -34,8 +34,10 @@ jobs:
             [contracts-legacy]=origin/v2-main
             [nitro-testnode]=origin/master
             [bold]=origin/main
+            [safe-smart-account]=origin/release/v1.5.0
             [arbitrator/langs/c]=origin/vm-storage-cache
             [arbitrator/tools/wasmer]=origin/stylus
+            [contracts-local/lib/openzeppelin-contracts]=origin/release-v4.7
           )
           divergent=0
           for mod in `git submodule --quiet foreach 'echo $name'`; do

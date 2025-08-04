@@ -45,7 +45,6 @@ import (
 )
 
 func TestFastConfirmationWithdrawal(t *testing.T) {
-	t.Parallel()
 	ctx, cancelCtx := context.WithCancel(context.Background())
 	defer cancelCtx()
 	builder, stakerA, cleanupBuilder, cleanupBackgroundTx := setupFastConfirmation(ctx, t)
@@ -176,7 +175,7 @@ func setupFastConfirmation(ctx context.Context, t *testing.T) (*NodeBuilder, *le
 	}()
 	var transferGas = util.NormalizeL2GasForL1GasInitial(800_000, params.GWei) // include room for aggregator L1 costs
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithProdConfirmPeriodBlocks()
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithProdConfirmPeriodBlocks().DontParalellise()
 	builder.L2Info = NewBlockChainTestInfo(
 		t,
 		types.NewArbitrumSigner(types.NewLondonSigner(builder.chainConfig.ChainID)), big.NewInt(l2pricing.InitialBaseFeeWei*2),
@@ -235,7 +234,7 @@ func setupFastConfirmation(ctx context.Context, t *testing.T) (*NodeBuilder, *le
 	if err != nil {
 		t.Fatalf("Error creating validator dataposter: %v", err)
 	}
-	valWallet, err := validatorwallet.NewContract(dp, nil, l2node.DeployInfo.ValidatorWalletCreator, l2node.DeployInfo.Rollup, l2node.L1Reader, &l1auth, 0, func(common.Address) {}, func() uint64 { return valConfig.ExtraGas })
+	valWallet, err := validatorwallet.NewContract(dp, nil, l2node.DeployInfo.ValidatorWalletCreator, l2node.L1Reader, &l1auth, 0, func(common.Address) {}, func() uint64 { return valConfig.ExtraGas })
 	Require(t, err)
 	valConfig.Strategy = "MakeNodes"
 
@@ -293,6 +292,10 @@ func setupFastConfirmation(ctx context.Context, t *testing.T) (*NodeBuilder, *le
 		nil,
 		nil,
 		l2node.DeployInfo.ValidatorUtils,
+		l2node.DeployInfo.Rollup,
+		l2node.InboxTracker,
+		l2node.TxStreamer,
+		l2node.InboxReader,
 		nil,
 	)
 	Require(t, err)
@@ -425,7 +428,7 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Error creating validator dataposter: %v", err)
 	}
-	valWalletA, err := validatorwallet.NewContract(dpA, nil, l2nodeA.DeployInfo.ValidatorWalletCreator, l2nodeA.DeployInfo.Rollup, l2nodeA.L1Reader, &l1authA, 0, func(common.Address) {}, func() uint64 { return valConfigA.ExtraGas })
+	valWalletA, err := validatorwallet.NewContract(dpA, nil, l2nodeA.DeployInfo.ValidatorWalletCreator, l2nodeA.L1Reader, &l1authA, 0, func(common.Address) {}, func() uint64 { return valConfigA.ExtraGas })
 	Require(t, err)
 	valConfigA.Strategy = "MakeNodes"
 
@@ -484,6 +487,10 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 		nil,
 		nil,
 		l2nodeA.DeployInfo.ValidatorUtils,
+		l2nodeA.DeployInfo.Rollup,
+		l2nodeA.InboxTracker,
+		l2nodeA.TxStreamer,
+		l2nodeA.InboxReader,
 		nil,
 	)
 	Require(t, err)
@@ -506,7 +513,7 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Error creating validator dataposter: %v", err)
 	}
-	valWalletB, err := validatorwallet.NewEOA(dpB, l2nodeB.DeployInfo.Rollup, l2nodeB.L1Reader.Client(), func() uint64 { return 0 })
+	valWalletB, err := validatorwallet.NewEOA(dpB, l2nodeB.L1Reader.Client(), func() uint64 { return 0 })
 	Require(t, err)
 	valConfigB := legacystaker.TestL1ValidatorConfig
 	valConfigB.EnableFastConfirmation = true
@@ -537,6 +544,10 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 		nil,
 		nil,
 		l2nodeB.DeployInfo.ValidatorUtils,
+		l2nodeB.DeployInfo.Rollup,
+		l2nodeB.InboxTracker,
+		l2nodeB.TxStreamer,
+		l2nodeB.InboxReader,
 		nil,
 	)
 	Require(t, err)

@@ -25,7 +25,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/execution/gethexec"
-	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
+	"github.com/offchainlabs/nitro/solgen/go/localgen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/redisutil"
@@ -53,7 +53,6 @@ type Options struct {
 }
 
 func testBlockValidatorSimple(t *testing.T, opts Options) {
-	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -71,7 +70,8 @@ func testBlockValidatorSimple(t *testing.T, opts Options) {
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
 	builder = builder.WithWasmRootDir(opts.wasmRootDir)
 	// For now PathDB is not supported when using block validation
-	builder.execConfig.Caching.StateScheme = rawdb.HashScheme
+	builder.RequireScheme(t, rawdb.HashScheme)
+
 	builder.nodeConfig = l1NodeConfigA
 	builder.chainConfig = chainConfig
 	builder.L2Info = nil
@@ -101,7 +101,7 @@ func testBlockValidatorSimple(t *testing.T, opts Options) {
 
 	perTransfer := big.NewInt(1e12)
 
-	var simple *mocksgen.Simple
+	var simple *localgen.Simple
 	if opts.workload != upgradeArbOs {
 		for i := 0; i < opts.workloadLoops; i++ {
 			var tx *types.Transaction
@@ -156,7 +156,7 @@ func testBlockValidatorSimple(t *testing.T, opts Options) {
 		auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
 		// deploy a test contract
 		var err error
-		_, _, simple, err = mocksgen.DeploySimple(&auth, builder.L2.Client)
+		_, _, simple, err = localgen.DeploySimple(&auth, builder.L2.Client)
 		Require(t, err, "could not deploy contract")
 
 		tx, err := simple.StoreDifficulty(&auth)

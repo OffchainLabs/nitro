@@ -28,7 +28,7 @@ env:
 jobs:
   arbitrator:
     name: Run Arbitrator tests
-    runs-on: ubuntu-8
+    runs-on: arbitrator-ci
     steps:
       - name: Setup tmate session
         uses: mxschmitt/action-tmate@v3
@@ -48,21 +48,21 @@ jobs:
           sudo ln -s /usr/bin/wasm-ld-14 /usr/local/bin/wasm-ld
 
       - name: Install go
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v5
         with:
-          go-version: 1.23.x
+          go-version: 1.24.x
 
       - name: Install custom go-ethereum
         run: |
           cd /tmp
-          git clone --branch v1.14.11 --depth 1 https://github.com/ethereum/go-ethereum.git
+          git clone --branch v1.15.11 --depth 1 https://github.com/ethereum/go-ethereum.git
           cd go-ethereum
           go build -o /usr/local/bin/geth ./cmd/geth
 
       - name: Setup nodejs
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: '24'
           cache: 'yarn'
           cache-dependency-path: '**/yarn.lock'
 
