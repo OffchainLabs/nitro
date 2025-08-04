@@ -34,18 +34,20 @@ type ForceInclusionCheckerConfig struct {
 }
 
 var DefaultEspressoForceInclusionCheckerConfig = ForceInclusionCheckerConfig{
-	RetryTime:                time.Second * 2,
-	PollingInterval:          time.Minute * 8,
-	BlockThresholdTolerance:  20,
-	SecondThresholdTolerance: 200,
+	RetryTime:       time.Second * 2,
+	PollingInterval: time.Minute * 8,
+	// We are setting the default value to 20 hours for ETH l1
+	BlockThresholdTolerance: 72000,
+	//  We are setting the default value to 20 hours for ETH l1 which is 72000/(12 second blocks)=6000
+	SecondThresholdTolerance: 6000,
 	ErrorToleranceDuration:   time.Minute * 8,
 }
 
 func EspressoForceInclusionConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Duration(prefix+".retry-time", DefaultEspressoForceInclusionCheckerConfig.RetryTime, "retry time after a failure")
 	f.Duration(prefix+".polling-interval", DefaultEspressoForceInclusionCheckerConfig.PollingInterval, "time after a success")
-	f.Uint64(prefix+".block-threshold-tolerance", DefaultEspressoForceInclusionCheckerConfig.BlockThresholdTolerance, "block threshold tolerance")
-	f.Uint64(prefix+".second-threshold-tolerance", DefaultEspressoForceInclusionCheckerConfig.SecondThresholdTolerance, "second threshold tolerance")
+	f.Uint64(prefix+".block-threshold-tolerance", DefaultEspressoForceInclusionCheckerConfig.BlockThresholdTolerance, "block threshold tolerance for ETH L1")
+	f.Uint64(prefix+".second-threshold-tolerance", DefaultEspressoForceInclusionCheckerConfig.SecondThresholdTolerance, "second threshold tolerance for ETH L1")
 	f.Duration(prefix+".error-tolerance-duration", DefaultEspressoForceInclusionCheckerConfig.ErrorToleranceDuration, "error tolerance duration")
 }
 

@@ -66,12 +66,14 @@ var DefaultEspressoCaffNodeConfig = EspressoCaffNodeConfig{
 	EspressoSGXVerifierAddr: "",
 	BatchPosterAddr:         "",
 	RecordPerformance:       false,
-	WaitForFinalization:     true,
-	WaitForConfirmations:    false,
-	RequiredBlockDepth:      6,
-	BlocksToRead:            10000,
-	Dangerous:               DefaultDangerousCaffNodeConfig,
-	FromBlock:               1,
+	// Setting these values to the default
+	// values set by Arbitrum
+	WaitForFinalization:  false,
+	WaitForConfirmations: true,
+	RequiredBlockDepth:   20,
+	BlocksToRead:         10000,
+	Dangerous:            DefaultDangerousCaffNodeConfig,
+	FromBlock:            1,
 }
 
 func EspressoCaffNodeConfigAddOptions(prefix string, f *flag.FlagSet) {
