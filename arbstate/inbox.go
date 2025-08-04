@@ -179,10 +179,16 @@ type inboxMultiplexer struct {
 
 func NewInboxMultiplexer(backend InboxBackend, delayedMessagesRead uint64, dapReaders []daprovider.Reader, keysetValidationMode daprovider.KeysetValidationMode) arbostypes.InboxMultiplexer {
 	return &inboxMultiplexer{
-		backend:              backend,
-		delayedMessagesRead:  delayedMessagesRead,
-		dapReaders:           dapReaders,
-		keysetValidationMode: keysetValidationMode,
+		backend:                   backend,
+		delayedMessagesRead:       delayedMessagesRead,
+		dapReaders:                dapReaders,
+		cachedSequencerMessage:    nil,
+		cachedSequencerMessageNum: 0,
+		cachedSegmentNum:          0,
+		cachedSegmentTimestamp:    0,
+		cachedSegmentBlockNumber:  0,
+		cachedSubMessageNumber:    0,
+		keysetValidationMode:      keysetValidationMode,
 	}
 }
 
