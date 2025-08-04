@@ -136,6 +136,7 @@ func Test_findCanonicalAssertionBranch(t *testing.T) {
 		execProvider:                provider,
 		chain:                       setup.Chains[0],
 		observedCanonicalAssertions: make(chan protocol.AssertionHash),
+		confirming:                  threadsafe.NewLruSet[protocol.AssertionHash](1000),
 		assertionChainData: &assertionChainData{
 			latestAgreedAssertion: numToAssertionHash(1),
 			canonicalAssertions:   make(map[protocol.AssertionHash]*protocol.AssertionCreatedInfo),
@@ -267,6 +268,7 @@ func Test_respondToAnyInvalidAssertions(t *testing.T) {
 	manager := &Manager{
 		observedCanonicalAssertions: make(chan protocol.AssertionHash),
 		submittedAssertions:         threadsafe.NewLruSet(1000, threadsafe.LruSetWithMetric[protocol.AssertionHash]("submittedAssertions")),
+		confirming:                  threadsafe.NewLruSet[protocol.AssertionHash](1000),
 		assertionChainData: &assertionChainData{
 			latestAgreedAssertion: numToAssertionHash(1),
 			canonicalAssertions:   make(map[protocol.AssertionHash]*protocol.AssertionCreatedInfo),
