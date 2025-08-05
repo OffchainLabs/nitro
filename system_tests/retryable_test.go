@@ -708,7 +708,14 @@ func warpL1Time(t *testing.T, builder *NodeBuilder, ctx context.Context, current
 	}
 	hooks := arbos.NoopSequencingHooks()
 	tx := builder.L2Info.PrepareTx("Faucet", "User2", 300000, big.NewInt(1), nil)
-	_, err = builder.L2.ExecNode.ExecEngine.SequenceTransactions(timeWarpHeader, types.Transactions{tx}, hooks, nil)
+	sequencedMsg, _, err := builder.L2.ExecNode.ExecEngine.SequenceTransactions(timeWarpHeader, types.Transactions{tx}, hooks, nil)
+	Require(t, err)
+	if sequencedMsg == nil {
+		Fatal(t, "sequencedMsg is nil")
+	}
+	err = builder.L2.ConsensusNode.TxStreamer.WriteSequencedMsg(sequencedMsg)
+	Require(t, err)
+	err = builder.L2.ExecNode.AppendLastSequencedBlock()
 	Require(t, err)
 	return newL1Timestamp
 }
@@ -844,7 +851,9 @@ func TestKeepaliveAndRetryableExpiry(t *testing.T) {
 	}
 
 	// checks that keepalive increases the timeout as expected
-	_, err = arbRetryableTx.Keepalive(&ownerTxOpts, ticketId)
+	tx, err := arbRetryableTx.Keepalive(&ownerTxOpts, ticketId)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
 	timeoutAfterKeepalive, err := arbRetryableTx.GetTimeout(&bind.CallOpts{}, ticketId)
 	Require(t, err)
@@ -933,7 +942,9 @@ func TestKeepaliveAndCancelRetryable(t *testing.T) {
 	}
 
 	// checks that keepalive increases the timeout as expected
-	_, err = arbRetryableTx.Keepalive(&ownerTxOpts, ticketId)
+	tx, err := arbRetryableTx.Keepalive(&ownerTxOpts, ticketId)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
 	timeoutAfterKeepalive, err := arbRetryableTx.GetTimeout(&bind.CallOpts{}, ticketId)
 	Require(t, err)
@@ -944,7 +955,7 @@ func TestKeepaliveAndCancelRetryable(t *testing.T) {
 
 	// cancel the ticket
 	beneficiaryTxOpts := builder.L2Info.GetDefaultTransactOpts("Beneficiary", ctx)
-	tx, err := arbRetryableTx.Cancel(&beneficiaryTxOpts, ticketId)
+	tx, err = arbRetryableTx.Cancel(&beneficiaryTxOpts, ticketId)
 	Require(t, err)
 	_, err = builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
