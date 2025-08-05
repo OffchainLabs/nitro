@@ -391,10 +391,13 @@ func (b *BOLDStaker) getLatestState(ctx context.Context, confirmed bool) (arbuti
 	}
 	caughtUp, count, err := staker.GlobalStateToMsgCount(b.inboxTracker, b.inboxStreamer, validator.GoGlobalState(globalState))
 	if err != nil {
-		if errors.Is(err, staker.ErrGlobalStateNotInChain) {
-			return 0, nil, fmt.Errorf("latest %s assertion of %v not yet in our node: %w", assertionType, globalState, err)
+		if !errors.Is(err, staker.ErrGlobalStateNotInChain) {
+			return 0, nil, fmt.Errorf("error getting message count: %w", err)
 		}
-		return 0, nil, fmt.Errorf("error getting message count: %w", err)
+		if !confirmed {
+			return 0, nil, fmt.Errorf("latest agreed assertion of %v not yet in our node: %w", globalState, err)
+		}
+		panic(fmt.Errorf("latest confirmed assertion of %v does not match what the node knows: %w", globalState, err))
 	}
 
 	if !caughtUp {
