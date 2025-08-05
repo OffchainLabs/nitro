@@ -79,10 +79,11 @@ type AuctioneerServerConfig struct {
 }
 
 var DefaultAuctioneerConsumerConfig = pubsub.ConsumerConfig{
+	ResponseEntryTimeout: time.Minute * 5,
 	// Messages with no heartbeat for over 1s will be reclaimed by the auctioneer
 	IdletimeToAutoclaim: time.Second,
-
-	ResponseEntryTimeout: time.Minute * 5,
+	Retry:               true,
+	MaxRetryCount:       -1,
 }
 
 var DefaultAuctioneerServerConfig = AuctioneerServerConfig{
