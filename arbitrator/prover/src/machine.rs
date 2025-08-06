@@ -2097,13 +2097,34 @@ impl Machine {
                 }
                 Opcode::CrossModuleInternalCall => {
                     let call_internal = inst.argument_data as u32;
-                    let call_module = value_stack.pop().unwrap().assume_u32();
+                    let Some(call_module_val) = value_stack.pop() else {
+                        bail!("WASM validation failed: value stack underflow in CrossModuleInternalCall");
+                    };
+                    let call_module = call_module_val.assume_u32();
+                    
+                    // Validate module index to prevent out-of-bounds access
+                    if call_module as usize >= self.modules.len() {
+                        bail!("WASM validation failed: invalid module index {} in CrossModuleInternalCall (max: {})", 
+                              call_module, self.modules.len());
+                    }
+                    
                     value_stack.push(Value::InternalRef(self.pc));
                     value_stack.push(self.pc.module.into());
                     value_stack.push(module.internals_offset.into());
+                    
+                    // Safe to access module now that we've validated the index
                     module = &mut self.modules[call_module as usize];
+                    
+                    // Validate function index within the module
+                    let target_func = module.internals_offset.checked_add(call_internal)
+                        .ok_or_else(|| eyre!("Function index overflow in CrossModuleInternalCall"))?;
+                    if target_func as usize >= module.funcs.len() {
+                        bail!("WASM validation failed: invalid function index {} in module {} (max: {})", 
+                              target_func, call_module, module.funcs.len());
+                    }
+                    
                     self.pc.module = call_module;
-                    self.pc.func = module.internals_offset + call_internal;
+                    self.pc.func = target_func;
                     self.pc.inst = 0;
                     reset_refs!();
                 }
@@ -2417,18 +2438,32 @@ impl Machine {
                     value_stack.push(x.into());
                 }
                 Opcode::MoveFromStackToInternal => {
-                    self.internal_stack.push(value_stack.pop().unwrap());
+                    let Some(val) = value_stack.pop() else {
+                        bail!("WASM validation failed: value stack underflow in MoveFromStackToInternal");
+                    };
+                    self.internal_stack.push(val);
                 }
                 Opcode::MoveFromInternalToStack => {
-                    value_stack.push(self.internal_stack.pop().unwrap());
+                    let Some(val) = self.internal_stack.pop() else {
+                        bail!("WASM validation failed: internal stack underflow in MoveFromInternalToStack");
+                    };
+                    value_stack.push(val);
                 }
                 Opcode::Dup => {
-                    let val = value_stack.last().cloned().unwrap();
+                    let Some(val) = value_stack.last().cloned() else {
+                        bail!("WASM validation failed: value stack underflow in Dup");
+                    };
                     value_stack.push(val);
                 }
                 Opcode::GetGlobalStateBytes32 => {
-                    let ptr = value_stack.pop().unwrap().assume_u32();
-                    let idx = value_stack.pop().unwrap().assume_u32() as usize;
+                    let Some(ptr_val) = value_stack.pop() else {
+                        bail!("WASM validation failed: value stack underflow in GetGlobalStateBytes32 (ptr)");
+                    };
+                    let ptr = ptr_val.assume_u32();
+                    let Some(idx_val) = value_stack.pop() else {
+                        bail!("WASM validation failed: value stack underflow in GetGlobalStateBytes32 (idx)");
+                    };
+                    let idx = idx_val.assume_u32() as usize;
                     if idx >= self.global_state.bytes32_vals.len()
                         || !module
                             .memory
@@ -2438,8 +2473,14 @@ impl Machine {
                     }
                 }
                 Opcode::SetGlobalStateBytes32 => {
-                    let ptr = value_stack.pop().unwrap().assume_u32();
-                    let idx = value_stack.pop().unwrap().assume_u32() as usize;
+                    let Some(ptr_val) = value_stack.pop() else {
+                        bail!("WASM validation failed: value stack underflow in SetGlobalStateBytes32 (ptr)");
+                    };
+                    let ptr = ptr_val.assume_u32();
+                    let Some(idx_val) = value_stack.pop() else {
+                        bail!("WASM validation failed: value stack underflow in SetGlobalStateBytes32 (idx)");
+                    };
+                    let idx = idx_val.assume_u32() as usize;
                     if idx >= self.global_state.bytes32_vals.len() {
                         error!();
                     } else if let Some(hash) = module.memory.load_32_byte_aligned(ptr.into()) {
@@ -2449,7 +2490,10 @@ impl Machine {
                     }
                 }
                 Opcode::GetGlobalStateU64 => {
-                    let idx = value_stack.pop().unwrap().assume_u32() as usize;
+                    let Some(idx_val) = value_stack.pop() else {
+                        bail!("WASM validation failed: value stack underflow in GetGlobalStateU64");
+                    };
+                    let idx = idx_val.assume_u32() as usize;
                     if idx >= self.global_state.u64_vals.len() {
                         error!();
                     } else {
@@ -2457,8 +2501,14 @@ impl Machine {
                     }
                 }
                 Opcode::SetGlobalStateU64 => {
-                    let val = value_stack.pop().unwrap().assume_u64();
-                    let idx = value_stack.pop().unwrap().assume_u32() as usize;
+                    let Some(val_val) = value_stack.pop() else {
+                        bail!("WASM validation failed: value stack underflow in SetGlobalStateU64 (val)");
+                    };
+                    let val = val_val.assume_u64();
+                    let Some(idx_val) = value_stack.pop() else {
+                        bail!("WASM validation failed: value stack underflow in SetGlobalStateU64 (idx)");
+                    };
+                    let idx = idx_val.assume_u32() as usize;
                     if idx >= self.global_state.u64_vals.len() {
                         error!();
                     } else {
@@ -2466,8 +2516,14 @@ impl Machine {
                     }
                 }
                 Opcode::ReadPreImage => {
-                    let offset = value_stack.pop().unwrap().assume_u32();
-                    let ptr = value_stack.pop().unwrap().assume_u32();
+                    let Some(offset_val) = value_stack.pop() else {
+                        bail!("WASM validation failed: value stack underflow in ReadPreImage (offset)");
+                    };
+                    let offset = offset_val.assume_u32();
+                    let Some(ptr_val) = value_stack.pop() else {
+                        bail!("WASM validation failed: value stack underflow in ReadPreImage (ptr)");
+                    };
+                    let ptr = ptr_val.assume_u32();
                     let preimage_ty = PreimageType::try_from(u8::try_from(inst.argument_data)?)?;
                     // Preimage reads must be word aligned
                     if offset % 32 != 0 {
@@ -2506,9 +2562,18 @@ impl Machine {
                     value_stack.push(Value::I32(len as u32));
                 }
                 Opcode::ReadInboxMessage => {
-                    let offset = value_stack.pop().unwrap().assume_u32();
-                    let ptr = value_stack.pop().unwrap().assume_u32();
-                    let msg_num = value_stack.pop().unwrap().assume_u64();
+                    let Some(offset_val) = value_stack.pop() else {
+                        bail!("WASM validation failed: value stack underflow in ReadInboxMessage (offset)");
+                    };
+                    let offset = offset_val.assume_u32();
+                    let Some(ptr_val) = value_stack.pop() else {
+                        bail!("WASM validation failed: value stack underflow in ReadInboxMessage (ptr)");
+                    };
+                    let ptr = ptr_val.assume_u32();
+                    let Some(msg_num_val) = value_stack.pop() else {
+                        bail!("WASM validation failed: value stack underflow in ReadInboxMessage (msg_num)");
+                    };
+                    let msg_num = msg_num_val.assume_u64();
                     let inbox_identifier =
                         argument_data_to_inbox(inst.argument_data).expect("Bad inbox indentifier");
                     if let Some(message) = self.inbox_contents.get(&(inbox_identifier, msg_num)) {
@@ -2539,7 +2604,10 @@ impl Machine {
                     }
                 }
                 Opcode::LinkModule => {
-                    let ptr = value_stack.pop().unwrap().assume_u32();
+                    let Some(ptr_val) = value_stack.pop() else {
+                        bail!("WASM validation failed: value stack underflow in LinkModule");
+                    };
+                    let ptr = ptr_val.assume_u32();
                     let Some(hash) = module.memory.load_32_byte_aligned(ptr.into()) else {
                         error!("no hash for {}", ptr)
                     };
