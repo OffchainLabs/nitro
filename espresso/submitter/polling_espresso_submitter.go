@@ -704,12 +704,7 @@ func (s *PollingEspressoSubmitter) RegisterSigner() error {
 
 func (s *PollingEspressoSubmitter) Start(sw *stopwaiter.StopWaiter) error {
 	if s.lightClientReader != nil && s.espressoClient != nil {
-		err := s.RegisterSigner()
-		if err != nil {
-			log.Error("failed to register espresso key manager", "err", err)
-			return err
-		}
-		err = stopwaiter.CallIterativelyWith[struct{}](sw, s.pollSubmittedTransactionForFinality, nil)
+		err := stopwaiter.CallIterativelyWith[struct{}](sw, s.pollSubmittedTransactionForFinality, nil)
 		if err != nil {
 			return err
 		}

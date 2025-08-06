@@ -1,6 +1,7 @@
 package espressotee
 
 import (
+	"context"
 	"fmt"
 	"math/big"
 	"strings"
@@ -8,7 +9,10 @@ import (
 
 	"github.com/spf13/pflag"
 
+	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
+
+	"github.com/offchainlabs/nitro/arbnode/dataposter"
 )
 
 type TEE uint8
@@ -95,6 +99,30 @@ func BaseFeeCheck(
 	}
 	if !lowBaseFee {
 		return fmt.Errorf("base fee is not low enough to attempt to register signer")
+	}
+	return nil
+}
+
+/**
+ * This functions checks the dataposter nonce and the parent chains nonce
+ * If these two differ, dont send a transaction as registering the signer is costly and we dont want to send multiple transactions.
+ * This will constantly be called when we try and post a batch which will allow time for the two to eventually sync up.
+ */
+func NonceValidation(context context.Context, l1Client *ethclient.Client, dataPoster *dataposter.DataPoster) error {
+	nonce, err := l1Client.NonceAt(context, dataPoster.Sender(), nil)
+	if err != nil {
+		log.Warn("could not retrieve on-chain nonce", "err", err)
+		return err
+	}
+	dataPosterNonce, _, err := dataPoster.GetNextNonceAndMeta(context)
+	if err != nil {
+		log.Warn("error getting dataposter nonce", "err", err)
+		return err
+	}
+	log.Info("successfully got datapaster next nonce and on-chain nonce", "dataposter nonce", dataPosterNonce, "on-chain nonce", nonce)
+	if dataPosterNonce != nonce {
+		log.Warn("dataposter and on-chain nonce have mismatch, not sending txn", "dataposter nonce", dataPosterNonce, "on-chain nonce", nonce)
+		return err
 	}
 	return nil
 }

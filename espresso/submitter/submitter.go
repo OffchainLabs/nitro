@@ -24,6 +24,7 @@ type EspressoSubmitter interface {
 	Start(sw *stopwaiter.StopWaiter) error
 	NotifyNewPendingMessages(pos arbutil.MessageIndex, messages []arbostypes.MessageWithMetadataAndBlockInfo) error
 	GetKeyManager() espresso_key_manager.EspressoKeyManagerInterface
+	RegisterSigner() error
 
 	IsEscapeHatchEnabled() bool
 	GetLastConfirmedPosition() (*arbutil.MessageIndex, error)

@@ -84,13 +84,10 @@ func (e *EspressoTEEVerifier) RegisterSigner(
 	if err != nil {
 		return err
 	}
-	nonce, err := e.l1Client.NonceAt(context.Background(), dataPoster.Sender(), nil)
-	if err == nil {
-		log.Info("registering signer: on chain nonce", "nonce", nonce)
-	}
-	dataPosterNonce, _, err := dataPoster.GetNextNonceAndMeta(context.Background())
-	if err == nil {
-		log.Info("registering signer: dataposter next nonce", "nonce", dataPosterNonce)
+
+	err = NonceValidation(context.Background(), e.l1Client, dataPoster)
+	if err != nil {
+		return err
 	}
 	// Add a buffer to the estimate for the gas limit
 	gasLimit := estimate * (100 + registerSignerOpts.GasLimitBufferIncreasePercent) / 100
