@@ -891,14 +891,56 @@ func (s *Sequencer) handleInactive(ctx context.Context, queueItems []txQueueItem
 
 var sequencerInternalError = errors.New("sequencer internal error")
 
-func (s *Sequencer) makeSequencingHooks() *arbos.SequencingHooks {
-	return &arbos.SequencingHooks{
-		PreTxFilter:             s.preTxFilter,
-		PostTxFilter:            s.postTxFilter,
-		DiscardInvalidTxsEarly:  true,
-		TxErrors:                []error{},
-		ConditionalOptionsForTx: nil,
+type fullSequencingHooks struct {
+	arbos.SequencingHooks
+	queueItems   []txQueueItem
+	queueItemIdx int
+	sizeSoFar    int
+	maxSize      int
+}
+
+// we accept a BUNCH of assumptions about how this func is called
+func (s *fullSequencingHooks) GetNextTx() (*types.Transaction, error) {
+	if len(s.SequencingHooks.TxErrors) != s.queueItemIdx {
+		return nil, fmt.Errorf("fullSequencingHooks: GetNextTx out of order! errs: %d, idx: %d", len(s.SequencingHooks.TxErrors), s.queueItemIdx)
 	}
+	if s.queueItemIdx > 0 && s.TxErrors[s.queueItemIdx-1] == nil {
+		s.sizeSoFar += s.queueItems[s.queueItemIdx-1].txSize
+	}
+	if s.queueItemIdx >= len(s.queueItems) {
+		return nil, nil
+	}
+	if s.sizeSoFar+s.queueItems[s.queueItemIdx].txSize > s.maxSize {
+		return nil, nil
+	}
+	s.queueItemIdx += 1
+	return s.queueItems[s.queueItemIdx-1].tx, nil
+}
+
+func (s *fullSequencingHooks) GetScheduledTx(i int) (*types.Transaction, error) {
+	if i > s.queueItemIdx {
+		return nil, fmt.Errorf("fullSequencingHooks: GetScheduledTx out of order! req: %d, idx: %d", i, s.queueItemIdx)
+	}
+	return s.queueItems[i].tx, nil
+}
+
+func (s *Sequencer) makeSequencingHooks(items []txQueueItem) *fullSequencingHooks {
+	res := &fullSequencingHooks{
+		arbos.SequencingHooks{
+			PreTxFilter:             s.preTxFilter,
+			PostTxFilter:            s.postTxFilter,
+			DiscardInvalidTxsEarly:  true,
+			TxErrors:                []error{},
+			ConditionalOptionsForTx: nil,
+		},
+		items,
+		0,
+		0,
+		s.config().MaxTxDataSize,
+	}
+	res.SequencingHooks.NextTxToSequence = res.GetNextTx
+	res.SequencingHooks.SequencedTx = res.GetScheduledTx
+	return res
 }
 
 func (s *Sequencer) expireNonceFailures() *time.Timer {
@@ -917,8 +959,7 @@ func (s *Sequencer) expireNonceFailures() *time.Timer {
 }
 
 // There's no guarantee that returned tx nonces will be correct
-func (s *Sequencer) precheckNonces(queueItems []txQueueItem, totalBlockSize int) []txQueueItem {
-	config := s.config()
+func (s *Sequencer) precheckNonces(queueItems []txQueueItem) []txQueueItem {
 	bc := s.execEngine.bc
 	latestHeader := bc.CurrentBlock()
 	latestState, err := bc.StateAt(latestHeader.Root)
@@ -969,13 +1010,8 @@ func (s *Sequencer) precheckNonces(queueItems []txQueueItem, totalBlockSize int)
 				if err != nil {
 					revivingFailure.queueItem.returnResult(err)
 				} else {
-					if arbmath.SaturatingAdd(totalBlockSize, revivingFailure.queueItem.txSize) > config.MaxTxDataSize {
-						// This tx would be too large to add to this block
-						s.txRetryQueue.Push(revivingFailure.queueItem)
-					} else {
-						nextQueueItem = &revivingFailure.queueItem
-						totalBlockSize += revivingFailure.queueItem.txSize
-					}
+					// This tx would be too large to add to this block
+					s.txRetryQueue.Push(revivingFailure.queueItem)
 				}
 			}
 		} else if txNonce < stateNonce || txNonce > pendingNonce {
@@ -1011,7 +1047,6 @@ func (s *Sequencer) precheckNonces(queueItems []txQueueItem, totalBlockSize int)
 
 func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 	var queueItems []txQueueItem
-	var totalBlockSize int
 
 	defer func() {
 		panicErr := recover()
@@ -1130,44 +1165,22 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 			queueItem.returnResult(fmt.Errorf("%w: maxFeePerGas: %s baseFee: %s", core.ErrFeeCapTooLow, queueItem.tx.GasFeeCap(), lastBlock.BaseFee))
 			continue
 		}
-		if totalBlockSize+queueItem.txSize > config.MaxTxDataSize {
-			// This tx would be too large to add to this batch
-			s.txRetryQueue.Push(queueItem)
-			// End the batch here to put this tx in the next one
-			break
-		}
-		totalBlockSize += queueItem.txSize
 		queueItems = append(queueItems, queueItem)
 	}
 
 	s.nonceCache.Resize(config.NonceCacheSize) // Would probably be better in a config hook but this is basically free
 	s.nonceCache.BeginNewBlock()
-	queueItems = s.precheckNonces(queueItems, totalBlockSize)
+	queueItems = s.precheckNonces(queueItems)
 	txes := make([]*types.Transaction, len(queueItems))
 	timeboostedTxs := make(map[common.Hash]struct{})
-	hooks := s.makeSequencingHooks()
+	hooks := s.makeSequencingHooks(queueItems)
 	hooks.ConditionalOptionsForTx = make([]*arbitrum_types.ConditionalOptions, len(queueItems))
-	totalBlockSize = 0 // recompute the totalBlockSize to double check it
 	for i, queueItem := range queueItems {
 		txes[i] = queueItem.tx
-		totalBlockSize = arbmath.SaturatingAdd(totalBlockSize, queueItem.txSize)
 		hooks.ConditionalOptionsForTx[i] = queueItem.options
 		if queueItem.isTimeboosted {
 			timeboostedTxs[queueItem.tx.Hash()] = struct{}{}
 		}
-	}
-
-	if totalBlockSize > config.MaxTxDataSize {
-		for _, queueItem := range queueItems {
-			s.txRetryQueue.Push(queueItem)
-		}
-		log.Error(
-			"put too many transactions in a block",
-			"numTxes", len(queueItems),
-			"totalBlockSize", totalBlockSize,
-			"maxTxDataSize", config.MaxTxDataSize,
-		)
-		return false
 	}
 
 	if s.handleInactive(ctx, queueItems) {
@@ -1209,9 +1222,12 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 		err   error
 	)
 	if config.EnableProfiling {
-		block, err = s.execEngine.SequenceTransactionsWithProfiling(header, txes, hooks, timeboostedTxs)
+		block, err = s.execEngine.SequenceTransactionsWithProfiling(header, &hooks.SequencingHooks, timeboostedTxs)
 	} else {
-		block, err = s.execEngine.SequenceTransactions(header, txes, hooks, timeboostedTxs)
+		block, err = s.execEngine.SequenceTransactions(header, &hooks.SequencingHooks, timeboostedTxs)
+	}
+	for i := hooks.queueItemIdx; i < len(hooks.queueItems); i++ {
+		s.txRetryQueue.Push(hooks.queueItems[i])
 	}
 	elapsed := time.Since(start)
 	blockCreationTimer.Update(elapsed.Nanoseconds())
