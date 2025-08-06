@@ -42,7 +42,7 @@ var DefaultEspressoForceInclusionCheckerConfig = ForceInclusionCheckerConfig{
 	BlockThresholdTolerance: 960,
 	//  Default is maxTimeVariationDelaySeconds=86400 (24 hour in seconds)
 	// We are setting the default value to 20 hours for buffer
-	// in the contract so we need to set (86400 - 72000) seconds which is 12,000 seconds
+	// in the contract so we need to set (86400 - 72000) seconds which is 14,400 seconds
 	SecondThresholdTolerance: 14400,
 	ErrorToleranceDuration:   time.Minute * 8,
 }
