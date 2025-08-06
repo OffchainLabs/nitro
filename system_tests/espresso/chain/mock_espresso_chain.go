@@ -29,8 +29,8 @@ type MockEspressoChain struct {
 	UnimplementedEspressoClient
 	Lock sync.RWMutex
 
-	Height     uint64
-	PendingTxs []espresso_common.Transaction
+	Height       uint64
+	BlockBuilder BlockBuilder
 
 	BlockHeightStore map[uint64]BlockDetail
 	BlockHashStore   map[string]BlockDetail // This is not used in the mock, but kept for interface compatibility
@@ -40,14 +40,39 @@ type MockEspressoChain struct {
 // Ensure MockEspressoChain implements the EspressoClient interface.
 var _ espresso_client.EspressoClient = &MockEspressoChain{}
 
+// MockEspressoChainOption is a functional option type for configuring
+// MockEspressoChain instances.
+type MockEspressoChainOption func(*MockEspressoChain)
+
+// WithBlockHeight sets the initial block height for the MockEspressoChain.
+func WithBlockHeight(height uint64) MockEspressoChainOption {
+	return func(chain *MockEspressoChain) {
+		chain.Height = height
+	}
+}
+
+// WithBuilder sets the BlockBuilder for the MockEspressoChain.
+func WithBuilder(builder BlockBuilder) MockEspressoChainOption {
+	return func(chain *MockEspressoChain) {
+		chain.BlockBuilder = builder
+	}
+}
+
 // NewMockEspressoChain creates a new instance of MockEspressoChain with
 // initialized stores for blocks and transactions.
-func NewMockEspressoChain() *MockEspressoChain {
-	return &MockEspressoChain{
+func NewMockEspressoChain(options ...MockEspressoChainOption) *MockEspressoChain {
+	chain := &MockEspressoChain{
+		BlockBuilder:     NewIdealBlockBuilder(),
 		BlockHeightStore: make(map[uint64]BlockDetail),
 		BlockHashStore:   make(map[string]BlockDetail),
 		TxnHashStore:     make(map[string]TransactionDetail),
 	}
+
+	for _, option := range options {
+		option(chain)
+	}
+
+	return chain
 }
 
 // ErrorBlockNotFoundForHeight is an error type that indicates a block was not
@@ -83,13 +108,16 @@ func (m *MockEspressoChain) Advance() {
 	height := m.Height
 	m.Height++
 
-	block := BlockDetail{
-		Height:       height,
-		NumTxns:      uint64(len(m.PendingTxs)),
-		Transactions: m.PendingTxs,
+	pendingTxs, err := m.BlockBuilder.NextTransactions()
+	if err != nil {
+		panic(fmt.Sprintf("failed to get next transactions: %v", err))
 	}
 
-	m.PendingTxs = nil // Clear pending transactions after committing them to the block
+	block := BlockDetail{
+		Height:       height,
+		NumTxns:      uint64(len(pendingTxs)),
+		Transactions: pendingTxs,
+	}
 
 	blockTag, err := block.TaggedBase64()
 	if err != nil {
@@ -247,19 +275,7 @@ func (e ErrorSubmitTransaction) Error() string {
 // Espresso chain. It generates a unique hash for the transaction, appends it
 // to the list of pending transactions, and returns the generated hash.
 func (m *MockEspressoChain) SubmitTransaction(ctx context.Context, tx espresso_common.Transaction) (*espresso_common.TaggedBase64, error) {
-	// Need to generate a unique hash for the transaction
-	tag, err := TransactionTaggedBase64(tx)
-	if err != nil {
-		return nil, ErrorSubmitTransaction{
-			Cause: err,
-		}
-	}
-
-	m.Lock.Lock()
-	m.PendingTxs = append(m.PendingTxs, tx)
-	m.Lock.Unlock()
-
-	return tag, nil
+	return m.BlockBuilder.SubmitTransaction(ctx, tx)
 }
 
 // FetchLatestBlockHeight retrieves the latest block height from the mock

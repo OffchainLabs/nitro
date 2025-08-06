@@ -18,5 +18,5 @@ gotestsum \
     -v \
     -timeout 45m \
     -p 1 \
-    ./system_tests/ \
+    ./system_tests/... \
     -run 'TestEspresso'

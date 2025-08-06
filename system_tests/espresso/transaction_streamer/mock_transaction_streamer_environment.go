@@ -35,6 +35,8 @@ type MockTransactionStreamerEnvironmentConfig struct {
 	TransactionStreamerConfigFetcher arbnode.TransactionStreamerConfigFetcher
 	SnapSyncConfig                   *arbnode.SnapSyncConfig
 
+	ChainOptions []chain.MockEspressoChainOption
+
 	// Espresso Environment Configuration options
 	EspressoClientOptions []TransactionStreamerEspressoClientOption
 
@@ -139,6 +141,14 @@ func WithSnapSyncConfig(snapSyncConfig *arbnode.SnapSyncConfig) MockTransactionS
 	}
 }
 
+// AddChainOptions is a function that adds options to the
+// MockTransactionStreamerEnvironmentConfig for the Mock Espresso Chain.
+func AddChainOptions(options ...chain.MockEspressoChainOption) MockTransactionStreamerEnvironmentOption {
+	return func(config *MockTransactionStreamerEnvironmentConfig) {
+		config.ChainOptions = append(config.ChainOptions, options...)
+	}
+}
+
 // AddEspressoClientOptions is a function that adds options to the Espresso
 // Client in the MockTransactionStreamerEnvironmentConfig.
 func AddEspressoClientOptions(options ...TransactionStreamerEspressoClientOption) MockTransactionStreamerEnvironmentOption {
@@ -152,6 +162,24 @@ func AddEspressoClientOptions(options ...TransactionStreamerEspressoClientOption
 func WithEspressoTransactionStreamerOptions(options ...arbnode.TransactionStreamerEspressoOption) MockTransactionStreamerEnvironmentOption {
 	return func(config *MockTransactionStreamerEnvironmentConfig) {
 		config.EspressoTransactionStreamerOptions = append(config.EspressoTransactionStreamerOptions, options...)
+	}
+}
+
+// WithMultipleMockTransactionStreamerEnvironmentOptions is a function that
+// allows for the application of multiple MockTransactionStreamerEnvironmentOptions
+// to the MockTransactionStreamerEnvironmentConfig.
+func WithMultipleMockTransactionStreamerEnvironmentOptions(options ...MockTransactionStreamerEnvironmentOption) MockTransactionStreamerEnvironmentOption {
+	return func(config *MockTransactionStreamerEnvironmentConfig) {
+		applyMockTransactionStreamerEnvironmentOptions(config, options...)
+	}
+}
+
+// applyMockTransactionStreamerEnvironmentOptions is a helper function that
+// applies the provided MockTransactionStreamerEnvironmentOptions to the
+// MockTransactionStreamerEnvironmentConfig.
+func applyMockTransactionStreamerEnvironmentOptions(config *MockTransactionStreamerEnvironmentConfig, options ...MockTransactionStreamerEnvironmentOption) {
+	for _, option := range options {
+		option(config)
 	}
 }
 
@@ -183,12 +211,12 @@ func NewMockTransactionStreamerEnvironment(ctx context.Context, options ...MockT
 	}
 
 	// Apply the provided options to the configuration
-	for _, option := range options {
-		option(config)
-	}
+	applyMockTransactionStreamerEnvironmentOptions(config, options...)
 
 	// Create a mock Espresso Chain
-	espressoChain := chain.NewMockEspressoChain()
+	espressoChain := chain.NewMockEspressoChain(
+		config.ChainOptions...,
+	)
 
 	// Create and configure the Espresso Client
 	var espressoClient espresso_client.EspressoClient = espressoChain
@@ -227,5 +255,9 @@ func NewMockTransactionStreamerEnvironment(ctx context.Context, options ...MockT
 		),
 	)
 
-	return espressoChain, espressoClient, submitter, streamer, err
+	if err != nil {
+		return nil, nil, nil, nil, ErrorFailedToCreateEspressoSubmitter{Cause: err}
+	}
+
+	return espressoChain, espressoClient, submitter, streamer, nil
 }
