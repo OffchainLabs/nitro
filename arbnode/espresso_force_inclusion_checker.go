@@ -37,12 +37,13 @@ var DefaultEspressoForceInclusionCheckerConfig = ForceInclusionCheckerConfig{
 	RetryTime:       time.Second * 2,
 	PollingInterval: time.Minute * 8,
 	// Default maxTimeVariationDelayBlocks=5760 in the contract (eth blocks produced in 24 hours)
-	// We are setting the default value to 20 hours for buffer
-	BlockThresholdTolerance: 4800,
+	// We are setting the default value to 20 hours for buffer so we need to set (5760 - 4800) blocks which is
+	// 960 blocks
+	BlockThresholdTolerance: 960,
 	//  Default is maxTimeVariationDelaySeconds=86400 (24 hour in seconds)
 	// We are setting the default value to 20 hours for buffer
-	// in the contract
-	SecondThresholdTolerance: 72000,
+	// in the contract so we need to set (86400 - 72000) seconds which is 12,000 seconds
+	SecondThresholdTolerance: 14400,
 	ErrorToleranceDuration:   time.Minute * 8,
 }
 
