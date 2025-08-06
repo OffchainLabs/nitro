@@ -115,6 +115,8 @@ func createNewHeader(prevHeader *types.Header, l1info *L1Info, state *arbosState
 type ConditionalOptionsForTx []*arbitrum_types.ConditionalOptions
 
 type SequencingHooks struct {
+	NextTxToSequence        func() (*types.Transaction, error)                                                                                                                                      // Must be set
+	SequencedTx             func(int) (*types.Transaction, error)                                                                                                                                   // Must be set
 	TxErrors                []error                                                                                                                                                                 // This can be unset
 	DiscardInvalidTxsEarly  bool                                                                                                                                                                    // This can be unset
 	PreTxFilter             func(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, *arbitrum_types.ConditionalOptions, common.Address, *L1Info) error // This has to be set. Writes to *state.StateDB object should be avoided to prevent invalid state from permeating
@@ -123,8 +125,40 @@ type SequencingHooks struct {
 	ConditionalOptionsForTx []*arbitrum_types.ConditionalOptions                                                                                                                                    // This can be unset
 }
 
-func NoopSequencingHooks() *SequencingHooks {
+type allTxScheduler struct {
+	txs types.Transactions
+	idx int
+}
+
+func (s *allTxScheduler) GetNextTx() (*types.Transaction, error) {
+	if s.idx > len(s.txs) {
+		return nil, errors.New("allTxScheduler: requested too many transactions")
+	}
+	if s.idx == len(s.txs) {
+		return nil, nil
+	}
+	s.idx += 1
+	return s.txs[s.idx-1], nil
+}
+
+func (s *allTxScheduler) GetScheduledTx(i int) (*types.Transaction, error) {
+	if i > len(s.txs) {
+		return nil, errors.New("get wrong tx (more then possible)")
+	}
+	if i > s.idx {
+		return nil, errors.New("get wrong tx (more then exist)")
+	}
+	return s.txs[i], nil
+}
+
+func NoopSequencingHooks(txes types.Transactions) *SequencingHooks {
+	scheduler := &allTxScheduler{
+		txes,
+		0,
+	}
 	return &SequencingHooks{
+		scheduler.GetNextTx,
+		scheduler.GetScheduledTx,
 		[]error{},
 		false,
 		func(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, *arbitrum_types.ConditionalOptions, common.Address, *L1Info) error {
@@ -153,17 +187,16 @@ func ProduceBlock(
 		log.Warn("error parsing incoming message", "err", err)
 		txes = types.Transactions{}
 	}
+	hooks := NoopSequencingHooks(txes)
 
-	hooks := NoopSequencingHooks()
 	return ProduceBlockAdvanced(
-		message.Header, txes, delayedMessagesRead, lastBlockHeader, statedb, chainContext, hooks, isMsgForPrefetch, runCtx,
+		message.Header, delayedMessagesRead, lastBlockHeader, statedb, chainContext, hooks, isMsgForPrefetch, runCtx,
 	)
 }
 
 // A bit more flexible than ProduceBlock for use in the sequencer.
 func ProduceBlockAdvanced(
 	l1Header *arbostypes.L1IncomingMessageHeader,
-	txes types.Transactions,
 	delayedMessagesRead uint64,
 	lastBlockHeader *types.Header,
 	statedb *state.StateDB,
@@ -200,7 +233,6 @@ func ProduceBlockAdvanced(
 
 	// Prepend a tx before all others to touch up the state (update the L1 block num, pricing pools, etc)
 	startTx := InternalTxStartBlock(chainConfig.ChainID, l1Header.L1BaseFee, l1BlockNum, header, lastBlockHeader)
-	txes = append(types.Transactions{types.NewTx(startTx)}, txes...)
 
 	complete := types.Transactions{}
 	receipts := types.Receipts{}
@@ -213,14 +245,19 @@ func ProduceBlockAdvanced(
 	// We'll check that the block can fit each message, so this pool is set to not run out
 	gethGas := core.GasPool(l2pricing.GethBlockGasLimit)
 
-	for len(txes) > 0 || len(redeems) > 0 {
+	firstTx := types.NewTx(startTx)
+
+	for {
 		// repeatedly process the next tx, doing redeems created along the way in FIFO order
 
 		var tx *types.Transaction
 		var options *arbitrum_types.ConditionalOptions
-		hooks := NoopSequencingHooks()
+		hooks := NoopSequencingHooks(nil) // TODO
 		isUserTx := false
-		if len(redeems) > 0 {
+		if firstTx != nil {
+			tx = firstTx
+			firstTx = nil
+		} else if len(redeems) > 0 {
 			tx = redeems[0]
 			redeems = redeems[1:]
 
@@ -234,8 +271,13 @@ func ProduceBlockAdvanced(
 				continue
 			}
 		} else {
-			tx = txes[0]
-			txes = txes[1:]
+			tx, err = sequencingHooks.NextTxToSequence()
+			if err != nil {
+				return nil, nil, fmt.Errorf("error from nextTx:%w, userProcessed: %d, errs: %d", err, userTxsProcessed, len(sequencingHooks.TxErrors))
+			}
+			if tx == nil {
+				break
+			}
 			if tx.Type() != types.ArbitrumInternalTxType {
 				hooks = sequencingHooks // the sequencer has the ability to drop this tx
 				isUserTx = true
