@@ -1171,12 +1171,10 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 	s.nonceCache.Resize(config.NonceCacheSize) // Would probably be better in a config hook but this is basically free
 	s.nonceCache.BeginNewBlock()
 	queueItems = s.precheckNonces(queueItems)
-	txes := make([]*types.Transaction, len(queueItems))
 	timeboostedTxs := make(map[common.Hash]struct{})
 	hooks := s.makeSequencingHooks(queueItems)
 	hooks.ConditionalOptionsForTx = make([]*arbitrum_types.ConditionalOptions, len(queueItems))
 	for i, queueItem := range queueItems {
-		txes[i] = queueItem.tx
 		hooks.ConditionalOptionsForTx[i] = queueItem.options
 		if queueItem.isTimeboosted {
 			timeboostedTxs[queueItem.tx.Hash()] = struct{}{}
@@ -1226,9 +1224,6 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 	} else {
 		block, err = s.execEngine.SequenceTransactions(header, &hooks.SequencingHooks, timeboostedTxs)
 	}
-	for i := hooks.queueItemIdx; i < len(hooks.queueItems); i++ {
-		s.txRetryQueue.Push(hooks.queueItems[i])
-	}
 	elapsed := time.Since(start)
 	blockCreationTimer.Update(elapsed.Nanoseconds())
 	if elapsed >= time.Second*5 {
@@ -1236,10 +1231,16 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 		if block != nil {
 			blockNum = block.Number()
 		}
-		log.Warn("took over 5 seconds to sequence a block", "elapsed", elapsed, "numTxes", len(txes), "success", block != nil, "l2Block", blockNum)
+		log.Warn("took over 5 seconds to sequence a block", "elapsed", elapsed, "numTxes", hooks.queueItemIdx, "success", block != nil, "l2Block", blockNum)
 	}
-	if err == nil && len(hooks.TxErrors) != len(txes) {
-		err = fmt.Errorf("unexpected number of error results: %v vs number of txes %v", len(hooks.TxErrors), len(txes))
+	if err == nil {
+		if len(hooks.TxErrors) != hooks.queueItemIdx {
+			err = fmt.Errorf("unexpected number of error results: %v vs number of txes %v", len(hooks.TxErrors), hooks.queueItemIdx)
+		} else {
+			for i := hooks.queueItemIdx; i < len(hooks.queueItems); i++ {
+				s.txRetryQueue.Push(hooks.queueItems[i])
+			}
+		}
 	}
 	if errors.Is(err, execution.ErrRetrySequencer) {
 		log.Warn("error sequencing transactions", "err", err)

@@ -379,7 +379,8 @@ func testBlockHashComparison(t *testing.T, blockHash *common.Hash, mustMismatch 
 		L1BaseFee:   nil,
 	}
 	hooks := arbos.NoopSequencingHooks(types.Transactions{tx})
-	hooks.NextTxToSequence()
+	_, err = hooks.NextTxToSequence()
+	Require(t, err)
 	hooks.TxErrors = []error{nil}
 	l1IncomingMsg, err := gethexec.MessageFromTxes(
 		&l1IncomingMsgHeader,
