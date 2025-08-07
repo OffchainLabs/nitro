@@ -5,6 +5,7 @@ package gethexec
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/pkg/errors"
@@ -116,6 +117,7 @@ func (t *ExpressLaneTracker) Start(ctxIn context.Context) {
 				log.Error("Could not filter auction resolutions event", "error", err)
 				continue
 			}
+
 			for it.Next() {
 				timeSinceAuctionClose := t.roundTimingInfo.AuctionClosing - t.roundTimingInfo.TimeTilNextRound()
 				auctionResolutionLatency.Update(timeSinceAuctionClose.Nanoseconds())
@@ -127,8 +129,13 @@ func (t *ExpressLaneTracker) Start(ctxIn context.Context) {
 				)
 
 				t.roundControl.Store(it.Event.Round, it.Event.FirstPriceExpressLaneController)
-
 			}
+
+			if it.Error() != nil {
+				log.Error("Error while iterating auction resolutions", "error", it.Error())
+			}
+
+			it.Close()
 			fromBlock = toBlock + 1
 		}
 	})
@@ -172,7 +179,7 @@ func (t *ExpressLaneTracker) Start(ctxIn context.Context) {
 func (t *ExpressLaneTracker) RoundController(round uint64) (common.Address, error) {
 	controller, ok := t.roundControl.Load(round)
 	if !ok {
-		return common.Address{}, timeboost.ErrNoOnchainController
+		return common.Address{}, fmt.Errorf("RoundController: round %d: %w", round, timeboost.ErrNoOnchainController)
 	}
 	return controller, nil
 }
@@ -203,7 +210,7 @@ func (t *ExpressLaneTracker) ValidateExpressLaneTx(msg *timeboost.ExpressLaneSub
 
 	controller, ok := t.roundControl.Load(msg.Round)
 	if !ok {
-		return timeboost.ErrNoOnchainController
+		return fmt.Errorf("ValidateExpressLaneTx: round %d: %w", msg.Round, timeboost.ErrNoOnchainController)
 	}
 	// Extract sender address and cache it to be later used by sequenceExpressLaneSubmission
 	sender, err := msg.Sender()
