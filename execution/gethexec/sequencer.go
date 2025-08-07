@@ -63,6 +63,7 @@ var (
 type SequencerConfig struct {
 	Enable                       bool            `koanf:"enable"`
 	MaxBlockSpeed                time.Duration   `koanf:"max-block-speed" reload:"hot"`
+	ReadFromTxQueueTimeout       time.Duration   `koanf:"read-from-tx-queue-timeout" reload:"hot"`
 	MaxRevertGasReject           uint64          `koanf:"max-revert-gas-reject" reload:"hot"`
 	MaxAcceptableTimestampDelta  time.Duration   `koanf:"max-acceptable-timestamp-delta" reload:"hot"`
 	SenderWhitelist              []string        `koanf:"sender-whitelist"`
@@ -170,6 +171,7 @@ type SequencerConfigFetcher func() *SequencerConfig
 var DefaultSequencerConfig = SequencerConfig{
 	Enable:                      false,
 	MaxBlockSpeed:               time.Millisecond * 250,
+	ReadFromTxQueueTimeout:      time.Millisecond * 50,
 	MaxRevertGasReject:          0,
 	MaxAcceptableTimestampDelta: time.Hour,
 	SenderWhitelist:             []string{},
@@ -196,6 +198,7 @@ var DefaultDangerousConfig = DangerousConfig{
 
 func SequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultSequencerConfig.Enable, "act and post to l1 as sequencer")
+	f.Duration(prefix+".read-from-tx-queue-timeout", DefaultSequencerConfig.ReadFromTxQueueTimeout, "time duration after which the sequencer stops reading txs from queue")
 	f.Duration(prefix+".max-block-speed", DefaultSequencerConfig.MaxBlockSpeed, "minimum delay between blocks (sets a maximum speed of block production)")
 	f.Uint64(prefix+".max-revert-gas-reject", DefaultSequencerConfig.MaxRevertGasReject, "maximum gas executed in a revert for the sequencer to reject the transaction instead of posting it (anti-DOS)")
 	f.Duration(prefix+".max-acceptable-timestamp-delta", DefaultSequencerConfig.MaxAcceptableTimestampDelta, "maximum acceptable time difference between the local time and the latest L1 block's timestamp")
@@ -1078,7 +1081,13 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 		}
 	}()
 
+	startOfReadingFromTxQueue := time.Now()
+
 	for {
+		if time.Since(startOfReadingFromTxQueue) > config.ReadFromTxQueueTimeout {
+			break
+		}
+
 		var queueItem txQueueItem
 
 		if s.txRetryQueue.Len() > 0 {

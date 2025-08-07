@@ -143,10 +143,10 @@ func (s *allTxScheduler) GetNextTx() (*types.Transaction, error) {
 
 func (s *allTxScheduler) GetScheduledTx(i int) (*types.Transaction, error) {
 	if i > len(s.txs) {
-		return nil, errors.New("get wrong tx (more then possible)")
+		return nil, errors.New("get wrong tx (more than possible)")
 	}
 	if i > s.idx {
-		return nil, errors.New("get wrong tx (more then exist)")
+		return nil, errors.New("get wrong tx (more than exist)")
 	}
 	return s.txs[i], nil
 }
