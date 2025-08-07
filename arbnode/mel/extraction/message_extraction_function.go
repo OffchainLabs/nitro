@@ -9,6 +9,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/rlp"
 
 	"github.com/offchainlabs/nitro/arbnode/mel"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
@@ -177,15 +178,24 @@ func extractMessagesImpl(
 	var batchMetas []*mel.BatchMetadata
 	var messages []*arbostypes.MessageWithMetadata
 	// Prepend a message extraction checkpoint message to the list.
+	internalTxPayload := &MELInternalTxPayload{
+		MELState:               state,
+		ParentChainBlockHeader: parentChainHeader,
+	}
+	payloadBytes, err := rlp.EncodeToBytes(internalTxPayload)
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
 	messages = append(messages, &arbostypes.MessageWithMetadata{
 		Message: &arbostypes.L1IncomingMessage{
 			Header: &arbostypes.L1IncomingMessageHeader{
 				Kind: arbostypes.L1MessageType_MessageExtractionCheckpoint,
 			},
-			L2msg: state.Hash().Bytes(),
+			L2msg: payloadBytes,
 		},
 		DelayedMessagesRead: state.DelayedMessagesRead,
 	})
+	fmt.Println("Adding to the messages list: ", messages[0])
 	for i, batch := range batches {
 		batchTx := batchTxs[i]
 		serialized, err := serialize(

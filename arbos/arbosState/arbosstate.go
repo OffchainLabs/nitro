@@ -29,6 +29,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbos/merkleAccumulator"
+	messageextraction "github.com/offchainlabs/nitro/arbos/messageExtraction"
 	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/arbos/retryables"
 	"github.com/offchainlabs/nitro/arbos/storage"
@@ -43,17 +44,18 @@ import (
 // persisted beyond the end of the test.)
 
 type ArbosState struct {
-	arbosVersion           uint64                      // version of the ArbOS storage format and semantics
-	upgradeVersion         storage.StorageBackedUint64 // version we're planning to upgrade to, or 0 if not planning to upgrade
-	upgradeTimestamp       storage.StorageBackedUint64 // when to do the planned upgrade
-	networkFeeAccount      storage.StorageBackedAddress
-	l1PricingState         *l1pricing.L1PricingState
-	l2PricingState         *l2pricing.L2PricingState
-	retryableState         *retryables.RetryableState
-	addressTable           *addressTable.AddressTable
-	chainOwners            *addressSet.AddressSet
-	nativeTokenOwners      *addressSet.AddressSet
-	sendMerkle             *merkleAccumulator.MerkleAccumulator
+	arbosVersion      uint64                      // version of the ArbOS storage format and semantics
+	upgradeVersion    storage.StorageBackedUint64 // version we're planning to upgrade to, or 0 if not planning to upgrade
+	upgradeTimestamp  storage.StorageBackedUint64 // when to do the planned upgrade
+	networkFeeAccount storage.StorageBackedAddress
+	l1PricingState    *l1pricing.L1PricingState
+	l2PricingState    *l2pricing.L2PricingState
+	retryableState    *retryables.RetryableState
+	addressTable      *addressTable.AddressTable
+	chainOwners       *addressSet.AddressSet
+	nativeTokenOwners *addressSet.AddressSet
+	sendMerkle        *merkleAccumulator.MerkleAccumulator
+	// extraction             *messageextraction.Extraction
 	programs               *programs.Programs
 	features               *features.Features
 	blockhashes            *blockhash.Blockhashes
@@ -91,6 +93,7 @@ func OpenArbosState(stateDB vm.StateDB, burner burn.Burner) (*ArbosState, error)
 		addressSet.OpenAddressSet(backingStorage.OpenCachedSubStorage(chainOwnerSubspace)),
 		addressSet.OpenAddressSet(backingStorage.OpenCachedSubStorage(nativeTokenOwnerSubspace)),
 		merkleAccumulator.OpenMerkleAccumulator(backingStorage.OpenCachedSubStorage(sendMerkleSubspace)),
+		// messageextraction.OpenExtraction(backingStorage.OpenCachedSubStorage(messageExtractionSubspace)),
 		programs.Open(arbosVersion, backingStorage.OpenSubStorage(programsSubspace)),
 		features.Open(backingStorage.OpenSubStorage(featuresSubspace)),
 		blockhash.OpenBlockhashes(backingStorage.OpenCachedSubStorage(blockhashesSubspace)),
@@ -169,17 +172,18 @@ const (
 type SubspaceID []byte
 
 var (
-	l1PricingSubspace        SubspaceID = []byte{0}
-	l2PricingSubspace        SubspaceID = []byte{1}
-	retryablesSubspace       SubspaceID = []byte{2}
-	addressTableSubspace     SubspaceID = []byte{3}
-	chainOwnerSubspace       SubspaceID = []byte{4}
-	sendMerkleSubspace       SubspaceID = []byte{5}
-	blockhashesSubspace      SubspaceID = []byte{6}
-	chainConfigSubspace      SubspaceID = []byte{7}
-	programsSubspace         SubspaceID = []byte{8}
-	featuresSubspace         SubspaceID = []byte{9}
-	nativeTokenOwnerSubspace SubspaceID = []byte{10}
+	l1PricingSubspace         SubspaceID = []byte{0}
+	l2PricingSubspace         SubspaceID = []byte{1}
+	retryablesSubspace        SubspaceID = []byte{2}
+	addressTableSubspace      SubspaceID = []byte{3}
+	chainOwnerSubspace        SubspaceID = []byte{4}
+	sendMerkleSubspace        SubspaceID = []byte{5}
+	blockhashesSubspace       SubspaceID = []byte{6}
+	chainConfigSubspace       SubspaceID = []byte{7}
+	programsSubspace          SubspaceID = []byte{8}
+	featuresSubspace          SubspaceID = []byte{9}
+	nativeTokenOwnerSubspace  SubspaceID = []byte{10}
+	messageExtractionSubspace SubspaceID = []byte{11}
 )
 
 var PrecompileMinArbOSVersions = make(map[common.Address]uint64)
@@ -497,6 +501,11 @@ func (state *ArbosState) SendMerkleAccumulator() *merkleAccumulator.MerkleAccumu
 
 func (state *ArbosState) Programs() *programs.Programs {
 	return state.programs
+}
+
+func (state *ArbosState) Extraction() *messageextraction.Extraction {
+	// return state.extraction
+	return nil
 }
 
 func (state *ArbosState) Features() *features.Features {

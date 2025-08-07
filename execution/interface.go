@@ -7,6 +7,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/state"
 
+	melextraction "github.com/offchainlabs/nitro/arbnode/mel/extraction"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/containers"
@@ -106,4 +107,5 @@ type FullConsensusClient interface {
 	BatchFetcher
 	ConsensusInfo
 	ConsensusSequencer
+	FetchMELDataProvider() melextraction.MELDataProvider
 }

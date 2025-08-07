@@ -31,6 +31,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	dbschema "github.com/offchainlabs/nitro/arbnode/db-schema"
 	"github.com/offchainlabs/nitro/arbnode/mel"
+	melextraction "github.com/offchainlabs/nitro/arbnode/mel/extraction"
 	melrunner "github.com/offchainlabs/nitro/arbnode/mel/runner"
 	"github.com/offchainlabs/nitro/arbnode/resourcemanager"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
@@ -1652,4 +1653,8 @@ func (n *Node) ExpectChosenSequencer() containers.PromiseInterface[struct{}] {
 
 func (n *Node) BlockMetadataAtMessageIndex(msgIdx arbutil.MessageIndex) containers.PromiseInterface[common.BlockMetadata] {
 	return containers.NewReadyPromise(n.TxStreamer.BlockMetadataAtMessageIndex(msgIdx))
+}
+
+func (n *Node) FetchMELDataProvider() melextraction.MELDataProvider {
+	return n.MessageExtractor.MessageExtractionRecorder()
 }

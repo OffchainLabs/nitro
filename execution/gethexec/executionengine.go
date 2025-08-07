@@ -571,7 +571,7 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 		hooks,
 		false,
 		core.NewMessageCommitContext(s.wasmTargets),
-		nil,
+		s.consensus.FetchMELDataProvider(),
 	)
 	if err != nil {
 		return nil, err
@@ -773,7 +773,7 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 		s.bc,
 		isMsgForPrefetch,
 		runCtx,
-		nil,
+		s.consensus.FetchMELDataProvider(),
 	)
 
 	return block, statedb, receipts, err

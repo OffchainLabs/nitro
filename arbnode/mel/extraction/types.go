@@ -24,6 +24,11 @@ func (*logUnpacker) unpackLogTo(
 	return unpackLogTo(event, abi, eventName, log)
 }
 
+type MELInternalTxPayload struct {
+	MELState               *mel.State
+	ParentChainBlockHeader *types.Header
+}
+
 // Defines a function that can lookup batches for a given parent chain block.
 // See: parseBatchesFromBlock.
 type batchLookupFunc func(

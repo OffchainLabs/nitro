@@ -78,6 +78,7 @@ type MessageExtractor struct {
 	dataProviders     []daprovider.Reader
 	fsm               *fsm.Fsm[action, FSMState]
 	retryInterval     time.Duration
+	recorderForArbOS  *ArbOSExtractionRecorder
 	caughtUp          bool
 	caughtUpChan      chan struct{}
 }
@@ -100,6 +101,11 @@ func NewMessageExtractor(
 	if err != nil {
 		return nil, err
 	}
+	recorder := &ArbOSExtractionRecorder{
+		melDB:      melDB,
+		txFetcher:  &txByLogFetcher{client: parentChainReader},
+		preFetcher: newLogsFetcher(parentChainReader, DefaultMessageExtractionConfig.BlocksToPrefetch),
+	}
 	return &MessageExtractor{
 		parentChainReader: parentChainReader,
 		addrs:             rollupAddrs,
@@ -110,6 +116,7 @@ func NewMessageExtractor(
 		retryInterval:     retryInterval,
 		config:            &DefaultMessageExtractionConfig, //TODO: remove retryInterval as a struct instead use config
 		caughtUpChan:      make(chan struct{}),
+		recorderForArbOS:  recorder,
 	}, nil
 }
 
@@ -133,6 +140,10 @@ func (m *MessageExtractor) Start(ctxIn context.Context) error {
 		},
 		runChan,
 	)
+}
+
+func (m *MessageExtractor) MessageExtractionRecorder() *ArbOSExtractionRecorder {
+	return m.recorderForArbOS
 }
 
 // txByLogFetcher is wrapper around ParentChainReader to implement TransactionByLog method

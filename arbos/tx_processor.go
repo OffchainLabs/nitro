@@ -17,6 +17,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/ethereum/go-ethereum/rlp"
 
 	melextraction "github.com/offchainlabs/nitro/arbnode/mel/extraction"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
@@ -54,23 +55,32 @@ type TxProcessor struct {
 	cachedL1BlockHashes map[uint64]common.Hash
 }
 
-func NewTxProcessor(evm *vm.EVM, msg *core.Message) *TxProcessor {
+func NewTxProcessor(evm *vm.EVM, msg *core.Message, messageExtractionProvider any) *TxProcessor {
 	tracingInfo := util.NewTracingInfo(evm, msg.From, arbosAddress, util.TracingBeforeEVM)
 	arbosState := arbosState.OpenSystemArbosStateOrPanic(evm.StateDB, tracingInfo, false)
+	var melProvider melextraction.MELDataProvider
+	if messageExtractionProvider != nil {
+		provider, ok := messageExtractionProvider.(melextraction.MELDataProvider)
+		if !ok {
+			panic("Cannot create TxProcessor with non-MEL message extraction provider")
+		}
+		melProvider = provider
+	}
 	return &TxProcessor{
-		msg:                 msg,
-		state:               arbosState,
-		PosterFee:           new(big.Int),
-		posterGas:           0,
-		delayedInbox:        evm.Context.Coinbase != l1pricing.BatchPosterAddress,
-		Contracts:           []*vm.Contract{},
-		Programs:            make(map[common.Address]uint),
-		TopTxType:           nil,
-		evm:                 evm,
-		CurrentRetryable:    nil,
-		CurrentRefundTo:     nil,
-		cachedL1BlockNumber: nil,
-		cachedL1BlockHashes: make(map[uint64]common.Hash),
+		msg:                       msg,
+		state:                     arbosState,
+		PosterFee:                 new(big.Int),
+		posterGas:                 0,
+		delayedInbox:              evm.Context.Coinbase != l1pricing.BatchPosterAddress,
+		Contracts:                 []*vm.Contract{},
+		Programs:                  make(map[common.Address]uint),
+		TopTxType:                 nil,
+		evm:                       evm,
+		CurrentRetryable:          nil,
+		CurrentRefundTo:           nil,
+		cachedL1BlockNumber:       nil,
+		cachedL1BlockHashes:       make(map[uint64]common.Hash),
+		messageExtractionProvider: melProvider,
 	}
 }
 
@@ -129,6 +139,10 @@ func (p *TxProcessor) ExecuteWASM(scope *vm.ScopeContext, input []byte, interpre
 		reentrant,
 		p.RunContext(),
 	)
+}
+
+func (p *TxProcessor) MessageExtractionProvider() any {
+	return p.messageExtractionProvider
 }
 
 func (p *TxProcessor) SetMessageExtractionProvider(provider any) error {
@@ -418,7 +432,18 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 		p.CurrentRetryable = &ticketId
 		p.CurrentRefundTo = &refundTo
 	case *types.ArbitrumMessageExtractionTx:
-		log.Info("Found an Arbitrum message extraction tx")
+		fmt.Println("Got this")
+		var payload *melextraction.MELInternalTxPayload
+		if err := rlp.DecodeBytes(tx.Data, &payload); err != nil {
+			return true, 0, fmt.Errorf("failed to decode MEL internal tx payload: %w", err), nil
+		}
+		if payload == nil {
+			return true, 0, errors.New("MEL internal tx payload is nil"), nil
+		}
+		if err := p.state.Extraction().RunExtractionAlgorithm(payload.MELState, payload.ParentChainBlockHeader, p.messageExtractionProvider); err != nil {
+			return true, 0, err, nil
+		}
+		log.Info("Ran the message extraction algorithm in ArbOS")
 		return false, 0, nil, nil
 	}
 	return false, 0, nil, nil

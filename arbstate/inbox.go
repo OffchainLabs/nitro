@@ -18,12 +18,13 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 
 	"github.com/offchainlabs/nitro/arbcompress"
-	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/zeroheavy"
 )
+
+var ErrFatalNodeOutOfDate = errors.New("please upgrade to the latest version of the node software")
 
 type InboxBackend interface {
 	PeekSequencerInbox() ([]byte, common.Hash, error)
@@ -69,7 +70,7 @@ func ParseSequencerMessage(ctx context.Context, batchNum uint64, batchBlockHash 
 	// an unknown header byte must mean that this node is out of date,
 	// because the smart contract understands the header byte and this node doesn't.
 	if len(payload) > 0 && daprovider.IsL1AuthenticatedMessageHeaderByte(payload[0]) && !daprovider.IsKnownHeaderByte(payload[0]) {
-		return nil, fmt.Errorf("%w: batch number %d has unsupported authenticated header byte 0x%02x", arbosState.ErrFatalNodeOutOfDate, batchNum, payload[0])
+		return nil, fmt.Errorf("%w: batch number %d has unsupported authenticated header byte 0x%02x", ErrFatalNodeOutOfDate, batchNum, payload[0])
 	}
 
 	// Stage 1: Extract the payload from any data availability header.
