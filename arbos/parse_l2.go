@@ -75,6 +75,12 @@ func ParseL2Transactions(msg *arbostypes.L1IncomingMessage, chainId *big.Int) (t
 			return nil, err
 		}
 		return types.Transactions{tx}, nil
+	case arbostypes.L1MessageType_MessageExtractionCheckpoint:
+		tx, err := parseMessageExtractionCheckpointMessage(bytes.NewReader(msg.L2msg), chainId)
+		if err != nil {
+			return nil, err
+		}
+		return types.Transactions{tx}, nil
 	case arbostypes.L1MessageType_Invalid:
 		// intentionally invalid message
 		return nil, errors.New("invalid message")
@@ -392,5 +398,16 @@ func parseBatchPostingReportMessage(rd io.Reader, chainId *big.Int, msgBatchGasC
 		ChainId: chainId,
 		Data:    data,
 		// don't need to fill in the other fields, since they exist only to ensure uniqueness, and batchNum is already unique
+	}), nil
+}
+
+func parseMessageExtractionCheckpointMessage(rd io.Reader, chainId *big.Int) (*types.Transaction, error) {
+	data, err := io.ReadAll(rd)
+	if err != nil {
+		return nil, err
+	}
+	return types.NewTx(&types.ArbitrumMessageExtractionTx{
+		ChainId: chainId,
+		Data:    data,
 	}), nil
 }

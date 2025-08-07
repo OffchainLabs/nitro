@@ -159,6 +159,7 @@ func (r *BlockRecorder) RecordBlockCreation(
 			chaincontext,
 			false,
 			core.NewMessageRecordingContext(r.execEngine.wasmTargets),
+			nil,
 		)
 		if err != nil {
 			return nil, err

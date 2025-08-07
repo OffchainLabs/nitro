@@ -17,6 +17,12 @@ import (
 	"github.com/offchainlabs/nitro/daprovider"
 )
 
+type MELDataProvider interface {
+	DelayedMessageDatabase
+	LogsFetcher
+	TransactionFetcher
+}
+
 // Defines a method that can read a delayed message from an external database.
 type DelayedMessageDatabase interface {
 	ReadDelayedMessage(
@@ -170,6 +176,16 @@ func extractMessagesImpl(
 
 	var batchMetas []*mel.BatchMetadata
 	var messages []*arbostypes.MessageWithMetadata
+	// Prepend a message extraction checkpoint message to the list.
+	messages = append(messages, &arbostypes.MessageWithMetadata{
+		Message: &arbostypes.L1IncomingMessage{
+			Header: &arbostypes.L1IncomingMessageHeader{
+				Kind: arbostypes.L1MessageType_MessageExtractionCheckpoint,
+			},
+			L2msg: state.Hash().Bytes(),
+		},
+		DelayedMessagesRead: state.DelayedMessagesRead,
+	})
 	for i, batch := range batches {
 		batchTx := batchTxs[i]
 		serialized, err := serialize(

@@ -21,16 +21,17 @@ import (
 )
 
 const (
-	L1MessageType_L2Message             = 3
-	L1MessageType_EndOfBlock            = 6
-	L1MessageType_L2FundedByL1          = 7
-	L1MessageType_RollupEvent           = 8
-	L1MessageType_SubmitRetryable       = 9
-	L1MessageType_BatchForGasEstimation = 10 // probably won't use this in practice
-	L1MessageType_Initialize            = 11
-	L1MessageType_EthDeposit            = 12
-	L1MessageType_BatchPostingReport    = 13
-	L1MessageType_Invalid               = 0xFF
+	L1MessageType_L2Message                   = 3
+	L1MessageType_EndOfBlock                  = 6
+	L1MessageType_L2FundedByL1                = 7
+	L1MessageType_RollupEvent                 = 8
+	L1MessageType_SubmitRetryable             = 9
+	L1MessageType_BatchForGasEstimation       = 10 // probably won't use this in practice
+	L1MessageType_Initialize                  = 11
+	L1MessageType_EthDeposit                  = 12
+	L1MessageType_BatchPostingReport          = 13
+	L1MessageType_MessageExtractionCheckpoint = 14
+	L1MessageType_Invalid                     = 0xFF
 )
 
 const MaxL2MessageSize = 256 * 1024

@@ -18,6 +18,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 
+	melextraction "github.com/offchainlabs/nitro/arbnode/mel/extraction"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbos/retryables"
@@ -33,18 +34,19 @@ const GasEstimationL1PricePadding arbmath.Bips = 11000 // pad estimates by 10%
 // It tracks state for ArbOS, allowing it infuence in Geth's tx processing.
 // Public fields are accessible in precompiles.
 type TxProcessor struct {
-	msg              *core.Message
-	state            *arbosState.ArbosState
-	PosterFee        *big.Int // set once in GasChargingHook to track L1 calldata costs
-	posterGas        uint64
-	computeHoldGas   uint64 // amount of gas temporarily held to prevent compute from exceeding the gas limit
-	delayedInbox     bool   // whether this tx was submitted through the delayed inbox
-	Contracts        []*vm.Contract
-	Programs         map[common.Address]uint // # of distinct context spans for each program
-	TopTxType        *byte                   // set once in StartTxHook
-	evm              *vm.EVM
-	CurrentRetryable *common.Hash
-	CurrentRefundTo  *common.Address
+	msg                       *core.Message
+	state                     *arbosState.ArbosState
+	PosterFee                 *big.Int // set once in GasChargingHook to track L1 calldata costs
+	posterGas                 uint64
+	computeHoldGas            uint64 // amount of gas temporarily held to prevent compute from exceeding the gas limit
+	delayedInbox              bool   // whether this tx was submitted through the delayed inbox
+	Contracts                 []*vm.Contract
+	Programs                  map[common.Address]uint // # of distinct context spans for each program
+	TopTxType                 *byte                   // set once in StartTxHook
+	evm                       *vm.EVM
+	CurrentRetryable          *common.Hash
+	CurrentRefundTo           *common.Address
+	messageExtractionProvider melextraction.MELDataProvider
 
 	// Caches for the latest L1 block number and hash,
 	// for the NUMBER and BLOCKHASH opcodes.
@@ -127,6 +129,15 @@ func (p *TxProcessor) ExecuteWASM(scope *vm.ScopeContext, input []byte, interpre
 		reentrant,
 		p.RunContext(),
 	)
+}
+
+func (p *TxProcessor) SetMessageExtractionProvider(provider any) error {
+	melProvider, ok := provider.(melextraction.MELDataProvider)
+	if !ok {
+		return errors.New("TxProcessor SetMessageExtractionProvider called with non-MEL provider")
+	}
+	p.messageExtractionProvider = melProvider
+	return nil
 }
 
 //nolint:staticcheck
@@ -406,6 +417,9 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 		refundTo := tx.RefundTo
 		p.CurrentRetryable = &ticketId
 		p.CurrentRefundTo = &refundTo
+	case *types.ArbitrumMessageExtractionTx:
+		log.Info("Found an Arbitrum message extraction tx")
+		return false, 0, nil, nil
 	}
 	return false, 0, nil, nil
 }
