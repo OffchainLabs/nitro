@@ -20,6 +20,9 @@ type Extraction struct {
 	parentChainBlockNum storage.StorageBackedUint64
 }
 
+func InitializeMessageExtraction(backingStorage *storage.Storage) {
+}
+
 func OpenExtraction(backingStorage *storage.Storage) *Extraction {
 	return &Extraction{
 		backingStorage.WithoutCache(),
@@ -55,5 +58,10 @@ func (e *Extraction) RunExtractionAlgorithm(
 	if err != nil {
 		return fmt.Errorf("failed to run extraction algorithm: %w", err)
 	}
-	return e.RecordMELStateHash(postState.ParentChainBlockNumber, postState.Hash())
+	postStateHash, err := postState.Hash()
+	if err != nil {
+		return err
+	}
+	fmt.Printf("ArbOS SAYS: For parent chain hash %#x, post state hash was %#x\n", parentChainBlockHeader.Hash(), postStateHash)
+	return e.RecordMELStateHash(postState.ParentChainBlockNumber, postStateHash)
 }

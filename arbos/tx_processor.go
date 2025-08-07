@@ -432,7 +432,6 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 		p.CurrentRetryable = &ticketId
 		p.CurrentRefundTo = &refundTo
 	case *types.ArbitrumMessageExtractionTx:
-		fmt.Println("Got this")
 		var payload *melextraction.MELInternalTxPayload
 		if err := rlp.DecodeBytes(tx.Data, &payload); err != nil {
 			return true, 0, fmt.Errorf("failed to decode MEL internal tx payload: %w", err), nil

@@ -4,7 +4,9 @@ import (
 	"context"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/rlp"
 
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/merkleAccumulator"
@@ -76,8 +78,12 @@ type MessageConsumer interface {
 	) error
 }
 
-func (s *State) Hash() common.Hash {
-	return common.Hash{}
+func (s *State) Hash() (common.Hash, error) {
+	enc, err := rlp.EncodeToBytes(s)
+	if err != nil {
+		return common.Hash{}, err
+	}
+	return crypto.Keccak256Hash(enc), nil
 }
 
 // Performs a deep clone of the state struct to prevent any unintended

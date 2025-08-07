@@ -179,7 +179,7 @@ func extractMessagesImpl(
 	var messages []*arbostypes.MessageWithMetadata
 	// Prepend a message extraction checkpoint message to the list.
 	internalTxPayload := &MELInternalTxPayload{
-		MELState:               state,
+		MELState:               inputState,
 		ParentChainBlockHeader: parentChainHeader,
 	}
 	payloadBytes, err := rlp.EncodeToBytes(internalTxPayload)
@@ -195,7 +195,6 @@ func extractMessagesImpl(
 		},
 		DelayedMessagesRead: state.DelayedMessagesRead,
 	})
-	fmt.Println("Adding to the messages list: ", messages[0])
 	for i, batch := range batches {
 		batchTx := batchTxs[i]
 		serialized, err := serialize(
@@ -265,5 +264,11 @@ func extractMessagesImpl(
 			ParentChainBlock:    state.ParentChainBlockNumber,
 		})
 	}
+	hash, err := state.Hash()
+	if err != nil {
+		return nil, nil, nil, nil, fmt.Errorf("failed to hash MEL state: %w", err)
+	}
+
+	fmt.Printf("For parent chain hash %#x, post state hash was %#x\n", state.ParentChainBlockHash, hash)
 	return state, messages, delayedMessages, batchMetas, nil
 }

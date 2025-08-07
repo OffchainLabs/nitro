@@ -73,7 +73,6 @@ type MessageExtractor struct {
 	parentChainReader ParentChainReader
 	logsPreFetcher    *logsFetcher
 	addrs             *chaininfo.RollupAddresses
-	melDB             *Database
 	msgConsumer       mel.MessageConsumer
 	dataProviders     []daprovider.Reader
 	fsm               *fsm.Fsm[action, FSMState]
@@ -109,7 +108,6 @@ func NewMessageExtractor(
 	return &MessageExtractor{
 		parentChainReader: parentChainReader,
 		addrs:             rollupAddrs,
-		melDB:             melDB,
 		msgConsumer:       msgConsumer,
 		dataProviders:     dataProviders,
 		fsm:               fsm,
@@ -168,11 +166,11 @@ func (m *MessageExtractor) getStateByRPCBlockNum(ctx context.Context, blockNum r
 	if err != nil {
 		return nil, err
 	}
-	headMelStateBlockNum, err := m.melDB.GetHeadMelStateBlockNum()
+	headMelStateBlockNum, err := m.recorderForArbOS.melDB.GetHeadMelStateBlockNum()
 	if err != nil {
 		return nil, err
 	}
-	state, err := m.melDB.State(ctx, min(headMelStateBlockNum, blk.Number.Uint64()))
+	state, err := m.recorderForArbOS.melDB.State(ctx, min(headMelStateBlockNum, blk.Number.Uint64()))
 	if err != nil {
 		return nil, err
 	}
@@ -204,11 +202,11 @@ func (m *MessageExtractor) GetFinalizedDelayedMessagesRead(ctx context.Context) 
 }
 
 func (m *MessageExtractor) GetHeadState(ctx context.Context) (*mel.State, error) {
-	return m.melDB.GetHeadMelState(ctx)
+	return m.recorderForArbOS.melDB.GetHeadMelState(ctx)
 }
 
 func (m *MessageExtractor) GetMsgCount(ctx context.Context) (arbutil.MessageIndex, error) {
-	headState, err := m.melDB.GetHeadMelState(ctx)
+	headState, err := m.recorderForArbOS.melDB.GetHeadMelState(ctx)
 	if err != nil {
 		return 0, err
 	}
@@ -216,16 +214,16 @@ func (m *MessageExtractor) GetMsgCount(ctx context.Context) (arbutil.MessageInde
 }
 
 func (d *MessageExtractor) GetDelayedMessage(index uint64) (*mel.DelayedInboxMessage, error) {
-	return d.melDB.fetchDelayedMessage(index)
+	return d.recorderForArbOS.melDB.fetchDelayedMessage(index)
 }
 
 func (m *MessageExtractor) GetDelayedCount(ctx context.Context, block uint64) (uint64, error) {
 	var state *mel.State
 	var err error
 	if block == 0 {
-		state, err = m.melDB.GetHeadMelState(ctx)
+		state, err = m.recorderForArbOS.melDB.GetHeadMelState(ctx)
 	} else {
-		state, err = m.melDB.State(ctx, block)
+		state, err = m.recorderForArbOS.melDB.State(ctx, block)
 	}
 	if err != nil {
 		return 0, err
@@ -235,7 +233,7 @@ func (m *MessageExtractor) GetDelayedCount(ctx context.Context, block uint64) (u
 
 func (m *MessageExtractor) GetBatchMetadata(seqNum uint64) (mel.BatchMetadata, error) {
 	// TODO: have a check to error if seqNum is less than headMelState.BatchCount
-	batchMetadata, err := m.melDB.fetchBatchMetadata(seqNum)
+	batchMetadata, err := m.recorderForArbOS.melDB.fetchBatchMetadata(seqNum)
 	if err != nil {
 		return mel.BatchMetadata{}, err
 	}
@@ -301,7 +299,7 @@ func (m *MessageExtractor) FindInboxBatchContainingMessage(ctx context.Context, 
 }
 
 func (m *MessageExtractor) GetBatchCount(ctx context.Context) (uint64, error) {
-	headState, err := m.melDB.GetHeadMelState(ctx)
+	headState, err := m.recorderForArbOS.melDB.GetHeadMelState(ctx)
 	if err != nil {
 		return 0, err
 	}
@@ -324,7 +322,7 @@ func (m *MessageExtractor) Act(ctx context.Context) (time.Duration, error) {
 	// MEL state struct for the message extraction process.
 	case Start:
 		// Start from the latest MEL state we have in the database
-		melState, err := m.melDB.GetHeadMelState(ctx)
+		melState, err := m.recorderForArbOS.melDB.GetHeadMelState(ctx)
 		if err != nil {
 			return m.retryInterval, err
 		}
@@ -333,7 +331,7 @@ func (m *MessageExtractor) Act(ctx context.Context) (time.Duration, error) {
 		if err != nil {
 			return m.retryInterval, err
 		}
-		if err = InitializeDelayedMessageBacklog(ctx, delayedMessageBacklog, m.melDB, melState, m.GetFinalizedDelayedMessagesRead); err != nil {
+		if err = InitializeDelayedMessageBacklog(ctx, delayedMessageBacklog, m.recorderForArbOS.melDB, melState, m.GetFinalizedDelayedMessagesRead); err != nil {
 			return m.retryInterval, err
 		}
 		melState.SetDelayedMessageBacklog(delayedMessageBacklog)
@@ -399,7 +397,7 @@ func (m *MessageExtractor) Act(ctx context.Context) (time.Duration, error) {
 			})
 		}
 		// Conditionally prefetch logs for upcoming block/s
-		if err = m.logsPreFetcher.fetch(ctx, preState); err != nil {
+		if err = m.recorderForArbOS.preFetcher.fetch(ctx, preState); err != nil {
 			return m.retryInterval, err
 		}
 		postState, msgs, delayedMsgs, batchMetas, err := melextraction.ExtractMessages(
@@ -407,9 +405,9 @@ func (m *MessageExtractor) Act(ctx context.Context) (time.Duration, error) {
 			preState,
 			parentChainBlock,
 			m.dataProviders,
-			m.melDB,
-			&txByLogFetcher{m.parentChainReader},
-			m.logsPreFetcher,
+			m.recorderForArbOS,
+			m.recorderForArbOS,
+			m.recorderForArbOS,
 		)
 		if err != nil {
 			return m.retryInterval, err
@@ -433,16 +431,16 @@ func (m *MessageExtractor) Act(ctx context.Context) (time.Duration, error) {
 		if !ok {
 			return m.retryInterval, fmt.Errorf("invalid action: %T", current.SourceEvent)
 		}
-		if err := m.melDB.SaveBatchMetas(ctx, saveAction.postState, saveAction.batchMetas); err != nil {
+		if err := m.recorderForArbOS.melDB.SaveBatchMetas(ctx, saveAction.postState, saveAction.batchMetas); err != nil {
 			return m.retryInterval, err
 		}
-		if err := m.melDB.SaveDelayedMessages(ctx, saveAction.postState, saveAction.delayedMessages); err != nil {
+		if err := m.recorderForArbOS.melDB.SaveDelayedMessages(ctx, saveAction.postState, saveAction.delayedMessages); err != nil {
 			return m.retryInterval, err
 		}
 		if err := m.msgConsumer.PushMessages(ctx, saveAction.preStateMsgCount, saveAction.messages); err != nil {
 			return m.retryInterval, err
 		}
-		if err := m.melDB.SaveState(ctx, saveAction.postState); err != nil {
+		if err := m.recorderForArbOS.melDB.SaveState(ctx, saveAction.postState); err != nil {
 			log.Error("Error saving messages from MessageExtractor to MessageConsumer", "err", err)
 			return m.retryInterval, err
 		}
@@ -462,7 +460,7 @@ func (m *MessageExtractor) Act(ctx context.Context) (time.Duration, error) {
 		if currentDirtyState.ParentChainBlockNumber == 0 {
 			return m.retryInterval, errors.New("invalid reorging stage, ParentChainBlockNumber of current mel state has reached 0")
 		}
-		previousState, err := m.melDB.State(ctx, currentDirtyState.ParentChainBlockNumber-1)
+		previousState, err := m.recorderForArbOS.melDB.State(ctx, currentDirtyState.ParentChainBlockNumber-1)
 		if err != nil {
 			return m.retryInterval, err
 		}

@@ -44,18 +44,18 @@ import (
 // persisted beyond the end of the test.)
 
 type ArbosState struct {
-	arbosVersion      uint64                      // version of the ArbOS storage format and semantics
-	upgradeVersion    storage.StorageBackedUint64 // version we're planning to upgrade to, or 0 if not planning to upgrade
-	upgradeTimestamp  storage.StorageBackedUint64 // when to do the planned upgrade
-	networkFeeAccount storage.StorageBackedAddress
-	l1PricingState    *l1pricing.L1PricingState
-	l2PricingState    *l2pricing.L2PricingState
-	retryableState    *retryables.RetryableState
-	addressTable      *addressTable.AddressTable
-	chainOwners       *addressSet.AddressSet
-	nativeTokenOwners *addressSet.AddressSet
-	sendMerkle        *merkleAccumulator.MerkleAccumulator
-	// extraction             *messageextraction.Extraction
+	arbosVersion           uint64                      // version of the ArbOS storage format and semantics
+	upgradeVersion         storage.StorageBackedUint64 // version we're planning to upgrade to, or 0 if not planning to upgrade
+	upgradeTimestamp       storage.StorageBackedUint64 // when to do the planned upgrade
+	networkFeeAccount      storage.StorageBackedAddress
+	l1PricingState         *l1pricing.L1PricingState
+	l2PricingState         *l2pricing.L2PricingState
+	retryableState         *retryables.RetryableState
+	addressTable           *addressTable.AddressTable
+	chainOwners            *addressSet.AddressSet
+	nativeTokenOwners      *addressSet.AddressSet
+	sendMerkle             *merkleAccumulator.MerkleAccumulator
+	extraction             *messageextraction.Extraction
 	programs               *programs.Programs
 	features               *features.Features
 	blockhashes            *blockhash.Blockhashes
@@ -93,7 +93,7 @@ func OpenArbosState(stateDB vm.StateDB, burner burn.Burner) (*ArbosState, error)
 		addressSet.OpenAddressSet(backingStorage.OpenCachedSubStorage(chainOwnerSubspace)),
 		addressSet.OpenAddressSet(backingStorage.OpenCachedSubStorage(nativeTokenOwnerSubspace)),
 		merkleAccumulator.OpenMerkleAccumulator(backingStorage.OpenCachedSubStorage(sendMerkleSubspace)),
-		// messageextraction.OpenExtraction(backingStorage.OpenCachedSubStorage(messageExtractionSubspace)),
+		messageextraction.OpenExtraction(backingStorage.OpenCachedSubStorage(messageExtractionSubspace)),
 		programs.Open(arbosVersion, backingStorage.OpenSubStorage(programsSubspace)),
 		features.Open(backingStorage.OpenSubStorage(featuresSubspace)),
 		blockhash.OpenBlockhashes(backingStorage.OpenCachedSubStorage(blockhashesSubspace)),
@@ -250,6 +250,7 @@ func InitializeArbosState(stateDB vm.StateDB, burner burn.Burner, chainConfig *p
 	addressTable.Initialize(sto.OpenCachedSubStorage(addressTableSubspace))
 	merkleAccumulator.InitializeMerkleAccumulator(sto.OpenCachedSubStorage(sendMerkleSubspace))
 	blockhash.InitializeBlockhashes(sto.OpenCachedSubStorage(blockhashesSubspace))
+	messageextraction.InitializeMessageExtraction(sto.OpenCachedSubStorage(messageExtractionSubspace))
 
 	ownersStorage := sto.OpenCachedSubStorage(chainOwnerSubspace)
 	_ = addressSet.Initialize(ownersStorage)
@@ -504,8 +505,7 @@ func (state *ArbosState) Programs() *programs.Programs {
 }
 
 func (state *ArbosState) Extraction() *messageextraction.Extraction {
-	// return state.extraction
-	return nil
+	return state.extraction
 }
 
 func (state *ArbosState) Features() *features.Features {
