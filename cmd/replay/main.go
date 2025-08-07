@@ -39,6 +39,10 @@ import (
 	"github.com/offchainlabs/nitro/wavmio"
 )
 
+type preimageResolver interface {
+	ResolveTypedPreimage(preimageType arbutil.PreimageType, hash common.Hash) ([]byte, error)
+}
+
 func getBlockHeaderByHash(hash common.Hash) *types.Header {
 	enc, err := wavmio.ResolveTypedPreimage(arbutil.Keccak256PreimageType, hash)
 	if err != nil {
@@ -160,6 +164,13 @@ func (r *BlobPreimageReader) GetBlobs(
 
 func (r *BlobPreimageReader) Initialize(ctx context.Context) error {
 	return nil
+}
+
+type wavmPreimageResolver struct{}
+
+func (w *wavmPreimageResolver) ResolveTypedPreimage(
+	preimageType arbutil.PreimageType, hash common.Hash) ([]byte, error) {
+	return wavmio.ResolveTypedPreimage(preimageType, hash)
 }
 
 // To generate:
@@ -300,7 +311,14 @@ func main() {
 		message := readMessage(chainConfig.ArbitrumChainParams.DataAvailabilityCommittee)
 
 		chainContext := WavmChainContext{chainConfig: chainConfig}
-		newBlock, _, err = arbos.ProduceBlock(message.Message, message.DelayedMessagesRead, lastBlockHeader, statedb, chainContext, false, core.NewMessageReplayContext(), nil)
+		resolver := &wavmPreimageResolver{}
+		melDataProvider := &melDataProvider{
+			delayedMessageDatabase: &delayedMessageDatabase{
+				preimageResolver: resolver,
+			},
+			resolver: resolver,
+		}
+		newBlock, _, err = arbos.ProduceBlock(message.Message, message.DelayedMessagesRead, lastBlockHeader, statedb, chainContext, false, core.NewMessageReplayContext(), melDataProvider)
 		if err != nil {
 			panic(err)
 		}
