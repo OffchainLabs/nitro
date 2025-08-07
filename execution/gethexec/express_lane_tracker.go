@@ -116,19 +116,52 @@ func (t *ExpressLaneTracker) Start(ctxIn context.Context) {
 				log.Error("Could not filter auction resolutions event", "error", err)
 				continue
 			}
-			for it.Next() {
-				timeSinceAuctionClose := t.roundTimingInfo.AuctionClosing - t.roundTimingInfo.TimeTilNextRound()
-				auctionResolutionLatency.Update(timeSinceAuctionClose.Nanoseconds())
-				log.Info(
-					"AuctionResolved: New express lane controller assigned",
-					"round", it.Event.Round,
-					"controller", it.Event.FirstPriceExpressLaneController,
-					"timeSinceAuctionClose", timeSinceAuctionClose,
-				)
 
-				t.roundControl.Store(it.Event.Round, it.Event.FirstPriceExpressLaneController)
+			done := make(chan struct{})
+			stop := make(chan struct{})
 
+			// Start a goroutine to process the auction resolutions in unblocking manner
+			go func() {
+				defer close(done)
+				for {
+					// If not closed → continue to it.Next()
+					select {
+					case <-stop:
+						return
+					default:
+					}
+
+					// This Next() call block for significant time e.g then unindexing is happening
+					if !it.Next() {
+						return
+					}
+
+					timeSinceAuctionClose := t.roundTimingInfo.AuctionClosing - t.roundTimingInfo.TimeTilNextRound()
+					auctionResolutionLatency.Update(timeSinceAuctionClose.Nanoseconds())
+					log.Info(
+						"AuctionResolved: New express lane controller assigned",
+						"round", it.Event.Round,
+						"controller", it.Event.FirstPriceExpressLaneController,
+						"timeSinceAuctionClose", timeSinceAuctionClose,
+					)
+					t.roundControl.Store(it.Event.Round, it.Event.FirstPriceExpressLaneController)
+				}
+			}()
+
+			select {
+			case <-done:
+				// Silent exit if the iterator is done
+			case <-time.After(500 * time.Millisecond): // TODO(NIT-3653): Move timeout to config or constant
+				log.Warn("AuctionResolved iterator timed out")
+				close(stop) // Cancel background goroutine
+			case <-ctx.Done():
+				return
 			}
+
+			if it.Error() != nil {
+				log.Error("Error while iterating auction resolutions", "error", it.Error())
+			}
+
 			fromBlock = toBlock + 1
 		}
 	})
