@@ -328,11 +328,10 @@ func (d *DelayedMessageFetcher) getDelayedMessagesInRange(ctx context.Context, b
 			log.Debug("caff node: skip storing init message")
 			continue
 		}
-		// the next seqNum is the index of the delayed message which needs to be processed next
-		// so it always needs to be equal to the delayed message indext + 1
-		if seqNum != lastDelayedMessageIndex+1 {
-			// We need to panic the node here because something has gone seriously wrong
-			log.Crit("Caff node is skipping delayed messages", "seqNum", seqNum, "lastDelayedMessageIndex", lastDelayedMessageIndex)
+
+		if seqNum <= lastDelayedMessageIndex {
+			log.Warn("Caff node already has processed delayed message", "seqNum", seqNum, "lastDelayedMessageIndex", lastDelayedMessageIndex)
+			continue
 		}
 
 		lastDelayedMessageIndex++
