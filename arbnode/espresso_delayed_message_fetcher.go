@@ -180,7 +180,7 @@ func (f *DelayedMessageFetcher) processDelayedMessage(messageWithMetadataAndPos 
 	delayedMessageToProcess := delayedMessagesRead - 1
 
 	if delayedMessageToProcess > delayedCount {
-		log.Warn("delayed message fetcher is lagging behind. delayedMessagesRead: %v, delayedCount: %v", delayedMessagesRead, delayedCount)
+		log.Warn("delayed message fetcher is lagging behind", "delayedMessagesRead", delayedMessagesRead, "delayedCount", delayedCount)
 		return nil, fmt.Errorf("delayed message fetcher is lagging behind")
 	}
 	log.Debug("Getting delayed message", "delayedCount", delayedMessageToProcess)
@@ -332,6 +332,12 @@ func (d *DelayedMessageFetcher) getDelayedMessagesInRange(ctx context.Context, b
 		if seqNum <= lastDelayedMessageIndex {
 			log.Warn("Caff node already has processed delayed message", "seqNum", seqNum, "lastDelayedMessageIndex", lastDelayedMessageIndex)
 			continue
+		}
+
+		if seqNum > lastDelayedMessageIndex+1 {
+			// Delayed message fetcher expects to fetch messages strictly in order. If a missing message is detected here,
+			// it indicates a break in sequential fetching. Recovery is not handled by this fetcher and would require additional logic.
+			log.Crit("Caff node is missing a delayed message", "seqNum", seqNum, "lastDelayedMessageIndex", lastDelayedMessageIndex)
 		}
 
 		lastDelayedMessageIndex++
