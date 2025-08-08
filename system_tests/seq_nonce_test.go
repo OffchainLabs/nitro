@@ -15,6 +15,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/core/types"
 
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
@@ -119,5 +120,92 @@ func TestSequencerNonceTooHighQueueFull(t *testing.T) {
 			Fatal(t, "Wrong number of transaction responses; got", got, "but expected", expected)
 		}
 		time.Sleep(time.Millisecond * 100)
+	}
+}
+
+func TestSequencerNonceHandling(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder.execConfig.Sequencer.MaxBlockSpeed = time.Second
+	builder.execConfig.Sequencer.NonceFailureCacheExpiry = 4 * time.Second
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	userAccount := "User"
+	builder.L2Info.GenerateAccount(userAccount)
+	userAccount2 := "User2"
+	builder.L2Info.GenerateAccount(userAccount2)
+	userAccount3 := "User3"
+	builder.L2Info.GenerateAccount(userAccount3)
+	val := big.NewInt(1e18)
+	builder.L2.TransferBalance(t, "Owner", "User", val, builder.L2Info)
+	builder.L2.TransferBalance(t, "Owner", "User2", val, builder.L2Info)
+	userBal, err := builder.L2.Client.BalanceAt(ctx, builder.L2Info.GetAddress(userAccount), nil)
+	Require(t, err)
+	if userBal.Cmp(val) != 0 {
+		t.Fatal("balance mismatch")
+	}
+	userBal2, err := builder.L2.Client.BalanceAt(ctx, builder.L2Info.GetAddress(userAccount2), nil)
+	Require(t, err)
+	if userBal2.Cmp(val) != 0 {
+		t.Fatal("balance mismatch")
+	}
+
+	size := 40000
+	data := make([]byte, size)
+	_, err = rand.Read(data)
+	Require(t, err)
+
+	var largeTxs types.Transactions
+	builder.L2Info.GetInfoWithPrivKey(userAccount).Nonce.Store(0)
+	largeTxs = append(largeTxs, builder.L2Info.PrepareTx(userAccount, userAccount3, 70000000, big.NewInt(1e8), data))
+	builder.L2Info.GetInfoWithPrivKey(userAccount).Nonce.Store(0)
+	largeTxs = append(largeTxs, builder.L2Info.PrepareTx(userAccount, userAccount3, 70000000, big.NewInt(1e9), data))
+	builder.L2Info.GetInfoWithPrivKey(userAccount).Nonce.Store(0)
+	txFirst := builder.L2Info.PrepareTx(userAccount, userAccount3, 7000000, big.NewInt(1e8), data)
+	builder.L2Info.GetInfoWithPrivKey(userAccount).Nonce.Store(1)
+	largeTxs = append(largeTxs, builder.L2Info.PrepareTx(userAccount, userAccount3, 35000000, big.NewInt(1e5), data))
+	builder.L2Info.GetInfoWithPrivKey(userAccount).Nonce.Store(1)
+	largeTxs = append(largeTxs, builder.L2Info.PrepareTx(userAccount, userAccount3, 35000000, big.NewInt(1e5+1), data))
+	builder.L2Info.GetInfoWithPrivKey(userAccount).Nonce.Store(1)
+	largeTxs = append(largeTxs, builder.L2Info.PrepareTx(userAccount, userAccount3, 35000000, big.NewInt(1e5+2), data))
+
+	var allTxs types.Transactions
+	allTxs = append(allTxs, txFirst)
+	allTxs = append(allTxs, largeTxs...)
+	for i := 0; i < 5; i++ {
+		allTxs = append(allTxs, builder.L2Info.PrepareTx("Owner", userAccount3, 7000000, big.NewInt(1e8), nil))
+	}
+	var wg sync.WaitGroup
+	wg.Add(len(allTxs))
+	for i, tx := range allTxs {
+		go func(w *sync.WaitGroup, txParallel *types.Transaction) {
+			time.Sleep(time.Duration(i * 10 * int(time.Millisecond)))
+			_ = builder.L2.Client.SendTransaction(ctx, txParallel)
+			w.Done()
+		}(&wg, tx)
+	}
+	wg.Wait()
+	var blockNumsOfAcceptedTxs []uint64
+	for _, tx := range allTxs {
+		receipt, err := builder.L2.Client.TransactionReceipt(ctx, tx.Hash())
+		if err == nil {
+			blockNumsOfAcceptedTxs = append(blockNumsOfAcceptedTxs, receipt.BlockNumber.Uint64())
+		}
+	}
+	if len(blockNumsOfAcceptedTxs) != 7 {
+		t.Fatalf("unexpected number of block nums in blockNumsOfAcceptedTxs. Have: %d, Want: 7", len(blockNumsOfAcceptedTxs))
+	}
+	if blockNumsOfAcceptedTxs[0] != blockNumsOfAcceptedTxs[1] {
+		t.Fatal("first and second valid txs shouldnt have been sequenced in two different blocks")
+	}
+	if blockNumsOfAcceptedTxs[2] != blockNumsOfAcceptedTxs[0]+1 ||
+		blockNumsOfAcceptedTxs[3] != blockNumsOfAcceptedTxs[0]+1 ||
+		blockNumsOfAcceptedTxs[4] != blockNumsOfAcceptedTxs[0]+1 ||
+		blockNumsOfAcceptedTxs[5] != blockNumsOfAcceptedTxs[0]+1 ||
+		blockNumsOfAcceptedTxs[6] != blockNumsOfAcceptedTxs[0]+1 {
+		t.Fatal("all the following valid txs should have been sequenced in the immediate next block")
 	}
 }

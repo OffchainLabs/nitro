@@ -16,6 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -377,10 +378,13 @@ func testBlockHashComparison(t *testing.T, blockHash *common.Hash, mustMismatch 
 		RequestId:   nil,
 		L1BaseFee:   nil,
 	}
+	hooks := arbos.NoopSequencingHooks(types.Transactions{tx})
+	_, err = hooks.NextTxToSequence()
+	Require(t, err)
+	hooks.TxErrors = []error{nil}
 	l1IncomingMsg, err := gethexec.MessageFromTxes(
 		&l1IncomingMsgHeader,
-		types.Transactions{tx},
-		[]error{nil},
+		hooks,
 	)
 	Require(t, err)
 
