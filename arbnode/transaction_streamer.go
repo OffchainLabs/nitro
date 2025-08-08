@@ -933,6 +933,9 @@ func (s *TransactionStreamer) addMessagesAndEndBatchImpl(firstMsgIdx arbutil.Mes
 		if err != nil {
 			return err
 		}
+		if confirmedReorg {
+			fmt.Println("First reorg here")
+		}
 		if numberOfDuplicates > 0 {
 			lastDelayedRead = messages[numberOfDuplicates-1].MessageWithMeta.DelayedMessagesRead
 			messages = messages[numberOfDuplicates:]

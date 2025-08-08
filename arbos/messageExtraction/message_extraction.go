@@ -9,6 +9,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/arbnode/mel"
 	melextraction "github.com/offchainlabs/nitro/arbnode/mel/extraction"
@@ -46,7 +47,7 @@ func (e *Extraction) RunExtractionAlgorithm(
 	parentChainBlockHeader *types.Header,
 	melDataProvider melextraction.MELDataProvider,
 ) error {
-	postState, _, _, _, err := melextraction.ExtractMessages(
+	postState, messages, delayedMessages, _, err := melextraction.ExtractMessages(
 		context.Background(),
 		startMelState,
 		parentChainBlockHeader,
@@ -62,6 +63,11 @@ func (e *Extraction) RunExtractionAlgorithm(
 	if err != nil {
 		return err
 	}
-	fmt.Printf("ArbOS SAYS: For parent chain hash %#x, post state hash was %#x\n", parentChainBlockHeader.Hash(), postStateHash)
+	log.Info(
+		"ArbOS MEL",
+		"block", postState.ParentChainBlockNumber,
+		"messages", len(messages),
+		"delayedMessages", len(delayedMessages),
+	)
 	return e.RecordMELStateHash(postState.ParentChainBlockNumber, postStateHash)
 }

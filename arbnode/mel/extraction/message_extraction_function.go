@@ -9,6 +9,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rlp"
 
 	"github.com/offchainlabs/nitro/arbnode/mel"
@@ -176,7 +177,6 @@ func extractMessagesImpl(
 	}
 
 	var batchMetas []*mel.BatchMetadata
-	var messages []*arbostypes.MessageWithMetadata
 	// Prepend a message extraction checkpoint message to the list.
 	internalTxPayload := &MELInternalTxPayload{
 		MELState:               inputState,
@@ -186,15 +186,21 @@ func extractMessagesImpl(
 	if err != nil {
 		return nil, nil, nil, nil, err
 	}
-	messages = append(messages, &arbostypes.MessageWithMetadata{
+	melCheckpointMessage := &arbostypes.MessageWithMetadata{
 		Message: &arbostypes.L1IncomingMessage{
 			Header: &arbostypes.L1IncomingMessageHeader{
-				Kind: arbostypes.L1MessageType_MessageExtractionCheckpoint,
+				Kind:        arbostypes.L1MessageType_MessageExtractionCheckpoint,
+				BlockNumber: state.ParentChainBlockNumber,
+				Timestamp:   parentChainHeader.Time,
 			},
 			L2msg: payloadBytes,
 		},
 		DelayedMessagesRead: state.DelayedMessagesRead,
-	})
+	}
+	messages := []*arbostypes.MessageWithMetadata{melCheckpointMessage}
+
+	// Increase the state's message count to account for the checkpoint message.
+	state.MsgCount += 1
 	for i, batch := range batches {
 		batchTx := batchTxs[i]
 		serialized, err := serialize(
@@ -264,11 +270,36 @@ func extractMessagesImpl(
 			ParentChainBlock:    state.ParentChainBlockNumber,
 		})
 	}
-	hash, err := state.Hash()
-	if err != nil {
-		return nil, nil, nil, nil, fmt.Errorf("failed to hash MEL state: %w", err)
-	}
+	log.Info(
+		"Native MEL",
+		"block", state.ParentChainBlockNumber,
+		"messages", len(messages),
+		"delayedMessages", len(delayedMessages),
+		"batches", len(batches),
+	)
 
-	fmt.Printf("For parent chain hash %#x, post state hash was %#x\n", state.ParentChainBlockHash, hash)
+	// If the list of messages contains an initialize message, ensure we move it to the front of the list.
+	moveInitMessageToFront(messages)
 	return state, messages, delayedMessages, batchMetas, nil
+}
+
+func moveInitMessageToFront(messages []*arbostypes.MessageWithMetadata) {
+	var initIndex = -1
+	// Find the init message in the list, if it exists.
+	for i, msg := range messages {
+		if msg.Message != nil && msg.Message.Header != nil &&
+			msg.Message.Header.Kind == arbostypes.L1MessageType_Initialize {
+			initIndex = i
+			break
+		}
+	}
+	// If no initialize message found or already at front, nothing to do.
+	if initIndex <= 0 {
+		return
+	}
+	// Remove init message from its current position and move it to the front.
+	initMessage := messages[initIndex]
+	copy(messages[1:initIndex+1], messages[0:initIndex])
+	messages[0] = initMessage
+	messages[1].DelayedMessagesRead = 1
 }

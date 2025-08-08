@@ -443,7 +443,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 			return true, 0, err, nil
 		}
 		log.Info("Ran the message extraction algorithm in ArbOS")
-		return false, 0, nil, nil
+		return true, 0, nil, nil
 	}
 	return false, 0, nil, nil
 }

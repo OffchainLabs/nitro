@@ -104,6 +104,12 @@ func NewMessageExtractor(
 		melDB:      melDB,
 		txFetcher:  &txByLogFetcher{client: parentChainReader},
 		preFetcher: newLogsFetcher(parentChainReader, DefaultMessageExtractionConfig.BlocksToPrefetch),
+		caches: &caches{
+			delayedMsgs:   make(map[uint64]*mel.DelayedInboxMessage),
+			logsByHash:    make(map[common.Hash][]*types.Log),
+			logsByTxIndex: make(map[common.Hash]map[uint][]*types.Log),
+			txsByHash:     make(map[common.Hash]*types.Transaction),
+		},
 	}
 	return &MessageExtractor{
 		parentChainReader: parentChainReader,

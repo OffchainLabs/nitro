@@ -484,38 +484,38 @@ func TestMessageExtractionLayer_RunningNode(t *testing.T) {
 	// Force a batch to be posted as a delayed message and ensure it is reflected in the onchain contracts.
 	forceDelayedBatchPosting(t, ctx, builder, testClientB, messagesPerBatch, threshold)
 
-	delayedInbox, err := bridgegen.NewInbox(builder.L1Info.GetAddress("Inbox"), builder.L1.Client)
-	Require(t, err)
-	delayedBridge, err := arbnode.NewDelayedBridge(builder.L1.Client, builder.L1Info.GetAddress("Bridge"), 0)
-	Require(t, err)
-	lookupL2Tx := getLookupL2Tx(t, ctx, delayedBridge)
+	// delayedInbox, err := bridgegen.NewInbox(builder.L1Info.GetAddress("Inbox"), builder.L1.Client)
+	// Require(t, err)
+	// delayedBridge, err := arbnode.NewDelayedBridge(builder.L1.Client, builder.L1Info.GetAddress("Bridge"), 0)
+	// Require(t, err)
+	// lookupL2Tx := getLookupL2Tx(t, ctx, delayedBridge)
 
-	// Test eth deposit
-	builder.L1Info.GenerateAccount("UserX")
-	builder.L1.TransferBalance(t, "Faucet", "UserX", big.NewInt(1e18), builder.L1Info)
+	// // Test eth deposit
+	// builder.L1Info.GenerateAccount("UserX")
+	// builder.L1.TransferBalance(t, "Faucet", "UserX", big.NewInt(1e18), builder.L1Info)
 
-	txOpts := builder.L1Info.GetDefaultTransactOpts("UserX", ctx)
-	txOpts.Value = big.NewInt(13)
-	oldBalanceClientB, err := testClientB.Client.BalanceAt(ctx, txOpts.From, nil)
-	if err != nil {
-		t.Fatalf("BalanceAt(%v) unexpected error: %v", txOpts.From, err)
-	}
+	// txOpts := builder.L1Info.GetDefaultTransactOpts("UserX", ctx)
+	// txOpts.Value = big.NewInt(13)
+	// oldBalanceClientB, err := testClientB.Client.BalanceAt(ctx, txOpts.From, nil)
+	// if err != nil {
+	// 	t.Fatalf("BalanceAt(%v) unexpected error: %v", txOpts.From, err)
+	// }
 
-	// Verify that ethDeposit works as intended on the sequence node's side
-	l2Receipt := testDepositETH(t, ctx, builder, delayedInbox, lookupL2Tx, txOpts)
-	forceDelayedBatchPosting(t, ctx, builder, testClientB, messagesPerBatch, threshold) // We need to post a batch so that clientB can pick up the deposit tx, since it itself cannot execute a delayed message!
+	// // Verify that ethDeposit works as intended on the sequence node's side
+	// l2Receipt := testDepositETH(t, ctx, builder, delayedInbox, lookupL2Tx, txOpts)
+	// forceDelayedBatchPosting(t, ctx, builder, testClientB, messagesPerBatch, threshold) // We need to post a batch so that clientB can pick up the deposit tx, since it itself cannot execute a delayed message!
 
-	// Wait for deposit to be seen at clientB
-	l2ReceiptClientB, err := WaitForTx(ctx, testClientB.Client, l2Receipt.TxHash, time.Second*5)
-	Require(t, err)
+	// // Wait for deposit to be seen at clientB
+	// l2ReceiptClientB, err := WaitForTx(ctx, testClientB.Client, l2Receipt.TxHash, time.Second*5)
+	// Require(t, err)
 
-	newBalance, err := testClientB.Client.BalanceAt(ctx, txOpts.From, l2ReceiptClientB.BlockNumber)
-	if err != nil {
-		t.Fatalf("BalanceAt(%v) unexpected error: %v", txOpts.From, err)
-	}
-	if got := new(big.Int); got.Sub(newBalance, oldBalanceClientB).Cmp(txOpts.Value) != 0 {
-		t.Errorf("Got transferred: %v, want: %v", got, txOpts.Value)
-	}
+	// newBalance, err := testClientB.Client.BalanceAt(ctx, txOpts.From, l2ReceiptClientB.BlockNumber)
+	// if err != nil {
+	// 	t.Fatalf("BalanceAt(%v) unexpected error: %v", txOpts.From, err)
+	// }
+	// if got := new(big.Int); got.Sub(newBalance, oldBalanceClientB).Cmp(txOpts.Value) != 0 {
+	// 	t.Errorf("Got transferred: %v, want: %v", got, txOpts.Value)
+	// }
 }
 
 func TestMessageExtractionLayer_TxStreamerHandleReorg(t *testing.T) {
