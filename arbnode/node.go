@@ -916,6 +916,7 @@ func getBatchPoster(
 	dapReaders []daprovider.Reader,
 	stakerAddr common.Address,
 	dataSigner signature.DataSignerFunc,
+	l2ChainId uint64,
 ) (*BatchPoster, error) {
 	var batchPoster *BatchPoster
 	if config.BatchPoster.Enable {
@@ -931,6 +932,7 @@ func getBatchPoster(
 		}
 		var err error
 		batchPoster, err = NewBatchPoster(ctx, &BatchPosterOpts{
+			ChainID:       l2ChainId,
 			DataPosterDB:  rawdb.NewTable(arbDb, storage.BatchPosterPrefix),
 			L1Reader:      l1Reader,
 			Inbox:         inboxTracker,
@@ -1201,7 +1203,7 @@ func createNodeImpl(
 		return nil, err
 	}
 
-	batchPoster, err := getBatchPoster(ctx, config, configFetcher, txOptsBatchPoster, dapWriter, l1Reader, inboxTracker, txStreamer, executionBatchPoster, arbDb, syncMonitor, deployInfo, parentChainID, dapReaders, stakerAddr, dataSigner)
+	batchPoster, err := getBatchPoster(ctx, config, configFetcher, txOptsBatchPoster, dapWriter, l1Reader, inboxTracker, txStreamer, executionBatchPoster, arbDb, syncMonitor, deployInfo, parentChainID, dapReaders, stakerAddr, dataSigner, l2Config.ChainID.Uint64())
 	if err != nil {
 		return nil, err
 	}

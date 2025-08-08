@@ -86,14 +86,14 @@ func NewBatcherAddrMonitor(
 	l1Reader *headerreader.HeaderReader,
 	seqInboxAddr common.Address,
 	deployAt uint64,
-	fromBlock uint64,
+	fromParentBlock uint64,
 ) *BatcherAddrMonitor {
 	seqInboxInterface, err := bridgegen.NewSequencerInbox(seqInboxAddr, l1Reader.Client())
 	if err != nil {
 		panic(err)
 	}
-	if fromBlock < deployAt+1 {
-		fromBlock = deployAt + 1
+	if fromParentBlock < deployAt+1 {
+		fromParentBlock = deployAt + 1
 	}
 	return &BatcherAddrMonitor{
 		initAddresses:             initAddresses,
@@ -102,7 +102,7 @@ func NewBatcherAddrMonitor(
 		seqInboxAddr:              seqInboxAddr,
 		seqInboxInterface:         seqInboxInterface,
 		deployAt:                  deployAt,
-		lastProcessedParentHeight: fromBlock - 1,
+		lastProcessedParentHeight: fromParentBlock - 1,
 	}
 }
 

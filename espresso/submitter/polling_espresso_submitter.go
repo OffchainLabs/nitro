@@ -34,9 +34,8 @@ import (
 
 var (
 	// Schema extensions for Espresso Tracking
-	espressoSubmittedTxns        []byte = []byte("_espressoSubmittedTxns")    // contains the hash and pos of the submitted transactions
-	espressoPendingTxnsPositions []byte = []byte("_espressoPendingTxnsPos")   // contains the index of the pending txns that need to be submitted to espresso
-	espressoLastConfirmedPos     []byte = []byte("_espressoLastConfirmedPos") // contains the position of the last confirmed message
+	espressoSubmittedTxns        []byte = []byte("_espressoSubmittedTxns")  // contains the hash and pos of the submitted transactions
+	espressoPendingTxnsPositions []byte = []byte("_espressoPendingTxnsPos") // contains the index of the pending txns that need to be submitted to espresso
 )
 
 // PollingEspressoSubmitter is a struct that implements the [EspressoSubmitter]
@@ -74,12 +73,9 @@ type PollingEspressoSubmitter struct {
 	espressoTxnsPollingInterval           time.Duration
 	espressoTxnsSendingInterval           time.Duration
 	espressoTxnsResubmissionInterval      time.Duration
-	maxBlockLagBeforeEscapeHatch          uint64
 	espressoMaxTransactionSize            int64
 	resubmitEspressoTxDeadline            time.Duration
 	lastSubmitFailureAt                   *time.Time
-	UseEscapeHatch                        bool
-	EscapeHatchEnabled                    bool
 	InitialFinalizedSequencerMessageCount *big.Int
 }
 
@@ -114,11 +110,8 @@ func NewPollingEspressoSubmitter(options ...EspressoSubmitterConfigOption) (Espr
 		espressoTxnsPollingInterval:      config.EspressoTxnsPollingInterval,
 		espressoTxnsSendingInterval:      config.EspressoTxnSendingInterval,
 		espressoTxnsResubmissionInterval: config.EspressoTxnsResubmissionInterval,
-		maxBlockLagBeforeEscapeHatch:     config.MaxBlockLagBeforeEscapeHatch,
 		espressoMaxTransactionSize:       config.EspressoMaxTransactionSize,
 		resubmitEspressoTxDeadline:       config.ResubmitEspressoTxDeadline,
-		EscapeHatchEnabled:               config.EscapeHatchEnabled,
-		UseEscapeHatch:                   config.UseEscapeHatch,
 
 		InitialFinalizedSequencerMessageCount: config.InitialFinalizedSequencerMessageCount,
 	}, nil
@@ -151,10 +144,6 @@ func (s *PollingEspressoSubmitter) checkSubmittedTransactionForFinality(ctx cont
 
 	batch := s.db.NewBatch()
 	newSubmittedTxns := []arbutil.SubmittedEspressoTx{}
-	lastConfirmedPos := arbutil.MessageIndex(0)
-	if lastConfirmedPosInDb, _ := s.getLastConfirmedPos(); lastConfirmedPosInDb != nil {
-		lastConfirmedPos = *lastConfirmedPosInDb
-	}
 	blockHeights := []uint64{}
 	posArray := []int{}
 	for i, submittedTx := range submittedTxns {
@@ -211,24 +200,7 @@ func (s *PollingEspressoSubmitter) checkSubmittedTransactionForFinality(ctx cont
 			newSubmittedTxns = append(newSubmittedTxns, *resubmittedTxn)
 			continue
 		}
-		max := submittedTx.Pos[0]
-		for _, pos := range submittedTx.Pos {
-			if pos > max {
-				max = pos
-			}
-		}
 
-		if max > lastConfirmedPos {
-			lastConfirmedPos = max
-		}
-
-	}
-
-	log.Info("last confirmed pos", "lastConfirmedPos", lastConfirmedPos)
-
-	err = s.setEspressoLastConfirmedPos(batch, &lastConfirmedPos)
-	if err != nil {
-		return fmt.Errorf("failed to set last confirmed pos: %w", err)
 	}
 
 	// this will be remmoved in other PRs
@@ -291,22 +263,6 @@ func (s *PollingEspressoSubmitter) getEspressoSubmittedTxns() ([]arbutil.Submitt
 	return tx, nil
 }
 
-func (s *PollingEspressoSubmitter) getLastConfirmedPos() (*arbutil.MessageIndex, error) {
-	lastConfirmedBytes, err := s.db.Get(espressoLastConfirmedPos)
-	if err != nil {
-		if dbutil.IsErrNotFound(err) {
-			return nil, nil
-		}
-		return nil, err
-	}
-	var lastConfirmed arbutil.MessageIndex
-	err = rlp.DecodeBytes(lastConfirmedBytes, &lastConfirmed)
-	if err != nil {
-		return nil, err
-	}
-	return &lastConfirmed, nil
-}
-
 func (s *PollingEspressoSubmitter) getEspressoPendingTxnsPos() ([]arbutil.MessageIndex, error) {
 	pendingTxnsBytes, err := s.db.Get(espressoPendingTxnsPositions)
 	if err != nil {
@@ -339,19 +295,6 @@ func (s *PollingEspressoSubmitter) setEspressoSubmittedTxns(batch ethdb.KeyValue
 		return err
 	}
 
-	return nil
-}
-
-func (s *PollingEspressoSubmitter) setEspressoLastConfirmedPos(batch ethdb.KeyValueWriter, pos *arbutil.MessageIndex) error {
-	posBytes, err := rlp.EncodeToBytes(pos)
-	if err != nil {
-		return err
-	}
-	err = batch.Put(espressoLastConfirmedPos, posBytes)
-	if err != nil {
-		return err
-
-	}
 	return nil
 }
 
@@ -516,33 +459,6 @@ func (s *PollingEspressoSubmitter) submitEspressoTransactions(ctx context.Contex
 	return nil
 }
 
-// Make sure useEscapeHatch is true
-func (s *PollingEspressoSubmitter) checkEspressoLiveness() error {
-	live, err := s.lightClientReader.IsHotShotLive(s.maxBlockLagBeforeEscapeHatch)
-	if err != nil {
-		return err
-	}
-	// If escape hatch is activated, the only thing is to check if hotshot is live again
-	if s.EscapeHatchEnabled {
-		if live {
-			log.Info("HotShot is up, disabling the escape hatch")
-			s.EscapeHatchEnabled = false
-		}
-		return nil
-	}
-
-	// If escape hatch is disabled, hotshot is live, everything is fine
-	if live {
-		return nil
-	}
-
-	// If escape hatch is on, and hotshot is down
-	log.Warn("enabling the escape hatch, hotshot is down")
-	s.EscapeHatchEnabled = true
-
-	return nil
-}
-
 var ErrEspressoValidation = errors.New("failed to check espresso validation")
 var ErrEspressoFetchTransaction = errors.New("failed to fetch the espresso transaction")
 
@@ -560,20 +476,7 @@ func getLogLevel(err error) func(string, ...interface{}) {
 // been finalized by Espresso  and verifies it.
 func (s *PollingEspressoSubmitter) pollSubmittedTransactionForFinality(ctx context.Context, ignored struct{}) time.Duration {
 	retryRate := s.espressoTxnsPollingInterval * 2
-	var err error
-	if s.UseEscapeHatch {
-		err = s.checkEspressoLiveness()
-		if err != nil {
-			if ctx.Err() != nil {
-				return s.espressoTxnsPollingInterval
-			}
-			logLevel := getLogLevel(err)
-			logLevel("error checking escape hatch, will retry", "err", err)
-			return retryRate
-		}
-		espressoTransactionEphemeralErrorHandler.Reset()
-	}
-	err = s.checkSubmittedTransactionForFinality(ctx)
+	err := s.checkSubmittedTransactionForFinality(ctx)
 	if err != nil {
 		if ctx.Err() != nil {
 			return s.espressoTxnsPollingInterval
@@ -637,7 +540,6 @@ func (s *PollingEspressoSubmitter) pollToResubmitEspressoTransactions(ctx contex
 //   - The Espresso Client and Light Client Reader must be set
 //   - The given `pos` parameter must be after our recorded finalized sequencer
 //     message count
-//   - The Escape Hatch must not be enabled
 //
 // NOTE: This method does not acquire any locks, so its state may change
 // when running concurrently with other methods.
@@ -652,7 +554,7 @@ func (s *PollingEspressoSubmitter) shouldSubmitEspressoTransaction(pos *uint64) 
 		}
 	}
 
-	return !s.EscapeHatchEnabled
+	return true
 }
 
 func (s *PollingEspressoSubmitter) shouldResubmitEspressoTransactions(ctx context.Context, submittedTxns []arbutil.SubmittedEspressoTx) bool {
@@ -836,12 +738,4 @@ func (s *PollingEspressoSubmitter) NotifyNewPendingMessages(firstMsgIdx arbutil.
 
 func (t *PollingEspressoSubmitter) GetKeyManager() espresso_key_manager.EspressoKeyManagerInterface {
 	return t.espressoKeyManager
-}
-
-func (t *PollingEspressoSubmitter) IsEscapeHatchEnabled() bool {
-	return t.EscapeHatchEnabled
-}
-
-func (t *PollingEspressoSubmitter) GetLastConfirmedPosition() (*arbutil.MessageIndex, error) {
-	return t.getLastConfirmedPos()
 }
