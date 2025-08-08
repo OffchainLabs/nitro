@@ -325,6 +325,7 @@ func (m *MessageExtractor) Act(ctx context.Context) (time.Duration, error) {
 		if err = InitializeDelayedMessageBacklog(ctx, delayedMessageBacklog, m.melDB, melState, m.GetFinalizedDelayedMessagesRead); err != nil {
 			return m.retryInterval, err
 		}
+		delayedMessageBacklog.CommitDirties()
 		melState.SetDelayedMessageBacklog(delayedMessageBacklog)
 		// Start mel state is now ready. Check if the state's parent chain block hash exists in the parent chain
 		startBlock, err := m.parentChainReader.HeaderByNumber(ctx, new(big.Int).SetUint64(melState.ParentChainBlockNumber))
@@ -422,6 +423,7 @@ func (m *MessageExtractor) Act(ctx context.Context) (time.Duration, error) {
 		if !ok {
 			return m.retryInterval, fmt.Errorf("invalid action: %T", current.SourceEvent)
 		}
+		saveAction.postState.GetDelayedMessageBacklog().CommitDirties()
 		if err := m.melDB.SaveBatchMetas(ctx, saveAction.postState, saveAction.batchMetas); err != nil {
 			return m.retryInterval, err
 		}
