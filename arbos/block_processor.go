@@ -125,34 +125,37 @@ type SequencingHooks struct {
 	ConditionalOptionsForTx []*arbitrum_types.ConditionalOptions                                                                                                                                    // This can be unset
 }
 
-type allTxScheduler struct {
-	txs types.Transactions
-	idx int
+type noopTxScheduler struct {
+	txs               types.Transactions
+	scheduledTxsCount int
 }
 
-func (s *allTxScheduler) GetNextTx() (*types.Transaction, error) {
-	if s.idx > len(s.txs) {
-		return nil, errors.New("allTxScheduler: requested too many transactions")
+func (s *noopTxScheduler) GetNextTx() (*types.Transaction, error) {
+	// This is not supposed to happen, if so we have a bug
+	if s.scheduledTxsCount > len(s.txs) {
+		return nil, errors.New("noopTxScheduler: requested too many transactions")
 	}
-	if s.idx == len(s.txs) {
+	if s.scheduledTxsCount == len(s.txs) {
 		return nil, nil
 	}
-	s.idx += 1
-	return s.txs[s.idx-1], nil
+	s.scheduledTxsCount += 1
+	return s.txs[s.scheduledTxsCount-1], nil
 }
 
-func (s *allTxScheduler) GetScheduledTx(i int) (*types.Transaction, error) {
-	if i > len(s.txs) {
-		return nil, errors.New("get wrong tx (more than possible)")
+func (s *noopTxScheduler) GetScheduledTx(txId int) (*types.Transaction, error) {
+	// This is not supposed to happen, if so we have a bug
+	if txId > len(s.txs) {
+		return nil, errors.New("transaction queried for does not exist in the noopTxScheduler")
 	}
-	if i > s.idx {
-		return nil, errors.New("get wrong tx (more than exist)")
+	// This is not supposed to happen, if so we have a bug
+	if txId > s.scheduledTxsCount {
+		return nil, errors.New("transaction queried for was not scheduled by the noopTxScheduler")
 	}
-	return s.txs[i], nil
+	return s.txs[txId], nil
 }
 
 func NoopSequencingHooks(txes types.Transactions) *SequencingHooks {
-	scheduler := &allTxScheduler{
+	scheduler := &noopTxScheduler{
 		txes,
 		0,
 	}
@@ -273,7 +276,7 @@ func ProduceBlockAdvanced(
 		} else {
 			tx, err = sequencingHooks.NextTxToSequence()
 			if err != nil {
-				return nil, nil, fmt.Errorf("error from nextTx:%w, userProcessed: %d, errs: %d", err, userTxsProcessed, len(sequencingHooks.TxErrors))
+				return nil, nil, fmt.Errorf("error fetching next transaction to sequence, userTxsProcessed: %d, hookTxErrors: %d, err: %w", userTxsProcessed, len(sequencingHooks.TxErrors), err)
 			}
 			if tx == nil {
 				break

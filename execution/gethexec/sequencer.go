@@ -896,35 +896,38 @@ var sequencerInternalError = errors.New("sequencer internal error")
 
 type fullSequencingHooks struct {
 	arbos.SequencingHooks
-	queueItems   []txQueueItem
-	queueItemIdx int
-	sizeSoFar    int
-	maxSize      int
+	queueItems               []txQueueItem
+	sequencedQueueItemsCount int
+	sequencedTxsSizeSoFar    int
+	maxSequencedTxsSize      int
 }
 
-// we accept a BUNCH of assumptions about how this func is called
+// GetNextTx returns the next tx to be sequenced into a block while maintaining a running count of total block size so far, if adding a tx would exceed the allowed
+// max-size, then GetNextTx signals to stop adding txs to the block and instead try the remaining txs in the next block
 func (s *fullSequencingHooks) GetNextTx() (*types.Transaction, error) {
-	if len(s.SequencingHooks.TxErrors) != s.queueItemIdx {
-		return nil, fmt.Errorf("fullSequencingHooks: GetNextTx out of order! errs: %d, idx: %d", len(s.SequencingHooks.TxErrors), s.queueItemIdx)
+	// This is not supposed to happen, if so we have a bug
+	if len(s.SequencingHooks.TxErrors) != s.sequencedQueueItemsCount {
+		return nil, fmt.Errorf("fullSequencingHooks: GetNextTx detected out of order request to sequence tx. hookTxErrors: %d, nextTxIdToBeSequenced: %d", len(s.SequencingHooks.TxErrors), s.sequencedQueueItemsCount)
 	}
-	if s.queueItemIdx > 0 && s.TxErrors[s.queueItemIdx-1] == nil {
-		s.sizeSoFar += s.queueItems[s.queueItemIdx-1].txSize
+	if s.sequencedQueueItemsCount > 0 && s.TxErrors[s.sequencedQueueItemsCount-1] == nil {
+		s.sequencedTxsSizeSoFar += s.queueItems[s.sequencedQueueItemsCount-1].txSize
 	}
-	if s.queueItemIdx >= len(s.queueItems) {
+	if s.sequencedQueueItemsCount >= len(s.queueItems) { // s.sequencedQueueItemsCount > len(s.queueItems), is not supposed to happen, if so we have a bug
 		return nil, nil
 	}
-	if s.sizeSoFar+s.queueItems[s.queueItemIdx].txSize > s.maxSize {
+	if s.sequencedTxsSizeSoFar+s.queueItems[s.sequencedQueueItemsCount].txSize > s.maxSequencedTxsSize {
 		return nil, nil
 	}
-	s.queueItemIdx += 1
-	return s.queueItems[s.queueItemIdx-1].tx, nil
+	s.sequencedQueueItemsCount += 1
+	return s.queueItems[s.sequencedQueueItemsCount-1].tx, nil
 }
 
-func (s *fullSequencingHooks) GetScheduledTx(i int) (*types.Transaction, error) {
-	if i > s.queueItemIdx {
-		return nil, fmt.Errorf("fullSequencingHooks: GetScheduledTx out of order! req: %d, idx: %d", i, s.queueItemIdx)
+func (s *fullSequencingHooks) GetScheduledTx(txId int) (*types.Transaction, error) {
+	// This is not supposed to happen, if so we have a bug
+	if txId > s.sequencedQueueItemsCount {
+		return nil, fmt.Errorf("transaction queried for was not scheduled by the fullSequencingHooks. txId: %d, sequencedCount: %d", txId, s.sequencedQueueItemsCount)
 	}
-	return s.queueItems[i].tx, nil
+	return s.queueItems[txId].tx, nil
 }
 
 func (s *Sequencer) makeSequencingHooks(items []txQueueItem) *fullSequencingHooks {
@@ -1013,7 +1016,7 @@ func (s *Sequencer) precheckNonces(queueItems []txQueueItem) []txQueueItem {
 				if err != nil {
 					revivingFailure.queueItem.returnResult(err)
 				} else {
-					// This tx would be too large to add to this block
+					// This tx can be too large to add to this block, so we add to the retry queue
 					s.txRetryQueue.Push(revivingFailure.queueItem)
 				}
 			}
@@ -1240,13 +1243,13 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 		if block != nil {
 			blockNum = block.Number()
 		}
-		log.Warn("took over 5 seconds to sequence a block", "elapsed", elapsed, "numTxes", hooks.queueItemIdx, "success", block != nil, "l2Block", blockNum)
+		log.Warn("took over 5 seconds to sequence a block", "elapsed", elapsed, "numTxes", hooks.sequencedQueueItemsCount, "success", block != nil, "l2Block", blockNum)
 	}
 	if err == nil {
-		if len(hooks.TxErrors) != hooks.queueItemIdx {
-			err = fmt.Errorf("unexpected number of error results: %v vs number of txes %v", len(hooks.TxErrors), hooks.queueItemIdx)
+		if len(hooks.TxErrors) != hooks.sequencedQueueItemsCount { // This is not supposed to happen, if so we have a bug
+			err = fmt.Errorf("unexpected number of error results: %v vs number of txes %v", len(hooks.TxErrors), hooks.sequencedQueueItemsCount)
 		} else {
-			for i := hooks.queueItemIdx; i < len(hooks.queueItems); i++ {
+			for i := hooks.sequencedQueueItemsCount; i < len(hooks.queueItems); i++ {
 				s.txRetryQueue.Push(hooks.queueItems[i])
 			}
 		}
