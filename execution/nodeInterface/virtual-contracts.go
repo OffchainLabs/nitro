@@ -143,18 +143,18 @@ func init() {
 	core.GetArbOSSpeedLimitPerSecond = func(statedb *state.StateDB) (uint64, error) {
 		arbosVersion := arbosState.ArbOSVersion(statedb)
 		if arbosVersion == 0 {
-			return 0.0, errors.New("ArbOS not installed")
+			return 0, errors.New("ArbOS not installed")
 		}
 		state, err := arbosState.OpenSystemArbosState(statedb, nil, true)
 		if err != nil {
 			log.Error("failed to open ArbOS state", "err", err)
-			return 0.0, err
+			return 0, err
 		}
 		pricing := state.L2PricingState()
 		speedLimit, err := pricing.SpeedLimitPerSecond()
 		if err != nil {
 			log.Error("failed to get the speed limit", "err", err)
-			return 0.0, err
+			return 0, err
 		}
 		return speedLimit, nil
 	}
