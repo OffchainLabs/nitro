@@ -25,6 +25,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/blockhash"
 	"github.com/offchainlabs/nitro/arbos/burn"
+	"github.com/offchainlabs/nitro/arbos/constraints"
 	"github.com/offchainlabs/nitro/arbos/features"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
@@ -57,6 +58,7 @@ type ArbosState struct {
 	programs               *programs.Programs
 	features               *features.Features
 	blockhashes            *blockhash.Blockhashes
+	resourceConstraints    *constraints.ResourceConstraintsStorage
 	chainId                storage.StorageBackedBigInt
 	chainConfig            storage.StorageBackedBytes
 	genesisBlockNum        storage.StorageBackedUint64
@@ -79,6 +81,7 @@ func OpenArbosState(stateDB vm.StateDB, burner burn.Burner) (*ArbosState, error)
 	if arbosVersion == 0 {
 		return nil, ErrUninitializedArbOS
 	}
+	constraintsBytes := backingStorage.OpenStorageBackedBytes(constraintsSubspace)
 	return &ArbosState{
 		arbosVersion,
 		backingStorage.OpenStorageBackedUint64(uint64(upgradeVersionOffset)),
@@ -94,6 +97,7 @@ func OpenArbosState(stateDB vm.StateDB, burner burn.Burner) (*ArbosState, error)
 		programs.Open(arbosVersion, backingStorage.OpenSubStorage(programsSubspace)),
 		features.Open(backingStorage.OpenSubStorage(featuresSubspace)),
 		blockhash.OpenBlockhashes(backingStorage.OpenCachedSubStorage(blockhashesSubspace)),
+		constraints.Open(&constraintsBytes),
 		backingStorage.OpenStorageBackedBigInt(uint64(chainIdOffset)),
 		backingStorage.OpenStorageBackedBytes(chainConfigSubspace),
 		backingStorage.OpenStorageBackedUint64(uint64(genesisBlockNumOffset)),
@@ -180,6 +184,7 @@ var (
 	programsSubspace         SubspaceID = []byte{8}
 	featuresSubspace         SubspaceID = []byte{9}
 	nativeTokenOwnerSubspace SubspaceID = []byte{10}
+	constraintsSubspace      SubspaceID = []byte{11}
 )
 
 var PrecompileMinArbOSVersions = make(map[common.Address]uint64)
@@ -505,6 +510,10 @@ func (state *ArbosState) Features() *features.Features {
 
 func (state *ArbosState) Blockhashes() *blockhash.Blockhashes {
 	return state.blockhashes
+}
+
+func (state *ArbosState) ResourceConstraints() *constraints.ResourceConstraintsStorage {
+	return state.resourceConstraints
 }
 
 func (state *ArbosState) NetworkFeeAccount() (common.Address, error) {
