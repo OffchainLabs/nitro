@@ -465,6 +465,9 @@ func NewSequencer(execEngine *ExecutionEngine, l1Reader *headerreader.HeaderRead
 	}
 	s.Pause()
 	execEngine.EnableReorgSequencing()
+	if config.ReadFromTxQueueTimeout >= config.MaxBlockSpeed {
+		log.Warn("Sequencer ReadFromTxQueueTimeout is higher than MaxBlockSpeed", "ReadFromTxQueueTimeout", config.ReadFromTxQueueTimeout, "MaxBlockSpeed", config.MaxBlockSpeed)
+	}
 	return s, nil
 }
 
@@ -1016,8 +1019,7 @@ func (s *Sequencer) precheckNonces(queueItems []txQueueItem) []txQueueItem {
 				if err != nil {
 					revivingFailure.queueItem.returnResult(err)
 				} else {
-					// This tx can be too large to add to this block, so we add to the retry queue
-					s.txRetryQueue.Push(revivingFailure.queueItem)
+					nextQueueItem = &revivingFailure.queueItem
 				}
 			}
 		} else if txNonce < stateNonce || txNonce > pendingNonce {
