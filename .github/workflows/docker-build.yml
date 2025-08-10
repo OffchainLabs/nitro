@@ -1,0 +1,20 @@
+name: Build docker container
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  id-token: write
+  attestations: write
+  contents: read
+
+jobs:
+  Build:
+    uses: NethermindEth/github-workflows/.github/workflows/docker-build-push-jfrog.yaml@v1.4.2
+    with:
+      group_name: core
+      image_name: 'arbitrum-nitro'
