@@ -2,6 +2,11 @@ package arbnode
 
 import (
 	"context"
+
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
+
+	"github.com/offchainlabs/nitro/util/signature"
 )
 
 var (
@@ -33,4 +38,22 @@ func binarySearchForBlockNumber(
 		}
 	}
 	return start, nil
+}
+
+// We should be able to get the address as soon as we have the signer.
+// We don't want to change a lot of code to make this work since we are working on a forked repo.
+// This function is not costly and it should be called only once.
+func recoverAddressFromSigner(signer signature.DataSignerFunc) (common.Address, error) {
+	message := make([]byte, 32)
+	signature, err := signer(message)
+	if err != nil {
+		return common.Address{}, err
+	}
+
+	publicKey, err := crypto.SigToPub(message, signature)
+	if err != nil {
+		return common.Address{}, err
+	}
+
+	return crypto.PubkeyToAddress(*publicKey), nil
 }
