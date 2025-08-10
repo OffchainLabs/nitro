@@ -8,6 +8,11 @@ import (
 	"regexp"
 )
 
+var (
+	uncolorRegex = regexp.MustCompile("\x1b\\[([0-9]+;)*[0-9]+m")
+	unwhiteRegex = regexp.MustCompile(`\s+`)
+)
+
 var Red = "\033[31;1m"
 var Blue = "\033[34;1m"
 var Yellow = "\033[33;1m"
@@ -59,9 +64,6 @@ func PrintPink(args ...interface{}) {
 }
 
 func Uncolor(text string) string {
-	uncolor := regexp.MustCompile("\x1b\\[([0-9]+;)*[0-9]+m")
-	unwhite := regexp.MustCompile(`\s+`)
-
-	text = uncolor.ReplaceAllString(text, "")
-	return unwhite.ReplaceAllString(text, " ")
+	text = uncolorRegex.ReplaceAllString(text, "")
+	return unwhiteRegex.ReplaceAllString(text, " ")
 }
