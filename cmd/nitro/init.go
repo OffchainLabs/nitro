@@ -644,6 +644,10 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 					return chainDb, l2BlockChain, err
 				}
 				if config.Init.RecreateMissingStateFrom > 0 {
+					err = gethexec.PopulateStylusTargetCache(&config.Execution.StylusTarget)
+					if err != nil {
+						return chainDb, l2BlockChain, err
+					}
 					err = staterecovery.RecreateMissingStates(chainDb, l2BlockChain, cacheConfig, config.Init.RecreateMissingStateFrom)
 					if err != nil {
 						return chainDb, l2BlockChain, fmt.Errorf("failed to recreate missing states: %w", err)
