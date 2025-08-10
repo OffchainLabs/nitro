@@ -47,7 +47,7 @@ var InitConfigDefault = InitConfig{
 	Force:                         false,
 	Url:                           "",
 	Latest:                        "",
-	LatestBase:                    "https://snapshot.arbitrum.foundation/",
+	LatestBase:                    "https://snapshot-explorer.arbitrum.io/",
 	ValidateChecksum:              true,
 	DownloadPath:                  "",
 	DownloadPoll:                  time.Minute,
