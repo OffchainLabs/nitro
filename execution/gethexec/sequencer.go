@@ -1367,10 +1367,10 @@ func (s *Sequencer) updateExpectedSurplus(ctx context.Context) (int64, error) {
 		if s.config().Dangerous.DisableBlobBaseFeeCheck {
 			log.Warn("expected surplus calculation is set to use blob price but --execution.sequencer.dangerous.disable-blob-base-fee-check is set, falling back to calldata price model")
 			backlogCost = backlogCallDataUnits * header.BaseFee.Int64()
+		} else if header.BlobGasUsed == nil || header.ExcessBlobGas == nil {
+			log.Warn("expected surplus calculation is set to use blob price but latest parent chain header has BlobGasUsed or ExcessBlobGas as nil, falling back to calldata price model")
+			backlogCost = backlogCallDataUnits * header.BaseFee.Int64()
 		} else {
-			if header.BlobGasUsed == nil || header.ExcessBlobGas == nil {
-				return 0, errors.New("expected surplus calculation is set to use blob price but latest parent chain header has BlobGasUsed or ExcessBlobGas as nil")
-			}
 			blobFeePerByte, err := s.l1Reader.Client().BlobBaseFee(ctx)
 			if err != nil {
 				return 0, fmt.Errorf("error encountered getting blob base fee while updating expectedSurplus: %w", err)
