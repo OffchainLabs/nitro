@@ -38,6 +38,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode/parent"
 	"github.com/offchainlabs/nitro/arbnode/redislock"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
+	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
@@ -763,8 +764,8 @@ func (b *BatchPoster) pollForL1PriceData(ctx context.Context) {
 					blobFeePerByte.Mul(blobFeePerByte, blobTxBlobGasPerBlob)
 					blobFeePerByte.Div(blobFeePerByte, usableBytesInBlob)
 					blobFeeGauge.Update(blobFeePerByte.Int64())
-					if l1GasPrice > blobFeePerByte.Uint64()/16 {
-						l1GasPrice = blobFeePerByte.Uint64() / 16
+					if blobGasPrice := blobFeePerByte.Uint64() / uint64(l1pricing.BatchGasUnitsPerByte); l1GasPrice > blobGasPrice {
+						l1GasPrice = blobGasPrice
 					}
 				}
 				// #nosec G115

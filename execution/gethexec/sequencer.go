@@ -1410,12 +1410,12 @@ func (s *Sequencer) updateExpectedSurplus(ctx context.Context) (int64, error) {
 			}
 			blobFeePerByte.Mul(blobFeePerByte, blobTxBlobGasPerBlob)
 			blobFeePerByte.Div(blobFeePerByte, usableBytesInBlob)
-			l1GasPrice = blobFeePerByte.Int64() / 16
-			backlogCost = (backlogCallDataUnits * blobFeePerByte.Int64()) / 16
+			l1GasPrice = blobFeePerByte.Int64() / int64(l1pricing.BatchGasUnitsPerByte)
+			backlogCost = (backlogCallDataUnits * blobFeePerByte.Int64()) / int64(l1pricing.BatchGasUnitsPerByte)
 		}
 	case "CalldataPrice7623":
-		l1GasPrice = (header.BaseFee.Int64() * 40) / 16
-		backlogCost = (backlogCallDataUnits * header.BaseFee.Int64() * 40) / 16
+		l1GasPrice = (header.BaseFee.Int64() * 40) / int64(l1pricing.BatchGasUnitsPerByte)
+		backlogCost = (backlogCallDataUnits * header.BaseFee.Int64() * 40) / int64(l1pricing.BatchGasUnitsPerByte)
 	default:
 		return 0, fmt.Errorf("unrecognized ExpectedSurplusGasPriceMode: %s", s.config().ExpectedSurplusGasPriceMode)
 	}

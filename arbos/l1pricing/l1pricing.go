@@ -4,6 +4,7 @@
 package l1pricing
 
 import (
+	"bytes"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -77,8 +78,8 @@ const (
 )
 
 // one minute at 100000 bytes / sec
-var InitialEquilibrationUnitsV0 = am.UintToBig(60 * params.TxDataNonZeroGasEIP2028 * 100000)
-var InitialEquilibrationUnitsV6 = am.UintToBig(params.TxDataNonZeroGasEIP2028 * 10000000)
+var InitialEquilibrationUnitsV0 = am.UintToBig(CompressedCalldataGasUnitsByLen(60 * 100_000))
+var InitialEquilibrationUnitsV6 = am.UintToBig(CompressedCalldataGasUnitsByLen(10_000_000))
 
 func InitializeL1PricingState(sto *storage.Storage, initialRewardsRecipient common.Address, initialL1BaseFee *big.Int) error {
 	bptStorage := sto.OpenCachedSubStorage(BatchPosterTableKey)
@@ -511,7 +512,7 @@ func (ps *L1PricingState) getPosterUnitsWithoutCache(tx *types.Transaction, post
 	if err != nil {
 		panic(fmt.Sprintf("failed to compress tx: %v", err))
 	}
-	return l1Bytes * params.TxDataNonZeroGasEIP2028
+	return CompressedCalldataGasUnitsByLen(l1Bytes)
 }
 
 // GetPosterInfo returns the poster cost and the calldata units for a transaction
@@ -534,7 +535,8 @@ func (ps *L1PricingState) GetPosterInfo(tx *types.Transaction, poster common.Add
 }
 
 // We don't have the full tx in gas estimation, so we assume it might be a bit bigger in practice.
-const estimationPaddingUnits = 16 * params.TxDataNonZeroGasEIP2028
+var estimationPaddingUnits = CompressedCalldataGasUnitsByLen(16)
+
 const estimationPaddingBasisPoints = 100
 
 var randomNonce = binary.BigEndian.Uint64(crypto.Keccak256([]byte("Nonce"))[:8])
@@ -601,4 +603,33 @@ func byteCountAfterBrotliLevel(input []byte, level uint64) (uint64, error) {
 		return 0, err
 	}
 	return uint64(len(compressed)), nil
+}
+
+// BatchGasUnitsPerByte refers to the gas units spent for every byte of compressed batch calldata
+// #nosec G115
+var BatchGasUnitsPerByte = uint32(CompressedCalldataGasUnitsByLen(1))
+
+// CompressedCalldataGasUnitsByLen calculates an estimate of the gas units spent by calldata with a specific length
+// This calculation is specifically meant for the compressed batch calldata.
+// All bytes are treated as non-zero bytes for simplicity, based on the assumption that compressed data won't have many zeros.
+func CompressedCalldataGasUnitsByLen(compressedCalldataLength uint64) uint64 {
+	return tokenGasUnits(compressedCalldataLength * params.TxTokenPerNonZeroByte)
+}
+
+// CalldataGasUnits calculates the gas units spent by calldata
+func CalldataGasUnits(calldata []byte) uint64 {
+	var (
+		zeros    = bytes.Count(calldata, []byte{0})
+		nonZeros = len(calldata) - zeros
+		// #nosec G115
+		calldataTokens = uint64(nonZeros)*params.TxTokenPerNonZeroByte + uint64(zeros)
+	)
+
+	return tokenGasUnits(calldataTokens)
+}
+
+const prePragueGasUnitsPerToken = params.TxDataZeroGas
+
+func tokenGasUnits(calldataTokens uint64) uint64 {
+	return calldataTokens * prePragueGasUnitsPerToken
 }
