@@ -172,6 +172,10 @@ all: build build-replay-env test-gen-proofs
 build: $(patsubst %,$(output_root)/bin/%, nitro deploy relay daprovider daserver autonomous-auctioneer bidder-client datool mockexternalsigner seq-coordinator-invalidate nitro-val seq-coordinator-manager dbconv)
 	@printf $(done)
 
+.PHONY: build-nitro
+build-nitro: $(patsubst %,$(output_root)/bin/%, nitro)
+	@printf $(done)
+
 .PHONY: build-node-deps
 build-node-deps: $(go_source) build-prover-header build-prover-lib build-jit .make/solgen .make/cbrotli-lib
 
@@ -304,6 +308,16 @@ docker:
 	docker build -t nitro-node-slim --target nitro-node-slim .
 	docker build -t nitro-node --target nitro-node .
 	docker build -t nitro-node-dev --target nitro-node-dev .
+
+.PHONY: run-follower
+run-follower: clean-follower
+	@echo "Starting Nitro sequencer follower..."
+	CGO_LDFLAGS=-Wl,-no_warn_duplicate_libraries PR_EXIT_AFTER_GENESIS=false PR_IGNORE_CALLSTACK=false PR_MAX_MESSAGES_TO_DIGEST=100000 PR_NETH_RPC_CLIENT_URL=http://localhost:20545 PR_OVERRIDE_FORWARDER_URL=ws://localhost:8548 PR_USE_EXTERNAL_EXECUTION=true target/bin/nitro --persistent.global-config /tmp/sequencer_follower --ipc.path /tmp/dev-test/geth.ipc --conf.file ../arbitrum-nitro-testnode/data/config/sequencer_config_local.json --node.seq-coordinator.my-url ws://follower:8548 --http.port 7547 --ws.port 7548
+
+.PHONY: clean-follower
+clean-follower:
+	@echo "Cleaning sequencer follower directory..."
+	@rm -rf /tmp/sequencer_follower
 
 # regular build rules
 
