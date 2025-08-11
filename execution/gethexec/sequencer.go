@@ -429,7 +429,6 @@ type Sequencer struct {
 	nonceCache         *nonceCache
 	nonceFailures      *nonceFailureCache
 	expressLaneService *expressLaneService
-	onForwarderSet     chan struct{}
 
 	L1BlockAndTimeMutex sync.Mutex
 	l1BlockNumber       atomic.Uint64
@@ -474,7 +473,6 @@ func NewSequencer(execEngine *ExecutionEngine, l1Reader *headerreader.HeaderRead
 		nonceCache:                        newNonceCache(config.NonceCacheSize),
 		l1Timestamp:                       0,
 		pauseChan:                         nil,
-		onForwarderSet:                    make(chan struct{}, 1),
 		timeboostAuctionResolutionTxQueue: make(chan txQueueItem, 10), // There should never be more than 1 outstanding auction resolutions
 	}
 	s.nonceFailures = &nonceFailureCache{
@@ -807,13 +805,6 @@ func (s *Sequencer) ForwardTo(url string) error {
 	if s.pauseChan != nil {
 		close(s.pauseChan)
 		s.pauseChan = nil
-	}
-	if err == nil {
-		// If createBlocks is waiting for a new queue item, notify it that it needs to clear the nonceFailures.
-		select {
-		case s.onForwarderSet <- struct{}{}:
-		default:
-		}
 	}
 	return err
 }
@@ -1162,13 +1153,6 @@ func (s *Sequencer) createBlockWithRegularTxs(ctx context.Context) (sequencedMsg
 				case <-nextNonceExpiryChan:
 					// No need to stop the previous timer since it already elapsed
 					nextNonceExpiryTimer = s.expireNonceFailures()
-					continue
-				case <-s.onForwarderSet:
-					// Make sure this notification isn't outdated
-					_, forwarder := s.GetPauseAndForwarder()
-					if forwarder != nil {
-						s.nonceFailures.Clear()
-					}
 					continue
 				case <-ctx.Done():
 					return nil, false
