@@ -180,7 +180,7 @@ func (t *ExpressLaneTracker) startViaLogIterator(ctxIn context.Context) {
 				continue
 			}
 			for it.Next() {
-				timeSinceAuctionClose := t.roundTimingInfo.AuctionClosing - t.roundTimingInfo.TimeTilNextRound()
+				timeSinceAuctionClose := t.elapsedSinceAuctionClose(it.Event.Round)
 				auctionResolutionLatency.Update(timeSinceAuctionClose.Nanoseconds())
 				log.Info(
 					"AuctionResolved: New express lane controller assigned",
@@ -215,6 +215,7 @@ func (t *ExpressLaneTracker) startViaContractPolling(ctxIn context.Context) {
 		defer ticker.Stop()
 
 		var highestSeenRound uint64
+		var initialized bool
 
 		for {
 			select {
@@ -223,30 +224,28 @@ func (t *ExpressLaneTracker) startViaContractPolling(ctxIn context.Context) {
 			case <-ticker.C:
 			}
 
-			records := t.readResolvedRounds(ctx)
-			if len(records) == 0 {
+			record, ok := t.readLatestResolvedRound(ctx)
+			if !ok {
 				continue
 			}
 
-			for _, r := range records {
-				if r.controller == (common.Address{}) || r.round == 0 {
-					continue
-				}
+			if record.round > highestSeenRound {
+				highestSeenRound = record.round
 
-				if r.round > highestSeenRound {
-					highestSeenRound = r.round
-
-					timeSinceAuctionClose := t.roundTimingInfo.AuctionClosing - t.roundTimingInfo.TimeTilNextRound()
+				if !initialized {
+					initialized = true
+				} else {
+					timeSinceAuctionClose := t.elapsedSinceAuctionClose(record.round)
 					auctionResolutionLatency.Update(timeSinceAuctionClose.Nanoseconds())
 					log.Info(
 						"AuctionResolved: New express lane controller assigned",
-						"round", r.round,
-						"controller", r.controller,
+						"round", record.round,
+						"controller", record.controller,
 						"timeSinceAuctionClose", timeSinceAuctionClose,
 					)
-
-					t.roundControl.Store(r.round, r.controller)
 				}
+
+				t.roundControl.Store(record.round, record.controller)
 			}
 		}
 	})
@@ -297,48 +296,45 @@ type resolvedRecord struct {
 	controller common.Address
 }
 
-// readResolvedRounds calls the contract’s 2-slot buffer:
-// ResolvedRounds(opts *bind.CallOpts) (ELCRound, ELCRound, error)
-// where ELCRound corresponds to Solidity tuple (address, uint64).
-// It deduplicates and returns entries ordered by round ascending.
-func (t *ExpressLaneTracker) readResolvedRounds(parentCtx context.Context) []resolvedRecord {
-	// Per-call timeout shorter than poll interval to avoid slow node stalling the loop
+// returns the latest resolved round information
+// assuming the first round in the 2 round array is always the most recent round
+func (t *ExpressLaneTracker) readLatestResolvedRound(parentCtx context.Context) (resolvedRecord, bool) {
+	// Per-call timeout shorter than poll interval to avoid a slow node stalling the loop
 	timeout := t.pollInterval / 2
 	if timeout <= 0 {
-		timeout = 2 * time.Second // default timeout - 2 seconds
+		timeout = 2 * time.Second // default timeout 2 seconds
 	}
 	ctx, cancel := context.WithTimeout(parentCtx, timeout)
 	defer cancel()
 
-	r0, r1, err := t.auctionContract.ResolvedRounds(&bind.CallOpts{Context: ctx})
+	r0, _, err := t.auctionContract.ResolvedRounds(&bind.CallOpts{Context: ctx})
 	if err != nil {
-		log.Warn("resolvedRounds call failed", "err", err)
-		return nil
+		log.Warn("ExpressLaneTracker: resolvedRounds call failed", "err", err)
+		return resolvedRecord{}, false
 	}
 
-	toResolvedRecord := func(r express_lane_auctiongen.ELCRound) (resolvedRecord, bool) {
-		controller := r.ExpressLaneController
-		round := r.Round
+	controller := r0.ExpressLaneController // adjust if binding fields differ
+	round := r0.Round
+	if controller == (common.Address{}) || round == 0 {
+		return resolvedRecord{}, false
+	}
+	return resolvedRecord{round: round, controller: controller}, true
+}
 
-		if controller == (common.Address{}) || round == 0 {
-			return resolvedRecord{}, false
-		}
-		return resolvedRecord{round: round, controller: controller}, true
+// elapsedSinceAuctionClose returns how long ago the auction for `round` closed.
+// If the close time is in the future relative to now, it returns 0.
+func (t *ExpressLaneTracker) elapsedSinceAuctionClose(round uint64) time.Duration {
+	rti := t.roundTimingInfo
+
+	var roundsAgo int64
+	if cur := rti.RoundNumber(); cur >= round {
+		// #nosec G115 — safe cast: round numbers are protocol-bounded
+		roundsAgo = int64(cur - round)
 	}
 
-	var records []resolvedRecord
-	if record, ok := toResolvedRecord(r0); ok {
-		records = append(records, record)
+	elapsed := time.Duration(roundsAgo)*rti.Round + (rti.AuctionClosing - rti.TimeTilNextRound())
+	if elapsed < 0 {
+		return 0
 	}
-	if record, ok := toResolvedRecord(r1); ok {
-		if len(records) == 0 || records[0].round != record.round {
-			// Prepend or append the record based on its round number
-			if len(records) > 0 && record.round < records[0].round {
-				records = []resolvedRecord{record, records[0]}
-			} else {
-				records = append(records, record)
-			}
-		}
-	}
-	return records
+	return elapsed
 }
