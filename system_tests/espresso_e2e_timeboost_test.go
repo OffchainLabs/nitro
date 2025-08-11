@@ -102,7 +102,7 @@ func createAndSendBundleToTimeboost(t *testing.T, builder *NodeBuilder, users []
 	twoTxnsInBundleIdx := 8            // Send two txns in a bundle
 	sendTxnToOneTimeboostNodeIdx := 10 // Only send the bundle to one timeboost node
 	for i, userName := range users {
-		tx := builder.L2Info.PrepareTx("Owner", userName, builder.L2Info.TransferGas, big.NewInt(2), nil)
+		tx := builder.L2Info.PrepareTx("Owner", userName, builder.L2Info.TransferGas, big.NewInt(7000000000000001), nil)
 		expectedTxs = append(expectedTxs, tx)
 		txBytes, err := tx.MarshalBinary()
 		Require(t, err)
@@ -183,10 +183,35 @@ func TestEspressoTimeboostSequencerE2E(t *testing.T) {
 	}
 
 	expectedTxs := createAndSendBundleToTimeboost(t, builder, users)
+	// account 2 transactions in a bundle
 	if len(expectedTxs) != numUsers+1 {
 		t.Fatalf("expected transactions should be num users + 1. num users %d, expected len %d", numUsers, len(expectedTxs))
 	}
-	// Wait for sometime for the blocks to be produced
+
+	// Send some delayed messages, any user should be able to do so, not just the owner
+	delayedTx := builder.L2Info.PrepareTx(users[0], users[1], 3e7, big.NewInt(1), nil)
+	builder.L1.SendWaitTestTransactions(t, []*types.Transaction{
+		WrapL2ForDelayed(t, delayedTx, builder.L1Info, "Faucet", 100000),
+	})
+	delayedTx2 := builder.L2Info.PrepareTx(users[1], users[2], 3e7, big.NewInt(1), nil)
+	builder.L1.SendWaitTestTransactions(t, []*types.Transaction{
+		WrapL2ForDelayed(t, delayedTx2, builder.L1Info, "Faucet", 100000),
+	})
+	// User has no funds so TX should fail
+	builder.L2Info.GenerateAccount("luke")
+	invalidTx := builder.L2Info.PrepareTx("luke", users[2], 3e7, big.NewInt(1), nil)
+	builder.L1.SendWaitTestTransactions(t, []*types.Transaction{
+		WrapL2ForDelayed(t, invalidTx, builder.L1Info, "Faucet", 100000),
+	})
+	// Wait for timeboost to update its delayed inbox (TODO: reduce this, timeboost is currently hard coded for 1 minute polling interval)
+	time.Sleep(time.Second * 65)
+	// Send another transaction
+	expectedTxs = append(expectedTxs, createAndSendBundleToTimeboost(t, builder, []string{users[10]})...)
+	// We expect delayed messages blocks to be built last
+	expectedTxs = append(expectedTxs, delayedTx)
+	expectedTxs = append(expectedTxs, delayedTx2)
+
+	// Wait for blocks
 	time.Sleep(time.Second * 10)
 
 	blockNumberAfter, err := builder.L2.Client.BlockNumber(ctx)

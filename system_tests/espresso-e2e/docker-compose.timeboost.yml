@@ -1,6 +1,6 @@
 services:
   node0:
-    image: ghcr.io/espressosystems/timeboost:20250714
+    image: ghcr.io/espressosystems/timeboost:20250729
     command:
       [
         "/app/timeboost",
@@ -8,7 +8,8 @@ services:
         "--rpc-port", "8800",
         "--metrics-port", "9000",
         "--keyset-file", "/app/timeboost-keyset.json",
-        "--stamp", "/tmp/timeboost.stamp"
+        "--stamp", "/tmp/timeboost.stamp",
+        "--namespace", "10101",
       ]
     environment:
       - RUST_LOG=timeboost=info,sailfish=error,cliquenet=error
@@ -31,7 +32,7 @@ services:
     networks:
       - nitro-timeboost
   node1:
-    image: ghcr.io/espressosystems/timeboost:20250714
+    image: ghcr.io/espressosystems/timeboost:20250729
     command:
       [
         "/app/timeboost",
@@ -39,7 +40,8 @@ services:
         "--rpc-port", "8801",
         "--metrics-port", "9001",
         "--keyset-file", "/app/timeboost-keyset.json",
-        "--stamp", "/tmp/timeboost.stamp"
+        "--stamp", "/tmp/timeboost.stamp",
+        "--namespace", "10101",
       ]
     environment:
       - RUST_LOG=timeboost=info,sailfish=error,cliquenet=error

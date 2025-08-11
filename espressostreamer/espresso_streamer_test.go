@@ -232,9 +232,9 @@ func TestEspressoStreamer(t *testing.T) {
 		namespace := uint64(1)
 		blockNum := uint64(3)
 
-		tx1, tx2, tx3 := espressoTypes.Bytes{0x01}, espressoTypes.Bytes{0x02}, espressoTypes.Bytes{0x03}
+		tx1, tx2, tx3 := types.Bytes{0x01}, types.Bytes{0x02}, types.Bytes{0x03}
 		mockEspressoClient.On("FetchTransactionsInBlock", ctx, blockNum, namespace).Return(espressoClient.TransactionsInBlock{
-			Transactions: []espressoTypes.Bytes{tx1, tx2, tx3},
+			Transactions: []types.Bytes{tx1, tx2, tx3},
 		}, nil).Once()
 
 		parseAttemptCount := 0
@@ -329,9 +329,9 @@ func (m *mockEspressoClient) FetchTransactionsInBlock(ctx context.Context, block
 	return args.Get(0).(espressoClient.TransactionsInBlock), args.Error(1)
 }
 
-func (m *mockEspressoClient) FetchHeaderByHeight(ctx context.Context, blockHeight uint64) (espressoTypes.HeaderImpl, error) {
-	header := espressoTypes.Header0_3{Height: blockHeight, L1Finalized: &espressoTypes.L1BlockInfo{Number: 1}}
-	return espressoTypes.HeaderImpl{Header: &header}, nil
+func (m *mockEspressoClient) FetchHeaderByHeight(ctx context.Context, blockHeight uint64) (types.HeaderImpl, error) {
+	header := types.Header0_3{Height: blockHeight, L1Finalized: &types.L1BlockInfo{Number: 1}}
+	return types.HeaderImpl{Header: &header}, nil
 }
 
 func (m *mockEspressoClient) FetchHeadersByRange(ctx context.Context, from uint64, until uint64) ([]types.HeaderImpl, error) {

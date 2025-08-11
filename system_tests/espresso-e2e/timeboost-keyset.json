@@ -7,6 +7,12 @@
       "internal_address": "node0:5000",
       "signing_key": "qkoZ7xPFuTjNpKmn3SyWL2Y6WLm89wi9jNkDuu9KefXv",
       "dh_key": "JCriD5gjwBBvJRX6XsVeM6SZCqJVpjeMSdWUmyWsB6fG",
+      "chain_config": {
+        "parent_chain_id": 1337,
+        "parent_chain_rpc_url": "http://host.docker.internal:8545",
+        "parent_ibox_contr_addr": "0x1E40d26e4107a7f68903a30CE950e58200615014",
+        "parent_block_tag": "latest"
+      },
       "enc_key": "8shQ2jx13sU9x2BHchmjGDtMq9x7VBE1okyRYuAifa8YdaP8rtZaf3xeARSWadr9ABU",
       "private": {
         "signing_key": "9xTovKuXbwvBxk56Vb5Rs8rQ8e4zYuDueVMzU8Dp2X4X",
@@ -23,6 +29,12 @@
       "internal_address": "node1:5001",
       "signing_key": "28y18s4egBUnxoLSJY8vCYXV8KXaKYysD6tUen7syFyPt",
       "dh_key": "2wkSkQr7f3H5rXHjbo2YTBsyZ6kaKZKzatRB4ZFm8aMx",
+      "chain_config": {
+        "parent_chain_id": 1337,
+        "parent_chain_rpc_url": "http://host.docker.internal:8545",
+        "parent_ibox_contr_addr": "0x1E40d26e4107a7f68903a30CE950e58200615014",
+        "parent_block_tag": "latest"
+      },
       "enc_key": "8snAicyAEjCvD3MnEZaSsgxXPGQBGDp8yKroaeCAFA1Kz8RGUcGNfJjqemuKC42Nf9U",
       "private": {
         "signing_key": "ELRLgE3jPkErc6cmp1gQjveku2gvvGCgAYEFS1tvJhEx",

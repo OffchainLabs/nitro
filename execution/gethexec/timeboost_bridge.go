@@ -80,9 +80,7 @@ func (l *TimeboostBridge) SendBlockToTimeboost(block *types.Block, round uint64,
 		return err
 	}
 	protoBlock := &protos.Block{
-		Namespace: chainId,
-		Round:     round,
-		Hash:      block.Hash().Bytes(),
+		Round: round,
 		// TODO: Proper hotshot payload
 		Payload: txns,
 	}

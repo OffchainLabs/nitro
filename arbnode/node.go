@@ -83,8 +83,9 @@ type Config struct {
 	// SnapSyncConfig is only used for testing purposes, these should not be configured in production.
 	SnapSyncTest SnapSyncConfig
 
-	EspressoCaffNode   EspressoCaffNodeConfig            `koanf:"espresso-caff-node"`
-	TimeboostSequencer gethexec.TimeboostSequencerConfig `koanf:"timeboost-sequencer" reload:"hot"`
+	EspressoCaffNode          EspressoCaffNodeConfig            `koanf:"espresso-caff-node"`
+	TimeboostSequencer        gethexec.TimeboostSequencerConfig `koanf:"timeboost-sequencer" reload:"hot"`
+	TimeboostDelayedSequencer TimeboostDelayedSequencerConfig   `koanf:"timeboost-delayed-sequencer" reload:"hot"`
 }
 
 func (c *Config) Validate() error {
@@ -104,7 +105,7 @@ func (c *Config) Validate() error {
 	if c.EspressoCaffNode.Enable && (c.Sequencer || c.DelayedSequencer.Enable || c.SeqCoordinator.Enable || c.TimeboostSequencer.Enable) {
 		return errors.New("cannot start a Caff node with any sequencer enabled")
 	}
-	if c.TimeboostSequencer.Enable && (c.Sequencer || c.SeqCoordinator.Enable || c.EspressoCaffNode.Enable) {
+	if c.TimeboostSequencer.Enable && (c.Sequencer || c.SeqCoordinator.Enable || c.EspressoCaffNode.Enable || c.DelayedSequencer.Enable) {
 		return errors.New("cannot start a timeboost sequencer with any other sequencer enabled")
 	}
 	if err := c.BlockValidator.Validate(); err != nil {
@@ -164,31 +165,33 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feed
 	ConsensusExecutionSyncerConfigAddOptions(prefix+".consensus-execution-syncer", f)
 	gethexec.TimeboostSequencerConfigAddOptions(prefix+".timeboost-sequencer", f)
 	EspressoCaffNodeConfigAddOptions(prefix+".espresso-caff-node", f)
+	TimeboostDelayedSequencerConfigAddOptions(prefix+".timeboost-delayed-sequencer", f)
 }
 
 var ConfigDefault = Config{
-	Sequencer:                false,
-	ParentChainReader:        headerreader.DefaultConfig,
-	InboxReader:              DefaultInboxReaderConfig,
-	DelayedSequencer:         DefaultDelayedSequencerConfig,
-	BatchPoster:              DefaultBatchPosterConfig,
-	MessagePruner:            DefaultMessagePrunerConfig,
-	BlockValidator:           staker.DefaultBlockValidatorConfig,
-	Feed:                     broadcastclient.FeedConfigDefault,
-	Staker:                   legacystaker.DefaultL1ValidatorConfig,
-	Bold:                     boldstaker.DefaultBoldConfig,
-	SeqCoordinator:           DefaultSeqCoordinatorConfig,
-	DataAvailability:         das.DefaultDataAvailabilityConfig,
-	DAProvider:               daclient.DefaultClientConfig,
-	SyncMonitor:              DefaultSyncMonitorConfig,
-	Dangerous:                DefaultDangerousConfig,
-	TransactionStreamer:      DefaultTransactionStreamerConfig,
-	ResourceMgmt:             resourcemanager.DefaultConfig,
-	BlockMetadataFetcher:     DefaultBlockMetadataFetcherConfig,
-	Maintenance:              DefaultMaintenanceConfig,
-	ConsensusExecutionSyncer: DefaultConsensusExecutionSyncerConfig,
-	SnapSyncTest:             DefaultSnapSyncConfig,
-	TimeboostSequencer:       gethexec.DefaultTimeboostSequencerConfig,
+	Sequencer:                 false,
+	ParentChainReader:         headerreader.DefaultConfig,
+	InboxReader:               DefaultInboxReaderConfig,
+	DelayedSequencer:          DefaultDelayedSequencerConfig,
+	BatchPoster:               DefaultBatchPosterConfig,
+	MessagePruner:             DefaultMessagePrunerConfig,
+	BlockValidator:            staker.DefaultBlockValidatorConfig,
+	Feed:                      broadcastclient.FeedConfigDefault,
+	Staker:                    legacystaker.DefaultL1ValidatorConfig,
+	Bold:                      boldstaker.DefaultBoldConfig,
+	SeqCoordinator:            DefaultSeqCoordinatorConfig,
+	DataAvailability:          das.DefaultDataAvailabilityConfig,
+	DAProvider:                daclient.DefaultClientConfig,
+	SyncMonitor:               DefaultSyncMonitorConfig,
+	Dangerous:                 DefaultDangerousConfig,
+	TransactionStreamer:       DefaultTransactionStreamerConfig,
+	ResourceMgmt:              resourcemanager.DefaultConfig,
+	BlockMetadataFetcher:      DefaultBlockMetadataFetcherConfig,
+	Maintenance:               DefaultMaintenanceConfig,
+	ConsensusExecutionSyncer:  DefaultConsensusExecutionSyncerConfig,
+	SnapSyncTest:              DefaultSnapSyncConfig,
+	TimeboostSequencer:        gethexec.DefaultTimeboostSequencerConfig,
+	TimeboostDelayedSequencer: DefaultTimeboostDelayedSequencerConfig,
 }
 
 func ConfigDefaultL1Test() *Config {
@@ -293,8 +296,9 @@ type Node struct {
 	ctx                      context.Context
 	ConsensusExecutionSyncer *ConsensusExecutionSyncer
 
-	EspressoCaffNode   *EspressoCaffNode
-	TimeboostSequencer *gethexec.TimeboostSequencer
+	EspressoCaffNode          *EspressoCaffNode
+	TimeboostSequencer        *gethexec.TimeboostSequencer
+	TimeboostDelayedSequencer *TimeboostDelayedSequencer
 }
 
 type SnapSyncConfig struct {
@@ -1053,10 +1057,29 @@ func getDelayedSequencer(
 	return delayedSequencer, nil
 }
 
+func getTimeboostDelayedSequencer(
+	inboxReader *InboxReader,
+	exec execution.ExecutionSequencer,
+	configFetcher ConfigFetcher,
+) (*TimeboostDelayedSequencer, chan gethexec.DelayedMessageCommand, error) {
+	if !configFetcher.Get().TimeboostDelayedSequencer.Enable {
+		return nil, nil, nil
+	}
+	if exec == nil {
+		return nil, nil, errors.New("Timeboost sequencer is enabled but execution client is nil")
+	}
+	timeboostDelayedSequencer, delayedChannel, err := NewTimeboostDelayedSequencer(inboxReader, exec, func() *TimeboostDelayedSequencerConfig { return &configFetcher.Get().TimeboostDelayedSequencer })
+	if err != nil {
+		return nil, nil, err
+	}
+	return timeboostDelayedSequencer, delayedChannel, nil
+}
+
 func getTimeboostSequencer(
 	l1Reader *headerreader.HeaderReader,
 	exec execution.ExecutionClient,
 	configFetcher ConfigFetcher,
+	channel chan gethexec.DelayedMessageCommand,
 ) (*gethexec.TimeboostSequencer, error) {
 	log.Info("timeboost sequencer: ", "enable", configFetcher.Get().TimeboostSequencer.Enable)
 	if !configFetcher.Get().TimeboostSequencer.Enable {
@@ -1065,9 +1088,12 @@ func getTimeboostSequencer(
 	if exec == nil {
 		return nil, errors.New("Timeboost sequencer is enabled but execution client is nil")
 	}
+	if channel == nil {
+		return nil, errors.New("Timeboost sequencer is enabled but channel is nil")
+	}
 
 	if exec, ok := exec.(*gethexec.ExecutionNode); ok {
-		timeboostSequencer, err := gethexec.NewTimeboostSequencer(exec.ExecEngine, l1Reader, func() *gethexec.TimeboostSequencerConfig { return &configFetcher.Get().TimeboostSequencer })
+		timeboostSequencer, err := gethexec.NewTimeboostSequencer(exec.ExecEngine, l1Reader, channel, func() *gethexec.TimeboostSequencerConfig { return &configFetcher.Get().TimeboostSequencer })
 		if err != nil {
 			return nil, err
 		}
@@ -1244,7 +1270,12 @@ func createNodeImpl(
 		return nil, err
 	}
 
-	timeboostSequencer, err := getTimeboostSequencer(l1Reader, executionClient, configFetcher)
+	timeboostDelayedSequencer, channel, err := getTimeboostDelayedSequencer(inboxReader, executionSequencer, configFetcher)
+	if err != nil {
+		return nil, err
+	}
+
+	timeboostSequencer, err := getTimeboostSequencer(l1Reader, executionClient, configFetcher, channel)
 	if err != nil {
 		return nil, err
 	}
@@ -1255,34 +1286,35 @@ func createNodeImpl(
 	consensusExecutionSyncer := NewConsensusExecutionSyncer(consensusExecutionSyncerConfigFetcher, inboxReader, executionClient, blockValidator, txStreamer)
 
 	return &Node{
-		ArbDB:                    arbDb,
-		Stack:                    stack,
-		ExecutionClient:          executionClient,
-		ExecutionSequencer:       executionSequencer,
-		ExecutionRecorder:        executionRecorder,
-		L1Reader:                 l1Reader,
-		TxStreamer:               txStreamer,
-		DeployInfo:               deployInfo,
-		BlobReader:               blobReader,
-		InboxReader:              inboxReader,
-		InboxTracker:             inboxTracker,
-		DelayedSequencer:         delayedSequencer,
-		BatchPoster:              batchPoster,
-		MessagePruner:            messagePruner,
-		BlockValidator:           blockValidator,
-		StatelessBlockValidator:  statelessBlockValidator,
-		Staker:                   stakerObj,
-		BroadcastServer:          broadcastServer,
-		BroadcastClients:         broadcastClients,
-		SeqCoordinator:           coordinator,
-		MaintenanceRunner:        maintenanceRunner,
-		dasServerCloseFn:         dasServerCloseFn,
-		SyncMonitor:              syncMonitor,
-		blockMetadataFetcher:     blockMetadataFetcher,
-		configFetcher:            configFetcher,
-		ctx:                      ctx,
-		ConsensusExecutionSyncer: consensusExecutionSyncer,
-		TimeboostSequencer:       timeboostSequencer,
+		ArbDB:                     arbDb,
+		Stack:                     stack,
+		ExecutionClient:           executionClient,
+		ExecutionSequencer:        executionSequencer,
+		ExecutionRecorder:         executionRecorder,
+		L1Reader:                  l1Reader,
+		TxStreamer:                txStreamer,
+		DeployInfo:                deployInfo,
+		BlobReader:                blobReader,
+		InboxReader:               inboxReader,
+		InboxTracker:              inboxTracker,
+		DelayedSequencer:          delayedSequencer,
+		BatchPoster:               batchPoster,
+		MessagePruner:             messagePruner,
+		BlockValidator:            blockValidator,
+		StatelessBlockValidator:   statelessBlockValidator,
+		Staker:                    stakerObj,
+		BroadcastServer:           broadcastServer,
+		BroadcastClients:          broadcastClients,
+		SeqCoordinator:            coordinator,
+		MaintenanceRunner:         maintenanceRunner,
+		dasServerCloseFn:          dasServerCloseFn,
+		SyncMonitor:               syncMonitor,
+		blockMetadataFetcher:      blockMetadataFetcher,
+		configFetcher:             configFetcher,
+		ctx:                       ctx,
+		ConsensusExecutionSyncer:  consensusExecutionSyncer,
+		TimeboostSequencer:        timeboostSequencer,
+		TimeboostDelayedSequencer: timeboostDelayedSequencer,
 	}, nil
 }
 
@@ -1575,6 +1607,9 @@ func (n *Node) Start(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("error starting timeboost sequencer: %w", err)
 		}
+	}
+	if n.TimeboostDelayedSequencer != nil {
+		n.TimeboostDelayedSequencer.Start(ctx)
 	}
 	// Also make sure to call initialize on the sync monitor after the inbox reader, tx streamer, and block validator are started.
 	// Else sync might call inbox reader or tx streamer before they are started, and it will lead to panic.

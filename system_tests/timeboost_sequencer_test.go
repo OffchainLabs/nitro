@@ -15,10 +15,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 )
 
-// Acknowledgement flag that timeboost will wait for to know sequencer processed
-// Inclusion list successfully
-const ACK_FLAG = 0xc0
-
 func createL1AndL2NodeForTimeboost(
 	ctx context.Context,
 	t *testing.T,
@@ -44,8 +40,8 @@ func createL1AndL2NodeForTimeboost(
 	builder.nodeConfig.BlockValidator.Enable = true
 	builder.nodeConfig.BlockValidator.ValidationPoll = 2 * time.Second
 	builder.nodeConfig.BlockValidator.ValidationServer.URL = fmt.Sprintf("ws://127.0.0.1:%d", arbValidationPort)
-	builder.nodeConfig.DelayedSequencer.Enable = delayedSequencer
-	builder.nodeConfig.DelayedSequencer.FinalizeDistance = 1
+	builder.nodeConfig.DelayedSequencer.Enable = false
+	builder.nodeConfig.TimeboostDelayedSequencer.Enable = delayedSequencer
 
 	// sequencer config
 	builder.nodeConfig.Sequencer = false
@@ -59,10 +55,10 @@ func createL1AndL2NodeForTimeboost(
 	// Enable timeboost sequencer
 	builder.nodeConfig.TimeboostSequencer.Enable = true
 	builder.nodeConfig.TimeboostSequencer.BlockRetryDuration = time.Second
-	builder.nodeConfig.TimeboostSequencer.MaxTxDataSize = 8000
+	builder.nodeConfig.TimeboostSequencer.MaxTxDataSize = 3000
 	builder.nodeConfig.TimeboostSequencer.NonceCacheSize = 1024
 	builder.nodeConfig.TimeboostSequencer.MaxRevertGasReject = 0
-	builder.nodeConfig.TimeboostSequencer.ParentChainFinalizationTime = 20 * time.Minute
+	builder.nodeConfig.TimeboostSequencer.ParentChainFinalizationTime = 2 * time.Second
 	builder.nodeConfig.TimeboostSequencer.MaxAcceptableTimestampDelta = time.Hour
 	builder.nodeConfig.TimeboostSequencer.EnableProfiling = false
 	builder.nodeConfig.TimeboostSequencer.TimeboostBridgeConfig.InternalTimeboostGrpcUrl = "localhost:5000"
@@ -174,7 +170,7 @@ func TestEspressoTimeboostSequencer(t *testing.T) {
 		var txns []*types.Transaction
 		// Every user generates a transaction and put into inclusion list
 		for _, userName := range users {
-			tx := builder.L2Info.PrepareTx("Owner", userName, builder.L2Info.TransferGas, big.NewInt(2000000000000000000), nil)
+			tx := builder.L2Info.PrepareTx("Owner", userName, builder.L2Info.TransferGas, big.NewInt(math.MaxInt64), nil)
 			txns = append(txns, tx)
 		}
 
@@ -269,7 +265,7 @@ func TestEspressoTimeboostSequencer(t *testing.T) {
 		SendInclusionLists(t, inclusionLists)
 
 		// Wait for sometime for the block to be produced
-		time.Sleep(time.Second * 20)
+		time.Sleep(time.Second * 10)
 
 		blockNumberAfter, err := builder.L2.Client.BlockNumber(ctx)
 		Require(t, err)
@@ -359,7 +355,7 @@ func TestEspressoTimeboostSequencer(t *testing.T) {
 		SendInclusionLists(t, inclusionLists)
 
 		// Wait for sometime for the block to be produced
-		time.Sleep(time.Second * 20)
+		time.Sleep(time.Second * 10)
 
 		blockNumberAfter, err := builder.L2.Client.BlockNumber(ctx)
 		Require(t, err)
@@ -371,8 +367,8 @@ func TestEspressoTimeboostSequencer(t *testing.T) {
 			t.Fatalf("expected numIncls to be greater than 0, got: %d", numIncls)
 		}
 		// This check ensures that more blocks were created than the number of inclusion lists
-		if blockNumberAfter-blockNumberBefore <= uint64(numIncls) {
-			t.Fatalf("expected difference between blockNumberAfter and blockNumberBefore should be greater than 0, got: %d", blockNumberAfter-blockNumberBefore)
+		if blockNumberAfter-blockNumberBefore != uint64(numIncls)+1 {
+			t.Fatalf("expected difference between blockNumberAfter and blockNumberBefore should be %d, got: %d", uint64(numIncls)+1, blockNumberAfter-blockNumberBefore)
 		}
 
 		// Initially the round number should be 0 and roundTransactions should contain the transactions from the first inclusion list
@@ -454,7 +450,7 @@ func TestEspressoTimeboostSequencer(t *testing.T) {
 		SendInclusionLists(t, inclusionLists)
 
 		// Wait for sometime for the block to be produced
-		time.Sleep(time.Second * 20)
+		time.Sleep(time.Second * 10)
 
 		blockNumberAfter, err := builder.L2.Client.BlockNumber(ctx)
 		Require(t, err)
@@ -490,7 +486,7 @@ func TestEspressoTimeboostSequencer(t *testing.T) {
 		SendInclusionLists(t, inclusionLists)
 
 		// Wait for sometime for the block to be produced
-		time.Sleep(time.Second * 20)
+		time.Sleep(time.Second * 10)
 
 		blockNumberAfter, err := builder.L2.Client.BlockNumber(ctx)
 		Require(t, err)
@@ -527,7 +523,7 @@ func TestEspressoTimeboostSequencer(t *testing.T) {
 		SendInclusionLists(t, inclusionLists)
 
 		// Wait for sometime for the block to be produced
-		time.Sleep(time.Second * 20)
+		time.Sleep(time.Second * 10)
 
 		blockNumberAfter, err := builder.L2.Client.BlockNumber(ctx)
 		Require(t, err)
