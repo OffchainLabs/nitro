@@ -414,7 +414,7 @@ func (q *synchronizedTxQueue) Len() int {
 type createdBlockInfo struct {
 	block      *types.Block
 	queueItems []txQueueItem
-	hooks      *arbos.SequencingHooks
+	hooks      *fullSequencingHooks
 }
 
 type Sequencer struct {
