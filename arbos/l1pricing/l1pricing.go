@@ -628,8 +628,6 @@ func CalldataGasUnits(calldata []byte) uint64 {
 	return tokenGasUnits(calldataTokens)
 }
 
-const prePragueGasUnitsPerToken = params.TxDataZeroGas
-
 func tokenGasUnits(calldataTokens uint64) uint64 {
-	return calldataTokens * prePragueGasUnitsPerToken
+	return calldataTokens * params.TxCostFloorPerToken
 }

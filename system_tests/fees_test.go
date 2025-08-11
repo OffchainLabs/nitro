@@ -97,11 +97,11 @@ func TestSequencerFeePaid(t *testing.T) {
 
 		txSize := compressedTxSize(t, tx)
 		l1GasBought := arbmath.BigDiv(l1Charge, l1Estimate).Uint64()
-		l1ChargeExpected := arbmath.BigMulByUint(l1Estimate, txSize*params.TxDataNonZeroGasEIP2028)
+		l1ChargeExpected := arbmath.BigMulByUint(l1Estimate, txSize*params.TxCostFloorPerToken*params.TxTokenPerNonZeroByte)
 		// L1 gas can only be charged in terms of L2 gas, so subtract off any rounding error from the expected value
 		l1ChargeExpected.Sub(l1ChargeExpected, new(big.Int).Mod(l1ChargeExpected, builder.L2Info.GasPrice))
 
-		colors.PrintBlue("bytes ", l1GasBought/params.TxDataNonZeroGasEIP2028, txSize)
+		colors.PrintBlue("bytes ", l1GasBought/params.TxCostFloorPerToken*params.TxTokenPerNonZeroByte, txSize)
 
 		if !arbmath.BigEquals(l1Charge, l1ChargeExpected) {
 			Fatal(t, "the sequencer's future revenue does not match its costs", l1Charge, l1ChargeExpected)
@@ -188,7 +188,7 @@ func testSequencerPriceAdjustsFrom(t *testing.T, initialEstimate uint64) {
 
 		builder.L1.TransferBalance(t, "Faucet", "Faucet", common.Big1, builder.L1Info) // generate l1 traffic
 
-		units := compressedTxSize(t, tx) * params.TxDataNonZeroGasEIP2028
+		units := compressedTxSize(t, tx) * params.TxCostFloorPerToken * params.TxTokenPerNonZeroByte
 		estimatedL1FeePerUnit := arbmath.BigDivByUint(arbmath.BigMulByUint(header.BaseFee, receipt.GasUsedForL1), units)
 
 		if !arbmath.BigEquals(lastEstimate, estimatedL1FeePerUnit) {
