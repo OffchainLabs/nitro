@@ -255,7 +255,7 @@ func ProduceBlockAdvanced(
 
 		var tx *types.Transaction
 		var options *arbitrum_types.ConditionalOptions
-		hooks := NoopSequencingHooks(nil) // TODO
+		hooks := NoopSequencingHooks(nil) // TODO: NIT-3678
 		isUserTx := false
 		if firstTx != nil {
 			tx = firstTx

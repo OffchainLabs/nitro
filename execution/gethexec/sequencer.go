@@ -163,6 +163,9 @@ func (c *SequencerConfig) Validate() error {
 			}
 		}
 	}
+	if c.ReadFromTxQueueTimeout >= c.MaxBlockSpeed {
+		log.Warn("Sequencer ReadFromTxQueueTimeout is higher than MaxBlockSpeed", "ReadFromTxQueueTimeout", c.ReadFromTxQueueTimeout, "MaxBlockSpeed", c.MaxBlockSpeed)
+	}
 	return nil
 }
 
@@ -171,7 +174,7 @@ type SequencerConfigFetcher func() *SequencerConfig
 var DefaultSequencerConfig = SequencerConfig{
 	Enable:                      false,
 	MaxBlockSpeed:               time.Millisecond * 250,
-	ReadFromTxQueueTimeout:      time.Millisecond * 50,
+	ReadFromTxQueueTimeout:      time.Millisecond * 10,
 	MaxRevertGasReject:          0,
 	MaxAcceptableTimestampDelta: time.Hour,
 	SenderWhitelist:             []string{},
@@ -198,7 +201,7 @@ var DefaultDangerousConfig = DangerousConfig{
 
 func SequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultSequencerConfig.Enable, "act and post to l1 as sequencer")
-	f.Duration(prefix+".read-from-tx-queue-timeout", DefaultSequencerConfig.ReadFromTxQueueTimeout, "time duration after which the sequencer stops reading txs from queue")
+	f.Duration(prefix+".read-from-tx-queue-timeout", DefaultSequencerConfig.ReadFromTxQueueTimeout, "timeout for reading new messages")
 	f.Duration(prefix+".max-block-speed", DefaultSequencerConfig.MaxBlockSpeed, "minimum delay between blocks (sets a maximum speed of block production)")
 	f.Uint64(prefix+".max-revert-gas-reject", DefaultSequencerConfig.MaxRevertGasReject, "maximum gas executed in a revert for the sequencer to reject the transaction instead of posting it (anti-DOS)")
 	f.Duration(prefix+".max-acceptable-timestamp-delta", DefaultSequencerConfig.MaxAcceptableTimestampDelta, "maximum acceptable time difference between the local time and the latest L1 block's timestamp")
@@ -465,9 +468,6 @@ func NewSequencer(execEngine *ExecutionEngine, l1Reader *headerreader.HeaderRead
 	}
 	s.Pause()
 	execEngine.EnableReorgSequencing()
-	if config.ReadFromTxQueueTimeout >= config.MaxBlockSpeed {
-		log.Warn("Sequencer ReadFromTxQueueTimeout is higher than MaxBlockSpeed", "ReadFromTxQueueTimeout", config.ReadFromTxQueueTimeout, "MaxBlockSpeed", config.MaxBlockSpeed)
-	}
 	return s, nil
 }
 
@@ -1086,10 +1086,12 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 		}
 	}()
 
-	startOfReadingFromTxQueue := time.Now()
+	var startOfReadingFromTxQueue time.Time
 
 	for {
-		if time.Since(startOfReadingFromTxQueue) > config.ReadFromTxQueueTimeout {
+		if len(queueItems) == 1 {
+			startOfReadingFromTxQueue = time.Now()
+		} else if len(queueItems) > 1 && time.Since(startOfReadingFromTxQueue) > config.ReadFromTxQueueTimeout {
 			break
 		}
 
