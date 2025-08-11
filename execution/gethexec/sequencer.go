@@ -915,7 +915,7 @@ func (s *fullSequencingHooks) GetNextTx() (*types.Transaction, error) {
 	if s.sequencedQueueItemsCount > 0 && s.TxErrors[s.sequencedQueueItemsCount-1] == nil {
 		s.sequencedTxsSizeSoFar += s.queueItems[s.sequencedQueueItemsCount-1].txSize
 	}
-	if s.sequencedQueueItemsCount >= len(s.queueItems) { // s.sequencedQueueItemsCount > len(s.queueItems), is not supposed to happen, if so we have a bug
+	if s.sequencedQueueItemsCount >= len(s.queueItems) {
 		return nil, nil
 	}
 	if s.sequencedTxsSizeSoFar+s.queueItems[s.sequencedQueueItemsCount].txSize > s.maxSequencedTxsSize {
