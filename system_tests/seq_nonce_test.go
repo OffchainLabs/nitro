@@ -166,11 +166,11 @@ func TestSequencerNonceHandling(t *testing.T) {
 	builder.L2Info.GetInfoWithPrivKey(userAccount).Nonce.Store(0)
 	txFirst := builder.L2Info.PrepareTx(userAccount, userAccount3, 7000000, big.NewInt(1e8), data)
 	builder.L2Info.GetInfoWithPrivKey(userAccount).Nonce.Store(1)
-	largeTxs = append(largeTxs, builder.L2Info.PrepareTx(userAccount, userAccount3, 35000000, big.NewInt(1e5), data))
+	largeTxs = append(largeTxs, builder.L2Info.PrepareTx(userAccount, userAccount3, 50000000, big.NewInt(1e5), data))
 	builder.L2Info.GetInfoWithPrivKey(userAccount).Nonce.Store(1)
-	largeTxs = append(largeTxs, builder.L2Info.PrepareTx(userAccount, userAccount3, 35000000, big.NewInt(1e5+1), data))
+	largeTxs = append(largeTxs, builder.L2Info.PrepareTx(userAccount, userAccount3, 50000000, big.NewInt(1e5+1), data))
 	builder.L2Info.GetInfoWithPrivKey(userAccount).Nonce.Store(1)
-	largeTxs = append(largeTxs, builder.L2Info.PrepareTx(userAccount, userAccount3, 35000000, big.NewInt(1e5+2), data))
+	largeTxs = append(largeTxs, builder.L2Info.PrepareTx(userAccount, userAccount3, 50000000, big.NewInt(1e5+2), data))
 
 	var allTxs types.Transactions
 	allTxs = append(allTxs, txFirst)
