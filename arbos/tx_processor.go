@@ -501,7 +501,8 @@ func (p *TxProcessor) NonrefundableGas() uint64 {
 	return p.posterGas
 }
 
-func (p *TxProcessor) ForceRefundGas() uint64 {
+func (p *TxProcessor) HeldGas() uint64 {
+	// Gas held back to limit computation, Must be refunded as soon as computation is complete.
 	return p.computeHoldGas
 }
 

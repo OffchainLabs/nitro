@@ -630,8 +630,14 @@ func (a *AssertionChain) createAndStakeOnAssertion(
 		return nil, errors.Wrapf(err, "could not fetch assertion with computed hash %#x", computedHash)
 	default:
 	}
-	if err = a.autoDepositFunds(ctx, parentAssertionCreationInfo.RequiredStake); err != nil {
-		return nil, errors.Wrapf(err, "could not auto-deposit funds for assertion creation")
+	staked, err := a.IsStaked(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if !staked {
+		if err = a.autoDepositFunds(ctx, parentAssertionCreationInfo.RequiredStake); err != nil {
+			return nil, errors.Wrapf(err, "could not auto-deposit funds for assertion creation")
+		}
 	}
 	receipt, err := a.transact(ctx, a.backend, func(opts *bind.TransactOpts) (*types.Transaction, error) {
 		return stakeFn(

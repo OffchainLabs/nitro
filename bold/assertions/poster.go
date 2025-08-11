@@ -196,7 +196,8 @@ func (m *Manager) PostAssertionBasedOnParent(
 		"postedExecutionState", fmt.Sprintf("%+v", newState),
 		"assertionHash", assertion.Id(),
 	)
-	m.observedCanonicalAssertions <- assertion.Id()
+
+	m.sendToConfirmationQueue(assertion.Id(), "PostAssertionBasedOnParent")
 	return option.Some(assertion), nil
 }
 

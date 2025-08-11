@@ -30,7 +30,7 @@ jobs:
           key: ${{ runner.os }}-buildx-${{ hashFiles('Dockerfile') }}
           restore-keys: ${{ runner.os }}-buildx-
       - name: Build nitro-node docker
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           target: nitro-node
           push: true
@@ -39,7 +39,7 @@ jobs:
           cache-from: type=local,src=/tmp/.buildx-cache
           cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
       - name: Build nitro-node-dev docker
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           target: nitro-node-dev
           push: true
