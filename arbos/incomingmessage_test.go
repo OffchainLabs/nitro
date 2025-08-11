@@ -37,7 +37,7 @@ func TestSerializeAndParseL1Message(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	txes, err := ParseL2Transactions(newMsg, chainId)
+	txes, err := ParseL2Transactions(newMsg, chainId, false)
 	if err != nil {
 		t.Error(err)
 	}
