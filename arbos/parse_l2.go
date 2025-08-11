@@ -14,7 +14,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
-
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/callstack"
@@ -42,7 +41,7 @@ func ParseL2Transactions(msg *arbostypes.L1IncomingMessage, chainId *big.Int) (t
 		callstack.FillMapWithStructFields(dump, tx, fmt.Sprintf("tx[%d]", i), ignoredFields, whitelistedMethods)
 	}
 
-	callstack.PrintPrettyJson(dump)
+	// callstack.PrintPrettyJson(dump)
 
 	return txs, err
 }

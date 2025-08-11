@@ -5,12 +5,12 @@ import (
 	"math"
 	"os"
 	"strconv"
+	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
-
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/execution"
@@ -59,7 +59,6 @@ func NewNodeWrapper(node *gethexec.ExecutionNode, rpcClient *NethRpcClient) *Nod
 // ---- execution.ExecutionClient interface methods ----
 
 func (w *NodeWrapper) DigestMessage(num arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, msgForPrefetch *arbostypes.MessageWithMetadata) containers.PromiseInterface[*execution.MessageResult] {
-	start := time.Now()
 	log.Info("NodeWrapper: DigestMessage", "num", num)
 
 	// Check message limit and exit if exceeded
@@ -71,13 +70,19 @@ func (w *NodeWrapper) DigestMessage(num arbutil.MessageIndex, msg *arbostypes.Me
 
 	atomic.AddUint64(&digestedMsgCounter, 1)
 
+	wg := sync.WaitGroup{}
+	defer wg.Wait()
+	wg.Add(1)
 	go func() {
+		defer wg.Done()
+		rpcStart := time.Now()
 		_ = w.rpcClient.DigestMessage(context.Background(), num, msg, msgForPrefetch)
-		log.Info("NodeWrapper: DigestMessage via JSON-RPC completed", "num", num, "elapsed", time.Since(start))
+		log.Info("NodeWrapper: DigestMessage via JSON-RPC completed", "num", num, "elapsed", time.Since(rpcStart))
 	}()
 
+	directCallStart := time.Now()
 	result := w.ExecutionNode.DigestMessage(num, msg, msgForPrefetch)
-	log.Info("NodeWrapper: DigestMessage via direct call completed", "num", num, "elapsed", time.Since(start))
+	log.Info("NodeWrapper: DigestMessage via direct call completed", "num", num, "elapsed", time.Since(directCallStart))
 	return result
 }
 
@@ -128,7 +133,12 @@ func (w *NodeWrapper) SetFinalityData(ctx context.Context, finalityData *arbutil
 		"finalizedFinalityData", finalizedFinalityData,
 		"validatedFinalityData", validatedFinalityData)
 
+	wg := sync.WaitGroup{}
+	defer wg.Wait()
+	wg.Add(1)
 	go func() {
+		defer wg.Done()
+
 		err := w.rpcClient.SetFinalityData(ctx, finalityData, finalizedFinalityData, validatedFinalityData)
 		if err != nil {
 			log.Error("NodeWrapper: SetFinalityData via JSON-RPC failed", "error", err, "elapsed", time.Since(start))

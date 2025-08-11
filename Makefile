@@ -319,6 +319,37 @@ clean-follower:
 	@echo "Cleaning sequencer follower directory..."
 	@rm -rf /tmp/sequencer_follower
 
+.PHONY: run-sequencer
+run-sequencer: clean-sequencer
+	@echo "Starting Nitro sequencer..."
+	CGO_LDFLAGS=-Wl,-no_warn_duplicate_libraries PR_EXIT_AFTER_GENESIS=false PR_IGNORE_CALLSTACK=false target/bin/nitro --persistent.global-config /tmp/sequencer --ipc.path /tmp/dev-test/geth.ipc --conf.file ../arbitrum-nitro-testnode/data/config/sequencer_config_local.json --node.feed.output.enable --node.feed.output.port 9642 --http.api net,web3,eth,txpool,debug,timeboost,auctioneer --http.port 8547 --ws.port 8548
+
+.PHONY: clean-sequencer
+clean-sequencer:
+	@echo "Cleaning sequencer directory..."
+	@rm -rf /tmp/sequencer
+
+.PHONY: run-sequencer-nethermind
+run-sequencer-nethermind: clean-sequencer-nethermind
+	@echo "Starting Nitro sequencer with external Nethermind EL..."
+	@echo "Ensure Nethermind is running at http://localhost:20545"
+	CGO_LDFLAGS=-Wl,-no_warn_duplicate_libraries \
+	PR_EXIT_AFTER_GENESIS=false PR_IGNORE_CALLSTACK=false \
+	PR_USE_EXTERNAL_EXECUTION=true PR_MAX_MESSAGES_TO_DIGEST=100000 \
+	PR_NETH_RPC_CLIENT_URL=http://localhost:20545 \
+	target/bin/nitro \
+		--persistent.global-config /tmp/sequencer_neth \
+		--ipc.path /tmp/dev-test/geth.ipc \
+		--conf.file ../arbitrum-nitro-testnode/data/config/sequencer_config_local.json \
+		--node.feed.output.enable --node.feed.output.port 9642 \
+		--http.api net,web3,eth,txpool,debug,timeboost,auctioneer \
+		--http.port 8547 --ws.port 8548
+
+.PHONY: clean-sequencer-nethermind
+clean-sequencer-nethermind:
+	@echo "Cleaning sequencer (Nethermind) directory..."
+	@rm -rf /tmp/sequencer_neth
+
 # regular build rules
 
 $(output_root)/bin/nitro: $(DEP_PREDICATE) build-node-deps

@@ -432,13 +432,24 @@ func mainImpl() int {
 		log.Info("enabling custom tracer", "name", traceConfig.TracerName)
 	}
 
-	nethRpcClient, err := nethexec.NewNethRpcClient()
-	if err != nil {
-		log.Crit("failed to create neth-rpc client", "err", err)
-		return 1
+	isExternalEL := nethexec.IsExternalExecutionEnabled()
+
+	var rpcClient *nethexec.NethRpcClient
+	var initDigester nethexec.InitMessageDigester
+	if isExternalEL {
+		var newClientErr error
+		rpcClient, newClientErr = nethexec.NewNethRpcClient()
+		if newClientErr != nil {
+			log.Crit("failed to create real RPC client", "err", newClientErr)
+			return 1
+		}
+		deferFuncs = append(deferFuncs, func() { rpcClient.Close() })
+		initDigester = rpcClient
+	} else {
+		initDigester = &nethexec.FakeRemoteExecutionRpcClient{}
 	}
 
-	chainDb, l2BlockChain, err := openInitializeChainDb(ctx, stack, nodeConfig, new(big.Int).SetUint64(nodeConfig.Chain.ID), gethexec.DefaultCacheConfigFor(stack, &nodeConfig.Execution.Caching), &nodeConfig.Execution.StylusTarget, tracer, &nodeConfig.Persistent, l1Client, nethRpcClient, rollupAddrs)
+	chainDb, l2BlockChain, err := openInitializeChainDb(ctx, stack, nodeConfig, new(big.Int).SetUint64(nodeConfig.Chain.ID), gethexec.DefaultCacheConfigFor(stack, &nodeConfig.Execution.Caching), &nodeConfig.Execution.StylusTarget, tracer, &nodeConfig.Persistent, l1Client, initDigester, rollupAddrs)
 	if l2BlockChain != nil {
 		deferFuncs = append(deferFuncs, func() { l2BlockChain.Stop() })
 	}
@@ -544,12 +555,10 @@ func mainImpl() int {
 		wasmModuleRoot = locator.LatestWasmModuleRoot()
 	}
 
-	// Create execution node based on external execution setting
 	var execNode nethexec.FullExecutionClient
-
-	if nethexec.IsExternalExecutionEnabled() {
-		execNode = nethexec.NewNodeWrapper(gethNode, nethRpcClient)
-		log.Info("Using NodeWrapper with external execution enabled")
+	if isExternalEL {
+		execNode = nethexec.NewNodeWrapper(gethNode, rpcClient)
+		log.Info("Created NodeWrapper with external execution")
 	} else {
 		execNode = gethNode
 		log.Info("Using gethNode directly (external execution disabled)")

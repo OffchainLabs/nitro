@@ -2,6 +2,7 @@ package nethexec
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math/big"
 	"net/http"
@@ -18,10 +19,6 @@ import (
 )
 
 var defaultUrl = "http://localhost:20545"
-
-type RemoteExecutionRpcClient interface {
-	DigestInitMessage(ctx context.Context, initialL1BaseFee *big.Int, serializedChainConfig []byte) *execution.MessageResult
-}
 
 type NethRpcClient struct {
 	client *rpc.Client
@@ -49,6 +46,20 @@ type RpcFinalityData struct {
 	MsgIdx    uint64      `json:"msgIdx"`
 	BlockHash common.Hash `json:"blockHash"`
 }
+
+type InitMessageDigester interface {
+	DigestInitMessage(ctx context.Context, initialL1BaseFee *big.Int, serializedChainConfig []byte) *execution.MessageResult
+}
+
+type FakeRemoteExecutionRpcClient struct{}
+
+func (n *FakeRemoteExecutionRpcClient) DigestInitMessage(ctx context.Context, initialL1BaseFee *big.Int, serializedChainConfig []byte) *execution.MessageResult {
+	return &execution.MessageResult{}
+}
+
+var _ InitMessageDigester = (*FakeRemoteExecutionRpcClient)(nil)
+
+var _ InitMessageDigester = (*NethRpcClient)(nil)
 
 func NewNethRpcClient() (*NethRpcClient, error) {
 	url, exists := os.LookupEnv("PR_NETH_RPC_CLIENT_URL")
@@ -87,12 +98,20 @@ func (c *NethRpcClient) DigestMessage(ctx context.Context, num arbutil.MessageIn
 	log.Info("Making JSON-RPC call to DigestMessage",
 		"url", c.url,
 		"num", num,
-		"messageType", msg.Message.Header.Kind)
+		"messageType", msg.Message.Header.Kind,
+	)
+
+	if payload, marshalErr := json.Marshal(params); marshalErr == nil {
+		fmt.Println("DigestMessage request:", string(payload))
+	} else {
+		log.Warn("Failed to marshal DigestMessage params to JSON", "error", marshalErr)
+	}
 
 	var result execution.MessageResult
 	err := c.client.CallContext(ctx, &result, "DigestMessage", params)
 	if err != nil {
-		panic(fmt.Sprintf("failed to call DigestMessage: %v", err))
+		log.Error("Failed to call DigestMessage", "error", err)
+		return nil
 	}
 
 	return &result
@@ -121,18 +140,18 @@ func (c *NethRpcClient) DigestInitMessage(ctx context.Context, initialL1BaseFee 
 		"initialL1BaseFee", initialL1BaseFee,
 		"len(serializedChainConfig)", len(serializedChainConfig))
 
+	if payload, marshalErr := json.Marshal(params); marshalErr == nil {
+		fmt.Println("DigestInitMessage request:", string(payload))
+	} else {
+		log.Warn("Failed to marshal DigestInitMessage params to JSON", "error", marshalErr)
+	}
+
 	err = c.client.CallContext(ctx, &result, "DigestInitMessage", params)
 	if err != nil {
 		panic(fmt.Sprintf("failed to call DigestInitMessage: %v", err))
 	}
 
 	return &result
-}
-
-type FakeRemoteExecutionRpcClient struct{}
-
-func (c FakeRemoteExecutionRpcClient) DigestInitMessage(ctx context.Context, initialL1BaseFee *big.Int, serializedChainConfig []byte) *execution.MessageResult {
-	return nil
 }
 
 func (c *NethRpcClient) SetFinalityData(ctx context.Context, safeFinalityData *arbutil.FinalityData, finalizedFinalityData *arbutil.FinalityData, validatedFinalityData *arbutil.FinalityData) error {
