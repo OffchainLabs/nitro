@@ -15,10 +15,26 @@ func TestDelayedMessageBacklog(t *testing.T) {
 
 	backlog, err := NewDelayedMessageBacklog(ctx, 1, func(ctx context.Context) (uint64, error) { return 0, nil }, WithUnboundedCapacity)
 	require.NoError(t, err)
-	numEntries := uint64(25)
-	for i := uint64(0); i < numEntries; i++ {
+
+	// Verify handling of dirties
+	for i := uint64(0); i < 2; i++ {
 		require.NoError(t, backlog.Add(&DelayedMessageBacklogEntry{Index: i}))
 	}
+	backlog.CommitDirties()
+	require.True(t, backlog.dirtiesStartPos == 2)
+	// Add dirties and verify that calling a clone would remove them
+	for i := uint64(2); i < 5; i++ {
+		require.NoError(t, backlog.Add(&DelayedMessageBacklogEntry{Index: i}))
+	}
+	backlog.clone() // should remove all the dirties from entries list
+	require.True(t, len(backlog.entries) == 2)
+	numEntries := uint64(25)
+	for i := uint64(2); i < numEntries; i++ {
+		require.NoError(t, backlog.Add(&DelayedMessageBacklogEntry{Index: i}))
+	}
+	backlog.CommitDirties()
+	// #nosec G115
+	require.True(t, uint64(backlog.dirtiesStartPos) == numEntries)
 
 	// Test that clone works
 	cloned := backlog.clone()
