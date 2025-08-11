@@ -24,7 +24,7 @@ func TestSequencerTxFilter(t *testing.T) {
 	builder, header, txes, hooks, cleanup := setupSequencerFilterTest(t, false)
 	defer cleanup()
 
-	block, err := builder.L2.ExecNode.ExecEngine.SequenceTransactions(header, txes, hooks, nil)
+	block, err := builder.L2.ExecNode.ExecEngine.SequenceTransactions(header, hooks, nil)
 	Require(t, err) // There shouldn't be any error in block generation
 	if block == nil {
 		t.Fatal("block should be generated as second tx should pass")
@@ -47,10 +47,10 @@ func TestSequencerTxFilter(t *testing.T) {
 }
 
 func TestSequencerBlockFilterReject(t *testing.T) {
-	builder, header, txes, hooks, cleanup := setupSequencerFilterTest(t, true)
+	builder, header, _, hooks, cleanup := setupSequencerFilterTest(t, true)
 	defer cleanup()
 
-	block, err := builder.L2.ExecNode.ExecEngine.SequenceTransactions(header, txes, hooks, nil)
+	block, err := builder.L2.ExecNode.ExecEngine.SequenceTransactions(header, hooks, nil)
 	if block != nil {
 		t.Fatal("block shouldn't be generated when all txes have failed")
 	}
@@ -65,8 +65,9 @@ func TestSequencerBlockFilterReject(t *testing.T) {
 func TestSequencerBlockFilterAccept(t *testing.T) {
 	builder, header, txes, hooks, cleanup := setupSequencerFilterTest(t, true)
 	defer cleanup()
-
-	block, err := builder.L2.ExecNode.ExecEngine.SequenceTransactions(header, txes[1:], hooks, nil)
+	_, err := hooks.NextTxToSequence() // remove first transaction from hooks
+	Require(t, err)
+	block, err := builder.L2.ExecNode.ExecEngine.SequenceTransactions(header, hooks, nil)
 	Require(t, err)
 	if block == nil {
 		t.Fatal("block should be generated as the tx should pass")
@@ -108,7 +109,7 @@ func setupSequencerFilterTest(t *testing.T, isBlockFilter bool) (*NodeBuilder, *
 	txes = append(txes, builder.L2Info.PrepareTx("Owner", "User", builder.L2Info.TransferGas, big.NewInt(1e12), []byte{1, 2, 3}))
 	txes = append(txes, builder.L2Info.PrepareTx("User", "Owner", builder.L2Info.TransferGas, big.NewInt(1e12), nil))
 
-	hooks := arbos.NoopSequencingHooks()
+	hooks := arbos.NoopSequencingHooks(txes)
 	if isBlockFilter {
 		hooks.BlockFilter = func(_ *types.Header, _ *state.StateDB, txes types.Transactions, _ types.Receipts) error {
 			if len(txes[1].Data()) > 0 {
