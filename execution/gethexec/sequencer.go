@@ -963,7 +963,7 @@ func (s *Sequencer) expireNonceFailures() *time.Timer {
 		if untilExpiry > 0 {
 			return time.NewTimer(untilExpiry)
 		}
-		
+
 		// Check queueCtx status before notifying client
 		queueItem := failure.queueItem
 		err := queueItem.ctx.Err()
@@ -974,7 +974,7 @@ func (s *Sequencer) expireNonceFailures() *time.Timer {
 			// nonce-failure-cache-expiry timeout, return the original nonce error
 			queueItem.returnResult(failure.nonceErr)
 		}
-		
+
 		s.nonceFailures.RemoveOldest()
 	}
 }
