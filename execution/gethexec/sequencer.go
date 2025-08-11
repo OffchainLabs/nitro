@@ -888,7 +888,7 @@ func (s *Sequencer) getForwarder(ctx context.Context) (*TxForwarder, error) {
 }
 
 // only called from createBlock, may be paused
-func (s *Sequencer) handleInactive(ctx context.Context, forwarder *TxForwarder, queueItems []txQueueItem) {
+func (s *Sequencer) handleInactive(forwarder *TxForwarder, queueItems []txQueueItem) {
 	if forwarder == nil {
 		return
 	}
@@ -1362,7 +1362,7 @@ func (s *Sequencer) createBlockWithRegularTxs(ctx context.Context) (sequencedMsg
 		}
 	}
 
-	s.handleInactive(ctx, forwarder, queueItems)
+	s.handleInactive(forwarder, queueItems)
 
 	timestamp := time.Now().Unix()
 	s.L1BlockAndTimeMutex.Lock()
@@ -1464,7 +1464,7 @@ func (s *Sequencer) EndSequencing(ctx context.Context, errWhileSequencing error)
 		_, forwarder := s.GetPauseAndForwarder()
 		if forwarder != nil {
 			// forward if we have where to
-			s.handleInactive(ctx, forwarder, s.lastCreatedBlockWithRegularTxsInfo.queueItems)
+			s.handleInactive(forwarder, s.lastCreatedBlockWithRegularTxsInfo.queueItems)
 			return
 		}
 
