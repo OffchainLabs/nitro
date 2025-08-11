@@ -52,6 +52,10 @@ var (
 	validatorMsgCountLastValidationSentGauge = metrics.NewRegisteredGauge("arb/validator/msg_count_last_validation_sent", nil)
 )
 
+type ValidationEntryCreator interface {
+	CreateValidationEntry(ctx context.Context, position uint64) (*validationEntry, bool, error)
+}
+
 type BlockValidator struct {
 	stopwaiter.StopWaiter
 	*StatelessBlockValidator
@@ -59,6 +63,8 @@ type BlockValidator struct {
 	reorgMutex sync.RWMutex
 
 	chainCaughtUp bool
+
+	bv *BlockValidatorInstance
 
 	// can only be accessed from creation thread or if holding reorg-write
 	nextCreateBatch       *FullBatchInfo
@@ -636,84 +642,12 @@ func (v *BlockValidator) createNextValidationEntry(ctx context.Context) (bool, e
 		log.Trace("create validation entry: nothing to do", "pos", pos, "validated", v.validated())
 		return false, nil
 	}
-	streamerMsgCount, err := v.streamer.GetProcessedMessageCount()
+	entry, shouldCreate, err := v.bv.CreateValidationEntry(ctx, uint64(pos))
 	if err != nil {
 		return false, err
 	}
-	if pos >= streamerMsgCount {
-		log.Trace("create validation entry: nothing to do", "pos", pos, "streamerMsgCount", streamerMsgCount)
+	if !shouldCreate {
 		return false, nil
-	}
-	msg, err := v.streamer.GetMessage(pos)
-	if err != nil {
-		return false, err
-	}
-	endRes, err := v.streamer.ResultAtMessageIndex(pos)
-	if err != nil {
-		return false, err
-	}
-	if v.nextCreateStartGS.PosInBatch == 0 || v.nextCreateBatchReread {
-		// new batch
-		found, fullBatchInfo, err := v.readFullBatch(ctx, v.nextCreateStartGS.Batch)
-		if !found {
-			return false, err
-		}
-		if v.nextCreateBatch != nil {
-			v.prevBatchCache[v.nextCreateBatch.Number] = v.nextCreateBatch.PostedData
-		}
-		v.nextCreateBatch = fullBatchInfo
-		// #nosec G115
-		validatorMsgCountCurrentBatch.Update(int64(fullBatchInfo.MsgCount))
-		batchCacheLimit := v.config().BatchCacheLimit
-		if len(v.prevBatchCache) > int(batchCacheLimit) {
-			for num := range v.prevBatchCache {
-				if num+uint64(batchCacheLimit) < v.nextCreateStartGS.Batch {
-					delete(v.prevBatchCache, num)
-				}
-			}
-		}
-		v.nextCreateBatchReread = false
-	}
-	endGS := validator.GoGlobalState{
-		BlockHash: endRes.BlockHash,
-		SendRoot:  endRes.SendRoot,
-	}
-	if pos+1 < v.nextCreateBatch.MsgCount {
-		endGS.Batch = v.nextCreateStartGS.Batch
-		endGS.PosInBatch = v.nextCreateStartGS.PosInBatch + 1
-	} else if pos+1 == v.nextCreateBatch.MsgCount {
-		endGS.Batch = v.nextCreateStartGS.Batch + 1
-		endGS.PosInBatch = 0
-	} else {
-		return false, fmt.Errorf("illegal batch msg count %d pos %d batch %d", v.nextCreateBatch.MsgCount, pos, endGS.Batch)
-	}
-	chainConfig := v.streamer.ChainConfig()
-	prevBatchNums, err := msg.Message.PastBatchesRequired()
-	if err != nil {
-		return false, err
-	}
-	prevBatches := make([]validator.BatchInfo, 0, len(prevBatchNums))
-	// prevBatchNums are only used for batch reports, each is only used once
-	for _, batchNum := range prevBatchNums {
-		data, found := v.prevBatchCache[batchNum]
-		if found {
-			delete(v.prevBatchCache, batchNum)
-		} else {
-			data, err = v.readPostedBatch(ctx, batchNum)
-			if err != nil {
-				return false, err
-			}
-		}
-		prevBatches = append(prevBatches, validator.BatchInfo{
-			Number: batchNum,
-			Data:   data,
-		})
-	}
-	entry, err := newValidationEntry(
-		pos, v.nextCreateStartGS, endGS, msg, v.nextCreateBatch, prevBatches, v.nextCreatePrevDelayed, chainConfig,
-	)
-	if err != nil {
-		return false, err
 	}
 	status := &validationStatus{
 		Entry:     entry,
@@ -721,8 +655,8 @@ func (v *BlockValidator) createNextValidationEntry(ctx context.Context) (bool, e
 	}
 	status.Status.Store(uint32(Created))
 	v.validations.Store(pos, status)
-	v.nextCreateStartGS = endGS
-	v.nextCreatePrevDelayed = msg.DelayedMessagesRead
+	v.nextCreateStartGS = entry.End
+	v.nextCreatePrevDelayed = entry.msg.DelayedMessagesRead
 	atomicStorePos(&v.createdA, pos+1, validatorMsgCountCreatedGauge)
 	log.Trace("create validation entry: created", "pos", pos)
 	return true, nil
@@ -1162,12 +1096,11 @@ func (v *BlockValidator) UpdateLatestStaked(count arbutil.MessageIndex, globalSt
 		v.validations.Delete(iPos)
 	}
 	if v.created() < count {
-		v.nextCreateStartGS = globalState
-		v.nextCreatePrevDelayed = msg.DelayedMessagesRead
-		v.nextCreateBatchReread = true
-		if v.nextCreateBatch != nil {
-			v.prevBatchCache[v.nextCreateBatch.Number] = v.nextCreateBatch.PostedData
-		}
+		v.bv.UpdateNextCreationState(
+			globalState,
+			msg.DelayedMessagesRead,
+			true, /* Should reread next batch on creation */
+		)
 		v.createdA.Store(countUint64)
 	}
 	// under the reorg mutex we don't need atomic access
@@ -1196,8 +1129,7 @@ func (v *BlockValidator) ReorgToBatchCount(count uint64) {
 	v.reorgMutex.Lock()
 	defer v.reorgMutex.Unlock()
 	if v.nextCreateStartGS.Batch >= count {
-		v.nextCreateBatchReread = true
-		v.prevBatchCache = make(map[uint64][]byte)
+		v.bv.ResetCaches()
 	}
 }
 
@@ -1235,10 +1167,12 @@ func (v *BlockValidator) Reorg(ctx context.Context, count arbutil.MessageIndex) 
 		}
 		v.validations.Delete(iPos)
 	}
-	v.nextCreateStartGS = BuildGlobalState(*res, endPosition)
-	v.nextCreatePrevDelayed = msg.DelayedMessagesRead
-	v.nextCreateBatchReread = true
-	v.prevBatchCache = make(map[uint64][]byte)
+	v.bv.UpdateNextCreationState(
+		BuildGlobalState(*res, endPosition),
+		msg.DelayedMessagesRead,
+		true, /* Reread next batch on creation */
+	)
+	v.bv.ResetCaches()
 	countUint64 := uint64(count)
 	v.createdA.Store(countUint64)
 	// under the reorg mutex we don't need atomic access
