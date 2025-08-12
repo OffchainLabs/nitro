@@ -1525,11 +1525,6 @@ func (n *Node) SyncTargetMessageCount() containers.PromiseInterface[arbutil.Mess
 	return containers.NewReadyPromise(n.SyncMonitor.SyncTargetMessageCount(), nil)
 }
 
-func (n *Node) ExpectChosenSequencer() containers.PromiseInterface[struct{}] {
-	err := n.TxStreamer.ExpectChosenSequencer()
-	return containers.NewReadyPromise(struct{}{}, err)
-}
-
 func (n *Node) BlockMetadataAtMessageIndex(msgIdx arbutil.MessageIndex) containers.PromiseInterface[common.BlockMetadata] {
 	return containers.NewReadyPromise(n.TxStreamer.BlockMetadataAtMessageIndex(msgIdx))
 }
