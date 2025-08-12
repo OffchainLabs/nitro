@@ -5,6 +5,7 @@ package arbtest
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/big"
 	"os"
@@ -38,9 +39,9 @@ func TestStaticForwarder(t *testing.T) {
 	builder.l2StackConfig.IPCPath = ipcPath
 	cleanupA := builder.Build(t)
 	defer cleanupA()
-
 	clientA := builder.L2.Client
 
+	// node B forwards to node A
 	nodeConfigB := arbnode.ConfigDefaultL1Test()
 	execConfigB := ExecConfigDefaultTest(t, env.GetTestStateScheme())
 	execConfigB.Sequencer.Enable = false
@@ -49,7 +50,6 @@ func TestStaticForwarder(t *testing.T) {
 	execConfigB.Forwarder.RedisUrl = ""
 	execConfigB.ForwardingTarget = ipcPath
 	nodeConfigB.BatchPoster.Enable = false
-
 	testClientB, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{
 		nodeConfig: nodeConfigB,
 		execConfig: execConfigB,
@@ -57,18 +57,29 @@ func TestStaticForwarder(t *testing.T) {
 	defer cleanupB()
 	clientB := testClientB.Client
 
+	// sends transaction to node B
 	builder.L2Info.GenerateAccount("User2")
 	tx := builder.L2Info.PrepareTx("Owner", "User2", builder.L2Info.TransferGas, transferAmount, nil)
 	err := clientB.SendTransaction(ctx, tx)
 	Require(t, err)
 
+	// checks that transaction is processed by node A
 	_, err = builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
-
 	l2balance, err := clientA.BalanceAt(ctx, builder.L2Info.GetAddress("User2"), nil)
 	Require(t, err)
-
 	if l2balance.Cmp(transferAmount) != 0 {
+		Fatal(t, "Unexpected balance:", l2balance)
+	}
+
+	// checks that transaction is not processed by node B
+	_, err = testClientB.EnsureTxSucceeded(tx)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("Expected timeout error, got: %v", err)
+	}
+	l2balance, err = clientB.BalanceAt(ctx, builder.L2Info.GetAddress("User2"), nil)
+	Require(t, err)
+	if l2balance.Cmp(big.NewInt(0)) != 0 {
 		Fatal(t, "Unexpected balance:", l2balance)
 	}
 }
