@@ -41,12 +41,16 @@ func Wat2Wasm(wat []byte) ([]byte, error) {
 	return rustBytesIntoBytes(output), nil
 }
 
-func testCompileArch(store bool) error {
+func testCompileArch(store bool, cranelift bool) error {
 
 	localTarget := rawdb.LocalTarget()
 	nativeArm64 := localTarget == rawdb.TargetArm64
 	nativeAmd64 := localTarget == rawdb.TargetAmd64
 
+	nameSuffix := ".bin"
+	if cranelift {
+		nameSuffix = "_cranelift.bin"
+	}
 	_, err := fmt.Print("starting test.. native arm? ", nativeArm64, " amd? ", nativeAmd64, " GOARCH/GOOS: ", runtime.GOARCH+"/"+runtime.GOOS, "\n")
 	if err != nil {
 		return err
@@ -90,12 +94,12 @@ func testCompileArch(store bool) error {
 		}
 	}
 
-	_, err = compileNative(wasm, 2, true, "booga")
+	_, err = compileNative(wasm, 2, true, "booga", false)
 	if err == nil {
 		return fmt.Errorf("succeeded compiling non-existent arch: %w", err)
 	}
 
-	outBytes, err := compileNative(wasm, 1, true, localTarget)
+	outBytes, err := compileNative(wasm, 1, true, localTarget, false)
 
 	if err != nil {
 		return fmt.Errorf("failed compiling native: %w", err)
@@ -106,13 +110,13 @@ func testCompileArch(store bool) error {
 			return err
 		}
 
-		err = os.WriteFile("../../target/testdata/host.bin", outBytes, 0644)
+		err = os.WriteFile("../../target/testdata/host"+nameSuffix, outBytes, 0644)
 		if err != nil {
 			return err
 		}
 	}
 
-	outBytes, err = compileNative(wasm, 1, true, rawdb.TargetArm64)
+	outBytes, err = compileNative(wasm, 1, true, rawdb.TargetArm64, false)
 
 	if err != nil {
 		return fmt.Errorf("failed compiling arm: %w", err)
@@ -123,13 +127,13 @@ func testCompileArch(store bool) error {
 			return err
 		}
 
-		err = os.WriteFile("../../target/testdata/arm64.bin", outBytes, 0644)
+		err = os.WriteFile("../../target/testdata/arm64"+nameSuffix, outBytes, 0644)
 		if err != nil {
 			return err
 		}
 	}
 
-	outBytes, err = compileNative(wasm, 1, true, rawdb.TargetAmd64)
+	outBytes, err = compileNative(wasm, 1, true, rawdb.TargetAmd64, false)
 
 	if err != nil {
 		return fmt.Errorf("failed compiling amd: %v", err)
@@ -140,7 +144,7 @@ func testCompileArch(store bool) error {
 			return err
 		}
 
-		err = os.WriteFile("../../target/testdata/amd64.bin", outBytes, 0644)
+		err = os.WriteFile("../../target/testdata/amd64"+nameSuffix, outBytes, 0644)
 		if err != nil {
 			return err
 		}
