@@ -10,6 +10,9 @@ import (
 	"strconv"
 	"time"
 
+	crand "crypto/rand"
+	"encoding/binary"
+	
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 	"github.com/spf13/pflag"
@@ -61,6 +64,8 @@ type Consumer[Request any, Response any] struct {
 	// Note: Not exposed as a configuration option because it affects semantic
 	// correctness for for some use cases.
 	claimAmongOldestIdleN int64
+
+	rng *rand.Rand
 }
 
 type Message[Request any] struct {
@@ -73,6 +78,11 @@ func NewConsumer[Request any, Response any](client redis.UniversalClient, stream
 	if streamName == "" {
 		return nil, fmt.Errorf("redis stream name cannot be empty")
 	}
+	var seed int64
+	if err := binary.Read(crand.Reader, binary.LittleEndian, &seed); err != nil {
+		// Fallback if crypto/rand is unavailable
+		seed = time.Now().UnixNano()
+	}
 	return &Consumer[Request, Response]{
 		id:          uuid.NewString(),
 		client:      client,
@@ -81,6 +91,7 @@ func NewConsumer[Request any, Response any](client redis.UniversalClient, stream
 		cfg:         cfg,
 
 		claimAmongOldestIdleN: 50, // Default for most use cases.
+		rng:                   rand.New(rand.NewSource(seed)),
 	}, nil
 }
 
@@ -142,7 +153,7 @@ func (c *Consumer[Request, Response]) Consume(ctx context.Context) (*Message[Req
 			log.Error("Error from XpendingExt in getting PEL for auto claim", "err", err, "penindlen", len(pendingMsgs))
 		}
 	} else if len(pendingMsgs) > 0 {
-		idx := rand.Intn(len(pendingMsgs))
+		idx := c.rng.Intn(len(pendingMsgs))
 		messages, _, err = c.client.XAutoClaim(ctx, &redis.XAutoClaimArgs{
 			Group:    c.redisGroup,
 			Consumer: c.id,
