@@ -47,35 +47,26 @@ func testCompileArch(store bool) error {
 	nativeArm64 := localTarget == rawdb.TargetArm64
 	nativeAmd64 := localTarget == rawdb.TargetAmd64
 
-	arm64CompileName := []byte(rawdb.TargetArm64)
-	amd64CompileName := []byte(rawdb.TargetAmd64)
-
-	arm64TargetString := []byte(DefaultTargetDescriptionArm)
-	amd64TargetString := []byte(DefaultTargetDescriptionX86)
-
-	output := &rustBytes{}
-
 	_, err := fmt.Print("starting test.. native arm? ", nativeArm64, " amd? ", nativeAmd64, " GOARCH/GOOS: ", runtime.GOARCH+"/"+runtime.GOOS, "\n")
 	if err != nil {
 		return err
 	}
 
-	status := C.stylus_target_set(goSlice(arm64CompileName),
-		goSlice(arm64TargetString),
-		output,
-		cbool(nativeArm64))
-
-	if status != 0 {
-		return fmt.Errorf("failed setting compilation target arm: %v", string(rustBytesIntoBytes(output)))
+	err = SetTarget(rawdb.TargetArm64, DefaultTargetDescriptionArm, nativeArm64)
+	if err != nil {
+		return err
 	}
 
-	status = C.stylus_target_set(goSlice(amd64CompileName),
-		goSlice(amd64TargetString),
-		output,
-		cbool(nativeAmd64))
+	err = SetTarget(rawdb.TargetAmd64, DefaultTargetDescriptionX86, nativeAmd64)
+	if err != nil {
+		return err
+	}
 
-	if status != 0 {
-		return fmt.Errorf("failed setting compilation target amd: %v", string(rustBytesIntoBytes(output)))
+	if !(nativeArm64 || nativeAmd64) {
+		err = SetTarget(localTarget, "", true)
+		if err != nil {
+			return err
+		}
 	}
 
 	source, err := os.ReadFile("../../arbitrator/stylus/tests/add.wat")
@@ -99,26 +90,15 @@ func testCompileArch(store bool) error {
 		}
 	}
 
-	status = C.stylus_compile(
-		goSlice(wasm),
-		u16(1),
-		cbool(true),
-		goSlice([]byte("booga")),
-		output,
-	)
-	if status == 0 {
-		return fmt.Errorf("succeeded compiling non-existent arch: %v", string(rustBytesIntoBytes(output)))
+	_, err = compileNative(wasm, 2, true, "booga")
+	if err == nil {
+		return fmt.Errorf("succeeded compiling non-existent arch: %w", err)
 	}
 
-	status = C.stylus_compile(
-		goSlice(wasm),
-		u16(1),
-		cbool(true),
-		goSlice([]byte{}),
-		output,
-	)
-	if status != 0 {
-		return fmt.Errorf("failed compiling native: %v", string(rustBytesIntoBytes(output)))
+	outBytes, err := compileNative(wasm, 1, true, localTarget)
+
+	if err != nil {
+		return fmt.Errorf("failed compiling native: %w", err)
 	}
 	if store && !nativeAmd64 && !nativeArm64 {
 		_, err := fmt.Printf("writing host file\n")
@@ -126,21 +106,16 @@ func testCompileArch(store bool) error {
 			return err
 		}
 
-		err = os.WriteFile("../../target/testdata/host.bin", rustBytesIntoBytes(output), 0644)
+		err = os.WriteFile("../../target/testdata/host.bin", outBytes, 0644)
 		if err != nil {
 			return err
 		}
 	}
 
-	status = C.stylus_compile(
-		goSlice(wasm),
-		u16(1),
-		cbool(true),
-		goSlice(arm64CompileName),
-		output,
-	)
-	if status != 0 {
-		return fmt.Errorf("failed compiling arm: %v", string(rustBytesIntoBytes(output)))
+	outBytes, err = compileNative(wasm, 1, true, rawdb.TargetArm64)
+
+	if err != nil {
+		return fmt.Errorf("failed compiling arm: %w", err)
 	}
 	if store {
 		_, err := fmt.Printf("writing arm file\n")
@@ -148,21 +123,16 @@ func testCompileArch(store bool) error {
 			return err
 		}
 
-		err = os.WriteFile("../../target/testdata/arm64.bin", rustBytesIntoBytes(output), 0644)
+		err = os.WriteFile("../../target/testdata/arm64.bin", outBytes, 0644)
 		if err != nil {
 			return err
 		}
 	}
 
-	status = C.stylus_compile(
-		goSlice(wasm),
-		u16(1),
-		cbool(true),
-		goSlice(amd64CompileName),
-		output,
-	)
-	if status != 0 {
-		return fmt.Errorf("failed compiling amd: %v", string(rustBytesIntoBytes(output)))
+	outBytes, err = compileNative(wasm, 1, true, rawdb.TargetAmd64)
+
+	if err != nil {
+		return fmt.Errorf("failed compiling amd: %v", err)
 	}
 	if store {
 		_, err := fmt.Printf("writing amd64 file\n")
@@ -170,7 +140,7 @@ func testCompileArch(store bool) error {
 			return err
 		}
 
-		err = os.WriteFile("../../target/testdata/amd64.bin", rustBytesIntoBytes(output), 0644)
+		err = os.WriteFile("../../target/testdata/amd64.bin", outBytes, 0644)
 		if err != nil {
 			return err
 		}
@@ -201,16 +171,7 @@ func resetNativeTarget() error {
 	return nil
 }
 
-func testCompileLoad() error {
-	filePath := "../../target/testdata/host.bin"
-	localTarget := rawdb.LocalTarget()
-	if localTarget == rawdb.TargetArm64 {
-		filePath = "../../target/testdata/arm64.bin"
-	}
-	if localTarget == rawdb.TargetAmd64 {
-		filePath = "../../target/testdata/amd64.bin"
-	}
-
+func testCompileLoadFor(filePath string) error {
 	_, err := fmt.Print("starting load test. FilePath: ", filePath, " GOARCH/GOOS: ", runtime.GOARCH+"/"+runtime.GOOS, "\n")
 	if err != nil {
 		return err
@@ -266,4 +227,20 @@ func testCompileLoad() error {
 	}
 
 	return err
+}
+
+func testCompileLoad() error {
+	filePathStart := "../../target/testdata/host"
+	localTarget := rawdb.LocalTarget()
+	if localTarget == rawdb.TargetArm64 {
+		filePathStart = "../../target/testdata/arm64"
+	}
+	if localTarget == rawdb.TargetAmd64 {
+		filePathStart = "../../target/testdata/amd64"
+	}
+	err := testCompileLoadFor(filePathStart + ".bin")
+	if err != nil {
+		return err
+	}
+	return testCompileLoadFor(filePathStart + "_cranelift.bin")
 }
