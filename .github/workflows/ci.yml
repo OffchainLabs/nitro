@@ -85,7 +85,7 @@ jobs:
         run: cargo install --force cbindgen
 
       - name: Cache Build Products
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.cache/go-build
@@ -93,7 +93,7 @@ jobs:
           restore-keys: ${{ runner.os }}-go-${{ matrix.test-mode }}-
 
       - name: Cache Rust Build Products
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.cargo/
@@ -106,7 +106,7 @@ jobs:
           restore-keys: ${{ runner.os }}-cargo-${{ matrix.test-mode }}-${{ steps.rust-version.outputs.version }}-
 
       - name: Cache cbrotli
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         id: cache-cbrotli
         with:
           path: |
