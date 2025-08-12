@@ -119,12 +119,7 @@ type ConsensusInfo interface {
 	BlockMetadataAtMessageIndex(msgIdx arbutil.MessageIndex) containers.PromiseInterface[common.BlockMetadata]
 }
 
-type ConsensusSequencer interface {
-	ExpectChosenSequencer() containers.PromiseInterface[struct{}]
-}
-
 type FullConsensusClient interface {
 	BatchFetcher
 	ConsensusInfo
-	ConsensusSequencer
 }
