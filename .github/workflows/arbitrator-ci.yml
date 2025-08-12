@@ -90,7 +90,7 @@ jobs:
         run: echo "version=$(rustc --version | cut -d' ' -f2)" >> $GITHUB_OUTPUT
 
       - name: Cache Rust intermediate build products
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.cargo/bin/
@@ -106,7 +106,7 @@ jobs:
 
       - name: Cache wabt build
         id: cache-wabt
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/wabt-prefix
           key: ${{ runner.os }}-wabt-${{ env.WABT_VERSION }}
@@ -129,7 +129,7 @@ jobs:
           cache: false
 
       - name: Cache cbrotli
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         id: cache-cbrotli
         with:
           path: |
