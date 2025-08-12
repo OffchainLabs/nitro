@@ -450,11 +450,9 @@ type Sequencer struct {
 	l1BlockNumber       atomic.Uint64
 	l1Timestamp         uint64
 
-	// activeMutex manages pauseChan (pauses execution) and forwarder
-	// at most one of these is non-nil at any given time
-	// both are nil for the active sequencer
+	// activeMutex manages forwarder
 	activeMutex sync.Mutex
-	pauseChan   chan struct{}
+	isActive    bool
 	forwarder   *TxForwarder
 
 	expectedSurplusMutex              sync.RWMutex
@@ -488,7 +486,7 @@ func NewSequencer(execEngine *ExecutionEngine, l1Reader *headerreader.HeaderRead
 		senderWhitelist: senderWhitelist,
 		nonceCache:      newNonceCache(config.NonceCacheSize),
 		l1Timestamp:     0,
-		pauseChan:       nil,
+		isActive:        false,
 		parentChain: &parent.ParentChain{
 			ChainID:  parentChainId,
 			L1Reader: l1Reader,
@@ -513,7 +511,7 @@ func (s *Sequencer) onNonceFailureEvict(_ addressAndNonce, failure *nonceFailure
 		queueItem.returnResult(err)
 		return
 	}
-	_, forwarder := s.GetPauseAndForwarder()
+	forwarder := s.getForwarder()
 	if forwarder != nil {
 		// We might not have gotten the predecessor tx because our forwarder did. Let's try there instead.
 		// We run this in a background goroutine because LRU eviction needs to be quick.
@@ -540,7 +538,7 @@ func ctxWithTimeout(ctx context.Context, timeout time.Duration) (context.Context
 }
 
 func (s *Sequencer) PublishTransaction(parentCtx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions) error {
-	_, forwarder := s.GetPauseAndForwarder()
+	forwarder := s.getForwarder()
 	if forwarder != nil {
 		err := forwarder.PublishTransaction(parentCtx, tx, options)
 		if !errors.Is(err, ErrNoSequencer) {
@@ -584,10 +582,7 @@ func (s *Sequencer) PublishAuctionResolutionTransaction(ctx context.Context, tx 
 		return errors.New("timeboost not enabled")
 	}
 
-	forwarder, err := s.getForwarder(ctx)
-	if err != nil {
-		return err
-	}
+	forwarder := s.getForwarder()
 	if forwarder != nil {
 		err := forwarder.PublishAuctionResolutionTransaction(ctx, tx)
 		if !errors.Is(err, ErrNoSequencer) {
@@ -636,10 +631,7 @@ func (s *Sequencer) PublishExpressLaneTransaction(ctx context.Context, msg *time
 		return errors.New("timeboost not enabled")
 	}
 
-	forwarder, err := s.getForwarder(ctx)
-	if err != nil {
-		return err
-	}
+	forwarder := s.getForwarder()
 	if forwarder != nil {
 		return forwarder.PublishExpressLaneTransaction(ctx, msg)
 	}
@@ -651,10 +643,7 @@ func (s *Sequencer) PublishExpressLaneTransaction(ctx context.Context, msg *time
 		return err
 	}
 
-	forwarder, err = s.getForwarder(ctx)
-	if err != nil {
-		return err
-	}
+	forwarder = s.getForwarder()
 	if forwarder != nil {
 		return forwarder.PublishExpressLaneTransaction(ctx, msg)
 	}
@@ -777,15 +766,15 @@ func (s *Sequencer) postTxFilter(header *types.Header, statedb *state.StateDB, _
 }
 
 func (s *Sequencer) CheckHealth(ctx context.Context) error {
-	pauseChan, forwarder := s.GetPauseAndForwarder()
+	forwarder := s.getForwarder()
 	if forwarder != nil {
 		return forwarder.CheckHealth(ctx)
 	}
-	if pauseChan != nil {
-		return nil
+	isActive := s.getIsActive()
+	if !isActive {
+		return errors.New("sequencer is not active")
 	}
-	_, err := s.execEngine.consensus.ExpectChosenSequencer().Await(ctx)
-	return err
+	return nil
 }
 
 func (s *Sequencer) ForwardTarget() string {
@@ -813,10 +802,7 @@ func (s *Sequencer) ForwardTo(url string) error {
 		log.Error("failed to set forward agent", "err", err)
 		s.forwarder = nil
 	}
-	if s.pauseChan != nil {
-		close(s.pauseChan)
-		s.pauseChan = nil
-	}
+	s.isActive = false
 	return err
 }
 
@@ -827,10 +813,6 @@ func (s *Sequencer) Activate() {
 		s.forwarder.Disable()
 		s.forwarder = nil
 	}
-	if s.pauseChan != nil {
-		close(s.pauseChan)
-		s.pauseChan = nil
-	}
 	if s.expressLaneService != nil {
 		s.LaunchThread(func(context.Context) {
 			// We launch redis sync (which is best effort) in parallel to avoid blocking sequencer activation
@@ -839,6 +821,7 @@ func (s *Sequencer) Activate() {
 			s.expressLaneService.syncFromRedis()
 		})
 	}
+	s.isActive = true
 }
 
 func (s *Sequencer) Pause() {
@@ -848,34 +831,21 @@ func (s *Sequencer) Pause() {
 		s.forwarder.Disable()
 		s.forwarder = nil
 	}
-	if s.pauseChan == nil {
-		s.pauseChan = make(chan struct{})
-	}
+	s.isActive = false
 }
 
 var ErrNoSequencer = errors.New("sequencer temporarily not available")
 
-func (s *Sequencer) GetPauseAndForwarder() (chan struct{}, *TxForwarder) {
+func (s *Sequencer) getForwarder() *TxForwarder {
 	s.activeMutex.Lock()
 	defer s.activeMutex.Unlock()
-	return s.pauseChan, s.forwarder
+	return s.forwarder
 }
 
-// getForwarder returns accurate forwarder and pauses if needed.
-// Required for processing timeboost txs, as just checking forwarder==nil doesn't imply the sequencer to be chosen
-func (s *Sequencer) getForwarder(ctx context.Context) (*TxForwarder, error) {
-	for {
-		pause, forwarder := s.GetPauseAndForwarder()
-		if pause == nil {
-			return forwarder, nil
-		}
-		// if paused: wait till unpaused
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		case <-pause:
-		}
-	}
+func (s *Sequencer) getIsActive() bool {
+	s.activeMutex.Lock()
+	defer s.activeMutex.Unlock()
+	return s.isActive
 }
 
 // only called from createBlock, may be paused
@@ -1191,15 +1161,7 @@ func (s *Sequencer) createBlockWithRegularTxs(ctx context.Context) (sequencedMsg
 
 	s.lastCreatedBlockWithRegularTxsInfo = nil
 
-	pause, forwarder := s.GetPauseAndForwarder()
-	if pause != nil {
-		select {
-		case <-pause:
-		default:
-			// doesn't block if it is paused
-			return nil, false
-		}
-	}
+	forwarder := s.getForwarder()
 
 	var queueItems []txQueueItem
 
@@ -1445,7 +1407,7 @@ func (s *Sequencer) EndSequencing(ctx context.Context, errWhileSequencing error)
 	}
 
 	if errors.Is(errWhileSequencing, execution.ErrRetrySequencer) {
-		_, forwarder := s.GetPauseAndForwarder()
+		forwarder := s.getForwarder()
 		if forwarder != nil {
 			// forward if we have where to
 			s.handleInactive(forwarder, s.lastCreatedBlockWithRegularTxsInfo.queueItems)
@@ -1743,7 +1705,7 @@ func (s *Sequencer) StopAndWait() {
 		"retryQueue", s.txRetryQueue.Len(),
 		"nonceFailures", s.nonceFailures.Len(),
 		"timeboostAuctionResolutionTxQueue", len(s.timeboostAuctionResolutionTxQueue))
-	_, forwarder := s.GetPauseAndForwarder()
+	forwarder := s.getForwarder()
 	if forwarder != nil {
 		var wg sync.WaitGroup
 	emptyqueues:

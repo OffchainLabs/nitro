@@ -1614,11 +1614,6 @@ func (n *Node) GetBatchParentChainBlock(seqNum uint64) containers.PromiseInterfa
 	return containers.NewReadyPromise(n.InboxTracker.GetBatchParentChainBlock(seqNum))
 }
 
-func (n *Node) ExpectChosenSequencer() containers.PromiseInterface[struct{}] {
-	err := n.TxStreamer.ExpectChosenSequencer()
-	return containers.NewReadyPromise(struct{}{}, err)
-}
-
 func (n *Node) BlockMetadataAtMessageIndex(msgIdx arbutil.MessageIndex) containers.PromiseInterface[common.BlockMetadata] {
 	return containers.NewReadyPromise(n.TxStreamer.BlockMetadataAtMessageIndex(msgIdx))
 }
