@@ -133,6 +133,7 @@ func compileNative(
 	stylusVersion uint16,
 	debug bool,
 	target rawdb.WasmTarget,
+	cranelift bool,
 ) ([]byte, error) {
 	output := &rustBytes{}
 	status_asm := C.stylus_compile(
@@ -140,6 +141,7 @@ func compileNative(
 		u16(stylusVersion),
 		cbool(debug),
 		goSlice([]byte(target)),
+		cbool(cranelift),
 		output,
 	)
 	asm := rustBytesIntoBytes(output)
@@ -199,7 +201,7 @@ func activateProgramInternal(
 	for _, target := range nativeTargets {
 		target := target
 		go func() {
-			asm, err := compileNative(wasm, stylusVersion, debug, target)
+			asm, err := compileNative(wasm, stylusVersion, debug, target, false)
 			results <- result{target, asm, err}
 		}()
 	}
