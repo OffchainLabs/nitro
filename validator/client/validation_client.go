@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"os"
 	"sync/atomic"
 	"time"
 
@@ -25,6 +26,18 @@ import (
 	"github.com/offchainlabs/nitro/validator/server_api"
 	"github.com/offchainlabs/nitro/validator/server_common"
 )
+
+var executionClientKeepAliveInterval = time.Minute
+
+func init() {
+	if s := os.Getenv("ARB_EXEC_KEEPALIVE_INTERVAL"); len(s) > 0 {
+		if d, err := time.ParseDuration(s); err == nil && d > 0 {
+			executionClientKeepAliveInterval = d
+		} else {
+			log.Warn("invalid ARB_EXEC_KEEPALIVE_INTERVAL, using default", "value", s, "err", err)
+		}
+	}
+}
 
 var executionNodeOfflineGauge = metrics.NewRegisteredGauge("arb/state_provider/execution_node_offline", nil)
 
@@ -260,7 +273,7 @@ func (r *ExecutionClientRun) SendKeepAlive(ctx context.Context) time.Duration {
 	if err != nil {
 		log.Error("execution run keepalive failed", "err", err)
 	}
-	return time.Minute // TODO: configurable
+	return executionClientKeepAliveInterval
 }
 
 func (r *ExecutionClientRun) CheckAlive(ctx context.Context) error {
