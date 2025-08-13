@@ -164,17 +164,26 @@ func TestDataCollection(t *testing.T) {
 			expectFiles: 0,
 		},
 		{
+			name:      "empty block",
+			batchSize: 10,
+			inputData: []*CollectorMessage{
+				{Type: CollectorMsgStartBlock},
+				{
+					Type: CollectorMsgFinaliseBlock,
+					Block: &BlockInfo{
+						BlockNumber:    20001,
+						BlockHash:      []byte{0xaa, 0xbb, 0xcc},
+						BlockTimestamp: 1111111111,
+					},
+				},
+			},
+			expectFiles: 1,
+		},
+		{
 			name:      "single block - one transaction",
 			batchSize: 1,
 			inputData: []*CollectorMessage{
-				{
-					Type: CollectorMsgBlock,
-					Block: &BlockInfo{
-						BlockNumber:    12345,
-						BlockHash:      []byte{0xab, 0xcd, 0xef},
-						BlockTimestamp: 1234567890,
-					},
-				},
+				{Type: CollectorMsgStartBlock},
 				{
 					Type: CollectorMsgTransaction,
 					Transaction: &TransactionMultiGas{
@@ -189,6 +198,52 @@ func TestDataCollection(t *testing.T) {
 						}),
 					},
 				},
+				{
+					Type: CollectorMsgFinaliseBlock,
+					Block: &BlockInfo{
+						BlockNumber:    12345,
+						BlockHash:      []byte{0xab, 0xcd, 0xef},
+						BlockTimestamp: 1234567890,
+					},
+				},
+			},
+			expectFiles: 1,
+		},
+		{
+			name:      "start new block without finalising previous -> drop unfinalised txs",
+			batchSize: 10,
+			inputData: []*CollectorMessage{
+				{Type: CollectorMsgStartBlock},
+				{
+					Type: CollectorMsgTransaction,
+					Transaction: &TransactionMultiGas{
+						TxHash:  []byte{0x01},
+						TxIndex: 0,
+						MultiGas: *multigas.MultiGasFromMap(map[multigas.ResourceKind]uint64{
+							multigas.ResourceKindComputation: 1,
+						}),
+					},
+				},
+				// Start a new block before finalising the previous -> prior tx is dropped
+				{Type: CollectorMsgStartBlock},
+				{
+					Type: CollectorMsgTransaction,
+					Transaction: &TransactionMultiGas{
+						TxHash:  []byte{0x02},
+						TxIndex: 0,
+						MultiGas: *multigas.MultiGasFromMap(map[multigas.ResourceKind]uint64{
+							multigas.ResourceKindComputation: 2,
+						}),
+					},
+				},
+				{
+					Type: CollectorMsgFinaliseBlock,
+					Block: &BlockInfo{
+						BlockNumber:    30001,
+						BlockHash:      []byte{0x01, 0x02, 0x03},
+						BlockTimestamp: 2222222222,
+					},
+				},
 			},
 			expectFiles: 1,
 		},
@@ -196,14 +251,7 @@ func TestDataCollection(t *testing.T) {
 			name:      "multiple blocks - single batch",
 			batchSize: 3,
 			inputData: []*CollectorMessage{
-				{
-					Type: CollectorMsgBlock,
-					Block: &BlockInfo{
-						BlockNumber:    12345,
-						BlockHash:      []byte{0xab, 0xcd, 0xef},
-						BlockTimestamp: 1234567890,
-					},
-				},
+				{Type: CollectorMsgStartBlock},
 				{
 					Type: CollectorMsgTransaction,
 					Transaction: &TransactionMultiGas{
@@ -217,13 +265,14 @@ func TestDataCollection(t *testing.T) {
 					},
 				},
 				{
-					Type: CollectorMsgBlock,
+					Type: CollectorMsgFinaliseBlock,
 					Block: &BlockInfo{
-						BlockNumber:    12346,
-						BlockHash:      []byte{0xde, 0xf1, 0x23},
-						BlockTimestamp: 1234567891,
+						BlockNumber:    12345,
+						BlockHash:      []byte{0xab, 0xcd, 0xef},
+						BlockTimestamp: 1234567890,
 					},
 				},
+				{Type: CollectorMsgStartBlock},
 				{
 					Type: CollectorMsgTransaction,
 					Transaction: &TransactionMultiGas{
@@ -248,6 +297,14 @@ func TestDataCollection(t *testing.T) {
 						}),
 					},
 				},
+				{
+					Type: CollectorMsgFinaliseBlock,
+					Block: &BlockInfo{
+						BlockNumber:    12346,
+						BlockHash:      []byte{0xde, 0xf1, 0x23},
+						BlockTimestamp: 1234567891,
+					},
+				},
 			},
 			expectFiles: 1,
 		},
@@ -255,14 +312,7 @@ func TestDataCollection(t *testing.T) {
 			name:      "multiple blocks - multiple batches",
 			batchSize: 2,
 			inputData: []*CollectorMessage{
-				{
-					Type: CollectorMsgBlock,
-					Block: &BlockInfo{
-						BlockNumber:    12345,
-						BlockHash:      []byte{0xab, 0xcd, 0xef},
-						BlockTimestamp: 1234567890,
-					},
-				},
+				{Type: CollectorMsgStartBlock},
 				{
 					Type: CollectorMsgTransaction,
 					Transaction: &TransactionMultiGas{
@@ -277,13 +327,14 @@ func TestDataCollection(t *testing.T) {
 					},
 				},
 				{
-					Type: CollectorMsgBlock,
+					Type: CollectorMsgFinaliseBlock,
 					Block: &BlockInfo{
-						BlockNumber:    12346,
-						BlockHash:      []byte{0xde, 0xf1, 0x23},
-						BlockTimestamp: 1234567891,
+						BlockNumber:    12345,
+						BlockHash:      []byte{0xab, 0xcd, 0xef},
+						BlockTimestamp: 1234567890,
 					},
 				},
+				{Type: CollectorMsgStartBlock},
 				{
 					Type: CollectorMsgTransaction,
 					Transaction: &TransactionMultiGas{
@@ -297,13 +348,14 @@ func TestDataCollection(t *testing.T) {
 					},
 				},
 				{
-					Type: CollectorMsgBlock,
+					Type: CollectorMsgFinaliseBlock,
 					Block: &BlockInfo{
-						BlockNumber:    12347,
-						BlockHash:      []byte{0x45, 0x67, 0x89},
-						BlockTimestamp: 1234567892,
+						BlockNumber:    12346,
+						BlockHash:      []byte{0xde, 0xf1, 0x23},
+						BlockTimestamp: 1234567891,
 					},
 				},
+				{Type: CollectorMsgStartBlock},
 				{
 					Type: CollectorMsgTransaction,
 					Transaction: &TransactionMultiGas{
@@ -316,8 +368,16 @@ func TestDataCollection(t *testing.T) {
 						}),
 					},
 				},
+				{
+					Type: CollectorMsgFinaliseBlock,
+					Block: &BlockInfo{
+						BlockNumber:    12347,
+						BlockHash:      []byte{0x45, 0x67, 0x89},
+						BlockTimestamp: 1234567892,
+					},
+				},
 			},
-			expectFiles: 2, // Two batches expected
+			expectFiles: 2,
 		},
 	}
 
@@ -328,70 +388,70 @@ func TestDataCollection(t *testing.T) {
 
 			config := Config{
 				OutputDir: tmpDir,
-				BatchSize: int(tt.batchSize), //nolint:gosec // safe: test batchSize is controlled
+				BatchSize: int(tt.batchSize), //nolint:gosec
 			}
 
-			collector, err := NewCollector(config, input)
+			c, err := NewCollector(config, input)
 			require.NoError(t, err)
+			c.Start(context.Background())
 
-			ctx := context.Background()
-			collector.Start(ctx)
-
-			// Send all input data and count blocks
-			var blockCount int
 			for _, msg := range tt.inputData {
 				input <- msg
-				if msg.Type == CollectorMsgBlock {
-					blockCount++
-				}
 			}
-
-			// Wait for completion, closing the channel is optional
 			close(input)
-			collector.StopAndWait()
+			c.StopAndWait()
 
-			// Verify file count
 			files, err := filepath.Glob(filepath.Join(tmpDir, "multigas_batch_*.pb"))
 			require.NoError(t, err)
 			assert.Len(t, files, tt.expectFiles)
 
-			// Read all batch data from files
+			// Decode batches from files
 			var allData []*proto.BlockMultiGasData
 			for _, file := range files {
 				data, err := os.ReadFile(file)
 				require.NoError(t, err)
-
 				var batch proto.BlockMultiGasBatch
-				err = protobuf.Unmarshal(data, &batch)
-				require.NoError(t, err)
-
+				require.NoError(t, protobuf.Unmarshal(data, &batch))
 				allData = append(allData, batch.Data...)
 			}
 
-			// Verify block count matches input
-			assert.Len(t, allData, blockCount)
-
-			// Iterate through input messages and verify against output data
-			var blockIndex int
-			var txIndexInBlock int
-			for _, message := range tt.inputData {
-				switch message.Type {
-				case CollectorMsgBlock:
-					assert.Equal(t, message.Block.BlockNumber, allData[blockIndex].BlockNumber)
-					assert.Equal(t, message.Block.BlockHash, allData[blockIndex].BlockHash)
-					assert.Equal(t, message.Block.BlockTimestamp, allData[blockIndex].BlockTimestamp)
-					blockIndex++
-					txIndexInBlock = 0 // Reset transaction counter for new block
-
+			// Build expected blocks: group TXs until FinaliseBlock; reset on StartBlock
+			type expBlock struct {
+				block *BlockInfo
+				txs   []*TransactionMultiGas
+			}
+			var expected []expBlock
+			var curTxs []*TransactionMultiGas
+			for _, m := range tt.inputData {
+				switch m.Type {
+				case CollectorMsgStartBlock:
+					// Explicitly drop any unfinalised txs (mirrors collector behavior)
+					curTxs = nil
 				case CollectorMsgTransaction:
-					txProto := allData[blockIndex-1].Transactions[txIndexInBlock]
-					assert.Equal(t, message.Transaction.TxHash, txProto.TxHash)
-					assert.Equal(t, message.Transaction.TxIndex, txProto.TxIndex)
-					assert.Equal(t, message.Transaction.MultiGas.Get(multigas.ResourceKindComputation), txProto.MultiGas.Computation)
-					assert.Equal(t, message.Transaction.MultiGas.Get(multigas.ResourceKindHistoryGrowth), txProto.MultiGas.HistoryGrowth)
-					assert.Equal(t, message.Transaction.MultiGas.Get(multigas.ResourceKindStorageAccess), txProto.MultiGas.StorageAccess)
-					assert.Equal(t, message.Transaction.MultiGas.Get(multigas.ResourceKindStorageGrowth), txProto.MultiGas.StorageGrowth)
-					txIndexInBlock++ // Move to next transaction in this block
+					curTxs = append(curTxs, m.Transaction)
+				case CollectorMsgFinaliseBlock:
+					expected = append(expected, expBlock{block: m.Block, txs: curTxs})
+					curTxs = nil
+				}
+			}
+
+			assert.Len(t, allData, len(expected))
+
+			for i, exp := range expected {
+				got := allData[i]
+				assert.Equal(t, exp.block.BlockNumber, got.BlockNumber)
+				assert.Equal(t, exp.block.BlockHash, got.BlockHash)
+				assert.Equal(t, exp.block.BlockTimestamp, got.BlockTimestamp)
+
+				assert.Len(t, got.Transactions, len(exp.txs))
+				for j, tx := range exp.txs {
+					txProto := got.Transactions[j]
+					assert.Equal(t, tx.TxHash, txProto.TxHash)
+					assert.Equal(t, tx.TxIndex, txProto.TxIndex)
+					assert.Equal(t, tx.MultiGas.Get(multigas.ResourceKindComputation), txProto.MultiGas.Computation)
+					assert.Equal(t, tx.MultiGas.Get(multigas.ResourceKindHistoryGrowth), txProto.MultiGas.HistoryGrowth)
+					assert.Equal(t, tx.MultiGas.Get(multigas.ResourceKindStorageAccess), txProto.MultiGas.StorageAccess)
+					assert.Equal(t, tx.MultiGas.Get(multigas.ResourceKindStorageGrowth), txProto.MultiGas.StorageGrowth)
 				}
 			}
 		})
@@ -415,7 +475,7 @@ func TestCollectorChannelClosed(t *testing.T) {
 
 	// Add some data
 	message := &CollectorMessage{
-		Type: CollectorMsgBlock,
+		Type: CollectorMsgFinaliseBlock,
 		Block: &BlockInfo{
 			BlockNumber:    12345,
 			BlockHash:      []byte{0xab, 0xcd, 0xef},

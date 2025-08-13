@@ -21,6 +21,9 @@ const (
 	// batchFilenameFormat defines the naming pattern for batch files.
 	// Format: multigas_batch_<batch_number>_<timestamp>.pb
 	batchFilenameFormat = "multigas_batch_%010d_%d.pb"
+
+	// Preallocate for ~2000 transactions per block, a safe high watermark for Arbitrum mainnet.
+	defaultTxPrealloc = 2000
 )
 
 var (
@@ -47,10 +50,12 @@ type BlockInfo struct {
 type CollectorMessageType int
 
 const (
-	// CollectorMsgBlock indicates a message starting a new block.
-	CollectorMsgBlock CollectorMessageType = iota
+	// CollectorMsgStartBlock indicates a message for starting a new block without metadata.
+	CollectorMsgStartBlock CollectorMessageType = iota
 	// CollectorMsgTransaction indicates a message for multi-gas data of a transaction.
 	CollectorMsgTransaction
+	// CollectorMsgFinaliseBlock indicates a message finalising a block with metadata.
+	CollectorMsgFinaliseBlock
 )
 
 // CollectorMessage represents a message sent to the collector.
@@ -76,9 +81,9 @@ type Collector struct {
 	config Config
 	input  <-chan *CollectorMessage
 
-	batchNum     int64
-	blockBuffer  []*proto.BlockMultiGasData
-	currentBlock *proto.BlockMultiGasData
+	batchNum          int64
+	blockBuffer       []*proto.BlockMultiGasData
+	transactionBuffer []*proto.TransactionMultiGasData
 }
 
 // ToProto converts the TransactionMultiGas to its protobuf representation.
@@ -146,11 +151,11 @@ func NewCollector(config Config, input <-chan *CollectorMessage) (*Collector, er
 	}
 
 	return &Collector{
-		config:       config,
-		input:        input,
-		batchNum:     0,
-		blockBuffer:  make([]*proto.BlockMultiGasData, 0, config.BatchSize),
-		currentBlock: nil,
+		config:            config,
+		input:             input,
+		batchNum:          0,
+		blockBuffer:       make([]*proto.BlockMultiGasData, 0, config.BatchSize),
+		transactionBuffer: make([]*proto.TransactionMultiGasData, 0, defaultTxPrealloc),
 	}, nil
 }
 
@@ -193,13 +198,13 @@ func (c *Collector) processData(ctx context.Context) {
 				}
 				break
 			}
-			c.finalize()
+			c.finalise()
 			return
 
 		case msg, ok := <-in:
 			if !ok {
 				// Channel closed: flush and keep running until Stop (no reliance on close)
-				c.finalize()
+				c.finalise()
 				in = nil
 				continue
 			}
@@ -210,37 +215,50 @@ func (c *Collector) processData(ctx context.Context) {
 
 // --- internal ---
 
-// handleMessage processes a single CollectorMessage and updates the in-memory batch.
-// If a batch reaches config.BatchSize, it is flushed immediately.
+// handleMessage processes a single CollectorMessage and updates in-memory buffers.
+// TXs are accumulated in transactionBuffer. When a Block message arrives, all
+// buffered TXs are wrapped into that block, appended to blockBuffer
 func (c *Collector) handleMessage(msg *CollectorMessage) {
 	switch msg.Type {
-	case CollectorMsgBlock:
-		if c.currentBlock != nil {
-			c.blockBuffer = append(c.blockBuffer, c.currentBlock)
-			if len(c.blockBuffer) >= c.config.BatchSize {
-				if err := c.flushBatch(); err != nil {
-					log.Error("Failed to flush batch", "error", err)
-				}
-			}
+	case CollectorMsgStartBlock:
+		// If c.transactionBuffer contains unflushed transactions, block was not finalised (stay silent)
+		if len(c.transactionBuffer) > 0 {
+			c.transactionBuffer = c.transactionBuffer[:0]
 		}
-		c.currentBlock = msg.Block.ToProto()
 
 	case CollectorMsgTransaction:
-		if c.currentBlock == nil {
-			log.Error("Received transaction before block message")
+		if msg.Transaction == nil {
+			log.Error("Transaction message missing payload")
 			return
 		}
-		c.currentBlock.Transactions = append(c.currentBlock.Transactions, msg.Transaction.ToProto())
+		c.transactionBuffer = append(c.transactionBuffer, msg.Transaction.ToProto())
+
+	case CollectorMsgFinaliseBlock:
+		if msg.Block == nil {
+			log.Error("Block message missing payload")
+			return
+		}
+		block := msg.Block.ToProto()
+		if len(c.transactionBuffer) > 0 {
+			block.Transactions = append(block.Transactions, c.transactionBuffer...)
+		}
+
+		c.blockBuffer = append(c.blockBuffer, block)
+		if len(c.blockBuffer) >= c.config.BatchSize {
+			if err := c.flushBatch(); err != nil {
+				log.Error("Failed to flush batch", "error", err)
+			}
+		}
+		c.transactionBuffer = c.transactionBuffer[:0]
 
 	default:
-		log.Error("Unknown message type")
+		log.Error("Unknown message type", "type", msg.Type)
 	}
 }
 
-func (c *Collector) finalize() {
-	if c.currentBlock != nil {
-		c.blockBuffer = append(c.blockBuffer, c.currentBlock)
-		c.currentBlock = nil
+func (c *Collector) finalise() {
+	if len(c.transactionBuffer) > 0 {
+		log.Warn("finalising with unassociated transactions", "count", len(c.transactionBuffer))
 	}
 	if len(c.blockBuffer) > 0 {
 		if err := c.flushBatch(); err != nil {
