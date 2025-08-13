@@ -110,7 +110,7 @@ func TestOverflowAssertions(t *testing.T) {
 	err = stateless.Start(ctx)
 	Require(t, err)
 
-	instance, err := staker.NewBlockValidatorInstance(
+	instance := staker.NewBlockValidatorInstance(
 		stateless,
 		StaticFetcherFrom(t, &blockValidatorConfig),
 	)

@@ -191,7 +191,7 @@ func testChallengeProtocolBOLD(t *testing.T, spawnerOpts ...server_arb.SpawnerOp
 	err = statelessB.Start(ctx)
 	Require(t, err)
 
-	instance, err := staker.NewBlockValidatorInstance(
+	instance := staker.NewBlockValidatorInstance(
 		statelessA,
 		StaticFetcherFrom(t, &blockValidatorConfig),
 	)
@@ -207,7 +207,7 @@ func testChallengeProtocolBOLD(t *testing.T, spawnerOpts ...server_arb.SpawnerOp
 	Require(t, blockValidatorA.Initialize(ctx))
 	Require(t, blockValidatorA.Start(ctx))
 
-	instanceB, err := staker.NewBlockValidatorInstance(
+	instanceB := staker.NewBlockValidatorInstance(
 		statelessB,
 		StaticFetcherFrom(t, &blockValidatorConfig),
 	)
