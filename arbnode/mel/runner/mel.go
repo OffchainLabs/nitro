@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math/big"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/spf13/pflag"
@@ -88,7 +89,7 @@ type MessageExtractor struct {
 	retryInterval     time.Duration
 	caughtUp          bool
 	caughtUpChan      chan struct{}
-	lastBlockToRead   uint64
+	lastBlockToRead   atomic.Uint64
 }
 
 // Creates a message extractor instance with the specified parameters,
@@ -131,6 +132,9 @@ func NewMessageExtractor(
 func (m *MessageExtractor) Start(ctxIn context.Context) error {
 	m.StopWaiter.Start(ctxIn, m)
 	runChan := make(chan struct{}, 1)
+	if m.config.ReadMode != "latest" {
+		m.CallIteratively(m.updateLastBlockToRead)
+	}
 	return stopwaiter.CallIterativelyWith(
 		&m.StopWaiterSafe,
 		func(ctx context.Context, ignored struct{}) time.Duration {
@@ -142,6 +146,23 @@ func (m *MessageExtractor) Start(ctxIn context.Context) error {
 		},
 		runChan,
 	)
+}
+
+func (m *MessageExtractor) updateLastBlockToRead(ctx context.Context) time.Duration {
+	var header *types.Header
+	var err error
+	switch m.config.ReadMode {
+	case "safe":
+		header, err = m.parentChainReader.HeaderByNumber(ctx, big.NewInt(rpc.SafeBlockNumber.Int64()))
+	case "finalized":
+		header, err = m.parentChainReader.HeaderByNumber(ctx, big.NewInt(rpc.FinalizedBlockNumber.Int64()))
+	}
+	if err != nil {
+		log.Error("Error fetching header to update last block to read in MEL", "err", err)
+		return m.retryInterval
+	}
+	m.lastBlockToRead.Store(header.Number.Uint64())
+	return m.retryInterval
 }
 
 // txByLogFetcher is wrapper around ParentChainReader to implement TransactionByLog method
@@ -370,19 +391,7 @@ func (m *MessageExtractor) Act(ctx context.Context) (time.Duration, error) {
 			return m.retryInterval, errors.New("detected nil DelayedMessageBacklog of melState, shouldnt be possible")
 		}
 		// If the current parent chain block is not safe/finalized we wait till it becomes safe/finalized as determined by the ReadMode
-		if m.config.ReadMode != "latest" && preState.ParentChainBlockNumber+1 > m.lastBlockToRead {
-			var header *types.Header
-			var err error
-			switch m.config.ReadMode {
-			case "safe":
-				header, err = m.parentChainReader.HeaderByNumber(ctx, big.NewInt(rpc.SafeBlockNumber.Int64()))
-			case "finalized":
-				header, err = m.parentChainReader.HeaderByNumber(ctx, big.NewInt(rpc.FinalizedBlockNumber.Int64()))
-			}
-			if err != nil {
-				return m.retryInterval, err
-			}
-			m.lastBlockToRead = header.Number.Uint64()
+		if m.config.ReadMode != "latest" && preState.ParentChainBlockNumber+1 > m.lastBlockToRead.Load() {
 			return m.retryInterval, nil
 		}
 		parentChainBlock, err := m.parentChainReader.HeaderByNumber(
