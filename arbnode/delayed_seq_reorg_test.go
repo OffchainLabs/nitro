@@ -175,7 +175,7 @@ func TestSequencerReorgFromDelayed(t *testing.T) {
 	// guarantees that delayed msg 1 is userDelayedModified and not userDelayed
 	msg, err := tracker.GetDelayedMessage(ctx, 1)
 	Require(t, err)
-	if msg.Header.RequestId.Cmp(*userDelayedModified.Message.Header.RequestId) != 0 {
+	if *msg.Header.RequestId != *userDelayedModified.Message.Header.RequestId {
 		Fail(t, "Unexpected delayed message requestId", msg.Header.RequestId, "(expected", userDelayedModified.Message.Header.RequestId, ")")
 	}
 	if msg.Header.Timestamp != userDelayedModified.Message.Header.Timestamp {
@@ -404,7 +404,7 @@ func TestSequencerReorgFromLastDelayedMsg(t *testing.T) {
 	// guarantees that delayed msg 2 is userDelayedModified and not userDelayed
 	msg, err := tracker.GetDelayedMessage(ctx, 2)
 	Require(t, err)
-	if msg.Header.RequestId.Cmp(*userDelayed2Modified.Message.Header.RequestId) != 0 {
+	if *msg.Header.RequestId != *userDelayed2Modified.Message.Header.RequestId {
 		Fail(t, "Unexpected delayed message requestId", msg.Header.RequestId, "(expected", userDelayed2Modified.Message.Header.RequestId, ")")
 	}
 	if msg.Header.Timestamp != userDelayed2Modified.Message.Header.Timestamp {
