@@ -15,7 +15,7 @@ import (
 	"github.com/offchainlabs/nitro/validator/client/redis"
 )
 
-var _ ValidationEntryCreator = (*BlockValidatorInstance)(nil)
+var _ ValidatorInstance = (*BlockValidatorInstance)(nil)
 
 type BlockValidatorInstance struct {
 	stateless *StatelessBlockValidator
@@ -45,6 +45,14 @@ func NewBlockValidatorInstance(
 	}
 }
 
+func (bv *BlockValidatorInstance) InstanceDir() string {
+	return bv.stateless.stack.InstanceDir()
+}
+
+func (bv *BlockValidatorInstance) NextCreationGlobalState() validator.GoGlobalState {
+	return bv.nextCreateStartGS
+}
+
 func (bv *BlockValidatorInstance) LatestWasmModuleRoot() common.Hash {
 	return bv.stateless.GetLatestWasmModuleRoot()
 }
@@ -55,6 +63,10 @@ func (bv *BlockValidatorInstance) RedisValidator() *redis.ValidationClient {
 
 func (bv *BlockValidatorInstance) ExecSpawners() []validator.ExecutionSpawner {
 	return bv.stateless.execSpawners
+}
+
+func (bv *BlockValidatorInstance) PositionsAtCount(count uint64) (GlobalStatePosition, GlobalStatePosition, error) {
+	return bv.stateless.GlobalStatePositionsAtCount(arbutil.MessageIndex(count))
 }
 
 func (bv *BlockValidatorInstance) WriteLastValidated(

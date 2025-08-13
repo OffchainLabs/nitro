@@ -284,6 +284,10 @@ func NewStatelessBlockValidator(
 	}, nil
 }
 
+func (v *StatelessBlockValidator) GetRecorder() execution.ExecutionRecorder {
+	return v.recorder
+}
+
 func (v *StatelessBlockValidator) readPostedBatch(ctx context.Context, batchNum uint64) ([]byte, error) {
 	batchCount, err := v.inboxTracker.GetBatchCount()
 	if err != nil {
