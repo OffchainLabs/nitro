@@ -1,6 +1,7 @@
 package multigasCollector
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -92,7 +93,7 @@ func TestBlockInfoToProto(t *testing.T) {
 	assert.Empty(t, protoData.Transactions) // No transactions initially
 }
 
-func TestNewCollector(t *testing.T) {
+func TestIdleCollector(t *testing.T) {
 	tests := []struct {
 		name      string
 		config    Config
@@ -127,6 +128,7 @@ func TestNewCollector(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			input := make(chan *CollectorMessage)
+			ctx := context.Background()
 
 			collector, err := NewCollector(tt.config, input)
 
@@ -140,8 +142,9 @@ func TestNewCollector(t *testing.T) {
 				assert.Equal(t, tt.config.OutputDir, collector.config.OutputDir)
 				assert.Equal(t, tt.config.BatchSize, collector.config.BatchSize)
 
+				collector.Start(ctx)
 				close(input)
-				collector.Wait()
+				collector.StopAndWait()
 			}
 		})
 	}
@@ -331,6 +334,9 @@ func TestDataCollection(t *testing.T) {
 			collector, err := NewCollector(config, input)
 			require.NoError(t, err)
 
+			ctx := context.Background()
+			collector.Start(ctx)
+
 			// Send all input data and count blocks
 			var blockCount int
 			for _, msg := range tt.inputData {
@@ -340,9 +346,9 @@ func TestDataCollection(t *testing.T) {
 				}
 			}
 
-			// Close input and wait for completion
+			// Wait for completion, closing the channel is optional
 			close(input)
-			collector.Wait()
+			collector.StopAndWait()
 
 			// Verify file count
 			files, err := filepath.Glob(filepath.Join(tmpDir, "multigas_batch_*.pb"))
@@ -404,6 +410,9 @@ func TestCollectorChannelClosed(t *testing.T) {
 	collector, err := NewCollector(config, input)
 	require.NoError(t, err)
 
+	ctx := context.Background()
+	collector.Start(ctx)
+
 	// Add some data
 	message := &CollectorMessage{
 		Type: CollectorMsgBlock,
@@ -427,5 +436,5 @@ func TestCollectorChannelClosed(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, files, 1)
 
-	collector.Wait()
+	collector.StopAndWait()
 }
