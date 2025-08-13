@@ -15,8 +15,8 @@ type PeriodSecs uint32
 
 // resourceConstraint defines the max gas target per second for the given period for a single resource.
 type resourceConstraint struct {
-	period time.Duration
-	target uint64
+	Period time.Duration `json:"period"`
+	Target uint64        `json:"target"`
 }
 
 // ResourceConstraints is a set of constraints for all resources.
@@ -46,12 +46,32 @@ func (rc ResourceConstraints) SetConstraint(
 	resource multigas.ResourceKind, periodSecs PeriodSecs, targetPerPeriod uint64,
 ) {
 	rc[resource][periodSecs] = resourceConstraint{
-		period: time.Duration(periodSecs) * time.Second,
-		target: targetPerPeriod / uint64(periodSecs),
+		Period: time.Duration(periodSecs) * time.Second,
+		Target: targetPerPeriod / uint64(periodSecs),
 	}
 }
 
 // ClearConstraint removes the given resource constraint.
 func (rc ResourceConstraints) ClearConstraint(resource multigas.ResourceKind, periodSecs PeriodSecs) {
 	delete(rc[resource], periodSecs)
+}
+
+type resourceConstraintDescription struct {
+	resource        multigas.ResourceKind
+	periodSecs      PeriodSecs
+	targetPerPeriod uint64
+}
+
+func (rc ResourceConstraints) getConstraints() []resourceConstraintDescription {
+	constraints := []resourceConstraintDescription{}
+	for resource := multigas.ResourceKindUnknown + 1; resource < multigas.NumResourceKind; resource++ {
+		for period, constraint := range rc[resource] {
+			constraints = append(constraints, resourceConstraintDescription{
+				resource:        resource,
+				periodSecs:      period,
+				targetPerPeriod: constraint.Target * uint64(period),
+			})
+		}
+	}
+	return constraints
 }
