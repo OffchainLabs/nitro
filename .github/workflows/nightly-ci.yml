@@ -119,7 +119,7 @@ jobs:
             target/lib/libbrotlicommon-static.a
             target/lib/libbrotlienc-static.a
             target/lib/libbrotlidec-static.a
-          key: ${{ runner.os }}-brotli-${{ hashFiles('scripts/build-brotli.sh') }}-${{ hashFiles('.github/workflows/arbitrator-ci.yaml') }}
+          key: ${{ runner.os }}-brotli-${{ hashFiles('scripts/build-brotli.sh') }}-${{ hashFiles('.github/workflows/arbitrator-ci.yml') }}
 
       - name: Build cbrotli-local
         run: ./scripts/build-brotli.sh -l
@@ -316,7 +316,7 @@ jobs:
             target/lib/libbrotlicommon-static.a
             target/lib/libbrotlienc-static.a
             target/lib/libbrotlidec-static.a
-          key: ${{ runner.os }}-brotli-${{ hashFiles('scripts/build-brotli.sh') }}-${{ hashFiles('.github/workflows/arbitrator-ci.yaml') }}
+          key: ${{ runner.os }}-brotli-${{ hashFiles('scripts/build-brotli.sh') }}-${{ hashFiles('.github/workflows/arbitrator-ci.yml') }}
 
       - name: Build cbrotli-local
         if: steps.changed-files.outputs.any_changed == 'true' && steps.cache-cbrotli.outputs.cache-hit != 'true'
