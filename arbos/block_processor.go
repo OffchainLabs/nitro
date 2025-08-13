@@ -10,6 +10,7 @@ import (
 	"math"
 	"math/big"
 
+	multigas "github.com/ethereum/go-ethereum/arbitrum/multigas"
 	"github.com/ethereum/go-ethereum/arbitrum_types"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
@@ -23,6 +24,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
+	mgc "github.com/offchainlabs/nitro/arbos/multigasCollector"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
@@ -37,6 +39,12 @@ var L2ToL1TransactionEventID common.Hash
 var L2ToL1TxEventID common.Hash
 var EmitReedeemScheduledEvent func(*vm.EVM, uint64, uint64, [32]byte, [32]byte, common.Address, *big.Int, *big.Int) error
 var EmitTicketCreatedEvent func(*vm.EVM, [32]byte) error
+
+// optional multigas channel; when nil, collection is disabled.
+var multiGasCh chan<- *mgc.CollectorMessage
+
+// SetMultiGasCollectorChan installs the optional collector channel.
+func SetMultiGasCollectorChan(ch chan<- *mgc.CollectorMessage) { multiGasCh = ch }
 
 // A helper struct that implements String() by marshalling to JSON.
 // This is useful for logging because it's lazy, so if the log level is too high to print the transaction,
@@ -249,6 +257,11 @@ func ProduceBlockAdvanced(
 	gethGas := core.GasPool(l2pricing.GethBlockGasLimit)
 
 	firstTx := types.NewTx(startTx)
+
+	// Emit multigas start block message, if the channel is set
+	if !isMsgForPrefetch {
+		tryEmitMultiGasMsgStartBlock()
+	}
 
 	for {
 		// repeatedly process the next tx, doing redeems created along the way in FIFO order
@@ -504,6 +517,11 @@ func ProduceBlockAdvanced(
 		if isUserTx {
 			userTxsProcessed++
 		}
+
+		// Emit multigas transaction message, if the channel is set
+		if !isMsgForPrefetch && result.UsedMultiGas != nil {
+			tryEmitMultiGasMsgTransaction(tx.Hash(), receipt.TransactionIndex, *result.UsedMultiGas)
+		}
 	}
 
 	if statedb.IsTxFiltered() {
@@ -547,6 +565,11 @@ func ProduceBlockAdvanced(
 		log.Error("Unexpected total balance delta", "delta", balanceDelta, "expected", expectedBalanceDelta)
 	}
 
+	// Emit multigas finalization block message, if the channel is set
+	if !isMsgForPrefetch {
+		tryEmitMultiGasMsgFinaliseBlock(header, blockHash)
+	}
+
 	return block, receipts, nil
 }
 
@@ -585,5 +608,67 @@ func FinalizeBlock(header *types.Header, txs types.Transactions, statedb vm.Stat
 		}
 		arbitrumHeader.UpdateHeaderWithInfo(header)
 		header.Root = statedb.IntermediateRoot(true)
+	}
+}
+
+// tryEmitMultiGasMsgStartBlock emits a block start message if the multigas channel is set.
+func tryEmitMultiGasMsgStartBlock() {
+	if multiGasCh == nil {
+		return
+	}
+
+	trySendMultiGasMessage(
+		&mgc.CollectorMessage{
+			Type: mgc.CollectorMsgStartBlock,
+		},
+	)
+}
+
+// tryEmitMultiGasMsgTransaction emits a transaction message if the multigas channel is set.
+func tryEmitMultiGasMsgTransaction(hash common.Hash, idx uint, mg multigas.MultiGas) {
+	if multiGasCh == nil {
+		return
+	}
+
+	trySendMultiGasMessage(
+		&mgc.CollectorMessage{
+			Type: mgc.CollectorMsgTransaction,
+			Transaction: &mgc.TransactionMultiGas{
+				TxHash:   hash.Bytes(),
+				TxIndex:  uint32(idx), // #nosec G115 -- block tx count << MaxUint32; safe cast
+				MultiGas: mg,
+			},
+		},
+	)
+}
+
+// tryEmitMultiGasMsgFinaliseBlock emits a block finalisation message if the multigas channel is set.
+func tryEmitMultiGasMsgFinaliseBlock(h *types.Header, blockHash common.Hash) {
+	if multiGasCh == nil {
+		return
+	}
+
+	trySendMultiGasMessage(
+		&mgc.CollectorMessage{
+			Type: mgc.CollectorMsgFinaliseBlock,
+			Block: &mgc.BlockInfo{
+				BlockNumber:    h.Number.Uint64(),
+				BlockHash:      blockHash.Bytes(),
+				BlockTimestamp: h.Time,
+			},
+		},
+	)
+}
+
+// trySendMultiGasMessage sends a multi-gas message to the collector channel if it's available.
+func trySendMultiGasMessage(msg *mgc.CollectorMessage) {
+	select {
+	case multiGasCh <- msg:
+	default:
+		log.Debug("multi-gas collector channel full, dropping message",
+			"type", msg.Type,
+			"queueCapacity", cap(multiGasCh),
+			"queueLen", len(multiGasCh),
+		)
 	}
 }
