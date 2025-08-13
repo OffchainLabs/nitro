@@ -12,6 +12,7 @@ import (
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/validator"
+	"github.com/offchainlabs/nitro/validator/client/redis"
 )
 
 var _ ValidationEntryCreator = (*BlockValidatorInstance)(nil)
@@ -31,6 +32,29 @@ type BlockValidatorInstance struct {
 	legacyValidInfo *legacyLastBlockValidatedDbInfo
 
 	config BlockValidatorConfigFetcher
+}
+
+func NewBlockValidatorInstance(
+	stateless *StatelessBlockValidator,
+	config BlockValidatorConfigFetcher,
+) *BlockValidatorInstance {
+	return &BlockValidatorInstance{
+		stateless:      stateless,
+		config:         config,
+		prevBatchCache: make(map[uint64][]byte),
+	}
+}
+
+func (bv *BlockValidatorInstance) LatestWasmModuleRoot() common.Hash {
+	return bv.stateless.GetLatestWasmModuleRoot()
+}
+
+func (bv *BlockValidatorInstance) RedisValidator() *redis.ValidationClient {
+	return bv.stateless.redisValidator
+}
+
+func (bv *BlockValidatorInstance) ExecSpawners() []validator.ExecutionSpawner {
+	return bv.stateless.execSpawners
 }
 
 func (bv *BlockValidatorInstance) WriteLastValidated(
@@ -322,6 +346,8 @@ func (bv *BlockValidatorInstance) CreateValidationEntry(
 	if err != nil {
 		return nil, false, err
 	}
+	bv.nextCreateStartGS = entry.End
+	bv.nextCreatePrevDelayed = entry.msg.DelayedMessagesRead
 	return entry, true, nil
 }
 
