@@ -261,6 +261,15 @@ func (i *txQueueItem) returnResult(err error) {
 	close(i.resultChan)
 }
 
+// returnResultNoLog is for when there is a good chance that client has already disconnected
+func (i *txQueueItem) returnResultNoLog(err error) {
+	if i.returnedResult.Swap(true) {
+		return
+	}
+	i.resultChan <- err
+	close(i.resultChan)
+}
+
 type nonceCache struct {
 	cache *containers.LruCache[common.Address, uint64]
 	block common.Hash
@@ -969,10 +978,10 @@ func (s *Sequencer) expireNonceFailures() *time.Timer {
 		err := queueItem.ctx.Err()
 		if err != nil {
 			// queueCtx has already timed out, return that error
-			queueItem.returnResult(err)
+			queueItem.returnResultNoLog(err)
 		} else {
 			// nonce-failure-cache-expiry timeout, return the original nonce error
-			queueItem.returnResult(failure.nonceErr)
+			queueItem.returnResultNoLog(failure.nonceErr)
 		}
 
 		s.nonceFailures.RemoveOldest()
