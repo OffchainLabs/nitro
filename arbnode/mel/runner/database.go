@@ -95,6 +95,40 @@ func (d *Database) State(ctx context.Context, parentChainBlockNumber uint64) (*m
 	return &state, nil
 }
 
+func (d *Database) SaveBatchMetas(ctx context.Context, state *mel.State, batchMetas []*mel.BatchMetadata) error {
+	dbBatch := d.db.NewBatch()
+	if state.BatchCount < uint64(len(batchMetas)) {
+		return fmt.Errorf("mel state's BatchCount: %d is lower than number of batchMetadata: %d queued to be added", state.BatchCount, len(batchMetas))
+	}
+	firstPos := state.BatchCount - uint64(len(batchMetas))
+	for i, batchMetadata := range batchMetas {
+		key := dbKey(dbschema.MelSequencerBatchMetaPrefix, firstPos+uint64(i)) // #nosec G115
+		batchMetadataBytes, err := rlp.EncodeToBytes(*batchMetadata)
+		if err != nil {
+			return err
+		}
+		err = dbBatch.Put(key, batchMetadataBytes)
+		if err != nil {
+			return err
+		}
+
+	}
+	return dbBatch.Write()
+}
+
+func (d *Database) fetchBatchMetadata(seqNum uint64) (*mel.BatchMetadata, error) {
+	key := dbKey(dbschema.MelSequencerBatchMetaPrefix, seqNum)
+	batchMetadataBytes, err := d.db.Get(key)
+	if err != nil {
+		return nil, err
+	}
+	var batchMetadata mel.BatchMetadata
+	if err = rlp.DecodeBytes(batchMetadataBytes, &batchMetadata); err != nil {
+		return nil, err
+	}
+	return &batchMetadata, nil
+}
+
 func (d *Database) SaveDelayedMessages(ctx context.Context, state *mel.State, delayedMessages []*mel.DelayedInboxMessage) error {
 	dbBatch := d.db.NewBatch()
 	if state.DelayedMessagedSeen < uint64(len(delayedMessages)) {

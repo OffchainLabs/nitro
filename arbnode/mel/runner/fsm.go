@@ -54,6 +54,7 @@ type saveMessages struct {
 	postState        *mel.State
 	messages         []*arbostypes.MessageWithMetadata
 	delayedMessages  []*mel.DelayedInboxMessage
+	batchMetas       []*mel.BatchMetadata
 }
 
 // An action that transitions the FSM to the reorging state.
