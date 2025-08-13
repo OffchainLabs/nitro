@@ -18,10 +18,8 @@ import (
 	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
-	"github.com/ethereum/go-ethereum/rlp"
 
 	"github.com/offchainlabs/nitro/arbnode/resourcemanager"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -58,13 +56,14 @@ type ValidationEntryCreator interface {
 
 type BlockValidator struct {
 	stopwaiter.StopWaiter
-	*StatelessBlockValidator
 
 	reorgMutex sync.RWMutex
 
 	chainCaughtUp bool
 
 	bv *BlockValidatorInstance
+
+	recordingPreparer execution.RecordingPreparer
 
 	// can only be accessed from creation thread or if holding reorg-write
 	nextCreateBatch       *FullBatchInfo
@@ -73,10 +72,6 @@ type BlockValidator struct {
 
 	nextCreateStartGS     validator.GoGlobalState
 	nextCreatePrevDelayed uint64
-
-	// can only be accessed from from validation thread or if holding reorg-write
-	lastValidGS     validator.GoGlobalState
-	legacyValidInfo *legacyLastBlockValidatedDbInfo
 
 	// only from logger thread
 	lastValidInfoPrinted *GlobalStateValidatedInfo
@@ -330,7 +325,6 @@ func NewBlockValidator(
 	fatalErr chan<- error,
 ) (*BlockValidator, error) {
 	ret := &BlockValidator{
-		StatelessBlockValidator: statelessBlockValidator,
 		createNodesChan:         make(chan struct{}, 1),
 		sendRecordChan:          make(chan struct{}, 1),
 		sendValidationsChan:     make(chan struct{}, 1),
@@ -338,9 +332,10 @@ func NewBlockValidator(
 		config:                  config,
 		fatalErr:                fatalErr,
 		prevBatchCache:          make(map[uint64][]byte),
+		recordingPreparer:       statelessBlockValidator.recorder,
 	}
 	valInputsWriter, err := inputs.NewWriter(
-		inputs.WithBaseDir(ret.stack.InstanceDir()),
+		inputs.WithBaseDir(statelessBlockValidator.stack.InstanceDir()),
 		inputs.WithSlug("BlockValidator"))
 	if err != nil {
 		return nil, err
@@ -352,27 +347,31 @@ func NewBlockValidator(
 			return nil, err
 		}
 		if validated != nil {
-			ret.lastValidGS = validated.GlobalState
+			ret.bv.SetLastValidGlobalState(validated.GlobalState)
 		} else {
-			legacyInfo, err := ret.legacyReadLastValidatedInfo()
+			legacyInfo, err := ret.bv.LegacyLastValidatedInfo()
 			if err != nil {
 				return nil, err
 			}
-			ret.legacyValidInfo = legacyInfo
+			ret.bv.SetLegacyValidInfo(legacyInfo)
 		}
 	}
 	// genesis block is impossible to validate unless genesis state is empty
-	if ret.lastValidGS.Batch == 0 && ret.legacyValidInfo == nil {
+	legacy, err := ret.bv.LegacyLastValidatedInfo()
+	if err != nil {
+		return nil, err
+	}
+	if ret.bv.LastValidGlobalState().Batch == 0 && legacy == nil {
 		genesis, err := streamer.ResultAtMessageIndex(0)
 		if err != nil {
 			return nil, err
 		}
-		ret.lastValidGS = validator.GoGlobalState{
+		ret.bv.SetLastValidGlobalState(validator.GoGlobalState{
 			BlockHash:  genesis.BlockHash,
 			SendRoot:   genesis.SendRoot,
 			Batch:      1,
 			PosInBatch: 0,
-		}
+		})
 	}
 	if config().Dangerous.Revalidation.StartBlock > 0 {
 		startBlock := config().Dangerous.Revalidation.StartBlock
@@ -392,7 +391,7 @@ func NewBlockValidator(
 			return nil, err
 		}
 		gs := BuildGlobalState(*res, endPos)
-		err = ret.writeLastValidated(gs, nil)
+		err = ret.bv.WriteLastValidated(gs, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -478,49 +477,8 @@ func (v *BlockValidator) GetModuleRootsToValidate() []common.Hash {
 	return validatingModuleRoots
 }
 
-// called from NewBlockValidator, doesn't need to catch locks
-func ReadLastValidatedInfo(db ethdb.Database) (*GlobalStateValidatedInfo, error) {
-	exists, err := db.Has(lastGlobalStateValidatedInfoKey)
-	if err != nil {
-		return nil, err
-	}
-	var validated GlobalStateValidatedInfo
-	if !exists {
-		return nil, nil
-	}
-	gsBytes, err := db.Get(lastGlobalStateValidatedInfoKey)
-	if err != nil {
-		return nil, err
-	}
-	err = rlp.DecodeBytes(gsBytes, &validated)
-	if err != nil {
-		return nil, err
-	}
-	return &validated, nil
-}
-
 func (v *BlockValidator) ReadLastValidatedInfo() (*GlobalStateValidatedInfo, error) {
-	return ReadLastValidatedInfo(v.db)
-}
-
-func (v *BlockValidator) legacyReadLastValidatedInfo() (*legacyLastBlockValidatedDbInfo, error) {
-	exists, err := v.db.Has(legacyLastBlockValidatedInfoKey)
-	if err != nil {
-		return nil, err
-	}
-	var validated legacyLastBlockValidatedDbInfo
-	if !exists {
-		return nil, nil
-	}
-	gsBytes, err := v.db.Get(legacyLastBlockValidatedInfoKey)
-	if err != nil {
-		return nil, err
-	}
-	err = rlp.DecodeBytes(gsBytes, &validated)
-	if err != nil {
-		return nil, err
-	}
-	return &validated, nil
+	return v.bv.LastValidatedInfo()
 }
 
 var ErrGlobalStateNotInChain = errors.New("globalstate not in chain")
@@ -587,7 +545,7 @@ func (v *BlockValidator) sendRecord(s *validationStatus) error {
 
 	validatorProfileWaitToRecordHist.Update(s.profileStep())
 	v.LaunchThread(func(ctx context.Context) {
-		err := v.ValidationEntryRecord(ctx, s.Entry)
+		err := v.bv.RecordEntry(ctx, s.Entry)
 		if ctx.Err() != nil {
 			return
 		}
@@ -665,7 +623,7 @@ func (v *BlockValidator) createNextValidationEntry(ctx context.Context) (bool, e
 func (v *BlockValidator) iterativeValidationEntryCreator(ctx context.Context, ignored struct{}) time.Duration {
 	moreWork, err := v.createNextValidationEntry(ctx)
 	if err != nil {
-		processed, processedErr := v.streamer.GetProcessedMessageCount()
+		processed, processedErr := v.bv.LatestSeenCount()
 		log.Error("error trying to create validation node", "err", err, "created", v.created()+1, "processed", processed, "processedErr", processedErr)
 	}
 	if moreWork {
@@ -709,7 +667,7 @@ func (v *BlockValidator) sendNextRecordRequests(ctx context.Context) (bool, erro
 	}
 	log.Trace("preparing to record", "pos", pos, "until", recordUntil)
 	// prepare could take a long time so we do it without a lock
-	err := v.recorder.PrepareForRecord(ctx, pos, recordUntil)
+	err := v.recordingPreparer.PrepareForRecord(ctx, pos, recordUntil)
 	if err != nil {
 		return false, err
 	}
@@ -772,17 +730,7 @@ func (v *BlockValidator) iterativeValidationPrint(ctx context.Context) time.Dura
 			return time.Second
 		}
 	}
-	var batchMsgs arbutil.MessageIndex
-	var printedCount int64
-	if validated.GlobalState.Batch > 0 {
-		batchMsgs, err = v.inboxTracker.GetBatchMessageCount(validated.GlobalState.Batch - 1)
-	}
-	if err != nil {
-		printedCount = -1
-	} else {
-		// #nosec G115
-		printedCount = int64(batchMsgs) + int64(validated.GlobalState.PosInBatch)
-	}
+	printedCount := v.bv.ValidatedCount(validated.GlobalState)
 	log.Info("validated execution", "messageCount", printedCount, "globalstate", validated.GlobalState, "WasmRoots", validated.WasmRoots)
 	v.lastValidInfoPrinted = validated
 	revalidationConfig := v.config().Dangerous.Revalidation
@@ -824,8 +772,8 @@ func (v *BlockValidator) advanceValidations(ctx context.Context) (*arbutil.Messa
 			log.Trace("advanceValidations: validation not done", "pos", pos, "status", validationStatus.getStatus())
 			return nil, nil
 		}
-		if validationStatus.DoneEntry.Start != v.lastValidGS {
-			log.Warn("Validation entry has wrong start state", "pos", pos, "start", validationStatus.DoneEntry.Start, "expected", v.lastValidGS)
+		if validationStatus.DoneEntry.Start != v.bv.LastValidGlobalState() {
+			log.Warn("Validation entry has wrong start state", "pos", pos, "start", validationStatus.DoneEntry.Start, "expected", v.bv.LastValidGlobalState())
 			validationStatus.Cancel()
 			return &pos, nil
 		}
@@ -833,11 +781,11 @@ func (v *BlockValidator) advanceValidations(ctx context.Context) (*arbutil.Messa
 			v.possiblyFatal(fmt.Errorf("validation: failed entry pos %d, start %v", pos, validationStatus.DoneEntry.Start))
 			return &pos, nil // if not fatal - retry
 		}
-		err := v.writeLastValidated(validationStatus.DoneEntry.End, validationStatus.DoneEntry.WasmModuleRoots)
+		err := v.bv.WriteLastValidated(validationStatus.DoneEntry.End, validationStatus.DoneEntry.WasmModuleRoots)
 		if err != nil {
 			log.Error("failed writing new validated to database", "pos", pos, "err", err)
 		}
-		go v.recorder.MarkValid(pos, v.lastValidGS.BlockHash)
+		go v.recordingPreparer.MarkValid(pos, v.bv.LastValidGlobalState())
 		atomicStorePos(&v.validatedA, pos+1, validatorMsgCountValidatedGauge)
 		v.validations.Delete(pos)
 		nonBlockingTrigger(v.createNodesChan)
@@ -849,7 +797,7 @@ func (v *BlockValidator) advanceValidations(ctx context.Context) (*arbutil.Messa
 		}
 		v.testingProgressMadeMutex.Unlock()
 
-		log.Trace("result validated", "count", v.validated(), "blockHash", v.lastValidGS.BlockHash)
+		log.Trace("result validated", "count", v.validated(), "blockHash", v.bv.LastValidGlobalState().BlockHash)
 	}
 }
 
@@ -999,42 +947,6 @@ func (v *BlockValidator) iterativeValidationSentProgress(ctx context.Context, ig
 
 var ErrValidationCanceled = errors.New("validation of block cancelled")
 
-func (v *BlockValidator) writeLastValidated(gs validator.GoGlobalState, wasmRoots []common.Hash) error {
-	v.lastValidGS = gs
-	info := GlobalStateValidatedInfo{
-		GlobalState: gs,
-		WasmRoots:   wasmRoots,
-	}
-	encoded, err := rlp.EncodeToBytes(info)
-	if err != nil {
-		return err
-	}
-	err = v.db.Put(lastGlobalStateValidatedInfoKey, encoded)
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-func (v *BlockValidator) validGSIsNew(globalState validator.GoGlobalState) bool {
-	if v.legacyValidInfo != nil {
-		if v.legacyValidInfo.AfterPosition.BatchNumber > globalState.Batch {
-			return false
-		}
-		if v.legacyValidInfo.AfterPosition.BatchNumber == globalState.Batch && v.legacyValidInfo.AfterPosition.PosInBatch >= globalState.PosInBatch {
-			return false
-		}
-		return true
-	}
-	if v.lastValidGS.Batch > globalState.Batch {
-		return false
-	}
-	if v.lastValidGS.Batch == globalState.Batch && v.lastValidGS.PosInBatch >= globalState.PosInBatch {
-		return false
-	}
-	return true
-}
-
 // this accepts globalstate even if not caught up
 func (v *BlockValidator) InitAssumeValid(globalState validator.GoGlobalState) error {
 	if v.Started() {
@@ -1042,13 +954,13 @@ func (v *BlockValidator) InitAssumeValid(globalState validator.GoGlobalState) er
 	}
 
 	// don't do anything if we already validated past that
-	if !v.validGSIsNew(globalState) {
+	if !v.bv.ValidGlobalStateIsNew(globalState) {
 		return nil
 	}
 
-	v.legacyValidInfo = nil
+	v.bv.SetLegacyValidInfo(nil)
 
-	err := v.writeLastValidated(globalState, nil)
+	err := v.bv.WriteLastValidated(globalState, nil)
 	if err != nil {
 		log.Error("failed writing new validated to database", "pos", v.lastValidGS, "err", err)
 	}
@@ -1070,11 +982,11 @@ func (v *BlockValidator) UpdateLatestStaked(count arbutil.MessageIndex, globalSt
 	}
 
 	if !v.chainCaughtUp {
-		if !v.validGSIsNew(globalState) {
+		if !v.bv.ValidGlobalStateIsNew(globalState) {
 			return
 		}
-		v.legacyValidInfo = nil
-		err := v.writeLastValidated(globalState, nil)
+		v.bv.SetLegacyValidInfo(nil)
+		err := v.bv.WriteLastValidated(globalState, nil)
 		if err != nil {
 			log.Error("error writing last validated", "err", err)
 		}
@@ -1115,7 +1027,7 @@ func (v *BlockValidator) UpdateLatestStaked(count arbutil.MessageIndex, globalSt
 	v.validatedA.Store(countUint64)
 	// #nosec G115
 	validatorMsgCountValidatedGauge.Update(int64(countUint64))
-	err = v.writeLastValidated(globalState, nil) // we don't know which wasm roots were validated
+	err = v.bv.WriteLastValidated(globalState, nil) // we don't know which wasm roots were validated
 	if err != nil {
 		log.Error("failed writing valid state after reorg", "err", err)
 	}
@@ -1336,46 +1248,18 @@ func (v *BlockValidator) checkValidatedGSCaughtUp() (bool, error) {
 	if v.chainCaughtUp {
 		return true, nil
 	}
-	if v.legacyValidInfo != nil {
-		return false, nil
-	}
-	if v.lastValidGS.Batch == 0 {
-		return false, errors.New("lastValid not initialized. cannot validate genesis")
-	}
-	caughtUp, count, err := GlobalStateToMsgCount(v.inboxTracker, v.streamer, v.lastValidGS)
+	count, caughtUp, err := v.bv.CheckValidatedStateCaughtUp()
 	if err != nil {
 		return false, err
 	}
 	if !caughtUp {
-		batchCount, err := v.inboxTracker.GetBatchCount()
-		if err != nil {
-			log.Error("failed reading batch count", "err", err)
-			batchCount = 0
-		}
-		batchMsgCount, err := v.inboxTracker.GetBatchMessageCount(batchCount - 1)
-		if err != nil {
-			log.Error("failed reading batchMsgCount", "err", err)
-			batchMsgCount = 0
-		}
-		processedMsgCount, err := v.streamer.GetProcessedMessageCount()
-		if err != nil {
-			log.Error("failed reading processedMsgCount", "err", err)
-			processedMsgCount = 0
-		}
-		log.Info("validator catching up to last valid", "lastValid.Batch", v.lastValidGS.Batch, "lastValid.PosInBatch", v.lastValidGS.PosInBatch, "batchCount", batchCount, "batchMsgCount", batchMsgCount, "processedMsgCount", processedMsgCount)
 		return false, nil
 	}
-	msg, err := v.streamer.GetMessage(count - 1)
-	if err != nil {
-		return false, err
-	}
-	v.nextCreateBatchReread = true
-	v.nextCreateStartGS = v.lastValidGS
-	v.nextCreatePrevDelayed = msg.DelayedMessagesRead
-	atomicStorePos(&v.createdA, count, validatorMsgCountCreatedGauge)
-	atomicStorePos(&v.recordSentA, count, validatorMsgCountRecordSentGauge)
-	atomicStorePos(&v.validatedA, count, validatorMsgCountValidatedGauge)
-	atomicStorePos(&v.lastValidationSentA, count, validatorMsgCountLastValidationSentGauge)
+	msgCount := arbutil.MessageIndex(count)
+	atomicStorePos(&v.createdA, msgCount, validatorMsgCountCreatedGauge)
+	atomicStorePos(&v.recordSentA, msgCount, validatorMsgCountRecordSentGauge)
+	atomicStorePos(&v.validatedA, msgCount, validatorMsgCountValidatedGauge)
+	atomicStorePos(&v.lastValidationSentA, msgCount, validatorMsgCountLastValidationSentGauge)
 	// #nosec G115
 	validatorMsgCountValidatedGauge.Update(int64(count))
 	v.chainCaughtUp = true
