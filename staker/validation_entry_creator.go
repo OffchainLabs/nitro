@@ -10,6 +10,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/validator"
 )
 
@@ -170,6 +171,73 @@ func (bv *BlockValidatorInstance) CheckValidatedStateCaughtUp() (uint64, bool, e
 	return uint64(count), true, nil
 }
 
+func (bv *BlockValidatorInstance) CheckLegacyValid() error {
+	if bv.legacyValidInfo == nil {
+		return nil
+	}
+	batchCount, err := bv.stateless.inboxTracker.GetBatchCount()
+	if err != nil {
+		return err
+	}
+	requiredBatchCount := bv.legacyValidInfo.AfterPosition.BatchNumber + 1
+	if bv.legacyValidInfo.AfterPosition.PosInBatch == 0 {
+		requiredBatchCount -= 1
+	}
+	if batchCount < requiredBatchCount {
+		log.Warn("legacy valid batch ahead of db", "current", batchCount, "required", requiredBatchCount)
+		return nil
+	}
+	var msgCount arbutil.MessageIndex
+	if bv.legacyValidInfo.AfterPosition.BatchNumber > 0 {
+		msgCount, err = bv.stateless.inboxTracker.GetBatchMessageCount(bv.legacyValidInfo.AfterPosition.BatchNumber - 1)
+		if err != nil {
+			return err
+		}
+	}
+	msgCount += arbutil.MessageIndex(bv.legacyValidInfo.AfterPosition.PosInBatch)
+	processedCount, err := bv.stateless.streamer.GetProcessedMessageCount()
+	if err != nil {
+		return err
+	}
+	if processedCount < msgCount {
+		log.Warn("legacy valid message count ahead of db", "current", processedCount, "required", msgCount)
+		return nil
+	}
+
+	result := &execution.MessageResult{}
+	if msgCount > 0 {
+		result, err = bv.stateless.streamer.ResultAtMessageIndex(msgCount - 1)
+		if err != nil {
+			return err
+		}
+	}
+
+	if result.BlockHash != bv.legacyValidInfo.BlockHash {
+		log.Error("legacy validated blockHash does not fit chain", "info.BlockHash", bv.legacyValidInfo.BlockHash, "chain", result.BlockHash, "count", msgCount)
+		return fmt.Errorf("legacy validated blockHash does not fit chain")
+	}
+	validGS := validator.GoGlobalState{
+		BlockHash:  result.BlockHash,
+		SendRoot:   result.SendRoot,
+		Batch:      bv.legacyValidInfo.AfterPosition.BatchNumber,
+		PosInBatch: bv.legacyValidInfo.AfterPosition.PosInBatch,
+	}
+	err = bv.WriteLastValidated(validGS, nil)
+	if err == nil {
+		err = bv.stateless.db.Delete(legacyLastBlockValidatedInfoKey)
+		if err != nil {
+			err = fmt.Errorf("deleting legacy: %w", err)
+		}
+	}
+	if err != nil {
+		log.Error("failed writing initial lastValid on upgrade from legacy", "new-info", bv.lastValidGS, "err", err)
+	} else {
+		log.Info("updated last-valid from legacy", "lastValid", bv.lastValidGS)
+	}
+	bv.legacyValidInfo = nil
+	return nil
+}
+
 func (bv *BlockValidatorInstance) CreateValidationEntry(
 	ctx context.Context,
 	position uint64,
@@ -257,7 +325,44 @@ func (bv *BlockValidatorInstance) CreateValidationEntry(
 	return entry, true, nil
 }
 
-func (bv *BlockValidatorInstance) OnReset() {}
+func (bv *BlockValidatorInstance) OnReorg(count uint64) error {
+	msgCount := arbutil.MessageIndex(count)
+	_, endPosition, err := bv.stateless.GlobalStatePositionsAtCount(msgCount)
+	if err != nil {
+		return err
+	}
+	res, err := bv.stateless.streamer.ResultAtMessageIndex(msgCount - 1)
+	if err != nil {
+		return err
+	}
+	msg, err := bv.stateless.streamer.GetMessage(msgCount - 1)
+	if err != nil {
+		return err
+	}
+	bv.UpdateNextCreationState(
+		BuildGlobalState(*res, endPosition),
+		msg.DelayedMessagesRead,
+		true, /* Reread next batch on creation */
+	)
+	bv.ResetCaches()
+	return nil
+}
+
+func (bv *BlockValidatorInstance) OnLatestStakedUpdate(
+	globalState validator.GoGlobalState,
+	count uint64,
+) {
+	msg, err := bv.stateless.streamer.GetMessage(arbutil.MessageIndex(count) - 1)
+	if err != nil {
+		log.Error("getMessage error", "err", err, "count", count)
+		return
+	}
+	bv.UpdateNextCreationState(
+		globalState,
+		msg.DelayedMessagesRead,
+		true, /* Should reread next batch on creation */
+	)
+}
 
 func (bv *BlockValidatorInstance) UpdateNextCreationState(
 	nextCreateStartGS validator.GoGlobalState,

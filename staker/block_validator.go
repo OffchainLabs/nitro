@@ -962,7 +962,7 @@ func (v *BlockValidator) InitAssumeValid(globalState validator.GoGlobalState) er
 
 	err := v.bv.WriteLastValidated(globalState, nil)
 	if err != nil {
-		log.Error("failed writing new validated to database", "pos", v.lastValidGS, "err", err)
+		log.Error("failed writing new validated to database", "pos", v.bv.LastValidGlobalState(), "err", err)
 	}
 
 	return nil
@@ -994,11 +994,6 @@ func (v *BlockValidator) UpdateLatestStaked(count arbutil.MessageIndex, globalSt
 	}
 
 	countUint64 := uint64(count)
-	msg, err := v.streamer.GetMessage(count - 1)
-	if err != nil {
-		log.Error("getMessage error", "err", err, "count", count)
-		return
-	}
 	// delete no-longer relevant entries
 	for iPos := v.validated(); iPos < count && iPos < v.created(); iPos++ {
 		status, found := v.validations.Load(iPos)
@@ -1008,11 +1003,7 @@ func (v *BlockValidator) UpdateLatestStaked(count arbutil.MessageIndex, globalSt
 		v.validations.Delete(iPos)
 	}
 	if v.created() < count {
-		v.bv.UpdateNextCreationState(
-			globalState,
-			msg.DelayedMessagesRead,
-			true, /* Should reread next batch on creation */
-		)
+		v.bv.OnLatestStakedUpdate(globalState, countUint64)
 		v.createdA.Store(countUint64)
 	}
 	// under the reorg mutex we don't need atomic access
@@ -1027,7 +1018,7 @@ func (v *BlockValidator) UpdateLatestStaked(count arbutil.MessageIndex, globalSt
 	v.validatedA.Store(countUint64)
 	// #nosec G115
 	validatorMsgCountValidatedGauge.Update(int64(countUint64))
-	err = v.bv.WriteLastValidated(globalState, nil) // we don't know which wasm roots were validated
+	err := v.bv.WriteLastValidated(globalState, nil) // we don't know which wasm roots were validated
 	if err != nil {
 		log.Error("failed writing valid state after reorg", "err", err)
 	}
@@ -1057,21 +1048,6 @@ func (v *BlockValidator) Reorg(ctx context.Context, count arbutil.MessageIndex) 
 	if v.created() < count {
 		return nil
 	}
-	_, endPosition, err := v.GlobalStatePositionsAtCount(count)
-	if err != nil {
-		v.possiblyFatal(err)
-		return err
-	}
-	res, err := v.streamer.ResultAtMessageIndex(count - 1)
-	if err != nil {
-		v.possiblyFatal(err)
-		return err
-	}
-	msg, err := v.streamer.GetMessage(count - 1)
-	if err != nil {
-		v.possiblyFatal(err)
-		return err
-	}
 	for iPos := count; iPos < v.created(); iPos++ {
 		status, found := v.validations.Load(iPos)
 		if found && status != nil && status.Cancel != nil {
@@ -1079,13 +1055,11 @@ func (v *BlockValidator) Reorg(ctx context.Context, count arbutil.MessageIndex) 
 		}
 		v.validations.Delete(iPos)
 	}
-	v.bv.UpdateNextCreationState(
-		BuildGlobalState(*res, endPosition),
-		msg.DelayedMessagesRead,
-		true, /* Reread next batch on creation */
-	)
-	v.bv.ResetCaches()
 	countUint64 := uint64(count)
+	if err := v.bv.OnReorg(countUint64); err != nil {
+		v.possiblyFatal(err)
+		return err
+	}
 	v.createdA.Store(countUint64)
 	// under the reorg mutex we don't need atomic access
 	if v.recordSentA.Load() > countUint64 {
@@ -1100,7 +1074,7 @@ func (v *BlockValidator) Reorg(ctx context.Context, count arbutil.MessageIndex) 
 		v.validatedA.Store(countUint64)
 		// #nosec G115
 		validatorMsgCountValidatedGauge.Update(int64(countUint64))
-		err := v.writeLastValidated(v.nextCreateStartGS, nil) // we don't know which wasm roots were validated
+		err := v.bv.WriteLastValidated(v.nextCreateStartGS, nil) // we don't know which wasm roots were validated
 		if err != nil {
 			log.Error("failed writing valid state after reorg", "err", err)
 		}
@@ -1175,70 +1149,7 @@ func (v *BlockValidator) Initialize(ctx context.Context) error {
 func (v *BlockValidator) checkLegacyValid() error {
 	v.reorgMutex.Lock()
 	defer v.reorgMutex.Unlock()
-	if v.legacyValidInfo == nil {
-		return nil
-	}
-	batchCount, err := v.inboxTracker.GetBatchCount()
-	if err != nil {
-		return err
-	}
-	requiredBatchCount := v.legacyValidInfo.AfterPosition.BatchNumber + 1
-	if v.legacyValidInfo.AfterPosition.PosInBatch == 0 {
-		requiredBatchCount -= 1
-	}
-	if batchCount < requiredBatchCount {
-		log.Warn("legacy valid batch ahead of db", "current", batchCount, "required", requiredBatchCount)
-		return nil
-	}
-	var msgCount arbutil.MessageIndex
-	if v.legacyValidInfo.AfterPosition.BatchNumber > 0 {
-		msgCount, err = v.inboxTracker.GetBatchMessageCount(v.legacyValidInfo.AfterPosition.BatchNumber - 1)
-		if err != nil {
-			return err
-		}
-	}
-	msgCount += arbutil.MessageIndex(v.legacyValidInfo.AfterPosition.PosInBatch)
-	processedCount, err := v.streamer.GetProcessedMessageCount()
-	if err != nil {
-		return err
-	}
-	if processedCount < msgCount {
-		log.Warn("legacy valid message count ahead of db", "current", processedCount, "required", msgCount)
-		return nil
-	}
-
-	result := &execution.MessageResult{}
-	if msgCount > 0 {
-		result, err = v.streamer.ResultAtMessageIndex(msgCount - 1)
-		if err != nil {
-			return err
-		}
-	}
-
-	if result.BlockHash != v.legacyValidInfo.BlockHash {
-		log.Error("legacy validated blockHash does not fit chain", "info.BlockHash", v.legacyValidInfo.BlockHash, "chain", result.BlockHash, "count", msgCount)
-		return fmt.Errorf("legacy validated blockHash does not fit chain")
-	}
-	validGS := validator.GoGlobalState{
-		BlockHash:  result.BlockHash,
-		SendRoot:   result.SendRoot,
-		Batch:      v.legacyValidInfo.AfterPosition.BatchNumber,
-		PosInBatch: v.legacyValidInfo.AfterPosition.PosInBatch,
-	}
-	err = v.writeLastValidated(validGS, nil)
-	if err == nil {
-		err = v.db.Delete(legacyLastBlockValidatedInfoKey)
-		if err != nil {
-			err = fmt.Errorf("deleting legacy: %w", err)
-		}
-	}
-	if err != nil {
-		log.Error("failed writing initial lastValid on upgrade from legacy", "new-info", v.lastValidGS, "err", err)
-	} else {
-		log.Info("updated last-valid from legacy", "lastValid", v.lastValidGS)
-	}
-	v.legacyValidInfo = nil
-	return nil
+	return v.bv.CheckLegacyValid()
 }
 
 // checks that the chain caught up to lastValidGS, used in startup
@@ -1255,11 +1166,11 @@ func (v *BlockValidator) checkValidatedGSCaughtUp() (bool, error) {
 	if !caughtUp {
 		return false, nil
 	}
-	msgCount := arbutil.MessageIndex(count)
-	atomicStorePos(&v.createdA, msgCount, validatorMsgCountCreatedGauge)
-	atomicStorePos(&v.recordSentA, msgCount, validatorMsgCountRecordSentGauge)
-	atomicStorePos(&v.validatedA, msgCount, validatorMsgCountValidatedGauge)
-	atomicStorePos(&v.lastValidationSentA, msgCount, validatorMsgCountLastValidationSentGauge)
+	itemCount := arbutil.MessageIndex(count)
+	atomicStorePos(&v.createdA, itemCount, validatorMsgCountCreatedGauge)
+	atomicStorePos(&v.recordSentA, itemCount, validatorMsgCountRecordSentGauge)
+	atomicStorePos(&v.validatedA, itemCount, validatorMsgCountValidatedGauge)
+	atomicStorePos(&v.lastValidationSentA, itemCount, validatorMsgCountLastValidationSentGauge)
 	// #nosec G115
 	validatorMsgCountValidatedGauge.Update(int64(count))
 	v.chainCaughtUp = true
