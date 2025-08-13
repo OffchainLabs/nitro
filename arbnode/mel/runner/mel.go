@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"strings"
 	"time"
 
 	"github.com/spf13/pflag"
@@ -33,9 +34,14 @@ type MessageExtractionConfig struct {
 	RetryInterval                 time.Duration `koanf:"retry-interval"`
 	DelayedMessageBacklogCapacity int           `koanf:"delayed-message-backlog-capacity"`
 	BlocksToPrefetch              uint64        `koanf:"blocks-to-prefetch" reload:"hot"`
+	ReadMode                      string        `koanf:"read-mode" reload:"hot"`
 }
 
 func (c *MessageExtractionConfig) Validate() error {
+	c.ReadMode = strings.ToLower(c.ReadMode)
+	if c.ReadMode != "latest" && c.ReadMode != "safe" && c.ReadMode != "finalized" {
+		return fmt.Errorf("inbox reader read-mode is invalid, want: latest or safe or finalized, got: %s", c.ReadMode)
+	}
 	return nil
 }
 
@@ -44,6 +50,7 @@ var DefaultMessageExtractionConfig = MessageExtractionConfig{
 	RetryInterval:                 defaultRetryInterval,
 	DelayedMessageBacklogCapacity: 100, // TODO: right default? setting to a lower value means more calls to l1reader
 	BlocksToPrefetch:              499, // 500 is the eth_getLogs block range limit
+	ReadMode:                      "latest",
 }
 
 func MessageExtractionConfigAddOptions(prefix string, f *pflag.FlagSet) {
@@ -51,6 +58,7 @@ func MessageExtractionConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Duration(prefix+".retry-interval", DefaultMessageExtractionConfig.RetryInterval, "wait time before retring upon a failure")
 	f.Int(prefix+".delayed-message-backlog-capacity", DefaultMessageExtractionConfig.DelayedMessageBacklogCapacity, "target capacity of the delayed message backlog")
 	f.Uint64(prefix+".blocks-to-prefetch", DefaultMessageExtractionConfig.BlocksToPrefetch, "the number of blocks to prefetch relevant logs from")
+	f.String(prefix+".read-mode", DefaultMessageExtractionConfig.ReadMode, "mode to only read latest or safe or finalized L1 blocks. Enabling safe or finalized disables feed input and output. Defaults to latest. Takes string input, valid strings- latest, safe, finalized")
 }
 
 // TODO (ganesh): cleanup unused methods from this interface after checking with wasm mode
@@ -80,6 +88,7 @@ type MessageExtractor struct {
 	retryInterval     time.Duration
 	caughtUp          bool
 	caughtUpChan      chan struct{}
+	lastBlockToRead   uint64
 }
 
 // Creates a message extractor instance with the specified parameters,
@@ -360,6 +369,22 @@ func (m *MessageExtractor) Act(ctx context.Context) (time.Duration, error) {
 		if preState.GetDelayedMessageBacklog() == nil { // Safety check since its relevant for native mode
 			return m.retryInterval, errors.New("detected nil DelayedMessageBacklog of melState, shouldnt be possible")
 		}
+		// If the current parent chain block is not safe/finalized we wait till it becomes safe/finalized as determined by the ReadMode
+		if m.config.ReadMode != "latest" && preState.ParentChainBlockNumber+1 > m.lastBlockToRead {
+			var header *types.Header
+			var err error
+			switch m.config.ReadMode {
+			case "safe":
+				header, err = m.parentChainReader.HeaderByNumber(ctx, big.NewInt(rpc.SafeBlockNumber.Int64()))
+			case "finalized":
+				header, err = m.parentChainReader.HeaderByNumber(ctx, big.NewInt(rpc.FinalizedBlockNumber.Int64()))
+			}
+			if err != nil {
+				return m.retryInterval, err
+			}
+			m.lastBlockToRead = header.Number.Uint64()
+			return m.retryInterval, nil
+		}
 		parentChainBlock, err := m.parentChainReader.HeaderByNumber(
 			ctx,
 			new(big.Int).SetUint64(preState.ParentChainBlockNumber+1),
@@ -369,7 +394,7 @@ func (m *MessageExtractor) Act(ctx context.Context) (time.Duration, error) {
 				// If the block with the specified number is not found, it likely has not
 				// been posted yet to the parent chain, so we can retry
 				// without returning an error from the FSM.
-				if !m.caughtUp {
+				if !m.caughtUp && m.config.ReadMode == "latest" {
 					if latestBlk, err := m.parentChainReader.HeaderByNumber(ctx, big.NewInt(rpc.LatestBlockNumber.Int64())); err != nil {
 						log.Error("Error fetching LatestBlockNumber from parent chain to determine if mel has caught up", "err", err)
 					} else if latestBlk.Number.Uint64()-preState.ParentChainBlockNumber <= 5 { // tolerance of catching up i.e parent chain might have progressed in the time between the above two function calls
