@@ -67,6 +67,7 @@ type SyncToStorageConfig struct {
 	ParentChainBlocksPerRead uint64        `koanf:"parent-chain-blocks-per-read"`
 	StateDir                 string        `koanf:"state-dir"`
 	SyncExpiredData          bool          `koanf:"sync-expired-data"`
+	FinalityConfirmations    uint64        `koanf:"finality-confirmations"`
 }
 
 var DefaultSyncToStorageConfig = SyncToStorageConfig{
@@ -78,6 +79,7 @@ var DefaultSyncToStorageConfig = SyncToStorageConfig{
 	ParentChainBlocksPerRead: 100,
 	StateDir:                 "",
 	SyncExpiredData:          true,
+	FinalityConfirmations:    12,
 }
 
 func SyncToStorageConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -89,6 +91,7 @@ func SyncToStorageConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".ignore-write-errors", DefaultSyncToStorageConfig.IgnoreWriteErrors, "log only on failures to write when syncing; otherwise treat it as an error")
 	f.String(prefix+".state-dir", DefaultSyncToStorageConfig.StateDir, "directory to store the sync state in, ie the block number currently synced up to, so that we don't sync from scratch each time")
 	f.Bool(prefix+".sync-expired-data", DefaultSyncToStorageConfig.SyncExpiredData, "sync even data that is expired; needed for mirror configuration")
+	f.Uint64(prefix+".finality-confirmations", DefaultSyncToStorageConfig.FinalityConfirmations, "number of parent chain confirmations to consider a block finalized when syncing")
 }
 
 type l1SyncService struct {
@@ -321,7 +324,10 @@ func (s *l1SyncService) readMore(ctx context.Context) error {
 		return err
 	}
 	highBlockNr := header.Number.Uint64()
-	finalizedHighBlockNr := highBlockNr - 12 // TODO
+	finalizedHighBlockNr := highBlockNr
+	if s.config.FinalityConfirmations > 0 && highBlockNr > s.config.FinalityConfirmations {
+		finalizedHighBlockNr = highBlockNr - s.config.FinalityConfirmations
+	}
 	callOpts := &bind.CallOpts{
 		Context:     ctx,
 		BlockNumber: header.Number,
