@@ -51,8 +51,13 @@ var (
 )
 
 type ValidatorInstance interface {
-	InstanceDir() string
+	CreateValidationEntry(
+		ctx context.Context,
+		position uint64,
+	) (*validationEntry, bool, error)
 	NextCreationGlobalState() validator.GoGlobalState
+	LastValidGlobalState() validator.GoGlobalState
+	InstanceDir() string
 	LatestWasmModuleRoot() common.Hash
 	RedisValidator() *redis.ValidationClient
 	ExecSpawners() []validator.ExecutionSpawner
@@ -67,14 +72,9 @@ type ValidatorInstance interface {
 	RecordEntry(ctx context.Context, entry *validationEntry) error
 	SetLegacyValidInfo(info *legacyLastBlockValidatedDbInfo)
 	SetLastValidGlobalState(gs validator.GoGlobalState)
-	LastValidGlobalState() validator.GoGlobalState
 	ValidGlobalStateIsNew(gs validator.GoGlobalState) bool
 	CheckValidatedStateCaughtUp() (uint64, bool, error)
 	CheckLegacyValid() error
-	CreateValidationEntry(
-		ctx context.Context,
-		position uint64,
-	) (*validationEntry, bool, error)
 	OnReorg(count uint64) error
 	OnLatestStakedUpdate(
 		globalState validator.GoGlobalState,
@@ -491,6 +491,10 @@ func nonBlockingTrigger(channel chan struct{}) {
 	case channel <- struct{}{}:
 	default:
 	}
+}
+
+func (v *BlockValidator) GlobalStatePositionsAtCount(count uint64) (GlobalStatePosition, GlobalStatePosition, error) {
+	return v.instance.PositionsAtCount(count)
 }
 
 func (v *BlockValidator) GetModuleRootsToValidate() []common.Hash {
