@@ -2,7 +2,6 @@ package melrunner
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"math/big"
 	"strings"
@@ -19,7 +18,6 @@ import (
 
 	"github.com/offchainlabs/bold/containers/fsm"
 	"github.com/offchainlabs/nitro/arbnode/mel"
-	melextraction "github.com/offchainlabs/nitro/arbnode/mel/extraction"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/daprovider"
@@ -163,19 +161,6 @@ func (m *MessageExtractor) updateLastBlockToRead(ctx context.Context) time.Durat
 	}
 	m.lastBlockToRead.Store(header.Number.Uint64())
 	return m.retryInterval
-}
-
-// txByLogFetcher is wrapper around ParentChainReader to implement TransactionByLog method
-type txByLogFetcher struct {
-	client ParentChainReader
-}
-
-func (f *txByLogFetcher) TransactionByLog(ctx context.Context, log *types.Log) (*types.Transaction, error) {
-	if log == nil {
-		return nil, errors.New("transactionByLog got nil log value")
-	}
-	tx, _, err := f.client.TransactionByHash(ctx, log.TxHash)
-	return tx, err
 }
 
 func (m *MessageExtractor) CurrentFSMState() FSMState {
@@ -342,163 +327,27 @@ func (m *MessageExtractor) Act(ctx context.Context) (time.Duration, error) {
 	// the `ProcessingNextBlock` state after successfully fetching the initial
 	// MEL state struct for the message extraction process.
 	case Start:
-		// Start from the latest MEL state we have in the database
-		melState, err := m.melDB.GetHeadMelState(ctx)
-		if err != nil {
-			return m.retryInterval, err
-		}
-		// Initialize delayedMessageBacklog and add it to the melState
-		delayedMessageBacklog, err := mel.NewDelayedMessageBacklog(m.GetContext(), m.config.DelayedMessageBacklogCapacity, m.GetFinalizedDelayedMessagesRead)
-		if err != nil {
-			return m.retryInterval, err
-		}
-		if err = InitializeDelayedMessageBacklog(ctx, delayedMessageBacklog, m.melDB, melState, m.GetFinalizedDelayedMessagesRead); err != nil {
-			return m.retryInterval, err
-		}
-		delayedMessageBacklog.CommitDirties()
-		melState.SetDelayedMessageBacklog(delayedMessageBacklog)
-		// Start mel state is now ready. Check if the state's parent chain block hash exists in the parent chain
-		startBlock, err := m.parentChainReader.HeaderByNumber(ctx, new(big.Int).SetUint64(melState.ParentChainBlockNumber))
-		if err != nil {
-			return m.retryInterval, fmt.Errorf("failed to get start parent chain block: %d corresponding to head mel state from parent chain: %w", melState.ParentChainBlockNumber, err)
-		}
-		// We check if our head mel state's parentChainBlockHash matches the one on-chain, if it doesnt then we detected a reorg
-		if melState.ParentChainBlockHash != startBlock.Hash() {
-			log.Info("MEL detected L1 reorg at the start", "block", melState.ParentChainBlockNumber, "parentChainBlockHash", melState.ParentChainBlockHash, "onchainParentChainBlockHash", startBlock.Hash()) // Log level is Info because L1 reorgs are a common occurrence
-			return 0, m.fsm.Do(reorgToOldBlock{
-				melState: melState,
-			})
-		}
-		// Initialize logsPreFetcher
-		m.logsPreFetcher = newLogsFetcher(m.parentChainReader, m.config.BlocksToPrefetch)
-		// Begin the next FSM state immediately.
-		return 0, m.fsm.Do(processNextBlock{
-			melState: melState,
-		})
+		return m.initialize(ctx, current)
 	// `ProcessingNextBlock` is the state responsible for processing the next block
 	// in the parent chain and extracting messages from it. It uses the
 	// `melextraction` package to extract messages and delayed messages
 	// from the parent chain block. The FSM will transition to the `SavingMessages`
 	// state after successfully extracting messages.
 	case ProcessingNextBlock:
-		// Process the next block in the parent chain and extracts messages.
-		processAction, ok := current.SourceEvent.(processNextBlock)
-		if !ok {
-			return m.retryInterval, fmt.Errorf("invalid action: %T", current.SourceEvent)
-		}
-		preState := processAction.melState
-		if preState.GetDelayedMessageBacklog() == nil { // Safety check since its relevant for native mode
-			return m.retryInterval, errors.New("detected nil DelayedMessageBacklog of melState, shouldnt be possible")
-		}
-		// If the current parent chain block is not safe/finalized we wait till it becomes safe/finalized as determined by the ReadMode
-		if m.config.ReadMode != "latest" && preState.ParentChainBlockNumber+1 > m.lastBlockToRead.Load() {
-			return m.retryInterval, nil
-		}
-		parentChainBlock, err := m.parentChainReader.HeaderByNumber(
-			ctx,
-			new(big.Int).SetUint64(preState.ParentChainBlockNumber+1),
-		)
-		if err != nil {
-			if errors.Is(err, ethereum.NotFound) {
-				// If the block with the specified number is not found, it likely has not
-				// been posted yet to the parent chain, so we can retry
-				// without returning an error from the FSM.
-				if !m.caughtUp && m.config.ReadMode == "latest" {
-					if latestBlk, err := m.parentChainReader.HeaderByNumber(ctx, big.NewInt(rpc.LatestBlockNumber.Int64())); err != nil {
-						log.Error("Error fetching LatestBlockNumber from parent chain to determine if mel has caught up", "err", err)
-					} else if latestBlk.Number.Uint64()-preState.ParentChainBlockNumber <= 5 { // tolerance of catching up i.e parent chain might have progressed in the time between the above two function calls
-						m.caughtUp = true
-						close(m.caughtUpChan)
-					}
-				}
-				return m.retryInterval, nil
-			} else {
-				return m.retryInterval, err
-			}
-		}
-		if parentChainBlock.ParentHash != preState.ParentChainBlockHash {
-			log.Info("MEL detected L1 reorg", "block", preState.ParentChainBlockNumber) // Log level is Info because L1 reorgs are a common occurrence
-			return 0, m.fsm.Do(reorgToOldBlock{
-				melState: preState,
-			})
-		}
-		// Conditionally prefetch logs for upcoming block/s
-		if err = m.logsPreFetcher.fetch(ctx, preState); err != nil {
-			return m.retryInterval, err
-		}
-		postState, msgs, delayedMsgs, batchMetas, err := melextraction.ExtractMessages(
-			ctx,
-			preState,
-			parentChainBlock,
-			m.dataProviders,
-			m.melDB,
-			&txByLogFetcher{m.parentChainReader},
-			m.logsPreFetcher,
-		)
-		if err != nil {
-			return m.retryInterval, err
-		}
-		// Begin the next FSM state immediately.
-		return 0, m.fsm.Do(saveMessages{
-			preStateMsgCount: preState.MsgCount,
-			postState:        postState,
-			messages:         msgs,
-			delayedMessages:  delayedMsgs,
-			batchMetas:       batchMetas,
-		})
+		return m.processNextBlock(ctx, current)
 	// `SavingMessages` is the state responsible for saving the extracted messages
 	// and delayed messages to the database. It stores data in the node's consensus database
 	// and runs after the `ProcessingNextBlock` state.
 	// After data is stored, the FSM will then transition to the `ProcessingNextBlock` state
 	// yet again.
 	case SavingMessages:
-		// Persists messages and a processed MEL state to the database.
-		saveAction, ok := current.SourceEvent.(saveMessages)
-		if !ok {
-			return m.retryInterval, fmt.Errorf("invalid action: %T", current.SourceEvent)
-		}
-		saveAction.postState.GetDelayedMessageBacklog().CommitDirties()
-		if err := m.melDB.SaveBatchMetas(ctx, saveAction.postState, saveAction.batchMetas); err != nil {
-			return m.retryInterval, err
-		}
-		if err := m.melDB.SaveDelayedMessages(ctx, saveAction.postState, saveAction.delayedMessages); err != nil {
-			return m.retryInterval, err
-		}
-		if err := m.msgConsumer.PushMessages(ctx, saveAction.preStateMsgCount, saveAction.messages); err != nil {
-			return m.retryInterval, err
-		}
-		if err := m.melDB.SaveState(ctx, saveAction.postState); err != nil {
-			log.Error("Error saving messages from MessageExtractor to MessageConsumer", "err", err)
-			return m.retryInterval, err
-		}
-		return 0, m.fsm.Do(processNextBlock{
-			melState: saveAction.postState,
-		})
+		return m.saveMessages(ctx, current)
 	// `Reorging` is the state responsible for handling reorgs in the parent chain.
 	// It is triggered when a reorg occurs, and it will revert the MEL state being processed to the
 	// specified block. The FSM will transition to the `ProcessingNextBlock` state
 	// based on this old state after the reorg is handled.
 	case Reorging:
-		reorgAction, ok := current.SourceEvent.(reorgToOldBlock)
-		if !ok {
-			return m.retryInterval, fmt.Errorf("invalid action: %T", current.SourceEvent)
-		}
-		currentDirtyState := reorgAction.melState
-		if currentDirtyState.ParentChainBlockNumber == 0 {
-			return m.retryInterval, errors.New("invalid reorging stage, ParentChainBlockNumber of current mel state has reached 0")
-		}
-		previousState, err := m.melDB.State(ctx, currentDirtyState.ParentChainBlockNumber-1)
-		if err != nil {
-			return m.retryInterval, err
-		}
-		// This adjusts delayedMessageBacklog
-		if err := currentDirtyState.ReorgTo(previousState); err != nil {
-			return m.retryInterval, err
-		}
-		m.logsPreFetcher.reset()
-		return 0, m.fsm.Do(processNextBlock{
-			melState: previousState,
-		})
+		return m.reorg(ctx, current)
 	default:
 		return m.retryInterval, fmt.Errorf("invalid state: %s", current.State)
 	}
