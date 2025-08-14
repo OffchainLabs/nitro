@@ -57,6 +57,7 @@ type saveMessages struct {
 	batchMetas       []*mel.BatchMetadata
 }
 
+// An action that transitions the FSM to the reorging state.
 type reorgToOldBlock struct {
 	melState *mel.State
 }
