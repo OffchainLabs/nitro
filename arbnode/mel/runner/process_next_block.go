@@ -11,6 +11,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rpc"
+
 	"github.com/offchainlabs/bold/containers/fsm"
 	melextraction "github.com/offchainlabs/nitro/arbnode/mel/extraction"
 )
