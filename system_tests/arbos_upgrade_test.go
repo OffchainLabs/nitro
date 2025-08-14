@@ -14,6 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
@@ -89,7 +90,7 @@ func checkArbOSVersion(t *testing.T, testClient *TestClient, expectedVersion uin
 	state, err := arbosState.OpenSystemArbosState(statedb, nil, true)
 	Require(t, err, "could not open ArbOS state", scenario)
 	if state.ArbOSVersion() != expectedVersion {
-		t.Errorf("%s: expected ArbOS version %v, got %v", scenario, expectedVersion, state.ArbOSVersion())
+		t.Fatalf("%s: expected ArbOS version %v, got %v", scenario, expectedVersion, state.ArbOSVersion())
 	}
 
 }
@@ -195,6 +196,121 @@ func TestArbos11To32UpgradeWithMcopy(t *testing.T) {
 	Require(t, err)
 	if blockSeq.Hash() != blockReplica.Hash() {
 		t.Errorf("expected sequencer and replica to have same block hash, got %v and %v", blockSeq.Hash(), blockReplica.Hash())
+	}
+}
+
+func TestArbNativeTokenManagerInArbos32To41Upgrade(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	initialVersion := uint64(32)
+	finalVersion := uint64(41)
+
+	arbOSInit := &params.ArbOSInit{
+		NativeTokenSupplyManagementEnabled: true,
+	}
+	builder := NewNodeBuilder(ctx).
+		DefaultConfig(t, true).
+		WithArbOSVersion(initialVersion).
+		WithArbOSInit(arbOSInit)
+	builder.execConfig.TxPreChecker.Strictness = gethexec.TxPreCheckerStrictnessLikelyCompatible
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	authOwner := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
+	authOwner.GasLimit = 32000000
+
+	// makes Owner a chain owner
+	arbDebug, err := precompilesgen.NewArbDebug(types.ArbDebugAddress, builder.L2.Client)
+	Require(t, err)
+	tx, err := arbDebug.BecomeChainOwner(&authOwner)
+	Require(t, err)
+	_, err = EnsureTxSucceeded(ctx, builder.L2.Client, tx)
+	Require(t, err)
+
+	checkArbOSVersion(t, builder.L2, initialVersion, "")
+
+	arbOwner, err := precompilesgen.NewArbOwner(types.ArbOwnerAddress, builder.L2.Client)
+	Require(t, err)
+
+	callOpts := &bind.CallOpts{Context: ctx}
+
+	nativeTokenOwnerName := "NativeTokenOwner"
+	builder.L2Info.GenerateAccount(nativeTokenOwnerName)
+	nativeTokenOwnerAddr := builder.L2Info.GetAddress(nativeTokenOwnerName)
+
+	// checks that IsNativeTokenOwner doesn't exist in ArbOwner before upgrade
+	_, err = arbOwner.IsNativeTokenOwner(callOpts, nativeTokenOwnerAddr)
+	if err == nil || !strings.Contains(err.Error(), "execution reverted") {
+		t.Fatalf("expected IsNativeTokenOwner to fail before upgrade, got %v", err)
+	}
+
+	// schedule arbos upgrade
+	tx, err = arbOwner.ScheduleArbOSUpgrade(&authOwner, finalVersion, 0)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	// checks upgrade worked
+	var data []byte
+	for i := range 10 {
+		for range 100 {
+			data = append(data, byte(i))
+		}
+	}
+	tx = builder.L2Info.PrepareTx("Owner", "Owner", builder.L2Info.TransferGas, big.NewInt(1e12), data)
+	err = builder.L2.Client.SendTransaction(ctx, tx)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+	checkArbOSVersion(t, builder.L2, finalVersion, "")
+
+	// checks that IsNativeTokenOwner works after upgrade
+	_, err = arbOwner.IsNativeTokenOwner(callOpts, nativeTokenOwnerAddr)
+	Require(t, err)
+
+	// adds native token owner
+	tx, err = arbOwner.AddNativeTokenOwner(&authOwner, nativeTokenOwnerAddr)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+
+	// funds the native token owner
+	tx = builder.L2Info.PrepareTx("Owner", nativeTokenOwnerName, builder.L2Info.TransferGas, big.NewInt(500000000000000000), nil)
+	err = builder.L2.Client.SendTransaction(ctx, tx)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	arbNativeTokenManager, err := precompilesgen.NewArbNativeTokenManager(types.ArbNativeTokenManagerAddress, builder.L2.Client)
+	Require(t, err)
+
+	// checks minting
+	nativeTokenOwnerABI, err := precompilesgen.ArbNativeTokenManagerMetaData.GetAbi()
+	Require(t, err)
+	mintTopic := nativeTokenOwnerABI.Events["NativeTokenMinted"].ID
+	authNativeTokenOwner := builder.L2Info.GetDefaultTransactOpts(nativeTokenOwnerName, ctx)
+	authNativeTokenOwner.GasLimit = 32000000
+	toMint := big.NewInt(100)
+	tx, err = arbNativeTokenManager.MintNativeToken(&authNativeTokenOwner, toMint)
+	Require(t, err)
+	receipt, err := builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+	mintLogged := false
+	for _, log := range receipt.Logs {
+		if log.Topics[0] == mintTopic {
+			mintLogged = true
+			parsedLog, err := arbNativeTokenManager.ParseNativeTokenMinted(*log)
+			Require(t, err)
+			if parsedLog.To != nativeTokenOwnerAddr {
+				t.Fatal("expected mint to be to", nativeTokenOwnerAddr, "got", parsedLog.To)
+			}
+			if parsedLog.Amount.Cmp(toMint) != 0 {
+				t.Fatal("expected mint amount to be", toMint, "got", parsedLog.Amount)
+			}
+		}
+	}
+	if !mintLogged {
+		t.Fatal("expected mint event to be logged")
 	}
 }
 
