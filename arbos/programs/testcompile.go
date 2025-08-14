@@ -136,7 +136,7 @@ func testCompileArch(store bool, cranelift bool) error {
 	outBytes, err = compileNative(wasm, 1, true, rawdb.TargetAmd64, false)
 
 	if err != nil {
-		return fmt.Errorf("failed compiling amd: %v", err)
+		return fmt.Errorf("failed compiling amd: %w", err)
 	}
 	if store {
 		_, err := fmt.Printf("writing amd64 file\n")
