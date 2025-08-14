@@ -180,6 +180,28 @@ func TestDataCollection(t *testing.T) {
 			expectFiles: 1,
 		},
 		{
+			name:      "discarded transaction",
+			batchSize: 10,
+			inputData: []*CollectorMessage{
+				{
+					Type: CollectorMsgTransaction,
+					Transaction: &TransactionMultiGas{
+						TxHash:  []byte{0x12, 0x34, 0x56},
+						TxIndex: 0,
+						MultiGas: *multigas.MultiGasFromMap(map[multigas.ResourceKind]uint64{
+							multigas.ResourceKindComputation:   100,
+							multigas.ResourceKindHistoryGrowth: 50,
+							multigas.ResourceKindStorageAccess: 200,
+							multigas.ResourceKindStorageGrowth: 1000,
+							multigas.ResourceKindUnknown:       25,
+						}),
+					},
+				},
+				{Type: CollectorMsgStartBlock},
+			},
+			expectFiles: 0,
+		},
+		{
 			name:      "single block - one transaction",
 			batchSize: 1,
 			inputData: []*CollectorMessage{

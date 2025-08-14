@@ -24,6 +24,9 @@ const (
 
 	// Preallocate for ~2000 transactions per block, a safe high watermark for Arbitrum mainnet.
 	defaultTxPrealloc = 2000
+
+	// CollectorMsgQueueSize defines the size of the collector message queue.
+	CollectorMsgQueueSize = 1024
 )
 
 var (
@@ -68,8 +71,8 @@ type CollectorMessage struct {
 
 // Config holds the configuration for the MultiGas collector.
 type Config struct {
-	OutputDir string
-	BatchSize int
+	OutputDir string `koanf:"output-dir"`
+	BatchSize int    `koanf:"batch-size"`
 }
 
 // Collector manages the asynchronous collection and batching of multi-dimensional

@@ -44,6 +44,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
+	mgc "github.com/offchainlabs/nitro/arbos/multigasCollector"
 	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/execution"
@@ -108,6 +109,8 @@ type ExecutionEngine struct {
 	syncTillBlock uint64
 
 	runningMaintenance atomic.Bool
+
+	mgcCollector *mgc.Collector
 }
 
 func NewL1PriceData() *L1PriceData {
@@ -247,6 +250,34 @@ func (s *ExecutionEngine) EnablePrefetchBlock() {
 		panic("trying to enable prefetch block when already set")
 	}
 	s.prefetchBlock = true
+}
+
+func (s *ExecutionEngine) EnableMultigasCollector(config mgc.Config) error {
+	if s.mgcCollector != nil {
+		return nil
+	}
+
+	ch := make(chan *mgc.CollectorMessage, mgc.CollectorMsgQueueSize)
+	collector, err := mgc.NewCollector(config, ch)
+	if err != nil {
+		return err
+	}
+
+	arbos.SetMultiGasCollectorChan(ch)
+	s.mgcCollector = collector
+
+	return nil
+}
+
+func (s *ExecutionEngine) DisableMultigasCollector() {
+	if s.mgcCollector == nil {
+		return
+	}
+
+	arbos.SetMultiGasCollectorChan(nil)
+
+	s.mgcCollector.StopAndWait()
+	s.mgcCollector = nil
 }
 
 func (s *ExecutionEngine) SetConsensus(consensus execution.FullConsensusClient) {
@@ -1033,6 +1064,11 @@ func (s *ExecutionEngine) ArbOSVersionForMessageIndex(msgIdx arbutil.MessageInde
 
 func (s *ExecutionEngine) Start(ctx_in context.Context) {
 	s.StopWaiter.Start(ctx_in, s)
+
+	if s.mgcCollector != nil {
+		s.mgcCollector.Start(s.GetContext())
+	}
+
 	s.LaunchThread(func(ctx context.Context) {
 		for {
 			if s.syncTillBlock > 0 && s.latestBlock != nil && s.latestBlock.NumberU64() >= s.syncTillBlock {
@@ -1086,6 +1122,14 @@ func (s *ExecutionEngine) Start(ctx_in context.Context) {
 				}
 			}
 		})
+	}
+}
+
+func (s *ExecutionEngine) StopAndWait() {
+	s.StopWaiter.StopAndWait()
+
+	if s.mgcCollector != nil {
+		s.mgcCollector.StopAndWait()
 	}
 }
 
