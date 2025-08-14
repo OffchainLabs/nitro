@@ -10,6 +10,5 @@ import (
 func TestBidValidatorAuctioneerRedisStream(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	redisURL := redisutil.CreateTestRedis(ctx, t)
-	_ = redisURL
+	_ = redisutil.CreateTestRedis(ctx, t)
 }
