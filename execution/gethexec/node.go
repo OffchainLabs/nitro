@@ -26,6 +26,7 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
+	mgc "github.com/offchainlabs/nitro/arbos/multigasCollector"
 	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/execution"
@@ -120,6 +121,7 @@ type Config struct {
 	RPC                         arbitrum.Config     `koanf:"rpc"`
 	TxIndexer                   TxIndexerConfig     `koanf:"tx-indexer"`
 	EnablePrefetchBlock         bool                `koanf:"enable-prefetch-block"`
+	MultigasCollector           mgc.Config          `koanf:"multigas-collector"`
 	SyncMonitor                 SyncMonitorConfig   `koanf:"sync-monitor"`
 	StylusTarget                StylusTargetConfig  `koanf:"stylus-target"`
 	BlockMetadataApiCacheSize   uint64              `koanf:"block-metadata-api-cache-size"`
@@ -147,6 +149,9 @@ func (c *Config) Validate() error {
 	if c.forwardingTarget != "" && c.Sequencer.Enable {
 		return errors.New("ForwardingTarget set and sequencer enabled")
 	}
+	if c.MultigasCollector.OutputDir != "" && c.MultigasCollector.BatchSize <= 0 {
+		return errors.New("MultigasCollector batch size must be greater than 0")
+	}
 	if err := c.StylusTarget.Validate(); err != nil {
 		return err
 	}
@@ -167,6 +172,8 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet) {
 	AddOptionsForNodeForwarderConfig(prefix+".forwarder", f)
 	TxPreCheckerConfigAddOptions(prefix+".tx-pre-checker", f)
 	CachingConfigAddOptions(prefix+".caching", f)
+	f.String(prefix+".multigas-collector.output-dir", "", "If set, enables Multigas collector and stores batches in this directory")
+	f.Int(prefix+".multigas-collector.batch-size", 0, "Batch size (blocks per file) for Multigas collector; <=0 uses default")
 	SyncMonitorConfigAddOptions(prefix+".sync-monitor", f)
 	f.Bool(prefix+".enable-prefetch-block", ConfigDefault.EnablePrefetchBlock, "enable prefetching of blocks")
 	StylusTargetConfigAddOptions(prefix+".stylus-target", f)
@@ -242,6 +249,11 @@ func CreateExecutionNode(
 	execEngine, err := NewExecutionEngine(l2BlockChain, syncTillBlock)
 	if config.EnablePrefetchBlock {
 		execEngine.EnablePrefetchBlock()
+	}
+	if mgtConfig := config.MultigasCollector; mgtConfig.OutputDir != "" {
+		if err := execEngine.EnableMultigasCollector(mgtConfig); err != nil {
+			return nil, fmt.Errorf("enable multigas collector: %w", err)
+		}
 	}
 	if config.Caching.DisableStylusCacheMetricsCollection {
 		execEngine.DisableStylusCacheMetricsCollection()
