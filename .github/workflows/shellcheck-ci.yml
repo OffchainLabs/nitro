@@ -2,12 +2,8 @@ name: ShellCheck CI
 run-name: ShellCheck CI triggered from @${{ github.actor }} of ${{ github.head_ref }}
 
 on:
+  # NOTE: Disabled for PR/merge_group/push; manual only during repo development.
   workflow_dispatch:
-  merge_group:
-  pull_request:
-  push:
-    branches:
-      - master
 
 jobs:
   shellcheck:

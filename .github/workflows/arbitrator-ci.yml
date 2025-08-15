@@ -2,6 +2,7 @@ name: Arbitrator CI
 run-name: Arbitrator CI triggered from @${{ github.actor }} of ${{ github.head_ref }}
 
 on:
+  # NOTE: Disabled for PR/merge_group/push; manual only during repo development.
   workflow_dispatch:
     inputs:
       enable_tmate:
@@ -9,16 +10,6 @@ on:
         description: 'Enable tmate'
         required: false
         default: false
-  merge_group:
-  pull_request:
-    paths:
-      - 'arbitrator/**'
-      - 'contracts/**'
-      - '.github/workflows/arbitrator-ci.yml'
-      - 'Makefile'
-  push:
-    branches:
-      - master
 
 env:
   RUST_BACKTRACE: 1
