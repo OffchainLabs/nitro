@@ -647,6 +647,7 @@ func Precompiles() map[addr]ArbosPrecompile {
 	ArbNativeTokenManager.methodsByName["MintNativeToken"].arbosVersion = params.ArbosVersion_41
 	ArbNativeTokenManager.methodsByName["BurnNativeToken"].arbosVersion = params.ArbosVersion_41
 
+	// this should be executed after all precompiles have been inserted
 	for _, contract := range contracts {
 		precompile := contract.Precompile()
 		arbosState.PrecompileMinArbOSVersions[precompile.address] = precompile.arbosVersion
