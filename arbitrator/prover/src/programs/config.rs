@@ -227,5 +227,4 @@ impl CompileConfig {
     pub fn store(&self, target: Target, cranelift: bool) -> Store {
         Store::new(self.engine_type(target, cranelift))
     }
-
 }

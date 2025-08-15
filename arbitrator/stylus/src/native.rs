@@ -362,7 +362,12 @@ impl<D: DataReader, E: EvmApi<D>> StartlessMachine for NativeInstance<D, E> {
     }
 }
 
-pub fn module(wasm: &[u8], compile: CompileConfig, target: Target, cranelift: bool) -> Result<Vec<u8>> {
+pub fn module(
+    wasm: &[u8],
+    compile: CompileConfig,
+    target: Target,
+    cranelift: bool,
+) -> Result<Vec<u8>> {
     let mut store = compile.store(target, cranelift);
     let module = Module::new(&store, wasm)?;
     macro_rules! stub {
@@ -472,7 +477,13 @@ pub fn activate(
     Ok((module, stylus_data))
 }
 
-pub fn compile(wasm: &[u8], version: u16, debug: bool, target: Target, cranelift: bool) -> Result<Vec<u8>> {
+pub fn compile(
+    wasm: &[u8],
+    version: u16,
+    debug: bool,
+    target: Target,
+    cranelift: bool,
+) -> Result<Vec<u8>> {
     let compile = CompileConfig::version(version, debug);
     self::module(wasm, compile, target, cranelift)
 }
