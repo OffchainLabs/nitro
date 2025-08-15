@@ -723,6 +723,7 @@ func mainImpl() int {
 		select {
 		case err = <-fatalErrChan:
 		default:
+			log.Info("shutting down because of sigint")
 		}
 	}
 
