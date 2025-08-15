@@ -1477,7 +1477,7 @@ func (n *Node) StopAndWait() {
 		n.TxStreamer.StopAndWait()
 	}
 	// n.BroadcastServer is stopped after txStreamer and inboxReader because if done before it would lead to a deadlock, as the threads from these two components
-	// attempt to Broadcast i.e send feedMessage to clientManager's broadcastChan when there wont be any reader to read it as n.BroadcastServer would've been stopped
+	// attempt to Broadcast i.e send feedMessage to clientManager's broadcastChan when there won't be any reader to read it as n.BroadcastServer would've been stopped
 	if n.BroadcastServer != nil && n.BroadcastServer.Started() {
 		n.BroadcastServer.StopAndWait()
 	}
