@@ -223,9 +223,10 @@ func (p *Producer[Request, Response]) clearMessages(ctx context.Context) time.Du
 				log.Error("error deleting PEL's lower message that's past its TTL", "msgID", pelData.Lower, "err", err)
 				return 5 * p.cfg.CheckResultInterval
 			}
+			return 0
 		}
 	}
-	return p.cfg.CheckResultInterval
+	return 5 * p.cfg.CheckResultInterval
 }
 
 func (p *Producer[Request, Response]) Start(ctx context.Context) {
