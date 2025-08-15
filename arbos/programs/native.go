@@ -199,8 +199,12 @@ func activateProgramInternal(
 	for _, target := range nativeTargets {
 		target := target
 		go func() {
-			asm, err := compileNative(wasm, stylusVersion, debug, target)
-			results <- result{target, asm, err}
+			if target == rawdb.TargetWasm {
+				results <- result{target, wasm, nil}
+			} else {
+				asm, err := compileNative(wasm, stylusVersion, debug, target)
+				results <- result{target, asm, err}
+			}
 		}()
 	}
 	expectedResults := len(nativeTargets)
