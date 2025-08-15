@@ -361,7 +361,7 @@ func TestArbTxTypesTracingPrestateTracerAndCallTracer(t *testing.T) {
 	)
 	Require(t, err, "failed to estimate retryable submission")
 	estimate := tx.Gas()
-	expectedEstimate := params.TxGas + params.TxDataNonZeroGasEIP2028*4
+	expectedEstimate := params.TxGas + params.TxTokenPerNonZeroByte*params.TxCostFloorPerToken*4
 	if float64(estimate) > float64(expectedEstimate)*(1+gasestimator.EstimateGasErrorRatio) {
 		t.Errorf("estimated retryable ticket at %v gas but expected %v, with error margin of %v",
 			estimate,

@@ -97,7 +97,7 @@ func TestTimeboostTxsTimeoutByBlock(t *testing.T) {
 
 	var txs types.Transactions
 	for i := uint64(0); i < numTxs; i++ {
-		txs = append(txs, seqInfo.PrepareTx("Owner", "User2", 700000000, big.NewInt(1e8), data)) // this tx should consume one block
+		txs = append(txs, seqInfo.PrepareTx("Owner", "User2", 2500000000, big.NewInt(1e8), data)) // this tx should consume one block
 	}
 	// Buffer future sequence numbered txs
 	for seq := uint64(1); seq < numTxs; seq++ {

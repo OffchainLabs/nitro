@@ -124,8 +124,8 @@ func TestGetPricesInArbGas(t *testing.T) {
 	callCtx := testContext(caller, evm)
 
 	evm.Context.BaseFee = big.NewInt(1005)
-	expectedGasPerL2Tx := big.NewInt(111442786069)
-	expectedGasForL1Calldata := big.NewInt(796019900)
+	expectedGasPerL2Tx := big.NewInt(278_606_965_174)
+	expectedGasForL1Calldata := big.NewInt(1_990_049_751)
 	expectedStorageArbGas := big.NewInt(int64(storage.StorageWriteCost))
 	gasPerL2Tx, gasForL1Calldata, storageArbGas, err := arbGasInfo.GetPricesInArbGas(callCtx, evm)
 	Require(t, err)

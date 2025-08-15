@@ -45,7 +45,7 @@ func (con ArbGasInfo) GetPricesInWeiWithAggregator(
 	}
 
 	// aggregators compress calldata, so we must estimate accordingly
-	weiForL1Calldata := arbmath.BigMulByUint(l1GasPrice, params.TxDataNonZeroGasEIP2028)
+	weiForL1Calldata := arbmath.BigMulByUint(l1GasPrice, uint64(l1pricing.BatchGasUnitsPerByte))
 
 	// the cost of a simple tx without calldata
 	perL2Tx := arbmath.BigMulByUint(weiForL1Calldata, AssumedSimpleTxSize)
@@ -83,7 +83,7 @@ func (con ArbGasInfo) _preVersion4_GetPricesInWeiWithAggregator(
 	}
 
 	// aggregators compress calldata, so we must estimate accordingly
-	weiForL1Calldata := arbmath.BigMulByUint(l1GasPrice, params.TxDataNonZeroGasEIP2028)
+	weiForL1Calldata := arbmath.BigMulByUint(l1GasPrice, uint64(l1pricing.BatchGasUnitsPerByte))
 
 	// the cost of a simple tx without calldata
 	perL2Tx := arbmath.BigMulByUint(weiForL1Calldata, AssumedSimpleTxSize)
@@ -120,7 +120,7 @@ func (con ArbGasInfo) GetPricesInArbGasWithAggregator(c ctx, evm mech, aggregato
 	}
 
 	// aggregators compress calldata, so we must estimate accordingly
-	weiForL1Calldata := arbmath.BigMulByUint(l1GasPrice, params.TxDataNonZeroGasEIP2028)
+	weiForL1Calldata := arbmath.BigMulByUint(l1GasPrice, uint64(l1pricing.BatchGasUnitsPerByte))
 	weiPerL2Tx := arbmath.BigMulByUint(weiForL1Calldata, AssumedSimpleTxSize)
 	gasForL1Calldata := common.Big0
 	gasPerL2Tx := common.Big0
@@ -145,7 +145,7 @@ func (con ArbGasInfo) _preVersion4_GetPricesInArbGasWithAggregator(c ctx, evm me
 	}
 
 	// aggregators compress calldata, so we must estimate accordingly
-	weiForL1Calldata := arbmath.BigMulByUint(l1GasPrice, params.TxDataNonZeroGasEIP2028)
+	weiForL1Calldata := arbmath.BigMulByUint(l1GasPrice, uint64(l1pricing.BatchGasUnitsPerByte))
 	gasForL1Calldata := common.Big0
 	if l2GasPrice.Sign() > 0 {
 		gasForL1Calldata = arbmath.BigDiv(weiForL1Calldata, l2GasPrice)
