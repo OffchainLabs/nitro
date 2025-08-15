@@ -25,6 +25,7 @@ import (
 	"fmt"
 	"os"
 	"runtime"
+	"time"
 
 	"github.com/ethereum/go-ethereum/core/rawdb"
 )
@@ -46,6 +47,7 @@ func testCompileArch(store bool, cranelift bool) error {
 	localTarget := rawdb.LocalTarget()
 	nativeArm64 := localTarget == rawdb.TargetArm64
 	nativeAmd64 := localTarget == rawdb.TargetAmd64
+	timeout := time.Minute
 
 	nameSuffix := ".bin"
 	if cranelift {
@@ -94,12 +96,12 @@ func testCompileArch(store bool, cranelift bool) error {
 		}
 	}
 
-	_, err = compileNative(wasm, 2, true, "booga", false)
+	_, err = compileNative(wasm, 2, true, "booga", false, timeout)
 	if err == nil {
 		return fmt.Errorf("succeeded compiling non-existent arch: %w", err)
 	}
 
-	outBytes, err := compileNative(wasm, 1, true, localTarget, false)
+	outBytes, err := compileNative(wasm, 1, true, localTarget, false, timeout)
 
 	if err != nil {
 		return fmt.Errorf("failed compiling native: %w", err)
@@ -116,7 +118,7 @@ func testCompileArch(store bool, cranelift bool) error {
 		}
 	}
 
-	outBytes, err = compileNative(wasm, 1, true, rawdb.TargetArm64, false)
+	outBytes, err = compileNative(wasm, 1, true, rawdb.TargetArm64, false, timeout)
 
 	if err != nil {
 		return fmt.Errorf("failed compiling arm: %w", err)
@@ -133,7 +135,7 @@ func testCompileArch(store bool, cranelift bool) error {
 		}
 	}
 
-	outBytes, err = compileNative(wasm, 1, true, rawdb.TargetAmd64, false)
+	outBytes, err = compileNative(wasm, 1, true, rawdb.TargetAmd64, false, timeout)
 
 	if err != nil {
 		return fmt.Errorf("failed compiling amd: %w", err)

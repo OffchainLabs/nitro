@@ -22,6 +22,7 @@ import "C"
 import (
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
@@ -34,6 +35,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/util/containers"
 )
 
 type u8 = C.uint8_t
@@ -134,21 +136,30 @@ func compileNative(
 	debug bool,
 	target rawdb.WasmTarget,
 	cranelift bool,
+	timeout time.Duration,
 ) ([]byte, error) {
-	output := &rustBytes{}
-	status_asm := C.stylus_compile(
-		goSlice(wasm),
-		u16(stylusVersion),
-		cbool(debug),
-		goSlice([]byte(target)),
-		cbool(cranelift),
-		output,
-	)
-	asm := rustBytesIntoBytes(output)
-	if status_asm != 0 {
-		return nil, fmt.Errorf("%w: %s", ErrProgramActivation, string(asm))
+	result := containers.NewPromise[[]byte](func() {})
+	go func() {
+		output := &rustBytes{}
+		status_asm := C.stylus_compile(
+			goSlice(wasm),
+			u16(stylusVersion),
+			cbool(debug),
+			goSlice([]byte(target)),
+			cbool(cranelift),
+			output,
+		)
+		asm := rustBytesIntoBytes(output)
+		if status_asm != 0 {
+			result.ProduceError(fmt.Errorf("%w: %s", ErrProgramActivation, string(asm)))
+		}
+		result.Produce(asm)
+	}()
+	select {
+	case <-result.ReadyChan():
+	case <-time.After(timeout):
 	}
-	return asm, nil
+	return result.Current()
 }
 
 func activateProgramInternal(
@@ -201,7 +212,13 @@ func activateProgramInternal(
 	for _, target := range nativeTargets {
 		target := target
 		go func() {
-			asm, err := compileNative(wasm, stylusVersion, debug, target, false)
+			cranelift := false
+			timeout := time.Second * 15
+			asm, err := compileNative(wasm, stylusVersion, debug, target, cranelift, timeout)
+			if err != nil {
+				log.Warn("initial stylus compilation failed", "address", addressForLogging, "cranelift", cranelift, "timeout", timeout, "err", err)
+				asm, err = compileNative(wasm, stylusVersion, debug, target, !cranelift, timeout)
+			}
 			results <- result{target, asm, err}
 		}()
 	}
