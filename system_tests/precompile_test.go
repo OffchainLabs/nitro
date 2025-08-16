@@ -456,6 +456,66 @@ func TestCurrentTxL1GasFees(t *testing.T) {
 	}
 }
 
+func TestArbNativeTokenManagerThroughSolidityContract(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	arbOSInit := &params.ArbOSInit{
+		NativeTokenSupplyManagementEnabled: true,
+	}
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false).WithArbOSInit(arbOSInit).WithArbOSVersion(params.ArbosVersion_41)
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	authOwner := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
+	authOwner.GasLimit = 32000000
+
+	// deploys test contract
+	contractAddr, tx, contract, err := localgen.DeployArbNativeTokenManagerTest(&authOwner, builder.L2.Client)
+	Require(t, err)
+	_, err = EnsureTxSucceeded(ctx, builder.L2.Client, tx)
+	Require(t, err)
+
+	// adds native token owner
+	arbOwner, err := precompilesgen.NewArbOwner(types.ArbOwnerAddress, builder.L2.Client)
+	Require(t, err)
+	tx, err = arbOwner.AddNativeTokenOwner(&authOwner, contractAddr)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	// mints
+	toMint := big.NewInt(100)
+	tx, err = contract.Mint(&authOwner, toMint)
+	Require(t, err)
+	receipt, err := builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	// checks minting
+	arbNativeTokenManager, err := precompilesgen.NewArbNativeTokenManager(types.ArbNativeTokenManagerAddress, builder.L2.Client)
+	Require(t, err)
+	nativeTokenOwnerABI, err := precompilesgen.ArbNativeTokenManagerMetaData.GetAbi()
+	Require(t, err)
+	mintTopic := nativeTokenOwnerABI.Events["NativeTokenMinted"].ID
+	mintLogged := false
+	for _, log := range receipt.Logs {
+		if log.Topics[0] == mintTopic {
+			mintLogged = true
+			parsedLog, err := arbNativeTokenManager.ParseNativeTokenMinted(*log)
+			Require(t, err)
+			if parsedLog.To != contractAddr {
+				t.Fatal("expected mint to be to", contractAddr, "got", parsedLog.To)
+			}
+			if parsedLog.Amount.Cmp(toMint) != 0 {
+				t.Fatal("expected mint amount to be", toMint, "got", parsedLog.Amount)
+			}
+		}
+	}
+	if !mintLogged {
+		t.Fatal("expected mint event to be logged")
+	}
+}
+
 func TestArbNativeTokenManager(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
