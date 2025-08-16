@@ -31,7 +31,11 @@ func TestCompileArch(t *testing.T) {
 		fmt.Print("use -test_compile=[STORE|LOAD] to allow store/load in compile test")
 	}
 	store := strings.Contains(*testflag.CompileFlag, "STORE")
-	err := testCompileArch(store)
+	err := testCompileArch(store, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = testCompileArch(store, true)
 	if err != nil {
 		t.Fatal(err)
 	}

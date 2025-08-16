@@ -14,7 +14,7 @@ use wasmer::{imports, Function, Target};
 #[test]
 fn test_bulk_memory() -> Result<()> {
     let (compile, config, ink) = test_configs();
-    let mut store = compile.store(Target::default());
+    let mut store = compile.store(Target::default(), false);
     let filename = "../prover/test-cases/bulk-memory.wat";
     let imports = imports! {
         "env" => {
