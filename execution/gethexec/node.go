@@ -35,6 +35,7 @@ import (
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/dbutil"
 	"github.com/offchainlabs/nitro/util/headerreader"
+	"github.com/offchainlabs/nitro/validator"
 )
 
 type StylusTargetConfig struct {
@@ -492,8 +493,8 @@ func (n *ExecutionNode) RecordBlockCreation(
 ) (*execution.RecordResult, error) {
 	return n.Recorder.RecordBlockCreation(ctx, pos, msg)
 }
-func (n *ExecutionNode) MarkValid(pos arbutil.MessageIndex, resultHash common.Hash) {
-	n.Recorder.MarkValid(pos, resultHash)
+func (n *ExecutionNode) MarkValid(pos arbutil.MessageIndex, gs validator.GoGlobalState) {
+	n.Recorder.MarkValid(pos, gs)
 }
 func (n *ExecutionNode) PrepareForRecord(ctx context.Context, start, end arbutil.MessageIndex) error {
 	return n.Recorder.PrepareForRecord(ctx, start, end)

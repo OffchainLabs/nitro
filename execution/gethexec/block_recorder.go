@@ -20,6 +20,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/execution"
+	"github.com/offchainlabs/nitro/validator"
 )
 
 // BlockRecorder uses a separate statedatabase from the blockchain.
@@ -234,7 +235,7 @@ func (r *BlockRecorder) updateValidCandidateHdr(hdr *types.Header) {
 	r.validHdrCandidate = hdr
 }
 
-func (r *BlockRecorder) MarkValid(pos arbutil.MessageIndex, resultHash common.Hash) {
+func (r *BlockRecorder) MarkValid(pos arbutil.MessageIndex, gs validator.GoGlobalState) {
 	r.validHdrLock.Lock()
 	defer r.validHdrLock.Unlock()
 	if r.validHdrCandidate == nil {
@@ -244,6 +245,7 @@ func (r *BlockRecorder) MarkValid(pos arbutil.MessageIndex, resultHash common.Ha
 	if r.validHdrCandidate.Number.Uint64() > validNum {
 		return
 	}
+	resultHash := gs.BlockHash
 	// make sure the valid is canonical
 	canonicalResultHash := r.execEngine.bc.GetCanonicalHash(uint64(validNum))
 	if canonicalResultHash != resultHash {
