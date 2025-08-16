@@ -80,7 +80,7 @@ type ipStringAndLimit struct {
 func (l *ConnectionLimiter) getIpStringsAndLimits(ip net.IP) []ipStringAndLimit {
 	var result []ipStringAndLimit
 	if ip == nil || ip.IsPrivate() || ip.IsLoopback() {
-		log.Warn("Ignoring private, looback, or unparseable IP. Please check relay and network configuration to ensure client IP addresses are detected correctly", "ip", ip)
+		log.Warn("Ignoring private, loopback, or unparseable IP. Please check relay and network configuration to ensure client IP addresses are detected correctly", "ip", ip)
 		return result
 	}
 

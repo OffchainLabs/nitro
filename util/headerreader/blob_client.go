@@ -199,13 +199,13 @@ const trailingCharsOfResponse = 25
 func (b *BlobClient) blobSidecars(ctx context.Context, slot uint64, versionedHashes []common.Hash) ([]kzg4844.Blob, error) {
 	rawData, err := beaconRequest[json.RawMessage](b, ctx, fmt.Sprintf("/eth/v1/beacon/blob_sidecars/%d", slot))
 	if err != nil || len(rawData) == 0 {
-		// blobs are pruned after 4096 epochs (1 epoch = 32 slots), we determine if the requested slot were to be pruned by a non-archive endpoint
+		// blobs are pruned after 4096 epochs (1 epoch = 32 slots), we determine if the requested slot was to be pruned by a non-archive endpoint
 		// #nosec G115
 		roughAgeOfSlot := uint64(time.Now().Unix()) - (b.genesisTime + slot*b.secondsPerSlot)
 		if roughAgeOfSlot > b.secondsPerSlot*32*4096 {
 			return nil, fmt.Errorf("beacon client in blobSidecars got error or empty response fetching older blobs in slot: %d, an archive endpoint is required, please refer to https://docs.arbitrum.io/run-arbitrum-node/l1-ethereum-beacon-chain-rpc-providers, err: %w", slot, err)
 		} else {
-			return nil, fmt.Errorf("beacon client in blobSidecars got error or empty response fetching non-expired blobs in slot: %d, if using a prysm endpoint, try --enable-experimental-backfill flag, err: %w", slot, err)
+			return nil, fmt.Errorf("beacon client in blobSidecars got error or empty response fetching non-expired blobs in slot: %d, if using a Prysm endpoint, try --enable-experimental-backfill flag, err: %w", slot, err)
 		}
 	}
 	var response []blobResponseItem
