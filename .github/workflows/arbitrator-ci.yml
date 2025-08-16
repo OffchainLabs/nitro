@@ -127,6 +127,7 @@ jobs:
         uses: foundry-rs/foundry-toolchain@v1
         with:
           cache: false
+          version: v1.0.0
 
       - name: Cache cbrotli
         uses: actions/cache@v4
