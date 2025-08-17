@@ -75,7 +75,7 @@ func RPCClientAddOptions(prefix string, f *flag.FlagSet, defaultConfig *ClientCo
 	f.Duration(prefix+".connection-wait", defaultConfig.ConnectionWait, "how long to wait for initial connection")
 	f.Duration(prefix+".timeout", defaultConfig.Timeout, "per-response timeout (0-disabled)")
 	f.Uint(prefix+".arg-log-limit", defaultConfig.ArgLogLimit, "limit size of arguments in log entries")
-	f.Uint(prefix+".retries", defaultConfig.Retries, "number of retries in case of failure(0 mean one attempt)")
+	f.Uint(prefix+".retries", defaultConfig.Retries, "number of retries in case of failure (0 mean one attempt)")
 	f.String(prefix+".retry-errors", defaultConfig.RetryErrors, "Errors matching this regular expression are automatically retried")
 	f.Duration(prefix+".retry-delay", defaultConfig.RetryDelay, "delay between retries")
 	f.Int64(prefix+".websocket-message-size-limit", defaultConfig.WebsocketMessageSizeLimit, "websocket message size limit used by the RPC client. 0 means no limit")
