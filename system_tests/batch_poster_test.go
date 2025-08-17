@@ -404,7 +404,7 @@ func testBatchPosterDelayBuffer(t *testing.T, delayBufferEnabled bool) {
 		_, err := builder.L2.ConsensusNode.BatchPoster.MaybePostSequencerBatch(ctx)
 		Require(t, err)
 
-		// Check messages did't appear in 2nd node
+		// Check messages didn't appear in 2nd node
 		_, err = WaitForTx(ctx, testClientB.Client, txs[0].Hash(), 100*time.Millisecond)
 		if err == nil || !errors.Is(err, context.DeadlineExceeded) {
 			Fatal(t, "expected context-deadline exceeded error, but got:", err)
