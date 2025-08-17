@@ -70,7 +70,7 @@ type ArbitratorSpawner struct {
 	count         atomic.Int32
 	locator       *server_common.MachineLocator
 	machineLoader *ArbMachineLoader
-	// Oreder of wrappers is important. The first wrapper is the innermost.
+	// Order of wrappers is important. The first wrapper is the innermost.
 	machineWrappers []MachineWrapper
 	config          ArbitratorSpawnerConfigFecher
 }
