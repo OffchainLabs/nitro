@@ -402,7 +402,7 @@ func DivCeil[T Unsigned](value, divisor T) T {
 
 // ApproxExpBasisPoints return the Maclaurin series approximation of e^x, where
 // x is denominated in basis points.
-// The 4th degreee Maclaurin series (for example) is:
+// The 4th degree Maclaurin series (for example) is:
 // b*(1 + (x/b) +(x/b)^2 / 2! + (x/b)^3 / 6! + (x/b)^4/4!)
 // The quartic polynomial (accuracy = 4) will underestimate e^x by about 5% as
 // x approaches 20000 bips.
