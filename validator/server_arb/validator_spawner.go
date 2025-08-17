@@ -57,7 +57,7 @@ func DefaultArbitratorSpawnerConfigFetcher() *ArbitratorSpawnerConfig {
 
 // MachineWrapper is a function that wraps a MachineInterface
 //
-// This is a mechanism to allow clients of the AribtratorSpawner to inject
+// This is a mechanism to allow clients of the ArbitratorSpawner to inject
 // functionality around the arbitrator machine. Possible use cases include
 // mocking out the machine for testing purposes, or having the machine behave
 // differently when certain features (like BoLD) are enabled.
