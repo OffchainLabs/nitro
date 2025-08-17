@@ -248,10 +248,9 @@ impl<D: DataReader, H: RequestHandler<D>> EvmApi<D> for EvmApiRequestor<D, H> {
     }
 
     fn emit_log(&mut self, data: Vec<u8>, topics: u32) -> Result<()> {
-        // TODO: remove copy
-        let mut request = Vec::with_capacity(4 + data.len());
-        request.extend(topics.to_be_bytes());
-        request.extend(data);
+        let mut request = data;
+        let header = topics.to_be_bytes();
+        request.splice(0..0, header);
 
         let (res, _, _) = self.request(EvmApiMethod::EmitLog, request);
         if !res.is_empty() {
