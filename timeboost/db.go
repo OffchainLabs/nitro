@@ -169,7 +169,7 @@ func (d *SqliteDatabase) GetBids(maxDbRows int) ([]*SqliteDatabaseBid, uint64, e
 		}
 	}
 	// If we can't determine a contiguous set of bids, we abort and retry again.
-	// Saves us from cases where we sometime push same batch data twice
+	// Saves us from cases where we sometimes push same batch data twice
 	return nil, 0, nil
 }
 
