@@ -74,7 +74,7 @@ func NewExecutionServerAPI(valSpawner validator.ValidationSpawner, execution val
 	return &ExecServerAPI{
 		ValidationServerAPI: *NewValidationServerAPI(valSpawner),
 		execSpawner:         execution,
-		nextId:              rand.Uint64(), // good-enough to aver reusing ids after reboot
+		nextId:              rand.Uint64(), // good-enough to avoid reusing ids after reboot
 		runs:                make(map[uint64]*execRunEntry),
 		config:              config,
 	}
