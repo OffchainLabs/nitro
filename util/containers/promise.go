@@ -98,7 +98,7 @@ func (p *Promise[R]) Produce(value R) {
 	}
 }
 
-// cancel might be called multiple times while no value or error produced
+// cancel might be called multiple times while no value or error is produced
 // cancel will be called by Await if it's context is done
 func NewPromise[R any](cancel func()) Promise[R] {
 	return Promise[R]{
