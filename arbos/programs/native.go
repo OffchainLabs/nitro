@@ -152,8 +152,9 @@ func compileNative(
 		asm := rustBytesIntoBytes(output)
 		if status_asm != 0 {
 			result.ProduceError(fmt.Errorf("%w: %s", ErrProgramActivation, string(asm)))
+		} else {
+			result.Produce(asm)
 		}
-		result.Produce(asm)
 	}()
 	select {
 	case <-result.ReadyChan():
