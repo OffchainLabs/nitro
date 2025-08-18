@@ -141,7 +141,7 @@ func BigToUintOrPanic(value *big.Int) uint64 {
 	return value.Uint64()
 }
 
-// UfracToBigFloat casts an rational to a big float
+// UfracToBigFloat casts a rational to a big float
 func UfracToBigFloat(numerator, denominator uint64) *big.Float {
 	float := new(big.Float)
 	float.Quo(UintToBigFloat(numerator), UintToBigFloat(denominator))
@@ -242,7 +242,7 @@ func BigMulByInt(multiplicand *big.Int, multiplier int64) *big.Int {
 	return new(big.Int).Mul(multiplicand, big.NewInt(multiplier))
 }
 
-// BigMulByUint multiply a huge by a unsigned integer
+// BigMulByUint multiply a huge by an unsigned integer
 func BigMulByUint(multiplicand *big.Int, multiplier uint64) *big.Int {
 	return new(big.Int).Mul(multiplicand, new(big.Int).SetUint64(multiplier))
 }

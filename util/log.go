@@ -8,7 +8,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 )
 
-// EphemeralErrorHandler handles errors that are ephemeral in nature i.e these are errors
+// EphemeralErrorHandler handles errors that are ephemeral in nature i.e. these are errors
 // that we would like to log as a warning unless they repeat for more than a certain duration of time.
 type EphemeralErrorHandler struct {
 	Duration        time.Duration

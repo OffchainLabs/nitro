@@ -33,7 +33,7 @@ type ArbitratorSpawnerConfig struct {
 	RedisValidationServerConfig redis.ValidationServerConfig `koanf:"redis-validation-server-config"`
 }
 
-type ArbitratorSpawnerConfigFecher func() *ArbitratorSpawnerConfig
+type ArbitratorSpawnerConfigFetcher func() *ArbitratorSpawnerConfig
 
 var DefaultArbitratorSpawnerConfig = ArbitratorSpawnerConfig{
 	Workers:                     0,
@@ -72,7 +72,7 @@ type ArbitratorSpawner struct {
 	machineLoader *ArbMachineLoader
 	// Order of wrappers is important. The first wrapper is the innermost.
 	machineWrappers []MachineWrapper
-	config          ArbitratorSpawnerConfigFecher
+	config          ArbitratorSpawnerConfigFetcher
 }
 
 func WithWrapper(wrapper MachineWrapper) SpawnerOption {
@@ -81,7 +81,7 @@ func WithWrapper(wrapper MachineWrapper) SpawnerOption {
 	}
 }
 
-func NewArbitratorSpawner(locator *server_common.MachineLocator, config ArbitratorSpawnerConfigFecher, opts ...SpawnerOption) (*ArbitratorSpawner, error) {
+func NewArbitratorSpawner(locator *server_common.MachineLocator, config ArbitratorSpawnerConfigFetcher, opts ...SpawnerOption) (*ArbitratorSpawner, error) {
 	// TODO: preload machines
 	spawner := &ArbitratorSpawner{
 		locator:         locator,

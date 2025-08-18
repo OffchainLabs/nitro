@@ -711,7 +711,7 @@ func (a *AuctioneerServer) GetId() string {
 
 func (a *AuctioneerServer) StopAndWait() {
 	// The AUCTIONEER_CHOSEN_KEY lock will be considered expired by other auctioneers after
-	// auctioneerLivenessTimeout. This timeout gives time for existing messages to  become
+	// auctioneerLivenessTimeout. This timeout gives time for existing messages to become
 	// unclaimed after IdleTimeToAutoclaim before the secondary auctioneer starts consuming
 	// messages.
 	a.StopWaiter.StopAndWait()

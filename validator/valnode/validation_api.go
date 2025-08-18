@@ -63,14 +63,14 @@ type ExecServerAPI struct {
 	ValidationServerAPI
 	execSpawner validator.ExecutionSpawner
 
-	config server_arb.ArbitratorSpawnerConfigFecher
+	config server_arb.ArbitratorSpawnerConfigFetcher
 
 	runIdLock sync.Mutex
 	nextId    uint64
 	runs      map[uint64]*execRunEntry
 }
 
-func NewExecutionServerAPI(valSpawner validator.ValidationSpawner, execution validator.ExecutionSpawner, config server_arb.ArbitratorSpawnerConfigFecher) *ExecServerAPI {
+func NewExecutionServerAPI(valSpawner validator.ValidationSpawner, execution validator.ExecutionSpawner, config server_arb.ArbitratorSpawnerConfigFetcher) *ExecServerAPI {
 	return &ExecServerAPI{
 		ValidationServerAPI: *NewValidationServerAPI(valSpawner),
 		execSpawner:         execution,
