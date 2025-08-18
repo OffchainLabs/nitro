@@ -84,6 +84,7 @@ jobs:
         uses: foundry-rs/foundry-toolchain@v1
         with:
           cache: false
+          version: v1.0.0
         
       - name: Install cbindgen
         run: cargo install --force cbindgen
@@ -275,6 +276,7 @@ jobs:
         uses: foundry-rs/foundry-toolchain@v1
         with:
           cache: false
+          version: v1.0.0
         
       - name: Install cbindgen
         if: steps.changed-files.outputs.any_changed == 'true'
