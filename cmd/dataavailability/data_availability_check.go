@@ -224,7 +224,7 @@ func (d *DataAvailabilityCheck) checkDataAvailabilityForOldHashInBlockRange(ctx 
 	return fmt.Errorf("no das message found between block %d and block %d", oldBlock, latestBlock)
 }
 
-// Trys to find if DAS message is present in the given log and if present
+// Tries to find if DAS message is present in the given log and if present
 // returns true and validates if the data is available in the storage service.
 func (d *DataAvailabilityCheck) checkDataAvailability(ctx context.Context, deliveredLog types.Log, metricBase string) (bool, error) {
 	deliveredEvent, err := d.inboxContract.ParseSequencerBatchDelivered(deliveredLog)

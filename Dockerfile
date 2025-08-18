@@ -99,7 +99,6 @@ COPY ./contracts/src/precompiles/ ./contracts/src/precompiles/
 COPY ./contracts/package.json ./contracts/yarn.lock ./contracts/
 COPY ./safe-smart-account ./safe-smart-account
 COPY ./solgen/gen.go ./solgen/
-COPY ./fastcache ./fastcache
 COPY ./go-ethereum ./go-ethereum
 COPY scripts/remove_reference_types.sh scripts/
 COPY --from=brotli-wasm-export / target/
@@ -255,7 +254,6 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get install -y wabt
 COPY go.mod go.sum ./
 COPY go-ethereum/go.mod go-ethereum/go.sum go-ethereum/
-COPY fastcache/go.mod fastcache/go.sum fastcache/
 COPY bold/go.mod bold/go.sum bold/
 RUN go mod download
 COPY . ./

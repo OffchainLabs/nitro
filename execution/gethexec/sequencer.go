@@ -1185,7 +1185,7 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 				queueItem.blockStamp,
 				queueItem.blockStamp+config.Timeboost.QueueTimeoutInBlocks,
 			)
-			queueItem.returnResult(err) // this isnt read by anyone, so we log
+			queueItem.returnResult(err) // this isn't read by anyone, so we log
 			log.Info("Error sequencing timeboost tx", "err", err)
 			continue
 		}

@@ -63,7 +63,7 @@ func (s *SyncMonitor) updateSyncTarget(ctx context.Context) time.Duration {
 		s.syncTarget = s.nextSyncTarget
 		s.nextSyncTarget = nextSyncTarget
 	} else {
-		log.Warn("failed readin max msg count", "err", err)
+		log.Warn("failed reading max msg count", "err", err)
 		s.nextSyncTarget = 0
 		s.syncTarget = 0
 	}
