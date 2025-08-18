@@ -23,7 +23,7 @@ var storageArbGas = big.NewInt(int64(storage.StorageWriteCost))
 
 const AssumedSimpleTxSize = 140
 
-// GetPricesInWeiWithAggregator gets  prices in wei when using the provided aggregator
+// GetPricesInWeiWithAggregator gets prices in wei when using the provided aggregator
 func (con ArbGasInfo) GetPricesInWeiWithAggregator(
 	c ctx,
 	evm mech,
