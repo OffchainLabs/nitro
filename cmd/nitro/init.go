@@ -292,11 +292,12 @@ func joinArchive(parts []string, archivePath string) (string, error) {
 		if err != nil {
 			return "", fmt.Errorf("failed to open part file %s: %w", part, err)
 		}
-		defer partFile.Close()
 		_, err = io.Copy(archive, partFile)
 		if err != nil {
+			partFile.Close()
 			return "", fmt.Errorf("failed to copy part file %s: %w", part, err)
 		}
+		partFile.Close()
 		log.Info("Joined database part into archive", "part", part)
 	}
 	log.Info("Successfully joined parts into archive", "archive", archivePath)
