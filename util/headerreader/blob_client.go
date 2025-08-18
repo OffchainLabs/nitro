@@ -231,7 +231,7 @@ func (b *BlobClient) blobSidecars(ctx context.Context, slot uint64, versionedHas
 		copy(commitment[:], blobItem.KzgCommitment)
 		versionedHash := blobs.CommitmentToVersionedHash(commitment)
 
-		// The versioned hashes of the blob commitments are produced in by HASH_OPCODE_BYTE,
+		// The versioned hashes of the blob commitments are produced in the by HASH_OPCODE_BYTE,
 		// presumably in the order they were added to the tx. The spec is unclear if the blobs
 		// need to be returned in any particular order from the beacon API, so we put them back in
 		// the order from the tx.
