@@ -136,7 +136,7 @@ func TestExistingKeystorePromptPasswordTerminal(t *testing.T) {
 
 	_, _, err := openTestKeystore("test", &walletConf, testPass)
 	if err != nil {
-		t.Fatalf("should not have have failed")
+		t.Fatalf("should not have failed")
 	}
 	if !testPassCalled {
 		t.Error("password not prompted for")
