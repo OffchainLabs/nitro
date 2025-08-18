@@ -427,7 +427,7 @@ func (n *ExecutionNode) Start(ctx context.Context) error {
 	n.ExecEngine.Start(ctx)
 	err := n.TxPublisher.Start(ctx)
 	if err != nil {
-		return fmt.Errorf("error starting transaction puiblisher: %w", err)
+		return fmt.Errorf("error starting transaction publisher: %w", err)
 	}
 	if n.ParentChainReader != nil {
 		n.ParentChainReader.Start(ctx)
@@ -459,7 +459,7 @@ func (n *ExecutionNode) StopAndWait() {
 	}
 	// TODO after separation
 	// if err := n.Stack.Close(); err != nil {
-	// 	log.Error("error on stak close", "err", err)
+	// 	log.Error("error on stack close", "err", err)
 	// }
 }
 
