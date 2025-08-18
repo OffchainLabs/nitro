@@ -78,11 +78,11 @@ func (r *MemoryInitDataReader) GetAddressTableReader() (AddressReader, error) {
 	}, nil
 }
 
-type MemoryAccountDataReaderr struct {
+type MemoryAccountDataReader struct {
 	FieldReader
 }
 
-func (r *MemoryAccountDataReaderr) GetNext() (*AccountInitializationInfo, error) {
+func (r *MemoryAccountDataReader) GetNext() (*AccountInitializationInfo, error) {
 	if !r.More() {
 		return nil, errNoMore
 	}
@@ -91,7 +91,7 @@ func (r *MemoryAccountDataReaderr) GetNext() (*AccountInitializationInfo, error)
 }
 
 func (r *MemoryInitDataReader) GetAccountDataReader() (AccountDataReader, error) {
-	return &MemoryAccountDataReaderr{
+	return &MemoryAccountDataReader{
 		FieldReader: FieldReader{
 			m:      r,
 			length: len(r.d.Accounts),
