@@ -165,14 +165,14 @@ func WithPostingInterval(t time.Duration) Opt {
 // WithPollingInterval overrides the default polling interval.
 //
 // This interval is the amount of time the assertion manager will wait between
-// atteampts to read new asseartions from the parent chain.
+// attempts to read new assertions from the parent chain.
 func WithPollingInterval(t time.Duration) Opt {
 	return func(m *Manager) {
 		m.times.pollInterval = t
 	}
 }
 
-// WithConfirmationInterval overrides the default a confiramtion interval.
+// WithConfirmationInterval overrides the default confirmation interval.
 //
 // This is the interval the assertion manager will wait between attempts to
 // persist information about which assertions can be confirmed to the parent
@@ -186,7 +186,7 @@ func WithConfirmationInterval(t time.Duration) Opt {
 // WithAverageBlockCreationTime overrides the default average block creation
 // time.
 //
-// The average block cretion time is used by the assertion manager to emit
+// The average block creation time is used by the assertion manager to emit
 // warnings if the parent chain hasn't had any new blocks for considerably
 // longer than this expected delay.
 func WithAverageBlockCreationTime(t time.Duration) Opt {

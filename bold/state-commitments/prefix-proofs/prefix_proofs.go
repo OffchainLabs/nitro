@@ -212,11 +212,11 @@ func TreeSize(me []common.Hash) uint64 {
 // Briefly, appending works like binary addition only that the value being added be an
 // exact power of two (complete), and must equal to or less than the least significant bit
 // in the existing tree.
-// If the me is empty, will just append directly.
+// If the slice is empty, will just append directly.
 func AppendCompleteSubTree(
 	me []common.Hash, level uint64, subtreeRoot common.Hash,
 ) ([]common.Hash, error) {
-	// we use number representations of the levels elsewhere, so we need to ensure we're appending a leve
+	// we use number representations of the levels elsewhere, so we need to ensure we're appending a level
 	// that's too high to use in uint
 	if level >= MAX_LEVEL {
 		return nil, ErrLevelTooHigh

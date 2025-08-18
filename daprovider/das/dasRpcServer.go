@@ -269,7 +269,7 @@ func (s *DASRPCServer) StartChunkedStore(ctx context.Context, timestamp, nChunks
 	defer func() {
 		if failed {
 			rpcStoreFailureGauge.Inc(1)
-		} // success gague will be incremented on successful commit
+		} // success gauge will be incremented on successful commit
 	}()
 
 	if err := s.signatureVerifier.verify(ctx, []byte{}, sig, uint64(timestamp), uint64(nChunks), uint64(chunkSize), uint64(totalSize), uint64(timeout)); err != nil {

@@ -54,7 +54,7 @@ func NewProducer[T any](opts ...ProducerOpt[T]) *Producer[T] {
 	return producer
 }
 
-// Start begins listening for subscription cancelation requests or context cancelation.
+// Start begins listening for subscription cancellation requests or context cancellation.
 func (ep *Producer[T]) Start(ctx context.Context) {
 	for {
 		select {
@@ -118,7 +118,7 @@ type Subscription[T any] struct {
 	done   chan subId
 }
 
-// Next waits for the next event or context cancelation, returning the event or an error.
+// Next waits for the next event or context cancellation, returning the event or an error.
 func (es *Subscription[T]) Next(ctx context.Context) (T, bool) {
 	var zeroVal T
 	for {

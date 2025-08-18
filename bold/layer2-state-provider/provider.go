@@ -63,7 +63,7 @@ type ExecutionProvider interface {
 	// Produces the L2 execution state to assert to after the previous assertion
 	// state.
 	// Returns either the state at the batch count maxInboxCount (PosInBatch=0) or
-	// the state LayerZeroHeights.BlockChallengeHeight blokcs after
+	// the state LayerZeroHeights.BlockChallengeHeight blocks after
 	// previousGlobalState, whichever is an earlier state.
 	ExecutionStateAfterPreviousState(ctx context.Context, maxInboxCount uint64, previousGlobalState protocol.GoGlobalState) (*protocol.ExecutionState, error)
 }
@@ -84,14 +84,14 @@ type AssociatedAssertionMetadata struct {
 // challenged in the block level challenge, and the heights at which the
 // challenges at higher challenge levels originated.
 //
-// HistoryCommitment requestors can also specify an optional height at which to
+// HistoryCommitment requesters can also specify an optional height at which to
 // end the history commitment. If none, the request will commit to all the
 // leaves at the current challenge level.
 //
 // NOTE: It is NOT possible to request a history commitment which starts at
 // some height other than 0 for the current challenge level. This is because
 // the edge tracker only needs to be able to provide history commitments for
-// all machine state hases at the current challenge level, or sets of leaves
+// all machine state hashes at the current challenge level, or sets of leaves
 // which are prefixes to that full set of leaves. In all cases, the first leaf
 // is the one in relative position 0 for the challenge level.
 type HistoryCommitmentRequest struct {
