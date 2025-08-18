@@ -61,7 +61,7 @@ jobs:
               "https://api.github.com/repos/$GITHUB_REPOSITORY/commits/${{ github.event.pull_request.head.sha }}/statuses")"
 
             if ! jq -e '.[] | select(.context == "Submodule Pin Check")' > /dev/null <<< "$resp"; then
-              # Submodule pin check is failling and no status exists
+              # Submodule pin check is failing and no status exists
               # Keep it without a status to keep the green checkmark appearing
               # Otherwise, the commit and PR's CI will appear to be indefinitely pending
               # Merging will still be blocked until the required status appears
