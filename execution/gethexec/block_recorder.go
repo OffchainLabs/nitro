@@ -254,7 +254,7 @@ func (r *BlockRecorder) MarkValid(pos arbutil.MessageIndex, resultHash common.Ha
 	canonicalHash := r.execEngine.bc.GetCanonicalHash(r.validHdrCandidate.Number.Uint64())
 	candidateHash := r.validHdrCandidate.Hash()
 	if canonicalHash != candidateHash {
-		log.Error("vlid candidate hash not canonical", "number", r.validHdrCandidate.Number, "candidate", candidateHash, "canonical", canonicalHash)
+		log.Error("valid candidate hash not canonical", "number", r.validHdrCandidate.Number, "candidate", candidateHash, "canonical", canonicalHash)
 		r.recordingDatabase.Dereference(r.validHdrCandidate)
 		r.validHdrCandidate = nil
 		return
