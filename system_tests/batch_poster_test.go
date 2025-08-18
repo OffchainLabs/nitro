@@ -27,6 +27,7 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/upgrade_executorgen"
 	"github.com/offchainlabs/nitro/util/redisutil"
+	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
 func TestBatchPosterParallel(t *testing.T) {
@@ -34,6 +35,7 @@ func TestBatchPosterParallel(t *testing.T) {
 }
 
 func TestRedisBatchPosterParallel(t *testing.T) {
+	_ = testhelpers.InitTestLog(t, log.LvlDebug)
 	testBatchPosterParallel(t, true)
 }
 

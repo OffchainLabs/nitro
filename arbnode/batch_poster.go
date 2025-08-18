@@ -310,6 +310,7 @@ var TestBatchPosterConfig = BatchPosterConfig{
 	L1BlockBound:                   "",
 	L1BlockBoundBypass:             time.Hour,
 	UseAccessLists:                 true,
+	RedisLock:                      redislock.TestCfg,
 	GasEstimateBaseFeeMultipleBips: arbmath.OneInUBips * 3 / 2,
 	CheckBatchCorrectness:          true,
 	DelayBufferThresholdMargin:     0,
@@ -1656,20 +1657,25 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 		return false, nil
 	}
 
-	if b.dapWriter != nil {
-		if !b.redisLock.AttemptLock(ctx) {
-			return false, errAttemptLockFailed
-		}
+	if !b.redisLock.AttemptLock(ctx) {
+		return false, errAttemptLockFailed
+	}
 
-		gotNonce, gotMeta, err := b.dataPoster.GetNextNonceAndMeta(ctx)
-		if err != nil {
+	gotNonce, gotMeta, err := b.dataPoster.GetNextNonceAndMeta(ctx)
+	if err != nil {
+		if b.dapWriter != nil {
 			batchPosterDAFailureCounter.Inc(1)
-			return false, err
 		}
-		if nonce != gotNonce || !bytes.Equal(batchPositionBytes, gotMeta) {
+		return false, err
+	}
+	if nonce != gotNonce || !bytes.Equal(batchPositionBytes, gotMeta) {
+		if b.dapWriter != nil {
 			batchPosterDAFailureCounter.Inc(1)
-			return false, fmt.Errorf("%w: nonce changed from %d to %d while creating batch", storage.ErrStorageRace, nonce, gotNonce)
 		}
+		return false, fmt.Errorf("%w: nonce changed from %d to %d while creating batch", storage.ErrStorageRace, nonce, gotNonce)
+	}
+
+	if b.dapWriter != nil {
 		// #nosec G115
 		sequencerMsg, err = b.dapWriter.Store(ctx, sequencerMsg, uint64(time.Now().Add(config.DASRetentionPeriod).Unix()), config.DisableDapFallbackStoreDataOnChain)
 		if err != nil {

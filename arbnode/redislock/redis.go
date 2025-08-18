@@ -71,6 +71,14 @@ var DefaultCfg = SimpleCfg{
 	BackgroundLock:  false,
 }
 
+var TestCfg = SimpleCfg{
+	Enable:          true,
+	LockoutDuration: 200 * time.Millisecond,
+	RefreshDuration: 50 * time.Millisecond,
+	Key:             "",
+	BackgroundLock:  false,
+}
+
 func (l *Simple) attemptLock(ctx context.Context) (bool, error) {
 	l.mutex.Lock()
 	defer l.mutex.Unlock()
