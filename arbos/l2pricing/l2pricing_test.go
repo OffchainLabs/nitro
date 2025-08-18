@@ -48,7 +48,7 @@ func TestPricingModelExp(t *testing.T) {
 	}
 
 	// show that running at the speed limit with a target pool is close to a steady-state
-	// note that for large enough spans of time the price will rise a miniscule amount due to the pool's avg
+	// note that for large enough spans of time the price will rise a minuscule amount due to the pool's avg
 	colors.PrintBlue("pool target & speed limit")
 	for seconds := 0; seconds < 4; seconds++ {
 		// #nosec G115
