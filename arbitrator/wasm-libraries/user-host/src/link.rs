@@ -154,7 +154,7 @@ pub unsafe extern "C" fn programs__get_request(id: u32, len_ptr: GuestPtr) -> u3
 ///
 /// # Safety
 ///
-/// `request_id` MUST be last request receieved
+/// `request_id` MUST be last request received
 /// `data_ptr` MUST point to a buffer of at least the length returned by `get_request`
 #[no_mangle]
 pub unsafe extern "C" fn programs__get_request_data(id: u32, data_ptr: GuestPtr) {

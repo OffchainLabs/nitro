@@ -44,7 +44,7 @@ pub struct Opts {
     pub debug: bool,
     #[structopt(long)]
     pub require_success: bool,
-    // JSON inputs supercede any of the command-line inputs which could
+    // JSON inputs supersede any of the command-line inputs which could
     // be specified in the JSON file.
     #[structopt(long)]
     json_inputs: Option<PathBuf>,
