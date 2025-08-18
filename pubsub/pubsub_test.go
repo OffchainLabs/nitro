@@ -359,7 +359,7 @@ func TestRedisProduceComplex(t *testing.T) {
 			// Check each producers all promises were responded to
 			for i := 0; i < tc.numProducers; i++ {
 				if cnt := producers[i].promisesLen(); cnt != 0 {
-					t.Errorf("Producer%d still has %d unfullfilled promises", i, cnt)
+					t.Errorf("Producer%d still has %d unfulfilled promises", i, cnt)
 				}
 			}
 
@@ -396,7 +396,7 @@ func removeDuplicates(list []string) []string {
 }
 
 // mergeValues merges maps from the slice and returns their values.
-// Returns and error if there exists duplicate key.
+// Returns an error if there exists duplicate key.
 func mergeValues(messages []map[string]string, withInvalidEntries bool) ([]string, error) {
 	res := make(map[string]any)
 	var ret []string
