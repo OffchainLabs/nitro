@@ -46,7 +46,7 @@ func validateRoundTimingInfo(c *express_lane_auctiongen.RoundTimingInfo) error {
 
 // RoundTimingInfo holds the information from the Solidity type of the same name,
 // validated and converted into higher level time types, with helpful methods
-// for calculating round number, if a round is closed, and time til close.
+// for calculating round number, if a round is closed, and time till close.
 type RoundTimingInfo struct {
 	Offset            time.Time
 	Round             time.Duration

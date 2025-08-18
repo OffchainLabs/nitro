@@ -166,7 +166,7 @@ func (s *HeaderReader) Config() *Config { return s.config() }
 // Subscribe to block header updates.
 // Subscribers are notified when there is a change.
 // Channel could be missing headers and have duplicates.
-// Listening to the channel will make sure listenere is notified when header changes.
+// Listening to the channel will make sure listener is notified when header changes.
 // Warning: listeners must not modify the header or its number, as they're shared between listeners.
 func (s *HeaderReader) Subscribe(requireBlockNrUpdates bool) (<-chan *types.Header, func()) {
 	s.chanMutex.Lock()
