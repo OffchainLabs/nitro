@@ -712,7 +712,7 @@ func mainImpl() int {
 
 	err = execNode.InitializeTimeboost(ctx, chainInfo.ChainConfig)
 	if err != nil {
-		fatalErrChan <- fmt.Errorf("error intializing timeboost: %w", err)
+		fatalErrChan <- fmt.Errorf("error initializing timeboost: %w", err)
 	}
 
 	err = nil

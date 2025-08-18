@@ -13,7 +13,7 @@ func testIsNotExistError(t *testing.T, dbEngine string, isNotExist func(error) b
 	stackConf.DBEngine = dbEngine
 	stack, err := node.New(&stackConf)
 	if err != nil {
-		t.Fatalf("Failed to created test stack: %v", err)
+		t.Fatalf("Failed to create test stack: %v", err)
 	}
 	defer stack.Close()
 	readonly := true

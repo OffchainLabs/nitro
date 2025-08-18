@@ -15,7 +15,7 @@ jobs:
   #   runs-on: ubuntu-latest
   #   steps:
   #     - name: Checkout
-  #       uses: actions/checkout@v4
+  #       uses: actions/checkout@v5
 
   #     - name: Go mod tidy checker
   #      id: gomodtidy
@@ -26,7 +26,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out code into the Go module directory
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           submodules: true
 
@@ -46,6 +46,7 @@ jobs:
         uses: foundry-rs/foundry-toolchain@v1
         with:
           cache: false
+          version: v1.0.0
 
       - name: AbiGen (nitro)
         run: make contracts
@@ -64,7 +65,7 @@ jobs:
         run: ANVIL=$(which anvil) go test -v -covermode=atomic -coverprofile=coverage.out -timeout=20m ./...
 
       - name: Upload coverage reports to Codecov
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v5
         env:
          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 

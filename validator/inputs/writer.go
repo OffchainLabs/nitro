@@ -13,26 +13,26 @@ import (
 //
 // The default Writer will write to a path like:
 //
-//	$HOME/.arbuitrum/validation-inputs/<YYYMMDD_HHMMSS>/block_inputs_<id>.json
+//	$HOME/.arbitrum/validation-inputs/<YYYMMDD_HHMMSS>/block_inputs_<id>.json
 //
 // The path can be nested under a slug directory so callers can provide a
 // recognizable name to differentiate various contexts in which the InputJSON
 // is being written. If the Writer is configured by calling WithSlug, then the
 // path will be like:
 //
-//	$HOME/.arbuitrum/validation-inputs/<slug>/<YYYMMDD_HHMMSS>/block_inputs_<id>.json
+//	$HOME/.arbitrum/validation-inputs/<slug>/<YYYMMDD_HHMMSS>/block_inputs_<id>.json
 //
 // The inclusion of BlockId in the file's name is on by default, however that can be disabled
 // by calling WithBlockIdInFileNameEnabled(false). In which case, the path will be like:
 //
-//	$HOME/.arbuitrum/validation-inputs/<slug>/<YYYMMDD_HHMMSS>/block_inputs.json
+//	$HOME/.arbitrum/validation-inputs/<slug>/<YYYMMDD_HHMMSS>/block_inputs.json
 //
 // The inclusion of a timestamp directory is on by default to avoid conflicts which
 // would result in files being overwritten. However, the Writer can be configured
 // to not use a timestamp directory.  If the Writer is configured by calling
 // WithTimestampDirEnabled(false), then the path will be like:
 //
-//	$HOME/.arbuitrum/validation-inputs/<slug>/block_inputs_<id>.json
+//	$HOME/.arbitrum/validation-inputs/<slug>/block_inputs_<id>.json
 //
 // Finally, to give complete control to the clients, the base directory can be
 // set directly with WithBaseDir. In which case, the path will be like:
