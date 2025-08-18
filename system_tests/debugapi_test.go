@@ -98,7 +98,7 @@ func TestLiveTracingInNode(t *testing.T) {
 	_, err = WaitForTx(ctx, testClientB.Client, lastTx.Hash(), time.Second*5)
 	Require(t, err)
 	if len(txsSeenByTracer) != numTxs {
-		t.Fatalf("unexpected number of blocks seen by testTracer. Want: %d, Got: %d", numTxs, len(txsSeenByTracer))
+		t.Fatalf("unexpected number of txs seen by testTracer. Want: %d, Got: %d", numTxs, len(txsSeenByTracer))
 	}
 	for txHash := range txs {
 		if _, ok := txsSeenByTracer[txHash]; !ok {
