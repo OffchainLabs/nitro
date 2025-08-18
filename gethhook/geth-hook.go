@@ -105,5 +105,5 @@ func init() {
 	}
 }
 
-// RequireHookedGeth does nothing, but forces an import to let the init function run
+// RequireHookedGeth do nothing, but forces an import to let the init function run
 func RequireHookedGeth() {}
