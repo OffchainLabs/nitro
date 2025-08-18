@@ -22,7 +22,7 @@ var defaultConfig = Config{
 	LogLevel: 2,
 }
 
-// Instantiating a type an taking reference.
+// Instantiating a type and taking reference.
 var defaultConfigPtr = &Config{
 	LogType: 3,
 	Metrics: 4,
