@@ -147,7 +147,7 @@ func (es *expressLaneService) sequenceExpressLaneSubmission(msg *timeboost.Expre
 	if msg.SequenceNumber == DontCareSequence {
 		// Don't store DontCareSequence txs with the redisCoordinator. The redisCoordinator is
 		// meant for restoring messages in the reordering queue if the sequencer fails over,
-		// but for messages with DontCareSequence we skip the reordernig queue.
+		// but for messages with DontCareSequence we skip the reordering queue.
 
 		if es.roundTimingInfo.RoundNumber() != msg.Round {
 			return errors.Wrapf(timeboost.ErrBadRoundNumber, "express lane tx round %d does not match current round %d", msg.Round, es.roundTimingInfo.RoundNumber())
