@@ -12,7 +12,7 @@ import (
 
 var (
 	errUnused   = errors.New("unused")
-	errMismatch = errors.New("mismmatched field name and tag in a struct")
+	errMismatch = errors.New("mismatched field name and tag in a struct")
 	// e.g. f.Int("max-sz", DefaultBatchPosterConfig.MaxSize, "maximum batch size")
 	errIncorrectFlag = errors.New("mismatching flag initialization")
 )
