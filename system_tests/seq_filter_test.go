@@ -30,7 +30,7 @@ func TestSequencerTxFilter(t *testing.T) {
 		t.Fatal("block should be generated as second tx should pass")
 	}
 	if len(block.Transactions()) != 2 {
-		t.Fatalf("expecting two txs found: %d", len(block.Transactions()))
+		t.Fatalf("expecting two txs, found: %d", len(block.Transactions()))
 	}
 	if block.Transactions()[1].Hash() != txes[1].Hash() {
 		t.Fatal("tx hash mismatch, expecting second tx to be present in the block")
