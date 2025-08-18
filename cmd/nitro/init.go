@@ -949,8 +949,8 @@ func testUpdateTxIndex(chainDb ethdb.Database, chainConfig *params.ChainConfig, 
 
 	var localWg sync.WaitGroup
 	threads := util.GoMaxProcs()
-	var failedTxIndiciesMutex sync.Mutex
-	failedTxIndicies := make(map[common.Hash]uint64)
+	var failedTxIndicesMutex sync.Mutex
+	failedTxIndices := make(map[common.Hash]uint64)
 	for thread := 0; thread < threads; thread++ {
 		thread := thread
 		localWg.Add(1)
@@ -967,12 +967,12 @@ func testUpdateTxIndex(chainDb ethdb.Database, chainConfig *params.ChainConfig, 
 					if receipt.Status != 0 || receipt.GasUsed != 0 {
 						rawdb.WriteTxLookupEntries(batch, blockNum, []common.Hash{txHash})
 					} else {
-						failedTxIndiciesMutex.Lock()
-						prev, exists := failedTxIndicies[txHash]
+						failedTxIndicesMutex.Lock()
+						prev, exists := failedTxIndices[txHash]
 						if !exists || prev < blockNum {
-							failedTxIndicies[txHash] = blockNum
+							failedTxIndices[txHash] = blockNum
 						}
-						failedTxIndiciesMutex.Unlock()
+						failedTxIndices.Unlock()
 					}
 				}
 				rawdb.WriteHeaderNumber(batch, block.Header().Hash(), blockNum)
@@ -999,7 +999,7 @@ func testUpdateTxIndex(chainDb ethdb.Database, chainConfig *params.ChainConfig, 
 	go func() {
 		localWg.Wait()
 		batch := chainDb.NewBatch()
-		for txHash, blockNum := range failedTxIndicies {
+		for txHash, blockNum := range failedTxIndices {
 			if rawdb.ReadTxLookupEntry(chainDb, txHash) == nil {
 				rawdb.WriteTxLookupEntries(batch, blockNum, []common.Hash{txHash})
 			}
