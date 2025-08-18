@@ -97,8 +97,8 @@ func (a *AssertionChain) transact(
 		return nil, err
 	}
 
-	if commiter, ok := backend.(ChainCommitter); ok {
-		commiter.Commit()
+	if committer, ok := backend.(ChainCommitter); ok {
+		committer.Commit()
 	}
 	ctxWaitMined, cancelWaitMined := context.WithTimeout(ctx, time.Minute)
 	defer cancelWaitMined()

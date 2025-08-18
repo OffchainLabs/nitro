@@ -40,7 +40,7 @@ var (
 
 type Opt = func(val *Manager)
 
-// AssertionManager works with the challenge manager suppplying information
+// AssertionManager works with the challenge manager supplying information
 // about assertions.
 type AssertionManager interface {
 	Start(context.Context)
@@ -145,7 +145,7 @@ func New(
 	m.assertionManager.SetRivalHandler(m)
 	log.Info("Setting up challenge manager",
 		"name", m.name,
-		"addreess", m.chain.StakerAddress(),
+		"address", m.chain.StakerAddress(),
 		"rollup", m.chain.RollupAddress())
 	return m, nil
 }

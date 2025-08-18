@@ -140,8 +140,8 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 	}
 
 	var tracingInfo *util.TracingInfo
-	tipe := underlyingTx.Type()
-	p.TopTxType = &tipe
+	txType := underlyingTx.Type()
+	p.TopTxType = &txType
 	evm := p.evm
 
 	startTracer := func() func() {
