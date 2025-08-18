@@ -10,7 +10,7 @@ decision-makers: eljobe@ plasmapower@
 
 When working on the go code for BoLD, we became slightly annoyed that several
 places in the history package were checking the constraint that the `virtual`
-argumet to a function was positive. One possible workaround would have been
+argument to a function was positive. One possible workaround would have been
 to create a constrained wrapper type around `uint64` which would only allow
 positive values. For example:
 
@@ -66,13 +66,13 @@ positive values.
 ## Decision Outcome
 
 Chosen option: "Status Quo", because the "New Package" option introduces a
-regression in being able to use type type with operators, and "Minimize Checks"
+regression in being able to use type with operators, and "Minimize Checks"
 is too prone to bugs introduced by refactoring.
 
 
 ## Pros and Cons of the Options
 
-### New Pacakge: `util/chk` for checking type constraint
+### New Package: `util/chk` for checking type constraint
 
 * Good, because it is expressive
 * Good, because the constraint only needs to be checked during construction
@@ -81,7 +81,7 @@ is too prone to bugs introduced by refactoring.
 ### Status Quo: check the constraint in multiple places
 
 * Good, because it is what the code is already doing
-* Good, because when a funciton becomes public, the constraint holds
+* Good, because when a function becomes public, the constraint holds
 * Good, because when a function moves to another file or package, the constraint holds
 * Bad, because it means the check may need to be repeated. DRY
 
