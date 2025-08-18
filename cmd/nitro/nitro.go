@@ -432,21 +432,23 @@ func mainImpl() int {
 		log.Info("enabling custom tracer", "name", traceConfig.TracerName)
 	}
 
-	isExternalEL := nethexec.IsExternalExecutionEnabled()
+	execMode := nethexec.GetExecutionModeFromEnv()
 
-	var rpcClient *nethexec.NethRpcClient
 	var initDigester nethexec.InitMessageDigester
-	if isExternalEL {
-		var newClientErr error
-		rpcClient, newClientErr = nethexec.NewNethRpcClient()
+	switch execMode {
+	case nethexec.ModeInternalOnly:
+		initDigester = nethexec.NewFakeRemoteExecutionRpcClient()
+	case nethexec.ModeDualCompare, nethexec.ModeExternalOnly:
+		rpcClient, newClientErr := nethexec.NewNethRpcClient()
 		if newClientErr != nil {
 			log.Crit("failed to create real RPC client", "err", newClientErr)
 			return 1
 		}
 		deferFuncs = append(deferFuncs, func() { rpcClient.Close() })
 		initDigester = rpcClient
-	} else {
-		initDigester = &nethexec.FakeRemoteExecutionRpcClient{}
+	default:
+		log.Crit("invalid execution mode", "mode", execMode)
+		return 1
 	}
 
 	chainDb, l2BlockChain, err := openInitializeChainDb(ctx, stack, nodeConfig, new(big.Int).SetUint64(nodeConfig.Chain.ID), gethexec.DefaultCacheConfigFor(stack, &nodeConfig.Execution.Caching), &nodeConfig.Execution.StylusTarget, tracer, &nodeConfig.Persistent, l1Client, initDigester, rollupAddrs)
@@ -556,12 +558,25 @@ func mainImpl() int {
 	}
 
 	var execNode nethexec.FullExecutionClient
-	if isExternalEL {
-		execNode = nethexec.NewNodeWrapper(gethNode, rpcClient)
-		log.Info("Created NodeWrapper with external execution")
-	} else {
+	switch execMode {
+	case nethexec.ModeInternalOnly:
 		execNode = gethNode
-		log.Info("Using gethNode directly (external execution disabled)")
+	case nethexec.ModeExternalOnly:
+		execNode, err = nethexec.NewNethermindExecutionClient()
+		if err != nil {
+			log.Error("failed to create nethermind execution client", "err", err)
+			return 1
+		}
+		log.Info("Created nethermind execution client")
+	case nethexec.ModeDualCompare:
+		nmExec, err := nethexec.NewNethermindExecutionClient()
+		if err != nil {
+			log.Error("failed to create nethermind execution client", "err", err)
+			return 1
+		}
+		log.Info("Created nethermind execution client")
+		execNode = nethexec.NewCompareExecutionClient(gethNode, nmExec)
+		log.Info("Created compare execution client")
 	}
 
 	currentNode, err := arbnode.CreateNodeFullExecutionClient(

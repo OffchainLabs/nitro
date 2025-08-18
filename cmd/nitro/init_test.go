@@ -444,7 +444,7 @@ func TestOpenInitializeChainDbIncompatibleStateScheme(t *testing.T) {
 		nil,
 		&nodeConfig.Persistent,
 		l1Client,
-		&nethexec.FakeRemoteExecutionRpcClient{},
+		nethexec.NewFakeRemoteExecutionRpcClient(),
 		chaininfo.RollupAddresses{},
 	)
 	Require(t, err)
@@ -463,7 +463,7 @@ func TestOpenInitializeChainDbIncompatibleStateScheme(t *testing.T) {
 		nil,
 		&nodeConfig.Persistent,
 		l1Client,
-		&nethexec.FakeRemoteExecutionRpcClient{},
+		nethexec.NewFakeRemoteExecutionRpcClient(),
 		chaininfo.RollupAddresses{},
 	)
 	Require(t, err)
@@ -484,7 +484,7 @@ func TestOpenInitializeChainDbIncompatibleStateScheme(t *testing.T) {
 		nil,
 		&nodeConfig.Persistent,
 		l1Client,
-		&nethexec.FakeRemoteExecutionRpcClient{},
+		nethexec.NewFakeRemoteExecutionRpcClient(),
 		chaininfo.RollupAddresses{},
 	)
 	if !strings.Contains(err.Error(), "incompatible state scheme, stored: path, provided: hash") {
@@ -713,7 +713,7 @@ func TestOpenInitializeChainDbEmptyInit(t *testing.T) {
 		nil,
 		&nodeConfig.Persistent,
 		l1Client,
-		&nethexec.FakeRemoteExecutionRpcClient{},
+		nethexec.NewFakeRemoteExecutionRpcClient(),
 		chaininfo.RollupAddresses{},
 	)
 	Require(t, err)

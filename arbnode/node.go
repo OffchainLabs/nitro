@@ -42,8 +42,6 @@ import (
 	"github.com/offchainlabs/nitro/daprovider/das"
 	"github.com/offchainlabs/nitro/daprovider/das/dasserver"
 	"github.com/offchainlabs/nitro/execution"
-	"github.com/offchainlabs/nitro/execution/gethexec"
-	"github.com/offchainlabs/nitro/execution/nethexec"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/staker"
@@ -1307,19 +1305,17 @@ func CreateNodeFullExecutionClient(
 	return currentNode, nil
 }
 
+type ExecutionNodeBridge interface {
+	Initialize(ctx context.Context) error
+	SetConsensusClient(consensus execution.FullConsensusClient)
+}
+
 func (n *Node) Start(ctx context.Context) error {
-	// execClient, ok := n.ExecutionClient.(*gethexec.ExecutionNode)
-	// if !ok {
-	//	execClient = nil
-	//}
-	var execClient *gethexec.ExecutionNode
-	switch ec := n.ExecutionClient.(type) {
-	case *gethexec.ExecutionNode:
-		execClient = ec
-	case *nethexec.NodeWrapper:
-		execClient = ec.ExecutionNode
-	default:
-		execClient = nil
+	// TODO: this is a hack to get the execution node from the execution client
+	// we should refactor this to not have to do this
+	execClient, ok := n.ExecutionClient.(ExecutionNodeBridge)
+	if !ok {
+		return fmt.Errorf("execution client does not implement ExecutionNodeBridge")
 	}
 
 	if execClient != nil {
