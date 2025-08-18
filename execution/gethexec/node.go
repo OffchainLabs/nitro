@@ -173,7 +173,7 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet) {
 	TxPreCheckerConfigAddOptions(prefix+".tx-pre-checker", f)
 	CachingConfigAddOptions(prefix+".caching", f)
 	f.String(prefix+".multigas-collector.output-dir", "", "If set, enables Multigas collector and stores batches in this directory")
-	f.Int(prefix+".multigas-collector.batch-size", 0, "Batch size (blocks per file) for Multigas collector; <=0 uses default")
+	f.Int(prefix+".multigas-collector.batch-size", 0, "Batch size (blocks per file) for Multigas collector. Must be > 0 if output-dir is set")
 	SyncMonitorConfigAddOptions(prefix+".sync-monitor", f)
 	f.Bool(prefix+".enable-prefetch-block", ConfigDefault.EnablePrefetchBlock, "enable prefetching of blocks")
 	StylusTargetConfigAddOptions(prefix+".stylus-target", f)

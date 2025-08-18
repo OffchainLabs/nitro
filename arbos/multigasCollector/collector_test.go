@@ -5,13 +5,14 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	protobuf "google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/testing/protocmp"
 
-	multigas "github.com/ethereum/go-ethereum/arbitrum/multigas"
+	"github.com/ethereum/go-ethereum/arbitrum/multigas"
 
 	"github.com/offchainlabs/nitro/arbos/multigasCollector/proto"
 )
@@ -127,10 +128,9 @@ func TestIdleCollector(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			input := make(chan *CollectorMessage)
 			ctx := context.Background()
 
-			collector, err := NewCollector(tt.config, input)
+			collector, err := NewCollector(tt.config)
 
 			if tt.expectErr != nil {
 				assert.Error(t, err)
@@ -143,7 +143,6 @@ func TestIdleCollector(t *testing.T) {
 				assert.Equal(t, tt.config.BatchSize, collector.config.BatchSize)
 
 				collector.Start(ctx)
-				close(input)
 				collector.StopAndWait()
 			}
 		})
@@ -406,117 +405,58 @@ func TestDataCollection(t *testing.T) {
 	for _, tt := range testCases {
 		t.Run(tt.name, func(t *testing.T) {
 			tmpDir := t.TempDir()
-			input := make(chan *CollectorMessage, 10)
 
 			config := Config{
 				OutputDir: tmpDir,
 				BatchSize: int(tt.batchSize), //nolint:gosec
 			}
 
-			c, err := NewCollector(config, input)
+			collector, err := NewCollector(config)
 			require.NoError(t, err)
-			c.Start(context.Background())
+			collector.Start(context.Background())
 
 			for _, msg := range tt.inputData {
-				input <- msg
+				collector.Submit(msg)
 			}
-			close(input)
-			c.StopAndWait()
+			collector.StopAndWait()
 
+			// Open result files and decode data into 'got'
 			files, err := filepath.Glob(filepath.Join(tmpDir, "multigas_batch_*.pb"))
 			require.NoError(t, err)
 			assert.Len(t, files, tt.expectFiles)
 
-			// Decode batches from files
-			var allData []*proto.BlockMultiGasData
-			for _, file := range files {
-				data, err := os.ReadFile(file)
+			var got []*proto.BlockMultiGasData
+			for _, f := range files {
+				raw, err := os.ReadFile(f)
 				require.NoError(t, err)
 				var batch proto.BlockMultiGasBatch
-				require.NoError(t, protobuf.Unmarshal(data, &batch))
-				allData = append(allData, batch.Data...)
+				require.NoError(t, protobuf.Unmarshal(raw, &batch))
+				got = append(got, batch.Data...)
 			}
 
-			// Build expected blocks: group TXs until FinaliseBlock; reset on StartBlock
-			type expBlock struct {
-				block *BlockInfo
-				txs   []*TransactionMultiGas
-			}
-			var expected []expBlock
-			var curTxs []*TransactionMultiGas
+			// Build expected protobufs from input messages
+			var expected []*proto.BlockMultiGasData
+			var curTxs []*proto.TransactionMultiGasData
 			for _, m := range tt.inputData {
 				switch m.Type {
 				case CollectorMsgStartBlock:
-					// Explicitly drop any unfinalised txs (mirrors collector behavior)
-					curTxs = nil
+					curTxs = nil // drop unfinalised txs
 				case CollectorMsgTransaction:
-					curTxs = append(curTxs, m.Transaction)
+					curTxs = append(curTxs, m.Transaction.ToProto())
 				case CollectorMsgFinaliseBlock:
-					expected = append(expected, expBlock{block: m.Block, txs: curTxs})
+					blk := m.Block.ToProto()
+					if len(curTxs) > 0 {
+						blk.Transactions = append(blk.Transactions, curTxs...)
+					}
+					expected = append(expected, blk)
 					curTxs = nil
 				}
 			}
 
-			assert.Len(t, allData, len(expected))
-
-			for i, exp := range expected {
-				got := allData[i]
-				assert.Equal(t, exp.block.BlockNumber, got.BlockNumber)
-				assert.Equal(t, exp.block.BlockHash, got.BlockHash)
-				assert.Equal(t, exp.block.BlockTimestamp, got.BlockTimestamp)
-
-				assert.Len(t, got.Transactions, len(exp.txs))
-				for j, tx := range exp.txs {
-					txProto := got.Transactions[j]
-					assert.Equal(t, tx.TxHash, txProto.TxHash)
-					assert.Equal(t, tx.TxIndex, txProto.TxIndex)
-					assert.Equal(t, tx.MultiGas.Get(multigas.ResourceKindComputation), txProto.MultiGas.Computation)
-					assert.Equal(t, tx.MultiGas.Get(multigas.ResourceKindHistoryGrowth), txProto.MultiGas.HistoryGrowth)
-					assert.Equal(t, tx.MultiGas.Get(multigas.ResourceKindStorageAccess), txProto.MultiGas.StorageAccess)
-					assert.Equal(t, tx.MultiGas.Get(multigas.ResourceKindStorageGrowth), txProto.MultiGas.StorageGrowth)
-				}
+			// Proto-based comparison
+			if diff := cmp.Diff(expected, got, protocmp.Transform()); diff != "" {
+				t.Fatalf("batch content mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}
-}
-
-func TestCollectorChannelClosed(t *testing.T) {
-	tmpDir := t.TempDir()
-	input := make(chan *CollectorMessage, 10)
-
-	config := Config{
-		OutputDir: tmpDir,
-		BatchSize: 10,
-	}
-
-	collector, err := NewCollector(config, input)
-	require.NoError(t, err)
-
-	ctx := context.Background()
-	collector.Start(ctx)
-
-	// Add some data
-	message := &CollectorMessage{
-		Type: CollectorMsgFinaliseBlock,
-		Block: &BlockInfo{
-			BlockNumber:    12345,
-			BlockHash:      []byte{0xab, 0xcd, 0xef},
-			BlockTimestamp: 1234567890,
-		},
-	}
-
-	input <- message
-
-	// Close input channel - should flush remaining data
-	close(input)
-
-	// Give time for processing
-	time.Sleep(100 * time.Millisecond)
-
-	// Verify data was flushed
-	files, err := filepath.Glob(filepath.Join(tmpDir, "multigas_batch_*.pb"))
-	require.NoError(t, err)
-	assert.Len(t, files, 1)
-
-	collector.StopAndWait()
 }

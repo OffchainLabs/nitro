@@ -6,15 +6,15 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	protobuf "google.golang.org/protobuf/proto"
 
-	multigas "github.com/ethereum/go-ethereum/arbitrum/multigas"
+	"github.com/ethereum/go-ethereum/arbitrum/multigas"
 	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/arbos/multigasCollector/proto"
-	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
 const (
@@ -22,7 +22,7 @@ const (
 	// Format: multigas_batch_<batch_number>_<timestamp>.pb
 	batchFilenameFormat = "multigas_batch_%010d_%d.pb"
 
-	// Preallocate for ~2000 transactions per block, a safe high watermark for Arbitrum mainnet.
+	// Preallocate for 2000 transactions per block
 	defaultTxPrealloc = 2000
 
 	// CollectorMsgQueueSize defines the size of the collector message queue.
@@ -76,17 +76,18 @@ type Config struct {
 }
 
 // Collector manages the asynchronous collection and batching of multi-dimensional
-// gas data from blocks. It receives BlockTransactionMultiGas data through a channel, buffers
-// it in memory, and periodically writes batches to disk in protobuf format.
+// gas data from blocks. It owns the message channel, buffers data in memory,
+// and periodically writes batches to disk in protobuf format.
 type Collector struct {
-	stopwaiter.StopWaiter
-
 	config Config
-	input  <-chan *CollectorMessage
+	in     chan *CollectorMessage
 
 	batchNum          int64
 	blockBuffer       []*proto.BlockMultiGasData
 	transactionBuffer []*proto.TransactionMultiGasData
+
+	cancel context.CancelFunc
+	wg     sync.WaitGroup
 }
 
 // ToProto converts the TransactionMultiGas to its protobuf representation.
@@ -123,100 +124,84 @@ func (btmg *BlockInfo) ToProto() *proto.BlockMultiGasData {
 }
 
 // NewCollector returns an initialized collector.
-//
-// It validates the configuration and ensures the output directory exists.
-//
-// Parameters:
-//   - config: Configuration specifying output directory and batch size
-//   - input: Channel supplying CollectorMessage values
-//
-// Returns:
-//   - *Collector: The initialized collector
-//   - error: Configuration validation or initialization error
-//
-// Usage:
-//
-//	c, _ := NewCollector(cfg, input)
-//	c.Start(ctx)
-//	// ... send messages ...
-//	c.StopAndWait() // flushes and stops regardless of channel state
-func NewCollector(config Config, input <-chan *CollectorMessage) (*Collector, error) {
+// Validates the configuration and ensures the output directory exists.
+func NewCollector(config Config) (*Collector, error) {
 	if config.OutputDir == "" {
 		return nil, ErrOutputDirRequired
 	}
-
-	if config.BatchSize == 0 {
+	if config.BatchSize <= 0 {
 		return nil, ErrBatchSizeRequired
 	}
-
-	if err := os.MkdirAll(config.OutputDir, 0755); err != nil {
-		return nil, ErrCreateOutputDir
+	if err := os.MkdirAll(config.OutputDir, 0o755); err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrCreateOutputDir, err)
 	}
 
 	return &Collector{
 		config:            config,
-		input:             input,
+		in:                nil,
 		batchNum:          0,
 		blockBuffer:       make([]*proto.BlockMultiGasData, 0, config.BatchSize),
 		transactionBuffer: make([]*proto.TransactionMultiGasData, 0, defaultTxPrealloc),
 	}, nil
 }
 
-// Start begins background processing using StopWaiter.
-// Processing continues until StopAndWait() is called or ctx is canceled.
-// Channel close is handled (remaining data is flushed), but shutdown does not
-// depend on it.
-func (c *Collector) Start(ctx context.Context) {
-	c.StopWaiter.Start(ctx, c)
-	c.LaunchThread(func(ctx context.Context) {
+// Start begins background processing of incoming messages.
+func (c *Collector) Start(parent context.Context) {
+	if c.in != nil {
+		log.Warn("Multi-gas collector already started, ignoring Start call")
+		return
+	}
+
+	ctx, cancel := context.WithCancel(parent)
+	c.cancel = cancel
+	c.in = make(chan *CollectorMessage, CollectorMsgQueueSize)
+
+	c.wg.Add(1)
+	go func() {
+		defer c.wg.Done()
 		c.processData(ctx)
-	})
+	}()
 }
 
-// StopAndWait stops background processing and waits for it to finish.
+// StopAndWait cancels processing, drains ready items, flushes once, and waits for shutdown.
 func (c *Collector) StopAndWait() {
-	c.StopWaiter.StopAndWait()
+	if c.cancel != nil {
+		c.cancel()
+	}
+	c.wg.Wait()
+	c.in = nil // Clear the input channel to prevent further submissions
 	log.Info("Multi-gas collector stopped")
 }
 
-// processData consumes input and batches writes.
-// Stop is driven by StopWaiter (ctx). Channel close is tolerated:
-// we flush once, ignore the channel thereafter, and wait for Stop.
-func (c *Collector) processData(ctx context.Context) {
-	in := c.input
-	for {
-		select {
-		case <-ctx.Done():
-			// Drain any ready items to avoid dropping work on Stop
-		drain:
-			for {
-				select {
-				case msg, ok := <-in:
-					if !ok {
-						break drain
-					}
-					c.handleMessage(msg)
-					continue
-				default:
-				}
-				break
-			}
-			c.finalise()
-			return
+// Submit enqueues a message for collection (non-blocking). Drops on a full queue.
+func (c *Collector) Submit(msg *CollectorMessage) {
+	if c.in == nil {
+		log.Debug("Multi-gas collector disabled; dropping message", "type", msg.Type)
+		return
+	}
 
-		case msg, ok := <-in:
-			if !ok {
-				// Channel closed: flush and keep running until Stop (no reliance on close)
-				c.finalise()
-				in = nil
-				continue
-			}
-			c.handleMessage(msg)
-		}
+	select {
+	case c.in <- msg:
+	default:
+		log.Debug("Multi-gas collector dropping message",
+			"queueCapacity", cap(c.in), "queueLen", len(c.in), "type", msg.Type)
 	}
 }
 
-// --- internal ---
+// processData consumes input and batches writes.
+// Shutdown is driven by context cancellation. On cancel, finalise() drains
+// queued items, flushes once, and exits.
+func (c *Collector) processData(ctx context.Context) {
+	for {
+		select {
+		case msg := <-c.in:
+			c.handleMessage(msg)
+		case <-ctx.Done():
+			c.finalise()
+			return
+		}
+	}
+}
 
 // handleMessage processes a single CollectorMessage and updates in-memory buffers.
 // TXs are accumulated in transactionBuffer. When a Block message arrives, all
@@ -231,14 +216,14 @@ func (c *Collector) handleMessage(msg *CollectorMessage) {
 
 	case CollectorMsgTransaction:
 		if msg.Transaction == nil {
-			log.Error("Transaction message missing payload")
+			log.Error("Multi-gas collector transaction message missing payload")
 			return
 		}
 		c.transactionBuffer = append(c.transactionBuffer, msg.Transaction.ToProto())
 
 	case CollectorMsgFinaliseBlock:
 		if msg.Block == nil {
-			log.Error("Block message missing payload")
+			log.Error("Multi-gas collector block message missing payload")
 			return
 		}
 		block := msg.Block.ToProto()
@@ -249,23 +234,35 @@ func (c *Collector) handleMessage(msg *CollectorMessage) {
 		c.blockBuffer = append(c.blockBuffer, block)
 		if len(c.blockBuffer) >= c.config.BatchSize {
 			if err := c.flushBatch(); err != nil {
-				log.Error("Failed to flush batch", "error", err)
+				log.Error("Multi-gas collector failed to flush batch", "error", err)
 			}
 		}
 		c.transactionBuffer = c.transactionBuffer[:0]
 
 	default:
-		log.Error("Unknown message type", "type", msg.Type)
+		log.Error("Multi-gas collector, unknown message type", "type", msg.Type)
 	}
 }
 
 func (c *Collector) finalise() {
+	// Drain channel on shutdown
+drainLoop:
+	for {
+		select {
+		case msg := <-c.in:
+			c.handleMessage(msg)
+		default:
+			break drainLoop
+		}
+	}
+
 	if len(c.transactionBuffer) > 0 {
-		log.Warn("finalising with unassociated transactions", "count", len(c.transactionBuffer))
+		log.Warn("Multi-gas collector finalising with unassociated transactions", "count", len(c.transactionBuffer))
+		c.transactionBuffer = c.transactionBuffer[:0]
 	}
 	if len(c.blockBuffer) > 0 {
 		if err := c.flushBatch(); err != nil {
-			log.Error("Failed to flush final batch", "error", err)
+			log.Error("Multi-gas collector failed to flush final batch", "error", err)
 		}
 	}
 }
@@ -290,13 +287,13 @@ func (c *Collector) flushBatch() error {
 	}
 
 	filename := fmt.Sprintf(batchFilenameFormat, c.batchNum, time.Now().Unix())
-	filepath := filepath.Join(c.config.OutputDir, filename)
+	outPath := filepath.Join(c.config.OutputDir, filename)
 
-	if err := os.WriteFile(filepath, data, 0600); err != nil {
+	if err := os.WriteFile(outPath, data, 0600); err != nil {
 		return err
 	}
 
-	log.Info("Wrote multi-gas batch",
+	log.Info("Multi-gas collector wrote multi-gas batch",
 		"file", filename,
 		"count", len(c.blockBuffer),
 		"size_bytes", len(data))

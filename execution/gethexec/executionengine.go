@@ -44,7 +44,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
-	mgc "github.com/offchainlabs/nitro/arbos/multigasCollector"
+	"github.com/offchainlabs/nitro/arbos/multigasCollector"
 	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/execution"
@@ -110,7 +110,7 @@ type ExecutionEngine struct {
 
 	runningMaintenance atomic.Bool
 
-	mgcCollector *mgc.Collector
+	multigasCollector *multigasCollector.Collector
 }
 
 func NewL1PriceData() *L1PriceData {
@@ -252,32 +252,18 @@ func (s *ExecutionEngine) EnablePrefetchBlock() {
 	s.prefetchBlock = true
 }
 
-func (s *ExecutionEngine) EnableMultigasCollector(config mgc.Config) error {
-	if s.mgcCollector != nil {
+func (s *ExecutionEngine) EnableMultigasCollector(config multigasCollector.Config) error {
+	if s.multigasCollector != nil {
 		return nil
 	}
 
-	ch := make(chan *mgc.CollectorMessage, mgc.CollectorMsgQueueSize)
-	collector, err := mgc.NewCollector(config, ch)
+	collector, err := multigasCollector.NewCollector(config)
 	if err != nil {
 		return err
 	}
 
-	arbos.SetMultiGasCollectorChan(ch)
-	s.mgcCollector = collector
-
+	s.multigasCollector = collector
 	return nil
-}
-
-func (s *ExecutionEngine) DisableMultigasCollector() {
-	if s.mgcCollector == nil {
-		return
-	}
-
-	arbos.SetMultiGasCollectorChan(nil)
-
-	s.mgcCollector.StopAndWait()
-	s.mgcCollector = nil
 }
 
 func (s *ExecutionEngine) SetConsensus(consensus execution.FullConsensusClient) {
@@ -609,6 +595,7 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 		hooks,
 		false,
 		core.NewMessageCommitContext(s.wasmTargets),
+		s.multigasCollector,
 	)
 	if err != nil {
 		return nil, err
@@ -1065,8 +1052,8 @@ func (s *ExecutionEngine) ArbOSVersionForMessageIndex(msgIdx arbutil.MessageInde
 func (s *ExecutionEngine) Start(ctx_in context.Context) {
 	s.StopWaiter.Start(ctx_in, s)
 
-	if s.mgcCollector != nil {
-		s.mgcCollector.Start(s.GetContext())
+	if s.multigasCollector != nil {
+		s.multigasCollector.Start(s.GetContext())
 	}
 
 	s.LaunchThread(func(ctx context.Context) {
@@ -1128,8 +1115,8 @@ func (s *ExecutionEngine) Start(ctx_in context.Context) {
 func (s *ExecutionEngine) StopAndWait() {
 	s.StopWaiter.StopAndWait()
 
-	if s.mgcCollector != nil {
-		s.mgcCollector.StopAndWait()
+	if s.multigasCollector != nil {
+		s.multigasCollector.StopAndWait()
 	}
 }
 
