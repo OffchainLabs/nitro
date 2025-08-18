@@ -407,8 +407,12 @@ func (s *EspressoStreamer) Start(ctxIn context.Context) error {
 	s.StopWaiter.Start(ctxIn, s)
 
 	ephemeralErrorHandler := util.NewEphemeralErrorHandler(3*time.Minute, ErrFailedToFetchTransactions.Error(), 1*time.Minute)
-	processedHotshotBlocks := 0
 	err := s.CallIterativelySafe(func(ctx context.Context) time.Duration {
+		if s.nextHotshotBlockNum%100 == 0 {
+			log.Info("Now processing hotshot block", "block number", s.nextHotshotBlockNum)
+		} else {
+			log.Debug("Now processing hotshot block", "block number", s.nextHotshotBlockNum)
+		}
 		err := s.QueueMessagesFromHotshot(ctx, s.parseEspressoTransaction)
 		if err != nil {
 			logLevel := log.Error
@@ -417,13 +421,6 @@ func (s *EspressoStreamer) Start(ctxIn context.Context) error {
 			return s.retryTime
 		} else {
 			ephemeralErrorHandler.Reset()
-		}
-		processedHotshotBlocks += 1
-		if processedHotshotBlocks == 100 {
-			log.Info("Now processing hotshot block", "block number", s.nextHotshotBlockNum)
-			processedHotshotBlocks = 0
-		} else {
-			log.Debug("Now processing hotshot block", "block number", s.nextHotshotBlockNum)
 		}
 		return 0
 	})

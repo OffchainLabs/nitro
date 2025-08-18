@@ -1149,20 +1149,19 @@ func (b *BatchPoster) getBatchPosterPosition(ctx context.Context, blockNum *big.
 var errBatchAlreadyClosed = errors.New("batch segments already closed")
 
 type batchSegments struct {
-	compressedBuffer               *bytes.Buffer
-	compressedWriter               *brotli.Writer
-	rawSegments                    [][]byte
-	timestamp                      uint64
-	blockNum                       uint64
-	delayedMsg                     uint64
-	sizeLimit                      int
-	recompressionLevel             int
-	newUncompressedSize            int
-	totalUncompressedSize          int
-	lastCompressedSize             int
-	trailingHeaders                int // how many trailing segments are headers
-	isDone                         bool
-	isWaitingForEspressoValidation bool // We are waiting for the entirety of the batch to be validated by espresso. Should be false by default
+	compressedBuffer      *bytes.Buffer
+	compressedWriter      *brotli.Writer
+	rawSegments           [][]byte
+	timestamp             uint64
+	blockNum              uint64
+	delayedMsg            uint64
+	sizeLimit             int
+	recompressionLevel    int
+	newUncompressedSize   int
+	totalUncompressedSize int
+	lastCompressedSize    int
+	trailingHeaders       int // how many trailing segments are headers
+	isDone                bool
 }
 
 type buildingBatch struct {
@@ -1386,12 +1385,6 @@ func (s *batchSegments) addDelayedMessage() (bool, error) {
 }
 
 func (s *batchSegments) AddMessage(msg *arbostypes.MessageWithMetadata) (bool, error) {
-
-	if s.isWaitingForEspressoValidation {
-		log.Info("Current batch is waiting for espresso validation, we won't add more messages")
-		// if we are waiting for espresso validation return that the batch is full with no error
-		return false, nil
-	}
 	if s.isDone {
 		return false, errBatchAlreadyClosed
 	}
@@ -1436,14 +1429,6 @@ func (s *batchSegments) CloseAndGetBytes() ([]byte, error) {
 	fullMsg[0] = daprovider.BrotliMessageHeaderByte
 	fullMsg = append(fullMsg, compressedBytes...)
 	return fullMsg, nil
-}
-
-// Make the batch wait for validation Add this so we don't need to export the structs state to set it as we shouldn't need to set it to false again.
-func (s *batchSegments) SetWaitingForValidation() {
-	if !s.isWaitingForEspressoValidation {
-		log.Info("Set current batch segments to waiting for validation")
-		s.isWaitingForEspressoValidation = true
-	}
 }
 
 func (b *BatchPoster) getCalldataForEspressoBatch(
