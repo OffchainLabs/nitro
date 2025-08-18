@@ -178,7 +178,7 @@ func findImportantRoots(ctx context.Context, chainDb ethdb.Database, stack *node
 		return nil, fmt.Errorf("unknown pruning mode: \"%v\"", initConfig.Prune)
 	}
 	if initConfig.Prune != "minimal" && l1Client != nil {
-		// in pruning modes other then "minimal", find the latest finalized block and add it as a pruning target
+		// in pruning modes other than "minimal", find the latest finalized block and add it as a pruning target
 		l1Block, err := l1Client.BlockByNumber(ctx, big.NewInt(int64(rpc.FinalizedBlockNumber)))
 		if err != nil {
 			return nil, fmt.Errorf("failed to get finalized block: %w", err)
