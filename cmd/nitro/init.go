@@ -52,8 +52,10 @@ import (
 
 var notFoundError = errors.New("file not found")
 
-// Based on https://github.com/wasmerio/wasmer/blob/6de934035a4b34c2878552320f058862faea4651/lib/types/src/serialize.rs#L16
+// taken from wasmer's lib/types/src/serialize.rs: MetadataHeader::CURRENT_VERSION
+// 8 is a bug (should have been 6) but we're skipping the real version 8 so it does not matter
 const WasmerSerializeVersion = 8
+const InitialWasmerSerializeVersion = 8
 
 func initializeAndDownloadInit(ctx context.Context, initConfig *conf.InitConfig, stack *node.Node) (string, func(), error) {
 	cleanUpTmp := func() {}
@@ -503,7 +505,7 @@ func validateOrUpgradeWasmerSerializeVersion(db ethdb.Database) error {
 		versionInDB, err := rawdb.ReadWasmerSerializeVersion(db)
 		if err != nil {
 			if rawdb.IsDbErrNotFound(err) {
-				versionInDB = 0
+				versionInDB = InitialWasmerSerializeVersion
 			} else {
 				return fmt.Errorf("Failed to retrieve wasmer serialize version: %w", err)
 			}
