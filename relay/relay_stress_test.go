@@ -147,7 +147,7 @@ func largeBacklogRelayTestImpl(t *testing.T, numClients, backlogSize, l2MsgSize 
 		defer client.StopOnly()
 	}
 
-	// wait for all clients to atleast connect once
+	// wait for all clients to at least connect once
 	connectDeadlineTimer := time.NewTicker(connectDeadline)
 	defer connectDeadlineTimer.Stop()
 	select {
