@@ -48,7 +48,7 @@ func (con ArbAddressTable) Lookup(c ctx, evm mech, addr addr) (huge, error) {
 	return new(big.Int).SetUint64(result), nil
 }
 
-// LookupIndex for  an address in the table by index
+// LookupIndex for an address in the table by index
 func (con ArbAddressTable) LookupIndex(c ctx, evm mech, index huge) (addr, error) {
 	if !index.IsUint64() {
 		return addr{}, errors.New("invalid index in ArbAddressTable.LookupIndex")
