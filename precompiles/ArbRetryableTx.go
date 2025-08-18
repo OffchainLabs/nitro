@@ -135,7 +135,7 @@ func (con ArbRetryableTx) GetLifetime(c ctx, evm mech) (huge, error) {
 	return big.NewInt(retryables.RetryableLifetimeSeconds), nil
 }
 
-// GetTimeout gets the timestamp for when ticket will expire
+// GetTimeout gets the timestamp for when the ticket will expire
 func (con ArbRetryableTx) GetTimeout(c ctx, evm mech, ticketId bytes32) (huge, error) {
 	retryableState := c.State.RetryableState()
 	retryable, err := retryableState.OpenRetryable(ticketId, evm.Context.Time)
