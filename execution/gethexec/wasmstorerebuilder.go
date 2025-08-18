@@ -21,7 +21,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 )
 
-var RebuildingPositionKey []byte = []byte("_rebuildingPosition")             // contains the codehash upto which rebuilding of wasm store was last completed. Initialized to common.Hash{} at the start
+var RebuildingPositionKey []byte = []byte("_rebuildingPosition")             // contains the codehash up to which rebuilding of wasm store was last completed. Initialized to common.Hash{} at the start
 var RebuildingStartBlockHashKey []byte = []byte("_rebuildingStartBlockHash") // contains the block hash of starting block when rebuilding of wasm store first began
 var RebuildingDone common.Hash = common.BytesToHash([]byte("_done"))         // indicates that the rebuilding is done, if RebuildingPositionKey holds this value it implies rebuilding was completed
 
@@ -52,7 +52,7 @@ func WriteToKeyValueStore[T any](store ethdb.KeyValueStore, key []byte, val T) e
 }
 
 // RebuildWasmStore function runs a loop looking at every codehash in diskDb, checking if its an activated stylus contract and
-// saving it to wasm store if it doesn't already exists. When errored it logs them and silently returns
+// saving it to wasm store if it doesn't already exist. When errored it logs them and silently returns
 //
 // It stores the status of rebuilding to wasm store by updating the codehash (of the latest successfully checked contract) in
 // RebuildingPositionKey after every second of work.
