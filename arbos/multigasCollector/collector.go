@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
-	"time"
 
 	protobuf "google.golang.org/protobuf/proto"
 
@@ -19,8 +18,8 @@ import (
 
 const (
 	// batchFilenameFormat defines the naming pattern for batch files.
-	// Format: multigas_batch_<batch_number>_<timestamp>.pb
-	batchFilenameFormat = "multigas_batch_%010d_%d.pb"
+	// Format: multigas_batch_<start_block_number>_<end_block_number>.pb
+	batchFilenameFormat = "multigas_batch_%010d_%010d.pb"
 
 	// Preallocate for 2000 transactions per block
 	defaultTxPrealloc = 2000
@@ -75,6 +74,11 @@ type Config struct {
 	BatchSize int    `koanf:"batch-size"`
 }
 
+var DefaultConfig = Config{
+	OutputDir: "",
+	BatchSize: 2000,
+}
+
 // Collector manages the asynchronous collection and batching of multi-dimensional
 // gas data from blocks. It owns the message channel, buffers data in memory,
 // and periodically writes batches to disk in protobuf format.
@@ -82,7 +86,6 @@ type Collector struct {
 	config Config
 	in     chan *CollectorMessage
 
-	batchNum          int64
 	blockBuffer       []*proto.BlockMultiGasData
 	transactionBuffer []*proto.TransactionMultiGasData
 
@@ -139,7 +142,6 @@ func NewCollector(config Config) (*Collector, error) {
 	return &Collector{
 		config:            config,
 		in:                nil,
-		batchNum:          0,
 		blockBuffer:       make([]*proto.BlockMultiGasData, 0, config.BatchSize),
 		transactionBuffer: make([]*proto.TransactionMultiGasData, 0, defaultTxPrealloc),
 	}, nil
@@ -286,7 +288,9 @@ func (c *Collector) flushBatch() error {
 		return err
 	}
 
-	filename := fmt.Sprintf(batchFilenameFormat, c.batchNum, time.Now().Unix())
+	start := c.blockBuffer[0].BlockNumber
+	end := c.blockBuffer[len(c.blockBuffer)-1].BlockNumber
+	filename := fmt.Sprintf(batchFilenameFormat, start, end)
 	outPath := filepath.Join(c.config.OutputDir, filename)
 
 	if err := os.WriteFile(outPath, data, 0600); err != nil {
@@ -299,7 +303,6 @@ func (c *Collector) flushBatch() error {
 		"size_bytes", len(data))
 
 	c.blockBuffer = c.blockBuffer[:0]
-	c.batchNum++
 
 	return nil
 }

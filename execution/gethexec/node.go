@@ -172,8 +172,8 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet) {
 	AddOptionsForNodeForwarderConfig(prefix+".forwarder", f)
 	TxPreCheckerConfigAddOptions(prefix+".tx-pre-checker", f)
 	CachingConfigAddOptions(prefix+".caching", f)
-	f.String(prefix+".multigas-collector.output-dir", "", "If set, enables Multigas collector and stores batches in this directory")
-	f.Int(prefix+".multigas-collector.batch-size", 0, "Batch size (blocks per file) for Multigas collector. Must be > 0 if output-dir is set")
+	f.String(prefix+".multigas-collector.output-dir", ConfigDefault.MultigasCollector.OutputDir, "If set, enables Multigas collector and stores batches in this directory")
+	f.Int(prefix+".multigas-collector.batch-size", ConfigDefault.MultigasCollector.BatchSize, "Batch size (blocks per file) for Multigas collector. Ignored unless output-dir is set")
 	SyncMonitorConfigAddOptions(prefix+".sync-monitor", f)
 	f.Bool(prefix+".enable-prefetch-block", ConfigDefault.EnablePrefetchBlock, "enable prefetching of blocks")
 	StylusTargetConfigAddOptions(prefix+".stylus-target", f)
@@ -198,16 +198,18 @@ func LiveTracingConfigAddOptions(prefix string, f *flag.FlagSet) {
 }
 
 var ConfigDefault = Config{
-	RPC:                         arbitrum.DefaultConfig,
-	TxIndexer:                   DefaultTxIndexerConfig,
-	Sequencer:                   DefaultSequencerConfig,
-	ParentChainReader:           headerreader.DefaultConfig,
-	RecordingDatabase:           DefaultBlockRecorderConfig,
-	ForwardingTarget:            "",
-	SecondaryForwardingTarget:   []string{},
-	TxPreChecker:                DefaultTxPreCheckerConfig,
-	Caching:                     DefaultCachingConfig,
-	Forwarder:                   DefaultNodeForwarderConfig,
+	RPC:                       arbitrum.DefaultConfig,
+	TxIndexer:                 DefaultTxIndexerConfig,
+	Sequencer:                 DefaultSequencerConfig,
+	ParentChainReader:         headerreader.DefaultConfig,
+	RecordingDatabase:         DefaultBlockRecorderConfig,
+	ForwardingTarget:          "",
+	SecondaryForwardingTarget: []string{},
+	TxPreChecker:              DefaultTxPreCheckerConfig,
+	Caching:                   DefaultCachingConfig,
+	Forwarder:                 DefaultNodeForwarderConfig,
+	MultigasCollector:         mgc.DefaultConfig,
+
 	EnablePrefetchBlock:         true,
 	StylusTarget:                DefaultStylusTargetConfig,
 	BlockMetadataApiCacheSize:   100 * 1024 * 1024,

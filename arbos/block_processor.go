@@ -573,9 +573,9 @@ func ProduceBlockAdvanced(
 		mgcCollector.Submit(&multigasCollector.CollectorMessage{
 			Type: multigasCollector.CollectorMsgFinaliseBlock,
 			Block: &multigasCollector.BlockInfo{
-				BlockNumber:    header.Number.Uint64(),
+				BlockNumber:    block.NumberU64(),
 				BlockHash:      blockHash.Bytes(),
-				BlockTimestamp: header.Time,
+				BlockTimestamp: block.Time(),
 			},
 		})
 	}
