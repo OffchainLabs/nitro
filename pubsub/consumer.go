@@ -59,7 +59,7 @@ type Consumer[Request any, Response any] struct {
 
 	// Idle messages will be reclaimed randomly from the oldest idle N messages.
 	// Note: Not exposed as a configuration option because it affects semantic
-	// correctness for for some use cases.
+	// correctness for some use cases.
 	claimAmongOldestIdleN int64
 }
 
