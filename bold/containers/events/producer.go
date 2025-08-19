@@ -20,6 +20,8 @@ type Producer[T any] struct {
 	sync.RWMutex
 	subscriptionBufferSize int
 	subs                   []*Subscription[T]
+	subsIndex              map[subId]int
+	nextID                 subId
 	doneListener           chan subId    // channel to listen for IDs of subscriptions to be remove.
 	broadcastTimeout       time.Duration // maximum duration to wait for an event to be sent.
 }
@@ -44,6 +46,7 @@ func WithSubscriptionBuffer[T any](size int) ProducerOpt[T] {
 func NewProducer[T any](opts ...ProducerOpt[T]) *Producer[T] {
 	producer := &Producer[T]{
 		subs:                   make([]*Subscription[T], 0),
+		subsIndex:              make(map[subId]int),
 		subscriptionBufferSize: defaultSubscriptionBufferSize,
 		doneListener:           make(chan subId, 100),
 		broadcastTimeout:       defaultBroadcastTimeout,
@@ -60,13 +63,19 @@ func (ep *Producer[T]) Start(ctx context.Context) {
 		select {
 		case id := <-ep.doneListener:
 			ep.Lock()
-			// Check if id overflows the length of the slice.
-			if int(id) >= len(ep.subs) {
+			idx, ok := ep.subsIndex[id]
+			if !ok {
 				ep.Unlock()
 				continue
 			}
-			// Otherwise, clear the subscription from the list.
-			ep.subs = append(ep.subs[:id], ep.subs[id+1:]...)
+			last := len(ep.subs) - 1
+			if idx != last {
+				moved := ep.subs[last]
+				ep.subs[idx] = moved
+				ep.subsIndex[moved.id] = idx
+			}
+			ep.subs = ep.subs[:last]
+			delete(ep.subsIndex, id)
 			ep.Unlock()
 		case <-ctx.Done():
 			close(ep.doneListener)
@@ -81,12 +90,15 @@ func (ep *Producer[T]) Start(ctx context.Context) {
 func (ep *Producer[T]) Subscribe() *Subscription[T] {
 	ep.Lock()
 	defer ep.Unlock()
+	id := ep.nextID
+	ep.nextID++
 	sub := &Subscription[T]{
-		id:     subId(len(ep.subs)), // Assign a unique ID based on the current count of subscriptions
+		id:     id, // stable unique ID
 		events: make(chan T),
 		done:   ep.doneListener,
 	}
 	ep.subs = append(ep.subs, sub)
+	ep.subsIndex[id] = len(ep.subs) - 1
 	return sub
 }
 
