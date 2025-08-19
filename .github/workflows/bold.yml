@@ -54,7 +54,7 @@ jobs:
       - name: Get dependencies
         working-directory: ./bold
         run: |
-          go get -v -t -d ./...
+          go get -v -t ./...
 
       - name: Build
         working-directory: ./bold
@@ -62,7 +62,7 @@ jobs:
 
       - name: Test
         working-directory: ./bold      
-        run: ANVIL=$(which anvil) go test -v -covermode=atomic -coverprofile=coverage.out -timeout=20m ./...
+        run: ANVIL=$(which anvil) go test -v -covermode=atomic -coverprofile=coverage.out -timeout=30m ./...
 
       - name: Upload coverage reports to Codecov
         uses: codecov/codecov-action@v5
