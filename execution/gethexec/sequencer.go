@@ -1590,6 +1590,21 @@ func (s *Sequencer) StartExpressLaneService(ctx context.Context) {
 	}
 }
 
+func (s *Sequencer) backgroundForwarder(ctx context.Context) time.Duration {
+	s.activeMutex.Lock()
+	defer s.activeMutex.Unlock()
+
+	if s.forwarder != nil {
+		s.createBlockMutex.Lock()
+		defer s.createBlockMutex.Unlock()
+
+		queueItems, _ := s.getQueueItems(ctx, s.config())
+
+		s.handleInactive(s.forwarder, queueItems)
+	}
+	return time.Millisecond * 100
+}
+
 func (s *Sequencer) Start(ctxIn context.Context) error {
 	s.StopWaiter.Start(ctxIn, s)
 	config := s.config()
@@ -1626,6 +1641,8 @@ func (s *Sequencer) Start(ctxIn context.Context) error {
 			s.expectedSurplus = expectedSurplus
 			return 5 * time.Second
 		})
+
+		s.CallIteratively(s.backgroundForwarder)
 
 		headerChan, cancel := s.l1Reader.Subscribe(false)
 

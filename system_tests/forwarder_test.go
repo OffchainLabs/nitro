@@ -22,12 +22,96 @@ import (
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/util/redisutil"
+	"github.com/offchainlabs/nitro/util/testhelpers"
 	"github.com/offchainlabs/nitro/util/testhelpers/env"
 )
 
 var transferAmount = big.NewInt(1e12) // amount of ether to use for transactions in tests
 
 const nodesCount = 5 // number of testnodes to create in tests
+
+func TestSetForwardToWhilePaused(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	// creates node A
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder.nodeConfig.BatchPoster.Enable = false
+	builder.execConfig.Sequencer.MaxBlockSpeed = time.Hour // effectively disables sequencing in this node
+	cleanupA := builder.Build(t)
+	defer cleanupA()
+	clientA := builder.L2.Client
+
+	// creates node B
+	ipcPathB := tmpPath(t, "test.ipc")
+	nodeConfigB := arbnode.ConfigDefaultL1Test()
+	nodeConfigB.Sequencer = true
+	nodeConfigB.BatchPoster.Enable = false
+	execConfigB := *builder.execConfig
+	execConfigB.Sequencer.MaxBlockSpeed = time.Millisecond * 100
+	execConfigB.Sequencer.ReadFromTxQueueTimeout = time.Millisecond * 10
+	stackConfigB := testhelpers.CreateStackConfigForTest(t.TempDir())
+	stackConfigB.IPCPath = ipcPathB
+	testClientB, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{
+		nodeConfig:  nodeConfigB,
+		execConfig:  &execConfigB,
+		stackConfig: stackConfigB,
+	})
+	defer cleanupB()
+	clientB := testClientB.Client
+
+	// pauses node A
+	builder.L2.ExecNode.Pause()
+
+	builder.L2Info.GenerateAccount("User2")
+	tx := builder.L2Info.PrepareTx("Owner", "User2", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
+
+	// sends a transaction to node A
+	errChan := make(chan error)
+	go func() {
+		err := clientA.SendTransaction(ctx, tx)
+		errChan <- err
+	}()
+	// it should not be processed since it is paused and there is no forwarder set
+	err := <-errChan
+	if err == nil || err.Error() != "context deadline exceeded" {
+		t.Fatalf("Expected timeout error, got: %v", err)
+	}
+
+	// sends a transaction to node A
+	go func() {
+		err := clientA.SendTransaction(ctx, tx)
+		errChan <- err
+	}()
+	// give some time for the transaction to be included in the sequencer's queue
+	time.Sleep(time.Second)
+	// sets forwarder to node B
+	err = builder.L2.ExecNode.ForwardTo(ipcPathB)
+	Require(t, err)
+	// it should be processed now
+	err = <-errChan
+	Require(t, err)
+
+	// should not be updated in node A
+	_, err = EnsureTxSucceeded(ctx, clientA, tx)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("Expected timeout error, got: %v", err)
+	}
+	balance, err := clientA.BalanceAt(ctx, builder.L2Info.GetAddress("User2"), nil)
+	Require(t, err)
+	if balance.Cmp(big.NewInt(0)) != 0 {
+		t.Fatalf("Expected User2 to have 0 L2 balance in 1st node, got %s", balance.String())
+	}
+
+	// should be updated in node B
+	_, err = EnsureTxSucceeded(ctx, clientB, tx)
+	Require(t, err)
+	balance, err = clientB.BalanceAt(ctx, builder.L2Info.GetAddress("User2"), nil)
+	Require(t, err)
+	if balance.Cmp(big.NewInt(1e12)) != 0 {
+		t.Fatalf("Expected User2 to have 1e12 L2 balance in 2nd node, got %s", balance.String())
+	}
+}
 
 func TestStaticForwarder(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
