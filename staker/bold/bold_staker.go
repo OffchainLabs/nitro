@@ -210,6 +210,7 @@ type BOLDStaker struct {
 	confirmedNotifiers []legacystaker.LatestConfirmedNotifier
 	inboxTracker       staker.InboxTrackerInterface
 	inboxStreamer      staker.TransactionStreamerInterface
+	fatalErr           chan<- error
 }
 
 func NewBOLDStaker(
@@ -229,6 +230,7 @@ func NewBOLDStaker(
 	inboxTracker staker.InboxTrackerInterface,
 	inboxStreamer staker.TransactionStreamerInterface,
 	inboxReader staker.InboxReaderInterface,
+	fatalErr chan<- error,
 ) (*BOLDStaker, error) {
 	if err := config.Validate(); err != nil {
 		return nil, err
@@ -251,6 +253,7 @@ func NewBOLDStaker(
 		confirmedNotifiers: confirmedNotifiers,
 		inboxTracker:       inboxTracker,
 		inboxStreamer:      inboxStreamer,
+		fatalErr:           fatalErr,
 	}, nil
 }
 
@@ -311,8 +314,10 @@ func (b *BOLDStaker) Start(ctxIn context.Context) {
 		confirmedMsgCount, confirmedGlobalState, err := b.getLatestState(ctx, true)
 		if err != nil {
 			log.Error("staker: error checking latest confirmed", "err", err)
-			b.StopWaiter.StopAndWait()
-			return time.Duration(0)
+			if errors.Is(err, staker.ErrGlobalStateNotInChain) {
+				b.fatalErr <- err
+				return time.Duration(0)
+			}
 		}
 
 		agreedMsgCount, agreedGlobalState, err := b.getLatestState(ctx, false)
