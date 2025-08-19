@@ -215,6 +215,144 @@ func testBatchPosterParallel(t *testing.T, useRedis bool, useRedisLock bool) {
 	}
 }
 
+func TestBatchPosterHandoff(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	srv := externalsignertest.NewServer(t)
+	go func() {
+		if err := srv.Start(); err != nil {
+			log.Error("Failed to start external signer server:", err)
+			return
+		}
+	}()
+	miniredis, redisUrl := redisutil.CreateMiniredis(ctx, t)
+	client, err := redisutil.RedisClientFromURL(redisUrl)
+	Require(t, err)
+	err = client.Del(ctx, "data-poster.queue").Err()
+	Require(t, err)
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder.nodeConfig.BatchPoster.Enable = false
+	builder.nodeConfig.BatchPoster.RedisUrl = redisUrl
+	builder.nodeConfig.BatchPoster.RedisLock.LockoutDuration = 100 * time.Millisecond
+	builder.nodeConfig.BatchPoster.RedisLock.RefreshDuration = 50 * time.Millisecond
+	signerCfg, err := dataposter.ExternalSignerTestCfg(srv.Address, srv.URL())
+	if err != nil {
+		t.Fatalf("Error getting external signer config: %v", err)
+	}
+	builder.nodeConfig.BatchPoster.DataPoster.ExternalSigner = *signerCfg
+
+	cleanup := builder.Build(t)
+	defer cleanup()
+	testClientB, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{})
+	defer cleanupB()
+	builder.L2Info.GenerateAccount("User2")
+
+	addNewBatchPoster(ctx, t, builder, srv.Address)
+
+	builder.L1.SendWaitTestTransactions(t, []*types.Transaction{
+		builder.L1Info.PrepareTxTo("Faucet", &srv.Address, 30000, big.NewInt(1e18), nil)})
+
+	var txs []*types.Transaction
+
+	for i := 0; i < 100; i++ {
+		tx := builder.L2Info.PrepareTx("Owner", "User2", builder.L2Info.TransferGas, common.Big1, nil)
+		txs = append(txs, tx)
+
+		err := builder.L2.Client.SendTransaction(ctx, tx)
+		Require(t, err)
+	}
+
+	for _, tx := range txs {
+		_, err := builder.L2.EnsureTxSucceeded(tx)
+		Require(t, err)
+	}
+
+	firstTxData, err := txs[0].MarshalBinary()
+	Require(t, err)
+	seqTxOpts := builder.L1Info.GetDefaultTransactOpts("Sequencer", ctx)
+	builder.nodeConfig.BatchPoster.Enable = true
+	builder.nodeConfig.BatchPoster.MaxSize = len(firstTxData) * 2
+	parentChainID, err := builder.L1.Client.ChainID(ctx)
+	if err != nil {
+		t.Fatalf("Failed to get parent chain id: %v", err)
+	}
+
+	newBatchPoster := func() *arbnode.BatchPoster {
+		// Make a copy of the batch poster config so NewBatchPoster calling Validate() on it doesn't race
+		batchPosterConfig := builder.nodeConfig.BatchPoster
+		batchPoster, err := arbnode.NewBatchPoster(ctx,
+			&arbnode.BatchPosterOpts{
+				DataPosterDB:  nil,
+				L1Reader:      builder.L2.ConsensusNode.L1Reader,
+				Inbox:         builder.L2.ConsensusNode.InboxTracker,
+				Streamer:      builder.L2.ConsensusNode.TxStreamer,
+				VersionGetter: builder.L2.ExecNode,
+				SyncMonitor:   builder.L2.ConsensusNode.SyncMonitor,
+				Config:        func() *arbnode.BatchPosterConfig { return &batchPosterConfig },
+				DeployInfo:    builder.L2.ConsensusNode.DeployInfo,
+				TransactOpts:  &seqTxOpts,
+				DAPWriter:     nil,
+				ParentChainID: parentChainID,
+			},
+		)
+		Require(t, err)
+		return batchPoster
+	}
+
+	nameA, batchPosterA := "BatchPoster1", newBatchPoster()
+	nameB, batchPosterB := "BatchPoster2", newBatchPoster()
+
+	for i := 0; i < 21; i++ {
+		posted, err := batchPosterA.MaybePostSequencerBatch(ctx)
+		if err != nil {
+			t.Fatalf("Batch poster %s failed with unexpected error: %v, iter: %d", nameA, err, i)
+		}
+		if !posted {
+			t.Fatalf("Batch poster %s should have posted, iter: %d", nameA, i)
+		}
+		posted, err = batchPosterB.MaybePostSequencerBatch(ctx)
+		if posted {
+			t.Fatalf("Batch poster %s should not have posted just after %s, iter: %d", nameB, nameA, i)
+		}
+		if err != nil && !strings.Contains(err.Error(), "failed to acquire lock") {
+			t.Fatalf("Batch poster %s failed with unexpected error: %v, iter: %d", nameB, err, i)
+		}
+		// fastforward to expire redis lock
+		miniredis.FastForward(builder.nodeConfig.BatchPoster.RedisLock.LockoutDuration)
+		// we need also to wait for our redislock.Simple lockedUntil to expire after RefreshDuration
+		time.Sleep(builder.nodeConfig.BatchPoster.RedisLock.RefreshDuration)
+
+		// swap posters
+		nameA, batchPosterA, nameB, batchPosterB = nameB, batchPosterB, nameA, batchPosterA
+	}
+	// start one batch poster to post the rest
+	batchPosterA.Start(ctx)
+	defer batchPosterA.StopAndWait()
+
+	lastTxHash := txs[len(txs)-1].Hash()
+	for i := 90; i >= 0; i-- {
+		builder.L1.SendWaitTestTransactions(t, []*types.Transaction{
+			builder.L1Info.PrepareTx("Faucet", "User", 30000, big.NewInt(1e12), nil),
+		})
+		time.Sleep(500 * time.Millisecond)
+		_, err := testClientB.Client.TransactionReceipt(ctx, lastTxHash)
+		if err == nil {
+			break
+		}
+		if i == 0 {
+			Require(t, err)
+		}
+	}
+
+	l2balance, err := testClientB.Client.BalanceAt(ctx, builder.L2Info.GetAddress("User2"), nil)
+	Require(t, err)
+
+	if l2balance.Sign() == 0 {
+		Fatal(t, "Unexpected zero balance")
+	}
+}
+
 func TestBatchPosterLargeTx(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

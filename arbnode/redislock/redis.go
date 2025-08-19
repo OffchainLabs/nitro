@@ -73,8 +73,8 @@ var DefaultCfg = SimpleCfg{
 
 var TestCfg = SimpleCfg{
 	Enable:          true,
-	LockoutDuration: 200 * time.Millisecond,
-	RefreshDuration: 50 * time.Millisecond,
+	LockoutDuration: time.Second,
+	RefreshDuration: time.Second / 6,
 	Key:             "",
 	BackgroundLock:  false,
 }

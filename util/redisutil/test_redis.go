@@ -20,6 +20,11 @@ func CreateTestRedis(ctx context.Context, t testing.TB) string {
 	if *testflag.RedisFlag != "" {
 		return *testflag.RedisFlag
 	}
+	_, url := CreateMiniredis(ctx, t)
+	return url
+}
+
+func CreateMiniredis(ctx context.Context, t testing.TB) (*miniredis.Miniredis, string) {
 	redisServer, err := miniredis.Run()
 	testhelpers.RequireImpl(t, err)
 	go func() {
@@ -27,5 +32,5 @@ func CreateTestRedis(ctx context.Context, t testing.TB) string {
 		redisServer.Close()
 	}()
 
-	return fmt.Sprintf("redis://%s/0", redisServer.Addr())
+	return redisServer, fmt.Sprintf("redis://%s/0", redisServer.Addr())
 }
