@@ -44,7 +44,7 @@ func RedisClientWithSentinelMasterNameFromURL(redisUrl string) (redis.UniversalC
 }
 
 // Designed using https://github.com/redis/go-redis/blob/a8590e987945b7ba050569cc3b94b8ece49e99e3/options.go#L283 as reference
-// Example Usage :
+// Example Usage:
 //
 //	redis+sentinel://<user>:<password>@<host1>:<port1>,<host2>:<port2>,<host3>:<port3>/<master_name/><db_number>?dial_timeout=3&db=1&read_timeout=6s&max_retries=2
 func parseFailoverRedisUrl(redisUrl string) (*redis.FailoverOptions, error) {

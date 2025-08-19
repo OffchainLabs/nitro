@@ -111,7 +111,7 @@ func CommitmentToVersionedHash(commitment kzg4844.Commitment) common.Hash {
 	return hash
 }
 
-// Return KZG commitments, proofs, and versioned hashes that corresponds to these blobs
+// Return KZG commitments, proofs, and versioned hashes that correspond to these blobs
 func ComputeCommitmentsAndHashes(blobs []kzg4844.Blob) ([]kzg4844.Commitment, []common.Hash, error) {
 	commitments := make([]kzg4844.Commitment, len(blobs))
 	versionedHashes := make([]common.Hash, len(blobs))
