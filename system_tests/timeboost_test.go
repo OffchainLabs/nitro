@@ -640,7 +640,7 @@ func TestTimeboostExpressLaneTransactionHandling(t *testing.T) {
 			t.Fatalf("unexpected error string returned: %s", failErr.Error())
 		}
 	}
-	checkFailErr("context deadline exceeded") // tx will be rejected with nonce too high error so wont appear in a block
+	checkFailErr("context deadline exceeded") // tx will be rejected with nonce too high error so won't appear in a block
 
 	wg.Add(1)
 	go func(w *sync.WaitGroup) {
