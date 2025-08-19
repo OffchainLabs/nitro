@@ -81,7 +81,7 @@ is too prone to bugs introduced by refactoring.
 ### Status Quo: check the constraint in multiple places
 
 * Good, because it is what the code is already doing
-* Good, because when a funciton becomes public, the constraint holds
+* Good, because when a function becomes public, the constraint holds
 * Good, because when a function moves to another file or package, the constraint holds
 * Bad, because it means the check may need to be repeated. DRY
 
