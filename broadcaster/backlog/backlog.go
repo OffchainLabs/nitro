@@ -115,6 +115,12 @@ func (b *backlog) Append(bm *m.BroadcastMessage) error {
 		}
 
 		prevMsgIdx := segment.End()
+		if prevMsgIdx != 0 && uint64(msg.SequenceNumber) <= prevMsgIdx {
+			log.Info("ignoring message sequence number, already in backlog", "message sequence number", msg.SequenceNumber)
+			// Skip creating a new segment if we're at the segment boundary and would not
+			// append a message. Empty segments break the backlog's invariants.
+			continue
+		}
 		if segment.count() >= b.config().SegmentLimit {
 			segment.messagesLock.RLock()
 			if len(segment.messages) > 0 {
@@ -138,9 +144,6 @@ func (b *backlog) Append(bm *m.BroadcastMessage) error {
 			b.messageCount.Store(0)
 			backlogSizeInBytesGauge.Update(0)
 			log.Warn(err.Error())
-		} else if errors.Is(err, errSequenceNumberSeen) {
-			log.Info("ignoring message sequence number, already in backlog", "message sequence number", msg.SequenceNumber)
-			continue
 		} else if err != nil {
 			return err
 		}
