@@ -16,8 +16,6 @@ import (
 	"github.com/offchainlabs/bold/api"
 	"github.com/offchainlabs/bold/api/db"
 	protocol "github.com/offchainlabs/bold/chain-abstraction"
-	"github.com/offchainlabs/bold/challenge-manager/chain-watcher"
-	"github.com/offchainlabs/bold/containers/option"
 )
 
 // Mock implementations for testing
@@ -37,6 +35,9 @@ func (m *mockDatabase) GetCollectMachineHashes(opts ...db.CollectMachineHashesOp
 func (m *mockDatabase) GetAssertions(opts ...db.AssertionOption) ([]*api.JsonAssertion, error) {
 	return nil, nil
 }
+func (m *mockDatabase) GetChallengedAssertions(opts ...db.AssertionOption) ([]*api.JsonAssertion, error) {
+	return nil, nil
+}
 func (m *mockDatabase) GetEdges(opts ...db.EdgeOption) ([]*api.JsonEdge, error)        { return nil, nil }
 func (m *mockDatabase) UpdateAssertions(assertions []*api.JsonAssertion) error         { return nil }
 func (m *mockDatabase) UpdateEdges(edges []*api.JsonEdge) error                        { return nil }
@@ -49,28 +50,8 @@ func (m *mockAssertionChain) GetAssertion(ctx context.Context, opts *bind.CallOp
 	return nil, nil
 }
 
-func (m *mockAssertionChain) SpecChallengeManager() protocol.ChallengeManager {
+func (m *mockAssertionChain) SpecChallengeManager() protocol.SpecChallengeManager {
 	return nil
-}
-
-type mockWatcher struct{}
-
-func (m *mockWatcher) IsRoyal(assertionHash protocol.AssertionHash, edgeId protocol.EdgeId) bool {
-	return false
-}
-
-func (m *mockWatcher) InheritedTimerForEdge(ctx context.Context, edgeId protocol.EdgeId) (int64, error) {
-	return 0, nil
-}
-
-func (m *mockWatcher) GetRoyalEdges(ctx context.Context) (map[protocol.AssertionHash][]*api.JsonTrackedRoyalEdge, error) {
-	return nil, nil
-}
-
-type mockEdgeTrackerFetcher struct{}
-
-func (m *mockEdgeTrackerFetcher) GetEdgeTracker(edgeId protocol.EdgeId) option.Option[*edgetracker.Tracker] {
-	return option.None[*edgetracker.Tracker]()
 }
 
 type mockError struct {
@@ -97,10 +78,7 @@ func TestBackend_GetCollectMachineHashes(t *testing.T) {
 		}
 
 		backend := &Backend{
-			db:               mockDB,
-			chainDataFetcher: &mockAssertionChain{},
-			chainWatcher:     &mockWatcher{},
-			trackerFetcher:   &mockEdgeTrackerFetcher{},
+			db: mockDB,
 		}
 
 		result, err := backend.GetCollectMachineHashes(ctx)
@@ -119,10 +97,7 @@ func TestBackend_GetCollectMachineHashes(t *testing.T) {
 		}
 
 		backend := &Backend{
-			db:               mockDB,
-			chainDataFetcher: &mockAssertionChain{},
-			chainWatcher:     &mockWatcher{},
-			trackerFetcher:   &mockEdgeTrackerFetcher{},
+			db: mockDB,
 		}
 
 		result, err := backend.GetCollectMachineHashes(ctx)
@@ -146,10 +121,7 @@ func TestBackend_GetCollectMachineHashes(t *testing.T) {
 		}
 
 		backend := &Backend{
-			db:               mockDB,
-			chainDataFetcher: &mockAssertionChain{},
-			chainWatcher:     &mockWatcher{},
-			trackerFetcher:   &mockEdgeTrackerFetcher{},
+			db: mockDB,
 		}
 
 		result, err := backend.GetCollectMachineHashes(ctx)
@@ -173,10 +145,7 @@ func TestBackend_GetCollectMachineHashes(t *testing.T) {
 		}
 
 		backend := &Backend{
-			db:               mockDB,
-			chainDataFetcher: &mockAssertionChain{},
-			chainWatcher:     &mockWatcher{},
-			trackerFetcher:   &mockEdgeTrackerFetcher{},
+			db: mockDB,
 		}
 
 		result, err := backend.GetCollectMachineHashes(ctx)
@@ -202,10 +171,7 @@ func TestBackend_GetCollectMachineHashes(t *testing.T) {
 		}
 
 		backend := &Backend{
-			db:               mockDB,
-			chainDataFetcher: &mockAssertionChain{},
-			chainWatcher:     &mockWatcher{},
-			trackerFetcher:   &mockEdgeTrackerFetcher{},
+			db: mockDB,
 		}
 
 		result, err := backend.GetCollectMachineHashes(ctx)
