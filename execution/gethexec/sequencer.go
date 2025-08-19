@@ -437,10 +437,10 @@ type Sequencer struct {
 	l1BlockNumber       atomic.Uint64
 	l1Timestamp         uint64
 
-	// activeMutex manages forwarder
-	activeMutex sync.Mutex
-	isActive    bool
-	forwarder   *TxForwarder
+	// forwarderMutex manages forwarder
+	forwarderMutex sync.Mutex
+	isActive       bool
+	forwarder      *TxForwarder
 
 	expectedSurplusMutex              sync.RWMutex
 	expectedSurplus                   int64
@@ -774,8 +774,8 @@ func (s *Sequencer) CheckHealth(ctx context.Context) error {
 }
 
 func (s *Sequencer) ForwardTarget() string {
-	s.activeMutex.Lock()
-	defer s.activeMutex.Unlock()
+	s.forwarderMutex.Lock()
+	defer s.forwarderMutex.Unlock()
 	if s.forwarder == nil {
 		return ""
 	}
@@ -783,8 +783,8 @@ func (s *Sequencer) ForwardTarget() string {
 }
 
 func (s *Sequencer) ForwardTo(url string) error {
-	s.activeMutex.Lock()
-	defer s.activeMutex.Unlock()
+	s.forwarderMutex.Lock()
+	defer s.forwarderMutex.Unlock()
 	if s.forwarder != nil {
 		if s.forwarder.PrimaryTarget() == url {
 			log.Warn("attempted to update sequencer forward target with existing target", "url", url)
@@ -803,8 +803,8 @@ func (s *Sequencer) ForwardTo(url string) error {
 }
 
 func (s *Sequencer) Activate() {
-	s.activeMutex.Lock()
-	defer s.activeMutex.Unlock()
+	s.forwarderMutex.Lock()
+	defer s.forwarderMutex.Unlock()
 	if s.forwarder != nil {
 		s.forwarder.Disable()
 		s.forwarder = nil
@@ -821,8 +821,8 @@ func (s *Sequencer) Activate() {
 }
 
 func (s *Sequencer) Pause() {
-	s.activeMutex.Lock()
-	defer s.activeMutex.Unlock()
+	s.forwarderMutex.Lock()
+	defer s.forwarderMutex.Unlock()
 	if s.forwarder != nil {
 		s.forwarder.Disable()
 		s.forwarder = nil
@@ -833,14 +833,14 @@ func (s *Sequencer) Pause() {
 var ErrNoSequencer = errors.New("sequencer temporarily not available")
 
 func (s *Sequencer) getForwarder() *TxForwarder {
-	s.activeMutex.Lock()
-	defer s.activeMutex.Unlock()
+	s.forwarderMutex.Lock()
+	defer s.forwarderMutex.Unlock()
 	return s.forwarder
 }
 
 func (s *Sequencer) getIsActive() bool {
-	s.activeMutex.Lock()
-	defer s.activeMutex.Unlock()
+	s.forwarderMutex.Lock()
+	defer s.forwarderMutex.Unlock()
 	return s.isActive
 }
 
@@ -1587,8 +1587,8 @@ func (s *Sequencer) StartExpressLaneService(ctx context.Context) {
 }
 
 func (s *Sequencer) backgroundForwarder(ctx context.Context) time.Duration {
-	s.activeMutex.Lock()
-	defer s.activeMutex.Unlock()
+	s.forwarderMutex.Lock()
+	defer s.forwarderMutex.Unlock()
 
 	if s.forwarder != nil {
 		s.createBlockMutex.Lock()
