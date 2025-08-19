@@ -1042,16 +1042,15 @@ func MakeZeroTxSizeSequencingHooksForTesting(
 	)
 }
 
-func (s *Sequencer) expireNonceFailures() *time.Timer {
+func (s *Sequencer) expireNonceFailures() {
 	defer nonceFailureCacheSizeGauge.Update(int64(s.nonceFailures.Len()))
 	for {
 		_, failure, ok := s.nonceFailures.GetOldest()
 		if !ok {
-			return nil
+			return
 		}
-		untilExpiry := time.Until(failure.expiry)
-		if untilExpiry > 0 {
-			return time.NewTimer(untilExpiry)
+		if time.Until(failure.expiry) > 0 {
+			return
 		}
 
 		// Check queueCtx status before notifying client
@@ -1188,16 +1187,9 @@ func (s *Sequencer) createBlockWithRegularTxs(ctx context.Context) (sequencedMsg
 
 	// Clear out old nonceFailures
 	s.nonceFailures.Resize(config.NonceFailureCacheSize)
-	nextNonceExpiryTimer := s.expireNonceFailures()
-	defer func() {
-		// We wrap this in a closure as to not cache the current value of nextNonceExpiryTimer
-		if nextNonceExpiryTimer != nil {
-			nextNonceExpiryTimer.Stop()
-		}
-	}()
+	s.expireNonceFailures()
 
 	var startOfReadingFromTxQueue time.Time
-
 	for {
 		if len(queueItems) == 1 {
 			startOfReadingFromTxQueue = time.Now()
@@ -1219,10 +1211,6 @@ func (s *Sequencer) createBlockWithRegularTxs(ctx context.Context) (sequencedMsg
 				queueItem = s.txRetryQueue.Pop()
 			}
 		} else if len(queueItems) == 0 {
-			var nextNonceExpiryChan <-chan time.Time
-			if nextNonceExpiryTimer != nil {
-				nextNonceExpiryChan = nextNonceExpiryTimer.C
-			}
 			select {
 			case queueItem = <-s.timeboostAuctionResolutionTxQueue:
 				log.Debug("Popped the auction resolution tx", "txHash", queueItem.tx.Hash())
@@ -1231,10 +1219,6 @@ func (s *Sequencer) createBlockWithRegularTxs(ctx context.Context) (sequencedMsg
 				case queueItem = <-s.txQueue:
 				case queueItem = <-s.timeboostAuctionResolutionTxQueue:
 					log.Debug("Popped the auction resolution tx", "txHash", queueItem.tx.Hash())
-				case <-nextNonceExpiryChan:
-					// No need to stop the previous timer since it already elapsed
-					nextNonceExpiryTimer = s.expireNonceFailures()
-					continue
 				case <-ctx.Done():
 					return nil, false
 				default:
