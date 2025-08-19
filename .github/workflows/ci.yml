@@ -104,17 +104,17 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         id: install-rust
         with:
-          toolchain: '1.84.1'
-          targets: 'wasm32-wasip1, wasm32-unknown-unknown'
-          components: 'llvm-tools-preview, rustfmt, clippy'
+          toolchain: "1.84.1"
+          targets: "wasm32-wasip1, wasm32-unknown-unknown"
+          components: "llvm-tools-preview, rustfmt, clippy"
 
       - name: Install rust nightly
         uses: dtolnay/rust-toolchain@nightly
         id: install-rust-nightly
         with:
-          toolchain: 'nightly-2025-02-14'
-          targets: 'wasm32-wasip1, wasm32-unknown-unknown'
-          components: 'rust-src, rustfmt, clippy'
+          toolchain: "nightly-2025-02-14"
+          targets: "wasm32-wasip1, wasm32-unknown-unknown"
+          components: "rust-src, rustfmt, clippy"
 
       - name: Set STYLUS_NIGHTLY_VER environment variable
         run: echo "STYLUS_NIGHTLY_VER=+$(rustup toolchain list | grep '^nightly' | head -n1 | cut -d' ' -f1)" >> "$GITHUB_ENV"
@@ -127,6 +127,7 @@ jobs:
         uses: foundry-rs/foundry-toolchain@v1
         with:
           cache: false
+          version: v1.0.0
 
       - name: Install cbindgen
         run: cargo install --force cbindgen
@@ -215,18 +216,18 @@ jobs:
           echo "Running redis tests" >> full.log
           skip_tests=$(grep -vE '^\s*#|^\s*$' ci_skip_tests | tr '\n' '|' | sed 's/|$//')
           gotestsum --format short-verbose -- -p 1 -run TestRedis -skip "$skip_tests" ./arbnode/... ./system_tests/... -coverprofile=coverage-redis.txt -covermode=atomic -coverpkg=./... -- --test_redis=redis://localhost:6379/0
-      
+
       - name: create block input json file
         if: matrix.test-mode == 'defaults'
         run: |
           gotestsum --format short-verbose -- -run TestProgramStorage$ ./system_tests/... --count 1 -- --recordBlockInputs.enable=true --recordBlockInputs.WithBaseDir="${{ github.workspace }}/target" --recordBlockInputs.WithTimestampDirEnabled=false --recordBlockInputs.WithBlockIdInFileNameEnabled=false
-      
+
       - name: run arbitrator prover on block input json
         if: matrix.test-mode == 'defaults'
         run: |
           make build-prover-bin
           target/bin/prover target/machines/latest/machine.wavm.br -b --json-inputs="${{ github.workspace }}/target/TestProgramStorage/block_inputs.json"
-      
+
       - name: run jit prover on block input json
         if: matrix.test-mode == 'defaults'
         run: |
