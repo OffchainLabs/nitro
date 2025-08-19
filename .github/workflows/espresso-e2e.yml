@@ -76,6 +76,9 @@ jobs:
 
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: v1.0.0
+          cache: false
 
       - name: Install rust nightly
         uses: dtolnay/rust-toolchain@nightly
@@ -133,7 +136,7 @@ jobs:
 
       - name: Install solidty dependencies
         run: cd contracts && yarn install && forge install
-      
+
       - name: Check tool versions
         run: |
           go version
