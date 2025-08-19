@@ -31,12 +31,17 @@ import (
 )
 
 func TestBatchPosterParallel(t *testing.T) {
-	testBatchPosterParallel(t, false)
+	testBatchPosterParallel(t, false, false)
 }
 
 func TestRedisBatchPosterParallel(t *testing.T) {
 	_ = testhelpers.InitTestLog(t, log.LvlDebug)
-	testBatchPosterParallel(t, true)
+	testBatchPosterParallel(t, true, false)
+}
+
+func TestRedisBatchPosterParallelWithRedisLock(t *testing.T) {
+	_ = testhelpers.InitTestLog(t, log.LvlDebug)
+	testBatchPosterParallel(t, true, true)
 }
 
 func addNewBatchPoster(ctx context.Context, t *testing.T, builder *NodeBuilder, address common.Address) {
@@ -66,7 +71,7 @@ func addNewBatchPoster(ctx context.Context, t *testing.T, builder *NodeBuilder, 
 	}
 }
 
-func testBatchPosterParallel(t *testing.T, useRedis bool) {
+func testBatchPosterParallel(t *testing.T, useRedis bool, useRedisLock bool) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	srv := externalsignertest.NewServer(t)
@@ -92,6 +97,7 @@ func testBatchPosterParallel(t *testing.T, useRedis bool) {
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
 	builder.nodeConfig.BatchPoster.Enable = false
 	builder.nodeConfig.BatchPoster.RedisUrl = redisUrl
+	builder.nodeConfig.BatchPoster.RedisLock.Enable = useRedisLock
 	signerCfg, err := dataposter.ExternalSignerTestCfg(srv.Address, srv.URL())
 	if err != nil {
 		t.Fatalf("Error getting external signer config: %v", err)
