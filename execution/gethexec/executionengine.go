@@ -44,10 +44,10 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
-	"github.com/offchainlabs/nitro/arbos/multigasCollector"
 	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/execution"
+	"github.com/offchainlabs/nitro/execution/multigascollector"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/sharedmetrics"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
@@ -110,7 +110,7 @@ type ExecutionEngine struct {
 
 	runningMaintenance atomic.Bool
 
-	multigasCollector *multigasCollector.Collector
+	multigascollector *multigascollector.Collector
 }
 
 func NewL1PriceData() *L1PriceData {
@@ -252,17 +252,17 @@ func (s *ExecutionEngine) EnablePrefetchBlock() {
 	s.prefetchBlock = true
 }
 
-func (s *ExecutionEngine) EnableMultigasCollector(config multigasCollector.Config) error {
-	if s.multigasCollector != nil {
+func (s *ExecutionEngine) EnableMultigasCollector(config multigascollector.CollectorConfig) error {
+	if s.multigascollector != nil {
 		return nil
 	}
 
-	collector, err := multigasCollector.NewCollector(config)
+	collector, err := multigascollector.NewCollector(config)
 	if err != nil {
 		return err
 	}
 
-	s.multigasCollector = collector
+	s.multigascollector = collector
 	return nil
 }
 
@@ -595,7 +595,7 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 		hooks,
 		false,
 		core.NewMessageCommitContext(s.wasmTargets),
-		s.multigasCollector,
+		s.multigascollector,
 	)
 	if err != nil {
 		return nil, err
@@ -1052,8 +1052,8 @@ func (s *ExecutionEngine) ArbOSVersionForMessageIndex(msgIdx arbutil.MessageInde
 func (s *ExecutionEngine) Start(ctx_in context.Context) {
 	s.StopWaiter.Start(ctx_in, s)
 
-	if s.multigasCollector != nil {
-		s.multigasCollector.Start(s.GetContext())
+	if s.multigascollector != nil {
+		s.multigascollector.Start(s.GetContext())
 	}
 
 	s.LaunchThread(func(ctx context.Context) {
@@ -1115,8 +1115,8 @@ func (s *ExecutionEngine) Start(ctx_in context.Context) {
 func (s *ExecutionEngine) StopAndWait() {
 	s.StopWaiter.StopAndWait()
 
-	if s.multigasCollector != nil {
-		s.multigasCollector.StopAndWait()
+	if s.multigascollector != nil {
+		s.multigascollector.StopAndWait()
 	}
 }
 

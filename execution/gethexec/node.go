@@ -26,10 +26,10 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
-	mgc "github.com/offchainlabs/nitro/arbos/multigasCollector"
 	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/execution"
+	"github.com/offchainlabs/nitro/execution/multigascollector"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -110,23 +110,23 @@ func TxIndexerConfigAddOptions(prefix string, f *flag.FlagSet) {
 }
 
 type Config struct {
-	ParentChainReader           headerreader.Config `koanf:"parent-chain-reader" reload:"hot"`
-	Sequencer                   SequencerConfig     `koanf:"sequencer" reload:"hot"`
-	RecordingDatabase           BlockRecorderConfig `koanf:"recording-database"`
-	TxPreChecker                TxPreCheckerConfig  `koanf:"tx-pre-checker" reload:"hot"`
-	Forwarder                   ForwarderConfig     `koanf:"forwarder"`
-	ForwardingTarget            string              `koanf:"forwarding-target"`
-	SecondaryForwardingTarget   []string            `koanf:"secondary-forwarding-target"`
-	Caching                     CachingConfig       `koanf:"caching"`
-	RPC                         arbitrum.Config     `koanf:"rpc"`
-	TxIndexer                   TxIndexerConfig     `koanf:"tx-indexer"`
-	EnablePrefetchBlock         bool                `koanf:"enable-prefetch-block"`
-	MultigasCollector           mgc.Config          `koanf:"multigas-collector"`
-	SyncMonitor                 SyncMonitorConfig   `koanf:"sync-monitor"`
-	StylusTarget                StylusTargetConfig  `koanf:"stylus-target"`
-	BlockMetadataApiCacheSize   uint64              `koanf:"block-metadata-api-cache-size"`
-	BlockMetadataApiBlocksLimit uint64              `koanf:"block-metadata-api-blocks-limit"`
-	VmTrace                     LiveTracingConfig   `koanf:"vmtrace"`
+	ParentChainReader           headerreader.Config               `koanf:"parent-chain-reader" reload:"hot"`
+	Sequencer                   SequencerConfig                   `koanf:"sequencer" reload:"hot"`
+	RecordingDatabase           BlockRecorderConfig               `koanf:"recording-database"`
+	TxPreChecker                TxPreCheckerConfig                `koanf:"tx-pre-checker" reload:"hot"`
+	Forwarder                   ForwarderConfig                   `koanf:"forwarder"`
+	ForwardingTarget            string                            `koanf:"forwarding-target"`
+	SecondaryForwardingTarget   []string                          `koanf:"secondary-forwarding-target"`
+	Caching                     CachingConfig                     `koanf:"caching"`
+	RPC                         arbitrum.Config                   `koanf:"rpc"`
+	TxIndexer                   TxIndexerConfig                   `koanf:"tx-indexer"`
+	EnablePrefetchBlock         bool                              `koanf:"enable-prefetch-block"`
+	MultigasCollector           multigascollector.CollectorConfig `koanf:"multigas-collector"`
+	SyncMonitor                 SyncMonitorConfig                 `koanf:"sync-monitor"`
+	StylusTarget                StylusTargetConfig                `koanf:"stylus-target"`
+	BlockMetadataApiCacheSize   uint64                            `koanf:"block-metadata-api-cache-size"`
+	BlockMetadataApiBlocksLimit uint64                            `koanf:"block-metadata-api-blocks-limit"`
+	VmTrace                     LiveTracingConfig                 `koanf:"vmtrace"`
 
 	forwardingTarget string
 }
@@ -172,8 +172,7 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet) {
 	AddOptionsForNodeForwarderConfig(prefix+".forwarder", f)
 	TxPreCheckerConfigAddOptions(prefix+".tx-pre-checker", f)
 	CachingConfigAddOptions(prefix+".caching", f)
-	f.String(prefix+".multigas-collector.output-dir", ConfigDefault.MultigasCollector.OutputDir, "If set, enables Multigas collector and stores batches in this directory")
-	f.Int(prefix+".multigas-collector.batch-size", ConfigDefault.MultigasCollector.BatchSize, "Batch size (blocks per file) for Multigas collector. Ignored unless output-dir is set")
+	multigascollector.MultigasCollectionAddOptions(prefix+".multigas-collector", f)
 	SyncMonitorConfigAddOptions(prefix+".sync-monitor", f)
 	f.Bool(prefix+".enable-prefetch-block", ConfigDefault.EnablePrefetchBlock, "enable prefetching of blocks")
 	StylusTargetConfigAddOptions(prefix+".stylus-target", f)
@@ -208,7 +207,6 @@ var ConfigDefault = Config{
 	TxPreChecker:              DefaultTxPreCheckerConfig,
 	Caching:                   DefaultCachingConfig,
 	Forwarder:                 DefaultNodeForwarderConfig,
-	MultigasCollector:         mgc.DefaultConfig,
 
 	EnablePrefetchBlock:         true,
 	StylusTarget:                DefaultStylusTargetConfig,

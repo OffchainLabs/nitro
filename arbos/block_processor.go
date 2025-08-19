@@ -23,8 +23,8 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
-	"github.com/offchainlabs/nitro/arbos/multigasCollector"
 	"github.com/offchainlabs/nitro/arbos/util"
+	"github.com/offchainlabs/nitro/execution/multigascollector"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
@@ -208,7 +208,7 @@ func ProduceBlockAdvanced(
 	sequencingHooks *SequencingHooks,
 	isMsgForPrefetch bool,
 	runCtx *core.MessageRunContext,
-	mgcCollector *multigasCollector.Collector,
+	mgcCollector *multigascollector.Collector,
 ) (*types.Block, types.Receipts, error) {
 
 	arbState, err := arbosState.OpenSystemArbosState(statedb, nil, true)
@@ -254,8 +254,8 @@ func ProduceBlockAdvanced(
 
 	// Submit multigas start block message, if the multi gas collector is set
 	if mgcCollector != nil {
-		mgcCollector.Submit(&multigasCollector.CollectorMessage{
-			Type: multigasCollector.CollectorMsgStartBlock,
+		mgcCollector.Submit(&multigascollector.CollectorMessage{
+			Type: multigascollector.CollectorMsgStartBlock,
 		})
 	}
 
@@ -516,9 +516,9 @@ func ProduceBlockAdvanced(
 
 		// Submit multigas transaction message, if the multi gas collector is set
 		if mgcCollector != nil && result.UsedMultiGas != nil {
-			mgcCollector.Submit(&multigasCollector.CollectorMessage{
-				Type: multigasCollector.CollectorMsgTransaction,
-				Transaction: &multigasCollector.TransactionMultiGas{
+			mgcCollector.Submit(&multigascollector.CollectorMessage{
+				Type: multigascollector.CollectorMsgTransaction,
+				Transaction: &multigascollector.TransactionMultiGas{
 					TxHash:   tx.Hash().Bytes(),
 					TxIndex:  uint32(receipt.TransactionIndex), // #nosec G115 -- block tx count << MaxUint32; safe cast
 					MultiGas: *result.UsedMultiGas,
@@ -570,9 +570,9 @@ func ProduceBlockAdvanced(
 
 	// Submit multigas finalization block message, if the multi gas collector is set
 	if mgcCollector != nil {
-		mgcCollector.Submit(&multigasCollector.CollectorMessage{
-			Type: multigasCollector.CollectorMsgFinaliseBlock,
-			Block: &multigasCollector.BlockInfo{
+		mgcCollector.Submit(&multigascollector.CollectorMessage{
+			Type: multigascollector.CollectorMsgFinaliseBlock,
+			Block: &multigascollector.BlockInfo{
 				BlockNumber:    block.NumberU64(),
 				BlockHash:      blockHash.Bytes(),
 				BlockTimestamp: block.Time(),

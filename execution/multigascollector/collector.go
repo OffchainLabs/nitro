@@ -1,4 +1,4 @@
-package multigasCollector
+package multigascollector
 
 import (
 	"context"
@@ -8,12 +8,13 @@ import (
 	"path/filepath"
 	"sync"
 
+	flag "github.com/spf13/pflag"
 	protobuf "google.golang.org/protobuf/proto"
 
 	"github.com/ethereum/go-ethereum/arbitrum/multigas"
 	"github.com/ethereum/go-ethereum/log"
 
-	"github.com/offchainlabs/nitro/arbos/multigasCollector/proto"
+	"github.com/offchainlabs/nitro/execution/multigascollector/proto"
 )
 
 const (
@@ -68,22 +69,24 @@ type CollectorMessage struct {
 	Transaction *TransactionMultiGas
 }
 
-// Config holds the configuration for the MultiGas collector.
-type Config struct {
-	OutputDir string `koanf:"output-dir"`
-	BatchSize int    `koanf:"batch-size"`
+// CollectorConfig holds the configuration for the MultiGas collector.
+type CollectorConfig struct {
+	OutputDir      string `koanf:"output-dir"`
+	BatchSize      int    `koanf:"batch-size"`
+	ClearOutputDir bool   `koanf:"clear-output-dir"`
 }
 
-var DefaultConfig = Config{
-	OutputDir: "",
-	BatchSize: 2000,
+var DefaultCollectorConfig = CollectorConfig{
+	OutputDir:      "",
+	BatchSize:      2000,
+	ClearOutputDir: false,
 }
 
 // Collector manages the asynchronous collection and batching of multi-dimensional
 // gas data from blocks. It owns the message channel, buffers data in memory,
 // and periodically writes batches to disk in protobuf format.
 type Collector struct {
-	config Config
+	config CollectorConfig
 	in     chan *CollectorMessage
 
 	blockBuffer       []*proto.BlockMultiGasData
@@ -91,6 +94,15 @@ type Collector struct {
 
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
+}
+
+func MultigasCollectionAddOptions(prefix string, f *flag.FlagSet) {
+	f.String(prefix+".output-dir", DefaultCollectorConfig.OutputDir,
+		"If set, enables Multigas collector and stores batches in this directory")
+	f.Int(prefix+".batch-size", DefaultCollectorConfig.BatchSize,
+		"Batch size (blocks per file) for Multigas collector. Ignored unless output-dir is set")
+	f.Bool(prefix+".clear-output-dir", DefaultCollectorConfig.ClearOutputDir,
+		"Whether to clear the output directory before starting the collector")
 }
 
 // ToProto converts the TransactionMultiGas to its protobuf representation.
@@ -128,35 +140,42 @@ func (btmg *BlockInfo) ToProto() *proto.BlockMultiGasData {
 
 // NewCollector returns an initialized collector.
 // Validates the configuration and ensures the output directory exists.
-func NewCollector(config Config) (*Collector, error) {
+func NewCollector(config CollectorConfig) (*Collector, error) {
 	if config.OutputDir == "" {
 		return nil, ErrOutputDirRequired
 	}
 	if config.BatchSize <= 0 {
 		return nil, ErrBatchSizeRequired
 	}
-	if err := os.MkdirAll(config.OutputDir, 0o755); err != nil {
-		return nil, fmt.Errorf("%w: %w", ErrCreateOutputDir, err)
-	}
 
 	return &Collector{
 		config:            config,
-		in:                nil,
+		in:                make(chan *CollectorMessage, CollectorMsgQueueSize),
 		blockBuffer:       make([]*proto.BlockMultiGasData, 0, config.BatchSize),
 		transactionBuffer: make([]*proto.TransactionMultiGasData, 0, defaultTxPrealloc),
 	}, nil
 }
 
-// Start begins background processing of incoming messages.
+// Start prepares the output directory (removes any previous contents)
+// and begins background processing of incoming messages,
+// should be called only once.
 func (c *Collector) Start(parent context.Context) {
-	if c.in != nil {
-		log.Warn("Multi-gas collector already started, ignoring Start call")
+	// Reset the output directory, if enabled
+	if c.config.ClearOutputDir {
+		if err := os.RemoveAll(c.config.OutputDir); err != nil {
+			log.Error("Multi-gas collector: failed to clear output dir", "dir", c.config.OutputDir, "err", err)
+			return
+		}
+	}
+
+	// Create the output directory
+	if err := os.MkdirAll(c.config.OutputDir, 0o755); err != nil {
+		log.Error("Multi-gas collector: failed to create output dir", "dir", c.config.OutputDir, "err", err)
 		return
 	}
 
 	ctx, cancel := context.WithCancel(parent)
 	c.cancel = cancel
-	c.in = make(chan *CollectorMessage, CollectorMsgQueueSize)
 
 	c.wg.Add(1)
 	go func() {
@@ -171,21 +190,15 @@ func (c *Collector) StopAndWait() {
 		c.cancel()
 	}
 	c.wg.Wait()
-	c.in = nil // Clear the input channel to prevent further submissions
 	log.Info("Multi-gas collector stopped")
 }
 
 // Submit enqueues a message for collection (non-blocking). Drops on a full queue.
 func (c *Collector) Submit(msg *CollectorMessage) {
-	if c.in == nil {
-		log.Debug("Multi-gas collector disabled; dropping message", "type", msg.Type)
-		return
-	}
-
 	select {
 	case c.in <- msg:
 	default:
-		log.Debug("Multi-gas collector dropping message",
+		log.Warn("Multi-gas collector dropping message",
 			"queueCapacity", cap(c.in), "queueLen", len(c.in), "type", msg.Type)
 	}
 }
@@ -276,7 +289,7 @@ drainLoop:
 // 3. Writes the data to a uniquely named file
 // 4. Clears the buffer and increments the batch counter
 //
-// File naming pattern: multigas_batch_<batch_number>_<timestamp>.pb
+// File naming pattern: multigas_batch_<start_block_number>_<end_block_number>.pb
 func (c *Collector) flushBatch() error {
 	batch := &proto.BlockMultiGasBatch{
 		Data: make([]*proto.BlockMultiGasData, len(c.blockBuffer)),

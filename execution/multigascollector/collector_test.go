@@ -1,4 +1,4 @@
-package multigasCollector
+package multigascollector
 
 import (
 	"context"
@@ -14,7 +14,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/arbitrum/multigas"
 
-	"github.com/offchainlabs/nitro/arbos/multigasCollector/proto"
+	"github.com/offchainlabs/nitro/execution/multigascollector/proto"
 )
 
 func TestTransactionMultiGasToProto(t *testing.T) {
@@ -97,12 +97,12 @@ func TestBlockInfoToProto(t *testing.T) {
 func TestIdleCollector(t *testing.T) {
 	tests := []struct {
 		name      string
-		config    Config
+		config    CollectorConfig
 		expectErr error
 	}{
 		{
 			name: "valid config",
-			config: Config{
+			config: CollectorConfig{
 				OutputDir: t.TempDir(),
 				BatchSize: 10,
 			},
@@ -110,7 +110,7 @@ func TestIdleCollector(t *testing.T) {
 		},
 		{
 			name: "empty output directory",
-			config: Config{
+			config: CollectorConfig{
 				OutputDir: "",
 				BatchSize: 10,
 			},
@@ -118,7 +118,7 @@ func TestIdleCollector(t *testing.T) {
 		},
 		{
 			name: "zero batch size",
-			config: Config{
+			config: CollectorConfig{
 				OutputDir: t.TempDir(),
 				BatchSize: 0,
 			},
@@ -406,7 +406,7 @@ func TestDataCollection(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			tmpDir := t.TempDir()
 
-			config := Config{
+			config := CollectorConfig{
 				OutputDir: tmpDir,
 				BatchSize: int(tt.batchSize), //nolint:gosec
 			}
