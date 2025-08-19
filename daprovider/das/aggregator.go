@@ -42,7 +42,6 @@ type AggregatorConfig struct {
 	Backends              BackendConfigList `koanf:"backends"`
 	MaxStoreChunkBodySize int               `koanf:"max-store-chunk-body-size"`
 	EnableChunkedStore    bool              `koanf:"enable-chunked-store"`
-	EnableHTTP2           bool              `koanf:"enable-http2"`
 }
 
 var DefaultAggregatorConfig = AggregatorConfig{
@@ -50,7 +49,6 @@ var DefaultAggregatorConfig = AggregatorConfig{
 	Backends:              nil,
 	MaxStoreChunkBodySize: 512 * 1024,
 	EnableChunkedStore:    true,
-	EnableHTTP2:           false,
 }
 
 var parsedBackendsConf BackendConfigList
@@ -61,7 +59,6 @@ func AggregatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Var(&parsedBackendsConf, prefix+".backends", "JSON RPC backend configuration. This can be specified on the command line as a JSON array, eg: [{\"url\": \"...\", \"pubkey\": \"...\"},...], or as a JSON array in the config file.")
 	f.Int(prefix+".max-store-chunk-body-size", DefaultAggregatorConfig.MaxStoreChunkBodySize, "maximum HTTP POST body size to use for individual batch chunks, including JSON RPC overhead and an estimated overhead of 512B of headers")
 	f.Bool(prefix+".enable-chunked-store", DefaultAggregatorConfig.EnableChunkedStore, "enable data to be sent to DAS in chunks instead of all at once")
-	f.Bool(prefix+".enable-http2", DefaultAggregatorConfig.EnableHTTP2, "enable HTTP/2 for backend connections (default is HTTP/1.1)")
 }
 
 type Aggregator struct {
