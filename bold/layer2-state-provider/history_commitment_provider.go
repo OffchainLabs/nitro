@@ -61,7 +61,7 @@ type ProofCollector interface {
 //
 // To determine the exact block from which to collect the machine hashes, the
 // collector needs to know the `FromState` which contains the batch and position
-// within that batch of the first messsage to which the rival assertions are
+// within that batch of the first message to which the rival assertions are
 // committing. In addiiton, the collector needs to know the
 // `BlockChallengeHeight` (which is a relative index within the range of blocks
 // to which the rival assertions are committing where they first diverge.)
