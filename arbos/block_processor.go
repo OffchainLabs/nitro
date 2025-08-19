@@ -306,7 +306,7 @@ func ProduceBlockAdvanced(
 				return nil, nil, core.ErrGasLimitReached
 			}
 
-			sender, err = signer.Sender(tx)
+			sender, err = types.Sender(signer, tx)
 			if err != nil {
 				return nil, nil, err
 			}
