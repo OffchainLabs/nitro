@@ -47,7 +47,7 @@ func AddConfigOptions(prefix string, f *flag.FlagSet) {
 	f.Duration(prefix+".lockout-duration", DefaultCfg.LockoutDuration, "how long lock is held")
 	f.Duration(prefix+".refresh-duration", DefaultCfg.RefreshDuration, "how long between consecutive calls to redis")
 	f.String(prefix+".key", DefaultCfg.Key, "key for lock")
-	f.Bool(prefix+".background-lock", DefaultCfg.BackgroundLock, "should node always try grabing lock in background")
+	f.Bool(prefix+".background-lock", DefaultCfg.BackgroundLock, "should node always try grabbing lock in background")
 }
 
 func NewSimple(client redis.UniversalClient, config SimpleCfgFetcher, readyToLock func() bool) (*Simple, error) {

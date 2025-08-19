@@ -52,8 +52,10 @@ import (
 
 var notFoundError = errors.New("file not found")
 
-// Based on https://github.com/wasmerio/wasmer/blob/6de934035a4b34c2878552320f058862faea4651/lib/types/src/serialize.rs#L16
+// taken from wasmer's lib/types/src/serialize.rs: MetadataHeader::CURRENT_VERSION
+// 8 is a bug (should have been 6) but we're skipping the real version 8 so it does not matter
 const WasmerSerializeVersion = 8
+const InitialWasmerSerializeVersion = 8
 
 func initializeAndDownloadInit(ctx context.Context, initConfig *conf.InitConfig, stack *node.Node) (string, func(), error) {
 	cleanUpTmp := func() {}
@@ -290,11 +292,12 @@ func joinArchive(parts []string, archivePath string) (string, error) {
 		if err != nil {
 			return "", fmt.Errorf("failed to open part file %s: %w", part, err)
 		}
-		defer partFile.Close()
 		_, err = io.Copy(archive, partFile)
 		if err != nil {
+			partFile.Close()
 			return "", fmt.Errorf("failed to copy part file %s: %w", part, err)
 		}
+		partFile.Close()
 		log.Info("Joined database part into archive", "part", part)
 	}
 	log.Info("Successfully joined parts into archive", "archive", archivePath)
@@ -434,7 +437,7 @@ func isWasmDb(path string) bool {
 func extractSnapshot(archive string, location string, importWasm bool) error {
 	reader, err := os.Open(archive)
 	if err != nil {
-		return fmt.Errorf("couln't open init '%v' archive: %w", archive, err)
+		return fmt.Errorf("couldn't open init '%v' archive: %w", archive, err)
 	}
 	defer reader.Close()
 	stat, err := reader.Stat()
@@ -453,7 +456,7 @@ func extractSnapshot(archive string, location string, importWasm bool) error {
 	}
 	err = extract.Archive(context.Background(), reader, location, rename)
 	if err != nil {
-		return fmt.Errorf("couln't extract init archive '%v' err: %w", archive, err)
+		return fmt.Errorf("couldn't extract init archive '%v' err: %w", archive, err)
 	}
 	return nil
 }
@@ -503,7 +506,7 @@ func validateOrUpgradeWasmerSerializeVersion(db ethdb.Database) error {
 		versionInDB, err := rawdb.ReadWasmerSerializeVersion(db)
 		if err != nil {
 			if rawdb.IsDbErrNotFound(err) {
-				versionInDB = 0
+				versionInDB = InitialWasmerSerializeVersion
 			} else {
 				return fmt.Errorf("Failed to retrieve wasmer serialize version: %w", err)
 			}
@@ -546,7 +549,7 @@ func validateOrUpgradeWasmStoreSchemaVersion(db ethdb.Database) error {
 			if err := deleteWasmEntries(db, prefixes, true, keyLength); err != nil {
 				return fmt.Errorf("Failed to purge wasm store version 0 entries: %w", err)
 			}
-			log.Info("Wasm store schama version 0 entries successfully removed.")
+			log.Info("Wasm store schema version 0 entries successfully removed.")
 		}
 	}
 	rawdb.WriteWasmSchemaVersion(db)
@@ -574,7 +577,7 @@ func rebuildLocalWasm(ctx context.Context, config *gethexec.Config, l2BlockChain
 		} else {
 			position, err = gethexec.ReadFromKeyValueStore[common.Hash](wasmDb, gethexec.RebuildingPositionKey)
 			if err != nil {
-				log.Info("Unable to get codehash position in rebuilding of wasm store, its possible it isnt initialized yet, so initializing it and starting rebuilding", "err", err)
+				log.Info("Unable to get codehash position in rebuilding of wasm store, its possible it isn't initialized yet, so initializing it and starting rebuilding", "err", err)
 				if err := gethexec.WriteToKeyValueStore(wasmDb, gethexec.RebuildingPositionKey, common.Hash{}); err != nil {
 					return nil, nil, fmt.Errorf("unable to initialize codehash position in rebuilding of wasm store to beginning: %w", err)
 				}
@@ -583,7 +586,7 @@ func rebuildLocalWasm(ctx context.Context, config *gethexec.Config, l2BlockChain
 		if position != gethexec.RebuildingDone {
 			startBlockHash, err := gethexec.ReadFromKeyValueStore[common.Hash](wasmDb, gethexec.RebuildingStartBlockHashKey)
 			if err != nil {
-				log.Info("Unable to get start block hash in rebuilding of wasm store, its possible it isnt initialized yet, so initializing it to latest block hash", "err", err)
+				log.Info("Unable to get start block hash in rebuilding of wasm store, its possible it isn't initialized yet, so initializing it to latest block hash", "err", err)
 				if err := gethexec.WriteToKeyValueStore(wasmDb, gethexec.RebuildingStartBlockHashKey, latestBlock.Hash()); err != nil {
 					return nil, nil, fmt.Errorf("unable to initialize start block hash in rebuilding of wasm store to latest block hash: %w", err)
 				}
