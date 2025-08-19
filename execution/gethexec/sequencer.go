@@ -450,7 +450,6 @@ type Sequencer struct {
 	l1BlockNumber       atomic.Uint64
 	l1Timestamp         uint64
 
-	// forwarderMutex manages forwarder
 	forwarderMutex sync.Mutex
 	isActive       bool
 	forwarder      *TxForwarder
