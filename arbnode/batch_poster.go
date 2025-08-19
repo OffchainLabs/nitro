@@ -1658,6 +1658,7 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 	}
 
 	if !b.redisLock.AttemptLock(ctx) {
+		b.building = nil // a closed batchSegments can't be reused
 		return false, errAttemptLockFailed
 	}
 
