@@ -63,7 +63,7 @@ type ExecutionProvider interface {
 	// Produces the L2 execution state to assert to after the previous assertion
 	// state.
 	// Returns either the state at the batch count maxInboxCount (PosInBatch=0) or
-	// the state LayerZeroHeights.BlockChallengeHeight blokcs after
+	// the state LayerZeroHeights.BlockChallengeHeight blocks after
 	// previousGlobalState, whichever is an earlier state.
 	ExecutionStateAfterPreviousState(ctx context.Context, maxInboxCount uint64, previousGlobalState protocol.GoGlobalState) (*protocol.ExecutionState, error)
 }
