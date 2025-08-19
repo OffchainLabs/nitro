@@ -216,7 +216,7 @@ func TestDelete(t *testing.T) {
 		{
 			"EmptyBacklog",
 			[]arbutil.MessageIndex{},
-			0, // no segements in backlog so nothing to delete
+			0, // no segments in backlog so nothing to delete
 			0,
 			0,
 			0,
