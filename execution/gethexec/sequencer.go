@@ -252,22 +252,19 @@ type txQueueItem struct {
 	blockStamp      uint64 // block number at which timeboosted tx was added to the txQueue
 }
 
-func (i *txQueueItem) returnResult(err error) {
+func (i *txQueueItem) returnResultMaybeLog(err error, outputLog bool) {
 	if i.returnedResult.Swap(true) {
-		log.Error("attempting to return result to already finished queue item", "err", err)
+		if outputLog {
+			log.Error("attempting to return result to already finished queue item", "err", err)
+		}
 		return
 	}
 	i.resultChan <- err
 	close(i.resultChan)
 }
 
-// returnResultNoLog is for when there is a good chance that client has already disconnected
-func (i *txQueueItem) returnResultNoLog(err error) {
-	if i.returnedResult.Swap(true) {
-		return
-	}
-	i.resultChan <- err
-	close(i.resultChan)
+func (i *txQueueItem) returnResult(err error) {
+	i.returnResultMaybeLog(err, false)
 }
 
 type nonceCache struct {
@@ -978,10 +975,10 @@ func (s *Sequencer) expireNonceFailures() *time.Timer {
 		err := queueItem.ctx.Err()
 		if err != nil {
 			// queueCtx has already timed out, return that error
-			queueItem.returnResultNoLog(err)
+			queueItem.returnResultMaybeLog(err, true)
 		} else {
 			// nonce-failure-cache-expiry timeout, return the original nonce error
-			queueItem.returnResultNoLog(failure.nonceErr)
+			queueItem.returnResultMaybeLog(failure.nonceErr, true)
 		}
 
 		s.nonceFailures.RemoveOldest()
