@@ -9,7 +9,7 @@ type A struct {
 // pointerCmp compares pointers, sometimes inside
 func pointerCmp() {
 	a, b := &A{}, &A{}
-	// Simple comparions.
+	// Simple comparisons.
 	if a != b {
 		fmt.Println("Not Equal")
 	}
