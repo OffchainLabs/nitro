@@ -1154,41 +1154,10 @@ func (s *Sequencer) precheckNonces(queueItems []txQueueItem) []txQueueItem {
 	return outputQueueItems
 }
 
-func (s *Sequencer) createBlockWithRegularTxs(ctx context.Context) (sequencedMsg *execution.SequencedMsg, returnValue bool) {
-	s.createBlockMutex.Lock()
-	defer s.createBlockMutex.Unlock()
-
-	s.lastCreatedBlockWithRegularTxsInfo = nil
-
-	forwarder := s.getForwarder()
-
-	var queueItems []txQueueItem
-
-	defer func() {
-		panicErr := recover()
-		if panicErr != nil {
-			log.Error("sequencer block creation panicked", "panic", panicErr, "backtrace", string(debug.Stack()))
-			// Return an internal error to any queue items we were trying to process
-			for _, item := range queueItems {
-				// This can race, but that's alright, worst case is a log line in returnResult
-				if !item.returnedResult.Load() {
-					item.returnResult(sequencerInternalError)
-				}
-			}
-			s.lastCreatedBlockWithRegularTxsInfo = nil
-			// Wait for the MaxBlockSpeed until attempting to create a block again
-			returnValue = true
-		}
-	}()
-	defer nonceFailureCacheSizeGauge.Update(int64(s.nonceFailures.Len()))
-
-	config := s.config()
+func (s *Sequencer) getQueueItems(ctx context.Context, config *SequencerConfig) ([]txQueueItem, bool) {
 	lastBlock := s.execEngine.bc.CurrentBlock()
 
-	// Clear out old nonceFailures
-	s.nonceFailures.Resize(config.NonceFailureCacheSize)
-	s.expireNonceFailures()
-
+	var queueItems []txQueueItem
 	var startOfReadingFromTxQueue time.Time
 	for {
 		if len(queueItems) == 1 {
@@ -1272,6 +1241,47 @@ func (s *Sequencer) createBlockWithRegularTxs(ctx context.Context) (sequencedMsg
 			continue
 		}
 		queueItems = append(queueItems, queueItem)
+	}
+	return queueItems, false
+}
+
+func (s *Sequencer) createBlockWithRegularTxs(ctx context.Context) (sequencedMsg *execution.SequencedMsg, returnValue bool) {
+	s.createBlockMutex.Lock()
+	defer s.createBlockMutex.Unlock()
+
+	s.lastCreatedBlockWithRegularTxsInfo = nil
+
+	forwarder := s.getForwarder()
+
+	var queueItems []txQueueItem
+
+	defer func() {
+		panicErr := recover()
+		if panicErr != nil {
+			log.Error("sequencer block creation panicked", "panic", panicErr, "backtrace", string(debug.Stack()))
+			// Return an internal error to any queue items we were trying to process
+			for _, item := range queueItems {
+				// This can race, but that's alright, worst case is a log line in returnResult
+				if !item.returnedResult.Load() {
+					item.returnResult(sequencerInternalError)
+				}
+			}
+			s.lastCreatedBlockWithRegularTxsInfo = nil
+			// Wait for the MaxBlockSpeed until attempting to create a block again
+			returnValue = true
+		}
+	}()
+	defer nonceFailureCacheSizeGauge.Update(int64(s.nonceFailures.Len()))
+
+	config := s.config()
+
+	// Clear out old nonceFailures
+	s.nonceFailures.Resize(config.NonceFailureCacheSize)
+	s.expireNonceFailures()
+
+	queueItems, waitUntilSequencingNextBlock := s.getQueueItems(ctx, config)
+	if queueItems == nil {
+		return nil, waitUntilSequencingNextBlock
 	}
 
 	s.nonceCache.Resize(config.NonceCacheSize) // Would probably be better in a config hook but this is basically free
