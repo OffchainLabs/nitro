@@ -316,8 +316,8 @@ func (b *BOLDStaker) Start(ctxIn context.Context) {
 			log.Error("staker: error checking latest confirmed", "err", err)
 			if errors.Is(err, staker.ErrGlobalStateNotInChain) {
 				b.fatalErr <- err
-				return time.Duration(0)
 			}
+			return b.config.AssertionPostingInterval
 		}
 
 		agreedMsgCount, agreedGlobalState, err := b.getLatestState(ctx, false)
