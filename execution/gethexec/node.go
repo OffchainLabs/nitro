@@ -109,6 +109,15 @@ func TxIndexerConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Duration(prefix+".min-batch-delay", DefaultTxIndexerConfig.MinBatchDelay, "minimum delay between transaction indexing/unindexing batches; the bigger the delay, the more blocks can be included in each batch")
 }
 
+func MultigasCollectionAddOptions(prefix string, f *flag.FlagSet) {
+	f.String(prefix+".output-dir", multigascollector.DefaultCollectorConfig.OutputDir,
+		"If set, enables Multigas collector and stores batches in this directory")
+	f.Int(prefix+".batch-size", multigascollector.DefaultCollectorConfig.BatchSize,
+		"Batch size (blocks per file) for Multigas collector. Ignored unless output-dir is set")
+	f.Bool(prefix+".clear-output-dir", multigascollector.DefaultCollectorConfig.ClearOutputDir,
+		"Whether to clear the output directory before starting the collector")
+}
+
 type Config struct {
 	ParentChainReader           headerreader.Config               `koanf:"parent-chain-reader" reload:"hot"`
 	Sequencer                   SequencerConfig                   `koanf:"sequencer" reload:"hot"`
@@ -172,7 +181,7 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet) {
 	AddOptionsForNodeForwarderConfig(prefix+".forwarder", f)
 	TxPreCheckerConfigAddOptions(prefix+".tx-pre-checker", f)
 	CachingConfigAddOptions(prefix+".caching", f)
-	multigascollector.MultigasCollectionAddOptions(prefix+".multigas-collector", f)
+	MultigasCollectionAddOptions(prefix+".multigas-collector", f)
 	SyncMonitorConfigAddOptions(prefix+".sync-monitor", f)
 	f.Bool(prefix+".enable-prefetch-block", ConfigDefault.EnablePrefetchBlock, "enable prefetching of blocks")
 	StylusTargetConfigAddOptions(prefix+".stylus-target", f)
@@ -206,6 +215,7 @@ var ConfigDefault = Config{
 	SecondaryForwardingTarget: []string{},
 	TxPreChecker:              DefaultTxPreCheckerConfig,
 	Caching:                   DefaultCachingConfig,
+	MultigasCollector:         multigascollector.DefaultCollectorConfig,
 	Forwarder:                 DefaultNodeForwarderConfig,
 
 	EnablePrefetchBlock:         true,

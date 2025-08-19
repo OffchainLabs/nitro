@@ -8,10 +8,8 @@ import (
 	"path/filepath"
 	"sync"
 
-	flag "github.com/spf13/pflag"
 	protobuf "google.golang.org/protobuf/proto"
 
-	"github.com/ethereum/go-ethereum/arbitrum/multigas"
 	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/execution/multigascollector/proto"
@@ -35,60 +33,33 @@ var (
 	ErrCreateOutputDir   = errors.New("failed to create output directory")
 )
 
-// TransactionMultiGas represents gas data for a single transaction
-type TransactionMultiGas struct {
-	TxHash   []byte
-	TxIndex  uint32
-	MultiGas multigas.MultiGas
-}
-
-// BlockInfo represents information about a block
-type BlockInfo struct {
-	BlockNumber    uint64
-	BlockHash      []byte
-	BlockTimestamp uint64
-}
-
-// CollectorMessageType defines the type of message being processed by the collector.
-type CollectorMessageType int
+// MessageType defines the message type processed by the file collector.
+type MessageType int
 
 const (
-	// CollectorMsgStartBlock indicates a message for starting a new block without metadata.
-	CollectorMsgStartBlock CollectorMessageType = iota
-	// CollectorMsgTransaction indicates a message for multi-gas data of a transaction.
-	CollectorMsgTransaction
-	// CollectorMsgFinaliseBlock indicates a message finalising a block with metadata.
-	CollectorMsgFinaliseBlock
+	// MsgStartBlock indicates the start of a new block without metadata.
+	MsgStartBlock MessageType = iota
+	// MsgTransaction indicates a multi-gas data record for a transaction.
+	MsgTransaction
+	// MsgFinaliseBlock indicates finalisation of a block with metadata.
+	MsgFinaliseBlock
 )
 
-// CollectorMessage represents a message sent to the collector.
-type CollectorMessage struct {
-	Type CollectorMessageType
-
+// Message is passed internally on the FileCollector's channel.
+type Message struct {
+	Type        MessageType
 	Block       *BlockInfo
 	Transaction *TransactionMultiGas
 }
 
-// CollectorConfig holds the configuration for the MultiGas collector.
-type CollectorConfig struct {
-	OutputDir      string `koanf:"output-dir"`
-	BatchSize      int    `koanf:"batch-size"`
-	ClearOutputDir bool   `koanf:"clear-output-dir"`
-}
-
-var DefaultCollectorConfig = CollectorConfig{
-	OutputDir:      "",
-	BatchSize:      2000,
-	ClearOutputDir: false,
-}
-
-// Collector manages the asynchronous collection and batching of multi-dimensional
+// FileCollector manages the asynchronous collection and batching of multi-dimensional
 // gas data from blocks. It owns the message channel, buffers data in memory,
 // and periodically writes batches to disk in protobuf format.
-type Collector struct {
+type FileCollector struct {
 	config CollectorConfig
-	in     chan *CollectorMessage
+	in     chan *Message
 
+	currentBlockNum   uint64
 	blockBuffer       []*proto.BlockMultiGasData
 	transactionBuffer []*proto.TransactionMultiGasData
 
@@ -96,51 +67,8 @@ type Collector struct {
 	wg     sync.WaitGroup
 }
 
-func MultigasCollectionAddOptions(prefix string, f *flag.FlagSet) {
-	f.String(prefix+".output-dir", DefaultCollectorConfig.OutputDir,
-		"If set, enables Multigas collector and stores batches in this directory")
-	f.Int(prefix+".batch-size", DefaultCollectorConfig.BatchSize,
-		"Batch size (blocks per file) for Multigas collector. Ignored unless output-dir is set")
-	f.Bool(prefix+".clear-output-dir", DefaultCollectorConfig.ClearOutputDir,
-		"Whether to clear the output directory before starting the collector")
-}
-
-// ToProto converts the TransactionMultiGas to its protobuf representation.
-func (tx *TransactionMultiGas) ToProto() *proto.TransactionMultiGasData {
-	multiGasData := &proto.MultiGasData{
-		Computation:   tx.MultiGas.Get(multigas.ResourceKindComputation),
-		StorageAccess: tx.MultiGas.Get(multigas.ResourceKindStorageAccess),
-		StorageGrowth: tx.MultiGas.Get(multigas.ResourceKindStorageGrowth),
-		HistoryGrowth: tx.MultiGas.Get(multigas.ResourceKindHistoryGrowth),
-	}
-
-	if unknown := tx.MultiGas.Get(multigas.ResourceKindUnknown); unknown > 0 {
-		multiGasData.Unknown = &unknown
-	}
-
-	if refund := tx.MultiGas.GetRefund(); refund > 0 {
-		multiGasData.Refund = &refund
-	}
-
-	return &proto.TransactionMultiGasData{
-		TxHash:   tx.TxHash,
-		TxIndex:  tx.TxIndex,
-		MultiGas: multiGasData,
-	}
-}
-
-// ToProto converts the BlockInfo to its protobuf representation.
-func (btmg *BlockInfo) ToProto() *proto.BlockMultiGasData {
-	return &proto.BlockMultiGasData{
-		BlockNumber:    btmg.BlockNumber,
-		BlockHash:      btmg.BlockHash,
-		BlockTimestamp: btmg.BlockTimestamp,
-	}
-}
-
-// NewCollector returns an initialized collector.
-// Validates the configuration and ensures the output directory exists.
-func NewCollector(config CollectorConfig) (*Collector, error) {
+// NewFileCollector validates the configuration and returns an initialized collector.
+func NewFileCollector(config CollectorConfig) (*FileCollector, error) {
 	if config.OutputDir == "" {
 		return nil, ErrOutputDirRequired
 	}
@@ -148,9 +76,9 @@ func NewCollector(config CollectorConfig) (*Collector, error) {
 		return nil, ErrBatchSizeRequired
 	}
 
-	return &Collector{
+	return &FileCollector{
 		config:            config,
-		in:                make(chan *CollectorMessage, CollectorMsgQueueSize),
+		in:                make(chan *Message, CollectorMsgQueueSize),
 		blockBuffer:       make([]*proto.BlockMultiGasData, 0, config.BatchSize),
 		transactionBuffer: make([]*proto.TransactionMultiGasData, 0, defaultTxPrealloc),
 	}, nil
@@ -159,7 +87,7 @@ func NewCollector(config CollectorConfig) (*Collector, error) {
 // Start prepares the output directory (removes any previous contents)
 // and begins background processing of incoming messages,
 // should be called only once.
-func (c *Collector) Start(parent context.Context) {
+func (c *FileCollector) Start(parent context.Context) {
 	// Reset the output directory, if enabled
 	if c.config.ClearOutputDir {
 		if err := os.RemoveAll(c.config.OutputDir); err != nil {
@@ -185,7 +113,7 @@ func (c *Collector) Start(parent context.Context) {
 }
 
 // StopAndWait cancels processing, drains ready items, flushes once, and waits for shutdown.
-func (c *Collector) StopAndWait() {
+func (c *FileCollector) StopAndWait() {
 	if c.cancel != nil {
 		c.cancel()
 	}
@@ -193,8 +121,34 @@ func (c *Collector) StopAndWait() {
 	log.Info("Multi-gas collector stopped")
 }
 
+// StartBlock signals the beginning of a new block.
+func (c *FileCollector) StartBlock(blockNum uint64) {
+	c.Submit(&Message{
+		Type: MsgStartBlock,
+		Block: &BlockInfo{
+			BlockNumber: blockNum,
+		},
+	})
+}
+
+// AddTransaction records multi-gas data for a transaction.
+func (c *FileCollector) AddTransaction(tx TransactionMultiGas) {
+	c.Submit(&Message{
+		Type:        MsgTransaction,
+		Transaction: &tx,
+	})
+}
+
+// FinaliseBlock finalises the current block with metadata and flushes buffered txs.
+func (c *FileCollector) FinaliseBlock(info BlockInfo) {
+	c.Submit(&Message{
+		Type:  MsgFinaliseBlock,
+		Block: &info,
+	})
+}
+
 // Submit enqueues a message for collection (non-blocking). Drops on a full queue.
-func (c *Collector) Submit(msg *CollectorMessage) {
+func (c *FileCollector) Submit(msg *Message) {
 	select {
 	case c.in <- msg:
 	default:
@@ -206,7 +160,7 @@ func (c *Collector) Submit(msg *CollectorMessage) {
 // processData consumes input and batches writes.
 // Shutdown is driven by context cancellation. On cancel, finalise() drains
 // queued items, flushes once, and exits.
-func (c *Collector) processData(ctx context.Context) {
+func (c *FileCollector) processData(ctx context.Context) {
 	for {
 		select {
 		case msg := <-c.in:
@@ -221,27 +175,41 @@ func (c *Collector) processData(ctx context.Context) {
 // handleMessage processes a single CollectorMessage and updates in-memory buffers.
 // TXs are accumulated in transactionBuffer. When a Block message arrives, all
 // buffered TXs are wrapped into that block, appended to blockBuffer
-func (c *Collector) handleMessage(msg *CollectorMessage) {
+func (c *FileCollector) handleMessage(msg *Message) {
 	switch msg.Type {
-	case CollectorMsgStartBlock:
+	case MsgStartBlock:
+		if msg.Block == nil {
+			log.Error("Multi-gas collector start block message missing payload")
+			return
+		}
+		c.currentBlockNum = msg.Block.BlockNumber
+
 		// If c.transactionBuffer contains unflushed transactions, block was not finalised (stay silent)
 		if len(c.transactionBuffer) > 0 {
 			c.transactionBuffer = c.transactionBuffer[:0]
 		}
 
-	case CollectorMsgTransaction:
+	case MsgTransaction:
 		if msg.Transaction == nil {
 			log.Error("Multi-gas collector transaction message missing payload")
 			return
 		}
 		c.transactionBuffer = append(c.transactionBuffer, msg.Transaction.ToProto())
 
-	case CollectorMsgFinaliseBlock:
+	case MsgFinaliseBlock:
 		if msg.Block == nil {
-			log.Error("Multi-gas collector block message missing payload")
+			log.Error("Multi-gas collector finalise block message missing payload")
 			return
 		}
+
+		if c.currentBlockNum > 0 && c.currentBlockNum != msg.Block.BlockNumber {
+			log.Error("Multi-gas collector: finalising block does not match current block",
+				"expected", c.currentBlockNum, "got", msg.Block.BlockNumber)
+			return
+		}
+
 		block := msg.Block.ToProto()
+
 		if len(c.transactionBuffer) > 0 {
 			block.Transactions = append(block.Transactions, c.transactionBuffer...)
 		}
@@ -253,14 +221,15 @@ func (c *Collector) handleMessage(msg *CollectorMessage) {
 			}
 		}
 		c.transactionBuffer = c.transactionBuffer[:0]
+		c.currentBlockNum = 0
 
 	default:
 		log.Error("Multi-gas collector, unknown message type", "type", msg.Type)
 	}
 }
 
-func (c *Collector) finalise() {
-	// Drain channel on shutdown
+// finalise drains channel, warns and cleans transaction buffer and finally flushes the block buffer
+func (c *FileCollector) finalise() {
 drainLoop:
 	for {
 		select {
@@ -290,7 +259,7 @@ drainLoop:
 // 4. Clears the buffer and increments the batch counter
 //
 // File naming pattern: multigas_batch_<start_block_number>_<end_block_number>.pb
-func (c *Collector) flushBatch() error {
+func (c *FileCollector) flushBatch() error {
 	batch := &proto.BlockMultiGasBatch{
 		Data: make([]*proto.BlockMultiGasData, len(c.blockBuffer)),
 	}

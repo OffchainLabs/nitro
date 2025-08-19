@@ -110,7 +110,7 @@ type ExecutionEngine struct {
 
 	runningMaintenance atomic.Bool
 
-	multigascollector *multigascollector.Collector
+	multigasCollector multigascollector.Collector
 }
 
 func NewL1PriceData() *L1PriceData {
@@ -253,16 +253,17 @@ func (s *ExecutionEngine) EnablePrefetchBlock() {
 }
 
 func (s *ExecutionEngine) EnableMultigasCollector(config multigascollector.CollectorConfig) error {
-	if s.multigascollector != nil {
+	if s.multigasCollector != nil {
 		return nil
 	}
 
-	collector, err := multigascollector.NewCollector(config)
+	factory := multigascollector.NewCollectorFactory()
+	collector, err := factory(config)
 	if err != nil {
 		return err
 	}
 
-	s.multigascollector = collector
+	s.multigasCollector = collector
 	return nil
 }
 
@@ -595,7 +596,7 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 		hooks,
 		false,
 		core.NewMessageCommitContext(s.wasmTargets),
-		s.multigascollector,
+		s.multigasCollector,
 	)
 	if err != nil {
 		return nil, err
@@ -1052,8 +1053,8 @@ func (s *ExecutionEngine) ArbOSVersionForMessageIndex(msgIdx arbutil.MessageInde
 func (s *ExecutionEngine) Start(ctx_in context.Context) {
 	s.StopWaiter.Start(ctx_in, s)
 
-	if s.multigascollector != nil {
-		s.multigascollector.Start(s.GetContext())
+	if s.multigasCollector != nil {
+		s.multigasCollector.Start(s.GetContext())
 	}
 
 	s.LaunchThread(func(ctx context.Context) {
@@ -1115,8 +1116,8 @@ func (s *ExecutionEngine) Start(ctx_in context.Context) {
 func (s *ExecutionEngine) StopAndWait() {
 	s.StopWaiter.StopAndWait()
 
-	if s.multigascollector != nil {
-		s.multigascollector.StopAndWait()
+	if s.multigasCollector != nil {
+		s.multigasCollector.StopAndWait()
 	}
 }
 

@@ -208,7 +208,7 @@ func ProduceBlockAdvanced(
 	sequencingHooks *SequencingHooks,
 	isMsgForPrefetch bool,
 	runCtx *core.MessageRunContext,
-	mgcCollector *multigascollector.Collector,
+	mgcCollector multigascollector.Collector,
 ) (*types.Block, types.Receipts, error) {
 
 	arbState, err := arbosState.OpenSystemArbosState(statedb, nil, true)
@@ -254,9 +254,7 @@ func ProduceBlockAdvanced(
 
 	// Submit multigas start block message, if the multi gas collector is set
 	if mgcCollector != nil {
-		mgcCollector.Submit(&multigascollector.CollectorMessage{
-			Type: multigascollector.CollectorMsgStartBlock,
-		})
+		mgcCollector.StartBlock(header.Number.Uint64())
 	}
 
 	for {
@@ -516,13 +514,10 @@ func ProduceBlockAdvanced(
 
 		// Submit multigas transaction message, if the multi gas collector is set
 		if mgcCollector != nil && result.UsedMultiGas != nil {
-			mgcCollector.Submit(&multigascollector.CollectorMessage{
-				Type: multigascollector.CollectorMsgTransaction,
-				Transaction: &multigascollector.TransactionMultiGas{
-					TxHash:   tx.Hash().Bytes(),
-					TxIndex:  uint32(receipt.TransactionIndex), // #nosec G115 -- block tx count << MaxUint32; safe cast
-					MultiGas: *result.UsedMultiGas,
-				},
+			mgcCollector.AddTransaction(multigascollector.TransactionMultiGas{
+				TxHash:   tx.Hash().Bytes(),
+				TxIndex:  uint32(receipt.TransactionIndex), // #nosec G115 -- block tx count << MaxUint32; safe cast
+				MultiGas: *result.UsedMultiGas,
 			})
 		}
 	}
@@ -570,13 +565,10 @@ func ProduceBlockAdvanced(
 
 	// Submit multigas finalization block message, if the multi gas collector is set
 	if mgcCollector != nil {
-		mgcCollector.Submit(&multigascollector.CollectorMessage{
-			Type: multigascollector.CollectorMsgFinaliseBlock,
-			Block: &multigascollector.BlockInfo{
-				BlockNumber:    block.NumberU64(),
-				BlockHash:      blockHash.Bytes(),
-				BlockTimestamp: block.Time(),
-			},
+		mgcCollector.FinaliseBlock(multigascollector.BlockInfo{
+			BlockNumber:    block.NumberU64(),
+			BlockHash:      blockHash.Bytes(),
+			BlockTimestamp: block.Time(),
 		})
 	}
 
