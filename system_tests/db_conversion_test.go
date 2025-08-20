@@ -62,6 +62,12 @@ func TestDatabaseConversion(t *testing.T) {
 		conv := dbconv.NewDBConverter(&convConfig)
 		err = conv.Convert(ctx)
 		Require(t, err)
+		// move ancients to the destination directory
+		err = os.Rename(
+			path.Join(instanceDir, fmt.Sprintf("%s_old", dbname), "ancient"),
+			path.Join(instanceDir, dbname, "ancient"),
+		)
+		Require(t, err)
 	}
 
 	builder.l2StackConfig.DBEngine = "pebble"
