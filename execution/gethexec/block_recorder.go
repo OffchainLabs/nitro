@@ -3,6 +3,7 @@ package gethexec
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sync"
 	"testing"
 
@@ -152,6 +153,9 @@ func (r *BlockRecorder) RecordBlockCreation(
 
 	var blockHash common.Hash
 	if msg != nil {
+		if !slices.Contains(wasmTargets, rawdb.LocalTarget()) {
+			wasmTargets = append(wasmTargets, rawdb.LocalTarget())
+		}
 		block, _, err := arbos.ProduceBlock(
 			msg.Message,
 			msg.DelayedMessagesRead,
