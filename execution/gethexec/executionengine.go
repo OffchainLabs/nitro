@@ -586,6 +586,11 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 	defer statedb.StopPrefetcher()
 	delayedMessagesRead := lastBlockHeader.Nonce.Uint64()
 
+	// Submit multigas start block message, if the multi gas collector is set
+	if s.multigasCollector != nil {
+		s.multigasCollector.PrepareToCollectBlock()
+	}
+
 	startTime := time.Now()
 	block, receipts, err := arbos.ProduceBlockAdvanced(
 		header,
@@ -651,6 +656,15 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 		return nil, err
 	}
 	s.cacheL1PriceDataOfMsg(msgIdx, block, false)
+
+	// Submit multigas finalization block message, if the multi gas collector is set
+	if s.multigasCollector != nil {
+		s.multigasCollector.FinaliseBlock(multigascollector.BlockInfo{
+			BlockNumber:    block.NumberU64(),
+			BlockHash:      block.Hash().Bytes(),
+			BlockTimestamp: block.Time(),
+		})
+	}
 
 	return block, nil
 }

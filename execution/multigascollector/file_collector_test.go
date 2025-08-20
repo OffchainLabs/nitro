@@ -93,10 +93,7 @@ func TestDataCollection(t *testing.T) {
 			batchSize: 10,
 			inputData: []*Message{
 				{
-					Type: MsgStartBlock,
-					Block: &BlockInfo{
-						BlockNumber: 20001,
-					},
+					Type: MsgPrepareToCollectBlock,
 				},
 				{
 					Type: MsgFinaliseBlock,
@@ -114,7 +111,7 @@ func TestDataCollection(t *testing.T) {
 			batchSize: 10,
 			inputData: []*Message{
 				{
-					Type: MsgTransaction,
+					Type: MsgTransactionMultiGas,
 					Transaction: &TransactionMultiGas{
 						TxHash:  []byte{0x12, 0x34, 0x56},
 						TxIndex: 0,
@@ -128,10 +125,7 @@ func TestDataCollection(t *testing.T) {
 					},
 				},
 				{
-					Type: MsgStartBlock,
-					Block: &BlockInfo{
-						BlockNumber: 20001,
-					},
+					Type: MsgPrepareToCollectBlock,
 				},
 			},
 			expectFiles: 0,
@@ -141,13 +135,10 @@ func TestDataCollection(t *testing.T) {
 			batchSize: 1,
 			inputData: []*Message{
 				{
-					Type: MsgStartBlock,
-					Block: &BlockInfo{
-						BlockNumber: 12345,
-					},
+					Type: MsgPrepareToCollectBlock,
 				},
 				{
-					Type: MsgTransaction,
+					Type: MsgTransactionMultiGas,
 					Transaction: &TransactionMultiGas{
 						TxHash:  []byte{0x12, 0x34, 0x56},
 						TxIndex: 0,
@@ -176,13 +167,10 @@ func TestDataCollection(t *testing.T) {
 			batchSize: 10,
 			inputData: []*Message{
 				{
-					Type: MsgStartBlock,
-					Block: &BlockInfo{
-						BlockNumber: 30000,
-					},
+					Type: MsgPrepareToCollectBlock,
 				},
 				{
-					Type: MsgTransaction,
+					Type: MsgTransactionMultiGas,
 					Transaction: &TransactionMultiGas{
 						TxHash:  []byte{0x01},
 						TxIndex: 0,
@@ -193,13 +181,10 @@ func TestDataCollection(t *testing.T) {
 				},
 				// Start a new block before finalising the previous -> prior tx is dropped
 				{
-					Type: MsgStartBlock,
-					Block: &BlockInfo{
-						BlockNumber: 30001,
-					},
+					Type: MsgPrepareToCollectBlock,
 				},
 				{
-					Type: MsgTransaction,
+					Type: MsgTransactionMultiGas,
 					Transaction: &TransactionMultiGas{
 						TxHash:  []byte{0x02},
 						TxIndex: 0,
@@ -224,13 +209,10 @@ func TestDataCollection(t *testing.T) {
 			batchSize: 3,
 			inputData: []*Message{
 				{
-					Type: MsgStartBlock,
-					Block: &BlockInfo{
-						BlockNumber: 12345,
-					},
+					Type: MsgPrepareToCollectBlock,
 				},
 				{
-					Type: MsgTransaction,
+					Type: MsgTransactionMultiGas,
 					Transaction: &TransactionMultiGas{
 						TxHash:  []byte{0x12, 0x34, 0x56},
 						TxIndex: 0,
@@ -250,13 +232,10 @@ func TestDataCollection(t *testing.T) {
 					},
 				},
 				{
-					Type: MsgStartBlock,
-					Block: &BlockInfo{
-						BlockNumber: 12346,
-					},
+					Type: MsgPrepareToCollectBlock,
 				},
 				{
-					Type: MsgTransaction,
+					Type: MsgTransactionMultiGas,
 					Transaction: &TransactionMultiGas{
 						TxHash:  []byte{0x45, 0x67, 0x89},
 						TxIndex: 1,
@@ -268,7 +247,7 @@ func TestDataCollection(t *testing.T) {
 					},
 				},
 				{
-					Type: MsgTransaction,
+					Type: MsgTransactionMultiGas,
 					Transaction: &TransactionMultiGas{
 						TxHash:  []byte{0x78, 0x9a, 0xbc},
 						TxIndex: 2,
@@ -295,13 +274,10 @@ func TestDataCollection(t *testing.T) {
 			batchSize: 2,
 			inputData: []*Message{
 				{
-					Type: MsgStartBlock,
-					Block: &BlockInfo{
-						BlockNumber: 12345,
-					},
+					Type: MsgPrepareToCollectBlock,
 				},
 				{
-					Type: MsgTransaction,
+					Type: MsgTransactionMultiGas,
 					Transaction: &TransactionMultiGas{
 						TxHash:  []byte{0x12, 0x34, 0x56},
 						TxIndex: 0,
@@ -322,13 +298,10 @@ func TestDataCollection(t *testing.T) {
 					},
 				},
 				{
-					Type: MsgStartBlock,
-					Block: &BlockInfo{
-						BlockNumber: 12346,
-					},
+					Type: MsgPrepareToCollectBlock,
 				},
 				{
-					Type: MsgTransaction,
+					Type: MsgTransactionMultiGas,
 					Transaction: &TransactionMultiGas{
 						TxHash:  []byte{0x78, 0x9a, 0xbc},
 						TxIndex: 1,
@@ -348,13 +321,10 @@ func TestDataCollection(t *testing.T) {
 					},
 				},
 				{
-					Type: MsgStartBlock,
-					Block: &BlockInfo{
-						BlockNumber: 12347,
-					},
+					Type: MsgPrepareToCollectBlock,
 				},
 				{
-					Type: MsgTransaction,
+					Type: MsgTransactionMultiGas,
 					Transaction: &TransactionMultiGas{
 						TxHash:  []byte{0xab, 0xcd, 0xef},
 						TxIndex: 2,
@@ -415,9 +385,9 @@ func TestDataCollection(t *testing.T) {
 			var curTxs []*proto.TransactionMultiGasData
 			for _, m := range tt.inputData {
 				switch m.Type {
-				case MsgStartBlock:
+				case MsgPrepareToCollectBlock:
 					curTxs = nil // drop unfinalised txs
-				case MsgTransaction:
+				case MsgTransactionMultiGas:
 					curTxs = append(curTxs, m.Transaction.ToProto())
 				case MsgFinaliseBlock:
 					blk := m.Block.ToProto()

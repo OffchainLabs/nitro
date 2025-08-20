@@ -48,11 +48,11 @@ type Collector interface {
 	// until the collector has fully shut down.
 	StopAndWait()
 
-	// StartBlock signals the beginning of a new block.
-	StartBlock(blockNum uint64)
+	// PrepareToCollectBlock signals the beginning of a new block.
+	PrepareToCollectBlock()
 
-	// AddTransaction records multi-gas data for a transaction within the current block.
-	AddTransaction(tx TransactionMultiGas)
+	// CollectTransactionMultiGas records multi-gas data for a transaction within the current block.
+	CollectTransactionMultiGas(tx TransactionMultiGas)
 
 	// FinaliseBlock finalises the current block with metadata and flushes
 	// any buffered transaction data into it.

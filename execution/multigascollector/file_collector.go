@@ -40,10 +40,10 @@ var (
 type MessageType int
 
 const (
-	// MsgStartBlock indicates the start of a new block without metadata.
-	MsgStartBlock MessageType = iota
-	// MsgTransaction indicates a multi-gas data record for a transaction.
-	MsgTransaction
+	// MsgPrepareToCollectBlock indicates the start of a new block without metadata.
+	MsgPrepareToCollectBlock MessageType = iota
+	// MsgTransactionMultiGas indicates a multi-gas data record for a transaction.
+	MsgTransactionMultiGas
 	// MsgFinaliseBlock indicates finalisation of a block with metadata.
 	MsgFinaliseBlock
 )
@@ -62,7 +62,6 @@ type FileCollector struct {
 	config CollectorConfig
 	in     chan *Message
 
-	currentBlockNum   uint64
 	blockBuffer       []*proto.BlockMultiGasData
 	transactionBuffer []*proto.TransactionMultiGasData
 
@@ -124,20 +123,17 @@ func (c *FileCollector) StopAndWait() {
 	log.Info("Multi-gas collector stopped")
 }
 
-// StartBlock signals the beginning of a new block.
-func (c *FileCollector) StartBlock(blockNum uint64) {
+// PrepareToCollectBlock signals the beginning of a new block.
+func (c *FileCollector) PrepareToCollectBlock() {
 	c.Submit(&Message{
-		Type: MsgStartBlock,
-		Block: &BlockInfo{
-			BlockNumber: blockNum,
-		},
+		Type: MsgPrepareToCollectBlock,
 	})
 }
 
-// AddTransaction records multi-gas data for a transaction.
-func (c *FileCollector) AddTransaction(tx TransactionMultiGas) {
+// CollectTransactionMultiGas records multi-gas data for a transaction.
+func (c *FileCollector) CollectTransactionMultiGas(tx TransactionMultiGas) {
 	c.Submit(&Message{
-		Type:        MsgTransaction,
+		Type:        MsgTransactionMultiGas,
 		Transaction: &tx,
 	})
 }
@@ -180,19 +176,13 @@ func (c *FileCollector) processData(ctx context.Context) {
 // buffered TXs are wrapped into that block, appended to blockBuffer
 func (c *FileCollector) handleMessage(msg *Message) {
 	switch msg.Type {
-	case MsgStartBlock:
-		if msg.Block == nil {
-			log.Error("Multi-gas collector start block message missing payload")
-			return
-		}
-		c.currentBlockNum = msg.Block.BlockNumber
-
+	case MsgPrepareToCollectBlock:
 		// If c.transactionBuffer contains unflushed transactions, block was not finalised (stay silent)
 		if len(c.transactionBuffer) > 0 {
 			c.transactionBuffer = c.transactionBuffer[:0]
 		}
 
-	case MsgTransaction:
+	case MsgTransactionMultiGas:
 		if msg.Transaction == nil {
 			log.Error("Multi-gas collector transaction message missing payload")
 			return
@@ -202,12 +192,6 @@ func (c *FileCollector) handleMessage(msg *Message) {
 	case MsgFinaliseBlock:
 		if msg.Block == nil {
 			log.Error("Multi-gas collector finalise block message missing payload")
-			return
-		}
-
-		if c.currentBlockNum > 0 && c.currentBlockNum != msg.Block.BlockNumber {
-			log.Error("Multi-gas collector: finalising block does not match current block",
-				"expected", c.currentBlockNum, "got", msg.Block.BlockNumber)
 			return
 		}
 
@@ -224,7 +208,6 @@ func (c *FileCollector) handleMessage(msg *Message) {
 			}
 		}
 		c.transactionBuffer = c.transactionBuffer[:0]
-		c.currentBlockNum = 0
 
 	default:
 		log.Error("Multi-gas collector, unknown message type", "type", msg.Type)

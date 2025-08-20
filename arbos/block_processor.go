@@ -252,11 +252,6 @@ func ProduceBlockAdvanced(
 
 	firstTx := types.NewTx(startTx)
 
-	// Submit multigas start block message, if the multi gas collector is set
-	if mgcCollector != nil {
-		mgcCollector.StartBlock(header.Number.Uint64())
-	}
-
 	for {
 		// repeatedly process the next tx, doing redeems created along the way in FIFO order
 
@@ -514,7 +509,7 @@ func ProduceBlockAdvanced(
 
 		// Submit multigas transaction message, if the multi gas collector is set
 		if mgcCollector != nil && result.UsedMultiGas != nil {
-			mgcCollector.AddTransaction(multigascollector.TransactionMultiGas{
+			mgcCollector.CollectTransactionMultiGas(multigascollector.TransactionMultiGas{
 				TxHash:   tx.Hash().Bytes(),
 				TxIndex:  uint32(receipt.TransactionIndex), // #nosec G115 -- block tx count << MaxUint32; safe cast
 				MultiGas: *result.UsedMultiGas,
@@ -561,15 +556,6 @@ func ProduceBlockAdvanced(
 		}
 		// This is a real chain and funds were burnt, not minted, so only log an error and don't panic
 		log.Error("Unexpected total balance delta", "delta", balanceDelta, "expected", expectedBalanceDelta)
-	}
-
-	// Submit multigas finalization block message, if the multi gas collector is set
-	if mgcCollector != nil {
-		mgcCollector.FinaliseBlock(multigascollector.BlockInfo{
-			BlockNumber:    block.NumberU64(),
-			BlockHash:      blockHash.Bytes(),
-			BlockTimestamp: block.Time(),
-		})
 	}
 
 	return block, receipts, nil
