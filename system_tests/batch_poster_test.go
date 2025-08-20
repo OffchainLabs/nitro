@@ -175,7 +175,7 @@ func testBatchPosterParallel(t *testing.T, useRedis bool, useRedisLock bool) {
 			break
 		}
 		if i == 0 {
-			Require(t, err)
+			Require(t, err, "timed out waiting for last transaction to be included in batch and synced by node B")
 		}
 	}
 
@@ -215,7 +215,7 @@ func testBatchPosterParallel(t *testing.T, useRedis bool, useRedisLock bool) {
 	}
 }
 
-func TestBatchPosterHandoff(t *testing.T) {
+func TestRedisBatchPosterHandoff(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	srv := externalsignertest.NewServer(t)
@@ -225,7 +225,7 @@ func TestBatchPosterHandoff(t *testing.T) {
 			return
 		}
 	}()
-	miniredis, redisUrl := redisutil.CreateMiniredis(ctx, t)
+	miniredis, redisUrl := redisutil.CreateTestRedisAdvanced(ctx, t)
 	client, err := redisutil.RedisClientFromURL(redisUrl)
 	Require(t, err)
 	err = client.Del(ctx, "data-poster.queue").Err()
@@ -318,10 +318,15 @@ func TestBatchPosterHandoff(t *testing.T) {
 		if err != nil && !strings.Contains(err.Error(), "failed to acquire lock") {
 			t.Fatalf("Batch poster %s failed with unexpected error: %v, iter: %d", nameB, err, i)
 		}
-		// fastforward to expire redis lock
-		miniredis.FastForward(builder.nodeConfig.BatchPoster.RedisLock.LockoutDuration)
-		// we need also to wait for our redislock.Simple lockedUntil to expire after RefreshDuration
-		time.Sleep(builder.nodeConfig.BatchPoster.RedisLock.RefreshDuration)
+		if miniredis != nil {
+			// fastforward to expire redis lock
+			miniredis.FastForward(builder.nodeConfig.BatchPoster.RedisLock.LockoutDuration)
+			// we need also to wait for our redislock.Simple lockedUntil to expire after RefreshDuration
+			time.Sleep(builder.nodeConfig.BatchPoster.RedisLock.RefreshDuration)
+		} else {
+			// we need to wait full LockoutDuration for the redis key to expire
+			time.Sleep(builder.nodeConfig.BatchPoster.RedisLock.LockoutDuration)
+		}
 
 		// swap posters
 		nameA, batchPosterA, nameB, batchPosterB = nameB, batchPosterB, nameA, batchPosterA

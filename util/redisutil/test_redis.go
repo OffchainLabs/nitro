@@ -17,20 +17,20 @@ import (
 // CreateTestRedis Provides external redis url, this is only done with --test_redis flag,
 // else creates a new miniredis and returns its url.
 func CreateTestRedis(ctx context.Context, t testing.TB) string {
-	if *testflag.RedisFlag != "" {
-		return *testflag.RedisFlag
-	}
-	_, url := CreateMiniredis(ctx, t)
+	_, url := CreateTestRedisAdvanced(ctx, t)
 	return url
 }
 
-func CreateMiniredis(ctx context.Context, t testing.TB) (*miniredis.Miniredis, string) {
+// CreateTestRedisAdvanced returns either (nil, test_redis url) or (miniredis, local url)
+func CreateTestRedisAdvanced(ctx context.Context, t testing.TB) (*miniredis.Miniredis, string) {
+	if *testflag.RedisFlag != "" {
+		return nil, *testflag.RedisFlag
+	}
 	redisServer, err := miniredis.Run()
 	testhelpers.RequireImpl(t, err)
 	go func() {
 		<-ctx.Done()
 		redisServer.Close()
 	}()
-
 	return redisServer, fmt.Sprintf("redis://%s/0", redisServer.Addr())
 }
