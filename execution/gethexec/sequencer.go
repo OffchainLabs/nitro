@@ -1590,16 +1590,13 @@ func (s *Sequencer) StartExpressLaneService(ctx context.Context) {
 }
 
 func (s *Sequencer) backgroundForwarder(ctx context.Context) time.Duration {
-	s.forwarderMutex.Lock()
-	defer s.forwarderMutex.Unlock()
+	s.createBlockMutex.Lock()
+	defer s.createBlockMutex.Unlock()
 
-	if s.forwarder != nil {
-		s.createBlockMutex.Lock()
-		defer s.createBlockMutex.Unlock()
-
+	forwarder := s.getForwarder()
+	if forwarder != nil {
 		queueItems, _ := s.getQueueItems(ctx, s.config())
-
-		s.handleInactive(s.forwarder, queueItems)
+		s.handleInactive(forwarder, queueItems)
 	}
 	return time.Millisecond * 100
 }
