@@ -1,6 +1,7 @@
 name: Merge Checks
 
 on:
+  merge_group:
   # Using pull_request_target for security. If we had used pull_request, then it
   # would be possible for malicious actors to create Pull Requests which would
   # trigger workflows that they could have modified locally to extract secrets.

@@ -2,8 +2,6 @@ module github.com/offchainlabs/nitro
 
 go 1.24.5
 
-replace github.com/VictoriaMetrics/fastcache => ./fastcache
-
 replace github.com/ethereum/go-ethereum => ./go-ethereum
 
 replace github.com/offchainlabs/bold => ./bold
@@ -55,7 +53,7 @@ require (
 	go.uber.org/automaxprocs v1.5.2
 	golang.org/x/crypto v0.36.0
 	golang.org/x/sync v0.12.0
-	golang.org/x/sys v0.33.0
+	golang.org/x/sys v0.34.0
 	golang.org/x/term v0.30.0
 	golang.org/x/tools v0.29.0
 	google.golang.org/api v0.187.0
@@ -106,7 +104,7 @@ require (
 require (
 	github.com/DataDog/zstd v1.5.2 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
-	github.com/VictoriaMetrics/fastcache v1.12.2 // indirect
+	github.com/VictoriaMetrics/fastcache v1.13.0 // indirect
 	github.com/alicebob/gopher-json v0.0.0-20200520072559-a9ecdc9d1d3a // indirect
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.6.5 // indirect
 	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.16.14 // indirect
@@ -150,7 +148,7 @@ require (
 	github.com/gobwas/pool v0.2.1 // indirect
 	github.com/gofrs/flock v0.8.1 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
-	github.com/golang/snappy v0.0.5-0.20220116011046-fa5810519dcb // indirect
+	github.com/golang/snappy v1.0.0 // indirect
 	github.com/google/flatbuffers v1.12.1 // indirect
 	github.com/google/go-github/v62 v62.0.0
 	github.com/google/pprof v0.0.0-20231023181126-ff6d637d2a7b // indirect
