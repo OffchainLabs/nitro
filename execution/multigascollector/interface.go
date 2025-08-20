@@ -1,4 +1,4 @@
-// Copyright 2022, Offchain Labs, Inc.
+// Copyright 2025, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package multigascollector
@@ -41,7 +41,7 @@ var DefaultCollectorConfig = CollectorConfig{
 // Collector defines the interface for collecting transaction- and block-level
 // multi-dimensional gas usage data.
 type Collector interface {
-	// Start begins background processing. Should be called once per instance.
+	// Start begins background processing. Must be called exactly once per instance.
 	Start(ctx context.Context)
 
 	// StopAndWait cancels processing, flushes any buffered data, and blocks
@@ -49,13 +49,16 @@ type Collector interface {
 	StopAndWait()
 
 	// PrepareToCollectBlock signals the beginning of a new block.
+	// Any unfinalised transactions buffered prior to this call are discarded.
 	PrepareToCollectBlock()
 
-	// CollectTransactionMultiGas records multi-gas data for a transaction within the current block.
+	// CollectTransactionMultiGas records multi-gas data for a single transaction
+	// within the current block.
 	CollectTransactionMultiGas(tx TransactionMultiGas)
 
-	// FinaliseBlock finalises the current block with metadata and flushes
-	// any buffered transaction data into it.
+	// FinaliseBlock completes the current block with its metadata, attaches any
+	// buffered transactions, and appends it to the block buffer. Finalised blocks
+	// are persisted once the batch is complete.
 	FinaliseBlock(info BlockInfo)
 }
 
