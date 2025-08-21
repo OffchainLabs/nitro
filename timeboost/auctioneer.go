@@ -76,6 +76,7 @@ type AuctioneerServerConfig struct {
 	DbDirectory               string                   `koanf:"db-directory"`
 	AuctionResolutionWaitTime time.Duration            `koanf:"auction-resolution-wait-time"`
 	S3Storage                 S3StorageServiceConfig   `koanf:"s3-storage"`
+	BidsBufferSize            int                      `koanf:"bids-buffer-size"`
 }
 
 var DefaultAuctioneerConsumerConfig = pubsub.ConsumerConfig{
@@ -92,6 +93,7 @@ var DefaultAuctioneerServerConfig = AuctioneerServerConfig{
 	StreamTimeout:             10 * time.Minute,
 	AuctionResolutionWaitTime: 2 * time.Second,
 	S3Storage:                 DefaultS3StorageServiceConfig,
+	BidsBufferSize:            100_000,
 }
 
 var TestAuctioneerServerConfig = AuctioneerServerConfig{
@@ -116,6 +118,7 @@ func AuctioneerServerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".db-directory", DefaultAuctioneerServerConfig.DbDirectory, "path to database directory for persisting validated bids in a sqlite file")
 	f.Duration(prefix+".auction-resolution-wait-time", DefaultAuctioneerServerConfig.AuctionResolutionWaitTime, "wait time after auction closing before resolving the auction")
 	S3StorageServiceConfigAddOptions(prefix+".s3-storage", f)
+	f.Int(prefix+".bids-buffer-size", DefaultAuctioneerServerConfig.BidsBufferSize, "buffer size of the bidsReceiver channel")
 }
 
 // AuctioneerServer is a struct that represents an autonomous auctioneer.
@@ -245,7 +248,7 @@ func NewAuctioneerServer(ctx context.Context, configFetcher AuctioneerServerConf
 		auctionContract:                auctionContract,
 		auctionContractAddr:            auctionContractAddr,
 		auctionContractDomainSeparator: domainSeparator,
-		bidsReceiver:                   make(chan *JsonValidatedBid, 100_000), // TODO(Terence): Is 100k enough? Make this configurable?
+		bidsReceiver:                   make(chan *JsonValidatedBid, cfg.BidsBufferSize),
 		bidCache:                       newBidCache(domainSeparator),
 		roundTimingInfo:                *roundTimingInfo,
 		auctionResolutionWaitTime:      cfg.AuctionResolutionWaitTime,
