@@ -53,13 +53,18 @@ func init() {
 	}
 
 	for k, v := range vm.PrecompiledContractsBerlin {
-		vm.PrecompiledAddressesArbitrum = append(vm.PrecompiledAddressesArbitrum, k)
-		vm.PrecompiledContractsArbitrum[k] = v
+		vm.PrecompiledAddressesBeforeArbOS30 = append(vm.PrecompiledAddressesBeforeArbOS30, k)
+		vm.PrecompiledContractsBeforeArbOS30[k] = v
 	}
 
 	for k, v := range vm.PrecompiledContractsCancun {
-		vm.PrecompiledAddressesArbOS30 = append(vm.PrecompiledAddressesArbOS30, k)
-		vm.PrecompiledContractsArbOS30[k] = v
+		vm.PrecompiledAddressesAfterArbOS30 = append(vm.PrecompiledAddressesAfterArbOS30, k)
+		vm.PrecompiledContractsAfterArbOS30[k] = v
+	}
+
+	for k, v := range vm.PrecompiledContractsPrague {
+		vm.PrecompiledAddressesAfterArbOS50 = append(vm.PrecompiledAddressesAfterArbOS50, k)
+		vm.PrecompiledContractsAfterArbOS50[k] = v
 	}
 
 	precompileErrors := make(map[[4]byte]abi.Error)
@@ -68,22 +73,26 @@ func init() {
 			precompileErrors[[4]byte(errABI.ID.Bytes())] = errABI
 		}
 		var wrapped vm.AdvancedPrecompile = ArbosPrecompileWrapper{precompile}
-		vm.PrecompiledContractsArbOS30[addr] = wrapped
-		vm.PrecompiledAddressesArbOS30 = append(vm.PrecompiledAddressesArbOS30, addr)
+		vm.PrecompiledContractsAfterArbOS30[addr] = wrapped
+		vm.PrecompiledAddressesAfterArbOS30 = append(vm.PrecompiledAddressesAfterArbOS30, addr)
 
 		if precompile.Precompile().ArbosVersion() < params.ArbosVersion_Stylus {
-			vm.PrecompiledContractsArbitrum[addr] = wrapped
-			vm.PrecompiledAddressesArbitrum = append(vm.PrecompiledAddressesArbitrum, addr)
+			vm.PrecompiledContractsBeforeArbOS30[addr] = wrapped
+			vm.PrecompiledAddressesBeforeArbOS30 = append(vm.PrecompiledAddressesBeforeArbOS30, addr)
 		}
 	}
 
-	for addr, precompile := range vm.PrecompiledContractsArbitrum {
-		vm.PrecompiledContractsArbOS30[addr] = precompile
-		vm.PrecompiledAddressesArbOS30 = append(vm.PrecompiledAddressesArbOS30, addr)
+	for addr, precompile := range vm.PrecompiledContractsBeforeArbOS30 {
+		vm.PrecompiledContractsAfterArbOS30[addr] = precompile
+		vm.PrecompiledAddressesAfterArbOS30 = append(vm.PrecompiledAddressesAfterArbOS30, addr)
 	}
 	for addr, precompile := range vm.PrecompiledContractsP256Verify {
-		vm.PrecompiledContractsArbOS30[addr] = precompile
-		vm.PrecompiledAddressesArbOS30 = append(vm.PrecompiledAddressesArbOS30, addr)
+		vm.PrecompiledContractsAfterArbOS30[addr] = precompile
+		vm.PrecompiledAddressesAfterArbOS30 = append(vm.PrecompiledAddressesAfterArbOS30, addr)
+	}
+	for addr, precompile := range vm.PrecompiledContractsAfterArbOS30 {
+		vm.PrecompiledContractsAfterArbOS50[addr] = precompile
+		vm.PrecompiledAddressesAfterArbOS50 = append(vm.PrecompiledAddressesAfterArbOS50, addr)
 	}
 
 	core.RenderRPCError = func(data []byte) error {
