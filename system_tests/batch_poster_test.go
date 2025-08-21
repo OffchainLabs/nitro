@@ -28,6 +28,7 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/upgrade_executorgen"
 	"github.com/offchainlabs/nitro/util/redisutil"
 	"github.com/offchainlabs/nitro/util/testhelpers"
+	testflag "github.com/offchainlabs/nitro/util/testhelpers/flag"
 )
 
 func TestBatchPosterParallel(t *testing.T) {
@@ -95,6 +96,9 @@ func testBatchPosterParallel(t *testing.T, useRedis bool, useRedisLock bool) {
 	}
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	if *testflag.RedisFlag != "" {
+		builder.DontParalellise()
+	}
 	builder.nodeConfig.BatchPoster.Enable = false
 	builder.nodeConfig.BatchPoster.RedisUrl = redisUrl
 	builder.nodeConfig.BatchPoster.RedisLock.Enable = useRedisLock
@@ -232,6 +236,9 @@ func TestRedisBatchPosterHandoff(t *testing.T) {
 	Require(t, err)
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	if *testflag.RedisFlag != "" {
+		builder.DontParalellise()
+	}
 	builder.nodeConfig.BatchPoster.Enable = false
 	builder.nodeConfig.BatchPoster.RedisUrl = redisUrl
 	builder.nodeConfig.BatchPoster.RedisLock.LockoutDuration = 100 * time.Millisecond
@@ -346,7 +353,7 @@ func TestRedisBatchPosterHandoff(t *testing.T) {
 			break
 		}
 		if i == 0 {
-			Require(t, err)
+			Require(t, err, "timed out waiting for last transaction to be included in batch and synced by node B")
 		}
 	}
 
