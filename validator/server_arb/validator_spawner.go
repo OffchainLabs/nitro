@@ -34,7 +34,7 @@ type ArbitratorSpawnerConfig struct {
 	UsePreBoldMachine           bool                         `koanf:"use-prebold-machine" reload:"hot"`
 }
 
-type ArbitratorSpawnerConfigFecher func() *ArbitratorSpawnerConfig
+type ArbitratorSpawnerConfigFetcher func() *ArbitratorSpawnerConfig
 
 var DefaultArbitratorSpawnerConfig = ArbitratorSpawnerConfig{
 	Workers:                     0,
@@ -60,7 +60,7 @@ func DefaultArbitratorSpawnerConfigFetcher() *ArbitratorSpawnerConfig {
 
 // MachineWrapper is a function that wraps a MachineInterface
 //
-// This is a mechanism to allow clients of the AribtratorSpawner to inject
+// This is a mechanism to allow clients of the ArbitratorSpawner to inject
 // functionality around the arbitrator machine. Possible use cases include
 // mocking out the machine for testing purposes, or having the machine behave
 // differently when certain features (like BoLD) are enabled.
@@ -73,9 +73,9 @@ type ArbitratorSpawner struct {
 	count         atomic.Int32
 	locator       *server_common.MachineLocator
 	machineLoader *ArbMachineLoader
-	// Oreder of wrappers is important. The first wrapper is the innermost.
+	// Order of wrappers is important. The first wrapper is the innermost.
 	machineWrappers []MachineWrapper
-	config          ArbitratorSpawnerConfigFecher
+	config          ArbitratorSpawnerConfigFetcher
 }
 
 func WithWrapper(wrapper MachineWrapper) SpawnerOption {
@@ -84,7 +84,7 @@ func WithWrapper(wrapper MachineWrapper) SpawnerOption {
 	}
 }
 
-func NewArbitratorSpawner(locator *server_common.MachineLocator, config ArbitratorSpawnerConfigFecher, opts ...SpawnerOption) (*ArbitratorSpawner, error) {
+func NewArbitratorSpawner(locator *server_common.MachineLocator, config ArbitratorSpawnerConfigFetcher, opts ...SpawnerOption) (*ArbitratorSpawner, error) {
 	// TODO: preload machines
 	spawner := &ArbitratorSpawner{
 		locator:         locator,

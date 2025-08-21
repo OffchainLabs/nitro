@@ -63,18 +63,18 @@ type ExecServerAPI struct {
 	ValidationServerAPI
 	execSpawner validator.ExecutionSpawner
 
-	config server_arb.ArbitratorSpawnerConfigFecher
+	config server_arb.ArbitratorSpawnerConfigFetcher
 
 	runIdLock sync.Mutex
 	nextId    uint64
 	runs      map[uint64]*execRunEntry
 }
 
-func NewExecutionServerAPI(valSpawner validator.ValidationSpawner, execution validator.ExecutionSpawner, config server_arb.ArbitratorSpawnerConfigFecher) *ExecServerAPI {
+func NewExecutionServerAPI(valSpawner validator.ValidationSpawner, execution validator.ExecutionSpawner, config server_arb.ArbitratorSpawnerConfigFetcher) *ExecServerAPI {
 	return &ExecServerAPI{
 		ValidationServerAPI: *NewValidationServerAPI(valSpawner),
 		execSpawner:         execution,
-		nextId:              rand.Uint64(), // good-enough to aver reusing ids after reboot
+		nextId:              rand.Uint64(), // good-enough to avoid reusing ids after reboot
 		runs:                make(map[uint64]*execRunEntry),
 		config:              config,
 	}

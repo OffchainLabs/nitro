@@ -60,6 +60,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
+	"github.com/offchainlabs/nitro/arbos/multigascollector"
 	arbosutil "github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/blsSignatures"
@@ -193,6 +194,7 @@ var DefaultTestForwarderConfig = gethexec.ForwarderConfig{
 var TestSequencerConfig = gethexec.SequencerConfig{
 	Enable:                       true,
 	MaxBlockSpeed:                time.Millisecond * 10,
+	ReadFromTxQueueTimeout:       time.Second, // Dont want this to affect tests
 	MaxRevertGasReject:           params.TxGas + 10000,
 	MaxAcceptableTimestampDelta:  time.Hour,
 	SenderWhitelist:              []string{},
@@ -393,6 +395,11 @@ func (b *NodeBuilder) WithWasmRootDir(wasmRootDir string) *NodeBuilder {
 
 func (b *NodeBuilder) WithExtraArchs(targets []string) *NodeBuilder {
 	b.execConfig.StylusTarget.ExtraArchs = targets
+	return b
+}
+
+func (b *NodeBuilder) WithMultigasCollector(config multigascollector.CollectorConfig) *NodeBuilder {
+	b.execConfig.MultigasCollector = config
 	return b
 }
 
