@@ -213,14 +213,18 @@ func activateProgramInternal(
 	for _, target := range nativeTargets {
 		target := target
 		go func() {
-			cranelift := false
-			timeout := time.Second * 15
-			asm, err := compileNative(wasm, stylusVersion, debug, target, cranelift, timeout)
-			if err != nil {
-				log.Warn("initial stylus compilation failed", "address", addressForLogging, "cranelift", cranelift, "timeout", timeout, "err", err)
-				asm, err = compileNative(wasm, stylusVersion, debug, target, !cranelift, timeout)
+			if target == rawdb.TargetWasm {
+				results <- result{target, wasm, nil}
+			} else {
+				cranelift := false
+				timeout := time.Second * 15
+				asm, err := compileNative(wasm, stylusVersion, debug, target, cranelift, timeout)
+				if err != nil {
+					log.Warn("initial stylus compilation failed", "address", addressForLogging, "cranelift", cranelift, "timeout", timeout, "err", err)
+					asm, err = compileNative(wasm, stylusVersion, debug, target, !cranelift, timeout)
+				}
+				results <- result{target, asm, err}
 			}
-			results <- result{target, asm, err}
 		}()
 	}
 	expectedResults := len(nativeTargets)
