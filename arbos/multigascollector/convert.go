@@ -6,7 +6,7 @@ package multigascollector
 import (
 	"github.com/ethereum/go-ethereum/arbitrum/multigas"
 
-	"github.com/offchainlabs/nitro/execution/multigascollector/proto"
+	"github.com/offchainlabs/nitro/arbos/multigascollector/proto"
 )
 
 // ToProto converts the TransactionMultiGas to its protobuf representation.

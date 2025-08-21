@@ -15,7 +15,6 @@ message MultiGasData {
   uint64 history_growth = 4;
   uint64 storage_access = 5;
   uint64 storage_growth = 6;
-
 }
 
 // Gas data and metadata for a single transaction

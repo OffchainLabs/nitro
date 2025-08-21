@@ -17,8 +17,8 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 
-	"github.com/offchainlabs/nitro/execution/multigascollector"
-	"github.com/offchainlabs/nitro/execution/multigascollector/proto"
+	"github.com/offchainlabs/nitro/arbos/multigascollector"
+	"github.com/offchainlabs/nitro/arbos/multigascollector/proto"
 )
 
 // TestMultigasCollector_System spins up an L2 node with the multigas collector enabled,

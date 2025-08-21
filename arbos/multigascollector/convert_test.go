@@ -10,7 +10,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/arbitrum/multigas"
 
-	"github.com/offchainlabs/nitro/execution/multigascollector/proto"
+	"github.com/offchainlabs/nitro/arbos/multigascollector/proto"
 )
 
 func TestTransactionMultiGasToProto(t *testing.T) {
