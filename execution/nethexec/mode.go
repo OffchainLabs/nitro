@@ -14,7 +14,7 @@ const (
 	ModeExternalOnly                      // return external, still drive internal in bg for consistency
 )
 
-// GetExecutionModeFromEnv reads PR_EXECUTION_MODE or legacy PR_USE_EXTERNAL_EXECUTION
+// GetExecutionModeFromEnv reads PR_EXECUTION_MODE
 // Values for PR_EXECUTION_MODE: "internal" (default), "dual", "external"
 func GetExecutionModeFromEnv() ExecutionMode {
 	mode := strings.ToLower(strings.TrimSpace(os.Getenv("PR_EXECUTION_MODE")))
