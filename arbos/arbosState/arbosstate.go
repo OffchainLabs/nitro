@@ -376,7 +376,7 @@ func (state *ArbosState) UpgradeArbosVersion(
 			// no change state needed
 
 		case 42, 43, 44, 45, 46, 47, 48, 49:
-			// no change state needed
+			// 	these versions are left to Orbit chains for custom upgrades.
 
 		case params.ArbosVersion_50:
 			// no change state needed

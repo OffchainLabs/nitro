@@ -71,17 +71,17 @@ func TestVersion40(t *testing.T) {
 	testPrecompiles(t, params.ArbosVersion_40, bn256AddByzantium.Included(), kzgPointEvaluation.Included(), p256Verify.Included(), bls12381G1Add.NotIncluded(), bls12381G1MultiExp.NotIncluded())
 }
 
-func TestVersion50(t *testing.T) {
+func TestArbOSVersion50(t *testing.T) {
 	testPrecompiles(t, params.ArbosVersion_50, kzgPointEvaluation.Included(), bls12381G1Add.Included(), bls12381G1MultiExp.Included())
 }
 
-func testPrecompiles(t *testing.T, version uint64, cases ...precompileCase) {
+func testPrecompiles(t *testing.T, arbosVersion uint64, cases ...precompileCase) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	builder := NewNodeBuilder(ctx).
 		DefaultConfig(t, false).
-		WithArbOSVersion(version)
+		WithArbOSVersion(arbosVersion)
 	builder.execConfig.TxPreChecker.Strictness = gethexec.TxPreCheckerStrictnessLikelyCompatible
 	cleanup := builder.Build(t)
 	defer cleanup()
