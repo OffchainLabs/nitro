@@ -19,6 +19,7 @@ func createL1AndL2NodeForTimeboost(
 	ctx context.Context,
 	t *testing.T,
 	delayedSequencer bool,
+	batchPoster bool,
 ) (*NodeBuilder, func()) {
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
 	builder.l1StackConfig.HTTPPort = 8545
@@ -34,7 +35,13 @@ func createL1AndL2NodeForTimeboost(
 	builder.useL1StackConfig = true
 
 	// poster config
-	builder.nodeConfig.BatchPoster.Enable = false
+	builder.nodeConfig.BatchPoster.Enable = batchPoster
+	builder.nodeConfig.BatchPoster.HotShotUrls = []string{hotShotUrl, hotShotUrl}
+	builder.nodeConfig.BatchPoster.EspressoRegisterSignerConfig.MaxBaseFee = 10000000000 // 100 GWEI for tests
+	builder.nodeConfig.BatchPoster.MaxSize = 10000
+	builder.nodeConfig.BatchPoster.PollInterval = 10 * time.Second
+	builder.nodeConfig.BatchPoster.MaxDelay = 1000 * time.Hour
+	builder.nodeConfig.BatchPoster.IsTimeboosted = true
 
 	// validator config
 	builder.nodeConfig.BlockValidator.Enable = true
@@ -141,7 +148,7 @@ func TestEspressoTimeboostSequencer(t *testing.T) {
 	defer valNodeCleanup()
 	// In future, we also need to create a version of
 	// delayed sequencer for timeboost
-	builder, cleanup := createL1AndL2NodeForTimeboost(ctx, t, true)
+	builder, cleanup := createL1AndL2NodeForTimeboost(ctx, t, true, false)
 	defer cleanup()
 
 	err := waitForL1Node(ctx)

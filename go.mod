@@ -13,8 +13,8 @@ replace github.com/prysmaticlabs/go-bitfield => github.com/OffchainLabs/go-bitfi
 require (
 	cloud.google.com/go/storage v1.43.0
 	github.com/DATA-DOG/go-sqlmock v1.5.2
-	github.com/EspressoSystems/espresso-network/sdks/go v0.2.5
-	github.com/EspressoSystems/timeboost-proto/go-generated v0.0.0-20250721153353-41d7768cabbd
+	github.com/EspressoSystems/espresso-network/sdks/go v0.2.8
+	github.com/EspressoSystems/timeboost-proto/go-generated v0.0.0-20250821174701-117696709273
 	github.com/Knetic/govaluate v3.0.1-0.20171022003610-9aa49832a739+incompatible
 	github.com/Shopify/toxiproxy v2.1.4+incompatible
 	github.com/alicebob/miniredis/v2 v2.32.1
@@ -61,12 +61,12 @@ require (
 	github.com/syndtr/goleveldb v1.0.1-0.20210819022825-2ae1ddf74ef7
 	github.com/wealdtech/go-merkletree v1.0.0
 	go.uber.org/automaxprocs v1.5.2
-	golang.org/x/crypto v0.36.0
-	golang.org/x/oauth2 v0.28.0
-	golang.org/x/sync v0.12.0
-	golang.org/x/sys v0.31.0
-	golang.org/x/term v0.30.0
-	golang.org/x/tools v0.29.0
+	golang.org/x/crypto v0.39.0
+	golang.org/x/oauth2 v0.30.0
+	golang.org/x/sync v0.15.0
+	golang.org/x/sys v0.33.0
+	golang.org/x/term v0.32.0
+	golang.org/x/tools v0.33.0
 	google.golang.org/api v0.187.0
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1
 )
@@ -86,7 +86,7 @@ require (
 	cloud.google.com/go v0.115.0 // indirect
 	cloud.google.com/go/auth v0.6.1 // indirect
 	cloud.google.com/go/auth/oauth2adapt v0.2.2 // indirect
-	cloud.google.com/go/compute/metadata v0.6.0 // indirect
+	cloud.google.com/go/compute/metadata v0.7.0 // indirect
 	cloud.google.com/go/iam v1.1.8 // indirect
 	github.com/benbjohnson/clock v1.3.5 // indirect
 	github.com/btcsuite/btcd v0.24.0 // indirect
@@ -96,10 +96,10 @@ require (
 	github.com/cockroachdb/fifo v0.0.0-20240606204812-0bbfbd93a7ce // indirect
 	github.com/ethereum/go-verkle v0.2.2 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
-	github.com/fxamacker/cbor/v2 v2.2.0 // indirect
-	github.com/go-logr/logr v1.4.2 // indirect
+	github.com/fxamacker/cbor/v2 v2.2.0
+	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
-	github.com/golang/glog v1.2.4 // indirect
+	github.com/golang/glog v1.2.5 // indirect
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/google/go-querystring v1.1.0 // indirect
@@ -117,17 +117,17 @@ require (
 	github.com/x448/float16 v0.8.4 // indirect
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.49.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.49.0 // indirect
-	go.opentelemetry.io/otel v1.35.0 // indirect
-	go.opentelemetry.io/otel/metric v1.35.0 // indirect
-	go.opentelemetry.io/otel/trace v1.35.0 // indirect
+	go.opentelemetry.io/otel v1.37.0 // indirect
+	go.opentelemetry.io/otel/metric v1.37.0 // indirect
+	go.opentelemetry.io/otel/trace v1.37.0 // indirect
 	golang.org/x/exp v0.0.0-20231110203233-9a3e6036ecaa // indirect
-	golang.org/x/text v0.23.0 // indirect
+	golang.org/x/text v0.26.0 // indirect
 	golang.org/x/time v0.9.0 // indirect
 	google.golang.org/genproto v0.0.0-20240624140628-dc46fd24d27d // indirect
-	google.golang.org/genproto/googleapis/api v0.0.0-20250324211829-b45e905df463 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20250324211829-b45e905df463 // indirect
-	google.golang.org/grpc v1.73.0
-	google.golang.org/protobuf v1.36.6
+	google.golang.org/genproto/googleapis/api v0.0.0-20250707201910-8d1bb00bc6a7 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20250707201910-8d1bb00bc6a7 // indirect
+	google.golang.org/grpc v1.75.0
+	google.golang.org/protobuf v1.36.8
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
@@ -230,7 +230,7 @@ require (
 	github.com/yuin/gopher-lua v1.1.1 // indirect
 	github.com/yusufpapurcu/wmi v1.2.2 // indirect
 	go.opencensus.io v0.24.0 // indirect
-	golang.org/x/mod v0.22.0 // indirect
-	golang.org/x/net v0.38.0
+	golang.org/x/mod v0.25.0 // indirect
+	golang.org/x/net v0.41.0
 	rsc.io/tmplfunc v0.0.3 // indirect
 )

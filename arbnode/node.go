@@ -1093,7 +1093,11 @@ func getTimeboostSequencer(
 	}
 
 	if exec, ok := exec.(*gethexec.ExecutionNode); ok {
-		timeboostSequencer, err := gethexec.NewTimeboostSequencer(exec.ExecEngine, l1Reader, channel, func() *gethexec.TimeboostSequencerConfig { return &configFetcher.Get().TimeboostSequencer })
+		bridge, err := gethexec.NewTimeboostBridge(configFetcher.Get().TimeboostSequencer.TimeboostBridgeConfig)
+		if err != nil {
+			return nil, err
+		}
+		timeboostSequencer, err := gethexec.NewTimeboostSequencer(exec.ExecEngine, l1Reader, channel, func() *gethexec.TimeboostSequencerConfig { return &configFetcher.Get().TimeboostSequencer }, bridge)
 		if err != nil {
 			return nil, err
 		}

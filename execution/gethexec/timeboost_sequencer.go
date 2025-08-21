@@ -4,12 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"math/big"
 	"runtime/debug"
 	"sync"
 	"time"
 
 	protos "github.com/EspressoSystems/timeboost-proto/go-generated"
+	"github.com/fxamacker/cbor/v2"
 	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/arbitrum"
@@ -20,6 +22,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/ethereum/go-ethereum/rlp"
 
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
@@ -98,11 +101,11 @@ type TimeboostSequencer struct {
 	execEngine *ExecutionEngine
 	l1Reader   *headerreader.HeaderReader
 	// TODO: We should probably also store the txRetryQueue in storage
-	txRetryQueue         synchronizedTimeboostTransactionQueue
-	nonceCache           *nonceCache
-	timeboostTxnListener *TimeboostBridge
-	delayedMessagesRead  uint64
-	channel              chan DelayedMessageCommand
+	txRetryQueue        synchronizedTimeboostTransactionQueue
+	nonceCache          *nonceCache
+	delayedMessagesRead uint64
+	channel             chan DelayedMessageCommand
+	timeboostBridge     *TimeboostBridge
 }
 
 type TimeboostSequencerConfigFetcher func() *TimeboostSequencerConfig
@@ -147,16 +150,13 @@ func TimeboostSequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
 	TimeboostBridgeConfigAddOptions(prefix+".timeboost-bridge-config", f)
 }
 
-func NewTimeboostSequencer(execEngine *ExecutionEngine, l1Reader *headerreader.HeaderReader, channel chan DelayedMessageCommand, configFetcher TimeboostSequencerConfigFetcher) (*TimeboostSequencer, error) {
+func NewTimeboostSequencer(execEngine *ExecutionEngine, l1Reader *headerreader.HeaderReader, channel chan DelayedMessageCommand, configFetcher TimeboostSequencerConfigFetcher, timeboostBridge *TimeboostBridge) (*TimeboostSequencer, error) {
 	return &TimeboostSequencer{
-		config:     configFetcher,
-		execEngine: execEngine,
-		l1Reader:   l1Reader,
-		nonceCache: newNonceCache(configFetcher().NonceCacheSize),
-		timeboostTxnListener: &TimeboostBridge{
-			config:     configFetcher().TimeboostBridgeConfig,
-			grpcClient: nil,
-		},
+		config:              configFetcher,
+		execEngine:          execEngine,
+		l1Reader:            l1Reader,
+		nonceCache:          newNonceCache(configFetcher().NonceCacheSize),
+		timeboostBridge:     timeboostBridge,
 		delayedMessagesRead: 0,
 		channel:             channel,
 	}, nil
@@ -382,6 +382,25 @@ outer:
 	}
 
 	if block != nil {
+		msg, err := MessageFromTxes(l1IncomingMessageHeader, txes, hooks.TxErrors)
+		if err != nil {
+			return false
+		}
+
+		msgIdx, err := s.execEngine.BlockNumberToMessageIndex(block.NumberU64())
+		if err != nil {
+			return false
+		}
+		delayed := block.Nonce()
+		messageWithMeta := arbostypes.MessageWithMetadata{
+			Message:             msg,
+			DelayedMessagesRead: delayed,
+		}
+
+		log.Info("sending block to timeboost", "idx", msgIdx, "block", block.NumberU64())
+		if err = s.SubmitBlockToTimeboost(uint64(msgIdx), messageWithMeta, queueItems[0].roundId); err != nil {
+			log.Error("error submitting block", "err", err)
+		}
 		successfulBlocksCounter.Inc(1)
 		s.nonceCache.Finalize(block)
 		// Add a metric to indicate how long it took to create the block
@@ -601,7 +620,7 @@ func (s *TimeboostSequencer) Start(ctx context.Context) error {
 		return errors.New("l1Reader is nil")
 	}
 
-	if err := s.timeboostTxnListener.Start(ctx, s.ProcessInclusionList); err != nil {
+	if err := s.timeboostBridge.Start(ctx, s.ProcessInclusionList); err != nil {
 		return err
 	}
 
@@ -612,6 +631,38 @@ func (s *TimeboostSequencer) Start(ctx context.Context) error {
 		return s.config().BlockRetryDuration
 	})
 	return err
+}
+
+type MessagePayload struct {
+	Position uint64 `cbor:"pos"`
+	Size     uint64 `cbor:"size"`
+	Message  []byte `cbor:"msg"`
+}
+
+func (s *TimeboostSequencer) SubmitBlockToTimeboost(pos uint64, msg arbostypes.MessageWithMetadata, roundId uint64) error {
+	//  Only submit the transaction if escape hatch is not enabled
+	msgBytes, _ := rlp.EncodeToBytes(msg)
+	payload := MessagePayload{
+		Position: pos,
+		Size:     uint64(len(msgBytes)),
+		Message:  msgBytes,
+	}
+	encoded, err := cbor.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	if len(encoded) == 0 {
+		return nil
+	}
+	chainID := s.execEngine.bc.Config().ChainID.Int64()
+	if chainID < 0 || chainID > math.MaxUint32 {
+		return fmt.Errorf("chain id %d is out of uint32 range", chainID)
+	}
+	err = s.timeboostBridge.SendBlockToTimeboost(pos, encoded, roundId, uint32(chainID))
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func (s *TimeboostSequencer) StopAndWait() {

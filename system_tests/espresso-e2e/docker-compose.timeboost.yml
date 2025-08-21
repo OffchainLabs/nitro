@@ -1,18 +1,19 @@
 services:
   node0:
-    image: ghcr.io/espressosystems/timeboost:20250729
+    image: timeboost:latest
     command:
       [
         "/app/timeboost",
         "--id", "0",
-        "--rpc-port", "8800",
-        "--metrics-port", "9000",
+        "--http-port", "8800",
         "--keyset-file", "/app/timeboost-keyset.json",
         "--stamp", "/tmp/timeboost.stamp",
-        "--namespace", "10101",
+        "--namespace", "412346",
+        "--espresso-base-url", "http://espresso-dev-node:41000/v1/",
+        "--espresso-websocket-url", "ws://espresso-dev-node:41000/v1/",
       ]
     environment:
-      - RUST_LOG=timeboost=info,sailfish=error,cliquenet=error
+      - RUST_LOG=timeboost=info,sailfish=error,cliquenet=error,robusta=info
       - TIMEBOOST_SAILFISH_PORT=8000
       - TIMEBOOST_DECRYPT_PORT=10000
       - TIMEBOOST_CERTIFIER_PORT=11000
@@ -32,19 +33,20 @@ services:
     networks:
       - nitro-timeboost
   node1:
-    image: ghcr.io/espressosystems/timeboost:20250729
+    image: timeboost:latest
     command:
       [
         "/app/timeboost",
         "--id", "1",
-        "--rpc-port", "8801",
-        "--metrics-port", "9001",
+        "--http-port", "8801",
         "--keyset-file", "/app/timeboost-keyset.json",
         "--stamp", "/tmp/timeboost.stamp",
-        "--namespace", "10101",
+        "--namespace", "412346",
+        "--espresso-base-url", "http://host.docker.internal:41000/",
+        "--espresso-websocket-url", "ws://host.docker.internal:41000/",
       ]
     environment:
-      - RUST_LOG=timeboost=info,sailfish=error,cliquenet=error
+      - RUST_LOG=timeboost=info,sailfish=error,cliquenet=error,rubusta=info
       - TIMEBOOST_SAILFISH_PORT=8001
       - TIMEBOOST_DECRYPT_PORT=10001
       - TIMEBOOST_CERTIFIER_PORT=11001
@@ -62,7 +64,33 @@ services:
       - "host.docker.internal:host-gateway"
     networks:
       - nitro-timeboost
+  espresso-dev-node:
+    image: ghcr.io/espressosystems/espresso-sequencer/espresso-dev-node:release-rc-20250623-p2
+    ports:
+      - "$ESPRESSO_SEQUENCER_API_PORT:$ESPRESSO_SEQUENCER_API_PORT"
+      - "$ESPRESSO_BUILDER_PORT:$ESPRESSO_BUILDER_PORT"
+      - "$ESPRESSO_DEV_NODE_PORT:$ESPRESSO_DEV_NODE_PORT"
+    environment:
+      - ESPRESSO_BUILDER_PORT
+      - ESPRESSO_DEPLOYER_ACCOUNT_INDEX
+      - ESPRESSO_DEV_NODE_PORT
+      - ESPRESSO_SEQUENCER_API_PORT
+      - ESPRESSO_SEQUENCER_ETH_MNEMONIC
+      - ESPRESSO_SEQUENCER_L1_PROVIDER
+      - ESPRESSO_SEQUENCER_DATABASE_MAX_CONNECTIONS=25
+      - ESPRESSO_DEV_NODE_EPOCH_HEIGHT
+      - ESPRESSO_SEQUENCER_STORAGE_PATH=/data/espresso
+      - RUST_LOG=WARN
+      - RUST_LOG_FORMAT
+    volumes:
+      - espresso_storage:/data/espresso
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - nitro-timeboost
 networks:
   nitro-timeboost:
     driver: bridge
     name: nitro-timeboost
+volumes:
+  espresso_storage:

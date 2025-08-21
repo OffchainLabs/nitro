@@ -31,7 +31,7 @@ func TestEspressoStreamer(t *testing.T) {
 		mockEspressoClient := new(mockEspressoClient)
 		mockEspressoTEEVerifierClient := new(mockEspressoTEEVerifier)
 
-		streamer := NewEspressoStreamer(1, 3, mockEspressoTEEVerifierClient, mockEspressoClient, false, func(l1Height uint64) []common.Address { return []common.Address{} }, 1*time.Second)
+		streamer := NewEspressoStreamer(1, 3, mockEspressoTEEVerifierClient, mockEspressoClient, false, func(l1Height uint64) []common.Address { return []common.Address{} }, 1*time.Second, false)
 
 		streamer.Reset(1, 3)
 
@@ -63,7 +63,7 @@ func TestEspressoStreamer(t *testing.T) {
 		mockEspressoClient := new(mockEspressoClient)
 		mockEspressoTEEVerifierClient := new(mockEspressoTEEVerifier)
 
-		streamer := NewEspressoStreamer(1, 3, mockEspressoTEEVerifierClient, mockEspressoClient, false, func(l1Height uint64) []common.Address { return []common.Address{} }, 1*time.Second)
+		streamer := NewEspressoStreamer(1, 3, mockEspressoTEEVerifierClient, mockEspressoClient, false, func(l1Height uint64) []common.Address { return []common.Address{} }, 1*time.Second, false)
 
 		streamer.Reset(1, 3)
 
@@ -118,7 +118,7 @@ func TestEspressoStreamer(t *testing.T) {
 		// Simulate the call to the tee verifier returning a byte array. To the streamer, this indicates the attestation quote is valid.
 		mockEspressoTEEVerifierClient.On("Verify", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(true, nil)
 		// create a new streamer object
-		streamer := NewEspressoStreamer(1, 1, mockEspressoTEEVerifierClient, mockEspressoClient, false, func(l1Height uint64) []common.Address { return []common.Address{} }, 1*time.Second)
+		streamer := NewEspressoStreamer(1, 1, mockEspressoTEEVerifierClient, mockEspressoClient, false, func(l1Height uint64) []common.Address { return []common.Address{} }, 1*time.Second, false)
 		streamer.Reset(735805, 1)
 		// Get the data for this test
 		testBlocks := GetTestBlocks()
@@ -149,7 +149,7 @@ func TestEspressoStreamer(t *testing.T) {
 
 		mockEspressoClient.On("FetchTransactionsInBlock", ctx, uint64(6), namespace).Return(espressoClient.TransactionsInBlock{}, errors.New("test error"))
 
-		streamer := NewEspressoStreamer(namespace, 3, mockEspressoTEEVerifierClient, mockEspressoClient, false, func(l1Height uint64) []common.Address { return []common.Address{} }, 1*time.Second)
+		streamer := NewEspressoStreamer(namespace, 3, mockEspressoTEEVerifierClient, mockEspressoClient, false, func(l1Height uint64) []common.Address { return []common.Address{} }, 1*time.Second, false)
 
 		testParseFn := func(tx types.Bytes, l1 uint64) ([]*MessageWithMetadataAndPos, error) {
 			return nil, nil
@@ -191,7 +191,7 @@ func TestEspressoStreamer(t *testing.T) {
 			},
 		}, nil)
 
-		streamer := NewEspressoStreamer(namespace, 3, mockEspressoTEEVerifierClient, mockEspressoClient, false, func(l1Height uint64) []common.Address { return []common.Address{} }, 1*time.Second)
+		streamer := NewEspressoStreamer(namespace, 3, mockEspressoTEEVerifierClient, mockEspressoClient, false, func(l1Height uint64) []common.Address { return []common.Address{} }, 1*time.Second, false)
 
 		testParseFn := func(pos uint64, hotshotheight uint64) func(tx types.Bytes, l1Height uint64) ([]*MessageWithMetadataAndPos, error) {
 
@@ -277,7 +277,7 @@ func ExpectErr(t *testing.T, err error, expectedError error) {
 func TestEspressoEmptyTransaction(t *testing.T) {
 	mockEspressoClient := new(mockEspressoClient)
 	mockEspressoTEEVerifierClient := new(mockEspressoTEEVerifier)
-	streamer := NewEspressoStreamer(1, 1, mockEspressoTEEVerifierClient, mockEspressoClient, false, func(l1Height uint64) []common.Address { return []common.Address{} }, time.Millisecond)
+	streamer := NewEspressoStreamer(1, 1, mockEspressoTEEVerifierClient, mockEspressoClient, false, func(l1Height uint64) []common.Address { return []common.Address{} }, time.Millisecond, false)
 	// This determines the contents of the message. For this test the contents of the message needs to be empty (not 0's) to properly test the behavior
 	msgFetcher := func(arbutil.MessageIndex) ([]byte, error) {
 		return []byte{}, nil

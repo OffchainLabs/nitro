@@ -175,6 +175,7 @@ func NewEspressoCaffNode(
 		recordPerformance,
 		batcherAddrMonitor.GetValidAddresses,
 		configFetcher().RetryTime,
+		false,
 	)
 
 	fromBlock := configFetcher().FromBlock

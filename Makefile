@@ -159,48 +159,6 @@ stylus_test_wasms = $(stylus_test_keccak_wasm) $(stylus_test_keccak-100_wasm) $(
 stylus_benchmarks = $(wildcard $(stylus_dir)/*.toml $(stylus_dir)/src/*.rs) $(stylus_test_wasms)
 CBROTLI_WASM_BUILD_ARGS ?=-d
 
-
-# Normalize architecture names
-ifeq ($(UNAME_M),arm64)
-    # Apple Silicon reports as arm64, but Rust uses aarch64
-    DETECTED_ARCH := aarch64
-else
-    DETECTED_ARCH := $(UNAME_M)
-endif
-
-# Determine target triple
-ifeq ($(DETECTED_ARCH),aarch64)
-    ifeq ($(UNAME_S),Darwin)
-        TRIPLE := aarch64-apple-darwin
-    else
-        TRIPLE := aarch64-unknown-linux-gnu
-    endif
-else ifeq ($(DETECTED_ARCH),x86_64)
-    ifeq ($(UNAME_S),Darwin)
-        TRIPLE := x86_64-apple-darwin
-    else
-        TRIPLE := x86_64-unknown-linux-gnu
-    endif
-else
-    $(error Architecture $(DETECTED_ARCH) is not supported)
-endif
-
-# Set library extension based on OS
-ifeq ($(UNAME_S),Darwin)
-    LIB_EXT := dylib
-	espresso_crypto_filename = libespresso_crypto_helper.dylib
-else
-    LIB_EXT := so
-	export LD_LIBRARY_PATH := $(shell pwd)/target/lib:$LD_LIBRARY_PATH
-endif
-
-CBROTLI_WASM_BUILD_ARGS ?=-d
-
-# user targets
-.PHONY: build-espresso-crypto-lib
-build-espresso-crypto-lib:
-	./scripts/prepare-espresso-crypto-helper
-
 .PHONY: push
 push: lint test-go .make/fmt
 	@printf "%bdone building %s%b\n" $(color_pink) $$(expr $$(echo $? | wc -w) - 1) $(color_reset)
@@ -215,7 +173,7 @@ build: $(patsubst %,$(output_root)/bin/%, nitro deploy relay daprovider daserver
 	@printf $(done)
 
 .PHONY: build-node-deps
-build-node-deps: $(go_source) build-prover-header build-prover-lib build-jit .make/solgen .make/cbrotli-lib build-espresso-crypto-lib
+build-node-deps: $(go_source) build-prover-header build-prover-lib build-jit .make/solgen .make/cbrotli-lib
 
 .PHONY: test-go-deps
 test-go-deps: \
@@ -341,9 +299,6 @@ clean:
 	@rm -rf contracts-local/out contracts-local/forge-cache
 	@rm -f .make/*
 	rm -rf brotli/buildfiles
-	@rm -f $(output_root)/lib/$(espresso_crypto_filename)
-	rm -f $(ESPRESSO_TAR)
-	rm -rf $(ESPRESSO_DIR)
 # Ensure lib64 is a symlink to lib
 	mkdir -p $(output_root)/lib
 	ln -s lib $(output_root)/lib64

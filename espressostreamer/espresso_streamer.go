@@ -11,6 +11,7 @@ import (
 	espressoClient "github.com/EspressoSystems/espresso-network/sdks/go/client"
 	espressoTypes "github.com/EspressoSystems/espresso-network/sdks/go/types"
 	"github.com/ccoveille/go-safecast"
+	"github.com/fxamacker/cbor/v2"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -21,6 +22,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/espressotee"
+	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/dbutil"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
@@ -69,6 +71,7 @@ type EspressoStreamer struct {
 	namespace                 uint64
 	messageWithMetadataAndPos []*MessageWithMetadataAndPos
 	espressoSGXVerifier       espressotee.EspressoSGXVerifierInterface
+	isTimeboosted             bool
 
 	messageLock sync.Mutex
 	retryTime   time.Duration
@@ -80,6 +83,41 @@ type EspressoStreamer struct {
 
 var _ EspressoStreamerInterface = (*EspressoStreamer)(nil)
 
+type BlockNumber uint64
+type RoundNumber uint64
+type BlockHash []byte
+type KeyId uint8
+type Signature []byte
+type Bytes []byte
+type Commitment []byte
+
+type Round struct {
+	Value uint64 `cbor:"0,keyasint"`
+}
+
+type Block struct {
+	Number  BlockNumber `cbor:"0,keyasint"`
+	Round   RoundNumber `cbor:"1,keyasint"`
+	Payload Bytes       `cbor:"2,keyasint"`
+}
+
+type BlockInfo struct {
+	Num   BlockNumber `cbor:"0,keyasint"`
+	Round Round       `cbor:"1,keyasint"`
+	Hash  BlockHash   `cbor:"2,keyasint"`
+}
+
+type Certificate struct {
+	Data       BlockInfo           `cbor:"0,keyasint"`
+	Commitment Commitment          `cbor:"1,keyasint"`
+	Signatures map[KeyId]Signature `cbor:"2,keyasint"`
+}
+
+type CertifiedBlock struct {
+	Data Block       `cbor:"0,keyasint"`
+	Cert Certificate `cbor:"1,keyasint"`
+}
+
 func NewEspressoStreamer(
 	namespace uint64,
 	nextHotshotBlockNum uint64,
@@ -88,6 +126,7 @@ func NewEspressoStreamer(
 	recordPerformance bool,
 	batcherAddressesFetcher func(l1Height uint64) []common.Address,
 	retryTime time.Duration,
+	isTimeboosted bool,
 ) *EspressoStreamer {
 
 	var PerfRecorder *PerfRecorder
@@ -104,6 +143,7 @@ func NewEspressoStreamer(
 		batcherAddressesFetcher: batcherAddressesFetcher,
 		retryTime:               retryTime,
 		currentMessagePos:       1,
+		isTimeboosted:           isTimeboosted,
 	}
 }
 
@@ -302,6 +342,41 @@ func (s *EspressoStreamer) parseEspressoTransaction(tx espressoTypes.Bytes, l1He
 	return result, nil
 }
 
+func (s *EspressoStreamer) parseTimeboostEspressoTransaction(tx espressoTypes.Bytes, l1Height uint64) ([]*MessageWithMetadataAndPos, error) {
+	var block CertifiedBlock
+	err := cbor.Unmarshal(tx, &block)
+	if err != nil {
+		log.Error("error decoding certified block", "err", err)
+		return nil, err
+	}
+	log.Info("block", "num", block.Data.Number)
+	var message gethexec.MessagePayload
+	err = cbor.Unmarshal(block.Data.Payload, &message)
+	if err != nil {
+		log.Error("error decoding payload", "err", err)
+		return nil, err
+	}
+	var messageWithMetadata arbostypes.MessageWithMetadata
+	err = rlp.DecodeBytes(message.Message, &messageWithMetadata)
+	if err != nil {
+		log.Error("error decoding message", "err", err)
+		return nil, err
+	}
+
+	result := []*MessageWithMetadataAndPos{}
+	if message.Position < s.currentMessagePos {
+		log.Warn("message index is less than current pos, skipping", "current", s.currentMessagePos, "messagePos", message.Position)
+		return result, nil
+	}
+	log.Warn("updating", "current", s.currentMessagePos, "messagePos", message.Position)
+	result = append(result, &MessageWithMetadataAndPos{
+		MessageWithMeta: messageWithMetadata,
+		Pos:             message.Position,
+		HotshotHeight:   s.nextHotshotBlockNum,
+	})
+	return result, nil
+}
+
 func (s *EspressoStreamer) ReadNextHotshotBlockFromDb(db ethdb.Database) (uint64, error) {
 	var nextHotshotBlock uint64
 	nextHotshotBytes, err := db.Get([]byte(NextHotshotBlockKey))
@@ -413,7 +488,13 @@ func (s *EspressoStreamer) Start(ctxIn context.Context) error {
 		} else {
 			log.Debug("Now processing hotshot block", "block number", s.nextHotshotBlockNum)
 		}
-		err := s.QueueMessagesFromHotshot(ctx, s.parseEspressoTransaction)
+		var err error
+		if s.isTimeboosted {
+			err = s.QueueMessagesFromHotshot(ctx, s.parseTimeboostEspressoTransaction)
+		} else {
+			err = s.QueueMessagesFromHotshot(ctx, s.parseEspressoTransaction)
+		}
+
 		if err != nil {
 			logLevel := log.Error
 			logLevel = ephemeralErrorHandler.LogLevel(err, logLevel)

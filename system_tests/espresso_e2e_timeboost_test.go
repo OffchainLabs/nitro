@@ -20,10 +20,10 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 )
 
-var timeBoostHealth = "/healthz"
-var timeBoostSubmit = "/submit-regular"
+var timeBoostHealth = "/i/health"
+var timeBoostSubmit = "/v1/submit/regular"
 var timeboostUrls = []string{
-	"http://localhost:8800/v0", "http://localhost:8801/v0",
+	"http://localhost:8800", "http://localhost:8801",
 }
 
 func runDecentralizedTimeboost() func() {
@@ -158,7 +158,7 @@ func TestEspressoTimeboostSequencerE2E(t *testing.T) {
 	defer valNodeCleanup()
 	// In future, we also need to create a version of
 	// delayed sequencer for timeboost
-	builder, cleanup := createL1AndL2NodeForTimeboost(ctx, t, true)
+	builder, cleanup := createL1AndL2NodeForTimeboost(ctx, t, true, true)
 	defer cleanup()
 
 	err := waitForL1Node(ctx)
@@ -166,6 +166,10 @@ func TestEspressoTimeboostSequencerE2E(t *testing.T) {
 
 	shutdown := runDecentralizedTimeboost()
 	defer shutdown()
+
+	// wait for the builder
+	err = waitForEspressoNode(ctx)
+	Require(t, err)
 
 	err = waitForTimeboostNodes(ctx)
 	Require(t, err)
@@ -204,7 +208,6 @@ func TestEspressoTimeboostSequencerE2E(t *testing.T) {
 		WrapL2ForDelayed(t, invalidTx, builder.L1Info, "Faucet", 100000),
 	})
 	// Wait for timeboost to update its delayed inbox (TODO: reduce this, timeboost is currently hard coded for 1 minute polling interval)
-	time.Sleep(time.Second * 65)
 	// Send another transaction
 	expectedTxs = append(expectedTxs, createAndSendBundleToTimeboost(t, builder, []string{users[10]})...)
 	// We expect delayed messages blocks to be built last
@@ -212,7 +215,7 @@ func TestEspressoTimeboostSequencerE2E(t *testing.T) {
 	expectedTxs = append(expectedTxs, delayedTx2)
 
 	// Wait for blocks
-	time.Sleep(time.Second * 10)
+	time.Sleep(time.Second * 30)
 
 	blockNumberAfter, err := builder.L2.Client.BlockNumber(ctx)
 	Require(t, err)

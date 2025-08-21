@@ -15,9 +15,7 @@ import (
 	"google.golang.org/protobuf/types/known/emptypb"
 
 	"github.com/ethereum/go-ethereum/arbitrum_types"
-	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/ethereum/go-ethereum/rlp"
 
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
@@ -74,15 +72,11 @@ func NewTimeboostBridge(config TimeboostBridgeConfig) (*TimeboostBridge, error) 
 }
 
 // Send block to timeboost who will get certificate over the block hash and forward to hotshot
-func (l *TimeboostBridge) SendBlockToTimeboost(block *types.Block, round uint64, chainId uint32) error {
-	txns, err := rlp.EncodeToBytes(block.Transactions())
-	if err != nil {
-		return err
-	}
+func (l *TimeboostBridge) SendBlockToTimeboost(number uint64, payload []byte, round uint64, chainId uint32) error {
 	protoBlock := &protos.Block{
-		Round: round,
-		// TODO: Proper hotshot payload
-		Payload: txns,
+		Number:  number,
+		Round:   round,
+		Payload: payload,
 	}
 	ctx := context.Background()
 	if _, err := l.grpcClient.SubmitBlock(ctx, protoBlock); err != nil {
@@ -118,6 +112,7 @@ func (l *TimeboostBridge) Start(
 		log.Error("Failed to connect to gRPC server", "err", err)
 		return err
 	}
+	log.Info("starting grpc client")
 	l.grpcClient = protos.NewInternalApiClient(grpcConn)
 
 	// Grpc server for inclusion list
