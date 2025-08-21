@@ -27,8 +27,6 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/upgrade_executorgen"
 	"github.com/offchainlabs/nitro/util/redisutil"
-	"github.com/offchainlabs/nitro/util/testhelpers"
-	testflag "github.com/offchainlabs/nitro/util/testhelpers/flag"
 )
 
 func TestBatchPosterParallel(t *testing.T) {
@@ -36,12 +34,10 @@ func TestBatchPosterParallel(t *testing.T) {
 }
 
 func TestRedisBatchPosterParallel(t *testing.T) {
-	_ = testhelpers.InitTestLog(t, log.LvlDebug)
 	testBatchPosterParallel(t, true, false)
 }
 
 func TestRedisBatchPosterParallelWithRedisLock(t *testing.T) {
-	_ = testhelpers.InitTestLog(t, log.LvlDebug)
 	testBatchPosterParallel(t, true, true)
 }
 
@@ -96,7 +92,7 @@ func testBatchPosterParallel(t *testing.T, useRedis bool, useRedisLock bool) {
 	}
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
-	if *testflag.RedisFlag != "" {
+	if redisutil.IsSharedTestRedisInstance() {
 		builder.DontParalellise()
 	}
 	builder.nodeConfig.BatchPoster.Enable = false
@@ -236,7 +232,7 @@ func TestRedisBatchPosterHandoff(t *testing.T) {
 	Require(t, err)
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
-	if *testflag.RedisFlag != "" {
+	if redisutil.IsSharedTestRedisInstance() {
 		builder.DontParalellise()
 	}
 	builder.nodeConfig.BatchPoster.Enable = false

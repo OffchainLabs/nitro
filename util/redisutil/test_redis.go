@@ -21,6 +21,11 @@ func CreateTestRedis(ctx context.Context, t testing.TB) string {
 	return url
 }
 
+// IsSharedTestRedisInstance checks if the redis instance is shared between multiple tests - that's the case when --test_redis flag is sepecified
+func IsSharedTestRedisInstance() bool {
+	return *testflag.RedisFlag != ""
+}
+
 // CreateTestRedisAdvanced returns either (nil, test_redis url) or (miniredis, local url)
 func CreateTestRedisAdvanced(ctx context.Context, t testing.TB) (*miniredis.Miniredis, string) {
 	if *testflag.RedisFlag != "" {
