@@ -70,6 +70,7 @@ import (
 	"github.com/offchainlabs/nitro/daprovider/das/dasutil"
 	"github.com/offchainlabs/nitro/deploy"
 	"github.com/offchainlabs/nitro/execution/gethexec"
+	"github.com/offchainlabs/nitro/execution/multigascollector"
 	_ "github.com/offchainlabs/nitro/execution/nodeInterface"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/localgen"
@@ -394,6 +395,11 @@ func (b *NodeBuilder) WithWasmRootDir(wasmRootDir string) *NodeBuilder {
 
 func (b *NodeBuilder) WithExtraArchs(targets []string) *NodeBuilder {
 	b.execConfig.StylusTarget.ExtraArchs = targets
+	return b
+}
+
+func (b *NodeBuilder) WithMultigasCollector(config multigascollector.CollectorConfig) *NodeBuilder {
+	b.execConfig.MultigasCollector = config
 	return b
 }
 
