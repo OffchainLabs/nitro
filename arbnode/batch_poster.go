@@ -1657,6 +1657,7 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 		return false, nil
 	}
 
+	// AttemptLock returns true if redis lock is disabled
 	if !b.redisLock.AttemptLock(ctx) {
 		b.building = nil // a closed batchSegments can't be reused
 		return false, errAttemptLockFailed
