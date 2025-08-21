@@ -167,16 +167,23 @@ func waitForSequencerLockout(ctx context.Context, node *arbnode.Node, duration t
 	if node.SeqCoordinator == nil {
 		return fmt.Errorf("sequence coordinator in the node is nil")
 	}
-	// TODO: implement exponential backoff retry mechanism and use it instead.
+	// Implement exponential backoff while checking for chosen sequencer
+	start := time.Now()
+	interval := 100 * time.Millisecond
+	maxInterval := 2 * time.Second
 	for {
-		select {
-		case <-time.After(duration):
+		if time.Since(start) >= duration {
 			return fmt.Errorf("no sequencer was chosen")
-		default:
-			if c, err := node.SeqCoordinator.RedisCoordinator().CurrentChosenSequencer(ctx); err == nil && c != "" {
-				return nil
+		}
+		if c, err := node.SeqCoordinator.RedisCoordinator().CurrentChosenSequencer(ctx); err == nil && c != "" {
+			return nil
+		}
+		time.Sleep(interval)
+		if interval < maxInterval {
+			interval *= 2
+			if interval > maxInterval {
+				interval = maxInterval
 			}
-			time.Sleep(100 * time.Millisecond)
 		}
 	}
 }
