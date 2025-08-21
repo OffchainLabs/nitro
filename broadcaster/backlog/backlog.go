@@ -87,6 +87,29 @@ func (b *backlog) backlogSizeInBytes() (uint64, error) {
 	return size, nil
 }
 
+// deepCopyMessageForDebug creates a selective copy of the message for memory debugging.
+// It only deep copies the L2msg field which is typically the largest memory consumer.
+// This helps pprof show allocations at the Append point rather than at message creation.
+func deepCopyMessageForDebug(msg *m.BroadcastFeedMessage) *m.BroadcastFeedMessage {
+	if msg == nil || msg.Message.Message == nil || msg.Message.Message.L2msg == nil {
+		return msg
+	}
+
+	copied := *msg
+
+	l2msgCopy := make([]byte, len(msg.Message.Message.L2msg))
+	copy(l2msgCopy, msg.Message.Message.L2msg)
+
+	l1IncomingMessageCopy := *msg.Message.Message
+	l1IncomingMessageCopy.L2msg = l2msgCopy
+
+	messageWithMetadataCopy := msg.Message
+	messageWithMetadataCopy.Message = &l1IncomingMessageCopy
+	copied.Message = messageWithMetadataCopy
+
+	return &copied
+}
+
 // Append will add the given messages to the backlogSegment at head until
 // that segment reaches its limit. If messages remain to be added a new segment
 // will be created.
@@ -103,8 +126,14 @@ func (b *backlog) Append(bm *m.BroadcastMessage) error {
 		}
 	}
 
+	enableDeepCopy := b.config().EnableBacklogDeepCopy
 	lookupByIndex := b.lookupByIndex.Load()
 	for _, msg := range bm.Messages {
+		// For memory debugging: deep copy L2msg to track allocations
+		msgToAppend := msg
+		if enableDeepCopy {
+			msgToAppend = deepCopyMessageForDebug(msg)
+		}
 		segment := b.tail.Load()
 		if segment == nil {
 			segment = newBacklogSegment()
@@ -124,7 +153,7 @@ func (b *backlog) Append(bm *m.BroadcastMessage) error {
 		if segment.count() >= b.config().SegmentLimit {
 			segment.messagesLock.RLock()
 			if len(segment.messages) > 0 {
-				msg.CumulativeSumMsgSize = segment.messages[len(segment.messages)-1].CumulativeSumMsgSize
+				msgToAppend.CumulativeSumMsgSize = segment.messages[len(segment.messages)-1].CumulativeSumMsgSize
 			}
 			segment.messagesLock.RUnlock()
 
@@ -135,7 +164,7 @@ func (b *backlog) Append(bm *m.BroadcastMessage) error {
 			b.tail.Store(segment)
 		}
 
-		err := segment.append(prevMsgIdx, msg)
+		err := segment.append(prevMsgIdx, msgToAppend)
 		if errors.Is(err, errDropSegments) {
 			head := b.head.Load()
 			b.removeFromLookup(head.Start(), uint64(msg.SequenceNumber))
