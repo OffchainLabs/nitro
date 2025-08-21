@@ -24,6 +24,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbos/util"
+	"github.com/offchainlabs/nitro/execution/multigascollector"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
@@ -193,7 +194,7 @@ func ProduceBlock(
 	hooks := NoopSequencingHooks(txes)
 
 	return ProduceBlockAdvanced(
-		message.Header, delayedMessagesRead, lastBlockHeader, statedb, chainContext, hooks, isMsgForPrefetch, runCtx,
+		message.Header, delayedMessagesRead, lastBlockHeader, statedb, chainContext, hooks, isMsgForPrefetch, runCtx, nil,
 	)
 }
 
@@ -207,6 +208,7 @@ func ProduceBlockAdvanced(
 	sequencingHooks *SequencingHooks,
 	isMsgForPrefetch bool,
 	runCtx *core.MessageRunContext,
+	mgcCollector multigascollector.Collector,
 ) (*types.Block, types.Receipts, error) {
 
 	arbState, err := arbosState.OpenSystemArbosState(statedb, nil, true)
@@ -503,6 +505,15 @@ func ProduceBlockAdvanced(
 
 		if isUserTx {
 			userTxsProcessed++
+		}
+
+		// Submit multigas transaction message, if the multi gas collector is set
+		if mgcCollector != nil && result.UsedMultiGas != nil {
+			mgcCollector.CollectTransactionMultiGas(multigascollector.TransactionMultiGas{
+				TxHash:   tx.Hash().Bytes(),
+				TxIndex:  uint32(receipt.TransactionIndex), // #nosec G115 -- block tx count << MaxUint32; safe cast
+				MultiGas: *result.UsedMultiGas,
+			})
 		}
 	}
 
