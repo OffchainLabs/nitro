@@ -21,7 +21,6 @@ func TestDatabaseConversion(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).DontParalellise()
-	builder.useFreezer = false
 	builder.l2StackConfig.DBEngine = "leveldb"
 	builder.l2StackConfig.Name = "testl2"
 	// currently only HashScheme supports archive mode
@@ -61,6 +60,12 @@ func TestDatabaseConversion(t *testing.T) {
 		convConfig.Dst.Data = path.Join(instanceDir, dbname)
 		conv := dbconv.NewDBConverter(&convConfig)
 		err = conv.Convert(ctx)
+		Require(t, err)
+		// move ancients to the destination directory
+		err = os.Rename(
+			path.Join(instanceDir, fmt.Sprintf("%s_old", dbname), "ancient"),
+			path.Join(instanceDir, dbname, "ancient"),
+		)
 		Require(t, err)
 	}
 
