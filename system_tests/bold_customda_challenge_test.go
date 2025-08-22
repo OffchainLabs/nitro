@@ -673,7 +673,7 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, 
 	// - Node B should succeed because the evil provider lies about certificate validity
 	var expectedFailureA, expectedFailureB string
 	if evilStrategy == UntrustedSignerCert {
-		expectedFailureA = "certificate signed by untrusted signer"
+		expectedFailureA = "" // Doesn't fail but returns an empty batch
 		expectedFailureB = "" // Evil provider lies about validity, so sync succeeds
 	}
 

@@ -6,6 +6,7 @@ package daprovider
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
@@ -13,6 +14,20 @@ import (
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/blobs"
 )
+
+// CertificateValidationError represents an error in certificate validation
+type CertificateValidationError struct {
+	Reason string
+}
+
+func (e *CertificateValidationError) Error() string {
+	return e.Reason
+}
+
+// IsCertificateValidationError checks if an error is a certificate validation error
+func IsCertificateValidationError(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "certificate validation failed")
+}
 
 type Reader interface {
 	// IsValidHeaderByte returns true if the given headerByte has bits corresponding to the DA provider

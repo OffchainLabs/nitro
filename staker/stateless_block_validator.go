@@ -322,16 +322,19 @@ func (v *StatelessBlockValidator) readFullBatch(ctx context.Context, batchNum ui
 	preimages := make(daprovider.PreimagesMap)
 	if len(postedData) > 40 {
 		foundDA := false
+		headerByte := postedData[40]
 		for _, dapReader := range v.dapReaders {
-			if dapReader != nil && dapReader.IsValidHeaderByte(ctx, postedData[40]) {
+			if dapReader != nil && dapReader.IsValidHeaderByte(ctx, headerByte) {
 				var err error
 				var preimagesRecorded daprovider.PreimagesMap
 				_, preimagesRecorded, err = dapReader.RecoverPayloadFromBatch(ctx, batchNum, batchBlockHash, postedData, preimages, true)
 				if err != nil {
 					// Matches the way keyset validation was done inside DAS readers i.e logging the error
 					//  But other daproviders might just want to return the error
-					if strings.Contains(err.Error(), daprovider.ErrSeqMsgValidation.Error()) && daprovider.IsDASMessageHeaderByte(postedData[40]) {
+					if daprovider.IsDASMessageHeaderByte(headerByte) && strings.Contains(err.Error(), daprovider.ErrSeqMsgValidation.Error()) {
 						log.Error(err.Error())
+					} else if daprovider.IsCustomDAMessageHeaderByte(headerByte) && daprovider.IsCertificateValidationError(err) {
+						log.Warn("Certificate validation of sequencer batch failed, treating it as an empty batch", "batch", batchNum, "error", err)
 					} else {
 						return false, nil, err
 					}
