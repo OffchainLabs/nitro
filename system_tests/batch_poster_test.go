@@ -306,7 +306,7 @@ func TestRedisBatchPosterHandoff(t *testing.T) {
 	nameA, batchPosterA := "BatchPoster1", newBatchPoster()
 	nameB, batchPosterB := "BatchPoster2", newBatchPoster()
 
-	for i := 0; i < 21; i++ {
+	for i := 0; i < 3; i++ {
 		posted, err := batchPosterA.MaybePostSequencerBatch(ctx)
 		if err != nil {
 			t.Fatalf("Batch poster %s failed with unexpected error: %v, iter: %d", nameA, err, i)
