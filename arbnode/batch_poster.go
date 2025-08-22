@@ -1657,27 +1657,22 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 		return false, nil
 	}
 
-	// AttemptLock returns true if redis lock is disabled
-	if !b.redisLock.AttemptLock(ctx) {
-		b.building = nil // a closed batchSegments can't be reused
-		return false, errAttemptLockFailed
-	}
-
-	gotNonce, gotMeta, err := b.dataPoster.GetNextNonceAndMeta(ctx)
-	if err != nil {
-		if b.dapWriter != nil {
-			batchPosterDAFailureCounter.Inc(1)
-		}
-		return false, err
-	}
-	if nonce != gotNonce || !bytes.Equal(batchPositionBytes, gotMeta) {
-		if b.dapWriter != nil {
-			batchPosterDAFailureCounter.Inc(1)
-		}
-		return false, fmt.Errorf("%w: nonce changed from %d to %d while creating batch", storage.ErrStorageRace, nonce, gotNonce)
-	}
-
 	if b.dapWriter != nil {
+		if !b.redisLock.AttemptLock(ctx) {
+			b.building = nil // a closed batchSegments can't be reused
+			return false, errAttemptLockFailed
+		}
+
+		gotNonce, gotMeta, err := b.dataPoster.GetNextNonceAndMeta(ctx)
+		if err != nil {
+			batchPosterDAFailureCounter.Inc(1)
+			return false, err
+		}
+		if nonce != gotNonce || !bytes.Equal(batchPositionBytes, gotMeta) {
+			batchPosterDAFailureCounter.Inc(1)
+			return false, fmt.Errorf("%w: nonce changed from %d to %d while creating batch", storage.ErrStorageRace, nonce, gotNonce)
+		}
+
 		// #nosec G115
 		sequencerMsg, err = b.dapWriter.Store(ctx, sequencerMsg, uint64(time.Now().Add(config.DASRetentionPeriod).Unix()), config.DisableDapFallbackStoreDataOnChain)
 		if err != nil {
@@ -1820,6 +1815,11 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 			}
 		}
 		log.Debug("Successfully checked that the batch produces correct messages when ran through inbox multiplexer", "sequenceNumber", batchPosition.NextSeqNum)
+	}
+
+	if !b.redisLock.AttemptLock(ctx) {
+		b.building = nil // a closed batchSegments can't be reused
+		return false, errAttemptLockFailed
 	}
 
 	tx, err := b.dataPoster.PostTransaction(ctx,
