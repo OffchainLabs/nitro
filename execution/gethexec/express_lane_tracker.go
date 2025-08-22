@@ -44,6 +44,7 @@ type ExpressLaneTracker struct {
 	earlySubmissionGrace time.Duration
 
 	roundControl containers.SyncMap[uint64, common.Address] // thread safe
+	useLogs      bool
 }
 
 func NewExpressLaneTracker(
@@ -62,111 +63,16 @@ func NewExpressLaneTracker(
 		auctionContractAddr:  auctionContractAddr,
 		earlySubmissionGrace: earlySubmissionGrace,
 		chainConfig:          chainConfig,
+		useLogs:              false, // default to use contract polling
 	}
 }
 
 func (t *ExpressLaneTracker) Start(ctxIn context.Context) {
-	t.StopWaiter.Start(ctxIn, t)
-
-	t.LaunchThread(func(ctx context.Context) {
-		// Monitor for auction resolutions from the auction manager smart contract
-		// and set the express lane controller for the upcoming round accordingly.
-		log.Info("Monitoring express lane auction contract")
-
-		var fromBlock uint64
-		latestBlock, err := t.headerProvider.HeaderByNumber(ctx, rpc.LatestBlockNumber)
-		if err != nil {
-			log.Error("ExpressLaneService could not get the latest header", "err", err)
-		} else {
-			maxBlocksPerRound := t.roundTimingInfo.Round / t.pollInterval
-			fromBlock = latestBlock.Number.Uint64()
-			// #nosec G115
-			if fromBlock > uint64(maxBlocksPerRound) {
-				// #nosec G115
-				fromBlock -= uint64(maxBlocksPerRound)
-			}
-		}
-
-		ticker := time.NewTicker(t.pollInterval)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-			}
-
-			latestBlock, err := t.headerProvider.HeaderByNumber(ctx, rpc.LatestBlockNumber)
-			if err != nil {
-				log.Error("ExpressLaneTracker could not get the latest header", "err", err)
-				continue
-			}
-			toBlock := latestBlock.Number.Uint64()
-			if fromBlock > toBlock {
-				continue
-			}
-			filterOpts := &bind.FilterOpts{
-				Context: ctx,
-				Start:   fromBlock,
-				End:     &toBlock,
-			}
-
-			it, err := t.auctionContract.FilterAuctionResolved(filterOpts, nil, nil, nil)
-			if err != nil {
-				log.Error("Could not filter auction resolutions event", "error", err)
-				continue
-			}
-			for it.Next() {
-				timeSinceAuctionClose := t.roundTimingInfo.AuctionClosing - t.roundTimingInfo.TimeTilNextRound()
-				auctionResolutionLatency.Update(timeSinceAuctionClose.Nanoseconds())
-				log.Info(
-					"AuctionResolved: New express lane controller assigned",
-					"round", it.Event.Round,
-					"controller", it.Event.FirstPriceExpressLaneController,
-					"timeSinceAuctionClose", timeSinceAuctionClose,
-				)
-
-				t.roundControl.Store(it.Event.Round, it.Event.FirstPriceExpressLaneController)
-
-			}
-			fromBlock = toBlock + 1
-		}
-	})
-
-	t.LaunchThread(func(ctx context.Context) {
-		// Log every new express lane auction round.
-		log.Info("Watching for new express lane rounds")
-
-		// Wait until the next round starts
-		waitTime := t.roundTimingInfo.TimeTilNextRound()
-		select {
-		case <-ctx.Done():
-			return
-		case <-time.After(waitTime):
-		}
-
-		// First tick happened, now set up regular ticks
-		ticker := time.NewTicker(t.roundTimingInfo.Round)
-		defer ticker.Stop()
-		for {
-			var ti time.Time
-			select {
-			case <-ctx.Done():
-				return
-			case ti = <-ticker.C:
-			}
-
-			round := t.roundTimingInfo.RoundNumber()
-			log.Info(
-				"New express lane auction round",
-				"round", round,
-				"timestamp", ti,
-			)
-
-			// Cleanup previous round controller data
-			t.roundControl.Delete(round - 1)
-		}
-	})
+	if t.useLogs {
+		t.startViaLogIterator(ctxIn)
+	} else {
+		t.startViaContractPolling(ctxIn)
+	}
 }
 
 func (t *ExpressLaneTracker) RoundController(round uint64) (common.Address, error) {
@@ -218,4 +124,217 @@ func (t *ExpressLaneTracker) ValidateExpressLaneTx(msg *timeboost.ExpressLaneSub
 
 func (t *ExpressLaneTracker) AuctionContractAddr() common.Address {
 	return t.auctionContractAddr
+}
+
+// --- internals ---
+
+func (t *ExpressLaneTracker) startViaLogIterator(ctxIn context.Context) {
+	t.StopWaiter.Start(ctxIn, t)
+
+	t.LaunchThread(func(ctx context.Context) {
+		// Monitor for auction resolutions from the auction manager smart contract
+		// and set the express lane controller for the upcoming round accordingly.
+		log.Info("Monitoring express lane auction contract via logs")
+
+		var fromBlock uint64
+		latestBlock, err := t.headerProvider.HeaderByNumber(ctx, rpc.LatestBlockNumber)
+		if err != nil {
+			log.Error("ExpressLaneService could not get the latest header", "err", err)
+		} else {
+			maxBlocksPerRound := t.roundTimingInfo.Round / t.pollInterval
+			fromBlock = latestBlock.Number.Uint64()
+			// #nosec G115
+			if fromBlock > uint64(maxBlocksPerRound) {
+				// #nosec G115
+				fromBlock -= uint64(maxBlocksPerRound)
+			}
+		}
+
+		ticker := time.NewTicker(t.pollInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+			}
+
+			latestBlock, err := t.headerProvider.HeaderByNumber(ctx, rpc.LatestBlockNumber)
+			if err != nil {
+				log.Error("ExpressLaneTracker could not get the latest header", "err", err)
+				continue
+			}
+			toBlock := latestBlock.Number.Uint64()
+			if fromBlock > toBlock {
+				continue
+			}
+			filterOpts := &bind.FilterOpts{
+				Context: ctx,
+				Start:   fromBlock,
+				End:     &toBlock,
+			}
+
+			it, err := t.auctionContract.FilterAuctionResolved(filterOpts, nil, nil, nil)
+			if err != nil {
+				log.Error("Could not filter auction resolutions event", "error", err)
+				continue
+			}
+			for it.Next() {
+				timeSinceAuctionClose := t.elapsedSinceAuctionClose(it.Event.Round)
+				auctionResolutionLatency.Update(timeSinceAuctionClose.Nanoseconds())
+				log.Info(
+					"AuctionResolved: New express lane controller assigned",
+					"round", it.Event.Round,
+					"controller", it.Event.FirstPriceExpressLaneController,
+					"timeSinceAuctionClose", timeSinceAuctionClose,
+				)
+
+				t.roundControl.Store(it.Event.Round, it.Event.FirstPriceExpressLaneController)
+
+			}
+
+			if it.Error() != nil {
+				log.Error("Error occurred while iterating auction resolutions", "error", it.Error())
+			}
+
+			fromBlock = toBlock + 1
+		}
+	})
+
+	t.roundHeartbeatThread()
+}
+
+func (t *ExpressLaneTracker) startViaContractPolling(ctxIn context.Context) {
+	t.StopWaiter.Start(ctxIn, t)
+
+	// poll contract state via resolvedRounds()
+	t.LaunchThread(func(ctx context.Context) {
+		log.Info("Monitoring express lane auction contract via resolvedRounds")
+
+		ticker := time.NewTicker(t.pollInterval)
+		defer ticker.Stop()
+
+		var highestSeenRound uint64
+		var initialized bool
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+			}
+
+			record, ok := t.readLatestResolvedRound(ctx)
+			if !ok {
+				continue
+			}
+
+			if record.round > highestSeenRound {
+				highestSeenRound = record.round
+
+				if !initialized {
+					initialized = true
+				} else {
+					timeSinceAuctionClose := t.elapsedSinceAuctionClose(record.round)
+					auctionResolutionLatency.Update(timeSinceAuctionClose.Nanoseconds())
+					log.Info(
+						"AuctionResolved: New express lane controller assigned",
+						"round", record.round,
+						"controller", record.controller,
+						"timeSinceAuctionClose", timeSinceAuctionClose,
+					)
+				}
+
+				t.roundControl.Store(record.round, record.controller)
+			}
+		}
+	})
+
+	t.roundHeartbeatThread()
+}
+
+func (t *ExpressLaneTracker) roundHeartbeatThread() {
+	t.LaunchThread(func(ctx context.Context) {
+		// Log every new express lane auction round.
+		log.Info("Watching for new express lane rounds")
+
+		// Wait until the next round starts
+		waitTime := t.roundTimingInfo.TimeTilNextRound()
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(waitTime):
+		}
+
+		// First tick happened, now set up regular ticks
+		ticker := time.NewTicker(t.roundTimingInfo.Round)
+		defer ticker.Stop()
+		for {
+			var ti time.Time
+			select {
+			case <-ctx.Done():
+				return
+			case ti = <-ticker.C:
+			}
+
+			round := t.roundTimingInfo.RoundNumber()
+			log.Info(
+				"New express lane auction round",
+				"round", round,
+				"timestamp", ti,
+			)
+
+			// Cleanup previous round controller data
+			t.roundControl.Delete(round - 1)
+		}
+	})
+}
+
+// resolvedRecord is a helper for parsed resolvedRounds entries
+type resolvedRecord struct {
+	round      uint64
+	controller common.Address
+}
+
+// returns the latest resolved round information
+// assuming the first round in the 2 round array is always the most recent round
+func (t *ExpressLaneTracker) readLatestResolvedRound(parentCtx context.Context) (resolvedRecord, bool) {
+	// Per-call timeout shorter than poll interval to avoid a slow node stalling the loop
+	timeout := t.pollInterval / 2
+	if timeout <= 0 {
+		timeout = 2 * time.Second // default timeout 2 seconds
+	}
+	ctx, cancel := context.WithTimeout(parentCtx, timeout)
+	defer cancel()
+
+	r0, _, err := t.auctionContract.ResolvedRounds(&bind.CallOpts{Context: ctx})
+	if err != nil {
+		log.Warn("ExpressLaneTracker: resolvedRounds call failed", "err", err)
+		return resolvedRecord{}, false
+	}
+
+	controller := r0.ExpressLaneController // adjust if binding fields differ
+	round := r0.Round
+	if controller == (common.Address{}) || round == 0 {
+		return resolvedRecord{}, false
+	}
+	return resolvedRecord{round: round, controller: controller}, true
+}
+
+// elapsedSinceAuctionClose returns how long ago the auction for `round` closed.
+// If the close time is in the future relative to now, it returns 0.
+func (t *ExpressLaneTracker) elapsedSinceAuctionClose(round uint64) time.Duration {
+	rti := t.roundTimingInfo
+
+	var roundsAgo int64
+	if cur := rti.RoundNumber(); cur >= round {
+		// #nosec G115 — safe cast: round numbers are protocol-bounded
+		roundsAgo = int64(cur - round)
+	}
+
+	elapsed := time.Duration(roundsAgo)*rti.Round + (rti.AuctionClosing - rti.TimeTilNextRound())
+	if elapsed < 0 {
+		return 0
+	}
+	return elapsed
 }

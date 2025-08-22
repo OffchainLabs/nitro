@@ -37,7 +37,7 @@ func attemptLock(ctx context.Context, s *redislock.Simple, flag *atomic.Int32, w
 	}
 }
 
-func simpleRedisLockTest(t *testing.T, redisKeySuffix string, chosen int, backgound bool) {
+func simpleRedisLockTest(t *testing.T, redisKeySuffix string, chosen int, background bool) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -52,7 +52,7 @@ func simpleRedisLockTest(t *testing.T, redisKeySuffix string, chosen int, backgo
 		LockoutDuration: test_delay * test_attempts * 10,
 		RefreshDuration: test_delay * 2,
 		Key:             redisKey,
-		BackgroundLock:  backgound,
+		BackgroundLock:  background,
 	}
 	confFetcher := func() *redislock.SimpleCfg { return conf }
 
@@ -72,7 +72,7 @@ func simpleRedisLockTest(t *testing.T, redisKeySuffix string, chosen int, backgo
 		defer lock.StopAndWait()
 		locks = append(locks, lock)
 	}
-	if backgound {
+	if background {
 		<-time.After(time.Second)
 	}
 	wg := sync.WaitGroup{}

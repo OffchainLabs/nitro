@@ -211,7 +211,7 @@ func (s *Storage) Put(ctx context.Context, index uint64, prev, new *storage.Queu
 		}
 		return err
 	}
-	// WATCH works with sorted sets: https://redis.io/docs/manual/transactions/#using-watch-to-implement-zpop
+	// WATCH works with sorted sets: https://redis.io/docs/latest/develop/clients/redis-py/transpipe/
 	return s.client.Watch(ctx, action, s.key)
 }
 

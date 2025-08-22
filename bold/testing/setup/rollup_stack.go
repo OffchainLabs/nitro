@@ -1,6 +1,6 @@
 // Copyright 2023-2024, Offchain Labs, Inc.
 // For license information, see:
-// https://github.com/offchainlabs/nitro/blob/main/LICENSE.md
+// https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 // Package setup prepares a simulated backend for testing.
 package setup

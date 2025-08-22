@@ -8,7 +8,13 @@ You can explore our [Open Issues](https://github.com/offchainlabs/nitro/issues) 
 
 <!-- start-trivial-prs -->
 > [!IMPORTANT] 
-> Please, **do not send pull requests for trivial changes**, such as typos, these will be rejected. These types of pull requests incur a cost to reviewers and do not provide much value to the project. If you are unsure, please open an issue first to discuss the change.
+> Please, **do not send pull requests for trivial changes**; these will be rejected.
+> These types of pull requests incur a cost to reviewers and do not provide much value to the project.
+> If you are unsure, please open an issue first to discuss the change.
+> Here are some examples of trivial PRs that will most-likely be rejected:
+> * Fixing typos
+> * AI-generated code
+> * Refactors that don't improve usability
 <!-- end-trivial-prs -->
 
 ## Contribution Steps

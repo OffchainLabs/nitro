@@ -13,7 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 )
 
-// ClientWrapper wraps a RPC client to manipulate inbound requests.
+// ClientWrapper wraps an RPC client to manipulate inbound requests.
 type ClientWrapper struct {
 	mutex                *sync.Mutex
 	innerClient          rpc.ClientInterface

@@ -306,7 +306,7 @@ func (bv *BidValidator) fetchReservePrice() *big.Int {
 }
 
 // Check time-related constraints for bid.
-// It's useful to split out to be able to re-check just these contraints after
+// It's useful to split out to be able to re-check just these constraints after
 // time has elapsed.
 func validateBidTimeConstraints(roundTimingInfo *RoundTimingInfo, bidRound uint64) error {
 	// Check if the bid is intended for upcoming round.
