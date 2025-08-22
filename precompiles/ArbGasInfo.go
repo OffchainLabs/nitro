@@ -45,7 +45,11 @@ func (con ArbGasInfo) GetPricesInWeiWithAggregator(
 	}
 
 	// aggregators compress calldata, so we must estimate accordingly
-	weiForL1Calldata := arbmath.BigMulByUint(l1GasPrice, uint64(l1pricing.BatchGasUnitsPerByte))
+	batchGasUnitsPerByte := l1pricing.BatchGasUnitsPerBytePreArbos50
+	if c.State.ArbOSVersion() >= params.ArbosVersion_50 {
+		batchGasUnitsPerByte = uint64(l1pricing.BatchGasUnitsPerByte)
+	}
+	weiForL1Calldata := arbmath.BigMulByUint(l1GasPrice, batchGasUnitsPerByte)
 
 	// the cost of a simple tx without calldata
 	perL2Tx := arbmath.BigMulByUint(weiForL1Calldata, AssumedSimpleTxSize)

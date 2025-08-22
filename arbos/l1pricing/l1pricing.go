@@ -78,8 +78,9 @@ const (
 )
 
 // one minute at 100000 bytes / sec
-var InitialEquilibrationUnitsV0 = am.UintToBig(CompressedCalldataGasUnitsByLen(60 * 100_000))
-var InitialEquilibrationUnitsV6 = am.UintToBig(CompressedCalldataGasUnitsByLen(10_000_000))
+var InitialEquilibrationUnitsV0 = am.UintToBig(60 * params.TxDataNonZeroGasEIP2028 * 100000)
+var InitialEquilibrationUnitsV6 = am.UintToBig(params.TxDataNonZeroGasEIP2028 * 10000000)
+var InitialEquilibrationUnitsV50 = am.UintToBig(CompressedCalldataGasUnitsByLen(10_000_000))
 
 func InitializeL1PricingState(sto *storage.Storage, initialRewardsRecipient common.Address, initialL1BaseFee *big.Int) error {
 	bptStorage := sto.OpenCachedSubStorage(BatchPosterTableKey)
@@ -607,6 +608,7 @@ func byteCountAfterBrotliLevel(input []byte, level uint64) (uint64, error) {
 
 // BatchGasUnitsPerByte refers to the gas units spent for every byte of compressed batch calldata
 // #nosec G115
+var BatchGasUnitsPerBytePreArbos50 = params.TxDataNonZeroGasEIP2028
 var BatchGasUnitsPerByte = uint32(CompressedCalldataGasUnitsByLen(1))
 
 // CompressedCalldataGasUnitsByLen calculates an estimate of the gas units spent by calldata with a specific length
