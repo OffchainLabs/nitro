@@ -217,7 +217,7 @@ func TestSubmitRetryableImmediateSuccess(t *testing.T) {
 	)
 	Require(t, err, "failed to estimate retryable submission")
 	estimate := tx.Gas()
-	expectedEstimate := params.TxGas + params.TxDataNonZeroGasEIP2028*4
+	expectedEstimate := params.TxGas + params.TxCostFloorPerToken*params.TxTokenPerNonZeroByte*4
 	if float64(estimate) > float64(expectedEstimate)*(1+gasestimator.EstimateGasErrorRatio) {
 		t.Errorf("estimated retryable ticket at %v gas but expected %v, with error margin of %v",
 			estimate,
@@ -374,7 +374,7 @@ func TestSubmitRetryableFailThenRetry(t *testing.T) {
 		beneficiaryAddress,
 		beneficiaryAddress,
 		// send enough L2 gas for intrinsic but not compute
-		big.NewInt(int64(params.TxGas+params.TxDataNonZeroGasEIP2028*4)),
+		big.NewInt(int64(params.TxGas+params.TxCostFloorPerToken*params.TxTokenPerNonZeroByte*4)),
 		big.NewInt(l2pricing.InitialBaseFeeWei*2),
 		simpleABI.Methods["incrementRedeem"].ID,
 	)
@@ -734,7 +734,7 @@ func TestRetryableExpiry(t *testing.T) {
 		beneficiaryAddress,
 		beneficiaryAddress,
 		// send enough L2 gas for intrinsic but not compute
-		big.NewInt(int64(params.TxGas+params.TxDataNonZeroGasEIP2028*4)),
+		big.NewInt(int64(params.TxGas+params.TxCostFloorPerToken*params.TxTokenPerNonZeroByte*4)),
 		big.NewInt(l2pricing.InitialBaseFeeWei*2),
 		simpleABI.Methods["incrementRedeem"].ID,
 	)
@@ -800,7 +800,7 @@ func TestKeepaliveAndRetryableExpiry(t *testing.T) {
 		beneficiaryAddress,
 		beneficiaryAddress,
 		// send enough L2 gas for intrinsic but not compute
-		big.NewInt(int64(params.TxGas+params.TxDataNonZeroGasEIP2028*4)),
+		big.NewInt(int64(params.TxGas+params.TxCostFloorPerToken*params.TxTokenPerNonZeroByte*4)),
 		big.NewInt(l2pricing.InitialBaseFeeWei*2),
 		simpleABI.Methods["incrementRedeem"].ID,
 	)
@@ -889,7 +889,7 @@ func TestKeepaliveAndCancelRetryable(t *testing.T) {
 		beneficiaryAddress,
 		beneficiaryAddress,
 		// send enough L2 gas for intrinsic but not compute
-		big.NewInt(int64(params.TxGas+params.TxDataNonZeroGasEIP2028*4)),
+		big.NewInt(int64(params.TxGas+params.TxCostFloorPerToken*params.TxTokenPerNonZeroByte*4)),
 		big.NewInt(l2pricing.InitialBaseFeeWei*2),
 		simpleABI.Methods["incrementRedeem"].ID,
 	)
@@ -1324,7 +1324,7 @@ func TestRetryableSubmissionAndRedeemFees(t *testing.T) {
 		beneficiaryAddress,
 		beneficiaryAddress,
 		// send enough L2 gas for intrinsic but not compute
-		big.NewInt(int64(params.TxGas+params.TxDataNonZeroGasEIP2028*4)),
+		big.NewInt(int64(params.TxGas+params.TxCostFloorPerToken*params.TxTokenPerNonZeroByte*4)),
 		big.NewInt(baseFee.Int64()*2),
 		simpleABI.Methods["incrementRedeem"].ID,
 	)
@@ -1495,7 +1495,7 @@ func TestRetryableRedeemBlockGasUsage(t *testing.T) {
 		beneficiaryAddress,
 		beneficiaryAddress,
 		// send enough L2 gas for intrinsic but not compute
-		big.NewInt(int64(params.TxGas+params.TxDataNonZeroGasEIP2028*4)),
+		big.NewInt(int64(params.TxGas+params.TxCostFloorPerToken*params.TxTokenPerNonZeroByte*4)),
 		big.NewInt(int64(l2pricing.InitialBaseFeeWei)*2),
 		simpleABI.Methods["incrementRedeem"].ID,
 	)
