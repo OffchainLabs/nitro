@@ -1893,7 +1893,6 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 		backlog = 0
 	}
 	b.backlog.Store(backlog)
-	b.building = nil
 
 	// If we aren't queueing up transactions, wait for the receipt before moving on to the next batch.
 	if config.DataPoster.UseNoOpStorage {
