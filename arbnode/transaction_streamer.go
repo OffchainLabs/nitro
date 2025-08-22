@@ -146,7 +146,7 @@ func NewTransactionStreamer(
 		streamer.syncTillMessage = syncTillMessage
 		msgCount, err := streamer.GetMessageCount()
 		if err == nil && msgCount >= streamer.syncTillMessage {
-			log.Info("Node has all mesages", "sync-till-block", config().SyncTillBlock)
+			log.Info("Node has all messages", "sync-till-block", config().SyncTillBlock)
 		}
 	}
 	return streamer, nil
@@ -762,7 +762,7 @@ func (s *TransactionStreamer) AddMessagesAndEndBatch(firstMsgIdx arbutil.Message
 		if numberOfDuplicates == uint64(len(messages)) {
 			return endBatch(batch)
 		}
-		// cant keep reorg lock when catching insertionMutex.
+		// can't keep reorg lock when catching insertionMutex.
 		// we have to re-evaluate all messages
 		// happy cases for confirmed messages:
 		// 1: were previously in feed. We saved work
@@ -1287,6 +1287,7 @@ func (s *TransactionStreamer) checkResult(msgIdx arbutil.MessageIndex, msgResult
 	if msgResult.BlockHash != *msgAndBlockInfo.BlockHash {
 		log.Error(
 			BlockHashMismatchLogMsg,
+			"msgIdx", msgIdx,
 			"expected", msgAndBlockInfo.BlockHash,
 			"actual", msgResult.BlockHash,
 		)

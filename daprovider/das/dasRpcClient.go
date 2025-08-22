@@ -6,7 +6,6 @@ package das
 import (
 	"context"
 	"fmt"
-	"net/http"
 	"strings"
 	"time"
 
@@ -49,20 +48,8 @@ func nilSigner(_ []byte) ([]byte, error) {
 
 const sendChunkJSONBoilerplate = "{\"jsonrpc\":\"2.0\",\"id\":4294967295,\"method\":\"das_sendChunked\",\"params\":[\"\"]}"
 
-func NewDASRPCClient(target string, signer signature.DataSignerFunc, maxStoreChunkBodySize int, enableChunkedStore bool, enableHTTP2 bool) (*DASRPCClient, error) {
-	// Always create a custom transport based on the default
-	httpTransport, ok := http.DefaultTransport.(*http.Transport)
-	if !ok {
-		panic("Failed conversion from DefaultTransport to http.Transport")
-	}
-	transport := httpTransport.Clone()
-	transport.ForceAttemptHTTP2 = enableHTTP2
-
-	httpClient := &http.Client{
-		Transport: transport,
-	}
-
-	clnt, err := rpc.DialOptions(context.Background(), target, rpc.WithHTTPClient(httpClient))
+func NewDASRPCClient(target string, signer signature.DataSignerFunc, maxStoreChunkBodySize int, enableChunkedStore bool) (*DASRPCClient, error) {
+	clnt, err := rpc.Dial(target)
 	if err != nil {
 		return nil, err
 	}

@@ -15,8 +15,8 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 
-	"github.com/offchainlabs/bold/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
+	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/util/headerreader"
 )
 
@@ -71,7 +71,7 @@ func GetDelayBufferConfig(ctx context.Context, sequencerInbox *bridgegen.Sequenc
 }
 
 // GenDelayProof generates the delay proof based on batch's first delayed message and the delayed
-// accumulater from the inbox.
+// accumulator from the inbox.
 func GenDelayProof(ctx context.Context, message *arbostypes.MessageWithMetadata, inbox *InboxTracker) (
 	*bridgegen.DelayProof, error) {
 

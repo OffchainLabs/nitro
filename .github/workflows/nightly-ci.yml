@@ -33,7 +33,7 @@ jobs:
     
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           submodules: true
           
@@ -43,7 +43,7 @@ jobs:
       - name: Setup nodejs
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: '24'
           cache: 'yarn'
           cache-dependency-path: '**/yarn.lock'
 
@@ -84,6 +84,7 @@ jobs:
         uses: foundry-rs/foundry-toolchain@v1
         with:
           cache: false
+          version: v1.0.0
         
       - name: Install cbindgen
         run: cargo install --force cbindgen
@@ -119,7 +120,7 @@ jobs:
             target/lib/libbrotlicommon-static.a
             target/lib/libbrotlienc-static.a
             target/lib/libbrotlidec-static.a
-          key: ${{ runner.os }}-brotli-${{ hashFiles('scripts/build-brotli.sh') }}-${{ hashFiles('.github/workflows/arbitrator-ci.yaml') }}
+          key: ${{ runner.os }}-brotli-${{ hashFiles('scripts/build-brotli.sh') }}-${{ hashFiles('.github/workflows/arbitrator-ci.yml') }}
 
       - name: Build cbrotli-local
         run: ./scripts/build-brotli.sh -l
@@ -181,7 +182,7 @@ jobs:
           path: full.log
 
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v2
+        uses: codecov/codecov-action@v5
         with:
           fail_ci_if_error: false
           files: ./coverage.txt,./coverage-redis.txt
@@ -200,7 +201,7 @@ jobs:
     
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           submodules: true
           fetch-depth: 10           // Will cover most PRs
@@ -228,7 +229,7 @@ jobs:
         if: steps.changed-files.outputs.any_changed == 'true'
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: '24'
           cache: 'yarn'
           cache-dependency-path: '**/yarn.lock'
 
@@ -275,6 +276,7 @@ jobs:
         uses: foundry-rs/foundry-toolchain@v1
         with:
           cache: false
+          version: v1.0.0
         
       - name: Install cbindgen
         if: steps.changed-files.outputs.any_changed == 'true'
@@ -316,7 +318,7 @@ jobs:
             target/lib/libbrotlicommon-static.a
             target/lib/libbrotlienc-static.a
             target/lib/libbrotlidec-static.a
-          key: ${{ runner.os }}-brotli-${{ hashFiles('scripts/build-brotli.sh') }}-${{ hashFiles('.github/workflows/arbitrator-ci.yaml') }}
+          key: ${{ runner.os }}-brotli-${{ hashFiles('scripts/build-brotli.sh') }}-${{ hashFiles('.github/workflows/arbitrator-ci.yml') }}
 
       - name: Build cbrotli-local
         if: steps.changed-files.outputs.any_changed == 'true' && steps.cache-cbrotli.outputs.cache-hit != 'true'
@@ -369,7 +371,7 @@ jobs:
 
       - name: Upload coverage to Codecov
         if: steps.changed-files.outputs.any_changed == 'true'
-        uses: codecov/codecov-action@v2
+        uses: codecov/codecov-action@v5
         with:
           fail_ci_if_error: false
           files: ./coverage.txt,./coverage-redis.txt

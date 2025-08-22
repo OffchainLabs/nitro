@@ -113,6 +113,9 @@ func (c *Config) Validate() error {
 	if err := c.Staker.Validate(); err != nil {
 		return err
 	}
+	if err := c.SeqCoordinator.Validate(); err != nil {
+		return err
+	}
 	if c.TransactionStreamer.TrackBlockMetadataFrom != 0 && !c.BlockMetadataFetcher.Enable {
 		log.Warn("track-block-metadata-from is set but blockMetadata fetcher is not enabled")
 	}
@@ -1477,7 +1480,7 @@ func (n *Node) StopAndWait() {
 		n.TxStreamer.StopAndWait()
 	}
 	// n.BroadcastServer is stopped after txStreamer and inboxReader because if done before it would lead to a deadlock, as the threads from these two components
-	// attempt to Broadcast i.e send feedMessage to clientManager's broadcastChan when there wont be any reader to read it as n.BroadcastServer would've been stopped
+	// attempt to Broadcast i.e send feedMessage to clientManager's broadcastChan when there won't be any reader to read it as n.BroadcastServer would've been stopped
 	if n.BroadcastServer != nil && n.BroadcastServer.Started() {
 		n.BroadcastServer.StopAndWait()
 	}

@@ -26,11 +26,11 @@ import (
 	challengemanager "github.com/offchainlabs/bold/challenge-manager"
 	boldtypes "github.com/offchainlabs/bold/challenge-manager/types"
 	l2stateprovider "github.com/offchainlabs/bold/layer2-state-provider"
-	"github.com/offchainlabs/bold/solgen/go/challengeV2gen"
-	boldrollup "github.com/offchainlabs/bold/solgen/go/rollupgen"
 	"github.com/offchainlabs/bold/util"
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/solgen/go/challengeV2gen"
+	boldrollup "github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/staker"
 	legacystaker "github.com/offchainlabs/nitro/staker/legacy"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -210,6 +210,7 @@ type BOLDStaker struct {
 	confirmedNotifiers []legacystaker.LatestConfirmedNotifier
 	inboxTracker       staker.InboxTrackerInterface
 	inboxStreamer      staker.TransactionStreamerInterface
+	fatalErr           chan<- error
 }
 
 func NewBOLDStaker(
@@ -229,6 +230,7 @@ func NewBOLDStaker(
 	inboxTracker staker.InboxTrackerInterface,
 	inboxStreamer staker.TransactionStreamerInterface,
 	inboxReader staker.InboxReaderInterface,
+	fatalErr chan<- error,
 ) (*BOLDStaker, error) {
 	if err := config.Validate(); err != nil {
 		return nil, err
@@ -251,6 +253,7 @@ func NewBOLDStaker(
 		confirmedNotifiers: confirmedNotifiers,
 		inboxTracker:       inboxTracker,
 		inboxStreamer:      inboxStreamer,
+		fatalErr:           fatalErr,
 	}, nil
 }
 
@@ -311,6 +314,10 @@ func (b *BOLDStaker) Start(ctxIn context.Context) {
 		confirmedMsgCount, confirmedGlobalState, err := b.getLatestState(ctx, true)
 		if err != nil {
 			log.Error("staker: error checking latest confirmed", "err", err)
+			if errors.Is(err, staker.ErrGlobalStateNotInChain) {
+				b.fatalErr <- err
+			}
+			return b.config.AssertionPostingInterval
 		}
 
 		agreedMsgCount, agreedGlobalState, err := b.getLatestState(ctx, false)
@@ -394,7 +401,8 @@ func (b *BOLDStaker) getLatestState(ctx context.Context, confirmed bool) (arbuti
 		if errors.Is(err, staker.ErrGlobalStateNotInChain) {
 			return 0, nil, fmt.Errorf("latest %s assertion of %v not yet in our node: %w", assertionType, globalState, err)
 		}
-		return 0, nil, fmt.Errorf("error getting message count: %w", err)
+		log.Error("error getting message count", "err", err)
+		return 0, nil, nil
 	}
 
 	if !caughtUp {
@@ -404,7 +412,8 @@ func (b *BOLDStaker) getLatestState(ctx context.Context, confirmed bool) (arbuti
 
 	processedCount, err := b.inboxStreamer.GetProcessedMessageCount()
 	if err != nil {
-		return 0, nil, err
+		log.Error("error getting processed message count", "err", err)
+		return 0, nil, nil
 	}
 
 	if processedCount < count {

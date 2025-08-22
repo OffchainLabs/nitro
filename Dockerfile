@@ -24,7 +24,7 @@ RUN apt-get update && \
 FROM scratch AS brotli-library-export
 COPY --from=brotli-library-builder /workspace/install/ /
 
-FROM node:18-bookworm-slim AS contracts-builder
+FROM node:24.4.1-bookworm-slim AS contracts-builder
 RUN apt-get update && \
     apt-get install -y git python3 make g++ curl
 RUN curl -L https://foundry.paradigm.xyz | bash && . ~/.bashrc && ~/.foundry/bin/foundryup -i 1.2.3
@@ -37,7 +37,7 @@ COPY contracts-legacy contracts-legacy/
 COPY contracts-local contracts-local/
 COPY contracts contracts/
 COPY safe-smart-account safe-smart-account/
-RUN cd safe-smart-account && yarn install
+RUN cd safe-smart-account && npm install
 COPY Makefile .
 RUN . ~/.bashrc && NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-solidity
 
@@ -99,7 +99,6 @@ COPY ./contracts/src/precompiles/ ./contracts/src/precompiles/
 COPY ./contracts/package.json ./contracts/yarn.lock ./contracts/
 COPY ./safe-smart-account ./safe-smart-account
 COPY ./solgen/gen.go ./solgen/
-COPY ./fastcache ./fastcache
 COPY ./go-ethereum ./go-ethereum
 COPY scripts/remove_reference_types.sh scripts/
 COPY --from=brotli-wasm-export / target/
@@ -255,7 +254,6 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get install -y wabt
 COPY go.mod go.sum ./
 COPY go-ethereum/go.mod go-ethereum/go.sum go-ethereum/
-COPY fastcache/go.mod fastcache/go.sum fastcache/
 COPY bold/go.mod bold/go.sum bold/
 RUN go mod download
 COPY . ./
@@ -328,6 +326,7 @@ COPY --from=node-builder  /workspace/target/bin/autonomous-auctioneer  /usr/loca
 COPY --from=node-builder  /workspace/target/bin/bidder-client  /usr/local/bin/
 COPY --from=node-builder  /workspace/target/bin/el-proxy  /usr/local/bin/
 COPY --from=node-builder  /workspace/target/bin/datool    /usr/local/bin/
+COPY --from=node-builder  /workspace/target/bin/genesis-generator  /usr/local/bin/
 COPY --from=nitro-legacy /home/user/target/machines /home/user/nitro-legacy/machines
 RUN rm -rf /workspace/target/legacy-machines/latest
 RUN export DEBIAN_FRONTEND=noninteractive && \

@@ -52,13 +52,13 @@ func TestRectreateMissingStates(t *testing.T) {
 		stack, err := node.New(builder.l2StackConfig)
 		Require(t, err)
 		defer stack.Close()
-		chainDb, err := stack.OpenDatabaseWithExtraOptions("l2chaindata", 0, 0, "l2chaindata/", false, conf.PersistentConfigDefault.Pebble.ExtraOptions("l2chaindata"))
+		chainDb, err := stack.OpenDatabaseWithOptions("l2chaindata", node.DatabaseOptions{MetricsNamespace: "l2chaindata/", PebbleExtraOptions: conf.PersistentConfigDefault.Pebble.ExtraOptions("l2chaindata")})
 		Require(t, err)
 		defer chainDb.Close()
 		cachingConfig := gethexec.DefaultCachingConfig
 		// For now Archive node should use HashScheme
 		cachingConfig.StateScheme = rawdb.HashScheme
-		cacheConfig := gethexec.DefaultCacheConfigFor(stack, &cachingConfig)
+		cacheConfig := gethexec.DefaultCacheConfigFor(&cachingConfig)
 		bc, err := gethexec.GetBlockChain(chainDb, cacheConfig, builder.chainConfig, nil, &builder.execConfig.TxIndexer)
 		Require(t, err)
 		err = staterecovery.RecreateMissingStates(chainDb, bc, cacheConfig, 1)
