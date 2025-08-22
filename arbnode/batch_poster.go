@@ -1648,18 +1648,19 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 	}
 
 	sequencerMsg, err := b.building.segments.CloseAndGetBytes()
+	defer func() {
+		b.building = nil // a closed batchSegments can't be reused
+	}()
 	if err != nil {
 		return false, err
 	}
 	if sequencerMsg == nil {
 		log.Debug("BatchPoster: batch nil", "sequence nr.", batchPosition.NextSeqNum, "from", batchPosition.MessageCount, "prev delayed", batchPosition.DelayedMessageCount)
-		b.building = nil // a closed batchSegments can't be reused
 		return false, nil
 	}
 
 	if b.dapWriter != nil {
 		if !b.redisLock.AttemptLock(ctx) {
-			b.building = nil // a closed batchSegments can't be reused
 			return false, errAttemptLockFailed
 		}
 
@@ -1805,11 +1806,9 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 				return false, fmt.Errorf("error getting message from simulated inbox multiplexer (Pop) when testing correctness of batch: %w", err)
 			}
 			if msg.DelayedMessagesRead != b.building.muxBackend.allMsgs[i].DelayedMessagesRead {
-				b.building = nil
 				return false, fmt.Errorf("simulated inbox multiplexer failed to produce correct delayedMessagesRead field for msg with seqNum: %d. Got: %d, Want: %d", i, msg.DelayedMessagesRead, b.building.muxBackend.allMsgs[i].DelayedMessagesRead)
 			}
 			if !msg.Message.Equals(b.building.muxBackend.allMsgs[i].Message) {
-				b.building = nil
 				return false, fmt.Errorf("simulated inbox multiplexer failed to produce correct message field for msg with seqNum: %d", i)
 			}
 		}
@@ -1817,7 +1816,6 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 	}
 
 	if !b.redisLock.AttemptLock(ctx) {
-		b.building = nil // a closed batchSegments can't be reused
 		return false, errAttemptLockFailed
 	}
 
