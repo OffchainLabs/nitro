@@ -31,7 +31,7 @@ jobs:
     runs-on: arbitrator-ci
     steps:
       - name: Setup tmate session
-        uses: mxschmitt/action-tmate@v3
+        uses: mxschmitt/action-tmate@v4
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.enable_tmate }}
         with:
           detached: true
@@ -60,7 +60,7 @@ jobs:
           go build -o /usr/local/bin/geth ./cmd/geth
 
       - name: Setup nodejs
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: '24'
           cache: 'yarn'
@@ -148,7 +148,7 @@ jobs:
 
       - name: Setup emsdk
         if: steps.cache-cbrotli.outputs.cache-hit != 'true'
-        uses: mymindstorm/setup-emsdk@v12
+        uses: mymindstorm/setup-emsdk@v13
         with:
           # Make sure to set a version number!
           version: 3.1.6
