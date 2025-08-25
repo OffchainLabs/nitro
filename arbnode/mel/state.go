@@ -76,6 +76,10 @@ type MessageConsumer interface {
 	) error
 }
 
+func (s *State) Hash() common.Hash {
+	return common.Hash{}
+}
+
 // Performs a deep clone of the state struct to prevent any unintended
 // mutations of pointers at runtime.
 func (s *State) Clone() *State {

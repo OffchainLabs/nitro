@@ -24,6 +24,7 @@ type DelayedMessageBacklog struct {
 	ctx                          context.Context
 	capacity                     int
 	entries                      []*DelayedMessageBacklogEntry
+	dirtiesStartPos              int // represents the starting point of dirties in the entries list, items added while processing a state
 	initMessage                  *DelayedInboxMessage
 	finalizedAndReadIndexFetcher func(context.Context) (uint64, error)
 }
@@ -80,7 +81,8 @@ func (d *DelayedMessageBacklog) Get(index uint64) (*DelayedMessageBacklogEntry, 
 	return entry, nil
 }
 
-func (d *DelayedMessageBacklog) Len() int                            { return len(d.entries) } // Used for testing InitializeDelayedMessageBacklog function in melrunner
+func (d *DelayedMessageBacklog) CommitDirties()                      { d.dirtiesStartPos = len(d.entries) } // Add dirties to the entries by moving dirtiesStartPos to the end
+func (d *DelayedMessageBacklog) Len() int                            { return len(d.entries) }              // Used for testing InitializeDelayedMessageBacklog function in melrunner
 func (d *DelayedMessageBacklog) GetInitMsg() *DelayedInboxMessage    { return d.initMessage }
 func (d *DelayedMessageBacklog) setInitMsg(msg *DelayedInboxMessage) { d.initMessage = msg }
 
@@ -89,7 +91,7 @@ func (d *DelayedMessageBacklog) clear() error {
 	if len(d.entries) <= d.capacity {
 		return nil
 	}
-	if d.finalizedAndReadIndexFetcher != nil {
+	if d.finalizedAndReadIndexFetcher != nil && d.dirtiesStartPos > 0 { // if all entries are currently dirty we dont trim the finalized ones
 		finalizedDelayedMessagesRead, err := d.finalizedAndReadIndexFetcher(d.ctx)
 		if err != nil {
 			log.Error("Unable to trim finalized and read delayed messages from DelayedMessageBacklog, will be retried later", "err", err)
@@ -97,7 +99,11 @@ func (d *DelayedMessageBacklog) clear() error {
 		}
 		if finalizedDelayedMessagesRead > d.entries[0].Index {
 			leftTrimPos := min(finalizedDelayedMessagesRead-d.entries[0].Index, uint64(len(d.entries)))
+			// #nosec G115
+			leftTrimPos = min(leftTrimPos, uint64(d.dirtiesStartPos)) // cannot clear dirties yet, they will be cleared out in the next attempt
 			d.entries = d.entries[leftTrimPos:]
+			// #nosec G115
+			d.dirtiesStartPos -= int(leftTrimPos) // adjust start position of dirties
 		}
 	}
 	return nil
@@ -105,6 +111,9 @@ func (d *DelayedMessageBacklog) clear() error {
 
 // Reorg removes from backlog the entries that corresponded to the reorged out parent chain blocks
 func (d *DelayedMessageBacklog) reorg(newDelayedMessagedSeen uint64) error {
+	if d.dirtiesStartPos != len(d.entries) {
+		return fmt.Errorf("delayedMessageBacklog dirties is non-empty when reorg was called, size of dirties:%d", len(d.entries)-d.dirtiesStartPos)
+	}
 	if len(d.entries) == 0 {
 		return nil
 	}
@@ -117,19 +126,13 @@ func (d *DelayedMessageBacklog) reorg(newDelayedMessagedSeen uint64) error {
 	} else {
 		d.entries = make([]*DelayedMessageBacklogEntry, 0)
 	}
+	d.dirtiesStartPos = len(d.entries)
 	return nil
 }
 
+// clone is a shallow clone of DelayedMessageBacklog
 func (d *DelayedMessageBacklog) clone() *DelayedMessageBacklog {
-	var deque []*DelayedMessageBacklogEntry
-	for _, item := range d.entries {
-		msgHash := common.Hash{}
-		copy(msgHash[:], item.MsgHash[:])
-		deque = append(deque, &DelayedMessageBacklogEntry{
-			Index:                       item.Index,
-			MsgHash:                     msgHash,
-			MelStateParentChainBlockNum: item.MelStateParentChainBlockNum,
-		})
-	}
-	return &DelayedMessageBacklog{d.ctx, d.capacity, deque, nil, d.finalizedAndReadIndexFetcher} // Init msg should only be read once, no need to persist it
+	// Remove dirties from entries
+	d.entries = d.entries[:d.dirtiesStartPos]
+	return d
 }

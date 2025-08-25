@@ -7,11 +7,11 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 )
 
-var batchDeliveredID common.Hash
-var inboxMessageDeliveredID common.Hash
-var inboxMessageFromOriginID common.Hash
-var seqInboxABI *abi.ABI
-var iBridgeABI *abi.ABI
+var BatchDeliveredID common.Hash
+var InboxMessageDeliveredID common.Hash
+var InboxMessageFromOriginID common.Hash
+var SeqInboxABI *abi.ABI
+var IBridgeABI *abi.ABI
 var iInboxABI *abi.ABI
 var iDelayedMessageProviderABI *abi.ABI
 
@@ -21,20 +21,20 @@ func init() {
 	if err != nil {
 		panic(err)
 	}
-	batchDeliveredID = sequencerBridgeABI.Events["SequencerBatchDelivered"].ID
+	BatchDeliveredID = sequencerBridgeABI.Events["SequencerBatchDelivered"].ID
 	parsedIBridgeABI, err := bridgegen.IBridgeMetaData.GetAbi()
 	if err != nil {
 		panic(err)
 	}
-	iBridgeABI = parsedIBridgeABI
+	IBridgeABI = parsedIBridgeABI
 	parsedIMessageProviderABI, err := bridgegen.IDelayedMessageProviderMetaData.GetAbi()
 	if err != nil {
 		panic(err)
 	}
 	iDelayedMessageProviderABI = parsedIMessageProviderABI
-	inboxMessageDeliveredID = parsedIMessageProviderABI.Events["InboxMessageDelivered"].ID
-	inboxMessageFromOriginID = parsedIMessageProviderABI.Events["InboxMessageDeliveredFromOrigin"].ID
-	seqInboxABI, err = bridgegen.SequencerInboxMetaData.GetAbi()
+	InboxMessageDeliveredID = parsedIMessageProviderABI.Events["InboxMessageDelivered"].ID
+	InboxMessageFromOriginID = parsedIMessageProviderABI.Events["InboxMessageDeliveredFromOrigin"].ID
+	SeqInboxABI, err = bridgegen.SequencerInboxMetaData.GetAbi()
 	if err != nil {
 		panic(err)
 	}
@@ -43,5 +43,5 @@ func init() {
 		panic(err)
 	}
 	iInboxABI = parsedIInboxABI
-	batchDeliveredID = sequencerBridgeABI.Events["SequencerBatchDelivered"].ID
+	BatchDeliveredID = sequencerBridgeABI.Events["SequencerBatchDelivered"].ID
 }

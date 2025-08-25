@@ -30,8 +30,21 @@ func TestMelDatabase(t *testing.T) {
 	headMelState := &mel.State{
 		ParentChainBlockNumber: 2,
 		ParentChainBlockHash:   common.MaxHash,
+		BatchCount:             1,
 	}
 	require.NoError(t, melDb.SaveState(ctx, headMelState))
+	want := &mel.BatchMetadata{
+		Accumulator:         common.MaxHash,
+		MessageCount:        1,
+		DelayedMessageCount: 10,
+		ParentChainBlock:    2,
+	}
+	require.NoError(t, melDb.SaveBatchMetas(ctx, headMelState, []*mel.BatchMetadata{want}))
+	have, err := melDb.fetchBatchMetadata(0)
+	require.NoError(t, err)
+	if !reflect.DeepEqual(have, want) {
+		t.Fatal("BatchMetadata mismatch")
+	}
 
 	headMelStateBlockNum, err := melDb.GetHeadMelStateBlockNum()
 	require.NoError(t, err)
@@ -46,7 +59,6 @@ func TestMelDatabase(t *testing.T) {
 	}
 	melState, err = melDb.State(ctx, headMelState.ParentChainBlockNumber)
 	checkMelState()
-
 }
 
 func TestMelDatabaseReadAndWriteDelayedMessages(t *testing.T) {
@@ -77,7 +89,6 @@ func TestMelDatabaseReadAndWriteDelayedMessages(t *testing.T) {
 	}
 	state := &mel.State{}
 	state.SetDelayedMessageBacklog(&mel.DelayedMessageBacklog{})
-	// state.SetReadDelayedMsgsAcc(merkleAccumulator.NewNonpersistentMerkleAccumulator())
 	require.NoError(t, state.AccumulateDelayedMessage(delayedMsg)) // Initialize delayedMessageBacklog
 	state.DelayedMessagedSeen++
 
