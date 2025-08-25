@@ -232,7 +232,7 @@ func activateProgramInternal(
 	for i := 0; i < expectedResults; i++ {
 		res := <-results
 		if res.err != nil {
-			err = errors.Join(res.err, fmt.Errorf("%s:%w", res.target, err))
+			err = errors.Join(err, fmt.Errorf("%s: %w", res.target, res.err))
 		} else {
 			asmMap[res.target] = res.asm
 		}
