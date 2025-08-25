@@ -16,6 +16,8 @@ func (tx *TransactionMultiGas) ToProto() *proto.TransactionMultiGasData {
 		StorageAccess: tx.MultiGas.Get(multigas.ResourceKindStorageAccess),
 		StorageGrowth: tx.MultiGas.Get(multigas.ResourceKindStorageGrowth),
 		HistoryGrowth: tx.MultiGas.Get(multigas.ResourceKindHistoryGrowth),
+		L1Calldata:    tx.MultiGas.Get(multigas.ResourceKindL1Calldata),
+		L2Calldata:    tx.MultiGas.Get(multigas.ResourceKindL2Calldata),
 	}
 
 	if unknown := tx.MultiGas.Get(multigas.ResourceKindUnknown); unknown > 0 {
