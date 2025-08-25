@@ -83,6 +83,23 @@ func (e *EvilDAProvider) RecoverPayloadFromBatch(
 		// Try to deserialize certificate
 		cert, err := referenceda.Deserialize(certificate)
 		if err == nil {
+			// Check if this certificate is from our untrusted signer
+			signer, signerErr := cert.RecoverSigner()
+			if signerErr == nil {
+				untrustedAddr := e.GetUntrustedSignerAddress()
+
+				// If this cert was signed by our known untrusted signer, accept it and return the data
+				if untrustedAddr != nil && signer == *untrustedAddr {
+					log.Info("EvilDAProvider accepting untrusted certificate",
+						"signer", signer.Hex(),
+						"dataHash", common.Hash(cert.DataHash).Hex())
+
+					// Get the data from the underlying storage (it was stored with untrusted signer)
+					// We need to call the reader WITHOUT validation
+					return e.reader.RecoverPayloadFromBatch(ctx, batchNum, batchBlockHash, sequencerMsg, preimages, false)
+				}
+			}
+
 			// Extract data hash (SHA256) from certificate
 			dataHash := cert.DataHash
 
@@ -106,12 +123,6 @@ func (e *EvilDAProvider) RecoverPayloadFromBatch(
 			}
 			e.mu.RUnlock()
 		}
-	}
-
-	// If the EvilDAProvider is trying to pass off an invalid signer then it shouldn't validate
-	// the cert.
-	if e.GetUntrustedSignerAddress() != nil {
-		validateSeqMsg = false
 	}
 
 	// Fall back to underlying reader for non-evil certificates

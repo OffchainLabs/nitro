@@ -476,9 +476,13 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, 
 	proofEnhancerA := server_arb.NewProofEnhancementManager()
 	customDAEnhancerA := server_arb.NewCustomDAProofEnhancer(daClientA, l2nodeA.InboxTracker, l2nodeA.InboxReader)
 	proofEnhancerA.RegisterEnhancer(server_arb.MarkerCustomDARead, customDAEnhancerA)
+	validatePreimageEnhancerA := server_arb.NewValidatePreimageProofEnhancer(daClientA, l2nodeA.InboxTracker, l2nodeA.InboxReader)
+	proofEnhancerA.RegisterEnhancer(server_arb.MarkerCustomDAValidate, validatePreimageEnhancerA)
 
 	proofEnhancerB := server_arb.NewProofEnhancementManager()
 	customDAEnhancerB := server_arb.NewCustomDAProofEnhancer(daClientB, l2nodeB.InboxTracker, l2nodeB.InboxReader)
+	validatePreimageEnhancerB := server_arb.NewValidatePreimageProofEnhancer(daClientB, l2nodeB.InboxTracker, l2nodeB.InboxReader)
+	proofEnhancerB.RegisterEnhancer(server_arb.MarkerCustomDAValidate, validatePreimageEnhancerB)
 
 	// For EvilDataEvilCert strategy, wrap the enhancer to inject evil certificates
 	var evilEnhancer *EvilCustomDAProofEnhancer
@@ -668,22 +672,19 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, 
 	// Now post the certificate to L1 and sync to both nodes
 	receipt := postBatchToL1(t, ctx, l1client, &sequencerTxOpts, seqInboxBinding, certificate2)
 
-	// For UntrustedSignerCert:
-	// - Node A should fail because it validates certificates correctly
-	// - Node B should succeed because the evil provider lies about certificate validity
-	var expectedFailureA, expectedFailureB string
-	if evilStrategy == UntrustedSignerCert {
-		expectedFailureA = "" // Doesn't fail but returns an empty batch
-		expectedFailureB = "" // Evil provider lies about validity, so sync succeeds
-	}
-
-	syncBatchToNode(t, ctx, l1client, l2nodeA, seqInbox, receipt, expectedFailureA)
-	syncBatchToNode(t, ctx, l1client, l2nodeB, seqInbox, receipt, expectedFailureB)
+	// The nodes will process a different number of messages.
+	// Node A: 5 messages (2nd batch was invalid and not read)
+	// Node B: 15 messages
+	syncBatchToNode(t, ctx, l1client, l2nodeA, seqInbox, receipt, "")
+	syncBatchToNode(t, ctx, l1client, l2nodeB, seqInbox, receipt, "")
 
 	// Both nodes will read the same certificate from shared sequencer inbox
-	// But when they dereference it:
+	// In the case of EvilDataGoodCert and EvilDataEvilCert
 	// - Node A: DA provider returns goodBatchData2
 	// - Node B: Evil DA provider returns evilBatchData2
+	// In the case of UntrustedSignerCert
+	// - Node A: DA provider returns an error for the invalid cert
+	// - Node B: DA provider returns the batch data for the invalid cert
 
 	totalMessagesPosted += numMessagesPerBatch
 
@@ -753,12 +754,8 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, 
 	bcB, err := l2nodeB.InboxTracker.GetBatchCount()
 	Require(t, err)
 
-	// For UntrustedSignerCert, Node A will have one less batch than Node B
-	if evilStrategy == UntrustedSignerCert {
-		if bcA != bcB-1 {
-			t.Errorf("Expected Node A batch count %d to be one less than Node B batch count %d", bcA, bcB)
-		}
-		t.Logf("✓ Node A has %d batches, Node B has %d batches (expected for UntrustedSignerCert)", bcA, bcB)
+	if bcA != bcB {
+		t.Fatalf("FATAL: Expected Node A batch count %d to be equal to Node B batch count %d", bcA, bcB)
 	}
 
 	msgA, err := l2nodeA.InboxTracker.GetBatchMessageCount(bcA - 1)
@@ -766,8 +763,19 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, 
 	msgB, err := l2nodeB.InboxTracker.GetBatchMessageCount(bcB - 1)
 	Require(t, err)
 
-	t.Logf("\nNode A batch count %d, msgs %d", bcA, msgA)
+	t.Logf("Node A batch count %d, msgs %d", bcA, msgA)
 	t.Logf("Node B batch count %d, msgs %d", bcB, msgB)
+	if evilStrategy != UntrustedSignerCert {
+		if msgA != msgB {
+			t.Fatalf("FATAL: Expected Node A message count %d to be equal to Node B message count %d", msgA, msgB)
+		}
+	} else {
+		if msgA != (msgB-10)+1 {
+			// There were 10 messages in the batch with the untrusted cert.
+			// Node A treats the invalid batch as if it contained a single virtual delayed message.
+			t.Fatalf("FATAL: Expected Node A message count %d to be 9 less than Node B message count %d", msgA, msgB)
+		}
+	}
 
 	// Wait for both nodes' chains to catch up.
 	nodeAExec, ok := l2nodeA.ExecutionClient.(*gethexec.ExecutionNode)
@@ -786,7 +794,7 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, 
 		if evilStrategy == UntrustedSignerCert {
 			// For UntrustedSignerCert, Node A processes fewer messages
 			// Node A should have totalMessagesPosted - numMessagesPerBatch messages
-			nodeAExpected := uint64(totalMessagesPosted - numMessagesPerBatch)
+			nodeAExpected := uint64(totalMessagesPosted-numMessagesPerBatch) + 1
 			nodeBExpected := uint64(totalMessagesPosted)
 			isCaughtUp = nodeALatest.Number.Uint64() == nodeAExpected && nodeBLatest.Number.Uint64() == nodeBExpected
 			shouldDiverge = true // Nodes should always diverge in this case
@@ -799,6 +807,7 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, 
 		}
 
 		if isCaughtUp {
+			t.Logf("NodeA and NodeB caught up after second batch.")
 			if shouldDiverge && nodeALatest.Hash() == nodeBLatest.Hash() {
 				Fatal(t, "node A L2 hash", nodeALatest, "matches node B L2 hash", nodeBLatest)
 			}
@@ -925,7 +934,7 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, 
 			Require(t, err)
 			for it.Next() {
 				if it.Error() != nil {
-					t.Fatalf("Error in filter iterator: %v", it.Error())
+					t.Fatalf("FATAL: Error in filter iterator: %v", it.Error())
 				}
 				t.Log("Received event of OSP confirmation!")
 				tx, _, err := l1client.TransactionByHash(ctx, it.Event.Raw.TxHash)
