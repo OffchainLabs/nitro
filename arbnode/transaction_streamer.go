@@ -64,39 +64,44 @@ type TransactionStreamer struct {
 	broadcasterQueuedMessagesFirstMsgIdx atomic.Uint64
 	broadcasterQueuedMessagesActiveReorg bool
 
-	coordinator     *SeqCoordinator
-	broadcastServer *broadcaster.Broadcaster
-	inboxReader     *InboxReader
-	delayedBridge   *DelayedBridge
+	coordinator      *SeqCoordinator
+	broadcastServer  *broadcaster.Broadcaster
+	inboxReader      *InboxReader
+	delayedBridge    *DelayedBridge
+	syncMonitor      *SyncMonitor
+	broadcastChecker *BroadcastSyncChecker
 
 	trackBlockMetadataFrom arbutil.MessageIndex
 	syncTillMessage        arbutil.MessageIndex
 }
 
 type TransactionStreamerConfig struct {
-	MaxBroadcasterQueueSize int           `koanf:"max-broadcaster-queue-size"`
-	MaxReorgResequenceDepth int64         `koanf:"max-reorg-resequence-depth" reload:"hot"`
-	ExecuteMessageLoopDelay time.Duration `koanf:"execute-message-loop-delay" reload:"hot"`
-	SyncTillBlock           uint64        `koanf:"sync-till-block"`
-	TrackBlockMetadataFrom  uint64        `koanf:"track-block-metadata-from"`
+	MaxBroadcasterQueueSize    int           `koanf:"max-broadcaster-queue-size"`
+	MaxReorgResequenceDepth    int64         `koanf:"max-reorg-resequence-depth" reload:"hot"`
+	ExecuteMessageLoopDelay    time.Duration `koanf:"execute-message-loop-delay" reload:"hot"`
+	SyncTillBlock              uint64        `koanf:"sync-till-block"`
+	TrackBlockMetadataFrom     uint64        `koanf:"track-block-metadata-from"`
+	DisableBroadcastDuringSync bool          `koanf:"disable-broadcast-during-sync" reload:"hot"`
 }
 
 type TransactionStreamerConfigFetcher func() *TransactionStreamerConfig
 
 var DefaultTransactionStreamerConfig = TransactionStreamerConfig{
-	MaxBroadcasterQueueSize: 50_000,
-	MaxReorgResequenceDepth: 1024,
-	ExecuteMessageLoopDelay: time.Millisecond * 100,
-	SyncTillBlock:           0,
-	TrackBlockMetadataFrom:  0,
+	MaxBroadcasterQueueSize:    50_000,
+	MaxReorgResequenceDepth:    1024,
+	ExecuteMessageLoopDelay:    time.Millisecond * 100,
+	SyncTillBlock:              0,
+	TrackBlockMetadataFrom:     0,
+	DisableBroadcastDuringSync: true,
 }
 
 var TestTransactionStreamerConfig = TransactionStreamerConfig{
-	MaxBroadcasterQueueSize: 10_000,
-	MaxReorgResequenceDepth: 128 * 1024,
-	ExecuteMessageLoopDelay: time.Millisecond,
-	SyncTillBlock:           0,
-	TrackBlockMetadataFrom:  0,
+	MaxBroadcasterQueueSize:    10_000,
+	MaxReorgResequenceDepth:    128 * 1024,
+	ExecuteMessageLoopDelay:    time.Millisecond,
+	SyncTillBlock:              0,
+	TrackBlockMetadataFrom:     0,
+	DisableBroadcastDuringSync: true,
 }
 
 func TransactionStreamerConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -105,6 +110,7 @@ func TransactionStreamerConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Duration(prefix+".execute-message-loop-delay", DefaultTransactionStreamerConfig.ExecuteMessageLoopDelay, "delay when polling calls to execute messages")
 	f.Uint64(prefix+".sync-till-block", DefaultTransactionStreamerConfig.SyncTillBlock, "node will not sync past this block")
 	f.Uint64(prefix+".track-block-metadata-from", DefaultTransactionStreamerConfig.TrackBlockMetadataFrom, "block number to start saving blockmetadata, 0 to disable")
+	f.Bool(prefix+".disable-broadcast-during-sync", DefaultTransactionStreamerConfig.DisableBroadcastDuringSync, "disable broadcasting historical messages during sync to prevent feed flooding")
 }
 
 func NewTransactionStreamer(
@@ -113,6 +119,7 @@ func NewTransactionStreamer(
 	chainConfig *params.ChainConfig,
 	exec execution.ExecutionClient,
 	broadcastServer *broadcaster.Broadcaster,
+	syncMonitor *SyncMonitor,
 	fatalErrChan chan<- error,
 	config TransactionStreamerConfigFetcher,
 	snapSyncConfig *SnapSyncConfig,
@@ -123,6 +130,7 @@ func NewTransactionStreamer(
 		db:                 db,
 		newMessageNotifier: make(chan struct{}, 1),
 		broadcastServer:    broadcastServer,
+		syncMonitor:        syncMonitor,
 		fatalErrChan:       fatalErrChan,
 		config:             config,
 		snapSyncConfig:     snapSyncConfig,
@@ -205,6 +213,10 @@ func (s *TransactionStreamer) SetInboxReaders(inboxReader *InboxReader, delayedB
 	}
 	s.inboxReader = inboxReader
 	s.delayedBridge = delayedBridge
+
+	if s.syncMonitor != nil && inboxReader != nil && inboxReader.tracker != nil {
+		s.broadcastChecker = NewBroadcastSyncChecker(s.syncMonitor, inboxReader.tracker)
+	}
 }
 
 func (s *TransactionStreamer) ChainConfig() *params.ChainConfig {
@@ -406,7 +418,7 @@ func (s *TransactionStreamer) addMessagesAndReorg(batch ethdb.Batch, msgIdxOfFir
 			BlockHash:       &messagesResults[i].BlockHash,
 		})
 	}
-	s.broadcastMessages(messagesWithComputedBlockHash, msgIdxOfFirstMsgToAdd)
+	s.broadcastMessages(messagesWithComputedBlockHash, msgIdxOfFirstMsgToAdd, false)
 
 	if s.validator != nil {
 		err = s.validator.Reorg(s.GetContext(), msgIdxOfFirstMsgToAdd)
@@ -1112,7 +1124,7 @@ func (s *TransactionStreamer) WriteMessageFromSequencer(
 	if s.trackBlockMetadataFrom == 0 || msgIdx < s.trackBlockMetadataFrom {
 		msgWithBlockInfo.BlockMetadata = nil
 	}
-	s.broadcastMessages([]arbostypes.MessageWithMetadataAndBlockInfo{msgWithBlockInfo}, msgIdx)
+	s.broadcastMessages([]arbostypes.MessageWithMetadataAndBlockInfo{msgWithBlockInfo}, msgIdx, true)
 
 	return nil
 }
@@ -1183,10 +1195,16 @@ func (s *TransactionStreamer) writeMessage(msgIdx arbutil.MessageIndex, msg arbo
 func (s *TransactionStreamer) broadcastMessages(
 	msgs []arbostypes.MessageWithMetadataAndBlockInfo,
 	firstMsgIdx arbutil.MessageIndex,
+	force bool,
 ) {
 	if s.broadcastServer == nil {
 		return
 	}
+
+	if !force && s.config().DisableBroadcastDuringSync && s.broadcastChecker != nil && !s.broadcastChecker.ShouldBroadcast(firstMsgIdx, len(msgs)) {
+		return
+	}
+
 	if err := s.broadcastServer.BroadcastMessages(msgs, firstMsgIdx); err != nil {
 		log.Error("failed broadcasting messages", "firstMsgIdx", firstMsgIdx, "err", err)
 	}
@@ -1399,7 +1417,7 @@ func (s *TransactionStreamer) ExecuteNextMsg(ctx context.Context) bool {
 		BlockHash:       &msgResult.BlockHash,
 		BlockMetadata:   msgAndBlockInfo.BlockMetadata,
 	}
-	s.broadcastMessages([]arbostypes.MessageWithMetadataAndBlockInfo{msgWithBlockInfo}, msgIdxToExecute)
+	s.broadcastMessages([]arbostypes.MessageWithMetadataAndBlockInfo{msgWithBlockInfo}, msgIdxToExecute, false)
 
 	return msgIdxToExecute+1 <= consensusHeadMsgIdx
 }
