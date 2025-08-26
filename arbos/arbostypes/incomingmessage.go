@@ -178,7 +178,6 @@ func (msg *L1IncomingMessage) FillInBatchGasCost(batchFetcher FallibleBatchFetch
 	if gotHash != batchHash {
 		return fmt.Errorf("batch fetcher returned incorrect data hash %v (wanted %v for batch %v)", gotHash, batchHash, batchNum)
 	}
-
 	gas := ComputeBatchGasCost(batchData)
 	msg.BatchGasCost = &gas
 	return nil

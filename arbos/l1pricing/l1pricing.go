@@ -4,7 +4,6 @@
 package l1pricing
 
 import (
-	"bytes"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -619,20 +618,4 @@ func byteCountAfterBrotliLevel(input []byte, level uint64) (uint64, error) {
 		return 0, err
 	}
 	return uint64(len(compressed)), nil
-}
-
-// CalldataGasUnits calculates the gas units spent by calldata
-func CalldataGasUnits(calldata []byte) uint64 {
-	var (
-		zeros    = bytes.Count(calldata, []byte{0})
-		nonZeros = len(calldata) - zeros
-		// #nosec G115
-		calldataTokens = uint64(nonZeros)*params.TxTokenPerNonZeroByte + uint64(zeros)
-	)
-
-	return tokenGasUnits(calldataTokens)
-}
-
-func tokenGasUnits(calldataTokens uint64) uint64 {
-	return calldataTokens * params.TxCostFloorPerToken
 }
