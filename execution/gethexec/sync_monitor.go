@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync/atomic"
 
 	flag "github.com/spf13/pflag"
 
@@ -34,6 +35,8 @@ type SyncMonitor struct {
 	config    *SyncMonitorConfig
 	consensus execution.ConsensusInfo
 	exec      *ExecutionEngine
+
+	consensusSyncData atomic.Pointer[execution.ConsensusSyncData]
 }
 
 func NewSyncMonitor(config *SyncMonitorConfig, exec *ExecutionEngine) *SyncMonitor {
@@ -43,20 +46,25 @@ func NewSyncMonitor(config *SyncMonitorConfig, exec *ExecutionEngine) *SyncMonit
 	}
 }
 
+// SetConsensusSyncData updates the sync data pushed from consensus
+func (s *SyncMonitor) SetConsensusSyncData(syncData *execution.ConsensusSyncData) {
+	s.consensusSyncData.Store(syncData)
+}
+
 func (s *SyncMonitor) FullSyncProgressMap(ctx context.Context) map[string]interface{} {
-	res, err := s.consensus.FullSyncProgressMap().Await(ctx)
-	if err != nil {
-		res = make(map[string]interface{})
-		res["fullSyncProgressMapError"] = err
+	data := s.consensusSyncData.Load()
+	if data == nil {
+		return map[string]interface{}{"error": "no consensus sync data available"}
 	}
 
-	consensusSyncTarget, err := s.consensus.SyncTargetMessageCount().Await(ctx)
-	if err != nil {
-		res["consensusSyncTargetError"] = err
-	} else {
-		res["consensusSyncTarget"] = consensusSyncTarget
+	res := make(map[string]interface{})
+	for k, v := range data.SyncProgressMap {
+		res[k] = v
 	}
 
+	res["consensusSyncTarget"] = data.SyncTargetMessageCount
+
+	// Add execution-specific data
 	header, err := s.exec.getCurrentHeader()
 	if err != nil {
 		res["currentHeaderError"] = err
@@ -82,32 +90,27 @@ func (s *SyncMonitor) SyncProgressMap(ctx context.Context) map[string]interface{
 }
 
 func (s *SyncMonitor) Synced(ctx context.Context) bool {
-	synced, err := s.consensus.Synced().Await(ctx)
-	if err != nil {
-		log.Error("Error checking if consensus is synced", "err", err)
+	data := s.consensusSyncData.Load()
+	if data == nil {
 		return false
 	}
-	if synced {
-		built, err := s.exec.HeadMessageIndex()
-		if err != nil {
-			log.Error("Error getting head message index", "err", err)
-			return false
-		}
 
-		consensusSyncTarget, err := s.consensus.SyncTargetMessageCount().Await(ctx)
-		if err != nil {
-			log.Error("Error getting consensus sync target", "err", err)
-			return false
-		}
-		if consensusSyncTarget == 0 {
-			return false
-		}
-
-		if built+1 >= consensusSyncTarget {
-			return true
-		}
+	if !data.Synced {
+		return false
 	}
-	return false
+
+	// Additional execution-side validation
+	built, err := s.exec.HeadMessageIndex()
+	if err != nil {
+		log.Error("Error getting head message index", "err", err)
+		return false
+	}
+
+	if data.SyncTargetMessageCount == 0 {
+		return false
+	}
+
+	return built+1 >= data.SyncTargetMessageCount
 }
 
 func (s *SyncMonitor) SetConsensusInfo(consensus execution.ConsensusInfo) {

@@ -29,7 +29,7 @@ var DefaultConsensusExecutionSyncerConfig = ConsensusExecutionSyncerConfig{
 }
 
 func ConsensusExecutionSyncerConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.Duration(prefix+".sync-interval", DefaultConsensusExecutionSyncerConfig.SyncInterval, "Interval in which finality data is pushed from consensus to execution")
+	f.Duration(prefix+".sync-interval", DefaultConsensusExecutionSyncerConfig.SyncInterval, "Interval in which finality and sync data is pushed from consensus to execution")
 }
 
 type ConsensusExecutionSyncer struct {
@@ -41,6 +41,7 @@ type ConsensusExecutionSyncer struct {
 	execClient     execution.ExecutionClient
 	blockValidator *staker.BlockValidator
 	txStreamer     *TransactionStreamer
+	syncMonitor    *SyncMonitor
 }
 
 func NewConsensusExecutionSyncer(
@@ -49,6 +50,7 @@ func NewConsensusExecutionSyncer(
 	execClient execution.ExecutionClient,
 	blockValidator *staker.BlockValidator,
 	txStreamer *TransactionStreamer,
+	syncMonitor *SyncMonitor,
 ) *ConsensusExecutionSyncer {
 	return &ConsensusExecutionSyncer{
 		config:         config,
@@ -56,12 +58,14 @@ func NewConsensusExecutionSyncer(
 		execClient:     execClient,
 		blockValidator: blockValidator,
 		txStreamer:     txStreamer,
+		syncMonitor:    syncMonitor,
 	}
 }
 
 func (c *ConsensusExecutionSyncer) Start(ctx_in context.Context) {
 	c.StopWaiter.Start(ctx_in, c)
 	c.CallIteratively(c.pushFinalityDataFromConsensusToExecution)
+	c.CallIteratively(c.pushConsensusSyncDataToExecution)
 }
 
 func (c *ConsensusExecutionSyncer) getFinalityData(
@@ -135,6 +139,26 @@ func (c *ConsensusExecutionSyncer) pushFinalityDataFromConsensusToExecution(ctx 
 			"safeMsgCount", finalityMsgCount(safeFinalityData),
 			"finalizedMsgCount", finalityMsgCount(finalizedFinalityData),
 			"validatedMsgCount", finalityMsgCount(validatedFinalityData),
+		)
+	}
+
+	return c.config().SyncInterval
+}
+
+func (c *ConsensusExecutionSyncer) pushConsensusSyncDataToExecution(ctx context.Context) time.Duration {
+	syncData := &execution.ConsensusSyncData{
+		Synced:                 c.syncMonitor.Synced(),
+		SyncTargetMessageCount: c.syncMonitor.SyncTargetMessageCount(),
+		SyncProgressMap:        c.syncMonitor.FullSyncProgressMap(),
+	}
+
+	_, err := c.execClient.SetConsensusSyncData(ctx, syncData).Await(ctx)
+	if err != nil {
+		log.Error("Error pushing sync data from consensus to execution", "err", err)
+	} else {
+		log.Debug("Pushed sync data from consensus to execution",
+			"synced", syncData.Synced,
+			"syncTarget", syncData.SyncTargetMessageCount,
 		)
 	}
 
