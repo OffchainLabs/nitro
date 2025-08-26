@@ -17,6 +17,7 @@ message MultiGasData {
   uint64 storage_growth = 6;
   uint64 l1_calldata = 7;
   uint64 l2_calldata = 8;
+  uint64 wasm_computation = 9;
 }
 
 // Gas data and metadata for a single transaction
