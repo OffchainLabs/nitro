@@ -99,17 +99,17 @@ func stateLogFunc(targetHeader *types.Header) arbitrum.StateBuildingLogFunction 
 // If keepreference == true, reference to state of prevHeader is added (no reference added if an error is returned)
 func (r *BlockRecorder) RecordBlockCreation(
 	ctx context.Context,
-	pos arbutil.MessageIndex,
+	index arbutil.MessageIndex,
 	msg *arbostypes.MessageWithMetadata,
 ) (*execution.RecordResult, error) {
 
-	blockNum := r.execEngine.MessageIndexToBlockNumber(pos)
+	blockNum := r.execEngine.MessageIndexToBlockNumber(index)
 
 	var prevHeader *types.Header
-	if pos != 0 {
+	if index != 0 {
 		prevHeader = r.execEngine.bc.GetHeaderByNumber(uint64(blockNum - 1))
 		if prevHeader == nil {
-			return nil, fmt.Errorf("pos %d prevHeader not found", pos)
+			return nil, fmt.Errorf("index %d prevHeader not found", index)
 		}
 	}
 
@@ -182,7 +182,7 @@ func (r *BlockRecorder) RecordBlockCreation(
 	r.updateValidCandidateHdr(prevHeader)
 
 	return &execution.RecordResult{
-		Pos:       pos,
+		Index:     index,
 		BlockHash: blockHash,
 		Preimages: preimages,
 		UserWasms: recordingdb.UserWasms(),
@@ -234,20 +234,20 @@ func (r *BlockRecorder) updateValidCandidateHdr(hdr *types.Header) {
 	r.validHdrCandidate = hdr
 }
 
-func (r *BlockRecorder) MarkValid(pos arbutil.MessageIndex, resultHash common.Hash) {
+func (r *BlockRecorder) MarkValid(index arbutil.MessageIndex, resultHash common.Hash) {
 	r.validHdrLock.Lock()
 	defer r.validHdrLock.Unlock()
 	if r.validHdrCandidate == nil {
 		return
 	}
-	validNum := r.execEngine.MessageIndexToBlockNumber(pos)
+	validNum := r.execEngine.MessageIndexToBlockNumber(index)
 	if r.validHdrCandidate.Number.Uint64() > validNum {
 		return
 	}
 	// make sure the valid is canonical
 	canonicalResultHash := r.execEngine.bc.GetCanonicalHash(uint64(validNum))
 	if canonicalResultHash != resultHash {
-		log.Warn("markvalid hash not canonical", "pos", pos, "result", resultHash, "canonical", canonicalResultHash)
+		log.Warn("markvalid hash not canonical", "index", index, "result", resultHash, "canonical", canonicalResultHash)
 		return
 	}
 	// make sure the candidate is still canonical

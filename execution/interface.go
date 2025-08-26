@@ -18,7 +18,7 @@ type MessageResult struct {
 }
 
 type RecordResult struct {
-	Pos       arbutil.MessageIndex
+	Index     arbutil.MessageIndex
 	BlockHash common.Hash
 	Preimages map[common.Hash][]byte
 	UserWasms state.UserWasms
@@ -38,7 +38,7 @@ type ExecutionClient interface {
 	Reorg(msgIdxOfFirstMsgToAdd arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadataAndBlockInfo, oldMessages []*arbostypes.MessageWithMetadata) containers.PromiseInterface[[]*MessageResult]
 	HeadMessageIndex() containers.PromiseInterface[arbutil.MessageIndex]
 	ResultAtMessageIndex(msgIdx arbutil.MessageIndex) containers.PromiseInterface[*MessageResult]
-	MessageIndexToBlockNumber(messageNum arbutil.MessageIndex) containers.PromiseInterface[uint64]
+	MessageIndexToBlockNumber(messageIndex arbutil.MessageIndex) containers.PromiseInterface[uint64]
 	BlockNumberToMessageIndex(blockNum uint64) containers.PromiseInterface[arbutil.MessageIndex]
 	SetFinalityData(ctx context.Context, safeFinalityData *arbutil.FinalityData, finalizedFinalityData *arbutil.FinalityData, validatedFinalityData *arbutil.FinalityData) containers.PromiseInterface[struct{}]
 	MarkFeedStart(to arbutil.MessageIndex) containers.PromiseInterface[struct{}]
@@ -53,10 +53,10 @@ type ExecutionClient interface {
 type ExecutionRecorder interface {
 	RecordBlockCreation(
 		ctx context.Context,
-		pos arbutil.MessageIndex,
+		index arbutil.MessageIndex,
 		msg *arbostypes.MessageWithMetadata,
 	) (*RecordResult, error)
-	MarkValid(pos arbutil.MessageIndex, resultHash common.Hash)
+	MarkValid(index arbutil.MessageIndex, resultHash common.Hash)
 	PrepareForRecord(ctx context.Context, start, end arbutil.MessageIndex) error
 }
 

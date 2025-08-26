@@ -31,10 +31,10 @@ func NewNethermindExecutionClient() (*nethermindExecutionClient, error) {
 	}, nil
 }
 
-func (p *nethermindExecutionClient) DigestMessage(num arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, msgForPrefetch *arbostypes.MessageWithMetadata) containers.PromiseInterface[*execution.MessageResult] {
+func (p *nethermindExecutionClient) DigestMessage(index arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, msgForPrefetch *arbostypes.MessageWithMetadata) containers.PromiseInterface[*execution.MessageResult] {
 	promise := containers.NewPromise[*execution.MessageResult](nil)
 	go func() {
-		res := p.rpcClient.DigestMessage(context.Background(), num, msg, msgForPrefetch)
+		res := p.rpcClient.DigestMessage(context.Background(), index, msg, msgForPrefetch)
 		if res == nil {
 			promise.ProduceError(fmt.Errorf("external DigestMessage returned nil"))
 			return
@@ -72,7 +72,7 @@ func (p *nethermindExecutionClient) Reorg(msgIdxOfFirstMsgToAdd arbutil.MessageI
 func (p *nethermindExecutionClient) HeadMessageIndex() containers.PromiseInterface[arbutil.MessageIndex] {
 	promise := containers.NewPromise[arbutil.MessageIndex](nil)
 	go func() {
-		idx, err := p.rpcClient.HeadMessageNumber(context.Background())
+		idx, err := p.rpcClient.HeadMessageIndex(context.Background())
 		if err != nil {
 			promise.ProduceError(err)
 			return
@@ -85,7 +85,7 @@ func (p *nethermindExecutionClient) HeadMessageIndex() containers.PromiseInterfa
 func (p *nethermindExecutionClient) ResultAtMessageIndex(msgIdx arbutil.MessageIndex) containers.PromiseInterface[*execution.MessageResult] {
 	promise := containers.NewPromise[*execution.MessageResult](nil)
 	go func() {
-		res, err := p.rpcClient.ResultAtPos(context.Background(), msgIdx)
+		res, err := p.rpcClient.ResultAtMessageIndex(context.Background(), msgIdx)
 		if err != nil {
 			promise.ProduceError(err)
 			return
@@ -95,10 +95,10 @@ func (p *nethermindExecutionClient) ResultAtMessageIndex(msgIdx arbutil.MessageI
 	return &promise
 }
 
-func (p *nethermindExecutionClient) MessageIndexToBlockNumber(messageNum arbutil.MessageIndex) containers.PromiseInterface[uint64] {
+func (p *nethermindExecutionClient) MessageIndexToBlockNumber(messageIndex arbutil.MessageIndex) containers.PromiseInterface[uint64] {
 	promise := containers.NewPromise[uint64](nil)
 	go func() {
-		num, err := p.rpcClient.MessageIndexToBlockNumber(context.Background(), messageNum)
+		num, err := p.rpcClient.MessageIndexToBlockNumber(context.Background(), messageIndex)
 		if err != nil {
 			promise.ProduceError(err)
 			return
@@ -179,11 +179,11 @@ func (p *nethermindExecutionClient) FullSyncProgressMap(ctx context.Context) map
 	return map[string]interface{}{}
 }
 
-func (p *nethermindExecutionClient) RecordBlockCreation(ctx context.Context, pos arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata) (*execution.RecordResult, error) {
+func (p *nethermindExecutionClient) RecordBlockCreation(ctx context.Context, index arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata) (*execution.RecordResult, error) {
 	return nil, fmt.Errorf("RecordBlockCreation not implemented")
 }
 
-func (p *nethermindExecutionClient) MarkValid(pos arbutil.MessageIndex, resultHash common.Hash) {
+func (p *nethermindExecutionClient) MarkValid(index arbutil.MessageIndex, resultHash common.Hash) {
 	// no-op until implemented
 }
 

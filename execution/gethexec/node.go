@@ -440,10 +440,10 @@ func (n *ExecutionNode) StopAndWait() {
 	// }
 }
 
-func (n *ExecutionNode) DigestMessage(num arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, msgForPrefetch *arbostypes.MessageWithMetadata) containers.PromiseInterface[*execution.MessageResult] {
+func (n *ExecutionNode) DigestMessage(index arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, msgForPrefetch *arbostypes.MessageWithMetadata) containers.PromiseInterface[*execution.MessageResult] {
 	promise := containers.NewPromise[*execution.MessageResult](nil)
 	go func() {
-		res, err := n.ExecEngine.DigestMessage(num, msg, msgForPrefetch)
+		res, err := n.ExecEngine.DigestMessage(index, msg, msgForPrefetch)
 		if err != nil {
 			promise.ProduceError(err)
 			return
@@ -473,13 +473,13 @@ func (n *ExecutionNode) ArbOSVersionForMessageIndex(msgIdx arbutil.MessageIndex)
 
 func (n *ExecutionNode) RecordBlockCreation(
 	ctx context.Context,
-	pos arbutil.MessageIndex,
+	index arbutil.MessageIndex,
 	msg *arbostypes.MessageWithMetadata,
 ) (*execution.RecordResult, error) {
-	return n.Recorder.RecordBlockCreation(ctx, pos, msg)
+	return n.Recorder.RecordBlockCreation(ctx, index, msg)
 }
-func (n *ExecutionNode) MarkValid(pos arbutil.MessageIndex, resultHash common.Hash) {
-	n.Recorder.MarkValid(pos, resultHash)
+func (n *ExecutionNode) MarkValid(index arbutil.MessageIndex, resultHash common.Hash) {
+	n.Recorder.MarkValid(index, resultHash)
 }
 func (n *ExecutionNode) PrepareForRecord(ctx context.Context, start, end arbutil.MessageIndex) error {
 	return n.Recorder.PrepareForRecord(ctx, start, end)
@@ -510,8 +510,8 @@ func (n *ExecutionNode) SetConsensusClient(consensus execution.FullConsensusClie
 	n.SyncMonitor.SetConsensusInfo(consensus)
 }
 
-func (n *ExecutionNode) MessageIndexToBlockNumber(messageNum arbutil.MessageIndex) containers.PromiseInterface[uint64] {
-	blockNum := n.ExecEngine.MessageIndexToBlockNumber(messageNum)
+func (n *ExecutionNode) MessageIndexToBlockNumber(messageIndex arbutil.MessageIndex) containers.PromiseInterface[uint64] {
+	blockNum := n.ExecEngine.MessageIndexToBlockNumber(messageIndex)
 	return containers.NewReadyPromise(blockNum, nil)
 }
 func (n *ExecutionNode) BlockNumberToMessageIndex(blockNum uint64) containers.PromiseInterface[arbutil.MessageIndex] {

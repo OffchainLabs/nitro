@@ -80,18 +80,18 @@ func compare[T any](op string, intRes T, intErr error, extRes T, extErr error) e
 	return nil
 }
 
-func (w *compareExecutionClient) DigestMessage(num arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, msgForPrefetch *arbostypes.MessageWithMetadata) containers.PromiseInterface[*execution.MessageResult] {
+func (w *compareExecutionClient) DigestMessage(index arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, msgForPrefetch *arbostypes.MessageWithMetadata) containers.PromiseInterface[*execution.MessageResult] {
 	start := time.Now()
-	log.Info("CompareExecutionClient: DigestMessage", "num", num)
-	internal := w.gethExecutionClient.DigestMessage(num, msg, msgForPrefetch)
-	external := w.nethermindExecutionClient.DigestMessage(num, msg, msgForPrefetch)
+	log.Info("CompareExecutionClient: DigestMessage", "index", index)
+	internal := w.gethExecutionClient.DigestMessage(index, msg, msgForPrefetch)
+	external := w.nethermindExecutionClient.DigestMessage(index, msg, msgForPrefetch)
 
 	result := comparePromises(
 		"DigestMessage",
 		internal,
 		external,
 	)
-	log.Info("CompareExecutionClient: DigestMessage completed", "num", num, "elapsed", time.Since(start))
+	log.Info("CompareExecutionClient: DigestMessage completed", "index", index, "elapsed", time.Since(start))
 	return result
 }
 
@@ -117,23 +117,23 @@ func (w *compareExecutionClient) HeadMessageIndex() containers.PromiseInterface[
 	return result
 }
 
-func (w *compareExecutionClient) ResultAtMessageIndex(pos arbutil.MessageIndex) containers.PromiseInterface[*execution.MessageResult] {
+func (w *compareExecutionClient) ResultAtMessageIndex(index arbutil.MessageIndex) containers.PromiseInterface[*execution.MessageResult] {
 	start := time.Now()
-	log.Info("CompareExecutionClient: ResultAtMessageIndex", "pos", pos)
-	internal := w.gethExecutionClient.ResultAtMessageIndex(pos)
-	external := w.nethermindExecutionClient.ResultAtMessageIndex(pos)
+	log.Info("CompareExecutionClient: ResultAtMessageIndex", "index", index)
+	internal := w.gethExecutionClient.ResultAtMessageIndex(index)
+	external := w.nethermindExecutionClient.ResultAtMessageIndex(index)
 	result := comparePromises("ResultAtMessageIndex", internal, external)
-	log.Info("CompareExecutionClient: ResultAtMessageIndex completed", "pos", pos, "elapsed", time.Since(start))
+	log.Info("CompareExecutionClient: ResultAtMessageIndex completed", "index", index, "elapsed", time.Since(start))
 	return result
 }
 
-func (w *compareExecutionClient) MessageIndexToBlockNumber(messageNum arbutil.MessageIndex) containers.PromiseInterface[uint64] {
+func (w *compareExecutionClient) MessageIndexToBlockNumber(messageIndex arbutil.MessageIndex) containers.PromiseInterface[uint64] {
 	start := time.Now()
-	log.Info("CompareExecutionClient: MessageIndexToBlockNumber", "messageNum", messageNum)
-	internal := w.gethExecutionClient.MessageIndexToBlockNumber(messageNum)
-	external := w.nethermindExecutionClient.MessageIndexToBlockNumber(messageNum)
+	log.Info("CompareExecutionClient: MessageIndexToBlockNumber", "messageIndex", messageIndex)
+	internal := w.gethExecutionClient.MessageIndexToBlockNumber(messageIndex)
+	external := w.nethermindExecutionClient.MessageIndexToBlockNumber(messageIndex)
 	result := comparePromises("MessageIndexToBlockNumber", internal, external)
-	log.Info("CompareExecutionClient: MessageIndexToBlockNumber completed", "messageNum", messageNum, "elapsed", time.Since(start))
+	log.Info("CompareExecutionClient: MessageIndexToBlockNumber completed", "messageIndex", messageIndex, "elapsed", time.Since(start))
 	return result
 }
 
@@ -254,19 +254,19 @@ func (w *compareExecutionClient) FullSyncProgressMap(ctx context.Context) map[st
 
 // ---- execution.ExecutionRecorder interface methods ----
 
-func (w *compareExecutionClient) RecordBlockCreation(ctx context.Context, pos arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata) (*execution.RecordResult, error) {
+func (w *compareExecutionClient) RecordBlockCreation(ctx context.Context, index arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata) (*execution.RecordResult, error) {
 	start := time.Now()
-	log.Info("CompareExecutionClient: RecordBlockCreation", "pos", pos)
-	result, err := w.gethExecutionClient.RecordBlockCreation(ctx, pos, msg)
-	log.Info("CompareExecutionClient: RecordBlockCreation completed", "pos", pos, "err", err, "elapsed", time.Since(start))
+	log.Info("CompareExecutionClient: RecordBlockCreation", "index", index)
+	result, err := w.gethExecutionClient.RecordBlockCreation(ctx, index, msg)
+	log.Info("CompareExecutionClient: RecordBlockCreation completed", "index", index, "err", err, "elapsed", time.Since(start))
 	return result, err
 }
 
-func (w *compareExecutionClient) MarkValid(pos arbutil.MessageIndex, resultHash common.Hash) {
+func (w *compareExecutionClient) MarkValid(index arbutil.MessageIndex, resultHash common.Hash) {
 	start := time.Now()
-	log.Info("CompareExecutionClient: MarkValid", "pos", pos, "resultHash", resultHash)
-	w.gethExecutionClient.MarkValid(pos, resultHash)
-	log.Info("CompareExecutionClient: MarkValid completed", "pos", pos, "elapsed", time.Since(start))
+	log.Info("CompareExecutionClient: MarkValid", "index", index, "resultHash", resultHash)
+	w.gethExecutionClient.MarkValid(index, resultHash)
+	log.Info("CompareExecutionClient: MarkValid completed", "index", index, "elapsed", time.Since(start))
 }
 
 func (w *compareExecutionClient) PrepareForRecord(ctx context.Context, start, end arbutil.MessageIndex) error {
@@ -277,7 +277,7 @@ func (w *compareExecutionClient) PrepareForRecord(ctx context.Context, start, en
 	return err
 }
 
-// ---- execution.ExecutionBatchPoster interface methods ----
+// ---- execution.ExecutionBatchindexter interface methods ----
 
 func (w *compareExecutionClient) ArbOSVersionForMessageIndex(msgIdx arbutil.MessageIndex) (uint64, error) {
 	start := time.Now()

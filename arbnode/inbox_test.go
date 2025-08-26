@@ -80,8 +80,8 @@ func (w *execClientWrapper) SetFinalityData(
 	return containers.NewReadyPromise(struct{}{}, nil)
 }
 
-func (w *execClientWrapper) DigestMessage(num arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, msgForPrefetch *arbostypes.MessageWithMetadata) containers.PromiseInterface[*execution.MessageResult] {
-	return containers.NewReadyPromise(w.ExecutionEngine.DigestMessage(num, msg, msgForPrefetch))
+func (w *execClientWrapper) DigestMessage(index arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, msgForPrefetch *arbostypes.MessageWithMetadata) containers.PromiseInterface[*execution.MessageResult] {
+	return containers.NewReadyPromise(w.ExecutionEngine.DigestMessage(index, msg, msgForPrefetch))
 }
 
 func (w *execClientWrapper) Reorg(count arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadataAndBlockInfo, oldMessages []*arbostypes.MessageWithMetadata) containers.PromiseInterface[[]*execution.MessageResult] {
@@ -92,16 +92,16 @@ func (w *execClientWrapper) HeadMessageIndex() containers.PromiseInterface[arbut
 	return containers.NewReadyPromise(w.ExecutionEngine.HeadMessageIndex())
 }
 
-func (w *execClientWrapper) ResultAtMessageIndex(pos arbutil.MessageIndex) containers.PromiseInterface[*execution.MessageResult] {
-	return containers.NewReadyPromise(w.ExecutionEngine.ResultAtMessageIndex(pos))
+func (w *execClientWrapper) ResultAtMessageIndex(index arbutil.MessageIndex) containers.PromiseInterface[*execution.MessageResult] {
+	return containers.NewReadyPromise(w.ExecutionEngine.ResultAtMessageIndex(index))
 }
 
 func (w *execClientWrapper) Start(ctx context.Context) error {
 	return nil
 }
 
-func (w *execClientWrapper) MessageIndexToBlockNumber(messageNum arbutil.MessageIndex) containers.PromiseInterface[uint64] {
-	return containers.NewReadyPromise(w.ExecutionEngine.MessageIndexToBlockNumber(messageNum), nil)
+func (w *execClientWrapper) MessageIndexToBlockNumber(messageIndex arbutil.MessageIndex) containers.PromiseInterface[uint64] {
+	return containers.NewReadyPromise(w.ExecutionEngine.MessageIndexToBlockNumber(messageIndex), nil)
 }
 
 func (w *execClientWrapper) BlockNumberToMessageIndex(blockNum uint64) containers.PromiseInterface[arbutil.MessageIndex] {

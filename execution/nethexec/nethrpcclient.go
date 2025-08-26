@@ -25,7 +25,7 @@ type nethRpcClient struct {
 }
 
 type messageParams struct {
-	Number             arbutil.MessageIndex            `json:"number"`
+	Index              arbutil.MessageIndex            `json:"index"`
 	Message            *arbostypes.MessageWithMetadata `json:"message"`
 	MessageForPrefetch *arbostypes.MessageWithMetadata `json:"messageForPrefetch,omitempty"`
 }
@@ -47,7 +47,7 @@ type rpcFinalityData struct {
 }
 
 type reorgParams struct {
-	Number             arbutil.MessageIndex                         `json:"number"`
+	Index              arbutil.MessageIndex                         `json:"index"`
 	Message            []arbostypes.MessageWithMetadataAndBlockInfo `json:"message"`
 	MessageForPrefetch []*arbostypes.MessageWithMetadata            `json:"messageForPrefetch"`
 }
@@ -103,16 +103,16 @@ func (c *nethRpcClient) Close() {
 	c.client.Close()
 }
 
-func (c *nethRpcClient) DigestMessage(ctx context.Context, num arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, msgForPrefetch *arbostypes.MessageWithMetadata) *execution.MessageResult {
+func (c *nethRpcClient) DigestMessage(ctx context.Context, index arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, msgForPrefetch *arbostypes.MessageWithMetadata) *execution.MessageResult {
 	params := messageParams{
-		Number:             num,
+		Index:              index,
 		Message:            msg,
 		MessageForPrefetch: msgForPrefetch,
 	}
 
 	log.Info("Making JSON-RPC call to DigestMessage",
 		"url", c.url,
-		"num", num,
+		"index", index,
 		"messageType", msg.Message.Header.Kind,
 	)
 
@@ -177,30 +177,30 @@ func convertToRpcFinalityData(data *arbutil.FinalityData) *rpcFinalityData {
 	}
 }
 
-func (c *nethRpcClient) HeadMessageNumber(ctx context.Context) (arbutil.MessageIndex, error) {
-	log.Info("Making JSON-RPC call to HeadMessageNumber", "url", c.url)
+func (c *nethRpcClient) HeadMessageIndex(ctx context.Context) (arbutil.MessageIndex, error) {
+	log.Info("Making JSON-RPC call to HeadMessageIndex", "url", c.url)
 	var result hexutil.Uint64
-	if err := c.client.CallContext(ctx, &result, "HeadMessageNumber"); err != nil {
-		log.Error("Failed to call HeadMessageNumber", "error", err)
-		return 0, fmt.Errorf("failed to call HeadMessageNumber: %w", err)
+	if err := c.client.CallContext(ctx, &result, "HeadMessageIndex"); err != nil {
+		log.Error("Failed to call HeadMessageIndex", "error", err)
+		return 0, fmt.Errorf("failed to call HeadMessageIndex: %w", err)
 	}
 	return arbutil.MessageIndex(uint64(result)), nil
 }
 
-func (c *nethRpcClient) ResultAtPos(ctx context.Context, pos arbutil.MessageIndex) (*execution.MessageResult, error) {
-	log.Info("Making JSON-RPC call to ResultAtPos", "url", c.url, "pos", pos)
+func (c *nethRpcClient) ResultAtMessageIndex(ctx context.Context, index arbutil.MessageIndex) (*execution.MessageResult, error) {
+	log.Info("Making JSON-RPC call to ResultAtMessageIndex", "url", c.url, "index", index)
 	var result execution.MessageResult
-	if err := c.client.CallContext(ctx, &result, "ResultAtPos", uint64(pos)); err != nil {
-		log.Error("Failed to call ResultAtPos", "error", err)
-		return nil, fmt.Errorf("failed to call ResultAtPos: %w", err)
+	if err := c.client.CallContext(ctx, &result, "ResultAtMessageIndex", uint64(index)); err != nil {
+		log.Error("Failed to call ResultAtMessageIndex", "error", err)
+		return nil, fmt.Errorf("failed to call ResultAtMessageIndex: %w", err)
 	}
 	return &result, nil
 }
 
-func (c *nethRpcClient) MessageIndexToBlockNumber(ctx context.Context, messageNum arbutil.MessageIndex) (uint64, error) {
-	log.Info("Making JSON-RPC call to MessageIndexToBlockNumber", "url", c.url, "messageNum", messageNum)
+func (c *nethRpcClient) MessageIndexToBlockNumber(ctx context.Context, messageIndex arbutil.MessageIndex) (uint64, error) {
+	log.Info("Making JSON-RPC call to MessageIndexToBlockNumber", "url", c.url, "messageIndex", messageIndex)
 	var result hexutil.Uint64
-	if err := c.client.CallContext(ctx, &result, "MessageIndexToBlockNumber", uint64(messageNum)); err != nil {
+	if err := c.client.CallContext(ctx, &result, "MessageIndexToBlockNumber", uint64(messageIndex)); err != nil {
 		log.Error("Failed to call MessageIndexToBlockNumber", "error", err)
 		return 0, fmt.Errorf("failed to call MessageIndexToBlockNumber: %w", err)
 	}
@@ -229,7 +229,7 @@ func (c *nethRpcClient) MarkFeedStart(ctx context.Context, to arbutil.MessageInd
 
 func (c *nethRpcClient) Reorg(ctx context.Context, count arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadataAndBlockInfo, oldMessages []*arbostypes.MessageWithMetadata) ([]*execution.MessageResult, error) {
 	log.Info("Making JSON-RPC call to Reorg", "url", c.url, "count", count, "newCount", len(newMessages), "oldCount", len(oldMessages))
-	params := reorgParams{Number: count, Message: newMessages, MessageForPrefetch: oldMessages}
+	params := reorgParams{Index: count, Message: newMessages, MessageForPrefetch: oldMessages}
 	var result []*execution.MessageResult
 	if err := c.client.CallContext(ctx, &result, "Reorg", params); err != nil {
 		log.Error("Failed to call Reorg", "error", err)

@@ -83,7 +83,7 @@ func InitConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Duration(prefix+".download-poll", InitConfigDefault.DownloadPoll, "how long to wait between polling attempts")
 	f.Bool(prefix+".dev-init", InitConfigDefault.DevInit, "init with dev data (1 account with balance) instead of file import")
 	f.String(prefix+".dev-init-address", InitConfigDefault.DevInitAddress, "Address of dev-account. Leave empty to use the dev-wallet.")
-	f.Uint64(prefix+".dev-init-blocknum", InitConfigDefault.DevInitBlockNum, "Number of preinit blocks. Must exist in ancient database.")
+	f.Uint64(prefix+".dev-init-blocknum", InitConfigDefault.DevInitBlockNum, "Index of preinit blocks. Must exist in ancient database.")
 	f.Uint64(prefix+".dev-max-code-size", InitConfigDefault.DevMaxCodeSize, "Max code size for dev accounts")
 	f.Bool(prefix+".empty", InitConfigDefault.Empty, "init with empty state")
 	f.Bool(prefix+".import-wasm", InitConfigDefault.ImportWasm, "if set, import the wasm directory when downloading a database (contains executable code - only use with highly trusted source)")
