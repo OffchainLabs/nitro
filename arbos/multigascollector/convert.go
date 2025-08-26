@@ -12,13 +12,14 @@ import (
 // ToProto converts the TransactionMultiGas to its protobuf representation.
 func (tx *TransactionMultiGas) ToProto() *proto.TransactionMultiGasData {
 	multiGasData := &proto.MultiGasData{
-		SingleGas:     tx.SingleGas,
-		Computation:   tx.MultiGas.Get(multigas.ResourceKindComputation),
-		StorageAccess: tx.MultiGas.Get(multigas.ResourceKindStorageAccess),
-		StorageGrowth: tx.MultiGas.Get(multigas.ResourceKindStorageGrowth),
-		HistoryGrowth: tx.MultiGas.Get(multigas.ResourceKindHistoryGrowth),
-		L1Calldata:    tx.MultiGas.Get(multigas.ResourceKindL1Calldata),
-		L2Calldata:    tx.MultiGas.Get(multigas.ResourceKindL2Calldata),
+		SingleGas:       tx.SingleGas,
+		Computation:     tx.MultiGas.Get(multigas.ResourceKindComputation),
+		StorageAccess:   tx.MultiGas.Get(multigas.ResourceKindStorageAccess),
+		StorageGrowth:   tx.MultiGas.Get(multigas.ResourceKindStorageGrowth),
+		HistoryGrowth:   tx.MultiGas.Get(multigas.ResourceKindHistoryGrowth),
+		L1Calldata:      tx.MultiGas.Get(multigas.ResourceKindL1Calldata),
+		L2Calldata:      tx.MultiGas.Get(multigas.ResourceKindL2Calldata),
+		WasmComputation: tx.MultiGas.Get(multigas.ResourceKindWasmComputation),
 	}
 
 	if unknown := tx.MultiGas.Get(multigas.ResourceKindUnknown); unknown > 0 {
