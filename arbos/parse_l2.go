@@ -169,16 +169,11 @@ func parseL2Message(rd io.Reader, poster common.Address, timestamp uint64, reque
 				nextRequestId = &subRequestId
 			}
 			nestedSegments, err := parseL2Message(bytes.NewReader(nextMsg), poster, timestamp, nextRequestId, chainId, depth+1, syndicateBatch)
-			// ignore invalid batch txs if the chain is a syndicate chain. they may optionally be pruned by the translator as well.
 			if err != nil {
-				if !syndicateBatch {
-					return nil, err
-				}
-				log.Warn("ignoring invalid l2 message", "err", err)
-			} else {
-				segments = append(segments, nestedSegments...)
-				index.Add(index, big.NewInt(1))
+				return nil, err
 			}
+			segments = append(segments, nestedSegments...)
+			index.Add(index, big.NewInt(1))
 		}
 	case L2MessageKind_SignedTx:
 		newTx := new(types.Transaction)
