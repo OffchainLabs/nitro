@@ -47,7 +47,6 @@ import (
 	"github.com/offchainlabs/nitro/arbnode/dataposter/slice"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbnode/parent"
-	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/blobs"
 	"github.com/offchainlabs/nitro/util/headerreader"
@@ -569,8 +568,7 @@ func (p *DataPoster) feeAndTipCaps(ctx context.Context, nonce uint64, gasLimit u
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	// TODO
-	normalizedGas := gasLimit + l1pricing.CompressedCalldataGasUnitsByLen(numBlobs*blobs.BlobEncodableData)
+	normalizedGas := gasLimit + numBlobs*blobs.BlobEncodableData*params.TxDataNonZeroGasEIP2028
 	targetMaxCost := arbmath.BigMulByUint(maxNormalizedFeeCap, normalizedGas)
 
 	maxMempoolWeight := arbmath.MinInt(config.MaxMempoolWeight, config.MaxMempoolTransactions)

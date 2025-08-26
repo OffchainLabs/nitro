@@ -15,7 +15,6 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
 
-	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -147,7 +146,14 @@ func (h *L1IncomingMessageHeader) Equals(other *L1IncomingMessageHeader) bool {
 }
 
 func ComputeBatchGasCost(data []byte) uint64 {
-	gas := l1pricing.CalldataGasUnits(data)
+	var gas uint64
+	for _, b := range data {
+		if b == 0 {
+			gas += params.TxDataZeroGas
+		} else {
+			gas += params.TxDataNonZeroGasEIP2028
+		}
+	}
 
 	// the poster also pays to keccak the batch and place it and a batch-posting report into the inbox
 	keccakWords := arbmath.WordsForBytes(uint64(len(data)))
@@ -172,6 +178,7 @@ func (msg *L1IncomingMessage) FillInBatchGasCost(batchFetcher FallibleBatchFetch
 	if gotHash != batchHash {
 		return fmt.Errorf("batch fetcher returned incorrect data hash %v (wanted %v for batch %v)", gotHash, batchHash, batchNum)
 	}
+
 	gas := ComputeBatchGasCost(batchData)
 	msg.BatchGasCost = &gas
 	return nil

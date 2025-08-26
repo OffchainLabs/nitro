@@ -283,3 +283,5 @@ func TestArbInfraFeeAccount(t *testing.T) {
 		t.Fatal()
 	}
 }
+
+// TODO: AF Add test for Set/GetL1CalldataPrice

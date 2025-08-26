@@ -34,7 +34,6 @@ import (
 	"github.com/offchainlabs/nitro/arbos/storage"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
-	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/testhelpers/env"
 )
 
@@ -376,9 +375,15 @@ func (state *ArbosState) UpgradeArbosVersion(
 		case params.ArbosVersion_41:
 			// no change state needed
 		case 42, 43, 44, 45, 46, 47, 48, 49:
-		//
+			// no change state needed
 		case params.ArbosVersion_50:
-			ensure(state.l1PricingState.SetCalldataPrice(big.NewInt(int64(params.TxDataNonZeroGasEIP2028))))
+			chainId, err := state.ChainId()
+			ensure(err)
+			if chainId.Cmp(chaininfo.ArbitrumOneChainConfig().ChainID) == 0 || chainId.Cmp(chaininfo.ArbitrumNovaChainConfig().ChainID) == 0 {
+				ensure(state.l1PricingState.SetCalldataPrice(big.NewInt(int64(params.TxCostFloorPerToken))))
+			} else {
+				ensure(state.l1PricingState.SetCalldataPrice(big.NewInt(int64(params.TxDataNonZeroGasEIP2028))))
+			}
 		default:
 			return fmt.Errorf(
 				"the chain is upgrading to unsupported ArbOS version %v, %w",
@@ -402,11 +407,7 @@ func (state *ArbosState) UpgradeArbosVersion(
 		if upgradeTo < params.ArbosVersion_11 {
 			state.Restrict(state.l1PricingState.SetPerBatchGasCost(l1pricing.InitialPerBatchGasCostV6))
 		}
-		l1CalldataPrice, err := state.l1PricingState.CalldataPrice()
-		if err != nil {
-			return err
-		}
-		state.Restrict(state.l1PricingState.SetEquilibrationUnits(arbmath.BigMulByUint(l1CalldataPrice, l1pricing.InitialEquilibrationBytesV6)))
+		state.Restrict(state.l1PricingState.SetEquilibrationUnits(l1pricing.InitialEquilibrationUnitsV6))
 		state.Restrict(state.l2PricingState.SetSpeedLimitPerSecond(l2pricing.InitialSpeedLimitPerSecondV6))
 		state.Restrict(state.l2PricingState.SetMaxPerBlockGasLimit(l2pricing.InitialPerBlockGasLimitV6))
 	}
