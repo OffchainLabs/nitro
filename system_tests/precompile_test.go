@@ -463,7 +463,7 @@ func TestArbNativeTokenManagerThroughSolidityContract(t *testing.T) {
 	arbOSInit := &params.ArbOSInit{
 		NativeTokenSupplyManagementEnabled: true,
 	}
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, false).WithArbOSInit(arbOSInit).WithArbOSVersion(params.ArbosVersion_41)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false).WithArbOSInit(arbOSInit).WithArbOSVersion(params.ArbosVersion_50)
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -525,7 +525,7 @@ func TestArbNativeTokenManager(t *testing.T) {
 		NativeTokenSupplyManagementEnabled: true,
 	}
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, false).WithArbOSInit(arbOSInit).WithArbOSVersion(params.ArbosVersion_41)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false).WithArbOSInit(arbOSInit).WithArbOSVersion(params.ArbosVersion_50)
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -617,6 +617,11 @@ func TestArbNativeTokenManager(t *testing.T) {
 	Require(t, err)
 	if isNativeTokenOwner {
 		t.Fatal("expected native token owner to not be set")
+	}
+	enabledTime, err := arbOwnerPub.GetNativeTokenManagementFrom(callOpts)
+	Require(t, err)
+	if enabledTime != 1 {
+		t.Fatalf("enabledTime: want %d, got %d", 1, enabledTime)
 	}
 	nativeTokenOwners, err = arbOwner.GetAllNativeTokenOwners(callOpts)
 	Require(t, err)
@@ -755,7 +760,7 @@ func TestNativeTokenManagementDisabledByDefault(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, false).WithArbOSVersion(params.ArbosVersion_41)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false).WithArbOSVersion(params.ArbosVersion_50)
 	cleanup := builder.Build(t)
 	defer cleanup()
 

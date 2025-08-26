@@ -46,6 +46,12 @@ func (con ArbOwnerPublic) GetAllNativeTokenOwners(c ctx, evm mech) ([]common.Add
 	return c.State.NativeTokenOwners().AllMembers(65536)
 }
 
+// GetNativeTokenMangementFrom returns the time in epoch seconds when the
+// native token management becomes enabled
+func (con ArbOwnerPublic) GetNativeTokenManagementFrom(c ctx, evm mech) (uint64, error) {
+	return c.State.NativeTokenManagementFromTime()
+}
+
 // GetNetworkFeeAccount gets the network fee collector
 func (con ArbOwnerPublic) GetNetworkFeeAccount(c ctx, evm mech) (addr, error) {
 	return c.State.NetworkFeeAccount()
