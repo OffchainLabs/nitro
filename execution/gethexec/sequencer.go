@@ -1422,10 +1422,12 @@ func (s *Sequencer) updateExpectedSurplus(ctx context.Context) (int64, error) {
 			}
 			blobFeePerByte.Mul(blobFeePerByte, blobTxBlobGasPerBlob)
 			blobFeePerByte.Div(blobFeePerByte, usableBytesInBlob)
+			//TODO
 			l1GasPrice = blobFeePerByte.Int64() / int64(l1pricing.BatchGasUnitsPerByte)
 			backlogCost = (backlogCallDataUnits * blobFeePerByte.Int64()) / int64(l1pricing.BatchGasUnitsPerByte)
 		}
 	case "CalldataPrice7623":
+		//TODO
 		l1GasPrice = (header.BaseFee.Int64() * 40) / int64(l1pricing.BatchGasUnitsPerByte)
 		backlogCost = (backlogCallDataUnits * header.BaseFee.Int64() * 40) / int64(l1pricing.BatchGasUnitsPerByte)
 	default:

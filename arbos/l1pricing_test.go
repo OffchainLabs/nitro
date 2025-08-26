@@ -269,7 +269,9 @@ func _testL1PriceEquilibration(t *testing.T, initialL1BasefeeEstimate *big.Int, 
 	bpAddr := common.Address{3, 4, 5, 6}
 	l1PoolAddress := l1pricing.L1PricerFundsPoolAddress
 	for i := 0; i < 10; i++ {
-		unitsToAdd := l1pricing.InitialEquilibrationUnitsV6.Uint64()
+		l1CalldataPrice, err := l1p.CalldataPrice()
+		Require(t, err)
+		unitsToAdd := arbmath.BigMulByUint(l1CalldataPrice, l1pricing.InitialEquilibrationBytesV6).Uint64()
 		oldUnits, err := l1p.UnitsSinceUpdate()
 		Require(t, err)
 		err = l1p.SetUnitsSinceUpdate(oldUnits + unitsToAdd)

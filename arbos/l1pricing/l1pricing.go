@@ -40,6 +40,7 @@ type L1PricingState struct {
 	// funds collected since update are recorded as the balance in account L1PricerFundsPoolAddress
 	unitsSinceUpdate     storage.StorageBackedUint64  // calldata units collected for since last update
 	pricePerUnit         storage.StorageBackedBigUint // current price per calldata unit
+	calldataPrice        storage.StorageBackedBigInt  // gas per non-zero calldata byte
 	lastSurplus          storage.StorageBackedBigInt  // introduced in ArbOS version 2
 	perBatchGasCost      storage.StorageBackedInt64   // introduced in ArbOS version 3
 	amortizedCostCapBips storage.StorageBackedUint64  // in basis points; introduced in ArbOS version 3
@@ -68,6 +69,7 @@ const (
 	perBatchGasCostOffset
 	amortizedCostCapBipsOffset
 	l1FeesAvailableOffset
+	calldataPriceOffset
 )
 
 const (
@@ -79,8 +81,7 @@ const (
 
 // one minute at 100000 bytes / sec
 var InitialEquilibrationUnitsV0 = am.UintToBig(60 * params.TxDataNonZeroGasEIP2028 * 100000)
-var InitialEquilibrationUnitsV6 = am.UintToBig(params.TxDataNonZeroGasEIP2028 * 10000000)
-var InitialEquilibrationUnitsV50 = am.UintToBig(CompressedCalldataGasUnitsByLen(10_000_000))
+var InitialEquilibrationBytesV6 uint64 = 10_000_000
 
 func InitializeL1PricingState(sto *storage.Storage, initialRewardsRecipient common.Address, initialL1BaseFee *big.Int) error {
 	bptStorage := sto.OpenCachedSubStorage(BatchPosterTableKey)
@@ -128,6 +129,7 @@ func OpenL1PricingState(sto *storage.Storage) *L1PricingState {
 		sto.OpenStorageBackedUint64(unitsSinceOffset),
 		sto.OpenStorageBackedBigUint(pricePerUnitOffset),
 		sto.OpenStorageBackedBigInt(lastSurplusOffset),
+		sto.OpenStorageBackedBigInt(calldataPriceOffset),
 		sto.OpenStorageBackedInt64(perBatchGasCostOffset),
 		sto.OpenStorageBackedUint64(amortizedCostCapBipsOffset),
 		sto.OpenStorageBackedBigUint(l1FeesAvailableOffset),
@@ -237,6 +239,14 @@ func (ps *L1PricingState) PricePerUnit() (*big.Int, error) {
 
 func (ps *L1PricingState) SetPricePerUnit(price *big.Int) error {
 	return ps.pricePerUnit.SetChecked(price)
+}
+
+func (ps *L1PricingState) CalldataPrice() (*big.Int, error) {
+	return ps.calldataPrice.Get()
+}
+
+func (ps *L1PricingState) SetCalldataPrice(price *big.Int) error {
+	return ps.calldataPrice.SetChecked(price)
 }
 
 func (ps *L1PricingState) PerBatchGasCost() (int64, error) {
@@ -513,7 +523,11 @@ func (ps *L1PricingState) getPosterUnitsWithoutCache(tx *types.Transaction, post
 	if err != nil {
 		panic(fmt.Sprintf("failed to compress tx: %v", err))
 	}
-	return CompressedCalldataGasUnitsByLen(l1Bytes)
+	l1CalldataPrice, err := ps.CalldataPrice()
+	if err != nil {
+		return 0
+	}
+	return am.BigMulByUint(l1CalldataPrice, l1Bytes).Uint64()
 }
 
 // GetPosterInfo returns the poster cost and the calldata units for a transaction
@@ -536,7 +550,7 @@ func (ps *L1PricingState) GetPosterInfo(tx *types.Transaction, poster common.Add
 }
 
 // We don't have the full tx in gas estimation, so we assume it might be a bit bigger in practice.
-var estimationPaddingUnits = CompressedCalldataGasUnitsByLen(16)
+var estimationPaddingUnits uint64 = 16
 
 const estimationPaddingBasisPoints = 100
 
@@ -593,7 +607,8 @@ func (ps *L1PricingState) PosterDataCost(message *core.Message, poster common.Ad
 	// We'll instead make a fake tx from the message info we do have, and then pad our cost a bit to be safe.
 	tx = makeFakeTxForMessage(message)
 	units := ps.getPosterUnitsWithoutCache(tx, poster, brotliCompressionLevel)
-	units = am.UintMulByBips(units+estimationPaddingUnits, am.OneInBips+estimationPaddingBasisPoints)
+	l1CalldataPrice, _ := ps.CalldataPrice()
+	units = am.UintMulByBips(units+l1CalldataPrice.Uint64()*estimationPaddingUnits, am.OneInBips+estimationPaddingBasisPoints)
 	pricePerUnit, _ := ps.PricePerUnit()
 	return am.BigMulByUint(pricePerUnit, units), units
 }
@@ -608,7 +623,6 @@ func byteCountAfterBrotliLevel(input []byte, level uint64) (uint64, error) {
 
 // BatchGasUnitsPerByte refers to the gas units spent for every byte of compressed batch calldata
 // #nosec G115
-var BatchGasUnitsPerBytePreArbos50 = params.TxDataNonZeroGasEIP2028
 var BatchGasUnitsPerByte = uint32(CompressedCalldataGasUnitsByLen(1))
 
 // CompressedCalldataGasUnitsByLen calculates an estimate of the gas units spent by calldata with a specific length

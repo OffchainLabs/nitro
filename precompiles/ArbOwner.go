@@ -215,6 +215,19 @@ func (con ArbOwner) SetL1PricePerUnit(c ctx, evm mech, pricePerUnit *big.Int) er
 	return c.State.L1PricingState().SetPricePerUnit(pricePerUnit)
 }
 
+// Set how much L1 charges per non-zero byte of calldata
+func (con ArbOwner) SetL1CalldataPrice(c ctx, evm mech, calldataPrice *big.Int) error {
+	return c.State.L1PricingState().SetCalldataPrice(calldataPrice)
+}
+
+// Get how much L1 charges per non-zero byte of calldata
+func (con ArbOwner) GetL1CalldataPrice(c ctx, evm mech) (*big.Int, error) {
+	if c.State.ArbOSVersion() < params.ArbosVersion_50 {
+		return big.NewInt(int64(params.TxDataNonZeroGasEIP2028)), nil
+	}
+	return c.State.L1PricingState().CalldataPrice()
+}
+
 // Sets the base charge (in L1 gas) attributed to each data batch in the calldata pricer
 func (con ArbOwner) SetPerBatchGasCharge(c ctx, evm mech, cost int64) error {
 	return c.State.L1PricingState().SetPerBatchGasCost(cost)

@@ -764,6 +764,7 @@ func (b *BatchPoster) pollForL1PriceData(ctx context.Context) {
 					blobFeePerByte.Mul(blobFeePerByte, blobTxBlobGasPerBlob)
 					blobFeePerByte.Div(blobFeePerByte, usableBytesInBlob)
 					blobFeeGauge.Update(blobFeePerByte.Int64())
+					//TODO
 					if blobGasPrice := blobFeePerByte.Uint64() / uint64(l1pricing.BatchGasUnitsPerByte); l1GasPrice > blobGasPrice {
 						l1GasPrice = blobGasPrice
 					}

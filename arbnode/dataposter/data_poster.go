@@ -569,6 +569,7 @@ func (p *DataPoster) feeAndTipCaps(ctx context.Context, nonce uint64, gasLimit u
 	if err != nil {
 		return nil, nil, nil, err
 	}
+	// TODO
 	normalizedGas := gasLimit + l1pricing.CompressedCalldataGasUnitsByLen(numBlobs*blobs.BlobEncodableData)
 	targetMaxCost := arbmath.BigMulByUint(maxNormalizedFeeCap, normalizedGas)
 
