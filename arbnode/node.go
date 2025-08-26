@@ -978,32 +978,46 @@ func getNodeParentChainReaderDisabled(
 	configFetcher ConfigFetcher,
 	blockMetadataFetcher *BlockMetadataFetcher,
 ) *Node {
+	// Create ConsensusExecutionSyncer even in L2-only mode to push sync data
+	consensusExecutionSyncerConfigFetcher := func() *ConsensusExecutionSyncerConfig {
+		return &configFetcher.Get().ConsensusExecutionSyncer
+	}
+	consensusExecutionSyncer := NewConsensusExecutionSyncer(
+		consensusExecutionSyncerConfigFetcher,
+		nil, // inboxReader
+		executionClient,
+		nil, // blockValidator
+		txStreamer,
+		syncMonitor,
+	)
+
 	return &Node{
-		ArbDB:                   arbDb,
-		Stack:                   stack,
-		ExecutionClient:         executionClient,
-		ExecutionSequencer:      executionSequencer,
-		ExecutionRecorder:       executionRecorder,
-		L1Reader:                nil,
-		TxStreamer:              txStreamer,
-		DeployInfo:              nil,
-		BlobReader:              blobReader,
-		InboxReader:             nil,
-		InboxTracker:            nil,
-		DelayedSequencer:        nil,
-		BatchPoster:             nil,
-		MessagePruner:           nil,
-		BlockValidator:          nil,
-		StatelessBlockValidator: nil,
-		Staker:                  nil,
-		BroadcastServer:         broadcastServer,
-		BroadcastClients:        broadcastClients,
-		SeqCoordinator:          coordinator,
-		MaintenanceRunner:       maintenanceRunner,
-		SyncMonitor:             syncMonitor,
-		configFetcher:           configFetcher,
-		ctx:                     ctx,
-		blockMetadataFetcher:    blockMetadataFetcher,
+		ArbDB:                    arbDb,
+		Stack:                    stack,
+		ExecutionClient:          executionClient,
+		ExecutionSequencer:       executionSequencer,
+		ExecutionRecorder:        executionRecorder,
+		L1Reader:                 nil,
+		TxStreamer:               txStreamer,
+		DeployInfo:               nil,
+		BlobReader:               blobReader,
+		InboxReader:              nil,
+		InboxTracker:             nil,
+		DelayedSequencer:         nil,
+		BatchPoster:              nil,
+		MessagePruner:            nil,
+		BlockValidator:           nil,
+		StatelessBlockValidator:  nil,
+		Staker:                   nil,
+		BroadcastServer:          broadcastServer,
+		BroadcastClients:         broadcastClients,
+		SeqCoordinator:           coordinator,
+		MaintenanceRunner:        maintenanceRunner,
+		SyncMonitor:              syncMonitor,
+		configFetcher:            configFetcher,
+		ctx:                      ctx,
+		blockMetadataFetcher:     blockMetadataFetcher,
+		ConsensusExecutionSyncer: consensusExecutionSyncer,
 	}
 }
 

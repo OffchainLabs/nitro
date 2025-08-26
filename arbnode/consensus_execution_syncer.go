@@ -64,7 +64,9 @@ func NewConsensusExecutionSyncer(
 
 func (c *ConsensusExecutionSyncer) Start(ctx_in context.Context) {
 	c.StopWaiter.Start(ctx_in, c)
-	c.CallIteratively(c.pushFinalityDataFromConsensusToExecution)
+	if c.inboxReader != nil {
+		c.CallIteratively(c.pushFinalityDataFromConsensusToExecution)
+	}
 	c.CallIteratively(c.pushConsensusSyncDataToExecution)
 }
 
@@ -159,6 +161,7 @@ func (c *ConsensusExecutionSyncer) pushConsensusSyncDataToExecution(ctx context.
 		log.Debug("Pushed sync data from consensus to execution",
 			"synced", syncData.Synced,
 			"syncTarget", syncData.SyncTargetMessageCount,
+			"syncProgressMap", syncData.SyncProgressMap,
 		)
 	}
 
