@@ -613,7 +613,6 @@ func Precompiles() map[addr]ArbosPrecompile {
 	ArbOwner.methodsByName["ReleaseL1PricerSurplusFunds"].arbosVersion = params.ArbosVersion_10
 	ArbOwner.methodsByName["SetChainConfig"].arbosVersion = params.ArbosVersion_11
 	ArbOwner.methodsByName["SetBrotliCompressionLevel"].arbosVersion = params.ArbosVersion_20
-	ArbOwner.methodsByName["SetL1CalldataPrice"].arbosVersion = params.ArbosVersion_50
 	stylusMethods := []string{
 		"SetInkPrice", "SetWasmMaxStackDepth", "SetWasmFreePages", "SetWasmPageGas",
 		"SetWasmPageLimit", "SetWasmMinInitGas", "SetWasmInitCostScalar",
@@ -643,6 +642,7 @@ func Precompiles() map[addr]ArbosPrecompile {
 	ArbOwner.methodsByName["RemoveNativeTokenOwner"].arbosVersion = params.ArbosVersion_41
 	ArbOwner.methodsByName["IsNativeTokenOwner"].arbosVersion = params.ArbosVersion_41
 	ArbOwner.methodsByName["GetAllNativeTokenOwners"].arbosVersion = params.ArbosVersion_41
+	ArbOwner.methodsByName["SetL1CalldataPrice"].arbosVersion = params.ArbosVersion_50
 
 	ArbNativeTokenManager := insert(MakePrecompile(pgen.ArbNativeTokenManagerMetaData, &ArbNativeTokenManager{Address: types.ArbNativeTokenManagerAddress}))
 	ArbNativeTokenManager.arbosVersion = params.ArbosVersion_41

@@ -4,7 +4,7 @@ go 1.24.5
 
 require (
 	github.com/ccoveille/go-safecast v1.1.0
-	github.com/ethereum/go-ethereum v1.15.5
+	github.com/ethereum/go-ethereum v1.16.2
 	github.com/gorilla/mux v1.8.0
 	github.com/jmoiron/sqlx v1.4.0
 	github.com/mattn/go-sqlite3 v1.14.22

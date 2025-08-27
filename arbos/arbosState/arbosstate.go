@@ -296,6 +296,7 @@ func (state *ArbosState) UpgradeArbosVersion(
 		}
 
 		nextArbosVersion := state.arbosVersion + 1
+		ensure(state.l1PricingState.SetArbOSVersion(nextArbosVersion))
 		switch nextArbosVersion {
 		case params.ArbosVersion_2:
 			ensure(state.l1PricingState.SetLastSurplus(common.Big0, 1))

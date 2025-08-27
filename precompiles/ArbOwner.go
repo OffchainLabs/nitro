@@ -222,9 +222,6 @@ func (con ArbOwner) SetL1CalldataPrice(c ctx, evm mech, calldataPrice *big.Int) 
 
 // Get how much L1 charges per non-zero byte of calldata
 func (con ArbOwner) GetL1CalldataPrice(c ctx, evm mech) (*big.Int, error) {
-	if c.State.ArbOSVersion() < params.ArbosVersion_50 {
-		return big.NewInt(int64(params.TxDataNonZeroGasEIP2028)), nil
-	}
 	return c.State.L1PricingState().CalldataPrice()
 }
 
