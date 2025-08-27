@@ -508,11 +508,11 @@ func ProduceBlockAdvanced(
 		}
 
 		// Submit multigas transaction message, if the multi gas collector is set
-		if mgcCollector != nil && result.UsedMultiGas != nil {
+		if mgcCollector != nil {
 			mgcCollector.CollectTransactionMultiGas(multigascollector.TransactionMultiGas{
 				TxHash:   tx.Hash().Bytes(),
 				TxIndex:  uint32(receipt.TransactionIndex), // #nosec G115 -- block tx count << MaxUint32; safe cast
-				MultiGas: *result.UsedMultiGas,
+				MultiGas: result.UsedMultiGas,
 			})
 		}
 	}
