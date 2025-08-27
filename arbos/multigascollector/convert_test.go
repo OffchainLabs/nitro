@@ -29,6 +29,8 @@ func TestTransactionMultiGasToProto(t *testing.T) {
 					multigas.ResourceKindHistoryGrowth: 50,
 					multigas.ResourceKindStorageAccess: 200,
 					multigas.ResourceKindStorageGrowth: 1000,
+					multigas.ResourceKindL1Calldata:    150,
+					multigas.ResourceKindL2Calldata:    300,
 					multigas.ResourceKindUnknown:       10,
 				}),
 			},
@@ -39,6 +41,8 @@ func TestTransactionMultiGasToProto(t *testing.T) {
 				assert.Equal(t, uint64(50), proto.MultiGas.HistoryGrowth)
 				assert.Equal(t, uint64(200), proto.MultiGas.StorageAccess)
 				assert.Equal(t, uint64(1000), proto.MultiGas.StorageGrowth)
+				assert.Equal(t, uint64(150), proto.MultiGas.L1Calldata)
+				assert.Equal(t, uint64(300), proto.MultiGas.L2Calldata)
 				assert.NotNil(t, proto.MultiGas.Unknown)
 				assert.Equal(t, uint64(10), *proto.MultiGas.Unknown)
 				assert.Nil(t, proto.MultiGas.Refund) // No refund in test data

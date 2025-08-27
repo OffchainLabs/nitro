@@ -208,11 +208,11 @@ func WriteOrTestChainConfig(chainDb ethdb.Database, config *params.ChainConfig) 
 		rawdb.WriteChainConfig(chainDb, block0Hash, config)
 		return nil
 	}
-	height := rawdb.ReadHeaderNumber(chainDb, rawdb.ReadHeadHeaderHash(chainDb))
-	if height == nil {
+	height, found := rawdb.ReadHeaderNumber(chainDb, rawdb.ReadHeadHeaderHash(chainDb))
+	if !found {
 		return errors.New("non empty chain config but empty chain")
 	}
-	err := storedConfig.CheckCompatible(config, *height, 0)
+	err := storedConfig.CheckCompatible(config, height, 0)
 	if err != nil {
 		return err
 	}

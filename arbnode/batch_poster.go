@@ -310,6 +310,7 @@ var TestBatchPosterConfig = BatchPosterConfig{
 	L1BlockBound:                   "",
 	L1BlockBoundBypass:             time.Hour,
 	UseAccessLists:                 true,
+	RedisLock:                      redislock.TestCfg,
 	GasEstimateBaseFeeMultipleBips: arbmath.OneInUBips * 3 / 2,
 	CheckBatchCorrectness:          true,
 	DelayBufferThresholdMargin:     0,
@@ -1647,12 +1648,14 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 	}
 
 	sequencerMsg, err := b.building.segments.CloseAndGetBytes()
+	defer func() {
+		b.building = nil // a closed batchSegments can't be reused
+	}()
 	if err != nil {
 		return false, err
 	}
 	if sequencerMsg == nil {
 		log.Debug("BatchPoster: batch nil", "sequence nr.", batchPosition.NextSeqNum, "from", batchPosition.MessageCount, "prev delayed", batchPosition.DelayedMessageCount)
-		b.building = nil // a closed batchSegments can't be reused
 		return false, nil
 	}
 
@@ -1803,15 +1806,17 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 				return false, fmt.Errorf("error getting message from simulated inbox multiplexer (Pop) when testing correctness of batch: %w", err)
 			}
 			if msg.DelayedMessagesRead != b.building.muxBackend.allMsgs[i].DelayedMessagesRead {
-				b.building = nil
 				return false, fmt.Errorf("simulated inbox multiplexer failed to produce correct delayedMessagesRead field for msg with seqNum: %d. Got: %d, Want: %d", i, msg.DelayedMessagesRead, b.building.muxBackend.allMsgs[i].DelayedMessagesRead)
 			}
 			if !msg.Message.Equals(b.building.muxBackend.allMsgs[i].Message) {
-				b.building = nil
 				return false, fmt.Errorf("simulated inbox multiplexer failed to produce correct message field for msg with seqNum: %d", i)
 			}
 		}
 		log.Debug("Successfully checked that the batch produces correct messages when ran through inbox multiplexer", "sequenceNumber", batchPosition.NextSeqNum)
+	}
+
+	if !b.redisLock.AttemptLock(ctx) {
+		return false, errAttemptLockFailed
 	}
 
 	tx, err := b.dataPoster.PostTransaction(ctx,
@@ -1888,7 +1893,6 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 		backlog = 0
 	}
 	b.backlog.Store(backlog)
-	b.building = nil
 
 	// If we aren't queueing up transactions, wait for the receipt before moving on to the next batch.
 	if config.DataPoster.UseNoOpStorage {
