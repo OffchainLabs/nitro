@@ -45,7 +45,7 @@ type L1PricingState struct {
 	amortizedCostCapBips storage.StorageBackedUint64  // in basis points; introduced in ArbOS version 3
 	l1FeesAvailable      storage.StorageBackedBigUint
 
-	arbosVersion uint64
+	ArbosVersion uint64
 }
 
 var (
@@ -71,7 +71,6 @@ const (
 	amortizedCostCapBipsOffset
 	l1FeesAvailableOffset
 	calldataPriceOffset
-	arbosVersionOffset
 )
 
 const (
@@ -245,7 +244,7 @@ func (ps *L1PricingState) SetPricePerUnit(price *big.Int) error {
 }
 
 func (ps *L1PricingState) CalldataPrice() (*big.Int, error) {
-	if ps.arbosVersion < params.ArbosVersion_50 {
+	if ps.ArbosVersion < params.ArbosVersion_50 {
 		return big.NewInt(int64(params.TxDataNonZeroGasEIP2028)), nil
 	}
 	return ps.calldataPrice.Get()
