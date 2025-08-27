@@ -127,6 +127,9 @@ func NewArbosMemoryBackedArbOSState() (*ArbosState, *state.StateDB) {
 
 // NewArbosMemoryBackedArbOSStateWithConfig creates and initializes a memory-backed ArbOS state with a given config (for testing only)
 func NewArbosMemoryBackedArbOSStateWithConfig(chainConfig *params.ChainConfig) (*ArbosState, *state.StateDB) {
+	if chainConfig.ArbitrumChainParams.InitialArbOSVersion == 0 {
+		chainConfig = chaininfo.ArbitrumDevTestChainConfig()
+	}
 	raw := rawdb.NewMemoryDatabase()
 	trieConfig := &triedb.Config{Preimages: false, PathDB: pathdb.Defaults}
 	if env.GetTestStateScheme() == rawdb.HashScheme {
