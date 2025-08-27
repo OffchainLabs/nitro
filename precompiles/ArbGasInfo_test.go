@@ -17,6 +17,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbos/storage"
 	"github.com/offchainlabs/nitro/arbos/util"
+	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
@@ -138,4 +139,51 @@ func TestGetPricesInArbGas(t *testing.T) {
 	if storageArbGas.Cmp(expectedStorageArbGas) != 0 {
 		t.Fatal("expected storage arb gas to be", expectedStorageArbGas, "but got", storageArbGas)
 	}
+}
+
+func TestGetPricesInArbGasVersion50(t *testing.T) {
+	t.Parallel()
+
+	chainConfig := chaininfo.ArbitrumDevTestChainConfig()
+	chainConfig.ArbitrumChainParams.InitialArbOSVersion = params.ArbosVersion_50
+	evm := newMockEVMForTestingWithConfigs(chainConfig, chainConfig)
+	caller := common.BytesToAddress(crypto.Keccak256([]byte{})[:20])
+	arbGasInfo := &ArbGasInfo{}
+	callCtx := testContext(caller, evm)
+
+	evm.Context.BaseFee = big.NewInt(1005)
+	expectedGasPerL2Tx := big.NewInt(111442786069)
+	expectedGasForL1Calldata := big.NewInt(796019900)
+	expectedStorageArbGas := big.NewInt(int64(storage.StorageWriteCost))
+	gasPerL2Tx, gasForL1Calldata, storageArbGas, err := arbGasInfo.GetPricesInArbGas(callCtx, evm)
+	Require(t, err)
+	if gasPerL2Tx.Cmp(expectedGasPerL2Tx) != 0 {
+		t.Fatal("expected gas per L2 tx to be", expectedGasPerL2Tx, "but got", gasPerL2Tx)
+	}
+	if gasForL1Calldata.Cmp(expectedGasForL1Calldata) != 0 {
+		t.Fatal("expected gas for L1 calldata to be", expectedGasForL1Calldata, "but got", gasForL1Calldata)
+	}
+	if storageArbGas.Cmp(expectedStorageArbGas) != 0 {
+		t.Fatal("expected storage arb gas to be", expectedStorageArbGas, "but got", storageArbGas)
+	}
+
+	arbOwner := &ArbOwner{}
+	err = arbOwner.SetL1CalldataPrice(callCtx, evm, big.NewInt(10))
+	Require(t, err)
+
+	expectedGasPerL2Tx = big.NewInt(69651741293)
+	expectedGasForL1Calldata = big.NewInt(497512437)
+	expectedStorageArbGas = big.NewInt(int64(storage.StorageWriteCost))
+	gasPerL2Tx, gasForL1Calldata, storageArbGas, err = arbGasInfo.GetPricesInArbGas(callCtx, evm)
+	Require(t, err)
+	if gasPerL2Tx.Cmp(expectedGasPerL2Tx) != 0 {
+		t.Fatal("expected gas per L2 tx to be", expectedGasPerL2Tx, "but got", gasPerL2Tx)
+	}
+	if gasForL1Calldata.Cmp(expectedGasForL1Calldata) != 0 {
+		t.Fatal("expected gas for L1 calldata to be", expectedGasForL1Calldata, "but got", gasForL1Calldata)
+	}
+	if storageArbGas.Cmp(expectedStorageArbGas) != 0 {
+		t.Fatal("expected storage arb gas to be", expectedStorageArbGas, "but got", storageArbGas)
+	}
+
 }
