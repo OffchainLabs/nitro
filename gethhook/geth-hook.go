@@ -7,6 +7,7 @@ import (
 	"errors"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
@@ -52,20 +53,9 @@ func init() {
 		}
 	}
 
-	for k, v := range vm.PrecompiledContractsBerlin {
-		vm.PrecompiledAddressesBeforeArbOS30 = append(vm.PrecompiledAddressesBeforeArbOS30, k)
-		vm.PrecompiledContractsBeforeArbOS30[k] = v
-	}
-
-	for k, v := range vm.PrecompiledContractsCancun {
-		vm.PrecompiledAddressesAfterArbOS30 = append(vm.PrecompiledAddressesAfterArbOS30, k)
-		vm.PrecompiledContractsAfterArbOS30[k] = v
-	}
-
-	for k, v := range vm.PrecompiledContractsPrague {
-		vm.PrecompiledAddressesAfterArbOS50 = append(vm.PrecompiledAddressesAfterArbOS50, k)
-		vm.PrecompiledContractsAfterArbOS50[k] = v
-	}
+	addPrecompiles(&vm.PrecompiledAddressesBeforeArbOS30, vm.PrecompiledContractsBeforeArbOS30, vm.PrecompiledContractsBerlin)
+	addPrecompiles(&vm.PrecompiledAddressesStartingFromArbOS30, vm.PrecompiledContractsStartingFromArbOS30, vm.PrecompiledContractsCancun)
+	addPrecompiles(&vm.PrecompiledAddressesStartingFromArbOS50, vm.PrecompiledContractsStartingFromArbOS50, vm.PrecompiledContractsPrague)
 
 	precompileErrors := make(map[[4]byte]abi.Error)
 	for addr, precompile := range precompiles.Precompiles() {
@@ -73,8 +63,8 @@ func init() {
 			precompileErrors[[4]byte(errABI.ID.Bytes())] = errABI
 		}
 		var wrapped vm.AdvancedPrecompile = ArbosPrecompileWrapper{precompile}
-		vm.PrecompiledContractsAfterArbOS30[addr] = wrapped
-		vm.PrecompiledAddressesAfterArbOS30 = append(vm.PrecompiledAddressesAfterArbOS30, addr)
+		vm.PrecompiledContractsStartingFromArbOS30[addr] = wrapped
+		vm.PrecompiledAddressesStartingFromArbOS30 = append(vm.PrecompiledAddressesStartingFromArbOS30, addr)
 
 		if precompile.Precompile().ArbosVersion() < params.ArbosVersion_Stylus {
 			vm.PrecompiledContractsBeforeArbOS30[addr] = wrapped
@@ -82,18 +72,9 @@ func init() {
 		}
 	}
 
-	for addr, precompile := range vm.PrecompiledContractsBeforeArbOS30 {
-		vm.PrecompiledContractsAfterArbOS30[addr] = precompile
-		vm.PrecompiledAddressesAfterArbOS30 = append(vm.PrecompiledAddressesAfterArbOS30, addr)
-	}
-	for addr, precompile := range vm.PrecompiledContractsP256Verify {
-		vm.PrecompiledContractsAfterArbOS30[addr] = precompile
-		vm.PrecompiledAddressesAfterArbOS30 = append(vm.PrecompiledAddressesAfterArbOS30, addr)
-	}
-	for addr, precompile := range vm.PrecompiledContractsAfterArbOS30 {
-		vm.PrecompiledContractsAfterArbOS50[addr] = precompile
-		vm.PrecompiledAddressesAfterArbOS50 = append(vm.PrecompiledAddressesAfterArbOS50, addr)
-	}
+	addPrecompiles(&vm.PrecompiledAddressesStartingFromArbOS30, vm.PrecompiledContractsStartingFromArbOS30, vm.PrecompiledContractsBeforeArbOS30)
+	addPrecompiles(&vm.PrecompiledAddressesStartingFromArbOS30, vm.PrecompiledContractsStartingFromArbOS30, vm.PrecompiledContractsP256Verify)
+	addPrecompiles(&vm.PrecompiledAddressesStartingFromArbOS50, vm.PrecompiledContractsStartingFromArbOS50, vm.PrecompiledContractsStartingFromArbOS30)
 
 	core.RenderRPCError = func(data []byte) error {
 		if len(data) < 4 {
@@ -111,6 +92,13 @@ func init() {
 			return nil
 		}
 		return errors.New(rendered)
+	}
+}
+
+func addPrecompiles(addresses *[]common.Address, contracts map[common.Address]vm.PrecompiledContract, toAdd map[common.Address]vm.PrecompiledContract) {
+	for addr, precompile := range toAdd {
+		contracts[addr] = precompile
+		*addresses = append(*addresses, addr)
 	}
 }
 
