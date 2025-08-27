@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"math/big"
 
+	"github.com/ethereum/go-ethereum/arbitrum/multigas"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
@@ -261,8 +262,29 @@ func (p Programs) CallProgram(
 			metrics.GetOrRegisterCounter(fmt.Sprintf("arb/arbos/stylus/gas_used/%s", runCtx.RunModeMetricName()), nil).Inc(int64(startingGas))
 			return nil, vm.ErrOutOfGas
 		}
+
 		maxGasToReturn := startingGas - evmCost
 		contract.Gas = am.MinInt(contract.Gas, maxGasToReturn)
+
+		// Set WASM computation gas to difference between used gas and accounted multi gas dimensions summarised
+		usedGas := startingGas - contract.Gas
+		accountedGas := contract.UsedMultiGas.SingleGas()
+		var computationGas uint64
+		if accountedGas > usedGas {
+			log.Error("negative WASM computation residual", "usedGas", usedGas, "accounted", accountedGas)
+			computationGas = 0
+		} else {
+			computationGas = usedGas - accountedGas
+		}
+
+		if prev := contract.UsedMultiGas.Get(multigas.ResourceKindWasmComputation); prev != 0 {
+			log.Error("WASM computation gas already set", "prev", prev)
+		}
+
+		var overflow bool
+		if contract.UsedMultiGas, overflow = contract.UsedMultiGas.With(multigas.ResourceKindWasmComputation, computationGas); overflow {
+			log.Error("WASM computation gas overflow")
+		}
 	}
 	// #nosec G115
 	metrics.GetOrRegisterCounter(fmt.Sprintf("arb/arbos/stylus/gas_used/%s", runCtx.RunModeMetricName()), nil).Inc(int64(startingGas - contract.Gas))
