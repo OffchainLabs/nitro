@@ -490,7 +490,7 @@ func TestPrestateTracerRegistersArbitrumStorage(t *testing.T) {
 			found++
 		}
 	}
-	if found != 2 {
+	if found != 3 {
 		t.Fatal("ArbosStateAddress storage accesses for ArbOSVersion and BrotliCompressionLevel not logged in the prestateTracer's trace")
 	}
 }
