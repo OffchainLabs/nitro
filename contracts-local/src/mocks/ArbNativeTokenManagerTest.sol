@@ -7,7 +7,9 @@ pragma solidity ^0.8.24;
 import "../precompiles/ArbNativeTokenManager.sol";
 
 contract ArbNativeTokenManagerTest {
-    function mint(uint256 amount) external {
+    function mint(
+        uint256 amount
+    ) external {
         ArbNativeTokenManager(address(0x73)).mintNativeToken(amount);
     }
 }

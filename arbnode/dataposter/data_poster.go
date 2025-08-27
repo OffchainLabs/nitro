@@ -1213,7 +1213,6 @@ func (p *DataPoster) Start(ctxIn context.Context) {
 			} else {
 				log.Error("Failed to fetch latest confirmed tx from queue", "confirmedNonce", confirmedNonce, "err", err, "confirmedMeta", confirmedMeta)
 			}
-
 		}
 
 		for _, tx := range queueContents {
@@ -1226,9 +1225,14 @@ func (p *DataPoster) Start(ctxIn context.Context) {
 				err := p.sendTx(ctx, tx, tx)
 				p.maybeLogError(err, tx, "failed to re-send transaction")
 			}
-			tx, err = p.queue.Get(ctx, tx.FullTx.Nonce())
+			nonce := tx.FullTx.Nonce()
+			tx, err = p.queue.Get(ctx, nonce)
 			if err != nil {
-				log.Error("Failed to fetch tx from queue to check updated status", "nonce", tx.FullTx.Nonce(), "err", err)
+				log.Error("Failed to fetch tx from queue to check updated status", "nonce", nonce, "err", err)
+				return minWait
+			}
+			if tx == nil {
+				log.Error("Failed to fetch tx from queue to check updated status, got tx == nil", "nonce", nonce)
 				return minWait
 			}
 			if nextCheck.After(tx.NextReplacement) {
