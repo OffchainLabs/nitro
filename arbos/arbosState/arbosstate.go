@@ -375,13 +375,15 @@ func (state *ArbosState) UpgradeArbosVersion(
 
 		case params.ArbosVersion_41:
 			// no change state needed
+
 		case 42, 43, 44, 45, 46, 47, 48, 49:
 			// these versions are left to Orbit chains for custom upgrades.
+
 		case params.ArbosVersion_50:
-			params, err := state.Programs().Params()
+			p, err := state.Programs().Params()
 			ensure(err)
-			ensure(params.UpgradeToArbosVersion(nextArbosVersion))
-			ensure(params.Save())
+			ensure(p.UpgradeToArbosVersion(nextArbosVersion))
+			ensure(p.Save())
 			chainId, err := state.ChainId()
 			ensure(err)
 			if chainId.Cmp(chaininfo.ArbitrumOneChainConfig().ChainID) == 0 || chainId.Cmp(chaininfo.ArbitrumNovaChainConfig().ChainID) == 0 {
