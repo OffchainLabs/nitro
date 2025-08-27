@@ -45,7 +45,7 @@ type L1PricingState struct {
 	amortizedCostCapBips storage.StorageBackedUint64  // in basis points; introduced in ArbOS version 3
 	l1FeesAvailable      storage.StorageBackedBigUint
 
-	arbosVersion storage.StorageBackedUint64
+	arbosVersion uint64
 }
 
 var (
@@ -118,7 +118,7 @@ func InitializeL1PricingState(sto *storage.Storage, initialRewardsRecipient comm
 	return nil
 }
 
-func OpenL1PricingState(sto *storage.Storage) *L1PricingState {
+func OpenL1PricingState(sto *storage.Storage, arbosVersion uint64) *L1PricingState {
 	return &L1PricingState{
 		sto,
 		OpenBatchPostersTable(sto.OpenCachedSubStorage(BatchPosterTableKey)),
@@ -135,7 +135,7 @@ func OpenL1PricingState(sto *storage.Storage) *L1PricingState {
 		sto.OpenStorageBackedInt64(perBatchGasCostOffset),
 		sto.OpenStorageBackedUint64(amortizedCostCapBipsOffset),
 		sto.OpenStorageBackedBigUint(l1FeesAvailableOffset),
-		sto.OpenStorageBackedUint64(arbosVersionOffset),
+		arbosVersion,
 	}
 }
 
@@ -245,12 +245,7 @@ func (ps *L1PricingState) SetPricePerUnit(price *big.Int) error {
 }
 
 func (ps *L1PricingState) CalldataPrice() (*big.Int, error) {
-	arbosVersion, err := ps.arbosVersion.Get()
-	if err != nil {
-		return nil, err
-	}
-
-	if arbosVersion < params.ArbosVersion_50 {
+	if ps.arbosVersion < params.ArbosVersion_50 {
 		return big.NewInt(int64(params.TxDataNonZeroGasEIP2028)), nil
 	}
 	return ps.calldataPrice.Get()
@@ -274,10 +269,6 @@ func (ps *L1PricingState) AmortizedCostCapBips() (uint64, error) {
 
 func (ps *L1PricingState) SetAmortizedCostCapBips(cap uint64) error {
 	return ps.amortizedCostCapBips.Set(cap)
-}
-
-func (ps *L1PricingState) SetArbOSVersion(version uint64) error {
-	return ps.arbosVersion.Set(version)
 }
 
 func (ps *L1PricingState) L1FeesAvailable() (*big.Int, error) {

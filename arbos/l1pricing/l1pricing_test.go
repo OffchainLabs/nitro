@@ -20,7 +20,7 @@ func TestL1PriceUpdate(t *testing.T) {
 	initialPriceEstimate := big.NewInt(123 * params.GWei)
 	err := InitializeL1PricingState(sto, common.Address{}, initialPriceEstimate)
 	Require(t, err)
-	ps := OpenL1PricingState(sto)
+	ps := OpenL1PricingState(sto, 10)
 
 	tyme, err := ps.LastUpdateTime()
 	Require(t, err)
