@@ -13,8 +13,23 @@ permissions:
   contents: read
 
 jobs:
-  Build:
-    uses: NethermindEth/github-workflows/.github/workflows/docker-build-push-jfrog.yaml@v1.4.2
+  build:
+    uses: NethermindEth/github-workflows/.github/workflows/docker-build-push-jfrog.yaml@v1.5.1
     with:
       group_name: core
+      runner: ubuntu-24.04-arm
       image_name: 'arbitrum-nitro'
+      platforms: "linux/arm64"
+      pre_build_script: |
+        sudo rm -rf /usr/share/dotnet
+        sudo rm -rf /opt/ghc
+        sudo rm -rf /usr/local/share/boost
+        sudo rm -rf /usr/local/graalvm/
+        sudo rm -rf /usr/local/.ghcup/
+        sudo rm -rf /usr/local/share/powershell
+        sudo rm -rf /usr/local/share/chromium
+        sudo rm -rf /usr/local/lib/android
+        sudo rm -rf /usr/local/lib/node_modules
+        sudo apt-get clean
+        docker system prune -af --volumes
+        df -h

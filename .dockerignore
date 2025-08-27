@@ -51,3 +51,20 @@ arbitrator/prover/test-cases
 
 # external tools and IDEs
 .vscode
+
+# Additional space-saving exclusions
+**/*.log
+**/*.tmp
+**/tmp/
+**/.cache/
+**/cache/
+**/.npm/
+**/.yarn/
+**/coverage/
+**/*.test
+**/*.prof
+**/*.rlib
+**/*.rmeta
+**/*.d
+**/build/
+**/.DS_Store
