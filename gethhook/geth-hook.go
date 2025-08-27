@@ -56,6 +56,7 @@ func init() {
 	addPrecompiles(&vm.PrecompiledAddressesBeforeArbOS30, vm.PrecompiledContractsBeforeArbOS30, vm.PrecompiledContractsBerlin)
 	addPrecompiles(&vm.PrecompiledAddressesStartingFromArbOS30, vm.PrecompiledContractsStartingFromArbOS30, vm.PrecompiledContractsCancun)
 	addPrecompiles(&vm.PrecompiledAddressesStartingFromArbOS50, vm.PrecompiledContractsStartingFromArbOS50, vm.PrecompiledContractsPrague)
+	addPrecompiles(&vm.PrecompiledAddressesStartingFromArbOS50, vm.PrecompiledContractsStartingFromArbOS50, vm.PrecompiledContractsOsaka)
 
 	precompileErrors := make(map[[4]byte]abi.Error)
 	for addr, precompile := range precompiles.Precompiles() {
