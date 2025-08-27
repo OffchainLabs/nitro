@@ -88,12 +88,12 @@ func (r *importantRoots) addHeader(header *types.Header, overwrite bool) error {
 var hashListRegex = regexp.MustCompile("^(0x)?[0-9a-fA-F]{64}(,(0x)?[0-9a-fA-F]{64})*$")
 
 // Finds important roots to retain while proving
-func findImportantRoots(ctx context.Context, chainDb ethdb.Database, stack *node.Node, initConfig *conf.InitConfig, cacheConfig *core.CacheConfig, persistentConfig *conf.PersistentConfig, l1Client *ethclient.Client, rollupAddrs chaininfo.RollupAddresses, validatorRequired bool) ([]common.Hash, error) {
+func findImportantRoots(ctx context.Context, chainDb ethdb.Database, stack *node.Node, initConfig *conf.InitConfig, cacheConfig *core.BlockChainConfig, persistentConfig *conf.PersistentConfig, l1Client *ethclient.Client, rollupAddrs chaininfo.RollupAddresses, validatorRequired bool) ([]common.Hash, error) {
 	chainConfig := gethexec.TryReadStoredChainConfig(chainDb)
 	if chainConfig == nil {
 		return nil, errors.New("database doesn't have a chain config (was this node initialized?)")
 	}
-	arbDb, err := stack.OpenDatabaseWithExtraOptions("arbitrumdata", 0, 0, "arbitrumdata/", true, persistentConfig.Pebble.ExtraOptions("arbitrumdata"))
+	arbDb, err := stack.OpenDatabaseWithOptions("arbitrumdata", node.DatabaseOptions{MetricsNamespace: "arbitrumdata/", ReadOnly: true, PebbleExtraOptions: persistentConfig.Pebble.ExtraOptions("arbitrumdata")})
 	if err != nil {
 		return nil, err
 	}
@@ -278,7 +278,7 @@ func getLatestConfirmedHash(ctx context.Context, rollupAddrs chaininfo.RollupAdd
 	}
 }
 
-func PruneChainDb(ctx context.Context, chainDb ethdb.Database, stack *node.Node, initConfig *conf.InitConfig, cacheConfig *core.CacheConfig, persistentConfig *conf.PersistentConfig, l1Client *ethclient.Client, rollupAddrs chaininfo.RollupAddresses, validatorRequired bool) error {
+func PruneChainDb(ctx context.Context, chainDb ethdb.Database, stack *node.Node, initConfig *conf.InitConfig, cacheConfig *core.BlockChainConfig, persistentConfig *conf.PersistentConfig, l1Client *ethclient.Client, rollupAddrs chaininfo.RollupAddresses, validatorRequired bool) error {
 	if cacheConfig.StateScheme == rawdb.PathScheme {
 		return nil
 	}

@@ -52,8 +52,10 @@ import (
 
 var notFoundError = errors.New("file not found")
 
-// Based on https://github.com/wasmerio/wasmer/blob/6de934035a4b34c2878552320f058862faea4651/lib/types/src/serialize.rs#L16
+// taken from wasmer's lib/types/src/serialize.rs: MetadataHeader::CURRENT_VERSION
+// 8 is a bug (should have been 6) but we're skipping the real version 8 so it does not matter
 const WasmerSerializeVersion = 8
+const InitialWasmerSerializeVersion = 8
 
 func initializeAndDownloadInit(ctx context.Context, initConfig *conf.InitConfig, stack *node.Node) (string, func(), error) {
 	cleanUpTmp := func() {}
@@ -290,11 +292,12 @@ func joinArchive(parts []string, archivePath string) (string, error) {
 		if err != nil {
 			return "", fmt.Errorf("failed to open part file %s: %w", part, err)
 		}
-		defer partFile.Close()
 		_, err = io.Copy(archive, partFile)
 		if err != nil {
+			partFile.Close()
 			return "", fmt.Errorf("failed to copy part file %s: %w", part, err)
 		}
+		partFile.Close()
 		log.Info("Joined database part into archive", "part", part)
 	}
 	log.Info("Successfully joined parts into archive", "archive", archivePath)
@@ -503,7 +506,7 @@ func validateOrUpgradeWasmerSerializeVersion(db ethdb.Database) error {
 		versionInDB, err := rawdb.ReadWasmerSerializeVersion(db)
 		if err != nil {
 			if rawdb.IsDbErrNotFound(err) {
-				versionInDB = 0
+				versionInDB = InitialWasmerSerializeVersion
 			} else {
 				return fmt.Errorf("Failed to retrieve wasmer serialize version: %w", err)
 			}
@@ -598,22 +601,22 @@ func rebuildLocalWasm(ctx context.Context, config *gethexec.Config, l2BlockChain
 	return chainDb, l2BlockChain, nil
 }
 
-func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeConfig, chainId *big.Int, cacheConfig *core.CacheConfig, targetConfig *gethexec.StylusTargetConfig, tracer *tracing.Hooks, persistentConfig *conf.PersistentConfig, l1Client *ethclient.Client, rollupAddrs chaininfo.RollupAddresses) (ethdb.Database, *core.BlockChain, error) {
+func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeConfig, chainId *big.Int, cacheConfig *core.BlockChainConfig, targetConfig *gethexec.StylusTargetConfig, tracer *tracing.Hooks, persistentConfig *conf.PersistentConfig, l1Client *ethclient.Client, rollupAddrs chaininfo.RollupAddresses) (ethdb.Database, *core.BlockChain, error) {
 	if !config.Init.Force {
-		if readOnlyDb, err := stack.OpenDatabaseWithFreezerWithExtraOptions("l2chaindata", 0, 0, config.Persistent.Ancient, "l2chaindata/", true, persistentConfig.Pebble.ExtraOptions("l2chaindata")); err == nil {
+		if readOnlyDb, err := stack.OpenDatabaseWithOptions("l2chaindata", node.DatabaseOptions{AncientsDirectory: config.Persistent.Ancient, MetricsNamespace: "l2chaindata/", ReadOnly: true, PebbleExtraOptions: persistentConfig.Pebble.ExtraOptions("l2chaindata")}); err == nil {
 			if chainConfig := gethexec.TryReadStoredChainConfig(readOnlyDb); chainConfig != nil {
 				readOnlyDb.Close()
 				if !arbmath.BigEquals(chainConfig.ChainID, chainId) {
 					return nil, nil, fmt.Errorf("database has chain ID %v but config has chain ID %v (are you sure this database is for the right chain?)", chainConfig.ChainID, chainId)
 				}
-				chainData, err := stack.OpenDatabaseWithFreezerWithExtraOptions("l2chaindata", config.Execution.Caching.DatabaseCache, config.Persistent.Handles, config.Persistent.Ancient, "l2chaindata/", false, persistentConfig.Pebble.ExtraOptions("l2chaindata"))
+				chainData, err := stack.OpenDatabaseWithOptions("l2chaindata", node.DatabaseOptions{AncientsDirectory: config.Persistent.Ancient, MetricsNamespace: "l2chaindata/", Cache: config.Execution.Caching.DatabaseCache, Handles: config.Persistent.Handles, PebbleExtraOptions: persistentConfig.Pebble.ExtraOptions("l2chaindata")})
 				if err != nil {
 					return nil, nil, err
 				}
 				if err := dbutil.UnfinishedConversionCheck(chainData); err != nil {
 					return nil, nil, fmt.Errorf("l2chaindata unfinished database conversion check error: %w", err)
 				}
-				wasmDb, err := stack.OpenDatabaseWithExtraOptions("wasm", config.Execution.Caching.DatabaseCache, config.Persistent.Handles, "wasm/", false, persistentConfig.Pebble.ExtraOptions("wasm"))
+				wasmDb, err := stack.OpenDatabaseWithOptions("wasm", node.DatabaseOptions{Cache: config.Execution.Caching.DatabaseCache, Handles: config.Persistent.Handles, MetricsNamespace: "wasm/", PebbleExtraOptions: persistentConfig.Pebble.ExtraOptions("wasm")})
 				if err != nil {
 					return nil, nil, err
 				}
@@ -691,11 +694,11 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 
 	var initDataReader statetransfer.InitDataReader = nil
 
-	chainData, err := stack.OpenDatabaseWithFreezerWithExtraOptions("l2chaindata", config.Execution.Caching.DatabaseCache, config.Persistent.Handles, config.Persistent.Ancient, "l2chaindata/", false, persistentConfig.Pebble.ExtraOptions("l2chaindata"))
+	chainData, err := stack.OpenDatabaseWithOptions("l2chaindata", node.DatabaseOptions{AncientsDirectory: config.Persistent.Ancient, MetricsNamespace: "l2chaindata/", Cache: config.Execution.Caching.DatabaseCache, Handles: config.Persistent.Handles, PebbleExtraOptions: persistentConfig.Pebble.ExtraOptions("l2chaindata")})
 	if err != nil {
 		return nil, nil, err
 	}
-	wasmDb, err := stack.OpenDatabaseWithExtraOptions("wasm", config.Execution.Caching.DatabaseCache, config.Persistent.Handles, "wasm/", false, persistentConfig.Pebble.ExtraOptions("wasm"))
+	wasmDb, err := stack.OpenDatabaseWithOptions("wasm", node.DatabaseOptions{Cache: config.Execution.Caching.DatabaseCache, Handles: config.Persistent.Handles, MetricsNamespace: "wasm/", PebbleExtraOptions: persistentConfig.Pebble.ExtraOptions("wasm")})
 	if err != nil {
 		return nil, nil, err
 	}
@@ -895,7 +898,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 	}
 
 	txIndexWg.Wait()
-	err = chainDb.Sync()
+	err = chainDb.SyncAncient()
 	if err != nil {
 		return chainDb, l2BlockChain, err
 	}
