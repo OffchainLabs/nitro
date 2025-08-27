@@ -178,7 +178,7 @@ func newMockEVMForTestingWithVersion(version *uint64) *vm.EVM {
 	if version != nil {
 		chainConfig.ArbitrumChainParams.InitialArbOSVersion = *version
 	}
-	_, statedb := arbosState.NewArbosMemoryBackedArbOSState()
+	_, statedb := arbosState.NewArbosMemoryBackedArbOSStateWithConfig(chainConfig)
 	context := vm.BlockContext{
 		BlockNumber: big.NewInt(0),
 		GasLimit:    ^uint64(0),

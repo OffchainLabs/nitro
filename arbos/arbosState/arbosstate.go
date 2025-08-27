@@ -122,6 +122,11 @@ func OpenSystemArbosStateOrPanic(stateDB vm.StateDB, tracingInfo *util.TracingIn
 
 // NewArbosMemoryBackedArbOSState creates and initializes a memory-backed ArbOS state (for testing only)
 func NewArbosMemoryBackedArbOSState() (*ArbosState, *state.StateDB) {
+	return NewArbosMemoryBackedArbOSStateWithConfig(chaininfo.ArbitrumDevTestChainConfig())
+}
+
+// NewArbosMemoryBackedArbOSStateWithConfig creates and initializes a memory-backed ArbOS state with a given config (for testing only)
+func NewArbosMemoryBackedArbOSStateWithConfig(chainConfig *params.ChainConfig) (*ArbosState, *state.StateDB) {
 	raw := rawdb.NewMemoryDatabase()
 	trieConfig := &triedb.Config{Preimages: false, PathDB: pathdb.Defaults}
 	if env.GetTestStateScheme() == rawdb.HashScheme {
@@ -133,7 +138,6 @@ func NewArbosMemoryBackedArbOSState() (*ArbosState, *state.StateDB) {
 		panic("failed to init empty statedb: " + err.Error())
 	}
 	burner := burn.NewSystemBurner(nil, false)
-	chainConfig := chaininfo.ArbitrumDevTestChainConfig()
 	// #nosec G115
 	newState, err := InitializeArbosState(statedb, burner, chainConfig, nil, arbostypes.TestInitMessage)
 	if err != nil {
