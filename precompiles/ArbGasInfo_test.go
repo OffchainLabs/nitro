@@ -12,6 +12,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/offchainlabs/nitro/cmd/chaininfo"
 
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/burn"
@@ -143,8 +144,9 @@ func TestGetPricesInArbGas(t *testing.T) {
 func TestGetPricesInArbGasVersion50(t *testing.T) {
 	t.Parallel()
 
-	version := params.ArbosVersion_50
-	evm := newMockEVMForTestingWithVersion(&version)
+	chainConfig := chaininfo.ArbitrumDevTestChainConfig()
+	chainConfig.ArbitrumChainParams.InitialArbOSVersion = params.ArbosVersion_50
+	evm := newMockEVMForTestingWithConfigs(chainConfig, chainConfig)
 	caller := common.BytesToAddress(crypto.Keccak256([]byte{})[:20])
 	arbGasInfo := &ArbGasInfo{}
 	callCtx := testContext(caller, evm)

@@ -285,8 +285,9 @@ func TestArbInfraFeeAccount(t *testing.T) {
 }
 
 func TestL1CalldataPrice(t *testing.T) {
-	version := params.ArbosVersion_50
-	evm := newMockEVMForTestingWithVersion(&version)
+	chainConfig := chaininfo.ArbitrumDevTestChainConfig()
+	chainConfig.ArbitrumChainParams.InitialArbOSVersion = params.ArbosVersion_50
+	evm := newMockEVMForTestingWithConfigs(chainConfig, chainConfig)
 	caller := common.BytesToAddress(crypto.Keccak256([]byte{})[:20])
 
 	callCtx := testContext(caller, evm)
