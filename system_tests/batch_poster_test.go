@@ -179,11 +179,12 @@ func testBatchPosterParallel(t *testing.T, useRedis bool, useRedisLock bool) {
 		}
 	}
 
-	// TODO: factor this out in separate test case and skip it or delete this
-	// code entirely.
-	// I've locally confirmed that this passes when the clique period is set to 1.
-	// However, setting the clique period to 1 slows everything else (including the L1 deployment for this test) down to a crawl.
-	if false {
+	// TODO: factor this out into a separate test and enable when feasible.
+	t.Run("multiple batches in one block", func(t *testing.T) {
+		// This subtest is intentionally skipped: it passes when the clique period is 1,
+		// but that slows the rest of the suite significantly. Enable in a dedicated test.
+		t.Skip("requires clique period 1; enable in dedicated test when environment permits")
+
 		// Make sure the batch poster is able to post multiple batches in one block
 		endL1Block, err := builder.L1.Client.BlockNumber(ctx)
 		Require(t, err)
@@ -205,7 +206,7 @@ func testBatchPosterParallel(t *testing.T, useRedis bool, useRedisLock bool) {
 		if !foundMultipleInBlock {
 			Fatal(t, "only found one batch per block")
 		}
-	}
+	})
 
 	l2balance, err := testClientB.Client.BalanceAt(ctx, builder.L2Info.GetAddress("User2"), nil)
 	Require(t, err)
