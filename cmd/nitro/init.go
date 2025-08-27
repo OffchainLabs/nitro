@@ -919,8 +919,8 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 func testTxIndexUpdated(chainDb ethdb.Database, lastBlock uint64) bool {
 	var transactions types.Transactions
 	blockHash := rawdb.ReadCanonicalHash(chainDb, lastBlock)
-	reReadNumber := rawdb.ReadHeaderNumber(chainDb, blockHash)
-	if reReadNumber == nil {
+	_, reReadNumberFound := rawdb.ReadHeaderNumber(chainDb, blockHash)
+	if !reReadNumberFound {
 		return false
 	}
 	for ; ; lastBlock-- {

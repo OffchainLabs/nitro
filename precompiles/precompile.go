@@ -642,6 +642,8 @@ func Precompiles() map[addr]ArbosPrecompile {
 	ArbOwner.methodsByName["IsNativeTokenOwner"].arbosVersion = params.ArbosVersion_41
 	ArbOwner.methodsByName["GetAllNativeTokenOwners"].arbosVersion = params.ArbosVersion_41
 
+	ArbOwnerPublic.methodsByName["GetNativeTokenManagementFrom"].arbosVersion = params.ArbosVersion_50
+
 	ArbNativeTokenManager := insert(MakePrecompile(pgen.ArbNativeTokenManagerMetaData, &ArbNativeTokenManager{Address: types.ArbNativeTokenManagerAddress}))
 	ArbNativeTokenManager.arbosVersion = params.ArbosVersion_41
 	ArbNativeTokenManager.methodsByName["MintNativeToken"].arbosVersion = params.ArbosVersion_41
