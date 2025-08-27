@@ -179,3 +179,15 @@ func (s *Server) GenerateProof(ctx context.Context, preimageType hexutil.Uint, c
 	}
 	return &daclient.GenerateProofResult{Proof: hexutil.Bytes(proof)}, nil
 }
+
+func (s *Server) GenerateCertificateValidityProof(ctx context.Context, preimageType hexutil.Uint, certificate hexutil.Bytes) (*daclient.GenerateCertificateValidityProofResult, error) {
+	if s.validator == nil {
+		return nil, errors.New("validator not available")
+	}
+	// #nosec G115
+	proof, err := s.validator.GenerateCertificateValidityProof(ctx, arbutil.PreimageType(uint8(preimageType)), certificate)
+	if err != nil {
+		return nil, err
+	}
+	return &daclient.GenerateCertificateValidityProofResult{Proof: hexutil.Bytes(proof)}, nil
+}

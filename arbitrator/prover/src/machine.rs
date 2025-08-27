@@ -3196,7 +3196,7 @@ impl Machine {
             }
             ValidatePreimage => {
                 // ValidatePreimage reads a hash from memory, so we need to prove that memory access
-                let ptr = value_stack.get(value_stack.len() - 1).unwrap().assume_u32();
+                let ptr = value_stack.get(value_stack.len() - 2).unwrap().assume_u32();
                 if let Some(mut idx) = usize::try_from(ptr).ok().filter(|x| x % 32 == 0) {
                     // Prove the leaf this index is in
                     idx /= Memory::LEAF_SIZE;
@@ -3205,7 +3205,7 @@ impl Machine {
                 }
 
                 // Check if this is a CustomDA ValidatePreimage that needs enhancement
-                let preimage_type = value_stack.get(value_stack.len() - 2).unwrap().assume_u32();
+                let preimage_type = value_stack.get(value_stack.len() - 1).unwrap().assume_u32();
                 if let Ok(preimage_ty) =
                     PreimageType::try_from(u8::try_from(preimage_type).unwrap_or(255))
                 {
