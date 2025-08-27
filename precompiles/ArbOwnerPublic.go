@@ -93,8 +93,5 @@ func (con ArbOwnerPublic) IsCalldataPriceIncreaseEnabled(c ctx, _ mech) (bool, e
 
 // Get how much L1 charges per non-zero byte of calldata
 func (con ArbOwnerPublic) GetL1CalldataPrice(c ctx, evm mech) (*big.Int, error) {
-	if c.State.ArbOSVersion() < params.ArbosVersion_50 {
-		return big.NewInt(int64(params.TxDataNonZeroGasEIP2028)), nil
-	}
 	return c.State.L1PricingState().CalldataPrice()
 }
