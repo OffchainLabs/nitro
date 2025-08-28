@@ -124,14 +124,6 @@ else
     EXIT_CODE=1
 fi
 
-# Check Rust nightly toolchain
-if rustup toolchain list | grep -q "nightly"; then
-    echo -e "${GREEN}Rust nightly toolchain is installed.${NC}"
-else
-    echo -e "${RED}Rust nightly toolchain is not installed. Install it using: rustup toolchain install nightly${NC}"
-    EXIT_CODE=1
-fi
-
 # Check Go version
 if command_exists go && go version | grep -q "$go_version_needed"; then
     echo -e "${GREEN}Go version $go_version_needed is installed.${NC}"

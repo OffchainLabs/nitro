@@ -61,17 +61,6 @@ jobs:
           targets: 'wasm32-wasip1, wasm32-unknown-unknown'
           components: 'llvm-tools-preview, rustfmt, clippy'
 
-      - name: Install rust nightly
-        uses: dtolnay/rust-toolchain@nightly
-        id: install-rust-nightly
-        with:
-          toolchain: 'nightly-2025-02-14'
-          targets: 'wasm32-wasip1, wasm32-unknown-unknown'
-          components: 'rust-src, rustfmt, clippy'
-
-      - name: Set STYLUS_NIGHTLY_VER environment variable
-        run: echo "STYLUS_NIGHTLY_VER=+$(rustup toolchain list | grep '^nightly' | head -n1 | cut -d' ' -f1)" >> "$GITHUB_ENV"
-
       - name: Get Rust version
         id: rust-version
         run: echo "version=$(rustc --version | cut -d' ' -f2)" >> $GITHUB_OUTPUT
