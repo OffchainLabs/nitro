@@ -247,6 +247,7 @@ func NewStatelessBlockValidator(
 	if config().RedisValidationClientConfig.Enabled() {
 		var err error
 		redisValClient, err = redis.NewValidationClient(&config().RedisValidationClientConfig)
+		boldExecutionSpawners = append(boldExecutionSpawners, redis.NewBOLDRedisExecutionClient(redisValClient))
 		if err != nil {
 			return nil, fmt.Errorf("creating new redis validation client: %w", err)
 		}
@@ -569,11 +570,19 @@ func (v *StatelessBlockValidator) Start(ctx_in context.Context) error {
 			return err
 		}
 	}
+	for _, spawner := range v.boldExecSpawners {
+		if err := spawner.Start(ctx_in); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
 func (v *StatelessBlockValidator) Stop() {
 	for _, spawner := range v.execSpawners {
+		spawner.Stop()
+	}
+	for _, spawner := range v.boldExecSpawners {
 		spawner.Stop()
 	}
 	if v.redisValidator != nil {
