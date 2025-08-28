@@ -72,7 +72,7 @@ func newApiClosures(
 	getBytes32 := func(key common.Hash) (common.Hash, uint64) {
 		cost := vm.WasmStateLoadCost(db, actingAddress, key)
 		// Operation getBytes32 charges storage-access gas (saturating, no overflow expected)
-		scope.Contract.UsedMultiGas.SaturatingIncrement(multigas.ResourceKindStorageAccess, cost)
+		scope.Contract.UsedMultiGas = scope.Contract.UsedMultiGas.SaturatingIncrement(multigas.ResourceKindStorageAccess, cost)
 		return db.GetState(actingAddress, key), cost
 	}
 	setTrieSlots := func(data []byte, gasLeft *uint64) apiStatus {
