@@ -209,7 +209,7 @@ func TestArbOwner(t *testing.T) {
 }
 
 func TestArbOwnerSetChainConfig(t *testing.T) {
-	evm := newMockEVMForTestingWithVersionAndRunMode(nil, core.MessageGasEstimationMode)
+	evm := newMockEVMForTestingWithVersionAndRunMode(nil, core.NewMessageGasEstimationContext())
 	caller := common.BytesToAddress(crypto.Keccak256([]byte{})[:20])
 	tracer := util.NewTracingInfo(evm, testhelpers.RandomAddress(), types.ArbosAddress, util.TracingDuringEVM)
 	state, err := arbosState.OpenArbosState(evm.StateDB, burn.NewSystemBurner(tracer, false))
@@ -280,6 +280,33 @@ func TestArbInfraFeeAccount(t *testing.T) {
 	addr, err = precPublic.GetInfraFeeAccount(callCtx, evm)
 	Require(t, err)
 	if addr != newAddr {
+		t.Fatal()
+	}
+}
+
+func TestL1CalldataPrice(t *testing.T) {
+	chainConfig := chaininfo.ArbitrumDevTestChainConfig()
+	chainConfig.ArbitrumChainParams.InitialArbOSVersion = params.ArbosVersion_50
+	evm := newMockEVMForTestingWithConfigs(chainConfig, chainConfig)
+	caller := common.BytesToAddress(crypto.Keccak256([]byte{})[:20])
+
+	callCtx := testContext(caller, evm)
+
+	pubPrec := &ArbOwnerPublic{}
+
+	price, err := pubPrec.GetL1CalldataPrice(callCtx, evm)
+	Require(t, err)
+	if price.Cmp(big.NewInt(int64(params.TxDataNonZeroGasEIP2028))) != 0 {
+		t.Fatal()
+	}
+
+	prec := &ArbOwner{}
+	err = prec.SetL1CalldataPrice(callCtx, evm, big.NewInt(10))
+	Require(t, err)
+
+	price, err = pubPrec.GetL1CalldataPrice(callCtx, evm)
+	Require(t, err)
+	if price.Cmp(big.NewInt(10)) != 0 {
 		t.Fatal()
 	}
 }

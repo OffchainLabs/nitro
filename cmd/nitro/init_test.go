@@ -424,6 +424,7 @@ func TestOpenInitializeChainDbIncompatibleStateScheme(t *testing.T) {
 
 	nodeConfig := NodeConfigDefault
 	nodeConfig.Execution.Caching.StateScheme = rawdb.PathScheme
+	nodeConfig.Execution.RPC.StateScheme = rawdb.PathScheme
 	nodeConfig.Chain.ID = 42161
 	nodeConfig.Node = *arbnode.ConfigDefaultL2Test()
 	nodeConfig.Init.DevInit = true
@@ -437,7 +438,7 @@ func TestOpenInitializeChainDbIncompatibleStateScheme(t *testing.T) {
 		stack,
 		&nodeConfig,
 		new(big.Int).SetUint64(nodeConfig.Chain.ID),
-		gethexec.DefaultCacheConfigFor(stack, &nodeConfig.Execution.Caching),
+		gethexec.DefaultCacheConfigFor(&nodeConfig.Execution.Caching),
 		defaultStylusTargetConfigForTest(t),
 		nil,
 		&nodeConfig.Persistent,
@@ -455,7 +456,7 @@ func TestOpenInitializeChainDbIncompatibleStateScheme(t *testing.T) {
 		stack,
 		&nodeConfig,
 		new(big.Int).SetUint64(nodeConfig.Chain.ID),
-		gethexec.DefaultCacheConfigFor(stack, &nodeConfig.Execution.Caching),
+		gethexec.DefaultCacheConfigFor(&nodeConfig.Execution.Caching),
 		defaultStylusTargetConfigForTest(t),
 		nil,
 		&nodeConfig.Persistent,
@@ -469,12 +470,13 @@ func TestOpenInitializeChainDbIncompatibleStateScheme(t *testing.T) {
 
 	// opening with a different state scheme errors
 	nodeConfig.Execution.Caching.StateScheme = rawdb.HashScheme
+	nodeConfig.Execution.RPC.StateScheme = rawdb.HashScheme
 	_, _, err = openInitializeChainDb(
 		ctx,
 		stack,
 		&nodeConfig,
 		new(big.Int).SetUint64(nodeConfig.Chain.ID),
-		gethexec.DefaultCacheConfigFor(stack, &nodeConfig.Execution.Caching),
+		gethexec.DefaultCacheConfigFor(&nodeConfig.Execution.Caching),
 		defaultStylusTargetConfigForTest(t),
 		nil,
 		&nodeConfig.Persistent,
@@ -534,7 +536,7 @@ func TestPurgeIncompatibleWasmerSerializeVersionEntries(t *testing.T) {
 		t.Fatalf("Failed to create test stack: %v", err)
 	}
 	defer stack.Close()
-	db, err := stack.OpenDatabaseWithExtraOptions("wasm", NodeConfigDefault.Execution.Caching.DatabaseCache, NodeConfigDefault.Persistent.Handles, "wasm/", false, nil)
+	db, err := stack.OpenDatabaseWithOptions("wasm", node.DatabaseOptions{MetricsNamespace: "wasm/", Cache: NodeConfigDefault.Execution.Caching.DatabaseCache, Handles: NodeConfigDefault.Persistent.Handles})
 	if err != nil {
 		t.Fatalf("Failed to open test db: %v", err)
 	}
@@ -615,7 +617,7 @@ func TestPurgeVersion0WasmStoreEntries(t *testing.T) {
 		t.Fatalf("Failed to create test stack: %v", err)
 	}
 	defer stack.Close()
-	db, err := stack.OpenDatabaseWithExtraOptions("wasm", NodeConfigDefault.Execution.Caching.DatabaseCache, NodeConfigDefault.Persistent.Handles, "wasm/", false, nil)
+	db, err := stack.OpenDatabaseWithOptions("wasm", node.DatabaseOptions{MetricsNamespace: "wasm/", Cache: NodeConfigDefault.Execution.Caching.DatabaseCache, Handles: NodeConfigDefault.Persistent.Handles})
 	if err != nil {
 		t.Fatalf("Failed to open test db: %v", err)
 	}
@@ -690,6 +692,7 @@ func TestOpenInitializeChainDbEmptyInit(t *testing.T) {
 
 	nodeConfig := NodeConfigDefault
 	nodeConfig.Execution.Caching.StateScheme = env.GetTestStateScheme()
+	nodeConfig.Execution.RPC.StateScheme = env.GetTestStateScheme()
 	nodeConfig.Chain.ID = 42161
 	nodeConfig.Node = *arbnode.ConfigDefaultL2Test()
 	nodeConfig.Init.Empty = true
@@ -701,7 +704,7 @@ func TestOpenInitializeChainDbEmptyInit(t *testing.T) {
 		stack,
 		&nodeConfig,
 		new(big.Int).SetUint64(nodeConfig.Chain.ID),
-		gethexec.DefaultCacheConfigFor(stack, &nodeConfig.Execution.Caching),
+		gethexec.DefaultCacheConfigFor(&nodeConfig.Execution.Caching),
 		defaultStylusTargetConfigForTest(t),
 		nil,
 		&nodeConfig.Persistent,

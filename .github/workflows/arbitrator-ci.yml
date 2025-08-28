@@ -37,7 +37,7 @@ jobs:
           detached: true
 
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           submodules: recursive
 
@@ -48,21 +48,21 @@ jobs:
           sudo ln -s /usr/bin/wasm-ld-14 /usr/local/bin/wasm-ld
 
       - name: Install go
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v5
         with:
-          go-version: 1.23.x
+          go-version: 1.24.x
 
       - name: Install custom go-ethereum
         run: |
           cd /tmp
-          git clone --branch v1.14.11 --depth 1 https://github.com/ethereum/go-ethereum.git
+          git clone --branch v1.15.11 --depth 1 https://github.com/ethereum/go-ethereum.git
           cd go-ethereum
           go build -o /usr/local/bin/geth ./cmd/geth
 
       - name: Setup nodejs
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: '24'
           cache: 'yarn'
           cache-dependency-path: '**/yarn.lock'
 
@@ -127,6 +127,7 @@ jobs:
         uses: foundry-rs/foundry-toolchain@v1
         with:
           cache: false
+          version: v1.0.0
 
       - name: Cache cbrotli
         uses: actions/cache@v4
@@ -138,8 +139,8 @@ jobs:
             target/lib/libbrotlicommon-static.a
             target/lib/libbrotlienc-static.a
             target/lib/libbrotlidec-static.a
-          key: ${{ runner.os }}-brotli-${{ hashFiles('scripts/build-brotli.sh') }}-${{ hashFiles('.github/workflows/arbitrator-ci.yaml') }}-arbitrator
-          restore-keys: ${{ runner.os }}-brotli-${{ hashFiles('scripts/build-brotli.sh') }}-${{ hashFiles('.github/workflows/arbitrator-ci.yaml') }}
+          key: ${{ runner.os }}-brotli-${{ hashFiles('scripts/build-brotli.sh') }}-${{ hashFiles('.github/workflows/arbitrator-ci.yml') }}-arbitrator
+          restore-keys: ${{ runner.os }}-brotli-${{ hashFiles('scripts/build-brotli.sh') }}-${{ hashFiles('.github/workflows/arbitrator-ci.yml') }}
 
       - name: Build cbrotli-local
         if: steps.cache-cbrotli.outputs.cache-hit != 'true'

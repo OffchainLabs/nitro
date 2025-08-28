@@ -42,7 +42,7 @@ type SeqCoordinator struct {
 	stopwaiter.StopWaiter
 
 	redisCoordinatorMutex sync.RWMutex
-	redisCoordinator      redisutil.RedisCoordinator
+	redisCoordinator      *redisutil.RedisCoordinator
 	prevRedisCoordinator  *redisutil.RedisCoordinator
 	prevRedisMessageCount arbutil.MessageIndex
 
@@ -155,6 +155,16 @@ var TestSeqCoordinatorConfig = SeqCoordinatorConfig{
 	Signer:                signature.DefaultSignVerifyConfig,
 }
 
+func (c *SeqCoordinatorConfig) Validate() error {
+	if !c.Enable {
+		return nil
+	}
+	if c.RedisUrl == "" {
+		return errors.New("seq-coordinator.redis-url is required when seq-coordinator is enabled")
+	}
+	return nil
+}
+
 func NewSeqCoordinator(
 	dataSigner signature.DataSignerFunc,
 	bpvalidator *contracts.AddressVerifier,
@@ -172,7 +182,7 @@ func NewSeqCoordinator(
 		return nil, err
 	}
 	coordinator := &SeqCoordinator{
-		redisCoordinator: *redisCoordinator,
+		redisCoordinator: redisCoordinator,
 		sync:             sync,
 		streamer:         streamer,
 		sequencer:        sequencer,
@@ -196,14 +206,14 @@ func (c *SeqCoordinator) SetDelayedSequencer(delayedSequencer *DelayedSequencer)
 func (c *SeqCoordinator) RedisCoordinator() *redisutil.RedisCoordinator {
 	c.redisCoordinatorMutex.RLock()
 	defer c.redisCoordinatorMutex.RUnlock()
-	return &c.redisCoordinator
+	return c.redisCoordinator
 }
 
 func (c *SeqCoordinator) setRedisCoordinator(redisCoordinator *redisutil.RedisCoordinator) {
 	c.redisCoordinatorMutex.Lock()
 	defer c.redisCoordinatorMutex.Unlock()
-	c.prevRedisCoordinator = &c.redisCoordinator
-	c.redisCoordinator = *redisCoordinator
+	c.prevRedisCoordinator = c.redisCoordinator
+	c.redisCoordinator = redisCoordinator
 }
 
 func StandaloneSeqCoordinatorInvalidateMsgIndex(ctx context.Context, redisClient redis.UniversalClient, keyConfig string, msgIndex arbutil.MessageIndex) error {
@@ -464,7 +474,11 @@ func (c *SeqCoordinator) chosenOneRelease(ctx context.Context) error {
 		return nil
 	}
 	// got error - was it still released?
-	current, _ := c.CurrentChosenSequencer(ctx) //nolint:errcheck
+	current, err := c.CurrentChosenSequencer(ctx)
+	if err != nil {
+		log.Warn("unable to verify sequencer release status due to Redis error: %v", err)
+		return releaseErr
+	}
 	if current != c.config.Url() {
 		return nil
 	}

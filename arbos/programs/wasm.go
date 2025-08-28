@@ -12,8 +12,10 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
+
 	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -64,6 +66,7 @@ func activateProgram(
 	arbosVersion uint64,
 	debug bool,
 	burner burn.Burner,
+	runCtx *core.MessageRunContext,
 ) (*activationInfo, error) {
 	errBuf := make([]byte, 1024)
 	debugMode := arbmath.BoolToUint32(debug)
@@ -98,9 +101,9 @@ func activateProgram(
 }
 
 // stub any non-consensus, Rust-side caching updates
-func cacheProgram(db vm.StateDB, module common.Hash, program Program, addressForLogging common.Address, code []byte, codeHash common.Hash, params *StylusParams, debug bool, time uint64, runMode core.MessageRunMode) {
+func cacheProgram(db vm.StateDB, module common.Hash, program Program, addressForLogging common.Address, code []byte, codeHash common.Hash, params *StylusParams, debug bool, time uint64, runCtx *core.MessageRunContext) {
 }
-func evictProgram(db vm.StateDB, module common.Hash, version uint16, debug bool, mode core.MessageRunMode, forever bool) {
+func evictProgram(db vm.StateDB, module common.Hash, version uint16, debug bool, runCtx *core.MessageRunContext, forever bool) {
 }
 
 //go:wasmimport programs new_program
@@ -131,8 +134,9 @@ func startProgram(module uint32) uint32
 //go:wasmimport programs send_response
 func sendResponse(req_id uint32) uint32
 
-func getLocalAsm(statedb vm.StateDB, moduleHash common.Hash, addressForLogging common.Address, code []byte, codeHash common.Hash, maxWasmSize uint32, pagelimit uint16, time uint64, debugMode bool, program Program) ([]byte, error) {
-	return nil, nil
+func getCompiledProgram(statedb vm.StateDB, moduleHash common.Hash, addressForLogging common.Address, code []byte, codeHash common.Hash, maxWasmSize uint32, pagelimit uint16, time uint64, debugMode bool, program Program, runCtx *core.MessageRunContext) (map[rawdb.WasmTarget][]byte, error) {
+	// we need to return asm map with an entry for local target to make checks for local target work
+	return map[rawdb.WasmTarget][]byte{rawdb.LocalTarget(): {}}, nil
 }
 
 func callProgram(
@@ -146,7 +150,7 @@ func callProgram(
 	evmData *EvmData,
 	params *ProgParams,
 	memoryModel *MemoryModel,
-	_arbos_tag uint32,
+	runCtx *core.MessageRunContext,
 ) ([]byte, error) {
 	reqHandler := newApiClosures(interpreter, tracingInfo, scope, memoryModel)
 	gasLeft, retData, err := CallProgramLoop(moduleHash, calldata, scope.Contract.Gas, evmData, params, reqHandler)

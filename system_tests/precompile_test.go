@@ -268,8 +268,6 @@ func setupArbOwnerAndArbGasInfo(
 }
 
 func TestL1BaseFeeEstimateInertia(t *testing.T) {
-	t.Parallel()
-
 	builder, cleanup, auth, arbOwner, arbGasInfo := setupArbOwnerAndArbGasInfo(t)
 	defer cleanup()
 	ctx := builder.ctx
@@ -288,8 +286,6 @@ func TestL1BaseFeeEstimateInertia(t *testing.T) {
 
 // Similar to TestL1BaseFeeEstimateInertia, but now using a different setter from ArbOwner
 func TestL1PricingInertia(t *testing.T) {
-	t.Parallel()
-
 	builder, cleanup, auth, arbOwner, arbGasInfo := setupArbOwnerAndArbGasInfo(t)
 	defer cleanup()
 	ctx := builder.ctx
@@ -307,8 +303,6 @@ func TestL1PricingInertia(t *testing.T) {
 }
 
 func TestL1PricingRewardRate(t *testing.T) {
-	t.Parallel()
-
 	builder, cleanup, auth, arbOwner, arbGasInfo := setupArbOwnerAndArbGasInfo(t)
 	defer cleanup()
 	ctx := builder.ctx
@@ -326,8 +320,6 @@ func TestL1PricingRewardRate(t *testing.T) {
 }
 
 func TestL1PricingRewardRecipient(t *testing.T) {
-	t.Parallel()
-
 	builder, cleanup, auth, arbOwner, arbGasInfo := setupArbOwnerAndArbGasInfo(t)
 	defer cleanup()
 	ctx := builder.ctx
@@ -345,8 +337,6 @@ func TestL1PricingRewardRecipient(t *testing.T) {
 }
 
 func TestL2GasPricingInertia(t *testing.T) {
-	t.Parallel()
-
 	builder, cleanup, auth, arbOwner, arbGasInfo := setupArbOwnerAndArbGasInfo(t)
 	defer cleanup()
 	ctx := builder.ctx
@@ -364,8 +354,6 @@ func TestL2GasPricingInertia(t *testing.T) {
 }
 
 func TestL2GasBacklogTolerance(t *testing.T) {
-	t.Parallel()
-
 	builder, cleanup, auth, arbOwner, arbGasInfo := setupArbOwnerAndArbGasInfo(t)
 	defer cleanup()
 	ctx := builder.ctx
@@ -383,8 +371,6 @@ func TestL2GasBacklogTolerance(t *testing.T) {
 }
 
 func TestPerBatchGasCharge(t *testing.T) {
-	t.Parallel()
-
 	builder, cleanup, auth, arbOwner, arbGasInfo := setupArbOwnerAndArbGasInfo(t)
 	defer cleanup()
 	ctx := builder.ctx
@@ -402,8 +388,6 @@ func TestPerBatchGasCharge(t *testing.T) {
 }
 
 func TestL1PricingEquilibrationUnits(t *testing.T) {
-	t.Parallel()
-
 	builder, cleanup, auth, arbOwner, arbGasInfo := setupArbOwnerAndArbGasInfo(t)
 	defer cleanup()
 	ctx := builder.ctx
@@ -421,8 +405,6 @@ func TestL1PricingEquilibrationUnits(t *testing.T) {
 }
 
 func TestGasAccountingParams(t *testing.T) {
-	t.Parallel()
-
 	builder, cleanup, auth, arbOwner, arbGasInfo := setupArbOwnerAndArbGasInfo(t)
 	defer cleanup()
 	ctx := builder.ctx
@@ -454,8 +436,6 @@ func TestGasAccountingParams(t *testing.T) {
 }
 
 func TestCurrentTxL1GasFees(t *testing.T) {
-	t.Parallel()
-
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -476,6 +456,66 @@ func TestCurrentTxL1GasFees(t *testing.T) {
 	}
 }
 
+func TestArbNativeTokenManagerThroughSolidityContract(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	arbOSInit := &params.ArbOSInit{
+		NativeTokenSupplyManagementEnabled: true,
+	}
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false).WithArbOSInit(arbOSInit).WithArbOSVersion(params.ArbosVersion_50)
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	authOwner := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
+	authOwner.GasLimit = 32000000
+
+	// deploys test contract
+	contractAddr, tx, contract, err := localgen.DeployArbNativeTokenManagerTest(&authOwner, builder.L2.Client)
+	Require(t, err)
+	_, err = EnsureTxSucceeded(ctx, builder.L2.Client, tx)
+	Require(t, err)
+
+	// adds native token owner
+	arbOwner, err := precompilesgen.NewArbOwner(types.ArbOwnerAddress, builder.L2.Client)
+	Require(t, err)
+	tx, err = arbOwner.AddNativeTokenOwner(&authOwner, contractAddr)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	// mints
+	toMint := big.NewInt(100)
+	tx, err = contract.Mint(&authOwner, toMint)
+	Require(t, err)
+	receipt, err := builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	// checks minting
+	arbNativeTokenManager, err := precompilesgen.NewArbNativeTokenManager(types.ArbNativeTokenManagerAddress, builder.L2.Client)
+	Require(t, err)
+	nativeTokenOwnerABI, err := precompilesgen.ArbNativeTokenManagerMetaData.GetAbi()
+	Require(t, err)
+	mintTopic := nativeTokenOwnerABI.Events["NativeTokenMinted"].ID
+	mintLogged := false
+	for _, log := range receipt.Logs {
+		if log.Topics[0] == mintTopic {
+			mintLogged = true
+			parsedLog, err := arbNativeTokenManager.ParseNativeTokenMinted(*log)
+			Require(t, err)
+			if parsedLog.To != contractAddr {
+				t.Fatal("expected mint to be to", contractAddr, "got", parsedLog.To)
+			}
+			if parsedLog.Amount.Cmp(toMint) != 0 {
+				t.Fatal("expected mint amount to be", toMint, "got", parsedLog.Amount)
+			}
+		}
+	}
+	if !mintLogged {
+		t.Fatal("expected mint event to be logged")
+	}
+}
+
 func TestArbNativeTokenManager(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -485,7 +525,7 @@ func TestArbNativeTokenManager(t *testing.T) {
 		NativeTokenSupplyManagementEnabled: true,
 	}
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, false).WithArbOSInit(arbOSInit).WithArbOSVersion(params.ArbosVersion_41)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false).WithArbOSInit(arbOSInit).WithArbOSVersion(params.ArbosVersion_50)
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -577,6 +617,11 @@ func TestArbNativeTokenManager(t *testing.T) {
 	Require(t, err)
 	if isNativeTokenOwner {
 		t.Fatal("expected native token owner to not be set")
+	}
+	enabledTime, err := arbOwnerPub.GetNativeTokenManagementFrom(callOpts)
+	Require(t, err)
+	if enabledTime != 1 {
+		t.Fatalf("enabledTime: want %d, got %d", 1, enabledTime)
 	}
 	nativeTokenOwners, err = arbOwner.GetAllNativeTokenOwners(callOpts)
 	Require(t, err)
@@ -715,7 +760,7 @@ func TestNativeTokenManagementDisabledByDefault(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, false).WithArbOSVersion(params.ArbosVersion_41)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false).WithArbOSVersion(params.ArbosVersion_50)
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -893,8 +938,6 @@ func TestGetBrotliCompressionLevel(t *testing.T) {
 }
 
 func TestArbStatistics(t *testing.T) {
-	t.Parallel()
-
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -918,8 +961,6 @@ func TestArbStatistics(t *testing.T) {
 }
 
 func TestArbosFeatures(t *testing.T) {
-	t.Parallel()
-
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -958,8 +999,6 @@ func TestArbosFeatures(t *testing.T) {
 }
 
 func TestArbFunctionTable(t *testing.T) {
-	t.Parallel()
-
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -994,8 +1033,6 @@ func TestArbFunctionTable(t *testing.T) {
 }
 
 func TestArbAggregatorBaseFee(t *testing.T) {
-	t.Parallel()
-
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -1022,8 +1059,6 @@ func TestArbAggregatorBaseFee(t *testing.T) {
 }
 
 func TestFeeAccounts(t *testing.T) {
-	t.Parallel()
-
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -1064,8 +1099,6 @@ func TestFeeAccounts(t *testing.T) {
 }
 
 func TestChainOwners(t *testing.T) {
-	t.Parallel()
-
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -1139,8 +1172,6 @@ func TestChainOwners(t *testing.T) {
 }
 
 func TestArbAggregatorBatchPosters(t *testing.T) {
-	t.Parallel()
-
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -1188,8 +1219,6 @@ func TestArbAggregatorBatchPosters(t *testing.T) {
 }
 
 func TestArbAggregatorGetPreferredAggregator(t *testing.T) {
-	t.Parallel()
-
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 

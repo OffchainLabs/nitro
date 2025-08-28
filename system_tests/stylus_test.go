@@ -57,12 +57,10 @@ func TestProgramArbitratorMemory(t *testing.T) {
 }
 
 func TestProgramArbitratorActivateTwice(t *testing.T) {
-	t.Parallel()
 	testActivateTwice(t, false)
 }
 
 func TestProgramArbitratorActivateFails(t *testing.T) {
-	t.Parallel()
 	testActivateFails(t, false)
 }
 
@@ -102,11 +100,11 @@ func fullRecurseTest() [][]multiCallRecurse {
 }
 
 func TestProgramLongCall(t *testing.T) {
-	testProgramResursiveCalls(t, fullRecurseTest(), true)
+	testProgramRecursiveCalls(t, fullRecurseTest(), true)
 }
 
 func TestProgramLongArbitratorCall(t *testing.T) {
-	testProgramResursiveCalls(t, fullRecurseTest(), false)
+	testProgramRecursiveCalls(t, fullRecurseTest(), false)
 }
 
 func TestProgramArbitratorStylusUpgrade(t *testing.T) {

@@ -10,7 +10,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
-	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/pubsub"
@@ -38,7 +37,7 @@ func (c ValidationClientConfig) Enabled() bool {
 
 func (c ValidationClientConfig) Validate() error {
 	for _, arch := range c.StylusArchs {
-		if !rawdb.IsSupportedWasmTarget(ethdb.WasmTarget(arch)) {
+		if !rawdb.IsSupportedWasmTarget(rawdb.WasmTarget(arch)) {
 			return fmt.Errorf("Invalid stylus arch: %v", arch)
 		}
 	}
@@ -110,7 +109,7 @@ func (c *ValidationClient) Initialize(ctx context.Context, moduleRoots []common.
 			}
 		}
 		if _, exists := c.producers[mr]; exists {
-			log.Warn("Producer already existsw for module root", "hash", mr)
+			log.Warn("Producer already exists for module root", "hash", mr)
 			continue
 		}
 		p, err := pubsub.NewProducer[*validator.ValidationInput, validator.GoGlobalState](
@@ -165,10 +164,10 @@ func (c *ValidationClient) Name() string {
 	return c.config.Name
 }
 
-func (c *ValidationClient) StylusArchs() []ethdb.WasmTarget {
-	stylusArchs := make([]ethdb.WasmTarget, 0, len(c.config.StylusArchs))
+func (c *ValidationClient) StylusArchs() []rawdb.WasmTarget {
+	stylusArchs := make([]rawdb.WasmTarget, 0, len(c.config.StylusArchs))
 	for _, arch := range c.config.StylusArchs {
-		stylusArchs = append(stylusArchs, ethdb.WasmTarget(arch))
+		stylusArchs = append(stylusArchs, rawdb.WasmTarget(arch))
 	}
 	return stylusArchs
 }

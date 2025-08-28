@@ -11,7 +11,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
-	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 
@@ -34,7 +33,7 @@ type ArbitratorSpawnerConfig struct {
 	RedisValidationServerConfig redis.ValidationServerConfig `koanf:"redis-validation-server-config"`
 }
 
-type ArbitratorSpawnerConfigFecher func() *ArbitratorSpawnerConfig
+type ArbitratorSpawnerConfigFetcher func() *ArbitratorSpawnerConfig
 
 var DefaultArbitratorSpawnerConfig = ArbitratorSpawnerConfig{
 	Workers:                     0,
@@ -58,7 +57,7 @@ func DefaultArbitratorSpawnerConfigFetcher() *ArbitratorSpawnerConfig {
 
 // MachineWrapper is a function that wraps a MachineInterface
 //
-// This is a mechanism to allow clients of the AribtratorSpawner to inject
+// This is a mechanism to allow clients of the ArbitratorSpawner to inject
 // functionality around the arbitrator machine. Possible use cases include
 // mocking out the machine for testing purposes, or having the machine behave
 // differently when certain features (like BoLD) are enabled.
@@ -71,9 +70,9 @@ type ArbitratorSpawner struct {
 	count         atomic.Int32
 	locator       *server_common.MachineLocator
 	machineLoader *ArbMachineLoader
-	// Oreder of wrappers is important. The first wrapper is the innermost.
+	// Order of wrappers is important. The first wrapper is the innermost.
 	machineWrappers []MachineWrapper
-	config          ArbitratorSpawnerConfigFecher
+	config          ArbitratorSpawnerConfigFetcher
 }
 
 func WithWrapper(wrapper MachineWrapper) SpawnerOption {
@@ -82,7 +81,7 @@ func WithWrapper(wrapper MachineWrapper) SpawnerOption {
 	}
 }
 
-func NewArbitratorSpawner(locator *server_common.MachineLocator, config ArbitratorSpawnerConfigFecher, opts ...SpawnerOption) (*ArbitratorSpawner, error) {
+func NewArbitratorSpawner(locator *server_common.MachineLocator, config ArbitratorSpawnerConfigFetcher, opts ...SpawnerOption) (*ArbitratorSpawner, error) {
 	// TODO: preload machines
 	spawner := &ArbitratorSpawner{
 		locator:         locator,
@@ -105,8 +104,8 @@ func (s *ArbitratorSpawner) WasmModuleRoots() ([]common.Hash, error) {
 	return s.locator.ModuleRoots(), nil
 }
 
-func (s *ArbitratorSpawner) StylusArchs() []ethdb.WasmTarget {
-	return []ethdb.WasmTarget{rawdb.TargetWavm}
+func (s *ArbitratorSpawner) StylusArchs() []rawdb.WasmTarget {
+	return []rawdb.WasmTarget{rawdb.TargetWavm}
 }
 
 func (s *ArbitratorSpawner) Name() string {

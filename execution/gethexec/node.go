@@ -4,9 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/big"
 	"reflect"
 	"sort"
 	"sync/atomic"
+	"time"
 
 	flag "github.com/spf13/pflag"
 
@@ -25,10 +27,12 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
+	"github.com/offchainlabs/nitro/arbos/multigascollector"
 	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
+	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/dbutil"
@@ -41,24 +45,24 @@ type StylusTargetConfig struct {
 	Host       string   `koanf:"host"`
 	ExtraArchs []string `koanf:"extra-archs"`
 
-	wasmTargets []ethdb.WasmTarget
+	wasmTargets []rawdb.WasmTarget
 }
 
-func (c *StylusTargetConfig) WasmTargets() []ethdb.WasmTarget {
+func (c *StylusTargetConfig) WasmTargets() []rawdb.WasmTarget {
 	return c.wasmTargets
 }
 
 func (c *StylusTargetConfig) Validate() error {
-	targetsSet := make(map[ethdb.WasmTarget]bool, len(c.ExtraArchs))
+	targetsSet := make(map[rawdb.WasmTarget]bool, len(c.ExtraArchs))
 	for _, arch := range c.ExtraArchs {
-		target := ethdb.WasmTarget(arch)
+		target := rawdb.WasmTarget(arch)
 		if !rawdb.IsSupportedWasmTarget(target) {
 			return fmt.Errorf("unsupported architecture: %v, possible values: %s, %s, %s, %s", arch, rawdb.TargetWavm, rawdb.TargetArm64, rawdb.TargetAmd64, rawdb.TargetHost)
 		}
 		targetsSet[target] = true
 	}
 	targetsSet[rawdb.LocalTarget()] = true
-	targets := make([]ethdb.WasmTarget, 0, len(c.ExtraArchs)+1)
+	targets := make([]rawdb.WasmTarget, 0, len(c.ExtraArchs)+1)
 	for target := range targetsSet {
 		targets = append(targets, target)
 	}
@@ -85,23 +89,54 @@ func StylusTargetConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.StringSlice(prefix+".extra-archs", DefaultStylusTargetConfig.ExtraArchs, fmt.Sprintf("Comma separated list of extra architectures to cross-compile stylus program to and cache in wasm store (additionally to local target). Currently must include at least %s. (supported targets: %s, %s, %s, %s)", rawdb.TargetWavm, rawdb.TargetWavm, rawdb.TargetArm64, rawdb.TargetAmd64, rawdb.TargetHost))
 }
 
+type TxIndexerConfig struct {
+	Enable        bool          `koanf:"enable"`
+	TxLookupLimit uint64        `koanf:"tx-lookup-limit"`
+	Threads       int           `koanf:"threads"`
+	MinBatchDelay time.Duration `koanf:"min-batch-delay"`
+}
+
+var DefaultTxIndexerConfig = TxIndexerConfig{
+	Enable:        true,
+	TxLookupLimit: 126_230_400, // 1 year at 4 blocks per second
+	Threads:       util.GoMaxProcs(),
+	MinBatchDelay: time.Second,
+}
+
+func TxIndexerConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.Bool(prefix+".enable", DefaultTxIndexerConfig.Enable, "enables transaction indexer")
+	f.Uint64(prefix+".tx-lookup-limit", DefaultTxIndexerConfig.TxLookupLimit, "retain the ability to lookup transactions by hash for the past N blocks (0 = all blocks)")
+	f.Int(prefix+".threads", DefaultTxIndexerConfig.Threads, "number of threads used to RLP decode blocks during indexing/unindexing of historical transactions")
+	f.Duration(prefix+".min-batch-delay", DefaultTxIndexerConfig.MinBatchDelay, "minimum delay between transaction indexing/unindexing batches; the bigger the delay, the more blocks can be included in each batch")
+}
+
+func MultigasCollectionAddOptions(prefix string, f *flag.FlagSet) {
+	f.String(prefix+".output-dir", multigascollector.DefaultCollectorConfig.OutputDir,
+		"If set, enables Multigas collector and stores batches in this directory")
+	f.Int(prefix+".batch-size", multigascollector.DefaultCollectorConfig.BatchSize,
+		"Batch size (blocks per file) for Multigas collector. Ignored unless output-dir is set")
+	f.Bool(prefix+".clear-output-dir", multigascollector.DefaultCollectorConfig.ClearOutputDir,
+		"Whether to clear the output directory before starting the collector")
+}
+
 type Config struct {
-	ParentChainReader           headerreader.Config `koanf:"parent-chain-reader" reload:"hot"`
-	Sequencer                   SequencerConfig     `koanf:"sequencer" reload:"hot"`
-	RecordingDatabase           BlockRecorderConfig `koanf:"recording-database"`
-	TxPreChecker                TxPreCheckerConfig  `koanf:"tx-pre-checker" reload:"hot"`
-	Forwarder                   ForwarderConfig     `koanf:"forwarder"`
-	ForwardingTarget            string              `koanf:"forwarding-target"`
-	SecondaryForwardingTarget   []string            `koanf:"secondary-forwarding-target"`
-	Caching                     CachingConfig       `koanf:"caching"`
-	RPC                         arbitrum.Config     `koanf:"rpc"`
-	TxLookupLimit               uint64              `koanf:"tx-lookup-limit"`
-	EnablePrefetchBlock         bool                `koanf:"enable-prefetch-block"`
-	SyncMonitor                 SyncMonitorConfig   `koanf:"sync-monitor"`
-	StylusTarget                StylusTargetConfig  `koanf:"stylus-target"`
-	BlockMetadataApiCacheSize   uint64              `koanf:"block-metadata-api-cache-size"`
-	BlockMetadataApiBlocksLimit uint64              `koanf:"block-metadata-api-blocks-limit"`
-	VmTrace                     LiveTracingConfig   `koanf:"vmtrace"`
+	ParentChainReader           headerreader.Config               `koanf:"parent-chain-reader" reload:"hot"`
+	Sequencer                   SequencerConfig                   `koanf:"sequencer" reload:"hot"`
+	RecordingDatabase           BlockRecorderConfig               `koanf:"recording-database"`
+	TxPreChecker                TxPreCheckerConfig                `koanf:"tx-pre-checker" reload:"hot"`
+	Forwarder                   ForwarderConfig                   `koanf:"forwarder"`
+	ForwardingTarget            string                            `koanf:"forwarding-target"`
+	SecondaryForwardingTarget   []string                          `koanf:"secondary-forwarding-target"`
+	Caching                     CachingConfig                     `koanf:"caching"`
+	RPC                         arbitrum.Config                   `koanf:"rpc"`
+	TxIndexer                   TxIndexerConfig                   `koanf:"tx-indexer"`
+	EnablePrefetchBlock         bool                              `koanf:"enable-prefetch-block"`
+	MultigasCollector           multigascollector.CollectorConfig `koanf:"multigas-collector"`
+	SyncMonitor                 SyncMonitorConfig                 `koanf:"sync-monitor"`
+	StylusTarget                StylusTargetConfig                `koanf:"stylus-target"`
+	BlockMetadataApiCacheSize   uint64                            `koanf:"block-metadata-api-cache-size"`
+	BlockMetadataApiBlocksLimit uint64                            `koanf:"block-metadata-api-blocks-limit"`
+	VmTrace                     LiveTracingConfig                 `koanf:"vmtrace"`
 
 	forwardingTarget string
 }
@@ -124,6 +159,9 @@ func (c *Config) Validate() error {
 	if c.forwardingTarget != "" && c.Sequencer.Enable {
 		return errors.New("ForwardingTarget set and sequencer enabled")
 	}
+	if c.MultigasCollector.OutputDir != "" && c.MultigasCollector.BatchSize <= 0 {
+		return errors.New("MultigasCollector batch size must be greater than 0")
+	}
 	if err := c.StylusTarget.Validate(); err != nil {
 		return err
 	}
@@ -135,6 +173,7 @@ func (c *Config) Validate() error {
 
 func ConfigAddOptions(prefix string, f *flag.FlagSet) {
 	arbitrum.ConfigAddOptions(prefix+".rpc", f)
+	TxIndexerConfigAddOptions(prefix+".tx-indexer", f)
 	SequencerConfigAddOptions(prefix+".sequencer", f)
 	headerreader.AddOptions(prefix+".parent-chain-reader", f)
 	BlockRecorderConfigAddOptions(prefix+".recording-database", f)
@@ -143,8 +182,8 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet) {
 	AddOptionsForNodeForwarderConfig(prefix+".forwarder", f)
 	TxPreCheckerConfigAddOptions(prefix+".tx-pre-checker", f)
 	CachingConfigAddOptions(prefix+".caching", f)
+	MultigasCollectionAddOptions(prefix+".multigas-collector", f)
 	SyncMonitorConfigAddOptions(prefix+".sync-monitor", f)
-	f.Uint64(prefix+".tx-lookup-limit", ConfigDefault.TxLookupLimit, "retain the ability to lookup transactions by hash for the past N blocks (0 = all blocks)")
 	f.Bool(prefix+".enable-prefetch-block", ConfigDefault.EnablePrefetchBlock, "enable prefetching of blocks")
 	StylusTargetConfigAddOptions(prefix+".stylus-target", f)
 	f.Uint64(prefix+".block-metadata-api-cache-size", ConfigDefault.BlockMetadataApiCacheSize, "size (in bytes) of lru cache storing the blockMetadata to service arb_getRawBlockMetadata")
@@ -168,16 +207,18 @@ func LiveTracingConfigAddOptions(prefix string, f *flag.FlagSet) {
 }
 
 var ConfigDefault = Config{
-	RPC:                         arbitrum.DefaultConfig,
-	Sequencer:                   DefaultSequencerConfig,
-	ParentChainReader:           headerreader.DefaultConfig,
-	RecordingDatabase:           DefaultBlockRecorderConfig,
-	ForwardingTarget:            "",
-	SecondaryForwardingTarget:   []string{},
-	TxPreChecker:                DefaultTxPreCheckerConfig,
-	TxLookupLimit:               126_230_400, // 1 year at 4 blocks per second
-	Caching:                     DefaultCachingConfig,
-	Forwarder:                   DefaultNodeForwarderConfig,
+	RPC:                       arbitrum.DefaultConfig,
+	TxIndexer:                 DefaultTxIndexerConfig,
+	Sequencer:                 DefaultSequencerConfig,
+	ParentChainReader:         headerreader.DefaultConfig,
+	RecordingDatabase:         DefaultBlockRecorderConfig,
+	ForwardingTarget:          "",
+	SecondaryForwardingTarget: []string{},
+	TxPreChecker:              DefaultTxPreCheckerConfig,
+	Caching:                   DefaultCachingConfig,
+	MultigasCollector:         multigascollector.DefaultCollectorConfig,
+	Forwarder:                 DefaultNodeForwarderConfig,
+
 	EnablePrefetchBlock:         true,
 	StylusTarget:                DefaultStylusTargetConfig,
 	BlockMetadataApiCacheSize:   100 * 1024 * 1024,
@@ -213,12 +254,18 @@ func CreateExecutionNode(
 	l2BlockChain *core.BlockChain,
 	l1client *ethclient.Client,
 	configFetcher ConfigFetcher,
+	parentChainID *big.Int,
 	syncTillBlock uint64,
 ) (*ExecutionNode, error) {
 	config := configFetcher()
 	execEngine, err := NewExecutionEngine(l2BlockChain, syncTillBlock)
 	if config.EnablePrefetchBlock {
 		execEngine.EnablePrefetchBlock()
+	}
+	if mgtConfig := config.MultigasCollector; mgtConfig.OutputDir != "" {
+		if err := execEngine.EnableMultigasCollector(mgtConfig); err != nil {
+			return nil, fmt.Errorf("enable multigas collector: %w", err)
+		}
 	}
 	if config.Caching.DisableStylusCacheMetricsCollection {
 		execEngine.DisableStylusCacheMetricsCollection()
@@ -243,7 +290,7 @@ func CreateExecutionNode(
 
 	if config.Sequencer.Enable {
 		seqConfigFetcher := func() *SequencerConfig { return &configFetcher().Sequencer }
-		sequencer, err = NewSequencer(execEngine, parentChainReader, seqConfigFetcher)
+		sequencer, err = NewSequencer(execEngine, parentChainReader, seqConfigFetcher, parentChainID)
 		if err != nil {
 			return nil, err
 		}
@@ -300,7 +347,7 @@ func CreateExecutionNode(
 	apis := []rpc.API{{
 		Namespace: "arb",
 		Version:   "1.0",
-		Service:   NewArbAPI(txPublisher, bulkBlockMetadataFetcher),
+		Service:   NewArbAPI(txPublisher, bulkBlockMetadataFetcher, execEngine),
 		Public:    false,
 	}}
 	apis = append(apis, rpc.API{
@@ -509,15 +556,17 @@ func (n *ExecutionNode) BlockNumberToMessageIndex(blockNum uint64) containers.Pr
 	return containers.NewReadyPromise(n.ExecEngine.BlockNumberToMessageIndex(blockNum))
 }
 
-func (n *ExecutionNode) Maintenance() containers.PromiseInterface[struct{}] {
-	trieCapLimitBytes := arbmath.SaturatingUMul(uint64(n.ConfigFetcher().Caching.TrieCapLimit), 1024*1024)
-	err := n.ExecEngine.Maintenance(trieCapLimitBytes)
-	if err != nil {
-		return containers.NewReadyPromise(struct{}{}, err)
-	}
+func (n *ExecutionNode) ShouldTriggerMaintenance() containers.PromiseInterface[bool] {
+	return containers.NewReadyPromise(n.ExecEngine.ShouldTriggerMaintenance(n.ConfigFetcher().Caching.TrieTimeLimitBeforeFlushMaintenance), nil)
+}
+func (n *ExecutionNode) MaintenanceStatus() containers.PromiseInterface[*execution.MaintenanceStatus] {
+	return containers.NewReadyPromise(n.ExecEngine.MaintenanceStatus(), nil)
+}
 
-	err = n.ChainDB.Compact(nil, nil)
-	return containers.NewReadyPromise(struct{}{}, err)
+func (n *ExecutionNode) TriggerMaintenance() containers.PromiseInterface[struct{}] {
+	trieCapLimitBytes := arbmath.SaturatingUMul(uint64(n.ConfigFetcher().Caching.TrieCapLimit), 1024*1024)
+	n.ExecEngine.TriggerMaintenance(trieCapLimitBytes)
+	return containers.NewReadyPromise(struct{}{}, nil)
 }
 
 func (n *ExecutionNode) Synced(ctx context.Context) bool {

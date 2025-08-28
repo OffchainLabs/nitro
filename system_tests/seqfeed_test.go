@@ -16,6 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -55,14 +56,14 @@ func TestSequencerFeed(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builderSeq := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	builderSeq := NewNodeBuilder(ctx).DefaultConfig(t, false).DontParalellise()
 	builderSeq.nodeConfig.Feed.Output = *newBroadcasterConfigTest()
 	cleanupSeq := builderSeq.Build(t)
 	defer cleanupSeq()
 	seqInfo, seqNode, seqClient := builderSeq.L2Info, builderSeq.L2.ConsensusNode, builderSeq.L2.Client
 
 	port := testhelpers.AddrTCPPort(seqNode.BroadcastServer.ListenerAddr(), t)
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false).DontParalellise()
 	builder.nodeConfig.Feed.Input = *newBroadcastClientConfigTest(port)
 	builder.takeOwnership = false
 	cleanup := builder.Build(t)
@@ -93,11 +94,10 @@ func TestSequencerFeed(t *testing.T) {
 }
 
 func TestRelayedSequencerFeed(t *testing.T) {
-	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builderSeq := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	builderSeq := NewNodeBuilder(ctx).DefaultConfig(t, false).DontParalellise()
 	builderSeq.nodeConfig.Feed.Output = *newBroadcasterConfigTest()
 	cleanupSeq := builderSeq.Build(t)
 	defer cleanupSeq()
@@ -120,7 +120,7 @@ func TestRelayedSequencerFeed(t *testing.T) {
 	defer currentRelay.StopAndWait()
 
 	port = testhelpers.AddrTCPPort(currentRelay.GetListenerAddr(), t)
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false).DontParalellise()
 	builder.nodeConfig.Feed.Input = *newBroadcastClientConfigTest(port)
 	builder.takeOwnership = false
 	cleanup := builder.Build(t)
@@ -187,8 +187,6 @@ func compareAllMsgResultsFromConsensusAndExecution(
 }
 
 func testLyingSequencer(t *testing.T, dasModeStr string) {
-	t.Parallel()
-
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -198,7 +196,7 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 
 	nodeConfigA.BatchPoster.Enable = true
 	nodeConfigA.Feed.Output.Enable = false
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).DontParalellise()
 	builder.nodeConfig = nodeConfigA
 	builder.chainConfig = chainConfig
 	builder.L2Info = nil
@@ -363,7 +361,7 @@ func testBlockHashComparison(t *testing.T, blockHash *common.Hash, mustMismatch 
 
 	port := testhelpers.AddrTCPPort(wsBroadcastServer.ListenerAddr(), t)
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).DontParalellise()
 	builder.nodeConfig.Feed.Input = *newBroadcastClientConfigTest(port)
 	cleanup := builder.Build(t)
 	defer cleanup()
@@ -380,10 +378,13 @@ func testBlockHashComparison(t *testing.T, blockHash *common.Hash, mustMismatch 
 		RequestId:   nil,
 		L1BaseFee:   nil,
 	}
+	hooks := arbos.NoopSequencingHooks(types.Transactions{tx})
+	_, err = hooks.NextTxToSequence()
+	Require(t, err)
+	hooks.TxErrors = []error{nil}
 	l1IncomingMsg, err := gethexec.MessageFromTxes(
 		&l1IncomingMsgHeader,
-		types.Transactions{tx},
-		[]error{nil},
+		hooks,
 	)
 	Require(t, err)
 

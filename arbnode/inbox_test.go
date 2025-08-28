@@ -59,7 +59,15 @@ func (w *execClientWrapper) MarkFeedStart(to arbutil.MessageIndex) containers.Pr
 	return containers.NewReadyPromise(markFeedStartWithReturn(to))
 }
 
-func (w *execClientWrapper) Maintenance() containers.PromiseInterface[struct{}] {
+func (w *execClientWrapper) ShouldTriggerMaintenance() containers.PromiseInterface[bool] {
+	return containers.NewReadyPromise(false, nil)
+}
+
+func (w *execClientWrapper) MaintenanceStatus() containers.PromiseInterface[*execution.MaintenanceStatus] {
+	return containers.NewReadyPromise(&execution.MaintenanceStatus{}, nil)
+}
+
+func (w *execClientWrapper) TriggerMaintenance() containers.PromiseInterface[struct{}] {
 	return containers.NewReadyPromise(struct{}{}, nil)
 }
 
@@ -127,8 +135,8 @@ func NewTransactionStreamerForTest(t *testing.T, ctx context.Context, ownerAddre
 	arbDb := rawdb.NewMemoryDatabase()
 	initReader := statetransfer.NewMemoryInitDataReader(&initData)
 
-	cacheConfig := core.DefaultCacheConfigWithScheme(env.GetTestStateScheme())
-	bc, err := gethexec.WriteOrTestBlockChain(chainDb, cacheConfig, initReader, chainConfig, nil, nil, arbostypes.TestInitMessage, gethexec.ConfigDefault.TxLookupLimit, 0)
+	options := core.DefaultConfig().WithStateScheme(env.GetTestStateScheme())
+	bc, err := gethexec.WriteOrTestBlockChain(chainDb, options, initReader, chainConfig, nil, nil, arbostypes.TestInitMessage, &gethexec.ConfigDefault.TxIndexer, 0)
 
 	if err != nil {
 		Fail(t, err)

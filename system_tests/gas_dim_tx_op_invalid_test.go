@@ -19,7 +19,6 @@ import (
 // but the tracer should not fail
 // and the gas should still make sense
 func TestDimTxOpInvalid(t *testing.T) {
-	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -59,7 +58,6 @@ func TestDimTxOpInvalid(t *testing.T) {
 // but the revert does not stop the entire transaction
 // execution, it's inside a try/catch
 func TestDimTxOpRevertInTryCatch(t *testing.T) {
-	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -75,7 +73,6 @@ func TestDimTxOpRevertInTryCatch(t *testing.T) {
 // execution, it's inside a try/catch
 // and the revert has a memory expansion
 func TestDimTxOpRevertInTryCatchWithMemoryExpansion(t *testing.T) {
-	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -91,7 +88,6 @@ func TestDimTxOpRevertInTryCatchWithMemoryExpansion(t *testing.T) {
 // but the tracer should not fail
 // and the gas should still make sense
 func TestDimTxOpRevert(t *testing.T) {
-	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, true)
 	defer cancel()
 	defer cleanup()
@@ -129,7 +125,6 @@ func TestDimTxOpRevert(t *testing.T) {
 // but the tracer should not fail
 // and the gas should still make sense
 func TestDimTxOpRevertWithMessage(t *testing.T) {
-	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, true)
 	defer cancel()
 	defer cleanup()
@@ -163,7 +158,6 @@ func TestDimTxOpRevertWithMessage(t *testing.T) {
 }
 
 func TestDimTxOpRevertWithMemoryExpansion(t *testing.T) {
-	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, true)
 	defer cancel()
 	defer cleanup()
@@ -201,7 +195,6 @@ func TestDimTxOpRevertWithMemoryExpansion(t *testing.T) {
 // but the tracer should not fail
 // and the gas should still make sense
 func TestDimTxOpInvalidJump(t *testing.T) {
-	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()

@@ -29,7 +29,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           submodules: true
 
@@ -39,14 +39,14 @@ jobs:
       - name: Setup nodejs
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: '24'
           cache: 'yarn'
           cache-dependency-path: '**/yarn.lock'
 
       - name: Install go
         uses: actions/setup-go@v5
         with:
-          go-version: 1.23.x
+          go-version: 1.24.x
 
       - name: Install wasm-ld
         run: |
@@ -80,7 +80,8 @@ jobs:
         uses: foundry-rs/foundry-toolchain@v1
         with:
           cache: false
-        
+          version: v1.0.0
+
       - name: Install cbindgen
         run: cargo install --force cbindgen
 
@@ -115,7 +116,7 @@ jobs:
             target/lib/libbrotlicommon-static.a
             target/lib/libbrotlienc-static.a
             target/lib/libbrotlidec-static.a
-          key: ${{ runner.os }}-brotli-${{ matrix.test-mode }}-${{ hashFiles('scripts/build-brotli.sh') }}-${{ hashFiles('.github/workflows/arbitrator-ci.yaml') }}
+          key: ${{ runner.os }}-brotli-${{ matrix.test-mode }}-${{ hashFiles('scripts/build-brotli.sh') }}-${{ hashFiles('.github/workflows/arbitrator-ci.yml') }}
 
       - name: Build cbrotli-local
         if: steps.cache-cbrotli.outputs.cache-hit != 'true'
@@ -153,13 +154,13 @@ jobs:
         if: matrix.test-mode == 'pathdb'
         run: |
           echo "Running tests with Path Scheme" >> full.log
-          ${{ github.workspace }}/.github/workflows/gotestsum.sh --tags cionly --timeout 20m --cover --test_state_scheme path
+          ${{ github.workspace }}/.github/workflows/gotestsum.sh --tags cionly --timeout 90m --cover --test_state_scheme path
 
       - name: run tests without race detection and hash state scheme
         if: matrix.test-mode == 'defaults'
         run: |
           echo "Running tests with Hash Scheme" >> full.log
-          ${{ github.workspace }}/.github/workflows/gotestsum.sh --tags cionly --timeout 20m --test_state_scheme hash
+          ${{ github.workspace }}/.github/workflows/gotestsum.sh --tags cionly --timeout 60m --test_state_scheme hash
 
       - name: run redis tests
         if: matrix.test-mode == 'defaults'
@@ -207,7 +208,7 @@ jobs:
           path: full.log
 
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v2
+        uses: codecov/codecov-action@v5
         if: matrix.test-mode == 'defaults'
         with:
           fail_ci_if_error: false

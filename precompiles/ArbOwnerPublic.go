@@ -4,6 +4,8 @@
 package precompiles
 
 import (
+	"math/big"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/params"
 )
@@ -46,6 +48,12 @@ func (con ArbOwnerPublic) GetAllNativeTokenOwners(c ctx, evm mech) ([]common.Add
 	return c.State.NativeTokenOwners().AllMembers(65536)
 }
 
+// GetNativeTokenMangementFrom returns the time in epoch seconds when the
+// native token management becomes enabled
+func (con ArbOwnerPublic) GetNativeTokenManagementFrom(c ctx, evm mech) (uint64, error) {
+	return c.State.NativeTokenManagementFromTime()
+}
+
 // GetNetworkFeeAccount gets the network fee collector
 func (con ArbOwnerPublic) GetNetworkFeeAccount(c ctx, evm mech) (addr, error) {
 	return c.State.NetworkFeeAccount()
@@ -81,4 +89,9 @@ func (con ArbOwnerPublic) GetScheduledUpgrade(c ctx, evm mech) (uint64, uint64, 
 // (EIP-7623) is enabled
 func (con ArbOwnerPublic) IsCalldataPriceIncreaseEnabled(c ctx, _ mech) (bool, error) {
 	return c.State.Features().IsIncreasedCalldataPriceEnabled()
+}
+
+// Get how much L1 charges per non-zero byte of calldata
+func (con ArbOwnerPublic) GetL1CalldataPrice(c ctx, evm mech) (*big.Int, error) {
+	return c.State.L1PricingState().CalldataPrice()
 }

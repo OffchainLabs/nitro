@@ -41,13 +41,13 @@ func TestPruning(t *testing.T) {
 }
 
 func testPruning(t *testing.T, mode string, pruneParallelStorageTraversal bool) {
-	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
 	// PathScheme prunes the state trie by itself, so only HashScheme should be tested
-	builder.execConfig.Caching.StateScheme = rawdb.HashScheme
+	builder.RequireScheme(t, rawdb.HashScheme)
+
 	_ = builder.Build(t)
 	l2cleanupDone := false
 	defer func() {
@@ -78,7 +78,7 @@ func testPruning(t *testing.T, mode string, pruneParallelStorageTraversal bool) 
 		stack, err := node.New(builder.l2StackConfig)
 		Require(t, err)
 		defer stack.Close()
-		chainDb, err := stack.OpenDatabaseWithExtraOptions("l2chaindata", 0, 0, "l2chaindata/", false, conf.PersistentConfigDefault.Pebble.ExtraOptions("l2chaindata"))
+		chainDb, err := stack.OpenDatabaseWithOptions("l2chaindata", node.DatabaseOptions{MetricsNamespace: "l2chaindata/", PebbleExtraOptions: conf.PersistentConfigDefault.Pebble.ExtraOptions("l2chaindata")})
 		Require(t, err)
 		defer chainDb.Close()
 		chainDbEntriesBeforePruning := countStateEntries(chainDb)
@@ -102,7 +102,7 @@ func testPruning(t *testing.T, mode string, pruneParallelStorageTraversal bool) 
 		initConfig := conf.InitConfigDefault
 		initConfig.Prune = mode
 		initConfig.PruneParallelStorageTraversal = pruneParallelStorageTraversal
-		coreCacheConfig := gethexec.DefaultCacheConfigFor(stack, &builder.execConfig.Caching)
+		coreCacheConfig := gethexec.DefaultCacheConfigFor(&builder.execConfig.Caching)
 		persistentConfig := conf.PersistentConfigDefault
 		err = pruning.PruneChainDb(ctx, chainDb, stack, &initConfig, coreCacheConfig, &persistentConfig, builder.L1.Client, *builder.L2.ConsensusNode.DeployInfo, false)
 		Require(t, err)

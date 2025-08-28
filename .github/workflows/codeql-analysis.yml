@@ -46,7 +46,7 @@ jobs:
 
     steps:
     - name: Checkout
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
       with:
         submodules: true
 
@@ -54,16 +54,16 @@ jobs:
       run: sudo apt update && sudo apt install -y wabt
 
     - name: Setup nodejs
-      uses: actions/setup-node@v3
+      uses: actions/setup-node@v4
       with:
-        node-version: '18'
+        node-version: '24'
         cache: 'yarn'
         cache-dependency-path: '**/yarn.lock'
 
     - name: Install go
-      uses: actions/setup-go@v4
+      uses: actions/setup-go@v5
       with:
-        go-version: 1.23.x
+        go-version: 1.24.x
 
     - name: Install wasm-ld
       run: |
@@ -94,12 +94,13 @@ jobs:
       uses: foundry-rs/foundry-toolchain@v1
       with:
         cache: false
+        version: v1.0.0
         
     - name: Install cbindgen
       run: cargo install --force cbindgen
 
     - name: Cache Build Products
-      uses: actions/cache@v3
+      uses: actions/cache@v4
       with:
         path: |
           ~/.cache/go-build
@@ -108,13 +109,13 @@ jobs:
 
     - name: Cache wabt build
       id: cache-wabt
-      uses: actions/cache@v3
+      uses: actions/cache@v4
       with:
         path: ~/wabt-prefix
         key: ${{ runner.os }}-wabt-codeql-${{ matrix.language }}-${{ env.WABT_VERSION }}
 
     - name: Cache cbrotli
-      uses: actions/cache@v3
+      uses: actions/cache@v4
       id: cache-cbrotli
       with:
         path: |
@@ -123,11 +124,11 @@ jobs:
           target/lib/libbrotlicommon-static.a
           target/lib/libbrotlienc-static.a
           target/lib/libbrotlidec-static.a
-        key: ${{ runner.os }}-brotli-${{ matrix.language }}-${{ hashFiles('scripts/build-brotli.sh') }}-${{ hashFiles('.github/workflows/arbitrator-ci.yaml') }}-codeql
-        restore-keys: ${{ runner.os }}-brotli-${{ matrix.language }}-${{ hashFiles('scripts/build-brotli.sh') }}-${{ hashFiles('.github/workflows/arbitrator-ci.yaml') }}
+        key: ${{ runner.os }}-brotli-${{ matrix.language }}-${{ hashFiles('scripts/build-brotli.sh') }}-${{ hashFiles('.github/workflows/arbitrator-ci.yml') }}-codeql
+        restore-keys: ${{ runner.os }}-brotli-${{ matrix.language }}-${{ hashFiles('scripts/build-brotli.sh') }}-${{ hashFiles('.github/workflows/arbitrator-ci.yml') }}
 
     - name: Cache Rust Build Products
-      uses: actions/cache@v3
+      uses: actions/cache@v4
       with:
         path: |
           ~/.cargo/
@@ -161,7 +162,7 @@ jobs:
       run: ./scripts/build-brotli.sh -w -d
 
     - name: Build Nitro for CodeQL
-      run: make build -j
+      run: make build
 
     # ℹ️ Command-line programs to run using the OS shell.
     # 📚 See https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions#jobsjob_idstepsrun

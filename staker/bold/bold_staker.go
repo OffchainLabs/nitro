@@ -16,7 +16,9 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/node"
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
 
 	protocol "github.com/offchainlabs/bold/chain-abstraction"
@@ -24,18 +26,24 @@ import (
 	challengemanager "github.com/offchainlabs/bold/challenge-manager"
 	boldtypes "github.com/offchainlabs/bold/challenge-manager/types"
 	l2stateprovider "github.com/offchainlabs/bold/layer2-state-provider"
-	"github.com/offchainlabs/bold/solgen/go/challengeV2gen"
-	boldrollup "github.com/offchainlabs/bold/solgen/go/rollupgen"
 	"github.com/offchainlabs/bold/util"
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/daprovider"
+	"github.com/offchainlabs/nitro/solgen/go/challengeV2gen"
+	boldrollup "github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/staker"
 	legacystaker "github.com/offchainlabs/nitro/staker/legacy"
+	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
 	"github.com/offchainlabs/nitro/validator/server_arb"
+)
+
+var (
+	boldStakerBalanceGauge      = metrics.NewRegisteredGaugeFloat64("arb/staker/balance", nil)
+	boldStakerAmountStakedGauge = metrics.NewRegisteredGauge("arb/staker/amount_staked", nil)
 )
 
 var assertionCreatedId common.Hash
@@ -197,13 +205,14 @@ type BOLDStaker struct {
 	blockValidator     *staker.BlockValidator
 	rollupAddress      common.Address
 	l1Reader           *headerreader.HeaderReader
-	client             protocol.ChainBackend
+	client             *util.BackendWrapper
 	callOpts           bind.CallOpts
 	wallet             legacystaker.ValidatorWalletInterface
 	stakedNotifiers    []legacystaker.LatestStakedNotifier
 	confirmedNotifiers []legacystaker.LatestConfirmedNotifier
 	inboxTracker       staker.InboxTrackerInterface
 	inboxStreamer      staker.TransactionStreamerInterface
+	fatalErr           chan<- error
 }
 
 func NewBOLDStaker(
@@ -224,6 +233,7 @@ func NewBOLDStaker(
 	inboxStreamer staker.TransactionStreamerInterface,
 	inboxReader staker.InboxReaderInterface,
 	dapValidator daprovider.Validator,
+	fatalErr chan<- error,
 ) (*BOLDStaker, error) {
 	if err := config.Validate(); err != nil {
 		return nil, err
@@ -262,6 +272,7 @@ func NewBOLDStaker(
 		confirmedNotifiers: confirmedNotifiers,
 		inboxTracker:       inboxTracker,
 		inboxStreamer:      inboxStreamer,
+		fatalErr:           fatalErr,
 	}, nil
 }
 
@@ -322,6 +333,10 @@ func (b *BOLDStaker) Start(ctxIn context.Context) {
 		confirmedMsgCount, confirmedGlobalState, err := b.getLatestState(ctx, true)
 		if err != nil {
 			log.Error("staker: error checking latest confirmed", "err", err)
+			if errors.Is(err, staker.ErrGlobalStateNotInChain) {
+				b.fatalErr <- err
+			}
+			return b.config.AssertionPostingInterval
 		}
 
 		agreedMsgCount, agreedGlobalState, err := b.getLatestState(ctx, false)
@@ -346,8 +361,41 @@ func (b *BOLDStaker) Start(ctxIn context.Context) {
 				notifier.UpdateLatestConfirmed(confirmedMsgCount, *confirmedGlobalState)
 			}
 		}
+		err = b.updateStakerBalanceMetric(ctx)
+		if err != nil {
+			log.Warn("error updating staker balance metric", "err", err)
+		}
 		return b.config.AssertionPostingInterval
 	})
+}
+
+func (b *BOLDStaker) updateStakerBalanceMetric(ctx context.Context) error {
+	walletAddressOrZero := b.wallet.AddressOrZero()
+	if walletAddressOrZero != (common.Address{}) {
+		rollupUserLogic, err := boldrollup.NewRollupUserLogic(b.rollupAddress, b.client)
+		if err != nil {
+			return fmt.Errorf("error creating rollup user logic: %w", err)
+		}
+		amountStaked, err := rollupUserLogic.AmountStaked(&bind.CallOpts{Context: ctx}, walletAddressOrZero)
+		if err != nil {
+			return fmt.Errorf("error getting amount staked: %w", err)
+		}
+		boldStakerAmountStakedGauge.Update(arbmath.BigDivByUint(amountStaked, params.Ether).Int64())
+	} else {
+		boldStakerAmountStakedGauge.Update(0)
+	}
+
+	txSenderAddress := b.wallet.TxSenderAddress()
+	if txSenderAddress != nil {
+		balance, err := b.client.BalanceAt(ctx, *txSenderAddress, nil)
+		if err != nil {
+			return fmt.Errorf("error getting balance for %v: %w", txSenderAddress, err)
+		}
+		boldStakerBalanceGauge.Update(arbmath.BalancePerEther(balance))
+	} else {
+		boldStakerBalanceGauge.Update(0)
+	}
+	return nil
 }
 
 func (b *BOLDStaker) getLatestState(ctx context.Context, confirmed bool) (arbutil.MessageIndex, *validator.GoGlobalState, error) {
@@ -372,7 +420,8 @@ func (b *BOLDStaker) getLatestState(ctx context.Context, confirmed bool) (arbuti
 		if errors.Is(err, staker.ErrGlobalStateNotInChain) {
 			return 0, nil, fmt.Errorf("latest %s assertion of %v not yet in our node: %w", assertionType, globalState, err)
 		}
-		return 0, nil, fmt.Errorf("error getting message count: %w", err)
+		log.Error("error getting message count", "err", err)
+		return 0, nil, nil
 	}
 
 	if !caughtUp {
@@ -382,7 +431,8 @@ func (b *BOLDStaker) getLatestState(ctx context.Context, confirmed bool) (arbuti
 
 	processedCount, err := b.inboxStreamer.GetProcessedMessageCount()
 	if err != nil {
-		return 0, nil, err
+		log.Error("error getting processed message count", "err", err)
+		return 0, nil, nil
 	}
 
 	if processedCount < count {

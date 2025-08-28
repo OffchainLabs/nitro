@@ -26,17 +26,19 @@ func NewDBConverter(config *DBConvConfig) *DBConverter {
 }
 
 func openDB(config *DBConfig, name string, readonly bool) (ethdb.Database, error) {
-	db, err := node.OpenDatabase(node.OpenOptions{
-		Type:      config.DBEngine,
+	db, err := node.OpenDatabase(node.InternalOpenOptions{
+		DbEngine:  config.DBEngine,
 		Directory: config.Data,
-		// we don't open freezer, it doesn't need to be converted as it has format independent of db-engine
-		// note: user needs to handle copying/moving the ancient directory
-		AncientsDirectory:  "",
-		Namespace:          config.Namespace,
-		Cache:              config.Cache,
-		Handles:            config.Handles,
-		ReadOnly:           readonly,
-		PebbleExtraOptions: config.Pebble.ExtraOptions(name),
+		DatabaseOptions: node.DatabaseOptions{
+			// we don't open freezer, it doesn't need to be converted as it has format independent of db-engine
+			// note: user needs to handle copying/moving the ancient directory
+			AncientsDirectory:  "",
+			MetricsNamespace:   config.Namespace,
+			Cache:              config.Cache,
+			Handles:            config.Handles,
+			ReadOnly:           readonly,
+			PebbleExtraOptions: config.Pebble.ExtraOptions(name),
+		},
 	})
 	if err != nil {
 		return nil, err

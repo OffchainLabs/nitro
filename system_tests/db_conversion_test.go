@@ -20,8 +20,7 @@ import (
 func TestDatabaseConversion(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
-	builder.useFreezer = false
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).DontParalellise()
 	builder.l2StackConfig.DBEngine = "leveldb"
 	builder.l2StackConfig.Name = "testl2"
 	// currently only HashScheme supports archive mode
@@ -30,12 +29,7 @@ func TestDatabaseConversion(t *testing.T) {
 	}
 	cleanup := builder.Build(t)
 	dataDir := builder.dataDir
-	cleanupDone := false
-	defer func() { // TODO we should be able to call cleanup twice, rn it gets stuck then
-		if !cleanupDone {
-			cleanup()
-		}
-	}()
+	defer cleanup()
 	builder.L2Info.GenerateAccount("User2")
 	var txs []*types.Transaction
 	for i := uint64(0); i < 200; i++ {
@@ -53,8 +47,7 @@ func TestDatabaseConversion(t *testing.T) {
 	user2Balance := builder.L2.GetBalance(t, builder.L2Info.GetAddress("User2"))
 	ownerBalance := builder.L2.GetBalance(t, builder.L2Info.GetAddress("Owner"))
 
-	cleanup()
-	cleanupDone = true
+	builder.L2.cleanup()
 	t.Log("stopped first node")
 
 	instanceDir := filepath.Join(dataDir, builder.l2StackConfig.Name)
@@ -67,6 +60,12 @@ func TestDatabaseConversion(t *testing.T) {
 		convConfig.Dst.Data = path.Join(instanceDir, dbname)
 		conv := dbconv.NewDBConverter(&convConfig)
 		err = conv.Convert(ctx)
+		Require(t, err)
+		// move ancients to the destination directory
+		err = os.Rename(
+			path.Join(instanceDir, fmt.Sprintf("%s_old", dbname), "ancient"),
+			path.Join(instanceDir, dbname, "ancient"),
+		)
 		Require(t, err)
 	}
 

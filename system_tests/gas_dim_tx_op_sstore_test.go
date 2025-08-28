@@ -27,7 +27,6 @@ import (
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: SSTORE cold slot from 0 to 0 (no state change).
 func TestDimTxOpSstoreColdZeroToZero(t *testing.T) {
-	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -42,7 +41,6 @@ func TestDimTxOpSstoreColdZeroToZero(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: SSTORE cold slot from 0 to non-zero (state growth).
 func TestDimTxOpSstoreColdZeroToNonZeroValue(t *testing.T) {
-	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -57,7 +55,6 @@ func TestDimTxOpSstoreColdZeroToNonZeroValue(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: SSTORE cold slot from non-zero to 0 (state cleanup with refund).
 func TestDimTxOpSstoreColdNonZeroValueToZero(t *testing.T) {
-	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -72,7 +69,6 @@ func TestDimTxOpSstoreColdNonZeroValueToZero(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: SSTORE cold slot from non-zero to same non-zero value (no state change).
 func TestDimTxOpSstoreColdNonZeroToSameNonZeroValue(t *testing.T) {
-	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -87,7 +83,6 @@ func TestDimTxOpSstoreColdNonZeroToSameNonZeroValue(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: SSTORE cold slot from non-zero to different non-zero value (state update).
 func TestDimTxOpSstoreColdNonZeroToDifferentNonZeroValue(t *testing.T) {
-	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -102,7 +97,6 @@ func TestDimTxOpSstoreColdNonZeroToDifferentNonZeroValue(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: SSTORE warm slot from 0 to 0 (no state change).
 func TestDimTxOpSstoreWarmZeroToZero(t *testing.T) {
-	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -117,7 +111,6 @@ func TestDimTxOpSstoreWarmZeroToZero(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: SSTORE warm slot from 0 to non-zero (state growth).
 func TestDimTxOpSstoreWarmZeroToNonZeroValue(t *testing.T) {
-	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -132,7 +125,6 @@ func TestDimTxOpSstoreWarmZeroToNonZeroValue(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: SSTORE warm slot from non-zero to 0 (state cleanup with refund).
 func TestDimTxOpSstoreWarmNonZeroValueToZero(t *testing.T) {
-	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -147,7 +139,6 @@ func TestDimTxOpSstoreWarmNonZeroValueToZero(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: SSTORE warm slot from non-zero to same non-zero value (no state change).
 func TestDimTxOpSstoreWarmNonZeroToSameNonZeroValue(t *testing.T) {
-	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -162,7 +153,6 @@ func TestDimTxOpSstoreWarmNonZeroToSameNonZeroValue(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: SSTORE warm slot from non-zero to different non-zero value (state update).
 func TestDimTxOpSstoreWarmNonZeroToDifferentNonZeroValue(t *testing.T) {
-	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -177,7 +167,6 @@ func TestDimTxOpSstoreWarmNonZeroToDifferentNonZeroValue(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: Multiple SSTORE operations on warm slot: non-zero -> non-zero -> different non-zero.
 func TestDimTxOpSstoreMultipleWarmNonZeroToNonZeroToNonZero(t *testing.T) {
-	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -192,7 +181,6 @@ func TestDimTxOpSstoreMultipleWarmNonZeroToNonZeroToNonZero(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: Multiple SSTORE operations on warm slot: non-zero -> non-zero -> same non-zero (with refund).
 func TestDimTxOpSstoreMultipleWarmNonZeroToNonZeroToSameNonZero(t *testing.T) {
-	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -207,7 +195,6 @@ func TestDimTxOpSstoreMultipleWarmNonZeroToNonZeroToSameNonZero(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: Multiple SSTORE operations on warm slot: non-zero -> zero -> non-zero (refund adjustment).
 func TestDimTxOpSstoreMultipleWarmNonZeroToZeroToNonZero(t *testing.T) {
-	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -222,7 +209,6 @@ func TestDimTxOpSstoreMultipleWarmNonZeroToZeroToNonZero(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: Multiple SSTORE operations on warm slot: non-zero -> zero -> same non-zero (refund adjustment).
 func TestDimTxOpSstoreMultipleWarmNonZeroToZeroToSameNonZero(t *testing.T) {
-	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -237,7 +223,6 @@ func TestDimTxOpSstoreMultipleWarmNonZeroToZeroToSameNonZero(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: Multiple SSTORE operations on warm slot: zero -> non-zero -> different non-zero.
 func TestDimTxOpSstoreMultipleWarmZeroToNonZeroToNonZero(t *testing.T) {
-	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
@@ -252,7 +237,6 @@ func TestDimTxOpSstoreMultipleWarmZeroToNonZeroToNonZero(t *testing.T) {
 // and that all gas dimension components sum to the total gas consumed.
 // Scenario: Multiple SSTORE operations on warm slot: zero -> non-zero -> zero (with refund).
 func TestDimTxOpSstoreMultipleWarmZeroToNonZeroBackToZero(t *testing.T) {
-	t.Parallel()
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
