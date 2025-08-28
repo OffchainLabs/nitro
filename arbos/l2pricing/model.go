@@ -19,6 +19,7 @@ const InitialMinimumBaseFeeWei = params.GWei / 10
 const InitialBaseFeeWei = InitialMinimumBaseFeeWei
 const InitialPricingInertia = 102
 const InitialBacklogTolerance = 10
+const InitialPerTxGasLimitV0 uint64 = 32 * 1000000
 
 func (ps *L2PricingState) AddToGasPool(gas int64) error {
 	backlog, err := ps.GasBacklog()
