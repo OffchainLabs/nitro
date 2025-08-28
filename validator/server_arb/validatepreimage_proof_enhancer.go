@@ -13,29 +13,29 @@ import (
 	"github.com/offchainlabs/nitro/staker"
 )
 
-type ValidatePreimageProofEnhancer struct {
+type ValidateCertificateProofEnhancer struct {
 	daValidator  daprovider.Validator
 	inboxTracker staker.InboxTrackerInterface
 	inboxReader  staker.InboxReaderInterface
 }
 
-func NewValidatePreimageProofEnhancer(
+func NewValidateCertificateProofEnhancer(
 	daValidator daprovider.Validator,
 	inboxTracker staker.InboxTrackerInterface,
 	inboxReader staker.InboxReaderInterface,
-) *ValidatePreimageProofEnhancer {
-	return &ValidatePreimageProofEnhancer{
+) *ValidateCertificateProofEnhancer {
+	return &ValidateCertificateProofEnhancer{
 		daValidator:  daValidator,
 		inboxTracker: inboxTracker,
 		inboxReader:  inboxReader,
 	}
 }
 
-func (e *ValidatePreimageProofEnhancer) EnhanceProof(ctx context.Context, messageNum arbutil.MessageIndex, proof []byte) ([]byte, error) {
+func (e *ValidateCertificateProofEnhancer) EnhanceProof(ctx context.Context, messageNum arbutil.MessageIndex, proof []byte) ([]byte, error) {
 	// Extract the hash and marker from the proof
 	// Format: [...proof..., certHash(32), marker(1)]
 	if len(proof) < 33 {
-		return nil, fmt.Errorf("proof too short for ValidatePreimage enhancement: %d bytes", len(proof))
+		return nil, fmt.Errorf("proof too short for ValidateCertificate enhancement: %d bytes", len(proof))
 	}
 
 	markerPos := len(proof) - 1
@@ -43,7 +43,7 @@ func (e *ValidatePreimageProofEnhancer) EnhanceProof(ctx context.Context, messag
 
 	// Verify marker
 	if proof[markerPos] != MarkerCustomDAValidate {
-		return nil, fmt.Errorf("invalid marker for ValidatePreimage enhancer: 0x%02x", proof[markerPos])
+		return nil, fmt.Errorf("invalid marker for ValidateCertificate enhancer: 0x%02x", proof[markerPos])
 	}
 
 	// Extract certificate hash

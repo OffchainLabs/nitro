@@ -19,7 +19,7 @@ extern "C" {
     pub fn wavm_read_customda_preimage(ptr: *mut u8, offset: usize) -> usize;
     pub fn wavm_read_inbox_message(msg_num: u64, ptr: *mut u8, offset: usize) -> usize;
     pub fn wavm_read_delayed_inbox_message(seq_num: u64, ptr: *mut u8, offset: usize) -> usize;
-    pub fn wavm_validate_preimage(ptr: *const u8, preimage_type: u8) -> u32;
+    pub fn wavm_validate_certificate(ptr: *const u8, preimage_type: u8) -> u32;
 }
 
 #[repr(C, align(256))]
@@ -147,9 +147,9 @@ pub unsafe extern "C" fn wavmio__resolveTypedPreimage(
     read
 }
 
-/// Validates that a preimage exists for the given hash.
+/// Validates a CustomDA certificate, other preimage types are always valid.
 #[no_mangle]
-pub unsafe extern "C" fn wavmio__validatePreimage(preimage_type: u8, hash_ptr: GuestPtr) -> u32 {
+pub unsafe extern "C" fn wavmio__validateCertificate(preimage_type: u8, hash_ptr: GuestPtr) -> u32 {
     let mut our_buf = MemoryLeaf([0u8; 32]);
     let hash = STATIC_MEM.read_slice(hash_ptr, 32);
     our_buf.copy_from_slice(&hash);
@@ -157,6 +157,6 @@ pub unsafe extern "C" fn wavmio__validatePreimage(preimage_type: u8, hash_ptr: G
     let our_ptr = our_buf.as_mut_ptr();
     assert_eq!(our_ptr as usize % 32, 0);
 
-    let result = wavm_validate_preimage(our_ptr, preimage_type);
+    let result = wavm_validate_certificate(our_ptr, preimage_type);
     result
 }

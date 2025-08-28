@@ -145,7 +145,7 @@ func ResolveTypedPreimage(ty arbutil.PreimageType, hash common.Hash) ([]byte, er
 	return val, nil
 }
 
-func ValidatePreimage(ty arbutil.PreimageType, hash common.Hash) bool {
+func ValidateCertificate(ty arbutil.PreimageType, hash common.Hash) bool {
 	// In stub mode, check if the preimage exists
 	_, ok := preimages[hash]
 	return ok

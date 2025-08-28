@@ -74,9 +74,9 @@ func ResolveTypedPreimage(ty arbutil.PreimageType, hash common.Hash) ([]byte, er
 	}), nil
 }
 
-func ValidatePreimage(ty arbutil.PreimageType, hash common.Hash) bool {
+func ValidateCertificate(ty arbutil.PreimageType, hash common.Hash) bool {
 	hashUnsafe := unsafe.Pointer(&hash[0])
-	return validatePreimage(uint32(ty), hashUnsafe) != 0
+	return validateCertificate(uint32(ty), hashUnsafe) != 0
 }
 
 func SetLastBlockHash(hash [32]byte) {

@@ -185,8 +185,8 @@ func (r *CustomDAPreimageReader) RecoverPayloadFromBatch(
 	// Hash the entire sequencer message to get the preimage key
 	customDAPreimageHash := crypto.Keccak256Hash(certificate)
 
-	// Validate the preimage exists before trying to read it
-	if !wavmio.ValidatePreimage(arbutil.CustomDAPreimageType, customDAPreimageHash) {
+	// Validate the certificate before trying to read it
+	if !wavmio.ValidateCertificate(arbutil.CustomDAPreimageType, customDAPreimageHash) {
 		// Preimage is not available - treat as invalid batch
 		log.Info("CustomDA preimage validation failed, treating as invalid batch",
 			"batchNum", batchNum,

@@ -2465,7 +2465,7 @@ impl Machine {
                         self.global_state.u64_vals[idx] = val
                     }
                 }
-                Opcode::ValidatePreimage => {
+                Opcode::ValidateCertificate => {
                     let preimage_type = value_stack.pop().unwrap().assume_u32();
                     let hash_ptr = value_stack.pop().unwrap().assume_u32();
 
@@ -2510,9 +2510,8 @@ impl Machine {
                         error!();
                     };
 
-                    // For CustomDA type, ValidatePreimage should have been called first
-                    // ReadPreImage assumes preimages are valid and available
-                    // The preimage_resolver only contains pre-validated preimages
+                    // For CustomDA type, ValidateCertificate should have been called first
+                    // ReadPreImage assumes certificates are valid and preimages are available.
 
                     let Some(preimage) =
                         self.preimage_resolver.get(self.context, preimage_ty, hash)
@@ -3123,8 +3122,9 @@ impl Machine {
                                     .expect("Failed to generate KZG preimage proof");
                             }
                             PreimageType::CustomDA => {
+                                // We do something special here; we don't create the final proof.
                                 // For CustomDA preimages, signal that this proof needs enhancement
-                                // Set the enhancement flag (0x80) on the machine status byte
+                                // Set the enhancement flag (0x80) on the machine status byte.
                                 data[0] |= 0x80;
 
                                 // Append hash and offset for the enhancer to use
@@ -3133,6 +3133,8 @@ impl Machine {
 
                                 // Append marker to identify this as CustomDA ReadPreimage
                                 data.push(0xDA);
+                                // The enhancement flag and marker data will be stripped out of
+                                // the proof by the enhancer.
                             }
                         }
                     } else if next_inst.opcode == Opcode::ReadInboxMessage {
@@ -3194,8 +3196,8 @@ impl Machine {
                 prove_pop!(self.get_data_stacks(), hash_value_stack);
                 prove_pop!(self.get_frame_stacks(), hash_stack_frame_stack);
             }
-            ValidatePreimage => {
-                // ValidatePreimage reads a hash from memory, so we need to prove that memory access
+            ValidateCertificate => {
+                // ValidateCertificate reads a hash from memory, so we need to prove that memory access
                 let ptr = value_stack.get(value_stack.len() - 2).unwrap().assume_u32();
                 if let Some(mut idx) = usize::try_from(ptr).ok().filter(|x| x % 32 == 0) {
                     // Prove the leaf this index is in
@@ -3204,13 +3206,15 @@ impl Machine {
                     out!(mem_merkle.prove(idx).unwrap_or_default());
                 }
 
-                // Check if this is a CustomDA ValidatePreimage that needs enhancement
+                // Check if this is a CustomDA ValidateCertificate that needs enhancement
                 let preimage_type = value_stack.get(value_stack.len() - 1).unwrap().assume_u32();
                 if let Ok(preimage_ty) =
                     PreimageType::try_from(u8::try_from(preimage_type).unwrap_or(255))
                 {
                     if preimage_ty == PreimageType::CustomDA {
-                        // Signal that this proof needs enhancement
+                        // We do something special here; we don't create the final proof.
+                        // For CustomDA preimages, signal that this proof needs enhancement
+                        // Set the enhancement flag (0x80) on the machine status byte.
                         data[0] |= 0x80;
 
                         // Load the hash from memory
@@ -3218,8 +3222,10 @@ impl Machine {
                             // Append hash for the enhancer to use
                             data.extend(hash.0);
 
-                            // Append marker to identify this as CustomDA ValidatePreimage
+                            // Append marker to identify this as CustomDA ValidateCertificate
                             data.push(0xDB);
+                            // The enhancement flag and marker data will be stripped out of
+                            // the proof by the enhancer.
                         }
                     }
                 }

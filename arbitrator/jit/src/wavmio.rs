@@ -200,7 +200,7 @@ pub fn resolve_preimage_impl(
     Ok(read.len() as u32)
 }
 
-pub fn validate_preimage(
+pub fn validate_certificate(
     mut env: WasmEnvMut,
     preimage_type: u8,
     hash_ptr: GuestPtr,

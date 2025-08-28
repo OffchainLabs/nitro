@@ -239,7 +239,7 @@ func NewBOLDStaker(
 		)
 		enhancerManager.RegisterEnhancer(
 			server_arb.MarkerCustomDAValidate,
-			server_arb.NewValidatePreimageProofEnhancer(dapValidator, inboxTracker, inboxReader),
+			server_arb.NewValidateCertificateProofEnhancer(dapValidator, inboxTracker, inboxReader),
 		)
 		proofEnhancer = enhancerManager
 	}
