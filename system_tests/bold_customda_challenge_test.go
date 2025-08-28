@@ -74,6 +74,12 @@ func TestChallengeProtocolBOLDCustomDA_UntrustedSignerCert(t *testing.T) {
 	testChallengeProtocolBOLDCustomDA(t, UntrustedSignerCert)
 }
 
+// Test with valid certificate but validator claims it's invalid
+// Evil validator will fail at OSP with "CLAIMED_INVALID_BUT_VALID"
+func TestChallengeProtocolBOLDCustomDA_ValidCertClaimedInvalid(t *testing.T) {
+	testChallengeProtocolBOLDCustomDA(t, ValidCertClaimedInvalid)
+}
+
 // createReferenceDAProviderServer creates and starts a ReferenceDA provider server with automatic port selection
 func createReferenceDAProviderServer(t *testing.T, ctx context.Context, l1Client *ethclient.Client, validatorAddr common.Address, dataSigner signature.DataSignerFunc) (*http.Server, string) {
 	// Create ReferenceDA components
@@ -669,12 +675,15 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, 
 		evilEnhancer.SetMapping(goodCertKeccak, evilCert.Serialize())
 	}
 
+	// For ValidCertClaimedInvalid strategy, configure provider to lie about this specific valid cert
+	if evilStrategy == ValidCertClaimedInvalid {
+		certKeccak := crypto.Keccak256Hash(certificate2)
+		evilProvider.SetClaimCertInvalid(certKeccak)
+		t.Logf("Configured evil provider to claim certificate %s is invalid", certKeccak.Hex())
+	}
+
 	// Now post the certificate to L1 and sync to both nodes
 	receipt := postBatchToL1(t, ctx, l1client, &sequencerTxOpts, seqInboxBinding, certificate2)
-
-	// The nodes will process a different number of messages.
-	// Node A: 5 messages (2nd batch was invalid and not read)
-	// Node B: 15 messages
 	syncBatchToNode(t, ctx, l1client, l2nodeA, seqInbox, receipt, "")
 	syncBatchToNode(t, ctx, l1client, l2nodeB, seqInbox, receipt, "")
 
@@ -725,6 +734,8 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, 
 		PrintSequencerInboxMessage(t, "Node A - Batch 2", msgA2)
 		if evilStrategy == UntrustedSignerCert {
 			t.Logf("  Note: Node A rejected this batch due to untrusted certificate signer")
+		} else if evilStrategy == ValidCertClaimedInvalid {
+			t.Logf("  Note: Node B rejected this batch because evil validator claimed valid cert was invalid")
 		}
 	}
 
@@ -734,6 +745,8 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, 
 	} else {
 		if evilStrategy == UntrustedSignerCert {
 			PrintSequencerInboxMessage(t, "Node B - Batch 2 (evil provider accepted untrusted cert)", msgB2)
+		} else if evilStrategy == ValidCertClaimedInvalid {
+			PrintSequencerInboxMessage(t, "Node B - Batch 2 (evil provider claimed valid cert was invalid)", msgB2)
 		}
 	}
 
@@ -743,7 +756,7 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, 
 			t.Errorf("Batch 2: Messages should be identical with shared inbox")
 		} else {
 			t.Logf("✓ Batch 2: Messages are identical (as expected with shared inbox)")
-			if evilStrategy != UntrustedSignerCert {
+			if evilStrategy != UntrustedSignerCert && evilStrategy != ValidCertClaimedInvalid {
 				t.Logf("  Note: DA provider will return different data for same certificate!")
 			}
 		}
@@ -765,15 +778,21 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, 
 
 	t.Logf("Node A batch count %d, msgs %d", bcA, msgA)
 	t.Logf("Node B batch count %d, msgs %d", bcB, msgB)
-	if evilStrategy != UntrustedSignerCert {
-		if msgA != msgB {
-			t.Fatalf("FATAL: Expected Node A message count %d to be equal to Node B message count %d", msgA, msgB)
-		}
-	} else {
+	if evilStrategy == UntrustedSignerCert {
 		if msgA != (msgB-10)+1 {
-			// There were 10 messages in the batch with the untrusted cert.
+			// There were 10 messages in the batch with the untrusted/invalid cert.
 			// Node A treats the invalid batch as if it contained a single virtual delayed message.
 			t.Fatalf("FATAL: Expected Node A message count %d to be 9 less than Node B message count %d", msgA, msgB)
+		}
+	} else if evilStrategy == ValidCertClaimedInvalid {
+		if msgB != (msgA-10)+1 {
+			// There were 10 messages in the batch that the evil validator said was invalid.
+			// The batch is valid for Node A, and node B treats it as if it contained a single virtual delayed message.
+			t.Fatalf("FATAL: Expected Node A message count %d to be 9 more than Node B message count %d", msgA, msgB)
+		}
+	} else {
+		if msgA != msgB {
+			t.Fatalf("FATAL: Expected Node A message count %d to be equal to Node B message count %d", msgA, msgB)
 		}
 	}
 
@@ -796,6 +815,14 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, 
 			// Node A should have totalMessagesPosted - numMessagesPerBatch messages
 			nodeAExpected := uint64(totalMessagesPosted-numMessagesPerBatch) + 1
 			nodeBExpected := uint64(totalMessagesPosted)
+			isCaughtUp = nodeALatest.Number.Uint64() == nodeAExpected && nodeBLatest.Number.Uint64() == nodeBExpected
+			shouldDiverge = true // Nodes should always diverge in this case
+
+		} else if evilStrategy == ValidCertClaimedInvalid {
+			// For ValidCertClaimedInvalid, Node B processes fewer messages
+			// Node A should have totalMessagesPosted - numMessagesPerBatch messages
+			nodeAExpected := uint64(totalMessagesPosted)
+			nodeBExpected := uint64(totalMessagesPosted-numMessagesPerBatch) + 1
 			isCaughtUp = nodeALatest.Number.Uint64() == nodeAExpected && nodeBLatest.Number.Uint64() == nodeBExpected
 			shouldDiverge = true // Nodes should always diverge in this case
 		} else {
@@ -822,10 +849,10 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, 
 	totalBatches := totalBatchesBig.Uint64()
 
 	// Wait until the validators have validated the batches.
-	// For UntrustedSignerCert, validator A validates one less batch
+	// For UntrustedSignerCert and ValidCertClaimedInvalid, validator A validates one less batch
 	validatorATarget := totalBatches - 1
 	if evilStrategy == UntrustedSignerCert {
-		validatorATarget = totalBatches - 2 // A skips the untrusted cert batch
+		validatorATarget = totalBatches - 2 // A skips the untrusted/invalid cert batch
 	}
 
 	for {

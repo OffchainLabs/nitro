@@ -18,6 +18,7 @@ const (
 	EvilDataGoodCert                        // Wrong data, correct cert
 	EvilDataEvilCert                        // Wrong data, matching evil cert
 	UntrustedSignerCert                     // Valid format cert signed by untrusted key
+	ValidCertClaimedInvalid                 // Valid cert, but validator claims invalid
 )
 
 // EvilCustomDAProofEnhancer wraps the standard CustomDAProofEnhancer to inject evil certificates

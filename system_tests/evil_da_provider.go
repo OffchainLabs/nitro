@@ -8,6 +8,7 @@ package arbtest
 import (
 	"context"
 	"encoding/binary"
+	"fmt"
 	"sync"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -29,15 +30,17 @@ type EvilDAProvider struct {
 	validator              daprovider.Validator
 	evilMappings           map[common.Hash][]byte // sha256 dataHash -> evil data
 	untrustedSignerAddress *common.Address        // Address of untrusted signer to lie about
+	invalidClaimCerts      map[common.Hash]bool   // Keccak256 of certs to claim are invalid
 	mu                     sync.RWMutex
 }
 
 func NewEvilDAProvider(l1Client *ethclient.Client, validatorAddr common.Address) *EvilDAProvider {
 	// Create fresh ReferenceDA components - they'll all share the singleton storage
 	return &EvilDAProvider{
-		reader:       referenceda.NewReader(l1Client, validatorAddr),
-		validator:    referenceda.NewValidator(l1Client, validatorAddr),
-		evilMappings: make(map[common.Hash][]byte),
+		reader:            referenceda.NewReader(l1Client, validatorAddr),
+		validator:         referenceda.NewValidator(l1Client, validatorAddr),
+		evilMappings:      make(map[common.Hash][]byte),
+		invalidClaimCerts: make(map[common.Hash]bool),
 	}
 }
 
@@ -59,7 +62,13 @@ func (e *EvilDAProvider) GetUntrustedSignerAddress() *common.Address {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	return e.untrustedSignerAddress
+}
 
+// SetClaimCertInvalid marks a specific certificate (by keccak256 hash) to be claimed as invalid
+func (e *EvilDAProvider) SetClaimCertInvalid(certKeccak common.Hash) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.invalidClaimCerts[certKeccak] = true
 }
 
 // IsValidHeaderByte delegates to underlying reader
@@ -79,6 +88,20 @@ func (e *EvilDAProvider) RecoverPayloadFromBatch(
 	// Check if this is a CustomDA message and extract certificate
 	if len(sequencerMsg) > 40 && daprovider.IsCustomDAMessageHeaderByte(sequencerMsg[40]) {
 		certificate := sequencerMsg[40:]
+
+		// Check if we're supposed to claim this certificate is invalid
+		certKeccak := crypto.Keccak256Hash(certificate)
+		e.mu.RLock()
+		shouldClaimInvalid := e.invalidClaimCerts[certKeccak]
+		e.mu.RUnlock()
+
+		if shouldClaimInvalid {
+			log.Info("EvilDAProvider rejecting certificate we claim is invalid",
+				"certKeccak", certKeccak.Hex(),
+				"batchNum", batchNum)
+			// Return an error similar to what would happen with an actually invalid certificate
+			return nil, nil, fmt.Errorf("certificate validation failed: claimed to be invalid")
+		}
 
 		// Try to deserialize certificate
 		cert, err := referenceda.Deserialize(certificate)
@@ -191,6 +214,19 @@ func (e *EvilDAProvider) GenerateCertificateValidityProof(ctx context.Context, p
 					"dataHash", common.Hash(cert.DataHash).Hex())
 				return []byte{1, 0x01}, nil // EVIL: claim valid when it's not
 			}
+		}
+
+		// Check if we should claim this specific valid cert is invalid
+		certKeccak := crypto.Keccak256Hash(certificate)
+		e.mu.RLock()
+		shouldClaimInvalid := e.invalidClaimCerts[certKeccak]
+		e.mu.RUnlock()
+
+		if shouldClaimInvalid {
+			log.Info("EvilDAProvider lying about valid certificate (claiming invalid)",
+				"certKeccak", certKeccak.Hex(),
+				"dataHash", common.Hash(cert.DataHash).Hex())
+			return []byte{0, 0x01}, nil // EVIL: claim invalid when it's valid
 		}
 	}
 
