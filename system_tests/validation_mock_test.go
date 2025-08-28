@@ -391,6 +391,7 @@ func (m *mockBlockRecorder) RecordBlockCreation(
 	ctx context.Context,
 	pos arbutil.MessageIndex,
 	msg *arbostypes.MessageWithMetadata,
+	wasmTargets []rawdb.WasmTarget,
 ) (*execution.RecordResult, error) {
 	_, globalpos, err := m.validator.GlobalStatePositionsAtCount(pos + 1)
 	if err != nil {
