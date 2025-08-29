@@ -61,7 +61,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         id: install-rust
         with:
-          toolchain: '1.84.1'
+          toolchain: '1.89.0'
           targets: 'wasm32-wasip1, wasm32-unknown-unknown'
           components: 'llvm-tools-preview, rustfmt, clippy'
 
@@ -239,7 +239,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         id: install-rust
         with:
-          toolchain: '1.84.1'
+          toolchain: '1.89.0'
           targets: 'wasm32-wasip1, wasm32-unknown-unknown'
           components: 'llvm-tools-preview, rustfmt, clippy'
 
