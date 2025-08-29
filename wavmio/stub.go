@@ -145,6 +145,12 @@ func ResolveTypedPreimage(ty arbutil.PreimageType, hash common.Hash) ([]byte, er
 	return val, nil
 }
 
+func ValidateCertificate(ty arbutil.PreimageType, hash common.Hash) bool {
+	// In stub mode, check if the preimage exists
+	_, ok := preimages[hash]
+	return ok
+}
+
 func SetLastBlockHash(hash [32]byte) {
 	lastBlockHash = hash
 }

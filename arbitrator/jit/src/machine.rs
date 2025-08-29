@@ -83,6 +83,7 @@ pub fn create(opts: &Opts, env: WasmEnv) -> (Instance, FunctionEnv<WasmEnv>, Sto
                 }
             },
             "resolveTypedPreimage" => func!(wavmio::resolve_typed_preimage),
+            "validateCertificate" => func!(wavmio::validate_certificate),
         },
         "wasi_snapshot_preview1" => {
             "proc_exit" => func!(wasip1_stub::proc_exit),
