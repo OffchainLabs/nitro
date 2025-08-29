@@ -88,6 +88,10 @@ func (w *execClientWrapper) SetFinalityData(
 	return containers.NewReadyPromise(struct{}{}, nil)
 }
 
+func (w *execClientWrapper) SetConsensusSyncData(ctx context.Context, syncData *execution.ConsensusSyncData) containers.PromiseInterface[struct{}] {
+	return containers.NewReadyPromise(struct{}{}, nil)
+}
+
 func (w *execClientWrapper) DigestMessage(num arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, msgForPrefetch *arbostypes.MessageWithMetadata) containers.PromiseInterface[*execution.MessageResult] {
 	return containers.NewReadyPromise(w.ExecutionEngine.DigestMessage(num, msg, msgForPrefetch))
 }
