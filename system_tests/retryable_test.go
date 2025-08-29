@@ -581,7 +581,7 @@ func TestSubmitManyRetryableFailThenRetry(t *testing.T) {
 	}
 
 	l2FaucetTxOpts := builder.L2Info.GetDefaultTransactOpts("Faucet", ctx)
-	l2FaucetTxOpts.GasLimit = uint64(1e8)
+	l2FaucetTxOpts.GasLimit = l2pricing.InitialPerTxGasLimitV50
 	l2FaucetAddress := builder.L2Info.GetAddress("Faucet")
 	colors.PrintBlue("L2 Faucet   ", l2FaucetAddress)
 	var addressesToCreate []common.Address

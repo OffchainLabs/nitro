@@ -41,6 +41,7 @@ import (
 	"github.com/offchainlabs/nitro/pubsub"
 	"github.com/offchainlabs/nitro/solgen/go/express_lane_auctiongen"
 	"github.com/offchainlabs/nitro/solgen/go/localgen"
+	pgen "github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/timeboost"
 	"github.com/offchainlabs/nitro/timeboost/bindings"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -63,6 +64,16 @@ func TestTimeboostTxsTimeoutByBlock(t *testing.T) {
 	seqClient, seqInfo := builderSeq.L2.Client, builderSeq.L2Info
 	defer cleanupSeq()
 	seqInfo.GenerateAccount("User2")
+	builderSeq.L2.TransferBalance(t, "Owner", "User2", big.NewInt(1e18), seqInfo)
+
+	user2Opts := seqInfo.GetDefaultTransactOpts("User2", ctx)
+	becomeChainOwner(t, ctx, user2Opts, seqClient)
+	arbOwner, err := pgen.NewArbOwner(types.ArbOwnerAddress, seqClient)
+	Require(t, err)
+	tx, err := arbOwner.SetMaxTxGasLimit(&user2Opts, 700000000)
+	Require(t, err)
+	_, err = EnsureTxSucceeded(ctx, seqClient, tx)
+	Require(t, err)
 
 	auctionContract, err := express_lane_auctiongen.NewExpressLaneAuction(auctionContractAddr, seqClient)
 	Require(t, err)
@@ -97,7 +108,8 @@ func TestTimeboostTxsTimeoutByBlock(t *testing.T) {
 
 	var txs types.Transactions
 	for i := uint64(0); i < numTxs; i++ {
-		txs = append(txs, seqInfo.PrepareTx("Owner", "User2", 700000000, big.NewInt(1e8), data)) // this tx should consume one block
+		user2 := seqInfo.GetAddress("User2")
+		txs = append(txs, seqInfo.PrepareTxToCustomGas("Owner", &user2, 700000000, big.NewInt(1e8), data)) // this tx should consume one block
 	}
 	// Buffer future sequence numbered txs
 	for seq := uint64(1); seq < numTxs; seq++ {
