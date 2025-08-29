@@ -41,7 +41,7 @@ func TestMultigasCollectorFromNode(t *testing.T) {
 
 	// Generate a L2 user and send 20 transacrtions
 	builder.L2Info.GenerateAccount("Alice")
-	want := make(map[common.Hash]struct{})
+	want := make(map[common.Hash]uint64)
 	for i := 0; i < 20; i++ {
 		// unique value to avoid duplicate txs
 		value := big.NewInt(1e12 + int64(i))
@@ -53,10 +53,10 @@ func TestMultigasCollectorFromNode(t *testing.T) {
 			nil,
 		)
 		require.NoError(t, builder.L2.Client.SendTransaction(ctx, tx))
-		_, err := builder.L2.EnsureTxSucceeded(tx)
+		rcpt, err := builder.L2.EnsureTxSucceeded(tx)
 		require.NoError(t, err)
 
-		want[tx.Hash()] = struct{}{}
+		want[tx.Hash()] = rcpt.GasUsed
 	}
 
 	// Stop the node; collector.StopAndWait() is called under cleanup()
@@ -113,10 +113,13 @@ func TestMultigasCollectorFromNode(t *testing.T) {
 	for _, b := range blocks {
 		for _, ptx := range b.Transactions {
 			h := common.BytesToHash(ptx.TxHash)
-			if _, ok := want[h]; !ok {
+			var gas uint64
+			var ok bool
+			if gas, ok = want[h]; !ok {
 				continue
 			}
 			require.NotNil(t, ptx.GetMultiGas(), "missing multigas for tx %s", h)
+			require.Equal(t, gas, ptx.GetMultiGas().SingleGas, "single gas mismatch for tx %s", h)
 			found++
 		}
 	}
