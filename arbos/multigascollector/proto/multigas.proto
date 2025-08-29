@@ -9,14 +9,15 @@ option go_package = "github.com/ethereum/go-ethereum/arbitrum/multigas/proto";
 
 // Multi-dimensional gas consumption data mirroring multigas.MultiGas struct
 message MultiGasData {
-  optional uint64 unknown = 1;
+  uint64 single_gas = 1;
   optional uint64 refund = 2;
-  uint64 computation = 3;
-  uint64 history_growth = 4;
-  uint64 storage_access = 5;
-  uint64 storage_growth = 6;
-  uint64 l1_calldata = 7;
-  uint64 l2_calldata = 8;
+  optional uint64 unknown = 3;
+  uint64 computation = 4;
+  uint64 history_growth = 5;
+  uint64 storage_access = 6;
+  uint64 storage_growth = 7;
+  uint64 l1_calldata = 8;
+  uint64 l2_calldata = 9;
 }
 
 // Gas data and metadata for a single transaction

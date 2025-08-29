@@ -12,6 +12,7 @@ import (
 // ToProto converts the TransactionMultiGas to its protobuf representation.
 func (tx *TransactionMultiGas) ToProto() *proto.TransactionMultiGasData {
 	multiGasData := &proto.MultiGasData{
+		SingleGas:     tx.SingleGas,
 		Computation:   tx.MultiGas.Get(multigas.ResourceKindComputation),
 		StorageAccess: tx.MultiGas.Get(multigas.ResourceKindStorageAccess),
 		StorageGrowth: tx.MultiGas.Get(multigas.ResourceKindStorageGrowth),

@@ -11,9 +11,10 @@ import (
 
 // TransactionMultiGas represents gas data for a single transaction
 type TransactionMultiGas struct {
-	TxHash   []byte
-	TxIndex  uint32
-	MultiGas multigas.MultiGas
+	TxHash    []byte
+	TxIndex   uint32
+	MultiGas  multigas.MultiGas
+	SingleGas uint64
 }
 
 // BlockInfo represents information about a block
