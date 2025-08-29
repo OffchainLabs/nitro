@@ -147,8 +147,16 @@ func (con ArbOwner) SetSpeedLimit(c ctx, evm mech, limit uint64) error {
 	return c.State.L2PricingState().SetSpeedLimitPerSecond(limit)
 }
 
-// SetMaxTxGasLimit sets the maximum size a tx (and block) can be
+// SetMaxTxGasLimit sets the maximum size a tx can be
 func (con ArbOwner) SetMaxTxGasLimit(c ctx, evm mech, limit uint64) error {
+	if c.State.ArbOSVersion() < params.ArbosVersion_50 {
+		return c.State.L2PricingState().SetMaxPerBlockGasLimit(limit)
+	}
+	return c.State.L2PricingState().SetMaxPerTxGasLimit(limit)
+}
+
+// SetMaxBlockGasLimit sets the maximum size a block can be
+func (con ArbOwner) SetMaxBlockGasLimit(c ctx, evm mech, limit uint64) error {
 	return c.State.L2PricingState().SetMaxPerBlockGasLimit(limit)
 }
 
