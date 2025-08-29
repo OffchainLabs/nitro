@@ -290,9 +290,10 @@ func TestComplexAssertionForkScenario(t *testing.T) {
 	// and then post the competing assertion.
 	charlieChain := testData.Chains[2]
 
+	const divergenceHeightForBatch4 = 36 // corresponds to batch 4 in current mock setup
 	stateManagerOpts = []statemanager.Opt{
 		statemanager.WithNumBatchesRead(5),
-		statemanager.WithBlockDivergenceHeight(36), // TODO: Make this more intuitive. This translates to batch 4 due to how our mock works.
+		statemanager.WithBlockDivergenceHeight(divergenceHeightForBatch4),
 		statemanager.WithMachineDivergenceStep(1),
 	}
 	charlieStateManager, err := statemanager.NewForSimpleMachine(t, stateManagerOpts...)

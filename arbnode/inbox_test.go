@@ -220,8 +220,8 @@ func TestTransactionStreamer(t *testing.T) {
 			state.balances = newBalances
 
 			var messages []arbostypes.MessageWithMetadata
-			// TODO replay a random amount of messages too
-			numMessages := rand.Int() % 5
+			// Replay a random amount of messages too (1..5)
+			numMessages := 1 + rand.Int()%5
 			for j := 0; j < numMessages; j++ {
 				source := state.accounts[rand.Int()%len(state.accounts)]
 				if state.balances[source].Cmp(minBalance) < 0 {
