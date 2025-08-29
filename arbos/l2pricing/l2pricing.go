@@ -41,7 +41,6 @@ func InitializeL2PricingState(sto *storage.Storage) error {
 	_ = sto.SetUint64ByUint64(gasBacklogOffset, 0)
 	_ = sto.SetUint64ByUint64(pricingInertiaOffset, InitialPricingInertia)
 	_ = sto.SetUint64ByUint64(backlogToleranceOffset, InitialBacklogTolerance)
-	_ = sto.SetUint64ByUint64(perTxGasLimitOffset, InitialPerTxGasLimitV0)
 	return sto.SetUint64ByUint64(minBaseFeeWeiOffset, InitialMinimumBaseFeeWei)
 }
 

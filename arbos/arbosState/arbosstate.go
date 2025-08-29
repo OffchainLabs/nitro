@@ -397,6 +397,7 @@ func (state *ArbosState) UpgradeArbosVersion(
 			} else {
 				ensure(state.l1PricingState.SetCalldataPrice(big.NewInt(int64(params.TxDataNonZeroGasEIP2028))))
 			}
+			ensure(state.l2PricingState.SetMaxPerTxGasLimit(l2pricing.InitialPerTxGasLimitV50))
 		default:
 			return fmt.Errorf(
 				"the chain is upgrading to unsupported ArbOS version %v, %w",
@@ -424,7 +425,6 @@ func (state *ArbosState) UpgradeArbosVersion(
 		state.Restrict(state.l1PricingState.SetEquilibrationUnits(l1pricing.InitialEquilibrationUnitsV6))
 		state.Restrict(state.l2PricingState.SetSpeedLimitPerSecond(l2pricing.InitialSpeedLimitPerSecondV6))
 		state.Restrict(state.l2PricingState.SetMaxPerBlockGasLimit(l2pricing.InitialPerBlockGasLimitV6))
-		state.Restrict(state.l2PricingState.SetMaxPerTxGasLimit(l2pricing.InitialPerTxGasLimitV0))
 	}
 
 	state.Restrict(state.backingStorage.SetUint64ByUint64(uint64(versionOffset), state.arbosVersion))
