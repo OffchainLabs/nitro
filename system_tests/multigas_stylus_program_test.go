@@ -13,6 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos/multigascollector"
+	"github.com/offchainlabs/nitro/arbos/multigascollector/proto"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
@@ -42,6 +43,7 @@ func TestMultigasStylus_GetBytes32(t *testing.T) {
 	// Send tx to call getBytes32
 	key := testhelpers.RandomHash()
 	readArgs := argsForStorageRead(key)
+
 	tx := l2info.PrepareTxTo("Owner", &storage, l2info.TransferGas, nil, readArgs)
 	require.NoError(t, l2client.SendTransaction(ctx, tx))
 	_, err := EnsureTxSucceeded(ctx, l2client, tx)
@@ -53,26 +55,27 @@ func TestMultigasStylus_GetBytes32(t *testing.T) {
 	var blocks = readCollectorBatches(t, outDir, -1)
 	require.NotEmpty(t, blocks, "no multigas data found")
 
-	// Find tx in last block and assert StorageAccess was charged
-	txHash := tx.Hash().Bytes()
+	var allTxs []*proto.TransactionMultiGasData
+	for _, blk := range blocks {
+		allTxs = append(allTxs, blk.Transactions...)
+	}
+
+	// Find transactions in the all transactions
 	var found bool
-	for _, ptx := range blocks[len(blocks)-1].Transactions {
-		if !bytes.Equal(ptx.TxHash, txHash) {
-			continue
+	for _, ptx := range allTxs {
+		if bytes.Equal(ptx.TxHash, tx.Hash().Bytes()) {
+			require.Equal(t, params.ColdSloadCostEIP2929-params.WarmStorageReadCostEIP2929, ptx.MultiGas.StorageAccess)
+			require.Equal(t, params.WarmStorageReadCostEIP2929, ptx.MultiGas.Computation)
+
+			// TODO(NIT-3767): replace with check from total gas
+			require.Greater(t, ptx.MultiGas.WasmComputation, uint64(0))
+
+			found = true
+			break
 		}
-		require.NotNil(t, ptx.MultiGas, "missing multigas for tx %s", tx.Hash())
-
-		require.Equal(t, uint64(params.ColdSloadCostEIP2929), ptx.MultiGas.StorageAccess)
-		require.Greater(t, ptx.MultiGas.WasmComputation, uint64(0))
-
-		// TODO(NIT-3767): check total gas value
-		// require.Equal(t, mg.StorageAccess+mg.WasmComputation, mg.Total)
-
-		found = true
-		break
 	}
 
 	if !found {
-		require.Fail(t, "tx %s not found in multigas data", tx.Hash().Hex())
+		require.Fail(t, "transactions not found in multigas collector data")
 	}
 }

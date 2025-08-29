@@ -8,7 +8,6 @@ import (
 
 	"github.com/holiman/uint256"
 
-	"github.com/ethereum/go-ethereum/arbitrum/multigas"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
@@ -70,10 +69,10 @@ func newApiClosures(
 	chainConfig := evm.ChainConfig()
 
 	getBytes32 := func(key common.Hash) (common.Hash, uint64) {
-		cost := vm.WasmStateLoadCost(db, actingAddress, key)
-		// Operation getBytes32 charges storage-access gas (saturating, no overflow expected)
-		scope.Contract.UsedMultiGas = scope.Contract.UsedMultiGas.SaturatingIncrement(multigas.ResourceKindStorageAccess, cost)
-		return db.GetState(actingAddress, key), cost
+		mgCost := vm.WasmStateLoadCost(db, actingAddress, key)
+		// TODO(NIT-3773): switch to saturating add, overflow is not expected
+		scope.Contract.UsedMultiGas, _ = scope.Contract.UsedMultiGas.SafeAdd(mgCost)
+		return db.GetState(actingAddress, key), mgCost.SingleGas()
 	}
 	setTrieSlots := func(data []byte, gasLeft *uint64) apiStatus {
 		isOutOfGas := false
