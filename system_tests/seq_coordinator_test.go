@@ -53,6 +53,7 @@ func TestRedisSeqCoordinatorPriorities(t *testing.T) {
 	builder.nodeConfig.SeqCoordinator.Enable = true
 	builder.nodeConfig.SeqCoordinator.RedisUrl = redisutil.CreateTestRedis(ctx, t)
 	builder.nodeConfig.ConsensusExecutionSyncer.SyncInterval = 10 * time.Millisecond
+	builder.execConfig.SyncMonitor.MsgLag = 10 * time.Millisecond
 
 	l2Info := builder.L2Info
 

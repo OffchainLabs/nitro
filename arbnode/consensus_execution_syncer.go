@@ -148,20 +148,36 @@ func (c *ConsensusExecutionSyncer) pushFinalityDataFromConsensusToExecution(ctx 
 }
 
 func (c *ConsensusExecutionSyncer) pushConsensusSyncDataToExecution(ctx context.Context) time.Duration {
-	syncData := &execution.ConsensusSyncData{
-		Synced:                 c.syncMonitor.Synced(),
-		SyncTargetMessageCount: c.syncMonitor.SyncTargetMessageCount(),
-		SyncProgressMap:        c.syncMonitor.FullSyncProgressMap(),
+	synced := c.syncMonitor.Synced()
+
+	maxMessageCount, err := c.syncMonitor.GetMaxMessageCount()
+	if err != nil {
+		log.Error("Error getting max message count", "err", err)
+		return c.config().SyncInterval
 	}
 
-	_, err := c.execClient.SetConsensusSyncData(ctx, syncData).Await(ctx)
+	var syncProgressMap map[string]interface{}
+	if !synced {
+		// Only populate the full progress map when not synced (for debugging)
+		syncProgressMap = c.syncMonitor.FullSyncProgressMap()
+	}
+
+	syncData := &execution.ConsensusSyncData{
+		Synced:          synced,
+		MaxMessageCount: maxMessageCount,
+		SyncProgressMap: syncProgressMap,
+		UpdatedAt:       time.Now(),
+	}
+
+	_, err = c.execClient.SetConsensusSyncData(ctx, syncData).Await(ctx)
 	if err != nil {
 		log.Error("Error pushing sync data from consensus to execution", "err", err)
 	} else {
 		log.Debug("Pushed sync data from consensus to execution",
 			"synced", syncData.Synced,
-			"syncTarget", syncData.SyncTargetMessageCount,
-			"syncProgressMap", syncData.SyncProgressMap,
+			"maxMessageCount", syncData.MaxMessageCount,
+			"updatedAt", syncData.UpdatedAt,
+			"hasProgressMap", syncData.SyncProgressMap != nil,
 		)
 	}
 

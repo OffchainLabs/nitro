@@ -3,6 +3,7 @@ package execution
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
@@ -36,9 +37,10 @@ type InboxBatch struct {
 
 // ConsensusSyncData contains sync status information pushed from consensus to execution
 type ConsensusSyncData struct {
-	Synced                 bool
-	SyncTargetMessageCount arbutil.MessageIndex
-	SyncProgressMap        map[string]interface{}
+	Synced          bool
+	MaxMessageCount arbutil.MessageIndex
+	SyncProgressMap map[string]interface{} // Only populated when !Synced for debugging
+	UpdatedAt       time.Time
 }
 
 var ErrRetrySequencer = errors.New("please retry transaction")
