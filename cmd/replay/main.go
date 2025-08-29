@@ -280,6 +280,8 @@ func main() {
 	raw := rawdb.NewDatabase(PreimageDb{})
 	db := state.NewDatabase(triedb.NewDatabase(raw, nil), nil)
 
+	dumpElf()
+
 	lastBlockHash := wavmio.GetLastBlockHash()
 
 	var lastBlockHeader *types.Header

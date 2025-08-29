@@ -5,3 +5,5 @@
 package main
 
 func gcTweaks() {}
+
+func dumpElf() {}
