@@ -409,6 +409,12 @@ unsafe fn handle_preimage_resolution(
         return None;
     }
     let data = CBytes::from_raw_parts(res.ptr, res.len as usize);
+
+    // Hash may not have a direct link to the data for CustomDA
+    if ty == PreimageType::CustomDA {
+        return Some(data);
+    }
+
     // Check if preimage rehashes to the provided hash
     match crate::utils::hash_preimage(&data, ty) {
         Ok(have_hash) if have_hash.as_slice() == *hash => {}
