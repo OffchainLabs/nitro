@@ -44,7 +44,6 @@ func TestStorageTrie(t *testing.T) {
 	defer cleanup()
 
 	ownerTxOpts := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
-	becomeChainOwner(t, ctx, ownerTxOpts, builder.L2.Client)
 	arbOwner, err := pgen.NewArbOwner(types.ArbOwnerAddress, builder.L2.Client)
 	Require(t, err)
 	tx, err := arbOwner.SetMaxTxGasLimit(&ownerTxOpts, 33000000)
