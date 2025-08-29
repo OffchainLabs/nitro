@@ -95,6 +95,7 @@ pub fn create(opts: &Opts, env: WasmEnv) -> (Instance, FunctionEnv<WasmEnv>, Sto
             "fd_sync" => func!(wasip1_stub::fd_sync),
             "fd_seek" => func!(wasip1_stub::fd_seek),
             "fd_datasync" => func!(wasip1_stub::fd_datasync),
+            "fd_tell" => func!(wasip1_stub::fd_tell),
             "path_open" => func!(wasip1_stub::path_open),
             "path_create_directory" => func!(wasip1_stub::path_create_directory),
             "path_remove_directory" => func!(wasip1_stub::path_remove_directory),
