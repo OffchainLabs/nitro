@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
 
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
@@ -69,6 +70,7 @@ type ExecutionRecorder interface {
 		ctx context.Context,
 		pos arbutil.MessageIndex,
 		msg *arbostypes.MessageWithMetadata,
+		wasmTargets []rawdb.WasmTarget,
 	) (*RecordResult, error)
 	MarkValid(pos arbutil.MessageIndex, resultHash common.Hash)
 	PrepareForRecord(ctx context.Context, start, end arbutil.MessageIndex) error

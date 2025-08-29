@@ -24,13 +24,15 @@ func TestTransactionMultiGasToProto(t *testing.T) {
 			tx: &TransactionMultiGas{
 				TxHash:  []byte{0x12, 0x34, 0x56},
 				TxIndex: 0,
-				MultiGas: *multigas.MultiGasFromMap(map[multigas.ResourceKind]uint64{
-					multigas.ResourceKindComputation:   100,
-					multigas.ResourceKindHistoryGrowth: 50,
-					multigas.ResourceKindStorageAccess: 200,
-					multigas.ResourceKindStorageGrowth: 1000,
-					multigas.ResourceKindUnknown:       10,
-				}),
+				MultiGas: multigas.MultiGasFromPairs(
+					multigas.Pair{Kind: multigas.ResourceKindComputation, Amount: 100},
+					multigas.Pair{Kind: multigas.ResourceKindHistoryGrowth, Amount: 50},
+					multigas.Pair{Kind: multigas.ResourceKindStorageAccess, Amount: 200},
+					multigas.Pair{Kind: multigas.ResourceKindStorageGrowth, Amount: 1000},
+					multigas.Pair{Kind: multigas.ResourceKindL1Calldata, Amount: 150},
+					multigas.Pair{Kind: multigas.ResourceKindL2Calldata, Amount: 300},
+					multigas.Pair{Kind: multigas.ResourceKindUnknown, Amount: 10},
+				),
 			},
 			expected: func(t *testing.T, proto *proto.TransactionMultiGasData) {
 				assert.Equal(t, []byte{0x12, 0x34, 0x56}, proto.TxHash)
@@ -39,6 +41,8 @@ func TestTransactionMultiGasToProto(t *testing.T) {
 				assert.Equal(t, uint64(50), proto.MultiGas.HistoryGrowth)
 				assert.Equal(t, uint64(200), proto.MultiGas.StorageAccess)
 				assert.Equal(t, uint64(1000), proto.MultiGas.StorageGrowth)
+				assert.Equal(t, uint64(150), proto.MultiGas.L1Calldata)
+				assert.Equal(t, uint64(300), proto.MultiGas.L2Calldata)
 				assert.NotNil(t, proto.MultiGas.Unknown)
 				assert.Equal(t, uint64(10), *proto.MultiGas.Unknown)
 				assert.Nil(t, proto.MultiGas.Refund) // No refund in test data
@@ -47,11 +51,9 @@ func TestTransactionMultiGasToProto(t *testing.T) {
 		{
 			name: "transaction with minimal gas dimensions (no optional fields)",
 			tx: &TransactionMultiGas{
-				TxHash:  []byte{0x78, 0x9a, 0xbc},
-				TxIndex: 1,
-				MultiGas: *multigas.MultiGasFromMap(map[multigas.ResourceKind]uint64{
-					multigas.ResourceKindComputation: 150,
-				}),
+				TxHash:   []byte{0x78, 0x9a, 0xbc},
+				TxIndex:  1,
+				MultiGas: multigas.ComputationGas(150),
 			},
 			expected: func(t *testing.T, proto *proto.TransactionMultiGasData) {
 				assert.Equal(t, []byte{0x78, 0x9a, 0xbc}, proto.TxHash)

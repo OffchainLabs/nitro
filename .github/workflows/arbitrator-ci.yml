@@ -66,14 +66,6 @@ jobs:
           cache: 'yarn'
           cache-dependency-path: '**/yarn.lock'
 
-      - name: Install rust nightly
-        uses: dtolnay/rust-toolchain@nightly
-        id: install-rust-nightly
-        with:
-          toolchain: 'nightly-2025-02-14'
-          targets: 'wasm32-wasip1, wasm32-unknown-unknown'
-          components: 'rust-src, rustfmt, clippy'
-
       - name: Install rust stable
         id: install-rust
         uses: dtolnay/rust-toolchain@stable
@@ -81,9 +73,6 @@ jobs:
           toolchain: '1.84.1'
           targets: 'wasm32-wasip1, wasm32-unknown-unknown'
           components: 'llvm-tools-preview, rustfmt, clippy'
-
-      - name: Set STYLUS_NIGHTLY_VER environment variable
-        run: echo "STYLUS_NIGHTLY_VER=+$(rustup toolchain list | grep '^nightly' | head -n1 | cut -d' ' -f1)" >> "$GITHUB_ENV"
 
       - name: Get Rust version
         id: rust-version
