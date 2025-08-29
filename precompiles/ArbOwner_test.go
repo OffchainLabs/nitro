@@ -283,3 +283,30 @@ func TestArbInfraFeeAccount(t *testing.T) {
 		t.Fatal()
 	}
 }
+
+func TestL1CalldataPrice(t *testing.T) {
+	chainConfig := chaininfo.ArbitrumDevTestChainConfig()
+	chainConfig.ArbitrumChainParams.InitialArbOSVersion = params.ArbosVersion_50
+	evm := newMockEVMForTestingWithConfigs(chainConfig, chainConfig)
+	caller := common.BytesToAddress(crypto.Keccak256([]byte{})[:20])
+
+	callCtx := testContext(caller, evm)
+
+	pubPrec := &ArbOwnerPublic{}
+
+	price, err := pubPrec.GetL1CalldataPrice(callCtx, evm)
+	Require(t, err)
+	if price.Cmp(big.NewInt(int64(params.TxDataNonZeroGasEIP2028))) != 0 {
+		t.Fatal()
+	}
+
+	prec := &ArbOwner{}
+	err = prec.SetL1CalldataPrice(callCtx, evm, big.NewInt(10))
+	Require(t, err)
+
+	price, err = pubPrec.GetL1CalldataPrice(callCtx, evm)
+	Require(t, err)
+	if price.Cmp(big.NewInt(10)) != 0 {
+		t.Fatal()
+	}
+}

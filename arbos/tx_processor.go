@@ -131,7 +131,7 @@ func (p *TxProcessor) ExecuteWASM(scope *vm.ScopeContext, input []byte, interpre
 }
 
 //nolint:staticcheck
-func (p *TxProcessor) StartTxHook() (endTxNow bool, multiGasUsed *multigas.MultiGas, err error, returnData []byte) {
+func (p *TxProcessor) StartTxHook() (endTxNow bool, multiGasUsed multigas.MultiGas, err error, returnData []byte) {
 	// This hook is called before gas charging and will end the state transition if endTxNow is set to true
 	// Hence, we must charge for any l2 resources if endTxNow is returned true
 

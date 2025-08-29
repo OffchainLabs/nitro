@@ -115,14 +115,14 @@ func TestDataCollection(t *testing.T) {
 					Transaction: &TransactionMultiGas{
 						TxHash:  []byte{0x12, 0x34, 0x56},
 						TxIndex: 0,
-						MultiGas: *multigas.MultiGasFromMap(map[multigas.ResourceKind]uint64{
-							multigas.ResourceKindComputation:   100,
-							multigas.ResourceKindHistoryGrowth: 50,
-							multigas.ResourceKindStorageAccess: 200,
-							multigas.ResourceKindStorageGrowth: 1000,
-							multigas.ResourceKindL2Calldata:    300,
-							multigas.ResourceKindUnknown:       25,
-						}),
+						MultiGas: multigas.MultiGasFromPairs(
+							multigas.Pair{Kind: multigas.ResourceKindComputation, Amount: 100},
+							multigas.Pair{Kind: multigas.ResourceKindHistoryGrowth, Amount: 50},
+							multigas.Pair{Kind: multigas.ResourceKindStorageAccess, Amount: 200},
+							multigas.Pair{Kind: multigas.ResourceKindStorageGrowth, Amount: 1000},
+							multigas.Pair{Kind: multigas.ResourceKindL2Calldata, Amount: 300},
+							multigas.Pair{Kind: multigas.ResourceKindUnknown, Amount: 25},
+						),
 					},
 				},
 				{
@@ -143,15 +143,15 @@ func TestDataCollection(t *testing.T) {
 					Transaction: &TransactionMultiGas{
 						TxHash:  []byte{0x12, 0x34, 0x56},
 						TxIndex: 0,
-						MultiGas: *multigas.MultiGasFromMap(map[multigas.ResourceKind]uint64{
-							multigas.ResourceKindComputation:   100,
-							multigas.ResourceKindHistoryGrowth: 50,
-							multigas.ResourceKindStorageAccess: 200,
-							multigas.ResourceKindStorageGrowth: 1000,
-							multigas.ResourceKindL1Calldata:    150,
-							multigas.ResourceKindL2Calldata:    300,
-							multigas.ResourceKindUnknown:       25,
-						}),
+						MultiGas: multigas.MultiGasFromPairs(
+							multigas.Pair{Kind: multigas.ResourceKindComputation, Amount: 100},
+							multigas.Pair{Kind: multigas.ResourceKindHistoryGrowth, Amount: 50},
+							multigas.Pair{Kind: multigas.ResourceKindStorageAccess, Amount: 200},
+							multigas.Pair{Kind: multigas.ResourceKindStorageGrowth, Amount: 1000},
+							multigas.Pair{Kind: multigas.ResourceKindL1Calldata, Amount: 150},
+							multigas.Pair{Kind: multigas.ResourceKindL2Calldata, Amount: 300},
+							multigas.Pair{Kind: multigas.ResourceKindUnknown, Amount: 25},
+						),
 					},
 				},
 				{
@@ -175,11 +175,9 @@ func TestDataCollection(t *testing.T) {
 				{
 					Type: MsgTransactionMultiGas,
 					Transaction: &TransactionMultiGas{
-						TxHash:  []byte{0x01},
-						TxIndex: 0,
-						MultiGas: *multigas.MultiGasFromMap(map[multigas.ResourceKind]uint64{
-							multigas.ResourceKindComputation: 1,
-						}),
+						TxHash:   []byte{0x01},
+						TxIndex:  0,
+						MultiGas: multigas.ComputationGas(1),
 					},
 				},
 				// Start a new block before finalising the previous -> prior tx is dropped
@@ -189,11 +187,9 @@ func TestDataCollection(t *testing.T) {
 				{
 					Type: MsgTransactionMultiGas,
 					Transaction: &TransactionMultiGas{
-						TxHash:  []byte{0x02},
-						TxIndex: 0,
-						MultiGas: *multigas.MultiGasFromMap(map[multigas.ResourceKind]uint64{
-							multigas.ResourceKindComputation: 2,
-						}),
+						TxHash:   []byte{0x02},
+						TxIndex:  0,
+						MultiGas: multigas.ComputationGas(2),
 					},
 				},
 				{
@@ -219,13 +215,13 @@ func TestDataCollection(t *testing.T) {
 					Transaction: &TransactionMultiGas{
 						TxHash:  []byte{0x12, 0x34, 0x56},
 						TxIndex: 0,
-						MultiGas: *multigas.MultiGasFromMap(map[multigas.ResourceKind]uint64{
-							multigas.ResourceKindComputation:   100,
-							multigas.ResourceKindHistoryGrowth: 25,
-							multigas.ResourceKindStorageAccess: 50,
-							multigas.ResourceKindL1Calldata:    150,
-							multigas.ResourceKindL2Calldata:    300,
-						}),
+						MultiGas: multigas.MultiGasFromPairs(
+							multigas.Pair{Kind: multigas.ResourceKindComputation, Amount: 100},
+							multigas.Pair{Kind: multigas.ResourceKindHistoryGrowth, Amount: 25},
+							multigas.Pair{Kind: multigas.ResourceKindStorageAccess, Amount: 50},
+							multigas.Pair{Kind: multigas.ResourceKindL1Calldata, Amount: 150},
+							multigas.Pair{Kind: multigas.ResourceKindL2Calldata, Amount: 300},
+						),
 					},
 				},
 				{
@@ -244,11 +240,11 @@ func TestDataCollection(t *testing.T) {
 					Transaction: &TransactionMultiGas{
 						TxHash:  []byte{0x45, 0x67, 0x89},
 						TxIndex: 1,
-						MultiGas: *multigas.MultiGasFromMap(map[multigas.ResourceKind]uint64{
-							multigas.ResourceKindComputation:   200,
-							multigas.ResourceKindStorageGrowth: 500,
-							multigas.ResourceKindUnknown:       15,
-						}),
+						MultiGas: multigas.MultiGasFromPairs(
+							multigas.Pair{Kind: multigas.ResourceKindComputation, Amount: 200},
+							multigas.Pair{Kind: multigas.ResourceKindStorageGrowth, Amount: 500},
+							multigas.Pair{Kind: multigas.ResourceKindUnknown, Amount: 15},
+						),
 					},
 				},
 				{
@@ -256,13 +252,13 @@ func TestDataCollection(t *testing.T) {
 					Transaction: &TransactionMultiGas{
 						TxHash:  []byte{0x78, 0x9a, 0xbc},
 						TxIndex: 2,
-						MultiGas: *multigas.MultiGasFromMap(map[multigas.ResourceKind]uint64{
-							multigas.ResourceKindComputation:   75,
-							multigas.ResourceKindHistoryGrowth: 30,
-							multigas.ResourceKindStorageAccess: 150,
-							multigas.ResourceKindL1Calldata:    75,
-							multigas.ResourceKindL2Calldata:    300,
-						}),
+						MultiGas: multigas.MultiGasFromPairs(
+							multigas.Pair{Kind: multigas.ResourceKindComputation, Amount: 75},
+							multigas.Pair{Kind: multigas.ResourceKindHistoryGrowth, Amount: 30},
+							multigas.Pair{Kind: multigas.ResourceKindStorageAccess, Amount: 150},
+							multigas.Pair{Kind: multigas.ResourceKindL1Calldata, Amount: 75},
+							multigas.Pair{Kind: multigas.ResourceKindL2Calldata, Amount: 300},
+						),
 					},
 				},
 				{
@@ -288,12 +284,12 @@ func TestDataCollection(t *testing.T) {
 					Transaction: &TransactionMultiGas{
 						TxHash:  []byte{0x12, 0x34, 0x56},
 						TxIndex: 0,
-						MultiGas: *multigas.MultiGasFromMap(map[multigas.ResourceKind]uint64{
-							multigas.ResourceKindComputation:   100,
-							multigas.ResourceKindHistoryGrowth: 40,
-							multigas.ResourceKindStorageAccess: 80,
-							multigas.ResourceKindStorageGrowth: 300,
-						}),
+						MultiGas: multigas.MultiGasFromPairs(
+							multigas.Pair{Kind: multigas.ResourceKindComputation, Amount: 100},
+							multigas.Pair{Kind: multigas.ResourceKindHistoryGrowth, Amount: 40},
+							multigas.Pair{Kind: multigas.ResourceKindStorageAccess, Amount: 80},
+							multigas.Pair{Kind: multigas.ResourceKindStorageGrowth, Amount: 300},
+						),
 					},
 				},
 				{
@@ -312,13 +308,13 @@ func TestDataCollection(t *testing.T) {
 					Transaction: &TransactionMultiGas{
 						TxHash:  []byte{0x78, 0x9a, 0xbc},
 						TxIndex: 1,
-						MultiGas: *multigas.MultiGasFromMap(map[multigas.ResourceKind]uint64{
-							multigas.ResourceKindComputation:   200,
-							multigas.ResourceKindHistoryGrowth: 60,
-							multigas.ResourceKindStorageAccess: 120,
-							multigas.ResourceKindL1Calldata:    75,
-							multigas.ResourceKindL2Calldata:    300,
-						}),
+						MultiGas: multigas.MultiGasFromPairs(
+							multigas.Pair{Kind: multigas.ResourceKindComputation, Amount: 200},
+							multigas.Pair{Kind: multigas.ResourceKindHistoryGrowth, Amount: 60},
+							multigas.Pair{Kind: multigas.ResourceKindStorageAccess, Amount: 120},
+							multigas.Pair{Kind: multigas.ResourceKindL1Calldata, Amount: 75},
+							multigas.Pair{Kind: multigas.ResourceKindL2Calldata, Amount: 300},
+						),
 					},
 				},
 				{
@@ -337,13 +333,13 @@ func TestDataCollection(t *testing.T) {
 					Transaction: &TransactionMultiGas{
 						TxHash:  []byte{0xab, 0xcd, 0xef},
 						TxIndex: 2,
-						MultiGas: *multigas.MultiGasFromMap(map[multigas.ResourceKind]uint64{
-							multigas.ResourceKindComputation:   300,
-							multigas.ResourceKindStorageGrowth: 800,
-							multigas.ResourceKindUnknown:       35,
-							multigas.ResourceKindL1Calldata:    150,
-							multigas.ResourceKindL2Calldata:    300,
-						}),
+						MultiGas: multigas.MultiGasFromPairs(
+							multigas.Pair{Kind: multigas.ResourceKindComputation, Amount: 300},
+							multigas.Pair{Kind: multigas.ResourceKindStorageGrowth, Amount: 800},
+							multigas.Pair{Kind: multigas.ResourceKindUnknown, Amount: 35},
+							multigas.Pair{Kind: multigas.ResourceKindL1Calldata, Amount: 150},
+							multigas.Pair{Kind: multigas.ResourceKindL2Calldata, Amount: 300},
+						),
 					},
 				},
 				{
