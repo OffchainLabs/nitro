@@ -1057,6 +1057,7 @@ func testMemory(t *testing.T, jit bool) {
 	Require(t, err)
 
 	ensure(arbOwner.SetInkPrice(&auth, 1e4))
+	ensure(arbOwner.SetMaxBlockGasLimit(&auth, 34000000))
 	ensure(arbOwner.SetMaxTxGasLimit(&auth, 34000000))
 
 	memoryAddr := deployWasm(t, ctx, auth, l2client, watFile("memory"))
@@ -1092,7 +1093,7 @@ func testMemory(t *testing.T, jit bool) {
 	args := argsForMulticall(vm.CALL, memoryAddr, nil, []byte{126, 50})
 	args = multicallAppend(args, vm.CALL, memoryAddr, []byte{126, 80})
 
-	tx := l2info.PrepareTxTo("Owner", &multiAddr, 1e9, nil, args)
+	tx := l2info.PrepareTxToCustomGas("Owner", &multiAddr, 33000000, nil, args)
 	receipt := ensure(tx, l2client.SendTransaction(ctx, tx))
 	gasCost := receipt.GasUsedForL2()
 	memCost := model.GasCost(128, 0, 0) + model.GasCost(126, 2, 128)
@@ -1102,6 +1103,7 @@ func testMemory(t *testing.T, jit bool) {
 	}
 
 	// check that we'd normally run out of gas
+	ensure(arbOwner.SetMaxBlockGasLimit(&auth, 32000000))
 	ensure(arbOwner.SetMaxTxGasLimit(&auth, 32000000))
 	expectFailure(multiAddr, args, oneEth)
 
