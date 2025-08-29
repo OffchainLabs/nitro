@@ -70,7 +70,7 @@ jobs:
         id: install-rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: '1.89.0'
+          toolchain: '1.88.0'
           targets: 'wasm32-wasip1, wasm32-unknown-unknown'
           components: 'llvm-tools-preview, rustfmt, clippy'
 

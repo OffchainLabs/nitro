@@ -9,7 +9,7 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 node_version_needed="v24"
-rust_version_needed="1.89.0"
+rust_version_needed="1.88.0"
 golangci_lint_version_needed="2.3.0"
 
 if [[ -f go.mod ]]; then
