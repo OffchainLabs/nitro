@@ -3207,7 +3207,7 @@ impl Machine {
                 }
 
                 // Check if this is a CustomDA ValidateCertificate that needs enhancement
-                let preimage_type = value_stack.get(value_stack.len() - 1).unwrap().assume_u32();
+                let preimage_type = value_stack.last().unwrap().assume_u32();
                 if let Ok(preimage_ty) =
                     PreimageType::try_from(u8::try_from(preimage_type).unwrap_or(255))
                 {
