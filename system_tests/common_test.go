@@ -2125,3 +2125,13 @@ func populateMachineDir(t *testing.T, cr *github.ConsensusRelease) string {
 	Require(t, err)
 	return machineDir
 }
+
+func becomeChainOwner(t *testing.T, ctx context.Context, opts bind.TransactOpts, client *ethclient.Client) {
+	t.Helper()
+	arbdebug, err := precompilesgen.NewArbDebug(types.ArbDebugAddress, client)
+	Require(t, err, "failed to deploy ArbDebug")
+	tx, err := arbdebug.BecomeChainOwner(&opts)
+	Require(t, err, "failed to deploy ArbDebug")
+	_, err = EnsureTxSucceeded(ctx, client, tx)
+	Require(t, err)
+}

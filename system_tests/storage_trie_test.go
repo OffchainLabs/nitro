@@ -11,7 +11,9 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/core/rawdb"
+	"github.com/ethereum/go-ethereum/core/types"
 
+	pgen "github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/validator/valnode"
 )
@@ -22,6 +24,7 @@ func TestStorageTrie(t *testing.T) {
 
 	var withL1 = true
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, withL1)
+	builder.takeOwnership = true
 
 	// This test tests validates blocks at the end.
 	// For now, validation only works with HashScheme set.
@@ -41,6 +44,14 @@ func TestStorageTrie(t *testing.T) {
 	defer cleanup()
 
 	ownerTxOpts := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
+	becomeChainOwner(t, ctx, ownerTxOpts, builder.L2.Client)
+	arbOwner, err := pgen.NewArbOwner(types.ArbOwnerAddress, builder.L2.Client)
+	Require(t, err)
+	tx, err := arbOwner.SetMaxTxGasLimit(&ownerTxOpts, 33000000)
+	Require(t, err)
+	_, err = EnsureTxSucceeded(ctx, builder.L2.Client, tx)
+	Require(t, err)
+
 	_, bigMap := builder.L2.DeployBigMap(t, ownerTxOpts)
 
 	// Store enough values to use just over 32M gas
@@ -49,7 +60,8 @@ func TestStorageTrie(t *testing.T) {
 	toClear := big.NewInt(0)
 
 	userTxOpts := builder.L2Info.GetDefaultTransactOpts("Faucet", ctx)
-	tx, err := bigMap.ClearAndAddValues(&userTxOpts, toClear, toAdd)
+	userTxOpts.GasMargin = 0
+	tx, err = bigMap.ClearAndAddValues(&userTxOpts, toClear, toAdd)
 	Require(t, err)
 
 	receipt, err := builder.L2.EnsureTxSucceeded(tx)
