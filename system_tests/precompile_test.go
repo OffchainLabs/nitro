@@ -414,12 +414,12 @@ func TestGasAccountingParams(t *testing.T) {
 	ctx := builder.ctx
 
 	speedLimit := uint64(18)
-	blockGasLimit := uint64(19)
+	txGasLimit := uint64(19)
 	tx, err := arbOwner.SetSpeedLimit(&auth, speedLimit)
 	Require(t, err)
 	_, err = builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
-	tx, err = arbOwner.SetMaxBlockGasLimit(&auth, blockGasLimit)
+	tx, err = arbOwner.SetMaxTxGasLimit(&auth, txGasLimit)
 	Require(t, err)
 	_, err = builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
@@ -430,12 +430,12 @@ func TestGasAccountingParams(t *testing.T) {
 		Fatal(t, "expected speed limit to be", speedLimit, "got", arbGasInfoSpeedLimit)
 	}
 	// #nosec G115
-	if arbGasInfoPoolSize.Cmp(big.NewInt(int64(blockGasLimit))) != 0 {
-		Fatal(t, "expected pool size to be", blockGasLimit, "got", arbGasInfoPoolSize)
+	if arbGasInfoPoolSize.Cmp(big.NewInt(int64(txGasLimit))) != 0 {
+		Fatal(t, "expected pool size to be", txGasLimit, "got", arbGasInfoPoolSize)
 	}
 	// #nosec G115
-	if arbGasInfoTxGasLimit.Cmp(big.NewInt(int64(blockGasLimit))) != 0 {
-		Fatal(t, "expected tx gas limit to be", blockGasLimit, "got", arbGasInfoTxGasLimit)
+	if arbGasInfoTxGasLimit.Cmp(big.NewInt(int64(txGasLimit))) != 0 {
+		Fatal(t, "expected tx gas limit to be", txGasLimit, "got", arbGasInfoTxGasLimit)
 	}
 }
 

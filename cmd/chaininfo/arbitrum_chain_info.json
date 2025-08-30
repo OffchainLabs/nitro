@@ -170,7 +170,7 @@
         "EnableArbOS": true,
         "AllowDebugPrecompiles": true,
         "DataAvailabilityCommittee": false,
-        "InitialArbOSVersion": 50,
+        "InitialArbOSVersion": 40,
         "InitialChainOwner": "0x0000000000000000000000000000000000000000",
         "GenesisBlockNum": 0
       }
@@ -263,7 +263,8 @@
     "chain-name": "stylus-testnet",
     "sequencer-url": "https://stylus-testnet-sequencer.arbitrum.io/rpc",
     "feed-url": "wss://stylus-testnet.arbitrum.io/feed",
-    "chain-config": {
+    "chain-config":
+    {
       "chainId": 23011913,
       "homesteadBlock": 0,
       "daoForkBlock": null,
@@ -279,11 +280,13 @@
       "muirGlacierBlock": 0,
       "berlinBlock": 0,
       "londonBlock": 0,
-      "clique": {
+      "clique":
+      {
         "period": 0,
         "epoch": 0
       },
-      "arbitrum": {
+      "arbitrum":
+      {
         "EnableArbOS": true,
         "AllowDebugPrecompiles": false,
         "DataAvailabilityCommittee": false,
@@ -292,7 +295,8 @@
         "GenesisBlockNum": 0
       }
     },
-    "rollup": {
+    "rollup":
+    {
       "bridge": "0x35aa95ac4747D928E2Cd42FE4461F6D9d1826346",
       "inbox": "0xe1e3b1CBaCC870cb6e5F4Bdf246feB6eB5cD351B",
       "sequencer-inbox": "0x00A0F15b79d1D3e5991929FaAbCF2AA65623530c",
