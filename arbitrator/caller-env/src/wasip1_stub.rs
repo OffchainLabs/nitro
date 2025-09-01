@@ -139,16 +139,6 @@ pub fn fd_seek<M: MemAccess, E: ExecEnv>(
     ERRNO_BADF
 }
 
-/// Get the offset of the file descriptor. Unsupported.
-pub fn fd_tell<M :MemAccess, E: ExecEnv>(
-    _: &mut M,
-    _: &mut E,
-    _fd: u32,
-    _offset: GuestPtr
-) -> Errno {
-    ERRNO_BADF
-}
-
 /// Syncs file contents to disk. Unsupported.
 pub fn fd_datasync<M: MemAccess, E: ExecEnv>(_: &mut M, _: &mut E, _fd: u32) -> Errno {
     ERRNO_BADF
