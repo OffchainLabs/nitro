@@ -1233,11 +1233,11 @@ impl Machine {
     ) -> Result<Machine> {
         let bin_source = file_bytes(binary_path)?;
         let bin = parse(&bin_source, binary_path)
-            .wrap_err_with(|| format!("failed to validate WASM binary at {:?}", binary_path))?;
+            .wrap_err_with(|| format!("failed to validate WASM binary at {binary_path:?}"))?;
         let mut libraries = vec![];
         let mut lib_sources = vec![];
         for path in library_paths {
-            let error_message = format!("failed to validate WASM binary at {:?}", path);
+            let error_message = format!("failed to validate WASM binary at {path:?}");
             lib_sources.push((file_bytes(path)?, path, error_message));
         }
         for (source, path, error_message) in &lib_sources {
@@ -2652,8 +2652,7 @@ impl Machine {
                 let exit_code = pull_arg!(0, I32);
                 if exit_code != 0 {
                     println!(
-                        "\x1b[31mWASM exiting\x1b[0m with exit code \x1b[31m{}\x1b[0m",
-                        exit_code,
+                        "\x1b[31mWASM exiting\x1b[0m with exit code \x1b[31m{exit_code}\x1b[0m",
                     );
                 }
                 Ok(())
@@ -3077,7 +3076,7 @@ impl Machine {
                             self.preimage_resolver
                                 .get_const(self.context, preimage_ty, hash)
                         else {
-                            panic!("Missing requested preimage for hash {}", hash)
+                            panic!("Missing requested preimage for hash {hash}")
                         };
                         data.push(0); // preimage proof type
                         match preimage_ty {
@@ -3212,8 +3211,8 @@ impl Machine {
 
     pub fn print_backtrace(&self, stderr: bool) {
         let print = |line: String| match stderr {
-            true => println!("{}", line),
-            false => eprintln!("{}", line),
+            true => println!("{line}"),
+            false => eprintln!("{line}"),
         };
 
         let print_pc = |pc: ProgramCounter| {
