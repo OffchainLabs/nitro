@@ -257,6 +257,7 @@ func (p Programs) CallProgram(
 		// Ensure that return data costs as least as much as it would in the EVM.
 		evmCost := evmMemoryCost(uint64(len(ret)))
 		if startingGas < evmCost {
+			attributeWasmComputation(contract, startingGas)
 			contract.Gas = 0
 			// #nosec G115
 			metrics.GetOrRegisterCounter(fmt.Sprintf("arb/arbos/stylus/gas_used/%s", runCtx.RunModeMetricName()), nil).Inc(int64(startingGas))
@@ -266,29 +267,34 @@ func (p Programs) CallProgram(
 		maxGasToReturn := startingGas - evmCost
 		contract.Gas = am.MinInt(contract.Gas, maxGasToReturn)
 
-		// Set WASM computation gas to difference between used gas and accounted multi gas dimensions summarised
 		usedGas := startingGas - contract.Gas
-		accountedGas := contract.UsedMultiGas.SingleGas()
-		var computationGas uint64
-		if accountedGas > usedGas {
-			log.Error("negative WASM computation residual", "usedGas", usedGas, "accounted", accountedGas)
-			computationGas = 0
-		} else {
-			computationGas = usedGas - accountedGas
-		}
-
-		if prev := contract.UsedMultiGas.Get(multigas.ResourceKindWasmComputation); prev != 0 {
-			log.Error("WASM computation gas already set", "prev", prev)
-		}
-
-		var overflow bool
-		if contract.UsedMultiGas, overflow = contract.UsedMultiGas.With(multigas.ResourceKindWasmComputation, computationGas); overflow {
-			log.Error("WASM computation gas overflow")
-		}
+		attributeWasmComputation(contract, usedGas)
 	}
 	// #nosec G115
 	metrics.GetOrRegisterCounter(fmt.Sprintf("arb/arbos/stylus/gas_used/%s", runCtx.RunModeMetricName()), nil).Inc(int64(startingGas - contract.Gas))
 	return ret, err
+}
+
+// attributeWasmComputation attributes the residual WASM computation gas so that
+// UsedMultiGas.SingleGas() matches the gross used gas for this stylus call.
+func attributeWasmComputation(contract *vm.Contract, usedGas uint64) {
+	accountedGas := contract.UsedMultiGas.SingleGas()
+
+	var residual uint64
+	if accountedGas > usedGas {
+		log.Error("negative WASM computation residual, usedGas", usedGas, "accounted", accountedGas)
+		residual = 0
+	} else {
+		residual = usedGas - accountedGas
+	}
+
+	if prev := contract.UsedMultiGas.Get(multigas.ResourceKindWasmComputation); prev != 0 {
+		log.Error("WASM computation gas already set, prev", prev)
+	}
+
+	if overflow := contract.UsedMultiGas.SafeIncrement(multigas.ResourceKindWasmComputation, residual); overflow {
+		log.Error("WASM computation gas overflow, residual", residual)
+	}
 }
 
 func evmMemoryCost(size uint64) uint64 {

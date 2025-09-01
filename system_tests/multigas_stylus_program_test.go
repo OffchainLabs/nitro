@@ -68,7 +68,7 @@ func TestMultigasStylus_GetBytes32(t *testing.T) {
 			require.Equal(t, params.WarmStorageReadCostEIP2929, ptx.MultiGas.Computation)
 
 			// TODO(NIT-3767): replace with check from total gas
-			require.Greater(t, ptx.MultiGas.WasmComputation, uint64(0))
+			require.Equal(t, uint64(10423), ptx.MultiGas.WasmComputation)
 
 			found = true
 			break
