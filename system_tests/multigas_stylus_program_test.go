@@ -67,8 +67,10 @@ func TestMultigasStylus_GetBytes32(t *testing.T) {
 			require.Equal(t, params.ColdSloadCostEIP2929-params.WarmStorageReadCostEIP2929, ptx.MultiGas.StorageAccess)
 			require.Equal(t, params.WarmStorageReadCostEIP2929, ptx.MultiGas.Computation)
 
-			// TODO(NIT-3767): replace with check from total gas
-			require.Equal(t, uint64(10423), ptx.MultiGas.WasmComputation)
+			// TODO: Use hard-coded value until all the places are instrumented,
+			// after expected wasm computation can be calculated from total (single gas)
+			expectedWasmComputation := uint64(10423)
+			require.Equal(t, expectedWasmComputation, ptx.MultiGas.WasmComputation)
 
 			found = true
 			break

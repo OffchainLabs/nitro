@@ -7,8 +7,8 @@ import (
 	"testing"
 
 	"github.com/holiman/uint256"
+	"github.com/stretchr/testify/require"
 
-	"github.com/ethereum/go-ethereum/arbitrum/multigas"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -34,10 +34,12 @@ func TestApiClosuresMultiGas_GetBytes32(t *testing.T) {
 	handler := newApiClosures(interp, nil, scope, &MemoryModel{})
 	_, _, expectedCost := handler(GetBytes32, key[:])
 
-	storageAccessGas := scope.Contract.UsedMultiGas.Get(multigas.ResourceKindStorageAccess)
-	if storageAccessGas != expectedCost {
-		t.Fatalf("storage-access gas mismatch: got %d, want %d", storageAccessGas, expectedCost)
-	}
+	statedb_testing, _ := state.New(types.EmptyRootHash, state.NewDatabaseForTesting())
+	storageAccessGas := vm.WasmStateLoadCost(statedb_testing, acting, key)
+
+	require.Equal(t, expectedCost, storageAccessGas.SingleGas(), "storage-access single gas mismatch")
+	require.Equal(t, storageAccessGas, scope.Contract.UsedMultiGas, "contract used multigas mismatch")
+
 	if gotTotal := scope.Contract.UsedMultiGas.SingleGas(); gotTotal != expectedCost {
 		t.Fatalf("total multigas mismatch: got %d, want %d", gotTotal, expectedCost)
 	}
