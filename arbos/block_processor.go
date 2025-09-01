@@ -348,9 +348,11 @@ func ProduceBlockAdvanced(
 
 			computeGas := tx.Gas() - dataGas
 			// Implements EIP-7825. Check activated after arbos_50
-			if arbState.ArbOSVersion() >= params.ArbosVersion_50 &&
-				computeGas > maxPerTxGasLimit && isUserTx {
-				return nil, nil, fmt.Errorf("%w (cap: %d, tx l2Gas: %d)", core.ErrGasLimitTooHigh, maxPerTxGasLimit, computeGas)
+			if arbState.ArbOSVersion() >= params.ArbosVersion_50 && computeGas > maxPerTxGasLimit && isUserTx {
+				// Cap the compute gas to the maximum per-transaction gas limit
+				// and attempt to apply the transaction, if it runs out, there
+				// will be an error during execution.
+				computeGas = maxPerTxGasLimit
 			}
 			if computeGas < params.TxGas {
 				if hooks.DiscardInvalidTxsEarly {
