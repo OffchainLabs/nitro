@@ -764,10 +764,6 @@ func (b *NodeBuilder) BuildL2OnL1(t *testing.T) func() {
 		b.addresses,
 	)
 
-	if b.takeOwnership {
-		becomeChainOwner(t, b.ctx, b.L2Info.GetDefaultTransactOpts("Owner", b.ctx), b.L2.Client)
-	}
-
 	return func() {
 		b.L2.cleanup()
 		if b.L1 != nil && b.L1.cleanup != nil {
@@ -822,7 +818,17 @@ func (b *NodeBuilder) BuildL2(t *testing.T) func() {
 	b.L2.Client = ClientForStack(t, b.L2.Stack)
 
 	if b.takeOwnership {
-		becomeChainOwner(t, b.ctx, b.L2Info.GetDefaultTransactOpts("Owner", b.ctx), b.L2.Client)
+		debugAuth := b.L2Info.GetDefaultTransactOpts("Owner", b.ctx)
+
+		// make auth a chain owner
+		arbdebug, err := precompilesgen.NewArbDebug(common.HexToAddress("0xff"), b.L2.Client)
+		Require(t, err, "failed to deploy ArbDebug")
+
+		tx, err := arbdebug.BecomeChainOwner(&debugAuth)
+		Require(t, err, "failed to deploy ArbDebug")
+
+		_, err = EnsureTxSucceeded(b.ctx, b.L2.Client, tx)
+		Require(t, err)
 	}
 
 	StartWatchChanErr(t, b.ctx, fatalErrChan, b.L2.ConsensusNode)
@@ -2118,14 +2124,4 @@ func populateMachineDir(t *testing.T, cr *github.ConsensusRelease) string {
 	_, err = io.Copy(replayFile, replayResp.Body)
 	Require(t, err)
 	return machineDir
-}
-
-func becomeChainOwner(t *testing.T, ctx context.Context, opts bind.TransactOpts, client *ethclient.Client) {
-	t.Helper()
-	arbdebug, err := precompilesgen.NewArbDebug(types.ArbDebugAddress, client)
-	Require(t, err, "failed to deploy ArbDebug")
-	tx, err := arbdebug.BecomeChainOwner(&opts)
-	Require(t, err, "failed to deploy ArbDebug")
-	_, err = EnsureTxSucceeded(ctx, client, tx)
-	Require(t, err)
 }

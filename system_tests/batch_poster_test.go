@@ -25,7 +25,6 @@ import (
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/externalsignertest"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
-	pgen "github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/solgen/go/upgrade_executorgen"
 	"github.com/offchainlabs/nitro/util/redisutil"
 )
@@ -367,7 +366,6 @@ func TestBatchPosterLargeTx(t *testing.T) {
 	defer cancel()
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
-	builder.takeOwnership = true
 	builder.execConfig.Sequencer.MaxTxDataSize = 110000
 	cleanup := builder.Build(t)
 	defer cleanup()
@@ -378,18 +376,9 @@ func TestBatchPosterLargeTx(t *testing.T) {
 	data := make([]byte, 100000)
 	_, err := rand.Read(data)
 	Require(t, err)
-	gas := builder.L2Info.TransferGas + 2000*uint64(len(data))
-
-	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
-	arbOwner, err := pgen.NewArbOwner(types.ArbOwnerAddress, builder.L2.Client)
-	Require(t, err)
-	tx, err := arbOwner.SetMaxTxGasLimit(&auth, gas)
-	Require(t, err)
-	_, err = EnsureTxSucceeded(ctx, builder.L2.Client, tx)
-	Require(t, err)
-
 	faucetAddr := builder.L2Info.GetAddress("Faucet")
-	tx = builder.L2Info.PrepareTxToCustomGas("Faucet", &faucetAddr, gas, common.Big0, data)
+	gas := builder.L2Info.TransferGas + 20000*uint64(len(data))
+	tx := builder.L2Info.PrepareTxTo("Faucet", &faucetAddr, gas, common.Big0, data)
 	err = builder.L2.Client.SendTransaction(ctx, tx)
 	Require(t, err)
 	receiptA, err := builder.L2.EnsureTxSucceeded(tx)
