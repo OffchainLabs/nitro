@@ -877,7 +877,7 @@ impl Display for MachineStatus {
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct ModuleState<'a> {
-    globals: Cow<'a, Vec<Value>>,
+    globals: Cow<'a, [Value]>,
     memory: Cow<'a, Memory>,
 }
 
@@ -911,13 +911,13 @@ pub struct MachineState<'a> {
     steps: u64, // Not part of machine hash
     thread_state: ThreadState,
     status: MachineStatus,
-    value_stacks: Cow<'a, Vec<Vec<Value>>>,
-    internal_stack: Cow<'a, Vec<Value>>,
-    frame_stacks: Cow<'a, Vec<Vec<StackFrame>>>,
+    value_stacks: Cow<'a, [Vec<Value>]>,
+    internal_stack: Cow<'a, [Value]>,
+    frame_stacks: Cow<'a, [Vec<StackFrame>]>,
     modules: Vec<ModuleState<'a>>,
     global_state: GlobalState,
     pc: ProgramCounter,
-    stdio_output: Cow<'a, Vec<u8>>,
+    stdio_output: Cow<'a, [u8]>,
     initial_hash: Bytes32,
 }
 
@@ -2546,7 +2546,11 @@ impl Machine {
                     let Some(bytes) = self.stylus_modules.get(&hash) else {
                         let modules = &self.stylus_modules;
                         let keys: Vec<_> = modules.keys().take(16).map(hex::encode).collect();
-                        let dots = (modules.len() > 16).then_some("...").unwrap_or_default();
+                        let dots = if modules.len() > 16 {
+                            "..."
+                        } else {
+                            Default::default()
+                        };
                         bail!("no program for {hash} in {{{}{dots}}}", keys.join(", "))
                     };
 
@@ -2722,7 +2726,7 @@ impl Machine {
         self.status
     }
 
-    fn get_modules_merkle(&self) -> Cow<Merkle> {
+    fn get_modules_merkle(&self) -> Cow<'_, Merkle> {
         #[cfg(feature = "counters")]
         GET_MODULES_MERKLE_COUNTER.fetch_add(1, Ordering::Relaxed);
 
