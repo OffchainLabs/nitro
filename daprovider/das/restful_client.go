@@ -79,6 +79,7 @@ func (c *RestfulDasClient) HealthCheck(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	defer res.Body.Close()
 	if res.StatusCode != http.StatusOK {
 		return fmt.Errorf("HTTP error with status %d returned by server: %s", res.StatusCode, http.StatusText(res.StatusCode))
 	}
@@ -90,6 +91,7 @@ func (c *RestfulDasClient) ExpirationPolicy(ctx context.Context) (dasutil.Expira
 	if err != nil {
 		return -1, err
 	}
+	defer res.Body.Close()
 	if res.StatusCode != http.StatusOK {
 		return -1, err
 	}
