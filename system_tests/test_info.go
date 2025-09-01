@@ -228,15 +228,6 @@ func (b *BlockchainTestInfo) PrepareTx(from, to string, gas uint64, value *big.I
 func (b *BlockchainTestInfo) PrepareTxTo(
 	from string, to *common.Address, gas uint64, value *big.Int, data []byte,
 ) *types.Transaction {
-	// After arbos_50 l2 txs consuming more than 32,000,000 in compute gas are rejected, this makes
-	// sure our current tests pass and we shouldnt reach compute gas consumption of 32,000,000 anyway
-	gas = min(gas, l2pricing.InitialPerTxGasLimitV50)
-	return b.PrepareTxToCustomGas(from, to, gas, value, data)
-}
-
-func (b *BlockchainTestInfo) PrepareTxToCustomGas(
-	from string, to *common.Address, gas uint64, value *big.Int, data []byte,
-) *types.Transaction {
 	b.T.Helper()
 	info := b.GetInfoWithPrivKey(from)
 	txNonce := info.Nonce.Add(1) - 1

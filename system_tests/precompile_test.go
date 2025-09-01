@@ -9,7 +9,6 @@ import (
 	"math/big"
 	"slices"
 	"sort"
-	"strings"
 	"testing"
 	"time"
 
@@ -17,7 +16,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
@@ -512,13 +510,6 @@ func TestArbOwnerMaxTxAndBlockGasLimit(t *testing.T) {
 	Require(t, err)
 	if haveBlockGasLimitArbGasInfo.Uint64() != wantBlockGasLimit {
 		t.Fatalf("arbGasInfo blockGasLimit mismatch. have: %d want: %d", haveBlockGasLimitArbGasInfo.Uint64(), wantBlockGasLimit)
-	}
-
-	gas := wantTxGasLimit + 1500000 // as txGasLimit is only on computeGas we need to add more for datagas
-	tx := builder.L2Info.PrepareTx("Owner", "Faucet", gas, big.NewInt(1e10), nil)
-	err = builder.L2.Client.SendTransaction(ctx, tx)
-	if err == nil || !strings.Contains(err.Error(), core.ErrGasLimitTooHigh.Error()) {
-		t.Fatalf("expected ErrGasLimitTooHigh error but got: %v", err)
 	}
 }
 
