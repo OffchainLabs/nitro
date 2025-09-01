@@ -27,14 +27,15 @@ const (
 // Multi-dimensional gas consumption data mirroring multigas.MultiGas struct
 type MultiGasData struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Unknown       *uint64                `protobuf:"varint,1,opt,name=unknown,proto3,oneof" json:"unknown,omitempty"`
+	SingleGas     uint64                 `protobuf:"varint,1,opt,name=single_gas,json=singleGas,proto3" json:"single_gas,omitempty"`
 	Refund        *uint64                `protobuf:"varint,2,opt,name=refund,proto3,oneof" json:"refund,omitempty"`
-	Computation   uint64                 `protobuf:"varint,3,opt,name=computation,proto3" json:"computation,omitempty"`
-	HistoryGrowth uint64                 `protobuf:"varint,4,opt,name=history_growth,json=historyGrowth,proto3" json:"history_growth,omitempty"`
-	StorageAccess uint64                 `protobuf:"varint,5,opt,name=storage_access,json=storageAccess,proto3" json:"storage_access,omitempty"`
-	StorageGrowth uint64                 `protobuf:"varint,6,opt,name=storage_growth,json=storageGrowth,proto3" json:"storage_growth,omitempty"`
-	L1Calldata    uint64                 `protobuf:"varint,7,opt,name=l1_calldata,json=l1Calldata,proto3" json:"l1_calldata,omitempty"`
-	L2Calldata    uint64                 `protobuf:"varint,8,opt,name=l2_calldata,json=l2Calldata,proto3" json:"l2_calldata,omitempty"`
+	Unknown       *uint64                `protobuf:"varint,3,opt,name=unknown,proto3,oneof" json:"unknown,omitempty"`
+	Computation   uint64                 `protobuf:"varint,4,opt,name=computation,proto3" json:"computation,omitempty"`
+	HistoryGrowth uint64                 `protobuf:"varint,5,opt,name=history_growth,json=historyGrowth,proto3" json:"history_growth,omitempty"`
+	StorageAccess uint64                 `protobuf:"varint,6,opt,name=storage_access,json=storageAccess,proto3" json:"storage_access,omitempty"`
+	StorageGrowth uint64                 `protobuf:"varint,7,opt,name=storage_growth,json=storageGrowth,proto3" json:"storage_growth,omitempty"`
+	L1Calldata    uint64                 `protobuf:"varint,8,opt,name=l1_calldata,json=l1Calldata,proto3" json:"l1_calldata,omitempty"`
+	L2Calldata    uint64                 `protobuf:"varint,9,opt,name=l2_calldata,json=l2Calldata,proto3" json:"l2_calldata,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -69,9 +70,9 @@ func (*MultiGasData) Descriptor() ([]byte, []int) {
 	return file_arbos_multigascollector_proto_multigas_proto_rawDescGZIP(), []int{0}
 }
 
-func (x *MultiGasData) GetUnknown() uint64 {
-	if x != nil && x.Unknown != nil {
-		return *x.Unknown
+func (x *MultiGasData) GetSingleGas() uint64 {
+	if x != nil {
+		return x.SingleGas
 	}
 	return 0
 }
@@ -79,6 +80,13 @@ func (x *MultiGasData) GetUnknown() uint64 {
 func (x *MultiGasData) GetRefund() uint64 {
 	if x != nil && x.Refund != nil {
 		return *x.Refund
+	}
+	return 0
+}
+
+func (x *MultiGasData) GetUnknown() uint64 {
+	if x != nil && x.Unknown != nil {
+		return *x.Unknown
 	}
 	return 0
 }
@@ -304,21 +312,23 @@ var File_arbos_multigascollector_proto_multigas_proto protoreflect.FileDescripto
 
 const file_arbos_multigascollector_proto_multigas_proto_rawDesc = "" +
 	"\n" +
-	",arbos/multigascollector/proto/multigas.proto\x12\x0emultigas.proto\"\xba\x02\n" +
+	",arbos/multigascollector/proto/multigas.proto\x12\x0emultigas.proto\"\xd9\x02\n" +
 	"\fMultiGasData\x12\x1d\n" +
-	"\aunknown\x18\x01 \x01(\x04H\x00R\aunknown\x88\x01\x01\x12\x1b\n" +
-	"\x06refund\x18\x02 \x01(\x04H\x01R\x06refund\x88\x01\x01\x12 \n" +
-	"\vcomputation\x18\x03 \x01(\x04R\vcomputation\x12%\n" +
-	"\x0ehistory_growth\x18\x04 \x01(\x04R\rhistoryGrowth\x12%\n" +
-	"\x0estorage_access\x18\x05 \x01(\x04R\rstorageAccess\x12%\n" +
-	"\x0estorage_growth\x18\x06 \x01(\x04R\rstorageGrowth\x12\x1f\n" +
-	"\vl1_calldata\x18\a \x01(\x04R\n" +
-	"l1Calldata\x12\x1f\n" +
-	"\vl2_calldata\x18\b \x01(\x04R\n" +
-	"l2CalldataB\n" +
 	"\n" +
-	"\b_unknownB\t\n" +
-	"\a_refund\"\x88\x01\n" +
+	"single_gas\x18\x01 \x01(\x04R\tsingleGas\x12\x1b\n" +
+	"\x06refund\x18\x02 \x01(\x04H\x00R\x06refund\x88\x01\x01\x12\x1d\n" +
+	"\aunknown\x18\x03 \x01(\x04H\x01R\aunknown\x88\x01\x01\x12 \n" +
+	"\vcomputation\x18\x04 \x01(\x04R\vcomputation\x12%\n" +
+	"\x0ehistory_growth\x18\x05 \x01(\x04R\rhistoryGrowth\x12%\n" +
+	"\x0estorage_access\x18\x06 \x01(\x04R\rstorageAccess\x12%\n" +
+	"\x0estorage_growth\x18\a \x01(\x04R\rstorageGrowth\x12\x1f\n" +
+	"\vl1_calldata\x18\b \x01(\x04R\n" +
+	"l1Calldata\x12\x1f\n" +
+	"\vl2_calldata\x18\t \x01(\x04R\n" +
+	"l2CalldataB\t\n" +
+	"\a_refundB\n" +
+	"\n" +
+	"\b_unknown\"\x88\x01\n" +
 	"\x17TransactionMultiGasData\x12\x17\n" +
 	"\atx_hash\x18\x01 \x01(\fR\x06txHash\x12\x19\n" +
 	"\btx_index\x18\x02 \x01(\rR\atxIndex\x129\n" +
