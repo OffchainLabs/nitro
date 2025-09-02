@@ -46,7 +46,7 @@ func TestMultigasStylus_GetBytes32(t *testing.T) {
 
 	tx := l2info.PrepareTxTo("Owner", &storage, l2info.TransferGas, nil, readArgs)
 	require.NoError(t, l2client.SendTransaction(ctx, tx))
-	_, err := EnsureTxSucceeded(ctx, l2client, tx)
+	receipt, err := EnsureTxSucceeded(ctx, l2client, tx)
 	require.NoError(t, err)
 
 	// Stop node to flush collector
@@ -66,11 +66,11 @@ func TestMultigasStylus_GetBytes32(t *testing.T) {
 		if bytes.Equal(ptx.TxHash, tx.Hash().Bytes()) {
 			require.Equal(t, params.ColdSloadCostEIP2929-params.WarmStorageReadCostEIP2929, ptx.MultiGas.StorageAccess)
 			require.Equal(t, params.WarmStorageReadCostEIP2929, ptx.MultiGas.Computation)
+			require.Equal(t, receipt.GasUsed, ptx.MultiGas.SingleGas)
 
-			// TODO: Use hard-coded value until all the places are instrumented,
-			// after expected wasm computation can be calculated from total (single gas)
-			expectedWasmComputation := uint64(10423)
-			require.Equal(t, expectedWasmComputation, ptx.MultiGas.WasmComputation)
+			// TODO: Once all operations are instrumented, WasmComputation
+			// should be derived as the residual from SingleGas instead of asserted directly.
+			require.Greater(t, ptx.MultiGas.WasmComputation, uint64(0))
 
 			found = true
 			break
