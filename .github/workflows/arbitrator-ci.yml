@@ -66,17 +66,9 @@ jobs:
           cache: 'yarn'
           cache-dependency-path: '**/yarn.lock'
 
-      - name: Install rust stable
+      - name: Install rust
         id: install-rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: '1.84.1'
-          targets: 'wasm32-wasip1, wasm32-unknown-unknown'
-          components: 'llvm-tools-preview, rustfmt, clippy'
-
-      - name: Get Rust version
-        id: rust-version
-        run: echo "version=$(rustc --version | cut -d' ' -f2)" >> $GITHUB_OUTPUT
+        uses: ./.github/actions/install-rust
 
       - name: Cache Rust intermediate build products
         uses: actions/cache@v4
@@ -88,10 +80,10 @@ jobs:
             ~/.cargo/git/db/
             arbitrator/target/
             arbitrator/wasm-libraries/target/
-          key: ${{ runner.os }}-cargo-${{ steps.rust-version.outputs.version }}-full-${{ hashFiles('arbitrator/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-${{ steps.install-rust.outputs.version }}-full-${{ hashFiles('arbitrator/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-${{ steps.rust-version.outputs.version }}-full-
-            ${{ runner.os }}-cargo-${{ steps.rust-version.outputs.version }}-
+            ${{ runner.os }}-cargo-${{ steps.install-rust.outputs.version }}-full-
+            ${{ runner.os }}-cargo-${{ steps.install-rust.outputs.version }}-
 
       - name: Cache wabt build
         id: cache-wabt
