@@ -228,18 +228,7 @@ jobs:
 
       - name: Install rust
         id: install-rust
-<<<<<<< HEAD
-        with:
-          toolchain: '1.88.0'
-          targets: 'wasm32-wasip1, wasm32-unknown-unknown'
-          components: 'llvm-tools-preview, rustfmt, clippy'
-
-      - name: Get Rust version
-        id: rust-version
-        run: echo "version=$(rustc --version | cut -d' ' -f2)" >> $GITHUB_OUTPUT
-=======
         uses: ./.github/actions/install-rust
->>>>>>> origin/master
 
       - name: Install Foundry
         if: steps.changed-files.outputs.any_changed == 'true'
