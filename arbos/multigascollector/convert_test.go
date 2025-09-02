@@ -32,6 +32,7 @@ func TestTransactionMultiGasToProto(t *testing.T) {
 					multigas.Pair{Kind: multigas.ResourceKindStorageGrowth, Amount: 1000},
 					multigas.Pair{Kind: multigas.ResourceKindL1Calldata, Amount: 150},
 					multigas.Pair{Kind: multigas.ResourceKindL2Calldata, Amount: 300},
+					multigas.Pair{Kind: multigas.ResourceKindWasmComputation, Amount: 75},
 				),
 				SingleGas: 1810,
 			},
@@ -48,6 +49,7 @@ func TestTransactionMultiGasToProto(t *testing.T) {
 				assert.Equal(t, uint64(1000), proto.MultiGas.StorageGrowth)
 				assert.Equal(t, uint64(150), proto.MultiGas.L1Calldata)
 				assert.Equal(t, uint64(300), proto.MultiGas.L2Calldata)
+				assert.Equal(t, uint64(75), proto.MultiGas.WasmComputation)
 			},
 		},
 		{
