@@ -69,8 +69,10 @@ func newApiClosures(
 	chainConfig := evm.ChainConfig()
 
 	getBytes32 := func(key common.Hash) (common.Hash, uint64) {
-		cost := vm.WasmStateLoadCost(db, actingAddress, key)
-		return db.GetState(actingAddress, key), cost
+		mgCost := vm.WasmStateLoadCost(db, actingAddress, key)
+		// TODO(NIT-3773): switch to saturating add, overflow is not expected
+		scope.Contract.UsedMultiGas, _ = scope.Contract.UsedMultiGas.SafeAdd(mgCost)
+		return db.GetState(actingAddress, key), mgCost.SingleGas()
 	}
 	setTrieSlots := func(data []byte, gasLeft *uint64) apiStatus {
 		isOutOfGas := false
