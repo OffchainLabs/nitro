@@ -257,8 +257,9 @@ func (p Programs) CallProgram(
 		// Ensure that return data costs as least as much as it would in the EVM.
 		evmCost := evmMemoryCost(uint64(len(ret)))
 		if startingGas < evmCost {
-			attributeWasmComputation(contract, startingGas)
+			// burn all remaining gas for this call
 			contract.Gas = 0
+			attributeWasmComputation(contract, startingGas)
 			// #nosec G115
 			metrics.GetOrRegisterCounter(fmt.Sprintf("arb/arbos/stylus/gas_used/%s", runCtx.RunModeMetricName()), nil).Inc(int64(startingGas))
 			return nil, vm.ErrOutOfGas
@@ -267,8 +268,7 @@ func (p Programs) CallProgram(
 		maxGasToReturn := startingGas - evmCost
 		contract.Gas = am.MinInt(contract.Gas, maxGasToReturn)
 
-		usedGas := startingGas - contract.Gas
-		attributeWasmComputation(contract, usedGas)
+		attributeWasmComputation(contract, startingGas)
 	}
 	// #nosec G115
 	metrics.GetOrRegisterCounter(fmt.Sprintf("arb/arbos/stylus/gas_used/%s", runCtx.RunModeMetricName()), nil).Inc(int64(startingGas - contract.Gas))
@@ -277,7 +277,8 @@ func (p Programs) CallProgram(
 
 // attributeWasmComputation attributes the residual WASM computation gas so that
 // UsedMultiGas.SingleGas() matches the gross used gas for this stylus call.
-func attributeWasmComputation(contract *vm.Contract, usedGas uint64) {
+func attributeWasmComputation(contract *vm.Contract, startingGas uint64) {
+	usedGas := startingGas - contract.Gas
 	accountedGas := contract.UsedMultiGas.SingleGas()
 
 	var residual uint64
