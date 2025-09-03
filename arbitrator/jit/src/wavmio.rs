@@ -204,7 +204,7 @@ pub fn validate_certificate(
     mut env: WasmEnvMut,
     preimage_type: u8,
     hash_ptr: GuestPtr,
-) -> Result<u32, Escape> {
+) -> Result<u8, Escape> {
     let (mut mem, exec) = env.jit_env();
     let hash = mem.read_bytes32(hash_ptr);
 
