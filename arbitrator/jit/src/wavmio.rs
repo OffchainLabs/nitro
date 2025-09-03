@@ -209,7 +209,9 @@ pub fn validate_certificate(
     let hash = mem.read_bytes32(hash_ptr);
 
     let Ok(preimage_type) = preimage_type.try_into() else {
-        // Invalid preimage type
+        eprintln!(
+            "Go trying to validate certificate for preimage with unknown type {preimage_type}"
+        );
         return Ok(0);
     };
 
