@@ -292,7 +292,8 @@ func attributeWasmComputation(contract *vm.Contract, startingGas uint64) {
 		log.Error("WASM computation gas already set, prev", prev)
 	}
 
-	if overflow := contract.UsedMultiGas.SafeIncrement(multigas.ResourceKindWasmComputation, residual); overflow {
+	var overflow bool
+	if contract.UsedMultiGas, overflow = contract.UsedMultiGas.SafeIncrement(multigas.ResourceKindWasmComputation, residual); overflow {
 		log.Error("WASM computation gas overflow, residual", residual)
 	}
 }

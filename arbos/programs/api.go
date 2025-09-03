@@ -69,8 +69,7 @@ func newApiClosures(
 
 	getBytes32 := func(key common.Hash) (common.Hash, uint64) {
 		mgCost := vm.WasmStateLoadCost(db, actingAddress, key)
-		// TODO(NIT-3773): switch to saturating add, overflow is not expected
-		scope.Contract.UsedMultiGas, _ = scope.Contract.UsedMultiGas.SafeAdd(mgCost)
+		scope.Contract.UsedMultiGas = scope.Contract.UsedMultiGas.SaturatingAdd(mgCost)
 		return db.GetState(actingAddress, key), mgCost.SingleGas()
 	}
 	setTrieSlots := func(data []byte, gasLeft *uint64) apiStatus {
