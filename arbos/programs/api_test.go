@@ -20,7 +20,6 @@ func TestApiClosuresMultiGas_GetBytes32(t *testing.T) {
 	// EVM + state setup
 	statedb, _ := state.New(types.EmptyRootHash, state.NewDatabaseForTesting())
 	evm := vm.NewEVM(vm.BlockContext{}, statedb, params.TestChainConfig, vm.Config{})
-	interp := vm.NewEVMInterpreter(evm)
 
 	// Scope + contract setup
 	caller := common.Address{}
@@ -31,7 +30,7 @@ func TestApiClosuresMultiGas_GetBytes32(t *testing.T) {
 	scope := &vm.ScopeContext{Contract: contract}
 
 	// Execute handler to update contract multi-gas usage
-	handler := newApiClosures(interp, nil, scope, &MemoryModel{})
+	handler := newApiClosures(evm, nil, scope, &MemoryModel{})
 	_, _, expectedCost := handler(GetBytes32, key[:])
 
 	statedb_testing, _ := state.New(types.EmptyRootHash, state.NewDatabaseForTesting())
