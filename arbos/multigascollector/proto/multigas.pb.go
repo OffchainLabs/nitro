@@ -26,18 +26,19 @@ const (
 
 // Multi-dimensional gas consumption data mirroring multigas.MultiGas struct
 type MultiGasData struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	SingleGas     uint64                 `protobuf:"varint,1,opt,name=single_gas,json=singleGas,proto3" json:"single_gas,omitempty"`
-	Refund        *uint64                `protobuf:"varint,2,opt,name=refund,proto3,oneof" json:"refund,omitempty"`
-	Unknown       *uint64                `protobuf:"varint,3,opt,name=unknown,proto3,oneof" json:"unknown,omitempty"`
-	Computation   uint64                 `protobuf:"varint,4,opt,name=computation,proto3" json:"computation,omitempty"`
-	HistoryGrowth uint64                 `protobuf:"varint,5,opt,name=history_growth,json=historyGrowth,proto3" json:"history_growth,omitempty"`
-	StorageAccess uint64                 `protobuf:"varint,6,opt,name=storage_access,json=storageAccess,proto3" json:"storage_access,omitempty"`
-	StorageGrowth uint64                 `protobuf:"varint,7,opt,name=storage_growth,json=storageGrowth,proto3" json:"storage_growth,omitempty"`
-	L1Calldata    uint64                 `protobuf:"varint,8,opt,name=l1_calldata,json=l1Calldata,proto3" json:"l1_calldata,omitempty"`
-	L2Calldata    uint64                 `protobuf:"varint,9,opt,name=l2_calldata,json=l2Calldata,proto3" json:"l2_calldata,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	SingleGas       uint64                 `protobuf:"varint,1,opt,name=single_gas,json=singleGas,proto3" json:"single_gas,omitempty"`
+	Refund          *uint64                `protobuf:"varint,2,opt,name=refund,proto3,oneof" json:"refund,omitempty"`
+	Unknown         *uint64                `protobuf:"varint,3,opt,name=unknown,proto3,oneof" json:"unknown,omitempty"`
+	Computation     uint64                 `protobuf:"varint,4,opt,name=computation,proto3" json:"computation,omitempty"`
+	HistoryGrowth   uint64                 `protobuf:"varint,5,opt,name=history_growth,json=historyGrowth,proto3" json:"history_growth,omitempty"`
+	StorageAccess   uint64                 `protobuf:"varint,6,opt,name=storage_access,json=storageAccess,proto3" json:"storage_access,omitempty"`
+	StorageGrowth   uint64                 `protobuf:"varint,7,opt,name=storage_growth,json=storageGrowth,proto3" json:"storage_growth,omitempty"`
+	L1Calldata      uint64                 `protobuf:"varint,8,opt,name=l1_calldata,json=l1Calldata,proto3" json:"l1_calldata,omitempty"`
+	L2Calldata      uint64                 `protobuf:"varint,9,opt,name=l2_calldata,json=l2Calldata,proto3" json:"l2_calldata,omitempty"`
+	WasmComputation uint64                 `protobuf:"varint,10,opt,name=wasm_computation,json=wasmComputation,proto3" json:"wasm_computation,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *MultiGasData) Reset() {
@@ -129,6 +130,13 @@ func (x *MultiGasData) GetL1Calldata() uint64 {
 func (x *MultiGasData) GetL2Calldata() uint64 {
 	if x != nil {
 		return x.L2Calldata
+	}
+	return 0
+}
+
+func (x *MultiGasData) GetWasmComputation() uint64 {
+	if x != nil {
+		return x.WasmComputation
 	}
 	return 0
 }
@@ -312,7 +320,7 @@ var File_arbos_multigascollector_proto_multigas_proto protoreflect.FileDescripto
 
 const file_arbos_multigascollector_proto_multigas_proto_rawDesc = "" +
 	"\n" +
-	",arbos/multigascollector/proto/multigas.proto\x12\x0emultigas.proto\"\xd9\x02\n" +
+	",arbos/multigascollector/proto/multigas.proto\x12\x0emultigas.proto\"\x84\x03\n" +
 	"\fMultiGasData\x12\x1d\n" +
 	"\n" +
 	"single_gas\x18\x01 \x01(\x04R\tsingleGas\x12\x1b\n" +
@@ -325,7 +333,9 @@ const file_arbos_multigascollector_proto_multigas_proto_rawDesc = "" +
 	"\vl1_calldata\x18\b \x01(\x04R\n" +
 	"l1Calldata\x12\x1f\n" +
 	"\vl2_calldata\x18\t \x01(\x04R\n" +
-	"l2CalldataB\t\n" +
+	"l2Calldata\x12)\n" +
+	"\x10wasm_computation\x18\n" +
+	" \x01(\x04R\x0fwasmComputationB\t\n" +
 	"\a_refundB\n" +
 	"\n" +
 	"\b_unknown\"\x88\x01\n" +
