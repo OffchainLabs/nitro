@@ -56,15 +56,14 @@ func (s apiStatus) to_slice() []byte {
 const EvmApiMethodReqOffset = 0x10000000
 
 func newApiClosures(
-	interpreter *vm.EVMInterpreter,
+	evm *vm.EVM,
 	tracingInfo *util.TracingInfo,
 	scope *vm.ScopeContext,
 	memoryModel *MemoryModel,
 ) RequestHandler {
 	contract := scope.Contract
 	actingAddress := contract.Address() // not necessarily WASM
-	readOnly := interpreter.ReadOnly()
-	evm := interpreter.Evm()
+	readOnly := evm.ReadOnly()
 	db := evm.StateDB
 	chainConfig := evm.ChainConfig()
 
@@ -165,7 +164,7 @@ func newApiClosures(
 			panic("unsupported call type: " + opcode.String())
 		}
 
-		interpreter.SetReturnData(ret)
+		evm.SetReturnData(ret)
 		cost := am.SaturatingUAdd(baseCost, am.SaturatingUSub(gas, returnGas))
 		return ret, cost, err
 	}
@@ -225,7 +224,7 @@ func newApiClosures(
 		if suberr != vm.ErrExecutionReverted {
 			res = nil // returnData is only provided in the revert case (opCreate)
 		}
-		interpreter.SetReturnData(res)
+		evm.SetReturnData(res)
 		cost := am.SaturatingUSub(startGas, returnGas+one64th) // user gets 1/64th back
 		return addr, res, cost, nil
 	}
