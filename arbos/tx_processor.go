@@ -106,14 +106,14 @@ func takeFunds(pool *big.Int, take *big.Int) *big.Int {
 	return new(big.Int).Set(take)
 }
 
-func (p *TxProcessor) ExecuteWASM(scope *vm.ScopeContext, input []byte, interpreter *vm.EVMInterpreter) ([]byte, error) {
+func (p *TxProcessor) ExecuteWASM(scope *vm.ScopeContext, input []byte, evm *vm.EVM) ([]byte, error) {
 	contract := scope.Contract
 	acting := contract.Address()
 
 	var tracingInfo *util.TracingInfo
-	if interpreter.Config().Tracer != nil {
+	if evm.Config.Tracer != nil {
 		caller := contract.Caller()
-		tracingInfo = util.NewTracingInfo(interpreter.Evm(), caller, acting, util.TracingDuringEVM)
+		tracingInfo = util.NewTracingInfo(evm, caller, acting, util.TracingDuringEVM)
 	}
 
 	// reentrant if more than one open same-actor context span exists
@@ -122,7 +122,7 @@ func (p *TxProcessor) ExecuteWASM(scope *vm.ScopeContext, input []byte, interpre
 	return p.state.Programs().CallProgram(
 		scope,
 		p.evm.StateDB,
-		interpreter,
+		evm,
 		tracingInfo,
 		input,
 		reentrant,
