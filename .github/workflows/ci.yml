@@ -1,3 +1,4 @@
+---
 name: Go tests CI
 run-name: Go tests CI triggered from @${{ github.actor }} of ${{ github.head_ref }}
 
@@ -9,103 +10,13 @@ on:
     branches:
       - master
       - develop
-
 jobs:
-  test:
-    name: Go Tests
+  # --- Fast gate: Build + Lint only (required by can_enqueue) ---
+  pr-gate:
+    name: Gate build + lint
     runs-on: arbitrator-ci
-
-    # Creates a redis container for redis tests
-    services:
-      redis:
-        image: redis
-        ports:
-          - 6379:6379
-
-    strategy:
-      fail-fast: false
-      matrix:
-        test-mode: [defaults, pathdb, challenge, stylus, l3challenge]
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v5
-        with:
-          submodules: true
-
-      - name: Install dependencies
-        run: sudo apt update && sudo apt install -y wabt gotestsum
-
-      - name: Setup nodejs
-        uses: actions/setup-node@v4
-        with:
-          node-version: '24'
-          cache: 'yarn'
-          cache-dependency-path: '**/yarn.lock'
-
-      - name: Install go
-        uses: actions/setup-go@v5
-        with:
-          go-version: 1.24.x
-
-      - name: Install wasm-ld
-        run: |
-          sudo apt-get update && sudo apt-get install -y lld-14
-          sudo ln -s /usr/bin/wasm-ld-14 /usr/local/bin/wasm-ld
-
-      - name: Install rust
-        id: install-rust
-        uses: ./.github/actions/install-rust
-
-      - name: Install Foundry
-        uses: foundry-rs/foundry-toolchain@v1
-        with:
-          cache: false
-          version: v1.0.0
-
-      - name: Install cbindgen
-        run: cargo install --force cbindgen
-
-      - name: Cache Build Products
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cache/go-build
-          key: ${{ runner.os }}-go-${{ matrix.test-mode }}-${{ hashFiles('**/go.sum') }}
-          restore-keys: ${{ runner.os }}-go-${{ matrix.test-mode }}-
-
-      - name: Cache Rust Build Products
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/
-            arbitrator/target/
-            arbitrator/wasm-libraries/target/
-            arbitrator/wasm-libraries/soft-float/
-            target/etc/initial-machine-cache/
-            /home/runner/.rustup/toolchains/
-          key: ${{ runner.os }}-cargo-${{ matrix.test-mode }}-${{ steps.install-rust.outputs.version }}-min-${{ hashFiles('arbitrator/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-${{ matrix.test-mode }}-${{ steps.install-rust.outputs.version }}-
-
-      - name: Cache cbrotli
-        uses: actions/cache@v4
-        id: cache-cbrotli
-        with:
-          path: |
-            target/include/brotli/
-            target/lib-wasm/
-            target/lib/libbrotlicommon-static.a
-            target/lib/libbrotlienc-static.a
-            target/lib/libbrotlidec-static.a
-          key: ${{ runner.os }}-brotli-${{ matrix.test-mode }}-${{ hashFiles('scripts/build-brotli.sh') }}-${{ hashFiles('.github/workflows/arbitrator-ci.yml') }}
-
-      - name: Build cbrotli-local
-        if: steps.cache-cbrotli.outputs.cache-hit != 'true'
-        run: ./scripts/build-brotli.sh -l
-
-      - name: Build cbrotli-wasm in docker
-        if: steps.cache-cbrotli.outputs.cache-hit != 'true'
-        run: ./scripts/build-brotli.sh -w -d
+      - uses: ./.github/actions/ci-setup
 
       - name: Build
         run: make build test-go-deps -j8
@@ -119,9 +30,42 @@ jobs:
           version: latest
           skip-cache: true
           skip-save-cache: true
+
       - name: Custom Lint
-        run: |
-          go run ./linters ./...
+        run: go run ./linters ./...
+
+      - name: Upload build artifacts (optional)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gate-build-artifacts
+          path: |
+            target/lib/
+            target/lib-wasm/
+            target/include/brotli/
+
+  # --- Full PR tests (not required by can_enqueue), still runs on every PR ---
+  pr-tests:
+    name: Full PR tests (matrix)
+    runs-on: arbitrator-ci
+    needs: pr-gate
+    strategy:
+      fail-fast: false
+      matrix:
+        test-mode: [defaults, pathdb, challenge, stylus, l3challenge]
+    services:
+      redis:
+        image: redis
+        ports:
+          - 6379:6379
+    steps:
+      - uses: ./.github/actions/ci-setup
+
+      - name: Download build artifacts (optional)
+        uses: actions/download-artifact@v4
+        with:
+          name: gate-build-artifacts
+          path: target
 
       - name: Set environment variables
         run: |
@@ -133,33 +77,31 @@ jobs:
 
       - name: run tests without race detection and path state scheme
         if: matrix.test-mode == 'pathdb'
-        run: |
-          echo "Running tests with Path Scheme" >> full.log
-          ${{ github.workspace }}/.github/workflows/gotestsum.sh --tags cionly --timeout 90m --cover --test_state_scheme path
+        run: ${{ github.workspace }}/.github/workflows/gotestsum.sh --tags cionly --timeout 90m --cover --test_state_scheme path
 
       - name: run tests without race detection and hash state scheme
         if: matrix.test-mode == 'defaults'
-        run: |
-          echo "Running tests with Hash Scheme" >> full.log
-          ${{ github.workspace }}/.github/workflows/gotestsum.sh --tags cionly --timeout 60m --test_state_scheme hash
+        run: ${{ github.workspace }}/.github/workflows/gotestsum.sh --tags cionly --timeout 60m --test_state_scheme hash
 
       - name: run redis tests
         if: matrix.test-mode == 'defaults'
         run: |
-          echo "Running redis tests" >> full.log
-          gotestsum --format short-verbose -- -p 1 -run TestRedis ./arbnode/... ./system_tests/... -coverprofile=coverage-redis.txt -covermode=atomic -coverpkg=./... -- --test_redis=redis://localhost:6379/0
-      
+          gotestsum --format short-verbose -- -p 1 -run TestRedis ./arbnode/... ./system_tests/... \
+            -coverprofile=coverage-redis.txt -covermode=atomic -coverpkg=./... -- --test_redis=redis://localhost:6379/0
+
       - name: create block input json file
         if: matrix.test-mode == 'defaults'
         run: |
-          gotestsum --format short-verbose -- -run TestProgramStorage$ ./system_tests/... --count 1 -- --recordBlockInputs.enable=true --recordBlockInputs.WithBaseDir="${{ github.workspace }}/target" --recordBlockInputs.WithTimestampDirEnabled=false --recordBlockInputs.WithBlockIdInFileNameEnabled=false
-      
+          gotestsum --format short-verbose -- -run TestProgramStorage$ ./system_tests/... --count 1 -- \
+            --recordBlockInputs.enable=true --recordBlockInputs.WithBaseDir="${{ github.workspace }}/target" \
+            --recordBlockInputs.WithTimestampDirEnabled=false --recordBlockInputs.WithBlockIdInFileNameEnabled=false
+
       - name: run arbitrator prover on block input json
         if: matrix.test-mode == 'defaults'
         run: |
           make build-prover-bin
           target/bin/prover target/machines/latest/machine.wavm.br -b --json-inputs="${{ github.workspace }}/target/TestProgramStorage/block_inputs.json"
-      
+
       - name: run jit prover on block input json
         if: matrix.test-mode == 'defaults'
         run: |
@@ -171,8 +113,7 @@ jobs:
 
       - name: build challenge tests
         if: matrix.test-mode == 'challenge'
-        run: |
-          go test -tags challengetest ./... -run=^$ -v
+        run: go test -tags challengetest ./... -run=^$ -v
 
       - name: run L3 challenge tests
         if: matrix.test-mode == 'l3challenge'
@@ -189,10 +130,44 @@ jobs:
           path: full.log
 
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v5
         if: matrix.test-mode == 'defaults'
+        uses: codecov/codecov-action@v5
         with:
           fail_ci_if_error: false
           files: ./coverage.txt,./coverage-redis.txt
           verbose: false
           token: ${{ secrets.CODECOV_TOKEN }}
+
+  can_enqueue:
+    needs: pr-gate
+    if: always() && github.event_name != 'merge_group'
+    permissions:
+      actions: read
+    runs-on: ubuntu-latest
+    steps:
+      - name: Transform outcomes
+        env:
+          NEEDS: "${{toJSON(needs)}}"
+        run: |
+         ok=$(echo "$NEEDS" | jq -r '[.[] | .result | IN("success","skipped")] | all')
+         test "$ok" = "true"
+
+  can_merge:
+    needs: pr-tests
+    if: always() && github.event_name == 'merge_group'
+    # Same thing as above, from here on:
+    permissions:
+      actions: read
+    runs-on: ubuntu-latest
+    steps:
+      - name: Transform outcomes
+        env:
+          NEEDS: "${{toJSON(needs)}}"
+        run: |
+         ok=$(echo "$NEEDS" | jq -r '[.[] | .result | IN("success","skipped")] | all')
+         test "$ok" = "true"
+
+  can_see_status:
+    runs-on: ubuntu-latest
+    steps:
+      - run: true
