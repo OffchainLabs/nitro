@@ -218,6 +218,7 @@ var ConfigDefault = Config{
 	Caching:                   DefaultCachingConfig,
 	MultigasCollector:         multigascollector.DefaultCollectorConfig,
 	Forwarder:                 DefaultNodeForwarderConfig,
+	SyncMonitor:               DefaultSyncMonitorConfig,
 
 	EnablePrefetchBlock:         true,
 	StylusTarget:                DefaultStylusTargetConfig,
