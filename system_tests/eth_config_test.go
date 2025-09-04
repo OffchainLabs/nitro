@@ -88,11 +88,7 @@ func TestEthConfig(t *testing.T) {
 				"SHA256":                common.HexToAddress("0x0000000000000000000000000000000000000002"),
 			},
 			SystemContracts: map[string]common.Address{
-				"BEACON_ROOTS_ADDRESS":                    common.HexToAddress("0x000f3df6d732807ef1319fb7b8bb8522d0beac02"),
-				"CONSOLIDATION_REQUEST_PREDEPLOY_ADDRESS": common.HexToAddress("0x0000bbddc7ce488642fb579f8b00f3a590007251"),
-				"DEPOSIT_CONTRACT_ADDRESS":                common.HexToAddress("0x0000000000000000000000000000000000000000"),
-				"HISTORY_STORAGE_ADDRESS":                 common.HexToAddress("0x0000f90827f1c53a10cb7a02335b175320002935"),
-				"WITHDRAWAL_REQUEST_PREDEPLOY_ADDRESS":    common.HexToAddress("0x00000961ef480eb55e80d19ad83579a64c007002"),
+				"HISTORY_STORAGE_ADDRESS": common.HexToAddress("0x0000f90827f1c53a10cb7a02335b175320002935"),
 			},
 		},
 		Next: nil,
