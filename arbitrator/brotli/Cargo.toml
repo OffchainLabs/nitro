@@ -14,8 +14,12 @@ num_enum.workspace = true
 wasmer = { path = "../tools/wasmer/lib/api", optional = true }
 wee_alloc.workspace = true
 
+[build-dependencies]
+cc = { version = "1.0", optional = true }
+
 [lib]
 crate-type = ["lib"]
 
 [features]
 wasmer_traits = ["dep:wasmer"]
+cc_brotli = ["dep:cc"]
