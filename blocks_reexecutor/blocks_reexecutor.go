@@ -71,7 +71,7 @@ var DefaultConfig = Config{
 	Blocks:             `[[0,0]]`, // execute from chain start to chain end
 	MinBlocksPerThread: 0,
 	TrieCleanLimit:     0,
-	blocks:             [][2]uint64{},
+	blocks:             nil,
 }
 
 var TestConfig = Config{
