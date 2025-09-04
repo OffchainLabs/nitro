@@ -48,6 +48,7 @@ type ArbosPrecompile interface {
 	) (output []byte, gasLeft uint64, err error)
 
 	Precompile() *Precompile
+	Name() string
 }
 
 type purity uint8
@@ -845,6 +846,11 @@ func (p *Precompile) Call(
 
 func (p *Precompile) Precompile() *Precompile {
 	return p
+}
+
+// Name returns the name of the precompile.
+func (p *Precompile) Name() string {
+	return p.name
 }
 
 // Get4ByteMethodSignatures is needed for the fuzzing harness
