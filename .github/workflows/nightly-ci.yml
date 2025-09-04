@@ -344,7 +344,7 @@ jobs:
     if: ${{ failure() }}
     steps:
       - name: Send Slack notification
-        uses: slackapi/slack-github-action@v2.0.0
+        uses: slackapi/slack-github-action@v2.1.1
         with:
           errors: true
           method: chat.postMessage
