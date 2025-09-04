@@ -30,7 +30,7 @@ func (p ArbosPrecompileWrapper) Run(input []byte) ([]byte, error) {
 }
 
 func (p ArbosPrecompileWrapper) Name() string {
-	panic("Non-advanced precompile method called")
+	return p.inner.Name()
 }
 
 func (p ArbosPrecompileWrapper) RunAdvanced(
