@@ -65,6 +65,7 @@ func TestEthSyncing(t *testing.T) {
 		attempt++
 	}
 
+	// TODO: Use Client.SyncProgressMap to see the full map
 	progress, err := testClientB.Client.SyncProgress(ctx)
 	Require(t, err)
 	if progress == nil {
@@ -72,6 +73,7 @@ func TestEthSyncing(t *testing.T) {
 	}
 	for testClientB.ConsensusNode.TxStreamer.ExecuteNextMsg(ctx) {
 	}
+	time.Sleep(time.Second * 2)
 	progress, err = testClientB.Client.SyncProgress(ctx)
 	Require(t, err)
 	if progress != nil {

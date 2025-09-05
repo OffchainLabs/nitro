@@ -28,6 +28,9 @@ var DefaultConsensusExecutionSyncerConfig = ConsensusExecutionSyncerConfig{
 	SyncInterval: 1 * time.Second,
 }
 
+// We don't define a Test config. For most tests we want the Syncer to behave
+// the same as in production.
+
 func ConsensusExecutionSyncerConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Duration(prefix+".sync-interval", DefaultConsensusExecutionSyncerConfig.SyncInterval, "Interval in which finality and sync data is pushed from consensus to execution")
 }
