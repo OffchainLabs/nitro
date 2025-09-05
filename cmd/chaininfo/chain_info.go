@@ -27,6 +27,7 @@ type ChainInfo struct {
 	SecondaryForwardingTarget string              `json:"secondary-forwarding-target"`
 	FeedUrl                   string              `json:"feed-url"`
 	SecondaryFeedUrl          string              `json:"secondary-feed-url"`
+	FeedSigned                bool                `json:"feed-signed"`
 	DasIndexUrl               string              `json:"das-index-url"`
 	HasGenesisState           bool                `json:"has-genesis-state"`
 	BlockMetadataUrl          string              `json:"block-metadata-url"`
