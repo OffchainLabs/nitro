@@ -218,6 +218,7 @@ var ConfigDefault = Config{
 	Caching:                   DefaultCachingConfig,
 	MultigasCollector:         multigascollector.DefaultCollectorConfig,
 	Forwarder:                 DefaultNodeForwarderConfig,
+	SyncMonitor:               DefaultSyncMonitorConfig,
 
 	EnablePrefetchBlock:         true,
 	StylusTarget:                DefaultStylusTargetConfig,
@@ -586,6 +587,11 @@ func (n *ExecutionNode) SetFinalityData(
 ) containers.PromiseInterface[struct{}] {
 	err := n.SyncMonitor.SetFinalityData(ctx, safeFinalityData, finalizedFinalityData, validatedFinalityData)
 	return containers.NewReadyPromise(struct{}{}, err)
+}
+
+func (n *ExecutionNode) SetConsensusSyncData(ctx context.Context, syncData *execution.ConsensusSyncData) containers.PromiseInterface[struct{}] {
+	n.SyncMonitor.SetConsensusSyncData(syncData)
+	return containers.NewReadyPromise(struct{}{}, nil)
 }
 
 func (n *ExecutionNode) InitializeTimeboost(ctx context.Context, chainConfig *params.ChainConfig) error {
