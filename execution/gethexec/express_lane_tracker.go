@@ -78,7 +78,12 @@ func (t *ExpressLaneTracker) Start(ctxIn context.Context) {
 func (t *ExpressLaneTracker) RoundController(round uint64) (common.Address, error) {
 	controller, ok := t.roundControl.Load(round)
 	if !ok {
-		return common.Address{}, timeboost.ErrNoOnchainController
+		return common.Address{}, errors.Wrapf(
+			timeboost.ErrNoOnchainController,
+			"no on-chain controller for round %d (current round %d, RoundController)",
+			round,
+			t.roundTimingInfo.RoundNumber(),
+		)
 	}
 	return controller, nil
 }
@@ -109,7 +114,12 @@ func (t *ExpressLaneTracker) ValidateExpressLaneTx(msg *timeboost.ExpressLaneSub
 
 	controller, ok := t.roundControl.Load(msg.Round)
 	if !ok {
-		return timeboost.ErrNoOnchainController
+		return errors.Wrapf(
+			timeboost.ErrNoOnchainController,
+			"no on-chain controller for round %d (current round %d, ValidateExpressLaneTx)",
+			msg.Round,
+			t.roundTimingInfo.RoundNumber(),
+		)
 	}
 	// Extract sender address and cache it to be later used by sequenceExpressLaneSubmission
 	sender, err := msg.Sender()
@@ -278,10 +288,12 @@ func (t *ExpressLaneTracker) roundHeartbeatThread() {
 			}
 
 			round := t.roundTimingInfo.RoundNumber()
+			_, ok := t.roundControl.Load(round)
 			log.Info(
 				"New express lane auction round",
 				"round", round,
 				"timestamp", ti,
+				"haveController", ok,
 			)
 
 			// Cleanup previous round controller data
@@ -316,6 +328,7 @@ func (t *ExpressLaneTracker) readLatestResolvedRound(parentCtx context.Context) 
 	controller := r0.ExpressLaneController // adjust if binding fields differ
 	round := r0.Round
 	if controller == (common.Address{}) || round == 0 {
+		log.Warn("ExpressLaneTracker: empty resolved round", "round", round, "controller", controller)
 		return resolvedRecord{}, false
 	}
 	return resolvedRecord{round: round, controller: controller}, true
