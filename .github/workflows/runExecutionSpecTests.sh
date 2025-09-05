@@ -15,7 +15,7 @@ NODE_PID=$!
 echo "Devnode started with PID $NODE_PID"
 cd ..
 
-# Give the devnode to initialize if needed
+# Give the devnode time to initialize if needed
 sleep 10
 
 # Run execution spec tests
