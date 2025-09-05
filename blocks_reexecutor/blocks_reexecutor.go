@@ -185,6 +185,7 @@ func New(c *Config, blockchain *core.BlockChain, ethDb ethdb.Database, fatalErrC
 	}
 
 	blocksReExecutor = &BlocksReExecutor{
+		StopWaiter:   stopwaiter.StopWaiter{},
 		config:       c,
 		db:           state.NewDatabase(triedb.NewDatabase(ethDb, &trieConfig), nil),
 		blockchain:   blockchain,
