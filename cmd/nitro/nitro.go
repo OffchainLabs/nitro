@@ -1006,6 +1006,9 @@ func applyChainParameters(k *koanf.Koanf, chainId uint64, chainName string, l2Ch
 	if chainInfo.SecondaryFeedUrl != "" {
 		chainDefaults["node.feed.input.secondary-url"] = strings.Split(chainInfo.SecondaryFeedUrl, ",")
 	}
+	if chainInfo.FeedSigned {
+		chainDefaults["node.feed.input.verify.dangerous.accept-missing"] = false
+	}
 	if chainInfo.DasIndexUrl != "" {
 		chainDefaults["node.data-availability.enable"] = true
 		chainDefaults["node.data-availability.rest-aggregator.enable"] = true
