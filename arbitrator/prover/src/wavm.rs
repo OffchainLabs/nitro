@@ -68,6 +68,10 @@ pub enum IBinOpType {
     Rotr,
 }
 
+// WARNING: NEW OPCODES MUST BE ADDED TO THE END OF THE ENUM
+// Raul says: The order of the Opcode enum matters because of how we serialize and deserialize
+// machines. We use a naive encoding approach using a crate named bincode, which just uses struct
+// layouts as a way of turning stuff to bytes and back.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Opcode {
     Unreachable,
@@ -173,6 +177,8 @@ pub enum Opcode {
     PopCoThread,
     /// switch between main and a cothread
     SwitchThread,
+    /// Validates the DACertificate certificate before allowing ReadPreImage to access it
+    ValidateCertificate,
 }
 
 impl Opcode {

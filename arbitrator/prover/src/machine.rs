@@ -2482,13 +2482,13 @@ impl Machine {
                         error!();
                     };
 
-                    // For types other than CustomDA, always return valid (1)
-                    if preimage_ty != PreimageType::CustomDA {
+                    // For types other than DACertificate, always return valid (1)
+                    if preimage_ty != PreimageType::DACertificate {
                         value_stack.push(Value::from(1u32));
                         continue;
                     }
 
-                    // For CustomDA, check if the preimage exists in the resolver
+                    // For DACertificate, check if the preimage exists in the resolver
                     // (which means it was pre-validated during batch processing)
                     let is_valid = self
                         .preimage_resolver
@@ -2510,7 +2510,7 @@ impl Machine {
                         error!();
                     };
 
-                    // For CustomDA type, ValidateCertificate should have been called first
+                    // For DACertificate type, ValidateCertificate should have been called first
                     // ReadPreImage assumes certificates are valid and preimages are available.
 
                     let Some(preimage) =
@@ -3121,9 +3121,9 @@ impl Machine {
                                 prove_kzg_preimage(hash, &preimage, offset, &mut data)
                                     .expect("Failed to generate KZG preimage proof");
                             }
-                            PreimageType::CustomDA => {
+                            PreimageType::DACertificate => {
                                 // We do something special here; we don't create the final proof.
-                                // For CustomDA preimages, signal that this proof needs enhancement
+                                // For DACertificate preimages, signal that this proof needs enhancement
                                 // Set the enhancement flag (0x80) on the machine status byte.
                                 data[0] |= 0x80;
 
@@ -3131,7 +3131,7 @@ impl Machine {
                                 data.extend(hash.0);
                                 data.extend((offset as u64).to_be_bytes());
 
-                                // Append marker to identify this as CustomDA ReadPreimage
+                                // Append marker to identify this as DACertificate ReadPreimage
                                 data.push(0xDA);
                                 // The enhancement flag and marker data will be stripped out of
                                 // the proof by the enhancer.
@@ -3206,14 +3206,14 @@ impl Machine {
                     out!(mem_merkle.prove(idx).unwrap_or_default());
                 }
 
-                // Check if this is a CustomDA ValidateCertificate that needs enhancement
-                let preimage_type = value_stack.get(value_stack.len() - 1).unwrap().assume_u32();
+                // Check if this is a DACertificate ValidateCertificate that needs enhancement
+                let preimage_type = value_stack.last().unwrap().assume_u32();
                 if let Ok(preimage_ty) =
                     PreimageType::try_from(u8::try_from(preimage_type).unwrap_or(255))
                 {
-                    if preimage_ty == PreimageType::CustomDA {
+                    if preimage_ty == PreimageType::DACertificate {
                         // We do something special here; we don't create the final proof.
-                        // For CustomDA preimages, signal that this proof needs enhancement
+                        // For DACertificate preimages, signal that this proof needs enhancement
                         // Set the enhancement flag (0x80) on the machine status byte.
                         data[0] |= 0x80;
 
@@ -3222,7 +3222,7 @@ impl Machine {
                             // Append hash for the enhancer to use
                             data.extend(hash.0);
 
-                            // Append marker to identify this as CustomDA ValidateCertificate
+                            // Append marker to identify this as DACertificate ValidateCertificate
                             data.push(0xDB);
                             // The enhancement flag and marker data will be stripped out of
                             // the proof by the enhancer.

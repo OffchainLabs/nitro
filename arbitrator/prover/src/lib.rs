@@ -421,8 +421,8 @@ unsafe fn handle_preimage_resolution(
     }
     let data = CBytes::from_raw_parts(res.ptr, res.len as usize);
 
-    // Hash may not have a direct link to the data for CustomDA
-    if ty == PreimageType::CustomDA {
+    // Hash may not have a direct link to the data for DACertificate
+    if ty == PreimageType::DACertificate {
         return Some(data);
     }
 

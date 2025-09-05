@@ -16,10 +16,10 @@ extern "C" {
     pub fn wavm_read_keccak_256_preimage(ptr: *mut u8, offset: usize) -> usize;
     pub fn wavm_read_sha2_256_preimage(ptr: *mut u8, offset: usize) -> usize;
     pub fn wavm_read_eth_versioned_hash_preimage(ptr: *mut u8, offset: usize) -> usize;
-    pub fn wavm_read_customda_preimage(ptr: *mut u8, offset: usize) -> usize;
+    pub fn wavm_read_dacertificate_preimage(ptr: *mut u8, offset: usize) -> usize;
     pub fn wavm_read_inbox_message(msg_num: u64, ptr: *mut u8, offset: usize) -> usize;
     pub fn wavm_read_delayed_inbox_message(seq_num: u64, ptr: *mut u8, offset: usize) -> usize;
-    pub fn wavm_validate_certificate(ptr: *const u8, preimage_type: u8) -> u32;
+    pub fn wavm_validate_certificate(ptr: *const u8, preimage_type: u8) -> u8;
 }
 
 #[repr(C, align(256))]
@@ -139,7 +139,7 @@ pub unsafe extern "C" fn wavmio__resolveTypedPreimage(
         PreimageType::Keccak256 => wavm_read_keccak_256_preimage,
         PreimageType::Sha2_256 => wavm_read_sha2_256_preimage,
         PreimageType::EthVersionedHash => wavm_read_eth_versioned_hash_preimage,
-        PreimageType::CustomDA => wavm_read_customda_preimage,
+        PreimageType::DACertificate => wavm_read_dacertificate_preimage,
     };
     let read = preimage_reader(our_ptr, offset);
     assert!(read <= 32);
@@ -147,9 +147,9 @@ pub unsafe extern "C" fn wavmio__resolveTypedPreimage(
     read
 }
 
-/// Validates a CustomDA certificate, other preimage types are always valid.
+/// Validates a DACertificate certificate, other preimage types are always valid.
 #[no_mangle]
-pub unsafe extern "C" fn wavmio__validateCertificate(preimage_type: u8, hash_ptr: GuestPtr) -> u32 {
+pub unsafe extern "C" fn wavmio__validateCertificate(preimage_type: u8, hash_ptr: GuestPtr) -> u8 {
     let mut our_buf = MemoryLeaf([0u8; 32]);
     let hash = STATIC_MEM.read_slice(hash_ptr, 32);
     our_buf.copy_from_slice(&hash);
