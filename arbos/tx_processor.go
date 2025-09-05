@@ -475,7 +475,6 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) (common.Address, mul
 
 	if *gasRemaining < gasNeededToStartEVM {
 		// the user couldn't pay for call data, so give up
-		fmt.Println("insufficient gas to pay for poster fee", *gasRemaining, "<", gasNeededToStartEVM)
 		return tipReceipient, multigas.ZeroGas(), core.ErrIntrinsicGas
 	}
 	*gasRemaining -= gasNeededToStartEVM
@@ -488,6 +487,7 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) (common.Address, mul
 		if *gasRemaining > gasAvailable {
 			p.computeHoldGas = *gasRemaining - gasAvailable
 			*gasRemaining = gasAvailable
+			// The amount of multigas does not increase here because it will be refunded later.
 		}
 	}
 	return tipReceipient, multiGas, nil
