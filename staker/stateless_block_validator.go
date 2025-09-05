@@ -418,6 +418,7 @@ func BuildGlobalState(res execution.MessageResult, pos GlobalStatePosition) vali
 		SendRoot:   res.SendRoot,
 		Batch:      pos.BatchNumber,
 		PosInBatch: pos.PosInBatch,
+		MELRoot:    common.Hash{},
 	}
 }
 
