@@ -257,6 +257,7 @@ func (m *MultiProtocolStaker) setupBoldStaker(
 		m.blockValidator,
 		m.statelessBlockValidator,
 		m.boldConfig,
+		m.legacyConfig().StrategyType(),
 		m.wallet.DataPoster(),
 		m.wallet,
 		m.stakedNotifiers,

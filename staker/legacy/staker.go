@@ -118,6 +118,23 @@ func ParseStrategy(strategy string) (StakerStrategy, error) {
 	}
 }
 
+func (s StakerStrategy) ToString() string {
+	switch s {
+	case WatchtowerStrategy:
+		return "watchtower"
+	case DefensiveStrategy:
+		return "defensive"
+	case StakeLatestStrategy:
+		return "stakelatest"
+	case ResolveNodesStrategy:
+		return "resolvenodes"
+	case MakeNodesStrategy:
+		return "makenodes"
+	default:
+		return "Unknown"
+	}
+}
+
 func (c *L1ValidatorConfig) ValidatorRequired() bool {
 	if !c.Enable {
 		return false
