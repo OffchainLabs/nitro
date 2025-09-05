@@ -429,6 +429,7 @@ func TestOpenInitializeChainDbIncompatibleStateScheme(t *testing.T) {
 	nodeConfig.Node = *arbnode.ConfigDefaultL2Test()
 	nodeConfig.Init.DevInit = true
 	nodeConfig.Init.DevInitAddress = "0x3f1Eae7D46d88F08fc2F8ed27FCb2AB183EB2d0E"
+	nodeConfig.Init.ValidateGenesisAssertion = false
 
 	l1Client := ethclient.NewClient(stack.Attach())
 
@@ -696,6 +697,7 @@ func TestOpenInitializeChainDbEmptyInit(t *testing.T) {
 	nodeConfig.Chain.ID = 42161
 	nodeConfig.Node = *arbnode.ConfigDefaultL2Test()
 	nodeConfig.Init.Empty = true
+	nodeConfig.Init.ValidateGenesisAssertion = false
 
 	l1Client := ethclient.NewClient(stack.Attach())
 
