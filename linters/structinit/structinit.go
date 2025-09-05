@@ -91,14 +91,14 @@ func markedStructs(pass *analysis.Pass) map[string]int {
 				}
 			case *ast.TypeSpec:
 				if st, ok := n.Type.(*ast.StructType); ok {
-					p := pass.Fset.Position(st.Struct)
-					if tips[position{p.Filename, p.Line}] {
-						fieldsCnt := 0
-						for _, field := range st.Fields.List {
-							fieldsCnt += len(field.Names)
-						}
-						res[pass.Pkg.Path()+"."+n.Name.Name] = fieldsCnt
+					//p := pass.Fset.Position(st.Struct)
+					//if tips[position{p.Filename, p.Line}] {
+					fieldsCnt := 0
+					for _, field := range st.Fields.List {
+						fieldsCnt += len(field.Names)
 					}
+					res[pass.Pkg.Path()+"."+n.Name.Name] = fieldsCnt
+					//}
 				}
 			}
 			return true
