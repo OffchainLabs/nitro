@@ -95,7 +95,7 @@ func markedStructs(pass *analysis.Pass) map[string]int {
 					if tips[position{p.Filename, p.Line}] {
 						fieldsCnt := 0
 						for _, field := range st.Fields.List {
-							fieldsCnt += len(field.Names)
+							fieldsCnt += max(1, len(field.Names))
 						}
 						res[pass.Pkg.Path()+"."+n.Name.Name] = fieldsCnt
 					}
