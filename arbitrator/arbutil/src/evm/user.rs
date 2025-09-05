@@ -65,7 +65,7 @@ impl Display for UserOutcome {
         use UserOutcome::*;
         match self {
             Success(data) => write!(f, "success {}", hex::encode(data)),
-            Failure(err) => write!(f, "failure {:?}", err),
+            Failure(err) => write!(f, "failure {err:?}"),
             OutOfInk => write!(f, "out of ink"),
             OutOfStack => write!(f, "out of stack"),
             Revert(data) => {

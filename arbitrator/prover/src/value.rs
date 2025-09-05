@@ -232,10 +232,7 @@ impl Value {
         match self {
             Value::I32(0) => true,
             Value::I32(_) => false,
-            _ => panic!(
-                "WASM validation failed: i32.eqz equivalent called on {:?}",
-                self,
-            ),
+            _ => panic!("WASM validation failed: i32.eqz equivalent called on {self:?}",),
         }
     }
 
@@ -243,24 +240,21 @@ impl Value {
         match self {
             Value::I64(0) => true,
             Value::I64(_) => false,
-            _ => panic!(
-                "WASM validation failed: i64.eqz equivalent called on {:?}",
-                self,
-            ),
+            _ => panic!("WASM validation failed: i64.eqz equivalent called on {self:?}",),
         }
     }
 
     pub fn assume_u32(self) -> u32 {
         match self {
             Value::I32(x) => x,
-            _ => panic!("WASM validation failed: assume_u32 called on {:?}", self),
+            _ => panic!("WASM validation failed: assume_u32 called on {self:?}"),
         }
     }
 
     pub fn assume_u64(self) -> u64 {
         match self {
             Value::I64(x) => x,
-            _ => panic!("WASM validation failed: assume_u64 called on {:?}", self),
+            _ => panic!("WASM validation failed: assume_u64 called on {self:?}"),
         }
     }
 
@@ -461,7 +455,7 @@ impl Display for FunctionType {
         let mut signature = "λ(".to_string();
         if !self.inputs.is_empty() {
             for arg in &self.inputs {
-                signature += &format!("{}, ", arg);
+                signature += &format!("{arg}, ");
             }
             signature.pop();
             signature.pop();
@@ -475,7 +469,7 @@ impl Display for FunctionType {
                 signature += "(";
             }
             for out in &self.outputs {
-                signature += &format!("{}, ", out);
+                signature += &format!("{out}, ");
             }
             signature.pop();
             signature.pop();
@@ -483,7 +477,7 @@ impl Display for FunctionType {
                 signature += ")";
             }
         }
-        write!(f, "{}", signature)
+        write!(f, "{signature}")
     }
 }
 
