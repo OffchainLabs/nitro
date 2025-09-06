@@ -14,6 +14,7 @@ func main() {
 		koanf.Analyzer,
 		pointercheck.Analyzer,
 		rightshift.Analyzer,
-		structinit.Analyzer,
+		structinit.FieldCountAnalyzer,
+		structinit.MainAnalyzer,
 	)
 }

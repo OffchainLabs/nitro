@@ -5,23 +5,18 @@ import (
 	"go/ast"
 	"go/token"
 	"reflect"
-	"strings"
 
 	"golang.org/x/tools/go/analysis"
 )
 
-// Tip for linter that struct that has this comment should be included in the
-// analysis.
-// Note: comment should be directly line above the struct definition.
-const linterTip = "// lint:require-exhaustive-initialization"
-
-// Analyzer implements struct analyzer for structs that are annotated with
+// MainAnalyzer implements struct analyzer for structs that are annotated with
 // `linterTip`, it checks that every instantiation initializes all the fields.
-var Analyzer = &analysis.Analyzer{
+var MainAnalyzer = &analysis.Analyzer{
 	Name:       "structinit",
 	Doc:        "check for struct field initializations",
 	Run:        func(p *analysis.Pass) (interface{}, error) { return run(false, p) },
 	ResultType: reflect.TypeOf(Result{}),
+	Requires:   []*analysis.Analyzer{FieldCountAnalyzer},
 }
 
 var analyzerForTests = &analysis.Analyzer{
@@ -43,7 +38,7 @@ type Result struct {
 func run(dryRun bool, pass *analysis.Pass) (interface{}, error) {
 	var (
 		ret     Result
-		structs = markedStructs(pass)
+		structs = pass.ResultOf[FieldCountAnalyzer].(fieldCounts)
 	)
 	for _, f := range pass.Files {
 		ast.Inspect(f, func(node ast.Node) bool {
@@ -73,41 +68,4 @@ func run(dryRun bool, pass *analysis.Pass) (interface{}, error) {
 		}
 	}
 	return ret, nil
-}
-
-// markedStructs returns a map of structs that are annotated for linter to check
-// that all fields are initialized when the struct is instantiated.
-// It maps struct full name (including package path) to number of fields it contains.
-func markedStructs(pass *analysis.Pass) map[string]int {
-	res := make(map[string]int)
-	for _, f := range pass.Files {
-		tips := make(map[position]bool)
-		ast.Inspect(f, func(node ast.Node) bool {
-			switch n := node.(type) {
-			case *ast.Comment:
-				p := pass.Fset.Position(node.Pos())
-				if strings.Contains(n.Text, linterTip) {
-					tips[position{p.Filename, p.Line + 1}] = true
-				}
-			case *ast.TypeSpec:
-				if st, ok := n.Type.(*ast.StructType); ok {
-					p := pass.Fset.Position(st.Struct)
-					if tips[position{p.Filename, p.Line}] {
-						fieldsCnt := 0
-						for _, field := range st.Fields.List {
-							fieldsCnt += max(1, len(field.Names))
-						}
-						res[pass.Pkg.Path()+"."+n.Name.Name] = fieldsCnt
-					}
-				}
-			}
-			return true
-		})
-	}
-	return res
-}
-
-type position struct {
-	fileName string
-	line     int
 }
