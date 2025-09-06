@@ -5,26 +5,34 @@ import (
 	"go/ast"
 	"go/token"
 	"reflect"
+	"strings"
 
 	"golang.org/x/tools/go/analysis"
 )
 
-// MainAnalyzer implements struct analyzer for structs that are annotated with
+// Tip for linter that struct that has this comment should be included in the
+// analysis.
+// Note: comment should be directly line above the struct definition.
+const linterTip = "// lint:require-exhaustive-initialization"
+
+// Analyzer implements struct analyzer for structs that are annotated with
 // `linterTip`, it checks that every instantiation initializes all the fields.
-var MainAnalyzer = &analysis.Analyzer{
+var Analyzer = &analysis.Analyzer{
 	Name:       "structinit",
 	Doc:        "check for struct field initializations",
 	Run:        func(p *analysis.Pass) (interface{}, error) { return run(false, p) },
-	ResultType: reflect.TypeOf(Result{}),
-	Requires:   []*analysis.Analyzer{FieldCountAnalyzer},
+	ResultType: reflect.TypeOf([]structError{}),
+	FactTypes:  []analysis.Fact{new(accumulatedFieldCounts)},
 }
+
+type fieldCounts = map[string]int
 
 var analyzerForTests = &analysis.Analyzer{
 	Name:       "teststructinit",
 	Doc:        "check for struct field initializations",
 	Run:        func(p *analysis.Pass) (interface{}, error) { return run(true, p) },
-	ResultType: reflect.TypeOf(Result{}),
-	Requires:   []*analysis.Analyzer{FieldCountAnalyzer},
+	ResultType: reflect.TypeOf([]structError{}),
+	FactTypes:  []analysis.Fact{new(accumulatedFieldCounts)},
 }
 
 type structError struct {
@@ -32,14 +40,16 @@ type structError struct {
 	Message string
 }
 
-type Result struct {
-	Errors []structError
+type accumulatedFieldCounts struct {
+	fieldCounts
 }
+
+func (f *accumulatedFieldCounts) AFact() {}
 
 func run(dryRun bool, pass *analysis.Pass) (interface{}, error) {
 	var (
-		ret     Result
-		structs = pass.ResultOf[FieldCountAnalyzer].(fieldCounts)
+		foundErrors []structError
+		structs     = countFieldsInPackageAndItsDeps(pass)
 	)
 	for _, f := range pass.Files {
 		ast.Inspect(f, func(node ast.Node) bool {
@@ -48,19 +58,18 @@ func run(dryRun bool, pass *analysis.Pass) (interface{}, error) {
 			if cl, ok := node.(*ast.CompositeLit); ok {
 				stName := pass.TypesInfo.Types[cl].Type.String()
 				if cnt, found := structs[stName]; found && cnt != len(cl.Elts) {
-					ret.Errors = append(ret.Errors, structError{
+					foundErrors = append(foundErrors, structError{
 						Pos:     cl.Pos(),
 						Message: fmt.Sprintf("struct: %q initialized with: %v of total: %v fields", stName, len(cl.Elts), cnt),
 					})
-
 				}
-
 			}
 			return true
 		})
 	}
-	for _, err := range ret.Errors {
-		if !dryRun {
+
+	if !dryRun {
+		for _, err := range foundErrors {
 			pass.Report(analysis.Diagnostic{
 				Pos:      err.Pos,
 				Message:  err.Message,
@@ -68,5 +77,62 @@ func run(dryRun bool, pass *analysis.Pass) (interface{}, error) {
 			})
 		}
 	}
-	return ret, nil
+
+	return foundErrors, nil
+}
+
+func countFieldsInPackageAndItsDeps(pass *analysis.Pass) fieldCounts {
+	counts := mergeFieldCountsAcrossVisitedPackages(pass)
+	for _, f := range pass.Files {
+		markedStructs := make(map[position]bool)
+		ast.Inspect(f, func(node ast.Node) bool {
+			switch n := node.(type) {
+			case *ast.Comment:
+				if strings.Contains(n.Text, linterTip) {
+					commentPos := getNodePosition(pass, node)
+					markedStructs[commentPos.nextLine()] = true
+				}
+			case *ast.TypeSpec:
+				if structDecl, ok := n.Type.(*ast.StructType); ok {
+					if markedStructs[getNodePosition(pass, node)] {
+						counts[pass.Pkg.Path()+"."+n.Name.Name] = countStructFields(structDecl)
+					}
+				}
+			}
+			return true
+		})
+	}
+	pass.ExportPackageFact(&accumulatedFieldCounts{counts})
+	return counts
+}
+
+func mergeFieldCountsAcrossVisitedPackages(pass *analysis.Pass) (merged fieldCounts) {
+	merged = make(fieldCounts)
+	for _, packageFieldCounts := range pass.AllPackageFacts() {
+		for k, v := range packageFieldCounts.Fact.(*accumulatedFieldCounts).fieldCounts {
+			merged[k] = v
+		}
+	}
+	return
+}
+
+func countStructFields(structDecl *ast.StructType) (fieldCount int) {
+	for _, field := range structDecl.Fields.List {
+		fieldCount += max(1, len(field.Names))
+	}
+	return
+}
+
+type position struct {
+	fileName string
+	line     int
+}
+
+func (p position) nextLine() position {
+	return position{p.fileName, p.line + 1}
+}
+
+func getNodePosition(pass *analysis.Pass, node ast.Node) position {
+	p := pass.Fset.Position(node.Pos())
+	return position{p.Filename, p.Line}
 }
