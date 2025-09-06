@@ -30,7 +30,7 @@ type packageFact struct {
 func (f *packageFact) AFact() {}
 
 func countFields(pass *analysis.Pass) (interface{}, error) {
-	counts := make(map[string]int)
+	counts := mergeFieldCountsAcrossPackages(pass)
 	for _, f := range pass.Files {
 		markedStructs := make(map[position]bool)
 		ast.Inspect(f, func(node ast.Node) bool {
@@ -42,15 +42,26 @@ func countFields(pass *analysis.Pass) (interface{}, error) {
 				}
 			case *ast.TypeSpec:
 				if structDecl, ok := n.Type.(*ast.StructType); ok {
-					if markedStructs[getNodePosition(pass, node)] {
-						counts[structId(pass, structDecl)] = countStructFields(structDecl)
-					}
+					//if markedStructs[getNodePosition(pass, node)] {
+					counts[structId(pass, structDecl)] = countStructFields(structDecl)
+					//}
 				}
 			}
 			return true
 		})
 	}
+	pass.ExportPackageFact(&packageFact{counts})
 	return counts, nil
+}
+
+func mergeFieldCountsAcrossPackages(pass *analysis.Pass) (merged fieldCounts) {
+	merged = make(fieldCounts)
+	for _, packageFieldCounts := range pass.AllPackageFacts() {
+		for k, v := range packageFieldCounts.Fact.(*packageFact).fieldCounts {
+			merged[k] = v
+		}
+	}
+	return
 }
 
 func countStructFields(structDecl *ast.StructType) (fieldCount int) {
