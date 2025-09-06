@@ -86,11 +86,8 @@ func Test_messagesFromBatchSegments_delayedMessages(t *testing.T) {
 	melState := &mel.State{
 		DelayedMessagesRead: 0,
 	}
-	seqMsg := &arbstate.SequencerMessage{
-		AfterDelayedMessages: 2,
-		Segments:             [][]byte{}, // No segments, but the
-		// sequencer message says that we must read 2 delayed messages.
-	}
+	// No segments, but the sequencer message says that we must read 2 delayed messages.
+	seqMsg := sequencerMessageWithSegments(2, [][]byte{})
 	mockDB := &mockDelayedMessageDB{
 		DelayedMessages: map[uint64]*mel.DelayedInboxMessage{
 			0: {
@@ -253,10 +250,7 @@ func Test_messagesFromBatchSegments(t *testing.T) {
 				}
 			},
 			setupSeqMsg: func(segments [][]byte) *arbstate.SequencerMessage {
-				return &arbstate.SequencerMessage{
-					AfterDelayedMessages: 1,
-					Segments:             segments,
-				}
+				return sequencerMessageWithSegments(1, segments)
 			},
 			setupMockDB: func() *mockDelayedMessageDB {
 				return &mockDelayedMessageDB{
@@ -277,10 +271,7 @@ func Test_messagesFromBatchSegments(t *testing.T) {
 				}
 			},
 			setupSeqMsg: func(segments [][]byte) *arbstate.SequencerMessage {
-				return &arbstate.SequencerMessage{
-					AfterDelayedMessages: 1,
-					Segments:             segments,
-				}
+				return sequencerMessageWithSegments(1, segments)
 			},
 			setupMockDB: func() *mockDelayedMessageDB {
 				return &mockDelayedMessageDB{
@@ -301,10 +292,7 @@ func Test_messagesFromBatchSegments(t *testing.T) {
 				}
 			},
 			setupSeqMsg: func(segments [][]byte) *arbstate.SequencerMessage {
-				return &arbstate.SequencerMessage{
-					AfterDelayedMessages: 1,
-					Segments:             segments,
-				}
+				return sequencerMessageWithSegments(1, segments)
 			},
 			setupMockDB: func() *mockDelayedMessageDB {
 				return &mockDelayedMessageDB{
@@ -371,4 +359,15 @@ func (m *mockDelayedMessageDB) ReadDelayedMessage(
 		return delayedMsg, nil
 	}
 	return nil, nil
+}
+
+func sequencerMessageWithSegments(afterDelayedMessages uint64, segments [][]byte) *arbstate.SequencerMessage {
+	return &arbstate.SequencerMessage{
+		MinTimestamp:         0,
+		MaxTimestamp:         0,
+		MinL1Block:           0,
+		MaxL1Block:           0,
+		AfterDelayedMessages: afterDelayedMessages,
+		Segments:             segments,
+	}
 }
