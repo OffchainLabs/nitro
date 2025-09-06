@@ -78,6 +78,16 @@ func NewFileCollector(config CollectorConfig) (*FileCollector, error) {
 		return nil, ErrBatchSizeRequired
 	}
 
+	// Prepare the output directory before starting, so callers can handle errors early
+	if config.ClearOutputDir {
+		if err := os.RemoveAll(config.OutputDir); err != nil {
+			return nil, fmt.Errorf("%w: %w", ErrCreateOutputDir, err)
+		}
+	}
+	if err := os.MkdirAll(config.OutputDir, 0o755); err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrCreateOutputDir, err)
+	}
+
 	return &FileCollector{
 		config:            config,
 		in:                make(chan *Message, CollectorMsgQueueSize),
@@ -86,24 +96,9 @@ func NewFileCollector(config CollectorConfig) (*FileCollector, error) {
 	}, nil
 }
 
-// Start prepares the output directory (removes any previous contents)
-// and begins background processing of incoming messages,
-// should be called only once.
+// Start begins background processing of incoming messages. Should be called only once.
+// Directory preparation occurs during construction in NewFileCollector.
 func (c *FileCollector) Start(parent context.Context) {
-	// Reset the output directory, if enabled
-	if c.config.ClearOutputDir {
-		if err := os.RemoveAll(c.config.OutputDir); err != nil {
-			log.Error("Multi-gas collector: failed to clear output dir", "dir", c.config.OutputDir, "err", err)
-			return
-		}
-	}
-
-	// Create the output directory
-	if err := os.MkdirAll(c.config.OutputDir, 0o755); err != nil {
-		log.Error("Multi-gas collector: failed to create output dir", "dir", c.config.OutputDir, "err", err)
-		return
-	}
-
 	ctx, cancel := context.WithCancel(parent)
 	c.cancel = cancel
 
