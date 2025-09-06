@@ -24,6 +24,7 @@ var analyzerForTests = &analysis.Analyzer{
 	Doc:        "check for struct field initializations",
 	Run:        func(p *analysis.Pass) (interface{}, error) { return run(true, p) },
 	ResultType: reflect.TypeOf(Result{}),
+	Requires:   []*analysis.Analyzer{FieldCountAnalyzer},
 }
 
 type structError struct {

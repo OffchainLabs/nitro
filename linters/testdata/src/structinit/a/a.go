@@ -1,33 +1,34 @@
+// want package:"{package a .*}"
 package a
 
 import "fmt"
 
 // lint:require-exhaustive-initialization
-type interestingStruct struct {
-	x int
-	b *boringStruct
+type InterestingStruct struct {
+	X int
+	B *BoringStruct
 }
 
-type boringStruct struct {
-	x, y int
+type BoringStruct struct {
+	X, Y int
 }
 
 func init() {
-	a := &interestingStruct{ // Error: only single field is initialized.
-		x: 1,
+	a := &InterestingStruct{ // Error: only single field is initialized.
+		X: 1,
 	}
 	fmt.Println(a)
-	b := interestingStruct{ // Error: only single field is initialized.
-		b: nil,
+	b := InterestingStruct{ // Error: only single field is initialized.
+		B: nil,
 	}
 	fmt.Println(b)
-	c := interestingStruct{ // Not an error, all fields are initialized.
-		x: 1,
-		b: nil,
+	c := InterestingStruct{ // Not an error, all fields are initialized.
+		X: 1,
+		B: nil,
 	}
 	fmt.Println(c)
-	d := &boringStruct{ // Not an error since it's not annotated for the linter.
-		x: 1,
+	d := &BoringStruct{ // Not an error since it's not annotated for the linter.
+		X: 1,
 	}
 	fmt.Println(d)
 }
