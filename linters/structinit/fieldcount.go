@@ -42,9 +42,9 @@ func countFields(pass *analysis.Pass) (interface{}, error) {
 				}
 			case *ast.TypeSpec:
 				if structDecl, ok := n.Type.(*ast.StructType); ok {
-					//if markedStructs[getNodePosition(pass, node)] {
-					counts[structId(pass, structDecl)] = countStructFields(structDecl)
-					//}
+					if markedStructs[getNodePosition(pass, node)] {
+						counts[pass.Pkg.Path()+"."+n.Name.Name] = countStructFields(structDecl)
+					}
 				}
 			}
 			return true
@@ -69,10 +69,6 @@ func countStructFields(structDecl *ast.StructType) (fieldCount int) {
 		fieldCount += max(1, len(field.Names))
 	}
 	return
-}
-
-func structId(pass *analysis.Pass, structDecl *ast.StructType) string {
-	return pass.TypesInfo.Types[structDecl].Type.String()
 }
 
 type position struct {
