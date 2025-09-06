@@ -81,11 +81,11 @@ func NewFileCollector(config CollectorConfig) (*FileCollector, error) {
 	// Prepare the output directory before starting, so callers can handle errors early
 	if config.ClearOutputDir {
 		if err := os.RemoveAll(config.OutputDir); err != nil {
-			return nil, fmt.Errorf("%w: %v", ErrCreateOutputDir, err)
+			return nil, fmt.Errorf("%w: %w", ErrCreateOutputDir, err)
 		}
 	}
 	if err := os.MkdirAll(config.OutputDir, 0o755); err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrCreateOutputDir, err)
+		return nil, fmt.Errorf("%w: %w", ErrCreateOutputDir, err)
 	}
 
 	return &FileCollector{
