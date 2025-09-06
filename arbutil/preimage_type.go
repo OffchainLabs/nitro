@@ -11,4 +11,5 @@ const (
 	Keccak256PreimageType PreimageType = iota
 	Sha2_256PreimageType
 	EthVersionedHashPreimageType
+	DACertificatePreimageType
 )

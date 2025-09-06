@@ -204,5 +204,14 @@ pub fn hash_preimage(preimage: &[u8], ty: PreimageType) -> Result<[u8; 32]> {
             commitment_hash[0] = 1;
             Ok(commitment_hash)
         }
+        PreimageType::DACertificate => {
+            // There is no way for us to compute the hash of the preimage for DACertificate.
+            // For DACertificate, this is only ever called on the flat file initialization path.
+            // For now it's okay to return nothing here but if we want to use the flat file
+            // initialization path with DACertificate for testing, then we could include
+            // the hash in the file too.
+            let b = Default::default();
+            Ok(b)
+        }
     }
 }

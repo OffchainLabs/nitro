@@ -21,6 +21,7 @@ pub enum PreimageType {
     Keccak256 = 0,
     Sha2_256 = 1,
     EthVersionedHash = 2,
+    DACertificate = 3,
 }
 
 /// cbindgen:field-names=[bytes]
