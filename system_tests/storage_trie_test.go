@@ -5,7 +5,6 @@
 package arbtest
 
 import (
-	"context"
 	"math/big"
 	"testing"
 	"time"
@@ -17,8 +16,7 @@ import (
 )
 
 func TestStorageTrie(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	var withL1 = true
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, withL1)
@@ -43,8 +41,8 @@ func TestStorageTrie(t *testing.T) {
 	ownerTxOpts := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
 	_, bigMap := builder.L2.DeployBigMap(t, ownerTxOpts)
 
-	// Store enough values to use just over 32M gas
-	toAdd := big.NewInt(1420)
+	// Store enough values to use just under 32M gas
+	toAdd := big.NewInt(1417)
 	// In the first transaction, don't clear any values.
 	toClear := big.NewInt(0)
 
@@ -56,7 +54,7 @@ func TestStorageTrie(t *testing.T) {
 	Require(t, err)
 	tx1BlockNum := receipt.BlockNumber.Uint64()
 
-	want := uint64(20_000_000)
+	want := uint64(30_000_000)
 	got := receipt.GasUsed - receipt.GasUsedForL1
 	if got < want {
 		t.Errorf("Want at least GasUsed: %d: got: %d", want, got)

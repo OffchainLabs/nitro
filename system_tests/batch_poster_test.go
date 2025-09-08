@@ -362,8 +362,7 @@ func TestRedisBatchPosterHandoff(t *testing.T) {
 }
 
 func TestBatchPosterLargeTx(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
 	builder.execConfig.Sequencer.MaxTxDataSize = 110000
@@ -373,7 +372,7 @@ func TestBatchPosterLargeTx(t *testing.T) {
 	testClientB, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{})
 	defer cleanupB()
 
-	data := make([]byte, 100000)
+	data := make([]byte, 72972)
 	_, err := rand.Read(data)
 	Require(t, err)
 	faucetAddr := builder.L2Info.GetAddress("Faucet")

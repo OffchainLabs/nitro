@@ -432,6 +432,30 @@ func GetPosterGas(state *arbosState.ArbosState, baseFee *big.Int, runCtx *core.M
 	return arbmath.BigToUintSaturating(arbmath.BigDiv(posterCost, baseFee))
 }
 
+func (p *TxProcessor) TxGasLimitHook(gasRemaining *uint64) error {
+	// This hook
+	if p.msg.TxRunContext.IsEthcall() {
+		return nil
+	}
+	// Before ArbOS 50, use the block gas limit to limit the transaction gas.
+	max, err := p.state.L2PricingState().PerBlockGasLimit()
+	if err != nil {
+		return err
+	}
+	if p.state.ArbOSVersion() >= params.ArbosVersion_50 {
+		// ArbOS 50 implements something like EIP-7825, a per-transaction limit.
+		max, err = p.state.L2PricingState().PerTxGasLimit()
+		if err != nil {
+			return err
+		}
+	}
+	if *gasRemaining > max {
+		p.computeHoldGas = *gasRemaining - max
+		*gasRemaining = max
+	}
+	return nil
+}
+
 func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) (common.Address, multigas.MultiGas, error) {
 	// Because a user pays a 1-dimensional gas price, we must re-express poster L1 calldata costs
 	// as if the user was buying an equivalent amount of L2 compute gas. This hook determines what
@@ -480,16 +504,6 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) (common.Address, mul
 	*gasRemaining -= gasNeededToStartEVM
 	multiGas := multigas.L1CalldataGas(gasNeededToStartEVM)
 
-	if !p.msg.TxRunContext.IsEthcall() {
-		// If this is a real tx, limit the amount of computed based on the gas pool.
-		// We do this by charging extra gas, and then refunding it later.
-		gasAvailable, _ := p.state.L2PricingState().PerBlockGasLimit()
-		if *gasRemaining > gasAvailable {
-			p.computeHoldGas = *gasRemaining - gasAvailable
-			*gasRemaining = gasAvailable
-			// The amount of multigas does not increase here because it will be refunded later.
-		}
-	}
 	return tipReceipient, multiGas, nil
 }
 
