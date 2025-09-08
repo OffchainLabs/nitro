@@ -57,10 +57,11 @@ func run(dryRun bool, pass *analysis.Pass) (interface{}, error) {
 			// the literal match the number of struct fields.
 			if cl, ok := node.(*ast.CompositeLit); ok {
 				stName := pass.TypesInfo.Types[cl].Type.String()
-				if cnt, found := structs[stName]; found && cnt != len(cl.Elts) {
+				initializedFields := len(cl.Elts)
+				if declaredFields, found := structs[stName]; found && declaredFields != initializedFields {
 					foundErrors = append(foundErrors, structError{
 						Pos:     cl.Pos(),
-						Message: fmt.Sprintf("struct: %q initialized with: %v of total: %v fields", stName, len(cl.Elts), cnt),
+						Message: errorMessage(stName, initializedFields, declaredFields),
 					})
 				}
 			}
@@ -135,4 +136,8 @@ func (p position) nextLine() position {
 func getNodePosition(pass *analysis.Pass, node ast.Node) position {
 	p := pass.Fset.Position(node.Pos())
 	return position{p.Filename, p.Line}
+}
+
+func errorMessage(structName string, initializedFields, declaredFields int) string {
+	return fmt.Sprintf("struct: %q initialized with: %v of total: %v fields", structName, initializedFields, declaredFields)
 }

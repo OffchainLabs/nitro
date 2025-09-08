@@ -3,7 +3,6 @@ package structinit
 import (
 	"bytes"
 	"os/exec"
-	"reflect"
 	"strings"
 	"testing"
 
@@ -14,24 +13,31 @@ import (
 const aPackagePath = "github.com/offchainlabs/nitro/linters/testdata/src/structinit/a"
 const bPackagePath = "github.com/offchainlabs/nitro/linters/testdata/src/structinit/b"
 
-func TestFieldCountInSinglePackage(t *testing.T) {
-	result := analysistest.Run(t, getModuleRoot(t), Analyzer, aPackagePath)
+func TestFieldCountingInSinglePackage(t *testing.T) {
+	result := analysistest.Run(t, getModuleRoot(t), analyzerForTests, aPackagePath)
 	require.Equal(t, 1, len(result),
 		"Expected single result - analysis was run for a single package")
 
-	actual := result[0].Result.(fieldCounts)
-	expected := fieldCounts{aPackagePath + ".InterestingStruct": 2}
-	require.True(t, reflect.DeepEqual(actual, expected))
+	actual := extractErrorMessages(result[0])
+	// a.go contains two incorrect initializations of InterestingStruct
+	expected := []string{
+		errorMessage(aPackagePath+".InterestingStruct", 1, 2),
+		errorMessage(aPackagePath+".InterestingStruct", 1, 2),
+	}
+	require.ElementsMatch(t, actual, expected)
 }
 
-func TestFieldCountAcrossPackages(t *testing.T) {
-	result := analysistest.Run(t, getModuleRoot(t), Analyzer, bPackagePath)
+func TestFieldCountingAcrossPackages(t *testing.T) {
+	result := analysistest.Run(t, getModuleRoot(t), analyzerForTests, bPackagePath)
 	require.Equal(t, 1, len(result),
 		"Expected two results - analysis was run for a single package")
 
-	actual := result[0].Result.(fieldCounts)
-	expected := fieldCounts{aPackagePath + ".InterestingStruct": 2, bPackagePath + ".AnotherStruct": 1}
-	require.True(t, reflect.DeepEqual(actual, expected))
+	actual := extractErrorMessages(result[0])
+	// b.go contains a single incorrect initialization of InterestingStruct
+	expected := []string{
+		errorMessage(aPackagePath+".InterestingStruct", 0, 2),
+	}
+	require.ElementsMatch(t, actual, expected)
 }
 
 func getModuleRoot(t *testing.T) string {
@@ -49,19 +55,10 @@ func getModuleRoot(t *testing.T) string {
 	return strings.TrimSpace(out.String())
 }
 
-func TestLinter(t *testing.T) {
-	got := errCount(analysistest.Run(t, getModuleRoot(t), analyzerForTests, aPackagePath))
-	if got != 2 {
-		t.Errorf("analysistest.Run() got %d errors, expected 2", got)
+func extractErrorMessages(analyzerResult *analysistest.Result) []string {
+	errors := []string{}
+	for _, structErr := range analyzerResult.Result.([]structError) {
+		errors = append(errors, structErr.Message)
 	}
-}
-
-func errCount(res []*analysistest.Result) int {
-	cnt := 0
-	for _, r := range res {
-		if errors, ok := r.Result.([]fieldCounts); ok {
-			cnt += len(errors)
-		}
-	}
-	return cnt
+	return errors
 }

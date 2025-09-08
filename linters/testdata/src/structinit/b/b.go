@@ -1,4 +1,9 @@
-// want package:"{package b .*}"
+// want package:"{package b .*structinit/b.* .*}"
+// The comment above ensures that during tests, the `structinit` analyzer
+// will produce a `Fact` about the `structinit/b` package (with some prefix
+// and suffix in its path). Since the fact will be of type `*accumulatedFieldCounts`,
+// we just match arbitrary pattern (.*) - it will be just some address.
+
 package b
 
 import (
@@ -13,8 +18,6 @@ type AnotherStruct struct {
 }
 
 func init() {
-	var partiallyInitialized = &a.InterestingStruct{ // Error: only single field is initialized.
-		X: 1,
-	}
-	fmt.Println(partiallyInitialized)
+	var silentlyInitialized = &a.InterestingStruct{} // Error: no field is initialized.
+	fmt.Println(silentlyInitialized)
 }
