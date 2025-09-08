@@ -56,9 +56,11 @@ func getModuleRoot(t *testing.T) string {
 }
 
 func extractErrorMessages(analyzerResult *analysistest.Result) []string {
-	errors := []string{}
-	for _, structErr := range analyzerResult.Result.([]structError) {
-		errors = append(errors, structErr.Message)
+	var errors []string
+	if structErrs, ok := analyzerResult.Result.([]structError); ok {
+		for _, structErr := range structErrs {
+			errors = append(errors, structErr.Message)
+		}
 	}
 	return errors
 }

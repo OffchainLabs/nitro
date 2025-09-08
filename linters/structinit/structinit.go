@@ -120,9 +120,11 @@ func countFieldsInPackageAndItsDeps(pass *analysis.Pass) fieldCounts {
 // Merge facts from all the already visited packages into a single `fieldCounts` object.
 func mergeFieldCountsAcrossVisitedPackages(pass *analysis.Pass) fieldCounts {
 	merged := make(map[string]int)
-	for _, packageFieldCounts := range pass.AllPackageFacts() {
-		for k, v := range packageFieldCounts.Fact.(*fieldCounts).counts {
-			merged[k] = v
+	for _, packageFact := range pass.AllPackageFacts() {
+		if fieldCounts, ok := packageFact.Fact.(*fieldCounts); ok {
+			for k, v := range fieldCounts.counts {
+				merged[k] = v
+			}
 		}
 	}
 	return fieldCounts{counts: merged}
