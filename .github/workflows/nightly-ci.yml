@@ -27,7 +27,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        test-mode: [race, legacychallenge, long, challenge, l3challenge]
+        test-mode: [race, legacychallenge, long, challenge, l3challenge, execution-spec-tests]
 
     if: github.event_name == 'workflow_dispatch' || (github.event_name == 'schedule' && github.ref == 'refs/heads/master')
     
@@ -155,6 +155,10 @@ jobs:
       - name: run long stylus tests
         if: matrix.test-mode == 'long'
         run: ${{ github.workspace }}/.github/workflows/gotestsum.sh --tags stylustest --run TestProgramLong --timeout 60m --cover
+
+      - name: run execution spec tests
+        if: matrix.test-mode == 'execution-spec-tests'
+        run: ${{ github.workspace }}/.github/workflows/runExecutionSpecTests.sh 
 
       - name: Archive detailed run log
         uses: actions/upload-artifact@v4

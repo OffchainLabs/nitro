@@ -1,3 +1,6 @@
+// Copyright 2023-2025, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
+
 package structinit
 
 import (
@@ -12,59 +15,74 @@ import (
 
 // Tip for linter that struct that has this comment should be included in the
 // analysis.
-// Note: comment should be directly line above the struct definition.
+// Note: comment should be on the line directly above the struct definition
 const linterTip = "// lint:require-exhaustive-initialization"
 
 // Analyzer implements struct analyzer for structs that are annotated with
 // `linterTip`, it checks that every instantiation initializes all the fields.
+//
+// For every package the Analyzer is run on, a slice of `structError` will be returned:
+// one error per single incorrect struct initialization. Additionally, every Analyzer
+// invocation will produce a `Fact` useful for dependent packages. It contains (accumulated)
+// information about field count for every encountered struct.
 var Analyzer = &analysis.Analyzer{
 	Name:       "structinit",
 	Doc:        "check for struct field initializations",
 	Run:        func(p *analysis.Pass) (interface{}, error) { return run(false, p) },
-	ResultType: reflect.TypeOf(Result{}),
+	ResultType: reflect.TypeOf([]structError{}),
+	FactTypes:  []analysis.Fact{new(fieldCounts)},
 }
 
+// Test version of the analyzer - errors that will be found during the package analysis
+// will not be reported as test failures.
 var analyzerForTests = &analysis.Analyzer{
 	Name:       "teststructinit",
 	Doc:        "check for struct field initializations",
 	Run:        func(p *analysis.Pass) (interface{}, error) { return run(true, p) },
-	ResultType: reflect.TypeOf(Result{}),
+	ResultType: reflect.TypeOf([]structError{}),
+	FactTypes:  []analysis.Fact{new(fieldCounts)},
 }
 
+// Mapping from a struct identifier to the number of declared fields.
+type fieldCounts struct {
+	counts map[string]int
+}
+
+// AFact required implementation for `fieldCounts` to be usable as a `Fact`.
+func (f *fieldCounts) AFact() {}
+
+// Error describing incorrect struct initialization.
 type structError struct {
 	Pos     token.Pos
 	Message string
 }
 
-type Result struct {
-	Errors []structError
-}
-
+// Analyzer logic entrypoint.
 func run(dryRun bool, pass *analysis.Pass) (interface{}, error) {
-	var (
-		ret     Result
-		structs = markedStructs(pass)
-	)
+	// Firstly, gather all field counts from the current package and all its dependencies.
+	var markedStructs = countFieldsInPackageAndItsDeps(pass)
+
+	var foundErrors []structError
+	// Secondly, do the second traversal over the package and inspect every struct initialization.
 	for _, f := range pass.Files {
 		ast.Inspect(f, func(node ast.Node) bool {
-			// For every composite literal check that number of elements in
-			// the literal match the number of struct fields.
 			if cl, ok := node.(*ast.CompositeLit); ok {
 				stName := pass.TypesInfo.Types[cl].Type.String()
-				if cnt, found := structs[stName]; found && cnt != len(cl.Elts) {
-					ret.Errors = append(ret.Errors, structError{
+				initializedFields := len(cl.Elts)
+				if declaredFields, found := markedStructs.counts[stName]; found && declaredFields != initializedFields {
+					foundErrors = append(foundErrors, structError{
 						Pos:     cl.Pos(),
-						Message: fmt.Sprintf("struct: %q initialized with: %v of total: %v fields", stName, len(cl.Elts), cnt),
+						Message: errorMessage(stName, initializedFields, declaredFields),
 					})
-
 				}
-
 			}
 			return true
 		})
 	}
-	for _, err := range ret.Errors {
-		if !dryRun {
+
+	// For tests, do not _report_ errors. We will just _return_ them.
+	if !dryRun {
+		for _, err := range foundErrors {
 			pass.Report(analysis.Diagnostic{
 				Pos:      err.Pos,
 				Message:  err.Message,
@@ -72,42 +90,71 @@ func run(dryRun bool, pass *analysis.Pass) (interface{}, error) {
 			})
 		}
 	}
-	return ret, nil
+
+	return foundErrors, nil
 }
 
-// markedStructs returns a map of structs that are annotated for linter to check
-// that all fields are initialized when the struct is instantiated.
-// It maps struct full name (including package path) to number of fields it contains.
-func markedStructs(pass *analysis.Pass) map[string]int {
-	res := make(map[string]int)
+// Find the number of fields for every struct in the current package and all its dependencies (including indirect).
+func countFieldsInPackageAndItsDeps(pass *analysis.Pass) fieldCounts {
+	accumulator := mergeFieldCountsAcrossVisitedPackages(pass)
 	for _, f := range pass.Files {
-		tips := make(map[position]bool)
+		markedStructs := make(map[position]bool)
 		ast.Inspect(f, func(node ast.Node) bool {
 			switch n := node.(type) {
 			case *ast.Comment:
-				p := pass.Fset.Position(node.Pos())
 				if strings.Contains(n.Text, linterTip) {
-					tips[position{p.Filename, p.Line + 1}] = true
+					commentPos := getNodePosition(pass, node)
+					markedStructs[commentPos.nextLine()] = true
 				}
 			case *ast.TypeSpec:
-				if st, ok := n.Type.(*ast.StructType); ok {
-					p := pass.Fset.Position(st.Struct)
-					if tips[position{p.Filename, p.Line}] {
-						fieldsCnt := 0
-						for _, field := range st.Fields.List {
-							fieldsCnt += len(field.Names)
-						}
-						res[pass.Pkg.Path()+"."+n.Name.Name] = fieldsCnt
+				if structDecl, ok := n.Type.(*ast.StructType); ok {
+					if markedStructs[getNodePosition(pass, node)] {
+						accumulator.counts[pass.Pkg.Path()+"."+n.Name.Name] = countStructFields(structDecl)
 					}
 				}
 			}
 			return true
 		})
 	}
-	return res
+	pass.ExportPackageFact(&accumulator)
+	return accumulator
+}
+
+// Merge facts from all the already visited packages into a single `fieldCounts` object.
+func mergeFieldCountsAcrossVisitedPackages(pass *analysis.Pass) fieldCounts {
+	merged := make(map[string]int)
+	for _, packageFact := range pass.AllPackageFacts() {
+		if fieldCounts, ok := packageFact.Fact.(*fieldCounts); ok {
+			for k, v := range fieldCounts.counts {
+				merged[k] = v
+			}
+		}
+	}
+	return fieldCounts{counts: merged}
+}
+
+// Given a struct declaration AST node, count all its fields (including unnamed and single-type-multi name).
+func countStructFields(structDecl *ast.StructType) (fieldCount int) {
+	for _, field := range structDecl.Fields.List {
+		fieldCount += max(1, len(field.Names))
+	}
+	return
 }
 
 type position struct {
 	fileName string
 	line     int
+}
+
+func (p position) nextLine() position {
+	return position{p.fileName, p.line + 1}
+}
+
+func getNodePosition(pass *analysis.Pass, node ast.Node) position {
+	p := pass.Fset.Position(node.Pos())
+	return position{p.Filename, p.Line}
+}
+
+func errorMessage(structName string, initializedFields, declaredFields int) string {
+	return fmt.Sprintf("struct: %q initialized with: %v of total: %v fields", structName, initializedFields, declaredFields)
 }
