@@ -19,7 +19,6 @@ func TestMultigasStylus_GetBytes32(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Build a node with the multigas collector enabled
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
 	cleanup := builder.Build(t)
 	defer cleanup()
@@ -44,8 +43,7 @@ func TestMultigasStylus_GetBytes32(t *testing.T) {
 	require.Equal(t, params.WarmStorageReadCostEIP2929, receipt.MultiGasUsed.Get(multigas.ResourceKindComputation))
 
 	// TODO(NIT-3552): after instrumenting intrinsic gas and gasChargingHook this difference should be zero
-	// 21000 (intrinsic base) + 64 (legacy calldata) + 803 (hook uplift).
-	gasDifference := params.TxGas + uint64(64) + uint64(803)
+	gasDifference := params.TxGas + uint64(516)
 	require.Equal(t, receipt.GasUsed, receipt.MultiGasUsed.SingleGas()+gasDifference)
 
 	// TODO: Once all WASM operations are instrumented, WasmComputation

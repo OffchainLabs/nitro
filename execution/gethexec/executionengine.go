@@ -44,7 +44,6 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
-	"github.com/offchainlabs/nitro/arbos/multigascollector"
 	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/execution"
@@ -109,8 +108,6 @@ type ExecutionEngine struct {
 	syncTillBlock uint64
 
 	runningMaintenance atomic.Bool
-
-	multigasCollector multigascollector.Collector
 }
 
 func NewL1PriceData() *L1PriceData {
@@ -250,21 +247,6 @@ func (s *ExecutionEngine) EnablePrefetchBlock() {
 		panic("trying to enable prefetch block when already set")
 	}
 	s.prefetchBlock = true
-}
-
-func (s *ExecutionEngine) EnableMultigasCollector(config multigascollector.CollectorConfig) error {
-	if s.multigasCollector != nil {
-		return nil
-	}
-
-	factory := multigascollector.NewCollectorFactory()
-	collector, err := factory(config)
-	if err != nil {
-		return err
-	}
-
-	s.multigasCollector = collector
-	return nil
 }
 
 func (s *ExecutionEngine) SetConsensus(consensus execution.FullConsensusClient) {
@@ -590,11 +572,6 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 	defer statedb.StopPrefetcher()
 	delayedMessagesRead := lastBlockHeader.Nonce.Uint64()
 
-	// Submit multigas start block message, if the multi gas collector is set
-	if s.multigasCollector != nil {
-		s.multigasCollector.PrepareToCollectBlock()
-	}
-
 	startTime := time.Now()
 	block, receipts, err := arbos.ProduceBlockAdvanced(
 		header,
@@ -605,7 +582,6 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 		hooks,
 		false,
 		core.NewMessageCommitContext(s.wasmTargets),
-		s.multigasCollector,
 	)
 	if err != nil {
 		return nil, err
@@ -660,15 +636,6 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 		return nil, err
 	}
 	s.cacheL1PriceDataOfMsg(msgIdx, block, false)
-
-	// Submit multigas finalization block message, if the multi gas collector is set
-	if s.multigasCollector != nil {
-		s.multigasCollector.FinaliseBlock(multigascollector.BlockInfo{
-			BlockNumber:    block.NumberU64(),
-			BlockHash:      block.Hash().Bytes(),
-			BlockTimestamp: block.Time(),
-		})
-	}
 
 	return block, nil
 }
@@ -1075,10 +1042,6 @@ func (s *ExecutionEngine) ArbOSVersionForMessageIndex(msgIdx arbutil.MessageInde
 func (s *ExecutionEngine) Start(ctx_in context.Context) {
 	s.StopWaiter.Start(ctx_in, s)
 
-	if s.multigasCollector != nil {
-		s.multigasCollector.Start(s.GetContext())
-	}
-
 	s.LaunchThread(func(ctx context.Context) {
 		for {
 			if s.syncTillBlock > 0 && s.latestBlock != nil && s.latestBlock.NumberU64() >= s.syncTillBlock {
@@ -1132,14 +1095,6 @@ func (s *ExecutionEngine) Start(ctx_in context.Context) {
 				}
 			}
 		})
-	}
-}
-
-func (s *ExecutionEngine) StopAndWait() {
-	s.StopWaiter.StopAndWait()
-
-	if s.multigasCollector != nil {
-		s.multigasCollector.StopAndWait()
 	}
 }
 

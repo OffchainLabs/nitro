@@ -19,7 +19,6 @@ func TestMultigasDataFromReceipts(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Build a node with collector enabled
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
 	cleanup := builder.Build(t)
 	defer cleanup()
@@ -52,7 +51,7 @@ func TestMultigasDataFromReceipts(t *testing.T) {
 		require.NoError(t, err)
 
 		// TODO(NIT-3552): after instrumenting intrinsic gas this difference should be zero
-		creation := rcpt.ContractAddress != (common.Address{}) // or infer from tx.To()==nil
+		creation := rcpt.ContractAddress != (common.Address{})
 		var gasDifference uint64
 		if creation {
 			gasDifference = params.TxGasContractCreation
