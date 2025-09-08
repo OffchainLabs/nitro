@@ -12,7 +12,7 @@ import (
 
 // Tip for linter that struct that has this comment should be included in the
 // analysis.
-// Note: comment should be directly line above the struct definition.
+// Note: comment should be on the line directly above the struct definition
 const linterTip = "// lint:require-exhaustive-initialization"
 
 // Analyzer implements struct analyzer for structs that are annotated with
