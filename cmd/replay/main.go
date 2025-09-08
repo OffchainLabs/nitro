@@ -162,14 +162,14 @@ func (r *BlobPreimageReader) Initialize(ctx context.Context) error {
 	return nil
 }
 
-type CustomDAPreimageReader struct {
+type DACertificatePreimageReader struct {
 }
 
-func (r *CustomDAPreimageReader) IsValidHeaderByte(ctx context.Context, headerByte byte) bool {
-	return daprovider.IsCustomDAMessageHeaderByte(headerByte)
+func (r *DACertificatePreimageReader) IsValidHeaderByte(ctx context.Context, headerByte byte) bool {
+	return daprovider.IsDACertificateMessageHeaderByte(headerByte)
 }
 
-func (r *CustomDAPreimageReader) RecoverPayloadFromBatch(
+func (r *DACertificatePreimageReader) RecoverPayloadFromBatch(
 	ctx context.Context,
 	batchNum uint64,
 	batchBlockHash common.Hash,
@@ -186,22 +186,22 @@ func (r *CustomDAPreimageReader) RecoverPayloadFromBatch(
 	customDAPreimageHash := crypto.Keccak256Hash(certificate)
 
 	// Validate the certificate before trying to read it
-	if !wavmio.ValidateCertificate(arbutil.CustomDAPreimageType, customDAPreimageHash) {
+	if !wavmio.ValidateCertificate(arbutil.DACertificatePreimageType, customDAPreimageHash) {
 		// Preimage is not available - treat as invalid batch
-		log.Info("CustomDA preimage validation failed, treating as invalid batch",
+		log.Info("DACertificate preimage validation failed, treating as invalid batch",
 			"batchNum", batchNum,
 			"hash", customDAPreimageHash.Hex())
 		return []byte{}, preimages, nil
 	}
 
 	// Read the preimage (which contains the actual batch data)
-	payload, err := wavmio.ResolveTypedPreimage(arbutil.CustomDAPreimageType, customDAPreimageHash)
+	payload, err := wavmio.ResolveTypedPreimage(arbutil.DACertificatePreimageType, customDAPreimageHash)
 	if err != nil {
 		// This should not happen after successful validation
-		panic(fmt.Errorf("failed to resolve CustomDA preimage after validation: %w", err))
+		panic(fmt.Errorf("failed to resolve DACertificate preimage after validation: %w", err))
 	}
 
-	log.Info("CustomDA batch recovered",
+	log.Info("DACertificate batch recovered",
 		"batchNum", batchNum,
 		"hash", customDAPreimageHash.Hex(),
 		"payloadSize", len(payload))
@@ -288,7 +288,7 @@ func main() {
 			dapReaders = append(dapReaders, dasutil.NewReaderForDAS(dasReader, dasKeysetFetcher))
 		}
 		dapReaders = append(dapReaders, daprovider.NewReaderForBlobReader(&BlobPreimageReader{}))
-		dapReaders = append(dapReaders, &CustomDAPreimageReader{})
+		dapReaders = append(dapReaders, &DACertificatePreimageReader{})
 		inboxMultiplexer := arbstate.NewInboxMultiplexer(backend, delayedMessagesRead, dapReaders, keysetValidationMode)
 		ctx := context.Background()
 		message, err := inboxMultiplexer.Pop(ctx)

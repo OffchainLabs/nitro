@@ -36,7 +36,7 @@ func NewReader(l1Client *ethclient.Client, validatorAddr common.Address) *Reader
 
 // IsValidHeaderByte returns true if the header byte indicates a CustomDA message
 func (r *Reader) IsValidHeaderByte(ctx context.Context, headerByte byte) bool {
-	return daprovider.IsCustomDAMessageHeaderByte(headerByte)
+	return daprovider.IsDACertificateMessageHeaderByte(headerByte)
 }
 
 // RecoverPayloadFromBatch fetches the batch data from the ReferenceDA storage
@@ -104,7 +104,7 @@ func (r *Reader) RecoverPayloadFromBatch(
 		// Record the mapping from certificate hash to actual payload data
 		// This is what the replay binary expects: keccak256(certificate) -> payload
 		certHash := crypto.Keccak256Hash(certBytes)
-		preimageRecorder(certHash, payload, arbutil.CustomDAPreimageType)
+		preimageRecorder(certHash, payload, arbutil.DACertificatePreimageType)
 	}
 
 	log.Debug("ReferenceDA batch recovery completed",

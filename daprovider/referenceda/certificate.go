@@ -35,7 +35,7 @@ func NewCertificate(data []byte, signer signature.DataSignerFunc) (*Certificate,
 	}
 
 	cert := &Certificate{
-		Header:   daprovider.CustomDAMessageHeaderFlag,
+		Header:   daprovider.DACertificateMessageHeaderFlag,
 		DataHash: dataHash,
 		V:        sig[64] + 27,
 	}
@@ -70,7 +70,7 @@ func Deserialize(data []byte) (*Certificate, error) {
 	copy(cert.R[:], data[34:66])
 	copy(cert.S[:], data[66:98])
 
-	if cert.Header != daprovider.CustomDAMessageHeaderFlag {
+	if cert.Header != daprovider.DACertificateMessageHeaderFlag {
 		return nil, fmt.Errorf("invalid certificate header: %x", cert.Header)
 	}
 

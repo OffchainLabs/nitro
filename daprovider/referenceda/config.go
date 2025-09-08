@@ -35,7 +35,7 @@ func SigningKeyConfigAddOptions(prefix string, f *flag.FlagSet) {
 }
 
 func ConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.Bool(prefix+".enable", DefaultConfig.Enable, "enable CustomDA mode")
+	f.Bool(prefix+".enable", DefaultConfig.Enable, "enable reference DA provider implementation")
 	SigningKeyConfigAddOptions(prefix+".signing-key", f)
 	f.String(prefix+".validator-contract", DefaultConfig.ValidatorContract, "address of the ReferenceDAProofValidator contract")
 }

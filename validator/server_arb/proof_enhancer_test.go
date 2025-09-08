@@ -13,7 +13,7 @@ import (
 )
 
 func TestCustomDAProofEnhancement(t *testing.T) {
-	t.Skip("TODO: Update test to work with new CustomDAProofEnhancer that requires InboxTracker and InboxReader")
+	t.Skip("TODO: Update test to work with new ReadPreimageProofEnhancer that requires InboxTracker and InboxReader")
 	return
 
 	// Create a reference DA validator with test data
@@ -32,7 +32,7 @@ func TestCustomDAProofEnhancement(t *testing.T) {
 	// Create proof enhancer
 	enhancerManager := NewProofEnhancementManager()
 	// TODO: Create proper mock InboxTracker and InboxReader for testing
-	customDAEnhancer := NewCustomDAProofEnhancer(validator, nil, nil)
+	customDAEnhancer := NewReadPreimageProofEnhancer(validator, nil, nil)
 	enhancerManager.RegisterEnhancer(MarkerCustomDARead, customDAEnhancer)
 
 	// Create a mock proof with enhancement flag and marker

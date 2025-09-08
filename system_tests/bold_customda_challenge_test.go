@@ -479,23 +479,23 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, 
 
 	// Create ProofEnhancers from DA validators
 	proofEnhancerA := server_arb.NewProofEnhancementManager()
-	customDAEnhancerA := server_arb.NewCustomDAProofEnhancer(daClientA, l2nodeA.InboxTracker, l2nodeA.InboxReader)
-	proofEnhancerA.RegisterEnhancer(server_arb.MarkerCustomDARead, customDAEnhancerA)
+	customDAEnhancerA := server_arb.NewReadPreimageProofEnhancer(daClientA, l2nodeA.InboxTracker, l2nodeA.InboxReader)
+	proofEnhancerA.RegisterEnhancer(server_arb.MarkerCustomDAReadPreimage, customDAEnhancerA)
 	validateCertificateEnhancerA := server_arb.NewValidateCertificateProofEnhancer(daClientA, l2nodeA.InboxTracker, l2nodeA.InboxReader)
-	proofEnhancerA.RegisterEnhancer(server_arb.MarkerCustomDAValidate, validateCertificateEnhancerA)
+	proofEnhancerA.RegisterEnhancer(server_arb.MarkerCustomDAValidateCertificate, validateCertificateEnhancerA)
 
 	proofEnhancerB := server_arb.NewProofEnhancementManager()
-	customDAEnhancerB := server_arb.NewCustomDAProofEnhancer(daClientB, l2nodeB.InboxTracker, l2nodeB.InboxReader)
+	customDAEnhancerB := server_arb.NewReadPreimageProofEnhancer(daClientB, l2nodeB.InboxTracker, l2nodeB.InboxReader)
 	validateCertificateEnhancerB := server_arb.NewValidateCertificateProofEnhancer(daClientB, l2nodeB.InboxTracker, l2nodeB.InboxReader)
-	proofEnhancerB.RegisterEnhancer(server_arb.MarkerCustomDAValidate, validateCertificateEnhancerB)
+	proofEnhancerB.RegisterEnhancer(server_arb.MarkerCustomDAValidateCertificate, validateCertificateEnhancerB)
 
 	// For EvilDataEvilCert strategy, wrap the enhancer to inject evil certificates
 	var evilEnhancer *EvilCustomDAProofEnhancer
 	if evilStrategy == EvilDataEvilCert {
 		evilEnhancer = NewEvilCustomDAProofEnhancer(customDAEnhancerB)
-		proofEnhancerB.RegisterEnhancer(server_arb.MarkerCustomDARead, evilEnhancer)
+		proofEnhancerB.RegisterEnhancer(server_arb.MarkerCustomDAReadPreimage, evilEnhancer)
 	} else {
-		proofEnhancerB.RegisterEnhancer(server_arb.MarkerCustomDARead, customDAEnhancerB)
+		proofEnhancerB.RegisterEnhancer(server_arb.MarkerCustomDAReadPreimage, customDAEnhancerB)
 	}
 
 	stateManager, err := bold.NewBOLDStateProvider(

@@ -12,8 +12,8 @@ const (
 	ProofEnhancementFlag = 0x80
 
 	// Marker bytes for different enhancement types
-	MarkerCustomDARead     = 0xDA
-	MarkerCustomDAValidate = 0xDB
+	MarkerCustomDAReadPreimage        = 0xDA
+	MarkerCustomDAValidateCertificate = 0xDB
 )
 
 // ProofEnhancer enhances one-step proofs with additional data

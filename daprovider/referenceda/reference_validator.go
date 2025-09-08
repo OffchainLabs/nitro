@@ -34,7 +34,7 @@ func NewValidator(l1Client *ethclient.Client, validatorAddr common.Address) *Val
 // The proof enhancer will prepend the standardized header [certKeccak256, offset, certSize, certificate]
 // So we only need to return the custom data: [Version(1), PreimageSize(8), PreimageData]
 func (v *Validator) GenerateProof(ctx context.Context, preimageType arbutil.PreimageType, certHash common.Hash, offset uint64, certificate []byte) ([]byte, error) {
-	if preimageType != arbutil.CustomDAPreimageType {
+	if preimageType != arbutil.DACertificatePreimageType {
 		return nil, fmt.Errorf("unsupported preimage type: %v", preimageType)
 	}
 

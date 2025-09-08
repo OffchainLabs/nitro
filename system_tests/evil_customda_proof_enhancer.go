@@ -21,18 +21,18 @@ const (
 	ValidCertClaimedInvalid                     // Valid cert, but validator claims invalid
 )
 
-// EvilCustomDAProofEnhancer wraps the standard CustomDAProofEnhancer to inject evil certificates
+// EvilCustomDAProofEnhancer wraps the standard ReadPreimageProofEnhancer to inject evil certificates
 type EvilCustomDAProofEnhancer struct {
-	*server_arb.CustomDAProofEnhancer
+	*server_arb.ReadPreimageProofEnhancer
 	evilMappings map[common.Hash][]byte // goodCertKeccak -> evil certificate
 }
 
 func NewEvilCustomDAProofEnhancer(
-	standardEnhancer *server_arb.CustomDAProofEnhancer,
+	standardEnhancer *server_arb.ReadPreimageProofEnhancer,
 ) *EvilCustomDAProofEnhancer {
 	return &EvilCustomDAProofEnhancer{
-		CustomDAProofEnhancer: standardEnhancer,
-		evilMappings:          make(map[common.Hash][]byte),
+		ReadPreimageProofEnhancer: standardEnhancer,
+		evilMappings:              make(map[common.Hash][]byte),
 	}
 }
 
@@ -53,7 +53,7 @@ func (e *EvilCustomDAProofEnhancer) EnhanceProof(ctx context.Context, messageNum
 	certKeccak256Pos := offsetPos - 32
 
 	// Verify marker
-	if proof[markerPos] != server_arb.MarkerCustomDARead {
+	if proof[markerPos] != server_arb.MarkerCustomDAReadPreimage {
 		return nil, fmt.Errorf("invalid marker for CustomDA enhancer: 0x%02x", proof[markerPos])
 	}
 
@@ -65,7 +65,7 @@ func (e *EvilCustomDAProofEnhancer) EnhanceProof(ctx context.Context, messageNum
 	if evilCert, ok := e.evilMappings[certKeccak256]; ok {
 		// We need to get the custom proof data
 		// Let the standard enhancer do its work to get the custom proof
-		standardEnhanced, err := e.CustomDAProofEnhancer.EnhanceProof(ctx, messageNum, proof)
+		standardEnhanced, err := e.ReadPreimageProofEnhancer.EnhanceProof(ctx, messageNum, proof)
 		if err != nil {
 			return nil, err
 		}
@@ -100,5 +100,5 @@ func (e *EvilCustomDAProofEnhancer) EnhanceProof(ctx context.Context, messageNum
 	}
 
 	// No evil mapping, use standard behavior
-	return e.CustomDAProofEnhancer.EnhanceProof(ctx, messageNum, proof)
+	return e.ReadPreimageProofEnhancer.EnhanceProof(ctx, messageNum, proof)
 }

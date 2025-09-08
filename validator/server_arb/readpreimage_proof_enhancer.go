@@ -14,20 +14,20 @@ import (
 	"github.com/offchainlabs/nitro/staker"
 )
 
-// CustomDAProofEnhancer enhances proofs that involve CustomDA preimage operations
-type CustomDAProofEnhancer struct {
+// ReadPreimageProofEnhancer enhances proofs that involve CustomDA preimage operations
+type ReadPreimageProofEnhancer struct {
 	daValidator  daprovider.Validator
 	inboxTracker staker.InboxTrackerInterface
 	inboxReader  staker.InboxReaderInterface
 }
 
-// NewCustomDAProofEnhancer creates a new CustomDA proof enhancer
-func NewCustomDAProofEnhancer(
+// NewReadPreimageProofEnhancer creates a new CustomDA proof enhancer
+func NewReadPreimageProofEnhancer(
 	validator daprovider.Validator,
 	inboxTracker staker.InboxTrackerInterface,
 	inboxReader staker.InboxReaderInterface,
-) *CustomDAProofEnhancer {
-	return &CustomDAProofEnhancer{
+) *ReadPreimageProofEnhancer {
+	return &ReadPreimageProofEnhancer{
 		daValidator:  validator,
 		inboxTracker: inboxTracker,
 		inboxReader:  inboxReader,
@@ -35,7 +35,7 @@ func NewCustomDAProofEnhancer(
 }
 
 // EnhanceProof implements ProofEnhancer for CustomDA
-func (e *CustomDAProofEnhancer) EnhanceProof(ctx context.Context, messageNum arbutil.MessageIndex, proof []byte) ([]byte, error) {
+func (e *ReadPreimageProofEnhancer) EnhanceProof(ctx context.Context, messageNum arbutil.MessageIndex, proof []byte) ([]byte, error) {
 	batchContainingMessage, found, err := e.inboxTracker.FindInboxBatchContainingMessage(messageNum)
 	if err != nil {
 		return nil, err
@@ -62,9 +62,9 @@ func (e *CustomDAProofEnhancer) EnhanceProof(ctx context.Context, messageNum arb
 		return nil, fmt.Errorf("certificate too short: expected at least 33 bytes, got %d", len(certificate))
 	}
 
-	if certificate[0] != daprovider.CustomDAMessageHeaderFlag {
+	if certificate[0] != daprovider.DACertificateMessageHeaderFlag {
 		return nil, fmt.Errorf("invalid certificate header: expected 0x%02x, got 0x%02x",
-			daprovider.CustomDAMessageHeaderFlag, certificate[0])
+			daprovider.DACertificateMessageHeaderFlag, certificate[0])
 	}
 
 	// Extract keccak256 of the certificate and offset from end of proof
@@ -80,7 +80,7 @@ func (e *CustomDAProofEnhancer) EnhanceProof(ctx context.Context, messageNum arb
 	certKeccak256Pos := offsetPos - 32
 
 	// Verify marker
-	if proof[markerPos] != MarkerCustomDARead {
+	if proof[markerPos] != MarkerCustomDAReadPreimage {
 		return nil, fmt.Errorf("invalid marker for CustomDA enhancer: 0x%02x", proof[markerPos])
 	}
 
@@ -96,7 +96,7 @@ func (e *CustomDAProofEnhancer) EnhanceProof(ctx context.Context, messageNum arb
 	}
 
 	// Generate custom proof with certificate
-	customProof, err := e.daValidator.GenerateProof(ctx, arbutil.CustomDAPreimageType, common.BytesToHash(certKeccak256[:]), offset, certificate)
+	customProof, err := e.daValidator.GenerateProof(ctx, arbutil.DACertificatePreimageType, common.BytesToHash(certKeccak256[:]), offset, certificate)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate custom DA proof: %w", err)
 	}

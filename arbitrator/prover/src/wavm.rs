@@ -159,8 +159,6 @@ pub enum Opcode {
     GetGlobalStateU64,
     /// Sets u64 in global state
     SetGlobalStateU64,
-    /// Validates the CustomDA certificate before allowing ReadPreImage to access it
-    ValidateCertificate,
     /// Reads the preimage of a hash in-place into the pointer on the stack at an offset
     ReadPreImage,
     /// Reads the current inbox message into the pointer on the stack at an offset

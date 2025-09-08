@@ -42,7 +42,7 @@ func (e *ValidateCertificateProofEnhancer) EnhanceProof(ctx context.Context, mes
 	hashPos := markerPos - 32
 
 	// Verify marker
-	if proof[markerPos] != MarkerCustomDAValidate {
+	if proof[markerPos] != MarkerCustomDAValidateCertificate {
 		return nil, fmt.Errorf("invalid marker for ValidateCertificate enhancer: 0x%02x", proof[markerPos])
 	}
 
@@ -78,7 +78,7 @@ func (e *ValidateCertificateProofEnhancer) EnhanceProof(ctx context.Context, mes
 	}
 
 	// Generate certificate validity proof
-	validityProof, err := e.daValidator.GenerateCertificateValidityProof(ctx, arbutil.CustomDAPreimageType, certificate)
+	validityProof, err := e.daValidator.GenerateCertificateValidityProof(ctx, arbutil.DACertificatePreimageType, certificate)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate certificate validity proof: %w", err)
 	}
