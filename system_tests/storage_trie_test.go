@@ -5,6 +5,7 @@
 package arbtest
 
 import (
+	"context"
 	"math/big"
 	"testing"
 	"time"
@@ -16,7 +17,8 @@ import (
 )
 
 func TestStorageTrie(t *testing.T) {
-	ctx := t.Context()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
 	var withL1 = true
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, withL1)
@@ -42,7 +44,7 @@ func TestStorageTrie(t *testing.T) {
 	_, bigMap := builder.L2.DeployBigMap(t, ownerTxOpts)
 
 	// Store enough values to use just under 32M gas
-	toAdd := big.NewInt(1418)
+	toAdd := big.NewInt(1420)
 	// In the first transaction, don't clear any values.
 	toClear := big.NewInt(0)
 

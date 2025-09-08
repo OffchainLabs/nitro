@@ -432,11 +432,6 @@ func GetPosterGas(state *arbosState.ArbosState, baseFee *big.Int, runCtx *core.M
 	return arbmath.BigToUintSaturating(arbmath.BigDiv(posterCost, baseFee))
 }
 
-func (p *TxProcessor) TxGasLimitHook(gasRemaining *uint64) error {
-
-	return nil
-}
-
 func (p *TxProcessor) GasChargingHook(gasRemaining *uint64, intrinsicGas uint64) (common.Address, multigas.MultiGas, error) {
 	// Because a user pays a 1-dimensional gas price, we must re-express poster L1 calldata costs
 	// as if the user was buying an equivalent amount of L2 compute gas. This hook determines what
