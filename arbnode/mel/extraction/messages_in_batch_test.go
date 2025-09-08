@@ -29,10 +29,7 @@ func Test_messagesFromBatchSegments_expectedFieldBounds_simple(t *testing.T) {
 	melState := &mel.State{
 		DelayedMessagesRead: 0,
 	}
-	seqMsg := sequencerMessageWithTimestampRange(segments,
-		10,
-		20,
-	)
+	seqMsg := sequencerMessageWithTimestampRange(segments, 10, 20)
 	mockDB := &mockDelayedMessageDB{}
 	msgs, err := messagesFromBatchSegments(
 		ctx,
@@ -60,10 +57,7 @@ func Test_messagesFromBatchSegments_expectedFieldBounds_complex(t *testing.T) {
 	melState := &mel.State{
 		DelayedMessagesRead: 0,
 	}
-	seqMsg := sequencerMessageWithTimestampRange(segments,
-		10,
-		20,
-	)
+	seqMsg := sequencerMessageWithTimestampRange(segments, 10, 20)
 	mockDB := &mockDelayedMessageDB{}
 	msgs, err := messagesFromBatchSegments(
 		ctx,
@@ -137,10 +131,7 @@ func Test_messagesFromBatchSegments(t *testing.T) {
 				return &mel.State{}
 			},
 			setupSeqMsg: func(segments [][]byte) *arbstate.SequencerMessage {
-				return sequencerMessageWithTimestampRange(segments,
-					0,
-					1_000_000,
-				)
+				return sequencerMessageWithTimestampRange(segments, 0, 1_000_000)
 			},
 			setupMockDB: func() *mockDelayedMessageDB {
 				return nil
@@ -198,10 +189,7 @@ func Test_messagesFromBatchSegments(t *testing.T) {
 				return &mel.State{}
 			},
 			setupSeqMsg: func(segments [][]byte) *arbstate.SequencerMessage {
-				return sequencerMessageWithTimestampRange(segments,
-					0,
-					1_000_000,
-				)
+				return sequencerMessageWithTimestampRange(segments, 0, 1_000_000)
 			},
 			setupMockDB: func() *mockDelayedMessageDB {
 				return nil
