@@ -93,11 +93,11 @@ func (c *RestfulDasClient) ExpirationPolicy(ctx context.Context) (dasutil.Expira
 	}
 	defer res.Body.Close()
 	if res.StatusCode != http.StatusOK {
-		return -1, err
+		return -1, fmt.Errorf("HTTP error with status %d returned by server: %s", res.StatusCode, http.StatusText(res.StatusCode))
 	}
 	body, err := io.ReadAll(res.Body)
 	if err != nil {
-		return -1, fmt.Errorf("HTTP error with status %d returned by server: %s", res.StatusCode, http.StatusText(res.StatusCode))
+		return -1, fmt.Errorf("failed to read response body: %w", err)
 	}
 
 	var response RestfulDasServerResponse
