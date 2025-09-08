@@ -18,7 +18,7 @@ type Slice[V any] struct {
 }
 
 func NewSlice[V any]() *Slice[V] {
-	return &Slice[V]{items: make([]V, 0)}
+	return &Slice[V]{}
 }
 
 func (s *Slice[V]) Push(v V) {
