@@ -17,48 +17,56 @@ const linterTip = "// lint:require-exhaustive-initialization"
 
 // Analyzer implements struct analyzer for structs that are annotated with
 // `linterTip`, it checks that every instantiation initializes all the fields.
+//
+// For every package the Analyzer is run on, a slice of `structError` will be returned:
+// one error per single incorrect struct initialization. Additionally, every Analyzer
+// invocation will produce a `Fact` useful for dependent packages. It contains (accumulated)
+// information about field count for every encountered struct.
 var Analyzer = &analysis.Analyzer{
 	Name:       "structinit",
 	Doc:        "check for struct field initializations",
 	Run:        func(p *analysis.Pass) (interface{}, error) { return run(false, p) },
 	ResultType: reflect.TypeOf([]structError{}),
-	FactTypes:  []analysis.Fact{new(accumulatedFieldCounts)},
+	FactTypes:  []analysis.Fact{new(fieldCounts)},
 }
 
-type fieldCounts = map[string]int
-
+// Test version of the analyzer - errors that will be found during the package analysis
+// will not be reported as test failures.
 var analyzerForTests = &analysis.Analyzer{
 	Name:       "teststructinit",
 	Doc:        "check for struct field initializations",
 	Run:        func(p *analysis.Pass) (interface{}, error) { return run(true, p) },
 	ResultType: reflect.TypeOf([]structError{}),
-	FactTypes:  []analysis.Fact{new(accumulatedFieldCounts)},
+	FactTypes:  []analysis.Fact{new(fieldCounts)},
 }
 
+// Mapping from a struct identifier to the number of declared fields.
+type fieldCounts struct {
+	counts map[string]int
+}
+
+// AFact required implementation for `fieldCounts` to be usable as a `Fact`.
+func (f *fieldCounts) AFact() {}
+
+// Error describing incorrect struct initialization.
 type structError struct {
 	Pos     token.Pos
 	Message string
 }
 
-type accumulatedFieldCounts struct {
-	fieldCounts
-}
-
-func (f *accumulatedFieldCounts) AFact() {}
-
+// Analyzer logic entrypoint.
 func run(dryRun bool, pass *analysis.Pass) (interface{}, error) {
-	var (
-		foundErrors []structError
-		structs     = countFieldsInPackageAndItsDeps(pass)
-	)
+	// Firstly, gather all field counts from the current package and all its dependencies.
+	var markedStructs = countFieldsInPackageAndItsDeps(pass)
+
+	var foundErrors []structError
+	// Secondly, do the second traversal over the package and inspect every struct initialization.
 	for _, f := range pass.Files {
 		ast.Inspect(f, func(node ast.Node) bool {
-			// For every composite literal check that number of elements in
-			// the literal match the number of struct fields.
 			if cl, ok := node.(*ast.CompositeLit); ok {
 				stName := pass.TypesInfo.Types[cl].Type.String()
 				initializedFields := len(cl.Elts)
-				if declaredFields, found := structs[stName]; found && declaredFields != initializedFields {
+				if declaredFields, found := markedStructs.counts[stName]; found && declaredFields != initializedFields {
 					foundErrors = append(foundErrors, structError{
 						Pos:     cl.Pos(),
 						Message: errorMessage(stName, initializedFields, declaredFields),
@@ -69,6 +77,7 @@ func run(dryRun bool, pass *analysis.Pass) (interface{}, error) {
 		})
 	}
 
+	// For tests, do not _report_ errors. We will just _return_ them.
 	if !dryRun {
 		for _, err := range foundErrors {
 			pass.Report(analysis.Diagnostic{
@@ -82,8 +91,9 @@ func run(dryRun bool, pass *analysis.Pass) (interface{}, error) {
 	return foundErrors, nil
 }
 
+// Find the number of fields for every struct in the current package and all its dependencies (including indirect).
 func countFieldsInPackageAndItsDeps(pass *analysis.Pass) fieldCounts {
-	counts := mergeFieldCountsAcrossVisitedPackages(pass)
+	accumulator := mergeFieldCountsAcrossVisitedPackages(pass)
 	for _, f := range pass.Files {
 		markedStructs := make(map[position]bool)
 		ast.Inspect(f, func(node ast.Node) bool {
@@ -96,27 +106,29 @@ func countFieldsInPackageAndItsDeps(pass *analysis.Pass) fieldCounts {
 			case *ast.TypeSpec:
 				if structDecl, ok := n.Type.(*ast.StructType); ok {
 					if markedStructs[getNodePosition(pass, node)] {
-						counts[pass.Pkg.Path()+"."+n.Name.Name] = countStructFields(structDecl)
+						accumulator.counts[pass.Pkg.Path()+"."+n.Name.Name] = countStructFields(structDecl)
 					}
 				}
 			}
 			return true
 		})
 	}
-	pass.ExportPackageFact(&accumulatedFieldCounts{counts})
-	return counts
+	pass.ExportPackageFact(&accumulator)
+	return accumulator
 }
 
-func mergeFieldCountsAcrossVisitedPackages(pass *analysis.Pass) (merged fieldCounts) {
-	merged = make(fieldCounts)
+// Merge facts from all the already visited packages into a single `fieldCounts` object.
+func mergeFieldCountsAcrossVisitedPackages(pass *analysis.Pass) fieldCounts {
+	merged := make(map[string]int)
 	for _, packageFieldCounts := range pass.AllPackageFacts() {
-		for k, v := range packageFieldCounts.Fact.(*accumulatedFieldCounts).fieldCounts {
+		for k, v := range packageFieldCounts.Fact.(*fieldCounts).counts {
 			merged[k] = v
 		}
 	}
-	return
+	return fieldCounts{counts: merged}
 }
 
+// Given a struct declaration AST node, count all its fields (including unnamed and single-type-multi name).
 func countStructFields(structDecl *ast.StructType) (fieldCount int) {
 	for _, field := range structDecl.Fields.List {
 		fieldCount += max(1, len(field.Names))
