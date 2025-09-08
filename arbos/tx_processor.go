@@ -433,30 +433,11 @@ func GetPosterGas(state *arbosState.ArbosState, baseFee *big.Int, runCtx *core.M
 }
 
 func (p *TxProcessor) TxGasLimitHook(gasRemaining *uint64) error {
-	// This hook
-	if p.msg.TxRunContext.IsEthcall() {
-		return nil
-	}
-	// Before ArbOS 50, use the block gas limit to limit the transaction gas.
-	max, err := p.state.L2PricingState().PerBlockGasLimit()
-	if err != nil {
-		return err
-	}
-	if p.state.ArbOSVersion() >= params.ArbosVersion_50 {
-		// ArbOS 50 implements something like EIP-7825, a per-transaction limit.
-		max, err = p.state.L2PricingState().PerTxGasLimit()
-		if err != nil {
-			return err
-		}
-	}
-	if *gasRemaining > max {
-		p.computeHoldGas = *gasRemaining - max
-		*gasRemaining = max
-	}
+
 	return nil
 }
 
-func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) (common.Address, multigas.MultiGas, error) {
+func (p *TxProcessor) GasChargingHook(gasRemaining *uint64, intrinsicGas uint64) (common.Address, multigas.MultiGas, error) {
 	// Because a user pays a 1-dimensional gas price, we must re-express poster L1 calldata costs
 	// as if the user was buying an equivalent amount of L2 compute gas. This hook determines what
 	// that cost looks like, ensuring the user can pay and saving the result for later reference.
@@ -503,6 +484,27 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) (common.Address, mul
 	}
 	*gasRemaining -= gasNeededToStartEVM
 	multiGas := multigas.L1CalldataGas(gasNeededToStartEVM)
+
+	if !p.msg.TxRunContext.IsEthcall() {
+		// Before ArbOS 50, use the block gas limit to limit the transaction gas.
+		max, err := p.state.L2PricingState().PerBlockGasLimit()
+		if err != nil {
+			return tipReceipient, multigas.ZeroGas(), err
+		}
+		if p.state.ArbOSVersion() >= params.ArbosVersion_50 {
+			// ArbOS 50 implements something like EIP-7825, a per-transaction limit.
+			max, err = p.state.L2PricingState().PerTxGasLimit()
+			if err != nil {
+				return tipReceipient, multigas.ZeroGas(), err
+			}
+			// Reduce the max by intrinsicGas because it was already charged
+			max -= intrinsicGas
+		}
+		if *gasRemaining > max {
+			p.computeHoldGas = *gasRemaining - max
+			*gasRemaining = max
+		}
+	}
 
 	return tipReceipient, multiGas, nil
 }

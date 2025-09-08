@@ -27,14 +27,14 @@ func TestBlockGasLimit(t *testing.T) {
 	// receipt from the execution of the transaction to check the gas used.
 	auth.GasLimit = uint64(50_000_000)
 	// Store enough values to use just over 32M gas
-	toAdd := big.NewInt(1358)
+	toAdd := big.NewInt(1423)
 	toClear := big.NewInt(0)
 
 	tx, err := bigMap.ClearAndAddValues(&auth, toClear, toAdd)
 	Require(t, err)
 	r := EnsureTxFailed(t, ctx, b.L2.Client, tx)
 	// Should run out of gas at the transaction limit
-	got := r.GasUsed
+	got := r.GasUsedForL2()
 	// This should be exactly the transaction gas limit as of ArbOS 50.
 	want := l2pricing.InitialPerTxGasLimitV50
 	if got != want {
