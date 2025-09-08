@@ -136,7 +136,7 @@ pub unsafe extern "C" fn arbitrator_load_machine(
     {
         Ok(mach) => mach,
         Err(err) => {
-            eprintln!("Error loading binary: {:?}", err);
+            eprintln!("Error loading binary: {err:?}");
             ptr::null_mut()
         }
     }
@@ -328,7 +328,7 @@ pub unsafe extern "C" fn arbitrator_serialize_state(
         .map_err(Report::from)
         .and_then(|path| mach.serialize_state(path));
     if let Err(err) = res {
-        eprintln!("Failed to serialize machine state: {}", err);
+        eprintln!("Failed to serialize machine state: {err}");
         1
     } else {
         0
@@ -347,7 +347,7 @@ pub unsafe extern "C" fn arbitrator_deserialize_and_replace_state(
         .map_err(Report::from)
         .and_then(|path| mach.deserialize_and_replace_state(path));
     if let Err(err) = res {
-        eprintln!("Failed to deserialize machine state: {}", err);
+        eprintln!("Failed to deserialize machine state: {err}");
         1
     } else {
         0
@@ -428,10 +428,7 @@ unsafe fn handle_preimage_resolution(
             hash,
             Bytes32(got_hash),
         ),
-        Err(err) => panic!(
-            "Failed to hash preimage from resolver (expecting hash {}): {}",
-            hash, err,
-        ),
+        Err(err) => panic!("Failed to hash preimage from resolver (expecting hash {hash}): {err}",),
     }
     Some(data)
 }
