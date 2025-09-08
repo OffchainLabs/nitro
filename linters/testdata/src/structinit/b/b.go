@@ -5,6 +5,9 @@
 // we just match arbitrary pattern (.*) - it will be just some address.
 // For a reference, see: https://pkg.go.dev/golang.org/x/tools/go/analysis/analysistest#Run
 
+// Copyright 2025, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
+
 package b
 
 import (
