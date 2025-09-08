@@ -40,8 +40,8 @@ import (
 )
 
 var (
-	boldStakerBalanceGauge      = metrics.NewRegisteredGaugeFloat64("arb/staker/balance", nil)
-	boldStakerAmountStakedGauge = metrics.NewRegisteredGauge("arb/staker/amount_staked", nil)
+	boldStakerBalanceGauge      = metrics.GetOrRegisterGaugeFloat64("arb/staker/balance", nil)
+	boldStakerAmountStakedGauge = metrics.GetOrRegisterGauge("arb/staker/amount_staked", nil)
 )
 
 var assertionCreatedId common.Hash
