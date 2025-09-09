@@ -10,10 +10,10 @@ import (
 
 	"github.com/pkg/errors"
 
-	protocol "github.com/offchainlabs/bold/chain-abstraction"
-	"github.com/offchainlabs/bold/containers"
-	"github.com/offchainlabs/bold/containers/threadsafe"
-	bisection "github.com/offchainlabs/bold/math"
+	protocol "github.com/offchainlabs/nitro/bold/chain-abstraction"
+	"github.com/offchainlabs/nitro/bold/containers"
+	"github.com/offchainlabs/nitro/bold/containers/threadsafe"
+	bisection "github.com/offchainlabs/nitro/bold/math"
 )
 
 var (
