@@ -72,9 +72,11 @@ pub enum Hostio {
     WavmSetGlobalStateBytes32,
     WavmGetGlobalStateU64,
     WavmSetGlobalStateU64,
+    WavmValidateCertificate,
     WavmReadKeccakPreimage,
     WavmReadSha256Preimage,
     WavmReadEthVersionedHashPreimage,
+    WavmReadDACertificatePreimage,
     WavmReadInboxMessage,
     WavmReadDelayedInboxMessage,
     WavmHaltAndSetFinished,
@@ -119,9 +121,11 @@ impl FromStr for Hostio {
             ("env", "wavm_set_globalstate_bytes32") => WavmSetGlobalStateBytes32,
             ("env", "wavm_get_globalstate_u64") => WavmGetGlobalStateU64,
             ("env", "wavm_set_globalstate_u64") => WavmSetGlobalStateU64,
+            ("env", "wavm_validate_certificate") => WavmValidateCertificate,
             ("env", "wavm_read_keccak_256_preimage") => WavmReadKeccakPreimage,
             ("env", "wavm_read_sha2_256_preimage") => WavmReadSha256Preimage,
             ("env", "wavm_read_eth_versioned_hash_preimage") => WavmReadEthVersionedHashPreimage,
+            ("env", "wavm_read_dacertificate_preimage") => WavmReadDACertificatePreimage,
             ("env", "wavm_read_inbox_message") => WavmReadInboxMessage,
             ("env", "wavm_read_delayed_inbox_message") => WavmReadDelayedInboxMessage,
             ("env", "wavm_halt_and_set_finished") => WavmHaltAndSetFinished,
@@ -180,9 +184,11 @@ impl Hostio {
             WavmSetGlobalStateBytes32        => func!([I32, I32]),
             WavmGetGlobalStateU64            => func!([I32], [I64]),
             WavmSetGlobalStateU64            => func!([I32, I64]),
+            WavmValidateCertificate          => func!([I32, I32], [I32]),
             WavmReadKeccakPreimage           => func!([I32, I32], [I32]),
             WavmReadSha256Preimage           => func!([I32, I32], [I32]),
             WavmReadEthVersionedHashPreimage => func!([I32, I32], [I32]),
+            WavmReadDACertificatePreimage         => func!([I32, I32], [I32]),
             WavmReadInboxMessage             => func!([I64, I32, I32], [I32]),
             WavmReadDelayedInboxMessage      => func!([I64, I32, I32], [I32]),
             WavmHaltAndSetFinished           => func!(),
@@ -276,6 +282,11 @@ impl Hostio {
                 opcode!(LocalGet, 1);
                 opcode!(SetGlobalStateU64);
             }
+            WavmValidateCertificate => {
+                opcode!(LocalGet, 0); // hash
+                opcode!(LocalGet, 1); // preimage_ty
+                opcode!(ValidateCertificate);
+            }
             WavmReadKeccakPreimage => {
                 opcode!(LocalGet, 0);
                 opcode!(LocalGet, 1);
@@ -290,6 +301,11 @@ impl Hostio {
                 opcode!(LocalGet, 0);
                 opcode!(LocalGet, 1);
                 opcode!(ReadPreImage, PreimageType::EthVersionedHash);
+            }
+            WavmReadDACertificatePreimage => {
+                opcode!(LocalGet, 0);
+                opcode!(LocalGet, 1);
+                opcode!(ReadPreImage, PreimageType::DACertificate);
             }
             WavmReadInboxMessage => {
                 opcode!(LocalGet, 0);
