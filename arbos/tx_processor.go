@@ -481,13 +481,16 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64, intrinsicGas uint64)
 	multiGas := multigas.L1CalldataGas(gasNeededToStartEVM)
 
 	if !p.msg.TxRunContext.IsEthcall() {
-		// Before ArbOS 50, use the block gas limit to limit the transaction gas.
-		max, err := p.state.L2PricingState().PerBlockGasLimit()
-		if err != nil {
-			return tipReceipient, multigas.ZeroGas(), err
-		}
-		if p.state.ArbOSVersion() >= params.ArbosVersion_50 {
-			// ArbOS 50 implements something like EIP-7825, a per-transaction limit.
+		var max uint64
+		var err error
+		if p.state.ArbOSVersion() < params.ArbosVersion_50 {
+			// Before ArbOS 50, cap transaction gas to the block gas limit.
+			max, err = p.state.L2PricingState().PerBlockGasLimit()
+			if err != nil {
+				return tipReceipient, multigas.ZeroGas(), err
+			}
+		} else {
+			// ArbOS 50 implements a EIP-7825-like per-transaction limit.
 			max, err = p.state.L2PricingState().PerTxGasLimit()
 			if err != nil {
 				return tipReceipient, multigas.ZeroGas(), err
