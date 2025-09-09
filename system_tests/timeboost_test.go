@@ -326,7 +326,7 @@ func testTxsHandlingDuringSequencerSwap(t *testing.T, dueToCrash bool) {
 	currentChosen, err := redisCoordinatorGetter.CurrentChosenSequencer(ctx)
 	Require(t, err)
 	if currentChosen != seqB.Stack.HTTPEndpoint() {
-		t.Fatalf("unexepcted current chosen sequencer. Want: %s, Got: %s", seqB.Stack.HTTPEndpoint(), currentChosen)
+		t.Fatalf("unexpected current chosen sequencer. Want: %s, Got: %s", seqB.Stack.HTTPEndpoint(), currentChosen)
 	}
 	redisCoordinatorSetter := &rediscoordinator.RedisCoordinator{RedisCoordinator: redisCoordinatorGetter}
 
@@ -1287,7 +1287,7 @@ func TestTimeboostSequencerFeed_ExpressLaneAuction_InnerPayloadNoncesAreRespecte
 	verifyTimeboostedCorrectness(t, ctx, "Alice", seq, seqClient, false, aliceTx, aliceBlock)
 	verifyTimeboostedCorrectness(t, ctx, "Charlie", seq, seqClient, true, charlie0, charlieBlock)
 
-	// Verify that timeboosted byte array receieved via sequencer feed is correct
+	// Verify that timeboosted byte array received via sequencer feed is correct
 	_, err = WaitForTx(ctx, feedListener.Client, charlie0.Hash(), time.Second*5)
 	Require(t, err)
 	_, err = WaitForTx(ctx, feedListener.Client, aliceTx.Hash(), time.Second*5)
@@ -1343,7 +1343,7 @@ func verifyTimeboostedCorrectness(t *testing.T, ctx context.Context, user string
 				t.Fatalf("incorrect timeboosted bit for %s's tx, it should be timeboosted", user)
 			}
 		} else if got {
-			// Other tx's right now shouln't be timeboosted
+			// Other tx's right now shouldn't be timeboosted
 			t.Fatalf("incorrect timeboosted bit for nonspecified tx with index: %d, it shouldn't be timeboosted", txIndex)
 		}
 	}

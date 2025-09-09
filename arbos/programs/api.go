@@ -56,21 +56,21 @@ func (s apiStatus) to_slice() []byte {
 const EvmApiMethodReqOffset = 0x10000000
 
 func newApiClosures(
-	interpreter *vm.EVMInterpreter,
+	evm *vm.EVM,
 	tracingInfo *util.TracingInfo,
 	scope *vm.ScopeContext,
 	memoryModel *MemoryModel,
 ) RequestHandler {
 	contract := scope.Contract
 	actingAddress := contract.Address() // not necessarily WASM
-	readOnly := interpreter.ReadOnly()
-	evm := interpreter.Evm()
+	readOnly := evm.ReadOnly()
 	db := evm.StateDB
 	chainConfig := evm.ChainConfig()
 
 	getBytes32 := func(key common.Hash) (common.Hash, uint64) {
-		cost := vm.WasmStateLoadCost(db, actingAddress, key)
-		return db.GetState(actingAddress, key), cost
+		mgCost := vm.WasmStateLoadCost(db, actingAddress, key)
+		scope.Contract.UsedMultiGas = scope.Contract.UsedMultiGas.SaturatingAdd(mgCost)
+		return db.GetState(actingAddress, key), mgCost.SingleGas()
 	}
 	setTrieSlots := func(data []byte, gasLeft *uint64) apiStatus {
 		isOutOfGas := false
@@ -163,7 +163,7 @@ func newApiClosures(
 			panic("unsupported call type: " + opcode.String())
 		}
 
-		interpreter.SetReturnData(ret)
+		evm.SetReturnData(ret)
 		cost := am.SaturatingUAdd(baseCost, am.SaturatingUSub(gas, returnGas))
 		return ret, cost, err
 	}
@@ -223,7 +223,7 @@ func newApiClosures(
 		if suberr != vm.ErrExecutionReverted {
 			res = nil // returnData is only provided in the revert case (opCreate)
 		}
-		interpreter.SetReturnData(res)
+		evm.SetReturnData(res)
 		cost := am.SaturatingUSub(startGas, returnGas+one64th) // user gets 1/64th back
 		return addr, res, cost, nil
 	}

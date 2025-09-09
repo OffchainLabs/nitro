@@ -18,6 +18,7 @@ type L2PricingState struct {
 	gasBacklog          storage.StorageBackedUint64
 	pricingInertia      storage.StorageBackedUint64
 	backlogTolerance    storage.StorageBackedUint64
+	perTxGasLimit       storage.StorageBackedUint64
 }
 
 const (
@@ -28,6 +29,7 @@ const (
 	gasBacklogOffset
 	pricingInertiaOffset
 	backlogToleranceOffset
+	perTxGasLimitOffset
 )
 
 const GethBlockGasLimit = 1 << 50
@@ -52,6 +54,7 @@ func OpenL2PricingState(sto *storage.Storage) *L2PricingState {
 		sto.OpenStorageBackedUint64(gasBacklogOffset),
 		sto.OpenStorageBackedUint64(pricingInertiaOffset),
 		sto.OpenStorageBackedUint64(backlogToleranceOffset),
+		sto.OpenStorageBackedUint64(perTxGasLimitOffset),
 	}
 }
 
@@ -88,6 +91,14 @@ func (ps *L2PricingState) PerBlockGasLimit() (uint64, error) {
 
 func (ps *L2PricingState) SetMaxPerBlockGasLimit(limit uint64) error {
 	return ps.perBlockGasLimit.Set(limit)
+}
+
+func (ps *L2PricingState) PerTxGasLimit() (uint64, error) {
+	return ps.perTxGasLimit.Get()
+}
+
+func (ps *L2PricingState) SetMaxPerTxGasLimit(limit uint64) error {
+	return ps.perTxGasLimit.Set(limit)
 }
 
 func (ps *L2PricingState) GasBacklog() (uint64, error) {

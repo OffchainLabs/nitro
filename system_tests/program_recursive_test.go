@@ -111,7 +111,7 @@ func testProgramRecursiveCall(t *testing.T, builder *NodeBuilder, slotVals map[s
 	return receipt.BlockNumber.Uint64()
 }
 
-func testProgramResursiveCalls(t *testing.T, tests [][]multiCallRecurse, jit bool) {
+func testProgramRecursiveCalls(t *testing.T, tests [][]multiCallRecurse, jit bool) {
 	builder, auth, cleanup := setupProgramTest(t, jit)
 	ctx := builder.ctx
 	l2client := builder.L2.Client
@@ -195,5 +195,5 @@ func TestProgramCallSimple(t *testing.T) {
 			},
 		},
 	}
-	testProgramResursiveCalls(t, tests, true)
+	testProgramRecursiveCalls(t, tests, true)
 }

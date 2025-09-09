@@ -155,6 +155,16 @@ var TestSeqCoordinatorConfig = SeqCoordinatorConfig{
 	Signer:                signature.DefaultSignVerifyConfig,
 }
 
+func (c *SeqCoordinatorConfig) Validate() error {
+	if !c.Enable {
+		return nil
+	}
+	if c.RedisUrl == "" {
+		return errors.New("seq-coordinator.redis-url is required when seq-coordinator is enabled")
+	}
+	return nil
+}
+
 func NewSeqCoordinator(
 	dataSigner signature.DataSignerFunc,
 	bpvalidator *contracts.AddressVerifier,

@@ -44,6 +44,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
+	"github.com/offchainlabs/nitro/arbos/multigascollector"
 	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/execution"
@@ -108,6 +109,8 @@ type ExecutionEngine struct {
 	syncTillBlock uint64
 
 	runningMaintenance atomic.Bool
+
+	multigasCollector multigascollector.Collector
 }
 
 func NewL1PriceData() *L1PriceData {
@@ -144,7 +147,7 @@ func (s *ExecutionEngine) MarkFeedStart(to arbutil.MessageIndex) {
 	defer s.cachedL1PriceData.mutex.Unlock()
 
 	if to < s.cachedL1PriceData.startOfL1PriceDataCache {
-		log.Debug("trying to trim older L1 price data cache which doesnt exist anymore")
+		log.Debug("trying to trim older L1 price data cache which doesn't exist anymore")
 	} else if to >= s.cachedL1PriceData.endOfL1PriceDataCache {
 		s.cachedL1PriceData.startOfL1PriceDataCache = 0
 		s.cachedL1PriceData.endOfL1PriceDataCache = 0
@@ -247,6 +250,21 @@ func (s *ExecutionEngine) EnablePrefetchBlock() {
 		panic("trying to enable prefetch block when already set")
 	}
 	s.prefetchBlock = true
+}
+
+func (s *ExecutionEngine) EnableMultigasCollector(config multigascollector.CollectorConfig) error {
+	if s.multigasCollector != nil {
+		return nil
+	}
+
+	factory := multigascollector.NewCollectorFactory()
+	collector, err := factory(config)
+	if err != nil {
+		return err
+	}
+
+	s.multigasCollector = collector
+	return nil
 }
 
 func (s *ExecutionEngine) SetConsensus(consensus execution.FullConsensusClient) {
@@ -558,15 +576,24 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 		return nil, errors.New("can't find block for current header")
 	}
 	var witness *stateless.Witness
+	var witnessStats *stateless.WitnessStats
 	if s.bc.GetVMConfig().StatelessSelfValidation {
 		witness, err = stateless.NewWitness(lastBlock.Header(), s.bc)
 		if err != nil {
 			return nil, err
 		}
+		if s.bc.GetVMConfig().EnableWitnessStats {
+			witnessStats = stateless.NewWitnessStats()
+		}
 	}
-	statedb.StartPrefetcher("Sequencer", witness)
+	statedb.StartPrefetcher("Sequencer", witness, witnessStats)
 	defer statedb.StopPrefetcher()
 	delayedMessagesRead := lastBlockHeader.Nonce.Uint64()
+
+	// Submit multigas start block message, if the multi gas collector is set
+	if s.multigasCollector != nil {
+		s.multigasCollector.PrepareToCollectBlock()
+	}
 
 	startTime := time.Now()
 	block, receipts, err := arbos.ProduceBlockAdvanced(
@@ -578,6 +605,7 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 		hooks,
 		false,
 		core.NewMessageCommitContext(s.wasmTargets),
+		s.multigasCollector,
 	)
 	if err != nil {
 		return nil, err
@@ -633,6 +661,15 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 	}
 	s.cacheL1PriceDataOfMsg(msgIdx, block, false)
 
+	// Submit multigas finalization block message, if the multi gas collector is set
+	if s.multigasCollector != nil {
+		s.multigasCollector.FinaliseBlock(multigascollector.BlockInfo{
+			BlockNumber:    block.NumberU64(),
+			BlockHash:      block.Hash().Bytes(),
+			BlockTimestamp: block.Time(),
+		})
+	}
+
 	return block, nil
 }
 
@@ -640,7 +677,7 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 // or not. The first byte of blockMetadata byte array is reserved to indicate the version,
 // starting from the second byte, (N)th bit would represent if (N)th tx is timeboosted or not, 1 means yes and 0 means no
 // blockMetadata[index / 8 + 1] & (1 << (index % 8)) != 0; where index = (N - 1), implies whether (N)th tx in a block is timeboosted
-// note that number of txs in a block will always lag behind (len(blockMetadata) - 1) * 8 but it wont lag more than a value of 7
+// note that number of txs in a block will always lag behind (len(blockMetadata) - 1) * 8 but it won't lag more than a value of 7
 func (s *ExecutionEngine) blockMetadataFromBlock(block *types.Block, timeboostedTxs map[common.Hash]struct{}) common.BlockMetadata {
 	bits := make(common.BlockMetadata, 1+arbmath.DivCeil(uint64(len(block.Transactions())), 8))
 	if len(timeboostedTxs) == 0 {
@@ -753,13 +790,17 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 		return nil, nil, nil, err
 	}
 	var witness *stateless.Witness
+	var witnessStats *stateless.WitnessStats
 	if s.bc.GetVMConfig().StatelessSelfValidation {
 		witness, err = stateless.NewWitness(currentBlock.Header(), s.bc)
 		if err != nil {
 			return nil, nil, nil, err
 		}
+		if s.bc.GetVMConfig().EnableWitnessStats {
+			witnessStats = stateless.NewWitnessStats()
+		}
 	}
-	statedb.StartPrefetcher("TransactionStreamer", witness)
+	statedb.StartPrefetcher("TransactionStreamer", witness, witnessStats)
 	defer statedb.StopPrefetcher()
 
 	var runCtx *core.MessageRunContext
@@ -1033,6 +1074,11 @@ func (s *ExecutionEngine) ArbOSVersionForMessageIndex(msgIdx arbutil.MessageInde
 
 func (s *ExecutionEngine) Start(ctx_in context.Context) {
 	s.StopWaiter.Start(ctx_in, s)
+
+	if s.multigasCollector != nil {
+		s.multigasCollector.Start(s.GetContext())
+	}
+
 	s.LaunchThread(func(ctx context.Context) {
 		for {
 			if s.syncTillBlock > 0 && s.latestBlock != nil && s.latestBlock.NumberU64() >= s.syncTillBlock {
@@ -1086,6 +1132,14 @@ func (s *ExecutionEngine) Start(ctx_in context.Context) {
 				}
 			}
 		})
+	}
+}
+
+func (s *ExecutionEngine) StopAndWait() {
+	s.StopWaiter.StopAndWait()
+
+	if s.multigasCollector != nil {
+		s.multigasCollector.StopAndWait()
 	}
 }
 

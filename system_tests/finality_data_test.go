@@ -85,14 +85,12 @@ func TestFinalizedBlocksMovedToAncients(t *testing.T) {
 		t.Fatalf("Ancients should be %d, but got %d", finalizedBlockNumber+1, ancients)
 	}
 
-	hasAncient, err := builder.L2.ExecNode.ChainDB.HasAncient(rawdb.ChainFreezerHeaderTable, 8)
-	Require(t, err)
-	if !hasAncient {
+	ancient, err := builder.L2.ExecNode.ChainDB.Ancient(rawdb.ChainFreezerHeaderTable, 8)
+	if err != nil || ancient == nil {
 		t.Fatalf("Ancient should exist")
 	}
-	hasAncient, err = builder.L2.ExecNode.ChainDB.HasAncient(rawdb.ChainFreezerHeaderTable, 15)
-	Require(t, err)
-	if hasAncient {
+	_, err = builder.L2.ExecNode.ChainDB.Ancient(rawdb.ChainFreezerHeaderTable, 15)
+	if err == nil {
 		t.Fatalf("Ancient should not exist")
 	}
 }
