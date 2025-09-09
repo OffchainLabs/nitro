@@ -1,36 +1,69 @@
+// Copyright 2023-2025, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
+
 package structinit
 
 import (
-	"os"
-	"path/filepath"
+	"bytes"
+	"os/exec"
+	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/require"
 	"golang.org/x/tools/go/analysis/analysistest"
 )
 
-func testData(t *testing.T) string {
+const aPackagePath = "github.com/offchainlabs/nitro/linters/testdata/src/structinit/a"
+const bPackagePath = "github.com/offchainlabs/nitro/linters/testdata/src/structinit/b"
+
+func TestFieldCountingInSinglePackage(t *testing.T) {
+	result := analysistest.Run(t, getModuleRoot(t), analyzerForTests, aPackagePath)
+	require.Equal(t, 1, len(result),
+		"Expected single result - analysis was run for a single package")
+
+	actual := extractErrorMessages(result[0])
+	// a.go contains two incorrect initializations of InterestingStruct
+	expected := []string{
+		errorMessage(aPackagePath+".InterestingStruct", 1, 2),
+		errorMessage(aPackagePath+".InterestingStruct", 1, 2),
+	}
+	require.ElementsMatch(t, actual, expected)
+}
+
+func TestFieldCountingAcrossPackages(t *testing.T) {
+	result := analysistest.Run(t, getModuleRoot(t), analyzerForTests, bPackagePath)
+	require.Equal(t, 1, len(result),
+		"Expected two results - analysis was run for a single package")
+
+	actual := extractErrorMessages(result[0])
+	// b.go contains a single incorrect initialization of InterestingStruct
+	expected := []string{
+		errorMessage(aPackagePath+".InterestingStruct", 0, 2),
+	}
+	require.ElementsMatch(t, actual, expected)
+}
+
+func getModuleRoot(t *testing.T) string {
 	t.Helper()
-	wd, err := os.Getwd()
+
+	var out bytes.Buffer
+	cmd := exec.Command("go", "list", "-m", "-f", "{{.Dir}}")
+	cmd.Stdout = &out
+
+	err := cmd.Run()
 	if err != nil {
-		t.Fatalf("Failed to get working directory: %v", err)
+		t.Fatalf("Failed to get module root directoryy: %v", err)
 	}
-	return filepath.Join(filepath.Dir(wd), "testdata")
+
+	return strings.TrimSpace(out.String())
 }
 
-func TestLinter(t *testing.T) {
-	testdata := testData(t)
-	got := errCount(analysistest.Run(t, testdata, analyzerForTests, "structinit/a"))
-	if got != 2 {
-		t.Errorf("analysistest.Run() got %d errors, expected 2", got)
-	}
-}
-
-func errCount(res []*analysistest.Result) int {
-	cnt := 0
-	for _, r := range res {
-		if rs, ok := r.Result.(Result); ok {
-			cnt += len(rs.Errors)
+func extractErrorMessages(analyzerResult *analysistest.Result) []string {
+	var errors []string
+	if structErrs, ok := analyzerResult.Result.([]structError); ok {
+		for _, structErr := range structErrs {
+			errors = append(errors, structErr.Message)
 		}
 	}
-	return cnt
+	return errors
 }

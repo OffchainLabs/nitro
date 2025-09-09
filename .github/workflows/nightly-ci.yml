@@ -27,7 +27,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        test-mode: [race, legacychallenge, long, challenge, l3challenge]
+        test-mode: [race, legacychallenge, long, challenge, l3challenge, execution-spec-tests]
 
     if: github.event_name == 'workflow_dispatch' || (github.event_name == 'schedule' && github.ref == 'refs/heads/master')
     
@@ -50,35 +50,16 @@ jobs:
       - name: Install go
         uses: actions/setup-go@v5
         with:
-          go-version: 1.23.x
+          go-version: 1.24.x
 
       - name: Install wasm-ld
         run: |
           sudo apt-get update && sudo apt-get install -y lld-14
           sudo ln -s /usr/bin/wasm-ld-14 /usr/local/bin/wasm-ld
 
-      - name: Install rust stable
-        uses: dtolnay/rust-toolchain@stable
+      - name: Install rust
         id: install-rust
-        with:
-          toolchain: '1.84.1'
-          targets: 'wasm32-wasip1, wasm32-unknown-unknown'
-          components: 'llvm-tools-preview, rustfmt, clippy'
-
-      - name: Install rust nightly
-        uses: dtolnay/rust-toolchain@nightly
-        id: install-rust-nightly
-        with:
-          toolchain: 'nightly-2025-02-14'
-          targets: 'wasm32-wasip1, wasm32-unknown-unknown'
-          components: 'rust-src, rustfmt, clippy'
-
-      - name: Set STYLUS_NIGHTLY_VER environment variable
-        run: echo "STYLUS_NIGHTLY_VER=+$(rustup toolchain list | grep '^nightly' | head -n1 | cut -d' ' -f1)" >> "$GITHUB_ENV"
-
-      - name: Get Rust version
-        id: rust-version
-        run: echo "version=$(rustc --version | cut -d' ' -f2)" >> $GITHUB_OUTPUT
+        uses: ./.github/actions/install-rust
 
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
@@ -107,8 +88,8 @@ jobs:
             arbitrator/wasm-libraries/soft-float/
             target/etc/initial-machine-cache/
             /home/runner/.rustup/toolchains/
-          key: ${{ runner.os }}-cargo-${{ steps.rust-version.outputs.version }}-min-${{ hashFiles('arbitrator/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-${{ steps.rust-version.outputs.version }}-
+          key: ${{ runner.os }}-cargo-${{ steps.install-rust.outputs.version }}-min-${{ hashFiles('arbitrator/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-${{ steps.install-rust.outputs.version }}-
 
       - name: Cache cbrotli
         uses: actions/cache@v4
@@ -175,6 +156,10 @@ jobs:
         if: matrix.test-mode == 'long'
         run: ${{ github.workspace }}/.github/workflows/gotestsum.sh --tags stylustest --run TestProgramLong --timeout 60m --cover
 
+      - name: run execution spec tests
+        if: matrix.test-mode == 'execution-spec-tests'
+        run: ${{ github.workspace }}/.github/workflows/runExecutionSpecTests.sh 
+
       - name: Archive detailed run log
         uses: actions/upload-artifact@v4
         with:
@@ -237,7 +222,7 @@ jobs:
         if: steps.changed-files.outputs.any_changed == 'true'
         uses: actions/setup-go@v5
         with:
-          go-version: 1.23.x
+          go-version: 1.24.x
 
       - name: Install wasm-ld
         if: steps.changed-files.outputs.any_changed == 'true'
@@ -245,31 +230,9 @@ jobs:
           sudo apt-get update && sudo apt-get install -y lld-14
           sudo ln -s /usr/bin/wasm-ld-14 /usr/local/bin/wasm-ld
 
-      - name: Install rust stable
-        if: steps.changed-files.outputs.any_changed == 'true'
-        uses: dtolnay/rust-toolchain@stable
+      - name: Install rust
         id: install-rust
-        with:
-          toolchain: '1.84.1'
-          targets: 'wasm32-wasip1, wasm32-unknown-unknown'
-          components: 'llvm-tools-preview, rustfmt, clippy'
-
-      - name: Install rust nightly
-        if: steps.changed-files.outputs.any_changed == 'true'
-        uses: dtolnay/rust-toolchain@nightly
-        id: install-rust-nightly
-        with:
-          toolchain: 'nightly-2025-02-14'
-          targets: 'wasm32-wasip1, wasm32-unknown-unknown'
-          components: 'rust-src, rustfmt, clippy'
-
-      - name: Set STYLUS_NIGHTLY_VER environment variable
-        if: steps.changed-files.outputs.any_changed == 'true'
-        run: echo "STYLUS_NIGHTLY_VER=+$(rustup toolchain list | grep '^nightly' | head -n1 | cut -d' ' -f1)" >> "$GITHUB_ENV"
-
-      - name: Get Rust version
-        id: rust-version
-        run: echo "version=$(rustc --version | cut -d' ' -f2)" >> $GITHUB_OUTPUT
+        uses: ./.github/actions/install-rust
 
       - name: Install Foundry
         if: steps.changed-files.outputs.any_changed == 'true'
@@ -302,10 +265,10 @@ jobs:
             arbitrator/wasm-libraries/soft-float/
             target/etc/initial-machine-cache/
             /home/runner/.rustup/toolchains/
-          key: ${{ runner.os }}-cargo-${{ matrix.test-mode }}-${{ steps.rust-version.outputs.version }}-min-${{ hashFiles('arbitrator/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-${{ matrix.test-mode }}-${{ steps.install-rust.outputs.version }}-min-${{ hashFiles('arbitrator/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-${{ matrix.test-mode }}-${{ steps.rust-version.outputs.version }}-
-            ${{ runner.os }}-cargo-${{ steps.rust-version.outputs.version }}-
+            ${{ runner.os }}-cargo-${{ matrix.test-mode }}-${{ steps.install-rust.outputs.version }}-
+            ${{ runner.os }}-cargo-${{ steps.install-rust.outputs.version }}-
 
       - name: Cache cbrotli
         if: steps.changed-files.outputs.any_changed == 'true'
@@ -385,7 +348,7 @@ jobs:
     if: ${{ failure() }}
     steps:
       - name: Send Slack notification
-        uses: slackapi/slack-github-action@v2.0.0
+        uses: slackapi/slack-github-action@v2.1.1
         with:
           errors: true
           method: chat.postMessage

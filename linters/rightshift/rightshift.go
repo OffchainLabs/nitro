@@ -17,12 +17,12 @@ var Analyzer = &analysis.Analyzer{
 
 var analyzerForTests = &analysis.Analyzer{
 	Name:       "testrightshift",
-	Doc:        "check for pointer comparison (for tests)",
+	Doc:        "check for rightshift operation (for tests)",
 	Run:        func(p *analysis.Pass) (interface{}, error) { return run(true, p) },
 	ResultType: reflect.TypeOf(Result{}),
 }
 
-// rightShiftError indicates the position of pointer comparison.
+// rightShiftError indicates the position of rightshift operation.
 type rightShiftError struct {
 	Pos     token.Position
 	Message string
@@ -53,7 +53,7 @@ func run(dryRun bool, pass *analysis.Pass) (interface{}, error) {
 					pass.Report(analysis.Diagnostic{
 						Pos:      pass.Fset.File(f.Pos()).Pos(err.Pos.Offset),
 						Message:  err.Message,
-						Category: "pointercheck",
+						Category: "rightshift",
 					})
 				}
 			}

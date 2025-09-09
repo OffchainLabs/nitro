@@ -15,20 +15,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
-
-	"github.com/offchainlabs/nitro/daprovider/das/dasutil"
 )
-
-type DataAvailabilityServiceWriter interface {
-	// Store requests that the message be stored until timeout (UTC time in unix epoch seconds).
-	Store(ctx context.Context, message []byte, timeout uint64) (*dasutil.DataAvailabilityCertificate, error)
-	fmt.Stringer
-}
-
-type DataAvailabilityServiceReader interface {
-	dasutil.DASReader
-	fmt.Stringer
-}
 
 type DataAvailabilityServiceHealthChecker interface {
 	HealthCheck(ctx context.Context) error

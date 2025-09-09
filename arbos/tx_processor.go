@@ -106,14 +106,14 @@ func takeFunds(pool *big.Int, take *big.Int) *big.Int {
 	return new(big.Int).Set(take)
 }
 
-func (p *TxProcessor) ExecuteWASM(scope *vm.ScopeContext, input []byte, interpreter *vm.EVMInterpreter) ([]byte, error) {
+func (p *TxProcessor) ExecuteWASM(scope *vm.ScopeContext, input []byte, evm *vm.EVM) ([]byte, error) {
 	contract := scope.Contract
 	acting := contract.Address()
 
 	var tracingInfo *util.TracingInfo
-	if interpreter.Config().Tracer != nil {
+	if evm.Config.Tracer != nil {
 		caller := contract.Caller()
-		tracingInfo = util.NewTracingInfo(interpreter.Evm(), caller, acting, util.TracingDuringEVM)
+		tracingInfo = util.NewTracingInfo(evm, caller, acting, util.TracingDuringEVM)
 	}
 
 	// reentrant if more than one open same-actor context span exists
@@ -122,7 +122,7 @@ func (p *TxProcessor) ExecuteWASM(scope *vm.ScopeContext, input []byte, interpre
 	return p.state.Programs().CallProgram(
 		scope,
 		p.evm.StateDB,
-		interpreter,
+		evm,
 		tracingInfo,
 		input,
 		reentrant,
@@ -131,7 +131,7 @@ func (p *TxProcessor) ExecuteWASM(scope *vm.ScopeContext, input []byte, interpre
 }
 
 //nolint:staticcheck
-func (p *TxProcessor) StartTxHook() (endTxNow bool, multiGasUsed *multigas.MultiGas, err error, returnData []byte) {
+func (p *TxProcessor) StartTxHook() (endTxNow bool, multiGasUsed multigas.MultiGas, err error, returnData []byte) {
 	// This hook is called before gas charging and will end the state transition if endTxNow is set to true
 	// Hence, we must charge for any l2 resources if endTxNow is returned true
 
@@ -432,7 +432,7 @@ func GetPosterGas(state *arbosState.ArbosState, baseFee *big.Int, runCtx *core.M
 	return arbmath.BigToUintSaturating(arbmath.BigDiv(posterCost, baseFee))
 }
 
-func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) (common.Address, error) {
+func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) (common.Address, multigas.MultiGas, error) {
 	// Because a user pays a 1-dimensional gas price, we must re-express poster L1 calldata costs
 	// as if the user was buying an equivalent amount of L2 compute gas. This hook determines what
 	// that cost looks like, ensuring the user can pay and saving the result for later reference.
@@ -462,7 +462,7 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) (common.Address, err
 
 		brotliCompressionLevel, err := p.state.BrotliCompressionLevel()
 		if err != nil {
-			return common.Address{}, fmt.Errorf("failed to get brotli compression level: %w", err)
+			return common.Address{}, multigas.ZeroGas(), fmt.Errorf("failed to get brotli compression level: %w", err)
 		}
 		posterCost, calldataUnits := p.state.L1PricingState().PosterDataCost(p.msg, poster, brotliCompressionLevel)
 		if calldataUnits > 0 {
@@ -475,9 +475,10 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) (common.Address, err
 
 	if *gasRemaining < gasNeededToStartEVM {
 		// the user couldn't pay for call data, so give up
-		return tipReceipient, core.ErrIntrinsicGas
+		return tipReceipient, multigas.ZeroGas(), core.ErrIntrinsicGas
 	}
 	*gasRemaining -= gasNeededToStartEVM
+	multiGas := multigas.L1CalldataGas(gasNeededToStartEVM)
 
 	if !p.msg.TxRunContext.IsEthcall() {
 		// If this is a real tx, limit the amount of computed based on the gas pool.
@@ -486,9 +487,10 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) (common.Address, err
 		if *gasRemaining > gasAvailable {
 			p.computeHoldGas = *gasRemaining - gasAvailable
 			*gasRemaining = gasAvailable
+			// The amount of multigas does not increase here because it will be refunded later.
 		}
 	}
-	return tipReceipient, nil
+	return tipReceipient, multiGas, nil
 }
 
 func (p *TxProcessor) RunContext() *core.MessageRunContext {

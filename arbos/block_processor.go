@@ -234,6 +234,7 @@ func ProduceBlockAdvanced(
 	// Note: blockGasLeft will diverge from the actual gas left during execution in the event of invalid txs,
 	// but it's only used as block-local representation limiting the amount of work done in a block.
 	blockGasLeft, _ := arbState.L2PricingState().PerBlockGasLimit()
+	maxPerTxGasLimit, _ := arbState.L2PricingState().PerTxGasLimit()
 	l1BlockNum := l1Info.l1BlockNumber
 
 	// Prepend a tx before all others to touch up the state (update the L1 block num, pricing pools, etc)
@@ -346,6 +347,13 @@ func ProduceBlockAdvanced(
 			}
 
 			computeGas := tx.Gas() - dataGas
+			// Implements EIP-7825. Check activated after arbos_50
+			if arbState.ArbOSVersion() >= params.ArbosVersion_50 && computeGas > maxPerTxGasLimit && isUserTx {
+				// Cap the compute gas to the maximum per-transaction gas limit
+				// and attempt to apply the transaction, if it runs out, there
+				// will be an error during execution.
+				computeGas = maxPerTxGasLimit
+			}
 			if computeGas < params.TxGas {
 				if hooks.DiscardInvalidTxsEarly {
 					return nil, nil, core.ErrIntrinsicGas
@@ -508,11 +516,12 @@ func ProduceBlockAdvanced(
 		}
 
 		// Submit multigas transaction message, if the multi gas collector is set
-		if mgcCollector != nil && result.UsedMultiGas != nil {
+		if mgcCollector != nil {
 			mgcCollector.CollectTransactionMultiGas(multigascollector.TransactionMultiGas{
-				TxHash:   tx.Hash().Bytes(),
-				TxIndex:  uint32(receipt.TransactionIndex), // #nosec G115 -- block tx count << MaxUint32; safe cast
-				MultiGas: *result.UsedMultiGas,
+				TxHash:    tx.Hash().Bytes(),
+				TxIndex:   uint32(receipt.TransactionIndex), // #nosec G115 -- block tx count << MaxUint32; safe cast
+				MultiGas:  result.UsedMultiGas,
+				SingleGas: result.UsedGas,
 			})
 		}
 	}

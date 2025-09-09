@@ -397,6 +397,7 @@ func (state *ArbosState) UpgradeArbosVersion(
 			} else {
 				ensure(state.l1PricingState.SetCalldataPrice(big.NewInt(int64(params.TxDataNonZeroGasEIP2028))))
 			}
+			ensure(state.l2PricingState.SetMaxPerTxGasLimit(l2pricing.InitialPerTxGasLimitV50))
 		default:
 			return fmt.Errorf(
 				"the chain is upgrading to unsupported ArbOS version %v, %w",

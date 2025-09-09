@@ -176,12 +176,19 @@ func (con ArbGasInfo) GetPricesInArbGas(c ctx, evm mech) (huge, huge, huge, erro
 	return con.GetPricesInArbGasWithAggregator(c, evm, addr{})
 }
 
-// GetGasAccountingParams gets the rollup's speed limit, pool size, and tx gas limit
+// GetGasAccountingParams gets the rollup's speed limit, pool size, and block gas limit
 func (con ArbGasInfo) GetGasAccountingParams(c ctx, evm mech) (huge, huge, huge, error) {
 	l2pricing := c.State.L2PricingState()
 	speedLimit, _ := l2pricing.SpeedLimitPerSecond()
-	maxTxGasLimit, err := l2pricing.PerBlockGasLimit()
-	return arbmath.UintToBig(speedLimit), arbmath.UintToBig(maxTxGasLimit), arbmath.UintToBig(maxTxGasLimit), err
+	maxBlockGasLimit, err := l2pricing.PerBlockGasLimit()
+	return arbmath.UintToBig(speedLimit), arbmath.UintToBig(maxBlockGasLimit), arbmath.UintToBig(maxBlockGasLimit), err
+}
+
+// GetMaxTxGasLimit gets the max tx gas limit
+func (con ArbGasInfo) GetMaxTxGasLimit(c ctx, evm mech) (huge, error) {
+	l2pricing := c.State.L2PricingState()
+	maxTxGasLimit, err := l2pricing.PerTxGasLimit()
+	return arbmath.UintToBig(maxTxGasLimit), err
 }
 
 // GetMinimumGasPrice gets the minimum gas price needed for a transaction to succeed
