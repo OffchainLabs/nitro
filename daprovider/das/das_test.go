@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/offchainlabs/nitro/daprovider/das/dasutil"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
@@ -53,7 +54,7 @@ func testDASStoreRetrieveMultipleInstances(t *testing.T, storageType string) {
 	defer lifecycleManager.StopAndWaitUntil(time.Second)
 	daWriter, err := NewSignAfterStoreDASWriter(firstCtx, config, storageService)
 	Require(t, err, "no das")
-	var daReader DataAvailabilityServiceReader = storageService
+	var daReader dasutil.DASReader = storageService
 
 	// #nosec G115
 	timeout := uint64(time.Now().Add(time.Hour * 24).Unix())
@@ -80,7 +81,7 @@ func testDASStoreRetrieveMultipleInstances(t *testing.T, storageType string) {
 	storageService2, lifecycleManager, err := CreatePersistentStorageService(secondCtx, &config)
 	Require(t, err)
 	defer lifecycleManager.StopAndWaitUntil(time.Second)
-	var daReader2 DataAvailabilityServiceReader = storageService2
+	var daReader2 dasutil.DASReader = storageService2
 
 	messageRetrieved2, err := daReader2.GetByHash(secondCtx, cert.DataHash)
 	Require(t, err, "Failed to retrieve message")
@@ -144,7 +145,7 @@ func testDASMissingMessage(t *testing.T, storageType string) {
 	defer lifecycleManager.StopAndWaitUntil(time.Second)
 	daWriter, err := NewSignAfterStoreDASWriter(ctx, config, storageService)
 	Require(t, err, "no das")
-	var daReader DataAvailabilityServiceReader = storageService
+	var daReader dasutil.DASReader = storageService
 
 	messageSaved := []byte("hello world")
 	// #nosec G115

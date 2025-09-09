@@ -9,21 +9,23 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
+
+	"github.com/offchainlabs/nitro/daprovider/das/dasutil"
 )
 
 type ReaderTimeoutWrapper struct {
 	t time.Duration
-	DataAvailabilityServiceReader
+	dasutil.DASReader
 }
 
 type TimeoutWrapper struct {
 	ReaderTimeoutWrapper
 }
 
-func NewReaderTimeoutWrapper(dataAvailabilityServiceReader DataAvailabilityServiceReader, t time.Duration) DataAvailabilityServiceReader {
+func NewReaderTimeoutWrapper(dataAvailabilityServiceReader dasutil.DASReader, t time.Duration) dasutil.DASReader {
 	return &ReaderTimeoutWrapper{
-		t:                             t,
-		DataAvailabilityServiceReader: dataAvailabilityServiceReader,
+		t:         t,
+		DASReader: dataAvailabilityServiceReader,
 	}
 }
 
@@ -32,9 +34,9 @@ func (w *ReaderTimeoutWrapper) GetByHash(ctx context.Context, hash common.Hash) 
 	// For GetByHash we want fast cancellation of all goroutines started by
 	// the aggregator as soon as one returns.
 	defer cancel()
-	return w.DataAvailabilityServiceReader.GetByHash(deadlineCtx, hash)
+	return w.DASReader.GetByHash(deadlineCtx, hash)
 }
 
 func (w *ReaderTimeoutWrapper) String() string {
-	return fmt.Sprintf("ReaderTimeoutWrapper{%v}", w.DataAvailabilityServiceReader)
+	return fmt.Sprintf("ReaderTimeoutWrapper{%v}", w.DASReader)
 }
