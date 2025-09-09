@@ -84,7 +84,7 @@ func OpenArbosState(stateDB vm.StateDB, burner burn.Burner) (*ArbosState, error)
 		backingStorage.OpenStorageBackedUint64(uint64(upgradeVersionOffset)),
 		backingStorage.OpenStorageBackedUint64(uint64(upgradeTimestampOffset)),
 		backingStorage.OpenStorageBackedAddress(uint64(networkFeeAccountOffset)),
-		l1pricing.OpenL1PricingState(backingStorage.OpenCachedSubStorage(l1PricingSubspace)),
+		l1pricing.OpenL1PricingState(backingStorage.OpenCachedSubStorage(l1PricingSubspace), arbosVersion),
 		l2pricing.OpenL2PricingState(backingStorage.OpenCachedSubStorage(l2PricingSubspace)),
 		retryables.OpenRetryableState(backingStorage.OpenCachedSubStorage(retryablesSubspace), stateDB),
 		addressTable.Open(backingStorage.OpenCachedSubStorage(addressTableSubspace)),
@@ -122,6 +122,14 @@ func OpenSystemArbosStateOrPanic(stateDB vm.StateDB, tracingInfo *util.TracingIn
 
 // NewArbosMemoryBackedArbOSState creates and initializes a memory-backed ArbOS state (for testing only)
 func NewArbosMemoryBackedArbOSState() (*ArbosState, *state.StateDB) {
+	return NewArbosMemoryBackedArbOSStateWithConfig(chaininfo.ArbitrumDevTestChainConfig())
+}
+
+// NewArbosMemoryBackedArbOSStateWithConfig creates and initializes a memory-backed ArbOS state with a given config (for testing only)
+func NewArbosMemoryBackedArbOSStateWithConfig(chainConfig *params.ChainConfig) (*ArbosState, *state.StateDB) {
+	if chainConfig.ArbitrumChainParams.InitialArbOSVersion == 0 {
+		chainConfig = chaininfo.ArbitrumDevTestChainConfig()
+	}
 	raw := rawdb.NewMemoryDatabase()
 	trieConfig := &triedb.Config{Preimages: false, PathDB: pathdb.Defaults}
 	if env.GetTestStateScheme() == rawdb.HashScheme {
@@ -133,7 +141,6 @@ func NewArbosMemoryBackedArbOSState() (*ArbosState, *state.StateDB) {
 		panic("failed to init empty statedb: " + err.Error())
 	}
 	burner := burn.NewSystemBurner(nil, false)
-	chainConfig := chaininfo.ArbitrumDevTestChainConfig()
 	// #nosec G115
 	newState, err := InitializeArbosState(statedb, burner, chainConfig, nil, arbostypes.TestInitMessage)
 	if err != nil {
@@ -379,11 +386,17 @@ func (state *ArbosState) UpgradeArbosVersion(
 			// these versions are left to Orbit chains for custom upgrades.
 
 		case params.ArbosVersion_50:
-			params, err := state.Programs().Params()
+			p, err := state.Programs().Params()
 			ensure(err)
-			ensure(params.UpgradeToArbosVersion(nextArbosVersion))
-			ensure(params.Save())
-
+			ensure(p.UpgradeToArbosVersion(nextArbosVersion))
+			ensure(p.Save())
+			chainId, err := state.ChainId()
+			ensure(err)
+			if chainId.Cmp(chaininfo.ArbitrumOneChainConfig().ChainID) == 0 || chainId.Cmp(chaininfo.ArbitrumNovaChainConfig().ChainID) == 0 {
+				ensure(state.l1PricingState.SetCalldataPrice(big.NewInt(int64(params.TxCostFloorPerToken))))
+			} else {
+				ensure(state.l1PricingState.SetCalldataPrice(big.NewInt(int64(params.TxDataNonZeroGasEIP2028))))
+			}
 		default:
 			return fmt.Errorf(
 				"the chain is upgrading to unsupported ArbOS version %v, %w",
@@ -401,6 +414,7 @@ func (state *ArbosState) UpgradeArbosVersion(
 
 		state.arbosVersion = nextArbosVersion
 		state.programs.ArbosVersion = nextArbosVersion
+		state.l1PricingState.ArbosVersion = nextArbosVersion
 	}
 
 	if firstTime && upgradeTo >= params.ArbosVersion_6 {
