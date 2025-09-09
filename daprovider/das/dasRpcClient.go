@@ -33,11 +33,10 @@ var (
 )
 
 type DASRPCClient struct { // implements DataAvailabilityService
-	clnt               *rpc.Client
-	url                string
-	signer             signature.DataSignerFunc
-	enableChunkedStore bool
-	dataStreamer       DataStreamer
+	clnt         *rpc.Client
+	url          string
+	signer       signature.DataSignerFunc
+	dataStreamer *DataStreamer
 }
 
 func nilSigner(_ []byte) ([]byte, error) {
@@ -51,22 +50,24 @@ func NewDASRPCClient(target string, signer signature.DataSignerFunc, maxStoreChu
 		signer = nilSigner
 	}
 
-	dataStreamer, err := NewDataStreamer(target, maxStoreChunkBodySize, signer)
-	if err != nil {
-		return nil, err
-	}
-
 	clnt, err := rpc.Dial(target)
 	if err != nil {
 		return nil, err
 	}
 
+	var dataStreamer *DataStreamer
+	if enableChunkedStore {
+		dataStreamer, err = NewDataStreamer(target, maxStoreChunkBodySize, signer)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	return &DASRPCClient{
-		clnt:               clnt,
-		url:                target,
-		signer:             signer,
-		enableChunkedStore: enableChunkedStore,
-		dataStreamer:       *dataStreamer,
+		clnt:         clnt,
+		url:          target,
+		signer:       signer,
+		dataStreamer: dataStreamer,
 	}, nil
 }
 
@@ -83,7 +84,7 @@ func (c *DASRPCClient) Store(ctx context.Context, message []byte, timeout uint64
 		rpcClientStoreDurationHistogram.Update(time.Since(start).Nanoseconds())
 	}()
 
-	if !c.enableChunkedStore {
+	if c.dataStreamer == nil {
 		log.Debug("Legacy store is being force-used by the DAS client", "url", c.url)
 		return c.legacyStore(ctx, message, timeout)
 	}
