@@ -1,8 +1,10 @@
 package dasutil
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/consensys/gnark-crypto/signature"
 	"github.com/ethereum/go-ethereum/rpc"
@@ -44,4 +46,25 @@ func calculateEffectiveChunkSize(maxStoreChunkBodySize int) (uint64, error) {
 		return -1, fmt.Errorf("max-store-chunk-body-size %d doesn't leave enough room for chunk payload", maxStoreChunkBodySize)
 	}
 	return uint64(chunkSize), nil
+}
+
+func (ds *DataStreamer) StreamData(ctx context.Context, data []byte, timeout uint64) error {
+	params := newStreamParams(uint64(len(data)), ds.chunkSize)
+}
+
+type streamParams struct {
+	timestamp, nChunks, lastChunkSize, dataLen uint64
+}
+
+// todo chunksize and datalen must be > 0
+func newStreamParams(dataLen, chunkSize uint64) streamParams {
+	nChunks := (dataLen + chunkSize - 1) / chunkSize
+	lastChunkSize := (dataLen-1)%chunkSize + 1
+
+	return streamParams{
+		timestamp:     uint64(time.Now().Unix()),
+		nChunks:       nChunks,
+		lastChunkSize: lastChunkSize,
+		dataLen:       dataLen,
+	}
 }
