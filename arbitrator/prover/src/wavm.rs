@@ -209,8 +209,7 @@ impl Opcode {
                 (ArbValueType::I64, 4, true) => 0x34,
                 (ArbValueType::I64, 4, false) => 0x35,
                 _ => panic!(
-                    "Unsupported memory load of type {:?} from {} bytes with signed {}",
-                    ty, bytes, signed,
+                    "Unsupported memory load of type {ty:?} from {bytes} bytes with signed {signed}",
                 ),
             },
             Opcode::MemoryStore { ty, bytes } => match (ty, bytes) {
@@ -224,8 +223,7 @@ impl Opcode {
                 (ArbValueType::I64, 2) => 0x3D,
                 (ArbValueType::I64, 4) => 0x3E,
                 _ => panic!(
-                    "Unsupported memory store of type {:?} to {} bytes",
-                    ty, bytes,
+                    "Unsupported memory store of type {ty:?} to {bytes} bytes",
                 ),
             },
             Opcode::MemorySize => 0x3F,
@@ -258,18 +256,18 @@ impl Opcode {
                 (ArbValueType::I64, ArbValueType::F64) => 0xBD,
                 (ArbValueType::F32, ArbValueType::I32) => 0xBE,
                 (ArbValueType::F64, ArbValueType::I64) => 0xBF,
-                _ => panic!("Unsupported reinterpret to {:?} from {:?}", dest, source),
+                _ => panic!("Unsupported reinterpret to {dest:?} from {source:?}"),
             },
             Opcode::I32ExtendS(x) => match x {
                 8 => 0xC0,
                 16 => 0xC1,
-                _ => panic!("Unsupported {:?}", self),
+                _ => panic!("Unsupported {self:?}"),
             },
             Opcode::I64ExtendS(x) => match x {
                 8 => 0xC2,
                 16 => 0xC3,
                 32 => 0xC4,
-                _ => panic!("Unsupported {:?}", self),
+                _ => panic!("Unsupported {self:?}"),
             },
             // Internal instructions:
             Opcode::InitFrame => 0x8002,

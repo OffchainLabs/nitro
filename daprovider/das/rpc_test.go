@@ -102,13 +102,6 @@ func testRpcImpl(t *testing.T, size, times int, concurrent bool) {
 		testhelpers.RequireImpl(t, err)
 
 		if !bytes.Equal(msg, retrievedMessage) {
-			testhelpers.FailImpl(t, "failed to retrieve correct message")
-		}
-
-		retrievedMessage, err = storageService.GetByHash(ctx, cert.DataHash)
-		testhelpers.RequireImpl(t, err)
-
-		if !bytes.Equal(msg, retrievedMessage) {
 			testhelpers.FailImpl(t, "failed to getByHash correct message")
 		}
 	}
@@ -132,16 +125,16 @@ func TestRPCStore(t *testing.T) {
 		desc             string
 		totalSize, times int
 		concurrent       bool
-		leagcyAPIOnly    bool
+		legacyAPIOnly    bool
 	}{
 		{desc: "small store", totalSize: 100, times: 1, concurrent: false},
 		{desc: "chunked store - last chunk full", totalSize: chunkSize * 20, times: 10, concurrent: true},
 		{desc: "chunked store - last chunk not full", totalSize: chunkSize*31 + 123, times: 10, concurrent: true},
 		{desc: "chunked store - overflow cache - sequential", totalSize: chunkSize * 3, times: 15, concurrent: false},
-		{desc: "new client falls back to old api for old server", totalSize: (5*1024*1024)/2 - len(sendChunkJSONBoilerplate) - 100 /* geth counts headers too */, times: 5, concurrent: true, leagcyAPIOnly: true},
+		{desc: "new client falls back to old api for old server", totalSize: (5*1024*1024)/2 - len(sendChunkJSONBoilerplate) - 100 /* geth counts headers too */, times: 5, concurrent: true, legacyAPIOnly: true},
 	} {
 		t.Run(tc.desc, func(t *testing.T) {
-			legacyDASStoreAPIOnly = tc.leagcyAPIOnly
+			legacyDASStoreAPIOnly = tc.legacyAPIOnly
 			testRpcImpl(t, tc.totalSize, tc.times, tc.concurrent)
 		})
 	}

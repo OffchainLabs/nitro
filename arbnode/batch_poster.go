@@ -1681,9 +1681,17 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 			batchPosterDAFailureCounter.Inc(1)
 			return false, err
 		}
-		if nonce != gotNonce || !bytes.Equal(batchPositionBytes, gotMeta) {
+		if nonce != gotNonce {
 			batchPosterDAFailureCounter.Inc(1)
 			return false, fmt.Errorf("%w: nonce changed from %d to %d while creating batch", storage.ErrStorageRace, nonce, gotNonce)
+		}
+		if !bytes.Equal(batchPositionBytes, gotMeta) {
+			batchPosterDAFailureCounter.Inc(1)
+			var actualBatchPosition batchPosterPosition
+			if err := rlp.DecodeBytes(gotMeta, &actualBatchPosition); err != nil {
+				return false, fmt.Errorf("%w: received unexpected batch position bytes", err)
+			}
+			return false, fmt.Errorf("%w: batch position changed from %v to %v while creating batch", storage.ErrStorageRace, batchPosition, actualBatchPosition)
 		}
 		// #nosec G115
 		sequencerMsg, err = b.dapWriter.Store(ctx, sequencerMsg, uint64(time.Now().Add(config.DASRetentionPeriod).Unix()), config.DisableDapFallbackStoreDataOnChain)
