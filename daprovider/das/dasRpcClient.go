@@ -105,7 +105,7 @@ func (c *DASRPCClient) Store(ctx context.Context, message []byte, timeout uint64
 	}
 	totalSize := uint64(len(message))
 
-	startReqSig, err := applyDasSigner(c.signer, []byte{}, timestamp, nChunks, c.chunkSize, totalSize, timeout)
+	startReqSig, err := ApplyDasSigner(c.signer, []byte{}, timestamp, nChunks, c.chunkSize, totalSize, timeout)
 	if err != nil {
 		return nil, err
 	}
@@ -138,7 +138,7 @@ func (c *DASRPCClient) Store(ctx context.Context, message []byte, timeout uint64
 		return nil, err
 	}
 
-	finalReqSig, err := applyDasSigner(c.signer, []byte{}, uint64(startChunkedStoreResult.BatchId))
+	finalReqSig, err := ApplyDasSigner(c.signer, []byte{}, uint64(startChunkedStoreResult.BatchId))
 	if err != nil {
 		return nil, err
 	}
@@ -167,7 +167,7 @@ func (c *DASRPCClient) Store(ctx context.Context, message []byte, timeout uint64
 }
 
 func (c *DASRPCClient) sendChunk(ctx context.Context, batchId, i uint64, chunk []byte) error {
-	chunkReqSig, err := applyDasSigner(c.signer, chunk, batchId, i)
+	chunkReqSig, err := ApplyDasSigner(c.signer, chunk, batchId, i)
 	if err != nil {
 		return err
 	}
@@ -184,7 +184,7 @@ func (c *DASRPCClient) legacyStore(ctx context.Context, message []byte, timeout 
 	// #nosec G115
 	log.Trace("das.DASRPCClient.Store(...)", "message", pretty.FirstFewBytes(message), "timeout", time.Unix(int64(timeout), 0), "this", *c)
 
-	reqSig, err := applyDasSigner(c.signer, message, timeout)
+	reqSig, err := ApplyDasSigner(c.signer, message, timeout)
 	if err != nil {
 		return nil, err
 	}

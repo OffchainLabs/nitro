@@ -15,7 +15,7 @@ import (
 
 var uniquifyingPrefix = []byte("Arbitrum Nitro DAS API Store:")
 
-func applyDasSigner(signer signature.DataSignerFunc, data []byte, extraFields ...uint64) ([]byte, error) {
+func ApplyDasSigner(signer signature.DataSignerFunc, data []byte, extraFields ...uint64) ([]byte, error) {
 	return signer(dasStoreHash(data, extraFields...))
 }
 

@@ -44,7 +44,7 @@ func TestExtraSignatureCheck(t *testing.T) {
 
 	msg := []byte("Hello world")
 	timeout := uint64(1234)
-	sig, err := applyDasSigner(signer, msg, timeout)
+	sig, err := ApplyDasSigner(signer, msg, timeout)
 	Require(t, err)
 	_, err = checkSig(keyDir, msg, timeout, sig)
 	Require(t, err)
