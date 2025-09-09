@@ -53,22 +53,29 @@ func calculateEffectiveChunkSize(maxStoreChunkBodySize int) (uint64, error) {
 	return uint64(chunkSize), nil
 }
 
-func (ds *DataStreamer) StreamData(ctx context.Context, data []byte, timeout uint64) error {
+func (ds *DataStreamer) StreamData(ctx context.Context, data []byte, timeout uint64) (storeResult *StoreResult, err error) {
 	params := newStreamParams(uint64(len(data)), ds.chunkSize, timeout)
 
 	startReqSig, err := ds.generateStartReqSignature(params)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	batchId, err := ds.startStream(ctx, startReqSig, params)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	if err := ds.doStream(ctx, data, batchId, params); err != nil {
-		return err
+		return nil, err
 	}
+
+	finalReqSig, err := ds.generateFinalReqSignature(batchId)
+	if err != nil {
+		return nil, err
+	}
+
+	return ds.finalizeStream(ctx, finalReqSig, batchId)
 }
 
 func (ds *DataStreamer) startStream(ctx context.Context, startReqSig []byte, params streamParams) (hexutil.Uint64, error) {
@@ -113,12 +120,21 @@ func (ds *DataStreamer) sendChunk(ctx context.Context, batchId hexutil.Uint64, c
 	return nil
 }
 
+func (ds *DataStreamer) finalizeStream(ctx context.Context, finalReqSig []byte, batchId hexutil.Uint64) (storeResult *StoreResult, err error) {
+	err = ds.rpcClient.CallContext(ctx, &storeResult, "das_commitChunkedStore", batchId, hexutil.Bytes(finalReqSig))
+	return
+}
+
 func (ds *DataStreamer) generateStartReqSignature(params streamParams) ([]byte, error) {
 	return applyDasSigner(ds.dataSigner, []byte{}, params.timestamp, params.nChunks, ds.chunkSize, params.dataLen, params.timeout)
 }
 
 func (ds *DataStreamer) generateChunkReqSignature(chunkData []byte, batchId, chunkId uint64) ([]byte, error) {
 	return applyDasSigner(ds.dataSigner, chunkData, batchId, chunkId)
+}
+
+func (ds *DataStreamer) generateFinalReqSignature(batchId hexutil.Uint64) ([]byte, error) {
+	return applyDasSigner(ds.dataSigner, []byte{}, uint64(batchId))
 }
 
 type streamParams struct {
