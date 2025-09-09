@@ -31,7 +31,6 @@ import (
 )
 
 func TestPostAssertion(t *testing.T) {
-	ctx := context.Background()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	chainSetup, chalManager, assertionManager, stateManager := setupAssertionPosting(t)
