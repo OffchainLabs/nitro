@@ -48,7 +48,7 @@ const sendChunkJSONOverhead = "{\"jsonrpc\":\"2.0\",\"id\":4294967295,\"method\"
 func calculateEffectiveChunkSize(maxStoreChunkBodySize int) (uint64, error) {
 	chunkSize := (maxStoreChunkBodySize - len(sendChunkJSONOverhead) - 512 /* headers */) / 2
 	if chunkSize <= 0 {
-		return -1, fmt.Errorf("max-store-chunk-body-size %d doesn't leave enough room for chunk payload", maxStoreChunkBodySize)
+		return 0, fmt.Errorf("max-store-chunk-body-size %d doesn't leave enough room for chunk payload", maxStoreChunkBodySize)
 	}
 	return uint64(chunkSize), nil
 }
@@ -96,7 +96,13 @@ func (ds *DataStreamer) startStream(ctx context.Context, startReqSig []byte, par
 func (ds *DataStreamer) doStream(ctx context.Context, data []byte, batchId hexutil.Uint64, params streamParams) error {
 	chunkRoutines := new(errgroup.Group)
 	for i := uint64(0); i < params.nChunks; i++ {
-		chunkData := data[i*ds.chunkSize : min((i+1)*ds.chunkSize, params.dataLen)]
+		startIndex := i * ds.chunkSize
+		endIndex := (i + 1) * ds.chunkSize
+		if endIndex > params.dataLen {
+			endIndex = params.dataLen
+		}
+		chunkData := data[startIndex:endIndex]
+
 		chunkRoutines.Go(func() error {
 			return ds.sendChunk(ctx, batchId, i, chunkData)
 		})
