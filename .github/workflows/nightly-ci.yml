@@ -94,7 +94,7 @@ jobs:
 
       - name: run execution spec tests
         if: matrix.test-mode == 'execution-spec-tests'
-        run: ${{ github.workspace }}/.github/workflows/runExecutionSpecTests.sh 
+        run: ${{ github.workspace }}/.github/workflows/runExecutionSpecTests.sh
 
       - name: Archive detailed run log
         uses: actions/upload-artifact@v4
@@ -175,6 +175,8 @@ jobs:
     needs: [tests-scheduled]
     runs-on: ubuntu-latest
     if: ${{ failure() }}
+    env:
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
     steps:
       - name: Send Slack notification
         uses: slackapi/slack-github-action@v2.1.1
@@ -184,4 +186,4 @@ jobs:
           token: ${{ secrets.SLACK_BOT_TOKEN }}
           payload: |
             "channel": "${{ secrets.SLACK_CHANNEL_ID }}",
-            "text": "⚠️ CI job failed! ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
+            "text": "⚠️ CI job failed! ${RUN_URL}",

@@ -53,6 +53,7 @@ jobs:
               divergent=1
             fi
           done
+          repo_url="${{ github.api_url }}/repos/$GITHUB_REPOSITORY"
           if [ $divergent -eq 0 ]; then
             status_state="success"
           else
@@ -60,7 +61,7 @@ jobs:
               -H "Accept: application/vnd.github+json" \
               -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
               -H "X-GitHub-Api-Version: 2022-11-28" \
-              "${{ github.api_url }}/repos/$GITHUB_REPOSITORY/commits/${{ github.event.pull_request.head.sha }}/statuses")"
+              "${repo_url}/commits/${{ github.event.pull_request.head.sha }}/statuses")"
 
             if ! jq -e '.[] | select(.context == "Submodule Pin Check")' > /dev/null <<< "$resp"; then
               # Submodule pin check is failling and no status exists
@@ -75,5 +76,5 @@ jobs:
             -H "Accept: application/vnd.github+json" \
             -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
             -H "X-GitHub-Api-Version: 2022-11-28" \
-            "${{ github.api_url }}/repos/$GITHUB_REPOSITORY/statuses/${{ github.event.pull_request.head.sha }}" \
+            "${repo_url}/statuses/${{ github.event.pull_request.head.sha }}" \
             -d '{"context":"Submodule Pin Check","state":"'"$status_state"'"}'
