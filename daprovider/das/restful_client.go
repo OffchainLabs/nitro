@@ -24,6 +24,10 @@ type RestfulDasClient struct {
 	url string
 }
 
+func (c *RestfulDasClient) String() string {
+	return fmt.Sprintf("Restful DAS client for %s", c.url)
+}
+
 func NewRestfulDasClient(protocol string, host string, port int) *RestfulDasClient {
 	return &RestfulDasClient{
 		url: fmt.Sprintf("%s://%s:%d", protocol, host, port),

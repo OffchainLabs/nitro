@@ -19,8 +19,8 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 
-	protocol "github.com/offchainlabs/bold/chain-abstraction"
-	retry "github.com/offchainlabs/bold/runtime"
+	protocol "github.com/offchainlabs/nitro/bold/chain-abstraction"
+	retry "github.com/offchainlabs/nitro/bold/runtime"
 )
 
 var onchainTimerDifferAfterConfirmationJobCounter = metrics.NewRegisteredCounter("arb/validator/tracker/onchain_timer_differed_after_confirmation_job", nil)

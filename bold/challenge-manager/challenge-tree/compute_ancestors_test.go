@@ -10,8 +10,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	protocol "github.com/offchainlabs/bold/chain-abstraction"
-	"github.com/offchainlabs/bold/containers/threadsafe"
+	protocol "github.com/offchainlabs/nitro/bold/chain-abstraction"
+	"github.com/offchainlabs/nitro/bold/containers/threadsafe"
 )
 
 // Tests the following tree, all the way down to the small
