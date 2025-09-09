@@ -9,10 +9,12 @@ import (
 	"fmt"
 	"time"
 
+	"golang.org/x/sync/errgroup"
+
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/rpc"
+
 	"github.com/offchainlabs/nitro/util/signature"
-	"golang.org/x/sync/errgroup"
 )
 
 // DataStreamer allows sending arbitrarily big payloads with JSON RPC. It follows a simple chunk-based protocol.
@@ -166,6 +168,7 @@ func newStreamParams(dataLen, chunkSize, timeout uint64) streamParams {
 	lastChunkSize := (dataLen-1)%chunkSize + 1
 
 	return streamParams{
+		// #nosec G115
 		timestamp:     uint64(time.Now().Unix()),
 		nChunks:       nChunks,
 		lastChunkSize: lastChunkSize,
