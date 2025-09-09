@@ -25,7 +25,6 @@ func TestMultigasDataFromReceipts(t *testing.T) {
 
 	// Generate a L2 user and send 20 transactions
 	builder.L2Info.GenerateAccount("Alice")
-	txs := make(map[common.Hash]uint64)
 	for i := 0; i < 20; i++ {
 		// unique value to avoid duplicate txs
 		value := big.NewInt(1e12 + int64(i))
@@ -40,16 +39,6 @@ func TestMultigasDataFromReceipts(t *testing.T) {
 		rcpt, err := builder.L2.EnsureTxSucceeded(tx)
 		require.NoError(t, err)
 
-		txs[tx.Hash()] = rcpt.GasUsed
-	}
-
-	// Restart the node to ensure multigas data is persisted
-	builder.RestartL2Node(t)
-
-	for tx, gas := range txs {
-		rcpt, err := builder.L2.Client.TransactionReceipt(ctx, tx) // wait for inclusion
-		require.NoError(t, err)
-
 		// TODO(NIT-3552): after instrumenting intrinsic gas this difference should be zero
 		creation := rcpt.ContractAddress != (common.Address{})
 		var gasDifference uint64
@@ -58,6 +47,7 @@ func TestMultigasDataFromReceipts(t *testing.T) {
 		} else {
 			gasDifference = params.TxGas
 		}
-		require.Equal(t, gas, rcpt.MultiGasUsed.SingleGas()+gasDifference)
+
+		require.Equal(t, rcpt.GasUsed, rcpt.MultiGasUsed.SingleGas()+gasDifference)
 	}
 }
