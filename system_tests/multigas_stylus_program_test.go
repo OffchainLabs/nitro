@@ -46,7 +46,7 @@ func TestMultigasStylus_GetBytes32(t *testing.T) {
 	gasDifference := params.TxGas + uint64(516)
 	require.Equal(t, receipt.GasUsed, receipt.MultiGasUsed.SingleGas()+gasDifference)
 
-	// TODO: Once all WASM operations are instrumented, WasmComputation
+	// TODO(NIT-3793, NIT-3793, NIT-3795): Once all WASM operations are instrumented, WasmComputation
 	// should be derived as the residual from SingleGas instead of asserted directly.
 	require.Greater(t, receipt.MultiGasUsed.Get(multigas.ResourceKindWasmComputation), uint64(0))
 }
