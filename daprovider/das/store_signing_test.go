@@ -23,7 +23,7 @@ func TestStoreSigning(t *testing.T) {
 	timeout := uint64(time.Now().Unix())
 
 	signer := signature.DataSignerFromPrivateKey(privateKey)
-	sig, err := ApplyDasSigner(signer, weirdMessage, timeout)
+	sig, err := applyDasSigner(signer, weirdMessage, timeout)
 	Require(t, err)
 
 	recoveredAddr, err := DasRecoverSigner(weirdMessage, sig, timeout)

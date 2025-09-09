@@ -1,7 +1,7 @@
 // Copyright 2025, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-package dasutil
+package das
 
 import (
 	"context"
@@ -9,17 +9,17 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/consensys/gnark-crypto/signature"
 	"github.com/ethereum/go-ethereum/rpc"
+	"github.com/offchainlabs/nitro/util/signature"
 )
 
 type DataStreamer struct {
 	rpcClient  *rpc.Client
 	chunkSize  uint64
-	dataSigner signature.Signer
+	dataSigner signature.DataSignerFunc
 }
 
-func NewDataStreamer(url string, maxStoreChunkBodySize int, dataSigner signature.Signer) (*DataStreamer, error) {
+func NewDataStreamer(url string, maxStoreChunkBodySize int, dataSigner signature.DataSignerFunc) (*DataStreamer, error) {
 	rpcClient, err := rpc.Dial(url)
 	if err != nil {
 		return nil, err
@@ -52,7 +52,12 @@ func calculateEffectiveChunkSize(maxStoreChunkBodySize int) (uint64, error) {
 }
 
 func (ds *DataStreamer) StreamData(ctx context.Context, data []byte, timeout uint64) error {
-	params := newStreamParams(uint64(len(data)), ds.chunkSize)
+	//params := newStreamParams(uint64(len(data)), ds.chunkSize)
+	return errors.New("")
+}
+
+func (ds *DataStreamer) generateStartReqSignature(params streamParams, timeout uint64) ([]byte, error) {
+	return applyDasSigner(ds.dataSigner, []byte{}, params.timestamp, params.nChunks, ds.chunkSize, params.dataLen, timeout)
 }
 
 type streamParams struct {
