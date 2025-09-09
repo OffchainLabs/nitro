@@ -949,10 +949,10 @@ func build2ndNode(
 func (b *NodeBuilder) Build2ndNode(t *testing.T, params *SecondNodeParams) (*TestClient, func()) {
 	DontWaitAndRun(b.ctx, 1, t.Name())
 	if b.L2 == nil {
-		t.Fatal("builder did not previously built an L2 Node")
+		t.Fatal("builder did not previously build an L2 Node")
 	}
 	if b.L1 == nil {
-		t.Fatal("builder did not previously built an L1 Node")
+		t.Fatal("builder did not previously build an L1 Node")
 	}
 	return build2ndNode(
 		t,
