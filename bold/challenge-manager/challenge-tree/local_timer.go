@@ -9,9 +9,9 @@ import (
 	"fmt"
 	"math"
 
-	protocol "github.com/offchainlabs/bold/chain-abstraction"
-	"github.com/offchainlabs/bold/containers/option"
-	"github.com/offchainlabs/bold/containers/threadsafe"
+	protocol "github.com/offchainlabs/nitro/bold/chain-abstraction"
+	"github.com/offchainlabs/nitro/bold/containers/option"
+	"github.com/offchainlabs/nitro/bold/containers/threadsafe"
 )
 
 // Gets the local timer of an edge at a block number, T. If T is earlier than the edge's creation,
