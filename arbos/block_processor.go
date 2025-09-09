@@ -299,7 +299,8 @@ func ProduceBlockAdvanced(
 		var sender common.Address
 		var dataGas uint64 = 0
 		preTxHeaderGasUsed := header.GasUsed
-		signer := types.MakeSigner(chainConfig, header.Number, header.Time, arbState.ArbOSVersion())
+		arbosVersion := arbState.ArbOSVersion()
+		signer := types.MakeSigner(chainConfig, header.Number, header.Time, arbosVersion)
 		receipt, result, err := (func() (*types.Receipt, *core.ExecutionResult, error) {
 			// If we've done too much work in this block, discard the tx as early as possible
 			if blockGasLeft < params.TxGas && isUserTx {
@@ -353,7 +354,9 @@ func ProduceBlockAdvanced(
 				computeGas = params.TxGas
 			}
 
-			if computeGas > blockGasLeft && isUserTx && userTxsProcessed > 0 {
+			// arbos<50: reject tx if they have available computeGas over block-gas-limit
+			// in arbos>=50, per-block-gas is limited to L2PricingState().PerBlockGasLimit() + L2PricingState().PerTxGasLimit()
+			if computeGas > blockGasLeft && isUserTx && userTxsProcessed > 0 && arbosVersion < params.ArbosVersion_50 {
 				return nil, nil, core.ErrGasLimitReached
 			}
 
