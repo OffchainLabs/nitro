@@ -29,7 +29,7 @@ type DataStreamer struct {
 //
 // Requirements:
 //   - connecting to `url` must succeed;
-//   - `maxStoreChunkBodySize` must be big enough (it should cover `sendChunkJSONOverhead` and leave some space for the data);
+//   - `maxStoreChunkBodySize` must be big enough (it should cover `sendChunkJSONBoilerplate` and leave some space for the data);
 //   - `dataSigner` must not be nil;
 //
 // otherwise an `error` is returned.
@@ -56,10 +56,10 @@ func NewDataStreamer(url string, maxStoreChunkBodySize int, dataSigner signature
 }
 
 // JSON request template for the `"das_sendChunked"` RPC method.
-const sendChunkJSONOverhead = "{\"jsonrpc\":\"2.0\",\"id\":4294967295,\"method\":\"das_sendChunked\",\"params\":[\"\"]}"
+const sendChunkJSONBoilerplate = "{\"jsonrpc\":\"2.0\",\"id\":4294967295,\"method\":\"das_sendChunked\",\"params\":[\"\"]}"
 
 func calculateEffectiveChunkSize(maxStoreChunkBodySize int) (uint64, error) {
-	chunkSize := (maxStoreChunkBodySize - len(sendChunkJSONOverhead) - 512 /* headers */) / 2
+	chunkSize := (maxStoreChunkBodySize - len(sendChunkJSONBoilerplate) - 512 /* headers */) / 2
 	if chunkSize <= 0 {
 		return 0, fmt.Errorf("max-store-chunk-body-size %d doesn't leave enough room for chunk payload", maxStoreChunkBodySize)
 	}

@@ -83,7 +83,7 @@ func testRpcImpl(t *testing.T, size, times int, concurrent bool) {
 		RPCAggregator: AggregatorConfig{
 			AssumedHonest:         1,
 			Backends:              beConfigs,
-			MaxStoreChunkBodySize: (chunkSize * 2) + len(sendChunkJSONOverhead),
+			MaxStoreChunkBodySize: (chunkSize * 2) + len(sendChunkJSONBoilerplate),
 			EnableChunkedStore:    true,
 		},
 		RequestTimeout: time.Minute,
@@ -131,7 +131,7 @@ func TestRPCStore(t *testing.T) {
 		{desc: "chunked store - last chunk full", totalSize: chunkSize * 20, times: 10, concurrent: true},
 		{desc: "chunked store - last chunk not full", totalSize: chunkSize*31 + 123, times: 10, concurrent: true},
 		{desc: "chunked store - overflow cache - sequential", totalSize: chunkSize * 3, times: 15, concurrent: false},
-		{desc: "new client falls back to old api for old server", totalSize: (5*1024*1024)/2 - len(sendChunkJSONOverhead) - 100 /* geth counts headers too */, times: 5, concurrent: true, legacyAPIOnly: true},
+		{desc: "new client falls back to old api for old server", totalSize: (5*1024*1024)/2 - len(sendChunkJSONBoilerplate) - 100 /* geth counts headers too */, times: 5, concurrent: true, legacyAPIOnly: true},
 	} {
 		t.Run(tc.desc, func(t *testing.T) {
 			legacyDASStoreAPIOnly = tc.legacyAPIOnly
