@@ -10,7 +10,97 @@ on:
     branches:
       - master
       - develop
+
 jobs:
+  # --- Determine which files have changed ---
+  changes:
+    name: Detect file changes
+    runs-on: ubuntu-latest
+    outputs:
+      arbitrator_changed: ${{ steps.changed.outputs.arbitrator_any_changed }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with: { fetch-depth: 0 }
+
+      - name: Determine if Arbitrator changed
+        id: changed
+        uses: tj-actions/changed-files@v46.0.5
+        with:
+          files_yaml: |
+            arbitrator:
+              - 'arbitrator/**'
+              - 'contracts/**'
+              - 'Makefile'
+
+  # --- Run Arbitrator tests: only when the files have changed ---            
+  arbitrator:
+    name: Run Arbitrator tests
+    needs: changes
+    runs-on: arbitrator-ci
+    if: needs.changes.outputs.arbitrator_changed == 'true'
+    env:
+      RUST_BACKTRACE: 1
+      # RUSTFLAGS: -Dwarnings          # TODO: re-enable after wasmer upgrade
+
+    steps:
+      - name: Setup CI
+        uses: ./.github/actions/ci-setup
+
+      - name: Install custom go-ethereum
+        run: |
+          cd /tmp
+          git clone --branch v1.16.2 --depth 1 https://github.com/ethereum/go-ethereum.git
+          cd go-ethereum
+          go build -o /usr/local/bin/geth ./cmd/geth
+
+      - name: Setup emsdk
+        uses: mymindstorm/setup-emsdk@v14
+        with:
+          # Make sure to set a version number!
+          version: 3.1.6
+          # This is the name of the cache folder.
+          # The cache folder will be placed in the build directory,
+          #  so make sure it doesn't conflict with anything!
+          no-cache: true
+
+      - name: Make arbitrator libraries
+        run: make -j wasm-ci-build
+
+      - name: Clippy check
+        run: cargo clippy --all --manifest-path arbitrator/Cargo.toml -- -D warnings
+
+      - name: Run rust tests
+        run: cargo test -p arbutil -p prover -p jit -p stylus --release --manifest-path arbitrator/prover/Cargo.toml
+
+      - name: Check stylus_bechmark
+        run: cargo check --manifest-path arbitrator/tools/stylus_benchmark/Cargo.toml
+
+      - name: Rustfmt
+        run: cargo fmt -p arbutil -p prover -p jit -p stylus --manifest-path arbitrator/Cargo.toml -- --check
+
+      - name: Rustfmt - tools/stylus_benchmark
+        run: cargo fmt --all --manifest-path arbitrator/tools/stylus_benchmark/Cargo.toml -- --check
+
+      - name: Make proofs from test cases
+        run: make -j test-gen-proofs
+
+      - name: Start geth server
+        run: |
+          geth --dev --http --http.port 8545 &
+          sleep 2
+
+      - name: Run proof validation tests
+        run: |
+          npm install --global yarn
+          cd contracts-legacy
+          cp -r ../contracts/test/prover/proofs/* ./test/prover/proofs
+          yarn install
+          yarn build
+          yarn build:forge:yul
+          yarn hardhat --network localhost test test/prover/*.ts
+
   # --- Fast gate: Build + Lint only (required by can_enqueue) ---
   pr-gate:
     name: Gate build + lint
@@ -153,7 +243,7 @@ jobs:
          test "$ok" = "true"
 
   can_merge:
-    needs: pr-tests
+    needs: [pr-tests, arbitrator]
     if: always() && github.event_name == 'merge_group'
     # Same thing as above, from here on:
     permissions:
