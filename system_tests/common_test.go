@@ -951,7 +951,7 @@ func (b *NodeBuilder) Build2ndNode(t *testing.T, params *SecondNodeParams) (*Tes
 	if b.L2 == nil {
 		t.Fatal("builder did not previously built an L2 Node")
 	}
-	if b.withL1 && b.L1 == nil {
+	if b.L1 == nil {
 		t.Fatal("builder did not previously built an L1 Node")
 	}
 	return build2ndNode(
