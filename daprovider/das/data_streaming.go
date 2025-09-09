@@ -15,12 +15,24 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
+// DataStreamer allows sending arbitrarily big payloads with JSON RPC. It follows a simple chunk-based protocol.
 type DataStreamer struct {
-	rpcClient  *rpc.Client
-	chunkSize  uint64
+	// rpcClient is the underlying client for making RPC calls to the receiver.
+	rpcClient *rpc.Client
+	// chunkSize is the preconfigured size limit on a single data chunk to be sent.
+	chunkSize uint64
+	// dataSigner is used for sender authentication during the protocol.
 	dataSigner signature.DataSignerFunc
 }
 
+// NewDataStreamer creates a new DataStreamer instance.
+//
+// Requirements:
+//   - connecting to `url` must succeed;
+//   - `maxStoreChunkBodySize` must be big enough (it should cover `sendChunkJSONOverhead` and leave some space for the data);
+//   - `dataSigner` must not be nil;
+//
+// otherwise an `error` is returned.
 func NewDataStreamer(url string, maxStoreChunkBodySize int, dataSigner signature.DataSignerFunc) (*DataStreamer, error) {
 	rpcClient, err := rpc.Dial(url)
 	if err != nil {
@@ -43,6 +55,7 @@ func NewDataStreamer(url string, maxStoreChunkBodySize int, dataSigner signature
 	}, nil
 }
 
+// JSON request template for the `"das_sendChunked"` RPC method.
 const sendChunkJSONOverhead = "{\"jsonrpc\":\"2.0\",\"id\":4294967295,\"method\":\"das_sendChunked\",\"params\":[\"\"]}"
 
 func calculateEffectiveChunkSize(maxStoreChunkBodySize int) (uint64, error) {
@@ -53,6 +66,7 @@ func calculateEffectiveChunkSize(maxStoreChunkBodySize int) (uint64, error) {
 	return uint64(chunkSize), nil
 }
 
+// StreamData sends arbitrarily long byte sequence to the receiver using a simple chunking-based protocol.
 func (ds *DataStreamer) StreamData(ctx context.Context, data []byte, timeout uint64) (storeResult *StoreResult, err error) {
 	params := newStreamParams(uint64(len(data)), ds.chunkSize, timeout)
 
@@ -147,7 +161,6 @@ type streamParams struct {
 	timestamp, nChunks, lastChunkSize, dataLen, timeout uint64
 }
 
-// todo chunksize and datalen must be > 0
 func newStreamParams(dataLen, chunkSize, timeout uint64) streamParams {
 	nChunks := (dataLen + chunkSize - 1) / chunkSize
 	lastChunkSize := (dataLen-1)%chunkSize + 1

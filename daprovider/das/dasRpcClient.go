@@ -43,8 +43,6 @@ func nilSigner(_ []byte) ([]byte, error) {
 	return []byte{}, nil
 }
 
-const sendChunkJSONBoilerplate = "{\"jsonrpc\":\"2.0\",\"id\":4294967295,\"method\":\"das_sendChunked\",\"params\":[\"\"]}"
-
 func NewDASRPCClient(target string, signer signature.DataSignerFunc, maxStoreChunkBodySize int, enableChunkedStore bool) (*DASRPCClient, error) {
 	if signer == nil {
 		signer = nilSigner
