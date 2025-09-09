@@ -12,6 +12,7 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/nitro/util/signature"
+	"golang.org/x/sync/errgroup"
 )
 
 type DataStreamer struct {
@@ -65,13 +66,9 @@ func (ds *DataStreamer) StreamData(ctx context.Context, data []byte, timeout uin
 		return err
 	}
 
-	if err := ds.doStream(ctx, batchId, params); err != nil {
+	if err := ds.doStream(ctx, data, batchId, params); err != nil {
 		return err
 	}
-}
-
-func (ds *DataStreamer) generateStartReqSignature(params streamParams) ([]byte, error) {
-	return applyDasSigner(ds.dataSigner, []byte{}, params.timestamp, params.nChunks, ds.chunkSize, params.dataLen, params.timeout)
 }
 
 func (ds *DataStreamer) startStream(ctx context.Context, startReqSig []byte, params streamParams) (hexutil.Uint64, error) {
@@ -87,6 +84,41 @@ func (ds *DataStreamer) startStream(ctx context.Context, startReqSig []byte, par
 		hexutil.Uint64(params.timeout),
 		hexutil.Bytes(startReqSig))
 	return startChunkedStoreResult.BatchId, err
+}
+
+func (ds *DataStreamer) doStream(ctx context.Context, data []byte, batchId hexutil.Uint64, params streamParams) error {
+	chunkRoutines := new(errgroup.Group)
+	for i := uint64(0); i < params.nChunks; i++ {
+		chunkData := data[i*ds.chunkSize : min((i+1)*ds.chunkSize, params.dataLen)]
+		chunkRoutines.Go(func() error {
+			return ds.sendChunk(ctx, batchId, i, chunkData)
+		})
+	}
+	return chunkRoutines.Wait()
+}
+
+func (ds *DataStreamer) sendChunk(ctx context.Context, batchId hexutil.Uint64, chunkId uint64, chunkData []byte) error {
+	chunkReqSig, err := ds.generateChunkReqSignature(chunkData, uint64(batchId), chunkId)
+	if err != nil {
+		return err
+	}
+
+	err = ds.rpcClient.CallContext(ctx, nil, "das_sendChunk", batchId, hexutil.Uint64(chunkId), hexutil.Bytes(chunkData), hexutil.Bytes(chunkReqSig))
+	if err != nil {
+		rpcClientSendChunkFailureGauge.Inc(1)
+		return err
+	}
+
+	rpcClientSendChunkSuccessGauge.Inc(1)
+	return nil
+}
+
+func (ds *DataStreamer) generateStartReqSignature(params streamParams) ([]byte, error) {
+	return applyDasSigner(ds.dataSigner, []byte{}, params.timestamp, params.nChunks, ds.chunkSize, params.dataLen, params.timeout)
+}
+
+func (ds *DataStreamer) generateChunkReqSignature(chunkData []byte, batchId, chunkId uint64) ([]byte, error) {
+	return applyDasSigner(ds.dataSigner, chunkData, batchId, chunkId)
 }
 
 type streamParams struct {
