@@ -877,7 +877,7 @@ impl Display for MachineStatus {
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct ModuleState<'a> {
-    globals: Cow<'a, Vec<Value>>,
+    globals: Cow<'a, [Value]>,
     memory: Cow<'a, Memory>,
 }
 
@@ -911,13 +911,13 @@ pub struct MachineState<'a> {
     steps: u64, // Not part of machine hash
     thread_state: ThreadState,
     status: MachineStatus,
-    value_stacks: Cow<'a, Vec<Vec<Value>>>,
-    internal_stack: Cow<'a, Vec<Value>>,
-    frame_stacks: Cow<'a, Vec<Vec<StackFrame>>>,
+    value_stacks: Cow<'a, [Vec<Value>]>,
+    internal_stack: Cow<'a, [Value]>,
+    frame_stacks: Cow<'a, [Vec<StackFrame>]>,
     modules: Vec<ModuleState<'a>>,
     global_state: GlobalState,
     pc: ProgramCounter,
-    stdio_output: Cow<'a, Vec<u8>>,
+    stdio_output: Cow<'a, [u8]>,
     initial_hash: Bytes32,
 }
 
@@ -1233,11 +1233,11 @@ impl Machine {
     ) -> Result<Machine> {
         let bin_source = file_bytes(binary_path)?;
         let bin = parse(&bin_source, binary_path)
-            .wrap_err_with(|| format!("failed to validate WASM binary at {:?}", binary_path))?;
+            .wrap_err_with(|| format!("failed to validate WASM binary at {binary_path:?}"))?;
         let mut libraries = vec![];
         let mut lib_sources = vec![];
         for path in library_paths {
-            let error_message = format!("failed to validate WASM binary at {:?}", path);
+            let error_message = format!("failed to validate WASM binary at {path:?}");
             lib_sources.push((file_bytes(path)?, path, error_message));
         }
         for (source, path, error_message) in &lib_sources {
@@ -2546,7 +2546,11 @@ impl Machine {
                     let Some(bytes) = self.stylus_modules.get(&hash) else {
                         let modules = &self.stylus_modules;
                         let keys: Vec<_> = modules.keys().take(16).map(hex::encode).collect();
-                        let dots = (modules.len() > 16).then_some("...").unwrap_or_default();
+                        let dots = if modules.len() > 16 {
+                            "..."
+                        } else {
+                            Default::default()
+                        };
                         bail!("no program for {hash} in {{{}{dots}}}", keys.join(", "))
                     };
 
@@ -2648,8 +2652,7 @@ impl Machine {
                 let exit_code = pull_arg!(0, I32);
                 if exit_code != 0 {
                     println!(
-                        "\x1b[31mWASM exiting\x1b[0m with exit code \x1b[31m{}\x1b[0m",
-                        exit_code,
+                        "\x1b[31mWASM exiting\x1b[0m with exit code \x1b[31m{exit_code}\x1b[0m",
                     );
                 }
                 Ok(())
@@ -2722,7 +2725,7 @@ impl Machine {
         self.status
     }
 
-    fn get_modules_merkle(&self) -> Cow<Merkle> {
+    fn get_modules_merkle(&self) -> Cow<'_, Merkle> {
         #[cfg(feature = "counters")]
         GET_MODULES_MERKLE_COUNTER.fetch_add(1, Ordering::Relaxed);
 
@@ -3073,7 +3076,7 @@ impl Machine {
                             self.preimage_resolver
                                 .get_const(self.context, preimage_ty, hash)
                         else {
-                            panic!("Missing requested preimage for hash {}", hash)
+                            panic!("Missing requested preimage for hash {hash}")
                         };
                         data.push(0); // preimage proof type
                         match preimage_ty {
@@ -3208,8 +3211,8 @@ impl Machine {
 
     pub fn print_backtrace(&self, stderr: bool) {
         let print = |line: String| match stderr {
-            true => println!("{}", line),
-            false => eprintln!("{}", line),
+            true => println!("{line}"),
+            false => eprintln!("{line}"),
         };
 
         let print_pc = |pc: ProgramCounter| {

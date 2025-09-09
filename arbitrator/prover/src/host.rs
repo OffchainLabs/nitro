@@ -515,11 +515,11 @@ lazy_static! {
                 |wasm| wasm_to_wavm(
                     &code.expr,
                     wasm,
-                    &HashMap::default(), // impls don't use floating point
-                    &[],                // impls don't make calls
-                    &[ty.clone()],      // only type needed is the func itself
-                    0,                  // -----------------------------------
-                    0,                  // impls don't use other internals
+                    &HashMap::default(),      // impls don't use floating point
+                    &[],                      // impls don't make calls
+                    std::slice::from_ref(ty), // only type needed is the func itself
+                    0,                        // -----------------------------------
+                    0,                        // impls don't use other internals
                     &bin.names.module,
                 ),
                 ty.clone(),

@@ -92,7 +92,7 @@ impl FromStr for Bytes32 {
         let s = s.strip_prefix("0x").unwrap_or(s);
 
         // Pad with leading zeros if the string is shorter than 64 characters (32 bytes)
-        let padded = format!("{:0>64}", s);
+        let padded = format!("{s:0>64}");
 
         // Decode the hex string using the hex crate
         let decoded_bytes = hex::decode(padded).map_err(|_| "Invalid hex string")?;
