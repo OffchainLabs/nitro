@@ -6,135 +6,106 @@ package events
 
 import (
 	"context"
-	"sync"
+	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
 )
 
-const (
-	defaultBroadcastTimeout       = time.Millisecond * 500
-	defaultSubscriptionBufferSize = 10
-)
-
-// Producer manages event subscriptions and broadcasts events to them.
-type Producer[T any] struct {
-	sync.RWMutex
-	subscriptionBufferSize int
-	subs                   []*Subscription[T]
-	doneListener           chan subId    // channel to listen for IDs of subscriptions to be remove.
-	broadcastTimeout       time.Duration // maximum duration to wait for an event to be sent.
-	nextId                 subId         // monotonically increasing id for stable subscription identification
+func TestSubscribe(t *testing.T) {
+	producer := NewProducer[int]()
+	sub := producer.Subscribe()
+	require.Equal(t, 1, len(producer.subs))
+	require.NotNil(t, sub)
 }
 
-type ProducerOpt[T any] func(*Producer[T])
-
-// WithBroadcastTimeout enables the amount of time the broadcaster will wait to send
-// to each subscriber before dropping the send.
-func WithBroadcastTimeout[T any](timeout time.Duration) ProducerOpt[T] {
-	return func(ep *Producer[T]) {
-		ep.broadcastTimeout = timeout
+func TestBroadcast(t *testing.T) {
+	producer := NewProducer[int]()
+	sub := producer.Subscribe()
+	done := make(chan bool)
+	go func() {
+		event, shouldEnd := sub.Next(context.Background())
+		require.False(t, shouldEnd)
+		require.Equal(t, 42, event)
+		done <- true
+	}()
+	ctx := context.Background()
+	producer.Broadcast(ctx, 42)
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Test timed out waiting for event")
 	}
 }
 
-// WithSubscriptionBuffer customizes the size of the subscription buffer channel.
-func WithSubscriptionBuffer[T any](size int) ProducerOpt[T] {
-	return func(ep *Producer[T]) {
-		ep.subscriptionBufferSize = size
+func TestBroadcastTimeout(t *testing.T) {
+	timeout := 50 * time.Millisecond
+	producer := NewProducer(WithBroadcastTimeout[int](timeout))
+	sub := producer.Subscribe()
+
+	go func() {
+		// Delay sending to simulate timeout scenario
+		time.Sleep(100 * time.Millisecond)
+		sub.events <- 42
+	}()
+
+	event, shouldEnd := sub.Next(context.Background())
+	require.False(t, shouldEnd)
+	require.Equal(t, 42, event)
+}
+
+func TestEventProducer_Start(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	producer := NewProducer[int]()
+	go producer.Start(ctx)
+
+	sub := producer.Subscribe()
+
+	// Simulate removing the subscription.
+	cancel()
+	_, shouldEnd := sub.Next(ctx)
+	if !shouldEnd {
+		t.Error("Expected to end after context cancellation")
 	}
 }
 
-func NewProducer[T any](opts ...ProducerOpt[T]) *Producer[T] {
-	producer := &Producer[T]{
-		subs:                   make([]*Subscription[T], 0),
-		subscriptionBufferSize: defaultSubscriptionBufferSize,
-		doneListener:           make(chan subId, 100),
-		broadcastTimeout:       defaultBroadcastTimeout,
-	}
-	for _, opt := range opts {
-		opt(producer)
-	}
-	return producer
-}
+func TestRemovalUsesStableId(t *testing.T) {
+    // This test ensures that removing subscriptions uses stable IDs rather than slice indices.
+    // Before the fix, deleting two subscriptions by their IDs 0 and 1 would incorrectly
+    // remove the first (index 0) and the third (now at index 1 after compaction), leaving
+    // the second subscription in place instead of the third.
+    ctx, cancel := context.WithCancel(context.Background())
+    defer cancel()
 
-// Start begins listening for subscription cancelation requests or context cancelation.
-func (ep *Producer[T]) Start(ctx context.Context) {
-	for {
-		select {
-		case id := <-ep.doneListener:
-			ep.Lock()
-			// Find the subscription by stable id and remove it if present.
-			idx := -1
-			for i, s := range ep.subs {
-				if s.id == id {
-					idx = i
-					break
-				}
-			}
-			if idx >= 0 {
-				ep.subs = append(ep.subs[:idx], ep.subs[idx+1:]...)
-			}
-			ep.Unlock()
-		case <-ctx.Done():
-			close(ep.doneListener)
-			ep.subs = nil
-			return
-		}
-	}
-}
+    producer := NewProducer[int]()
+    go producer.Start(ctx)
 
-// Subscribe returns a handle to a new event subscription,
-// adding it to the list of active subscriptions.
-func (ep *Producer[T]) Subscribe() *Subscription[T] {
-	ep.Lock()
-	defer ep.Unlock()
-	sub := &Subscription[T]{
-		id:     ep.nextId, // Assign a stable, monotonically increasing ID
-		events: make(chan T),
-		done:   ep.doneListener,
-	}
-	ep.nextId++
-	ep.subs = append(ep.subs, sub)
-	return sub
-}
+    s0 := producer.Subscribe()
+    s1 := producer.Subscribe()
+    s2 := producer.Subscribe()
 
-// Broadcast sends an event to all active subscriptions, respecting a configured timeout or context.
-// It spawns goroutines to send events to each subscription so as to not block the producer to submitting
-// to all consumers. Broadcast should be used if not all consumers are expected to consume the event,
-// within a reasonable time, or if the configured broadcast timeout is short enough.
-func (ep *Producer[T]) Broadcast(ctx context.Context, event T) {
-	ep.RLock()
-	defer ep.RUnlock()
-	for _, sub := range ep.subs {
-		go func(listener *Subscription[T]) {
-			select {
-			case listener.events <- event:
-			case <-time.After(ep.broadcastTimeout):
-			case <-ctx.Done():
-			}
-		}(sub)
-	}
-}
+    // Cancel first two subscriptions; they will send their IDs to doneListener via Next.
+    for _, s := range []*Subscription[int]{s0, s1} {
+        c, cancelSub := context.WithCancel(context.Background())
+        cancelSub()
+        _, shouldEnd := s.Next(c)
+        require.True(t, shouldEnd)
+    }
 
-type subId int
+    // Wait until the producer processes removal and only one subscription remains.
+    deadline := time.Now().Add(2 * time.Second)
+    for {
+        producer.RLock()
+        remaining := len(producer.subs)
+        producer.RUnlock()
+        if remaining == 1 || time.Now().After(deadline) {
+            break
+        }
+        time.Sleep(5 * time.Millisecond)
+    }
 
-// Subscription defines a generic handle to a subscription of
-// events from a producer.
-type Subscription[T any] struct {
-	id     subId
-	events chan T
-	done   chan subId
-}
-
-// Next waits for the next event or context cancelation, returning the event or an error.
-func (es *Subscription[T]) Next(ctx context.Context) (T, bool) {
-	var zeroVal T
-	for {
-		select {
-		case ev := <-es.events:
-			return ev, false
-		case <-ctx.Done():
-			es.done <- es.id
-			close(es.events)
-			return zeroVal, true
-		}
-	}
+    producer.RLock()
+    require.Equal(t, 1, len(producer.subs))
+    require.Same(t, s2, producer.subs[0])
+    producer.RUnlock()
 }
