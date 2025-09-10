@@ -4,16 +4,14 @@
 package arbtest
 
 import (
-	"bytes"
 	"context"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/ethereum/go-ethereum/arbitrum/multigas"
 	"github.com/ethereum/go-ethereum/params"
 
-	"github.com/offchainlabs/nitro/arbos/multigascollector"
-	"github.com/offchainlabs/nitro/arbos/multigascollector/proto"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
@@ -21,17 +19,9 @@ func TestMultigasStylus_GetBytes32(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	outDir := t.TempDir()
-
-	// Build a node with the multigas collector enabled
-	builder := NewNodeBuilder(ctx).
-		DefaultConfig(t, false).
-		WithMultigasCollector(multigascollector.CollectorConfig{
-			OutputDir:      outDir,
-			BatchSize:      5,
-			ClearOutputDir: true,
-		})
-	cleanup := builder.Build(t) // no defer
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	cleanup := builder.Build(t)
+	defer cleanup()
 
 	l2info := builder.L2Info
 	l2client := builder.L2.Client
@@ -49,35 +39,14 @@ func TestMultigasStylus_GetBytes32(t *testing.T) {
 	receipt, err := EnsureTxSucceeded(ctx, l2client, tx)
 	require.NoError(t, err)
 
-	// Stop node to flush collector
-	cleanup()
+	require.Equal(t, params.ColdSloadCostEIP2929-params.WarmStorageReadCostEIP2929, receipt.MultiGasUsed.Get(multigas.ResourceKindStorageAccess))
+	require.Equal(t, params.WarmStorageReadCostEIP2929, receipt.MultiGasUsed.Get(multigas.ResourceKindComputation))
 
-	var blocks = readCollectorBatches(t, outDir, -1)
-	require.NotEmpty(t, blocks, "no multigas data found")
+	// TODO(NIT-3552): after instrumenting intrinsic gas and gasChargingHook this difference should be zero
+	gasDifference := params.TxGas + uint64(516)
+	require.Equal(t, receipt.GasUsed, receipt.MultiGasUsed.SingleGas()+gasDifference)
 
-	var allTxs []*proto.TransactionMultiGasData
-	for _, blk := range blocks {
-		allTxs = append(allTxs, blk.Transactions...)
-	}
-
-	// Find transactions in the all transactions
-	var found bool
-	for _, ptx := range allTxs {
-		if bytes.Equal(ptx.TxHash, tx.Hash().Bytes()) {
-			require.Equal(t, params.ColdSloadCostEIP2929-params.WarmStorageReadCostEIP2929, ptx.MultiGas.StorageAccess)
-			require.Equal(t, params.WarmStorageReadCostEIP2929, ptx.MultiGas.Computation)
-			require.Equal(t, receipt.GasUsed, ptx.MultiGas.SingleGas)
-
-			// TODO: Once all operations are instrumented, WasmComputation
-			// should be derived as the residual from SingleGas instead of asserted directly.
-			require.Greater(t, ptx.MultiGas.WasmComputation, uint64(0))
-
-			found = true
-			break
-		}
-	}
-
-	if !found {
-		require.Fail(t, "transactions not found in multigas collector data")
-	}
+	// TODO(NIT-3793, NIT-3793, NIT-3795): Once all WASM operations are instrumented, WasmComputation
+	// should be derived as the residual from SingleGas instead of asserted directly.
+	require.Greater(t, receipt.MultiGasUsed.Get(multigas.ResourceKindWasmComputation), uint64(0))
 }
