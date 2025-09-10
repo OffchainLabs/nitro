@@ -234,12 +234,12 @@ func ParseIncomingL1Message(rd io.Reader, batchFetcher FallibleBatchFetcher) (*L
 
 	msg := &L1IncomingMessage{
 		&L1IncomingMessageHeader{
-			kind,
-			sender,
-			blockNumber,
-			timestamp,
-			&requestId,
-			baseFeeL1.Big(),
+			Kind:        kind,
+			Poster:      sender,
+			BlockNumber: blockNumber,
+			Timestamp:   timestamp,
+			RequestId:   &requestId,
+			L1BaseFee:   baseFeeL1.Big(),
 		},
 		data,
 		nil,

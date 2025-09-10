@@ -8,15 +8,15 @@
 package arbtest
 
 import (
-        "testing"
+	"testing"
 )
 
 func TestBlockValidatorBenchmark(t *testing.T) {
-        opts := Options{
-                dasModeString: "onchain",
-                workloadLoops: 1,
-                workload:      depleteGas,
-                arbitrator:    true,
-        }
-        testBlockValidatorSimple(t, opts)
+	opts := Options{
+		dasModeString: "onchain",
+		workloadLoops: 1,
+		workload:      depleteGas,
+		arbitrator:    true,
+	}
+	testBlockValidatorSimple(t, opts)
 }

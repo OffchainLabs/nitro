@@ -29,6 +29,7 @@ import (
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/params"
 
+	"github.com/offchainlabs/nitro/arbnode/parent"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
@@ -424,6 +425,7 @@ type Sequencer struct {
 	nonceFailures      *nonceFailureCache
 	expressLaneService *expressLaneService
 	onForwarderSet     chan struct{}
+	parentChain        *parent.ParentChain
 
 	L1BlockAndTimeMutex sync.Mutex
 	l1BlockNumber       atomic.Uint64
@@ -444,7 +446,7 @@ type Sequencer struct {
 	timeboostAuctionResolutionTxQueue chan txQueueItem
 }
 
-func NewSequencer(execEngine *ExecutionEngine, l1Reader *headerreader.HeaderReader, configFetcher SequencerConfigFetcher) (*Sequencer, error) {
+func NewSequencer(execEngine *ExecutionEngine, l1Reader *headerreader.HeaderReader, configFetcher SequencerConfigFetcher, parentChainId *big.Int) (*Sequencer, error) {
 	config := configFetcher()
 	if err := config.Validate(); err != nil {
 		return nil, err
@@ -457,15 +459,19 @@ func NewSequencer(execEngine *ExecutionEngine, l1Reader *headerreader.HeaderRead
 		senderWhitelist[common.HexToAddress(address)] = struct{}{}
 	}
 	s := &Sequencer{
-		execEngine:                        execEngine,
-		txQueue:                           make(chan txQueueItem, config.QueueSize),
-		l1Reader:                          l1Reader,
-		config:                            configFetcher,
-		senderWhitelist:                   senderWhitelist,
-		nonceCache:                        newNonceCache(config.NonceCacheSize),
-		l1Timestamp:                       0,
-		pauseChan:                         nil,
-		onForwarderSet:                    make(chan struct{}, 1),
+		execEngine:      execEngine,
+		txQueue:         make(chan txQueueItem, config.QueueSize),
+		l1Reader:        l1Reader,
+		config:          configFetcher,
+		senderWhitelist: senderWhitelist,
+		nonceCache:      newNonceCache(config.NonceCacheSize),
+		l1Timestamp:     0,
+		pauseChan:       nil,
+		onForwarderSet:  make(chan struct{}, 1),
+		parentChain: &parent.ParentChain{
+			ChainID:  parentChainId,
+			L1Reader: l1Reader,
+		},
 		timeboostAuctionResolutionTxQueue: make(chan txQueueItem, 10), // There should never be more than 1 outstanding auction resolutions
 	}
 	s.nonceFailures = &nonceFailureCache{
@@ -694,15 +700,15 @@ func (s *Sequencer) publishTransactionToQueue(queueCtx context.Context, tx *type
 	}
 
 	queueItem := txQueueItem{
-		tx,
-		len(txBytes),
-		options,
-		resultChan,
-		&atomic.Bool{},
-		queueCtx,
-		time.Now(),
-		isExpressLaneController,
-		blockStamp,
+		tx:              tx,
+		txSize:          len(txBytes),
+		options:         options,
+		resultChan:      resultChan,
+		returnedResult:  &atomic.Bool{},
+		ctx:             queueCtx,
+		firstAppearance: time.Now(),
+		isTimeboosted:   isExpressLaneController,
+		blockStamp:      blockStamp,
 	}
 	select {
 	case s.txQueue <- queueItem:
@@ -1422,7 +1428,7 @@ func (s *Sequencer) updateExpectedSurplus(ctx context.Context) (int64, error) {
 			log.Warn("expected surplus calculation is set to use blob price but latest parent chain header has BlobGasUsed or ExcessBlobGas as nil, falling back to calldata price model")
 			backlogCost = backlogCallDataUnits * header.BaseFee.Int64()
 		} else {
-			blobFeePerByte, err := s.l1Reader.Client().BlobBaseFee(ctx)
+			blobFeePerByte, err := s.parentChain.BlobFeePerByte(ctx, header)
 			if err != nil {
 				return 0, fmt.Errorf("error encountered getting blob base fee while updating expectedSurplus: %w", err)
 			}

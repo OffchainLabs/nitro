@@ -13,9 +13,9 @@ import (
 
 	"github.com/pkg/errors"
 
-	protocol "github.com/offchainlabs/bold/chain-abstraction"
-	"github.com/offchainlabs/bold/containers"
-	"github.com/offchainlabs/bold/containers/option"
+	protocol "github.com/offchainlabs/nitro/bold/chain-abstraction"
+	"github.com/offchainlabs/nitro/bold/containers"
+	"github.com/offchainlabs/nitro/bold/containers/option"
 )
 
 type ComputePathWeightArgs struct {

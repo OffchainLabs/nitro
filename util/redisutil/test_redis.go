@@ -17,8 +17,19 @@ import (
 // CreateTestRedis Provides external redis url, this is only done with --test_redis flag,
 // else creates a new miniredis and returns its url.
 func CreateTestRedis(ctx context.Context, t testing.TB) string {
+	_, url := CreateTestRedisAdvanced(ctx, t)
+	return url
+}
+
+// IsSharedTestRedisInstance checks if the redis instance is shared between multiple tests - that's the case when --test_redis flag is sepecified
+func IsSharedTestRedisInstance() bool {
+	return *testflag.RedisFlag != ""
+}
+
+// CreateTestRedisAdvanced returns either (nil, test_redis url) or (miniredis, local url)
+func CreateTestRedisAdvanced(ctx context.Context, t testing.TB) (*miniredis.Miniredis, string) {
 	if *testflag.RedisFlag != "" {
-		return *testflag.RedisFlag
+		return nil, *testflag.RedisFlag
 	}
 	redisServer, err := miniredis.Run()
 	testhelpers.RequireImpl(t, err)
@@ -26,6 +37,5 @@ func CreateTestRedis(ctx context.Context, t testing.TB) string {
 		<-ctx.Done()
 		redisServer.Close()
 	}()
-
-	return fmt.Sprintf("redis://%s/0", redisServer.Addr())
+	return redisServer, fmt.Sprintf("redis://%s/0", redisServer.Addr())
 }

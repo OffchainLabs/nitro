@@ -21,10 +21,10 @@ import (
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/rpc"
 
-	protocol "github.com/offchainlabs/bold/chain-abstraction"
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbutil"
+	protocol "github.com/offchainlabs/nitro/bold/chain-abstraction"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/execution/gethexec"
@@ -124,10 +124,10 @@ func findImportantRoots(ctx context.Context, chainDb ethdb.Database, stack *node
 		if err != nil {
 			return nil, err
 		}
-		confirmedNumber := rawdb.ReadHeaderNumber(chainDb, confirmedHash)
+		confirmedNumber, found := rawdb.ReadHeaderNumber(chainDb, confirmedHash)
 		var confirmedHeader *types.Header
-		if confirmedNumber != nil {
-			confirmedHeader = rawdb.ReadHeader(chainDb, confirmedHash, *confirmedNumber)
+		if found {
+			confirmedHeader = rawdb.ReadHeader(chainDb, confirmedHash, confirmedNumber)
 		}
 		if confirmedHeader != nil {
 			err = roots.addHeader(confirmedHeader, false)
@@ -145,9 +145,9 @@ func findImportantRoots(ctx context.Context, chainDb ethdb.Database, stack *node
 		}
 		if lastValidated != nil {
 			var lastValidatedHeader *types.Header
-			headerNum := rawdb.ReadHeaderNumber(chainDb, lastValidated.GlobalState.BlockHash)
-			if headerNum != nil {
-				lastValidatedHeader = rawdb.ReadHeader(chainDb, lastValidated.GlobalState.BlockHash, *headerNum)
+			headerNum, found := rawdb.ReadHeaderNumber(chainDb, lastValidated.GlobalState.BlockHash)
+			if found {
+				lastValidatedHeader = rawdb.ReadHeader(chainDb, lastValidated.GlobalState.BlockHash, headerNum)
 			}
 			if lastValidatedHeader != nil {
 				err = roots.addHeader(lastValidatedHeader, false)

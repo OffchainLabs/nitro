@@ -45,12 +45,12 @@ type NativeApi struct {
 }
 
 func newApi(
-	interpreter *vm.EVMInterpreter,
+	evm *vm.EVM,
 	tracingInfo *util.TracingInfo,
 	scope *vm.ScopeContext,
 	memoryModel *MemoryModel,
 ) NativeApi {
-	handler := newApiClosures(interpreter, tracingInfo, scope, memoryModel)
+	handler := newApiClosures(evm, tracingInfo, scope, memoryModel)
 	apiId := apiIds.Add(1)
 	id := usize(apiId)
 	api := NativeApi{

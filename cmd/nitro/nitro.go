@@ -206,6 +206,7 @@ func mainImpl() int {
 		nodeConfig.Node.ParentChainReader.Enable = false
 		nodeConfig.Node.BatchPoster.Enable = false
 		nodeConfig.Node.DelayedSequencer.Enable = false
+		nodeConfig.Init.ValidateGenesisAssertion = false
 	} else {
 		nodeConfig.Node.ParentChainReader.Enable = true
 	}
@@ -527,6 +528,7 @@ func mainImpl() int {
 		l2BlockChain,
 		l1Client,
 		func() *gethexec.Config { return &liveNodeConfig.Get().Execution },
+		new(big.Int).SetUint64(nodeConfig.ParentChain.ID),
 		liveNodeConfig.Get().Node.TransactionStreamer.SyncTillBlock,
 	)
 	if err != nil {
@@ -1004,6 +1006,9 @@ func applyChainParameters(k *koanf.Koanf, chainId uint64, chainName string, l2Ch
 	}
 	if chainInfo.SecondaryFeedUrl != "" {
 		chainDefaults["node.feed.input.secondary-url"] = strings.Split(chainInfo.SecondaryFeedUrl, ",")
+	}
+	if chainInfo.FeedSigned {
+		chainDefaults["node.feed.input.verify.dangerous.accept-missing"] = false
 	}
 	if chainInfo.DasIndexUrl != "" {
 		chainDefaults["node.data-availability.enable"] = true

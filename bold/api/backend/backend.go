@@ -18,12 +18,12 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 
-	"github.com/offchainlabs/bold/api"
-	"github.com/offchainlabs/bold/api/db"
-	protocol "github.com/offchainlabs/bold/chain-abstraction"
-	watcher "github.com/offchainlabs/bold/challenge-manager/chain-watcher"
-	edgetracker "github.com/offchainlabs/bold/challenge-manager/edge-tracker"
-	"github.com/offchainlabs/bold/containers/option"
+	"github.com/offchainlabs/nitro/bold/api"
+	"github.com/offchainlabs/nitro/bold/api/db"
+	protocol "github.com/offchainlabs/nitro/bold/chain-abstraction"
+	watcher "github.com/offchainlabs/nitro/bold/challenge-manager/chain-watcher"
+	edgetracker "github.com/offchainlabs/nitro/bold/challenge-manager/edge-tracker"
+	"github.com/offchainlabs/nitro/bold/containers/option"
 )
 
 type BusinessLogicProvider interface {

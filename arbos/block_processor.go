@@ -23,7 +23,6 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
-	"github.com/offchainlabs/nitro/arbos/multigascollector"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
@@ -161,18 +160,18 @@ func NoopSequencingHooks(txes types.Transactions) *SequencingHooks {
 		0,
 	}
 	return &SequencingHooks{
-		scheduler.GetNextTx,
-		scheduler.GetScheduledTx,
-		[]error{},
-		false,
-		func(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, *arbitrum_types.ConditionalOptions, common.Address, *L1Info) error {
+		NextTxToSequence:       scheduler.GetNextTx,
+		SequencedTx:            scheduler.GetScheduledTx,
+		TxErrors:               []error{},
+		DiscardInvalidTxsEarly: false,
+		PreTxFilter: func(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, *arbitrum_types.ConditionalOptions, common.Address, *L1Info) error {
 			return nil
 		},
-		func(*types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult) error {
+		PostTxFilter: func(*types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult) error {
 			return nil
 		},
-		nil,
-		nil,
+		BlockFilter:             nil,
+		ConditionalOptionsForTx: nil,
 	}
 }
 
@@ -184,6 +183,7 @@ func ProduceBlock(
 	chainContext core.ChainContext,
 	isMsgForPrefetch bool,
 	runCtx *core.MessageRunContext,
+	exposeMultiGas bool,
 ) (*types.Block, types.Receipts, error) {
 	chainConfig := chainContext.Config()
 	txes, err := ParseL2Transactions(message, chainConfig.ChainID)
@@ -194,7 +194,7 @@ func ProduceBlock(
 	hooks := NoopSequencingHooks(txes)
 
 	return ProduceBlockAdvanced(
-		message.Header, delayedMessagesRead, lastBlockHeader, statedb, chainContext, hooks, isMsgForPrefetch, runCtx, nil,
+		message.Header, delayedMessagesRead, lastBlockHeader, statedb, chainContext, hooks, isMsgForPrefetch, runCtx, exposeMultiGas,
 	)
 }
 
@@ -208,7 +208,7 @@ func ProduceBlockAdvanced(
 	sequencingHooks *SequencingHooks,
 	isMsgForPrefetch bool,
 	runCtx *core.MessageRunContext,
-	mgcCollector multigascollector.Collector,
+	exposeMultiGas bool,
 ) (*types.Block, types.Receipts, error) {
 
 	arbState, err := arbosState.OpenSystemArbosState(statedb, nil, true)
@@ -346,6 +346,7 @@ func ProduceBlockAdvanced(
 			}
 
 			computeGas := tx.Gas() - dataGas
+
 			if computeGas < params.TxGas {
 				if hooks.DiscardInvalidTxsEarly {
 					return nil, nil, core.ErrIntrinsicGas
@@ -363,7 +364,7 @@ func ProduceBlockAdvanced(
 
 			gasPool := gethGas
 			blockContext := core.NewEVMBlockContext(header, chainContext, &header.Coinbase)
-			evm := vm.NewEVM(blockContext, statedb, chainConfig, vm.Config{})
+			evm := vm.NewEVM(blockContext, statedb, chainConfig, vm.Config{ExposeMultiGas: exposeMultiGas})
 			receipt, result, err := core.ApplyTransactionWithResultFilter(
 				evm,
 				&gasPool,
@@ -505,15 +506,6 @@ func ProduceBlockAdvanced(
 
 		if isUserTx {
 			userTxsProcessed++
-		}
-
-		// Submit multigas transaction message, if the multi gas collector is set
-		if mgcCollector != nil && result.UsedMultiGas != nil {
-			mgcCollector.CollectTransactionMultiGas(multigascollector.TransactionMultiGas{
-				TxHash:   tx.Hash().Bytes(),
-				TxIndex:  uint32(receipt.TransactionIndex), // #nosec G115 -- block tx count << MaxUint32; safe cast
-				MultiGas: *result.UsedMultiGas,
-			})
 		}
 	}
 

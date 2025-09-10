@@ -31,20 +31,20 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/rpc"
 
-	protocol "github.com/offchainlabs/bold/chain-abstraction"
-	solimpl "github.com/offchainlabs/bold/chain-abstraction/sol-implementation"
-	challengemanager "github.com/offchainlabs/bold/challenge-manager"
-	modes "github.com/offchainlabs/bold/challenge-manager/types"
-	l2stateprovider "github.com/offchainlabs/bold/layer2-state-provider"
-	challengetesting "github.com/offchainlabs/bold/testing"
-	"github.com/offchainlabs/bold/testing/setup"
-	butil "github.com/offchainlabs/bold/util"
 	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbstate"
+	protocol "github.com/offchainlabs/nitro/bold/chain-abstraction"
+	solimpl "github.com/offchainlabs/nitro/bold/chain-abstraction/sol-implementation"
+	challengemanager "github.com/offchainlabs/nitro/bold/challenge-manager"
+	modes "github.com/offchainlabs/nitro/bold/challenge-manager/types"
+	l2stateprovider "github.com/offchainlabs/nitro/bold/layer2-state-provider"
+	challengetesting "github.com/offchainlabs/nitro/bold/testing"
+	"github.com/offchainlabs/nitro/bold/testing/setup"
+	butil "github.com/offchainlabs/nitro/bold/util"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
@@ -623,11 +623,11 @@ func createTestNodeOnL1ForBoldProtocol(
 
 	AddValNodeIfNeeded(t, ctx, nodeConfig, true, "", "")
 
+	parentChainId, err := l1client.ChainID(ctx)
 	execConfigFetcher := func() *gethexec.Config { return execConfig }
-	execNode, err := gethexec.CreateExecutionNode(ctx, l2stack, l2chainDb, l2blockchain, l1client, execConfigFetcher, 0)
+	execNode, err := gethexec.CreateExecutionNode(ctx, l2stack, l2chainDb, l2blockchain, l1client, execConfigFetcher, parentChainId, 0)
 	Require(t, err)
 
-	parentChainId, err := l1client.ChainID(ctx)
 	Require(t, err)
 	locator, err := server_common.NewMachineLocator("")
 	Require(t, err)
@@ -837,9 +837,9 @@ func create2ndNodeWithConfigForBoldProtocol(
 	Require(t, err)
 
 	execConfigFetcher := func() *gethexec.Config { return execConfig }
-	execNode, err := gethexec.CreateExecutionNode(ctx, l2stack, l2chainDb, l2blockchain, l1client, execConfigFetcher, 0)
-	Require(t, err)
 	l1ChainId, err := l1client.ChainID(ctx)
+	Require(t, err)
+	execNode, err := gethexec.CreateExecutionNode(ctx, l2stack, l2chainDb, l2blockchain, l1client, execConfigFetcher, l1ChainId, 0)
 	Require(t, err)
 	locator, err := server_common.NewMachineLocator("")
 	Require(t, err)

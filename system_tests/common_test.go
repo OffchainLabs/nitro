@@ -55,15 +55,14 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
 
-	"github.com/offchainlabs/bold/testing/setup"
-	butil "github.com/offchainlabs/bold/util"
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
-	"github.com/offchainlabs/nitro/arbos/multigascollector"
 	arbosutil "github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/blsSignatures"
+	"github.com/offchainlabs/nitro/bold/testing/setup"
+	butil "github.com/offchainlabs/nitro/bold/util"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
@@ -396,11 +395,6 @@ func (b *NodeBuilder) WithExtraArchs(targets []string) *NodeBuilder {
 	return b
 }
 
-func (b *NodeBuilder) WithMultigasCollector(config multigascollector.CollectorConfig) *NodeBuilder {
-	b.execConfig.MultigasCollector = config
-	return b
-}
-
 // WithDelayBuffer sets the delay-buffer threshold, which is the number of blocks the batch-poster
 // is allowed to delay a batch with a delayed message.
 // Setting the threshold to zero disabled the delay buffer (default behaviour).
@@ -665,7 +659,7 @@ func buildOnParentChain(
 	Require(t, execConfig.Validate())
 	execConfigToBeUsedInConfigFetcher := execConfig
 	execConfigFetcher := func() *gethexec.Config { return execConfigToBeUsedInConfigFetcher }
-	execNode, err := gethexec.CreateExecutionNode(ctx, chainTestClient.Stack, chainDb, blockchain, parentChainTestClient.Client, execConfigFetcher, 0)
+	execNode, err := gethexec.CreateExecutionNode(ctx, chainTestClient.Stack, chainDb, blockchain, parentChainTestClient.Client, execConfigFetcher, parentChainId, 0)
 	Require(t, err)
 
 	fatalErrChan := make(chan error, 10)
@@ -797,7 +791,7 @@ func (b *NodeBuilder) BuildL2(t *testing.T) func() {
 	Require(t, b.execConfig.Validate())
 	execConfig := b.execConfig
 	execConfigFetcher := func() *gethexec.Config { return execConfig }
-	execNode, err := gethexec.CreateExecutionNode(b.ctx, b.L2.Stack, chainDb, blockchain, nil, execConfigFetcher, 0)
+	execNode, err := gethexec.CreateExecutionNode(b.ctx, b.L2.Stack, chainDb, blockchain, nil, execConfigFetcher, big.NewInt(1337), 0)
 	Require(t, err)
 
 	fatalErrChan := make(chan error, 10)
@@ -851,7 +845,7 @@ func (b *NodeBuilder) RestartL2Node(t *testing.T) {
 	l2info, stack, chainDb, arbDb, blockchain := createNonL1BlockChainWithStackConfig(t, b.L2Info, b.dataDir, b.chainConfig, b.arbOSInit, b.initMessage, b.l2StackConfig, b.execConfig)
 
 	execConfigFetcher := func() *gethexec.Config { return b.execConfig }
-	execNode, err := gethexec.CreateExecutionNode(b.ctx, stack, chainDb, blockchain, nil, execConfigFetcher, 0)
+	execNode, err := gethexec.CreateExecutionNode(b.ctx, stack, chainDb, blockchain, nil, execConfigFetcher, big.NewInt(1337), 0)
 	Require(t, err)
 
 	feedErrChan := make(chan error, 10)
@@ -949,10 +943,10 @@ func build2ndNode(
 func (b *NodeBuilder) Build2ndNode(t *testing.T, params *SecondNodeParams) (*TestClient, func()) {
 	DontWaitAndRun(b.ctx, 1, t.Name())
 	if b.L2 == nil {
-		t.Fatal("builder did not previously built an L2 Node")
+		t.Fatal("builder did not previously build an L2 Node")
 	}
-	if b.withL1 && b.L1 == nil {
-		t.Fatal("builder did not previously built an L1 Node")
+	if b.L1 == nil {
+		t.Fatal("builder did not previously build an L1 Node")
 	}
 	return build2ndNode(
 		t,
@@ -1762,7 +1756,7 @@ func Create2ndNodeWithConfig(
 
 	Require(t, nodeConfig.Validate())
 	configFetcher := func() *gethexec.Config { return execConfig }
-	currentExec, err := gethexec.CreateExecutionNode(ctx, chainStack, chainDb, blockchain, parentChainClient, configFetcher, 0)
+	currentExec, err := gethexec.CreateExecutionNode(ctx, chainStack, chainDb, blockchain, parentChainClient, configFetcher, big.NewInt(1337), 0)
 	Require(t, err)
 
 	var currentNode *arbnode.Node
@@ -1880,8 +1874,8 @@ func setupConfigWithDAS(
 
 	l1NodeConfigA.DataAvailability = das.DefaultDataAvailabilityConfig
 	var lifecycleManager *das.LifecycleManager
-	var daReader das.DataAvailabilityServiceReader
-	var daWriter das.DataAvailabilityServiceWriter
+	var daReader dasutil.DASReader
+	var daWriter dasutil.DASWriter
 	var daHealthChecker das.DataAvailabilityServiceHealthChecker
 	var signatureVerifier *das.SignatureVerifier
 	if dasModeString != "onchain" {
