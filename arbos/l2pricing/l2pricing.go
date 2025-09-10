@@ -46,15 +46,15 @@ func InitializeL2PricingState(sto *storage.Storage) error {
 
 func OpenL2PricingState(sto *storage.Storage) *L2PricingState {
 	return &L2PricingState{
-		sto,
-		sto.OpenStorageBackedUint64(speedLimitPerSecondOffset),
-		sto.OpenStorageBackedUint64(perBlockGasLimitOffset),
-		sto.OpenStorageBackedBigUint(baseFeeWeiOffset),
-		sto.OpenStorageBackedBigUint(minBaseFeeWeiOffset),
-		sto.OpenStorageBackedUint64(gasBacklogOffset),
-		sto.OpenStorageBackedUint64(pricingInertiaOffset),
-		sto.OpenStorageBackedUint64(backlogToleranceOffset),
-		sto.OpenStorageBackedUint64(perTxGasLimitOffset),
+		storage:             sto,
+		speedLimitPerSecond: sto.OpenStorageBackedUint64(speedLimitPerSecondOffset),
+		perBlockGasLimit:    sto.OpenStorageBackedUint64(perBlockGasLimitOffset),
+		baseFeeWei:          sto.OpenStorageBackedBigUint(baseFeeWeiOffset),
+		minBaseFeeWei:       sto.OpenStorageBackedBigUint(minBaseFeeWeiOffset),
+		gasBacklog:          sto.OpenStorageBackedUint64(gasBacklogOffset),
+		pricingInertia:      sto.OpenStorageBackedUint64(pricingInertiaOffset),
+		backlogTolerance:    sto.OpenStorageBackedUint64(backlogToleranceOffset),
+		perTxGasLimit:       sto.OpenStorageBackedUint64(perTxGasLimitOffset),
 	}
 }
 
