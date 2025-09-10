@@ -17,7 +17,7 @@ const aPackagePath = "github.com/offchainlabs/nitro/linters/testdata/src/structi
 const bPackagePath = "github.com/offchainlabs/nitro/linters/testdata/src/structinit/b"
 
 func TestFieldCountingInSinglePackage(t *testing.T) {
-	result := analysistest.Run(t, getModuleRoot(t), analyzerForTests, aPackagePath)
+	result := analysistest.Run(t, getModuleRoot(t), Analyzer, aPackagePath)
 	require.Equal(t, 1, len(result),
 		"Expected single result - analysis was run for a single package")
 
@@ -31,7 +31,7 @@ func TestFieldCountingInSinglePackage(t *testing.T) {
 }
 
 func TestFieldCountingAcrossPackages(t *testing.T) {
-	result := analysistest.Run(t, getModuleRoot(t), analyzerForTests, bPackagePath)
+	result := analysistest.Run(t, getModuleRoot(t), Analyzer, bPackagePath)
 	require.Equal(t, 1, len(result),
 		"Expected two results - analysis was run for a single package")
 

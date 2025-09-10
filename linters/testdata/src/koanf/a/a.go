@@ -1,3 +1,6 @@
+// Copyright 2023-2025, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
+
 package a
 
 import (
@@ -5,7 +8,7 @@ import (
 )
 
 type Config struct {
-	L2       int `koanf:"chain"` // Err: mismatch.
+	L2       int `koanf:"chain"` // want `field name: "L2" doesn't match tag name: "chain"`
 	LogLevel int `koanf:"log-level"`
 	LogType  int `koanf:"log-type"`
 	Metrics  int `koanf:"metrics"`
@@ -41,9 +44,9 @@ type BatchPosterConfig struct {
 
 var DefaultBatchPosterConfig BatchPosterConfig
 
-func BatchPosterConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.Bool(prefix+".enabled", DefaultBatchPosterConfig.Enable, "") // Err: incorrect flag.
-	f.Int("max-sz", DefaultBatchPosterConfig.MaxSize, "")          // Err: incorrect flag.
+func BatchPosterConfigAddOptions(prefix string, f *flag.FlagSet) { // want `koanf tag name: "enabled" doesn't match the field: "Enable"` `koanf tag name: "max-sz" doesn't match the field: "MaxSize"`
+	f.Bool(prefix+".enabled", DefaultBatchPosterConfig.Enable, "")
+	f.Int("max-sz", DefaultBatchPosterConfig.MaxSize, "")
 }
 
 func ConfigAddOptions(prefix string, f *flag.FlagSet) {
