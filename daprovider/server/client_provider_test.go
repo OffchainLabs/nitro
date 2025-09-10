@@ -16,6 +16,7 @@ import (
 	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/util/testhelpers"
+	"github.com/stretchr/testify/require"
 )
 
 const RPCServerBodyLimit int = 1_000
@@ -29,6 +30,17 @@ func TestInteractionBetweenClientAndProviderServer_StoreSucceeds(t *testing.T) {
 
 	_, err := client.Store(ctx, message, 0, true)
 	testhelpers.RequireImpl(t, err)
+}
+
+func TestInteractionBetweenClientAndProviderServer_StoreFailsDueToSize(t *testing.T) {
+	ctx := context.Background()
+	server := setupProviderServer(ctx, t)
+	client := setupClient(ctx, t, server.Addr)
+
+	message := testhelpers.RandomizeSlice(make([]byte, RPCServerBodyLimit+1))
+
+	_, err := client.Store(ctx, message, 0, true)
+	require.Regexp(t, ".*Request Entity Too Large.*", err.Error())
 }
 
 func setupProviderServer(ctx context.Context, t *testing.T) *http.Server {
