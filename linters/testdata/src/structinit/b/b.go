@@ -11,8 +11,6 @@
 package b
 
 import (
-	"fmt"
-
 	"github.com/offchainlabs/nitro/linters/testdata/src/structinit/a"
 )
 
@@ -22,6 +20,5 @@ type AnotherStruct struct {
 }
 
 func init() {
-	var silentlyInitialized = &a.InterestingStruct{} // Error: no field is initialized.
-	fmt.Println(silentlyInitialized)
+	_ = &a.InterestingStruct{} // want `initialized with: 0 of total: 2 fields`
 }

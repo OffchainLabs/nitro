@@ -10,8 +10,6 @@
 
 package a
 
-import "fmt"
-
 // lint:require-exhaustive-initialization
 type InterestingStruct struct {
 	X int
@@ -23,21 +21,17 @@ type BoringStruct struct {
 }
 
 func init() {
-	a := &InterestingStruct{ // Error: only single field is initialized.
+	_ = &InterestingStruct{ // want `initialized with: 1 of total: 2 fields`
 		X: 1,
 	}
-	fmt.Println(a)
-	b := InterestingStruct{ // Error: only single field is initialized.
+	_ = InterestingStruct{ // want `initialized with: 1 of total: 2 fields`
 		B: nil,
 	}
-	fmt.Println(b)
-	c := InterestingStruct{ // Not an error, all fields are initialized.
+	_ = InterestingStruct{ // Not an error, all fields are initialized.
 		X: 1,
 		B: nil,
 	}
-	fmt.Println(c)
-	d := &BoringStruct{ // Not an error since it's not annotated for the linter.
+	_ = &BoringStruct{ // Not an error since it's not annotated for the linter.
 		X: 1,
 	}
-	fmt.Println(d)
 }
