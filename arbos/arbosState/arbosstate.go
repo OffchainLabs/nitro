@@ -392,6 +392,13 @@ func (state *ArbosState) UpgradeArbosVersion(
 			ensure(p.Save())
 			chainId, err := state.ChainId()
 			ensure(err)
+			// As of ArbOS v50, the parents of these chains have increased
+			// calldata pricing as part of EIP-7623.
+			// See: https://eips.ethereum.org/EIPS/eip-7623
+			var chainsWithIncreasedCalldataInParent = []*big.Int{
+				chaininfo.ArbitrumOneChainConfig().ChainID,
+				chaininfo.ArbitrumNovaChainConfig().ChainID,
+			}
 			if chainId.Cmp(chaininfo.ArbitrumOneChainConfig().ChainID) == 0 || chainId.Cmp(chaininfo.ArbitrumNovaChainConfig().ChainID) == 0 {
 				ensure(state.l1PricingState.SetCalldataPrice(big.NewInt(int64(params.TxCostFloorPerToken))))
 			} else {

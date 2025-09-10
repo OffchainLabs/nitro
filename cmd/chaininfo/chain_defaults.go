@@ -145,6 +145,9 @@ func ArbitrumNovaParams() params.ArbitrumChainParams {
 func ArbitrumRollupGoerliTestnetParams() params.ArbitrumChainParams {
 	return fetchArbitrumChainParams("goerli-rollup")
 }
+func ArbitrumRollupSepoliaTestnetParams() params.ArbitrumChainParams {
+	return fetchArbitrumChainParams("sepolia-rollup")
+}
 func ArbitrumDevTestParams() params.ArbitrumChainParams {
 	return fetchArbitrumChainParams("arb-dev-test")
 }
@@ -168,6 +171,9 @@ func ArbitrumNovaChainConfig() *params.ChainConfig {
 }
 func ArbitrumRollupGoerliTestnetChainConfig() *params.ChainConfig {
 	return fetchChainConfig("goerli-rollup")
+}
+func ArbitrumRollupSepoliaTestnetChainConfig() *params.ChainConfig {
+	return fetchChainConfig("sepolia-rollup")
 }
 func ArbitrumDevTestChainConfig() *params.ChainConfig {
 	return fetchChainConfig("arb-dev-test")

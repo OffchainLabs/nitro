@@ -9,7 +9,7 @@ import (
 )
 
 func TestDefaultChainConfigsCopyCorrectly(t *testing.T) {
-	for _, chainName := range []string{"arb1", "nova", "goerli-rollup", "arb-dev-test", "anytrust-dev-test"} {
+	for _, chainName := range []string{"arb1", "nova", "goerli-rollup", "sepolia-rollup", "arb-dev-test", "anytrust-dev-test"} {
 		if !reflect.DeepEqual(DefaultChainConfigs[chainName], fetchChainConfig(chainName)) {
 			t.Fatalf("copy of %s default chain config mismatch", chainName)
 		}
