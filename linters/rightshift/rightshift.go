@@ -11,14 +11,7 @@ import (
 var Analyzer = &analysis.Analyzer{
 	Name:       "rightshift",
 	Doc:        "check for 1 >> x operation",
-	Run:        func(p *analysis.Pass) (interface{}, error) { return run(false, p) },
-	ResultType: reflect.TypeOf(Result{}),
-}
-
-var analyzerForTests = &analysis.Analyzer{
-	Name:       "testrightshift",
-	Doc:        "check for rightshift operation (for tests)",
-	Run:        func(p *analysis.Pass) (interface{}, error) { return run(true, p) },
+	Run:        run,
 	ResultType: reflect.TypeOf(Result{}),
 }
 
@@ -34,7 +27,7 @@ type Result struct {
 	Errors []rightShiftError
 }
 
-func run(dryRun bool, pass *analysis.Pass) (interface{}, error) {
+func run(pass *analysis.Pass) (interface{}, error) {
 	var ret Result
 	for _, f := range pass.Files {
 		ast.Inspect(f, func(node ast.Node) bool {
@@ -49,13 +42,11 @@ func run(dryRun bool, pass *analysis.Pass) (interface{}, error) {
 					Message: "found rightshift ('1 >> x') expression, did you mean '1 << x' ?",
 				}
 				ret.Errors = append(ret.Errors, err)
-				if !dryRun {
-					pass.Report(analysis.Diagnostic{
-						Pos:      pass.Fset.File(f.Pos()).Pos(err.Pos.Offset),
-						Message:  err.Message,
-						Category: "rightshift",
-					})
-				}
+				pass.Report(analysis.Diagnostic{
+					Pos:      pass.Fset.File(f.Pos()).Pos(err.Pos.Offset),
+					Message:  err.Message,
+					Category: "rightshift",
+				})
 			}
 			return true
 		},

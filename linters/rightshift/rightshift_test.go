@@ -15,7 +15,7 @@ func TestAll(t *testing.T) {
 		t.Fatalf("Failed to get working directory: %v", err)
 	}
 	testdata := filepath.Join(filepath.Dir(wd), "testdata")
-	res := analysistest.Run(t, testdata, analyzerForTests, "rightshift")
+	res := analysistest.Run(t, testdata, Analyzer, "rightshift")
 	want := []int{6, 11, 12}
 	got := erroLines(res)
 	if diff := cmp.Diff(want, got); diff != "" {
