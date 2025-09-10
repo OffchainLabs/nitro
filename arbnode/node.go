@@ -37,12 +37,16 @@ import (
 	"github.com/offchainlabs/nitro/broadcaster"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
+	"github.com/offchainlabs/nitro/consensus"
+	consensusrpcclient "github.com/offchainlabs/nitro/consensus/rpcclient"
+	consensusrpcserver "github.com/offchainlabs/nitro/consensus/rpcserver"
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/daprovider/daclient"
 	"github.com/offchainlabs/nitro/daprovider/das"
 	"github.com/offchainlabs/nitro/daprovider/das/dasserver"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/execution/gethexec"
+	executionrpcserver "github.com/offchainlabs/nitro/execution/rpcserver"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/staker"
@@ -58,6 +62,53 @@ import (
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
+
+type Interconnect string
+
+const (
+	InterconnectDirect  Interconnect = "direct"  // in-process calls (DEFAULT)
+	InterconnectJSONRPC Interconnect = "jsonrpc" // JSON-RPC over loopback
+)
+
+type ConsensusRPCServerConfig struct {
+	Public        bool `koanf:"public"`
+	Authenticated bool `koanf:"authenticated"`
+}
+
+var DefaultConsensusRPCServerConfig = ConsensusRPCServerConfig{
+	Public:        false,
+	Authenticated: true,
+}
+
+var TestConsensusRPCServerConfig = ConsensusRPCServerConfig{
+	Public:        true,
+	Authenticated: false,
+}
+
+func ConsensusRPCServerAddOptions(prefix string, f *flag.FlagSet) {
+	f.Bool(prefix+".public", DefaultConsensusRPCServerConfig.Public, "consensus rpc is public")
+	f.Bool(prefix+".authenticated", DefaultConsensusRPCServerConfig.Authenticated, "consensus rpc is authenticated")
+}
+
+type ExecutionRPCServerConfig struct {
+	Public        bool `koanf:"public"`
+	Authenticated bool `koanf:"authenticated"`
+}
+
+var DefaultExecutionRPCConfig = ExecutionRPCServerConfig{
+	Public:        false,
+	Authenticated: true,
+}
+
+var TestExecutionRPCServerConfig = ExecutionRPCServerConfig{
+	Public:        true,
+	Authenticated: false,
+}
+
+func ExecutionRPCServerAddOptions(prefix string, f *flag.FlagSet) {
+	f.Bool(prefix+".public", DefaultExecutionRPCConfig.Public, "rpc is public")
+	f.Bool(prefix+".authenticated", DefaultExecutionRPCConfig.Authenticated, "rpc is authenticated")
+}
 
 type Config struct {
 	Sequencer                bool                           `koanf:"sequencer"`
@@ -82,6 +133,14 @@ type Config struct {
 	ConsensusExecutionSyncer ConsensusExecutionSyncerConfig `koanf:"consensus-execution-syncer"`
 	// SnapSyncConfig is only used for testing purposes, these should not be configured in production.
 	SnapSyncTest SnapSyncConfig
+
+	// These options control if we use direct in-process calls between the execution and consensus or JSON-RPC over loopback.
+
+	Interconnect       Interconnect              `koanf:"interconnect"`
+	ExecutionRpcServer *ExecutionRPCServerConfig `koanf:"execution-rpc-server"`
+	ExecutionRpcClient *rpcclient.ClientConfig   `koanf:"execution-rpc-client" reload:"hot"`
+	ConsensusRpcServer *ConsensusRPCServerConfig `koanf:"consensus-rpc-server"`
+	ConsensusRpcClient *rpcclient.ClientConfig   `koanf:"consensus-rpc-client" reload:"hot"`
 }
 
 func (c *Config) Validate() error {
@@ -119,6 +178,40 @@ func (c *Config) Validate() error {
 	if c.TransactionStreamer.TrackBlockMetadataFrom != 0 && !c.BlockMetadataFetcher.Enable {
 		log.Warn("track-block-metadata-from is set but blockMetadata fetcher is not enabled")
 	}
+	switch c.Interconnect {
+	case InterconnectDirect:
+		// Forbid any CLI flags that touch node.execution-rpc* or node.consensus-rpc*.
+		if c.ExecutionRpcClient != nil {
+			return errors.New("cannot set execution-rpc-client when interconnect is direct")
+		}
+		if c.ConsensusRpcClient != nil {
+			return errors.New("cannot set consensus-rpc-client when interconnect is direct")
+		}
+		if c.ExecutionRpcServer != nil {
+			return errors.New("cannot set execution-rpc-server when interconnect is direct")
+		}
+	case InterconnectJSONRPC:
+		if c.ExecutionRpcServer == nil {
+			return errors.New("must set execution-rpc-server when interconnect is jsonrpc")
+		}
+		if c.ConsensusRpcServer == nil {
+			return errors.New("must set consensus-rpc-server when interconnect is jsonrpc")
+		}
+		if c.ExecutionRpcClient == nil {
+			return errors.New("must set execution-rpc-client when interconnect is jsonrpc")
+		}
+		if c.ConsensusRpcClient == nil {
+			return errors.New("must set consensus-rpc-client when interconnect is jsonrpc")
+		}
+		if err := c.ExecutionRpcClient.Validate(); err != nil {
+			return err
+		}
+		if err := c.ConsensusRpcClient.Validate(); err != nil {
+			return err
+		}
+	default:
+		return fmt.Errorf("invalid interconnect %q (expected direct or jsonrpc)", c.Interconnect)
+	}
 	return nil
 }
 
@@ -153,6 +246,11 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feed
 	resourcemanager.ConfigAddOptions(prefix+".resource-mgmt", f)
 	BlockMetadataFetcherConfigAddOptions(prefix+".block-metadata-fetcher", f)
 	ConsensusExecutionSyncerConfigAddOptions(prefix+".consensus-execution-syncer", f)
+	f.String(prefix+".interconnect", string(ConfigDefault.Interconnect), "interconnect method between execution and consensus (direct or jsonrpc)")
+	ExecutionRPCServerAddOptions(prefix+".execution-rpc-server", f)
+	rpcclient.RPCClientAddOptions(prefix+".execution-rpc-client", f, &rpcclient.DefaultClientConfig)
+	ConsensusRPCServerAddOptions(prefix+".consensus-rpc-server", f)
+	rpcclient.RPCClientAddOptions(prefix+".consensus-rpc-client", f, &rpcclient.DefaultClientConfig)
 }
 
 var ConfigDefault = Config{
@@ -177,6 +275,11 @@ var ConfigDefault = Config{
 	Maintenance:              DefaultMaintenanceConfig,
 	ConsensusExecutionSyncer: DefaultConsensusExecutionSyncerConfig,
 	SnapSyncTest:             DefaultSnapSyncConfig,
+	Interconnect:             InterconnectDirect,
+	ExecutionRpcServer:       nil,
+	ExecutionRpcClient:       nil,
+	ConsensusRpcServer:       nil,
+	ConsensusRpcClient:       nil,
 }
 
 func ConfigDefaultL1Test() *Config {
@@ -1228,6 +1331,23 @@ func registerAPIs(currentNode *Node, stack *node.Node) {
 			Public: false,
 		})
 	}
+	config := currentNode.configFetcher.Get()
+	if config.Interconnect == InterconnectJSONRPC {
+		apis = append(apis, rpc.API{
+			Namespace:     consensus.RPCNamespace,
+			Version:       "1.0",
+			Service:       consensusrpcserver.NewConsensusRpcServer(currentNode),
+			Public:        config.ConsensusRpcServer.Public,
+			Authenticated: config.ConsensusRpcServer.Authenticated,
+		})
+		apis = append(apis, rpc.API{
+			Namespace:     execution.RPCNamespace,
+			Version:       "1.0",
+			Service:       executionrpcserver.NewExecutionRpcServer(currentNode.ExecutionClient),
+			Public:        config.ExecutionRpcServer.Public,
+			Authenticated: config.ExecutionRpcServer.Authenticated,
+		})
+	}
 	stack.RegisterAPIs(apis)
 }
 
@@ -1306,7 +1426,16 @@ func (n *Node) Start(ctx context.Context) error {
 		return fmt.Errorf("error starting geth stack: %w", err)
 	}
 	if execClient != nil {
-		execClient.SetConsensusClient(n)
+		var consensusClient consensus.FullConsensusClient
+		if n.configFetcher.Get().Interconnect == InterconnectDirect {
+			consensusClient = n
+		} else {
+			consensusConfigFetcher := func() *rpcclient.ClientConfig { return n.configFetcher.Get().ConsensusRpcClient }
+			consensusRpcClient := consensusrpcclient.NewConsensusRpcClient(consensusConfigFetcher, n.Stack)
+			consensusRpcClient.Start(ctx)
+			consensusClient = consensusRpcClient
+		}
+		execClient.SetConsensusClient(consensusClient)
 	}
 	err = n.ExecutionClient.Start(ctx)
 	if err != nil {
@@ -1500,9 +1629,9 @@ func (n *Node) StopAndWait() {
 	}
 }
 
-func (n *Node) FindInboxBatchContainingMessage(message arbutil.MessageIndex) containers.PromiseInterface[execution.InboxBatch] {
+func (n *Node) FindInboxBatchContainingMessage(message arbutil.MessageIndex) containers.PromiseInterface[consensus.InboxBatch] {
 	batchNum, found, err := n.InboxTracker.FindInboxBatchContainingMessage(message)
-	inboxBatch := execution.InboxBatch{
+	inboxBatch := consensus.InboxBatch{
 		BatchNum: batchNum,
 		Found:    found,
 	}
@@ -1525,7 +1654,7 @@ func (n *Node) SyncTargetMessageCount() containers.PromiseInterface[arbutil.Mess
 	return containers.NewReadyPromise(n.SyncMonitor.SyncTargetMessageCount(), nil)
 }
 
-func (n *Node) WriteMessageFromSequencer(pos arbutil.MessageIndex, msgWithMeta arbostypes.MessageWithMetadata, msgResult execution.MessageResult, blockMetadata common.BlockMetadata) containers.PromiseInterface[struct{}] {
+func (n *Node) WriteMessageFromSequencer(pos arbutil.MessageIndex, msgWithMeta arbostypes.MessageWithMetadata, msgResult consensus.MessageResult, blockMetadata common.BlockMetadata) containers.PromiseInterface[struct{}] {
 	err := n.TxStreamer.WriteMessageFromSequencer(pos, msgWithMeta, msgResult, blockMetadata)
 	return containers.NewReadyPromise(struct{}{}, err)
 }

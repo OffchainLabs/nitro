@@ -56,8 +56,10 @@ import (
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/daprovider/das"
+	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	_ "github.com/offchainlabs/nitro/execution/nodeInterface"
+	executionrpcclient "github.com/offchainlabs/nitro/execution/rpcclient"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
@@ -544,10 +546,20 @@ func mainImpl() int {
 		wasmModuleRoot = locator.LatestWasmModuleRoot()
 	}
 
+	// if config says use rpc use it else, use execNode directly
+	var executionClient execution.ExecutionClient
+	if liveNodeConfig.Get().Node.Interconnect == arbnode.InterconnectDirect {
+		executionClient = execNode
+	} else {
+		execConfigFetcher := func() *rpcclient.ClientConfig { return liveNodeConfig.Get().Node.ExecutionRpcClient }
+		executionClient = executionrpcclient.NewExecutionRpcClient(execConfigFetcher, stack)
+		executionClient.Start(ctx)
+	}
+
 	currentNode, err := arbnode.CreateNodeFullExecutionClient(
 		ctx,
 		stack,
-		execNode,
+		executionClient,
 		execNode,
 		execNode,
 		execNode,
@@ -966,6 +978,21 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 		nodeConfig.Execution.TxIndexer.TxLookupLimit = 0
 	}
 
+	// If ArbNode is using the JSON-RPC interconnect mode, then we need to set the defaults
+	if nodeConfig.Node.Interconnect == arbnode.InterconnectJSONRPC {
+		nodeConfig.Node.ExecutionRpcServer = &arbnode.DefaultExecutionRPCConfig
+		nodeConfig.Node.ExecutionRpcClient = &rpcclient.DefaultClientConfig
+		nodeConfig.Node.ExecutionRpcClient.URL = "0.0.0.0:8547"
+		nodeConfig.Node.ConsensusRpcServer = &arbnode.DefaultConsensusRPCServerConfig
+		nodeConfig.Node.ConsensusRpcClient = &rpcclient.DefaultClientConfig
+		nodeConfig.Node.ConsensusRpcClient.URL = "0.0.0.0:8547"
+	} else {
+		nodeConfig.Node.ExecutionRpcServer = nil
+		nodeConfig.Node.ExecutionRpcClient = nil
+		nodeConfig.Node.ConsensusRpcServer = nil
+		nodeConfig.Node.ConsensusRpcClient = nil
+	}
+
 	err = nodeConfig.Validate()
 	if err != nil {
 		return nil, nil, err
@@ -1042,6 +1069,7 @@ func applyChainParameters(k *koanf.Koanf, chainId uint64, chainName string, l2Ch
 	if chainInfo.TrackBlockMetadataFrom > 0 && chainInfo.BlockMetadataUrl != "" {
 		chainDefaults["node.block-metadata-fetcher.enable"] = true
 	}
+
 	err = k.Load(confmap.Provider(chainDefaults, "."), nil)
 	if err != nil {
 		return err
