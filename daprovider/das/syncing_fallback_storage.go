@@ -427,14 +427,14 @@ func NewSyncingFallbackStorageService(ctx context.Context,
 	syncService.Start(ctx)
 	return &SyncingFallbackStorageService{
 		FallbackStorageService{
-			primary,
-			backup,
-			backupHealthChecker,
-			uint64(syncConf.RetentionPeriod.Seconds()),
-			syncConf.IgnoreWriteErrors,
-			true,
-			make(map[[32]byte]bool),
-			sync.RWMutex{},
+			StorageService:             primary,
+			backup:                     backup,
+			backupHealthChecker:        backupHealthChecker,
+			backupRetentionSeconds:     uint64(syncConf.RetentionPeriod.Seconds()),
+			ignoreRetentionWriteErrors: syncConf.IgnoreWriteErrors,
+			preventRecursiveGets:       true,
+			currentlyFetching:          make(map[[32]byte]bool),
+			currentlyFetchingMutex:     sync.RWMutex{},
 		},
 		syncService,
 	}, nil

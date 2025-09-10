@@ -700,15 +700,15 @@ func (s *Sequencer) publishTransactionToQueue(queueCtx context.Context, tx *type
 	}
 
 	queueItem := txQueueItem{
-		tx,
-		len(txBytes),
-		options,
-		resultChan,
-		&atomic.Bool{},
-		queueCtx,
-		time.Now(),
-		isExpressLaneController,
-		blockStamp,
+		tx:              tx,
+		txSize:          len(txBytes),
+		options:         options,
+		resultChan:      resultChan,
+		returnedResult:  &atomic.Bool{},
+		ctx:             queueCtx,
+		firstAppearance: time.Now(),
+		isTimeboosted:   isExpressLaneController,
+		blockStamp:      blockStamp,
 	}
 	select {
 	case s.txQueue <- queueItem:

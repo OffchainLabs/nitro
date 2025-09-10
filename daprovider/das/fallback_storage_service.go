@@ -40,14 +40,14 @@ func NewFallbackStorageService(
 	preventRecursiveGets bool, // if true, return NotFound on simultaneous calls to Gets that miss in primary (prevents infinite recursion)
 ) *FallbackStorageService {
 	return &FallbackStorageService{
-		primary,
-		backup,
-		backupHealthChecker,
-		backupRetentionSeconds,
-		ignoreRetentionWriteErrors,
-		preventRecursiveGets,
-		make(map[[32]byte]bool),
-		sync.RWMutex{},
+		StorageService:             primary,
+		backup:                     backup,
+		backupHealthChecker:        backupHealthChecker,
+		backupRetentionSeconds:     backupRetentionSeconds,
+		ignoreRetentionWriteErrors: ignoreRetentionWriteErrors,
+		preventRecursiveGets:       preventRecursiveGets,
+		currentlyFetching:          make(map[[32]byte]bool),
+		currentlyFetchingMutex:     sync.RWMutex{},
 	}
 }
 

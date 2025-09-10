@@ -23,13 +23,13 @@ import (
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/rpc"
 
-	"github.com/offchainlabs/bold/api/db"
-	protocol "github.com/offchainlabs/bold/chain-abstraction"
-	"github.com/offchainlabs/bold/challenge-manager/types"
-	"github.com/offchainlabs/bold/containers/threadsafe"
-	l2stateprovider "github.com/offchainlabs/bold/layer2-state-provider"
-	retry "github.com/offchainlabs/bold/runtime"
-	"github.com/offchainlabs/bold/util/stopwaiter"
+	"github.com/offchainlabs/nitro/bold/api/db"
+	protocol "github.com/offchainlabs/nitro/bold/chain-abstraction"
+	"github.com/offchainlabs/nitro/bold/challenge-manager/types"
+	"github.com/offchainlabs/nitro/bold/containers/threadsafe"
+	l2stateprovider "github.com/offchainlabs/nitro/bold/layer2-state-provider"
+	retry "github.com/offchainlabs/nitro/bold/runtime"
+	"github.com/offchainlabs/nitro/bold/util/stopwaiter"
 )
 
 var (

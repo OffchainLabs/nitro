@@ -14,7 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/core/types"
 
-	protocol "github.com/offchainlabs/bold/chain-abstraction"
+	protocol "github.com/offchainlabs/nitro/bold/chain-abstraction"
 )
 
 // TrackedContractBackend implements a wrapper around a chain backend interface
