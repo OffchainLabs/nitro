@@ -1,4 +1,4 @@
-package namedfields
+package namedfieldsinit
 
 import (
 	"fmt"
@@ -10,28 +10,26 @@ import (
 	"golang.org/x/tools/go/analysis"
 )
 
-const defaultFieldThreshold = 5 // Require named fields for structs with more than 5 fields
+const fieldThreshold = 5 // Require named fields for structs with more than 5 fields
 
 var Analyzer = &analysis.Analyzer{
-	Name:       "namedfields",
+	Name:       "namedfieldsinit",
 	Doc:        "check that struct literals with many fields use named field initialization",
 	Run:        func(p *analysis.Pass) (interface{}, error) { return run(false, p) },
 	ResultType: reflect.TypeOf(Result{}),
 }
 
-type namedFieldsError struct {
+type namedFieldsInitError struct {
 	Pos     token.Pos
 	Message string
 }
 
 type Result struct {
-	Errors []namedFieldsError
+	Errors []namedFieldsInitError
 }
 
 func run(dryRun bool, pass *analysis.Pass) (interface{}, error) {
 	var ret Result
-	threshold := defaultFieldThreshold
-
 	for _, f := range pass.Files {
 		ast.Inspect(f, func(node ast.Node) bool {
 			cl, ok := node.(*ast.CompositeLit)
@@ -60,7 +58,7 @@ func run(dryRun bool, pass *analysis.Pass) (interface{}, error) {
 			}
 
 			numFields := structType.NumFields()
-			if numFields <= threshold {
+			if numFields <= fieldThreshold {
 				return true
 			}
 
@@ -75,10 +73,10 @@ func run(dryRun bool, pass *analysis.Pass) (interface{}, error) {
 
 			if hasUnnamedFields {
 				typeName := pass.TypesInfo.Types[cl].Type.String()
-				ret.Errors = append(ret.Errors, namedFieldsError{
+				ret.Errors = append(ret.Errors, namedFieldsInitError{
 					Pos: cl.Pos(),
 					Message: fmt.Sprintf("struct %q has %d fields and must use named field initialization (threshold: %d)",
-						typeName, numFields, threshold),
+						typeName, numFields, fieldThreshold),
 				})
 			}
 
@@ -91,7 +89,7 @@ func run(dryRun bool, pass *analysis.Pass) (interface{}, error) {
 			pass.Report(analysis.Diagnostic{
 				Pos:      err.Pos,
 				Message:  err.Message,
-				Category: "namedfields",
+				Category: "namedfieldsinit",
 			})
 		}
 	}

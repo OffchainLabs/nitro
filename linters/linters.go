@@ -4,7 +4,7 @@ import (
 	"golang.org/x/tools/go/analysis/multichecker"
 
 	"github.com/offchainlabs/nitro/linters/koanf"
-	"github.com/offchainlabs/nitro/linters/namedfields"
+	"github.com/offchainlabs/nitro/linters/namedfieldsinit"
 	"github.com/offchainlabs/nitro/linters/pointercheck"
 	"github.com/offchainlabs/nitro/linters/rightshift"
 	"github.com/offchainlabs/nitro/linters/structinit"
@@ -13,7 +13,7 @@ import (
 func main() {
 	multichecker.Main(
 		koanf.Analyzer,
-		namedfields.Analyzer,
+		namedfieldsinit.Analyzer,
 		pointercheck.Analyzer,
 		rightshift.Analyzer,
 		structinit.Analyzer,

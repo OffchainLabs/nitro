@@ -1,4 +1,4 @@
-package namedfields
+package namedfieldsinit
 
 type SmallStruct struct {
 	A int

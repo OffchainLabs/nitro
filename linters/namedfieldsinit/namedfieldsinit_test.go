@@ -1,4 +1,4 @@
-package namedfields
+package namedfieldsinit
 
 import (
 	"os"
@@ -17,7 +17,7 @@ func testData(t *testing.T) string {
 	return filepath.Join(filepath.Dir(wd), "testdata")
 }
 
-func TestNamedFields(t *testing.T) {
+func TestNamedFieldsInit(t *testing.T) {
 	testdata := testData(t)
-	analysistest.Run(t, testdata, Analyzer, "namedfields")
+	analysistest.Run(t, testdata, Analyzer, "namedfieldsinit")
 }
