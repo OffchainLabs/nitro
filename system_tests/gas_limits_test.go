@@ -58,7 +58,7 @@ func TestBlockGasLimit(t *testing.T) {
 	_, err = EnsureTxSucceeded(ctx, b.L2.Client, ownerTx)
 	Require(t, err)
 
-	// create a successfull transaction that consumes a little less than 32M gas
+	// create a successful transaction that consumes a little less than 32M gas
 	toAddSuccesfull := big.NewInt(1420)
 	succesfullTx, err := bigMap.ClearAndAddValues(&auth, toClear, toAddSuccesfull)
 	Require(t, err)
@@ -90,10 +90,10 @@ func TestBlockGasLimit(t *testing.T) {
 	receipt1, err := EnsureTxSucceeded(ctx, b.L2.Client, txes[1])
 	Require(t, err)
 	if receipt0.BlockNumber.Uint64() != receipt1.BlockNumber.Uint64() {
-		Fatal(t, "two transactions should have been in the same block")
+		t.Error("two transactions should have been in the same block")
 	}
 	_, err = WaitForTx(ctx, b.L2.Client, txes[2].Hash(), time.Second)
 	if err == nil {
-		Fatal(t, "got 3rd tx which should not be there ")
+		t.Error("got 3rd tx which should not be there ")
 	}
 }
