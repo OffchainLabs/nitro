@@ -14,8 +14,8 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 
-	inclusionproofs "github.com/offchainlabs/bold/state-commitments/inclusion-proofs"
-	prefixproofs "github.com/offchainlabs/bold/state-commitments/prefix-proofs"
+	inclusionproofs "github.com/offchainlabs/nitro/bold/state-commitments/inclusion-proofs"
+	prefixproofs "github.com/offchainlabs/nitro/bold/state-commitments/prefix-proofs"
 )
 
 var (

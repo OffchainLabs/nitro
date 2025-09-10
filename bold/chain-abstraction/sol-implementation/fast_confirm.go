@@ -13,8 +13,8 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 
-	protocol "github.com/offchainlabs/bold/chain-abstraction"
-	retry "github.com/offchainlabs/bold/runtime"
+	protocol "github.com/offchainlabs/nitro/bold/chain-abstraction"
+	retry "github.com/offchainlabs/nitro/bold/runtime"
 	"github.com/offchainlabs/nitro/solgen/go/contractsgen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 )

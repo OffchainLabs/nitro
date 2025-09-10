@@ -18,10 +18,10 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/log"
 
-	"github.com/offchainlabs/bold/api"
-	"github.com/offchainlabs/bold/api/db"
-	protocol "github.com/offchainlabs/bold/chain-abstraction"
-	"github.com/offchainlabs/bold/state-commitments/history"
+	"github.com/offchainlabs/nitro/bold/api"
+	"github.com/offchainlabs/nitro/bold/api/db"
+	protocol "github.com/offchainlabs/nitro/bold/chain-abstraction"
+	"github.com/offchainlabs/nitro/bold/state-commitments/history"
 )
 
 var contentType = "application/json"
