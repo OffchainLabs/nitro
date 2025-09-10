@@ -19,6 +19,10 @@ type dummyReader struct {
 	int
 }
 
+func (*dummyReader) String() string {
+	return "dummyReader"
+}
+
 func (*dummyReader) GetByHash(context.Context, common.Hash) ([]byte, error) {
 	return nil, errors.New("not implemented")
 }

@@ -25,6 +25,7 @@ import (
 type DASReader interface {
 	GetByHash(ctx context.Context, hash common.Hash) ([]byte, error)
 	ExpirationPolicy(ctx context.Context) (ExpirationPolicy, error)
+	fmt.Stringer
 }
 
 type DASWriter interface {

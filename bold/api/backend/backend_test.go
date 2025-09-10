@@ -10,12 +10,10 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 
-	"github.com/offchainlabs/bold/api"
-	"github.com/offchainlabs/bold/api/db"
-	protocol "github.com/offchainlabs/bold/chain-abstraction"
+	"github.com/offchainlabs/nitro/bold/api"
+	"github.com/offchainlabs/nitro/bold/api/db"
 )
 
 // Mock implementations for testing
@@ -43,16 +41,6 @@ func (m *mockDatabase) UpdateAssertions(assertions []*api.JsonAssertion) error  
 func (m *mockDatabase) UpdateEdges(edges []*api.JsonEdge) error                        { return nil }
 func (m *mockDatabase) InsertCollectMachineHash(h *api.JsonCollectMachineHashes) error { return nil }
 func (m *mockDatabase) UpdateCollectMachineHash(h *api.JsonCollectMachineHashes) error { return nil }
-
-type mockAssertionChain struct{}
-
-func (m *mockAssertionChain) GetAssertion(ctx context.Context, opts *bind.CallOpts, hash protocol.AssertionHash) (protocol.Assertion, error) {
-	return nil, nil
-}
-
-func (m *mockAssertionChain) SpecChallengeManager() protocol.SpecChallengeManager {
-	return nil
-}
 
 type mockError struct {
 	message string

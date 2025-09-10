@@ -41,6 +41,7 @@ type InitConfig struct {
 	ReorgToBatch                  int64         `koanf:"reorg-to-batch"`
 	ReorgToMessageBatch           int64         `koanf:"reorg-to-message-batch"`
 	ReorgToBlockBatch             int64         `koanf:"reorg-to-block-batch"`
+	ValidateGenesisAssertion      bool          `koanf:"validate-genesis-assertion"`
 }
 
 var InitConfigDefault = InitConfig{
@@ -71,6 +72,7 @@ var InitConfigDefault = InitConfig{
 	ReorgToBatch:                  -1,
 	ReorgToMessageBatch:           -1,
 	ReorgToBlockBatch:             -1,
+	ValidateGenesisAssertion:      true,
 }
 
 func InitConfigAddOptions(prefix string, f *pflag.FlagSet) {
@@ -105,6 +107,7 @@ func InitConfigAddOptions(prefix string, f *pflag.FlagSet) {
 		"\"force\"- force rebuilding which would commence rebuilding despite the status of previous attempts,\n"+
 		"\"false\"- do not rebuild on startup",
 	)
+	f.Bool(prefix+".validate-genesis-assertion", InitConfigDefault.ValidateGenesisAssertion, "tests genesis assertion posted on parent chain against the genesis block created on init")
 }
 
 func (c *InitConfig) Validate() error {

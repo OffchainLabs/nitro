@@ -19,12 +19,12 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient/simulated"
 
-	protocol "github.com/offchainlabs/bold/chain-abstraction"
-	"github.com/offchainlabs/bold/containers/option"
-	l2stateprovider "github.com/offchainlabs/bold/layer2-state-provider"
-	"github.com/offchainlabs/bold/state-commitments/history"
-	prefixproofs "github.com/offchainlabs/bold/state-commitments/prefix-proofs"
-	statemanager "github.com/offchainlabs/bold/testing/mocks/state-provider"
+	protocol "github.com/offchainlabs/nitro/bold/chain-abstraction"
+	"github.com/offchainlabs/nitro/bold/containers/option"
+	l2stateprovider "github.com/offchainlabs/nitro/bold/layer2-state-provider"
+	"github.com/offchainlabs/nitro/bold/state-commitments/history"
+	prefixproofs "github.com/offchainlabs/nitro/bold/state-commitments/prefix-proofs"
+	statemanager "github.com/offchainlabs/nitro/bold/testing/mocks/state-provider"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 )
 
