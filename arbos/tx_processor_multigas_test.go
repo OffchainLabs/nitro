@@ -65,7 +65,7 @@ func TestStartTxHookReturnsMultigas(t *testing.T) {
 			txProcessor := NewTxProcessor(evm, msg)
 
 			gasRem := c.gasRemaining
-			_, mg, err := txProcessor.GasChargingHook(&gasRem)
+			_, mg, err := txProcessor.GasChargingHook(&gasRem, 0)
 
 			require.Equal(t, c.expectErr, err, "GasChargingHook error mismatch")
 
