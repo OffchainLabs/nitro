@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/core/types"
+
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
@@ -78,7 +79,8 @@ func TestBlockGasLimit(t *testing.T) {
 		L1BaseFee:   nil,
 	}
 	hooks := arbos.NoopSequencingHooks(txes)
-	b.L2.ExecNode.ExecEngine.SequenceTransactions(header, hooks, nil)
+	_, err = b.L2.ExecNode.ExecEngine.SequenceTransactions(header, hooks, nil)
+	Require(t, err)
 	receipt0, err := EnsureTxSucceeded(ctx, b.L2.Client, txes[0])
 	Require(t, err)
 	receipt1, err := EnsureTxSucceeded(ctx, b.L2.Client, txes[1])
