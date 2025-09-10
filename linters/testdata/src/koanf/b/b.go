@@ -16,7 +16,7 @@ type ChildCfg struct {
 	A bool `koanf:"A"`
 	B bool `koanf:"B"`
 	C bool `koanf:"C"`
-	D bool `koanf:"D"` // Error: not used outside flag definition.
+	D bool `koanf:"D"` // want `field b.ChildCfg.D not used`
 }
 
 var defaultChildCfg = ChildCfg{}
@@ -29,7 +29,7 @@ func childConfigAddOptions(prefix string, f *flag.FlagSet) {
 }
 
 type GrandChildCfg struct {
-	A int `koanf:"A"` // Error: unused.
+	A int `koanf:"A"` // want `field b.GrandChildCfg.A not used`
 }
 
 func (c *GrandChildCfg) Do() {

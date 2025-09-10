@@ -31,7 +31,7 @@ func testData(t *testing.T) string {
 // Errors are marked as comments in the package source file.
 func TestMismatch(t *testing.T) {
 	testdata := testData(t)
-	got := errCounts(analysistest.Run(t, testdata, analyzerForTests, "koanf/a"))
+	got := errCounts(analysistest.Run(t, testdata, Analyzer, "koanf/a"))
 	want := map[string]int{
 		incorrectFlag: 2,
 		mismatch:      1,
@@ -43,7 +43,7 @@ func TestMismatch(t *testing.T) {
 
 func TestUnused(t *testing.T) {
 	testdata := testData(t)
-	got := errCounts(analysistest.Run(t, testdata, analyzerForTests, "koanf/b"))
+	got := errCounts(analysistest.Run(t, testdata, Analyzer, "koanf/b"))
 	if diff := cmp.Diff(got, map[string]int{"unused": 2}); diff != "" {
 		t.Errorf("analysistest.Run() unexpected diff:\n%s\n", diff)
 	}
