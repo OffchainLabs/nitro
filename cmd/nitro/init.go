@@ -938,6 +938,9 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 }
 
 func validateGenesisAssertion(ctx context.Context, rollupAddress common.Address, l1Client *ethclient.Client, genesisBlockHash common.Hash, initDataReaderHasAccounts bool) error {
+	if l1Client == nil {
+		return fmt.Errorf("no l1 client")
+	}
 	userLogic, err := rollupgen.NewRollupUserLogic(rollupAddress, l1Client)
 	if err != nil {
 		return err
