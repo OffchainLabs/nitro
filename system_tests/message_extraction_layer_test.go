@@ -70,12 +70,12 @@ func TestMessageExtractionLayer_SequencerBatchMessageEquivalence(t *testing.T) {
 	Require(t, melDB.SaveState(ctx, melState)) // save head mel state
 	mockMsgConsumer := &mockMELDB{savedMsgs: make([]*arbostypes.MessageWithMetadata, 0)}
 	extractor, err := melrunner.NewMessageExtractor(
+		melrunner.DefaultMessageExtractionConfig,
 		l1Reader.Client(),
 		builder.addresses,
 		melDB,
 		mockMsgConsumer,
 		nil, // TODO: Provide da readers here.
-		0,
 	)
 	Require(t, err)
 	extractor.StopWaiter.Start(ctx, extractor)
@@ -205,12 +205,12 @@ func TestMessageExtractionLayer_SequencerBatchMessageEquivalence_Blobs(t *testin
 	Require(t, melDB.SaveState(ctx, melState)) // save head mel state
 	mockMsgConsumer := &mockMELDB{savedMsgs: make([]*arbostypes.MessageWithMetadata, 0)}
 	extractor, err := melrunner.NewMessageExtractor(
+		melrunner.DefaultMessageExtractionConfig,
 		l1Reader.Client(),
 		builder.addresses,
 		melDB,
 		mockMsgConsumer,
 		[]daprovider.Reader{daprovider.NewReaderForBlobReader(builder.L1.blobReader)},
-		0,
 	)
 	Require(t, err)
 	extractor.StopWaiter.Start(ctx, extractor)
@@ -344,12 +344,12 @@ func TestMessageExtractionLayer_DelayedMessageEquivalence_Simple(t *testing.T) {
 	Require(t, melDB.SaveState(ctx, melState)) // save head mel state
 	mockMsgConsumer := &mockMELDB{savedMsgs: make([]*arbostypes.MessageWithMetadata, 0)}
 	extractor, err := melrunner.NewMessageExtractor(
+		melrunner.DefaultMessageExtractionConfig,
 		l1Reader.Client(),
 		builder.addresses,
 		melDB,
 		mockMsgConsumer,
 		nil, // TODO: Provide da readers here.
-		0,
 	)
 	Require(t, err)
 	extractor.StopWaiter.Start(ctx, extractor)
@@ -411,12 +411,12 @@ func TestMessageExtractionLayer_DelayedMessageEquivalence_Simple(t *testing.T) {
 
 	// Before checking if reorg handling works as intended, verify that starting a new message extractor will detect a reorg too and correctly transitions to Reorging step
 	newExtractor, err := melrunner.NewMessageExtractor(
+		melrunner.DefaultMessageExtractionConfig,
 		l1Reader.Client(),
 		builder.addresses,
 		melDB,
 		mockMsgConsumer,
 		nil,
-		0,
 	)
 	Require(t, err)
 	newExtractor.StopWaiter.Start(ctx, extractor)
@@ -669,12 +669,12 @@ func TestMessageExtractionLayer_UseArbDBForStoringDelayedMessages(t *testing.T) 
 	// TODO: tx streamer to be used here when ready to run the node using mel thus replacing inbox reader-tracker code
 	mockMsgConsumer := &mockMELDB{savedMsgs: make([]*arbostypes.MessageWithMetadata, 0)}
 	extractor, err := melrunner.NewMessageExtractor(
+		melrunner.DefaultMessageExtractionConfig,
 		l1Reader.Client(),
 		builder.addresses,
 		melDB,
 		mockMsgConsumer,
 		nil, // TODO: Provide da readers here.
-		0,
 	)
 	Require(t, err)
 	extractor.StopWaiter.Start(ctx, extractor)

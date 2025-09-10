@@ -33,15 +33,15 @@ func (m *MessageExtractor) processNextBlock(ctx context.Context, current *fsm.Cu
 	// Process the next block in the parent chain and extracts messages.
 	processAction, ok := current.SourceEvent.(processNextBlock)
 	if !ok {
-		return m.retryInterval, fmt.Errorf("invalid action: %T", current.SourceEvent)
+		return m.config.RetryInterval, fmt.Errorf("invalid action: %T", current.SourceEvent)
 	}
 	preState := processAction.melState
 	if preState.GetDelayedMessageBacklog() == nil { // Safety check since its relevant for native mode
-		return m.retryInterval, errors.New("detected nil DelayedMessageBacklog of melState, shouldnt be possible")
+		return m.config.RetryInterval, errors.New("detected nil DelayedMessageBacklog of melState, shouldnt be possible")
 	}
 	// If the current parent chain block is not safe/finalized we wait till it becomes safe/finalized as determined by the ReadMode
 	if m.config.ReadMode != "latest" && preState.ParentChainBlockNumber+1 > m.lastBlockToRead.Load() {
-		return m.retryInterval, nil
+		return m.config.RetryInterval, nil
 	}
 	parentChainBlock, err := m.parentChainReader.HeaderByNumber(
 		ctx,
@@ -60,9 +60,9 @@ func (m *MessageExtractor) processNextBlock(ctx context.Context, current *fsm.Cu
 					close(m.caughtUpChan)
 				}
 			}
-			return m.retryInterval, nil
+			return m.config.RetryInterval, nil
 		} else {
-			return m.retryInterval, err
+			return m.config.RetryInterval, err
 		}
 	}
 	if parentChainBlock.ParentHash != preState.ParentChainBlockHash {
@@ -73,7 +73,7 @@ func (m *MessageExtractor) processNextBlock(ctx context.Context, current *fsm.Cu
 	}
 	// Conditionally prefetch logs for upcoming block/s
 	if err = m.logsPreFetcher.fetch(ctx, preState); err != nil {
-		return m.retryInterval, err
+		return m.config.RetryInterval, err
 	}
 	postState, msgs, delayedMsgs, batchMetas, err := melextraction.ExtractMessages(
 		ctx,
@@ -85,7 +85,7 @@ func (m *MessageExtractor) processNextBlock(ctx context.Context, current *fsm.Cu
 		m.logsPreFetcher,
 	)
 	if err != nil {
-		return m.retryInterval, err
+		return m.config.RetryInterval, err
 	}
 	// Begin the next FSM state immediately.
 	return 0, m.fsm.Do(saveMessages{

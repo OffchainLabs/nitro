@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math/big"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -22,6 +23,29 @@ import (
 )
 
 var _ ParentChainReader = (*mockParentChainReader)(nil)
+
+func TestMessageExtractorStallTriggersMetric(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	cfg := DefaultMessageExtractionConfig
+	cfg.StallTolerance = 2
+	cfg.RetryInterval = 100 * time.Millisecond
+	extractor, err := NewMessageExtractor(
+		cfg,
+		&mockParentChainReader{},
+		&chaininfo.RollupAddresses{},
+		NewDatabase(rawdb.NewMemoryDatabase()),
+		&mockMessageConsumer{},
+		[]daprovider.Reader{},
+	)
+	require.NoError(t, err)
+	require.True(t, stuckFSMIndicatingGauge.Snapshot().Value() == 0)
+	require.NoError(t, extractor.Start(ctx))
+	// MEL will be stuck at the 'Start' state as HeadMelState is not yet stored in the db
+	// so after RetryInterval*StallTolerance amount of time the metric should have been set to 1
+	time.Sleep(cfg.RetryInterval*time.Duration(cfg.StallTolerance) + 50*time.Millisecond)
+	require.True(t, stuckFSMIndicatingGauge.Snapshot().Value() == 1)
+}
 
 func TestMessageExtractor(t *testing.T) {
 	ctx := context.Background()
@@ -45,12 +69,12 @@ func TestMessageExtractor(t *testing.T) {
 	melDb := NewDatabase(arbDb)
 	messageConsumer := &mockMessageConsumer{}
 	extractor, err := NewMessageExtractor(
+		DefaultMessageExtractionConfig,
 		parentChainReader,
 		&chaininfo.RollupAddresses{},
 		melDb,
 		messageConsumer,
 		[]daprovider.Reader{},
-		0,
 	)
 	extractor.StopWaiter.Start(ctx, extractor)
 	require.NoError(t, err)

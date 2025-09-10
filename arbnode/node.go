@@ -723,12 +723,12 @@ func getMessageExtractor(
 		}
 	}
 	msgExtractor, err := melrunner.NewMessageExtractor(
+		config.MessageExtraction,
 		l1client,
 		deployInfo,
 		melDB,
 		txStreamer,
 		dapReaders,
-		config.MessageExtraction.RetryInterval,
 	)
 	if err != nil {
 		return nil, err
