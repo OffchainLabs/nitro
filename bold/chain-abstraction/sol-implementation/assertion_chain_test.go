@@ -594,9 +594,9 @@ func Test_autoDepositFunds_SkipsIfAlreadyStaked(t *testing.T) {
 	evenBiggerBalance := new(big.Int).Add(oldBalance, big.NewInt(100))
 	require.NoError(t, setupCfg.Chains[0].AutoDepositTokenForStaking(ctx, evenBiggerBalance))
 
-	// Check that we our balance does not increase if we try to auto-deposit again given we are
-	// already staked as a validator. In fact, expect it decreased.
+	// Check that our balance does not change if we try to auto-deposit again given we are
+	// already staked as a validator.
 	newBalance, err = erc20.BalanceOf(&bind.CallOpts{}, account.AccountAddr)
 	require.NoError(t, err)
-	require.True(t, oldBalance.Cmp(newBalance) > 0)
+	require.Equal(t, oldBalance, newBalance)
 }
