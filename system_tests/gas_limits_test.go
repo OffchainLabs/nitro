@@ -50,24 +50,25 @@ func TestBlockGasLimit(t *testing.T) {
 		t.Fatalf("want: %d gas used, got: %d", want, got)
 	}
 
+	// set block gas-limit to 1.5 times the transaction limit
 	arbOwner, err := precompilesgen.NewArbOwner(types.ArbOwnerAddress, b.L2.Client)
 	Require(t, err)
 	ownerTx, err := arbOwner.SetMaxBlockGasLimit(&auth, l2pricing.InitialPerTxGasLimitV50*3/2)
 	Require(t, err)
-	lastReceipt, err := EnsureTxSucceeded(ctx, b.L2.Client, ownerTx)
+	_, err = EnsureTxSucceeded(ctx, b.L2.Client, ownerTx)
 	Require(t, err)
 
-	// use just under 32M gas
-	txData := overboundTx.Data()
-	lastByte := len(txData) - 1
-	if txData[lastByte] != byte(1423%256) || txData[lastByte] < 3 {
-		Fatal(t, "I have miscalculated")
-	}
-	txData[lastByte] -= 3
+	// create a successfull transaction that consumes a little less than 32M gas
+	toAddSuccesfull := big.NewInt(1420)
+	succesfullTx, err := bigMap.ClearAndAddValues(&auth, toClear, toAddSuccesfull)
+	Require(t, err)
+	lastReceipt, err := EnsureTxSucceeded(ctx, b.L2.Client, succesfullTx)
+	Require(t, err)
 
+	// send 3 transactions to the sequencer to be sequenced in the same block, each almost consuming the tx limit
 	txes := types.Transactions{}
 	for i := 0; i < 3; i++ {
-		tx := b.L2Info.PrepareTxTo("Owner", overboundTx.To(), 50_000_000, big.NewInt(0), txData)
+		tx := b.L2Info.PrepareTxTo("Owner", succesfullTx.To(), 50_000_000, big.NewInt(0), succesfullTx.Data())
 		txes = append(txes, tx)
 	}
 	header := &arbostypes.L1IncomingMessageHeader{
@@ -81,6 +82,9 @@ func TestBlockGasLimit(t *testing.T) {
 	hooks := arbos.NoopSequencingHooks(txes)
 	_, err = b.L2.ExecNode.ExecEngine.SequenceTransactions(header, hooks, nil)
 	Require(t, err)
+
+	// as block gas-limit is 1.5txs, and it's a soft limit - first two transactions should pass
+	// 3rd tx will never be included because the block is over the soft limit before reaching it
 	receipt0, err := EnsureTxSucceeded(ctx, b.L2.Client, txes[0])
 	Require(t, err)
 	receipt1, err := EnsureTxSucceeded(ctx, b.L2.Client, txes[1])
