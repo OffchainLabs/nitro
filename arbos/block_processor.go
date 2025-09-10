@@ -160,18 +160,18 @@ func NoopSequencingHooks(txes types.Transactions) *SequencingHooks {
 		0,
 	}
 	return &SequencingHooks{
-		scheduler.GetNextTx,
-		scheduler.GetScheduledTx,
-		[]error{},
-		false,
-		func(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, *arbitrum_types.ConditionalOptions, common.Address, *L1Info) error {
+		NextTxToSequence:       scheduler.GetNextTx,
+		SequencedTx:            scheduler.GetScheduledTx,
+		TxErrors:               []error{},
+		DiscardInvalidTxsEarly: false,
+		PreTxFilter: func(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, *arbitrum_types.ConditionalOptions, common.Address, *L1Info) error {
 			return nil
 		},
-		func(*types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult) error {
+		PostTxFilter: func(*types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult) error {
 			return nil
 		},
-		nil,
-		nil,
+		BlockFilter:             nil,
+		ConditionalOptionsForTx: nil,
 	}
 }
 
