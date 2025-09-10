@@ -119,22 +119,22 @@ func InitializeL1PricingState(sto *storage.Storage, initialRewardsRecipient comm
 
 func OpenL1PricingState(sto *storage.Storage, arbosVersion uint64) *L1PricingState {
 	return &L1PricingState{
-		sto,
-		OpenBatchPostersTable(sto.OpenCachedSubStorage(BatchPosterTableKey)),
-		sto.OpenStorageBackedAddress(payRewardsToOffset),
-		sto.OpenStorageBackedBigUint(equilibrationUnitsOffset),
-		sto.OpenStorageBackedUint64(inertiaOffset),
-		sto.OpenStorageBackedUint64(perUnitRewardOffset),
-		sto.OpenStorageBackedUint64(lastUpdateTimeOffset),
-		sto.OpenStorageBackedBigInt(fundsDueForRewardsOffset),
-		sto.OpenStorageBackedUint64(unitsSinceOffset),
-		sto.OpenStorageBackedBigUint(pricePerUnitOffset),
-		sto.OpenStorageBackedBigInt(lastSurplusOffset),
-		sto.OpenStorageBackedBigInt(calldataPriceOffset),
-		sto.OpenStorageBackedInt64(perBatchGasCostOffset),
-		sto.OpenStorageBackedUint64(amortizedCostCapBipsOffset),
-		sto.OpenStorageBackedBigUint(l1FeesAvailableOffset),
-		arbosVersion,
+		storage:              sto,
+		batchPosterTable:     OpenBatchPostersTable(sto.OpenCachedSubStorage(BatchPosterTableKey)),
+		payRewardsTo:         sto.OpenStorageBackedAddress(payRewardsToOffset),
+		equilibrationUnits:   sto.OpenStorageBackedBigUint(equilibrationUnitsOffset),
+		inertia:              sto.OpenStorageBackedUint64(inertiaOffset),
+		perUnitReward:        sto.OpenStorageBackedUint64(perUnitRewardOffset),
+		lastUpdateTime:       sto.OpenStorageBackedUint64(lastUpdateTimeOffset),
+		fundsDueForRewards:   sto.OpenStorageBackedBigInt(fundsDueForRewardsOffset),
+		unitsSinceUpdate:     sto.OpenStorageBackedUint64(unitsSinceOffset),
+		pricePerUnit:         sto.OpenStorageBackedBigUint(pricePerUnitOffset),
+		calldataPrice:        sto.OpenStorageBackedBigInt(calldataPriceOffset),
+		lastSurplus:          sto.OpenStorageBackedBigInt(lastSurplusOffset),
+		perBatchGasCost:      sto.OpenStorageBackedInt64(perBatchGasCostOffset),
+		amortizedCostCapBips: sto.OpenStorageBackedUint64(amortizedCostCapBipsOffset),
+		l1FeesAvailable:      sto.OpenStorageBackedBigUint(l1FeesAvailableOffset),
+		ArbosVersion:         arbosVersion,
 	}
 }
 
