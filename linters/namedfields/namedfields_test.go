@@ -19,5 +19,5 @@ func testData(t *testing.T) string {
 
 func TestNamedFields(t *testing.T) {
 	testdata := testData(t)
-	analysistest.Run(t, testdata, analyzerForTests, "namedfields")
+	analysistest.Run(t, testdata, Analyzer, "namedfields")
 }

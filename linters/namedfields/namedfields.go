@@ -19,13 +19,6 @@ var Analyzer = &analysis.Analyzer{
 	ResultType: reflect.TypeOf(Result{}),
 }
 
-var analyzerForTests = &analysis.Analyzer{
-	Name:       "testnamedfields",
-	Doc:        "check that struct literals with many fields use named field initialization (for tests)",
-	Run:        func(p *analysis.Pass) (interface{}, error) { return run(true, p) },
-	ResultType: reflect.TypeOf(Result{}),
-}
-
 type namedFieldsError struct {
 	Pos     token.Pos
 	Message string
