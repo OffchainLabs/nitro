@@ -356,7 +356,7 @@ func ProduceBlockAdvanced(
 
 			// arbos<50: reject tx if they have available computeGas over block-gas-limit
 			// in arbos>=50, per-block-gas is limited to L2PricingState().PerBlockGasLimit() + L2PricingState().PerTxGasLimit()
-			if computeGas > blockGasLeft && isUserTx && userTxsProcessed > 0 && arbosVersion < params.ArbosVersion_50 {
+			if arbosVersion < params.ArbosVersion_50 && computeGas > blockGasLeft && isUserTx && userTxsProcessed > 0 {
 				return nil, nil, core.ErrGasLimitReached
 			}
 
