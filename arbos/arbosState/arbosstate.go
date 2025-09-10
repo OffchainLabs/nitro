@@ -390,28 +390,7 @@ func (state *ArbosState) UpgradeArbosVersion(
 			ensure(err)
 			ensure(p.UpgradeToArbosVersion(nextArbosVersion))
 			ensure(p.Save())
-			chainId, err := state.ChainId()
-			ensure(err)
-			// As of ArbOS v50, nitro models the parents of these chains have
-			// increased calldata pricing as part of EIP-7623.
-			// See: https://eips.ethereum.org/EIPS/eip-7623
-			eip7623chains := []*big.Int{
-				chaininfo.ArbitrumOneChainConfig().ChainID,
-				chaininfo.ArbitrumNovaChainConfig().ChainID,
-				chaininfo.ArbitrumRollupSepoliaTestnetChainConfig().ChainID,
-			}
-			parentHasEIP7623 := false
-			for _, id := range eip7623chains {
-				if chainId.Cmp(id) == 0 {
-					parentHasEIP7623 = true
-					break
-				}
-			}
-			if parentHasEIP7623 {
-				ensure(state.l1PricingState.SetCalldataPrice(big.NewInt(int64(params.TxCostFloorPerToken))))
-			} else {
-				ensure(state.l1PricingState.SetCalldataPrice(big.NewInt(int64(params.TxDataNonZeroGasEIP2028))))
-			}
+			ensure(state.l1PricingState.SetCalldataPrice(big.NewInt(int64(params.TxDataNonZeroGasEIP2028))))
 			ensure(state.l2PricingState.SetMaxPerTxGasLimit(l2pricing.InitialPerTxGasLimitV50))
 		default:
 			return fmt.Errorf(
