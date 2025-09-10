@@ -183,6 +183,7 @@ func ProduceBlock(
 	chainContext core.ChainContext,
 	isMsgForPrefetch bool,
 	runCtx *core.MessageRunContext,
+	exposeMultiGas bool,
 ) (*types.Block, types.Receipts, error) {
 	chainConfig := chainContext.Config()
 	txes, err := ParseL2Transactions(message, chainConfig.ChainID)
@@ -193,7 +194,7 @@ func ProduceBlock(
 	hooks := NoopSequencingHooks(txes)
 
 	return ProduceBlockAdvanced(
-		message.Header, delayedMessagesRead, lastBlockHeader, statedb, chainContext, hooks, isMsgForPrefetch, runCtx,
+		message.Header, delayedMessagesRead, lastBlockHeader, statedb, chainContext, hooks, isMsgForPrefetch, runCtx, exposeMultiGas,
 	)
 }
 
@@ -207,6 +208,7 @@ func ProduceBlockAdvanced(
 	sequencingHooks *SequencingHooks,
 	isMsgForPrefetch bool,
 	runCtx *core.MessageRunContext,
+	exposeMultiGas bool,
 ) (*types.Block, types.Receipts, error) {
 
 	arbState, err := arbosState.OpenSystemArbosState(statedb, nil, true)
@@ -365,7 +367,7 @@ func ProduceBlockAdvanced(
 
 			gasPool := gethGas
 			blockContext := core.NewEVMBlockContext(header, chainContext, &header.Coinbase)
-			evm := vm.NewEVM(blockContext, statedb, chainConfig, vm.Config{})
+			evm := vm.NewEVM(blockContext, statedb, chainConfig, vm.Config{ExposeMultiGas: exposeMultiGas})
 			receipt, result, err := core.ApplyTransactionWithResultFilter(
 				evm,
 				&gasPool,
