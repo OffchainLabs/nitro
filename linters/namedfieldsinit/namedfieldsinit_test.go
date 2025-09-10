@@ -1,3 +1,6 @@
+// Copyright 2025, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
+
 package namedfieldsinit
 
 import (
@@ -19,5 +22,5 @@ func testData(t *testing.T) string {
 
 func TestNamedFieldsInit(t *testing.T) {
 	testdata := testData(t)
-	analysistest.Run(t, testdata, Analyzer, "namedfieldsinit")
+	analysistest.Run(t, testdata, Analyzer, "namedfieldsinit", "namedfieldsinit/otherpkg")
 }

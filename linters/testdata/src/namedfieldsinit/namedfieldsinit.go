@@ -1,4 +1,9 @@
+// Copyright 2025, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
+
 package namedfieldsinit
+
+import "namedfieldsinit/otherpkg"
 
 type SmallStruct struct {
 	A int
@@ -96,4 +101,25 @@ func testStructs() {
 
 	// Pointer to edge case struct
 	_ = &EdgeCaseAboveThreshold{2, "ptr", false, 1.0, 5, []byte{1}} // want `has 6 fields and must use named field initialization`
+}
+
+func testCrossPackage() {
+	// Test cross-package: Small struct from other package - should be OK with positional
+	_ = otherpkg.ExportedSmall{1, "test", true}
+
+	// Large struct from other package - should trigger linter
+	_ = otherpkg.ExportedLarge{1, "test", true, 3.14, 42, []byte{}} // want `has 6 fields and must use named field initialization`
+
+	// Large struct from other package with named fields - should be OK
+	_ = otherpkg.ExportedLarge{
+		Field1: 1,
+		Field2: "test",
+		Field3: true,
+		Field4: 3.14,
+		Field5: 42,
+		Field6: []byte{},
+	}
+
+	// Pointer to large struct from other package - should also trigger
+	_ = &otherpkg.ExportedLarge{2, "ptr", false, 1.0, 5, []byte{1}} // want `has 6 fields and must use named field initialization`
 }
