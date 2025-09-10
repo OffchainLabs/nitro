@@ -18,7 +18,7 @@ const fieldThreshold = 5 // Require named fields for structs with more than 5 fi
 var Analyzer = &analysis.Analyzer{
 	Name:       "namedfieldsinit",
 	Doc:        "check that struct literals with many fields use named field initialization",
-	Run:        func(p *analysis.Pass) (interface{}, error) { return run(false, p) },
+	Run:        run,
 	ResultType: reflect.TypeOf(Result{}),
 }
 
@@ -31,7 +31,7 @@ type Result struct {
 	Errors []namedFieldsInitError
 }
 
-func run(dryRun bool, pass *analysis.Pass) (interface{}, error) {
+func run(pass *analysis.Pass) (interface{}, error) {
 	var ret Result
 	for _, f := range pass.Files {
 		ast.Inspect(f, func(node ast.Node) bool {
@@ -88,13 +88,11 @@ func run(dryRun bool, pass *analysis.Pass) (interface{}, error) {
 	}
 
 	for _, err := range ret.Errors {
-		if !dryRun {
-			pass.Report(analysis.Diagnostic{
-				Pos:      err.Pos,
-				Message:  err.Message,
-				Category: "namedfieldsinit",
-			})
-		}
+		pass.Report(analysis.Diagnostic{
+			Pos:      err.Pos,
+			Message:  err.Message,
+			Category: "namedfieldsinit",
+		})
 	}
 
 	return ret, nil
