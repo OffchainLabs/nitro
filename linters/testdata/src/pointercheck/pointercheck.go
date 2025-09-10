@@ -10,21 +10,21 @@ type A struct {
 func pointerCmp() {
 	a, b := &A{}, &A{}
 	// Simple comparions.
-	if a != b {
+	if a != b { // want `comparison of two pointers in expression`
 		fmt.Println("Not Equal")
 	}
-	if a == b {
+	if a == b { // want `comparison of two pointers in expression`
 		fmt.Println("Equals")
 	}
 	// Nested binary expressions.
-	if (2 > 1) && (a != b) {
+	if (2 > 1) && (a != b) { // want `comparison of two pointers in expression`
 		fmt.Println("Still not equal")
 	}
-	if (174%15 > 3) && (2 > 1 && (1+2 > 2 || a != b)) {
+	if (174%15 > 3) && (2 > 1 && (1+2 > 2 || a != b)) { // want `comparison of two pointers in expression`
 		fmt.Println("Who knows at this point")
 	}
 	// Nested and inside unary operator.
-	if 10 > 5 && !(2 > 1 || a == b) {
+	if 10 > 5 && !(2 > 1 || a == b) { // want `comparison of two pointers in expression`
 		fmt.Println("Not equal")
 	}
 	c, d := 1, 2
@@ -46,5 +46,5 @@ type cache struct {
 
 // matches does pointer comparison.
 func (c *cache) matches(a *A) bool {
-	return c.dirty == a
+	return c.dirty == a // want `comparison of two pointers in expression`
 }

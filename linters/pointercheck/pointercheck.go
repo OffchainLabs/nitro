@@ -13,14 +13,7 @@ import (
 var Analyzer = &analysis.Analyzer{
 	Name:       "pointercheck",
 	Doc:        "check for pointer comparison",
-	Run:        func(p *analysis.Pass) (interface{}, error) { return run(false, p) },
-	ResultType: reflect.TypeOf(Result{}),
-}
-
-var analyzerForTests = &analysis.Analyzer{
-	Name:       "testpointercheck",
-	Doc:        "check for pointer comparison (for tests)",
-	Run:        func(p *analysis.Pass) (interface{}, error) { return run(true, p) },
+	Run:        run,
 	ResultType: reflect.TypeOf(Result{}),
 }
 
@@ -36,7 +29,7 @@ type Result struct {
 	Errors []pointerCmpError
 }
 
-func run(dryRun bool, pass *analysis.Pass) (interface{}, error) {
+func run(pass *analysis.Pass) (interface{}, error) {
 	var ret Result
 	for _, f := range pass.Files {
 		ast.Inspect(f, func(node ast.Node) bool {
@@ -51,13 +44,11 @@ func run(dryRun bool, pass *analysis.Pass) (interface{}, error) {
 			}
 			for _, err := range res.Errors {
 				ret.Errors = append(ret.Errors, err)
-				if !dryRun {
-					pass.Report(analysis.Diagnostic{
-						Pos:      pass.Fset.File(f.Pos()).Pos(err.Pos.Offset),
-						Message:  err.Message,
-						Category: "pointercheck",
-					})
-				}
+				pass.Report(analysis.Diagnostic{
+					Pos:      pass.Fset.File(f.Pos()).Pos(err.Pos.Offset),
+					Message:  err.Message,
+					Category: "pointercheck",
+				})
 			}
 			return true
 		},
