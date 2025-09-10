@@ -401,7 +401,7 @@ func (state *ArbosState) UpgradeArbosVersion(
 			ensure(state.l2PricingState.SetMaxPerTxGasLimit(l2pricing.InitialPerTxGasLimitV50))
 			oldBlockGasLimit, err := state.l2PricingState.PerBlockGasLimit()
 			ensure(err)
-			newBlockGasLimit := arbmath.SaturatingUMul(oldBlockGasLimit, 10)
+			newBlockGasLimit := arbmath.SaturatingUMul(oldBlockGasLimit, 4)
 			ensure(state.l2PricingState.SetMaxPerBlockGasLimit(newBlockGasLimit))
 		default:
 			return fmt.Errorf(
