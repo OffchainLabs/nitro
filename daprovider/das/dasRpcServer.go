@@ -7,11 +7,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math/rand"
 	"net"
 	"net/http"
-	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -43,7 +40,7 @@ type DASRPCServer struct {
 
 	signatureVerifier *SignatureVerifier
 
-	batches *batchBuilder
+	batches *messageStore
 }
 
 func StartDASRPCServer(ctx context.Context, addr string, portNum uint64, rpcServerTimeouts genericconf.HTTPServerTimeoutConfig, rpcServerBodyLimit int, daReader dasutil.DASReader, daWriter dasutil.DASWriter, daHealthChecker DataAvailabilityServiceHealthChecker, signatureVerifier *SignatureVerifier) (*http.Server, error) {
@@ -71,7 +68,7 @@ func StartDASRPCServerOnListener(ctx context.Context, listener net.Listener, rpc
 		daWriter:          daWriter,
 		daHealthChecker:   daHealthChecker,
 		signatureVerifier: signatureVerifier,
-		batches:           newBatchBuilder(),
+		batches:           newMessageStore(),
 	})
 	if err != nil {
 		return nil, err
@@ -150,126 +147,10 @@ type SendChunkResult struct {
 	Ok hexutil.Uint64 `json:"sendChunkResult,omitempty"`
 }
 
-type batch struct {
-	chunks                          [][]byte
-	expectedChunks                  uint64
-	seenChunks                      atomic.Uint64
-	expectedChunkSize, expectedSize uint64
-	timeout                         uint64
-	startTime                       time.Time
-	mutex                           sync.Mutex
-}
-
-const (
-	maxPendingBatches   = 10
-	batchBuildingExpiry = 1 * time.Minute
-)
-
 // exposed global for test control
 var (
 	legacyDASStoreAPIOnly = false
 )
-
-type batchBuilder struct {
-	mutex   sync.Mutex
-	batches map[uint64]*batch
-}
-
-func newBatchBuilder() *batchBuilder {
-	return &batchBuilder{
-		batches: make(map[uint64]*batch),
-	}
-}
-
-func (b *batchBuilder) assign(nChunks, timeout, chunkSize, totalSize uint64) (uint64, error) {
-	b.mutex.Lock()
-	defer b.mutex.Unlock()
-	if len(b.batches) >= maxPendingBatches {
-		return 0, fmt.Errorf("can't start new batch, already %d pending", len(b.batches))
-	}
-
-	id := rand.Uint64()
-	_, ok := b.batches[id]
-	if ok {
-		return 0, fmt.Errorf("can't start new batch, try again")
-	}
-
-	b.batches[id] = &batch{
-		chunks:            make([][]byte, nChunks),
-		expectedChunks:    nChunks,
-		expectedChunkSize: chunkSize,
-		expectedSize:      totalSize,
-		timeout:           timeout,
-		startTime:         time.Now(),
-	}
-	go func(id uint64) {
-		<-time.After(batchBuildingExpiry)
-		b.mutex.Lock()
-		// Batch will only exist if expiry was reached without it being complete.
-		if _, exists := b.batches[id]; exists {
-			rpcStoreFailureGauge.Inc(1)
-			delete(b.batches, id)
-		}
-		b.mutex.Unlock()
-	}(id)
-	return id, nil
-}
-
-func (b *batchBuilder) add(id, idx uint64, data []byte) error {
-	b.mutex.Lock()
-	batch, ok := b.batches[id]
-	b.mutex.Unlock()
-	if !ok {
-		return fmt.Errorf("unknown batch(%d)", id)
-	}
-
-	batch.mutex.Lock()
-	defer batch.mutex.Unlock()
-
-	if idx >= uint64(len(batch.chunks)) {
-		return fmt.Errorf("batch(%d): chunk(%d) out of range", id, idx)
-	}
-
-	if batch.chunks[idx] != nil {
-		return fmt.Errorf("batch(%d): chunk(%d) already added", id, idx)
-	}
-
-	if batch.expectedChunkSize < uint64(len(data)) {
-		return fmt.Errorf("batch(%d): chunk(%d) greater than expected size %d, was %d", id, idx, batch.expectedChunkSize, len(data))
-	}
-
-	batch.chunks[idx] = data
-	batch.seenChunks.Add(1)
-	return nil
-}
-
-func (b *batchBuilder) close(id uint64) ([]byte, uint64, time.Time, error) {
-	b.mutex.Lock()
-	batch, ok := b.batches[id]
-	delete(b.batches, id)
-	b.mutex.Unlock()
-	if !ok {
-		return nil, 0, time.Time{}, fmt.Errorf("unknown batch(%d)", id)
-	}
-
-	batch.mutex.Lock()
-	defer batch.mutex.Unlock()
-
-	if batch.expectedChunks != batch.seenChunks.Load() {
-		return nil, 0, time.Time{}, fmt.Errorf("incomplete batch(%d): got %d/%d chunks", id, batch.seenChunks.Load(), batch.expectedChunks)
-	}
-
-	var flattened []byte
-	for _, chunk := range batch.chunks {
-		flattened = append(flattened, chunk...)
-	}
-
-	if batch.expectedSize != uint64(len(flattened)) {
-		return nil, 0, time.Time{}, fmt.Errorf("batch(%d) was not expected size %d, was %d", id, batch.expectedSize, len(flattened))
-	}
-
-	return flattened, batch.timeout, batch.startTime, nil
-}
 
 func (s *DASRPCServer) StartChunkedStore(ctx context.Context, timestamp, nChunks, chunkSize, totalSize, timeout hexutil.Uint64, sig hexutil.Bytes) (*StartChunkedStoreResult, error) {
 	rpcStoreRequestGauge.Inc(1)
