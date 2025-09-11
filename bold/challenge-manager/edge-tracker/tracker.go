@@ -18,16 +18,16 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 
-	protocol "github.com/offchainlabs/bold/chain-abstraction"
-	challengetree "github.com/offchainlabs/bold/challenge-manager/challenge-tree"
-	"github.com/offchainlabs/bold/containers"
-	"github.com/offchainlabs/bold/containers/events"
-	"github.com/offchainlabs/bold/containers/fsm"
-	"github.com/offchainlabs/bold/containers/option"
-	l2stateprovider "github.com/offchainlabs/bold/layer2-state-provider"
-	"github.com/offchainlabs/bold/math"
-	"github.com/offchainlabs/bold/state-commitments/history"
-	utilTime "github.com/offchainlabs/bold/time"
+	protocol "github.com/offchainlabs/nitro/bold/chain-abstraction"
+	challengetree "github.com/offchainlabs/nitro/bold/challenge-manager/challenge-tree"
+	"github.com/offchainlabs/nitro/bold/containers"
+	"github.com/offchainlabs/nitro/bold/containers/events"
+	"github.com/offchainlabs/nitro/bold/containers/fsm"
+	"github.com/offchainlabs/nitro/bold/containers/option"
+	l2stateprovider "github.com/offchainlabs/nitro/bold/layer2-state-provider"
+	"github.com/offchainlabs/nitro/bold/math"
+	"github.com/offchainlabs/nitro/bold/state-commitments/history"
+	utilTime "github.com/offchainlabs/nitro/bold/time"
 )
 
 var (
@@ -93,7 +93,7 @@ type Opt func(et *Tracker)
 
 // WithTimeReference allows setting the timer used by the tracker to determine that time
 // passed in accordance with the act interval set with [WithActInterval]. The default is
-// to use [github.com/offchainlabs/bold/time.NewRealTimeReference].
+// to use [github.com/offchainlabs/nitro/bold/time.NewRealTimeReference].
 // This is useful for testing with a fake time reference to avoid waiting for real time.
 func WithTimeReference(ref utilTime.Reference) Opt {
 	return func(et *Tracker) {

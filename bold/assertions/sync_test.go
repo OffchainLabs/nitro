@@ -15,12 +15,12 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 
-	protocol "github.com/offchainlabs/bold/chain-abstraction"
-	"github.com/offchainlabs/bold/containers/threadsafe"
-	challenge_testing "github.com/offchainlabs/bold/testing"
-	"github.com/offchainlabs/bold/testing/casttest"
-	statemanager "github.com/offchainlabs/bold/testing/mocks/state-provider"
-	"github.com/offchainlabs/bold/testing/setup"
+	protocol "github.com/offchainlabs/nitro/bold/chain-abstraction"
+	"github.com/offchainlabs/nitro/bold/containers/threadsafe"
+	challenge_testing "github.com/offchainlabs/nitro/bold/testing"
+	"github.com/offchainlabs/nitro/bold/testing/casttest"
+	statemanager "github.com/offchainlabs/nitro/bold/testing/mocks/state-provider"
+	"github.com/offchainlabs/nitro/bold/testing/setup"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 )

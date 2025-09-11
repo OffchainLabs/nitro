@@ -171,13 +171,12 @@ func (p Programs) ActivateProgram(evm *vm.EVM, address common.Address, runCtx *c
 func (p Programs) CallProgram(
 	scope *vm.ScopeContext,
 	statedb vm.StateDB,
-	interpreter *vm.EVMInterpreter,
+	evm *vm.EVM,
 	tracingInfo *util.TracingInfo,
 	calldata []byte,
 	reentrant bool,
 	runCtx *core.MessageRunContext,
 ) ([]byte, error) {
-	evm := interpreter.Evm()
 	contract := scope.Contract
 	codeHash := contract.CodeHash
 	startingGas := contract.Gas
@@ -252,7 +251,7 @@ func (p Programs) CallProgram(
 
 	address := contract.Address()
 	metrics.GetOrRegisterCounter(fmt.Sprintf("arb/arbos/stylus/program_calls/%s", runCtx.RunModeMetricName()), nil).Inc(1)
-	ret, err := callProgram(address, moduleHash, localAsm, scope, interpreter, tracingInfo, calldata, evmData, goParams, model, runCtx)
+	ret, err := callProgram(address, moduleHash, localAsm, scope, evm, tracingInfo, calldata, evmData, goParams, model, runCtx)
 	if len(ret) > 0 && p.ArbosVersion >= gethParams.ArbosVersion_StylusFixes {
 		// Ensure that return data costs as least as much as it would in the EVM.
 		evmCost := evmMemoryCost(uint64(len(ret)))
@@ -293,7 +292,8 @@ func attributeWasmComputation(contract *vm.Contract, startingGas uint64) {
 		log.Error("WASM computation gas already set, prev", prev)
 	}
 
-	if overflow := contract.UsedMultiGas.SafeIncrement(multigas.ResourceKindWasmComputation, residual); overflow {
+	var overflow bool
+	if contract.UsedMultiGas, overflow = contract.UsedMultiGas.SafeIncrement(multigas.ResourceKindWasmComputation, residual); overflow {
 		log.Error("WASM computation gas overflow, residual", residual)
 	}
 }

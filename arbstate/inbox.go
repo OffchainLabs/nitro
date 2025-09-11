@@ -37,6 +37,7 @@ type InboxBackend interface {
 	ReadDelayedInbox(seqNum uint64) (*arbostypes.L1IncomingMessage, error)
 }
 
+// lint:require-exhaustive-initialization
 type SequencerMessage struct {
 	MinTimestamp         uint64
 	MaxTimestamp         uint64
@@ -162,6 +163,7 @@ func ParseSequencerMessage(ctx context.Context, batchNum uint64, batchBlockHash 
 	return parsedMsg, nil
 }
 
+// lint:require-exhaustive-initialization
 type inboxMultiplexer struct {
 	backend                   InboxBackend
 	delayedMessagesRead       uint64
@@ -177,10 +179,16 @@ type inboxMultiplexer struct {
 
 func NewInboxMultiplexer(backend InboxBackend, delayedMessagesRead uint64, dapReaders []daprovider.Reader, keysetValidationMode daprovider.KeysetValidationMode) arbostypes.InboxMultiplexer {
 	return &inboxMultiplexer{
-		backend:              backend,
-		delayedMessagesRead:  delayedMessagesRead,
-		dapReaders:           dapReaders,
-		keysetValidationMode: keysetValidationMode,
+		backend:                   backend,
+		delayedMessagesRead:       delayedMessagesRead,
+		dapReaders:                dapReaders,
+		cachedSequencerMessage:    nil,
+		cachedSequencerMessageNum: 0,
+		cachedSegmentNum:          0,
+		cachedSegmentTimestamp:    0,
+		cachedSegmentBlockNumber:  0,
+		cachedSubMessageNumber:    0,
+		keysetValidationMode:      keysetValidationMode,
 	}
 }
 

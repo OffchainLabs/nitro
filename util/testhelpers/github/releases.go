@@ -15,6 +15,7 @@ import (
 var wasmRootExp = regexp.MustCompile(`\*\*WAVM Module Root\*\*: (0x[a-f0-9]{64})`)
 
 type ConsensusRelease struct {
+	ArbosVersion   uint64
 	WavmModuleRoot string
 	MachineWavmURL url.URL
 	ReplayWasmURL  url.URL
@@ -86,7 +87,12 @@ func fromRelease(release *github.RepositoryRelease) (*ConsensusRelease, error) {
 			replayWasmURL = *rURL
 		}
 	}
+	var arbosVersion uint64
+	if _, err := fmt.Sscanf(release.GetTagName(), "consensus-v%d", &arbosVersion); err != nil {
+		return nil, fmt.Errorf("error identifying arbosVersion number from consensus release's tagName: %w", err)
+	}
 	return &ConsensusRelease{
+		ArbosVersion:   arbosVersion,
 		WavmModuleRoot: wavmModuleRoot,
 		MachineWavmURL: machineWavmURL,
 		ReplayWasmURL:  replayWasmURL,

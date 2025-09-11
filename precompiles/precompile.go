@@ -48,6 +48,7 @@ type ArbosPrecompile interface {
 	) (output []byte, gasLeft uint64, err error)
 
 	Precompile() *Precompile
+	Name() string
 }
 
 type purity uint8
@@ -220,12 +221,12 @@ func MakePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, *Pr
 		}
 
 		method := PrecompileMethod{
-			name,
-			method,
-			purity,
-			handler,
-			0,
-			0,
+			name:            name,
+			template:        method,
+			purity:          purity,
+			handler:         handler,
+			arbosVersion:    0,
+			maxArbosVersion: 0,
 		}
 		methods[id] = &method
 		methodsByName[name] = &method
@@ -500,14 +501,14 @@ func MakePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, *Pr
 	}
 
 	return address, &Precompile{
-		methods,
-		methodsByName,
-		events,
-		errors,
-		contract,
-		reflect.ValueOf(implementer),
-		address,
-		0,
+		methods:       methods,
+		methodsByName: methodsByName,
+		events:        events,
+		errors:        errors,
+		name:          contract,
+		implementer:   reflect.ValueOf(implementer),
+		address:       address,
+		arbosVersion:  0,
 	}
 }
 
@@ -845,6 +846,11 @@ func (p *Precompile) Call(
 
 func (p *Precompile) Precompile() *Precompile {
 	return p
+}
+
+// Name returns the name of the precompile.
+func (p *Precompile) Name() string {
+	return p.name
 }
 
 // Get4ByteMethodSignatures is needed for the fuzzing harness

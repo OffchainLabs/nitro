@@ -55,15 +55,14 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
 
-	"github.com/offchainlabs/bold/testing/setup"
-	butil "github.com/offchainlabs/bold/util"
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
-	"github.com/offchainlabs/nitro/arbos/multigascollector"
 	arbosutil "github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/blsSignatures"
+	"github.com/offchainlabs/nitro/bold/testing/setup"
+	butil "github.com/offchainlabs/nitro/bold/util"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
@@ -393,11 +392,6 @@ func (b *NodeBuilder) WithWasmRootDir(wasmRootDir string) *NodeBuilder {
 
 func (b *NodeBuilder) WithExtraArchs(targets []string) *NodeBuilder {
 	b.execConfig.StylusTarget.ExtraArchs = targets
-	return b
-}
-
-func (b *NodeBuilder) WithMultigasCollector(config multigascollector.CollectorConfig) *NodeBuilder {
-	b.execConfig.MultigasCollector = config
 	return b
 }
 
@@ -949,10 +943,10 @@ func build2ndNode(
 func (b *NodeBuilder) Build2ndNode(t *testing.T, params *SecondNodeParams) (*TestClient, func()) {
 	DontWaitAndRun(b.ctx, 1, t.Name())
 	if b.L2 == nil {
-		t.Fatal("builder did not previously built an L2 Node")
+		t.Fatal("builder did not previously build an L2 Node")
 	}
-	if b.withL1 && b.L1 == nil {
-		t.Fatal("builder did not previously built an L1 Node")
+	if b.L1 == nil {
+		t.Fatal("builder did not previously build an L1 Node")
 	}
 	return build2ndNode(
 		t,
@@ -1880,8 +1874,8 @@ func setupConfigWithDAS(
 
 	l1NodeConfigA.DataAvailability = das.DefaultDataAvailabilityConfig
 	var lifecycleManager *das.LifecycleManager
-	var daReader das.DataAvailabilityServiceReader
-	var daWriter das.DataAvailabilityServiceWriter
+	var daReader dasutil.DASReader
+	var daWriter dasutil.DASWriter
 	var daHealthChecker das.DataAvailabilityServiceHealthChecker
 	var signatureVerifier *das.SignatureVerifier
 	if dasModeString != "onchain" {
