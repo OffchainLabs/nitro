@@ -11,9 +11,9 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 
-	protocol "github.com/offchainlabs/bold/chain-abstraction"
-	challenge_testing "github.com/offchainlabs/bold/testing"
-	"github.com/offchainlabs/bold/testing/setup"
+	protocol "github.com/offchainlabs/nitro/bold/chain-abstraction"
+	challenge_testing "github.com/offchainlabs/nitro/bold/testing"
+	"github.com/offchainlabs/nitro/bold/testing/setup"
 )
 
 var _ Backend = &LocalSimulatedBackend{}

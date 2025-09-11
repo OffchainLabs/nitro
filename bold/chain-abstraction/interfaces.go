@@ -20,8 +20,8 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/rpc"
 
-	"github.com/offchainlabs/bold/containers/option"
-	"github.com/offchainlabs/bold/state-commitments/history"
+	"github.com/offchainlabs/nitro/bold/containers/option"
+	"github.com/offchainlabs/nitro/bold/state-commitments/history"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 )
 

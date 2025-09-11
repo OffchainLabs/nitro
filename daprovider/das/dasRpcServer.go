@@ -21,6 +21,7 @@ import (
 
 	"github.com/offchainlabs/nitro/blsSignatures"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
+	"github.com/offchainlabs/nitro/daprovider/das/dasutil"
 	"github.com/offchainlabs/nitro/util/pretty"
 )
 
@@ -36,8 +37,8 @@ var (
 )
 
 type DASRPCServer struct {
-	daReader        DataAvailabilityServiceReader
-	daWriter        DataAvailabilityServiceWriter
+	daReader        dasutil.DASReader
+	daWriter        dasutil.DASWriter
 	daHealthChecker DataAvailabilityServiceHealthChecker
 
 	signatureVerifier *SignatureVerifier
@@ -45,7 +46,7 @@ type DASRPCServer struct {
 	batches *batchBuilder
 }
 
-func StartDASRPCServer(ctx context.Context, addr string, portNum uint64, rpcServerTimeouts genericconf.HTTPServerTimeoutConfig, rpcServerBodyLimit int, daReader DataAvailabilityServiceReader, daWriter DataAvailabilityServiceWriter, daHealthChecker DataAvailabilityServiceHealthChecker, signatureVerifier *SignatureVerifier) (*http.Server, error) {
+func StartDASRPCServer(ctx context.Context, addr string, portNum uint64, rpcServerTimeouts genericconf.HTTPServerTimeoutConfig, rpcServerBodyLimit int, daReader dasutil.DASReader, daWriter dasutil.DASWriter, daHealthChecker DataAvailabilityServiceHealthChecker, signatureVerifier *SignatureVerifier) (*http.Server, error) {
 	listener, err := net.Listen("tcp", fmt.Sprintf("%s:%d", addr, portNum))
 	if err != nil {
 		return nil, err
@@ -53,7 +54,7 @@ func StartDASRPCServer(ctx context.Context, addr string, portNum uint64, rpcServ
 	return StartDASRPCServerOnListener(ctx, listener, rpcServerTimeouts, rpcServerBodyLimit, daReader, daWriter, daHealthChecker, signatureVerifier)
 }
 
-func StartDASRPCServerOnListener(ctx context.Context, listener net.Listener, rpcServerTimeouts genericconf.HTTPServerTimeoutConfig, rpcServerBodyLimit int, daReader DataAvailabilityServiceReader, daWriter DataAvailabilityServiceWriter, daHealthChecker DataAvailabilityServiceHealthChecker, signatureVerifier *SignatureVerifier) (*http.Server, error) {
+func StartDASRPCServerOnListener(ctx context.Context, listener net.Listener, rpcServerTimeouts genericconf.HTTPServerTimeoutConfig, rpcServerBodyLimit int, daReader dasutil.DASReader, daWriter dasutil.DASWriter, daHealthChecker DataAvailabilityServiceHealthChecker, signatureVerifier *SignatureVerifier) (*http.Server, error) {
 	if daWriter == nil {
 		return nil, errors.New("No writer backend was configured for DAS RPC server. Has the BLS signing key been set up (--data-availability.key.key-dir or --data-availability.key.priv-key options)?")
 	}
@@ -156,6 +157,7 @@ type batch struct {
 	expectedChunkSize, expectedSize uint64
 	timeout                         uint64
 	startTime                       time.Time
+	mutex                           sync.Mutex
 }
 
 const (
@@ -221,6 +223,9 @@ func (b *batchBuilder) add(id, idx uint64, data []byte) error {
 		return fmt.Errorf("unknown batch(%d)", id)
 	}
 
+	batch.mutex.Lock()
+	defer batch.mutex.Unlock()
+
 	if idx >= uint64(len(batch.chunks)) {
 		return fmt.Errorf("batch(%d): chunk(%d) out of range", id, idx)
 	}
@@ -246,6 +251,9 @@ func (b *batchBuilder) close(id uint64) ([]byte, uint64, time.Time, error) {
 	if !ok {
 		return nil, 0, time.Time{}, fmt.Errorf("unknown batch(%d)", id)
 	}
+
+	batch.mutex.Lock()
+	defer batch.mutex.Unlock()
 
 	if batch.expectedChunks != batch.seenChunks.Load() {
 		return nil, 0, time.Time{}, fmt.Errorf("incomplete batch(%d): got %d/%d chunks", id, batch.seenChunks.Load(), batch.expectedChunks)
