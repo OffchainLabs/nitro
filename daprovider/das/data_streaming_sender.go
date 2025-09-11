@@ -25,6 +25,13 @@ type DataStreamer struct {
 	chunkSize uint64
 	// dataSigner is used for sender authentication during the protocol.
 	dataSigner signature.DataSignerFunc
+	// rpcMethods define the actual server API
+	rpcMethods DataStreamingRPCMethods
+}
+
+// DataStreamingRPCMethods configuration specifies names of the protocol's RPC methods on the server side.
+type DataStreamingRPCMethods struct {
+	startReceiving, receiveChunk, finalizeReceiving string
 }
 
 // NewDataStreamer creates a new DataStreamer instance.
@@ -35,13 +42,13 @@ type DataStreamer struct {
 //   - `dataSigner` must not be nil;
 //
 // otherwise an `error` is returned.
-func NewDataStreamer(url string, maxStoreChunkBodySize int, dataSigner signature.DataSignerFunc) (*DataStreamer, error) {
+func NewDataStreamer(url string, maxStoreChunkBodySize int, dataSigner signature.DataSignerFunc, rpcMethods DataStreamingRPCMethods) (*DataStreamer, error) {
 	rpcClient, err := rpc.Dial(url)
 	if err != nil {
 		return nil, err
 	}
 
-	chunkSize, err := calculateEffectiveChunkSize(maxStoreChunkBodySize)
+	chunkSize, err := calculateEffectiveChunkSize(maxStoreChunkBodySize, rpcMethods)
 	if err != nil {
 		return nil, err
 	}
@@ -54,14 +61,13 @@ func NewDataStreamer(url string, maxStoreChunkBodySize int, dataSigner signature
 		rpcClient:  rpcClient,
 		chunkSize:  chunkSize,
 		dataSigner: dataSigner,
+		rpcMethods: rpcMethods,
 	}, nil
 }
 
-// JSON request template for the `"das_sendChunked"` RPC method.
-const sendChunkJSONBoilerplate = "{\"jsonrpc\":\"2.0\",\"id\":4294967295,\"method\":\"das_sendChunked\",\"params\":[\"\"]}"
-
-func calculateEffectiveChunkSize(maxStoreChunkBodySize int) (uint64, error) {
-	chunkSize := (maxStoreChunkBodySize - len(sendChunkJSONBoilerplate) - 512 /* headers */) / 2
+func calculateEffectiveChunkSize(maxStoreChunkBodySize int, rpcMethods DataStreamingRPCMethods) (uint64, error) {
+	jsonOverhead := len("{\"jsonrpc\":\"2.0\",\"id\":4294967295,\"method\":\"\",\"params\":[\"\"]}") + len(rpcMethods.receiveChunk)
+	chunkSize := (maxStoreChunkBodySize - jsonOverhead - 512 /* headers */) / 2
 	if chunkSize <= 0 {
 		return 0, fmt.Errorf("max-store-chunk-body-size %d doesn't leave enough room for chunk payload", maxStoreChunkBodySize)
 	}
@@ -99,7 +105,7 @@ func (ds *DataStreamer) startStream(ctx context.Context, startReqSig []byte, par
 	err := ds.rpcClient.CallContext(
 		ctx,
 		&startChunkedStoreResult,
-		"das_startChunkedStore",
+		ds.rpcMethods.startReceiving,
 		hexutil.Uint64(params.timestamp),
 		hexutil.Uint64(params.nChunks),
 		hexutil.Uint64(ds.chunkSize),
@@ -132,7 +138,7 @@ func (ds *DataStreamer) sendChunk(ctx context.Context, batchId hexutil.Uint64, c
 		return err
 	}
 
-	err = ds.rpcClient.CallContext(ctx, nil, "das_sendChunk", batchId, hexutil.Uint64(chunkId), hexutil.Bytes(chunkData), hexutil.Bytes(chunkReqSig))
+	err = ds.rpcClient.CallContext(ctx, nil, ds.rpcMethods.receiveChunk, batchId, hexutil.Uint64(chunkId), hexutil.Bytes(chunkData), hexutil.Bytes(chunkReqSig))
 	if err != nil {
 		rpcClientSendChunkFailureGauge.Inc(1)
 		return err
@@ -143,7 +149,7 @@ func (ds *DataStreamer) sendChunk(ctx context.Context, batchId hexutil.Uint64, c
 }
 
 func (ds *DataStreamer) finalizeStream(ctx context.Context, finalReqSig []byte, batchId hexutil.Uint64) (storeResult *StoreResult, err error) {
-	err = ds.rpcClient.CallContext(ctx, &storeResult, "das_commitChunkedStore", batchId, hexutil.Bytes(finalReqSig))
+	err = ds.rpcClient.CallContext(ctx, &storeResult, ds.rpcMethods.finalizeReceiving, batchId, hexutil.Bytes(finalReqSig))
 	return
 }
 
