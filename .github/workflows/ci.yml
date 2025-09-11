@@ -20,7 +20,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
-        with: {fetch-depth: 0}
+        with:
+          submodules: recursive
 
       - name: Determine if Arbitrator changed
         id: changed
@@ -43,8 +44,15 @@ jobs:
       # RUSTFLAGS: -Dwarnings          # TODO: re-enable after wasmer upgrade
 
     steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          submodules: recursive
+
       - name: Setup CI
         uses: ./.github/actions/ci-setup
+        with:
+          skip_checkout: true
 
       - name: Install custom go-ethereum
         run: |
@@ -104,7 +112,15 @@ jobs:
     name: Gate build + lint
     runs-on: arbitrator-ci
     steps:
-      - uses: ./.github/actions/ci-setup
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          submodules: recursive
+
+      - name: Setup CI
+        uses: ./.github/actions/ci-setup
+        with:
+          skip_checkout: true
 
       - name: Build
         run: make build test-go-deps -j8
@@ -147,7 +163,15 @@ jobs:
         ports:
           - 6379:6379
     steps:
-      - uses: ./.github/actions/ci-setup
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          submodules: recursive
+
+      - name: Setup CI
+        uses: ./.github/actions/ci-setup
+        with:
+          skip_checkout: true
 
       - name: Download build artifacts (optional)
         uses: actions/download-artifact@v4

@@ -15,7 +15,7 @@ runs:
       if: ${{ inputs.skip_checkout != 'true' }}
       uses: actions/checkout@v5
       with:
-        submodules: true
+        submodules: recursive
 
     - name: Install dependencies
       run: sudo apt update && sudo apt install -y wabt gotestsum
