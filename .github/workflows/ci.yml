@@ -210,15 +210,13 @@ jobs:
       - name: run redis tests
         if: matrix.test-mode == 'defaults'
         run: >-
-          ${{ github.workspace }}/.github/workflows/gotestsum.sh
-          --format short-verbose -- -p 1 -run TestRedis ./arbnode/... ./system_tests/...
+          gotestsum --format short-verbose -- -p 1 -run TestRedis ./arbnode/... ./system_tests/...
           -coverprofile=coverage-redis.txt -covermode=atomic -coverpkg=./... -- --test_redis=redis://localhost:6379/0
 
       - name: create block input json file
         if: matrix.test-mode == 'defaults'
         run: >-
-          ${{ github.workspace }}/.github/workflows/gotestsum.sh
-          --format short-verbose -- -run TestProgramStorage$ ./system_tests/... --count 1 --
+          gotestsum --format short-verbose -- -run TestProgramStorage$ ./system_tests/... --count 1 --
           --recordBlockInputs.enable=true --recordBlockInputs.WithBaseDir="${{ github.workspace }}/target"
           --recordBlockInputs.WithTimestampDirEnabled=false --recordBlockInputs.WithBlockIdInFileNameEnabled=false
 

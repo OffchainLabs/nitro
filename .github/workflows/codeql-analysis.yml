@@ -29,7 +29,7 @@ jobs:
       - name: Setup CI
         uses: ./.github/actions/ci-setup
         with:
-          skip_checkout: true
+          skip_checkout: 'true'
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v3
