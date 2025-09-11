@@ -66,7 +66,7 @@ func BuildBlock(
 	}
 
 	block, _, err := arbos.ProduceBlock(
-		l1Message, delayedMessagesRead, lastBlockHeader, statedb, chainContext, false, runCtx,
+		l1Message, delayedMessagesRead, lastBlockHeader, statedb, chainContext, false, runCtx, false,
 	)
 	return block, err
 }

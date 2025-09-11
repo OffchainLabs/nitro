@@ -107,6 +107,8 @@ type ExecutionEngine struct {
 
 	syncTillBlock uint64
 
+	exposeMultiGas bool
+
 	runningMaintenance atomic.Bool
 }
 
@@ -116,12 +118,13 @@ func NewL1PriceData() *L1PriceData {
 	}
 }
 
-func NewExecutionEngine(bc *core.BlockChain, syncTillBlock uint64) (*ExecutionEngine, error) {
+func NewExecutionEngine(bc *core.BlockChain, syncTillBlock uint64, exposeMultiGas bool) (*ExecutionEngine, error) {
 	return &ExecutionEngine{
 		bc:                bc,
 		resequenceChan:    make(chan []*arbostypes.MessageWithMetadata),
 		newBlockNotifier:  make(chan struct{}, 1),
 		cachedL1PriceData: NewL1PriceData(),
+		exposeMultiGas:    exposeMultiGas,
 		syncTillBlock:     syncTillBlock,
 	}, nil
 }
@@ -582,6 +585,7 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 		hooks,
 		false,
 		core.NewMessageCommitContext(s.wasmTargets),
+		s.exposeMultiGas,
 	)
 	if err != nil {
 		return nil, err
@@ -784,6 +788,7 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 		s.bc,
 		isMsgForPrefetch,
 		runCtx,
+		s.exposeMultiGas,
 	)
 
 	return block, statedb, receipts, err

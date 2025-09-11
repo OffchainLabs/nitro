@@ -205,10 +205,10 @@ func runEndToEndTest(t *testing.T, cfg *e2eConfig) {
 		t.Fatalf("Backend kind for e2e test not supported: %s", cfg.backend)
 	}
 
+	require.NoError(t, bk.Start(ctx))
+
 	rollupAddr, err := bk.DeployRollup(ctx, challengeTestingOpts...)
 	require.NoError(t, err)
-
-	require.NoError(t, bk.Start(ctx))
 
 	accounts := bk.Accounts()
 	bk.Commit()

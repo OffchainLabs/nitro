@@ -20,6 +20,7 @@ func TestMultigasStylus_GetBytes32(t *testing.T) {
 	defer cancel()
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	builder.execConfig.ExposeMultiGas = true
 	cleanup := builder.Build(t)
 	defer cleanup()
 

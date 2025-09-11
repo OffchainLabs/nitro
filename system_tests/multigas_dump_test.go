@@ -20,6 +20,7 @@ func TestMultigasDataFromReceipts(t *testing.T) {
 	defer cancel()
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	builder.execConfig.ExposeMultiGas = true
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -50,4 +51,26 @@ func TestMultigasDataFromReceipts(t *testing.T) {
 
 		require.Equal(t, rcpt.GasUsed, rcpt.MultiGasUsed.SingleGas()+gasDifference)
 	}
+}
+
+func TestMultigasDataCanBeDisabled(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	builder.execConfig.ExposeMultiGas = false
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	tx := builder.L2Info.PrepareTx(
+		"Owner", "Owner",
+		builder.L2Info.TransferGas,
+		big.NewInt(1),
+		nil,
+	)
+	require.NoError(t, builder.L2.Client.SendTransaction(ctx, tx))
+	receipt, err := builder.L2.EnsureTxSucceeded(tx)
+	require.NoError(t, err)
+
+	require.True(t, receipt.MultiGasUsed.IsZero())
 }
