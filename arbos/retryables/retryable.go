@@ -36,7 +36,7 @@ func InitializeRetryableState(sto *storage.Storage) error {
 	return storage.InitializeQueue(sto.OpenCachedSubStorage(timeoutQueueKey))
 }
 
-func OpenRetryableState(sto *storage.Storage, statedb vm.StateDB) *RetryableState {
+func OpenRetryableState(sto *storage.Storage) *RetryableState {
 	return &RetryableState{
 		sto,
 		storage.OpenQueue(sto.OpenCachedSubStorage(timeoutQueueKey)),
@@ -217,8 +217,7 @@ func (retryable *Retryable) CalldataSize() (uint64, error) {
 func (rs *RetryableState) Keepalive(
 	ticketId common.Hash,
 	currentTimestamp,
-	limitBeforeAdd,
-	timeToAdd uint64,
+	limitBeforeAdd uint64,
 ) (uint64, error) {
 	retryable, err := rs.OpenRetryable(ticketId, currentTimestamp)
 	if err != nil {
