@@ -123,9 +123,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
         with:
-          submodules: true
-          fetch-depth: 10            # Will cover most PRs
-          persist-credentials: true  # In case changed-files requires deeper depth
+          submodules: recursive
 
       - name: Check changed files
         id: changed-files
@@ -145,7 +143,7 @@ jobs:
         if: steps.changed-files.outputs.any_changed == 'true'
         uses: ./.github/actions/ci-setup
         with:
-          skip_checkout: 'true'
+          skip_checkout: true
 
       - name: run challenge tests
         if: steps.changed-files.outputs.any_changed == 'true'
