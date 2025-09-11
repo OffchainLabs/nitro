@@ -38,6 +38,7 @@ const (
 	defaultMessageCollectionExpiry = 1 * time.Minute
 )
 
+// lint:require-exhaustive-initialization
 type DASRPCServer struct {
 	daReader        dasutil.DASReader
 	daWriter        dasutil.DASWriter
@@ -100,6 +101,7 @@ func StartDASRPCServerOnListener(ctx context.Context, listener net.Listener, rpc
 	return srv, nil
 }
 
+// lint:require-exhaustive-initialization
 type StoreResult struct {
 	DataHash    hexutil.Bytes  `json:"dataHash,omitempty"`
 	Timeout     hexutil.Uint64 `json:"timeout,omitempty"`
@@ -150,10 +152,12 @@ var (
 	legacyDASStoreAPIOnly = false
 )
 
+// lint:require-exhaustive-initialization
 type StartChunkedStoreResult struct {
 	MessageId hexutil.Uint64 `json:"messageId,omitempty"`
 }
 
+// lint:require-exhaustive-initialization
 type SendChunkResult struct {
 	Ok hexutil.Uint64 `json:"sendChunkResult,omitempty"`
 }

@@ -32,6 +32,7 @@ var (
 	rpcClientSendChunkFailureGauge = metrics.NewRegisteredGauge("arb/das/rpcclient/sendchunk/failure", nil)
 )
 
+// lint:require-exhaustive-initialization
 type DASRPCClient struct { // implements DataAvailabilityService
 	clnt         *rpc.Client
 	url          string

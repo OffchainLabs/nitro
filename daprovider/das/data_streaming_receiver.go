@@ -22,6 +22,7 @@ import (
 //
 // DataStreamReceiver has built-in support for limiting number of open protocol interactions and garbage collection for
 // the interrupted streams.
+// lint:require-exhaustive-initialization
 type DataStreamReceiver struct {
 	signatureVerifier *SignatureVerifier
 	messageStore      *messageStore
@@ -71,6 +72,7 @@ func (dsr *DataStreamReceiver) FinalizeReceiving(ctx context.Context, messageId 
 // MessageId is the identifier of the message being streamed (protocol invocation id).
 type MessageId uint64
 
+// lint:require-exhaustive-initialization
 type partialMessage struct {
 	mutex             sync.Mutex
 	chunks            [][]byte
@@ -81,6 +83,7 @@ type partialMessage struct {
 	startTime         time.Time
 }
 
+// lint:require-exhaustive-initialization
 type messageStore struct {
 	mutex                   sync.Mutex
 	messages                map[MessageId]*partialMessage
@@ -114,7 +117,9 @@ func (ms *messageStore) registerNewMessage(nChunks, timeout, chunkSize, totalSiz
 	}
 
 	ms.messages[id] = &partialMessage{
+		mutex:             sync.Mutex{},
 		chunks:            make([][]byte, nChunks),
+		seenChunks:        0,
 		expectedChunkSize: chunkSize,
 		expectedTotalSize: totalSize,
 		timeout:           timeout,
