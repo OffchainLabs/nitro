@@ -26,7 +26,7 @@ import (
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
-	solimpl "github.com/offchainlabs/bold/chain-abstraction/sol-implementation"
+	"github.com/offchainlabs/bold/chain-abstraction/solimpl"
 	challengemanager "github.com/offchainlabs/bold/challenge-manager"
 	modes "github.com/offchainlabs/bold/challenge-manager/types"
 	l2stateprovider "github.com/offchainlabs/bold/layer2-state-provider"
