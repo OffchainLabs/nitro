@@ -22,6 +22,8 @@ jobs:
         uses: actions/checkout@v5
         with:
           submodules: recursive
+          depth: 10            # Will cover most PRs
+          persist-credentials: true  # In case changed-files requires deeper depth
 
       - name: Determine if Arbitrator changed
         id: changed
@@ -52,7 +54,7 @@ jobs:
       - name: Setup CI
         uses: ./.github/actions/ci-setup
         with:
-          skip_checkout: true
+          skip_checkout: 'true'
 
       - name: Install custom go-ethereum
         run: |
@@ -120,7 +122,7 @@ jobs:
       - name: Setup CI
         uses: ./.github/actions/ci-setup
         with:
-          skip_checkout: true
+          skip_checkout: 'true'
 
       - name: Build
         run: make build test-go-deps -j8
@@ -171,7 +173,7 @@ jobs:
       - name: Setup CI
         uses: ./.github/actions/ci-setup
         with:
-          skip_checkout: true
+          skip_checkout: 'true'
 
       - name: Download build artifacts (optional)
         uses: actions/download-artifact@v4
