@@ -4,19 +4,61 @@
 package das
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"math/rand"
 	"sync"
 	"time"
+
+	"github.com/ethereum/go-ethereum/common/hexutil"
 )
 
 type DataStreamReceiver struct {
+	signatureVerifier *SignatureVerifier
+	messageStore      *messageStore
+}
+
+func NewDataStreamReceiver(signatureVerifier *SignatureVerifier) *DataStreamReceiver {
+	return &DataStreamReceiver{
+		signatureVerifier: signatureVerifier,
+		messageStore:      newMessageStore(),
+	}
+}
+
+func (dsr *DataStreamReceiver) StartReceiving(ctx context.Context, timestamp, nChunks, chunkSize, totalSize, timeout uint64, sig []byte) (MessageId, error) {
+	if err := dsr.signatureVerifier.verify(ctx, []byte{}, sig, timestamp, nChunks, chunkSize, totalSize, timeout); err != nil {
+		return 0, err
+	}
+
+	// Prevent replay of old messages
+	// #nosec G115
+	if time.Since(time.Unix(int64(timestamp), 0)).Abs() > time.Minute {
+		return 0, errors.New("too much time has elapsed since request was signed")
+	}
+
+	return dsr.messageStore.registerNewMessage(nChunks, timeout, chunkSize, totalSize)
+}
+
+func (dsr *DataStreamReceiver) ReceiveChunk(ctx context.Context, messageId MessageId, chunkId uint64, chunk, sig []byte) error {
+	if err := dsr.signatureVerifier.verify(ctx, chunk, sig, uint64(messageId), chunkId); err != nil {
+		return err
+	}
+	return dsr.messageStore.addNewChunk(messageId, chunkId, chunk)
+}
+
+func (dsr *DataStreamReceiver) FinalizeReceiving(ctx context.Context, messageId MessageId, sig hexutil.Bytes) ([]byte, uint64, time.Time, error) {
+	if err := dsr.signatureVerifier.verify(ctx, []byte{}, sig, uint64(messageId)); err != nil {
+		return nil, 0, time.Time{}, err
+	}
+	return dsr.messageStore.finalizeMessage(messageId)
 }
 
 // ============= MESSAGE MANAGEMENT ================================================================================= //
 
 type MessageId uint64
 
+// todo remove
 const (
 	maxPendingMessages      = 10
 	messageCollectionExpiry = 1 * time.Minute

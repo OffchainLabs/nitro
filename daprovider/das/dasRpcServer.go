@@ -104,6 +104,7 @@ type StoreResult struct {
 	Version     hexutil.Uint64 `json:"version,omitempty"`
 }
 
+// The legacy storing API.
 func (s *DASRPCServer) Store(ctx context.Context, message hexutil.Bytes, timeout hexutil.Uint64, sig hexutil.Bytes) (*StoreResult, error) {
 	// #nosec G115
 	log.Trace("dasRpc.DASRPCServer.Store", "message", pretty.FirstFewBytes(message), "message length", len(message), "timeout", time.Unix(int64(timeout), 0), "sig", pretty.FirstFewBytes(sig), "this", s)
@@ -139,20 +140,12 @@ func (s *DASRPCServer) Store(ctx context.Context, message hexutil.Bytes, timeout
 	}, nil
 }
 
-type StartChunkedStoreResult struct {
-	BatchId hexutil.Uint64 `json:"batchId,omitempty"`
-}
-
-type SendChunkResult struct {
-	Ok hexutil.Uint64 `json:"sendChunkResult,omitempty"`
-}
-
 // exposed global for test control
 var (
 	legacyDASStoreAPIOnly = false
 )
 
-func (s *DASRPCServer) StartChunkedStore(ctx context.Context, timestamp, nChunks, chunkSize, totalSize, timeout hexutil.Uint64, sig hexutil.Bytes) (*StartChunkedStoreResult, error) {
+func (s *DASRPCServer) StartChunkedStore(ctx context.Context, timestamp, nChunks, chunkSize, totalSize, timeout hexutil.Uint64, sig hexutil.Bytes) (*StartReceivingResult, error) {
 	rpcStoreRequestGauge.Inc(1)
 	failed := true
 	defer func() {
