@@ -32,7 +32,7 @@ type contractAdapter struct {
 }
 
 func (a *contractAdapter) FilterLogs(ctx context.Context, q ethereum.FilterQuery) ([]types.Log, error) {
-	logPointers, err := a.GetLogs(ctx, filters.FilterCriteria(q))
+	logPointers, err := a.GetLogs(ctx, q)
 	if err != nil {
 		return nil, err
 	}
@@ -49,7 +49,7 @@ func (a *contractAdapter) SubscribeFilterLogs(ctx context.Context, q ethereum.Fi
 }
 
 func (a *contractAdapter) CodeAt(ctx context.Context, contract common.Address, blockNumber *big.Int) ([]byte, error) {
-	number := rpc.LatestBlockNumber
+	var number rpc.BlockNumber = rpc.LatestBlockNumber
 	if blockNumber != nil {
 		number = rpc.BlockNumber(blockNumber.Int64())
 	}
@@ -63,7 +63,7 @@ func (a *contractAdapter) CodeAt(ctx context.Context, contract common.Address, b
 }
 
 func (a *contractAdapter) CallContract(ctx context.Context, call ethereum.CallMsg, blockNumber *big.Int) ([]byte, error) {
-	var num = rpc.LatestBlockNumber
+	var num rpc.BlockNumber = rpc.LatestBlockNumber
 	if blockNumber != nil {
 		num = rpc.BlockNumber(blockNumber.Int64())
 	}
@@ -85,12 +85,14 @@ func (a *contractAdapter) CallContract(ctx context.Context, call ethereum.CallMs
 		AccessList:       call.AccessList,
 		SkipNonceChecks:  true,
 		SkipFromEOACheck: true,
-		TxRunContext:     core.NewMessageEthcallContext(), // Indicate this is an eth_call
-		SkipL1Charging:   true,                            // Skip L1 data fees
+		TxRunContext:     core.NewEVMEthCallContext(),
+		SkipL1Charging:   true,
 	}
 
-	evm := a.apiBackend.GetEVM(ctx, state, header, &vm.Config{NoBaseFee: true}, nil)
-	gp := new(core.GasPool).AddGas(math.MaxUint64)
+	evm := a.apiBackend.GetEVM(ctx, state, header, &vm.Config{NoBaseFee: true}, &core.BlockContext{})
+	gp := new(core.GasPool)
+	gp.AddGas(math.MaxUint64)
+
 	result, err := core.ApplyMessage(evm, msg, gp)
 	if err != nil {
 		return nil, err
