@@ -43,7 +43,7 @@ func TestMessageExtractorStallTriggersMetric(t *testing.T) {
 	require.NoError(t, extractor.Start(ctx))
 	// MEL will be stuck at the 'Start' state as HeadMelState is not yet stored in the db
 	// so after RetryInterval*StallTolerance amount of time the metric should have been set to 1
-	time.Sleep(cfg.RetryInterval*time.Duration(cfg.StallTolerance) + 50*time.Millisecond)
+	time.Sleep(cfg.RetryInterval*time.Duration(cfg.StallTolerance) + 50*time.Millisecond) // #nosec G115
 	require.True(t, stuckFSMIndicatingGauge.Snapshot().Value() == 1)
 }
 
