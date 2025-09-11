@@ -60,7 +60,7 @@ $ git checkout feature-in-progress-branch
 
 **8. Test your changes.**
 
-Write unit tests or write a [system test](https://github.com/OffchainLabs/nitro/tree/master/system_tests) for your feature before shipping it.
+Write unit tests or write a [system test](https://github.com/OffchainLabs/nitro/tree/main/system_tests) for your feature before shipping it.
 
 **9. Stage the file or files that you want to commit.**
 
@@ -94,7 +94,7 @@ $ git push mynitrorepo feature-in-progress-branch
 
 **13. Create a pull request.**
 
-Navigate your browser to https://github.com/offchainlabs/nitro and click on the new pull request button. In the “base” box on the left, leave the default selection “base master”, the branch that you want your changes to be applied to. In the “compare” box on the right, select feature-in-progress-branch, the branch containing the changes you want to apply. 
+Navigate your browser to https://github.com/offchainlabs/nitro and click on the new pull request button. In the “base” box on the left, leave the default selection “base main”, the branch that you want your changes to be applied to. In the “compare” box on the right, select feature-in-progress-branch, the branch containing the changes you want to apply. 
 
 **14. Respond to comments by Core Contributors.**
 
@@ -105,7 +105,7 @@ Core Contributors may ask questions and request that you make edits. If you set 
  You can do this with an interactive rebase. Start by running the following command to determine the commit that is the base of your branch...
 
 ```
-$ git merge-base feature-in-progress-branch nitro/master
+$ git merge-base feature-in-progress-branch nitro/main
 ```
 
 **16. The previous command will return a commit-hash that you should use in the following command.**
