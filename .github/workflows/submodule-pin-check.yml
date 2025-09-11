@@ -9,7 +9,7 @@ on:
   # For this reason, the pins below must be updated and merged in a separate PR
   # before the PR that changes the actual submodule pins.
   pull_request_target:
-    branches: [master]
+    branches: [master, main]
     types: [synchronize, opened, reopened]
 
 permissions:

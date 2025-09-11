@@ -7,8 +7,7 @@ on:
   merge_group:
   pull_request:
   push:
-    branches:
-      - master
+    branches: [master, main]
   schedule:
     # Run at 00:00 AM UTC
     - cron: '0 0 * * *'

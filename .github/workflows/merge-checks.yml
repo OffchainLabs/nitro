@@ -4,7 +4,7 @@ name: Merge Checks
 on:
   merge_group:
   pull_request_target:
-    branches: [master]
+    branches: [master, main]
     types: [synchronize, opened, reopened, labeled, unlabeled]
 
 permissions:

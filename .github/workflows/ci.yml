@@ -7,9 +7,7 @@ on:
   merge_group:
   pull_request:
   push:
-    branches:
-      - master
-      - develop
+    branches: [master, main]
 
 jobs:
   # --- Determine which files have changed ---
