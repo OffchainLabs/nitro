@@ -14,11 +14,23 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 )
 
+// DataStreamReceiver implements the server side of the data streaming protocol. It stays compatible with `DataStreamer`
+// client, although is able to talk to many senders at the same time.
+//
+// DataStreamReceiver is responsible only for the protocol level communication. Usually it will be wrapped within an
+// outer service that handles JSON-serialization, HTTP, listening etc.
+//
+// DataStreamReceiver has built-in support for limiting number of open protocol interactions and garbage collection for
+// the interrupted streams.
 type DataStreamReceiver struct {
 	signatureVerifier *SignatureVerifier
 	messageStore      *messageStore
 }
 
+// NewDataStreamReceiver sets up a new stream receiver. `signatureVerifier` must be compatible with message signing on
+// the `DataStreamer` sender side. `maxPendingMessages` limits how many parallel protocol instances are supported.
+// `messageCollectionExpiry` is the window in which a single message streaming must end - otherwise the protocol will
+// be closed and all related data will be removed.
 func NewDataStreamReceiver(signatureVerifier *SignatureVerifier, maxPendingMessages int, messageCollectionExpiry time.Duration) *DataStreamReceiver {
 	return &DataStreamReceiver{
 		signatureVerifier: signatureVerifier,
@@ -56,6 +68,7 @@ func (dsr *DataStreamReceiver) FinalizeReceiving(ctx context.Context, messageId 
 
 // ============= MESSAGE MANAGEMENT ================================================================================= //
 
+// MessageId is the identifier of the message being streamed (protocol invocation id).
 type MessageId uint64
 
 type partialMessage struct {
