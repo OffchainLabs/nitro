@@ -33,6 +33,11 @@ var (
 	rpcSendChunkFailureGauge = metrics.NewRegisteredGauge("arb/das/rpc/sendchunk/failure", nil)
 )
 
+const (
+	defaultMaxPendingMessages      = 10
+	defaultMessageCollectionExpiry = 1 * time.Minute
+)
+
 type DASRPCServer struct {
 	daReader        dasutil.DASReader
 	daWriter        dasutil.DASWriter
@@ -68,7 +73,7 @@ func StartDASRPCServerOnListener(ctx context.Context, listener net.Listener, rpc
 		daWriter:           daWriter,
 		daHealthChecker:    daHealthChecker,
 		signatureVerifier:  signatureVerifier,
-		dataStreamReceiver: NewDataStreamReceiver(signatureVerifier),
+		dataStreamReceiver: NewDataStreamReceiver(signatureVerifier, defaultMaxPendingMessages, defaultMessageCollectionExpiry),
 	})
 	if err != nil {
 		return nil, err

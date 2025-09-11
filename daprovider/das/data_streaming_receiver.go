@@ -19,10 +19,10 @@ type DataStreamReceiver struct {
 	messageStore      *messageStore
 }
 
-func NewDataStreamReceiver(signatureVerifier *SignatureVerifier) *DataStreamReceiver {
+func NewDataStreamReceiver(signatureVerifier *SignatureVerifier, maxPendingMessages int, messageCollectionExpiry time.Duration) *DataStreamReceiver {
 	return &DataStreamReceiver{
 		signatureVerifier: signatureVerifier,
-		messageStore:      newMessageStore(),
+		messageStore:      newMessageStore(maxPendingMessages, messageCollectionExpiry),
 	}
 }
 
@@ -58,12 +58,6 @@ func (dsr *DataStreamReceiver) FinalizeReceiving(ctx context.Context, messageId 
 
 type MessageId uint64
 
-// todo remove
-const (
-	maxPendingMessages      = 10
-	messageCollectionExpiry = 1 * time.Minute
-)
-
 type partialMessage struct {
 	mutex             sync.Mutex
 	chunks            [][]byte
@@ -75,14 +69,18 @@ type partialMessage struct {
 }
 
 type messageStore struct {
-	mutex    sync.Mutex
-	messages map[MessageId]*partialMessage
+	mutex                   sync.Mutex
+	messages                map[MessageId]*partialMessage
+	maxPendingMessages      int
+	messageCollectionExpiry time.Duration
 }
 
-func newMessageStore() *messageStore {
+func newMessageStore(maxPendingMessages int, messageCollectionExpiry time.Duration) *messageStore {
 	return &messageStore{
-		mutex:    sync.Mutex{},
-		messages: make(map[MessageId]*partialMessage),
+		mutex:                   sync.Mutex{},
+		messages:                make(map[MessageId]*partialMessage),
+		maxPendingMessages:      maxPendingMessages,
+		messageCollectionExpiry: messageCollectionExpiry,
 	}
 }
 
@@ -90,7 +88,7 @@ func (ms *messageStore) registerNewMessage(nChunks, timeout, chunkSize, totalSiz
 	ms.mutex.Lock()
 	defer ms.mutex.Unlock()
 
-	if len(ms.messages) >= maxPendingMessages {
+	if len(ms.messages) >= ms.maxPendingMessages {
 		return 0, fmt.Errorf("can't start collecting new message: already %d pending", len(ms.messages))
 	}
 
@@ -112,7 +110,7 @@ func (ms *messageStore) registerNewMessage(nChunks, timeout, chunkSize, totalSiz
 
 	// Schedule garbage collection for the old incomplete messages.
 	go func(id MessageId) {
-		<-time.After(messageCollectionExpiry)
+		<-time.After(ms.messageCollectionExpiry)
 		ms.mutex.Lock()
 		defer ms.mutex.Unlock()
 
