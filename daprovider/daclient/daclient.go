@@ -25,7 +25,7 @@ type Client struct {
 type ClientConfig struct {
 	Enable     bool                   `koanf:"enable"`
 	WithWriter bool                   `koanf:"with-writer"`
-	RPC        rpcclient.ClientConfig `koanf:"rpc" reload:"hot"`
+	RPC        rpcclient.ClientConfig `koanf:"rpc"`
 }
 
 var DefaultClientConfig = ClientConfig{
