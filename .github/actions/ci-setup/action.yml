@@ -2,13 +2,14 @@
 name: Nitro CI Setup
 description: Common setup for Nitro CI jobs
 
+inputs:
+  skip_checkout:
+    required: false
+    description: 'If true, skip the checkout step (useful when the caller already checked out)'
+    default: 'false'
+
 runs:
   using: composite
-  inputs:
-    skip_checkout:
-      required: false
-      description: 'If true, skip the checkout step (useful when the caller already checked out)'
-      default: 'false'
 
   steps:
     - name: Checkout
