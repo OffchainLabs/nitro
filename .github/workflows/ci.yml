@@ -36,6 +36,9 @@ jobs:
       - name: Install dependencies
         run: sudo apt update && sudo apt install -y wabt gotestsum
 
+      - name: ls
+        run: ls -alR ./contracts
+
       - name: Setup nodejs
         uses: actions/setup-node@v4
         with:
