@@ -16,6 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos/arbosState"
+	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
@@ -102,16 +103,32 @@ func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.Arbos
 		}
 		batchTimestamp := util.SafeMapGet[*big.Int](inputs, "batchTimestamp")
 		batchPosterAddress := util.SafeMapGet[common.Address](inputs, "batchPosterAddress")
-		batchDataGas := util.SafeMapGet[uint64](inputs, "batchDataGas")
+		batchLength := util.SafeMapGet[uint64](inputs, "batchLength")
+		batchNonZeros := util.SafeMapGet[uint64](inputs, "batchNonZeros")
+		batchExtraGas := util.SafeMapGet[uint64](inputs, "batchExtraGas")
 		l1BaseFeeWei := util.SafeMapGet[*big.Int](inputs, "l1BaseFeeWei")
+
+		gasSpent := arbostypes.LegacyCostForStats(&arbostypes.BatchDataStats{
+			Length:   batchLength,
+			NonZeros: batchNonZeros,
+		})
+		gasSpent = arbmath.SaturatingUAdd(gasSpent, batchExtraGas)
 
 		l1p := state.L1PricingState()
 		perBatchGas, err := l1p.PerBatchGasCost()
 		if err != nil {
 			log.Warn("L1Pricing PerBatchGas failed", "err", err)
 		}
-		gasSpent := arbmath.SaturatingAdd(perBatchGas, arbmath.SaturatingCast[int64](batchDataGas))
-		weiSpent := arbmath.BigMulByUint(l1BaseFeeWei, arbmath.SaturatingUCast[uint64](gasSpent))
+		gasSpent = arbmath.SaturatingUAdd(gasSpent, arbmath.SaturatingUCast[uint64](perBatchGas))
+
+		if state.ArbOSVersion() >= params.ArbosVersion_50 { // TODO: make conditional in state
+			floorGasSpent := (batchLength + batchNonZeros*3) * params.TxCostFloorPerToken
+			if floorGasSpent > gasSpent {
+				gasSpent = floorGasSpent
+			}
+		}
+
+		weiSpent := arbmath.BigMulByUint(l1BaseFeeWei, gasSpent)
 		err = l1p.UpdateForBatchPosterSpending(
 			evm.StateDB,
 			evm,

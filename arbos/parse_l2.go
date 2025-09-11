@@ -70,7 +70,7 @@ func ParseL2Transactions(msg *arbostypes.L1IncomingMessage, chainId *big.Int) (t
 		log.Debug("ignoring rollup event message")
 		return types.Transactions{}, nil
 	case arbostypes.L1MessageType_BatchPostingReport:
-		tx, err := parseBatchPostingReportMessage(bytes.NewReader(msg.L2msg), chainId, msg.BatchGasCost)
+		tx, err := parseBatchPostingReportMessage(bytes.NewReader(msg.L2msg), chainId, msg.BatchDataStats)
 		if err != nil {
 			return nil, err
 		}
@@ -369,21 +369,17 @@ func parseSubmitRetryableMessage(rd io.Reader, header *arbostypes.L1IncomingMess
 	return types.NewTx(tx), err
 }
 
-func parseBatchPostingReportMessage(rd io.Reader, chainId *big.Int, msgBatchGasCost *uint64) (*types.Transaction, error) {
+func parseBatchPostingReportMessage(rd io.Reader, chainId *big.Int, batchDataStats *arbostypes.BatchDataStats) (*types.Transaction, error) {
 	batchTimestamp, batchPosterAddr, _, batchNum, l1BaseFee, extraGas, err := arbostypes.ParseBatchPostingReportMessageFields(rd)
 	if err != nil {
 		return nil, err
 	}
-	var batchDataGas uint64
-	if msgBatchGasCost != nil {
-		batchDataGas = *msgBatchGasCost
-	} else {
+	if batchDataStats == nil {
 		return nil, errors.New("cannot compute batch gas cost")
 	}
-	batchDataGas = arbmath.SaturatingUAdd(batchDataGas, extraGas)
 
 	data, err := util.PackInternalTxDataBatchPostingReport(
-		batchTimestamp, batchPosterAddr, batchNum, batchDataGas, l1BaseFee,
+		batchTimestamp, batchPosterAddr, batchNum, batchDataStats.Length, batchDataStats.NonZeros, extraGas, l1BaseFee,
 	)
 	if err != nil {
 		return nil, err

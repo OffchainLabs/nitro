@@ -55,12 +55,20 @@ func (h L1IncomingMessageHeader) SeqNum() (uint64, error) {
 	return seqNumBig.Uint64(), nil
 }
 
+type BatchDataStats struct {
+	Length   uint64 `json:"zeros"`
+	NonZeros uint64 `json:"nonzeros"`
+}
+
 type L1IncomingMessage struct {
 	Header *L1IncomingMessageHeader `json:"header"`
 	L2msg  []byte                   `json:"l2Msg"`
 
 	// Only used for `L1MessageType_BatchPostingReport`
-	BatchGasCost *uint64 `json:"batchGasCost,omitempty" rlp:"optional"`
+	// note: the legacy field is used in json to support older clients
+	// in rlp it's used to distinguish old from new (old will load into first arg)
+	LegacyBatchGasCost *uint64         `json:"batchGasCost,omitempty" rlp:"optional"`
+	BatchDataStats     *BatchDataStats `json:"batchDataTokens,omitempty" rlp:"optional"`
 }
 
 var EmptyTestIncomingMessage = L1IncomingMessage{
@@ -145,41 +153,52 @@ func (h *L1IncomingMessageHeader) Equals(other *L1IncomingMessageHeader) bool {
 		arbmath.BigEquals(h.L1BaseFee, other.L1BaseFee)
 }
 
-func ComputeBatchGasCost(data []byte) uint64 {
-	var gas uint64
+func GetDataStats(data []byte) *BatchDataStats {
+	nonZeros := uint64(0)
 	for _, b := range data {
-		if b == 0 {
-			gas += params.TxDataZeroGas
-		} else {
-			gas += params.TxDataNonZeroGasEIP2028
+		if b != 0 {
+			nonZeros += 1
 		}
 	}
+	return &BatchDataStats{
+		Length:   uint64(len(data)),
+		NonZeros: nonZeros,
+	}
+}
 
+func LegacyCostForStats(stats *BatchDataStats) uint64 {
+	gas := params.TxDataZeroGas*(stats.Length-stats.NonZeros) + params.TxDataNonZeroGasEIP2028*stats.NonZeros
 	// the poster also pays to keccak the batch and place it and a batch-posting report into the inbox
-	keccakWords := arbmath.WordsForBytes(uint64(len(data)))
+	keccakWords := arbmath.WordsForBytes(stats.Length)
 	gas += params.Keccak256Gas + (keccakWords * params.Keccak256WordGas)
 	gas += 2 * params.SstoreSetGasEIP2200
 	return gas
 }
 
-func (msg *L1IncomingMessage) FillInBatchGasCost(batchFetcher FallibleBatchFetcher) error {
-	if batchFetcher == nil || msg.Header.Kind != L1MessageType_BatchPostingReport || msg.BatchGasCost != nil {
+func (msg *L1IncomingMessage) FillInBatchGasFields(batchFetcher FallibleBatchFetcher) error {
+	if batchFetcher == nil || msg.Header.Kind != L1MessageType_BatchPostingReport {
 		return nil
 	}
-	_, _, batchHash, batchNum, _, _, err := ParseBatchPostingReportMessageFields(bytes.NewReader(msg.L2msg))
-	if err != nil {
-		return fmt.Errorf("failed to parse batch posting report: %w", err)
+	if msg.BatchDataStats != nil && msg.LegacyBatchGasCost != nil {
+		return nil
 	}
-	batchData, err := batchFetcher(batchNum)
-	if err != nil {
-		return fmt.Errorf("failed to fetch batch mentioned by batch posting report: %w", err)
+	if msg.BatchDataStats == nil {
+		_, _, batchHash, batchNum, _, _, err := ParseBatchPostingReportMessageFields(bytes.NewReader(msg.L2msg))
+		if err != nil {
+			return fmt.Errorf("failed to parse batch posting report: %w", err)
+		}
+		batchData, err := batchFetcher(batchNum)
+		if err != nil {
+			return fmt.Errorf("failed to fetch batch mentioned by batch posting report: %w", err)
+		}
+		gotHash := crypto.Keccak256Hash(batchData)
+		if gotHash != batchHash {
+			return fmt.Errorf("batch fetcher returned incorrect data hash %v (wanted %v for batch %v)", gotHash, batchHash, batchNum)
+		}
+		msg.BatchDataStats = GetDataStats(batchData)
 	}
-	gotHash := crypto.Keccak256Hash(batchData)
-	if gotHash != batchHash {
-		return fmt.Errorf("batch fetcher returned incorrect data hash %v (wanted %v for batch %v)", gotHash, batchHash, batchNum)
-	}
-	gas := ComputeBatchGasCost(batchData)
-	msg.BatchGasCost = &gas
+	legacyCost := LegacyCostForStats(msg.BatchDataStats)
+	msg.LegacyBatchGasCost = &legacyCost
 	return nil
 }
 
@@ -243,8 +262,9 @@ func ParseIncomingL1Message(rd io.Reader, batchFetcher FallibleBatchFetcher) (*L
 		},
 		data,
 		nil,
+		nil,
 	}
-	err = msg.FillInBatchGasCost(batchFetcher)
+	err = msg.FillInBatchGasFields(batchFetcher)
 	if err != nil {
 		return nil, err
 	}
