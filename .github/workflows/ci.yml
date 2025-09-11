@@ -189,6 +189,12 @@ jobs:
           echo "GOGC=80" >> "$GITHUB_ENV"
           echo "GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }}" >> "$GITHUB_ENV"
 
+      - name: Build
+        run: make build test-go-deps -j8
+
+      - name: Build all lint dependencies
+        run: make -j8 build-node-deps
+
       - name: run tests without race detection and path state scheme
         if: matrix.test-mode == 'pathdb'
         run: >-
