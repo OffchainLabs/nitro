@@ -68,3 +68,44 @@ func TestEventProducer_Start(t *testing.T) {
 		t.Error("Expected to end after context cancellation")
 	}
 }
+
+func TestRemovalUsesStableId(t *testing.T) {
+    // This test ensures that removing subscriptions uses stable IDs rather than slice indices.
+    // Before the fix, deleting two subscriptions by their IDs 0 and 1 would incorrectly
+    // remove the first (index 0) and the third (now at index 1 after compaction), leaving
+    // the second subscription in place instead of the third.
+    ctx, cancel := context.WithCancel(context.Background())
+    defer cancel()
+
+    producer := NewProducer[int]()
+    go producer.Start(ctx)
+
+    s0 := producer.Subscribe()
+    s1 := producer.Subscribe()
+    s2 := producer.Subscribe()
+
+    // Cancel first two subscriptions; they will send their IDs to doneListener via Next.
+    for _, s := range []*Subscription[int]{s0, s1} {
+        c, cancelSub := context.WithCancel(context.Background())
+        cancelSub()
+        _, shouldEnd := s.Next(c)
+        require.True(t, shouldEnd)
+    }
+
+    // Wait until the producer processes removal and only one subscription remains.
+    deadline := time.Now().Add(2 * time.Second)
+    for {
+        producer.RLock()
+        remaining := len(producer.subs)
+        producer.RUnlock()
+        if remaining == 1 || time.Now().After(deadline) {
+            break
+        }
+        time.Sleep(5 * time.Millisecond)
+    }
+
+    producer.RLock()
+    require.Equal(t, 1, len(producer.subs))
+    require.Same(t, s2, producer.subs[0])
+    producer.RUnlock()
+}
