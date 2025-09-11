@@ -35,7 +35,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
         with:
-          submodules: true
+          submodules: recursive
           
       - name: Install dependencies
         run: sudo apt update && sudo apt install -y wabt gotestsum
@@ -188,7 +188,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
         with:
-          submodules: true
+          submodules: recursive
           fetch-depth: 10           // Will cover most PRs
           persist-credentials: true // In case changed-files requires deeper depth
           
