@@ -147,7 +147,7 @@ func (ms *messageStore) addNewChunk(id MessageId, chunkId uint64, chunk []byte) 
 	}
 
 	// Validate chunk size
-	chunkLen := uint64(len(message.chunks))
+	chunkLen := uint64(len(chunk))
 	if chunkId+1 == uint64(len(message.chunks)) {
 		expectedLen := message.expectedTotalSize % message.expectedChunkSize
 		if chunkLen != expectedLen {

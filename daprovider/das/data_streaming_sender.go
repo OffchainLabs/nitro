@@ -106,7 +106,7 @@ func (ds *DataStreamer) startStream(ctx context.Context, startReqSig []byte, par
 		hexutil.Uint64(params.dataLen),
 		hexutil.Uint64(params.timeout),
 		hexutil.Bytes(startReqSig))
-	return startChunkedStoreResult.BatchId, err
+	return startChunkedStoreResult.MessageId, err
 }
 
 func (ds *DataStreamer) doStream(ctx context.Context, data []byte, batchId hexutil.Uint64, params streamParams) error {

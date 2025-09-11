@@ -40,7 +40,7 @@ type DASRPCServer struct {
 
 	signatureVerifier *SignatureVerifier
 
-	batches *messageStore
+	dataStreamReceiver *DataStreamReceiver
 }
 
 func StartDASRPCServer(ctx context.Context, addr string, portNum uint64, rpcServerTimeouts genericconf.HTTPServerTimeoutConfig, rpcServerBodyLimit int, daReader dasutil.DASReader, daWriter dasutil.DASWriter, daHealthChecker DataAvailabilityServiceHealthChecker, signatureVerifier *SignatureVerifier) (*http.Server, error) {
@@ -64,11 +64,11 @@ func StartDASRPCServerOnListener(ctx context.Context, listener net.Listener, rpc
 	}
 
 	err := rpcServer.RegisterName("das", &DASRPCServer{
-		daReader:          daReader,
-		daWriter:          daWriter,
-		daHealthChecker:   daHealthChecker,
-		signatureVerifier: signatureVerifier,
-		batches:           newMessageStore(),
+		daReader:           daReader,
+		daWriter:           daWriter,
+		daHealthChecker:    daHealthChecker,
+		signatureVerifier:  signatureVerifier,
+		dataStreamReceiver: NewDataStreamReceiver(signatureVerifier),
 	})
 	if err != nil {
 		return nil, err
@@ -145,38 +145,36 @@ var (
 	legacyDASStoreAPIOnly = false
 )
 
-func (s *DASRPCServer) StartChunkedStore(ctx context.Context, timestamp, nChunks, chunkSize, totalSize, timeout hexutil.Uint64, sig hexutil.Bytes) (*StartReceivingResult, error) {
+type StartChunkedStoreResult struct {
+	MessageId hexutil.Uint64 `json:"messageId,omitempty"`
+}
+
+type SendChunkResult struct {
+	Ok hexutil.Uint64 `json:"sendChunkResult,omitempty"`
+}
+
+func (s *DASRPCServer) StartChunkedStore(ctx context.Context, timestamp, nChunks, chunkSize, totalSize, timeout hexutil.Uint64, sig hexutil.Bytes) (*StartChunkedStoreResult, error) {
 	rpcStoreRequestGauge.Inc(1)
 	failed := true
 	defer func() {
 		if failed {
 			rpcStoreFailureGauge.Inc(1)
-		} // success gague will be incremented on successful commit
+		} // success gauge will be incremented on successful commit
 	}()
 
-	if err := s.signatureVerifier.verify(ctx, []byte{}, sig, uint64(timestamp), uint64(nChunks), uint64(chunkSize), uint64(totalSize), uint64(timeout)); err != nil {
-		return nil, err
-	}
-
-	// Prevent replay of old messages
-	// #nosec G115
-	if time.Since(time.Unix(int64(timestamp), 0)).Abs() > time.Minute {
-		return nil, errors.New("too much time has elapsed since request was signed")
-	}
-
-	id, err := s.batches.assign(uint64(nChunks), uint64(timeout), uint64(chunkSize), uint64(totalSize))
+	id, err := s.dataStreamReceiver.StartReceiving(ctx, uint64(timestamp), uint64(nChunks), uint64(chunkSize), uint64(totalSize), uint64(timeout), sig)
 	if err != nil {
 		return nil, err
 	}
 
 	failed = false
 	return &StartChunkedStoreResult{
-		BatchId: hexutil.Uint64(id),
+		MessageId: hexutil.Uint64(id),
 	}, nil
 
 }
 
-func (s *DASRPCServer) SendChunk(ctx context.Context, batchId, chunkId hexutil.Uint64, message hexutil.Bytes, sig hexutil.Bytes) error {
+func (s *DASRPCServer) SendChunk(ctx context.Context, messageId, chunkId hexutil.Uint64, chunk hexutil.Bytes, sig hexutil.Bytes) error {
 	success := false
 	defer func() {
 		if success {
@@ -186,11 +184,7 @@ func (s *DASRPCServer) SendChunk(ctx context.Context, batchId, chunkId hexutil.U
 		}
 	}()
 
-	if err := s.signatureVerifier.verify(ctx, message, sig, uint64(batchId), uint64(chunkId)); err != nil {
-		return err
-	}
-
-	if err := s.batches.add(uint64(batchId), uint64(chunkId), message); err != nil {
+	if err := s.dataStreamReceiver.ReceiveChunk(ctx, MessageId(messageId), uint64(chunkId), chunk, sig); err != nil {
 		return err
 	}
 
@@ -198,12 +192,8 @@ func (s *DASRPCServer) SendChunk(ctx context.Context, batchId, chunkId hexutil.U
 	return nil
 }
 
-func (s *DASRPCServer) CommitChunkedStore(ctx context.Context, batchId hexutil.Uint64, sig hexutil.Bytes) (*StoreResult, error) {
-	if err := s.signatureVerifier.verify(ctx, []byte{}, sig, uint64(batchId)); err != nil {
-		return nil, err
-	}
-
-	message, timeout, startTime, err := s.batches.close(uint64(batchId))
+func (s *DASRPCServer) CommitChunkedStore(ctx context.Context, messageId hexutil.Uint64, sig hexutil.Bytes) (*StoreResult, error) {
+	message, timeout, startTime, err := s.dataStreamReceiver.FinalizeReceiving(ctx, MessageId(messageId), sig)
 	if err != nil {
 		return nil, err
 	}
