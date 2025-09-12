@@ -45,7 +45,6 @@ func TestL3ChallengeProtocolBOLD(t *testing.T) {
 	builder.nodeConfig.BlockValidator.Enable = true
 	builder.nodeConfig.Staker.Enable = true
 	builder.nodeConfig.Staker.Strategy = "MakeNodes"
-	builder.nodeConfig.Bold.Strategy = "MakeNodes"
 	builder.nodeConfig.Bold.RPCBlockNumber = "latest"
 	builder.nodeConfig.Bold.StateProviderConfig.CheckBatchFinality = false
 	builder.nodeConfig.Bold.StateProviderConfig.ValidatorName = "L2-validator"
@@ -59,7 +58,6 @@ func TestL3ChallengeProtocolBOLD(t *testing.T) {
 	builder.l3Config.nodeConfig.Staker.Enable = true
 	builder.l3Config.nodeConfig.BlockValidator.Enable = true
 	builder.l3Config.nodeConfig.Staker.Strategy = "MakeNodes"
-	builder.l3Config.nodeConfig.Bold.Strategy = "MakeNodes"
 	builder.l3Config.nodeConfig.Bold.RPCBlockNumber = "latest"
 	builder.l3Config.nodeConfig.Bold.StateProviderConfig.CheckBatchFinality = false
 	builder.l3Config.nodeConfig.Bold.StateProviderConfig.ValidatorName = "L3-validator"
@@ -72,7 +70,6 @@ func TestL3ChallengeProtocolBOLD(t *testing.T) {
 	secondNodeNodeConfig.BlockValidator.Enable = true
 	secondNodeNodeConfig.Staker.Enable = true
 	secondNodeNodeConfig.Staker.Strategy = "Watchtower"
-	secondNodeNodeConfig.Bold.Strategy = "Watchtower"
 	secondNodeNodeConfig.Bold.StateProviderConfig.CheckBatchFinality = false
 	secondNodeNodeConfig.Bold.StateProviderConfig.ValidatorName = "Second-L2-validator"
 	secondNodeNodeConfig.Bold.RPCBlockNumber = "latest"
