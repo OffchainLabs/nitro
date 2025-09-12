@@ -22,6 +22,7 @@ type Producer[T any] struct {
 	subs                   []*Subscription[T]
 	doneListener           chan subId    // channel to listen for IDs of subscriptions to be remove.
 	broadcastTimeout       time.Duration // maximum duration to wait for an event to be sent.
+	nextId                 subId         // monotonically increasing id for stable subscription identification
 }
 
 type ProducerOpt[T any] func(*Producer[T])
@@ -60,13 +61,17 @@ func (ep *Producer[T]) Start(ctx context.Context) {
 		select {
 		case id := <-ep.doneListener:
 			ep.Lock()
-			// Check if id overflows the length of the slice.
-			if int(id) >= len(ep.subs) {
-				ep.Unlock()
-				continue
+			// Find the subscription by stable id and remove it if present.
+			idx := -1
+			for i, s := range ep.subs {
+				if s.id == id {
+					idx = i
+					break
+				}
 			}
-			// Otherwise, clear the subscription from the list.
-			ep.subs = append(ep.subs[:id], ep.subs[id+1:]...)
+			if idx >= 0 {
+				ep.subs = append(ep.subs[:idx], ep.subs[idx+1:]...)
+			}
 			ep.Unlock()
 		case <-ctx.Done():
 			close(ep.doneListener)
@@ -82,10 +87,11 @@ func (ep *Producer[T]) Subscribe() *Subscription[T] {
 	ep.Lock()
 	defer ep.Unlock()
 	sub := &Subscription[T]{
-		id:     subId(len(ep.subs)), // Assign a unique ID based on the current count of subscriptions
+		id:     ep.nextId, // Assign a stable, monotonically increasing ID
 		events: make(chan T),
 		done:   ep.doneListener,
 	}
+	ep.nextId++
 	ep.subs = append(ep.subs, sub)
 	return sub
 }
