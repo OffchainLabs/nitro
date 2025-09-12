@@ -170,7 +170,7 @@ func (con ArbRetryableTx) Keepalive(c ctx, evm mech, ticketId bytes32) (huge, er
 
 	currentTime := evm.Context.Time
 	window := currentTime + retryables.RetryableLifetimeSeconds
-	newTimeout, err := retryableState.Keepalive(ticketId, currentTime, window, retryables.RetryableLifetimeSeconds)
+	newTimeout, err := retryableState.Keepalive(ticketId, currentTime, window)
 	if err != nil {
 		return big.NewInt(0), err
 	}

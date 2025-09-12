@@ -87,7 +87,7 @@ func TestRetryableLifecycle(t *testing.T) {
 	setTime((timestampAtCreation + timeoutAtCreation) / 2)
 	for _, id := range ids {
 		window := currentTime + lifetime
-		newTimeout, err := retryableState.Keepalive(id, currentTime, window, lifetime)
+		newTimeout, err := retryableState.Keepalive(id, currentTime, window)
 		Require(t, err, "failed to extend the retryable's lifetime")
 		proveReapingDoesNothing()
 		if newTimeout != timeoutAtCreation+lifetime {
@@ -95,7 +95,7 @@ func TestRetryableLifecycle(t *testing.T) {
 		}
 
 		// prove we need to wait before keepalive can succeed again
-		_, err = retryableState.Keepalive(id, currentTime, window, lifetime)
+		_, err = retryableState.Keepalive(id, currentTime, window)
 		if err == nil {
 			Fail(t, "keepalive should have failed")
 		}
