@@ -28,6 +28,8 @@ func blsPubToBase64(pubkey *blsSignatures.PublicKey) string {
 	return string(encodedPubkey)
 }
 
+const sendChunkJSONBoilerplate = "{\"jsonrpc\":\"2.0\",\"id\":4294967295,\"method\":\"das_sendChunked\",\"params\":[\"\"]}"
+
 func testRpcImpl(t *testing.T, size, times int, concurrent bool) {
 	// enableLogging()
 
