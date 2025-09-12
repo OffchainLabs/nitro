@@ -86,7 +86,7 @@ func (e *EvilDAProvider) RecoverPayloadFromBatch(
 	validateSeqMsg bool,
 ) ([]byte, daprovider.PreimagesMap, error) {
 	// Check if this is a CustomDA message and extract certificate
-	if len(sequencerMsg) > 40 && daprovider.IsCustomDAMessageHeaderByte(sequencerMsg[40]) {
+	if len(sequencerMsg) > 40 && daprovider.IsDACertificateMessageHeaderByte(sequencerMsg[40]) {
 		certificate := sequencerMsg[40:]
 
 		// Check if we're supposed to claim this certificate is invalid
@@ -135,7 +135,7 @@ func (e *EvilDAProvider) RecoverPayloadFromBatch(
 					preimageRecorder := daprovider.RecordPreimagesTo(preimages)
 					// Use keccak256 of certificate for preimage recording
 					certKeccak := crypto.Keccak256Hash(certificate)
-					preimageRecorder(certKeccak, evilData, arbutil.CustomDAPreimageType)
+					preimageRecorder(certKeccak, evilData, arbutil.DACertificatePreimageType)
 				}
 
 				log.Info("EvilDAProvider returning evil data",
@@ -160,7 +160,7 @@ func (e *EvilDAProvider) GenerateProof(
 	offset uint64,
 	certificate []byte,
 ) ([]byte, error) {
-	if preimageType != arbutil.CustomDAPreimageType {
+	if preimageType != arbutil.DACertificatePreimageType {
 		return e.validator.GenerateProof(ctx, preimageType, certHash, offset, certificate)
 	}
 
