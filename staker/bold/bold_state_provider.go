@@ -20,7 +20,7 @@ import (
 	"github.com/offchainlabs/nitro/bold/containers/option"
 	l2stateprovider "github.com/offchainlabs/nitro/bold/layer2-state-provider"
 	"github.com/offchainlabs/nitro/bold/state-commitments/history"
-	"github.com/offchainlabs/nitro/execution"
+	"github.com/offchainlabs/nitro/consensus"
 	"github.com/offchainlabs/nitro/staker"
 	challengecache "github.com/offchainlabs/nitro/staker/challenge-cache"
 	"github.com/offchainlabs/nitro/validator"
@@ -216,7 +216,7 @@ func (s *BOLDStateProvider) StatesInBatchRange(
 		if ctx.Err() != nil {
 			return nil, nil, ctx.Err()
 		}
-		executionResult := &execution.MessageResult{}
+		executionResult := &consensus.MessageResult{}
 		if pos > 0 {
 			executionResult, err = s.inboxStreamer.ResultAtMessageIndex(pos - 1)
 			if err != nil {
@@ -279,7 +279,7 @@ func (s *BOLDStateProvider) findGlobalStateFromMessageCountAndBatch(count arbuti
 			return validator.GoGlobalState{}, fmt.Errorf("message count %v is past end of batch %v message count %v", count, batchIndex, batchMsgCount)
 		}
 	}
-	res := &execution.MessageResult{}
+	res := &consensus.MessageResult{}
 	if count > 0 {
 		res, err = s.inboxStreamer.ResultAtMessageIndex(count - 1)
 		if err != nil {
@@ -440,7 +440,7 @@ func (s *BOLDStateProvider) virtualState(msgNum arbutil.MessageIndex, limit l2st
 		return gs, fmt.Errorf("could not get limitMsgCount at %d: %w", limit, err)
 	}
 	if msgNum >= limitMsgCount {
-		result := &execution.MessageResult{}
+		result := &consensus.MessageResult{}
 		if limitMsgCount > 0 {
 			result, err = s.inboxStreamer.ResultAtMessageIndex(limitMsgCount - 1)
 			if err != nil {
