@@ -157,6 +157,7 @@ type batch struct {
 	expectedChunkSize, expectedSize uint64
 	timeout                         uint64
 	startTime                       time.Time
+	mutex                           sync.Mutex
 }
 
 const (
@@ -222,6 +223,9 @@ func (b *batchBuilder) add(id, idx uint64, data []byte) error {
 		return fmt.Errorf("unknown batch(%d)", id)
 	}
 
+	batch.mutex.Lock()
+	defer batch.mutex.Unlock()
+
 	if idx >= uint64(len(batch.chunks)) {
 		return fmt.Errorf("batch(%d): chunk(%d) out of range", id, idx)
 	}
@@ -247,6 +251,9 @@ func (b *batchBuilder) close(id uint64) ([]byte, uint64, time.Time, error) {
 	if !ok {
 		return nil, 0, time.Time{}, fmt.Errorf("unknown batch(%d)", id)
 	}
+
+	batch.mutex.Lock()
+	defer batch.mutex.Unlock()
 
 	if batch.expectedChunks != batch.seenChunks.Load() {
 		return nil, 0, time.Time{}, fmt.Errorf("incomplete batch(%d): got %d/%d chunks", id, batch.seenChunks.Load(), batch.expectedChunks)
