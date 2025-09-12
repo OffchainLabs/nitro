@@ -105,6 +105,14 @@ func (c *Client) RecoverPayloadFromBatch(
 	return recoverPayloadFromBatchResult.Payload, recoverPayloadFromBatchResult.Preimages, nil
 }
 
+type StartChunkedStoreResult struct {
+	MessageId hexutil.Uint64 `json:"messageId,omitempty"`
+}
+
+type SendChunkResult struct {
+	Ok hexutil.Uint64 `json:"sendChunkResult,omitempty"`
+}
+
 // StoreResult is the result struct that data availability providers should use to respond with a commitment to a Store request for posting batch data to their DA service
 type StoreResult struct {
 	SerializedDACert hexutil.Bytes `json:"serialized-da-cert,omitempty"`
