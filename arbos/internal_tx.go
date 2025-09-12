@@ -121,8 +121,12 @@ func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.Arbos
 		}
 		gasSpent = arbmath.SaturatingUAdd(gasSpent, arbmath.SaturatingUCast[uint64](perBatchGas))
 
-		if state.ArbOSVersion() >= params.ArbosVersion_50 { // TODO: make conditional in state
-			floorGasSpent := (batchLength + batchNonZeros*3) * params.TxCostFloorPerToken
+		if state.ArbOSVersion() >= params.ArbosVersion_50 {
+			gasFloorPerToken, err := l1p.ParentGasFloorPerToken()
+			if err != nil {
+				log.Warn("failed reading gasFloorPerToken", "err", err)
+			}
+			floorGasSpent := gasFloorPerToken * (batchLength + batchNonZeros*3)
 			if floorGasSpent > gasSpent {
 				gasSpent = floorGasSpent
 			}
