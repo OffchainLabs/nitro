@@ -322,8 +322,8 @@ func (s *BOLDStateProvider) L2MessageStatesUpTo(
 func (s *BOLDStateProvider) CollectMachineHashes(
 	ctx context.Context, cfg *l2stateprovider.HashCollectorConfig,
 ) ([]common.Hash, error) {
-	s.Lock()
-	defer s.Unlock()
+	s.RLock()
+	defer s.RUnlock()
 	batchLimit := cfg.AssertionMetadata.BatchLimit
 	messageNum, err := s.messageNum(cfg.AssertionMetadata, cfg.BlockChallengeHeight)
 	if err != nil {
