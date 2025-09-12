@@ -32,6 +32,7 @@ var (
 	rpcClientSendChunkFailureGauge = metrics.NewRegisteredGauge("arb/das/rpcclient/sendchunk/failure", nil)
 )
 
+// lint:require-exhaustive-initialization
 type DASRPCClient struct { // implements DataAvailabilityService
 	clnt         *rpc.Client
 	url          string
@@ -55,7 +56,12 @@ func NewDASRPCClient(target string, signer signature.DataSignerFunc, maxStoreChu
 
 	var dataStreamer *DataStreamer
 	if enableChunkedStore {
-		dataStreamer, err = NewDataStreamer(target, maxStoreChunkBodySize, signer)
+		rpcMethods := DataStreamingRPCMethods{
+			startReceiving:    "das_startChunkedStore",
+			receiveChunk:      "das_sendChunk",
+			finalizeReceiving: "das_commitChunkedStore",
+		}
+		dataStreamer, err = NewDataStreamer(target, maxStoreChunkBodySize, signer, rpcMethods)
 		if err != nil {
 			return nil, err
 		}
