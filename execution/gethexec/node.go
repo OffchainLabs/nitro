@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/big"
 	"reflect"
 	"sort"
 	"sync/atomic"
@@ -125,6 +126,7 @@ type Config struct {
 	BlockMetadataApiCacheSize   uint64              `koanf:"block-metadata-api-cache-size"`
 	BlockMetadataApiBlocksLimit uint64              `koanf:"block-metadata-api-blocks-limit"`
 	VmTrace                     LiveTracingConfig   `koanf:"vmtrace"`
+	ExposeMultiGas              bool                `koanf:"expose-multi-gas"`
 
 	forwardingTarget string
 }
@@ -172,6 +174,7 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet) {
 	StylusTargetConfigAddOptions(prefix+".stylus-target", f)
 	f.Uint64(prefix+".block-metadata-api-cache-size", ConfigDefault.BlockMetadataApiCacheSize, "size (in bytes) of lru cache storing the blockMetadata to service arb_getRawBlockMetadata")
 	f.Uint64(prefix+".block-metadata-api-blocks-limit", ConfigDefault.BlockMetadataApiBlocksLimit, "maximum number of blocks allowed to be queried for blockMetadata per arb_getRawBlockMetadata query. Enabled by default, set 0 to disable the limit")
+	f.Bool(prefix+".expose-multi-gas", false, "experimental: expose multi-dimensional gas in transaction receipts")
 	LiveTracingConfigAddOptions(prefix+".vmtrace", f)
 }
 
@@ -191,21 +194,23 @@ func LiveTracingConfigAddOptions(prefix string, f *flag.FlagSet) {
 }
 
 var ConfigDefault = Config{
-	RPC:                         arbitrum.DefaultConfig,
-	TxIndexer:                   DefaultTxIndexerConfig,
-	Sequencer:                   DefaultSequencerConfig,
-	ParentChainReader:           headerreader.DefaultConfig,
-	RecordingDatabase:           DefaultBlockRecorderConfig,
-	ForwardingTarget:            "",
-	SecondaryForwardingTarget:   []string{},
-	TxPreChecker:                DefaultTxPreCheckerConfig,
-	Caching:                     DefaultCachingConfig,
-	Forwarder:                   DefaultNodeForwarderConfig,
+	RPC:                       arbitrum.DefaultConfig,
+	TxIndexer:                 DefaultTxIndexerConfig,
+	Sequencer:                 DefaultSequencerConfig,
+	ParentChainReader:         headerreader.DefaultConfig,
+	RecordingDatabase:         DefaultBlockRecorderConfig,
+	ForwardingTarget:          "",
+	SecondaryForwardingTarget: []string{},
+	TxPreChecker:              DefaultTxPreCheckerConfig,
+	Caching:                   DefaultCachingConfig,
+	Forwarder:                 DefaultNodeForwarderConfig,
+
 	EnablePrefetchBlock:         true,
 	StylusTarget:                DefaultStylusTargetConfig,
 	BlockMetadataApiCacheSize:   100 * 1024 * 1024,
 	BlockMetadataApiBlocksLimit: 100,
 	VmTrace:                     DefaultLiveTracingConfig,
+	ExposeMultiGas:              false,
 }
 
 type ConfigFetcher func() *Config
@@ -236,10 +241,11 @@ func CreateExecutionNode(
 	l2BlockChain *core.BlockChain,
 	l1client *ethclient.Client,
 	configFetcher ConfigFetcher,
+	parentChainID *big.Int,
 	syncTillBlock uint64,
 ) (*ExecutionNode, error) {
 	config := configFetcher()
-	execEngine, err := NewExecutionEngine(l2BlockChain, syncTillBlock)
+	execEngine, err := NewExecutionEngine(l2BlockChain, syncTillBlock, config.ExposeMultiGas)
 	if config.EnablePrefetchBlock {
 		execEngine.EnablePrefetchBlock()
 	}
@@ -266,7 +272,7 @@ func CreateExecutionNode(
 
 	if config.Sequencer.Enable {
 		seqConfigFetcher := func() *SequencerConfig { return &configFetcher().Sequencer }
-		sequencer, err = NewSequencer(execEngine, parentChainReader, seqConfigFetcher)
+		sequencer, err = NewSequencer(execEngine, parentChainReader, seqConfigFetcher, parentChainID)
 		if err != nil {
 			return nil, err
 		}
@@ -489,8 +495,9 @@ func (n *ExecutionNode) RecordBlockCreation(
 	ctx context.Context,
 	pos arbutil.MessageIndex,
 	msg *arbostypes.MessageWithMetadata,
+	wasmTargets []rawdb.WasmTarget,
 ) (*execution.RecordResult, error) {
-	return n.Recorder.RecordBlockCreation(ctx, pos, msg)
+	return n.Recorder.RecordBlockCreation(ctx, pos, msg, wasmTargets)
 }
 func (n *ExecutionNode) MarkValid(pos arbutil.MessageIndex, resultHash common.Hash) {
 	n.Recorder.MarkValid(pos, resultHash)

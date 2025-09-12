@@ -18,12 +18,12 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 
-	"github.com/offchainlabs/bold/api"
-	"github.com/offchainlabs/bold/api/db"
-	protocol "github.com/offchainlabs/bold/chain-abstraction"
-	watcher "github.com/offchainlabs/bold/challenge-manager/chain-watcher"
-	edgetracker "github.com/offchainlabs/bold/challenge-manager/edge-tracker"
-	"github.com/offchainlabs/bold/containers/option"
+	"github.com/offchainlabs/nitro/bold/api"
+	"github.com/offchainlabs/nitro/bold/api/db"
+	protocol "github.com/offchainlabs/nitro/bold/chain-abstraction"
+	watcher "github.com/offchainlabs/nitro/bold/challenge-manager/chain-watcher"
+	edgetracker "github.com/offchainlabs/nitro/bold/challenge-manager/edge-tracker"
+	"github.com/offchainlabs/nitro/bold/containers/option"
 )
 
 type BusinessLogicProvider interface {
@@ -116,29 +116,29 @@ func (b *Backend) GetCollectMachineHashes(ctx context.Context, opts ...db.Collec
 		o(query)
 	}
 	collectMachineHashes, err := b.db.GetCollectMachineHashes(opts...)
+	if err != nil {
+		return nil, err
+	}
 	for _, cmh := range collectMachineHashes {
 		if cmh.RawStepHeights != "" {
 			stepHeightsStr := strings.Split(cmh.RawStepHeights, ",")
-			stepHeights := make([]uint64, len(stepHeightsStr))
-			for i, stepHeightStr := range stepHeightsStr {
-				stepHeight := 0
+			stepHeights := make([]uint64, 0, len(stepHeightsStr))
+			for _, stepHeightStr := range stepHeightsStr {
 				if stepHeightStr == "" {
 					continue
 				}
-				stepHeight, err = strconv.Atoi(stepHeightStr)
+				stepHeight, err := strconv.Atoi(stepHeightStr)
 				if err != nil {
 					return nil, fmt.Errorf("could not parse step height %s: %w", stepHeightStr, err)
 				}
-				stepHeights[i], err = safecast.ToUint64(stepHeight)
+				stepHeightUint64, err := safecast.ToUint64(stepHeight)
 				if err != nil {
 					return nil, fmt.Errorf("could not cast step height %d to uint64: %w", stepHeight, err)
 				}
+				stepHeights = append(stepHeights, stepHeightUint64)
 			}
 			cmh.StepHeights = stepHeights
 		}
-	}
-	if err != nil {
-		return nil, err
 	}
 	return collectMachineHashes, nil
 }

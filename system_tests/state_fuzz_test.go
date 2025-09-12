@@ -66,7 +66,7 @@ func BuildBlock(
 	}
 
 	block, _, err := arbos.ProduceBlock(
-		l1Message, delayedMessagesRead, lastBlockHeader, statedb, chainContext, false, runCtx,
+		l1Message, delayedMessagesRead, lastBlockHeader, statedb, chainContext, false, runCtx, false,
 	)
 	return block, err
 }
@@ -152,10 +152,10 @@ func FuzzStateTransition(f *testing.F) {
 			ChainConfig:           chainConfig,
 			SerializedChainConfig: serializedChainConfig,
 		}
-		cacheConfig := core.DefaultCacheConfigWithScheme(env.GetTestStateScheme())
+		options := core.DefaultConfig().WithStateScheme(env.GetTestStateScheme())
 		stateRoot, err := arbosState.InitializeArbosInDatabase(
 			chainDb,
-			cacheConfig,
+			options,
 			statetransfer.NewMemoryInitDataReader(&statetransfer.ArbosInitializationInfo{}),
 			chainConfig,
 			nil,
@@ -166,7 +166,7 @@ func FuzzStateTransition(f *testing.F) {
 		if err != nil {
 			panic(err)
 		}
-		trieDBConfig := cacheConfig.TriedbConfig()
+		trieDBConfig := options.TriedbConfig()
 		statedb, err := state.New(stateRoot, state.NewDatabase(triedb.NewDatabase(chainDb, trieDBConfig), nil))
 		if err != nil {
 			panic(err)

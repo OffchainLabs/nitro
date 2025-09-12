@@ -27,15 +27,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        test-mode: [race, legacychallenge, long, challenge, l3challenge]
+        test-mode: [race, legacychallenge, long, challenge, l3challenge, execution-spec-tests]
 
     if: github.event_name == 'workflow_dispatch' || (github.event_name == 'schedule' && github.ref == 'refs/heads/master')
     
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
-          submodules: true
+          submodules: recursive
           
       - name: Install dependencies
         run: sudo apt update && sudo apt install -y wabt gotestsum
@@ -50,40 +50,22 @@ jobs:
       - name: Install go
         uses: actions/setup-go@v5
         with:
-          go-version: 1.23.x
+          go-version: 1.24.x
 
       - name: Install wasm-ld
         run: |
           sudo apt-get update && sudo apt-get install -y lld-14
           sudo ln -s /usr/bin/wasm-ld-14 /usr/local/bin/wasm-ld
 
-      - name: Install rust stable
-        uses: dtolnay/rust-toolchain@stable
+      - name: Install rust
         id: install-rust
-        with:
-          toolchain: '1.84.1'
-          targets: 'wasm32-wasip1, wasm32-unknown-unknown'
-          components: 'llvm-tools-preview, rustfmt, clippy'
-
-      - name: Install rust nightly
-        uses: dtolnay/rust-toolchain@nightly
-        id: install-rust-nightly
-        with:
-          toolchain: 'nightly-2025-02-14'
-          targets: 'wasm32-wasip1, wasm32-unknown-unknown'
-          components: 'rust-src, rustfmt, clippy'
-
-      - name: Set STYLUS_NIGHTLY_VER environment variable
-        run: echo "STYLUS_NIGHTLY_VER=+$(rustup toolchain list | grep '^nightly' | head -n1 | cut -d' ' -f1)" >> "$GITHUB_ENV"
-
-      - name: Get Rust version
-        id: rust-version
-        run: echo "version=$(rustc --version | cut -d' ' -f2)" >> $GITHUB_OUTPUT
+        uses: ./.github/actions/install-rust
 
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
         with:
           cache: false
+          version: v1.0.0
         
       - name: Install cbindgen
         run: cargo install --force cbindgen
@@ -106,8 +88,8 @@ jobs:
             arbitrator/wasm-libraries/soft-float/
             target/etc/initial-machine-cache/
             /home/runner/.rustup/toolchains/
-          key: ${{ runner.os }}-cargo-${{ steps.rust-version.outputs.version }}-min-${{ hashFiles('arbitrator/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-${{ steps.rust-version.outputs.version }}-
+          key: ${{ runner.os }}-cargo-${{ steps.install-rust.outputs.version }}-min-${{ hashFiles('arbitrator/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-${{ steps.install-rust.outputs.version }}-
 
       - name: Cache cbrotli
         uses: actions/cache@v4
@@ -119,7 +101,7 @@ jobs:
             target/lib/libbrotlicommon-static.a
             target/lib/libbrotlienc-static.a
             target/lib/libbrotlidec-static.a
-          key: ${{ runner.os }}-brotli-${{ hashFiles('scripts/build-brotli.sh') }}-${{ hashFiles('.github/workflows/arbitrator-ci.yaml') }}
+          key: ${{ runner.os }}-brotli-${{ hashFiles('scripts/build-brotli.sh') }}-${{ hashFiles('.github/workflows/arbitrator-ci.yml') }}
 
       - name: Build cbrotli-local
         run: ./scripts/build-brotli.sh -l
@@ -174,6 +156,10 @@ jobs:
         if: matrix.test-mode == 'long'
         run: ${{ github.workspace }}/.github/workflows/gotestsum.sh --tags stylustest --run TestProgramLong --timeout 60m --cover
 
+      - name: run execution spec tests
+        if: matrix.test-mode == 'execution-spec-tests'
+        run: ${{ github.workspace }}/.github/workflows/runExecutionSpecTests.sh 
+
       - name: Archive detailed run log
         uses: actions/upload-artifact@v4
         with:
@@ -181,7 +167,7 @@ jobs:
           path: full.log
 
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v2
+        uses: codecov/codecov-action@v5
         with:
           fail_ci_if_error: false
           files: ./coverage.txt,./coverage-redis.txt
@@ -200,9 +186,9 @@ jobs:
     
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
-          submodules: true
+          submodules: recursive
           fetch-depth: 10           // Will cover most PRs
           persist-credentials: true // In case changed-files requires deeper depth
           
@@ -236,7 +222,7 @@ jobs:
         if: steps.changed-files.outputs.any_changed == 'true'
         uses: actions/setup-go@v5
         with:
-          go-version: 1.23.x
+          go-version: 1.24.x
 
       - name: Install wasm-ld
         if: steps.changed-files.outputs.any_changed == 'true'
@@ -244,37 +230,16 @@ jobs:
           sudo apt-get update && sudo apt-get install -y lld-14
           sudo ln -s /usr/bin/wasm-ld-14 /usr/local/bin/wasm-ld
 
-      - name: Install rust stable
-        if: steps.changed-files.outputs.any_changed == 'true'
-        uses: dtolnay/rust-toolchain@stable
+      - name: Install rust
         id: install-rust
-        with:
-          toolchain: '1.84.1'
-          targets: 'wasm32-wasip1, wasm32-unknown-unknown'
-          components: 'llvm-tools-preview, rustfmt, clippy'
-
-      - name: Install rust nightly
-        if: steps.changed-files.outputs.any_changed == 'true'
-        uses: dtolnay/rust-toolchain@nightly
-        id: install-rust-nightly
-        with:
-          toolchain: 'nightly-2025-02-14'
-          targets: 'wasm32-wasip1, wasm32-unknown-unknown'
-          components: 'rust-src, rustfmt, clippy'
-
-      - name: Set STYLUS_NIGHTLY_VER environment variable
-        if: steps.changed-files.outputs.any_changed == 'true'
-        run: echo "STYLUS_NIGHTLY_VER=+$(rustup toolchain list | grep '^nightly' | head -n1 | cut -d' ' -f1)" >> "$GITHUB_ENV"
-
-      - name: Get Rust version
-        id: rust-version
-        run: echo "version=$(rustc --version | cut -d' ' -f2)" >> $GITHUB_OUTPUT
+        uses: ./.github/actions/install-rust
 
       - name: Install Foundry
         if: steps.changed-files.outputs.any_changed == 'true'
         uses: foundry-rs/foundry-toolchain@v1
         with:
           cache: false
+          version: v1.0.0
         
       - name: Install cbindgen
         if: steps.changed-files.outputs.any_changed == 'true'
@@ -300,10 +265,10 @@ jobs:
             arbitrator/wasm-libraries/soft-float/
             target/etc/initial-machine-cache/
             /home/runner/.rustup/toolchains/
-          key: ${{ runner.os }}-cargo-${{ matrix.test-mode }}-${{ steps.rust-version.outputs.version }}-min-${{ hashFiles('arbitrator/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-${{ matrix.test-mode }}-${{ steps.install-rust.outputs.version }}-min-${{ hashFiles('arbitrator/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-${{ matrix.test-mode }}-${{ steps.rust-version.outputs.version }}-
-            ${{ runner.os }}-cargo-${{ steps.rust-version.outputs.version }}-
+            ${{ runner.os }}-cargo-${{ matrix.test-mode }}-${{ steps.install-rust.outputs.version }}-
+            ${{ runner.os }}-cargo-${{ steps.install-rust.outputs.version }}-
 
       - name: Cache cbrotli
         if: steps.changed-files.outputs.any_changed == 'true'
@@ -316,7 +281,7 @@ jobs:
             target/lib/libbrotlicommon-static.a
             target/lib/libbrotlienc-static.a
             target/lib/libbrotlidec-static.a
-          key: ${{ runner.os }}-brotli-${{ hashFiles('scripts/build-brotli.sh') }}-${{ hashFiles('.github/workflows/arbitrator-ci.yaml') }}
+          key: ${{ runner.os }}-brotli-${{ hashFiles('scripts/build-brotli.sh') }}-${{ hashFiles('.github/workflows/arbitrator-ci.yml') }}
 
       - name: Build cbrotli-local
         if: steps.changed-files.outputs.any_changed == 'true' && steps.cache-cbrotli.outputs.cache-hit != 'true'
@@ -369,7 +334,7 @@ jobs:
 
       - name: Upload coverage to Codecov
         if: steps.changed-files.outputs.any_changed == 'true'
-        uses: codecov/codecov-action@v2
+        uses: codecov/codecov-action@v5
         with:
           fail_ci_if_error: false
           files: ./coverage.txt,./coverage-redis.txt
@@ -383,7 +348,7 @@ jobs:
     if: ${{ failure() }}
     steps:
       - name: Send Slack notification
-        uses: slackapi/slack-github-action@v2.0.0
+        uses: slackapi/slack-github-action@v2.1.1
         with:
           errors: true
           method: chat.postMessage

@@ -120,7 +120,7 @@ where
     T: Middleware<ModuleInfo> + Debug + Send + Sync + 'static,
 {
     fn transform_module_info(&self, module: &mut ModuleInfo) -> Result<(), MiddlewareError> {
-        let error = |err| MiddlewareError::new(self.0.name().red(), format!("{:?}", err));
+        let error = |err| MiddlewareError::new(self.0.name().red(), format!("{err:?}"));
         self.0.update_module(module).map_err(error)
     }
 
@@ -157,7 +157,7 @@ where
         out: &mut wasmer::MiddlewareReaderState<'a>,
     ) -> Result<(), MiddlewareError> {
         let name = self.0.name().red();
-        let error = |err| MiddlewareError::new(name, format!("{:?}", err));
+        let error = |err| MiddlewareError::new(name, format!("{err:?}"));
         self.0.feed(op, out).map_err(error)
     }
 }

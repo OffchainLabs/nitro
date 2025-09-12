@@ -244,6 +244,8 @@ func TxTypeHasPosterCosts(txType byte) bool {
 		fallthrough
 	case types.ArbitrumSubmitRetryableTxType:
 		return false
+	case types.ArbitrumDepositTxType:
+		return false
 	}
 	return true
 }

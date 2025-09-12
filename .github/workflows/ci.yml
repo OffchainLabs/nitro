@@ -29,9 +29,9 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
-          submodules: true
+          submodules: recursive
 
       - name: Install dependencies
         run: sudo apt update && sudo apt install -y wabt gotestsum
@@ -53,34 +53,16 @@ jobs:
           sudo apt-get update && sudo apt-get install -y lld-14
           sudo ln -s /usr/bin/wasm-ld-14 /usr/local/bin/wasm-ld
 
-      - name: Install rust stable
-        uses: dtolnay/rust-toolchain@stable
+      - name: Install rust
         id: install-rust
-        with:
-          toolchain: '1.84.1'
-          targets: 'wasm32-wasip1, wasm32-unknown-unknown'
-          components: 'llvm-tools-preview, rustfmt, clippy'
-
-      - name: Install rust nightly
-        uses: dtolnay/rust-toolchain@nightly
-        id: install-rust-nightly
-        with:
-          toolchain: 'nightly-2025-02-14'
-          targets: 'wasm32-wasip1, wasm32-unknown-unknown'
-          components: 'rust-src, rustfmt, clippy'
-
-      - name: Set STYLUS_NIGHTLY_VER environment variable
-        run: echo "STYLUS_NIGHTLY_VER=+$(rustup toolchain list | grep '^nightly' | head -n1 | cut -d' ' -f1)" >> "$GITHUB_ENV"
-
-      - name: Get Rust version
-        id: rust-version
-        run: echo "version=$(rustc --version | cut -d' ' -f2)" >> $GITHUB_OUTPUT
+        uses: ./.github/actions/install-rust
 
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
         with:
           cache: false
-        
+          version: v1.0.0
+
       - name: Install cbindgen
         run: cargo install --force cbindgen
 
@@ -102,8 +84,8 @@ jobs:
             arbitrator/wasm-libraries/soft-float/
             target/etc/initial-machine-cache/
             /home/runner/.rustup/toolchains/
-          key: ${{ runner.os }}-cargo-${{ matrix.test-mode }}-${{ steps.rust-version.outputs.version }}-min-${{ hashFiles('arbitrator/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-${{ matrix.test-mode }}-${{ steps.rust-version.outputs.version }}-
+          key: ${{ runner.os }}-cargo-${{ matrix.test-mode }}-${{ steps.install-rust.outputs.version }}-min-${{ hashFiles('arbitrator/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-${{ matrix.test-mode }}-${{ steps.install-rust.outputs.version }}-
 
       - name: Cache cbrotli
         uses: actions/cache@v4
@@ -115,7 +97,7 @@ jobs:
             target/lib/libbrotlicommon-static.a
             target/lib/libbrotlienc-static.a
             target/lib/libbrotlidec-static.a
-          key: ${{ runner.os }}-brotli-${{ matrix.test-mode }}-${{ hashFiles('scripts/build-brotli.sh') }}-${{ hashFiles('.github/workflows/arbitrator-ci.yaml') }}
+          key: ${{ runner.os }}-brotli-${{ matrix.test-mode }}-${{ hashFiles('scripts/build-brotli.sh') }}-${{ hashFiles('.github/workflows/arbitrator-ci.yml') }}
 
       - name: Build cbrotli-local
         if: steps.cache-cbrotli.outputs.cache-hit != 'true'
@@ -207,7 +189,7 @@ jobs:
           path: full.log
 
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v2
+        uses: codecov/codecov-action@v5
         if: matrix.test-mode == 'defaults'
         with:
           fail_ci_if_error: false

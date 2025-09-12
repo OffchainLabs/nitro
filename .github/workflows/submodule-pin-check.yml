@@ -1,6 +1,7 @@
 name: Merge Checks
 
 on:
+  merge_group:
   # Using pull_request_target for security. If we had used pull_request, then it
   # would be possible for malicious actors to create Pull Requests which would
   # trigger workflows that they could have modified locally to extract secrets.
@@ -19,10 +20,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
-          submodules: true
+          submodules: recursive
           persist-credentials: false
           ref: "${{ github.event.pull_request.head.sha }}"
 

@@ -111,7 +111,7 @@ func mainImpl() error {
 	return nil
 }
 
-func generateGenesisBlock(chainDb ethdb.Database, cacheConfig *core.CacheConfig, initData statetransfer.InitDataReader, chainConfig *params.ChainConfig, genesisArbOSInit *params.ArbOSInit, initMessage *arbostypes.ParsedInitMessage, accountsPerSync uint) (*types.Block, error) {
+func generateGenesisBlock(chainDb ethdb.Database, cacheConfig *core.BlockChainConfig, initData statetransfer.InitDataReader, chainConfig *params.ChainConfig, genesisArbOSInit *params.ArbOSInit, initMessage *arbostypes.ParsedInitMessage, accountsPerSync uint) (*types.Block, error) {
 	EmptyHash := common.Hash{}
 	prevHash := EmptyHash
 	blockNumber, err := initData.GetNextBlockNumber()

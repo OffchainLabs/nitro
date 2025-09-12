@@ -36,6 +36,8 @@ type StatelessBlockValidator struct {
 	boldExecSpawners []validator.BOLDExecutionSpawner
 	redisValidator   *redis.ValidationClient
 
+	wasmTargets []rawdb.WasmTarget
+
 	recorder execution.ExecutionRecorder
 
 	inboxReader          InboxReaderInterface
@@ -255,6 +257,7 @@ func NewStatelessBlockValidator(
 	for i := range configs {
 		i := i
 		confFetcher := func() *rpcclient.ClientConfig { return &config().ValidationServerConfigs[i] }
+
 		executionSpawner := validatorclient.NewExecutionClient(confFetcher, stack)
 		executionSpawners = append(executionSpawners, executionSpawner)
 		boldExecutionSpawners = append(boldExecutionSpawners, validatorclient.NewBOLDExecutionClient(executionSpawner))
@@ -369,12 +372,16 @@ func copyPreimagesInto(dest, source map[arbutil.PreimageType]map[common.Hash][]b
 	}
 }
 
-func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *validationEntry) error {
+func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *validationEntry, wasmTargets ...rawdb.WasmTarget) error {
 	if e.Stage != ReadyForRecord {
 		return fmt.Errorf("validation entry should be ReadyForRecord, is: %v", e.Stage)
 	}
 	if e.Pos != 0 {
-		recording, err := v.recorder.RecordBlockCreation(ctx, e.Pos, e.msg)
+		// if wasmTargets is not provided then fallback to the targets required by the validators
+		if len(wasmTargets) == 0 {
+			wasmTargets = v.wasmTargets
+		}
+		recording, err := v.recorder.RecordBlockCreation(ctx, e.Pos, e.msg, wasmTargets)
 		if err != nil {
 			return err
 		}
@@ -432,7 +439,7 @@ func (v *StatelessBlockValidator) GlobalStatePositionsAtCount(count arbutil.Mess
 	return GlobalStatePositionsAtCount(v.inboxTracker, count, batch)
 }
 
-func (v *StatelessBlockValidator) CreateReadyValidationEntry(ctx context.Context, pos arbutil.MessageIndex) (*validationEntry, error) {
+func (v *StatelessBlockValidator) CreateReadyValidationEntry(ctx context.Context, pos arbutil.MessageIndex, wasmTargets ...rawdb.WasmTarget) (*validationEntry, error) {
 	msg, err := v.streamer.GetMessage(pos)
 	if err != nil {
 		return nil, err
@@ -488,7 +495,7 @@ func (v *StatelessBlockValidator) CreateReadyValidationEntry(ctx context.Context
 	if err != nil {
 		return nil, err
 	}
-	err = v.ValidationEntryRecord(ctx, entry)
+	err = v.ValidationEntryRecord(ctx, entry, wasmTargets...)
 	if err != nil {
 		return nil, err
 	}
@@ -538,12 +545,12 @@ func (v *StatelessBlockValidator) ValidateResult(
 	return true, &entry.End, nil
 }
 
-func (v *StatelessBlockValidator) ValidationInputsAt(ctx context.Context, pos arbutil.MessageIndex, targets ...rawdb.WasmTarget) (server_api.InputJSON, error) {
-	entry, err := v.CreateReadyValidationEntry(ctx, pos)
+func (v *StatelessBlockValidator) ValidationInputsAt(ctx context.Context, pos arbutil.MessageIndex, wasmTargets ...rawdb.WasmTarget) (server_api.InputJSON, error) {
+	entry, err := v.CreateReadyValidationEntry(ctx, pos, wasmTargets...)
 	if err != nil {
 		return server_api.InputJSON{}, err
 	}
-	input, err := entry.ToInput(targets)
+	input, err := entry.ToInput(wasmTargets)
 	if err != nil {
 		return server_api.InputJSON{}, err
 	}
@@ -559,16 +566,32 @@ func (v *StatelessBlockValidator) GetLatestWasmModuleRoot() common.Hash {
 }
 
 func (v *StatelessBlockValidator) Start(ctx_in context.Context) error {
+	wasmTargetsSet := make(map[rawdb.WasmTarget]struct{})
+
 	if v.redisValidator != nil {
 		if err := v.redisValidator.Start(ctx_in); err != nil {
 			return fmt.Errorf("starting execution spawner: %w", err)
 		}
+		for _, wasmTarget := range v.redisValidator.StylusArchs() {
+			wasmTargetsSet[wasmTarget] = struct{}{}
+		}
 	}
+
 	for _, spawner := range v.execSpawners {
 		if err := spawner.Start(ctx_in); err != nil {
 			return err
 		}
+		for _, wasmTarget := range spawner.StylusArchs() {
+			wasmTargetsSet[wasmTarget] = struct{}{}
+		}
 	}
+
+	wasmTargets := make([]rawdb.WasmTarget, 0)
+	for wasmTarget := range wasmTargetsSet {
+		wasmTargets = append(wasmTargets, wasmTarget)
+	}
+	v.wasmTargets = wasmTargets
+
 	return nil
 }
 

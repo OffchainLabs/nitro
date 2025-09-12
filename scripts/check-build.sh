@@ -9,7 +9,7 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 node_version_needed="v24"
-rust_version_needed="1.83.0"
+rust_version_needed="1.88.0"
 golangci_lint_version_needed="2.3.0"
 
 if [[ -f go.mod ]]; then
@@ -121,14 +121,6 @@ if command_exists rustc && rustc --version | grep -q "$rust_version_needed"; the
     echo -e "${GREEN}Rust version $rust_version_needed is installed.${NC}"
 else
     echo -e "${RED}Rust version $rust_version_needed is not installed.${NC}"
-    EXIT_CODE=1
-fi
-
-# Check Rust nightly toolchain
-if rustup toolchain list | grep -q "nightly"; then
-    echo -e "${GREEN}Rust nightly toolchain is installed.${NC}"
-else
-    echo -e "${RED}Rust nightly toolchain is not installed. Install it using: rustup toolchain install nightly${NC}"
     EXIT_CODE=1
 fi
 

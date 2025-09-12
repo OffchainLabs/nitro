@@ -1,6 +1,6 @@
 // Copyright 2023-2024, Offchain Labs, Inc.
 // For license information, see:
-// https://github.com/offchainlabs/nitro/blob/main/LICENSE.md
+// https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 // Package setup prepares a simulated backend for testing.
 package setup
@@ -24,12 +24,12 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rpc"
 
-	protocol "github.com/offchainlabs/bold/chain-abstraction"
-	solimpl "github.com/offchainlabs/bold/chain-abstraction/sol-implementation"
-	l2stateprovider "github.com/offchainlabs/bold/layer2-state-provider"
-	retry "github.com/offchainlabs/bold/runtime"
-	challenge_testing "github.com/offchainlabs/bold/testing"
-	statemanager "github.com/offchainlabs/bold/testing/mocks/state-provider"
+	protocol "github.com/offchainlabs/nitro/bold/chain-abstraction"
+	solimpl "github.com/offchainlabs/nitro/bold/chain-abstraction/sol-implementation"
+	l2stateprovider "github.com/offchainlabs/nitro/bold/layer2-state-provider"
+	retry "github.com/offchainlabs/nitro/bold/runtime"
+	challenge_testing "github.com/offchainlabs/nitro/bold/testing"
+	statemanager "github.com/offchainlabs/nitro/bold/testing/mocks/state-provider"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/challengeV2gen"
 	"github.com/offchainlabs/nitro/solgen/go/contractsgen"

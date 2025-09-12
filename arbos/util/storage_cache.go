@@ -60,7 +60,7 @@ func (s *storageCache) Flush() []storageCacheStores {
 	stores := []storageCacheStores{}
 	for key, entry := range s.cache {
 		if entry.dirty() {
-			v := entry.Value // Create new var to avoid alliasing
+			v := entry.Value // Create new var to avoid aliasing
 			entry.Known = &v
 			s.cache[key] = entry
 			stores = append(stores, storageCacheStores{

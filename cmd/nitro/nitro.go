@@ -206,6 +206,7 @@ func mainImpl() int {
 		nodeConfig.Node.ParentChainReader.Enable = false
 		nodeConfig.Node.BatchPoster.Enable = false
 		nodeConfig.Node.DelayedSequencer.Enable = false
+		nodeConfig.Init.ValidateGenesisAssertion = false
 	} else {
 		nodeConfig.Node.ParentChainReader.Enable = true
 	}
@@ -452,7 +453,7 @@ func mainImpl() int {
 		return 1
 	}
 
-	arbDb, err := stack.OpenDatabaseWithExtraOptions("arbitrumdata", 0, 0, "arbitrumdata/", false, nodeConfig.Persistent.Pebble.ExtraOptions("arbitrumdata"))
+	arbDb, err := stack.OpenDatabaseWithOptions("arbitrumdata", node.DatabaseOptions{MetricsNamespace: "arbitrumdata/", PebbleExtraOptions: nodeConfig.Persistent.Pebble.ExtraOptions("arbitrumdata")})
 	deferFuncs = append(deferFuncs, func() { closeDb(arbDb, "arbDb") })
 	if err != nil {
 		log.Error("failed to open database", "err", err)
@@ -528,6 +529,7 @@ func mainImpl() int {
 		l2BlockChain,
 		l1Client,
 		func() *gethexec.Config { return &liveNodeConfig.Get().Execution },
+		new(big.Int).SetUint64(nodeConfig.ParentChain.ID),
 		liveNodeConfig.Get().Node.TransactionStreamer.SyncTillBlock,
 	)
 	if err != nil {
@@ -713,7 +715,7 @@ func mainImpl() int {
 
 	err = execNode.InitializeTimeboost(ctx, chainInfo.ChainConfig)
 	if err != nil {
-		fatalErrChan <- fmt.Errorf("error intializing timeboost: %w", err)
+		fatalErrChan <- fmt.Errorf("error initializing timeboost: %w", err)
 	}
 
 	err = nil
@@ -1005,6 +1007,9 @@ func applyChainParameters(k *koanf.Koanf, chainId uint64, chainName string, l2Ch
 	}
 	if chainInfo.SecondaryFeedUrl != "" {
 		chainDefaults["node.feed.input.secondary-url"] = strings.Split(chainInfo.SecondaryFeedUrl, ",")
+	}
+	if chainInfo.FeedSigned {
+		chainDefaults["node.feed.input.verify.dangerous.accept-missing"] = false
 	}
 	if chainInfo.DasIndexUrl != "" {
 		chainDefaults["node.data-availability.enable"] = true

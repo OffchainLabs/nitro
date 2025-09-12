@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"math/big"
 
+	"github.com/ethereum/go-ethereum/arbitrum/multigas"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
@@ -170,13 +171,12 @@ func (p Programs) ActivateProgram(evm *vm.EVM, address common.Address, runCtx *c
 func (p Programs) CallProgram(
 	scope *vm.ScopeContext,
 	statedb vm.StateDB,
-	interpreter *vm.EVMInterpreter,
+	evm *vm.EVM,
 	tracingInfo *util.TracingInfo,
 	calldata []byte,
 	reentrant bool,
 	runCtx *core.MessageRunContext,
 ) ([]byte, error) {
-	evm := interpreter.Evm()
 	contract := scope.Contract
 	codeHash := contract.CodeHash
 	startingGas := contract.Gas
@@ -251,22 +251,51 @@ func (p Programs) CallProgram(
 
 	address := contract.Address()
 	metrics.GetOrRegisterCounter(fmt.Sprintf("arb/arbos/stylus/program_calls/%s", runCtx.RunModeMetricName()), nil).Inc(1)
-	ret, err := callProgram(address, moduleHash, localAsm, scope, interpreter, tracingInfo, calldata, evmData, goParams, model, runCtx)
+	ret, err := callProgram(address, moduleHash, localAsm, scope, evm, tracingInfo, calldata, evmData, goParams, model, runCtx)
 	if len(ret) > 0 && p.ArbosVersion >= gethParams.ArbosVersion_StylusFixes {
 		// Ensure that return data costs as least as much as it would in the EVM.
 		evmCost := evmMemoryCost(uint64(len(ret)))
 		if startingGas < evmCost {
+			// burn all remaining gas for this call
 			contract.Gas = 0
+			attributeWasmComputation(contract, startingGas)
 			// #nosec G115
 			metrics.GetOrRegisterCounter(fmt.Sprintf("arb/arbos/stylus/gas_used/%s", runCtx.RunModeMetricName()), nil).Inc(int64(startingGas))
 			return nil, vm.ErrOutOfGas
 		}
+
 		maxGasToReturn := startingGas - evmCost
 		contract.Gas = am.MinInt(contract.Gas, maxGasToReturn)
+
+		attributeWasmComputation(contract, startingGas)
 	}
 	// #nosec G115
 	metrics.GetOrRegisterCounter(fmt.Sprintf("arb/arbos/stylus/gas_used/%s", runCtx.RunModeMetricName()), nil).Inc(int64(startingGas - contract.Gas))
 	return ret, err
+}
+
+// attributeWasmComputation attributes the residual WASM computation gas so that
+// UsedMultiGas.SingleGas() matches the gross used gas for this stylus call.
+func attributeWasmComputation(contract *vm.Contract, startingGas uint64) {
+	usedGas := startingGas - contract.Gas
+	accountedGas := contract.UsedMultiGas.SingleGas()
+
+	var residual uint64
+	if accountedGas > usedGas {
+		log.Error("negative WASM computation residual, usedGas", usedGas, "accounted", accountedGas)
+		residual = 0
+	} else {
+		residual = usedGas - accountedGas
+	}
+
+	if prev := contract.UsedMultiGas.Get(multigas.ResourceKindWasmComputation); prev != 0 {
+		log.Error("WASM computation gas already set, prev", prev)
+	}
+
+	var overflow bool
+	if contract.UsedMultiGas, overflow = contract.UsedMultiGas.SafeIncrement(multigas.ResourceKindWasmComputation, residual); overflow {
+		log.Error("WASM computation gas overflow, residual", residual)
+	}
 }
 
 func evmMemoryCost(size uint64) uint64 {

@@ -23,10 +23,10 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/rpc"
 
-	protocol "github.com/offchainlabs/bold/chain-abstraction"
-	challenge_testing "github.com/offchainlabs/bold/testing"
-	"github.com/offchainlabs/bold/testing/setup"
-	"github.com/offchainlabs/bold/util"
+	protocol "github.com/offchainlabs/nitro/bold/chain-abstraction"
+	challenge_testing "github.com/offchainlabs/nitro/bold/testing"
+	"github.com/offchainlabs/nitro/bold/testing/setup"
+	"github.com/offchainlabs/nitro/bold/util"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 )
@@ -52,11 +52,7 @@ func NewAnvilLocal(ctx context.Context) (*AnvilLocal, error) {
 	if err := a.loadAccounts(); err != nil {
 		return nil, err
 	}
-	c, err := rpc.DialContext(ctx, "http://localhost:8686")
-	if err != nil {
-		return nil, err
-	}
-	a.client = util.NewBackendWrapper(ethclient.NewClient(c), rpc.LatestBlockNumber)
+	// RPC client will be initialized in Start when Anvil is up.
 	return a, nil
 }
 
@@ -129,15 +125,37 @@ func (a *AnvilLocal) Start(ctx context.Context) error {
 		return errors.Wrap(err, "could not start anvil")
 	}
 
-	// Wait until ready to serve a request.
-	// It should be very fast.
-	waitCtx, cancel := context.WithTimeout(ctx, 1*time.Second)
-	defer cancel()
-	for waitCtx.Err() == nil {
-		cID, _ := a.client.ChainID(waitCtx)
-		if cID != nil && cID.Cmp(anvilLocalChainID) == 0 {
-			break
+	// Establish RPC client and wait until ready.
+	deadline := time.Now().Add(30 * time.Second)
+	var lastErr error
+	for time.Now().Before(deadline) {
+		// Dial with a short timeout per attempt.
+		dctx, cancelDial := context.WithTimeout(ctx, 500*time.Millisecond)
+		c, err := rpc.DialContext(dctx, "http://localhost:8686")
+		cancelDial()
+		if err == nil {
+			ethc := ethclient.NewClient(c)
+			backend := util.NewBackendWrapper(ethc, rpc.LatestBlockNumber)
+			qctx, cancelQuery := context.WithTimeout(ctx, 500*time.Millisecond)
+			cid, qerr := backend.ChainID(qctx)
+			cancelQuery()
+			if qerr == nil && cid != nil && cid.Cmp(anvilLocalChainID) == 0 {
+				a.client = backend
+				break
+			}
+			lastErr = qerr
+			ethc.Close()
+		} else {
+			lastErr = err
 		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	if a.client == nil {
+		if lastErr == nil {
+			lastErr = errors.New("anvil not ready")
+		}
+		_ = cmd.Process.Kill()
+		return errors.Wrap(lastErr, "anvil did not become ready within timeout")
 	}
 
 	a.cmd = cmd
