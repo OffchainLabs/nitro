@@ -127,11 +127,6 @@ func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.Arbos
 		}
 
 		l1p := state.L1PricingState()
-		perBatchGas, err := l1p.PerBatchGasCost()
-		if err != nil {
-			log.Warn("L1Pricing PerBatchGas failed", "err", err)
-		}
-		gasSpent = arbmath.SaturatingUAdd(gasSpent, arbmath.SaturatingUCast[uint64](perBatchGas))
 
 		if state.ArbOSVersion() >= params.ArbosVersion_50 {
 			gasFloorPerToken, err := l1p.ParentGasFloorPerToken()
@@ -143,6 +138,12 @@ func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.Arbos
 				gasSpent = floorGasSpent
 			}
 		}
+
+		perBatchGas, err := l1p.PerBatchGasCost()
+		if err != nil {
+			log.Warn("L1Pricing PerBatchGas failed", "err", err)
+		}
+		gasSpent = arbmath.SaturatingUAdd(gasSpent, arbmath.SaturatingUCast[uint64](perBatchGas))
 
 		weiSpent := arbmath.BigMulByUint(l1BaseFeeWei, gasSpent)
 		err = l1p.UpdateForBatchPosterSpending(
