@@ -124,11 +124,12 @@ func (c *Client) Store(
 	timeout uint64,
 	disableFallbackStoreDataOnChain bool,
 ) ([]byte, error) {
-	var storeResult StoreResult
-	if err := c.CallContext(ctx, &storeResult, "daprovider_store", hexutil.Bytes(message), hexutil.Uint64(timeout), disableFallbackStoreDataOnChain); err != nil {
-		return nil, fmt.Errorf("error returned from daprovider_store rpc method, err: %w", err)
+	_, err := c.DataStreamer.StreamData(ctx, message, timeout)
+	if err != nil {
+		// TODO? try store on chain
+		return nil, fmt.Errorf("error returned from daprovider rpc, err: %w", err)
 	}
-	return storeResult.SerializedDACert, nil
+	return make([]byte, 0), nil
 }
 
 // GenerateProofResult is the result struct that data availability providers should use to respond with a proof for a specific preimage
