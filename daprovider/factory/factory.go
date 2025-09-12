@@ -108,45 +108,35 @@ func (f *AnyTrustFactory) ValidateConfig() error {
 }
 
 func (f *AnyTrustFactory) CreateReader(ctx context.Context) (daprovider.Reader, func(), error) {
+	var daReader das.DataAvailabilityServiceReader
+	var keysetFetcher *das.KeysetFetcher
+	var lifecycleManager *das.LifecycleManager
+	var err error
+
 	if f.enableWriter {
-		_, daReader, keysetFetcher, lifecycleManager, err := das.CreateDAReaderAndWriter(
+		_, daReader, keysetFetcher, lifecycleManager, err = das.CreateDAReaderAndWriter(
 			ctx, f.config, f.dataSigner, f.l1Client, f.seqInboxAddr)
-		if err != nil {
-			return nil, nil, err
-		}
-
-		daReader = das.NewReaderTimeoutWrapper(daReader, f.config.RequestTimeout)
-		if f.config.PanicOnError {
-			daReader = das.NewReaderPanicWrapper(daReader)
-		}
-
-		reader := dasutil.NewReaderForDAS(daReader, keysetFetcher)
-		cleanupFn := func() {
-			if lifecycleManager != nil {
-				lifecycleManager.StopAndWaitUntil(0)
-			}
-		}
-		return reader, cleanupFn, nil
 	} else {
-		daReader, keysetFetcher, lifecycleManager, err := das.CreateDAReader(
+		daReader, keysetFetcher, lifecycleManager, err = das.CreateDAReader(
 			ctx, f.config, f.l1Reader, &f.seqInboxAddr)
-		if err != nil {
-			return nil, nil, err
-		}
-
-		daReader = das.NewReaderTimeoutWrapper(daReader, f.config.RequestTimeout)
-		if f.config.PanicOnError {
-			daReader = das.NewReaderPanicWrapper(daReader)
-		}
-
-		reader := dasutil.NewReaderForDAS(daReader, keysetFetcher)
-		cleanupFn := func() {
-			if lifecycleManager != nil {
-				lifecycleManager.StopAndWaitUntil(0)
-			}
-		}
-		return reader, cleanupFn, nil
 	}
+
+	if err != nil {
+		return nil, nil, err
+	}
+
+	daReader = das.NewReaderTimeoutWrapper(daReader, f.config.RequestTimeout)
+	if f.config.PanicOnError {
+		daReader = das.NewReaderPanicWrapper(daReader)
+	}
+
+	reader := dasutil.NewReaderForDAS(daReader, keysetFetcher)
+	cleanupFn := func() {
+		if lifecycleManager != nil {
+			lifecycleManager.StopAndWaitUntil(0)
+		}
+	}
+	return reader, cleanupFn, nil
 }
 
 func (f *AnyTrustFactory) CreateWriter(ctx context.Context) (daprovider.Writer, func(), error) {

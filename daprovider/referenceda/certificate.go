@@ -77,6 +77,10 @@ func Deserialize(data []byte) (*Certificate, error) {
 
 // RecoverSigner recovers the signer address from the certificate
 func (c *Certificate) RecoverSigner() (common.Address, error) {
+	if c.V < 27 {
+		return common.Address{}, fmt.Errorf("invalid signature V value: %d (must be >= 27)", c.V)
+	}
+
 	sig := make([]byte, 65)
 	copy(sig[0:32], c.R[:])
 	copy(sig[32:64], c.S[:])
