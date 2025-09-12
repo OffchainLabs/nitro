@@ -34,6 +34,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/storage"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
+	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/testhelpers/env"
 )
 
@@ -391,6 +392,10 @@ func (state *ArbosState) UpgradeArbosVersion(
 			ensure(p.UpgradeToArbosVersion(nextArbosVersion))
 			ensure(p.Save())
 			ensure(state.l2PricingState.SetMaxPerTxGasLimit(l2pricing.InitialPerTxGasLimitV50))
+			oldBlockGasLimit, err := state.l2PricingState.PerBlockGasLimit()
+			ensure(err)
+			newBlockGasLimit := arbmath.SaturatingUMul(oldBlockGasLimit, 4)
+			ensure(state.l2PricingState.SetMaxPerBlockGasLimit(newBlockGasLimit))
 		default:
 			return fmt.Errorf(
 				"the chain is upgrading to unsupported ArbOS version %v, %w",
