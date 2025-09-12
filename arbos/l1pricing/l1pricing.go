@@ -39,11 +39,11 @@ type L1PricingState struct {
 	// funds collected since update are recorded as the balance in account L1PricerFundsPoolAddress
 	unitsSinceUpdate     storage.StorageBackedUint64  // calldata units collected for since last update
 	pricePerUnit         storage.StorageBackedBigUint // current price per calldata unit
-	calldataPrice        storage.StorageBackedBigInt  // gas per non-zero calldata byte
 	lastSurplus          storage.StorageBackedBigInt  // introduced in ArbOS version 2
 	perBatchGasCost      storage.StorageBackedInt64   // introduced in ArbOS version 3
 	amortizedCostCapBips storage.StorageBackedUint64  // in basis points; introduced in ArbOS version 3
 	l1FeesAvailable      storage.StorageBackedBigUint
+	gasFloorPerToken     storage.StorageBackedUint64 // introduced in arbos version 50, default 0
 
 	ArbosVersion uint64
 }
@@ -70,7 +70,7 @@ const (
 	perBatchGasCostOffset
 	amortizedCostCapBipsOffset
 	l1FeesAvailableOffset
-	calldataPriceOffset
+	gasFloorPerTokenOffset
 )
 
 const (
@@ -129,11 +129,11 @@ func OpenL1PricingState(sto *storage.Storage, arbosVersion uint64) *L1PricingSta
 		fundsDueForRewards:   sto.OpenStorageBackedBigInt(fundsDueForRewardsOffset),
 		unitsSinceUpdate:     sto.OpenStorageBackedUint64(unitsSinceOffset),
 		pricePerUnit:         sto.OpenStorageBackedBigUint(pricePerUnitOffset),
-		calldataPrice:        sto.OpenStorageBackedBigInt(calldataPriceOffset),
 		lastSurplus:          sto.OpenStorageBackedBigInt(lastSurplusOffset),
 		perBatchGasCost:      sto.OpenStorageBackedInt64(perBatchGasCostOffset),
 		amortizedCostCapBips: sto.OpenStorageBackedUint64(amortizedCostCapBipsOffset),
 		l1FeesAvailable:      sto.OpenStorageBackedBigUint(l1FeesAvailableOffset),
+		gasFloorPerToken:     sto.OpenStorageBackedUint64(gasFloorPerTokenOffset),
 		ArbosVersion:         arbosVersion,
 	}
 }
@@ -243,15 +243,18 @@ func (ps *L1PricingState) SetPricePerUnit(price *big.Int) error {
 	return ps.pricePerUnit.SetChecked(price)
 }
 
-func (ps *L1PricingState) CalldataPrice() (*big.Int, error) {
+func (ps *L1PricingState) SetParentGasFloorPerToken(floor uint64) error {
 	if ps.ArbosVersion < params.ArbosVersion_50 {
-		return big.NewInt(int64(params.TxDataNonZeroGasEIP2028)), nil
+		return fmt.Errorf("not supported")
 	}
-	return ps.calldataPrice.Get()
+	return ps.gasFloorPerToken.Set(floor)
 }
 
-func (ps *L1PricingState) SetCalldataPrice(price *big.Int) error {
-	return ps.calldataPrice.SetChecked(price)
+func (ps *L1PricingState) ParentGasFloorPerToken() (uint64, error) {
+	if ps.ArbosVersion < params.ArbosVersion_50 {
+		return 0, nil
+	}
+	return ps.gasFloorPerToken.Get()
 }
 
 func (ps *L1PricingState) PerBatchGasCost() (int64, error) {
@@ -528,11 +531,7 @@ func (ps *L1PricingState) getPosterUnitsWithoutCache(tx *types.Transaction, post
 	if err != nil {
 		panic(fmt.Sprintf("failed to compress tx: %v", err))
 	}
-	l1CalldataPrice, err := ps.CalldataPrice()
-	if err != nil {
-		return 0
-	}
-	return am.BigMulByUint(l1CalldataPrice, l1Bytes).Uint64()
+	return am.SaturatingUMul(params.TxDataNonZeroGasEIP2028, l1Bytes)
 }
 
 // GetPosterInfo returns the poster cost and the calldata units for a transaction
@@ -555,7 +554,7 @@ func (ps *L1PricingState) GetPosterInfo(tx *types.Transaction, poster common.Add
 }
 
 // We don't have the full tx in gas estimation, so we assume it might be a bit bigger in practice.
-var estimationPaddingUnits uint64 = 16
+var estimationPaddingUnits uint64 = 16 * params.TxDataNonZeroGasEIP2028
 
 const estimationPaddingBasisPoints = 100
 
@@ -612,8 +611,7 @@ func (ps *L1PricingState) PosterDataCost(message *core.Message, poster common.Ad
 	// We'll instead make a fake tx from the message info we do have, and then pad our cost a bit to be safe.
 	tx = makeFakeTxForMessage(message)
 	units := ps.getPosterUnitsWithoutCache(tx, poster, brotliCompressionLevel)
-	l1CalldataPrice, _ := ps.CalldataPrice()
-	units = am.UintMulByBips(units+l1CalldataPrice.Uint64()*estimationPaddingUnits, am.OneInBips+estimationPaddingBasisPoints)
+	units = am.UintMulByBips(units+estimationPaddingUnits, am.OneInBips+estimationPaddingBasisPoints)
 	pricePerUnit, _ := ps.PricePerUnit()
 	return am.BigMulByUint(pricePerUnit, units), units
 }
