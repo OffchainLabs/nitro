@@ -733,6 +733,9 @@ func TestBatchPosterL1SurplusMatchesBatchGas(t *testing.T) {
 
 	// make max tx data big enough to send near-limit sized tx
 	builder.execConfig.Sequencer.MaxTxDataSize = 150000
+	// Enable delayed sequencer to process batch posting reports
+	builder.nodeConfig.DelayedSequencer.Enable = true
+	builder.nodeConfig.DelayedSequencer.FinalizeDistance = 1
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -819,6 +822,9 @@ func TestBatchPosterL1SurplusMatchesBatchGas(t *testing.T) {
 	Require(t, err)
 	batchL1GasUsed := batchReceipt.GasUsed
 
+	// Advance L1 to satisfy finality requirements for the batch posting report to be processed
+	AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, 2)
+
 	// find the L2 block which processed the delayed messages (the header Nonce increases)
 	latestL2, err := builder.L2.Client.BlockNumber(ctx)
 	Require(t, err)
@@ -829,11 +835,12 @@ func TestBatchPosterL1SurplusMatchesBatchGas(t *testing.T) {
 	// scan recent L2 blocks for nonce increase
 	// we expect this to be within the last 50 since the batch poster should post quickly
 	for b := l2Block.Number().Uint64(); b <= latestL2; b++ {
-		t.Logf("checking L2 block %d for nonce %d", b, nonce+1)
 		block, err := builder.L2.Client.BlockByNumber(ctx, big.NewInt(int64(b)))
 		Require(t, err)
+		t.Logf("checking L2 block %d: nonce=%d (looking for %d)", b, block.Nonce(), nonce+1)
 		if block.Nonce() == nonce+1 {
 			foundBlock = block.Header().Number.Uint64()
+			break
 		}
 	}
 	if foundBlock == 0 {
