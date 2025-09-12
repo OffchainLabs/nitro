@@ -103,16 +103,28 @@ func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.Arbos
 		}
 		batchTimestamp := util.SafeMapGet[*big.Int](inputs, "batchTimestamp")
 		batchPosterAddress := util.SafeMapGet[common.Address](inputs, "batchPosterAddress")
-		batchLength := util.SafeMapGet[uint64](inputs, "batchLength")
-		batchNonZeros := util.SafeMapGet[uint64](inputs, "batchNonZeros")
+		batchCalldataLength := util.SafeMapGet[uint64](inputs, "batchCalldataLength")
+		batchCalldataNonZeros := util.SafeMapGet[uint64](inputs, "batchCalldataNonZeros")
+		batchLegacyGas := util.SafeMapGet[uint64](inputs, "batchLegacyGas")
 		batchExtraGas := util.SafeMapGet[uint64](inputs, "batchExtraGas")
 		l1BaseFeeWei := util.SafeMapGet[*big.Int](inputs, "l1BaseFeeWei")
 
-		gasSpent := arbostypes.LegacyCostForStats(&arbostypes.BatchDataStats{
-			Length:   batchLength,
-			NonZeros: batchNonZeros,
-		})
-		gasSpent = arbmath.SaturatingUAdd(gasSpent, batchExtraGas)
+		var gasSpent uint64
+		if batchCalldataLength == ^uint64(0) {
+			if state.ArbOSVersion() >= params.ArbosVersion_50 {
+				return fmt.Errorf("missing batch calldata stats for arbos >= 50")
+			}
+			gasSpent = batchLegacyGas
+		} else {
+			gasSpent = arbostypes.LegacyCostForStats(&arbostypes.BatchDataStats{
+				Length:   batchCalldataLength,
+				NonZeros: batchCalldataNonZeros,
+			})
+			gasSpent = arbmath.SaturatingUAdd(gasSpent, batchExtraGas)
+			if batchLegacyGas != ^uint64(0) && batchLegacyGas != gasSpent {
+				log.Error("legacy gas doesn't fit local compute", "local", gasSpent, "legacy", batchLegacyGas, "timestamp", batchTimestamp)
+			}
+		}
 
 		l1p := state.L1PricingState()
 		perBatchGas, err := l1p.PerBatchGasCost()
@@ -126,7 +138,7 @@ func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.Arbos
 			if err != nil {
 				log.Warn("failed reading gasFloorPerToken", "err", err)
 			}
-			floorGasSpent := gasFloorPerToken * (batchLength + batchNonZeros*3)
+			floorGasSpent := gasFloorPerToken * (batchCalldataLength + batchCalldataNonZeros*3)
 			if floorGasSpent > gasSpent {
 				gasSpent = floorGasSpent
 			}
