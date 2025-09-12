@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -41,7 +42,7 @@ var DefaultClientConfig = ClientConfig{
 		ArgLogLimit:               2048,
 		WebsocketMessageSizeLimit: 256 * 1024 * 1024,
 	},
-	MaxPostBodySize: 512 * 1024,
+	MaxPostBodySize: genericconf.HTTPServerBodyLimitDefault,
 }
 
 func ClientConfigAddOptions(prefix string, f *pflag.FlagSet) {
