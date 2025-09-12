@@ -31,7 +31,7 @@ type DataStreamer struct {
 
 // DataStreamingRPCMethods configuration specifies names of the protocol's RPC methods on the server side.
 type DataStreamingRPCMethods struct {
-	startReceiving, receiveChunk, finalizeReceiving string
+	StartReceiving, ReceiveChunk, FinalizeReceiving string
 }
 
 // NewDataStreamer creates a new DataStreamer instance.
@@ -66,7 +66,7 @@ func NewDataStreamer(url string, maxStoreChunkBodySize int, dataSigner signature
 }
 
 func calculateEffectiveChunkSize(maxStoreChunkBodySize int, rpcMethods DataStreamingRPCMethods) (uint64, error) {
-	jsonOverhead := len("{\"jsonrpc\":\"2.0\",\"id\":4294967295,\"method\":\"\",\"params\":[\"\"]}") + len(rpcMethods.receiveChunk)
+	jsonOverhead := len("{\"jsonrpc\":\"2.0\",\"id\":4294967295,\"method\":\"\",\"params\":[\"\"]}") + len(rpcMethods.ReceiveChunk)
 	chunkSize := (maxStoreChunkBodySize - jsonOverhead - 512 /* headers */) / 2
 	if chunkSize <= 0 {
 		return 0, fmt.Errorf("max-store-chunk-body-size %d doesn't leave enough room for chunk payload", maxStoreChunkBodySize)
@@ -105,7 +105,7 @@ func (ds *DataStreamer) startStream(ctx context.Context, startReqSig []byte, par
 	err := ds.rpcClient.CallContext(
 		ctx,
 		&startChunkedStoreResult,
-		ds.rpcMethods.startReceiving,
+		ds.rpcMethods.StartReceiving,
 		hexutil.Uint64(params.timestamp),
 		hexutil.Uint64(params.nChunks),
 		hexutil.Uint64(ds.chunkSize),
@@ -138,7 +138,7 @@ func (ds *DataStreamer) sendChunk(ctx context.Context, batchId hexutil.Uint64, c
 		return err
 	}
 
-	err = ds.rpcClient.CallContext(ctx, nil, ds.rpcMethods.receiveChunk, batchId, hexutil.Uint64(chunkId), hexutil.Bytes(chunkData), hexutil.Bytes(chunkReqSig))
+	err = ds.rpcClient.CallContext(ctx, nil, ds.rpcMethods.ReceiveChunk, batchId, hexutil.Uint64(chunkId), hexutil.Bytes(chunkData), hexutil.Bytes(chunkReqSig))
 	if err != nil {
 		rpcClientSendChunkFailureGauge.Inc(1)
 		return err
@@ -149,7 +149,7 @@ func (ds *DataStreamer) sendChunk(ctx context.Context, batchId hexutil.Uint64, c
 }
 
 func (ds *DataStreamer) finalizeStream(ctx context.Context, finalReqSig []byte, batchId hexutil.Uint64) (storeResult *StoreResult, err error) {
-	err = ds.rpcClient.CallContext(ctx, &storeResult, ds.rpcMethods.finalizeReceiving, batchId, hexutil.Bytes(finalReqSig))
+	err = ds.rpcClient.CallContext(ctx, &storeResult, ds.rpcMethods.FinalizeReceiving, batchId, hexutil.Bytes(finalReqSig))
 	return
 }
 

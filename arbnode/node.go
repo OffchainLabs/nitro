@@ -596,7 +596,7 @@ func getDAProvider(
 
 	if config.DA.Mode == "external" {
 		// External DA provider mode
-		daClient, err = daclient.NewClient(ctx, func() *rpcclient.ClientConfig { return &config.DA.ExternalProvider.RPC })
+		daClient, err = daclient.NewClient(ctx, func() *rpcclient.ClientConfig { return &config.DA.ExternalProvider.RPC }, config.DA.ExternalProvider.MaxPostBodySize, dataSigner)
 		if err != nil {
 			return nil, nil, nil, nil, err
 		}
@@ -713,7 +713,7 @@ func getDAProvider(
 		clientConfig := rpcclient.DefaultClientConfig
 		clientConfig.URL = providerServer.Addr
 		clientConfig.JWTSecret = jwtPath
-		daClient, err = daclient.NewClient(ctx, func() *rpcclient.ClientConfig { return &clientConfig })
+		daClient, err = daclient.NewClient(ctx, func() *rpcclient.ClientConfig { return &clientConfig }, config.DA.ExternalProvider.MaxPostBodySize, dataSigner)
 		if err != nil {
 			return nil, nil, nil, nil, err
 		}

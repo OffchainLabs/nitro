@@ -57,9 +57,9 @@ func NewDASRPCClient(target string, signer signature.DataSignerFunc, maxStoreChu
 	var dataStreamer *DataStreamer
 	if enableChunkedStore {
 		rpcMethods := DataStreamingRPCMethods{
-			startReceiving:    "das_startChunkedStore",
-			receiveChunk:      "das_sendChunk",
-			finalizeReceiving: "das_commitChunkedStore",
+			StartReceiving:    "das_startChunkedStore",
+			ReceiveChunk:      "das_sendChunk",
+			FinalizeReceiving: "das_commitChunkedStore",
 		}
 		dataStreamer, err = NewDataStreamer(target, maxStoreChunkBodySize, signer, rpcMethods)
 		if err != nil {

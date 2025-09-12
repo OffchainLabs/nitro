@@ -403,13 +403,15 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, 
 	locator, err := server_common.NewMachineLocator(valCfg.Wasm.RootPath)
 	Require(t, err)
 
+	const RPCBodyLimit int = 1_000
+
 	// Create DA validators for both nodes
 	daClientConfigA := func() *rpcclient.ClientConfig {
 		return &rpcclient.ClientConfig{
 			URL: providerURLNodeA,
 		}
 	}
-	daClientA, err := daclient.NewClient(ctx, daClientConfigA)
+	daClientA, err := daclient.NewClient(ctx, daClientConfigA, RPCBodyLimit, dataSigner)
 	Require(t, err)
 
 	daClientConfigB := func() *rpcclient.ClientConfig {
@@ -417,7 +419,7 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, 
 			URL: providerURLNodeB,
 		}
 	}
-	daClientB, err := daclient.NewClient(ctx, daClientConfigB)
+	daClientB, err := daclient.NewClient(ctx, daClientConfigB, RPCBodyLimit, dataSigner)
 	Require(t, err)
 
 	// Create DA readers for validators

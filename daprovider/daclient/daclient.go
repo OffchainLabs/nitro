@@ -15,17 +15,21 @@ import (
 
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/daprovider"
+	"github.com/offchainlabs/nitro/daprovider/das"
 	"github.com/offchainlabs/nitro/util/rpcclient"
+	"github.com/offchainlabs/nitro/util/signature"
 )
 
 type Client struct {
 	*rpcclient.RpcClient
+	*das.DataStreamer
 }
 
 type ClientConfig struct {
-	Enable     bool                   `koanf:"enable"`
-	WithWriter bool                   `koanf:"with-writer"`
-	RPC        rpcclient.ClientConfig `koanf:"rpc"`
+	Enable          bool                   `koanf:"enable"`
+	WithWriter      bool                   `koanf:"with-writer"`
+	RPC             rpcclient.ClientConfig `koanf:"rpc"`
+	MaxPostBodySize int                    `koanf:"max-post-body-size"`
 }
 
 var DefaultClientConfig = ClientConfig{
@@ -37,16 +41,28 @@ var DefaultClientConfig = ClientConfig{
 		ArgLogLimit:               2048,
 		WebsocketMessageSizeLimit: 256 * 1024 * 1024,
 	},
+	MaxPostBodySize: 512 * 1024,
 }
 
 func ClientConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultClientConfig.Enable, "enable daprovider client")
 	f.Bool(prefix+".with-writer", DefaultClientConfig.WithWriter, "implies if the daprovider rpc server supports writer interface")
 	rpcclient.RPCClientAddOptions(prefix+".rpc", f, &DefaultClientConfig.RPC)
+	f.Int(prefix+".max-post-body-size", DefaultClientConfig.MaxPostBodySize, "max HTTP POST body size")
 }
 
-func NewClient(ctx context.Context, config rpcclient.ClientConfigFetcher) (*Client, error) {
-	client := &Client{rpcclient.NewRpcClient(config, nil)}
+func NewClient(ctx context.Context, config rpcclient.ClientConfigFetcher, maxPostBodySize int, dataSigner signature.DataSignerFunc) (*Client, error) {
+	storeRpcMethods := das.DataStreamingRPCMethods{
+		StartReceiving:    "daprovider_startChunkedStore",
+		ReceiveChunk:      "daprovider_sendChunk",
+		FinalizeReceiving: "daprovider_commitChunkedStore",
+	}
+	dataStreamer, err := das.NewDataStreamer(config().URL, maxPostBodySize, dataSigner, storeRpcMethods)
+	if err != nil {
+		return nil, err
+	}
+
+	client := &Client{rpcclient.NewRpcClient(config, nil), dataStreamer}
 	if err := client.Start(ctx); err != nil {
 		return nil, fmt.Errorf("error starting daprovider client: %w", err)
 	}
