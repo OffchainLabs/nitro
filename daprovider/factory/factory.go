@@ -108,7 +108,7 @@ func (f *AnyTrustFactory) ValidateConfig() error {
 }
 
 func (f *AnyTrustFactory) CreateReader(ctx context.Context) (daprovider.Reader, func(), error) {
-	var daReader das.DataAvailabilityServiceReader
+	var daReader dasutil.DASReader
 	var keysetFetcher *das.KeysetFetcher
 	var lifecycleManager *das.LifecycleManager
 	var err error
