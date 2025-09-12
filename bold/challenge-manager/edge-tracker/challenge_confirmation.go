@@ -319,12 +319,13 @@ func (cc *challengeConfirmer) waitForTxToBeSafe(
 		if !txSafe {
 			var blocksLeftForTxToBeSafe int64
 			if receipt.BlockNumber.Uint64() > latestSafeHeaderNumber {
-				blocksLeftForTxToBeSafe = 0
-			} else {
-				blocksLeftForTxToBeSafe, err = safecast.ToInt64(latestSafeHeaderNumber - receipt.BlockNumber.Uint64())
+				// Wait for safe head to catch up to the receipt block
+				blocksLeftForTxToBeSafe, err = safecast.ToInt64(receipt.BlockNumber.Uint64() - latestSafeHeaderNumber)
 				if err != nil {
 					return errors.Wrap(err, "could not convert blocks left for tx to be safe to int64")
 				}
+			} else {
+				blocksLeftForTxToBeSafe = 0
 			}
 			timeToWait := cc.averageTimeForBlockCreation * time.Duration(blocksLeftForTxToBeSafe)
 			select {
