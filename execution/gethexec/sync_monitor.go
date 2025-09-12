@@ -4,6 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
+	"sync/atomic"
+	"time"
 
 	flag "github.com/spf13/pflag"
 
@@ -15,48 +18,139 @@ import (
 	"github.com/offchainlabs/nitro/execution"
 )
 
+type syncDataEntry struct {
+	maxMessageCount arbutil.MessageIndex
+	timestamp       time.Time
+}
+
+// syncHistory maintains a time-based sliding window of sync data
+type syncHistory struct {
+	mutex   sync.RWMutex
+	entries []syncDataEntry
+	msgLag  time.Duration
+}
+
+func newSyncHistory(msgLag time.Duration) *syncHistory {
+	return &syncHistory{
+		entries: make([]syncDataEntry, 0),
+		msgLag:  msgLag,
+	}
+}
+
+// add adds a new entry and trims old entries beyond 2*msgLag
+func (h *syncHistory) add(maxMessageCount arbutil.MessageIndex, timestamp time.Time) {
+	h.mutex.Lock()
+	defer h.mutex.Unlock()
+
+	h.entries = append(h.entries, syncDataEntry{
+		maxMessageCount: maxMessageCount,
+		timestamp:       timestamp,
+	})
+
+	// Trim entries older than 2*msgLag
+	cutoff := timestamp.Add(-2 * h.msgLag)
+	i := 0
+	for i < len(h.entries) && h.entries[i].timestamp.Before(cutoff) {
+		i++
+	}
+	if i > 0 {
+		h.entries = h.entries[i:]
+	}
+}
+
+// getSyncTarget returns the appropriate sync target based on msgLag timing
+// Returns 0 if no appropriate entry is found
+func (h *syncHistory) getSyncTarget(now time.Time) arbutil.MessageIndex {
+	h.mutex.RLock()
+	defer h.mutex.RUnlock()
+
+	if len(h.entries) == 0 {
+		return 0
+	}
+
+	// Find entries between msgLag and 2*msgLag ago
+	windowStart := now.Add(-2 * h.msgLag)
+	windowEnd := now.Add(-h.msgLag)
+
+	for _, entry := range h.entries {
+		if !entry.timestamp.Before(windowStart) && !entry.timestamp.After(windowEnd) {
+			// Return the first (oldest) entry in the window
+			return entry.maxMessageCount
+		}
+	}
+
+	return 0
+}
+
 type SyncMonitorConfig struct {
-	SafeBlockWaitForBlockValidator      bool `koanf:"safe-block-wait-for-block-validator"`
-	FinalizedBlockWaitForBlockValidator bool `koanf:"finalized-block-wait-for-block-validator"`
+	SafeBlockWaitForBlockValidator      bool          `koanf:"safe-block-wait-for-block-validator"`
+	FinalizedBlockWaitForBlockValidator bool          `koanf:"finalized-block-wait-for-block-validator"`
+	MsgLag                              time.Duration `koanf:"msg-lag"`
 }
 
 var DefaultSyncMonitorConfig = SyncMonitorConfig{
 	SafeBlockWaitForBlockValidator:      false,
 	FinalizedBlockWaitForBlockValidator: false,
+	MsgLag:                              time.Second,
 }
 
 func SyncMonitorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".safe-block-wait-for-block-validator", DefaultSyncMonitorConfig.SafeBlockWaitForBlockValidator, "wait for block validator to complete before returning safe block number")
 	f.Bool(prefix+".finalized-block-wait-for-block-validator", DefaultSyncMonitorConfig.FinalizedBlockWaitForBlockValidator, "wait for block validator to complete before returning finalized block number")
+	f.Duration(prefix+".msg-lag", DefaultSyncMonitorConfig.MsgLag, "allowed message lag while still considered in sync")
 }
 
 type SyncMonitor struct {
 	config    *SyncMonitorConfig
 	consensus execution.ConsensusInfo
 	exec      *ExecutionEngine
+
+	consensusSyncData atomic.Pointer[execution.ConsensusSyncData]
+	syncHistory       *syncHistory
 }
 
 func NewSyncMonitor(config *SyncMonitorConfig, exec *ExecutionEngine) *SyncMonitor {
 	return &SyncMonitor{
-		config: config,
-		exec:   exec,
+		config:      config,
+		exec:        exec,
+		syncHistory: newSyncHistory(config.MsgLag),
+	}
+}
+
+// SetConsensusSyncData updates the sync data pushed from consensus
+func (s *SyncMonitor) SetConsensusSyncData(syncData *execution.ConsensusSyncData) {
+	s.consensusSyncData.Store(syncData)
+
+	// Add the max message count to history for sync target calculation
+	if syncData != nil && syncData.MaxMessageCount > 0 {
+		s.syncHistory.add(syncData.MaxMessageCount, syncData.UpdatedAt)
 	}
 }
 
 func (s *SyncMonitor) FullSyncProgressMap(ctx context.Context) map[string]interface{} {
-	res, err := s.consensus.FullSyncProgressMap().Await(ctx)
-	if err != nil {
-		res = make(map[string]interface{})
-		res["fullSyncProgressMapError"] = err
+	data := s.consensusSyncData.Load()
+	if data == nil {
+		return map[string]interface{}{"error": "no consensus sync data available"}
 	}
 
-	consensusSyncTarget, err := s.consensus.SyncTargetMessageCount().Await(ctx)
-	if err != nil {
-		res["consensusSyncTargetError"] = err
-	} else {
-		res["consensusSyncTarget"] = consensusSyncTarget
+	res := make(map[string]interface{})
+
+	// Copy sync progress map if it exists (may be nil when synced)
+	if data.SyncProgressMap != nil {
+		for k, v := range data.SyncProgressMap {
+			res[k] = v
+		}
 	}
 
+	// Always add the max message count
+	res["maxMessageCount"] = data.MaxMessageCount
+
+	// Add execution-calculated sync target
+	now := time.Now()
+	executionSyncTarget := s.syncHistory.getSyncTarget(now)
+	res["executionSyncTarget"] = executionSyncTarget
+
+	// Add execution-specific data
 	header, err := s.exec.getCurrentHeader()
 	if err != nil {
 		res["currentHeaderError"] = err
@@ -82,32 +176,38 @@ func (s *SyncMonitor) SyncProgressMap(ctx context.Context) map[string]interface{
 }
 
 func (s *SyncMonitor) Synced(ctx context.Context) bool {
-	synced, err := s.consensus.Synced().Await(ctx)
-	if err != nil {
-		log.Error("Error checking if consensus is synced", "err", err)
+	data := s.consensusSyncData.Load()
+	if data == nil {
 		return false
 	}
-	if synced {
-		built, err := s.exec.HeadMessageIndex()
-		if err != nil {
-			log.Error("Error getting head message index", "err", err)
-			return false
-		}
 
-		consensusSyncTarget, err := s.consensus.SyncTargetMessageCount().Await(ctx)
-		if err != nil {
-			log.Error("Error getting consensus sync target", "err", err)
-			return false
-		}
-		if consensusSyncTarget == 0 {
-			return false
-		}
-
-		if built+1 >= consensusSyncTarget {
-			return true
-		}
+	// Check that the sync data is fresh (not older than MsgLag)
+	now := time.Now()
+	if now.Sub(data.UpdatedAt) > s.config.MsgLag {
+		return false
 	}
-	return false
+
+	// Consensus must report being synced
+	if !data.Synced {
+		return false
+	}
+
+	// Get execution's current message index
+	built, err := s.exec.HeadMessageIndex()
+	if err != nil {
+		log.Error("Error getting head message index", "err", err)
+		return false
+	}
+
+	// Calculate the sync target based on historical data
+	syncTarget := s.syncHistory.getSyncTarget(now)
+	if syncTarget == 0 {
+		// No valid sync target available yet
+		return false
+	}
+
+	// Check if execution has reached the calculated sync target
+	return built+1 >= syncTarget
 }
 
 func (s *SyncMonitor) SetConsensusInfo(consensus execution.ConsensusInfo) {
