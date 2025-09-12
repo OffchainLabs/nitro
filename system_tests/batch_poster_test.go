@@ -25,6 +25,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/externalsignertest"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
+	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/solgen/go/upgrade_executorgen"
 	"github.com/offchainlabs/nitro/util/redisutil"
 )
@@ -514,6 +515,7 @@ func GetBatchCount(t *testing.T, builder *NodeBuilder) uint64 {
 }
 
 func CheckBatchCount(t *testing.T, builder *NodeBuilder, want uint64) {
+	t.Helper()
 	if got := GetBatchCount(t, builder); got != want {
 		t.Fatalf("invalid batch count, want %v, got %v", want, got)
 	}
@@ -720,4 +722,141 @@ func TestBatchPosterWithDelayProofsAndBacklog(t *testing.T) {
 	builder.L1.ClientWrapper.DisableRawTransactionFilter()
 	builder.L1.SendWaitTestTransactions(t, batchPosterTxs)
 	CheckBatchCount(t, builder, initialBatchCount+numBatches)
+}
+
+func TestBatchPosterL1SurplusMatchesBatchGas(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).
+		DefaultConfig(t, true)
+
+	// make max tx data big enough to send near-limit sized tx
+	builder.execConfig.Sequencer.MaxTxDataSize = 150000
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	initialBatchCount := GetBatchCount(t, builder)
+
+	debugAuth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
+
+	// make auth a chain owner
+	arbdebug, err := precompilesgen.NewArbDebug(types.ArbDebugAddress, builder.L2.Client)
+	Require(t, err, "failed to deploy ArbDebug")
+
+	tx, err := arbdebug.BecomeChainOwner(&debugAuth)
+	Require(t, err, "failed to deploy ArbDebug")
+
+	_, err = EnsureTxSucceeded(ctx, builder.L2.Client, tx)
+	Require(t, err)
+
+	// prepare accounts
+	builder.L2Info.GenerateAccount("UserLarge")
+
+	// Optionally set parent gas floor per token to allow the batch poster to reimburse
+	ownerAuth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
+	arbOwner, err := precompilesgen.NewArbOwner(types.ArbOwnerAddress, builder.L2.Client)
+	Require(t, err)
+	tx, err = arbOwner.SetParentGasFloorPerToken(&ownerAuth, uint64(10))
+	Require(t, err)
+	_, err = WaitForTx(ctx, builder.L2.Client, tx.Hash(), 5*time.Second)
+	Require(t, err)
+
+	// Build l1 gas info accessor
+	gasInfo, err := precompilesgen.NewArbGasInfo(types.ArbGasInfoAddress, builder.L2.Client)
+	Require(t, err)
+
+	// craft a large L2 tx to trigger batch posting
+	data := make([]byte, 120000)
+	_, err = rand.Read(data)
+	Require(t, err)
+
+	// send tx from Owner -> random address to ensure it is included
+	to := builder.L2Info.GetAddress("Faucet")
+	gas := builder.L2Info.TransferGas + 20000*uint64(len(data))
+	tx = builder.L2Info.PrepareTxTo("Owner", &to, gas, common.Big0, data)
+	err = builder.L2.Client.SendTransaction(ctx, tx)
+	Require(t, err)
+
+	// wait for tx receipt
+	receipt, err := builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	l2Block, err := builder.L2.Client.BlockByHash(ctx, receipt.BlockHash)
+	Require(t, err)
+
+	// record the header Nonce before the delayed message is processed
+	nonce := l2Block.Header().Nonce.Uint64()
+
+	// Even advancing the L1, the batch won't be posted because it doesn't contain a delayed message
+	CheckBatchCount(t, builder, initialBatchCount+1)
+
+	// find L1 transaction that posts the batch by scanning SequencerInbox transactions
+	seqInboxAddr := builder.L1Info.GetAddress("SequencerInbox")
+	var batchTx *types.Transaction
+	// scan recent L1 blocks for txs to SequencerInbox
+	latestL1, err := builder.L1.Client.BlockNumber(ctx)
+	Require(t, err)
+	for b := latestL1; b > 0 && latestL1-b < 50; b-- {
+		block, err := builder.L1.Client.BlockByNumber(ctx, big.NewInt(int64(b)))
+		Require(t, err)
+		for _, txL1 := range block.Transactions() {
+			if len(txL1.To()) > 0 && *txL1.To() == seqInboxAddr {
+				batchTx = txL1
+				break
+			}
+		}
+		if batchTx != nil {
+			break
+		}
+	}
+	if batchTx == nil {
+		Fatal(t, "couldn't find batch poster transaction on L1")
+	}
+
+	// get receipt of batch tx to know gas used
+	batchReceipt, err := builder.L1.Client.TransactionReceipt(ctx, batchTx.Hash())
+	Require(t, err)
+	batchL1GasUsed := batchReceipt.GasUsed
+
+	// find the L2 block which processed the delayed messages (the header Nonce increases)
+	latestL2, err := builder.L2.Client.BlockNumber(ctx)
+	Require(t, err)
+
+	/* THIS IS WHERE L2 is still on the block that sent the large tx, and not yet got the batch posting report from L1 */
+
+	var foundBlock uint64
+	// scan recent L2 blocks for nonce increase
+	// we expect this to be within the last 50 since the batch poster should post quickly
+	for b := l2Block.Number().Uint64(); b <= latestL2; b++ {
+		t.Logf("checking L2 block %d for nonce %d", b, nonce+1)
+		block, err := builder.L2.Client.BlockByNumber(ctx, big.NewInt(int64(b)))
+		Require(t, err)
+		if block.Nonce() == nonce+1 {
+			foundBlock = block.Header().Number.Uint64()
+		}
+	}
+	if foundBlock == 0 {
+		Fatal(t, "couldn't find L2 block that processed delayed message")
+	}
+	// check headers before and after the block containing our receipt
+	// Find the block that processed the delayed instruction by scanning L2 headers around receipt block
+	Require(t, err)
+	// call gasInfo surplus before and after this block
+	surplusBefore, err := gasInfo.GetL1PricingSurplus(&bind.CallOpts{BlockNumber: big.NewInt(int64(foundBlock))})
+	Require(t, err)
+	surplusAfter, err := gasInfo.GetL1PricingSurplus(&bind.CallOpts{BlockNumber: big.NewInt(int64(foundBlock + 1))})
+	Require(t, err)
+
+	// compute delta
+	delta := new(big.Int).Sub(surplusAfter, surplusBefore)
+
+	diff := new(big.Int).Sub(delta, new(big.Int).SetUint64(batchL1GasUsed))
+	// allow small rounding differences up to 1 wei per unit
+	if diff.Uint64() != 0 {
+		// fail unless parent gas floor env was set (which makes test intended to pass)
+		if diff.Uint64() > 10 {
+			t.Errorf("surplus delta %d and batch L1 gas cost %d differ by %d (want < 10).", delta, batchL1GasUsed, diff)
+		}
+	}
 }
