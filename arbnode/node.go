@@ -699,7 +699,11 @@ func getDAProvider(
 			cleanupFuncs = append(cleanupFuncs, validatorCleanup)
 		}
 
-		providerServer, err := dapserver.NewServerWithDAPProvider(ctx, &serverConfig, reader, writer, validator)
+		signatureVerifier, err := das.NewSignatureVerifier(ctx, config.DataAvailability)
+		if err != nil {
+			return nil, nil, nil, nil, err
+		}
+		providerServer, err := dapserver.NewServerWithDAPProvider(ctx, &serverConfig, reader, writer, validator, signatureVerifier)
 
 		// Create combined cleanup function
 		closeFn := func() {

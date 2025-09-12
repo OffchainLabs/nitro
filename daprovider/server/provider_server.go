@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	flag "github.com/spf13/pflag"
 
@@ -25,30 +26,36 @@ import (
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/daprovider/daclient"
+	"github.com/offchainlabs/nitro/daprovider/das"
 )
 
 type Server struct {
-	reader    daprovider.Reader
-	writer    daprovider.Writer
-	validator daprovider.Validator
+	reader       daprovider.Reader
+	writer       daprovider.Writer
+	validator    daprovider.Validator
+	dataReceiver *das.DataStreamReceiver
 }
 
 type ServerConfig struct {
-	Addr               string                              `koanf:"addr"`
-	Port               uint64                              `koanf:"port"`
-	JWTSecret          string                              `koanf:"jwtsecret"`
-	EnableDAWriter     bool                                `koanf:"enable-da-writer"`
-	ServerTimeouts     genericconf.HTTPServerTimeoutConfig `koanf:"server-timeouts"`
-	RPCServerBodyLimit int                                 `koanf:"rpc-server-body-limit"`
+	Addr                  string                              `koanf:"addr"`
+	Port                  uint64                              `koanf:"port"`
+	JWTSecret             string                              `koanf:"jwtsecret"`
+	EnableDAWriter        bool                                `koanf:"enable-da-writer"`
+	ServerTimeouts        genericconf.HTTPServerTimeoutConfig `koanf:"server-timeouts"`
+	RPCServerBodyLimit    int                                 `koanf:"rpc-server-body-limit"`
+	MaxPendingBatches     int                                 `koanf:"max-pending-batches"`
+	BatchCollectionExpiry time.Duration                       `koanf:"batch-collection-expiry"`
 }
 
 var DefaultServerConfig = ServerConfig{
-	Addr:               "localhost",
-	Port:               9880,
-	JWTSecret:          "",
-	EnableDAWriter:     false,
-	ServerTimeouts:     genericconf.HTTPServerTimeoutConfigDefault,
-	RPCServerBodyLimit: genericconf.HTTPServerBodyLimitDefault,
+	Addr:                  "localhost",
+	Port:                  9880,
+	JWTSecret:             "",
+	EnableDAWriter:        false,
+	ServerTimeouts:        genericconf.HTTPServerTimeoutConfigDefault,
+	RPCServerBodyLimit:    genericconf.HTTPServerBodyLimitDefault,
+	MaxPendingBatches:     das.DefaultMaxPendingMessages,
+	BatchCollectionExpiry: das.DefaultMessageCollectionExpiry,
 }
 
 func ServerConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -58,6 +65,8 @@ func ServerConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable-da-writer", DefaultServerConfig.EnableDAWriter, "implies if the das server supports daprovider's writer interface")
 	f.Int(prefix+".rpc-server-body-limit", DefaultServerConfig.RPCServerBodyLimit, "HTTP-RPC server maximum request body size in bytes; the default (0) uses geth's 5MB limit")
 	genericconf.HTTPServerTimeoutConfigAddOptions(prefix+".server-timeouts", f)
+	f.Int(prefix+".max-pending-batches", DefaultServerConfig.MaxPendingBatches, "max open connections for batch streaming")
+	f.Duration(prefix+".batch-collection-expiry", DefaultServerConfig.BatchCollectionExpiry, "expiration time of an incomplete batch")
 }
 
 func fetchJWTSecret(fileName string) ([]byte, error) {
@@ -74,7 +83,7 @@ func fetchJWTSecret(fileName string) ([]byte, error) {
 }
 
 // NewServerWithDAPProvider creates a new server with pre-created reader/writer/validator components
-func NewServerWithDAPProvider(ctx context.Context, config *ServerConfig, reader daprovider.Reader, writer daprovider.Writer, validator daprovider.Validator) (*http.Server, error) {
+func NewServerWithDAPProvider(ctx context.Context, config *ServerConfig, reader daprovider.Reader, writer daprovider.Writer, validator daprovider.Validator, signatureVerifier *das.SignatureVerifier) (*http.Server, error) {
 	listener, err := net.Listen("tcp", fmt.Sprintf("%s:%d", config.Addr, config.Port))
 	if err != nil {
 		return nil, err
@@ -86,9 +95,10 @@ func NewServerWithDAPProvider(ctx context.Context, config *ServerConfig, reader 
 	}
 
 	server := &Server{
-		reader:    reader,
-		writer:    writer,
-		validator: validator,
+		reader:       reader,
+		writer:       writer,
+		validator:    validator,
+		dataReceiver: das.NewDataStreamReceiver(signatureVerifier, config.MaxPendingBatches, config.BatchCollectionExpiry),
 	}
 	if err = rpcServer.RegisterName("daprovider", server); err != nil {
 		return nil, err

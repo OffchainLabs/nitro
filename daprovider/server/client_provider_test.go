@@ -15,6 +15,7 @@ import (
 
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/daprovider/daclient"
+	"github.com/offchainlabs/nitro/daprovider/das"
 	"github.com/offchainlabs/nitro/daprovider/referenceda"
 	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/signature"
@@ -64,7 +65,12 @@ func setupProviderServer(ctx context.Context, t *testing.T) *http.Server {
 	writer := referenceda.NewWriter(dataSigner)
 	validator := referenceda.NewValidator(nil, dummyAddress)
 
-	providerServer, err := NewServerWithDAPProvider(ctx, &providerServerConfig, reader, writer, validator)
+	signatureVerifier, err := das.NewSignatureVerifierWithSeqInboxCaller(nil, "")
+	if err != nil {
+		return nil
+	}
+
+	providerServer, err := NewServerWithDAPProvider(ctx, &providerServerConfig, reader, writer, validator, signatureVerifier)
 	testhelpers.RequireImpl(t, err)
 
 	return providerServer
