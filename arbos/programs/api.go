@@ -210,9 +210,9 @@ func newApiClosures(
 		var suberr error
 
 		if opcode == vm.CREATE {
-			res, addr, returnGas, suberr = evm.Create(contract.Address(), code, gas, endowment)
+			res, addr, returnGas, _, suberr = evm.Create(contract.Address(), code, gas, endowment)
 		} else {
-			res, addr, returnGas, suberr = evm.Create2(contract.Address(), code, gas, endowment, salt)
+			res, addr, returnGas, _, suberr = evm.Create2(contract.Address(), code, gas, endowment, salt)
 		}
 		if suberr != nil {
 			addr = zeroAddr
