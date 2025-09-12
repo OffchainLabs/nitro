@@ -203,7 +203,7 @@ func WithSafeFastConfirmation() Opt {
 
 func WithMockBridge() Opt {
 	return func(setup *ChainSetup) {
-		setup.useMockBridge = false
+		setup.useMockBridge = true
 	}
 }
 
