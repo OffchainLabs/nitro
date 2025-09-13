@@ -101,7 +101,7 @@ func testCompileArch(store bool, cranelift bool) error {
 		return fmt.Errorf("succeeded compiling non-existent arch: %w", err)
 	}
 
-	outBytes, err := compileNative(wasm, 1, true, localTarget, false, timeout)
+	outBytes, err := compileNative(wasm, 1, true, localTarget, cranelift, timeout)
 
 	if err != nil {
 		return fmt.Errorf("failed compiling native: %w", err)
@@ -118,7 +118,7 @@ func testCompileArch(store bool, cranelift bool) error {
 		}
 	}
 
-	outBytes, err = compileNative(wasm, 1, true, rawdb.TargetArm64, false, timeout)
+	outBytes, err = compileNative(wasm, 1, true, rawdb.TargetArm64, cranelift, timeout)
 
 	if err != nil {
 		return fmt.Errorf("failed compiling arm: %w", err)
@@ -135,7 +135,7 @@ func testCompileArch(store bool, cranelift bool) error {
 		}
 	}
 
-	outBytes, err = compileNative(wasm, 1, true, rawdb.TargetAmd64, false, timeout)
+	outBytes, err = compileNative(wasm, 1, true, rawdb.TargetAmd64, cranelift, timeout)
 
 	if err != nil {
 		return fmt.Errorf("failed compiling amd: %w", err)
