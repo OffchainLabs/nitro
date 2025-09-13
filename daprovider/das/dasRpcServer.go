@@ -7,11 +7,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math/rand"
 	"net"
 	"net/http"
-	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -36,6 +33,12 @@ var (
 	rpcSendChunkFailureGauge = metrics.NewRegisteredGauge("arb/das/rpc/sendchunk/failure", nil)
 )
 
+const (
+	defaultMaxPendingMessages      = 10
+	defaultMessageCollectionExpiry = 1 * time.Minute
+)
+
+// lint:require-exhaustive-initialization
 type DASRPCServer struct {
 	daReader        dasutil.DASReader
 	daWriter        dasutil.DASWriter
@@ -43,7 +46,7 @@ type DASRPCServer struct {
 
 	signatureVerifier *SignatureVerifier
 
-	batches *batchBuilder
+	dataStreamReceiver *DataStreamReceiver
 }
 
 func StartDASRPCServer(ctx context.Context, addr string, portNum uint64, rpcServerTimeouts genericconf.HTTPServerTimeoutConfig, rpcServerBodyLimit int, daReader dasutil.DASReader, daWriter dasutil.DASWriter, daHealthChecker DataAvailabilityServiceHealthChecker, signatureVerifier *SignatureVerifier) (*http.Server, error) {
@@ -67,11 +70,11 @@ func StartDASRPCServerOnListener(ctx context.Context, listener net.Listener, rpc
 	}
 
 	err := rpcServer.RegisterName("das", &DASRPCServer{
-		daReader:          daReader,
-		daWriter:          daWriter,
-		daHealthChecker:   daHealthChecker,
-		signatureVerifier: signatureVerifier,
-		batches:           newBatchBuilder(),
+		daReader:           daReader,
+		daWriter:           daWriter,
+		daHealthChecker:    daHealthChecker,
+		signatureVerifier:  signatureVerifier,
+		dataStreamReceiver: NewDataStreamReceiver(signatureVerifier, defaultMaxPendingMessages, defaultMessageCollectionExpiry),
 	})
 	if err != nil {
 		return nil, err
@@ -98,6 +101,7 @@ func StartDASRPCServerOnListener(ctx context.Context, listener net.Listener, rpc
 	return srv, nil
 }
 
+// lint:require-exhaustive-initialization
 type StoreResult struct {
 	DataHash    hexutil.Bytes  `json:"dataHash,omitempty"`
 	Timeout     hexutil.Uint64 `json:"timeout,omitempty"`
@@ -107,6 +111,7 @@ type StoreResult struct {
 	Version     hexutil.Uint64 `json:"version,omitempty"`
 }
 
+// The legacy storing API.
 func (s *DASRPCServer) Store(ctx context.Context, message hexutil.Bytes, timeout hexutil.Uint64, sig hexutil.Bytes) (*StoreResult, error) {
 	// #nosec G115
 	log.Trace("dasRpc.DASRPCServer.Store", "message", pretty.FirstFewBytes(message), "message length", len(message), "timeout", time.Unix(int64(timeout), 0), "sig", pretty.FirstFewBytes(sig), "this", s)
@@ -142,133 +147,19 @@ func (s *DASRPCServer) Store(ctx context.Context, message hexutil.Bytes, timeout
 	}, nil
 }
 
-type StartChunkedStoreResult struct {
-	BatchId hexutil.Uint64 `json:"batchId,omitempty"`
-}
-
-type SendChunkResult struct {
-	Ok hexutil.Uint64 `json:"sendChunkResult,omitempty"`
-}
-
-type batch struct {
-	chunks                          [][]byte
-	expectedChunks                  uint64
-	seenChunks                      atomic.Uint64
-	expectedChunkSize, expectedSize uint64
-	timeout                         uint64
-	startTime                       time.Time
-	mutex                           sync.Mutex
-}
-
-const (
-	maxPendingBatches   = 10
-	batchBuildingExpiry = 1 * time.Minute
-)
-
 // exposed global for test control
 var (
 	legacyDASStoreAPIOnly = false
 )
 
-type batchBuilder struct {
-	mutex   sync.Mutex
-	batches map[uint64]*batch
+// lint:require-exhaustive-initialization
+type StartChunkedStoreResult struct {
+	MessageId hexutil.Uint64 `json:"messageId,omitempty"`
 }
 
-func newBatchBuilder() *batchBuilder {
-	return &batchBuilder{
-		batches: make(map[uint64]*batch),
-	}
-}
-
-func (b *batchBuilder) assign(nChunks, timeout, chunkSize, totalSize uint64) (uint64, error) {
-	b.mutex.Lock()
-	defer b.mutex.Unlock()
-	if len(b.batches) >= maxPendingBatches {
-		return 0, fmt.Errorf("can't start new batch, already %d pending", len(b.batches))
-	}
-
-	id := rand.Uint64()
-	_, ok := b.batches[id]
-	if ok {
-		return 0, fmt.Errorf("can't start new batch, try again")
-	}
-
-	b.batches[id] = &batch{
-		chunks:            make([][]byte, nChunks),
-		expectedChunks:    nChunks,
-		expectedChunkSize: chunkSize,
-		expectedSize:      totalSize,
-		timeout:           timeout,
-		startTime:         time.Now(),
-	}
-	go func(id uint64) {
-		<-time.After(batchBuildingExpiry)
-		b.mutex.Lock()
-		// Batch will only exist if expiry was reached without it being complete.
-		if _, exists := b.batches[id]; exists {
-			rpcStoreFailureGauge.Inc(1)
-			delete(b.batches, id)
-		}
-		b.mutex.Unlock()
-	}(id)
-	return id, nil
-}
-
-func (b *batchBuilder) add(id, idx uint64, data []byte) error {
-	b.mutex.Lock()
-	batch, ok := b.batches[id]
-	b.mutex.Unlock()
-	if !ok {
-		return fmt.Errorf("unknown batch(%d)", id)
-	}
-
-	batch.mutex.Lock()
-	defer batch.mutex.Unlock()
-
-	if idx >= uint64(len(batch.chunks)) {
-		return fmt.Errorf("batch(%d): chunk(%d) out of range", id, idx)
-	}
-
-	if batch.chunks[idx] != nil {
-		return fmt.Errorf("batch(%d): chunk(%d) already added", id, idx)
-	}
-
-	if batch.expectedChunkSize < uint64(len(data)) {
-		return fmt.Errorf("batch(%d): chunk(%d) greater than expected size %d, was %d", id, idx, batch.expectedChunkSize, len(data))
-	}
-
-	batch.chunks[idx] = data
-	batch.seenChunks.Add(1)
-	return nil
-}
-
-func (b *batchBuilder) close(id uint64) ([]byte, uint64, time.Time, error) {
-	b.mutex.Lock()
-	batch, ok := b.batches[id]
-	delete(b.batches, id)
-	b.mutex.Unlock()
-	if !ok {
-		return nil, 0, time.Time{}, fmt.Errorf("unknown batch(%d)", id)
-	}
-
-	batch.mutex.Lock()
-	defer batch.mutex.Unlock()
-
-	if batch.expectedChunks != batch.seenChunks.Load() {
-		return nil, 0, time.Time{}, fmt.Errorf("incomplete batch(%d): got %d/%d chunks", id, batch.seenChunks.Load(), batch.expectedChunks)
-	}
-
-	var flattened []byte
-	for _, chunk := range batch.chunks {
-		flattened = append(flattened, chunk...)
-	}
-
-	if batch.expectedSize != uint64(len(flattened)) {
-		return nil, 0, time.Time{}, fmt.Errorf("batch(%d) was not expected size %d, was %d", id, batch.expectedSize, len(flattened))
-	}
-
-	return flattened, batch.timeout, batch.startTime, nil
+// lint:require-exhaustive-initialization
+type SendChunkResult struct {
+	Ok hexutil.Uint64 `json:"sendChunkResult,omitempty"`
 }
 
 func (s *DASRPCServer) StartChunkedStore(ctx context.Context, timestamp, nChunks, chunkSize, totalSize, timeout hexutil.Uint64, sig hexutil.Bytes) (*StartChunkedStoreResult, error) {
@@ -277,32 +168,22 @@ func (s *DASRPCServer) StartChunkedStore(ctx context.Context, timestamp, nChunks
 	defer func() {
 		if failed {
 			rpcStoreFailureGauge.Inc(1)
-		} // success gague will be incremented on successful commit
+		} // success gauge will be incremented on successful commit
 	}()
 
-	if err := s.signatureVerifier.verify(ctx, []byte{}, sig, uint64(timestamp), uint64(nChunks), uint64(chunkSize), uint64(totalSize), uint64(timeout)); err != nil {
-		return nil, err
-	}
-
-	// Prevent replay of old messages
-	// #nosec G115
-	if time.Since(time.Unix(int64(timestamp), 0)).Abs() > time.Minute {
-		return nil, errors.New("too much time has elapsed since request was signed")
-	}
-
-	id, err := s.batches.assign(uint64(nChunks), uint64(timeout), uint64(chunkSize), uint64(totalSize))
+	id, err := s.dataStreamReceiver.StartReceiving(ctx, uint64(timestamp), uint64(nChunks), uint64(chunkSize), uint64(totalSize), uint64(timeout), sig)
 	if err != nil {
 		return nil, err
 	}
 
 	failed = false
 	return &StartChunkedStoreResult{
-		BatchId: hexutil.Uint64(id),
+		MessageId: hexutil.Uint64(id),
 	}, nil
 
 }
 
-func (s *DASRPCServer) SendChunk(ctx context.Context, batchId, chunkId hexutil.Uint64, message hexutil.Bytes, sig hexutil.Bytes) error {
+func (s *DASRPCServer) SendChunk(ctx context.Context, messageId, chunkId hexutil.Uint64, chunk hexutil.Bytes, sig hexutil.Bytes) error {
 	success := false
 	defer func() {
 		if success {
@@ -312,11 +193,7 @@ func (s *DASRPCServer) SendChunk(ctx context.Context, batchId, chunkId hexutil.U
 		}
 	}()
 
-	if err := s.signatureVerifier.verify(ctx, message, sig, uint64(batchId), uint64(chunkId)); err != nil {
-		return err
-	}
-
-	if err := s.batches.add(uint64(batchId), uint64(chunkId), message); err != nil {
+	if err := s.dataStreamReceiver.ReceiveChunk(ctx, MessageId(messageId), uint64(chunkId), chunk, sig); err != nil {
 		return err
 	}
 
@@ -324,12 +201,8 @@ func (s *DASRPCServer) SendChunk(ctx context.Context, batchId, chunkId hexutil.U
 	return nil
 }
 
-func (s *DASRPCServer) CommitChunkedStore(ctx context.Context, batchId hexutil.Uint64, sig hexutil.Bytes) (*StoreResult, error) {
-	if err := s.signatureVerifier.verify(ctx, []byte{}, sig, uint64(batchId)); err != nil {
-		return nil, err
-	}
-
-	message, timeout, startTime, err := s.batches.close(uint64(batchId))
+func (s *DASRPCServer) CommitChunkedStore(ctx context.Context, messageId hexutil.Uint64, sig hexutil.Bytes) (*StoreResult, error) {
+	message, timeout, startTime, err := s.dataStreamReceiver.FinalizeReceiving(ctx, MessageId(messageId), sig)
 	if err != nil {
 		return nil, err
 	}
