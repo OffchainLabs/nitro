@@ -432,6 +432,11 @@ func (b *NodeBuilder) WithL1ClientWrapper(t *testing.T) *NodeBuilder {
 	return b
 }
 
+func (b *NodeBuilder) TakeOwnership() *NodeBuilder {
+	b.takeOwnership = true
+	return b
+}
+
 func (b *NodeBuilder) Build(t *testing.T) func() {
 	if b.parallelise {
 		b.parallelise = false
@@ -757,6 +762,20 @@ func (b *NodeBuilder) BuildL2OnL1(t *testing.T) func() {
 		b.initMessage,
 		b.addresses,
 	)
+
+	if b.takeOwnership {
+		debugAuth := b.L2Info.GetDefaultTransactOpts("Owner", b.ctx)
+
+		// make auth a chain owner
+		arbdebug, err := precompilesgen.NewArbDebug(common.HexToAddress("0xff"), b.L2.Client)
+		Require(t, err, "failed to deploy ArbDebug")
+
+		tx, err := arbdebug.BecomeChainOwner(&debugAuth)
+		Require(t, err, "failed to deploy ArbDebug")
+
+		_, err = EnsureTxSucceeded(b.ctx, b.L2.Client, tx)
+		Require(t, err)
+	}
 
 	return func() {
 		b.L2.cleanup()

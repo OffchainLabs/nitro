@@ -16,6 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos/arbosState"
+	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
@@ -102,16 +103,49 @@ func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.Arbos
 		}
 		batchTimestamp := util.SafeMapGet[*big.Int](inputs, "batchTimestamp")
 		batchPosterAddress := util.SafeMapGet[common.Address](inputs, "batchPosterAddress")
-		batchDataGas := util.SafeMapGet[uint64](inputs, "batchDataGas")
+		batchCalldataLength := util.SafeMapGet[uint64](inputs, "batchCalldataLength")
+		batchCalldataNonZeros := util.SafeMapGet[uint64](inputs, "batchCalldataNonZeros")
+		batchLegacyGas := util.SafeMapGet[uint64](inputs, "batchLegacyGas")
+		batchExtraGas := util.SafeMapGet[uint64](inputs, "batchExtraGas")
 		l1BaseFeeWei := util.SafeMapGet[*big.Int](inputs, "l1BaseFeeWei")
 
+		var gasSpent uint64
+		if batchCalldataLength == ^uint64(0) {
+			if state.ArbOSVersion() >= params.ArbosVersion_50 {
+				return fmt.Errorf("missing batch calldata stats for arbos >= 50")
+			}
+			gasSpent = batchLegacyGas
+		} else {
+			gasSpent = arbostypes.LegacyCostForStats(&arbostypes.BatchDataStats{
+				Length:   batchCalldataLength,
+				NonZeros: batchCalldataNonZeros,
+			})
+			gasSpent = arbmath.SaturatingUAdd(gasSpent, batchExtraGas)
+			if batchLegacyGas != ^uint64(0) && batchLegacyGas != gasSpent {
+				log.Error("legacy gas doesn't fit local compute", "local", gasSpent, "legacy", batchLegacyGas, "timestamp", batchTimestamp)
+			}
+		}
+
 		l1p := state.L1PricingState()
+
 		perBatchGas, err := l1p.PerBatchGasCost()
 		if err != nil {
 			log.Warn("L1Pricing PerBatchGas failed", "err", err)
 		}
-		gasSpent := arbmath.SaturatingAdd(perBatchGas, arbmath.SaturatingCast[int64](batchDataGas))
-		weiSpent := arbmath.BigMulByUint(l1BaseFeeWei, arbmath.SaturatingUCast[uint64](gasSpent))
+		gasSpent = arbmath.SaturatingUAdd(gasSpent, arbmath.SaturatingUCast[uint64](perBatchGas))
+
+		if state.ArbOSVersion() >= params.ArbosVersion_50 {
+			gasFloorPerToken, err := l1p.ParentGasFloorPerToken()
+			if err != nil {
+				log.Warn("failed reading gasFloorPerToken", "err", err)
+			}
+			floorGasSpent := gasFloorPerToken*(batchCalldataLength+batchCalldataNonZeros*3) + params.TxGas
+			if floorGasSpent > gasSpent {
+				gasSpent = floorGasSpent
+			}
+		}
+
+		weiSpent := arbmath.BigMulByUint(l1BaseFeeWei, gasSpent)
 		err = l1p.UpdateForBatchPosterSpending(
 			evm.StateDB,
 			evm,

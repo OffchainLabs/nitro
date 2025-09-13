@@ -44,12 +44,7 @@ func (con ArbGasInfo) GetPricesInWeiWithAggregator(
 		l2GasPrice = evm.Context.BaseFee
 	}
 
-	// aggregators compress calldata, so we must estimate accordingly
-	l1CalldataPrice, err := c.State.L1PricingState().CalldataPrice()
-	if err != nil {
-		return nil, nil, nil, nil, nil, nil, err
-	}
-	weiForL1Calldata := arbmath.BigMul(l1GasPrice, l1CalldataPrice)
+	weiForL1Calldata := arbmath.BigMulByUint(l1GasPrice, params.TxDataNonZeroGasEIP2028)
 
 	// the cost of a simple tx without calldata
 	perL2Tx := arbmath.BigMulByUint(weiForL1Calldata, AssumedSimpleTxSize)
@@ -86,12 +81,7 @@ func (con ArbGasInfo) _preVersion4_GetPricesInWeiWithAggregator(
 		l2GasPrice = evm.Context.BaseFee
 	}
 
-	// aggregators compress calldata, so we must estimate accordingly
-	l1CalldataPrice, err := c.State.L1PricingState().CalldataPrice()
-	if err != nil {
-		return nil, nil, nil, nil, nil, nil, err
-	}
-	weiForL1Calldata := arbmath.BigMul(l1GasPrice, l1CalldataPrice)
+	weiForL1Calldata := arbmath.BigMulByUint(l1GasPrice, params.TxDataNonZeroGasEIP2028)
 
 	// the cost of a simple tx without calldata
 	perL2Tx := arbmath.BigMulByUint(weiForL1Calldata, AssumedSimpleTxSize)
@@ -127,12 +117,7 @@ func (con ArbGasInfo) GetPricesInArbGasWithAggregator(c ctx, evm mech, aggregato
 		l2GasPrice = evm.Context.BaseFee
 	}
 
-	// aggregators compress calldata, so we must estimate accordingly
-	l1CalldataPrice, err := c.State.L1PricingState().CalldataPrice()
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	weiForL1Calldata := arbmath.BigMul(l1GasPrice, l1CalldataPrice)
+	weiForL1Calldata := arbmath.BigMulByUint(l1GasPrice, params.TxDataNonZeroGasEIP2028)
 	weiPerL2Tx := arbmath.BigMulByUint(weiForL1Calldata, AssumedSimpleTxSize)
 	gasForL1Calldata := common.Big0
 	gasPerL2Tx := common.Big0
@@ -156,12 +141,7 @@ func (con ArbGasInfo) _preVersion4_GetPricesInArbGasWithAggregator(c ctx, evm me
 		l2GasPrice = evm.Context.BaseFee
 	}
 
-	// aggregators compress calldata, so we must estimate accordingly
-	l1CalldataPrice, err := c.State.L1PricingState().CalldataPrice()
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	weiForL1Calldata := arbmath.BigMul(l1GasPrice, l1CalldataPrice)
+	weiForL1Calldata := arbmath.BigMulByUint(l1GasPrice, params.TxDataNonZeroGasEIP2028)
 	gasForL1Calldata := common.Big0
 	if l2GasPrice.Sign() > 0 {
 		gasForL1Calldata = arbmath.BigDiv(weiForL1Calldata, l2GasPrice)

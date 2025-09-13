@@ -58,7 +58,7 @@ func BuildBlock(
 	batchFetcher := func(uint64) ([]byte, error) {
 		return seqBatch, nil
 	}
-	err = l1Message.FillInBatchGasCost(batchFetcher)
+	err = l1Message.FillInBatchGasFields(batchFetcher)
 	if err != nil {
 		// skip malformed batch posting report
 		// nolint:nilerr

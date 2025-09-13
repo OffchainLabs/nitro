@@ -49,7 +49,7 @@ func TestEthConfig(t *testing.T) {
 			ActivationTime: 0,
 			BlobSchedule:   nil,
 			ChainId:        (*hexutil.Big)(hexutil.MustDecodeBig("0x64aba")),
-			ForkId:         (hexutil.Bytes)(hexutil.MustDecode("0xf13b2a8a")),
+			ForkId:         (hexutil.Bytes)(hexutil.MustDecode("0x0bad4cb8")),
 			Precompiles: map[string]common.Address{
 				"ArbAddressTable":       common.HexToAddress("0x0000000000000000000000000000000000000066"),
 				"ArbAggregator":         common.HexToAddress("0x000000000000000000000000000000000000006d"),
