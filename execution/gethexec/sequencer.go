@@ -1599,18 +1599,18 @@ func (s *Sequencer) StopAndWait() {
 				}
 			}
 			wg.Add(1)
-			go func() {
+			go func(it txQueueItem, src TxSource) {
 				defer wg.Done()
 				var err error
-				if source == TimeboostAuctionResolutionTxQueue {
-					err = forwarder.PublishAuctionResolutionTransaction(item.ctx, item.tx)
+				if src == TimeboostAuctionResolutionTxQueue {
+					err = forwarder.PublishAuctionResolutionTransaction(it.ctx, it.tx)
 				} else {
-					err = forwarder.PublishTransaction(item.ctx, item.tx, item.options)
+					err = forwarder.PublishTransaction(it.ctx, it.tx, it.options)
 				}
 				if err != nil {
-					log.Warn("failed to forward transaction while shutting down", "source", source.String(), "err", err)
+					log.Warn("failed to forward transaction while shutting down", "source", src.String(), "err", err)
 				}
-			}()
+			}(item, source)
 		}
 		wg.Wait()
 	}
