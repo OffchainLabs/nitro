@@ -56,7 +56,7 @@ func (h L1IncomingMessageHeader) SeqNum() (uint64, error) {
 }
 
 type BatchDataStats struct {
-	Length   uint64 `json:"zeros"`
+	Length   uint64 `json:"length"`
 	NonZeros uint64 `json:"nonzeros"`
 }
 
@@ -252,7 +252,7 @@ func ParseIncomingL1Message(rd io.Reader, batchFetcher FallibleBatchFetcher) (*L
 	}
 
 	msg := &L1IncomingMessage{
-		&L1IncomingMessageHeader{
+		Header: &L1IncomingMessageHeader{
 			Kind:        kind,
 			Poster:      sender,
 			BlockNumber: blockNumber,
@@ -260,9 +260,9 @@ func ParseIncomingL1Message(rd io.Reader, batchFetcher FallibleBatchFetcher) (*L
 			RequestId:   &requestId,
 			L1BaseFee:   baseFeeL1.Big(),
 		},
-		data,
-		nil,
-		nil,
+		L2msg:              data,
+		LegacyBatchGasCost: nil,
+		BatchDataStats:     nil,
 	}
 	err = msg.FillInBatchGasFields(batchFetcher)
 	if err != nil {
