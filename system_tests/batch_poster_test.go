@@ -24,6 +24,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/externalsignertest"
+	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/solgen/go/upgrade_executorgen"
@@ -729,48 +730,33 @@ func TestBatchPosterL1SurplusMatchesBatchGas(t *testing.T) {
 	defer cancel()
 
 	builder := NewNodeBuilder(ctx).
-		DefaultConfig(t, true)
+		DefaultConfig(t, true).
+		TakeOwnership()
 
-	// make max tx data big enough to send near-limit sized tx
-	builder.execConfig.Sequencer.MaxTxDataSize = 150000
 	// Enable delayed sequencer to process batch posting reports
 	builder.nodeConfig.DelayedSequencer.Enable = true
 	builder.nodeConfig.DelayedSequencer.FinalizeDistance = 1
 	cleanup := builder.Build(t)
 	defer cleanup()
-
-	initialBatchCount := GetBatchCount(t, builder)
-
-	debugAuth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
-
-	// make auth a chain owner
-	arbdebug, err := precompilesgen.NewArbDebug(types.ArbDebugAddress, builder.L2.Client)
-	Require(t, err, "failed to deploy ArbDebug")
-
-	tx, err := arbdebug.BecomeChainOwner(&debugAuth)
-	Require(t, err, "failed to deploy ArbDebug")
-
-	_, err = EnsureTxSucceeded(ctx, builder.L2.Client, tx)
-	Require(t, err)
-
-	// prepare accounts
-	builder.L2Info.GenerateAccount("UserLarge")
-
-	// Optionally set parent gas floor per token to allow the batch poster to reimburse
+	// Set chain params: GasFloorPerToken for fusaka, but dont charge L1 to make pricing easier
 	ownerAuth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
 	arbOwner, err := precompilesgen.NewArbOwner(types.ArbOwnerAddress, builder.L2.Client)
 	Require(t, err)
-	tx, err = arbOwner.SetParentGasFloorPerToken(&ownerAuth, uint64(10))
+	tx, err := arbOwner.SetParentGasFloorPerToken(&ownerAuth, uint64(10))
 	Require(t, err)
-	_, err = WaitForTx(ctx, builder.L2.Client, tx.Hash(), 5*time.Second)
+	_, err = EnsureTxSucceeded(ctx, builder.L2.Client, tx)
+	Require(t, err)
+	tx, err = arbOwner.SetL1PricePerUnit(&ownerAuth, big.NewInt(0))
+	Require(t, err)
+	_, err = EnsureTxSucceeded(ctx, builder.L2.Client, tx)
+	Require(t, err)
+	tx, err = arbOwner.SetL1PricingInertia(&ownerAuth, 1)
+	Require(t, err)
+	_, err = EnsureTxSucceeded(ctx, builder.L2.Client, tx)
 	Require(t, err)
 
-	// Build l1 gas info accessor
-	gasInfo, err := precompilesgen.NewArbGasInfo(types.ArbGasInfoAddress, builder.L2.Client)
-	Require(t, err)
-
-	// craft a large L2 tx to trigger batch posting
-	data := make([]byte, 120000)
+	// craft a large L2 tx
+	data := make([]byte, 70000)
 	_, err = rand.Read(data)
 	Require(t, err)
 
@@ -781,47 +767,47 @@ func TestBatchPosterL1SurplusMatchesBatchGas(t *testing.T) {
 	err = builder.L2.Client.SendTransaction(ctx, tx)
 	Require(t, err)
 
-	// wait for tx receipt
+	// wait for L2 tx receipt
 	receipt, err := builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
 
 	l2Block, err := builder.L2.Client.BlockByHash(ctx, receipt.BlockHash)
 	Require(t, err)
 
-	// record the header Nonce before the delayed message is processed
-	nonce := l2Block.Header().Nonce.Uint64()
-
-	// Even advancing the L1, the batch won't be posted because it doesn't contain a delayed message
-	CheckBatchCount(t, builder, initialBatchCount+1)
-
-	// find L1 transaction that posts the batch by scanning SequencerInbox transactions
-	seqInboxAddr := builder.L1Info.GetAddress("SequencerInbox")
-	var batchTx *types.Transaction
-	// scan recent L1 blocks for txs to SequencerInbox
-	latestL1, err := builder.L1.Client.BlockNumber(ctx)
-	Require(t, err)
-	for b := latestL1; b > 0 && latestL1-b < 50; b-- {
-		block, err := builder.L1.Client.BlockByNumber(ctx, big.NewInt(int64(b)))
-		Require(t, err)
-		for _, txL1 := range block.Transactions() {
-			if len(txL1.To()) > 0 && *txL1.To() == seqInboxAddr {
-				batchTx = txL1
-				break
-			}
-		}
-		if batchTx != nil {
+	// wait for this tx to be posted in a batch, and check which batch
+	var batchNum *big.Int
+	for {
+		batch, err := builder.L2.ConsensusNode.FindInboxBatchContainingMessage(arbutil.MessageIndex(l2Block.NumberU64())).Await(ctx)
+		if err == nil && batch.Found {
+			batchNum = new(big.Int).SetUint64(batch.BatchNum)
 			break
 		}
+		t.Logf("waiting for tx to be posted in a batch")
+		<-time.After(time.Millisecond * 10)
 	}
-	if batchTx == nil {
-		Fatal(t, "couldn't find batch poster transaction on L1")
+
+	// find the transaction that posted this batch to parent chain
+	seqInboxContract, err := bridgegen.NewSequencerInbox(builder.L1Info.GetAddress("SequencerInbox"), builder.L1.Client)
+	Require(t, err)
+	var batchTxHash common.Hash
+	for {
+		it, err := seqInboxContract.FilterSequencerBatchDelivered(nil, []*big.Int{batchNum}, nil, nil)
+		if err == nil && it.Next() {
+			batchTxHash = it.Event.Raw.TxHash
+			break
+		}
+		t.Logf("waiting to find sequencer batch message")
+		<-time.After(time.Millisecond * 10)
 	}
 
 	// get receipt of batch tx to know gas used
-	batchReceipt, err := builder.L1.Client.TransactionReceipt(ctx, batchTx.Hash())
+	batchReceipt, err := builder.L1.Client.TransactionReceipt(ctx, batchTxHash)
 	Require(t, err)
-	batchL1GasUsed := batchReceipt.GasUsed
+	batchL1Block, err := builder.L1.Client.HeaderByHash(ctx, batchReceipt.BlockHash)
+	Require(t, err)
+	batchL1PostCost, _ := new(big.Int).Mul(batchL1Block.BaseFee, new(big.Int).SetUint64(batchReceipt.GasUsed)).Float64()
 
+	t.Log("batch posting found", "l1Block", batchL1Block.Number.Uint64(), "basefee", batchL1Block.BaseFee.Uint64(), "postCost", batchL1PostCost, "gasUsed", batchReceipt.GasUsed)
 	// Advance L1 to satisfy finality requirements for the batch posting report to be processed
 	AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, 2)
 
@@ -835,10 +821,10 @@ func TestBatchPosterL1SurplusMatchesBatchGas(t *testing.T) {
 	// scan recent L2 blocks for nonce increase
 	// we expect this to be within the last 50 since the batch poster should post quickly
 	for b := l2Block.Number().Uint64(); b <= latestL2; b++ {
-		block, err := builder.L2.Client.BlockByNumber(ctx, big.NewInt(int64(b)))
+		block, err := builder.L2.Client.BlockByNumber(ctx, new(big.Int).SetUint64(b))
 		Require(t, err)
-		t.Logf("checking L2 block %d: nonce=%d (looking for %d)", b, block.Nonce(), nonce+1)
-		if block.Nonce() == nonce+1 {
+		t.Logf("checking L2 block %d: nonce=%d (looking for %d)", b, block.Nonce(), batchNum)
+		if block.Nonce() == batchNum.Uint64()+1 {
 			foundBlock = block.Header().Number.Uint64()
 			break
 		}
@@ -848,22 +834,21 @@ func TestBatchPosterL1SurplusMatchesBatchGas(t *testing.T) {
 	}
 	// check headers before and after the block containing our receipt
 	// Find the block that processed the delayed instruction by scanning L2 headers around receipt block
+
+	// Build l1 gas info accessor
+	gasInfo, err := precompilesgen.NewArbGasInfo(types.ArbGasInfoAddress, builder.L2.Client)
 	Require(t, err)
+
 	// call gasInfo surplus before and after this block
-	surplusBefore, err := gasInfo.GetL1PricingSurplus(&bind.CallOpts{BlockNumber: big.NewInt(int64(foundBlock))})
+	surplusBefore, err := gasInfo.GetL1PricingSurplus(&bind.CallOpts{BlockNumber: new(big.Int).SetUint64(foundBlock - 1)})
 	Require(t, err)
-	surplusAfter, err := gasInfo.GetL1PricingSurplus(&bind.CallOpts{BlockNumber: big.NewInt(int64(foundBlock + 1))})
+	surplusAfter, err := gasInfo.GetL1PricingSurplus(&bind.CallOpts{BlockNumber: new(big.Int).SetUint64(foundBlock)})
 	Require(t, err)
 
 	// compute delta
-	delta := new(big.Int).Sub(surplusAfter, surplusBefore)
+	delta, _ := new(big.Int).Sub(surplusBefore, surplusAfter).Float64()
 
-	diff := new(big.Int).Sub(delta, new(big.Int).SetUint64(batchL1GasUsed))
-	// allow small rounding differences up to 1 wei per unit
-	if diff.Uint64() != 0 {
-		// fail unless parent gas floor env was set (which makes test intended to pass)
-		if diff.Uint64() > 10 {
-			t.Errorf("surplus delta %d and batch L1 gas cost %d differ by %d (want < 10).", delta, batchL1GasUsed, diff)
-		}
-	}
+	t.Log("BATCH prices", "from-receipt", batchL1PostCost, "surplus-delta", delta)
+
+	checkPercentDiff(t, delta, batchL1PostCost, 0.1)
 }
