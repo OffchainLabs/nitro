@@ -4,8 +4,6 @@ run-name: Nightly CI tests triggered from @${{ github.actor }} of ${{ github.hea
 
 on:
   workflow_dispatch:
-  merge_group:
-  pull_request:
   push:
     branches: [master, main]
   schedule:
@@ -13,7 +11,7 @@ on:
     - cron: '0 0 * * *'
 
 jobs:
-  # Only run on schedule AND main branch
+  # Only run on schedule AND pushes to the main branch
   tests-scheduled:
     name: Scheduled tests
     runs-on: arbitrator-ci
