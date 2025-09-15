@@ -483,7 +483,7 @@ func (s *TransactionStreamer) GetMessage(msgIdx arbutil.MessageIndex) (*arbostyp
 		return nil, err
 	}
 
-	err = message.Message.FillInBatchGasCost(func(batchNum uint64) ([]byte, error) {
+	err = message.Message.FillInBatchGasFields(func(batchNum uint64) ([]byte, error) {
 		ctx, err := s.GetContextSafe()
 		if err != nil {
 			return nil, err
@@ -831,19 +831,22 @@ func (s *TransactionStreamer) countDuplicateMessages(
 			}
 			var duplicateMessage bool
 			if nextMessage.MessageWithMeta.Message != nil {
-				if dbMessageParsed.Message.BatchGasCost == nil || nextMessage.MessageWithMeta.Message.BatchGasCost == nil {
+				if dbMessageParsed.Message.BatchDataStats == nil || nextMessage.MessageWithMeta.Message.BatchDataStats == nil {
 					// Remove both of the batch gas costs and see if the messages still differ
 					nextMessageCopy := nextMessage.MessageWithMeta
 					nextMessageCopy.Message = new(arbostypes.L1IncomingMessage)
 					*nextMessageCopy.Message = *nextMessage.MessageWithMeta.Message
-					batchGasCostBkup := dbMessageParsed.Message.BatchGasCost
-					dbMessageParsed.Message.BatchGasCost = nil
-					nextMessageCopy.Message.BatchGasCost = nil
+					batchGasCostBkup := dbMessageParsed.Message.LegacyBatchGasCost
+					statsBkup := dbMessageParsed.Message.BatchDataStats
+					dbMessageParsed.Message.LegacyBatchGasCost = nil
+					nextMessageCopy.Message.LegacyBatchGasCost = nil
+					dbMessageParsed.Message.BatchDataStats = nil
+					nextMessageCopy.Message.BatchDataStats = nil
 					if reflect.DeepEqual(dbMessageParsed, nextMessageCopy) {
 						// Actually this isn't a reorg; only the batch gas costs differed
 						duplicateMessage = true
 						// If possible - update the message in the database to add the gas cost cache.
-						if batch != nil && nextMessage.MessageWithMeta.Message.BatchGasCost != nil {
+						if batch != nil && nextMessage.MessageWithMeta.Message.BatchDataStats != nil {
 							if *batch == nil {
 								*batch = s.db.NewBatch()
 							}
@@ -852,7 +855,8 @@ func (s *TransactionStreamer) countDuplicateMessages(
 							}
 						}
 					}
-					dbMessageParsed.Message.BatchGasCost = batchGasCostBkup
+					dbMessageParsed.Message.LegacyBatchGasCost = batchGasCostBkup
+					dbMessageParsed.Message.BatchDataStats = statsBkup
 				}
 			}
 

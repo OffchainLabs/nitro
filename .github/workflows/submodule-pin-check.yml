@@ -23,7 +23,7 @@ jobs:
         uses: actions/checkout@v5
         with:
           fetch-depth: 0
-          submodules: true
+          submodules: recursive
           persist-credentials: false
           ref: "${{ github.event.pull_request.head.sha }}"
 
