@@ -815,8 +815,6 @@ func TestBatchPosterL1SurplusMatchesBatchGas(t *testing.T) {
 	latestL2, err := builder.L2.Client.BlockNumber(ctx)
 	Require(t, err)
 
-	/* THIS IS WHERE L2 is still on the block that sent the large tx, and not yet got the batch posting report from L1 */
-
 	var foundBlock uint64
 	// scan recent L2 blocks for nonce increase
 	// we expect this to be within the last 50 since the batch poster should post quickly
