@@ -41,11 +41,8 @@ func TestMultigasStylus_GetBytes32(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Equal(t, params.ColdSloadCostEIP2929-params.WarmStorageReadCostEIP2929, receipt.MultiGasUsed.Get(multigas.ResourceKindStorageAccess))
-	require.Equal(t, params.WarmStorageReadCostEIP2929, receipt.MultiGasUsed.Get(multigas.ResourceKindComputation))
-
-	// TODO(NIT-3552): after instrumenting intrinsic gas and gasChargingHook this difference should be zero
-	// require.Equal(t, receipt.GasUsed, receipt.MultiGasUsed.SingleGas()+params.TxGas)
-	require.GreaterOrEqual(t, receipt.GasUsed, receipt.MultiGasUsed.SingleGas())
+	require.Equal(t, params.TxGas+params.WarmStorageReadCostEIP2929, receipt.MultiGasUsed.Get(multigas.ResourceKindComputation))
+	require.Equal(t, receipt.GasUsed, receipt.MultiGasUsed.SingleGas())
 
 	// TODO(NIT-3793, NIT-3793, NIT-3795): Once all WASM operations are instrumented, WasmComputation
 	// should be derived as the residual from SingleGas instead of asserted directly.
