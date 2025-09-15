@@ -20,10 +20,10 @@ import (
 
 	"github.com/offchainlabs/nitro/bold/api"
 	"github.com/offchainlabs/nitro/bold/api/db"
-	protocol "github.com/offchainlabs/nitro/bold/chain-abstraction"
+	"github.com/offchainlabs/nitro/bold/chain-abstraction"
 	"github.com/offchainlabs/nitro/bold/containers/option"
 	"github.com/offchainlabs/nitro/bold/state-commitments/history"
-	prefixproofs "github.com/offchainlabs/nitro/bold/state-commitments/prefix-proofs"
+	"github.com/offchainlabs/nitro/bold/state-commitments/prefix-proofs"
 )
 
 // MachineHashCollector defines an interface which collects hashes of the state

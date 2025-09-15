@@ -15,12 +15,12 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/log"
 
-	protocol "github.com/offchainlabs/nitro/bold/chain-abstraction"
-	solimpl "github.com/offchainlabs/nitro/bold/chain-abstraction/sol-implementation"
+	"github.com/offchainlabs/nitro/bold/chain-abstraction"
+	"github.com/offchainlabs/nitro/bold/chain-abstraction/sol-implementation"
 	"github.com/offchainlabs/nitro/bold/challenge-manager/types"
 	"github.com/offchainlabs/nitro/bold/containers/option"
 	"github.com/offchainlabs/nitro/bold/logs/ephemeral"
-	retry "github.com/offchainlabs/nitro/bold/runtime"
+	"github.com/offchainlabs/nitro/bold/runtime"
 )
 
 func (m *Manager) queueCanonicalAssertionsForConfirmation(ctx context.Context) {

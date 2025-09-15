@@ -21,7 +21,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/storage"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
-	am "github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
 type L1PricingState struct {
@@ -81,8 +81,8 @@ const (
 )
 
 // one minute at 100000 bytes / sec
-var InitialEquilibrationUnitsV0 = am.UintToBig(60 * params.TxDataNonZeroGasEIP2028 * 100000)
-var InitialEquilibrationUnitsV6 = am.UintToBig(params.TxDataNonZeroGasEIP2028 * 10000000)
+var InitialEquilibrationUnitsV0 = arbmath.UintToBig(60 * params.TxDataNonZeroGasEIP2028 * 100000)
+var InitialEquilibrationUnitsV6 = arbmath.UintToBig(params.TxDataNonZeroGasEIP2028 * 10000000)
 
 func InitializeL1PricingState(sto *storage.Storage, initialRewardsRecipient common.Address, initialL1BaseFee *big.Int) error {
 	bptStorage := sto.OpenCachedSubStorage(BatchPosterTableKey)
@@ -212,8 +212,8 @@ func (ps *L1PricingState) GetL1PricingSurplus() (*big.Int, error) {
 	if err != nil {
 		return nil, err
 	}
-	needFunds := am.BigAdd(fundsDueForRefunds, fundsDueForRewards)
-	return am.BigSub(haveFunds, needFunds), nil
+	needFunds := arbmath.BigAdd(fundsDueForRefunds, fundsDueForRewards)
+	return arbmath.BigSub(haveFunds, needFunds), nil
 }
 
 func (ps *L1PricingState) LastSurplus() (*big.Int, error) {
@@ -371,7 +371,7 @@ func (ps *L1PricingState) UpdateForBatchPosterSpending(
 	if err != nil {
 		return err
 	}
-	unitsAllocated := am.SaturatingUMul(unitsSinceUpdate, allocationNumerator) / allocationDenominator
+	unitsAllocated := arbmath.SaturatingUMul(unitsSinceUpdate, allocationNumerator) / allocationDenominator
 	unitsSinceUpdate -= unitsAllocated
 	if err := ps.SetUnitsSinceUpdate(unitsSinceUpdate); err != nil {
 		return err
@@ -384,11 +384,11 @@ func (ps *L1PricingState) UpdateForBatchPosterSpending(
 			return err
 		}
 		if amortizedCostCapBips != 0 {
-			weiSpentCap := am.BigMulByBips(
-				am.BigMulByUint(l1Basefee, unitsAllocated),
-				am.SaturatingCastToBips(amortizedCostCapBips),
+			weiSpentCap := arbmath.BigMulByBips(
+				arbmath.BigMulByUint(l1Basefee, unitsAllocated),
+				arbmath.SaturatingCastToBips(amortizedCostCapBips),
 			)
-			if am.BigLessThan(weiSpentCap, weiSpent) {
+			if arbmath.BigLessThan(weiSpentCap, weiSpent) {
 				// apply the cap on assignment of amortized cost;
 				// the difference will be a loss for the batch poster
 				weiSpent = weiSpentCap
@@ -400,7 +400,7 @@ func (ps *L1PricingState) UpdateForBatchPosterSpending(
 	if err != nil {
 		return err
 	}
-	err = posterState.SetFundsDue(am.BigAdd(dueToPoster, weiSpent))
+	err = posterState.SetFundsDue(arbmath.BigAdd(dueToPoster, weiSpent))
 	if err != nil {
 		return err
 	}
@@ -408,17 +408,17 @@ func (ps *L1PricingState) UpdateForBatchPosterSpending(
 	if err != nil {
 		return err
 	}
-	fundsDueForRewards = am.BigAdd(fundsDueForRewards, am.BigMulByUint(am.UintToBig(unitsAllocated), perUnitReward))
+	fundsDueForRewards = arbmath.BigAdd(fundsDueForRewards, arbmath.BigMulByUint(arbmath.UintToBig(unitsAllocated), perUnitReward))
 	if err := ps.SetFundsDueForRewards(fundsDueForRewards); err != nil {
 		return err
 	}
 
 	// pay rewards, as much as possible
-	paymentForRewards := am.BigMulByUint(am.UintToBig(perUnitReward), unitsAllocated)
-	if am.BigLessThan(l1FeesAvailable, paymentForRewards) {
+	paymentForRewards := arbmath.BigMulByUint(arbmath.UintToBig(perUnitReward), unitsAllocated)
+	if arbmath.BigLessThan(l1FeesAvailable, paymentForRewards) {
 		paymentForRewards = l1FeesAvailable
 	}
-	fundsDueForRewards = am.BigSub(fundsDueForRewards, paymentForRewards)
+	fundsDueForRewards = arbmath.BigSub(fundsDueForRewards, paymentForRewards)
 	if err := ps.SetFundsDueForRewards(fundsDueForRewards); err != nil {
 		return err
 	}
@@ -439,7 +439,7 @@ func (ps *L1PricingState) UpdateForBatchPosterSpending(
 		return err
 	}
 	balanceToTransfer := balanceDueToPoster
-	if am.BigLessThan(l1FeesAvailable, balanceToTransfer) {
+	if arbmath.BigLessThan(l1FeesAvailable, balanceToTransfer) {
 		balanceToTransfer = l1FeesAvailable
 	}
 	if balanceToTransfer.Sign() > 0 {
@@ -453,7 +453,7 @@ func (ps *L1PricingState) UpdateForBatchPosterSpending(
 		if err != nil {
 			return err
 		}
-		balanceDueToPoster = am.BigSub(balanceDueToPoster, balanceToTransfer)
+		balanceDueToPoster = arbmath.BigSub(balanceDueToPoster, balanceToTransfer)
 		err = posterState.SetFundsDue(balanceDueToPoster)
 		if err != nil {
 			return err
@@ -475,7 +475,7 @@ func (ps *L1PricingState) UpdateForBatchPosterSpending(
 		if err != nil {
 			return err
 		}
-		surplus := am.BigSub(l1FeesAvailable, am.BigAdd(totalFundsDue, fundsDueForRewards))
+		surplus := arbmath.BigSub(l1FeesAvailable, arbmath.BigAdd(totalFundsDue, fundsDueForRewards))
 
 		inertia, err := ps.Inertia()
 		if err != nil {
@@ -485,27 +485,27 @@ func (ps *L1PricingState) UpdateForBatchPosterSpending(
 		if err != nil {
 			return err
 		}
-		inertiaUnits := am.BigDivByUint(equilUnits, inertia)
+		inertiaUnits := arbmath.BigDivByUint(equilUnits, inertia)
 		price, err := ps.PricePerUnit()
 		if err != nil {
 			return err
 		}
 
-		allocPlusInert := am.BigAddByUint(inertiaUnits, unitsAllocated)
+		allocPlusInert := arbmath.BigAddByUint(inertiaUnits, unitsAllocated)
 		oldSurplus, err := ps.LastSurplus()
 		if err != nil {
 			return err
 		}
 
-		desiredDerivative := am.BigDiv(new(big.Int).Neg(surplus), equilUnits)
-		actualDerivative := am.BigDivByUint(am.BigSub(surplus, oldSurplus), unitsAllocated)
-		changeDerivativeBy := am.BigSub(desiredDerivative, actualDerivative)
-		priceChange := am.BigDiv(am.BigMulByUint(changeDerivativeBy, unitsAllocated), allocPlusInert)
+		desiredDerivative := arbmath.BigDiv(new(big.Int).Neg(surplus), equilUnits)
+		actualDerivative := arbmath.BigDivByUint(arbmath.BigSub(surplus, oldSurplus), unitsAllocated)
+		changeDerivativeBy := arbmath.BigSub(desiredDerivative, actualDerivative)
+		priceChange := arbmath.BigDiv(arbmath.BigMulByUint(changeDerivativeBy, unitsAllocated), allocPlusInert)
 
 		if err := ps.SetLastSurplus(surplus, arbosVersion); err != nil {
 			return err
 		}
-		newPrice := am.BigAdd(price, priceChange)
+		newPrice := arbmath.BigAdd(price, priceChange)
 		if newPrice.Sign() < 0 {
 			newPrice = common.Big0
 		}
@@ -531,7 +531,7 @@ func (ps *L1PricingState) getPosterUnitsWithoutCache(tx *types.Transaction, post
 	if err != nil {
 		panic(fmt.Sprintf("failed to compress tx: %v", err))
 	}
-	return am.SaturatingUMul(params.TxDataNonZeroGasEIP2028, l1Bytes)
+	return arbmath.SaturatingUMul(params.TxDataNonZeroGasEIP2028, l1Bytes)
 }
 
 // GetPosterInfo returns the poster cost and the calldata units for a transaction
@@ -550,7 +550,7 @@ func (ps *L1PricingState) GetPosterInfo(tx *types.Transaction, poster common.Add
 
 	// Approximate the l1 fee charged for posting this tx's calldata
 	pricePerUnit, _ := ps.PricePerUnit()
-	return am.BigMulByUint(pricePerUnit, units), units
+	return arbmath.BigMulByUint(pricePerUnit, units), units
 }
 
 // We don't have the full tx in gas estimation, so we assume it might be a bit bigger in practice.
@@ -562,7 +562,7 @@ var randomNonce = binary.BigEndian.Uint64(crypto.Keccak256([]byte("Nonce"))[:8])
 var randomGasTipCap = new(big.Int).SetBytes(crypto.Keccak256([]byte("GasTipCap"))[:4])
 var randomGasFeeCap = new(big.Int).SetBytes(crypto.Keccak256([]byte("GasFeeCap"))[:4])
 var RandomGas = uint64(binary.BigEndian.Uint32(crypto.Keccak256([]byte("Gas"))[:4]))
-var randV = am.BigMulByUint(chaininfo.ArbitrumOneChainConfig().ChainID, 3)
+var randV = arbmath.BigMulByUint(chaininfo.ArbitrumOneChainConfig().ChainID, 3)
 var randR = crypto.Keccak256Hash([]byte("R")).Big()
 var randS = crypto.Keccak256Hash([]byte("S")).Big()
 
@@ -611,9 +611,9 @@ func (ps *L1PricingState) PosterDataCost(message *core.Message, poster common.Ad
 	// We'll instead make a fake tx from the message info we do have, and then pad our cost a bit to be safe.
 	tx = makeFakeTxForMessage(message)
 	units := ps.getPosterUnitsWithoutCache(tx, poster, brotliCompressionLevel)
-	units = am.UintMulByBips(units+estimationPaddingUnits, am.OneInBips+estimationPaddingBasisPoints)
+	units = arbmath.UintMulByBips(units+estimationPaddingUnits, arbmath.OneInBips+estimationPaddingBasisPoints)
 	pricePerUnit, _ := ps.PricePerUnit()
-	return am.BigMulByUint(pricePerUnit, units), units
+	return arbmath.BigMulByUint(pricePerUnit, units), units
 }
 
 func byteCountAfterBrotliLevel(input []byte, level uint64) (uint64, error) {

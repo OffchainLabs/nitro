@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"github.com/r3labs/diff/v3"
-	flag "github.com/spf13/pflag"
+	"github.com/spf13/pflag"
 
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
@@ -25,7 +25,7 @@ import (
 )
 
 func TestEmptyCliConfig(t *testing.T) {
-	f := flag.NewFlagSet("", flag.ContinueOnError)
+	f := pflag.NewFlagSet("", pflag.ContinueOnError)
 	NodeConfigAddOptions(f)
 	k, err := confighelpers.BeginCommonParse(f, []string{})
 	Require(t, err)
