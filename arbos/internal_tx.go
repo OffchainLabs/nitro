@@ -45,10 +45,10 @@ func InternalTxStartBlock(
 	}
 }
 
-// In case floor_gas is used - this negates most of the difference between calldata and batch
+// In case floor_gas is used - this negates most of the difference between calldata and raw batch
 // Raw batch has a 40-byte header that didn't come from calldata (5 uint64s)
 // Calldata for the addSequencerL2BatchFromOrigin call in SequencerInbox, has a function selector
-// and 5 additional fields that don't appear in the aaw batch.
+// and 5 additional fields that don't appear in the raw batch.
 //
 // Token count for the additional fields in calldata:
 // 4*4 - 1 function selector (4 non-zero bytes)
