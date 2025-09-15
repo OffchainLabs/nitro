@@ -391,13 +391,6 @@ func (state *ArbosState) UpgradeArbosVersion(
 			ensure(err)
 			ensure(p.UpgradeToArbosVersion(nextArbosVersion))
 			ensure(p.Save())
-			chainId, err := state.ChainId()
-			ensure(err)
-			if chainId.Cmp(chaininfo.ArbitrumOneChainConfig().ChainID) == 0 || chainId.Cmp(chaininfo.ArbitrumNovaChainConfig().ChainID) == 0 {
-				ensure(state.l1PricingState.SetCalldataPrice(big.NewInt(int64(params.TxCostFloorPerToken))))
-			} else {
-				ensure(state.l1PricingState.SetCalldataPrice(big.NewInt(int64(params.TxDataNonZeroGasEIP2028))))
-			}
 			ensure(state.l2PricingState.SetMaxPerTxGasLimit(l2pricing.InitialPerTxGasLimitV50))
 			oldBlockGasLimit, err := state.l2PricingState.PerBlockGasLimit()
 			ensure(err)
