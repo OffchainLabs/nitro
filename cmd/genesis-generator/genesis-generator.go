@@ -147,12 +147,12 @@ func extractSerializedChainConfigFromJSON(genesisJson []byte) ([]byte, error) {
 	// Set decoded json feilds to map
 	var result map[string]json.RawMessage
 	if err := decoder.Decode(&result); err != nil {
-		return "", fmt.Errorf("failed to decode JSON: %w", err)
+		return nil, fmt.Errorf("failed to decode JSON: %w", err)
 	}
 
 	serializedChainConfig, exists := result["config"]
 	if !exists {
-		return "", fmt.Errorf("config field not found")
+		return nil, fmt.Errorf("config field not found")
 	}
 
 	return serializedChainConfig, nil
