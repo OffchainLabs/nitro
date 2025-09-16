@@ -107,7 +107,7 @@ func messageFromSegment(
 			blockNumber += advancing
 		}
 		return nil, blockNumber, timestamp, nil
-	} else if kind == arbstate.BatchSegmentKindL2Message || kind == arbstate.BatchSegmentKindL2MessageBrotli {
+	} if kind == arbstate.BatchSegmentKindL2Message || kind == arbstate.BatchSegmentKindL2MessageBrotli {
 		segment = segment[1:]
 		msg := produceL2Message(
 			kind,
@@ -207,7 +207,7 @@ func extractDelayedMessageFromSegment(
 	}
 
 	// Increment the delayed messages read count in the mel state.
-	melState.DelayedMessagesRead += 1
+	melState.DelayedMessagesRead++
 
 	return &arbostypes.MessageWithMetadata{
 		Message:             delayed.Message,
