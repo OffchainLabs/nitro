@@ -36,8 +36,8 @@ import (
 )
 
 var (
-	stakerBalanceGauge              = metrics.NewRegisteredGaugeFloat64("arb/staker/balance", nil)
-	stakerAmountStakedGauge         = metrics.NewRegisteredGauge("arb/staker/amount_staked", nil)
+	stakerBalanceGauge              = metrics.GetOrRegisterGaugeFloat64("arb/staker/balance", nil)
+	stakerAmountStakedGauge         = metrics.GetOrRegisterGauge("arb/staker/amount_staked", nil)
 	stakerLatestStakedNodeGauge     = metrics.NewRegisteredGauge("arb/staker/staked_node", nil)
 	stakerLatestConfirmedNodeGauge  = metrics.NewRegisteredGauge("arb/staker/confirmed_node", nil)
 	stakerLastSuccessfulActionGauge = metrics.NewRegisteredGauge("arb/staker/action/last_success", nil)
@@ -115,6 +115,23 @@ func ParseStrategy(strategy string) (StakerStrategy, error) {
 		return MakeNodesStrategy, nil
 	default:
 		return WatchtowerStrategy, fmt.Errorf("unknown staker strategy \"%v\"", strategy)
+	}
+}
+
+func (s StakerStrategy) ToString() string {
+	switch s {
+	case WatchtowerStrategy:
+		return "watchtower"
+	case DefensiveStrategy:
+		return "defensive"
+	case StakeLatestStrategy:
+		return "stakelatest"
+	case ResolveNodesStrategy:
+		return "resolvenodes"
+	case MakeNodesStrategy:
+		return "makenodes"
+	default:
+		return "Unknown"
 	}
 }
 
