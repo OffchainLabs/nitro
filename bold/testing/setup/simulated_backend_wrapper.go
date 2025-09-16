@@ -16,7 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient/simulated"
 	"github.com/ethereum/go-ethereum/rpc"
 
-	protocol "github.com/offchainlabs/bold/chain-abstraction"
+	protocol "github.com/offchainlabs/nitro/bold/chain-abstraction"
 )
 
 var (

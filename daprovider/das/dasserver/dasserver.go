@@ -79,8 +79,8 @@ func fetchJWTSecret(fileName string) ([]byte, error) {
 
 func NewServer(ctx context.Context, config *ServerConfig, dataSigner signature.DataSignerFunc, l1Client *ethclient.Client, l1Reader *headerreader.HeaderReader, sequencerInboxAddr common.Address) (*http.Server, func(), error) {
 	var err error
-	var daWriter das.DataAvailabilityServiceWriter
-	var daReader das.DataAvailabilityServiceReader
+	var daWriter dasutil.DASWriter
+	var daReader dasutil.DASReader
 	var dasKeysetFetcher *das.KeysetFetcher
 	var dasLifecycleManager *das.LifecycleManager
 	if config.EnableDAWriter {

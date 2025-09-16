@@ -206,6 +206,7 @@ func mainImpl() int {
 		nodeConfig.Node.ParentChainReader.Enable = false
 		nodeConfig.Node.BatchPoster.Enable = false
 		nodeConfig.Node.DelayedSequencer.Enable = false
+		nodeConfig.Init.ValidateGenesisAssertion = false
 	} else {
 		nodeConfig.Node.ParentChainReader.Enable = true
 	}
@@ -436,6 +437,11 @@ func mainImpl() int {
 		log.Info("enabling custom tracer", "name", traceConfig.TracerName)
 	}
 
+	if err := gethexec.PopulateStylusTargetCache(&nodeConfig.Execution.StylusTarget); err != nil {
+		log.Error("error populating stylus target cache", "err", err)
+		return 1
+	}
+
 	chainDb, l2BlockChain, err := openInitializeChainDb(ctx, stack, nodeConfig, new(big.Int).SetUint64(nodeConfig.Chain.ID), gethexec.DefaultCacheConfigFor(&nodeConfig.Execution.Caching), &nodeConfig.Execution.StylusTarget, tracer, &nodeConfig.Persistent, l1Client, rollupAddrs)
 	if l2BlockChain != nil {
 		deferFuncs = append(deferFuncs, func() { l2BlockChain.Stop() })
@@ -469,10 +475,6 @@ func mainImpl() int {
 		blocksReExecutor, err := blocksreexecutor.New(&nodeConfig.BlocksReExecutor, l2BlockChain, chainDb, fatalErrChan)
 		if err != nil {
 			log.Error("error initializing blocksReExecutor", "err", err)
-			return 1
-		}
-		if err := gethexec.PopulateStylusTargetCache(&nodeConfig.Execution.StylusTarget); err != nil {
-			log.Error("error populating stylus target cache", "err", err)
 			return 1
 		}
 		success := make(chan struct{})
@@ -1005,6 +1007,9 @@ func applyChainParameters(k *koanf.Koanf, chainId uint64, chainName string, l2Ch
 	}
 	if chainInfo.SecondaryFeedUrl != "" {
 		chainDefaults["node.feed.input.secondary-url"] = strings.Split(chainInfo.SecondaryFeedUrl, ",")
+	}
+	if chainInfo.FeedSigned {
+		chainDefaults["node.feed.input.verify.dangerous.accept-missing"] = false
 	}
 	if chainInfo.DasIndexUrl != "" {
 		chainDefaults["node.data-availability.enable"] = true

@@ -20,13 +20,13 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	gethtypes "github.com/ethereum/go-ethereum/core/types"
 
-	protocol "github.com/offchainlabs/bold/chain-abstraction"
-	cm "github.com/offchainlabs/bold/challenge-manager"
-	"github.com/offchainlabs/bold/challenge-manager/types"
-	challenge_testing "github.com/offchainlabs/bold/testing"
-	"github.com/offchainlabs/bold/testing/endtoend/backend"
-	statemanager "github.com/offchainlabs/bold/testing/mocks/state-provider"
-	"github.com/offchainlabs/bold/testing/setup"
+	protocol "github.com/offchainlabs/nitro/bold/chain-abstraction"
+	cm "github.com/offchainlabs/nitro/bold/challenge-manager"
+	"github.com/offchainlabs/nitro/bold/challenge-manager/types"
+	challenge_testing "github.com/offchainlabs/nitro/bold/testing"
+	"github.com/offchainlabs/nitro/bold/testing/endtoend/backend"
+	statemanager "github.com/offchainlabs/nitro/bold/testing/mocks/state-provider"
+	"github.com/offchainlabs/nitro/bold/testing/setup"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
@@ -205,10 +205,10 @@ func runEndToEndTest(t *testing.T, cfg *e2eConfig) {
 		t.Fatalf("Backend kind for e2e test not supported: %s", cfg.backend)
 	}
 
+	require.NoError(t, bk.Start(ctx))
+
 	rollupAddr, err := bk.DeployRollup(ctx, challengeTestingOpts...)
 	require.NoError(t, err)
-
-	require.NoError(t, bk.Start(ctx))
 
 	accounts := bk.Accounts()
 	bk.Commit()

@@ -102,25 +102,25 @@ impl FromStr for FloatInstruction {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         type IResult<'a, T> = nom::IResult<&'a str, T, nom::error::Error<&'a str>>;
 
-        fn parse_fp_type(s: &str) -> IResult<FloatType> {
+        fn parse_fp_type(s: &str) -> IResult<'_, FloatType> {
             alt((
                 value(FloatType::F32, tag("f32")),
                 value(FloatType::F64, tag("f64")),
             ))(s)
         }
 
-        fn parse_signedness(s: &str) -> IResult<bool> {
+        fn parse_signedness(s: &str) -> IResult<'_, bool> {
             alt((value(true, tag("s")), value(false, tag("u"))))(s)
         }
 
-        fn parse_int_type(s: &str) -> IResult<IntegerValType> {
+        fn parse_int_type(s: &str) -> IResult<'_, IntegerValType> {
             alt((
                 value(IntegerValType::I32, tag("i32")),
                 value(IntegerValType::I64, tag("i64")),
             ))(s)
         }
 
-        fn parse_un_op(s: &str) -> IResult<FloatUnOp> {
+        fn parse_un_op(s: &str) -> IResult<'_, FloatUnOp> {
             alt((
                 value(FloatUnOp::Abs, tag("abs")),
                 value(FloatUnOp::Neg, tag("neg")),
@@ -132,7 +132,7 @@ impl FromStr for FloatInstruction {
             ))(s)
         }
 
-        fn parse_bin_op(s: &str) -> IResult<FloatBinOp> {
+        fn parse_bin_op(s: &str) -> IResult<'_, FloatBinOp> {
             alt((
                 value(FloatBinOp::Add, tag("add")),
                 value(FloatBinOp::Sub, tag("sub")),
@@ -144,7 +144,7 @@ impl FromStr for FloatInstruction {
             ))(s)
         }
 
-        fn parse_rel_op(s: &str) -> IResult<FloatRelOp> {
+        fn parse_rel_op(s: &str) -> IResult<'_, FloatRelOp> {
             alt((
                 value(FloatRelOp::Eq, tag("eq")),
                 value(FloatRelOp::Ne, tag("ne")),

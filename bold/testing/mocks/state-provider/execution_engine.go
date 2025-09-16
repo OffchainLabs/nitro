@@ -9,7 +9,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 
-	protocol "github.com/offchainlabs/bold/chain-abstraction"
+	protocol "github.com/offchainlabs/nitro/bold/chain-abstraction"
 )
 
 type Machine interface {

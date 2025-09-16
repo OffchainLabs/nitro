@@ -221,12 +221,12 @@ func MakePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, *Pr
 		}
 
 		method := PrecompileMethod{
-			name,
-			method,
-			purity,
-			handler,
-			0,
-			0,
+			name:            name,
+			template:        method,
+			purity:          purity,
+			handler:         handler,
+			arbosVersion:    0,
+			maxArbosVersion: 0,
 		}
 		methods[id] = &method
 		methodsByName[name] = &method
@@ -501,14 +501,14 @@ func MakePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, *Pr
 	}
 
 	return address, &Precompile{
-		methods,
-		methodsByName,
-		events,
-		errors,
-		contract,
-		reflect.ValueOf(implementer),
-		address,
-		0,
+		methods:       methods,
+		methodsByName: methodsByName,
+		events:        events,
+		errors:        errors,
+		name:          contract,
+		implementer:   reflect.ValueOf(implementer),
+		address:       address,
+		arbosVersion:  0,
 	}
 }
 
@@ -556,7 +556,7 @@ func Precompiles() map[addr]ArbosPrecompile {
 	ArbOwnerPublic.methodsByName["GetScheduledUpgrade"].arbosVersion = params.ArbosVersion_20
 	ArbOwnerPublic.methodsByName["IsNativeTokenOwner"].arbosVersion = params.ArbosVersion_41
 	ArbOwnerPublic.methodsByName["GetAllNativeTokenOwners"].arbosVersion = params.ArbosVersion_41
-	ArbOwnerPublic.methodsByName["GetL1CalldataPrice"].arbosVersion = params.ArbosVersion_50
+	ArbOwnerPublic.methodsByName["GetParentGasFloorPerToken"].arbosVersion = params.ArbosVersion_50
 
 	ArbWasmImpl := &ArbWasm{Address: types.ArbWasmAddress}
 	ArbWasm := insert(MakePrecompile(pgen.ArbWasmMetaData, ArbWasmImpl))
@@ -644,7 +644,7 @@ func Precompiles() map[addr]ArbosPrecompile {
 	ArbOwner.methodsByName["RemoveNativeTokenOwner"].arbosVersion = params.ArbosVersion_41
 	ArbOwner.methodsByName["IsNativeTokenOwner"].arbosVersion = params.ArbosVersion_41
 	ArbOwner.methodsByName["GetAllNativeTokenOwners"].arbosVersion = params.ArbosVersion_41
-	ArbOwner.methodsByName["SetL1CalldataPrice"].arbosVersion = params.ArbosVersion_50
+	ArbOwner.methodsByName["SetParentGasFloorPerToken"].arbosVersion = params.ArbosVersion_50
 	ArbOwner.methodsByName["SetMaxBlockGasLimit"].arbosVersion = params.ArbosVersion_50
 
 	ArbOwnerPublic.methodsByName["GetNativeTokenManagementFrom"].arbosVersion = params.ArbosVersion_50
