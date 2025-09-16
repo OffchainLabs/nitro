@@ -14,6 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
 
+	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
@@ -54,7 +55,7 @@ func TestMultigasStylus_GetBytes32(t *testing.T) {
 	require.Greater(t, receipt.MultiGasUsed.Get(multigas.ResourceKindWasmComputation), uint64(0))
 }
 
-func TestMultigasStylus_AccountBalance(t *testing.T) {
+func TestMultigasStylus_AccountAccessHostIOs(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -65,29 +66,62 @@ func TestMultigasStylus_AccountBalance(t *testing.T) {
 
 	l2info := builder.L2Info
 	l2client := builder.L2.Client
-
-	// Deploy programs
 	owner := l2info.GetDefaultTransactOpts("Owner", ctx)
+
 	hostio := deployWasm(t, ctx, owner, l2client, rustFile("hostio-test"))
 
-	// Send tx with account read
 	target := common.HexToAddress("0xbeefdead00000000000000000000000000000000")
-	selector := crypto.Keccak256([]byte("accountBalance(address)"))[:4]
-	callData := append([]byte{}, selector...)
-	callData = append(callData, common.LeftPadBytes(target.Bytes(), 32)...)
 
-	tx := l2info.PrepareTxTo("Owner", &hostio, l2info.TransferGas, nil, callData)
-	require.NoError(t, l2client.SendTransaction(ctx, tx))
+	tests := []struct {
+		name               string
+		selectorSignature  string
+		withCode           bool
+		expectedAccessGas  uint64
+		expectedComputeGas uint64
+	}{
+		{
+			name:              "accountBalance",
+			selectorSignature: "accountBalance(address)",
+			withCode:          false,
+		},
+		{
+			name:              "accountCode",
+			selectorSignature: "accountCode(address)",
+			withCode:          true,
+		},
+		{
+			name:              "accountCodehash",
+			selectorSignature: "accountCodehash(address)",
+			withCode:          false,
+		},
+	}
 
-	receipt, err := EnsureTxSucceeded(ctx, l2client, tx)
-	require.NoError(t, err)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			selector := crypto.Keccak256([]byte(tc.selectorSignature))[:4]
+			callData := append([]byte{}, selector...)
+			callData = append(callData, common.LeftPadBytes(target.Bytes(), 32)...)
 
-	require.Equal(t,
-		params.ColdAccountAccessCostEIP2929-params.WarmStorageReadCostEIP2929,
-		receipt.MultiGasUsed.Get(multigas.ResourceKindStorageAccess),
-	)
+			tx := l2info.PrepareTxTo("Owner", &hostio, l2info.TransferGas, nil, callData)
+			require.NoError(t, l2client.SendTransaction(ctx, tx))
 
-	require.Equal(t, params.WarmStorageReadCostEIP2929,
-		receipt.MultiGasUsed.Get(multigas.ResourceKindComputation),
-	)
+			receipt, err := EnsureTxSucceeded(ctx, l2client, tx)
+			require.NoError(t, err)
+
+			expectedAccess := params.ColdAccountAccessCostEIP2929 - params.WarmStorageReadCostEIP2929
+			expectedCompute := params.WarmStorageReadCostEIP2929
+			if tc.withCode {
+				maxCodeSize := chaininfo.ArbitrumDevTestChainConfig().MaxCodeSize()
+				extCodeCost := maxCodeSize / params.DefaultMaxCodeSize * params.ExtcodeSizeGasEIP150
+				expectedAccess += extCodeCost
+			}
+
+			require.Equal(t, expectedAccess,
+				receipt.MultiGasUsed.Get(multigas.ResourceKindStorageAccess),
+			)
+			require.Equal(t, expectedCompute,
+				receipt.MultiGasUsed.Get(multigas.ResourceKindComputation),
+			)
+		})
+	}
 }
