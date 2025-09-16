@@ -156,9 +156,9 @@ func newApiClosures(
 		case vm.CALL:
 			ret, returnGas, _, err = evm.Call(scope.Contract.Address(), contract, input, gas, value)
 		case vm.DELEGATECALL:
-			ret, returnGas, err = evm.DelegateCall(scope.Contract.Caller(), scope.Contract.Address(), contract, input, gas, scope.Contract.Value())
+			ret, returnGas, _, err = evm.DelegateCall(scope.Contract.Caller(), scope.Contract.Address(), contract, input, gas, scope.Contract.Value())
 		case vm.STATICCALL:
-			ret, returnGas, err = evm.StaticCall(scope.Contract.Address(), contract, input, gas)
+			ret, returnGas, _, err = evm.StaticCall(scope.Contract.Address(), contract, input, gas)
 		default:
 			panic("unsupported call type: " + opcode.String())
 		}
