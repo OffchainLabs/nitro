@@ -4,10 +4,12 @@
 package programs
 
 import (
+	"fmt"
 	"strconv"
 
 	"github.com/holiman/uint256"
 
+	"github.com/ethereum/go-ethereum/arbitrum/multigas"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
@@ -231,6 +233,37 @@ func newApiClosures(
 		if readOnly {
 			return vm.ErrWriteProtection
 		}
+
+		// Calculate multi-gas cost in a way similar to makeGasLog from gas_table.go for EVM
+		topicBytes := uint64(32)
+		numTopics := uint64(len(topics))
+		dataBytes := uint64(len(data))
+		if numTopics > 4 || dataBytes < numTopics*32 {
+			return fmt.Errorf("invalid log: topics=%d, data.len=%d", numTopics, dataBytes)
+		}
+
+		// NOTE: Don't charge memory expansion in this closure,
+		// it is charged in pay_for_memory_grow hostio (addPages closure)
+
+		// Computation gas part for hostio::EMIT_LOG_BASE_INK
+		mgCost := multigas.WasmComputationGas(params.LogGas)
+
+		// History growth per topic
+		topicHistPer := topicBytes * params.LogDataGas
+		if params.LogTopicGas < topicHistPer {
+			return fmt.Errorf("bad gas param config: LogTopicGas < topicHistPer")
+		}
+		// Computation per topic
+		topicCompPer := params.LogTopicGas - topicHistPer
+
+		// Apply the split
+		mgCost.SaturatingIncrementInto(multigas.ResourceKindHistoryGrowth, topicHistPer*numTopics)
+		mgCost.SaturatingIncrementInto(multigas.ResourceKindWasmComputation, topicCompPer*numTopics)
+
+		// Data payload (excluding topic hashes)
+		payloadBytes := dataBytes - topicBytes*numTopics
+		mgCost.SaturatingIncrementInto(multigas.ResourceKindHistoryGrowth, payloadBytes*params.LogDataGas)
+
 		event := &types.Log{
 			Address:     actingAddress,
 			Topics:      topics,
@@ -239,6 +272,9 @@ func newApiClosures(
 			// Geth will set other fields
 		}
 		db.AddLog(event)
+
+		scope.Contract.UsedMultiGas.SaturatingAddInto(mgCost)
+
 		return nil
 	}
 	accountBalance := func(address common.Address) (common.Hash, uint64) {
@@ -265,7 +301,11 @@ func newApiClosures(
 	}
 	addPages := func(pages uint16) uint64 {
 		open, ever := db.AddStylusPages(pages)
-		return memoryModel.GasCost(pages, open, ever)
+		cost := memoryModel.GasCost(pages, open, ever)
+
+		scope.Contract.UsedMultiGas.SaturatingIncrementInto(multigas.ResourceKindComputation, cost)
+
+		return cost
 	}
 	captureHostio := func(name string, args, outs []byte, startInk, endInk uint64) {
 		if tracingInfo.Tracer != nil && tracingInfo.Tracer.CaptureStylusHostio != nil {
