@@ -16,7 +16,7 @@ import (
 
 var benchResult int
 
-func TestUnsingedIntegerLog2Floor(t *testing.T) {
+func TestUnsignedIntegerLog2Floor(t *testing.T) {
 	type log2TestCase struct {
 		input    uint64
 		expected int
@@ -38,13 +38,13 @@ func TestUnsingedIntegerLog2Floor(t *testing.T) {
 	}
 }
 
-func TestUnsingedIntegerLog2FloorPanicsOnZero(t *testing.T) {
+func TestUnsignedIntegerLog2FloorPanicsOnZero(t *testing.T) {
 	require.Panics(t, func() {
 		Log2Floor(0)
 	})
 }
 
-func FuzzUnsingedIntegerLog2Floor(f *testing.F) {
+func FuzzUnsignedIntegerLog2Floor(f *testing.F) {
 	testcases := []uint64{0, 2, 4, 6, 8}
 	for _, tc := range testcases {
 		f.Add(tc)
@@ -62,7 +62,7 @@ func FuzzUnsingedIntegerLog2Floor(f *testing.F) {
 	})
 }
 
-func BenchmarkUnsingedIntegerLog2Floor(b *testing.B) {
+func BenchmarkUnsignedIntegerLog2Floor(b *testing.B) {
 	var r int
 	for i := 1; i < b.N; i++ {
 		r = Log2Floor(casttest.ToUint64(b, i))
@@ -78,7 +78,7 @@ func BenchmarkMathLog2Floor(b *testing.B) {
 	benchResult = r
 }
 
-func TestUnsingedIntegerLog2Ceil(t *testing.T) {
+func TestUnsignedIntegerLog2Ceil(t *testing.T) {
 	type log2TestCase struct {
 		input    uint64
 		expected int
@@ -100,13 +100,13 @@ func TestUnsingedIntegerLog2Ceil(t *testing.T) {
 	}
 }
 
-func TestUnsingedIntegerLog2CeilPanicsOnZero(t *testing.T) {
+func TestUnsignedIntegerLog2CeilPanicsOnZero(t *testing.T) {
 	require.Panics(t, func() {
 		Log2Ceil(0)
 	})
 }
 
-func FuzzUnsingedIntegerLog2Ceil(f *testing.F) {
+func FuzzUnsignedIntegerLog2Ceil(f *testing.F) {
 	testcases := []uint64{0, 2, 4, 6, 8}
 	for _, tc := range testcases {
 		f.Add(tc)
@@ -124,7 +124,7 @@ func FuzzUnsingedIntegerLog2Ceil(f *testing.F) {
 	})
 }
 
-func BenchmarkUnsingedIntegerLog2Ceil(b *testing.B) {
+func BenchmarkUnsignedIntegerLog2Ceil(b *testing.B) {
 	var r int
 	for i := 1; i < b.N; i++ {
 		r = Log2Ceil(casttest.ToUint64(b, i))
