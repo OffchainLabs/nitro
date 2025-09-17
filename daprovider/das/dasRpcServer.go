@@ -23,14 +23,14 @@ import (
 )
 
 var (
-	rpcStoreRequestGauge      = metrics.NewRegisteredGauge("arb/das/rpc/store/requests", nil)
-	rpcStoreSuccessGauge      = metrics.NewRegisteredGauge("arb/das/rpc/store/success", nil)
-	rpcStoreFailureGauge      = metrics.NewRegisteredGauge("arb/das/rpc/store/failure", nil)
-	rpcStoreStoredBytesGauge  = metrics.NewRegisteredGauge("arb/das/rpc/store/bytes", nil)
+    rpcStoreRequestGauge      = metrics.NewRegisteredCounter("arb/das/rpc/store/requests", nil)
+    rpcStoreSuccessGauge      = metrics.NewRegisteredCounter("arb/das/rpc/store/success", nil)
+    rpcStoreFailureGauge      = metrics.NewRegisteredCounter("arb/das/rpc/store/failure", nil)
+    rpcStoreStoredBytesGauge  = metrics.NewRegisteredCounter("arb/das/rpc/store/bytes", nil)
 	rpcStoreDurationHistogram = metrics.NewRegisteredHistogram("arb/das/rpc/store/duration", nil, metrics.NewBoundedHistogramSample())
 
-	rpcSendChunkSuccessGauge = metrics.NewRegisteredGauge("arb/das/rpc/sendchunk/success", nil)
-	rpcSendChunkFailureGauge = metrics.NewRegisteredGauge("arb/das/rpc/sendchunk/failure", nil)
+    rpcSendChunkSuccessGauge = metrics.NewRegisteredCounter("arb/das/rpc/sendchunk/success", nil)
+    rpcSendChunkFailureGauge = metrics.NewRegisteredCounter("arb/das/rpc/sendchunk/failure", nil)
 )
 
 const (
