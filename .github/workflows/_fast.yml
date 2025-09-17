@@ -38,16 +38,6 @@ jobs:
       - name: Custom Lint
         run: go run ./linters ./...
 
-      - name: Upload build artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-artifacts
-          path: |
-            target/lib/
-            target/lib-wasm/
-            target/include/brotli/
-
   aggregate:
     runs-on: ubuntu-4
     needs: [lint-and-build]

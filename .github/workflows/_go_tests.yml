@@ -34,12 +34,6 @@ jobs:
         with:
           skip_checkout: 'true'
 
-      - name: Download build artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: build-artifacts
-          path: target
-
       - name: Set environment variables
         run: |
           mkdir -p target/tmp/deadbeefbee
