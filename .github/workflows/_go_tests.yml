@@ -130,7 +130,7 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
 
   aggregate:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-4
     needs: [go-tests]
     outputs:
         ok: ${{ steps.ok.outputs.ok }}

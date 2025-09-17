@@ -8,7 +8,7 @@ on:
 jobs:
   close-trivial-pr:
     if: github.event.label.name == 'trivial'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-4
     permissions:
       pull-requests: write
 

@@ -84,7 +84,7 @@ jobs:
           yarn hardhat --network localhost test test/prover/*.ts
 
   aggregate:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-4
     needs: [arbitrator]
     outputs:
       ok: ${{ steps.ok.outputs.ok }}

@@ -12,7 +12,7 @@ jobs:
   # --- Determine which files have changed ---
   changes:
     name: Detect file changes
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-4
     outputs:
       arbitrator_changed: ${{ steps.changed.outputs.arbitrator_any_changed }}
 
@@ -55,13 +55,13 @@ jobs:
 
   can_proceed:
     name: can_proceed
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-4
     needs: [fast]
     steps:
       - name: OK
         run: exit 0
 
   can_see_status:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-4
     steps:
       - run: true
