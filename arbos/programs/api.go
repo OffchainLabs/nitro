@@ -235,6 +235,7 @@ func newApiClosures(
 		}
 
 		// Calculate multi-gas cost in a way similar to makeGasLog from gas_table.go for EVM
+		mgCost := multigas.ZeroGas()
 		topicBytes := uint64(32)
 		numTopics := uint64(len(topics))
 		dataBytes := uint64(len(data))
@@ -242,11 +243,8 @@ func newApiClosures(
 			return fmt.Errorf("invalid log: topics=%d, data.len=%d", numTopics, dataBytes)
 		}
 
-		// NOTE: Don't charge memory expansion in this closure,
-		// it is charged in pay_for_memory_grow hostio (addPages closure)
-
-		// Computation gas part for hostio::EMIT_LOG_BASE_INK
-		mgCost := multigas.WasmComputationGas(params.LogGas)
+		// Base LOG operation cost
+		mgCost.SaturatingIncrementInto(multigas.ResourceKindWasmComputation, params.LogGas)
 
 		// History growth per topic
 		topicHistPer := topicBytes * params.LogDataGas
@@ -264,6 +262,8 @@ func newApiClosures(
 		payloadBytes := dataBytes - topicBytes*numTopics
 		mgCost.SaturatingIncrementInto(multigas.ResourceKindHistoryGrowth, payloadBytes*params.LogDataGas)
 
+		scope.Contract.UsedMultiGas.SaturatingAddInto(mgCost)
+
 		event := &types.Log{
 			Address:     actingAddress,
 			Topics:      topics,
@@ -272,8 +272,6 @@ func newApiClosures(
 			// Geth will set other fields
 		}
 		db.AddLog(event)
-
-		scope.Contract.UsedMultiGas.SaturatingAddInto(mgCost)
 
 		return nil
 	}
@@ -303,7 +301,7 @@ func newApiClosures(
 		open, ever := db.AddStylusPages(pages)
 		cost := memoryModel.GasCost(pages, open, ever)
 
-		scope.Contract.UsedMultiGas.SaturatingIncrementInto(multigas.ResourceKindComputation, cost)
+		scope.Contract.UsedMultiGas.SaturatingIncrementInto(multigas.ResourceKindWasmComputation, cost)
 
 		return cost
 	}
