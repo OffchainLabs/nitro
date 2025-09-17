@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/offchainlabs/nitro/arbutil"
-	m "github.com/offchainlabs/nitro/broadcaster/message"
+	"github.com/offchainlabs/nitro/broadcaster/message"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/containers"
 )
@@ -40,7 +40,7 @@ func validateBacklog(t *testing.T, b *backlog, count, start, end uint64, lookupK
 	}
 }
 
-func validateBroadcastMessage(t *testing.T, bm *m.BroadcastMessage, expectedCount int, start, end uint64) {
+func validateBroadcastMessage(t *testing.T, bm *message.BroadcastMessage, expectedCount int, start, end uint64) {
 	actualCount := len(bm.Messages)
 	if actualCount != expectedCount {
 		t.Errorf("number of messages returned (%d) does not equal the expected number of messages (%d)", actualCount, expectedCount)
@@ -60,7 +60,7 @@ func createDummyBacklog(indexes []arbutil.MessageIndex) (*backlog, error) {
 		config: func() *Config { return &DefaultTestConfig },
 	}
 	b.lookupByIndex.Store(&containers.SyncMap[uint64, *backlogSegment]{})
-	bm := &m.BroadcastMessage{Messages: m.CreateDummyBroadcastMessages(indexes)}
+	bm := &message.BroadcastMessage{Messages: message.CreateDummyBroadcastMessages(indexes)}
 	err := b.Append(bm)
 	return b, err
 }
@@ -161,7 +161,7 @@ func TestAppend(t *testing.T) {
 				t.Fatalf("error creating dummy backlog: %s", err)
 			}
 
-			bm := &m.BroadcastMessage{Messages: m.CreateDummyBroadcastMessages(tc.newIndexes)}
+			bm := &message.BroadcastMessage{Messages: message.CreateDummyBroadcastMessages(tc.newIndexes)}
 			err = b.Append(bm)
 			if err != nil {
 				t.Fatalf("error appending BroadcastMessage: %s", err)
@@ -175,7 +175,7 @@ func TestAppend(t *testing.T) {
 func TestDeleteInvalidBacklog(t *testing.T) {
 	// Create a backlog with an invalid sequence
 	s := &backlogSegment{
-		messages: m.CreateDummyBroadcastMessages([]arbutil.MessageIndex{40, 42}),
+		messages: message.CreateDummyBroadcastMessages([]arbutil.MessageIndex{40, 42}),
 	}
 
 	lookup := &containers.SyncMap[uint64, *backlogSegment]{}
@@ -188,9 +188,9 @@ func TestDeleteInvalidBacklog(t *testing.T) {
 	b.head.Store(s)
 	b.tail.Store(s)
 
-	bm := &m.BroadcastMessage{
+	bm := &message.BroadcastMessage{
 		Messages: nil,
-		ConfirmedSequenceNumberMessage: &m.ConfirmedSequenceNumberMessage{
+		ConfirmedSequenceNumberMessage: &message.ConfirmedSequenceNumberMessage{
 			SequenceNumber: 41,
 		},
 	}
@@ -285,9 +285,9 @@ func TestDelete(t *testing.T) {
 				t.Fatalf("error creating dummy backlog: %s", err)
 			}
 
-			bm := &m.BroadcastMessage{
+			bm := &message.BroadcastMessage{
 				Messages: nil,
-				ConfirmedSequenceNumberMessage: &m.ConfirmedSequenceNumberMessage{
+				ConfirmedSequenceNumberMessage: &message.ConfirmedSequenceNumberMessage{
 					SequenceNumber: tc.confirmed,
 				},
 			}
@@ -429,7 +429,7 @@ func TestBacklogRaceCondition(t *testing.T) {
 	go func(t *testing.T, b *backlog) {
 		defer wg.Done()
 		for _, i := range newIndexes {
-			bm := m.CreateDummyBroadcastMessage([]arbutil.MessageIndex{i})
+			bm := message.CreateDummyBroadcastMessage([]arbutil.MessageIndex{i})
 			err := b.Append(bm)
 			errs <- err
 			if err != nil {

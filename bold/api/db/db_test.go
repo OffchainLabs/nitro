@@ -16,7 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 
 	"github.com/offchainlabs/nitro/bold/api"
-	protocol "github.com/offchainlabs/nitro/bold/chain-abstraction"
+	"github.com/offchainlabs/nitro/bold/chain-abstraction"
 	"github.com/offchainlabs/nitro/bold/state-commitments/history"
 	"github.com/offchainlabs/nitro/bold/testing/casttest"
 )
