@@ -26,7 +26,7 @@ import (
 	"github.com/offchainlabs/nitro/validator/server_common"
 )
 
-var executionNodeOfflineGauge = metrics.NewRegisteredGauge("arb/state_provider/execution_node_offline", nil)
+var executionNodeOfflineGauge = metrics.NewRegisteredCounter("arb/state_provider/execution_node_offline", nil)
 
 type ValidationClient struct {
 	stopwaiter.StopWaiter
