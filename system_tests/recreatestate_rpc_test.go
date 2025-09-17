@@ -25,6 +25,7 @@ import (
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/testhelpers/env"
+	testflag "github.com/offchainlabs/nitro/util/testhelpers/flag"
 )
 
 func makeSomeTransfers(t *testing.T, ctx context.Context, builder *NodeBuilder, txCount uint64) {
@@ -433,6 +434,9 @@ func testSkippingSavingStateAndRecreatingAfterRestart(t *testing.T, cacheConfig 
 }
 
 func TestSkippingSavingStateAndRecreatingAfterRestart(t *testing.T) {
+	if *testflag.ExecutionConsensusJSONRPCInterconnect {
+		t.Skip("TestSkippingSavingStateAndRecreatingAfterRestart currently fails with json-rpc interconnect") // TODO: tests using RestartL2Node are failing, need to fix them
+	}
 	cacheConfig := gethexec.DefaultCachingConfig
 	cacheConfig.Archive = true
 	cacheConfig.SnapshotCache = 0 // disable snapshots

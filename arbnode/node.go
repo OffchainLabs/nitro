@@ -38,21 +38,19 @@ import (
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/consensus"
-	consensusrpcclient "github.com/offchainlabs/nitro/consensus/rpcclient"
 	consensusrpcserver "github.com/offchainlabs/nitro/consensus/rpcserver"
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/daprovider/daclient"
 	"github.com/offchainlabs/nitro/daprovider/das"
 	"github.com/offchainlabs/nitro/daprovider/das/dasserver"
 	"github.com/offchainlabs/nitro/execution"
-	"github.com/offchainlabs/nitro/execution/gethexec"
-	executionrpcserver "github.com/offchainlabs/nitro/execution/rpcserver"
+	executionrpcclient "github.com/offchainlabs/nitro/execution/rpcclient"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/staker/bold"
-	"github.com/offchainlabs/nitro/staker/legacy"
-	"github.com/offchainlabs/nitro/staker/multi_protocol"
+	legacystaker "github.com/offchainlabs/nitro/staker/legacy"
+	multiprotocolstaker "github.com/offchainlabs/nitro/staker/multi_protocol"
 	"github.com/offchainlabs/nitro/staker/validatorwallet"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/contracts"
@@ -63,51 +61,22 @@ import (
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
 
-type Interconnect string
-
-const (
-	InterconnectDirect  Interconnect = "direct"  // in-process calls (DEFAULT)
-	InterconnectJSONRPC Interconnect = "jsonrpc" // JSON-RPC over loopback
-)
-
-type ConsensusRPCServerConfig struct {
+type RPCServerConfig struct {
+	Enable        bool `koanf:"enable"`
 	Public        bool `koanf:"public"`
 	Authenticated bool `koanf:"authenticated"`
 }
 
-var DefaultConsensusRPCServerConfig = ConsensusRPCServerConfig{
+var DefaultRPCServerConfig = RPCServerConfig{
+	Enable:        false,
 	Public:        false,
 	Authenticated: true,
 }
 
-var TestConsensusRPCServerConfig = ConsensusRPCServerConfig{
-	Public:        true,
-	Authenticated: false,
-}
-
-func ConsensusRPCServerAddOptions(prefix string, f *flag.FlagSet) {
-	f.Bool(prefix+".public", DefaultConsensusRPCServerConfig.Public, "consensus rpc is public")
-	f.Bool(prefix+".authenticated", DefaultConsensusRPCServerConfig.Authenticated, "consensus rpc is authenticated")
-}
-
-type ExecutionRPCServerConfig struct {
-	Public        bool `koanf:"public"`
-	Authenticated bool `koanf:"authenticated"`
-}
-
-var DefaultExecutionRPCConfig = ExecutionRPCServerConfig{
-	Public:        false,
-	Authenticated: true,
-}
-
-var TestExecutionRPCServerConfig = ExecutionRPCServerConfig{
-	Public:        true,
-	Authenticated: false,
-}
-
-func ExecutionRPCServerAddOptions(prefix string, f *flag.FlagSet) {
-	f.Bool(prefix+".public", DefaultExecutionRPCConfig.Public, "rpc is public")
-	f.Bool(prefix+".authenticated", DefaultExecutionRPCConfig.Authenticated, "rpc is authenticated")
+func RPCServerAddOptions(prefix string, f *pflag.FlagSet) {
+	f.Bool(prefix+".enable", DefaultRPCServerConfig.Enable, "enable consensus node to serve over rpc")
+	f.Bool(prefix+".public", DefaultRPCServerConfig.Public, "rpc is public")
+	f.Bool(prefix+".authenticated", DefaultRPCServerConfig.Authenticated, "rpc is authenticated")
 }
 
 type Config struct {
@@ -131,16 +100,10 @@ type Config struct {
 	ResourceMgmt             resourcemanager.Config         `koanf:"resource-mgmt" reload:"hot"`
 	BlockMetadataFetcher     BlockMetadataFetcherConfig     `koanf:"block-metadata-fetcher" reload:"hot"`
 	ConsensusExecutionSyncer ConsensusExecutionSyncerConfig `koanf:"consensus-execution-syncer"`
+	RPCServer                RPCServerConfig                `koanf:"rpc-server"`
+	ExecutionRPCClient       rpcclient.ClientConfig         `koanf:"execution-rpc-client" reload:"hot"`
 	// SnapSyncConfig is only used for testing purposes, these should not be configured in production.
 	SnapSyncTest SnapSyncConfig
-
-	// These options control if we use direct in-process calls between the execution and consensus or JSON-RPC over loopback.
-
-	Interconnect       Interconnect              `koanf:"interconnect"`
-	ExecutionRpcServer *ExecutionRPCServerConfig `koanf:"execution-rpc-server"`
-	ExecutionRpcClient *rpcclient.ClientConfig   `koanf:"execution-rpc-client" reload:"hot"`
-	ConsensusRpcServer *ConsensusRPCServerConfig `koanf:"consensus-rpc-server"`
-	ConsensusRpcClient *rpcclient.ClientConfig   `koanf:"consensus-rpc-client" reload:"hot"`
 }
 
 func (c *Config) Validate() error {
@@ -178,39 +141,8 @@ func (c *Config) Validate() error {
 	if c.TransactionStreamer.TrackBlockMetadataFrom != 0 && !c.BlockMetadataFetcher.Enable {
 		log.Warn("track-block-metadata-from is set but blockMetadata fetcher is not enabled")
 	}
-	switch c.Interconnect {
-	case InterconnectDirect:
-		// Forbid any CLI flags that touch node.execution-rpc* or node.consensus-rpc*.
-		if c.ExecutionRpcClient != nil {
-			return errors.New("cannot set execution-rpc-client when interconnect is direct")
-		}
-		if c.ConsensusRpcClient != nil {
-			return errors.New("cannot set consensus-rpc-client when interconnect is direct")
-		}
-		if c.ExecutionRpcServer != nil {
-			return errors.New("cannot set execution-rpc-server when interconnect is direct")
-		}
-	case InterconnectJSONRPC:
-		if c.ExecutionRpcServer == nil {
-			return errors.New("must set execution-rpc-server when interconnect is jsonrpc")
-		}
-		if c.ConsensusRpcServer == nil {
-			return errors.New("must set consensus-rpc-server when interconnect is jsonrpc")
-		}
-		if c.ExecutionRpcClient == nil {
-			return errors.New("must set execution-rpc-client when interconnect is jsonrpc")
-		}
-		if c.ConsensusRpcClient == nil {
-			return errors.New("must set consensus-rpc-client when interconnect is jsonrpc")
-		}
-		if err := c.ExecutionRpcClient.Validate(); err != nil {
-			return err
-		}
-		if err := c.ConsensusRpcClient.Validate(); err != nil {
-			return err
-		}
-	default:
-		return fmt.Errorf("invalid interconnect %q (expected direct or jsonrpc)", c.Interconnect)
+	if err := c.ExecutionRPCClient.Validate(); err != nil {
+		return fmt.Errorf("error validating ExecutionRPCClient config: %w", err)
 	}
 	return nil
 }
@@ -246,11 +178,8 @@ func ConfigAddOptions(prefix string, f *pflag.FlagSet, feedInputEnable bool, fee
 	resourcemanager.ConfigAddOptions(prefix+".resource-mgmt", f)
 	BlockMetadataFetcherConfigAddOptions(prefix+".block-metadata-fetcher", f)
 	ConsensusExecutionSyncerConfigAddOptions(prefix+".consensus-execution-syncer", f)
-	f.String(prefix+".interconnect", string(ConfigDefault.Interconnect), "interconnect method between execution and consensus (direct or jsonrpc)")
-	ExecutionRPCServerAddOptions(prefix+".execution-rpc-server", f)
-	rpcclient.RPCClientAddOptions(prefix+".execution-rpc-client", f, &rpcclient.DefaultClientConfig)
-	ConsensusRPCServerAddOptions(prefix+".consensus-rpc-server", f)
-	rpcclient.RPCClientAddOptions(prefix+".consensus-rpc-client", f, &rpcclient.DefaultClientConfig)
+	RPCServerAddOptions(prefix+".rpc-server", f)
+	rpcclient.RPCClientAddOptions(prefix+".execution-rpc-client", f, &ConfigDefault.ExecutionRPCClient)
 }
 
 var ConfigDefault = Config{
@@ -275,11 +204,15 @@ var ConfigDefault = Config{
 	Maintenance:              DefaultMaintenanceConfig,
 	ConsensusExecutionSyncer: DefaultConsensusExecutionSyncerConfig,
 	SnapSyncTest:             DefaultSnapSyncConfig,
-	Interconnect:             InterconnectDirect,
-	ExecutionRpcServer:       nil,
-	ExecutionRpcClient:       nil,
-	ConsensusRpcServer:       nil,
-	ConsensusRpcClient:       nil,
+	RPCServer:                DefaultRPCServerConfig,
+	ExecutionRPCClient: rpcclient.ClientConfig{
+		URL:                       "",
+		JWTSecret:                 "",
+		Retries:                   3,
+		RetryErrors:               "websocket: close.*|dial tcp .*|.*i/o timeout|.*connection reset by peer|.*connection refused",
+		ArgLogLimit:               2048,
+		WebsocketMessageSizeLimit: 256 * 1024 * 1024,
+	},
 }
 
 func ConfigDefaultL1Test() *Config {
@@ -1332,20 +1265,13 @@ func registerAPIs(currentNode *Node, stack *node.Node) {
 		})
 	}
 	config := currentNode.configFetcher.Get()
-	if config.Interconnect == InterconnectJSONRPC {
+	if config.RPCServer.Enable {
 		apis = append(apis, rpc.API{
 			Namespace:     consensus.RPCNamespace,
 			Version:       "1.0",
 			Service:       consensusrpcserver.NewConsensusRpcServer(currentNode),
-			Public:        config.ConsensusRpcServer.Public,
-			Authenticated: config.ConsensusRpcServer.Authenticated,
-		})
-		apis = append(apis, rpc.API{
-			Namespace:     execution.RPCNamespace,
-			Version:       "1.0",
-			Service:       executionrpcserver.NewExecutionRpcServer(currentNode.ExecutionClient),
-			Public:        config.ExecutionRpcServer.Public,
-			Authenticated: config.ExecutionRpcServer.Authenticated,
+			Public:        config.RPCServer.Public,
+			Authenticated: config.RPCServer.Authenticated,
 		})
 	}
 	stack.RegisterAPIs(apis)
@@ -1370,6 +1296,10 @@ func CreateNodeExecutionClient(
 ) (*Node, error) {
 	if executionClient == nil {
 		return nil, errors.New("execution client must be non-nil")
+	}
+	if configFetcher.Get().ExecutionRPCClient.URL != "" {
+		execConfigFetcher := func() *rpcclient.ClientConfig { return &configFetcher.Get().ExecutionRPCClient }
+		executionClient = executionrpcclient.NewExecutionRpcClient(execConfigFetcher, nil)
 	}
 	currentNode, err := createNodeImpl(ctx, stack, executionClient, nil, nil, nil, arbDb, configFetcher, l2Config, l1client, deployInfo, txOptsValidator, txOptsBatchPoster, dataSigner, fatalErrChan, parentChainID, blobReader, latestWasmModuleRoot)
 	if err != nil {
@@ -1402,6 +1332,10 @@ func CreateNodeFullExecutionClient(
 	if (executionClient == nil) || (executionSequencer == nil) || (executionRecorder == nil) || (executionBatchPoster == nil) {
 		return nil, errors.New("execution client, sequencer, recorder, and batch poster must be non-nil")
 	}
+	if configFetcher.Get().ExecutionRPCClient.URL != "" {
+		execConfigFetcher := func() *rpcclient.ClientConfig { return &configFetcher.Get().ExecutionRPCClient }
+		executionClient = executionrpcclient.NewExecutionRpcClient(execConfigFetcher, nil)
+	}
 	currentNode, err := createNodeImpl(ctx, stack, executionClient, executionSequencer, executionRecorder, executionBatchPoster, arbDb, configFetcher, l2Config, l1client, deployInfo, txOptsValidator, txOptsBatchPoster, dataSigner, fatalErrChan, parentChainID, blobReader, latestWasmModuleRoot)
 	if err != nil {
 		return nil, err
@@ -1411,35 +1345,11 @@ func CreateNodeFullExecutionClient(
 }
 
 func (n *Node) Start(ctx context.Context) error {
-	execClient, ok := n.ExecutionClient.(*gethexec.ExecutionNode)
-	if !ok {
-		execClient = nil
-	}
-	if execClient != nil {
-		err := execClient.Initialize(ctx)
-		if err != nil {
-			return fmt.Errorf("error initializing exec client: %w", err)
+	var err error
+	if execRPCClient, ok := n.ExecutionClient.(*executionrpcclient.ExecutionRpcClient); ok {
+		if err = execRPCClient.Start(ctx); err != nil {
+			return fmt.Errorf("error starting exec rpc client: %w", err)
 		}
-	}
-	err := n.Stack.Start()
-	if err != nil {
-		return fmt.Errorf("error starting geth stack: %w", err)
-	}
-	if execClient != nil {
-		var consensusClient consensus.FullConsensusClient
-		if n.configFetcher.Get().Interconnect == InterconnectDirect {
-			consensusClient = n
-		} else {
-			consensusConfigFetcher := func() *rpcclient.ClientConfig { return n.configFetcher.Get().ConsensusRpcClient }
-			consensusRpcClient := consensusrpcclient.NewConsensusRpcClient(consensusConfigFetcher, n.Stack)
-			consensusRpcClient.Start(ctx)
-			consensusClient = consensusRpcClient
-		}
-		execClient.SetConsensusClient(consensusClient)
-	}
-	err = n.ExecutionClient.Start(ctx)
-	if err != nil {
-		return fmt.Errorf("error starting exec client: %w", err)
 	}
 	if n.BlobReader != nil {
 		err = n.BlobReader.Initialize(ctx)
@@ -1547,7 +1457,10 @@ func (n *Node) Start(ctx context.Context) error {
 		}()
 	}
 	if n.blockMetadataFetcher != nil {
-		n.blockMetadataFetcher.Start(ctx)
+		err = n.blockMetadataFetcher.Start(ctx)
+		if err != nil {
+			return fmt.Errorf("error starting block metadata fetcher: %w", err)
+		}
 	}
 	if n.configFetcher != nil {
 		n.configFetcher.Start(ctx)

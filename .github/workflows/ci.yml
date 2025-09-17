@@ -142,6 +142,12 @@ jobs:
         run: |
           echo "Running tests with Hash Scheme" >> full.log
           ${{ github.workspace }}/.github/workflows/gotestsum.sh --tags cionly --timeout 60m --test_state_scheme hash
+      
+      - name: run tests with consensus execution json rpc interconnect enabled
+        if: matrix.test-mode == 'defaults'
+        run: |
+          echo "Running tests with consensus execution json rpc interconnect enabled in Hash Scheme" >> full.log
+          ${{ github.workspace }}/.github/workflows/gotestsum.sh --tags cionly --timeout 60m --test_state_scheme hash --execution_consensus_jsonrpc_interconnect=true
 
       - name: run redis tests
         if: matrix.test-mode == 'defaults'

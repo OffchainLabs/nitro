@@ -132,13 +132,6 @@ func NewTransactionStreamer(
 	if err != nil {
 		return nil, err
 	}
-	if config().TrackBlockMetadataFrom != 0 {
-		trackBlockMetadataFrom, err := exec.BlockNumberToMessageIndex(config().TrackBlockMetadataFrom).Await(ctx)
-		if err != nil {
-			return nil, err
-		}
-		streamer.trackBlockMetadataFrom = trackBlockMetadataFrom
-	}
 	if config().SyncTillBlock != 0 {
 		syncTillMessage, err := exec.BlockNumberToMessageIndex(config().SyncTillBlock).Await(ctx)
 		if err != nil {
@@ -1485,6 +1478,13 @@ func (s *TransactionStreamer) backfillTrackersForMissingBlockMetadata(ctx contex
 
 func (s *TransactionStreamer) Start(ctxIn context.Context) error {
 	s.StopWaiter.Start(ctxIn, s)
+	if s.config().TrackBlockMetadataFrom != 0 {
+		trackBlockMetadataFrom, err := s.exec.BlockNumberToMessageIndex(s.config().TrackBlockMetadataFrom).Await(ctxIn)
+		if err != nil {
+			return err
+		}
+		s.trackBlockMetadataFrom = trackBlockMetadataFrom
+	}
 	s.LaunchThread(s.backfillTrackersForMissingBlockMetadata)
 	return stopwaiter.CallIterativelyWith[struct{}](&s.StopWaiterSafe, s.executeMessages, s.newMessageNotifier)
 }

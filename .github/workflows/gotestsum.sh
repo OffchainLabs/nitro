@@ -14,6 +14,7 @@ test_state_scheme=""
 log=true
 race=false
 cover=false
+execution_consensus_jsonrpc_interconnect=false
 while [[ $# -gt 0 ]]; do
   case $1 in
     --timeout)
@@ -46,6 +47,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --cover)
       cover=true
+      shift
+      ;;
+    --execution_consensus_jsonrpc_interconnect)
+      execution_consensus_jsonrpc_interconnect=true
       shift
       ;;
 		--nolog)
@@ -86,6 +91,10 @@ for package in $packages; do
       cmd="$cmd -args -- --test_state_scheme=$test_state_scheme --test_loglevel=8"
   else
       cmd="$cmd -args -- --test_loglevel=8" # Use error log level, which is the value 8 in the slog level enum for tests.
+  fi
+
+  if [ "$execution_consensus_jsonrpc_interconnect" == true ]; then
+    cmd="$cmd --execution_consensus_jsonrpc_interconnect=true"
   fi
 
 	if [ "$log" == true ]; then
