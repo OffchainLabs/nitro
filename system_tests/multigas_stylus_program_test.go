@@ -106,7 +106,7 @@ func TestMultigasStylus_AccountAccessHostIOs(t *testing.T) {
 			require.NoError(t, err)
 
 			expectedAccess := params.ColdAccountAccessCostEIP2929 - params.WarmStorageReadCostEIP2929
-			expectedCompute := params.WarmStorageReadCostEIP2929
+			expectedCompute := params.WarmStorageReadCostEIP2929 + params.TxGas
 			if tc.withCode {
 				maxCodeSize := chaininfo.ArbitrumDevTestChainConfig().MaxCodeSize()
 				extCodeCost := maxCodeSize / params.DefaultMaxCodeSize * params.ExtcodeSizeGasEIP150
