@@ -11,8 +11,8 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
 
-	boldrollup "github.com/offchainlabs/bold/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
+	boldrollup "github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/staker"
 	boldstaker "github.com/offchainlabs/nitro/staker/bold"
 	legacystaker "github.com/offchainlabs/nitro/staker/legacy"
@@ -52,6 +52,7 @@ type MultiProtocolStaker struct {
 	inboxTracker            staker.InboxTrackerInterface
 	inboxStreamer           staker.TransactionStreamerInterface
 	inboxReader             staker.InboxReaderInterface
+	fatalErr                chan<- error
 }
 
 func NewMultiProtocolStaker(
@@ -121,6 +122,7 @@ func NewMultiProtocolStaker(
 		inboxTracker:            inboxTracker,
 		inboxStreamer:           inboxStreamer,
 		inboxReader:             inboxReader,
+		fatalErr:                fatalErr,
 	}, nil
 }
 
@@ -262,6 +264,7 @@ func (m *MultiProtocolStaker) setupBoldStaker(
 		m.inboxTracker,
 		m.inboxStreamer,
 		m.inboxReader,
+		m.fatalErr,
 	)
 	if err != nil {
 		return err

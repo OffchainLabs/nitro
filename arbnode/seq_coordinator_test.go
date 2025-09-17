@@ -128,7 +128,7 @@ func TestRedisSeqCoordinatorAtomic(t *testing.T) {
 		redisCoordinator, err := redisutil.NewRedisCoordinator(config.RedisUrl, config.RedisQuorumSize)
 		Require(t, err)
 		coordinator := &SeqCoordinator{
-			redisCoordinator: *redisCoordinator,
+			redisCoordinator: redisCoordinator,
 			config:           config,
 			signer:           nullSigner,
 		}
@@ -184,7 +184,7 @@ func TestSeqCoordinatorDeletesFinalizedMessages(t *testing.T) {
 	redisCoordinator, err := redisutil.NewRedisCoordinator(config.RedisUrl, config.RedisQuorumSize)
 	Require(t, err)
 	coordinator := &SeqCoordinator{
-		redisCoordinator: *redisCoordinator,
+		redisCoordinator: redisCoordinator,
 		config:           config,
 		signer:           nullSigner,
 	}
@@ -229,7 +229,7 @@ func TestSeqCoordinatorDeletesFinalizedMessages(t *testing.T) {
 		t.Fatalf("incorrect finalizedMsgCount, want: 5, have: %d", finalized)
 	}
 
-	// Try deleting finalized messages when theres already a finalizedMsgCount
+	// Try deleting finalized messages when there's already a finalizedMsgCount
 	err = coordinator.deleteFinalizedMsgsFromRedis(ctx, 7)
 	Require(t, err)
 	exists, err = coordinator.RedisCoordinator().Client.Exists(ctx, keys[8:12]...).Result()
@@ -275,7 +275,7 @@ func TestSeqCoordinatorAddsBlockMetadata(t *testing.T) {
 	redisCoordinator, err := redisutil.NewRedisCoordinator(config.RedisUrl, config.RedisQuorumSize)
 	Require(t, err)
 	coordinator := &SeqCoordinator{
-		redisCoordinator: *redisCoordinator,
+		redisCoordinator: redisCoordinator,
 		config:           config,
 		signer:           nullSigner,
 	}

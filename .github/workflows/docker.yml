@@ -15,7 +15,7 @@ jobs:
           - 5000:5000
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           submodules: recursive
       - name: Set up Docker Buildx
@@ -23,13 +23,13 @@ jobs:
         with:
           driver-opts: network=host
       - name: Cache Docker layers
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: /tmp/.buildx-cache
           key: ${{ runner.os }}-buildx-${{ hashFiles('Dockerfile') }}
           restore-keys: ${{ runner.os }}-buildx-
       - name: Build nitro-node docker
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           target: nitro-node
           push: true
@@ -38,7 +38,7 @@ jobs:
           cache-from: type=local,src=/tmp/.buildx-cache
           cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
       - name: Build nitro-node-dev docker
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           target: nitro-node-dev
           push: true

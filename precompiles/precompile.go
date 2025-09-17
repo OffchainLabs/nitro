@@ -633,11 +633,6 @@ func Precompiles() map[addr]ArbosPrecompile {
 	arbos.InternalTxStartBlockMethodID = ArbosActs.GetMethodID("StartBlock")
 	arbos.InternalTxBatchPostingReportMethodID = ArbosActs.GetMethodID("BatchPostingReport")
 
-	for _, contract := range contracts {
-		precompile := contract.Precompile()
-		arbosState.PrecompileMinArbOSVersions[precompile.address] = precompile.arbosVersion
-	}
-
 	ArbOwner.methodsByName["SetCalldataPriceIncrease"].arbosVersion = params.ArbosVersion_40
 	ArbOwnerPublic.methodsByName["IsCalldataPriceIncreaseEnabled"].arbosVersion = params.ArbosVersion_40
 
@@ -649,11 +644,16 @@ func Precompiles() map[addr]ArbosPrecompile {
 	ArbOwner.methodsByName["IsNativeTokenOwner"].arbosVersion = params.ArbosVersion_41
 	ArbOwner.methodsByName["GetAllNativeTokenOwners"].arbosVersion = params.ArbosVersion_41
 
-	_, ArbNativeTokenManager := MakePrecompile(pgen.ArbNativeTokenManagerMetaData, &ArbNativeTokenManager{Address: types.ArbNativeTokenManagerAddress})
+	ArbNativeTokenManager := insert(MakePrecompile(pgen.ArbNativeTokenManagerMetaData, &ArbNativeTokenManager{Address: types.ArbNativeTokenManagerAddress}))
 	ArbNativeTokenManager.arbosVersion = params.ArbosVersion_41
 	ArbNativeTokenManager.methodsByName["MintNativeToken"].arbosVersion = params.ArbosVersion_41
 	ArbNativeTokenManager.methodsByName["BurnNativeToken"].arbosVersion = params.ArbosVersion_41
-	insert(ArbNativeTokenManager.address, ArbNativeTokenManager)
+
+	// this should be executed after all precompiles have been inserted
+	for _, contract := range contracts {
+		precompile := contract.Precompile()
+		arbosState.PrecompileMinArbOSVersions[precompile.address] = precompile.arbosVersion
+	}
 
 	return contracts
 }

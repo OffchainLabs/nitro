@@ -58,8 +58,8 @@ func TestRectreateMissingStates(t *testing.T) {
 		cachingConfig := gethexec.DefaultCachingConfig
 		// For now Archive node should use HashScheme
 		cachingConfig.StateScheme = rawdb.HashScheme
-		cacheConfig := gethexec.DefaultCacheConfigFor(stack, &cachingConfig)
-		bc, err := gethexec.GetBlockChain(chainDb, cacheConfig, builder.chainConfig, nil, builder.execConfig.TxLookupLimit)
+		cacheConfig := gethexec.DefaultCacheConfigFor(&cachingConfig)
+		bc, err := gethexec.GetBlockChain(chainDb, cacheConfig, builder.chainConfig, nil, &builder.execConfig.TxIndexer)
 		Require(t, err)
 		err = staterecovery.RecreateMissingStates(chainDb, bc, cacheConfig, 1)
 		Require(t, err)

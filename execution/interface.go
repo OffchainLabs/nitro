@@ -12,6 +12,10 @@ import (
 	"github.com/offchainlabs/nitro/util/containers"
 )
 
+type MaintenanceStatus struct {
+	IsRunning bool `json:"isRunning"`
+}
+
 type MessageResult struct {
 	BlockHash common.Hash
 	SendRoot  common.Hash
@@ -43,7 +47,9 @@ type ExecutionClient interface {
 	SetFinalityData(ctx context.Context, safeFinalityData *arbutil.FinalityData, finalizedFinalityData *arbutil.FinalityData, validatedFinalityData *arbutil.FinalityData) containers.PromiseInterface[struct{}]
 	MarkFeedStart(to arbutil.MessageIndex) containers.PromiseInterface[struct{}]
 
-	Maintenance() containers.PromiseInterface[struct{}]
+	TriggerMaintenance() containers.PromiseInterface[struct{}]
+	ShouldTriggerMaintenance() containers.PromiseInterface[bool]
+	MaintenanceStatus() containers.PromiseInterface[*MaintenanceStatus]
 
 	Start(ctx context.Context) error
 	StopAndWait()

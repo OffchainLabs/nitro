@@ -168,11 +168,31 @@ func (w *compareExecutionClient) MarkFeedStart(to arbutil.MessageIndex) containe
 	return result
 }
 
-func (w *compareExecutionClient) Maintenance() containers.PromiseInterface[struct{}] {
+func (w *compareExecutionClient) TriggerMaintenance() containers.PromiseInterface[struct{}] {
 	start := time.Now()
-	log.Info("CompareExecutionClient: Maintenance")
-	result := w.gethExecutionClient.Maintenance()
-	log.Info("CompareExecutionClient: Maintenance completed", "elapsed", time.Since(start))
+	log.Info("CompareExecutionClient: TriggerMaintenance")
+	result := w.gethExecutionClient.TriggerMaintenance()
+	log.Info("CompareExecutionClient: TriggerMaintenance completed", "elapsed", time.Since(start))
+	return result
+}
+
+func (w *compareExecutionClient) ShouldTriggerMaintenance() containers.PromiseInterface[bool] {
+	start := time.Now()
+	log.Info("CompareExecutionClient: ShouldTriggerMaintenance")
+	internal := w.gethExecutionClient.ShouldTriggerMaintenance()
+	external := w.nethermindExecutionClient.ShouldTriggerMaintenance()
+	result := comparePromises("ShouldTriggerMaintenance", internal, external)
+	log.Info("CompareExecutionClient: ShouldTriggerMaintenance completed", "elapsed", time.Since(start))
+	return result
+}
+
+func (w *compareExecutionClient) MaintenanceStatus() containers.PromiseInterface[*execution.MaintenanceStatus] {
+	start := time.Now()
+	log.Info("CompareExecutionClient: MaintenanceStatus")
+	internal := w.gethExecutionClient.MaintenanceStatus()
+	external := w.nethermindExecutionClient.MaintenanceStatus()
+	result := comparePromises("MaintenanceStatus", internal, external)
+	log.Info("CompareExecutionClient: MaintenanceStatus completed", "elapsed", time.Since(start))
 	return result
 }
 

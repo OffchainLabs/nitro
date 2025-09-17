@@ -22,13 +22,13 @@ import "C"
 import (
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/vm"
-	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 
@@ -36,6 +36,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/callstack"
+	"github.com/offchainlabs/nitro/util/containers"
 )
 
 type u8 = C.uint8_t
@@ -72,15 +73,14 @@ func activateProgram(
 	arbosVersionForGas uint64,
 	debug bool,
 	burner burn.Burner,
+	runCtx *core.MessageRunContext,
 ) (*activationInfo, error) {
-	targets := db.Database().WasmTargets()
 	moduleActivationMandatory := true
-	info, asmMap, err := activateProgramInternal(program, codehash, wasm, page_limit, stylusVersion, arbosVersionForGas, debug, burner.GasLeft(), targets, moduleActivationMandatory)
+	info, asmMap, err := activateProgramInternal(program, codehash, wasm, page_limit, stylusVersion, arbosVersionForGas, debug, burner.GasLeft(), runCtx.WasmTargets(), moduleActivationMandatory)
 	if err != nil {
 		return nil, err
 	}
-	db.ActivateWasm(info.moduleHash, asmMap)
-	return info, nil
+	return info, db.ActivateWasm(info.moduleHash, asmMap)
 }
 
 func activateModule(
@@ -135,21 +135,33 @@ func compileNative(
 	wasm []byte,
 	stylusVersion uint16,
 	debug bool,
-	target ethdb.WasmTarget,
+	target rawdb.WasmTarget,
+	cranelift bool,
+	timeout time.Duration,
 ) ([]byte, error) {
-	output := &rustBytes{}
-	status_asm := C.stylus_compile(
-		goSlice(wasm),
-		u16(stylusVersion),
-		cbool(debug),
-		goSlice([]byte(target)),
-		output,
-	)
-	asm := rustBytesIntoBytes(output)
-	if status_asm != 0 {
-		return nil, fmt.Errorf("%w: %s", ErrProgramActivation, string(asm))
+	result := containers.NewPromise[[]byte](func() {})
+	go func() {
+		output := &rustBytes{}
+		status_asm := C.stylus_compile(
+			goSlice(wasm),
+			u16(stylusVersion),
+			cbool(debug),
+			goSlice([]byte(target)),
+			cbool(cranelift),
+			output,
+		)
+		asm := rustBytesIntoBytes(output)
+		if status_asm != 0 {
+			result.ProduceError(fmt.Errorf("%w: %s", ErrProgramActivation, string(asm)))
+		} else {
+			result.Produce(asm)
+		}
+	}()
+	select {
+	case <-result.ReadyChan():
+	case <-time.After(timeout):
 	}
-	return asm, nil
+	return result.Current()
 }
 
 func activateProgramInternal(
@@ -161,11 +173,11 @@ func activateProgramInternal(
 	arbosVersionForGas uint64,
 	debug bool,
 	gasLeft *uint64,
-	targets []ethdb.WasmTarget,
+	targets []rawdb.WasmTarget,
 	moduleActivationMandatory bool,
-) (*activationInfo, map[ethdb.WasmTarget][]byte, error) {
+) (*activationInfo, map[rawdb.WasmTarget][]byte, error) {
 	var wavmFound bool
-	var nativeTargets []ethdb.WasmTarget
+	var nativeTargets []rawdb.WasmTarget
 	for _, target := range targets {
 		if target == rawdb.TargetWavm {
 			wavmFound = true
@@ -174,14 +186,14 @@ func activateProgramInternal(
 		}
 	}
 	type result struct {
-		target ethdb.WasmTarget
+		target rawdb.WasmTarget
 		asm    []byte
 		err    error
 	}
 	results := make(chan result)
 	// info will be set in separate thread, make sure to wait before reading
 	var info *activationInfo
-	asmMap := make(map[ethdb.WasmTarget][]byte, len(nativeTargets)+1)
+	asmMap := make(map[rawdb.WasmTarget][]byte, len(nativeTargets)+1)
 	if moduleActivationMandatory || wavmFound {
 		go func() {
 			var err error
@@ -202,7 +214,13 @@ func activateProgramInternal(
 	for _, target := range nativeTargets {
 		target := target
 		go func() {
-			asm, err := compileNative(wasm, stylusVersion, debug, target)
+			cranelift := false
+			timeout := time.Second * 15
+			asm, err := compileNative(wasm, stylusVersion, debug, target, cranelift, timeout)
+			if err != nil {
+				log.Warn("initial stylus compilation failed", "address", addressForLogging, "cranelift", cranelift, "timeout", timeout, "err", err)
+				asm, err = compileNative(wasm, stylusVersion, debug, target, !cranelift, timeout)
+			}
 			results <- result{target, asm, err}
 		}()
 	}
@@ -234,11 +252,19 @@ func activateProgramInternal(
 	return info, asmMap, err
 }
 
-func getLocalAsm(statedb vm.StateDB, moduleHash common.Hash, addressForLogging common.Address, code []byte, codehash common.Hash, maxWasmSize uint32, pagelimit uint16, time uint64, debugMode bool, program Program) ([]byte, error) {
-	localTarget := rawdb.LocalTarget()
-	localAsm, err := statedb.TryGetActivatedAsm(localTarget, moduleHash)
-	if err == nil && len(localAsm) > 0 {
-		return localAsm, nil
+// getCompiledProgram gets compiled wasm for all targets and recompiles missing ones.
+func getCompiledProgram(statedb vm.StateDB, moduleHash common.Hash, addressForLogging common.Address, code []byte, codehash common.Hash, maxWasmSize uint32, pagelimit uint16, time uint64, debugMode bool, program Program, runCtx *core.MessageRunContext) (map[rawdb.WasmTarget][]byte, error) {
+	targets := runCtx.WasmTargets()
+	// even though we need only asm for local target, make sure that all configured targets are available as they are needed during multi-target recording of a program call
+	asmMap, missingTargets, err := statedb.ActivatedAsmMap(targets, moduleHash)
+	if err != nil {
+		// exit early in case of an unexpected error
+		// e.g. caused by inconsistent recent activations stored in statedb (not yet committed activation that doesn't contain asms for all targets)
+		log.Error("unexpected error reading asm map", "err", err)
+		return nil, err
+	}
+	if len(missingTargets) == 0 {
+		return asmMap, nil
 	}
 
 	// addressForLogging may be empty or may not correspond to the code, so we need to be careful to use the code passed in separately
@@ -252,10 +278,10 @@ func getLocalAsm(statedb vm.StateDB, moduleHash common.Hash, addressForLogging c
 	zeroArbosVersion := uint64(0)
 	zeroGas := uint64(0)
 
-	targets := statedb.Database().WasmTargets()
 	// we know program is activated, so it must be in correct version and not use too much memory
 	moduleActivationMandatory := false
-	info, asmMap, err := activateProgramInternal(addressForLogging, codehash, wasm, pagelimit, program.version, zeroArbosVersion, debugMode, &zeroGas, targets, moduleActivationMandatory)
+	// compile only missing targets
+	info, newlyBuilt, err := activateProgramInternal(addressForLogging, codehash, wasm, pagelimit, program.version, zeroArbosVersion, debugMode, &zeroGas, missingTargets, moduleActivationMandatory)
 	if err != nil {
 		log.Error("failed to reactivate program", "address", addressForLogging, "expected moduleHash", moduleHash, "err", err)
 		return nil, fmt.Errorf("failed to reactivate program address: %v err: %w", addressForLogging, err)
@@ -266,30 +292,29 @@ func getLocalAsm(statedb vm.StateDB, moduleHash common.Hash, addressForLogging c
 		return nil, fmt.Errorf("failed to reactivate program. address: %v, expected ModuleHash: %v", addressForLogging, moduleHash)
 	}
 
+	// merge in the newly built asms
+	for target, asm := range newlyBuilt {
+		asmMap[target] = asm
+	}
 	currentHoursSince := hoursSinceArbitrum(time)
 	if currentHoursSince > program.activatedAt {
 		// stylus program is active on-chain, and was activated in the past
 		// so we store it directly to database
 		batch := statedb.Database().WasmStore().NewBatch()
-		rawdb.WriteActivation(batch, moduleHash, asmMap)
+		// rawdb.WriteActivation iterates over the asms map and writes each entry separately to wasmdb, so the writes for the same module hash can be incremental
+		// we know that all targets for which asms were found initially, were read from disk as oppose to from newly activated asms from memory, as otherwise statedb.ActivatedAsmMap would have failed with an error because of missing targets within newly activated asms
+		rawdb.WriteActivation(batch, moduleHash, newlyBuilt)
 		if err := batch.Write(); err != nil {
 			log.Error("failed writing re-activation to state", "address", addressForLogging, "err", err)
 		}
 	} else {
-		// program activated recently, possibly in this eth_call
-		// store it to statedb. It will be stored to database if statedb is committed
-		statedb.ActivateWasm(moduleHash, asmMap)
-	}
-	asm, exists := asmMap[localTarget]
-	if !exists {
-		var availableTargets []ethdb.WasmTarget
-		for target := range asmMap {
-			availableTargets = append(availableTargets, target)
+		// we need to add asms for all targets to the newly activated targets (not only the newly built) to maintain consistency the newly activated targets map
+		if err := statedb.ActivateWasm(moduleHash, asmMap); err != nil {
+			log.Error("Failed to store recent activation of wasm in statedb", "err", err)
+			return nil, err
 		}
-		log.Error("failed to reactivate program - missing asm for local target", "address", addressForLogging, "local target", localTarget, "available targets", availableTargets)
-		return nil, fmt.Errorf("failed to reactivate program - missing asm for local target, address: %v, local target: %v, available targets: %v", addressForLogging, localTarget, availableTargets)
 	}
-	return asm, nil
+	return asmMap, nil
 }
 
 func callProgram(
@@ -303,7 +328,7 @@ func callProgram(
 	evmData *EvmData,
 	stylusParams *ProgParams,
 	memoryModel *MemoryModel,
-	arbos_tag uint32,
+	runCtx *core.MessageRunContext,
 ) ([]byte, error) {
 	callstack.LogCallStack("")
 
@@ -315,8 +340,13 @@ func callProgram(
 		panic("missing asm")
 	}
 
-	if stateDb, ok := db.(*state.StateDB); ok {
-		stateDb.RecordProgram(db.Database().WasmTargets(), moduleHash)
+	if runCtx.IsRecording() {
+		if stateDb, ok := db.(*state.StateDB); ok {
+			if err := stateDb.RecordProgram(runCtx.WasmTargets(), moduleHash); err != nil {
+				log.Error("failed to record program", "program", address, "module", moduleHash, "err", err)
+				panic(fmt.Sprintf("failed to record program: %v", err))
+			}
+		}
 	}
 
 	evmApi := newApi(interpreter, tracingInfo, scope, memoryModel)
@@ -332,7 +362,7 @@ func callProgram(
 		cbool(debug),
 		output,
 		(*u64)(&scope.Contract.Gas),
-		u32(arbos_tag),
+		u32(runCtx.WasmCacheTag()),
 	))
 
 	depth := interpreter.Depth()
@@ -359,24 +389,29 @@ func handleReqImpl(apiId usize, req_type u32, data *rustSlice, costPtr *u64, out
 
 // Caches a program in Rust. We write a record so that we can undo on revert.
 // For gas estimation and eth_call, we ignore permanent updates and rely on Rust's LRU.
-func cacheProgram(db vm.StateDB, module common.Hash, program Program, addressForLogging common.Address, code []byte, codehash common.Hash, params *StylusParams, debug bool, time uint64, runMode core.MessageRunMode) {
-	if runMode == core.MessageCommitMode {
+func cacheProgram(db vm.StateDB, module common.Hash, program Program, addressForLogging common.Address, code []byte, codehash common.Hash, params *StylusParams, debug bool, time uint64, runCtx *core.MessageRunContext) {
+	if runCtx.IsCommitMode() {
 		// address is only used for logging
-		asm, err := getLocalAsm(db, module, addressForLogging, code, codehash, params.MaxWasmSize, params.PageLimit, time, debug, program)
-		if err != nil {
-			panic("unable to recreate wasm")
+		asmMap, err := getCompiledProgram(db, module, addressForLogging, code, codehash, params.MaxWasmSize, params.PageLimit, time, debug, program, runCtx)
+		var ok bool
+		var localAsm []byte
+		if asmMap != nil {
+			localAsm, ok = asmMap[rawdb.LocalTarget()]
 		}
-		tag := db.Database().WasmCacheTag()
-		state.CacheWasmRust(asm, module, program.version, tag, debug)
+		if err != nil || !ok {
+			panic(fmt.Sprintf("failed to get compiled program for caching, program: %v, local target missing: %v, err: %v", addressForLogging.Hex(), !ok, err))
+		}
+		tag := runCtx.WasmCacheTag()
+		state.CacheWasmRust(localAsm, module, program.version, tag, debug)
 		db.RecordCacheWasm(state.CacheWasm{ModuleHash: module, Version: program.version, Tag: tag, Debug: debug})
 	}
 }
 
 // Evicts a program in Rust. We write a record so that we can undo on revert, unless we don't need to (e.g. expired)
 // For gas estimation and eth_call, we ignore permanent updates and rely on Rust's LRU.
-func evictProgram(db vm.StateDB, module common.Hash, version uint16, debug bool, runMode core.MessageRunMode, forever bool) {
-	if runMode == core.MessageCommitMode {
-		tag := db.Database().WasmCacheTag()
+func evictProgram(db vm.StateDB, module common.Hash, version uint16, debug bool, runCtx *core.MessageRunContext, forever bool) {
+	if runCtx.IsCommitMode() {
+		tag := runCtx.WasmCacheTag()
 		state.EvictWasmRust(module, version, tag, debug)
 		if !forever {
 			db.RecordEvictWasm(state.EvictWasm{ModuleHash: module, Version: version, Tag: tag, Debug: debug})
@@ -466,7 +501,7 @@ func GetEntrySizeEstimateBytes(module []byte, version uint16, debug bool) uint64
 const DefaultTargetDescriptionArm = "arm64-linux-unknown+neon"
 const DefaultTargetDescriptionX86 = "x86_64-linux-unknown+sse4.2+lzcnt+bmi"
 
-func SetTarget(name ethdb.WasmTarget, description string, native bool) error {
+func SetTarget(name rawdb.WasmTarget, description string, native bool) error {
 	output := &rustBytes{}
 	status := userStatus(C.stylus_target_set(
 		goSlice([]byte(name)),

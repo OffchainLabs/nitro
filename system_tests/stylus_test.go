@@ -100,11 +100,11 @@ func fullRecurseTest() [][]multiCallRecurse {
 }
 
 func TestProgramLongCall(t *testing.T) {
-	testProgramResursiveCalls(t, fullRecurseTest(), true)
+	testProgramRecursiveCalls(t, fullRecurseTest(), true)
 }
 
 func TestProgramLongArbitratorCall(t *testing.T) {
-	testProgramResursiveCalls(t, fullRecurseTest(), false)
+	testProgramRecursiveCalls(t, fullRecurseTest(), false)
 }
 
 func TestProgramArbitratorStylusUpgrade(t *testing.T) {

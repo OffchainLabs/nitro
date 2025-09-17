@@ -25,6 +25,7 @@ import (
 	"github.com/cavaliergopher/grab/v3"
 	"github.com/codeclysm/extract/v3"
 
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
@@ -36,6 +37,7 @@ import (
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
 
+	protocol "github.com/offchainlabs/bold/chain-abstraction"
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
@@ -45,16 +47,21 @@ import (
 	"github.com/offchainlabs/nitro/cmd/staterecovery"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/execution/nethexec"
+	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
+	"github.com/offchainlabs/nitro/staker/bold"
 	"github.com/offchainlabs/nitro/statetransfer"
 	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/dbutil"
+	"github.com/offchainlabs/nitro/util/headerreader"
 )
 
 var notFoundError = errors.New("file not found")
 
-// Based on https://github.com/wasmerio/wasmer/blob/6de934035a4b34c2878552320f058862faea4651/lib/types/src/serialize.rs#L16
+// taken from wasmer's lib/types/src/serialize.rs: MetadataHeader::CURRENT_VERSION
+// 8 is a bug (should have been 6) but we're skipping the real version 8 so it does not matter
 const WasmerSerializeVersion = 8
+const InitialWasmerSerializeVersion = 8
 
 func initializeAndDownloadInit(ctx context.Context, initConfig *conf.InitConfig, stack *node.Node) (string, func(), error) {
 	cleanUpTmp := func() {}
@@ -291,11 +298,12 @@ func joinArchive(parts []string, archivePath string) (string, error) {
 		if err != nil {
 			return "", fmt.Errorf("failed to open part file %s: %w", part, err)
 		}
-		defer partFile.Close()
 		_, err = io.Copy(archive, partFile)
 		if err != nil {
+			partFile.Close()
 			return "", fmt.Errorf("failed to copy part file %s: %w", part, err)
 		}
+		partFile.Close()
 		log.Info("Joined database part into archive", "part", part)
 	}
 	log.Info("Successfully joined parts into archive", "archive", archivePath)
@@ -435,7 +443,7 @@ func isWasmDb(path string) bool {
 func extractSnapshot(archive string, location string, importWasm bool) error {
 	reader, err := os.Open(archive)
 	if err != nil {
-		return fmt.Errorf("couln't open init '%v' archive: %w", archive, err)
+		return fmt.Errorf("couldn't open init '%v' archive: %w", archive, err)
 	}
 	defer reader.Close()
 	stat, err := reader.Stat()
@@ -454,7 +462,7 @@ func extractSnapshot(archive string, location string, importWasm bool) error {
 	}
 	err = extract.Archive(context.Background(), reader, location, rename)
 	if err != nil {
-		return fmt.Errorf("couln't extract init archive '%v' err: %w", archive, err)
+		return fmt.Errorf("couldn't extract init archive '%v' err: %w", archive, err)
 	}
 	return nil
 }
@@ -503,8 +511,8 @@ func validateOrUpgradeWasmerSerializeVersion(db ethdb.Database) error {
 	if !databaseIsEmpty(db) {
 		versionInDB, err := rawdb.ReadWasmerSerializeVersion(db)
 		if err != nil {
-			if dbutil.IsErrNotFound(err) {
-				versionInDB = 0
+			if rawdb.IsDbErrNotFound(err) {
+				versionInDB = InitialWasmerSerializeVersion
 			} else {
 				return fmt.Errorf("Failed to retrieve wasmer serialize version: %w", err)
 			}
@@ -531,7 +539,7 @@ func validateOrUpgradeWasmStoreSchemaVersion(db ethdb.Database) error {
 	if !databaseIsEmpty(db) {
 		version, err := rawdb.ReadWasmSchemaVersion(db)
 		if err != nil {
-			if dbutil.IsErrNotFound(err) {
+			if rawdb.IsDbErrNotFound(err) {
 				version = []byte{0}
 			} else {
 				return fmt.Errorf("Failed to retrieve wasm schema version: %w", err)
@@ -547,7 +555,7 @@ func validateOrUpgradeWasmStoreSchemaVersion(db ethdb.Database) error {
 			if err := deleteWasmEntries(db, prefixes, true, keyLength); err != nil {
 				return fmt.Errorf("Failed to purge wasm store version 0 entries: %w", err)
 			}
-			log.Info("Wasm store schama version 0 entries successfully removed.")
+			log.Info("Wasm store schema version 0 entries successfully removed.")
 		}
 	}
 	rawdb.WriteWasmSchemaVersion(db)
@@ -575,7 +583,7 @@ func rebuildLocalWasm(ctx context.Context, config *gethexec.Config, l2BlockChain
 		} else {
 			position, err = gethexec.ReadFromKeyValueStore[common.Hash](wasmDb, gethexec.RebuildingPositionKey)
 			if err != nil {
-				log.Info("Unable to get codehash position in rebuilding of wasm store, its possible it isnt initialized yet, so initializing it and starting rebuilding", "err", err)
+				log.Info("Unable to get codehash position in rebuilding of wasm store, its possible it isn't initialized yet, so initializing it and starting rebuilding", "err", err)
 				if err := gethexec.WriteToKeyValueStore(wasmDb, gethexec.RebuildingPositionKey, common.Hash{}); err != nil {
 					return nil, nil, fmt.Errorf("unable to initialize codehash position in rebuilding of wasm store to beginning: %w", err)
 				}
@@ -584,7 +592,7 @@ func rebuildLocalWasm(ctx context.Context, config *gethexec.Config, l2BlockChain
 		if position != gethexec.RebuildingDone {
 			startBlockHash, err := gethexec.ReadFromKeyValueStore[common.Hash](wasmDb, gethexec.RebuildingStartBlockHashKey)
 			if err != nil {
-				log.Info("Unable to get start block hash in rebuilding of wasm store, its possible it isnt initialized yet, so initializing it to latest block hash", "err", err)
+				log.Info("Unable to get start block hash in rebuilding of wasm store, its possible it isn't initialized yet, so initializing it to latest block hash", "err", err)
 				if err := gethexec.WriteToKeyValueStore(wasmDb, gethexec.RebuildingStartBlockHashKey, latestBlock.Hash()); err != nil {
 					return nil, nil, fmt.Errorf("unable to initialize start block hash in rebuilding of wasm store to latest block hash: %w", err)
 				}
@@ -627,7 +635,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 				if err := dbutil.UnfinishedConversionCheck(wasmDb); err != nil {
 					return nil, nil, fmt.Errorf("wasm unfinished database conversion check error: %w", err)
 				}
-				chainDb := rawdb.WrapDatabaseWithWasm(chainData, wasmDb, 1, targetConfig.WasmTargets())
+				chainDb := rawdb.WrapDatabaseWithWasm(chainData, wasmDb)
 				_, err = rawdb.ParseStateScheme(cacheConfig.StateScheme, chainDb)
 				if err != nil {
 					return nil, nil, err
@@ -636,7 +644,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 				if err != nil {
 					return chainDb, nil, fmt.Errorf("error pruning: %w", err)
 				}
-				l2BlockChain, err := gethexec.GetBlockChain(chainDb, cacheConfig, chainConfig, tracer, config.Execution.TxLookupLimit)
+				l2BlockChain, err := gethexec.GetBlockChain(chainDb, cacheConfig, chainConfig, tracer, &config.Execution.TxIndexer)
 				if err != nil {
 					return chainDb, nil, err
 				}
@@ -703,7 +711,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 	if err := validateOrUpgradeWasmStoreSchemaVersion(wasmDb); err != nil {
 		return nil, nil, err
 	}
-	chainDb := rawdb.WrapDatabaseWithWasm(chainData, wasmDb, 1, targetConfig.WasmTargets())
+	chainDb := rawdb.WrapDatabaseWithWasm(chainData, wasmDb)
 	_, err = rawdb.ParseStateScheme(cacheConfig.StateScheme, chainDb)
 	if err != nil {
 		return nil, nil, err
@@ -790,7 +798,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 		if chainConfig == nil {
 			return chainDb, nil, errors.New("no --init.* mode supplied and chain data not in expected directory")
 		}
-		l2BlockChain, err = gethexec.GetBlockChain(chainDb, cacheConfig, chainConfig, tracer, config.Execution.TxLookupLimit)
+		l2BlockChain, err = gethexec.GetBlockChain(chainDb, cacheConfig, chainConfig, tracer, &config.Execution.TxIndexer)
 		if err != nil {
 			return chainDb, nil, err
 		}
@@ -804,6 +812,14 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 		}
 		testUpdateTxIndex(chainDb, chainConfig, &txIndexWg)
 	} else {
+		var initDataReaderHasAccounts bool
+		if config.Init.ValidateGenesisAssertion {
+			accountsReader, err := initDataReader.GetAccountDataReader()
+			if err != nil {
+				return chainDb, nil, err
+			}
+			initDataReaderHasAccounts = accountsReader.More()
+		}
 		genesisBlockNr, err := initDataReader.GetNextBlockNumber()
 		if err != nil {
 			return chainDb, nil, err
@@ -893,9 +909,17 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 		// Trigger genesis block building at Nethermind
 		_ = initDigester.DigestInitMessage(ctx, parsedInitMessage.InitialL1BaseFee, parsedInitMessage.SerializedChainConfig)
 
-		l2BlockChain, err = gethexec.WriteOrTestBlockChain(chainDb, cacheConfig, initDataReader, chainConfig, genesisArbOSInit, tracer, parsedInitMessage, config.Execution.TxLookupLimit, config.Init.AccountsPerSync)
+		l2BlockChain, err = gethexec.WriteOrTestBlockChain(chainDb, cacheConfig, initDataReader, chainConfig, genesisArbOSInit, tracer, parsedInitMessage, &config.Execution.TxIndexer, config.Init.AccountsPerSync)
 		if err != nil {
 			return chainDb, nil, err
+		}
+		if config.Init.ValidateGenesisAssertion {
+			if err := validateGenesisAssertion(ctx, rollupAddrs.Rollup, l1Client, l2BlockChain.Genesis().Hash(), initDataReaderHasAccounts); err != nil {
+				if !config.Init.Force {
+					return chainDb, nil, fmt.Errorf("error testing genesis assertion: %w", err)
+				}
+				log.Error("Error testing genesis assertions", "err", err)
+			}
 		}
 	}
 
@@ -916,6 +940,39 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 	}
 
 	return rebuildLocalWasm(ctx, &config.Execution, l2BlockChain, chainDb, wasmDb, config.Init.RebuildLocalWasm)
+}
+
+func validateGenesisAssertion(ctx context.Context, rollupAddress common.Address, l1Client *ethclient.Client, genesisBlockHash common.Hash, initDataReaderHasAccounts bool) error {
+	userLogic, err := rollupgen.NewRollupUserLogic(rollupAddress, l1Client)
+	if err != nil {
+		return err
+	}
+	_, err = userLogic.ChallengeGracePeriodBlocks(&bind.CallOpts{Context: ctx})
+	if err != nil {
+		if !headerreader.IsExecutionReverted(err) {
+			return err
+		}
+		log.Warn("Genesis Assertion is not tested") // not a bold chain
+		return nil
+	}
+	genesisAssertionHash, err := userLogic.GenesisAssertionHash(&bind.CallOpts{Context: context.Background()})
+	if err != nil {
+		return err
+	}
+	genesisAssertionCreationInfo, err := bold.ReadBoldAssertionCreationInfo(ctx, userLogic, l1Client, rollupAddress, genesisAssertionHash)
+	if err != nil {
+		return err
+	}
+	beforeGlobalState := protocol.GoGlobalStateFromSolidity(genesisAssertionCreationInfo.BeforeState.GlobalState)
+	afterGlobalState := protocol.GoGlobalStateFromSolidity(genesisAssertionCreationInfo.AfterState.GlobalState)
+	isNullAssertion := beforeGlobalState.Batch == afterGlobalState.Batch && beforeGlobalState.PosInBatch == afterGlobalState.PosInBatch
+	if isNullAssertion && initDataReaderHasAccounts {
+		return errors.New("genesis assertion is null but there are accounts in the init data")
+	}
+	if !isNullAssertion && afterGlobalState.BlockHash != genesisBlockHash {
+		return errors.New("genesis assertion is non null and its afterGlobalState.BlockHash doesn't match the genesis blockHash")
+	}
+	return nil
 }
 
 func testTxIndexUpdated(chainDb ethdb.Database, lastBlock uint64) bool {

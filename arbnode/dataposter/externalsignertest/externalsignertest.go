@@ -124,7 +124,7 @@ func NewServer(t *testing.T) *SignerServer {
 		if err := httpServer.Close(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			t.Fatalf("Error shutting down http server: %v", err)
 		}
-		// Explicitly close the listner in case the server was never started.
+		// Explicitly close the listener in case the server was never started.
 		if err := ln.Close(); err != nil && !errors.Is(err, net.ErrClosed) {
 			t.Fatalf("Error closing listener: %v", err)
 		}

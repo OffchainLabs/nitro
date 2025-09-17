@@ -134,10 +134,31 @@ func (p *nethermindExecutionClient) MarkFeedStart(to arbutil.MessageIndex) conta
 	return &promise
 }
 
-func (p *nethermindExecutionClient) Maintenance() containers.PromiseInterface[struct{}] {
+func (p *nethermindExecutionClient) TriggerMaintenance() containers.PromiseInterface[struct{}] {
 	promise := containers.NewPromise[struct{}](nil)
 	go func() {
-		promise.ProduceError(fmt.Errorf("Maintenance not implemented"))
+		promise.ProduceError(fmt.Errorf("TriggerMaintenance not implemented"))
+	}()
+	return &promise
+}
+
+func (p *nethermindExecutionClient) ShouldTriggerMaintenance() containers.PromiseInterface[bool] {
+	promise := containers.NewPromise[bool](nil)
+	go func() {
+		// Conservative default - don't trigger maintenance until implemented
+		promise.Produce(false)
+	}()
+	return &promise
+}
+
+func (p *nethermindExecutionClient) MaintenanceStatus() containers.PromiseInterface[*execution.MaintenanceStatus] {
+	promise := containers.NewPromise[*execution.MaintenanceStatus](nil)
+	go func() {
+		// Return default status indicating maintenance is not running
+		status := &execution.MaintenanceStatus{
+			IsRunning: false,
+		}
+		promise.Produce(status)
 	}()
 	return &promise
 }

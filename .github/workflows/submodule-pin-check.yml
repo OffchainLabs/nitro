@@ -1,6 +1,7 @@
 name: Merge Checks
 
 on:
+  merge_group:
   # Using pull_request_target for security. If we had used pull_request, then it
   # would be possible for malicious actors to create Pull Requests which would
   # trigger workflows that they could have modified locally to extract secrets.
@@ -19,7 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
           submodules: true
@@ -34,6 +35,7 @@ jobs:
             [contracts-legacy]=origin/v2-main
             [nitro-testnode]=origin/master
             [bold]=origin/main
+            [safe-smart-account]=origin/release/v1.5.0
             [arbitrator/langs/c]=origin/vm-storage-cache
             [arbitrator/tools/wasmer]=origin/stylus
             [contracts-local/lib/openzeppelin-contracts]=origin/release-v4.7

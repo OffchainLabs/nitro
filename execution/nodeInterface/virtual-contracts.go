@@ -137,7 +137,7 @@ func init() {
 		}
 		posterCost, _ := state.L1PricingState().PosterDataCost(msg, l1pricing.BatchPosterAddress, brotliCompressionLevel)
 		// Use estimate mode because this is used to raise the gas cap, so we don't want to underestimate.
-		return arbos.GetPosterGas(state, header.BaseFee, core.MessageGasEstimationMode, posterCost), nil
+		return arbos.GetPosterGas(state, header.BaseFee, core.NewMessageGasEstimationContext(), posterCost), nil
 	}
 
 	core.GetArbOSSpeedLimitPerSecond = func(statedb *state.StateDB) (uint64, error) {

@@ -116,6 +116,8 @@ func createNewHeader(prevHeader *types.Header, l1info *L1Info, state *arbosState
 type ConditionalOptionsForTx []*arbitrum_types.ConditionalOptions
 
 type SequencingHooks struct {
+	NextTxToSequence        func() (*types.Transaction, error)                                                                                                                                      // Must be set
+	SequencedTx             func(int) (*types.Transaction, error)                                                                                                                                   // Must be set
 	TxErrors                []error                                                                                                                                                                 // This can be unset
 	DiscardInvalidTxsEarly  bool                                                                                                                                                                    // This can be unset
 	PreTxFilter             func(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, *arbitrum_types.ConditionalOptions, common.Address, *L1Info) error // This has to be set. Writes to *state.StateDB object should be avoided to prevent invalid state from permeating
@@ -124,8 +126,43 @@ type SequencingHooks struct {
 	ConditionalOptionsForTx []*arbitrum_types.ConditionalOptions                                                                                                                                    // This can be unset
 }
 
-func NoopSequencingHooks() *SequencingHooks {
+type noopTxScheduler struct {
+	txs               types.Transactions
+	scheduledTxsCount int
+}
+
+func (s *noopTxScheduler) GetNextTx() (*types.Transaction, error) {
+	// This is not supposed to happen, if so we have a bug
+	if s.scheduledTxsCount > len(s.txs) {
+		return nil, errors.New("noopTxScheduler: requested too many transactions")
+	}
+	if s.scheduledTxsCount == len(s.txs) {
+		return nil, nil
+	}
+	s.scheduledTxsCount += 1
+	return s.txs[s.scheduledTxsCount-1], nil
+}
+
+func (s *noopTxScheduler) GetScheduledTx(txId int) (*types.Transaction, error) {
+	// This is not supposed to happen, if so we have a bug
+	if txId > len(s.txs) {
+		return nil, errors.New("transaction queried for does not exist in the noopTxScheduler")
+	}
+	// This is not supposed to happen, if so we have a bug
+	if txId > s.scheduledTxsCount {
+		return nil, errors.New("transaction queried for was not scheduled by the noopTxScheduler")
+	}
+	return s.txs[txId], nil
+}
+
+func NoopSequencingHooks(txes types.Transactions) *SequencingHooks {
+	scheduler := &noopTxScheduler{
+		txes,
+		0,
+	}
 	return &SequencingHooks{
+		scheduler.GetNextTx,
+		scheduler.GetScheduledTx,
 		[]error{},
 		false,
 		func(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, *arbitrum_types.ConditionalOptions, common.Address, *L1Info) error {
@@ -146,7 +183,7 @@ func ProduceBlock(
 	statedb *state.StateDB,
 	chainContext core.ChainContext,
 	isMsgForPrefetch bool,
-	runMode core.MessageRunMode,
+	runCtx *core.MessageRunContext,
 ) (*types.Block, types.Receipts, error) {
 	chainConfig := chainContext.Config()
 	txes, err := ParseL2Transactions(message, chainConfig.ChainID)
@@ -154,24 +191,23 @@ func ProduceBlock(
 		log.Warn("error parsing incoming message", "err", err)
 		txes = types.Transactions{}
 	}
+	hooks := NoopSequencingHooks(txes)
 
-	hooks := NoopSequencingHooks()
 	return ProduceBlockAdvanced(
-		message.Header, txes, delayedMessagesRead, lastBlockHeader, statedb, chainContext, hooks, isMsgForPrefetch, runMode,
+		message.Header, delayedMessagesRead, lastBlockHeader, statedb, chainContext, hooks, isMsgForPrefetch, runCtx,
 	)
 }
 
 // A bit more flexible than ProduceBlock for use in the sequencer.
 func ProduceBlockAdvanced(
 	l1Header *arbostypes.L1IncomingMessageHeader,
-	txes types.Transactions,
 	delayedMessagesRead uint64,
 	lastBlockHeader *types.Header,
 	statedb *state.StateDB,
 	chainContext core.ChainContext,
 	sequencingHooks *SequencingHooks,
 	isMsgForPrefetch bool,
-	runMode core.MessageRunMode,
+	runCtx *core.MessageRunContext,
 ) (*types.Block, types.Receipts, error) {
 	callstack.LogCallStack("")
 
@@ -202,7 +238,6 @@ func ProduceBlockAdvanced(
 
 	// Prepend a tx before all others to touch up the state (update the L1 block num, pricing pools, etc)
 	startTx := InternalTxStartBlock(chainConfig.ChainID, l1Header.L1BaseFee, l1BlockNum, header, lastBlockHeader)
-	txes = append(types.Transactions{types.NewTx(startTx)}, txes...)
 
 	complete := types.Transactions{}
 	receipts := types.Receipts{}
@@ -215,14 +250,19 @@ func ProduceBlockAdvanced(
 	// We'll check that the block can fit each message, so this pool is set to not run out
 	gethGas := core.GasPool(l2pricing.GethBlockGasLimit)
 
-	for len(txes) > 0 || len(redeems) > 0 {
+	firstTx := types.NewTx(startTx)
+
+	for {
 		// repeatedly process the next tx, doing redeems created along the way in FIFO order
 
 		var tx *types.Transaction
 		var options *arbitrum_types.ConditionalOptions
-		hooks := NoopSequencingHooks()
+		hooks := NoopSequencingHooks(nil) // TODO: NIT-3678
 		isUserTx := false
-		if len(redeems) > 0 {
+		if firstTx != nil {
+			tx = firstTx
+			firstTx = nil
+		} else if len(redeems) > 0 {
 			tx = redeems[0]
 			redeems = redeems[1:]
 
@@ -236,8 +276,13 @@ func ProduceBlockAdvanced(
 				continue
 			}
 		} else {
-			tx = txes[0]
-			txes = txes[1:]
+			tx, err = sequencingHooks.NextTxToSequence()
+			if err != nil {
+				return nil, nil, fmt.Errorf("error fetching next transaction to sequence, userTxsProcessed: %d, hookTxErrors: %d, err: %w", userTxsProcessed, len(sequencingHooks.TxErrors), err)
+			}
+			if tx == nil {
+				break
+			}
 			if tx.Type() != types.ArbitrumInternalTxType {
 				hooks = sequencingHooks // the sequencer has the ability to drop this tx
 				isUserTx = true
@@ -326,7 +371,7 @@ func ProduceBlockAdvanced(
 				header,
 				tx,
 				&header.GasUsed,
-				runMode,
+				runCtx,
 				func(result *core.ExecutionResult) error {
 					return hooks.PostTxFilter(header, statedb, arbState, tx, sender, dataGas, result)
 				},

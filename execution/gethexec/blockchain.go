@@ -19,7 +19,6 @@ import (
 	"github.com/ethereum/go-ethereum/eth/ethconfig"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/triedb"
 
@@ -34,6 +33,7 @@ type CachingConfig struct {
 	Archive                             bool          `koanf:"archive"`
 	BlockCount                          uint64        `koanf:"block-count"`
 	BlockAge                            time.Duration `koanf:"block-age"`
+	TrieTimeLimitBeforeFlushMaintenance time.Duration `koanf:"trie-time-limit-before-flush-maintenance"`
 	TrieTimeLimit                       time.Duration `koanf:"trie-time-limit"`
 	TrieTimeLimitRandomOffset           time.Duration `koanf:"trie-time-limit-random-offset"`
 	TrieDirtyCache                      int           `koanf:"trie-dirty-cache"`
@@ -56,6 +56,7 @@ func CachingConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".archive", DefaultCachingConfig.Archive, "retain past block state")
 	f.Uint64(prefix+".block-count", DefaultCachingConfig.BlockCount, "minimum number of recent blocks to keep in memory")
 	f.Duration(prefix+".block-age", DefaultCachingConfig.BlockAge, "minimum age of recent blocks to keep in memory")
+	f.Duration(prefix+".trie-time-limit-before-flush-maintenance", DefaultCachingConfig.TrieTimeLimitBeforeFlushMaintenance, "Execution will suggest that maintenance is run if the block processing time required to reach trie-time-limit is smaller or equal than trie-time-limit-before-flush-maintenance")
 	f.Duration(prefix+".trie-time-limit", DefaultCachingConfig.TrieTimeLimit, "maximum block processing time before trie is written to hard-disk")
 	f.Duration(prefix+".trie-time-limit-random-offset", DefaultCachingConfig.TrieTimeLimitRandomOffset, "if greater then 0, the block processing time period of each trie write to hard-disk is shortened by a random value from range [0, trie-time-limit-random-offset)")
 	f.Int(prefix+".trie-dirty-cache", DefaultCachingConfig.TrieDirtyCache, "amount of memory in megabytes to cache state diffs against disk with (larger cache lowers database growth)")
@@ -80,27 +81,27 @@ func getStateHistory(maxBlockSpeed time.Duration) uint64 {
 }
 
 var DefaultCachingConfig = CachingConfig{
-	Archive:                            false,
-	BlockCount:                         128,
-	BlockAge:                           30 * time.Minute,
-	TrieTimeLimit:                      time.Hour,
-	TrieTimeLimitRandomOffset:          0,
-	TrieDirtyCache:                     1024,
-	TrieCleanCache:                     600,
-	TrieCapLimit:                       100,
-	SnapshotCache:                      400,
-	DatabaseCache:                      2048,
-	SnapshotRestoreGasLimit:            300_000_000_000,
-	HeadRewindBlocksLimit:              4 * 7 * 24 * 3600, // 4 blocks per second over 7 days (an arbitrary value, should be greater than the number of blocks between state commits in full node; the state commit period depends both on chain activity and TrieTimeLimit)
-	MaxNumberOfBlocksToSkipStateSaving: 0,
-	MaxAmountOfGasToSkipStateSaving:    0,
-	StylusLRUCacheCapacity:             256,
-	StateScheme:                        rawdb.HashScheme,
-	StateHistory:                       getStateHistory(DefaultSequencerConfig.MaxBlockSpeed),
+	Archive:                             false,
+	BlockCount:                          128,
+	BlockAge:                            30 * time.Minute,
+	TrieTimeLimitBeforeFlushMaintenance: 0,
+	TrieTimeLimit:                       time.Hour,
+	TrieTimeLimitRandomOffset:           0,
+	TrieDirtyCache:                      1024,
+	TrieCleanCache:                      600,
+	TrieCapLimit:                        100,
+	SnapshotCache:                       400,
+	DatabaseCache:                       2048,
+	SnapshotRestoreGasLimit:             300_000_000_000,
+	HeadRewindBlocksLimit:               4 * 7 * 24 * 3600, // 4 blocks per second over 7 days (an arbitrary value, should be greater than the number of blocks between state commits in full node; the state commit period depends both on chain activity and TrieTimeLimit)
+	MaxNumberOfBlocksToSkipStateSaving:  0,
+	MaxAmountOfGasToSkipStateSaving:     0,
+	StylusLRUCacheCapacity:              256,
+	StateScheme:                         rawdb.HashScheme,
+	StateHistory:                        getStateHistory(DefaultSequencerConfig.MaxBlockSpeed),
 }
 
-// TODO remove stack from parameters as it is no longer needed here
-func DefaultCacheConfigFor(stack *node.Node, cachingConfig *CachingConfig) *core.CacheConfig {
+func DefaultCacheConfigFor(cachingConfig *CachingConfig) *core.CacheConfig {
 	baseConf := ethconfig.Defaults
 	if cachingConfig.Archive {
 		baseConf = ethconfig.ArchiveDefaults
@@ -253,7 +254,7 @@ func GetBlockChain(
 	cacheConfig *core.CacheConfig,
 	chainConfig *params.ChainConfig,
 	tracer *tracing.Hooks,
-	txLookupLimit uint64,
+	txIndexerConfig *TxIndexerConfig,
 ) (*core.BlockChain, error) {
 	engine := arbos.Engine{
 		IsSequencer: true,
@@ -264,7 +265,15 @@ func GetBlockChain(
 		Tracer:                  tracer,
 	}
 
-	return core.NewBlockChain(chainDb, cacheConfig, chainConfig, nil, nil, engine, vmConfig, &txLookupLimit)
+	var coreTxIndexerConfig *core.TxIndexerConfig // nil if disabled
+	if txIndexerConfig.Enable {
+		coreTxIndexerConfig = &core.TxIndexerConfig{
+			Limit:         txIndexerConfig.TxLookupLimit,
+			Threads:       txIndexerConfig.Threads,
+			MinBatchDelay: txIndexerConfig.MinBatchDelay,
+		}
+	}
+	return core.NewBlockChainExtended(chainDb, cacheConfig, chainConfig, nil, nil, engine, vmConfig, coreTxIndexerConfig)
 }
 
 func WriteOrTestBlockChain(
@@ -275,7 +284,7 @@ func WriteOrTestBlockChain(
 	genesisArbOSInit *params.ArbOSInit,
 	tracer *tracing.Hooks,
 	initMessage *arbostypes.ParsedInitMessage,
-	txLookupLimit uint64,
+	txIndexerConfig *TxIndexerConfig,
 	accountsPerSync uint,
 ) (*core.BlockChain, error) {
 	emptyBlockChain := rawdb.ReadHeadHeader(chainDb) == nil
@@ -283,7 +292,7 @@ func WriteOrTestBlockChain(
 		// When using path scheme, and the stored state trie is not empty,
 		// WriteOrTestGenBlock is not able to recover EmptyRootHash state trie node.
 		// In that case Nitro doesn't test genblock, but just returns the BlockChain.
-		return GetBlockChain(chainDb, cacheConfig, chainConfig, tracer, txLookupLimit)
+		return GetBlockChain(chainDb, cacheConfig, chainConfig, tracer, txIndexerConfig)
 	}
 
 	err := WriteOrTestGenblock(chainDb, cacheConfig, initData, chainConfig, genesisArbOSInit, initMessage, accountsPerSync)
@@ -294,7 +303,7 @@ func WriteOrTestBlockChain(
 	if err != nil {
 		return nil, err
 	}
-	return GetBlockChain(chainDb, cacheConfig, chainConfig, tracer, txLookupLimit)
+	return GetBlockChain(chainDb, cacheConfig, chainConfig, tracer, txIndexerConfig)
 }
 
 func init() {

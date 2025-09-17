@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"math/big"
 	"math/rand"
+	"strings"
 	"testing"
 	"time"
 
@@ -17,6 +18,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient/gethclient"
 	"github.com/ethereum/go-ethereum/params"
@@ -221,8 +223,14 @@ func testSequencerInboxReaderImpl(t *testing.T, validator bool) {
 			builder.L1Info.GetInfoWithPrivKey("Faucet").Nonce.Store(currNonce)
 			for j := uint64(0); j < blocksToPad; j++ {
 				tx := builder.L1Info.PrepareTx("Faucet", "User", 30000, big.NewInt(1e12), nil)
-				Require(t, builder.L1.Client.SendTransaction(ctx, tx))
-				_, _ = builder.L1.EnsureTxSucceeded(tx)
+				err = builder.L1.Client.SendTransaction(ctx, tx)
+				if err != nil {
+					if !strings.Contains(err.Error(), "already known") && !strings.Contains(err.Error(), core.ErrNonceTooLow.Error()) {
+						t.Fatalf("error sending txs to create padding for reorg: %s", err.Error())
+					}
+				} else {
+					_, _ = builder.L1.EnsureTxSucceeded(tx)
+				}
 			}
 			currentHeader, err = builder.L1.Client.HeaderByNumber(ctx, nil)
 			Require(t, err)
