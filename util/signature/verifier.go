@@ -8,7 +8,7 @@ import (
 	"errors"
 	"fmt"
 
-	flag "github.com/spf13/pflag"
+	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -36,13 +36,13 @@ var ErrSignatureNotVerified = errors.New("signature not verified")
 var ErrMissingSignature = fmt.Errorf("%w: signature not found", ErrSignatureNotVerified)
 var ErrSignerNotApproved = fmt.Errorf("%w: signer not approved", ErrSignatureNotVerified)
 
-func FeedVerifierConfigAddOptions(prefix string, f *flag.FlagSet) {
+func FeedVerifierConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.StringSlice(prefix+".allowed-addresses", DefultFeedVerifierConfig.AllowedAddresses, "a list of allowed addresses")
 	f.Bool(prefix+".accept-sequencer", DefultFeedVerifierConfig.AcceptSequencer, "accept verified message from sequencer")
 	DangerousFeedVerifierConfigAddOptions(prefix+".dangerous", f)
 }
 
-func DangerousFeedVerifierConfigAddOptions(prefix string, f *flag.FlagSet) {
+func DangerousFeedVerifierConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".accept-missing", DefultFeedVerifierConfig.Dangerous.AcceptMissing, "accept empty as valid signature")
 }
 

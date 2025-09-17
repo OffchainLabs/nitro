@@ -15,6 +15,6 @@ func (con ArbosActs) StartBlock(c ctx, evm mech, l1BaseFee huge, l1BlockNumber, 
 	return con.CallerNotArbOSError()
 }
 
-func (con ArbosActs) BatchPostingReport(c ctx, evm mech, batchTimestamp huge, batchPosterAddress addr, batchNumber uint64, batchDataGas uint64, l1BaseFeeWei huge) error {
+func (con ArbosActs) BatchPostingReport(c ctx, evm mech, batchTimestamp huge, batchPosterAddress addr, batchNumber uint64, batchCallDataLength uint64, batchCallDataNonZeros uint64, batchLegacyGas uint64, batchExtraGas uint64, l1BaseFeeWei huge) error {
 	return con.CallerNotArbOSError()
 }
