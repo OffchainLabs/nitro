@@ -23,7 +23,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/util"
-	deploycode "github.com/offchainlabs/nitro/deploy"
+	"github.com/offchainlabs/nitro/deploy"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/validator/server_common"
@@ -178,14 +178,14 @@ func main() {
 	defer l1Reader.StopAndWait()
 
 	nativeToken := common.HexToAddress(*nativeTokenAddressString)
-	deployedAddresses, err := deploycode.DeployLegacyOnParentChain(
+	deployedAddresses, err := deploy.DeployLegacyOnParentChain(
 		ctx,
 		l1Reader,
 		l1TransactionOpts,
 		batchPosters,
 		batchPosterManagerAddress,
 		*authorizevalidators,
-		deploycode.GenerateLegacyRollupConfig(*prod, moduleRoot, ownerAddress, &chainConfig, chainConfigJson, loserEscrowAddress),
+		deploy.GenerateLegacyRollupConfig(*prod, moduleRoot, ownerAddress, &chainConfig, chainConfigJson, loserEscrowAddress),
 		nativeToken,
 		maxDataSize,
 		true,

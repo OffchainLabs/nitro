@@ -13,8 +13,8 @@ import (
 	"path/filepath"
 	"time"
 
-	badger "github.com/dgraph-io/badger/v4"
-	flag "github.com/spf13/pflag"
+	"github.com/dgraph-io/badger/v4"
+	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
@@ -56,7 +56,7 @@ var DefaultLocalDBStorageConfig = LocalDBStorageConfig{
 	ValueLogFileSize:        badgerDefaultOptions.ValueLogFileSize,
 }
 
-func LocalDBStorageConfigAddOptions(prefix string, f *flag.FlagSet) {
+func LocalDBStorageConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultLocalDBStorageConfig.Enable, "!!!DEPRECATED, USE local-file-storage!!! enable storage/retrieval of sequencer batch data from a database on the local filesystem")
 	f.String(prefix+".data-dir", DefaultLocalDBStorageConfig.DataDir, "directory in which to store the database")
 	f.Bool(prefix+".discard-after-timeout", DefaultLocalDBStorageConfig.DiscardAfterTimeout, "discard data after its expiry timeout")

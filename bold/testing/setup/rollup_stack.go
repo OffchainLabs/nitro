@@ -24,12 +24,12 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rpc"
 
-	protocol "github.com/offchainlabs/nitro/bold/chain-abstraction"
-	solimpl "github.com/offchainlabs/nitro/bold/chain-abstraction/sol-implementation"
-	l2stateprovider "github.com/offchainlabs/nitro/bold/layer2-state-provider"
-	retry "github.com/offchainlabs/nitro/bold/runtime"
-	challenge_testing "github.com/offchainlabs/nitro/bold/testing"
-	statemanager "github.com/offchainlabs/nitro/bold/testing/mocks/state-provider"
+	"github.com/offchainlabs/nitro/bold/chain-abstraction"
+	"github.com/offchainlabs/nitro/bold/chain-abstraction/sol-implementation"
+	"github.com/offchainlabs/nitro/bold/layer2-state-provider"
+	"github.com/offchainlabs/nitro/bold/runtime"
+	"github.com/offchainlabs/nitro/bold/testing"
+	"github.com/offchainlabs/nitro/bold/testing/mocks/state-provider"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/challengeV2gen"
 	"github.com/offchainlabs/nitro/solgen/go/contractsgen"
@@ -89,7 +89,7 @@ func CreateTwoValidatorFork(
 		return nil, err
 	}
 
-	honestStateManager, err := statemanager.NewForSimpleMachine(t, setup.StateManagerOpts...)
+	honestStateManager, err := stateprovider.NewForSimpleMachine(t, setup.StateManagerOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -108,11 +108,11 @@ func CreateTwoValidatorFork(
 	stateManagerOpts := setup.StateManagerOpts
 	stateManagerOpts = append(
 		stateManagerOpts,
-		statemanager.WithBlockDivergenceHeight(cfg.DivergeBlockHeight),
-		statemanager.WithDivergentBlockHeightOffset(cfg.BlockHeightDifference),
-		statemanager.WithMachineDivergenceStep(cfg.DivergeMachineHeight),
+		stateprovider.WithBlockDivergenceHeight(cfg.DivergeBlockHeight),
+		stateprovider.WithDivergentBlockHeightOffset(cfg.BlockHeightDifference),
+		stateprovider.WithMachineDivergenceStep(cfg.DivergeMachineHeight),
 	)
-	evilStateManager, err := statemanager.NewForSimpleMachine(t, stateManagerOpts...)
+	evilStateManager, err := stateprovider.NewForSimpleMachine(t, stateManagerOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -175,7 +175,7 @@ type ChainSetup struct {
 	minimumAssertionPeriod     int64
 	autoDeposit                bool
 	challengeTestingOpts       []challenge_testing.Opt
-	StateManagerOpts           []statemanager.Opt
+	StateManagerOpts           []stateprovider.Opt
 	StakeTokenAddress          common.Address
 	EnableFastConfirmation     bool
 	EnableSafeFastConfirmation bool
@@ -219,7 +219,7 @@ func WithChallengeTestingOpts(opts ...challenge_testing.Opt) Opt {
 	}
 }
 
-func WithStateManagerOpts(opts ...statemanager.Opt) Opt {
+func WithStateManagerOpts(opts ...stateprovider.Opt) Opt {
 	return func(setup *ChainSetup) {
 		setup.StateManagerOpts = opts
 	}

@@ -18,13 +18,13 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 
 	"github.com/offchainlabs/nitro/bold/assertions"
-	protocol "github.com/offchainlabs/nitro/bold/chain-abstraction"
-	cm "github.com/offchainlabs/nitro/bold/challenge-manager"
+	"github.com/offchainlabs/nitro/bold/chain-abstraction"
+	"github.com/offchainlabs/nitro/bold/challenge-manager"
 	"github.com/offchainlabs/nitro/bold/challenge-manager/types"
-	retry "github.com/offchainlabs/nitro/bold/runtime"
-	challenge_testing "github.com/offchainlabs/nitro/bold/testing"
+	"github.com/offchainlabs/nitro/bold/runtime"
+	"github.com/offchainlabs/nitro/bold/testing"
 	"github.com/offchainlabs/nitro/bold/testing/casttest"
-	statemanager "github.com/offchainlabs/nitro/bold/testing/mocks/state-provider"
+	"github.com/offchainlabs/nitro/bold/testing/mocks/state-provider"
 	"github.com/offchainlabs/nitro/bold/testing/setup"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
@@ -66,27 +66,27 @@ func TestSkipsProcessingAssertionFromEvilFork(t *testing.T) {
 	stateManagerOpts := testData.StateManagerOpts
 	stateManagerOpts = append(
 		stateManagerOpts,
-		statemanager.WithNumBatchesRead(5),
+		stateprovider.WithNumBatchesRead(5),
 	)
-	aliceStateManager, err := statemanager.NewForSimpleMachine(t, stateManagerOpts...)
+	aliceStateManager, err := stateprovider.NewForSimpleMachine(t, stateManagerOpts...)
 	require.NoError(t, err)
 
 	// Bob diverges from Alice at batch 1.
 	stateManagerOpts = testData.StateManagerOpts
 	stateManagerOpts = append(
 		stateManagerOpts,
-		statemanager.WithNumBatchesRead(5),
-		statemanager.WithBlockDivergenceHeight(1),
-		statemanager.WithMachineDivergenceStep(1),
+		stateprovider.WithNumBatchesRead(5),
+		stateprovider.WithBlockDivergenceHeight(1),
+		stateprovider.WithMachineDivergenceStep(1),
 	)
-	bobStateManager, err := statemanager.NewForSimpleMachine(t, stateManagerOpts...)
+	bobStateManager, err := stateprovider.NewForSimpleMachine(t, stateManagerOpts...)
 	require.NoError(t, err)
 
-	aliceChalManager, err := cm.NewChallengeStack(
+	aliceChalManager, err := challengemanager.NewChallengeStack(
 		aliceChain,
 		aliceStateManager,
-		cm.StackWithMode(types.DefensiveMode),
-		cm.StackWithName("alice"),
+		challengemanager.StackWithMode(types.DefensiveMode),
+		challengemanager.StackWithName("alice"),
 	)
 	require.NoError(t, err)
 	aliceChalManager.Start(ctx)
@@ -211,20 +211,20 @@ func TestComplexAssertionForkScenario(t *testing.T) {
 	stateManagerOpts := testData.StateManagerOpts
 	stateManagerOpts = append(
 		stateManagerOpts,
-		statemanager.WithNumBatchesRead(5),
+		stateprovider.WithNumBatchesRead(5),
 	)
-	aliceStateManager, err := statemanager.NewForSimpleMachine(t, stateManagerOpts...)
+	aliceStateManager, err := stateprovider.NewForSimpleMachine(t, stateManagerOpts...)
 	require.NoError(t, err)
 
 	// Bob diverges from Alice at batch 1.
 	stateManagerOpts = testData.StateManagerOpts
 	stateManagerOpts = append(
 		stateManagerOpts,
-		statemanager.WithNumBatchesRead(5),
-		statemanager.WithBlockDivergenceHeight(1),
-		statemanager.WithMachineDivergenceStep(1),
+		stateprovider.WithNumBatchesRead(5),
+		stateprovider.WithBlockDivergenceHeight(1),
+		stateprovider.WithMachineDivergenceStep(1),
 	)
-	bobStateManager, err := statemanager.NewForSimpleMachine(t, stateManagerOpts...)
+	bobStateManager, err := stateprovider.NewForSimpleMachine(t, stateManagerOpts...)
 	require.NoError(t, err)
 
 	genesisState, err := aliceStateManager.ExecutionStateAfterPreviousState(ctx, 0, protocol.GoGlobalState{})
@@ -290,12 +290,12 @@ func TestComplexAssertionForkScenario(t *testing.T) {
 	// and then post the competing assertion.
 	charlieChain := testData.Chains[2]
 
-	stateManagerOpts = []statemanager.Opt{
-		statemanager.WithNumBatchesRead(5),
-		statemanager.WithBlockDivergenceHeight(36), // TODO: Make this more intuitive. This translates to batch 4 due to how our mock works.
-		statemanager.WithMachineDivergenceStep(1),
+	stateManagerOpts = []stateprovider.Opt{
+		stateprovider.WithNumBatchesRead(5),
+		stateprovider.WithBlockDivergenceHeight(36), // TODO: Make this more intuitive. This translates to batch 4 due to how our mock works.
+		stateprovider.WithMachineDivergenceStep(1),
 	}
-	charlieStateManager, err := statemanager.NewForSimpleMachine(t, stateManagerOpts...)
+	charlieStateManager, err := stateprovider.NewForSimpleMachine(t, stateManagerOpts...)
 	require.NoError(t, err)
 
 	// Setup an assertion manager for Charlie, and have it process Alice's
@@ -312,12 +312,12 @@ func TestComplexAssertionForkScenario(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	chalManager, err := cm.NewChallengeStack(
+	chalManager, err := challengemanager.NewChallengeStack(
 		charlieChain,
 		charlieStateManager,
-		cm.OverrideAssertionManager(charlieAssertionManager),
-		cm.StackWithMode(types.DefensiveMode),
-		cm.StackWithName("charlie"),
+		challengemanager.OverrideAssertionManager(charlieAssertionManager),
+		challengemanager.StackWithMode(types.DefensiveMode),
+		challengemanager.StackWithName("charlie"),
 	)
 	require.NoError(t, err)
 	chalManager.Start(ctx)
@@ -368,9 +368,9 @@ func TestFastConfirmation(t *testing.T) {
 	stateManagerOpts := testData.StateManagerOpts
 	stateManagerOpts = append(
 		stateManagerOpts,
-		statemanager.WithNumBatchesRead(5),
+		stateprovider.WithNumBatchesRead(5),
 	)
-	stateManager, err := statemanager.NewForSimpleMachine(t, stateManagerOpts...)
+	stateManager, err := stateprovider.NewForSimpleMachine(t, stateManagerOpts...)
 	require.NoError(t, err)
 
 	assertionManager, err := assertions.NewManager(
@@ -385,12 +385,12 @@ func TestFastConfirmation(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	chalManager, err := cm.NewChallengeStack(
+	chalManager, err := challengemanager.NewChallengeStack(
 		aliceChain,
 		stateManager,
-		cm.OverrideAssertionManager(assertionManager),
-		cm.StackWithMode(types.ResolveMode),
-		cm.StackWithName("alice"),
+		challengemanager.OverrideAssertionManager(assertionManager),
+		challengemanager.StackWithMode(types.ResolveMode),
+		challengemanager.StackWithName("alice"),
 	)
 	require.NoError(t, err)
 	chalManager.Start(ctx)
@@ -443,9 +443,9 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 	stateManagerOpts := testData.StateManagerOpts
 	stateManagerOpts = append(
 		stateManagerOpts,
-		statemanager.WithNumBatchesRead(5),
+		stateprovider.WithNumBatchesRead(5),
 	)
-	stateManager, err := statemanager.NewForSimpleMachine(t, stateManagerOpts...)
+	stateManager, err := stateprovider.NewForSimpleMachine(t, stateManagerOpts...)
 	require.NoError(t, err)
 
 	assertionManagerAlice, err := assertions.NewManager(
@@ -462,12 +462,12 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	chalManagerAlice, err := cm.NewChallengeStack(
+	chalManagerAlice, err := challengemanager.NewChallengeStack(
 		aliceChain,
 		stateManager,
-		cm.OverrideAssertionManager(assertionManagerAlice),
-		cm.StackWithMode(types.ResolveMode),
-		cm.StackWithName("alice"),
+		challengemanager.OverrideAssertionManager(assertionManagerAlice),
+		challengemanager.StackWithMode(types.ResolveMode),
+		challengemanager.StackWithName("alice"),
 	)
 	require.NoError(t, err)
 	chalManagerAlice.Start(ctx)
@@ -506,12 +506,12 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	chalManagerBob, err := cm.NewChallengeStack(
+	chalManagerBob, err := challengemanager.NewChallengeStack(
 		bobChain,
 		stateManager,
-		cm.OverrideAssertionManager(assertionManagerBob),
-		cm.StackWithMode(types.ResolveMode),
-		cm.StackWithName("bob"),
+		challengemanager.OverrideAssertionManager(assertionManagerBob),
+		challengemanager.StackWithMode(types.ResolveMode),
+		challengemanager.StackWithName("bob"),
 	)
 	require.NoError(t, err)
 	chalManagerBob.Start(ctx)

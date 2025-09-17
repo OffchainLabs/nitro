@@ -18,7 +18,7 @@ import (
 	"testing"
 	"time"
 
-	flag "github.com/spf13/pflag"
+	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
@@ -31,7 +31,7 @@ import (
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcastclient"
 	"github.com/offchainlabs/nitro/broadcaster"
-	m "github.com/offchainlabs/nitro/broadcaster/message"
+	"github.com/offchainlabs/nitro/broadcaster/message"
 	"github.com/offchainlabs/nitro/consensus"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/staker"
@@ -100,7 +100,7 @@ var TestTransactionStreamerConfig = TransactionStreamerConfig{
 	TrackBlockMetadataFrom:  0,
 }
 
-func TransactionStreamerConfigAddOptions(prefix string, f *flag.FlagSet) {
+func TransactionStreamerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Int(prefix+".max-broadcaster-queue-size", DefaultTransactionStreamerConfig.MaxBroadcasterQueueSize, "maximum cache of pending broadcaster messages")
 	f.Int64(prefix+".max-reorg-resequence-depth", DefaultTransactionStreamerConfig.MaxReorgResequenceDepth, "maximum number of messages to attempt to resequence on reorg (0 = never resequence, -1 = always resequence)")
 	f.Duration(prefix+".execute-message-loop-delay", DefaultTransactionStreamerConfig.ExecuteMessageLoopDelay, "delay when polling calls to execute messages")
@@ -593,7 +593,7 @@ func (s *TransactionStreamer) FeedPendingMessageCount() arbutil.MessageIndex {
 	return arbutil.MessageIndex(firstMsgIdx + uint64(len(s.broadcasterQueuedMessages)))
 }
 
-func (s *TransactionStreamer) AddBroadcastMessages(feedMessages []*m.BroadcastFeedMessage) error {
+func (s *TransactionStreamer) AddBroadcastMessages(feedMessages []*message.BroadcastFeedMessage) error {
 	if len(feedMessages) == 0 {
 		return nil
 	}
