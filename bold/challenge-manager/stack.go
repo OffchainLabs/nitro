@@ -15,10 +15,10 @@ import (
 	"github.com/offchainlabs/nitro/bold/api/db"
 	"github.com/offchainlabs/nitro/bold/api/server"
 	"github.com/offchainlabs/nitro/bold/assertions"
-	protocol "github.com/offchainlabs/nitro/bold/chain-abstraction"
-	watcher "github.com/offchainlabs/nitro/bold/challenge-manager/chain-watcher"
+	"github.com/offchainlabs/nitro/bold/chain-abstraction"
+	"github.com/offchainlabs/nitro/bold/challenge-manager/chain-watcher"
 	"github.com/offchainlabs/nitro/bold/challenge-manager/types"
-	l2stateprovider "github.com/offchainlabs/nitro/bold/layer2-state-provider"
+	"github.com/offchainlabs/nitro/bold/layer2-state-provider"
 )
 
 type stackParams struct {

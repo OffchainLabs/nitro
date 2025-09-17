@@ -12,7 +12,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 
-	prefixproofs "github.com/offchainlabs/nitro/bold/state-commitments/prefix-proofs"
+	"github.com/offchainlabs/nitro/bold/state-commitments/prefix-proofs"
 	"github.com/offchainlabs/nitro/bold/testing/casttest"
 )
 

@@ -7,7 +7,7 @@ import (
 	"os"
 	"strings"
 
-	flag "github.com/spf13/pflag"
+	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
@@ -34,7 +34,7 @@ func main() {
 
 func mainImpl() error {
 	args := os.Args[1:]
-	f := flag.NewFlagSet("", flag.ContinueOnError)
+	f := pflag.NewFlagSet("", pflag.ContinueOnError)
 
 	ConfigAddOptions(f)
 
@@ -172,7 +172,7 @@ var ConfigDefault = Config{
 	InitialL1BaseFee: arbostypes.DefaultInitialL1BaseFee.Int64(),
 }
 
-func ConfigAddOptions(f *flag.FlagSet) {
+func ConfigAddOptions(f *pflag.FlagSet) {
 	gethexec.CachingConfigAddOptions("caching", f)
 	f.String("genesis-json-file", ConfigDefault.GenesisJsonFile, "path for genesis json file")
 	f.Uint("accounts-per-sync", ConfigDefault.AccountsPerSync, "during init - sync database every X accounts. Lower value for low-memory systems. 0 disables.")
