@@ -156,9 +156,9 @@ func newApiClosures(
 		case vm.CALL:
 			ret, returnGas, _, err = evm.Call(scope.Contract.Address(), contract, input, gas, value)
 		case vm.DELEGATECALL:
-			ret, returnGas, err = evm.DelegateCall(scope.Contract.Caller(), scope.Contract.Address(), contract, input, gas, scope.Contract.Value())
+			ret, returnGas, _, err = evm.DelegateCall(scope.Contract.Caller(), scope.Contract.Address(), contract, input, gas, scope.Contract.Value())
 		case vm.STATICCALL:
-			ret, returnGas, err = evm.StaticCall(scope.Contract.Address(), contract, input, gas)
+			ret, returnGas, _, err = evm.StaticCall(scope.Contract.Address(), contract, input, gas)
 		default:
 			panic("unsupported call type: " + opcode.String())
 		}
@@ -243,22 +243,25 @@ func newApiClosures(
 	}
 	accountBalance := func(address common.Address) (common.Hash, uint64) {
 		cost := vm.WasmAccountTouchCost(chainConfig, evm.StateDB, address, false)
+		scope.Contract.UsedMultiGas.SaturatingAddInto(cost)
 		balance := evm.StateDB.GetBalance(address)
-		return balance.Bytes32(), cost
+		return balance.Bytes32(), cost.SingleGas()
 	}
 	accountCode := func(address common.Address, gas uint64) ([]byte, uint64) {
 		// In the future it'll be possible to know the size of a contract before loading it.
 		// For now, require the worst case before doing the load.
 
 		cost := vm.WasmAccountTouchCost(chainConfig, evm.StateDB, address, true)
-		if gas < cost {
-			return []byte{}, cost
+		scope.Contract.UsedMultiGas.SaturatingAddInto(cost)
+		if gas < cost.SingleGas() {
+			return []byte{}, cost.SingleGas()
 		}
-		return evm.StateDB.GetCode(address), cost
+		return evm.StateDB.GetCode(address), cost.SingleGas()
 	}
 	accountCodehash := func(address common.Address) (common.Hash, uint64) {
 		cost := vm.WasmAccountTouchCost(chainConfig, evm.StateDB, address, false)
-		return evm.StateDB.GetCodeHash(address), cost
+		scope.Contract.UsedMultiGas.SaturatingAddInto(cost)
+		return evm.StateDB.GetCodeHash(address), cost.SingleGas()
 	}
 	addPages := func(pages uint16) uint64 {
 		open, ever := db.AddStylusPages(pages)
