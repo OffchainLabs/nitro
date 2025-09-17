@@ -1,3 +1,6 @@
+// Copyright 2024-2025, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
+
 package daclient
 
 import (
@@ -10,6 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/log"
 
+	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/util/rpcclient"
 )
@@ -100,4 +104,43 @@ func (c *Client) Store(
 		return nil, fmt.Errorf("error returned from daprovider_store rpc method, err: %w", err)
 	}
 	return storeResult.SerializedDACert, nil
+}
+
+// GenerateReadPreimageProofResult is the result struct that data availability providers
+// should use to respond with a proof for a specific preimage
+type GenerateReadPreimageProofResult struct {
+	Proof hexutil.Bytes `json:"proof,omitempty"`
+}
+
+// GenerateReadPreimageProof generates a proof for a specific preimage at a given offset
+// This method calls the external DA provider's RPC endpoint to generate the proof
+func (c *Client) GenerateReadPreimageProof(
+	ctx context.Context,
+	preimageType arbutil.PreimageType,
+	certHash common.Hash,
+	offset uint64,
+	certificate []byte,
+) ([]byte, error) {
+	var generateProofResult GenerateReadPreimageProofResult
+	if err := c.CallContext(ctx, &generateProofResult, "daprovider_generateReadPreimageProof", hexutil.Uint(preimageType), certHash, hexutil.Uint64(offset), hexutil.Bytes(certificate)); err != nil {
+		return nil, fmt.Errorf("error returned from daprovider_generateProof rpc method, err: %w", err)
+	}
+	return generateProofResult.Proof, nil
+}
+
+// GenerateCertificateValidityProofResult is the result struct that data availability providers should use to respond with validity proof
+type GenerateCertificateValidityProofResult struct {
+	Proof hexutil.Bytes `json:"proof,omitempty"`
+}
+
+func (c *Client) GenerateCertificateValidityProof(
+	ctx context.Context,
+	preimageType arbutil.PreimageType,
+	certificate []byte,
+) ([]byte, error) {
+	var generateCertificateValidityProofResult GenerateCertificateValidityProofResult
+	if err := c.CallContext(ctx, &generateCertificateValidityProofResult, "daprovider_generateCertificateValidityProof", hexutil.Uint(preimageType), hexutil.Bytes(certificate)); err != nil {
+		return nil, fmt.Errorf("error returned from daprovider_generateCertificateValidityProof rpc method, err: %w", err)
+	}
+	return generateCertificateValidityProofResult.Proof, nil
 }
