@@ -26,7 +26,7 @@ import (
 )
 
 var (
-	stuckFSMIndicatingGauge = metrics.NewRegisteredGauge("arb/mel/stuck", nil) // 1-stuck, 0-not_stuck. TODO: once this is merged into master notify SRE to create an alert
+	stuckFSMIndicatingGauge = metrics.NewRegisteredGauge("arb/mel/stuck", nil) // 1-stuck, 0-not_stuck
 )
 
 // The default retry interval for the message extractor FSM. After each tick of the FSM,
@@ -65,7 +65,7 @@ func MessageExtractionConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Int(prefix+".delayed-message-backlog-capacity", DefaultMessageExtractionConfig.DelayedMessageBacklogCapacity, "target capacity of the delayed message backlog")
 	f.Uint64(prefix+".blocks-to-prefetch", DefaultMessageExtractionConfig.BlocksToPrefetch, "the number of blocks to prefetch relevant logs from")
 	f.String(prefix+".read-mode", DefaultMessageExtractionConfig.ReadMode, "mode to only read latest or safe or finalized L1 blocks. Enabling safe or finalized disables feed input and output. Defaults to latest. Takes string input, valid strings- latest, safe, finalized")
-	f.Uint64(prefix+".stall-tolerance", DefaultMessageExtractionConfig.StallTolerance, "max number of times the MEL fsm is allowed to be stuck in the same state before logging an error and firing the ")
+	f.Uint64(prefix+".stall-tolerance", DefaultMessageExtractionConfig.StallTolerance, "max times the MEL fsm is allowed to be stuck without logging error")
 }
 
 // TODO (ganesh): cleanup unused methods from this interface after checking with wasm mode
