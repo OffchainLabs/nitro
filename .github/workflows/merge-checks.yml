@@ -1,5 +1,5 @@
 ---
-name: Merge Checks
+name: Check Design Approved
 
 on:
   merge_group:
@@ -22,6 +22,7 @@ jobs:
           design_approved='${{ contains(github.event.pull_request.labels.*.name, 'design-approved') }}'
           after_next_version='${{ contains(github.event.pull_request.labels.*.name, 'after-next-version') }}'
           repo_url="${{ github.api_url }}/repos/$GITHUB_REPOSITORY"
+          commit_sha="${{ github.event.pull_request.head.sha || github.sha }}"
 
           if [[ "$design_approved" == "true" && "$after_next_version" != "true" ]]; then
             status_state="success"
@@ -30,7 +31,7 @@ jobs:
               -H "Accept: application/vnd.github+json" \
               -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
               -H "X-GitHub-Api-Version: 2022-11-28" \
-              "${repo_url}/commits/${{ github.event.pull_request.head.sha }}/statuses")"
+              "${repo_url}/commits/$commit_sha/statuses")"
             if ! jq -e '.[] | select(.context == "Design Approved Check")' >/dev/null <<<"$resp"; then
               # Design not approved yet and no status exists
               # Keep it without a status to keep the green checkmark appearing
@@ -45,5 +46,5 @@ jobs:
             -H "Accept: application/vnd.github+json" \
             -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
             -H "X-GitHub-Api-Version: 2022-11-28" \
-            "${repo_url}/statuses/${{ github.event.pull_request.head.sha }}" \
+            "${repo_url}/statuses/$commit_sha" \
             -d '{"context":"Design Approved Check","state":"'"$status_state"'"}'

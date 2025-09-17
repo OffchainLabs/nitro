@@ -1,5 +1,5 @@
 ---
-name: Merge Checks
+name: Check Submodule Pins
 
 on:
   merge_group:
@@ -42,6 +42,7 @@ jobs:
             [contracts-local/lib/openzeppelin-contracts]=origin/release-v4.7
           )
           divergent=0
+          commit_sha="${{ github.event.pull_request.head.sha || github.sha }}"
           for mod in `git submodule --quiet foreach 'echo $name'`; do
             branch=origin/HEAD
             if [[ -v exceptions[$mod] ]]; then
@@ -61,7 +62,7 @@ jobs:
               -H "Accept: application/vnd.github+json" \
               -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
               -H "X-GitHub-Api-Version: 2022-11-28" \
-              "${repo_url}/commits/${{ github.event.pull_request.head.sha }}/statuses")"
+              "${repo_url}/commits/$commit_sha/statuses")"
 
             if ! jq -e '.[] | select(.context == "Submodule Pin Check")' > /dev/null <<< "$resp"; then
               # Submodule pin check is failling and no status exists
@@ -76,5 +77,5 @@ jobs:
             -H "Accept: application/vnd.github+json" \
             -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
             -H "X-GitHub-Api-Version: 2022-11-28" \
-            "${repo_url}/statuses/${{ github.event.pull_request.head.sha }}" \
+            "${repo_url}/statuses/$commit_sha" \
             -d '{"context":"Submodule Pin Check","state":"'"$status_state"'"}'
