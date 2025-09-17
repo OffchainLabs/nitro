@@ -50,6 +50,7 @@ jobs:
 
   # --- Full GO tests (not required by can_proceed) ---
   go-tests:
+    needs: [fast]  # To reuse the build artifacts
     uses: ./.github/workflows/_go_tests.yml
     secrets: inherit
 
