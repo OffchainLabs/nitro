@@ -12,7 +12,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 
 	"github.com/offchainlabs/nitro/arbutil"
-	pgen "github.com/offchainlabs/nitro/solgen/go/precompilesgen"
+	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 	"github.com/offchainlabs/nitro/validator/server_api"
 )
@@ -29,7 +29,7 @@ func TestValidationInputsAtWithWasmTarget(t *testing.T) {
 
 	// deploys contract
 	wasmToDeploy, wasmExpected := readWasmFile(t, rustFile("storage"))
-	arbWasm, err := pgen.NewArbWasm(types.ArbWasmAddress, l2client)
+	arbWasm, err := precompilesgen.NewArbWasm(types.ArbWasmAddress, l2client)
 	Require(t, err)
 	programAddress := deployContract(t, ctx, auth, l2client, wasmToDeploy)
 	tx, err := arbWasm.ActivateProgram(&auth, programAddress)

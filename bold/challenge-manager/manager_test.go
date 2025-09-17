@@ -14,12 +14,12 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 
-	protocol "github.com/offchainlabs/nitro/bold/chain-abstraction"
-	watcher "github.com/offchainlabs/nitro/bold/challenge-manager/chain-watcher"
-	edgetracker "github.com/offchainlabs/nitro/bold/challenge-manager/edge-tracker"
+	"github.com/offchainlabs/nitro/bold/chain-abstraction"
+	"github.com/offchainlabs/nitro/bold/challenge-manager/chain-watcher"
+	"github.com/offchainlabs/nitro/bold/challenge-manager/edge-tracker"
 	"github.com/offchainlabs/nitro/bold/challenge-manager/types"
 	"github.com/offchainlabs/nitro/bold/containers/option"
-	l2stateprovider "github.com/offchainlabs/nitro/bold/layer2-state-provider"
+	"github.com/offchainlabs/nitro/bold/layer2-state-provider"
 	"github.com/offchainlabs/nitro/bold/testing/mocks"
 	"github.com/offchainlabs/nitro/bold/testing/setup"
 	customTime "github.com/offchainlabs/nitro/bold/time"
