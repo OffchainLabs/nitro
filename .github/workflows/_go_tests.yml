@@ -127,7 +127,7 @@ jobs:
     runs-on: ubuntu-4
     needs: [go-tests]
     outputs:
-        ok: ${{ steps.ok.outputs.ok }}
+      ok: ${{ steps.ok.outputs.ok }}
     steps:
-        - id: ok
-          run: echo "ok=true" >> "$GITHUB_OUTPUT"
+      - id: ok
+        run: echo "ok=true" >> "$GITHUB_OUTPUT"
