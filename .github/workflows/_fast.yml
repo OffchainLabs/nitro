@@ -22,6 +22,12 @@ jobs:
         with:
           skip_checkout: 'true'
 
+      - name: Build
+        run: make -j8 build test-go-deps
+
+      - name: Build all lint dependencies
+        run: make -j8 build-node-deps
+
       - name: Lint
         uses: golangci/golangci-lint-action@v8
         with:
@@ -31,12 +37,6 @@ jobs:
 
       - name: Custom Lint
         run: go run ./linters ./...
-
-      - name: Build
-        run: make -j8 build test-go-deps
-
-      - name: Build all lint dependencies
-        run: make -j8 build-node-deps
 
       - name: Upload build artifacts
         if: always()
