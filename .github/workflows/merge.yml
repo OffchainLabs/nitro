@@ -3,7 +3,6 @@ name: CI
 run-name: Merge CI triggered from @${{ github.actor }} of ${{ github.head_ref }}
 on:
   merge_group:
-    branches: [master, main]
 
 jobs:
   # --- Determine which files have changed ---
