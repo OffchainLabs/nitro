@@ -30,6 +30,8 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/rpc"
+	"github.com/offchainlabs/nitro/util/redisutil"
+	"github.com/offchainlabs/nitro/validator/client/redis"
 
 	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbnode"
@@ -63,7 +65,11 @@ import (
 )
 
 func TestChallengeProtocolBOLDReadInboxChallenge(t *testing.T) {
-	testChallengeProtocolBOLD(t)
+	testChallengeProtocolBOLD(t, false)
+}
+
+func TestChallengeProtocolBOLDWithRedisReadInboxChallenge(t *testing.T) {
+	testChallengeProtocolBOLD(t, true)
 }
 
 func TestChallengeProtocolBOLDStartStepChallenge(t *testing.T) {
@@ -75,10 +81,10 @@ func TestChallengeProtocolBOLDStartStepChallenge(t *testing.T) {
 			return NewIncorrectIntermediateMachine(inner, 1)
 		}),
 	}
-	testChallengeProtocolBOLD(t, opts...)
+	testChallengeProtocolBOLD(t, false, opts...)
 }
 
-func testChallengeProtocolBOLD(t *testing.T, spawnerOpts ...server_arb.SpawnerOption) {
+func testChallengeProtocolBOLD(t *testing.T, useRedis bool, spawnerOpts ...server_arb.SpawnerOption) {
 	goodDir, err := os.MkdirTemp("", "good_*")
 	Require(t, err)
 	evilDir, err := os.MkdirTemp("", "evil_*")
@@ -153,12 +159,15 @@ func testChallengeProtocolBOLD(t *testing.T, spawnerOpts ...server_arb.SpawnerOp
 	TransferBalance(t, "Faucet", "Asserter", balance, l1info, l1client, ctx)
 	TransferBalance(t, "Faucet", "EvilAsserter", balance, l1info, l1client, ctx)
 
-	valCfg := valnode.TestValidationConfig
-	valCfg.UseJit = false
-	_, valStack := createTestValidationNode(t, ctx, &valCfg)
+	redisURL := ""
+	if useRedis {
+		redisURL = redisutil.CreateTestRedis(ctx, t)
+	}
+	valStack := AddValNode(t, ctx, l2nodeConfig, false, redisURL, "")
 	blockValidatorConfig := staker.TestBlockValidatorConfig
-
-	locator, err := server_common.NewMachineLocator(valCfg.Wasm.RootPath)
+	blockValidatorConfig.RedisValidationClientConfig = redis.TestValidationClientConfig
+	blockValidatorConfig.RedisValidationClientConfig.RedisURL = redisURL
+	locator, err := server_common.NewMachineLocator("")
 	Require(t, err)
 	statelessA, err := staker.NewStatelessBlockValidator(
 		l2nodeA.InboxReader,
@@ -174,6 +183,8 @@ func testChallengeProtocolBOLD(t *testing.T, spawnerOpts ...server_arb.SpawnerOp
 	Require(t, err)
 	err = statelessA.Start(ctx)
 	Require(t, err)
+	valCfg := valnode.TestValidationConfig
+	valCfg.UseJit = false
 	_, valStackB := createTestValidationNode(t, ctx, &valCfg, spawnerOpts...)
 
 	statelessB, err := staker.NewStatelessBlockValidator(

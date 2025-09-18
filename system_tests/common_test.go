@@ -92,6 +92,7 @@ import (
 	"github.com/offchainlabs/nitro/validator/server_common"
 	"github.com/offchainlabs/nitro/validator/valnode"
 	rediscons "github.com/offchainlabs/nitro/validator/valnode/redis"
+	valnoderedis "github.com/offchainlabs/nitro/validator/valnode/redis"
 )
 
 type info = *BlockchainTestInfo
@@ -1341,9 +1342,19 @@ func createTestValidationNode(t *testing.T, ctx context.Context, config *valnode
 	err = valnode.Start(ctx)
 	Require(t, err)
 
+	var redisConsumer *valnoderedis.ValidationServer
+	if config.Arbitrator.RedisValidationServerConfig.Enabled() {
+		redisConsumer, err = valnoderedis.NewValidationServer(&config.Arbitrator.RedisValidationServerConfig, valnode.GetExec())
+		Require(t, err)
+		redisConsumer.Start(ctx)
+	}
+
 	t.Cleanup(func() {
 		stack.Close()
 		valnode.Stop()
+		if redisConsumer != nil {
+			redisConsumer.StopOnly()
+		}
 	})
 
 	return valnode, stack
@@ -1387,7 +1398,7 @@ func AddValNodeIfNeeded(t *testing.T, ctx context.Context, nodeConfig *arbnode.C
 	AddValNode(t, ctx, nodeConfig, useJit, redisURL, wasmRootDir)
 }
 
-func AddValNode(t *testing.T, ctx context.Context, nodeConfig *arbnode.Config, useJit bool, redisURL string, wasmRootDir string) {
+func AddValNode(t *testing.T, ctx context.Context, nodeConfig *arbnode.Config, useJit bool, redisURL string, wasmRootDir string) *node.Node {
 	conf := valnode.TestValidationConfig
 	conf.UseJit = useJit
 	conf.Wasm.RootPath = wasmRootDir
@@ -1407,6 +1418,7 @@ func AddValNode(t *testing.T, ctx context.Context, nodeConfig *arbnode.Config, u
 	}
 	_, valStack := createTestValidationNode(t, ctx, &conf)
 	configByValidationNode(nodeConfig, valStack)
+	return valStack
 }
 
 func createTestL1BlockChain(t *testing.T, l1info info, withClientWrapper bool) (info, *ethclient.Client, *eth.Ethereum, *node.Node, *ClientWrapper) {
