@@ -19,7 +19,7 @@ import (
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcastclient"
 	"github.com/offchainlabs/nitro/broadcaster"
-	m "github.com/offchainlabs/nitro/broadcaster/message"
+	"github.com/offchainlabs/nitro/broadcaster/message"
 	"github.com/offchainlabs/nitro/util/contracts"
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/util/testhelpers"
@@ -27,20 +27,20 @@ import (
 )
 
 type MockTransactionStreamer struct {
-	messageReceiver chan m.BroadcastFeedMessage
+	messageReceiver chan message.BroadcastFeedMessage
 	chainId         uint64
 	sequencerAddr   *common.Address
 }
 
 func NewMockTransactionStreamer(chainId uint64, sequencerAddr *common.Address) *MockTransactionStreamer {
 	return &MockTransactionStreamer{
-		messageReceiver: make(chan m.BroadcastFeedMessage, 100),
+		messageReceiver: make(chan message.BroadcastFeedMessage, 100),
 		chainId:         chainId,
 		sequencerAddr:   sequencerAddr,
 	}
 }
 
-func (ts *MockTransactionStreamer) AddBroadcastMessages(feedMessages []*m.BroadcastFeedMessage) error {
+func (ts *MockTransactionStreamer) AddBroadcastMessages(feedMessages []*message.BroadcastFeedMessage) error {
 	for _, feedMessage := range feedMessages {
 		ts.messageReceiver <- *feedMessage
 	}

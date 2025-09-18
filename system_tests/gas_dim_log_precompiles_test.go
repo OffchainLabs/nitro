@@ -9,7 +9,6 @@ import (
 
 	"github.com/offchainlabs/nitro/solgen/go/gas_dimensionsgen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
-	pgen "github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 )
 
 // This test calls the ArbBlockNumber function on the ArbSys precompile
@@ -66,7 +65,7 @@ func TestDimLogActivateProgramForSstoreAndCall(t *testing.T) {
 	auth.GasLimit = 32000000 // skip gas estimation
 	program := deployContract(t, ctx, auth, l2client, wasm)
 
-	arbWasm, err := pgen.NewArbWasm(types.ArbWasmAddress, l2client)
+	arbWasm, err := precompilesgen.NewArbWasm(types.ArbWasmAddress, l2client)
 	Require(t, err)
 
 	auth.Value = oneEth
