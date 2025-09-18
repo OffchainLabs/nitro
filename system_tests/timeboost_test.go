@@ -50,7 +50,6 @@ import (
 	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/util/testhelpers"
-	testflag "github.com/offchainlabs/nitro/util/testhelpers/flag"
 )
 
 func TestTimeboostTxsTimeoutByBlock(t *testing.T) {
@@ -921,9 +920,6 @@ func TestTimeboostedFieldInReceiptsObject(t *testing.T) {
 }
 
 func TestTimeboostBulkBlockMetadataAPI(t *testing.T) {
-	if *testflag.ExecutionConsensusJSONRPCInterconnect {
-		t.Skip("TestTimeboostBulkBlockMetadataAPI currently fails with json-rpc interconnect") // TODO: tests using RestartL2Node are failing, need to fix them
-	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 

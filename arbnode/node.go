@@ -1535,10 +1535,9 @@ func (n *Node) StopAndWait() {
 		n.dasServerCloseFn()
 	}
 	if n.ExecutionClient != nil {
-		n.ExecutionClient.StopAndWait()
-	}
-	if err := n.Stack.Close(); err != nil {
-		log.Error("error on stack close", "err", err)
+		if _, ok := n.ExecutionClient.(*executionrpcclient.ExecutionRpcClient); ok {
+			n.ExecutionClient.StopAndWait()
+		}
 	}
 }
 

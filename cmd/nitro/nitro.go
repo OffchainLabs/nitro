@@ -58,6 +58,7 @@ import (
 	"github.com/offchainlabs/nitro/daprovider/das"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	_ "github.com/offchainlabs/nitro/execution/nodeInterface"
+	"github.com/offchainlabs/nitro/execution_consensus"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
@@ -693,25 +694,16 @@ func mainImpl() int {
 		}
 	}
 	if err == nil {
-		if err = execNode.Initialize(ctx); err != nil {
-			log.Error("Error initializing exec node", "err", err)
-			return 1
-		}
-		if err = consensusNode.Stack.Start(); err != nil {
-			log.Error("Error starting geth stack", "err", err)
-			return 1
-		}
-		execNode.SetConsensusClient(consensusNode)
-		if err = execNode.Start(ctx); err != nil {
-			log.Error("Error starting exec node", "err", err)
-			return 1
-		}
-		err = consensusNode.Start(ctx)
+		// In current model execution and consensus share the same stack, so starting and closing of this stack
+		// is handled externally here, but after the split when they have their own stacks- the responsibility
+		// of starting and closing their stacks belongs to them respectively
+		cleanup, err := execution_consensus.InitAndStartExecutionAndConsensusNodes(ctx, stack, execNode, consensusNode)
 		if err != nil {
-			fatalErrChan <- fmt.Errorf("error starting consensus node: %w", err)
+			log.Error("Error initializing and starting execution and consensus", "err", err)
+			return 1
 		}
 		// remove previous deferFuncs, StopAndWait closes database and blockchain.
-		deferFuncs = []func(){func() { consensusNode.StopAndWait() }}
+		deferFuncs = []func(){cleanup}
 	}
 
 	sigint := make(chan os.Signal, 1)

@@ -73,6 +73,7 @@ import (
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	_ "github.com/offchainlabs/nitro/execution/nodeInterface"
+	"github.com/offchainlabs/nitro/execution_consensus"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/localgen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
@@ -707,7 +708,7 @@ func buildOnParentChain(
 		addresses, validatorTxOptsPtr, sequencerTxOptsPtr, dataSigner, fatalErrChan, parentChainId, nil, locator.LatestWasmModuleRoot())
 	Require(t, err)
 
-	err = InitializeAndStartExecutionAndConsensusNodes(ctx, execNode, chainTestClient.ConsensusNode)
+	cleanup, err := execution_consensus.InitAndStartExecutionAndConsensusNodes(ctx, chainTestClient.Stack, execNode, chainTestClient.ConsensusNode)
 	Require(t, err)
 
 	chainTestClient.Client = ClientForStack(t, chainTestClient.Stack)
@@ -719,7 +720,7 @@ func buildOnParentChain(
 	} else {
 		chainTestClient.ExecNode = execNode
 	}
-	chainTestClient.cleanup = func() { chainTestClient.ConsensusNode.StopAndWait() }
+	chainTestClient.cleanup = cleanup
 
 	return chainTestClient
 }
@@ -861,7 +862,7 @@ func (b *NodeBuilder) BuildL2(t *testing.T) func() {
 	err = b.L2.ConsensusNode.TxStreamer.AddFakeInitMessage()
 	Require(t, err)
 
-	err = InitializeAndStartExecutionAndConsensusNodes(b.ctx, execNode, b.L2.ConsensusNode)
+	cleanup, err := execution_consensus.InitAndStartExecutionAndConsensusNodes(b.ctx, b.L2.Stack, execNode, b.L2.ConsensusNode)
 	Require(t, err)
 
 	b.L2.Client = ClientForStack(t, b.L2.Stack)
@@ -887,7 +888,7 @@ func (b *NodeBuilder) BuildL2(t *testing.T) func() {
 	} else {
 		b.L2.ExecNode = execNode
 	}
-	b.L2.cleanup = func() { b.L2.ConsensusNode.StopAndWait() }
+	b.L2.cleanup = cleanup
 	return func() {
 		b.L2.cleanup()
 		b.ctxCancel()
@@ -925,7 +926,8 @@ func (b *NodeBuilder) RestartL2Node(t *testing.T) {
 	currentNode, err := arbnode.CreateNodeFullExecutionClient(b.ctx, stack, execNode, execNode, execNode, execNode, arbDb, NewFetcherFromConfig(b.nodeConfig), blockchain.Config(), l1Client, b.addresses, validatorTxOpts, sequencerTxOpts, dataSigner, feedErrChan, big.NewInt(1337), nil, locator.LatestWasmModuleRoot())
 	Require(t, err)
 
-	Require(t, InitializeAndStartExecutionAndConsensusNodes(b.ctx, execNode, currentNode))
+	cleanup, err := execution_consensus.InitAndStartExecutionAndConsensusNodes(b.ctx, stack, execNode, currentNode)
+	Require(t, err)
 	client := ClientForStack(t, stack)
 
 	StartWatchChanErr(t, b.ctx, feedErrChan, currentNode)
@@ -934,7 +936,7 @@ func (b *NodeBuilder) RestartL2Node(t *testing.T) {
 	l2.ConsensusNode = currentNode
 	l2.Client = client
 	l2.ExecNode = execNode
-	l2.cleanup = func() { b.L2.ConsensusNode.StopAndWait() }
+	l2.cleanup = cleanup
 	l2.Stack = stack
 
 	b.L2 = l2
@@ -995,10 +997,11 @@ func build2ndNode(
 		configureJsonRPCInterconnect(t, params.execConfig, params.nodeConfig, params.stackConfig)
 	}
 
+	var cleanup func()
 	testClient := NewTestClient(ctx)
-	testClient.Client, testClient.ConsensusNode, testClient.ExecNode =
+	testClient.Client, testClient.ConsensusNode, testClient.ExecNode, cleanup =
 		Create2ndNodeWithConfig(t, ctx, firstNodeTestClient.ConsensusNode, firstNodeTestClient.ExecNode, parentChainTestClient.Stack, parentChainInfo, params.initData, params.nodeConfig, params.execConfig, params.stackConfig, valnodeConfig, params.addresses, initMessage, params.useExecutionClientOnly)
-	testClient.cleanup = func() { testClient.ConsensusNode.StopAndWait() }
+	testClient.cleanup = cleanup
 	return testClient, func() { testClient.cleanup() }
 }
 
@@ -1770,7 +1773,7 @@ func Create2ndNodeWithConfig(
 	addresses *chaininfo.RollupAddresses,
 	initMessage *arbostypes.ParsedInitMessage,
 	useExecutionClientOnly bool,
-) (*ethclient.Client, *arbnode.Node, *gethexec.ExecutionNode) {
+) (*ethclient.Client, *arbnode.Node, *gethexec.ExecutionNode, func()) {
 	if nodeConfig == nil {
 		nodeConfig = arbnode.ConfigDefaultL1NonSequencerTest()
 	}
@@ -1832,13 +1835,13 @@ func Create2ndNodeWithConfig(
 
 	Require(t, err)
 
-	err = InitializeAndStartExecutionAndConsensusNodes(ctx, currentExec, currentNode)
+	cleanup, err := execution_consensus.InitAndStartExecutionAndConsensusNodes(ctx, chainStack, currentExec, currentNode)
 	Require(t, err)
 	chainClient := ClientForStack(t, chainStack)
 
 	StartWatchChanErr(t, ctx, feedErrChan, currentNode)
 
-	return chainClient, currentNode, currentExec
+	return chainClient, currentNode, currentExec, cleanup
 }
 
 func GetBalance(t *testing.T, ctx context.Context, client *ethclient.Client, account common.Address) *big.Int {
@@ -2180,21 +2183,4 @@ func populateMachineDir(t *testing.T, cr *github.ConsensusRelease) string {
 	_, err = io.Copy(replayFile, replayResp.Body)
 	Require(t, err)
 	return machineDir
-}
-
-func InitializeAndStartExecutionAndConsensusNodes(ctx context.Context, execNode *gethexec.ExecutionNode, consensusNode *arbnode.Node) error {
-	if err := execNode.Initialize(ctx); err != nil {
-		return fmt.Errorf("error initializing exec node: %w", err)
-	}
-	if err := consensusNode.Stack.Start(); err != nil {
-		return fmt.Errorf("error starting geth stack: %w", err)
-	}
-	execNode.SetConsensusClient(consensusNode)
-	if err := execNode.Start(ctx); err != nil {
-		return fmt.Errorf("error starting exec node: %w", err)
-	}
-	if err := consensusNode.Start(ctx); err != nil {
-		return fmt.Errorf("error starting consensus node: %w", err)
-	}
-	return nil
 }

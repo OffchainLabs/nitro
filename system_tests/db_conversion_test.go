@@ -15,13 +15,9 @@ import (
 
 	"github.com/offchainlabs/nitro/cmd/dbconv/dbconv"
 	"github.com/offchainlabs/nitro/util/arbmath"
-	testflag "github.com/offchainlabs/nitro/util/testhelpers/flag"
 )
 
 func TestDatabaseConversion(t *testing.T) {
-	if *testflag.ExecutionConsensusJSONRPCInterconnect {
-		t.Skip("TestDatabaseConversion currently fails with json-rpc interconnect") // TODO: tests using RestartL2Node are failing, need to fix them
-	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).DontParalellise()

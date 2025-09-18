@@ -132,17 +132,6 @@ func NewTransactionStreamer(
 	if err != nil {
 		return nil, err
 	}
-	if config().SyncTillBlock != 0 {
-		syncTillMessage, err := exec.BlockNumberToMessageIndex(config().SyncTillBlock).Await(ctx)
-		if err != nil {
-			return nil, err
-		}
-		streamer.syncTillMessage = syncTillMessage
-		msgCount, err := streamer.GetMessageCount()
-		if err == nil && msgCount >= streamer.syncTillMessage {
-			log.Info("Node has all messages", "sync-till-block", config().SyncTillBlock)
-		}
-	}
 	return streamer, nil
 }
 
@@ -1484,6 +1473,17 @@ func (s *TransactionStreamer) Start(ctxIn context.Context) error {
 			return err
 		}
 		s.trackBlockMetadataFrom = trackBlockMetadataFrom
+	}
+	if s.config().SyncTillBlock != 0 {
+		syncTillMessage, err := s.exec.BlockNumberToMessageIndex(s.config().SyncTillBlock).Await(ctxIn)
+		if err != nil {
+			return err
+		}
+		s.syncTillMessage = syncTillMessage
+		msgCount, err := s.GetMessageCount()
+		if err == nil && msgCount >= s.syncTillMessage {
+			log.Info("Node has all messages", "sync-till-block", s.config().SyncTillBlock)
+		}
 	}
 	s.LaunchThread(s.backfillTrackersForMissingBlockMetadata)
 	return stopwaiter.CallIterativelyWith[struct{}](&s.StopWaiterSafe, s.executeMessages, s.newMessageNotifier)

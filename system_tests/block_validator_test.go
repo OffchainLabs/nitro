@@ -29,7 +29,7 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/redisutil"
-	"github.com/offchainlabs/nitro/util/testhelpers/flag"
+	testflag "github.com/offchainlabs/nitro/util/testhelpers/flag"
 	"github.com/offchainlabs/nitro/util/testhelpers/github"
 	"github.com/offchainlabs/nitro/validator/client/redis"
 )
@@ -252,9 +252,15 @@ func testBlockValidatorSimple(t *testing.T, opts Options) {
 	if !testClientB.ConsensusNode.BlockValidator.WaitForPos(t, ctx, arbutil.MessageIndex(lastBlock.NumberU64()), timeout) {
 		Fatal(t, "did not validate all blocks")
 	}
-	gethExec, ok := testClientB.ConsensusNode.ExecutionClient.(*gethexec.ExecutionNode)
-	if !ok {
-		t.Fail()
+	var gethExec *gethexec.ExecutionNode
+	if validatorConfig.ExecutionRPCClient.URL == "" {
+		var ok bool
+		gethExec, ok = testClientB.ConsensusNode.ExecutionClient.(*gethexec.ExecutionNode)
+		if !ok {
+			t.Fail()
+		}
+	} else {
+		gethExec = testClientB.ExecNode
 	}
 	gethExec.Recorder.TrimAllPrepared(t)
 	finalRefCount := gethExec.Recorder.RecordingDBReferenceCount()
@@ -316,9 +322,6 @@ func TestBlockValidatorSimpleOnchain(t *testing.T) {
 }
 
 func TestBlockValidatorSimpleJITOnchainWithPublishedMachine(t *testing.T) {
-	if *testflag.ExecutionConsensusJSONRPCInterconnect {
-		t.Skip("TestBlockValidatorSimpleJITOnchainWithPublishedMachine currently fails with json-rpc interconnect") // TODO: fix test
-	}
 	cr, err := github.LatestConsensusRelease(context.Background())
 	Require(t, err)
 	machPath := populateMachineDir(t, cr)
