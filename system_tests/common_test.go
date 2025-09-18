@@ -86,7 +86,7 @@ import (
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 	"github.com/offchainlabs/nitro/util/testhelpers/env"
-	"github.com/offchainlabs/nitro/util/testhelpers/flag"
+	testflag "github.com/offchainlabs/nitro/util/testhelpers/flag"
 	"github.com/offchainlabs/nitro/util/testhelpers/github"
 	"github.com/offchainlabs/nitro/validator/inputs"
 	"github.com/offchainlabs/nitro/validator/server_api"
@@ -366,26 +366,30 @@ func (b *NodeBuilder) DontParalellise() *NodeBuilder {
 }
 
 func (b *NodeBuilder) WithJsonRPCInterconnect(t *testing.T) *NodeBuilder {
+	configureJsonRPCInterconnect(t, b.execConfig, b.nodeConfig, b.l2StackConfig)
+	return b
+}
+
+func configureJsonRPCInterconnect(t *testing.T, execConfig *gethexec.Config, nodeConfig *arbnode.Config, l2StackConfig *node.Config) {
 	var httpHost string
-	if b.l2StackConfig.HTTPHost == "" || b.l2StackConfig.HTTPHost == "localhost" {
-		b.l2StackConfig.HTTPHost = "localhost"
+	if l2StackConfig.HTTPHost == "" || l2StackConfig.HTTPHost == "localhost" {
+		l2StackConfig.HTTPHost = "localhost"
 		httpHost = "http://127.0.0.1"
 	} else {
-		httpHost = b.l2StackConfig.HTTPHost
+		httpHost = l2StackConfig.HTTPHost
 	}
-	if b.l2StackConfig.HTTPPort == 0 {
-		b.l2StackConfig.HTTPPort = getRandomPort(t)
+	if l2StackConfig.HTTPPort == 0 {
+		l2StackConfig.HTTPPort = getRandomPort(t)
 	}
-	b.l2StackConfig.HTTPModules = append(b.l2StackConfig.HTTPModules, consensus.RPCNamespace, execution.RPCNamespace)
-	b.nodeConfig.RPCServer.Enable = true
-	b.nodeConfig.RPCServer.Public = true
-	b.nodeConfig.RPCServer.Authenticated = false
-	b.nodeConfig.ExecutionRPCClient.URL = fmt.Sprintf("%s:%d", httpHost, b.l2StackConfig.HTTPPort)
-	b.execConfig.RPCServer.Enable = true
-	b.execConfig.RPCServer.Public = true
-	b.execConfig.RPCServer.Authenticated = false
-	b.execConfig.ConsensusRPCClient.URL = fmt.Sprintf("%s:%d", httpHost, b.l2StackConfig.HTTPPort)
-	return b
+	l2StackConfig.HTTPModules = append(l2StackConfig.HTTPModules, consensus.RPCNamespace, execution.RPCNamespace)
+	nodeConfig.RPCServer.Enable = true
+	nodeConfig.RPCServer.Public = true
+	nodeConfig.RPCServer.Authenticated = false
+	nodeConfig.ExecutionRPCClient.URL = fmt.Sprintf("%s:%d", httpHost, l2StackConfig.HTTPPort)
+	execConfig.RPCServer.Enable = true
+	execConfig.RPCServer.Public = true
+	execConfig.RPCServer.Authenticated = false
+	execConfig.ConsensusRPCClient.URL = fmt.Sprintf("%s:%d", httpHost, l2StackConfig.HTTPPort)
 }
 
 func (b *NodeBuilder) WithArbOSVersion(arbosVersion uint64) *NodeBuilder {
@@ -986,6 +990,9 @@ func build2ndNode(
 	}
 	if firstNodeNodeConfig.BatchPoster.Enable && params.nodeConfig.BatchPoster.Enable && params.nodeConfig.BatchPoster.RedisUrl == "" {
 		t.Fatal("The batch poster must use Redis when enabled for multiple nodes")
+	}
+	if *testflag.ExecutionConsensusJSONRPCInterconnect {
+		configureJsonRPCInterconnect(t, params.execConfig, params.nodeConfig, params.stackConfig)
 	}
 
 	testClient := NewTestClient(ctx)

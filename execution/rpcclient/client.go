@@ -59,7 +59,7 @@ func (c *ExecutionRpcClient) DigestMessage(msgIdx arbutil.MessageIndex, msg *arb
 func (c *ExecutionRpcClient) Reorg(msgIdxOfFirstMsgToAdd arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadataAndBlockInfo, oldMessages []*arbostypes.MessageWithMetadata) containers.PromiseInterface[[]*consensus.MessageResult] {
 	return stopwaiter.LaunchPromiseThread(c, func(ctx context.Context) ([]*consensus.MessageResult, error) {
 		var res []*consensus.MessageResult
-		err := c.client.CallContext(ctx, res, execution.RPCNamespace+"_reorg", msgIdxOfFirstMsgToAdd, newMessages, oldMessages)
+		err := c.client.CallContext(ctx, &res, execution.RPCNamespace+"_reorg", msgIdxOfFirstMsgToAdd, newMessages, oldMessages)
 		if err != nil {
 			return nil, convertError(err)
 		}
