@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/google/btree"
-	flag "github.com/spf13/pflag"
+	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -36,8 +36,8 @@ import (
 )
 
 var (
-	stakerBalanceGauge              = metrics.NewRegisteredGaugeFloat64("arb/staker/balance", nil)
-	stakerAmountStakedGauge         = metrics.NewRegisteredGauge("arb/staker/amount_staked", nil)
+	stakerBalanceGauge              = metrics.GetOrRegisterGaugeFloat64("arb/staker/balance", nil)
+	stakerAmountStakedGauge         = metrics.GetOrRegisterGauge("arb/staker/amount_staked", nil)
 	stakerLatestStakedNodeGauge     = metrics.NewRegisteredGauge("arb/staker/staked_node", nil)
 	stakerLatestConfirmedNodeGauge  = metrics.NewRegisteredGauge("arb/staker/confirmed_node", nil)
 	stakerLastSuccessfulActionGauge = metrics.NewRegisteredGauge("arb/staker/action/last_success", nil)
@@ -71,7 +71,7 @@ var DefaultL1PostingStrategy = L1PostingStrategy{
 	HighGasDelayBlocks: 0,
 }
 
-func L1PostingStrategyAddOptions(prefix string, f *flag.FlagSet) {
+func L1PostingStrategyAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Float64(prefix+".high-gas-threshold", DefaultL1PostingStrategy.HighGasThreshold, "high gas threshold")
 	f.Int64(prefix+".high-gas-delay-blocks", DefaultL1PostingStrategy.HighGasDelayBlocks, "high gas delay blocks")
 }
@@ -220,7 +220,7 @@ var DefaultValidatorL1WalletConfig = genericconf.WalletConfig{
 	OnlyCreateKey: genericconf.WalletConfigDefault.OnlyCreateKey,
 }
 
-func L1ValidatorConfigAddOptions(prefix string, f *flag.FlagSet) {
+func L1ValidatorConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultL1ValidatorConfig.Enable, "enable validator")
 	f.String(prefix+".strategy", DefaultL1ValidatorConfig.Strategy, "L1 validator strategy, either watchtower, defensive, stakeLatest, or makeNodes")
 	f.Duration(prefix+".staker-interval", DefaultL1ValidatorConfig.StakerInterval, "how often the L1 validator should check the status of the L1 rollup and maybe take action with its stake")
@@ -252,7 +252,7 @@ var DefaultDangerousConfig = DangerousConfig{
 	WithoutBlockValidator:      false,
 }
 
-func DangerousConfigAddOptions(prefix string, f *flag.FlagSet) {
+func DangerousConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".ignore-rollup-wasm-module-root", DefaultL1ValidatorConfig.Dangerous.IgnoreRollupWasmModuleRoot, "DANGEROUS! make assertions even when the wasm module root is wrong")
 	f.Bool(prefix+".without-block-validator", DefaultL1ValidatorConfig.Dangerous.WithoutBlockValidator, "DANGEROUS! allows running an L1 validator without a block validator")
 }
