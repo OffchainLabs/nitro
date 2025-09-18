@@ -179,5 +179,3 @@ contract Simple {
         }
     }
 }
-
-

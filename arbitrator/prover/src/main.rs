@@ -107,7 +107,7 @@ fn decode_hex_arg(arg: &Option<String>, name: &str) -> Result<Bytes32> {
         }
         let mut bytes32 = Bytes32::default();
         hex::decode_to_slice(arg, &mut bytes32.0)
-            .wrap_err_with(|| format!("failed to parse {} contents", name))?;
+            .wrap_err_with(|| format!("failed to parse {name} contents"))?;
         Ok(bytes32)
     } else {
         Ok(Bytes32::default())
@@ -399,33 +399,20 @@ fn main() -> Result<()> {
                 }
             }
         }
-        let opts_binary = opts.binary;
-        let opts_libraries = opts.libraries;
         let format_pc = |module_num: usize, func_num: usize| -> (String, String) {
             let Some(names) = mach.get_module_names(module_num) else {
                 return (
-                    format!("[unknown {}]", module_num),
-                    format!("[unknown {}]", func_num),
+                    format!("[unknown {module_num}]"),
+                    format!("[unknown {func_num}]"),
                 );
             };
-            let module_name = if module_num == 0 {
-                names.module.clone()
-            } else if module_num == &opts_libraries.len() + 1 {
-                opts_binary.file_name().unwrap().to_str().unwrap().into()
-            } else {
-                opts_libraries[module_num - 1]
-                    .file_name()
-                    .unwrap()
-                    .to_str()
-                    .unwrap()
-                    .into()
-            };
+            let module_name = names.module.clone();
             let func_idx = func_num as u32;
             let mut name = names
                 .functions
                 .get(&func_idx)
                 .cloned()
-                .unwrap_or_else(|| format!("[unknown {}]", func_idx));
+                .unwrap_or_else(|| format!("[unknown {func_idx}]"));
             name = rustc_demangle::demangle(&name).to_string();
             (module_name, name)
         };
@@ -436,7 +423,7 @@ fn main() -> Result<()> {
             func_vector.sort_by(|a, b| b.1.total_cycles.cmp(&a.1.total_cycles));
             let mut printed = 0;
             for (&(module_num, func), profile) in func_vector {
-                let (name, module_name) = format_pc(module_num, func);
+                let (module_name, name) = format_pc(module_num, func);
                 let percent =
                     (profile.total_cycles as f64) * 100.0 / (cycles_measured_total as f64);
                 println!(
@@ -467,7 +454,7 @@ fn main() -> Result<()> {
                     path += ";";
                 }
                 path.pop(); // remove trailing ';'
-                writeln!(out, "{} {}", path, count)?;
+                writeln!(out, "{path} {count}")?;
             }
             out.flush()?;
         }

@@ -5,7 +5,7 @@ import (
 	"reflect"
 	"time"
 
-	flag "github.com/spf13/pflag"
+	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/p2p"
@@ -79,7 +79,7 @@ var ExpressLaneProxyConfigDefault = ExpressLaneProxyConfig{
 	PprofCfg:      genericconf.PProfDefault,
 }
 
-func ExpressLaneProxyConfigAddOptions(f *flag.FlagSet) {
+func ExpressLaneProxyConfigAddOptions(f *pflag.FlagSet) {
 	f.String("express-lane-url", ExpressLaneProxyConfigDefault.ExpressLaneURL, "URL to send timeboost_sendExpressLaneTransaction requests to")
 	f.String("rpc-url", ExpressLaneProxyConfigDefault.RPCURL, "URL to proxy to all other RPC requests to")
 	f.Int64("chain-id", ExpressLaneProxyConfigDefault.ChainId, "Chain ID of the chain being proxied to")

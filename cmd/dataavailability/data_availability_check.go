@@ -13,7 +13,7 @@ import (
 	"syscall"
 	"time"
 
-	flag "github.com/spf13/pflag"
+	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
@@ -105,7 +105,7 @@ func newDataAvailabilityCheck(ctx context.Context, dataAvailabilityCheckConfig *
 }
 
 func parseDataAvailabilityCheckConfig(args []string) (*DataAvailabilityCheckConfig, error) {
-	f := flag.NewFlagSet("dataavailabilitycheck", flag.ContinueOnError)
+	f := pflag.NewFlagSet("dataavailabilitycheck", pflag.ContinueOnError)
 	f.String("online-url-list", DefaultDataAvailabilityCheckConfig.OnlineUrlList, "a URL to a list of URLs of REST das endpoints that is checked for data availability")
 	f.String("l1-node-url", DefaultDataAvailabilityCheckConfig.L1NodeURL, "URL for L1 node")
 	f.Int("l1-connection-attempts", DefaultDataAvailabilityCheckConfig.L1ConnectionAttempts, "layer 1 RPC connection attempts (spaced out at least 1 second per attempt, 0 to retry infinitely)")
@@ -224,7 +224,7 @@ func (d *DataAvailabilityCheck) checkDataAvailabilityForOldHashInBlockRange(ctx 
 	return fmt.Errorf("no das message found between block %d and block %d", oldBlock, latestBlock)
 }
 
-// Trys to find if DAS message is present in the given log and if present
+// Tries to find if DAS message is present in the given log and if present
 // returns true and validates if the data is available in the storage service.
 func (d *DataAvailabilityCheck) checkDataAvailability(ctx context.Context, deliveredLog types.Log, metricBase string) (bool, error) {
 	deliveredEvent, err := d.inboxContract.ParseSequencerBatchDelivered(deliveredLog)

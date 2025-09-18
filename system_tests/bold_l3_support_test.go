@@ -18,16 +18,17 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
-	solimpl "github.com/offchainlabs/bold/chain-abstraction/sol-implementation"
-	challengemanager "github.com/offchainlabs/bold/challenge-manager"
-	modes "github.com/offchainlabs/bold/challenge-manager/types"
-	l2stateprovider "github.com/offchainlabs/bold/layer2-state-provider"
-	"github.com/offchainlabs/bold/solgen/go/challengeV2gen"
-	"github.com/offchainlabs/bold/solgen/go/rollupgen"
-	butil "github.com/offchainlabs/bold/util"
+
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
+	"github.com/offchainlabs/nitro/bold/chain-abstraction/sol-implementation"
+	"github.com/offchainlabs/nitro/bold/challenge-manager"
+	modes "github.com/offchainlabs/nitro/bold/challenge-manager/types"
+	"github.com/offchainlabs/nitro/bold/layer2-state-provider"
+	"github.com/offchainlabs/nitro/bold/util"
+	"github.com/offchainlabs/nitro/solgen/go/challengeV2gen"
 	"github.com/offchainlabs/nitro/solgen/go/localgen"
+	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/staker/bold"
 )
 
@@ -44,7 +45,6 @@ func TestL3ChallengeProtocolBOLD(t *testing.T) {
 	builder.nodeConfig.BlockValidator.Enable = true
 	builder.nodeConfig.Staker.Enable = true
 	builder.nodeConfig.Staker.Strategy = "MakeNodes"
-	builder.nodeConfig.Bold.Strategy = "MakeNodes"
 	builder.nodeConfig.Bold.RPCBlockNumber = "latest"
 	builder.nodeConfig.Bold.StateProviderConfig.CheckBatchFinality = false
 	builder.nodeConfig.Bold.StateProviderConfig.ValidatorName = "L2-validator"
@@ -58,7 +58,6 @@ func TestL3ChallengeProtocolBOLD(t *testing.T) {
 	builder.l3Config.nodeConfig.Staker.Enable = true
 	builder.l3Config.nodeConfig.BlockValidator.Enable = true
 	builder.l3Config.nodeConfig.Staker.Strategy = "MakeNodes"
-	builder.l3Config.nodeConfig.Bold.Strategy = "MakeNodes"
 	builder.l3Config.nodeConfig.Bold.RPCBlockNumber = "latest"
 	builder.l3Config.nodeConfig.Bold.StateProviderConfig.CheckBatchFinality = false
 	builder.l3Config.nodeConfig.Bold.StateProviderConfig.ValidatorName = "L3-validator"
@@ -71,7 +70,6 @@ func TestL3ChallengeProtocolBOLD(t *testing.T) {
 	secondNodeNodeConfig.BlockValidator.Enable = true
 	secondNodeNodeConfig.Staker.Enable = true
 	secondNodeNodeConfig.Staker.Strategy = "Watchtower"
-	secondNodeNodeConfig.Bold.Strategy = "Watchtower"
 	secondNodeNodeConfig.Bold.StateProviderConfig.CheckBatchFinality = false
 	secondNodeNodeConfig.Bold.StateProviderConfig.ValidatorName = "Second-L2-validator"
 	secondNodeNodeConfig.Bold.RPCBlockNumber = "latest"
@@ -264,7 +262,7 @@ func startL3BoldChallengeManager(t *testing.T, ctx context.Context, builder *Nod
 		builder.l3Addresses.Rollup,
 		chalManagerAddr,
 		&txOpts,
-		butil.NewBackendWrapper(builder.L2.Client, rpc.LatestBlockNumber),
+		util.NewBackendWrapper(builder.L2.Client, rpc.LatestBlockNumber),
 		bold.NewDataPosterTransactor(dp),
 		solimpl.WithRpcHeadBlockNumber(rpc.LatestBlockNumber),
 	)

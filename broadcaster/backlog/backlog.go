@@ -9,7 +9,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 
-	m "github.com/offchainlabs/nitro/broadcaster/message"
+	"github.com/offchainlabs/nitro/broadcaster/message"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/containers"
 )
@@ -27,8 +27,8 @@ var (
 // Backlog defines the interface for backlog.
 type Backlog interface {
 	Head() BacklogSegment
-	Append(*m.BroadcastMessage) error
-	Get(uint64, uint64) (*m.BroadcastMessage, error)
+	Append(*message.BroadcastMessage) error
+	Get(uint64, uint64) (*message.BroadcastMessage, error)
 	Count() uint64
 	Lookup(uint64) (BacklogSegment, error)
 }
@@ -87,10 +87,33 @@ func (b *backlog) backlogSizeInBytes() (uint64, error) {
 	return size, nil
 }
 
+// deepCopyMessageForDebug creates a selective copy of the message for memory debugging.
+// It only deep copies the L2msg field which is typically the largest memory consumer.
+// This helps pprof show allocations at the Append point rather than at message creation.
+func deepCopyMessageForDebug(msg *message.BroadcastFeedMessage) *message.BroadcastFeedMessage {
+	if msg == nil || msg.Message.Message == nil || msg.Message.Message.L2msg == nil {
+		return msg
+	}
+
+	copied := *msg
+
+	l2msgCopy := make([]byte, len(msg.Message.Message.L2msg))
+	copy(l2msgCopy, msg.Message.Message.L2msg)
+
+	l1IncomingMessageCopy := *msg.Message.Message
+	l1IncomingMessageCopy.L2msg = l2msgCopy
+
+	messageWithMetadataCopy := msg.Message
+	messageWithMetadataCopy.Message = &l1IncomingMessageCopy
+	copied.Message = messageWithMetadataCopy
+
+	return &copied
+}
+
 // Append will add the given messages to the backlogSegment at head until
 // that segment reaches its limit. If messages remain to be added a new segment
 // will be created.
-func (b *backlog) Append(bm *m.BroadcastMessage) error {
+func (b *backlog) Append(bm *message.BroadcastMessage) error {
 
 	if bm.ConfirmedSequenceNumberMessage != nil {
 		b.delete(uint64(bm.ConfirmedSequenceNumberMessage.SequenceNumber))
@@ -103,8 +126,14 @@ func (b *backlog) Append(bm *m.BroadcastMessage) error {
 		}
 	}
 
+	enableDeepCopy := b.config().EnableBacklogDeepCopy
 	lookupByIndex := b.lookupByIndex.Load()
 	for _, msg := range bm.Messages {
+		// For memory debugging: deep copy L2msg to track allocations
+		msgToAppend := msg
+		if enableDeepCopy {
+			msgToAppend = deepCopyMessageForDebug(msg)
+		}
 		segment := b.tail.Load()
 		if segment == nil {
 			segment = newBacklogSegment()
@@ -115,10 +144,16 @@ func (b *backlog) Append(bm *m.BroadcastMessage) error {
 		}
 
 		prevMsgIdx := segment.End()
+		if prevMsgIdx != 0 && uint64(msg.SequenceNumber) <= prevMsgIdx {
+			log.Info("ignoring message sequence number, already in backlog", "message sequence number", msg.SequenceNumber)
+			// Skip creating a new segment if we're at the segment boundary and would not
+			// append a message. Empty segments break the backlog's invariants.
+			continue
+		}
 		if segment.count() >= b.config().SegmentLimit {
 			segment.messagesLock.RLock()
 			if len(segment.messages) > 0 {
-				msg.CumulativeSumMsgSize = segment.messages[len(segment.messages)-1].CumulativeSumMsgSize
+				msgToAppend.CumulativeSumMsgSize = segment.messages[len(segment.messages)-1].CumulativeSumMsgSize
 			}
 			segment.messagesLock.RUnlock()
 
@@ -129,7 +164,7 @@ func (b *backlog) Append(bm *m.BroadcastMessage) error {
 			b.tail.Store(segment)
 		}
 
-		err := segment.append(prevMsgIdx, msg)
+		err := segment.append(prevMsgIdx, msgToAppend)
 		if errors.Is(err, errDropSegments) {
 			head := b.head.Load()
 			b.removeFromLookup(head.Start(), uint64(msg.SequenceNumber))
@@ -138,9 +173,6 @@ func (b *backlog) Append(bm *m.BroadcastMessage) error {
 			b.messageCount.Store(0)
 			backlogSizeInBytesGauge.Update(0)
 			log.Warn(err.Error())
-		} else if errors.Is(err, errSequenceNumberSeen) {
-			log.Info("ignoring message sequence number, already in backlog", "message sequence number", msg.SequenceNumber)
-			continue
 		} else if err != nil {
 			return err
 		}
@@ -156,7 +188,7 @@ func (b *backlog) Append(bm *m.BroadcastMessage) error {
 }
 
 // Get reads messages from the given start to end MessageIndex.
-func (b *backlog) Get(start, end uint64) (*m.BroadcastMessage, error) {
+func (b *backlog) Get(start, end uint64) (*message.BroadcastMessage, error) {
 	head := b.head.Load()
 	tail := b.tail.Load()
 	if head == nil && tail == nil {
@@ -178,7 +210,7 @@ func (b *backlog) Get(start, end uint64) (*m.BroadcastMessage, error) {
 		return nil, err
 	}
 
-	bm := &m.BroadcastMessage{Version: 1}
+	bm := &message.BroadcastMessage{Version: 1}
 	required := end - start + 1
 	for {
 		segMsgs, err := segment.Get(arbmath.MaxInt(start, segment.Start()), arbmath.MinInt(end, segment.End()))
@@ -302,15 +334,15 @@ type BacklogSegment interface {
 	End() uint64
 	Next() BacklogSegment
 	Contains(uint64) bool
-	Messages() []*m.BroadcastFeedMessage
-	Get(uint64, uint64) ([]*m.BroadcastFeedMessage, error)
+	Messages() []*message.BroadcastFeedMessage
+	Get(uint64, uint64) ([]*message.BroadcastFeedMessage, error)
 }
 
 // backlogSegment stores messages up to a limit defined by the backlog. It also
 // points to the next backlogSegment in the list.
 type backlogSegment struct {
 	messagesLock sync.RWMutex
-	messages     []*m.BroadcastFeedMessage
+	messages     []*message.BroadcastFeedMessage
 	nextSegment  atomic.Pointer[backlogSegment]
 }
 
@@ -319,7 +351,7 @@ type backlogSegment struct {
 // backlog library.
 func newBacklogSegment() *backlogSegment {
 	return &backlogSegment{
-		messages: []*m.BroadcastFeedMessage{},
+		messages: []*message.BroadcastFeedMessage{},
 	}
 }
 
@@ -384,19 +416,19 @@ func (s *backlogSegment) Next() BacklogSegment {
 }
 
 // Messages returns all of the messages stored in the backlogSegment.
-func (s *backlogSegment) Messages() []*m.BroadcastFeedMessage {
+func (s *backlogSegment) Messages() []*message.BroadcastFeedMessage {
 	s.messagesLock.RLock()
 	defer s.messagesLock.RUnlock()
-	tmp := make([]*m.BroadcastFeedMessage, len(s.messages))
+	tmp := make([]*message.BroadcastFeedMessage, len(s.messages))
 	copy(tmp, s.messages)
 	return tmp
 }
 
 // Get reads messages from the given start to end message index.
-func (s *backlogSegment) Get(start, end uint64) ([]*m.BroadcastFeedMessage, error) {
+func (s *backlogSegment) Get(start, end uint64) ([]*message.BroadcastFeedMessage, error) {
 	s.messagesLock.RLock()
 	defer s.messagesLock.RUnlock()
-	noMsgs := []*m.BroadcastFeedMessage{}
+	noMsgs := []*message.BroadcastFeedMessage{}
 	if start < s.start() {
 		return noMsgs, errOutOfBounds
 	}
@@ -408,7 +440,7 @@ func (s *backlogSegment) Get(start, end uint64) ([]*m.BroadcastFeedMessage, erro
 	startIndex := start - s.start()
 	endIndex := end - s.start() + 1
 
-	tmp := make([]*m.BroadcastFeedMessage, endIndex-startIndex)
+	tmp := make([]*message.BroadcastFeedMessage, endIndex-startIndex)
 	copy(tmp, s.messages[startIndex:endIndex])
 	return tmp, nil
 }
@@ -418,7 +450,7 @@ func (s *backlogSegment) Get(start, end uint64) ([]*m.BroadcastFeedMessage, erro
 // message is ahead of the given message append will do nothing. If the given
 // message is ahead of the segment's end message append will return
 // errDropSegments to ensure any messages before the given message are dropped.
-func (s *backlogSegment) append(prevMsgIdx uint64, msg *m.BroadcastFeedMessage) error {
+func (s *backlogSegment) append(prevMsgIdx uint64, msg *message.BroadcastFeedMessage) error {
 	s.messagesLock.Lock()
 	defer s.messagesLock.Unlock()
 

@@ -46,17 +46,17 @@ jobs:
 
     steps:
     - name: Checkout
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
       with:
-        submodules: true
+        submodules: recursive
 
     - name: Install dependencies
       run: sudo apt update && sudo apt install -y wabt
 
     - name: Setup nodejs
-      uses: actions/setup-node@v3
+      uses: actions/setup-node@v4
       with:
-        node-version: '18'
+        node-version: '24'
         cache: 'yarn'
         cache-dependency-path: '**/yarn.lock'
 
@@ -70,30 +70,15 @@ jobs:
         sudo apt-get update && sudo apt-get install -y lld-14
         sudo ln -s /usr/bin/wasm-ld-14 /usr/local/bin/wasm-ld
 
-    - name: Install rust stable
-      uses: dtolnay/rust-toolchain@stable
+    - name: Install rust
       id: install-rust
-      with:
-        toolchain: '1.84.1'
-        targets: 'wasm32-wasip1, wasm32-unknown-unknown'
-        components: 'llvm-tools-preview, rustfmt, clippy'
-
-    - name: Install rust nightly
-      uses: dtolnay/rust-toolchain@nightly
-      id: install-rust-nightly
-      with:
-        toolchain: 'nightly-2025-02-14'
-        targets: 'wasm32-wasip1, wasm32-unknown-unknown'
-        components: 'rust-src, rustfmt, clippy'
-
-    - name: Get Rust version
-      id: rust-version
-      run: echo "version=$(rustc --version | cut -d' ' -f2)" >> $GITHUB_OUTPUT
+      uses: ./.github/actions/install-rust
 
     - name: Install Foundry
       uses: foundry-rs/foundry-toolchain@v1
       with:
         cache: false
+        version: v1.0.0
         
     - name: Install cbindgen
       run: cargo install --force cbindgen
@@ -123,8 +108,8 @@ jobs:
           target/lib/libbrotlicommon-static.a
           target/lib/libbrotlienc-static.a
           target/lib/libbrotlidec-static.a
-        key: ${{ runner.os }}-brotli-${{ matrix.language }}-${{ hashFiles('scripts/build-brotli.sh') }}-${{ hashFiles('.github/workflows/arbitrator-ci.yaml') }}-codeql
-        restore-keys: ${{ runner.os }}-brotli-${{ matrix.language }}-${{ hashFiles('scripts/build-brotli.sh') }}-${{ hashFiles('.github/workflows/arbitrator-ci.yaml') }}
+        key: ${{ runner.os }}-brotli-${{ matrix.language }}-${{ hashFiles('scripts/build-brotli.sh') }}-${{ hashFiles('.github/workflows/arbitrator-ci.yml') }}-codeql
+        restore-keys: ${{ runner.os }}-brotli-${{ matrix.language }}-${{ hashFiles('scripts/build-brotli.sh') }}-${{ hashFiles('.github/workflows/arbitrator-ci.yml') }}
 
     - name: Cache Rust Build Products
       uses: actions/cache@v4
@@ -135,8 +120,8 @@ jobs:
           arbitrator/wasm-libraries/target/
           arbitrator/wasm-libraries/soft-float/SoftFloat/build
           target/etc/initial-machine-cache/
-        key: ${{ runner.os }}-cargo-${{ matrix.language }}-${{ steps.rust-version.outputs.version }}-min-${{ hashFiles('arbitrator/Cargo.lock') }}
-        restore-keys: ${{ runner.os }}-cargo-${{ matrix.language }}-${{ steps.rust-version.outputs.version }}-
+        key: ${{ runner.os }}-cargo-${{ matrix.language }}-${{ steps.install-rust.outputs.version }}-min-${{ hashFiles('arbitrator/Cargo.lock') }}
+        restore-keys: ${{ runner.os }}-cargo-${{ matrix.language }}-${{ steps.install-rust.outputs.version }}-
 
     # Initializes the CodeQL tools for scanning.
     - name: Initialize CodeQL
@@ -161,7 +146,7 @@ jobs:
       run: ./scripts/build-brotli.sh -w -d
 
     - name: Build Nitro for CodeQL
-      run: make build -j
+      run: make build
 
     # ℹ️ Command-line programs to run using the OS shell.
     # 📚 See https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions#jobsjob_idstepsrun

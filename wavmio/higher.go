@@ -10,6 +10,7 @@ import (
 	"unsafe"
 
 	"github.com/ethereum/go-ethereum/common"
+
 	"github.com/offchainlabs/nitro/arbutil"
 )
 
@@ -72,6 +73,11 @@ func ResolveTypedPreimage(ty arbutil.PreimageType, hash common.Hash) ([]byte, er
 		hashUnsafe := unsafe.Pointer(&hash[0])
 		return resolveTypedPreimage(uint32(ty), hashUnsafe, offset, buf)
 	}), nil
+}
+
+func ValidateCertificate(ty arbutil.PreimageType, hash common.Hash) bool {
+	hashUnsafe := unsafe.Pointer(&hash[0])
+	return validateCertificate(uint32(ty), hashUnsafe) != 0
 }
 
 func SetLastBlockHash(hash [32]byte) {
