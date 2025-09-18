@@ -1412,8 +1412,13 @@ func AddValNode(t *testing.T, ctx context.Context, nodeConfig *arbnode.Config, u
 		}
 		redisStream := server_api.RedisStreamForRoot(rediscons.TestValidationServerConfig.StreamPrefix, currentRootModule(t))
 		createRedisGroup(ctx, t, redisStream, redisClient)
+		redisBoldStream := server_api.RedisBoldStreamForRoot(rediscons.TestValidationServerConfig.StreamPrefix, currentRootModule(t))
+		createRedisGroup(ctx, t, redisBoldStream, redisClient)
 		conf.Arbitrator.RedisValidationServerConfig.RedisURL = redisURL
-		t.Cleanup(func() { destroyRedisGroup(ctx, t, redisStream, redisClient) })
+		t.Cleanup(func() {
+			destroyRedisGroup(ctx, t, redisStream, redisClient)
+			destroyRedisGroup(ctx, t, redisBoldStream, redisClient)
+		})
 		conf.Arbitrator.RedisValidationServerConfig.ModuleRoots = []string{currentRootModule(t).Hex()}
 	}
 	_, valStack := createTestValidationNode(t, ctx, &conf)

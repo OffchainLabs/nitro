@@ -119,7 +119,6 @@ func (c *ValidationClient) Initialize(ctx context.Context, moduleRoots []common.
 			log.Warn("failed init redis for %v: %w", mr, err)
 			continue
 		}
-		p.Start(c.GetContext())
 		c.producers[mr] = p
 		c.moduleRoots = append(c.moduleRoots, mr)
 	}

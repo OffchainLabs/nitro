@@ -570,6 +570,9 @@ func (v *StatelessBlockValidator) Start(ctx_in context.Context) error {
 	wasmTargetsSet := make(map[rawdb.WasmTarget]struct{})
 
 	if v.redisValidator != nil {
+		if err := v.redisValidator.Initialize(ctx_in, []common.Hash{v.GetLatestWasmModuleRoot()}); err != nil {
+			return fmt.Errorf("initializing redis validation client: %w", err)
+		}
 		if err := v.redisValidator.Start(ctx_in); err != nil {
 			return fmt.Errorf("starting execution spawner: %w", err)
 		}
