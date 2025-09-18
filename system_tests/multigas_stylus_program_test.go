@@ -159,21 +159,14 @@ func TestMultigasStylus_EmitLog(t *testing.T) {
 	receipt, err := EnsureTxSucceeded(ctx, l2client, tx)
 	require.NoError(t, err)
 
-	// Expected MultiGas calculation (mirrors hostio closure)
+	// Expected history growth calculation
 	numTopics := uint64(len(topics))
 	dataBytes := uint64(len(data))
 	topicBytes := uint64(32)
 	topicHistPer := topicBytes * params.LogDataGas
-	topicCompPer := params.LogTopicGas - topicHistPer
 	payloadBytes := dataBytes - topicBytes*numTopics
-
-	expectedComputation := params.LogGas + topicCompPer*numTopics
 	expectedHistoryGrowth := topicHistPer*numTopics + payloadBytes*params.LogDataGas
 
-	require.Equal(t,
-		expectedComputation,
-		receipt.MultiGasUsed.Get(multigas.ResourceKindWasmComputation),
-	)
 	require.Equal(t,
 		expectedHistoryGrowth,
 		receipt.MultiGasUsed.Get(multigas.ResourceKindHistoryGrowth),

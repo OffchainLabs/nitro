@@ -234,29 +234,19 @@ func newApiClosures(
 			return vm.ErrWriteProtection
 		}
 
-		// Calculate multi-gas cost in a way similar to makeGasLog from gas_table.go for EVM
+		// Attribute history growth gas in a way similar to makeGasLog from gas_table.go for EVM
+		// WASM computation part is charged separately in attributeWasmComputation
 		mgCost := multigas.ZeroGas()
 		topicBytes := uint64(32)
 		numTopics := uint64(len(topics))
 		dataBytes := uint64(len(data))
-		if numTopics > 4 || dataBytes < numTopics*32 {
-			return fmt.Errorf("invalid log: topics=%d, data.len=%d", numTopics, dataBytes)
-		}
-
-		// Base LOG operation cost
-		mgCost.SaturatingIncrementInto(multigas.ResourceKindWasmComputation, params.LogGas)
 
 		// History growth per topic
 		topicHistPer := topicBytes * params.LogDataGas
 		if params.LogTopicGas < topicHistPer {
 			return fmt.Errorf("bad gas param config: LogTopicGas < topicHistPer")
 		}
-		// Computation per topic
-		topicCompPer := params.LogTopicGas - topicHistPer
-
-		// Apply the split
 		mgCost.SaturatingIncrementInto(multigas.ResourceKindHistoryGrowth, topicHistPer*numTopics)
-		mgCost.SaturatingIncrementInto(multigas.ResourceKindWasmComputation, topicCompPer*numTopics)
 
 		// Data payload (excluding topic hashes)
 		payloadBytes := dataBytes - topicBytes*numTopics
@@ -272,7 +262,6 @@ func newApiClosures(
 			// Geth will set other fields
 		}
 		db.AddLog(event)
-
 		return nil
 	}
 	accountBalance := func(address common.Address) (common.Hash, uint64) {
@@ -299,11 +288,9 @@ func newApiClosures(
 	}
 	addPages := func(pages uint16) uint64 {
 		open, ever := db.AddStylusPages(pages)
-		cost := memoryModel.GasCost(pages, open, ever)
+		// addPages WASM computation cost is charged separately in attributeWasmComputation
+		return memoryModel.GasCost(pages, open, ever)
 
-		scope.Contract.UsedMultiGas.SaturatingIncrementInto(multigas.ResourceKindWasmComputation, cost)
-
-		return cost
 	}
 	captureHostio := func(name string, args, outs []byte, startInk, endInk uint64) {
 		if tracingInfo.Tracer != nil && tracingInfo.Tracer.CaptureStylusHostio != nil {
