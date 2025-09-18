@@ -4,7 +4,7 @@ name: Check Design Approved
 on:
   merge_group:
   pull_request_target:
-    branches: [master, main]
+    branches: [master]
     types: [synchronize, opened, reopened, labeled, unlabeled]
 
 permissions:

@@ -5,7 +5,7 @@ run-name: Nightly CI tests triggered from @${{ github.actor }} of ${{ github.hea
 on:
   workflow_dispatch:
   push:
-    branches: [master, main]
+    branches: [master]
   schedule:
     # Run at 00:00 AM UTC
     - cron: '0 0 * * *'

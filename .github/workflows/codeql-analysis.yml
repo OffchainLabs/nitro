@@ -3,11 +3,11 @@ name: CodeQL
 
 on:
   push:
-    branches: [master, main]
+    branches: [master]
   merge_group:
-    branches: [master, main]
+    branches: [master]
   pull_request:
-    branches: [master, main]
+    branches: [master]
   schedule:
     - cron: '18 21 * * 5'
 
