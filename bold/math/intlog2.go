@@ -7,17 +7,19 @@ package math
 import "math/bits"
 
 // Log2Floor returns the integer logarithm base 2 of u (rounded down).
+// Returns 0 for u == 0 to maintain consistency with arbmath.Log2ceil.
 func Log2Floor(u uint64) int {
 	if u == 0 {
-		panic("log2 undefined for non-positive values")
+		return 0
 	}
 	return bits.Len64(u) - 1
 }
 
 // Log2Ceil returns the integer logarithm base 2 of u (rounded up).
+// Returns 0 for u == 0 to maintain consistency with arbmath.Log2ceil.
 func Log2Ceil(u uint64) int {
 	r := Log2Floor(u)
-	if isPowerOfTwo(u) {
+	if u == 0 || isPowerOfTwo(u) {
 		return r
 	}
 	return r + 1
