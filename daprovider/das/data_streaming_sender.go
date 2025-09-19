@@ -36,7 +36,7 @@ type DataStreamer struct {
 // DataStreamingRPCMethods configuration specifies names of the protocol's RPC methods on the server side.
 // lint:require-exhaustive-initialization
 type DataStreamingRPCMethods struct {
-	startReceiving, receiveChunk, finalizeReceiving string
+	startStream, streamChunk, finalizeStream string
 }
 
 // NewDataStreamer creates a new DataStreamer instance.
@@ -71,7 +71,7 @@ func NewDataStreamer(url string, maxStoreChunkBodySize int, dataSigner signature
 }
 
 func calculateEffectiveChunkSize(maxStoreChunkBodySize int, rpcMethods DataStreamingRPCMethods) (uint64, error) {
-	jsonOverhead := len("{\"jsonrpc\":\"2.0\",\"id\":4294967295,\"method\":\"\",\"params\":[\"\"]}") + len(rpcMethods.receiveChunk)
+	jsonOverhead := len("{\"jsonrpc\":\"2.0\",\"id\":4294967295,\"method\":\"\",\"params\":[\"\"]}") + len(rpcMethods.streamChunk)
 	chunkSize := (maxStoreChunkBodySize - jsonOverhead - 512 /* headers */) / 2
 	if chunkSize <= 0 {
 		return 0, fmt.Errorf("max-store-chunk-body-size %d doesn't leave enough room for chunk payload", maxStoreChunkBodySize)
@@ -88,21 +88,21 @@ func (ds *DataStreamer) StreamData(ctx context.Context, data []byte, timeout uin
 		return nil, err
 	}
 
-	batchId, err := ds.startStream(ctx, startReqSig, params)
+	messageId, err := ds.startStream(ctx, startReqSig, params)
 	if err != nil {
 		return nil, err
 	}
 
-	if err := ds.doStream(ctx, data, batchId, params); err != nil {
+	if err := ds.doStream(ctx, data, messageId, params); err != nil {
 		return nil, err
 	}
 
-	finalReqSig, err := ds.sign(nil, batchId)
+	finalReqSig, err := ds.sign(nil, messageId)
 	if err != nil {
 		return nil, err
 	}
 
-	return ds.finalizeStream(ctx, finalReqSig, batchId)
+	return ds.finalizeStream(ctx, finalReqSig, messageId)
 }
 
 func (ds *DataStreamer) startStream(ctx context.Context, startReqSig []byte, params streamParams) (uint64, error) {
@@ -110,7 +110,7 @@ func (ds *DataStreamer) startStream(ctx context.Context, startReqSig []byte, par
 	err := ds.rpcClient.CallContext(
 		ctx,
 		&startChunkedStoreResult,
-		ds.rpcMethods.startReceiving,
+		ds.rpcMethods.startStream,
 		hexutil.Uint64(params.timestamp),
 		hexutil.Uint64(params.nChunks),
 		hexutil.Uint64(ds.chunkSize),
@@ -120,7 +120,7 @@ func (ds *DataStreamer) startStream(ctx context.Context, startReqSig []byte, par
 	return uint64(startChunkedStoreResult.MessageId), err
 }
 
-func (ds *DataStreamer) doStream(ctx context.Context, data []byte, batchId uint64, params streamParams) error {
+func (ds *DataStreamer) doStream(ctx context.Context, data []byte, messageId uint64, params streamParams) error {
 	chunkRoutines := new(errgroup.Group)
 	for i := uint64(0); i < params.nChunks; i++ {
 		startIndex := i * ds.chunkSize
@@ -131,22 +131,22 @@ func (ds *DataStreamer) doStream(ctx context.Context, data []byte, batchId uint6
 		chunkData := data[startIndex:endIndex]
 
 		chunkRoutines.Go(func() error {
-			return ds.sendChunk(ctx, batchId, i, chunkData)
+			return ds.sendChunk(ctx, messageId, i, chunkData)
 		})
 	}
 	return chunkRoutines.Wait()
 }
 
-func (ds *DataStreamer) sendChunk(ctx context.Context, batchId, chunkId uint64, chunkData []byte) error {
-	chunkReqSig, err := ds.sign(chunkData, batchId, chunkId)
+func (ds *DataStreamer) sendChunk(ctx context.Context, messageId, chunkId uint64, chunkData []byte) error {
+	chunkReqSig, err := ds.sign(chunkData, messageId, chunkId)
 	if err != nil {
 		return err
 	}
-	return ds.rpcClient.CallContext(ctx, nil, ds.rpcMethods.receiveChunk, hexutil.Uint64(batchId), hexutil.Uint64(chunkId), hexutil.Bytes(chunkData), hexutil.Bytes(chunkReqSig))
+	return ds.rpcClient.CallContext(ctx, nil, ds.rpcMethods.streamChunk, hexutil.Uint64(messageId), hexutil.Uint64(chunkId), hexutil.Bytes(chunkData), hexutil.Bytes(chunkReqSig))
 }
 
-func (ds *DataStreamer) finalizeStream(ctx context.Context, finalReqSig []byte, batchId uint64) (storeResult *StoreResult, err error) {
-	err = ds.rpcClient.CallContext(ctx, &storeResult, ds.rpcMethods.finalizeReceiving, hexutil.Uint64(batchId), hexutil.Bytes(finalReqSig))
+func (ds *DataStreamer) finalizeStream(ctx context.Context, finalReqSig []byte, messageId uint64) (storeResult *StoreResult, err error) {
+	err = ds.rpcClient.CallContext(ctx, &storeResult, ds.rpcMethods.finalizeStream, hexutil.Uint64(messageId), hexutil.Bytes(finalReqSig))
 	return
 }
 
