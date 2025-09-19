@@ -247,13 +247,15 @@ impl<D: DataReader, H: RequestHandler<D>> EvmApi<D> for EvmApiRequestor<D, H> {
         self.last_return_data.clone().expect("missing return data")
     }
 
-    fn emit_log(&mut self, data: Vec<u8>, topics: u32) -> Result<()> {
-        // TODO: remove copy
-        let mut request = Vec::with_capacity(4 + data.len());
-        request.extend(topics.to_be_bytes());
-        request.extend(data);
+    fn emit_log(&mut self, mut data: Vec<u8>, topics: u32) -> Result<()> {
+        // Insert the topics header (4 bytes) at the start of the existing buffer in-place
+        data.reserve(4);
+        let old_len = data.len();
+        data.extend_from_slice(&[0; 4]);
+        data.copy_within(0..old_len, 4);
+        data[0..4].copy_from_slice(&topics.to_be_bytes());
 
-        let (res, _, _) = self.request(EvmApiMethod::EmitLog, request);
+        let (res, _, _) = self.request(EvmApiMethod::EmitLog, data);
         if !res.is_empty() {
             bail!(String::from_utf8(res).unwrap_or("malformed emit-log response".into()))
         }
