@@ -266,9 +266,9 @@ func (p Programs) CallProgram(
 
 		maxGasToReturn := startingGas - evmCost
 		contract.Gas = arbmath.MinInt(contract.Gas, maxGasToReturn)
-
-		attributeWasmComputation(contract, startingGas)
 	}
+	attributeWasmComputation(contract, startingGas)
+
 	// #nosec G115
 	metrics.GetOrRegisterCounter(fmt.Sprintf("arb/arbos/stylus/gas_used/%s", runCtx.RunModeMetricName()), nil).Inc(int64(startingGas - contract.Gas))
 	return ret, err
@@ -286,10 +286,6 @@ func attributeWasmComputation(contract *vm.Contract, startingGas uint64) {
 		residual = 0
 	} else {
 		residual = usedGas - accountedGas
-	}
-
-	if prev := contract.UsedMultiGas.Get(multigas.ResourceKindWasmComputation); prev != 0 {
-		log.Error("WASM computation gas already set, prev", prev)
 	}
 
 	var overflow bool
