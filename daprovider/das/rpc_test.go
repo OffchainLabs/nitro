@@ -133,7 +133,7 @@ func TestRPCStore(t *testing.T) {
 		legacyAPIOnly    bool
 	}{
 		{desc: "small store", totalSize: 100, times: 1, concurrent: false},
-		{desc: "chunked store - last chunk full", totalSize: chunkSize * 20, times: 1, concurrent: false},
+		{desc: "chunked store - last chunk full", totalSize: chunkSize * 20, times: 10, concurrent: true},
 		{desc: "chunked store - last chunk not full", totalSize: chunkSize*31 + 123, times: 10, concurrent: true},
 		{desc: "chunked store - overflow cache - sequential", totalSize: chunkSize * 3, times: 15, concurrent: false},
 		{desc: "new client falls back to old api for old server", totalSize: (5*1024*1024)/2 - len(sendChunkJSONBoilerplate) - 100 /* geth counts headers too */, times: 5, concurrent: true, legacyAPIOnly: true},
