@@ -5,11 +5,15 @@ package das
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"os"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/offchainlabs/nitro/util/contracts"
 
 	"github.com/offchainlabs/nitro/daprovider/das/dasutil"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
@@ -162,7 +166,7 @@ func CreateDAComponentsForDaserver(
 	config *DataAvailabilityConfig,
 	l1Reader *headerreader.HeaderReader,
 	seqInboxAddress *common.Address,
-) (dasutil.DASReader, dasutil.DASWriter, *SignatureVerifier, DataAvailabilityServiceHealthChecker, *LifecycleManager, error) {
+) (dasutil.DASReader, dasutil.DASWriter, *signature.Verifier, DataAvailabilityServiceHealthChecker, *LifecycleManager, error) {
 	if !config.Enable {
 		return nil, nil, nil, nil, nil, nil
 	}
@@ -225,7 +229,7 @@ func CreateDAComponentsForDaserver(
 	var daWriter dasutil.DASWriter
 	var daReader dasutil.DASReader = storageService
 	var daHealthChecker DataAvailabilityServiceHealthChecker = storageService
-	var signatureVerifier *SignatureVerifier
+	var signatureVerifier *signature.Verifier
 
 	if config.Key.KeyDir != "" || config.Key.PrivKey != "" {
 		var seqInboxCaller *bridgegen.SequencerInboxCaller
@@ -246,10 +250,37 @@ func CreateDAComponentsForDaserver(
 			return nil, nil, nil, nil, nil, err
 		}
 
-		signatureVerifier, err = NewSignatureVerifierWithSeqInboxCaller(
-			seqInboxCaller,
-			config.ExtraSignatureCheckingPublicKey,
-		)
+		var allowedSignerAddresses []string
+		if config.ExtraSignatureCheckingPublicKey != "" {
+			var allowedPubkey []byte
+			if config.ExtraSignatureCheckingPublicKey[:2] == "0x" {
+				allowedPubkey, err = hex.DecodeString(config.ExtraSignatureCheckingPublicKey[2:])
+				if err != nil {
+					return nil, nil, nil, nil, nil, err
+				}
+			} else {
+				pubkeyEncoded, err := os.ReadFile(config.ExtraSignatureCheckingPublicKey)
+				if err != nil {
+					return nil, nil, nil, nil, nil, err
+				}
+				allowedPubkey, err = hex.DecodeString(string(pubkeyEncoded))
+				if err != nil {
+					return nil, nil, nil, nil, nil, err
+				}
+			}
+			allowedPubkeyDecompressed, err := crypto.DecompressPubkey(allowedPubkey)
+			if err != nil {
+				return nil, nil, nil, nil, nil, err
+			}
+			allowedSignerAddresses = []string{crypto.PubkeyToAddress(*allowedPubkeyDecompressed).String()}
+		}
+
+		signatureVerifierConfig := signature.VerifierConfig{
+			AllowedAddresses: allowedSignerAddresses,
+			AcceptSequencer:  true,
+			Dangerous:        signature.DangerousVerifierConfig{AcceptMissing: false},
+		}
+		signatureVerifier, err = signature.NewVerifier(&signatureVerifierConfig, contracts.NewAddressVerifier(seqInboxCaller))
 		if err != nil {
 			return nil, nil, nil, nil, nil, err
 		}
