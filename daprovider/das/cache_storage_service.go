@@ -7,7 +7,7 @@ import (
 	"context"
 	"fmt"
 
-	flag "github.com/spf13/pflag"
+	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/lru"
@@ -31,7 +31,7 @@ var TestCacheConfig = CacheConfig{
 	Capacity: 1_000,
 }
 
-func CacheConfigAddOptions(prefix string, f *flag.FlagSet) {
+func CacheConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultCacheConfig.Enable, "Enable local in-memory caching of sequencer batch data")
 	f.Int(prefix+".capacity", DefaultCacheConfig.Capacity, "Maximum number of entries (up to 64KB each) to store in the cache.")
 }

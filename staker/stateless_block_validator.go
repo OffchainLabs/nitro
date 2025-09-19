@@ -24,7 +24,7 @@ import (
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/validator"
-	validatorclient "github.com/offchainlabs/nitro/validator/client"
+	"github.com/offchainlabs/nitro/validator/client"
 	"github.com/offchainlabs/nitro/validator/client/redis"
 	"github.com/offchainlabs/nitro/validator/server_api"
 )
@@ -258,9 +258,9 @@ func NewStatelessBlockValidator(
 		i := i
 		confFetcher := func() *rpcclient.ClientConfig { return &config().ValidationServerConfigs[i] }
 
-		executionSpawner := validatorclient.NewExecutionClient(confFetcher, stack)
+		executionSpawner := client.NewExecutionClient(confFetcher, stack)
 		executionSpawners = append(executionSpawners, executionSpawner)
-		boldExecutionSpawners = append(boldExecutionSpawners, validatorclient.NewBOLDExecutionClient(executionSpawner))
+		boldExecutionSpawners = append(boldExecutionSpawners, client.NewBOLDExecutionClient(executionSpawner))
 	}
 
 	if len(executionSpawners) == 0 {

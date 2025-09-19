@@ -9,8 +9,8 @@ import (
 	"os/signal"
 	"syscall"
 
-	koanfjson "github.com/knadh/koanf/parsers/json"
-	flag "github.com/spf13/pflag"
+	"github.com/knadh/koanf/parsers/json"
+	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -73,7 +73,7 @@ func printSampleUsage(progname string) {
 }
 
 func parseDAProvider(args []string) (*Config, error) {
-	f := flag.NewFlagSet("daprovider", flag.ContinueOnError)
+	f := pflag.NewFlagSet("daprovider", pflag.ContinueOnError)
 	f.String("mode", string(DefaultConfig.Mode), "DA provider mode (anytrust or referenceda) - REQUIRED")
 	f.Bool("with-data-signer", DefaultConfig.WithDataSigner, "set to enable data signing when processing store requests. If enabled requires data-signer-wallet config")
 	genericconf.WalletConfigAddOptions("data-signer-wallet", f, DefaultConfig.DataSignerWallet.Pathname)
@@ -117,7 +117,7 @@ func parseDAProvider(args []string) (*Config, error) {
 			return nil, fmt.Errorf("error removing extra parameters before dump: %w", err)
 		}
 
-		c, err := k.Marshal(koanfjson.Parser())
+		c, err := k.Marshal(json.Parser())
 		if err != nil {
 			return nil, fmt.Errorf("unable to marshal config file to JSON: %w", err)
 		}
@@ -156,7 +156,7 @@ func startup() error {
 
 	handler, err := genericconf.HandlerFromLogType(config.LogType, io.Writer(os.Stderr))
 	if err != nil {
-		flag.Usage()
+		pflag.Usage()
 		return fmt.Errorf("error parsing log type when creating handler: %w", err)
 	}
 	glogger := log.NewGlogHandler(handler)

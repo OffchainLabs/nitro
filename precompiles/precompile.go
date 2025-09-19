@@ -27,7 +27,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/arbos/util"
-	pgen "github.com/offchainlabs/nitro/solgen/go/precompilesgen"
+	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
@@ -520,12 +520,12 @@ func Precompiles() map[addr]ArbosPrecompile {
 		return impl.Precompile()
 	}
 
-	insert(MakePrecompile(pgen.ArbInfoMetaData, &ArbInfo{Address: types.ArbInfoAddress}))
-	insert(MakePrecompile(pgen.ArbAddressTableMetaData, &ArbAddressTable{Address: types.ArbAddressTableAddress}))
-	insert(MakePrecompile(pgen.ArbBLSMetaData, &ArbBLS{Address: types.ArbBLSAddress}))
-	insert(MakePrecompile(pgen.ArbFunctionTableMetaData, &ArbFunctionTable{Address: types.ArbFunctionTableAddress}))
-	insert(MakePrecompile(pgen.ArbosTestMetaData, &ArbosTest{Address: types.ArbosTestAddress}))
-	ArbGasInfo := insert(MakePrecompile(pgen.ArbGasInfoMetaData, &ArbGasInfo{Address: types.ArbGasInfoAddress}))
+	insert(MakePrecompile(precompilesgen.ArbInfoMetaData, &ArbInfo{Address: types.ArbInfoAddress}))
+	insert(MakePrecompile(precompilesgen.ArbAddressTableMetaData, &ArbAddressTable{Address: types.ArbAddressTableAddress}))
+	insert(MakePrecompile(precompilesgen.ArbBLSMetaData, &ArbBLS{Address: types.ArbBLSAddress}))
+	insert(MakePrecompile(precompilesgen.ArbFunctionTableMetaData, &ArbFunctionTable{Address: types.ArbFunctionTableAddress}))
+	insert(MakePrecompile(precompilesgen.ArbosTestMetaData, &ArbosTest{Address: types.ArbosTestAddress}))
+	ArbGasInfo := insert(MakePrecompile(precompilesgen.ArbGasInfoMetaData, &ArbGasInfo{Address: types.ArbGasInfoAddress}))
 	ArbGasInfo.methodsByName["GetL1FeesAvailable"].arbosVersion = params.ArbosVersion_10
 	ArbGasInfo.methodsByName["GetL1RewardRate"].arbosVersion = params.ArbosVersion_11
 	ArbGasInfo.methodsByName["GetL1RewardRecipient"].arbosVersion = params.ArbosVersion_11
@@ -535,8 +535,8 @@ func Precompiles() map[addr]ArbosPrecompile {
 	ArbGasInfo.methodsByName["GetL1PricingUnitsSinceUpdate"].arbosVersion = params.ArbosVersion_20
 	ArbGasInfo.methodsByName["GetLastL1PricingSurplus"].arbosVersion = params.ArbosVersion_20
 	ArbGasInfo.methodsByName["GetMaxTxGasLimit"].arbosVersion = params.ArbosVersion_50
-	insert(MakePrecompile(pgen.ArbAggregatorMetaData, &ArbAggregator{Address: types.ArbAggregatorAddress}))
-	insert(MakePrecompile(pgen.ArbStatisticsMetaData, &ArbStatistics{Address: types.ArbStatisticsAddress}))
+	insert(MakePrecompile(precompilesgen.ArbAggregatorMetaData, &ArbAggregator{Address: types.ArbAggregatorAddress}))
+	insert(MakePrecompile(precompilesgen.ArbStatisticsMetaData, &ArbStatistics{Address: types.ArbStatisticsAddress}))
 
 	eventCtx := func(gasLimit uint64, err error) *Context {
 		if err != nil {
@@ -549,17 +549,17 @@ func Precompiles() map[addr]ArbosPrecompile {
 	}
 
 	ArbOwnerPublicImpl := &ArbOwnerPublic{Address: types.ArbOwnerPublicAddress}
-	ArbOwnerPublic := insert(MakePrecompile(pgen.ArbOwnerPublicMetaData, ArbOwnerPublicImpl))
+	ArbOwnerPublic := insert(MakePrecompile(precompilesgen.ArbOwnerPublicMetaData, ArbOwnerPublicImpl))
 	ArbOwnerPublic.methodsByName["GetInfraFeeAccount"].arbosVersion = params.ArbosVersion_5
 	ArbOwnerPublic.methodsByName["RectifyChainOwner"].arbosVersion = params.ArbosVersion_11
 	ArbOwnerPublic.methodsByName["GetBrotliCompressionLevel"].arbosVersion = params.ArbosVersion_20
 	ArbOwnerPublic.methodsByName["GetScheduledUpgrade"].arbosVersion = params.ArbosVersion_20
 	ArbOwnerPublic.methodsByName["IsNativeTokenOwner"].arbosVersion = params.ArbosVersion_41
 	ArbOwnerPublic.methodsByName["GetAllNativeTokenOwners"].arbosVersion = params.ArbosVersion_41
-	ArbOwnerPublic.methodsByName["GetL1CalldataPrice"].arbosVersion = params.ArbosVersion_50
+	ArbOwnerPublic.methodsByName["GetParentGasFloorPerToken"].arbosVersion = params.ArbosVersion_50
 
 	ArbWasmImpl := &ArbWasm{Address: types.ArbWasmAddress}
-	ArbWasm := insert(MakePrecompile(pgen.ArbWasmMetaData, ArbWasmImpl))
+	ArbWasm := insert(MakePrecompile(precompilesgen.ArbWasmMetaData, ArbWasmImpl))
 	ArbWasm.arbosVersion = params.ArbosVersion_Stylus
 	programs.ProgramNotWasmError = ArbWasmImpl.ProgramNotWasmError
 	programs.ProgramNotActivatedError = ArbWasmImpl.ProgramNotActivatedError
@@ -572,7 +572,7 @@ func Precompiles() map[addr]ArbosPrecompile {
 	}
 
 	ArbWasmCacheImpl := &ArbWasmCache{Address: types.ArbWasmCacheAddress}
-	ArbWasmCache := insert(MakePrecompile(pgen.ArbWasmCacheMetaData, ArbWasmCacheImpl))
+	ArbWasmCache := insert(MakePrecompile(precompilesgen.ArbWasmCacheMetaData, ArbWasmCacheImpl))
 	ArbWasmCache.arbosVersion = params.ArbosVersion_Stylus
 	for _, method := range ArbWasmCache.methods {
 		method.arbosVersion = ArbWasmCache.arbosVersion
@@ -581,7 +581,7 @@ func Precompiles() map[addr]ArbosPrecompile {
 	ArbWasmCache.methodsByName["CacheProgram"].arbosVersion = params.ArbosVersion_StylusFixes
 
 	ArbRetryableImpl := &ArbRetryableTx{Address: types.ArbRetryableTxAddress}
-	ArbRetryable := insert(MakePrecompile(pgen.ArbRetryableTxMetaData, ArbRetryableImpl))
+	ArbRetryable := insert(MakePrecompile(precompilesgen.ArbRetryableTxMetaData, ArbRetryableImpl))
 	arbos.ArbRetryableTxAddress = ArbRetryable.address
 	arbos.RedeemScheduledEventID = ArbRetryable.events["RedeemScheduled"].template.ID
 	arbos.EmitReedeemScheduledEvent = func(
@@ -599,7 +599,7 @@ func Precompiles() map[addr]ArbosPrecompile {
 		return ArbRetryableImpl.TicketCreated(context, evm, ticketId)
 	}
 
-	ArbSys := insert(MakePrecompile(pgen.ArbSysMetaData, &ArbSys{Address: types.ArbSysAddress}))
+	ArbSys := insert(MakePrecompile(precompilesgen.ArbSysMetaData, &ArbSys{Address: types.ArbSysAddress}))
 	arbos.ArbSysAddress = ArbSys.address
 	arbos.L2ToL1TransactionEventID = ArbSys.events["L2ToL1Transaction"].template.ID
 	arbos.L2ToL1TxEventID = ArbSys.events["L2ToL1Tx"].template.ID
@@ -609,7 +609,7 @@ func Precompiles() map[addr]ArbosPrecompile {
 		context := eventCtx(ArbOwnerImpl.OwnerActsGasCost(method, owner, data))
 		return ArbOwnerImpl.OwnerActs(context, evm, method, owner, data)
 	}
-	_, ArbOwner := MakePrecompile(pgen.ArbOwnerMetaData, ArbOwnerImpl)
+	_, ArbOwner := MakePrecompile(precompilesgen.ArbOwnerMetaData, ArbOwnerImpl)
 	ArbOwner.methodsByName["GetInfraFeeAccount"].arbosVersion = params.ArbosVersion_5
 	ArbOwner.methodsByName["SetInfraFeeAccount"].arbosVersion = params.ArbosVersion_5
 	ArbOwner.methodsByName["ReleaseL1PricerSurplusFunds"].arbosVersion = params.ArbosVersion_10
@@ -626,11 +626,11 @@ func Precompiles() map[addr]ArbosPrecompile {
 	}
 
 	insert(ownerOnly(ArbOwnerImpl.Address, ArbOwner, emitOwnerActs))
-	_, arbDebug := MakePrecompile(pgen.ArbDebugMetaData, &ArbDebug{Address: types.ArbDebugAddress})
+	_, arbDebug := MakePrecompile(precompilesgen.ArbDebugMetaData, &ArbDebug{Address: types.ArbDebugAddress})
 	arbDebug.methodsByName["Panic"].arbosVersion = params.ArbosVersion_Stylus
 	insert(debugOnly(arbDebug.address, arbDebug))
 
-	ArbosActs := insert(MakePrecompile(pgen.ArbosActsMetaData, &ArbosActs{Address: types.ArbosAddress}))
+	ArbosActs := insert(MakePrecompile(precompilesgen.ArbosActsMetaData, &ArbosActs{Address: types.ArbosAddress}))
 	arbos.InternalTxStartBlockMethodID = ArbosActs.GetMethodID("StartBlock")
 	arbos.InternalTxBatchPostingReportMethodID = ArbosActs.GetMethodID("BatchPostingReport")
 
@@ -644,12 +644,12 @@ func Precompiles() map[addr]ArbosPrecompile {
 	ArbOwner.methodsByName["RemoveNativeTokenOwner"].arbosVersion = params.ArbosVersion_41
 	ArbOwner.methodsByName["IsNativeTokenOwner"].arbosVersion = params.ArbosVersion_41
 	ArbOwner.methodsByName["GetAllNativeTokenOwners"].arbosVersion = params.ArbosVersion_41
-	ArbOwner.methodsByName["SetL1CalldataPrice"].arbosVersion = params.ArbosVersion_50
+	ArbOwner.methodsByName["SetParentGasFloorPerToken"].arbosVersion = params.ArbosVersion_50
 	ArbOwner.methodsByName["SetMaxBlockGasLimit"].arbosVersion = params.ArbosVersion_50
 
 	ArbOwnerPublic.methodsByName["GetNativeTokenManagementFrom"].arbosVersion = params.ArbosVersion_50
 
-	ArbNativeTokenManager := insert(MakePrecompile(pgen.ArbNativeTokenManagerMetaData, &ArbNativeTokenManager{Address: types.ArbNativeTokenManagerAddress}))
+	ArbNativeTokenManager := insert(MakePrecompile(precompilesgen.ArbNativeTokenManagerMetaData, &ArbNativeTokenManager{Address: types.ArbNativeTokenManagerAddress}))
 	ArbNativeTokenManager.arbosVersion = params.ArbosVersion_41
 	ArbNativeTokenManager.methodsByName["MintNativeToken"].arbosVersion = params.ArbosVersion_41
 	ArbNativeTokenManager.methodsByName["BurnNativeToken"].arbosVersion = params.ArbosVersion_41

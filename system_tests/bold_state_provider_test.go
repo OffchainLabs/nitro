@@ -24,11 +24,11 @@ import (
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
-	protocol "github.com/offchainlabs/nitro/bold/chain-abstraction"
+	"github.com/offchainlabs/nitro/bold/chain-abstraction"
 	"github.com/offchainlabs/nitro/bold/containers/option"
-	l2stateprovider "github.com/offchainlabs/nitro/bold/layer2-state-provider"
-	prefixproofs "github.com/offchainlabs/nitro/bold/state-commitments/prefix-proofs"
-	mockmanager "github.com/offchainlabs/nitro/bold/testing/mocks/state-provider"
+	"github.com/offchainlabs/nitro/bold/layer2-state-provider"
+	"github.com/offchainlabs/nitro/bold/state-commitments/prefix-proofs"
+	"github.com/offchainlabs/nitro/bold/testing/mocks/state-provider"
 	"github.com/offchainlabs/nitro/bold/testing/setup"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
@@ -135,7 +135,7 @@ func TestChallengeProtocolBOLD_Bisections(t *testing.T) {
 	packedProof, err := historyCommitter.PrefixProof(ctx, request, bisectionHeight)
 	Require(t, err)
 
-	dataItem, err := mockmanager.ProofArgs.Unpack(packedProof)
+	dataItem, err := stateprovider.ProofArgs.Unpack(packedProof)
 	Require(t, err)
 	preExpansion, ok := dataItem[0].([][32]byte)
 	if !ok {

@@ -9,7 +9,7 @@ import (
 	"log/slog"
 	"time"
 
-	flag "github.com/spf13/pflag"
+	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
@@ -24,7 +24,7 @@ type ConfConfig struct {
 	ReloadInterval time.Duration `koanf:"reload-interval" reload:"hot"`
 }
 
-func ConfConfigAddOptions(prefix string, f *flag.FlagSet) {
+func ConfConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".dump", ConfConfigDefault.Dump, "print out currently active configuration file")
 	f.String(prefix+".env-prefix", ConfConfigDefault.EnvPrefix, "environment variables with given prefix will be loaded as configuration values")
 	f.StringSlice(prefix+".file", ConfConfigDefault.File, "name of configuration file")
@@ -50,7 +50,7 @@ type S3Config struct {
 	SecretKey string `koanf:"secret-key"`
 }
 
-func S3ConfigAddOptions(prefix string, f *flag.FlagSet) {
+func S3ConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".access-key", DefaultS3Config.AccessKey, "S3 access key")
 	f.String(prefix+".bucket", DefaultS3Config.Bucket, "S3 bucket")
 	f.String(prefix+".object-key", DefaultS3Config.ObjectKey, "S3 object key")
@@ -97,7 +97,7 @@ var DefaultFileLoggingConfig = FileLoggingConfig{
 	BufSize:    512,
 }
 
-func FileLoggingConfigAddOptions(prefix string, f *flag.FlagSet) {
+func FileLoggingConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultFileLoggingConfig.Enable, "enable logging to file")
 	f.String(prefix+".file", DefaultFileLoggingConfig.File, "path to log file")
 	f.Int(prefix+".max-size", DefaultFileLoggingConfig.MaxSize, "log file size in Mb that will trigger log file rotation (0 = trigger disabled)")
@@ -123,7 +123,7 @@ func (c *RpcConfig) Apply(stackConf *node.Config) {
 	stackConf.BatchRequestLimit = c.BatchRequestLimit
 }
 
-func RpcConfigAddOptions(prefix string, f *flag.FlagSet) {
+func RpcConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Int(prefix+".max-batch-response-size", DefaultRpcConfig.MaxBatchResponseSize, "the maximum response size for a JSON-RPC request measured in bytes (0 means no limit)")
 	f.Int(prefix+".batch-request-limit", DefaultRpcConfig.BatchRequestLimit, "the maximum number of requests in a batch (0 means no limit)")
 }

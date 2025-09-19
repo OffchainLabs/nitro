@@ -300,7 +300,7 @@ func main() {
 			panic(fmt.Sprintf("Error reading from inbox multiplexer: %v", err.Error()))
 		}
 
-		err = message.Message.FillInBatchGasCost(batchFetcher)
+		err = message.Message.FillInBatchGasFields(batchFetcher)
 		if err != nil {
 			message.Message = arbostypes.InvalidL1Message
 		}

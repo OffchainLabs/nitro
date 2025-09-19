@@ -13,7 +13,7 @@ import (
 	"os"
 	"strings"
 
-	flag "github.com/spf13/pflag"
+	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -51,7 +51,7 @@ var DefaultServerConfig = ServerConfig{
 	RPCServerBodyLimit: genericconf.HTTPServerBodyLimitDefault,
 }
 
-func ServerConfigAddOptions(prefix string, f *flag.FlagSet) {
+func ServerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".addr", DefaultServerConfig.Addr, "JSON rpc server listening interface")
 	f.Uint64(prefix+".port", DefaultServerConfig.Port, "JSON rpc server listening port")
 	f.String(prefix+".jwtsecret", DefaultServerConfig.JWTSecret, "path to file with jwtsecret for validation")

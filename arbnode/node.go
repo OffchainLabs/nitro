@@ -14,7 +14,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	flag "github.com/spf13/pflag"
+	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -48,9 +48,9 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/staker"
-	boldstaker "github.com/offchainlabs/nitro/staker/bold"
-	legacystaker "github.com/offchainlabs/nitro/staker/legacy"
-	multiprotocolstaker "github.com/offchainlabs/nitro/staker/multi_protocol"
+	"github.com/offchainlabs/nitro/staker/bold"
+	"github.com/offchainlabs/nitro/staker/legacy"
+	"github.com/offchainlabs/nitro/staker/multi_protocol"
 	"github.com/offchainlabs/nitro/staker/validatorwallet"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/contracts"
@@ -67,7 +67,7 @@ type DAConfig struct {
 	ExternalProvider daclient.ClientConfig `koanf:"external-provider"`
 }
 
-func DAConfigAddOptions(prefix string, f *flag.FlagSet) {
+func DAConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".mode", "", "DA mode (anytrust, referenceda, or external)")
 	referenceda.ConfigAddOptions(prefix+".referenceda", f)
 	daclient.ClientConfigAddOptions(prefix+".external-provider", f)
@@ -83,7 +83,7 @@ type Config struct {
 	BlockValidator           staker.BlockValidatorConfig    `koanf:"block-validator" reload:"hot"`
 	Feed                     broadcastclient.FeedConfig     `koanf:"feed" reload:"hot"`
 	Staker                   legacystaker.L1ValidatorConfig `koanf:"staker" reload:"hot"`
-	Bold                     boldstaker.BoldConfig          `koanf:"bold"`
+	Bold                     bold.BoldConfig                `koanf:"bold"`
 	SeqCoordinator           SeqCoordinatorConfig           `koanf:"seq-coordinator"`
 	DataAvailability         das.DataAvailabilityConfig     `koanf:"data-availability"`
 	DA                       DAConfig                       `koanf:"da"`
@@ -146,7 +146,7 @@ func (c *Config) ValidatorRequired() bool {
 	return false
 }
 
-func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feedOutputEnable bool) {
+func ConfigAddOptions(prefix string, f *pflag.FlagSet, feedInputEnable bool, feedOutputEnable bool) {
 	f.Bool(prefix+".sequencer", ConfigDefault.Sequencer, "enable sequencer")
 	headerreader.AddOptions(prefix+".parent-chain-reader", f)
 	InboxReaderConfigAddOptions(prefix+".inbox-reader", f)
@@ -156,7 +156,7 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feed
 	staker.BlockValidatorConfigAddOptions(prefix+".block-validator", f)
 	broadcastclient.FeedConfigAddOptions(prefix+".feed", f, feedInputEnable, feedOutputEnable)
 	legacystaker.L1ValidatorConfigAddOptions(prefix+".staker", f)
-	boldstaker.BoldConfigAddOptions(prefix+".bold", f)
+	bold.BoldConfigAddOptions(prefix+".bold", f)
 	SeqCoordinatorConfigAddOptions(prefix+".seq-coordinator", f)
 	das.DataAvailabilityConfigAddNodeOptions(prefix+".data-availability", f)
 	DAConfigAddOptions(prefix+".da", f)
@@ -179,7 +179,7 @@ var ConfigDefault = Config{
 	BlockValidator:           staker.DefaultBlockValidatorConfig,
 	Feed:                     broadcastclient.FeedConfigDefault,
 	Staker:                   legacystaker.DefaultL1ValidatorConfig,
-	Bold:                     boldstaker.DefaultBoldConfig,
+	Bold:                     bold.DefaultBoldConfig,
 	SeqCoordinator:           DefaultSeqCoordinatorConfig,
 	DataAvailability:         das.DefaultDataAvailabilityConfig,
 	DA:                       DAConfig{Mode: "", ReferenceDA: referenceda.DefaultConfig, ExternalProvider: daclient.DefaultClientConfig},
@@ -259,7 +259,7 @@ var TestDangerousConfig = DangerousConfig{
 	DisableBlobReader:      true,
 }
 
-func DangerousConfigAddOptions(prefix string, f *flag.FlagSet) {
+func DangerousConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".no-l1-listener", DefaultDangerousConfig.NoL1Listener, "DANGEROUS! disables listening to L1. To be used in test nodes only")
 	f.Bool(prefix+".no-sequencer-coordinator", DefaultDangerousConfig.NoSequencerCoordinator, "DANGEROUS! allows sequencing without sequencer-coordinator")
 	f.Bool(prefix+".disable-blob-reader", DefaultDangerousConfig.DisableBlobReader, "DANGEROUS! disables the EIP-4844 blob reader, which is necessary to read batches")

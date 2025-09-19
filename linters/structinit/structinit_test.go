@@ -54,8 +54,8 @@ func getModuleRoot(t *testing.T) string {
 	if err != nil {
 		t.Fatalf("Failed to get module root directoryy: %v", err)
 	}
-
-	return strings.TrimSpace(out.String())
+	parts := strings.Split(out.String(), "\n")
+	return strings.TrimSpace(parts[0])
 }
 
 func extractErrorMessages(analyzerResult *analysistest.Result) []string {

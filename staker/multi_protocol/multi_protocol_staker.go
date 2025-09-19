@@ -13,10 +13,10 @@ import (
 
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
-	boldrollup "github.com/offchainlabs/nitro/solgen/go/rollupgen"
+	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/staker"
-	boldstaker "github.com/offchainlabs/nitro/staker/bold"
-	legacystaker "github.com/offchainlabs/nitro/staker/legacy"
+	"github.com/offchainlabs/nitro/staker/bold"
+	"github.com/offchainlabs/nitro/staker/legacy"
 	"github.com/offchainlabs/nitro/staker/txbuilder"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
@@ -38,7 +38,7 @@ type MultiProtocolStaker struct {
 	stopwaiter.StopWaiter
 	bridge                  *bridgegen.IBridge
 	oldStaker               *legacystaker.Staker
-	boldStaker              *boldstaker.BOLDStaker
+	boldStaker              *bold.BOLDStaker
 	legacyConfig            legacystaker.L1ValidatorConfigFetcher
 	stakedNotifiers         []legacystaker.LatestStakedNotifier
 	confirmedNotifiers      []legacystaker.LatestConfirmedNotifier
@@ -47,7 +47,7 @@ type MultiProtocolStaker struct {
 	l1Reader                *headerreader.HeaderReader
 	blockValidator          *staker.BlockValidator
 	callOpts                bind.CallOpts
-	boldConfig              *boldstaker.BoldConfig
+	boldConfig              *bold.BoldConfig
 	stakeTokenAddress       common.Address
 	stack                   *node.Node
 	inboxTracker            staker.InboxTrackerInterface
@@ -63,7 +63,7 @@ func NewMultiProtocolStaker(
 	wallet legacystaker.ValidatorWalletInterface,
 	callOpts bind.CallOpts,
 	legacyConfig legacystaker.L1ValidatorConfigFetcher,
-	boldConfig *boldstaker.BoldConfig,
+	boldConfig *bold.BoldConfig,
 	blockValidator *staker.BlockValidator,
 	statelessBlockValidator *staker.StatelessBlockValidator,
 	stakedNotifiers []legacystaker.LatestStakedNotifier,
@@ -194,7 +194,7 @@ func IsBoldActive(callOpts *bind.CallOpts, bridge *bridgegen.IBridge, l1Backend 
 	if err != nil {
 		return false, addr, err
 	}
-	userLogic, err := boldrollup.NewRollupUserLogic(rollupAddress, l1Backend)
+	userLogic, err := rollupgen.NewRollupUserLogic(rollupAddress, l1Backend)
 	if err != nil {
 		return false, addr, err
 	}
@@ -251,7 +251,7 @@ func (m *MultiProtocolStaker) setupBoldStaker(
 	if err != nil {
 		return err
 	}
-	boldStaker, err := boldstaker.NewBOLDStaker(
+	boldStaker, err := bold.NewBOLDStaker(
 		ctx,
 		m.stack,
 		rollupAddress,
@@ -261,6 +261,7 @@ func (m *MultiProtocolStaker) setupBoldStaker(
 		m.blockValidator,
 		m.statelessBlockValidator,
 		m.boldConfig,
+		m.legacyConfig().StrategyType(),
 		m.wallet.DataPoster(),
 		m.wallet,
 		m.stakedNotifiers,
