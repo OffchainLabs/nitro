@@ -7,7 +7,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
-	"encoding/hex"
 	"net"
 	"sync"
 	"testing"
@@ -61,20 +60,17 @@ func testRpcImpl(t *testing.T, size, times int, concurrent bool) {
 	testPrivateKey, err := crypto.GenerateKey()
 	testhelpers.RequireImpl(t, err)
 
-	signatureVerifier, err := NewSignatureVerifierWithSeqInboxCaller(nil, "0x"+hex.EncodeToString(crypto.FromECDSAPub(&testPrivateKey.PublicKey)))
-	testhelpers.RequireImpl(t, err)
-
 	signatureVerifierConfig := signature.VerifierConfig{
 		AllowedAddresses: []string{crypto.PubkeyToAddress(testPrivateKey.PublicKey).Hex()},
 		AcceptSequencer:  false,
 		Dangerous:        signature.DangerousVerifierConfig{AcceptMissing: false},
 	}
+	signatureVerifier, err := signature.NewVerifier(&signatureVerifierConfig, nil)
 
-	signatureVerifier1, err := signature.NewVerifier(&signatureVerifierConfig, nil)
 	testhelpers.RequireImpl(t, err)
 	signer := signature.DataSignerFromPrivateKey(testPrivateKey)
 
-	dasServer, err := StartDASRPCServerOnListener(ctx, lis, genericconf.HTTPServerTimeoutConfigDefault, genericconf.HTTPServerBodyLimitDefault, storageService, localDas, storageService, signatureVerifier, signatureVerifier1)
+	dasServer, err := StartDASRPCServerOnListener(ctx, lis, genericconf.HTTPServerTimeoutConfigDefault, genericconf.HTTPServerBodyLimitDefault, storageService, localDas, storageService, signatureVerifier)
 
 	defer func() {
 		if err := dasServer.Shutdown(ctx); err != nil {
