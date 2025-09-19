@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/ethereum/go-ethereum/crypto"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -155,8 +156,7 @@ func (ds *DataStreamer) finalizeStream(ctx context.Context, finalReqSig []byte, 
 }
 
 func (ds *DataStreamer) generateStartReqSignature(params streamParams) ([]byte, error) {
-	//return ds.dataSigner(crypto.Keccak256(TEMP_flattenDataForSigning([]byte{}, params.timestamp, params.nChunks, ds.chunkSize, params.dataLen, params.timeout)))
-	return applyDasSigner(ds.dataSigner, []byte{}, params.timestamp, params.nChunks, ds.chunkSize, params.dataLen, params.timeout)
+	return ds.dataSigner(crypto.Keccak256(TEMP_flattenDataForSigning([]byte{}, params.timestamp, params.nChunks, ds.chunkSize, params.dataLen, params.timeout)))
 }
 
 func (ds *DataStreamer) generateChunkReqSignature(chunkData []byte, batchId, chunkId uint64) ([]byte, error) {
@@ -165,8 +165,7 @@ func (ds *DataStreamer) generateChunkReqSignature(chunkData []byte, batchId, chu
 }
 
 func (ds *DataStreamer) generateFinalReqSignature(batchId uint64) ([]byte, error) {
-	return applyDasSigner(ds.dataSigner, []byte{}, uint64(batchId))
-	//return ds.dataSigner(crypto.Keccak256(TEMP_flattenDataForSigning([]byte{}, batchId)))
+	return ds.dataSigner(crypto.Keccak256(TEMP_flattenDataForSigning([]byte{}, batchId)))
 }
 
 func TEMP_flattenDataForSigning(data []byte, extras ...uint64) []byte {

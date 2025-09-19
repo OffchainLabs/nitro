@@ -43,9 +43,8 @@ func NewDataStreamReceiver(signatureVerifier *SignatureVerifier, signatureVerifi
 }
 
 func (dsr *DataStreamReceiver) StartReceiving(ctx context.Context, timestamp, nChunks, chunkSize, totalSize, timeout uint64, sig []byte) (MessageId, error) {
-	//signedData := TEMP_flattenDataForSigning([]byte{}, timestamp, nChunks, chunkSize, totalSize, timeout)
-	//if err := dsr.signatureVerifier.VerifyData(ctx, signature, signedData); err != nil {
-	if err := dsr.signatureVerifier.verify(ctx, []byte{}, sig, timestamp, nChunks, chunkSize, totalSize, timeout); err != nil {
+	signedData := TEMP_flattenDataForSigning([]byte{}, timestamp, nChunks, chunkSize, totalSize, timeout)
+	if err := dsr.signatureVerifier1.VerifyData(ctx, sig, signedData); err != nil {
 		return 0, err
 	}
 
@@ -68,9 +67,8 @@ func (dsr *DataStreamReceiver) ReceiveChunk(ctx context.Context, messageId Messa
 }
 
 func (dsr *DataStreamReceiver) FinalizeReceiving(ctx context.Context, messageId MessageId, sig hexutil.Bytes) ([]byte, uint64, time.Time, error) {
-	//signedData := TEMP_flattenDataForSigning([]byte{}, uint64(messageId))
-	//if err := dsr.signatureVerifier.VerifyData(ctx, sig, signedData); err != nil {
-	if err := dsr.signatureVerifier.verify(ctx, []byte{}, sig, uint64(messageId)); err != nil {
+	signedData := TEMP_flattenDataForSigning([]byte{}, uint64(messageId))
+	if err := dsr.signatureVerifier1.VerifyData(ctx, sig, signedData); err != nil {
 		return nil, 0, time.Time{}, err
 	}
 	return dsr.messageStore.finalizeMessage(messageId)
