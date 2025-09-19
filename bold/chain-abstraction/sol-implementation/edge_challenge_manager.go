@@ -20,9 +20,9 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/metrics"
 
-	protocol "github.com/offchainlabs/nitro/bold/chain-abstraction"
-	challengetree "github.com/offchainlabs/nitro/bold/challenge-manager/challenge-tree"
-	edgetracker "github.com/offchainlabs/nitro/bold/challenge-manager/edge-tracker"
+	"github.com/offchainlabs/nitro/bold/chain-abstraction"
+	"github.com/offchainlabs/nitro/bold/challenge-manager/challenge-tree"
+	"github.com/offchainlabs/nitro/bold/challenge-manager/edge-tracker"
 	"github.com/offchainlabs/nitro/bold/containers"
 	"github.com/offchainlabs/nitro/bold/containers/option"
 	"github.com/offchainlabs/nitro/bold/state-commitments/history"

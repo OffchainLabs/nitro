@@ -12,7 +12,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 
-	protocol "github.com/offchainlabs/nitro/bold/chain-abstraction"
+	"github.com/offchainlabs/nitro/bold/chain-abstraction"
 	"github.com/offchainlabs/nitro/bold/containers/option"
 	"github.com/offchainlabs/nitro/solgen/go/challengeV2gen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
