@@ -157,18 +157,18 @@ func (ds *DataStreamer) finalizeStream(ctx context.Context, finalReqSig []byte, 
 }
 
 func (ds *DataStreamer) generateStartReqSignature(params streamParams) ([]byte, error) {
-	return ds.dataSigner(crypto.Keccak256(TEMP_flattenDataForSigning([]byte{}, params.timestamp, params.nChunks, ds.chunkSize, params.dataLen, params.timeout)))
+	return ds.dataSigner(crypto.Keccak256(flattenDataForSigning([]byte{}, params.timestamp, params.nChunks, ds.chunkSize, params.dataLen, params.timeout)))
 }
 
 func (ds *DataStreamer) generateChunkReqSignature(chunkData []byte, batchId, chunkId uint64) ([]byte, error) {
-	return ds.dataSigner(crypto.Keccak256(TEMP_flattenDataForSigning(chunkData, batchId, chunkId)))
+	return ds.dataSigner(crypto.Keccak256(flattenDataForSigning(chunkData, batchId, chunkId)))
 }
 
 func (ds *DataStreamer) generateFinalReqSignature(batchId uint64) ([]byte, error) {
-	return ds.dataSigner(crypto.Keccak256(TEMP_flattenDataForSigning([]byte{}, batchId)))
+	return ds.dataSigner(crypto.Keccak256(flattenDataForSigning([]byte{}, batchId)))
 }
 
-func TEMP_flattenDataForSigning(data []byte, extras ...uint64) []byte {
+func flattenDataForSigning(data []byte, extras ...uint64) []byte {
 	var bufferForExtras []byte
 	for _, field := range extras {
 		bufferForExtras = binary.BigEndian.AppendUint64(bufferForExtras, field)

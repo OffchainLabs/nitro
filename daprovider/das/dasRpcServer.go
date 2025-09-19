@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2025, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package das
@@ -76,7 +76,7 @@ func StartDASRPCServerOnListener(ctx context.Context, listener net.Listener, rpc
 		daWriter:           daWriter,
 		daHealthChecker:    daHealthChecker,
 		signatureVerifier:  signatureVerifier,
-		dataStreamReceiver: NewDataStreamReceiver(signatureVerifier, signatureVerifier1, defaultMaxPendingMessages, defaultMessageCollectionExpiry),
+		dataStreamReceiver: NewDataStreamReceiver(signatureVerifier1, defaultMaxPendingMessages, defaultMessageCollectionExpiry),
 	})
 	if err != nil {
 		return nil, err
