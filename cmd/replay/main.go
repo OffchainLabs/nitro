@@ -166,6 +166,53 @@ func (r *BlobPreimageReader) Initialize(ctx context.Context) error {
 	return nil
 }
 
+type DACertificatePreimageReader struct {
+}
+
+func (r *DACertificatePreimageReader) IsValidHeaderByte(ctx context.Context, headerByte byte) bool {
+	return daprovider.IsDACertificateMessageHeaderByte(headerByte)
+}
+
+func (r *DACertificatePreimageReader) RecoverPayloadFromBatch(
+	ctx context.Context,
+	batchNum uint64,
+	batchBlockHash common.Hash,
+	sequencerMsg []byte,
+	preimages daprovider.PreimagesMap,
+	validateSeqMsg bool,
+) ([]byte, daprovider.PreimagesMap, error) {
+	if len(sequencerMsg) <= 40 {
+		return nil, nil, fmt.Errorf("sequencer message too small")
+	}
+	certificate := sequencerMsg[40:]
+
+	// Hash the entire sequencer message to get the preimage key
+	customDAPreimageHash := crypto.Keccak256Hash(certificate)
+
+	// Validate the certificate before trying to read it
+	if !wavmio.ValidateCertificate(arbutil.DACertificatePreimageType, customDAPreimageHash) {
+		// Preimage is not available - treat as invalid batch
+		log.Info("DACertificate preimage validation failed, treating as invalid batch",
+			"batchNum", batchNum,
+			"hash", customDAPreimageHash.Hex())
+		return []byte{}, preimages, nil
+	}
+
+	// Read the preimage (which contains the actual batch data)
+	payload, err := wavmio.ResolveTypedPreimage(arbutil.DACertificatePreimageType, customDAPreimageHash)
+	if err != nil {
+		// This should not happen after successful validation
+		panic(fmt.Errorf("failed to resolve DACertificate preimage after validation: %w", err))
+	}
+
+	log.Info("DACertificate batch recovered",
+		"batchNum", batchNum,
+		"hash", customDAPreimageHash.Hex(),
+		"payloadSize", len(payload))
+
+	return payload, preimages, nil
+}
+
 // To generate:
 // key, _ := crypto.HexToECDSA("0000000000000000000000000000000000000000000000000000000000000001")
 // sig, _ := crypto.Sign(make([]byte, 32), key)
@@ -245,6 +292,7 @@ func main() {
 			dapReaders = append(dapReaders, dasutil.NewReaderForDAS(dasReader, dasKeysetFetcher))
 		}
 		dapReaders = append(dapReaders, daprovider.NewReaderForBlobReader(&BlobPreimageReader{}))
+		dapReaders = append(dapReaders, &DACertificatePreimageReader{})
 		inboxMultiplexer := arbstate.NewInboxMultiplexer(backend, delayedMessagesRead, dapReaders, keysetValidationMode)
 		ctx := context.Background()
 		message, err := inboxMultiplexer.Pop(ctx)

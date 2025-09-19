@@ -29,6 +29,7 @@ import (
 	"github.com/offchainlabs/nitro/bold/challenge-manager/types"
 	"github.com/offchainlabs/nitro/bold/layer2-state-provider"
 	"github.com/offchainlabs/nitro/bold/util"
+	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/solgen/go/challengeV2gen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/staker"
@@ -37,6 +38,7 @@ import (
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
+	"github.com/offchainlabs/nitro/validator/server_arb"
 )
 
 var (
@@ -223,13 +225,30 @@ func NewBOLDStaker(
 	inboxTracker staker.InboxTrackerInterface,
 	inboxStreamer staker.TransactionStreamerInterface,
 	inboxReader staker.InboxReaderInterface,
+	dapValidator daprovider.Validator,
 	fatalErr chan<- error,
 ) (*BOLDStaker, error) {
 	if err := config.Validate(); err != nil {
 		return nil, err
 	}
+
+	// Create proof enhancer if validator is available
+	var proofEnhancer server_arb.ProofEnhancer
+	if dapValidator != nil {
+		enhancerManager := server_arb.NewProofEnhancementManager()
+		enhancerManager.RegisterEnhancer(
+			server_arb.MarkerCustomDAReadPreimage,
+			server_arb.NewReadPreimageProofEnhancer(dapValidator, inboxTracker, inboxReader),
+		)
+		enhancerManager.RegisterEnhancer(
+			server_arb.MarkerCustomDAValidateCertificate,
+			server_arb.NewValidateCertificateProofEnhancer(dapValidator, inboxTracker, inboxReader),
+		)
+		proofEnhancer = enhancerManager
+	}
+
 	wrappedClient := util.NewBackendWrapper(l1Reader.Client(), rpc.LatestBlockNumber)
-	manager, err := newBOLDChallengeManager(ctx, stack, rollupAddress, txOpts, l1Reader, wrappedClient, blockValidator, statelessBlockValidator, config, strategy, dataPoster, inboxTracker, inboxStreamer, inboxReader)
+	manager, err := newBOLDChallengeManager(ctx, stack, rollupAddress, txOpts, l1Reader, wrappedClient, blockValidator, statelessBlockValidator, config, strategy, dataPoster, inboxTracker, inboxStreamer, inboxReader, proofEnhancer)
 	if err != nil {
 		return nil, err
 	}
@@ -462,6 +481,7 @@ func newBOLDChallengeManager(
 	inboxTracker staker.InboxTrackerInterface,
 	inboxStreamer staker.TransactionStreamerInterface,
 	inboxReader staker.InboxReaderInterface,
+	proofEnhancer server_arb.ProofEnhancer,
 ) (*challengemanager.Manager, error) {
 	// Initializes the BOLD contract bindings and the assertion chain abstraction.
 	rollupBindings, err := rollupgen.NewRollupUserLogic(rollupAddress, client)
@@ -555,6 +575,7 @@ func newBOLDChallengeManager(
 		inboxTracker,
 		inboxStreamer,
 		inboxReader,
+		proofEnhancer,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("could not create state manager: %w", err)

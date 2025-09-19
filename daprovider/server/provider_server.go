@@ -1,4 +1,7 @@
-package dasserver
+// Copyright 2024-2025, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
+
+package dapserver
 
 import (
 	"context"
@@ -9,29 +12,25 @@ import (
 	"net/http"
 	"os"
 	"strings"
-	"time"
 
 	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
-	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/rpc"
 
+	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/daprovider/daclient"
-	"github.com/offchainlabs/nitro/daprovider/das"
-	"github.com/offchainlabs/nitro/daprovider/das/dasutil"
-	"github.com/offchainlabs/nitro/util/headerreader"
-	"github.com/offchainlabs/nitro/util/signature"
 )
 
 type Server struct {
-	reader daprovider.Reader
-	writer daprovider.Writer
+	reader    daprovider.Reader
+	writer    daprovider.Writer
+	validator daprovider.Validator
 }
 
 type ServerConfig struct {
@@ -39,7 +38,6 @@ type ServerConfig struct {
 	Port               uint64                              `koanf:"port"`
 	JWTSecret          string                              `koanf:"jwtsecret"`
 	EnableDAWriter     bool                                `koanf:"enable-da-writer"`
-	DataAvailability   das.DataAvailabilityConfig          `koanf:"data-availability"`
 	ServerTimeouts     genericconf.HTTPServerTimeoutConfig `koanf:"server-timeouts"`
 	RPCServerBodyLimit int                                 `koanf:"rpc-server-body-limit"`
 }
@@ -49,7 +47,6 @@ var DefaultServerConfig = ServerConfig{
 	Port:               9880,
 	JWTSecret:          "",
 	EnableDAWriter:     false,
-	DataAvailability:   das.DefaultDataAvailabilityConfig,
 	ServerTimeouts:     genericconf.HTTPServerTimeoutConfigDefault,
 	RPCServerBodyLimit: genericconf.HTTPServerBodyLimitDefault,
 }
@@ -60,7 +57,6 @@ func ServerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".jwtsecret", DefaultServerConfig.JWTSecret, "path to file with jwtsecret for validation")
 	f.Bool(prefix+".enable-da-writer", DefaultServerConfig.EnableDAWriter, "implies if the das server supports daprovider's writer interface")
 	f.Int(prefix+".rpc-server-body-limit", DefaultServerConfig.RPCServerBodyLimit, "HTTP-RPC server maximum request body size in bytes; the default (0) uses geth's 5MB limit")
-	das.DataAvailabilityConfigAddNodeOptions(prefix+".data-availability", f)
 	genericconf.HTTPServerTimeoutConfigAddOptions(prefix+".server-timeouts", f)
 }
 
@@ -77,63 +73,37 @@ func fetchJWTSecret(fileName string) ([]byte, error) {
 	return nil, errors.New("JWT secret file not found")
 }
 
-func NewServer(ctx context.Context, config *ServerConfig, dataSigner signature.DataSignerFunc, l1Client *ethclient.Client, l1Reader *headerreader.HeaderReader, sequencerInboxAddr common.Address) (*http.Server, func(), error) {
-	var err error
-	var daWriter dasutil.DASWriter
-	var daReader dasutil.DASReader
-	var dasKeysetFetcher *das.KeysetFetcher
-	var dasLifecycleManager *das.LifecycleManager
-	if config.EnableDAWriter {
-		daWriter, daReader, dasKeysetFetcher, dasLifecycleManager, err = das.CreateDAReaderAndWriter(ctx, &config.DataAvailability, dataSigner, l1Client, sequencerInboxAddr)
-		if err != nil {
-			return nil, nil, err
-		}
-	} else {
-		daReader, dasKeysetFetcher, dasLifecycleManager, err = das.CreateDAReader(ctx, &config.DataAvailability, l1Reader, &sequencerInboxAddr)
-		if err != nil {
-			return nil, nil, err
-		}
-	}
-
-	daReader = das.NewReaderTimeoutWrapper(daReader, config.DataAvailability.RequestTimeout)
-	if config.DataAvailability.PanicOnError {
-		if daWriter != nil {
-			daWriter = das.NewWriterPanicWrapper(daWriter)
-		}
-		daReader = das.NewReaderPanicWrapper(daReader)
-	}
-
+// NewServerWithDAPProvider creates a new server with pre-created reader/writer/validator components
+func NewServerWithDAPProvider(ctx context.Context, config *ServerConfig, reader daprovider.Reader, writer daprovider.Writer, validator daprovider.Validator) (*http.Server, error) {
 	listener, err := net.Listen("tcp", fmt.Sprintf("%s:%d", config.Addr, config.Port))
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	rpcServer := rpc.NewServer()
 	if config.RPCServerBodyLimit > 0 {
 		rpcServer.SetHTTPBodyLimit(config.RPCServerBodyLimit)
 	}
-	var writer daprovider.Writer
-	if daWriter != nil {
-		writer = dasutil.NewWriterForDAS(daWriter)
-	}
+
 	server := &Server{
-		reader: dasutil.NewReaderForDAS(daReader, dasKeysetFetcher),
-		writer: writer,
+		reader:    reader,
+		writer:    writer,
+		validator: validator,
 	}
 	if err = rpcServer.RegisterName("daprovider", server); err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	addr, ok := listener.Addr().(*net.TCPAddr)
 	if !ok {
-		return nil, nil, errors.New("failed getting dasserver address from listener")
+		return nil, errors.New("failed getting provider server address from listener")
 	}
 
 	var handler http.Handler
 	if config.JWTSecret != "" {
 		jwt, err := fetchJWTSecret(config.JWTSecret)
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed creating new dasserver: %w", err)
+			return nil, fmt.Errorf("failed creating new provider server: %w", err)
 		}
 		handler = node.NewHTTPHandlerStack(rpcServer, nil, nil, jwt)
 	} else {
@@ -151,7 +121,7 @@ func NewServer(ctx context.Context, config *ServerConfig, dataSigner signature.D
 	go func() {
 		if err := srv.Serve(listener); err != nil &&
 			!errors.Is(err, http.ErrServerClosed) {
-			log.Error("das-server's Serve method returned a non http.ErrServerClosed error", "err", err)
+			log.Error("provider server's Serve method returned a non http.ErrServerClosed error", "err", err)
 		}
 	}()
 
@@ -160,11 +130,7 @@ func NewServer(ctx context.Context, config *ServerConfig, dataSigner signature.D
 		_ = srv.Shutdown(context.Background())
 	}()
 
-	return srv, func() {
-		if dasLifecycleManager != nil {
-			dasLifecycleManager.StopAndWaitUntil(2 * time.Second)
-		}
-	}, nil
+	return srv, nil
 }
 
 func (s *Server) IsValidHeaderByte(ctx context.Context, headerByte byte) (*daclient.IsValidHeaderByteResult, error) {
@@ -200,4 +166,28 @@ func (s *Server) Store(
 		return nil, err
 	}
 	return &daclient.StoreResult{SerializedDACert: serializedDACert}, nil
+}
+
+func (s *Server) GenerateProof(ctx context.Context, preimageType hexutil.Uint, certHash common.Hash, offset hexutil.Uint64, certificate hexutil.Bytes) (*daclient.GenerateProofResult, error) {
+	if s.validator == nil {
+		return nil, errors.New("validator not available")
+	}
+	// #nosec G115
+	proof, err := s.validator.GenerateProof(ctx, arbutil.PreimageType(uint8(preimageType)), certHash, uint64(offset), certificate)
+	if err != nil {
+		return nil, err
+	}
+	return &daclient.GenerateProofResult{Proof: hexutil.Bytes(proof)}, nil
+}
+
+func (s *Server) GenerateCertificateValidityProof(ctx context.Context, preimageType hexutil.Uint, certificate hexutil.Bytes) (*daclient.GenerateCertificateValidityProofResult, error) {
+	if s.validator == nil {
+		return nil, errors.New("validator not available")
+	}
+	// #nosec G115
+	proof, err := s.validator.GenerateCertificateValidityProof(ctx, arbutil.PreimageType(uint8(preimageType)), certificate)
+	if err != nil {
+		return nil, err
+	}
+	return &daclient.GenerateCertificateValidityProofResult{Proof: hexutil.Bytes(proof)}, nil
 }
