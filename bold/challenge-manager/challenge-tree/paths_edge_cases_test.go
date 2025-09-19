@@ -6,7 +6,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	protocol "github.com/offchainlabs/nitro/bold/chain-abstraction"
+	"github.com/offchainlabs/nitro/bold/chain-abstraction"
 	"github.com/offchainlabs/nitro/bold/challenge-manager/challenge-tree/mock"
 	"github.com/offchainlabs/nitro/bold/containers/threadsafe"
 )

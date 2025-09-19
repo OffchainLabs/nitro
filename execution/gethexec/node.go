@@ -10,7 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	flag "github.com/spf13/pflag"
+	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/common"
@@ -81,7 +81,7 @@ var DefaultStylusTargetConfig = StylusTargetConfig{
 	ExtraArchs: []string{string(rawdb.TargetWavm)},
 }
 
-func StylusTargetConfigAddOptions(prefix string, f *flag.FlagSet) {
+func StylusTargetConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".arm64", DefaultStylusTargetConfig.Arm64, "stylus programs compilation target for arm64 linux")
 	f.String(prefix+".amd64", DefaultStylusTargetConfig.Amd64, "stylus programs compilation target for amd64 linux")
 	f.String(prefix+".host", DefaultStylusTargetConfig.Host, "stylus programs compilation target for system other than 64-bit ARM or 64-bit x86")
@@ -102,7 +102,7 @@ var DefaultTxIndexerConfig = TxIndexerConfig{
 	MinBatchDelay: time.Second,
 }
 
-func TxIndexerConfigAddOptions(prefix string, f *flag.FlagSet) {
+func TxIndexerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultTxIndexerConfig.Enable, "enables transaction indexer")
 	f.Uint64(prefix+".tx-lookup-limit", DefaultTxIndexerConfig.TxLookupLimit, "retain the ability to lookup transactions by hash for the past N blocks (0 = all blocks)")
 	f.Int(prefix+".threads", DefaultTxIndexerConfig.Threads, "number of threads used to RLP decode blocks during indexing/unindexing of historical transactions")
@@ -158,7 +158,7 @@ func (c *Config) Validate() error {
 	return nil
 }
 
-func ConfigAddOptions(prefix string, f *flag.FlagSet) {
+func ConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	arbitrum.ConfigAddOptions(prefix+".rpc", f)
 	TxIndexerConfigAddOptions(prefix+".tx-indexer", f)
 	SequencerConfigAddOptions(prefix+".sequencer", f)
@@ -188,7 +188,7 @@ var DefaultLiveTracingConfig = LiveTracingConfig{
 	JSONConfig: "{}",
 }
 
-func LiveTracingConfigAddOptions(prefix string, f *flag.FlagSet) {
+func LiveTracingConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".tracer-name", DefaultLiveTracingConfig.TracerName, "(experimental) Name of tracer which should record internal VM operations (costly)")
 	f.String(prefix+".json-config", DefaultLiveTracingConfig.JSONConfig, "(experimental) Tracer configuration in JSON format")
 }

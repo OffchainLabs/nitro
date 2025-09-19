@@ -23,8 +23,8 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/rpc"
 
-	protocol "github.com/offchainlabs/nitro/bold/chain-abstraction"
-	challenge_testing "github.com/offchainlabs/nitro/bold/testing"
+	"github.com/offchainlabs/nitro/bold/chain-abstraction"
+	"github.com/offchainlabs/nitro/bold/testing"
 	"github.com/offchainlabs/nitro/bold/testing/setup"
 	"github.com/offchainlabs/nitro/bold/util"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"

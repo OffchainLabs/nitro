@@ -20,7 +20,7 @@ import (
 	"github.com/gobwas/ws-examples/src/gopool"
 	"github.com/gobwas/ws/wsflate"
 	"github.com/mailru/easygo/netpoll"
-	flag "github.com/spf13/pflag"
+	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
@@ -80,7 +80,7 @@ func (bc *BroadcasterConfig) Validate() error {
 
 type BroadcasterConfigFetcher func() *BroadcasterConfig
 
-func BroadcasterConfigAddOptions(prefix string, f *flag.FlagSet) {
+func BroadcasterConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultBroadcasterConfig.Enable, "enable broadcaster")
 	f.Bool(prefix+".signed", DefaultBroadcasterConfig.Signed, "sign broadcast messages")
 	f.String(prefix+".addr", DefaultBroadcasterConfig.Addr, "address to bind the relay feed output to")
