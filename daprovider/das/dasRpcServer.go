@@ -71,11 +71,13 @@ func StartDASRPCServerOnListener(ctx context.Context, listener net.Listener, rpc
 	}
 
 	err := rpcServer.RegisterName("das", &DASRPCServer{
-		daReader:           daReader,
-		daWriter:           daWriter,
-		daHealthChecker:    daHealthChecker,
-		signatureVerifier:  signatureVerifier,
-		dataStreamReceiver: NewDataStreamReceiver(signatureVerifier, defaultMaxPendingMessages, defaultMessageCollectionExpiry),
+		daReader:          daReader,
+		daWriter:          daWriter,
+		daHealthChecker:   daHealthChecker,
+		signatureVerifier: signatureVerifier,
+		dataStreamReceiver: NewDataStreamReceiver(signatureVerifier, defaultMaxPendingMessages, defaultMessageCollectionExpiry, func(id MessageId) {
+			rpcStoreFailureGauge.Inc(1)
+		}),
 	})
 	if err != nil {
 		return nil, err

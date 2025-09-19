@@ -33,10 +33,10 @@ type DataStreamReceiver struct {
 // the `DataStreamer` sender side. `maxPendingMessages` limits how many parallel protocol instances are supported.
 // `messageCollectionExpiry` is the window in which a single message streaming must end - otherwise the protocol will
 // be closed and all related data will be removed.
-func NewDataStreamReceiver(signatureVerifier *signature.Verifier, maxPendingMessages int, messageCollectionExpiry time.Duration) *DataStreamReceiver {
+func NewDataStreamReceiver(signatureVerifier *signature.Verifier, maxPendingMessages int, messageCollectionExpiry time.Duration, expirationCallback func(id MessageId)) *DataStreamReceiver {
 	return &DataStreamReceiver{
 		signatureVerifier: signatureVerifier,
-		messageStore:      newMessageStore(maxPendingMessages, messageCollectionExpiry),
+		messageStore:      newMessageStore(maxPendingMessages, messageCollectionExpiry, expirationCallback),
 	}
 }
 
@@ -93,14 +93,16 @@ type messageStore struct {
 	messages                map[MessageId]*partialMessage
 	maxPendingMessages      int
 	messageCollectionExpiry time.Duration
+	expirationCallback      func(MessageId)
 }
 
-func newMessageStore(maxPendingMessages int, messageCollectionExpiry time.Duration) *messageStore {
+func newMessageStore(maxPendingMessages int, messageCollectionExpiry time.Duration, expirationCallback func(id MessageId)) *messageStore {
 	return &messageStore{
 		mutex:                   sync.Mutex{},
 		messages:                make(map[MessageId]*partialMessage),
 		maxPendingMessages:      maxPendingMessages,
 		messageCollectionExpiry: messageCollectionExpiry,
+		expirationCallback:      expirationCallback,
 	}
 }
 
@@ -138,7 +140,9 @@ func (ms *messageStore) registerNewMessage(nChunks, timeout, chunkSize, totalSiz
 
 		// Message will only exist if expiry was reached without it being complete.
 		if _, stillExists := ms.messages[id]; stillExists {
-			rpcStoreFailureGauge.Inc(1)
+			if ms.expirationCallback != nil {
+				ms.expirationCallback(id)
+			}
 			delete(ms.messages, id)
 		}
 	}(id)
