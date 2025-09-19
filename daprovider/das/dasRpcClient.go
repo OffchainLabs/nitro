@@ -11,12 +11,14 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/blsSignatures"
 	"github.com/offchainlabs/nitro/daprovider/das/dasutil"
+	"github.com/offchainlabs/nitro/daprovider/das/data_streaming"
 	"github.com/offchainlabs/nitro/util/pretty"
 	"github.com/offchainlabs/nitro/util/signature"
 )
@@ -27,9 +29,6 @@ var (
 	rpcClientStoreFailureGauge      = metrics.NewRegisteredGauge("arb/das/rpcclient/store/failure", nil)
 	rpcClientStoreStoredBytesGauge  = metrics.NewRegisteredGauge("arb/das/rpcclient/store/bytes", nil)
 	rpcClientStoreDurationHistogram = metrics.NewRegisteredHistogram("arb/das/rpcclient/store/duration", nil, metrics.NewBoundedHistogramSample())
-
-	rpcClientSendChunkSuccessGauge = metrics.NewRegisteredGauge("arb/das/rpcclient/sendchunk/success", nil)
-	rpcClientSendChunkFailureGauge = metrics.NewRegisteredGauge("arb/das/rpcclient/sendchunk/failure", nil)
 )
 
 // lint:require-exhaustive-initialization
@@ -37,7 +36,7 @@ type DASRPCClient struct { // implements DataAvailabilityService
 	clnt         *rpc.Client
 	url          string
 	signer       signature.DataSignerFunc
-	dataStreamer *DataStreamer
+	dataStreamer *data_streaming.DataStreamer[StoreResult]
 }
 
 func nilSigner(_ []byte) ([]byte, error) {
@@ -54,14 +53,14 @@ func NewDASRPCClient(target string, signer signature.DataSignerFunc, maxStoreChu
 		return nil, err
 	}
 
-	var dataStreamer *DataStreamer
+	var dataStreamer *data_streaming.DataStreamer[StoreResult]
 	if enableChunkedStore {
-		rpcMethods := DataStreamingRPCMethods{
-			startReceiving:    "das_startChunkedStore",
-			receiveChunk:      "das_sendChunk",
-			finalizeReceiving: "das_commitChunkedStore",
+		rpcMethods := data_streaming.DataStreamingRPCMethods{
+			StartStream:    "das_startChunkedStore",
+			StreamChunk:    "das_sendChunk",
+			FinalizeStream: "das_commitChunkedStore",
 		}
-		dataStreamer, err = NewDataStreamer(target, maxStoreChunkBodySize, signer, rpcMethods)
+		dataStreamer, err = data_streaming.NewDataStreamer[StoreResult](target, maxStoreChunkBodySize, signer, rpcMethods)
 		if err != nil {
 			return nil, err
 		}
@@ -124,7 +123,7 @@ func (c *DASRPCClient) legacyStore(ctx context.Context, message []byte, timeout 
 	// #nosec G115
 	log.Trace("das.DASRPCClient.Store(...)", "message", pretty.FirstFewBytes(message), "timeout", time.Unix(int64(timeout), 0), "this", *c)
 
-	reqSig, err := applyDasSigner(c.signer, message, timeout)
+	reqSig, err := c.signer(crypto.Keccak256(data_streaming.FlattenDataForSigning(message, timeout)))
 	if err != nil {
 		return nil, err
 	}
