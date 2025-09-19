@@ -232,7 +232,6 @@ func newApiClosures(
 			return vm.ErrWriteProtection
 		}
 
-		// Attribute history growth, WASM computation part is charged separately in attributeWasmComputation
 		numTopics := uint64(len(topics))
 		dataBytes := uint64(len(data))
 		mgCost := vm.WasmLogCost(numTopics, dataBytes)

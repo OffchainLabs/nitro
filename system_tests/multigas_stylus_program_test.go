@@ -148,32 +148,50 @@ func TestMultigasStylus_EmitLog(t *testing.T) {
 		return args
 	}
 
-	// Send transaction with 2 topics, 64-byte payload (valid: 64 >= 2*32)
-	topics := []common.Hash{testhelpers.RandomHash(), testhelpers.RandomHash()}
-	data := testhelpers.RandomSlice(64)
-	args := encode(topics, data)
+	cases := []struct {
+		name       string
+		numTopics  uint64
+		payloadLen uint64
+	}{
+		{"no_topics_no_data", 0, 0},
+		{"one_topic_empty_payload", 1, 0},
+		{"two_topics_64_bytes", 2, 64},
+		{"three_topics_96_bytes", 3, 96},
+		{"four_topics_128_bytes", 4, 128},
+		{"one_topic_large_payload", 1, 1024},
+		{"four_topics_zero_payload", 4, 0}, // pure topic cost
+	}
 
-	tx := l2info.PrepareTxTo("Owner", &logAddr, l2info.TransferGas, nil, args)
-	require.NoError(t, l2client.SendTransaction(ctx, tx))
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Send a transaction with specified topics and data
+			topics := make([]common.Hash, tc.numTopics)
+			for i := range topics {
+				topics[i] = testhelpers.RandomHash()
+			}
+			data := make([]byte, tc.payloadLen)
+			args := encode(topics, data)
 
-	receipt, err := EnsureTxSucceeded(ctx, l2client, tx)
-	require.NoError(t, err)
+			tx := l2info.PrepareTxTo("Owner", &logAddr, l2info.TransferGas, nil, args)
+			require.NoError(t, l2client.SendTransaction(ctx, tx))
 
-	// Expected history growth calculation
-	numTopics := uint64(len(topics))
-	dataBytes := uint64(len(data))
-	payloadBytes := dataBytes - params.LogTopicBytes*numTopics
-	expectedHistoryGrowth := params.LogTopicHistoryGas*numTopics + payloadBytes*params.LogDataGas
+			receipt, err := EnsureTxSucceeded(ctx, l2client, tx)
+			require.NoError(t, err)
 
-	require.Equal(t,
-		expectedHistoryGrowth,
-		receipt.MultiGasUsed.Get(multigas.ResourceKindHistoryGrowth),
-	)
+			// Expected history growth calculation
+			expectedHistoryGrowth := params.LogTopicHistoryGas*tc.numTopics + tc.payloadLen*params.LogDataGas
 
-	require.Equalf(t,
-		receipt.GasUsed,
-		receipt.MultiGasUsed.SingleGas(),
-		"Used gas mismatch: GasUsed=%d, MultiGas=%d, Difference=%d",
-		receipt.GasUsed, receipt.MultiGasUsed.SingleGas(), receipt.GasUsed-receipt.MultiGasUsed.SingleGas(),
-	)
+			require.Equal(t,
+				expectedHistoryGrowth,
+				receipt.MultiGasUsed.Get(multigas.ResourceKindHistoryGrowth),
+			)
+
+			require.Equalf(t,
+				receipt.GasUsed,
+				receipt.MultiGasUsed.SingleGas(),
+				"Used gas mismatch: GasUsed=%d, MultiGas=%d, Difference=%d",
+				receipt.GasUsed, receipt.MultiGasUsed.SingleGas(), receipt.GasUsed-receipt.MultiGasUsed.SingleGas(),
+			)
+		})
+	}
 }
