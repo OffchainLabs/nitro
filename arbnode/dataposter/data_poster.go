@@ -188,7 +188,9 @@ func NewDataPoster(ctx context.Context, opts *DataPosterOpts) (*DataPoster, erro
 		dp.auth = &bind.TransactOpts{
 			From: sender,
 			Signer: func(address common.Address, tx *types.Transaction) (*types.Transaction, error) {
-				return signer(context.TODO(), address, tx)
+				c, cancel := context.WithTimeout(ctx, 30*time.Second)
+				defer cancel()
+				return signer(c, address, tx)
 			},
 		}
 	}
