@@ -80,7 +80,7 @@ func calculateEffectiveChunkSize(maxStoreChunkBodySize int, rpcMethods DataStrea
 }
 
 // StreamData sends arbitrarily long byte sequence to the receiver using a simple chunking-based protocol.
-func (ds *DataStreamer[Result]) StreamData(ctx context.Context, data []byte, timeout uint64) (interface{}, error) {
+func (ds *DataStreamer[Result]) StreamData(ctx context.Context, data []byte, timeout uint64) (*Result, error) {
 	params := newStreamParams(uint64(len(data)), ds.chunkSize, timeout)
 
 	messageId, err := ds.startStream(ctx, params)
@@ -140,7 +140,7 @@ func (ds *DataStreamer[Result]) sendChunk(ctx context.Context, messageId Message
 	return ds.rpcClient.CallContext(ctx, nil, ds.rpcMethods.StreamChunk, hexutil.Uint64(messageId), hexutil.Uint64(chunkId), hexutil.Bytes(chunkData), hexutil.Bytes(payloadSignature))
 }
 
-func (ds *DataStreamer[Result]) finalizeStream(ctx context.Context, messageId MessageId) (result interface{}, err error) {
+func (ds *DataStreamer[Result]) finalizeStream(ctx context.Context, messageId MessageId) (result *Result, err error) {
 	payloadSignature, err := ds.sign(nil, uint64(messageId))
 	if err != nil {
 		return nil, err

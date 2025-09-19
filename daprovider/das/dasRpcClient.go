@@ -5,7 +5,6 @@ package das
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -93,21 +92,12 @@ func (c *DASRPCClient) Store(ctx context.Context, message []byte, timeout uint64
 		return c.legacyStore(ctx, message, timeout)
 	}
 
-	storeResultUntyped, err := c.dataStreamer.StreamData(ctx, message, timeout)
+	storeResult, err := c.dataStreamer.StreamData(ctx, message, timeout)
 	if err != nil {
 		if strings.Contains(err.Error(), "the method das_startChunkedStore does not exist") {
 			log.Info("Legacy store is used by the DAS client", "url", c.url)
 			return c.legacyStore(ctx, message, timeout)
 		}
-		return nil, err
-	}
-	var storeResult StoreResult
-	jsonData, err := json.Marshal(storeResultUntyped)
-	if err != nil {
-		return nil, err
-	}
-	err = json.Unmarshal(jsonData, &storeResult)
-	if err != nil {
 		return nil, err
 	}
 
