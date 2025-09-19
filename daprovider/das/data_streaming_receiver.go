@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/offchainlabs/nitro/util/signature"
 )
 
@@ -58,9 +59,8 @@ func (dsr *DataStreamReceiver) StartReceiving(ctx context.Context, timestamp, nC
 }
 
 func (dsr *DataStreamReceiver) ReceiveChunk(ctx context.Context, messageId MessageId, chunkId uint64, chunk, sig []byte) error {
-	//signedData := TEMP_flattenDataForSigning(chunk, uint64(messageId))
-	//if err := dsr.signatureVerifier.VerifyHash(ctx, sig, crypto.Keccak256Hash(signedData)); err != nil {
-	if err := dsr.signatureVerifier.verify(ctx, chunk, sig, uint64(messageId), chunkId); err != nil {
+	signedData := TEMP_flattenDataForSigning(chunk, uint64(messageId), chunkId)
+	if err := dsr.signatureVerifier1.VerifyHash(ctx, sig, crypto.Keccak256Hash(signedData)); err != nil {
 		return err
 	}
 	return dsr.messageStore.addNewChunk(messageId, chunkId, chunk)

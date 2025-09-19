@@ -13,7 +13,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 
 	"github.com/offchainlabs/nitro/blsSignatures"
@@ -32,8 +31,6 @@ func blsPubToBase64(pubkey *blsSignatures.PublicKey) string {
 const sendChunkJSONBoilerplate = "{\"jsonrpc\":\"2.0\",\"id\":4294967295,\"method\":\"das_sendChunked\",\"params\":[\"\"]}"
 
 func testRpcImpl(t *testing.T, size, times int, concurrent bool) {
-	// enableLogging()
-
 	ctx := context.Background()
 	lis, err := net.Listen("tcp", "localhost:0")
 	testhelpers.RequireImpl(t, err)

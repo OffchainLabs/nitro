@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/offchainlabs/nitro/util/arbmath"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -160,8 +161,7 @@ func (ds *DataStreamer) generateStartReqSignature(params streamParams) ([]byte, 
 }
 
 func (ds *DataStreamer) generateChunkReqSignature(chunkData []byte, batchId, chunkId uint64) ([]byte, error) {
-	return applyDasSigner(ds.dataSigner, chunkData, batchId, chunkId)
-	//return ds.dataSigner(crypto.Keccak256(TEMP_flattenDataForSigning(chunkData, batchId)))
+	return ds.dataSigner(crypto.Keccak256(TEMP_flattenDataForSigning(chunkData, batchId, chunkId)))
 }
 
 func (ds *DataStreamer) generateFinalReqSignature(batchId uint64) ([]byte, error) {
@@ -169,10 +169,11 @@ func (ds *DataStreamer) generateFinalReqSignature(batchId uint64) ([]byte, error
 }
 
 func TEMP_flattenDataForSigning(data []byte, extras ...uint64) []byte {
+	var bufferForExtras []byte
 	for _, field := range extras {
-		data = binary.BigEndian.AppendUint64(data, field)
+		bufferForExtras = binary.BigEndian.AppendUint64(bufferForExtras, field)
 	}
-	return data
+	return arbmath.ConcatByteSlices(data, bufferForExtras)
 }
 
 type streamParams struct {
