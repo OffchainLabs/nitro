@@ -20,9 +20,9 @@ import (
 
 	"github.com/offchainlabs/nitro/bold/api"
 	"github.com/offchainlabs/nitro/bold/api/db"
-	protocol "github.com/offchainlabs/nitro/bold/chain-abstraction"
-	watcher "github.com/offchainlabs/nitro/bold/challenge-manager/chain-watcher"
-	edgetracker "github.com/offchainlabs/nitro/bold/challenge-manager/edge-tracker"
+	"github.com/offchainlabs/nitro/bold/chain-abstraction"
+	"github.com/offchainlabs/nitro/bold/challenge-manager/chain-watcher"
+	"github.com/offchainlabs/nitro/bold/challenge-manager/edge-tracker"
 	"github.com/offchainlabs/nitro/bold/containers/option"
 )
 

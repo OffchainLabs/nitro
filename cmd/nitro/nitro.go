@@ -23,7 +23,7 @@ import (
 	"github.com/cockroachdb/pebble"
 	"github.com/knadh/koanf"
 	"github.com/knadh/koanf/providers/confmap"
-	flag "github.com/spf13/pflag"
+	"github.com/spf13/pflag"
 	"github.com/syndtr/goleveldb/leveldb"
 
 	"github.com/ethereum/go-ethereum/accounts"
@@ -48,7 +48,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbnode/resourcemanager"
 	"github.com/offchainlabs/nitro/arbutil"
-	blocksreexecutor "github.com/offchainlabs/nitro/blocks_reexecutor"
+	"github.com/offchainlabs/nitro/blocks_reexecutor"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
@@ -61,7 +61,7 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
-	legacystaker "github.com/offchainlabs/nitro/staker/legacy"
+	"github.com/offchainlabs/nitro/staker/legacy"
 	"github.com/offchainlabs/nitro/staker/validatorwallet"
 	nitroutil "github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/colors"
@@ -246,7 +246,7 @@ func mainImpl() int {
 	if sequencerNeedsKey || nodeConfig.Node.BatchPoster.ParentChainWallet.OnlyCreateKey {
 		l1TransactionOptsBatchPoster, dataSigner, err = util.OpenWallet("l1-batch-poster", &nodeConfig.Node.BatchPoster.ParentChainWallet, new(big.Int).SetUint64(nodeConfig.ParentChain.ID))
 		if err != nil {
-			flag.Usage()
+			pflag.Usage()
 			log.Crit("error opening Batch poster parent chain wallet", "path", nodeConfig.Node.BatchPoster.ParentChainWallet.Pathname, "account", nodeConfig.Node.BatchPoster.ParentChainWallet.Account, "err", err)
 		}
 		if nodeConfig.Node.BatchPoster.ParentChainWallet.OnlyCreateKey {
@@ -256,7 +256,7 @@ func mainImpl() int {
 	if validatorNeedsKey || nodeConfig.Node.Staker.ParentChainWallet.OnlyCreateKey {
 		l1TransactionOptsValidator, _, err = util.OpenWallet("l1-validator", &nodeConfig.Node.Staker.ParentChainWallet, new(big.Int).SetUint64(nodeConfig.ParentChain.ID))
 		if err != nil {
-			flag.Usage()
+			pflag.Usage()
 			log.Crit("error opening Validator parent chain wallet", "path", nodeConfig.Node.Staker.ParentChainWallet.Pathname, "account", nodeConfig.Node.Staker.ParentChainWallet.Account, "err", err)
 		}
 		if nodeConfig.Node.Staker.ParentChainWallet.OnlyCreateKey {
@@ -266,7 +266,7 @@ func mainImpl() int {
 
 	if nodeConfig.Node.Staker.Enable {
 		if !nodeConfig.Node.ParentChainReader.Enable {
-			flag.Usage()
+			pflag.Usage()
 			log.Crit("validator must have the parent chain reader enabled")
 		}
 		strategy, err := legacystaker.ParseStrategy(nodeConfig.Node.Staker.Strategy)
@@ -323,7 +323,7 @@ func mainImpl() int {
 		}
 		if !l1Reader.IsParentChainArbitrum() && !nodeConfig.Node.Dangerous.DisableBlobReader {
 			if nodeConfig.ParentChain.BlobClient.BeaconUrl == "" {
-				flag.Usage()
+				pflag.Usage()
 				log.Crit("a beacon chain RPC URL is required to read batches, but it was not configured (CLI argument: --parent-chain.blob-client.beacon-url [URL])")
 			}
 			blobClient, err := headerreader.NewBlobClient(nodeConfig.ParentChain.BlobClient, l1Client)
@@ -336,11 +336,11 @@ func mainImpl() int {
 
 	if nodeConfig.Node.Staker.OnlyCreateWalletContract {
 		if !nodeConfig.Node.Staker.UseSmartContractWallet {
-			flag.Usage()
+			pflag.Usage()
 			log.Crit("--node.validator.only-create-wallet-contract requires --node.validator.use-smart-contract-wallet")
 		}
 		if l1Reader == nil {
-			flag.Usage()
+			pflag.Usage()
 			log.Crit("--node.validator.only-create-wallet-contract conflicts with --node.dangerous.no-l1-listener")
 		}
 		// Just create validator smart wallet if needed then exit
@@ -371,7 +371,7 @@ func mainImpl() int {
 	}
 
 	if err := resourcemanager.Init(&nodeConfig.Node.ResourceMgmt); err != nil {
-		flag.Usage()
+		pflag.Usage()
 		log.Crit("Failed to start resource management module", "err", err)
 	}
 
@@ -382,13 +382,13 @@ func mainImpl() int {
 	}
 	stack, err := node.New(&stackConf)
 	if err != nil {
-		flag.Usage()
+		pflag.Usage()
 		log.Crit("failed to initialize geth stack", "err", err)
 	}
 	{
 		devAddr, err := addUnlockWallet(stack.AccountManager(), l2DevWallet)
 		if err != nil {
-			flag.Usage()
+			pflag.Usage()
 			log.Crit("error opening L2 dev wallet", "err", err)
 		}
 		if devAddr != (common.Address{}) {
@@ -448,7 +448,7 @@ func mainImpl() int {
 	}
 	deferFuncs = append(deferFuncs, func() { closeDb(chainDb, "chainDb") })
 	if err != nil {
-		flag.Usage()
+		pflag.Usage()
 		log.Error("error initializing database", "err", err)
 		return 1
 	}
@@ -504,7 +504,7 @@ func mainImpl() int {
 	}
 
 	if l2BlockChain.Config().ArbitrumChainParams.DataAvailabilityCommittee != nodeConfig.Node.DataAvailability.Enable {
-		flag.Usage()
+		pflag.Usage()
 		log.Error(fmt.Sprintf("data availability service usage for this chain is set to %v but --node.data-availability.enable is set to %v", l2BlockChain.Config().ArbitrumChainParams.DataAvailabilityCommittee, nodeConfig.Node.DataAvailability.Enable))
 		return 1
 	}
@@ -791,7 +791,7 @@ var NodeConfigDefault = NodeConfig{
 	EnsureRollupDeployment: true,
 }
 
-func NodeConfigAddOptions(f *flag.FlagSet) {
+func NodeConfigAddOptions(f *pflag.FlagSet) {
 	genericconf.ConfConfigAddOptions("conf", f)
 	arbnode.ConfigAddOptions("node", f, true, true)
 	gethexec.ConfigAddOptions("execution", f)
@@ -896,7 +896,7 @@ func (c *NodeConfig) GetReloadInterval() time.Duration {
 }
 
 func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.WalletConfig, error) {
-	f := flag.NewFlagSet("", flag.ContinueOnError)
+	f := pflag.NewFlagSet("", pflag.ContinueOnError)
 
 	NodeConfigAddOptions(f)
 

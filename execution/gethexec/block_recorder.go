@@ -7,7 +7,7 @@ import (
 	"sync"
 	"testing"
 
-	flag "github.com/spf13/pflag"
+	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/common"
@@ -59,7 +59,7 @@ var DefaultBlockRecorderConfig = BlockRecorderConfig{
 	MaxPrepared:    1000,
 }
 
-func BlockRecorderConfigAddOptions(prefix string, f *flag.FlagSet) {
+func BlockRecorderConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Int(prefix+".trie-dirty-cache", DefaultBlockRecorderConfig.TrieDirtyCache, "like trie-dirty-cache for the separate, recording database (used for validation)")
 	f.Int(prefix+".trie-clean-cache", DefaultBlockRecorderConfig.TrieCleanCache, "like trie-clean-cache for the separate, recording database (used for validation)")
 	f.Int(prefix+".max-prepared", DefaultBlockRecorderConfig.MaxPrepared, "max references to store in the recording database")

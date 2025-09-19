@@ -20,7 +20,7 @@ import (
 	"syscall"
 	"time"
 
-	flag "github.com/spf13/pflag"
+	"github.com/spf13/pflag"
 	"golang.org/x/sys/unix"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -44,7 +44,7 @@ var DefaultLocalFileStorageConfig = LocalFileStorageConfig{
 	MaxRetention: defaultStorageRetention,
 }
 
-func LocalFileStorageConfigAddOptions(prefix string, f *flag.FlagSet) {
+func LocalFileStorageConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultLocalFileStorageConfig.Enable, "enable storage/retrieval of sequencer batch data from a directory of files, one per batch")
 	f.String(prefix+".data-dir", DefaultLocalFileStorageConfig.DataDir, "local data directory")
 	f.Bool(prefix+".enable-expiry", DefaultLocalFileStorageConfig.EnableExpiry, "enable expiry of batches")
