@@ -24,10 +24,10 @@ import (
 )
 
 var (
-	restGetByHashRequestGauge       = metrics.NewRegisteredGauge("arb/das/rest/getbyhash/requests", nil)
-	restGetByHashSuccessGauge       = metrics.NewRegisteredGauge("arb/das/rest/getbyhash/success", nil)
-	restGetByHashFailureGauge       = metrics.NewRegisteredGauge("arb/das/rest/getbyhash/failure", nil)
-	restGetByHashReturnedBytesGauge = metrics.NewRegisteredGauge("arb/das/rest/getbyhash/bytes", nil)
+    restGetByHashRequestGauge       = metrics.NewRegisteredCounter("arb/das/rest/getbyhash/requests", nil)
+    restGetByHashSuccessGauge       = metrics.NewRegisteredCounter("arb/das/rest/getbyhash/success", nil)
+    restGetByHashFailureGauge       = metrics.NewRegisteredCounter("arb/das/rest/getbyhash/failure", nil)
+    restGetByHashReturnedBytesGauge = metrics.NewRegisteredCounter("arb/das/rest/getbyhash/bytes", nil)
 	restGetByHashDurationHistogram  = metrics.NewRegisteredHistogram("arb/das/rest/getbyhash/duration", nil, metrics.NewBoundedHistogramSample())
 )
 

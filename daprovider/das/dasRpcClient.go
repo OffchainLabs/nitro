@@ -22,14 +22,14 @@ import (
 )
 
 var (
-	rpcClientStoreRequestGauge      = metrics.NewRegisteredGauge("arb/das/rpcclient/store/requests", nil)
-	rpcClientStoreSuccessGauge      = metrics.NewRegisteredGauge("arb/das/rpcclient/store/success", nil)
-	rpcClientStoreFailureGauge      = metrics.NewRegisteredGauge("arb/das/rpcclient/store/failure", nil)
-	rpcClientStoreStoredBytesGauge  = metrics.NewRegisteredGauge("arb/das/rpcclient/store/bytes", nil)
+    rpcClientStoreRequestGauge      = metrics.NewRegisteredCounter("arb/das/rpcclient/store/requests", nil)
+    rpcClientStoreSuccessGauge      = metrics.NewRegisteredCounter("arb/das/rpcclient/store/success", nil)
+    rpcClientStoreFailureGauge      = metrics.NewRegisteredCounter("arb/das/rpcclient/store/failure", nil)
+    rpcClientStoreStoredBytesGauge  = metrics.NewRegisteredCounter("arb/das/rpcclient/store/bytes", nil)
 	rpcClientStoreDurationHistogram = metrics.NewRegisteredHistogram("arb/das/rpcclient/store/duration", nil, metrics.NewBoundedHistogramSample())
 
-	rpcClientSendChunkSuccessGauge = metrics.NewRegisteredGauge("arb/das/rpcclient/sendchunk/success", nil)
-	rpcClientSendChunkFailureGauge = metrics.NewRegisteredGauge("arb/das/rpcclient/sendchunk/failure", nil)
+    rpcClientSendChunkSuccessGauge = metrics.NewRegisteredCounter("arb/das/rpcclient/sendchunk/success", nil)
+    rpcClientSendChunkFailureGauge = metrics.NewRegisteredCounter("arb/das/rpcclient/sendchunk/failure", nil)
 )
 
 // lint:require-exhaustive-initialization
