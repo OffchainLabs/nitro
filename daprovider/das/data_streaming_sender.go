@@ -83,12 +83,7 @@ func calculateEffectiveChunkSize(maxStoreChunkBodySize int, rpcMethods DataStrea
 func (ds *DataStreamer) StreamData(ctx context.Context, data []byte, timeout uint64) (storeResult *StoreResult, err error) {
 	params := newStreamParams(uint64(len(data)), ds.chunkSize, timeout)
 
-	startReqSig, err := ds.sign(nil, params.timestamp, params.nChunks, ds.chunkSize, params.dataLen, params.timeout)
-	if err != nil {
-		return nil, err
-	}
-
-	messageId, err := ds.startStream(ctx, startReqSig, params)
+	messageId, err := ds.startStream(ctx, params)
 	if err != nil {
 		return nil, err
 	}
@@ -97,17 +92,17 @@ func (ds *DataStreamer) StreamData(ctx context.Context, data []byte, timeout uin
 		return nil, err
 	}
 
-	finalReqSig, err := ds.sign(nil, messageId)
-	if err != nil {
-		return nil, err
-	}
-
-	return ds.finalizeStream(ctx, finalReqSig, messageId)
+	return ds.finalizeStream(ctx, messageId)
 }
 
-func (ds *DataStreamer) startStream(ctx context.Context, startReqSig []byte, params streamParams) (uint64, error) {
+func (ds *DataStreamer) startStream(ctx context.Context, params streamParams) (MessageId, error) {
+	payloadSignature, err := ds.sign(nil, params.timestamp, params.nChunks, ds.chunkSize, params.dataLen, params.timeout)
+	if err != nil {
+		return 0, err
+	}
+
 	var startChunkedStoreResult StartChunkedStoreResult
-	err := ds.rpcClient.CallContext(
+	err = ds.rpcClient.CallContext(
 		ctx,
 		&startChunkedStoreResult,
 		ds.rpcMethods.startStream,
@@ -116,11 +111,11 @@ func (ds *DataStreamer) startStream(ctx context.Context, startReqSig []byte, par
 		hexutil.Uint64(ds.chunkSize),
 		hexutil.Uint64(params.dataLen),
 		hexutil.Uint64(params.timeout),
-		hexutil.Bytes(startReqSig))
-	return uint64(startChunkedStoreResult.MessageId), err
+		hexutil.Bytes(payloadSignature))
+	return MessageId(startChunkedStoreResult.MessageId), err
 }
 
-func (ds *DataStreamer) doStream(ctx context.Context, data []byte, messageId uint64, params streamParams) error {
+func (ds *DataStreamer) doStream(ctx context.Context, data []byte, messageId MessageId, params streamParams) error {
 	chunkRoutines := new(errgroup.Group)
 	for i := uint64(0); i < params.nChunks; i++ {
 		startIndex := i * ds.chunkSize
@@ -137,16 +132,20 @@ func (ds *DataStreamer) doStream(ctx context.Context, data []byte, messageId uin
 	return chunkRoutines.Wait()
 }
 
-func (ds *DataStreamer) sendChunk(ctx context.Context, messageId, chunkId uint64, chunkData []byte) error {
-	chunkReqSig, err := ds.sign(chunkData, messageId, chunkId)
+func (ds *DataStreamer) sendChunk(ctx context.Context, messageId MessageId, chunkId uint64, chunkData []byte) error {
+	payloadSignature, err := ds.sign(chunkData, uint64(messageId), chunkId)
 	if err != nil {
 		return err
 	}
-	return ds.rpcClient.CallContext(ctx, nil, ds.rpcMethods.streamChunk, hexutil.Uint64(messageId), hexutil.Uint64(chunkId), hexutil.Bytes(chunkData), hexutil.Bytes(chunkReqSig))
+	return ds.rpcClient.CallContext(ctx, nil, ds.rpcMethods.streamChunk, hexutil.Uint64(messageId), hexutil.Uint64(chunkId), hexutil.Bytes(chunkData), hexutil.Bytes(payloadSignature))
 }
 
-func (ds *DataStreamer) finalizeStream(ctx context.Context, finalReqSig []byte, messageId uint64) (storeResult *StoreResult, err error) {
-	err = ds.rpcClient.CallContext(ctx, &storeResult, ds.rpcMethods.finalizeStream, hexutil.Uint64(messageId), hexutil.Bytes(finalReqSig))
+func (ds *DataStreamer) finalizeStream(ctx context.Context, messageId MessageId) (storeResult *StoreResult, err error) {
+	payloadSignature, err := ds.sign(nil, uint64(messageId))
+	if err != nil {
+		return nil, err
+	}
+	err = ds.rpcClient.CallContext(ctx, &storeResult, ds.rpcMethods.finalizeStream, hexutil.Uint64(messageId), hexutil.Bytes(payloadSignature))
 	return
 }
 
