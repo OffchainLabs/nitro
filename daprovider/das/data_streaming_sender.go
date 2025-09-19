@@ -142,15 +142,7 @@ func (ds *DataStreamer) sendChunk(ctx context.Context, batchId, chunkId uint64, 
 	if err != nil {
 		return err
 	}
-
-	err = ds.rpcClient.CallContext(ctx, nil, ds.rpcMethods.receiveChunk, hexutil.Uint64(batchId), hexutil.Uint64(chunkId), hexutil.Bytes(chunkData), hexutil.Bytes(chunkReqSig))
-	if err != nil {
-		rpcClientSendChunkFailureGauge.Inc(1)
-		return err
-	}
-
-	rpcClientSendChunkSuccessGauge.Inc(1)
-	return nil
+	return ds.rpcClient.CallContext(ctx, nil, ds.rpcMethods.receiveChunk, hexutil.Uint64(batchId), hexutil.Uint64(chunkId), hexutil.Bytes(chunkData), hexutil.Bytes(chunkReqSig))
 }
 
 func (ds *DataStreamer) finalizeStream(ctx context.Context, finalReqSig []byte, batchId uint64) (storeResult *StoreResult, err error) {
