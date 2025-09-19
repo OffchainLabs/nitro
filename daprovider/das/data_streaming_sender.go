@@ -5,6 +5,7 @@ package das
 
 import (
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"time"
@@ -100,7 +101,7 @@ func (ds *DataStreamer) StreamData(ctx context.Context, data []byte, timeout uin
 	return ds.finalizeStream(ctx, finalReqSig, batchId)
 }
 
-func (ds *DataStreamer) startStream(ctx context.Context, startReqSig []byte, params streamParams) (hexutil.Uint64, error) {
+func (ds *DataStreamer) startStream(ctx context.Context, startReqSig []byte, params streamParams) (uint64, error) {
 	var startChunkedStoreResult StartChunkedStoreResult
 	err := ds.rpcClient.CallContext(
 		ctx,
@@ -112,10 +113,10 @@ func (ds *DataStreamer) startStream(ctx context.Context, startReqSig []byte, par
 		hexutil.Uint64(params.dataLen),
 		hexutil.Uint64(params.timeout),
 		hexutil.Bytes(startReqSig))
-	return startChunkedStoreResult.MessageId, err
+	return uint64(startChunkedStoreResult.MessageId), err
 }
 
-func (ds *DataStreamer) doStream(ctx context.Context, data []byte, batchId hexutil.Uint64, params streamParams) error {
+func (ds *DataStreamer) doStream(ctx context.Context, data []byte, batchId uint64, params streamParams) error {
 	chunkRoutines := new(errgroup.Group)
 	for i := uint64(0); i < params.nChunks; i++ {
 		startIndex := i * ds.chunkSize
@@ -132,13 +133,13 @@ func (ds *DataStreamer) doStream(ctx context.Context, data []byte, batchId hexut
 	return chunkRoutines.Wait()
 }
 
-func (ds *DataStreamer) sendChunk(ctx context.Context, batchId hexutil.Uint64, chunkId uint64, chunkData []byte) error {
-	chunkReqSig, err := ds.generateChunkReqSignature(chunkData, uint64(batchId), chunkId)
+func (ds *DataStreamer) sendChunk(ctx context.Context, batchId, chunkId uint64, chunkData []byte) error {
+	chunkReqSig, err := ds.generateChunkReqSignature(chunkData, batchId, chunkId)
 	if err != nil {
 		return err
 	}
 
-	err = ds.rpcClient.CallContext(ctx, nil, ds.rpcMethods.receiveChunk, batchId, hexutil.Uint64(chunkId), hexutil.Bytes(chunkData), hexutil.Bytes(chunkReqSig))
+	err = ds.rpcClient.CallContext(ctx, nil, ds.rpcMethods.receiveChunk, hexutil.Uint64(batchId), hexutil.Uint64(chunkId), hexutil.Bytes(chunkData), hexutil.Bytes(chunkReqSig))
 	if err != nil {
 		rpcClientSendChunkFailureGauge.Inc(1)
 		return err
@@ -148,21 +149,31 @@ func (ds *DataStreamer) sendChunk(ctx context.Context, batchId hexutil.Uint64, c
 	return nil
 }
 
-func (ds *DataStreamer) finalizeStream(ctx context.Context, finalReqSig []byte, batchId hexutil.Uint64) (storeResult *StoreResult, err error) {
-	err = ds.rpcClient.CallContext(ctx, &storeResult, ds.rpcMethods.finalizeReceiving, batchId, hexutil.Bytes(finalReqSig))
+func (ds *DataStreamer) finalizeStream(ctx context.Context, finalReqSig []byte, batchId uint64) (storeResult *StoreResult, err error) {
+	err = ds.rpcClient.CallContext(ctx, &storeResult, ds.rpcMethods.finalizeReceiving, hexutil.Uint64(batchId), hexutil.Bytes(finalReqSig))
 	return
 }
 
 func (ds *DataStreamer) generateStartReqSignature(params streamParams) ([]byte, error) {
+	//return ds.dataSigner(crypto.Keccak256(TEMP_flattenDataForSigning([]byte{}, params.timestamp, params.nChunks, ds.chunkSize, params.dataLen, params.timeout)))
 	return applyDasSigner(ds.dataSigner, []byte{}, params.timestamp, params.nChunks, ds.chunkSize, params.dataLen, params.timeout)
 }
 
 func (ds *DataStreamer) generateChunkReqSignature(chunkData []byte, batchId, chunkId uint64) ([]byte, error) {
 	return applyDasSigner(ds.dataSigner, chunkData, batchId, chunkId)
+	//return ds.dataSigner(crypto.Keccak256(TEMP_flattenDataForSigning(chunkData, batchId)))
 }
 
-func (ds *DataStreamer) generateFinalReqSignature(batchId hexutil.Uint64) ([]byte, error) {
+func (ds *DataStreamer) generateFinalReqSignature(batchId uint64) ([]byte, error) {
 	return applyDasSigner(ds.dataSigner, []byte{}, uint64(batchId))
+	//return ds.dataSigner(crypto.Keccak256(TEMP_flattenDataForSigning([]byte{}, batchId)))
+}
+
+func TEMP_flattenDataForSigning(data []byte, extras ...uint64) []byte {
+	for _, field := range extras {
+		data = binary.BigEndian.AppendUint64(data, field)
+	}
+	return data
 }
 
 type streamParams struct {

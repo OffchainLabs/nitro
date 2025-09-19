@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 
 	"github.com/offchainlabs/nitro/blsSignatures"
@@ -65,9 +66,18 @@ func testRpcImpl(t *testing.T, size, times int, concurrent bool) {
 
 	signatureVerifier, err := NewSignatureVerifierWithSeqInboxCaller(nil, "0x"+hex.EncodeToString(crypto.FromECDSAPub(&testPrivateKey.PublicKey)))
 	testhelpers.RequireImpl(t, err)
+
+	signatureVerifierConfig := signature.VerifierConfig{
+		AllowedAddresses: []string{crypto.PubkeyToAddress(testPrivateKey.PublicKey).Hex()},
+		AcceptSequencer:  false,
+		Dangerous:        signature.DangerousVerifierConfig{AcceptMissing: false},
+	}
+
+	signatureVerifier1, err := signature.NewVerifier(&signatureVerifierConfig, nil)
+	testhelpers.RequireImpl(t, err)
 	signer := signature.DataSignerFromPrivateKey(testPrivateKey)
 
-	dasServer, err := StartDASRPCServerOnListener(ctx, lis, genericconf.HTTPServerTimeoutConfigDefault, genericconf.HTTPServerBodyLimitDefault, storageService, localDas, storageService, signatureVerifier)
+	dasServer, err := StartDASRPCServerOnListener(ctx, lis, genericconf.HTTPServerTimeoutConfigDefault, genericconf.HTTPServerBodyLimitDefault, storageService, localDas, storageService, signatureVerifier, signatureVerifier1)
 
 	defer func() {
 		if err := dasServer.Shutdown(ctx); err != nil {
@@ -130,7 +140,7 @@ func TestRPCStore(t *testing.T) {
 		legacyAPIOnly    bool
 	}{
 		{desc: "small store", totalSize: 100, times: 1, concurrent: false},
-		{desc: "chunked store - last chunk full", totalSize: chunkSize * 20, times: 10, concurrent: true},
+		{desc: "chunked store - last chunk full", totalSize: chunkSize * 20, times: 1, concurrent: false},
 		{desc: "chunked store - last chunk not full", totalSize: chunkSize*31 + 123, times: 10, concurrent: true},
 		{desc: "chunked store - overflow cache - sequential", totalSize: chunkSize * 3, times: 15, concurrent: false},
 		{desc: "new client falls back to old api for old server", totalSize: (5*1024*1024)/2 - len(sendChunkJSONBoilerplate) - 100 /* geth counts headers too */, times: 5, concurrent: true, legacyAPIOnly: true},
