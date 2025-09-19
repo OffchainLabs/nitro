@@ -28,6 +28,11 @@ type DataStreamReceiver struct {
 	messageStore      *messageStore
 }
 
+const (
+	DefaultMaxPendingMessages      = 10
+	DefaultMessageCollectionExpiry = 1 * time.Minute
+)
+
 // NewDataStreamReceiver sets up a new stream receiver. `signatureVerifier` must be compatible with message signing on
 // the `DataStreamer` sender side. `maxPendingMessages` limits how many parallel protocol instances are supported.
 // `messageCollectionExpiry` is the window in which a single message streaming must end - otherwise the protocol will

@@ -285,7 +285,11 @@ func startup() error {
 	}
 
 	log.Info("Starting json rpc server", "mode", config.Mode, "addr", config.ProviderServer.Addr, "port", config.ProviderServer.Port)
-	providerServer, err := dapserver.NewServerWithDAPProvider(ctx, &config.ProviderServer, reader, writer, validator)
+	signatureVerifier, err := das.NewSignatureVerifier(ctx, config.Anytrust)
+	if err != nil {
+		return err
+	}
+	providerServer, err := dapserver.NewServerWithDAPProvider(ctx, &config.ProviderServer, reader, writer, validator, signatureVerifier)
 	if err != nil {
 		return err
 	}
