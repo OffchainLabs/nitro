@@ -83,7 +83,7 @@ func calculateEffectiveChunkSize(maxStoreChunkBodySize int, rpcMethods DataStrea
 func (ds *DataStreamer) StreamData(ctx context.Context, data []byte, timeout uint64) (storeResult *StoreResult, err error) {
 	params := newStreamParams(uint64(len(data)), ds.chunkSize, timeout)
 
-	startReqSig, err := ds.generateStartReqSignature(params)
+	startReqSig, err := ds.sign(nil, params.timestamp, params.nChunks, ds.chunkSize, params.dataLen, params.timeout)
 	if err != nil {
 		return nil, err
 	}
@@ -97,7 +97,7 @@ func (ds *DataStreamer) StreamData(ctx context.Context, data []byte, timeout uin
 		return nil, err
 	}
 
-	finalReqSig, err := ds.generateFinalReqSignature(batchId)
+	finalReqSig, err := ds.sign(nil, batchId)
 	if err != nil {
 		return nil, err
 	}
@@ -138,7 +138,7 @@ func (ds *DataStreamer) doStream(ctx context.Context, data []byte, batchId uint6
 }
 
 func (ds *DataStreamer) sendChunk(ctx context.Context, batchId, chunkId uint64, chunkData []byte) error {
-	chunkReqSig, err := ds.generateChunkReqSignature(chunkData, batchId, chunkId)
+	chunkReqSig, err := ds.sign(chunkData, batchId, chunkId)
 	if err != nil {
 		return err
 	}
@@ -150,16 +150,8 @@ func (ds *DataStreamer) finalizeStream(ctx context.Context, finalReqSig []byte, 
 	return
 }
 
-func (ds *DataStreamer) generateStartReqSignature(params streamParams) ([]byte, error) {
-	return ds.dataSigner(crypto.Keccak256(flattenDataForSigning([]byte{}, params.timestamp, params.nChunks, ds.chunkSize, params.dataLen, params.timeout)))
-}
-
-func (ds *DataStreamer) generateChunkReqSignature(chunkData []byte, batchId, chunkId uint64) ([]byte, error) {
-	return ds.dataSigner(crypto.Keccak256(flattenDataForSigning(chunkData, batchId, chunkId)))
-}
-
-func (ds *DataStreamer) generateFinalReqSignature(batchId uint64) ([]byte, error) {
-	return ds.dataSigner(crypto.Keccak256(flattenDataForSigning([]byte{}, batchId)))
+func (ds *DataStreamer) sign(bytes []byte, extras ...uint64) ([]byte, error) {
+	return ds.dataSigner(crypto.Keccak256(flattenDataForSigning(bytes, extras...)))
 }
 
 func flattenDataForSigning(data []byte, extras ...uint64) []byte {
