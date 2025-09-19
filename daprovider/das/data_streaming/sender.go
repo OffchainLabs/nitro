@@ -1,7 +1,7 @@
 // Copyright 2025, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-package das
+package data_streaming
 
 import (
 	"context"
@@ -36,7 +36,7 @@ type DataStreamer struct {
 // DataStreamingRPCMethods configuration specifies names of the protocol's RPC methods on the server side.
 // lint:require-exhaustive-initialization
 type DataStreamingRPCMethods struct {
-	startStream, streamChunk, finalizeStream string
+	StartStream, StreamChunk, FinalizeStream string
 }
 
 // NewDataStreamer creates a new DataStreamer instance.
@@ -71,7 +71,7 @@ func NewDataStreamer(url string, maxStoreChunkBodySize int, dataSigner signature
 }
 
 func calculateEffectiveChunkSize(maxStoreChunkBodySize int, rpcMethods DataStreamingRPCMethods) (uint64, error) {
-	jsonOverhead := len("{\"jsonrpc\":\"2.0\",\"id\":4294967295,\"method\":\"\",\"params\":[\"\"]}") + len(rpcMethods.streamChunk)
+	jsonOverhead := len("{\"jsonrpc\":\"2.0\",\"id\":4294967295,\"method\":\"\",\"params\":[\"\"]}") + len(rpcMethods.StreamChunk)
 	chunkSize := (maxStoreChunkBodySize - jsonOverhead - 512 /* headers */) / 2
 	if chunkSize <= 0 {
 		return 0, fmt.Errorf("max-store-chunk-body-size %d doesn't leave enough room for chunk payload", maxStoreChunkBodySize)
@@ -80,7 +80,7 @@ func calculateEffectiveChunkSize(maxStoreChunkBodySize int, rpcMethods DataStrea
 }
 
 // StreamData sends arbitrarily long byte sequence to the receiver using a simple chunking-based protocol.
-func (ds *DataStreamer) StreamData(ctx context.Context, data []byte, timeout uint64) (storeResult *StoreResult, err error) {
+func (ds *DataStreamer) StreamData(ctx context.Context, data []byte, timeout uint64) (interface{}, error) {
 	params := newStreamParams(uint64(len(data)), ds.chunkSize, timeout)
 
 	messageId, err := ds.startStream(ctx, params)
@@ -101,18 +101,18 @@ func (ds *DataStreamer) startStream(ctx context.Context, params streamParams) (M
 		return 0, err
 	}
 
-	var startChunkedStoreResult StartChunkedStoreResult
+	var result StartStreamingResult
 	err = ds.rpcClient.CallContext(
 		ctx,
-		&startChunkedStoreResult,
-		ds.rpcMethods.startStream,
+		&result,
+		ds.rpcMethods.StartStream,
 		hexutil.Uint64(params.timestamp),
 		hexutil.Uint64(params.nChunks),
 		hexutil.Uint64(ds.chunkSize),
 		hexutil.Uint64(params.dataLen),
 		hexutil.Uint64(params.timeout),
 		hexutil.Bytes(payloadSignature))
-	return MessageId(startChunkedStoreResult.MessageId), err
+	return MessageId(result.MessageId), err
 }
 
 func (ds *DataStreamer) doStream(ctx context.Context, data []byte, messageId MessageId, params streamParams) error {
@@ -137,23 +137,23 @@ func (ds *DataStreamer) sendChunk(ctx context.Context, messageId MessageId, chun
 	if err != nil {
 		return err
 	}
-	return ds.rpcClient.CallContext(ctx, nil, ds.rpcMethods.streamChunk, hexutil.Uint64(messageId), hexutil.Uint64(chunkId), hexutil.Bytes(chunkData), hexutil.Bytes(payloadSignature))
+	return ds.rpcClient.CallContext(ctx, nil, ds.rpcMethods.StreamChunk, hexutil.Uint64(messageId), hexutil.Uint64(chunkId), hexutil.Bytes(chunkData), hexutil.Bytes(payloadSignature))
 }
 
-func (ds *DataStreamer) finalizeStream(ctx context.Context, messageId MessageId) (storeResult *StoreResult, err error) {
+func (ds *DataStreamer) finalizeStream(ctx context.Context, messageId MessageId) (result interface{}, err error) {
 	payloadSignature, err := ds.sign(nil, uint64(messageId))
 	if err != nil {
 		return nil, err
 	}
-	err = ds.rpcClient.CallContext(ctx, &storeResult, ds.rpcMethods.finalizeStream, hexutil.Uint64(messageId), hexutil.Bytes(payloadSignature))
+	err = ds.rpcClient.CallContext(ctx, &result, ds.rpcMethods.FinalizeStream, hexutil.Uint64(messageId), hexutil.Bytes(payloadSignature))
 	return
 }
 
 func (ds *DataStreamer) sign(bytes []byte, extras ...uint64) ([]byte, error) {
-	return ds.dataSigner(crypto.Keccak256(flattenDataForSigning(bytes, extras...)))
+	return ds.dataSigner(crypto.Keccak256(FlattenDataForSigning(bytes, extras...)))
 }
 
-func flattenDataForSigning(data []byte, extras ...uint64) []byte {
+func FlattenDataForSigning(data []byte, extras ...uint64) []byte {
 	var bufferForExtras []byte
 	for _, field := range extras {
 		bufferForExtras = binary.BigEndian.AppendUint64(bufferForExtras, field)

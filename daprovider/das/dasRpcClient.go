@@ -5,6 +5,7 @@ package das
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -15,6 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/rpc"
+	"github.com/offchainlabs/nitro/daprovider/das/data_streaming"
 
 	"github.com/offchainlabs/nitro/blsSignatures"
 	"github.com/offchainlabs/nitro/daprovider/das/dasutil"
@@ -35,7 +37,7 @@ type DASRPCClient struct { // implements DataAvailabilityService
 	clnt         *rpc.Client
 	url          string
 	signer       signature.DataSignerFunc
-	dataStreamer *DataStreamer
+	dataStreamer *data_streaming.DataStreamer
 }
 
 func nilSigner(_ []byte) ([]byte, error) {
@@ -52,14 +54,14 @@ func NewDASRPCClient(target string, signer signature.DataSignerFunc, maxStoreChu
 		return nil, err
 	}
 
-	var dataStreamer *DataStreamer
+	var dataStreamer *data_streaming.DataStreamer
 	if enableChunkedStore {
-		rpcMethods := DataStreamingRPCMethods{
-			startStream:    "das_startChunkedStore",
-			streamChunk:    "das_sendChunk",
-			finalizeStream: "das_commitChunkedStore",
+		rpcMethods := data_streaming.DataStreamingRPCMethods{
+			StartStream:    "das_startChunkedStore",
+			StreamChunk:    "das_sendChunk",
+			FinalizeStream: "das_commitChunkedStore",
 		}
-		dataStreamer, err = NewDataStreamer(target, maxStoreChunkBodySize, signer, rpcMethods)
+		dataStreamer, err = data_streaming.NewDataStreamer(target, maxStoreChunkBodySize, signer, rpcMethods)
 		if err != nil {
 			return nil, err
 		}
@@ -91,12 +93,21 @@ func (c *DASRPCClient) Store(ctx context.Context, message []byte, timeout uint64
 		return c.legacyStore(ctx, message, timeout)
 	}
 
-	storeResult, err := c.dataStreamer.StreamData(ctx, message, timeout)
+	storeResultUntyped, err := c.dataStreamer.StreamData(ctx, message, timeout)
 	if err != nil {
 		if strings.Contains(err.Error(), "the method das_startChunkedStore does not exist") {
 			log.Info("Legacy store is used by the DAS client", "url", c.url)
 			return c.legacyStore(ctx, message, timeout)
 		}
+		return nil, err
+	}
+	var storeResult StoreResult
+	jsonData, err := json.Marshal(storeResultUntyped)
+	if err != nil {
+		return nil, err
+	}
+	err = json.Unmarshal(jsonData, &storeResult)
+	if err != nil {
 		return nil, err
 	}
 
@@ -122,7 +133,7 @@ func (c *DASRPCClient) legacyStore(ctx context.Context, message []byte, timeout 
 	// #nosec G115
 	log.Trace("das.DASRPCClient.Store(...)", "message", pretty.FirstFewBytes(message), "timeout", time.Unix(int64(timeout), 0), "this", *c)
 
-	reqSig, err := c.signer(crypto.Keccak256(flattenDataForSigning(message, timeout)))
+	reqSig, err := c.signer(crypto.Keccak256(data_streaming.FlattenDataForSigning(message, timeout)))
 	if err != nil {
 		return nil, err
 	}

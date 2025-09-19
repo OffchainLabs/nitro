@@ -15,6 +15,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/rpc"
+	"github.com/offchainlabs/nitro/daprovider/das/data_streaming"
 	"github.com/offchainlabs/nitro/util/signature"
 
 	"github.com/offchainlabs/nitro/blsSignatures"
@@ -47,7 +48,7 @@ type DASRPCServer struct {
 
 	signatureVerifier *signature.Verifier
 
-	dataStreamReceiver *DataStreamReceiver
+	dataStreamReceiver *data_streaming.DataStreamReceiver
 }
 
 func StartDASRPCServer(ctx context.Context, addr string, portNum uint64, rpcServerTimeouts genericconf.HTTPServerTimeoutConfig, rpcServerBodyLimit int, daReader dasutil.DASReader, daWriter dasutil.DASWriter, daHealthChecker DataAvailabilityServiceHealthChecker, signatureVerifier *signature.Verifier) (*http.Server, error) {
@@ -75,7 +76,7 @@ func StartDASRPCServerOnListener(ctx context.Context, listener net.Listener, rpc
 		daWriter:          daWriter,
 		daHealthChecker:   daHealthChecker,
 		signatureVerifier: signatureVerifier,
-		dataStreamReceiver: NewDataStreamReceiver(signatureVerifier, defaultMaxPendingMessages, defaultMessageCollectionExpiry, func(id MessageId) {
+		dataStreamReceiver: data_streaming.NewDataStreamReceiver(signatureVerifier, defaultMaxPendingMessages, defaultMessageCollectionExpiry, func(id data_streaming.MessageId) {
 			rpcStoreFailureGauge.Inc(1)
 		}),
 	})
@@ -130,7 +131,7 @@ func (s *DASRPCServer) Store(ctx context.Context, message hexutil.Bytes, timeout
 		rpcStoreDurationHistogram.Update(time.Since(start).Nanoseconds())
 	}()
 
-	expectedSignaturePreimage := flattenDataForSigning(message, uint64(timeout))
+	expectedSignaturePreimage := data_streaming.FlattenDataForSigning(message, uint64(timeout))
 	if err := s.signatureVerifier.VerifyData(ctx, sig, expectedSignaturePreimage); err != nil {
 		return nil, err
 	}
@@ -157,33 +158,26 @@ var (
 )
 
 // lint:require-exhaustive-initialization
-type StartChunkedStoreResult struct {
-	MessageId hexutil.Uint64 `json:"messageId,omitempty"`
-}
-
-// lint:require-exhaustive-initialization
 type SendChunkResult struct {
 	Ok hexutil.Uint64 `json:"sendChunkResult,omitempty"`
 }
 
-func (s *DASRPCServer) StartChunkedStore(ctx context.Context, timestamp, nChunks, chunkSize, totalSize, timeout hexutil.Uint64, sig hexutil.Bytes) (*StartChunkedStoreResult, error) {
+func (s *DASRPCServer) StartChunkedStore(ctx context.Context, timestamp, nChunks, chunkSize, totalSize, timeout hexutil.Uint64, sig hexutil.Bytes) (*data_streaming.StartStreamingResult, error) {
 	rpcStoreRequestGauge.Inc(1)
 	failed := true
 	defer func() {
 		if failed {
 			rpcStoreFailureGauge.Inc(1)
-		} // success gauge will be incremented on successful commit
+		}
 	}()
 
-	id, err := s.dataStreamReceiver.StartReceiving(ctx, uint64(timestamp), uint64(nChunks), uint64(chunkSize), uint64(totalSize), uint64(timeout), sig)
+	result, err := s.dataStreamReceiver.StartReceiving(ctx, uint64(timestamp), uint64(nChunks), uint64(chunkSize), uint64(totalSize), uint64(timeout), sig)
 	if err != nil {
 		return nil, err
 	}
 
 	failed = false
-	return &StartChunkedStoreResult{
-		MessageId: hexutil.Uint64(id),
-	}, nil
+	return &result, nil
 
 }
 
@@ -197,7 +191,7 @@ func (s *DASRPCServer) SendChunk(ctx context.Context, messageId, chunkId hexutil
 		}
 	}()
 
-	if err := s.dataStreamReceiver.ReceiveChunk(ctx, MessageId(messageId), uint64(chunkId), chunk, sig); err != nil {
+	if err := s.dataStreamReceiver.ReceiveChunk(ctx, data_streaming.MessageId(messageId), uint64(chunkId), chunk, sig); err != nil {
 		return err
 	}
 
@@ -206,7 +200,7 @@ func (s *DASRPCServer) SendChunk(ctx context.Context, messageId, chunkId hexutil
 }
 
 func (s *DASRPCServer) CommitChunkedStore(ctx context.Context, messageId hexutil.Uint64, sig hexutil.Bytes) (*StoreResult, error) {
-	message, timeout, startTime, err := s.dataStreamReceiver.FinalizeReceiving(ctx, MessageId(messageId), sig)
+	message, timeout, startTime, err := s.dataStreamReceiver.FinalizeReceiving(ctx, data_streaming.MessageId(messageId), sig)
 	if err != nil {
 		return nil, err
 	}
@@ -236,12 +230,12 @@ func (s *DASRPCServer) CommitChunkedStore(ctx context.Context, messageId hexutil
 	}, nil
 }
 
-func (serv *DASRPCServer) HealthCheck(ctx context.Context) error {
-	return serv.daHealthChecker.HealthCheck(ctx)
+func (s *DASRPCServer) HealthCheck(ctx context.Context) error {
+	return s.daHealthChecker.HealthCheck(ctx)
 }
 
-func (serv *DASRPCServer) ExpirationPolicy(ctx context.Context) (string, error) {
-	expirationPolicy, err := serv.daReader.ExpirationPolicy(ctx)
+func (s *DASRPCServer) ExpirationPolicy(ctx context.Context) (string, error) {
+	expirationPolicy, err := s.daReader.ExpirationPolicy(ctx)
 	if err != nil {
 		return "", err
 	}

@@ -1,7 +1,7 @@
 // Copyright 2025, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-package das
+package data_streaming
 
 import (
 	"context"
@@ -40,23 +40,30 @@ func NewDataStreamReceiver(signatureVerifier *signature.Verifier, maxPendingMess
 	}
 }
 
-func (dsr *DataStreamReceiver) StartReceiving(ctx context.Context, timestamp, nChunks, chunkSize, totalSize, timeout uint64, signature []byte) (MessageId, error) {
-	expectedSignaturePreimage := flattenDataForSigning([]byte{}, timestamp, nChunks, chunkSize, totalSize, timeout)
+// StartStreamingResult is expected by DataStreamer to be returned by the endpoint responsible for the StartReceiving method.
+// lint:require-exhaustive-initialization
+type StartStreamingResult struct {
+	MessageId hexutil.Uint64 `json:"MessageId,omitempty"`
+}
+
+func (dsr *DataStreamReceiver) StartReceiving(ctx context.Context, timestamp, nChunks, chunkSize, totalSize, timeout uint64, signature []byte) (StartStreamingResult, error) {
+	expectedSignaturePreimage := FlattenDataForSigning([]byte{}, timestamp, nChunks, chunkSize, totalSize, timeout)
 	if err := dsr.signatureVerifier.VerifyData(ctx, signature, expectedSignaturePreimage); err != nil {
-		return 0, err
+		return StartStreamingResult{0}, err
 	}
 
 	// Prevent replay of old messages
 	// #nosec G115
 	if time.Since(time.Unix(int64(timestamp), 0)).Abs() > time.Minute {
-		return 0, errors.New("too much time has elapsed since request was signed")
+		return StartStreamingResult{0}, errors.New("too much time has elapsed since request was signed")
 	}
 
-	return dsr.messageStore.registerNewMessage(nChunks, timeout, chunkSize, totalSize)
+	messageId, err := dsr.messageStore.registerNewMessage(nChunks, timeout, chunkSize, totalSize)
+	return StartStreamingResult{hexutil.Uint64(messageId)}, err
 }
 
 func (dsr *DataStreamReceiver) ReceiveChunk(ctx context.Context, messageId MessageId, chunkId uint64, chunkData, signature []byte) error {
-	expectedSignaturePreimage := flattenDataForSigning(chunkData, uint64(messageId), chunkId)
+	expectedSignaturePreimage := FlattenDataForSigning(chunkData, uint64(messageId), chunkId)
 	if err := dsr.signatureVerifier.VerifyData(ctx, signature, expectedSignaturePreimage); err != nil {
 		return err
 	}
@@ -64,7 +71,7 @@ func (dsr *DataStreamReceiver) ReceiveChunk(ctx context.Context, messageId Messa
 }
 
 func (dsr *DataStreamReceiver) FinalizeReceiving(ctx context.Context, messageId MessageId, signature hexutil.Bytes) ([]byte, uint64, time.Time, error) {
-	expectedSignaturePreimage := flattenDataForSigning([]byte{}, uint64(messageId))
+	expectedSignaturePreimage := FlattenDataForSigning([]byte{}, uint64(messageId))
 	if err := dsr.signatureVerifier.VerifyData(ctx, signature, expectedSignaturePreimage); err != nil {
 		return nil, 0, time.Time{}, err
 	}
