@@ -33,7 +33,7 @@ func getAuthGitClient(ctx context.Context) *github.Client {
 func NitroReleases(ctx context.Context) ([]*github.RepositoryRelease, error) {
 	client := getAuthGitClient(ctx)
 	opts := &github.ListOptions{
-		PerPage: 50,
+		PerPage: 100,
 	}
 	releases, _, err := client.Repositories.ListReleases(ctx, "OffchainLabs", "nitro", opts)
 	return releases, err
