@@ -37,12 +37,12 @@ import (
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbstate"
-	protocol "github.com/offchainlabs/nitro/bold/chain-abstraction"
-	solimpl "github.com/offchainlabs/nitro/bold/chain-abstraction/sol-implementation"
-	challengemanager "github.com/offchainlabs/nitro/bold/challenge-manager"
+	"github.com/offchainlabs/nitro/bold/chain-abstraction"
+	"github.com/offchainlabs/nitro/bold/chain-abstraction/sol-implementation"
+	"github.com/offchainlabs/nitro/bold/challenge-manager"
 	modes "github.com/offchainlabs/nitro/bold/challenge-manager/types"
-	l2stateprovider "github.com/offchainlabs/nitro/bold/layer2-state-provider"
-	challengetesting "github.com/offchainlabs/nitro/bold/testing"
+	"github.com/offchainlabs/nitro/bold/layer2-state-provider"
+	"github.com/offchainlabs/nitro/bold/testing"
 	"github.com/offchainlabs/nitro/bold/testing/setup"
 	butil "github.com/offchainlabs/nitro/bold/util"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
@@ -692,7 +692,7 @@ func deployContractsOnly(
 	genesisInboxCount := big.NewInt(0)
 	anyTrustFastConfirmer := common.Address{}
 	miniStakeValues := []*big.Int{big.NewInt(5), big.NewInt(4), big.NewInt(3), big.NewInt(2), big.NewInt(1)}
-	cfg := challengetesting.GenerateRollupConfig(
+	cfg := challenge_testing.GenerateRollupConfig(
 		false,
 		wasmModuleRoot,
 		l1TransactionOpts.From,
@@ -703,13 +703,13 @@ func deployContractsOnly(
 		genesisExecutionState,
 		genesisInboxCount,
 		anyTrustFastConfirmer,
-		challengetesting.WithLayerZeroHeights(&protocol.LayerZeroHeights{
+		challenge_testing.WithLayerZeroHeights(&protocol.LayerZeroHeights{
 			BlockChallengeHeight:     protocol.Height(blockChallengeLeafHeight),
 			BigStepChallengeHeight:   protocol.Height(bigStepChallengeLeafHeight),
 			SmallStepChallengeHeight: protocol.Height(smallStepChallengeLeafHeight),
 		}),
-		challengetesting.WithNumBigStepLevels(uint8(3)),       // TODO: Hardcoded.
-		challengetesting.WithConfirmPeriodBlocks(uint64(120)), // TODO: Hardcoded.
+		challenge_testing.WithNumBigStepLevels(uint8(3)),       // TODO: Hardcoded.
+		challenge_testing.WithConfirmPeriodBlocks(uint64(120)), // TODO: Hardcoded.
 	)
 	config, err := json.Marshal(chaininfo.ArbitrumDevTestChainConfig())
 	Require(t, err)

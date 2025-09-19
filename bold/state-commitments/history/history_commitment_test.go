@@ -14,7 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 
 	"github.com/offchainlabs/nitro/bold/state-commitments/legacy"
-	prefixproofs "github.com/offchainlabs/nitro/bold/state-commitments/prefix-proofs"
+	"github.com/offchainlabs/nitro/bold/state-commitments/prefix-proofs"
 	"github.com/offchainlabs/nitro/bold/testing/casttest"
 )
 
