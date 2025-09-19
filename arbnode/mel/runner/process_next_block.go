@@ -12,8 +12,8 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rpc"
 
-	"github.com/offchainlabs/bold/containers/fsm"
 	melextraction "github.com/offchainlabs/nitro/arbnode/mel/extraction"
+	"github.com/offchainlabs/nitro/bold/containers/fsm"
 )
 
 // txByLogFetcher is wrapper around ParentChainReader to implement TransactionByLog method

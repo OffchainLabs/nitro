@@ -37,10 +37,10 @@ import (
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
 
-	protocol "github.com/offchainlabs/bold/chain-abstraction"
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
+	"github.com/offchainlabs/nitro/bold/chain-abstraction"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/cmd/pruning"
@@ -938,6 +938,9 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 }
 
 func validateGenesisAssertion(ctx context.Context, rollupAddress common.Address, l1Client *ethclient.Client, genesisBlockHash common.Hash, initDataReaderHasAccounts bool) error {
+	if l1Client == nil {
+		return fmt.Errorf("no l1 client")
+	}
 	userLogic, err := rollupgen.NewRollupUserLogic(rollupAddress, l1Client)
 	if err != nil {
 		return err

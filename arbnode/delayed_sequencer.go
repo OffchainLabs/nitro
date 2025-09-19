@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	flag "github.com/spf13/pflag"
+	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -52,7 +52,7 @@ type DelayedSequencerConfig struct {
 
 type DelayedSequencerConfigFetcher func() *DelayedSequencerConfig
 
-func DelayedSequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
+func DelayedSequencerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultDelayedSequencerConfig.Enable, "enable delayed sequencer")
 	f.Int64(prefix+".finalize-distance", DefaultDelayedSequencerConfig.FinalizeDistance, "how many blocks in the past L1 block is considered final (ignored when using Merge finality)")
 	f.Bool(prefix+".require-full-finality", DefaultDelayedSequencerConfig.RequireFullFinality, "whether to wait for full finality before sequencing delayed messages")
@@ -194,7 +194,7 @@ func (d *DelayedSequencer) sequenceWithoutLockout(ctx context.Context, lastBlock
 			}
 		}
 		lastDelayedAcc = acc
-		err = msg.FillInBatchGasCost(func(batchNum uint64) ([]byte, error) {
+		err = msg.FillInBatchGasFields(func(batchNum uint64) ([]byte, error) {
 			data, _, err := d.reader.GetSequencerMessageBytes(ctx, batchNum)
 			return data, err
 		})

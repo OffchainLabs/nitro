@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"sync"
 
-	flag "github.com/spf13/pflag"
+	"github.com/spf13/pflag"
 )
 
 // MachineCache manages a list of machines at various step counts.
@@ -40,7 +40,7 @@ var DefaultMachineCacheConfig = MachineCacheConfig{
 	InitialSteps:            100000,
 }
 
-func MachineCacheConfigConfigAddOptions(prefix string, f *flag.FlagSet) {
+func MachineCacheConfigConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Uint64(prefix+".initial-steps", DefaultMachineCacheConfig.InitialSteps, "initial steps between machines")
 	f.Uint64(prefix+".cached-challenge-machines", DefaultMachineCacheConfig.CachedChallengeMachines, "how many machines to store in cache while working on a challenge (should be even)")
 }

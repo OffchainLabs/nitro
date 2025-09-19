@@ -8,8 +8,8 @@ import (
 
 	"github.com/ethereum/go-ethereum/log"
 
-	"github.com/offchainlabs/bold/containers/fsm"
 	"github.com/offchainlabs/nitro/arbnode/mel"
+	"github.com/offchainlabs/nitro/bold/containers/fsm"
 )
 
 func (m *MessageExtractor) initialize(ctx context.Context, current *fsm.CurrentState[action, FSMState]) (time.Duration, error) {

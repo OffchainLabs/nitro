@@ -18,7 +18,7 @@ import (
 	"testing"
 	"time"
 
-	flag "github.com/spf13/pflag"
+	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
@@ -33,7 +33,7 @@ import (
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcastclient"
 	"github.com/offchainlabs/nitro/broadcaster"
-	m "github.com/offchainlabs/nitro/broadcaster/message"
+	"github.com/offchainlabs/nitro/broadcaster/message"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -102,7 +102,7 @@ var TestTransactionStreamerConfig = TransactionStreamerConfig{
 	TrackBlockMetadataFrom:  0,
 }
 
-func TransactionStreamerConfigAddOptions(prefix string, f *flag.FlagSet) {
+func TransactionStreamerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Int(prefix+".max-broadcaster-queue-size", DefaultTransactionStreamerConfig.MaxBroadcasterQueueSize, "maximum cache of pending broadcaster messages")
 	f.Int64(prefix+".max-reorg-resequence-depth", DefaultTransactionStreamerConfig.MaxReorgResequenceDepth, "maximum number of messages to attempt to resequence on reorg (0 = never resequence, -1 = always resequence)")
 	f.Duration(prefix+".execute-message-loop-delay", DefaultTransactionStreamerConfig.ExecuteMessageLoopDelay, "delay when polling calls to execute messages")
@@ -503,7 +503,7 @@ func (s *TransactionStreamer) GetMessage(msgIdx arbutil.MessageIndex) (*arbostyp
 	}
 
 	if s.inboxReader != nil {
-		err = message.Message.FillInBatchGasCost(func(batchNum uint64) ([]byte, error) {
+		err = message.Message.FillInBatchGasFields(func(batchNum uint64) ([]byte, error) {
 			ctx, err := s.GetContextSafe()
 			if err != nil {
 				return nil, err
@@ -614,7 +614,7 @@ func (s *TransactionStreamer) FeedPendingMessageCount() arbutil.MessageIndex {
 	return arbutil.MessageIndex(firstMsgIdx + uint64(len(s.broadcasterQueuedMessages)))
 }
 
-func (s *TransactionStreamer) AddBroadcastMessages(feedMessages []*m.BroadcastFeedMessage) error {
+func (s *TransactionStreamer) AddBroadcastMessages(feedMessages []*message.BroadcastFeedMessage) error {
 	if len(feedMessages) == 0 {
 		return nil
 	}
@@ -860,19 +860,22 @@ func (s *TransactionStreamer) countDuplicateMessages(
 			}
 			var duplicateMessage bool
 			if nextMessage.MessageWithMeta.Message != nil {
-				if dbMessageParsed.Message.BatchGasCost == nil || nextMessage.MessageWithMeta.Message.BatchGasCost == nil {
+				if dbMessageParsed.Message.BatchDataStats == nil || nextMessage.MessageWithMeta.Message.BatchDataStats == nil {
 					// Remove both of the batch gas costs and see if the messages still differ
 					nextMessageCopy := nextMessage.MessageWithMeta
 					nextMessageCopy.Message = new(arbostypes.L1IncomingMessage)
 					*nextMessageCopy.Message = *nextMessage.MessageWithMeta.Message
-					batchGasCostBkup := dbMessageParsed.Message.BatchGasCost
-					dbMessageParsed.Message.BatchGasCost = nil
-					nextMessageCopy.Message.BatchGasCost = nil
+					batchGasCostBkup := dbMessageParsed.Message.LegacyBatchGasCost
+					statsBkup := dbMessageParsed.Message.BatchDataStats
+					dbMessageParsed.Message.LegacyBatchGasCost = nil
+					nextMessageCopy.Message.LegacyBatchGasCost = nil
+					dbMessageParsed.Message.BatchDataStats = nil
+					nextMessageCopy.Message.BatchDataStats = nil
 					if reflect.DeepEqual(dbMessageParsed, nextMessageCopy) {
 						// Actually this isn't a reorg; only the batch gas costs differed
 						duplicateMessage = true
 						// If possible - update the message in the database to add the gas cost cache.
-						if batch != nil && nextMessage.MessageWithMeta.Message.BatchGasCost != nil {
+						if batch != nil && nextMessage.MessageWithMeta.Message.BatchDataStats != nil {
 							if *batch == nil {
 								*batch = s.db.NewBatch()
 							}
@@ -881,7 +884,8 @@ func (s *TransactionStreamer) countDuplicateMessages(
 							}
 						}
 					}
-					dbMessageParsed.Message.BatchGasCost = batchGasCostBkup
+					dbMessageParsed.Message.LegacyBatchGasCost = batchGasCostBkup
+					dbMessageParsed.Message.BatchDataStats = statsBkup
 				}
 			}
 
@@ -1185,7 +1189,7 @@ func (s *TransactionStreamer) PopulateFeedBacklog(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("error getting tx streamer message count: %w", err)
 	}
-	var feedMessages []*m.BroadcastFeedMessage
+	var feedMessages []*message.BroadcastFeedMessage
 	for seqNum := startMessage; seqNum < messageCount; seqNum++ {
 		message, err := s.GetMessage(seqNum)
 		if err != nil {

@@ -239,7 +239,7 @@ func (b *DelayedBridge) logsToDeliveredMessages(ctx context.Context, logs []type
 			},
 			ParentChainBlockNumber: parsedLog.Raw.BlockNumber,
 		}
-		err := msg.Message.FillInBatchGasCost(batchFetcher)
+		err := msg.Message.FillInBatchGasFields(batchFetcher)
 		if err != nil {
 			return nil, err
 		}

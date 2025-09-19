@@ -4,16 +4,17 @@
 package arbtest
 
 import (
-	"bytes"
 	"context"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/ethereum/go-ethereum/arbitrum/multigas"
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
 
-	"github.com/offchainlabs/nitro/arbos/multigascollector"
-	"github.com/offchainlabs/nitro/arbos/multigascollector/proto"
+	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
@@ -21,17 +22,10 @@ func TestMultigasStylus_GetBytes32(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	outDir := t.TempDir()
-
-	// Build a node with the multigas collector enabled
-	builder := NewNodeBuilder(ctx).
-		DefaultConfig(t, false).
-		WithMultigasCollector(multigascollector.CollectorConfig{
-			OutputDir:      outDir,
-			BatchSize:      5,
-			ClearOutputDir: true,
-		})
-	cleanup := builder.Build(t) // no defer
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	builder.execConfig.ExposeMultiGas = true
+	cleanup := builder.Build(t)
+	defer cleanup()
 
 	l2info := builder.L2Info
 	l2client := builder.L2.Client
@@ -49,35 +43,82 @@ func TestMultigasStylus_GetBytes32(t *testing.T) {
 	receipt, err := EnsureTxSucceeded(ctx, l2client, tx)
 	require.NoError(t, err)
 
-	// Stop node to flush collector
-	cleanup()
+	require.Equal(t, params.ColdSloadCostEIP2929-params.WarmStorageReadCostEIP2929, receipt.MultiGasUsed.Get(multigas.ResourceKindStorageAccess))
+	require.Equal(t, params.TxGas+params.WarmStorageReadCostEIP2929, receipt.MultiGasUsed.Get(multigas.ResourceKindComputation))
+	require.Equal(t, receipt.GasUsed, receipt.MultiGasUsed.SingleGas())
 
-	var blocks = readCollectorBatches(t, outDir, -1)
-	require.NotEmpty(t, blocks, "no multigas data found")
+	// TODO(NIT-3793, NIT-3793, NIT-3795): Once all WASM operations are instrumented, WasmComputation
+	// should be derived as the residual from SingleGas instead of asserted directly.
+	require.Greater(t, receipt.MultiGasUsed.Get(multigas.ResourceKindWasmComputation), uint64(0))
+}
 
-	var allTxs []*proto.TransactionMultiGasData
-	for _, blk := range blocks {
-		allTxs = append(allTxs, blk.Transactions...)
+func TestMultigasStylus_AccountAccessHostIOs(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	builder.execConfig.ExposeMultiGas = true
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	l2info := builder.L2Info
+	l2client := builder.L2.Client
+	owner := l2info.GetDefaultTransactOpts("Owner", ctx)
+
+	hostio := deployWasm(t, ctx, owner, l2client, rustFile("hostio-test"))
+
+	target := common.HexToAddress("0xbeefdead00000000000000000000000000000000")
+
+	tests := []struct {
+		name               string
+		selectorSignature  string
+		withCode           bool
+		expectedAccessGas  uint64
+		expectedComputeGas uint64
+	}{
+		{
+			name:              "accountBalance",
+			selectorSignature: "accountBalance(address)",
+			withCode:          false,
+		},
+		{
+			name:              "accountCode",
+			selectorSignature: "accountCode(address)",
+			withCode:          true,
+		},
+		{
+			name:              "accountCodehash",
+			selectorSignature: "accountCodehash(address)",
+			withCode:          false,
+		},
 	}
 
-	// Find transactions in the all transactions
-	var found bool
-	for _, ptx := range allTxs {
-		if bytes.Equal(ptx.TxHash, tx.Hash().Bytes()) {
-			require.Equal(t, params.ColdSloadCostEIP2929-params.WarmStorageReadCostEIP2929, ptx.MultiGas.StorageAccess)
-			require.Equal(t, params.WarmStorageReadCostEIP2929, ptx.MultiGas.Computation)
-			require.Equal(t, receipt.GasUsed, ptx.MultiGas.SingleGas)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			selector := crypto.Keccak256([]byte(tc.selectorSignature))[:4]
+			callData := append([]byte{}, selector...)
+			callData = append(callData, common.LeftPadBytes(target.Bytes(), 32)...)
 
-			// TODO: Once all operations are instrumented, WasmComputation
-			// should be derived as the residual from SingleGas instead of asserted directly.
-			require.Greater(t, ptx.MultiGas.WasmComputation, uint64(0))
+			tx := l2info.PrepareTxTo("Owner", &hostio, l2info.TransferGas, nil, callData)
+			require.NoError(t, l2client.SendTransaction(ctx, tx))
 
-			found = true
-			break
-		}
-	}
+			receipt, err := EnsureTxSucceeded(ctx, l2client, tx)
+			require.NoError(t, err)
 
-	if !found {
-		require.Fail(t, "transactions not found in multigas collector data")
+			expectedAccess := params.ColdAccountAccessCostEIP2929 - params.WarmStorageReadCostEIP2929
+			expectedCompute := params.WarmStorageReadCostEIP2929 + params.TxGas
+			if tc.withCode {
+				maxCodeSize := chaininfo.ArbitrumDevTestChainConfig().MaxCodeSize()
+				extCodeCost := maxCodeSize / params.DefaultMaxCodeSize * params.ExtcodeSizeGasEIP150
+				expectedAccess += extCodeCost
+			}
+
+			require.Equal(t, expectedAccess,
+				receipt.MultiGasUsed.Get(multigas.ResourceKindStorageAccess),
+			)
+			require.Equal(t, expectedCompute,
+				receipt.MultiGasUsed.Get(multigas.ResourceKindComputation),
+			)
+		})
 	}
 }
