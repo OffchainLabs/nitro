@@ -22,7 +22,7 @@ import (
 
 // DataStreamer allows sending arbitrarily big payloads with JSON RPC. It follows a simple chunk-based protocol.
 // lint:require-exhaustive-initialization
-type DataStreamer struct {
+type DataStreamer[Result any] struct {
 	// rpcClient is the underlying client for making RPC calls to the receiver.
 	rpcClient *rpc.Client
 	// chunkSize is the preconfigured size limit on a single data chunk to be sent.
@@ -47,7 +47,7 @@ type DataStreamingRPCMethods struct {
 //   - `dataSigner` must not be nil;
 //
 // otherwise an `error` is returned.
-func NewDataStreamer(url string, maxStoreChunkBodySize int, dataSigner signature.DataSignerFunc, rpcMethods DataStreamingRPCMethods) (*DataStreamer, error) {
+func NewDataStreamer[T any](url string, maxStoreChunkBodySize int, dataSigner signature.DataSignerFunc, rpcMethods DataStreamingRPCMethods) (*DataStreamer[T], error) {
 	rpcClient, err := rpc.Dial(url)
 	if err != nil {
 		return nil, err
@@ -62,7 +62,7 @@ func NewDataStreamer(url string, maxStoreChunkBodySize int, dataSigner signature
 		return nil, errors.New("dataSigner must not be nil")
 	}
 
-	return &DataStreamer{
+	return &DataStreamer[T]{
 		rpcClient:  rpcClient,
 		chunkSize:  chunkSize,
 		dataSigner: dataSigner,
@@ -80,7 +80,7 @@ func calculateEffectiveChunkSize(maxStoreChunkBodySize int, rpcMethods DataStrea
 }
 
 // StreamData sends arbitrarily long byte sequence to the receiver using a simple chunking-based protocol.
-func (ds *DataStreamer) StreamData(ctx context.Context, data []byte, timeout uint64) (interface{}, error) {
+func (ds *DataStreamer[Result]) StreamData(ctx context.Context, data []byte, timeout uint64) (interface{}, error) {
 	params := newStreamParams(uint64(len(data)), ds.chunkSize, timeout)
 
 	messageId, err := ds.startStream(ctx, params)
@@ -95,7 +95,7 @@ func (ds *DataStreamer) StreamData(ctx context.Context, data []byte, timeout uin
 	return ds.finalizeStream(ctx, messageId)
 }
 
-func (ds *DataStreamer) startStream(ctx context.Context, params streamParams) (MessageId, error) {
+func (ds *DataStreamer[Result]) startStream(ctx context.Context, params streamParams) (MessageId, error) {
 	payloadSignature, err := ds.sign(nil, params.timestamp, params.nChunks, ds.chunkSize, params.dataLen, params.timeout)
 	if err != nil {
 		return 0, err
@@ -115,7 +115,7 @@ func (ds *DataStreamer) startStream(ctx context.Context, params streamParams) (M
 	return MessageId(result.MessageId), err
 }
 
-func (ds *DataStreamer) doStream(ctx context.Context, data []byte, messageId MessageId, params streamParams) error {
+func (ds *DataStreamer[Result]) doStream(ctx context.Context, data []byte, messageId MessageId, params streamParams) error {
 	chunkRoutines := new(errgroup.Group)
 	for i := uint64(0); i < params.nChunks; i++ {
 		startIndex := i * ds.chunkSize
@@ -132,7 +132,7 @@ func (ds *DataStreamer) doStream(ctx context.Context, data []byte, messageId Mes
 	return chunkRoutines.Wait()
 }
 
-func (ds *DataStreamer) sendChunk(ctx context.Context, messageId MessageId, chunkId uint64, chunkData []byte) error {
+func (ds *DataStreamer[Result]) sendChunk(ctx context.Context, messageId MessageId, chunkId uint64, chunkData []byte) error {
 	payloadSignature, err := ds.sign(chunkData, uint64(messageId), chunkId)
 	if err != nil {
 		return err
@@ -140,7 +140,7 @@ func (ds *DataStreamer) sendChunk(ctx context.Context, messageId MessageId, chun
 	return ds.rpcClient.CallContext(ctx, nil, ds.rpcMethods.StreamChunk, hexutil.Uint64(messageId), hexutil.Uint64(chunkId), hexutil.Bytes(chunkData), hexutil.Bytes(payloadSignature))
 }
 
-func (ds *DataStreamer) finalizeStream(ctx context.Context, messageId MessageId) (result interface{}, err error) {
+func (ds *DataStreamer[Result]) finalizeStream(ctx context.Context, messageId MessageId) (result interface{}, err error) {
 	payloadSignature, err := ds.sign(nil, uint64(messageId))
 	if err != nil {
 		return nil, err
@@ -149,7 +149,7 @@ func (ds *DataStreamer) finalizeStream(ctx context.Context, messageId MessageId)
 	return
 }
 
-func (ds *DataStreamer) sign(bytes []byte, extras ...uint64) ([]byte, error) {
+func (ds *DataStreamer[Result]) sign(bytes []byte, extras ...uint64) ([]byte, error) {
 	return ds.dataSigner(crypto.Keccak256(FlattenDataForSigning(bytes, extras...)))
 }
 

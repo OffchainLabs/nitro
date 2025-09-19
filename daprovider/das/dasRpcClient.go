@@ -37,7 +37,7 @@ type DASRPCClient struct { // implements DataAvailabilityService
 	clnt         *rpc.Client
 	url          string
 	signer       signature.DataSignerFunc
-	dataStreamer *data_streaming.DataStreamer
+	dataStreamer *data_streaming.DataStreamer[StoreResult]
 }
 
 func nilSigner(_ []byte) ([]byte, error) {
@@ -54,14 +54,14 @@ func NewDASRPCClient(target string, signer signature.DataSignerFunc, maxStoreChu
 		return nil, err
 	}
 
-	var dataStreamer *data_streaming.DataStreamer
+	var dataStreamer *data_streaming.DataStreamer[StoreResult]
 	if enableChunkedStore {
 		rpcMethods := data_streaming.DataStreamingRPCMethods{
 			StartStream:    "das_startChunkedStore",
 			StreamChunk:    "das_sendChunk",
 			FinalizeStream: "das_commitChunkedStore",
 		}
-		dataStreamer, err = data_streaming.NewDataStreamer(target, maxStoreChunkBodySize, signer, rpcMethods)
+		dataStreamer, err = data_streaming.NewDataStreamer[StoreResult](target, maxStoreChunkBodySize, signer, rpcMethods)
 		if err != nil {
 			return nil, err
 		}
