@@ -21,6 +21,7 @@ import (
 )
 
 // DataStreamer allows sending arbitrarily big payloads with JSON RPC. It follows a simple chunk-based protocol.
+// lint:require-exhaustive-initialization
 type DataStreamer struct {
 	// rpcClient is the underlying client for making RPC calls to the receiver.
 	rpcClient *rpc.Client
@@ -33,6 +34,7 @@ type DataStreamer struct {
 }
 
 // DataStreamingRPCMethods configuration specifies names of the protocol's RPC methods on the server side.
+// lint:require-exhaustive-initialization
 type DataStreamingRPCMethods struct {
 	startReceiving, receiveChunk, finalizeReceiving string
 }
@@ -176,6 +178,7 @@ func flattenDataForSigning(data []byte, extras ...uint64) []byte {
 	return arbmath.ConcatByteSlices(data, bufferForExtras)
 }
 
+// lint:require-exhaustive-initialization
 type streamParams struct {
 	timestamp, nChunks, lastChunkSize, dataLen, timeout uint64
 }
