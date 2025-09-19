@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common/hexutil"
+
 	"github.com/offchainlabs/nitro/util/signature"
 )
 
