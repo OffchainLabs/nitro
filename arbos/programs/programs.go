@@ -268,6 +268,7 @@ func (p Programs) CallProgram(
 		contract.Gas = arbmath.MinInt(contract.Gas, maxGasToReturn)
 	}
 	attributeWasmComputation(contract, startingGas)
+
 	// #nosec G115
 	metrics.GetOrRegisterCounter(fmt.Sprintf("arb/arbos/stylus/gas_used/%s", runCtx.RunModeMetricName()), nil).Inc(int64(startingGas - contract.Gas))
 	return ret, err

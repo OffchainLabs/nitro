@@ -4,12 +4,10 @@
 package programs
 
 import (
-	"fmt"
 	"strconv"
 
 	"github.com/holiman/uint256"
 
-	"github.com/ethereum/go-ethereum/arbitrum/multigas"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
@@ -234,24 +232,10 @@ func newApiClosures(
 			return vm.ErrWriteProtection
 		}
 
-		// Attribute history growth gas in a way similar to makeGasLog from gas_table.go for EVM
-		// WASM computation part is charged separately in attributeWasmComputation
-		mgCost := multigas.ZeroGas()
-		topicBytes := uint64(32)
+		// Attribute history growth, WASM computation part is charged separately in attributeWasmComputation
 		numTopics := uint64(len(topics))
 		dataBytes := uint64(len(data))
-
-		// History growth per topic
-		topicHistPer := topicBytes * params.LogDataGas
-		if params.LogTopicGas < topicHistPer {
-			return fmt.Errorf("bad gas param config: LogTopicGas < topicHistPer")
-		}
-		mgCost.SaturatingIncrementInto(multigas.ResourceKindHistoryGrowth, topicHistPer*numTopics)
-
-		// Data payload (excluding topic hashes)
-		payloadBytes := dataBytes - topicBytes*numTopics
-		mgCost.SaturatingIncrementInto(multigas.ResourceKindHistoryGrowth, payloadBytes*params.LogDataGas)
-
+		mgCost := vm.WasmLogCost(numTopics, dataBytes)
 		scope.Contract.UsedMultiGas.SaturatingAddInto(mgCost)
 
 		event := &types.Log{
@@ -290,7 +274,6 @@ func newApiClosures(
 		open, ever := db.AddStylusPages(pages)
 		// addPages WASM computation cost is charged separately in attributeWasmComputation
 		return memoryModel.GasCost(pages, open, ever)
-
 	}
 	captureHostio := func(name string, args, outs []byte, startInk, endInk uint64) {
 		if tracingInfo.Tracer != nil && tracingInfo.Tracer.CaptureStylusHostio != nil {

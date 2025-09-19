@@ -162,10 +162,8 @@ func TestMultigasStylus_EmitLog(t *testing.T) {
 	// Expected history growth calculation
 	numTopics := uint64(len(topics))
 	dataBytes := uint64(len(data))
-	topicBytes := uint64(32)
-	topicHistPer := topicBytes * params.LogDataGas
-	payloadBytes := dataBytes - topicBytes*numTopics
-	expectedHistoryGrowth := topicHistPer*numTopics + payloadBytes*params.LogDataGas
+	payloadBytes := dataBytes - params.LogTopicBytes*numTopics
+	expectedHistoryGrowth := params.LogTopicHistoryGas*numTopics + payloadBytes*params.LogDataGas
 
 	require.Equal(t,
 		expectedHistoryGrowth,
