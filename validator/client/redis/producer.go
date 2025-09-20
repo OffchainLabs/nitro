@@ -2,6 +2,7 @@ package redis
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync/atomic"
 
@@ -126,6 +127,9 @@ func (c *ValidationClient) Initialize(ctx context.Context, moduleRoots []common.
 }
 
 func (c *ValidationClient) WasmModuleRoots() ([]common.Hash, error) {
+	if len(c.moduleRoots) == 0 && len(c.producers) == 0 {
+		return nil, errors.New("validation client not initialized")
+	}
 	return c.moduleRoots, nil
 }
 
