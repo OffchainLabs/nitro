@@ -23,4 +23,6 @@ jobs:
         run: make -j8 build-node-deps
 
       - name: Custom Lint
-        run: make lint
+        uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.1
