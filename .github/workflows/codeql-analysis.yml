@@ -13,6 +13,7 @@ jobs:
   analyze:
     name: Analyze
     runs-on: arbitrator-ci
+    if: github.repository == 'OffchainLabs/nitro'  # avoid forks without "Advanced Security" enabled
     permissions:
       actions: read
       contents: read
