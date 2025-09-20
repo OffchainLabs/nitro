@@ -1,3 +1,4 @@
+---
 name: 'Install stable Rust'
 description: 'Installs stable Rust toolchain with appropriate targets and components.'
 
@@ -22,6 +23,7 @@ outputs:
 
 runs:
   using: composite
+
   steps:
     - name: Install Rust stable
       id: install-rust

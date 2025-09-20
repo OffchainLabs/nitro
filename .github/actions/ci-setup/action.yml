@@ -1,0 +1,83 @@
+---
+name: Nitro CI Setup
+description: Common setup for Nitro CI jobs
+
+runs:
+  using: composite
+
+  steps:
+    - name: Install dependencies
+      run: sudo apt update && sudo apt install -y wabt gotestsum
+      shell: bash
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v5
+      with:
+        node-version: "24"
+        cache: yarn
+        cache-dependency-path: "**/yarn.lock"
+
+    - name: Setup Go
+      uses: actions/setup-go@v6
+      with:
+        go-version-file: "go.mod"
+
+    - name: Install wasm-ld
+      run: |
+        sudo apt-get update && sudo apt-get install -y lld-14
+        sudo ln -s /usr/bin/wasm-ld-14 /usr/local/bin/wasm-ld
+      shell: bash
+
+    - name: Install rust
+      id: install-rust
+      uses: ./.github/actions/install-rust
+
+    - name: Setup Foundry
+      uses: foundry-rs/foundry-toolchain@v1
+      with:
+        cache: false
+        version: v1.0.0
+
+    - name: Install cbindgen
+      run: cargo install --force cbindgen
+      shell: bash
+
+    - name: Cache Go build
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/go-build
+        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+
+    - name: Cache Rust build
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/
+          arbitrator/target/
+          arbitrator/wasm-libraries/target/
+          arbitrator/wasm-libraries/soft-float/
+          target/etc/initial-machine-cache/
+          /home/runner/.rustup/toolchains/
+        key: ${{ runner.os }}-cargo-${{ steps.install-rust.outputs.version }}-${{ hashFiles('arbitrator/Cargo.lock') }}
+
+    - name: Cache cbrotli
+      id: cache-cbrotli
+      uses: actions/cache@v4
+      with:
+        path: |
+          target/include/brotli/
+          target/lib-wasm/
+          target/lib/libbrotlicommon-static.a
+          target/lib/libbrotlienc-static.a
+          target/lib/libbrotlidec-static.a
+        key: ${{ runner.os }}-brotli-${{ hashFiles('scripts/build-brotli.sh') }}
+
+    - name: Build cbrotli-local
+      if: steps.cache-cbrotli.outputs.cache-hit != 'true'
+      run: ./scripts/build-brotli.sh -l
+      shell: bash
+
+    - name: Build cbrotli-wasm in docker
+      if: steps.cache-cbrotli.outputs.cache-hit != 'true'
+      run: ./scripts/build-brotli.sh -w -d
+      shell: bash
