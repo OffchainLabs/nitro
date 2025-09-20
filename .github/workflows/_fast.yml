@@ -2,25 +2,14 @@
 name: fast-ci-jobs
 on:
   workflow_call:
-    outputs:
-      ok:
-        description: "true if all fast jobs passed"
-        value: ${{ jobs.aggregate.outputs.ok }}
 
 jobs:
   lint-and-build:
     name: Lint and Build
     runs-on: arbitrator-ci
     steps:
-      - name: Checkout
-        uses: actions/checkout@v5
-        with:
-          submodules: recursive
-
       - name: Setup CI
         uses: ./.github/actions/ci-setup
-        with:
-          skip_checkout: 'true'
 
       - name: Build
         run: make -j8 build test-go-deps
@@ -28,21 +17,5 @@ jobs:
       - name: Build all lint dependencies
         run: make -j8 build-node-deps
 
-      - name: Lint
-        uses: golangci/golangci-lint-action@v8
-        with:
-          version: latest
-          skip-cache: true
-          skip-save-cache: true
-
       - name: Custom Lint
-        run: go run ./linters ./...
-
-  aggregate:
-    runs-on: ubuntu-4
-    needs: [lint-and-build]
-    outputs:
-      ok: ${{ steps.ok.outputs.ok }}
-    steps:
-      - id: ok
-        run: echo "ok=true" >> "$GITHUB_OUTPUT"
+        run: make lint

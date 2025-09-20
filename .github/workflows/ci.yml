@@ -15,6 +15,7 @@ jobs:
     runs-on: ubuntu-4
     outputs:
       arbitrator_changed: ${{ steps.changed.outputs.arbitrator_any_changed }}
+      bold_legacy_changed: ${{ steps.changed.outputs.bold_legacy_any_changed }}
 
     steps:
       - name: Checkout
@@ -33,6 +34,8 @@ jobs:
               - 'arbitrator/**'
               - 'contracts/**'
               - 'Makefile'
+            bold_legacy:
+              - 'bold/legacy/**'
 
   # --- Fast: Build + Lint only (required by can_proceed) ---
   fast:
@@ -45,12 +48,17 @@ jobs:
     if: needs.changes.outputs.arbitrator_changed == 'true'
     uses: ./.github/workflows/_arbitrator.yml
     secrets: inherit
-    with:
-      run: true
+
+  # --- Run Bold Legacy challenge tests (not required by can_proceed) ---
+  bold-legacy:
+    needs: changes
+    if: needs.changes.outputs.bold_legacy_changed == 'true'
+    uses: ./.github/workflows/_bold-legacy.yml
+    secrets: inherit
 
   # --- Full GO tests (not required by can_proceed) ---
   go-tests:
-    uses: ./.github/workflows/_go_tests.yml
+    uses: ./.github/workflows/_go-tests.yml
     secrets: inherit
 
   can_proceed:

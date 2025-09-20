@@ -42,6 +42,7 @@ jobs:
             [contracts-local/lib/openzeppelin-contracts]=origin/release-v4.7
           )
           divergent=0
+          # The commit SHA of the PR or the current commit if a merge_group event
           commit_sha="${{ github.event.pull_request.head.sha || github.sha }}"
           for mod in `git submodule --quiet foreach 'echo $name'`; do
             branch=origin/HEAD

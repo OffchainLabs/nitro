@@ -2,17 +2,9 @@
 name: nitro-arbitrator
 on:
   workflow_call:
-    inputs:
-      run:
-        type: boolean
-        default: true
-    outputs:
-      ok:
-        value: ${{ jobs.aggregate.outputs.ok }}
 
 jobs:
   arbitrator:
-    if: ${{ inputs.run }}
     name: Run Arbitrator tests
     runs-on: arbitrator-ci
     env:
@@ -20,15 +12,8 @@ jobs:
       # RUSTFLAGS: -Dwarnings          # TODO: re-enable after wasmer upgrade
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v5
-        with:
-          submodules: recursive
-
       - name: Setup CI
         uses: ./.github/actions/ci-setup
-        with:
-          skip_checkout: 'true'
 
       - name: Install custom go-ethereum
         run: |
@@ -82,12 +67,3 @@ jobs:
           yarn build
           yarn build:forge:yul
           yarn hardhat --network localhost test test/prover/*.ts
-
-  aggregate:
-    runs-on: ubuntu-4
-    needs: [arbitrator]
-    outputs:
-      ok: ${{ steps.ok.outputs.ok }}
-    steps:
-      - id: ok
-        run: echo "ok=true" >> "$GITHUB_OUTPUT"

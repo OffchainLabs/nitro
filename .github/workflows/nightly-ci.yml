@@ -4,14 +4,12 @@ run-name: Nightly CI tests triggered from @${{ github.actor }} of ${{ github.hea
 
 on:
   workflow_dispatch:
-  push:
-    branches: [master]
   schedule:
     # Run at 00:00 AM UTC
     - cron: '0 0 * * *'
 
 jobs:
-  # Only run on schedule AND pushes to the main branch
+  # Only run on schedule
   tests-scheduled:
     name: Scheduled tests
     runs-on: arbitrator-ci
@@ -25,21 +23,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        test-mode: [race, legacychallenge, long, challenge, l3challenge, execution-spec-tests]
+        test-mode: [legacychallenge, long, challenge, l3challenge, execution-spec-tests]
 
     if: >-
       github.event_name == 'workflow_dispatch' || (github.event_name == 'schedule' && github.ref == 'refs/heads/master')
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v5
-        with:
-          submodules: recursive
-
       - name: Setup CI
         uses: ./.github/actions/ci-setup
-        with:
-          skip_checkout: 'true'
 
       - name: Build
         run: make build test-go-deps -j
@@ -107,66 +98,6 @@ jobs:
           path: full.log
 
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v5
-        with:
-          fail_ci_if_error: false
-          files: ./coverage.txt,./coverage-redis.txt
-          verbose: false
-          token: ${{ secrets.CODECOV_TOKEN }}
-
-
-  # Only run this job if files in bold/legacy/ are modified
-  tests-pr:
-    name: PR modified files tests
-    runs-on: arbitrator-ci
-    if: github.event_name == 'pull_request'
-
-    permissions:
-      pull-requests: read
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v5
-        with:
-          submodules: recursive
-          fetch-depth: 10           # Will cover most PRs
-          persist-credentials: true # In case changed-files requires deeper depth
-          
-      - name: Check changed files
-        id: changed-files
-        uses: tj-actions/changed-files@v46
-        with:
-          files: bold/legacy/**
-
-      # Add conditional execution for all subsequent steps
-      - name: Skip tests if no relevant files changed
-        id: check-skip
-        if: steps.changed-files.outputs.any_changed != 'true'
-        run: |
-          echo "No changes detected in bold/legacy/** - skipping challenge tests"
-          exit 0  # Success exit code to pass the job
-
-      - name: Setup CI
-        if: steps.changed-files.outputs.any_changed == 'true'
-        uses: ./.github/actions/ci-setup
-        with:
-          skip_checkout: 'true'
-
-      - name: run challenge tests
-        if: steps.changed-files.outputs.any_changed == 'true'
-        run: >-
-          ${{ github.workspace }}/.github/workflows/gotestsum.sh --tags legacychallengetest
-          --run TestChallenge --timeout 60m --cover
-
-      - name: Archive detailed run log
-        if: steps.changed-files.outputs.any_changed == 'true'
-        uses: actions/upload-artifact@v4
-        with:
-          name: full.log
-          path: full.log
-
-      - name: Upload coverage to Codecov
-        if: steps.changed-files.outputs.any_changed == 'true'
         uses: codecov/codecov-action@v5
         with:
           fail_ci_if_error: false

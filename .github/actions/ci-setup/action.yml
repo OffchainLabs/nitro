@@ -3,10 +3,10 @@ name: Nitro CI Setup
 description: Common setup for Nitro CI jobs
 
 inputs:
-  skip_checkout:
-    required: false
-    description: 'If true, skip the checkout step (useful when the caller already checked out)'
-    default: 'false'
+  submodule_mode:
+    required: true
+    description: 'The mode that should be used for submodules. One of: "true" (default), "recursive", or "false"'
+    default: 'recursive'
 
 runs:
   using: composite
@@ -16,7 +16,7 @@ runs:
       if: ${{ inputs.skip_checkout != 'true' }}
       uses: actions/checkout@v5
       with:
-        submodules: recursive
+        submodules: ${{ inputs.submodule_mode }}
 
     - name: Install dependencies
       run: sudo apt update && sudo apt install -y wabt gotestsum

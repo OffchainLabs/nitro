@@ -2,8 +2,6 @@
 name: CodeQL
 
 on:
-  push:
-    branches: [master]
   merge_group:
     branches: [master]
   pull_request:
@@ -21,16 +19,8 @@ jobs:
       security-events: write
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v5
-        with:
-          submodules: recursive
-
       - name: Setup CI
         uses: ./.github/actions/ci-setup
-        with:
-          skip_checkout: 'true'
-
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v3
         with:

@@ -2,13 +2,6 @@
 name: nitro-go-tests
 on:
   workflow_call:
-    inputs:
-      run:
-        type: boolean
-        default: true
-    outputs:
-      ok:
-        value: ${{ jobs.aggregate.outputs.ok }}
 
 jobs:
   go-tests:
@@ -24,15 +17,8 @@ jobs:
         ports:
           - 6379:6379
     steps:
-      - name: Checkout
-        uses: actions/checkout@v5
-        with:
-          submodules: recursive
-
       - name: Setup CI
         uses: ./.github/actions/ci-setup
-        with:
-          skip_checkout: 'true'
 
       - name: Set environment variables
         run: |
@@ -122,12 +108,3 @@ jobs:
           files: ./coverage.txt,./coverage-redis.txt
           verbose: false
           token: ${{ secrets.CODECOV_TOKEN }}
-
-  aggregate:
-    runs-on: ubuntu-4
-    needs: [go-tests]
-    outputs:
-      ok: ${{ steps.ok.outputs.ok }}
-    steps:
-      - id: ok
-        run: echo "ok=true" >> "$GITHUB_OUTPUT"
