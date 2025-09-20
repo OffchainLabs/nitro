@@ -8,10 +8,14 @@ jobs:
     name: Run Bold Legacy challenge tests
     runs-on: arbitrator-ci
     steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          submodules: recursive
+
+
       - name: Setup CI
         uses: ./.github/actions/ci-setup
-        with:
-          skip_checkout: 'true'
 
       - name: run challenge tests
         run: >-

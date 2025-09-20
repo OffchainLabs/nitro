@@ -2,22 +2,10 @@
 name: Nitro CI Setup
 description: Common setup for Nitro CI jobs
 
-inputs:
-  submodule_mode:
-    required: true
-    description: 'The mode that should be used for submodules. One of: "true" (default), "recursive", or "false"'
-    default: 'recursive'
-
 runs:
   using: composite
 
   steps:
-    - name: Checkout
-      if: ${{ inputs.skip_checkout != 'true' }}
-      uses: actions/checkout@v5
-      with:
-        submodules: ${{ inputs.submodule_mode }}
-
     - name: Install dependencies
       run: sudo apt update && sudo apt install -y wabt gotestsum
       shell: bash

@@ -17,6 +17,11 @@ jobs:
         ports:
           - 6379:6379
     steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          submodules: recursive
+
       - name: Setup CI
         uses: ./.github/actions/ci-setup
 
