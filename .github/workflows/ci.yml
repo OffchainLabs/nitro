@@ -25,7 +25,7 @@ jobs:
           fetch-depth: 10            # Will cover most PRs
           persist-credentials: true  # In case changed-files requires deeper depth
 
-      - name: Determine if Arbitrator changed
+      - name: Determine if Arbitrator or Bold Legacy changed
         id: changed
         uses: tj-actions/changed-files@v46.0.5
         with:

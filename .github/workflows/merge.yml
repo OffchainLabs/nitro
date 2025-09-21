@@ -21,7 +21,7 @@ jobs:
           fetch-depth: 10            # Will cover most PRs
           persist-credentials: true  # In case changed-files requires deeper depth
 
-      - name: Determine if Arbitrator changed
+      - name: Determine if Arbitrator or Bold Legacy changed
         id: changed
         uses: tj-actions/changed-files@v46.0.5
         with:
@@ -61,9 +61,14 @@ jobs:
     name: can_proceed
     runs-on: ubuntu-4
     needs: [fast, arbitrator, bold-legacy, go-tests]
+    if: ${{ always()
+          && needs.fast.result == 'success'
+          && needs.go-tests.result == 'success'
+          && (needs.arbitrator.result == 'success' || needs.arbitrator.result == 'skipped')
+          && (needs.bold-legacy.result == 'success' || needs.bold-legacy.result == 'skipped') }}
     steps:
       - name: OK
-        run: exit 0
+        run: echo "All required jobs succeeded or were skipped when appropriate."
 
   can_see_status:
     runs-on: ubuntu-4
