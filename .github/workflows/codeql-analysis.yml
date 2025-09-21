@@ -3,9 +3,9 @@ name: CodeQL
 
 on:
   merge_group:
-    branches: [master]
+    branches: [master, main]
   pull_request:
-    branches: [master]
+    branches: [master, main]
   schedule:
     - cron: '18 21 * * 5'
 

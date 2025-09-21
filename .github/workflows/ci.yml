@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
   pull_request:
   push:
-    branches: [master]
+    branches: [master, main]
 
 jobs:
   # --- Determine which files have changed ---
