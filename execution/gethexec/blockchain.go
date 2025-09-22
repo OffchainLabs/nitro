@@ -126,9 +126,6 @@ func (c *CachingConfig) validateStateScheme() error {
 	switch c.StateScheme {
 	case rawdb.HashScheme:
 	case rawdb.PathScheme:
-		if c.Archive {
-			return errors.New("archive cannot be set when using path as the state-scheme")
-		}
 	default:
 		return errors.New("Invalid StateScheme")
 	}
