@@ -22,7 +22,11 @@ jobs:
       - name: Build all lint dependencies
         run: make -j8 build-node-deps
 
-      - name: Custom Lint
+      - name: GolangCI Lint
         uses: golangci/golangci-lint-action@v8
         with:
           version: v2.1
+
+      - name: Custom Lint
+        run: |
+          go run ./linters ./...

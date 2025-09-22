@@ -25,9 +25,6 @@ jobs:
       matrix:
         test-mode: [legacychallenge, long, challenge, l3challenge, execution-spec-tests]
 
-    if: >-
-      github.event_name == 'workflow_dispatch' || (github.event_name == 'schedule' && github.ref == 'refs/heads/master')
-
     steps:
       - name: Checkout
         uses: actions/checkout@v5
