@@ -34,6 +34,7 @@ type DAProviderFactory interface {
 	CreateWriter(ctx context.Context) (daprovider.Writer, func(), error)
 	CreateValidator(ctx context.Context) (daprovider.Validator, func(), error)
 	ValidateConfig() error
+	GetSupportedHeaderBytes() []byte
 }
 
 type AnyTrustFactory struct {
@@ -86,6 +87,10 @@ func NewDAProviderFactory(
 }
 
 // AnyTrust Factory Implementation
+func (f *AnyTrustFactory) GetSupportedHeaderBytes() []byte {
+	return []byte{daprovider.DASMessageHeaderFlag}
+}
+
 func (f *AnyTrustFactory) ValidateConfig() error {
 	if !f.config.Enable {
 		return errors.New("anytrust data availability must be enabled")
@@ -169,6 +174,10 @@ func (f *AnyTrustFactory) CreateValidator(ctx context.Context) (daprovider.Valid
 }
 
 // ReferenceDA Factory Implementation
+func (f *ReferenceDAFactory) GetSupportedHeaderBytes() []byte {
+	return []byte{daprovider.DACertificateMessageHeaderFlag}
+}
+
 func (f *ReferenceDAFactory) ValidateConfig() error {
 	if !f.config.Enable {
 		return errors.New("referenceda must be enabled")

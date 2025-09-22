@@ -32,11 +32,6 @@ func NewReader(l1Client *ethclient.Client, validatorAddr common.Address) *Reader
 	}
 }
 
-// IsValidHeaderByte returns true if the header byte indicates a CustomDA message
-func (r *Reader) IsValidHeaderByte(ctx context.Context, headerByte byte) bool {
-	return daprovider.IsDACertificateMessageHeaderByte(headerByte)
-}
-
 // RecoverPayloadFromBatch fetches the batch data from the ReferenceDA storage
 func (r *Reader) RecoverPayloadFromBatch(
 	ctx context.Context,

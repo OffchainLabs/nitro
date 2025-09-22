@@ -27,9 +27,10 @@ import (
 )
 
 type Server struct {
-	reader    daprovider.Reader
-	writer    daprovider.Writer
-	validator daprovider.Validator
+	reader      daprovider.Reader
+	writer      daprovider.Writer
+	validator   daprovider.Validator
+	headerBytes []byte // Supported header bytes for this provider
 }
 
 type ServerConfig struct {
@@ -73,7 +74,7 @@ func fetchJWTSecret(fileName string) ([]byte, error) {
 }
 
 // NewServerWithDAPProvider creates a new server with pre-created reader/writer/validator components
-func NewServerWithDAPProvider(ctx context.Context, config *ServerConfig, reader daprovider.Reader, writer daprovider.Writer, validator daprovider.Validator) (*http.Server, error) {
+func NewServerWithDAPProvider(ctx context.Context, config *ServerConfig, reader daprovider.Reader, writer daprovider.Writer, validator daprovider.Validator, headerBytes []byte) (*http.Server, error) {
 	listener, err := net.Listen("tcp", fmt.Sprintf("%s:%d", config.Addr, config.Port))
 	if err != nil {
 		return nil, err
@@ -85,9 +86,10 @@ func NewServerWithDAPProvider(ctx context.Context, config *ServerConfig, reader 
 	}
 
 	server := &Server{
-		reader:    reader,
-		writer:    writer,
-		validator: validator,
+		reader:      reader,
+		writer:      writer,
+		validator:   validator,
+		headerBytes: headerBytes,
 	}
 	if err = rpcServer.RegisterName("daprovider", server); err != nil {
 		return nil, err
@@ -132,8 +134,10 @@ func NewServerWithDAPProvider(ctx context.Context, config *ServerConfig, reader 
 	return srv, nil
 }
 
-func (s *Server) IsValidHeaderByte(ctx context.Context, headerByte byte) (*daclient.IsValidHeaderByteResult, error) {
-	return &daclient.IsValidHeaderByteResult{IsValid: s.reader.IsValidHeaderByte(ctx, headerByte)}, nil
+func (s *Server) GetSupportedHeaderBytes(ctx context.Context) (*daclient.SupportedHeaderBytesResult, error) {
+	return &daclient.SupportedHeaderBytesResult{
+		HeaderBytes: s.headerBytes,
+	}, nil
 }
 
 func (s *Server) RecoverPayloadFromBatch(

@@ -167,8 +167,11 @@ func NewServer(ctx context.Context, config *ServerConfig, dataSigner signature.D
 	}, nil
 }
 
-func (s *Server) IsValidHeaderByte(ctx context.Context, headerByte byte) (*daclient.IsValidHeaderByteResult, error) {
-	return &daclient.IsValidHeaderByteResult{IsValid: s.reader.IsValidHeaderByte(ctx, headerByte)}, nil
+func (s *Server) GetSupportedHeaderBytes(ctx context.Context) (*daclient.SupportedHeaderBytesResult, error) {
+	// DAS supports the DAS message header byte
+	return &daclient.SupportedHeaderBytesResult{
+		HeaderBytes: []byte{daprovider.DASMessageHeaderFlag},
+	}, nil
 }
 
 func (s *Server) RecoverPayloadFromBatch(

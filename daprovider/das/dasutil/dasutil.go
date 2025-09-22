@@ -52,10 +52,6 @@ type readerForDAS struct {
 	keysetFetcher DASKeysetFetcher
 }
 
-func (d *readerForDAS) IsValidHeaderByte(ctx context.Context, headerByte byte) bool {
-	return daprovider.IsDASMessageHeaderByte(headerByte)
-}
-
 func (d *readerForDAS) RecoverPayloadFromBatch(
 	ctx context.Context,
 	batchNum uint64,

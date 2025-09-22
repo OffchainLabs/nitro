@@ -11,7 +11,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
-	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/util/rpcclient"
@@ -52,18 +51,17 @@ func NewClient(ctx context.Context, config rpcclient.ClientConfigFetcher) (*Clie
 	return client, nil
 }
 
-// IsValidHeaderByteResult is the result struct that data availability providers should use to respond if the given headerByte corresponds to their DA service
-type IsValidHeaderByteResult struct {
-	IsValid bool `json:"is-valid,omitempty"`
+// SupportedHeaderBytesResult is the result struct that data availability providers should use to respond with their supported header bytes
+type SupportedHeaderBytesResult struct {
+	HeaderBytes hexutil.Bytes `json:"headerBytes,omitempty"`
 }
 
-func (c *Client) IsValidHeaderByte(ctx context.Context, headerByte byte) bool {
-	var isValidHeaderByteResult IsValidHeaderByteResult
-	if err := c.CallContext(ctx, &isValidHeaderByteResult, "daprovider_isValidHeaderByte", headerByte); err != nil {
-		log.Error("Error returned from daprovider_isValidHeaderByte rpc method, defaulting to result as false", "err", err)
-		return false
+func (c *Client) GetSupportedHeaderBytes(ctx context.Context) ([]byte, error) {
+	var result SupportedHeaderBytesResult
+	if err := c.CallContext(ctx, &result, "daprovider_getSupportedHeaderBytes"); err != nil {
+		return nil, fmt.Errorf("error returned from daprovider_getSupportedHeaderBytes rpc method: %w", err)
 	}
-	return isValidHeaderByteResult.IsValid
+	return result.HeaderBytes, nil
 }
 
 // RecoverPayloadFromBatchResult is the result struct that data availability providers should use to respond with underlying payload and updated preimages map to a RecoverPayloadFromBatch fetch request

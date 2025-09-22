@@ -30,9 +30,6 @@ func IsCertificateValidationError(err error) bool {
 }
 
 type Reader interface {
-	// IsValidHeaderByte returns true if the given headerByte has bits corresponding to the DA provider
-	IsValidHeaderByte(ctx context.Context, headerByte byte) bool
-
 	// RecoverPayloadFromBatch fetches the underlying payload and a map of preimages from the DA provider given the batch header information
 	RecoverPayloadFromBatch(
 		ctx context.Context,
@@ -52,10 +49,6 @@ func NewReaderForBlobReader(blobReader BlobReader) *readerForBlobReader {
 
 type readerForBlobReader struct {
 	blobReader BlobReader
-}
-
-func (b *readerForBlobReader) IsValidHeaderByte(ctx context.Context, headerByte byte) bool {
-	return IsBlobHashesHeaderByte(headerByte)
 }
 
 func (b *readerForBlobReader) RecoverPayloadFromBatch(
