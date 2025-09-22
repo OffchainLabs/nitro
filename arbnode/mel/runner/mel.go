@@ -14,6 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/arbnode/mel"
@@ -24,6 +25,10 @@ import (
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
+var (
+	stuckFSMIndicatingGauge = metrics.NewRegisteredGauge("arb/mel/stuck", nil) // 1-stuck, 0-not_stuck
+)
+
 // The default retry interval for the message extractor FSM. After each tick of the FSM,
 // the extractor service stop waiter will wait for this duration before trying to act again.
 const defaultRetryInterval = time.Second
@@ -32,8 +37,9 @@ type MessageExtractionConfig struct {
 	Enable                        bool          `koanf:"enable"`
 	RetryInterval                 time.Duration `koanf:"retry-interval"`
 	DelayedMessageBacklogCapacity int           `koanf:"delayed-message-backlog-capacity"`
-	BlocksToPrefetch              uint64        `koanf:"blocks-to-prefetch" reload:"hot"`
-	ReadMode                      string        `koanf:"read-mode" reload:"hot"`
+	BlocksToPrefetch              uint64        `koanf:"blocks-to-prefetch"`
+	ReadMode                      string        `koanf:"read-mode"`
+	StallTolerance                uint64        `koanf:"stall-tolerance"`
 }
 
 func (c *MessageExtractionConfig) Validate() error {
@@ -50,6 +56,7 @@ var DefaultMessageExtractionConfig = MessageExtractionConfig{
 	DelayedMessageBacklogCapacity: 100, // TODO: right default? setting to a lower value means more calls to l1reader
 	BlocksToPrefetch:              499, // 500 is the eth_getLogs block range limit
 	ReadMode:                      "latest",
+	StallTolerance:                10,
 }
 
 func MessageExtractionConfigAddOptions(prefix string, f *pflag.FlagSet) {
@@ -58,6 +65,7 @@ func MessageExtractionConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Int(prefix+".delayed-message-backlog-capacity", DefaultMessageExtractionConfig.DelayedMessageBacklogCapacity, "target capacity of the delayed message backlog")
 	f.Uint64(prefix+".blocks-to-prefetch", DefaultMessageExtractionConfig.BlocksToPrefetch, "the number of blocks to prefetch relevant logs from")
 	f.String(prefix+".read-mode", DefaultMessageExtractionConfig.ReadMode, "mode to only read latest or safe or finalized L1 blocks. Enabling safe or finalized disables feed input and output. Defaults to latest. Takes string input, valid strings- latest, safe, finalized")
+	f.Uint64(prefix+".stall-tolerance", DefaultMessageExtractionConfig.StallTolerance, "max times the MEL fsm is allowed to be stuck without logging error")
 }
 
 // TODO (ganesh): cleanup unused methods from this interface after checking with wasm mode
@@ -76,7 +84,7 @@ type ParentChainReader interface {
 // blocks one by one to transform them into messages for the execution layer.
 type MessageExtractor struct {
 	stopwaiter.StopWaiter
-	config            *MessageExtractionConfig
+	config            MessageExtractionConfig
 	parentChainReader ParentChainReader
 	logsPreFetcher    *logsFetcher
 	addrs             *chaininfo.RollupAddresses
@@ -84,39 +92,35 @@ type MessageExtractor struct {
 	msgConsumer       mel.MessageConsumer
 	dataProviders     []daprovider.Reader
 	fsm               *fsm.Fsm[action, FSMState]
-	retryInterval     time.Duration
 	caughtUp          bool
 	caughtUpChan      chan struct{}
 	lastBlockToRead   atomic.Uint64
+	stuckCount        uint64
 }
 
 // Creates a message extractor instance with the specified parameters,
 // including a parent chain reader, rollup addresses, and data providers
 // to be used when extracting messages from the parent chain.
 func NewMessageExtractor(
+	config MessageExtractionConfig,
 	parentChainReader ParentChainReader,
 	rollupAddrs *chaininfo.RollupAddresses,
 	melDB *Database,
 	msgConsumer mel.MessageConsumer,
 	dataProviders []daprovider.Reader,
-	retryInterval time.Duration,
 ) (*MessageExtractor, error) {
-	if retryInterval == 0 {
-		retryInterval = defaultRetryInterval
-	}
 	fsm, err := newFSM(Start)
 	if err != nil {
 		return nil, err
 	}
 	return &MessageExtractor{
+		config:            config,
 		parentChainReader: parentChainReader,
 		addrs:             rollupAddrs,
 		melDB:             melDB,
 		msgConsumer:       msgConsumer,
 		dataProviders:     dataProviders,
 		fsm:               fsm,
-		retryInterval:     retryInterval,
-		config:            &DefaultMessageExtractionConfig, //TODO: remove retryInterval as a struct instead use config
 		caughtUpChan:      make(chan struct{}),
 	}, nil
 }
@@ -135,10 +139,19 @@ func (m *MessageExtractor) Start(ctxIn context.Context) error {
 	}
 	return stopwaiter.CallIterativelyWith(
 		&m.StopWaiterSafe,
-		func(ctx context.Context, ignored struct{}) time.Duration {
+		func(ctx context.Context, _ struct{}) time.Duration {
 			actAgainInterval, err := m.Act(ctx)
 			if err != nil {
 				log.Error("Error in message extractor", "err", err)
+				m.stuckCount++ // an error implies no change in the fsm state
+			} else {
+				m.stuckCount = 0
+			}
+			if m.stuckCount > m.config.StallTolerance {
+				stuckFSMIndicatingGauge.Update(1)
+				log.Error("Message extractor has been stuck at the same fsm state past the stall-tolerance number of times", "state", m.fsm.Current().State.String(), "stuckCount", m.stuckCount, "err", err)
+			} else {
+				stuckFSMIndicatingGauge.Update(0)
 			}
 			return actAgainInterval
 		},
@@ -157,10 +170,10 @@ func (m *MessageExtractor) updateLastBlockToRead(ctx context.Context) time.Durat
 	}
 	if err != nil {
 		log.Error("Error fetching header to update last block to read in MEL", "err", err)
-		return m.retryInterval
+		return m.config.RetryInterval
 	}
 	m.lastBlockToRead.Store(header.Number.Uint64())
-	return m.retryInterval
+	return m.config.RetryInterval
 }
 
 func (m *MessageExtractor) CurrentFSMState() FSMState {
@@ -349,6 +362,6 @@ func (m *MessageExtractor) Act(ctx context.Context) (time.Duration, error) {
 	case Reorging:
 		return m.reorg(ctx, current)
 	default:
-		return m.retryInterval, fmt.Errorf("invalid state: %s", current.State)
+		return m.config.RetryInterval, fmt.Errorf("invalid state: %s", current.State)
 	}
 }
