@@ -13,8 +13,8 @@ func TestReleases(t *testing.T) {
 	if len(rels) == 0 {
 		t.Error("No releases found")
 	}
-	if len(rels) != 50 {
-		t.Errorf("Expected 50 releases, got %d", len(rels))
+	if len(rels) != 100 {
+		t.Errorf("Expected 100 releases, got %d", len(rels))
 	}
 }
 
