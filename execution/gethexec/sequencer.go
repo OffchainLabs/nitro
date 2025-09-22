@@ -15,7 +15,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	flag "github.com/spf13/pflag"
+	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/arbitrum_types"
@@ -200,7 +200,7 @@ var DefaultDangerousConfig = DangerousConfig{
 	DisableSeqInboxMaxDataSizeCheck: false,
 }
 
-func SequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
+func SequencerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultSequencerConfig.Enable, "act and post to l1 as sequencer")
 	f.Duration(prefix+".read-from-tx-queue-timeout", DefaultSequencerConfig.ReadFromTxQueueTimeout, "timeout for reading new messages")
 	f.Duration(prefix+".max-block-speed", DefaultSequencerConfig.MaxBlockSpeed, "minimum delay between blocks (sets a maximum speed of block production)")
@@ -223,7 +223,7 @@ func SequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable-profiling", DefaultSequencerConfig.EnableProfiling, "enable CPU profiling and tracing")
 }
 
-func TimeboostAddOptions(prefix string, f *flag.FlagSet) {
+func TimeboostAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultTimeboostConfig.Enable, "enable timeboost based on express lane auctions")
 	f.String(prefix+".auction-contract-address", DefaultTimeboostConfig.AuctionContractAddress, "Address of the proxy pointing to the ExpressLaneAuction contract")
 	f.String(prefix+".auctioneer-address", DefaultTimeboostConfig.AuctioneerAddress, "Address of the Timeboost Autonomous Auctioneer")
@@ -236,7 +236,7 @@ func TimeboostAddOptions(prefix string, f *flag.FlagSet) {
 	f.Uint64(prefix+".queue-timeout-in-blocks", DefaultTimeboostConfig.QueueTimeoutInBlocks, "maximum amount of time (measured in blocks) that Express Lane transactions can wait in the sequencer's queue")
 }
 
-func DangerousAddOptions(prefix string, f *flag.FlagSet) {
+func DangerousAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".disable-seq-inbox-max-data-size-check", DefaultDangerousConfig.DisableSeqInboxMaxDataSizeCheck, "DANGEROUS! disables nitro checks on sequencer MaxTxDataSize against the sequencer inbox MaxDataSize")
 	f.Bool(prefix+".disable-blob-base-fee-check", DefaultDangerousConfig.DisableBlobBaseFeeCheck, "DANGEROUS! disables nitro checks on sequencer for blob base fee")
 }
@@ -1599,18 +1599,18 @@ func (s *Sequencer) StopAndWait() {
 				}
 			}
 			wg.Add(1)
-			go func() {
+			go func(it txQueueItem, src TxSource) {
 				defer wg.Done()
 				var err error
-				if source == TimeboostAuctionResolutionTxQueue {
-					err = forwarder.PublishAuctionResolutionTransaction(item.ctx, item.tx)
+				if src == TimeboostAuctionResolutionTxQueue {
+					err = forwarder.PublishAuctionResolutionTransaction(it.ctx, it.tx)
 				} else {
-					err = forwarder.PublishTransaction(item.ctx, item.tx, item.options)
+					err = forwarder.PublishTransaction(it.ctx, it.tx, it.options)
 				}
 				if err != nil {
-					log.Warn("failed to forward transaction while shutting down", "source", source.String(), "err", err)
+					log.Warn("failed to forward transaction while shutting down", "source", src.String(), "err", err)
 				}
-			}()
+			}(item, source)
 		}
 		wg.Wait()
 	}

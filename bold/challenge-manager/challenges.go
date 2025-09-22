@@ -13,11 +13,11 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/log"
 
-	protocol "github.com/offchainlabs/nitro/bold/chain-abstraction"
-	edgetracker "github.com/offchainlabs/nitro/bold/challenge-manager/edge-tracker"
+	"github.com/offchainlabs/nitro/bold/chain-abstraction"
+	"github.com/offchainlabs/nitro/bold/challenge-manager/edge-tracker"
 	"github.com/offchainlabs/nitro/bold/containers"
 	"github.com/offchainlabs/nitro/bold/containers/option"
-	l2stateprovider "github.com/offchainlabs/nitro/bold/layer2-state-provider"
+	"github.com/offchainlabs/nitro/bold/layer2-state-provider"
 )
 
 // HandleCorrectRival is called when the assertion manager has posted a correct

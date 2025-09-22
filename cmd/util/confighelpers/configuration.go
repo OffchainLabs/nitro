@@ -20,7 +20,7 @@ import (
 	"github.com/knadh/koanf/providers/rawbytes"
 	"github.com/knadh/koanf/providers/s3"
 	"github.com/mitchellh/mapstructure"
-	flag "github.com/spf13/pflag"
+	"github.com/spf13/pflag"
 
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 )
@@ -31,7 +31,7 @@ var (
 	modified = ""
 )
 
-func ApplyOverrides(f *flag.FlagSet, k *koanf.Koanf) error {
+func ApplyOverrides(f *pflag.FlagSet, k *koanf.Koanf) error {
 	// Apply command line options and environment variables
 	if err := applyOverrideOverrides(f, k); err != nil {
 		return err
@@ -66,7 +66,7 @@ func ApplyOverrides(f *flag.FlagSet, k *koanf.Koanf) error {
 }
 
 // applyOverrideOverrides for configuration values that need to be re-applied for each configuration item applied
-func applyOverrideOverrides(f *flag.FlagSet, k *koanf.Koanf) error {
+func applyOverrideOverrides(f *pflag.FlagSet, k *koanf.Koanf) error {
 	// Command line overrides config file or config string
 	if err := k.Load(posflag.Provider(f, ".", k), nil); err != nil {
 		return fmt.Errorf("error loading command line config: %w", err)
@@ -185,7 +185,7 @@ func PrintErrorAndExit(err error, usage func(string)) {
 		os.Exit(0)
 	}
 	usage(os.Args[0])
-	if err != nil && !errors.Is(err, flag.ErrHelp) {
+	if err != nil && !errors.Is(err, pflag.ErrHelp) {
 		fmt.Printf("\nFatal configuration error: %s\n", err.Error())
 		os.Exit(1)
 	} else {
@@ -215,7 +215,7 @@ func devFlagArgs() []string {
 	return args
 }
 
-func BeginCommonParse(f *flag.FlagSet, args []string) (*koanf.Koanf, error) {
+func BeginCommonParse(f *pflag.FlagSet, args []string) (*koanf.Koanf, error) {
 	var expandedArgs []string
 	for _, arg := range args {
 		if arg == "--version" || arg == "-v" {

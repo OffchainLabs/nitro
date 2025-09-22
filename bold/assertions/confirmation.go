@@ -15,12 +15,12 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/log"
 
-	protocol "github.com/offchainlabs/nitro/bold/chain-abstraction"
-	solimpl "github.com/offchainlabs/nitro/bold/chain-abstraction/sol-implementation"
+	"github.com/offchainlabs/nitro/bold/chain-abstraction"
+	"github.com/offchainlabs/nitro/bold/chain-abstraction/sol-implementation"
 	"github.com/offchainlabs/nitro/bold/challenge-manager/types"
 	"github.com/offchainlabs/nitro/bold/containers/option"
 	"github.com/offchainlabs/nitro/bold/logs/ephemeral"
-	retry "github.com/offchainlabs/nitro/bold/runtime"
+	"github.com/offchainlabs/nitro/bold/runtime"
 )
 
 func (m *Manager) queueCanonicalAssertionsForConfirmation(ctx context.Context) {
@@ -51,13 +51,11 @@ func (m *Manager) keepTryingAssertionConfirmation(ctx context.Context, assertion
 		confirmed, err = m.chain.FastConfirmAssertion(ctx, creationInfo)
 		if err != nil {
 			log.Error("Could not fast confirm latest assertion", "err", err)
-			return
-		}
-		if confirmed {
+		} else if confirmed {
 			assertionConfirmedCounter.Inc(1)
 			log.Info("Fast Confirmed assertion", "assertionHash", creationInfo.AssertionHash)
+			return
 		}
-		return
 	}
 	prevCreationInfo, err := retry.UntilSucceeds(ctx, func() (*protocol.AssertionCreatedInfo, error) {
 		return m.chain.ReadAssertionCreationInfo(ctx, creationInfo.ParentAssertionHash)
@@ -75,6 +73,17 @@ func (m *Manager) keepTryingAssertionConfirmation(ctx context.Context, assertion
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
+			if m.enableFastConfirmation {
+				var confirmed bool
+				confirmed, err = m.chain.FastConfirmAssertion(ctx, creationInfo)
+				if err != nil {
+					log.Error("Could not fast confirm latest assertion", "err", err)
+				} else if confirmed {
+					assertionConfirmedCounter.Inc(1)
+					log.Info("Fast Confirmed assertion", "assertionHash", creationInfo.AssertionHash)
+					return
+				}
+			}
 			opts := m.chain.GetCallOptsWithDesiredRpcHeadBlockNumber(&bind.CallOpts{Context: ctx})
 			parentAssertion, err := m.chain.GetAssertion(
 				ctx,
