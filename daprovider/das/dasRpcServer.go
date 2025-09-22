@@ -21,7 +21,6 @@ import (
 	"github.com/offchainlabs/nitro/daprovider/das/dasutil"
 	"github.com/offchainlabs/nitro/daprovider/das/data_streaming"
 	"github.com/offchainlabs/nitro/util/pretty"
-	"github.com/offchainlabs/nitro/util/signature"
 )
 
 var (
@@ -46,12 +45,12 @@ type DASRPCServer struct {
 	daWriter        dasutil.DASWriter
 	daHealthChecker DataAvailabilityServiceHealthChecker
 
-	signatureVerifier *signature.Verifier
+	signatureVerifier *SignatureVerifier
 
 	dataStreamReceiver *data_streaming.DataStreamReceiver
 }
 
-func StartDASRPCServer(ctx context.Context, addr string, portNum uint64, rpcServerTimeouts genericconf.HTTPServerTimeoutConfig, rpcServerBodyLimit int, daReader dasutil.DASReader, daWriter dasutil.DASWriter, daHealthChecker DataAvailabilityServiceHealthChecker, signatureVerifier *signature.Verifier) (*http.Server, error) {
+func StartDASRPCServer(ctx context.Context, addr string, portNum uint64, rpcServerTimeouts genericconf.HTTPServerTimeoutConfig, rpcServerBodyLimit int, daReader dasutil.DASReader, daWriter dasutil.DASWriter, daHealthChecker DataAvailabilityServiceHealthChecker, signatureVerifier *SignatureVerifier) (*http.Server, error) {
 	listener, err := net.Listen("tcp", fmt.Sprintf("%s:%d", addr, portNum))
 	if err != nil {
 		return nil, err
@@ -59,7 +58,7 @@ func StartDASRPCServer(ctx context.Context, addr string, portNum uint64, rpcServ
 	return StartDASRPCServerOnListener(ctx, listener, rpcServerTimeouts, rpcServerBodyLimit, daReader, daWriter, daHealthChecker, signatureVerifier)
 }
 
-func StartDASRPCServerOnListener(ctx context.Context, listener net.Listener, rpcServerTimeouts genericconf.HTTPServerTimeoutConfig, rpcServerBodyLimit int, daReader dasutil.DASReader, daWriter dasutil.DASWriter, daHealthChecker DataAvailabilityServiceHealthChecker, signatureVerifier *signature.Verifier) (*http.Server, error) {
+func StartDASRPCServerOnListener(ctx context.Context, listener net.Listener, rpcServerTimeouts genericconf.HTTPServerTimeoutConfig, rpcServerBodyLimit int, daReader dasutil.DASReader, daWriter dasutil.DASWriter, daHealthChecker DataAvailabilityServiceHealthChecker, signatureVerifier *SignatureVerifier) (*http.Server, error) {
 	if daWriter == nil {
 		return nil, errors.New("No writer backend was configured for DAS RPC server. Has the BLS signing key been set up (--data-availability.key.key-dir or --data-availability.key.priv-key options)?")
 	}
@@ -71,12 +70,15 @@ func StartDASRPCServerOnListener(ctx context.Context, listener net.Listener, rpc
 		rpcServer.SetHTTPBodyLimit(rpcServerBodyLimit)
 	}
 
+	dataStreamPayloadVerifier := data_streaming.CustomPayloadVerifier(func(ctx context.Context, signature []byte, bytes []byte, extras ...uint64) error {
+		return signatureVerifier.verify(ctx, bytes, signature, extras...)
+	})
 	err := rpcServer.RegisterName("das", &DASRPCServer{
 		daReader:          daReader,
 		daWriter:          daWriter,
 		daHealthChecker:   daHealthChecker,
 		signatureVerifier: signatureVerifier,
-		dataStreamReceiver: data_streaming.NewDataStreamReceiver(signatureVerifier, defaultMaxPendingMessages, defaultMessageCollectionExpiry, func(id data_streaming.MessageId) {
+		dataStreamReceiver: data_streaming.NewDataStreamReceiver(dataStreamPayloadVerifier, defaultMaxPendingMessages, defaultMessageCollectionExpiry, func(id data_streaming.MessageId) {
 			rpcStoreFailureGauge.Inc(1)
 		}),
 	})
@@ -131,8 +133,7 @@ func (s *DASRPCServer) Store(ctx context.Context, message hexutil.Bytes, timeout
 		rpcStoreDurationHistogram.Update(time.Since(start).Nanoseconds())
 	}()
 
-	expectedSignaturePreimage := data_streaming.FlattenDataForSigning(message, uint64(timeout))
-	if err := s.signatureVerifier.VerifyData(ctx, sig, expectedSignaturePreimage); err != nil {
+	if err := s.signatureVerifier.verify(ctx, message, sig, uint64(timeout)); err != nil {
 		return nil, err
 	}
 

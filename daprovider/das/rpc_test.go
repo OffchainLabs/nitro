@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"encoding/hex"
 	"net"
 	"sync"
 	"testing"
@@ -30,6 +31,8 @@ func blsPubToBase64(pubkey *blsSignatures.PublicKey) string {
 const sendChunkJSONBoilerplate = "{\"jsonrpc\":\"2.0\",\"id\":4294967295,\"method\":\"das_sendChunked\",\"params\":[\"\"]}"
 
 func testRpcImpl(t *testing.T, size, times int, concurrent bool) {
+	// enableLogging()
+
 	ctx := context.Background()
 	lis, err := net.Listen("tcp", "localhost:0")
 	testhelpers.RequireImpl(t, err)
@@ -60,13 +63,7 @@ func testRpcImpl(t *testing.T, size, times int, concurrent bool) {
 	testPrivateKey, err := crypto.GenerateKey()
 	testhelpers.RequireImpl(t, err)
 
-	signatureVerifierConfig := signature.VerifierConfig{
-		AllowedAddresses: []string{crypto.PubkeyToAddress(testPrivateKey.PublicKey).Hex()},
-		AcceptSequencer:  false,
-		Dangerous:        signature.DangerousVerifierConfig{AcceptMissing: false},
-	}
-	signatureVerifier, err := signature.NewVerifier(&signatureVerifierConfig, nil)
-
+	signatureVerifier, err := NewSignatureVerifierWithSeqInboxCaller(nil, "0x"+hex.EncodeToString(crypto.FromECDSAPub(&testPrivateKey.PublicKey)))
 	testhelpers.RequireImpl(t, err)
 	signer := signature.DataSignerFromPrivateKey(testPrivateKey)
 

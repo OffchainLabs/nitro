@@ -1896,7 +1896,7 @@ func setupConfigWithDAS(
 	var daReader dasutil.DASReader
 	var daWriter dasutil.DASWriter
 	var daHealthChecker das.DataAvailabilityServiceHealthChecker
-	var signatureVerifier *signature.Verifier
+	var signatureVerifier *das.SignatureVerifier
 	if dasModeString != "onchain" {
 		daReader, daWriter, signatureVerifier, daHealthChecker, lifecycleManager, err = das.CreateDAComponentsForDaserver(ctx, dasConfig, nil, nil)
 

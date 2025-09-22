@@ -11,7 +11,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/rpc"
@@ -60,7 +59,10 @@ func NewDASRPCClient(target string, signer signature.DataSignerFunc, maxStoreChu
 			StreamChunk:    "das_sendChunk",
 			FinalizeStream: "das_commitChunkedStore",
 		}
-		dataStreamer, err = data_streaming.NewDataStreamer[StoreResult](target, maxStoreChunkBodySize, signer, rpcMethods)
+		payloadSigner := data_streaming.CustomPayloadSigner(func(bytes []byte, extras ...uint64) ([]byte, error) {
+			return applyDasSigner(signer, bytes, extras...)
+		})
+		dataStreamer, err = data_streaming.NewDataStreamer[StoreResult](target, maxStoreChunkBodySize, payloadSigner, rpcMethods)
 		if err != nil {
 			return nil, err
 		}
@@ -123,7 +125,7 @@ func (c *DASRPCClient) legacyStore(ctx context.Context, message []byte, timeout 
 	// #nosec G115
 	log.Trace("das.DASRPCClient.Store(...)", "message", pretty.FirstFewBytes(message), "timeout", time.Unix(int64(timeout), 0), "this", *c)
 
-	reqSig, err := c.signer(crypto.Keccak256(data_streaming.FlattenDataForSigning(message, timeout)))
+	reqSig, err := applyDasSigner(c.signer, message, timeout)
 	if err != nil {
 		return nil, err
 	}

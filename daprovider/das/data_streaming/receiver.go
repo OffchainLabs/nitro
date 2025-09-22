@@ -24,7 +24,7 @@ import (
 // the interrupted streams.
 // lint:require-exhaustive-initialization
 type DataStreamReceiver struct {
-	payloadVerifier PayloadVerifier
+	payloadVerifier *PayloadVerifier
 	messageStore    *messageStore
 }
 
@@ -32,7 +32,7 @@ type DataStreamReceiver struct {
 // the `DataStreamer` sender side. `maxPendingMessages` limits how many parallel protocol instances are supported.
 // `messageCollectionExpiry` is the window in which a single message streaming must end - otherwise the protocol will
 // be closed and all related data will be removed.
-func NewDataStreamReceiver(payloadVerifier PayloadVerifier, maxPendingMessages int, messageCollectionExpiry time.Duration, expirationCallback func(id MessageId)) *DataStreamReceiver {
+func NewDataStreamReceiver(payloadVerifier *PayloadVerifier, maxPendingMessages int, messageCollectionExpiry time.Duration, expirationCallback func(id MessageId)) *DataStreamReceiver {
 	return &DataStreamReceiver{
 		payloadVerifier: payloadVerifier,
 		messageStore:    newMessageStore(maxPendingMessages, messageCollectionExpiry, expirationCallback),
@@ -46,7 +46,7 @@ type StartStreamingResult struct {
 }
 
 func (dsr *DataStreamReceiver) StartReceiving(ctx context.Context, timestamp, nChunks, chunkSize, totalSize, timeout uint64, signature []byte) (StartStreamingResult, error) {
-	if err := dsr.payloadVerifier.VerifyPayload(ctx, signature, []byte{}, timestamp, nChunks, chunkSize, totalSize, timeout); err != nil {
+	if err := dsr.payloadVerifier.verifyPayload(ctx, signature, []byte{}, timestamp, nChunks, chunkSize, totalSize, timeout); err != nil {
 		return StartStreamingResult{0}, err
 	}
 
@@ -61,14 +61,14 @@ func (dsr *DataStreamReceiver) StartReceiving(ctx context.Context, timestamp, nC
 }
 
 func (dsr *DataStreamReceiver) ReceiveChunk(ctx context.Context, messageId MessageId, chunkId uint64, chunkData, signature []byte) error {
-	if err := dsr.payloadVerifier.VerifyPayload(ctx, signature, chunkData, uint64(messageId), chunkId); err != nil {
+	if err := dsr.payloadVerifier.verifyPayload(ctx, signature, chunkData, uint64(messageId), chunkId); err != nil {
 		return err
 	}
 	return dsr.messageStore.addNewChunk(messageId, chunkId, chunkData)
 }
 
 func (dsr *DataStreamReceiver) FinalizeReceiving(ctx context.Context, messageId MessageId, signature hexutil.Bytes) ([]byte, uint64, time.Time, error) {
-	if err := dsr.payloadVerifier.VerifyPayload(ctx, signature, []byte{}, uint64(messageId)); err != nil {
+	if err := dsr.payloadVerifier.verifyPayload(ctx, signature, []byte{}, uint64(messageId)); err != nil {
 		return nil, 0, time.Time{}, err
 	}
 	return dsr.messageStore.finalizeMessage(messageId)

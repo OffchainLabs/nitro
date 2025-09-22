@@ -24,9 +24,7 @@ import (
 	"github.com/offchainlabs/nitro/daprovider/das"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
-	"github.com/offchainlabs/nitro/util/contracts"
 	"github.com/offchainlabs/nitro/util/headerreader"
-	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
@@ -57,15 +55,8 @@ func startLocalDASServer(
 	Require(t, err)
 	daWriter, err := das.NewSignAfterStoreDASWriter(ctx, config, storageService)
 	Require(t, err)
-
-	signatureVerifierConfig := signature.VerifierConfig{
-		AllowedAddresses: []string{},
-		AcceptSequencer:  true,
-		Dangerous:        signature.DangerousVerifierConfig{AcceptMissing: false},
-	}
-	signatureVerifier, err := signature.NewVerifier(&signatureVerifierConfig, contracts.NewAddressVerifier(seqInboxCaller))
+	signatureVerifier, err := das.NewSignatureVerifierWithSeqInboxCaller(seqInboxCaller, "")
 	Require(t, err)
-
 	rpcLis, err := net.Listen("tcp", "localhost:0")
 	Require(t, err)
 	rpcServer, err := das.StartDASRPCServerOnListener(ctx, rpcLis, genericconf.HTTPServerTimeoutConfigDefault, genericconf.HTTPServerBodyLimitDefault, storageService, daWriter, storageService, signatureVerifier)

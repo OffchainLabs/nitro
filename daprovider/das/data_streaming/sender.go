@@ -23,7 +23,7 @@ type DataStreamer[Result any] struct {
 	// chunkSize is the preconfigured size limit on a single data chunk to be sent.
 	chunkSize uint64
 	// dataSigner is used for sender authentication during the protocol.
-	dataSigner PayloadSigner
+	dataSigner *PayloadSigner
 	// rpcMethods define the actual server API
 	rpcMethods DataStreamingRPCMethods
 }
@@ -42,7 +42,7 @@ type DataStreamingRPCMethods struct {
 //   - `dataSigner` must not be nil;
 //
 // otherwise an `error` is returned.
-func NewDataStreamer[T any](url string, maxStoreChunkBodySize int, dataSigner PayloadSigner, rpcMethods DataStreamingRPCMethods) (*DataStreamer[T], error) {
+func NewDataStreamer[T any](url string, maxStoreChunkBodySize int, dataSigner *PayloadSigner, rpcMethods DataStreamingRPCMethods) (*DataStreamer[T], error) {
 	rpcClient, err := rpc.Dial(url)
 	if err != nil {
 		return nil, err
@@ -145,7 +145,7 @@ func (ds *DataStreamer[Result]) finalizeStream(ctx context.Context, messageId Me
 }
 
 func (ds *DataStreamer[Result]) sign(bytes []byte, extras ...uint64) ([]byte, error) {
-	return ds.dataSigner.SignPayload(bytes, extras...)
+	return ds.dataSigner.signPayload(bytes, extras...)
 }
 
 // lint:require-exhaustive-initialization

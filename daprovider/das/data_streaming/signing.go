@@ -5,33 +5,44 @@ import (
 	"encoding/binary"
 
 	"github.com/ethereum/go-ethereum/crypto"
+
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/signature"
 )
 
-type PayloadSigner interface {
-	SignPayload(bytes []byte, extras ...uint64) ([]byte, error)
+// lint:require-exhaustive-initialization
+type PayloadSigner struct {
+	signPayload func(bytes []byte, extras ...uint64) ([]byte, error)
 }
 
-type PayloadVerifier interface {
-	VerifyPayload(ctx context.Context, signature []byte, bytes []byte, extras ...uint64) error
+func DefaultPayloadSigner(signer signature.DataSignerFunc) *PayloadSigner {
+	return CustomPayloadSigner(func(bytes []byte, extras ...uint64) ([]byte, error) {
+		return signer(crypto.Keccak256(flattenDataForSigning(bytes, extras...)))
+	})
 }
 
-type DefaultPayloadSigner struct {
-	inner signature.DataSignerFunc
+func CustomPayloadSigner(signingFunc func([]byte, ...uint64) ([]byte, error)) *PayloadSigner {
+	return &PayloadSigner{
+		signPayload: signingFunc,
+	}
 }
 
-func (s *DefaultPayloadSigner) SignPayload(bytes []byte, extras ...uint64) ([]byte, error) {
-	return s.inner(crypto.Keccak256(flattenDataForSigning(bytes, extras...)))
+// lint:require-exhaustive-initialization
+type PayloadVerifier struct {
+	verifyPayload func(ctx context.Context, signature []byte, bytes []byte, extras ...uint64) error
 }
 
-type DefaultPayloadVerifier struct {
-	inner *signature.Verifier
+func DefaultPayloadVerifier(verifier *signature.Verifier) *PayloadVerifier {
+	return CustomPayloadVerifier(func(ctx context.Context, signature []byte, bytes []byte, extras ...uint64) error {
+		expectedPayload := flattenDataForSigning(bytes, extras...)
+		return verifier.VerifyData(ctx, signature, expectedPayload)
+	})
 }
 
-func (v *DefaultPayloadVerifier) VerifyPayload(ctx context.Context, signature []byte, bytes []byte, extras ...uint64) error {
-	expectedPayload := flattenDataForSigning(bytes, extras...)
-	return v.inner.VerifyData(ctx, signature, expectedPayload)
+func CustomPayloadVerifier(verifyingFunc func(ctx context.Context, signature []byte, bytes []byte, extras ...uint64) error) *PayloadVerifier {
+	return &PayloadVerifier{
+		verifyPayload: verifyingFunc,
+	}
 }
 
 func flattenDataForSigning(bytes []byte, extras ...uint64) []byte {
