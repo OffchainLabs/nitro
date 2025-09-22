@@ -577,7 +577,7 @@ func mainImpl() int {
 			return 1
 		}
 		log.Info("Created nethermind execution client")
-		execNode = nethexec.NewCompareExecutionClient(gethNode, nmExec)
+		execNode = nethexec.NewCompareExecutionClient(gethNode, nmExec, fatalErrChan)
 		log.Info("Created compare execution client")
 	}
 

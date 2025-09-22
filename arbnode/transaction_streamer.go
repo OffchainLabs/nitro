@@ -1262,13 +1262,22 @@ func (s *TransactionStreamer) ResultAtMessageIndex(msgIdx arbutil.MessageIndex) 
 	}
 	log.Info(FailedToGetMsgResultFromDB, "msgIdx", msgIdx)
 
-	ctx := context.Background()
-	if s.Started() {
-		ctx = s.GetContext()
+	if !s.Started() {
+		return nil, fmt.Errorf("transaction streamer not started")
 	}
+
+	ctx := s.GetContext()
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+
 	msgResult, err := s.exec.ResultAtMessageIndex(msgIdx).Await(ctx)
 	if err != nil {
 		return nil, err
+	}
+	// Check for nil result during shutdown
+	if msgResult == nil {
+		return nil, fmt.Errorf("message result is nil, likely due to shutdown")
 	}
 	// Stores result in Consensus DB in a best-effort manner
 	batch := s.db.NewBatch()

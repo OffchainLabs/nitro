@@ -310,7 +310,7 @@ docker:
 	docker build -t nitro-node-dev --target nitro-node-dev .
 
 .PHONY: run-follower-compare-local
-run-follower-compare-local: clean-follower
+run-follower-compare-local:
 	@echo "Starting Nitro sequencer follower..."
 	CGO_LDFLAGS=-Wl,-no_warn_duplicate_libraries \
 	PR_EXIT_AFTER_GENESIS=false \
@@ -326,8 +326,11 @@ run-follower-compare-local: clean-follower
 		--http.port 7547 \
 		--ws.port 7548
 
+.PHONY: clean-run-follower-compare-local
+clean-run-follower-compare-local: clean-follower run-follower-compare-local
+
 .PHONY: run-follower-compare-sepolia
-run-follower-compare-sepolia: clean-follower
+run-follower-compare-sepolia:
 	@echo "Starting Nitro sequencer follower (Sepolia with Nethermind)..."
 	CGO_LDFLAGS=-Wl,-no_warn_duplicate_libraries \
 	PR_EXIT_AFTER_GENESIS=false \
@@ -341,6 +344,9 @@ run-follower-compare-sepolia: clean-follower
 		--chain.id=421614 \
 		--execution.forwarding-target null \
 		--execution.enable-prefetch-block=false
+
+.PHONY: clean-run-follower-compare-sepolia
+clean-run-follower-compare-sepolia: clean-follower run-follower-compare-sepolia
 
 .PHONY: clean-follower
 clean-follower:

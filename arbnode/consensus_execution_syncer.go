@@ -87,6 +87,11 @@ func (c *ConsensusExecutionSyncer) getFinalityData(
 		log.Debug("Message result not found, node out of sync", "msgIdx", msgIdx, "err", err)
 		return nil, nil
 	} else if err != nil {
+		// Handle shutdown gracefully - context cancellation is expected during shutdown
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			log.Debug("Message result unavailable during shutdown", "msgIdx", msgIdx, "err", err)
+			return nil, nil
+		}
 		log.Error("Error getting message result", "msgIdx", msgIdx, "err", err)
 		return nil, err
 	}
