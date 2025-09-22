@@ -1,12 +1,8 @@
 ---
 name: CI
-run-name: CI triggered from @${{ github.actor }} of ${{ github.head_ref }}
-
+run-name: Merge CI triggered from @${{ github.actor }} of ${{ github.head_ref }}
 on:
-  workflow_dispatch:
-  pull_request:
-  push:
-    branches: [master, main]
+  merge_group:
 
 jobs:
   # --- Determine which files have changed ---
@@ -37,26 +33,26 @@ jobs:
             bold_legacy:
               - 'bold/legacy/**'
 
-  # --- Fast: Build + Lint only (required by can_proceed) ---
+  # --- Fast: Build + Lint only ---
   fast:
     uses: ./.github/workflows/_fast.yml
     secrets: inherit
 
-  # --- Run Arbitrator tests (not required by can_proceed) ---
+  # --- Run Arbitrator tests ---
   arbitrator:
     needs: changes
     if: needs.changes.outputs.arbitrator_changed == 'true'
     uses: ./.github/workflows/_arbitrator.yml
     secrets: inherit
 
-  # --- Run Bold Legacy challenge tests (not required by can_proceed) ---
+  # --- Run Bold Legacy challenge tests ---
   bold-legacy:
     needs: changes
     if: needs.changes.outputs.bold_legacy_changed == 'true'
     uses: ./.github/workflows/_bold-legacy.yml
     secrets: inherit
 
-  # --- Full GO tests (not required by can_proceed) ---
+  # --- Full GO tests ---
   go-tests:
     uses: ./.github/workflows/_go-tests.yml
     secrets: inherit
@@ -64,10 +60,15 @@ jobs:
   can_proceed:
     name: can_proceed
     runs-on: ubuntu-4
-    needs: [fast]
+    needs: [fast, arbitrator, bold-legacy, go-tests]
+    if: ${{ always()
+          && needs.fast.result == 'success'
+          && needs.go-tests.result == 'success'
+          && (needs.arbitrator.result == 'success' || needs.arbitrator.result == 'skipped')
+          && (needs.bold-legacy.result == 'success' || needs.bold-legacy.result == 'skipped') }}
     steps:
       - name: OK
-        run: exit 0
+        run: echo "All required jobs succeeded or were skipped when appropriate."
 
   can_see_status:
     # This job is just to make sure that the "can_proceed" job's status is visible
