@@ -158,11 +158,6 @@ var (
 	legacyDASStoreAPIOnly = false
 )
 
-// lint:require-exhaustive-initialization
-type SendChunkResult struct {
-	Ok hexutil.Uint64 `json:"sendChunkResult,omitempty"`
-}
-
 func (s *DASRPCServer) StartChunkedStore(ctx context.Context, timestamp, nChunks, chunkSize, totalSize, timeout hexutil.Uint64, sig hexutil.Bytes) (*data_streaming.StartStreamingResult, error) {
 	rpcStoreRequestGauge.Inc(1)
 	failed := true
@@ -178,8 +173,7 @@ func (s *DASRPCServer) StartChunkedStore(ctx context.Context, timestamp, nChunks
 	}
 
 	failed = false
-	return &result, nil
-
+	return result, nil
 }
 
 func (s *DASRPCServer) SendChunk(ctx context.Context, messageId, chunkId hexutil.Uint64, chunk hexutil.Bytes, sig hexutil.Bytes) error {

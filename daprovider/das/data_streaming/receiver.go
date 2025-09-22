@@ -45,19 +45,19 @@ type StartStreamingResult struct {
 	MessageId hexutil.Uint64 `json:"MessageId,omitempty"`
 }
 
-func (dsr *DataStreamReceiver) StartReceiving(ctx context.Context, timestamp, nChunks, chunkSize, totalSize, timeout uint64, signature []byte) (StartStreamingResult, error) {
+func (dsr *DataStreamReceiver) StartReceiving(ctx context.Context, timestamp, nChunks, chunkSize, totalSize, timeout uint64, signature []byte) (*StartStreamingResult, error) {
 	if err := dsr.payloadVerifier.verifyPayload(ctx, signature, []byte{}, timestamp, nChunks, chunkSize, totalSize, timeout); err != nil {
-		return StartStreamingResult{0}, err
+		return &StartStreamingResult{0}, err
 	}
 
 	// Prevent replay of old messages
 	// #nosec G115
 	if time.Since(time.Unix(int64(timestamp), 0)).Abs() > time.Minute {
-		return StartStreamingResult{0}, errors.New("too much time has elapsed since request was signed")
+		return &StartStreamingResult{0}, errors.New("too much time has elapsed since request was signed")
 	}
 
 	messageId, err := dsr.messageStore.registerNewMessage(nChunks, timeout, chunkSize, totalSize)
-	return StartStreamingResult{hexutil.Uint64(messageId)}, err
+	return &StartStreamingResult{hexutil.Uint64(messageId)}, err
 }
 
 func (dsr *DataStreamReceiver) ReceiveChunk(ctx context.Context, messageId MessageId, chunkId uint64, chunkData, signature []byte) error {
