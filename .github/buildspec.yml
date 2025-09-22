@@ -31,12 +31,12 @@ phases:
       - echo Build started on `date`
       - echo Building the Docker image ${NITRO_VERSION}...
       - >-
-        DOCKER_BUILDKIT=1 docker build . -t nitro-node-slim --target nitro-node-slim $BUILD_ARGS
+        DOCKER_BUILDKIT=1 docker build . --tag nitro-node-slim --target nitro-node-slim $BUILD_ARGS
       - >-
-        DOCKER_BUILDKIT=1 docker build . -t nitro-node --target nitro-node $BUILD_ARGS
+        DOCKER_BUILDKIT=1 docker build . --tag nitro-node --target nitro-node $BUILD_ARGS
       - >-
-        DOCKER_BUILDKIT=1 docker build . -t nitro-node-dev --target nitro-node-dev $BUILD_ARGS
-      - DOCKER_BUILDKIT=1 docker build . -t nitro-node-validator --target nitro-node-validator $BUILD_ARGS
+        DOCKER_BUILDKIT=1 docker build . --tag nitro-node-dev --target nitro-node-dev $BUILD_ARGS
+      - DOCKER_BUILDKIT=1 docker build . --tag nitro-node-validator --target nitro-node-validator $BUILD_ARGS
       - docker tag nitro-node:latest $REPOSITORY_URI:$IMAGE_TAG-$ARCH_TAG
       - docker tag nitro-node-slim:latest $REPOSITORY_URI:$IMAGE_TAG-slim-$ARCH_TAG
       - docker tag nitro-node-dev:latest $REPOSITORY_URI:$IMAGE_TAG-dev-$ARCH_TAG
