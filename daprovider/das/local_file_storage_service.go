@@ -94,9 +94,9 @@ func (s *LocalFileStorageService) start(ctx context.Context) error {
 	}
 	if s.config.EnableExpiry && !s.enableLegacyLayout {
 		err = s.stopWaiter.CallIterativelySafe(func(ctx context.Context) time.Duration {
-			err = s.layout.prune(time.Now())
-			if err != nil {
-				log.Error("error pruning expired batches", "error", err)
+			pruneErr := s.layout.prune(time.Now())
+			if pruneErr != nil {
+				log.Error("error pruning expired batches", "error", pruneErr)
 			}
 			return time.Minute * 5
 		})
