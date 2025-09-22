@@ -47,7 +47,7 @@ func TestMultigasStylus_GetBytes32(t *testing.T) {
 	require.Equal(t, params.TxGas+params.WarmStorageReadCostEIP2929, receipt.MultiGasUsed.Get(multigas.ResourceKindComputation))
 	require.Equal(t, receipt.GasUsed, receipt.MultiGasUsed.SingleGas())
 
-	// TODO(NIT-3793, NIT-3793, NIT-3795): Once all WASM operations are instrumented, WasmComputation
+	// TODO(NIT-3793, NIT-3794): Once all WASM operations are instrumented, WasmComputation
 	// should be derived as the residual from SingleGas instead of asserted directly.
 	require.Greater(t, receipt.MultiGasUsed.Get(multigas.ResourceKindWasmComputation), uint64(0))
 }
@@ -118,6 +118,79 @@ func TestMultigasStylus_AccountAccessHostIOs(t *testing.T) {
 			)
 			require.Equal(t, expectedCompute,
 				receipt.MultiGasUsed.Get(multigas.ResourceKindComputation),
+			)
+		})
+	}
+}
+
+func TestMultigasStylus_EmitLog(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	builder.execConfig.ExposeMultiGas = true
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	l2info := builder.L2Info
+	l2client := builder.L2.Client
+	owner := l2info.GetDefaultTransactOpts("Owner", ctx)
+
+	// Deploy log contract
+	logAddr := deployWasm(t, ctx, owner, l2client, rustFile("log"))
+
+	encode := func(topics []common.Hash, data []byte) []byte {
+		args := []byte{byte(len(topics))}
+		for _, topic := range topics {
+			args = append(args, topic[:]...)
+		}
+		args = append(args, data...)
+		return args
+	}
+
+	cases := []struct {
+		name       string
+		numTopics  uint64
+		payloadLen uint64
+	}{
+		{"no_topics_no_data", 0, 0},
+		{"one_topic_empty_payload", 1, 0},
+		{"two_topics_64_bytes", 2, 64},
+		{"three_topics_96_bytes", 3, 96},
+		{"four_topics_128_bytes", 4, 128},
+		{"one_topic_large_payload", 1, 1024},
+		{"four_topics_zero_payload", 4, 0}, // pure topic cost
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Send a transaction with specified topics and data
+			topics := make([]common.Hash, tc.numTopics)
+			for i := range topics {
+				topics[i] = testhelpers.RandomHash()
+			}
+			data := make([]byte, tc.payloadLen)
+			args := encode(topics, data)
+
+			tx := l2info.PrepareTxTo("Owner", &logAddr, l2info.TransferGas, nil, args)
+			require.NoError(t, l2client.SendTransaction(ctx, tx))
+
+			receipt, err := EnsureTxSucceeded(ctx, l2client, tx)
+			require.NoError(t, err)
+
+			// Expected history growth calculation
+			expectedHistoryGrowth := params.LogTopicHistoryGas*tc.numTopics + tc.payloadLen*params.LogDataGas
+
+			require.Equal(t,
+				expectedHistoryGrowth,
+				receipt.MultiGasUsed.Get(multigas.ResourceKindHistoryGrowth),
+			)
+
+			require.Equalf(t,
+				receipt.GasUsed,
+				receipt.MultiGasUsed.SingleGas(),
+				"Used gas mismatch: GasUsed=%d, MultiGas=%d, Difference=%d",
+				receipt.GasUsed, receipt.MultiGasUsed.SingleGas(), receipt.GasUsed-receipt.MultiGasUsed.SingleGas(),
 			)
 		})
 	}

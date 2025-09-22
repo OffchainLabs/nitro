@@ -231,6 +231,12 @@ func newApiClosures(
 		if readOnly {
 			return vm.ErrWriteProtection
 		}
+
+		numTopics := uint64(len(topics))
+		dataBytes := uint64(len(data))
+		mgCost := vm.WasmLogCost(numTopics, dataBytes)
+		scope.Contract.UsedMultiGas.SaturatingAddInto(mgCost)
+
 		event := &types.Log{
 			Address:     actingAddress,
 			Topics:      topics,
@@ -265,6 +271,7 @@ func newApiClosures(
 	}
 	addPages := func(pages uint16) uint64 {
 		open, ever := db.AddStylusPages(pages)
+		// addPages WASM computation cost is charged separately in attributeWasmComputation
 		return memoryModel.GasCost(pages, open, ever)
 	}
 	captureHostio := func(name string, args, outs []byte, startInk, endInk uint64) {
