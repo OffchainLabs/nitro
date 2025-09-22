@@ -12,8 +12,6 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common/hexutil"
-
-	"github.com/offchainlabs/nitro/util/signature"
 )
 
 // DataStreamReceiver implements the server side of the data streaming protocol. It stays compatible with `DataStreamer`
@@ -26,18 +24,18 @@ import (
 // the interrupted streams.
 // lint:require-exhaustive-initialization
 type DataStreamReceiver struct {
-	signatureVerifier *signature.Verifier
-	messageStore      *messageStore
+	payloadVerifier PayloadVerifier
+	messageStore    *messageStore
 }
 
-// NewDataStreamReceiver sets up a new stream receiver. `signatureVerifier` must be compatible with message signing on
+// NewDataStreamReceiver sets up a new stream receiver. `payloadVerifier` must be compatible with message signing on
 // the `DataStreamer` sender side. `maxPendingMessages` limits how many parallel protocol instances are supported.
 // `messageCollectionExpiry` is the window in which a single message streaming must end - otherwise the protocol will
 // be closed and all related data will be removed.
-func NewDataStreamReceiver(signatureVerifier *signature.Verifier, maxPendingMessages int, messageCollectionExpiry time.Duration, expirationCallback func(id MessageId)) *DataStreamReceiver {
+func NewDataStreamReceiver(payloadVerifier PayloadVerifier, maxPendingMessages int, messageCollectionExpiry time.Duration, expirationCallback func(id MessageId)) *DataStreamReceiver {
 	return &DataStreamReceiver{
-		signatureVerifier: signatureVerifier,
-		messageStore:      newMessageStore(maxPendingMessages, messageCollectionExpiry, expirationCallback),
+		payloadVerifier: payloadVerifier,
+		messageStore:    newMessageStore(maxPendingMessages, messageCollectionExpiry, expirationCallback),
 	}
 }
 
@@ -48,8 +46,7 @@ type StartStreamingResult struct {
 }
 
 func (dsr *DataStreamReceiver) StartReceiving(ctx context.Context, timestamp, nChunks, chunkSize, totalSize, timeout uint64, signature []byte) (StartStreamingResult, error) {
-	expectedSignaturePreimage := FlattenDataForSigning([]byte{}, timestamp, nChunks, chunkSize, totalSize, timeout)
-	if err := dsr.signatureVerifier.VerifyData(ctx, signature, expectedSignaturePreimage); err != nil {
+	if err := dsr.payloadVerifier.VerifyPayload(ctx, signature, []byte{}, timestamp, nChunks, chunkSize, totalSize, timeout); err != nil {
 		return StartStreamingResult{0}, err
 	}
 
@@ -64,16 +61,14 @@ func (dsr *DataStreamReceiver) StartReceiving(ctx context.Context, timestamp, nC
 }
 
 func (dsr *DataStreamReceiver) ReceiveChunk(ctx context.Context, messageId MessageId, chunkId uint64, chunkData, signature []byte) error {
-	expectedSignaturePreimage := FlattenDataForSigning(chunkData, uint64(messageId), chunkId)
-	if err := dsr.signatureVerifier.VerifyData(ctx, signature, expectedSignaturePreimage); err != nil {
+	if err := dsr.payloadVerifier.VerifyPayload(ctx, signature, chunkData, uint64(messageId), chunkId); err != nil {
 		return err
 	}
 	return dsr.messageStore.addNewChunk(messageId, chunkId, chunkData)
 }
 
 func (dsr *DataStreamReceiver) FinalizeReceiving(ctx context.Context, messageId MessageId, signature hexutil.Bytes) ([]byte, uint64, time.Time, error) {
-	expectedSignaturePreimage := FlattenDataForSigning([]byte{}, uint64(messageId))
-	if err := dsr.signatureVerifier.VerifyData(ctx, signature, expectedSignaturePreimage); err != nil {
+	if err := dsr.payloadVerifier.VerifyPayload(ctx, signature, []byte{}, uint64(messageId)); err != nil {
 		return nil, 0, time.Time{}, err
 	}
 	return dsr.messageStore.finalizeMessage(messageId)

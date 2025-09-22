@@ -5,7 +5,6 @@ package data_streaming
 
 import (
 	"context"
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"time"
@@ -13,11 +12,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/ethereum/go-ethereum/common/hexutil"
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/rpc"
-
-	"github.com/offchainlabs/nitro/util/arbmath"
-	"github.com/offchainlabs/nitro/util/signature"
 )
 
 // DataStreamer allows sending arbitrarily big payloads with JSON RPC. It follows a simple chunk-based protocol.
@@ -28,7 +23,7 @@ type DataStreamer[Result any] struct {
 	// chunkSize is the preconfigured size limit on a single data chunk to be sent.
 	chunkSize uint64
 	// dataSigner is used for sender authentication during the protocol.
-	dataSigner signature.DataSignerFunc
+	dataSigner PayloadSigner
 	// rpcMethods define the actual server API
 	rpcMethods DataStreamingRPCMethods
 }
@@ -47,7 +42,7 @@ type DataStreamingRPCMethods struct {
 //   - `dataSigner` must not be nil;
 //
 // otherwise an `error` is returned.
-func NewDataStreamer[T any](url string, maxStoreChunkBodySize int, dataSigner signature.DataSignerFunc, rpcMethods DataStreamingRPCMethods) (*DataStreamer[T], error) {
+func NewDataStreamer[T any](url string, maxStoreChunkBodySize int, dataSigner PayloadSigner, rpcMethods DataStreamingRPCMethods) (*DataStreamer[T], error) {
 	rpcClient, err := rpc.Dial(url)
 	if err != nil {
 		return nil, err
@@ -150,15 +145,7 @@ func (ds *DataStreamer[Result]) finalizeStream(ctx context.Context, messageId Me
 }
 
 func (ds *DataStreamer[Result]) sign(bytes []byte, extras ...uint64) ([]byte, error) {
-	return ds.dataSigner(crypto.Keccak256(FlattenDataForSigning(bytes, extras...)))
-}
-
-func FlattenDataForSigning(data []byte, extras ...uint64) []byte {
-	var bufferForExtras []byte
-	for _, field := range extras {
-		bufferForExtras = binary.BigEndian.AppendUint64(bufferForExtras, field)
-	}
-	return arbmath.ConcatByteSlices(data, bufferForExtras)
+	return ds.dataSigner.SignPayload(bytes, extras...)
 }
 
 // lint:require-exhaustive-initialization
