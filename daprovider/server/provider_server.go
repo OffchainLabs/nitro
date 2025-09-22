@@ -21,7 +21,6 @@ import (
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/rpc"
 
-	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/daprovider/daclient"
@@ -168,24 +167,24 @@ func (s *Server) Store(
 	return &daclient.StoreResult{SerializedDACert: serializedDACert}, nil
 }
 
-func (s *Server) GenerateReadPreimageProof(ctx context.Context, preimageType hexutil.Uint, certHash common.Hash, offset hexutil.Uint64, certificate hexutil.Bytes) (*daclient.GenerateReadPreimageProofResult, error) {
+func (s *Server) GenerateReadPreimageProof(ctx context.Context, certHash common.Hash, offset hexutil.Uint64, certificate hexutil.Bytes) (*daclient.GenerateReadPreimageProofResult, error) {
 	if s.validator == nil {
 		return nil, errors.New("validator not available")
 	}
 	// #nosec G115
-	proof, err := s.validator.GenerateReadPreimageProof(ctx, arbutil.PreimageType(uint8(preimageType)), certHash, uint64(offset), certificate)
+	proof, err := s.validator.GenerateReadPreimageProof(ctx, certHash, uint64(offset), certificate)
 	if err != nil {
 		return nil, err
 	}
 	return &daclient.GenerateReadPreimageProofResult{Proof: hexutil.Bytes(proof)}, nil
 }
 
-func (s *Server) GenerateCertificateValidityProof(ctx context.Context, preimageType hexutil.Uint, certificate hexutil.Bytes) (*daclient.GenerateCertificateValidityProofResult, error) {
+func (s *Server) GenerateCertificateValidityProof(ctx context.Context, certificate hexutil.Bytes) (*daclient.GenerateCertificateValidityProofResult, error) {
 	if s.validator == nil {
 		return nil, errors.New("validator not available")
 	}
 	// #nosec G115
-	proof, err := s.validator.GenerateCertificateValidityProof(ctx, arbutil.PreimageType(uint8(preimageType)), certificate)
+	proof, err := s.validator.GenerateCertificateValidityProof(ctx, certificate)
 	if err != nil {
 		return nil, err
 	}

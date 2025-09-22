@@ -10,8 +10,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
-
-	"github.com/offchainlabs/nitro/arbutil"
 )
 
 type Validator struct {
@@ -31,11 +29,7 @@ func NewValidator(l1Client *ethclient.Client, validatorAddr common.Address) *Val
 // GenerateReadPreimageProof creates a ReadPreimage proof for ReferenceDA
 // The proof enhancer will prepend the standardized header [certKeccak256, offset, certSize, certificate]
 // So we only need to return the custom data: [Version(1), PreimageSize(8), PreimageData]
-func (v *Validator) GenerateReadPreimageProof(ctx context.Context, preimageType arbutil.PreimageType, certHash common.Hash, offset uint64, certificate []byte) ([]byte, error) {
-	if preimageType != arbutil.DACertificatePreimageType {
-		return nil, fmt.Errorf("unsupported preimage type: %v", preimageType)
-	}
-
+func (v *Validator) GenerateReadPreimageProof(ctx context.Context, certHash common.Hash, offset uint64, certificate []byte) ([]byte, error) {
 	// Deserialize certificate to extract data hash
 	cert, err := Deserialize(certificate)
 	if err != nil {
@@ -72,8 +66,7 @@ func (v *Validator) GenerateReadPreimageProof(ctx context.Context, preimageType 
 // This validates the certificate signature against trusted signers from the contract.
 // Invalid certificates (wrong format, untrusted signer) return claimedValid=0.
 // Only transient errors (like RPC failures) return an error.
-func (v *Validator) GenerateCertificateValidityProof(ctx context.Context, preimageType arbutil.PreimageType, certificate []byte) ([]byte, error) {
-
+func (v *Validator) GenerateCertificateValidityProof(ctx context.Context, certificate []byte) ([]byte, error) {
 	// Try to deserialize certificate
 	cert, err := Deserialize(certificate)
 	if err != nil {

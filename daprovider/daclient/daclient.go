@@ -13,7 +13,6 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/log"
 
-	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/util/rpcclient"
 )
@@ -116,13 +115,12 @@ type GenerateReadPreimageProofResult struct {
 // This method calls the external DA provider's RPC endpoint to generate the proof
 func (c *Client) GenerateReadPreimageProof(
 	ctx context.Context,
-	preimageType arbutil.PreimageType,
 	certHash common.Hash,
 	offset uint64,
 	certificate []byte,
 ) ([]byte, error) {
 	var generateProofResult GenerateReadPreimageProofResult
-	if err := c.CallContext(ctx, &generateProofResult, "daprovider_generateReadPreimageProof", hexutil.Uint(preimageType), certHash, hexutil.Uint64(offset), hexutil.Bytes(certificate)); err != nil {
+	if err := c.CallContext(ctx, &generateProofResult, "daprovider_generateReadPreimageProof", certHash, hexutil.Uint64(offset), hexutil.Bytes(certificate)); err != nil {
 		return nil, fmt.Errorf("error returned from daprovider_generateProof rpc method, err: %w", err)
 	}
 	return generateProofResult.Proof, nil
@@ -135,11 +133,10 @@ type GenerateCertificateValidityProofResult struct {
 
 func (c *Client) GenerateCertificateValidityProof(
 	ctx context.Context,
-	preimageType arbutil.PreimageType,
 	certificate []byte,
 ) ([]byte, error) {
 	var generateCertificateValidityProofResult GenerateCertificateValidityProofResult
-	if err := c.CallContext(ctx, &generateCertificateValidityProofResult, "daprovider_generateCertificateValidityProof", hexutil.Uint(preimageType), hexutil.Bytes(certificate)); err != nil {
+	if err := c.CallContext(ctx, &generateCertificateValidityProofResult, "daprovider_generateCertificateValidityProof", hexutil.Bytes(certificate)); err != nil {
 		return nil, fmt.Errorf("error returned from daprovider_generateCertificateValidityProof rpc method, err: %w", err)
 	}
 	return generateCertificateValidityProofResult.Proof, nil
