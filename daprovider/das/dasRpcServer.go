@@ -162,8 +162,8 @@ var (
 
 // lint:require-exhaustive-initialization
 type StoreRequest struct {
-	message []byte
-	timeout uint64
+	Message []byte
+	Timeout uint64
 }
 
 func (s *DASRPCServer) StartChunkedStore(ctx context.Context, timestamp, nChunks, chunkSize, totalSize hexutil.Uint64, sig hexutil.Bytes) (*data_streaming.StartStreamingResult, error) {
@@ -214,7 +214,7 @@ func (s *DASRPCServer) CommitChunkedStore(ctx context.Context, messageId hexutil
 		return nil, err
 	}
 
-	cert, err := s.daWriter.Store(ctx, request.message, request.timeout)
+	cert, err := s.daWriter.Store(ctx, request.Message, request.Timeout)
 	success := false
 	defer func() {
 		if success {
