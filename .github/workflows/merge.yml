@@ -64,16 +64,44 @@ jobs:
     steps:
       - name: Aggregate results
         run: |
+          fast_result="${{ needs.fast.result }}"
+          go_tests_result="${{ needs['go-tests'].result }}"
+          arbitrator_result="${{ needs.arbitrator.result }}"
+          bold_legacy_result="${{ needs['bold-legacy'].result }}"
           ok=1
           for r in fast go-tests arbitrator bold-legacy; do
-            result="${{ needs[r].result }}"
-            if [ "$result" != "success" ] && [ "$result" != "skipped" ]; then
-              echo "$r failed ($result)"
-              ok=0
-            fi
+            case "$r" in
+              fast)
+                if [ "$fast_result" != "success" ]; then
+                  ok=0
+                  echo "Fast job failed or was skipped"
+                fi
+                ;;
+              go-tests)
+                if [ "$go_tests_result" != "success" ]; then
+                  ok=0
+                  echo "Go tests job failed or was skipped"
+                fi
+                ;;
+              arbitrator)
+                if [ "$arbitrator_result" != "success" ] && [ "$arbitrator_result" != "skipped" ]; then
+                  ok=0
+                  echo "Arbitrator job failed"
+                fi
+                ;;
+              bold-legacy)
+                if [ "$bold_legacy_result" != "success" ] && [ "$bold_legacy_result" != "skipped" ]; then
+                  ok=0
+                  echo "Bold Legacy job failed"
+                fi
+                ;;
+            esac
           done
-          if [ $ok -eq 0 ]; then
-            echo "Some required jobs failed"
+          if [ $ok -eq 1 ]; then
+            echo "All required jobs passed or were skipped"
+            exit 0
+          else
+            echo "One or more required jobs failed"
             exit 1
           fi
 
