@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"time"
 
-	flag "github.com/spf13/pflag"
+	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/log"
 
@@ -35,7 +35,7 @@ type MaintenanceConfig struct {
 	Lock          redislock.SimpleCfg `koanf:"lock" reload:"hot"`
 }
 
-func MaintenanceConfigAddOptions(prefix string, f *flag.FlagSet) {
+func MaintenanceConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultMaintenanceConfig.Enable, "enable maintenance runner")
 	f.Duration(prefix+".check-interval", DefaultMaintenanceConfig.CheckInterval, "how often to check if maintenance should be run")
 	redislock.AddConfigOptions(prefix+".lock", f)

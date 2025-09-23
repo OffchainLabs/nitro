@@ -75,4 +75,4 @@ sort_imports = false
 [fuzz]
 runs = 1000
 
-# See more config options https://github.com/foundry-rs/foundry/tree/master/config
+# See more config options https://github.com/foundry-rs/foundry/tree/master/crates/config

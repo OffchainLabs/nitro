@@ -52,7 +52,7 @@ func WriteToKeyValueStore[T any](store ethdb.KeyValueStore, key []byte, val T) e
 }
 
 // RebuildWasmStore function runs a loop looking at every codehash in diskDb, checking if its an activated stylus contract and
-// saving it to wasm store if it doesnt already exists. When errored it logs them and silently returns
+// saving it to wasm store if it doesn't already exists. When errored it logs them and silently returns
 //
 // It stores the status of rebuilding to wasm store by updating the codehash (of the latest successfully checked contract) in
 // RebuildingPositionKey after every second of work.

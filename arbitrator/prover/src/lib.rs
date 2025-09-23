@@ -124,6 +124,7 @@ pub unsafe extern "C" fn free_rust_bytes(vec: RustBytes) {
 }
 
 #[no_mangle]
+#[cfg(feature = "native")]
 pub unsafe extern "C" fn arbitrator_load_machine(
     binary_path: *const c_char,
     library_paths: *const *const c_char,
@@ -135,7 +136,7 @@ pub unsafe extern "C" fn arbitrator_load_machine(
     {
         Ok(mach) => mach,
         Err(err) => {
-            eprintln!("Error loading binary: {:?}", err);
+            eprintln!("Error loading binary: {err:?}");
             ptr::null_mut()
         }
     }
@@ -212,11 +213,13 @@ pub fn str_to_c_string(text: &str) -> *mut libc::c_char {
 }
 
 #[no_mangle]
+#[cfg(feature = "native")]
 pub unsafe extern "C" fn arbitrator_free_machine(mach: *mut Machine) {
     drop(Box::from_raw(mach));
 }
 
 #[no_mangle]
+#[cfg(feature = "native")]
 pub unsafe extern "C" fn arbitrator_clone_machine(mach: *mut Machine) -> *mut Machine {
     let new_mach = (*mach).clone();
     Box::into_raw(Box::new(new_mach))
@@ -255,6 +258,7 @@ pub unsafe extern "C" fn arbitrator_step(
 }
 
 #[no_mangle]
+#[cfg(feature = "native")]
 pub unsafe extern "C" fn arbitrator_add_inbox_message(
     mach: *mut Machine,
     inbox_identifier: u64,
@@ -274,6 +278,7 @@ pub unsafe extern "C" fn arbitrator_add_inbox_message(
 
 /// Adds a user program to the machine's known set of wasms.
 #[no_mangle]
+#[cfg(feature = "native")]
 pub unsafe extern "C" fn arbitrator_add_user_wasm(
     mach: *mut Machine,
     module: *const u8,
@@ -312,6 +317,7 @@ pub unsafe extern "C" fn arbitrator_step_until_host_io(
 }
 
 #[no_mangle]
+#[cfg(feature = "native")]
 pub unsafe extern "C" fn arbitrator_serialize_state(
     mach: *const Machine,
     path: *const c_char,
@@ -322,7 +328,7 @@ pub unsafe extern "C" fn arbitrator_serialize_state(
         .map_err(Report::from)
         .and_then(|path| mach.serialize_state(path));
     if let Err(err) = res {
-        eprintln!("Failed to serialize machine state: {}", err);
+        eprintln!("Failed to serialize machine state: {err}");
         1
     } else {
         0
@@ -330,6 +336,7 @@ pub unsafe extern "C" fn arbitrator_serialize_state(
 }
 
 #[no_mangle]
+#[cfg(feature = "native")]
 pub unsafe extern "C" fn arbitrator_deserialize_and_replace_state(
     mach: *mut Machine,
     path: *const c_char,
@@ -340,7 +347,7 @@ pub unsafe extern "C" fn arbitrator_deserialize_and_replace_state(
         .map_err(Report::from)
         .and_then(|path| mach.deserialize_and_replace_state(path));
     if let Err(err) = res {
-        eprintln!("Failed to deserialize machine state: {}", err);
+        eprintln!("Failed to deserialize machine state: {err}");
         1
     } else {
         0
@@ -348,6 +355,7 @@ pub unsafe extern "C" fn arbitrator_deserialize_and_replace_state(
 }
 
 #[no_mangle]
+#[cfg(feature = "native")]
 pub unsafe extern "C" fn arbitrator_get_num_steps(mach: *const Machine) -> u64 {
     (*mach).get_steps()
 }
@@ -377,16 +385,19 @@ const_assert_eq!(
 
 /// Returns one of ARBITRATOR_MACHINE_STATUS_*
 #[no_mangle]
+#[cfg(feature = "native")]
 pub unsafe extern "C" fn arbitrator_get_status(mach: *const Machine) -> u8 {
     (*mach).get_status() as u8
 }
 
 #[no_mangle]
+#[cfg(feature = "native")]
 pub unsafe extern "C" fn arbitrator_global_state(mach: *mut Machine) -> GlobalState {
     (*mach).get_global_state()
 }
 
 #[no_mangle]
+#[cfg(feature = "native")]
 pub unsafe extern "C" fn arbitrator_set_global_state(mach: *mut Machine, gs: GlobalState) {
     (*mach).set_global_state(gs);
 }
@@ -409,6 +420,12 @@ unsafe fn handle_preimage_resolution(
         return None;
     }
     let data = CBytes::from_raw_parts(res.ptr, res.len as usize);
+
+    // Hash may not have a direct link to the data for DACertificate
+    if ty == PreimageType::DACertificate {
+        return Some(data);
+    }
+
     // Check if preimage rehashes to the provided hash
     match crate::utils::hash_preimage(&data, ty) {
         Ok(have_hash) if have_hash.as_slice() == *hash => {}
@@ -417,10 +434,7 @@ unsafe fn handle_preimage_resolution(
             hash,
             Bytes32(got_hash),
         ),
-        Err(err) => panic!(
-            "Failed to hash preimage from resolver (expecting hash {}): {}",
-            hash, err,
-        ),
+        Err(err) => panic!("Failed to hash preimage from resolver (expecting hash {hash}): {err}",),
     }
     Some(data)
 }
@@ -451,16 +465,19 @@ pub unsafe extern "C" fn arbitrator_set_preimage_resolver(
 }
 
 #[no_mangle]
+#[cfg(feature = "native")]
 pub unsafe extern "C" fn arbitrator_set_context(mach: *mut Machine, context: u64) {
     (*mach).set_context(context);
 }
 
 #[no_mangle]
+#[cfg(feature = "native")]
 pub unsafe extern "C" fn arbitrator_hash(mach: *mut Machine) -> Bytes32 {
     (*mach).hash()
 }
 
 #[no_mangle]
+#[cfg(feature = "native")]
 pub unsafe extern "C" fn arbitrator_module_root(mach: *mut Machine) -> Bytes32 {
     (*mach).get_modules_root()
 }

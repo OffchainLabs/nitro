@@ -482,6 +482,8 @@ func testGettingState(t *testing.T, execConfig *gethexec.Config) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	// This test is HashScheme specific, it shouldn't be run with Pathdb
+	builder.RequireScheme(t, rawdb.HashScheme)
 	builder.execConfig = execConfig
 	cancelNode := buildWithHistory(t, ctx, builder, 16)
 	execNode := builder.L2.ExecNode
@@ -552,7 +554,7 @@ func TestGettingState(t *testing.T) {
 	execConfig.Caching.BlockAge = 0      // use only Caching.BlockCount to keep only last N blocks in dirties cache, no matter how new they are
 	execConfig.Sequencer.MaxBlockSpeed = 0
 	execConfig.Sequencer.MaxTxDataSize = 150 // 1 test tx ~= 110
-	t.Run("archive-node", func(t *testing.T) {
+	t.Run("sparse-archive-node", func(t *testing.T) {
 		testGettingState(t, execConfig)
 	})
 }

@@ -44,7 +44,6 @@ func (con ArbGasInfo) GetPricesInWeiWithAggregator(
 		l2GasPrice = evm.Context.BaseFee
 	}
 
-	// aggregators compress calldata, so we must estimate accordingly
 	weiForL1Calldata := arbmath.BigMulByUint(l1GasPrice, params.TxDataNonZeroGasEIP2028)
 
 	// the cost of a simple tx without calldata
@@ -82,7 +81,6 @@ func (con ArbGasInfo) _preVersion4_GetPricesInWeiWithAggregator(
 		l2GasPrice = evm.Context.BaseFee
 	}
 
-	// aggregators compress calldata, so we must estimate accordingly
 	weiForL1Calldata := arbmath.BigMulByUint(l1GasPrice, params.TxDataNonZeroGasEIP2028)
 
 	// the cost of a simple tx without calldata
@@ -119,7 +117,6 @@ func (con ArbGasInfo) GetPricesInArbGasWithAggregator(c ctx, evm mech, aggregato
 		l2GasPrice = evm.Context.BaseFee
 	}
 
-	// aggregators compress calldata, so we must estimate accordingly
 	weiForL1Calldata := arbmath.BigMulByUint(l1GasPrice, params.TxDataNonZeroGasEIP2028)
 	weiPerL2Tx := arbmath.BigMulByUint(weiForL1Calldata, AssumedSimpleTxSize)
 	gasForL1Calldata := common.Big0
@@ -144,7 +141,6 @@ func (con ArbGasInfo) _preVersion4_GetPricesInArbGasWithAggregator(c ctx, evm me
 		l2GasPrice = evm.Context.BaseFee
 	}
 
-	// aggregators compress calldata, so we must estimate accordingly
 	weiForL1Calldata := arbmath.BigMulByUint(l1GasPrice, params.TxDataNonZeroGasEIP2028)
 	gasForL1Calldata := common.Big0
 	if l2GasPrice.Sign() > 0 {
@@ -160,12 +156,19 @@ func (con ArbGasInfo) GetPricesInArbGas(c ctx, evm mech) (huge, huge, huge, erro
 	return con.GetPricesInArbGasWithAggregator(c, evm, addr{})
 }
 
-// GetGasAccountingParams gets the rollup's speed limit, pool size, and tx gas limit
+// GetGasAccountingParams gets the rollup's speed limit, pool size, and block gas limit
 func (con ArbGasInfo) GetGasAccountingParams(c ctx, evm mech) (huge, huge, huge, error) {
 	l2pricing := c.State.L2PricingState()
 	speedLimit, _ := l2pricing.SpeedLimitPerSecond()
-	maxTxGasLimit, err := l2pricing.PerBlockGasLimit()
-	return arbmath.UintToBig(speedLimit), arbmath.UintToBig(maxTxGasLimit), arbmath.UintToBig(maxTxGasLimit), err
+	maxBlockGasLimit, err := l2pricing.PerBlockGasLimit()
+	return arbmath.UintToBig(speedLimit), arbmath.UintToBig(maxBlockGasLimit), arbmath.UintToBig(maxBlockGasLimit), err
+}
+
+// GetMaxTxGasLimit gets the max tx gas limit
+func (con ArbGasInfo) GetMaxTxGasLimit(c ctx, evm mech) (huge, error) {
+	l2pricing := c.State.L2PricingState()
+	maxTxGasLimit, err := l2pricing.PerTxGasLimit()
+	return arbmath.UintToBig(maxTxGasLimit), err
 }
 
 // GetMinimumGasPrice gets the minimum gas price needed for a transaction to succeed

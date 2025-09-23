@@ -11,6 +11,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
 
+	"github.com/offchainlabs/nitro/daprovider/das/dasutil"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/signature"
@@ -123,7 +124,7 @@ func CreateDAReaderAndWriter(
 	dataSigner signature.DataSignerFunc,
 	l1Reader *ethclient.Client,
 	sequencerInboxAddr common.Address,
-) (DataAvailabilityServiceWriter, DataAvailabilityServiceReader, *KeysetFetcher, *LifecycleManager, error) {
+) (dasutil.DASWriter, dasutil.DASReader, *KeysetFetcher, *LifecycleManager, error) {
 	if !config.Enable {
 		return nil, nil, nil, nil, nil
 	}
@@ -134,7 +135,7 @@ func CreateDAReaderAndWriter(
 	}
 	// Done checking config requirements
 
-	var daWriter DataAvailabilityServiceWriter
+	var daWriter dasutil.DASWriter
 	daWriter, err := NewRPCAggregator(ctx, *config, dataSigner)
 	if err != nil {
 		return nil, nil, nil, nil, err
@@ -147,7 +148,7 @@ func CreateDAReaderAndWriter(
 	restAgg.Start(ctx)
 	var lifecycleManager LifecycleManager
 	lifecycleManager.Register(restAgg)
-	var daReader DataAvailabilityServiceReader = restAgg
+	var daReader dasutil.DASReader = restAgg
 	keysetFetcher, err := NewKeysetFetcher(l1Reader, sequencerInboxAddr)
 	if err != nil {
 		return nil, nil, nil, nil, err
@@ -161,7 +162,7 @@ func CreateDAComponentsForDaserver(
 	config *DataAvailabilityConfig,
 	l1Reader *headerreader.HeaderReader,
 	seqInboxAddress *common.Address,
-) (DataAvailabilityServiceReader, DataAvailabilityServiceWriter, *SignatureVerifier, DataAvailabilityServiceHealthChecker, *LifecycleManager, error) {
+) (dasutil.DASReader, dasutil.DASWriter, *SignatureVerifier, DataAvailabilityServiceHealthChecker, *LifecycleManager, error) {
 	if !config.Enable {
 		return nil, nil, nil, nil, nil, nil
 	}
@@ -221,8 +222,8 @@ func CreateDAComponentsForDaserver(
 
 	}
 
-	var daWriter DataAvailabilityServiceWriter
-	var daReader DataAvailabilityServiceReader = storageService
+	var daWriter dasutil.DASWriter
+	var daReader dasutil.DASReader = storageService
 	var daHealthChecker DataAvailabilityServiceHealthChecker = storageService
 	var signatureVerifier *SignatureVerifier
 
@@ -262,7 +263,7 @@ func CreateDAReader(
 	config *DataAvailabilityConfig,
 	l1Reader *headerreader.HeaderReader,
 	seqInboxAddress *common.Address,
-) (DataAvailabilityServiceReader, *KeysetFetcher, *LifecycleManager, error) {
+) (dasutil.DASReader, *KeysetFetcher, *LifecycleManager, error) {
 	if !config.Enable {
 		return nil, nil, nil, nil
 	}
@@ -278,7 +279,7 @@ func CreateDAReader(
 	// Done checking config requirements
 
 	var lifecycleManager LifecycleManager
-	var daReader DataAvailabilityServiceReader
+	var daReader dasutil.DASReader
 	if config.RestAggregator.Enable {
 		var restAgg *SimpleDASReaderAggregator
 		restAgg, err := NewRestfulClientAggregator(ctx, &config.RestAggregator)

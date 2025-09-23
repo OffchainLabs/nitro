@@ -515,7 +515,7 @@ func (a *AuctioneerServer) resolveAuction(ctx context.Context) error {
 	if newRpc {
 		a.auctionContract, err = express_lane_auctiongen.NewExpressLaneAuction(a.auctionContractAddr, ethclient.NewClient(sequencerRpc))
 		if err != nil {
-			return fmt.Errorf("failed to recreate ExpressLaneAuction conctract bindings with new sequencer endpoint: %w", err)
+			return fmt.Errorf("failed to recreate ExpressLaneAuction contract bindings with new sequencer endpoint: %w", err)
 		}
 	}
 
@@ -711,7 +711,7 @@ func (a *AuctioneerServer) GetId() string {
 
 func (a *AuctioneerServer) StopAndWait() {
 	// The AUCTIONEER_CHOSEN_KEY lock will be considered expired by other auctioneers after
-	// auctioneerLivenessTimeout. This timeout gives time for existing messages to  become
+	// auctioneerLivenessTimeout. This timeout gives time for existing messages to become
 	// unclaimed after IdleTimeToAutoclaim before the secondary auctioneer starts consuming
 	// messages.
 	a.StopWaiter.StopAndWait()

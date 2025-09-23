@@ -18,7 +18,7 @@ import (
 
 // Storage implements db based storage for batch poster.
 type Storage struct {
-	db     ethdb.Database
+	db     ethdb.KeyValueStore
 	encDec storage.EncoderDecoderF
 }
 
@@ -31,7 +31,7 @@ var (
 	countKey       = []byte(".count_key")
 )
 
-func New(db ethdb.Database, enc storage.EncoderDecoderF) *Storage {
+func New(db ethdb.KeyValueStore, enc storage.EncoderDecoderF) *Storage {
 	return &Storage{db: db, encDec: enc}
 }
 

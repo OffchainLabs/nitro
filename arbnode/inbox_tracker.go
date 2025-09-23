@@ -23,7 +23,7 @@ import (
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcaster"
-	m "github.com/offchainlabs/nitro/broadcaster/message"
+	"github.com/offchainlabs/nitro/broadcaster/message"
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/util/containers"
@@ -294,7 +294,7 @@ func (t *InboxTracker) PopulateFeedBacklog(broadcastServer *broadcaster.Broadcas
 	if err != nil {
 		return fmt.Errorf("error getting tx streamer message count: %w", err)
 	}
-	var feedMessages []*m.BroadcastFeedMessage
+	var feedMessages []*message.BroadcastFeedMessage
 	for seqNum := startMessage; seqNum < messageCount; seqNum++ {
 		message, err := t.txStreamer.GetMessage(seqNum)
 		if err != nil {
@@ -338,7 +338,7 @@ func (t *InboxTracker) legacyGetDelayedMessageAndAccumulator(ctx context.Context
 		return nil, common.Hash{}, err
 	}
 
-	err = msg.FillInBatchGasCost(func(batchNum uint64) ([]byte, error) {
+	err = msg.FillInBatchGasFields(func(batchNum uint64) ([]byte, error) {
 		data, _, err := t.txStreamer.inboxReader.GetSequencerMessageBytes(ctx, batchNum)
 		return data, err
 	})
@@ -371,7 +371,7 @@ func (t *InboxTracker) GetDelayedMessageAccumulatorAndParentChainBlockNumber(ctx
 		return msg, acc, 0, err
 	}
 
-	err = msg.FillInBatchGasCost(func(batchNum uint64) ([]byte, error) {
+	err = msg.FillInBatchGasFields(func(batchNum uint64) ([]byte, error) {
 		data, _, err := t.txStreamer.inboxReader.GetSequencerMessageBytes(ctx, batchNum)
 		return data, err
 	})

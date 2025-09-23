@@ -12,9 +12,9 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 
-	protocol "github.com/offchainlabs/bold/chain-abstraction"
-	"github.com/offchainlabs/bold/challenge-manager/challenge-tree/mock"
-	"github.com/offchainlabs/bold/containers/threadsafe"
+	"github.com/offchainlabs/nitro/bold/chain-abstraction"
+	"github.com/offchainlabs/nitro/bold/challenge-manager/challenge-tree/mock"
+	"github.com/offchainlabs/nitro/bold/containers/threadsafe"
 )
 
 func TestClosestEssentialAncestor(t *testing.T) {

@@ -160,9 +160,8 @@ impl Memory {
         let size = leaf_hashes.len();
         let m = Merkle::new_advanced(MerkleType::Memory, leaf_hashes, Self::MEMORY_LAYERS);
         if size < leaves {
-            m.resize(leaves).unwrap_or_else(|_| {
-                panic!("Couldn't resize merkle tree from {} to {}", size, leaves)
-            });
+            m.resize(leaves)
+                .unwrap_or_else(|_| panic!("Couldn't resize merkle tree from {size} to {leaves}"));
         }
         self.dirty_leaves.lock().clear();
         Cow::Owned(m)
@@ -241,10 +240,7 @@ impl Memory {
             (1, true) => i64::from(self.get_u8(idx)? as i8),
             (2, true) => i64::from(self.get_u16(idx)? as i16),
             (4, true) => i64::from(self.get_u32(idx)? as i32),
-            _ => panic!(
-                "Attempted to load from memory with {} bytes and signed {}",
-                bytes, signed,
-            ),
+            _ => panic!("Attempted to load from memory with {bytes} bytes and signed {signed}",),
         };
         Some(match ty {
             ArbValueType::I32 => Value::I32(contents as u32),
@@ -257,7 +253,7 @@ impl Memory {
                 assert!(bytes == 8 && !signed, "Invalid source for f64");
                 f64::from_bits(contents as u64).into()
             }
-            _ => panic!("Invalid memory load output type {:?}", ty),
+            _ => panic!("Invalid memory load output type {ty:?}"),
         })
     }
 

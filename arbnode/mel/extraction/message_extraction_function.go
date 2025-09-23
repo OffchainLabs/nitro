@@ -187,10 +187,8 @@ func extractMessagesImpl(
 					batch.SequenceNumber,
 				)
 			}
-			gas := arbostypes.ComputeBatchGasCost(serialized)
-
-			// Fill in the batch gas cost into the batch posting report.
-			batchPostReport.Message.BatchGasCost = &gas
+			// Fill in the batch gas stats into the batch posting report.
+			batchPostReport.Message.BatchDataStats = arbostypes.GetDataStats(serialized)
 		} else if !(inputState.DelayedMessagedSeen == 0 && i == 0 && delayedMessages[i] == batchPostReport) {
 			return nil, nil, nil, errors.New("encountered initialize message that is not the first delayed message and the first batch ")
 		}

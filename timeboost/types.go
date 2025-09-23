@@ -107,7 +107,7 @@ func (v *ValidatedBid) BigIntHash(domainSeparator [32]byte) *big.Int {
 		Round:                 v.Round,
 		Amount:                v.Amount,
 	}
-	// Since ToEIP712Hash is deterministic, this error can be ignored here, as the bidvalidator
+	// Since ToEIP712Hash is deterministic, this error can be ignored here, as the bid validator
 	// would have previously validated it when calculating bidHash
 	bidHash, _ := bid.ToEIP712Hash(domainSeparator)
 	bidder := v.Bidder.Bytes()

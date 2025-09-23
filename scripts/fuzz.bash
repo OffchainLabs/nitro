@@ -50,7 +50,7 @@ while [[ $# -gt 0 ]]; do
             ;;
         --fuzzcache-path)
             fuzzcachepath="$2"
-            if [[ ! -d "$binpath" ]]; then
+            if [[ ! -d "$fuzzcachepath" ]]; then
                 echo must supply valid path for fuzzcache-path
                 exit 1
             fi

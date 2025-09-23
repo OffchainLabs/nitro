@@ -20,7 +20,7 @@ import (
 
 	"github.com/offchainlabs/nitro/blsSignatures"
 	"github.com/offchainlabs/nitro/daprovider/das/dasutil"
-	testflag "github.com/offchainlabs/nitro/util/testhelpers/flag"
+	"github.com/offchainlabs/nitro/util/testhelpers/flag"
 )
 
 func TestDAS_BasicAggregationLocal(t *testing.T) {
@@ -121,20 +121,20 @@ func (b *randomBagOfFailures) shouldFail() failureType {
 type WrapStore struct {
 	t        *testing.T
 	injector failureInjector
-	DataAvailabilityServiceWriter
+	dasutil.DASWriter
 }
 
 func (w *WrapStore) Store(ctx context.Context, message []byte, timeout uint64) (*dasutil.DataAvailabilityCertificate, error) {
 	switch w.injector.shouldFail() {
 	case success:
-		return w.DataAvailabilityServiceWriter.Store(ctx, message, timeout)
+		return w.DASWriter.Store(ctx, message, timeout)
 	case immediateError:
 		return nil, errors.New("expected Store failure")
 	case tooSlow:
 		<-ctx.Done()
 		return nil, ctx.Err()
 	case dataCorruption:
-		cert, err := w.DataAvailabilityServiceWriter.Store(ctx, message, timeout)
+		cert, err := w.DASWriter.Store(ctx, message, timeout)
 		if err != nil {
 			return nil, err
 		}

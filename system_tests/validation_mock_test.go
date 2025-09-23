@@ -23,7 +23,7 @@ import (
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/validator"
-	validatorclient "github.com/offchainlabs/nitro/validator/client"
+	"github.com/offchainlabs/nitro/validator/client"
 	"github.com/offchainlabs/nitro/validator/server_api"
 	"github.com/offchainlabs/nitro/validator/server_arb"
 	"github.com/offchainlabs/nitro/validator/valnode"
@@ -206,7 +206,7 @@ func TestValidationServerAPI(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	_, validationDefault := createMockValidationNode(t, ctx, nil)
-	client := validatorclient.NewExecutionClient(StaticFetcherFrom(t, &rpcclient.TestClientConfig), validationDefault)
+	client := client.NewExecutionClient(StaticFetcherFrom(t, &rpcclient.TestClientConfig), validationDefault)
 	err := client.Start(ctx)
 	Require(t, err)
 
@@ -275,7 +275,7 @@ func TestValidationClientRoom(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	mockSpawner, spawnerStack := createMockValidationNode(t, ctx, nil)
-	client := validatorclient.NewExecutionClient(StaticFetcherFrom(t, &rpcclient.TestClientConfig), spawnerStack)
+	client := client.NewExecutionClient(StaticFetcherFrom(t, &rpcclient.TestClientConfig), spawnerStack)
 	err := client.Start(ctx)
 	Require(t, err)
 
@@ -358,10 +358,10 @@ func TestExecutionKeepAlive(t *testing.T) {
 	_, validationShortTO := createMockValidationNode(t, ctx, &shortTimeoutConfig)
 	configFetcher := StaticFetcherFrom(t, &rpcclient.TestClientConfig)
 
-	clientDefault := validatorclient.NewExecutionClient(configFetcher, validationDefault)
+	clientDefault := client.NewExecutionClient(configFetcher, validationDefault)
 	err := clientDefault.Start(ctx)
 	Require(t, err)
-	clientShortTO := validatorclient.NewExecutionClient(configFetcher, validationShortTO)
+	clientShortTO := client.NewExecutionClient(configFetcher, validationShortTO)
 	err = clientShortTO.Start(ctx)
 	Require(t, err)
 
@@ -391,6 +391,7 @@ func (m *mockBlockRecorder) RecordBlockCreation(
 	ctx context.Context,
 	pos arbutil.MessageIndex,
 	msg *arbostypes.MessageWithMetadata,
+	wasmTargets []rawdb.WasmTarget,
 ) (*execution.RecordResult, error) {
 	_, globalpos, err := m.validator.GlobalStatePositionsAtCount(pos + 1)
 	if err != nil {

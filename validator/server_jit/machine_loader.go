@@ -18,15 +18,24 @@ type JitMachineConfig struct {
 	ProverBinPath        string
 	JitCranelift         bool
 	WasmMemoryUsageLimit int
+	JitPath              string
 }
 
 var DefaultJitMachineConfig = JitMachineConfig{
 	JitCranelift:         true,
 	ProverBinPath:        "replay.wasm",
 	WasmMemoryUsageLimit: 4294967296,
+	JitPath:              "", // Empty string means use default path resolution
 }
 
-func getJitPath() (string, error) {
+func getJitPath(configPath string) (string, error) {
+	// If a custom path is provided, use it directly
+	if configPath != "" {
+		_, err := os.Stat(configPath)
+		return configPath, err
+	}
+
+	// Fall back to original logic for auto-detection
 	var jitBinary string
 	executable, err := os.Executable()
 	if err == nil {
@@ -55,7 +64,7 @@ type JitMachineLoader struct {
 }
 
 func NewJitMachineLoader(config *JitMachineConfig, locator *server_common.MachineLocator, maxExecutionTime time.Duration, fatalErrChan chan error) (*JitMachineLoader, error) {
-	jitPath, err := getJitPath()
+	jitPath, err := getJitPath(config.JitPath)
 	if err != nil {
 		return nil, err
 	}

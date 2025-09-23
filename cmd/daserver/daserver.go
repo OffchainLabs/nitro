@@ -14,8 +14,8 @@ import (
 	"syscall"
 	"time"
 
-	koanfjson "github.com/knadh/koanf/parsers/json"
-	flag "github.com/spf13/pflag"
+	"github.com/knadh/koanf/parsers/json"
+	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -86,7 +86,7 @@ func printSampleUsage(progname string) {
 }
 
 func parseDAServer(args []string) (*DAServerConfig, error) {
-	f := flag.NewFlagSet("daserver", flag.ContinueOnError)
+	f := pflag.NewFlagSet("daserver", pflag.ContinueOnError)
 	f.Bool("enable-rpc", DefaultDAServerConfig.EnableRPC, "enable the HTTP-RPC server listening on rpc-addr and rpc-port")
 	f.String("rpc-addr", DefaultDAServerConfig.RPCAddr, "HTTP-RPC server listening interface")
 	f.Uint64("rpc-port", DefaultDAServerConfig.RPCPort, "HTTP-RPC server listening port")
@@ -127,7 +127,7 @@ func parseDAServer(args []string) (*DAServerConfig, error) {
 			return nil, fmt.Errorf("error removing extra parameters before dump: %w", err)
 		}
 
-		c, err := k.Marshal(koanfjson.Parser())
+		c, err := k.Marshal(json.Parser())
 		if err != nil {
 			return nil, fmt.Errorf("unable to marshal config file to JSON: %w", err)
 		}
@@ -192,7 +192,7 @@ func startup() error {
 
 	handler, err := genericconf.HandlerFromLogType(serverConfig.LogType, io.Writer(os.Stderr))
 	if err != nil {
-		flag.Usage()
+		pflag.Usage()
 		return fmt.Errorf("error parsing log type when creating handler: %w", err)
 	}
 	glogger := log.NewGlogHandler(handler)

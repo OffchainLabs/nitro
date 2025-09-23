@@ -100,7 +100,7 @@ impl<D: DataReader, E: EvmApi<D>> NativeInstance<D, E> {
         evm_data: EvmData,
     ) -> Result<Self> {
         let env = WasmEnv::new(compile, None, evm, evm_data);
-        let store = env.compile.store(target_native());
+        let store = env.compile.store(target_native(), false);
         let module = unsafe { Module::deserialize_unchecked(&store, module)? };
         Self::from_module(module, store, env)
     }
@@ -153,7 +153,7 @@ impl<D: DataReader, E: EvmApi<D>> NativeInstance<D, E> {
         target: Target,
     ) -> Result<Self> {
         let env = WasmEnv::new(compile.clone(), Some(config), evm_api, evm_data);
-        let store = env.compile.store(target);
+        let store = env.compile.store(target, false);
         let module = Module::new(&store, bytes)?;
         Self::from_module(module, store, env)
     }
@@ -362,8 +362,13 @@ impl<D: DataReader, E: EvmApi<D>> StartlessMachine for NativeInstance<D, E> {
     }
 }
 
-pub fn module(wasm: &[u8], compile: CompileConfig, target: Target) -> Result<Vec<u8>> {
-    let mut store = compile.store(target);
+pub fn module(
+    wasm: &[u8],
+    compile: CompileConfig,
+    target: Target,
+    cranelift: bool,
+) -> Result<Vec<u8>> {
+    let mut store = compile.store(target, cranelift);
     let module = Module::new(&store, wasm)?;
     macro_rules! stub {
         (u8 <- $($types:tt)+) => {
@@ -472,7 +477,13 @@ pub fn activate(
     Ok((module, stylus_data))
 }
 
-pub fn compile(wasm: &[u8], version: u16, debug: bool, target: Target) -> Result<Vec<u8>> {
+pub fn compile(
+    wasm: &[u8],
+    version: u16,
+    debug: bool,
+    target: Target,
+    cranelift: bool,
+) -> Result<Vec<u8>> {
     let compile = CompileConfig::version(version, debug);
-    self::module(wasm, compile, target)
+    self::module(wasm, compile, target, cranelift)
 }

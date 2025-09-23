@@ -18,6 +18,7 @@ type L2PricingState struct {
 	gasBacklog          storage.StorageBackedUint64
 	pricingInertia      storage.StorageBackedUint64
 	backlogTolerance    storage.StorageBackedUint64
+	perTxGasLimit       storage.StorageBackedUint64
 }
 
 const (
@@ -28,6 +29,7 @@ const (
 	gasBacklogOffset
 	pricingInertiaOffset
 	backlogToleranceOffset
+	perTxGasLimitOffset
 )
 
 const GethBlockGasLimit = 1 << 50
@@ -44,14 +46,15 @@ func InitializeL2PricingState(sto *storage.Storage) error {
 
 func OpenL2PricingState(sto *storage.Storage) *L2PricingState {
 	return &L2PricingState{
-		sto,
-		sto.OpenStorageBackedUint64(speedLimitPerSecondOffset),
-		sto.OpenStorageBackedUint64(perBlockGasLimitOffset),
-		sto.OpenStorageBackedBigUint(baseFeeWeiOffset),
-		sto.OpenStorageBackedBigUint(minBaseFeeWeiOffset),
-		sto.OpenStorageBackedUint64(gasBacklogOffset),
-		sto.OpenStorageBackedUint64(pricingInertiaOffset),
-		sto.OpenStorageBackedUint64(backlogToleranceOffset),
+		storage:             sto,
+		speedLimitPerSecond: sto.OpenStorageBackedUint64(speedLimitPerSecondOffset),
+		perBlockGasLimit:    sto.OpenStorageBackedUint64(perBlockGasLimitOffset),
+		baseFeeWei:          sto.OpenStorageBackedBigUint(baseFeeWeiOffset),
+		minBaseFeeWei:       sto.OpenStorageBackedBigUint(minBaseFeeWeiOffset),
+		gasBacklog:          sto.OpenStorageBackedUint64(gasBacklogOffset),
+		pricingInertia:      sto.OpenStorageBackedUint64(pricingInertiaOffset),
+		backlogTolerance:    sto.OpenStorageBackedUint64(backlogToleranceOffset),
+		perTxGasLimit:       sto.OpenStorageBackedUint64(perTxGasLimitOffset),
 	}
 }
 
@@ -88,6 +91,14 @@ func (ps *L2PricingState) PerBlockGasLimit() (uint64, error) {
 
 func (ps *L2PricingState) SetMaxPerBlockGasLimit(limit uint64) error {
 	return ps.perBlockGasLimit.Set(limit)
+}
+
+func (ps *L2PricingState) PerTxGasLimit() (uint64, error) {
+	return ps.perTxGasLimit.Get()
+}
+
+func (ps *L2PricingState) SetMaxPerTxGasLimit(limit uint64) error {
+	return ps.perTxGasLimit.Set(limit)
 }
 
 func (ps *L2PricingState) GasBacklog() (uint64, error) {

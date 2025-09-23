@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	flag "github.com/spf13/pflag"
+	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
@@ -34,7 +34,7 @@ var DefaultConnectionLimiterConfig = ConnectionLimiterConfig{
 	ReconnectCooldownPeriod: 0,
 }
 
-func ConnectionLimiterConfigAddOptions(prefix string, f *flag.FlagSet) {
+func ConnectionLimiterConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultConnectionLimiterConfig.Enable, "enable broadcaster per-client connection limiting")
 	f.Int(prefix+".per-ip-limit", DefaultConnectionLimiterConfig.PerIpLimit, "limit clients, as identified by IPv4/v6 address, to this many connections to this relay")
 	f.Int(prefix+".per-ipv6-cidr-48-limit", DefaultConnectionLimiterConfig.PerIpv6Cidr48Limit, "limit ipv6 clients, as identified by IPv6 address masked with /48, to this many connections to this relay")
@@ -80,7 +80,7 @@ type ipStringAndLimit struct {
 func (l *ConnectionLimiter) getIpStringsAndLimits(ip net.IP) []ipStringAndLimit {
 	var result []ipStringAndLimit
 	if ip == nil || ip.IsPrivate() || ip.IsLoopback() {
-		log.Warn("Ignoring private, looback, or unparseable IP. Please check relay and network configuration to ensure client IP addresses are detected correctly", "ip", ip)
+		log.Warn("Ignoring private, loopback, or unparseable IP. Please check relay and network configuration to ensure client IP addresses are detected correctly", "ip", ip)
 		return result
 	}
 

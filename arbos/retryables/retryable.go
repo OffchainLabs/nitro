@@ -77,16 +77,16 @@ func (rs *RetryableState) CreateRetryable(
 ) (*Retryable, error) {
 	sto := rs.retryables.OpenSubStorage(id.Bytes())
 	ret := &Retryable{
-		id,
-		sto,
-		sto.OpenStorageBackedUint64(numTriesOffset),
-		sto.OpenStorageBackedAddress(fromOffset),
-		sto.OpenStorageBackedAddressOrNil(toOffset),
-		sto.OpenStorageBackedBigUint(callvalueOffset),
-		sto.OpenStorageBackedAddress(beneficiaryOffset),
-		sto.OpenStorageBackedBytes(calldataKey),
-		sto.OpenStorageBackedUint64(timeoutOffset),
-		sto.OpenStorageBackedUint64(timeoutWindowsLeftOffset),
+		id:                 id,
+		backingStorage:     sto,
+		numTries:           sto.OpenStorageBackedUint64(numTriesOffset),
+		from:               sto.OpenStorageBackedAddress(fromOffset),
+		to:                 sto.OpenStorageBackedAddressOrNil(toOffset),
+		callvalue:          sto.OpenStorageBackedBigUint(callvalueOffset),
+		beneficiary:        sto.OpenStorageBackedAddress(beneficiaryOffset),
+		calldata:           sto.OpenStorageBackedBytes(calldataKey),
+		timeout:            sto.OpenStorageBackedUint64(timeoutOffset),
+		timeoutWindowsLeft: sto.OpenStorageBackedUint64(timeoutWindowsLeftOffset),
 	}
 	_ = ret.numTries.Set(0)
 	_ = ret.from.Set(from)

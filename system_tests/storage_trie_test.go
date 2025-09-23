@@ -43,7 +43,7 @@ func TestStorageTrie(t *testing.T) {
 	ownerTxOpts := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
 	_, bigMap := builder.L2.DeployBigMap(t, ownerTxOpts)
 
-	// Store enough values to use just over 32M gas
+	// Store enough values to use just under 32M gas
 	toAdd := big.NewInt(1420)
 	// In the first transaction, don't clear any values.
 	toClear := big.NewInt(0)
@@ -56,8 +56,8 @@ func TestStorageTrie(t *testing.T) {
 	Require(t, err)
 	tx1BlockNum := receipt.BlockNumber.Uint64()
 
-	want := uint64(20_000_000)
-	got := receipt.GasUsed - receipt.GasUsedForL1
+	want := uint64(31_900_000)
+	got := receipt.GasUsedForL2()
 	if got < want {
 		t.Errorf("Want at least GasUsed: %d: got: %d", want, got)
 	}

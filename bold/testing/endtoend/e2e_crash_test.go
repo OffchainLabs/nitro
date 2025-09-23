@@ -16,14 +16,14 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	gethtypes "github.com/ethereum/go-ethereum/core/types"
 
-	protocol "github.com/offchainlabs/bold/chain-abstraction"
-	cm "github.com/offchainlabs/bold/challenge-manager"
-	"github.com/offchainlabs/bold/challenge-manager/types"
-	retry "github.com/offchainlabs/bold/runtime"
-	challenge_testing "github.com/offchainlabs/bold/testing"
-	"github.com/offchainlabs/bold/testing/endtoend/backend"
-	statemanager "github.com/offchainlabs/bold/testing/mocks/state-provider"
-	"github.com/offchainlabs/bold/testing/setup"
+	"github.com/offchainlabs/nitro/bold/chain-abstraction"
+	"github.com/offchainlabs/nitro/bold/challenge-manager"
+	"github.com/offchainlabs/nitro/bold/challenge-manager/types"
+	"github.com/offchainlabs/nitro/bold/runtime"
+	"github.com/offchainlabs/nitro/bold/testing"
+	"github.com/offchainlabs/nitro/bold/testing/endtoend/backend"
+	"github.com/offchainlabs/nitro/bold/testing/mocks/state-provider"
+	"github.com/offchainlabs/nitro/bold/testing/setup"
 	"github.com/offchainlabs/nitro/solgen/go/challengeV2gen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 )
@@ -84,24 +84,24 @@ func TestEndToEnd_HonestValidatorCrashes(t *testing.T) {
 		},
 	)
 
-	baseStateManagerOpts := []statemanager.Opt{
-		statemanager.WithNumBatchesRead(inboxCfg.numBatchesPosted),
-		statemanager.WithLayerZeroHeights(&protocolCfg.layerZeroHeights, protocolCfg.numBigStepLevels),
+	baseStateManagerOpts := []stateprovider.Opt{
+		stateprovider.WithNumBatchesRead(inboxCfg.numBatchesPosted),
+		stateprovider.WithLayerZeroHeights(&protocolCfg.layerZeroHeights, protocolCfg.numBigStepLevels),
 	}
-	honestStateManager, err := statemanager.NewForSimpleMachine(t, baseStateManagerOpts...)
+	honestStateManager, err := stateprovider.NewForSimpleMachine(t, baseStateManagerOpts...)
 	require.NoError(t, err)
 
 	shp := &simpleHeaderProvider{b: bk, chs: make([]chan<- *gethtypes.Header, 0)}
 	shp.Start(neutralCtx)
 
-	baseStackOpts := []cm.StackOpt{
-		cm.StackWithMode(types.MakeMode),
-		cm.StackWithPollingInterval(timeCfg.assertionScanningInterval),
-		cm.StackWithPostingInterval(timeCfg.assertionPostingInterval),
-		cm.StackWithAverageBlockCreationTime(timeCfg.blockTime),
-		cm.StackWithConfirmationInterval(timeCfg.assertionConfirmationAttemptInterval),
-		cm.StackWithMinimumGapToParentAssertion(0),
-		cm.StackWithHeaderProvider(shp),
+	baseStackOpts := []challengemanager.StackOpt{
+		challengemanager.StackWithMode(types.MakeMode),
+		challengemanager.StackWithPollingInterval(timeCfg.assertionScanningInterval),
+		challengemanager.StackWithPostingInterval(timeCfg.assertionPostingInterval),
+		challengemanager.StackWithAverageBlockCreationTime(timeCfg.blockTime),
+		challengemanager.StackWithConfirmationInterval(timeCfg.assertionConfirmationAttemptInterval),
+		challengemanager.StackWithMinimumGapToParentAssertion(0),
+		challengemanager.StackWithHeaderProvider(shp),
 	}
 
 	name := "honest"
@@ -109,10 +109,10 @@ func TestEndToEnd_HonestValidatorCrashes(t *testing.T) {
 	//nolint:gocritic
 	honestOpts := append(
 		baseStackOpts,
-		cm.StackWithName(name),
+		challengemanager.StackWithName(name),
 	)
 	honestChain := setupAssertionChain(t, honestCtx, bk.Client(), rollupAddr.Rollup, txOpts)
-	honestManager, err := cm.NewChallengeStack(honestChain, honestStateManager, honestOpts...)
+	honestManager, err := challengemanager.NewChallengeStack(honestChain, honestStateManager, honestOpts...)
 	require.NoError(t, err)
 
 	totalOpcodes := totalWasmOpcodes(&protocolCfg.layerZeroHeights, protocolCfg.numBigStepLevels)
@@ -125,11 +125,11 @@ func TestEndToEnd_HonestValidatorCrashes(t *testing.T) {
 	//nolint:gocritic
 	evilStateManagerOpts := append(
 		baseStateManagerOpts,
-		statemanager.WithMachineDivergenceStep(machineDivergenceStep),
-		statemanager.WithBlockDivergenceHeight(assertionDivergenceHeight),
-		statemanager.WithDivergentBlockHeightOffset(assertionBlockHeightDifference),
+		stateprovider.WithMachineDivergenceStep(machineDivergenceStep),
+		stateprovider.WithBlockDivergenceHeight(assertionDivergenceHeight),
+		stateprovider.WithDivergentBlockHeightOffset(assertionBlockHeightDifference),
 	)
-	evilStateManager, err := statemanager.NewForSimpleMachine(t, evilStateManagerOpts...)
+	evilStateManager, err := stateprovider.NewForSimpleMachine(t, evilStateManagerOpts...)
 	require.NoError(t, err)
 
 	// Honest validator has index 1 in the accounts slice, as 0 is admin, so
@@ -138,10 +138,10 @@ func TestEndToEnd_HonestValidatorCrashes(t *testing.T) {
 	//nolint:gocritic
 	evilOpts := append(
 		baseStackOpts,
-		cm.StackWithName("evil"),
+		challengemanager.StackWithName("evil"),
 	)
 	evilChain := setupAssertionChain(t, evilCtx, bk.Client(), rollupAddr.Rollup, evilTxOpts)
-	evilManager, err := cm.NewChallengeStack(evilChain, evilStateManager, evilOpts...)
+	evilManager, err := challengemanager.NewChallengeStack(evilChain, evilStateManager, evilOpts...)
 	require.NoError(t, err)
 
 	chalManagerAddr := honestChain.SpecChallengeManager().Address()
@@ -189,7 +189,7 @@ func TestEndToEnd_HonestValidatorCrashes(t *testing.T) {
 
 		honestCtx, honestCancel = context.WithCancel(context.Background())
 		honestChain := setupAssertionChain(t, honestCtx, bk.Client(), rollupAddr.Rollup, txOpts)
-		honestManager, err := cm.NewChallengeStack(honestChain, honestStateManager, honestOpts...)
+		honestManager, err := challengemanager.NewChallengeStack(honestChain, honestStateManager, honestOpts...)
 		require.NoError(t, err)
 
 		honestManager.Start(honestCtx)
@@ -252,7 +252,7 @@ func TestEndToEnd_HonestValidatorCrashes(t *testing.T) {
 
 			ctx := context.Background()
 			honestChain := setupAssertionChain(t, ctx, bk.Client(), rollupAddr.Rollup, txOpts)
-			honestManager, err := cm.NewChallengeStack(honestChain, honestStateManager, honestOpts...)
+			honestManager, err := challengemanager.NewChallengeStack(honestChain, honestStateManager, honestOpts...)
 			require.NoError(t, err)
 
 			honestManager.Start(ctx)

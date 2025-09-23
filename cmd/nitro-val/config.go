@@ -5,7 +5,7 @@ import (
 	"reflect"
 	"time"
 
-	flag "github.com/spf13/pflag"
+	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/p2p"
@@ -75,7 +75,7 @@ var ValidationNodeConfigDefault = ValidationNodeConfig{
 	Workdir:       "",
 }
 
-func ValidationNodeConfigAddOptions(f *flag.FlagSet) {
+func ValidationNodeConfigAddOptions(f *pflag.FlagSet) {
 	genericconf.ConfConfigAddOptions("conf", f)
 	valnode.ValidationConfigAddOptions("validation", f)
 	f.String("log-level", ValidationNodeConfigDefault.LogLevel, "log level, valid values are CRIT, ERROR, WARN, INFO, DEBUG, TRACE")

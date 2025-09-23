@@ -107,7 +107,7 @@ fn decode_hex_arg(arg: &Option<String>, name: &str) -> Result<Bytes32> {
         }
         let mut bytes32 = Bytes32::default();
         hex::decode_to_slice(arg, &mut bytes32.0)
-            .wrap_err_with(|| format!("failed to parse {} contents", name))?;
+            .wrap_err_with(|| format!("failed to parse {name} contents"))?;
         Ok(bytes32)
     } else {
         Ok(Bytes32::default())
@@ -402,8 +402,8 @@ fn main() -> Result<()> {
         let format_pc = |module_num: usize, func_num: usize| -> (String, String) {
             let Some(names) = mach.get_module_names(module_num) else {
                 return (
-                    format!("[unknown {}]", module_num),
-                    format!("[unknown {}]", func_num),
+                    format!("[unknown {module_num}]"),
+                    format!("[unknown {func_num}]"),
                 );
             };
             let module_name = names.module.clone();
@@ -412,7 +412,7 @@ fn main() -> Result<()> {
                 .functions
                 .get(&func_idx)
                 .cloned()
-                .unwrap_or_else(|| format!("[unknown {}]", func_idx));
+                .unwrap_or_else(|| format!("[unknown {func_idx}]"));
             name = rustc_demangle::demangle(&name).to_string();
             (module_name, name)
         };
@@ -454,7 +454,7 @@ fn main() -> Result<()> {
                     path += ";";
                 }
                 path.pop(); // remove trailing ';'
-                writeln!(out, "{} {}", path, count)?;
+                writeln!(out, "{path} {count}")?;
             }
             out.flush()?;
         }

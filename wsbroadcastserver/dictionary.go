@@ -4,7 +4,7 @@ import "compress/flate"
 
 const DeflateCompressionLevel = flate.BestCompression
 
-// The static dictionary was created by appending manually created dictionary to a dictionary generated with dictator tool (https://github.com/vkrasnov/dictator)
+// The static dictionary was created by appending a manually created dictionary to a dictionary generated with dictator tool (https://github.com/vkrasnov/dictator)
 // * the dictator tool was used with default parameters, except for threshold which was set to 0.05% and compression level to 9
 // * the input for the generator consisted of 61512 preprocessed messages gathered from public feed with wscat
 // * the preprocessing substituted sequential numeric fields with pseudorandom values to minimize overfitting

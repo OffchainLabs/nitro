@@ -416,8 +416,8 @@ fn test_calls() -> Result<()> {
 
     let calls_addr = random_bytes20();
     let store_addr = random_bytes20();
-    println!("calls.wasm {}", calls_addr);
-    println!("store.wasm {}", store_addr);
+    println!("calls.wasm {calls_addr}");
+    println!("store.wasm {store_addr}");
 
     let mut slots = HashMap::new();
 

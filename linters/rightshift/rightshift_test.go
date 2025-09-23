@@ -1,3 +1,6 @@
+// Copyright 2024-2025, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
+
 package rightshift
 
 import (
@@ -15,11 +18,11 @@ func TestAll(t *testing.T) {
 		t.Fatalf("Failed to get working directory: %v", err)
 	}
 	testdata := filepath.Join(filepath.Dir(wd), "testdata")
-	res := analysistest.Run(t, testdata, analyzerForTests, "rightshift")
-	want := []int{6, 11, 12}
+	res := analysistest.Run(t, testdata, Analyzer, "rightshift")
+	want := []int{9, 14, 15}
 	got := erroLines(res)
 	if diff := cmp.Diff(want, got); diff != "" {
-		t.Errorf("analysistest.Ru() unexpected diff in error lines:\n%s\n", diff)
+		t.Errorf("analysistest.Run() unexpected diff in error lines:\n%s\n", diff)
 	}
 }
 

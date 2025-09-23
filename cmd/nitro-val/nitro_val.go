@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"syscall"
 
-	flag "github.com/spf13/pflag"
+	"github.com/spf13/pflag"
 
 	_ "github.com/ethereum/go-ethereum/eth/tracers/js"
 	_ "github.com/ethereum/go-ethereum/eth/tracers/native"
@@ -97,7 +97,7 @@ func mainImpl() int {
 
 	stack, err := node.New(&stackConf)
 	if err != nil {
-		flag.Usage()
+		pflag.Usage()
 		log.Crit("failed to initialize geth stack", "err", err)
 	}
 
@@ -159,7 +159,7 @@ func mainImpl() int {
 }
 
 func ParseNode(ctx context.Context, args []string) (*ValidationNodeConfig, error) {
-	f := flag.NewFlagSet("", flag.ContinueOnError)
+	f := pflag.NewFlagSet("", pflag.ContinueOnError)
 
 	ValidationNodeConfigAddOptions(f)
 

@@ -83,6 +83,7 @@ pub fn create(opts: &Opts, env: WasmEnv) -> (Instance, FunctionEnv<WasmEnv>, Sto
                 }
             },
             "resolveTypedPreimage" => func!(wavmio::resolve_typed_preimage),
+            "validateCertificate" => func!(wavmio::validate_certificate),
         },
         "wasi_snapshot_preview1" => {
             "proc_exit" => func!(wasip1_stub::proc_exit),
@@ -272,7 +273,7 @@ impl WasmEnv {
                         }
                         let mut bytes32 = [0u8; 32];
                         hex::decode_to_slice(arg, &mut bytes32)
-                            .wrap_err_with(|| format!("failed to parse {} contents", name))?;
+                            .wrap_err_with(|| format!("failed to parse {name} contents"))?;
                         Ok(bytes32.into())
                     }
                     None => Ok(Bytes32::default()),

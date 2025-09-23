@@ -13,7 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos/util"
-	am "github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
 func (ps *L1PricingState) _preversion10_UpdateForBatchPosterSpending(
@@ -64,7 +64,7 @@ func (ps *L1PricingState) _preversion10_UpdateForBatchPosterSpending(
 	if err != nil {
 		return err
 	}
-	unitsAllocated := am.SaturatingUMul(unitsSinceUpdate, allocationNumerator) / allocationDenominator
+	unitsAllocated := arbmath.SaturatingUMul(unitsSinceUpdate, allocationNumerator) / allocationDenominator
 	unitsSinceUpdate -= unitsAllocated
 	if err := ps.SetUnitsSinceUpdate(unitsSinceUpdate); err != nil {
 		return err
@@ -77,11 +77,11 @@ func (ps *L1PricingState) _preversion10_UpdateForBatchPosterSpending(
 			return err
 		}
 		if amortizedCostCapBips != 0 {
-			weiSpentCap := am.BigMulByBips(
-				am.BigMulByUint(l1Basefee, unitsAllocated),
-				am.SaturatingCastToBips(amortizedCostCapBips),
+			weiSpentCap := arbmath.BigMulByBips(
+				arbmath.BigMulByUint(l1Basefee, unitsAllocated),
+				arbmath.SaturatingCastToBips(amortizedCostCapBips),
 			)
-			if am.BigLessThan(weiSpentCap, weiSpent) {
+			if arbmath.BigLessThan(weiSpentCap, weiSpent) {
 				// apply the cap on assignment of amortized cost;
 				// the difference will be a loss for the batch poster
 				weiSpent = weiSpentCap
@@ -93,7 +93,7 @@ func (ps *L1PricingState) _preversion10_UpdateForBatchPosterSpending(
 	if err != nil {
 		return err
 	}
-	err = posterState.SetFundsDue(am.BigAdd(dueToPoster, weiSpent))
+	err = posterState.SetFundsDue(arbmath.BigAdd(dueToPoster, weiSpent))
 	if err != nil {
 		return err
 	}
@@ -101,18 +101,18 @@ func (ps *L1PricingState) _preversion10_UpdateForBatchPosterSpending(
 	if err != nil {
 		return err
 	}
-	fundsDueForRewards = am.BigAdd(fundsDueForRewards, am.BigMulByUint(am.UintToBig(unitsAllocated), perUnitReward))
+	fundsDueForRewards = arbmath.BigAdd(fundsDueForRewards, arbmath.BigMulByUint(arbmath.UintToBig(unitsAllocated), perUnitReward))
 	if err := ps.SetFundsDueForRewards(fundsDueForRewards); err != nil {
 		return err
 	}
 
 	// pay rewards, as much as possible
-	paymentForRewards := am.BigMulByUint(am.UintToBig(perUnitReward), unitsAllocated)
+	paymentForRewards := arbmath.BigMulByUint(arbmath.UintToBig(perUnitReward), unitsAllocated)
 	availableFunds := statedb.GetBalance(L1PricerFundsPoolAddress)
-	if am.BigLessThan(availableFunds.ToBig(), paymentForRewards) {
+	if arbmath.BigLessThan(availableFunds.ToBig(), paymentForRewards) {
 		paymentForRewards = availableFunds.ToBig()
 	}
-	fundsDueForRewards = am.BigSub(fundsDueForRewards, paymentForRewards)
+	fundsDueForRewards = arbmath.BigSub(fundsDueForRewards, paymentForRewards)
 	if err := ps.SetFundsDueForRewards(fundsDueForRewards); err != nil {
 		return err
 	}
@@ -134,7 +134,7 @@ func (ps *L1PricingState) _preversion10_UpdateForBatchPosterSpending(
 		return err
 	}
 	balanceToTransfer := balanceDueToPoster
-	if am.BigLessThan(availableFunds.ToBig(), balanceToTransfer) {
+	if arbmath.BigLessThan(availableFunds.ToBig(), balanceToTransfer) {
 		balanceToTransfer = availableFunds.ToBig()
 	}
 	if balanceToTransfer.Sign() > 0 {
@@ -148,7 +148,7 @@ func (ps *L1PricingState) _preversion10_UpdateForBatchPosterSpending(
 		if err != nil {
 			return err
 		}
-		balanceDueToPoster = am.BigSub(balanceDueToPoster, balanceToTransfer)
+		balanceDueToPoster = arbmath.BigSub(balanceDueToPoster, balanceToTransfer)
 		err = posterState.SetFundsDue(balanceDueToPoster)
 		if err != nil {
 			return err
@@ -170,7 +170,7 @@ func (ps *L1PricingState) _preversion10_UpdateForBatchPosterSpending(
 		if err != nil {
 			return err
 		}
-		surplus := am.BigSub(statedb.GetBalance(L1PricerFundsPoolAddress).ToBig(), am.BigAdd(totalFundsDue, fundsDueForRewards))
+		surplus := arbmath.BigSub(statedb.GetBalance(L1PricerFundsPoolAddress).ToBig(), arbmath.BigAdd(totalFundsDue, fundsDueForRewards))
 
 		inertia, err := ps.Inertia()
 		if err != nil {
@@ -180,27 +180,27 @@ func (ps *L1PricingState) _preversion10_UpdateForBatchPosterSpending(
 		if err != nil {
 			return err
 		}
-		inertiaUnits := am.BigDivByUint(equilUnits, inertia)
+		inertiaUnits := arbmath.BigDivByUint(equilUnits, inertia)
 		price, err := ps.PricePerUnit()
 		if err != nil {
 			return err
 		}
 
-		allocPlusInert := am.BigAddByUint(inertiaUnits, unitsAllocated)
+		allocPlusInert := arbmath.BigAddByUint(inertiaUnits, unitsAllocated)
 		oldSurplus, err := ps.LastSurplus()
 		if err != nil {
 			return err
 		}
 
-		desiredDerivative := am.BigDiv(new(big.Int).Neg(surplus), equilUnits)
-		actualDerivative := am.BigDivByUint(am.BigSub(surplus, oldSurplus), unitsAllocated)
-		changeDerivativeBy := am.BigSub(desiredDerivative, actualDerivative)
-		priceChange := am.BigDiv(am.BigMulByUint(changeDerivativeBy, unitsAllocated), allocPlusInert)
+		desiredDerivative := arbmath.BigDiv(new(big.Int).Neg(surplus), equilUnits)
+		actualDerivative := arbmath.BigDivByUint(arbmath.BigSub(surplus, oldSurplus), unitsAllocated)
+		changeDerivativeBy := arbmath.BigSub(desiredDerivative, actualDerivative)
+		priceChange := arbmath.BigDiv(arbmath.BigMulByUint(changeDerivativeBy, unitsAllocated), allocPlusInert)
 
 		if err := ps.SetLastSurplus(surplus, arbosVersion); err != nil {
 			return err
 		}
-		newPrice := am.BigAdd(price, priceChange)
+		newPrice := arbmath.BigAdd(price, priceChange)
 		if newPrice.Sign() < 0 {
 			newPrice = common.Big0
 		}
@@ -234,7 +234,7 @@ func (ps *L1PricingState) _preVersion2_UpdateForBatchPosterSpending(
 	if err != nil {
 		return err
 	}
-	oldSurplus := am.BigSub(statedb.GetBalance(L1PricerFundsPoolAddress).ToBig(), am.BigAdd(totalFundsDue, fundsDueForRewards))
+	oldSurplus := arbmath.BigSub(statedb.GetBalance(L1PricerFundsPoolAddress).ToBig(), arbmath.BigAdd(totalFundsDue, fundsDueForRewards))
 
 	// compute allocation fraction -- will allocate updateTimeDelta/timeDelta fraction of units and funds to this update
 	lastUpdateTime, err := ps.LastUpdateTime()
@@ -269,7 +269,7 @@ func (ps *L1PricingState) _preVersion2_UpdateForBatchPosterSpending(
 	if err != nil {
 		return err
 	}
-	err = posterState.SetFundsDue(am.BigAdd(dueToPoster, weiSpent))
+	err = posterState.SetFundsDue(arbmath.BigAdd(dueToPoster, weiSpent))
 	if err != nil {
 		return err
 	}
@@ -277,21 +277,21 @@ func (ps *L1PricingState) _preVersion2_UpdateForBatchPosterSpending(
 	if err != nil {
 		return err
 	}
-	fundsDueForRewards = am.BigAdd(fundsDueForRewards, am.BigMulByUint(am.UintToBig(unitsAllocated), perUnitReward))
+	fundsDueForRewards = arbmath.BigAdd(fundsDueForRewards, arbmath.BigMulByUint(arbmath.UintToBig(unitsAllocated), perUnitReward))
 	if err := ps.SetFundsDueForRewards(fundsDueForRewards); err != nil {
 		return err
 	}
 
 	// allocate funds to this update
 	collectedSinceUpdate := statedb.GetBalance(L1PricerFundsPoolAddress)
-	availableFunds := am.BigDivByUint(am.BigMulByUint(collectedSinceUpdate.ToBig(), allocationNumerator), allocationDenominator)
+	availableFunds := arbmath.BigDivByUint(arbmath.BigMulByUint(collectedSinceUpdate.ToBig(), allocationNumerator), allocationDenominator)
 
 	// pay rewards, as much as possible
-	paymentForRewards := am.BigMulByUint(am.UintToBig(perUnitReward), unitsAllocated)
-	if am.BigLessThan(availableFunds, paymentForRewards) {
+	paymentForRewards := arbmath.BigMulByUint(arbmath.UintToBig(perUnitReward), unitsAllocated)
+	if arbmath.BigLessThan(availableFunds, paymentForRewards) {
 		paymentForRewards = availableFunds
 	}
-	fundsDueForRewards = am.BigSub(fundsDueForRewards, paymentForRewards)
+	fundsDueForRewards = arbmath.BigSub(fundsDueForRewards, paymentForRewards)
 	if err := ps.SetFundsDueForRewards(fundsDueForRewards); err != nil {
 		return err
 	}
@@ -305,7 +305,7 @@ func (ps *L1PricingState) _preVersion2_UpdateForBatchPosterSpending(
 	if err != nil {
 		return err
 	}
-	availableFunds = am.BigSub(availableFunds, paymentForRewards)
+	availableFunds = arbmath.BigSub(availableFunds, paymentForRewards)
 
 	// settle up our batch poster payments owed, as much as possible
 	allPosterAddrs, err := batchPosterTable.AllPosters(math.MaxUint64)
@@ -322,7 +322,7 @@ func (ps *L1PricingState) _preVersion2_UpdateForBatchPosterSpending(
 			return err
 		}
 		balanceToTransfer := balanceDueToPoster
-		if am.BigLessThan(availableFunds, balanceToTransfer) {
+		if arbmath.BigLessThan(availableFunds, balanceToTransfer) {
 			balanceToTransfer = availableFunds
 		}
 		if balanceToTransfer.Sign() > 0 {
@@ -336,8 +336,8 @@ func (ps *L1PricingState) _preVersion2_UpdateForBatchPosterSpending(
 			if err != nil {
 				return err
 			}
-			availableFunds = am.BigSub(availableFunds, balanceToTransfer)
-			balanceDueToPoster = am.BigSub(balanceDueToPoster, balanceToTransfer)
+			availableFunds = arbmath.BigSub(availableFunds, balanceToTransfer)
+			balanceDueToPoster = arbmath.BigSub(balanceDueToPoster, balanceToTransfer)
 			err = poster.SetFundsDue(balanceDueToPoster)
 			if err != nil {
 				return err
@@ -360,7 +360,7 @@ func (ps *L1PricingState) _preVersion2_UpdateForBatchPosterSpending(
 		if err != nil {
 			return err
 		}
-		surplus := am.BigSub(statedb.GetBalance(L1PricerFundsPoolAddress).ToBig(), am.BigAdd(totalFundsDue, fundsDueForRewards))
+		surplus := arbmath.BigSub(statedb.GetBalance(L1PricerFundsPoolAddress).ToBig(), arbmath.BigAdd(totalFundsDue, fundsDueForRewards))
 
 		inertia, err := ps.Inertia()
 		if err != nil {
@@ -370,22 +370,22 @@ func (ps *L1PricingState) _preVersion2_UpdateForBatchPosterSpending(
 		if err != nil {
 			return err
 		}
-		inertiaUnits := am.BigDivByUint(equilUnits, inertia)
+		inertiaUnits := arbmath.BigDivByUint(equilUnits, inertia)
 		price, err := ps.PricePerUnit()
 		if err != nil {
 			return err
 		}
 
-		allocPlusInert := am.BigAddByUint(inertiaUnits, unitsAllocated)
-		priceChange := am.BigDiv(
-			am.BigSub(
-				am.BigMul(surplus, am.BigSub(equilUnits, common.Big1)),
-				am.BigMul(oldSurplus, equilUnits),
+		allocPlusInert := arbmath.BigAddByUint(inertiaUnits, unitsAllocated)
+		priceChange := arbmath.BigDiv(
+			arbmath.BigSub(
+				arbmath.BigMul(surplus, arbmath.BigSub(equilUnits, common.Big1)),
+				arbmath.BigMul(oldSurplus, equilUnits),
 			),
-			am.BigMul(equilUnits, allocPlusInert),
+			arbmath.BigMul(equilUnits, allocPlusInert),
 		)
 
-		newPrice := am.BigAdd(price, priceChange)
+		newPrice := arbmath.BigAdd(price, priceChange)
 		if newPrice.Sign() < 0 {
 			newPrice = common.Big0
 		}

@@ -15,7 +15,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 
-	"github.com/offchainlabs/bold/logs/ephemeral"
+	"github.com/offchainlabs/nitro/bold/logs/ephemeral"
 )
 
 const defaultSleepTime = time.Second * 30

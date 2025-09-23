@@ -219,8 +219,6 @@ func TestPrestateTracingSimple(t *testing.T) {
 	receiver := builder.L2Info.GetAddress("User2")
 	ownerOldBalance, err := builder.L2.Client.BalanceAt(ctx, sender, nil)
 	Require(t, err)
-	user2OldBalance, err := builder.L2.Client.BalanceAt(ctx, receiver, nil)
-	Require(t, err)
 
 	value := big.NewInt(1e6)
 	tx := builder.L2Info.PrepareTx("Owner", "User2", builder.L2Info.TransferGas, value, nil)
@@ -243,8 +241,8 @@ func TestPrestateTracingSimple(t *testing.T) {
 	if !arbmath.BigEquals(result.Pre[sender].Balance.ToInt(), ownerOldBalance) {
 		Fatal(t, "Unexpected initial balance of sender")
 	}
-	if !arbmath.BigEquals(result.Pre[receiver].Balance.ToInt(), user2OldBalance) {
-		Fatal(t, "Unexpected initial balance of receiver")
+	if _, ok := result.Pre[receiver]; ok {
+		Fatal(t, "receiver account found in the result of prestate tracer, its initial balance is zero so it shouldn't have been")
 	}
 	expBalance := arbmath.BigSub(ownerOldBalance, value)
 	gas := arbmath.BigMulByUint(receipt.EffectiveGasPrice, receipt.GasUsed)
@@ -262,9 +260,6 @@ func TestPrestateTracingSimple(t *testing.T) {
 	}
 	if result.Post[sender].Nonce != result.Pre[sender].Nonce+1 {
 		Fatal(t, "sender nonce increment wasn't registered")
-	}
-	if result.Post[receiver].Nonce != result.Pre[receiver].Nonce {
-		Fatal(t, "receiver nonce shouldn't change")
 	}
 }
 
@@ -418,13 +413,10 @@ func TestArbTxTypesTracingPrestateTracerAndCallTracer(t *testing.T) {
 	Require(t, err)
 
 	escrowAddr := retryables.RetryableEscrowAddress(ticketId)
-	if _, ok := result.Pre[escrowAddr]; !ok {
-		Fatal(t, "Escrow account not found in the result of prestate tracer for a ArbitrumSubmitRetryableTx transaction")
+	if _, ok := result.Pre[escrowAddr]; ok {
+		Fatal(t, "Escrow account found in the result of prestate tracer for a ArbitrumSubmitRetryableTx transaction, its initial balance is zero so it shouldn't have been")
 	}
 
-	if !arbmath.BigEquals(result.Pre[escrowAddr].Balance.ToInt(), common.Big0) {
-		Fatal(t, "Unexpected initial balance of Escrow")
-	}
 	if !arbmath.BigEquals(result.Post[escrowAddr].Balance.ToInt(), callValue) {
 		Fatal(t, "Unexpected final balance of Escrow")
 	}
@@ -444,8 +436,8 @@ func TestArbTxTypesTracingPrestateTracerAndCallTracer(t *testing.T) {
 	err = l2rpc.CallContext(ctx, &result, "debug_traceTransaction", firstRetryTxId, traceConfig)
 	Require(t, err)
 
-	if !arbmath.BigEquals(result.Pre[user2Address].Balance.ToInt(), common.Big0) {
-		Fatal(t, "Unexpected initial balance of User2")
+	if _, ok := result.Pre[user2Address]; ok {
+		Fatal(t, "User2 account found in the result of prestate tracer, its initial balance is zero so it shouldn't have been")
 	}
 	if !arbmath.BigEquals(result.Post[user2Address].Balance.ToInt(), callValue) {
 		Fatal(t, "Unexpected final balance of User2")

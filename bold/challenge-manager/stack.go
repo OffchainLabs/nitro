@@ -11,14 +11,14 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 
-	"github.com/offchainlabs/bold/api/backend"
-	"github.com/offchainlabs/bold/api/db"
-	"github.com/offchainlabs/bold/api/server"
-	"github.com/offchainlabs/bold/assertions"
-	protocol "github.com/offchainlabs/bold/chain-abstraction"
-	watcher "github.com/offchainlabs/bold/challenge-manager/chain-watcher"
-	"github.com/offchainlabs/bold/challenge-manager/types"
-	l2stateprovider "github.com/offchainlabs/bold/layer2-state-provider"
+	"github.com/offchainlabs/nitro/bold/api/backend"
+	"github.com/offchainlabs/nitro/bold/api/db"
+	"github.com/offchainlabs/nitro/bold/api/server"
+	"github.com/offchainlabs/nitro/bold/assertions"
+	"github.com/offchainlabs/nitro/bold/chain-abstraction"
+	"github.com/offchainlabs/nitro/bold/challenge-manager/chain-watcher"
+	"github.com/offchainlabs/nitro/bold/challenge-manager/types"
+	"github.com/offchainlabs/nitro/bold/layer2-state-provider"
 )
 
 type stackParams struct {

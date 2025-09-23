@@ -60,6 +60,14 @@ func (p DB) NewIterator(prefix []byte, start []byte) ethdb.Iterator {
 	panic("unimplemented")
 }
 
+func (p DB) SyncAncient() error {
+	return nil // no-op
+}
+
+func (p DB) SyncKeyValue() error {
+	return nil // no-op
+}
+
 func (p DB) Compact(start []byte, limit []byte) error {
 	return nil // no-op
 }

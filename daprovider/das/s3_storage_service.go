@@ -12,7 +12,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/feature/s3/manager"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	flag "github.com/spf13/pflag"
+	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
@@ -35,7 +35,7 @@ type S3StorageServiceConfig struct {
 
 var DefaultS3StorageServiceConfig = S3StorageServiceConfig{}
 
-func S3ConfigAddOptions(prefix string, f *flag.FlagSet) {
+func S3ConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultS3StorageServiceConfig.Enable, "enable storage/retrieval of sequencer batch data from an AWS S3 bucket")
 	f.String(prefix+".access-key", DefaultS3StorageServiceConfig.AccessKey, "S3 access key")
 	f.String(prefix+".bucket", DefaultS3StorageServiceConfig.Bucket, "S3 bucket")

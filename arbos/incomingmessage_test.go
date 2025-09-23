@@ -25,9 +25,10 @@ func TestSerializeAndParseL1Message(t *testing.T) {
 		L1BaseFee:   big.NewInt(10000000000000),
 	}
 	msg := arbostypes.L1IncomingMessage{
-		Header:       &header,
-		L2msg:        []byte{3, 2, 1},
-		BatchGasCost: nil,
+		Header:             &header,
+		L2msg:              []byte{3, 2, 1},
+		LegacyBatchGasCost: nil,
+		BatchDataStats:     nil,
 	}
 	serialized, err := msg.Serialize()
 	if err != nil {

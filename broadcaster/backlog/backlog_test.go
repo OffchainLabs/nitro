@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/offchainlabs/nitro/arbutil"
-	m "github.com/offchainlabs/nitro/broadcaster/message"
+	"github.com/offchainlabs/nitro/broadcaster/message"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/containers"
 )
@@ -40,7 +40,7 @@ func validateBacklog(t *testing.T, b *backlog, count, start, end uint64, lookupK
 	}
 }
 
-func validateBroadcastMessage(t *testing.T, bm *m.BroadcastMessage, expectedCount int, start, end uint64) {
+func validateBroadcastMessage(t *testing.T, bm *message.BroadcastMessage, expectedCount int, start, end uint64) {
 	actualCount := len(bm.Messages)
 	if actualCount != expectedCount {
 		t.Errorf("number of messages returned (%d) does not equal the expected number of messages (%d)", actualCount, expectedCount)
@@ -60,7 +60,7 @@ func createDummyBacklog(indexes []arbutil.MessageIndex) (*backlog, error) {
 		config: func() *Config { return &DefaultTestConfig },
 	}
 	b.lookupByIndex.Store(&containers.SyncMap[uint64, *backlogSegment]{})
-	bm := &m.BroadcastMessage{Messages: m.CreateDummyBroadcastMessages(indexes)}
+	bm := &message.BroadcastMessage{Messages: message.CreateDummyBroadcastMessages(indexes)}
 	err := b.Append(bm)
 	return b, err
 }
@@ -76,58 +76,78 @@ func TestAppend(t *testing.T) {
 		expectedLookupKeys []arbutil.MessageIndex
 	}{
 		{
-			"EmptyBacklog",
-			[]arbutil.MessageIndex{},
-			[]arbutil.MessageIndex{40, 41, 42, 43, 44, 45, 46},
-			7,
-			40,
-			46,
-			[]arbutil.MessageIndex{40, 41, 42, 43, 44, 45, 46},
+			name:               "EmptyBacklog",
+			backlogIndexes:     []arbutil.MessageIndex{},
+			newIndexes:         []arbutil.MessageIndex{40, 41, 42, 43, 44, 45, 46},
+			expectedCount:      7,
+			expectedStart:      40,
+			expectedEnd:        46,
+			expectedLookupKeys: []arbutil.MessageIndex{40, 41, 42, 43, 44, 45, 46},
 		},
 		{
-			"NonEmptyBacklog",
-			[]arbutil.MessageIndex{40, 41},
-			[]arbutil.MessageIndex{42, 43, 44, 45, 46},
-			7,
-			40,
-			46,
-			[]arbutil.MessageIndex{40, 41, 42, 43, 44, 45, 46},
+			name:               "NonEmptyBacklog",
+			backlogIndexes:     []arbutil.MessageIndex{40, 41},
+			newIndexes:         []arbutil.MessageIndex{42, 43, 44, 45, 46},
+			expectedCount:      7,
+			expectedStart:      40,
+			expectedEnd:        46,
+			expectedLookupKeys: []arbutil.MessageIndex{40, 41, 42, 43, 44, 45, 46},
 		},
 		{
-			"NonSequential",
-			[]arbutil.MessageIndex{40, 41},
-			[]arbutil.MessageIndex{42, 43, 45, 46},
-			2, // Message 45 is non sequential, the previous messages will be dropped from the backlog
-			45,
-			46,
-			[]arbutil.MessageIndex{45, 46},
+			name:               "NonSequential",
+			backlogIndexes:     []arbutil.MessageIndex{40, 41},
+			newIndexes:         []arbutil.MessageIndex{42, 43, 45, 46},
+			expectedCount:      2, // Message 45 is non sequential, the previous messages will be dropped from the backlog
+			expectedStart:      45,
+			expectedEnd:        46,
+			expectedLookupKeys: []arbutil.MessageIndex{45, 46},
 		},
 		{
-			"MessageSeen",
-			[]arbutil.MessageIndex{40, 41},
-			[]arbutil.MessageIndex{42, 43, 44, 45, 46, 41},
-			7, // Message 41 is already present in the backlog, it will be ignored
-			40,
-			46,
-			[]arbutil.MessageIndex{40, 41, 42, 43, 44, 45, 46},
+			name:               "MessageSeen",
+			backlogIndexes:     []arbutil.MessageIndex{40, 41},
+			newIndexes:         []arbutil.MessageIndex{42, 43, 44, 45, 46, 41},
+			expectedCount:      7, // Message 41 is already present in the backlog, it will be ignored
+			expectedStart:      40,
+			expectedEnd:        46,
+			expectedLookupKeys: []arbutil.MessageIndex{40, 41, 42, 43, 44, 45, 46},
 		},
 		{
-			"NonSequentialFirstSegmentMessage",
-			[]arbutil.MessageIndex{40, 41},
-			[]arbutil.MessageIndex{42, 44, 45, 46},
-			3, // Message 44 is non sequential and the first message in a new segment, the previous messages will be dropped from the backlog
-			44,
-			46,
-			[]arbutil.MessageIndex{44, 45, 46},
+			name:               "NonSequentialFirstSegmentMessage",
+			backlogIndexes:     []arbutil.MessageIndex{40, 41},
+			newIndexes:         []arbutil.MessageIndex{42, 44, 45, 46},
+			expectedCount:      3, // Message 44 is non sequential and the first message in a new segment, the previous messages will be dropped from the backlog
+			expectedStart:      44,
+			expectedEnd:        46,
+			expectedLookupKeys: []arbutil.MessageIndex{44, 45, 46},
 		},
 		{
-			"MessageSeenFirstSegmentMessage",
-			[]arbutil.MessageIndex{40, 41},
-			[]arbutil.MessageIndex{42, 43, 44, 45, 41, 46},
-			7, // Message 41 is already present in the backlog and the first message in a new segment, it will be ignored
-			40,
-			46,
-			[]arbutil.MessageIndex{40, 41, 42, 43, 44, 45, 46},
+			name:               "MessageSeenFirstSegmentMessage",
+			backlogIndexes:     []arbutil.MessageIndex{40, 41},
+			newIndexes:         []arbutil.MessageIndex{42, 43, 44, 45, 41, 46},
+			expectedCount:      7, // Message 41 is already present in the backlog and the first message in a new segment, it will be ignored
+			expectedStart:      40,
+			expectedEnd:        46,
+			expectedLookupKeys: []arbutil.MessageIndex{40, 41, 42, 43, 44, 45, 46},
+		},
+		// There was a bug where if the last message was a duplicate it could insert an empty segment.
+		{
+			name:               "MessageSeenFirstSegmentMessageDoesntCreateNewSegment",
+			backlogIndexes:     []arbutil.MessageIndex{40, 41},
+			newIndexes:         []arbutil.MessageIndex{42, 43, 44, 45, 41},
+			expectedCount:      6,
+			expectedStart:      40,
+			expectedEnd:        45,
+			expectedLookupKeys: []arbutil.MessageIndex{40, 41, 42, 43, 44, 45},
+		},
+		// The above bug could also be used to insert messages out of order.
+		{
+			name:               "MyMessageSeenFirstSegmentMessageDoesntAllowOutOfOrderInsertion",
+			backlogIndexes:     []arbutil.MessageIndex{40, 41},
+			newIndexes:         []arbutil.MessageIndex{42, 43, 44, 45, 41, 1},
+			expectedCount:      6,
+			expectedStart:      40,
+			expectedEnd:        45,
+			expectedLookupKeys: []arbutil.MessageIndex{40, 41, 42, 43, 44, 45},
 		},
 	}
 
@@ -141,7 +161,7 @@ func TestAppend(t *testing.T) {
 				t.Fatalf("error creating dummy backlog: %s", err)
 			}
 
-			bm := &m.BroadcastMessage{Messages: m.CreateDummyBroadcastMessages(tc.newIndexes)}
+			bm := &message.BroadcastMessage{Messages: message.CreateDummyBroadcastMessages(tc.newIndexes)}
 			err = b.Append(bm)
 			if err != nil {
 				t.Fatalf("error appending BroadcastMessage: %s", err)
@@ -155,7 +175,7 @@ func TestAppend(t *testing.T) {
 func TestDeleteInvalidBacklog(t *testing.T) {
 	// Create a backlog with an invalid sequence
 	s := &backlogSegment{
-		messages: m.CreateDummyBroadcastMessages([]arbutil.MessageIndex{40, 42}),
+		messages: message.CreateDummyBroadcastMessages([]arbutil.MessageIndex{40, 42}),
 	}
 
 	lookup := &containers.SyncMap[uint64, *backlogSegment]{}
@@ -168,9 +188,9 @@ func TestDeleteInvalidBacklog(t *testing.T) {
 	b.head.Store(s)
 	b.tail.Store(s)
 
-	bm := &m.BroadcastMessage{
+	bm := &message.BroadcastMessage{
 		Messages: nil,
-		ConfirmedSequenceNumberMessage: &m.ConfirmedSequenceNumberMessage{
+		ConfirmedSequenceNumberMessage: &message.ConfirmedSequenceNumberMessage{
 			SequenceNumber: 41,
 		},
 	}
@@ -194,67 +214,67 @@ func TestDelete(t *testing.T) {
 		expectedLookupKeys []arbutil.MessageIndex
 	}{
 		{
-			"EmptyBacklog",
-			[]arbutil.MessageIndex{},
-			0, // no segements in backlog so nothing to delete
-			0,
-			0,
-			0,
-			[]arbutil.MessageIndex{},
+			name:               "EmptyBacklog",
+			backlogIndexes:     []arbutil.MessageIndex{},
+			confirmed:          0, // no segements in backlog so nothing to delete
+			expectedCount:      0,
+			expectedStart:      0,
+			expectedEnd:        0,
+			expectedLookupKeys: []arbutil.MessageIndex{},
 		},
 		{
-			"MsgBeforeBacklog",
-			[]arbutil.MessageIndex{40, 41, 42, 43, 44, 45, 46},
-			39, // no segments will be deleted
-			7,
-			40,
-			46,
-			[]arbutil.MessageIndex{40, 41, 42, 43, 44, 45, 46},
+			name:               "MsgBeforeBacklog",
+			backlogIndexes:     []arbutil.MessageIndex{40, 41, 42, 43, 44, 45, 46},
+			confirmed:          39, // no segments will be deleted
+			expectedCount:      7,
+			expectedStart:      40,
+			expectedEnd:        46,
+			expectedLookupKeys: []arbutil.MessageIndex{40, 41, 42, 43, 44, 45, 46},
 		},
 		{
-			"FirstMsgInBacklog",
-			[]arbutil.MessageIndex{40, 41, 42, 43, 44, 45, 46},
-			40, // this is the first message in the backlog
-			6,
-			41,
-			46,
-			[]arbutil.MessageIndex{41, 42, 43, 44, 45, 46},
+			name:               "FirstMsgInBacklog",
+			backlogIndexes:     []arbutil.MessageIndex{40, 41, 42, 43, 44, 45, 46},
+			confirmed:          40, // this is the first message in the backlog
+			expectedCount:      6,
+			expectedStart:      41,
+			expectedEnd:        46,
+			expectedLookupKeys: []arbutil.MessageIndex{41, 42, 43, 44, 45, 46},
 		},
 		{
-			"FirstMsgInSegment",
-			[]arbutil.MessageIndex{40, 41, 42, 43, 44, 45, 46},
-			43, // this is the first message in a middle segment of the backlog
-			3,
-			44,
-			46,
-			[]arbutil.MessageIndex{44, 45, 46},
+			name:               "FirstMsgInSegment",
+			backlogIndexes:     []arbutil.MessageIndex{40, 41, 42, 43, 44, 45, 46},
+			confirmed:          43, // this is the first message in a middle segment of the backlog
+			expectedCount:      3,
+			expectedStart:      44,
+			expectedEnd:        46,
+			expectedLookupKeys: []arbutil.MessageIndex{44, 45, 46},
 		},
 		{
-			"MiddleMsgInSegment",
-			[]arbutil.MessageIndex{40, 41, 42, 43, 44, 45, 46},
-			44, // this is a message in the middle of a middle segment of the backlog
-			2,
-			45,
-			46,
-			[]arbutil.MessageIndex{45, 46},
+			name:               "MiddleMsgInSegment",
+			backlogIndexes:     []arbutil.MessageIndex{40, 41, 42, 43, 44, 45, 46},
+			confirmed:          44, // this is a message in the middle of a middle segment of the backlog
+			expectedCount:      2,
+			expectedStart:      45,
+			expectedEnd:        46,
+			expectedLookupKeys: []arbutil.MessageIndex{45, 46},
 		},
 		{
-			"LastMsgInSegment",
-			[]arbutil.MessageIndex{40, 41, 42, 43, 44, 45, 46},
-			45, // this is the last message in a middle segment of the backlog, the whole segment should be deleted along with any segments before it
-			1,
-			46,
-			46,
-			[]arbutil.MessageIndex{46},
+			name:               "LastMsgInSegment",
+			backlogIndexes:     []arbutil.MessageIndex{40, 41, 42, 43, 44, 45, 46},
+			confirmed:          45, // this is the last message in a middle segment of the backlog, the whole segment should be deleted along with any segments before it
+			expectedCount:      1,
+			expectedStart:      46,
+			expectedEnd:        46,
+			expectedLookupKeys: []arbutil.MessageIndex{46},
 		},
 		{
-			"MsgAfterBacklog",
-			[]arbutil.MessageIndex{40, 41, 42, 43, 44, 45, 46},
-			47, // all segments will be deleted
-			0,
-			0,
-			0,
-			[]arbutil.MessageIndex{},
+			name:               "MsgAfterBacklog",
+			backlogIndexes:     []arbutil.MessageIndex{40, 41, 42, 43, 44, 45, 46},
+			confirmed:          47, // all segments will be deleted
+			expectedCount:      0,
+			expectedStart:      0,
+			expectedEnd:        0,
+			expectedLookupKeys: []arbutil.MessageIndex{},
 		},
 	}
 
@@ -265,9 +285,9 @@ func TestDelete(t *testing.T) {
 				t.Fatalf("error creating dummy backlog: %s", err)
 			}
 
-			bm := &m.BroadcastMessage{
+			bm := &message.BroadcastMessage{
 				Messages: nil,
-				ConfirmedSequenceNumberMessage: &m.ConfirmedSequenceNumberMessage{
+				ConfirmedSequenceNumberMessage: &message.ConfirmedSequenceNumberMessage{
 					SequenceNumber: tc.confirmed,
 				},
 			}
@@ -409,7 +429,7 @@ func TestBacklogRaceCondition(t *testing.T) {
 	go func(t *testing.T, b *backlog) {
 		defer wg.Done()
 		for _, i := range newIndexes {
-			bm := m.CreateDummyBroadcastMessage([]arbutil.MessageIndex{i})
+			bm := message.CreateDummyBroadcastMessage([]arbutil.MessageIndex{i})
 			err := b.Append(bm)
 			errs <- err
 			if err != nil {
