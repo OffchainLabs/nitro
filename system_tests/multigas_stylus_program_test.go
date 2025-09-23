@@ -5,6 +5,7 @@ package arbtest
 
 import (
 	"context"
+	"math/big"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -15,6 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
+	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
@@ -194,4 +196,79 @@ func TestMultigasStylus_EmitLog(t *testing.T) {
 			)
 		})
 	}
+}
+
+func TestMultigasStylus_Create(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	builder.execConfig.ExposeMultiGas = true
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	l2info := builder.L2Info
+	l2client := builder.L2.Client
+	owner := l2info.GetDefaultTransactOpts("Owner", ctx)
+
+	// Deploy the factory (create) contract
+	createAddr := deployWasm(t, ctx, owner, l2client, rustFile("create"))
+	storageWasm, _ := readWasmFile(t, rustFile("storage"))
+	deployCode := deployContractInitCode(storageWasm, false)
+
+	// CREATE1 call
+	create1Args := []byte{0x01} // selector for CREATE1
+	create1Args = append(create1Args, common.BigToHash(big.NewInt(0)).Bytes()...)
+	create1Args = append(create1Args, deployCode...)
+
+	tx := l2info.PrepareTxTo("Owner", &createAddr, 1_000_000_000, nil, create1Args)
+	require.NoError(t, l2client.SendTransaction(ctx, tx))
+	receipt1, err := EnsureTxSucceeded(ctx, l2client, tx)
+	require.NoError(t, err)
+
+	// Both computation and wasm computation should be charged
+	// TODO(NIT-3888): Check for exact values after correct computation/wasm attribution
+	require.GreaterOrEqual(t,
+		receipt1.MultiGasUsed.Get(multigas.ResourceKindWasmComputation),
+		params.CreateGas,
+	)
+	require.GreaterOrEqual(t,
+		receipt1.MultiGasUsed.Get(multigas.ResourceKindComputation),
+		params.TxGas,
+	)
+
+	require.Equalf(t,
+		receipt1.GasUsed,
+		receipt1.MultiGasUsed.SingleGas(),
+		"Used gas mismatch: GasUsed=%d, MultiGas=%d",
+		receipt1.GasUsed, receipt1.MultiGasUsed.SingleGas(),
+	)
+
+	// CREATE2 call
+	salt := testhelpers.RandomHash()
+	create2Args := []byte{0x02} // selector for CREATE2
+	create2Args = append(create2Args, common.BigToHash(big.NewInt(0)).Bytes()...)
+	create2Args = append(create2Args, salt[:]...)
+	create2Args = append(create2Args, deployCode...)
+
+	tx2 := l2info.PrepareTxTo("Owner", &createAddr, 1_000_000_000, nil, create2Args)
+	require.NoError(t, l2client.SendTransaction(ctx, tx2))
+	receipt2, err := EnsureTxSucceeded(ctx, l2client, tx2)
+	require.NoError(t, err)
+
+	// CREATE2: expect additional keccak cost relative to CREATE1
+	keccakWords := arbmath.WordsForBytes(uint64(len(deployCode)))
+	expectedExtra := arbmath.SaturatingUMul(params.Keccak256WordGas, keccakWords)
+
+	require.Equal(t,
+		receipt1.MultiGasUsed.Get(multigas.ResourceKindComputation)+expectedExtra,
+		receipt2.MultiGasUsed.Get(multigas.ResourceKindComputation),
+	)
+
+	require.Equalf(t,
+		receipt2.GasUsed,
+		receipt2.MultiGasUsed.SingleGas(),
+		"Used gas mismatch: GasUsed=%d, MultiGas=%d",
+		receipt2.GasUsed, receipt2.MultiGasUsed.SingleGas(),
+	)
 }

@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2025, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package broadcastclient
@@ -99,7 +99,7 @@ var DefaultConfig = Config{
 	ReconnectMaximumBackoff: time.Second * 64,
 	RequireChainId:          false,
 	RequireFeedVersion:      false,
-	Verify:                  signature.DefultFeedVerifierConfig,
+	Verify:                  signature.DefaultFeedVerifierConfig,
 	URL:                     []string{},
 	SecondaryURL:            []string{},
 	Timeout:                 20 * time.Second,
@@ -111,7 +111,7 @@ var DefaultTestConfig = Config{
 	ReconnectMaximumBackoff: 0,
 	RequireChainId:          false,
 	RequireFeedVersion:      false,
-	Verify:                  signature.DefultFeedVerifierConfig,
+	Verify:                  signature.DefaultFeedVerifierConfig,
 	URL:                     []string{""},
 	SecondaryURL:            []string{},
 	Timeout:                 200 * time.Millisecond,
