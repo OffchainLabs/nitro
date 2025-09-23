@@ -93,10 +93,9 @@ func (c *Client) Store(
 	ctx context.Context,
 	message []byte,
 	timeout uint64,
-	disableFallbackStoreDataOnChain bool,
 ) ([]byte, error) {
 	var storeResult StoreResult
-	if err := c.CallContext(ctx, &storeResult, "daprovider_store", hexutil.Bytes(message), hexutil.Uint64(timeout), disableFallbackStoreDataOnChain); err != nil {
+	if err := c.CallContext(ctx, &storeResult, "daprovider_store", hexutil.Bytes(message), hexutil.Uint64(timeout)); err != nil {
 		return nil, fmt.Errorf("error returned from daprovider_store rpc method, err: %w", err)
 	}
 	return storeResult.SerializedDACert, nil
