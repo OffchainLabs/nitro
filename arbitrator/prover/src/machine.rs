@@ -901,7 +901,7 @@ impl Display for MachineStatus {
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct ModuleState<'a> {
-    globals: Cow<'a, Vec<Value>>,
+    globals: Cow<'a, [Value]>,
     memory: Cow<'a, Memory>,
 }
 
@@ -935,13 +935,13 @@ pub struct MachineState<'a> {
     steps: u64, // Not part of machine hash
     thread_state: ThreadState,
     status: MachineStatus,
-    value_stacks: Cow<'a, Vec<Vec<Value>>>,
-    internal_stack: Cow<'a, Vec<Value>>,
-    frame_stacks: Cow<'a, Vec<Vec<StackFrame>>>,
+    value_stacks: Cow<'a, [Vec<Value>]>,
+    internal_stack: Cow<'a, [Value]>,
+    frame_stacks: Cow<'a, [Vec<StackFrame>]>,
     modules: Vec<ModuleState<'a>>,
     global_state: GlobalState,
     pc: ProgramCounter,
-    stdio_output: Cow<'a, Vec<u8>>,
+    stdio_output: Cow<'a, [u8]>,
     initial_hash: Bytes32,
 }
 
@@ -1258,11 +1258,11 @@ impl Machine {
     ) -> Result<Machine> {
         let bin_source = file_bytes(binary_path)?;
         let bin = parse(&bin_source, binary_path)
-            .wrap_err_with(|| format!("failed to validate WASM binary at {:?}", binary_path))?;
+            .wrap_err_with(|| format!("failed to validate WASM binary at {binary_path:?}"))?;
         let mut libraries = vec![];
         let mut lib_sources = vec![];
         for path in library_paths {
-            let error_message = format!("failed to validate WASM binary at {:?}", path);
+            let error_message = format!("failed to validate WASM binary at {path:?}");
             lib_sources.push((file_bytes(path)?, path, error_message));
         }
         for (source, path, error_message) in &lib_sources {
@@ -2502,6 +2502,38 @@ impl Machine {
                         error!();
                     }
                 }
+                Opcode::ValidateCertificate => {
+                    let preimage_type = value_stack.pop().unwrap().assume_u32();
+                    let hash_ptr = value_stack.pop().unwrap().assume_u32();
+
+                    // Try to convert preimage_type to PreimageType
+                    let Ok(preimage_ty) = PreimageType::try_from(u8::try_from(preimage_type)?)
+                    else {
+                        // For invalid preimage types, return 0 (invalid)
+                        value_stack.push(Value::from(0u32));
+                        continue;
+                    };
+
+                    // Load the hash from memory
+                    let Some(hash) = module.memory.load_32_byte_aligned(hash_ptr.into()) else {
+                        error!();
+                    };
+
+                    // For types other than DACertificate, always return valid (1)
+                    if preimage_ty != PreimageType::DACertificate {
+                        value_stack.push(Value::from(1u32));
+                        continue;
+                    }
+
+                    // For DACertificate, check if the preimage exists in the resolver
+                    // (which means it was pre-validated during batch processing)
+                    let is_valid = self
+                        .preimage_resolver
+                        .get(self.context, preimage_ty, hash)
+                        .is_some();
+
+                    value_stack.push(Value::from(if is_valid { 1u32 } else { 0u32 }));
+                }
                 Opcode::ReadPreImage => {
                     let offset = value_stack.pop().unwrap().assume_u32();
                     let ptr = value_stack.pop().unwrap().assume_u32();
@@ -2514,6 +2546,10 @@ impl Machine {
                     let Some(hash) = module.memory.load_32_byte_aligned(ptr.into()) else {
                         error!();
                     };
+
+                    // For DACertificate type, ValidateCertificate should have been called first
+                    // ReadPreImage assumes certificates are valid and preimages are available.
+
                     let Some(preimage) =
                         self.preimage_resolver.get(self.context, preimage_ty, hash)
                     else {
@@ -2583,7 +2619,11 @@ impl Machine {
                     let Some(bytes) = self.stylus_modules.get(&hash) else {
                         let modules = &self.stylus_modules;
                         let keys: Vec<_> = modules.keys().take(16).map(hex::encode).collect();
-                        let dots = (modules.len() > 16).then_some("...").unwrap_or_default();
+                        let dots = if modules.len() > 16 {
+                            "..."
+                        } else {
+                            Default::default()
+                        };
                         bail!("no program for {hash} in {{{}{dots}}}", keys.join(", "))
                     };
 
@@ -2685,8 +2725,7 @@ impl Machine {
                 let exit_code = pull_arg!(0, I32);
                 if exit_code != 0 {
                     println!(
-                        "\x1b[31mWASM exiting\x1b[0m with exit code \x1b[31m{}\x1b[0m",
-                        exit_code,
+                        "\x1b[31mWASM exiting\x1b[0m with exit code \x1b[31m{exit_code}\x1b[0m",
                     );
                 }
                 Ok(())
@@ -2759,7 +2798,7 @@ impl Machine {
         self.status
     }
 
-    fn get_modules_merkle(&self) -> Cow<Merkle> {
+    fn get_modules_merkle(&self) -> Cow<'_, Merkle> {
         #[cfg(feature = "counters")]
         GET_MODULES_MERKLE_COUNTER.fetch_add(1, Ordering::Relaxed);
 
@@ -3110,7 +3149,7 @@ impl Machine {
                             self.preimage_resolver
                                 .get_const(self.context, preimage_ty, hash)
                         else {
-                            panic!("Missing requested preimage for hash {}", hash)
+                            panic!("Missing requested preimage for hash {hash}")
                         };
                         data.push(0); // preimage proof type
                         match preimage_ty {
@@ -3121,6 +3160,21 @@ impl Machine {
                             PreimageType::EthVersionedHash => {
                                 prove_kzg_preimage(hash, &preimage, offset, &mut data)
                                     .expect("Failed to generate KZG preimage proof");
+                            }
+                            PreimageType::DACertificate => {
+                                // We do something special here; we don't create the final proof.
+                                // For DACertificate preimages, signal that this proof needs enhancement
+                                // Set the enhancement flag (0x80) on the machine status byte.
+                                data[0] |= 0x80;
+
+                                // Append hash and offset for the enhancer to use
+                                data.extend(hash.0);
+                                data.extend((offset as u64).to_be_bytes());
+
+                                // Append marker to identify this as DACertificate ReadPreimage
+                                data.push(0xDA);
+                                // The enhancement flag and marker data will be stripped out of
+                                // the proof by the enhancer.
                             }
                         }
                     } else if next_inst.opcode == Opcode::ReadInboxMessage {
@@ -3181,6 +3235,40 @@ impl Machine {
                 }
                 prove_pop!(self.get_data_stacks(), hash_value_stack);
                 prove_pop!(self.get_frame_stacks(), hash_stack_frame_stack);
+            }
+            ValidateCertificate => {
+                // ValidateCertificate reads a hash from memory, so we need to prove that memory access
+                let ptr = value_stack.get(value_stack.len() - 2).unwrap().assume_u32();
+                if let Some(mut idx) = usize::try_from(ptr).ok().filter(|x| x % 32 == 0) {
+                    // Prove the leaf this index is in
+                    idx /= Memory::LEAF_SIZE;
+                    out!(module.memory.get_leaf_data(idx));
+                    out!(mem_merkle.prove(idx).unwrap_or_default());
+                }
+
+                // Check if this is a DACertificate ValidateCertificate that needs enhancement
+                let preimage_type = value_stack.last().unwrap().assume_u32();
+                if let Ok(preimage_ty) =
+                    PreimageType::try_from(u8::try_from(preimage_type).unwrap_or(255))
+                {
+                    if preimage_ty == PreimageType::DACertificate {
+                        // We do something special here; we don't create the final proof.
+                        // For DACertificate preimages, signal that this proof needs enhancement
+                        // Set the enhancement flag (0x80) on the machine status byte.
+                        data[0] |= 0x80;
+
+                        // Load the hash from memory
+                        if let Some(hash) = module.memory.load_32_byte_aligned(ptr.into()) {
+                            // Append hash for the enhancer to use
+                            data.extend(hash.0);
+
+                            // Append marker to identify this as DACertificate ValidateCertificate
+                            data.push(0xDB);
+                            // The enhancement flag and marker data will be stripped out of
+                            // the proof by the enhancer.
+                        }
+                    }
+                }
             }
             _ => {}
         }
@@ -3249,8 +3337,8 @@ impl Machine {
 
     pub fn print_backtrace(&self, stderr: bool) {
         let print = |line: String| match stderr {
-            true => println!("{}", line),
-            false => eprintln!("{}", line),
+            true => println!("{line}"),
+            false => eprintln!("{line}"),
         };
 
         let print_pc = |pc: ProgramCounter| {

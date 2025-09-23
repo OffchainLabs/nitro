@@ -14,7 +14,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	flag "github.com/spf13/pflag"
+	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/arbitrum_types"
@@ -55,15 +55,15 @@ var DefaultSequencerForwarderConfig = ForwarderConfig{
 	RetryInterval:         100 * time.Millisecond,
 }
 
-func AddOptionsForNodeForwarderConfig(prefix string, f *flag.FlagSet) {
+func AddOptionsForNodeForwarderConfig(prefix string, f *pflag.FlagSet) {
 	AddOptionsForForwarderConfigImpl(prefix, &DefaultNodeForwarderConfig, f)
 }
 
-func AddOptionsForSequencerForwarderConfig(prefix string, f *flag.FlagSet) {
+func AddOptionsForSequencerForwarderConfig(prefix string, f *pflag.FlagSet) {
 	AddOptionsForForwarderConfigImpl(prefix, &DefaultSequencerForwarderConfig, f)
 }
 
-func AddOptionsForForwarderConfigImpl(prefix string, defaultConfig *ForwarderConfig, f *flag.FlagSet) {
+func AddOptionsForForwarderConfigImpl(prefix string, defaultConfig *ForwarderConfig, f *pflag.FlagSet) {
 	f.Duration(prefix+".connection-timeout", defaultConfig.ConnectionTimeout, "total time to wait before cancelling connection")
 	f.Duration(prefix+".idle-connection-timeout", defaultConfig.IdleConnectionTimeout, "time until idle connections are closed")
 	f.Int(prefix+".max-idle-connections", defaultConfig.MaxIdleConnections, "maximum number of idle connections to keep open")
@@ -446,7 +446,7 @@ func (f *RedisTxForwarder) update(ctx context.Context) time.Duration {
 			newSequencerUrl = f.fallbackTarget
 		} else {
 			// TODO panic? - there is no way to recover from this point
-			log.Error("redis coordinator not initilized, no fallback available")
+			log.Error("redis coordinator not initialized, no fallback available")
 			return f.retryAfterError()
 		}
 	}

@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2025, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package broadcastclient
@@ -21,13 +21,13 @@ import (
 	"github.com/gobwas/httphead"
 	"github.com/gobwas/ws"
 	"github.com/gobwas/ws/wsflate"
-	flag "github.com/spf13/pflag"
+	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 
 	"github.com/offchainlabs/nitro/arbutil"
-	m "github.com/offchainlabs/nitro/broadcaster/message"
+	"github.com/offchainlabs/nitro/broadcaster/message"
 	"github.com/offchainlabs/nitro/util/contracts"
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
@@ -50,7 +50,7 @@ func (fc *FeedConfig) Validate() error {
 	return fc.Output.Validate()
 }
 
-func FeedConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feedOutputEnable bool) {
+func FeedConfigAddOptions(prefix string, f *pflag.FlagSet, feedInputEnable bool, feedOutputEnable bool) {
 	if feedInputEnable {
 		ConfigAddOptions(prefix+".input", f)
 	}
@@ -82,7 +82,7 @@ func (c *Config) Enable() bool {
 
 type ConfigFetcher func() *Config
 
-func ConfigAddOptions(prefix string, f *flag.FlagSet) {
+func ConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Duration(prefix+".reconnect-initial-backoff", DefaultConfig.ReconnectInitialBackoff, "initial duration to wait before reconnect")
 	f.Duration(prefix+".reconnect-maximum-backoff", DefaultConfig.ReconnectMaximumBackoff, "maximum duration to wait before reconnect")
 	f.Bool(prefix+".require-chain-id", DefaultConfig.RequireChainId, "require chain id to be present on connect")
@@ -99,7 +99,7 @@ var DefaultConfig = Config{
 	ReconnectMaximumBackoff: time.Second * 64,
 	RequireChainId:          false,
 	RequireFeedVersion:      false,
-	Verify:                  signature.DefultFeedVerifierConfig,
+	Verify:                  signature.DefaultFeedVerifierConfig,
 	URL:                     []string{},
 	SecondaryURL:            []string{},
 	Timeout:                 20 * time.Second,
@@ -111,7 +111,7 @@ var DefaultTestConfig = Config{
 	ReconnectMaximumBackoff: 0,
 	RequireChainId:          false,
 	RequireFeedVersion:      false,
-	Verify:                  signature.DefultFeedVerifierConfig,
+	Verify:                  signature.DefaultFeedVerifierConfig,
 	URL:                     []string{""},
 	SecondaryURL:            []string{},
 	Timeout:                 200 * time.Millisecond,
@@ -119,7 +119,7 @@ var DefaultTestConfig = Config{
 }
 
 type TransactionStreamerInterface interface {
-	AddBroadcastMessages(feedMessages []*m.BroadcastFeedMessage) error
+	AddBroadcastMessages(feedMessages []*message.BroadcastFeedMessage) error
 }
 
 type BroadcastClient struct {
@@ -439,7 +439,7 @@ func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
 			backoffDuration = bc.config().ReconnectInitialBackoff
 
 			if msg != nil {
-				res := m.BroadcastMessage{}
+				res := message.BroadcastMessage{}
 				err = json.Unmarshal(msg, &res)
 				if err != nil {
 					log.Error("error unmarshalling message", "msg", msg, "err", err)
@@ -546,7 +546,7 @@ func (bc *BroadcastClient) StopAndWait() {
 	}
 }
 
-func (bc *BroadcastClient) isValidSignature(ctx context.Context, message *m.BroadcastFeedMessage) error {
+func (bc *BroadcastClient) isValidSignature(ctx context.Context, message *message.BroadcastFeedMessage) error {
 	if bc.config().Verify.Dangerous.AcceptMissing && bc.sigVerifier == nil {
 		// Verifier disabled
 		return nil

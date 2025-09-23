@@ -11,8 +11,9 @@ import (
 	"path/filepath"
 	"time"
 
-	flag "github.com/spf13/pflag"
+	"github.com/spf13/pflag"
 
+	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/ethdb/pebble"
 
 	"github.com/offchainlabs/nitro/util"
@@ -38,7 +39,7 @@ var PersistentConfigDefault = PersistentConfig{
 	Pebble:       PebbleConfigDefault,
 }
 
-func PersistentConfigAddOptions(prefix string, f *flag.FlagSet) {
+func PersistentConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".global-config", PersistentConfigDefault.GlobalConfig, "directory to store global config")
 	f.String(prefix+".chain", PersistentConfigDefault.Chain, "directory to store chain state")
 	f.String(prefix+".log-dir", PersistentConfigDefault.LogDir, "directory to store log file")
@@ -119,12 +120,19 @@ type PebbleConfig struct {
 }
 
 var PebbleConfigDefault = PebbleConfig{
-	SyncMode:                 false, // use NO-SYNC mode, see: https://github.com/ethereum/go-ethereum/issues/29819
+	// Use asynchronous write mode by default. Otherwise, the overhead of frequent fsync
+	// operations can be significant, especially on platforms with slow fsync performance
+	// (e.g., macOS) or less capable SSDs.
+	//
+	// Note that enabling async writes means recent data may be lost in the event of an
+	// application-level panic (writes will also be lost on a machine-level failure,
+	// of course). Geth is expected to handle recovery from an unclean shutdown.
+	SyncMode:                 false,
 	MaxConcurrentCompactions: util.GoMaxProcs(),
 	Experimental:             PebbleExperimentalConfigDefault,
 }
 
-func PebbleConfigAddOptions(prefix string, f *flag.FlagSet, defaultConfig *PebbleConfig) {
+func PebbleConfigAddOptions(prefix string, f *pflag.FlagSet, defaultConfig *PebbleConfig) {
 	f.Bool(prefix+".sync-mode", defaultConfig.SyncMode, "if true sync mode is used (data needs to be written to WAL before the write is marked as completed)")
 	f.Int(prefix+".max-concurrent-compactions", defaultConfig.MaxConcurrentCompactions, "maximum number of concurrent compactions")
 	PebbleExperimentalConfigAddOptions(prefix+".experimental", f, &defaultConfig.Experimental)
@@ -169,17 +177,38 @@ type PebbleExperimentalConfig struct {
 }
 
 var PebbleExperimentalConfigDefault = PebbleExperimentalConfig{
-	BytesPerSync:                512 << 10, // 512 KB
-	L0CompactionFileThreshold:   500,
-	L0CompactionThreshold:       4,
-	L0StopWritesThreshold:       12,
-	LBaseMaxBytes:               64 << 20, // 64 MB
-	MemTableStopWritesThreshold: 2,
+	BytesPerSync:              512 << 10, // 512 KB
+	L0CompactionFileThreshold: 500,
+	// L0CompactionThreshold specifies the number of L0 read-amplification
+	// necessary to trigger an L0 compaction. It essentially refers to the
+	// number of sub-levels at the L0. For each sub-level, it contains several
+	// L0 files which are non-overlapping with each other, typically produced
+	// by a single memory-table flush.
+	//
+	// The default value in Pebble is 4, which is a bit too large to have
+	// the compaction debt as around 10GB. By reducing it to 2, the compaction
+	// debt will be less than 1GB, but with more frequent compactions scheduled.
+	L0CompactionThreshold: 2,
+	L0StopWritesThreshold: 12,
+	LBaseMaxBytes:         64 << 20, // 64 MB
+	// Four memory tables are configured, each with a default size of 256 MB.
+	// Having multiple smaller memory tables while keeping the total memory
+	// limit unchanged allows writes to be flushed more smoothly. This helps
+	// avoid compaction spikes and mitigates write stalls caused by heavy
+	// compaction workloads.
+	MemTableStopWritesThreshold: 4,
 	DisableAutomaticCompactions: false,
-	WALBytesPerSync:             0,  // no background syncing
-	WALDir:                      "", // use same dir as for sstables
-	WALMinSyncInterval:          0,  // no artificial delay
-	TargetByteDeletionRate:      0,  // deletion pacing disabled
+	// Pebble is configured to use asynchronous write mode, meaning write operations
+	// return as soon as the data is cached in memory, without waiting for the WAL
+	// to be written. This mode offers better write performance but risks losing
+	// recent writes if the application crashes or a power failure/system crash occurs.
+	//
+	// By setting the WALBytesPerSync, the cached WAL writes will be periodically
+	// flushed at the background if the accumulated size exceeds this threshold.
+	WALBytesPerSync:        5 * ethdb.IdealBatchSize,
+	WALDir:                 "", // use same dir as for sstables
+	WALMinSyncInterval:     0,  // no artificial delay
+	TargetByteDeletionRate: 0,  // deletion pacing disabled
 
 	BlockSize:                 4 << 10, // 4 KB
 	IndexBlockSize:            4 << 10, // 4 KB
@@ -194,7 +223,7 @@ var PebbleExperimentalConfigDefault = PebbleExperimentalConfig{
 	ForceWriterParallelism:    false,
 }
 
-func PebbleExperimentalConfigAddOptions(prefix string, f *flag.FlagSet, defaultConfig *PebbleExperimentalConfig) {
+func PebbleExperimentalConfigAddOptions(prefix string, f *pflag.FlagSet, defaultConfig *PebbleExperimentalConfig) {
 	f.Int(prefix+".bytes-per-sync", defaultConfig.BytesPerSync, "number of bytes to write to a SSTable before calling Sync on it in the background")
 	f.Int(prefix+".l0-compaction-file-threshold", defaultConfig.L0CompactionFileThreshold, "count of L0 files necessary to trigger an L0 compaction")
 	f.Int(prefix+".l0-compaction-threshold", defaultConfig.L0CompactionThreshold, "amount of L0 read-amplification necessary to trigger an L0 compaction")

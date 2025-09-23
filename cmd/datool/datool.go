@@ -16,8 +16,8 @@ import (
 	"strings"
 	"time"
 
-	koanfjson "github.com/knadh/koanf/parsers/json"
-	flag "github.com/spf13/pflag"
+	"github.com/knadh/koanf/parsers/json"
+	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -93,11 +93,10 @@ type ClientStoreConfig struct {
 	SigningWalletPassword string        `koanf:"signing-wallet-password"`
 	MaxStoreChunkBodySize int           `koanf:"max-store-chunk-body-size"`
 	EnableChunkedStore    bool          `koanf:"enable-chunked-store"`
-	EnableHTTP2           bool          `koanf:"enable-http2"`
 }
 
 func parseClientStoreConfig(args []string) (*ClientStoreConfig, error) {
-	f := flag.NewFlagSet("datool client store", flag.ContinueOnError)
+	f := pflag.NewFlagSet("datool client store", pflag.ContinueOnError)
 	f.String("url", "", "URL of DAS server to connect to")
 	f.String("message", "", "message to send")
 	f.Int("random-message-size", 0, "send a message of a specified number of random bytes")
@@ -107,7 +106,6 @@ func parseClientStoreConfig(args []string) (*ClientStoreConfig, error) {
 	f.Duration("das-retention-period", 24*time.Hour, "The period which DASes are requested to retain the stored batches.")
 	f.Int("max-store-chunk-body-size", 512*1024, "The maximum HTTP POST body size for a chunked store request")
 	f.Bool("enable-chunked-store", true, "enable data to be sent to DAS in chunks instead of all at once")
-	f.Bool("enable-http2", true, "enable HTTP/2 for DAS connections")
 
 	k, err := confighelpers.BeginCommonParse(f, args)
 	if err != nil {
@@ -156,7 +154,7 @@ func startClientStore(args []string) error {
 		}
 	}
 
-	client, err := das.NewDASRPCClient(config.URL, signer, config.MaxStoreChunkBodySize, config.EnableChunkedStore, config.EnableHTTP2)
+	client, err := das.NewDASRPCClient(config.URL, signer, config.MaxStoreChunkBodySize, config.EnableChunkedStore)
 	if err != nil {
 		return err
 	}
@@ -198,7 +196,7 @@ type RESTClientGetByHashConfig struct {
 }
 
 func parseRESTClientGetByHashConfig(args []string) (*RESTClientGetByHashConfig, error) {
-	f := flag.NewFlagSet("datool client retrieve", flag.ContinueOnError)
+	f := pflag.NewFlagSet("datool client retrieve", pflag.ContinueOnError)
 	f.String("url", "http://localhost:9877", "URL of DAS server to connect to.")
 	f.String("data-hash", "", "hash of the message to retrieve, if starts with '0x' it's treated as hex encoded, otherwise base64 encoded")
 
@@ -259,7 +257,7 @@ type KeyGenConfig struct {
 }
 
 func parseKeyGenConfig(args []string) (*KeyGenConfig, error) {
-	f := flag.NewFlagSet("datool keygen", flag.ContinueOnError)
+	f := pflag.NewFlagSet("datool keygen", pflag.ContinueOnError)
 	f.String("dir", "", "the directory to generate the keys in")
 	f.Bool("ecdsa", false, "generate an ECDSA keypair instead of BLS")
 	f.Bool("wallet", false, "generate the ECDSA keypair in a wallet file")
@@ -312,7 +310,7 @@ func generateHash(message string) error {
 }
 
 func parseDumpKeyset(args []string) (*DumpKeysetConfig, error) {
-	f := flag.NewFlagSet("dump keyset", flag.ContinueOnError)
+	f := pflag.NewFlagSet("dump keyset", pflag.ContinueOnError)
 
 	das.AggregatorConfigAddOptions("keyset", f)
 	genericconf.ConfConfigAddOptions("conf", f)
@@ -332,7 +330,7 @@ func parseDumpKeyset(args []string) (*DumpKeysetConfig, error) {
 	}
 
 	if config.Conf.Dump {
-		c, err := k.Marshal(koanfjson.Parser())
+		c, err := k.Marshal(json.Parser())
 		if err != nil {
 			return nil, fmt.Errorf("unable to marshal config file to JSON: %w", err)
 		}

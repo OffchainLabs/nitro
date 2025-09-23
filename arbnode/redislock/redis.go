@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
-	flag "github.com/spf13/pflag"
+	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/log"
 
@@ -41,13 +41,13 @@ type SimpleCfg struct {
 
 type SimpleCfgFetcher func() *SimpleCfg
 
-func AddConfigOptions(prefix string, f *flag.FlagSet) {
+func AddConfigOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultCfg.Enable, "if false, always treat this as locked and don't write the lock to redis")
 	f.String(prefix+".my-id", "", "this node's id prefix when acquiring the lock (optional)")
 	f.Duration(prefix+".lockout-duration", DefaultCfg.LockoutDuration, "how long lock is held")
 	f.Duration(prefix+".refresh-duration", DefaultCfg.RefreshDuration, "how long between consecutive calls to redis")
 	f.String(prefix+".key", DefaultCfg.Key, "key for lock")
-	f.Bool(prefix+".background-lock", DefaultCfg.BackgroundLock, "should node always try grabing lock in background")
+	f.Bool(prefix+".background-lock", DefaultCfg.BackgroundLock, "should node always try grabbing lock in background")
 }
 
 func NewSimple(client redis.UniversalClient, config SimpleCfgFetcher, readyToLock func() bool) (*Simple, error) {
@@ -67,6 +67,14 @@ var DefaultCfg = SimpleCfg{
 	Enable:          true,
 	LockoutDuration: time.Minute,
 	RefreshDuration: time.Second * 10,
+	Key:             "",
+	BackgroundLock:  false,
+}
+
+var TestCfg = SimpleCfg{
+	Enable:          true,
+	LockoutDuration: time.Second,
+	RefreshDuration: time.Second / 6,
 	Key:             "",
 	BackgroundLock:  false,
 }

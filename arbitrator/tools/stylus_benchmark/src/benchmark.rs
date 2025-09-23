@@ -72,7 +72,7 @@ fn run(compiled_module: Vec<u8>) -> (Duration, Ink) {
 pub fn benchmark(wat: Vec<u8>) -> eyre::Result<()> {
     let wasm = wasmer::wat2wasm(&wat)?;
 
-    let compiled_module = native::compile(&wasm, 2, true, Target::default())?;
+    let compiled_module = native::compile(&wasm, 2, true, Target::default(), false)?;
 
     let mut durations: Vec<Duration> = Vec::new();
     let mut ink_spent = Ink(0);

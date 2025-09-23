@@ -117,10 +117,6 @@ stylus_lang_rust = $(wildcard $(rust_sdk)/*/src/*.rs $(rust_sdk)/*/src/*/*.rs $(
 stylus_lang_c    = $(wildcard $(c_sdk)/*/*.c $(c_sdk)/*/*.h)
 stylus_lang_bf   = $(wildcard arbitrator/langs/bf/src/*.* arbitrator/langs/bf/src/*.toml)
 
-STYLUS_NIGHTLY_VER ?= "+nightly"
-
-cargo_nightly = cargo $(STYLUS_NIGHTLY_VER) build -Z build-std=std,panic_abort -Z build-std-features=panic_immediate_abort
-
 get_stylus_test_wasm = $(stylus_test_dir)/$(1)/$(wasm32_unknown)/$(1).wasm
 get_stylus_test_rust = $(wildcard $(stylus_test_dir)/$(1)/*.toml $(stylus_test_dir)/$(1)/src/*.rs) $(stylus_cargo) $(stylus_lang_rust)
 get_stylus_test_c    = $(wildcard $(c_sdk)/examples/$(1)/*.c $(c_sdk)/examples/$(1)/*.h) $(stylus_lang_c)
@@ -489,67 +485,67 @@ $(stylus_test_dir)/%.wasm: $(stylus_test_dir)/%.b $(stylus_lang_bf)
 	cargo run --manifest-path arbitrator/langs/bf/Cargo.toml $< -o $@
 
 $(stylus_test_keccak_wasm): $(stylus_test_keccak_src)
-	$(cargo_nightly) --manifest-path $< --release --config $(stylus_cargo)
+	cargo build --manifest-path $< --release --config $(stylus_cargo)
 	./scripts/remove_reference_types.sh $@
 	@touch -c $@ # cargo might decide to not rebuild the binary
 
 $(stylus_test_keccak-100_wasm): $(stylus_test_keccak-100_src)
-	$(cargo_nightly) --manifest-path $< --release --config $(stylus_cargo)
+	cargo build --manifest-path $< --release --config $(stylus_cargo)
 	./scripts/remove_reference_types.sh $@
 	@touch -c $@ # cargo might decide to not rebuild the binary
 
 $(stylus_test_fallible_wasm): $(stylus_test_fallible_src)
-	$(cargo_nightly) --manifest-path $< --release --config $(stylus_cargo)
+	cargo build --manifest-path $< --release --config $(stylus_cargo)
 	./scripts/remove_reference_types.sh $@
 	@touch -c $@ # cargo might decide to not rebuild the binary
 
 $(stylus_test_storage_wasm): $(stylus_test_storage_src)
-	$(cargo_nightly) --manifest-path $< --release --config $(stylus_cargo)
+	cargo build --manifest-path $< --release --config $(stylus_cargo)
 	./scripts/remove_reference_types.sh $@
 	@touch -c $@ # cargo might decide to not rebuild the binary
 
 $(stylus_test_multicall_wasm): $(stylus_test_multicall_src)
-	$(cargo_nightly) --manifest-path $< --release --config $(stylus_cargo)
+	cargo build --manifest-path $< --release --config $(stylus_cargo)
 	./scripts/remove_reference_types.sh $@
 	@touch -c $@ # cargo might decide to not rebuild the binary
 
 $(stylus_test_log_wasm): $(stylus_test_log_src)
-	$(cargo_nightly) --manifest-path $< --release --config $(stylus_cargo)
+	cargo build --manifest-path $< --release --config $(stylus_cargo)
 	./scripts/remove_reference_types.sh $@
 	@touch -c $@ # cargo might decide to not rebuild the binary
 
 $(stylus_test_create_wasm): $(stylus_test_create_src)
-	$(cargo_nightly) --manifest-path $< --release --config $(stylus_cargo)
+	cargo build --manifest-path $< --release --config $(stylus_cargo)
 	./scripts/remove_reference_types.sh $@
 	@touch -c $@ # cargo might decide to not rebuild the binary
 
 $(stylus_test_math_wasm): $(stylus_test_math_src)
-	$(cargo_nightly) --manifest-path $< --release --config $(stylus_cargo)
+	cargo build --manifest-path $< --release --config $(stylus_cargo)
 	./scripts/remove_reference_types.sh $@
 	@touch -c $@ # cargo might decide to not rebuild the binary
 
 $(stylus_test_evm-data_wasm): $(stylus_test_evm-data_src)
-	$(cargo_nightly) --manifest-path $< --release --config $(stylus_cargo)
+	cargo build --manifest-path $< --release --config $(stylus_cargo)
 	./scripts/remove_reference_types.sh $@
 	@touch -c $@ # cargo might decide to not rebuild the binary
 
 $(stylus_test_read-return-data_wasm): $(stylus_test_read-return-data_src)
-	$(cargo_nightly) --manifest-path $< --release --config $(stylus_cargo)
+	cargo build --manifest-path $< --release --config $(stylus_cargo)
 	./scripts/remove_reference_types.sh $@
 	@touch -c $@ # cargo might decide to not rebuild the binary
 
 $(stylus_test_sdk-storage_wasm): $(stylus_test_sdk-storage_src)
-	$(cargo_nightly) --manifest-path $< --release --config $(stylus_cargo)
+	cargo build --manifest-path $< --release --config $(stylus_cargo)
 	./scripts/remove_reference_types.sh $@
 	@touch -c $@ # cargo might decide to not rebuild the binary
 
 $(stylus_test_erc20_wasm): $(stylus_test_erc20_src)
-	$(cargo_nightly) --manifest-path $< --release --config $(stylus_cargo)
+	cargo build --manifest-path $< --release --config $(stylus_cargo)
 	./scripts/remove_reference_types.sh $@
 	@touch -c $@ # cargo might decide to not rebuild the binary
 
 $(stylus_test_hostio-test_wasm): $(stylus_test_hostio-test_src)
-	$(cargo_nightly) --manifest-path $< --release --config $(stylus_cargo)
+	cargo build --manifest-path $< --release --config $(stylus_cargo)
 	./scripts/remove_reference_types.sh $@
 	@touch -c $@ # cargo might decide to not rebuild the binary
 

@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2025
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package das
@@ -6,11 +6,8 @@ package das
 import (
 	"context"
 	"fmt"
-	"net/http"
 	"strings"
 	"time"
-
-	"golang.org/x/sync/errgroup"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -20,6 +17,7 @@ import (
 
 	"github.com/offchainlabs/nitro/blsSignatures"
 	"github.com/offchainlabs/nitro/daprovider/das/dasutil"
+	"github.com/offchainlabs/nitro/daprovider/das/data_streaming"
 	"github.com/offchainlabs/nitro/util/pretty"
 	"github.com/offchainlabs/nitro/util/signature"
 )
@@ -30,63 +28,52 @@ var (
 	rpcClientStoreFailureGauge      = metrics.NewRegisteredGauge("arb/das/rpcclient/store/failure", nil)
 	rpcClientStoreStoredBytesGauge  = metrics.NewRegisteredGauge("arb/das/rpcclient/store/bytes", nil)
 	rpcClientStoreDurationHistogram = metrics.NewRegisteredHistogram("arb/das/rpcclient/store/duration", nil, metrics.NewBoundedHistogramSample())
-
-	rpcClientSendChunkSuccessGauge = metrics.NewRegisteredGauge("arb/das/rpcclient/sendchunk/success", nil)
-	rpcClientSendChunkFailureGauge = metrics.NewRegisteredGauge("arb/das/rpcclient/sendchunk/failure", nil)
 )
 
+// lint:require-exhaustive-initialization
 type DASRPCClient struct { // implements DataAvailabilityService
-	clnt               *rpc.Client
-	url                string
-	signer             signature.DataSignerFunc
-	chunkSize          uint64
-	enableChunkedStore bool
+	clnt         *rpc.Client
+	url          string
+	signer       signature.DataSignerFunc
+	dataStreamer *data_streaming.DataStreamer[StoreResult]
 }
 
 func nilSigner(_ []byte) ([]byte, error) {
 	return []byte{}, nil
 }
 
-const sendChunkJSONBoilerplate = "{\"jsonrpc\":\"2.0\",\"id\":4294967295,\"method\":\"das_sendChunked\",\"params\":[\"\"]}"
-
-func NewDASRPCClient(target string, signer signature.DataSignerFunc, maxStoreChunkBodySize int, enableChunkedStore bool, enableHTTP2 bool) (*DASRPCClient, error) {
-	// Always create a custom transport based on the default
-	httpTransport, ok := http.DefaultTransport.(*http.Transport)
-	if !ok {
-		panic("Failed conversion from DefaultTransport to http.Transport")
-	}
-	transport := httpTransport.Clone()
-	transport.ForceAttemptHTTP2 = enableHTTP2
-
-	httpClient := &http.Client{
-		Transport: transport,
-	}
-
-	clnt, err := rpc.DialOptions(context.Background(), target, rpc.WithHTTPClient(httpClient))
-	if err != nil {
-		return nil, err
-	}
+func NewDASRPCClient(target string, signer signature.DataSignerFunc, maxStoreChunkBodySize int, enableChunkedStore bool) (*DASRPCClient, error) {
 	if signer == nil {
 		signer = nilSigner
 	}
 
-	client := &DASRPCClient{
-		clnt:               clnt,
-		url:                target,
-		signer:             signer,
-		enableChunkedStore: enableChunkedStore,
+	clnt, err := rpc.Dial(target)
+	if err != nil {
+		return nil, err
 	}
 
-	// Byte arrays are encoded in base64
+	var dataStreamer *data_streaming.DataStreamer[StoreResult]
 	if enableChunkedStore {
-		chunkSize := (maxStoreChunkBodySize - len(sendChunkJSONBoilerplate) - 512 /* headers */) / 2
-		if chunkSize <= 0 {
-			return nil, fmt.Errorf("max-store-chunk-body-size %d doesn't leave enough room for chunk payload", maxStoreChunkBodySize)
+		rpcMethods := data_streaming.DataStreamingRPCMethods{
+			StartStream:    "das_startChunkedStore",
+			StreamChunk:    "das_sendChunk",
+			FinalizeStream: "das_commitChunkedStore",
 		}
-		client.chunkSize = uint64(chunkSize)
+		payloadSigner := data_streaming.CustomPayloadSigner(func(bytes []byte, extras ...uint64) ([]byte, error) {
+			return applyDasSigner(signer, bytes, extras...)
+		})
+		dataStreamer, err = data_streaming.NewDataStreamer[StoreResult](target, maxStoreChunkBodySize, payloadSigner, rpcMethods)
+		if err != nil {
+			return nil, err
+		}
 	}
 
-	return client, nil
+	return &DASRPCClient{
+		clnt:         clnt,
+		url:          target,
+		signer:       signer,
+		dataStreamer: dataStreamer,
+	}, nil
 }
 
 func (c *DASRPCClient) Store(ctx context.Context, message []byte, timeout uint64) (*dasutil.DataAvailabilityCertificate, error) {
@@ -102,62 +89,17 @@ func (c *DASRPCClient) Store(ctx context.Context, message []byte, timeout uint64
 		rpcClientStoreDurationHistogram.Update(time.Since(start).Nanoseconds())
 	}()
 
-	if !c.enableChunkedStore {
+	if c.dataStreamer == nil {
 		log.Debug("Legacy store is being force-used by the DAS client", "url", c.url)
 		return c.legacyStore(ctx, message, timeout)
 	}
 
-	// #nosec G115
-	timestamp := uint64(start.Unix())
-	nChunks := uint64(len(message)) / c.chunkSize
-	lastChunkSize := uint64(len(message)) % c.chunkSize
-	if lastChunkSize > 0 {
-		nChunks++
-	} else {
-		lastChunkSize = c.chunkSize
-	}
-	totalSize := uint64(len(message))
-
-	startReqSig, err := applyDasSigner(c.signer, []byte{}, timestamp, nChunks, c.chunkSize, totalSize, timeout)
+	storeResult, err := c.dataStreamer.StreamData(ctx, message, timeout)
 	if err != nil {
-		return nil, err
-	}
-
-	var startChunkedStoreResult StartChunkedStoreResult
-	if err := c.clnt.CallContext(ctx, &startChunkedStoreResult, "das_startChunkedStore", hexutil.Uint64(timestamp), hexutil.Uint64(nChunks), hexutil.Uint64(c.chunkSize), hexutil.Uint64(totalSize), hexutil.Uint64(timeout), hexutil.Bytes(startReqSig)); err != nil {
 		if strings.Contains(err.Error(), "the method das_startChunkedStore does not exist") {
 			log.Info("Legacy store is used by the DAS client", "url", c.url)
 			return c.legacyStore(ctx, message, timeout)
 		}
-		return nil, err
-	}
-	batchId := uint64(startChunkedStoreResult.BatchId)
-
-	g := new(errgroup.Group)
-	for i := uint64(0); i < nChunks; i++ {
-		var chunk []byte
-		if i == nChunks-1 {
-			chunk = message[i*c.chunkSize : i*c.chunkSize+lastChunkSize]
-		} else {
-			chunk = message[i*c.chunkSize : (i+1)*c.chunkSize]
-		}
-
-		inner := func(_i uint64, _chunk []byte) func() error {
-			return func() error { return c.sendChunk(ctx, batchId, _i, _chunk) }
-		}
-		g.Go(inner(i, chunk))
-	}
-	if err := g.Wait(); err != nil {
-		return nil, err
-	}
-
-	finalReqSig, err := applyDasSigner(c.signer, []byte{}, uint64(startChunkedStoreResult.BatchId))
-	if err != nil {
-		return nil, err
-	}
-
-	var storeResult StoreResult
-	if err := c.clnt.CallContext(ctx, &storeResult, "das_commitChunkedStore", startChunkedStoreResult.BatchId, hexutil.Bytes(finalReqSig)); err != nil {
 		return nil, err
 	}
 
@@ -177,20 +119,6 @@ func (c *DASRPCClient) Store(ctx context.Context, message []byte, timeout uint64
 		KeysetHash:  common.BytesToHash(storeResult.KeysetHash),
 		Version:     byte(storeResult.Version),
 	}, nil
-}
-
-func (c *DASRPCClient) sendChunk(ctx context.Context, batchId, i uint64, chunk []byte) error {
-	chunkReqSig, err := applyDasSigner(c.signer, chunk, batchId, i)
-	if err != nil {
-		return err
-	}
-
-	if err := c.clnt.CallContext(ctx, nil, "das_sendChunk", hexutil.Uint64(batchId), hexutil.Uint64(i), hexutil.Bytes(chunk), hexutil.Bytes(chunkReqSig)); err != nil {
-		rpcClientSendChunkFailureGauge.Inc(1)
-		return err
-	}
-	rpcClientSendChunkSuccessGauge.Inc(1)
-	return nil
 }
 
 func (c *DASRPCClient) legacyStore(ctx context.Context, message []byte, timeout uint64) (*dasutil.DataAvailabilityCertificate, error) {

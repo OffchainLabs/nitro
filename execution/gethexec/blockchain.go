@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	flag "github.com/spf13/pflag"
+	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
@@ -47,7 +47,7 @@ type CachingConfig struct {
 	EnablePreimages                     bool          `koanf:"enable-preimages"`
 }
 
-func CachingConfigAddOptions(prefix string, f *flag.FlagSet) {
+func CachingConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".archive", DefaultCachingConfig.Archive, "retain past block state")
 	f.Uint64(prefix+".block-count", DefaultCachingConfig.BlockCount, "minimum number of recent blocks to keep in memory")
 	f.Duration(prefix+".block-age", DefaultCachingConfig.BlockAge, "minimum age of recent blocks to keep in memory")
@@ -96,17 +96,17 @@ var DefaultCachingConfig = CachingConfig{
 	StateHistory:                        getStateHistory(DefaultSequencerConfig.MaxBlockSpeed),
 }
 
-func DefaultCacheConfigFor(cachingConfig *CachingConfig) *core.CacheConfig {
+func DefaultCacheConfigFor(cachingConfig *CachingConfig) *core.BlockChainConfig {
 	baseConf := ethconfig.Defaults
 	if cachingConfig.Archive {
 		baseConf = ethconfig.ArchiveDefaults
 	}
 
-	return &core.CacheConfig{
+	return &core.BlockChainConfig{
 		TrieCleanLimit:                     cachingConfig.TrieCleanCache,
-		TrieCleanNoPrefetch:                baseConf.NoPrefetch,
+		NoPrefetch:                         baseConf.NoPrefetch,
 		TrieDirtyLimit:                     cachingConfig.TrieDirtyCache,
-		TrieDirtyDisabled:                  cachingConfig.Archive,
+		ArchiveMode:                        cachingConfig.Archive,
 		TrieTimeLimit:                      cachingConfig.TrieTimeLimit,
 		TrieTimeLimitRandomOffset:          cachingConfig.TrieTimeLimitRandomOffset,
 		TriesInMemory:                      cachingConfig.BlockCount,
@@ -139,7 +139,7 @@ func (c *CachingConfig) Validate() error {
 	return c.validateStateScheme()
 }
 
-func WriteOrTestGenblock(chainDb ethdb.Database, cacheConfig *core.CacheConfig, initData statetransfer.InitDataReader, chainConfig *params.ChainConfig, genesisArbOSInit *params.ArbOSInit, initMessage *arbostypes.ParsedInitMessage, accountsPerSync uint) error {
+func WriteOrTestGenblock(chainDb ethdb.Database, cacheConfig *core.BlockChainConfig, initData statetransfer.InitDataReader, chainConfig *params.ChainConfig, genesisArbOSInit *params.ArbOSInit, initMessage *arbostypes.ParsedInitMessage, accountsPerSync uint) error {
 	EmptyHash := common.Hash{}
 	prevHash := EmptyHash
 	blockNumber, err := initData.GetNextBlockNumber()
@@ -208,11 +208,11 @@ func WriteOrTestChainConfig(chainDb ethdb.Database, config *params.ChainConfig) 
 		rawdb.WriteChainConfig(chainDb, block0Hash, config)
 		return nil
 	}
-	height := rawdb.ReadHeaderNumber(chainDb, rawdb.ReadHeadHeaderHash(chainDb))
-	if height == nil {
+	height, found := rawdb.ReadHeaderNumber(chainDb, rawdb.ReadHeadHeaderHash(chainDb))
+	if !found {
 		return errors.New("non empty chain config but empty chain")
 	}
-	err := storedConfig.CheckCompatible(config, *height, 0)
+	err := storedConfig.CheckCompatible(config, height, 0)
 	if err != nil {
 		return err
 	}
@@ -222,7 +222,7 @@ func WriteOrTestChainConfig(chainDb ethdb.Database, config *params.ChainConfig) 
 
 func GetBlockChain(
 	chainDb ethdb.Database,
-	cacheConfig *core.CacheConfig,
+	cacheConfig *core.BlockChainConfig,
 	chainConfig *params.ChainConfig,
 	tracer *tracing.Hooks,
 	txIndexerConfig *TxIndexerConfig,
@@ -235,6 +235,7 @@ func GetBlockChain(
 		EnablePreimageRecording: false,
 		Tracer:                  tracer,
 	}
+	cacheConfig.VmConfig = vmConfig
 
 	var coreTxIndexerConfig *core.TxIndexerConfig // nil if disabled
 	if txIndexerConfig.Enable {
@@ -244,12 +245,13 @@ func GetBlockChain(
 			MinBatchDelay: txIndexerConfig.MinBatchDelay,
 		}
 	}
-	return core.NewBlockChainExtended(chainDb, cacheConfig, chainConfig, nil, nil, engine, vmConfig, coreTxIndexerConfig)
+	cacheConfig.TxIndexer = coreTxIndexerConfig
+	return core.NewBlockChain(chainDb, chainConfig, nil, engine, cacheConfig)
 }
 
 func WriteOrTestBlockChain(
 	chainDb ethdb.Database,
-	cacheConfig *core.CacheConfig,
+	cacheConfig *core.BlockChainConfig,
 	initData statetransfer.InitDataReader,
 	chainConfig *params.ChainConfig,
 	genesisArbOSInit *params.ArbOSInit,

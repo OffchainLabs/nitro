@@ -68,6 +68,10 @@ pub enum IBinOpType {
     Rotr,
 }
 
+// WARNING: NEW OPCODES MUST BE ADDED TO THE END OF THE ENUM
+// Raul says: The order of the Opcode enum matters because of how we serialize and deserialize
+// machines. We use a naive encoding approach using a crate named bincode, which just uses struct
+// layouts as a way of turning stuff to bytes and back.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Opcode {
     Unreachable,
@@ -173,6 +177,8 @@ pub enum Opcode {
     SwitchThread,
     /// Gets the end parent chain block hash for MEL
     GetEndParentChainBlockHash,
+    /// Validates the DACertificate certificate before allowing ReadPreImage to access it
+    ValidateCertificate,
 }
 
 impl Opcode {
@@ -205,8 +211,7 @@ impl Opcode {
                 (ArbValueType::I64, 4, true) => 0x34,
                 (ArbValueType::I64, 4, false) => 0x35,
                 _ => panic!(
-                    "Unsupported memory load of type {:?} from {} bytes with signed {}",
-                    ty, bytes, signed,
+                    "Unsupported memory load of type {ty:?} from {bytes} bytes with signed {signed}",
                 ),
             },
             Opcode::MemoryStore { ty, bytes } => match (ty, bytes) {
@@ -220,8 +225,7 @@ impl Opcode {
                 (ArbValueType::I64, 2) => 0x3D,
                 (ArbValueType::I64, 4) => 0x3E,
                 _ => panic!(
-                    "Unsupported memory store of type {:?} to {} bytes",
-                    ty, bytes,
+                    "Unsupported memory store of type {ty:?} to {bytes} bytes",
                 ),
             },
             Opcode::MemorySize => 0x3F,
@@ -254,18 +258,18 @@ impl Opcode {
                 (ArbValueType::I64, ArbValueType::F64) => 0xBD,
                 (ArbValueType::F32, ArbValueType::I32) => 0xBE,
                 (ArbValueType::F64, ArbValueType::I64) => 0xBF,
-                _ => panic!("Unsupported reinterpret to {:?} from {:?}", dest, source),
+                _ => panic!("Unsupported reinterpret to {dest:?} from {source:?}"),
             },
             Opcode::I32ExtendS(x) => match x {
                 8 => 0xC0,
                 16 => 0xC1,
-                _ => panic!("Unsupported {:?}", self),
+                _ => panic!("Unsupported {self:?}"),
             },
             Opcode::I64ExtendS(x) => match x {
                 8 => 0xC2,
                 16 => 0xC3,
                 32 => 0xC4,
-                _ => panic!("Unsupported {:?}", self),
+                _ => panic!("Unsupported {self:?}"),
             },
             // Internal instructions:
             Opcode::InitFrame => 0x8002,
@@ -282,6 +286,7 @@ impl Opcode {
             Opcode::SetGlobalStateBytes32 => 0x8011,
             Opcode::GetGlobalStateU64 => 0x8012,
             Opcode::SetGlobalStateU64 => 0x8013,
+            Opcode::ValidateCertificate => 0x8019,
             Opcode::ReadPreImage => 0x8020,
             Opcode::ReadInboxMessage => 0x8021,
             Opcode::LinkModule => 0x8023,
@@ -301,6 +306,7 @@ impl Opcode {
                 | Opcode::SetGlobalStateBytes32
                 | Opcode::GetGlobalStateU64
                 | Opcode::SetGlobalStateU64
+                | Opcode::ValidateCertificate
                 | Opcode::ReadPreImage
                 | Opcode::ReadInboxMessage
                 | Opcode::GetEndParentChainBlockHash

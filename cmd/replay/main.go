@@ -113,6 +113,10 @@ func (i WavmInbox) ReadDelayedInbox(seqNum uint64) (*arbostypes.L1IncomingMessag
 type PreimageDASReader struct {
 }
 
+func (*PreimageDASReader) String() string {
+	return "PreimageDASReader"
+}
+
 func (dasReader *PreimageDASReader) GetByHash(ctx context.Context, hash common.Hash) ([]byte, error) {
 	oracle := func(hash common.Hash) ([]byte, error) {
 		return wavmio.ResolveTypedPreimage(arbutil.Keccak256PreimageType, hash)
@@ -225,7 +229,7 @@ func main() {
 			panic(fmt.Sprintf("Error reading from inbox multiplexer: %v", err.Error()))
 		}
 
-		err = message.Message.FillInBatchGasCost(batchFetcher)
+		err = message.Message.FillInBatchGasFields(batchFetcher)
 		if err != nil {
 			message.Message = arbostypes.InvalidL1Message
 		}
@@ -277,7 +281,7 @@ func main() {
 		message := readMessage(chainConfig.ArbitrumChainParams.DataAvailabilityCommittee)
 
 		chainContext := WavmChainContext{chainConfig: chainConfig}
-		newBlock, _, err = arbos.ProduceBlock(message.Message, message.DelayedMessagesRead, lastBlockHeader, statedb, chainContext, false, core.NewMessageReplayContext())
+		newBlock, _, err = arbos.ProduceBlock(message.Message, message.DelayedMessagesRead, lastBlockHeader, statedb, chainContext, false, core.NewMessageReplayContext(), false)
 		if err != nil {
 			panic(err)
 		}

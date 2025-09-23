@@ -1,3 +1,6 @@
+// Copyright 2024-2025, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
+
 package rightshift
 
 import (
@@ -11,18 +14,11 @@ import (
 var Analyzer = &analysis.Analyzer{
 	Name:       "rightshift",
 	Doc:        "check for 1 >> x operation",
-	Run:        func(p *analysis.Pass) (interface{}, error) { return run(false, p) },
+	Run:        run,
 	ResultType: reflect.TypeOf(Result{}),
 }
 
-var analyzerForTests = &analysis.Analyzer{
-	Name:       "testrightshift",
-	Doc:        "check for pointer comparison (for tests)",
-	Run:        func(p *analysis.Pass) (interface{}, error) { return run(true, p) },
-	ResultType: reflect.TypeOf(Result{}),
-}
-
-// rightShiftError indicates the position of pointer comparison.
+// rightShiftError indicates the position of rightshift operation.
 type rightShiftError struct {
 	Pos     token.Position
 	Message string
@@ -34,7 +30,7 @@ type Result struct {
 	Errors []rightShiftError
 }
 
-func run(dryRun bool, pass *analysis.Pass) (interface{}, error) {
+func run(pass *analysis.Pass) (interface{}, error) {
 	var ret Result
 	for _, f := range pass.Files {
 		ast.Inspect(f, func(node ast.Node) bool {
@@ -49,13 +45,11 @@ func run(dryRun bool, pass *analysis.Pass) (interface{}, error) {
 					Message: "found rightshift ('1 >> x') expression, did you mean '1 << x' ?",
 				}
 				ret.Errors = append(ret.Errors, err)
-				if !dryRun {
-					pass.Report(analysis.Diagnostic{
-						Pos:      pass.Fset.File(f.Pos()).Pos(err.Pos.Offset),
-						Message:  err.Message,
-						Category: "pointercheck",
-					})
-				}
+				pass.Report(analysis.Diagnostic{
+					Pos:      pass.Fset.File(f.Pos()).Pos(err.Pos.Offset),
+					Message:  err.Message,
+					Category: "rightshift",
+				})
 			}
 			return true
 		},

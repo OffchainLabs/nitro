@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	flag "github.com/spf13/pflag"
+	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -107,7 +107,7 @@ var DefaultConfig = Config{
 	},
 }
 
-func AddOptions(prefix string, f *flag.FlagSet) {
+func AddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultConfig.Enable, "enable reader connection")
 	f.Bool(prefix+".poll-only", DefaultConfig.PollOnly, "do not attempt to subscribe to header events")
 	f.Bool(prefix+".use-finality-data", DefaultConfig.UseFinalityData, "use l1 data about finalized/safe blocks")
@@ -119,7 +119,7 @@ func AddOptions(prefix string, f *flag.FlagSet) {
 	AddDangerousOptions(prefix+".dangerous", f)
 }
 
-func AddDangerousOptions(prefix string, f *flag.FlagSet) {
+func AddDangerousOptions(prefix string, f *pflag.FlagSet) {
 	f.Duration(prefix+".wait-for-tx-approval-safe-poll", DefaultConfig.Dangerous.WaitForTxApprovalSafePoll, "Dangerous! only meant to be used by system tests")
 }
 
@@ -166,7 +166,7 @@ func (s *HeaderReader) Config() *Config { return s.config() }
 // Subscribe to block header updates.
 // Subscribers are notified when there is a change.
 // Channel could be missing headers and have duplicates.
-// Listening to the channel will make sure listenere is notified when header changes.
+// Listening to the channel will make sure listener is notified when header changes.
 // Warning: listeners must not modify the header or its number, as they're shared between listeners.
 func (s *HeaderReader) Subscribe(requireBlockNrUpdates bool) (<-chan *types.Header, func()) {
 	s.chanMutex.Lock()

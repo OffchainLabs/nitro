@@ -153,21 +153,22 @@ pub unsafe extern "C" fn stylus_compile(
     wasm: GoSliceData,
     version: u16,
     debug: bool,
-    name: GoSliceData,
+    target: GoSliceData,
+    cranelift: bool,
     output: *mut RustBytes,
 ) -> UserOutcomeKind {
     let wasm = wasm.slice();
     let output = &mut *output;
-    let name = match String::from_utf8(name.slice().to_vec()) {
+    let target = match String::from_utf8(target.slice().to_vec()) {
         Ok(val) => val,
         Err(err) => return write_err(output, err.into()),
     };
-    let target = match target_cache_get(&name) {
+    let target = match target_cache_get(&target) {
         Ok(val) => val,
         Err(err) => return write_err(output, err),
     };
 
-    let asm = match native::compile(wasm, version, debug, target) {
+    let asm = match native::compile(wasm, version, debug, target, cranelift) {
         Ok(val) => val,
         Err(err) => return write_err(output, err),
     };

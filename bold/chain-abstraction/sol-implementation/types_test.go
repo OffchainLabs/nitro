@@ -4,7 +4,7 @@
 
 package solimpl
 
-import protocol "github.com/offchainlabs/bold/chain-abstraction"
+import "github.com/offchainlabs/nitro/bold/chain-abstraction"
 
 var (
 	_ = protocol.SpecEdge(&specEdge{})

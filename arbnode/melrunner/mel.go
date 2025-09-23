@@ -12,9 +12,9 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 
-	"github.com/offchainlabs/bold/containers/fsm"
 	"github.com/offchainlabs/nitro/arbnode/mel"
 	"github.com/offchainlabs/nitro/arbnode/melextraction"
+	"github.com/offchainlabs/nitro/bold/containers/fsm"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
