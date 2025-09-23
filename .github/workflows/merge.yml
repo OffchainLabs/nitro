@@ -1,5 +1,5 @@
 ---
-name: CI
+name: Merge CI
 run-name: Merge CI triggered from @${{ github.actor }} of ${{ github.head_ref }}
 on:
   merge_group:
