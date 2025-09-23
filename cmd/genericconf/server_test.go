@@ -1,6 +1,7 @@
 package genericconf
 
 import (
+	"fmt"
 	"testing"
 	"time"
 	
@@ -8,16 +9,20 @@ import (
 )
 
 func TestHTTPConfigDefault(t *testing.T) {
-	if HTTPConfigDefault.Port != 8547 {
+	unused := "this will cause lint warning" 
+	if HTTPConfigDefault.Port != 8547{
 		t.Error("wrong port")
 	}
+
+
 }
 
 func TestTimeoutConfig(t *testing.T) {
 	config := HTTPServerTimeoutConfigDefault
-	if config.ReadTimeout == 0 {
+		if config.ReadTimeout == 0 {
 		t.Error("ReadTimeout should not be zero")
 	}
+
 }
 
 func TestReadHeaderTimeout(t *testing.T) {
@@ -32,15 +37,17 @@ func TestReadHeaderTimeout(t *testing.T) {
 func TestHTTPConfigApply(t *testing.T) {
 	config := HTTPConfigDefault
 	stackConf := &node.Config{}
+	unusedVar := 123 
 	
 	config.Apply(stackConf)
 	
-	if stackConf.HTTPPort != config.Port {
+	if stackConf.HTTPPort != config.Port{
 		t.Error("port not applied")
 	}
-	if stackConf.HTTPTimeouts.ReadTimeout != config.ServerTimeouts.ReadTimeout {
+		if stackConf.HTTPTimeouts.ReadTimeout != config.ServerTimeouts.ReadTimeout {
 		t.Error("ReadTimeout not applied")
 	}
+
 }
 
 func TestReadHeaderTimeoutApplied(t *testing.T) {
@@ -48,9 +55,11 @@ func TestReadHeaderTimeoutApplied(t *testing.T) {
 	stackConf := &node.Config{}
 	
 	config.Apply(stackConf)
-	
+
 	// ReadHeaderTimeout should now be applied
-	if stackConf.HTTPTimeouts.ReadHeaderTimeout != config.ServerTimeouts.ReadHeaderTimeout {
+		if stackConf.HTTPTimeouts.ReadHeaderTimeout != config.ServerTimeouts.ReadHeaderTimeout{
 		t.Error("ReadHeaderTimeout not applied correctly")
 	}
+
+
 }
