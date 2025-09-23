@@ -37,7 +37,7 @@ func newSyncHistory(msgLag time.Duration) *syncHistory {
 	}
 }
 
-// add adds a new entry and trims old entries beyond 2*msgLag
+// add adds a new entry and trims old entries beyond msgLag
 func (h *syncHistory) add(maxMessageCount arbutil.MessageIndex, timestamp time.Time) {
 	h.mutex.Lock()
 	defer h.mutex.Unlock()
@@ -47,8 +47,8 @@ func (h *syncHistory) add(maxMessageCount arbutil.MessageIndex, timestamp time.T
 		timestamp:       timestamp,
 	})
 
-	// Trim entries older than 2*msgLag
-	cutoff := timestamp.Add(-2 * h.msgLag)
+	// Trim entries older than msgLag
+	cutoff := timestamp.Add(-h.msgLag)
 	i := 0
 	for i < len(h.entries) && h.entries[i].timestamp.Before(cutoff) {
 		i++
@@ -58,7 +58,10 @@ func (h *syncHistory) add(maxMessageCount arbutil.MessageIndex, timestamp time.T
 	}
 }
 
-// getSyncTarget returns the appropriate sync target based on msgLag timing
+// getSyncTarget returns the sync target based on msgLag timing.
+// The sync target is the consensusMaxMessageCount from the oldest
+// syncDataEntry that was received more recently that than 1 msgLag ago.
+// There may be no entries if the syncHistory has not been updated recently.
 // Returns 0 if no appropriate entry is found
 func (h *syncHistory) getSyncTarget(now time.Time) arbutil.MessageIndex {
 	h.mutex.RLock()
@@ -68,13 +71,11 @@ func (h *syncHistory) getSyncTarget(now time.Time) arbutil.MessageIndex {
 		return 0
 	}
 
-	// Find entries between msgLag and 2*msgLag ago
-	windowStart := now.Add(-2 * h.msgLag)
-	windowEnd := now.Add(-h.msgLag)
+	// Find oldest entry newer than now-msgLag
+	windowStart := now.Add(-h.msgLag)
 
 	for _, entry := range h.entries {
-		if !entry.timestamp.Before(windowStart) && !entry.timestamp.After(windowEnd) {
-			// Return the first (oldest) entry in the window
+		if !entry.timestamp.Before(windowStart) {
 			return entry.maxMessageCount
 		}
 	}
@@ -123,7 +124,12 @@ func (s *SyncMonitor) SetConsensusSyncData(syncData *execution.ConsensusSyncData
 
 	// Add the max message count to history for sync target calculation
 	if syncData != nil && syncData.MaxMessageCount > 0 {
-		s.syncHistory.add(syncData.MaxMessageCount, syncData.UpdatedAt)
+		syncTime := time.Now()
+		if syncTime.After(syncData.UpdatedAt) {
+			syncTime = syncData.UpdatedAt
+		}
+
+		s.syncHistory.add(syncData.MaxMessageCount, syncTime)
 	}
 }
 
@@ -143,7 +149,7 @@ func (s *SyncMonitor) FullSyncProgressMap(ctx context.Context) map[string]interf
 	}
 
 	// Always add the max message count
-	res["maxMessageCount"] = data.MaxMessageCount
+	res["consensusMaxMessageCount"] = data.MaxMessageCount
 
 	// Add execution-calculated sync target
 	now := time.Now()

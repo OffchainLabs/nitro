@@ -26,17 +26,19 @@ func TestSyncHistory_Add(t *testing.T) {
 		t.Errorf("Expected 3 entries, got %d", len(h.entries))
 	}
 
-	// Add an entry that should trigger trimming (more than 2*msgLag later)
+	// Add an entry that should trigger trimming (more than msgLag later)
+	// The new entry is at now+250ms, so we keep entries from (now+250ms - 100ms) = now+150ms onwards
+	// All previous entries are before now+150ms, so they get trimmed
 	h.add(arbutil.MessageIndex(400), now.Add(250*time.Millisecond))
 
-	// First entry should be trimmed (it's older than 2*msgLag from newest entry)
-	if len(h.entries) != 3 {
-		t.Errorf("Expected 3 entries after trimming, got %d", len(h.entries))
+	// Only the newest entry should remain after trimming
+	if len(h.entries) != 1 {
+		t.Errorf("Expected 1 entry after trimming, got %d", len(h.entries))
 	}
 
-	// Verify the first entry was trimmed
-	if h.entries[0].maxMessageCount != 200 {
-		t.Errorf("Expected first entry to have maxMessageCount 200, got %d", h.entries[0].maxMessageCount)
+	// Verify only the newest entry remains
+	if h.entries[0].maxMessageCount != 400 {
+		t.Errorf("Expected first entry to have maxMessageCount 400, got %d", h.entries[0].maxMessageCount)
 	}
 }
 
@@ -53,17 +55,17 @@ func TestSyncHistory_GetSyncTarget(t *testing.T) {
 	}
 
 	// Add entries at various times
-	h.add(arbutil.MessageIndex(100), now.Add(-250*time.Millisecond)) // Too old (beyond 2*msgLag)
-	h.add(arbutil.MessageIndex(200), now.Add(-180*time.Millisecond)) // In window (between msgLag and 2*msgLag)
-	h.add(arbutil.MessageIndex(300), now.Add(-150*time.Millisecond)) // In window
-	h.add(arbutil.MessageIndex(400), now.Add(-120*time.Millisecond)) // In window
-	h.add(arbutil.MessageIndex(500), now.Add(-80*time.Millisecond))  // Too recent (less than msgLag)
-	h.add(arbutil.MessageIndex(600), now.Add(-50*time.Millisecond))  // Too recent
+	h.add(arbutil.MessageIndex(100), now.Add(-250*time.Millisecond)) // Too old (beyond msgLag)
+	h.add(arbutil.MessageIndex(200), now.Add(-180*time.Millisecond)) // Too old (beyond msgLag)
+	h.add(arbutil.MessageIndex(300), now.Add(-150*time.Millisecond)) // Too old (beyond msgLag)
+	h.add(arbutil.MessageIndex(400), now.Add(-120*time.Millisecond)) // Too old (beyond msgLag)
+	h.add(arbutil.MessageIndex(500), now.Add(-80*time.Millisecond))  // In window (less than msgLag ago)
+	h.add(arbutil.MessageIndex(600), now.Add(-50*time.Millisecond))  // In window (less than msgLag ago)
 
-	// Should return the oldest entry in the window (200)
+	// Should return the oldest entry in the window (500)
 	target = h.getSyncTarget(now)
-	if target != 200 {
-		t.Errorf("Expected sync target 200, got %d", target)
+	if target != 500 {
+		t.Errorf("Expected sync target 500, got %d", target)
 	}
 }
 
@@ -75,7 +77,7 @@ func TestSyncHistory_GetSyncTarget_NoValidEntries(t *testing.T) {
 
 	// Add only entries outside the valid window
 	h.add(arbutil.MessageIndex(100), now.Add(-250*time.Millisecond)) // Too old
-	h.add(arbutil.MessageIndex(200), now.Add(-50*time.Millisecond))  // Too recent
+	h.add(arbutil.MessageIndex(200), now.Add(-250*time.Millisecond)) // Too old
 
 	// Should return 0 as no entries are in the valid window
 	target := h.getSyncTarget(now)
@@ -91,10 +93,10 @@ func TestSyncHistory_GetSyncTarget_ExactBoundaries(t *testing.T) {
 	now := time.Now()
 
 	// Add entries exactly at the boundaries
-	h.add(arbutil.MessageIndex(100), now.Add(-2*msgLag)) // Exactly at 2*msgLag ago (inclusive)
-	h.add(arbutil.MessageIndex(200), now.Add(-msgLag))   // Exactly at msgLag ago (inclusive)
+	h.add(arbutil.MessageIndex(100), now.Add(-msgLag))   // Exactly at msgLag ago (included)
+	h.add(arbutil.MessageIndex(200), now.Add(-msgLag/2)) // More recent than msgLag ago
 
-	// Both should be in the window, return the oldest (100)
+	// Both entries are in the window, return the oldest (100)
 	target := h.getSyncTarget(now)
 	if target != 100 {
 		t.Errorf("Expected sync target 100, got %d", target)
@@ -108,28 +110,28 @@ func TestSyncHistory_Trimming(t *testing.T) {
 	baseTime := time.Now()
 
 	// Add many entries - they will get trimmed as we go
-	// With msgLag=100ms, we keep entries within 200ms of the newest
+	// With msgLag=100ms, we keep entries within 100ms of the newest
 	for i := 0; i < 10; i++ {
 		// #nosec G115
 		h.add(arbutil.MessageIndex(i*100), baseTime.Add(time.Duration(i*50)*time.Millisecond))
 	}
 
-	// After adding entry at 450ms, we keep entries from 250ms onwards
-	// That's entries at 250ms, 300ms, 350ms, 400ms, 450ms = 5 entries
-	if len(h.entries) != 5 {
-		t.Errorf("Expected 5 entries after incremental adds, got %d", len(h.entries))
+	// After adding entry at 450ms, we keep entries from 350ms onwards
+	// That's entries at 350ms, 400ms, 450ms = 3 entries
+	if len(h.entries) != 3 {
+		t.Errorf("Expected 3 entries after incremental adds, got %d", len(h.entries))
 	}
 
-	// Verify the first entry is the one at 250ms (index 5)
-	if h.entries[0].maxMessageCount != 500 {
-		t.Errorf("Expected first entry to be 500, got %d", h.entries[0].maxMessageCount)
+	// Verify the first entry is the one at 350ms (index 7)
+	if h.entries[0].maxMessageCount != 700 {
+		t.Errorf("Expected first entry to be 700, got %d", h.entries[0].maxMessageCount)
 	}
 
 	// Add an entry much later that should trigger more aggressive trimming
 	futureTime := baseTime.Add(1 * time.Second)
 	h.add(arbutil.MessageIndex(1000), futureTime)
 
-	// Should have trimmed all old entries (keeping only the new one since all others are > 200ms old)
+	// Should have trimmed all old entries (keeping only the new one since all others are > 100ms old)
 	if len(h.entries) != 1 {
 		t.Errorf("Expected 1 entry after adding future entry, got %d", len(h.entries))
 	}
@@ -182,7 +184,7 @@ func TestSyncHistory_EdgeCases(t *testing.T) {
 	now := time.Now()
 
 	// Test with single entry in window
-	h.add(arbutil.MessageIndex(100), now.Add(-150*time.Millisecond))
+	h.add(arbutil.MessageIndex(100), now.Add(-50*time.Millisecond))
 	target := h.getSyncTarget(now)
 	if target != 100 {
 		t.Errorf("Expected sync target 100 for single entry, got %d", target)
