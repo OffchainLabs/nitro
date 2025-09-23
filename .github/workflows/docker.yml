@@ -3,7 +3,7 @@ name: Docker build CI
 run-name: Docker build CI triggered from @${{ github.actor }} of ${{ github.head_ref }}
 
 concurrency:
-  group: "${{ github.ref }}-${{ github.workflow }}"
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 on:
