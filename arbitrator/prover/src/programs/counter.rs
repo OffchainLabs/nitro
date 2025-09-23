@@ -32,7 +32,7 @@ impl Counter {
     }
 
     pub fn global_name(index: usize) -> String {
-        format!("stylus_opcode{}_count", index)
+        format!("stylus_opcode{index}_count")
     }
 }
 

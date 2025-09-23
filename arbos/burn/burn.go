@@ -6,7 +6,7 @@ package burn
 import (
 	"fmt"
 
-	glog "github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/arbos/util"
 )
@@ -54,7 +54,7 @@ func (burner *SystemBurner) GasLeft() *uint64 {
 
 func (burner *SystemBurner) Restrict(err error) {
 	if err != nil {
-		glog.Error("Restrict() received an error", "err", err)
+		log.Error("Restrict() received an error", "err", err)
 	}
 }
 

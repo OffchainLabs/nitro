@@ -16,12 +16,12 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 
-	protocol "github.com/offchainlabs/bold/chain-abstraction"
-	"github.com/offchainlabs/bold/challenge-manager/challenge-tree/mock"
-	"github.com/offchainlabs/bold/containers/option"
-	"github.com/offchainlabs/bold/containers/threadsafe"
-	l2stateprovider "github.com/offchainlabs/bold/layer2-state-provider"
-	"github.com/offchainlabs/bold/testing/mocks"
+	"github.com/offchainlabs/nitro/bold/chain-abstraction"
+	"github.com/offchainlabs/nitro/bold/challenge-manager/challenge-tree/mock"
+	"github.com/offchainlabs/nitro/bold/containers/option"
+	"github.com/offchainlabs/nitro/bold/containers/threadsafe"
+	"github.com/offchainlabs/nitro/bold/layer2-state-provider"
+	"github.com/offchainlabs/nitro/bold/testing/mocks"
 )
 
 func simpleAssertionMetadata() *l2stateprovider.AssociatedAssertionMetadata {

@@ -33,7 +33,7 @@ func TestClassicRedirectURLNotLeaked(t *testing.T) {
 
 	var result traceResult
 	err = l2rpc.CallContext(ctx, &result, "arbtrace_call", callTxArgs{}, []string{"trace"}, rpc.BlockNumberOrHash{})
-	// checks that it errors and that the error message does not contains the classic redirect URL
+	// checks that it errors and that the error message does not contain the classic redirect URL
 	expectedErrMsg := "Failed to call fallback API"
 	if err == nil || err.Error() != expectedErrMsg {
 		t.Fatalf("Expected error message to be %s, got %v", expectedErrMsg, err)

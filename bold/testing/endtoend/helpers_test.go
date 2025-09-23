@@ -18,8 +18,8 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 
-	protocol "github.com/offchainlabs/bold/chain-abstraction"
-	solimpl "github.com/offchainlabs/bold/chain-abstraction/sol-implementation"
+	"github.com/offchainlabs/nitro/bold/chain-abstraction"
+	"github.com/offchainlabs/nitro/bold/chain-abstraction/sol-implementation"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 )
 

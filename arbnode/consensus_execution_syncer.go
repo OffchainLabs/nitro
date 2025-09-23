@@ -8,7 +8,7 @@ import (
 	"errors"
 	"time"
 
-	flag "github.com/spf13/pflag"
+	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/log"
 
@@ -28,7 +28,7 @@ var DefaultConsensusExecutionSyncerConfig = ConsensusExecutionSyncerConfig{
 	SyncInterval: 1 * time.Second,
 }
 
-func ConsensusExecutionSyncerConfigAddOptions(prefix string, f *flag.FlagSet) {
+func ConsensusExecutionSyncerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Duration(prefix+".sync-interval", DefaultConsensusExecutionSyncerConfig.SyncInterval, "Interval in which finality data is pushed from consensus to execution")
 }
 

@@ -10,7 +10,7 @@ import (
 	"strings"
 	"sync"
 
-	flag "github.com/spf13/pflag"
+	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/common"
@@ -28,6 +28,7 @@ import (
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
+// lint:require-exhaustive-initialization
 type Config struct {
 	Enable             bool   `koanf:"enable"`
 	Mode               string `koanf:"mode"`
@@ -64,21 +65,27 @@ func (c *Config) Validate() error {
 }
 
 var DefaultConfig = Config{
-	Enable: false,
-	Mode:   "random",
-	Room:   util.GoMaxProcs(),
-	Blocks: `[[0,0]]`, // execute from chain start to chain end
+	Enable:             false,
+	Mode:               "random",
+	Room:               util.GoMaxProcs(),
+	Blocks:             `[[0,0]]`, // execute from chain start to chain end
+	MinBlocksPerThread: 0,
+	TrieCleanLimit:     0,
+	blocks:             nil,
 }
 
 var TestConfig = Config{
-	Enable:         true,
-	Mode:           "full",
-	Blocks:         `[[0,0]]`, // execute from chain start to chain end
-	Room:           util.GoMaxProcs(),
-	TrieCleanLimit: 600,
+	Enable:             true,
+	Mode:               "full",
+	Blocks:             `[[0,0]]`, // execute from chain start to chain end
+	Room:               util.GoMaxProcs(),
+	TrieCleanLimit:     600,
+	MinBlocksPerThread: 0,
+
+	blocks: [][2]uint64{},
 }
 
-func ConfigAddOptions(prefix string, f *flag.FlagSet) {
+func ConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultConfig.Enable, "enables re-execution of a range of blocks against historic state")
 	f.String(prefix+".mode", DefaultConfig.Mode, "mode to run the blocks-reexecutor on. Valid modes full and random. full - execute all the blocks in the given range. random - execute a random sample range of blocks with in a given range")
 	f.String(prefix+".blocks", DefaultConfig.Blocks, "json encoded list of block ranges in the form of start and end block numbers in a list of size 2")
@@ -87,6 +94,7 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Int(prefix+".trie-clean-limit", DefaultConfig.TrieCleanLimit, "memory allowance (MB) to use for caching trie nodes in memory")
 }
 
+// lint:require-exhaustive-initialization
 type BlocksReExecutor struct {
 	stopwaiter.StopWaiter
 	config       *Config
@@ -162,15 +170,10 @@ func New(c *Config, blockchain *core.BlockChain, ethDb ethdb.Database, fatalErrC
 		Preimages: false,
 		HashDB:    &hashConfig,
 	}
-	blocksReExecutor := &BlocksReExecutor{
-		config:       c,
-		db:           state.NewDatabase(triedb.NewDatabase(ethDb, &trieConfig), nil),
-		blockchain:   blockchain,
-		blocks:       blocks,
-		done:         make(chan struct{}, c.Room),
-		fatalErrChan: fatalErrChan,
-	}
-	blocksReExecutor.stateFor = func(header *types.Header) (*state.StateDB, arbitrum.StateReleaseFunc, error) {
+
+	var blocksReExecutor *BlocksReExecutor
+
+	stateForFunc := func(header *types.Header) (*state.StateDB, arbitrum.StateReleaseFunc, error) {
 		blocksReExecutor.mutex.Lock()
 		defer blocksReExecutor.mutex.Unlock()
 		sdb, err := state.New(header.Root, blocksReExecutor.db)
@@ -179,6 +182,18 @@ func New(c *Config, blockchain *core.BlockChain, ethDb ethdb.Database, fatalErrC
 			return sdb, func() { blocksReExecutor.dereferenceRoot(header.Root) }, nil
 		}
 		return sdb, arbitrum.NoopStateRelease, err
+	}
+
+	blocksReExecutor = &BlocksReExecutor{
+		StopWaiter:   stopwaiter.StopWaiter{},
+		config:       c,
+		db:           state.NewDatabase(triedb.NewDatabase(ethDb, &trieConfig), nil),
+		blockchain:   blockchain,
+		stateFor:     stateForFunc,
+		blocks:       blocks,
+		done:         make(chan struct{}, c.Room),
+		fatalErrChan: fatalErrChan,
+		mutex:        sync.Mutex{},
 	}
 	return blocksReExecutor, nil
 }

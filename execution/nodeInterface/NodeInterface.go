@@ -507,6 +507,7 @@ func (n NodeInterface) messageArgs(
 		Value:                (*hexutil.Big)(value),
 		Nonce:                (*hexutil.Uint64)(&nonce),
 		Data:                 (*hexutil.Bytes)(&data),
+		AuthorizationList:    msg.SetCodeAuthorizations,
 	}
 	if !contractCreation {
 		args.To = &to

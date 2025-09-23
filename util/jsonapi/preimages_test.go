@@ -36,7 +36,7 @@ func TestPreimagesMapJson(t *testing.T) {
 		t.Run(fmt.Sprintf("%v preimages", len(preimages.Map)), func(t *testing.T) {
 			// These test cases are fast enough that t.Parallel() probably isn't worth it
 			serialized, err := preimages.MarshalJSON()
-			Require(t, err, "Failed to marshal preimagesj")
+			Require(t, err, "Failed to marshal preimages")
 
 			// Make sure that `serialized` is a valid JSON map
 			stringMap := make(map[string]string)

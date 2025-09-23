@@ -178,6 +178,7 @@ pub fn resolve_preimage_impl(
             PreimageType::Keccak256 => Keccak256::digest(preimage).into(),
             PreimageType::Sha2_256 => Sha256::digest(preimage).into(),
             PreimageType::EthVersionedHash => *hash,
+            PreimageType::DACertificate => *hash, // Can't verify DACertificate hash, just accept it
         };
         if calculated_hash != *hash {
             error!(
@@ -197,6 +198,31 @@ pub fn resolve_preimage_impl(
     let read = preimage.get(offset..(offset + len)).unwrap_or_default();
     mem.write_slice(out_ptr, read);
     Ok(read.len() as u32)
+}
+
+pub fn validate_certificate(
+    mut env: WasmEnvMut,
+    preimage_type: u8,
+    hash_ptr: GuestPtr,
+) -> Result<u8, Escape> {
+    let (mut mem, exec) = env.jit_env();
+    let hash = mem.read_bytes32(hash_ptr);
+
+    let Ok(preimage_type) = preimage_type.try_into() else {
+        eprintln!(
+            "Go trying to validate certificate for preimage with unknown type {preimage_type}"
+        );
+        return Ok(0);
+    };
+
+    // Check if preimage exists
+    let exists = exec
+        .preimages
+        .get(&preimage_type)
+        .and_then(|m| m.get(&hash))
+        .is_some();
+
+    Ok(if exists { 1 } else { 0 })
 }
 
 fn ready_hostio(env: &mut WasmEnv) -> MaybeEscape {

@@ -14,7 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/metrics"
 
-	protocol "github.com/offchainlabs/bold/chain-abstraction"
+	"github.com/offchainlabs/nitro/bold/chain-abstraction"
 )
 
 var _ protocol.ChainBackend = &MetricsContractBackend{}

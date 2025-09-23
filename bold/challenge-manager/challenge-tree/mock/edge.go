@@ -13,8 +13,8 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 
-	protocol "github.com/offchainlabs/bold/chain-abstraction"
-	"github.com/offchainlabs/bold/containers/option"
+	"github.com/offchainlabs/nitro/bold/chain-abstraction"
+	"github.com/offchainlabs/nitro/bold/containers/option"
 )
 
 var _ = protocol.ReadOnlyEdge(&Edge{})

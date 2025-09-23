@@ -5,7 +5,7 @@ import (
 	"reflect"
 	"time"
 
-	flag "github.com/spf13/pflag"
+	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/p2p"
@@ -71,7 +71,7 @@ var AutonomousAuctioneerConfigDefault = AutonomousAuctioneerConfig{
 	PprofCfg:      genericconf.PProfDefault,
 }
 
-func AuctioneerConfigAddOptions(f *flag.FlagSet) {
+func AuctioneerConfigAddOptions(f *pflag.FlagSet) {
 	timeboost.AuctioneerServerConfigAddOptions("auctioneer-server", f)
 	timeboost.BidValidatorConfigAddOptions("bid-validator", f)
 	conf.PersistentConfigAddOptions("persistent", f)

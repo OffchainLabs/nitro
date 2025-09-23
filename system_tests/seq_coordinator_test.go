@@ -392,6 +392,9 @@ func TestRedisSwitchover(t *testing.T) {
 	defer cancel()
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	if redisutil.IsSharedTestRedisInstance() {
+		builder.DontParalellise()
+	}
 	builder.nodeConfig.SeqCoordinator.Enable = true
 	builder.nodeConfig.SeqCoordinator.RedisUrl = redisutil.CreateTestRedis(ctx, t)
 	builder.nodeConfig.SeqCoordinator.NewRedisUrl = redisutil.CreateTestRedis(ctx, t)

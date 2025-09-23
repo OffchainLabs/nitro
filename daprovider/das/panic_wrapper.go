@@ -15,20 +15,18 @@ import (
 )
 
 type WriterPanicWrapper struct {
-	DataAvailabilityServiceWriter
+	dasutil.DASWriter
 }
 
-func NewWriterPanicWrapper(dataAvailabilityService DataAvailabilityServiceWriter) DataAvailabilityServiceWriter {
-	return &WriterPanicWrapper{
-		DataAvailabilityServiceWriter: dataAvailabilityService,
-	}
+func NewWriterPanicWrapper(dataAvailabilityService dasutil.DASWriter) dasutil.DASWriter {
+	return &WriterPanicWrapper{DASWriter: dataAvailabilityService}
 }
 func (w *WriterPanicWrapper) String() string {
-	return fmt.Sprintf("WriterPanicWrapper{%v}", w.DataAvailabilityServiceWriter)
+	return fmt.Sprintf("WriterPanicWrapper{%v}", w.DASWriter)
 }
 
 func (w *WriterPanicWrapper) Store(ctx context.Context, message []byte, timeout uint64) (*dasutil.DataAvailabilityCertificate, error) {
-	cert, err := w.DataAvailabilityServiceWriter.Store(ctx, message, timeout)
+	cert, err := w.DASWriter.Store(ctx, message, timeout)
 	if err != nil {
 		panic(fmt.Sprintf("panic wrapper Store: %v", err))
 	}
@@ -36,20 +34,20 @@ func (w *WriterPanicWrapper) Store(ctx context.Context, message []byte, timeout 
 }
 
 type ReaderPanicWrapper struct {
-	DataAvailabilityServiceReader
+	dasutil.DASReader
 }
 
-func NewReaderPanicWrapper(dataAvailabilityService DataAvailabilityServiceReader) DataAvailabilityServiceReader {
+func NewReaderPanicWrapper(dataAvailabilityService dasutil.DASReader) dasutil.DASReader {
 	return &ReaderPanicWrapper{
-		DataAvailabilityServiceReader: dataAvailabilityService,
+		DASReader: dataAvailabilityService,
 	}
 }
 func (w *ReaderPanicWrapper) String() string {
-	return fmt.Sprintf("ReaderPanicWrapper{%v}", w.DataAvailabilityServiceReader)
+	return fmt.Sprintf("ReaderPanicWrapper{%v}", w.DASReader)
 }
 
 func (w *ReaderPanicWrapper) GetByHash(ctx context.Context, hash common.Hash) ([]byte, error) {
-	data, err := w.DataAvailabilityServiceReader.GetByHash(ctx, hash)
+	data, err := w.DASReader.GetByHash(ctx, hash)
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
 			log.Error("DAS hash lookup failed from cancelled context")

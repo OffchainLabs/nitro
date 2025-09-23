@@ -162,14 +162,14 @@ func (d *SqliteDatabase) GetBids(maxDbRows int) ([]*SqliteDatabaseBid, uint64, e
 	if err := d.sqlDB.Select(&sqlDBbids, "SELECT * FROM Bids WHERE Round < ? ORDER BY Round ASC LIMIT ?", maxRound, maxDbRows); err != nil {
 		return nil, 0, err
 	}
-	// We should return contiguous set of bids
+	// We should return a contiguous set of bids
 	for i := len(sqlDBbids) - 1; i > 0; i-- {
 		if sqlDBbids[i].Round != sqlDBbids[i-1].Round {
 			return sqlDBbids[:i], sqlDBbids[i].Round, nil
 		}
 	}
 	// If we can't determine a contiguous set of bids, we abort and retry again.
-	// Saves us from cases where we sometime push same batch data twice
+	// Saves us from cases where we sometimes push the same batch data twice
 	return nil, 0, nil
 }
 

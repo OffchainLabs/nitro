@@ -13,9 +13,9 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 
-	"github.com/offchainlabs/bold/state-commitments/legacy"
-	prefixproofs "github.com/offchainlabs/bold/state-commitments/prefix-proofs"
-	"github.com/offchainlabs/bold/testing/casttest"
+	"github.com/offchainlabs/nitro/bold/state-commitments/legacy"
+	"github.com/offchainlabs/nitro/bold/state-commitments/prefix-proofs"
+	"github.com/offchainlabs/nitro/bold/testing/casttest"
 )
 
 func FuzzHistoryCommitter(f *testing.F) {

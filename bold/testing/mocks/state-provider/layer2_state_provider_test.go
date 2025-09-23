@@ -17,9 +17,9 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 
-	protocol "github.com/offchainlabs/bold/chain-abstraction"
-	l2stateprovider "github.com/offchainlabs/bold/layer2-state-provider"
-	challenge_testing "github.com/offchainlabs/bold/testing"
+	"github.com/offchainlabs/nitro/bold/chain-abstraction"
+	"github.com/offchainlabs/nitro/bold/layer2-state-provider"
+	"github.com/offchainlabs/nitro/bold/testing"
 )
 
 func mockMachineAtBlock(_ context.Context, block uint64) (Machine, error) {

@@ -1,3 +1,6 @@
+// Copyright 2023-2025, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
+
 package pointercheck
 
 import (
@@ -14,7 +17,7 @@ func TestAll(t *testing.T) {
 		t.Fatalf("Failed to get working directory: %v", err)
 	}
 	testdata := filepath.Join(filepath.Dir(wd), "testdata")
-	res := analysistest.Run(t, testdata, analyzerForTests, "pointercheck")
+	res := analysistest.Run(t, testdata, Analyzer, "pointercheck")
 	if cnt := countErrors(res); cnt != 6 {
 		t.Errorf("analysistest.Run() got %v errors, expected 6", cnt)
 	}

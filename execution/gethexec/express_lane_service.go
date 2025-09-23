@@ -83,7 +83,7 @@ pending:
 		const maxRetries = 5
 		if errors.Is(err, bind.ErrNoCode) && retries < maxRetries {
 			wait := time.Millisecond * 250 * (1 << retries)
-			log.Info("ExpressLaneAuction contract not ready, will retry afer wait", "err", err, "wait", wait, "maxRetries", maxRetries)
+			log.Info("ExpressLaneAuction contract not ready, will retry after wait", "err", err, "wait", wait, "maxRetries", maxRetries)
 			retries++
 			time.Sleep(wait)
 			goto pending

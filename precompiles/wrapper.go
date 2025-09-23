@@ -51,6 +51,10 @@ func (wrapper *DebugPrecompile) Precompile() *Precompile {
 	return wrapper.precompile.Precompile()
 }
 
+func (wrapper *DebugPrecompile) Name() string {
+	return wrapper.precompile.Name()
+}
+
 // OwnerPrecompile is a precompile wrapper for those only chain owners may use
 type OwnerPrecompile struct {
 	precompile  ArbosPrecompile
@@ -116,4 +120,8 @@ func (wrapper *OwnerPrecompile) Call(
 func (wrapper *OwnerPrecompile) Precompile() *Precompile {
 	con := wrapper.precompile
 	return con.Precompile()
+}
+
+func (wrapper *OwnerPrecompile) Name() string {
+	return wrapper.precompile.Name()
 }

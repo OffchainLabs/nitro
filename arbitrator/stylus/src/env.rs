@@ -156,7 +156,7 @@ impl<D: DataReader, E: EvmApi<D>> HostioInfo<'_, D, E> {
         self.config().pricing
     }
 
-    pub fn view(&self) -> MemoryView {
+    pub fn view(&self) -> MemoryView<'_> {
         self.memory.view(&self.store)
     }
 

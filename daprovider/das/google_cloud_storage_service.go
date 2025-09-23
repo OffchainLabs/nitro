@@ -10,7 +10,7 @@ import (
 
 	googlestorage "cloud.google.com/go/storage"
 	"github.com/google/go-cmp/cmp"
-	flag "github.com/spf13/pflag"
+	"github.com/spf13/pflag"
 	"google.golang.org/api/option"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -77,7 +77,7 @@ type GoogleCloudStorageServiceConfig struct {
 
 var DefaultGoogleCloudStorageServiceConfig = GoogleCloudStorageServiceConfig{}
 
-func GoogleCloudConfigAddOptions(prefix string, f *flag.FlagSet) {
+func GoogleCloudConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultGoogleCloudStorageServiceConfig.Enable, "EXPERIMENTAL/unsupported - enable storage/retrieval of sequencer batch data from a Google Cloud Storage bucket")
 	f.String(prefix+".access-token", DefaultGoogleCloudStorageServiceConfig.AccessToken, "Google Cloud Storage access token (JSON string)")
 	f.String(prefix+".access-token-file", DefaultGoogleCloudStorageServiceConfig.AccessTokenFile, "Google Cloud Storage access token (JSON file path)")

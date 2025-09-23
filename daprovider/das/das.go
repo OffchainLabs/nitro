@@ -10,25 +10,12 @@ import (
 	"math"
 	"time"
 
-	flag "github.com/spf13/pflag"
+	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
-
-	"github.com/offchainlabs/nitro/daprovider/das/dasutil"
 )
-
-type DataAvailabilityServiceWriter interface {
-	// Store requests that the message be stored until timeout (UTC time in unix epoch seconds).
-	Store(ctx context.Context, message []byte, timeout uint64) (*dasutil.DataAvailabilityCertificate, error)
-	fmt.Stringer
-}
-
-type DataAvailabilityServiceReader interface {
-	dasutil.DASReader
-	fmt.Stringer
-}
 
 type DataAvailabilityServiceHealthChecker interface {
 	HealthCheck(ctx context.Context) error
@@ -86,11 +73,11 @@ func OptionalAddressFromString(s string) (*common.Address, error) {
 	return &addr, nil
 }
 
-func DataAvailabilityConfigAddNodeOptions(prefix string, f *flag.FlagSet) {
+func DataAvailabilityConfigAddNodeOptions(prefix string, f *pflag.FlagSet) {
 	dataAvailabilityConfigAddOptions(prefix, f, roleNode)
 }
 
-func DataAvailabilityConfigAddDaserverOptions(prefix string, f *flag.FlagSet) {
+func DataAvailabilityConfigAddDaserverOptions(prefix string, f *pflag.FlagSet) {
 	dataAvailabilityConfigAddOptions(prefix, f, roleDaserver)
 }
 
@@ -101,7 +88,7 @@ const (
 	roleDaserver
 )
 
-func dataAvailabilityConfigAddOptions(prefix string, f *flag.FlagSet, r role) {
+func dataAvailabilityConfigAddOptions(prefix string, f *pflag.FlagSet, r role) {
 	f.Bool(prefix+".enable", DefaultDataAvailabilityConfig.Enable, "enable Anytrust Data Availability mode")
 	f.Bool(prefix+".panic-on-error", DefaultDataAvailabilityConfig.PanicOnError, "whether the Data Availability Service should fail immediately on errors (not recommended)")
 

@@ -11,7 +11,7 @@ import (
 	"os"
 	"time"
 
-	flag "github.com/spf13/pflag"
+	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/log"
@@ -52,7 +52,7 @@ func (c *KeyConfig) BLSPrivKey() (blsSignatures.PrivateKey, error) {
 
 var DefaultKeyConfig = KeyConfig{}
 
-func KeyConfigAddOptions(prefix string, f *flag.FlagSet) {
+func KeyConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".key-dir", DefaultKeyConfig.KeyDir, fmt.Sprintf("the directory to read the bls keypair ('%s' and '%s') from; if using any of the DAS storage types exactly one of key-dir or priv-key must be specified", DefaultPubKeyFilename, DefaultPrivKeyFilename))
 	f.String(prefix+".priv-key", DefaultKeyConfig.PrivKey, "the base64 BLS private key to use for signing DAS certificates; if using any of the DAS storage types exactly one of key-dir or priv-key must be specified")
 }

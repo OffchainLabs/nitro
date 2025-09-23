@@ -464,7 +464,7 @@ func (p *DataPoster) getNextNonceAndMaybeMeta(ctx context.Context, thisWeight ui
 
 // GetNextNonceAndMeta retrieves generates next nonce, validates that a
 // transaction can be posted with that nonce, and fetches "Meta" either last
-// queued iterm (if queue isn't empty) or retrieves with last block.
+// queued item (if queue isn't empty) or retrieves with last block.
 func (p *DataPoster) GetNextNonceAndMeta(ctx context.Context) (uint64, []byte, error) {
 	p.mutex.Lock()
 	defer p.mutex.Unlock()
@@ -1115,7 +1115,7 @@ func (p *DataPoster) updateNonce(ctx context.Context) error {
 
 // Updates dataposter balance to balance at pending block.
 func (p *DataPoster) updateBalance(ctx context.Context) error {
-	// Use the pending (representated as -1) balance because we're looking at batches we'd post,
+	// Use the pending (represented as -1) balance because we're looking at batches we'd post,
 	// so we want to see how much gas we could afford with our pending state.
 	balance, err := p.client.BalanceAt(ctx, p.Sender(), big.NewInt(-1))
 	if err != nil {
@@ -1213,7 +1213,6 @@ func (p *DataPoster) Start(ctxIn context.Context) {
 			} else {
 				log.Error("Failed to fetch latest confirmed tx from queue", "confirmedNonce", confirmedNonce, "err", err, "confirmedMeta", confirmedMeta)
 			}
-
 		}
 
 		for _, tx := range queueContents {
@@ -1226,9 +1225,14 @@ func (p *DataPoster) Start(ctxIn context.Context) {
 				err := p.sendTx(ctx, tx, tx)
 				p.maybeLogError(err, tx, "failed to re-send transaction")
 			}
-			tx, err = p.queue.Get(ctx, tx.FullTx.Nonce())
+			nonce := tx.FullTx.Nonce()
+			tx, err = p.queue.Get(ctx, nonce)
 			if err != nil {
-				log.Error("Failed to fetch tx from queue to check updated status", "nonce", tx.FullTx.Nonce(), "err", err)
+				log.Error("Failed to fetch tx from queue to check updated status", "nonce", nonce, "err", err)
+				return minWait
+			}
+			if tx == nil {
+				log.Error("Failed to fetch tx from queue to check updated status, got tx == nil", "nonce", nonce)
 				return minWait
 			}
 			if nextCheck.After(tx.NextReplacement) {

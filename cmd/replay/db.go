@@ -78,6 +78,14 @@ func (db PreimageDb) Close() error {
 func (db PreimageDb) Release() {
 }
 
+func (db PreimageDb) SyncAncient() error {
+	return nil // no-op
+}
+
+func (db PreimageDb) SyncKeyValue() error {
+	return nil // no-op
+}
+
 type NopBatcher struct {
 	ethdb.KeyValueStore
 }

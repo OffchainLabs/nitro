@@ -7,7 +7,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/log"
 
-	testflag "github.com/offchainlabs/nitro/util/testhelpers/flag"
+	"github.com/offchainlabs/nitro/util/testhelpers/flag"
 )
 
 // There are two CI steps, one to run tests using the path state scheme, and one to run tests using the hash state scheme.

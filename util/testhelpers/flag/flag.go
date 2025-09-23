@@ -24,7 +24,7 @@ var (
 
 // This is a workaround for the fact that we can only pass flags to the package in which they are defined.
 // So to avoid doing that we pass the flags after adding a delimiter "--" to the command line.
-// We then parse the argument only after the delimiter to the flagset.
+// We then parse the arguments only after the delimiter to the flagset.
 func init() {
 	var args []string
 	foundDelimiter := false

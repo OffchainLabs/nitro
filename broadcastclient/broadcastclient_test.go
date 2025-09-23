@@ -23,7 +23,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcaster"
-	m "github.com/offchainlabs/nitro/broadcaster/message"
+	"github.com/offchainlabs/nitro/broadcaster/message"
 	"github.com/offchainlabs/nitro/util/contracts"
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/util/testhelpers"
@@ -173,20 +173,20 @@ func TestInvalidSignature(t *testing.T) {
 }
 
 type dummyTransactionStreamer struct {
-	messageReceiver chan m.BroadcastFeedMessage
+	messageReceiver chan message.BroadcastFeedMessage
 	chainId         uint64
 	sequencerAddr   *common.Address
 }
 
 func NewDummyTransactionStreamer(chainId uint64, sequencerAddr *common.Address) *dummyTransactionStreamer {
 	return &dummyTransactionStreamer{
-		messageReceiver: make(chan m.BroadcastFeedMessage),
+		messageReceiver: make(chan message.BroadcastFeedMessage),
 		chainId:         chainId,
 		sequencerAddr:   sequencerAddr,
 	}
 }
 
-func (ts *dummyTransactionStreamer) AddBroadcastMessages(feedMessages []*m.BroadcastFeedMessage) error {
+func (ts *dummyTransactionStreamer) AddBroadcastMessages(feedMessages []*message.BroadcastFeedMessage) error {
 	for _, feedMessage := range feedMessages {
 		ts.messageReceiver <- *feedMessage
 	}
@@ -264,7 +264,7 @@ func startMakeBroadcastClient(ctx context.Context, t *testing.T, clientConfig Co
 			}
 			timer.Stop()
 			if (!gotMsg && expectedCount > 0) || (gotMsg && expectedCount == 0) {
-				t.Errorf("Client %d expected %d meesages, got %d messages\n", index, expectedCount, messageCount)
+				t.Errorf("Client %d expected %d messages, got %d messages\n", index, expectedCount, messageCount)
 				return
 			}
 

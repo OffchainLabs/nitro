@@ -199,7 +199,7 @@ func (s *S3StorageService) uploadBatches(ctx context.Context) time.Duration {
 			log.Error("error deleting s3-persisted bids from sql db", "round", deletRound, "err", err)
 			s.lastFailedDeleteRound = deletRound
 		} else {
-			// Previously failed deletes dont matter anymore as the recent one (larger round number) succeeded
+			// Previously failed deletes don't matter anymore as the recent one (larger round number) succeeded
 			s.lastFailedDeleteRound = 0
 		}
 		return nil

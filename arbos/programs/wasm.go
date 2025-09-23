@@ -144,7 +144,7 @@ func callProgram(
 	moduleHash common.Hash,
 	_localAsm []byte,
 	scope *vm.ScopeContext,
-	interpreter *vm.EVMInterpreter,
+	evm *vm.EVM,
 	tracingInfo *util.TracingInfo,
 	calldata []byte,
 	evmData *EvmData,
@@ -152,7 +152,7 @@ func callProgram(
 	memoryModel *MemoryModel,
 	runCtx *core.MessageRunContext,
 ) ([]byte, error) {
-	reqHandler := newApiClosures(interpreter, tracingInfo, scope, memoryModel)
+	reqHandler := newApiClosures(evm, tracingInfo, scope, memoryModel)
 	gasLeft, retData, err := CallProgramLoop(moduleHash, calldata, scope.Contract.Gas, evmData, params, reqHandler)
 	scope.Contract.Gas = gasLeft
 	return retData, err

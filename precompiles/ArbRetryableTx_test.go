@@ -13,7 +13,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/storage"
-	templates "github.com/offchainlabs/nitro/solgen/go/precompilesgen"
+	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 )
 
 func newMockEVMForTestingWithCurrentRefundTo(currentRefundTo *common.Address) *vm.EVM {
@@ -63,7 +63,7 @@ func TestRetryableRedeem(t *testing.T) {
 	)
 	Require(t, err)
 
-	retryABI, err := templates.ArbRetryableTxMetaData.GetAbi()
+	retryABI, err := precompilesgen.ArbRetryableTxMetaData.GetAbi()
 	Require(t, err)
 	redeemCalldata, err := retryABI.Pack("redeem", id)
 	Require(t, err)

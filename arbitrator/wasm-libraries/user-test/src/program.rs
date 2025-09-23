@@ -196,7 +196,12 @@ impl EvmApi<VecReader> for MockEvmApi {
         unimplemented!()
     }
 
-    fn account_code(&mut self, _arbos_version: u64, _address: Bytes20, _gas_left: Gas) -> (VecReader, Gas) {
+    fn account_code(
+        &mut self,
+        _arbos_version: u64,
+        _address: Bytes20,
+        _gas_left: Gas,
+    ) -> (VecReader, Gas) {
         unimplemented!()
     }
 
