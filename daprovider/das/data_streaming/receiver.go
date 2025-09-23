@@ -86,7 +86,6 @@ type partialMessage struct {
 	seenChunks        int
 	expectedChunkSize uint64
 	expectedTotalSize uint64
-	timeout           uint64
 	startTime         time.Time
 }
 

@@ -4,7 +4,9 @@
 package das
 
 import (
+	"bytes"
 	"context"
+	"encoding/gob"
 	"fmt"
 	"strings"
 	"time"
@@ -94,7 +96,13 @@ func (c *DASRPCClient) Store(ctx context.Context, message []byte, timeout uint64
 		return c.legacyStore(ctx, message, timeout)
 	}
 
-	storeResult, err := c.dataStreamer.StreamData(ctx, message, timeout)
+	var encodedRequest bytes.Buffer
+	err := gob.NewEncoder(&encodedRequest).Encode(StoreRequest{message, timeout})
+	if err != nil {
+		return nil, err
+	}
+
+	storeResult, err := c.dataStreamer.StreamData(ctx, encodedRequest.Bytes())
 	if err != nil {
 		if strings.Contains(err.Error(), "the method das_startChunkedStore does not exist") {
 			log.Info("Legacy store is used by the DAS client", "url", c.url)

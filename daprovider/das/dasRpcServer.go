@@ -4,7 +4,9 @@
 package das
 
 import (
+	"bytes"
 	"context"
+	"encoding/gob"
 	"errors"
 	"fmt"
 	"net"
@@ -158,7 +160,13 @@ var (
 	legacyDASStoreAPIOnly = false
 )
 
-func (s *DASRPCServer) StartChunkedStore(ctx context.Context, timestamp, nChunks, chunkSize, totalSize, timeout hexutil.Uint64, sig hexutil.Bytes) (*data_streaming.StartStreamingResult, error) {
+// lint:require-exhaustive-initialization
+type StoreRequest struct {
+	message []byte
+	timeout uint64
+}
+
+func (s *DASRPCServer) StartChunkedStore(ctx context.Context, timestamp, nChunks, chunkSize, totalSize hexutil.Uint64, sig hexutil.Bytes) (*data_streaming.StartStreamingResult, error) {
 	rpcStoreRequestGauge.Inc(1)
 	failed := true
 	defer func() {
@@ -167,7 +175,7 @@ func (s *DASRPCServer) StartChunkedStore(ctx context.Context, timestamp, nChunks
 		}
 	}()
 
-	result, err := s.dataStreamReceiver.StartReceiving(ctx, uint64(timestamp), uint64(nChunks), uint64(chunkSize), uint64(totalSize), uint64(timeout), sig)
+	result, err := s.dataStreamReceiver.StartReceiving(ctx, uint64(timestamp), uint64(nChunks), uint64(chunkSize), uint64(totalSize), sig)
 	if err != nil {
 		return nil, err
 	}
@@ -195,12 +203,18 @@ func (s *DASRPCServer) SendChunk(ctx context.Context, messageId, chunkId hexutil
 }
 
 func (s *DASRPCServer) CommitChunkedStore(ctx context.Context, messageId hexutil.Uint64, sig hexutil.Bytes) (*StoreResult, error) {
-	message, timeout, startTime, err := s.dataStreamReceiver.FinalizeReceiving(ctx, data_streaming.MessageId(messageId), sig)
+	encodedRequest, startTime, err := s.dataStreamReceiver.FinalizeReceiving(ctx, data_streaming.MessageId(messageId), sig)
 	if err != nil {
 		return nil, err
 	}
 
-	cert, err := s.daWriter.Store(ctx, message, timeout)
+	var request StoreRequest
+	err = gob.NewDecoder(bytes.NewBuffer(encodedRequest)).Decode(&request)
+	if err != nil {
+		return nil, err
+	}
+
+	cert, err := s.daWriter.Store(ctx, request.message, request.timeout)
 	success := false
 	defer func() {
 		if success {
@@ -213,7 +227,7 @@ func (s *DASRPCServer) CommitChunkedStore(ctx context.Context, messageId hexutil
 	if err != nil {
 		return nil, err
 	}
-	rpcStoreStoredBytesGauge.Inc(int64(len(message)))
+	rpcStoreStoredBytesGauge.Inc(int64(len(encodedRequest)))
 	success = true
 	return &StoreResult{
 		KeysetHash:  cert.KeysetHash[:],
