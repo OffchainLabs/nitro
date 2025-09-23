@@ -42,3 +42,15 @@ func TestHTTPConfigApply(t *testing.T) {
 		t.Error("ReadTimeout not applied")
 	}
 }
+
+func TestReadHeaderTimeoutNotApplied(t *testing.T) {
+	config := HTTPConfigDefault
+	stackConf := &node.Config{}
+	
+	config.Apply(stackConf)
+	
+	// ReadHeaderTimeout is not being applied due to TODO
+	if stackConf.HTTPTimeouts.ReadHeaderTimeout == config.ServerTimeouts.ReadHeaderTimeout {
+		t.Error("ReadHeaderTimeout should not be applied yet")
+	}
+}
