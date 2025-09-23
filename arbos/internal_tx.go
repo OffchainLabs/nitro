@@ -134,11 +134,11 @@ func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.Arbos
 				Length:   batchCalldataLength,
 				NonZeros: batchCalldataNonZeros,
 			})
-			gasSpent = arbmath.SaturatingUAdd(gasSpent, batchExtraGas)
 			if batchLegacyGas != ^uint64(0) && batchLegacyGas != gasSpent {
 				log.Error("legacy gas doesn't fit local compute", "local", gasSpent, "legacy", batchLegacyGas, "timestamp", batchTimestamp)
 			}
 		}
+		gasSpent = arbmath.SaturatingUAdd(gasSpent, batchExtraGas)
 
 		l1p := state.L1PricingState()
 

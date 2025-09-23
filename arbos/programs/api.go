@@ -8,6 +8,7 @@ import (
 
 	"github.com/holiman/uint256"
 
+	"github.com/ethereum/go-ethereum/arbitrum/multigas"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
@@ -199,24 +200,31 @@ func newApiClosures(
 			return zeroAddr, nil, gas, vm.ErrOutOfGas
 		}
 		gas -= baseCost
+		// Charge for contract creation as computation gas
+		scope.Contract.UsedMultiGas.SaturatingAddInto(multigas.ComputationGas(baseCost))
 
 		// apply the 63/64ths rule
 		one64th := gas / 64
 		gas -= one64th
 
-		var res []byte
-		var addr common.Address // zero on failure
-		var returnGas uint64
-		var suberr error
+		var (
+			res            []byte
+			addr           common.Address // zero on failure
+			returnGas      uint64
+			returnMultiGas multigas.MultiGas
+			suberr         error
+		)
 
 		if opcode == vm.CREATE {
-			res, addr, returnGas, _, suberr = evm.Create(contract.Address(), code, gas, endowment)
+			res, addr, returnGas, returnMultiGas, suberr = evm.Create(contract.Address(), code, gas, endowment)
 		} else {
-			res, addr, returnGas, _, suberr = evm.Create2(contract.Address(), code, gas, endowment, salt)
+			res, addr, returnGas, returnMultiGas, suberr = evm.Create2(contract.Address(), code, gas, endowment, salt)
 		}
 		if suberr != nil {
 			addr = zeroAddr
 		}
+		scope.Contract.UsedMultiGas.SaturatingAddInto(returnMultiGas)
+
 		// This matches geth behavior of doing an exact error comparison instead of errors.Is
 		// See e.g. EVM's create method or the opCreate function for references of how geth checks this
 		//nolint:errorlint
@@ -231,6 +239,12 @@ func newApiClosures(
 		if readOnly {
 			return vm.ErrWriteProtection
 		}
+
+		numTopics := uint64(len(topics))
+		dataBytes := uint64(len(data))
+		mgCost := vm.WasmLogCost(numTopics, dataBytes)
+		scope.Contract.UsedMultiGas.SaturatingAddInto(mgCost)
+
 		event := &types.Log{
 			Address:     actingAddress,
 			Topics:      topics,
@@ -265,6 +279,7 @@ func newApiClosures(
 	}
 	addPages := func(pages uint16) uint64 {
 		open, ever := db.AddStylusPages(pages)
+		// addPages WASM computation cost is charged separately in attributeWasmComputation
 		return memoryModel.GasCost(pages, open, ever)
 	}
 	captureHostio := func(name string, args, outs []byte, startInk, endInk uint64) {
