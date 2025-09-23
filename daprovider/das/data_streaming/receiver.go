@@ -1,7 +1,7 @@
 // Copyright 2025, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-package das
+package data_streaming
 
 import (
 	"context"
@@ -24,44 +24,51 @@ import (
 // the interrupted streams.
 // lint:require-exhaustive-initialization
 type DataStreamReceiver struct {
-	signatureVerifier *SignatureVerifier
-	messageStore      *messageStore
+	payloadVerifier *PayloadVerifier
+	messageStore    *messageStore
 }
 
-// NewDataStreamReceiver sets up a new stream receiver. `signatureVerifier` must be compatible with message signing on
+// NewDataStreamReceiver sets up a new stream receiver. `payloadVerifier` must be compatible with message signing on
 // the `DataStreamer` sender side. `maxPendingMessages` limits how many parallel protocol instances are supported.
 // `messageCollectionExpiry` is the window in which a single message streaming must end - otherwise the protocol will
 // be closed and all related data will be removed.
-func NewDataStreamReceiver(signatureVerifier *SignatureVerifier, maxPendingMessages int, messageCollectionExpiry time.Duration) *DataStreamReceiver {
+func NewDataStreamReceiver(payloadVerifier *PayloadVerifier, maxPendingMessages int, messageCollectionExpiry time.Duration, expirationCallback func(id MessageId)) *DataStreamReceiver {
 	return &DataStreamReceiver{
-		signatureVerifier: signatureVerifier,
-		messageStore:      newMessageStore(maxPendingMessages, messageCollectionExpiry),
+		payloadVerifier: payloadVerifier,
+		messageStore:    newMessageStore(maxPendingMessages, messageCollectionExpiry, expirationCallback),
 	}
 }
 
-func (dsr *DataStreamReceiver) StartReceiving(ctx context.Context, timestamp, nChunks, chunkSize, totalSize, timeout uint64, sig []byte) (MessageId, error) {
-	if err := dsr.signatureVerifier.verify(ctx, []byte{}, sig, timestamp, nChunks, chunkSize, totalSize, timeout); err != nil {
-		return 0, err
+// StartStreamingResult is expected by DataStreamer to be returned by the endpoint responsible for the StartReceiving method.
+// lint:require-exhaustive-initialization
+type StartStreamingResult struct {
+	MessageId hexutil.Uint64 `json:"MessageId,omitempty"`
+}
+
+func (dsr *DataStreamReceiver) StartReceiving(ctx context.Context, timestamp, nChunks, chunkSize, totalSize, timeout uint64, signature []byte) (*StartStreamingResult, error) {
+	if err := dsr.payloadVerifier.verifyPayload(ctx, signature, []byte{}, timestamp, nChunks, chunkSize, totalSize, timeout); err != nil {
+		return &StartStreamingResult{0}, err
 	}
 
 	// Prevent replay of old messages
 	// #nosec G115
 	if time.Since(time.Unix(int64(timestamp), 0)).Abs() > time.Minute {
-		return 0, errors.New("too much time has elapsed since request was signed")
+		return &StartStreamingResult{0}, errors.New("too much time has elapsed since request was signed")
 	}
 
-	return dsr.messageStore.registerNewMessage(nChunks, timeout, chunkSize, totalSize)
+	messageId, err := dsr.messageStore.registerNewMessage(nChunks, timeout, chunkSize, totalSize)
+	return &StartStreamingResult{hexutil.Uint64(messageId)}, err
 }
 
-func (dsr *DataStreamReceiver) ReceiveChunk(ctx context.Context, messageId MessageId, chunkId uint64, chunk, sig []byte) error {
-	if err := dsr.signatureVerifier.verify(ctx, chunk, sig, uint64(messageId), chunkId); err != nil {
+func (dsr *DataStreamReceiver) ReceiveChunk(ctx context.Context, messageId MessageId, chunkId uint64, chunkData, signature []byte) error {
+	if err := dsr.payloadVerifier.verifyPayload(ctx, signature, chunkData, uint64(messageId), chunkId); err != nil {
 		return err
 	}
-	return dsr.messageStore.addNewChunk(messageId, chunkId, chunk)
+	return dsr.messageStore.addNewChunk(messageId, chunkId, chunkData)
 }
 
-func (dsr *DataStreamReceiver) FinalizeReceiving(ctx context.Context, messageId MessageId, sig hexutil.Bytes) ([]byte, uint64, time.Time, error) {
-	if err := dsr.signatureVerifier.verify(ctx, []byte{}, sig, uint64(messageId)); err != nil {
+func (dsr *DataStreamReceiver) FinalizeReceiving(ctx context.Context, messageId MessageId, signature hexutil.Bytes) ([]byte, uint64, time.Time, error) {
+	if err := dsr.payloadVerifier.verifyPayload(ctx, signature, []byte{}, uint64(messageId)); err != nil {
 		return nil, 0, time.Time{}, err
 	}
 	return dsr.messageStore.finalizeMessage(messageId)
@@ -89,14 +96,16 @@ type messageStore struct {
 	messages                map[MessageId]*partialMessage
 	maxPendingMessages      int
 	messageCollectionExpiry time.Duration
+	expirationCallback      func(MessageId)
 }
 
-func newMessageStore(maxPendingMessages int, messageCollectionExpiry time.Duration) *messageStore {
+func newMessageStore(maxPendingMessages int, messageCollectionExpiry time.Duration, expirationCallback func(id MessageId)) *messageStore {
 	return &messageStore{
 		mutex:                   sync.Mutex{},
 		messages:                make(map[MessageId]*partialMessage),
 		maxPendingMessages:      maxPendingMessages,
 		messageCollectionExpiry: messageCollectionExpiry,
+		expirationCallback:      expirationCallback,
 	}
 }
 
@@ -134,7 +143,9 @@ func (ms *messageStore) registerNewMessage(nChunks, timeout, chunkSize, totalSiz
 
 		// Message will only exist if expiry was reached without it being complete.
 		if _, stillExists := ms.messages[id]; stillExists {
-			rpcStoreFailureGauge.Inc(1)
+			if ms.expirationCallback != nil {
+				ms.expirationCallback(id)
+			}
 			delete(ms.messages, id)
 		}
 	}(id)
