@@ -1,6 +1,10 @@
 ---
 name: CodeQL
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 on:
   merge_group:
     branches: [master, main]
