@@ -79,4 +79,4 @@ jobs:
     # skipped. It does not depend on any other jobs, so it always runs.
     runs-on: ubuntu-4
     steps:
-      - run: 'true'
+      - run: true
