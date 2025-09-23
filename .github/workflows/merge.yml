@@ -58,17 +58,24 @@ jobs:
     secrets: inherit
 
   can_proceed:
-    name: can_proceed
     runs-on: ubuntu-4
     needs: [fast, arbitrator, bold-legacy, go-tests]
-    if: ${{ always()
-          && needs.fast.result == 'success'
-          && needs.go-tests.result == 'success'
-          && (needs.arbitrator.result == 'success' || needs.arbitrator.result == 'skipped')
-          && (needs.bold-legacy.result == 'success' || needs.bold-legacy.result == 'skipped') }}
+    if: always()
     steps:
-      - name: OK
-        run: echo "All required jobs succeeded or were skipped when appropriate."
+      - name: Aggregate results
+        run: |
+          ok=1
+          for r in fast go-tests arbitrator bold-legacy; do
+            result="${{ needs[r].result }}"
+            if [ "$result" != "success" ] && [ "$result" != "skipped" ]; then
+              echo "$r failed ($result)"
+              ok=0
+            fi
+          done
+          if [ $ok -eq 0 ]; then
+            echo "Some required jobs failed"
+            exit 1
+          fi
 
   can_see_status:
     # This job is just to make sure that the "can_proceed" job's status is visible
