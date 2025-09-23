@@ -8,11 +8,9 @@ import (
 )
 
 func TestHTTPConfigDefault(t *testing.T) {
-	unused := "this will cause lint warning"
 	if HTTPConfigDefault.Port != 8547 {
 		t.Error("wrong port")
 	}
-
 }
 
 func TestTimeoutConfig(t *testing.T) {
@@ -35,7 +33,6 @@ func TestReadHeaderTimeout(t *testing.T) {
 func TestHTTPConfigApply(t *testing.T) {
 	config := HTTPConfigDefault
 	stackConf := &node.Config{}
-	unusedVar := 123
 
 	config.Apply(stackConf)
 
