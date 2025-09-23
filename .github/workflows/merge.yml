@@ -1,6 +1,7 @@
 ---
-name: CI
+name: Merge CI
 run-name: Merge CI triggered from @${{ github.actor }} of ${{ github.head_ref }}
+
 on:
   merge_group:
 
@@ -58,17 +59,40 @@ jobs:
     secrets: inherit
 
   can_proceed:
-    name: can_proceed
     runs-on: ubuntu-4
     needs: [fast, arbitrator, bold-legacy, go-tests]
-    if: ${{ always()
-          && needs.fast.result == 'success'
-          && needs.go-tests.result == 'success'
-          && (needs.arbitrator.result == 'success' || needs.arbitrator.result == 'skipped')
-          && (needs.bold-legacy.result == 'success' || needs.bold-legacy.result == 'skipped') }}
+    if: always()
     steps:
-      - name: OK
-        run: echo "All required jobs succeeded or were skipped when appropriate."
+      - name: Aggregate results
+        run: |
+          fast_result="${{ needs.fast.result }}"
+          go_tests_result="${{ needs['go-tests'].result }}"
+          arbitrator_result="${{ needs.arbitrator.result }}"
+          bold_legacy_result="${{ needs['bold-legacy'].result }}"
+          ok=1
+          if [ "$fast_result" != "success" ]; then
+            ok=0
+            echo "Fast job failed or was skipped"
+          fi
+          if [ "$go_tests_result" != "success" ]; then
+            ok=0
+            echo "Go tests job failed or was skipped"
+          fi
+          if [ "$arbitrator_result" != "success" ] && [ "$arbitrator_result" != "skipped" ]; then
+            ok=0
+            echo "Arbitrator job failed"
+          fi
+          if [ "$bold_legacy_result" != "success" ] && [ "$bold_legacy_result" != "skipped" ]; then
+            ok=0
+            echo "Bold Legacy job failed"
+          fi
+          if [ $ok -eq 1 ]; then
+            echo "All required jobs passed or were skipped"
+            exit 0
+          else
+            echo "One or more required jobs failed"
+            exit 1
+          fi
 
   can_see_status:
     # This job is just to make sure that the "can_proceed" job's status is visible

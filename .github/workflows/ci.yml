@@ -2,11 +2,13 @@
 name: CI
 run-name: CI triggered from @${{ github.actor }} of ${{ github.head_ref }}
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 on:
   workflow_dispatch:
   pull_request:
-  push:
-    branches: [master, main]
 
 jobs:
   # --- Determine which files have changed ---
