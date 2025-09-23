@@ -14,7 +14,7 @@ permissions:
 
 jobs:
   build:
-    uses: NethermindEth/github-workflows/.github/workflows/docker-build-push-jfrog.yaml@v1.5.1
+    uses: NethermindEth/github-workflows/.github/workflows/docker-build-push-jfrog.yaml@v1.9.0
     with:
       group_name: core
       runner: ubuntu-24.04-arm
