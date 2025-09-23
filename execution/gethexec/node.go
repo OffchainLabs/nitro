@@ -10,7 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	flag "github.com/spf13/pflag"
+	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/common"
@@ -27,7 +27,6 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
-	"github.com/offchainlabs/nitro/arbos/multigascollector"
 	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/execution"
@@ -82,7 +81,7 @@ var DefaultStylusTargetConfig = StylusTargetConfig{
 	ExtraArchs: []string{string(rawdb.TargetWavm)},
 }
 
-func StylusTargetConfigAddOptions(prefix string, f *flag.FlagSet) {
+func StylusTargetConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".arm64", DefaultStylusTargetConfig.Arm64, "stylus programs compilation target for arm64 linux")
 	f.String(prefix+".amd64", DefaultStylusTargetConfig.Amd64, "stylus programs compilation target for amd64 linux")
 	f.String(prefix+".host", DefaultStylusTargetConfig.Host, "stylus programs compilation target for system other than 64-bit ARM or 64-bit x86")
@@ -103,40 +102,31 @@ var DefaultTxIndexerConfig = TxIndexerConfig{
 	MinBatchDelay: time.Second,
 }
 
-func TxIndexerConfigAddOptions(prefix string, f *flag.FlagSet) {
+func TxIndexerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultTxIndexerConfig.Enable, "enables transaction indexer")
 	f.Uint64(prefix+".tx-lookup-limit", DefaultTxIndexerConfig.TxLookupLimit, "retain the ability to lookup transactions by hash for the past N blocks (0 = all blocks)")
 	f.Int(prefix+".threads", DefaultTxIndexerConfig.Threads, "number of threads used to RLP decode blocks during indexing/unindexing of historical transactions")
 	f.Duration(prefix+".min-batch-delay", DefaultTxIndexerConfig.MinBatchDelay, "minimum delay between transaction indexing/unindexing batches; the bigger the delay, the more blocks can be included in each batch")
 }
 
-func MultigasCollectionAddOptions(prefix string, f *flag.FlagSet) {
-	f.String(prefix+".output-dir", multigascollector.DefaultCollectorConfig.OutputDir,
-		"If set, enables Multigas collector and stores batches in this directory")
-	f.Int(prefix+".batch-size", multigascollector.DefaultCollectorConfig.BatchSize,
-		"Batch size (blocks per file) for Multigas collector. Ignored unless output-dir is set")
-	f.Bool(prefix+".clear-output-dir", multigascollector.DefaultCollectorConfig.ClearOutputDir,
-		"Whether to clear the output directory before starting the collector")
-}
-
 type Config struct {
-	ParentChainReader           headerreader.Config               `koanf:"parent-chain-reader" reload:"hot"`
-	Sequencer                   SequencerConfig                   `koanf:"sequencer" reload:"hot"`
-	RecordingDatabase           BlockRecorderConfig               `koanf:"recording-database"`
-	TxPreChecker                TxPreCheckerConfig                `koanf:"tx-pre-checker" reload:"hot"`
-	Forwarder                   ForwarderConfig                   `koanf:"forwarder"`
-	ForwardingTarget            string                            `koanf:"forwarding-target"`
-	SecondaryForwardingTarget   []string                          `koanf:"secondary-forwarding-target"`
-	Caching                     CachingConfig                     `koanf:"caching"`
-	RPC                         arbitrum.Config                   `koanf:"rpc"`
-	TxIndexer                   TxIndexerConfig                   `koanf:"tx-indexer"`
-	EnablePrefetchBlock         bool                              `koanf:"enable-prefetch-block"`
-	MultigasCollector           multigascollector.CollectorConfig `koanf:"multigas-collector"`
-	SyncMonitor                 SyncMonitorConfig                 `koanf:"sync-monitor"`
-	StylusTarget                StylusTargetConfig                `koanf:"stylus-target"`
-	BlockMetadataApiCacheSize   uint64                            `koanf:"block-metadata-api-cache-size"`
-	BlockMetadataApiBlocksLimit uint64                            `koanf:"block-metadata-api-blocks-limit"`
-	VmTrace                     LiveTracingConfig                 `koanf:"vmtrace"`
+	ParentChainReader           headerreader.Config `koanf:"parent-chain-reader" reload:"hot"`
+	Sequencer                   SequencerConfig     `koanf:"sequencer" reload:"hot"`
+	RecordingDatabase           BlockRecorderConfig `koanf:"recording-database"`
+	TxPreChecker                TxPreCheckerConfig  `koanf:"tx-pre-checker" reload:"hot"`
+	Forwarder                   ForwarderConfig     `koanf:"forwarder"`
+	ForwardingTarget            string              `koanf:"forwarding-target"`
+	SecondaryForwardingTarget   []string            `koanf:"secondary-forwarding-target"`
+	Caching                     CachingConfig       `koanf:"caching"`
+	RPC                         arbitrum.Config     `koanf:"rpc"`
+	TxIndexer                   TxIndexerConfig     `koanf:"tx-indexer"`
+	EnablePrefetchBlock         bool                `koanf:"enable-prefetch-block"`
+	SyncMonitor                 SyncMonitorConfig   `koanf:"sync-monitor"`
+	StylusTarget                StylusTargetConfig  `koanf:"stylus-target"`
+	BlockMetadataApiCacheSize   uint64              `koanf:"block-metadata-api-cache-size"`
+	BlockMetadataApiBlocksLimit uint64              `koanf:"block-metadata-api-blocks-limit"`
+	VmTrace                     LiveTracingConfig   `koanf:"vmtrace"`
+	ExposeMultiGas              bool                `koanf:"expose-multi-gas"`
 
 	forwardingTarget string
 }
@@ -159,9 +149,6 @@ func (c *Config) Validate() error {
 	if c.forwardingTarget != "" && c.Sequencer.Enable {
 		return errors.New("ForwardingTarget set and sequencer enabled")
 	}
-	if c.MultigasCollector.OutputDir != "" && c.MultigasCollector.BatchSize <= 0 {
-		return errors.New("MultigasCollector batch size must be greater than 0")
-	}
 	if err := c.StylusTarget.Validate(); err != nil {
 		return err
 	}
@@ -171,7 +158,7 @@ func (c *Config) Validate() error {
 	return nil
 }
 
-func ConfigAddOptions(prefix string, f *flag.FlagSet) {
+func ConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	arbitrum.ConfigAddOptions(prefix+".rpc", f)
 	TxIndexerConfigAddOptions(prefix+".tx-indexer", f)
 	SequencerConfigAddOptions(prefix+".sequencer", f)
@@ -182,12 +169,12 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet) {
 	AddOptionsForNodeForwarderConfig(prefix+".forwarder", f)
 	TxPreCheckerConfigAddOptions(prefix+".tx-pre-checker", f)
 	CachingConfigAddOptions(prefix+".caching", f)
-	MultigasCollectionAddOptions(prefix+".multigas-collector", f)
 	SyncMonitorConfigAddOptions(prefix+".sync-monitor", f)
 	f.Bool(prefix+".enable-prefetch-block", ConfigDefault.EnablePrefetchBlock, "enable prefetching of blocks")
 	StylusTargetConfigAddOptions(prefix+".stylus-target", f)
 	f.Uint64(prefix+".block-metadata-api-cache-size", ConfigDefault.BlockMetadataApiCacheSize, "size (in bytes) of lru cache storing the blockMetadata to service arb_getRawBlockMetadata")
 	f.Uint64(prefix+".block-metadata-api-blocks-limit", ConfigDefault.BlockMetadataApiBlocksLimit, "maximum number of blocks allowed to be queried for blockMetadata per arb_getRawBlockMetadata query. Enabled by default, set 0 to disable the limit")
+	f.Bool(prefix+".expose-multi-gas", false, "experimental: expose multi-dimensional gas in transaction receipts")
 	LiveTracingConfigAddOptions(prefix+".vmtrace", f)
 }
 
@@ -201,7 +188,7 @@ var DefaultLiveTracingConfig = LiveTracingConfig{
 	JSONConfig: "{}",
 }
 
-func LiveTracingConfigAddOptions(prefix string, f *flag.FlagSet) {
+func LiveTracingConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".tracer-name", DefaultLiveTracingConfig.TracerName, "(experimental) Name of tracer which should record internal VM operations (costly)")
 	f.String(prefix+".json-config", DefaultLiveTracingConfig.JSONConfig, "(experimental) Tracer configuration in JSON format")
 }
@@ -216,7 +203,6 @@ var ConfigDefault = Config{
 	SecondaryForwardingTarget: []string{},
 	TxPreChecker:              DefaultTxPreCheckerConfig,
 	Caching:                   DefaultCachingConfig,
-	MultigasCollector:         multigascollector.DefaultCollectorConfig,
 	Forwarder:                 DefaultNodeForwarderConfig,
 	SyncMonitor:               DefaultSyncMonitorConfig,
 
@@ -225,6 +211,7 @@ var ConfigDefault = Config{
 	BlockMetadataApiCacheSize:   100 * 1024 * 1024,
 	BlockMetadataApiBlocksLimit: 100,
 	VmTrace:                     DefaultLiveTracingConfig,
+	ExposeMultiGas:              false,
 }
 
 type ConfigFetcher func() *Config
@@ -259,14 +246,9 @@ func CreateExecutionNode(
 	syncTillBlock uint64,
 ) (*ExecutionNode, error) {
 	config := configFetcher()
-	execEngine, err := NewExecutionEngine(l2BlockChain, syncTillBlock)
+	execEngine, err := NewExecutionEngine(l2BlockChain, syncTillBlock, config.ExposeMultiGas)
 	if config.EnablePrefetchBlock {
 		execEngine.EnablePrefetchBlock()
-	}
-	if mgtConfig := config.MultigasCollector; mgtConfig.OutputDir != "" {
-		if err := execEngine.EnableMultigasCollector(mgtConfig); err != nil {
-			return nil, fmt.Errorf("enable multigas collector: %w", err)
-		}
 	}
 	if config.Caching.DisableStylusCacheMetricsCollection {
 		execEngine.DisableStylusCacheMetricsCollection()

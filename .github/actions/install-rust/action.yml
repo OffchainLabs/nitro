@@ -1,3 +1,4 @@
+---
 name: 'Install stable Rust'
 description: 'Installs stable Rust toolchain with appropriate targets and components.'
 
@@ -5,7 +6,7 @@ inputs:
   toolchain:
     required: true
     description: 'Toolchain to install'
-    default: '1.84.1'
+    default: '1.88.0'
   targets:
     required: true
     description: 'Compilation targets to install'
@@ -22,6 +23,7 @@ outputs:
 
 runs:
   using: composite
+
   steps:
     - name: Install Rust stable
       id: install-rust

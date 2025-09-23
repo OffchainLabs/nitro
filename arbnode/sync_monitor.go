@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	flag "github.com/spf13/pflag"
+	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/log"
 
@@ -44,7 +44,7 @@ var TestSyncMonitorConfig = SyncMonitorConfig{
 	MsgLag: time.Millisecond * 10,
 }
 
-func SyncMonitorConfigAddOptions(prefix string, f *flag.FlagSet) {
+func SyncMonitorConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Duration(prefix+".msg-lag", DefaultSyncMonitorConfig.MsgLag, "allowed msg lag while still considered in sync")
 }
 

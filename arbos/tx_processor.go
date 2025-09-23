@@ -432,7 +432,7 @@ func GetPosterGas(state *arbosState.ArbosState, baseFee *big.Int, runCtx *core.M
 	return arbmath.BigToUintSaturating(arbmath.BigDiv(posterCost, baseFee))
 }
 
-func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) (common.Address, error) {
+func (p *TxProcessor) GasChargingHook(gasRemaining *uint64, intrinsicGas uint64) (common.Address, multigas.MultiGas, error) {
 	// Because a user pays a 1-dimensional gas price, we must re-express poster L1 calldata costs
 	// as if the user was buying an equivalent amount of L2 compute gas. This hook determines what
 	// that cost looks like, ensuring the user can pay and saving the result for later reference.
@@ -462,7 +462,7 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) (common.Address, err
 
 		brotliCompressionLevel, err := p.state.BrotliCompressionLevel()
 		if err != nil {
-			return common.Address{}, fmt.Errorf("failed to get brotli compression level: %w", err)
+			return common.Address{}, multigas.ZeroGas(), fmt.Errorf("failed to get brotli compression level: %w", err)
 		}
 		posterCost, calldataUnits := p.state.L1PricingState().PosterDataCost(p.msg, poster, brotliCompressionLevel)
 		if calldataUnits > 0 {
@@ -475,20 +475,36 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) (common.Address, err
 
 	if *gasRemaining < gasNeededToStartEVM {
 		// the user couldn't pay for call data, so give up
-		return tipReceipient, core.ErrIntrinsicGas
+		return tipReceipient, multigas.ZeroGas(), core.ErrIntrinsicGas
 	}
 	*gasRemaining -= gasNeededToStartEVM
+	multiGas := multigas.L1CalldataGas(gasNeededToStartEVM)
 
 	if !p.msg.TxRunContext.IsEthcall() {
-		// If this is a real tx, limit the amount of computed based on the gas pool.
-		// We do this by charging extra gas, and then refunding it later.
-		gasAvailable, _ := p.state.L2PricingState().PerBlockGasLimit()
-		if *gasRemaining > gasAvailable {
-			p.computeHoldGas = *gasRemaining - gasAvailable
-			*gasRemaining = gasAvailable
+		var max uint64
+		var err error
+		if p.state.ArbOSVersion() < params.ArbosVersion_50 {
+			// Before ArbOS 50, cap transaction gas to the block gas limit.
+			max, err = p.state.L2PricingState().PerBlockGasLimit()
+			if err != nil {
+				return tipReceipient, multigas.ZeroGas(), err
+			}
+		} else {
+			// ArbOS 50 implements a EIP-7825-like per-transaction limit.
+			max, err = p.state.L2PricingState().PerTxGasLimit()
+			if err != nil {
+				return tipReceipient, multigas.ZeroGas(), err
+			}
+			// Reduce the max by intrinsicGas because it was already charged
+			max -= intrinsicGas
+		}
+		if *gasRemaining > max {
+			p.computeHoldGas = *gasRemaining - max
+			*gasRemaining = max
 		}
 	}
-	return tipReceipient, nil
+
+	return tipReceipient, multiGas, nil
 }
 
 func (p *TxProcessor) RunContext() *core.MessageRunContext {

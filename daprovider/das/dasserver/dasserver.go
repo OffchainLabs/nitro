@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	flag "github.com/spf13/pflag"
+	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -54,7 +54,7 @@ var DefaultServerConfig = ServerConfig{
 	RPCServerBodyLimit: genericconf.HTTPServerBodyLimitDefault,
 }
 
-func ServerConfigAddOptions(prefix string, f *flag.FlagSet) {
+func ServerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".addr", DefaultServerConfig.Addr, "JSON rpc server listening interface")
 	f.Uint64(prefix+".port", DefaultServerConfig.Port, "JSON rpc server listening port")
 	f.String(prefix+".jwtsecret", DefaultServerConfig.JWTSecret, "path to file with jwtsecret for validation")
@@ -79,8 +79,8 @@ func fetchJWTSecret(fileName string) ([]byte, error) {
 
 func NewServer(ctx context.Context, config *ServerConfig, dataSigner signature.DataSignerFunc, l1Client *ethclient.Client, l1Reader *headerreader.HeaderReader, sequencerInboxAddr common.Address) (*http.Server, func(), error) {
 	var err error
-	var daWriter das.DataAvailabilityServiceWriter
-	var daReader das.DataAvailabilityServiceReader
+	var daWriter dasutil.DASWriter
+	var daReader dasutil.DASReader
 	var dasKeysetFetcher *das.KeysetFetcher
 	var dasLifecycleManager *das.LifecycleManager
 	if config.EnableDAWriter {
@@ -141,7 +141,7 @@ func NewServer(ctx context.Context, config *ServerConfig, dataSigner signature.D
 	}
 
 	srv := &http.Server{
-		Addr:              "http://" + addr.String(),
+		Addr:              addr.String(),
 		Handler:           handler,
 		ReadTimeout:       config.ServerTimeouts.ReadTimeout,
 		ReadHeaderTimeout: config.ServerTimeouts.ReadHeaderTimeout,
@@ -157,7 +157,9 @@ func NewServer(ctx context.Context, config *ServerConfig, dataSigner signature.D
 
 	go func() {
 		<-ctx.Done()
-		_ = srv.Shutdown(context.Background())
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		_ = srv.Shutdown(shutdownCtx)
 	}()
 
 	return srv, func() {

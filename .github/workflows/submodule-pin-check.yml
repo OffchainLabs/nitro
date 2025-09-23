@@ -1,4 +1,5 @@
-name: Merge Checks
+---
+name: Check Submodule Pins
 
 on:
   merge_group:
@@ -8,7 +9,7 @@ on:
   # For this reason, the pins below must be updated and merged in a separate PR
   # before the PR that changes the actual submodule pins.
   pull_request_target:
-    branches: [ master ]
+    branches: [master, main]
     types: [synchronize, opened, reopened]
 
 permissions:
@@ -17,13 +18,13 @@ permissions:
 jobs:
   submodule-pin-check:
     name: Check Submodule Pin
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-4
     steps:
       - name: Checkout
         uses: actions/checkout@v5
         with:
           fetch-depth: 0
-          submodules: true
+          submodules: recursive
           persist-credentials: false
           ref: "${{ github.event.pull_request.head.sha }}"
 
@@ -41,6 +42,8 @@ jobs:
             [contracts-local/lib/openzeppelin-contracts]=origin/release-v4.7
           )
           divergent=0
+          # The commit SHA of the PR or the current commit if a merge_group event
+          commit_sha="${{ github.event.pull_request.head.sha || github.sha }}"
           for mod in `git submodule --quiet foreach 'echo $name'`; do
             branch=origin/HEAD
             if [[ -v exceptions[$mod] ]]; then
@@ -52,6 +55,7 @@ jobs:
               divergent=1
             fi
           done
+          repo_url="${{ github.api_url }}/repos/$GITHUB_REPOSITORY"
           if [ $divergent -eq 0 ]; then
             status_state="success"
           else
@@ -59,7 +63,7 @@ jobs:
               -H "Accept: application/vnd.github+json" \
               -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
               -H "X-GitHub-Api-Version: 2022-11-28" \
-              "https://api.github.com/repos/$GITHUB_REPOSITORY/commits/${{ github.event.pull_request.head.sha }}/statuses")"
+              "${repo_url}/commits/$commit_sha/statuses")"
 
             if ! jq -e '.[] | select(.context == "Submodule Pin Check")' > /dev/null <<< "$resp"; then
               # Submodule pin check is failling and no status exists
@@ -74,5 +78,5 @@ jobs:
             -H "Accept: application/vnd.github+json" \
             -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
             -H "X-GitHub-Api-Version: 2022-11-28" \
-            "https://api.github.com/repos/$GITHUB_REPOSITORY/statuses/${{ github.event.pull_request.head.sha }}" \
+            "${repo_url}/statuses/$commit_sha" \
             -d '{"context":"Submodule Pin Check","state":"'"$status_state"'"}'

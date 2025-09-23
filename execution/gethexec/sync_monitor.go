@@ -8,7 +8,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	flag "github.com/spf13/pflag"
+	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -95,7 +95,7 @@ var DefaultSyncMonitorConfig = SyncMonitorConfig{
 	MsgLag:                              time.Second,
 }
 
-func SyncMonitorConfigAddOptions(prefix string, f *flag.FlagSet) {
+func SyncMonitorConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".safe-block-wait-for-block-validator", DefaultSyncMonitorConfig.SafeBlockWaitForBlockValidator, "wait for block validator to complete before returning safe block number")
 	f.Bool(prefix+".finalized-block-wait-for-block-validator", DefaultSyncMonitorConfig.FinalizedBlockWaitForBlockValidator, "wait for block validator to complete before returning finalized block number")
 	f.Duration(prefix+".msg-lag", DefaultSyncMonitorConfig.MsgLag, "allowed message lag while still considered in sync")

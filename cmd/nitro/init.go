@@ -25,6 +25,7 @@ import (
 	"github.com/cavaliergopher/grab/v3"
 	"github.com/codeclysm/extract/v3"
 
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
@@ -39,15 +40,19 @@ import (
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
+	"github.com/offchainlabs/nitro/bold/chain-abstraction"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/cmd/pruning"
 	"github.com/offchainlabs/nitro/cmd/staterecovery"
 	"github.com/offchainlabs/nitro/execution/gethexec"
+	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
+	"github.com/offchainlabs/nitro/staker/bold"
 	"github.com/offchainlabs/nitro/statetransfer"
 	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/dbutil"
+	"github.com/offchainlabs/nitro/util/headerreader"
 )
 
 var notFoundError = errors.New("file not found")
@@ -806,6 +811,14 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 		}
 		testUpdateTxIndex(chainDb, chainConfig, &txIndexWg)
 	} else {
+		var initDataReaderHasAccounts bool
+		if config.Init.ValidateGenesisAssertion {
+			accountsReader, err := initDataReader.GetAccountDataReader()
+			if err != nil {
+				return chainDb, nil, err
+			}
+			initDataReaderHasAccounts = accountsReader.More()
+		}
 		genesisBlockNr, err := initDataReader.GetNextBlockNumber()
 		if err != nil {
 			return chainDb, nil, err
@@ -895,6 +908,14 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 		if err != nil {
 			return chainDb, nil, err
 		}
+		if config.Init.ValidateGenesisAssertion {
+			if err := validateGenesisAssertion(ctx, rollupAddrs.Rollup, l1Client, l2BlockChain.Genesis().Hash(), initDataReaderHasAccounts); err != nil {
+				if !config.Init.Force {
+					return chainDb, nil, fmt.Errorf("error testing genesis assertion: %w", err)
+				}
+				log.Error("Error testing genesis assertions", "err", err)
+			}
+		}
 	}
 
 	txIndexWg.Wait()
@@ -914,6 +935,42 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 	}
 
 	return rebuildLocalWasm(ctx, &config.Execution, l2BlockChain, chainDb, wasmDb, config.Init.RebuildLocalWasm)
+}
+
+func validateGenesisAssertion(ctx context.Context, rollupAddress common.Address, l1Client *ethclient.Client, genesisBlockHash common.Hash, initDataReaderHasAccounts bool) error {
+	if l1Client == nil {
+		return fmt.Errorf("no l1 client")
+	}
+	userLogic, err := rollupgen.NewRollupUserLogic(rollupAddress, l1Client)
+	if err != nil {
+		return err
+	}
+	_, err = userLogic.ChallengeGracePeriodBlocks(&bind.CallOpts{Context: ctx})
+	if err != nil {
+		if !headerreader.IsExecutionReverted(err) {
+			return err
+		}
+		log.Warn("Genesis Assertion is not tested") // not a bold chain
+		return nil
+	}
+	genesisAssertionHash, err := userLogic.GenesisAssertionHash(&bind.CallOpts{Context: context.Background()})
+	if err != nil {
+		return err
+	}
+	genesisAssertionCreationInfo, err := bold.ReadBoldAssertionCreationInfo(ctx, userLogic, l1Client, rollupAddress, genesisAssertionHash)
+	if err != nil {
+		return err
+	}
+	beforeGlobalState := protocol.GoGlobalStateFromSolidity(genesisAssertionCreationInfo.BeforeState.GlobalState)
+	afterGlobalState := protocol.GoGlobalStateFromSolidity(genesisAssertionCreationInfo.AfterState.GlobalState)
+	isNullAssertion := beforeGlobalState.Batch == afterGlobalState.Batch && beforeGlobalState.PosInBatch == afterGlobalState.PosInBatch
+	if isNullAssertion && initDataReaderHasAccounts {
+		return errors.New("genesis assertion is null but there are accounts in the init data")
+	}
+	if !isNullAssertion && afterGlobalState.BlockHash != genesisBlockHash {
+		return errors.New("genesis assertion is non null and its afterGlobalState.BlockHash doesn't match the genesis blockHash")
+	}
+	return nil
 }
 
 func testTxIndexUpdated(chainDb ethdb.Database, lastBlock uint64) bool {

@@ -1,0 +1,37 @@
+---
+name: bold-legacy
+on:
+  workflow_call:
+
+jobs:
+  bold-legacy:
+    name: Run Bold Legacy challenge tests
+    runs-on: arbitrator-ci
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          submodules: recursive
+
+
+      - name: Setup CI
+        uses: ./.github/actions/ci-setup
+
+      - name: run challenge tests
+        run: >-
+          ${{ github.workspace }}/.github/workflows/gotestsum.sh --tags legacychallengetest
+          --run TestChallenge --timeout 60m --cover
+
+      - name: Archive detailed run log
+        uses: actions/upload-artifact@v4
+        with:
+          name: full.log
+          path: full.log
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          fail_ci_if_error: false
+          files: ./coverage.txt,./coverage-redis.txt
+          verbose: false
+          token: ${{ secrets.CODECOV_TOKEN }}
