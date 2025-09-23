@@ -141,7 +141,7 @@ func NewServer(ctx context.Context, config *ServerConfig, dataSigner signature.D
 	}
 
 	srv := &http.Server{
-		Addr:              addr.String(),
+		Addr:              "http://" + addr.String(),
 		Handler:           handler,
 		ReadTimeout:       config.ServerTimeouts.ReadTimeout,
 		ReadHeaderTimeout: config.ServerTimeouts.ReadHeaderTimeout,
