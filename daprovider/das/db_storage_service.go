@@ -108,10 +108,15 @@ func NewDBStorageService(ctx context.Context, config *LocalDBStorageConfig, targ
 
 	if target != nil {
 		if err = ret.migrateTo(ctx, target); err != nil {
+			_ = ret.db.Close()
 			return nil, fmt.Errorf("error migrating local-db-storage to %s: %w", target, err)
 		}
 		if err = ret.setMigrated(); err != nil {
+			_ = ret.db.Close()
 			return nil, fmt.Errorf("error finalizing migration of local-db-storage to %s: %w", target, err)
+		}
+		if err := ret.db.Close(); err != nil {
+			return nil, fmt.Errorf("error closing db after migration: %w", err)
 		}
 		return nil, nil
 	}
