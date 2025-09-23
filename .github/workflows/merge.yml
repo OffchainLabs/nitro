@@ -69,34 +69,22 @@ jobs:
           arbitrator_result="${{ needs.arbitrator.result }}"
           bold_legacy_result="${{ needs['bold-legacy'].result }}"
           ok=1
-          for r in fast go-tests arbitrator bold-legacy; do
-            case "$r" in
-              fast)
-                if [ "$fast_result" != "success" ]; then
-                  ok=0
-                  echo "Fast job failed or was skipped"
-                fi
-                ;;
-              go-tests)
-                if [ "$go_tests_result" != "success" ]; then
-                  ok=0
-                  echo "Go tests job failed or was skipped"
-                fi
-                ;;
-              arbitrator)
-                if [ "$arbitrator_result" != "success" ] && [ "$arbitrator_result" != "skipped" ]; then
-                  ok=0
-                  echo "Arbitrator job failed"
-                fi
-                ;;
-              bold-legacy)
-                if [ "$bold_legacy_result" != "success" ] && [ "$bold_legacy_result" != "skipped" ]; then
-                  ok=0
-                  echo "Bold Legacy job failed"
-                fi
-                ;;
-            esac
-          done
+          if [ "$fast_result" != "success" ]; then
+            ok=0
+            echo "Fast job failed or was skipped"
+          fi
+          if [ "$go_tests_result" != "success" ]; then
+            ok=0
+            echo "Go tests job failed or was skipped"
+          fi
+          if [ "$arbitrator_result" != "success" ] && [ "$arbitrator_result" != "skipped" ]; then
+            ok=0
+            echo "Arbitrator job failed"
+          fi
+          if [ "$bold_legacy_result" != "success" ] && [ "$bold_legacy_result" != "skipped" ]; then
+            ok=0
+            echo "Bold Legacy job failed"
+          fi
           if [ $ok -eq 1 ]; then
             echo "All required jobs passed or were skipped"
             exit 0
