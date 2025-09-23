@@ -75,8 +75,8 @@ func calculateEffectiveChunkSize(maxStoreChunkBodySize int, rpcMethods DataStrea
 }
 
 // StreamData sends arbitrarily long byte sequence to the receiver using a simple chunking-based protocol.
-func (ds *DataStreamer[Result]) StreamData(ctx context.Context, data []byte, timeout uint64) (*Result, error) {
-	params := newStreamParams(uint64(len(data)), ds.chunkSize, timeout)
+func (ds *DataStreamer[Result]) StreamData(ctx context.Context, data []byte) (*Result, error) {
+	params := newStreamParams(uint64(len(data)), ds.chunkSize)
 
 	messageId, err := ds.startStream(ctx, params)
 	if err != nil {
@@ -91,7 +91,7 @@ func (ds *DataStreamer[Result]) StreamData(ctx context.Context, data []byte, tim
 }
 
 func (ds *DataStreamer[Result]) startStream(ctx context.Context, params streamParams) (MessageId, error) {
-	payloadSignature, err := ds.sign(nil, params.timestamp, params.nChunks, ds.chunkSize, params.dataLen, params.timeout)
+	payloadSignature, err := ds.sign(nil, params.timestamp, params.nChunks, ds.chunkSize, params.dataLen)
 	if err != nil {
 		return 0, err
 	}
@@ -105,7 +105,6 @@ func (ds *DataStreamer[Result]) startStream(ctx context.Context, params streamPa
 		hexutil.Uint64(params.nChunks),
 		hexutil.Uint64(ds.chunkSize),
 		hexutil.Uint64(params.dataLen),
-		hexutil.Uint64(params.timeout),
 		hexutil.Bytes(payloadSignature))
 	return MessageId(result.MessageId), err
 }
@@ -150,10 +149,10 @@ func (ds *DataStreamer[Result]) sign(bytes []byte, extras ...uint64) ([]byte, er
 
 // lint:require-exhaustive-initialization
 type streamParams struct {
-	timestamp, nChunks, lastChunkSize, dataLen, timeout uint64
+	timestamp, nChunks, lastChunkSize, dataLen uint64
 }
 
-func newStreamParams(dataLen, chunkSize, timeout uint64) streamParams {
+func newStreamParams(dataLen, chunkSize uint64) streamParams {
 	nChunks := (dataLen + chunkSize - 1) / chunkSize
 	lastChunkSize := (dataLen-1)%chunkSize + 1
 
@@ -163,6 +162,5 @@ func newStreamParams(dataLen, chunkSize, timeout uint64) streamParams {
 		nChunks:       nChunks,
 		lastChunkSize: lastChunkSize,
 		dataLen:       dataLen,
-		timeout:       timeout,
 	}
 }

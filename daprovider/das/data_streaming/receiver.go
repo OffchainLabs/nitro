@@ -45,8 +45,8 @@ type StartStreamingResult struct {
 	MessageId hexutil.Uint64 `json:"MessageId,omitempty"`
 }
 
-func (dsr *DataStreamReceiver) StartReceiving(ctx context.Context, timestamp, nChunks, chunkSize, totalSize, timeout uint64, signature []byte) (*StartStreamingResult, error) {
-	if err := dsr.payloadVerifier.verifyPayload(ctx, signature, []byte{}, timestamp, nChunks, chunkSize, totalSize, timeout); err != nil {
+func (dsr *DataStreamReceiver) StartReceiving(ctx context.Context, timestamp, nChunks, chunkSize, totalSize uint64, signature []byte) (*StartStreamingResult, error) {
+	if err := dsr.payloadVerifier.verifyPayload(ctx, signature, []byte{}, timestamp, nChunks, chunkSize, totalSize); err != nil {
 		return &StartStreamingResult{0}, err
 	}
 
@@ -56,7 +56,7 @@ func (dsr *DataStreamReceiver) StartReceiving(ctx context.Context, timestamp, nC
 		return &StartStreamingResult{0}, errors.New("too much time has elapsed since request was signed")
 	}
 
-	messageId, err := dsr.messageStore.registerNewMessage(nChunks, timeout, chunkSize, totalSize)
+	messageId, err := dsr.messageStore.registerNewMessage(nChunks, chunkSize, totalSize)
 	return &StartStreamingResult{hexutil.Uint64(messageId)}, err
 }
 
@@ -67,9 +67,9 @@ func (dsr *DataStreamReceiver) ReceiveChunk(ctx context.Context, messageId Messa
 	return dsr.messageStore.addNewChunk(messageId, chunkId, chunkData)
 }
 
-func (dsr *DataStreamReceiver) FinalizeReceiving(ctx context.Context, messageId MessageId, signature hexutil.Bytes) ([]byte, uint64, time.Time, error) {
+func (dsr *DataStreamReceiver) FinalizeReceiving(ctx context.Context, messageId MessageId, signature hexutil.Bytes) ([]byte, time.Time, error) {
 	if err := dsr.payloadVerifier.verifyPayload(ctx, signature, []byte{}, uint64(messageId)); err != nil {
-		return nil, 0, time.Time{}, err
+		return nil, time.Time{}, err
 	}
 	return dsr.messageStore.finalizeMessage(messageId)
 }
@@ -109,7 +109,7 @@ func newMessageStore(maxPendingMessages int, messageCollectionExpiry time.Durati
 	}
 }
 
-func (ms *messageStore) registerNewMessage(nChunks, timeout, chunkSize, totalSize uint64) (id MessageId, err error) {
+func (ms *messageStore) registerNewMessage(nChunks, chunkSize, totalSize uint64) (id MessageId, err error) {
 	ms.mutex.Lock()
 	defer ms.mutex.Unlock()
 
@@ -131,7 +131,6 @@ func (ms *messageStore) registerNewMessage(nChunks, timeout, chunkSize, totalSiz
 		seenChunks:        0,
 		expectedChunkSize: chunkSize,
 		expectedTotalSize: totalSize,
-		timeout:           timeout,
 		startTime:         time.Now(),
 	}
 
@@ -190,20 +189,20 @@ func (ms *messageStore) addNewChunk(id MessageId, chunkId uint64, chunk []byte) 
 	return nil
 }
 
-func (ms *messageStore) finalizeMessage(id MessageId) ([]byte, uint64, time.Time, error) {
+func (ms *messageStore) finalizeMessage(id MessageId) ([]byte, time.Time, error) {
 	ms.mutex.Lock()
 	message, messageIsRegistered := ms.messages[id]
 	delete(ms.messages, id)
 	ms.mutex.Unlock()
 	if !messageIsRegistered {
-		return nil, 0, time.Time{}, fmt.Errorf("unknown message(%d)", id)
+		return nil, time.Time{}, fmt.Errorf("unknown message(%d)", id)
 	}
 
 	message.mutex.Lock()
 	defer message.mutex.Unlock()
 
 	if len(message.chunks) != message.seenChunks {
-		return nil, 0, time.Time{}, fmt.Errorf("incomplete message(%d): got %d/%d chunks", id, message.seenChunks, len(message.chunks))
+		return nil, time.Time{}, fmt.Errorf("incomplete message(%d): got %d/%d chunks", id, message.seenChunks, len(message.chunks))
 	}
 
 	var flattened []byte
@@ -211,5 +210,5 @@ func (ms *messageStore) finalizeMessage(id MessageId) ([]byte, uint64, time.Time
 		flattened = append(flattened, chunk...)
 	}
 
-	return flattened, message.timeout, message.startTime, nil
+	return flattened, message.startTime, nil
 }

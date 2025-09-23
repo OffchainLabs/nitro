@@ -25,9 +25,8 @@ import (
 
 const (
 	maxPendingMessages      = 10
-	messageCollectionExpiry = time.Duration(2 * time.Second)
+	messageCollectionExpiry = 2 * time.Second
 	maxStoreChunkBodySize   = 1024
-	timeout                 = 10
 	serverRPCRoot           = "datastreaming"
 )
 
@@ -66,7 +65,7 @@ func test(t *testing.T, messageSizeMean, messageSizeStdDev, concurrency int) {
 			messageSize := int(rand.NormFloat64()*float64(messageSizeStdDev) + float64(messageSizeMean))
 
 			message := testhelpers.RandomizeSlice(make([]byte, messageSize))
-			result, err := streamer.StreamData(ctx, message, timeout)
+			result, err := streamer.StreamData(ctx, message)
 			testhelpers.RequireImpl(t, err)
 			require.Equal(t, message, ([]byte)(result.Message), "protocol resulted in an incorrect message")
 		}()
@@ -120,8 +119,8 @@ type TestServer struct {
 	dataStreamReceiver *DataStreamReceiver
 }
 
-func (server *TestServer) Start(ctx context.Context, timestamp, nChunks, chunkSize, totalSize, timeout hexutil.Uint64, sig hexutil.Bytes) (*StartStreamingResult, error) {
-	return server.dataStreamReceiver.StartReceiving(ctx, uint64(timestamp), uint64(nChunks), uint64(chunkSize), uint64(totalSize), uint64(timeout), sig)
+func (server *TestServer) Start(ctx context.Context, timestamp, nChunks, chunkSize, totalSize hexutil.Uint64, sig hexutil.Bytes) (*StartStreamingResult, error) {
+	return server.dataStreamReceiver.StartReceiving(ctx, uint64(timestamp), uint64(nChunks), uint64(chunkSize), uint64(totalSize), sig)
 }
 
 func (server *TestServer) Chunk(ctx context.Context, messageId, chunkId hexutil.Uint64, chunk hexutil.Bytes, sig hexutil.Bytes) error {
@@ -129,7 +128,7 @@ func (server *TestServer) Chunk(ctx context.Context, messageId, chunkId hexutil.
 }
 
 func (server *TestServer) Finish(ctx context.Context, messageId hexutil.Uint64, sig hexutil.Bytes) (*ProtocolResult, error) {
-	message, _, _, err := server.dataStreamReceiver.FinalizeReceiving(ctx, MessageId(messageId), sig)
+	message, _, err := server.dataStreamReceiver.FinalizeReceiving(ctx, MessageId(messageId), sig)
 	return &ProtocolResult{Message: message}, err
 }
 
