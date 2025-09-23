@@ -29,8 +29,8 @@ type DASReader interface {
 }
 
 type DASWriter interface {
-	// Store requests that the message be stored until timeout (UTC time in unix epoch seconds).
-	Store(ctx context.Context, message []byte, timeout uint64) (*DataAvailabilityCertificate, error)
+	// Store requests that the message be stored until expiration date (UTC time in unix epoch seconds).
+	Store(ctx context.Context, message []byte, expiry uint64) (*DataAvailabilityCertificate, error)
 	fmt.Stringer
 }
 
@@ -77,8 +77,8 @@ type writerForDAS struct {
 	dasWriter DASWriter
 }
 
-func (d *writerForDAS) Store(ctx context.Context, message []byte, timeout uint64, disableFallbackStoreDataOnChain bool) ([]byte, error) {
-	cert, err := d.dasWriter.Store(ctx, message, timeout)
+func (d *writerForDAS) Store(ctx context.Context, message []byte, expiry uint64, disableFallbackStoreDataOnChain bool) ([]byte, error) {
+	cert, err := d.dasWriter.Store(ctx, message, expiry)
 	if errors.Is(err, ErrBatchToDasFailed) {
 		if disableFallbackStoreDataOnChain {
 			return nil, errors.New("unable to batch to DAS and fallback storing data on chain is disabled")
@@ -172,7 +172,7 @@ func RecoverPayloadFromDasBatch(
 	}
 
 	maxTimestamp := binary.BigEndian.Uint64(sequencerMsg[8:16])
-	if cert.Timeout < maxTimestamp+MinLifetimeSecondsForDataAvailabilityCert {
+	if cert.Expiry < maxTimestamp+MinLifetimeSecondsForDataAvailabilityCert {
 		log.Error("Data availability cert expires too soon", "err", "")
 		return nil, nil, nil
 	}
@@ -200,7 +200,7 @@ func RecoverPayloadFromDasBatch(
 type DataAvailabilityCertificate struct {
 	KeysetHash  [32]byte
 	DataHash    [32]byte
-	Timeout     uint64
+	Expiry      uint64
 	SignersMask uint64
 	Sig         blsSignatures.Signature
 	Version     uint8
@@ -228,12 +228,12 @@ func DeserializeDASCertFrom(rd io.Reader) (c *DataAvailabilityCertificate, err e
 		return nil, err
 	}
 
-	var timeoutBuf [8]byte
-	_, err = io.ReadFull(r, timeoutBuf[:])
+	var expiryBuf [8]byte
+	_, err = io.ReadFull(r, expiryBuf[:])
 	if err != nil {
 		return nil, err
 	}
-	c.Timeout = binary.BigEndian.Uint64(timeoutBuf[:])
+	c.Expiry = binary.BigEndian.Uint64(expiryBuf[:])
 
 	if daprovider.IsTreeDASMessageHeaderByte(header) {
 		var versionBuf [1]byte
@@ -269,7 +269,7 @@ func (c *DataAvailabilityCertificate) SerializeSignableFields() []byte {
 	buf = append(buf, c.DataHash[:]...)
 
 	var intData [8]byte
-	binary.BigEndian.PutUint64(intData[:], c.Timeout)
+	binary.BigEndian.PutUint64(intData[:], c.Expiry)
 	buf = append(buf, intData[:]...)
 
 	if c.Version != 0 {

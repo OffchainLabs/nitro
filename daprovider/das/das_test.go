@@ -57,12 +57,12 @@ func testDASStoreRetrieveMultipleInstances(t *testing.T, storageType string) {
 	var daReader dasutil.DASReader = storageService
 
 	// #nosec G115
-	timeout := uint64(time.Now().Add(time.Hour * 24).Unix())
+	expiry := uint64(time.Now().Add(time.Hour * 24).Unix())
 	messageSaved := []byte("hello world")
-	cert, err := daWriter.Store(firstCtx, messageSaved, timeout)
+	cert, err := daWriter.Store(firstCtx, messageSaved, expiry)
 	Require(t, err, "Error storing message")
-	if cert.Timeout != timeout {
-		Fail(t, fmt.Sprintf("Expected timeout of %d in cert, was %d", timeout, cert.Timeout))
+	if cert.Expiry != expiry {
+		Fail(t, fmt.Sprintf("Expected expiry of %d in cert, was %d", expiry, cert.Expiry))
 	}
 
 	messageRetrieved, err := daReader.GetByHash(firstCtx, cert.DataHash)
@@ -149,11 +149,11 @@ func testDASMissingMessage(t *testing.T, storageType string) {
 
 	messageSaved := []byte("hello world")
 	// #nosec G115
-	timeout := uint64(time.Now().Add(time.Hour * 24).Unix())
-	cert, err := daWriter.Store(ctx, messageSaved, timeout)
+	expiry := uint64(time.Now().Add(time.Hour * 24).Unix())
+	cert, err := daWriter.Store(ctx, messageSaved, expiry)
 	Require(t, err, "Error storing message")
-	if cert.Timeout != timeout {
-		Fail(t, fmt.Sprintf("Expected timeout of %d in cert, was %d", timeout, cert.Timeout))
+	if cert.Expiry != expiry {
+		Fail(t, fmt.Sprintf("Expected expiry of %d in cert, was %d", expiry, cert.Expiry))
 	}
 
 	// Change the hash to look up

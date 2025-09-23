@@ -105,11 +105,11 @@ func NewSignAfterStoreDASWriter(ctx context.Context, config DataAvailabilityConf
 	}, nil
 }
 
-func (d *SignAfterStoreDASWriter) Store(ctx context.Context, message []byte, timeout uint64) (c *dasutil.DataAvailabilityCertificate, err error) {
+func (d *SignAfterStoreDASWriter) Store(ctx context.Context, message []byte, expiry uint64) (c *dasutil.DataAvailabilityCertificate, err error) {
 	// #nosec G115
-	log.Trace("das.SignAfterStoreDASWriter.Store", "message", pretty.FirstFewBytes(message), "timeout", time.Unix(int64(timeout), 0), "this", d)
+	log.Trace("das.SignAfterStoreDASWriter.Store", "message", pretty.FirstFewBytes(message), "expiry", time.Unix(int64(expiry), 0), "this", d)
 	c = &dasutil.DataAvailabilityCertificate{
-		Timeout:     timeout,
+		Expiry:      expiry,
 		DataHash:    dastree.Hash(message),
 		Version:     1,
 		SignersMask: 1, // The aggregator will override this if we're part of a committee.
@@ -121,7 +121,7 @@ func (d *SignAfterStoreDASWriter) Store(ctx context.Context, message []byte, tim
 		return nil, err
 	}
 
-	err = d.storageService.Put(ctx, message, timeout)
+	err = d.storageService.Put(ctx, message, expiry)
 	if err != nil {
 		return nil, err
 	}

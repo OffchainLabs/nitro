@@ -169,9 +169,9 @@ type storeResponse struct {
 //
 // If Store gets not enough successful responses by the time its context is canceled
 // (eg via TimeoutWrapper) then it also returns an error.
-func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64) (*dasutil.DataAvailabilityCertificate, error) {
+func (a *Aggregator) Store(ctx context.Context, message []byte, expiry uint64) (*dasutil.DataAvailabilityCertificate, error) {
 	// #nosec G115
-	log.Trace("das.Aggregator.Store", "message", pretty.FirstFewBytes(message), "timeout", time.Unix(int64(timeout), 0))
+	log.Trace("das.Aggregator.Store", "message", pretty.FirstFewBytes(message), "expiry", time.Unix(int64(expiry), 0))
 
 	allBackendsSucceeded := false
 	defer func() {
@@ -195,7 +195,7 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64) 
 				metrics.GetOrRegisterCounter(metricBase+"/error/all/total", nil).Inc(1)
 			}
 
-			cert, err := d.service.Store(storeCtx, message, timeout)
+			cert, err := d.service.Store(storeCtx, message, expiry)
 			if err != nil {
 				incFailureMetric()
 				log.Warn("DAS Aggregator failed to store batch to backend", "backend", d.metricName, "err", err)
@@ -227,10 +227,10 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64) 
 				responses <- storeResponse{d, nil, errors.New("hash verification failed")}
 				return
 			}
-			if cert.Timeout != timeout {
+			if cert.Expiry != expiry {
 				incFailureMetric()
 				log.Warn("DAS Aggregator got a store response with any expiry time not matching the expected expiry time", "backend", d.metricName, "dataHash", cert.DataHash, "expectedHash", expectedHash, "err", err)
-				responses <- storeResponse{d, nil, fmt.Errorf("timeout was %d, expected %d", cert.Timeout, timeout)}
+				responses <- storeResponse{d, nil, fmt.Errorf("expiry was %d, expected %d", cert.Expiry, expiry)}
 				return
 			}
 
@@ -313,7 +313,7 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64) 
 	aggCert.SignersMask = cd.aggSignersMask
 
 	aggCert.DataHash = expectedHash
-	aggCert.Timeout = timeout
+	aggCert.Expiry = expiry
 	aggCert.KeysetHash = a.keysetHash
 	aggCert.Version = 1
 

@@ -112,7 +112,7 @@ func StartDASRPCServerOnListener(ctx context.Context, listener net.Listener, rpc
 // lint:require-exhaustive-initialization
 type StoreResult struct {
 	DataHash    hexutil.Bytes  `json:"dataHash,omitempty"`
-	Timeout     hexutil.Uint64 `json:"timeout,omitempty"`
+	Expiry      hexutil.Uint64 `json:"expiry,omitempty"`
 	SignersMask hexutil.Uint64 `json:"signersMask,omitempty"`
 	KeysetHash  hexutil.Bytes  `json:"keysetHash,omitempty"`
 	Sig         hexutil.Bytes  `json:"sig,omitempty"`
@@ -120,9 +120,9 @@ type StoreResult struct {
 }
 
 // The legacy storing API.
-func (s *DASRPCServer) Store(ctx context.Context, message hexutil.Bytes, timeout hexutil.Uint64, sig hexutil.Bytes) (*StoreResult, error) {
+func (s *DASRPCServer) Store(ctx context.Context, message hexutil.Bytes, expiry hexutil.Uint64, sig hexutil.Bytes) (*StoreResult, error) {
 	// #nosec G115
-	log.Trace("dasRpc.DASRPCServer.Store", "message", pretty.FirstFewBytes(message), "message length", len(message), "timeout", time.Unix(int64(timeout), 0), "sig", pretty.FirstFewBytes(sig), "this", s)
+	log.Trace("dasRpc.DASRPCServer.Store", "message", pretty.FirstFewBytes(message), "message length", len(message), "expiry", time.Unix(int64(expiry), 0), "sig", pretty.FirstFewBytes(sig), "this", s)
 	rpcStoreRequestGauge.Inc(1)
 	start := time.Now()
 	success := false
@@ -135,11 +135,11 @@ func (s *DASRPCServer) Store(ctx context.Context, message hexutil.Bytes, timeout
 		rpcStoreDurationHistogram.Update(time.Since(start).Nanoseconds())
 	}()
 
-	if err := s.signatureVerifier.verify(ctx, message, sig, uint64(timeout)); err != nil {
+	if err := s.signatureVerifier.verify(ctx, message, sig, uint64(expiry)); err != nil {
 		return nil, err
 	}
 
-	cert, err := s.daWriter.Store(ctx, message, uint64(timeout))
+	cert, err := s.daWriter.Store(ctx, message, uint64(expiry))
 	if err != nil {
 		return nil, err
 	}
@@ -148,7 +148,7 @@ func (s *DASRPCServer) Store(ctx context.Context, message hexutil.Bytes, timeout
 	return &StoreResult{
 		KeysetHash:  cert.KeysetHash[:],
 		DataHash:    cert.DataHash[:],
-		Timeout:     hexutil.Uint64(cert.Timeout),
+		Expiry:      hexutil.Uint64(cert.Expiry),
 		SignersMask: hexutil.Uint64(cert.SignersMask),
 		Sig:         blsSignatures.SignatureToBytes(cert.Sig),
 		Version:     hexutil.Uint64(cert.Version),
@@ -163,7 +163,7 @@ var (
 // lint:require-exhaustive-initialization
 type StoreRequest struct {
 	Message []byte
-	Timeout uint64
+	Expiry  uint64
 }
 
 func (s *DASRPCServer) StartChunkedStore(ctx context.Context, timestamp, nChunks, chunkSize, totalSize hexutil.Uint64, sig hexutil.Bytes) (*data_streaming.StartStreamingResult, error) {
@@ -214,7 +214,7 @@ func (s *DASRPCServer) CommitChunkedStore(ctx context.Context, messageId hexutil
 		return nil, err
 	}
 
-	cert, err := s.daWriter.Store(ctx, request.Message, request.Timeout)
+	cert, err := s.daWriter.Store(ctx, request.Message, request.Expiry)
 	success := false
 	defer func() {
 		if success {
@@ -232,7 +232,7 @@ func (s *DASRPCServer) CommitChunkedStore(ctx context.Context, messageId hexutil
 	return &StoreResult{
 		KeysetHash:  cert.KeysetHash[:],
 		DataHash:    cert.DataHash[:],
-		Timeout:     hexutil.Uint64(cert.Timeout),
+		Expiry:      hexutil.Uint64(cert.Expiry),
 		SignersMask: hexutil.Uint64(cert.SignersMask),
 		Sig:         blsSignatures.SignatureToBytes(cert.Sig),
 		Version:     hexutil.Uint64(cert.Version),

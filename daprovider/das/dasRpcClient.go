@@ -78,7 +78,7 @@ func NewDASRPCClient(target string, signer signature.DataSignerFunc, maxStoreChu
 	}, nil
 }
 
-func (c *DASRPCClient) Store(ctx context.Context, message []byte, timeout uint64) (*dasutil.DataAvailabilityCertificate, error) {
+func (c *DASRPCClient) Store(ctx context.Context, message []byte, expiry uint64) (*dasutil.DataAvailabilityCertificate, error) {
 	rpcClientStoreRequestGauge.Inc(1)
 	start := time.Now()
 	success := false
@@ -93,11 +93,11 @@ func (c *DASRPCClient) Store(ctx context.Context, message []byte, timeout uint64
 
 	if c.dataStreamer == nil {
 		log.Debug("Legacy store is being force-used by the DAS client", "url", c.url)
-		return c.legacyStore(ctx, message, timeout)
+		return c.legacyStore(ctx, message, expiry)
 	}
 
 	var encodedRequest bytes.Buffer
-	err := gob.NewEncoder(&encodedRequest).Encode(StoreRequest{message, timeout})
+	err := gob.NewEncoder(&encodedRequest).Encode(StoreRequest{message, expiry})
 	if err != nil {
 		return nil, err
 	}
@@ -106,7 +106,7 @@ func (c *DASRPCClient) Store(ctx context.Context, message []byte, timeout uint64
 	if err != nil {
 		if strings.Contains(err.Error(), "the method das_startChunkedStore does not exist") {
 			log.Info("Legacy store is used by the DAS client", "url", c.url)
-			return c.legacyStore(ctx, message, timeout)
+			return c.legacyStore(ctx, message, expiry)
 		}
 		return nil, err
 	}
@@ -121,7 +121,7 @@ func (c *DASRPCClient) Store(ctx context.Context, message []byte, timeout uint64
 
 	return &dasutil.DataAvailabilityCertificate{
 		DataHash:    common.BytesToHash(storeResult.DataHash),
-		Timeout:     uint64(storeResult.Timeout),
+		Expiry:      uint64(storeResult.Expiry),
 		SignersMask: uint64(storeResult.SignersMask),
 		Sig:         respSig,
 		KeysetHash:  common.BytesToHash(storeResult.KeysetHash),
@@ -129,17 +129,17 @@ func (c *DASRPCClient) Store(ctx context.Context, message []byte, timeout uint64
 	}, nil
 }
 
-func (c *DASRPCClient) legacyStore(ctx context.Context, message []byte, timeout uint64) (*dasutil.DataAvailabilityCertificate, error) {
+func (c *DASRPCClient) legacyStore(ctx context.Context, message []byte, expiry uint64) (*dasutil.DataAvailabilityCertificate, error) {
 	// #nosec G115
-	log.Trace("das.DASRPCClient.Store(...)", "message", pretty.FirstFewBytes(message), "timeout", time.Unix(int64(timeout), 0), "this", *c)
+	log.Trace("das.DASRPCClient.Store(...)", "message", pretty.FirstFewBytes(message), "expiry", time.Unix(int64(expiry), 0), "this", *c)
 
-	reqSig, err := applyDasSigner(c.signer, message, timeout)
+	reqSig, err := applyDasSigner(c.signer, message, expiry)
 	if err != nil {
 		return nil, err
 	}
 
 	var ret StoreResult
-	if err := c.clnt.CallContext(ctx, &ret, "das_store", hexutil.Bytes(message), hexutil.Uint64(timeout), hexutil.Bytes(reqSig)); err != nil {
+	if err := c.clnt.CallContext(ctx, &ret, "das_store", hexutil.Bytes(message), hexutil.Uint64(expiry), hexutil.Bytes(reqSig)); err != nil {
 		return nil, err
 	}
 	respSig, err := blsSignatures.SignatureFromBytes(ret.Sig)
@@ -148,7 +148,7 @@ func (c *DASRPCClient) legacyStore(ctx context.Context, message []byte, timeout 
 	}
 	return &dasutil.DataAvailabilityCertificate{
 		DataHash:    common.BytesToHash(ret.DataHash),
-		Timeout:     uint64(ret.Timeout),
+		Expiry:      uint64(ret.Expiry),
 		SignersMask: uint64(ret.SignersMask),
 		Sig:         respSig,
 		KeysetHash:  common.BytesToHash(ret.KeysetHash),
