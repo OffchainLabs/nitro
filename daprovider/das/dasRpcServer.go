@@ -227,7 +227,7 @@ func (s *DASRPCServer) CommitChunkedStore(ctx context.Context, messageId hexutil
 	if err != nil {
 		return nil, err
 	}
-	rpcStoreStoredBytesGauge.Inc(int64(len(encodedRequest)))
+	rpcStoreStoredBytesGauge.Inc(int64(len(request.Message)))
 	success = true
 	return &StoreResult{
 		KeysetHash:  cert.KeysetHash[:],
