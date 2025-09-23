@@ -5,8 +5,6 @@ run-name: CI triggered from @${{ github.actor }} of ${{ github.head_ref }}
 on:
   workflow_dispatch:
   pull_request:
-  push:
-    branches: [master, main]
 
 jobs:
   # --- Determine which files have changed ---
