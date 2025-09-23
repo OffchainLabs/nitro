@@ -141,7 +141,7 @@ func NewServer(ctx context.Context, config *ServerConfig, dataSigner signature.D
 	}
 
 	srv := &http.Server{
-		Addr:              "http://" + addr.String(),
+		Addr:              addr.String(),
 		Handler:           handler,
 		ReadTimeout:       config.ServerTimeouts.ReadTimeout,
 		ReadHeaderTimeout: config.ServerTimeouts.ReadHeaderTimeout,
@@ -157,7 +157,9 @@ func NewServer(ctx context.Context, config *ServerConfig, dataSigner signature.D
 
 	go func() {
 		<-ctx.Done()
-		_ = srv.Shutdown(context.Background())
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		_ = srv.Shutdown(shutdownCtx)
 	}()
 
 	return srv, func() {
