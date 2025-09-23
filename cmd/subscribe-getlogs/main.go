@@ -7,12 +7,36 @@ import (
 	"log/slog"
 	"net/url"
 	"os"
+	"math/big"
+	"time"
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 )
+
+const Retries = 3
+
+func getLogsAsync(ctx context.Context, client *ethclient.Client, blockNum *big.Int) {
+	for i := 0; i < Retries; i++ {
+		logs, err := client.FilterLogs(ctx, ethereum.FilterQuery{
+			FromBlock: blockNum,
+			ToBlock:   blockNum,
+		})
+		if err != nil {
+			log.Error("failed to get logs", "block", blockNum, "retry", i, "err", err.Error())
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(time.Second):
+			}
+			continue
+		}
+		log.Info("got logs", "block", blockNum, "retry", i, "lenLogs", len(logs))
+		break
+	}
+}
 
 func subscribeAndGetLogs(ctx context.Context, provider string) error {
 	client, err := ethclient.Dial(provider)
@@ -43,15 +67,7 @@ func subscribeAndGetLogs(ctx context.Context, provider string) error {
 		case err := <-ctx.Done():
 			return fmt.Errorf("context error: %w", err)
 		case block := <-ch:
-			logs, err := client.FilterLogs(ctx, ethereum.FilterQuery{
-				FromBlock: block.Number,
-				ToBlock:   block.Number,
-			})
-			if err != nil {
-				log.Error("failed to get logs", "block", block.Number, "err", err.Error())
-				continue
-			}
-			log.Info("got logs", "block", block.Number, "lenLogs", len(logs))
+			go getLogsAsync(ctx, client, block.Number)
 		}
 	}
 }
