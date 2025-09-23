@@ -2,6 +2,10 @@
 name: Docker build CI
 run-name: Docker build CI triggered from @${{ github.actor }} of ${{ github.head_ref }}
 
+concurrency:
+  group: "${{ github.ref }}-${{ github.workflow }}"
+  cancel-in-progress: true
+
 on:
   workflow_dispatch:
   merge_group:
@@ -65,8 +69,7 @@ jobs:
 
       - name: Wait for rpc to come up
         shell: bash
-        run: |
-          ${{ github.workspace }}/.github/workflows/waitForNitro.sh
+        run: ${{ github.workspace }}/.github/workflows/waitForNitro.sh
 
       - name: Print WAVM module root
         id: module-root
