@@ -35,7 +35,6 @@ import (
 	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/offchainlabs/nitro/callstack"
 	"github.com/offchainlabs/nitro/util/containers"
 )
 
@@ -330,8 +329,6 @@ func callProgram(
 	memoryModel *MemoryModel,
 	runCtx *core.MessageRunContext,
 ) ([]byte, error) {
-	callstack.LogCallStack("")
-
 	db := interpreter.Evm().StateDB
 	debug := stylusParams.DebugMode
 

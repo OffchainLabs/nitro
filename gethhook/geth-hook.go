@@ -13,7 +13,6 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos"
-	"github.com/offchainlabs/nitro/callstack"
 	"github.com/offchainlabs/nitro/precompiles"
 )
 
@@ -47,7 +46,6 @@ func (p ArbosPrecompileWrapper) RunAdvanced(
 }
 
 func init() {
-	callstack.LogCallStack("")
 	core.ReadyEVMForL2 = func(evm *vm.EVM, msg *core.Message) {
 		if evm.ChainConfig().IsArbitrum() {
 			evm.ProcessingHook = arbos.NewTxProcessor(evm, msg)

@@ -13,7 +13,6 @@ import (
 	"github.com/ethereum/go-ethereum/ethdb"
 
 	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/offchainlabs/nitro/callstack"
 	"github.com/offchainlabs/nitro/wavmio"
 )
 
@@ -31,7 +30,6 @@ func (db PreimageDb) DeleteRange(start, end []byte) error {
 }
 
 func (db PreimageDb) Get(key []byte) ([]byte, error) {
-	callstack.LogCallStack("")
 	var hash [32]byte
 	copy(hash[:], key)
 	if len(key) == 32 {

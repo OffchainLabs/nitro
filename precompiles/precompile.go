@@ -27,7 +27,6 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/arbos/util"
-	"github.com/offchainlabs/nitro/callstack"
 	pgen "github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
@@ -513,7 +512,6 @@ func MakePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, *Pr
 }
 
 func Precompiles() map[addr]ArbosPrecompile {
-	callstack.LogCallStack("")
 	contracts := make(map[addr]ArbosPrecompile)
 
 	insert := func(address addr, impl ArbosPrecompile) *Precompile {

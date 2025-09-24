@@ -34,7 +34,6 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/offchainlabs/nitro/callstack"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/timeboost"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -682,8 +681,6 @@ func (s *Sequencer) publishTransactionToQueue(queueCtx context.Context, tx *type
 			time.Sleep(s.config().Timeboost.ExpressLaneAdvantage)
 		}
 	}
-
-	callstack.LogCallStack("")
 
 	var blockStamp uint64
 	if isExpressLaneController && config.Timeboost.QueueTimeoutInBlocks > 0 {

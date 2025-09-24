@@ -22,7 +22,6 @@ import (
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbos/retryables"
 	"github.com/offchainlabs/nitro/arbos/util"
-	"github.com/offchainlabs/nitro/callstack"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
@@ -107,8 +106,6 @@ func takeFunds(pool *big.Int, take *big.Int) *big.Int {
 }
 
 func (p *TxProcessor) ExecuteWASM(scope *vm.ScopeContext, input []byte, interpreter *vm.EVMInterpreter) ([]byte, error) {
-	callstack.LogCallStack("")
-
 	contract := scope.Contract
 	acting := contract.Address()
 

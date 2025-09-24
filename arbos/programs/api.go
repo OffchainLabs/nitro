@@ -14,7 +14,6 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos/util"
-	"github.com/offchainlabs/nitro/callstack"
 	am "github.com/offchainlabs/nitro/util/arbmath"
 )
 
@@ -68,8 +67,6 @@ func newApiClosures(
 	evm := interpreter.Evm()
 	db := evm.StateDB
 	chainConfig := evm.ChainConfig()
-
-	callstack.LogCallStack("")
 
 	getBytes32 := func(key common.Hash) (common.Hash, uint64) {
 		cost := vm.WasmStateLoadCost(db, actingAddress, key)
@@ -293,8 +290,6 @@ func newApiClosures(
 				crash("extra input")
 			}
 		}()
-
-		callstack.LogCallStack("return")
 
 		takeAddress := func() common.Address {
 			return common.BytesToAddress(takeInput(20, "expected address"))
