@@ -86,8 +86,9 @@ type SequencerConfig struct {
 }
 
 type DangerousConfig struct {
-	DisableSeqInboxMaxDataSizeCheck bool `koanf:"disable-seq-inbox-max-data-size-check"`
-	DisableBlobBaseFeeCheck         bool `koanf:"disable-blob-base-fee-check"`
+	DisableSeqInboxMaxDataSizeCheck bool   `koanf:"disable-seq-inbox-max-data-size-check"`
+	DisableBlobBaseFeeCheck         bool   `koanf:"disable-blob-base-fee-check"`
+	SequenceDebugBlock              uint64 `koanf:"sequence-debug-block"`
 }
 
 type TimeboostConfig struct {
@@ -198,6 +199,7 @@ var DefaultSequencerConfig = SequencerConfig{
 
 var DefaultDangerousConfig = DangerousConfig{
 	DisableSeqInboxMaxDataSizeCheck: false,
+	SequenceDebugBlock:              0,
 }
 
 func SequencerConfigAddOptions(prefix string, f *pflag.FlagSet) {
@@ -239,6 +241,7 @@ func TimeboostAddOptions(prefix string, f *pflag.FlagSet) {
 func DangerousAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".disable-seq-inbox-max-data-size-check", DefaultDangerousConfig.DisableSeqInboxMaxDataSizeCheck, "DANGEROUS! disables nitro checks on sequencer MaxTxDataSize against the sequencer inbox MaxDataSize")
 	f.Bool(prefix+".disable-blob-base-fee-check", DefaultDangerousConfig.DisableBlobBaseFeeCheck, "DANGEROUS! disables nitro checks on sequencer for blob base fee")
+	f.Uint64(prefix+".sequence-debug-block", DefaultDangerousConfig.SequenceDebugBlock, "DANGEROUS! sequences a block that prefunds dev wallet")
 }
 
 type txQueueItem struct {
@@ -1112,7 +1115,15 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 
 	var startOfReadingFromTxQueue time.Time
 
-	for {
+	makeEmptyBlock := false
+	if s.execEngine.bc.Config().DebugMode() {
+		debugBlock := s.execEngine.bc.Config().ArbitrumChainParams.DebugBlock
+		if lastBlock.Number.Uint64()+1 == debugBlock {
+			// if we are about to produce block with DebugBlock number, we don't want to wait for new tranasactions and we just go ahead triggering an empty block (with startTx only)
+			makeEmptyBlock = true
+		}
+	}
+	for !makeEmptyBlock {
 		if len(queueItems) == 1 {
 			startOfReadingFromTxQueue = time.Now()
 		} else if len(queueItems) > 1 && time.Since(startOfReadingFromTxQueue) > config.ReadFromTxQueueTimeout {
@@ -1339,6 +1350,9 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 			continue
 		}
 		queueItem.returnResult(err)
+	}
+	if block != nil && makeEmptyBlock {
+		return true
 	}
 	return madeBlock
 }

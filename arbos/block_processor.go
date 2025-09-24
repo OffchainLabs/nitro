@@ -10,10 +10,13 @@ import (
 	"math"
 	"math/big"
 
+	"github.com/holiman/uint256"
+
 	"github.com/ethereum/go-ethereum/arbitrum_types"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/state"
+	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
@@ -251,6 +254,14 @@ func ProduceBlockAdvanced(
 	gethGas := core.GasPool(l2pricing.GethBlockGasLimit)
 
 	firstTx := types.NewTx(startTx)
+
+	if chainConfig.DebugMode() && chainConfig.DebugBlock() == header.Number.Uint64() {
+		log.Warn("producing debug block, prefunding dev account")
+		devAddr := common.HexToAddress("0x3f1Eae7D46d88F08fc2F8ed27FCb2AB183EB2d0E")
+		balance := uint256.MustFromHex("0xfffffffffffffffffffffffffffffffffffffff")
+		statedb.SetBalance(devAddr, balance, tracing.BalanceChangeUnspecified)
+		expectedBalanceDelta.Add(expectedBalanceDelta, balance.ToBig())
+	}
 
 	for {
 		// repeatedly process the next tx, doing redeems created along the way in FIFO order
