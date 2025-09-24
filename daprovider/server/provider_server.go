@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/spf13/pflag"
 
@@ -178,7 +179,7 @@ func (s *Server) GenerateProof(ctx context.Context, preimageType hexutil.Uint, c
 	if err != nil {
 		return nil, err
 	}
-	return &daclient.GenerateProofResult{Proof: hexutil.Bytes(proof)}, nil
+	return &daclient.GenerateProofResult{Proof: proof}, nil
 }
 
 func (s *Server) GenerateCertificateValidityProof(ctx context.Context, preimageType hexutil.Uint, certificate hexutil.Bytes) (*daclient.GenerateCertificateValidityProofResult, error) {
@@ -190,5 +191,5 @@ func (s *Server) GenerateCertificateValidityProof(ctx context.Context, preimageT
 	if err != nil {
 		return nil, err
 	}
-	return &daclient.GenerateCertificateValidityProofResult{Proof: hexutil.Bytes(proof)}, nil
+	return &daclient.GenerateCertificateValidityProofResult{Proof: proof}, nil
 }
