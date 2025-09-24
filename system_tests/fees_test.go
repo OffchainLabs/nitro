@@ -25,6 +25,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
+	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/colors"
@@ -136,8 +137,11 @@ func testSequencerPriceAdjustsFrom(t *testing.T, initialEstimate uint64) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).
+		WithWasmRootDir("/Users/tsahi/src/nitro/target/machines/arbos40/").
+		WithArbOSVersion(40)
 	builder.nodeConfig.DelayedSequencer.FinalizeDistance = 1
+	builder.nodeConfig.BlockValidator.Enable = true
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -286,6 +290,30 @@ func testSequencerPriceAdjustsFrom(t *testing.T, initialEstimate uint64) {
 	if numReimbursed != 1 {
 		Fatal(t, "Wrong number of batch posters were reimbursed", numReimbursed)
 	}
+
+	lastBlock, err := builder.L2.Client.BlockByNumber(ctx, nil)
+	Require(t, err)
+	for {
+		usefulBlock := false
+		for _, tx := range lastBlock.Transactions() {
+			if tx.Type() != types.ArbitrumInternalTxType {
+				usefulBlock = true
+				break
+			}
+		}
+		if usefulBlock {
+			break
+		}
+		lastBlock, err = builder.L2.Client.BlockByHash(ctx, lastBlock.ParentHash())
+		Require(t, err)
+	}
+	t.Log("waiting for block: ", lastBlock.NumberU64())
+	timeout := getDeadlineTimeout(t, time.Minute*10)
+	// messageindex is same as block number here
+	if !builder.L2.ConsensusNode.BlockValidator.WaitForPos(t, ctx, arbutil.MessageIndex(lastBlock.NumberU64()), timeout) {
+		Fatal(t, "did not validate all blocks")
+	}
+
 }
 
 func TestSequencerPriceAdjustsFrom1Gwei(t *testing.T) {
