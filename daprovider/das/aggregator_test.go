@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"math/rand"
 	"os"
 	"strconv"
@@ -252,7 +253,8 @@ func initTest(t *testing.T) int {
 	}
 	rand.Seed(seed)
 
-	runs := 2 ^ 32
+	// Use a portable large default; avoid 2 ^ 32 (bitwise XOR), which yields 34
+	runs := math.MaxInt32
 	if len(*testflag.RunsFlag) > 0 {
 		var err error
 		runs, err = strconv.Atoi(*testflag.RunsFlag)
