@@ -1522,6 +1522,18 @@ func deployOnParentChain(
 	deployBold bool,
 	delayBufferThreshold uint64,
 ) (*chaininfo.RollupAddresses, *arbostypes.ParsedInitMessage) {
+	accts := []string{"RollupOwner", "Sequencer", "Validator", "User"}
+	var fundingTxs []*types.Transaction
+	for _, acct := range accts {
+		if !parentChainInfo.HasAccount(acct) {
+			parentChainInfo.GenerateAccount(acct)
+			fundingTxs = append(fundingTxs, parentChainInfo.PrepareTx("Faucet", acct, parentChainInfo.TransferGas, big.NewInt(9223372036854775807), nil))
+		}
+	}
+	if len(fundingTxs) > 0 {
+		SendWaitTestTransactions(t, ctx, parentChainClient, fundingTxs)
+	}
+
 	parentChainTransactionOpts := parentChainInfo.GetDefaultTransactOpts("RollupOwner", ctx)
 	serializedChainConfig, err := json.Marshal(chainConfig)
 	Require(t, err)
