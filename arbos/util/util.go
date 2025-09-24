@@ -27,7 +27,9 @@ var ParseL2ToL1TxLog func(*types.Log) (*precompilesgen.ArbSysL2ToL1Tx, error)
 var PackInternalTxDataStartBlock func(...interface{}) ([]byte, error)
 var UnpackInternalTxDataStartBlock func([]byte) (map[string]interface{}, error)
 var PackInternalTxDataBatchPostingReport func(...interface{}) ([]byte, error)
+var PackInternalTxDataDetailedBatchPostingReport func(...interface{}) ([]byte, error)
 var UnpackInternalTxDataBatchPostingReport func([]byte) (map[string]interface{}, error)
+var UnpackInternalTxDataDetailedBatchPostingReport func([]byte) (map[string]interface{}, error)
 var PackArbRetryableTxRedeem func(...interface{}) ([]byte, error)
 
 func init() {
@@ -45,6 +47,7 @@ func init() {
 	acts := precompilesgen.ArbosActsABI
 	PackInternalTxDataStartBlock, UnpackInternalTxDataStartBlock = NewCallParser(acts, "startBlock")
 	PackInternalTxDataBatchPostingReport, UnpackInternalTxDataBatchPostingReport = NewCallParser(acts, "batchPostingReport")
+	PackInternalTxDataDetailedBatchPostingReport, UnpackInternalTxDataDetailedBatchPostingReport = NewCallParser(acts, "detailedBatchPostingReport")
 	PackArbRetryableTxRedeem, _ = NewCallParser(precompilesgen.ArbRetryableTxABI, "redeem")
 }
 
