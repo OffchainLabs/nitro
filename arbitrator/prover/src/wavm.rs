@@ -175,6 +175,8 @@ pub enum Opcode {
     PopCoThread,
     /// switch between main and a cothread
     SwitchThread,
+    /// Gets the end parent chain block hash for MEL
+    GetEndParentChainBlockHash,
     /// Validates the DACertificate certificate before allowing ReadPreImage to access it
     ValidateCertificate,
 }
@@ -293,6 +295,7 @@ impl Opcode {
             Opcode::NewCoThread => 0x8030,
             Opcode::PopCoThread => 0x8031,
             Opcode::SwitchThread => 0x8032,
+            Opcode::GetEndParentChainBlockHash => 0x8033,
         }
     }
 
@@ -306,6 +309,7 @@ impl Opcode {
                 | Opcode::ValidateCertificate
                 | Opcode::ReadPreImage
                 | Opcode::ReadInboxMessage
+                | Opcode::GetEndParentChainBlockHash
         )
     }
 }
