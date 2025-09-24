@@ -12,6 +12,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/arbitrum/multigas"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
 
@@ -271,4 +272,78 @@ func TestMultigasStylus_Create(t *testing.T) {
 		"Used gas mismatch: GasUsed=%d, MultiGas=%d",
 		receipt2.GasUsed, receipt2.MultiGasUsed.SingleGas(),
 	)
+}
+
+func TestMultigasStylus_Calls(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	builder.execConfig.ExposeMultiGas = true
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	l2info := builder.L2Info
+	l2client := builder.L2.Client
+	owner := l2info.GetDefaultTransactOpts("Owner", ctx)
+
+	// deploy multicall + storage targets
+	callsAddr := deployWasm(t, ctx, owner, l2client, rustFile("multicall"))
+	storeAddr := deployWasm(t, ctx, owner, l2client, rustFile("storage"))
+
+	cases := []struct {
+		name   string
+		opcode vm.OpCode
+	}{
+		{"call", vm.CALL},
+		{"delegatecall", vm.DELEGATECALL},
+		{"staticcall", vm.STATICCALL},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var calldata []byte
+			var expectedStorageAccess uint64
+			switch tc.opcode {
+			case vm.CALL:
+				key := testhelpers.RandomHash()
+				storageVal := testhelpers.RandomHash()
+				calldata = argsForMulticall(vm.CALL, storeAddr, nil, argsForStorageWrite(key, storageVal))
+
+				expectedStorageAccess = params.ColdAccountAccessCostEIP2929 - params.WarmStorageReadCostEIP2929
+
+			case vm.DELEGATECALL:
+				calldata = argsForMulticall(vm.DELEGATECALL, callsAddr, nil, []byte{0})
+
+				expectedStorageAccess = 0
+
+			case vm.STATICCALL:
+				key := testhelpers.RandomHash()
+
+				// now read it with STATICCALL
+				calldata = argsForMulticall(vm.STATICCALL, storeAddr, nil, argsForStorageRead(key))
+
+				// One cold account access + one cold storage read
+				expectedStorageAccess = params.ColdAccountAccessCostEIP2929 + params.ColdSloadCostEIP2929 - params.WarmStorageReadCostEIP2929*2
+			}
+
+			tx := l2info.PrepareTxTo("Owner", &callsAddr, 1e9, nil, calldata)
+			require.NoError(t, l2client.SendTransaction(ctx, tx))
+
+			receipt, err := EnsureTxSucceeded(ctx, l2client, tx)
+			require.NoError(t, err)
+
+			require.Equalf(t,
+				receipt.GasUsed,
+				receipt.MultiGasUsed.SingleGas(),
+				"Used gas mismatch: GasUsed=%d, MultiGas=%d, Difference=%d",
+				receipt.GasUsed, receipt.MultiGasUsed.SingleGas(), receipt.GasUsed-receipt.MultiGasUsed.SingleGas(),
+			)
+
+			require.Equal(t,
+				expectedStorageAccess,
+				receipt.MultiGasUsed.Get(multigas.ResourceKindStorageAccess),
+			)
+		})
+	}
 }
