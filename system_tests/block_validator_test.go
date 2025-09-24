@@ -82,9 +82,10 @@ func testBlockValidatorSimple(t *testing.T, opts Options) {
 	}
 	builder.L2Info = nil
 
-	// Configure batch poster for referenceda mode
+	// Configure for referenceda mode
 	if opts.dasModeString == "referenceda" {
 		builder.nodeConfig.BatchPoster.UseCustomDA = true
+		builder.WithReferenceDA()
 	}
 
 	cleanup := builder.Build(t)
@@ -103,6 +104,11 @@ func testBlockValidatorSimple(t *testing.T, opts Options) {
 		// For embedded referenceda, copy the configuration
 		validatorConfig.DA.Mode = "referenceda"
 		validatorConfig.DA.ReferenceDA.Enable = true
+
+		// Copy the validator contract address from builder's nodeConfig
+		if builder.nodeConfig.DA.ReferenceDA.ValidatorContract != "" {
+			validatorConfig.DA.ReferenceDA.ValidatorContract = builder.nodeConfig.DA.ReferenceDA.ValidatorContract
+		}
 
 		// Disable traditional DAS for validator
 		validatorConfig.DataAvailability.Enable = false
