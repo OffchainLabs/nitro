@@ -161,9 +161,8 @@ func (s *Server) Store(
 	ctx context.Context,
 	message hexutil.Bytes,
 	timeout hexutil.Uint64,
-	disableFallbackStoreDataOnChain bool,
 ) (*daclient.StoreResult, error) {
-	serializedDACert, err := s.writer.Store(ctx, message, uint64(timeout), disableFallbackStoreDataOnChain)
+	serializedDACert, err := s.writer.Store(ctx, message, uint64(timeout))
 	if err != nil {
 		return nil, err
 	}
