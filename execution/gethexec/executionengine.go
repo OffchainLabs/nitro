@@ -470,7 +470,9 @@ func (s *ExecutionEngine) resequenceReorgedMessages(messages []*arbostypes.Messa
 			log.Error("failed to re-sequence old user message removed by reorg", "err", err)
 			return
 		}
-		lastBlockHeader = block.Header()
+		if block != nil {
+			lastBlockHeader = block.Header()
+		}
 	}
 }
 
