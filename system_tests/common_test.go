@@ -118,6 +118,13 @@ type TestClient struct {
 	cleanup func()
 }
 
+var RollupOwner = "RollupOwner"
+var Sequencer = "Sequencer"
+var Validator = "Validator"
+var User = "User"
+
+var DefaultChainAccounts = []string{RollupOwner, Sequencer, Validator, User}
+
 func NewTestClient(ctx context.Context) *TestClient {
 	return &TestClient{ctx: ctx}
 }
@@ -1414,10 +1421,9 @@ func createTestL1BlockChain(t *testing.T, l1info info, withClientWrapper bool) (
 	}
 	stackConfig := testhelpers.CreateStackConfigForTest("")
 	l1info.GenerateAccount("Faucet")
-	l1info.GenerateAccount("RollupOwner")
-	l1info.GenerateAccount("Sequencer")
-	l1info.GenerateAccount("Validator")
-	l1info.GenerateAccount("User")
+	for _, acct := range DefaultChainAccounts {
+		l1info.GenerateAccount(acct)
+	}
 
 	chainConfig := chaininfo.ArbitrumDevTestChainConfig()
 	chainConfig.ArbitrumChainParams = params.ArbitrumChainParams{}
@@ -1433,7 +1439,7 @@ func createTestL1BlockChain(t *testing.T, l1info info, withClientWrapper bool) (
 	// Pre-fund with large values some common accounts
 	infoGenesis := l1info.GetGenesisAlloc()
 	bigBalance := big.NewInt(0).SetUint64(9223372036854775807)
-	for _, acct := range []string{"RollupOwner", "Sequencer", "Validator", "User"} {
+	for _, acct := range DefaultChainAccounts {
 		addr := l1info.GetAddress(acct)
 		if l1Genesis.Alloc[addr].Balance == nil {
 			l1Genesis.Alloc[addr] = types.Account{Balance: bigBalance}
@@ -1522,15 +1528,15 @@ func deployOnParentChain(
 	deployBold bool,
 	delayBufferThreshold uint64,
 ) (*chaininfo.RollupAddresses, *arbostypes.ParsedInitMessage) {
-	accts := []string{"RollupOwner", "Sequencer", "Validator", "User"}
 	var fundingTxs []*types.Transaction
-	for _, acct := range accts {
+	for _, acct := range DefaultChainAccounts {
 		if !parentChainInfo.HasAccount(acct) {
 			parentChainInfo.GenerateAccount(acct)
 			fundingTxs = append(fundingTxs, parentChainInfo.PrepareTx("Faucet", acct, parentChainInfo.TransferGas, big.NewInt(9223372036854775807), nil))
 		}
 	}
 	if len(fundingTxs) > 0 {
+		// TODO(NIT-3910): Use ArbosInitializationInfo to fund accounts at genesis instead of sending transactions
 		SendWaitTestTransactions(t, ctx, parentChainClient, fundingTxs)
 	}
 
