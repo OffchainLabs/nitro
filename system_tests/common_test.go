@@ -84,7 +84,7 @@ import (
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 	"github.com/offchainlabs/nitro/util/testhelpers/env"
-	"github.com/offchainlabs/nitro/util/testhelpers/flag"
+	testflag "github.com/offchainlabs/nitro/util/testhelpers/flag"
 	"github.com/offchainlabs/nitro/util/testhelpers/github"
 	"github.com/offchainlabs/nitro/validator/inputs"
 	"github.com/offchainlabs/nitro/validator/server_api"
@@ -1413,7 +1413,7 @@ func createTestL1BlockChain(t *testing.T, l1info info, withClientWrapper bool) (
 	if l1info == nil {
 		l1info = NewL1TestInfo(t)
 	}
-	stackConfig := testhelpers.CreateStackConfigForTest("")
+	stackConfig := testhelpers.CreateStackConfigForTest(t.TempDir())
 	l1info.GenerateAccount("Faucet")
 
 	chainConfig := chaininfo.ArbitrumDevTestChainConfig()

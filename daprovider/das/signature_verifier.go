@@ -26,30 +26,6 @@ type SignatureVerifier struct {
 	extraBpVerifier func(message []byte, sig []byte, extraFields ...uint64) bool
 }
 
-func NewSignatureVerifier(ctx context.Context, config DataAvailabilityConfig) (*SignatureVerifier, error) {
-	if config.ParentChainNodeURL == "none" {
-		return NewSignatureVerifierWithSeqInboxCaller(nil, config.ExtraSignatureCheckingPublicKey)
-	}
-	l1client, err := GetL1Client(ctx, config.ParentChainConnectionAttempts, config.ParentChainNodeURL)
-	if err != nil {
-		return nil, err
-	}
-	seqInboxAddress, err := OptionalAddressFromString(config.SequencerInboxAddress)
-	if err != nil {
-		return nil, err
-	}
-	if seqInboxAddress == nil {
-		return NewSignatureVerifierWithSeqInboxCaller(nil, config.ExtraSignatureCheckingPublicKey)
-	}
-
-	seqInboxCaller, err := bridgegen.NewSequencerInboxCaller(*seqInboxAddress, l1client)
-	if err != nil {
-		return nil, err
-	}
-	return NewSignatureVerifierWithSeqInboxCaller(seqInboxCaller, config.ExtraSignatureCheckingPublicKey)
-
-}
-
 func NewSignatureVerifierWithSeqInboxCaller(
 	seqInboxCaller *bridgegen.SequencerInboxCaller,
 	extraSignatureCheckingPublicKey string,
