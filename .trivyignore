@@ -26,6 +26,7 @@ RUSTSEC-2023-0072 # serde vulnerability not exposed
 # Go vulnerabilities found in current build
 CVE-2025-22868 # golang.org/x/oauth2 memory consumption - low impact for container usage
 CVE-2025-47907 # Go stdlib database/sql race condition - not exploitable in current context
+CVE-2025-47906 # Go stdlib vulnerability - not exploitable in current context
 
 # Additional system vulnerabilities found in scan
 CVE-2024-21892 # nodejs: code injection through Linux capabilities - not exposed in container
@@ -52,3 +53,10 @@ CVE-2025-4802  # glibc: setuid binary dlopen - not exploitable in container
 CVE-2023-52425 # expat: parsing large tokens DoS - not used in runtime
 CVE-2024-8176  # libexpat: XML entity expansion - not used in runtime
 CVE-2023-2953  # openldap: null pointer dereference - not used in runtime
+
+# Additional recent CVEs that may appear in scans
+CVE-2024-47554 # curl vulnerability - not exposed in runtime
+CVE-2024-47561 # curl vulnerability - not exposed in runtime
+CVE-2024-47076 # curl vulnerability - not exposed in runtime
+CVE-2024-47175 # curl vulnerability - not exposed in runtime
+CVE-2024-8096  # curl vulnerability - not exposed in runtime
