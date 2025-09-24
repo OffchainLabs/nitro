@@ -39,9 +39,6 @@ jobs:
           build-mode: manual
           config-file: ./.github/codeql/codeql-config.yml
 
-      - name: Build Nitro for CodeQL
-        run: make build
-
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v3
         with:
