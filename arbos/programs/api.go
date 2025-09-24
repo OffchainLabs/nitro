@@ -70,7 +70,7 @@ func newApiClosures(
 
 	getBytes32 := func(key common.Hash) (common.Hash, uint64) {
 		mgCost := vm.WasmStateLoadCost(db, actingAddress, key)
-		scope.Contract.UsedMultiGas = scope.Contract.UsedMultiGas.SaturatingAdd(mgCost)
+		scope.Contract.UsedMultiGas.SaturatingAddInto(mgCost)
 		return db.GetState(actingAddress, key), mgCost.SingleGas()
 	}
 	setTrieSlots := func(data []byte, gasLeft *uint64) apiStatus {
@@ -131,10 +131,11 @@ func newApiClosures(
 		}
 
 		// computes makeCallVariantGasCallEIP2929 and gasCall/gasDelegateCall/gasStaticCall
-		baseCost, err := vm.WasmCallCost(db, contract, value, gasLeft)
+		mgCost, err := vm.WasmCallCost(db, contract, value, gasLeft)
 		if err != nil {
 			return nil, gasLeft, err
 		}
+		baseCost := mgCost.SingleGas()
 
 		// apply the 63/64ths rule
 		startGas := arbmath.SaturatingUSub(gasLeft, baseCost) * 63 / 64
@@ -150,22 +151,30 @@ func newApiClosures(
 			tracingInfo.CaptureStylusCall(opcode, contract, value, input, gas, startGas, baseCost)
 		}
 
-		var ret []byte
-		var returnGas uint64
+		var (
+			ret            []byte
+			returnGas      uint64
+			returnMultiGas multigas.MultiGas
+		)
 
 		switch opcode {
 		case vm.CALL:
-			ret, returnGas, _, err = evm.Call(scope.Contract.Address(), contract, input, gas, value)
+			ret, returnGas, returnMultiGas, err = evm.Call(scope.Contract.Address(), contract, input, gas, value)
 		case vm.DELEGATECALL:
-			ret, returnGas, _, err = evm.DelegateCall(scope.Contract.Caller(), scope.Contract.Address(), contract, input, gas, scope.Contract.Value())
+			ret, returnGas, returnMultiGas, err = evm.DelegateCall(scope.Contract.Caller(), scope.Contract.Address(), contract, input, gas, scope.Contract.Value())
 		case vm.STATICCALL:
-			ret, returnGas, _, err = evm.StaticCall(scope.Contract.Address(), contract, input, gas)
+			ret, returnGas, returnMultiGas, err = evm.StaticCall(scope.Contract.Address(), contract, input, gas)
 		default:
 			panic("unsupported call type: " + opcode.String())
 		}
 
 		evm.SetReturnData(ret)
+
+		mgCost.SaturatingAddInto(returnMultiGas)
+		scope.Contract.UsedMultiGas.SaturatingAddInto(mgCost)
+
 		cost := arbmath.SaturatingUAdd(baseCost, arbmath.SaturatingUSub(gas, returnGas))
+
 		return ret, cost, err
 	}
 	create := func(code []byte, endowment, salt *u256, gas uint64) (common.Address, []byte, uint64, error) {
