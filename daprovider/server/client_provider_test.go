@@ -30,7 +30,7 @@ func TestInteractionBetweenClientAndProviderServer_StoreSucceeds(t *testing.T) {
 
 	message := testhelpers.RandomizeSlice(make([]byte, 10)) // fits into the body limit
 
-	_, err := client.Store(ctx, message, 0, true)
+	_, err := client.Store(ctx, message, 0)
 	testhelpers.RequireImpl(t, err)
 }
 
@@ -41,7 +41,7 @@ func TestInteractionBetweenClientAndProviderServer_StoreFailsDueToSize(t *testin
 
 	message := testhelpers.RandomizeSlice(make([]byte, RPCServerBodyLimit+1))
 
-	_, err := client.Store(ctx, message, 0, true)
+	_, err := client.Store(ctx, message, 0)
 	require.Regexp(t, ".*Request Entity Too Large.*", err.Error())
 }
 
