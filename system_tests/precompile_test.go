@@ -196,7 +196,14 @@ func TestCustomSolidityErrors(t *testing.T) {
 		"arbosActs.StartBlock",
 	)
 
-	_, customError = arbosActs.BatchPostingReport(&auth, big.NewInt(0), common.Address{}, 0, 0, 0, 0, 0, big.NewInt(0))
+	_, customError = arbosActs.BatchPostingReport(&auth, big.NewInt(0), common.Address{}, 0, 0, big.NewInt(0))
+	ensure(
+		customError,
+		"CallerNotArbOS()",
+		"arbosActs.BatchPostingReport",
+	)
+
+	_, customError = arbosActs.DetailedBatchPostingReport(&auth, big.NewInt(0), common.Address{}, 0, 0, 0, 0, big.NewInt(0))
 	ensure(
 		customError,
 		"CallerNotArbOS()",
