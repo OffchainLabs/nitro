@@ -1,14 +1,9 @@
 ---
-name: CI
-run-name: CI triggered from @${{ github.actor }} of ${{ github.head_ref }}
-
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+name: Merge CI
+run-name: Merge CI triggered from @${{ github.actor }} of ${{ github.head_ref }}
 
 on:
-  workflow_dispatch:
-  pull_request:
+  merge_group:
 
 jobs:
   # --- Determine which files have changed ---
@@ -39,37 +34,65 @@ jobs:
             bold_legacy:
               - 'bold/legacy/**'
 
-  # --- Fast: Build + Lint only (required by can_proceed) ---
+  # --- Fast: Build + Lint only ---
   fast:
     uses: ./.github/workflows/_fast.yml
     secrets: inherit
 
-  # --- Run Arbitrator tests (not required by can_proceed) ---
+  # --- Run Arbitrator tests ---
   arbitrator:
     needs: changes
     if: needs.changes.outputs.arbitrator_changed == 'true'
     uses: ./.github/workflows/_arbitrator.yml
     secrets: inherit
 
-  # --- Run Bold Legacy challenge tests (not required by can_proceed) ---
+  # --- Run Bold Legacy challenge tests ---
   bold-legacy:
     needs: changes
     if: needs.changes.outputs.bold_legacy_changed == 'true'
     uses: ./.github/workflows/_bold-legacy.yml
     secrets: inherit
 
-  # --- Full GO tests (not required by can_proceed) ---
+  # --- Full GO tests ---
   go-tests:
     uses: ./.github/workflows/_go-tests.yml
     secrets: inherit
 
   can_proceed:
-    name: can_proceed
     runs-on: ubuntu-4
-    needs: [fast]
+    needs: [fast, arbitrator, bold-legacy, go-tests]
+    if: always()
     steps:
-      - name: OK
-        run: exit 0
+      - name: Aggregate results
+        run: |
+          fast_result="${{ needs.fast.result }}"
+          go_tests_result="${{ needs['go-tests'].result }}"
+          arbitrator_result="${{ needs.arbitrator.result }}"
+          bold_legacy_result="${{ needs['bold-legacy'].result }}"
+          ok=1
+          if [ "$fast_result" != "success" ]; then
+            ok=0
+            echo "Fast job failed or was skipped"
+          fi
+          if [ "$go_tests_result" != "success" ]; then
+            ok=0
+            echo "Go tests job failed or was skipped"
+          fi
+          if [ "$arbitrator_result" != "success" ] && [ "$arbitrator_result" != "skipped" ]; then
+            ok=0
+            echo "Arbitrator job failed"
+          fi
+          if [ "$bold_legacy_result" != "success" ] && [ "$bold_legacy_result" != "skipped" ]; then
+            ok=0
+            echo "Bold Legacy job failed"
+          fi
+          if [ $ok -eq 1 ]; then
+            echo "All required jobs passed or were skipped"
+            exit 0
+          else
+            echo "One or more required jobs failed"
+            exit 1
+          fi
 
   can_see_status:
     # This job is just to make sure that the "can_proceed" job's status is visible
