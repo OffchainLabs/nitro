@@ -25,7 +25,7 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Start registry
-        run: docker run -d -p 5000:5000 registry:2
+        run: docker run -d -p 5000:5000 registry:2.8
 
       - name: Checkout
         uses: actions/checkout@v5
