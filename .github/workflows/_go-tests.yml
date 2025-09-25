@@ -11,12 +11,17 @@ jobs:
       fail-fast: false
       matrix:
         test-mode: [defaults, pathdb, challenge, stylus, l3challenge]
-    services:
-      redis:
-        image: redis
-        ports:
-          - 6379:6379
+
     steps:
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Start redis
+        docker run -d -p 6379: 6379 redis:latest
+
       - name: Checkout
         uses: actions/checkout@v5
         with:
