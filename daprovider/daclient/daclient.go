@@ -71,11 +71,11 @@ func (c *Client) RecoverPayload(
 	promise := containers.NewPromise[daprovider.PayloadResult](nil)
 	go func() {
 		ctx := context.Background()
-		var recoverPayloadFromBatchResult server_api.RecoverPayloadFromBatchResult
-		if err := c.CallContext(ctx, &recoverPayloadFromBatchResult, "daprovider_recoverPayloadFromBatch", hexutil.Uint64(batchNum), batchBlockHash, hexutil.Bytes(sequencerMsg), nil, validateSeqMsg); err != nil {
-			promise.ProduceError(fmt.Errorf("error returned from daprovider_recoverPayloadFromBatch rpc method, err: %w", err))
+		var result daprovider.PayloadResult
+		if err := c.CallContext(ctx, &result, "daprovider_recoverPayload", hexutil.Uint64(batchNum), batchBlockHash, hexutil.Bytes(sequencerMsg), validateSeqMsg); err != nil {
+			promise.ProduceError(fmt.Errorf("error returned from daprovider_recoverPayload rpc method, err: %w", err))
 		} else {
-			promise.Produce(daprovider.PayloadResult{Payload: recoverPayloadFromBatchResult.Payload})
+			promise.Produce(result)
 		}
 	}()
 	return &promise
@@ -91,12 +91,11 @@ func (c *Client) CollectPreimages(
 	promise := containers.NewPromise[daprovider.PreimagesResult](nil)
 	go func() {
 		ctx := context.Background()
-		preimages := make(daprovider.PreimagesMap)
-		var recoverPayloadFromBatchResult server_api.RecoverPayloadFromBatchResult
-		if err := c.CallContext(ctx, &recoverPayloadFromBatchResult, "daprovider_recoverPayloadFromBatch", hexutil.Uint64(batchNum), batchBlockHash, hexutil.Bytes(sequencerMsg), preimages, validateSeqMsg); err != nil {
-			promise.ProduceError(fmt.Errorf("error returned from daprovider_recoverPayloadFromBatch rpc method, err: %w", err))
+		var result daprovider.PreimagesResult
+		if err := c.CallContext(ctx, &result, "daprovider_collectPreimages", hexutil.Uint64(batchNum), batchBlockHash, hexutil.Bytes(sequencerMsg), validateSeqMsg); err != nil {
+			promise.ProduceError(fmt.Errorf("error returned from daprovider_collectPreimages rpc method, err: %w", err))
 		} else {
-			promise.Produce(daprovider.PreimagesResult{Preimages: recoverPayloadFromBatchResult.Preimages})
+			promise.Produce(result)
 		}
 	}()
 	return &promise

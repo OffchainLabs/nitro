@@ -5,19 +5,11 @@ package server_api
 
 import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
-
-	"github.com/offchainlabs/nitro/daprovider"
 )
 
 // SupportedHeaderBytesResult is the result struct that data availability providers should use to respond with their supported header bytes
 type SupportedHeaderBytesResult struct {
 	HeaderBytes hexutil.Bytes `json:"headerBytes,omitempty"`
-}
-
-// RecoverPayloadFromBatchResult is the result struct that data availability providers should use to respond with underlying payload and updated preimages map to a RecoverPayloadFromBatch fetch request
-type RecoverPayloadFromBatchResult struct {
-	Payload   hexutil.Bytes           `json:"payload,omitempty"`
-	Preimages daprovider.PreimagesMap `json:"preimages,omitempty"`
 }
 
 // StoreResult is the result struct that data availability providers should use to respond with a commitment to a Store request for posting batch data to their DA service
