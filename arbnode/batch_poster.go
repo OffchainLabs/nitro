@@ -1708,6 +1708,8 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 
 		batchPosterDASuccessCounter.Inc(1)
 		batchPosterDALastSuccessfulActionGauge.Update(time.Now().Unix())
+	} else {
+		sequencerMsg = batchData
 	}
 
 	prevMessageCount := batchPosition.MessageCount
