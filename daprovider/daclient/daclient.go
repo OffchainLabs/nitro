@@ -22,6 +22,10 @@ type Client struct {
 	*rpcclient.RpcClient
 }
 
+func (c *Client) String() string {
+	return "DA Client"
+}
+
 type ClientConfig struct {
 	Enable     bool                   `koanf:"enable"`
 	WithWriter bool                   `koanf:"with-writer"`

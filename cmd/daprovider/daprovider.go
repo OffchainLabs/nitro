@@ -21,8 +21,8 @@ import (
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
-	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/daprovider/das"
+	"github.com/offchainlabs/nitro/daprovider/das/dasutil"
 	"github.com/offchainlabs/nitro/daprovider/factory"
 	"github.com/offchainlabs/nitro/daprovider/referenceda"
 	dapserver "github.com/offchainlabs/nitro/daprovider/server"
@@ -263,7 +263,7 @@ func startup() error {
 		cleanupFuncs = append(cleanupFuncs, readerCleanup)
 	}
 
-	var writer daprovider.Writer
+	var writer dasutil.DASWriter
 	if config.ProviderServer.EnableDAWriter {
 		var writerCleanup func()
 		writer, writerCleanup, err = providerFactory.CreateWriter(ctx)

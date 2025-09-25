@@ -43,6 +43,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/daprovider"
+	"github.com/offchainlabs/nitro/daprovider/das/dasutil"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/util"
@@ -106,7 +107,7 @@ type BatchPoster struct {
 	bridgeAddr         common.Address
 	gasRefunderAddr    common.Address
 	building           *buildingBatch
-	dapWriter          daprovider.Writer
+	dapWriter          dasutil.DASWriter
 	dapReaders         []daprovider.Reader
 	dataPoster         *dataposter.DataPoster
 	redisLock          *redislock.Simple
@@ -332,7 +333,7 @@ type BatchPosterOpts struct {
 	Config        BatchPosterConfigFetcher
 	DeployInfo    *chaininfo.RollupAddresses
 	TransactOpts  *bind.TransactOpts
-	DAPWriter     daprovider.Writer
+	DAPWriter     dasutil.DASWriter
 	ParentChainID *big.Int
 	DAPReaders    []daprovider.Reader
 }

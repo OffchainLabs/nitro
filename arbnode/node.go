@@ -40,6 +40,7 @@ import (
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/daprovider/daclient"
 	"github.com/offchainlabs/nitro/daprovider/das"
+	"github.com/offchainlabs/nitro/daprovider/das/dasutil"
 	"github.com/offchainlabs/nitro/daprovider/factory"
 	"github.com/offchainlabs/nitro/daprovider/referenceda"
 	dapserver "github.com/offchainlabs/nitro/daprovider/server"
@@ -574,7 +575,7 @@ func getDAProvider(
 	dataSigner signature.DataSignerFunc,
 	l1client *ethclient.Client,
 	stack *node.Node,
-) (daprovider.Writer, func(), []daprovider.Reader, daprovider.Validator, error) {
+) (dasutil.DASWriter, func(), []daprovider.Reader, daprovider.Validator, error) {
 	// Validate DA configuration
 	if config.DA.Mode == "external" {
 		if !config.DA.ExternalProvider.Enable {
@@ -677,7 +678,7 @@ func getDAProvider(
 			cleanupFuncs = append(cleanupFuncs, readerCleanup)
 		}
 
-		var writer daprovider.Writer
+		var writer dasutil.DASWriter
 		if config.BatchPoster.Enable {
 			var writerCleanup func()
 			writer, writerCleanup, err = daFactory.CreateWriter(ctx)
@@ -1002,7 +1003,7 @@ func getBatchPoster(
 	config *Config,
 	configFetcher ConfigFetcher,
 	txOptsBatchPoster *bind.TransactOpts,
-	dapWriter daprovider.Writer,
+	dapWriter dasutil.DASWriter,
 	l1Reader *headerreader.HeaderReader,
 	inboxTracker *InboxTracker,
 	txStreamer *TransactionStreamer,

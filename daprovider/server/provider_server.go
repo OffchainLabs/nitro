@@ -26,11 +26,12 @@ import (
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/daprovider/daclient"
+	"github.com/offchainlabs/nitro/daprovider/das/dasutil"
 )
 
 type Server struct {
 	reader    daprovider.Reader
-	writer    daprovider.Writer
+	writer    dasutil.DASWriter
 	validator daprovider.Validator
 }
 
@@ -75,7 +76,7 @@ func fetchJWTSecret(fileName string) ([]byte, error) {
 }
 
 // NewServerWithDAPProvider creates a new server with pre-created reader/writer/validator components
-func NewServerWithDAPProvider(ctx context.Context, config *ServerConfig, reader daprovider.Reader, writer daprovider.Writer, validator daprovider.Validator) (*http.Server, error) {
+func NewServerWithDAPProvider(ctx context.Context, config *ServerConfig, reader daprovider.Reader, writer dasutil.DASWriter, validator daprovider.Validator) (*http.Server, error) {
 	listener, err := net.Listen("tcp", fmt.Sprintf("%s:%d", config.Addr, config.Port))
 	if err != nil {
 		return nil, err
