@@ -14,6 +14,7 @@ import (
 
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/daprovider/server_api"
+	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/rpcclient"
 )
 
@@ -60,19 +61,45 @@ func (c *Client) GetSupportedHeaderBytes(ctx context.Context) ([]byte, error) {
 	return result.HeaderBytes, nil
 }
 
-func (c *Client) RecoverPayloadFromBatch(
-	ctx context.Context,
+// RecoverPayload fetches the underlying payload from the DA provider
+func (c *Client) RecoverPayload(
 	batchNum uint64,
 	batchBlockHash common.Hash,
 	sequencerMsg []byte,
-	preimages daprovider.PreimagesMap,
 	validateSeqMsg bool,
-) ([]byte, daprovider.PreimagesMap, error) {
-	var recoverPayloadFromBatchResult server_api.RecoverPayloadFromBatchResult
-	if err := c.CallContext(ctx, &recoverPayloadFromBatchResult, "daprovider_recoverPayloadFromBatch", hexutil.Uint64(batchNum), batchBlockHash, hexutil.Bytes(sequencerMsg), preimages, validateSeqMsg); err != nil {
-		return nil, nil, fmt.Errorf("error returned from daprovider_recoverPayloadFromBatch rpc method, err: %w", err)
-	}
-	return recoverPayloadFromBatchResult.Payload, recoverPayloadFromBatchResult.Preimages, nil
+) containers.PromiseInterface[daprovider.PayloadResult] {
+	promise := containers.NewPromise[daprovider.PayloadResult](nil)
+	go func() {
+		ctx := context.Background()
+		var recoverPayloadFromBatchResult server_api.RecoverPayloadFromBatchResult
+		if err := c.CallContext(ctx, &recoverPayloadFromBatchResult, "daprovider_recoverPayloadFromBatch", hexutil.Uint64(batchNum), batchBlockHash, hexutil.Bytes(sequencerMsg), nil, validateSeqMsg); err != nil {
+			promise.ProduceError(fmt.Errorf("error returned from daprovider_recoverPayloadFromBatch rpc method, err: %w", err))
+		} else {
+			promise.Produce(daprovider.PayloadResult{Payload: recoverPayloadFromBatchResult.Payload})
+		}
+	}()
+	return &promise
+}
+
+// CollectPreimages collects preimages from the DA provider
+func (c *Client) CollectPreimages(
+	batchNum uint64,
+	batchBlockHash common.Hash,
+	sequencerMsg []byte,
+	validateSeqMsg bool,
+) containers.PromiseInterface[daprovider.PreimagesResult] {
+	promise := containers.NewPromise[daprovider.PreimagesResult](nil)
+	go func() {
+		ctx := context.Background()
+		preimages := make(daprovider.PreimagesMap)
+		var recoverPayloadFromBatchResult server_api.RecoverPayloadFromBatchResult
+		if err := c.CallContext(ctx, &recoverPayloadFromBatchResult, "daprovider_recoverPayloadFromBatch", hexutil.Uint64(batchNum), batchBlockHash, hexutil.Bytes(sequencerMsg), preimages, validateSeqMsg); err != nil {
+			promise.ProduceError(fmt.Errorf("error returned from daprovider_recoverPayloadFromBatch rpc method, err: %w", err))
+		} else {
+			promise.Produce(daprovider.PreimagesResult{Preimages: recoverPayloadFromBatchResult.Preimages})
+		}
+	}()
+	return &promise
 }
 
 func (c *Client) Store(

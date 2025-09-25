@@ -182,14 +182,34 @@ func (s *Server) RecoverPayloadFromBatch(
 	preimages daprovider.PreimagesMap,
 	validateSeqMsg bool,
 ) (*server_api.RecoverPayloadFromBatchResult, error) {
-	payload, preimages, err := s.reader.RecoverPayloadFromBatch(ctx, uint64(batchNum), batchBlockHash, sequencerMsg, preimages, validateSeqMsg)
-	if err != nil {
-		return nil, err
+	// If preimages are requested, use CollectPreimages, otherwise RecoverPayload
+	if preimages != nil {
+		promise := s.reader.CollectPreimages(uint64(batchNum), batchBlockHash, sequencerMsg, validateSeqMsg)
+		result, err := promise.Await(ctx)
+		if err != nil {
+			return nil, err
+		}
+		// We still need to get the payload, so call RecoverPayload too
+		payloadPromise := s.reader.RecoverPayload(uint64(batchNum), batchBlockHash, sequencerMsg, validateSeqMsg)
+		payloadResult, err := payloadPromise.Await(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return &server_api.RecoverPayloadFromBatchResult{
+			Payload:   payloadResult.Payload,
+			Preimages: result.Preimages,
+		}, nil
+	} else {
+		promise := s.reader.RecoverPayload(uint64(batchNum), batchBlockHash, sequencerMsg, validateSeqMsg)
+		result, err := promise.Await(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return &server_api.RecoverPayloadFromBatchResult{
+			Payload:   result.Payload,
+			Preimages: nil,
+		}, nil
 	}
-	return &server_api.RecoverPayloadFromBatchResult{
-		Payload:   payload,
-		Preimages: preimages,
-	}, nil
 }
 
 func (s *Server) Store(
