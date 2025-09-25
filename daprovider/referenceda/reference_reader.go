@@ -40,7 +40,6 @@ func (r *Reader) recoverInternal(
 	batchNum uint64,
 	batchBlockHash common.Hash,
 	sequencerMsg []byte,
-	validateSeqMsg bool,
 	needPayload bool,
 	needPreimages bool,
 ) ([]byte, daprovider.PreimagesMap, error) {
@@ -57,22 +56,20 @@ func (r *Reader) recoverInternal(
 		return nil, nil, fmt.Errorf("failed to deserialize certificate: %w", err)
 	}
 
-	// Validate certificate if requested
+	// Validate certificate - always validate for ReferenceDA
 	// TODO: Uncomment the following once we have merged customda contracts changes.
 	/*
-		if validateSeqMsg {
-				// Create contract binding
-				validator, err := ospgen.NewReferenceDAProofValidator(r.validatorAddr, r.l1Client)
-				if err != nil {
-					return nil, nil, fmt.Errorf("failed to create validator binding: %w", err)
-				}
+		// Create contract binding
+		validator, err := ospgen.NewReferenceDAProofValidator(r.validatorAddr, r.l1Client)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to create validator binding: %w", err)
+		}
 
-				// Validate using contract
-				callOpts := &bind.CallOpts{Context: ctx}
-				err = cert.ValidateWithContract(validator, callOpts)
-				if err != nil {
-					return nil, nil, fmt.Errorf("certificate validation failed: %w", err)
-				}
+		// Validate using contract
+		callOpts := &bind.CallOpts{Context: ctx}
+		err = cert.ValidateWithContract(validator, callOpts)
+		if err != nil {
+			return nil, nil, fmt.Errorf("certificate validation failed: %w", err)
 		}
 	*/
 
@@ -125,12 +122,11 @@ func (r *Reader) RecoverPayload(
 	batchNum uint64,
 	batchBlockHash common.Hash,
 	sequencerMsg []byte,
-	validateSeqMsg bool,
 ) containers.PromiseInterface[daprovider.PayloadResult] {
 	promise := containers.NewPromise[daprovider.PayloadResult](nil)
 	go func() {
 		ctx := context.Background()
-		payload, _, err := r.recoverInternal(ctx, batchNum, batchBlockHash, sequencerMsg, validateSeqMsg, true, false)
+		payload, _, err := r.recoverInternal(ctx, batchNum, batchBlockHash, sequencerMsg, true, false)
 		if err != nil {
 			promise.ProduceError(err)
 		} else {
@@ -145,12 +141,11 @@ func (r *Reader) CollectPreimages(
 	batchNum uint64,
 	batchBlockHash common.Hash,
 	sequencerMsg []byte,
-	validateSeqMsg bool,
 ) containers.PromiseInterface[daprovider.PreimagesResult] {
 	promise := containers.NewPromise[daprovider.PreimagesResult](nil)
 	go func() {
 		ctx := context.Background()
-		_, preimages, err := r.recoverInternal(ctx, batchNum, batchBlockHash, sequencerMsg, validateSeqMsg, false, true)
+		_, preimages, err := r.recoverInternal(ctx, batchNum, batchBlockHash, sequencerMsg, false, true)
 		if err != nil {
 			promise.ProduceError(err)
 		} else {

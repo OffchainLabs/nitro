@@ -135,7 +135,7 @@ func (f *AnyTrustFactory) CreateReader(ctx context.Context) (daprovider.Reader, 
 		daReader = das.NewReaderPanicWrapper(daReader)
 	}
 
-	reader := dasutil.NewReaderForDAS(daReader, keysetFetcher)
+	reader := dasutil.NewReaderForDAS(daReader, keysetFetcher, daprovider.KeysetValidate)
 	cleanupFn := func() {
 		if lifecycleManager != nil {
 			lifecycleManager.StopAndWaitUntil(0)

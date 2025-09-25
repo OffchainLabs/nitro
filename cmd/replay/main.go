@@ -242,7 +242,7 @@ func main() {
 		}
 		dapReaders := daprovider.NewReaderRegistry()
 		if dasReader != nil {
-			err = dapReaders.SetupDASReader(dasutil.NewReaderForDAS(dasReader, dasKeysetFetcher))
+			err = dapReaders.SetupDASReader(dasutil.NewReaderForDAS(dasReader, dasKeysetFetcher, keysetValidationMode))
 			if err != nil {
 				panic(fmt.Sprintf("Failed to register DAS reader: %v", err))
 			}

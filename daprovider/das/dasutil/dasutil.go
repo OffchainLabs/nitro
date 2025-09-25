@@ -41,16 +41,18 @@ type DASKeysetFetcher interface {
 
 // NewReaderForDAS is generally meant to be only used by nitro.
 // DA Providers should implement methods in the Reader interface independently
-func NewReaderForDAS(dasReader DASReader, keysetFetcher DASKeysetFetcher) *readerForDAS {
+func NewReaderForDAS(dasReader DASReader, keysetFetcher DASKeysetFetcher, validationMode daprovider.KeysetValidationMode) *readerForDAS {
 	return &readerForDAS{
-		dasReader:     dasReader,
-		keysetFetcher: keysetFetcher,
+		dasReader:      dasReader,
+		keysetFetcher:  keysetFetcher,
+		validationMode: validationMode,
 	}
 }
 
 type readerForDAS struct {
-	dasReader     DASReader
-	keysetFetcher DASKeysetFetcher
+	dasReader      DASReader
+	keysetFetcher  DASKeysetFetcher
+	validationMode daprovider.KeysetValidationMode
 }
 
 // recoverInternal is the shared implementation for both RecoverPayload and CollectPreimages
@@ -58,10 +60,11 @@ func (d *readerForDAS) recoverInternal(
 	ctx context.Context,
 	batchNum uint64,
 	sequencerMsg []byte,
-	validateSeqMsg bool,
 	needPayload bool,
 	needPreimages bool,
 ) ([]byte, daprovider.PreimagesMap, error) {
+	// Convert validation mode to boolean for the internal function
+	validateSeqMsg := d.validationMode != daprovider.KeysetDontValidate
 	return recoverPayloadFromDasBatchInternal(ctx, batchNum, sequencerMsg, d.dasReader, d.keysetFetcher, validateSeqMsg, needPayload, needPreimages)
 }
 
@@ -70,12 +73,11 @@ func (d *readerForDAS) RecoverPayload(
 	batchNum uint64,
 	batchBlockHash common.Hash,
 	sequencerMsg []byte,
-	validateSeqMsg bool,
 ) containers.PromiseInterface[daprovider.PayloadResult] {
 	promise := containers.NewPromise[daprovider.PayloadResult](nil)
 	go func() {
 		ctx := context.Background()
-		payload, _, err := d.recoverInternal(ctx, batchNum, sequencerMsg, validateSeqMsg, true, false)
+		payload, _, err := d.recoverInternal(ctx, batchNum, sequencerMsg, true, false)
 		if err != nil {
 			promise.ProduceError(err)
 		} else {
@@ -90,12 +92,11 @@ func (d *readerForDAS) CollectPreimages(
 	batchNum uint64,
 	batchBlockHash common.Hash,
 	sequencerMsg []byte,
-	validateSeqMsg bool,
 ) containers.PromiseInterface[daprovider.PreimagesResult] {
 	promise := containers.NewPromise[daprovider.PreimagesResult](nil)
 	go func() {
 		ctx := context.Background()
-		_, preimages, err := d.recoverInternal(ctx, batchNum, sequencerMsg, validateSeqMsg, false, true)
+		_, preimages, err := d.recoverInternal(ctx, batchNum, sequencerMsg, false, true)
 		if err != nil {
 			promise.ProduceError(err)
 		} else {
