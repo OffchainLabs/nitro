@@ -457,17 +457,21 @@ func (s *ExecutionEngine) resequenceReorgedMessages(messages []*arbostypes.Messa
 			log.Warn("skipping non-standard sequencer message found from reorg", "header", header)
 			continue
 		}
-		txes, err := arbos.ParseL2Transactions(msg.Message, s.bc.Config().ChainID)
+		lastArbosVersion := types.DeserializeHeaderExtraInformation(lastBlockHeader).ArbOSFormatVersion
+		txes, err := arbos.ParseL2Transactions(msg.Message, s.bc.Config().ChainID, lastArbosVersion)
 		if err != nil {
 			log.Warn("failed to parse sequencer message found from reorg", "err", err)
 			continue
 		}
 		hooks := arbos.NoopSequencingHooks(txes)
 		hooks.DiscardInvalidTxsEarly = true
-		_, err = s.sequenceTransactionsWithBlockMutex(msg.Message.Header, hooks, nil)
+		block, err := s.sequenceTransactionsWithBlockMutex(msg.Message.Header, hooks, nil)
 		if err != nil {
 			log.Error("failed to re-sequence old user message removed by reorg", "err", err)
 			return
+		}
+		if block != nil {
+			lastBlockHeader = block.Header()
 		}
 	}
 }
