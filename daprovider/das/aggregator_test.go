@@ -145,20 +145,6 @@ func (w *WrapStore) Store(ctx context.Context, message []byte, timeout uint64) (
 	return nil, nil
 }
 
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
 func enableLogging() {
 	glogger := log.NewGlogHandler(
 		log.NewTerminalHandler(io.Writer(os.Stderr), false))
