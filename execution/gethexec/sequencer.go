@@ -86,9 +86,8 @@ type SequencerConfig struct {
 }
 
 type DangerousConfig struct {
-	DisableSeqInboxMaxDataSizeCheck bool   `koanf:"disable-seq-inbox-max-data-size-check"`
-	DisableBlobBaseFeeCheck         bool   `koanf:"disable-blob-base-fee-check"`
-	SequenceDebugBlock              uint64 `koanf:"sequence-debug-block"`
+	DisableSeqInboxMaxDataSizeCheck bool `koanf:"disable-seq-inbox-max-data-size-check"`
+	DisableBlobBaseFeeCheck         bool `koanf:"disable-blob-base-fee-check"`
 }
 
 type TimeboostConfig struct {
@@ -199,7 +198,6 @@ var DefaultSequencerConfig = SequencerConfig{
 
 var DefaultDangerousConfig = DangerousConfig{
 	DisableSeqInboxMaxDataSizeCheck: false,
-	SequenceDebugBlock:              0,
 }
 
 func SequencerConfigAddOptions(prefix string, f *pflag.FlagSet) {
@@ -241,7 +239,6 @@ func TimeboostAddOptions(prefix string, f *pflag.FlagSet) {
 func DangerousAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".disable-seq-inbox-max-data-size-check", DefaultDangerousConfig.DisableSeqInboxMaxDataSizeCheck, "DANGEROUS! disables nitro checks on sequencer MaxTxDataSize against the sequencer inbox MaxDataSize")
 	f.Bool(prefix+".disable-blob-base-fee-check", DefaultDangerousConfig.DisableBlobBaseFeeCheck, "DANGEROUS! disables nitro checks on sequencer for blob base fee")
-	f.Uint64(prefix+".sequence-debug-block", DefaultDangerousConfig.SequenceDebugBlock, "DANGEROUS! sequences a block that prefunds dev wallet")
 }
 
 type txQueueItem struct {

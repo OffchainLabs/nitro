@@ -212,39 +212,6 @@
     }
   },
   {
-    "chain-name": "arb-bench-test",
-    "chain-config": {
-      "chainId": 412348,
-      "homesteadBlock": 0,
-      "daoForkBlock": null,
-      "daoForkSupport": true,
-      "eip150Block": 0,
-      "eip150Hash": "0x0000000000000000000000000000000000000000000000000000000000000000",
-      "eip155Block": 0,
-      "eip158Block": 0,
-      "byzantiumBlock": 0,
-      "constantinopleBlock": 0,
-      "petersburgBlock": 0,
-      "istanbulBlock": 0,
-      "muirGlacierBlock": 0,
-      "berlinBlock": 0,
-      "londonBlock": 0,
-      "clique": {
-        "period": 0,
-        "epoch": 0
-      },
-      "arbitrum": {
-        "EnableArbOS": true,
-        "AllowDebugPrecompiles": false,
-        "DataAvailabilityCommittee": false,
-        "InitialArbOSVersion": 50,
-        "InitialChainOwner": "0x0000000000000000000000000000000000000000",
-        "GenesisBlockNum": 0,
-		"DebugBlock":3
-      }
-    }
-  },
-  {
     "chain-id": 421614,
     "parent-chain-id": 11155111,
     "parent-chain-is-arbitrum": false,
