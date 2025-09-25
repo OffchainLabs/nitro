@@ -40,7 +40,7 @@ import (
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/daprovider/daclient"
 	"github.com/offchainlabs/nitro/daprovider/das"
-	"github.com/offchainlabs/nitro/daprovider/das/dasserver"
+	dapserver "github.com/offchainlabs/nitro/daprovider/server"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
@@ -589,13 +589,13 @@ func getDAS(
 			}
 		}()
 
-		serverConfig := dasserver.DefaultServerConfig
+		serverConfig := dapserver.DefaultDASServerConfig
 		serverConfig.Port = 0 // Initializes server at a random available port
 		serverConfig.DataAvailability = config.DataAvailability
 		serverConfig.EnableDAWriter = config.BatchPoster.Enable
 		serverConfig.JWTSecret = jwtPath
 		withDAWriter = config.BatchPoster.Enable
-		dasServer, closeFn, err := dasserver.NewServer(ctx, &serverConfig, dataSigner, l1client, l1Reader, deployInfo.SequencerInbox)
+		dasServer, closeFn, err := dapserver.NewServerForDAS(ctx, &serverConfig, dataSigner, l1client, l1Reader, deployInfo.SequencerInbox)
 		if err != nil {
 			return nil, nil, nil, err
 		}
