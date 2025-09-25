@@ -32,6 +32,7 @@ var ArbRetryableTxAddress common.Address
 var ArbSysAddress common.Address
 var InternalTxStartBlockMethodID [4]byte
 var InternalTxBatchPostingReportMethodID [4]byte
+var InternalTxBatchPostingReportV2MethodID [4]byte
 var RedeemScheduledEventID common.Hash
 var L2ToL1TransactionEventID common.Hash
 var L2ToL1TxEventID common.Hash
@@ -186,7 +187,8 @@ func ProduceBlock(
 	exposeMultiGas bool,
 ) (*types.Block, types.Receipts, error) {
 	chainConfig := chainContext.Config()
-	txes, err := ParseL2Transactions(message, chainConfig.ChainID)
+	lastArbosVersion := types.DeserializeHeaderExtraInformation(lastBlockHeader).ArbOSFormatVersion
+	txes, err := ParseL2Transactions(message, chainConfig.ChainID, lastArbosVersion)
 	if err != nil {
 		log.Warn("error parsing incoming message", "err", err)
 		txes = types.Transactions{}
