@@ -142,8 +142,8 @@ func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.Arbos
 			log.Warn("L1Pricing UpdateForSequencerSpending failed", "err", err)
 		}
 		return nil
-	case InternalTxDetailedBatchPostingReportMethodID:
-		inputs, err := util.UnpackInternalTxDataDetailedBatchPostingReport(tx.Data)
+	case InternalTxBatchPostingReportV2MethodID:
+		inputs, err := util.UnpackInternalTxDataBatchPostingReportV2(tx.Data)
 		if err != nil {
 			return err
 		}
@@ -193,7 +193,7 @@ func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.Arbos
 			util.TracingDuringEVM,
 		)
 		if err != nil {
-			log.Warn("L1Pricing UpdateForSequencerSpending failed (detailed report)", "err", err)
+			log.Warn("L1Pricing UpdateForSequencerSpending failed (v2 report)", "err", err)
 		}
 		return nil
 

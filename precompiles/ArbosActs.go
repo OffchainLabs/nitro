@@ -19,6 +19,6 @@ func (con ArbosActs) BatchPostingReport(c ctx, evm mech, batchTimestamp huge, ba
 	return con.CallerNotArbOSError()
 }
 
-func (con ArbosActs) DetailedBatchPostingReport(c ctx, evm mech, batchTimestamp huge, batchPosterAddress addr, batchNumber uint64, batchCallDataLength uint64, batchCallDataNonZeros uint64, batchExtraGas uint64, l1BaseFeeWei huge) error {
+func (con ArbosActs) BatchPostingReportV2(c ctx, evm mech, batchTimestamp huge, batchPosterAddress addr, batchNumber uint64, batchCallDataLength uint64, batchCallDataNonZeros uint64, batchExtraGas uint64, l1BaseFeeWei huge) error {
 	return con.CallerNotArbOSError()
 }

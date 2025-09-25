@@ -371,8 +371,8 @@ func parseSubmitRetryableMessage(rd io.Reader, header *arbostypes.L1IncomingMess
 	return types.NewTx(tx), err
 }
 
-// if lastArbosVersion is under 50: we'll create a nondetailed batch-posting report
-// arbos-50+ can parse both legacy and detailed batch posting report, so it's o.k. that we rely on previous block
+// if lastArbosVersion is under 50: we'll create a legacy batch-posting report
+// arbos-50+ can parse both legacy and v2 batch posting report, so it's o.k. that we rely on previous block
 func createBatchPostingReportTransaction(rd io.Reader, chainId *big.Int, lastArbosVersion uint64, batchDataStats *arbostypes.BatchDataStats, legacyBatchGas *uint64) (*types.Transaction, error) {
 	batchTimestamp, batchPosterAddr, _, batchNum, l1BaseFee, extraGas, err := arbostypes.ParseBatchPostingReportMessageFields(rd)
 	if err != nil {
@@ -404,7 +404,7 @@ func createBatchPostingReportTransaction(rd io.Reader, chainId *big.Int, lastArb
 		if batchDataStats == nil {
 			return nil, fmt.Errorf("no gas data stats in a batch posting report post arbos 50")
 		}
-		data, err = util.PackInternalTxDataDetailedBatchPostingReport(
+		data, err = util.PackInternalTxDataBatchPostingReportV2(
 			batchTimestamp, batchPosterAddr, batchNum, batchDataStats.Length, batchDataStats.NonZeros, extraGas, l1BaseFee,
 		)
 		if err != nil {

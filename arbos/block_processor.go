@@ -32,7 +32,7 @@ var ArbRetryableTxAddress common.Address
 var ArbSysAddress common.Address
 var InternalTxStartBlockMethodID [4]byte
 var InternalTxBatchPostingReportMethodID [4]byte
-var InternalTxDetailedBatchPostingReportMethodID [4]byte
+var InternalTxBatchPostingReportV2MethodID [4]byte
 var RedeemScheduledEventID common.Hash
 var L2ToL1TransactionEventID common.Hash
 var L2ToL1TxEventID common.Hash
