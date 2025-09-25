@@ -27,7 +27,7 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Start redis
-        docker run -d -p 6379: 6379 redis:latest
+        docker run -d -p 6379:6379 redis:latest
 
       - name: Checkout
         uses: actions/checkout@v5
