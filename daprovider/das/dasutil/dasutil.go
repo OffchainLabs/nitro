@@ -37,24 +37,30 @@ type GenericDASWriter[WriteResult any] interface {
 type DASWriter = GenericDASWriter[[]byte]
 type AnyTrustWriter = GenericDASWriter[*DataAvailabilityCertificate]
 
-func ConvertAnyTrustWriterToDASWriter(anyTrustWriter AnyTrustWriter) DASWriter {
-	return &anyTrustWriterWrapper{anyTrustWriter}
+// NewDASWriterAdapter converts a writer with a generic WriteResult into a concrete DASWriter ([]byte)
+// by using the provided mapFn to convert the generic result to []byte.
+func NewDASWriterAdapter[WriteResult any](
+	inner GenericDASWriter[WriteResult],
+	mapFn func(WriteResult) []byte,
+) DASWriter {
+	return &writerWrapper[WriteResult]{inner, mapFn}
 }
 
-type anyTrustWriterWrapper struct {
-	AnyTrustWriter
+type writerWrapper[InnerResult any] struct {
+	inner GenericDASWriter[InnerResult]
+	mapFn func(InnerResult) []byte
 }
 
-func (wrapper *anyTrustWriterWrapper) String() string {
-	return fmt.Sprintf("anyTrustWriterWrapper{%v}", wrapper.AnyTrustWriter)
+func (wrapper *writerWrapper[InnerResult]) String() string {
+	return fmt.Sprintf("writerWrapper{%v}", wrapper.inner)
 }
 
-func (wrapper *anyTrustWriterWrapper) Store(ctx context.Context, message []byte, timeout uint64) ([]byte, error) {
-	cert, err := wrapper.AnyTrustWriter.Store(ctx, message, timeout)
+func (wrapper *writerWrapper[InnerResult]) Store(ctx context.Context, message []byte, timeout uint64) ([]byte, error) {
+	innerResult, err := wrapper.inner.Store(ctx, message, timeout)
 	if err != nil {
 		return nil, err
 	} else {
-		return Serialize(cert), nil
+		return wrapper.mapFn(innerResult), nil
 	}
 }
 

@@ -164,7 +164,7 @@ func (f *AnyTrustFactory) CreateWriter(ctx context.Context) (dasutil.DASWriter, 
 		daWriter = das.NewWriterPanicWrapper(daWriter)
 	}
 
-	writer := dasutil.ConvertAnyTrustWriterToDASWriter(daWriter)
+	writer := dasutil.NewDASWriterAdapter(daWriter, dasutil.Serialize)
 	cleanupFn := func() {
 		if lifecycleManager != nil {
 			lifecycleManager.StopAndWaitUntil(0)
