@@ -28,10 +28,34 @@ type DASReader interface {
 	fmt.Stringer
 }
 
-type DASWriter interface {
+type GenericDASWriter[WriteResult any] interface {
 	// Store requests that the message be stored until timeout (UTC time in unix epoch seconds).
-	Store(ctx context.Context, message []byte, timeout uint64) (*DataAvailabilityCertificate, error)
+	Store(ctx context.Context, message []byte, timeout uint64) (WriteResult, error)
 	fmt.Stringer
+}
+
+type DASWriter = GenericDASWriter[[]byte]
+type AnyTrustWriter = GenericDASWriter[*DataAvailabilityCertificate]
+
+func ConvertAnyTrustWriterToDASWriter(anyTrustWriter AnyTrustWriter) DASWriter {
+	return &anyTrustWriterWrapper{anyTrustWriter}
+}
+
+type anyTrustWriterWrapper struct {
+	AnyTrustWriter
+}
+
+func (wrapper *anyTrustWriterWrapper) String() string {
+	return fmt.Sprintf("anyTrustWriterWrapper{%v}", wrapper.AnyTrustWriter)
+}
+
+func (wrapper *anyTrustWriterWrapper) Store(ctx context.Context, message []byte, timeout uint64) ([]byte, error) {
+	cert, err := wrapper.AnyTrustWriter.Store(ctx, message, timeout)
+	if err != nil {
+		return nil, err
+	} else {
+		return Serialize(cert), nil
+	}
 }
 
 type DASKeysetFetcher interface {
@@ -65,25 +89,6 @@ func (d *readerForDAS) RecoverPayloadFromBatch(
 	validateSeqMsg bool,
 ) ([]byte, daprovider.PreimagesMap, error) {
 	return RecoverPayloadFromDasBatch(ctx, batchNum, sequencerMsg, d.dasReader, d.keysetFetcher, preimages, validateSeqMsg)
-}
-
-// NewWriterForDAS is generally meant to be only used by nitro.
-// DA Providers should implement methods in the DAProviderWriter interface independently
-func NewWriterForDAS(dasWriter DASWriter) *writerForDAS {
-	return &writerForDAS{dasWriter: dasWriter}
-}
-
-type writerForDAS struct {
-	dasWriter DASWriter
-}
-
-func (d *writerForDAS) Store(ctx context.Context, message []byte, timeout uint64) ([]byte, error) {
-	cert, err := d.dasWriter.Store(ctx, message, timeout)
-	if err != nil {
-		return nil, err
-	} else {
-		return Serialize(cert), nil
-	}
 }
 
 var (

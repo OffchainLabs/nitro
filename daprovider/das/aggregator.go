@@ -74,7 +74,7 @@ type Aggregator struct {
 }
 
 type ServiceDetails struct {
-	service     dasutil.DASWriter
+	service     dasutil.AnyTrustWriter
 	pubKey      blsSignatures.PublicKey
 	signersMask uint64
 	metricName  string
@@ -84,7 +84,7 @@ func (s *ServiceDetails) String() string {
 	return fmt.Sprintf("ServiceDetails{service: %v, signersMask %d}", s.service, s.signersMask)
 }
 
-func NewServiceDetails(service dasutil.DASWriter, pubKey blsSignatures.PublicKey, signersMask uint64, metricName string) (*ServiceDetails, error) {
+func NewServiceDetails(service dasutil.AnyTrustWriter, pubKey blsSignatures.PublicKey, signersMask uint64, metricName string) (*ServiceDetails, error) {
 	if bits.OnesCount64(signersMask) != 1 {
 		return nil, fmt.Errorf("tried to configure backend DAS %v with invalid signersMask %X", service, signersMask)
 	}

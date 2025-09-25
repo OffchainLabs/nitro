@@ -27,6 +27,10 @@ func NewWriter(signer signature.DataSignerFunc) *Writer {
 	}
 }
 
+func (w *Writer) String() string {
+	return fmt.Sprintf("Writer{%v}", w.storage)
+}
+
 func (w *Writer) Store(
 	ctx context.Context,
 	message []byte,

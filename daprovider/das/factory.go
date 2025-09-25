@@ -124,7 +124,7 @@ func CreateDAReaderAndWriter(
 	dataSigner signature.DataSignerFunc,
 	l1Reader *ethclient.Client,
 	sequencerInboxAddr common.Address,
-) (dasutil.DASWriter, dasutil.DASReader, *KeysetFetcher, *LifecycleManager, error) {
+) (dasutil.AnyTrustWriter, dasutil.DASReader, *KeysetFetcher, *LifecycleManager, error) {
 	if !config.Enable {
 		return nil, nil, nil, nil, nil
 	}
@@ -135,7 +135,7 @@ func CreateDAReaderAndWriter(
 	}
 	// Done checking config requirements
 
-	var daWriter dasutil.DASWriter
+	var daWriter dasutil.AnyTrustWriter
 	daWriter, err := NewRPCAggregator(ctx, *config, dataSigner)
 	if err != nil {
 		return nil, nil, nil, nil, err
@@ -162,7 +162,7 @@ func CreateDAComponentsForDaserver(
 	config *DataAvailabilityConfig,
 	l1Reader *headerreader.HeaderReader,
 	seqInboxAddress *common.Address,
-) (dasutil.DASReader, dasutil.DASWriter, *SignatureVerifier, DataAvailabilityServiceHealthChecker, *LifecycleManager, error) {
+) (dasutil.DASReader, dasutil.AnyTrustWriter, *SignatureVerifier, DataAvailabilityServiceHealthChecker, *LifecycleManager, error) {
 	if !config.Enable {
 		return nil, nil, nil, nil, nil, nil
 	}
@@ -222,7 +222,7 @@ func CreateDAComponentsForDaserver(
 
 	}
 
-	var daWriter dasutil.DASWriter
+	var daWriter dasutil.AnyTrustWriter
 	var daReader dasutil.DASReader = storageService
 	var daHealthChecker DataAvailabilityServiceHealthChecker = storageService
 	var signatureVerifier *SignatureVerifier

@@ -31,7 +31,7 @@ const (
 
 type DAProviderFactory interface {
 	CreateReader(ctx context.Context) (daprovider.Reader, func(), error)
-	CreateWriter(ctx context.Context) (daprovider.Writer, func(), error)
+	CreateWriter(ctx context.Context) (dasutil.DASWriter, func(), error)
 	CreateValidator(ctx context.Context) (daprovider.Validator, func(), error)
 	ValidateConfig() error
 }
@@ -149,7 +149,7 @@ func (f *AnyTrustFactory) CreateReader(ctx context.Context) (daprovider.Reader, 
 	}
 }
 
-func (f *AnyTrustFactory) CreateWriter(ctx context.Context) (daprovider.Writer, func(), error) {
+func (f *AnyTrustFactory) CreateWriter(ctx context.Context) (dasutil.DASWriter, func(), error) {
 	if !f.enableWriter {
 		return nil, nil, nil
 	}
@@ -164,7 +164,7 @@ func (f *AnyTrustFactory) CreateWriter(ctx context.Context) (daprovider.Writer, 
 		daWriter = das.NewWriterPanicWrapper(daWriter)
 	}
 
-	writer := dasutil.NewWriterForDAS(daWriter)
+	writer := dasutil.ConvertAnyTrustWriterToDASWriter(daWriter)
 	cleanupFn := func() {
 		if lifecycleManager != nil {
 			lifecycleManager.StopAndWaitUntil(0)
@@ -195,7 +195,7 @@ func (f *ReferenceDAFactory) CreateReader(ctx context.Context) (daprovider.Reade
 	return reader, nil, nil
 }
 
-func (f *ReferenceDAFactory) CreateWriter(ctx context.Context) (daprovider.Writer, func(), error) {
+func (f *ReferenceDAFactory) CreateWriter(ctx context.Context) (dasutil.DASWriter, func(), error) {
 	if !f.enableWriter {
 		return nil, nil, nil
 	}

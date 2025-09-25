@@ -1994,7 +1994,7 @@ func setupConfigWithDAS(
 	l1NodeConfigA.DataAvailability = das.DefaultDataAvailabilityConfig
 	var lifecycleManager *das.LifecycleManager
 	var daReader dasutil.DASReader
-	var daWriter dasutil.DASWriter
+	var daWriter dasutil.AnyTrustWriter
 	var daHealthChecker das.DataAvailabilityServiceHealthChecker
 	var signatureVerifier *das.SignatureVerifier
 	if dasModeString != "onchain" && dasModeString != "referenceda" {

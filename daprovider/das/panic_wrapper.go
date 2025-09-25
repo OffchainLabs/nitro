@@ -14,19 +14,19 @@ import (
 	"github.com/offchainlabs/nitro/daprovider/das/dasutil"
 )
 
-type WriterPanicWrapper struct {
-	dasutil.DASWriter
+type WriterPanicWrapper[WriteResult any] struct {
+	inner dasutil.GenericDASWriter[WriteResult]
 }
 
-func NewWriterPanicWrapper(dataAvailabilityService dasutil.DASWriter) dasutil.DASWriter {
-	return &WriterPanicWrapper{DASWriter: dataAvailabilityService}
+func NewWriterPanicWrapper[WriteResult any](inner dasutil.GenericDASWriter[WriteResult]) dasutil.GenericDASWriter[WriteResult] {
+	return &WriterPanicWrapper[WriteResult]{inner}
 }
-func (w *WriterPanicWrapper) String() string {
-	return fmt.Sprintf("WriterPanicWrapper{%v}", w.DASWriter)
+func (w *WriterPanicWrapper[WriteResult]) String() string {
+	return fmt.Sprintf("WriterPanicWrapper{%v}", w.inner)
 }
 
-func (w *WriterPanicWrapper) Store(ctx context.Context, message []byte, timeout uint64) (*dasutil.DataAvailabilityCertificate, error) {
-	cert, err := w.DASWriter.Store(ctx, message, timeout)
+func (w *WriterPanicWrapper[WriteResult]) Store(ctx context.Context, message []byte, timeout uint64) (WriteResult, error) {
+	cert, err := w.inner.Store(ctx, message, timeout)
 	if err != nil {
 		panic(fmt.Sprintf("panic wrapper Store: %v", err))
 	}
