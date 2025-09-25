@@ -85,7 +85,7 @@ func TestChallengeProtocolBOLDCustomDA_ValidCertClaimedInvalid(t *testing.T) {
 func createReferenceDAProviderServer(t *testing.T, ctx context.Context, l1Client *ethclient.Client, validatorAddr common.Address, dataSigner signature.DataSignerFunc) (*http.Server, string) {
 	// Create ReferenceDA components
 	reader := referenceda.NewReader(l1Client, validatorAddr)
-	writer := referenceda.NewWriter(dataSigner)
+	writer := referenceda.NewDASWriter(dataSigner)
 	validator := referenceda.NewValidator(l1Client, validatorAddr)
 
 	// Create server config with automatic port selection
@@ -589,7 +589,7 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, 
 	Require(t, err)
 
 	// Create DA writers for both nodes
-	daWriterA := referenceda.NewWriter(dataSigner)
+	daWriterA := referenceda.NewDASWriter(dataSigner)
 
 	totalMessagesPosted := int64(0)
 	numMessagesPerBatch := int64(5)
@@ -648,7 +648,7 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, 
 	var certificate2 []byte
 	if evilStrategy == UntrustedSignerCert {
 		// For UntrustedSignerCert, use a writer with untrusted signer
-		daWriterUntrusted := referenceda.NewWriter(untrustedSigner)
+		daWriterUntrusted := referenceda.NewDASWriter(untrustedSigner)
 		certificate2, err = daWriterUntrusted.Store(ctx, goodBatchData2, 3600)
 		Require(t, err)
 		t.Log("Created certificate for batch 2 with untrusted signer")
