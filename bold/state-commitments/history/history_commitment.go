@@ -91,7 +91,7 @@ func newCommitter() *historyCommitter {
 //
 // Without this type, it would be impossible to distinguish between a hash which
 // has not been found and a hash which is the value of common.Hash{}.
-// That's because the lastLeafProver's postions map is initialized with pointers
+// That's because the lastLeafProver's positions map is initialized with pointers
 // to common.Hash{} values in a pre-allocated slice.
 type soughtHash struct {
 	found bool
