@@ -126,7 +126,7 @@ func postBatchWithDA(
 	ctx := context.Background()
 
 	// Store data in DA provider
-	certificate, err := daWriter.Store(ctx, batchData, 3600, false)
+	certificate, err := daWriter.Store(ctx, batchData, 3600)
 	Require(t, err)
 
 	// Certificate already contains the CustomDA header flag
@@ -173,7 +173,7 @@ func createEvilDAProviderServer(t *testing.T, ctx context.Context, l1Client *eth
 // assertingWriter is a Writer that panics if Store is called
 type assertingWriter struct{}
 
-func (w *assertingWriter) Store(ctx context.Context, message []byte, timeout uint64, disableFallback bool) ([]byte, error) {
+func (w *assertingWriter) Store(ctx context.Context, message []byte, timeout uint64) ([]byte, error) {
 	panic("assertingWriter.Store should never be called - evil provider server should not be used for writing")
 }
 
@@ -644,12 +644,12 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, 
 	if evilStrategy == UntrustedSignerCert {
 		// For UntrustedSignerCert, use a writer with untrusted signer
 		daWriterUntrusted := referenceda.NewWriter(untrustedSigner)
-		certificate2, err = daWriterUntrusted.Store(ctx, goodBatchData2, 3600, false)
+		certificate2, err = daWriterUntrusted.Store(ctx, goodBatchData2, 3600)
 		Require(t, err)
 		t.Log("Created certificate for batch 2 with untrusted signer")
 	} else {
 		// For other strategies, use normal writer
-		certificate2, err = daWriterA.Store(ctx, goodBatchData2, 3600, false)
+		certificate2, err = daWriterA.Store(ctx, goodBatchData2, 3600)
 		Require(t, err)
 	}
 
