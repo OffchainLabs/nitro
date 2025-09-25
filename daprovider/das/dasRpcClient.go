@@ -22,14 +22,14 @@ import (
 )
 
 var (
-    rpcClientStoreRequestGauge      = metrics.NewRegisteredCounter("arb/das/rpcclient/store/requests", nil)
-    rpcClientStoreSuccessGauge      = metrics.NewRegisteredCounter("arb/das/rpcclient/store/success", nil)
-    rpcClientStoreFailureGauge      = metrics.NewRegisteredCounter("arb/das/rpcclient/store/failure", nil)
-    rpcClientStoreStoredBytesGauge  = metrics.NewRegisteredCounter("arb/das/rpcclient/store/bytes", nil)
-	rpcClientStoreDurationHistogram = metrics.NewRegisteredHistogram("arb/das/rpcclient/store/duration", nil, metrics.NewBoundedHistogramSample())
+	rpcClientStoreRequestCounter     = metrics.NewRegisteredCounter("arb/das/rpcclient/store/requests", nil)
+	rpcClientStoreSuccessCounter     = metrics.NewRegisteredCounter("arb/das/rpcclient/store/success", nil)
+	rpcClientStoreFailureCounter     = metrics.NewRegisteredCounter("arb/das/rpcclient/store/failure", nil)
+	rpcClientStoreStoredBytesCounter = metrics.NewRegisteredCounter("arb/das/rpcclient/store/bytes", nil)
+	rpcClientStoreDurationHistogram  = metrics.NewRegisteredHistogram("arb/das/rpcclient/store/duration", nil, metrics.NewBoundedHistogramSample())
 
-    rpcClientSendChunkSuccessGauge = metrics.NewRegisteredCounter("arb/das/rpcclient/sendchunk/success", nil)
-    rpcClientSendChunkFailureGauge = metrics.NewRegisteredCounter("arb/das/rpcclient/sendchunk/failure", nil)
+	rpcClientSendChunkSuccessCounter = metrics.NewRegisteredCounter("arb/das/rpcclient/sendchunk/success", nil)
+	rpcClientSendChunkFailureCounter = metrics.NewRegisteredCounter("arb/das/rpcclient/sendchunk/failure", nil)
 )
 
 // lint:require-exhaustive-initialization
@@ -76,14 +76,14 @@ func NewDASRPCClient(target string, signer signature.DataSignerFunc, maxStoreChu
 }
 
 func (c *DASRPCClient) Store(ctx context.Context, message []byte, timeout uint64) (*dasutil.DataAvailabilityCertificate, error) {
-	rpcClientStoreRequestGauge.Inc(1)
+	rpcClientStoreRequestCounter.Inc(1)
 	start := time.Now()
 	success := false
 	defer func() {
 		if success {
-			rpcClientStoreSuccessGauge.Inc(1)
+			rpcClientStoreSuccessCounter.Inc(1)
 		} else {
-			rpcClientStoreFailureGauge.Inc(1)
+			rpcClientStoreFailureCounter.Inc(1)
 		}
 		rpcClientStoreDurationHistogram.Update(time.Since(start).Nanoseconds())
 	}()
@@ -107,7 +107,7 @@ func (c *DASRPCClient) Store(ctx context.Context, message []byte, timeout uint64
 		return nil, err
 	}
 
-	rpcClientStoreStoredBytesGauge.Inc(int64(len(message)))
+	rpcClientStoreStoredBytesCounter.Inc(int64(len(message)))
 	success = true
 
 	return &dasutil.DataAvailabilityCertificate{
