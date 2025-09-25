@@ -23,14 +23,14 @@ import (
 )
 
 var (
-    rpcStoreRequestGauge      = metrics.NewRegisteredCounter("arb/das/rpc/store/requests", nil)
-    rpcStoreSuccessGauge      = metrics.NewRegisteredCounter("arb/das/rpc/store/success", nil)
-    rpcStoreFailureGauge      = metrics.NewRegisteredCounter("arb/das/rpc/store/failure", nil)
-    rpcStoreStoredBytesGauge  = metrics.NewRegisteredCounter("arb/das/rpc/store/bytes", nil)
-	rpcStoreDurationHistogram = metrics.NewRegisteredHistogram("arb/das/rpc/store/duration", nil, metrics.NewBoundedHistogramSample())
+	rpcStoreRequestCounter     = metrics.NewRegisteredCounter("arb/das/rpc/store/requests", nil)
+	rpcStoreSuccessCounter     = metrics.NewRegisteredCounter("arb/das/rpc/store/success", nil)
+	rpcStoreFailureCounter     = metrics.NewRegisteredCounter("arb/das/rpc/store/failure", nil)
+	rpcStoreStoredBytesCounter = metrics.NewRegisteredCounter("arb/das/rpc/store/bytes", nil)
+	rpcStoreDurationHistogram  = metrics.NewRegisteredHistogram("arb/das/rpc/store/duration", nil, metrics.NewBoundedHistogramSample())
 
-    rpcSendChunkSuccessGauge = metrics.NewRegisteredCounter("arb/das/rpc/sendchunk/success", nil)
-    rpcSendChunkFailureGauge = metrics.NewRegisteredCounter("arb/das/rpc/sendchunk/failure", nil)
+	rpcSendChunkSuccessCounter = metrics.NewRegisteredCounter("arb/das/rpc/sendchunk/success", nil)
+	rpcSendChunkFailureCounter = metrics.NewRegisteredCounter("arb/das/rpc/sendchunk/failure", nil)
 )
 
 const (
@@ -115,14 +115,14 @@ type StoreResult struct {
 func (s *DASRPCServer) Store(ctx context.Context, message hexutil.Bytes, timeout hexutil.Uint64, sig hexutil.Bytes) (*StoreResult, error) {
 	// #nosec G115
 	log.Trace("dasRpc.DASRPCServer.Store", "message", pretty.FirstFewBytes(message), "message length", len(message), "timeout", time.Unix(int64(timeout), 0), "sig", pretty.FirstFewBytes(sig), "this", s)
-	rpcStoreRequestGauge.Inc(1)
+	rpcStoreRequestCounter.Inc(1)
 	start := time.Now()
 	success := false
 	defer func() {
 		if success {
-			rpcStoreSuccessGauge.Inc(1)
+			rpcStoreSuccessCounter.Inc(1)
 		} else {
-			rpcStoreFailureGauge.Inc(1)
+			rpcStoreFailureCounter.Inc(1)
 		}
 		rpcStoreDurationHistogram.Update(time.Since(start).Nanoseconds())
 	}()
@@ -135,7 +135,7 @@ func (s *DASRPCServer) Store(ctx context.Context, message hexutil.Bytes, timeout
 	if err != nil {
 		return nil, err
 	}
-	rpcStoreStoredBytesGauge.Inc(int64(len(message)))
+	rpcStoreStoredBytesCounter.Inc(int64(len(message)))
 	success = true
 	return &StoreResult{
 		KeysetHash:  cert.KeysetHash[:],
@@ -163,11 +163,11 @@ type SendChunkResult struct {
 }
 
 func (s *DASRPCServer) StartChunkedStore(ctx context.Context, timestamp, nChunks, chunkSize, totalSize, timeout hexutil.Uint64, sig hexutil.Bytes) (*StartChunkedStoreResult, error) {
-	rpcStoreRequestGauge.Inc(1)
+	rpcStoreRequestCounter.Inc(1)
 	failed := true
 	defer func() {
 		if failed {
-			rpcStoreFailureGauge.Inc(1)
+			rpcStoreFailureCounter.Inc(1)
 		} // success gauge will be incremented on successful commit
 	}()
 
@@ -187,9 +187,9 @@ func (s *DASRPCServer) SendChunk(ctx context.Context, messageId, chunkId hexutil
 	success := false
 	defer func() {
 		if success {
-			rpcSendChunkSuccessGauge.Inc(1)
+			rpcSendChunkSuccessCounter.Inc(1)
 		} else {
-			rpcSendChunkFailureGauge.Inc(1)
+			rpcSendChunkFailureCounter.Inc(1)
 		}
 	}()
 
@@ -211,16 +211,16 @@ func (s *DASRPCServer) CommitChunkedStore(ctx context.Context, messageId hexutil
 	success := false
 	defer func() {
 		if success {
-			rpcStoreSuccessGauge.Inc(1)
+			rpcStoreSuccessCounter.Inc(1)
 		} else {
-			rpcStoreFailureGauge.Inc(1)
+			rpcStoreFailureCounter.Inc(1)
 		}
 		rpcStoreDurationHistogram.Update(time.Since(startTime).Nanoseconds())
 	}()
 	if err != nil {
 		return nil, err
 	}
-	rpcStoreStoredBytesGauge.Inc(int64(len(message)))
+	rpcStoreStoredBytesCounter.Inc(int64(len(message)))
 	success = true
 	return &StoreResult{
 		KeysetHash:  cert.KeysetHash[:],
