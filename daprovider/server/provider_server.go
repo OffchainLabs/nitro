@@ -140,42 +140,34 @@ func (s *Server) GetSupportedHeaderBytes(ctx context.Context) (*server_api.Suppo
 	}, nil
 }
 
-func (s *Server) RecoverPayloadFromBatch(
+func (s *Server) RecoverPayload(
 	ctx context.Context,
 	batchNum hexutil.Uint64,
 	batchBlockHash common.Hash,
 	sequencerMsg hexutil.Bytes,
-	preimages daprovider.PreimagesMap,
 	validateSeqMsg bool,
-) (*server_api.RecoverPayloadFromBatchResult, error) {
-	// If preimages are requested, use CollectPreimages, otherwise RecoverPayload
-	if preimages != nil {
-		promise := s.reader.CollectPreimages(uint64(batchNum), batchBlockHash, sequencerMsg, validateSeqMsg)
-		result, err := promise.Await(ctx)
-		if err != nil {
-			return nil, err
-		}
-		// We still need to get the payload, so call RecoverPayload too
-		payloadPromise := s.reader.RecoverPayload(uint64(batchNum), batchBlockHash, sequencerMsg, validateSeqMsg)
-		payloadResult, err := payloadPromise.Await(ctx)
-		if err != nil {
-			return nil, err
-		}
-		return &server_api.RecoverPayloadFromBatchResult{
-			Payload:   payloadResult.Payload,
-			Preimages: result.Preimages,
-		}, nil
-	} else {
-		promise := s.reader.RecoverPayload(uint64(batchNum), batchBlockHash, sequencerMsg, validateSeqMsg)
-		result, err := promise.Await(ctx)
-		if err != nil {
-			return nil, err
-		}
-		return &server_api.RecoverPayloadFromBatchResult{
-			Payload:   result.Payload,
-			Preimages: nil,
-		}, nil
+) (*daprovider.PayloadResult, error) {
+	promise := s.reader.RecoverPayload(uint64(batchNum), batchBlockHash, sequencerMsg, validateSeqMsg)
+	result, err := promise.Await(ctx)
+	if err != nil {
+		return nil, err
 	}
+	return &result, nil
+}
+
+func (s *Server) CollectPreimages(
+	ctx context.Context,
+	batchNum hexutil.Uint64,
+	batchBlockHash common.Hash,
+	sequencerMsg hexutil.Bytes,
+	validateSeqMsg bool,
+) (*daprovider.PreimagesResult, error) {
+	promise := s.reader.CollectPreimages(uint64(batchNum), batchBlockHash, sequencerMsg, validateSeqMsg)
+	result, err := promise.Await(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return &result, nil
 }
 
 func (s *Server) Store(
