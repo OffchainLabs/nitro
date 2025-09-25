@@ -186,11 +186,12 @@ func (s *Server) GenerateReadPreimageProof(ctx context.Context, certHash common.
 		return nil, errors.New("validator not available")
 	}
 	// #nosec G115
-	proof, err := s.validator.GenerateReadPreimageProof(ctx, certHash, uint64(offset), certificate)
+	promise := s.validator.GenerateReadPreimageProof(certHash, uint64(offset), certificate)
+	result, err := promise.Await(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return &server_api.GenerateReadPreimageProofResult{Proof: hexutil.Bytes(proof)}, nil
+	return &server_api.GenerateReadPreimageProofResult{Proof: hexutil.Bytes(result.Proof)}, nil
 }
 
 func (s *Server) GenerateCertificateValidityProof(ctx context.Context, certificate hexutil.Bytes) (*server_api.GenerateCertificateValidityProofResult, error) {
@@ -198,9 +199,10 @@ func (s *Server) GenerateCertificateValidityProof(ctx context.Context, certifica
 		return nil, errors.New("validator not available")
 	}
 	// #nosec G115
-	proof, err := s.validator.GenerateCertificateValidityProof(ctx, certificate)
+	promise := s.validator.GenerateCertificateValidityProof(certificate)
+	result, err := promise.Await(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return &server_api.GenerateCertificateValidityProofResult{Proof: hexutil.Bytes(proof)}, nil
+	return &server_api.GenerateCertificateValidityProofResult{Proof: hexutil.Bytes(result.Proof)}, nil
 }

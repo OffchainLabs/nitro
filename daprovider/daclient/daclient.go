@@ -115,25 +115,35 @@ func (c *Client) Store(
 // GenerateReadPreimageProof generates a proof for a specific preimage at a given offset
 // This method calls the external DA provider's RPC endpoint to generate the proof
 func (c *Client) GenerateReadPreimageProof(
-	ctx context.Context,
 	certHash common.Hash,
 	offset uint64,
 	certificate []byte,
-) ([]byte, error) {
-	var generateProofResult server_api.GenerateReadPreimageProofResult
-	if err := c.CallContext(ctx, &generateProofResult, "daprovider_generateReadPreimageProof", certHash, hexutil.Uint64(offset), hexutil.Bytes(certificate)); err != nil {
-		return nil, fmt.Errorf("error returned from daprovider_generateProof rpc method, err: %w", err)
-	}
-	return generateProofResult.Proof, nil
+) containers.PromiseInterface[daprovider.PreimageProofResult] {
+	promise := containers.NewPromise[daprovider.PreimageProofResult](nil)
+	go func() {
+		ctx := context.Background()
+		var generateProofResult server_api.GenerateReadPreimageProofResult
+		if err := c.CallContext(ctx, &generateProofResult, "daprovider_generateReadPreimageProof", certHash, hexutil.Uint64(offset), hexutil.Bytes(certificate)); err != nil {
+			promise.ProduceError(fmt.Errorf("error returned from daprovider_generateProof rpc method, err: %w", err))
+		} else {
+			promise.Produce(daprovider.PreimageProofResult{Proof: generateProofResult.Proof})
+		}
+	}()
+	return &promise
 }
 
 func (c *Client) GenerateCertificateValidityProof(
-	ctx context.Context,
 	certificate []byte,
-) ([]byte, error) {
-	var generateCertificateValidityProofResult server_api.GenerateCertificateValidityProofResult
-	if err := c.CallContext(ctx, &generateCertificateValidityProofResult, "daprovider_generateCertificateValidityProof", hexutil.Bytes(certificate)); err != nil {
-		return nil, fmt.Errorf("error returned from daprovider_generateCertificateValidityProof rpc method, err: %w", err)
-	}
-	return generateCertificateValidityProofResult.Proof, nil
+) containers.PromiseInterface[daprovider.ValidityProofResult] {
+	promise := containers.NewPromise[daprovider.ValidityProofResult](nil)
+	go func() {
+		ctx := context.Background()
+		var generateCertificateValidityProofResult server_api.GenerateCertificateValidityProofResult
+		if err := c.CallContext(ctx, &generateCertificateValidityProofResult, "daprovider_generateCertificateValidityProof", hexutil.Bytes(certificate)); err != nil {
+			promise.ProduceError(fmt.Errorf("error returned from daprovider_generateCertificateValidityProof rpc method, err: %w", err))
+		} else {
+			promise.Produce(daprovider.ValidityProofResult{Proof: generateCertificateValidityProofResult.Proof})
+		}
+	}()
+	return &promise
 }
