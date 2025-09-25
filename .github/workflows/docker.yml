@@ -24,7 +24,7 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Start registgry
+      - name: Start registry
         docker run -d -p 5000:5000 registry:2
 
       - name: Checkout
