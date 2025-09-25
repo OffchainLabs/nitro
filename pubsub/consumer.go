@@ -9,6 +9,8 @@ import (
 	"math/rand"
 	"strconv"
 	"time"
+	crand "crypto/rand"
+	"encoding/binary"
 
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
@@ -61,6 +63,10 @@ type Consumer[Request any, Response any] struct {
 	// Note: Not exposed as a configuration option because it affects semantic
 	// correctness for for some use cases.
 	claimAmongOldestIdleN int64
+
+	// rng is a per-consumer pseudo-random generator to avoid using the global math/rand state.
+	// This makes the selection of pending messages less predictable and fairer across instances.
+	rng *rand.Rand
 }
 
 type Message[Request any] struct {
@@ -73,7 +79,7 @@ func NewConsumer[Request any, Response any](client redis.UniversalClient, stream
 	if streamName == "" {
 		return nil, fmt.Errorf("redis stream name cannot be empty")
 	}
-	return &Consumer[Request, Response]{
+	c := &Consumer[Request, Response]{
 		id:          uuid.NewString(),
 		client:      client,
 		redisStream: streamName,
@@ -81,7 +87,22 @@ func NewConsumer[Request any, Response any](client redis.UniversalClient, stream
 		cfg:         cfg,
 
 		claimAmongOldestIdleN: 50, // Default for most use cases.
-	}, nil
+	}
+
+	// Initialize RNG with an unpredictable seed. crypto/rand preferred; fall back to time-based.
+	// Note: randomness here is non-cryptographic and only for fairness in message selection.
+	{
+		var seed int64
+		b := make([]byte, 8)
+		if _, err := crand.Read(b); err == nil {
+			seed = int64(binary.LittleEndian.Uint64(b))
+		} else {
+			seed = time.Now().UnixNano()
+		}
+		c.rng = rand.New(rand.NewSource(seed))
+	}
+
+	return c, nil
 }
 
 // Set the Consumer to reprocess idle messages in a deterministic order.
@@ -142,7 +163,7 @@ func (c *Consumer[Request, Response]) Consume(ctx context.Context) (*Message[Req
 			log.Error("Error from XpendingExt in getting PEL for auto claim", "err", err, "penindlen", len(pendingMsgs))
 		}
 	} else if len(pendingMsgs) > 0 {
-		idx := rand.Intn(len(pendingMsgs))
+		idx := c.rng.Intn(len(pendingMsgs))
 		messages, _, err = c.client.XAutoClaim(ctx, &redis.XAutoClaimArgs{
 			Group:    c.redisGroup,
 			Consumer: c.id,
