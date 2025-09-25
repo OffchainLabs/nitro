@@ -23,7 +23,7 @@ import (
 
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/daprovider"
-	"github.com/offchainlabs/nitro/daprovider/daclient"
+	"github.com/offchainlabs/nitro/daprovider/server_api"
 )
 
 type Server struct {
@@ -134,8 +134,8 @@ func NewServerWithDAPProvider(ctx context.Context, config *ServerConfig, reader 
 	return srv, nil
 }
 
-func (s *Server) GetSupportedHeaderBytes(ctx context.Context) (*daclient.SupportedHeaderBytesResult, error) {
-	return &daclient.SupportedHeaderBytesResult{
+func (s *Server) GetSupportedHeaderBytes(ctx context.Context) (*server_api.SupportedHeaderBytesResult, error) {
+	return &server_api.SupportedHeaderBytesResult{
 		HeaderBytes: s.headerBytes,
 	}, nil
 }
@@ -147,12 +147,12 @@ func (s *Server) RecoverPayloadFromBatch(
 	sequencerMsg hexutil.Bytes,
 	preimages daprovider.PreimagesMap,
 	validateSeqMsg bool,
-) (*daclient.RecoverPayloadFromBatchResult, error) {
+) (*server_api.RecoverPayloadFromBatchResult, error) {
 	payload, preimages, err := s.reader.RecoverPayloadFromBatch(ctx, uint64(batchNum), batchBlockHash, sequencerMsg, preimages, validateSeqMsg)
 	if err != nil {
 		return nil, err
 	}
-	return &daclient.RecoverPayloadFromBatchResult{
+	return &server_api.RecoverPayloadFromBatchResult{
 		Payload:   payload,
 		Preimages: preimages,
 	}, nil
@@ -163,15 +163,15 @@ func (s *Server) Store(
 	message hexutil.Bytes,
 	timeout hexutil.Uint64,
 	disableFallbackStoreDataOnChain bool,
-) (*daclient.StoreResult, error) {
+) (*server_api.StoreResult, error) {
 	serializedDACert, err := s.writer.Store(ctx, message, uint64(timeout), disableFallbackStoreDataOnChain)
 	if err != nil {
 		return nil, err
 	}
-	return &daclient.StoreResult{SerializedDACert: serializedDACert}, nil
+	return &server_api.StoreResult{SerializedDACert: serializedDACert}, nil
 }
 
-func (s *Server) GenerateReadPreimageProof(ctx context.Context, certHash common.Hash, offset hexutil.Uint64, certificate hexutil.Bytes) (*daclient.GenerateReadPreimageProofResult, error) {
+func (s *Server) GenerateReadPreimageProof(ctx context.Context, certHash common.Hash, offset hexutil.Uint64, certificate hexutil.Bytes) (*server_api.GenerateReadPreimageProofResult, error) {
 	if s.validator == nil {
 		return nil, errors.New("validator not available")
 	}
@@ -180,10 +180,10 @@ func (s *Server) GenerateReadPreimageProof(ctx context.Context, certHash common.
 	if err != nil {
 		return nil, err
 	}
-	return &daclient.GenerateReadPreimageProofResult{Proof: hexutil.Bytes(proof)}, nil
+	return &server_api.GenerateReadPreimageProofResult{Proof: hexutil.Bytes(proof)}, nil
 }
 
-func (s *Server) GenerateCertificateValidityProof(ctx context.Context, certificate hexutil.Bytes) (*daclient.GenerateCertificateValidityProofResult, error) {
+func (s *Server) GenerateCertificateValidityProof(ctx context.Context, certificate hexutil.Bytes) (*server_api.GenerateCertificateValidityProofResult, error) {
 	if s.validator == nil {
 		return nil, errors.New("validator not available")
 	}
@@ -192,5 +192,5 @@ func (s *Server) GenerateCertificateValidityProof(ctx context.Context, certifica
 	if err != nil {
 		return nil, err
 	}
-	return &daclient.GenerateCertificateValidityProofResult{Proof: hexutil.Bytes(proof)}, nil
+	return &server_api.GenerateCertificateValidityProofResult{Proof: hexutil.Bytes(proof)}, nil
 }

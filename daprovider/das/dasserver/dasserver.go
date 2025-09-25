@@ -22,9 +22,9 @@ import (
 
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/daprovider"
-	"github.com/offchainlabs/nitro/daprovider/daclient"
 	"github.com/offchainlabs/nitro/daprovider/das"
 	"github.com/offchainlabs/nitro/daprovider/das/dasutil"
+	"github.com/offchainlabs/nitro/daprovider/server_api"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/signature"
 )
@@ -167,9 +167,9 @@ func NewServer(ctx context.Context, config *ServerConfig, dataSigner signature.D
 	}, nil
 }
 
-func (s *Server) GetSupportedHeaderBytes(ctx context.Context) (*daclient.SupportedHeaderBytesResult, error) {
+func (s *Server) GetSupportedHeaderBytes(ctx context.Context) (*server_api.SupportedHeaderBytesResult, error) {
 	// DAS supports the DAS message header byte
-	return &daclient.SupportedHeaderBytesResult{
+	return &server_api.SupportedHeaderBytesResult{
 		HeaderBytes: []byte{daprovider.DASMessageHeaderFlag},
 	}, nil
 }
@@ -181,12 +181,12 @@ func (s *Server) RecoverPayloadFromBatch(
 	sequencerMsg hexutil.Bytes,
 	preimages daprovider.PreimagesMap,
 	validateSeqMsg bool,
-) (*daclient.RecoverPayloadFromBatchResult, error) {
+) (*server_api.RecoverPayloadFromBatchResult, error) {
 	payload, preimages, err := s.reader.RecoverPayloadFromBatch(ctx, uint64(batchNum), batchBlockHash, sequencerMsg, preimages, validateSeqMsg)
 	if err != nil {
 		return nil, err
 	}
-	return &daclient.RecoverPayloadFromBatchResult{
+	return &server_api.RecoverPayloadFromBatchResult{
 		Payload:   payload,
 		Preimages: preimages,
 	}, nil
@@ -197,10 +197,10 @@ func (s *Server) Store(
 	message hexutil.Bytes,
 	timeout hexutil.Uint64,
 	disableFallbackStoreDataOnChain bool,
-) (*daclient.StoreResult, error) {
+) (*server_api.StoreResult, error) {
 	serializedDACert, err := s.writer.Store(ctx, message, uint64(timeout), disableFallbackStoreDataOnChain)
 	if err != nil {
 		return nil, err
 	}
-	return &daclient.StoreResult{SerializedDACert: serializedDACert}, nil
+	return &server_api.StoreResult{SerializedDACert: serializedDACert}, nil
 }

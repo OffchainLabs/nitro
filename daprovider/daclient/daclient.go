@@ -13,6 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 
 	"github.com/offchainlabs/nitro/daprovider"
+	"github.com/offchainlabs/nitro/daprovider/server_api"
 	"github.com/offchainlabs/nitro/util/rpcclient"
 )
 
@@ -51,23 +52,12 @@ func NewClient(ctx context.Context, config rpcclient.ClientConfigFetcher) (*Clie
 	return client, nil
 }
 
-// SupportedHeaderBytesResult is the result struct that data availability providers should use to respond with their supported header bytes
-type SupportedHeaderBytesResult struct {
-	HeaderBytes hexutil.Bytes `json:"headerBytes,omitempty"`
-}
-
 func (c *Client) GetSupportedHeaderBytes(ctx context.Context) ([]byte, error) {
-	var result SupportedHeaderBytesResult
+	var result server_api.SupportedHeaderBytesResult
 	if err := c.CallContext(ctx, &result, "daprovider_getSupportedHeaderBytes"); err != nil {
 		return nil, fmt.Errorf("error returned from daprovider_getSupportedHeaderBytes rpc method: %w", err)
 	}
 	return result.HeaderBytes, nil
-}
-
-// RecoverPayloadFromBatchResult is the result struct that data availability providers should use to respond with underlying payload and updated preimages map to a RecoverPayloadFromBatch fetch request
-type RecoverPayloadFromBatchResult struct {
-	Payload   hexutil.Bytes           `json:"payload,omitempty"`
-	Preimages daprovider.PreimagesMap `json:"preimages,omitempty"`
 }
 
 func (c *Client) RecoverPayloadFromBatch(
@@ -78,16 +68,11 @@ func (c *Client) RecoverPayloadFromBatch(
 	preimages daprovider.PreimagesMap,
 	validateSeqMsg bool,
 ) ([]byte, daprovider.PreimagesMap, error) {
-	var recoverPayloadFromBatchResult RecoverPayloadFromBatchResult
+	var recoverPayloadFromBatchResult server_api.RecoverPayloadFromBatchResult
 	if err := c.CallContext(ctx, &recoverPayloadFromBatchResult, "daprovider_recoverPayloadFromBatch", hexutil.Uint64(batchNum), batchBlockHash, hexutil.Bytes(sequencerMsg), preimages, validateSeqMsg); err != nil {
 		return nil, nil, fmt.Errorf("error returned from daprovider_recoverPayloadFromBatch rpc method, err: %w", err)
 	}
 	return recoverPayloadFromBatchResult.Payload, recoverPayloadFromBatchResult.Preimages, nil
-}
-
-// StoreResult is the result struct that data availability providers should use to respond with a commitment to a Store request for posting batch data to their DA service
-type StoreResult struct {
-	SerializedDACert hexutil.Bytes `json:"serialized-da-cert,omitempty"`
 }
 
 func (c *Client) Store(
@@ -96,17 +81,11 @@ func (c *Client) Store(
 	timeout uint64,
 	disableFallbackStoreDataOnChain bool,
 ) ([]byte, error) {
-	var storeResult StoreResult
+	var storeResult server_api.StoreResult
 	if err := c.CallContext(ctx, &storeResult, "daprovider_store", hexutil.Bytes(message), hexutil.Uint64(timeout), disableFallbackStoreDataOnChain); err != nil {
 		return nil, fmt.Errorf("error returned from daprovider_store rpc method, err: %w", err)
 	}
 	return storeResult.SerializedDACert, nil
-}
-
-// GenerateReadPreimageProofResult is the result struct that data availability providers
-// should use to respond with a proof for a specific preimage
-type GenerateReadPreimageProofResult struct {
-	Proof hexutil.Bytes `json:"proof,omitempty"`
 }
 
 // GenerateReadPreimageProof generates a proof for a specific preimage at a given offset
@@ -117,23 +96,18 @@ func (c *Client) GenerateReadPreimageProof(
 	offset uint64,
 	certificate []byte,
 ) ([]byte, error) {
-	var generateProofResult GenerateReadPreimageProofResult
+	var generateProofResult server_api.GenerateReadPreimageProofResult
 	if err := c.CallContext(ctx, &generateProofResult, "daprovider_generateReadPreimageProof", certHash, hexutil.Uint64(offset), hexutil.Bytes(certificate)); err != nil {
 		return nil, fmt.Errorf("error returned from daprovider_generateProof rpc method, err: %w", err)
 	}
 	return generateProofResult.Proof, nil
 }
 
-// GenerateCertificateValidityProofResult is the result struct that data availability providers should use to respond with validity proof
-type GenerateCertificateValidityProofResult struct {
-	Proof hexutil.Bytes `json:"proof,omitempty"`
-}
-
 func (c *Client) GenerateCertificateValidityProof(
 	ctx context.Context,
 	certificate []byte,
 ) ([]byte, error) {
-	var generateCertificateValidityProofResult GenerateCertificateValidityProofResult
+	var generateCertificateValidityProofResult server_api.GenerateCertificateValidityProofResult
 	if err := c.CallContext(ctx, &generateCertificateValidityProofResult, "daprovider_generateCertificateValidityProof", hexutil.Bytes(certificate)); err != nil {
 		return nil, fmt.Errorf("error returned from daprovider_generateCertificateValidityProof rpc method, err: %w", err)
 	}
