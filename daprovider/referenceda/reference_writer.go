@@ -10,6 +10,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 
+	"github.com/offchainlabs/nitro/daprovider/das/dasutil"
 	"github.com/offchainlabs/nitro/util/signature"
 )
 
@@ -27,6 +28,11 @@ func NewWriter(signer signature.DataSignerFunc) *Writer {
 	}
 }
 
+// NewDASWriter creates a new ReferenceDA writer that serializes DA certificate
+func NewDASWriter(signer signature.DataSignerFunc) dasutil.DASWriter {
+	return dasutil.NewDASWriterAdapter(NewWriter(signer), (*Certificate).Serialize)
+}
+
 func (w *Writer) String() string {
 	return fmt.Sprintf("Writer{%v}", w.storage)
 }
@@ -35,7 +41,7 @@ func (w *Writer) Store(
 	ctx context.Context,
 	message []byte,
 	timeout uint64,
-) ([]byte, error) {
+) (*Certificate, error) {
 	if w.signer == nil {
 		return nil, fmt.Errorf("no signer configured")
 	}
@@ -53,14 +59,12 @@ func (w *Writer) Store(
 	}
 
 	// Serialize certificate for on-chain storage
-	certificate := cert.Serialize()
 	hashKey := common.BytesToHash(cert.DataHash[:])
 
 	log.Debug("ReferenceDA batch stored with signature",
 		"sha256", hashKey.Hex(),
-		"certificateSize", len(certificate),
+		"certificateSize", len(cert.Serialize()),
 		"batchSize", len(message),
 	)
-
-	return certificate, nil
+	return cert, nil
 }

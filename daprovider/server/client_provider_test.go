@@ -61,7 +61,7 @@ func setupProviderServer(ctx context.Context, t *testing.T) *http.Server {
 	// The services below will work fine as long as we don't need to do any action on-chain.
 	dummyAddress := common.HexToAddress("0x0")
 	reader := referenceda.NewReader(nil, dummyAddress)
-	writer := referenceda.NewWriter(dataSigner)
+	writer := referenceda.NewDASWriter(dataSigner)
 	validator := referenceda.NewValidator(nil, dummyAddress)
 
 	providerServer, err := NewServerWithDAPProvider(ctx, &providerServerConfig, reader, writer, validator)

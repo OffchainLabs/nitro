@@ -225,8 +225,7 @@ func (f *ReferenceDAFactory) CreateWriter(ctx context.Context) (dasutil.DASWrite
 		f.dataSigner = signer
 	}
 
-	writer := referenceda.NewWriter(f.dataSigner)
-	return writer, nil, nil
+	return referenceda.NewDASWriter(f.dataSigner), nil, nil
 }
 
 func (f *ReferenceDAFactory) CreateValidator(ctx context.Context) (daprovider.Validator, func(), error) {
