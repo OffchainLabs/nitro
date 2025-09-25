@@ -148,7 +148,21 @@ func (cm *ClientManager) Broadcast(bm *m.BroadcastMessage) {
 		// In this case we should proceed without broadcasting the message.
 		return
 	}
-	cm.broadcastChan <- bm
+	
+	// Make a shallow copy of the message so later mutations by the caller do not race with
+	// the consumer goroutine reading from broadcastChan. We copy the slice header to freeze
+	// the set of pointers; deep copying individual messages can be added if needed.
+	bmCopy := &m.BroadcastMessage{
+		Version:                        bm.Version,
+		ConfirmedSequenceNumberMessage: bm.ConfirmedSequenceNumberMessage,
+	}
+	if n := len(bm.Messages); n > 0 {
+		msgsCopy := make([]*m.BroadcastFeedMessage, n)
+		copy(msgsCopy, bm.Messages)
+		bmCopy.Messages = msgsCopy
+	}
+
+	cm.broadcastChan <- bmCopy
 }
 
 func (cm *ClientManager) doBroadcast(bm *m.BroadcastMessage) ([]*ClientConnection, error) {
