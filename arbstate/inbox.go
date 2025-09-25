@@ -79,8 +79,8 @@ func ParseSequencerMessage(ctx context.Context, batchNum uint64, batchBlockHash 
 	// Use the registry to find the appropriate reader for the header byte
 	if len(payload) > 0 && dapReaders != nil {
 		if dapReader, found := dapReaders.GetByHeaderByte(payload[0]); found {
-			var err error
-			payload, _, err = dapReader.RecoverPayloadFromBatch(ctx, batchNum, batchBlockHash, data, nil, keysetValidationMode != daprovider.KeysetDontValidate)
+			promise := dapReader.RecoverPayload(batchNum, batchBlockHash, data, keysetValidationMode != daprovider.KeysetDontValidate)
+			result, err := promise.Await(ctx)
 			if err != nil {
 				// Matches the way keyset validation was done inside DAS readers i.e logging the error
 				//  But other daproviders might just want to return the error
@@ -93,6 +93,8 @@ func ParseSequencerMessage(ctx context.Context, batchNum uint64, batchBlockHash 
 				} else {
 					return nil, err
 				}
+			} else {
+				payload = result.Payload
 			}
 			if payload == nil {
 				return parsedMsg, nil

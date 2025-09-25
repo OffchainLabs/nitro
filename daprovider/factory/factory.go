@@ -190,7 +190,8 @@ func (f *ReferenceDAFactory) CreateReader(ctx context.Context) (daprovider.Reade
 		return nil, nil, errors.New("validator-contract address not configured for reference DA reader")
 	}
 	validatorAddr := common.HexToAddress(f.config.ValidatorContract)
-	reader := referenceda.NewReader(f.l1Client, validatorAddr)
+	storage := referenceda.GetInMemoryStorage()
+	reader := referenceda.NewReader(storage, f.l1Client, validatorAddr)
 	return reader, nil, nil
 }
 
