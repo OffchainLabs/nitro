@@ -215,29 +215,6 @@ func devFlagArgs() []string {
 	return args
 }
 
-func dev2FlagArgs() []string {
-	args := []string{
-		"--init.dev-init",
-		//		"--init.dev-init-address", "0x3f1Eae7D46d88F08fc2F8ed27FCb2AB183EB2d0E",
-		"--chain.dev-wallet.private-key", "5cbd86f39447c546b2b43f62c586099b77dfb77837f333b45439590a9f460b47",
-		"--node.dangerous.no-l1-listener",
-		"--node.parent-chain-reader.enable=false",
-		"--parent-chain.id=1337",
-		"--chain.id=412348",
-		"--persistent.chain", "/tmp/dev-test",
-		"--node.sequencer",
-		"--execution.sequencer.enable",
-		"--node.dangerous.no-sequencer-coordinator",
-		"--node.staker.enable=false",
-		"--init.empty=false",
-		"--http.port", "8547",
-		"--http.addr", "127.0.0.1",
-		"--http.api=net,web3,eth,arb,arbdebug,debug",
-		"--node.transaction-streamer.track-block-metadata-from=1",
-	}
-	return args
-}
-
 func BeginCommonParse(f *pflag.FlagSet, args []string) (*koanf.Koanf, error) {
 	var expandedArgs []string
 	for _, arg := range args {
@@ -245,8 +222,6 @@ func BeginCommonParse(f *pflag.FlagSet, args []string) (*koanf.Koanf, error) {
 			return nil, ErrVersion
 		} else if arg == "--dev" {
 			expandedArgs = append(expandedArgs, devFlagArgs()...)
-		} else if arg == "--dev2" {
-			expandedArgs = append(expandedArgs, dev2FlagArgs()...)
 		} else {
 			expandedArgs = append(expandedArgs, arg)
 		}

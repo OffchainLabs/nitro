@@ -5,6 +5,7 @@ package arbos
 
 import (
 	"encoding/binary"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -263,6 +264,15 @@ func ProduceBlockAdvanced(
 		balance := uint256.MustFromHex("0xfffffffffffffffffffffffffffffffffffffff")
 		statedb.SetBalance(devAddr, balance, tracing.BalanceChangeUnspecified)
 		expectedBalanceDelta.Add(expectedBalanceDelta, balance.ToBig())
+		chainConfig := chainContext.Config()
+		serializedChainConfig, err := json.Marshal(chainConfig)
+		if err != nil {
+			log.Error("debug block: failed to marshal chain config", "err", err)
+		} else {
+			if err = arbState.SetChainConfig(serializedChainConfig); err != nil {
+				log.Error("debug block: failed to set chain config in arbos state", "err", err)
+			}
+		}
 	}
 
 	for {
