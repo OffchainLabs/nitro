@@ -265,13 +265,12 @@ func ProduceBlockAdvanced(
 		statedb.SetBalance(devAddr, balance, tracing.BalanceChangeUnspecified)
 		expectedBalanceDelta.Add(expectedBalanceDelta, balance.ToBig())
 		chainConfig := chainContext.Config()
-		serializedChainConfig, err := json.Marshal(chainConfig)
-		if err != nil {
+		if serializedChainConfig, err := json.Marshal(chainConfig); err != nil {
 			log.Error("debug block: failed to marshal chain config", "err", err)
-		} else {
-			if err = arbState.SetChainConfig(serializedChainConfig); err != nil {
-				log.Error("debug block: failed to set chain config in arbos state", "err", err)
-			}
+		} else if arbStateWrite, err := arbosState.OpenSystemArbosState(statedb, nil, false); err != nil {
+			log.Error("debug block: failed to open arbos state for writing", "err", err)
+		} else if err = arbStateWrite.SetChainConfig(serializedChainConfig); err != nil {
+			log.Error("debug block: failed to set chain config in arbos state", "err", err)
 		}
 	}
 
