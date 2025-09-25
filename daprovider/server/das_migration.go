@@ -117,7 +117,7 @@ func NewServerForDAS(
 	if daWriter != nil {
 		writer = dasutil.NewWriterForDAS(daWriter)
 	}
-	reader := dasutil.NewReaderForDAS(daReader, dasKeysetFetcher)
+	reader := dasutil.NewReaderForDAS(daReader, dasKeysetFetcher, daprovider.KeysetValidate)
 
 	// Translate DAS config to generic server config
 	serverConfig := ServerConfig{

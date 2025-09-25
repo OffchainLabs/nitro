@@ -79,7 +79,7 @@ func ParseSequencerMessage(ctx context.Context, batchNum uint64, batchBlockHash 
 	// Use the registry to find the appropriate reader for the header byte
 	if len(payload) > 0 && dapReaders != nil {
 		if dapReader, found := dapReaders.GetByHeaderByte(payload[0]); found {
-			promise := dapReader.RecoverPayload(batchNum, batchBlockHash, data, keysetValidationMode != daprovider.KeysetDontValidate)
+			promise := dapReader.RecoverPayload(batchNum, batchBlockHash, data)
 			result, err := promise.Await(ctx)
 			if err != nil {
 				// Matches the way keyset validation was done inside DAS readers i.e logging the error
@@ -173,7 +173,11 @@ type inboxMultiplexer struct {
 	cachedSegmentTimestamp    uint64
 	cachedSegmentBlockNumber  uint64
 	cachedSubMessageNumber    uint64
-	keysetValidationMode      daprovider.KeysetValidationMode
+	// keysetValidationMode is used for error handling in ParseSequencerMessage.
+	// Note: DAS readers now handle validation internally based on their construction-time mode,
+	// but ParseSequencerMessage still needs this to decide whether to panic or log on validation errors.
+	// In replay mode, this allows proper error handling based on the position within the message.
+	keysetValidationMode daprovider.KeysetValidationMode
 }
 
 func NewInboxMultiplexer(backend InboxBackend, delayedMessagesRead uint64, dapReaders *daprovider.ReaderRegistry, keysetValidationMode daprovider.KeysetValidationMode) arbostypes.InboxMultiplexer {

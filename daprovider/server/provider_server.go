@@ -145,9 +145,8 @@ func (s *Server) RecoverPayload(
 	batchNum hexutil.Uint64,
 	batchBlockHash common.Hash,
 	sequencerMsg hexutil.Bytes,
-	validateSeqMsg bool,
 ) (*daprovider.PayloadResult, error) {
-	promise := s.reader.RecoverPayload(uint64(batchNum), batchBlockHash, sequencerMsg, validateSeqMsg)
+	promise := s.reader.RecoverPayload(uint64(batchNum), batchBlockHash, sequencerMsg)
 	result, err := promise.Await(ctx)
 	if err != nil {
 		return nil, err
@@ -160,9 +159,8 @@ func (s *Server) CollectPreimages(
 	batchNum hexutil.Uint64,
 	batchBlockHash common.Hash,
 	sequencerMsg hexutil.Bytes,
-	validateSeqMsg bool,
 ) (*daprovider.PreimagesResult, error) {
-	promise := s.reader.CollectPreimages(uint64(batchNum), batchBlockHash, sequencerMsg, validateSeqMsg)
+	promise := s.reader.CollectPreimages(uint64(batchNum), batchBlockHash, sequencerMsg)
 	result, err := promise.Await(ctx)
 	if err != nil {
 		return nil, err

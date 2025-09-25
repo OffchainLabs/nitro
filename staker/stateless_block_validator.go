@@ -327,7 +327,7 @@ func (v *StatelessBlockValidator) readFullBatch(ctx context.Context, batchNum ui
 	if len(postedData) > 40 && v.dapReaders != nil {
 		headerByte := postedData[40]
 		if dapReader, found := v.dapReaders.GetByHeaderByte(headerByte); found {
-			promise := dapReader.CollectPreimages(batchNum, batchBlockHash, postedData, true)
+			promise := dapReader.CollectPreimages(batchNum, batchBlockHash, postedData)
 			result, err := promise.Await(ctx)
 			if err != nil {
 				// Matches the way keyset validation was done inside DAS readers i.e logging the error

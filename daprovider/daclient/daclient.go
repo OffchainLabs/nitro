@@ -66,13 +66,12 @@ func (c *Client) RecoverPayload(
 	batchNum uint64,
 	batchBlockHash common.Hash,
 	sequencerMsg []byte,
-	validateSeqMsg bool,
 ) containers.PromiseInterface[daprovider.PayloadResult] {
 	promise := containers.NewPromise[daprovider.PayloadResult](nil)
 	go func() {
 		ctx := context.Background()
 		var result daprovider.PayloadResult
-		if err := c.CallContext(ctx, &result, "daprovider_recoverPayload", hexutil.Uint64(batchNum), batchBlockHash, hexutil.Bytes(sequencerMsg), validateSeqMsg); err != nil {
+		if err := c.CallContext(ctx, &result, "daprovider_recoverPayload", hexutil.Uint64(batchNum), batchBlockHash, hexutil.Bytes(sequencerMsg)); err != nil {
 			promise.ProduceError(fmt.Errorf("error returned from daprovider_recoverPayload rpc method, err: %w", err))
 		} else {
 			promise.Produce(result)
@@ -86,13 +85,12 @@ func (c *Client) CollectPreimages(
 	batchNum uint64,
 	batchBlockHash common.Hash,
 	sequencerMsg []byte,
-	validateSeqMsg bool,
 ) containers.PromiseInterface[daprovider.PreimagesResult] {
 	promise := containers.NewPromise[daprovider.PreimagesResult](nil)
 	go func() {
 		ctx := context.Background()
 		var result daprovider.PreimagesResult
-		if err := c.CallContext(ctx, &result, "daprovider_collectPreimages", hexutil.Uint64(batchNum), batchBlockHash, hexutil.Bytes(sequencerMsg), validateSeqMsg); err != nil {
+		if err := c.CallContext(ctx, &result, "daprovider_collectPreimages", hexutil.Uint64(batchNum), batchBlockHash, hexutil.Bytes(sequencerMsg)); err != nil {
 			promise.ProduceError(fmt.Errorf("error returned from daprovider_collectPreimages rpc method, err: %w", err))
 		} else {
 			promise.Produce(result)
