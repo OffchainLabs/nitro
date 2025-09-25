@@ -19,7 +19,7 @@ jobs:
     services:
       # local registry
       registry:
-        image: registry:2
+        image: ghcr.io/library/registry:2
         ports:
           - 5000:5000
 

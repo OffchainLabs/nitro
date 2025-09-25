@@ -16,7 +16,7 @@ jobs:
 
     services:
       redis:
-        image: redis
+        image: ghcr.io/library/redis:latest
         ports:
           - 6379:6379
 
