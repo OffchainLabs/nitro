@@ -38,6 +38,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/daprovider/daclient"
+	"github.com/offchainlabs/nitro/daprovider/das/dasutil"
 	"github.com/offchainlabs/nitro/daprovider/referenceda"
 	dapserver "github.com/offchainlabs/nitro/daprovider/server"
 	"github.com/offchainlabs/nitro/execution/gethexec"
@@ -121,7 +122,7 @@ func postBatchWithDA(
 	seqInbox *bridgegen.SequencerInbox,
 	seqInboxAddr common.Address,
 	batchData []byte,
-	daWriter daprovider.Writer,
+	daWriter dasutil.DASWriter,
 ) []byte {
 	ctx := context.Background()
 
@@ -172,6 +173,10 @@ func createEvilDAProviderServer(t *testing.T, ctx context.Context, l1Client *eth
 
 // assertingWriter is a Writer that panics if Store is called
 type assertingWriter struct{}
+
+func (w *assertingWriter) String() string {
+	panic("assertingWriter")
+}
 
 func (w *assertingWriter) Store(ctx context.Context, message []byte, timeout uint64) ([]byte, error) {
 	panic("assertingWriter.Store should never be called - evil provider server should not be used for writing")
