@@ -24,11 +24,11 @@ import (
 )
 
 var (
-    restGetByHashRequestGauge       = metrics.NewRegisteredCounter("arb/das/rest/getbyhash/requests", nil)
-    restGetByHashSuccessGauge       = metrics.NewRegisteredCounter("arb/das/rest/getbyhash/success", nil)
-    restGetByHashFailureGauge       = metrics.NewRegisteredCounter("arb/das/rest/getbyhash/failure", nil)
-    restGetByHashReturnedBytesGauge = metrics.NewRegisteredCounter("arb/das/rest/getbyhash/bytes", nil)
-	restGetByHashDurationHistogram  = metrics.NewRegisteredHistogram("arb/das/rest/getbyhash/duration", nil, metrics.NewBoundedHistogramSample())
+	restGetByHashRequestCounter       = metrics.NewRegisteredCounter("arb/das/rest/getbyhash/requests", nil)
+	restGetByHashSuccessCounter       = metrics.NewRegisteredCounter("arb/das/rest/getbyhash/success", nil)
+	restGetByHashFailureCounter       = metrics.NewRegisteredCounter("arb/das/rest/getbyhash/failure", nil)
+	restGetByHashReturnedBytesCounter = metrics.NewRegisteredCounter("arb/das/rest/getbyhash/bytes", nil)
+	restGetByHashDurationHistogram    = metrics.NewRegisteredHistogram("arb/das/rest/getbyhash/duration", nil, metrics.NewBoundedHistogramSample())
 )
 
 type RestfulDasServer struct {
@@ -140,14 +140,14 @@ func (rds *RestfulDasServer) ExpirationPolicyHandler(w http.ResponseWriter, r *h
 
 func (rds *RestfulDasServer) GetByHashHandler(w http.ResponseWriter, r *http.Request, requestPath string) {
 	log.Debug("Got request", "requestPath", requestPath)
-	restGetByHashRequestGauge.Inc(1)
+	restGetByHashRequestCounter.Inc(1)
 	start := time.Now()
 	success := false
 	defer func() {
 		if success {
-			restGetByHashSuccessGauge.Inc(1)
+			restGetByHashSuccessCounter.Inc(1)
 		} else {
-			restGetByHashFailureGauge.Inc(1)
+			restGetByHashFailureCounter.Inc(1)
 		}
 		restGetByHashDurationHistogram.Update(time.Since(start).Nanoseconds())
 	}()
@@ -176,7 +176,7 @@ func (rds *RestfulDasServer) GetByHashHandler(w http.ResponseWriter, r *http.Req
 	base64.StdEncoding.Encode(encodedResponseData, responseData)
 	var response RestfulDasServerResponse
 	response.Data = string(encodedResponseData)
-	restGetByHashReturnedBytesGauge.Inc(int64(len(response.Data)))
+	restGetByHashReturnedBytesCounter.Inc(int64(len(response.Data)))
 
 	err = json.NewEncoder(w).Encode(response)
 	if err != nil {
