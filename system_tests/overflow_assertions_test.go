@@ -74,7 +74,7 @@ func TestOverflowAssertions(t *testing.T) {
 		UseBlobs:               true,
 	}
 
-	_, l2node, _, _, l1info, _, l1client, l1stack, assertionChain, _ := createTestNodeOnL1ForBoldProtocol(t, ctx, true, nil, l2chainConfig, nil, sconf, l2info)
+	_, l2node, _, _, l1info, _, l1client, l1stack, assertionChain, _ := createTestNodeOnL1ForBoldProtocol(t, ctx, true, nil, l2chainConfig, nil, sconf, l2info, false)
 	defer requireClose(t, l1stack)
 	defer l2node.StopAndWait()
 
@@ -134,6 +134,7 @@ func TestOverflowAssertions(t *testing.T) {
 		l2node.InboxTracker,
 		l2node.TxStreamer,
 		l2node.InboxReader,
+		nil,
 	)
 	Require(t, err)
 
