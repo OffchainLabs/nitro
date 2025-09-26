@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/offchainlabs/nitro/daprovider/das/data_streaming"
 	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -27,13 +28,16 @@ import (
 	"github.com/offchainlabs/nitro/daprovider/server_api"
 )
 
+// lint:require-exhaustive-initialization
 type Server struct {
 	reader      daprovider.Reader
 	writer      daprovider.Writer
 	validator   daprovider.Validator
 	headerBytes []byte // Supported header bytes for this provider
+	dataReceiver *data_streaming.DataStreamReceiver
 }
 
+// lint:require-exhaustive-initialization
 type ServerConfig struct {
 	Addr               string                              `koanf:"addr"`
 	Port               uint64                              `koanf:"port"`
@@ -91,6 +95,8 @@ func NewServerWithDAPProvider(ctx context.Context, config *ServerConfig, reader 
 		writer:      writer,
 		validator:   validator,
 		headerBytes: headerBytes,
+		// TODO: nil verifier
+		dataReceiver: data_streaming.NewDefaultDataStreamReceiver(nil),
 	}
 	if err = rpcServer.RegisterName("daprovider", server); err != nil {
 		return nil, err
@@ -207,4 +213,24 @@ func (s *Server) GenerateCertificateValidityProof(ctx context.Context, certifica
 		return nil, err
 	}
 	return &server_api.GenerateCertificateValidityProofResult{Proof: hexutil.Bytes(result.Proof)}, nil
+}
+
+// ============================= DATA STREAM API ==================================================================== //
+
+func (s *Server) StartChunkedStore(ctx context.Context, timestamp, nChunks, chunkSize, totalSize, timeout hexutil.Uint64, sig hexutil.Bytes) (*data_streaming.StartStreamingResult, error) {
+	return s.dataReceiver.StartReceiving(ctx, uint64(timestamp), uint64(nChunks), uint64(chunkSize), uint64(totalSize), uint64(timeout), sig)
+}
+
+func (s *Server) SendChunk(ctx context.Context, messageId, chunkId hexutil.Uint64, chunk hexutil.Bytes, sig hexutil.Bytes) error {
+	return s.dataReceiver.ReceiveChunk(ctx, data_streaming.MessageId(messageId), uint64(chunkId), chunk, sig)
+}
+
+func (s *Server) CommitChunkedStore(ctx context.Context, messageId hexutil.Uint64, sig hexutil.Bytes) (*daclient.StoreResult, error) {
+	message, timeout, _, err := s.dataReceiver.FinalizeReceiving(ctx, data_streaming.MessageId(messageId), sig)
+	if err != nil {
+		return nil, err
+	}
+
+	serializedDACert, err := s.writer.Store(ctx, message, timeout)
+	return &daclient.StoreResult{SerializedDACert: serializedDACert}, err
 }

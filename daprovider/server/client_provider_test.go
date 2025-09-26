@@ -53,6 +53,7 @@ func setupProviderServer(ctx context.Context, t *testing.T) *http.Server {
 		EnableDAWriter:     true,
 		ServerTimeouts:     genericconf.HTTPServerTimeoutConfig{},
 		RPCServerBodyLimit: RPCServerBodyLimit,
+		JWTSecret:          "",
 	}
 
 	privateKey, err := crypto.GenerateKey()
