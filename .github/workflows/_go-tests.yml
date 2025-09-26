@@ -16,6 +16,9 @@ jobs:
         image: redis
         ports:
           - 6379:6379
+    permissions:
+      pull-requests: write
+
     steps:
       - name: Checkout
         uses: actions/checkout@v5
