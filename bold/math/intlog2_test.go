@@ -23,6 +23,7 @@ func TestUnsingedIntegerLog2Floor(t *testing.T) {
 	}
 
 	testCases := []log2TestCase{
+		{input: 0, expected: 0},
 		{input: 1, expected: 0},
 		{input: 2, expected: 1},
 		{input: 4, expected: 2},
@@ -38,10 +39,9 @@ func TestUnsingedIntegerLog2Floor(t *testing.T) {
 	}
 }
 
-func TestUnsingedIntegerLog2FloorPanicsOnZero(t *testing.T) {
-	require.Panics(t, func() {
-		Log2Floor(0)
-	})
+func TestUnsingedIntegerLog2FloorReturnsZeroForZero(t *testing.T) {
+	result := Log2Floor(0)
+	require.Equal(t, 0, result)
 }
 
 func FuzzUnsingedIntegerLog2Floor(f *testing.F) {
@@ -50,13 +50,11 @@ func FuzzUnsingedIntegerLog2Floor(f *testing.F) {
 		f.Add(tc)
 	}
 	f.Fuzz(func(t *testing.T, input uint64) {
-		if input == 0 {
-			require.Panics(t, func() {
-				Log2Floor(input)
-			})
-			t.Skip()
-		}
 		r := Log2Floor(input)
+		if input == 0 {
+			require.Equal(t, 0, r)
+			return
+		}
 		fr := math.Log2(float64(input))
 		require.Equal(t, int(math.Floor(fr)), r)
 	})
@@ -85,6 +83,7 @@ func TestUnsingedIntegerLog2Ceil(t *testing.T) {
 	}
 
 	testCases := []log2TestCase{
+		{input: 0, expected: 0},
 		{input: 1, expected: 0},
 		{input: 2, expected: 1},
 		{input: 4, expected: 2},
@@ -100,10 +99,9 @@ func TestUnsingedIntegerLog2Ceil(t *testing.T) {
 	}
 }
 
-func TestUnsingedIntegerLog2CeilPanicsOnZero(t *testing.T) {
-	require.Panics(t, func() {
-		Log2Ceil(0)
-	})
+func TestUnsingedIntegerLog2CeilReturnsZeroForZero(t *testing.T) {
+	result := Log2Ceil(0)
+	require.Equal(t, 0, result)
 }
 
 func FuzzUnsingedIntegerLog2Ceil(f *testing.F) {
@@ -112,13 +110,11 @@ func FuzzUnsingedIntegerLog2Ceil(f *testing.F) {
 		f.Add(tc)
 	}
 	f.Fuzz(func(t *testing.T, input uint64) {
-		if input == 0 {
-			require.Panics(t, func() {
-				Log2Ceil(input)
-			})
-			t.Skip()
-		}
 		r := Log2Ceil(input)
+		if input == 0 {
+			require.Equal(t, 0, r)
+			return
+		}
 		fr := math.Log2(float64(input))
 		require.Equal(t, int(math.Ceil(fr)), r)
 	})
