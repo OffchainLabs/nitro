@@ -26,7 +26,7 @@ import (
 	"github.com/offchainlabs/nitro/validator/server_common"
 )
 
-var executionNodeOfflineGauge = metrics.NewRegisteredGauge("arb/state_provider/execution_node_offline", nil)
+var executionNodeOfflineCounter = metrics.NewRegisteredCounter("arb/state_provider/execution_node_offline", nil)
 
 type ValidationClient struct {
 	stopwaiter.StopWaiter
@@ -238,7 +238,7 @@ func ctxWithCheckAlive(ctxIn context.Context, execRun validator.ExecutionRun) (c
 				ctxCheckAliveWithTimeout, cancelCheckAliveWithTimeout := context.WithTimeout(ctx, 5*time.Second)
 				err := execRun.CheckAlive(ctxCheckAliveWithTimeout)
 				if err != nil {
-					executionNodeOfflineGauge.Inc(1)
+					executionNodeOfflineCounter.Inc(1)
 					cancelCheckAliveWithTimeout()
 					return
 				}
