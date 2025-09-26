@@ -699,7 +699,8 @@ func getDAProvider(
 			cleanupFuncs = append(cleanupFuncs, validatorCleanup)
 		}
 
-		providerServer, err := dapserver.NewServerWithDAPProvider(ctx, &serverConfig, reader, writer, validator)
+		headerBytes := daFactory.GetSupportedHeaderBytes()
+		providerServer, err := dapserver.NewServerWithDAPProvider(ctx, &serverConfig, reader, writer, validator, headerBytes)
 
 		// Create combined cleanup function
 		closeFn := func() {

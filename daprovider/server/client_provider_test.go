@@ -14,6 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 
 	"github.com/offchainlabs/nitro/cmd/genericconf"
+	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/daprovider/daclient"
 	"github.com/offchainlabs/nitro/daprovider/referenceda"
 	"github.com/offchainlabs/nitro/util/rpcclient"
@@ -60,11 +61,13 @@ func setupProviderServer(ctx context.Context, t *testing.T) *http.Server {
 
 	// The services below will work fine as long as we don't need to do any action on-chain.
 	dummyAddress := common.HexToAddress("0x0")
-	reader := referenceda.NewReader(nil, dummyAddress)
+	storage := referenceda.GetInMemoryStorage()
+	reader := referenceda.NewReader(storage, nil, dummyAddress)
 	writer := referenceda.NewWriter(dataSigner)
 	validator := referenceda.NewValidator(nil, dummyAddress)
+	headerBytes := []byte{daprovider.DACertificateMessageHeaderFlag}
 
-	providerServer, err := NewServerWithDAPProvider(ctx, &providerServerConfig, reader, writer, validator)
+	providerServer, err := NewServerWithDAPProvider(ctx, &providerServerConfig, reader, writer, validator, headerBytes)
 	testhelpers.RequireImpl(t, err)
 
 	return providerServer
