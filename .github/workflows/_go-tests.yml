@@ -44,11 +44,10 @@ jobs:
         continue-on-error: true
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh
-          --tags challengetest --run TestL3Challenge --timeout 120m --cover --junitfile junit.xml
+          --tags challengetest --run TestL3Challenge --timeout 120m --cover --junitfile test-results/junit.xml
 
       - name: Run basic test results action
         uses: codecov/basic-test-results@v1
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          file: junit.xml
-          disable-search: true
+          directory: 'test-results'

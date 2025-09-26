@@ -11,6 +11,7 @@ timeout=""
 tags=""
 run=""
 test_state_scheme=""
+junitfile=""
 log=true
 race=false
 cover=false
@@ -52,6 +53,12 @@ while [[ $# -gt 0 ]]; do
 			log=false
 			shift
 			;;
+    --junitfile)
+      shift
+      check_missing_value $# "$1" "--junitfile"
+      junitfile=$1
+      shift
+      ;;
     *)
       echo "Invalid argument: $1"
       exit 1
@@ -61,7 +68,20 @@ done
 
 packages=$(go list ./...)
 for package in $packages; do
-  cmd="stdbuf -oL gotestsum --format short-verbose --packages=\"$package\" --rerun-fails=3 --rerun-fails-max-failures=30 --no-color=false --"
+  # Add the gotestsum flags first
+  cmd="stdbuf -oL gotestsum --format short-verbose --packages=\"$package\" --rerun-fails=3 --rerun-fails-max-failures=30 --no-color=false"
+
+  if [ "$junitfile" != "" ]; then
+    # Since we run tests package-by-package, we must make the JUnit file name unique
+    # to avoid overwriting. We'll append the package name (slugified) to the base file.
+    sanitized_package_name=$(echo "$package" | tr -c '[:alnum:]' '_')
+    unique_junit_file="${junitfile%.*}_${sanitized_package_name}.xml"
+    cmd="$cmd --junitfile \"$unique_junit_file\""
+  fi
+
+  # Append the separator and go test arguments
+  cmd="$cmd --"
+
   if [ "$timeout" != "" ]; then
     cmd="$cmd -timeout $timeout"
   fi
