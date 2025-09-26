@@ -105,8 +105,8 @@ func (v *Contract) validateWallet(ctx context.Context) error {
 	return nil
 }
 
-func (v *Contract) Initialize(ctx context.Context) error {
-	err := v.populateWallet(ctx, false)
+func (v *Contract) Initialize(ctx context.Context, createIfMissing bool) error {
+	err := v.populateWallet(ctx, createIfMissing)
 	if err != nil {
 		return err
 	}

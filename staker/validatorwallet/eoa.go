@@ -35,7 +35,7 @@ func NewEOA(dataPoster *dataposter.DataPoster, l1Client *ethclient.Client, getEx
 	}, nil
 }
 
-func (w *EOA) Initialize(ctx context.Context) error {
+func (w *EOA) Initialize(ctx context.Context, _ bool) error {
 	return nil
 }
 

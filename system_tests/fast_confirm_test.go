@@ -37,7 +37,7 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/rollup_legacy_gen"
 	"github.com/offchainlabs/nitro/solgen/go/upgrade_executorgen"
 	"github.com/offchainlabs/nitro/staker"
-	"github.com/offchainlabs/nitro/staker/legacy"
+	legacystaker "github.com/offchainlabs/nitro/staker/legacy"
 	"github.com/offchainlabs/nitro/staker/validatorwallet"
 	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/validator/server_common"
@@ -280,7 +280,7 @@ func setupFastConfirmation(ctx context.Context, t *testing.T) (*NodeBuilder, *le
 	Require(t, err)
 	err = stateless.Start(ctx)
 	Require(t, err)
-	err = valWallet.Initialize(ctx)
+	err = valWallet.Initialize(ctx, false)
 	Require(t, err)
 	stakerA, err := legacystaker.NewStaker(
 		l2node.L1Reader,
@@ -475,7 +475,7 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 	Require(t, err)
 	err = statelessA.Start(ctx)
 	Require(t, err)
-	err = valWalletA.Initialize(ctx)
+	err = valWalletA.Initialize(ctx, false)
 	Require(t, err)
 	stakerA, err := legacystaker.NewStaker(
 		l2nodeA.L1Reader,
@@ -532,7 +532,7 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 	Require(t, err)
 	err = statelessB.Start(ctx)
 	Require(t, err)
-	err = valWalletB.Initialize(ctx)
+	err = valWalletB.Initialize(ctx, false)
 	Require(t, err)
 	stakerB, err := legacystaker.NewStaker(
 		l2nodeB.L1Reader,

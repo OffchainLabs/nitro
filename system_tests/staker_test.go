@@ -34,7 +34,7 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/rollup_legacy_gen"
 	"github.com/offchainlabs/nitro/solgen/go/upgrade_executorgen"
 	"github.com/offchainlabs/nitro/staker"
-	"github.com/offchainlabs/nitro/staker/legacy"
+	legacystaker "github.com/offchainlabs/nitro/staker/legacy"
 	"github.com/offchainlabs/nitro/staker/validatorwallet"
 	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -234,7 +234,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	Require(t, err)
 	err = stakerA.Initialize(ctx)
 	if stakerA.Strategy() != legacystaker.WatchtowerStrategy {
-		err = valWalletA.Initialize(ctx)
+		err = valWalletA.Initialize(ctx, false)
 		Require(t, err)
 	}
 	Require(t, err)
@@ -293,7 +293,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	err = stakerB.Initialize(ctx)
 	Require(t, err)
 	if stakerB.Strategy() != legacystaker.WatchtowerStrategy {
-		err = valWalletB.Initialize(ctx)
+		err = valWalletB.Initialize(ctx, false)
 		Require(t, err)
 	}
 	valWalletC := validatorwallet.NewNoOp(builder.L1.Client)
@@ -317,7 +317,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	)
 	Require(t, err)
 	if stakerC.Strategy() != legacystaker.WatchtowerStrategy {
-		err = valWalletC.Initialize(ctx)
+		err = valWalletC.Initialize(ctx, false)
 		Require(t, err)
 	}
 	err = stakerC.Initialize(ctx)
