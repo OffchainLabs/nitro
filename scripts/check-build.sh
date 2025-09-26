@@ -86,11 +86,6 @@ fi
 
 # Check prerequisites for building binaries
 prerequisites=(git go curl clang make cmake npm wasm2wat wasm-ld yarn gotestsum python3)
-if [[ "$OS" == "Linux" ]]; then
-    prerequisites+=()
-else
-    prerequisites+=()
-fi
 
 for pkg in "${prerequisites[@]}"; do
     display_name="$pkg"
