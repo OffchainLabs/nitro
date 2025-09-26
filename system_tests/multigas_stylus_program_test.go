@@ -310,7 +310,7 @@ func TestMultigasStylus_Calls(t *testing.T) {
 				storageVal := testhelpers.RandomHash()
 				calldata = argsForMulticall(vm.CALL, storeAddr, nil, argsForStorageWrite(key, storageVal))
 
-				expectedStorageAccess = params.ColdAccountAccessCostEIP2929 - params.WarmStorageReadCostEIP2929
+				expectedStorageAccess = params.ColdAccountAccessCostEIP2929 - params.WarmStorageReadCostEIP2929 + params.ColdSloadCostEIP2929
 
 			case vm.DELEGATECALL:
 				calldata = argsForMulticall(vm.DELEGATECALL, callsAddr, nil, []byte{0})
@@ -344,6 +344,57 @@ func TestMultigasStylus_Calls(t *testing.T) {
 				expectedStorageAccess,
 				receipt.MultiGasUsed.Get(multigas.ResourceKindStorageAccess),
 			)
+		})
+	}
+}
+
+func TestMultigasStylus_StorageWrite(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	builder.execConfig.ExposeMultiGas = true
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	l2info := builder.L2Info
+	l2client := builder.L2.Client
+	owner := l2info.GetDefaultTransactOpts("Owner", ctx)
+
+	storage := deployWasm(t, ctx, owner, l2client, rustFile("storage"))
+
+	key := testhelpers.RandomHash()
+	val := testhelpers.RandomHash()
+	writeArgs := argsForStorageWrite(key, val)
+
+	cases := []struct {
+		name     string
+		gasLimit uint64
+		expectOK bool
+	}{
+		{"success", 1_000_000_000, true},
+		{"out_of_gas", 1_500_000, false}, // above intrinsic cost, below storage create slot cost
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			tx := l2info.PrepareTxTo("Owner", &storage, tc.gasLimit, nil, writeArgs)
+			require.NoError(t, l2client.SendTransaction(ctx, tx))
+
+			receipt, err := EnsureTxSucceeded(ctx, l2client, tx)
+			if tc.expectOK {
+				require.NoError(t, err)
+
+				// Expected multigas for create slot operation
+				require.Equal(t, receipt.GasUsed, receipt.MultiGasUsed.SingleGas())
+				require.Equal(t, params.ColdSloadCostEIP2929, receipt.MultiGasUsed.Get(multigas.ResourceKindStorageAccess))
+				require.Equal(t, params.SstoreSetGasEIP2200, receipt.MultiGasUsed.Get(multigas.ResourceKindStorageGrowth))
+			} else {
+				require.Error(t, err)
+				receipt, err := l2client.TransactionReceipt(ctx, tx.Hash())
+				require.NoError(t, err)
+				require.Equal(t, receipt.GasUsed, receipt.MultiGasUsed.SingleGas())
+			}
 		})
 	}
 }
