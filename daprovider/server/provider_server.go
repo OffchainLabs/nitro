@@ -93,10 +93,11 @@ func NewServerWithDAPProvider(ctx context.Context, config *ServerConfig, reader 
 	}
 
 	server := &Server{
-		reader:      reader,
-		writer:      writer,
-		validator:   validator,
-		headerBytes: headerBytes,
+		reader:       reader,
+		writer:       writer,
+		validator:    validator,
+		headerBytes:  headerBytes,
+		dataReceiver: data_streaming.NewDefaultDataStreamReceiver(verifier),
 	}
 	if err = rpcServer.RegisterName("daprovider", server); err != nil {
 		return nil, err
