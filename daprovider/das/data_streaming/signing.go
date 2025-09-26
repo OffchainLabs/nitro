@@ -27,6 +27,10 @@ func CustomPayloadSigner(signingFunc func([]byte, ...uint64) ([]byte, error)) *P
 	}
 }
 
+func NoopPayloadSigner() *PayloadSigner {
+	return CustomPayloadSigner(func(bytes []byte, extras ...uint64) ([]byte, error) { return make([]byte, 0), nil })
+}
+
 // lint:require-exhaustive-initialization
 type PayloadVerifier struct {
 	verifyPayload func(ctx context.Context, signature []byte, bytes []byte, extras ...uint64) error
@@ -43,6 +47,10 @@ func CustomPayloadVerifier(verifyingFunc func(ctx context.Context, signature []b
 	return &PayloadVerifier{
 		verifyPayload: verifyingFunc,
 	}
+}
+
+func TrustingPayloadVerifier() *PayloadVerifier {
+	return CustomPayloadVerifier(func(ctx context.Context, signature []byte, bytes []byte, extras ...uint64) error { return nil })
 }
 
 func flattenDataForSigning(bytes []byte, extras ...uint64) []byte {

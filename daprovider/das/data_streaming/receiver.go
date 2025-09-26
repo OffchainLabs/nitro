@@ -14,6 +14,11 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 )
 
+const (
+	DefaultMaxPendingMessages      = 10
+	DefaultMessageCollectionExpiry = 1 * time.Minute
+)
+
 // DataStreamReceiver implements the server side of the data streaming protocol. It stays compatible with `DataStreamer`
 // client, although is able to talk to many senders at the same time.
 //
@@ -37,6 +42,11 @@ func NewDataStreamReceiver(payloadVerifier *PayloadVerifier, maxPendingMessages 
 		payloadVerifier: payloadVerifier,
 		messageStore:    newMessageStore(maxPendingMessages, messageCollectionExpiry, expirationCallback),
 	}
+}
+
+// NewDefaultDataStreamReceiver sets up a new stream receiver with default settings.
+func NewDefaultDataStreamReceiver(verifier *PayloadVerifier) *DataStreamReceiver {
+	return NewDataStreamReceiver(verifier, DefaultMaxPendingMessages, DefaultMessageCollectionExpiry, nil)
 }
 
 // StartStreamingResult is expected by DataStreamer to be returned by the endpoint responsible for the StartReceiving method.
