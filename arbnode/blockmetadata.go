@@ -71,7 +71,7 @@ type BlockMetadataFetcher struct {
 	db                     ethdb.Database
 	client                 *rpcclient.RpcClient
 	exec                   execution.ExecutionClient
-	startPos               uint64
+	startBlockNum          uint64
 	trackBlockMetadataFrom arbutil.MessageIndex
 	expectedChainId        uint64
 
@@ -85,7 +85,7 @@ func NewBlockMetadataFetcher(
 	c BlockMetadataFetcherConfig,
 	db ethdb.Database,
 	exec execution.ExecutionClient,
-	startPos uint64,
+	startBlockNum uint64,
 	expectedChainId uint64,
 ) (*BlockMetadataFetcher, error) {
 	var err error
@@ -108,7 +108,7 @@ func NewBlockMetadataFetcher(
 		db:                  db,
 		client:              client,
 		exec:                exec,
-		startPos:            startPos,
+		startBlockNum:       startBlockNum,
 		expectedChainId:     expectedChainId,
 		chainIdChecked:      chainIdChecked,
 		currentSyncInterval: c.SyncInterval,
@@ -244,8 +244,8 @@ func (b *BlockMetadataFetcher) Update(ctx context.Context) time.Duration {
 // InitializeTrackBlockMetadataFrom is only used for testing purposes
 func (b *BlockMetadataFetcher) InitializeTrackBlockMetadataFrom(ctx context.Context) error {
 	var err error
-	if b.startPos != 0 {
-		b.trackBlockMetadataFrom, err = b.exec.BlockNumberToMessageIndex(b.startPos).Await(ctx)
+	if b.startBlockNum != 0 {
+		b.trackBlockMetadataFrom, err = b.exec.BlockNumberToMessageIndex(b.startBlockNum).Await(ctx)
 		if err != nil {
 			return err
 		}
