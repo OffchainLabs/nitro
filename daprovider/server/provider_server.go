@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/spf13/pflag"
+	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -25,13 +25,14 @@ import (
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/daprovider"
-	"github.com/offchainlabs/nitro/daprovider/daclient"
+	"github.com/offchainlabs/nitro/daprovider/server_api"
 )
 
 type Server struct {
-	reader    daprovider.Reader
-	writer    daprovider.Writer
-	validator daprovider.Validator
+	reader      daprovider.Reader
+	writer      daprovider.Writer
+	validator   daprovider.Validator
+	headerBytes []byte // Supported header bytes for this provider
 }
 
 type ServerConfig struct {
@@ -52,7 +53,7 @@ var DefaultServerConfig = ServerConfig{
 	RPCServerBodyLimit: genericconf.HTTPServerBodyLimitDefault,
 }
 
-func ServerConfigAddOptions(prefix string, f *pflag.FlagSet) {
+func ServerConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".addr", DefaultServerConfig.Addr, "JSON rpc server listening interface")
 	f.Uint64(prefix+".port", DefaultServerConfig.Port, "JSON rpc server listening port")
 	f.String(prefix+".jwtsecret", DefaultServerConfig.JWTSecret, "path to file with jwtsecret for validation")
@@ -75,7 +76,7 @@ func fetchJWTSecret(fileName string) ([]byte, error) {
 }
 
 // NewServerWithDAPProvider creates a new server with pre-created reader/writer/validator components
-func NewServerWithDAPProvider(ctx context.Context, config *ServerConfig, reader daprovider.Reader, writer daprovider.Writer, validator daprovider.Validator) (*http.Server, error) {
+func NewServerWithDAPProvider(ctx context.Context, config *ServerConfig, reader daprovider.Reader, writer daprovider.Writer, validator daprovider.Validator, headerBytes []byte) (*http.Server, error) {
 	listener, err := net.Listen("tcp", fmt.Sprintf("%s:%d", config.Addr, config.Port))
 	if err != nil {
 		return nil, err
@@ -87,9 +88,10 @@ func NewServerWithDAPProvider(ctx context.Context, config *ServerConfig, reader 
 	}
 
 	server := &Server{
-		reader:    reader,
-		writer:    writer,
-		validator: validator,
+		reader:      reader,
+		writer:      writer,
+		validator:   validator,
+		headerBytes: headerBytes,
 	}
 	if err = rpcServer.RegisterName("daprovider", server); err != nil {
 		return nil, err
@@ -136,38 +138,76 @@ func NewServerWithDAPProvider(ctx context.Context, config *ServerConfig, reader 
 	return srv, nil
 }
 
-func (s *Server) IsValidHeaderByte(ctx context.Context, headerByte byte) (*daclient.IsValidHeaderByteResult, error) {
-	return &daclient.IsValidHeaderByteResult{IsValid: s.reader.IsValidHeaderByte(ctx, headerByte)}, nil
+func (s *Server) GetSupportedHeaderBytes(ctx context.Context) (*server_api.SupportedHeaderBytesResult, error) {
+	return &server_api.SupportedHeaderBytesResult{
+		HeaderBytes: s.headerBytes,
+	}, nil
 }
 
-func (s *Server) RecoverPayloadFromBatch(
+func (s *Server) RecoverPayload(
 	ctx context.Context,
 	batchNum hexutil.Uint64,
 	batchBlockHash common.Hash,
 	sequencerMsg hexutil.Bytes,
-	preimages daprovider.PreimagesMap,
-	validateSeqMsg bool,
-) (*daclient.RecoverPayloadFromBatchResult, error) {
-	payload, preimages, err := s.reader.RecoverPayloadFromBatch(ctx, uint64(batchNum), batchBlockHash, sequencerMsg, preimages, validateSeqMsg)
+) (*daprovider.PayloadResult, error) {
+	promise := s.reader.RecoverPayload(uint64(batchNum), batchBlockHash, sequencerMsg)
+	result, err := promise.Await(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return &daclient.RecoverPayloadFromBatchResult{
-		Payload:   payload,
-		Preimages: preimages,
-	}, nil
+	return &result, nil
+}
+
+func (s *Server) CollectPreimages(
+	ctx context.Context,
+	batchNum hexutil.Uint64,
+	batchBlockHash common.Hash,
+	sequencerMsg hexutil.Bytes,
+) (*daprovider.PreimagesResult, error) {
+	promise := s.reader.CollectPreimages(uint64(batchNum), batchBlockHash, sequencerMsg)
+	result, err := promise.Await(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return &result, nil
 }
 
 func (s *Server) Store(
 	ctx context.Context,
 	message hexutil.Bytes,
 	timeout hexutil.Uint64,
-) (*daclient.StoreResult, error) {
+) (*server_api.StoreResult, error) {
 	serializedDACert, err := s.writer.Store(ctx, message, uint64(timeout))
 	if err != nil {
 		return nil, err
 	}
-	return &daclient.StoreResult{SerializedDACert: serializedDACert}, nil
+	return &server_api.StoreResult{SerializedDACert: serializedDACert}, nil
+}
+
+func (s *Server) GenerateReadPreimageProof(ctx context.Context, certHash common.Hash, offset hexutil.Uint64, certificate hexutil.Bytes) (*server_api.GenerateReadPreimageProofResult, error) {
+	if s.validator == nil {
+		return nil, errors.New("validator not available")
+	}
+	// #nosec G115
+	promise := s.validator.GenerateReadPreimageProof(certHash, uint64(offset), certificate)
+	result, err := promise.Await(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return &server_api.GenerateReadPreimageProofResult{Proof: hexutil.Bytes(result.Proof)}, nil
+}
+
+func (s *Server) GenerateCertificateValidityProof(ctx context.Context, certificate hexutil.Bytes) (*server_api.GenerateCertificateValidityProofResult, error) {
+	if s.validator == nil {
+		return nil, errors.New("validator not available")
+	}
+	// #nosec G115
+	promise := s.validator.GenerateCertificateValidityProof(certificate)
+	result, err := promise.Await(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return &server_api.GenerateCertificateValidityProofResult{Proof: hexutil.Bytes(result.Proof)}, nil
 }
 
 func (s *Server) GenerateProof(ctx context.Context, preimageType hexutil.Uint, certHash common.Hash, offset hexutil.Uint64, certificate hexutil.Bytes) (*daclient.GenerateProofResult, error) {
