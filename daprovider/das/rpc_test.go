@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2025, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package das
@@ -27,6 +27,8 @@ func blsPubToBase64(pubkey *blsSignatures.PublicKey) string {
 	base64.StdEncoding.Encode(encodedPubkey, pubkeyBytes)
 	return string(encodedPubkey)
 }
+
+const sendChunkJSONBoilerplate = "{\"jsonrpc\":\"2.0\",\"id\":4294967295,\"method\":\"das_sendChunked\",\"params\":[\"\"]}"
 
 func testRpcImpl(t *testing.T, size, times int, concurrent bool) {
 	// enableLogging()

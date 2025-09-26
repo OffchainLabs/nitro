@@ -202,6 +202,13 @@ func TestCustomSolidityErrors(t *testing.T) {
 		"CallerNotArbOS()",
 		"arbosActs.BatchPostingReport",
 	)
+
+	_, customError = arbosActs.BatchPostingReportV2(&auth, big.NewInt(0), common.Address{}, 0, 0, 0, 0, big.NewInt(0))
+	ensure(
+		customError,
+		"CallerNotArbOS()",
+		"arbosActs.BatchPostingReportV2",
+	)
 }
 
 func TestPrecompileErrorGasLeft(t *testing.T) {

@@ -13,9 +13,9 @@ import (
 
 	"github.com/pkg/errors"
 
-	protocol "github.com/offchainlabs/nitro/bold/chain-abstraction"
+	"github.com/offchainlabs/nitro/bold/chain-abstraction"
 	"github.com/offchainlabs/nitro/bold/containers/threadsafe"
-	l2stateprovider "github.com/offchainlabs/nitro/bold/layer2-state-provider"
+	"github.com/offchainlabs/nitro/bold/layer2-state-provider"
 )
 
 // MetadataReader can read certain information about edges from the backend.

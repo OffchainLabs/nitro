@@ -14,7 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos/storage"
-	templates "github.com/offchainlabs/nitro/solgen/go/precompilesgen"
+	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
@@ -109,7 +109,7 @@ func TestEvents(t *testing.T) {
 		Fail(t, "indexing an address didn't work")
 	}
 
-	ArbDebugInfo, cerr := templates.NewArbDebug(common.Address{}, nil)
+	ArbDebugInfo, cerr := precompilesgen.NewArbDebug(common.Address{}, nil)
 	basic, berr := ArbDebugInfo.ParseBasic(*logs[0])
 	mixed, merr := ArbDebugInfo.ParseMixed(*logs[1])
 	if cerr != nil || berr != nil || merr != nil {
@@ -183,7 +183,7 @@ func TestPrecompilesPerArbosVersion(t *testing.T) {
 	// Each new precompile contract and each method on new or existing precompile
 	// contracts should be counted.
 	expectedNewEntriesPerArbosVersion := map[uint64]int{
-		0:                      98,
+		0:                      99,
 		params.ArbosVersion_5:  3,
 		params.ArbosVersion_10: 2,
 		params.ArbosVersion_11: 4,

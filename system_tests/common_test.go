@@ -42,7 +42,6 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/eth"
 	"github.com/ethereum/go-ethereum/eth/catalyst"
-	"github.com/ethereum/go-ethereum/eth/downloader"
 	"github.com/ethereum/go-ethereum/eth/ethconfig"
 	"github.com/ethereum/go-ethereum/eth/filters"
 	"github.com/ethereum/go-ethereum/eth/tracers"
@@ -118,6 +117,13 @@ type TestClient struct {
 	// having cleanup() field makes cleanup customizable from default cleanup methods after calling build
 	cleanup func()
 }
+
+var RollupOwner = "RollupOwner"
+var Sequencer = "Sequencer"
+var Validator = "Validator"
+var User = "User"
+
+var DefaultChainAccounts = []string{RollupOwner, Sequencer, Validator, User}
 
 func NewTestClient(ctx context.Context) *TestClient {
 	return &TestClient{ctx: ctx}
@@ -429,6 +435,11 @@ func (b *NodeBuilder) WithL1ClientWrapper(t *testing.T) *NodeBuilder {
 		Fatal(t, "WithL1ClientWrapper only works when L1 is enabled")
 	}
 	b.withL1ClientWrapper = true
+	return b
+}
+
+func (b *NodeBuilder) TakeOwnership() *NodeBuilder {
+	b.takeOwnership = true
 	return b
 }
 
@@ -757,6 +768,20 @@ func (b *NodeBuilder) BuildL2OnL1(t *testing.T) func() {
 		b.initMessage,
 		b.addresses,
 	)
+
+	if b.takeOwnership {
+		debugAuth := b.L2Info.GetDefaultTransactOpts("Owner", b.ctx)
+
+		// make auth a chain owner
+		arbdebug, err := precompilesgen.NewArbDebug(common.HexToAddress("0xff"), b.L2.Client)
+		Require(t, err, "failed to deploy ArbDebug")
+
+		tx, err := arbdebug.BecomeChainOwner(&debugAuth)
+		Require(t, err, "failed to deploy ArbDebug")
+
+		_, err = EnsureTxSucceeded(b.ctx, b.L2.Client, tx)
+		Require(t, err)
+	}
 
 	return func() {
 		b.L2.cleanup()
@@ -1396,6 +1421,9 @@ func createTestL1BlockChain(t *testing.T, l1info info, withClientWrapper bool) (
 	}
 	stackConfig := testhelpers.CreateStackConfigForTest("")
 	l1info.GenerateAccount("Faucet")
+	for _, acct := range DefaultChainAccounts {
+		l1info.GenerateAccount(acct)
+	}
 
 	chainConfig := chaininfo.ArbitrumDevTestChainConfig()
 	chainConfig.ArbitrumChainParams = params.ArbitrumChainParams{}
@@ -1407,7 +1435,18 @@ func createTestL1BlockChain(t *testing.T, l1info info, withClientWrapper bool) (
 	nodeConf.NetworkId = chainConfig.ChainID.Uint64()
 	faucetAddr := l1info.GetAddress("Faucet")
 	l1Genesis := core.DeveloperGenesisBlock(15_000_000, &faucetAddr)
+
+	// Pre-fund with large values some common accounts
 	infoGenesis := l1info.GetGenesisAlloc()
+	bigBalance := big.NewInt(0).SetUint64(9223372036854775807)
+	for _, acct := range DefaultChainAccounts {
+		addr := l1info.GetAddress(acct)
+		if l1Genesis.Alloc[addr].Balance == nil {
+			l1Genesis.Alloc[addr] = types.Account{Balance: bigBalance}
+		} else {
+			l1Genesis.Alloc[addr].Balance.Add(l1Genesis.Alloc[addr].Balance, bigBalance)
+		}
+	}
 	for acct, info := range infoGenesis {
 		l1Genesis.Alloc[acct] = info
 	}
@@ -1415,7 +1454,7 @@ func createTestL1BlockChain(t *testing.T, l1info info, withClientWrapper bool) (
 	nodeConf.Genesis = l1Genesis
 	nodeConf.Miner.Etherbase = l1info.GetAddress("Faucet")
 	nodeConf.Miner.PendingFeeRecipient = l1info.GetAddress("Faucet")
-	nodeConf.SyncMode = downloader.FullSync
+	nodeConf.SyncMode = ethconfig.FullSync
 
 	l1backend, err := eth.New(stack, &nodeConf)
 	Require(t, err)
@@ -1489,16 +1528,17 @@ func deployOnParentChain(
 	deployBold bool,
 	delayBufferThreshold uint64,
 ) (*chaininfo.RollupAddresses, *arbostypes.ParsedInitMessage) {
-	parentChainInfo.GenerateAccount("RollupOwner")
-	parentChainInfo.GenerateAccount("Sequencer")
-	parentChainInfo.GenerateAccount("Validator")
-	parentChainInfo.GenerateAccount("User")
-
-	SendWaitTestTransactions(t, ctx, parentChainClient, []*types.Transaction{
-		parentChainInfo.PrepareTx("Faucet", "RollupOwner", parentChainInfo.TransferGas, big.NewInt(9223372036854775807), nil),
-		parentChainInfo.PrepareTx("Faucet", "Sequencer", parentChainInfo.TransferGas, big.NewInt(9223372036854775807), nil),
-		parentChainInfo.PrepareTx("Faucet", "Validator", parentChainInfo.TransferGas, big.NewInt(9223372036854775807), nil),
-		parentChainInfo.PrepareTx("Faucet", "User", parentChainInfo.TransferGas, big.NewInt(9223372036854775807), nil)})
+	var fundingTxs []*types.Transaction
+	for _, acct := range DefaultChainAccounts {
+		if !parentChainInfo.HasAccount(acct) {
+			parentChainInfo.GenerateAccount(acct)
+			fundingTxs = append(fundingTxs, parentChainInfo.PrepareTx("Faucet", acct, parentChainInfo.TransferGas, big.NewInt(9223372036854775807), nil))
+		}
+	}
+	if len(fundingTxs) > 0 {
+		// TODO(NIT-3910): Use ArbosInitializationInfo to fund accounts at genesis instead of sending transactions
+		SendWaitTestTransactions(t, ctx, parentChainClient, fundingTxs)
+	}
 
 	parentChainTransactionOpts := parentChainInfo.GetDefaultTransactOpts("RollupOwner", ctx)
 	serializedChainConfig, err := json.Marshal(chainConfig)
@@ -1834,11 +1874,8 @@ func setupConfigWithDAS(
 	var dbPath string
 	var err error
 
-	enableFileStorage, enableDbStorage, enableDas := false, false, true
+	enableFileStorage, enableDas := false, true
 	switch dasModeString {
-	case "db":
-		enableDbStorage = true
-		chainConfig = chaininfo.ArbitrumDevTestDASChainConfig()
 	case "files":
 		enableFileStorage = true
 		chainConfig = chaininfo.ArbitrumDevTestDASChainConfig()
@@ -1851,10 +1888,6 @@ func setupConfigWithDAS(
 	dasSignerKey, _, err := das.GenerateAndStoreKeys(dbPath)
 	Require(t, err)
 
-	dbConfig := das.DefaultLocalDBStorageConfig
-	dbConfig.Enable = enableDbStorage
-	dbConfig.DataDir = dbPath
-
 	dasConfig := &das.DataAvailabilityConfig{
 		Enable: enableDas,
 		Key: das.KeyConfig{
@@ -1864,7 +1897,6 @@ func setupConfigWithDAS(
 			Enable:  enableFileStorage,
 			DataDir: dbPath,
 		},
-		LocalDBStorage:           dbConfig,
 		RequestTimeout:           5 * time.Second,
 		ParentChainNodeURL:       "none",
 		SequencerInboxAddress:    "none",

@@ -16,6 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos/arbosState"
+	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
@@ -43,6 +44,20 @@ func InternalTxStartBlock(
 		Data:    data,
 	}
 }
+
+// In case floor_gas is used - this negates most of the difference between calldata and raw batch
+// Raw batch has a 40-byte header that didn't come from calldata (5 uint64s)
+// Calldata for the addSequencerL2BatchFromOrigin call in SequencerInbox, has a function selector
+// and 5 additional fields that don't appear in the raw batch.
+//
+// Token count for the additional fields in calldata:
+// 4*4 - 1 function selector (4 non-zero bytes)
+// 4*24 - 4 fields fit in a uint64 - differ only by padding of 24 zero-bytes each
+// 4*12 + 12 - 1 address field, so has about 12 additional nonzero bytes + 12 zero bytes for padding
+// Total: 172
+// This is not exact since most uint64s also have zeroes, and batch poster may use another function,
+// but it doesn't need to be exact
+const FloorGasAdditionalTokens uint64 = 172
 
 func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.ArbosState, evm *vm.EVM) error {
 	if len(tx.Data) < 4 {
@@ -127,6 +142,61 @@ func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.Arbos
 			log.Warn("L1Pricing UpdateForSequencerSpending failed", "err", err)
 		}
 		return nil
+	case InternalTxBatchPostingReportV2MethodID:
+		inputs, err := util.UnpackInternalTxDataBatchPostingReportV2(tx.Data)
+		if err != nil {
+			return err
+		}
+		batchTimestamp := util.SafeMapGet[*big.Int](inputs, "batchTimestamp")
+		batchPosterAddress := util.SafeMapGet[common.Address](inputs, "batchPosterAddress")
+		batchCalldataLength := util.SafeMapGet[uint64](inputs, "batchCalldataLength")
+		batchCalldataNonZeros := util.SafeMapGet[uint64](inputs, "batchCalldataNonZeros")
+		batchExtraGas := util.SafeMapGet[uint64](inputs, "batchExtraGas")
+		l1BaseFeeWei := util.SafeMapGet[*big.Int](inputs, "l1BaseFeeWei")
+
+		gasSpent := arbostypes.LegacyCostForStats(&arbostypes.BatchDataStats{
+			Length:   batchCalldataLength,
+			NonZeros: batchCalldataNonZeros,
+		})
+
+		gasSpent = arbmath.SaturatingUAdd(gasSpent, batchExtraGas)
+
+		l1p := state.L1PricingState()
+
+		perBatchGas, err := l1p.PerBatchGasCost()
+		if err != nil {
+			log.Warn("L1Pricing PerBatchGas failed", "err", err)
+		}
+		gasSpent = arbmath.SaturatingUAdd(gasSpent, arbmath.SaturatingUCast[uint64](perBatchGas))
+
+		if state.ArbOSVersion() >= params.ArbosVersion_50 {
+			gasFloorPerToken, err := l1p.ParentGasFloorPerToken()
+			if err != nil {
+				log.Warn("failed reading gasFloorPerToken", "err", err)
+			}
+			floorGasSpent := gasFloorPerToken*(batchCalldataLength+batchCalldataNonZeros*3+FloorGasAdditionalTokens) + params.TxGas
+			if floorGasSpent > gasSpent {
+				gasSpent = floorGasSpent
+			}
+		}
+
+		weiSpent := arbmath.BigMulByUint(l1BaseFeeWei, gasSpent)
+		err = l1p.UpdateForBatchPosterSpending(
+			evm.StateDB,
+			evm,
+			state.ArbOSVersion(),
+			batchTimestamp.Uint64(),
+			evm.Context.Time,
+			batchPosterAddress,
+			weiSpent,
+			l1BaseFeeWei,
+			util.TracingDuringEVM,
+		)
+		if err != nil {
+			log.Warn("L1Pricing UpdateForSequencerSpending failed (v2 report)", "err", err)
+		}
+		return nil
+
 	default:
 		return fmt.Errorf("unknown internal tx method selector: %v", hex.EncodeToString(tx.Data[:4]))
 	}

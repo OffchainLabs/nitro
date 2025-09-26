@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 )
@@ -25,9 +26,10 @@ func TestSerializeAndParseL1Message(t *testing.T) {
 		L1BaseFee:   big.NewInt(10000000000000),
 	}
 	msg := arbostypes.L1IncomingMessage{
-		Header:       &header,
-		L2msg:        []byte{3, 2, 1},
-		BatchGasCost: nil,
+		Header:             &header,
+		L2msg:              []byte{3, 2, 1},
+		LegacyBatchGasCost: nil,
+		BatchDataStats:     nil,
 	}
 	serialized, err := msg.Serialize()
 	if err != nil {
@@ -37,7 +39,7 @@ func TestSerializeAndParseL1Message(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	txes, err := ParseL2Transactions(newMsg, chainId)
+	txes, err := ParseL2Transactions(newMsg, chainId, params.MaxDebugArbosVersionSupported)
 	if err != nil {
 		t.Error(err)
 	}

@@ -10,7 +10,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
-	solimpl "github.com/offchainlabs/nitro/bold/chain-abstraction/sol-implementation"
+	"github.com/offchainlabs/nitro/bold/chain-abstraction/sol-implementation"
 )
 
 // DataPosterTransactor is a wrapper around a DataPoster that implements the Transactor interface.

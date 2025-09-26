@@ -32,6 +32,7 @@ var ArbRetryableTxAddress common.Address
 var ArbSysAddress common.Address
 var InternalTxStartBlockMethodID [4]byte
 var InternalTxBatchPostingReportMethodID [4]byte
+var InternalTxBatchPostingReportV2MethodID [4]byte
 var RedeemScheduledEventID common.Hash
 var L2ToL1TransactionEventID common.Hash
 var L2ToL1TxEventID common.Hash
@@ -186,7 +187,8 @@ func ProduceBlock(
 	exposeMultiGas bool,
 ) (*types.Block, types.Receipts, error) {
 	chainConfig := chainContext.Config()
-	txes, err := ParseL2Transactions(message, chainConfig.ChainID)
+	lastArbosVersion := types.DeserializeHeaderExtraInformation(lastBlockHeader).ArbOSFormatVersion
+	txes, err := ParseL2Transactions(message, chainConfig.ChainID, lastArbosVersion)
 	if err != nil {
 		log.Warn("error parsing incoming message", "err", err)
 		txes = types.Transactions{}
@@ -257,7 +259,7 @@ func ProduceBlockAdvanced(
 
 		var tx *types.Transaction
 		var options *arbitrum_types.ConditionalOptions
-		hooks := NoopSequencingHooks(nil) // TODO: NIT-3678
+		var hooks *SequencingHooks
 		isUserTx := false
 		if firstTx != nil {
 			tx = firstTx
@@ -315,8 +317,10 @@ func ProduceBlockAdvanced(
 			}
 
 			// Writes to statedb object should be avoided to prevent invalid state from permeating as statedb snapshot is not taken
-			if err = hooks.PreTxFilter(chainConfig, header, statedb, arbState, tx, options, sender, l1Info); err != nil {
-				return nil, nil, err
+			if hooks != nil {
+				if err = hooks.PreTxFilter(chainConfig, header, statedb, arbState, tx, options, sender, l1Info); err != nil {
+					return nil, nil, err
+				}
 			}
 
 			// Additional pre-transaction validity check
@@ -349,7 +353,7 @@ func ProduceBlockAdvanced(
 			computeGas := tx.Gas() - dataGas
 
 			if computeGas < params.TxGas {
-				if hooks.DiscardInvalidTxsEarly {
+				if hooks != nil && hooks.DiscardInvalidTxsEarly {
 					return nil, nil, core.ErrIntrinsicGas
 				}
 				// ensure at least TxGas is left in the pool before trying a state transition
@@ -377,7 +381,10 @@ func ProduceBlockAdvanced(
 				&header.GasUsed,
 				runCtx,
 				func(result *core.ExecutionResult) error {
-					return hooks.PostTxFilter(header, statedb, arbState, tx, sender, dataGas, result)
+					if hooks != nil {
+						return hooks.PostTxFilter(header, statedb, arbState, tx, sender, dataGas, result)
+					}
+					return nil
 				},
 			)
 			if err != nil {
@@ -398,7 +405,9 @@ func ProduceBlockAdvanced(
 		})()
 
 		// append the err, even if it is nil
-		hooks.TxErrors = append(hooks.TxErrors, err)
+		if hooks != nil {
+			hooks.TxErrors = append(hooks.TxErrors, err)
+		}
 
 		if err != nil {
 			logLevel := log.Debug
@@ -408,7 +417,7 @@ func ProduceBlockAdvanced(
 			if !isMsgForPrefetch {
 				logLevel("error applying transaction", "tx", printTxAsJson{tx}, "err", err)
 			}
-			if !hooks.DiscardInvalidTxsEarly {
+			if !(hooks != nil && hooks.DiscardInvalidTxsEarly) {
 				// we'll still deduct a TxGas's worth from the block-local rate limiter even if the tx was invalid
 				blockGasLeft = arbmath.SaturatingUSub(blockGasLeft, params.TxGas)
 				if isUserTx {
