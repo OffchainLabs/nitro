@@ -1112,7 +1112,15 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 
 	var startOfReadingFromTxQueue time.Time
 
-	for {
+	makeEmptyBlock := false
+	if s.execEngine.bc.Config().DebugMode() {
+		debugBlock := s.execEngine.bc.Config().ArbitrumChainParams.DebugBlock
+		if lastBlock.Number.Uint64()+1 == debugBlock {
+			// if we are about to produce block with DebugBlock number, we don't want to wait for new tranasactions and we just go ahead triggering an empty block (with startTx only)
+			makeEmptyBlock = true
+		}
+	}
+	for !makeEmptyBlock {
 		if len(queueItems) == 1 {
 			startOfReadingFromTxQueue = time.Now()
 		} else if len(queueItems) > 1 && time.Since(startOfReadingFromTxQueue) > config.ReadFromTxQueueTimeout {
@@ -1339,6 +1347,9 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 			continue
 		}
 		queueItem.returnResult(err)
+	}
+	if block != nil && makeEmptyBlock {
+		return true
 	}
 	return madeBlock
 }
