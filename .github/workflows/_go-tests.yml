@@ -46,18 +46,17 @@ jobs:
         continue-on-error: true
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh
-          --tags challengetest --run TestL3Challenge --timeout 120m --cover --junitfile test-results/junit.xml
+          --run TestDataStreamingProtocol --timeout 120m --cover --junitfile test-results/junit.xml
 
-      - name: less report
-        run: cat test-results/junit_github_com_offchainlabs_nitro_system_tests_.xml
-
+#      - name: less report
+#        run: cat test-results/junit_github_com_offchainlabs_nitro_system_tests_.xml
+#
       - name: Run basic test results action
         uses: codecov/basic-test-results@v1
         if: always()
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          file: "test-results/junit_github_com_offchainlabs_nitro_system_tests_.xml"
-          disable-search: true
+          directory: 'test-results'
 
       - name: Fail if tests failed
         if: steps.run-l3-challenge-tests.outcome == 'failure'

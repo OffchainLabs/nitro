@@ -33,7 +33,6 @@ import (
 )
 
 func TestL3ChallengeProtocolBOLD(t *testing.T) {
-	panic("fail intentionally")
 	t.Skip("TODO: Needs stronger CI machines to pass")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
