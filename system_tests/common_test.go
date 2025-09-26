@@ -340,6 +340,7 @@ func (b *NodeBuilder) DefaultConfig(t *testing.T, withL1 bool) *NodeBuilder {
 	// most used values across current tests are set here as default
 	b.withL1 = withL1
 	b.parallelise = true
+	b.deployBold = true
 	if withL1 {
 		b.isSequencer = true
 		b.nodeConfig = arbnode.ConfigDefaultL1Test()
@@ -386,8 +387,8 @@ func (b *NodeBuilder) WithProdConfirmPeriodBlocks() *NodeBuilder {
 	return b
 }
 
-func (b *NodeBuilder) WithBoldDeployment() *NodeBuilder {
-	b.deployBold = true
+func (b *NodeBuilder) WithPreBoldDeployment() *NodeBuilder {
+	b.deployBold = false
 	return b
 }
 

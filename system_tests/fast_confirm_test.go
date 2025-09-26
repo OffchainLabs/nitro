@@ -175,7 +175,7 @@ func setupFastConfirmation(ctx context.Context, t *testing.T) (*NodeBuilder, *le
 	}()
 	var transferGas = util.NormalizeL2GasForL1GasInitial(800_000, params.GWei) // include room for aggregator L1 costs
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithProdConfirmPeriodBlocks().DontParalellise()
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithPreBoldDeployment().WithProdConfirmPeriodBlocks().DontParalellise()
 	builder.L2Info = NewBlockChainTestInfo(
 		t,
 		types.NewArbitrumSigner(types.NewLondonSigner(builder.chainConfig.ChainID)), big.NewInt(l2pricing.InitialBaseFeeWei*2),
@@ -345,7 +345,7 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 	var transferGas = util.NormalizeL2GasForL1GasInitial(800_000, params.GWei) // include room for aggregator L1 costs
 
 	// Create a node with a large confirm period to ensure that the staker can't confirm without the fast confirmer.
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithProdConfirmPeriodBlocks()
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithPreBoldDeployment().WithProdConfirmPeriodBlocks()
 	builder.L2Info = NewBlockChainTestInfo(
 		t,
 		types.NewArbitrumSigner(types.NewLondonSigner(builder.chainConfig.ChainID)), big.NewInt(l2pricing.InitialBaseFeeWei*2),
