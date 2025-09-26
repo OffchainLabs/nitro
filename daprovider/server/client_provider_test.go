@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/offchainlabs/nitro/daprovider/das/data_streaming"
 	"github.com/stretchr/testify/require"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -17,6 +16,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/daprovider/daclient"
+	"github.com/offchainlabs/nitro/daprovider/das/data_streaming"
 	"github.com/offchainlabs/nitro/daprovider/referenceda"
 	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/signature"

@@ -25,6 +25,7 @@ import (
 
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/daprovider"
+	"github.com/offchainlabs/nitro/daprovider/daclient"
 	"github.com/offchainlabs/nitro/daprovider/server_api"
 )
 

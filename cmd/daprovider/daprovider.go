@@ -10,7 +10,6 @@ import (
 	"syscall"
 
 	"github.com/knadh/koanf/parsers/json"
-	"github.com/offchainlabs/nitro/daprovider/das/data_streaming"
 	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -24,6 +23,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/daprovider/das"
+	"github.com/offchainlabs/nitro/daprovider/das/data_streaming"
 	"github.com/offchainlabs/nitro/daprovider/factory"
 	"github.com/offchainlabs/nitro/daprovider/referenceda"
 	dapserver "github.com/offchainlabs/nitro/daprovider/server"
