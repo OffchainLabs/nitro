@@ -14,7 +14,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/offchainlabs/nitro/daprovider/das/data_streaming"
 	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -25,16 +24,16 @@ import (
 
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/daprovider"
-	"github.com/offchainlabs/nitro/daprovider/daclient"
+	"github.com/offchainlabs/nitro/daprovider/das/data_streaming"
 	"github.com/offchainlabs/nitro/daprovider/server_api"
 )
 
 // lint:require-exhaustive-initialization
 type Server struct {
-	reader      daprovider.Reader
-	writer      daprovider.Writer
-	validator   daprovider.Validator
-	headerBytes []byte // Supported header bytes for this provider
+	reader       daprovider.Reader
+	writer       daprovider.Writer
+	validator    daprovider.Validator
+	headerBytes  []byte // Supported header bytes for this provider
 	dataReceiver *data_streaming.DataStreamReceiver
 }
 
@@ -228,12 +227,12 @@ func (s *Server) SendChunk(ctx context.Context, messageId, chunkId hexutil.Uint6
 	return s.dataReceiver.ReceiveChunk(ctx, data_streaming.MessageId(messageId), uint64(chunkId), chunk, sig)
 }
 
-func (s *Server) CommitChunkedStore(ctx context.Context, messageId hexutil.Uint64, sig hexutil.Bytes) (*daclient.StoreResult, error) {
+func (s *Server) CommitChunkedStore(ctx context.Context, messageId hexutil.Uint64, sig hexutil.Bytes) (*server_api.StoreResult, error) {
 	message, timeout, _, err := s.dataReceiver.FinalizeReceiving(ctx, data_streaming.MessageId(messageId), sig)
 	if err != nil {
 		return nil, err
 	}
 
 	serializedDACert, err := s.writer.Store(ctx, message, timeout)
-	return &daclient.StoreResult{SerializedDACert: serializedDACert}, err
+	return &server_api.StoreResult{SerializedDACert: serializedDACert}, err
 }
