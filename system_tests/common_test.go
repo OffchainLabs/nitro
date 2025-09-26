@@ -65,11 +65,14 @@ import (
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
+	"github.com/offchainlabs/nitro/consensus"
 	"github.com/offchainlabs/nitro/daprovider/das"
 	"github.com/offchainlabs/nitro/daprovider/das/dasutil"
 	"github.com/offchainlabs/nitro/deploy"
+	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	_ "github.com/offchainlabs/nitro/execution/nodeInterface"
+	"github.com/offchainlabs/nitro/execution_consensus"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/localgen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
@@ -369,6 +372,33 @@ func (b *NodeBuilder) DontParalellise() *NodeBuilder {
 	return b
 }
 
+func (b *NodeBuilder) WithJsonRPCInterconnect(t *testing.T) *NodeBuilder {
+	configureJsonRPCInterconnect(t, b.execConfig, b.nodeConfig, b.l2StackConfig)
+	return b
+}
+
+func configureJsonRPCInterconnect(t *testing.T, execConfig *gethexec.Config, nodeConfig *arbnode.Config, l2StackConfig *node.Config) {
+	var httpHost string
+	if l2StackConfig.HTTPHost == "" || l2StackConfig.HTTPHost == "localhost" {
+		l2StackConfig.HTTPHost = "localhost"
+		httpHost = "http://127.0.0.1"
+	} else {
+		httpHost = l2StackConfig.HTTPHost
+	}
+	if l2StackConfig.HTTPPort == 0 {
+		l2StackConfig.HTTPPort = getRandomPort(t)
+	}
+	l2StackConfig.HTTPModules = append(l2StackConfig.HTTPModules, consensus.RPCNamespace, execution.RPCNamespace)
+	nodeConfig.RPCServer.Enable = true
+	nodeConfig.RPCServer.Public = true
+	nodeConfig.RPCServer.Authenticated = false
+	nodeConfig.ExecutionRPCClient.URL = fmt.Sprintf("%s:%d", httpHost, l2StackConfig.HTTPPort)
+	execConfig.RPCServer.Enable = true
+	execConfig.RPCServer.Public = true
+	execConfig.RPCServer.Authenticated = false
+	execConfig.ConsensusRPCClient.URL = fmt.Sprintf("%s:%d", httpHost, l2StackConfig.HTTPPort)
+}
+
 func (b *NodeBuilder) WithArbOSVersion(arbosVersion uint64) *NodeBuilder {
 	newChainConfig := *b.chainConfig
 	newChainConfig.ArbitrumChainParams.InitialArbOSVersion = arbosVersion
@@ -444,6 +474,9 @@ func (b *NodeBuilder) TakeOwnership() *NodeBuilder {
 }
 
 func (b *NodeBuilder) Build(t *testing.T) func() {
+	if *testflag.ExecutionConsensusJSONRPCInterconnect {
+		b.WithJsonRPCInterconnect(t)
+	}
 	if b.parallelise {
 		b.parallelise = false
 		t.Parallel()
@@ -681,15 +714,19 @@ func buildOnParentChain(
 		addresses, validatorTxOptsPtr, sequencerTxOptsPtr, dataSigner, fatalErrChan, parentChainId, nil, locator.LatestWasmModuleRoot())
 	Require(t, err)
 
-	err = chainTestClient.ConsensusNode.Start(ctx)
+	cleanup, err := execution_consensus.InitAndStartExecutionAndConsensusNodes(ctx, chainTestClient.Stack, execNode, chainTestClient.ConsensusNode)
 	Require(t, err)
 
 	chainTestClient.Client = ClientForStack(t, chainTestClient.Stack)
 
 	StartWatchChanErr(t, ctx, fatalErrChan, chainTestClient.ConsensusNode)
 
-	chainTestClient.ExecNode = getExecNode(t, chainTestClient.ConsensusNode)
-	chainTestClient.cleanup = func() { chainTestClient.ConsensusNode.StopAndWait() }
+	if nodeConfig.ExecutionRPCClient.URL == "" {
+		chainTestClient.ExecNode = getExecNode(t, chainTestClient.ConsensusNode)
+	} else {
+		chainTestClient.ExecNode = execNode
+	}
+	chainTestClient.cleanup = cleanup
 
 	return chainTestClient
 }
@@ -831,7 +868,7 @@ func (b *NodeBuilder) BuildL2(t *testing.T) func() {
 	err = b.L2.ConsensusNode.TxStreamer.AddFakeInitMessage()
 	Require(t, err)
 
-	err = b.L2.ConsensusNode.Start(b.ctx)
+	cleanup, err := execution_consensus.InitAndStartExecutionAndConsensusNodes(b.ctx, b.L2.Stack, execNode, b.L2.ConsensusNode)
 	Require(t, err)
 
 	b.L2.Client = ClientForStack(t, b.L2.Stack)
@@ -852,8 +889,12 @@ func (b *NodeBuilder) BuildL2(t *testing.T) func() {
 
 	StartWatchChanErr(t, b.ctx, fatalErrChan, b.L2.ConsensusNode)
 
-	b.L2.ExecNode = getExecNode(t, b.L2.ConsensusNode)
-	b.L2.cleanup = func() { b.L2.ConsensusNode.StopAndWait() }
+	if b.nodeConfig.ExecutionRPCClient.URL == "" {
+		b.L2.ExecNode = getExecNode(t, b.L2.ConsensusNode)
+	} else {
+		b.L2.ExecNode = execNode
+	}
+	b.L2.cleanup = cleanup
 	return func() {
 		b.L2.cleanup()
 		b.ctxCancel()
@@ -891,7 +932,8 @@ func (b *NodeBuilder) RestartL2Node(t *testing.T) {
 	currentNode, err := arbnode.CreateNodeFullExecutionClient(b.ctx, stack, execNode, execNode, execNode, execNode, arbDb, NewFetcherFromConfig(b.nodeConfig), blockchain.Config(), l1Client, b.addresses, validatorTxOpts, sequencerTxOpts, dataSigner, feedErrChan, big.NewInt(1337), nil, locator.LatestWasmModuleRoot())
 	Require(t, err)
 
-	Require(t, currentNode.Start(b.ctx))
+	cleanup, err := execution_consensus.InitAndStartExecutionAndConsensusNodes(b.ctx, stack, execNode, currentNode)
+	Require(t, err)
 	client := ClientForStack(t, stack)
 
 	StartWatchChanErr(t, b.ctx, feedErrChan, currentNode)
@@ -900,7 +942,7 @@ func (b *NodeBuilder) RestartL2Node(t *testing.T) {
 	l2.ConsensusNode = currentNode
 	l2.Client = client
 	l2.ExecNode = execNode
-	l2.cleanup = func() { b.L2.ConsensusNode.StopAndWait() }
+	l2.cleanup = cleanup
 	l2.Stack = stack
 
 	b.L2 = l2
@@ -936,6 +978,7 @@ func build2ndNode(
 		params.stackConfig = firstNodeStackConfig
 		// should use different dataDir from the previously used ones
 		params.stackConfig.DataDir = t.TempDir()
+		params.stackConfig.HTTPPort = 0 // to avoid using the same http port as first node, in case firstNodeStackConfig has jsonrpcinterconnect enabled
 	}
 	if params.initData == nil {
 		params.initData = &firstNodeInfo.ArbInitData
@@ -956,12 +999,15 @@ func build2ndNode(
 	if firstNodeNodeConfig.BatchPoster.Enable && params.nodeConfig.BatchPoster.Enable && params.nodeConfig.BatchPoster.RedisUrl == "" {
 		t.Fatal("The batch poster must use Redis when enabled for multiple nodes")
 	}
+	if *testflag.ExecutionConsensusJSONRPCInterconnect {
+		configureJsonRPCInterconnect(t, params.execConfig, params.nodeConfig, params.stackConfig)
+	}
 
+	var cleanup func()
 	testClient := NewTestClient(ctx)
-	testClient.Client, testClient.ConsensusNode =
-		Create2ndNodeWithConfig(t, ctx, firstNodeTestClient.ConsensusNode, parentChainTestClient.Stack, parentChainInfo, params.initData, params.nodeConfig, params.execConfig, params.stackConfig, valnodeConfig, params.addresses, initMessage, params.useExecutionClientOnly)
-	testClient.ExecNode = getExecNode(t, testClient.ConsensusNode)
-	testClient.cleanup = func() { testClient.ConsensusNode.StopAndWait() }
+	testClient.Client, testClient.ConsensusNode, testClient.ExecNode, cleanup =
+		Create2ndNodeWithConfig(t, ctx, firstNodeTestClient.ConsensusNode, firstNodeTestClient.ExecNode, parentChainTestClient.Stack, parentChainInfo, params.initData, params.nodeConfig, params.execConfig, params.stackConfig, valnodeConfig, params.addresses, initMessage, params.useExecutionClientOnly)
+	testClient.cleanup = cleanup
 	return testClient, func() { testClient.cleanup() }
 }
 
@@ -1737,6 +1783,7 @@ func Create2ndNodeWithConfig(
 	t *testing.T,
 	ctx context.Context,
 	first *arbnode.Node,
+	firstExec *gethexec.ExecutionNode,
 	parentChainStack *node.Node,
 	parentChainInfo *BlockchainTestInfo,
 	chainInitData *statetransfer.ArbosInitializationInfo,
@@ -1747,7 +1794,7 @@ func Create2ndNodeWithConfig(
 	addresses *chaininfo.RollupAddresses,
 	initMessage *arbostypes.ParsedInitMessage,
 	useExecutionClientOnly bool,
-) (*ethclient.Client, *arbnode.Node) {
+) (*ethclient.Client, *arbnode.Node, *gethexec.ExecutionNode, func()) {
 	if nodeConfig == nil {
 		nodeConfig = arbnode.ConfigDefaultL1NonSequencerTest()
 	}
@@ -1779,7 +1826,6 @@ func Create2ndNodeWithConfig(
 	dataSigner := signature.DataSignerFromPrivateKey(parentChainInfo.GetInfoWithPrivKey("Sequencer").PrivateKey)
 	sequencerTxOpts := parentChainInfo.GetDefaultTransactOpts("Sequencer", ctx)
 	validatorTxOpts := parentChainInfo.GetDefaultTransactOpts("Validator", ctx)
-	firstExec := getExecNode(t, first)
 
 	chainConfig := firstExec.ArbInterface.BlockChain().Config()
 
@@ -1810,13 +1856,13 @@ func Create2ndNodeWithConfig(
 
 	Require(t, err)
 
-	err = currentNode.Start(ctx)
+	cleanup, err := execution_consensus.InitAndStartExecutionAndConsensusNodes(ctx, chainStack, currentExec, currentNode)
 	Require(t, err)
 	chainClient := ClientForStack(t, chainStack)
 
 	StartWatchChanErr(t, ctx, feedErrChan, currentNode)
 
-	return chainClient, currentNode
+	return chainClient, currentNode, currentExec, cleanup
 }
 
 func GetBalance(t *testing.T, ctx context.Context, client *ethclient.Client, account common.Address) *big.Int {
