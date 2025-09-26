@@ -81,7 +81,7 @@ func setupClient(ctx context.Context, t *testing.T, providerServerAddress string
 			URL: providerServerAddress,
 		}
 	}
-	client, err := daclient.NewClient(ctx, clientConfig, RPCServerBodyLimit)
+	client, err := daclient.NewClient(ctx, clientConfig, RPCServerBodyLimit, data_streaming.NoopPayloadSigner())
 	testhelpers.RequireImpl(t, err)
 	return client
 }
