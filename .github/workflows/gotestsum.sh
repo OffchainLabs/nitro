@@ -69,7 +69,7 @@ done
 packages=$(go list ./...)
 for package in $packages; do
   # Add the gotestsum flags first
-  cmd="stdbuf -oL gotestsum --format short-verbose --packages=\"$package\" --rerun-fails=3 --rerun-fails-max-failures=30 --no-color=false"
+  cmd="stdbuf -oL gotestsum --format short-verbose --packages=\"$package\" --rerun-fails=1 --rerun-fails-max-failures=30 --no-color=false"
 
   if [ "$junitfile" != "" ]; then
     # Since we run tests package-by-package, we must make the JUnit file name unique
