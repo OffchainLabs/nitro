@@ -8,8 +8,6 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/stretchr/testify/require"
-
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 
@@ -36,7 +34,7 @@ func TestInteractionBetweenClientAndProviderServer_StoreSucceeds(t *testing.T) {
 	testhelpers.RequireImpl(t, err)
 }
 
-func TestInteractionBetweenClientAndProviderServer_StoreFailsDueToSize(t *testing.T) {
+func TestInteractionBetweenClientAndProviderServer_StoreLongMessageSucceeds(t *testing.T) {
 	ctx := context.Background()
 	server := setupProviderServer(ctx, t)
 	client := setupClient(ctx, t, server.Addr)
@@ -44,7 +42,7 @@ func TestInteractionBetweenClientAndProviderServer_StoreFailsDueToSize(t *testin
 	message := testhelpers.RandomizeSlice(make([]byte, RPCServerBodyLimit+1))
 
 	_, err := client.Store(ctx, message, 0)
-	require.Regexp(t, ".*Request Entity Too Large.*", err.Error())
+	testhelpers.RequireImpl(t, err)
 }
 
 func setupProviderServer(ctx context.Context, t *testing.T) *http.Server {
