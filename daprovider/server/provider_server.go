@@ -178,18 +178,6 @@ func (s *Server) CollectPreimages(
 	return &result, nil
 }
 
-func (s *Server) Store(
-	ctx context.Context,
-	message hexutil.Bytes,
-	timeout hexutil.Uint64,
-) (*server_api.StoreResult, error) {
-	serializedDACert, err := s.writer.Store(ctx, message, uint64(timeout))
-	if err != nil {
-		return nil, err
-	}
-	return &server_api.StoreResult{SerializedDACert: serializedDACert}, nil
-}
-
 func (s *Server) GenerateReadPreimageProof(ctx context.Context, certHash common.Hash, offset hexutil.Uint64, certificate hexutil.Bytes) (*server_api.GenerateReadPreimageProofResult, error) {
 	if s.validator == nil {
 		return nil, errors.New("validator not available")
