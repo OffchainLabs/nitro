@@ -16,8 +16,6 @@ jobs:
         image: redis
         ports:
           - 6379:6379
-    permissions:
-      pull-requests: write
 
     steps:
       - name: Checkout
@@ -43,6 +41,7 @@ jobs:
         run: make -j8 build-node-deps
 
       - name: run L3 challenge tests
+        id: run-l3-challenge-tests
         if: matrix.test-mode == 'l3challenge'
         continue-on-error: true
         run: >-
@@ -51,6 +50,13 @@ jobs:
 
       - name: Run basic test results action
         uses: codecov/basic-test-results@v1
+        if: always()
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           directory: 'test-results'
+
+      - name: Fail if tests failed
+        if: steps.run-l3-challenge-tests.outcome == 'failure'
+        run: |
+          echo "One or more tests failed."
+          exit 1
