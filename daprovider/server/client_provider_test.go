@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/offchainlabs/nitro/daprovider/das/data_streaming"
 	"github.com/stretchr/testify/require"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -68,7 +69,7 @@ func setupProviderServer(ctx context.Context, t *testing.T) *http.Server {
 	validator := referenceda.NewValidator(nil, dummyAddress)
 	headerBytes := []byte{daprovider.DACertificateMessageHeaderFlag}
 
-	providerServer, err := NewServerWithDAPProvider(ctx, &providerServerConfig, reader, writer, validator, headerBytes)
+	providerServer, err := NewServerWithDAPProvider(ctx, &providerServerConfig, reader, writer, validator, headerBytes, data_streaming.TrustingPayloadVerifier())
 	testhelpers.RequireImpl(t, err)
 
 	return providerServer

@@ -38,6 +38,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/daprovider/daclient"
+	"github.com/offchainlabs/nitro/daprovider/das/data_streaming"
 	"github.com/offchainlabs/nitro/daprovider/referenceda"
 	dapserver "github.com/offchainlabs/nitro/daprovider/server"
 	"github.com/offchainlabs/nitro/execution/gethexec"
@@ -99,7 +100,7 @@ func createReferenceDAProviderServer(t *testing.T, ctx context.Context, l1Client
 
 	// Create the provider server
 	headerBytes := []byte{daprovider.DACertificateMessageHeaderFlag}
-	server, err := dapserver.NewServerWithDAPProvider(ctx, serverConfig, reader, writer, validator, headerBytes)
+	server, err := dapserver.NewServerWithDAPProvider(ctx, serverConfig, reader, writer, validator, headerBytes, data_streaming.TrustingPayloadVerifier())
 	Require(t, err)
 
 	// Extract the actual address with port
@@ -161,7 +162,7 @@ func createEvilDAProviderServer(t *testing.T, ctx context.Context, l1Client *eth
 	// In this test we call the writers directly to have more control over batch posting.
 	writer := &assertingWriter{}
 	headerBytes := []byte{daprovider.DACertificateMessageHeaderFlag}
-	server, err := dapserver.NewServerWithDAPProvider(ctx, serverConfig, evilProvider, writer, evilProvider, headerBytes)
+	server, err := dapserver.NewServerWithDAPProvider(ctx, serverConfig, evilProvider, writer, evilProvider, headerBytes, data_streaming.TrustingPayloadVerifier())
 	Require(t, err)
 
 	// Extract the actual address with port

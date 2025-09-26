@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/offchainlabs/nitro/daprovider/das/data_streaming"
 	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -700,7 +701,7 @@ func getDAProvider(
 		}
 
 		headerBytes := daFactory.GetSupportedHeaderBytes()
-		providerServer, err := dapserver.NewServerWithDAPProvider(ctx, &serverConfig, reader, writer, validator, headerBytes)
+		providerServer, err := dapserver.NewServerWithDAPProvider(ctx, &serverConfig, reader, writer, validator, headerBytes, data_streaming.TrustingPayloadVerifier())
 
 		// Create combined cleanup function
 		closeFn := func() {

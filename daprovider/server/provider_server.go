@@ -78,8 +78,10 @@ func fetchJWTSecret(fileName string) ([]byte, error) {
 	return nil, errors.New("JWT secret file not found")
 }
 
-// NewServerWithDAPProvider creates a new server with pre-created reader/writer/validator components
-func NewServerWithDAPProvider(ctx context.Context, config *ServerConfig, reader daprovider.Reader, writer daprovider.Writer, validator daprovider.Validator, headerBytes []byte) (*http.Server, error) {
+// NewServerWithDAPProvider creates a new server with pre-created reader/writer/validator components.
+// The server supports the Data Stream protocol (see `data_streaming` package). The `verifier` parameter is used for
+// authenticating the sender (`daclient`). If `nil`, then a trusting verifier will be used (blindly accepting any signature).
+func NewServerWithDAPProvider(ctx context.Context, config *ServerConfig, reader daprovider.Reader, writer daprovider.Writer, validator daprovider.Validator, headerBytes []byte, verifier *data_streaming.PayloadVerifier) (*http.Server, error) {
 	listener, err := net.Listen("tcp", fmt.Sprintf("%s:%d", config.Addr, config.Port))
 	if err != nil {
 		return nil, err
@@ -96,7 +98,7 @@ func NewServerWithDAPProvider(ctx context.Context, config *ServerConfig, reader 
 		validator:   validator,
 		headerBytes: headerBytes,
 		// TODO: nil verifier
-		dataReceiver: data_streaming.NewDefaultDataStreamReceiver(nil),
+		dataReceiver: data_streaming.NewDefaultDataStreamReceiver(verifier),
 	}
 	if err = rpcServer.RegisterName("daprovider", server); err != nil {
 		return nil, err

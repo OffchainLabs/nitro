@@ -10,6 +10,7 @@ import (
 	"syscall"
 
 	"github.com/knadh/koanf/parsers/json"
+	"github.com/offchainlabs/nitro/daprovider/das/data_streaming"
 	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -286,7 +287,7 @@ func startup() error {
 
 	log.Info("Starting json rpc server", "mode", config.Mode, "addr", config.ProviderServer.Addr, "port", config.ProviderServer.Port)
 	headerBytes := providerFactory.GetSupportedHeaderBytes()
-	providerServer, err := dapserver.NewServerWithDAPProvider(ctx, &config.ProviderServer, reader, writer, validator, headerBytes)
+	providerServer, err := dapserver.NewServerWithDAPProvider(ctx, &config.ProviderServer, reader, writer, validator, headerBytes, data_streaming.TrustingPayloadVerifier())
 	if err != nil {
 		return err
 	}
