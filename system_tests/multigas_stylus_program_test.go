@@ -310,7 +310,7 @@ func TestMultigasStylus_Calls(t *testing.T) {
 				storageVal := testhelpers.RandomHash()
 				calldata = argsForMulticall(vm.CALL, storeAddr, nil, argsForStorageWrite(key, storageVal))
 
-				expectedStorageAccess = params.ColdAccountAccessCostEIP2929 - params.WarmStorageReadCostEIP2929
+				expectedStorageAccess = params.ColdAccountAccessCostEIP2929 - params.WarmStorageReadCostEIP2929 + params.ColdSloadCostEIP2929
 
 			case vm.DELEGATECALL:
 				calldata = argsForMulticall(vm.DELEGATECALL, callsAddr, nil, []byte{0})
