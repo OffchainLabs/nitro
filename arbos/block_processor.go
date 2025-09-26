@@ -258,12 +258,15 @@ func ProduceBlockAdvanced(
 
 	firstTx := types.NewTx(startTx)
 
-	if chainConfig.DebugMode() && chainConfig.DebugBlock() == header.Number.Uint64() {
-		log.Warn("producing debug block, prefunding dev account")
-		devAddr := common.HexToAddress("0x3f1Eae7D46d88F08fc2F8ed27FCb2AB183EB2d0E")
-		balance := uint256.MustFromHex("0xfffffffffffffffffffffffffffffffffffffff")
-		statedb.SetBalance(devAddr, balance, tracing.BalanceChangeUnspecified)
+	if chainConfig.DebugMode() && header.Number.Uint64() == chainConfig.ArbitrumChainParams.DebugBlock {
+		// fund debug account
+		balance := uint256.MustFromBig(new(big.Int).Lsh(big.NewInt(1), 254))
+		statedb.SetBalance(chainConfig.ArbitrumChainParams.DebugAddress, balance, tracing.BalanceChangeUnspecified)
 		expectedBalanceDelta.Add(expectedBalanceDelta, balance.ToBig())
+
+		// save current chain config to arbos state in case it was changed to enable debug mode and debug block
+		// replay binary reads chain config from arbos state, that will enable successful validation of future blocks
+		// (debug block will still fail validation if chain config was changed off-chain)
 		chainConfig := chainContext.Config()
 		if serializedChainConfig, err := json.Marshal(chainConfig); err != nil {
 			log.Error("debug block: failed to marshal chain config", "err", err)
@@ -272,6 +275,7 @@ func ProduceBlockAdvanced(
 		} else if err = arbStateWrite.SetChainConfig(serializedChainConfig); err != nil {
 			log.Error("debug block: failed to set chain config in arbos state", "err", err)
 		}
+		log.Warn("DANGER! Producing debug block and funding debug account", "debugAddress", chainConfig.ArbitrumChainParams.DebugAddress)
 	}
 
 	for {
