@@ -18,7 +18,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/offchainlabs/nitro/execution"
+	"github.com/offchainlabs/nitro/consensus"
 	"github.com/offchainlabs/nitro/solgen/go/rollup_legacy_gen"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/staker/txbuilder"
@@ -350,7 +350,7 @@ func (v *L1Validator) generateNodeAction(
 				return nil, false, errors.New("batch not found on L1")
 			}
 		}
-		execResult := &execution.MessageResult{}
+		execResult := &consensus.MessageResult{}
 		if validatedCount > 0 {
 			execResult, err = v.txStreamer.ResultAtMessageIndex(validatedCount - 1)
 			if err != nil {
