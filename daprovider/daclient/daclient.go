@@ -13,15 +13,19 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 
 	"github.com/offchainlabs/nitro/daprovider"
+	"github.com/offchainlabs/nitro/daprovider/das/data_streaming"
 	"github.com/offchainlabs/nitro/daprovider/server_api"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/rpcclient"
 )
 
+// lint:require-exhaustive-initialization
 type Client struct {
 	*rpcclient.RpcClient
+	*data_streaming.DataStreamer[server_api.StoreResult]
 }
 
+// lint:require-exhaustive-initialization
 type ClientConfig struct {
 	Enable     bool                   `koanf:"enable"`
 	WithWriter bool                   `koanf:"with-writer"`
@@ -46,8 +50,22 @@ func ClientConfigAddOptions(prefix string, f *pflag.FlagSet) {
 }
 
 func NewClient(ctx context.Context, config rpcclient.ClientConfigFetcher) (*Client, error) {
-	client := &Client{rpcclient.NewRpcClient(config, nil)}
-	if err := client.Start(ctx); err != nil {
+	dataStreamer, err := data_streaming.NewDataStreamer[server_api.StoreResult](
+		config().URL,
+		0,   // todo
+		nil, // todo
+		data_streaming.DataStreamingRPCMethods{
+			StartStream:    "daprovider_startChunkedStore",
+			StreamChunk:    "daprovider_sendChunk",
+			FinalizeStream: "daprovider_commitChunkedStore",
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	client := &Client{rpcclient.NewRpcClient(config, nil), dataStreamer}
+	if err = client.Start(ctx); err != nil {
 		return nil, fmt.Errorf("error starting daprovider client: %w", err)
 	}
 	return client, nil
@@ -104,9 +122,9 @@ func (c *Client) Store(
 	message []byte,
 	timeout uint64,
 ) ([]byte, error) {
-	var storeResult server_api.StoreResult
-	if err := c.CallContext(ctx, &storeResult, "daprovider_store", hexutil.Bytes(message), hexutil.Uint64(timeout)); err != nil {
-		return nil, fmt.Errorf("error returned from daprovider_store rpc method, err: %w", err)
+	storeResult, err := c.DataStreamer.StreamData(ctx, message, timeout)
+	if err != nil {
+		return nil, fmt.Errorf("error returned from daprovider server (chunked store protocol), err: %w", err)
 	}
 	return storeResult.SerializedDACert, nil
 }
