@@ -77,3 +77,9 @@ type ExecutionSequencer interface {
 type ExecutionBatchPoster interface {
 	ArbOSVersionForMessageIndex(msgIdx arbutil.MessageIndex) (uint64, error)
 }
+
+type FullExecutionClient interface {
+	ExecutionSequencer
+	ExecutionRecorder
+	ExecutionBatchPoster
+}

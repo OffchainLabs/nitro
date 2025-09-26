@@ -523,20 +523,6 @@ func mainImpl() int {
 		}
 	}
 
-	execNode, err := gethexec.CreateExecutionNode(
-		ctx,
-		stack,
-		chainDb,
-		l2BlockChain,
-		l1Client,
-		func() *gethexec.Config { return &liveNodeConfig.Get().Execution },
-		new(big.Int).SetUint64(nodeConfig.ParentChain.ID),
-		liveNodeConfig.Get().Node.TransactionStreamer.SyncTillBlock,
-	)
-	if err != nil {
-		log.Error("failed to create execution node", "err", err)
-		return 1
-	}
 	var wasmModuleRoot common.Hash
 	if liveNodeConfig.Get().Node.ValidatorRequired() {
 		locator, err := server_common.NewMachineLocator(liveNodeConfig.Get().Validation.Wasm.RootPath)
@@ -546,31 +532,67 @@ func mainImpl() int {
 		wasmModuleRoot = locator.LatestWasmModuleRoot()
 	}
 
-	consensusNode, err := arbnode.CreateNodeFullExecutionClient(
-		ctx,
-		stack,
-		execNode,
-		execNode,
-		execNode,
-		execNode,
-		arbDb,
-		&NodeConfigFetcher{liveNodeConfig},
-		l2BlockChain.Config(),
-		l1Client,
-		&rollupAddrs,
-		l1TransactionOptsValidator,
-		l1TransactionOptsBatchPoster,
-		dataSigner,
-		fatalErrChan,
-		new(big.Int).SetUint64(nodeConfig.ParentChain.ID),
-		blobReader,
-		wasmModuleRoot,
-	)
-	if err != nil {
-		log.Error("failed to create node", "err", err)
-		return 1
+	var execNode *gethexec.ExecutionNode
+	var consensusNode *arbnode.Node
+	if nodeConfig.ExecutionNode {
+		execNode, err = gethexec.CreateExecutionNode(
+			ctx,
+			stack,
+			chainDb,
+			l2BlockChain,
+			l1Client,
+			func() *gethexec.Config { return &liveNodeConfig.Get().Execution },
+			new(big.Int).SetUint64(nodeConfig.ParentChain.ID),
+			liveNodeConfig.Get().Node.TransactionStreamer.SyncTillBlock,
+		)
+		if err != nil {
+			log.Error("failed to create execution node", "err", err)
+			return 1
+		}
+		consensusNode, err = arbnode.CreateConsensusNodeConnectedWithFullExecutionClient(
+			ctx,
+			stack,
+			execNode,
+			arbDb,
+			&NodeConfigFetcher{liveNodeConfig},
+			l2BlockChain.Config(),
+			l1Client,
+			&rollupAddrs,
+			l1TransactionOptsValidator,
+			l1TransactionOptsBatchPoster,
+			dataSigner,
+			fatalErrChan,
+			new(big.Int).SetUint64(nodeConfig.ParentChain.ID),
+			blobReader,
+			wasmModuleRoot,
+		)
+		if err != nil {
+			log.Error("failed to create consensus node", "err", err)
+			return 1
+		}
+	} else {
+		consensusNode, err = arbnode.CreateNodeExecutionClient(
+			ctx,
+			stack,
+			nil,
+			arbDb,
+			&NodeConfigFetcher{liveNodeConfig},
+			l2BlockChain.Config(),
+			l1Client,
+			&rollupAddrs,
+			l1TransactionOptsValidator,
+			l1TransactionOptsBatchPoster,
+			dataSigner,
+			fatalErrChan,
+			new(big.Int).SetUint64(nodeConfig.ParentChain.ID),
+			blobReader,
+			wasmModuleRoot,
+		)
+		if err != nil {
+			log.Error("failed to create consensus node", "err", err)
+			return 1
+		}
 	}
-
 	// Validate sequencer's MaxTxDataSize and batchPoster's MaxSize params.
 	// SequencerInbox's maxDataSize is defaulted to 117964 which is 90% of Geth's 128KB tx size limit, leaving ~13KB for proving.
 	seqInboxMaxDataSize := 117964
@@ -677,7 +699,7 @@ func mainImpl() int {
 	}
 
 	gqlConf := nodeConfig.GraphQL
-	if gqlConf.Enable {
+	if execNode != nil && gqlConf.Enable {
 		if err := graphql.New(stack, execNode.Backend.APIBackend(), execNode.FilterSystem, gqlConf.CORSDomain, gqlConf.VHosts); err != nil {
 			log.Error("failed to register the GraphQL service", "err", err)
 			return 1
@@ -718,9 +740,11 @@ func mainImpl() int {
 		}
 	}
 
-	err = execNode.InitializeTimeboost(ctx, chainInfo.ChainConfig)
-	if err != nil {
-		fatalErrChan <- fmt.Errorf("error initializing timeboost: %w", err)
+	if execNode != nil {
+		err = execNode.InitializeTimeboost(ctx, chainInfo.ChainConfig)
+		if err != nil {
+			fatalErrChan <- fmt.Errorf("error initializing timeboost: %w", err)
+		}
 	}
 
 	err = nil
@@ -743,13 +767,6 @@ func mainImpl() int {
 
 	return 0
 }
-
-type Interconnect string
-
-const (
-	InterconnectDirect  Interconnect = "direct"  // in-process calls (DEFAULT)
-	InterconnectJSONRPC Interconnect = "jsonrpc" // JSON-RPC over loopback
-)
 
 type NodeConfig struct {
 	Conf                   genericconf.ConfConfig          `koanf:"conf" reload:"hot"`
@@ -776,35 +793,37 @@ type NodeConfig struct {
 	BlocksReExecutor       blocksreexecutor.Config         `koanf:"blocks-reexecutor"`
 	EnsureRollupDeployment bool                            `koanf:"ensure-rollup-deployment" reload:"hot"`
 
-	// This option controls if we use direct in-process calls between the execution and consensus or JSON-RPC over loopback.
-	Interconnect Interconnect `koanf:"interconnect"`
+	// Below options allow users either
+	ExecutionNode            bool `koanf:"execution-node"` // true- just using execution client interface for now
+	ConsensusExecutionUseRPC bool `koanf:"consensus-execution-use-rpc"`
 }
 
 var NodeConfigDefault = NodeConfig{
-	Conf:                   genericconf.ConfConfigDefault,
-	Node:                   arbnode.ConfigDefault,
-	Execution:              gethexec.ConfigDefault,
-	Validation:             valnode.DefaultValidationConfig,
-	ParentChain:            conf.L1ConfigDefault,
-	Chain:                  conf.L2ConfigDefault,
-	LogLevel:               "INFO",
-	LogType:                "plaintext",
-	FileLogging:            genericconf.DefaultFileLoggingConfig,
-	Persistent:             conf.PersistentConfigDefault,
-	HTTP:                   genericconf.HTTPConfigDefault,
-	WS:                     genericconf.WSConfigDefault,
-	IPC:                    genericconf.IPCConfigDefault,
-	Auth:                   genericconf.AuthRPCConfigDefault,
-	GraphQL:                genericconf.GraphQLConfigDefault,
-	Metrics:                false,
-	MetricsServer:          genericconf.MetricsServerConfigDefault,
-	Init:                   conf.InitConfigDefault,
-	Rpc:                    genericconf.DefaultRpcConfig,
-	PProf:                  false,
-	PprofCfg:               genericconf.PProfDefault,
-	BlocksReExecutor:       blocksreexecutor.DefaultConfig,
-	EnsureRollupDeployment: true,
-	Interconnect:           InterconnectDirect,
+	Conf:                     genericconf.ConfConfigDefault,
+	Node:                     arbnode.ConfigDefault,
+	Execution:                gethexec.ConfigDefault,
+	Validation:               valnode.DefaultValidationConfig,
+	ParentChain:              conf.L1ConfigDefault,
+	Chain:                    conf.L2ConfigDefault,
+	LogLevel:                 "INFO",
+	LogType:                  "plaintext",
+	FileLogging:              genericconf.DefaultFileLoggingConfig,
+	Persistent:               conf.PersistentConfigDefault,
+	HTTP:                     genericconf.HTTPConfigDefault,
+	WS:                       genericconf.WSConfigDefault,
+	IPC:                      genericconf.IPCConfigDefault,
+	Auth:                     genericconf.AuthRPCConfigDefault,
+	GraphQL:                  genericconf.GraphQLConfigDefault,
+	Metrics:                  false,
+	MetricsServer:            genericconf.MetricsServerConfigDefault,
+	Init:                     conf.InitConfigDefault,
+	Rpc:                      genericconf.DefaultRpcConfig,
+	PProf:                    false,
+	PprofCfg:                 genericconf.PProfDefault,
+	BlocksReExecutor:         blocksreexecutor.DefaultConfig,
+	EnsureRollupDeployment:   true,
+	ExecutionNode:            true,
+	ConsensusExecutionUseRPC: false,
 }
 
 func NodeConfigAddOptions(f *pflag.FlagSet) {
@@ -832,7 +851,8 @@ func NodeConfigAddOptions(f *pflag.FlagSet) {
 	genericconf.RpcConfigAddOptions("rpc", f)
 	blocksreexecutor.ConfigAddOptions("blocks-reexecutor", f)
 	f.Bool("ensure-rollup-deployment", NodeConfigDefault.EnsureRollupDeployment, "before starting the node, wait until the transaction that deployed rollup is finalized")
-	f.String("interconnect", string(NodeConfigDefault.Interconnect), "interconnect method between execution and consensus (direct or jsonrpc). Currently used to verify if the related configs are valid")
+	f.Bool("execution-node", NodeConfigDefault.ExecutionNode, "implies running nitro with both consensus and execution nodes, if false, then requires --node.execution-rpc-client.* config to connect to execution client over rpc")
+	f.Bool("consensus-execution-use-rpc", NodeConfigDefault.ConsensusExecutionUseRPC, "when both consensus and execution node are enabled this options allow them to communicate over rpc- mainly for testing purpose")
 }
 
 func (c *NodeConfig) ResolveDirectoryNames() error {
@@ -899,25 +919,34 @@ func (c *NodeConfig) Validate() error {
 	if err := c.Execution.Validate(); err != nil {
 		return err
 	}
-	if c.Interconnect == InterconnectDirect {
-		if c.Execution.ConsensusRPCClient.URL != "" {
-			return fmt.Errorf("interconnect is set to direct but execution node has non-empty consensusRPCClient url: %s", c.Execution.ConsensusRPCClient.URL)
-		}
-		if c.Node.ExecutionRPCClient.URL != "" {
-			return fmt.Errorf("interconnect is set to direct but consensus node has non-empty executionRPCClient url: %s", c.Node.ExecutionRPCClient.URL)
-		}
-	} else if c.Interconnect == InterconnectJSONRPC {
-		if !c.Execution.RPCServer.Enable {
-			return errors.New("interconnect is set to jsonrpc but execution node has not enabled rpc server")
-		}
-		if c.Execution.ConsensusRPCClient.URL == "" {
-			return errors.New("interconnect is set to jsonrpc but execution node has empty consensusRPCClient url")
-		}
-		if !c.Node.RPCServer.Enable {
-			return errors.New("interconnect is set to jsonrpc but consensus node has not enabled rpc server")
-		}
+	if !c.ExecutionNode {
 		if c.Node.ExecutionRPCClient.URL == "" {
-			return errors.New("interconnect is set to jsonrpc but consensus node has empty executionRPCClient url")
+			return errors.New("starting consensus only node with empty executionRPCClient url")
+		}
+		if c.ConsensusExecutionUseRPC {
+			return errors.New("starting without an execution node but have ConsensusExecutionUseRPC set")
+		}
+	} else {
+		if c.ConsensusExecutionUseRPC {
+			if !c.Execution.RPCServer.Enable {
+				return errors.New("ConsensusExecutionUseRPC is set but execution node has not enabled rpc server")
+			}
+			if c.Execution.ConsensusRPCClient.URL == "" {
+				return errors.New("ConsensusExecutionUseRPC is set but execution node has empty consensusRPCClient url")
+			}
+			if !c.Node.RPCServer.Enable {
+				return errors.New("ConsensusExecutionUseRPC is set but consensus node has not enabled rpc server")
+			}
+			if c.Node.ExecutionRPCClient.URL == "" {
+				return errors.New("ConsensusExecutionUseRPC is set but consensus node has empty executionRPCClient url")
+			}
+		} else {
+			if c.Execution.ConsensusRPCClient.URL != "" {
+				return fmt.Errorf("consensus and execution are configured to communicate directly but execution node has non-empty consensusRPCClient url: %s", c.Execution.ConsensusRPCClient.URL)
+			}
+			if c.Node.ExecutionRPCClient.URL != "" {
+				return fmt.Errorf("consensus and execution are configured to communicate directly but consensus node has non-empty executionRPCClient url: %s", c.Node.ExecutionRPCClient.URL)
+			}
 		}
 	}
 	if err := c.BlocksReExecutor.Validate(); err != nil {

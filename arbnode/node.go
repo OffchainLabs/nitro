@@ -1294,12 +1294,12 @@ func CreateNodeExecutionClient(
 	blobReader daprovider.BlobReader,
 	latestWasmModuleRoot common.Hash,
 ) (*Node, error) {
-	if executionClient == nil {
-		return nil, errors.New("execution client must be non-nil")
-	}
 	if configFetcher.Get().ExecutionRPCClient.URL != "" {
 		execConfigFetcher := func() *rpcclient.ClientConfig { return &configFetcher.Get().ExecutionRPCClient }
 		executionClient = executionrpcclient.NewExecutionRpcClient(execConfigFetcher, nil)
+	}
+	if executionClient == nil {
+		return nil, errors.New("execution client must be non-nil")
 	}
 	currentNode, err := createNodeImpl(ctx, stack, executionClient, nil, nil, nil, arbDb, configFetcher, l2Config, l1client, deployInfo, txOptsValidator, txOptsBatchPoster, dataSigner, fatalErrChan, parentChainID, blobReader, latestWasmModuleRoot)
 	if err != nil {
@@ -1309,13 +1309,10 @@ func CreateNodeExecutionClient(
 	return currentNode, nil
 }
 
-func CreateNodeFullExecutionClient(
+func CreateConsensusNodeConnectedWithFullExecutionClient(
 	ctx context.Context,
 	stack *node.Node,
-	executionClient execution.ExecutionClient,
-	executionSequencer execution.ExecutionSequencer,
-	executionRecorder execution.ExecutionRecorder,
-	executionBatchPoster execution.ExecutionBatchPoster,
+	fullExecutionClient execution.FullExecutionClient,
 	arbDb ethdb.Database,
 	configFetcher ConfigFetcher,
 	l2Config *params.ChainConfig,
@@ -1329,14 +1326,17 @@ func CreateNodeFullExecutionClient(
 	blobReader daprovider.BlobReader,
 	latestWasmModuleRoot common.Hash,
 ) (*Node, error) {
-	if (executionClient == nil) || (executionSequencer == nil) || (executionRecorder == nil) || (executionBatchPoster == nil) {
-		return nil, errors.New("execution client, sequencer, recorder, and batch poster must be non-nil")
+	if fullExecutionClient == nil {
+		return nil, errors.New("full execution client must be non-nil")
 	}
+	var executionClient execution.ExecutionClient
 	if configFetcher.Get().ExecutionRPCClient.URL != "" {
 		execConfigFetcher := func() *rpcclient.ClientConfig { return &configFetcher.Get().ExecutionRPCClient }
 		executionClient = executionrpcclient.NewExecutionRpcClient(execConfigFetcher, nil)
+	} else {
+		executionClient = fullExecutionClient
 	}
-	currentNode, err := createNodeImpl(ctx, stack, executionClient, executionSequencer, executionRecorder, executionBatchPoster, arbDb, configFetcher, l2Config, l1client, deployInfo, txOptsValidator, txOptsBatchPoster, dataSigner, fatalErrChan, parentChainID, blobReader, latestWasmModuleRoot)
+	currentNode, err := createNodeImpl(ctx, stack, executionClient, fullExecutionClient, fullExecutionClient, fullExecutionClient, arbDb, configFetcher, l2Config, l1client, deployInfo, txOptsValidator, txOptsBatchPoster, dataSigner, fatalErrChan, parentChainID, blobReader, latestWasmModuleRoot)
 	if err != nil {
 		return nil, err
 	}
@@ -1346,7 +1346,7 @@ func CreateNodeFullExecutionClient(
 
 func (n *Node) Start(ctx context.Context) error {
 	var err error
-	if execRPCClient, ok := n.ExecutionClient.(*executionrpcclient.ExecutionRpcClient); ok {
+	if execRPCClient, ok := n.ExecutionClient.(*executionrpcclient.ExecutionRPCClient); ok {
 		if err = execRPCClient.Start(ctx); err != nil {
 			return fmt.Errorf("error starting exec rpc client: %w", err)
 		}
@@ -1535,7 +1535,7 @@ func (n *Node) StopAndWait() {
 		n.dasServerCloseFn()
 	}
 	if n.ExecutionClient != nil {
-		if _, ok := n.ExecutionClient.(*executionrpcclient.ExecutionRpcClient); ok {
+		if _, ok := n.ExecutionClient.(*executionrpcclient.ExecutionRPCClient); ok {
 			n.ExecutionClient.StopAndWait()
 		}
 	}

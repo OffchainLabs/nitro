@@ -1,8 +1,6 @@
 package consensus
 
 import (
-	"errors"
-
 	"github.com/ethereum/go-ethereum/common"
 
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
@@ -11,8 +9,6 @@ import (
 )
 
 const RPCNamespace = "nitroconsensus"
-
-var ErrSequencerInsertLockTaken = errors.New("insert lock taken")
 
 type MessageResult struct {
 	BlockHash common.Hash

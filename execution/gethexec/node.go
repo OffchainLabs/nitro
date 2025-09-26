@@ -268,7 +268,7 @@ type ExecutionNode struct {
 	ClassicOutbox            *ClassicOutboxRetriever
 	started                  atomic.Bool
 	bulkBlockMetadataFetcher *BulkBlockMetadataFetcher
-	consensusRPCClient       *consensusrpcclient.ConsensusRpcClient
+	consensusRPCClient       *consensusrpcclient.ConsensusRPCClient
 }
 
 func CreateExecutionNode(

@@ -10,23 +10,24 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/consensus"
+	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
-type ConsensusRpcClient struct {
+type ConsensusRPCClient struct {
 	stopwaiter.StopWaiter
 	client *rpcclient.RpcClient
 }
 
-func NewConsensusRpcClient(config rpcclient.ClientConfigFetcher, stack *node.Node) *ConsensusRpcClient {
-	return &ConsensusRpcClient{
+func NewConsensusRpcClient(config rpcclient.ClientConfigFetcher, stack *node.Node) *ConsensusRPCClient {
+	return &ConsensusRPCClient{
 		client: rpcclient.NewRpcClient(config, stack),
 	}
 }
 
-func (c *ConsensusRpcClient) Start(ctx_in context.Context) error {
+func (c *ConsensusRPCClient) Start(ctx_in context.Context) error {
 	c.StopWaiter.Start(ctx_in, c)
 	ctx := c.GetContext()
 	return c.client.Start(ctx)
@@ -37,13 +38,13 @@ func convertError(err error) error {
 		return nil
 	}
 	errStr := err.Error()
-	if strings.Contains(errStr, consensus.ErrSequencerInsertLockTaken.Error()) {
-		return consensus.ErrSequencerInsertLockTaken
+	if strings.Contains(errStr, execution.ErrSequencerInsertLockTaken.Error()) {
+		return execution.ErrSequencerInsertLockTaken
 	}
 	return err
 }
 
-func (c *ConsensusRpcClient) FindInboxBatchContainingMessage(message arbutil.MessageIndex) containers.PromiseInterface[consensus.InboxBatch] {
+func (c *ConsensusRPCClient) FindInboxBatchContainingMessage(message arbutil.MessageIndex) containers.PromiseInterface[consensus.InboxBatch] {
 	return stopwaiter.LaunchPromiseThread(c, func(ctx context.Context) (consensus.InboxBatch, error) {
 		var res consensus.InboxBatch
 		err := c.client.CallContext(ctx, &res, consensus.RPCNamespace+"_findInboxBatchContainingMessage", message)
@@ -54,7 +55,7 @@ func (c *ConsensusRpcClient) FindInboxBatchContainingMessage(message arbutil.Mes
 	})
 }
 
-func (c *ConsensusRpcClient) GetBatchParentChainBlock(seqNum uint64) containers.PromiseInterface[uint64] {
+func (c *ConsensusRPCClient) GetBatchParentChainBlock(seqNum uint64) containers.PromiseInterface[uint64] {
 	return stopwaiter.LaunchPromiseThread(c, func(ctx context.Context) (uint64, error) {
 		var res uint64
 		err := c.client.CallContext(ctx, &res, consensus.RPCNamespace+"_getBatchParentChainBlock", seqNum)
@@ -65,7 +66,7 @@ func (c *ConsensusRpcClient) GetBatchParentChainBlock(seqNum uint64) containers.
 	})
 }
 
-func (c *ConsensusRpcClient) Synced() containers.PromiseInterface[bool] {
+func (c *ConsensusRPCClient) Synced() containers.PromiseInterface[bool] {
 	return stopwaiter.LaunchPromiseThread(c, func(ctx context.Context) (bool, error) {
 		var res bool
 		err := c.client.CallContext(ctx, &res, consensus.RPCNamespace+"_synced")
@@ -76,7 +77,7 @@ func (c *ConsensusRpcClient) Synced() containers.PromiseInterface[bool] {
 	})
 }
 
-func (c *ConsensusRpcClient) FullSyncProgressMap() containers.PromiseInterface[map[string]interface{}] {
+func (c *ConsensusRPCClient) FullSyncProgressMap() containers.PromiseInterface[map[string]interface{}] {
 	return stopwaiter.LaunchPromiseThread(c, func(ctx context.Context) (map[string]interface{}, error) {
 		var res map[string]interface{}
 		err := c.client.CallContext(ctx, &res, consensus.RPCNamespace+"_fullSyncProgressMap")
@@ -87,7 +88,7 @@ func (c *ConsensusRpcClient) FullSyncProgressMap() containers.PromiseInterface[m
 	})
 }
 
-func (c *ConsensusRpcClient) SyncTargetMessageCount() containers.PromiseInterface[arbutil.MessageIndex] {
+func (c *ConsensusRPCClient) SyncTargetMessageCount() containers.PromiseInterface[arbutil.MessageIndex] {
 	return stopwaiter.LaunchPromiseThread(c, func(ctx context.Context) (arbutil.MessageIndex, error) {
 		var res arbutil.MessageIndex
 		err := c.client.CallContext(ctx, &res, consensus.RPCNamespace+"_syncTargetMessageCount")
@@ -98,7 +99,7 @@ func (c *ConsensusRpcClient) SyncTargetMessageCount() containers.PromiseInterfac
 	})
 }
 
-func (c *ConsensusRpcClient) BlockMetadataAtMessageIndex(msgIdx arbutil.MessageIndex) containers.PromiseInterface[common.BlockMetadata] {
+func (c *ConsensusRPCClient) BlockMetadataAtMessageIndex(msgIdx arbutil.MessageIndex) containers.PromiseInterface[common.BlockMetadata] {
 	return stopwaiter.LaunchPromiseThread(c, func(ctx context.Context) (common.BlockMetadata, error) {
 		var res common.BlockMetadata
 		err := c.client.CallContext(ctx, &res, consensus.RPCNamespace+"_blockMetadataAtMessageIndex", msgIdx)
@@ -109,7 +110,7 @@ func (c *ConsensusRpcClient) BlockMetadataAtMessageIndex(msgIdx arbutil.MessageI
 	})
 }
 
-func (c *ConsensusRpcClient) WriteMessageFromSequencer(msgIdx arbutil.MessageIndex, msgWithMeta arbostypes.MessageWithMetadata, msgResult consensus.MessageResult, blockMetadata common.BlockMetadata) containers.PromiseInterface[struct{}] {
+func (c *ConsensusRPCClient) WriteMessageFromSequencer(msgIdx arbutil.MessageIndex, msgWithMeta arbostypes.MessageWithMetadata, msgResult consensus.MessageResult, blockMetadata common.BlockMetadata) containers.PromiseInterface[struct{}] {
 	return stopwaiter.LaunchPromiseThread(c, func(ctx context.Context) (struct{}, error) {
 		var res struct{}
 		err := c.client.CallContext(ctx, &res, consensus.RPCNamespace+"_writeMessageFromSequencer", msgIdx, msgWithMeta, msgResult, blockMetadata)
@@ -120,7 +121,7 @@ func (c *ConsensusRpcClient) WriteMessageFromSequencer(msgIdx arbutil.MessageInd
 	})
 }
 
-func (c *ConsensusRpcClient) ExpectChosenSequencer() containers.PromiseInterface[struct{}] {
+func (c *ConsensusRPCClient) ExpectChosenSequencer() containers.PromiseInterface[struct{}] {
 	return stopwaiter.LaunchPromiseThread(c, func(ctx context.Context) (struct{}, error) {
 		var res struct{}
 		err := c.client.CallContext(ctx, &res, consensus.RPCNamespace+"_expectChosenSequencer")
