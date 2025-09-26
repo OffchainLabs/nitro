@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2025, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package daprovider
@@ -13,6 +13,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/blobs"
+	"github.com/offchainlabs/nitro/util/containers"
 )
 
 // CertificateValidationError represents an error in certificate validation
@@ -29,19 +30,30 @@ func IsCertificateValidationError(err error) bool {
 	return err != nil && strings.Contains(err.Error(), "certificate validation failed")
 }
 
-type Reader interface {
-	// IsValidHeaderByte returns true if the given headerByte has bits corresponding to the DA provider
-	IsValidHeaderByte(ctx context.Context, headerByte byte) bool
+// PayloadResult contains the recovered payload data
+type PayloadResult struct {
+	Payload []byte
+}
 
-	// RecoverPayloadFromBatch fetches the underlying payload and a map of preimages from the DA provider given the batch header information
-	RecoverPayloadFromBatch(
-		ctx context.Context,
+// PreimagesResult contains the collected preimages
+type PreimagesResult struct {
+	Preimages PreimagesMap
+}
+
+type Reader interface {
+	// RecoverPayload fetches the underlying payload from the DA provider given the batch header information
+	RecoverPayload(
 		batchNum uint64,
 		batchBlockHash common.Hash,
 		sequencerMsg []byte,
-		preimages PreimagesMap,
-		validateSeqMsg bool,
-	) ([]byte, PreimagesMap, error)
+	) containers.PromiseInterface[PayloadResult]
+
+	// CollectPreimages collects preimages from the DA provider given the batch header information
+	CollectPreimages(
+		batchNum uint64,
+		batchBlockHash common.Hash,
+		sequencerMsg []byte,
+	) containers.PromiseInterface[PreimagesResult]
 }
 
 // NewReaderForBlobReader is generally meant to be only used by nitro.
@@ -54,17 +66,14 @@ type readerForBlobReader struct {
 	blobReader BlobReader
 }
 
-func (b *readerForBlobReader) IsValidHeaderByte(ctx context.Context, headerByte byte) bool {
-	return IsBlobHashesHeaderByte(headerByte)
-}
-
-func (b *readerForBlobReader) RecoverPayloadFromBatch(
+// recoverInternal is the shared implementation for both RecoverPayload and CollectPreimages
+func (b *readerForBlobReader) recoverInternal(
 	ctx context.Context,
 	batchNum uint64,
 	batchBlockHash common.Hash,
 	sequencerMsg []byte,
-	preimages PreimagesMap,
-	validateSeqMsg bool,
+	needPayload bool,
+	needPreimages bool,
 ) ([]byte, PreimagesMap, error) {
 	blobHashes := sequencerMsg[41:]
 	if len(blobHashes)%len(common.Hash{}) != 0 {
@@ -78,7 +87,10 @@ func (b *readerForBlobReader) RecoverPayloadFromBatch(
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to get blobs: %w", err)
 	}
-	if preimages != nil {
+
+	var preimages PreimagesMap
+	if needPreimages {
+		preimages = make(PreimagesMap)
 		preimageRecorder := RecordPreimagesTo(preimages)
 		for i, blob := range kzgBlobs {
 			// Prevent aliasing `blob` when slicing it, as for range loops overwrite the same variable
@@ -87,10 +99,53 @@ func (b *readerForBlobReader) RecoverPayloadFromBatch(
 			preimageRecorder(versionedHashes[i], b[:], arbutil.EthVersionedHashPreimageType)
 		}
 	}
-	payload, err := blobs.DecodeBlobs(kzgBlobs)
-	if err != nil {
-		log.Warn("Failed to decode blobs", "batchBlockHash", batchBlockHash, "versionedHashes", versionedHashes, "err", err)
-		return nil, nil, nil
+
+	var payload []byte
+	if needPayload {
+		payload, err = blobs.DecodeBlobs(kzgBlobs)
+		if err != nil {
+			log.Warn("Failed to decode blobs", "batchBlockHash", batchBlockHash, "versionedHashes", versionedHashes, "err", err)
+			return nil, nil, nil
+		}
 	}
+
 	return payload, preimages, nil
+}
+
+// RecoverPayload fetches the underlying payload from the DA provider
+func (b *readerForBlobReader) RecoverPayload(
+	batchNum uint64,
+	batchBlockHash common.Hash,
+	sequencerMsg []byte,
+) containers.PromiseInterface[PayloadResult] {
+	promise := containers.NewPromise[PayloadResult](nil)
+	go func() {
+		ctx := context.Background()
+		payload, _, err := b.recoverInternal(ctx, batchNum, batchBlockHash, sequencerMsg, true, false)
+		if err != nil {
+			promise.ProduceError(err)
+		} else {
+			promise.Produce(PayloadResult{Payload: payload})
+		}
+	}()
+	return &promise
+}
+
+// CollectPreimages collects preimages from the DA provider
+func (b *readerForBlobReader) CollectPreimages(
+	batchNum uint64,
+	batchBlockHash common.Hash,
+	sequencerMsg []byte,
+) containers.PromiseInterface[PreimagesResult] {
+	promise := containers.NewPromise[PreimagesResult](nil)
+	go func() {
+		ctx := context.Background()
+		_, preimages, err := b.recoverInternal(ctx, batchNum, batchBlockHash, sequencerMsg, false, true)
+		if err != nil {
+			promise.ProduceError(err)
+		} else {
+			promise.Produce(PreimagesResult{Preimages: preimages})
+		}
+	}()
+	return &promise
 }

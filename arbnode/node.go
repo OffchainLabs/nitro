@@ -574,7 +574,7 @@ func getDAProvider(
 	dataSigner signature.DataSignerFunc,
 	l1client *ethclient.Client,
 	stack *node.Node,
-) (daprovider.Writer, func(), []daprovider.Reader, daprovider.Validator, error) {
+) (daprovider.Writer, func(), *daprovider.ReaderRegistry, daprovider.Validator, error) {
 	// Validate DA configuration
 	if config.DA.Mode == "external" {
 		if !config.DA.ExternalProvider.Enable {
@@ -699,7 +699,8 @@ func getDAProvider(
 			cleanupFuncs = append(cleanupFuncs, validatorCleanup)
 		}
 
-		providerServer, err := dapserver.NewServerWithDAPProvider(ctx, &serverConfig, reader, writer, validator)
+		headerBytes := daFactory.GetSupportedHeaderBytes()
+		providerServer, err := dapserver.NewServerWithDAPProvider(ctx, &serverConfig, reader, writer, validator, headerBytes)
 
 		// Create combined cleanup function
 		closeFn := func() {
@@ -731,13 +732,25 @@ func getDAProvider(
 	if txStreamer != nil && txStreamer.chainConfig.ArbitrumChainParams.DataAvailabilityCommittee && daClient == nil {
 		return nil, nil, nil, nil, errors.New("data availability service required but unconfigured")
 	}
-	var dapReaders []daprovider.Reader
+
+	dapReaders := daprovider.NewReaderRegistry()
 	if daClient != nil {
-		dapReaders = append(dapReaders, daClient)
+		headerBytes, err := daClient.GetSupportedHeaderBytes(ctx)
+		if err != nil {
+			return nil, nil, nil, nil, fmt.Errorf("failed to get supported header bytes from DA client: %w", err)
+		}
+		if err := dapReaders.RegisterAll(headerBytes, daClient); err != nil {
+			return nil, nil, nil, nil, fmt.Errorf("failed to register DA client: %w", err)
+		}
 	}
 	if blobReader != nil {
-		dapReaders = append(dapReaders, daprovider.NewReaderForBlobReader(blobReader))
+		if err := dapReaders.SetupBlobReader(daprovider.NewReaderForBlobReader(blobReader)); err != nil {
+			return nil, nil, nil, nil, fmt.Errorf("failed to register blob reader: %w", err)
+		}
 	}
+	// AnyTrust now always uses the daClient, which is already registered,
+	// so we don't need to register it separately here.
+
 	if withDAWriter {
 		return daClient, providerServerCloseFn, dapReaders, validator, nil
 	}
@@ -748,7 +761,7 @@ func getInboxTrackerAndReader(
 	ctx context.Context,
 	arbDb ethdb.Database,
 	txStreamer *TransactionStreamer,
-	dapReaders []daprovider.Reader,
+	dapReaders *daprovider.ReaderRegistry,
 	config *Config,
 	configFetcher ConfigFetcher,
 	l1client *ethclient.Client,
@@ -961,7 +974,7 @@ func getStatelessBlockValidator(
 	txStreamer *TransactionStreamer,
 	exec execution.ExecutionRecorder,
 	arbDb ethdb.Database,
-	dapReaders []daprovider.Reader,
+	dapReaders *daprovider.ReaderRegistry,
 	stack *node.Node,
 	latestWasmModuleRoot common.Hash,
 ) (*staker.StatelessBlockValidator, error) {
@@ -1011,7 +1024,7 @@ func getBatchPoster(
 	syncMonitor *SyncMonitor,
 	deployInfo *chaininfo.RollupAddresses,
 	parentChainID *big.Int,
-	dapReaders []daprovider.Reader,
+	dapReaders *daprovider.ReaderRegistry,
 	stakerAddr common.Address,
 ) (*BatchPoster, error) {
 	var batchPoster *BatchPoster

@@ -78,10 +78,12 @@ func (e *ValidateCertificateProofEnhancer) EnhanceProof(ctx context.Context, mes
 	}
 
 	// Generate certificate validity proof
-	validityProof, err := e.daValidator.GenerateCertificateValidityProof(ctx, arbutil.DACertificatePreimageType, certificate)
+	promise := e.daValidator.GenerateCertificateValidityProof(certificate)
+	result, err := promise.Await(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate certificate validity proof: %w", err)
 	}
+	validityProof := result.Proof
 
 	// Build enhanced proof: [...originalProof..., certSize(8), certificate, validityProof]
 	// Remove the marker data (hash + marker) from original proof

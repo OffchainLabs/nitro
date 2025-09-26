@@ -285,7 +285,8 @@ func startup() error {
 	}
 
 	log.Info("Starting json rpc server", "mode", config.Mode, "addr", config.ProviderServer.Addr, "port", config.ProviderServer.Port)
-	providerServer, err := dapserver.NewServerWithDAPProvider(ctx, &config.ProviderServer, reader, writer, validator)
+	headerBytes := providerFactory.GetSupportedHeaderBytes()
+	providerServer, err := dapserver.NewServerWithDAPProvider(ctx, &config.ProviderServer, reader, writer, validator, headerBytes)
 	if err != nil {
 		return err
 	}

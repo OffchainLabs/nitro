@@ -40,7 +40,7 @@ type MessageExtractor struct {
 	addrs                     *chaininfo.RollupAddresses
 	melDB                     *Database
 	msgConsumer               mel.MessageConsumer
-	dataProviders             []daprovider.Reader
+	dataProviders             *daprovider.ReaderRegistry
 	startParentChainBlockHash common.Hash
 	fsm                       *fsm.Fsm[action, FSMState]
 	retryInterval             time.Duration
@@ -54,7 +54,7 @@ func NewMessageExtractor(
 	rollupAddrs *chaininfo.RollupAddresses,
 	melDB *Database,
 	msgConsumer mel.MessageConsumer,
-	dataProviders []daprovider.Reader,
+	dataProviders *daprovider.ReaderRegistry,
 	startParentChainBlockHash common.Hash,
 	retryInterval time.Duration,
 ) (*MessageExtractor, error) {

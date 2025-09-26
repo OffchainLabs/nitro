@@ -96,15 +96,17 @@ func (e *ReadPreimageProofEnhancer) EnhanceProof(ctx context.Context, messageNum
 	}
 
 	// Generate custom proof with certificate
-	customProof, err := e.daValidator.GenerateProof(ctx, arbutil.DACertificatePreimageType, common.BytesToHash(certKeccak256[:]), offset, certificate)
+	promise := e.daValidator.GenerateReadPreimageProof(common.BytesToHash(certKeccak256[:]), offset, certificate)
+	result, err := promise.Await(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate custom DA proof: %w", err)
 	}
+	customProof := result.Proof
 
 	// Build standard CustomDA proof preamble:
 	// [...proof..., certSize(8), certificate, customProof]
 	// We're dropping the CustomDA marker data (certKeccak256, offset, marker byte) from the original proof.
-	// It was only needed here to call GenerateProof above, the same information is
+	// It was only needed here to call GenerateReadPreimageProof above, the same information is
 	// available to the OSP in the instruction arguments.
 	certSize := uint64(len(certificate))
 	markerDataStart := certKeccak256Pos // Start of CustomDA marker data that we'll drop

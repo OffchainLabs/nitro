@@ -4,30 +4,31 @@
 package daprovider
 
 import (
-	"context"
-	"errors"
-
 	"github.com/ethereum/go-ethereum/common"
 
-	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/util/containers"
 )
 
-// Common errors
-var (
-	ErrNoSuchPreimage = errors.New("no such preimage")
-)
+// PreimageProofResult contains the generated preimage proof
+type PreimageProofResult struct {
+	Proof []byte
+}
 
-// Validator defines the interface for custom data availability systems
-// This interface is used to validate and generate proofs for DACertificate preimages
+// ValidityProofResult contains the generated validity proof
+type ValidityProofResult struct {
+	Proof []byte
+}
+
+// Validator defines the interface for custom data availability systems.
+// This interface is used to generate proofs for DACertificate certificates and preimages.
 type Validator interface {
-	// GenerateProof generates a proof for a specific preimage at a given offset
-	// The proof format depends on the implementation and must be compatible with
-	// the Solidity IDACertificateValidator contract
-	// For DACertificate preimages, certificate contains the DA certificate
-	// certHash is the keccak256 hash of the certificate
-	GenerateProof(ctx context.Context, preimageType arbutil.PreimageType, certHash common.Hash, offset uint64, certificate []byte) ([]byte, error)
+	// GenerateReadPreimageProof generates a proof for a specific preimage at a given offset.
+	// The proof format depends on the implementation and must be compatible with the Solidity
+	// IDACertificateValidator contract.
+	// certHash is the keccak256 hash of the certificate.
+	GenerateReadPreimageProof(certHash common.Hash, offset uint64, certificate []byte) containers.PromiseInterface[PreimageProofResult]
 
-	// GenerateCertificateValidityProof generates a proof of certificate validity
-	// Returns a proof that includes whether the certificate is valid according to the DA system rules
-	GenerateCertificateValidityProof(ctx context.Context, preimageType arbutil.PreimageType, certificate []byte) ([]byte, error)
+	// GenerateCertificateValidityProof returns a proof of whether the certificate
+	// is valid according to the DA system's rules.
+	GenerateCertificateValidityProof(certificate []byte) containers.PromiseInterface[ValidityProofResult]
 }
