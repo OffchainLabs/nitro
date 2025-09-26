@@ -413,7 +413,7 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, 
 			URL: providerURLNodeA,
 		}
 	}
-	daClientA, err := daclient.NewClient(ctx, daClientConfigA)
+	daClientA, err := daclient.NewClient(ctx, daClientConfigA, dapserver.DefaultServerConfig.RPCServerBodyLimit)
 	Require(t, err)
 
 	daClientConfigB := func() *rpcclient.ClientConfig {
@@ -421,7 +421,7 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, 
 			URL: providerURLNodeB,
 		}
 	}
-	daClientB, err := daclient.NewClient(ctx, daClientConfigB)
+	daClientB, err := daclient.NewClient(ctx, daClientConfigB, dapserver.DefaultServerConfig.RPCServerBodyLimit)
 	Require(t, err)
 
 	// Create DA readers for validators

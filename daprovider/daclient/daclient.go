@@ -49,10 +49,10 @@ func ClientConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	rpcclient.RPCClientAddOptions(prefix+".rpc", f, &DefaultClientConfig.RPC)
 }
 
-func NewClient(ctx context.Context, config rpcclient.ClientConfigFetcher) (*Client, error) {
+func NewClient(ctx context.Context, config rpcclient.ClientConfigFetcher, httpBodySizeLimit int) (*Client, error) {
 	dataStreamer, err := data_streaming.NewDataStreamer[server_api.StoreResult](
 		config().URL,
-		0,   // todo
+		httpBodySizeLimit,
 		nil, // todo
 		data_streaming.DataStreamingRPCMethods{
 			StartStream:    "daprovider_startChunkedStore",
