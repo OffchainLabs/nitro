@@ -56,7 +56,8 @@ jobs:
         if: always()
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          directory: 'test-results'
+          file: "test-results/junit_github_com_offchainlabs_nitro_system_tests_.xml"
+          disable-search: true
 
       - name: Fail if tests failed
         if: steps.run-l3-challenge-tests.outcome == 'failure'
