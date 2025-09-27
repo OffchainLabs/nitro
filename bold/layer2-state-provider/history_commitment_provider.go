@@ -50,7 +50,7 @@ type ProofCollector interface {
 //
 // The goal of CollectMachineHashes is to gather Arbitrator machine hashes for
 // a specific arbitrum block in the context of a BoLD challenge which has been
-// created to deterimine which assertion is correct.
+// created to determine which assertion is correct.
 //
 // Depending on the challenge level, the set of machine hashes the collector
 // needs to collect can vary. But, it will always be some set of machine hashes
@@ -61,8 +61,8 @@ type ProofCollector interface {
 //
 // To determine the exact block from which to collect the machine hashes, the
 // collector needs to know the `FromState` which contains the batch and position
-// within that batch of the first messsage to which the rival assertions are
-// committing. In addiiton, the collector needs to know the
+// within that batch of the first message to which the rival assertions are
+// committing. In addition, the collector needs to know the
 // `BlockChallengeHeight` (which is a relative index within the range of blocks
 // to which the rival assertions are committing where they first diverge.)
 //
