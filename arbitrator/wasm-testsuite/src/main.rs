@@ -279,7 +279,7 @@ fn main() -> eyre::Result<()> {
     }
 
     'next: for (index, command) in case.commands.into_iter().enumerate() {
-        // each iteration represets a test case
+        // each iteration represents a test case
 
         macro_rules! test_success {
             ($func:expr, $args:expr, $expected:expr) => {
