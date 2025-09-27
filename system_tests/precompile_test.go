@@ -807,7 +807,7 @@ func TestArbNativeTokenManager(t *testing.T) {
 		t.Fatal("expected sending L2 to L1 value to fail")
 	}
 
-	// After clearning the native token owners, sending L2 to L1 value should
+	// After clearing the native token owners, sending L2 to L1 value should
 	// work again.
 	tx, err = arbOwner.RemoveNativeTokenOwner(&authOwner, nativeTokenOwnerAddr)
 	Require(t, err)
