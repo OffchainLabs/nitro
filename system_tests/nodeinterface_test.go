@@ -130,7 +130,7 @@ func TestL2BlockRangeForL1(t *testing.T) {
 		if rng.FirstBlock != expected[0] || rng.LastBlock != expected[1] {
 			unexpectedL1BlockNum, err := nodeInterface.BlockL1Num(&bind.CallOpts{}, rng.LastBlock)
 			if err != nil {
-				t.Fatalf("Error quering l1 block number for l2 block: %d, error: %v", rng.LastBlock, err)
+				t.Fatalf("Error querying l1 block number for l2 block: %d, error: %v", rng.LastBlock, err)
 			}
 			// Handle the edge case when new l2 blocks are produced between latestL2 was last calculated and now.
 			if unexpectedL1BlockNum != l1BlockNum || rng.LastBlock < expected[1] || rng.FirstBlock != expected[0] {
