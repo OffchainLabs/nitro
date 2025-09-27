@@ -180,7 +180,7 @@ pub fn exec_wasm(
             .request_handler()
             .tx
             .send(msg)
-            .or_else(|_| Escape::hostio("failed sending messaage to thread"))
+            .or_else(|_| Escape::hostio("failed sending message to thread"))
     });
 
     Ok(CothreadHandler {
