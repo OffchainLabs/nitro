@@ -43,7 +43,7 @@ struct Opts {
     #[structopt(long)]
     /// print wasm module root to the console
     print_wasmmoduleroot: bool,
-    /// profile output instead of generting proofs
+    /// profile output instead of generating proofs
     #[structopt(short = "p", long)]
     profile_run: bool,
     /// simple summary of hot opcodes
