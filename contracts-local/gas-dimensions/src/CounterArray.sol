@@ -13,7 +13,7 @@ contract CounterArray {
         counters = new uint256[](20);
     }
 
-    // alllow caller to set data in the array
+    // allow caller to set data in the array
     function setCounters(uint256[] memory newCounters) public {
         require(newCounters.length == 20, "Array must be 20 elements long");
         for (uint256 i = 0; i < 20; i++) {
