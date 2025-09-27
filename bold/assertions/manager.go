@@ -172,7 +172,7 @@ func WithPollingInterval(t time.Duration) Opt {
 	}
 }
 
-// WithConfirmationInterval overrides the default a confiramtion interval.
+// WithConfirmationInterval overrides the default a confirmation interval.
 //
 // This is the interval the assertion manager will wait between attempts to
 // persist information about which assertions can be confirmed to the parent
