@@ -231,7 +231,7 @@ func TestOutboxProofs(t *testing.T) {
 				Require(t, err, "couldn't get logs")
 			}
 
-			t.Log("Querried for", len(query), "positions", query)
+			t.Log("Queried for", len(query), "positions", query)
 			t.Log("Found", len(logs), "logs for proof", provable.leaf, "of", treeSize)
 
 			known := make(map[merkletree.LevelAndLeaf]common.Hash) // all values in the tree we know
