@@ -429,7 +429,7 @@ func (s *BOLDStateProvider) messageNum(md *l2stateprovider.AssociatedAssertionMe
 // current batch. In that case, the chalHeight will be a block in the virtual
 // padding of the history commitment of this validator.
 //
-// If there is an Option.Some() retrun value, it means that callers don't need
+// If there is an Option.Some() return value, it means that callers don't need
 // to actually step through a machine to produce a series of hashes, because all
 // of the hashes can just be "virtual" copies of a single machine in the
 // FINISHED state's hash.
