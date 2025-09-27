@@ -36,7 +36,7 @@ func (d *DB) Put(key []byte, value []byte) error {
 	return errors.New("unimplemented")
 }
 
-func (p DB) Delete(key []byte) error {
+func (d *DB) Delete(key []byte) error {
 	return errors.New("unimplemented")
 }
 
@@ -44,35 +44,35 @@ func (d *DB) DeleteRange(start, end []byte) error {
 	return errors.New("unimplemented")
 }
 
-func (p DB) Stat() (string, error) {
+func (d *DB) Stat() (string, error) {
 	return "", errors.New("unimplemented")
 }
 
-func (p DB) NewBatch() ethdb.Batch {
+func (d *DB) NewBatch() ethdb.Batch {
 	panic("unimplemented")
 }
 
-func (p DB) NewBatchWithSize(size int) ethdb.Batch {
+func (d *DB) NewBatchWithSize(size int) ethdb.Batch {
 	panic("unimplemented")
 }
 
-func (p DB) NewIterator(prefix []byte, start []byte) ethdb.Iterator {
+func (d *DB) NewIterator(prefix []byte, start []byte) ethdb.Iterator {
 	panic("unimplemented")
 }
 
-func (p DB) SyncAncient() error {
+func (d *DB) SyncAncient() error {
 	return nil // no-op
 }
 
-func (p DB) SyncKeyValue() error {
+func (d *DB) SyncKeyValue() error {
 	return nil // no-op
 }
 
-func (p DB) Compact(start []byte, limit []byte) error {
+func (d *DB) Compact(start []byte, limit []byte) error {
 	return nil // no-op
 }
 
-func (p DB) Close() error {
+func (d *DB) Close() error {
 	return nil
 }
 
