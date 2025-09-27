@@ -45,7 +45,7 @@ func (p ArbosPrecompileWrapper) RunAdvanced(
 	defer info.Evm.DecrementDepth()
 
 	return p.inner.Call(
-		input, info.PrecompileAddress, info.ActingAsAddress,
+		input, info.ActingAsAddress,
 		info.Caller, info.Value, info.ReadOnly, gasSupplied, info.Evm,
 	)
 }

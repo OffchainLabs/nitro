@@ -54,7 +54,6 @@ func TestEvents(t *testing.T) {
 	output, gasLeft, err := contract.Call(
 		data,
 		debugContractAddr,
-		debugContractAddr,
 		caller,
 		number,
 		false,

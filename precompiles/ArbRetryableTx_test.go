@@ -72,7 +72,6 @@ func TestRetryableRedeem(t *testing.T) {
 	_, gasLeft, err := Precompiles()[retryAddress].Call(
 		redeemCalldata,
 		retryAddress,
-		retryAddress,
 		common.Address{},
 		big.NewInt(0),
 		false,

@@ -26,7 +26,6 @@ import (
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/programs"
-	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
@@ -38,7 +37,6 @@ type ArbosPrecompile interface {
 	// In that case, unless this precompile is pure, it should probably revert.
 	Call(
 		input []byte,
-		precompileAddress common.Address,
 		actingAsAddress common.Address,
 		caller common.Address,
 		value *big.Int,
@@ -49,6 +47,7 @@ type ArbosPrecompile interface {
 
 	Precompile() *Precompile
 	Name() string
+	Address() common.Address
 }
 
 type purity uint8
@@ -682,10 +681,13 @@ func (p *Precompile) ArbosVersion() uint64 {
 	return p.arbosVersion
 }
 
+func (p *Precompile) Address() common.Address {
+	return p.address
+}
+
 // Call a precompile in typed form, deserializing its inputs and serializing its outputs
 func (p *Precompile) Call(
 	input []byte,
-	precompileAddress common.Address,
 	actingAsAddress common.Address,
 	caller common.Address,
 	value *big.Int,
@@ -711,7 +713,7 @@ func (p *Precompile) Call(
 		return nil, 0, vm.ErrExecutionReverted
 	}
 
-	if method.purity >= view && actingAsAddress != precompileAddress {
+	if method.purity >= view && actingAsAddress != p.address {
 		// should not access precompile superpowers when not acting as the precompile
 		return nil, 0, vm.ErrExecutionReverted
 	}
@@ -726,12 +728,9 @@ func (p *Precompile) Call(
 		return nil, 0, vm.ErrExecutionReverted
 	}
 
-	callerCtx := &Context{
-		caller:      caller,
-		gasSupplied: gasSupplied,
-		gasLeft:     gasSupplied,
-		readOnly:    method.purity <= view,
-		tracingInfo: util.NewTracingInfo(evm, caller, precompileAddress, util.TracingDuringEVM),
+	callerCtx, err := makeContext(p, method, caller, gasSupplied, evm)
+	if err != nil {
+		return nil, 0, err
 	}
 
 	// len(input) must be at least 4 because of the check near the start of this function
@@ -739,26 +738,6 @@ func (p *Precompile) Call(
 	argsCost := params.CopyGas * arbmath.WordsForBytes(uint64(len(input)-4))
 	if err := callerCtx.Burn(argsCost); err != nil {
 		// user cannot afford the argument data supplied
-		return nil, 0, vm.ErrExecutionReverted
-	}
-
-	if method.purity != pure {
-		// impure methods may need the ArbOS state, so open & update the call context now
-		state, err := arbosState.OpenArbosState(evm.StateDB, callerCtx)
-		if err != nil {
-			return nil, 0, err
-		}
-		callerCtx.State = state
-	}
-
-	switch txProcessor := evm.ProcessingHook.(type) {
-	case *arbos.TxProcessor:
-		callerCtx.txProcessor = txProcessor
-	case *vm.DefaultTxProcessor:
-		log.Error("processing hook not set")
-		return nil, 0, vm.ErrExecutionReverted
-	default:
-		log.Error("unknown processing hook")
 		return nil, 0, vm.ErrExecutionReverted
 	}
 
@@ -815,7 +794,7 @@ func (p *Precompile) Call(
 		if !errors.Is(errRet, vm.ErrOutOfGas) {
 			log.Debug(
 				"precompile reverted with non-solidity error",
-				"precompile", precompileAddress, "input", input, "err", errRet,
+				"precompile", p.address, "input", input, "err", errRet,
 			)
 		}
 		// nolint:errorlint
