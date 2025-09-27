@@ -55,7 +55,7 @@ func NewProducer[T any](opts ...ProducerOpt[T]) *Producer[T] {
 	return producer
 }
 
-// Start begins listening for subscription cancelation requests or context cancelation.
+// Start begins listening for subscription cancellation requests or context cancellation.
 func (ep *Producer[T]) Start(ctx context.Context) {
 	for {
 		select {
