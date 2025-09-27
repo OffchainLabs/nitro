@@ -50,7 +50,7 @@ type Options struct {
 	arbitrator      bool
 	useRedisStreams bool
 	wasmRootDir     string
-	arbosVersion    uint64 // sets InitialArbOSVersion, overwrites any other operation setting it like upgradeArbOs worload
+	arbosVersion    uint64 // sets InitialArbOSVersion, overwrites any other operation setting it like upgradeArbOs workload
 }
 
 func testBlockValidatorSimple(t *testing.T, opts Options) {
