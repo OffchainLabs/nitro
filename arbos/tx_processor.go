@@ -438,7 +438,7 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64, intrinsicGas uint64)
 	// that cost looks like, ensuring the user can pay and saving the result for later reference.
 
 	var gasNeededToStartEVM uint64
-	tipReceipient, _ := p.state.NetworkFeeAccount()
+	tipRecipient, _ := p.state.NetworkFeeAccount()
 	var basefee *big.Int
 	if p.evm.Context.BaseFeeInBlock != nil {
 		basefee = p.evm.Context.BaseFeeInBlock
@@ -475,7 +475,7 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64, intrinsicGas uint64)
 
 	if *gasRemaining < gasNeededToStartEVM {
 		// the user couldn't pay for call data, so give up
-		return tipReceipient, multigas.ZeroGas(), core.ErrIntrinsicGas
+		return tipRecipient, multigas.ZeroGas(), core.ErrIntrinsicGas
 	}
 	*gasRemaining -= gasNeededToStartEVM
 	multiGas := multigas.L1CalldataGas(gasNeededToStartEVM)
@@ -487,13 +487,13 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64, intrinsicGas uint64)
 			// Before ArbOS 50, cap transaction gas to the block gas limit.
 			max, err = p.state.L2PricingState().PerBlockGasLimit()
 			if err != nil {
-				return tipReceipient, multigas.ZeroGas(), err
+				return tipRecipient, multigas.ZeroGas(), err
 			}
 		} else {
 			// ArbOS 50 implements a EIP-7825-like per-transaction limit.
 			max, err = p.state.L2PricingState().PerTxGasLimit()
 			if err != nil {
-				return tipReceipient, multigas.ZeroGas(), err
+				return tipRecipient, multigas.ZeroGas(), err
 			}
 			// Reduce the max by intrinsicGas because it was already charged
 			max = arbmath.SaturatingUSub(max, intrinsicGas)
