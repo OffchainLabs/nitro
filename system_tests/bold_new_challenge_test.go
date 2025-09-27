@@ -79,7 +79,7 @@ func (s *incorrectBlockStateProvider) L2MessageStatesUpTo(
 	// Double check that virtual blocks aren't being enumerated by the honest impl
 	for i := len(states) - 1; i >= 1; i-- {
 		if states[i] == states[i-1] {
-			panic("Virtual block found repeated in honest impl (test case currently doesn't accomodate this)")
+			panic("Virtual block found repeated in honest impl (test case currently doesn't accommodate this)")
 		} else {
 			break
 		}
@@ -116,7 +116,7 @@ func (s *incorrectBlockStateProvider) CollectMachineHashes(
 			honestHashes = append(honestHashes, s.evilMachineHash)
 		}
 	} else if uint64(cfg.BlockChallengeHeight) >= s.wrongAtBlockHeight {
-		panic(fmt.Sprintf("challenge occured at block height %v at or after wrongAtBlockHeight %v", cfg.BlockChallengeHeight, s.wrongAtBlockHeight))
+		panic(fmt.Sprintf("challenge occurred at block height %v at or after wrongAtBlockHeight %v", cfg.BlockChallengeHeight, s.wrongAtBlockHeight))
 	}
 	return honestHashes, nil
 }
