@@ -216,7 +216,7 @@ func TestDelete(t *testing.T) {
 		{
 			name:               "EmptyBacklog",
 			backlogIndexes:     []arbutil.MessageIndex{},
-			confirmed:          0, // no segements in backlog so nothing to delete
+			confirmed:          0, // no segments in backlog so nothing to delete
 			expectedCount:      0,
 			expectedStart:      0,
 			expectedEnd:        0,
