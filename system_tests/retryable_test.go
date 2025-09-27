@@ -1143,7 +1143,7 @@ func TestDepositETH(t *testing.T) {
 
 	l1tx, err := delayedInbox.DepositEth439370b1(&txOpts)
 	if err != nil {
-		t.Fatalf("DepositEth0() unexected error: %v", err)
+		t.Fatalf("DepositEth0() unexpected error: %v", err)
 	}
 
 	l1Receipt, err := builder.L1.EnsureTxSucceeded(l1tx)
