@@ -445,7 +445,7 @@ func (m *Manager) maybePostRivalAssertionAndChallenge(
 // Attempt to post a rival assertion based on the last agreed with ancestor
 // of a given assertion.
 //
-// If this parent assertion already has a rival we agree with that arleady exists
+// If this parent assertion already has a rival we agree with that already exists
 // then this function will return that assertion.
 func (m *Manager) maybePostRivalAssertion(
 	ctx context.Context,
