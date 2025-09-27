@@ -1063,17 +1063,19 @@ func (s *TransactionStreamer) WriteMessageFromSequencer(
 		if s.insertionMutex.TryLock() {
 			return true
 		}
-		lockTick := time.Tick(5 * time.Millisecond)
-		lockTimeout := time.After(50 * time.Millisecond)
+		lockTicker := time.NewTicker(5 * time.Millisecond)
+		defer lockTicker.Stop()
+		lockTimeout := time.NewTimer(50 * time.Millisecond)
+		defer lockTimeout.Stop()
 		for {
 			select {
-			case <-lockTimeout:
+			case <-lockTimeout.C:
 				return false
 			default:
 				select {
-				case <-lockTimeout:
+				case <-lockTimeout.C:
 					return false
-				case <-lockTick:
+				case <-lockTicker.C:
 					if s.insertionMutex.TryLock() {
 						return true
 					}
