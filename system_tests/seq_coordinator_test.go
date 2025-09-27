@@ -110,7 +110,7 @@ func TestRedisSeqCoordinatorPriorities(t *testing.T) {
 			}
 			if trySequencing(nodeNum) {
 				if succeeded >= 0 {
-					t.Fatal("sequnced succeeded in parallel",
+					t.Fatal("sequenced succeeded in parallel",
 						"index1:", succeeded, "debug", testNodes[succeeded].ConsensusNode.SeqCoordinator.DebugPrint(),
 						"index2:", nodeNum, "debug", node.SeqCoordinator.DebugPrint(),
 						"now", time.Now().UnixMilli())
