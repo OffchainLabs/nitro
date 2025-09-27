@@ -201,7 +201,7 @@ func testCompileLoadFor(filePath string) error {
 		id:                  0,
 	}
 
-	inifiniteGas := u64(0xfffffffffffffff)
+	infiniteGas := u64(0xfffffffffffffff)
 
 	output := &rustBytes{}
 
@@ -218,7 +218,7 @@ func testCompileLoadFor(filePath string) error {
 		evmData.encode(),
 		cbool(true),
 		output,
-		&inifiniteGas,
+		&infiniteGas,
 		u32(0),
 	))
 
