@@ -138,7 +138,7 @@ func (cc *challengeConfirmer) beginConfirmationJob(
 	// wait for them to reach safe head.
 	var lastPropagationTx *types.Transaction
 	for i, branch := range royalBranches {
-		tx, innerErr := cc.propageTimerUpdateToBranch(
+		tx, innerErr := cc.propagateTimerUpdateToBranch(
 			ctx,
 			royalRootEdge,
 			computedTimer,
@@ -211,7 +211,7 @@ func (cc *challengeConfirmer) beginConfirmationJob(
 	return nil
 }
 
-func (cc *challengeConfirmer) propageTimerUpdateToBranch(
+func (cc *challengeConfirmer) propagateTimerUpdateToBranch(
 	ctx context.Context,
 	royalRootEdge protocol.VerifiedRoyalEdge,
 	computedLocalTimer uint64,
