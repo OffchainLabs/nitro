@@ -1363,8 +1363,8 @@ func StaticFetcherFrom[T any](t *testing.T, config *T) func() *T {
 	t.Helper()
 	tCopy := *config
 	asEmptyIf := interface{}(&tCopy)
-	if asValidtedIf, ok := asEmptyIf.(validated); ok {
-		err := asValidtedIf.Validate()
+	if asValidatedIf, ok := asEmptyIf.(validated); ok {
+		err := asValidatedIf.Validate()
 		if err != nil {
 			Fatal(t, err)
 		}
