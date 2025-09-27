@@ -893,7 +893,7 @@ func (s *ExecutionEngine) cacheL1PriceDataOfMsg(msgIdx arbutil.MessageIndex, blo
 	var callDataUnits uint64
 	if !blockBuiltUsingDelayedMessage {
 		// s.cachedL1PriceData tracks L1 price data for messages posted by Nitro,
-		// so delayed messages should not update cummulative values kept on it.
+		// so delayed messages should not update cumulative values kept on it.
 
 		for _, tx := range block.Transactions() {
 			_, cachedUnits := tx.GetRawCachedCalldataUnits()
