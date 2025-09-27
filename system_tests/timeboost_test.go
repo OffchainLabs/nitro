@@ -612,7 +612,7 @@ func TestTimeboostExpressLaneTransactionHandling(t *testing.T) {
 	failTxDueToTimeout := seqInfo.PrepareTx("Alice", "Owner", seqInfo.TransferGas, big.NewInt(1), nil)
 
 	currSeqNumber := uint64(3)
-	wg.Add(2) // We send a failing and a passing tx with cummulative future seq numbers, followed by a unblocking seq num tx
+	wg.Add(2) // We send a failing and a passing tx with cumulative future seq numbers, followed by a unblocking seq num tx
 	var failErr error
 	go func(w *sync.WaitGroup) {
 		failErr = expressLaneClient.SendTransactionWithSequence(ctx, failTx, currSeqNumber+1) // Should give out nonce too high error
