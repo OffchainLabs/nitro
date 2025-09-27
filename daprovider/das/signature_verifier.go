@@ -35,7 +35,7 @@ func NewSignatureVerifierWithSeqInboxCaller(
 		addrVerifier = contracts.NewAddressVerifier(seqInboxCaller)
 	}
 
-	var extraBpVerifier func(message []byte, sig []byte, extraFeilds ...uint64) bool
+	var extraBpVerifier func(message []byte, sig []byte, extraFields ...uint64) bool
 	if extraSignatureCheckingPublicKey != "" {
 		var pubkey []byte
 		var err error
