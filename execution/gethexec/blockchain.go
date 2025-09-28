@@ -152,11 +152,11 @@ func WriteOrTestGenblock(chainDb ethdb.Database, cacheConfig *core.BlockChainCon
 	if blockNumber > 0 {
 		prevHash = rawdb.ReadCanonicalHash(chainDb, blockNumber-1)
 		if prevHash == EmptyHash {
-			return fmt.Errorf("block number %d not found in database", chainDb)
+			return fmt.Errorf("block number %d not found in database", blockNumber-1)
 		}
 		prevHeader := rawdb.ReadHeader(chainDb, prevHash, blockNumber-1)
 		if prevHeader == nil {
-			return fmt.Errorf("block header for block %d not found in database", chainDb)
+			return fmt.Errorf("block header for block %d not found in database", blockNumber-1)
 		}
 		timestamp = prevHeader.Time
 	}
