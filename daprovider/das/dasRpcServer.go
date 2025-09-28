@@ -79,7 +79,7 @@ func StartDASRPCServerOnListener(ctx context.Context, listener net.Listener, rpc
 		daHealthChecker:   daHealthChecker,
 		signatureVerifier: signatureVerifier,
 		dataStreamReceiver: data_streaming.NewDataStreamReceiver(dataStreamPayloadVerifier, defaultMaxPendingMessages, defaultMessageCollectionExpiry, func(id data_streaming.MessageId) {
-			rpcStoreFailureGauge.Inc(1)
+			rpcStoreFailureCounter.Inc(1)
 		}),
 	})
 	if err != nil {
