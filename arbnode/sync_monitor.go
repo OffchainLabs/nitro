@@ -3,6 +3,7 @@ package arbnode
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/spf13/pflag"
@@ -17,9 +18,12 @@ type SyncMonitor struct {
 	stopwaiter.StopWaiter
 	config      func() *SyncMonitorConfig
 	inboxReader *InboxReader
-	txStreamer  *TransactionStreamer
 	coordinator *SeqCoordinator
 	initialized bool
+
+	// Updates to these are pushed from the TransactionStreamer using UpdateMessageCount
+	currentMessageCount     atomic.Uint64
+	feedPendingMessageCount atomic.Uint64
 
 	syncTargetLock sync.Mutex
 	nextSyncTarget arbutil.MessageIndex
@@ -48,11 +52,16 @@ func SyncMonitorConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Duration(prefix+".msg-lag", DefaultSyncMonitorConfig.MsgLag, "allowed msg lag while still considered in sync")
 }
 
-func (s *SyncMonitor) Initialize(inboxReader *InboxReader, txStreamer *TransactionStreamer, coordinator *SeqCoordinator) {
+func (s *SyncMonitor) Initialize(inboxReader *InboxReader, coordinator *SeqCoordinator) {
 	s.inboxReader = inboxReader
-	s.txStreamer = txStreamer
 	s.coordinator = coordinator
 	s.initialized = true
+}
+
+// UpdateMessageCount updates the internal message count tracking
+func (s *SyncMonitor) UpdateMessageCount(committed, feedPending arbutil.MessageIndex) {
+	s.currentMessageCount.Store(uint64(committed))
+	s.feedPendingMessageCount.Store(uint64(feedPending))
 }
 
 func (s *SyncMonitor) updateSyncTarget(ctx context.Context) time.Duration {
@@ -85,14 +94,10 @@ func (s *SyncMonitor) GetFinalizedMsgCount(ctx context.Context) (arbutil.Message
 }
 
 func (s *SyncMonitor) maxMessageCount() (arbutil.MessageIndex, error) {
-	msgCount, err := s.txStreamer.GetMessageCount()
-	if err != nil {
-		return 0, err
-	}
-
-	pending := s.txStreamer.FeedPendingMessageCount()
-	if pending > msgCount {
-		msgCount = pending
+	msgCount := arbutil.MessageIndex(s.currentMessageCount.Load())
+	feedPending := arbutil.MessageIndex(s.feedPendingMessageCount.Load())
+	if feedPending > msgCount {
+		msgCount = feedPending
 	}
 
 	if s.inboxReader != nil {
@@ -138,14 +143,10 @@ func (s *SyncMonitor) FullSyncProgressMap() map[string]interface{} {
 	syncTarget := s.SyncTargetMessageCount()
 	res["syncTargetMsgCount"] = syncTarget
 
-	msgCount, err := s.txStreamer.GetMessageCount()
-	if err != nil {
-		res["msgCountError"] = err.Error()
-		return res
-	}
+	msgCount := arbutil.MessageIndex(s.currentMessageCount.Load())
 	res["msgCount"] = msgCount
 
-	res["feedPendingMessageCount"] = s.txStreamer.FeedPendingMessageCount()
+	res["feedPendingMessageCount"] = arbutil.MessageIndex(s.feedPendingMessageCount.Load())
 
 	if s.inboxReader != nil {
 		batchSeen := s.inboxReader.GetLastSeenBatchCount()
@@ -213,10 +214,7 @@ func (s *SyncMonitor) Synced() bool {
 		return false
 	}
 
-	msgCount, err := s.txStreamer.GetMessageCount()
-	if err != nil {
-		return false
-	}
+	msgCount := arbutil.MessageIndex(s.currentMessageCount.Load())
 
 	if syncTarget > msgCount {
 		return false
