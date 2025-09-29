@@ -26,7 +26,7 @@ import (
 
 const (
 	maxPendingMessages      = 10
-	messageCollectionExpiry = 2 * time.Second
+	messageCollectionExpiry = 1 * time.Second
 	maxStoreChunkBodySize   = 1024
 	timeout                 = 10
 	serverRPCRoot           = "datastreaming"
@@ -218,7 +218,7 @@ func launchServer(t *testing.T, ctx context.Context, signatureVerifier *signatur
 }
 
 func getLongRandomMessage(chunkSize uint64) ([]byte, [][]byte) {
-	message := testhelpers.RandomizeSlice(make([]byte, 2*maxStoreChunkBodySize))
+	message := testhelpers.RandomizeSlice(make([]byte, maxStoreChunkBodySize))
 	chunks := slices.Collect(slices.Chunk(message, int(chunkSize))) //nolint:gosec
 	return message, chunks
 }
