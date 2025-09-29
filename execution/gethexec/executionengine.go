@@ -30,6 +30,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/ethereum/go-ethereum/arbitrum/multigas"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
@@ -53,14 +54,21 @@ import (
 )
 
 var (
-	l1GasPriceEstimateGauge    = metrics.NewRegisteredGauge("arb/l1gasprice/estimate", nil)
-	baseFeeGauge               = metrics.NewRegisteredGauge("arb/block/basefee", nil)
-	blockGasUsedHistogram      = metrics.NewRegisteredHistogram("arb/block/gasused", nil, metrics.NewBoundedHistogramSample())
-	txCountHistogram           = metrics.NewRegisteredHistogram("arb/block/transactions/count", nil, metrics.NewBoundedHistogramSample())
-	txGasUsedHistogram         = metrics.NewRegisteredHistogram("arb/block/transactions/gasused", nil, metrics.NewBoundedHistogramSample())
-	gasUsedSinceStartupCounter = metrics.NewRegisteredCounter("arb/gas_used", nil)
-	blockExecutionTimer        = metrics.NewRegisteredHistogram("arb/block/execution", nil, metrics.NewBoundedHistogramSample())
-	blockWriteToDbTimer        = metrics.NewRegisteredHistogram("arb/block/writetodb", nil, metrics.NewBoundedHistogramSample())
+	l1GasPriceEstimateGauge                = metrics.NewRegisteredGauge("arb/l1gasprice/estimate", nil)
+	baseFeeGauge                           = metrics.NewRegisteredGauge("arb/block/basefee", nil)
+	blockGasUsedHistogram                  = metrics.NewRegisteredHistogram("arb/block/gasused", nil, metrics.NewBoundedHistogramSample())
+	txCountHistogram                       = metrics.NewRegisteredHistogram("arb/block/transactions/count", nil, metrics.NewBoundedHistogramSample())
+	txGasUsedHistogram                     = metrics.NewRegisteredHistogram("arb/block/transactions/gasused", nil, metrics.NewBoundedHistogramSample())
+	txMultiGasUsedComputationHistogram     = metrics.NewRegisteredHistogram("arb/block/transactions/multigasused/computation", nil, metrics.NewBoundedHistogramSample())
+	txMultiGasUsedHistoryGrowthHistogram   = metrics.NewRegisteredHistogram("arb/block/transactions/multigasused/historygrowth", nil, metrics.NewBoundedHistogramSample())
+	txMultiGasUsedStorageAccessHistogram   = metrics.NewRegisteredHistogram("arb/block/transactions/multigasused/storageaccess", nil, metrics.NewBoundedHistogramSample())
+	txMultiGasUsedStorageGrowthHistogram   = metrics.NewRegisteredHistogram("arb/block/transactions/multigasused/storagegrowth", nil, metrics.NewBoundedHistogramSample())
+	txMultiGasUsedL1CalldataHistogram      = metrics.NewRegisteredHistogram("arb/block/transactions/multigasused/l1calldata", nil, metrics.NewBoundedHistogramSample())
+	txMultiGasUsedL2CalldataHistogram      = metrics.NewRegisteredHistogram("arb/block/transactions/multigasused/l2calldata", nil, metrics.NewBoundedHistogramSample())
+	txMultiGasUsedWasmComputationHistogram = metrics.NewRegisteredHistogram("arb/block/transactions/multigasused/wasmcomputation", nil, metrics.NewBoundedHistogramSample())
+	gasUsedSinceStartupCounter             = metrics.NewRegisteredCounter("arb/gas_used", nil)
+	blockExecutionTimer                    = metrics.NewRegisteredHistogram("arb/block/execution", nil, metrics.NewBoundedHistogramSample())
+	blockWriteToDbTimer                    = metrics.NewRegisteredHistogram("arb/block/writetodb", nil, metrics.NewBoundedHistogramSample())
 )
 
 var ExecutionEngineBlockCreationStopped = errors.New("block creation stopped in execution engine")
@@ -825,9 +833,20 @@ func (s *ExecutionEngine) appendBlock(block *types.Block, statedb *state.StateDB
 	txCountHistogram.Update(int64(len(block.Transactions()) - 1))
 	var blockGasused uint64
 	for i := 1; i < len(receipts); i++ {
-		val := arbmath.SaturatingUSub(receipts[i].GasUsed, receipts[i].GasUsedForL1)
+		receipt := receipts[i]
+		val := arbmath.SaturatingUSub(receipt.GasUsed, receipt.GasUsedForL1)
 		txGasUsedHistogram.Update(int64(val))
 		blockGasused += val
+
+		if s.exposeMultiGas {
+			txMultiGasUsedComputationHistogram.Update(int64(receipt.MultiGasUsed.Get(multigas.ResourceKindComputation)))
+			txMultiGasUsedHistoryGrowthHistogram.Update(int64(receipt.MultiGasUsed.Get(multigas.ResourceKindHistoryGrowth)))
+			txMultiGasUsedStorageAccessHistogram.Update(int64(receipt.MultiGasUsed.Get(multigas.ResourceKindStorageAccess)))
+			txMultiGasUsedStorageGrowthHistogram.Update(int64(receipt.MultiGasUsed.Get(multigas.ResourceKindStorageGrowth)))
+			txMultiGasUsedL1CalldataHistogram.Update(int64(receipt.MultiGasUsed.Get(multigas.ResourceKindL1Calldata)))
+			txMultiGasUsedL2CalldataHistogram.Update(int64(receipt.MultiGasUsed.Get(multigas.ResourceKindL2Calldata)))
+			txMultiGasUsedWasmComputationHistogram.Update(int64(receipt.MultiGasUsed.Get(multigas.ResourceKindWasmComputation)))
+		}
 	}
 	blockGasUsedHistogram.Update(int64(blockGasused))
 	gasUsedSinceStartupCounter.Inc(int64(blockGasused))
