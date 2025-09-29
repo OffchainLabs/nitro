@@ -134,7 +134,7 @@ func testChallengeProtocolBOLDVirtualBlocks(t *testing.T, wrongAtFirstVirtual bo
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithBoldDeployment()
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
 
 	// Block validation requires db hash scheme
 	builder.RequireScheme(t, rawdb.HashScheme)

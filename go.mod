@@ -1,6 +1,6 @@
 module github.com/offchainlabs/nitro
 
-go 1.24.5
+go 1.25
 
 replace github.com/ethereum/go-ethereum => ./go-ethereum
 
@@ -20,7 +20,6 @@ require (
 	github.com/ccoveille/go-safecast v1.1.0
 	github.com/cockroachdb/pebble v1.1.5
 	github.com/codeclysm/extract/v3 v3.0.2
-	github.com/dgraph-io/badger/v4 v4.2.0
 	github.com/enescakir/emoji v1.0.0
 	github.com/ethereum/go-ethereum v1.16.2
 	github.com/fatih/structtag v1.2.0
@@ -54,7 +53,6 @@ require (
 	golang.org/x/term v0.30.0
 	golang.org/x/tools v0.29.0
 	google.golang.org/api v0.187.0
-	google.golang.org/protobuf v1.34.2
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1
 )
 
@@ -74,7 +72,6 @@ require (
 	github.com/ferranbt/fastssz v0.1.4 // indirect
 	github.com/go-logr/logr v1.4.1 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
-	github.com/golang/glog v1.2.4 // indirect
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/google/go-querystring v1.1.0 // indirect
@@ -101,6 +98,7 @@ require (
 	google.golang.org/genproto/googleapis/api v0.0.0-20240617180043-68d350f18fd4 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20240624140628-dc46fd24d27d // indirect
 	google.golang.org/grpc v1.64.1 // indirect
+	google.golang.org/protobuf v1.34.2 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
@@ -137,11 +135,9 @@ require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/deckarep/golang-set/v2 v2.6.0 // indirect
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.2.0 // indirect
-	github.com/dgraph-io/ristretto v0.1.1 // indirect
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
 	github.com/dlclark/regexp2 v1.7.0 // indirect
 	github.com/dop251/goja v0.0.0-20230806174421-c933cf95e127 // indirect
-	github.com/dustin/go-humanize v1.0.0 // indirect
 	github.com/fsnotify/fsnotify v1.6.0 // indirect
 	github.com/gammazero/deque v1.1.0 // indirect
 	github.com/gdamore/encoding v1.0.0 // indirect
@@ -152,7 +148,6 @@ require (
 	github.com/gofrs/flock v0.12.1 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang/snappy v1.0.0 // indirect
-	github.com/google/flatbuffers v1.12.1 // indirect
 	github.com/google/go-github/v62 v62.0.0
 	github.com/google/pprof v0.0.0-20231023181126-ff6d637d2a7b // indirect
 	github.com/gorilla/mux v1.8.0
