@@ -13,10 +13,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/rpc"
-	"github.com/stretchr/testify/require"
 
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/util/signature"
@@ -51,8 +52,7 @@ func TestDataStreaming_PositiveScenario(t *testing.T) {
 
 func TestDataStreaming_ServerIdempotency(t *testing.T) {
 	ctx, streamer := prepareTestEnv(t)
-	message := testhelpers.RandomizeSlice(make([]byte, 2*maxStoreChunkBodySize))
-	chunks := slices.Collect(slices.Chunk(message, int(streamer.chunkSize)))
+	message, chunks := getLongRandomMessage(streamer.chunkSize)
 	redundancy := 3
 
 	// ========== Implementation of streamer.StreamData that sends every chunk multiple times. ==========
@@ -65,7 +65,7 @@ func TestDataStreaming_ServerIdempotency(t *testing.T) {
 	// 2. Send chunks with redundancy
 	for i, chunkData := range chunks {
 		for try := 0; try < redundancy; try++ {
-			err = streamer.sendChunk(ctx, messageId, uint64(i), chunkData)
+			err = streamer.sendChunk(ctx, messageId, uint64(i), chunkData) //nolint:gosec
 			testhelpers.RequireImpl(t, err)
 		}
 	}
@@ -78,8 +78,7 @@ func TestDataStreaming_ServerIdempotency(t *testing.T) {
 
 func TestDataStreaming_ServerHaltsProtocolWhenObservesInconsistency(t *testing.T) {
 	ctx, streamer := prepareTestEnv(t)
-	message := testhelpers.RandomizeSlice(make([]byte, 2*maxStoreChunkBodySize))
-	chunks := slices.Collect(slices.Chunk(message, int(streamer.chunkSize)))
+	message, chunks := getLongRandomMessage(streamer.chunkSize)
 
 	// ========== Implementation of streamer.StreamData that will repeat a chunk with different data. ==========
 
@@ -102,8 +101,7 @@ func TestDataStreaming_ServerHaltsProtocolWhenObservesInconsistency(t *testing.T
 
 func TestDataStreaming_ServerAbortsProtocolAfterExpiry(t *testing.T) {
 	ctx, streamer := prepareTestEnv(t)
-	message := testhelpers.RandomizeSlice(make([]byte, 2*maxStoreChunkBodySize))
-	chunks := slices.Collect(slices.Chunk(message, int(streamer.chunkSize)))
+	message, chunks := getLongRandomMessage(streamer.chunkSize)
 
 	// ========== Implementation of streamer.StreamData that wait too long before sending next message ==========
 
@@ -126,8 +124,7 @@ func TestDataStreaming_ServerAbortsProtocolAfterExpiry(t *testing.T) {
 
 func TestDataStreaming_ProtocolSucceedsEvenWithDelays(t *testing.T) {
 	ctx, streamer := prepareTestEnv(t)
-	message := testhelpers.RandomizeSlice(make([]byte, 2*maxStoreChunkBodySize))
-	chunks := slices.Collect(slices.Chunk(message, int(streamer.chunkSize)))
+	message, chunks := getLongRandomMessage(streamer.chunkSize)
 
 	// ========== Implementation of streamer.StreamData that sends every message just before expiry ==========
 
@@ -139,7 +136,7 @@ func TestDataStreaming_ProtocolSucceedsEvenWithDelays(t *testing.T) {
 	// 2. Send chunks with delay
 	for i, chunkData := range chunks {
 		time.Sleep(messageCollectionExpiry * 9 / 10)
-		err = streamer.sendChunk(ctx, messageId, uint64(i), chunkData)
+		err = streamer.sendChunk(ctx, messageId, uint64(i), chunkData) //nolint:gosec
 		testhelpers.RequireImpl(t, err)
 	}
 
@@ -218,6 +215,12 @@ func launchServer(t *testing.T, ctx context.Context, signatureVerifier *signatur
 	}()
 
 	return listener.Addr().String()
+}
+
+func getLongRandomMessage(chunkSize uint64) ([]byte, [][]byte) {
+	message := testhelpers.RandomizeSlice(make([]byte, 2*maxStoreChunkBodySize))
+	chunks := slices.Collect(slices.Chunk(message, int(chunkSize))) //nolint:gosec
+	return message, chunks
 }
 
 // ======================================= Test server (wrapping the receiver part) ========================== //

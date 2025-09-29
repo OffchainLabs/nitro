@@ -113,9 +113,9 @@ func (ds *DataStreamer[Result]) startStream(ctx context.Context, params streamPa
 
 func (ds *DataStreamer[Result]) doStream(ctx context.Context, data []byte, messageId MessageId, params streamParams) error {
 	chunkRoutines := new(errgroup.Group)
-	for i, chunkData := range slices.Collect(slices.Chunk(data, int(ds.chunkSize))) {
+	for i, chunkData := range slices.Collect(slices.Chunk(data, int(ds.chunkSize))) { //nolint:gosec
 		chunkRoutines.Go(func() error {
-			return ds.sendChunk(ctx, messageId, uint64(i), chunkData)
+			return ds.sendChunk(ctx, messageId, uint64(i), chunkData) //nolint:gosec
 		})
 	}
 	return chunkRoutines.Wait()
