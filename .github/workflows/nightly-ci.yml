@@ -122,5 +122,7 @@ jobs:
           method: chat.postMessage
           token: ${{ secrets.SLACK_BOT_TOKEN }}
           payload: |
-            "channel": "${{ secrets.SLACK_CHANNEL_ID }}",
-            "text": "⚠️ CI job failed! ${RUN_URL}",
+            {
+              "channel": "${{ secrets.SLACK_CHANNEL_ID }}",
+              "text": "⚠️ CI job failed! ${{ env.RUN_URL }}",
+            }
