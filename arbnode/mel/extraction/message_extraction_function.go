@@ -100,7 +100,7 @@ func extractMessagesImpl(
 	if state.ParentChainBlockHash != parentChainHeader.ParentHash {
 		return nil, nil, nil, fmt.Errorf(
 			"parent chain block hash in MEL state does not match incoming block's parent hash: expected %s, got %s",
-			state.ParentChainPreviousBlockHash.Hex(),
+			state.ParentChainBlockHash.Hex(),
 			parentChainHeader.ParentHash.Hex(),
 		)
 	}
