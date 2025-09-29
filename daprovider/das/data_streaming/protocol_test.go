@@ -32,7 +32,7 @@ const (
 )
 
 var rpcMethods = DataStreamingRPCMethods{
-	StartStream:    serverRPCRoot + "_start1",
+	StartStream:    serverRPCRoot + "_start",
 	StreamChunk:    serverRPCRoot + "_chunk",
 	FinalizeStream: serverRPCRoot + "_finish",
 }
