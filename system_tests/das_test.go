@@ -205,13 +205,9 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 	l1Reader.Start(ctx)
 	defer l1Reader.StopAndWait()
 
-	keyDir, fileDataDir, dbDataDir := t.TempDir(), t.TempDir(), t.TempDir()
+	keyDir, fileDataDir := t.TempDir(), t.TempDir()
 	pubkey, _, err := das.GenerateAndStoreKeys(keyDir)
 	Require(t, err)
-
-	dbConfig := das.DefaultLocalDBStorageConfig
-	dbConfig.Enable = true
-	dbConfig.DataDir = dbDataDir
 
 	serverConfig := das.DataAvailabilityConfig{
 		Enable: true,
@@ -222,7 +218,6 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 			Enable:  true,
 			DataDir: fileDataDir,
 		},
-		LocalDBStorage: dbConfig,
 
 		Key: das.KeyConfig{
 			KeyDir: keyDir,

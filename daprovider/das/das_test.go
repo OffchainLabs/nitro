@@ -21,19 +21,13 @@ func testDASStoreRetrieveMultipleInstances(t *testing.T, storageType string) {
 	_, _, err := GenerateAndStoreKeys(dbPath)
 	Require(t, err)
 
-	enableFileStorage, enableDbStorage := false, false
+	enableFileStorage := false
 	switch storageType {
-	case "db":
-		enableDbStorage = true
 	case "files":
 		enableFileStorage = true
 	default:
 		Fail(t, "unknown storage type")
 	}
-
-	dbConfig := DefaultLocalDBStorageConfig
-	dbConfig.Enable = enableDbStorage
-	dbConfig.DataDir = dbPath
 
 	config := DataAvailabilityConfig{
 		Enable: true,
@@ -45,7 +39,6 @@ func testDASStoreRetrieveMultipleInstances(t *testing.T, storageType string) {
 			DataDir:      dbPath,
 			MaxRetention: DefaultLocalFileStorageConfig.MaxRetention,
 		},
-		LocalDBStorage:     dbConfig,
 		ParentChainNodeURL: "none",
 	}
 
@@ -100,10 +93,6 @@ func TestDASStoreRetrieveMultipleInstancesFiles(t *testing.T) {
 	testDASStoreRetrieveMultipleInstances(t, "files")
 }
 
-func TestDASStoreRetrieveMultipleInstancesDB(t *testing.T) {
-	testDASStoreRetrieveMultipleInstances(t, "db")
-}
-
 func testDASMissingMessage(t *testing.T, storageType string) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -112,19 +101,13 @@ func testDASMissingMessage(t *testing.T, storageType string) {
 	_, _, err := GenerateAndStoreKeys(dbPath)
 	Require(t, err)
 
-	enableFileStorage, enableDbStorage := false, false
+	enableFileStorage := false
 	switch storageType {
-	case "db":
-		enableDbStorage = true
 	case "files":
 		enableFileStorage = true
 	default:
 		Fail(t, "unknown storage type")
 	}
-
-	dbConfig := DefaultLocalDBStorageConfig
-	dbConfig.Enable = enableDbStorage
-	dbConfig.DataDir = dbPath
 
 	config := DataAvailabilityConfig{
 		Enable: true,
@@ -136,7 +119,6 @@ func testDASMissingMessage(t *testing.T, storageType string) {
 			DataDir:      dbPath,
 			MaxRetention: DefaultLocalFileStorageConfig.MaxRetention,
 		},
-		LocalDBStorage:     dbConfig,
 		ParentChainNodeURL: "none",
 	}
 
@@ -172,10 +154,6 @@ func testDASMissingMessage(t *testing.T, storageType string) {
 
 func TestDASMissingMessageFiles(t *testing.T) {
 	testDASMissingMessage(t, "files")
-}
-
-func TestDASMissingMessageDB(t *testing.T) {
-	testDASMissingMessage(t, "db")
 }
 
 func Require(t *testing.T, err error, printables ...interface{}) {
