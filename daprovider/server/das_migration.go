@@ -130,13 +130,17 @@ func NewServerForDAS(
 	}
 
 	// Create the generic DA provider server with DAS components
+	// Support both DAS without tree flag (0x80) and with tree flag (0x88)
 	server, err := NewServerWithDAPProvider(
 		ctx,
 		&serverConfig,
 		reader,
 		writer,
 		nil, // DAS doesn't use a validator
-		[]byte{daprovider.DASMessageHeaderFlag},
+		[]byte{
+			daprovider.DASMessageHeaderFlag,
+			daprovider.DASMessageHeaderFlag | daprovider.TreeDASMessageHeaderFlag,
+		},
 	)
 	if err != nil {
 		// Clean up lifecycle manager if server creation fails
