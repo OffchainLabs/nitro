@@ -25,7 +25,7 @@ import (
 
 const (
 	maxPendingMessages      = 10
-	messageCollectionExpiry = time.Duration(2 * time.Second)
+	messageCollectionExpiry = 2 * time.Second
 	maxStoreChunkBodySize   = 1024
 	timeout                 = 10
 	serverRPCRoot           = "datastreaming"
@@ -37,19 +37,19 @@ var rpcMethods = DataStreamingRPCMethods{
 	FinalizeStream: serverRPCRoot + "_finish",
 }
 
-func TestDataStreamingProtocol(t *testing.T) {
+func TestDataStreaming_PositiveScenario(t *testing.T) {
 	t.Run("Single sender, short message", func(t *testing.T) {
-		test(t, maxStoreChunkBodySize/2, 10, 1)
+		testBasic(t, maxStoreChunkBodySize/2, 10, 1)
 	})
 	t.Run("Single sender, long message", func(t *testing.T) {
-		test(t, 2*maxStoreChunkBodySize, 50, 1)
+		testBasic(t, 2*maxStoreChunkBodySize, 50, 1)
 	})
 	t.Run("Many senders, long messages", func(t *testing.T) {
-		test(t, 10*maxStoreChunkBodySize, maxStoreChunkBodySize, maxPendingMessages)
+		testBasic(t, 10*maxStoreChunkBodySize, maxStoreChunkBodySize, maxPendingMessages)
 	})
 }
 
-func test(t *testing.T, messageSizeMean, messageSizeStdDev, concurrency int) {
+func testBasic(t *testing.T, messageSizeMean, messageSizeStdDev, concurrency int) {
 	ctx := context.Background()
 	signer, verifier := prepareCrypto(t)
 	serverUrl := launchServer(t, ctx, verifier)
