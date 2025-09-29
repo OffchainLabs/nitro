@@ -66,6 +66,7 @@ var (
 	txMultiGasUsedL1CalldataHistogram      = metrics.NewRegisteredHistogram("arb/block/transactions/multigasused/l1calldata", nil, metrics.NewBoundedHistogramSample())
 	txMultiGasUsedL2CalldataHistogram      = metrics.NewRegisteredHistogram("arb/block/transactions/multigasused/l2calldata", nil, metrics.NewBoundedHistogramSample())
 	txMultiGasUsedWasmComputationHistogram = metrics.NewRegisteredHistogram("arb/block/transactions/multigasused/wasmcomputation", nil, metrics.NewBoundedHistogramSample())
+	txMultiGasUsedTotalHistogram           = metrics.NewRegisteredHistogram("arb/block/transactions/multigasused/total", nil, metrics.NewBoundedHistogramSample())
 	gasUsedSinceStartupCounter             = metrics.NewRegisteredCounter("arb/gas_used", nil)
 	blockExecutionTimer                    = metrics.NewRegisteredHistogram("arb/block/execution", nil, metrics.NewBoundedHistogramSample())
 	blockWriteToDbTimer                    = metrics.NewRegisteredHistogram("arb/block/writetodb", nil, metrics.NewBoundedHistogramSample())
@@ -846,6 +847,7 @@ func (s *ExecutionEngine) appendBlock(block *types.Block, statedb *state.StateDB
 			txMultiGasUsedL1CalldataHistogram.Update(int64(receipt.MultiGasUsed.Get(multigas.ResourceKindL1Calldata)))
 			txMultiGasUsedL2CalldataHistogram.Update(int64(receipt.MultiGasUsed.Get(multigas.ResourceKindL2Calldata)))
 			txMultiGasUsedWasmComputationHistogram.Update(int64(receipt.MultiGasUsed.Get(multigas.ResourceKindWasmComputation)))
+			txMultiGasUsedTotalHistogram.Update(int64(receipt.MultiGasUsed.SingleGas()))
 		}
 	}
 	blockGasUsedHistogram.Update(int64(blockGasused))
