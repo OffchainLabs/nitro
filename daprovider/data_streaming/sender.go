@@ -16,6 +16,8 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 )
 
+const RequestRetries = 5
+
 // DataStreamer allows sending arbitrarily big payloads with JSON RPC. It follows a simple chunk-based protocol.
 // lint:require-exhaustive-initialization
 type DataStreamer[Result any] struct {
@@ -98,7 +100,7 @@ func (ds *DataStreamer[Result]) startStream(ctx context.Context, params streamPa
 	}
 
 	var result StartStreamingResult
-	err = ds.rpcClient.CallContext(
+	err = ds.call(
 		ctx,
 		&result,
 		ds.rpcMethods.StartStream,
@@ -126,7 +128,7 @@ func (ds *DataStreamer[Result]) sendChunk(ctx context.Context, messageId Message
 	if err != nil {
 		return err
 	}
-	return ds.rpcClient.CallContext(ctx, nil, ds.rpcMethods.StreamChunk, hexutil.Uint64(messageId), hexutil.Uint64(chunkId), hexutil.Bytes(chunkData), hexutil.Bytes(payloadSignature))
+	return ds.call(ctx, nil, ds.rpcMethods.StreamChunk, hexutil.Uint64(messageId), hexutil.Uint64(chunkId), hexutil.Bytes(chunkData), hexutil.Bytes(payloadSignature))
 }
 
 func (ds *DataStreamer[Result]) finalizeStream(ctx context.Context, messageId MessageId) (result *Result, err error) {
@@ -134,7 +136,16 @@ func (ds *DataStreamer[Result]) finalizeStream(ctx context.Context, messageId Me
 	if err != nil {
 		return nil, err
 	}
-	err = ds.rpcClient.CallContext(ctx, &result, ds.rpcMethods.FinalizeStream, hexutil.Uint64(messageId), hexutil.Bytes(payloadSignature))
+	err = ds.call(ctx, &result, ds.rpcMethods.FinalizeStream, hexutil.Uint64(messageId), hexutil.Bytes(payloadSignature))
+	return
+}
+
+func (ds *DataStreamer[Result]) call(ctx context.Context, result interface{}, method string, args ...interface{}) (err error) {
+	for try := 0; try < RequestRetries; try++ {
+		if err = ds.rpcClient.CallContext(ctx, result, method, args...); err == nil {
+			break
+		}
+	}
 	return
 }
 
