@@ -5,6 +5,7 @@ package data_streaming
 
 import (
 	"context"
+	"errors"
 	"math/rand"
 	"net"
 	"net/http"
@@ -51,7 +52,7 @@ func TestDataStreaming_PositiveScenario(t *testing.T) {
 }
 
 func TestDataStreaming_ServerIdempotency(t *testing.T) {
-	ctx, streamer := prepareTestEnv(t)
+	ctx, streamer := prepareTestEnv(t, nil)
 	message, chunks := getLongRandomMessage(streamer.chunkSize)
 	redundancy := 3
 
@@ -77,7 +78,7 @@ func TestDataStreaming_ServerIdempotency(t *testing.T) {
 }
 
 func TestDataStreaming_ServerHaltsProtocolWhenObservesInconsistency(t *testing.T) {
-	ctx, streamer := prepareTestEnv(t)
+	ctx, streamer := prepareTestEnv(t, nil)
 	message, chunks := getLongRandomMessage(streamer.chunkSize)
 
 	// ========== Implementation of streamer.StreamData that will repeat a chunk with different data. ==========
@@ -100,7 +101,7 @@ func TestDataStreaming_ServerHaltsProtocolWhenObservesInconsistency(t *testing.T
 }
 
 func TestDataStreaming_ServerAbortsProtocolAfterExpiry(t *testing.T) {
-	ctx, streamer := prepareTestEnv(t)
+	ctx, streamer := prepareTestEnv(t, nil)
 	message, chunks := getLongRandomMessage(streamer.chunkSize)
 
 	// ========== Implementation of streamer.StreamData that wait too long before sending next message ==========
@@ -123,7 +124,7 @@ func TestDataStreaming_ServerAbortsProtocolAfterExpiry(t *testing.T) {
 }
 
 func TestDataStreaming_ProtocolSucceedsEvenWithDelays(t *testing.T) {
-	ctx, streamer := prepareTestEnv(t)
+	ctx, streamer := prepareTestEnv(t, nil)
 	message, chunks := getLongRandomMessage(streamer.chunkSize)
 
 	// ========== Implementation of streamer.StreamData that sends every message just before expiry ==========
@@ -147,8 +148,25 @@ func TestDataStreaming_ProtocolSucceedsEvenWithDelays(t *testing.T) {
 	require.Equal(t, message, ([]byte)(result.Message), "protocol resulted in an incorrect message")
 }
 
+var alreadyWentOffline = false
+
+func TestDataStreaming_ClientRetriesWhenThereAreConnectionProblems(t *testing.T) {
+	// Server 'goes offline' for a moment just before reading the second chunk
+	ctx, streamer := prepareTestEnv(t, func(i uint64) error {
+		if i == 1 && !alreadyWentOffline {
+			alreadyWentOffline = true
+			return errors.New("service unavailable")
+		}
+		return nil
+	})
+	message, _ := getLongRandomMessage(streamer.chunkSize)
+	result, err := streamer.StreamData(ctx, message, timeout)
+	testhelpers.RequireImpl(t, err)
+	require.Equal(t, message, ([]byte)(result.Message), "protocol resulted in an incorrect message")
+}
+
 func testBasic(t *testing.T, messageSizeMean, messageSizeStdDev, concurrency int) {
-	ctx, streamer := prepareTestEnv(t)
+	ctx, streamer := prepareTestEnv(t, nil)
 
 	var wg sync.WaitGroup
 	for i := 0; i < concurrency; i++ {
@@ -167,10 +185,10 @@ func testBasic(t *testing.T, messageSizeMean, messageSizeStdDev, concurrency int
 	wg.Wait()
 }
 
-func prepareTestEnv(t *testing.T) (context.Context, *DataStreamer[ProtocolResult]) {
+func prepareTestEnv(t *testing.T, onChunkInjection func(uint64) error) (context.Context, *DataStreamer[ProtocolResult]) {
 	ctx := context.Background()
 	signer, verifier := prepareCrypto(t)
-	serverUrl := launchServer(t, ctx, verifier)
+	serverUrl := launchServer(t, ctx, verifier, onChunkInjection)
 
 	streamer, err := NewDataStreamer[ProtocolResult]("http://"+serverUrl, maxStoreChunkBodySize, DefaultPayloadSigner(signer), rpcMethods)
 	testhelpers.RequireImpl(t, err)
@@ -194,10 +212,11 @@ func prepareCrypto(t *testing.T) (signature.DataSignerFunc, *signature.Verifier)
 	return signer, verifier
 }
 
-func launchServer(t *testing.T, ctx context.Context, signatureVerifier *signature.Verifier) string {
+func launchServer(t *testing.T, ctx context.Context, signatureVerifier *signature.Verifier, onChunkInjection func(uint64) error) string {
 	rpcServer := rpc.NewServer()
 	err := rpcServer.RegisterName(serverRPCRoot, &TestServer{
 		dataStreamReceiver: NewDataStreamReceiver(DefaultPayloadVerifier(signatureVerifier), maxPendingMessages, messageCollectionExpiry, nil),
+		onChunkInject:      onChunkInjection,
 	})
 	testhelpers.RequireImpl(t, err)
 
@@ -228,6 +247,7 @@ func getLongRandomMessage(chunkSize uint64) ([]byte, [][]byte) {
 // lint:require-exhaustive-initialization
 type TestServer struct {
 	dataStreamReceiver *DataStreamReceiver
+	onChunkInject      func(uint64) error
 }
 
 func (server *TestServer) Start(ctx context.Context, timestamp, nChunks, chunkSize, totalSize, timeout hexutil.Uint64, sig hexutil.Bytes) (*StartStreamingResult, error) {
@@ -235,6 +255,12 @@ func (server *TestServer) Start(ctx context.Context, timestamp, nChunks, chunkSi
 }
 
 func (server *TestServer) Chunk(ctx context.Context, messageId, chunkId hexutil.Uint64, chunk hexutil.Bytes, sig hexutil.Bytes) error {
+	if server.onChunkInject != nil {
+		maybeInjection := server.onChunkInject(uint64(chunkId))
+		if maybeInjection != nil {
+			return maybeInjection
+		}
+	}
 	return server.dataStreamReceiver.ReceiveChunk(ctx, MessageId(messageId), uint64(chunkId), chunk, sig)
 }
 
