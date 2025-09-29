@@ -94,10 +94,10 @@ func TestDataStreaming_ServerHaltsProtocolWhenObservesInconsistency(t *testing.T
 	testhelpers.RequireImpl(t, err)
 	// 2.2 Send again the first chunk, but with different data
 	err = streamer.sendChunk(ctx, messageId, 0, chunks[1])
-	require.Error(t, err, "received different chunk data than previously; aborting protocol")
+	require.Error(t, err)
 	// 2.3 Ensure that we cannot send next chunk
 	err = streamer.sendChunk(ctx, messageId, 1, chunks[1])
-	require.Error(t, err, "received different chunk data than previously; aborting protocol")
+	require.Error(t, err)
 }
 
 func testBasic(t *testing.T, messageSizeMean, messageSizeStdDev, concurrency int) {
