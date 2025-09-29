@@ -52,6 +52,7 @@ func TestDataStreaming_PositiveScenario(t *testing.T) {
 func TestDataStreaming_ServerIdempotency(t *testing.T) {
 	ctx, streamer := prepareTestEnv(t)
 	message := testhelpers.RandomizeSlice(make([]byte, 2*maxStoreChunkBodySize))
+	chunks := slices.Collect(slices.Chunk(message, int(streamer.chunkSize)))
 	redundancy := 3
 
 	// ========== Implementation of streamer.StreamData that sends every chunk multiple times. ==========
@@ -62,7 +63,7 @@ func TestDataStreaming_ServerIdempotency(t *testing.T) {
 	testhelpers.RequireImpl(t, err)
 
 	// 2. Send chunks with redundancy
-	for i, chunkData := range slices.Collect(slices.Chunk(message, int(streamer.chunkSize))) {
+	for i, chunkData := range chunks {
 		for try := 0; try < redundancy; try++ {
 			err = streamer.sendChunk(ctx, messageId, uint64(i), chunkData)
 			testhelpers.RequireImpl(t, err)
@@ -78,6 +79,7 @@ func TestDataStreaming_ServerIdempotency(t *testing.T) {
 func TestDataStreaming_ServerHaltsProtocolWhenObservesInconsistency(t *testing.T) {
 	ctx, streamer := prepareTestEnv(t)
 	message := testhelpers.RandomizeSlice(make([]byte, 2*maxStoreChunkBodySize))
+	chunks := slices.Collect(slices.Chunk(message, int(streamer.chunkSize)))
 
 	// ========== Implementation of streamer.StreamData that will repeat a chunk with different data. ==========
 
@@ -87,8 +89,6 @@ func TestDataStreaming_ServerHaltsProtocolWhenObservesInconsistency(t *testing.T
 	testhelpers.RequireImpl(t, err)
 
 	// 2. Send chunks in a malicious way
-	chunks := slices.Collect(slices.Chunk(message, int(streamer.chunkSize)))
-
 	// 2.1 Send first chunk
 	err = streamer.sendChunk(ctx, messageId, 0, chunks[0])
 	testhelpers.RequireImpl(t, err)
@@ -96,6 +96,30 @@ func TestDataStreaming_ServerHaltsProtocolWhenObservesInconsistency(t *testing.T
 	err = streamer.sendChunk(ctx, messageId, 0, chunks[1])
 	require.Error(t, err)
 	// 2.3 Ensure that we cannot send next chunk
+	err = streamer.sendChunk(ctx, messageId, 1, chunks[1])
+	require.Error(t, err)
+}
+
+func TestDataStreaming_ServerAbortsProtocolAfterExpiry(t *testing.T) {
+	ctx, streamer := prepareTestEnv(t)
+	message := testhelpers.RandomizeSlice(make([]byte, 2*maxStoreChunkBodySize))
+	chunks := slices.Collect(slices.Chunk(message, int(streamer.chunkSize)))
+
+	// ========== Implementation of streamer.StreamData that wait too long before sending next message ==========
+
+	// 1. Start the protocol as usual
+	params := newStreamParams(uint64(len(message)), streamer.chunkSize, timeout)
+	messageId, err := streamer.startStream(ctx, params)
+	testhelpers.RequireImpl(t, err)
+
+	// 2. Send first chunk
+	err = streamer.sendChunk(ctx, messageId, 0, chunks[0])
+	testhelpers.RequireImpl(t, err)
+
+	// 3. Wait for long enough
+	time.Sleep(messageCollectionExpiry * 2)
+
+	// 4. Ensure that we cannot proceed with the protocol
 	err = streamer.sendChunk(ctx, messageId, 1, chunks[1])
 	require.Error(t, err)
 }
