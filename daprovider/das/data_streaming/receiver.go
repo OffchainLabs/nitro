@@ -176,7 +176,13 @@ func (ms *messageStore) addNewChunk(id MessageId, chunkId uint64, chunk []byte) 
 	// Validate chunk size
 	chunkLen := uint64(len(chunk))
 	if chunkId+1 == uint64(len(message.chunks)) {
-		expectedLen := message.expectedTotalSize % message.expectedChunkSize
+		// For the last chunk, if totalSize is an exact multiple of chunkSize,
+		// the expected size is chunkSize (not zero remainder).
+		rem := message.expectedTotalSize % message.expectedChunkSize
+		expectedLen := message.expectedChunkSize
+		if rem != 0 {
+			expectedLen = rem
+		}
 		if chunkLen != expectedLen {
 			return fmt.Errorf("message(%d): chunk(%d) has incorrect size (%d bytes) - expecting %d bytes", id, chunkId, chunkLen, expectedLen)
 		}
