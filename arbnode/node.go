@@ -600,7 +600,7 @@ func getDAProvider(
 		daClient, err = daclient.NewClient(
 			ctx,
 			func() *rpcclient.ClientConfig { return &config.DA.ExternalProvider.RPC },
-			dapserver.DefaultServerConfig.RPCServerBodyLimit,
+			dapserver.DefaultBodyLimit,
 			data_streaming.NoopPayloadSigner(),
 		)
 		if err != nil {
@@ -723,7 +723,7 @@ func getDAProvider(
 		daClient, err = daclient.NewClient(
 			ctx,
 			func() *rpcclient.ClientConfig { return &clientConfig },
-			serverConfig.RPCServerBodyLimit,
+			dapserver.DefaultBodyLimit,
 			data_streaming.NoopPayloadSigner(),
 		)
 		if err != nil {
