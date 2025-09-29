@@ -181,9 +181,13 @@ func (ms *messageStore) addNewChunk(id MessageId, chunkId uint64, chunk []byte) 
 	}
 
 	if message.chunks[chunkId] != nil {
-		// Server idempotency: ignore duplicated request as long as it doesn't break consistency
 		if bytes.Equal(message.chunks[chunkId], chunk) {
+			// Server idempotency: ignore duplicated request as long as it doesn't break consistency
 			return nil
+		} else {
+			// Inconsistency between chunks at the same index detected. Protocol must be aborted (no way of deciding what data is correct)
+			delete(ms.messages, id)
+			return errors.New("received different chunk data than previously; aborting protocol")
 		}
 	}
 

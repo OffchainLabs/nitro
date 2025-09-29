@@ -75,6 +75,31 @@ func TestDataStreaming_ServerIdempotency(t *testing.T) {
 	require.Equal(t, message, ([]byte)(result.Message), "protocol resulted in an incorrect message")
 }
 
+func TestDataStreaming_ServerHaltsProtocolWhenObservesInconsistency(t *testing.T) {
+	ctx, streamer := prepareTestEnv(t)
+	message := testhelpers.RandomizeSlice(make([]byte, 2*maxStoreChunkBodySize))
+
+	// ========== Implementation of streamer.StreamData that will repeat a chunk with different data. ==========
+
+	// 1. Start the protocol as usual
+	params := newStreamParams(uint64(len(message)), streamer.chunkSize, timeout)
+	messageId, err := streamer.startStream(ctx, params)
+	testhelpers.RequireImpl(t, err)
+
+	// 2. Send chunks in a malicious way
+	chunks := slices.Collect(slices.Chunk(message, int(streamer.chunkSize)))
+
+	// 2.1 Send first chunk
+	err = streamer.sendChunk(ctx, messageId, 0, chunks[0])
+	testhelpers.RequireImpl(t, err)
+	// 2.2 Send again the first chunk, but with different data
+	err = streamer.sendChunk(ctx, messageId, 0, chunks[1])
+	require.Error(t, err, "received different chunk data than previously; aborting protocol")
+	// 2.3 Ensure that we cannot send next chunk
+	err = streamer.sendChunk(ctx, messageId, 1, chunks[1])
+	require.Error(t, err, "received different chunk data than previously; aborting protocol")
+}
+
 func testBasic(t *testing.T, messageSizeMean, messageSizeStdDev, concurrency int) {
 	ctx, streamer := prepareTestEnv(t)
 
