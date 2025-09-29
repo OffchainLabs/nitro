@@ -51,7 +51,7 @@ func TestEvents(t *testing.T) {
 	caller := common.HexToAddress("aaaaaaaabbbbbbbbccccccccdddddddd")
 	number := big.NewInt(0x9364)
 
-	output, gasLeft, err := contract.Call(
+	output, gasLeft, _, err := contract.Call(
 		data,
 		debugContractAddr,
 		debugContractAddr,

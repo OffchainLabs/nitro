@@ -95,7 +95,7 @@ func init() {
 			}()
 			core.ReadyEVMForL2(evm, msg)
 
-			output, gasLeft, err := precompile.Call(
+			output, _, gasUsed, err := precompile.Call(
 				msg.Data, address, address, msg.From, msg.Value, false, msg.GasLimit, evm,
 			)
 			if err != nil {
@@ -105,8 +105,8 @@ func init() {
 				return returnMessage, nil, nil
 			}
 			res := &ExecutionResult{
-				UsedGas:       msg.GasLimit - gasLeft,
-				MaxUsedGas:    msg.GasLimit - gasLeft,
+				UsedGas:       gasUsed.SingleGas(),
+				MaxUsedGas:    gasUsed.SingleGas(),
 				Err:           nil,
 				ReturnData:    output,
 				ScheduledTxes: nil,
