@@ -200,9 +200,6 @@ func UintToHash(val uint64) common.Hash {
 	return common.BigToHash(new(big.Int).SetUint64(val))
 }
 
-func HashPlusInt(x common.Hash, y int64) common.Hash {
-	return common.BigToHash(new(big.Int).Add(x.Big(), big.NewInt(y))) // BUGBUG: BigToHash(x) converts abs(x) to a Hash
-}
 
 func RemapL1Address(l1Addr common.Address) common.Address {
 	sumBytes := new(big.Int).Add(new(big.Int).SetBytes(l1Addr.Bytes()), AddressAliasOffset).Bytes()
