@@ -234,7 +234,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	Require(t, err)
 	err = stakerA.Initialize(ctx)
 	if stakerA.Strategy() != legacystaker.WatchtowerStrategy {
-		err = valWalletA.Initialize(ctx, false)
+		err = valWalletA.Initialize(ctx)
 		Require(t, err)
 	}
 	Require(t, err)
@@ -293,7 +293,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	err = stakerB.Initialize(ctx)
 	Require(t, err)
 	if stakerB.Strategy() != legacystaker.WatchtowerStrategy {
-		err = valWalletB.Initialize(ctx, false)
+		err = valWalletB.Initialize(ctx)
 		Require(t, err)
 	}
 	valWalletC := validatorwallet.NewNoOp(builder.L1.Client)
@@ -317,7 +317,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	)
 	Require(t, err)
 	if stakerC.Strategy() != legacystaker.WatchtowerStrategy {
-		err = valWalletC.Initialize(ctx, false)
+		err = valWalletC.Initialize(ctx)
 		Require(t, err)
 	}
 	err = stakerC.Initialize(ctx)

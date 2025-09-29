@@ -298,7 +298,8 @@ type Staker struct {
 }
 
 type ValidatorWalletInterface interface {
-	Initialize(context.Context, bool) error
+	Initialize(context.Context) error
+	InitializeAndCreateSCW(context.Context) error
 	// Address must be able to be called concurrently with other functions
 	Address() *common.Address
 	// Address must be able to be called concurrently with other functions

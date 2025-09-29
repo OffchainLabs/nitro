@@ -26,7 +26,9 @@ func NewNoOp(l1Client *ethclient.Client) *NoOp {
 	}
 }
 
-func (*NoOp) Initialize(context.Context, bool) error { return nil }
+func (*NoOp) Initialize(context.Context) error { return nil }
+
+func (*NoOp) InitializeAndCreateSCW(context.Context) error { return nil }
 
 func (*NoOp) Address() *common.Address { return nil }
 

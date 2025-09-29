@@ -788,7 +788,12 @@ func getStaker(
 		if err != nil {
 			return nil, nil, common.Address{}, err
 		}
-		if err := wallet.Initialize(ctx, config.Staker.UseSmartContractWallet); err != nil {
+		if config.Staker.UseSmartContractWallet {
+			err = wallet.InitializeAndCreateSCW(ctx)
+		} else {
+			err = wallet.Initialize(ctx)
+		}
+		if err != nil {
 			return nil, nil, common.Address{}, err
 		}
 		if dp != nil {
