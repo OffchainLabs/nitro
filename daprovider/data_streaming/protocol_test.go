@@ -124,6 +124,32 @@ func TestDataStreaming_ServerAbortsProtocolAfterExpiry(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestDataStreaming_ProtocolSucceedsEvenWithDelays(t *testing.T) {
+	ctx, streamer := prepareTestEnv(t)
+	message := testhelpers.RandomizeSlice(make([]byte, 2*maxStoreChunkBodySize))
+	chunks := slices.Collect(slices.Chunk(message, int(streamer.chunkSize)))
+
+	// ========== Implementation of streamer.StreamData that sends every message just before expiry ==========
+
+	// 1. Start the protocol as usual
+	params := newStreamParams(uint64(len(message)), streamer.chunkSize, timeout)
+	messageId, err := streamer.startStream(ctx, params)
+	testhelpers.RequireImpl(t, err)
+
+	// 2. Send chunks with delay
+	for i, chunkData := range chunks {
+		time.Sleep(messageCollectionExpiry * 9 / 10)
+		err = streamer.sendChunk(ctx, messageId, uint64(i), chunkData)
+		testhelpers.RequireImpl(t, err)
+	}
+
+	// 3. Ensure we can still finalize the protocol.
+	time.Sleep(messageCollectionExpiry * 9 / 10)
+	result, err := streamer.finalizeStream(ctx, messageId)
+	testhelpers.RequireImpl(t, err)
+	require.Equal(t, message, ([]byte)(result.Message), "protocol resulted in an incorrect message")
+}
+
 func testBasic(t *testing.T, messageSizeMean, messageSizeStdDev, concurrency int) {
 	ctx, streamer := prepareTestEnv(t)
 
