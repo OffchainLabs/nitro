@@ -122,7 +122,7 @@ jobs:
         if: matrix.test-mode == 'l3challenge'
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh
-          --run TestDataStreamingProtocol --timeout 120m
+          --tags challengetest --run TestL3Challenge --timeout 120m --cover
 
       # --------------------- CHALLENGE MODES ---------------------
 
