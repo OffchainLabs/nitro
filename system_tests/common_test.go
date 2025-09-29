@@ -340,6 +340,7 @@ func (b *NodeBuilder) DefaultConfig(t *testing.T, withL1 bool) *NodeBuilder {
 	// most used values across current tests are set here as default
 	b.withL1 = withL1
 	b.parallelise = true
+	b.deployBold = true
 	if withL1 {
 		b.isSequencer = true
 		b.nodeConfig = arbnode.ConfigDefaultL1Test()
@@ -386,8 +387,8 @@ func (b *NodeBuilder) WithProdConfirmPeriodBlocks() *NodeBuilder {
 	return b
 }
 
-func (b *NodeBuilder) WithBoldDeployment() *NodeBuilder {
-	b.deployBold = true
+func (b *NodeBuilder) WithPreBoldDeployment() *NodeBuilder {
+	b.deployBold = false
 	return b
 }
 
@@ -1874,11 +1875,8 @@ func setupConfigWithDAS(
 	var dbPath string
 	var err error
 
-	enableFileStorage, enableDbStorage, enableDas := false, false, true
+	enableFileStorage, enableDas := false, true
 	switch dasModeString {
-	case "db":
-		enableDbStorage = true
-		chainConfig = chaininfo.ArbitrumDevTestDASChainConfig()
 	case "files":
 		enableFileStorage = true
 		chainConfig = chaininfo.ArbitrumDevTestDASChainConfig()
@@ -1891,10 +1889,6 @@ func setupConfigWithDAS(
 	dasSignerKey, _, err := das.GenerateAndStoreKeys(dbPath)
 	Require(t, err)
 
-	dbConfig := das.DefaultLocalDBStorageConfig
-	dbConfig.Enable = enableDbStorage
-	dbConfig.DataDir = dbPath
-
 	dasConfig := &das.DataAvailabilityConfig{
 		Enable: enableDas,
 		Key: das.KeyConfig{
@@ -1904,7 +1898,6 @@ func setupConfigWithDAS(
 			Enable:  enableFileStorage,
 			DataDir: dbPath,
 		},
-		LocalDBStorage:           dbConfig,
 		RequestTimeout:           5 * time.Second,
 		ParentChainNodeURL:       "none",
 		SequencerInboxAddress:    "none",
