@@ -429,9 +429,21 @@ func ProduceBlockAdvanced(
 
 		if tx.Type() == types.ArbitrumInternalTxType {
 			// ArbOS might have upgraded to a new version, so we need to refresh our state
+			initialBlockGasLimit, err := arbState.L2PricingState().PerBlockGasLimit()
+			if err != nil {
+				return nil, nil, err
+			}
 			arbState, err = arbosState.OpenSystemArbosState(statedb, nil, true)
 			if err != nil {
 				return nil, nil, err
+			}
+			newBlockGasLimit, err := arbState.L2PricingState().PerBlockGasLimit()
+			if err != nil {
+				return nil, nil, err
+			}
+			if newBlockGasLimit > initialBlockGasLimit {
+				increaseInBlockGasLimit := newBlockGasLimit - initialBlockGasLimit
+				blockGasLeft = arbmath.SaturatingUAdd(blockGasLeft, increaseInBlockGasLimit)
 			}
 			// Update the ArbOS version in the header (if it changed)
 			extraInfo := types.DeserializeHeaderExtraInformation(header)
