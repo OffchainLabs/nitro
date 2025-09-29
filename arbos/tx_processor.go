@@ -10,6 +10,7 @@ import (
 
 	"github.com/holiman/uint256"
 
+	"github.com/ethereum/go-ethereum/arbitrum/multigas"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/tracing"
@@ -105,14 +106,14 @@ func takeFunds(pool *big.Int, take *big.Int) *big.Int {
 	return new(big.Int).Set(take)
 }
 
-func (p *TxProcessor) ExecuteWASM(scope *vm.ScopeContext, input []byte, interpreter *vm.EVMInterpreter) ([]byte, error) {
+func (p *TxProcessor) ExecuteWASM(scope *vm.ScopeContext, input []byte, evm *vm.EVM) ([]byte, error) {
 	contract := scope.Contract
 	acting := contract.Address()
 
 	var tracingInfo *util.TracingInfo
-	if interpreter.Config().Tracer != nil {
+	if evm.Config.Tracer != nil {
 		caller := contract.Caller()
-		tracingInfo = util.NewTracingInfo(interpreter.Evm(), caller, acting, util.TracingDuringEVM)
+		tracingInfo = util.NewTracingInfo(evm, caller, acting, util.TracingDuringEVM)
 	}
 
 	// reentrant if more than one open same-actor context span exists
@@ -121,7 +122,7 @@ func (p *TxProcessor) ExecuteWASM(scope *vm.ScopeContext, input []byte, interpre
 	return p.state.Programs().CallProgram(
 		scope,
 		p.evm.StateDB,
-		interpreter,
+		evm,
 		tracingInfo,
 		input,
 		reentrant,
@@ -130,13 +131,13 @@ func (p *TxProcessor) ExecuteWASM(scope *vm.ScopeContext, input []byte, interpre
 }
 
 //nolint:staticcheck
-func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, returnData []byte) {
+func (p *TxProcessor) StartTxHook() (endTxNow bool, multiGasUsed multigas.MultiGas, err error, returnData []byte) {
 	// This hook is called before gas charging and will end the state transition if endTxNow is set to true
 	// Hence, we must charge for any l2 resources if endTxNow is returned true
 
 	underlyingTx := p.msg.Tx
 	if underlyingTx == nil {
-		return false, 0, nil, nil
+		return false, multigas.ZeroGas(), nil, nil
 	}
 
 	var tracingInfo *util.TracingInfo
@@ -175,7 +176,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 		to := p.msg.To
 		value := p.msg.Value
 		if to == nil {
-			return true, 0, errors.New("eth deposit has no To address"), nil
+			return true, multigas.ZeroGas(), errors.New("eth deposit has no To address"), nil
 		}
 		util.MintBalance(&from, value, evm, util.TracingBeforeEVM, tracing.BalanceIncreaseDeposit)
 		defer (startTracer())()
@@ -185,14 +186,14 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 		// Since MintBalance already called AddBalance on `from`,
 		// we don't have EIP-161 concerns around not touching `from`.
 		core.Transfer(evm.StateDB, from, *to, uint256.MustFromBig(value))
-		return true, 0, nil, nil
+		return true, multigas.ZeroGas(), nil, nil
 	case *types.ArbitrumInternalTx:
 		defer (startTracer())()
 		if p.msg.From != arbosAddress {
-			return true, 0, errors.New("internal tx not from arbAddress"), nil
+			return true, multigas.ZeroGas(), errors.New("internal tx not from arbAddress"), nil
 		}
 		err = ApplyInternalTxUpdate(tx, p.state, evm)
-		return true, 0, err, nil
+		return true, multigas.ZeroGas(), err, nil
 	case *types.ArbitrumSubmitRetryableTx:
 		defer (startTracer())()
 		statedb := evm.StateDB
@@ -218,7 +219,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 				"insufficient funds for max submission fee: address %v have %v want %v",
 				tx.From, balanceAfterMint, tx.MaxSubmissionFee,
 			)
-			return true, 0, err, nil
+			return true, multigas.ZeroGas(), err, nil
 		}
 
 		submissionFee := retryables.RetryableSubmissionFee(len(tx.RetryData), tx.L1BaseFee)
@@ -228,7 +229,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 				"max submission fee %v is less than the actual submission fee %v",
 				tx.MaxSubmissionFee, submissionFee,
 			)
-			return true, 0, err, nil
+			return true, multigas.ZeroGas(), err, nil
 		}
 
 		// collect the submission fee
@@ -236,7 +237,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 			// should be impossible as we just checked that they have enough balance for the max submission fee,
 			// and we also checked that the max submission fee is at least the actual submission fee
 			log.Error("failed to transfer submissionFee", "err", err)
-			return true, 0, err, nil
+			return true, multigas.ZeroGas(), err, nil
 		}
 		withheldSubmissionFee := takeFunds(availableRefund, submissionFee)
 
@@ -262,7 +263,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 			if err := transfer(&tx.From, &tx.FeeRefundAddr, withheldSubmissionFee, tracing.BalanceChangeTransferRetryableExcessRefund); err != nil {
 				log.Error("failed to refund withheldSubmissionFee", "err", err)
 			}
-			return true, 0, callValueErr, nil
+			return true, multigas.ZeroGas(), callValueErr, nil
 		}
 
 		time := evm.Context.Time
@@ -301,7 +302,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 				// should never happen as from's balance should be at least availableRefund at this point
 				log.Error("failed to transfer gasCostRefund", "err", err)
 			}
-			return true, 0, nil, ticketId.Bytes()
+			return true, multigas.ZeroGas(), nil, ticketId.Bytes()
 		}
 
 		// pay for the retryable's gas and update the pools
@@ -318,7 +319,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 				infraCost = takeFunds(networkCost, infraCost)
 				if err := transfer(&tx.From, &infraFeeAccount, infraCost, tracing.BalanceIncreaseInfraFee); err != nil {
 					log.Error("failed to transfer gas cost to infrastructure fee account", "err", err)
-					return true, 0, nil, ticketId.Bytes()
+					return true, multigas.ZeroGas(), nil, ticketId.Bytes()
 				}
 			}
 		}
@@ -326,7 +327,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 			if err := transfer(&tx.From, &networkFeeAccount, networkCost, tracing.BalanceIncreaseNetworkFee); err != nil {
 				// should be impossible because we just checked the tx.From balance
 				log.Error("failed to transfer gas cost to network fee account", "err", err)
-				return true, 0, nil, ticketId.Bytes()
+				return true, multigas.ZeroGas(), nil, ticketId.Bytes()
 			}
 		}
 
@@ -382,21 +383,21 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 			}
 		}
 
-		return true, usergas, nil, ticketId.Bytes()
+		return true, multigas.L2CalldataGas(usergas), nil, ticketId.Bytes()
 	case *types.ArbitrumRetryTx:
 		retryable, err := p.state.RetryableState().OpenRetryable(tx.TicketId, p.evm.Context.Time)
 		if err != nil {
-			return true, 0, err, nil
+			return true, multigas.ZeroGas(), err, nil
 		}
 		if retryable == nil {
-			return true, 0, fmt.Errorf("retryable with ticketId: %v not found", tx.TicketId), nil
+			return true, multigas.ZeroGas(), fmt.Errorf("retryable with ticketId: %v not found", tx.TicketId), nil
 		}
 
 		// Transfer callvalue from escrow
 		escrow := retryables.RetryableEscrowAddress(tx.TicketId)
 		scenario := util.TracingBeforeEVM
 		if err := util.TransferBalance(&escrow, &tx.From, tx.Value, evm, scenario, tracing.BalanceChangeEscrowTransfer); err != nil {
-			return true, 0, err, nil
+			return true, multigas.ZeroGas(), err, nil
 		}
 
 		// The redeemer has pre-paid for this tx's gas
@@ -407,7 +408,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 		p.CurrentRetryable = &ticketId
 		p.CurrentRefundTo = &refundTo
 	}
-	return false, 0, nil, nil
+	return false, multigas.ZeroGas(), nil, nil
 }
 
 func GetPosterGas(state *arbosState.ArbosState, baseFee *big.Int, runCtx *core.MessageRunContext, posterCost *big.Int) uint64 {
@@ -431,7 +432,7 @@ func GetPosterGas(state *arbosState.ArbosState, baseFee *big.Int, runCtx *core.M
 	return arbmath.BigToUintSaturating(arbmath.BigDiv(posterCost, baseFee))
 }
 
-func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) (common.Address, error) {
+func (p *TxProcessor) GasChargingHook(gasRemaining *uint64, intrinsicGas uint64) (common.Address, multigas.MultiGas, error) {
 	// Because a user pays a 1-dimensional gas price, we must re-express poster L1 calldata costs
 	// as if the user was buying an equivalent amount of L2 compute gas. This hook determines what
 	// that cost looks like, ensuring the user can pay and saving the result for later reference.
@@ -461,7 +462,7 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) (common.Address, err
 
 		brotliCompressionLevel, err := p.state.BrotliCompressionLevel()
 		if err != nil {
-			return common.Address{}, fmt.Errorf("failed to get brotli compression level: %w", err)
+			return common.Address{}, multigas.ZeroGas(), fmt.Errorf("failed to get brotli compression level: %w", err)
 		}
 		posterCost, calldataUnits := p.state.L1PricingState().PosterDataCost(p.msg, poster, brotliCompressionLevel)
 		if calldataUnits > 0 {
@@ -474,20 +475,36 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) (common.Address, err
 
 	if *gasRemaining < gasNeededToStartEVM {
 		// the user couldn't pay for call data, so give up
-		return tipReceipient, core.ErrIntrinsicGas
+		return tipReceipient, multigas.ZeroGas(), core.ErrIntrinsicGas
 	}
 	*gasRemaining -= gasNeededToStartEVM
+	multiGas := multigas.L1CalldataGas(gasNeededToStartEVM)
 
 	if !p.msg.TxRunContext.IsEthcall() {
-		// If this is a real tx, limit the amount of computed based on the gas pool.
-		// We do this by charging extra gas, and then refunding it later.
-		gasAvailable, _ := p.state.L2PricingState().PerBlockGasLimit()
-		if *gasRemaining > gasAvailable {
-			p.computeHoldGas = *gasRemaining - gasAvailable
-			*gasRemaining = gasAvailable
+		var max uint64
+		var err error
+		if p.state.ArbOSVersion() < params.ArbosVersion_50 {
+			// Before ArbOS 50, cap transaction gas to the block gas limit.
+			max, err = p.state.L2PricingState().PerBlockGasLimit()
+			if err != nil {
+				return tipReceipient, multigas.ZeroGas(), err
+			}
+		} else {
+			// ArbOS 50 implements a EIP-7825-like per-transaction limit.
+			max, err = p.state.L2PricingState().PerTxGasLimit()
+			if err != nil {
+				return tipReceipient, multigas.ZeroGas(), err
+			}
+			// Reduce the max by intrinsicGas because it was already charged
+			max = arbmath.SaturatingUSub(max, intrinsicGas)
+		}
+		if *gasRemaining > max {
+			p.computeHoldGas = *gasRemaining - max
+			*gasRemaining = max
 		}
 	}
-	return tipReceipient, nil
+
+	return tipReceipient, multiGas, nil
 }
 
 func (p *TxProcessor) RunContext() *core.MessageRunContext {

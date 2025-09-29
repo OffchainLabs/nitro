@@ -80,28 +80,28 @@ func OpenArbosState(stateDB vm.StateDB, burner burn.Burner) (*ArbosState, error)
 		return nil, ErrUninitializedArbOS
 	}
 	return &ArbosState{
-		arbosVersion,
-		backingStorage.OpenStorageBackedUint64(uint64(upgradeVersionOffset)),
-		backingStorage.OpenStorageBackedUint64(uint64(upgradeTimestampOffset)),
-		backingStorage.OpenStorageBackedAddress(uint64(networkFeeAccountOffset)),
-		l1pricing.OpenL1PricingState(backingStorage.OpenCachedSubStorage(l1PricingSubspace)),
-		l2pricing.OpenL2PricingState(backingStorage.OpenCachedSubStorage(l2PricingSubspace)),
-		retryables.OpenRetryableState(backingStorage.OpenCachedSubStorage(retryablesSubspace), stateDB),
-		addressTable.Open(backingStorage.OpenCachedSubStorage(addressTableSubspace)),
-		addressSet.OpenAddressSet(backingStorage.OpenCachedSubStorage(chainOwnerSubspace)),
-		addressSet.OpenAddressSet(backingStorage.OpenCachedSubStorage(nativeTokenOwnerSubspace)),
-		merkleAccumulator.OpenMerkleAccumulator(backingStorage.OpenCachedSubStorage(sendMerkleSubspace)),
-		programs.Open(arbosVersion, backingStorage.OpenSubStorage(programsSubspace)),
-		features.Open(backingStorage.OpenSubStorage(featuresSubspace)),
-		blockhash.OpenBlockhashes(backingStorage.OpenCachedSubStorage(blockhashesSubspace)),
-		backingStorage.OpenStorageBackedBigInt(uint64(chainIdOffset)),
-		backingStorage.OpenStorageBackedBytes(chainConfigSubspace),
-		backingStorage.OpenStorageBackedUint64(uint64(genesisBlockNumOffset)),
-		backingStorage.OpenStorageBackedAddress(uint64(infraFeeAccountOffset)),
-		backingStorage.OpenStorageBackedUint64(uint64(brotliCompressionLevelOffset)),
-		backingStorage.OpenStorageBackedUint64(uint64(nativeTokenEnabledFromTimeOffset)),
-		backingStorage,
-		burner,
+		arbosVersion:           arbosVersion,
+		upgradeVersion:         backingStorage.OpenStorageBackedUint64(uint64(upgradeVersionOffset)),
+		upgradeTimestamp:       backingStorage.OpenStorageBackedUint64(uint64(upgradeTimestampOffset)),
+		networkFeeAccount:      backingStorage.OpenStorageBackedAddress(uint64(networkFeeAccountOffset)),
+		l1PricingState:         l1pricing.OpenL1PricingState(backingStorage.OpenCachedSubStorage(l1PricingSubspace), arbosVersion),
+		l2PricingState:         l2pricing.OpenL2PricingState(backingStorage.OpenCachedSubStorage(l2PricingSubspace)),
+		retryableState:         retryables.OpenRetryableState(backingStorage.OpenCachedSubStorage(retryablesSubspace), stateDB),
+		addressTable:           addressTable.Open(backingStorage.OpenCachedSubStorage(addressTableSubspace)),
+		chainOwners:            addressSet.OpenAddressSet(backingStorage.OpenCachedSubStorage(chainOwnerSubspace)),
+		nativeTokenOwners:      addressSet.OpenAddressSet(backingStorage.OpenCachedSubStorage(nativeTokenOwnerSubspace)),
+		sendMerkle:             merkleAccumulator.OpenMerkleAccumulator(backingStorage.OpenCachedSubStorage(sendMerkleSubspace)),
+		programs:               programs.Open(arbosVersion, backingStorage.OpenSubStorage(programsSubspace)),
+		features:               features.Open(backingStorage.OpenSubStorage(featuresSubspace)),
+		blockhashes:            blockhash.OpenBlockhashes(backingStorage.OpenCachedSubStorage(blockhashesSubspace)),
+		chainId:                backingStorage.OpenStorageBackedBigInt(uint64(chainIdOffset)),
+		chainConfig:            backingStorage.OpenStorageBackedBytes(chainConfigSubspace),
+		genesisBlockNum:        backingStorage.OpenStorageBackedUint64(uint64(genesisBlockNumOffset)),
+		infraFeeAccount:        backingStorage.OpenStorageBackedAddress(uint64(infraFeeAccountOffset)),
+		brotliCompressionLevel: backingStorage.OpenStorageBackedUint64(uint64(brotliCompressionLevelOffset)),
+		nativeTokenEnabledTime: backingStorage.OpenStorageBackedUint64(uint64(nativeTokenEnabledFromTimeOffset)),
+		backingStorage:         backingStorage,
+		Burner:                 burner,
 	}, nil
 }
 
@@ -122,6 +122,14 @@ func OpenSystemArbosStateOrPanic(stateDB vm.StateDB, tracingInfo *util.TracingIn
 
 // NewArbosMemoryBackedArbOSState creates and initializes a memory-backed ArbOS state (for testing only)
 func NewArbosMemoryBackedArbOSState() (*ArbosState, *state.StateDB) {
+	return NewArbosMemoryBackedArbOSStateWithConfig(chaininfo.ArbitrumDevTestChainConfig())
+}
+
+// NewArbosMemoryBackedArbOSStateWithConfig creates and initializes a memory-backed ArbOS state with a given config (for testing only)
+func NewArbosMemoryBackedArbOSStateWithConfig(chainConfig *params.ChainConfig) (*ArbosState, *state.StateDB) {
+	if chainConfig.ArbitrumChainParams.InitialArbOSVersion == 0 {
+		chainConfig = chaininfo.ArbitrumDevTestChainConfig()
+	}
 	raw := rawdb.NewMemoryDatabase()
 	trieConfig := &triedb.Config{Preimages: false, PathDB: pathdb.Defaults}
 	if env.GetTestStateScheme() == rawdb.HashScheme {
@@ -133,7 +141,6 @@ func NewArbosMemoryBackedArbOSState() (*ArbosState, *state.StateDB) {
 		panic("failed to init empty statedb: " + err.Error())
 	}
 	burner := burn.NewSystemBurner(nil, false)
-	chainConfig := chaininfo.ArbitrumDevTestChainConfig()
 	// #nosec G115
 	newState, err := InitializeArbosState(statedb, burner, chainConfig, nil, arbostypes.TestInitMessage)
 	if err != nil {
@@ -375,6 +382,15 @@ func (state *ArbosState) UpgradeArbosVersion(
 		case params.ArbosVersion_41:
 			// no change state needed
 
+		case 42, 43, 44, 45, 46, 47, 48, 49:
+			// these versions are left to Orbit chains for custom upgrades.
+
+		case params.ArbosVersion_50:
+			p, err := state.Programs().Params()
+			ensure(err)
+			ensure(p.UpgradeToArbosVersion(nextArbosVersion))
+			ensure(p.Save())
+			ensure(state.l2PricingState.SetMaxPerTxGasLimit(l2pricing.InitialPerTxGasLimitV50))
 		default:
 			return fmt.Errorf(
 				"the chain is upgrading to unsupported ArbOS version %v, %w",
@@ -392,6 +408,7 @@ func (state *ArbosState) UpgradeArbosVersion(
 
 		state.arbosVersion = nextArbosVersion
 		state.programs.ArbosVersion = nextArbosVersion
+		state.l1PricingState.ArbosVersion = nextArbosVersion
 	}
 
 	if firstTime && upgradeTo >= params.ArbosVersion_6 {

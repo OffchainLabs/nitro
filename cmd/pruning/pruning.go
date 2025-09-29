@@ -21,19 +21,19 @@ import (
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/rpc"
 
-	protocol "github.com/offchainlabs/bold/chain-abstraction"
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/bold/chain-abstraction"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
-	boldrollup "github.com/offchainlabs/nitro/solgen/go/rollupgen"
+	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/staker"
-	boldstaker "github.com/offchainlabs/nitro/staker/bold"
-	legacystaker "github.com/offchainlabs/nitro/staker/legacy"
-	multiprotocolstaker "github.com/offchainlabs/nitro/staker/multi_protocol"
+	"github.com/offchainlabs/nitro/staker/bold"
+	"github.com/offchainlabs/nitro/staker/legacy"
+	"github.com/offchainlabs/nitro/staker/multi_protocol"
 )
 
 type importantRoots struct {
@@ -124,10 +124,10 @@ func findImportantRoots(ctx context.Context, chainDb ethdb.Database, stack *node
 		if err != nil {
 			return nil, err
 		}
-		confirmedNumber := rawdb.ReadHeaderNumber(chainDb, confirmedHash)
+		confirmedNumber, found := rawdb.ReadHeaderNumber(chainDb, confirmedHash)
 		var confirmedHeader *types.Header
-		if confirmedNumber != nil {
-			confirmedHeader = rawdb.ReadHeader(chainDb, confirmedHash, *confirmedNumber)
+		if found {
+			confirmedHeader = rawdb.ReadHeader(chainDb, confirmedHash, confirmedNumber)
 		}
 		if confirmedHeader != nil {
 			err = roots.addHeader(confirmedHeader, false)
@@ -145,9 +145,9 @@ func findImportantRoots(ctx context.Context, chainDb ethdb.Database, stack *node
 		}
 		if lastValidated != nil {
 			var lastValidatedHeader *types.Header
-			headerNum := rawdb.ReadHeaderNumber(chainDb, lastValidated.GlobalState.BlockHash)
-			if headerNum != nil {
-				lastValidatedHeader = rawdb.ReadHeader(chainDb, lastValidated.GlobalState.BlockHash, *headerNum)
+			headerNum, found := rawdb.ReadHeaderNumber(chainDb, lastValidated.GlobalState.BlockHash)
+			if found {
+				lastValidatedHeader = rawdb.ReadHeader(chainDb, lastValidated.GlobalState.BlockHash, headerNum)
 			}
 			if lastValidatedHeader != nil {
 				err = roots.addHeader(lastValidatedHeader, false)
@@ -242,7 +242,7 @@ func getLatestConfirmedHash(ctx context.Context, rollupAddrs chaininfo.RollupAdd
 		return common.Hash{}, err
 	}
 	if isBoldActive {
-		rollupUserLogic, err := boldrollup.NewRollupUserLogic(rollupAddress, l1Client)
+		rollupUserLogic, err := rollupgen.NewRollupUserLogic(rollupAddress, l1Client)
 		if err != nil {
 			return common.Hash{}, err
 		}
@@ -250,7 +250,7 @@ func getLatestConfirmedHash(ctx context.Context, rollupAddrs chaininfo.RollupAdd
 		if err != nil {
 			return common.Hash{}, err
 		}
-		assertion, err := boldstaker.ReadBoldAssertionCreationInfo(
+		assertion, err := bold.ReadBoldAssertionCreationInfo(
 			ctx,
 			rollupUserLogic,
 			l1Client,

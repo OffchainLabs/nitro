@@ -15,19 +15,21 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 
-	pgen "github.com/offchainlabs/nitro/solgen/go/precompilesgen"
+	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
 var AddressAliasOffset *big.Int
 var InverseAddressAliasOffset *big.Int
-var ParseRedeemScheduledLog func(*types.Log) (*pgen.ArbRetryableTxRedeemScheduled, error)
-var ParseL2ToL1TransactionLog func(*types.Log) (*pgen.ArbSysL2ToL1Transaction, error)
-var ParseL2ToL1TxLog func(*types.Log) (*pgen.ArbSysL2ToL1Tx, error)
+var ParseRedeemScheduledLog func(*types.Log) (*precompilesgen.ArbRetryableTxRedeemScheduled, error)
+var ParseL2ToL1TransactionLog func(*types.Log) (*precompilesgen.ArbSysL2ToL1Transaction, error)
+var ParseL2ToL1TxLog func(*types.Log) (*precompilesgen.ArbSysL2ToL1Tx, error)
 var PackInternalTxDataStartBlock func(...interface{}) ([]byte, error)
 var UnpackInternalTxDataStartBlock func([]byte) (map[string]interface{}, error)
 var PackInternalTxDataBatchPostingReport func(...interface{}) ([]byte, error)
+var PackInternalTxDataBatchPostingReportV2 func(...interface{}) ([]byte, error)
 var UnpackInternalTxDataBatchPostingReport func([]byte) (map[string]interface{}, error)
+var UnpackInternalTxDataBatchPostingReportV2 func([]byte) (map[string]interface{}, error)
 var PackArbRetryableTxRedeem func(...interface{}) ([]byte, error)
 
 func init() {
@@ -38,14 +40,15 @@ func init() {
 	AddressAliasOffset = offset
 	InverseAddressAliasOffset = arbmath.BigSub(new(big.Int).Lsh(big.NewInt(1), 160), AddressAliasOffset)
 
-	ParseRedeemScheduledLog = NewLogParser[pgen.ArbRetryableTxRedeemScheduled](pgen.ArbRetryableTxABI, "RedeemScheduled")
-	ParseL2ToL1TxLog = NewLogParser[pgen.ArbSysL2ToL1Tx](pgen.ArbSysABI, "L2ToL1Tx")
-	ParseL2ToL1TransactionLog = NewLogParser[pgen.ArbSysL2ToL1Transaction](pgen.ArbSysABI, "L2ToL1Transaction")
+	ParseRedeemScheduledLog = NewLogParser[precompilesgen.ArbRetryableTxRedeemScheduled](precompilesgen.ArbRetryableTxABI, "RedeemScheduled")
+	ParseL2ToL1TxLog = NewLogParser[precompilesgen.ArbSysL2ToL1Tx](precompilesgen.ArbSysABI, "L2ToL1Tx")
+	ParseL2ToL1TransactionLog = NewLogParser[precompilesgen.ArbSysL2ToL1Transaction](precompilesgen.ArbSysABI, "L2ToL1Transaction")
 
-	acts := pgen.ArbosActsABI
+	acts := precompilesgen.ArbosActsABI
 	PackInternalTxDataStartBlock, UnpackInternalTxDataStartBlock = NewCallParser(acts, "startBlock")
 	PackInternalTxDataBatchPostingReport, UnpackInternalTxDataBatchPostingReport = NewCallParser(acts, "batchPostingReport")
-	PackArbRetryableTxRedeem, _ = NewCallParser(pgen.ArbRetryableTxABI, "redeem")
+	PackInternalTxDataBatchPostingReportV2, UnpackInternalTxDataBatchPostingReportV2 = NewCallParser(acts, "batchPostingReportV2")
+	PackArbRetryableTxRedeem, _ = NewCallParser(precompilesgen.ArbRetryableTxABI, "redeem")
 }
 
 // Create a mechanism for packing and unpacking calls
@@ -243,6 +246,8 @@ func TxTypeHasPosterCosts(txType byte) bool {
 	case types.ArbitrumInternalTxType:
 		fallthrough
 	case types.ArbitrumSubmitRetryableTxType:
+		return false
+	case types.ArbitrumDepositTxType:
 		return false
 	}
 	return true

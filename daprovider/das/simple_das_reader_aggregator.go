@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	flag "github.com/spf13/pflag"
+	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
@@ -61,7 +61,7 @@ var DefaultSimpleExploreExploitStrategyConfig = SimpleExploreExploitStrategyConf
 	ExploitIterations: 1000,
 }
 
-func RestfulClientAggregatorConfigAddOptions(prefix string, f *flag.FlagSet) {
+func RestfulClientAggregatorConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultRestfulClientAggregatorConfig.Enable, "enable retrieval of sequencer batch data from a list of remote REST endpoints; if other DAS storage types are enabled, this mode is used as a fallback")
 	f.StringSlice(prefix+".urls", DefaultRestfulClientAggregatorConfig.Urls, "list of URLs including 'http://' or 'https://' prefixes and port numbers to REST DAS endpoints; additive with the online-url-list option")
 	f.String(prefix+".online-url-list", DefaultRestfulClientAggregatorConfig.OnlineUrlList, "a URL to a list of URLs of REST das endpoints that is checked at startup; additive with the url option")
@@ -74,7 +74,7 @@ func RestfulClientAggregatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	SyncToStorageConfigAddOptions(prefix+".sync-to-storage", f)
 }
 
-func SimpleExploreExploitStrategyConfigAddOptions(prefix string, f *flag.FlagSet) {
+func SimpleExploreExploitStrategyConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Uint32(prefix+".explore-iterations", DefaultSimpleExploreExploitStrategyConfig.ExploreIterations, "number of consecutive GetByHash calls to the aggregator where each call will cause it to randomly select from REST endpoints until one returns successfully, before switching to exploit mode")
 	f.Uint32(prefix+".exploit-iterations", DefaultSimpleExploreExploitStrategyConfig.ExploitIterations, "number of consecutive GetByHash calls to the aggregator where each call will cause it to select from REST endpoints in order of best latency and success rate, before switching to explore mode")
 }

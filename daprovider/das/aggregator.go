@@ -12,7 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	flag "github.com/spf13/pflag"
+	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -33,7 +33,7 @@ var (
 	// there was a Store that had no backend failures.
 	anyErrorGauge = metrics.GetOrRegisterGauge(metricBase+"/error/gauge", nil)
 
-// Other aggregator metrics are generated dynamically in the Store function.
+	// Other aggregator metrics are generated dynamically in the Store function.
 )
 
 type AggregatorConfig struct {
@@ -53,7 +53,7 @@ var DefaultAggregatorConfig = AggregatorConfig{
 
 var parsedBackendsConf BackendConfigList
 
-func AggregatorConfigAddOptions(prefix string, f *flag.FlagSet) {
+func AggregatorConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultAggregatorConfig.Enable, "enable storage of sequencer batch data from a list of RPC endpoints; this should only be used by the batch poster and not in combination with other DAS storage types")
 	f.Int(prefix+".assumed-honest", DefaultAggregatorConfig.AssumedHonest, "Number of assumed honest backends (H). If there are N backends, K=N+1-H valid responses are required to consider an Store request to be successful.")
 	f.Var(&parsedBackendsConf, prefix+".backends", "JSON RPC backend configuration. This can be specified on the command line as a JSON array, eg: [{\"url\": \"...\", \"pubkey\": \"...\"},...], or as a JSON array in the config file.")
@@ -74,7 +74,7 @@ type Aggregator struct {
 }
 
 type ServiceDetails struct {
-	service     DataAvailabilityServiceWriter
+	service     dasutil.DASWriter
 	pubKey      blsSignatures.PublicKey
 	signersMask uint64
 	metricName  string
@@ -84,7 +84,7 @@ func (s *ServiceDetails) String() string {
 	return fmt.Sprintf("ServiceDetails{service: %v, signersMask %d}", s.service, s.signersMask)
 }
 
-func NewServiceDetails(service DataAvailabilityServiceWriter, pubKey blsSignatures.PublicKey, signersMask uint64, metricName string) (*ServiceDetails, error) {
+func NewServiceDetails(service dasutil.DASWriter, pubKey blsSignatures.PublicKey, signersMask uint64, metricName string) (*ServiceDetails, error) {
 	if bits.OnesCount64(signersMask) != 1 {
 		return nil, fmt.Errorf("tried to configure backend DAS %v with invalid signersMask %X", service, signersMask)
 	}

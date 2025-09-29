@@ -44,7 +44,6 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
-	"github.com/offchainlabs/nitro/arbos/multigascollector"
 	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/execution"
@@ -108,9 +107,9 @@ type ExecutionEngine struct {
 
 	syncTillBlock uint64
 
-	runningMaintenance atomic.Bool
+	exposeMultiGas bool
 
-	multigasCollector multigascollector.Collector
+	runningMaintenance atomic.Bool
 }
 
 func NewL1PriceData() *L1PriceData {
@@ -119,12 +118,13 @@ func NewL1PriceData() *L1PriceData {
 	}
 }
 
-func NewExecutionEngine(bc *core.BlockChain, syncTillBlock uint64) (*ExecutionEngine, error) {
+func NewExecutionEngine(bc *core.BlockChain, syncTillBlock uint64, exposeMultiGas bool) (*ExecutionEngine, error) {
 	return &ExecutionEngine{
 		bc:                bc,
 		resequenceChan:    make(chan []*arbostypes.MessageWithMetadata),
 		newBlockNotifier:  make(chan struct{}, 1),
 		cachedL1PriceData: NewL1PriceData(),
+		exposeMultiGas:    exposeMultiGas,
 		syncTillBlock:     syncTillBlock,
 	}, nil
 }
@@ -250,21 +250,6 @@ func (s *ExecutionEngine) EnablePrefetchBlock() {
 		panic("trying to enable prefetch block when already set")
 	}
 	s.prefetchBlock = true
-}
-
-func (s *ExecutionEngine) EnableMultigasCollector(config multigascollector.CollectorConfig) error {
-	if s.multigasCollector != nil {
-		return nil
-	}
-
-	factory := multigascollector.NewCollectorFactory()
-	collector, err := factory(config)
-	if err != nil {
-		return err
-	}
-
-	s.multigasCollector = collector
-	return nil
 }
 
 func (s *ExecutionEngine) SetConsensus(consensus execution.FullConsensusClient) {
@@ -472,17 +457,21 @@ func (s *ExecutionEngine) resequenceReorgedMessages(messages []*arbostypes.Messa
 			log.Warn("skipping non-standard sequencer message found from reorg", "header", header)
 			continue
 		}
-		txes, err := arbos.ParseL2Transactions(msg.Message, s.bc.Config().ChainID)
+		lastArbosVersion := types.DeserializeHeaderExtraInformation(lastBlockHeader).ArbOSFormatVersion
+		txes, err := arbos.ParseL2Transactions(msg.Message, s.bc.Config().ChainID, lastArbosVersion)
 		if err != nil {
 			log.Warn("failed to parse sequencer message found from reorg", "err", err)
 			continue
 		}
 		hooks := arbos.NoopSequencingHooks(txes)
 		hooks.DiscardInvalidTxsEarly = true
-		_, err = s.sequenceTransactionsWithBlockMutex(msg.Message.Header, hooks, nil)
+		block, err := s.sequenceTransactionsWithBlockMutex(msg.Message.Header, hooks, nil)
 		if err != nil {
 			log.Error("failed to re-sequence old user message removed by reorg", "err", err)
 			return
+		}
+		if block != nil {
+			lastBlockHeader = block.Header()
 		}
 	}
 }
@@ -576,20 +565,19 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 		return nil, errors.New("can't find block for current header")
 	}
 	var witness *stateless.Witness
+	var witnessStats *stateless.WitnessStats
 	if s.bc.GetVMConfig().StatelessSelfValidation {
 		witness, err = stateless.NewWitness(lastBlock.Header(), s.bc)
 		if err != nil {
 			return nil, err
 		}
+		if s.bc.GetVMConfig().EnableWitnessStats {
+			witnessStats = stateless.NewWitnessStats()
+		}
 	}
-	statedb.StartPrefetcher("Sequencer", witness)
+	statedb.StartPrefetcher("Sequencer", witness, witnessStats)
 	defer statedb.StopPrefetcher()
 	delayedMessagesRead := lastBlockHeader.Nonce.Uint64()
-
-	// Submit multigas start block message, if the multi gas collector is set
-	if s.multigasCollector != nil {
-		s.multigasCollector.PrepareToCollectBlock()
-	}
 
 	startTime := time.Now()
 	block, receipts, err := arbos.ProduceBlockAdvanced(
@@ -601,7 +589,7 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 		hooks,
 		false,
 		core.NewMessageCommitContext(s.wasmTargets),
-		s.multigasCollector,
+		s.exposeMultiGas,
 	)
 	if err != nil {
 		return nil, err
@@ -656,15 +644,6 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 		return nil, err
 	}
 	s.cacheL1PriceDataOfMsg(msgIdx, block, false)
-
-	// Submit multigas finalization block message, if the multi gas collector is set
-	if s.multigasCollector != nil {
-		s.multigasCollector.FinaliseBlock(multigascollector.BlockInfo{
-			BlockNumber:    block.NumberU64(),
-			BlockHash:      block.Hash().Bytes(),
-			BlockTimestamp: block.Time(),
-		})
-	}
 
 	return block, nil
 }
@@ -786,13 +765,17 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 		return nil, nil, nil, err
 	}
 	var witness *stateless.Witness
+	var witnessStats *stateless.WitnessStats
 	if s.bc.GetVMConfig().StatelessSelfValidation {
 		witness, err = stateless.NewWitness(currentBlock.Header(), s.bc)
 		if err != nil {
 			return nil, nil, nil, err
 		}
+		if s.bc.GetVMConfig().EnableWitnessStats {
+			witnessStats = stateless.NewWitnessStats()
+		}
 	}
-	statedb.StartPrefetcher("TransactionStreamer", witness)
+	statedb.StartPrefetcher("TransactionStreamer", witness, witnessStats)
 	defer statedb.StopPrefetcher()
 
 	var runCtx *core.MessageRunContext
@@ -809,6 +792,7 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 		s.bc,
 		isMsgForPrefetch,
 		runCtx,
+		s.exposeMultiGas,
 	)
 
 	return block, statedb, receipts, err
@@ -1067,10 +1051,6 @@ func (s *ExecutionEngine) ArbOSVersionForMessageIndex(msgIdx arbutil.MessageInde
 func (s *ExecutionEngine) Start(ctx_in context.Context) {
 	s.StopWaiter.Start(ctx_in, s)
 
-	if s.multigasCollector != nil {
-		s.multigasCollector.Start(s.GetContext())
-	}
-
 	s.LaunchThread(func(ctx context.Context) {
 		for {
 			if s.syncTillBlock > 0 && s.latestBlock != nil && s.latestBlock.NumberU64() >= s.syncTillBlock {
@@ -1124,14 +1104,6 @@ func (s *ExecutionEngine) Start(ctx_in context.Context) {
 				}
 			}
 		})
-	}
-}
-
-func (s *ExecutionEngine) StopAndWait() {
-	s.StopWaiter.StopAndWait()
-
-	if s.multigasCollector != nil {
-		s.multigasCollector.StopAndWait()
 	}
 }
 
