@@ -3,14 +3,22 @@ import os
 import glob
 import xml.etree.ElementTree as ET
 
-MAX_LENGTH = 2048
+LINES_TO_KEEP = 20
 
 def shorten_content(element: ET.Element):
-    content = element.text
-    if not content:
+    original_content = element.text
+    if not original_content:
         return
-    if len(content) > MAX_LENGTH:
-        content = content[:MAX_LENGTH] + "\n... [CONTENT TRUNCATED]"
+
+    lines = original_content.splitlines()
+
+    if len(lines) > LINES_TO_KEEP:
+        header = f"... [CONTENT TRUNCATED: Keeping last {LINES_TO_KEEP} lines]\n"
+        truncated_lines = lines[-LINES_TO_KEEP:]
+        content = header + '\n'.join(truncated_lines)
+    else:
+        content = original_content
+
     element.text = content
 
 
