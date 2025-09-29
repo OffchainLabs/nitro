@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"golang.org/x/sync/errgroup"
@@ -112,16 +113,9 @@ func (ds *DataStreamer[Result]) startStream(ctx context.Context, params streamPa
 
 func (ds *DataStreamer[Result]) doStream(ctx context.Context, data []byte, messageId MessageId, params streamParams) error {
 	chunkRoutines := new(errgroup.Group)
-	for i := uint64(0); i < params.nChunks; i++ {
-		startIndex := i * ds.chunkSize
-		endIndex := (i + 1) * ds.chunkSize
-		if endIndex > params.dataLen {
-			endIndex = params.dataLen
-		}
-		chunkData := data[startIndex:endIndex]
-
+	for i, chunkData := range slices.Collect(slices.Chunk(data, int(ds.chunkSize))) {
 		chunkRoutines.Go(func() error {
-			return ds.sendChunk(ctx, messageId, i, chunkData)
+			return ds.sendChunk(ctx, messageId, uint64(i), chunkData)
 		})
 	}
 	return chunkRoutines.Wait()

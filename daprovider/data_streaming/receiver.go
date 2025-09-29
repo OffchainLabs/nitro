@@ -4,6 +4,7 @@
 package data_streaming
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -180,7 +181,10 @@ func (ms *messageStore) addNewChunk(id MessageId, chunkId uint64, chunk []byte) 
 	}
 
 	if message.chunks[chunkId] != nil {
-		return fmt.Errorf("message(%d): chunk(%d) already added", id, chunkId)
+		// Server idempotency: ignore duplicated request as long as it doesn't break consistency
+		if bytes.Equal(message.chunks[chunkId], chunk) {
+			return nil
+		}
 	}
 
 	// Validate chunk size

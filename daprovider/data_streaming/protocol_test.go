@@ -8,15 +8,15 @@ import (
 	"math/rand"
 	"net"
 	"net/http"
+	"slices"
 	"sync"
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/require"
-
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/rpc"
+	"github.com/stretchr/testify/require"
 
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/util/signature"
@@ -49,13 +49,34 @@ func TestDataStreaming_PositiveScenario(t *testing.T) {
 	})
 }
 
-func testBasic(t *testing.T, messageSizeMean, messageSizeStdDev, concurrency int) {
-	ctx := context.Background()
-	signer, verifier := prepareCrypto(t)
-	serverUrl := launchServer(t, ctx, verifier)
+func TestDataStreaming_ServerIdempotency(t *testing.T) {
+	ctx, streamer := prepareTestEnv(t)
+	message := testhelpers.RandomizeSlice(make([]byte, 2*maxStoreChunkBodySize))
+	redundancy := 3
 
-	streamer, err := NewDataStreamer[ProtocolResult]("http://"+serverUrl, maxStoreChunkBodySize, DefaultPayloadSigner(signer), rpcMethods)
+	// ========== Implementation of streamer.StreamData that sends every chunk multiple times. ==========
+
+	// 1. Start the protocol as usual
+	params := newStreamParams(uint64(len(message)), streamer.chunkSize, timeout)
+	messageId, err := streamer.startStream(ctx, params)
 	testhelpers.RequireImpl(t, err)
+
+	// 2. Send chunks with redundancy
+	for i, chunkData := range slices.Collect(slices.Chunk(message, int(streamer.chunkSize))) {
+		for try := 0; try < redundancy; try++ {
+			err = streamer.sendChunk(ctx, messageId, uint64(i), chunkData)
+			testhelpers.RequireImpl(t, err)
+		}
+	}
+
+	// 3. Ensure we can still finalize the protocol.
+	result, err := streamer.finalizeStream(ctx, messageId)
+	testhelpers.RequireImpl(t, err)
+	require.Equal(t, message, ([]byte)(result.Message), "protocol resulted in an incorrect message")
+}
+
+func testBasic(t *testing.T, messageSizeMean, messageSizeStdDev, concurrency int) {
+	ctx, streamer := prepareTestEnv(t)
 
 	var wg sync.WaitGroup
 	for i := 0; i < concurrency; i++ {
@@ -72,6 +93,17 @@ func testBasic(t *testing.T, messageSizeMean, messageSizeStdDev, concurrency int
 		}()
 	}
 	wg.Wait()
+}
+
+func prepareTestEnv(t *testing.T) (context.Context, *DataStreamer[ProtocolResult]) {
+	ctx := context.Background()
+	signer, verifier := prepareCrypto(t)
+	serverUrl := launchServer(t, ctx, verifier)
+
+	streamer, err := NewDataStreamer[ProtocolResult]("http://"+serverUrl, maxStoreChunkBodySize, DefaultPayloadSigner(signer), rpcMethods)
+	testhelpers.RequireImpl(t, err)
+
+	return ctx, streamer
 }
 
 func prepareCrypto(t *testing.T) (signature.DataSignerFunc, *signature.Verifier) {
