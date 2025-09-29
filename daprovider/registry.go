@@ -56,9 +56,14 @@ func (r *ReaderRegistry) SupportedHeaderBytes() []byte {
 	return bytes
 }
 
-// SetupDASReader registers a DAS reader for the DAS header byte
+// SetupDASReader registers a DAS reader for the DAS header bytes (with and without Tree flag)
 func (r *ReaderRegistry) SetupDASReader(reader Reader) error {
-	return r.Register(DASMessageHeaderFlag, reader)
+	// Register for DAS without tree flag (0x80)
+	if err := r.Register(DASMessageHeaderFlag, reader); err != nil {
+		return err
+	}
+	// Register for DAS with tree flag (0x88 = 0x80 | 0x08)
+	return r.Register(DASMessageHeaderFlag|TreeDASMessageHeaderFlag, reader)
 }
 
 // SetupBlobReader registers a blob reader for the blob header byte

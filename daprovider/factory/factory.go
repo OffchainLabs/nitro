@@ -88,7 +88,11 @@ func NewDAProviderFactory(
 
 // AnyTrust Factory Implementation
 func (f *AnyTrustFactory) GetSupportedHeaderBytes() []byte {
-	return []byte{daprovider.DASMessageHeaderFlag}
+	// Support both DAS without tree flag (0x80) and with tree flag (0x88)
+	return []byte{
+		daprovider.DASMessageHeaderFlag,
+		daprovider.DASMessageHeaderFlag | daprovider.TreeDASMessageHeaderFlag,
+	}
 }
 
 func (f *AnyTrustFactory) ValidateConfig() error {
