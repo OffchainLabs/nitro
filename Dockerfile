@@ -72,7 +72,7 @@ COPY --from=wasm-libs-builder /workspace/ /
 FROM wasm-base AS wasm-bin-builder
 RUN apt update && apt install -y wabt
 # pinned go version
-RUN curl -L https://golang.org/dl/go1.24.5.linux-`dpkg --print-architecture`.tar.gz | tar -C /usr/local -xzf -
+RUN curl -L https://golang.org/dl/go1.25.1.linux-`dpkg --print-architecture`.tar.gz | tar -C /usr/local -xzf -
 COPY ./Makefile ./go.mod ./go.sum ./
 COPY ./arbcompress ./arbcompress
 COPY ./arbos ./arbos
@@ -245,7 +245,7 @@ RUN ./download-machine.sh consensus-v50-rc.3 0x385fa2524d86d4ebc340988224f8686b3
 RUN ./download-machine.sh consensus-v50-rc.4 0x393be710f252e8217d66fe179739eba1ed471f0d5a847b5905c30926d853241a
 RUN ./download-machine.sh consensus-v40 0xdb698a2576298f25448bc092e52cf13b1e24141c997135d70f217d674bbeb69a
 
-FROM golang:1.24.5-bookworm AS node-builder
+FROM golang:1.25-bookworm AS node-builder
 WORKDIR /workspace
 ARG version=""
 ARG datetime=""

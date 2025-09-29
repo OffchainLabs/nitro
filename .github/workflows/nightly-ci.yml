@@ -14,21 +14,18 @@ jobs:
     name: Scheduled tests
     runs-on: arbitrator-ci
 
+    services:
+      redis:
+        image: redis
+        ports:
+          - 6379:6379
+
     strategy:
       fail-fast: false
       matrix:
         test-mode: [legacychallenge, long, challenge, l3challenge, execution-spec-tests]
 
     steps:
-      - name: Login to Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Start redis
-        run: docker run -d -p 6379:6379 redis:latest
-
       - name: Checkout
         uses: actions/checkout@v5
         with:
@@ -125,5 +122,7 @@ jobs:
           method: chat.postMessage
           token: ${{ secrets.SLACK_BOT_TOKEN }}
           payload: |
-            "channel": "${{ secrets.SLACK_CHANNEL_ID }}",
-            "text": "⚠️ CI job failed! ${RUN_URL}",
+            {
+              "channel": "${{ secrets.SLACK_CHANNEL_ID }}",
+              "text": "⚠️ CI job failed! ${{ env.RUN_URL }}",
+            }
