@@ -17,7 +17,7 @@ import (
 
 	"github.com/offchainlabs/nitro/blsSignatures"
 	"github.com/offchainlabs/nitro/daprovider/das/dasutil"
-	"github.com/offchainlabs/nitro/daprovider/das/data_streaming"
+	"github.com/offchainlabs/nitro/daprovider/data_streaming"
 	"github.com/offchainlabs/nitro/util/pretty"
 	"github.com/offchainlabs/nitro/util/signature"
 )
