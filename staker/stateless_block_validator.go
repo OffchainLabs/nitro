@@ -20,6 +20,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/consensus"
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/util/rpcclient"
@@ -66,7 +67,7 @@ type TransactionStreamerInterface interface {
 	BlockValidatorRegistrer
 	GetProcessedMessageCount() (arbutil.MessageIndex, error)
 	GetMessage(msgIdx arbutil.MessageIndex) (*arbostypes.MessageWithMetadata, error)
-	ResultAtMessageIndex(msgIdx arbutil.MessageIndex) (*execution.MessageResult, error)
+	ResultAtMessageIndex(msgIdx arbutil.MessageIndex) (*consensus.MessageResult, error)
 	PauseReorgs()
 	ResumeReorgs()
 	ChainConfig() *params.ChainConfig
@@ -412,7 +413,7 @@ func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *
 	return nil
 }
 
-func BuildGlobalState(res execution.MessageResult, pos GlobalStatePosition) validator.GoGlobalState {
+func BuildGlobalState(res consensus.MessageResult, pos GlobalStatePosition) validator.GoGlobalState {
 	return validator.GoGlobalState{
 		BlockHash:  res.BlockHash,
 		SendRoot:   res.SendRoot,
@@ -449,7 +450,7 @@ func (v *StatelessBlockValidator) CreateReadyValidationEntry(ctx context.Context
 		return nil, err
 	}
 	var prevDelayed uint64
-	prevResult := &execution.MessageResult{}
+	prevResult := &consensus.MessageResult{}
 	if pos > 0 {
 		prev, err := v.streamer.GetMessage(pos - 1)
 		if err != nil {

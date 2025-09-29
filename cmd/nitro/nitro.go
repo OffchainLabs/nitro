@@ -48,7 +48,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbnode/resourcemanager"
 	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/offchainlabs/nitro/blocks_reexecutor"
+	blocksreexecutor "github.com/offchainlabs/nitro/blocks_reexecutor"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
@@ -58,10 +58,11 @@ import (
 	"github.com/offchainlabs/nitro/daprovider/das"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	_ "github.com/offchainlabs/nitro/execution/nodeInterface"
+	"github.com/offchainlabs/nitro/execution_consensus"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
-	"github.com/offchainlabs/nitro/staker/legacy"
+	legacystaker "github.com/offchainlabs/nitro/staker/legacy"
 	"github.com/offchainlabs/nitro/staker/validatorwallet"
 	nitroutil "github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/colors"
@@ -545,7 +546,7 @@ func mainImpl() int {
 		wasmModuleRoot = locator.LatestWasmModuleRoot()
 	}
 
-	currentNode, err := arbnode.CreateNodeFullExecutionClient(
+	consensusNode, err := arbnode.CreateNodeFullExecutionClient(
 		ctx,
 		stack,
 		execNode,
@@ -613,19 +614,19 @@ func mainImpl() int {
 		if err := genericconf.InitLog(newCfg.LogType, newCfg.LogLevel, &newCfg.FileLogging, pathResolver(nodeConfig.Persistent.LogDir)); err != nil {
 			return fmt.Errorf("failed to re-init logging: %w", err)
 		}
-		return currentNode.OnConfigReload(&oldCfg.Node, &newCfg.Node)
+		return consensusNode.OnConfigReload(&oldCfg.Node, &newCfg.Node)
 	})
 
 	if nodeConfig.Node.Dangerous.NoL1Listener && nodeConfig.Init.DevInit {
 		// If we don't have any messages, we're not connected to the L1, and we're using a dev init,
 		// we should create our own fake init message.
-		count, err := currentNode.TxStreamer.GetMessageCount()
+		count, err := consensusNode.TxStreamer.GetMessageCount()
 		if err != nil {
 			log.Warn("Getmessagecount failed. Assuming new database", "err", err)
 			count = 0
 		}
 		if count == 0 {
-			err = currentNode.TxStreamer.AddFakeInitMessage()
+			err = consensusNode.TxStreamer.AddFakeInitMessage()
 			if err != nil {
 				panic(err)
 			}
@@ -693,19 +694,23 @@ func mainImpl() int {
 		}
 	}
 	if err == nil {
-		err = currentNode.Start(ctx)
+		// In current model execution and consensus share the same stack, so starting and closing of this stack
+		// is handled externally here, but after the split when they have their own stacks- the responsibility
+		// of starting and closing their stacks belongs to them respectively
+		cleanup, err := execution_consensus.InitAndStartExecutionAndConsensusNodes(ctx, stack, execNode, consensusNode)
 		if err != nil {
-			fatalErrChan <- fmt.Errorf("error starting node: %w", err)
+			log.Error("Error initializing and starting execution and consensus", "err", err)
+			return 1
 		}
 		// remove previous deferFuncs, StopAndWait closes database and blockchain.
-		deferFuncs = []func(){func() { currentNode.StopAndWait() }}
+		deferFuncs = []func(){cleanup}
 	}
 
 	sigint := make(chan os.Signal, 1)
 	signal.Notify(sigint, os.Interrupt, syscall.SIGTERM)
 
 	if err == nil && nodeConfig.Init.IsReorgRequested() {
-		err = initReorg(nodeConfig.Init, chainInfo.ChainConfig, currentNode.InboxTracker)
+		err = initReorg(nodeConfig.Init, chainInfo.ChainConfig, consensusNode.InboxTracker)
 		if err != nil {
 			fatalErrChan <- fmt.Errorf("error reorging per init config: %w", err)
 		} else if nodeConfig.Init.ThenQuit {
@@ -739,6 +744,13 @@ func mainImpl() int {
 	return 0
 }
 
+type Interconnect string
+
+const (
+	InterconnectDirect  Interconnect = "direct"  // in-process calls (DEFAULT)
+	InterconnectJSONRPC Interconnect = "jsonrpc" // JSON-RPC over loopback
+)
+
 type NodeConfig struct {
 	Conf                   genericconf.ConfConfig          `koanf:"conf" reload:"hot"`
 	Node                   arbnode.Config                  `koanf:"node" reload:"hot"`
@@ -763,6 +775,9 @@ type NodeConfig struct {
 	Rpc                    genericconf.RpcConfig           `koanf:"rpc"`
 	BlocksReExecutor       blocksreexecutor.Config         `koanf:"blocks-reexecutor"`
 	EnsureRollupDeployment bool                            `koanf:"ensure-rollup-deployment" reload:"hot"`
+
+	// This option controls if we use direct in-process calls between the execution and consensus or JSON-RPC over loopback.
+	Interconnect Interconnect `koanf:"interconnect"`
 }
 
 var NodeConfigDefault = NodeConfig{
@@ -789,6 +804,7 @@ var NodeConfigDefault = NodeConfig{
 	PprofCfg:               genericconf.PProfDefault,
 	BlocksReExecutor:       blocksreexecutor.DefaultConfig,
 	EnsureRollupDeployment: true,
+	Interconnect:           InterconnectDirect,
 }
 
 func NodeConfigAddOptions(f *pflag.FlagSet) {
@@ -816,6 +832,7 @@ func NodeConfigAddOptions(f *pflag.FlagSet) {
 	genericconf.RpcConfigAddOptions("rpc", f)
 	blocksreexecutor.ConfigAddOptions("blocks-reexecutor", f)
 	f.Bool("ensure-rollup-deployment", NodeConfigDefault.EnsureRollupDeployment, "before starting the node, wait until the transaction that deployed rollup is finalized")
+	f.String("interconnect", string(NodeConfigDefault.Interconnect), "interconnect method between execution and consensus (direct or jsonrpc). Currently used to verify if the related configs are valid")
 }
 
 func (c *NodeConfig) ResolveDirectoryNames() error {
@@ -881,6 +898,27 @@ func (c *NodeConfig) Validate() error {
 	}
 	if err := c.Execution.Validate(); err != nil {
 		return err
+	}
+	if c.Interconnect == InterconnectDirect {
+		if c.Execution.ConsensusRPCClient.URL != "" {
+			return fmt.Errorf("interconnect is set to direct but execution node has non-empty consensusRPCClient url: %s", c.Execution.ConsensusRPCClient.URL)
+		}
+		if c.Node.ExecutionRPCClient.URL != "" {
+			return fmt.Errorf("interconnect is set to direct but consensus node has non-empty executionRPCClient url: %s", c.Node.ExecutionRPCClient.URL)
+		}
+	} else if c.Interconnect == InterconnectJSONRPC {
+		if !c.Execution.RPCServer.Enable {
+			return errors.New("interconnect is set to jsonrpc but execution node has not enabled rpc server")
+		}
+		if c.Execution.ConsensusRPCClient.URL == "" {
+			return errors.New("interconnect is set to jsonrpc but execution node has empty consensusRPCClient url")
+		}
+		if !c.Node.RPCServer.Enable {
+			return errors.New("interconnect is set to jsonrpc but consensus node has not enabled rpc server")
+		}
+		if c.Node.ExecutionRPCClient.URL == "" {
+			return errors.New("interconnect is set to jsonrpc but consensus node has empty executionRPCClient url")
+		}
 	}
 	if err := c.BlocksReExecutor.Validate(); err != nil {
 		return err
@@ -1043,6 +1081,7 @@ func applyChainParameters(k *koanf.Koanf, chainId uint64, chainName string, l2Ch
 	if chainInfo.TrackBlockMetadataFrom > 0 && chainInfo.BlockMetadataUrl != "" {
 		chainDefaults["node.block-metadata-fetcher.enable"] = true
 	}
+
 	err = k.Load(confmap.Provider(chainDefaults, "."), nil)
 	if err != nil {
 		return err

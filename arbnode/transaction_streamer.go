@@ -32,6 +32,7 @@ import (
 	"github.com/offchainlabs/nitro/broadcastclient"
 	"github.com/offchainlabs/nitro/broadcaster"
 	"github.com/offchainlabs/nitro/broadcaster/message"
+	"github.com/offchainlabs/nitro/consensus"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -130,24 +131,6 @@ func NewTransactionStreamer(
 	err := streamer.cleanupInconsistentState()
 	if err != nil {
 		return nil, err
-	}
-	if config().TrackBlockMetadataFrom != 0 {
-		trackBlockMetadataFrom, err := exec.BlockNumberToMessageIndex(config().TrackBlockMetadataFrom).Await(ctx)
-		if err != nil {
-			return nil, err
-		}
-		streamer.trackBlockMetadataFrom = trackBlockMetadataFrom
-	}
-	if config().SyncTillBlock != 0 {
-		syncTillMessage, err := exec.BlockNumberToMessageIndex(config().SyncTillBlock).Await(ctx)
-		if err != nil {
-			return nil, err
-		}
-		streamer.syncTillMessage = syncTillMessage
-		msgCount, err := streamer.GetMessageCount()
-		if err == nil && msgCount >= streamer.syncTillMessage {
-			log.Info("Node has all messages", "sync-till-block", config().SyncTillBlock)
-		}
 	}
 	return streamer, nil
 }
@@ -1033,7 +1016,7 @@ func (s *TransactionStreamer) ExpectChosenSequencer() error {
 func (s *TransactionStreamer) WriteMessageFromSequencer(
 	msgIdx arbutil.MessageIndex,
 	msgWithMeta arbostypes.MessageWithMetadata,
-	msgResult execution.MessageResult,
+	msgResult consensus.MessageResult,
 	blockMetadata common.BlockMetadata,
 ) error {
 	if err := s.ExpectChosenSequencer(); err != nil {
@@ -1248,11 +1231,11 @@ func (s *TransactionStreamer) BlockMetadataAtMessageIndex(msgIdx arbutil.Message
 	return blockMetadata, nil
 }
 
-func (s *TransactionStreamer) ResultAtMessageIndex(msgIdx arbutil.MessageIndex) (*execution.MessageResult, error) {
+func (s *TransactionStreamer) ResultAtMessageIndex(msgIdx arbutil.MessageIndex) (*consensus.MessageResult, error) {
 	key := dbKey(messageResultPrefix, uint64(msgIdx))
 	data, err := s.db.Get(key)
 	if err == nil {
-		var msgResult execution.MessageResult
+		var msgResult consensus.MessageResult
 		err = rlp.DecodeBytes(data, &msgResult)
 		if err == nil {
 			return &msgResult, nil
@@ -1286,7 +1269,7 @@ func (s *TransactionStreamer) ResultAtMessageIndex(msgIdx arbutil.MessageIndex) 
 	return msgResult, nil
 }
 
-func (s *TransactionStreamer) checkResult(msgIdx arbutil.MessageIndex, msgResult *execution.MessageResult, msgAndBlockInfo *arbostypes.MessageWithMetadataAndBlockInfo) {
+func (s *TransactionStreamer) checkResult(msgIdx arbutil.MessageIndex, msgResult *consensus.MessageResult, msgAndBlockInfo *arbostypes.MessageWithMetadataAndBlockInfo) {
 	if msgAndBlockInfo.BlockHash == nil {
 		return
 	}
@@ -1318,7 +1301,7 @@ func (s *TransactionStreamer) checkResult(msgIdx arbutil.MessageIndex, msgResult
 
 func (s *TransactionStreamer) storeResult(
 	msgIdx arbutil.MessageIndex,
-	msgResult execution.MessageResult,
+	msgResult consensus.MessageResult,
 	batch ethdb.Batch,
 ) error {
 	msgResultBytes, err := rlp.EncodeToBytes(msgResult)
@@ -1486,6 +1469,24 @@ func (s *TransactionStreamer) backfillTrackersForMissingBlockMetadata(ctx contex
 
 func (s *TransactionStreamer) Start(ctxIn context.Context) error {
 	s.StopWaiter.Start(ctxIn, s)
+	if s.config().TrackBlockMetadataFrom != 0 {
+		trackBlockMetadataFrom, err := s.exec.BlockNumberToMessageIndex(s.config().TrackBlockMetadataFrom).Await(ctxIn)
+		if err != nil {
+			return err
+		}
+		s.trackBlockMetadataFrom = trackBlockMetadataFrom
+	}
+	if s.config().SyncTillBlock != 0 {
+		syncTillMessage, err := s.exec.BlockNumberToMessageIndex(s.config().SyncTillBlock).Await(ctxIn)
+		if err != nil {
+			return err
+		}
+		s.syncTillMessage = syncTillMessage
+		msgCount, err := s.GetMessageCount()
+		if err == nil && msgCount >= s.syncTillMessage {
+			log.Info("Node has all messages", "sync-till-block", s.config().SyncTillBlock)
+		}
+	}
 	s.LaunchThread(s.backfillTrackersForMissingBlockMetadata)
 	return stopwaiter.CallIterativelyWith[struct{}](&s.StopWaiterSafe, s.executeMessages, s.newMessageNotifier)
 }
