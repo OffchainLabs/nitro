@@ -58,11 +58,37 @@ jobs:
           ${{ github.workspace }}/.github/workflows/gotestsum.sh
           --tags cionly --timeout 60m --test_state_scheme hash --junitfile test-results/junit.xml
 
+      - name: Process JUnit XML logs
+        if: matrix.test-mode == 'defaults'
+        run: python3 ${{ github.workspace }}/.github/workflows/process_junit.py test-results/
+
+      - name: Run basic test results action
+        uses: codecov/basic-test-results@v1
+        if: matrix.test-mode == 'defaults'
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          directory: 'test-results'
+
+      - name: Fail if tests failed
+        if: matrix.test-mode == 'defaults' && steps.run-tests-defaults.outcome == 'failure'
+        run: |
+          echo "One or more tests failed."
+          exit 1
+
       - name: run redis tests
         if: matrix.test-mode == 'defaults'
         run: >-
           gotestsum --format short-verbose -- -p 1 -run TestRedis ./arbnode/... ./system_tests/...
           -coverprofile=coverage-redis.txt -covermode=atomic -coverpkg=./... -- --test_redis=redis://localhost:6379/0
+
+      - name: Upload coverage to Codecov
+        if: matrix.test-mode == 'defaults'
+        uses: codecov/codecov-action@v5
+        with:
+          fail_ci_if_error: false
+          files: ./coverage.txt,./coverage-redis.txt
+          verbose: false
+          token: ${{ secrets.CODECOV_TOKEN }}
 
       - name: create block input json file
         if: matrix.test-mode == 'defaults'
@@ -89,32 +115,6 @@ jobs:
             echo "Error: Command produced output."
             exit 1
           fi
-
-      - name: Process JUnit XML logs
-        if: matrix.test-mode == 'defaults'
-        run: python3 ${{ github.workspace }}/.github/workflows/process_junit.py test-results/
-
-      - name: Run basic test results action
-        uses: codecov/basic-test-results@v1
-        if: matrix.test-mode == 'defaults'
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          directory: 'test-results'
-
-      - name: Fail if tests failed
-        if: matrix.test-mode == 'defaults' && steps.run-tests-defaults.outcome == 'failure'
-        run: |
-          echo "One or more tests failed."
-          exit 1
-
-      - name: Upload coverage to Codecov
-        if: matrix.test-mode == 'defaults'
-        uses: codecov/codecov-action@v5
-        with:
-          fail_ci_if_error: false
-          files: ./coverage.txt,./coverage-redis.txt
-          verbose: false
-          token: ${{ secrets.CODECOV_TOKEN }}
 
       # --------------------- CHALLENGE MODES ---------------------
 
