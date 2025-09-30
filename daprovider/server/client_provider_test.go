@@ -8,14 +8,13 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/stretchr/testify/require"
-
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/daprovider/daclient"
+	"github.com/offchainlabs/nitro/daprovider/das/data_streaming"
 	"github.com/offchainlabs/nitro/daprovider/referenceda"
 	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/signature"
@@ -35,7 +34,7 @@ func TestInteractionBetweenClientAndProviderServer_StoreSucceeds(t *testing.T) {
 	testhelpers.RequireImpl(t, err)
 }
 
-func TestInteractionBetweenClientAndProviderServer_StoreFailsDueToSize(t *testing.T) {
+func TestInteractionBetweenClientAndProviderServer_StoreLongMessageSucceeds(t *testing.T) {
 	ctx := context.Background()
 	server := setupProviderServer(ctx, t)
 	client := setupClient(ctx, t, server.Addr)
@@ -43,7 +42,7 @@ func TestInteractionBetweenClientAndProviderServer_StoreFailsDueToSize(t *testin
 	message := testhelpers.RandomizeSlice(make([]byte, RPCServerBodyLimit+1))
 
 	_, err := client.Store(ctx, message, 0)
-	require.Regexp(t, ".*Request Entity Too Large.*", err.Error())
+	testhelpers.RequireImpl(t, err)
 }
 
 func setupProviderServer(ctx context.Context, t *testing.T) *http.Server {
@@ -53,6 +52,7 @@ func setupProviderServer(ctx context.Context, t *testing.T) *http.Server {
 		EnableDAWriter:     true,
 		ServerTimeouts:     genericconf.HTTPServerTimeoutConfig{},
 		RPCServerBodyLimit: RPCServerBodyLimit,
+		JWTSecret:          "",
 	}
 
 	privateKey, err := crypto.GenerateKey()
@@ -67,7 +67,7 @@ func setupProviderServer(ctx context.Context, t *testing.T) *http.Server {
 	validator := referenceda.NewValidator(nil, dummyAddress)
 	headerBytes := []byte{daprovider.DACertificateMessageHeaderFlag}
 
-	providerServer, err := NewServerWithDAPProvider(ctx, &providerServerConfig, reader, writer, validator, headerBytes)
+	providerServer, err := NewServerWithDAPProvider(ctx, &providerServerConfig, reader, writer, validator, headerBytes, data_streaming.TrustingPayloadVerifier())
 	testhelpers.RequireImpl(t, err)
 
 	return providerServer
@@ -79,7 +79,7 @@ func setupClient(ctx context.Context, t *testing.T, providerServerAddress string
 			URL: providerServerAddress,
 		}
 	}
-	client, err := daclient.NewClient(ctx, clientConfig)
+	client, err := daclient.NewClient(ctx, clientConfig, RPCServerBodyLimit, data_streaming.NoopPayloadSigner())
 	testhelpers.RequireImpl(t, err)
 	return client
 }

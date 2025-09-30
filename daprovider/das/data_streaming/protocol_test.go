@@ -19,6 +19,7 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/cmd/genericconf"
+	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
@@ -54,7 +55,12 @@ func test(t *testing.T, messageSizeMean, messageSizeStdDev, concurrency int) {
 	signer, verifier := prepareCrypto(t)
 	serverUrl := launchServer(t, ctx, verifier)
 
-	streamer, err := NewDataStreamer[ProtocolResult]("http://"+serverUrl, maxStoreChunkBodySize, DefaultPayloadSigner(signer), rpcMethods)
+	clientConfig := func() *rpcclient.ClientConfig { return &rpcclient.ClientConfig{URL: "http://" + serverUrl} }
+	rpcClient := rpcclient.NewRpcClient(clientConfig, nil)
+	err := rpcClient.Start(ctx)
+	testhelpers.RequireImpl(t, err)
+
+	streamer, err := NewDataStreamer[ProtocolResult](maxStoreChunkBodySize, DefaultPayloadSigner(signer), rpcClient, rpcMethods)
 	testhelpers.RequireImpl(t, err)
 
 	var wg sync.WaitGroup

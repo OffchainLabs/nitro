@@ -12,14 +12,15 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/ethereum/go-ethereum/common/hexutil"
-	"github.com/ethereum/go-ethereum/rpc"
+
+	"github.com/offchainlabs/nitro/util/rpcclient"
 )
 
 // DataStreamer allows sending arbitrarily big payloads with JSON RPC. It follows a simple chunk-based protocol.
 // lint:require-exhaustive-initialization
 type DataStreamer[Result any] struct {
 	// rpcClient is the underlying client for making RPC calls to the receiver.
-	rpcClient *rpc.Client
+	rpcClient *rpcclient.RpcClient
 	// chunkSize is the preconfigured size limit on a single data chunk to be sent.
 	chunkSize uint64
 	// dataSigner is used for sender authentication during the protocol.
@@ -37,17 +38,11 @@ type DataStreamingRPCMethods struct {
 // NewDataStreamer creates a new DataStreamer instance.
 //
 // Requirements:
-//   - connecting to `url` must succeed;
 //   - `maxStoreChunkBodySize` must be big enough (it should cover `sendChunkJSONBoilerplate` and leave some space for the data);
 //   - `dataSigner` must not be nil;
 //
 // otherwise an `error` is returned.
-func NewDataStreamer[T any](url string, maxStoreChunkBodySize int, dataSigner *PayloadSigner, rpcMethods DataStreamingRPCMethods) (*DataStreamer[T], error) {
-	rpcClient, err := rpc.Dial(url)
-	if err != nil {
-		return nil, err
-	}
-
+func NewDataStreamer[T any](maxStoreChunkBodySize int, dataSigner *PayloadSigner, rpcClient *rpcclient.RpcClient, rpcMethods DataStreamingRPCMethods) (*DataStreamer[T], error) {
 	chunkSize, err := calculateEffectiveChunkSize(maxStoreChunkBodySize, rpcMethods)
 	if err != nil {
 		return nil, err

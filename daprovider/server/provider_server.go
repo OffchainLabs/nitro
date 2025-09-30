@@ -24,16 +24,22 @@ import (
 
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/daprovider"
+	"github.com/offchainlabs/nitro/daprovider/das/data_streaming"
 	"github.com/offchainlabs/nitro/daprovider/server_api"
 )
 
+const DefaultBodyLimit = 5 * 1024 * 1024 // Taken from go-ethereum http.defaultBodyLimit
+
+// lint:require-exhaustive-initialization
 type Server struct {
-	reader      daprovider.Reader
-	writer      daprovider.Writer
-	validator   daprovider.Validator
-	headerBytes []byte // Supported header bytes for this provider
+	reader       daprovider.Reader
+	writer       daprovider.Writer
+	validator    daprovider.Validator
+	headerBytes  []byte // Supported header bytes for this provider
+	dataReceiver *data_streaming.DataStreamReceiver
 }
 
+// lint:require-exhaustive-initialization
 type ServerConfig struct {
 	Addr               string                              `koanf:"addr"`
 	Port               uint64                              `koanf:"port"`
@@ -49,7 +55,7 @@ var DefaultServerConfig = ServerConfig{
 	JWTSecret:          "",
 	EnableDAWriter:     false,
 	ServerTimeouts:     genericconf.HTTPServerTimeoutConfigDefault,
-	RPCServerBodyLimit: genericconf.HTTPServerBodyLimitDefault,
+	RPCServerBodyLimit: DefaultBodyLimit,
 }
 
 func ServerConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -74,8 +80,10 @@ func fetchJWTSecret(fileName string) ([]byte, error) {
 	return nil, errors.New("JWT secret file not found")
 }
 
-// NewServerWithDAPProvider creates a new server with pre-created reader/writer/validator components
-func NewServerWithDAPProvider(ctx context.Context, config *ServerConfig, reader daprovider.Reader, writer daprovider.Writer, validator daprovider.Validator, headerBytes []byte) (*http.Server, error) {
+// NewServerWithDAPProvider creates a new server with pre-created reader/writer/validator components.
+// The server supports the Data Stream protocol (see `data_streaming` package). The `verifier` parameter is used for
+// authenticating the sender (`daclient`).
+func NewServerWithDAPProvider(ctx context.Context, config *ServerConfig, reader daprovider.Reader, writer daprovider.Writer, validator daprovider.Validator, headerBytes []byte, verifier *data_streaming.PayloadVerifier) (*http.Server, error) {
 	listener, err := net.Listen("tcp", fmt.Sprintf("%s:%d", config.Addr, config.Port))
 	if err != nil {
 		return nil, err
@@ -87,10 +95,11 @@ func NewServerWithDAPProvider(ctx context.Context, config *ServerConfig, reader 
 	}
 
 	server := &Server{
-		reader:      reader,
-		writer:      writer,
-		validator:   validator,
-		headerBytes: headerBytes,
+		reader:       reader,
+		writer:       writer,
+		validator:    validator,
+		headerBytes:  headerBytes,
+		dataReceiver: data_streaming.NewDefaultDataStreamReceiver(verifier),
 	}
 	if err = rpcServer.RegisterName("daprovider", server); err != nil {
 		return nil, err
@@ -171,18 +180,6 @@ func (s *Server) CollectPreimages(
 	return &result, nil
 }
 
-func (s *Server) Store(
-	ctx context.Context,
-	message hexutil.Bytes,
-	timeout hexutil.Uint64,
-) (*server_api.StoreResult, error) {
-	serializedDACert, err := s.writer.Store(ctx, message, uint64(timeout))
-	if err != nil {
-		return nil, err
-	}
-	return &server_api.StoreResult{SerializedDACert: serializedDACert}, nil
-}
-
 func (s *Server) GenerateReadPreimageProof(ctx context.Context, certHash common.Hash, offset hexutil.Uint64, certificate hexutil.Bytes) (*server_api.GenerateReadPreimageProofResult, error) {
 	if s.validator == nil {
 		return nil, errors.New("validator not available")
@@ -207,4 +204,24 @@ func (s *Server) GenerateCertificateValidityProof(ctx context.Context, certifica
 		return nil, err
 	}
 	return &server_api.GenerateCertificateValidityProofResult{Proof: hexutil.Bytes(result.Proof)}, nil
+}
+
+// ============================= DATA STREAM API ==================================================================== //
+
+func (s *Server) StartChunkedStore(ctx context.Context, timestamp, nChunks, chunkSize, totalSize, timeout hexutil.Uint64, sig hexutil.Bytes) (*data_streaming.StartStreamingResult, error) {
+	return s.dataReceiver.StartReceiving(ctx, uint64(timestamp), uint64(nChunks), uint64(chunkSize), uint64(totalSize), uint64(timeout), sig)
+}
+
+func (s *Server) SendChunk(ctx context.Context, messageId, chunkId hexutil.Uint64, chunk hexutil.Bytes, sig hexutil.Bytes) error {
+	return s.dataReceiver.ReceiveChunk(ctx, data_streaming.MessageId(messageId), uint64(chunkId), chunk, sig)
+}
+
+func (s *Server) CommitChunkedStore(ctx context.Context, messageId hexutil.Uint64, sig hexutil.Bytes) (*server_api.StoreResult, error) {
+	message, timeout, _, err := s.dataReceiver.FinalizeReceiving(ctx, data_streaming.MessageId(messageId), sig)
+	if err != nil {
+		return nil, err
+	}
+
+	serializedDACert, err := s.writer.Store(ctx, message, timeout)
+	return &server_api.StoreResult{SerializedDACert: serializedDACert}, err
 }
