@@ -67,7 +67,7 @@ jobs:
 
   # --- Summarize test results (not required by can_proceed) ---
   codecov:
-    needs: [fast]
+    needs: [go-tests, arbitrator]
     if: always()
     uses: ./.github/workflows/_codecov.yml
     secrets: inherit
