@@ -49,10 +49,10 @@ while [[ $# -gt 0 ]]; do
       cover=true
       shift
       ;;
-		--nolog)
-			log=false
-			shift
-			;;
+    --nolog)
+      log=false
+      shift
+      ;;
     --junitfile)
       shift
       check_missing_value $# "$1" "--junitfile"
@@ -108,11 +108,11 @@ for package in $packages; do
       cmd="$cmd -args -- --test_loglevel=8" # Use error log level, which is the value 8 in the slog level enum for tests.
   fi
 
-	if [ "$log" == true ]; then
-			cmd="$cmd > >(stdbuf -oL tee -a full.log | grep -vE \"DEBUG|TRACE|INFO|seal\")"
-	else
-			cmd="$cmd | grep -vE \"DEBUG|TRACE|INFO|seal\""
-	fi
+  if [ "$log" == true ]; then
+      cmd="$cmd > >(stdbuf -oL tee -a full.log | grep -vE \"DEBUG|TRACE|INFO|seal\")"
+  else
+      cmd="$cmd | grep -vE \"DEBUG|TRACE|INFO|seal\""
+  fi
 
   echo ""
   echo running tests for "$package"
