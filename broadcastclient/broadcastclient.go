@@ -42,11 +42,15 @@ var (
 var TransactionStreamerBlockCreationStopped = errors.New("block creation stopped in transaction streamer")
 
 type FeedConfig struct {
-	Output wsbroadcastserver.BroadcasterConfig `koanf:"output" reload:"hot"`
-	Input  Config                              `koanf:"input" reload:"hot"`
+	Output           wsbroadcastserver.BroadcasterConfig `koanf:"output" reload:"hot"`
+	Input            Config                              `koanf:"input" reload:"hot"`
+	MinNitroVersions []int                               `koanf:"min-nitro-versions"`
 }
 
 func (fc *FeedConfig) Validate() error {
+	if len(fc.MinNitroVersions) > 0 && len(fc.MinNitroVersions) != 3 {
+		return fmt.Errorf("--node.feed.min-nitro-versions int array has to be exactly of length 3 but its length is: %d", len(fc.MinNitroVersions))
+	}
 	return fc.Output.Validate()
 }
 
@@ -57,11 +61,13 @@ func FeedConfigAddOptions(prefix string, f *pflag.FlagSet, feedInputEnable bool,
 	if feedOutputEnable {
 		wsbroadcastserver.BroadcasterConfigAddOptions(prefix+".output", f)
 	}
+	f.IntSlice(prefix+".min-nitro-versions", FeedConfigDefault.MinNitroVersions, "minimum nitro versions decided by the feed source such that info/warn/error logs would be logged by feed readers if their node version is lower than values given here respectively. Only accept int array of length 3")
 }
 
 var FeedConfigDefault = FeedConfig{
-	Output: wsbroadcastserver.DefaultBroadcasterConfig,
-	Input:  DefaultConfig,
+	Output:           wsbroadcastserver.DefaultBroadcasterConfig,
+	Input:            DefaultConfig,
+	MinNitroVersions: []int{},
 }
 
 type Config struct {

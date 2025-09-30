@@ -47,8 +47,8 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/staker/bold"
-	"github.com/offchainlabs/nitro/staker/legacy"
-	"github.com/offchainlabs/nitro/staker/multi_protocol"
+	legacystaker "github.com/offchainlabs/nitro/staker/legacy"
+	multiprotocolstaker "github.com/offchainlabs/nitro/staker/multi_protocol"
 	"github.com/offchainlabs/nitro/staker/validatorwallet"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/contracts"
@@ -449,7 +449,7 @@ func getBroadcastServer(
 			}
 			maybeDataSigner = dataSigner
 		}
-		broadcastServer = broadcaster.NewBroadcaster(func() *wsbroadcastserver.BroadcasterConfig { return &configFetcher.Get().Feed.Output }, l2ChainId, fatalErrChan, maybeDataSigner)
+		broadcastServer = broadcaster.NewBroadcaster(func() *wsbroadcastserver.BroadcasterConfig { return &configFetcher.Get().Feed.Output }, l2ChainId, fatalErrChan, maybeDataSigner, config.Feed.MinNitroVersions...)
 	}
 	return broadcastServer, nil
 }

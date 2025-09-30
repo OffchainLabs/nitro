@@ -4,12 +4,18 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"log/slog"
 	"testing"
+	"time"
 
 	"github.com/ethereum/go-ethereum/core/rawdb"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rlp"
 
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/broadcaster/message"
+	"github.com/offchainlabs/nitro/cmd/chaininfo"
+	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
 func TestTimeboostBackfillingsTrackersForMissingBlockMetadata(t *testing.T) {
@@ -64,4 +70,34 @@ func TestTimeboostBackfillingsTrackersForMissingBlockMetadata(t *testing.T) {
 
 	// Backfill trackers for missing data and verify that 5, 6, 7, 8, 9 get added to already existing 10, 11, 16, 17, 18, 19 keys
 	backfillAndVerifyCorrectness(5, []uint64{5, 6, 7, 8, 9, 10, 11, 15, 16, 17, 19})
+}
+
+func TestLoggingMinRequiredNodeVersionMessage(t *testing.T) {
+	logHandler := testhelpers.InitTestLog(t, log.LvlTrace)
+
+	txStreamer := &TransactionStreamer{}
+	feedMessage := &message.BroadcastFeedMessage{}
+	currentNodeVersion := chaininfo.NITRO_NODE_VERSION
+	msg := "Node version is below the required minimum nitro version"
+
+	minNitroVersions := [3]int{currentNodeVersion + 1, currentNodeVersion, currentNodeVersion} // Info log should be printed
+	feedMessage.MinNitroVersions = &minNitroVersions
+	Require(t, txStreamer.logMinRequiredNodeVersionMessage(feedMessage))
+	if !logHandler.WasLoggedAtLevel(msg, slog.LevelInfo) || logHandler.WasLoggedAtLevel(msg, slog.LevelWarn) || logHandler.WasLoggedAtLevel(msg, slog.LevelError) { // Only Info shoul be printed
+		t.Fatal("minimum required node version message was not logged at level Info")
+	}
+
+	atomicTimeWrite(&txStreamer.lastMinNitroVersionMsgLoggedTimestamp, time.Time{})
+	minNitroVersions[1] += 2 // Warn log should be printed
+	Require(t, txStreamer.logMinRequiredNodeVersionMessage(feedMessage))
+	if !logHandler.WasLoggedAtLevel(msg, slog.LevelWarn) || logHandler.WasLoggedAtLevel(msg, slog.LevelError) { // Error log shouldn't be printed yet
+		t.Fatal("minimum required node version message was not logged at level Warn")
+	}
+
+	atomicTimeWrite(&txStreamer.lastMinNitroVersionMsgLoggedTimestamp, time.Time{})
+	minNitroVersions[2] += 3 // Error log should be printed
+	Require(t, txStreamer.logMinRequiredNodeVersionMessage(feedMessage))
+	if !logHandler.WasLoggedAtLevel(msg, slog.LevelError) {
+		t.Fatal("minimum required node version message was not logged at level Error")
+	}
 }
