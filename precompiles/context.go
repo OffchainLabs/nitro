@@ -112,7 +112,7 @@ func makeContext(p *Precompile, method *PrecompileMethod, caller common.Address,
 	callerCtx := &Context{
 		caller:      caller,
 		gasSupplied: gas,
-		gasLeft:     gas,
+		gasUsed:     multigas.ZeroGas(),
 		readOnly:    readOnly,
 		txProcessor: txProcessor,
 		tracingInfo: util.NewTracingInfo(evm, caller, p.address, util.TracingDuringEVM),
@@ -131,7 +131,7 @@ func makeContext(p *Precompile, method *PrecompileMethod, caller common.Address,
 		if err != nil {
 			return nil, err
 		}
-		err = callerCtx.Burn(toBurn)
+		err = callerCtx.Burn(multigas.ResourceKindComputation, toBurn)
 		if err != nil {
 			return nil, err
 		}
