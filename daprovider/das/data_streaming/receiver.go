@@ -113,6 +113,16 @@ func (ms *messageStore) registerNewMessage(nChunks, timeout, chunkSize, totalSiz
 	ms.mutex.Lock()
 	defer ms.mutex.Unlock()
 
+	// Validate parameters to prevent inconsistent or unsafe states.
+	// Specifically, avoid zero expectedTotalSize for non-empty streams,
+	// which could cause incorrect last-chunk calculations elsewhere.
+	if nChunks > 0 && totalSize == 0 {
+		return 0, errors.New("can't start collecting new message: total size is 0 while nChunks > 0")
+	}
+	if nChunks == 0 && totalSize > 0 {
+		return 0, errors.New("can't start collecting new message: total size > 0 while nChunks == 0")
+	}
+	
 	if len(ms.messages) >= ms.maxPendingMessages {
 		return 0, fmt.Errorf("can't start collecting new message: already %d pending", len(ms.messages))
 	}
