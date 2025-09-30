@@ -17,7 +17,7 @@ type ArbInfo struct {
 
 // GetBalance retrieves an account's balance
 func (con ArbInfo) GetBalance(c ctx, evm mech, account addr) (huge, error) {
-	if err := c.Burn(multigas.ResourceKindStorageAccess, params.BalanceGasEIP1884); err != nil {
+	if err := c.Burn(multigas.ResourceKindComputation, params.BalanceGasEIP1884); err != nil {
 		return nil, err
 	}
 	return evm.StateDB.GetBalance(account).ToBig(), nil
