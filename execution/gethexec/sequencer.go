@@ -1116,7 +1116,7 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 	if s.execEngine.bc.Config().DebugMode() {
 		debugBlock := s.execEngine.bc.Config().ArbitrumChainParams.DebugBlock
 		if lastBlock.Number.Uint64()+1 == debugBlock {
-			// if we are about to produce block with DebugBlock number, we don't want to wait for new tranasactions and we just go ahead triggering an empty block (with startTx only)
+			// if we are about to produce block with DebugBlock number, we don't want to wait for new tranasactions and we just trigger an empty block (with startTx only)
 			makeEmptyBlock = true
 		}
 	}
