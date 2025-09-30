@@ -11,16 +11,62 @@ on:
   pull_request:
 
 jobs:
+  # --- Determine which files have changed ---
+  changes:
+    name: Detect file changes
+    runs-on: ubuntu-4
+    outputs:
+      arbitrator_changed: ${{ steps.changed.outputs.arbitrator_any_changed }}
+      bold_legacy_changed: ${{ steps.changed.outputs.bold_legacy_any_changed }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          submodules: recursive
+          fetch-depth: 10            # Will cover most PRs
+          persist-credentials: true  # In case changed-files requires deeper depth
+
+      - name: Determine if Arbitrator or Bold Legacy changed
+        id: changed
+        uses: tj-actions/changed-files@v46.0.5
+        with:
+          files_yaml: |
+            arbitrator:
+              - 'arbitrator/**'
+              - 'contracts/**'
+              - 'Makefile'
+            bold_legacy:
+              - 'bold/legacy/**'
+
+  # --- Fast: Build + Lint only (required by can_proceed) ---
+  fast:
+    uses: ./.github/workflows/_fast.yml
+    secrets: inherit
+
+  # --- Run Arbitrator tests (not required by can_proceed) ---
+  arbitrator:
+    needs: changes
+    if: needs.changes.outputs.arbitrator_changed == 'true'
+    uses: ./.github/workflows/_arbitrator.yml
+    secrets: inherit
+
+  # --- Run Bold Legacy challenge tests (not required by can_proceed) ---
+  bold-legacy:
+    needs: changes
+    if: needs.changes.outputs.bold_legacy_changed == 'true'
+    uses: ./.github/workflows/_bold-legacy.yml
+    secrets: inherit
+
+  # --- Full GO tests (not required by can_proceed) ---
   go-tests:
     uses: ./.github/workflows/_go-tests.yml
     secrets: inherit
-    permissions:
-      pull-requests: write
 
   can_proceed:
     name: can_proceed
     runs-on: ubuntu-4
-    needs: [go-tests]
+    needs: [fast]
     steps:
       - name: OK
         run: exit 0
