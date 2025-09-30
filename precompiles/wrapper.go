@@ -27,9 +27,12 @@ func debugOnly(address addr, impl ArbosPrecompile) (addr, ArbosPrecompile) {
 	return address, &DebugPrecompile{impl}
 }
 
+func (wrapper *DebugPrecompile) Address() common.Address {
+	return wrapper.precompile.Address()
+}
+
 func (wrapper *DebugPrecompile) Call(
 	input []byte,
-	precompileAddress common.Address,
 	actingAsAddress common.Address,
 	caller common.Address,
 	value *big.Int,
@@ -42,7 +45,7 @@ func (wrapper *DebugPrecompile) Call(
 
 	if debugMode {
 		con := wrapper.precompile
-		return con.Call(input, precompileAddress, actingAsAddress, caller, value, readOnly, gasSupplied, evm)
+		return con.Call(input, actingAsAddress, caller, value, readOnly, gasSupplied, evm)
 	}
 	// Take all gas.
 	return nil, 0, multigas.ComputationGas(gasSupplied), errors.New("debug precompiles are disabled")
@@ -69,9 +72,12 @@ func ownerOnly(address addr, impl ArbosPrecompile, emit func(mech, bytes4, addr,
 	}
 }
 
+func (wrapper *OwnerPrecompile) Address() common.Address {
+	return wrapper.precompile.Address()
+}
+
 func (wrapper *OwnerPrecompile) Call(
 	input []byte,
-	precompileAddress common.Address,
 	actingAsAddress common.Address,
 	caller common.Address,
 	value *big.Int,
@@ -84,7 +90,7 @@ func (wrapper *OwnerPrecompile) Call(
 	burner := &Context{
 		gasSupplied: gasSupplied,
 		gasUsed:     multigas.ZeroGas(),
-		tracingInfo: util.NewTracingInfo(evm, caller, precompileAddress, util.TracingDuringEVM),
+		tracingInfo: util.NewTracingInfo(evm, caller, wrapper.precompile.Address(), util.TracingDuringEVM),
 	}
 	state, err := arbosState.OpenArbosState(evm.StateDB, burner)
 	if err != nil {
@@ -101,7 +107,7 @@ func (wrapper *OwnerPrecompile) Call(
 		return nil, burner.GasLeft(), burner.gasUsed, errors.New("unauthorized caller to access-controlled method")
 	}
 
-	output, _, _, err := con.Call(input, precompileAddress, actingAsAddress, caller, value, readOnly, gasSupplied, evm)
+	output, _, _, err := con.Call(input, actingAsAddress, caller, value, readOnly, gasSupplied, evm)
 
 	if err != nil {
 		return output, gasSupplied, multigas.ZeroGas(), err // we don't deduct gas since we don't want to charge the owner
