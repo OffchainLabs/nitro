@@ -41,11 +41,23 @@ jobs:
               - 'bold/legacy/**'
               - '.github/workflows/_bold-legacy.yml'
 
+  # --- Fast: Build + Lint only (required by can_proceed) ---
+  fast:
+    uses: ./.github/workflows/_fast.yml
+    secrets: inherit
+
   # --- Run Arbitrator tests (not required by can_proceed) ---
   arbitrator:
     needs: changes
     if: needs.changes.outputs.arbitrator_changed == 'true'
     uses: ./.github/workflows/_arbitrator.yml
+    secrets: inherit
+
+  # --- Run Bold Legacy challenge tests (not required by can_proceed) ---
+  bold-legacy:
+    needs: changes
+    if: needs.changes.outputs.bold_legacy_changed == 'true'
+    uses: ./.github/workflows/_bold-legacy.yml
     secrets: inherit
 
   # --- Full GO tests (not required by can_proceed) ---
@@ -63,7 +75,7 @@ jobs:
   can_proceed:
     name: can_proceed
     runs-on: ubuntu-4
-    needs: [arbitrator, go-tests]
+    needs: [fast]
     steps:
       - name: OK
         run: exit 0
