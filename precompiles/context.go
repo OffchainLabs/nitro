@@ -6,6 +6,7 @@ package precompiles
 import (
 	"math/big"
 
+	"github.com/ethereum/go-ethereum/arbitrum/multigas"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
@@ -28,33 +29,33 @@ type ctx = *Context
 type Context struct {
 	caller      addr
 	gasSupplied uint64
-	gasLeft     uint64
+	gasUsed     multigas.MultiGas
 	txProcessor *arbos.TxProcessor
 	State       *arbosState.ArbosState
 	tracingInfo *util.TracingInfo
 	readOnly    bool
 }
 
-func (c *Context) Burn(amount uint64) error {
-	if c.gasLeft < amount {
+func (c *Context) Burn(kind multigas.ResourceKind, amount uint64) error {
+	if c.GasLeft() < amount {
 		return c.BurnOut()
 	}
-	c.gasLeft -= amount
+	c.gasUsed.SaturatingIncrementInto(kind, amount)
 	return nil
 }
 
 //nolint:unused
 func (c *Context) Burned() uint64 {
-	return c.gasSupplied - c.gasLeft
+	return c.gasUsed.SingleGas()
 }
 
 func (c *Context) BurnOut() error {
-	c.gasLeft = 0
+	c.gasUsed.SaturatingIncrementInto(multigas.ResourceKindComputation, c.GasLeft())
 	return vm.ErrOutOfGas
 }
 
-func (c *Context) GasLeft() *uint64 {
-	return &c.gasLeft
+func (c *Context) GasLeft() uint64 {
+	return c.gasSupplied - c.gasUsed.SingleGas()
 }
 
 func (c *Context) Restrict(err error) {
@@ -82,7 +83,7 @@ func testContext(caller addr, evm mech) *Context {
 	ctx := &Context{
 		caller:      caller,
 		gasSupplied: ^uint64(0),
-		gasLeft:     ^uint64(0),
+		gasUsed:     multigas.ZeroGas(),
 		tracingInfo: tracingInfo,
 		readOnly:    false,
 	}
