@@ -25,7 +25,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbnode/resourcemanager"
 	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/offchainlabs/nitro/execution"
+	"github.com/offchainlabs/nitro/consensus"
 	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/rpcclient"
@@ -355,42 +355,8 @@ func NewBlockValidator(
 			ret.legacyValidInfo = legacyInfo
 		}
 	}
-	// genesis block is impossible to validate unless genesis state is empty
-	if ret.lastValidGS.Batch == 0 && ret.legacyValidInfo == nil {
-		genesis, err := streamer.ResultAtMessageIndex(0)
-		if err != nil {
-			return nil, err
-		}
-		ret.lastValidGS = validator.GoGlobalState{
-			BlockHash:  genesis.BlockHash,
-			SendRoot:   genesis.SendRoot,
-			Batch:      1,
-			PosInBatch: 0,
-		}
-	}
-	if config().Dangerous.Revalidation.StartBlock > 0 {
-		startBlock := config().Dangerous.Revalidation.StartBlock
-		messageCount, err := inbox.GetBatchMessageCount(startBlock - 1)
-		if err != nil {
-			return nil, err
-		}
-		res := &execution.MessageResult{}
-		if messageCount > 0 {
-			res, err = streamer.ResultAtMessageIndex(messageCount - 1)
-			if err != nil {
-				return nil, err
-			}
-		}
-		_, endPos, err := statelessBlockValidator.GlobalStatePositionsAtCount(messageCount)
-		if err != nil {
-			return nil, err
-		}
-		gs := BuildGlobalState(*res, endPos)
-		err = ret.writeLastValidated(gs, nil)
-		if err != nil {
-			return nil, err
-		}
-	}
+	ret.streamer = streamer
+	ret.inboxTracker = inbox
 	streamer.SetBlockValidator(ret)
 	inbox.SetBlockValidator(ret)
 	if config().MemoryFreeLimit != "" {
@@ -558,7 +524,7 @@ func GlobalStateToMsgCount(tracker InboxTrackerInterface, streamer TransactionSt
 	if processed < count {
 		return false, 0, nil
 	}
-	res := &execution.MessageResult{}
+	res := &consensus.MessageResult{}
 	if count > 0 {
 		res, err = streamer.ResultAtMessageIndex(count - 1)
 		if err != nil {
@@ -1267,6 +1233,43 @@ func (v *BlockValidator) Reorg(ctx context.Context, count arbutil.MessageIndex) 
 func (v *BlockValidator) Initialize(ctx context.Context) error {
 	config := v.config()
 
+	// genesis block is impossible to validate unless genesis state is empty
+	if v.lastValidGS.Batch == 0 && v.legacyValidInfo == nil {
+		genesis, err := v.streamer.ResultAtMessageIndex(0)
+		if err != nil {
+			return err
+		}
+		v.lastValidGS = validator.GoGlobalState{
+			BlockHash:  genesis.BlockHash,
+			SendRoot:   genesis.SendRoot,
+			Batch:      1,
+			PosInBatch: 0,
+		}
+	}
+	if config.Dangerous.Revalidation.StartBlock > 0 {
+		startBlock := config.Dangerous.Revalidation.StartBlock
+		messageCount, err := v.inboxTracker.GetBatchMessageCount(startBlock - 1)
+		if err != nil {
+			return err
+		}
+		res := &consensus.MessageResult{}
+		if messageCount > 0 {
+			res, err = v.streamer.ResultAtMessageIndex(messageCount - 1)
+			if err != nil {
+				return err
+			}
+		}
+		_, endPos, err := v.StatelessBlockValidator.GlobalStatePositionsAtCount(messageCount)
+		if err != nil {
+			return err
+		}
+		gs := BuildGlobalState(*res, endPos)
+		err = v.writeLastValidated(gs, nil)
+		if err != nil {
+			return err
+		}
+	}
+
 	currentModuleRoot := config.CurrentModuleRoot
 	switch currentModuleRoot {
 	case "latest":
@@ -1361,7 +1364,7 @@ func (v *BlockValidator) checkLegacyValid() error {
 		return nil
 	}
 
-	result := &execution.MessageResult{}
+	result := &consensus.MessageResult{}
 	if msgCount > 0 {
 		result, err = v.streamer.ResultAtMessageIndex(msgCount - 1)
 		if err != nil {
