@@ -56,7 +56,7 @@ jobs:
         continue-on-error: true
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh
-            --tags cionly --timeout 60m --test_state_scheme hash --junitfile test-results/junit.xml
+          --tags cionly --timeout 60m --test_state_scheme hash --junitfile test-results/junit.xml
 
       - name: Process JUnit XML logs
         if: matrix.test-mode == 'defaults' && always()
