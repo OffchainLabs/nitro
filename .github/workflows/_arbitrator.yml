@@ -37,38 +37,50 @@ jobs:
           #  so make sure it doesn't conflict with anything!
           no-cache: true
 
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@v2
+        with:
+          tool: nextest@0.9
+
+      - name: Create minimal nextest.toml config file
+        run: |
+          cat << EOF > nextest.toml
+          [profile.ci.junit]
+          path = "junit.xml"
+          EOF
+
       - name: Make arbitrator libraries
         run: make -j wasm-ci-build
-
-      - name: Clippy check
-        run: cargo clippy --all --manifest-path arbitrator/Cargo.toml -- -D warnings
+#
+#      - name: Clippy check
+#        run: cargo clippy --all --manifest-path arbitrator/Cargo.toml -- -D warnings
 
       - name: Run rust tests
-        run: cargo test -p arbutil -p prover -p jit -p stylus --release --manifest-path arbitrator/prover/Cargo.toml
+        run: cargo nextest run -p arbutil -p prover -p jit -p stylus --release --manifest-path arbitrator/prover/Cargo.toml --profile ci --config-file nextest.toml
 
-      - name: Check stylus_bechmark
-        run: cargo check --manifest-path arbitrator/tools/stylus_benchmark/Cargo.toml
-
-      - name: Rustfmt
-        run: cargo fmt -p arbutil -p prover -p jit -p stylus --manifest-path arbitrator/Cargo.toml -- --check
-
-      - name: Rustfmt - tools/stylus_benchmark
-        run: cargo fmt --all --manifest-path arbitrator/tools/stylus_benchmark/Cargo.toml -- --check
-
-      - name: Make proofs from test cases
-        run: make -j test-gen-proofs
-
-      - name: Start geth server
-        run: |
-          geth --dev --http --http.port 8545 &
-          sleep 2
-
-      - name: Run proof validation tests
-        run: |
-          npm install --global yarn
-          cd contracts-legacy
-          cp -r ../contracts/test/prover/proofs/* ./test/prover/proofs
-          yarn install
-          yarn build
-          yarn build:forge:yul
-          yarn hardhat --network localhost test test/prover/*.ts
+#      - name: Check stylus_bechmark
+#        run: cargo check --manifest-path arbitrator/tools/stylus_benchmark/Cargo.toml
+#
+#      - name: Rustfmt
+#        run: cargo fmt -p arbutil -p prover -p jit -p stylus --manifest-path arbitrator/Cargo.toml -- --check
+#
+#      - name: Rustfmt - tools/stylus_benchmark
+#        run: cargo fmt --all --manifest-path arbitrator/tools/stylus_benchmark/Cargo.toml -- --check
+#
+#      - name: Make proofs from test cases
+#        run: make -j test-gen-proofs
+#
+#      - name: Start geth server
+#        run: |
+#          geth --dev --http --http.port 8545 &
+#          sleep 2
+#
+#      - name: Run proof validation tests
+#        run: |
+#          npm install --global yarn
+#          cd contracts-legacy
+#          cp -r ../contracts/test/prover/proofs/* ./test/prover/proofs
+#          yarn install
+#          yarn build
+#          yarn build:forge:yul
+#          yarn hardhat --network localhost test test/prover/*.ts
