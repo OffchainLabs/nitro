@@ -71,6 +71,8 @@ jobs:
     if: always()
     uses: ./.github/workflows/_codecov.yml
     secrets: inherit
+    permissions:
+      pull-requests: write
 
   can_proceed:
     name: can_proceed
