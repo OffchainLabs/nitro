@@ -7,6 +7,8 @@ jobs:
   report_summary:
     name: Aggregate test results
     runs-on: ubuntu-4
+    permissions:
+      pull-requests: write
 
     steps:
       - name: Checkout repository
@@ -24,9 +26,6 @@ jobs:
         with:
           name: rust-junit-reports
           path: downloaded-reports/rust
-
-      - name: List downloaded files
-        run: ls -R downloaded-reports/ || echo "No files downloaded (expected if all artifacts are missing)."
 
       - name: Run Basic Test Results Action (Unified Report)
         uses: codecov/basic-test-results@v1
