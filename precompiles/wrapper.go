@@ -7,6 +7,7 @@ import (
 	"errors"
 	"math/big"
 
+	"github.com/ethereum/go-ethereum/arbitrum/multigas"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
@@ -35,7 +36,7 @@ func (wrapper *DebugPrecompile) Call(
 	readOnly bool,
 	gasSupplied uint64,
 	evm *vm.EVM,
-) ([]byte, uint64, error) {
+) ([]byte, uint64, multigas.MultiGas, error) {
 
 	debugMode := evm.ChainConfig().DebugMode()
 
@@ -44,7 +45,7 @@ func (wrapper *DebugPrecompile) Call(
 		return con.Call(input, precompileAddress, actingAsAddress, caller, value, readOnly, gasSupplied, evm)
 	}
 	// Take all gas.
-	return nil, 0, errors.New("debug precompiles are disabled")
+	return nil, 0, multigas.ComputationGas(gasSupplied), errors.New("debug precompiles are disabled")
 }
 
 func (wrapper *DebugPrecompile) Precompile() *Precompile {
@@ -77,33 +78,33 @@ func (wrapper *OwnerPrecompile) Call(
 	readOnly bool,
 	gasSupplied uint64,
 	evm *vm.EVM,
-) ([]byte, uint64, error) {
+) ([]byte, uint64, multigas.MultiGas, error) {
 	con := wrapper.precompile
 
 	burner := &Context{
 		gasSupplied: gasSupplied,
-		gasLeft:     gasSupplied,
+		gasUsed:     multigas.ZeroGas(),
 		tracingInfo: util.NewTracingInfo(evm, caller, precompileAddress, util.TracingDuringEVM),
 	}
 	state, err := arbosState.OpenArbosState(evm.StateDB, burner)
 	if err != nil {
-		return nil, burner.gasLeft, err
+		return nil, burner.GasLeft(), burner.gasUsed, err
 	}
 
 	owners := state.ChainOwners()
 	isOwner, err := owners.IsMember(caller)
 	if err != nil {
-		return nil, burner.gasLeft, err
+		return nil, burner.GasLeft(), burner.gasUsed, err
 	}
 
 	if !isOwner {
-		return nil, burner.gasLeft, errors.New("unauthorized caller to access-controlled method")
+		return nil, burner.GasLeft(), burner.gasUsed, errors.New("unauthorized caller to access-controlled method")
 	}
 
-	output, _, err := con.Call(input, precompileAddress, actingAsAddress, caller, value, readOnly, gasSupplied, evm)
+	output, _, _, err := con.Call(input, precompileAddress, actingAsAddress, caller, value, readOnly, gasSupplied, evm)
 
 	if err != nil {
-		return output, gasSupplied, err // we don't deduct gas since we don't want to charge the owner
+		return output, gasSupplied, multigas.ZeroGas(), err // we don't deduct gas since we don't want to charge the owner
 	}
 
 	version := arbosState.ArbOSVersion(evm.StateDB)
@@ -114,7 +115,7 @@ func (wrapper *OwnerPrecompile) Call(
 		}
 	}
 
-	return output, gasSupplied, err // we don't deduct gas since we don't want to charge the owner
+	return output, gasSupplied, multigas.ZeroGas(), err // we don't deduct gas since we don't want to charge the owner
 }
 
 func (wrapper *OwnerPrecompile) Precompile() *Precompile {

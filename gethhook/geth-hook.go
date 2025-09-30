@@ -7,6 +7,7 @@ import (
 	"errors"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
+	"github.com/ethereum/go-ethereum/arbitrum/multigas"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/vm"
@@ -37,7 +38,7 @@ func (p ArbosPrecompileWrapper) RunAdvanced(
 	input []byte,
 	gasSupplied uint64,
 	info *vm.AdvancedPrecompileCall,
-) (ret []byte, gasLeft uint64, err error) {
+) (ret []byte, gasLeft uint64, usedMultiGas multigas.MultiGas, err error) {
 
 	// Precompiles don't actually enter evm execution like normal calls do,
 	// so we need to increment the depth here to simulate the callstack change.
