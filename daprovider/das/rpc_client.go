@@ -19,6 +19,7 @@ import (
 	"github.com/offchainlabs/nitro/daprovider/das/dasutil"
 	"github.com/offchainlabs/nitro/daprovider/data_streaming"
 	"github.com/offchainlabs/nitro/util/pretty"
+	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/signature"
 )
 
@@ -62,7 +63,17 @@ func NewDASRPCClient(target string, signer signature.DataSignerFunc, maxStoreChu
 		payloadSigner := data_streaming.CustomPayloadSigner(func(bytes []byte, extras ...uint64) ([]byte, error) {
 			return applyDasSigner(signer, bytes, extras...)
 		})
-		dataStreamer, err = data_streaming.NewDataStreamer[StoreResult](target, maxStoreChunkBodySize, payloadSigner, rpcMethods)
+		rpcClient := rpcclient.NewRpcClient(func() *rpcclient.ClientConfig {
+			config := rpcclient.DefaultClientConfig
+			config.URL = target
+			return &config
+		}, nil)
+		err := rpcClient.Start(context.Background())
+		if err != nil {
+			return nil, err
+		}
+
+		dataStreamer, err = data_streaming.NewDataStreamer[StoreResult](maxStoreChunkBodySize, payloadSigner, rpcClient, rpcMethods)
 		if err != nil {
 			return nil, err
 		}

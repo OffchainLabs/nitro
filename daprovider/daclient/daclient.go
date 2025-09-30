@@ -50,10 +50,12 @@ func ClientConfigAddOptions(prefix string, f *pflag.FlagSet) {
 }
 
 func NewClient(ctx context.Context, config rpcclient.ClientConfigFetcher, httpBodySizeLimit int, payloadSigner *data_streaming.PayloadSigner) (*Client, error) {
+	rpcClient := rpcclient.NewRpcClient(config, nil)
+
 	dataStreamer, err := data_streaming.NewDataStreamer[server_api.StoreResult](
-		config().URL,
 		httpBodySizeLimit,
 		payloadSigner,
+		rpcClient,
 		data_streaming.DataStreamingRPCMethods{
 			StartStream:    "daprovider_startChunkedStore",
 			StreamChunk:    "daprovider_sendChunk",
@@ -64,7 +66,7 @@ func NewClient(ctx context.Context, config rpcclient.ClientConfigFetcher, httpBo
 		return nil, err
 	}
 
-	client := &Client{rpcclient.NewRpcClient(config, nil), dataStreamer}
+	client := &Client{rpcClient, dataStreamer}
 	if err = client.Start(ctx); err != nil {
 		return nil, fmt.Errorf("error starting daprovider client: %w", err)
 	}

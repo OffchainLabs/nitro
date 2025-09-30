@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/stretchr/testify/require"
 
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -190,7 +191,12 @@ func prepareTestEnv(t *testing.T, onChunkInjection func(uint64) error) (context.
 	signer, verifier := prepareCrypto(t)
 	serverUrl := launchServer(t, ctx, verifier, onChunkInjection)
 
-	streamer, err := NewDataStreamer[ProtocolResult]("http://"+serverUrl, maxStoreChunkBodySize, DefaultPayloadSigner(signer), rpcMethods)
+	clientConfig := func() *rpcclient.ClientConfig { return &rpcclient.ClientConfig{URL: "http://" + serverUrl} }
+	rpcClient := rpcclient.NewRpcClient(clientConfig, nil)
+	err := rpcClient.Start(ctx)
+	testhelpers.RequireImpl(t, err)
+
+	streamer, err := NewDataStreamer[ProtocolResult](maxStoreChunkBodySize, DefaultPayloadSigner(signer), rpcClient, rpcMethods)
 	testhelpers.RequireImpl(t, err)
 
 	return ctx, streamer
