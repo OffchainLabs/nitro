@@ -58,9 +58,9 @@ jobs:
       - name: Run rust tests
         id: run-rust-tests
         continue-on-error: true
-        run: |
-          cargo nextest run -p arbutil -p prover -p jit -p stylus --release \
-            --manifest-path arbitrator/prover/Cargo.toml \
+        run: >-
+          cargo nextest run -p arbutil -p prover -p jit -p stylus --release
+            --manifest-path arbitrator/prover/Cargo.toml
             --profile ci --config-file nextest.toml
 
       - name: Upload rust test results
