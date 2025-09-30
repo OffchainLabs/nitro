@@ -28,7 +28,7 @@ jobs:
       - name: List downloaded files
         run: ls -R downloaded-reports/ || echo "No files downloaded (expected if all artifacts are missing)."
 
-      - name: Run Basic Test Results Action (Unified Report) 🚀
+      - name: Run Basic Test Results Action (Unified Report)
         uses: codecov/basic-test-results@v1
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
