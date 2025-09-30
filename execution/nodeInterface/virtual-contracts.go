@@ -96,7 +96,7 @@ func init() {
 			core.ReadyEVMForL2(evm, msg)
 
 			output, _, gasUsed, err := precompile.Call(
-				msg.Data, address, address, msg.From, msg.Value, false, msg.GasLimit, evm,
+				msg.Data, address, msg.From, msg.Value, false, msg.GasLimit, evm,
 			)
 			if err != nil {
 				return msg, nil, err
