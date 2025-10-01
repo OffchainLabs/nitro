@@ -7,6 +7,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/util/testhelpers"
+	"github.com/stretchr/testify/require"
 )
 
 var testBytes = []byte("test payload data")
@@ -23,6 +24,10 @@ func testSynergy(t *testing.T, payloadSigner *PayloadSigner, payloadVerifier *Pa
 	testhelpers.RequireImpl(t, err)
 	err = payloadVerifier.verifyPayload(context.Background(), sig, testBytes, testExtras...)
 	testhelpers.RequireImpl(t, err)
+
+	sig2, err := payloadSigner.signPayload(append(testBytes, 0), testExtras...)
+	err = payloadVerifier.verifyPayload(context.Background(), sig2, testBytes, testExtras...)
+	require.Error(t, err)
 }
 
 func prepareCrypto(t *testing.T) (signature.DataSignerFunc, *signature.Verifier) {
