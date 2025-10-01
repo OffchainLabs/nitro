@@ -181,7 +181,11 @@ func (e *ExpDelayPolicy) NextDelay(attempt int) (time.Duration, bool) {
 	if attempt >= e.MaxAttempts {
 		return 0, false
 	}
-	delay := e.BaseDelay * time.Duration(1<<uint(attempt-1))
+	if attempt <= 0 {
+		return time.Duration(0), true
+	}
+
+	delay := e.BaseDelay * time.Duration(1<<uint(attempt-1)) // nolint:gosec
 	if delay > e.MaxDelay {
 		delay = e.MaxDelay
 	}
