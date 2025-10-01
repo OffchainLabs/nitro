@@ -17,7 +17,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/ethereum/go-ethereum/common/hexutil"
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/cmd/genericconf"
@@ -200,22 +199,6 @@ func prepareTestEnv(t *testing.T, onChunkInjection func(uint64) error) (context.
 	testhelpers.RequireImpl(t, err)
 
 	return ctx, streamer
-}
-
-func prepareCrypto(t *testing.T) (signature.DataSignerFunc, *signature.Verifier) {
-	privateKey, err := crypto.GenerateKey()
-	testhelpers.RequireImpl(t, err)
-
-	signatureVerifierConfig := signature.VerifierConfig{
-		AllowedAddresses: []string{crypto.PubkeyToAddress(privateKey.PublicKey).Hex()},
-		AcceptSequencer:  false,
-		Dangerous:        signature.DangerousVerifierConfig{AcceptMissing: false},
-	}
-	verifier, err := signature.NewVerifier(&signatureVerifierConfig, nil)
-	testhelpers.RequireImpl(t, err)
-
-	signer := signature.DataSignerFromPrivateKey(privateKey)
-	return signer, verifier
 }
 
 func launchServer(t *testing.T, ctx context.Context, signatureVerifier *signature.Verifier, onChunkInjection func(uint64) error) string {
