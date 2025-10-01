@@ -18,6 +18,7 @@ import (
 const (
 	DefaultMaxPendingMessages      = 10
 	DefaultMessageCollectionExpiry = 1 * time.Minute
+	DefaultRequestValidity         = 5 * time.Minute
 )
 
 // DataStreamReceiver implements the server side of the data streaming protocol. It stays compatible with `DataStreamer`
@@ -38,16 +39,17 @@ type DataStreamReceiver struct {
 // the `DataStreamer` sender side. `maxPendingMessages` limits how many parallel protocol instances are supported.
 // `messageCollectionExpiry` is the window in which a protocol must end - otherwise the protocol will be closed and all
 // related data will be removed. This time window is reset after every _new_ protocol message received.
-func NewDataStreamReceiver(payloadVerifier *PayloadVerifier, maxPendingMessages int, messageCollectionExpiry time.Duration, expirationCallback func(id MessageId)) *DataStreamReceiver {
+// `requestValidity` is the maximum age of the incoming protocol opening message.
+func NewDataStreamReceiver(payloadVerifier *PayloadVerifier, maxPendingMessages int, messageCollectionExpiry, requestValidity time.Duration, expirationCallback func(id MessageId)) *DataStreamReceiver {
 	return &DataStreamReceiver{
 		payloadVerifier: payloadVerifier,
-		messageStore:    newMessageStore(maxPendingMessages, messageCollectionExpiry, expirationCallback),
+		messageStore:    newMessageStore(maxPendingMessages, messageCollectionExpiry, requestValidity, expirationCallback),
 	}
 }
 
 // NewDefaultDataStreamReceiver sets up a new stream receiver with default settings.
 func NewDefaultDataStreamReceiver(verifier *PayloadVerifier) *DataStreamReceiver {
-	return NewDataStreamReceiver(verifier, DefaultMaxPendingMessages, DefaultMessageCollectionExpiry, nil)
+	return NewDataStreamReceiver(verifier, DefaultMaxPendingMessages, DefaultMessageCollectionExpiry, DefaultRequestValidity, nil)
 }
 
 // StartStreamingResult is expected by DataStreamer to be returned by the endpoint responsible for the StartReceiving method.
@@ -108,15 +110,17 @@ type messageStore struct {
 	messages                map[MessageId]*partialMessage
 	maxPendingMessages      int
 	messageCollectionExpiry time.Duration
+	requestValidity         time.Duration
 	expirationCallback      func(MessageId)
 }
 
-func newMessageStore(maxPendingMessages int, messageCollectionExpiry time.Duration, expirationCallback func(id MessageId)) *messageStore {
+func newMessageStore(maxPendingMessages int, messageCollectionExpiry, requestValidity time.Duration, expirationCallback func(id MessageId)) *messageStore {
 	return &messageStore{
 		mutex:                   sync.Mutex{},
 		messages:                make(map[MessageId]*partialMessage),
 		maxPendingMessages:      maxPendingMessages,
 		messageCollectionExpiry: messageCollectionExpiry,
+		requestValidity:         requestValidity,
 		expirationCallback:      expirationCallback,
 	}
 }

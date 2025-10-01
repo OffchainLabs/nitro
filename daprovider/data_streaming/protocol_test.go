@@ -28,6 +28,7 @@ import (
 const (
 	maxPendingMessages      = 10
 	messageCollectionExpiry = 1 * time.Second
+	requestValidity         = 1 * time.Second
 	maxStoreChunkBodySize   = 1024
 	timeout                 = 10
 	serverRPCRoot           = "datastreaming"
@@ -204,7 +205,7 @@ func prepareTestEnv(t *testing.T, onChunkInjection func(uint64) error) (context.
 func launchServer(t *testing.T, ctx context.Context, signatureVerifier *signature.Verifier, onChunkInjection func(uint64) error) string {
 	rpcServer := rpc.NewServer()
 	err := rpcServer.RegisterName(serverRPCRoot, &TestServer{
-		dataStreamReceiver: NewDataStreamReceiver(DefaultPayloadVerifier(signatureVerifier), maxPendingMessages, messageCollectionExpiry, nil),
+		dataStreamReceiver: NewDataStreamReceiver(DefaultPayloadVerifier(signatureVerifier), maxPendingMessages, messageCollectionExpiry, requestValidity, nil),
 		onChunkInject:      onChunkInjection,
 	})
 	testhelpers.RequireImpl(t, err)
