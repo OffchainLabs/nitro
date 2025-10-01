@@ -8,6 +8,7 @@ import (
 	"errors"
 	"math/big"
 
+	"github.com/ethereum/go-ethereum/arbitrum/multigas"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -246,7 +247,7 @@ func (rs *RetryableState) Keepalive(
 	newTimeout := timeout + RetryableLifetimeSeconds
 
 	// Pay in advance for the work needed to reap the duplicate from the timeout queue
-	return newTimeout, rs.retryables.Burner().Burn(RetryableReapPrice)
+	return newTimeout, rs.retryables.Burner().Burn(multigas.ResourceKindComputation, RetryableReapPrice)
 }
 
 func (retryable *Retryable) Equals(other *Retryable) (bool, error) { // for testing

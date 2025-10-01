@@ -85,8 +85,17 @@ func newApiClosures(
 				return WriteProtection
 			}
 
-			cost := vm.WasmStateStoreCost(db, actingAddress, key, value)
+			costMultiGas := vm.WasmStateStoreCost(db, actingAddress, key, value)
+			cost := costMultiGas.SingleGas()
 			if cost > *gasLeft {
+				// Account what is left as WASM computation MultiGas
+				if *gasLeft > 0 {
+					scope.Contract.UsedMultiGas.SaturatingIncrementInto(
+						multigas.ResourceKindWasmComputation,
+						*gasLeft,
+					)
+				}
+
 				*gasLeft = 0
 				isOutOfGas = true
 				if recording {
@@ -95,6 +104,7 @@ func newApiClosures(
 				break
 			}
 			*gasLeft -= cost
+			scope.Contract.UsedMultiGas.SaturatingAddInto(costMultiGas)
 			db.SetState(actingAddress, key, value)
 		}
 		if isOutOfGas {
