@@ -1,0 +1,34 @@
+---
+name: codecov
+on:
+  workflow_call:
+
+jobs:
+  report_summary:
+    name: Aggregate test results
+    runs-on: ubuntu-4
+    permissions:
+      pull-requests: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Download Go JUnit reports
+        uses: actions/download-artifact@v4
+        with:
+          name: go-junit-reports
+          path: downloaded-reports/go
+
+      - name: Download Rust JUnit reports
+        uses: actions/download-artifact@v4
+        continue-on-error: true # Rust pipeline might have not been run
+        with:
+          name: rust-junit-reports
+          path: downloaded-reports/rust
+
+      - name: Run Basic Test Results Action (Unified Report)
+        uses: codecov/basic-test-results@v1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          directory: 'downloaded-reports/'

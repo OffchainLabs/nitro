@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/ethereum/go-ethereum/arbitrum/multigas"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
@@ -65,7 +66,7 @@ func (p Programs) Params() (*StylusParams, error) {
 	sto := p.backingStorage.OpenCachedSubStorage(paramsKey)
 
 	// assume reads are warm due to the frequency of access
-	if err := sto.Burner().Burn(1 * params.WarmStorageReadCostEIP2929); err != nil {
+	if err := sto.Burner().Burn(multigas.ResourceKindComputation, params.WarmStorageReadCostEIP2929); err != nil {
 		return &StylusParams{}, err
 	}
 
