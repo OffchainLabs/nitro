@@ -26,7 +26,6 @@ func TestMultigasStylus_GetBytes32(t *testing.T) {
 	defer cancel()
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
-	builder.execConfig.ExposeMultiGas = true
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -60,7 +59,6 @@ func TestMultigasStylus_AccountAccessHostIOs(t *testing.T) {
 	defer cancel()
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
-	builder.execConfig.ExposeMultiGas = true
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -131,7 +129,6 @@ func TestMultigasStylus_EmitLog(t *testing.T) {
 	defer cancel()
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
-	builder.execConfig.ExposeMultiGas = true
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -204,7 +201,6 @@ func TestMultigasStylus_Create(t *testing.T) {
 	defer cancel()
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
-	builder.execConfig.ExposeMultiGas = true
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -279,7 +275,6 @@ func TestMultigasStylus_Calls(t *testing.T) {
 	defer cancel()
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
-	builder.execConfig.ExposeMultiGas = true
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -353,7 +348,6 @@ func TestMultigasStylus_StorageWrite(t *testing.T) {
 	defer cancel()
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
-	builder.execConfig.ExposeMultiGas = true
 	cleanup := builder.Build(t)
 	defer cleanup()
 
