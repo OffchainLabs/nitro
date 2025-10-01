@@ -10,6 +10,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
@@ -97,4 +98,44 @@ func testContext(caller addr, evm mech) *Context {
 		panic("must have tx processor")
 	}
 	return ctx
+}
+
+func makeContext(p *Precompile, method *PrecompileMethod, caller common.Address, gas uint64, evm *vm.EVM) (*Context, error) {
+	txProcessor, ok := evm.ProcessingHook.(*arbos.TxProcessor)
+	if !ok {
+		log.Error("processing hook not set")
+		return nil, vm.ErrExecutionReverted
+	}
+
+	readOnly := method.purity <= view
+
+	callerCtx := &Context{
+		caller:      caller,
+		gasSupplied: gas,
+		gasUsed:     multigas.ZeroGas(),
+		readOnly:    readOnly,
+		txProcessor: txProcessor,
+		tracingInfo: util.NewTracingInfo(evm, caller, p.address, util.TracingDuringEVM),
+	}
+
+	if method.purity != pure {
+		state, err := arbosState.OpenArbosState(evm.StateDB, callerCtx)
+		if err != nil {
+			return nil, err
+		}
+		callerCtx.State = state
+	}
+
+	if method.purity >= write && evm.ReadOnly() {
+		toBurn, err := callerCtx.State.L2PricingState().PerTxGasLimit()
+		if err != nil {
+			return nil, err
+		}
+		err = callerCtx.Burn(multigas.ResourceKindComputation, toBurn)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return callerCtx, nil
 }
