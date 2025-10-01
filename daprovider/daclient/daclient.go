@@ -53,12 +53,21 @@ func NewClient(ctx context.Context, config rpcclient.ClientConfigFetcher) (*Clie
 	return client, nil
 }
 
-func (c *Client) GetSupportedHeaderBytes(ctx context.Context) ([]byte, error) {
-	var result server_api.SupportedHeaderBytesResult
-	if err := c.CallContext(ctx, &result, "daprovider_getSupportedHeaderBytes"); err != nil {
-		return nil, fmt.Errorf("error returned from daprovider_getSupportedHeaderBytes rpc method: %w", err)
-	}
-	return result.HeaderBytes, nil
+type SupportedHeaderBytesResult struct {
+	HeaderBytes []byte
+}
+
+func (c *Client) GetSupportedHeaderBytes() containers.PromiseInterface[SupportedHeaderBytesResult] {
+	promise, ctx := containers.NewPromiseWithContext[SupportedHeaderBytesResult](context.Background())
+	go func() {
+		var result server_api.SupportedHeaderBytesResult
+		if err := c.CallContext(ctx, &result, "daprovider_getSupportedHeaderBytes"); err != nil {
+			promise.ProduceError(fmt.Errorf("error returned from daprovider_getSupportedHeaderBytes rpc method: %w", err))
+		} else {
+			promise.Produce(SupportedHeaderBytesResult{HeaderBytes: result.HeaderBytes})
+		}
+	}()
+	return promise
 }
 
 // RecoverPayload fetches the underlying payload from the DA provider
