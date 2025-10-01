@@ -102,6 +102,11 @@ func EnsureTxSucceededWithTimeout(ctx context.Context, client *ethclient.Client,
 			}
 		}
 	}
+
+	// Don't perform gas check if multigas is zero, as that indicates multigas is disabled
+	if !receipt.MultiGasUsed.IsZero() && receipt.GasUsed != receipt.MultiGasUsed.SingleGas() {
+		return receipt, fmt.Errorf("receipt gas used %d doesn't match multigas single gas used %d", receipt.GasUsed, receipt.MultiGasUsed.SingleGas())
+	}
 	return receipt, arbutil.DetailTxError(ctx, client, tx, receipt)
 }
 
