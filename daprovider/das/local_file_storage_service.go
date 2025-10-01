@@ -274,6 +274,37 @@ func listDir(dir string) ([]string, error) {
 	return files, nil
 }
 
+// readDirNamesFiltered reads directory entries at p and returns only names matching the expected type.
+// If p is not a directory or does not exist (e.g., a stray file in place of a directory), it returns
+// an empty slice and nil to skip it gracefully.
+func readDirNamesFiltered(p string, wantDirs bool) ([]string, error) {
+	entries, err := os.ReadDir(p)
+	if err != nil {
+		// If path does not exist, treat it as empty to allow iteration to proceed.
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, nil
+		}
+		// If path exists but is not a directory, also treat it as empty.
+		if info, statErr := os.Stat(p); statErr == nil && !info.IsDir() {
+			return nil, nil
+		}
+		return nil, err
+	}
+	names := make([]string, 0, len(entries))
+	for _, e := range entries {
+		if wantDirs {
+			if e.IsDir() {
+				names = append(names, e.Name())
+			}
+			continue
+		}
+		if !e.IsDir() {
+			names = append(names, e.Name())
+		}
+	}
+	return names, nil
+}
+
 var hex64Regex = regexp.MustCompile(fmt.Sprintf("^[a-fA-F0-9]{%d}$", common.HashLength*2))
 
 func isStorageServiceKey(key string) bool {
@@ -608,22 +639,20 @@ func (l *trieLayout) iterateBatches() (*trieLayoutIterator, error) {
 	var firstLevel, secondLevel, files []string
 	var err error
 
-	// TODO handle stray files that aren't dirs
-
-	firstLevel, err = listDir(filepath.Join(l.root, byDataHash))
+	firstLevel, err = readDirNamesFiltered(filepath.Join(l.root, byDataHash), true)
 	if err != nil {
 		return nil, err
 	}
 
 	if len(firstLevel) > 0 {
-		secondLevel, err = listDir(filepath.Join(l.root, byDataHash, firstLevel[0]))
+		secondLevel, err = readDirNamesFiltered(filepath.Join(l.root, byDataHash, firstLevel[0]), true)
 		if err != nil {
 			return nil, err
 		}
 	}
 
 	if len(secondLevel) > 0 {
-		files, err = listDir(filepath.Join(l.root, byDataHash, firstLevel[0], secondLevel[0]))
+		files, err = readDirNamesFiltered(filepath.Join(l.root, byDataHash, firstLevel[0], secondLevel[0]), false)
 		if err != nil {
 			return nil, err
 		}
@@ -645,20 +674,20 @@ func (l *trieLayout) iterateBatchesByTimestamp(maxTimestamp time.Time) (*trieLay
 	var firstLevel, secondLevel, files []string
 	var err error
 
-	firstLevel, err = listDir(filepath.Join(l.root, byExpiryTimestamp))
+	firstLevel, err = readDirNamesFiltered(filepath.Join(l.root, byExpiryTimestamp), true)
 	if err != nil {
 		return nil, err
 	}
 
 	if len(firstLevel) > 0 {
-		secondLevel, err = listDir(filepath.Join(l.root, byExpiryTimestamp, firstLevel[0]))
+		secondLevel, err = readDirNamesFiltered(filepath.Join(l.root, byExpiryTimestamp, firstLevel[0]), true)
 		if err != nil {
 			return nil, err
 		}
 	}
 
 	if len(secondLevel) > 0 {
-		files, err = listDir(filepath.Join(l.root, byExpiryTimestamp, firstLevel[0], secondLevel[0]))
+		files, err = readDirNamesFiltered(filepath.Join(l.root, byExpiryTimestamp, firstLevel[0], secondLevel[0]), false)
 		if err != nil {
 			return nil, err
 		}
@@ -776,7 +805,9 @@ func (it *trieLayoutIterator) next() (string, error) {
 		if isLeaf(idx) || len(it.levels[idx]) == 0 {
 			return nil
 		}
-		nextLevelEntries, err := listDir(makePathAtLevel(idx))
+		// Next level expects directories unless it is the leaf level
+		wantDirs := (idx + 1) < (len(it.levels) - 1)
+		nextLevelEntries, err := readDirNamesFiltered(makePathAtLevel(idx), wantDirs)
 		if err != nil {
 			return err
 		}
