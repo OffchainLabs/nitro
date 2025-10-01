@@ -166,6 +166,25 @@ func TestDataStreaming_ClientRetriesWhenThereAreConnectionProblems(t *testing.T)
 	require.Equal(t, message, ([]byte)(result.Message), "protocol resulted in an incorrect message")
 }
 
+func TestDataStreaming_ServerDeniesTooOldAndFutureRequests(t *testing.T) {
+	ctx, streamer := prepareTestEnv(t, nil)
+	message, _ := getLongRandomMessage(streamer.chunkSize)
+
+	// ========== Implementation of streamer.StreamData from the past ==========
+
+	params := newStreamParams(uint64(len(message)), streamer.chunkSize, timeout)
+	params.timestamp = uint64(time.Now().Add(-2 * requestValidity).Unix())
+
+	_, err := streamer.startStream(ctx, params)
+	require.Error(t, err)
+
+	// ========== Implementation of streamer.StreamData from the past ==========
+	params.timestamp = uint64(time.Now().Add(2 * requestValidity).Unix())
+
+	_, err = streamer.startStream(ctx, params)
+	require.Error(t, err)
+}
+
 func testBasic(t *testing.T, messageSizeMean, messageSizeStdDev, concurrency int) {
 	ctx, streamer := prepareTestEnv(t, nil)
 

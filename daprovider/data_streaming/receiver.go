@@ -33,6 +33,7 @@ const (
 type DataStreamReceiver struct {
 	payloadVerifier *PayloadVerifier
 	messageStore    *messageStore
+	requestValidity time.Duration
 }
 
 // NewDataStreamReceiver sets up a new stream receiver. `payloadVerifier` must be compatible with message signing on
@@ -43,7 +44,8 @@ type DataStreamReceiver struct {
 func NewDataStreamReceiver(payloadVerifier *PayloadVerifier, maxPendingMessages int, messageCollectionExpiry, requestValidity time.Duration, expirationCallback func(id MessageId)) *DataStreamReceiver {
 	return &DataStreamReceiver{
 		payloadVerifier: payloadVerifier,
-		messageStore:    newMessageStore(maxPendingMessages, messageCollectionExpiry, requestValidity, expirationCallback),
+		messageStore:    newMessageStore(maxPendingMessages, messageCollectionExpiry, expirationCallback),
+		requestValidity: requestValidity,
 	}
 }
 
@@ -63,9 +65,9 @@ func (dsr *DataStreamReceiver) StartReceiving(ctx context.Context, timestamp, nC
 		return &StartStreamingResult{0}, err
 	}
 
-	// Prevent replay of old messages
+	// Deny too old or from-future requests. We keep the margin of `dsr.requestValidity` also to the future, in case of unsync clocks.
 	// #nosec G115
-	if time.Since(time.Unix(int64(timestamp), 0)).Abs() > time.Minute {
+	if time.Since(time.Unix(int64(timestamp), 0)).Abs() > dsr.requestValidity {
 		return &StartStreamingResult{0}, errors.New("too much time has elapsed since request was signed")
 	}
 
@@ -110,17 +112,15 @@ type messageStore struct {
 	messages                map[MessageId]*partialMessage
 	maxPendingMessages      int
 	messageCollectionExpiry time.Duration
-	requestValidity         time.Duration
 	expirationCallback      func(MessageId)
 }
 
-func newMessageStore(maxPendingMessages int, messageCollectionExpiry, requestValidity time.Duration, expirationCallback func(id MessageId)) *messageStore {
+func newMessageStore(maxPendingMessages int, messageCollectionExpiry time.Duration, expirationCallback func(id MessageId)) *messageStore {
 	return &messageStore{
 		mutex:                   sync.Mutex{},
 		messages:                make(map[MessageId]*partialMessage),
 		maxPendingMessages:      maxPendingMessages,
 		messageCollectionExpiry: messageCollectionExpiry,
-		requestValidity:         requestValidity,
 		expirationCallback:      expirationCallback,
 	}
 }
