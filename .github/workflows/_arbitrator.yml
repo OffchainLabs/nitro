@@ -37,6 +37,18 @@ jobs:
           #  so make sure it doesn't conflict with anything!
           no-cache: true
 
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@v2
+        with:
+          tool: nextest@0.9
+
+      - name: Create minimal nextest.toml config file
+        run: |
+          cat << EOF > nextest.toml
+          [profile.ci.junit]
+          path = "junit.xml"
+          EOF
+
       - name: Make arbitrator libraries
         run: make -j wasm-ci-build
 
@@ -44,7 +56,25 @@ jobs:
         run: cargo clippy --all --manifest-path arbitrator/Cargo.toml -- -D warnings
 
       - name: Run rust tests
-        run: cargo test -p arbutil -p prover -p jit -p stylus --release --manifest-path arbitrator/prover/Cargo.toml
+        id: run-rust-tests
+        continue-on-error: true
+        run: >-
+          cargo nextest run -p arbutil -p prover -p jit -p stylus --release
+          --manifest-path arbitrator/prover/Cargo.toml
+          --profile ci --config-file nextest.toml
+
+      - name: Upload rust test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rust-junit-reports
+          path: ./arbitrator/target/nextest/ci/junit.xml
+
+      - name: Fail if rust tests failed
+        if: steps.run-rust-tests.outcome == 'failure'
+        run: |
+          echo "Rust tests failed. Failing the workflow as required."
+          exit 1
 
       - name: Check stylus_bechmark
         run: cargo check --manifest-path arbitrator/tools/stylus_benchmark/Cargo.toml
