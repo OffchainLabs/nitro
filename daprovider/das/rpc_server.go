@@ -34,11 +34,6 @@ var (
 	rpcSendChunkFailureGauge = metrics.NewRegisteredGauge("arb/das/rpc/sendchunk/failure", nil)
 )
 
-const (
-	defaultMaxPendingMessages      = 10
-	defaultMessageCollectionExpiry = 1 * time.Minute
-)
-
 // lint:require-exhaustive-initialization
 type DASRPCServer struct {
 	daReader        dasutil.DASReader
@@ -78,7 +73,7 @@ func StartDASRPCServerOnListener(ctx context.Context, listener net.Listener, rpc
 		daWriter:          daWriter,
 		daHealthChecker:   daHealthChecker,
 		signatureVerifier: signatureVerifier,
-		dataStreamReceiver: data_streaming.NewDataStreamReceiver(dataStreamPayloadVerifier, defaultMaxPendingMessages, defaultMessageCollectionExpiry, func(id data_streaming.MessageId) {
+		dataStreamReceiver: data_streaming.NewDataStreamReceiver(dataStreamPayloadVerifier, data_streaming.DefaultMaxPendingMessages, data_streaming.DefaultMessageCollectionExpiry, data_streaming.DefaultRequestValidity, func(id data_streaming.MessageId) {
 			rpcStoreFailureGauge.Inc(1)
 		}),
 	})
