@@ -29,51 +29,18 @@ func Test_parseDelayedMessagesFromBlock(t *testing.T) {
 	header := &types.Header{
 		Number: big.NewInt(1),
 	}
-	txsFetcher := &mockTxsFetcher{
+	txFetcher := &mockTxFetcher{
 		txs: []*types.Transaction{},
 	}
-	receiptFetcher := &mockReceiptFetcher{}
+	blockLogsFetcher := &mockBlockLogsFetcher{}
 
 	t.Run("no transactions", func(t *testing.T) {
 		msgs, err := parseDelayedMessagesFromBlock(
 			ctx,
 			melState,
 			header,
-			receiptFetcher,
-			txsFetcher,
-		)
-		require.NoError(t, err)
-		require.Empty(t, msgs)
-	})
-	t.Run("tx with no to field set", func(t *testing.T) {
-		txData := &types.DynamicFeeTx{
-			To:        nil,
-			Nonce:     1,
-			GasFeeCap: big.NewInt(1),
-			GasTipCap: big.NewInt(1),
-			Gas:       1,
-			Value:     big.NewInt(0),
-			Data:      nil,
-		}
-		tx := types.NewTx(txData)
-		blockBody := &types.Body{
-			Transactions: []*types.Transaction{tx},
-		}
-		txsFetcher = &mockTxsFetcher{
-			txs: []*types.Transaction{tx},
-		}
-		block := types.NewBlock(
-			&types.Header{},
-			blockBody,
-			nil,
-			trie.NewStackTrie(nil),
-		)
-		msgs, err := parseDelayedMessagesFromBlock(
-			ctx,
-			melState,
-			block.Header(),
-			receiptFetcher,
-			txsFetcher,
+			txFetcher,
+			blockLogsFetcher,
 		)
 		require.NoError(t, err)
 		require.Empty(t, msgs)
@@ -92,7 +59,7 @@ func Test_parseDelayedMessagesFromBlock(t *testing.T) {
 		blockBody := &types.Body{
 			Transactions: []*types.Transaction{tx},
 		}
-		txsFetcher = &mockTxsFetcher{
+		txFetcher = &mockTxFetcher{
 			txs: []*types.Transaction{tx},
 		}
 		receipt := &types.Receipt{
@@ -105,15 +72,13 @@ func Test_parseDelayedMessagesFromBlock(t *testing.T) {
 			receipts,
 			trie.NewStackTrie(nil),
 		)
-		receiptFetcher = &mockReceiptFetcher{
-			receipts: receipts,
-		}
+		blockLogsFetcher = newMockBlockLogsFetcher(receipts)
 		msgs, err := parseDelayedMessagesFromBlock(
 			ctx,
 			melState,
 			block.Header(),
-			receiptFetcher,
-			txsFetcher,
+			txFetcher,
+			blockLogsFetcher,
 		)
 		require.NoError(t, err)
 		require.Empty(t, msgs)
@@ -133,7 +98,7 @@ func Test_parseDelayedMessagesFromBlock(t *testing.T) {
 		blockBody := &types.Body{
 			Transactions: []*types.Transaction{tx},
 		}
-		txsFetcher = &mockTxsFetcher{
+		txFetcher = &mockTxFetcher{
 			txs: []*types.Transaction{tx},
 		}
 		messageIndexBytes := common.BigToHash(event.MessageIndex)
@@ -143,7 +108,7 @@ func Test_parseDelayedMessagesFromBlock(t *testing.T) {
 					Address: delayedMsgPostingAddr,
 					Data:    packedLog,
 					Topics: []common.Hash{
-						iBridgeABI.Events["MessageDelivered"].ID,
+						IBridgeABI.Events["MessageDelivered"].ID,
 						messageIndexBytes,
 						event.BeforeInboxAcc,
 					},
@@ -157,15 +122,13 @@ func Test_parseDelayedMessagesFromBlock(t *testing.T) {
 			receipts,
 			trie.NewStackTrie(nil),
 		)
-		receiptFetcher = &mockReceiptFetcher{
-			receipts: receipts,
-		}
+		blockLogsFetcher = newMockBlockLogsFetcher(receipts)
 		_, err := parseDelayedMessagesFromBlock(
 			ctx,
 			melState,
 			block.Header(),
-			receiptFetcher,
-			txsFetcher,
+			txFetcher,
+			blockLogsFetcher,
 		)
 		require.ErrorContains(t, err, "message 1 data not found")
 	})
@@ -201,7 +164,7 @@ func Test_parseDelayedMessagesFromBlock(t *testing.T) {
 		blockBody := &types.Body{
 			Transactions: []*types.Transaction{tx1, tx2},
 		}
-		txsFetcher := &mockTxsFetcher{
+		txFetcher := &mockTxFetcher{
 			txs: []*types.Transaction{tx1, tx2},
 		}
 		messageIndexBytes := common.BigToHash(delayedMsgEvent.MessageIndex)
@@ -211,7 +174,7 @@ func Test_parseDelayedMessagesFromBlock(t *testing.T) {
 					Address: delayedMsgPostingAddr,
 					Data:    delayedMsgPackedLog,
 					Topics: []common.Hash{
-						iBridgeABI.Events["MessageDelivered"].ID,
+						IBridgeABI.Events["MessageDelivered"].ID,
 						messageIndexBytes,
 						delayedMsgEvent.BeforeInboxAcc,
 					},
@@ -237,15 +200,13 @@ func Test_parseDelayedMessagesFromBlock(t *testing.T) {
 			receipts,
 			trie.NewStackTrie(nil),
 		)
-		receiptFetcher = &mockReceiptFetcher{
-			receipts: receipts,
-		}
+		blockLogsFetcher = newMockBlockLogsFetcher(receipts)
 		_, err = parseDelayedMessagesFromBlock(
 			ctx,
 			melState,
 			block.Header(),
-			receiptFetcher,
-			txsFetcher,
+			txFetcher,
+			blockLogsFetcher,
 		)
 		require.ErrorContains(t, err, "mismatched hash")
 	})
@@ -261,7 +222,7 @@ func Test_parseDelayedMessagesFromBlock(t *testing.T) {
 			BaseFeeL1:       big.NewInt(2),
 			Timestamp:       0,
 		}
-		eventABI := iBridgeABI.Events["MessageDelivered"]
+		eventABI := IBridgeABI.Events["MessageDelivered"]
 		delayedMsgPackedLog, err := eventABI.Inputs.NonIndexed().Pack(
 			delayedMsgEvent.Inbox,
 			delayedMsgEvent.Kind,
@@ -301,7 +262,7 @@ func Test_parseDelayedMessagesFromBlock(t *testing.T) {
 		blockBody := &types.Body{
 			Transactions: []*types.Transaction{tx1, tx2},
 		}
-		txsFetcher := &mockTxsFetcher{
+		txFetcher := &mockTxFetcher{
 			txs: []*types.Transaction{tx1, tx2},
 		}
 		messageIndexBytes := common.BigToHash(delayedMsgEvent.MessageIndex)
@@ -311,7 +272,7 @@ func Test_parseDelayedMessagesFromBlock(t *testing.T) {
 					Address: delayedMsgPostingAddr,
 					Data:    delayedMsgPackedLog,
 					Topics: []common.Hash{
-						iBridgeABI.Events["MessageDelivered"].ID,
+						IBridgeABI.Events["MessageDelivered"].ID,
 						messageIndexBytes,
 						delayedMsgEvent.BeforeInboxAcc,
 					},
@@ -337,15 +298,13 @@ func Test_parseDelayedMessagesFromBlock(t *testing.T) {
 			receipts,
 			trie.NewStackTrie(nil),
 		)
-		receiptFetcher = &mockReceiptFetcher{
-			receipts: receipts,
-		}
+		blockLogsFetcher = newMockBlockLogsFetcher(receipts)
 		delayedMessages, err := parseDelayedMessagesFromBlock(
 			ctx,
 			melState,
 			block.Header(),
-			receiptFetcher,
-			txsFetcher,
+			txFetcher,
+			blockLogsFetcher,
 		)
 		require.NoError(t, err)
 		require.Equal(t, 1, len(delayedMessages))
@@ -363,7 +322,7 @@ func Test_parseDelayedMessagesFromBlock(t *testing.T) {
 			BaseFeeL1:       big.NewInt(2),
 			Timestamp:       0,
 		}
-		eventABI := iBridgeABI.Events["MessageDelivered"]
+		eventABI := IBridgeABI.Events["MessageDelivered"]
 		delayedMsgPackedLog, err := eventABI.Inputs.NonIndexed().Pack(
 			delayedMsgEvent.Inbox,
 			delayedMsgEvent.Kind,
@@ -396,7 +355,7 @@ func Test_parseDelayedMessagesFromBlock(t *testing.T) {
 		blockBody := &types.Body{
 			Transactions: []*types.Transaction{tx1, tx2},
 		}
-		txsFetcher := &mockTxsFetcher{
+		txFetcher := &mockTxFetcher{
 			txs: []*types.Transaction{tx1, tx2},
 		}
 		messageIndexBytes := common.BigToHash(delayedMsgEvent.MessageIndex)
@@ -406,10 +365,11 @@ func Test_parseDelayedMessagesFromBlock(t *testing.T) {
 					Address: delayedMsgPostingAddr,
 					Data:    delayedMsgPackedLog,
 					Topics: []common.Hash{
-						iBridgeABI.Events["MessageDelivered"].ID,
+						IBridgeABI.Events["MessageDelivered"].ID,
 						messageIndexBytes,
 						delayedMsgEvent.BeforeInboxAcc,
 					},
+					TxHash: tx1.Hash(),
 				},
 			},
 		}
@@ -421,6 +381,7 @@ func Test_parseDelayedMessagesFromBlock(t *testing.T) {
 						iDelayedMessageProviderABI.Events["InboxMessageDeliveredFromOrigin"].ID,
 						messageIndexBytes,
 					},
+					TxHash: tx2.Hash(),
 				},
 			},
 		}
@@ -431,15 +392,13 @@ func Test_parseDelayedMessagesFromBlock(t *testing.T) {
 			receipts,
 			trie.NewStackTrie(nil),
 		)
-		receiptFetcher = &mockReceiptFetcher{
-			receipts: receipts,
-		}
+		blockLogsFetcher = newMockBlockLogsFetcher(receipts)
 		_, err = parseDelayedMessagesFromBlock(
 			ctx,
 			melState,
 			block.Header(),
-			receiptFetcher,
-			txsFetcher,
+			txFetcher,
+			blockLogsFetcher,
 		)
 		require.ErrorContains(t, err, "too short")
 	})
@@ -455,7 +414,7 @@ func Test_parseDelayedMessagesFromBlock(t *testing.T) {
 			BaseFeeL1:       big.NewInt(2),
 			Timestamp:       0,
 		}
-		eventABI := iBridgeABI.Events["MessageDelivered"]
+		eventABI := IBridgeABI.Events["MessageDelivered"]
 		delayedMsgPackedLog, err := eventABI.Inputs.NonIndexed().Pack(
 			delayedMsgEvent.Inbox,
 			delayedMsgEvent.Kind,
@@ -494,7 +453,7 @@ func Test_parseDelayedMessagesFromBlock(t *testing.T) {
 		blockBody := &types.Body{
 			Transactions: []*types.Transaction{tx1, tx2},
 		}
-		txsFetcher := &mockTxsFetcher{
+		txFetcher := &mockTxFetcher{
 			txs: []*types.Transaction{tx1, tx2},
 		}
 		messageIndexBytes := common.BigToHash(delayedMsgEvent.MessageIndex)
@@ -504,10 +463,11 @@ func Test_parseDelayedMessagesFromBlock(t *testing.T) {
 					Address: delayedMsgPostingAddr,
 					Data:    delayedMsgPackedLog,
 					Topics: []common.Hash{
-						iBridgeABI.Events["MessageDelivered"].ID,
+						IBridgeABI.Events["MessageDelivered"].ID,
 						messageIndexBytes,
 						delayedMsgEvent.BeforeInboxAcc,
 					},
+					TxHash: tx1.Hash(),
 				},
 			},
 		}
@@ -519,6 +479,7 @@ func Test_parseDelayedMessagesFromBlock(t *testing.T) {
 						iDelayedMessageProviderABI.Events["InboxMessageDeliveredFromOrigin"].ID,
 						messageIndexBytes,
 					},
+					TxHash: tx2.Hash(),
 				},
 			},
 		}
@@ -529,15 +490,13 @@ func Test_parseDelayedMessagesFromBlock(t *testing.T) {
 			receipts,
 			trie.NewStackTrie(nil),
 		)
-		receiptFetcher = &mockReceiptFetcher{
-			receipts: receipts,
-		}
+		blockLogsFetcher = newMockBlockLogsFetcher(receipts)
 		delayedMessages, err := parseDelayedMessagesFromBlock(
 			ctx,
 			melState,
 			block.Header(),
-			receiptFetcher,
-			txsFetcher,
+			txFetcher,
+			blockLogsFetcher,
 		)
 		require.NoError(t, err)
 		require.Equal(t, 1, len(delayedMessages))
@@ -595,7 +554,7 @@ func setupParseDelayedMessagesTest(t *testing.T) (*bridgegen.IBridgeMessageDeliv
 		BaseFeeL1:       big.NewInt(2),
 		Timestamp:       0,
 	}
-	eventABI := iBridgeABI.Events["MessageDelivered"]
+	eventABI := IBridgeABI.Events["MessageDelivered"]
 	packedLog, err := eventABI.Inputs.NonIndexed().Pack(
 		event.Inbox,
 		event.Kind,
