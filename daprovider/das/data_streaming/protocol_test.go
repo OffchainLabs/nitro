@@ -47,6 +47,11 @@ func TestDataStreamingProtocol(t *testing.T) {
 	t.Run("Many senders, long messages", func(t *testing.T) {
 		test(t, 10*maxStoreChunkBodySize, maxStoreChunkBodySize, maxPendingMessages)
 	})
+	t.Run("Single sender, exact multiple-of-chunk size", func(t *testing.T) {
+    	chunkSize, err := calculateEffectiveChunkSize(maxStoreChunkBodySize, rpcMethods)
+    	testhelpers.RequireImpl(t, err)
+    	test(t, int(chunkSize*3), 0, 1)
+    })
 }
 
 func test(t *testing.T, messageSizeMean, messageSizeStdDev, concurrency int) {
@@ -111,6 +116,44 @@ func launchServer(t *testing.T, ctx context.Context, signatureVerifier *signatur
 	}()
 
 	return listener.Addr().String()
+}
+
+// Ensure that attempting to start stream with totalSize == 0 is rejected via protocol entrypoint
+func TestStartStreamRejectsZeroTotalSize(t *testing.T) {
+    ctx := context.Background()
+    signer, verifier := prepareCrypto(t)
+    serverUrl := launchServer(t, ctx, verifier)
+
+    rpcClient, err := rpc.Dial("http://" + serverUrl)
+    testhelpers.RequireImpl(t, err)
+
+    chunkSize, err := calculateEffectiveChunkSize(maxStoreChunkBodySize, rpcMethods)
+    testhelpers.RequireImpl(t, err)
+
+    // Prepare signed payload with totalSize == 0
+    // #nosec G115
+    timestamp := uint64(time.Now().Unix())
+    nChunks := uint64(1)
+    totalSize := uint64(0)
+    payloadSigner := DefaultPayloadSigner(signer)
+    sig, err := payloadSigner.signPayload(nil, timestamp, nChunks, chunkSize, totalSize, timeout)
+    testhelpers.RequireImpl(t, err)
+
+    var result StartStreamingResult
+    err = rpcClient.CallContext(
+        ctx,
+        &result,
+        rpcMethods.StartStream,
+        hexutil.Uint64(timestamp),
+        hexutil.Uint64(nChunks),
+        hexutil.Uint64(chunkSize),
+        hexutil.Uint64(totalSize),
+        hexutil.Uint64(timeout),
+        hexutil.Bytes(sig),
+    )
+    if err == nil {
+        t.Fatalf("expected error when totalSize == 0, got nil")
+    }
 }
 
 // ======================================= Test server (wrapping the receiver part) ========================== //
