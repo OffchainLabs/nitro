@@ -73,7 +73,7 @@ func NewDataStreamer[T any](maxStoreChunkBodySize int, dataSigner *PayloadSigner
 	}, nil
 }
 
-func SetRetryPolicy[Result any](ds *DataStreamer[Result], policy RetryPolicy) error {
+func (ds *DataStreamer[Result]) SetRetryPolicy(policy RetryPolicy) error {
 	if policy == nil {
 		return errors.New("retry policy must not be nil")
 	}

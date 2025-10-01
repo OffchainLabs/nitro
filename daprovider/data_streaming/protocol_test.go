@@ -159,6 +159,14 @@ func TestDataStreaming_ClientRetriesWhenThereAreConnectionProblems(t *testing.T)
 		}
 		return nil
 	})
+
+	err := streamer.SetRetryPolicy(&ExpDelayPolicy{
+		BaseDelay:   time.Second,
+		MaxDelay:    5 * time.Second,
+		MaxAttempts: 2,
+	})
+	testhelpers.RequireImpl(t, err)
+
 	message, _ := getLongRandomMessage(streamer.chunkSize)
 	result, err := streamer.StreamData(ctx, message, timeout)
 	testhelpers.RequireImpl(t, err)
