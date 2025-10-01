@@ -65,9 +65,8 @@ func (v *Validator) generateReadPreimageProofInternal(ctx context.Context, certH
 // The proof enhancer will prepend the standardized header [certKeccak256, offset, certSize, certificate]
 // So we only need to return the custom data: [Version(1), PreimageSize(8), PreimageData]
 func (v *Validator) GenerateReadPreimageProof(certHash common.Hash, offset uint64, certificate []byte) containers.PromiseInterface[daprovider.PreimageProofResult] {
-	promise := containers.NewPromise[daprovider.PreimageProofResult](nil)
+	promise, ctx := containers.NewPromiseWithContext[daprovider.PreimageProofResult](context.Background())
 	go func() {
-		ctx := context.Background()
 		proof, err := v.generateReadPreimageProofInternal(ctx, certHash, offset, certificate)
 		if err != nil {
 			promise.ProduceError(err)
@@ -75,7 +74,7 @@ func (v *Validator) GenerateReadPreimageProof(certHash common.Hash, offset uint6
 			promise.Produce(daprovider.PreimageProofResult{Proof: proof})
 		}
 	}()
-	return &promise
+	return promise
 }
 
 // GenerateCertificateValidityProof creates a certificate validity proof for ReferenceDA
@@ -141,9 +140,8 @@ func (v *Validator) generateCertificateValidityProofInternal(ctx context.Context
 // Invalid certificates (wrong format, untrusted signer) return claimedValid=0.
 // Only transient errors (like RPC failures) return an error.
 func (v *Validator) GenerateCertificateValidityProof(certificate []byte) containers.PromiseInterface[daprovider.ValidityProofResult] {
-	promise := containers.NewPromise[daprovider.ValidityProofResult](nil)
+	promise, ctx := containers.NewPromiseWithContext[daprovider.ValidityProofResult](context.Background())
 	go func() {
-		ctx := context.Background()
 		proof, err := v.generateCertificateValidityProofInternal(ctx, certificate)
 		if err != nil {
 			promise.ProduceError(err)
@@ -151,5 +149,5 @@ func (v *Validator) GenerateCertificateValidityProof(certificate []byte) contain
 			promise.Produce(daprovider.ValidityProofResult{Proof: proof})
 		}
 	}()
-	return &promise
+	return promise
 }
