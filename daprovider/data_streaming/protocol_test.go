@@ -179,13 +179,13 @@ func TestDataStreaming_ServerDeniesTooOldAndFutureRequests(t *testing.T) {
 
 	// ========== Implementation of streamer.StreamData from the past ==========
 	params := newStreamParams(uint64(len(message)), streamer.chunkSize, timeout)
-	params.timestamp = uint64(time.Now().Add(-2 * requestValidity).Unix())
+	params.timestamp = uint64(time.Now().Add(-2 * requestValidity).Unix()) // nolint:gosec
 
 	_, err := streamer.startStream(ctx, params)
 	require.Error(t, err)
 
 	// ========== Implementation of streamer.StreamData from the future ==========
-	params.timestamp = uint64(time.Now().Add(2 * requestValidity).Unix())
+	params.timestamp = uint64(time.Now().Add(2 * requestValidity).Unix()) // nolint:gosec
 
 	_, err = streamer.startStream(ctx, params)
 	require.Error(t, err)
