@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 )
 
@@ -34,6 +35,9 @@ type DataStreamReceiver struct {
 	payloadVerifier *PayloadVerifier
 	messageStore    *messageStore
 	requestValidity time.Duration
+
+	mutex        sync.Mutex
+	seenRequests map[common.Hash]time.Time
 }
 
 // NewDataStreamReceiver sets up a new stream receiver. `payloadVerifier` must be compatible with message signing on
@@ -42,11 +46,30 @@ type DataStreamReceiver struct {
 // related data will be removed. This time window is reset after every _new_ protocol message received.
 // `requestValidity` is the maximum age of the incoming protocol opening message.
 func NewDataStreamReceiver(payloadVerifier *PayloadVerifier, maxPendingMessages int, messageCollectionExpiry, requestValidity time.Duration, expirationCallback func(id MessageId)) *DataStreamReceiver {
-	return &DataStreamReceiver{
+	dsr := &DataStreamReceiver{
 		payloadVerifier: payloadVerifier,
 		messageStore:    newMessageStore(maxPendingMessages, messageCollectionExpiry, expirationCallback),
 		requestValidity: requestValidity,
+
+		mutex:        sync.Mutex{},
+		seenRequests: make(map[common.Hash]time.Time),
 	}
+
+	var gcRoutine func()
+	gcRoutine = func() {
+		dsr.mutex.Lock()
+		defer dsr.mutex.Unlock()
+		cutoff := time.Now().Add(-dsr.requestValidity)
+		for hash, requestTime := range dsr.seenRequests {
+			if requestTime.Before(cutoff) {
+				delete(dsr.seenRequests, hash)
+			}
+		}
+		time.AfterFunc(dsr.requestValidity, gcRoutine)
+	}
+	go gcRoutine()
+
+	return dsr
 }
 
 // NewDefaultDataStreamReceiver sets up a new stream receiver with default settings.
@@ -61,15 +84,26 @@ type StartStreamingResult struct {
 }
 
 func (dsr *DataStreamReceiver) StartReceiving(ctx context.Context, timestamp, nChunks, chunkSize, totalSize, timeout uint64, signature []byte) (*StartStreamingResult, error) {
+	dsr.mutex.Lock()
+	defer dsr.mutex.Unlock()
+
 	if err := dsr.payloadVerifier.verifyPayload(ctx, signature, []byte{}, timestamp, nChunks, chunkSize, totalSize, timeout); err != nil {
 		return &StartStreamingResult{0}, err
 	}
 
+	requestTime := time.Unix(int64(timestamp), 0) // #nosec G115
+
 	// Deny too old or from-future requests. We keep the margin of `dsr.requestValidity` also to the future, in case of unsync clocks.
-	// #nosec G115
-	if time.Since(time.Unix(int64(timestamp), 0)).Abs() > dsr.requestValidity {
+	if time.Since(requestTime).Abs() > dsr.requestValidity {
 		return &StartStreamingResult{0}, errors.New("too much time has elapsed since request was signed")
 	}
+
+	// Save in a short-memory cache that request. We use the first 32 bytes of the signature as a sufficient, pseudorandom request identifier.
+	requestHash := common.BytesToHash(signature)
+	if _, ok := dsr.seenRequests[requestHash]; ok {
+		return &StartStreamingResult{0}, errors.New("we have already seen this request; aborting replayed protocol")
+	}
+	dsr.seenRequests[requestHash] = requestTime
 
 	messageId, err := dsr.messageStore.registerNewMessage(nChunks, timeout, chunkSize, totalSize)
 	return &StartStreamingResult{hexutil.Uint64(messageId)}, err

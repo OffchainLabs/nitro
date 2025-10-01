@@ -178,16 +178,40 @@ func TestDataStreaming_ServerDeniesTooOldAndFutureRequests(t *testing.T) {
 	message, _ := getLongRandomMessage(streamer.chunkSize)
 
 	// ========== Implementation of streamer.StreamData from the past ==========
-
 	params := newStreamParams(uint64(len(message)), streamer.chunkSize, timeout)
 	params.timestamp = uint64(time.Now().Add(-2 * requestValidity).Unix())
 
 	_, err := streamer.startStream(ctx, params)
 	require.Error(t, err)
 
-	// ========== Implementation of streamer.StreamData from the past ==========
+	// ========== Implementation of streamer.StreamData from the future ==========
 	params.timestamp = uint64(time.Now().Add(2 * requestValidity).Unix())
 
+	_, err = streamer.startStream(ctx, params)
+	require.Error(t, err)
+}
+
+func TestDataStreaming_CannotReplayStartProtocol(t *testing.T) {
+	t.Parallel()
+	ctx, streamer := prepareTestEnv(t, nil)
+	message, chunks := getLongRandomMessage(streamer.chunkSize)
+
+	// ========== Standard implementation of streamer.StreamData (but we need params for replay). ==========
+
+	params := newStreamParams(uint64(len(message)), streamer.chunkSize, timeout)
+	messageId, err := streamer.startStream(ctx, params)
+	testhelpers.RequireImpl(t, err)
+
+	for i, chunkData := range chunks {
+		err = streamer.sendChunk(ctx, messageId, uint64(i), chunkData) //nolint:gosec
+		testhelpers.RequireImpl(t, err)
+	}
+
+	result, err := streamer.finalizeStream(ctx, messageId)
+	testhelpers.RequireImpl(t, err)
+	require.Equal(t, message, ([]byte)(result.Message), "protocol resulted in an incorrect message")
+
+	// Try replaying
 	_, err = streamer.startStream(ctx, params)
 	require.Error(t, err)
 }
