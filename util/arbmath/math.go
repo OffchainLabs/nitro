@@ -4,6 +4,7 @@
 package arbmath
 
 import (
+	"errors"
 	"math"
 	"math/big"
 	"math/bits"
@@ -33,12 +34,41 @@ func Log2ceil(value uint64) uint64 {
 	return uint64(64 - bits.LeadingZeros64(value))
 }
 
-type Signed interface {
-	~int | ~int8 | ~int16 | ~int32 | ~int64
+// Log2Floor returns the integer logarithm base 2 of u (rounded down).
+// Returns 0 for u == 0 to maintain consistency with arbmath.Log2ceil.
+func Log2Floor(u uint64) int {
+	if u == 0 {
+		return 0
+	}
+	return bits.Len64(u) - 1
 }
 
-type Unsigned interface {
-	~uint | ~uint8 | ~uint16 | ~uint32 | ~uint64 | ~uintptr
+// Log2Ceil returns the integer logarithm base 2 of u (rounded up).
+// Returns 0 for u == 0 to maintain consistency with arbmath.Log2ceil.
+func Log2Ceil(u uint64) int {
+	r := Log2Floor(u)
+	if u == 0 || isPowerOfTwo(u) {
+		return r
+	}
+	return r + 1
+}
+
+func isPowerOfTwo(u uint64) bool {
+	return u&(u-1) == 0
+}
+
+var ErrUnableToBisect = errors.New("unable to bisect")
+
+func Bisect(pre, post uint64) (uint64, error) {
+	if pre+2 > post {
+		return 0, ErrUnableToBisect
+	}
+	if pre+2 == post {
+		return pre + 1, nil
+	}
+	matchingBits := bits.LeadingZeros64((post - 1) ^ pre)
+	mask := uint64(math.MaxUint64) << (63 - matchingBits)
+	return (post - 1) & mask, nil
 }
 
 type Integer interface {
