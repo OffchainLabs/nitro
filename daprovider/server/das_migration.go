@@ -142,7 +142,7 @@ func NewServerForDAS(
 			daprovider.DASMessageHeaderFlag,
 			daprovider.DASMessageHeaderFlag | daprovider.TreeDASMessageHeaderFlag,
 		},
-		data_streaming.TrustingPayloadVerifier(),
+		data_streaming.PayloadCommitmentVerifier(),
 	)
 	if err != nil {
 		// Clean up lifecycle manager if server creation fails

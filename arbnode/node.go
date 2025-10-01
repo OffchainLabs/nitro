@@ -601,7 +601,7 @@ func getDAProvider(
 			ctx,
 			func() *rpcclient.ClientConfig { return &config.DA.ExternalProvider.RPC },
 			dapserver.DefaultBodyLimit,
-			data_streaming.NoopPayloadSigner(),
+			data_streaming.PayloadCommiter(),
 		)
 		if err != nil {
 			return nil, nil, nil, nil, err
@@ -706,7 +706,7 @@ func getDAProvider(
 		}
 
 		headerBytes := daFactory.GetSupportedHeaderBytes()
-		providerServer, err := dapserver.NewServerWithDAPProvider(ctx, &serverConfig, reader, writer, validator, headerBytes, data_streaming.TrustingPayloadVerifier())
+		providerServer, err := dapserver.NewServerWithDAPProvider(ctx, &serverConfig, reader, writer, validator, headerBytes, data_streaming.PayloadCommitmentVerifier())
 
 		// Create combined cleanup function
 		closeFn := func() {
@@ -724,7 +724,7 @@ func getDAProvider(
 			ctx,
 			func() *rpcclient.ClientConfig { return &clientConfig },
 			dapserver.DefaultBodyLimit,
-			data_streaming.NoopPayloadSigner(),
+			data_streaming.PayloadCommiter(),
 		)
 		if err != nil {
 			return nil, nil, nil, nil, err

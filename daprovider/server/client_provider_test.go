@@ -67,7 +67,7 @@ func setupProviderServer(ctx context.Context, t *testing.T) *http.Server {
 	validator := referenceda.NewValidator(nil, dummyAddress)
 	headerBytes := []byte{daprovider.DACertificateMessageHeaderFlag}
 
-	providerServer, err := NewServerWithDAPProvider(ctx, &providerServerConfig, reader, writer, validator, headerBytes, data_streaming.TrustingPayloadVerifier())
+	providerServer, err := NewServerWithDAPProvider(ctx, &providerServerConfig, reader, writer, validator, headerBytes, data_streaming.PayloadCommitmentVerifier())
 	testhelpers.RequireImpl(t, err)
 
 	return providerServer
@@ -79,7 +79,7 @@ func setupClient(ctx context.Context, t *testing.T, providerServerAddress string
 			URL: providerServerAddress,
 		}
 	}
-	client, err := daclient.NewClient(ctx, clientConfig, RPCServerBodyLimit, data_streaming.NoopPayloadSigner())
+	client, err := daclient.NewClient(ctx, clientConfig, RPCServerBodyLimit, data_streaming.PayloadCommiter())
 	testhelpers.RequireImpl(t, err)
 	return client
 }
