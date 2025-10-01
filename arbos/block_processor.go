@@ -24,6 +24,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbos/util"
+	"github.com/offchainlabs/nitro/experimental/debugblock"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
@@ -255,7 +256,7 @@ func ProduceBlockAdvanced(
 	firstTx := types.NewTx(startTx)
 
 	if chainConfig.DebugMode() && header.Number.Uint64() == chainConfig.ArbitrumChainParams.DebugBlock {
-		debugBlockStateUpdate(statedb, expectedBalanceDelta, chainConfig)
+		debugblock.DebugBlockStateUpdate(statedb, expectedBalanceDelta, chainConfig)
 	}
 
 	for {

@@ -1,20 +1,50 @@
 //go:build debugblock
 
-package arbos
+package debugblock
 
 import (
 	"encoding/json"
+	"errors"
 	"math/big"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/holiman/uint256"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
+	"github.com/spf13/pflag"
 )
 
-func debugBlockStateUpdate(statedb *state.StateDB, expectedBalanceDelta *big.Int, chainConfig *params.ChainConfig) {
+func ConfigAddOptions(prefix string, f *pflag.FlagSet) {
+	f.Bool(prefix+".overwrite-chain-config", ConfigDefault.OverwriteChainConfig, "DANGEROUS! overwrites chain when opening existing database; chain debug mode will be enabled")
+	f.String(prefix+".debug-address", ConfigDefault.DebugAddress, "DANGEROUS! address of debug account to be pre-funded")
+	f.Uint64(prefix+".debug-blocknum", ConfigDefault.DebugBlockNum, "DANGEROUS! block number of injected debug block")
+}
+
+func (c *Config) Validate() error {
+	if c.OverwriteChainConfig {
+		log.Warn("DANGER! overwrite-chain-config set, chain config will be over-written")
+	}
+	if c.DebugAddress != "" && !common.IsHexAddress(c.DebugAddress) {
+		return errors.New("invalid debug-address, hex address expected")
+	}
+	if c.DebugBlockNum != 0 {
+		log.Warn("DANGER! debug-blocknum set", "blocknum", c.DebugBlockNum)
+	}
+	return nil
+}
+
+func (c *Config) Apply(chainConfig *params.ChainConfig) {
+	if c.OverwriteChainConfig {
+		chainConfig.ArbitrumChainParams.AllowDebugPrecompiles = true
+		chainConfig.ArbitrumChainParams.DebugAddress = common.HexToAddress(c.DebugAddress)
+		chainConfig.ArbitrumChainParams.DebugBlock = c.DebugBlockNum
+	}
+}
+
+func DebugBlockStateUpdate(statedb *state.StateDB, expectedBalanceDelta *big.Int, chainConfig *params.ChainConfig) {
 	// fund debug account
 	balance := uint256.MustFromBig(new(big.Int).Lsh(big.NewInt(1), 254))
 	statedb.SetBalance(chainConfig.ArbitrumChainParams.DebugAddress, balance, tracing.BalanceChangeUnspecified)
