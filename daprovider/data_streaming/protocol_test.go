@@ -154,11 +154,10 @@ func TestDataStreaming_ProtocolSucceedsEvenWithDelays(t *testing.T) {
 	require.Equal(t, message, ([]byte)(result.Message), "protocol resulted in an incorrect message")
 }
 
-var alreadyWentOffline = false
-
 func TestDataStreaming_ClientRetriesWhenThereAreConnectionProblems(t *testing.T) {
 	t.Parallel()
 	// Server 'goes offline' for a moment just before reading the second chunk
+	var alreadyWentOffline = false
 	ctx, streamer := prepareTestEnv(t, func(i uint64) error {
 		if i == 1 && !alreadyWentOffline {
 			alreadyWentOffline = true
@@ -166,6 +165,14 @@ func TestDataStreaming_ClientRetriesWhenThereAreConnectionProblems(t *testing.T)
 		}
 		return nil
 	})
+
+	err := streamer.SetRetryPolicy(&ExpDelayPolicy{
+		BaseDelay:   time.Second,
+		MaxDelay:    5 * time.Second,
+		MaxAttempts: 2,
+	})
+	testhelpers.RequireImpl(t, err)
+
 	message, _ := getLongRandomMessage(streamer.chunkSize)
 	result, err := streamer.StreamData(ctx, message, timeout)
 	testhelpers.RequireImpl(t, err)
