@@ -191,7 +191,7 @@ func TestDataStreaming_ServerDeniesTooOldAndFutureRequests(t *testing.T) {
 	require.Error(t, err)
 }
 
-func TestDataStreaming_CannotReplayStartProtocol(t *testing.T) {
+func TestDataStreaming_CannotReplay(t *testing.T) {
 	t.Parallel()
 	ctx, streamer := prepareTestEnv(t, nil)
 	message, chunks := getLongRandomMessage(streamer.chunkSize)
@@ -211,8 +211,12 @@ func TestDataStreaming_CannotReplayStartProtocol(t *testing.T) {
 	testhelpers.RequireImpl(t, err)
 	require.Equal(t, message, ([]byte)(result.Message), "protocol resulted in an incorrect message")
 
-	// Try replaying
+	// Try replaying protocol initialization
 	_, err = streamer.startStream(ctx, params)
+	require.Error(t, err)
+
+	// Try replaying protocol finalization
+	_, err = streamer.finalizeStream(ctx, messageId)
 	require.Error(t, err)
 }
 
