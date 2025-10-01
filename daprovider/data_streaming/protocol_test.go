@@ -149,10 +149,9 @@ func TestDataStreaming_ProtocolSucceedsEvenWithDelays(t *testing.T) {
 	require.Equal(t, message, ([]byte)(result.Message), "protocol resulted in an incorrect message")
 }
 
-var alreadyWentOffline = false
-
 func TestDataStreaming_ClientRetriesWhenThereAreConnectionProblems(t *testing.T) {
 	// Server 'goes offline' for a moment just before reading the second chunk
+	var alreadyWentOffline = false
 	ctx, streamer := prepareTestEnv(t, func(i uint64) error {
 		if i == 1 && !alreadyWentOffline {
 			alreadyWentOffline = true
