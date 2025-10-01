@@ -18,16 +18,16 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 
-	"github.com/offchainlabs/nitro/bold/chain-abstraction"
-	"github.com/offchainlabs/nitro/bold/challenge-manager/challenge-tree"
+	protocol "github.com/offchainlabs/nitro/bold/chain-abstraction"
+	challengetree "github.com/offchainlabs/nitro/bold/challenge-manager/challenge-tree"
 	"github.com/offchainlabs/nitro/bold/containers"
 	"github.com/offchainlabs/nitro/bold/containers/events"
 	"github.com/offchainlabs/nitro/bold/containers/fsm"
 	"github.com/offchainlabs/nitro/bold/containers/option"
-	"github.com/offchainlabs/nitro/bold/layer2-state-provider"
-	"github.com/offchainlabs/nitro/bold/math"
+	l2stateprovider "github.com/offchainlabs/nitro/bold/layer2-state-provider"
 	"github.com/offchainlabs/nitro/bold/state-commitments/history"
 	utilTime "github.com/offchainlabs/nitro/bold/time"
+	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
 var (
@@ -530,7 +530,7 @@ func (et *Tracker) DetermineBisectionHistoryWithProof(
 ) (history.History, []byte, error) {
 	startHeight, _ := et.edge.StartCommitment()
 	endHeight, _ := et.edge.EndCommitment()
-	bisectTo, err := math.Bisect(uint64(startHeight), uint64(endHeight))
+	bisectTo, err := arbmath.Bisect(uint64(startHeight), uint64(endHeight))
 	if err != nil {
 		return history.History{}, nil, errors.Wrapf(err, "determining bisection point errored for %d and %d", startHeight, endHeight)
 	}
