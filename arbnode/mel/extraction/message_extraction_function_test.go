@@ -31,7 +31,7 @@ func TestExtractMessages(t *testing.T) {
 		lookupDelayedMsgs    func(context.Context, *mel.State, *types.Header, ReceiptFetcher, TransactionsFetcher) ([]*mel.DelayedInboxMessage, error)
 		serializer           func(context.Context, *mel.SequencerInboxBatch, *types.Transaction, uint, ReceiptFetcher) ([]byte, error)
 		parseReport          func(io.Reader) (*big.Int, common.Address, common.Hash, uint64, *big.Int, uint64, error)
-		parseSequencerMsg    func(context.Context, uint64, common.Hash, []byte, []daprovider.Reader, daprovider.KeysetValidationMode) (*arbstate.SequencerMessage, error)
+		parseSequencerMsg    func(context.Context, uint64, common.Hash, []byte, *daprovider.ReaderRegistry, daprovider.KeysetValidationMode) (*arbstate.SequencerMessage, error)
 		extractBatchMessages func(context.Context, *mel.State, *arbstate.SequencerMessage, DelayedMessageDatabase) ([]*arbostypes.MessageWithMetadata, error)
 		expectedError        string
 		expectedMsgCount     uint64
@@ -319,7 +319,7 @@ func successfulParseSequencerMsg(
 	batchNum uint64,
 	batchBlockHash common.Hash,
 	data []byte,
-	dapReaders []daprovider.Reader,
+	dapReaders *daprovider.ReaderRegistry,
 	keysetValidationMode daprovider.KeysetValidationMode,
 ) (*arbstate.SequencerMessage, error) {
 	return nil, nil
@@ -330,7 +330,7 @@ func failingParseSequencerMsg(
 	batchNum uint64,
 	batchBlockHash common.Hash,
 	data []byte,
-	dapReaders []daprovider.Reader,
+	dapReaders *daprovider.ReaderRegistry,
 	keysetValidationMode daprovider.KeysetValidationMode,
 ) (*arbstate.SequencerMessage, error) {
 	return nil, errors.New("failed to parse sequencer message")

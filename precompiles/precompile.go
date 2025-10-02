@@ -16,6 +16,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/arbitrum/multigas"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
@@ -26,7 +27,6 @@ import (
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/programs"
-	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
@@ -38,17 +38,17 @@ type ArbosPrecompile interface {
 	// In that case, unless this precompile is pure, it should probably revert.
 	Call(
 		input []byte,
-		precompileAddress common.Address,
 		actingAsAddress common.Address,
 		caller common.Address,
 		value *big.Int,
 		readOnly bool,
 		gasSupplied uint64,
 		evm *vm.EVM,
-	) (output []byte, gasLeft uint64, err error)
+	) (output []byte, gasLeft uint64, usedMultiGas multigas.MultiGas, err error)
 
 	Precompile() *Precompile
 	Name() string
+	Address() common.Address
 }
 
 type purity uint8
@@ -367,7 +367,7 @@ func MakePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, *Pr
 				// an error occurred during gascost()
 				return []reflect.Value{emitCost[1]}
 			}
-			if err := callerCtx.Burn(cost); err != nil {
+			if err := callerCtx.Burn(multigas.ResourceKindHistoryGrowth, cost); err != nil {
 				// the user has run out of gas
 				return []reflect.Value{reflect.ValueOf(vm.ErrOutOfGas)}
 			}
@@ -544,7 +544,7 @@ func Precompiles() map[addr]ArbosPrecompile {
 		}
 		return &Context{
 			gasSupplied: gasLimit,
-			gasLeft:     gasLimit,
+			gasUsed:     multigas.ZeroGas(),
 		}
 	}
 
@@ -682,84 +682,64 @@ func (p *Precompile) ArbosVersion() uint64 {
 	return p.arbosVersion
 }
 
+func (p *Precompile) Address() common.Address {
+	return p.address
+}
+
 // Call a precompile in typed form, deserializing its inputs and serializing its outputs
 func (p *Precompile) Call(
 	input []byte,
-	precompileAddress common.Address,
 	actingAsAddress common.Address,
 	caller common.Address,
 	value *big.Int,
 	readOnly bool,
 	gasSupplied uint64,
 	evm *vm.EVM,
-) (output []byte, gasLeft uint64, err error) {
+) (output []byte, gasLeft uint64, multiGasUsed multigas.MultiGas, err error) {
 	arbosVersion := arbosState.ArbOSVersion(evm.StateDB)
 
 	if arbosVersion < p.arbosVersion {
 		// the precompile isn't yet active, so treat this call as if it were to a contract that doesn't exist
-		return []byte{}, gasSupplied, nil
+		return []byte{}, gasSupplied, multigas.ZeroGas(), nil
 	}
 
 	if len(input) < 4 {
 		// ArbOS precompiles always have canonical method selectors
-		return nil, 0, vm.ErrExecutionReverted
+		return nil, 0, multigas.ComputationGas(gasSupplied), vm.ErrExecutionReverted
 	}
 	id := *(*[4]byte)(input)
 	method, ok := p.methods[id]
 	if !ok || arbosVersion < method.arbosVersion || (method.maxArbosVersion > 0 && arbosVersion > method.maxArbosVersion) {
 		// method does not exist or hasn't yet been activated
-		return nil, 0, vm.ErrExecutionReverted
+		return nil, 0, multigas.ComputationGas(gasSupplied), vm.ErrExecutionReverted
 	}
 
-	if method.purity >= view && actingAsAddress != precompileAddress {
+	if method.purity >= view && actingAsAddress != p.address {
 		// should not access precompile superpowers when not acting as the precompile
-		return nil, 0, vm.ErrExecutionReverted
+		return nil, 0, multigas.ComputationGas(gasSupplied), vm.ErrExecutionReverted
 	}
 
 	if method.purity >= write && readOnly {
 		// tried to write to global state in read-only mode
-		return nil, 0, vm.ErrExecutionReverted
+		return nil, 0, multigas.ComputationGas(gasSupplied), vm.ErrExecutionReverted
 	}
 
 	if method.purity < payable && value.Sign() != 0 {
 		// tried to pay something that's non-payable
-		return nil, 0, vm.ErrExecutionReverted
+		return nil, 0, multigas.ComputationGas(gasSupplied), vm.ErrExecutionReverted
 	}
 
-	callerCtx := &Context{
-		caller:      caller,
-		gasSupplied: gasSupplied,
-		gasLeft:     gasSupplied,
-		readOnly:    method.purity <= view,
-		tracingInfo: util.NewTracingInfo(evm, caller, precompileAddress, util.TracingDuringEVM),
+	callerCtx, err := makeContext(p, method, caller, gasSupplied, evm)
+	if err != nil {
+		return nil, 0, multigas.ComputationGas(gasSupplied), err
 	}
 
 	// len(input) must be at least 4 because of the check near the start of this function
 	// #nosec G115
 	argsCost := params.CopyGas * arbmath.WordsForBytes(uint64(len(input)-4))
-	if err := callerCtx.Burn(argsCost); err != nil {
+	if err := callerCtx.Burn(multigas.ResourceKindL2Calldata, argsCost); err != nil {
 		// user cannot afford the argument data supplied
-		return nil, 0, vm.ErrExecutionReverted
-	}
-
-	if method.purity != pure {
-		// impure methods may need the ArbOS state, so open & update the call context now
-		state, err := arbosState.OpenArbosState(evm.StateDB, callerCtx)
-		if err != nil {
-			return nil, 0, err
-		}
-		callerCtx.State = state
-	}
-
-	switch txProcessor := evm.ProcessingHook.(type) {
-	case *arbos.TxProcessor:
-		callerCtx.txProcessor = txProcessor
-	case *vm.DefaultTxProcessor:
-		log.Error("processing hook not set")
-		return nil, 0, vm.ErrExecutionReverted
-	default:
-		log.Error("unknown processing hook")
-		return nil, 0, vm.ErrExecutionReverted
+		return nil, 0, multigas.ComputationGas(gasSupplied), vm.ErrExecutionReverted
 	}
 
 	reflectArgs := []reflect.Value{
@@ -783,7 +763,7 @@ func (p *Precompile) Call(
 	args, err := method.template.Inputs.Unpack(input[4:])
 	if err != nil {
 		// calldata does not match the method's signature
-		return nil, 0, vm.ErrExecutionReverted
+		return nil, 0, multigas.ComputationGas(gasSupplied), vm.ErrExecutionReverted
 	}
 	for _, arg := range args {
 		converted := reflect.ValueOf(arg).Convert(method.handler.Type.In(len(reflectArgs)))
@@ -797,33 +777,36 @@ func (p *Precompile) Call(
 		errRet, ok := reflectResult[resultCount].Interface().(error)
 		if !ok {
 			log.Error("final precompile return value must be error")
-			return nil, callerCtx.gasLeft, vm.ErrExecutionReverted
+			return nil, callerCtx.GasLeft(), callerCtx.gasUsed, vm.ErrExecutionReverted
 		}
 		var solErr *SolError
 		isSolErr := errors.As(errRet, &solErr)
 		if isSolErr {
 			resultCost := params.CopyGas * arbmath.WordsForBytes(uint64(len(solErr.data)))
-			if err := callerCtx.Burn(resultCost); err != nil {
+			if err := callerCtx.Burn(multigas.ResourceKindComputation, resultCost); err != nil {
 				// user cannot afford the result data returned
-				return nil, 0, vm.ErrExecutionReverted
+				return nil, 0, callerCtx.gasUsed, vm.ErrExecutionReverted
 			}
-			return solErr.data, callerCtx.gasLeft, vm.ErrExecutionReverted
+			return solErr.data, callerCtx.GasLeft(), callerCtx.gasUsed, vm.ErrExecutionReverted
 		}
 		if errors.Is(errRet, programs.ErrProgramActivation) {
-			return nil, 0, errRet
+			// Ensure we burn all remaining gas
+			callerCtx.BurnOut() //nolint:errcheck
+			return nil, 0, callerCtx.gasUsed, errRet
 		}
 		if !errors.Is(errRet, vm.ErrOutOfGas) {
 			log.Debug(
 				"precompile reverted with non-solidity error",
-				"precompile", precompileAddress, "input", input, "err", errRet,
+				"precompile", p.address, "input", input, "err", errRet,
 			)
 		}
 		// nolint:errorlint
 		if arbosVersion >= params.ArbosVersion_11 || errRet == vm.ErrExecutionReverted {
-			return nil, callerCtx.gasLeft, vm.ErrExecutionReverted
+			return nil, callerCtx.GasLeft(), callerCtx.gasUsed, vm.ErrExecutionReverted
 		}
 		// Preserve behavior with old versions which would zero out gas on this type of error
-		return nil, 0, errRet
+		callerCtx.BurnOut() //nolint:errcheck
+		return nil, 0, callerCtx.gasUsed, errRet
 	}
 	result := make([]interface{}, resultCount)
 	for i := 0; i < resultCount; i++ {
@@ -833,16 +816,16 @@ func (p *Precompile) Call(
 	encoded, err := method.template.Outputs.PackValues(result)
 	if err != nil {
 		log.Error("could not encode precompile result", "err", err)
-		return nil, callerCtx.gasLeft, vm.ErrExecutionReverted
+		return nil, callerCtx.GasLeft(), callerCtx.gasUsed, vm.ErrExecutionReverted
 	}
 
 	resultCost := params.CopyGas * arbmath.WordsForBytes(uint64(len(encoded)))
-	if err := callerCtx.Burn(resultCost); err != nil {
+	if err := callerCtx.Burn(multigas.ResourceKindComputation, resultCost); err != nil {
 		// user cannot afford the result data returned
-		return nil, 0, vm.ErrExecutionReverted
+		return nil, 0, callerCtx.gasUsed, vm.ErrExecutionReverted
 	}
 
-	return encoded, callerCtx.gasLeft, nil
+	return encoded, callerCtx.GasLeft(), callerCtx.gasUsed, nil
 }
 
 func (p *Precompile) Precompile() *Precompile {
