@@ -338,10 +338,12 @@ func (t *InboxTracker) legacyGetDelayedMessageAndAccumulator(ctx context.Context
 		return nil, common.Hash{}, err
 	}
 
-	err = msg.FillInBatchGasFields(func(batchNum uint64) ([]byte, error) {
-		data, _, err := t.txStreamer.inboxReader.GetSequencerMessageBytes(ctx, batchNum)
-		return data, err
-	})
+	if t.txStreamer.inboxReader != nil {
+		err = msg.FillInBatchGasFields(func(batchNum uint64) ([]byte, error) {
+			data, _, err := t.txStreamer.inboxReader.GetSequencerMessageBytes(ctx, batchNum)
+			return data, err
+		})
+	}
 
 	return msg, acc, err
 }
@@ -371,10 +373,12 @@ func (t *InboxTracker) GetDelayedMessageAccumulatorAndParentChainBlockNumber(ctx
 		return msg, acc, 0, err
 	}
 
-	err = msg.FillInBatchGasFields(func(batchNum uint64) ([]byte, error) {
-		data, _, err := t.txStreamer.inboxReader.GetSequencerMessageBytes(ctx, batchNum)
-		return data, err
-	})
+	if t.txStreamer.inboxReader != nil {
+		err = msg.FillInBatchGasFields(func(batchNum uint64) ([]byte, error) {
+			data, _, err := t.txStreamer.inboxReader.GetSequencerMessageBytes(ctx, batchNum)
+			return data, err
+		})
+	}
 	if err != nil {
 		return msg, acc, 0, err
 	}
