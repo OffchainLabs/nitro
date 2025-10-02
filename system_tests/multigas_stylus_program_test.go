@@ -223,15 +223,9 @@ func TestMultigasStylus_Create(t *testing.T) {
 	receipt1, err := EnsureTxSucceeded(ctx, l2client, tx)
 	require.NoError(t, err)
 
-	// Both computation and wasm computation should be charged
-	// TODO(NIT-3888): Check for exact values after correct computation/wasm attribution
-	require.GreaterOrEqual(t,
-		receipt1.MultiGasUsed.Get(multigas.ResourceKindWasmComputation),
-		params.CreateGas,
-	)
-	require.GreaterOrEqual(t,
+	require.Equal(t,
 		receipt1.MultiGasUsed.Get(multigas.ResourceKindComputation),
-		params.TxGas,
+		uint64(54127), // intrinsic + CREATE + keccak for init code
 	)
 
 	require.Equalf(t,
