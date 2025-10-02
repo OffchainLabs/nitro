@@ -11,16 +11,14 @@ on:
         description: 'Set to true to post a test summary comment on the PR.'
         type: boolean
         required: true
-        default: false
       upload_report:
         description: 'Set to true to upload test reports to Codecov.'
         type: boolean
         required: true
-        default: false
       report-name:
         description: 'Name to use when uploading reports to Codecov.'
         type: string
-        required: true
+        required: false
         default: 'CI Test Results'
 
 jobs:
