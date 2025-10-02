@@ -41,7 +41,6 @@ var rpcMethods = DataStreamingRPCMethods{
 }
 
 func TestDataStreaming_PositiveScenario(t *testing.T) {
-	t.Parallel()
 	t.Run("Single sender, short message", func(t *testing.T) {
 		testBasic(t, maxStoreChunkBodySize/2, 10, 1)
 	})
@@ -54,7 +53,6 @@ func TestDataStreaming_PositiveScenario(t *testing.T) {
 }
 
 func TestDataStreaming_ServerIdempotency(t *testing.T) {
-	t.Parallel()
 	ctx, streamer := prepareTestEnv(t, nil)
 	message, chunks := getLongRandomMessage(streamer.chunkSize)
 	redundancy := 3
@@ -81,7 +79,6 @@ func TestDataStreaming_ServerIdempotency(t *testing.T) {
 }
 
 func TestDataStreaming_ServerHaltsProtocolWhenObservesInconsistency(t *testing.T) {
-	t.Parallel()
 	ctx, streamer := prepareTestEnv(t, nil)
 	message, chunks := getLongRandomMessage(streamer.chunkSize)
 
@@ -105,7 +102,6 @@ func TestDataStreaming_ServerHaltsProtocolWhenObservesInconsistency(t *testing.T
 }
 
 func TestDataStreaming_ServerAbortsProtocolAfterExpiry(t *testing.T) {
-	t.Parallel()
 	ctx, streamer := prepareTestEnv(t, nil)
 	message, chunks := getLongRandomMessage(streamer.chunkSize)
 
@@ -129,7 +125,6 @@ func TestDataStreaming_ServerAbortsProtocolAfterExpiry(t *testing.T) {
 }
 
 func TestDataStreaming_ProtocolSucceedsEvenWithDelays(t *testing.T) {
-	t.Parallel()
 	ctx, streamer := prepareTestEnv(t, nil)
 	message, chunks := getLongRandomMessage(streamer.chunkSize)
 
@@ -155,7 +150,6 @@ func TestDataStreaming_ProtocolSucceedsEvenWithDelays(t *testing.T) {
 }
 
 func TestDataStreaming_ClientRetriesWhenThereAreConnectionProblems(t *testing.T) {
-	t.Parallel()
 	// Server 'goes offline' for a moment just before reading the second chunk
 	var alreadyWentOffline = false
 	ctx, streamer := prepareTestEnv(t, func(i uint64) error {
@@ -164,15 +158,8 @@ func TestDataStreaming_ClientRetriesWhenThereAreConnectionProblems(t *testing.T)
 			return errors.New("service unavailable")
 		}
 		return nil
-	})
 
-	err := streamer.SetRetryPolicy(&ExpDelayPolicy{
-		BaseDelay:   time.Second,
-		MaxDelay:    5 * time.Second,
-		MaxAttempts: 2,
 	})
-	testhelpers.RequireImpl(t, err)
-
 	message, _ := getLongRandomMessage(streamer.chunkSize)
 	result, err := streamer.StreamData(ctx, message, timeout)
 	testhelpers.RequireImpl(t, err)
@@ -180,7 +167,6 @@ func TestDataStreaming_ClientRetriesWhenThereAreConnectionProblems(t *testing.T)
 }
 
 func TestDataStreaming_ServerDeniesTooOldAndFutureRequests(t *testing.T) {
-	t.Parallel()
 	ctx, streamer := prepareTestEnv(t, nil)
 	message, _ := getLongRandomMessage(streamer.chunkSize)
 
@@ -199,7 +185,6 @@ func TestDataStreaming_ServerDeniesTooOldAndFutureRequests(t *testing.T) {
 }
 
 func TestDataStreaming_CannotReplay(t *testing.T) {
-	t.Parallel()
 	ctx, streamer := prepareTestEnv(t, nil)
 	message, chunks := getLongRandomMessage(streamer.chunkSize)
 
@@ -258,6 +243,13 @@ func prepareTestEnv(t *testing.T, onChunkInjection func(uint64) error) (context.
 	testhelpers.RequireImpl(t, err)
 
 	streamer, err := NewDataStreamer[ProtocolResult](maxStoreChunkBodySize, DefaultPayloadSigner(signer), rpcClient, rpcMethods)
+	testhelpers.RequireImpl(t, err)
+
+	err = streamer.SetRetryPolicy(&ExpDelayPolicy{
+		BaseDelay:   time.Second,
+		MaxDelay:    2 * time.Second,
+		MaxAttempts: 2,
+	})
 	testhelpers.RequireImpl(t, err)
 
 	return ctx, streamer
