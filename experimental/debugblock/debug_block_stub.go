@@ -6,16 +6,17 @@ import (
 	"errors"
 	"math/big"
 
+	"github.com/spf13/pflag"
+
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/spf13/pflag"
 )
 
 func (c *Config) Validate() error {
 	if c.OverwriteChainConfig || c.DebugAddress != "" || c.DebugBlockNum != 0 {
-		errors.New("debug block injection is not supported in this build")
+		return errors.New("debug block injection is not supported in this build")
 	}
 	return nil
 }
