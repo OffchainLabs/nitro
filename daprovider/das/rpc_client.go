@@ -19,15 +19,16 @@ import (
 	"github.com/offchainlabs/nitro/daprovider/das/dasutil"
 	"github.com/offchainlabs/nitro/daprovider/das/data_streaming"
 	"github.com/offchainlabs/nitro/util/pretty"
+	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/signature"
 )
 
 var (
-	rpcClientStoreRequestGauge      = metrics.NewRegisteredGauge("arb/das/rpcclient/store/requests", nil)
-	rpcClientStoreSuccessGauge      = metrics.NewRegisteredGauge("arb/das/rpcclient/store/success", nil)
-	rpcClientStoreFailureGauge      = metrics.NewRegisteredGauge("arb/das/rpcclient/store/failure", nil)
-	rpcClientStoreStoredBytesGauge  = metrics.NewRegisteredGauge("arb/das/rpcclient/store/bytes", nil)
-	rpcClientStoreDurationHistogram = metrics.NewRegisteredHistogram("arb/das/rpcclient/store/duration", nil, metrics.NewBoundedHistogramSample())
+	rpcClientStoreRequestCounter     = metrics.NewRegisteredCounter("arb/das/rpcclient/store/requests", nil)
+	rpcClientStoreSuccessCounter     = metrics.NewRegisteredCounter("arb/das/rpcclient/store/success", nil)
+	rpcClientStoreFailureCounter     = metrics.NewRegisteredCounter("arb/das/rpcclient/store/failure", nil)
+	rpcClientStoreStoredBytesCounter = metrics.NewRegisteredCounter("arb/das/rpcclient/store/bytes", nil)
+	rpcClientStoreDurationHistogram  = metrics.NewRegisteredHistogram("arb/das/rpcclient/store/duration", nil, metrics.NewBoundedHistogramSample())
 )
 
 // lint:require-exhaustive-initialization
@@ -62,7 +63,17 @@ func NewDASRPCClient(target string, signer signature.DataSignerFunc, maxStoreChu
 		payloadSigner := data_streaming.CustomPayloadSigner(func(bytes []byte, extras ...uint64) ([]byte, error) {
 			return applyDasSigner(signer, bytes, extras...)
 		})
-		dataStreamer, err = data_streaming.NewDataStreamer[StoreResult](target, maxStoreChunkBodySize, payloadSigner, rpcMethods)
+		rpcClient := rpcclient.NewRpcClient(func() *rpcclient.ClientConfig {
+			config := rpcclient.DefaultClientConfig
+			config.URL = target
+			return &config
+		}, nil)
+		err := rpcClient.Start(context.Background())
+		if err != nil {
+			return nil, err
+		}
+
+		dataStreamer, err = data_streaming.NewDataStreamer[StoreResult](maxStoreChunkBodySize, payloadSigner, rpcClient, rpcMethods)
 		if err != nil {
 			return nil, err
 		}
@@ -77,14 +88,14 @@ func NewDASRPCClient(target string, signer signature.DataSignerFunc, maxStoreChu
 }
 
 func (c *DASRPCClient) Store(ctx context.Context, message []byte, timeout uint64) (*dasutil.DataAvailabilityCertificate, error) {
-	rpcClientStoreRequestGauge.Inc(1)
+	rpcClientStoreRequestCounter.Inc(1)
 	start := time.Now()
 	success := false
 	defer func() {
 		if success {
-			rpcClientStoreSuccessGauge.Inc(1)
+			rpcClientStoreSuccessCounter.Inc(1)
 		} else {
-			rpcClientStoreFailureGauge.Inc(1)
+			rpcClientStoreFailureCounter.Inc(1)
 		}
 		rpcClientStoreDurationHistogram.Update(time.Since(start).Nanoseconds())
 	}()
@@ -108,7 +119,7 @@ func (c *DASRPCClient) Store(ctx context.Context, message []byte, timeout uint64
 		return nil, err
 	}
 
-	rpcClientStoreStoredBytesGauge.Inc(int64(len(message)))
+	rpcClientStoreStoredBytesCounter.Inc(int64(len(message)))
 	success = true
 
 	return &dasutil.DataAvailabilityCertificate{

@@ -38,6 +38,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/daprovider/daclient"
+	"github.com/offchainlabs/nitro/daprovider/das/data_streaming"
 	"github.com/offchainlabs/nitro/daprovider/referenceda"
 	dapserver "github.com/offchainlabs/nitro/daprovider/server"
 	"github.com/offchainlabs/nitro/execution/gethexec"
@@ -83,7 +84,8 @@ func TestChallengeProtocolBOLDCustomDA_ValidCertClaimedInvalid(t *testing.T) {
 // createReferenceDAProviderServer creates and starts a ReferenceDA provider server with automatic port selection
 func createReferenceDAProviderServer(t *testing.T, ctx context.Context, l1Client *ethclient.Client, validatorAddr common.Address, dataSigner signature.DataSignerFunc) (*http.Server, string) {
 	// Create ReferenceDA components
-	reader := referenceda.NewReader(l1Client, validatorAddr)
+	storage := referenceda.GetInMemoryStorage()
+	reader := referenceda.NewReader(storage, l1Client, validatorAddr)
 	writer := referenceda.NewWriter(dataSigner)
 	validator := referenceda.NewValidator(l1Client, validatorAddr)
 
@@ -97,7 +99,8 @@ func createReferenceDAProviderServer(t *testing.T, ctx context.Context, l1Client
 	}
 
 	// Create the provider server
-	server, err := dapserver.NewServerWithDAPProvider(ctx, serverConfig, reader, writer, validator)
+	headerBytes := []byte{daprovider.DACertificateMessageHeaderFlag}
+	server, err := dapserver.NewServerWithDAPProvider(ctx, serverConfig, reader, writer, validator, headerBytes, data_streaming.TrustingPayloadVerifier())
 	Require(t, err)
 
 	// Extract the actual address with port
@@ -158,7 +161,8 @@ func createEvilDAProviderServer(t *testing.T, ctx context.Context, l1Client *eth
 	// Use asserting writer to ensure evil provider is never used for writing.
 	// In this test we call the writers directly to have more control over batch posting.
 	writer := &assertingWriter{}
-	server, err := dapserver.NewServerWithDAPProvider(ctx, serverConfig, evilProvider, writer, evilProvider)
+	headerBytes := []byte{daprovider.DACertificateMessageHeaderFlag}
+	server, err := dapserver.NewServerWithDAPProvider(ctx, serverConfig, evilProvider, writer, evilProvider, headerBytes, data_streaming.TrustingPayloadVerifier())
 	Require(t, err)
 
 	// Extract the actual address with port
@@ -409,7 +413,7 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, 
 			URL: providerURLNodeA,
 		}
 	}
-	daClientA, err := daclient.NewClient(ctx, daClientConfigA)
+	daClientA, err := daclient.NewClient(ctx, daClientConfigA, dapserver.DefaultServerConfig.RPCServerBodyLimit, data_streaming.NoopPayloadSigner())
 	Require(t, err)
 
 	daClientConfigB := func() *rpcclient.ClientConfig {
@@ -417,12 +421,17 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, 
 			URL: providerURLNodeB,
 		}
 	}
-	daClientB, err := daclient.NewClient(ctx, daClientConfigB)
+	daClientB, err := daclient.NewClient(ctx, daClientConfigB, dapserver.DefaultServerConfig.RPCServerBodyLimit, data_streaming.NoopPayloadSigner())
 	Require(t, err)
 
 	// Create DA readers for validators
-	dapReadersA := []daprovider.Reader{daClientA}
-	dapReadersB := []daprovider.Reader{daClientB}
+	dapReadersA := daprovider.NewReaderRegistry()
+	err = dapReadersA.SetupDACertificateReader(daClientA)
+	Require(t, err)
+
+	dapReadersB := daprovider.NewReaderRegistry()
+	err = dapReadersB.SetupDACertificateReader(daClientB)
+	Require(t, err)
 
 	statelessA, err := staker.NewStatelessBlockValidator(
 		l2nodeA.InboxReader,

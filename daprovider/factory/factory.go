@@ -34,6 +34,7 @@ type DAProviderFactory interface {
 	CreateWriter(ctx context.Context) (daprovider.Writer, func(), error)
 	CreateValidator(ctx context.Context) (daprovider.Validator, func(), error)
 	ValidateConfig() error
+	GetSupportedHeaderBytes() []byte
 }
 
 type AnyTrustFactory struct {
@@ -86,6 +87,14 @@ func NewDAProviderFactory(
 }
 
 // AnyTrust Factory Implementation
+func (f *AnyTrustFactory) GetSupportedHeaderBytes() []byte {
+	// Support both DAS without tree flag (0x80) and with tree flag (0x88)
+	return []byte{
+		daprovider.DASMessageHeaderFlag,
+		daprovider.DASMessageHeaderFlag | daprovider.TreeDASMessageHeaderFlag,
+	}
+}
+
 func (f *AnyTrustFactory) ValidateConfig() error {
 	if !f.config.Enable {
 		return errors.New("anytrust data availability must be enabled")
@@ -108,45 +117,35 @@ func (f *AnyTrustFactory) ValidateConfig() error {
 }
 
 func (f *AnyTrustFactory) CreateReader(ctx context.Context) (daprovider.Reader, func(), error) {
+	var daReader dasutil.DASReader
+	var keysetFetcher *das.KeysetFetcher
+	var lifecycleManager *das.LifecycleManager
+	var err error
+
 	if f.enableWriter {
-		_, daReader, keysetFetcher, lifecycleManager, err := das.CreateDAReaderAndWriter(
+		_, daReader, keysetFetcher, lifecycleManager, err = das.CreateDAReaderAndWriter(
 			ctx, f.config, f.dataSigner, f.l1Client, f.seqInboxAddr)
-		if err != nil {
-			return nil, nil, err
-		}
-
-		daReader = das.NewReaderTimeoutWrapper(daReader, f.config.RequestTimeout)
-		if f.config.PanicOnError {
-			daReader = das.NewReaderPanicWrapper(daReader)
-		}
-
-		reader := dasutil.NewReaderForDAS(daReader, keysetFetcher)
-		cleanupFn := func() {
-			if lifecycleManager != nil {
-				lifecycleManager.StopAndWaitUntil(0)
-			}
-		}
-		return reader, cleanupFn, nil
 	} else {
-		daReader, keysetFetcher, lifecycleManager, err := das.CreateDAReader(
+		daReader, keysetFetcher, lifecycleManager, err = das.CreateDAReader(
 			ctx, f.config, f.l1Reader, &f.seqInboxAddr)
-		if err != nil {
-			return nil, nil, err
-		}
-
-		daReader = das.NewReaderTimeoutWrapper(daReader, f.config.RequestTimeout)
-		if f.config.PanicOnError {
-			daReader = das.NewReaderPanicWrapper(daReader)
-		}
-
-		reader := dasutil.NewReaderForDAS(daReader, keysetFetcher)
-		cleanupFn := func() {
-			if lifecycleManager != nil {
-				lifecycleManager.StopAndWaitUntil(0)
-			}
-		}
-		return reader, cleanupFn, nil
 	}
+
+	if err != nil {
+		return nil, nil, err
+	}
+
+	daReader = das.NewReaderTimeoutWrapper(daReader, f.config.RequestTimeout)
+	if f.config.PanicOnError {
+		daReader = das.NewReaderPanicWrapper(daReader)
+	}
+
+	reader := dasutil.NewReaderForDAS(daReader, keysetFetcher, daprovider.KeysetValidate)
+	cleanupFn := func() {
+		if lifecycleManager != nil {
+			lifecycleManager.StopAndWaitUntil(0)
+		}
+	}
+	return reader, cleanupFn, nil
 }
 
 func (f *AnyTrustFactory) CreateWriter(ctx context.Context) (daprovider.Writer, func(), error) {
@@ -179,6 +178,10 @@ func (f *AnyTrustFactory) CreateValidator(ctx context.Context) (daprovider.Valid
 }
 
 // ReferenceDA Factory Implementation
+func (f *ReferenceDAFactory) GetSupportedHeaderBytes() []byte {
+	return []byte{daprovider.DACertificateMessageHeaderFlag}
+}
+
 func (f *ReferenceDAFactory) ValidateConfig() error {
 	if !f.config.Enable {
 		return errors.New("referenceda must be enabled")
@@ -191,7 +194,8 @@ func (f *ReferenceDAFactory) CreateReader(ctx context.Context) (daprovider.Reade
 		return nil, nil, errors.New("validator-contract address not configured for reference DA reader")
 	}
 	validatorAddr := common.HexToAddress(f.config.ValidatorContract)
-	reader := referenceda.NewReader(f.l1Client, validatorAddr)
+	storage := referenceda.GetInMemoryStorage()
+	reader := referenceda.NewReader(storage, f.l1Client, validatorAddr)
 	return reader, nil, nil
 }
 

@@ -72,7 +72,7 @@ func NewBlobClient(config BlobClientConfig, ec *ethclient.Client) (*BlobClient, 
 	}
 	var secondaryBeaconUrl *url.URL
 	if config.SecondaryBeaconUrl != "" {
-		if secondaryBeaconUrl, err = url.Parse(config.BeaconUrl); err != nil {
+		if secondaryBeaconUrl, err = url.Parse(config.SecondaryBeaconUrl); err != nil {
 			return nil, fmt.Errorf("failed to parse secondary beacon chain URL: %w", err)
 		}
 	}

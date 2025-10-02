@@ -79,6 +79,10 @@ func Deserialize(data []byte) (*Certificate, error) {
 
 // RecoverSigner recovers the signer address from the certificate
 func (c *Certificate) RecoverSigner() (common.Address, error) {
+	if c.V < 27 {
+		return common.Address{}, fmt.Errorf("invalid signature V value: %d (must be >= 27)", c.V)
+	}
+
 	sig := make([]byte, 65)
 	copy(sig[0:32], c.R[:])
 	copy(sig[32:64], c.S[:])
@@ -93,6 +97,7 @@ func (c *Certificate) RecoverSigner() (common.Address, error) {
 }
 
 // ValidateWithContract checks if the certificate is signed by a trusted signer using the contract
+// TODO: Until we have merged customda contracts changes, this will need to be commented out.
 func (c *Certificate) ValidateWithContract(validator *ospgen.ReferenceDAProofValidator, opts *bind.CallOpts) error {
 	signer, err := c.RecoverSigner()
 	if err != nil {
