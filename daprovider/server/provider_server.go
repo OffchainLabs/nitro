@@ -94,15 +94,15 @@ func NewServerWithDAPProvider(ctx context.Context, config *ServerConfig, reader 
 		rpcServer.SetHTTPBodyLimit(config.RPCServerBodyLimit)
 	}
 
-	dataReceiver := data_streaming.NewDefaultDataStreamReceiver(verifier)
-	dataReceiver.Start(ctx)
+	dataStreamReceiver := data_streaming.NewDefaultDataStreamReceiver(verifier)
+	dataStreamReceiver.Start(ctx)
 
 	server := &Server{
 		reader:       reader,
 		writer:       writer,
 		validator:    validator,
 		headerBytes:  headerBytes,
-		dataReceiver: dataReceiver,
+		dataReceiver: dataStreamReceiver,
 	}
 	if err = rpcServer.RegisterName("daprovider", server); err != nil {
 		return nil, err
@@ -141,6 +141,7 @@ func NewServerWithDAPProvider(ctx context.Context, config *ServerConfig, reader 
 
 	go func() {
 		<-ctx.Done()
+		dataStreamReceiver.StopAndWait()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		_ = srv.Shutdown(shutdownCtx)

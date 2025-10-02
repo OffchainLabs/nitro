@@ -277,6 +277,7 @@ func launchServer(t *testing.T, ctx context.Context, signatureVerifier *signatur
 	}()
 	go func() {
 		<-ctx.Done()
+		dataStreamReceiver.StopAndWait()
 		_ = httpServer.Shutdown(context.Background())
 	}()
 

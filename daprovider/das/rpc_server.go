@@ -101,6 +101,7 @@ func StartDASRPCServerOnListener(ctx context.Context, listener net.Listener, rpc
 	}()
 	go func() {
 		<-ctx.Done()
+		dataStreamReceiver.StopAndWait()
 		_ = srv.Shutdown(context.Background())
 	}()
 	return srv, nil
