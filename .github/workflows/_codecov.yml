@@ -3,9 +3,6 @@ name: codecov
 on:
   workflow_call:
     secrets:
-      GITHUB_TOKEN:
-        required: true
-        description: Token to post comments on the PR.
       CODECOV_TOKEN:
         required: true
         description: Token to upload reports to Codecov.
