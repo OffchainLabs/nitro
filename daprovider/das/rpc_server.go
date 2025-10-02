@@ -68,14 +68,18 @@ func StartDASRPCServerOnListener(ctx context.Context, listener net.Listener, rpc
 	dataStreamPayloadVerifier := data_streaming.CustomPayloadVerifier(func(ctx context.Context, signature []byte, bytes []byte, extras ...uint64) error {
 		return signatureVerifier.verify(ctx, bytes, signature, extras...)
 	})
+
+	dataStreamReceiver := data_streaming.NewDataStreamReceiver(dataStreamPayloadVerifier, data_streaming.DefaultMaxPendingMessages, data_streaming.DefaultMessageCollectionExpiry, data_streaming.DefaultRequestValidity, func(id data_streaming.MessageId) {
+		rpcStoreFailureCounter.Inc(1)
+	})
+	dataStreamReceiver.Start(ctx)
+
 	err := rpcServer.RegisterName("das", &DASRPCServer{
-		daReader:          daReader,
-		daWriter:          daWriter,
-		daHealthChecker:   daHealthChecker,
-		signatureVerifier: signatureVerifier,
-		dataStreamReceiver: data_streaming.NewDataStreamReceiver(dataStreamPayloadVerifier, data_streaming.DefaultMaxPendingMessages, data_streaming.DefaultMessageCollectionExpiry, data_streaming.DefaultRequestValidity, func(id data_streaming.MessageId) {
-			rpcStoreFailureCounter.Inc(1)
-		}),
+		daReader:           daReader,
+		daWriter:           daWriter,
+		daHealthChecker:    daHealthChecker,
+		signatureVerifier:  signatureVerifier,
+		dataStreamReceiver: dataStreamReceiver,
 	})
 	if err != nil {
 		return nil, err

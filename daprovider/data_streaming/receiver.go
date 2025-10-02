@@ -34,6 +34,8 @@ const (
 // the interrupted streams.
 // lint:require-exhaustive-initialization
 type DataStreamReceiver struct {
+	stopwaiter.StopWaiter
+
 	payloadVerifier *PayloadVerifier
 	messageStore    *messageStore
 	requestValidity time.Duration
@@ -42,24 +44,10 @@ type DataStreamReceiver struct {
 	seenRequests map[common.Hash]time.Time
 }
 
-// NewDataStreamReceiver sets up a new stream receiver. `payloadVerifier` must be compatible with message signing on
-// the `DataStreamer` sender side. `maxPendingMessages` limits how many parallel protocol instances are supported.
-// `messageCollectionExpiry` is the window in which a protocol must end - otherwise the protocol will be closed and all
-// related data will be removed. This time window is reset after every _new_ protocol message received.
-// `requestValidity` is the maximum age of the incoming protocol opening message.
-func NewDataStreamReceiver(payloadVerifier *PayloadVerifier, maxPendingMessages int, messageCollectionExpiry, requestValidity time.Duration, expirationCallback func(id MessageId)) *DataStreamReceiver {
-	dsr := &DataStreamReceiver{
-		payloadVerifier: payloadVerifier,
-		messageStore:    newMessageStore(maxPendingMessages, messageCollectionExpiry, expirationCallback),
-		requestValidity: requestValidity,
+func (dsr *DataStreamReceiver) Start(ctxIn context.Context) {
+	dsr.StopWaiter.Start(ctxIn, dsr)
 
-		mutex:        sync.Mutex{},
-		seenRequests: make(map[common.Hash]time.Time),
-	}
-
-	waiter := stopwaiter.StopWaiter{}
-	waiter.Start(context.Background(), dsr)
-	waiter.CallIteratively(func(ctx context.Context) time.Duration {
+	dsr.StopWaiter.CallIteratively(func(ctx context.Context) time.Duration {
 		dsr.mutex.Lock()
 		defer dsr.mutex.Unlock()
 		cutoff := time.Now().Add(-dsr.requestValidity)
@@ -70,8 +58,24 @@ func NewDataStreamReceiver(payloadVerifier *PayloadVerifier, maxPendingMessages 
 		}
 		return dsr.requestValidity
 	})
+}
 
-	return dsr
+// NewDataStreamReceiver sets up a new stream receiver. `payloadVerifier` must be compatible with message signing on
+// the `DataStreamer` sender side. `maxPendingMessages` limits how many parallel protocol instances are supported.
+// `messageCollectionExpiry` is the window in which a protocol must end - otherwise the protocol will be closed and all
+// related data will be removed. This time window is reset after every _new_ protocol message received.
+// `requestValidity` is the maximum age of the incoming protocol opening message.
+func NewDataStreamReceiver(payloadVerifier *PayloadVerifier, maxPendingMessages int, messageCollectionExpiry, requestValidity time.Duration, expirationCallback func(id MessageId)) *DataStreamReceiver {
+	return &DataStreamReceiver{
+		StopWaiter: stopwaiter.StopWaiter{},
+
+		payloadVerifier: payloadVerifier,
+		messageStore:    newMessageStore(maxPendingMessages, messageCollectionExpiry, expirationCallback),
+		requestValidity: requestValidity,
+
+		mutex:        sync.Mutex{},
+		seenRequests: make(map[common.Hash]time.Time),
+	}
 }
 
 // NewDefaultDataStreamReceiver sets up a new stream receiver with default settings.

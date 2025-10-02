@@ -257,8 +257,12 @@ func prepareTestEnv(t *testing.T, onChunkInjection func(uint64) error) (context.
 
 func launchServer(t *testing.T, ctx context.Context, signatureVerifier *signature.Verifier, onChunkInjection func(uint64) error) string {
 	rpcServer := rpc.NewServer()
+
+	dataStreamReceiver := NewDataStreamReceiver(DefaultPayloadVerifier(signatureVerifier), maxPendingMessages, messageCollectionExpiry, requestValidity, nil)
+	dataStreamReceiver.Start(ctx)
+
 	err := rpcServer.RegisterName(serverRPCRoot, &TestServer{
-		dataStreamReceiver: NewDataStreamReceiver(DefaultPayloadVerifier(signatureVerifier), maxPendingMessages, messageCollectionExpiry, requestValidity, nil),
+		dataStreamReceiver: dataStreamReceiver,
 		onChunkInject:      onChunkInjection,
 	})
 	testhelpers.RequireImpl(t, err)
