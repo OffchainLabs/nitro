@@ -223,7 +223,31 @@ func (s *TransactionStreamer) cleanupInconsistentState() error {
 			return err
 		}
 	}
-	// TODO remove trailing messageCountToMessage and messageCountToBlockPrefix entries
+	// Remove any trailing entries (with index >= messageCount) to keep DB consistent on startup
+	count, err := s.GetMessageCount()
+	if err != nil {
+		return err
+	}
+	batch := s.db.NewBatch()
+	startKey := uint64ToKey(uint64(count))
+	if err := deleteStartingAt(s.db, batch, messagePrefix, startKey); err != nil {
+		return err
+	}
+	if err := deleteStartingAt(s.db, batch, blockHashInputFeedPrefix, startKey); err != nil {
+		return err
+	}
+	if err := deleteStartingAt(s.db, batch, blockMetadataInputFeedPrefix, startKey); err != nil {
+		return err
+	}
+	if err := deleteStartingAt(s.db, batch, missingBlockMetadataInputFeedPrefix, startKey); err != nil {
+		return err
+	}
+	if err := deleteStartingAt(s.db, batch, messageResultPrefix, startKey); err != nil {
+		return err
+	}
+	if err := batch.Write(); err != nil {
+		return err
+	}
 	return nil
 }
 
