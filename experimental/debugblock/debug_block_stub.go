@@ -7,6 +7,7 @@ import (
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/core/state"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/spf13/pflag"
@@ -27,6 +28,11 @@ func ConfigAddOptions(_ string, _ *pflag.FlagSet) {
 	// don't add any of debug block options
 }
 
+func PrepareDebugTransaction(_ *params.ChainConfig) *types.Transaction {
+	log.Warn("PrepareDebugTransaction is not supported in this build")
+	return nil
+}
+
 func DebugBlockStateUpdate(_ *state.StateDB, _ *big.Int, _ *params.ChainConfig) {
-	log.Warn("debugBlockStateUpdate is not supported in this build")
+	log.Warn("DebugBlockStateUpdate is not supported in this build")
 }

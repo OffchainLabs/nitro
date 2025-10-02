@@ -36,6 +36,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/execution"
+	"github.com/offchainlabs/nitro/experimental/debugblock"
 	"github.com/offchainlabs/nitro/timeboost"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/containers"
@@ -1112,15 +1113,23 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 
 	var startOfReadingFromTxQueue time.Time
 
-	makeEmptyBlock := false
 	if s.execEngine.bc.Config().DebugMode() {
-		debugBlock := s.execEngine.bc.Config().ArbitrumChainParams.DebugBlock
-		if lastBlock.Number.Uint64()+1 == debugBlock {
-			// if we are about to produce block with DebugBlock number, we don't want to wait for new tranasactions and we just trigger an empty block (with startTx only)
-			makeEmptyBlock = true
+		chainConfig := s.execEngine.bc.Config()
+		if lastBlock.Number.Uint64()+1 == chainConfig.ArbitrumChainParams.DebugBlock {
+			// publish transaction to trigger next block
+			tx := debugblock.PrepareDebugTransaction(chainConfig)
+			if tx != nil {
+				go func() {
+					if err := s.PublishTransaction(ctx, tx, nil); err != nil {
+						log.Error("debug block: failed to publish tx", "err", err)
+					} else {
+						log.Warn("published tx", "txHash", tx.Hash())
+					}
+				}()
+			}
 		}
 	}
-	for !makeEmptyBlock {
+	for {
 		if len(queueItems) == 1 {
 			startOfReadingFromTxQueue = time.Now()
 		} else if len(queueItems) > 1 && time.Since(startOfReadingFromTxQueue) > config.ReadFromTxQueueTimeout {
@@ -1347,9 +1356,6 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 			continue
 		}
 		queueItem.returnResult(err)
-	}
-	if block != nil && makeEmptyBlock {
-		return true
 	}
 	return madeBlock
 }

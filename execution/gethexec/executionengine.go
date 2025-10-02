@@ -597,9 +597,7 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 	blockCalcTime := time.Since(startTime)
 	blockExecutionTimer.Update(blockCalcTime.Nanoseconds())
 
-	debugBlock := s.bc.Config().DebugMode() && block.NumberU64() == s.bc.Config().ArbitrumChainParams.DebugBlock
-
-	if len(receipts) == 0 && !debugBlock {
+	if len(receipts) == 0 {
 		return nil, nil
 	}
 
@@ -610,7 +608,7 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 			break
 		}
 	}
-	if allTxsErrored && !debugBlock {
+	if allTxsErrored {
 		return nil, nil
 	}
 

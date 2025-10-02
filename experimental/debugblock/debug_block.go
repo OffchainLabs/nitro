@@ -10,6 +10,8 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/tracing"
+	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/holiman/uint256"
@@ -42,6 +44,32 @@ func (c *Config) Apply(chainConfig *params.ChainConfig) {
 		chainConfig.ArbitrumChainParams.DebugAddress = common.HexToAddress(c.DebugAddress)
 		chainConfig.ArbitrumChainParams.DebugBlock = c.DebugBlockNum
 	}
+}
+
+func PrepareDebugTransaction(chainConfig *params.ChainConfig) *types.Transaction {
+	devPrivKey, err := crypto.HexToECDSA("") //TODO
+	if err != nil {
+		log.Error("debug block: failed to HexToECDSA", "err", err)
+		return nil
+	}
+	devAddr := crypto.PubkeyToAddress(devPrivKey.PublicKey)
+	txData := &types.DynamicFeeTx{
+		To:        &devAddr,
+		Gas:       1e9,
+		GasTipCap: big.NewInt(params.Ether),
+		GasFeeCap: big.NewInt(params.Ether),
+		Value:     big.NewInt(1),
+		Nonce:     0,
+		Data:      nil,
+	}
+	signer := types.LatestSigner(chainConfig) // TODO
+	tx := types.NewTx(txData)
+	tx, err = types.SignTx(tx, signer, devPrivKey)
+	if err != nil {
+		log.Error("debug block: failed to sign tx", "err", err)
+		return nil
+	}
+	return tx
 }
 
 func DebugBlockStateUpdate(statedb *state.StateDB, expectedBalanceDelta *big.Int, chainConfig *params.ChainConfig) {
