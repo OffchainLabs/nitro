@@ -746,11 +746,12 @@ func getDAProvider(
 
 	dapReaders := daprovider.NewReaderRegistry()
 	if daClient != nil {
-		headerBytes, err := daClient.GetSupportedHeaderBytes(ctx)
+		promise := daClient.GetSupportedHeaderBytes()
+		result, err := promise.Await(ctx)
 		if err != nil {
 			return nil, nil, nil, nil, fmt.Errorf("failed to get supported header bytes from DA client: %w", err)
 		}
-		if err := dapReaders.RegisterAll(headerBytes, daClient); err != nil {
+		if err := dapReaders.RegisterAll(result.HeaderBytes, daClient); err != nil {
 			return nil, nil, nil, nil, fmt.Errorf("failed to register DA client: %w", err)
 		}
 	}

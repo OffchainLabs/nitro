@@ -177,7 +177,7 @@ func InitializeArbosInDatabase(db ethdb.Database, cacheConfig *core.BlockChainCo
 		statedb.SetBalance(account.Addr, uint256.MustFromBig(account.EthBalance), tracing.BalanceChangeUnspecified)
 		statedb.SetNonce(account.Addr, account.Nonce, tracing.NonceChangeUnspecified)
 		if account.ContractInfo != nil {
-			statedb.SetCode(account.Addr, account.ContractInfo.Code)
+			statedb.SetCode(account.Addr, account.ContractInfo.Code, tracing.CodeChangeUnspecified)
 			for k, v := range account.ContractInfo.ContractStorage {
 				statedb.SetState(account.Addr, k, v)
 			}

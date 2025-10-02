@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/ethereum/go-ethereum/arbitrum/multigas"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
@@ -75,7 +76,13 @@ func activateProgram(
 	runCtx *core.MessageRunContext,
 ) (*activationInfo, error) {
 	moduleActivationMandatory := true
-	info, asmMap, err := activateProgramInternal(program, codehash, wasm, page_limit, stylusVersion, arbosVersionForGas, debug, burner.GasLeft(), runCtx.WasmTargets(), moduleActivationMandatory)
+	suppliedGas := burner.GasLeft()
+	gasLeft := suppliedGas
+	info, asmMap, err := activateProgramInternal(program, codehash, wasm, page_limit, stylusVersion, arbosVersionForGas, debug, &gasLeft, runCtx.WasmTargets(), moduleActivationMandatory)
+	if gasLeft < suppliedGas {
+		// Ignore the out-of-gas error because we want to return the error above
+		burner.Burn(multigas.ResourceKindComputation, suppliedGas-gasLeft) //nolint:errcheck
+	}
 	if err != nil {
 		return nil, err
 	}
