@@ -319,8 +319,10 @@ func externalSigner(ctx context.Context, opts *ExternalSignerCfg) (signerFn, com
 			return nil, fmt.Errorf("transaction: %x from external signer differs from request: %x", hasher.Hash(signedTx), h)
 		}
 		// Ensure the returned transaction is signed by the expected address.
-		// This provides application-level authentication independent of TLS settings.
-		from, err := types.Sender(hasher, signedTx)
+		// Use the hasher derived from the signed transaction's chain ID to
+		// correctly recover the sender address regardless of the input tx fields.
+		recoveryHasher := types.LatestSignerForChainID(signedTx.ChainId())
+		from, err := types.Sender(recoveryHasher, signedTx)
 		if err != nil {
 			return nil, fmt.Errorf("recovering signer address: %w", err)
 		}
