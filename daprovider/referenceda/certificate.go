@@ -97,6 +97,7 @@ func (c *Certificate) RecoverSigner() (common.Address, error) {
 }
 
 // ValidateWithContract checks if the certificate is signed by a trusted signer using the contract
+// TODO: Until we have merged customda contracts changes, this will need to be commented out.
 func (c *Certificate) ValidateWithContract(validator *ospgen.ReferenceDAProofValidator, opts *bind.CallOpts) error {
 	signer, err := c.RecoverSigner()
 	if err != nil {

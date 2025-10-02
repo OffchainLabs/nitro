@@ -210,7 +210,7 @@ func InitializeArbosState(stateDB vm.StateDB, burner burn.Burner, chainConfig *p
 	// To work around this, we give precompiles fake code.
 	for addr, version := range PrecompileMinArbOSVersions {
 		if version == 0 {
-			stateDB.SetCode(addr, []byte{byte(vm.INVALID)})
+			stateDB.SetCode(addr, []byte{byte(vm.INVALID)}, tracing.CodeChangeUnspecified)
 		}
 	}
 
@@ -371,7 +371,7 @@ func (state *ArbosState) UpgradeArbosVersion(
 		case params.ArbosVersion_40:
 			// EIP-2935: Add support for historical block hashes.
 			stateDB.SetNonce(params.HistoryStorageAddress, 1, tracing.NonceChangeUnspecified)
-			stateDB.SetCode(params.HistoryStorageAddress, params.HistoryStorageCodeArbitrum)
+			stateDB.SetCode(params.HistoryStorageAddress, params.HistoryStorageCodeArbitrum, tracing.CodeChangeUnspecified)
 			// The MaxWasmSize was a constant before arbos version 40, and can
 			// be read as a parameter after arbos version 40.
 			params, err := state.Programs().Params()
@@ -402,7 +402,7 @@ func (state *ArbosState) UpgradeArbosVersion(
 		// install any new precompiles
 		for addr, version := range PrecompileMinArbOSVersions {
 			if version == nextArbosVersion {
-				stateDB.SetCode(addr, []byte{byte(vm.INVALID)})
+				stateDB.SetCode(addr, []byte{byte(vm.INVALID)}, tracing.CodeChangeUnspecified)
 			}
 		}
 
