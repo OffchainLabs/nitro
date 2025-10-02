@@ -14,6 +14,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
 const (
@@ -55,8 +56,9 @@ func NewDataStreamReceiver(payloadVerifier *PayloadVerifier, maxPendingMessages 
 		seenRequests: make(map[common.Hash]time.Time),
 	}
 
-	var gcRoutine func()
-	gcRoutine = func() {
+	waiter := stopwaiter.StopWaiter{}
+	waiter.Start(context.Background(), dsr)
+	waiter.CallIteratively(func(ctx context.Context) time.Duration {
 		dsr.mutex.Lock()
 		defer dsr.mutex.Unlock()
 		cutoff := time.Now().Add(-dsr.requestValidity)
@@ -65,9 +67,8 @@ func NewDataStreamReceiver(payloadVerifier *PayloadVerifier, maxPendingMessages 
 				delete(dsr.seenRequests, hash)
 			}
 		}
-		time.AfterFunc(dsr.requestValidity, gcRoutine)
-	}
-	go gcRoutine()
+		return dsr.requestValidity
+	})
 
 	return dsr
 }
