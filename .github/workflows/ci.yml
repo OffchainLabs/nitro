@@ -3,7 +3,7 @@ name: CI
 run-name: CI triggered from @${{ github.actor }} of ${{ github.head_ref }}
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}-${{ github.ref }}
   cancel-in-progress: true
 
 on:
@@ -36,8 +36,10 @@ jobs:
               - 'arbitrator/**'
               - 'contracts/**'
               - 'Makefile'
+              - '.github/workflows/_arbitrator.yml'
             bold_legacy:
               - 'bold/legacy/**'
+              - '.github/workflows/_bold-legacy.yml'
 
   # --- Fast: Build + Lint only (required by can_proceed) ---
   fast:
@@ -62,6 +64,15 @@ jobs:
   go-tests:
     uses: ./.github/workflows/_go-tests.yml
     secrets: inherit
+
+  # --- Summarize test results (not required by can_proceed) ---
+  codecov:
+    needs: [go-tests, arbitrator]
+    if: always()
+    uses: ./.github/workflows/_codecov.yml
+    secrets: inherit
+    permissions:
+      pull-requests: write
 
   can_proceed:
     name: can_proceed
