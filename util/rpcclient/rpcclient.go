@@ -277,6 +277,9 @@ func (c *RpcClient) Start(ctx_in context.Context) error {
 		select {
 		case <-connTimeout:
 			return fmt.Errorf("timeout trying to connect lastError: %w", err)
+		case <-ctx_in.Done():
+			// Respect context cancellation during reconnect wait
+			return ctx_in.Err()
 		case <-time.After(time.Second):
 		}
 	}
