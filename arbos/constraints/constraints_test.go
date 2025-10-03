@@ -11,19 +11,13 @@ import (
 	"github.com/ethereum/go-ethereum/arbitrum/multigas"
 )
 
-func TestResourceSetWithResource(t *testing.T) {
-	s := EmptyResourceSet()
-	s = s.WithResource(multigas.ResourceKindComputation)
-	require.True(t, s.HasResource(multigas.ResourceKindComputation))
-}
-
 func TestResourceSetWithResources(t *testing.T) {
 	s := EmptyResourceSet()
 	resources := []multigas.ResourceKind{
 		multigas.ResourceKindComputation,
 		multigas.ResourceKindStorageAccess,
 	}
-	s = s.WithResources(resources)
+	s = s.WithResources(resources...)
 	for _, r := range resources {
 		require.True(t, s.HasResource(r))
 	}
@@ -32,7 +26,7 @@ func TestResourceSetWithResources(t *testing.T) {
 func TestResourceSetHasResource(t *testing.T) {
 	s := EmptyResourceSet()
 	require.False(t, s.HasResource(multigas.ResourceKindComputation))
-	s = s.WithResource(multigas.ResourceKindComputation)
+	s = s.WithResources(multigas.ResourceKindComputation)
 	require.True(t, s.HasResource(multigas.ResourceKindComputation))
 }
 
@@ -42,7 +36,7 @@ func TestResourceSetGetResources(t *testing.T) {
 		multigas.ResourceKindComputation,
 		multigas.ResourceKindStorageAccess,
 	}
-	s = s.WithResources(resources)
+	s = s.WithResources(resources...)
 	retrieved := s.GetResources()
 	require.Equal(t, resources, retrieved)
 }
@@ -56,7 +50,7 @@ func TestNewResourceConstraints(t *testing.T) {
 
 func TestSetResourceConstraints(t *testing.T) {
 	rc := NewResourceConstraints()
-	resources := EmptyResourceSet().WithResource(multigas.ResourceKindComputation)
+	resources := EmptyResourceSet().WithResources(multigas.ResourceKindComputation)
 	periodSecs := PeriodSecs(10)
 	targetPerSec := uint64(100)
 
@@ -71,7 +65,7 @@ func TestSetResourceConstraints(t *testing.T) {
 
 func TestGetResourceConstraints(t *testing.T) {
 	rc := NewResourceConstraints()
-	resources := EmptyResourceSet().WithResource(multigas.ResourceKindComputation)
+	resources := EmptyResourceSet().WithResources(multigas.ResourceKindComputation)
 	periodSecs := PeriodSecs(10)
 	targetPerSec := uint64(100)
 
@@ -86,14 +80,14 @@ func TestGetResourceConstraints(t *testing.T) {
 	require.Equal(t, uint64(0), constraint.Backlog)
 
 	// Test getting a non-existent constraint
-	nonExistentResources := EmptyResourceSet().WithResource(multigas.ResourceKindStorageAccess)
+	nonExistentResources := EmptyResourceSet().WithResources(multigas.ResourceKindStorageAccess)
 	constraint = rc.Get(nonExistentResources, periodSecs)
 	require.Nil(t, constraint)
 }
 
 func TestClearResourceConstraints(t *testing.T) {
 	rc := NewResourceConstraints()
-	resources := EmptyResourceSet().WithResource(multigas.ResourceKindComputation)
+	resources := EmptyResourceSet().WithResources(multigas.ResourceKindComputation)
 	periodSecs := PeriodSecs(10)
 	targetPerSec := uint64(100)
 
@@ -113,11 +107,11 @@ func TestClearResourceConstraints(t *testing.T) {
 
 func TestAllResourceConstraints(t *testing.T) {
 	rc := NewResourceConstraints()
-	resources1 := EmptyResourceSet().WithResource(multigas.ResourceKindComputation)
+	resources1 := EmptyResourceSet().WithResources(multigas.ResourceKindComputation)
 	periodSecs1 := PeriodSecs(10)
 	targetPerSec1 := uint64(100)
 
-	resources2 := EmptyResourceSet().WithResource(multigas.ResourceKindStorageAccess)
+	resources2 := EmptyResourceSet().WithResources(multigas.ResourceKindStorageAccess)
 	periodSecs2 := PeriodSecs(20)
 	targetPerSec2 := uint64(200)
 
