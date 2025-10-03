@@ -272,6 +272,10 @@ tests-all: tests test-go-challenge test-go-stylus test-gen-proofs
 wasm-ci-build: $(arbitrator_wasm_libs) $(arbitrator_test_wasms) $(stylus_test_wasms) $(output_latest)/user_test.wasm
 	@printf $(done)
 
+.PHONY: build-nitro-debugblock
+build-nitro-debugblock: $(output_root)/bin/nitro-debugblock
+	@printf $(done)
+
 .PHONY: clean
 clean:
 	go clean -testcache
@@ -347,6 +351,10 @@ $(output_root)/bin/seq-coordinator-manager: $(DEP_PREDICATE) build-node-deps
 
 $(output_root)/bin/dbconv: $(DEP_PREDICATE) build-node-deps
 	go build $(GOLANG_PARAMS) -o $@ "$(CURDIR)/cmd/dbconv"
+
+# nitro built with debug block injection support
+$(output_root)/bin/nitro-debugblock: $(DEP_PREDICATE) build-node-deps
+	go build $(GOLANG_PARAMS) --tags debugblock -o $@ "$(CURDIR)/cmd/nitro"
 
 # recompile wasm, but don't change timestamp unless files differ
 $(replay_wasm): $(DEP_PREDICATE) $(go_source) .make/solgen
