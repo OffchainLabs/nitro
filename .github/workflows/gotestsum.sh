@@ -15,6 +15,7 @@ junitfile=""
 log=true
 race=false
 cover=false
+flaky=false
 while [[ $# -gt 0 ]]; do
   case $1 in
     --timeout)
@@ -59,6 +60,10 @@ while [[ $# -gt 0 ]]; do
       junitfile=$1
       shift
       ;;
+    --flaky)
+      flaky=true
+      shift
+      ;;
     *)
       echo "Invalid argument: $1"
       exit 1
@@ -88,6 +93,16 @@ for package in $packages; do
 
   if [ "$tags" != "" ]; then
     cmd="$cmd -tags=$tags"
+  fi
+
+  if [ "$flaky" == true ]; then
+    if [ "$run" != "" ]; then
+      run="Flaky/$run"
+    else
+      run="Flaky"
+    fi
+  else
+    cmd="$cmd -skip=Flaky"
   fi
 
   if [ "$run" != "" ]; then
