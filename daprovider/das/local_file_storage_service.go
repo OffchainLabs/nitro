@@ -282,10 +282,12 @@ func readDirNamesFiltered(p string, wantDirs bool) ([]string, error) {
 	if err != nil {
 		// If path does not exist, treat it as empty to allow iteration to proceed.
 		if errors.Is(err, os.ErrNotExist) {
+			log.Warn("path does not exist during traversal, skipping", "path", p)
 			return nil, nil
 		}
 		// If path exists but is not a directory, also treat it as empty.
 		if info, statErr := os.Stat(p); statErr == nil && !info.IsDir() {
+			log.Warn("expected directory but found non-directory, skipping", "path", p)
 			return nil, nil
 		}
 		return nil, err
@@ -296,10 +298,16 @@ func readDirNamesFiltered(p string, wantDirs bool) ([]string, error) {
 			if e.IsDir() {
 				names = append(names, e.Name())
 			}
+			if !e.IsDir() {
+				log.Warn("skipping non-directory entry", "parent", p, "name", e.Name())
+			}
 			continue
 		}
 		if !e.IsDir() {
 			names = append(names, e.Name())
+		}
+		if e.IsDir() {
+			log.Warn("skipping directory entry where file expected", "parent", p, "name", e.Name())
 		}
 	}
 	return names, nil
@@ -659,7 +667,12 @@ func (l *trieLayout) iterateBatches() (*trieLayoutIterator, error) {
 	}
 
 	storageKeyFilter := func(layers *[][]string, idx int) bool {
-		return isStorageServiceKey((*layers)[idx][0])
+		name := (*layers)[idx][0]
+		if !isStorageServiceKey(name) {
+			log.Warn("skipping stray file with invalid storage key name", "name", name)
+			return false
+		}
+		return true
 	}
 
 	return &trieLayoutIterator{
@@ -708,7 +721,12 @@ func (l *trieLayout) iterateBatchesByTimestamp(maxTimestamp time.Time) (*trieLay
 		return int64(num) < maxTimestamp.Unix()
 	}
 	storageKeyFilter := func(layers *[][]string, idx int) bool {
-		return isStorageServiceKey((*layers)[idx][0])
+		name := (*layers)[idx][0]
+		if !isStorageServiceKey(name) {
+			log.Warn("skipping stray file with invalid storage key name in expiry index", "name", name)
+			return false
+		}
+		return true
 	}
 
 	return &trieLayoutIterator{
