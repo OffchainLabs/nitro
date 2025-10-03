@@ -65,11 +65,6 @@ jobs:
     uses: ./.github/workflows/_go-tests.yml
     secrets: inherit
 
-  # --- Run flaky tests in a separate job that doesn't block on failure ---
-  flaky-tests:
-    uses: ./.github/workflows/_flaky-tests.yml
-    secrets: inherit
-
   # --- Summarize test results (not required by can_proceed) ---
   codecov:
     needs: [go-tests, arbitrator]
