@@ -29,7 +29,6 @@ const (
 	maxPendingMessages      = 10
 	messageCollectionExpiry = 1 * time.Second
 	requestValidity         = 1 * time.Second
-	maxStoreChunkBodySize   = 1024
 	timeout                 = 10
 	serverRPCRoot           = "datastreaming"
 )
@@ -42,13 +41,13 @@ var rpcMethods = DataStreamingRPCMethods{
 
 func TestDataStreaming_PositiveScenario(t *testing.T) {
 	t.Run("Single sender, short message", func(t *testing.T) {
-		testBasic(t, maxStoreChunkBodySize/2, 10, 1)
+		testBasic(t, TestHttpBodyLimit/2, 10, 1)
 	})
 	t.Run("Single sender, long message", func(t *testing.T) {
-		testBasic(t, 2*maxStoreChunkBodySize, 50, 1)
+		testBasic(t, 2*TestHttpBodyLimit, 50, 1)
 	})
 	t.Run("Many senders, long messages", func(t *testing.T) {
-		testBasic(t, 10*maxStoreChunkBodySize, maxStoreChunkBodySize, maxPendingMessages)
+		testBasic(t, 10*TestHttpBodyLimit, TestHttpBodyLimit, maxPendingMessages)
 	})
 }
 
@@ -242,14 +241,8 @@ func prepareTestEnv(t *testing.T, onChunkInjection func(uint64) error) (context.
 	err := rpcClient.Start(ctx)
 	testhelpers.RequireImpl(t, err)
 
-	streamer, err := NewDataStreamer[ProtocolResult](maxStoreChunkBodySize, DefaultPayloadSigner(signer), rpcClient, rpcMethods)
-	testhelpers.RequireImpl(t, err)
-
-	err = streamer.SetRetryPolicy(&ExpDelayPolicy{
-		BaseDelay:   time.Second,
-		MaxDelay:    2 * time.Second,
-		MaxAttempts: 2,
-	})
+	dataStreamerConfig := TestDataStreamerConfig(rpcMethods)
+	streamer, err := NewDataStreamer[ProtocolResult](dataStreamerConfig, DefaultPayloadSigner(signer), rpcClient)
 	testhelpers.RequireImpl(t, err)
 
 	return ctx, streamer
@@ -285,7 +278,7 @@ func launchServer(t *testing.T, ctx context.Context, signatureVerifier *signatur
 }
 
 func getLongRandomMessage(chunkSize uint64) ([]byte, [][]byte) {
-	message := testhelpers.RandomizeSlice(make([]byte, maxStoreChunkBodySize))
+	message := testhelpers.RandomizeSlice(make([]byte, TestHttpBodyLimit))
 	chunks := slices.Collect(slices.Chunk(message, int(chunkSize))) //nolint:gosec
 	return message, chunks
 }

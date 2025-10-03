@@ -27,9 +27,10 @@ type Client struct {
 
 // lint:require-exhaustive-initialization
 type ClientConfig struct {
-	Enable     bool                   `koanf:"enable"`
-	WithWriter bool                   `koanf:"with-writer"`
-	RPC        rpcclient.ClientConfig `koanf:"rpc"`
+	Enable     bool                              `koanf:"enable"`
+	WithWriter bool                              `koanf:"with-writer"`
+	RPC        rpcclient.ClientConfig            `koanf:"rpc"`
+	DataStream data_streaming.DataStreamerConfig `koanf:"data-stream"`
 }
 
 var DefaultClientConfig = ClientConfig{
@@ -41,27 +42,35 @@ var DefaultClientConfig = ClientConfig{
 		ArgLogLimit:               2048,
 		WebsocketMessageSizeLimit: 256 * 1024 * 1024,
 	},
+	DataStream: data_streaming.DefaultDataStreamerConfig(DefaultStreamRpcMethods),
+}
+
+func TestClientConfig(serverUrl string) *ClientConfig {
+	return &ClientConfig{
+		Enable:     true,
+		WithWriter: true,
+		RPC:        rpcclient.ClientConfig{URL: serverUrl},
+		DataStream: data_streaming.TestDataStreamerConfig(DefaultStreamRpcMethods),
+	}
+}
+
+var DefaultStreamRpcMethods = data_streaming.DataStreamingRPCMethods{
+	StartStream:    "daprovider_startChunkedStore",
+	StreamChunk:    "daprovider_sendChunk",
+	FinalizeStream: "daprovider_commitChunkedStore",
 }
 
 func ClientConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultClientConfig.Enable, "enable daprovider client")
 	f.Bool(prefix+".with-writer", DefaultClientConfig.WithWriter, "implies if the daprovider rpc server supports writer interface")
 	rpcclient.RPCClientAddOptions(prefix+".rpc", f, &DefaultClientConfig.RPC)
+	data_streaming.DataStreamerConfigAddOptions(prefix+".data-stream", f, DefaultStreamRpcMethods)
 }
 
-func NewClient(ctx context.Context, config rpcclient.ClientConfigFetcher, httpBodySizeLimit int, payloadSigner *data_streaming.PayloadSigner) (*Client, error) {
-	rpcClient := rpcclient.NewRpcClient(config, nil)
+func NewClient(ctx context.Context, config *ClientConfig, payloadSigner *data_streaming.PayloadSigner) (*Client, error) {
+	rpcClient := rpcclient.NewRpcClient(func() *rpcclient.ClientConfig { return &config.RPC }, nil)
 
-	dataStreamer, err := data_streaming.NewDataStreamer[server_api.StoreResult](
-		httpBodySizeLimit,
-		payloadSigner,
-		rpcClient,
-		data_streaming.DataStreamingRPCMethods{
-			StartStream:    "daprovider_startChunkedStore",
-			StreamChunk:    "daprovider_sendChunk",
-			FinalizeStream: "daprovider_commitChunkedStore",
-		},
-	)
+	dataStreamer, err := data_streaming.NewDataStreamer[server_api.StoreResult](config.DataStream, payloadSigner, rpcClient)
 	if err != nil {
 		return nil, err
 	}

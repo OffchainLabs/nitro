@@ -10,6 +10,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/spf13/pflag"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -17,42 +18,79 @@ import (
 	"github.com/offchainlabs/nitro/util/rpcclient"
 )
 
-const DefaultRequestRetries = 5
-const DefaultRequestRetryDelay = 2 * time.Second
+const (
+	DefaultHttpBodyLimit    = 5 * 1024 * 1024 // Taken from go-ethereum http.defaultBodyLimit
+	TestHttpBodyLimit       = 1024
+	DefaultBaseRetryDelay   = 2 * time.Second
+	DefaultMaxRetryDelay    = 1 * time.Minute
+	DefaultMaxRetryAttempts = 5
+)
+
+// lint:require-exhaustive-initialization
+type DataStreamerConfig struct {
+	MaxStoreChunkBodySize int                     `koanf:"max-store-chunk-body-size"`
+	RpcMethods            DataStreamingRPCMethods `koanf:"rpc-methods"`
+
+	// Retry policy for RPC calls
+	BaseRetryDelay   time.Duration `koanf:"base-retry-delay"`
+	MaxRetryDelay    time.Duration `koanf:"max-retry-delay"`
+	MaxRetryAttempts int           `koanf:"max-retry-attempts"`
+}
+
+func DefaultDataStreamerConfig(rpcMethods DataStreamingRPCMethods) DataStreamerConfig {
+	return DataStreamerConfig{
+		MaxStoreChunkBodySize: DefaultHttpBodyLimit,
+		RpcMethods:            rpcMethods,
+		BaseRetryDelay:        DefaultBaseRetryDelay,
+		MaxRetryDelay:         DefaultMaxRetryDelay,
+		MaxRetryAttempts:      DefaultMaxRetryAttempts,
+	}
+}
+
+func TestDataStreamerConfig(rpcMethods DataStreamingRPCMethods) DataStreamerConfig {
+	return DataStreamerConfig{
+		MaxStoreChunkBodySize: TestHttpBodyLimit,
+		RpcMethods:            rpcMethods,
+		BaseRetryDelay:        100 * time.Millisecond,
+		MaxRetryDelay:         100 * time.Millisecond,
+		MaxRetryAttempts:      3,
+	}
+}
+
+func DataStreamerConfigAddOptions(prefix string, f *pflag.FlagSet, defaultRpcMethods DataStreamingRPCMethods) {
+	f.Int(prefix+".max-store-chunk-body-size", DefaultHttpBodyLimit, "maximum HTTP body size for chunked store requests")
+	f.Duration(prefix+".base-retry-delay", DefaultBaseRetryDelay, "base delay for retrying failed RPC calls")
+	f.Duration(prefix+".max-retry-delay", DefaultMaxRetryDelay, "maximum delay for retrying failed RPC calls")
+	f.Int(prefix+".max-retry-attempts", DefaultMaxRetryAttempts, "maximum number of attempts for retrying failed RPC calls")
+	DataStreamingRPCMethodsAddOptions(prefix+".rpc-methods", f, defaultRpcMethods)
+}
 
 // DataStreamer allows sending arbitrarily big payloads with JSON RPC. It follows a simple chunk-based protocol.
 // lint:require-exhaustive-initialization
 type DataStreamer[Result any] struct {
-	// rpcClient is the underlying client for making RPC calls to the receiver.
-	rpcClient *rpcclient.RpcClient
-	// chunkSize is the preconfigured size limit on a single data chunk to be sent.
-	chunkSize uint64
-	// dataSigner is used for sender authentication during the protocol.
-	dataSigner *PayloadSigner
-	// rpcMethods define the actual server API
-	rpcMethods DataStreamingRPCMethods
-	// retryPolicy defines how we should retry failed RPC calls. By default we use a fixed delay policy with 5 attempts and 2s delay.
-	retryPolicy RetryPolicy
+	rpcClient        *rpcclient.RpcClient
+	chunkSize        uint64
+	dataSigner       *PayloadSigner
+	rpcMethods       DataStreamingRPCMethods
+	retryDelayPolicy *expDelayPolicy
 }
 
 // DataStreamingRPCMethods configuration specifies names of the protocol's RPC methods on the server side.
 // lint:require-exhaustive-initialization
 type DataStreamingRPCMethods struct {
-	StartStream, StreamChunk, FinalizeStream string
+	StartStream    string `koanf:"start-stream"`
+	StreamChunk    string `koanf:"stream-chunk"`
+	FinalizeStream string `koanf:"finalize-stream"`
 }
 
-// NewDataStreamer creates a new DataStreamer instance.
-//
-// Requirements:
-//   - `maxStoreChunkBodySize` must be big enough (it should cover `sendChunkJSONBoilerplate` and leave some space for the data);
-//   - `dataSigner` must not be nil;
-//
-// otherwise an `error` is returned.
-//
-// By default, we use a fixed delay retry policy with 5 attempts and 2s delay between attempts. This however can be changed by
-// modifying the `retryPolicy` field of the returned DataStreamer instance with `SetRetryPolicy` function.
-func NewDataStreamer[T any](maxStoreChunkBodySize int, dataSigner *PayloadSigner, rpcClient *rpcclient.RpcClient, rpcMethods DataStreamingRPCMethods) (*DataStreamer[T], error) {
-	chunkSize, err := calculateEffectiveChunkSize(maxStoreChunkBodySize, rpcMethods)
+func DataStreamingRPCMethodsAddOptions(prefix string, f *pflag.FlagSet, defaultRpcMethods DataStreamingRPCMethods) {
+	f.String(prefix+".start-stream", defaultRpcMethods.StartStream, "name of the RPC method to start a chunked data stream")
+	f.String(prefix+".stream-chunk", defaultRpcMethods.StreamChunk, "name of the RPC method to send a chunk of data")
+	f.String(prefix+".finalize-stream", defaultRpcMethods.FinalizeStream, "name of the RPC method to finalize a chunked data stream")
+}
+
+func NewDataStreamer[T any](config DataStreamerConfig, dataSigner *PayloadSigner, rpcClient *rpcclient.RpcClient) (*DataStreamer[T], error) {
+	chunkSize, err := calculateEffectiveChunkSize(config.MaxStoreChunkBodySize, config.RpcMethods)
 	if err != nil {
 		return nil, err
 	}
@@ -65,20 +103,13 @@ func NewDataStreamer[T any](maxStoreChunkBodySize int, dataSigner *PayloadSigner
 		rpcClient:  rpcClient,
 		chunkSize:  chunkSize,
 		dataSigner: dataSigner,
-		rpcMethods: rpcMethods,
-		retryPolicy: &FixedDelayPolicy{
-			Delay:       DefaultRequestRetryDelay,
-			MaxAttempts: DefaultRequestRetries,
+		rpcMethods: config.RpcMethods,
+		retryDelayPolicy: &expDelayPolicy{
+			baseDelay:   config.BaseRetryDelay,
+			maxDelay:    config.MaxRetryDelay,
+			maxAttempts: config.MaxRetryAttempts,
 		},
 	}, nil
-}
-
-func (ds *DataStreamer[Result]) SetRetryPolicy(policy RetryPolicy) error {
-	if policy == nil {
-		return errors.New("retry policy must not be nil")
-	}
-	ds.retryPolicy = policy
-	return nil
 }
 
 func calculateEffectiveChunkSize(maxStoreChunkBodySize int, rpcMethods DataStreamingRPCMethods) (uint64, error) {
@@ -153,41 +184,22 @@ func (ds *DataStreamer[Result]) finalizeStream(ctx context.Context, messageId Me
 	return
 }
 
-type RetryPolicy interface {
-	// NextDelay calculates the duration to wait before the next attempt.
-	// It returns the duration and a boolean indicating if retries should continue (true).
-	NextDelay(attempt int) (time.Duration, bool)
+type expDelayPolicy struct {
+	baseDelay, maxDelay time.Duration
+	maxAttempts         int
 }
 
-type FixedDelayPolicy struct {
-	Delay       time.Duration
-	MaxAttempts int
-}
-
-func (f *FixedDelayPolicy) NextDelay(attempt int) (time.Duration, bool) {
-	if attempt >= f.MaxAttempts {
-		return 0, false
-	}
-	return f.Delay, true
-}
-
-type ExpDelayPolicy struct {
-	BaseDelay   time.Duration
-	MaxDelay    time.Duration
-	MaxAttempts int
-}
-
-func (e *ExpDelayPolicy) NextDelay(attempt int) (time.Duration, bool) {
-	if attempt >= e.MaxAttempts {
+func (e *expDelayPolicy) NextDelay(attempt int) (time.Duration, bool) {
+	if attempt >= e.maxAttempts {
 		return 0, false
 	}
 	if attempt <= 0 {
 		return time.Duration(0), true
 	}
 
-	delay := e.BaseDelay * time.Duration(1<<uint(attempt-1)) // nolint:gosec
-	if delay > e.MaxDelay {
-		delay = e.MaxDelay
+	delay := e.baseDelay * time.Duration(1<<uint(attempt-1)) // nolint:gosec
+	if delay > e.maxDelay {
+		delay = e.maxDelay
 	}
 	return delay, true
 }
@@ -197,8 +209,7 @@ func (ds *DataStreamer[Result]) call(ctx context.Context, result interface{}, me
 		if err = ds.rpcClient.CallContext(ctx, result, method, args...); err == nil {
 			return nil
 		}
-
-		delay, proceed := ds.retryPolicy.NextDelay(attempt)
+		delay, proceed := ds.retryDelayPolicy.NextDelay(attempt)
 		if !proceed {
 			return fmt.Errorf("failed after %d attempts: %w", attempt, err)
 		}
