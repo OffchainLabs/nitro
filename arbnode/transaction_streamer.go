@@ -32,6 +32,7 @@ import (
 	"github.com/offchainlabs/nitro/broadcastclient"
 	"github.com/offchainlabs/nitro/broadcaster"
 	"github.com/offchainlabs/nitro/broadcaster/message"
+	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -71,6 +72,8 @@ type TransactionStreamer struct {
 
 	trackBlockMetadataFrom arbutil.MessageIndex
 	syncTillMessage        arbutil.MessageIndex
+
+	lastMinNitroVersionMsgLoggedTimestamp atomic.Int64 // atomic
 }
 
 type TransactionStreamerConfig struct {
@@ -592,6 +595,31 @@ func (s *TransactionStreamer) FeedPendingMessageCount() arbutil.MessageIndex {
 	return arbutil.MessageIndex(firstMsgIdx + uint64(len(s.broadcasterQueuedMessages)))
 }
 
+func (s *TransactionStreamer) logMinRequiredNodeVersionMessage(feedMessage *message.BroadcastFeedMessage) error {
+	if feedMessage.MinNitroVersions == nil {
+		return nil
+	}
+	if time.Since(atomicTimeRead(&s.lastMinNitroVersionMsgLoggedTimestamp)) < 5*time.Minute {
+		return nil
+	}
+	minNitroVersions := *feedMessage.MinNitroVersions
+	if len(minNitroVersions) != 3 {
+		return fmt.Errorf("invalid length MinNitroVersions seen in feed message, expected of length 3, but got: %d", len(minNitroVersions))
+	}
+	switch {
+	case chaininfo.NITRO_NODE_VERSION < minNitroVersions[2]:
+		log.Error("Node version is below the required minimum nitro version", "nodeVersion", chaininfo.NITRO_NODE_VERSION, "requiredVersion", minNitroVersions[2])
+	case chaininfo.NITRO_NODE_VERSION < minNitroVersions[1]:
+		log.Warn("Node version is below the required minimum nitro version", "nodeVersion", chaininfo.NITRO_NODE_VERSION, "requiredVersion", minNitroVersions[1])
+	case chaininfo.NITRO_NODE_VERSION < minNitroVersions[0]:
+		log.Info("Node version is below the required minimum nitro version", "nodeVersion", chaininfo.NITRO_NODE_VERSION, "requiredVersion", minNitroVersions[0])
+	default:
+		return nil
+	}
+	atomicTimeWrite(&s.lastMinNitroVersionMsgLoggedTimestamp, time.Now())
+	return nil
+}
+
 func (s *TransactionStreamer) AddBroadcastMessages(feedMessages []*message.BroadcastFeedMessage) error {
 	if len(feedMessages) == 0 {
 		return nil
@@ -613,6 +641,9 @@ func (s *TransactionStreamer) AddBroadcastMessages(feedMessages []*message.Broad
 		}
 		messages = append(messages, msgWithBlockInfo)
 		expectedMsgIdx++
+		if err := s.logMinRequiredNodeVersionMessage(feedMessage); err != nil {
+			return err
+		}
 	}
 
 	s.insertionMutex.Lock()

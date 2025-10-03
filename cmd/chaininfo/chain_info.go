@@ -15,6 +15,9 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 )
 
+// NITRO_NODE_VERSION needs to be updated every time a new nitro release is published
+const NITRO_NODE_VERSION int = 0
+
 //go:embed arbitrum_chain_info.json
 var DefaultChainsInfoBytes []byte
 

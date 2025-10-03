@@ -23,20 +23,26 @@ import (
 )
 
 type Broadcaster struct {
-	server     *wsbroadcastserver.WSBroadcastServer
-	backlog    backlog.Backlog
-	chainId    uint64
-	dataSigner signature.DataSignerFunc
+	server           *wsbroadcastserver.WSBroadcastServer
+	backlog          backlog.Backlog
+	chainId          uint64
+	dataSigner       signature.DataSignerFunc
+	minNitroVersions *[3]int
 }
 
-func NewBroadcaster(config wsbroadcastserver.BroadcasterConfigFetcher, chainId uint64, feedErrChan chan error, dataSigner signature.DataSignerFunc) *Broadcaster {
+func NewBroadcaster(config wsbroadcastserver.BroadcasterConfigFetcher, chainId uint64, feedErrChan chan error, dataSigner signature.DataSignerFunc, minNitroVersions ...int) *Broadcaster {
 	bklg := backlog.NewBacklog(func() *backlog.Config { return &config().Backlog })
-	return &Broadcaster{
+	b := &Broadcaster{
 		server:     wsbroadcastserver.NewWSBroadcastServer(config, bklg, chainId, feedErrChan),
 		backlog:    bklg,
 		chainId:    chainId,
 		dataSigner: dataSigner,
 	}
+	if len(minNitroVersions) > 0 {
+		versions := [3]int(minNitroVersions)
+		b.minNitroVersions = &versions
+	}
+	return b
 }
 
 func (b *Broadcaster) NewBroadcastFeedMessage(
@@ -58,11 +64,12 @@ func (b *Broadcaster) NewBroadcastFeedMessage(
 	}
 
 	return &m.BroadcastFeedMessage{
-		SequenceNumber: sequenceNumber,
-		Message:        message,
-		BlockHash:      blockHash,
-		Signature:      messageSignature,
-		BlockMetadata:  blockMetadata,
+		SequenceNumber:   sequenceNumber,
+		Message:          message,
+		BlockHash:        blockHash,
+		Signature:        messageSignature,
+		BlockMetadata:    blockMetadata,
+		MinNitroVersions: b.minNitroVersions,
 	}, nil
 }
 

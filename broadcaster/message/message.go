@@ -40,6 +40,10 @@ type BroadcastFeedMessage struct {
 	Signature      []byte                         `json:"signature"`
 	BlockMetadata  common.BlockMetadata           `json:"blockMetadata,omitempty"`
 
+	// Represents minimum nitro versions such that any node reading from the feed would log an info or
+	// warn or error log message if its node version is lower than the corresponding value of the array
+	MinNitroVersions *[3]int `json:"minNitroVersions,omitempty"`
+
 	CumulativeSumMsgSize uint64 `json:"-"`
 }
 
