@@ -87,7 +87,7 @@ func testRpcImpl(t *testing.T, size, times int, concurrent bool) {
 			DASRPCClient: DASRPCClientConfig{
 				ServerUrl:          "",
 				EnableChunkedStore: true,
-				DataStreamConfig:   data_streaming.TestDataStreamerConfig(DefaultDataStreamRpcMethods),
+				DataStream:         data_streaming.TestDataStreamerConfig(DefaultDataStreamRpcMethods),
 			},
 		},
 		RequestTimeout: time.Minute,

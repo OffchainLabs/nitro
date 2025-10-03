@@ -88,7 +88,7 @@ func aggConfigForBackend(backendConfig das.BackendConfig) das.AggregatorConfig {
 		DASRPCClient: das.DASRPCClientConfig{
 			ServerUrl:          "",
 			EnableChunkedStore: true,
-			DataStreamConfig:   data_streaming.TestDataStreamerConfig(das.DefaultDataStreamRpcMethods),
+			DataStream:         data_streaming.TestDataStreamerConfig(das.DefaultDataStreamRpcMethods),
 		},
 	}
 }
