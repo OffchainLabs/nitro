@@ -93,7 +93,7 @@ func PrepareDebugTransaction(chainConfig *params.ChainConfig, lastHeader *types.
 }
 
 func DebugBlockStateUpdate(statedb *state.StateDB, expectedBalanceDelta *big.Int, chainConfig *params.ChainConfig) {
-	// fund trigger account - used to send a transaction that will trigger this block
+	// fund trigger account - used to send the transaction that triggered this block and needs pre-funding to succeed (at least one successful tx is required for the block to be appended to the chain)
 	transferGas := util.NormalizeL2GasForL1GasInitial(800_000, params.GWei) // include room for L1 costs
 	triggerCost := uint256.MustFromBig(new(big.Int).Mul(big.NewInt(int64(transferGas)), big.NewInt(params.GWei)))
 	_, triggerAddress, err := triggerPrivateKeyAndAddress()
