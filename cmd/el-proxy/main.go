@@ -188,11 +188,13 @@ func GetClientFromURL(ctx context.Context, rawUrl string, transport *http.Transp
 	case "ws", "wss":
 		rpcClient, err = rpc.DialWebsocket(ctx, rawUrl, "")
 	default:
-		log.Error("no known transport", "scheme", u.Scheme, "url", rawUrl)
+		// Avoid logging raw URL to prevent leaking credentials
+		log.Error("no known transport", "scheme", u.Scheme, "url", u.Redacted())
 		return nil, ErrorInternalConnectionError
 	}
 	if err != nil {
-		log.Error("error connecting to client", "error", err, "url", rawUrl)
+		// Avoid logging raw URL to prevent leaking credentials
+		log.Error("error connecting to client", "error", err, "url", u.Redacted())
 		return nil, ErrorInternalConnectionError
 	}
 	return rpcClient, nil
