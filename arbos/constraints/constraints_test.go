@@ -4,6 +4,7 @@
 package constraints
 
 import (
+	"math"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -39,6 +40,48 @@ func TestResourceSetGetResources(t *testing.T) {
 	s = s.WithResources(resources...)
 	retrieved := s.GetResources()
 	require.Equal(t, resources, retrieved)
+}
+
+func TestAddToBacklog(t *testing.T) {
+	resources := EmptyResourceSet().WithResources(multigas.ResourceKindComputation, multigas.ResourceKindStorageAccess)
+	c := &ResourceConstraint{
+		Resources: resources,
+		Backlog:   0,
+	}
+
+	gasUsed := multigas.MultiGasFromPairs(
+		multigas.Pair{Kind: multigas.ResourceKindComputation, Amount: 50},
+		multigas.Pair{Kind: multigas.ResourceKindStorageAccess, Amount: 75},
+		multigas.Pair{Kind: multigas.ResourceKindStorageGrowth, Amount: 100},
+	)
+
+	c.AddToBacklog(gasUsed)
+	require.Equal(t, uint64(125), c.Backlog) // 50 + 75
+
+	// Test saturation
+	c.Backlog = math.MaxUint64 - 10
+	c.AddToBacklog(gasUsed)
+	require.Equal(t, c.Backlog, uint64(math.MaxUint64))
+}
+
+func TestRemoveFromBacklog(t *testing.T) {
+	c := &ResourceConstraint{
+		Backlog:      1000,
+		TargetPerSec: 50,
+	}
+
+	// Remove a small amount
+	c.RemoveFromBacklog(10) // Remove 10 * 50 = 500
+	require.Equal(t, uint64(500), c.Backlog)
+
+	// Remove the rest
+	c.RemoveFromBacklog(10) // Remove 10 * 50 = 500
+	require.Equal(t, uint64(0), c.Backlog)
+
+	// Test saturation (underflow)
+	c.Backlog = 100
+	c.RemoveFromBacklog(10) // Attempt to remove 500
+	require.Equal(t, uint64(0), c.Backlog)
 }
 
 func TestNewResourceConstraints(t *testing.T) {
