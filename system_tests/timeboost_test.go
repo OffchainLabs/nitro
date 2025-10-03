@@ -377,7 +377,7 @@ func testTxsHandlingDuringSequencerSwap(t *testing.T, dueToCrash bool) {
 	}
 }
 
-func TestTimeboostForwardingExpressLaneTxs(t *testing.T) {
+func TestTimeboostForwardingExpressLaneTxsFlaky(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -417,7 +417,7 @@ func TestTimeboostForwardingExpressLaneTxs(t *testing.T) {
 	verifyControllerAdvantage(t, ctx, seqClient, expressLaneClient, seqInfo, "Bob", "Alice")
 }
 
-func TestTimeboostExpressLaneTransactionHandlingComplex(t *testing.T) {
+func TestTimeboostExpressLaneTransactionHandlingComplexFlaky(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -1128,7 +1128,7 @@ func TestTimeboostBulkBlockMetadataAPIFlaky(t *testing.T) {
 // 	verifyControllerChange(winnerRound, aliceOpts.From, bobOpts.From)     // Alice transfers control to Bob before the round begins
 // }
 
-func TestTimeboostSequencerFeed_ExpressLaneAuction_ExpressLaneTxsHaveAdvantage(t *testing.T) {
+func TestTimeboostSequencerFeed_ExpressLaneAuction_ExpressLaneTxsHaveAdvantageFlaky(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -1167,7 +1167,7 @@ func TestTimeboostSequencerFeed_ExpressLaneAuction_ExpressLaneTxsHaveAdvantage(t
 	verifyControllerAdvantage(t, ctx, seqClient, expressLaneClient, seqInfo, "Bob", "Alice")
 }
 
-func TestTimeboostSequencerFeed_ExpressLaneAuction_InnerPayloadNoncesAreRespected_TimeboostedFieldIsCorrect(t *testing.T) {
+func TestTimeboostSequencerFeed_ExpressLaneAuction_InnerPayloadNoncesAreRespected_TimeboostedFieldIsCorrectFlaky(t *testing.T) {
 	logHandler := testhelpers.InitTestLog(t, log.LevelInfo)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
