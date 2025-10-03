@@ -31,12 +31,20 @@ import (
 const DefaultBodyLimit = 5 * 1024 * 1024 // Taken from go-ethereum http.defaultBodyLimit
 
 // lint:require-exhaustive-initialization
-type Server struct {
-	reader       daprovider.Reader
+type ReaderServer struct {
+	reader      daprovider.Reader
+	headerBytes []byte // Supported header bytes for this provider
+}
+
+// lint:require-exhaustive-initialization
+type WriterServer struct {
 	writer       daprovider.Writer
-	validator    daprovider.Validator
-	headerBytes  []byte // Supported header bytes for this provider
 	dataReceiver *data_streaming.DataStreamReceiver
+}
+
+// lint:require-exhaustive-initialization
+type ValidatorServer struct {
+	validator daprovider.Validator
 }
 
 // lint:require-exhaustive-initialization
@@ -94,15 +102,33 @@ func NewServerWithDAPProvider(ctx context.Context, config *ServerConfig, reader 
 		rpcServer.SetHTTPBodyLimit(config.RPCServerBodyLimit)
 	}
 
-	server := &Server{
-		reader:       reader,
-		writer:       writer,
-		validator:    validator,
-		headerBytes:  headerBytes,
-		dataReceiver: data_streaming.NewDefaultDataStreamReceiver(verifier),
+	if reader != nil {
+		readerServer := &ReaderServer{
+			reader:      reader,
+			headerBytes: headerBytes,
+		}
+		if err = rpcServer.RegisterName("daprovider", readerServer); err != nil {
+			return nil, err
+		}
 	}
-	if err = rpcServer.RegisterName("daprovider", server); err != nil {
-		return nil, err
+
+	if writer != nil {
+		writerServer := &WriterServer{
+			writer:       writer,
+			dataReceiver: data_streaming.NewDefaultDataStreamReceiver(verifier),
+		}
+		if err = rpcServer.RegisterName("daprovider", writerServer); err != nil {
+			return nil, err
+		}
+	}
+
+	if validator != nil {
+		validatorServer := &ValidatorServer{
+			validator: validator,
+		}
+		if err = rpcServer.RegisterName("daprovider", validatorServer); err != nil {
+			return nil, err
+		}
 	}
 
 	addr, ok := listener.Addr().(*net.TCPAddr)
@@ -146,13 +172,15 @@ func NewServerWithDAPProvider(ctx context.Context, config *ServerConfig, reader 
 	return srv, nil
 }
 
-func (s *Server) GetSupportedHeaderBytes(ctx context.Context) (*server_api.SupportedHeaderBytesResult, error) {
+// ReaderServer methods
+
+func (s *ReaderServer) GetSupportedHeaderBytes(ctx context.Context) (*server_api.SupportedHeaderBytesResult, error) {
 	return &server_api.SupportedHeaderBytesResult{
 		HeaderBytes: s.headerBytes,
 	}, nil
 }
 
-func (s *Server) RecoverPayload(
+func (s *ReaderServer) RecoverPayload(
 	ctx context.Context,
 	batchNum hexutil.Uint64,
 	batchBlockHash common.Hash,
@@ -166,7 +194,7 @@ func (s *Server) RecoverPayload(
 	return &result, nil
 }
 
-func (s *Server) CollectPreimages(
+func (s *ReaderServer) CollectPreimages(
 	ctx context.Context,
 	batchNum hexutil.Uint64,
 	batchBlockHash common.Hash,
@@ -180,10 +208,9 @@ func (s *Server) CollectPreimages(
 	return &result, nil
 }
 
-func (s *Server) GenerateReadPreimageProof(ctx context.Context, certHash common.Hash, offset hexutil.Uint64, certificate hexutil.Bytes) (*server_api.GenerateReadPreimageProofResult, error) {
-	if s.validator == nil {
-		return nil, errors.New("validator not available")
-	}
+// ValidatorServer methods
+
+func (s *ValidatorServer) GenerateReadPreimageProof(ctx context.Context, certHash common.Hash, offset hexutil.Uint64, certificate hexutil.Bytes) (*server_api.GenerateReadPreimageProofResult, error) {
 	// #nosec G115
 	promise := s.validator.GenerateReadPreimageProof(certHash, uint64(offset), certificate)
 	result, err := promise.Await(ctx)
@@ -193,10 +220,7 @@ func (s *Server) GenerateReadPreimageProof(ctx context.Context, certHash common.
 	return &server_api.GenerateReadPreimageProofResult{Proof: hexutil.Bytes(result.Proof)}, nil
 }
 
-func (s *Server) GenerateCertificateValidityProof(ctx context.Context, certificate hexutil.Bytes) (*server_api.GenerateCertificateValidityProofResult, error) {
-	if s.validator == nil {
-		return nil, errors.New("validator not available")
-	}
+func (s *ValidatorServer) GenerateCertificateValidityProof(ctx context.Context, certificate hexutil.Bytes) (*server_api.GenerateCertificateValidityProofResult, error) {
 	// #nosec G115
 	promise := s.validator.GenerateCertificateValidityProof(certificate)
 	result, err := promise.Await(ctx)
@@ -206,17 +230,17 @@ func (s *Server) GenerateCertificateValidityProof(ctx context.Context, certifica
 	return &server_api.GenerateCertificateValidityProofResult{Proof: hexutil.Bytes(result.Proof)}, nil
 }
 
-// ============================= DATA STREAM API ==================================================================== //
+// WriterServer methods (Data Stream API)
 
-func (s *Server) StartChunkedStore(ctx context.Context, timestamp, nChunks, chunkSize, totalSize, timeout hexutil.Uint64, sig hexutil.Bytes) (*data_streaming.StartStreamingResult, error) {
+func (s *WriterServer) StartChunkedStore(ctx context.Context, timestamp, nChunks, chunkSize, totalSize, timeout hexutil.Uint64, sig hexutil.Bytes) (*data_streaming.StartStreamingResult, error) {
 	return s.dataReceiver.StartReceiving(ctx, uint64(timestamp), uint64(nChunks), uint64(chunkSize), uint64(totalSize), uint64(timeout), sig)
 }
 
-func (s *Server) SendChunk(ctx context.Context, messageId, chunkId hexutil.Uint64, chunk hexutil.Bytes, sig hexutil.Bytes) error {
+func (s *WriterServer) SendChunk(ctx context.Context, messageId, chunkId hexutil.Uint64, chunk hexutil.Bytes, sig hexutil.Bytes) error {
 	return s.dataReceiver.ReceiveChunk(ctx, data_streaming.MessageId(messageId), uint64(chunkId), chunk, sig)
 }
 
-func (s *Server) CommitChunkedStore(ctx context.Context, messageId hexutil.Uint64, sig hexutil.Bytes) (*server_api.StoreResult, error) {
+func (s *WriterServer) CommitChunkedStore(ctx context.Context, messageId hexutil.Uint64, sig hexutil.Bytes) (*server_api.StoreResult, error) {
 	message, timeout, _, err := s.dataReceiver.FinalizeReceiving(ctx, data_streaming.MessageId(messageId), sig)
 	if err != nil {
 		return nil, err
