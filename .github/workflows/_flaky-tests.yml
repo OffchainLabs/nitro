@@ -38,11 +38,9 @@ jobs:
           --tags cionly --timeout 60m --test_state_scheme hash --junitfile test-results/junit.xml --flaky
 
       - name: Process JUnit XML logs
-        if: matrix.test-mode == 'defaults' && always()
         run: python3 ${{ github.workspace }}/.github/workflows/process_junit.py test-results/
 
       - name: Upload Go test Artifacts
-        if: matrix.test-mode == 'defaults' && always()
         uses: actions/upload-artifact@v4
         with:
           name: go-junit-reports
