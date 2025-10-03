@@ -22,15 +22,10 @@ func EmptyResourceSet() ResourceSet {
 	return ResourceSet(0)
 }
 
-// WithResource adds a resource to the set.
-func (s ResourceSet) WithResource(resource multigas.ResourceKind) ResourceSet {
-	return s | (1 << resource)
-}
-
 // WithResources adds the list of resources to the set.
-func (s ResourceSet) WithResources(resources []multigas.ResourceKind) ResourceSet {
+func (s ResourceSet) WithResources(resources ...multigas.ResourceKind) ResourceSet {
 	for _, resource := range resources {
-		s = s.WithResource(resource)
+		s = s | (1 << resource)
 	}
 	return s
 }
