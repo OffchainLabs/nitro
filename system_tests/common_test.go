@@ -277,6 +277,8 @@ type NodeBuilder struct {
 	delayBufferThreshold        uint64
 	withL1ClientWrapper         bool
 
+	ignoreExecConfigValidationError bool
+
 	// Created nodes
 	L1 *TestClient
 	L2 *TestClient
@@ -417,7 +419,7 @@ func (b *NodeBuilder) RequireScheme(t *testing.T, scheme string) *NodeBuilder {
 	if b.defaultDbScheme != scheme && b.execConfig != nil {
 		b.execConfig.Caching.StateScheme = scheme
 		b.execConfig.RPC.StateScheme = scheme
-		Require(t, b.execConfig.Validate())
+		b.validateExecConfig(t)
 	}
 	b.defaultDbScheme = scheme
 	return b
@@ -442,6 +444,25 @@ func (b *NodeBuilder) WithL1ClientWrapper(t *testing.T) *NodeBuilder {
 func (b *NodeBuilder) TakeOwnership() *NodeBuilder {
 	b.takeOwnership = true
 	return b
+}
+
+func (b *NodeBuilder) IgnoreExecConfigValidationError() *NodeBuilder {
+	b.ignoreExecConfigValidationError = true
+	return b
+}
+
+func (b *NodeBuilder) validateExecConfig(t *testing.T) {
+	validateExecConfig(t, b.execConfig, b.ignoreExecConfigValidationError)
+}
+
+func validateExecConfig(t *testing.T, execConfig *gethexec.Config, ignoreExecConfigValidationError bool) {
+	t.Helper()
+	err := execConfig.Validate()
+	if err != nil && ignoreExecConfigValidationError {
+		log.Warn("ignoring execution config validation error", "err", err)
+		return
+	}
+	Require(t, err)
 }
 
 func (b *NodeBuilder) Build(t *testing.T) func() {
@@ -634,6 +655,8 @@ func buildOnParentChain(
 
 	initMessage *arbostypes.ParsedInitMessage,
 	addresses *chaininfo.RollupAddresses,
+
+	ignoreExecConfigValidationError bool,
 ) *TestClient {
 	if parentChainTestClient == nil {
 		t.Fatal("must build parent chain before building chain")
@@ -645,7 +668,8 @@ func buildOnParentChain(
 	var arbDb ethdb.Database
 	var blockchain *core.BlockChain
 	_, chainTestClient.Stack, chainDb, arbDb, blockchain = createNonL1BlockChainWithStackConfig(
-		t, chainInfo, dataDir, chainConfig, arbOSInit, initMessage, stackConfig, execConfig)
+		t, chainInfo, dataDir, chainConfig, arbOSInit, initMessage, stackConfig, execConfig,
+		ignoreExecConfigValidationError)
 
 	var sequencerTxOptsPtr *bind.TransactOpts
 	var dataSigner signature.DataSignerFunc
@@ -668,7 +692,7 @@ func buildOnParentChain(
 
 	AddValNodeIfNeeded(t, ctx, nodeConfig, true, "", valnodeConfig.Wasm.RootPath)
 
-	Require(t, execConfig.Validate())
+	validateExecConfig(t, execConfig, ignoreExecConfigValidationError)
 	execConfigToBeUsedInConfigFetcher := execConfig
 	execConfigFetcher := func() *gethexec.Config { return execConfigToBeUsedInConfigFetcher }
 	execNode, err := gethexec.CreateExecutionNode(ctx, chainTestClient.Stack, chainDb, blockchain, parentChainTestClient.Client, execConfigFetcher, parentChainId, 0)
@@ -739,6 +763,8 @@ func (b *NodeBuilder) BuildL3OnL2(t *testing.T) func() {
 
 		b.l3InitMessage,
 		b.l3Addresses,
+
+		b.ignoreExecConfigValidationError,
 	)
 
 	return func() {
@@ -768,6 +794,8 @@ func (b *NodeBuilder) BuildL2OnL1(t *testing.T) func() {
 
 		b.initMessage,
 		b.addresses,
+
+		b.ignoreExecConfigValidationError,
 	)
 
 	if b.takeOwnership {
@@ -812,9 +840,10 @@ func (b *NodeBuilder) BuildL2(t *testing.T) func() {
 	var arbDb ethdb.Database
 	var blockchain *core.BlockChain
 	b.L2Info, b.L2.Stack, chainDb, arbDb, blockchain = createNonL1BlockChainWithStackConfig(
-		t, b.L2Info, b.dataDir, b.chainConfig, b.arbOSInit, nil, b.l2StackConfig, b.execConfig)
+		t, b.L2Info, b.dataDir, b.chainConfig, b.arbOSInit, nil, b.l2StackConfig, b.execConfig,
+		b.ignoreExecConfigValidationError)
 
-	Require(t, b.execConfig.Validate())
+	b.validateExecConfig(t)
 	execConfig := b.execConfig
 	execConfigFetcher := func() *gethexec.Config { return execConfig }
 	execNode, err := gethexec.CreateExecutionNode(b.ctx, b.L2.Stack, chainDb, blockchain, nil, execConfigFetcher, big.NewInt(1337), 0)
@@ -868,7 +897,7 @@ func (b *NodeBuilder) RestartL2Node(t *testing.T) {
 	}
 	b.L2.cleanup()
 
-	l2info, stack, chainDb, arbDb, blockchain := createNonL1BlockChainWithStackConfig(t, b.L2Info, b.dataDir, b.chainConfig, b.arbOSInit, b.initMessage, b.l2StackConfig, b.execConfig)
+	l2info, stack, chainDb, arbDb, blockchain := createNonL1BlockChainWithStackConfig(t, b.L2Info, b.dataDir, b.chainConfig, b.arbOSInit, b.initMessage, b.l2StackConfig, b.execConfig, b.ignoreExecConfigValidationError)
 
 	execConfigFetcher := func() *gethexec.Config { return b.execConfig }
 	execNode, err := gethexec.CreateExecutionNode(b.ctx, stack, chainDb, blockchain, nil, execConfigFetcher, big.NewInt(1337), 0)
@@ -930,6 +959,8 @@ func build2ndNode(
 
 	addresses *chaininfo.RollupAddresses,
 	initMessage *arbostypes.ParsedInitMessage,
+
+	ignoreExecConfigValidationError bool,
 ) (*TestClient, func()) {
 	if params.nodeConfig == nil {
 		params.nodeConfig = arbnode.ConfigDefaultL1NonSequencerTest()
@@ -964,7 +995,7 @@ func build2ndNode(
 
 	testClient := NewTestClient(ctx)
 	testClient.Client, testClient.ConsensusNode =
-		Create2ndNodeWithConfig(t, ctx, firstNodeTestClient.ConsensusNode, parentChainTestClient.Stack, parentChainInfo, params.initData, params.nodeConfig, params.execConfig, params.stackConfig, valnodeConfig, params.addresses, initMessage, params.useExecutionClientOnly)
+		Create2ndNodeWithConfig(t, ctx, firstNodeTestClient.ConsensusNode, parentChainTestClient.Stack, parentChainInfo, params.initData, params.nodeConfig, params.execConfig, params.stackConfig, valnodeConfig, params.addresses, initMessage, params.useExecutionClientOnly, ignoreExecConfigValidationError)
 	testClient.ExecNode = getExecNode(t, testClient.ConsensusNode)
 	testClient.cleanup = func() { testClient.ConsensusNode.StopAndWait() }
 	return testClient, func() { testClient.cleanup() }
@@ -996,6 +1027,8 @@ func (b *NodeBuilder) Build2ndNode(t *testing.T, params *SecondNodeParams) (*Tes
 
 		b.addresses,
 		b.initMessage,
+
+		b.ignoreExecConfigValidationError,
 	)
 }
 
@@ -1022,6 +1055,8 @@ func (b *NodeBuilder) Build2ndNodeOnL3(t *testing.T, params *SecondNodeParams) (
 
 		b.l3Addresses,
 		b.l3InitMessage,
+
+		b.ignoreExecConfigValidationError,
 	)
 }
 
@@ -1658,7 +1693,7 @@ func deployOnParentChain(
 }
 
 func createNonL1BlockChainWithStackConfig(
-	t *testing.T, info *BlockchainTestInfo, dataDir string, chainConfig *params.ChainConfig, arbOSInit *params.ArbOSInit, initMessage *arbostypes.ParsedInitMessage, stackConfig *node.Config, execConfig *gethexec.Config,
+	t *testing.T, info *BlockchainTestInfo, dataDir string, chainConfig *params.ChainConfig, arbOSInit *params.ArbOSInit, initMessage *arbostypes.ParsedInitMessage, stackConfig *node.Config, execConfig *gethexec.Config, ignoreExecConfigValidationError bool,
 ) (*BlockchainTestInfo, *node.Node, ethdb.Database, ethdb.Database, *core.BlockChain) {
 	if info == nil {
 		info = NewArbTestInfo(t, chainConfig.ChainID)
@@ -1669,7 +1704,8 @@ func createNonL1BlockChainWithStackConfig(
 	if execConfig == nil {
 		execConfig = ExecConfigDefaultTest(t, env.GetTestStateScheme())
 	}
-	Require(t, execConfig.Validate())
+
+	validateExecConfig(t, execConfig, ignoreExecConfigValidationError)
 
 	stack, err := node.New(stackConfig)
 	Require(t, err)
@@ -1752,6 +1788,7 @@ func Create2ndNodeWithConfig(
 	addresses *chaininfo.RollupAddresses,
 	initMessage *arbostypes.ParsedInitMessage,
 	useExecutionClientOnly bool,
+	ignoreExecConfigValidationError bool,
 ) (*ethclient.Client, *arbnode.Node) {
 	if nodeConfig == nil {
 		nodeConfig = arbnode.ConfigDefaultL1NonSequencerTest()
@@ -1759,7 +1796,7 @@ func Create2ndNodeWithConfig(
 	if execConfig == nil {
 		t.Fatal("should not be nil")
 	}
-	Require(t, execConfig.Validate())
+	validateExecConfig(t, execConfig, ignoreExecConfigValidationError)
 
 	feedErrChan := make(chan error, 10)
 	parentChainRpcClient := parentChainStack.Attach()
@@ -2155,4 +2192,24 @@ func populateMachineDir(t *testing.T, cr *github.ConsensusRelease) string {
 	_, err = io.Copy(replayFile, replayResp.Body)
 	Require(t, err)
 	return machineDir
+}
+
+// will call foo with specified interval, until foo returns true or specified timeout elapses
+// if timeout elapses fails with t.Fatal with timeoutMessage appended to the message
+// note: use pollWithDeadlineDefault if you don't care much about the interval and timeout, should make it easier to globally tune the tests
+func pollWithDeadline(t *testing.T, interval time.Duration, timeout time.Duration, foo func() bool) bool {
+	t.Helper()
+	deadline := time.After(timeout)
+	for !foo() {
+		select {
+		case <-deadline:
+			return false
+		case <-time.After(interval):
+		}
+	}
+	return true
+}
+
+func pollWithDeadlineDefault(t *testing.T, foo func() bool) bool {
+	return pollWithDeadline(t, 20*time.Millisecond, 5*time.Second, foo)
 }
