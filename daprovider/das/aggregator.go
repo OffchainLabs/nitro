@@ -38,16 +38,16 @@ var (
 )
 
 type AggregatorConfig struct {
-	Enable             bool               `koanf:"enable"`
-	AssumedHonest      int                `koanf:"assumed-honest"`
-	Backends           BackendConfigList  `koanf:"backends"`
-	DASRPCClientConfig DASRPCClientConfig `koanf:"das-rpc-client"`
+	Enable        bool               `koanf:"enable"`
+	AssumedHonest int                `koanf:"assumed-honest"`
+	Backends      BackendConfigList  `koanf:"backends"`
+	DASRPCClient  DASRPCClientConfig `koanf:"das-rpc-client"`
 }
 
 var DefaultAggregatorConfig = AggregatorConfig{
 	AssumedHonest: 0,
 	Backends:      nil,
-	DASRPCClientConfig: DASRPCClientConfig{
+	DASRPCClient: DASRPCClientConfig{
 		ServerUrl:          "",
 		EnableChunkedStore: true,
 		DataStreamConfig:   data_streaming.DefaultDataStreamerConfig(DefaultDataStreamRpcMethods),

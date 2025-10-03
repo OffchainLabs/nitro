@@ -28,13 +28,13 @@ const (
 
 // lint:require-exhaustive-initialization
 type DataStreamerConfig struct {
-	MaxStoreChunkBodySize int
-	RpcMethods            DataStreamingRPCMethods
+	MaxStoreChunkBodySize int                     `koanf:"max-store-chunk-body-size"`
+	RpcMethods            DataStreamingRPCMethods `koanf:"rpc-methods"`
 
 	// Retry policy for RPC calls
-	BaseRetryDelay   time.Duration
-	MaxRetryDelay    time.Duration
-	MaxRetryAttempts int
+	BaseRetryDelay   time.Duration `koanf:"base-retry-delay"`
+	MaxRetryDelay    time.Duration `koanf:"max-retry-delay"`
+	MaxRetryAttempts int           `koanf:"max-retry-attempts"`
 }
 
 func DefaultDataStreamerConfig(rpcMethods DataStreamingRPCMethods) DataStreamerConfig {
@@ -62,9 +62,7 @@ func DataStreamerConfigAddOptions(prefix string, f *pflag.FlagSet, defaultRpcMet
 	f.Duration(prefix+".base-retry-delay", DefaultBaseRetryDelay, "base delay for retrying failed RPC calls")
 	f.Duration(prefix+".max-retry-delay", DefaultMaxRetryDelay, "maximum delay for retrying failed RPC calls")
 	f.Int(prefix+".max-retry-attempts", DefaultMaxRetryAttempts, "maximum number of attempts for retrying failed RPC calls")
-	f.String(prefix+".rpc.start-stream", defaultRpcMethods.StartStream, "name of the RPC method to start a chunked data stream")
-	f.String(prefix+".rpc.stream-chunk", defaultRpcMethods.StreamChunk, "name of the RPC method to send a chunk of data")
-	f.String(prefix+".rpc.finalize-stream", defaultRpcMethods.FinalizeStream, "name of the RPC method to finalize a chunked data stream")
+	DataStreamingRPCMethodsAddOptions(prefix+".rpc-methods", f, defaultRpcMethods)
 }
 
 // DataStreamer allows sending arbitrarily big payloads with JSON RPC. It follows a simple chunk-based protocol.
@@ -80,7 +78,15 @@ type DataStreamer[Result any] struct {
 // DataStreamingRPCMethods configuration specifies names of the protocol's RPC methods on the server side.
 // lint:require-exhaustive-initialization
 type DataStreamingRPCMethods struct {
-	StartStream, StreamChunk, FinalizeStream string
+	StartStream    string `koanf:"start-stream"`
+	StreamChunk    string `koanf:"stream-chunk"`
+	FinalizeStream string `koanf:"finalize-stream"`
+}
+
+func DataStreamingRPCMethodsAddOptions(prefix string, f *pflag.FlagSet, defaultRpcMethods *DataStreamingRPCMethods) {
+	f.String(prefix+".start-stream", defaultRpcMethods.StartStream, "name of the RPC method to start a chunked data stream")
+	f.String(prefix+".stream-chunk", defaultRpcMethods.StreamChunk, "name of the RPC method to send a chunk of data")
+	f.String(prefix+".finalize-stream", defaultRpcMethods.FinalizeStream, "name of the RPC method to finalize a chunked data stream")
 }
 
 func NewDataStreamer[T any](config DataStreamerConfig, dataSigner *PayloadSigner, rpcClient *rpcclient.RpcClient) (*DataStreamer[T], error) {

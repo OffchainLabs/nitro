@@ -84,7 +84,8 @@ func testRpcImpl(t *testing.T, size, times int, concurrent bool) {
 		RPCAggregator: AggregatorConfig{
 			AssumedHonest: 1,
 			Backends:      beConfigs,
-			DASRPCClientConfig: DASRPCClientConfig{
+			DASRPCClient: DASRPCClientConfig{
+				ServerUrl:          "",
 				EnableChunkedStore: true,
 				DataStreamConfig:   data_streaming.TestDataStreamerConfig(DefaultDataStreamRpcMethods),
 			},

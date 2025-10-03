@@ -16,6 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/offchainlabs/nitro/daprovider/data_streaming"
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/blsSignatures"
@@ -81,11 +82,14 @@ func blsPubToBase64(pubkey *blsSignatures.PublicKey) string {
 
 func aggConfigForBackend(backendConfig das.BackendConfig) das.AggregatorConfig {
 	return das.AggregatorConfig{
-		Enable:                true,
-		AssumedHonest:         1,
-		Backends:              das.BackendConfigList{backendConfig},
-		MaxStoreChunkBodySize: 512 * 1024,
-		EnableChunkedStore:    true,
+		Enable:        true,
+		AssumedHonest: 1,
+		Backends:      das.BackendConfigList{backendConfig},
+		DASRPCClient: das.DASRPCClientConfig{
+			ServerUrl:          "",
+			EnableChunkedStore: true,
+			DataStreamConfig:   data_streaming.TestDataStreamerConfig(das.DefaultDataStreamRpcMethods),
+		},
 	}
 }
 

@@ -90,7 +90,7 @@ type ClientStoreConfig struct {
 	SigningKey            string                 `koanf:"signing-key"`
 	SigningWallet         string                 `koanf:"signing-wallet"`
 	SigningWalletPassword string                 `koanf:"signing-wallet-password"`
-	DASRPCClientConfig    das.DASRPCClientConfig `koanf:"das-rpc-client"`
+	DASRPCClient          das.DASRPCClientConfig `koanf:"das-rpc-client"`
 }
 
 func parseClientStoreConfig(args []string) (*ClientStoreConfig, error) {
@@ -150,7 +150,7 @@ func startClientStore(args []string) error {
 		}
 	}
 
-	client, err := das.NewDASRPCClient(&config.DASRPCClientConfig, signer)
+	client, err := das.NewDASRPCClient(&config.DASRPCClient, signer)
 	if err != nil {
 		return err
 	}
