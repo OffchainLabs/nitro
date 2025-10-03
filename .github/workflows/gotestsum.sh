@@ -71,6 +71,14 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+if [ "$flaky" == true ]; then
+  if [ "$run" != "" ]; then
+    run="Flaky/$run"
+  else
+    run="Flaky"
+  fi
+fi
+
 packages=$(go list ./...)
 for package in $packages; do
   # Add the gotestsum flags first
@@ -95,18 +103,12 @@ for package in $packages; do
     cmd="$cmd -tags=$tags"
   fi
 
-  if [ "$flaky" == true ]; then
-    if [ "$run" != "" ]; then
-      run="Flaky/$run"
-    else
-      run="Flaky"
-    fi
-  else
-    cmd="$cmd -skip=Flaky"
-  fi
-
   if [ "$run" != "" ]; then
     cmd="$cmd -run=$run"
+  fi
+
+  if [ "$flaky" == false ]; then
+    cmd="$cmd -skip=Flaky"
   fi
 
   if [ "$race" == true ]; then
