@@ -5,18 +5,74 @@
 package constraints
 
 import (
-	"time"
+	"iter"
 
 	"github.com/ethereum/go-ethereum/arbitrum/multigas"
+
+	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
-// The period duration for a resource constraint.
+// PeriodSecs is the period in seconds for a resource constraint to reach the target.
+// Going over the target for this given period will increase the gas price.
 type PeriodSecs uint32
 
-// resourceConstraint defines the max gas target per second for the given period for a single resource.
-type resourceConstraint struct {
-	period time.Duration
-	target uint64
+// ResourceSet is a set of resources.
+type ResourceSet uint32
+
+// EmptyResourceSet creates a new set.
+func EmptyResourceSet() ResourceSet {
+	return ResourceSet(0)
+}
+
+// WithResources adds the list of resources to the set.
+func (s ResourceSet) WithResources(resources ...multigas.ResourceKind) ResourceSet {
+	for _, resource := range resources {
+		s = s | (1 << resource)
+	}
+	return s
+}
+
+// HasResource returns whether the given resource is in the set.
+func (s ResourceSet) HasResource(resource multigas.ResourceKind) bool {
+	return (s & (1 << resource)) != 0
+}
+
+// GetResources returns the list of resources in the set.
+func (s ResourceSet) GetResources() []multigas.ResourceKind {
+	var resources []multigas.ResourceKind
+	for resource := range multigas.NumResourceKind {
+		if s.HasResource(resource) {
+			resources = append(resources, resource)
+		}
+	}
+	return resources
+}
+
+// ResourceConstraint defines the max gas target per second for the given period for a single resource.
+type ResourceConstraint struct {
+	Resources    ResourceSet
+	Period       PeriodSecs
+	TargetPerSec uint64
+	Backlog      uint64
+}
+
+// AddToBacklog increases the constraint backlog given the multi-dimensional gas used.
+func (c *ResourceConstraint) AddToBacklog(gasUsed multigas.MultiGas) {
+	for _, resource := range c.Resources.GetResources() {
+		c.Backlog = arbmath.SaturatingUAdd(c.Backlog, gasUsed.Get(resource))
+	}
+}
+
+// RemoveFromBacklog decreases the backlog by its target given the amount of time passed.
+func (c *ResourceConstraint) RemoveFromBacklog(timeElapsed uint64) {
+	c.Backlog = arbmath.SaturatingUSub(c.Backlog, timeElapsed*c.TargetPerSec)
+}
+
+// constraintKey identifies a resource constraint. There can be only one constraint given the
+// resource set and the period.
+type constraintKey struct {
+	resources ResourceSet
+	period    PeriodSecs
 }
 
 // ResourceConstraints is a set of constraints for all resources.
@@ -29,29 +85,60 @@ type resourceConstraint struct {
 // - X amount of computation over 12 seconds so nodes can keep up.
 // - Y amount of computation over 7 days so fresh nodes can catch up with the chain.
 // - Z amount of history growth over one month to avoid bloat.
-type ResourceConstraints map[multigas.ResourceKind]map[PeriodSecs]resourceConstraint
+type ResourceConstraints struct {
+	constraints map[constraintKey]*ResourceConstraint
+}
 
 // NewResourceConstraints creates a new set of constraints.
-// This type can be used as a reference.
-func NewResourceConstraints() ResourceConstraints {
-	c := ResourceConstraints{}
-	for resource := multigas.ResourceKindUnknown + 1; resource < multigas.NumResourceKind; resource++ {
-		c[resource] = map[PeriodSecs]resourceConstraint{}
-	}
+func NewResourceConstraints() *ResourceConstraints {
+	c := &ResourceConstraints{}
+	c.constraints = map[constraintKey]*ResourceConstraint{}
 	return c
 }
 
-// SetConstraint adds or updates the given resource constraint.
-func (rc ResourceConstraints) SetConstraint(
-	resource multigas.ResourceKind, periodSecs PeriodSecs, targetPerPeriod uint64,
+// Set adds or updates the given resource constraint.
+// The set of resources and the period are the key that defines the constraint.
+func (rc *ResourceConstraints) Set(
+	resources ResourceSet, periodSecs PeriodSecs, targetPerSec uint64,
 ) {
-	rc[resource][periodSecs] = resourceConstraint{
-		period: time.Duration(periodSecs) * time.Second,
-		target: targetPerPeriod / uint64(periodSecs),
+	key := constraintKey{
+		resources: resources,
+		period:    periodSecs,
 	}
+	constraint := &ResourceConstraint{
+		Resources:    resources,
+		Period:       periodSecs,
+		TargetPerSec: targetPerSec,
+		Backlog:      0,
+	}
+	rc.constraints[key] = constraint
 }
 
-// ClearConstraint removes the given resource constraint.
-func (rc ResourceConstraints) ClearConstraint(resource multigas.ResourceKind, periodSecs PeriodSecs) {
-	delete(rc[resource], periodSecs)
+// Get gets the constraint given its key.
+func (rc *ResourceConstraints) Get(resources ResourceSet, periodSecs PeriodSecs) *ResourceConstraint {
+	key := constraintKey{
+		resources: resources,
+		period:    periodSecs,
+	}
+	return rc.constraints[key]
+}
+
+// Clear removes the given resource constraint.
+func (rc *ResourceConstraints) Clear(resources ResourceSet, periodSecs PeriodSecs) {
+	key := constraintKey{
+		resources: resources,
+		period:    periodSecs,
+	}
+	delete(rc.constraints, key)
+}
+
+// All iterates over the resource constraints.
+func (rc *ResourceConstraints) All() iter.Seq[*ResourceConstraint] {
+	return func(yield func(*ResourceConstraint) bool) {
+		for _, constraint := range rc.constraints {
+			if !yield(constraint) {
+				return
+			}
+		}
+	}
 }
