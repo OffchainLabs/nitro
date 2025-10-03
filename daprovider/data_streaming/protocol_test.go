@@ -17,7 +17,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/ethereum/go-ethereum/common/hexutil"
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/cmd/genericconf"
@@ -29,6 +28,7 @@ import (
 const (
 	maxPendingMessages      = 10
 	messageCollectionExpiry = 1 * time.Second
+	requestValidity         = 1 * time.Second
 	timeout                 = 10
 	serverRPCRoot           = "datastreaming"
 )
@@ -157,12 +157,58 @@ func TestDataStreaming_ClientRetriesWhenThereAreConnectionProblems(t *testing.T)
 			return errors.New("service unavailable")
 		}
 		return nil
-	})
 
+	})
 	message, _ := getLongRandomMessage(streamer.chunkSize)
 	result, err := streamer.StreamData(ctx, message, timeout)
 	testhelpers.RequireImpl(t, err)
 	require.Equal(t, message, ([]byte)(result.Message), "protocol resulted in an incorrect message")
+}
+
+func TestDataStreaming_ServerDeniesTooOldAndFutureRequests(t *testing.T) {
+	ctx, streamer := prepareTestEnv(t, nil)
+	message, _ := getLongRandomMessage(streamer.chunkSize)
+
+	// ========== Implementation of streamer.StreamData from the past ==========
+	params := newStreamParams(uint64(len(message)), streamer.chunkSize, timeout)
+	params.timestamp = uint64(time.Now().Add(-5 * requestValidity).Unix()) // nolint:gosec
+
+	_, err := streamer.startStream(ctx, params)
+	require.Error(t, err)
+
+	// ========== Implementation of streamer.StreamData from the future ==========
+	params.timestamp = uint64(time.Now().Add(5 * requestValidity).Unix()) // nolint:gosec
+
+	_, err = streamer.startStream(ctx, params)
+	require.Error(t, err)
+}
+
+func TestDataStreaming_CannotReplay(t *testing.T) {
+	ctx, streamer := prepareTestEnv(t, nil)
+	message, chunks := getLongRandomMessage(streamer.chunkSize)
+
+	// ========== Standard implementation of streamer.StreamData (but we need params for replay). ==========
+
+	params := newStreamParams(uint64(len(message)), streamer.chunkSize, timeout)
+	messageId, err := streamer.startStream(ctx, params)
+	testhelpers.RequireImpl(t, err)
+
+	for i, chunkData := range chunks {
+		err = streamer.sendChunk(ctx, messageId, uint64(i), chunkData) //nolint:gosec
+		testhelpers.RequireImpl(t, err)
+	}
+
+	result, err := streamer.finalizeStream(ctx, messageId)
+	testhelpers.RequireImpl(t, err)
+	require.Equal(t, message, ([]byte)(result.Message), "protocol resulted in an incorrect message")
+
+	// Try replaying protocol initialization
+	_, err = streamer.startStream(ctx, params)
+	require.Error(t, err)
+
+	// Try replaying protocol finalization
+	_, err = streamer.finalizeStream(ctx, messageId)
+	require.Error(t, err)
 }
 
 func testBasic(t *testing.T, messageSizeMean, messageSizeStdDev, concurrency int) {
@@ -202,26 +248,14 @@ func prepareTestEnv(t *testing.T, onChunkInjection func(uint64) error) (context.
 	return ctx, streamer
 }
 
-func prepareCrypto(t *testing.T) (signature.DataSignerFunc, *signature.Verifier) {
-	privateKey, err := crypto.GenerateKey()
-	testhelpers.RequireImpl(t, err)
-
-	signatureVerifierConfig := signature.VerifierConfig{
-		AllowedAddresses: []string{crypto.PubkeyToAddress(privateKey.PublicKey).Hex()},
-		AcceptSequencer:  false,
-		Dangerous:        signature.DangerousVerifierConfig{AcceptMissing: false},
-	}
-	verifier, err := signature.NewVerifier(&signatureVerifierConfig, nil)
-	testhelpers.RequireImpl(t, err)
-
-	signer := signature.DataSignerFromPrivateKey(privateKey)
-	return signer, verifier
-}
-
 func launchServer(t *testing.T, ctx context.Context, signatureVerifier *signature.Verifier, onChunkInjection func(uint64) error) string {
 	rpcServer := rpc.NewServer()
+
+	dataStreamReceiver := NewDataStreamReceiver(DefaultPayloadVerifier(signatureVerifier), maxPendingMessages, messageCollectionExpiry, requestValidity, nil)
+	dataStreamReceiver.Start(ctx)
+
 	err := rpcServer.RegisterName(serverRPCRoot, &TestServer{
-		dataStreamReceiver: NewDataStreamReceiver(DefaultPayloadVerifier(signatureVerifier), maxPendingMessages, messageCollectionExpiry, nil),
+		dataStreamReceiver: dataStreamReceiver,
 		onChunkInject:      onChunkInjection,
 	})
 	testhelpers.RequireImpl(t, err)
@@ -236,6 +270,7 @@ func launchServer(t *testing.T, ctx context.Context, signatureVerifier *signatur
 	}()
 	go func() {
 		<-ctx.Done()
+		dataStreamReceiver.StopAndWait()
 		_ = httpServer.Shutdown(context.Background())
 	}()
 

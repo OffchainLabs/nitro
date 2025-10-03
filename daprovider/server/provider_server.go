@@ -110,10 +110,14 @@ func NewServerWithDAPProvider(ctx context.Context, config *ServerConfig, reader 
 		}
 	}
 
+	var dataStreamReceiver *data_streaming.DataStreamReceiver
 	if writer != nil {
+		dataStreamReceiver = data_streaming.NewDefaultDataStreamReceiver(verifier)
+		dataStreamReceiver.Start(ctx)
+
 		writerServer := &WriterServer{
 			writer:       writer,
-			dataReceiver: data_streaming.NewDefaultDataStreamReceiver(verifier),
+			dataReceiver: dataStreamReceiver,
 		}
 		if err = rpcServer.RegisterName("daprovider", writerServer); err != nil {
 			return nil, err
@@ -162,6 +166,9 @@ func NewServerWithDAPProvider(ctx context.Context, config *ServerConfig, reader 
 
 	go func() {
 		<-ctx.Done()
+		if dataStreamReceiver != nil {
+			dataStreamReceiver.StopAndWait()
+		}
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		_ = srv.Shutdown(shutdownCtx)

@@ -598,7 +598,7 @@ func getDAProvider(
 
 	if config.DA.Mode == "external" {
 		// External DA provider mode
-		daClient, err = daclient.NewClient(ctx, &config.DA.ExternalProvider, data_streaming.NoopPayloadSigner())
+		daClient, err = daclient.NewClient(ctx, &config.DA.ExternalProvider, data_streaming.PayloadCommiter())
 		if err != nil {
 			return nil, nil, nil, nil, err
 		}
@@ -702,7 +702,7 @@ func getDAProvider(
 		}
 
 		headerBytes := daFactory.GetSupportedHeaderBytes()
-		providerServer, err := dapserver.NewServerWithDAPProvider(ctx, &serverConfig, reader, writer, validator, headerBytes, data_streaming.TrustingPayloadVerifier())
+		providerServer, err := dapserver.NewServerWithDAPProvider(ctx, &serverConfig, reader, writer, validator, headerBytes, data_streaming.PayloadCommitmentVerifier())
 
 		// Create combined cleanup function
 		closeFn := func() {
@@ -720,7 +720,7 @@ func getDAProvider(
 		daClientConfig := config.DA.ExternalProvider
 		daClientConfig.RPC = rpcClientConfig
 
-		daClient, err = daclient.NewClient(ctx, &daClientConfig, data_streaming.NoopPayloadSigner())
+		daClient, err = daclient.NewClient(ctx, &daClientConfig, data_streaming.PayloadCommiter())
 		if err != nil {
 			return nil, nil, nil, nil, err
 		}

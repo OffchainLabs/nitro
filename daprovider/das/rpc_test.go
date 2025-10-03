@@ -99,7 +99,7 @@ func testRpcImpl(t *testing.T, size, times int, concurrent bool) {
 	runStore := func() {
 		defer wg.Done()
 		msg := testhelpers.RandomizeSlice(make([]byte, size))
-		cert, err := rpcAgg.Store(ctx, msg, 0)
+		cert, err := rpcAgg.Store(ctx, msg, testhelpers.RandomUint64(0, uint64(defaultStorageRetention.Seconds()))) // we use random timeouts as a random nonce to differentiate between request signatures to avoid replay-protection issues
 		testhelpers.RequireImpl(t, err)
 
 		retrievedMessage, err := storageService.GetByHash(ctx, cert.DataHash)

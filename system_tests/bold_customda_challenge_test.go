@@ -99,7 +99,7 @@ func createReferenceDAProviderServer(t *testing.T, ctx context.Context, l1Client
 
 	// Create the provider server
 	headerBytes := []byte{daprovider.DACertificateMessageHeaderFlag}
-	server, err := dapserver.NewServerWithDAPProvider(ctx, serverConfig, reader, writer, validator, headerBytes, data_streaming.TrustingPayloadVerifier())
+	server, err := dapserver.NewServerWithDAPProvider(ctx, serverConfig, reader, writer, validator, headerBytes, data_streaming.PayloadCommitmentVerifier())
 	Require(t, err)
 
 	// Extract the actual address with port
@@ -161,7 +161,7 @@ func createEvilDAProviderServer(t *testing.T, ctx context.Context, l1Client *eth
 	// In this test we call the writers directly to have more control over batch posting.
 	writer := &assertingWriter{}
 	headerBytes := []byte{daprovider.DACertificateMessageHeaderFlag}
-	server, err := dapserver.NewServerWithDAPProvider(ctx, serverConfig, evilProvider, writer, evilProvider, headerBytes, data_streaming.TrustingPayloadVerifier())
+	server, err := dapserver.NewServerWithDAPProvider(ctx, serverConfig, evilProvider, writer, evilProvider, headerBytes, data_streaming.PayloadCommitmentVerifier())
 	Require(t, err)
 
 	// Extract the actual address with port
@@ -407,10 +407,10 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, 
 	Require(t, err)
 
 	// Create DA validators for both nodes
-	daClientA, err := daclient.NewClient(ctx, daclient.TestClientConfig(providerURLNodeA), data_streaming.NoopPayloadSigner())
+	daClientA, err := daclient.NewClient(ctx, daclient.TestClientConfig(providerURLNodeA), data_streaming.PayloadCommiter())
 	Require(t, err)
 
-	daClientB, err := daclient.NewClient(ctx, daclient.TestClientConfig(providerURLNodeB), data_streaming.NoopPayloadSigner())
+	daClientB, err := daclient.NewClient(ctx, daclient.TestClientConfig(providerURLNodeB), data_streaming.PayloadCommiter())
 	Require(t, err)
 
 	// Create DA readers for validators
