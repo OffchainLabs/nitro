@@ -48,10 +48,9 @@ var DefaultAggregatorConfig = AggregatorConfig{
 	AssumedHonest: 0,
 	Backends:      nil,
 	DASRPCClientConfig: DASRPCClientConfig{
-		ServerUrl:             "",
-		EnableChunkedStore:    true,
-		MaxStoreChunkBodySize: 512 * 1024,
-		DataStreamConfig:      data_streaming.DefaultDataStreamerConfig(DefaultDataStreamRpcMethods),
+		ServerUrl:          "",
+		EnableChunkedStore: true,
+		DataStreamConfig:   data_streaming.DefaultDataStreamerConfig(DefaultDataStreamRpcMethods),
 	},
 }
 

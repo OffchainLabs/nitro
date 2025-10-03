@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/offchainlabs/nitro/daprovider/data_streaming"
 
 	"github.com/offchainlabs/nitro/blsSignatures"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
@@ -31,8 +32,6 @@ func blsPubToBase64(pubkey *blsSignatures.PublicKey) string {
 const sendChunkJSONBoilerplate = "{\"jsonrpc\":\"2.0\",\"id\":4294967295,\"method\":\"das_sendChunked\",\"params\":[\"\"]}"
 
 func testRpcImpl(t *testing.T, size, times int, concurrent bool) {
-	// enableLogging()
-
 	ctx := context.Background()
 	lis, err := net.Listen("tcp", "localhost:0")
 	testhelpers.RequireImpl(t, err)
@@ -83,10 +82,12 @@ func testRpcImpl(t *testing.T, size, times int, concurrent bool) {
 	testhelpers.RequireImpl(t, err)
 	aggConf := DataAvailabilityConfig{
 		RPCAggregator: AggregatorConfig{
-			AssumedHonest:         1,
-			Backends:              beConfigs,
-			MaxStoreChunkBodySize: (chunkSize * 2) + len(sendChunkJSONBoilerplate),
-			EnableChunkedStore:    true,
+			AssumedHonest: 1,
+			Backends:      beConfigs,
+			DASRPCClientConfig: DASRPCClientConfig{
+				EnableChunkedStore: true,
+				DataStreamConfig:   data_streaming.TestDataStreamerConfig(DefaultDataStreamRpcMethods),
+			},
 		},
 		RequestTimeout: time.Minute,
 	}
@@ -120,7 +121,7 @@ func testRpcImpl(t *testing.T, size, times int, concurrent bool) {
 	wg.Wait()
 }
 
-const chunkSize = 512 * 1024
+const chunkSize = (data_streaming.TestHttpBodyLimit - len(sendChunkJSONBoilerplate)) / 2
 
 func TestRPCStore(t *testing.T) {
 	for _, tc := range []struct {

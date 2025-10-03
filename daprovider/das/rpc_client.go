@@ -45,16 +45,14 @@ func nilSigner(_ []byte) ([]byte, error) {
 
 // lint:require-exhaustive-initialization
 type DASRPCClientConfig struct {
-	ServerUrl             string
-	EnableChunkedStore    bool
-	MaxStoreChunkBodySize int
-	DataStreamConfig      data_streaming.DataStreamerConfig
+	ServerUrl          string
+	EnableChunkedStore bool
+	DataStreamConfig   data_streaming.DataStreamerConfig
 }
 
 func DASRPCClientConfigAddOptions(prefix string, f *pflag.FlagSet, defaultDataStreamRpcMethods *data_streaming.DataStreamingRPCMethods) {
 	f.String(prefix+"url", "", "URL of DAS server to connect to")
 	f.Bool(prefix+"enable-chunked-store", true, "enable data to be sent to DAS in chunks instead of all at once")
-	f.Int(prefix+"max-store-chunk-body-size", 512*1024, "The maximum HTTP POST body size for a chunked store request")
 	data_streaming.DataStreamerConfigAddOptions(prefix+"data-stream", f, defaultDataStreamRpcMethods)
 }
 
