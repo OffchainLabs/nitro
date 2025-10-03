@@ -12,6 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/offchainlabs/nitro/daprovider/data_streaming"
 	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -37,18 +38,21 @@ var (
 )
 
 type AggregatorConfig struct {
-	Enable                bool              `koanf:"enable"`
-	AssumedHonest         int               `koanf:"assumed-honest"`
-	Backends              BackendConfigList `koanf:"backends"`
-	MaxStoreChunkBodySize int               `koanf:"max-store-chunk-body-size"`
-	EnableChunkedStore    bool              `koanf:"enable-chunked-store"`
+	Enable             bool               `koanf:"enable"`
+	AssumedHonest      int                `koanf:"assumed-honest"`
+	Backends           BackendConfigList  `koanf:"backends"`
+	DASRPCClientConfig DASRPCClientConfig `koanf:"das-rpc-client"`
 }
 
 var DefaultAggregatorConfig = AggregatorConfig{
-	AssumedHonest:         0,
-	Backends:              nil,
-	MaxStoreChunkBodySize: 512 * 1024,
-	EnableChunkedStore:    true,
+	AssumedHonest: 0,
+	Backends:      nil,
+	DASRPCClientConfig: DASRPCClientConfig{
+		ServerUrl:             "",
+		EnableChunkedStore:    true,
+		MaxStoreChunkBodySize: 512 * 1024,
+		DataStreamConfig:      data_streaming.DefaultDataStreamerConfig(DefaultDataStreamRpcMethods),
+	},
 }
 
 var parsedBackendsConf BackendConfigList
@@ -57,8 +61,7 @@ func AggregatorConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultAggregatorConfig.Enable, "enable storage of sequencer batch data from a list of RPC endpoints; this should only be used by the batch poster and not in combination with other DAS storage types")
 	f.Int(prefix+".assumed-honest", DefaultAggregatorConfig.AssumedHonest, "Number of assumed honest backends (H). If there are N backends, K=N+1-H valid responses are required to consider an Store request to be successful.")
 	f.Var(&parsedBackendsConf, prefix+".backends", "JSON RPC backend configuration. This can be specified on the command line as a JSON array, eg: [{\"url\": \"...\", \"pubkey\": \"...\"},...], or as a JSON array in the config file.")
-	f.Int(prefix+".max-store-chunk-body-size", DefaultAggregatorConfig.MaxStoreChunkBodySize, "maximum HTTP POST body size to use for individual batch chunks, including JSON RPC overhead and an estimated overhead of 512B of headers")
-	f.Bool(prefix+".enable-chunked-store", DefaultAggregatorConfig.EnableChunkedStore, "enable data to be sent to DAS in chunks instead of all at once")
+	DASRPCClientConfigAddOptions(prefix+".das-rpc-client.", f, &DefaultDataStreamRpcMethods)
 }
 
 type Aggregator struct {

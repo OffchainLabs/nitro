@@ -28,8 +28,6 @@ import (
 	"github.com/offchainlabs/nitro/daprovider/server_api"
 )
 
-const DefaultBodyLimit = 5 * 1024 * 1024 // Taken from go-ethereum http.defaultBodyLimit
-
 // lint:require-exhaustive-initialization
 type ReaderServer struct {
 	reader      daprovider.Reader
@@ -63,7 +61,7 @@ var DefaultServerConfig = ServerConfig{
 	JWTSecret:          "",
 	EnableDAWriter:     false,
 	ServerTimeouts:     genericconf.HTTPServerTimeoutConfigDefault,
-	RPCServerBodyLimit: DefaultBodyLimit,
+	RPCServerBodyLimit: genericconf.HTTPServerBodyLimitDefault,
 }
 
 func ServerConfigAddOptions(prefix string, f *flag.FlagSet) {
