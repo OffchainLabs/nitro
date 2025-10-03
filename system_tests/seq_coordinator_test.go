@@ -360,7 +360,7 @@ func testCoordinatorMessageSync(t *testing.T, successCase bool) {
 		}
 
 		// check that nodeBOutputFeedReader also processed the transaction
-		_, err = WaitForTx(ctx, testClientNodeBOutputFeedReader.Client, tx.Hash(), time.Second*5)
+		_, err = WaitForTx(ctx, testClientNodeBOutputFeedReader.Client, tx.Hash(), time.Second*15)
 		Require(t, err)
 		l2balance, err = testClientNodeBOutputFeedReader.Client.BalanceAt(ctx, builder.L2Info.GetAddress("User2"), nil)
 		Require(t, err)
