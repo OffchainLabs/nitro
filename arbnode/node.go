@@ -40,7 +40,7 @@ import (
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/daprovider/daclient"
 	"github.com/offchainlabs/nitro/daprovider/das"
-	"github.com/offchainlabs/nitro/daprovider/das/data_streaming"
+	"github.com/offchainlabs/nitro/daprovider/data_streaming"
 	"github.com/offchainlabs/nitro/daprovider/factory"
 	"github.com/offchainlabs/nitro/daprovider/referenceda"
 	dapserver "github.com/offchainlabs/nitro/daprovider/server"
@@ -219,6 +219,7 @@ func ConfigDefaultL1NonSequencerTest() *Config {
 	config.Staker.Enable = false
 	config.BlockValidator.ValidationServerConfigs = []rpcclient.ClientConfig{{URL: ""}}
 	config.Bold.MinimumGapToParentAssertion = 0
+	config.DA.ExternalProvider.DataStream = data_streaming.TestDataStreamerConfig(daclient.DefaultStreamRpcMethods)
 
 	return &config
 }
@@ -597,12 +598,7 @@ func getDAProvider(
 
 	if config.DA.Mode == "external" {
 		// External DA provider mode
-		daClient, err = daclient.NewClient(
-			ctx,
-			func() *rpcclient.ClientConfig { return &config.DA.ExternalProvider.RPC },
-			dapserver.DefaultBodyLimit,
-			data_streaming.NoopPayloadSigner(),
-		)
+		daClient, err = daclient.NewClient(ctx, &config.DA.ExternalProvider, data_streaming.NoopPayloadSigner())
 		if err != nil {
 			return nil, nil, nil, nil, err
 		}
@@ -717,15 +713,14 @@ func getDAProvider(
 		if err != nil {
 			return nil, nil, nil, nil, err
 		}
-		clientConfig := rpcclient.DefaultClientConfig
-		clientConfig.URL = providerServer.Addr
-		clientConfig.JWTSecret = jwtPath
-		daClient, err = daclient.NewClient(
-			ctx,
-			func() *rpcclient.ClientConfig { return &clientConfig },
-			dapserver.DefaultBodyLimit,
-			data_streaming.NoopPayloadSigner(),
-		)
+		rpcClientConfig := rpcclient.DefaultClientConfig
+		rpcClientConfig.URL = providerServer.Addr
+		rpcClientConfig.JWTSecret = jwtPath
+
+		daClientConfig := config.DA.ExternalProvider
+		daClientConfig.RPC = rpcClientConfig
+
+		daClient, err = daclient.NewClient(ctx, &daClientConfig, data_streaming.NoopPayloadSigner())
 		if err != nil {
 			return nil, nil, nil, nil, err
 		}

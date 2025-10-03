@@ -4,6 +4,7 @@
 package data_streaming
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -35,8 +36,8 @@ type DataStreamReceiver struct {
 
 // NewDataStreamReceiver sets up a new stream receiver. `payloadVerifier` must be compatible with message signing on
 // the `DataStreamer` sender side. `maxPendingMessages` limits how many parallel protocol instances are supported.
-// `messageCollectionExpiry` is the window in which a single message streaming must end - otherwise the protocol will
-// be closed and all related data will be removed.
+// `messageCollectionExpiry` is the window in which a protocol must end - otherwise the protocol will be closed and all
+// related data will be removed. This time window is reset after every _new_ protocol message received.
 func NewDataStreamReceiver(payloadVerifier *PayloadVerifier, maxPendingMessages int, messageCollectionExpiry time.Duration, expirationCallback func(id MessageId)) *DataStreamReceiver {
 	return &DataStreamReceiver{
 		payloadVerifier: payloadVerifier,
@@ -98,6 +99,7 @@ type partialMessage struct {
 	expectedTotalSize uint64
 	timeout           uint64
 	startTime         time.Time
+	lastUpdateTime    time.Time
 }
 
 // lint:require-exhaustive-initialization
@@ -143,22 +145,28 @@ func (ms *messageStore) registerNewMessage(nChunks, timeout, chunkSize, totalSiz
 		expectedTotalSize: totalSize,
 		timeout:           timeout,
 		startTime:         time.Now(),
+		lastUpdateTime:    time.Now(),
 	}
 
 	// Schedule garbage collection for the old incomplete messages.
-	go func(id MessageId) {
-		<-time.After(ms.messageCollectionExpiry)
+	var gcRoutine func()
+	gcRoutine = func() {
 		ms.mutex.Lock()
 		defer ms.mutex.Unlock()
 
-		// Message will only exist if expiry was reached without it being complete.
-		if _, stillExists := ms.messages[id]; stillExists {
+		message, stillExists := ms.messages[id]
+		if !stillExists {
+			return
+		} else if time.Since(message.lastUpdateTime) > ms.messageCollectionExpiry {
 			if ms.expirationCallback != nil {
 				ms.expirationCallback(id)
 			}
 			delete(ms.messages, id)
+			return
 		}
-	}(id)
+		time.AfterFunc(ms.messageCollectionExpiry, gcRoutine)
+	}
+	go gcRoutine()
 
 	return id, nil
 }
@@ -180,7 +188,14 @@ func (ms *messageStore) addNewChunk(id MessageId, chunkId uint64, chunk []byte) 
 	}
 
 	if message.chunks[chunkId] != nil {
-		return fmt.Errorf("message(%d): chunk(%d) already added", id, chunkId)
+		if bytes.Equal(message.chunks[chunkId], chunk) {
+			// Server idempotency: ignore duplicated request as long as it doesn't break consistency
+			return nil
+		} else {
+			// Inconsistency between chunks at the same index detected. Protocol must be aborted (no way of deciding what data is correct)
+			delete(ms.messages, id)
+			return errors.New("received different chunk data than previously; aborting protocol")
+		}
 	}
 
 	// Validate chunk size
@@ -196,6 +211,7 @@ func (ms *messageStore) addNewChunk(id MessageId, chunkId uint64, chunk []byte) 
 
 	message.chunks[chunkId] = chunk
 	message.seenChunks++
+	message.lastUpdateTime = time.Now()
 
 	return nil
 }

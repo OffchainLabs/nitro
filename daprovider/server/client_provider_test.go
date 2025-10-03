@@ -14,14 +14,11 @@ import (
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/daprovider/daclient"
-	"github.com/offchainlabs/nitro/daprovider/das/data_streaming"
+	"github.com/offchainlabs/nitro/daprovider/data_streaming"
 	"github.com/offchainlabs/nitro/daprovider/referenceda"
-	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
-
-const RPCServerBodyLimit int = 1_000
 
 func TestInteractionBetweenClientAndProviderServer_StoreSucceeds(t *testing.T) {
 	ctx := context.Background()
@@ -39,7 +36,7 @@ func TestInteractionBetweenClientAndProviderServer_StoreLongMessageSucceeds(t *t
 	server := setupProviderServer(ctx, t)
 	client := setupClient(ctx, t, server.Addr)
 
-	message := testhelpers.RandomizeSlice(make([]byte, RPCServerBodyLimit+1))
+	message := testhelpers.RandomizeSlice(make([]byte, data_streaming.TestHttpBodyLimit+1))
 
 	_, err := client.Store(ctx, message, 0)
 	testhelpers.RequireImpl(t, err)
@@ -51,7 +48,7 @@ func setupProviderServer(ctx context.Context, t *testing.T) *http.Server {
 		Port:               0,
 		EnableDAWriter:     true,
 		ServerTimeouts:     genericconf.HTTPServerTimeoutConfig{},
-		RPCServerBodyLimit: RPCServerBodyLimit,
+		RPCServerBodyLimit: data_streaming.TestHttpBodyLimit,
 		JWTSecret:          "",
 	}
 
@@ -74,12 +71,7 @@ func setupProviderServer(ctx context.Context, t *testing.T) *http.Server {
 }
 
 func setupClient(ctx context.Context, t *testing.T, providerServerAddress string) *daclient.Client {
-	clientConfig := func() *rpcclient.ClientConfig {
-		return &rpcclient.ClientConfig{
-			URL: providerServerAddress,
-		}
-	}
-	client, err := daclient.NewClient(ctx, clientConfig, RPCServerBodyLimit, data_streaming.NoopPayloadSigner())
+	client, err := daclient.NewClient(ctx, daclient.TestClientConfig(providerServerAddress), data_streaming.NoopPayloadSigner())
 	testhelpers.RequireImpl(t, err)
 	return client
 }

@@ -38,7 +38,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/daprovider/daclient"
-	"github.com/offchainlabs/nitro/daprovider/das/data_streaming"
+	"github.com/offchainlabs/nitro/daprovider/data_streaming"
 	"github.com/offchainlabs/nitro/daprovider/referenceda"
 	dapserver "github.com/offchainlabs/nitro/daprovider/server"
 	"github.com/offchainlabs/nitro/execution/gethexec"
@@ -49,7 +49,6 @@ import (
 	"github.com/offchainlabs/nitro/staker/bold"
 	"github.com/offchainlabs/nitro/statetransfer"
 	"github.com/offchainlabs/nitro/util"
-	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 	"github.com/offchainlabs/nitro/validator/server_arb"
@@ -408,20 +407,10 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, 
 	Require(t, err)
 
 	// Create DA validators for both nodes
-	daClientConfigA := func() *rpcclient.ClientConfig {
-		return &rpcclient.ClientConfig{
-			URL: providerURLNodeA,
-		}
-	}
-	daClientA, err := daclient.NewClient(ctx, daClientConfigA, dapserver.DefaultServerConfig.RPCServerBodyLimit, data_streaming.NoopPayloadSigner())
+	daClientA, err := daclient.NewClient(ctx, daclient.TestClientConfig(providerURLNodeA), data_streaming.NoopPayloadSigner())
 	Require(t, err)
 
-	daClientConfigB := func() *rpcclient.ClientConfig {
-		return &rpcclient.ClientConfig{
-			URL: providerURLNodeB,
-		}
-	}
-	daClientB, err := daclient.NewClient(ctx, daClientConfigB, dapserver.DefaultServerConfig.RPCServerBodyLimit, data_streaming.NoopPayloadSigner())
+	daClientB, err := daclient.NewClient(ctx, daclient.TestClientConfig(providerURLNodeB), data_streaming.NoopPayloadSigner())
 	Require(t, err)
 
 	// Create DA readers for validators
