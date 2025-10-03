@@ -1117,7 +1117,7 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 		chainConfig := s.execEngine.bc.Config()
 		if lastBlock.Number.Uint64()+1 == chainConfig.ArbitrumChainParams.DebugBlock {
 			// publish transaction to trigger next block
-			tx := debugblock.PrepareDebugTransaction(chainConfig)
+			tx := debugblock.PrepareDebugTransaction(chainConfig, lastBlock)
 			if tx != nil {
 				go func() {
 					if err := s.PublishTransaction(ctx, tx, nil); err != nil {

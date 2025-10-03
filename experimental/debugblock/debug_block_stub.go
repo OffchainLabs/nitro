@@ -29,7 +29,7 @@ func ConfigAddOptions(_ string, _ *pflag.FlagSet) {
 	// don't add any of debug block options
 }
 
-func PrepareDebugTransaction(_ *params.ChainConfig) *types.Transaction {
+func PrepareDebugTransaction(_ *params.ChainConfig, _ *types.Header) *types.Transaction {
 	log.Warn("PrepareDebugTransaction is not supported in this build")
 	return nil
 }

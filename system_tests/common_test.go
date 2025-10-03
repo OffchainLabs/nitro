@@ -889,7 +889,11 @@ func (b *NodeBuilder) RestartL2Node(t *testing.T) {
 		dataSigner = signature.DataSignerFromPrivateKey(b.L1Info.GetInfoWithPrivKey("Sequencer").PrivateKey)
 		l1Client = b.L1.Client
 	}
-	currentNode, err := arbnode.CreateNodeFullExecutionClient(b.ctx, stack, execNode, execNode, execNode, execNode, arbDb, NewFetcherFromConfig(b.nodeConfig), blockchain.Config(), l1Client, b.addresses, validatorTxOpts, sequencerTxOpts, dataSigner, feedErrChan, big.NewInt(1337), nil, locator.LatestWasmModuleRoot())
+	chainConfig := blockchain.Config()
+	if b.execConfig.Dangerous.DebugBlock.OverwriteChainConfig {
+		b.execConfig.Dangerous.DebugBlock.Apply(chainConfig)
+	}
+	currentNode, err := arbnode.CreateNodeFullExecutionClient(b.ctx, stack, execNode, execNode, execNode, execNode, arbDb, NewFetcherFromConfig(b.nodeConfig), chainConfig, l1Client, b.addresses, validatorTxOpts, sequencerTxOpts, dataSigner, feedErrChan, big.NewInt(1337), nil, locator.LatestWasmModuleRoot())
 	Require(t, err)
 
 	Require(t, currentNode.Start(b.ctx))

@@ -3,6 +3,7 @@
 package debugblock
 
 import (
+	"crypto/ecdsa"
 	"encoding/json"
 	"errors"
 	"math/big"
@@ -16,6 +17,8 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/holiman/uint256"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
+	"github.com/offchainlabs/nitro/util"
+	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/spf13/pflag"
 )
 
@@ -46,33 +49,61 @@ func (c *Config) Apply(chainConfig *params.ChainConfig) {
 	}
 }
 
-func PrepareDebugTransaction(chainConfig *params.ChainConfig) *types.Transaction {
-	devPrivKey, err := crypto.HexToECDSA("") //TODO
+// private key and address of account to be used by PrepareDebugTransaction
+func triggerPrivateKeyAndAddress() (*ecdsa.PrivateKey, common.Address, error) {
+	key, err := crypto.HexToECDSA("acb2d96fc54f5db4530d6c5a6adfd10964b1b62222d875e08b68b72cc9b9935c")
 	if err != nil {
-		log.Error("debug block: failed to HexToECDSA", "err", err)
+		return nil, common.Address{}, err
+	}
+	return key, crypto.PubkeyToAddress(key.PublicKey), nil
+}
+
+// prepares transaction used to trigger debug block creation
+// the transaction needs pre-funding within DebugBlockStateUpdate (executed in the begging of debug block, before the trigger transaction)
+func PrepareDebugTransaction(chainConfig *params.ChainConfig, lastHeader *types.Header) *types.Transaction {
+	if !chainConfig.DebugMode() {
 		return nil
 	}
-	devAddr := crypto.PubkeyToAddress(devPrivKey.PublicKey)
+	privateKey, address, err := triggerPrivateKeyAndAddress()
+	if err != nil {
+		log.Error("debug block: failed to get hardcoded private key and address", "err", err)
+		return nil
+	}
+	transferGas := util.NormalizeL2GasForL1GasInitial(800_000, params.GWei) // include room for L1 costs
 	txData := &types.DynamicFeeTx{
-		To:        &devAddr,
-		Gas:       1e9,
-		GasTipCap: big.NewInt(params.Ether),
-		GasFeeCap: big.NewInt(params.Ether),
-		Value:     big.NewInt(1),
+		To:        &address,
+		Gas:       transferGas,
+		GasTipCap: big.NewInt(0),
+		GasFeeCap: big.NewInt(params.GWei),
+		Value:     big.NewInt(0),
 		Nonce:     0,
 		Data:      nil,
 	}
-	signer := types.LatestSigner(chainConfig) // TODO
+	nextHeaderNumber := arbmath.BigAdd(lastHeader.Number, common.Big1)
+	arbosVersion := types.DeserializeHeaderExtraInformation(lastHeader).ArbOSFormatVersion
+	signer := types.MakeSigner(chainConfig, nextHeaderNumber, lastHeader.Time, arbosVersion)
 	tx := types.NewTx(txData)
-	tx, err = types.SignTx(tx, signer, devPrivKey)
+	tx, err = types.SignTx(tx, signer, privateKey)
 	if err != nil {
-		log.Error("debug block: failed to sign tx", "err", err)
+		log.Error("debug block: failed to sign trigger tx", "address", address, "err", err)
 		return nil
 	}
+	log.Warn("debug block: PrepareDebugTransaction", "address", address)
 	return tx
 }
 
 func DebugBlockStateUpdate(statedb *state.StateDB, expectedBalanceDelta *big.Int, chainConfig *params.ChainConfig) {
+	// fund trigger account - used to send a transaction that will trigger this block
+	transferGas := util.NormalizeL2GasForL1GasInitial(800_000, params.GWei) // include room for L1 costs
+	triggerCost := uint256.MustFromBig(new(big.Int).Mul(big.NewInt(int64(transferGas)), big.NewInt(params.GWei)))
+	_, triggerAddress, err := triggerPrivateKeyAndAddress()
+	if err != nil {
+		log.Error("debug block: failed to get hardcoded address", "err", err)
+		return
+	}
+	statedb.SetBalance(triggerAddress, triggerCost, tracing.BalanceChangeUnspecified)
+	expectedBalanceDelta.Add(expectedBalanceDelta, triggerCost.ToBig())
+
 	// fund debug account
 	balance := uint256.MustFromBig(new(big.Int).Lsh(big.NewInt(1), 254))
 	statedb.SetBalance(chainConfig.ArbitrumChainParams.DebugAddress, balance, tracing.BalanceChangeUnspecified)
