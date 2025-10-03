@@ -241,11 +241,11 @@ func testAuctionResolutionDuringATie(t *testing.T, multiRuns bool) {
 	}
 }
 
-func TestTimeboostExpressLaneTxsHandlingDuringSequencerSwapDueToPriorities(t *testing.T) {
+func TestTimeboostExpressLaneTxsHandlingDuringSequencerSwapDueToPrioritiesFlaky(t *testing.T) {
 	testTxsHandlingDuringSequencerSwap(t, false)
 }
 
-func TestTimeboostExpressLaneTxsHandlingDuringSequencerSwapDueToActiveSequencerCrashing(t *testing.T) {
+func TestTimeboostExpressLaneTxsHandlingDuringSequencerSwapDueToActiveSequencerCrashingFlaky(t *testing.T) {
 	testTxsHandlingDuringSequencerSwap(t, true)
 }
 
@@ -918,7 +918,7 @@ func TestTimeboostedFieldInReceiptsObject(t *testing.T) {
 	}
 }
 
-func TestTimeboostBulkBlockMetadataAPI(t *testing.T) {
+func TestTimeboostBulkBlockMetadataAPIFlaky(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
