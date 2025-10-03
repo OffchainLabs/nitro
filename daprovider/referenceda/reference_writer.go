@@ -31,7 +31,6 @@ func (w *Writer) Store(
 	ctx context.Context,
 	message []byte,
 	timeout uint64,
-	disableFallbackStoreDataOnChain bool,
 ) ([]byte, error) {
 	if w.signer == nil {
 		return nil, fmt.Errorf("no signer configured")

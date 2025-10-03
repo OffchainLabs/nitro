@@ -169,6 +169,7 @@ type BatchPosterConfig struct {
 	ExtraBatchGas                  uint64                      `koanf:"extra-batch-gas" reload:"hot"`
 	Post4844Blobs                  bool                        `koanf:"post-4844-blobs" reload:"hot"`
 	IgnoreBlobPrice                bool                        `koanf:"ignore-blob-price" reload:"hot"`
+	UseCustomDA                    bool                        `koanf:"use-custom-da" reload:"hot"`
 	ParentChainWallet              genericconf.WalletConfig    `koanf:"parent-chain-wallet"`
 	L1BlockBound                   string                      `koanf:"l1-block-bound" reload:"hot"`
 	L1BlockBoundBypass             time.Duration               `koanf:"l1-block-bound-bypass" reload:"hot"`
@@ -232,6 +233,7 @@ func BatchPosterConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Uint64(prefix+".extra-batch-gas", DefaultBatchPosterConfig.ExtraBatchGas, "use this much more gas than estimation says is necessary to post batches")
 	f.Bool(prefix+".post-4844-blobs", DefaultBatchPosterConfig.Post4844Blobs, "if the parent chain supports 4844 blobs and they're well priced, post EIP-4844 blobs")
 	f.Bool(prefix+".ignore-blob-price", DefaultBatchPosterConfig.IgnoreBlobPrice, "if the parent chain supports 4844 blobs and ignore-blob-price is true, post 4844 blobs even if it's not price efficient")
+	f.Bool(prefix+".use-custom-da", DefaultBatchPosterConfig.UseCustomDA, "use Custom Data Availability messaging by setting the DACertificate header flag")
 	f.String(prefix+".redis-url", DefaultBatchPosterConfig.RedisUrl, "if non-empty, the Redis URL to store queued transactions in")
 	f.String(prefix+".l1-block-bound", DefaultBatchPosterConfig.L1BlockBound, "only post messages to batches when they're within the max future block/timestamp as of this L1 block tag (\"safe\", \"finalized\", \"latest\", or \"ignore\" to ignore this check)")
 	f.Duration(prefix+".l1-block-bound-bypass", DefaultBatchPosterConfig.L1BlockBoundBypass, "post batches even if not within the layer 1 future bounds if we're within this margin of the max delay")
@@ -268,6 +270,7 @@ var DefaultBatchPosterConfig = BatchPosterConfig{
 	ExtraBatchGas:                  50_000,
 	Post4844Blobs:                  false,
 	IgnoreBlobPrice:                false,
+	UseCustomDA:                    false,
 	DataPoster:                     dataposter.DefaultDataPosterConfig,
 	ParentChainWallet:              DefaultBatchPosterL1WalletConfig,
 	L1BlockBound:                   "",
@@ -305,6 +308,7 @@ var TestBatchPosterConfig = BatchPosterConfig{
 	ExtraBatchGas:                  10_000,
 	Post4844Blobs:                  false,
 	IgnoreBlobPrice:                false,
+	UseCustomDA:                    false,
 	DataPoster:                     dataposter.TestDataPosterConfig,
 	ParentChainWallet:              DefaultBatchPosterL1WalletConfig,
 	L1BlockBound:                   "",
@@ -878,6 +882,7 @@ type batchSegments struct {
 	lastCompressedSize    int
 	trailingHeaders       int // how many trailing segments are headers
 	isDone                bool
+	useCustomDA           bool // whether to use the DACertificate header flag
 }
 
 type buildingBatch struct {
@@ -886,13 +891,14 @@ type buildingBatch struct {
 	msgCount           arbutil.MessageIndex
 	haveUsefulMessage  bool
 	use4844            bool
+	useCustomDA        bool
 	muxBackend         *simulatedMuxBackend
 	firstDelayedMsg    *arbostypes.MessageWithMetadata
 	firstNonDelayedMsg *arbostypes.MessageWithMetadata
 	firstUsefulMsg     *arbostypes.MessageWithMetadata
 }
 
-func (b *BatchPoster) newBatchSegments(ctx context.Context, firstDelayed uint64, use4844 bool) (*batchSegments, error) {
+func (b *BatchPoster) newBatchSegments(ctx context.Context, firstDelayed uint64, use4844 bool, useCustomDA bool) (*batchSegments, error) {
 	maxSize := b.config().MaxSize
 	if use4844 {
 		if b.config().Max4844BatchSize != 0 {
@@ -940,6 +946,7 @@ func (b *BatchPoster) newBatchSegments(ctx context.Context, firstDelayed uint64,
 		recompressionLevel: recompressionLevel,
 		rawSegments:        make([][]byte, 0, 128),
 		delayedMsg:         firstDelayed,
+		useCustomDA:        useCustomDA,
 	}, nil
 }
 
@@ -1136,7 +1143,9 @@ func (s *batchSegments) CloseAndGetBytes() ([]byte, error) {
 	}
 	compressedBytes := s.compressedBuffer.Bytes()
 	fullMsg := make([]byte, 1, len(compressedBytes)+1)
+
 	fullMsg[0] = daprovider.BrotliMessageHeaderByte
+
 	fullMsg = append(fullMsg, compressedBytes...)
 	return fullMsg, nil
 }
@@ -1420,7 +1429,9 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 			}
 		}
 
-		segments, err := b.newBatchSegments(ctx, batchPosition.DelayedMessageCount, use4844)
+		// Use CustomDA if configured
+		useCustomDA := b.config().UseCustomDA
+		segments, err := b.newBatchSegments(ctx, batchPosition.DelayedMessageCount, use4844, useCustomDA)
 		if err != nil {
 			return false, err
 		}
@@ -1429,6 +1440,7 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 			msgCount:      batchPosition.MessageCount,
 			startMsgCount: batchPosition.MessageCount,
 			use4844:       use4844,
+			useCustomDA:   useCustomDA,
 		}
 		if b.config().CheckBatchCorrectness {
 			b.building.muxBackend = &simulatedMuxBackend{
@@ -1647,17 +1659,18 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 		return false, nil
 	}
 
-	sequencerMsg, err := b.building.segments.CloseAndGetBytes()
+	batchData, err := b.building.segments.CloseAndGetBytes()
 	defer func() {
 		b.building = nil // a closed batchSegments can't be reused
 	}()
 	if err != nil {
 		return false, err
 	}
-	if sequencerMsg == nil {
+	if batchData == nil {
 		log.Debug("BatchPoster: batch nil", "sequence nr.", batchPosition.NextSeqNum, "from", batchPosition.MessageCount, "prev delayed", batchPosition.DelayedMessageCount)
 		return false, nil
 	}
+	var sequencerMsg []byte
 
 	if b.dapWriter != nil {
 		if !b.redisLock.AttemptLock(ctx) {
@@ -1682,14 +1695,21 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 			return false, fmt.Errorf("%w: batch position changed from %v to %v while creating batch", storage.ErrStorageRace, batchPosition, actualBatchPosition)
 		}
 		// #nosec G115
-		sequencerMsg, err = b.dapWriter.Store(ctx, sequencerMsg, uint64(time.Now().Add(config.DASRetentionPeriod).Unix()), config.DisableDapFallbackStoreDataOnChain)
+		sequencerMsg, err = b.dapWriter.Store(ctx, batchData, uint64(time.Now().Add(config.DASRetentionPeriod).Unix()))
 		if err != nil {
-			batchPosterDAFailureCounter.Inc(1)
-			return false, err
+			if config.DisableDapFallbackStoreDataOnChain {
+				batchPosterDAFailureCounter.Inc(1)
+				return false, err
+			} else {
+				// DAP on-chain fallback storage
+				sequencerMsg = batchData
+			}
 		}
 
 		batchPosterDASuccessCounter.Inc(1)
 		batchPosterDALastSuccessfulActionGauge.Update(time.Now().Unix())
+	} else {
+		sequencerMsg = batchData
 	}
 
 	prevMessageCount := batchPosition.MessageCount
@@ -1878,6 +1898,7 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 		"currentDelayed", b.building.segments.delayedMsg,
 		"totalSegments", len(b.building.segments.rawSegments),
 		"numBlobs", len(kzgBlobs),
+		"useCustomDA", b.building.useCustomDA,
 	)
 
 	recentlyHitL1Bounds := time.Since(b.lastHitL1Bounds) < config.PollInterval*3

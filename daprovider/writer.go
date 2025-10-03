@@ -14,6 +14,5 @@ type Writer interface {
 		ctx context.Context,
 		message []byte,
 		timeout uint64,
-		disableFallbackStoreDataOnChain bool,
 	) ([]byte, error)
 }

@@ -371,6 +371,7 @@ func setupBoldStateProvider(t *testing.T, ctx context.Context, blockChallengeHei
 		nil,
 		sconf,
 		l2info,
+		false,
 	)
 
 	valnode.TestValidationConfig.UseJit = false
@@ -418,6 +419,7 @@ func setupBoldStateProvider(t *testing.T, ctx context.Context, blockChallengeHei
 		l2node.InboxTracker,
 		l2node.TxStreamer,
 		l2node.InboxReader,
+		nil,
 	)
 	Require(t, err)
 

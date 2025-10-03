@@ -72,6 +72,7 @@ import (
 	_ "github.com/offchainlabs/nitro/execution/nodeInterface"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/localgen"
+	"github.com/offchainlabs/nitro/solgen/go/ospgen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/solgen/go/upgrade_executorgen"
@@ -245,6 +246,13 @@ func ExecConfigDefaultTest(t *testing.T, stateScheme string) *gethexec.Config {
 	return &config
 }
 
+// DeployConfig contains options for deployOnParentChain
+type DeployConfig struct {
+	DeployBold           bool
+	DeployReferenceDA    bool
+	DelayBufferThreshold uint64
+}
+
 type NodeBuilder struct {
 	// NodeBuilder configuration
 	ctx           context.Context
@@ -276,6 +284,7 @@ type NodeBuilder struct {
 	withProdConfirmPeriodBlocks bool
 	delayBufferThreshold        uint64
 	withL1ClientWrapper         bool
+	deployReferenceDA           bool
 
 	// Created nodes
 	L1 *TestClient
@@ -407,6 +416,11 @@ func (b *NodeBuilder) WithExtraArchs(targets []string) *NodeBuilder {
 // Setting the threshold to zero disabled the delay buffer (default behaviour).
 func (b *NodeBuilder) WithDelayBuffer(threshold uint64) *NodeBuilder {
 	b.delayBufferThreshold = threshold
+	return b
+}
+
+func (b *NodeBuilder) WithReferenceDA() *NodeBuilder {
+	b.deployReferenceDA = true
 	return b
 }
 
@@ -597,6 +611,12 @@ func (b *NodeBuilder) BuildL1(t *testing.T) {
 	b.L1Info, b.L1.Client, b.L1.L1Backend, b.L1.Stack, b.L1.ClientWrapper = createTestL1BlockChain(t, b.L1Info, b.withL1ClientWrapper)
 	locator, err := server_common.NewMachineLocator(b.valnodeConfig.Wasm.RootPath)
 	Require(t, err)
+	deployConfig := DeployConfig{
+		DeployBold:           b.deployBold,
+		DeployReferenceDA:    b.deployReferenceDA,
+		DelayBufferThreshold: b.delayBufferThreshold,
+	}
+	t.Logf("BuildL1 deployConfig: DeployBold=%v, DeployReferenceDA=%v", deployConfig.DeployBold, deployConfig.DeployReferenceDA)
 	b.addresses, b.initMessage = deployOnParentChain(
 		t,
 		b.ctx,
@@ -607,8 +627,7 @@ func (b *NodeBuilder) BuildL1(t *testing.T) {
 		locator.LatestWasmModuleRoot(),
 		b.withProdConfirmPeriodBlocks,
 		true,
-		b.deployBold,
-		b.delayBufferThreshold,
+		deployConfig,
 	)
 	b.L1.cleanup = func() { requireClose(t, b.L1.Stack) }
 }
@@ -704,6 +723,11 @@ func (b *NodeBuilder) BuildL3OnL2(t *testing.T) func() {
 
 	parentChainReaderConfig := headerreader.TestConfig
 	parentChainReaderConfig.Dangerous.WaitForTxApprovalSafePoll = 0
+	deployConfig := DeployConfig{
+		DeployBold:           b.deployBold,
+		DeployReferenceDA:    false, // L3 doesn't need ReferenceDA
+		DelayBufferThreshold: 0,
+	}
 	b.l3Addresses, b.l3InitMessage = deployOnParentChain(
 		t,
 		b.ctx,
@@ -714,8 +738,7 @@ func (b *NodeBuilder) BuildL3OnL2(t *testing.T) func() {
 		locator.LatestWasmModuleRoot(),
 		b.l3Config.withProdConfirmPeriodBlocks,
 		false,
-		b.deployBold,
-		0,
+		deployConfig,
 	)
 
 	b.L3 = buildOnParentChain(
@@ -747,6 +770,19 @@ func (b *NodeBuilder) BuildL3OnL2(t *testing.T) func() {
 }
 
 func (b *NodeBuilder) BuildL2OnL1(t *testing.T) func() {
+	// If ReferenceDA is deployed, set the validator contract address in nodeConfig
+	if b.deployReferenceDA {
+		if validatorInfo, ok := b.L1Info.Accounts["ReferenceDAProofValidator"]; ok {
+			validatorAddr := validatorInfo.Address
+			if validatorAddr != (common.Address{}) {
+				b.nodeConfig.DA.ReferenceDA.ValidatorContract = validatorAddr.Hex()
+				t.Logf("Using ReferenceDAProofValidator contract address in nodeConfig: %s", validatorAddr.Hex())
+			}
+		} else {
+			t.Logf("ReferenceDAProofValidator not found in L1Info.Accounts")
+		}
+	}
+
 	b.L2 = buildOnParentChain(
 		t,
 		b.ctx,
@@ -1526,8 +1562,7 @@ func deployOnParentChain(
 	wasmModuleRoot common.Hash,
 	prodConfirmPeriodBlocks bool,
 	chainSupportsBlobs bool,
-	deployBold bool,
-	delayBufferThreshold uint64,
+	deployConfig DeployConfig,
 ) (*chaininfo.RollupAddresses, *arbostypes.ParsedInitMessage) {
 	var fundingTxs []*types.Transaction
 	for _, acct := range DefaultChainAccounts {
@@ -1553,8 +1588,26 @@ func deployOnParentChain(
 
 	nativeToken := common.Address{}
 	maxDataSize := big.NewInt(117964)
+
+	// Deploy ReferenceDA contracts if enabled (needed for both BOLD and legacy)
+	if deployConfig.DeployReferenceDA {
+		t.Logf("Deploying ReferenceDA contracts (deployConfig.DeployReferenceDA = true)")
+		// Deploy ReferenceDAProofValidator with trusted signers
+		// Using Sequencer as the trusted signer since it's the one signing certificates
+		trustedSigners := []common.Address{parentChainInfo.GetAddress("Sequencer")}
+		refDAValidatorAddr, tx, _, err := ospgen.DeployReferenceDAProofValidator(
+			&parentChainTransactionOpts, parentChainReader.Client(), trustedSigners)
+		Require(t, err)
+		_, err = EnsureTxSucceeded(ctx, parentChainReader.Client(), tx)
+		Require(t, err)
+
+		// Store the validator address in parentChainInfo
+		parentChainInfo.SetContract("ReferenceDAProofValidator", refDAValidatorAddr)
+		t.Logf("Set ReferenceDAProofValidator contract address: %s", refDAValidatorAddr.Hex())
+	}
+
 	var addresses *chaininfo.RollupAddresses
-	if deployBold {
+	if deployConfig.DeployBold {
 		stakeToken, tx, _, err := localgen.DeployTestWETH9(
 			&parentChainTransactionOpts,
 			parentChainReader.Client(),
@@ -1571,9 +1624,9 @@ func deployOnParentChain(
 			EndHistoryRoot: [32]byte{},
 		}
 		bufferConfig := rollupgen.BufferConfig{
-			Threshold:            delayBufferThreshold, // number of blocks
-			Max:                  14400,                // 2 days of blocks
-			ReplenishRateInBasis: 500,                  // 5%
+			Threshold:            deployConfig.DelayBufferThreshold, // number of blocks
+			Max:                  14400,                             // 2 days of blocks
+			ReplenishRateInBasis: 500,                               // 5%
 		}
 		cfg := rollupgen.Config{
 			MiniStakeValues:        miniStakeValues,
@@ -1603,19 +1656,62 @@ func deployOnParentChain(
 			ChallengeGracePeriodBlocks:   3,
 			BufferConfig:                 bufferConfig,
 		}
+
+		// Deploy custom OSP for ReferenceDA if enabled
+		var customOspAddr common.Address
+		if deployConfig.DeployReferenceDA {
+			refDAValidatorAddr := parentChainInfo.GetAddress("ReferenceDAProofValidator")
+
+			// Deploy custom OneStepProverHostIo with the ReferenceDAProofValidator
+			ospHostIoAddr, tx, _, err := ospgen.DeployOneStepProverHostIo(
+				&parentChainTransactionOpts, parentChainReader.Client(), refDAValidatorAddr)
+			Require(t, err)
+			_, err = EnsureTxSucceeded(ctx, parentChainReader.Client(), tx)
+			Require(t, err)
+
+			// Deploy the other OSP contracts
+			osp0Addr, tx, _, err := ospgen.DeployOneStepProver0(&parentChainTransactionOpts, parentChainReader.Client())
+			Require(t, err)
+			_, err = EnsureTxSucceeded(ctx, parentChainReader.Client(), tx)
+			Require(t, err)
+
+			ospMemAddr, tx, _, err := ospgen.DeployOneStepProverMemory(&parentChainTransactionOpts, parentChainReader.Client())
+			Require(t, err)
+			_, err = EnsureTxSucceeded(ctx, parentChainReader.Client(), tx)
+			Require(t, err)
+
+			ospMathAddr, tx, _, err := ospgen.DeployOneStepProverMath(&parentChainTransactionOpts, parentChainReader.Client())
+			Require(t, err)
+			_, err = EnsureTxSucceeded(ctx, parentChainReader.Client(), tx)
+			Require(t, err)
+
+			// Deploy custom OneStepProofEntry with all the OSP contracts
+			customOspAddr, tx, _, err = ospgen.DeployOneStepProofEntry(
+				&parentChainTransactionOpts, parentChainReader.Client(),
+				osp0Addr, ospMemAddr, ospMathAddr, ospHostIoAddr)
+			Require(t, err)
+			_, err = EnsureTxSucceeded(ctx, parentChainReader.Client(), tx)
+			Require(t, err)
+		}
+
 		wrappedClient := butil.NewBackendWrapper(parentChainReader.Client(), rpc.LatestBlockNumber)
+		rollupStackConfig := setup.RollupStackConfig{
+			UseMockBridge:          false,
+			UseMockOneStepProver:   false,
+			UseBlobs:               chainSupportsBlobs,
+			MinimumAssertionPeriod: 0,
+		}
+		if deployConfig.DeployReferenceDA {
+			rollupStackConfig.CustomOsp = customOspAddr
+		}
+
 		boldAddresses, err := setup.DeployFullRollupStack(
 			ctx,
 			wrappedClient,
 			&parentChainTransactionOpts,
 			parentChainInfo.GetAddress("Sequencer"),
 			cfg,
-			setup.RollupStackConfig{
-				UseMockBridge:          false,
-				UseMockOneStepProver:   false,
-				UseBlobs:               chainSupportsBlobs,
-				MinimumAssertionPeriod: 0,
-			},
+			rollupStackConfig,
 		)
 		Require(t, err)
 		addresses = &chaininfo.RollupAddresses{
@@ -1882,6 +1978,10 @@ func setupConfigWithDAS(
 		chainConfig = chaininfo.ArbitrumDevTestDASChainConfig()
 	case "onchain":
 		enableDas = false
+	case "referenceda":
+		// For referenceda, we use DAS chain config but will configure embedded referenceda later
+		chainConfig = chaininfo.ArbitrumDevTestDASChainConfig()
+		enableDas = false // We'll use referenceda instead of traditional DAS
 	default:
 		Fatal(t, "unknown storage type")
 	}
@@ -1911,7 +2011,7 @@ func setupConfigWithDAS(
 	var daWriter dasutil.DASWriter
 	var daHealthChecker das.DataAvailabilityServiceHealthChecker
 	var signatureVerifier *das.SignatureVerifier
-	if dasModeString != "onchain" {
+	if dasModeString != "onchain" && dasModeString != "referenceda" {
 		daReader, daWriter, signatureVerifier, daHealthChecker, lifecycleManager, err = das.CreateDAComponentsForDaserver(ctx, dasConfig, nil, nil)
 
 		Require(t, err)
@@ -1934,6 +2034,12 @@ func setupConfigWithDAS(
 		l1NodeConfigA.DataAvailability.RestAggregator.Enable = true
 		l1NodeConfigA.DataAvailability.RestAggregator.Urls = []string{"http://" + restLis.Addr().String()}
 		l1NodeConfigA.DataAvailability.ParentChainNodeURL = "none"
+	} else if dasModeString == "referenceda" {
+		// Configure for embedded referenceda mode
+		l1NodeConfigA.DA.Mode = "referenceda"
+		l1NodeConfigA.DA.ReferenceDA.Enable = true
+		l1NodeConfigA.DataAvailability.Enable = false
+		// Note: BatchPoster configuration is handled by the specific test that needs it
 	}
 
 	return chainConfig, l1NodeConfigA, lifecycleManager, dbPath, dasSignerKey

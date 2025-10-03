@@ -7,10 +7,12 @@ import (
 	"crypto/sha256"
 	"fmt"
 
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 
 	"github.com/offchainlabs/nitro/daprovider"
+	"github.com/offchainlabs/nitro/solgen/go/ospgen"
 	"github.com/offchainlabs/nitro/util/signature"
 )
 
@@ -95,8 +97,7 @@ func (c *Certificate) RecoverSigner() (common.Address, error) {
 }
 
 // ValidateWithContract checks if the certificate is signed by a trusted signer using the contract
-// TODO: Uncomment the following once we have merged customda contracts changes.
-/*
+// TODO: Until we have merged customda contracts changes, this will need to be commented out.
 func (c *Certificate) ValidateWithContract(validator *ospgen.ReferenceDAProofValidator, opts *bind.CallOpts) error {
 	signer, err := c.RecoverSigner()
 	if err != nil {
@@ -113,5 +114,4 @@ func (c *Certificate) ValidateWithContract(validator *ospgen.ReferenceDAProofVal
 	}
 
 	return nil
-    }
-*/
+}

@@ -51,7 +51,9 @@ func TestDAS_BasicAggregationLocal(t *testing.T) {
 		backends = append(backends, *details)
 	}
 
-	aggregator, err := NewAggregator(ctx, DataAvailabilityConfig{RPCAggregator: AggregatorConfig{AssumedHonest: 1, EnableChunkedStore: true}, ParentChainNodeURL: "none"}, backends)
+	aggregatorConfig := DefaultAggregatorConfig
+	aggregatorConfig.AssumedHonest = 1
+	aggregator, err := NewAggregator(ctx, DataAvailabilityConfig{RPCAggregator: aggregatorConfig, ParentChainNodeURL: "none"}, backends)
 	Require(t, err)
 
 	rawMsg := []byte("It's time for you to see the fnords.")
@@ -205,10 +207,12 @@ func testConfigurableStorageFailures(t *testing.T, shouldFailAggregation bool) {
 		backends = append(backends, *details)
 	}
 
+	aggregatorConfig := DefaultAggregatorConfig
+	aggregatorConfig.AssumedHonest = assumedHonest
 	aggregator, err := NewAggregator(
 		ctx,
 		DataAvailabilityConfig{
-			RPCAggregator:      AggregatorConfig{AssumedHonest: assumedHonest, EnableChunkedStore: true},
+			RPCAggregator:      aggregatorConfig,
 			ParentChainNodeURL: "none",
 			RequestTimeout:     time.Millisecond * 2000,
 		}, backends)
