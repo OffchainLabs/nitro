@@ -13,10 +13,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/rpc"
-	"github.com/stretchr/testify/require"
 
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/util/signature"
@@ -52,7 +53,7 @@ func TestDataStreamingProtocol(t *testing.T) {
 		testhelpers.RequireImpl(t, err)
 		// Ensure safe conversion to int before multiplying
 		require.LessOrEqual(t, chunkSize, uint64(math.MaxInt/3))
-		test(t, int(chunkSize)*3, 0, 1)
+		test(t, int(chunkSize)*3, 0, 1) //nolint:gosec
 	})
 }
 
