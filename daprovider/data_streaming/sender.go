@@ -57,7 +57,7 @@ func TestDataStreamerConfig(rpcMethods DataStreamingRPCMethods) DataStreamerConf
 	}
 }
 
-func DataStreamerConfigAddOptions(prefix string, f *pflag.FlagSet, defaultRpcMethods *DataStreamingRPCMethods) {
+func DataStreamerConfigAddOptions(prefix string, f *pflag.FlagSet, defaultRpcMethods DataStreamingRPCMethods) {
 	f.Int(prefix+".max-store-chunk-body-size", DefaultHttpBodyLimit, "maximum HTTP body size for chunked store requests")
 	f.Duration(prefix+".base-retry-delay", DefaultBaseRetryDelay, "base delay for retrying failed RPC calls")
 	f.Duration(prefix+".max-retry-delay", DefaultMaxRetryDelay, "maximum delay for retrying failed RPC calls")
@@ -83,7 +83,7 @@ type DataStreamingRPCMethods struct {
 	FinalizeStream string `koanf:"finalize-stream"`
 }
 
-func DataStreamingRPCMethodsAddOptions(prefix string, f *pflag.FlagSet, defaultRpcMethods *DataStreamingRPCMethods) {
+func DataStreamingRPCMethodsAddOptions(prefix string, f *pflag.FlagSet, defaultRpcMethods DataStreamingRPCMethods) {
 	f.String(prefix+".start-stream", defaultRpcMethods.StartStream, "name of the RPC method to start a chunked data stream")
 	f.String(prefix+".stream-chunk", defaultRpcMethods.StreamChunk, "name of the RPC method to send a chunk of data")
 	f.String(prefix+".finalize-stream", defaultRpcMethods.FinalizeStream, "name of the RPC method to finalize a chunked data stream")

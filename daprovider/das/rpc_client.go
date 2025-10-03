@@ -52,10 +52,10 @@ type DASRPCClientConfig struct {
 	DataStream         data_streaming.DataStreamerConfig `koanf:"data-stream"`
 }
 
-func DASRPCClientConfigAddOptions(prefix string, f *pflag.FlagSet, defaultDataStreamRpcMethods *data_streaming.DataStreamingRPCMethods) {
+func DASRPCClientConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".server-url", "", "URL of DAS server to connect to")
 	f.Bool(prefix+".enable-chunked-store", true, "enable data to be sent to DAS in chunks instead of all at once")
-	data_streaming.DataStreamerConfigAddOptions(prefix+".data-stream", f, defaultDataStreamRpcMethods)
+	data_streaming.DataStreamerConfigAddOptions(prefix+".data-stream", f, DefaultDataStreamRpcMethods)
 }
 
 var DefaultDataStreamRpcMethods = data_streaming.DataStreamingRPCMethods{

@@ -42,7 +42,7 @@ var DefaultClientConfig = ClientConfig{
 		ArgLogLimit:               2048,
 		WebsocketMessageSizeLimit: 256 * 1024 * 1024,
 	},
-	DataStream: data_streaming.DefaultDataStreamerConfig(defaultStreamRpcMethods),
+	DataStream: data_streaming.DefaultDataStreamerConfig(DefaultStreamRpcMethods),
 }
 
 func TestClientConfig(serverUrl string) *ClientConfig {
@@ -50,11 +50,11 @@ func TestClientConfig(serverUrl string) *ClientConfig {
 		Enable:     true,
 		WithWriter: true,
 		RPC:        rpcclient.ClientConfig{URL: serverUrl},
-		DataStream: data_streaming.TestDataStreamerConfig(defaultStreamRpcMethods),
+		DataStream: data_streaming.TestDataStreamerConfig(DefaultStreamRpcMethods),
 	}
 }
 
-var defaultStreamRpcMethods = data_streaming.DataStreamingRPCMethods{
+var DefaultStreamRpcMethods = data_streaming.DataStreamingRPCMethods{
 	StartStream:    "daprovider_startChunkedStore",
 	StreamChunk:    "daprovider_sendChunk",
 	FinalizeStream: "daprovider_commitChunkedStore",
@@ -64,7 +64,7 @@ func ClientConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultClientConfig.Enable, "enable daprovider client")
 	f.Bool(prefix+".with-writer", DefaultClientConfig.WithWriter, "implies if the daprovider rpc server supports writer interface")
 	rpcclient.RPCClientAddOptions(prefix+".rpc", f, &DefaultClientConfig.RPC)
-	data_streaming.DataStreamerConfigAddOptions(prefix+".data-stream", f, &defaultStreamRpcMethods)
+	data_streaming.DataStreamerConfigAddOptions(prefix+".data-stream", f, DefaultStreamRpcMethods)
 }
 
 func NewClient(ctx context.Context, config *ClientConfig, payloadSigner *data_streaming.PayloadSigner) (*Client, error) {
