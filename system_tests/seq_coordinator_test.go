@@ -44,7 +44,7 @@ func initRedisForTest(t *testing.T, ctx context.Context, redisUrl string, nodeNa
 	redisClient.Del(ctx, redisutil.CHOSENSEQ_KEY, redisutil.MSG_COUNT_KEY)
 }
 
-func TestRedisSeqCoordinatorPriorities(t *testing.T) {
+func TestRedisSeqCoordinatorPrioritiesFlaky(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 

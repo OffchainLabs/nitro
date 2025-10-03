@@ -15,6 +15,7 @@ junitfile=""
 log=true
 race=false
 cover=false
+flaky=false
 while [[ $# -gt 0 ]]; do
   case $1 in
     --timeout)
@@ -59,12 +60,24 @@ while [[ $# -gt 0 ]]; do
       junitfile=$1
       shift
       ;;
+    --flaky)
+      flaky=true
+      shift
+      ;;
     *)
       echo "Invalid argument: $1"
       exit 1
       ;;
   esac
 done
+
+if [ "$flaky" == true ]; then
+  if [ "$run" != "" ]; then
+    run="Flaky/$run"
+  else
+    run="Flaky"
+  fi
+fi
 
 packages=$(go list ./...)
 for package in $packages; do
@@ -92,6 +105,10 @@ for package in $packages; do
 
   if [ "$run" != "" ]; then
     cmd="$cmd -run=$run"
+  fi
+
+  if [ "$flaky" == false ]; then
+    cmd="$cmd -skip=Flaky"
   fi
 
   if [ "$race" == true ]; then

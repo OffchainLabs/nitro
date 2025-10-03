@@ -722,7 +722,7 @@ func TestBatchPosterWithDelayProofsAndBacklog(t *testing.T) {
 	CheckBatchCount(t, builder, initialBatchCount+numBatches)
 }
 
-func TestBatchPosterL1SurplusMatchesBatchGas(t *testing.T) {
+func TestBatchPosterL1SurplusMatchesBatchGasFlaky(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
