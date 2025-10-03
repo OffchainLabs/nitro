@@ -119,6 +119,12 @@ func (c *Config) Validate() error {
 	if c.TransactionStreamer.TrackBlockMetadataFrom != 0 && !c.BlockMetadataFetcher.Enable {
 		log.Warn("track-block-metadata-from is set but blockMetadata fetcher is not enabled")
 	}
+	// Check that sync-interval is not more than msg-lag / 2
+	if c.ConsensusExecutionSyncer.SyncInterval > c.SyncMonitor.MsgLag/2 {
+		log.Warn("consensus-execution-syncer.sync-interval is more than half of sync-monitor.msg-lag, which may cause sync issues",
+			"sync-interval", c.ConsensusExecutionSyncer.SyncInterval,
+			"msg-lag", c.SyncMonitor.MsgLag)
+	}
 	return nil
 }
 

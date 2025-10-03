@@ -65,7 +65,6 @@ func TestEthSyncing(t *testing.T) {
 		attempt++
 	}
 
-	// TODO: Use Client.SyncProgressMap to see the full map
 	progress, err := testClientB.Client.SyncProgress(ctx)
 	Require(t, err)
 	if progress == nil {
