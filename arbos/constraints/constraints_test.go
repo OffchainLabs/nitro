@@ -5,79 +5,145 @@ package constraints
 
 import (
 	"testing"
-	"time"
+
+	"github.com/stretchr/testify/require"
 
 	"github.com/ethereum/go-ethereum/arbitrum/multigas"
 )
 
-func TestResourceConstraints(t *testing.T) {
+func TestResourceSetWithResource(t *testing.T) {
+	s := EmptyResourceSet()
+	s = s.WithResource(multigas.ResourceKindComputation)
+	require.True(t, s.HasResource(multigas.ResourceKindComputation))
+}
+
+func TestResourceSetWithResources(t *testing.T) {
+	s := EmptyResourceSet()
+	resources := []multigas.ResourceKind{
+		multigas.ResourceKindComputation,
+		multigas.ResourceKindStorageAccess,
+	}
+	s = s.WithResources(resources)
+	for _, r := range resources {
+		require.True(t, s.HasResource(r))
+	}
+}
+
+func TestResourceSetHasResource(t *testing.T) {
+	s := EmptyResourceSet()
+	require.False(t, s.HasResource(multigas.ResourceKindComputation))
+	s = s.WithResource(multigas.ResourceKindComputation)
+	require.True(t, s.HasResource(multigas.ResourceKindComputation))
+}
+
+func TestResourceSetGetResources(t *testing.T) {
+	s := EmptyResourceSet()
+	resources := []multigas.ResourceKind{
+		multigas.ResourceKindComputation,
+		multigas.ResourceKindStorageAccess,
+	}
+	s = s.WithResources(resources)
+	retrieved := s.GetResources()
+	require.Equal(t, resources, retrieved)
+}
+
+func TestNewResourceConstraints(t *testing.T) {
 	rc := NewResourceConstraints()
+	require.NotNil(t, rc)
+	require.NotNil(t, rc.constraints)
+	require.Empty(t, rc.constraints)
+}
 
-	const (
-		minuteSecs = 60
-		daySecs    = 24 * 60 * 60
-		weekSecs   = 7 * daySecs
-		monthSecs  = 30 * daySecs
-	)
+func TestSetResourceConstraints(t *testing.T) {
+	rc := NewResourceConstraints()
+	resources := EmptyResourceSet().WithResource(multigas.ResourceKindComputation)
+	periodSecs := PeriodSecs(10)
+	targetPerSec := uint64(100)
 
-	// Adds a few constraints
-	rc.SetConstraint(multigas.ResourceKindComputation, minuteSecs, 5_000_000*minuteSecs)
-	rc.SetConstraint(multigas.ResourceKindComputation, weekSecs, 3_000_000*weekSecs)
-	rc.SetConstraint(multigas.ResourceKindHistoryGrowth, monthSecs, 1_000_000*monthSecs)
-	if got, want := len(rc[multigas.ResourceKindComputation]), 2; got != want {
-		t.Fatalf("unexpected number of computation constraints: got %v, want %v", got, want)
-	}
-	if got, want := rc[multigas.ResourceKindComputation][minuteSecs].period, time.Duration(minuteSecs)*time.Second; got != want {
-		t.Errorf("unexpected constraint period: got %v, want %v", got, want)
-	}
-	if got, want := rc[multigas.ResourceKindComputation][minuteSecs].target, uint64(5_000_000); got != want {
-		t.Errorf("unexpected constraint target: got %v, want %v", got, want)
-	}
-	if got, want := rc[multigas.ResourceKindComputation][weekSecs].period, time.Duration(weekSecs)*time.Second; got != want {
-		t.Errorf("unexpected constraint period: got %v, want %v", got, want)
-	}
-	if got, want := rc[multigas.ResourceKindComputation][weekSecs].target, uint64(3_000_000); got != want {
-		t.Errorf("unexpected constraint target: got %v, want %v", got, want)
-	}
-	if got, want := len(rc[multigas.ResourceKindHistoryGrowth]), 1; got != want {
-		t.Fatalf("unexpected number of history growth constraints: got %v, want %v", got, want)
-	}
-	if got, want := rc[multigas.ResourceKindHistoryGrowth][monthSecs].period, time.Duration(monthSecs)*time.Second; got != want {
-		t.Errorf("unexpected constraint period: got %v, want %v", got, want)
-	}
-	if got, want := rc[multigas.ResourceKindHistoryGrowth][monthSecs].target, uint64(1_000_000); got != want {
-		t.Errorf("unexpected constraint target: got %v, want %v", got, want)
-	}
-	if got, want := len(rc[multigas.ResourceKindStorageAccess]), 0; got != want {
-		t.Errorf("unexpected number of storage access constraints: got %v, want %v", got, want)
-	}
-	if got, want := len(rc[multigas.ResourceKindStorageGrowth]), 0; got != want {
-		t.Errorf("unexpected number of storage growth constraints: got %v, want %v", got, want)
+	rc.Set(resources, periodSecs, targetPerSec)
+
+	constraint := rc.Get(resources, periodSecs)
+	require.NotNil(t, constraint)
+	require.Equal(t, resources, constraint.Resources)
+	require.Equal(t, periodSecs, constraint.Period)
+	require.Equal(t, targetPerSec, constraint.TargetPerSec)
+}
+
+func TestGetResourceConstraints(t *testing.T) {
+	rc := NewResourceConstraints()
+	resources := EmptyResourceSet().WithResource(multigas.ResourceKindComputation)
+	periodSecs := PeriodSecs(10)
+	targetPerSec := uint64(100)
+
+	rc.Set(resources, periodSecs, targetPerSec)
+
+	// Test getting an existing constraint
+	constraint := rc.Get(resources, periodSecs)
+	require.NotNil(t, constraint)
+	require.Equal(t, resources, constraint.Resources)
+	require.Equal(t, periodSecs, constraint.Period)
+	require.Equal(t, targetPerSec, constraint.TargetPerSec)
+	require.Equal(t, uint64(0), constraint.Backlog)
+
+	// Test getting a non-existent constraint
+	nonExistentResources := EmptyResourceSet().WithResource(multigas.ResourceKindStorageAccess)
+	constraint = rc.Get(nonExistentResources, periodSecs)
+	require.Nil(t, constraint)
+}
+
+func TestClearResourceConstraints(t *testing.T) {
+	rc := NewResourceConstraints()
+	resources := EmptyResourceSet().WithResource(multigas.ResourceKindComputation)
+	periodSecs := PeriodSecs(10)
+	targetPerSec := uint64(100)
+
+	rc.Set(resources, periodSecs, targetPerSec)
+
+	// Ensure the constraint was set
+	constraint := rc.Get(resources, periodSecs)
+	require.NotNil(t, constraint)
+
+	// Clear the constraint
+	rc.Clear(resources, periodSecs)
+
+	// Ensure the constraint is gone
+	constraint = rc.Get(resources, periodSecs)
+	require.Nil(t, constraint)
+}
+
+func TestAllResourceConstraints(t *testing.T) {
+	rc := NewResourceConstraints()
+	resources1 := EmptyResourceSet().WithResource(multigas.ResourceKindComputation)
+	periodSecs1 := PeriodSecs(10)
+	targetPerSec1 := uint64(100)
+
+	resources2 := EmptyResourceSet().WithResource(multigas.ResourceKindStorageAccess)
+	periodSecs2 := PeriodSecs(20)
+	targetPerSec2 := uint64(200)
+
+	rc.Set(resources1, periodSecs1, targetPerSec1)
+	rc.Set(resources2, periodSecs2, targetPerSec2)
+
+	var constraints []*ResourceConstraint
+	for constraint := range rc.All() {
+		constraints = append(constraints, constraint)
 	}
 
-	// Updates a constraint
-	rc.SetConstraint(multigas.ResourceKindHistoryGrowth, monthSecs, 500_000*monthSecs)
-	if got, want := len(rc[multigas.ResourceKindHistoryGrowth]), 1; got != want {
-		t.Fatalf("unexpected number of history growth constraints: got %v, want %v", got, want)
-	}
-	if got, want := rc[multigas.ResourceKindHistoryGrowth][monthSecs].target, uint64(500_000); got != want {
-		t.Errorf("unexpected constraint target: got %v, want %v", got, want)
-	}
+	require.Len(t, constraints, 2)
 
-	// Clear constraints
-	rc.ClearConstraint(multigas.ResourceKindComputation, minuteSecs)
-	rc.ClearConstraint(multigas.ResourceKindComputation, weekSecs)
-	rc.ClearConstraint(multigas.ResourceKindHistoryGrowth, monthSecs)
-	if got, want := len(rc[multigas.ResourceKindComputation]), 0; got != want {
-		t.Errorf("unexpected number of computation constraints: got %v, want %v", got, want)
+	// Check if both constraints are present, order is not guaranteed
+	found1 := false
+	found2 := false
+	for _, c := range constraints {
+		if c.Resources == resources1 && c.Period == periodSecs1 {
+			require.Equal(t, targetPerSec1, c.TargetPerSec)
+			found1 = true
+		}
+		if c.Resources == resources2 && c.Period == periodSecs2 {
+			require.Equal(t, targetPerSec2, c.TargetPerSec)
+			found2 = true
+		}
 	}
-	if got, want := len(rc[multigas.ResourceKindHistoryGrowth]), 0; got != want {
-		t.Errorf("unexpected number of history growth constraints: got %v, want %v", got, want)
-	}
-	if got, want := len(rc[multigas.ResourceKindStorageAccess]), 0; got != want {
-		t.Errorf("unexpected number of storage access constraints: got %v, want %v", got, want)
-	}
-	if got, want := len(rc[multigas.ResourceKindStorageGrowth]), 0; got != want {
-		t.Errorf("unexpected number of storage growth constraints: got %v, want %v", got, want)
-	}
+	require.True(t, found1)
+	require.True(t, found2)
 }
