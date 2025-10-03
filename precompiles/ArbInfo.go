@@ -4,6 +4,7 @@
 package precompiles
 
 import (
+	"github.com/ethereum/go-ethereum/arbitrum/multigas"
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -16,7 +17,7 @@ type ArbInfo struct {
 
 // GetBalance retrieves an account's balance
 func (con ArbInfo) GetBalance(c ctx, evm mech, account addr) (huge, error) {
-	if err := c.Burn(params.BalanceGasEIP1884); err != nil {
+	if err := c.Burn(multigas.ResourceKindComputation, params.BalanceGasEIP1884); err != nil {
 		return nil, err
 	}
 	return evm.StateDB.GetBalance(account).ToBig(), nil
@@ -24,11 +25,12 @@ func (con ArbInfo) GetBalance(c ctx, evm mech, account addr) (huge, error) {
 
 // GetCode retrieves a contract's deployed code
 func (con ArbInfo) GetCode(c ctx, evm mech, account addr) ([]byte, error) {
-	if err := c.Burn(params.ColdSloadCostEIP2929); err != nil {
+	if err := c.Burn(multigas.ResourceKindStorageAccess, params.ColdSloadCostEIP2929); err != nil {
 		return nil, err
 	}
 	code := evm.StateDB.GetCode(account)
-	if err := c.Burn(params.CopyGas * arbmath.WordsForBytes(uint64(len(code)))); err != nil {
+	words := arbmath.WordsForBytes(uint64(len(code)))
+	if err := c.Burn(multigas.ResourceKindStorageAccess, params.CopyGas*words); err != nil {
 		return nil, err
 	}
 	return code, nil

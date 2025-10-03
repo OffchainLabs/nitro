@@ -69,9 +69,8 @@ func TestRetryableRedeem(t *testing.T) {
 	Require(t, err)
 
 	retryAddress := common.HexToAddress("6e")
-	_, gasLeft, err := Precompiles()[retryAddress].Call(
+	_, gasLeft, _, err := Precompiles()[retryAddress].Call(
 		redeemCalldata,
-		retryAddress,
 		retryAddress,
 		common.Address{},
 		big.NewInt(0),
