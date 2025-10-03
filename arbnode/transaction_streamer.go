@@ -482,14 +482,19 @@ func (s *TransactionStreamer) GetMessage(msgIdx arbutil.MessageIndex) (*arbostyp
 		return nil, err
 	}
 
-	err = message.Message.FillInBatchGasFields(func(batchNum uint64) ([]byte, error) {
-		ctx, err := s.GetContextSafe()
-		if err != nil {
-			return nil, err
-		}
-		data, _, err := s.inboxReader.GetSequencerMessageBytes(ctx, batchNum)
-		return data, err
-	})
+	if s.inboxReader != nil {
+		err = message.Message.FillInBatchGasFields(func(batchNum uint64) ([]byte, error) {
+			ctx, err := s.GetContextSafe()
+			if err != nil {
+				return nil, err
+			}
+			data, _, err := s.inboxReader.GetSequencerMessageBytes(ctx, batchNum)
+			return data, err
+		})
+	} else {
+		// Without an inbox reader, we can't fetch batch data; skip best-effort filling.
+		// err remains nil here intentionally.
+	}
 	if err != nil {
 		return nil, err
 	}
