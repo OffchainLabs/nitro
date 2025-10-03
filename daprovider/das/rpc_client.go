@@ -47,15 +47,15 @@ func nilSigner(_ []byte) ([]byte, error) {
 
 // lint:require-exhaustive-initialization
 type DASRPCClientConfig struct {
-	ServerUrl          string
-	EnableChunkedStore bool
-	DataStreamConfig   data_streaming.DataStreamerConfig
+	ServerUrl          string                            `koanf:"url"`
+	EnableChunkedStore bool                              `koanf:"enable-chunked-store"`
+	DataStreamConfig   data_streaming.DataStreamerConfig `koanf:"data-stream"`
 }
 
 func DASRPCClientConfigAddOptions(prefix string, f *pflag.FlagSet, defaultDataStreamRpcMethods *data_streaming.DataStreamingRPCMethods) {
-	f.String(prefix+"url", "", "URL of DAS server to connect to")
-	f.Bool(prefix+"enable-chunked-store", true, "enable data to be sent to DAS in chunks instead of all at once")
-	data_streaming.DataStreamerConfigAddOptions(prefix+"data-stream", f, defaultDataStreamRpcMethods)
+	f.String(prefix+".url", "", "URL of DAS server to connect to")
+	f.Bool(prefix+".enable-chunked-store", true, "enable data to be sent to DAS in chunks instead of all at once")
+	data_streaming.DataStreamerConfigAddOptions(prefix+".data-stream", f, defaultDataStreamRpcMethods)
 }
 
 var DefaultDataStreamRpcMethods = data_streaming.DataStreamingRPCMethods{
