@@ -8,6 +8,8 @@ import (
 	"iter"
 
 	"github.com/ethereum/go-ethereum/arbitrum/multigas"
+
+	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
 // PeriodSecs is the period in seconds for a resource constraint to reach the target.
@@ -52,6 +54,18 @@ type ResourceConstraint struct {
 	Period       PeriodSecs
 	TargetPerSec uint64
 	Backlog      uint64
+}
+
+// AddToBacklog increases the constraint backlog given the multi-dimensional gas used.
+func (c *ResourceConstraint) AddToBacklog(gasUsed multigas.MultiGas) {
+	for _, resource := range c.Resources.GetResources() {
+		c.Backlog = arbmath.SaturatingUAdd(c.Backlog, gasUsed.Get(resource))
+	}
+}
+
+// RemoveFromBacklog decreases the backlog by its target given the amount of time passed.
+func (c *ResourceConstraint) RemoveFromBacklog(timeElapsed uint64) {
+	c.Backlog = arbmath.SaturatingUSub(c.Backlog, timeElapsed*c.TargetPerSec)
 }
 
 // constraintKey identifies a resource constraint. There can be only one constraint given the
