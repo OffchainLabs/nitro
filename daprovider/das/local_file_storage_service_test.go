@@ -8,6 +8,10 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os"
+	"path/filepath"
+	"reflect"
+	"sort"
 	"testing"
 	"time"
 
@@ -225,4 +229,78 @@ func TestExpiryDuplicates(t *testing.T) {
 	// We've expired the "f"
 	pruneCountRemaining(t, &s.layout, afterNow.Add(3*time.Second*expiryDivisor), 0)
 	countTimestampEntries(t, &s.layout, afterNow.Add(1000*time.Hour), 0)
+}
+
+// --- Tests for readDirNamesFiltered helper ---
+
+func TestReadDirNamesFiltered_NonExistentPath(t *testing.T) {
+	tmp := t.TempDir()
+	missing := filepath.Join(tmp, "does-not-exist")
+
+	names, err := readDirNamesFiltered(missing, true)
+	if err != nil {
+		t.Fatalf("expected nil error for non-existent path, got %v", err)
+	}
+	if len(names) != 0 {
+		t.Fatalf("expected empty list for non-existent path, got %v", names)
+	}
+}
+
+func TestReadDirNamesFiltered_NonDirectory(t *testing.T) {
+	tmp := t.TempDir()
+	filePath := filepath.Join(tmp, "file.txt")
+	if err := os.WriteFile(filePath, []byte("content"), 0o600); err != nil {
+		t.Fatalf("failed creating file: %v", err)
+	}
+
+	names, err := readDirNamesFiltered(filePath, true)
+	if err != nil {
+		t.Fatalf("expected nil error for non-directory path, got %v", err)
+	}
+	if len(names) != 0 {
+		t.Fatalf("expected empty list for non-directory path, got %v", names)
+	}
+}
+
+func TestReadDirNamesFiltered_FilterDirsAndFiles(t *testing.T) {
+	tmp := t.TempDir()
+	// Create entries: dirA (dir), fileB (file), dirC (dir), fileD (file)
+	dirA := filepath.Join(tmp, "dirA")
+	if err := os.Mkdir(dirA, 0o700); err != nil {
+		t.Fatalf("failed creating dirA: %v", err)
+	}
+	fileB := filepath.Join(tmp, "fileB")
+	if err := os.WriteFile(fileB, []byte("b"), 0o600); err != nil {
+		t.Fatalf("failed creating fileB: %v", err)
+	}
+	dirC := filepath.Join(tmp, "dirC")
+	if err := os.Mkdir(dirC, 0o700); err != nil {
+		t.Fatalf("failed creating dirC: %v", err)
+	}
+	fileD := filepath.Join(tmp, "fileD")
+	if err := os.WriteFile(fileD, []byte("d"), 0o600); err != nil {
+		t.Fatalf("failed creating fileD: %v", err)
+	}
+
+	// Expect only directories when wantDirs = true
+	dirs, err := readDirNamesFiltered(tmp, true)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	sort.Strings(dirs)
+	expectedDirs := []string{"dirA", "dirC"}
+	if !reflect.DeepEqual(dirs, expectedDirs) {
+		t.Fatalf("expected %v dirs, got %v", expectedDirs, dirs)
+	}
+
+	// Expect only files when wantDirs = false
+	files, err := readDirNamesFiltered(tmp, false)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	sort.Strings(files)
+	expectedFiles := []string{"fileB", "fileD"}
+	if !reflect.DeepEqual(files, expectedFiles) {
+		t.Fatalf("expected %v files, got %v", expectedFiles, files)
+	}
 }
