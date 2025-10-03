@@ -26,4 +26,4 @@ var (
 	HeadMelStateBlockNumKey     []byte = []byte("_headMelStateBlockNum")        // contains the latest computed MEL state's parent chain block number
 )
 
-const CurrentDbSchemaVersion uint64 = 1
+const CurrentDbSchemaVersion uint64 = 2
