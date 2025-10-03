@@ -73,6 +73,9 @@ jobs:
     secrets: inherit
     permissions:
       pull-requests: write
+    with:
+      post_comment: true
+      upload_report: false
 
   can_proceed:
     name: can_proceed
