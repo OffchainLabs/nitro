@@ -26,7 +26,6 @@ func TestMultigasStylus_GetBytes32(t *testing.T) {
 	defer cancel()
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
-	builder.execConfig.ExposeMultiGas = true
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -60,7 +59,6 @@ func TestMultigasStylus_AccountAccessHostIOs(t *testing.T) {
 	defer cancel()
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
-	builder.execConfig.ExposeMultiGas = true
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -131,7 +129,6 @@ func TestMultigasStylus_EmitLog(t *testing.T) {
 	defer cancel()
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
-	builder.execConfig.ExposeMultiGas = true
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -204,7 +201,6 @@ func TestMultigasStylus_Create(t *testing.T) {
 	defer cancel()
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
-	builder.execConfig.ExposeMultiGas = true
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -227,15 +223,9 @@ func TestMultigasStylus_Create(t *testing.T) {
 	receipt1, err := EnsureTxSucceeded(ctx, l2client, tx)
 	require.NoError(t, err)
 
-	// Both computation and wasm computation should be charged
-	// TODO(NIT-3888): Check for exact values after correct computation/wasm attribution
-	require.GreaterOrEqual(t,
-		receipt1.MultiGasUsed.Get(multigas.ResourceKindWasmComputation),
-		params.CreateGas,
-	)
-	require.GreaterOrEqual(t,
+	require.Equal(t,
 		receipt1.MultiGasUsed.Get(multigas.ResourceKindComputation),
-		params.TxGas,
+		uint64(54127), // intrinsic + CREATE + keccak for init code
 	)
 
 	require.Equalf(t,
@@ -279,7 +269,6 @@ func TestMultigasStylus_Calls(t *testing.T) {
 	defer cancel()
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
-	builder.execConfig.ExposeMultiGas = true
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -353,7 +342,6 @@ func TestMultigasStylus_StorageWrite(t *testing.T) {
 	defer cancel()
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
-	builder.execConfig.ExposeMultiGas = true
 	cleanup := builder.Build(t)
 	defer cleanup()
 

@@ -17,7 +17,6 @@ func TestMultigasDataFromReceipts(t *testing.T) {
 	defer cancel()
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
-	builder.execConfig.ExposeMultiGas = true
 	cleanup := builder.Build(t)
 	defer cleanup()
 
