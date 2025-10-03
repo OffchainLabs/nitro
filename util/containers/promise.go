@@ -107,6 +107,12 @@ func NewPromise[R any](cancel func()) Promise[R] {
 	}
 }
 
+func NewPromiseWithContext[R any](parentCtx context.Context) (*Promise[R], context.Context) {
+	ctx, cancel := context.WithCancel(parentCtx)
+	promise := NewPromise[R](cancel)
+	return &promise, ctx
+}
+
 func NewReadyPromise[R any](val R, err error) PromiseInterface[R] {
 	promise := NewPromise[R](nil)
 	if err == nil {

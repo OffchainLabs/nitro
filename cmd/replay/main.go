@@ -240,11 +240,17 @@ func main() {
 		if backend.GetPositionWithinMessage() > 0 {
 			keysetValidationMode = daprovider.KeysetDontValidate
 		}
-		var dapReaders []daprovider.Reader
+		dapReaders := daprovider.NewReaderRegistry()
 		if dasReader != nil {
-			dapReaders = append(dapReaders, dasutil.NewReaderForDAS(dasReader, dasKeysetFetcher))
+			err = dapReaders.SetupDASReader(dasutil.NewReaderForDAS(dasReader, dasKeysetFetcher, keysetValidationMode))
+			if err != nil {
+				panic(fmt.Sprintf("Failed to register DAS reader: %v", err))
+			}
 		}
-		dapReaders = append(dapReaders, daprovider.NewReaderForBlobReader(&BlobPreimageReader{}))
+		err = dapReaders.SetupBlobReader(daprovider.NewReaderForBlobReader(&BlobPreimageReader{}))
+		if err != nil {
+			panic(fmt.Sprintf("Failed to register blob reader: %v", err))
+		}
 		inboxMultiplexer := arbstate.NewInboxMultiplexer(backend, delayedMessagesRead, dapReaders, keysetValidationMode)
 		ctx := context.Background()
 		message, err := inboxMultiplexer.Pop(ctx)
