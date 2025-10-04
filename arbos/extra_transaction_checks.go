@@ -23,7 +23,7 @@ func extraPreTxFilter(
 	sender common.Address,
 	l1Info *L1Info,
 ) error {
-	// TODO: implement additional pre-transaction checks
+	// No additional pre-transaction checks configured
 	return nil
 }
 
@@ -39,6 +39,6 @@ func extraPostTxFilter(
 	l1Info *L1Info,
 	result *core.ExecutionResult,
 ) error {
-	// TODO: implement additional post-transaction checks
+	// No additional post-transaction checks configured
 	return nil
 }
