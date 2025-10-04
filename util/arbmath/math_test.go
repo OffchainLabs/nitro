@@ -253,6 +253,111 @@ func TestApproxExpBasisPoints(t *testing.T) {
 	}
 }
 
+func TestLog2Floor(t *testing.T) {
+	type log2TestCase struct {
+		input    uint64
+		expected int
+	}
+
+	testCases := []log2TestCase{
+		{input: 0, expected: 0},
+		{input: 1, expected: 0},
+		{input: 2, expected: 1},
+		{input: 4, expected: 2},
+		{input: 6, expected: 2},
+		{input: 8, expected: 3},
+		{input: 24601, expected: 14},
+	}
+	for _, tc := range testCases {
+		t.Run(fmt.Sprintf("%d", tc.input), func(t *testing.T) {
+			res := Log2Floor(tc.input)
+			if res != tc.expected {
+				t.Errorf("Log2Floor(%d) = %d; want %d", tc.input, res, tc.expected)
+			}
+		})
+	}
+}
+
+func TestLog2FloorReturnsZeroForZero(t *testing.T) {
+	result := Log2Floor(0)
+	if result != 0 {
+		t.Errorf("Log2Floor(0) = %d; want 0", result)
+	}
+}
+
+func TestLog2Ceil(t *testing.T) {
+	type log2TestCase struct {
+		input    uint64
+		expected int
+	}
+
+	testCases := []log2TestCase{
+		{input: 0, expected: 0},
+		{input: 1, expected: 0},
+		{input: 2, expected: 1},
+		{input: 4, expected: 2},
+		{input: 6, expected: 3},
+		{input: 8, expected: 3},
+		{input: 24601, expected: 15},
+	}
+	for _, tc := range testCases {
+		t.Run(fmt.Sprintf("%d", tc.input), func(t *testing.T) {
+			res := Log2Ceil(tc.input)
+			if res != tc.expected {
+				t.Errorf("Log2Ceil(%d) = %d; want %d", tc.input, res, tc.expected)
+			}
+		})
+	}
+}
+
+func TestLog2CeilReturnsZeroForZero(t *testing.T) {
+	result := Log2Ceil(0)
+	if result != 0 {
+		t.Errorf("Log2Ceil(0) = %d; want 0", result)
+	}
+}
+
+func TestBisectionPoint(t *testing.T) {
+	type bpTestCase struct {
+		pre      uint64
+		post     uint64
+		expected uint64
+	}
+
+	errorTestCases := []bpTestCase{
+		{12, 13, 0},
+		{13, 9, 0},
+	}
+	for _, testCase := range errorTestCases {
+		_, err := Bisect(testCase.pre, testCase.post)
+		if err != ErrUnableToBisect {
+			t.Errorf("Bisect(%d, %d) should return ErrUnableToBisect", testCase.pre, testCase.post)
+		}
+	}
+	testCases := []bpTestCase{
+		{0, 2, 1},
+		{1, 3, 2},
+		{31, 33, 32},
+		{32, 34, 33},
+		{13, 15, 14},
+		{0, 9, 8},
+		{0, 13, 8},
+		{0, 15, 8},
+		{13, 17, 16},
+		{13, 31, 16},
+		{15, 31, 16},
+	}
+	for _, testCase := range testCases {
+		res, err := Bisect(testCase.pre, testCase.post)
+		if err != nil {
+			t.Errorf("Bisect(%d, %d) returned error: %v", testCase.pre, testCase.post, err)
+		}
+		if res != testCase.expected {
+			t.Errorf("Bisect(%d, %d) = %d; want %d", testCase.pre, testCase.post, res, testCase.expected)
+		}
+	}
+}
+
 func Fail(t *testing.T, printables ...interface{}) {
 	t.Helper()
 	testhelpers.FailImpl(t, printables...)
