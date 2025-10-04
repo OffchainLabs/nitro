@@ -121,6 +121,7 @@ func beaconRequest[T interface{}](b *BlobClient, ctx context.Context, beaconPath
 			return nil, err
 		}
 		if resp.StatusCode != http.StatusOK {
+			defer resp.Body.Close()
 			body, _ := io.ReadAll(resp.Body)
 			bodyStr := string(body)
 			log.Debug("beacon request returned response with non 200 OK status", "status", resp.Status, "body", bodyStr)
