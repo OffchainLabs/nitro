@@ -4,15 +4,14 @@
 package daprovider
 
 import (
-	"context"
+	"github.com/offchainlabs/nitro/util/containers"
 )
 
 type Writer interface {
 	// Store posts the batch data to the invoking DA provider
 	// And returns sequencerMsg which is later used to retrieve the batch data
 	Store(
-		ctx context.Context,
 		message []byte,
 		timeout uint64,
-	) ([]byte, error)
+	) containers.PromiseInterface[[]byte]
 }

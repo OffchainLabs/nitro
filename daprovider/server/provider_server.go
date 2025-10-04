@@ -251,6 +251,6 @@ func (s *WriterServer) CommitChunkedStore(ctx context.Context, messageId hexutil
 		return nil, err
 	}
 
-	serializedDACert, err := s.writer.Store(ctx, message, timeout)
+	serializedDACert, err := s.writer.Store(message, timeout).Await(ctx)
 	return &server_api.StoreResult{SerializedDACert: serializedDACert}, err
 }

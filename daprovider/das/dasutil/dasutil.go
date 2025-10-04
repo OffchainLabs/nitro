@@ -114,13 +114,17 @@ type writerForDAS struct {
 	dasWriter DASWriter
 }
 
-func (d *writerForDAS) Store(ctx context.Context, message []byte, timeout uint64) ([]byte, error) {
-	cert, err := d.dasWriter.Store(ctx, message, timeout)
-	if err != nil {
-		return nil, err
-	} else {
-		return Serialize(cert), nil
-	}
+func (d *writerForDAS) Store(message []byte, timeout uint64) containers.PromiseInterface[[]byte] {
+	promise, ctx := containers.NewPromiseWithContext[[]byte](context.Background())
+	go func() {
+		cert, err := d.dasWriter.Store(ctx, message, timeout)
+		if err != nil {
+			promise.ProduceError(err)
+		} else {
+			promise.Produce(Serialize(cert))
+		}
+	}()
+	return promise
 }
 
 var (

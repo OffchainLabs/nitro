@@ -24,7 +24,7 @@ func TestCustomDAProofEnhancement(t *testing.T) {
 	testPreimage := []byte("test custom DA preimage data")
 	hashBytes := sha256.Sum256(testPreimage)
 	hash := common.BytesToHash(hashBytes[:])
-	err := storage.Store(ctx, testPreimage)
+	err := storage.Store(testPreimage)
 	if err != nil {
 		t.Fatalf("Failed to store preimage: %v", err)
 	}

@@ -4,12 +4,12 @@
 package referenceda
 
 import (
-	"context"
 	"fmt"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 
+	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/signature"
 )
 
@@ -28,9 +28,15 @@ func NewWriter(signer signature.DataSignerFunc) *Writer {
 }
 
 func (w *Writer) Store(
-	ctx context.Context,
 	message []byte,
 	timeout uint64,
+) containers.PromiseInterface[[]byte] {
+	certificate, err := w.store(message)
+	return containers.NewReadyPromise(certificate, err)
+}
+
+func (w *Writer) store(
+	message []byte,
 ) ([]byte, error) {
 	if w.signer == nil {
 		return nil, fmt.Errorf("no signer configured")
@@ -43,7 +49,7 @@ func (w *Writer) Store(
 	}
 
 	// Store the message in the singleton storage
-	err = w.storage.Store(ctx, message)
+	err = w.storage.Store(message)
 	if err != nil {
 		return nil, err
 	}

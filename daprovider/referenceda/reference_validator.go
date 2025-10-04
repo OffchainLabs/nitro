@@ -45,7 +45,7 @@ func (v *Validator) generateReadPreimageProofInternal(ctx context.Context, certH
 	dataHash := cert.DataHash
 
 	// Get preimage from storage using SHA256 hash
-	preimage, err := v.storage.GetByHash(ctx, dataHash)
+	preimage, err := v.storage.GetByHash(dataHash)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get preimage: %w", err)
 	}
