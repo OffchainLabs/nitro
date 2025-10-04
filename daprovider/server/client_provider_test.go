@@ -27,7 +27,7 @@ func TestInteractionBetweenClientAndProviderServer_StoreSucceeds(t *testing.T) {
 
 	message := testhelpers.RandomizeSlice(make([]byte, 10)) // fits into the body limit
 
-	_, err := client.Store(ctx, message, 0)
+	_, err := client.Store(message, 0).Await(ctx)
 	testhelpers.RequireImpl(t, err)
 }
 
@@ -38,7 +38,7 @@ func TestInteractionBetweenClientAndProviderServer_StoreLongMessageSucceeds(t *t
 
 	message := testhelpers.RandomizeSlice(make([]byte, data_streaming.TestHttpBodyLimit+1))
 
-	_, err := client.Store(ctx, message, 0)
+	_, err := client.Store(message, 0).Await(ctx)
 	testhelpers.RequireImpl(t, err)
 }
 

@@ -128,7 +128,7 @@ func postBatchWithDA(
 	ctx := context.Background()
 
 	// Store data in DA provider
-	certificate, err := daWriter.Store(ctx, batchData, 3600)
+	certificate, err := daWriter.Store(batchData, 3600).Await(ctx)
 	Require(t, err)
 
 	// Certificate already contains the CustomDA header flag
