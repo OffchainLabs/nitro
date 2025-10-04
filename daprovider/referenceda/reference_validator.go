@@ -102,9 +102,8 @@ func (v *Validator) generateCertificateValidityProofInternal(ctx context.Context
 		return []byte{0, 0x01}, nil //nolint:nilerr // Invalid certificate, version 1
 	}
 
-	// TODO: Remove/uncomment the following once we have merged customda contracts changes.
-	// For now we will always just say the cert is untrusted.
-	_ = signer
+	// TODO: Implement trusted signer validation once customda contracts are merged
+	// For now, all certificates are considered untrusted for security
 	isTrusted := false
 	/*
 		// Create contract binding
