@@ -115,13 +115,32 @@ func (m limitedMarshal) String() string {
 		str = string(marshalled)
 	}
 	// #nosec G115
-	limit := int(m.limit)
-	if m.limit <= 0 || len(str) <= limit {
-		return str
-	}
-	prefix := str[:m.limit/2-1]
-	postfix := str[len(str)-limit/2+1:]
-	return fmt.Sprintf("%v..%v", prefix, postfix)
+    limit := int(m.limit)
+    if limit <= 0 || len(str) <= limit {
+        return str
+    }
+    // Ensure safe bounds for very small limits to avoid slice bound panics.
+    // We compute prefix/postfix lengths entirely in int domain to avoid uint underflow.
+    if limit < 2 {
+        return str
+    }
+    prefixLen := limit/2 - 1
+    if prefixLen < 0 {
+        prefixLen = 0
+    }
+    postfixLen := limit - prefixLen - 2 // account for two dots
+    if postfixLen < 0 {
+        postfixLen = 0
+    }
+    if prefixLen > len(str) {
+        prefixLen = len(str)
+    }
+    if postfixLen > len(str) {
+        postfixLen = len(str)
+    }
+    prefix := str[:prefixLen]
+    postfix := str[len(str)-postfixLen:]
+    return fmt.Sprintf("%v..%v", prefix, postfix)
 }
 
 type limitedArgumentsMarshal struct {
