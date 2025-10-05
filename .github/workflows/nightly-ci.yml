@@ -27,7 +27,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v4
         with:
           submodules: recursive
 
@@ -41,7 +41,7 @@ jobs:
         run: make -j build-node-deps
 
       - name: Lint
-        uses: golangci/golangci-lint-action@v8
+        uses: golangci/golangci-lint-action@v7
         with:
           version: latest
           skip-cache: true
@@ -94,13 +94,13 @@ jobs:
         run: ${{ github.workspace }}/.github/workflows/runExecutionSpecTests.sh
 
       - name: Archive detailed run log
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v3
         with:
           name: ${{ matrix.test-mode }}-full.log
           path: full.log
 
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v4
         with:
           fail_ci_if_error: false
           files: ./coverage.txt,./coverage-redis.txt

@@ -16,8 +16,8 @@ jobs:
     timeout-minutes: 10
 
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-go@v6
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
         with:
           go-version-file: "go.mod"
       - id: list
@@ -35,8 +35,8 @@ jobs:
         include: ${{fromJson(needs.list.outputs.fuzz-tests)}}
 
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-go@v6
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
         with:
           go-version-file: "go.mod"
       - uses: shogo82148/actions-go-fuzz/run@v1

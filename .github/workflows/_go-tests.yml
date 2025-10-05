@@ -19,7 +19,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v4
         with:
           submodules: recursive
 
@@ -83,7 +83,7 @@ jobs:
 
       - name: Upload coverage to Codecov
         if: matrix.test-mode == 'defaults'
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v4
         with:
           fail_ci_if_error: false
           files: ./coverage.txt,./coverage-redis.txt
@@ -139,7 +139,7 @@ jobs:
       # --------------------- ARCHIVE LOGS FOR ALL MODES ---------------------
 
       - name: Archive detailed run log
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v3
         with:
           name: ${{ matrix.test-mode }}-full.log
           path: full.log

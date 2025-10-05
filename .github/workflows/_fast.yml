@@ -9,7 +9,7 @@ jobs:
     runs-on: arbitrator-ci
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v4
         with:
           submodules: recursive
 
@@ -23,7 +23,7 @@ jobs:
         run: make -j8 build-node-deps
 
       - name: GolangCI Lint
-        uses: golangci/golangci-lint-action@v8
+        uses: golangci/golangci-lint-action@v7
         with:
           version: v2.5
 

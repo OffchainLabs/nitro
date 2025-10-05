@@ -25,24 +25,24 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v4
         with:
           submodules: recursive
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v2
         with:
           driver-opts: network=host
 
       - name: Cache Docker layers
-        uses: actions/cache@v4
+        uses: actions/cache@v3
         with:
           path: /tmp/.buildx-cache
           key: ${{ runner.os }}-buildx-${{ hashFiles('Dockerfile') }}
           restore-keys: ${{ runner.os }}-buildx-
 
       - name: Build nitro-node docker
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v5
         with:
           target: nitro-node
           push: true
@@ -52,7 +52,7 @@ jobs:
           cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
 
       - name: Build nitro-node-dev docker
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v5
         with:
           target: nitro-node-dev
           push: true
@@ -82,7 +82,7 @@ jobs:
           echo -e "\x1b[1;34mWAVM module root:\x1b[0m $module_root"
 
       - name: Upload WAVM machine as artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v3
         with:
           name: wavm-machine-${{ steps.module-root.outputs.module-root }}
           path: target/machines/latest/*

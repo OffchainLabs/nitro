@@ -12,16 +12,16 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v4
 
       - name: Download Go JUnit reports
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v3
         with:
           name: go-junit-reports
           path: downloaded-reports/go
 
       - name: Download Rust JUnit reports
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v3
         continue-on-error: true # Rust pipeline might have not been run
         with:
           name: rust-junit-reports
