@@ -56,6 +56,7 @@ import (
 	"github.com/offchainlabs/nitro/util/redisutil"
 	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/signature"
+	"github.com/offchainlabs/nitro/util/testhelpers/env"
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
 
@@ -204,6 +205,10 @@ func ConfigDefaultL1NonSequencerTest() *Config {
 	config.Staker.Enable = false
 	config.BlockValidator.ValidationServerConfigs = []rpcclient.ClientConfig{{URL: ""}}
 	config.Bold.MinimumGapToParentAssertion = 0
+	// Disable broadcast during sync only for path tests as it causes test timeouts
+	if env.GetTestStateScheme() == rawdb.PathScheme {
+		config.TransactionStreamer.DisableBroadcastDuringSync = false
+	}
 
 	return &config
 }
@@ -222,6 +227,10 @@ func ConfigDefaultL2Test() *Config {
 	config.Staker.Enable = false
 	config.BlockValidator.ValidationServerConfigs = []rpcclient.ClientConfig{{URL: ""}}
 	config.TransactionStreamer = DefaultTransactionStreamerConfig
+	// Disable broadcast during sync only for path tests as it causes test timeouts
+	if env.GetTestStateScheme() == rawdb.PathScheme {
+		config.TransactionStreamer.DisableBroadcastDuringSync = false
+	}
 	config.Bold.MinimumGapToParentAssertion = 0
 
 	return &config
