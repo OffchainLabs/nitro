@@ -48,7 +48,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 
-	"github.com/offchainlabs/nitro/bold/math"
+	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
 var (
@@ -237,11 +237,11 @@ func (h *historyCommitter) computeRoot(leaves []common.Hash, virtual uint64) (co
 	}
 	hashed := h.hashLeaves(leaves)
 	limit := nextPowerOf2(virtual)
-	depth, err := safecast.ToUint(math.Log2Floor(limit))
+	depth, err := safecast.ToUint(arbmath.Log2Floor(limit))
 	if err != nil {
 		return emptyHash, err
 	}
-	n, err := safecast.ToUint(math.Log2Ceil(virtual))
+	n, err := safecast.ToUint(arbmath.Log2Ceil(virtual))
 	if err != nil {
 		return emptyHash, err
 	}
@@ -313,7 +313,7 @@ func (h *historyCommitter) partialRoot(leaves []common.Hash, virtual, limit uint
 	if limit < virtual {
 		return emptyHash, fmt.Errorf("limit %d should be >= virtual %d", limit, virtual)
 	}
-	minFillers := math.Log2Ceil(uint64(virtual))
+	minFillers := arbmath.Log2Ceil(uint64(virtual))
 	if len(h.fillers) < minFillers {
 		return emptyHash, fmt.Errorf("insufficient fillers, want %d, got %d", minFillers, len(h.fillers))
 	}
@@ -360,7 +360,7 @@ func (h *historyCommitter) partialRoot(leaves []common.Hash, virtual, limit uint
 			// made purely of virtual nodes, and it is a complete tree.
 			// So, the root of the subtree will be the precomputed filler
 			// at the current layer.
-			right = h.fillers[math.Log2Floor(uint64(mid))]
+			right = h.fillers[arbmath.Log2Floor(uint64(mid))]
 			h.handle(right)
 		} else {
 			var rLeaves []common.Hash
@@ -524,7 +524,7 @@ func (h *historyCommitter) prefixAndProof(index uint64, leaves []common.Hash, vi
 	if index+1 > virtual {
 		return nil, nil, fmt.Errorf("index %d + 1 should be <= virtual %d", index, virtual)
 	}
-	logVirtual, err := safecast.ToUint(math.Log2Floor(virtual) + 1)
+	logVirtual, err := safecast.ToUint(arbmath.Log2Floor(virtual) + 1)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -574,7 +574,7 @@ func lastLeafProofPositions(virtual uint64) ([]treePosition, error) {
 		return []treePosition{}, nil
 	}
 	limit := nextPowerOf2(uint64(virtual))
-	depth := math.Log2Floor(limit)
+	depth := arbmath.Log2Floor(limit)
 	positions := make([]treePosition, depth)
 	idx := uint64(virtual) - 1
 	for l := range positions {
