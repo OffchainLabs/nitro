@@ -212,10 +212,16 @@ func (a *ExecServerAPI) CheckAlive(ctx context.Context, execid uint64) error {
 }
 
 func (a *ExecServerAPI) CloseExec(execid uint64) {
-	run, err := a.getRun(execid)
-	if err != nil {
-		return // means not found
+	// Protect map access with runIdLock to avoid concurrent map read/write.
+	// Call Close() outside the lock to avoid holding the mutex during a potentially long operation.
+	a.runIdLock.Lock()
+	entry := a.runs[execid]
+	if entry != nil {
+		delete(a.runs, execid)
 	}
-	run.Close()
-	delete(a.runs, execid)
+	a.runIdLock.Unlock()
+
+	if entry != nil {
+		entry.run.Close()
+	}
 }
