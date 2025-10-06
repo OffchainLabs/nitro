@@ -80,7 +80,7 @@ jobs:
           path: test-results/junit*.xml
 
       - name: Fail if tests failed
-        if: startsWith(matrix.test-mode, 'defaults') && steps.run-tests-defaults.outcome == 'failure'
+        if: (matrix.test-mode == 'defaults-A' && steps.run-tests-defaults-a.outcome == 'failure') || (matrix.test-mode == 'defaults-B' && steps.run-tests-defaults-b.outcome == 'failure')
         run: |
           echo "One or more tests failed."
           exit 1
