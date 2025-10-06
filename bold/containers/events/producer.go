@@ -74,8 +74,10 @@ func (ep *Producer[T]) Start(ctx context.Context) {
 			}
 			ep.Unlock()
 		case <-ctx.Done():
-			close(ep.doneListener)
+			// Ensure synchronized shutdown of subscriptions list to avoid data races.
+			ep.Lock()
 			ep.subs = nil
+			ep.Unlock()
 			return
 		}
 	}
