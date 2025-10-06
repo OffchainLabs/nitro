@@ -169,6 +169,10 @@ func (ms *messageStore) registerNewMessage(nChunks, timeout, chunkSize, totalSiz
 	ms.mutex.Lock()
 	defer ms.mutex.Unlock()
 
+	// Validate parameters to prevent inconsistent or unsafe states.
+	if nChunks*totalSize*chunkSize == 0 {
+		return 0, errors.New("can't start collecting new message: neither number of chunks, total size or chunk size can be zero")
+	}
 	if len(ms.messages) >= ms.maxPendingMessages {
 		return 0, fmt.Errorf("can't start collecting new message: already %d pending", len(ms.messages))
 	}
@@ -245,7 +249,9 @@ func (ms *messageStore) addNewChunk(id MessageId, chunkId uint64, chunk []byte) 
 	// Validate chunk size
 	chunkLen := uint64(len(chunk))
 	if chunkId+1 == uint64(len(message.chunks)) {
-		expectedLen := message.expectedTotalSize % message.expectedChunkSize
+		// For the last chunk, if totalSize is an exact multiple of chunkSize,
+		// the expected size is chunkSize (not zero remainder).
+		expectedLen := (message.expectedTotalSize-1)%message.expectedChunkSize + 1
 		if chunkLen != expectedLen {
 			return fmt.Errorf("message(%d): chunk(%d) has incorrect size (%d bytes) - expecting %d bytes", id, chunkId, chunkLen, expectedLen)
 		}
