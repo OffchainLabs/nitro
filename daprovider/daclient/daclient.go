@@ -136,15 +136,19 @@ func (c *Client) CollectPreimages(
 }
 
 func (c *Client) Store(
-	ctx context.Context,
 	message []byte,
 	timeout uint64,
-) ([]byte, error) {
-	storeResult, err := c.DataStreamer.StreamData(ctx, message, timeout)
-	if err != nil {
-		return nil, fmt.Errorf("error returned from daprovider server (chunked store protocol), err: %w", err)
-	}
-	return storeResult.SerializedDACert, nil
+) containers.PromiseInterface[[]byte] {
+	promise, ctx := containers.NewPromiseWithContext[[]byte](context.Background())
+	go func() {
+		storeResult, err := c.DataStreamer.StreamData(ctx, message, timeout)
+		if err != nil {
+			promise.ProduceError(fmt.Errorf("error returned from daprovider server (chunked store protocol), err: %w", err))
+		} else {
+			promise.Produce(storeResult.SerializedDACert)
+		}
+	}()
+	return promise
 }
 
 // GenerateReadPreimageProof generates a proof for a specific preimage at a given offset
