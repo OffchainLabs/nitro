@@ -10,7 +10,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        test-mode: [defaults, pathdb, challenge, stylus, l3challenge]
+        test-mode: [defaults, flaky, pathdb, challenge, stylus, l3challenge]
     services:
       redis:
         image: redis
@@ -115,6 +115,15 @@ jobs:
             echo "Error: Command produced output."
             exit 1
           fi
+
+      # --------------------- FLAKY MODE --------------------------
+
+      - name: run flaky tests
+        if: matrix.test-mode == 'flaky'
+        continue-on-error: true
+        run: >-
+          ${{ github.workspace }}/.github/workflows/gotestsum.sh
+          --tags cionly --timeout 60m --test_state_scheme hash --flaky
 
       # --------------------- CHALLENGE MODES ---------------------
 
