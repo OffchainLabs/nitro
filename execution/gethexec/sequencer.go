@@ -1437,7 +1437,7 @@ func (s *Sequencer) updateExpectedSurplus(ctx context.Context) (int64, error) {
 			blobFeePerByte.Div(blobFeePerByte, big.NewInt(16))
 			l1GasPrice = blobFeePerByte.Int64()
 
-			//l1GasPrice can be zero because of roundings, hence backlogCost is calculated separately
+			// l1GasPrice can be zero because of roundings, hence backlogCost is calculated separately
 			backlogCost = blobFeePerByte.Mul(blobFeePerByte, big.NewInt(backlogCallDataUnits)).Int64()
 		}
 	case "CalldataPrice7623":
