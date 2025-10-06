@@ -1432,12 +1432,13 @@ func (s *Sequencer) updateExpectedSurplus(ctx context.Context) (int64, error) {
 			if err != nil {
 				return 0, fmt.Errorf("error encountered getting blob base fee while updating expectedSurplus: %w", err)
 			}
-			backlogFee := big.NewInt(backlogCallDataUnits)
-			backlogFee.Mul(backlogFee, blobFeePerByte)
-			backlogFee.Mul(backlogFee, blobTxBlobGasPerBlob)
-			backlogFee.Div(backlogFee, usableBytesInBlob)
-			backlogCost = backlogFee.Int64() / 16
-			l1GasPrice = backlogCost / backlogCallDataUnits
+			blobFeePerByte.Mul(blobFeePerByte, blobTxBlobGasPerBlob)
+			blobFeePerByte.Div(blobFeePerByte, usableBytesInBlob)
+			blobFeePerByte.Div(blobFeePerByte, big.NewInt(16))
+			l1GasPrice = blobFeePerByte.Int64()
+
+			//l1GasPrice can be zero because of roundings, hence backlogCost is calculated separately
+			backlogCost = blobFeePerByte.Mul(blobFeePerByte, big.NewInt(backlogCallDataUnits)).Int64()
 		}
 	case "CalldataPrice7623":
 		l1GasPrice = (header.BaseFee.Int64() * 40) / 16
