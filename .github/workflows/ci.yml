@@ -3,7 +3,7 @@ name: CI
 run-name: CI triggered from @${{ github.actor }} of ${{ github.head_ref }}
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}-${{ github.ref }}
   cancel-in-progress: true
 
 on:
@@ -73,6 +73,9 @@ jobs:
     secrets: inherit
     permissions:
       pull-requests: write
+    with:
+      post_comment: true
+      upload_report: false
 
   can_proceed:
     name: can_proceed
