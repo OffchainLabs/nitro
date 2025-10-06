@@ -17,7 +17,7 @@ import (
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
-func TestDatabaseConversionFlaky(t *testing.T) {
+func TestDatabaseConversion(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).DontParalellise()
