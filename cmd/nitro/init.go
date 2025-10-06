@@ -186,8 +186,8 @@ func httpGet(ctx context.Context, url string) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("error creating request: %w", err)
 	}
-	client := &http.Client{}
-	resp, err := client.Do(req)
+	// Set a sane timeout to avoid indefinite hangs if ctx lacks a deadline
+	client := &http.Client{Timeout: 30 * time.Second}
 	if err != nil {
 		return nil, fmt.Errorf("error making GET request: %w", err)
 	}
