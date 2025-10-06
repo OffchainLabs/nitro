@@ -1595,7 +1595,7 @@ func deployOnParentChain(
 		// Deploy ReferenceDAProofValidator with trusted signers
 		// Using Sequencer as the trusted signer since it's the one signing certificates
 		trustedSigners := []common.Address{parentChainInfo.GetAddress("Sequencer")}
-		refDAValidatorAddr, tx, _, err := ospgen.DeployReferenceDAProofValidator(
+		refDAValidatorAddr, tx, _, err := localgen.DeployReferenceDAProofValidator(
 			&parentChainTransactionOpts, parentChainReader.Client(), trustedSigners)
 		Require(t, err)
 		_, err = EnsureTxSucceeded(ctx, parentChainReader.Client(), tx)

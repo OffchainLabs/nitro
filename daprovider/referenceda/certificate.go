@@ -12,7 +12,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 
 	"github.com/offchainlabs/nitro/daprovider"
-	"github.com/offchainlabs/nitro/solgen/go/ospgen"
+	"github.com/offchainlabs/nitro/solgen/go/localgen"
 	"github.com/offchainlabs/nitro/util/signature"
 )
 
@@ -97,8 +97,7 @@ func (c *Certificate) RecoverSigner() (common.Address, error) {
 }
 
 // ValidateWithContract checks if the certificate is signed by a trusted signer using the contract
-// TODO: Until we have merged customda contracts changes, this will need to be commented out.
-func (c *Certificate) ValidateWithContract(validator *ospgen.ReferenceDAProofValidator, opts *bind.CallOpts) error {
+func (c *Certificate) ValidateWithContract(validator *localgen.ReferenceDAProofValidator, opts *bind.CallOpts) error {
 	signer, err := c.RecoverSigner()
 	if err != nil {
 		return err

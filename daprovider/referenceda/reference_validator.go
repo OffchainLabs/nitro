@@ -13,7 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 
 	"github.com/offchainlabs/nitro/daprovider"
-	"github.com/offchainlabs/nitro/solgen/go/ospgen"
+	"github.com/offchainlabs/nitro/solgen/go/localgen"
 	"github.com/offchainlabs/nitro/util/containers"
 )
 
@@ -98,7 +98,7 @@ func (v *Validator) generateCertificateValidityProofInternal(ctx context.Context
 
 	// TODO: This will need to be commented out until we have merged customda contracts
 	// Create contract binding
-	validator, err := ospgen.NewReferenceDAProofValidator(v.validatorAddr, v.l1Client)
+	validator, err := localgen.NewReferenceDAProofValidator(v.validatorAddr, v.l1Client)
 	if err != nil {
 		// This is a transient error - can't connect to contract
 		return nil, fmt.Errorf("failed to create validator binding: %w", err)

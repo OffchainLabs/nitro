@@ -46,7 +46,7 @@ func TestDataStreaming_PositiveScenario(t *testing.T) {
 	t.Run("Single sender, message of chunk-size multiple length", func(t *testing.T) {
 		msgLength, err := calculateEffectiveChunkSize(TestHttpBodyLimit, rpcMethods)
 		testhelpers.RequireImpl(t, err)
-		testBasic(t, int(msgLength*3), 0, 1)
+		testBasic(t, int(msgLength*3), 0, 1) //nolint:gosec
 	})
 	t.Run("Single sender, long message", func(t *testing.T) {
 		testBasic(t, 2*TestHttpBodyLimit, 50, 1)

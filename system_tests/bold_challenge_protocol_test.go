@@ -49,6 +49,7 @@ import (
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/challengeV2gen"
+	"github.com/offchainlabs/nitro/solgen/go/localgen"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/solgen/go/ospgen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
@@ -783,7 +784,7 @@ func deployContractsOnly(
 		// Create a dedicated DA signer account
 		l1info.GenerateAccount("DASigner")
 		trustedSigners := []common.Address{l1info.GetAddress("DASigner")}
-		refDAValidatorAddr, tx, _, err := ospgen.DeployReferenceDAProofValidator(&l1TransactionOpts, backend, trustedSigners)
+		refDAValidatorAddr, tx, _, err := localgen.DeployReferenceDAProofValidator(&l1TransactionOpts, backend, trustedSigners)
 		Require(t, err)
 		_, err = EnsureTxSucceeded(ctx, backend, tx)
 		Require(t, err)

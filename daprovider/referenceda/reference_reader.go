@@ -16,7 +16,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/daprovider"
-	"github.com/offchainlabs/nitro/solgen/go/ospgen"
+	"github.com/offchainlabs/nitro/solgen/go/localgen"
 	"github.com/offchainlabs/nitro/util/containers"
 )
 
@@ -59,9 +59,8 @@ func (r *Reader) recoverInternal(
 	}
 
 	// Validate certificate - always validate for ReferenceDA
-	// TODO: This will need to be commented out until we have merged customda contracts changes.
 	// Create contract binding
-	validator, err := ospgen.NewReferenceDAProofValidator(r.validatorAddr, r.l1Client)
+	validator, err := localgen.NewReferenceDAProofValidator(r.validatorAddr, r.l1Client)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to create validator binding: %w", err)
 	}
