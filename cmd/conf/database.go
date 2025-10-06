@@ -252,7 +252,60 @@ func (c *PebbleExperimentalConfig) Validate() error {
 	if c.WALDir != "" && !filepath.IsAbs(c.WALDir) {
 		return fmt.Errorf("invalid .wal-dir directory (%s) - has to be an absolute path", c.WALDir)
 	}
-	// TODO
+	if c.BytesPerSync < 0 {
+		return fmt.Errorf("invalid .bytes-per-sync value: %d, must be >= 0", c.BytesPerSync)
+	}
+	if c.L0CompactionFileThreshold <= 0 {
+		return fmt.Errorf("invalid .l0-compaction-file-threshold value: %d, must be > 0", c.L0CompactionFileThreshold)
+	}
+	if c.L0CompactionThreshold < 1 {
+		return fmt.Errorf("invalid .l0-compaction-threshold value: %d, must be >= 1", c.L0CompactionThreshold)
+	}
+	if c.L0StopWritesThreshold <= 0 {
+		return fmt.Errorf("invalid .l0-stop-writes-threshold value: %d, must be > 0", c.L0StopWritesThreshold)
+	}
+	if c.L0StopWritesThreshold < c.L0CompactionThreshold {
+		return fmt.Errorf("invalid .l0-stop-writes-threshold value: %d, must be >= .l0-compaction-threshold (%d)", c.L0StopWritesThreshold, c.L0CompactionThreshold)
+	}
+	if c.LBaseMaxBytes <= 0 {
+		return fmt.Errorf("invalid .l-base-max-bytes value: %d, must be > 0", c.LBaseMaxBytes)
+	}
+	if c.MemTableStopWritesThreshold <= 0 {
+		return fmt.Errorf("invalid .mem-table-stop-writes-threshold value: %d, must be > 0", c.MemTableStopWritesThreshold)
+	}
+	if c.WALBytesPerSync < 0 {
+		return fmt.Errorf("invalid .wal-bytes-per-sync value: %d, must be >= 0", c.WALBytesPerSync)
+	}
+	if c.WALMinSyncInterval < 0 {
+		return fmt.Errorf("invalid .wal-min-sync-interval value: %d, must be >= 0", c.WALMinSyncInterval)
+	}
+	if c.TargetByteDeletionRate < 0 {
+		return fmt.Errorf("invalid .target-byte-deletion-rate value: %d, must be >= 0", c.TargetByteDeletionRate)
+	}
+	if c.BlockSize <= 0 {
+		return fmt.Errorf("invalid .block-size value: %d, must be > 0", c.BlockSize)
+	}
+	if c.IndexBlockSize <= 0 {
+		return fmt.Errorf("invalid .index-block-size value: %d, must be > 0", c.IndexBlockSize)
+	}
+	if c.TargetFileSize <= 0 {
+		return fmt.Errorf("invalid .target-file-size value: %d, must be > 0", c.TargetFileSize)
+	}
+	if c.L0CompactionConcurrency <= 0 {
+		return fmt.Errorf("invalid .l0-compaction-concurrency value: %d, must be > 0", c.L0CompactionConcurrency)
+	}
+	if c.CompactionDebtConcurrency == 0 {
+		return fmt.Errorf("invalid .compaction-debt-concurrency value: %d, must be > 0", c.CompactionDebtConcurrency)
+	}
+	if c.ReadCompactionRate <= 0 {
+		return fmt.Errorf("invalid .read-compaction-rate value: %d, must be > 0", c.ReadCompactionRate)
+	}
+	if !(c.ReadSamplingMultiplier == -1 || c.ReadSamplingMultiplier >= 1) {
+		return fmt.Errorf("invalid .read-sampling-multiplier value: %d, must be -1 or >= 1", c.ReadSamplingMultiplier)
+	}
+	if c.MaxWriterConcurrency < 0 {
+		return fmt.Errorf("invalid .max-writer-concurrency value: %d, must be >= 0", c.MaxWriterConcurrency)
+	}
 	return nil
 }
 
