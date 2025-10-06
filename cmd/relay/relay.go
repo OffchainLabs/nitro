@@ -24,6 +24,7 @@ import (
 func main() {
 	if err := startup(); err != nil {
 		log.Error("Error running relay", "err", err)
+		os.Exit(1) // exit non-zero on failure to ensure supervisors detect startup errors
 	}
 }
 
