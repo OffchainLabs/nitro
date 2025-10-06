@@ -7,7 +7,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 
-	"github.com/offchainlabs/nitro/blocks_reexecutor"
+	blocksreexecutor "github.com/offchainlabs/nitro/blocks_reexecutor"
 )
 
 func TestBlocksReExecutorModes(t *testing.T) {
@@ -54,6 +54,7 @@ func testBlocksReExecutorModes(t *testing.T, onMultipleRanges bool) {
 
 	// Set Blocks config field if running blocks reexecution on multiple ranges
 	c := &blocksreexecutor.TestConfig
+	c.ValidateMultiGas = true
 	if onMultipleRanges {
 		c.Blocks = `[[0, 29], [30, 59], [60, 99]]`
 	}
