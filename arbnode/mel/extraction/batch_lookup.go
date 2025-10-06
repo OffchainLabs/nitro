@@ -32,14 +32,13 @@ func parseBatchesFromBlock(
 		return nil, nil, nil, fmt.Errorf("failed to fetch transactions for parent chain block %v: %w", parentChainHeader.Hash(), err)
 	}
 	for i, tx := range parentChainBlockTxs {
-		// TODO: remove this temporary work around for handling init message, i.e skipping the check when msgCount==0
-		if melState.MsgCount != 0 {
-			if tx.To() == nil {
-				continue
-			}
-			if *tx.To() != melState.BatchPostingTargetAddress {
-				continue
-			}
+		// Always filter transactions by the expected sequencer inbox address.
+		// This avoids accepting logs from unrelated contracts, including at init when MsgCount == 0.
+		if tx.To() == nil {
+			continue
+		}
+		if *tx.To() != melState.BatchPostingTargetAddress {
+			continue
 		}
 		// Fetch the receipts for the transaction to get the logs.
 		txIndex := uint(i) // #nosec G115
@@ -55,7 +54,11 @@ func parseBatchesFromBlock(
 		txIndices := make([]uint, 0, len(receipt.Logs))
 		var lastSeqNum *uint64
 		for _, log := range receipt.Logs {
-			if log == nil || log.Topics[0] != batchDeliveredID {
+			// Guard against logs with no topics and ensure the expected event and address.
+			if log == nil || len(log.Topics) == 0 || log.Topics[0] != batchDeliveredID {
+				continue
+			}
+			if log.Address != melState.BatchPostingTargetAddress {
 				continue
 			}
 			event := new(bridgegen.SequencerInboxSequencerBatchDelivered)
@@ -91,7 +94,7 @@ func parseBatchesFromBlock(
 			}
 			batches = append(batches, batch)
 			txs = append(txs, tx)
-			txIndices = append(txIndices, uint(i)) // #nosec G115
+			txIndices = append(txIndices, txIndex)
 		}
 		allBatches = append(allBatches, batches...)
 		allBatchTxs = append(allBatchTxs, txs...)
