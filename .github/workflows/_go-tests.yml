@@ -76,7 +76,7 @@ jobs:
         if: startsWith(matrix.test-mode, 'defaults') && always()
         uses: actions/upload-artifact@v4
         with:
-          name: go-junit-reports
+          name: junit-reports-go-${{ matrix.test-mode }}
           path: test-results/junit*.xml
 
       - name: Fail if tests failed
