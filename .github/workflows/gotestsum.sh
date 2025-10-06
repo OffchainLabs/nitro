@@ -98,7 +98,7 @@ if [ "$tags" != "" ]; then
 fi
 
 if [ "$run" != "" ]; then
-  cmd="$cmd -run=$run"
+  cmd="$cmd -run=\"$run\""
 fi
 
 if [ "$flaky" == false ]; then
