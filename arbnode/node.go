@@ -14,7 +14,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/offchainlabs/nitro/daprovider/data_streaming"
 	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -41,6 +40,7 @@ import (
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/daprovider/daclient"
 	"github.com/offchainlabs/nitro/daprovider/das"
+	"github.com/offchainlabs/nitro/daprovider/data_streaming"
 	dapserver "github.com/offchainlabs/nitro/daprovider/server"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/execution/gethexec"
