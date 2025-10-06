@@ -94,7 +94,8 @@ func addUnlockWallet(accountManager *accounts.Manager, walletConf *genericconf.W
 
 		devAddr = crypto.PubkeyToAddress(devPrivKey.PublicKey)
 
-		log.Info("Dev node funded private key", "priv", walletConf.PrivateKey)
+		// Do not log private keys
+        log.Info("Dev node funded key loaded")
 		log.Info("Funded public address", "addr", devAddr)
 	}
 
