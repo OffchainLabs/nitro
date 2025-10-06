@@ -47,7 +47,7 @@ func NewValidationClient(config rpcclient.ClientConfigFetcher, stack *node.Node)
 
 func (c *ValidationClient) Launch(entry *validator.ValidationInput, moduleRoot common.Hash) validator.ValidationRun {
 	c.room.Add(-1)
-	promise := stopwaiter.LaunchPromiseThread[validator.GoGlobalState](c, func(ctx context.Context) (validator.GoGlobalState, error) {
+	promise := stopwaiter.LaunchPromiseThread(c, func(ctx context.Context) (validator.GoGlobalState, error) {
 		input := server_api.ValidationInputToJson(entry)
 		var res validator.GoGlobalState
 		err := c.client.CallContext(ctx, &res, server_api.Namespace+"_validate", input, moduleRoot)
@@ -69,13 +69,41 @@ func (c *ValidationClient) Start(ctx context.Context) error {
 		return errors.New("couldn't read name from server")
 	}
 	var stylusArchs []rawdb.WasmTarget
-	if err := c.client.CallContext(ctx, &stylusArchs, server_api.Namespace+"_stylusArchs"); err != nil {
-		var rpcError rpc.Error
-		ok := errors.As(err, &rpcError)
-		if !ok || rpcError.ErrorCode() != -32601 {
-			return fmt.Errorf("could not read stylus arch from server: %w", err)
+
+	const (
+		maxAttempts = 5
+		baseDelay   = 50 * time.Millisecond
+	)
+	var lastErr error
+	for attempt := 0; attempt < maxAttempts; attempt++ {
+		err := c.client.CallContext(ctx, &stylusArchs, server_api.Namespace+"_stylusArchs")
+		if err == nil {
+			lastErr = nil
+			break
 		}
-		stylusArchs = []rawdb.WasmTarget{rawdb.WasmTarget("pre-stylus")} // invalid, will fail if trying to validate block with stylus
+		var rpcError rpc.Error
+		if errors.As(err, &rpcError) && rpcError.ErrorCode() == -32601 {
+			lastErr = err
+			break
+		}
+		lastErr = err
+		if ctx.Err() != nil {
+			break
+		}
+		delay := baseDelay << attempt
+		select {
+		case <-time.After(delay):
+		case <-ctx.Done():
+			break
+		}
+	}
+	if lastErr != nil {
+		var rpcError rpc.Error
+		if errors.As(lastErr, &rpcError) && rpcError.ErrorCode() == -32601 {
+			stylusArchs = []rawdb.WasmTarget{rawdb.WasmTarget("pre-stylus")} // invalid, will fail if trying to validate block with stylus
+		} else {
+			return fmt.Errorf("could not read stylus arch from server: %w", lastErr)
+		}
 	} else {
 		if len(stylusArchs) == 0 {
 			return fmt.Errorf("could not read stylus archs from validation server")
