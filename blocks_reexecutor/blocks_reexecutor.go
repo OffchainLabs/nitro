@@ -36,6 +36,7 @@ type Config struct {
 	Room               int    `koanf:"room"`
 	MinBlocksPerThread uint64 `koanf:"min-blocks-per-thread"`
 	TrieCleanLimit     int    `koanf:"trie-clean-limit"`
+	ValidateMultiGas   bool   `koanf:"validate-multigas"`
 
 	blocks [][2]uint64
 }
@@ -71,6 +72,7 @@ var DefaultConfig = Config{
 	Blocks:             `[[0,0]]`, // execute from chain start to chain end
 	MinBlocksPerThread: 0,
 	TrieCleanLimit:     0,
+	ValidateMultiGas:   false,
 	blocks:             nil,
 }
 
@@ -81,6 +83,7 @@ var TestConfig = Config{
 	Room:               util.GoMaxProcs(),
 	TrieCleanLimit:     600,
 	MinBlocksPerThread: 0,
+	ValidateMultiGas:   true,
 
 	blocks: [][2]uint64{},
 }
@@ -92,6 +95,7 @@ func ConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Int(prefix+".room", DefaultConfig.Room, "number of threads to parallelize blocks re-execution")
 	f.Uint64(prefix+".min-blocks-per-thread", DefaultConfig.MinBlocksPerThread, "minimum number of blocks to execute per thread. When mode is random this acts as the size of random block range sample")
 	f.Int(prefix+".trie-clean-limit", DefaultConfig.TrieCleanLimit, "memory allowance (MB) to use for caching trie nodes in memory")
+	f.Bool(prefix+".validate-multigas", DefaultConfig.ValidateMultiGas, "enables validation of multigas calculations during blocks re-execution")
 }
 
 // lint:require-exhaustive-initialization
@@ -300,6 +304,7 @@ func (s *BlocksReExecutor) advanceStateUpToBlock(ctx context.Context, state *sta
 	targetBlockNumber := targetHeader.Number.Uint64()
 	blockToRecreate := lastAvailableHeader.Number.Uint64() + 1
 	prevHash := lastAvailableHeader.Hash()
+	validateMultiGas := s.config.ValidateMultiGas
 	var stateRelease arbitrum.StateReleaseFunc
 	defer func() {
 		lastRelease()
@@ -307,10 +312,26 @@ func (s *BlocksReExecutor) advanceStateUpToBlock(ctx context.Context, state *sta
 	var block *types.Block
 	var err error
 	for ctx.Err() == nil {
-		state, block, err = arbitrum.AdvanceStateByBlock(ctx, s.blockchain, state, blockToRecreate, prevHash, nil)
+		var receipts types.Receipts
+		state, block, receipts, err = arbitrum.AdvanceStateByBlock(ctx, s.blockchain, state, blockToRecreate, prevHash, nil, validateMultiGas)
 		if err != nil {
 			return err
 		}
+
+		if validateMultiGas {
+			for _, receipt := range receipts {
+				if receipt.GasUsed != receipt.MultiGasUsed.SingleGas() {
+					log.Warn("multi-dimensional gas mismatch",
+						"block", block.NumberU64(),
+						"gasUsed", receipt.GasUsed,
+						"multiGasUsed", receipt.MultiGasUsed.SingleGas(),
+					)
+
+					return fmt.Errorf("multi-dimensional gas mismatch in block %d", block.NumberU64())
+				}
+			}
+		}
+
 		prevHash = block.Hash()
 		state, stateRelease, err = s.commitStateAndVerify(state, block.Root(), block.NumberU64())
 		if err != nil {
