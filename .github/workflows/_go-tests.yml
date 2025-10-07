@@ -10,7 +10,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        test-mode: [defaults, flaky, pathdb, challenge, stylus, l3challenge]
+        test-mode: [defaults, flaky, pathdb, challenge, stylus, l3challenge, experimental]
     services:
       redis:
         image: redis
@@ -137,13 +137,20 @@ jobs:
           ${{ github.workspace }}/.github/workflows/gotestsum.sh
           --tags challengetest --run TestL3Challenge --timeout 120m --cover
 
-      # --------------------- CHALLENGE MODES ---------------------
+      # --------------------- STYLUS MODE --------------------------
 
       - name: run stylus tests
         if: matrix.test-mode == 'stylus'
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh
           --tags stylustest --run TestProgramArbitrator --timeout 60m --cover
+
+      # --------------------- EXPERIMENTAL MODE --------------------
+      - name: run experimental tooling tests
+        if: matrix.test-mode == 'experimental'
+        run: >-
+          ${{ github.workspace }}/.github/workflows/gotestsum.sh
+          --tags debugblock --timeout 60m --cover
 
       # --------------------- ARCHIVE LOGS FOR ALL MODES ---------------------
 
