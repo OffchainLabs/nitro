@@ -358,30 +358,34 @@ COPY scripts/split-val-entry.sh /usr/local/bin
 ENTRYPOINT [ "/usr/local/bin/split-val-entry.sh" ]
 USER user
 
+# The nitro-node-validator is needed in case some modifications are needed in arbitrator or jit API.
+# That was the case when enabling arbos30.
+# We no longer support pre-arbos-30 wasmmoduleroots (newer wasmmoduleroots can execute old blocks)
+# We keep the code (commented out), and the docker-target, for use in case such an update is needed again.
 FROM nitro-node-validator AS nitro-node-dev
-USER root
-# Copy in latest WASM module root
-RUN rm -f /home/user/target/machines/latest
-COPY --from=prover-export /bin/jit                                         /usr/local/bin/
-COPY --from=node-builder  /workspace/target/bin/deploy                     /usr/local/bin/
-COPY --from=node-builder  /workspace/target/bin/seq-coordinator-invalidate /usr/local/bin/
-COPY --from=node-builder  /workspace/target/bin/mockexternalsigner        /usr/local/bin/
-COPY --from=module-root-calc /workspace/target/machines/latest/machine.wavm.br /home/user/target/machines/latest/
-COPY --from=module-root-calc /workspace/target/machines/latest/until-host-io-state.bin /home/user/target/machines/latest/
-COPY --from=module-root-calc /workspace/target/machines/latest/module-root.txt /home/user/target/machines/latest/
-COPY --from=module-root-calc /workspace/target/machines/latest/replay.wasm /home/user/target/machines/latest/
-RUN export DEBIAN_FRONTEND=noninteractive && \
-    apt-get update && \
-    apt-get install -y \
-    sudo && \
-    chmod -R 555 /home/user/target/machines && \
-    adduser user sudo && \
-    echo '%sudo ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/* /usr/share/doc/* /var/cache/ldconfig/aux-cache /usr/lib/python3.9/__pycache__/ /usr/lib/python3.9/*/__pycache__/ /var/log/* && \
-    nitro --version
+# USER root
+# # Copy in latest WASM module root
+# RUN rm -f /home/user/target/machines/latest
+# COPY --from=prover-export /bin/jit                                         /usr/local/bin/
+# COPY --from=node-builder  /workspace/target/bin/deploy                     /usr/local/bin/
+# COPY --from=node-builder  /workspace/target/bin/seq-coordinator-invalidate /usr/local/bin/
+# COPY --from=node-builder  /workspace/target/bin/mockexternalsigner        /usr/local/bin/
+# COPY --from=module-root-calc /workspace/target/machines/latest/machine.wavm.br /home/user/target/machines/latest/
+# COPY --from=module-root-calc /workspace/target/machines/latest/until-host-io-state.bin /home/user/target/machines/latest/
+# COPY --from=module-root-calc /workspace/target/machines/latest/module-root.txt /home/user/target/machines/latest/
+# COPY --from=module-root-calc /workspace/target/machines/latest/replay.wasm /home/user/target/machines/latest/
+# RUN export DEBIAN_FRONTEND=noninteractive && \
+#     apt-get update && \
+#     apt-get install -y \
+#     sudo && \
+#     chmod -R 555 /home/user/target/machines && \
+#     adduser user sudo && \
+#     echo '%sudo ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers && \
+#     apt-get clean && \
+#     rm -rf /var/lib/apt/lists/* /usr/share/doc/* /var/cache/ldconfig/aux-cache /usr/lib/python3.9/__pycache__/ /usr/lib/python3.9/*/__pycache__/ /var/log/* && \
+#     nitro --version
 
-USER user
+# USER user
 
 FROM nitro-node AS nitro-node-default
 # Just to ensure nitro-node-dist is default
