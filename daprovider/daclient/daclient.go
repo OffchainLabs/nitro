@@ -29,7 +29,7 @@ type Client struct {
 type ClientConfig struct {
 	Enable     bool                              `koanf:"enable"`
 	WithWriter bool                              `koanf:"with-writer"`
-	RPC        rpcclient.ClientConfig            `koanf:"rpc"`
+	RPC        rpcclient.ClientConfig            `koanf:"rpc" reload:"hot"`
 	DataStream data_streaming.DataStreamerConfig `koanf:"data-stream"`
 }
 

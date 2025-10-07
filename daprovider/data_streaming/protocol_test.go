@@ -60,8 +60,7 @@ func TestDataStreaming_ServerRejectsEmptyMessageParameters(t *testing.T) {
 	ctx, streamer := prepareTestEnv(t, nil)
 	message, _ := getLongRandomMessage(streamer.chunkSize)
 
-	// ========== Implementation of streamer.StreamData that wants to send empty message. ==========
-
+	// ========== Implementation of streamer.StreamData that sends empty message.. ==========
 	params := newStreamParams(uint64(len(message)), streamer.chunkSize, timeout)
 	params.dataLen = 0
 	_, err := streamer.startStream(ctx, params)
