@@ -383,5 +383,11 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
 
 USER user
 
+FROM nitro-node AS nitro-node-experimental
+USER root
+COPY --from=node-builder /workspace/target/bin/nitro-experimental /usr/local/bin/
+ENTRYPOINT [ "/usr/local/bin/nitro-experimental" , "--validation.wasm.allowed-wasm-module-roots", "/home/user/nitro-legacy/machines,/home/user/target/machines"]
+USER user
+
 FROM nitro-node AS nitro-node-default
 # Just to ensure nitro-node-dist is default
