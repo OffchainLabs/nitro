@@ -72,7 +72,9 @@ func (t *TrackedContractBackend) SendTransaction(ctx context.Context, tx *types.
 		metric.GasCosts = append(metric.GasCosts, *gasCost)
 		t.mu.Unlock()
 	}
-	log.Debug("TrackedContractBackend: SendTransaction", "to", tx.To(), "data", tx.Data(), "gas", tx.Gas())
+	if tx != nil {
+		log.Debug("TrackedContractBackend: SendTransaction", "to", tx.To(), "data", tx.Data(), "gas", tx.Gas())
+	}
 	return t.ChainBackend.SendTransaction(ctx, tx)
 }
 

@@ -554,7 +554,9 @@ func (a *AssertionChain) NewStakeOnNewAssertion(
 			expectedAssertionHash,
 			a.withdrawalAddress,
 		)
-		log.Debug("NewStakeOnNewAssertion: composed tx", "gas", tx.Gas(), "nonce", tx.Nonce(), "to", tx.To(), "data", tx.Data())
+		if tx != nil {
+			log.Debug("NewStakeOnNewAssertion: composed tx", "gas", tx.Gas(), "nonce", tx.Nonce(), "to", tx.To(), "data", tx.Data())
+		}
 		return tx, err
 	}
 	return a.createAndStakeOnAssertion(
