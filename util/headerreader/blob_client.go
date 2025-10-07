@@ -72,7 +72,7 @@ func NewBlobClient(config BlobClientConfig, ec *ethclient.Client) (*BlobClient, 
 	}
 	var secondaryBeaconUrl *url.URL
 	if config.SecondaryBeaconUrl != "" {
-		if secondaryBeaconUrl, err = url.Parse(config.BeaconUrl); err != nil {
+		if secondaryBeaconUrl, err = url.Parse(config.SecondaryBeaconUrl); err != nil {
 			return nil, fmt.Errorf("failed to parse secondary beacon chain URL: %w", err)
 		}
 	}
@@ -121,6 +121,7 @@ func beaconRequest[T interface{}](b *BlobClient, ctx context.Context, beaconPath
 			return nil, err
 		}
 		if resp.StatusCode != http.StatusOK {
+			defer resp.Body.Close()
 			body, _ := io.ReadAll(resp.Body)
 			bodyStr := string(body)
 			log.Debug("beacon request returned response with non 200 OK status", "status", resp.Status, "body", bodyStr)

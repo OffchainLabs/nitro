@@ -10,12 +10,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        test-mode: [defaults, pathdb, challenge, stylus, l3challenge]
+        test-mode: [defaults, flaky, pathdb, challenge, stylus, l3challenge]
     services:
       redis:
         image: redis
         ports:
           - 6379:6379
+
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -39,23 +40,55 @@ jobs:
       - name: Build all lint dependencies
         run: make -j8 build-node-deps
 
+      # --------------------- PATHDB MODE ---------------------
+
       - name: run tests without race detection and path state scheme
         if: matrix.test-mode == 'pathdb'
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh
           --tags cionly --timeout 90m --cover --test_state_scheme path
 
+      # --------------------- DEFAULTS MODE ---------------------
+
       - name: run tests without race detection and hash state scheme
         if: matrix.test-mode == 'defaults'
+        id: run-tests-defaults
+        continue-on-error: true
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh
-          --tags cionly --timeout 60m --test_state_scheme hash
+          --tags cionly --timeout 60m --test_state_scheme hash --junitfile test-results/junit.xml
+
+      - name: Process JUnit XML logs
+        if: matrix.test-mode == 'defaults' && always()
+        run: python3 ${{ github.workspace }}/.github/workflows/process_junit.py test-results/
+
+      - name: Upload Go test Artifacts
+        if: matrix.test-mode == 'defaults' && always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: go-junit-reports
+          path: test-results/junit_*.xml
+
+      - name: Fail if tests failed
+        if: matrix.test-mode == 'defaults' && steps.run-tests-defaults.outcome == 'failure'
+        run: |
+          echo "One or more tests failed."
+          exit 1
 
       - name: run redis tests
         if: matrix.test-mode == 'defaults'
         run: >-
           gotestsum --format short-verbose -- -p 1 -run TestRedis ./arbnode/... ./system_tests/...
           -coverprofile=coverage-redis.txt -covermode=atomic -coverpkg=./... -- --test_redis=redis://localhost:6379/0
+
+      - name: Upload coverage to Codecov
+        if: matrix.test-mode == 'defaults'
+        uses: codecov/codecov-action@v5
+        with:
+          fail_ci_if_error: false
+          files: ./coverage.txt,./coverage-redis.txt
+          verbose: false
+          token: ${{ secrets.CODECOV_TOKEN }}
 
       - name: create block input json file
         if: matrix.test-mode == 'defaults'
@@ -83,6 +116,17 @@ jobs:
             exit 1
           fi
 
+      # --------------------- FLAKY MODE --------------------------
+
+      - name: run flaky tests
+        if: matrix.test-mode == 'flaky'
+        continue-on-error: true
+        run: >-
+          ${{ github.workspace }}/.github/workflows/gotestsum.sh
+          --tags cionly --timeout 60m --test_state_scheme hash --flaky
+
+      # --------------------- CHALLENGE MODES ---------------------
+
       - name: build challenge tests
         if: matrix.test-mode == 'challenge'
         run: go test -tags challengetest ./... -run=^$ -v
@@ -93,23 +137,18 @@ jobs:
           ${{ github.workspace }}/.github/workflows/gotestsum.sh
           --tags challengetest --run TestL3Challenge --timeout 120m --cover
 
+      # --------------------- CHALLENGE MODES ---------------------
+
       - name: run stylus tests
         if: matrix.test-mode == 'stylus'
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh
           --tags stylustest --run TestProgramArbitrator --timeout 60m --cover
 
+      # --------------------- ARCHIVE LOGS FOR ALL MODES ---------------------
+
       - name: Archive detailed run log
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.test-mode }}-full.log
           path: full.log
-
-      - name: Upload coverage to Codecov
-        if: matrix.test-mode == 'defaults'
-        uses: codecov/codecov-action@v5
-        with:
-          fail_ci_if_error: false
-          files: ./coverage.txt,./coverage-redis.txt
-          verbose: false
-          token: ${{ secrets.CODECOV_TOKEN }}

@@ -451,7 +451,7 @@ func (p Programs) SetProgramCached(
 	}
 
 	// pay to cache the program, or to re-cache in case of upcoming revert
-	if err := p.programs.Burner().Burn(uint64(program.initCost)); err != nil {
+	if err := p.programs.Burner().Burn(multigas.ResourceKindStorageAccess, uint64(program.initCost)); err != nil {
 		return err
 	}
 	moduleHash, err := p.moduleHashes.Get(codeHash)
