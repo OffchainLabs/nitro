@@ -150,7 +150,7 @@ jobs:
         if: matrix.test-mode == 'experimental'
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh
-          --tags debugblock --timeout 60m --cover
+          --tags debugblock --run TestExperimental --timeout 60m --cover
 
       # --------------------- ARCHIVE LOGS FOR ALL MODES ---------------------
 
