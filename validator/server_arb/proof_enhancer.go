@@ -18,14 +18,21 @@ const (
 	MarkerCustomDAValidateCertificate = 0xDB
 )
 
-// ProofEnhancer enhances one-step proofs with additional data
+// ProofEnhancer enhances one-step proofs with additional data.
+// For proving certain opcodes, like for CustomDA, Arbitrator doesn't have enough information
+// to generate the full proofs. In the case of CustomDA, daprovider implementations usually
+// need network access to talk to external DA systems to get full proof details. To indicate
+// that a proof needs enhancement, Arbitrator sets the ProofEnhancementFlag on the machine
+// status byte of the proof that it returns, and also appends one of the Marker bytes to
+// indicate which ProofEnhancer is required.
 type ProofEnhancer interface {
 	// EnhanceProof checks if enhancement is needed and applies it
 	// Returns the enhanced proof or the original if no enhancement needed
 	EnhanceProof(ctx context.Context, messageNum arbutil.MessageIndex, proof []byte) ([]byte, error)
 }
 
-// ProofEnhancementManager manages multiple proof enhancers by marker type
+// ProofEnhancementManager allows registration of ProofEnhancers and provides forwarding of EnhanceProof
+// requests to the appropriate ProofEnhancer.
 type ProofEnhancementManager struct {
 	enhancers map[byte]ProofEnhancer
 }
@@ -42,7 +49,9 @@ func (m *ProofEnhancementManager) RegisterEnhancer(marker byte, enhancer ProofEn
 	m.enhancers[marker] = enhancer
 }
 
-// EnhanceProof implements ProofEnhancer interface
+// EnhanceProof implements ProofEnhancer interface to forward EnhanceProof requests
+// to the appropriate registered ProofEnhancer implementation, if there is any
+// and proof enhancement was requested.
 func (m *ProofEnhancementManager) EnhanceProof(ctx context.Context, messageNum arbutil.MessageIndex, proof []byte) ([]byte, error) {
 	if len(proof) == 0 {
 		return proof, nil
