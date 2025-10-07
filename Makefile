@@ -333,6 +333,10 @@ clean-run-follower-compare-local: clean-follower run-follower-compare-local
 .PHONY: run-follower-compare-sepolia
 run-follower-compare-sepolia:
 	@echo "Starting Nitro sequencer follower (Sepolia with Nethermind)..."
+	@if [ -z "$$SEPOLIA_RPC_API_KEY" ]; then \
+		echo "Error: SEPOLIA_RPC_API_KEY is not set. Please create a .env file or export the variable."; \
+		exit 1; \
+	fi
 	CGO_LDFLAGS=-Wl,-no_warn_duplicate_libraries \
 	PR_EXIT_AFTER_GENESIS=false \
 	PR_IGNORE_CALLSTACK=false \
@@ -341,8 +345,8 @@ run-follower-compare-sepolia:
 	PR_EXECUTION_MODE=compare \
 	target/bin/nitro \
 		--persistent.global-config /tmp/sequencer_follower \
-		--parent-chain.connection.url=http://209.127.228.66/rpc/6ekWpL9BXR0aLXrd \
-        --parent-chain.blob-client.beacon-url=http://209.127.228.66/consensus/6ekWpL9BXR0aLXrd \
+		--parent-chain.connection.url=http://209.127.228.66/rpc/$$SEPOLIA_RPC_API_KEY \
+		--parent-chain.blob-client.beacon-url=http://209.127.228.66/consensus/$$SEPOLIA_RPC_API_KEY \
 		--chain.id=421614 \
 		--execution.forwarding-target null \
 		--execution.enable-prefetch-block=false \
