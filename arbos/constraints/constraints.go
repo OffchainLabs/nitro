@@ -50,22 +50,43 @@ func (s ResourceSet) GetResources() []multigas.ResourceKind {
 
 // ResourceConstraint defines the max gas target per second for the given period for a single resource.
 type ResourceConstraint struct {
-	Resources    ResourceSet
-	Period       PeriodSecs
-	TargetPerSec uint64
-	Backlog      uint64
+	resources    ResourceSet
+	period       PeriodSecs
+	targetPerSec uint64
+	backlog      uint64
+	denominator  uint64
+}
+
+func NewResourceConstraint(resources ResourceSet, periodSecs PeriodSecs, targetPerSec uint64) *ResourceConstraint {
+	constraint := &ResourceConstraint{
+		resources:    resources,
+		period:       periodSecs,
+		targetPerSec: targetPerSec,
+		backlog:      0,
+	}
+	constraint.updateDenominator()
+	return constraint
 }
 
 // AddToBacklog increases the constraint backlog given the multi-dimensional gas used.
 func (c *ResourceConstraint) AddToBacklog(gasUsed multigas.MultiGas) {
-	for _, resource := range c.Resources.GetResources() {
-		c.Backlog = arbmath.SaturatingUAdd(c.Backlog, gasUsed.Get(resource))
+	for _, resource := range c.resources.GetResources() {
+		c.backlog = arbmath.SaturatingUAdd(c.backlog, gasUsed.Get(resource))
 	}
 }
 
 // RemoveFromBacklog decreases the backlog by its target given the amount of time passed.
 func (c *ResourceConstraint) RemoveFromBacklog(timeElapsed uint64) {
-	c.Backlog = arbmath.SaturatingUSub(c.Backlog, timeElapsed*c.TargetPerSec)
+	c.backlog = arbmath.SaturatingUSub(c.backlog, timeElapsed*c.targetPerSec)
+}
+
+// updateDenominator recomputes the denominator based on the target and period.
+func (c *ResourceConstraint) updateDenominator() {
+	// Compute inertia = 30 * sqrt(Δ_i)
+	inertia := PricingInertiaFactor * arbmath.ApproxSquareRoot(uint64(c.period))
+
+	// Compute denominator = inertia * T_i
+	c.denominator = arbmath.SaturatingUMul(inertia, c.targetPerSec)
 }
 
 // constraintKey identifies a resource constraint. There can be only one constraint given the
@@ -105,12 +126,7 @@ func (rc *ResourceConstraints) Set(
 		resources: resources,
 		period:    periodSecs,
 	}
-	constraint := &ResourceConstraint{
-		Resources:    resources,
-		Period:       periodSecs,
-		TargetPerSec: targetPerSec,
-		Backlog:      0,
-	}
+	constraint := NewResourceConstraint(resources, periodSecs, targetPerSec)
 	rc.constraints[key] = constraint
 }
 

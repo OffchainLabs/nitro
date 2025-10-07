@@ -5,7 +5,6 @@
 package constraints
 
 import (
-	"math"
 	"math/big"
 
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -28,18 +27,12 @@ func (ps *PricingState) UpdatePricingModel(minBaseFee *big.Int, timePassed uint6
 		// Decay per-constraint backlog by T_i * timePassed
 		c.RemoveFromBacklog(timePassed)
 
-		if c.Backlog == 0 || c.TargetPerSec == 0 || c.Period == 0 {
+		if c.backlog == 0 || c.targetPerSec == 0 || c.period == 0 {
 			continue
 		}
 
-		// Compute inertia = 30 * sqrt(Δ_i)
-		inertia := PricingInertiaFactor * uint64(math.Floor(math.Sqrt(float64(c.Period))))
-
-		// Compute denominator = inertia * T_i
-		denominator := arbmath.SaturatingUMul(inertia, c.TargetPerSec)
-
-		// Normalized backlog = B_i / (inertia * T_i)
-		expBips := arbmath.NaturalToBips(arbmath.SaturatingCast[int64](c.Backlog)) / arbmath.SaturatingCast[arbmath.Bips](denominator)
+		// Normalized backlog = B_i / denominator
+		expBips := arbmath.NaturalToBips(arbmath.SaturatingCast[int64](c.backlog)) / arbmath.SaturatingCast[arbmath.Bips](c.denominator)
 
 		// Pick the maximum exponent across all constraints
 		if expBips > maxExponentBips {

@@ -115,7 +115,7 @@ func TestConstraintsModelVersusLegacy(t *testing.T) {
 		)
 		val, _ := diff.Float64()
 
-		require.InEpsilonf(t, 1.0, val, 0.015, // within 1.5% tolerance
+		require.InEpsilonf(t, 1.0, val, 0.01, // within 1% tolerance
 			"fees differ too much at iteration %d: legacy=%s new=%s",
 			i, legacyFee.String(), newFee.String())
 
