@@ -805,7 +805,7 @@ func (p *DataPoster) postTransactionWithMutex(ctx context.Context, dataCreatedAt
 		if err != nil {
 			return nil, fmt.Errorf("failed to compute KZG commitments: %w", err)
 		}
-		proofs, err := blobs.ComputeBlobProofs(kzgBlobs, commitments)
+		proofs, version, err := blobs.ComputeBlobProofs(kzgBlobs, commitments, p.config().EnableCellProofs)
 		if err != nil {
 			return nil, fmt.Errorf("failed to compute KZG proofs: %w", err)
 		}
@@ -816,6 +816,7 @@ func (p *DataPoster) postTransactionWithMutex(ctx context.Context, dataCreatedAt
 			Value: value256,
 			Data:  calldata,
 			Sidecar: &types.BlobTxSidecar{
+				Version:     version,
 				Blobs:       kzgBlobs,
 				Commitments: commitments,
 				Proofs:      proofs,
@@ -1306,6 +1307,7 @@ type DataPosterConfig struct {
 	MaxFeeBidMultipleBips  arbmath.UBips     `koanf:"max-fee-bid-multiple-bips" reload:"hot"`
 	NonceRbfSoftConfs      uint64            `koanf:"nonce-rbf-soft-confs" reload:"hot"`
 	Post4844Blobs          bool              `koanf:"post-4844-blobs" reload:"hot"`
+	EnableCellProofs       bool              `koanf:"enable-cell-proofs" reload:"hot"`
 	AllocateMempoolBalance bool              `koanf:"allocate-mempool-balance" reload:"hot"`
 	UseDBStorage           bool              `koanf:"use-db-storage"`
 	UseNoOpStorage         bool              `koanf:"use-noop-storage"`
@@ -1385,6 +1387,7 @@ func DataPosterConfigAddOptions(prefix string, f *pflag.FlagSet, defaultDataPost
 	f.Bool(prefix+".use-db-storage", defaultDataPosterConfig.UseDBStorage, "uses database storage when enabled")
 	f.Bool(prefix+".use-noop-storage", defaultDataPosterConfig.UseNoOpStorage, "uses noop storage, it doesn't store anything")
 	f.Bool(prefix+".post-4844-blobs", defaultDataPosterConfig.Post4844Blobs, "if the parent chain supports 4844 blobs and they're well priced, post EIP-4844 blobs")
+	f.Bool(prefix+".enable-cell-proofs", defaultDataPosterConfig.EnableCellProofs, "enable cell proofs in blob transactions for Fusaka compatibility")
 	f.Bool(prefix+".legacy-storage-encoding", defaultDataPosterConfig.LegacyStorageEncoding, "encodes items in a legacy way (as it was before dropping generics)")
 	f.String(prefix+".max-fee-cap-formula", defaultDataPosterConfig.MaxFeeCapFormula, "mathematical formula to calculate maximum fee cap gwei the result of which would be float64.\n"+
 		"This expression is expected to be evaluated please refer https://github.com/Knetic/govaluate/blob/master/MANUAL.md to find all available mathematical operators.\n"+
@@ -1427,6 +1430,7 @@ var DefaultDataPosterConfig = DataPosterConfig{
 	MaxFeeBidMultipleBips:  arbmath.OneInUBips * 10,
 	NonceRbfSoftConfs:      1,
 	Post4844Blobs:          false,
+	EnableCellProofs:       false, // TODO: Change default after Fusaka activates on L1
 	AllocateMempoolBalance: true,
 	UseDBStorage:           true,
 	UseNoOpStorage:         false,
@@ -1463,6 +1467,7 @@ var TestDataPosterConfig = DataPosterConfig{
 	MaxFeeBidMultipleBips:  arbmath.OneInUBips * 10,
 	NonceRbfSoftConfs:      1,
 	Post4844Blobs:          false,
+	EnableCellProofs:       false,
 	AllocateMempoolBalance: true,
 	UseDBStorage:           false,
 	UseNoOpStorage:         false,
