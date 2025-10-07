@@ -23,7 +23,7 @@ func (d *delayedMessageDatabase) ReadDelayedMessage(
 	msgIndex uint64,
 ) (*mel.DelayedInboxMessage, error) {
 	originalMsgIndex := msgIndex
-	totalMsgsSeen := state.DelayedMessagedSeen
+    totalMsgsSeen := state.DelayedMessagesSeen
 	if msgIndex >= totalMsgsSeen {
 		return nil, fmt.Errorf("index %d out of range, total delayed messages seen: %d", msgIndex, totalMsgsSeen)
 	}
