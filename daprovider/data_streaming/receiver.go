@@ -8,7 +8,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math/rand"
+	"crypto/rand"
+	"encoding/binary"
 	"sync"
 	"time"
 
@@ -177,9 +178,13 @@ func (ms *messageStore) registerNewMessage(nChunks, timeout, chunkSize, totalSiz
 		return 0, fmt.Errorf("can't start collecting new message: already %d pending", len(ms.messages))
 	}
 
-	// Find a free identifier.
+	// Find a free, cryptographically random identifier to avoid predictability across restarts.
 	for {
-		id = MessageId(rand.Uint64())
+		var b [8]byte
+		if _, err := rand.Read(b[:]); err != nil {
+			return 0, fmt.Errorf("can't start collecting new message: %w", err)
+		}
+		id = MessageId(binary.LittleEndian.Uint64(b[:]))
 		if _, alreadyRegistered := ms.messages[id]; !alreadyRegistered {
 			break
 		}
