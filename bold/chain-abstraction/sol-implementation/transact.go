@@ -16,9 +16,10 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rpc"
 
-	"github.com/offchainlabs/nitro/bold/chain-abstraction"
+	protocol "github.com/offchainlabs/nitro/bold/chain-abstraction"
 	"github.com/offchainlabs/nitro/bold/containers"
 )
 
@@ -92,8 +93,10 @@ func (a *AssertionChain) transact(
 		return nil, errors.Wrap(err, "could not convert default base gas to uint64")
 	}
 	opts.GasLimit = gas + defaultGasUint64
+	log.Debug("transact: estimated", "to", tx.To(), "data", tx.Data(), "nonce", tx.Nonce(), "estimated gas", gas, "limit", opts.GasLimit)
 	tx, err = a.transactor.SendTransaction(ctx, fn, opts, gas)
 	if err != nil {
+		log.Debug("transact: send tx failed", "to", tx.To(), "data", tx.Data(), "nonce", tx.Nonce(), "gas", tx.Gas())
 		return nil, err
 	}
 

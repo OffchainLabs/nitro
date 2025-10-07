@@ -11,6 +11,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
 	"github.com/offchainlabs/nitro/solgen/go/challenge_legacy_gen"
@@ -70,6 +71,7 @@ func (w *EOA) ExecuteTransactions(ctx context.Context, txes []*types.Transaction
 
 func (w *EOA) postTransaction(ctx context.Context, baseTx *types.Transaction) (*types.Transaction, error) {
 	gas := baseTx.Gas() + w.getExtraGas()
+	log.Debug("EOA - posting transaction", "nonce", baseTx.Nonce(), "gas", gas, "to", baseTx.To(), "data", baseTx.Data(), "extragas", w.getExtraGas())
 	newTx, err := w.dataPoster.PostSimpleTransaction(ctx, *baseTx.To(), baseTx.Data(), gas, baseTx.Value())
 	if err != nil {
 		return nil, fmt.Errorf("post transaction: %w", err)

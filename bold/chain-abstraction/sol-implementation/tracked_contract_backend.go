@@ -13,8 +13,9 @@ import (
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/log"
 
-	"github.com/offchainlabs/nitro/bold/chain-abstraction"
+	protocol "github.com/offchainlabs/nitro/bold/chain-abstraction"
 )
 
 // TrackedContractBackend implements a wrapper around a chain backend interface
@@ -71,6 +72,7 @@ func (t *TrackedContractBackend) SendTransaction(ctx context.Context, tx *types.
 		metric.GasCosts = append(metric.GasCosts, *gasCost)
 		t.mu.Unlock()
 	}
+	log.Debug("TrackedContractBackend: SendTransaction", "to", tx.To(), "data", tx.Data(), "gas", tx.Gas())
 	return t.ChainBackend.SendTransaction(ctx, tx)
 }
 

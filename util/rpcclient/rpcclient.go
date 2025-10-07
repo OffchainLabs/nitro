@@ -181,7 +181,7 @@ func (c *RpcClient) CallContext(ctx_in context.Context, result interface{}, meth
 		err = c.client.CallContext(ctx, result, method, args...)
 
 		cancelCtx()
-		logger := log.Trace
+		logger := log.Debug
 		limit := c.config().ArgLogLimit
 		if err != nil && !IsAlreadyKnownError(err) {
 			logger = log.Info
@@ -189,7 +189,7 @@ func (c *RpcClient) CallContext(ctx_in context.Context, result interface{}, meth
 		logEntry := []interface{}{
 			"method", method,
 			"logId", logId,
-			"err", err,
+			"err", limitedMarshal{limit, err},
 			"result", limitedMarshal{limit, result},
 			"attempt", i,
 			"args", limitedArgumentsMarshal{limit, args},

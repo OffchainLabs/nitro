@@ -25,11 +25,11 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rpc"
 
-	"github.com/offchainlabs/nitro/bold/chain-abstraction"
+	protocol "github.com/offchainlabs/nitro/bold/chain-abstraction"
 	"github.com/offchainlabs/nitro/bold/containers"
 	"github.com/offchainlabs/nitro/bold/containers/option"
 	"github.com/offchainlabs/nitro/bold/containers/threadsafe"
-	"github.com/offchainlabs/nitro/bold/runtime"
+	retry "github.com/offchainlabs/nitro/bold/runtime"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
@@ -93,6 +93,7 @@ func (d *ChainBackendTransactor) SendTransaction(ctx context.Context, fn func(op
 	}
 	defer d.fifo.Unlock()
 	tx, err := fn(opts)
+	log.Debug("ChainBackendTransactor: SendTransaction", "to", tx.To(), "data", tx.Data(), "gas", tx.Gas())
 	if err != nil {
 		return nil, err
 	}
@@ -546,13 +547,15 @@ func (a *AssertionChain) NewStakeOnNewAssertion(
 		assertionInputs rollupgen.AssertionInputs,
 		expectedAssertionHash [32]byte,
 	) (*types.Transaction, error) {
-		return a.userLogic.NewStakeOnNewAssertion50f32f68(
+		tx, err := a.userLogic.NewStakeOnNewAssertion50f32f68(
 			opts,
 			tokenAmount,
 			assertionInputs,
 			expectedAssertionHash,
 			a.withdrawalAddress,
 		)
+		log.Debug("NewStakeOnNewAssertion: composed tx", "gas", tx.Gas(), "nonce", tx.Nonce(), "to", tx.To(), "data", tx.Data())
+		return tx, err
 	}
 	return a.createAndStakeOnAssertion(
 		ctx,

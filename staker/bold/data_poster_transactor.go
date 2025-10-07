@@ -8,9 +8,10 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
-	"github.com/offchainlabs/nitro/bold/chain-abstraction/sol-implementation"
+	solimpl "github.com/offchainlabs/nitro/bold/chain-abstraction/sol-implementation"
 )
 
 // DataPosterTransactor is a wrapper around a DataPoster that implements the Transactor interface.
@@ -40,5 +41,6 @@ func (d *DataPosterTransactor) SendTransaction(ctx context.Context, fn func(opts
 	if err != nil {
 		return nil, err
 	}
+	log.Debug("DataPosterTransactor: SendTransaction", "to", tx.To(), "data", tx.Data(), "limit", gas)
 	return d.PostSimpleTransaction(ctx, *tx.To(), tx.Data(), gas, tx.Value())
 }
