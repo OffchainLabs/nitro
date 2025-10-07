@@ -93,6 +93,10 @@ func (s *SyncMonitor) GetFinalizedMsgCount(ctx context.Context) (arbutil.Message
 	return 0, nil
 }
 
+func (s *SyncMonitor) GetMaxMessageCount() (arbutil.MessageIndex, error) {
+	return s.maxMessageCount()
+}
+
 func (s *SyncMonitor) maxMessageCount() (arbutil.MessageIndex, error) {
 	msgCount := arbutil.MessageIndex(s.currentMessageCount.Load())
 	feedPending := arbutil.MessageIndex(s.feedPendingMessageCount.Load())
@@ -141,7 +145,14 @@ func (s *SyncMonitor) FullSyncProgressMap() map[string]interface{} {
 	}
 
 	syncTarget := s.SyncTargetMessageCount()
-	res["syncTargetMsgCount"] = syncTarget
+	res["consensusSyncTargetMsgCount"] = syncTarget
+
+	maxMsgCount, err := s.maxMessageCount()
+	if err != nil {
+		res["maxMessageCountError"] = err.Error()
+		return res
+	}
+	res["maxMessageCount"] = maxMsgCount
 
 	msgCount := arbutil.MessageIndex(s.currentMessageCount.Load())
 	res["msgCount"] = msgCount
