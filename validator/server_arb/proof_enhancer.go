@@ -16,6 +16,21 @@ const (
 	// Marker bytes for different enhancement types
 	MarkerCustomDAReadPreimage        = 0xDA
 	MarkerCustomDAValidateCertificate = 0xDB
+
+	// SequencerMessageHeaderSize is the size of the sequencer message header
+	// (MinTimestamp + MaxTimestamp + MinL1Block + MaxL1Block + AfterDelayedMessages = 8+8+8+8+8)
+	SequencerMessageHeaderSize = 40
+
+	// Sizes for proof enhancement marker data
+	CertificateHashSize      = 32 // Size of keccak256 hash of the certificate
+	OffsetSize               = 8  // Size of uint64 offset
+	MarkerSize               = 1  // Size of marker byte
+	CertificateSizeFieldSize = 8  // Size of uint64 certificate size field
+
+	// MinCertificateSize is the minimum size of a certificate (just the header byte).
+	// Real certificates will have more data, but the proof enhancer system doesn't
+	// put any further constraints on certificate structure.
+	MinCertificateSize = 1
 )
 
 // ProofMarker identifies the type of proof enhancement needed
@@ -66,10 +81,9 @@ func (m *ProofEnhancementManager) EnhanceProof(ctx context.Context, messageNum a
 	}
 
 	// Find marker at end of proof
-	if len(proof) < 1 { // Need at least the marker byte
+	if len(proof) < 2 { // Need at least the marker byte after the enhancement flag
 		return nil, fmt.Errorf("proof too short for enhancement: %d bytes", len(proof))
 	}
-
 	marker := ProofMarker(proof[len(proof)-1])
 	enhancer, exists := m.enhancers[marker]
 	if !exists {

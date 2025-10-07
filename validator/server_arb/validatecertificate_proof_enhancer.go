@@ -36,12 +36,13 @@ func NewValidateCertificateProofEnhancer(
 func (e *ValidateCertificateProofEnhancer) EnhanceProof(ctx context.Context, messageNum arbutil.MessageIndex, proof []byte) ([]byte, error) {
 	// Extract the hash and marker from the proof
 	// Format: [...proof..., certHash(32), marker(1)]
-	if len(proof) < 33 {
-		return nil, fmt.Errorf("proof too short for ValidateCertificate enhancement: %d bytes", len(proof))
+	minProofSize := CertificateHashSize + MarkerSize
+	if len(proof) < minProofSize {
+		return nil, fmt.Errorf("proof too short for ValidateCertificate enhancement: expected at least %d bytes, got %d", minProofSize, len(proof))
 	}
 
-	markerPos := len(proof) - 1
-	hashPos := markerPos - 32
+	markerPos := len(proof) - MarkerSize
+	hashPos := markerPos - CertificateHashSize
 
 	// Verify marker
 	if proof[markerPos] != MarkerCustomDAValidateCertificate {
@@ -67,11 +68,11 @@ func (e *ValidateCertificateProofEnhancer) EnhanceProof(ctx context.Context, mes
 		return nil, fmt.Errorf("failed to get sequencer message for batch %d: %w", batchContainingMessage, err)
 	}
 
-	// Extract certificate from sequencer message (skip 40-byte header)
-	if len(sequencerMessage) < 41 {
-		return nil, fmt.Errorf("sequencer message too short: expected at least 41 bytes, got %d", len(sequencerMessage))
+	// Extract certificate from sequencer message (skip sequencer message header)
+	if len(sequencerMessage) < SequencerMessageHeaderSize+1 {
+		return nil, fmt.Errorf("sequencer message too short: expected at least %d bytes, got %d", SequencerMessageHeaderSize+1, len(sequencerMessage))
 	}
-	certificate := sequencerMessage[40:]
+	certificate := sequencerMessage[SequencerMessageHeaderSize:]
 
 	// Verify the certificate hash matches what's requested
 	actualHash := crypto.Keccak256Hash(certificate)
@@ -91,7 +92,7 @@ func (e *ValidateCertificateProofEnhancer) EnhanceProof(ctx context.Context, mes
 	// Remove the marker data (hash + marker) from original proof
 	originalProofLen := hashPos
 	certSize := uint64(len(certificate))
-	enhancedProof := make([]byte, originalProofLen+8+len(certificate)+len(validityProof))
+	enhancedProof := make([]byte, originalProofLen+CertificateSizeFieldSize+len(certificate)+len(validityProof))
 
 	// Copy original proof (without marker data)
 	copy(enhancedProof, proof[:originalProofLen])
@@ -99,7 +100,7 @@ func (e *ValidateCertificateProofEnhancer) EnhanceProof(ctx context.Context, mes
 	// Add certSize
 	offset := originalProofLen
 	binary.BigEndian.PutUint64(enhancedProof[offset:], certSize)
-	offset += 8
+	offset += CertificateSizeFieldSize
 
 	// Add certificate
 	copy(enhancedProof[offset:], certificate)
