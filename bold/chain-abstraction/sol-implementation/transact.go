@@ -94,9 +94,10 @@ func (a *AssertionChain) transact(
 	}
 	opts.GasLimit = gas + defaultGasUint64
 	log.Debug("transact: estimated", "to", tx.To(), "data", tx.Data(), "nonce", tx.Nonce(), "estimated gas", gas, "limit", opts.GasLimit)
+	txCopy := tx
 	tx, err = a.transactor.SendTransaction(ctx, fn, opts, gas)
 	if err != nil {
-		log.Debug("transact: send tx failed", "to", tx.To(), "data", tx.Data(), "nonce", tx.Nonce(), "gas", tx.Gas())
+		log.Debug("transact: send tx failed", "to", txCopy.To(), "data", txCopy.Data(), "nonce", txCopy.Nonce(), "gas", txCopy.Gas())
 		return nil, err
 	}
 
