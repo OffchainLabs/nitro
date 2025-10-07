@@ -93,25 +93,3 @@ func (c *Certificate) RecoverSigner() (common.Address, error) {
 
 	return crypto.PubkeyToAddress(*pubKey), nil
 }
-
-// ValidateWithContract checks if the certificate is signed by a trusted signer using the contract
-// TODO: Uncomment the following once we have merged customda contracts changes.
-/*
-func (c *Certificate) ValidateWithContract(validator *ospgen.ReferenceDAProofValidator, opts *bind.CallOpts) error {
-	signer, err := c.RecoverSigner()
-	if err != nil {
-		return err
-	}
-
-	isTrusted, err := validator.TrustedSigners(opts, signer)
-	if err != nil {
-		return fmt.Errorf("failed to check trusted signer: %w", err)
-	}
-
-	if !isTrusted {
-		return fmt.Errorf("certificate signed by untrusted signer: %s", signer.Hex())
-	}
-
-	return nil
-    }
-*/
