@@ -100,6 +100,7 @@ COPY ./contracts/package.json ./contracts/yarn.lock ./contracts/
 COPY ./safe-smart-account ./safe-smart-account
 COPY ./solgen/gen.go ./solgen/
 COPY ./go-ethereum ./go-ethereum
+COPY ./experimental/debugblock ./experimental/debugblock
 COPY scripts/remove_reference_types.sh scripts/
 COPY --from=brotli-wasm-export / target/
 COPY --from=contracts-builder workspace/contracts-local/out/precompiles/ contracts-local/out/precompiles/
