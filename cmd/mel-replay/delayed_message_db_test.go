@@ -21,9 +21,9 @@ func TestReadDelayedMessage(t *testing.T) {
 	ctx := context.Background()
 	t.Run("message index out of range", func(t *testing.T) {
 		db := &delayedMessageDatabase{}
-		state := &mel.State{
-			DelayedMessagedSeen: 5,
-		}
+        state := &mel.State{
+            DelayedMessagesSeen: 5,
+        }
 		_, err := db.ReadDelayedMessage(ctx, state, 5)
 		require.ErrorContains(t, err, "index 5 out of range, total delayed messages seen: 5")
 	})
@@ -39,10 +39,10 @@ func TestReadDelayedMessage(t *testing.T) {
 
 		resolver := &mockPreimageResolver{preimages: preimages}
 		db := &delayedMessageDatabase{preimageResolver: resolver}
-		state := &mel.State{
-			DelayedMessagedSeen:     1,
-			DelayedMessagesSeenRoot: root,
-		}
+        state := &mel.State{
+            DelayedMessagesSeen:     1,
+            DelayedMessagesSeenRoot: root,
+        }
 
 		msg, err := db.ReadDelayedMessage(ctx, state, uint64(0)) // #nosec G115
 		require.NoError(t, err)
@@ -68,10 +68,10 @@ func TestReadDelayedMessage(t *testing.T) {
 
 		resolver := &mockPreimageResolver{preimages: preimages}
 		db := &delayedMessageDatabase{preimageResolver: resolver}
-		state := &mel.State{
-			DelayedMessagedSeen:     2,
-			DelayedMessagesSeenRoot: root,
-		}
+        state := &mel.State{
+            DelayedMessagesSeen:     2,
+            DelayedMessagesSeenRoot: root,
+        }
 
 		// Test each message
 		expectedData := [][]byte{[]byte("a"), []byte("b")}
@@ -101,10 +101,10 @@ func TestReadDelayedMessage(t *testing.T) {
 
 		resolver := &mockPreimageResolver{preimages: preimages}
 		db := &delayedMessageDatabase{preimageResolver: resolver}
-		state := &mel.State{
-			DelayedMessagedSeen:     3,
-			DelayedMessagesSeenRoot: root,
-		}
+        state := &mel.State{
+            DelayedMessagesSeen:     3,
+            DelayedMessagesSeenRoot: root,
+        }
 
 		// Test each message
 		expectedData := [][]byte{[]byte("a"), []byte("b"), []byte("c")}
