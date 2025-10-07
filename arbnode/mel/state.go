@@ -25,7 +25,7 @@ type State struct {
 	MsgCount                           uint64
 	BatchCount                         uint64
 	DelayedMessagesRead                uint64
-	DelayedMessagedSeen                uint64
+	DelayedMessagesSeen                uint64
 }
 
 // DelayedMessageDatabase can read delayed messages by their global index.
@@ -92,7 +92,7 @@ func (s *State) Clone() *State {
 		DelayedMessagesSeenRoot:            delayedMsgSeenRoot,
 		MsgCount:                           s.MsgCount,
 		DelayedMessagesRead:                s.DelayedMessagesRead,
-		DelayedMessagedSeen:                s.DelayedMessagedSeen,
+		DelayedMessagesSeen:               s.DelayedMessagesSeen,
 	}
 }
 
