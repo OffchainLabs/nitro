@@ -41,7 +41,7 @@ import (
 )
 
 var (
-	messageTimer = metrics.NewRegisteredHistogram("arb/txstreamer/message/time", nil, metrics.NewBoundedHistogramSample())
+	messageTimer = metrics.NewRegisteredHistogram("arb/txstreamer/message/duration", nil, metrics.NewBoundedHistogramSample())
 )
 
 // TransactionStreamer produces blocks from a node's L1 messages, storing the results in the blockchain and recording their positions
