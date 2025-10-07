@@ -407,7 +407,7 @@ func (m *mockBlockRecorder) RecordBlockCreation(
 		SendRoot:   res.SendRoot,
 	}
 	return &execution.RecordResult{
-		Pos:       pos,
+		Index:     pos,
 		BlockHash: res.BlockHash,
 		Preimages: globalstateToTestPreimages(globalState),
 		UserWasms: make(state.UserWasms),

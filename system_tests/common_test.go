@@ -70,6 +70,7 @@ import (
 	"github.com/offchainlabs/nitro/daprovider/das/dasutil"
 	"github.com/offchainlabs/nitro/deploy"
 	"github.com/offchainlabs/nitro/execution/gethexec"
+	"github.com/offchainlabs/nitro/execution/nethexec"
 	_ "github.com/offchainlabs/nitro/execution/nodeInterface"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/localgen"
@@ -97,13 +98,14 @@ import (
 type info = *BlockchainTestInfo
 
 type SecondNodeParams struct {
-	nodeConfig             *arbnode.Config
-	execConfig             *gethexec.Config
-	stackConfig            *node.Config
-	dasConfig              *das.DataAvailabilityConfig
-	initData               *statetransfer.ArbosInitializationInfo
-	addresses              *chaininfo.RollupAddresses
-	useExecutionClientOnly bool
+	nodeConfig                 *arbnode.Config
+	execConfig                 *gethexec.Config
+	stackConfig                *node.Config
+	dasConfig                  *das.DataAvailabilityConfig
+	initData                   *statetransfer.ArbosInitializationInfo
+	addresses                  *chaininfo.RollupAddresses
+	useExecutionClientOnly     bool
+	useExternalExecutionClient bool // Use external Nethermind execution client instead of internal geth
 }
 
 type TestClient struct {
@@ -942,8 +944,7 @@ func build2ndNode(
 
 	testClient := NewTestClient(ctx)
 	testClient.Client, testClient.ConsensusNode =
-		Create2ndNodeWithConfig(t, ctx, firstNodeTestClient.ConsensusNode, parentChainTestClient.Stack, parentChainInfo, params.initData, params.nodeConfig, params.execConfig, params.stackConfig, valnodeConfig, params.addresses, initMessage, params.useExecutionClientOnly)
-	testClient.ExecNode = getExecNode(t, testClient.ConsensusNode)
+		Create2ndNodeWithConfig(t, ctx, firstNodeTestClient.ConsensusNode, parentChainTestClient.Stack, parentChainInfo, params.initData, params.nodeConfig, params.execConfig, params.stackConfig, valnodeConfig, params.addresses, initMessage, params.useExecutionClientOnly, params.useExternalExecutionClient)
 	testClient.cleanup = func() { testClient.ConsensusNode.StopAndWait() }
 	return testClient, func() { testClient.cleanup() }
 }
@@ -1720,6 +1721,7 @@ func Create2ndNodeWithConfig(
 	addresses *chaininfo.RollupAddresses,
 	initMessage *arbostypes.ParsedInitMessage,
 	useExecutionClientOnly bool,
+	useExternalExecutionClient bool,
 ) (*ethclient.Client, *arbnode.Node) {
 	if nodeConfig == nil {
 		nodeConfig = arbnode.ConfigDefaultL1NonSequencerTest()
@@ -1769,23 +1771,54 @@ func Create2ndNodeWithConfig(
 
 	Require(t, nodeConfig.Validate())
 	configFetcher := func() *gethexec.Config { return execConfig }
-	currentExec, err := gethexec.CreateExecutionNode(ctx, chainStack, chainDb, blockchain, parentChainClient, configFetcher, 0)
-	Require(t, err)
 
 	var currentNode *arbnode.Node
 	locator, err := server_common.NewMachineLocator(valnodeConfig.Wasm.RootPath)
 	Require(t, err)
-	if useExecutionClientOnly {
-		currentNode, err = arbnode.CreateNodeExecutionClient(ctx, chainStack, currentExec, arbDb, NewFetcherFromConfig(nodeConfig), blockchain.Config(), parentChainClient, addresses, &validatorTxOpts, &sequencerTxOpts, dataSigner, feedErrChan, big.NewInt(1337), nil, locator.LatestWasmModuleRoot())
+
+	var currentExec nethexec.FullExecutionClient
+	if useExternalExecutionClient {
+		// Create external Nethermind execution client
+		nethermindExecClient, err := nethexec.NewNethermindExecutionClient()
+		Require(t, err)
+
+		// Call DigestInitMessage to initialize the external execution client with genesis block
+		if initMessage != nil {
+			result := nethermindExecClient.DigestInitMessage(ctx, initMessage.InitialL1BaseFee, initMessage.SerializedChainConfig)
+			if result == nil {
+				t.Fatal("DigestInitMessage returned nil for external execution client")
+			}
+		}
+		currentExec = nethermindExecClient
 	} else {
-		currentNode, err = arbnode.CreateNodeFullExecutionClient(ctx, chainStack, currentExec, currentExec, currentExec, currentExec, arbDb, NewFetcherFromConfig(nodeConfig), blockchain.Config(), parentChainClient, addresses, &validatorTxOpts, &sequencerTxOpts, dataSigner, feedErrChan, big.NewInt(1337), nil, locator.LatestWasmModuleRoot())
+		currentExec, err = gethexec.CreateExecutionNode(ctx, chainStack, chainDb, blockchain, parentChainClient, configFetcher, 0)
+		Require(t, err)
 	}
 
-	Require(t, err)
+	if useExecutionClientOnly {
+		currentNode, err = arbnode.CreateNodeExecutionClient(ctx, chainStack, currentExec, arbDb, NewFetcherFromConfig(nodeConfig), blockchain.Config(), parentChainClient, addresses, &validatorTxOpts, &sequencerTxOpts, dataSigner, feedErrChan, big.NewInt(1337), nil, locator.LatestWasmModuleRoot())
+		Require(t, err)
+	} else {
+		currentNode, err = arbnode.CreateNodeFullExecutionClient(ctx, chainStack, currentExec, currentExec, currentExec, currentExec, arbDb, NewFetcherFromConfig(nodeConfig), blockchain.Config(), parentChainClient, addresses, &validatorTxOpts, &sequencerTxOpts, dataSigner, feedErrChan, big.NewInt(1337), nil, locator.LatestWasmModuleRoot())
+		Require(t, err)
+	}
 
 	err = currentNode.Start(ctx)
 	Require(t, err)
-	chainClient := ClientForStack(t, chainStack)
+
+	// For external execution client, connect directly to Nethermind for RPC calls
+	var chainClient *ethclient.Client
+	if useExternalExecutionClient {
+		nethRpcUrl := os.Getenv("PR_NETH_RPC_CLIENT_URL")
+		if nethRpcUrl == "" {
+			nethRpcUrl = "http://localhost:20545"
+		}
+		externalRpcClient, err := rpc.Dial(nethRpcUrl)
+		Require(t, err)
+		chainClient = ethclient.NewClient(externalRpcClient)
+	} else {
+		chainClient = ClientForStack(t, chainStack)
+	}
 
 	StartWatchChanErr(t, ctx, feedErrChan, currentNode)
 
