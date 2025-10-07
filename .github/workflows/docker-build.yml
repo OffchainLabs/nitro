@@ -19,14 +19,17 @@ jobs:
         include:
           - platform: linux/arm64
             runner: ubuntu-arm64-8-core
+            arch_suffix: -arm64
           - platform: linux/amd64
             runner: ubuntu-latest
-    uses: NethermindEth/github-workflows/.github/workflows/docker-build-push-jfrog.yaml@v1.9.0
+            arch_suffix: -amd64
+    uses: NethermindEth/github-workflows/.github/workflows/docker-build-push-jfrog.yaml@v1.9.2
     with:
       group_name: core
       runner: ${{ matrix.runner }}
       image_name: 'arbitrum-nitro'
       platforms: ${{ matrix.platform }}
+      additional_tags: nethermind${{ matrix.arch_suffix }}
       pre_build_script: |
         sudo rm -rf /usr/share/dotnet
         sudo rm -rf /opt/ghc
@@ -40,3 +43,64 @@ jobs:
         sudo apt-get clean
         docker system prune -af --volumes
         df -h
+
+  create-manifest:
+    name: Create multi-arch manifest
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install JFrog CLI
+        id: jfrog
+        uses: jfrog/setup-jfrog-cli@v4
+        env:
+          JF_URL: https://nethermind.jfrog.io
+        with:
+          oidc-provider-name: github-nethermindeth
+
+      - name: Login to Registry with OIDC
+        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
+        with:
+          registry: nethermind.jfrog.io
+          username: ${{ steps.jfrog.outputs.oidc-user }}
+          password: ${{ steps.jfrog.outputs.oidc-token }}
+
+      - name: Create and push multi-arch manifest
+        run: |
+          IMAGE_BASE="nethermind.jfrog.io/core-oci-local-dev/arbitrum-nitro"
+          TAG="nethermind"
+          
+          # Pull architecture-specific digests (excluding attestations)
+          AMD64_DIGEST=$(docker buildx imagetools inspect "${IMAGE_BASE}:${TAG}-amd64" --raw | jq -r '.manifests[] | select(.platform.architecture == "amd64") | .digest')
+          ARM64_DIGEST=$(docker buildx imagetools inspect "${IMAGE_BASE}:${TAG}-arm64" --raw | jq -r '.manifests[] | select(.platform.architecture == "arm64") | .digest')
+          
+          echo "AMD64 Digest: ${AMD64_DIGEST}"
+          echo "ARM64 Digest: ${ARM64_DIGEST}"
+          
+          # Create all the tags that should be multi-arch
+          # Extract branch name for branch-based tag
+          BRANCH_NAME="${GITHUB_REF#refs/heads/}"
+          BRANCH_TAG="${BRANCH_NAME//\//-}"  # Replace / with -
+          
+          TAGS_TO_CREATE=(
+            "${TAG}"
+            "${BRANCH_TAG}"
+            "latest"
+            "$(date +%Y%m%d)"
+            "$(date +%Y%m%d)-${GITHUB_SHA:0:7}"
+            "sha-${GITHUB_SHA:0:7}"
+            "${GITHUB_SHA}"
+            "${GITHUB_SHA:0:7}"
+          )
+          
+          # Create manifest for each tag using specific digests (excludes attestations)
+          for TAG_NAME in "${TAGS_TO_CREATE[@]}"; do
+            echo "Creating multi-arch manifest for: ${IMAGE_BASE}:${TAG_NAME}"
+            docker buildx imagetools create -t "${IMAGE_BASE}:${TAG_NAME}" \
+              "${IMAGE_BASE}@${AMD64_DIGEST}" \
+              "${IMAGE_BASE}@${ARM64_DIGEST}"
+          done
+          
+          echo "✅ Multi-arch manifests created for all tags"
+          
+          # Verify main tag manifest
+          docker buildx imagetools inspect "${IMAGE_BASE}:${TAG}"
