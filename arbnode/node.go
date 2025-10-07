@@ -65,7 +65,7 @@ import (
 type DAConfig struct {
 	Mode             string                `koanf:"mode"`
 	ReferenceDA      referenceda.Config    `koanf:"referenceda"`
-	ExternalProvider daclient.ClientConfig `koanf:"external-provider"`
+	ExternalProvider daclient.ClientConfig `koanf:"external-provider" reload:"hot"`
 }
 
 func DAConfigAddOptions(prefix string, f *pflag.FlagSet) {
@@ -87,7 +87,7 @@ type Config struct {
 	Bold                     bold.BoldConfig                `koanf:"bold"`
 	SeqCoordinator           SeqCoordinatorConfig           `koanf:"seq-coordinator"`
 	DataAvailability         das.DataAvailabilityConfig     `koanf:"data-availability"`
-	DA                       DAConfig                       `koanf:"da"`
+	DA                       DAConfig                       `koanf:"da" reload:"hot"`
 	SyncMonitor              SyncMonitorConfig              `koanf:"sync-monitor"`
 	Dangerous                DangerousConfig                `koanf:"dangerous"`
 	TransactionStreamer      TransactionStreamerConfig      `koanf:"transaction-streamer" reload:"hot"`
