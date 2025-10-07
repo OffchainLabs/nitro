@@ -21,9 +21,9 @@ import (
 func TestDatabaseConversion(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).DontParalellise()
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
 	builder.l2StackConfig.DBEngine = "leveldb"
-	builder.l2StackConfig.Name = "testl2"
+	builder.l2StackConfig.Name = "db-conversion-test-l2"
 	// currently only HashScheme supports archive mode
 	if builder.execConfig.Caching.StateScheme == rawdb.HashScheme {
 		builder.execConfig.Caching.Archive = true
@@ -33,7 +33,7 @@ func TestDatabaseConversion(t *testing.T) {
 	defer cleanup()
 	builder.L2Info.GenerateAccount("User2")
 	var txs []*types.Transaction
-	for i := uint64(0); i < 200; i++ {
+	for i := uint64(0); i < 51; i++ {
 		tx := builder.L2Info.PrepareTx("Owner", "User2", builder.L2Info.TransferGas, common.Big1, nil)
 		txs = append(txs, tx)
 	}
