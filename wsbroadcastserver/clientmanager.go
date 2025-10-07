@@ -76,8 +76,6 @@ func (cm *ClientManager) registerClient(ctx context.Context, clientConnection *C
 		}
 	}()
 
-	// TODO:(clamb) the clientsTotalFailedRegisterCounter was deleted after backlog logic moved to ClientConnection. Should this metric be reintroduced or will it be ok to just delete completely given the behaviour has changed, ask Lee
-
 	if cm.config().ConnectionLimits.Enable && !cm.connectionLimiter.Register(clientConnection.clientIp) {
 		return fmt.Errorf("Connection limited %s", clientConnection.clientIp)
 	}
