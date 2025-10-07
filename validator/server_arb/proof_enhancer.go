@@ -18,6 +18,9 @@ const (
 	MarkerCustomDAValidateCertificate = 0xDB
 )
 
+// ProofMarker identifies the type of proof enhancement needed
+type ProofMarker byte
+
 // ProofEnhancer enhances one-step proofs with additional data.
 // For proving certain opcodes, like for CustomDA, Arbitrator doesn't have enough information
 // to generate the full proofs. In the case of CustomDA, daprovider implementations usually
@@ -34,18 +37,18 @@ type ProofEnhancer interface {
 // ProofEnhancementManager allows registration of ProofEnhancers and provides forwarding of EnhanceProof
 // requests to the appropriate ProofEnhancer.
 type ProofEnhancementManager struct {
-	enhancers map[byte]ProofEnhancer
+	enhancers map[ProofMarker]ProofEnhancer
 }
 
 // NewProofEnhancementManager creates a new proof enhancement manager
 func NewProofEnhancementManager() *ProofEnhancementManager {
 	return &ProofEnhancementManager{
-		enhancers: make(map[byte]ProofEnhancer),
+		enhancers: make(map[ProofMarker]ProofEnhancer),
 	}
 }
 
 // RegisterEnhancer registers an enhancer for a specific marker byte
-func (m *ProofEnhancementManager) RegisterEnhancer(marker byte, enhancer ProofEnhancer) {
+func (m *ProofEnhancementManager) RegisterEnhancer(marker ProofMarker, enhancer ProofEnhancer) {
 	m.enhancers[marker] = enhancer
 }
 
@@ -67,7 +70,7 @@ func (m *ProofEnhancementManager) EnhanceProof(ctx context.Context, messageNum a
 		return nil, fmt.Errorf("proof too short for enhancement: %d bytes", len(proof))
 	}
 
-	marker := proof[len(proof)-1]
+	marker := ProofMarker(proof[len(proof)-1])
 	enhancer, exists := m.enhancers[marker]
 	if !exists {
 		return nil, fmt.Errorf("unknown enhancement marker: 0x%02x", marker)
