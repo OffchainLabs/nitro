@@ -16,23 +16,23 @@ import (
 // Going over the target for this given period will increase the gas price.
 type PeriodSecs uint32
 
+type ResourceWeight uint64
+
 // ResourceSet tracks resource weights for constraint calculation.
 type ResourceSet struct {
-	weights [multigas.NumResourceKind]uint8
+	weights [multigas.NumResourceKind]ResourceWeight
 }
 
 // EmptyResourceSet creates a new set with all weights initialized to zero.
 func EmptyResourceSet() ResourceSet {
 	return ResourceSet{
-		weights: [multigas.NumResourceKind]uint8{},
+		weights: [multigas.NumResourceKind]ResourceWeight{},
 	}
 }
 
-// WithResources sets resource weights from the provided map.
-func (s ResourceSet) WithResources(resourceWeights map[multigas.ResourceKind]uint8) ResourceSet {
-	for resource, weight := range resourceWeights {
-		s.weights[resource] = weight
-	}
+// WithResource sets the weight for a single resource.
+func (s ResourceSet) WithResource(resource multigas.ResourceKind, weight ResourceWeight) ResourceSet {
+	s.weights[resource] = weight
 	return s
 }
 
@@ -41,16 +41,19 @@ func (s ResourceSet) HasResource(resource multigas.ResourceKind) bool {
 	return s.weights[resource] != 0
 }
 
-// GetResources returns all resources with non-zero weights.
-func (s ResourceSet) GetResources() []multigas.ResourceKind {
-	var resources []multigas.ResourceKind
-	for resource, weight := range s.weights {
-		if weight != 0 {
-			//nolint:gosec // G115: Safe conversion, resource is array index within bounds
-			resources = append(resources, multigas.ResourceKind(resource))
+// All returns all resources with non-zero weights.
+func (s ResourceSet) All() iter.Seq2[multigas.ResourceKind, ResourceWeight] {
+	return func(yield func(multigas.ResourceKind, ResourceWeight) bool) {
+		for i, weight := range s.weights {
+			if weight != 0 {
+				//nolint:gosec // G115: Safe conversion, s.weights length is multigas.NumResourceKind
+				resource := multigas.ResourceKind(i)
+				if !yield(resource, weight) {
+					break
+				}
+			}
 		}
 	}
-	return resources
 }
 
 // ResourceConstraint defines the max gas target per second for the given period for a single resource.
@@ -63,8 +66,7 @@ type ResourceConstraint struct {
 
 // AddToBacklog increases the constraint backlog given the multi-dimensional gas used multiplied by their weights.
 func (c *ResourceConstraint) AddToBacklog(gasUsed multigas.MultiGas) {
-	for _, resource := range c.Resources.GetResources() {
-		weight := c.Resources.weights[resource]
+	for resource, weight := range c.Resources.All() {
 		weightedGas := gasUsed.Get(resource) * uint64(weight)
 		c.Backlog = arbmath.SaturatingUAdd(c.Backlog, weightedGas)
 	}
