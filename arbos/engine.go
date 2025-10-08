@@ -25,16 +25,56 @@ func (e Engine) Author(header *types.Header) (common.Address, error) {
 }
 
 func (e Engine) VerifyHeader(chain consensus.ChainHeaderReader, header *types.Header) error {
-	// TODO what verification should be done here?
+	if header == nil {
+		return errors.New("nil header")
+	}
+
+	// Enforce Arbitrum L2 invariants that don't require state.
+	if header.UncleHash != types.EmptyUncleHash {
+		return errors.New("uncles not supported")
+	}
+	if header.Difficulty == nil || header.Difficulty.Cmp(big.NewInt(1)) != 0 {
+		return errors.New("unexpected difficulty")
+	}
+	if header.BaseFee == nil {
+		return errors.New("missing basefee")
+	}
+	if header.GasLimit < header.GasUsed {
+		return errors.New("gas used exceeds gas limit")
+	}
+	if header.Nonce != (types.BlockNonce{}) {
+		return errors.New("unexpected nonce")
+	}
+
+	// Timestamp monotonicity relative to parent (if parent exists).
+	if header.Number != nil && header.Number.Sign() > 0 {
+		parentNumber := new(big.Int).Sub(header.Number, big.NewInt(1))
+		parent := chain.GetHeader(header.ParentHash, parentNumber.Uint64())
+		if parent != nil {
+			if header.Time < parent.Time {
+				return errors.New("timestamp older than parent")
+			}
+		}
+	}
+
 	return nil
 }
 
 func (e Engine) VerifyHeaders(chain consensus.ChainHeaderReader, headers []*types.Header) (chan<- struct{}, <-chan error) {
-	errors := make(chan error, len(headers))
-	for i := range headers {
-		errors <- e.VerifyHeader(chain, headers[i])
-	}
-	return make(chan struct{}), errors
+	abort := make(chan struct{})
+	errs := make(chan error, len(headers))
+	go func() {
+		defer close(errs)
+		for i := range headers {
+			select {
+			case <-abort:
+				return
+			default:
+			}
+			errs <- e.VerifyHeader(chain, headers[i])
+		}
+	}()
+	return abort, errs
 }
 
 func (e Engine) VerifyUncles(chain consensus.ChainReader, block *types.Block) error {
