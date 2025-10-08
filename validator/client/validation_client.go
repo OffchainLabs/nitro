@@ -16,7 +16,6 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/node"
-	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/rpcclient"
@@ -70,12 +69,7 @@ func (c *ValidationClient) Start(ctx context.Context) error {
 	}
 	var stylusArchs []rawdb.WasmTarget
 	if err := c.client.CallContext(ctx, &stylusArchs, server_api.Namespace+"_stylusArchs"); err != nil {
-		var rpcError rpc.Error
-		ok := errors.As(err, &rpcError)
-		if !ok || rpcError.ErrorCode() != -32601 {
-			return fmt.Errorf("could not read stylus arch from server: %w", err)
-		}
-		stylusArchs = []rawdb.WasmTarget{rawdb.WasmTarget("pre-stylus")} // invalid, will fail if trying to validate block with stylus
+		return fmt.Errorf("could not read stylus arch from server: %w", err)
 	} else {
 		if len(stylusArchs) == 0 {
 			return fmt.Errorf("could not read stylus archs from validation server")
