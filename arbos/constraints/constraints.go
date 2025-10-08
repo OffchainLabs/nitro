@@ -16,33 +16,38 @@ import (
 // Going over the target for this given period will increase the gas price.
 type PeriodSecs uint32
 
-// ResourceSet is a set of resources.
-type ResourceSet uint32
-
-// EmptyResourceSet creates a new set.
-func EmptyResourceSet() ResourceSet {
-	return ResourceSet(0)
+// ResourceSet tracks resource weights for constraint calculation.
+type ResourceSet struct {
+	weights [multigas.NumResourceKind]uint8
 }
 
-// WithResources adds the list of resources to the set.
-func (s ResourceSet) WithResources(resources ...multigas.ResourceKind) ResourceSet {
-	for _, resource := range resources {
-		s = s | (1 << resource)
+// EmptyResourceSet creates a new set with all weights initialized to zero.
+func EmptyResourceSet() ResourceSet {
+	return ResourceSet{
+		weights: [multigas.NumResourceKind]uint8{},
+	}
+}
+
+// WithResources sets resource weights from the provided map.
+func (s ResourceSet) WithResources(resourceWeights map[multigas.ResourceKind]uint8) ResourceSet {
+	for resource, weight := range resourceWeights {
+		s.weights[resource] = weight
 	}
 	return s
 }
 
-// HasResource returns whether the given resource is in the set.
+// HasResource returns true if the resource has a non-zero weight in the set.
 func (s ResourceSet) HasResource(resource multigas.ResourceKind) bool {
-	return (s & (1 << resource)) != 0
+	return s.weights[resource] != 0
 }
 
-// GetResources returns the list of resources in the set.
+// GetResources returns all resources with non-zero weights.
 func (s ResourceSet) GetResources() []multigas.ResourceKind {
 	var resources []multigas.ResourceKind
-	for resource := range multigas.NumResourceKind {
-		if s.HasResource(resource) {
-			resources = append(resources, resource)
+	for resource, weight := range s.weights {
+		if weight != 0 {
+			//nolint:gosec // G115: Safe conversion, resource is array index within bounds
+			resources = append(resources, multigas.ResourceKind(resource))
 		}
 	}
 	return resources
@@ -56,10 +61,12 @@ type ResourceConstraint struct {
 	Backlog      uint64
 }
 
-// AddToBacklog increases the constraint backlog given the multi-dimensional gas used.
+// AddToBacklog increases the constraint backlog given the multi-dimensional gas used multiplied by their weights.
 func (c *ResourceConstraint) AddToBacklog(gasUsed multigas.MultiGas) {
 	for _, resource := range c.Resources.GetResources() {
-		c.Backlog = arbmath.SaturatingUAdd(c.Backlog, gasUsed.Get(resource))
+		weight := c.Resources.weights[resource]
+		weightedGas := gasUsed.Get(resource) * uint64(weight)
+		c.Backlog = arbmath.SaturatingUAdd(c.Backlog, weightedGas)
 	}
 }
 
