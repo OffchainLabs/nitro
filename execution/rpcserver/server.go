@@ -51,6 +51,11 @@ func (c *ExecutionRPCServer) SetFinalityData(ctx context.Context, safeFinalityDa
 	return err
 }
 
+func (c *ExecutionRPCServer) SetConsensusSyncData(ctx context.Context, syncData *execution.ConsensusSyncData) error {
+	_, err := c.executionClient.SetConsensusSyncData(ctx, syncData).Await(ctx)
+	return err
+}
+
 func (c *ExecutionRPCServer) MarkFeedStart(ctx context.Context, to arbutil.MessageIndex) error {
 	_, err := c.executionClient.MarkFeedStart(to).Await(ctx)
 	return err

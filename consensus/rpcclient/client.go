@@ -66,39 +66,6 @@ func (c *ConsensusRPCClient) GetBatchParentChainBlock(seqNum uint64) containers.
 	})
 }
 
-func (c *ConsensusRPCClient) Synced() containers.PromiseInterface[bool] {
-	return stopwaiter.LaunchPromiseThread(c, func(ctx context.Context) (bool, error) {
-		var res bool
-		err := c.client.CallContext(ctx, &res, consensus.RPCNamespace+"_synced")
-		if err != nil {
-			return false, convertError(err)
-		}
-		return res, nil
-	})
-}
-
-func (c *ConsensusRPCClient) FullSyncProgressMap() containers.PromiseInterface[map[string]interface{}] {
-	return stopwaiter.LaunchPromiseThread(c, func(ctx context.Context) (map[string]interface{}, error) {
-		var res map[string]interface{}
-		err := c.client.CallContext(ctx, &res, consensus.RPCNamespace+"_fullSyncProgressMap")
-		if err != nil {
-			return nil, convertError(err)
-		}
-		return res, nil
-	})
-}
-
-func (c *ConsensusRPCClient) SyncTargetMessageCount() containers.PromiseInterface[arbutil.MessageIndex] {
-	return stopwaiter.LaunchPromiseThread(c, func(ctx context.Context) (arbutil.MessageIndex, error) {
-		var res arbutil.MessageIndex
-		err := c.client.CallContext(ctx, &res, consensus.RPCNamespace+"_syncTargetMessageCount")
-		if err != nil {
-			return 0, convertError(err)
-		}
-		return res, nil
-	})
-}
-
 func (c *ConsensusRPCClient) BlockMetadataAtMessageIndex(msgIdx arbutil.MessageIndex) containers.PromiseInterface[common.BlockMetadata] {
 	return stopwaiter.LaunchPromiseThread(c, func(ctx context.Context) (common.BlockMetadata, error) {
 		var res common.BlockMetadata
