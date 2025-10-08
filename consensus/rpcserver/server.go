@@ -26,18 +26,6 @@ func (a *ConsensusRPCServer) GetBatchParentChainBlock(ctx context.Context, seqNu
 	return a.consensus.GetBatchParentChainBlock(seqNum).Await(ctx)
 }
 
-func (a *ConsensusRPCServer) Synced(ctx context.Context) (bool, error) {
-	return a.consensus.Synced().Await(ctx)
-}
-
-func (a *ConsensusRPCServer) FullSyncProgressMap(ctx context.Context) (map[string]interface{}, error) {
-	return a.consensus.FullSyncProgressMap().Await(ctx)
-}
-
-func (a *ConsensusRPCServer) SyncTargetMessageCount(ctx context.Context) (arbutil.MessageIndex, error) {
-	return a.consensus.SyncTargetMessageCount().Await(ctx)
-}
-
 func (a *ConsensusRPCServer) BlockMetadataAtMessageIndex(ctx context.Context, msgIdx arbutil.MessageIndex) (common.BlockMetadata, error) {
 	return a.consensus.BlockMetadataAtMessageIndex(msgIdx).Await(ctx)
 }
