@@ -55,6 +55,9 @@ func Decompress(input []byte, maxSize int) ([]byte, error) {
 }
 
 func DecompressWithDictionary(input []byte, maxSize int, dictionary Dictionary) ([]byte, error) {
+	if maxSize < 0 {
+		return nil, fmt.Errorf("maxSize cannot be negative: %d", maxSize)
+	}
 	output := make([]byte, maxSize)
 	outbuf := sliceToBuffer(output)
 	inbuf := sliceToBuffer(input)
@@ -66,7 +69,7 @@ func DecompressWithDictionary(input []byte, maxSize int, dictionary Dictionary) 
 	if status != C.BrotliStatus_Success {
 		return nil, fmt.Errorf("failed decompression: %d", status)
 	}
-	if *outbuf.len > usize(maxSize) {
+	if int(*outbuf.len) > maxSize {
 		return nil, fmt.Errorf("failed decompression: result too large: %d, wanted: < %d", *outbuf.len, maxSize)
 	}
 	output = output[:*outbuf.len]
