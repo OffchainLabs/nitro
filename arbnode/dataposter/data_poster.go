@@ -118,6 +118,9 @@ type DataPosterOpts struct {
 
 func NewDataPoster(ctx context.Context, opts *DataPosterOpts) (*DataPoster, error) {
 	cfg := opts.Config()
+	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
 	useNoOpStorage := cfg.UseNoOpStorage
 	if opts.HeaderReader.IsParentChainArbitrum() && !cfg.UseNoOpStorage {
 		useNoOpStorage = true
@@ -756,6 +759,27 @@ func (p *DataPoster) PostTransaction(ctx context.Context, dataCreatedAt time.Tim
 	return p.postTransactionWithMutex(ctx, dataCreatedAt, nonce, meta, to, calldata, gasLimit, value, kzgBlobs, accessList)
 }
 
+// shouldEnableCellProofs determines whether to use cell proofs based on the config and L1 state.
+// Returns true if cell proofs should be used, false otherwise.
+func (p *DataPoster) shouldEnableCellProofs(ctx context.Context) (bool, error) {
+	config := p.config().EnableCellProofs
+
+	switch config {
+	case "force-enable":
+		return true, nil
+	case "force-disable":
+		return false, nil
+	case "", "auto":
+		// Auto-detect based on L1 Osaka fork activation
+		if p.parentChain == nil {
+			return false, fmt.Errorf("cannot auto-detect cell proof support: parent chain not configured")
+		}
+		return p.parentChain.SupportsCellProofs(ctx, nil)
+	default:
+		return false, fmt.Errorf("invalid enable-cell-proofs config value: %q (valid values: \"\", \"auto\", \"force-enable\", \"force-disable\")", config)
+	}
+}
+
 func (p *DataPoster) postTransactionWithMutex(ctx context.Context, dataCreatedAt time.Time, nonce uint64, meta []byte, to common.Address, calldata []byte, gasLimit uint64, value *big.Int, kzgBlobs []kzg4844.Blob, accessList types.AccessList) (*types.Transaction, error) {
 
 	if p.config().DisableNewTx {
@@ -805,7 +829,11 @@ func (p *DataPoster) postTransactionWithMutex(ctx context.Context, dataCreatedAt
 		if err != nil {
 			return nil, fmt.Errorf("failed to compute KZG commitments: %w", err)
 		}
-		proofs, err := blobs.ComputeBlobProofs(kzgBlobs, commitments)
+		enableCellProofs, err := p.shouldEnableCellProofs(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to determine cell proof support: %w", err)
+		}
+		proofs, version, err := blobs.ComputeProofs(kzgBlobs, commitments, enableCellProofs)
 		if err != nil {
 			return nil, fmt.Errorf("failed to compute KZG proofs: %w", err)
 		}
@@ -816,6 +844,7 @@ func (p *DataPoster) postTransactionWithMutex(ctx context.Context, dataCreatedAt
 			Value: value256,
 			Data:  calldata,
 			Sidecar: &types.BlobTxSidecar{
+				Version:     version,
 				Blobs:       kzgBlobs,
 				Commitments: commitments,
 				Proofs:      proofs,
@@ -1306,6 +1335,7 @@ type DataPosterConfig struct {
 	MaxFeeBidMultipleBips  arbmath.UBips     `koanf:"max-fee-bid-multiple-bips" reload:"hot"`
 	NonceRbfSoftConfs      uint64            `koanf:"nonce-rbf-soft-confs" reload:"hot"`
 	Post4844Blobs          bool              `koanf:"post-4844-blobs" reload:"hot"`
+	EnableCellProofs       string            `koanf:"enable-cell-proofs" reload:"hot"`
 	AllocateMempoolBalance bool              `koanf:"allocate-mempool-balance" reload:"hot"`
 	UseDBStorage           bool              `koanf:"use-db-storage"`
 	UseNoOpStorage         bool              `koanf:"use-noop-storage"`
@@ -1362,6 +1392,17 @@ type DangerousConfig struct {
 	ClearDBStorage bool `koanf:"clear-dbstorage"`
 }
 
+// Validate checks that the DataPosterConfig is valid.
+func (c *DataPosterConfig) Validate() error {
+	switch c.EnableCellProofs {
+	case "", "auto", "force-enable", "force-disable":
+		// Valid values
+	default:
+		return fmt.Errorf("invalid enable-cell-proofs value %q (valid: \"\", \"auto\", \"force-enable\", \"force-disable\")", c.EnableCellProofs)
+	}
+	return nil
+}
+
 // ConfigFetcher function type is used instead of directly passing config so
 // that flags can be reloaded dynamically.
 type ConfigFetcher func() *DataPosterConfig
@@ -1385,6 +1426,7 @@ func DataPosterConfigAddOptions(prefix string, f *pflag.FlagSet, defaultDataPost
 	f.Bool(prefix+".use-db-storage", defaultDataPosterConfig.UseDBStorage, "uses database storage when enabled")
 	f.Bool(prefix+".use-noop-storage", defaultDataPosterConfig.UseNoOpStorage, "uses noop storage, it doesn't store anything")
 	f.Bool(prefix+".post-4844-blobs", defaultDataPosterConfig.Post4844Blobs, "if the parent chain supports 4844 blobs and they're well priced, post EIP-4844 blobs")
+	f.String(prefix+".enable-cell-proofs", defaultDataPosterConfig.EnableCellProofs, "enable cell proofs in blob transactions for Fusaka compatibility. Valid values: \"\" or \"auto\" (auto-detect based on L1 Osaka fork), \"force-enable\", \"force-disable\"")
 	f.Bool(prefix+".legacy-storage-encoding", defaultDataPosterConfig.LegacyStorageEncoding, "encodes items in a legacy way (as it was before dropping generics)")
 	f.String(prefix+".max-fee-cap-formula", defaultDataPosterConfig.MaxFeeCapFormula, "mathematical formula to calculate maximum fee cap gwei the result of which would be float64.\n"+
 		"This expression is expected to be evaluated please refer https://github.com/Knetic/govaluate/blob/master/MANUAL.md to find all available mathematical operators.\n"+
@@ -1427,6 +1469,7 @@ var DefaultDataPosterConfig = DataPosterConfig{
 	MaxFeeBidMultipleBips:  arbmath.OneInUBips * 10,
 	NonceRbfSoftConfs:      1,
 	Post4844Blobs:          false,
+	EnableCellProofs:       "", // empty string = auto-detect based on L1 Osaka fork
 	AllocateMempoolBalance: true,
 	UseDBStorage:           true,
 	UseNoOpStorage:         false,
@@ -1463,6 +1506,7 @@ var TestDataPosterConfig = DataPosterConfig{
 	MaxFeeBidMultipleBips:  arbmath.OneInUBips * 10,
 	NonceRbfSoftConfs:      1,
 	Post4844Blobs:          false,
+	EnableCellProofs:       "", // empty string = auto-detect based on L1 Osaka fork
 	AllocateMempoolBalance: true,
 	UseDBStorage:           false,
 	UseNoOpStorage:         false,
