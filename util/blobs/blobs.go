@@ -128,15 +128,15 @@ func ComputeCommitmentsAndHashes(blobs []kzg4844.Blob) ([]kzg4844.Commitment, []
 	return commitments, versionedHashes, nil
 }
 
-// ComputeBlobProofs computes either legacy blob proofs (Version0) or cell proofs (Version1)
+// ComputeProofs computes either legacy blob proofs (Version0) or cell proofs (Version1)
 // based on the enableCellProofs flag. Returns proofs, version byte, and error.
-func ComputeBlobProofs(blobs []kzg4844.Blob, commitments []kzg4844.Commitment, enableCellProofs bool) ([]kzg4844.Proof, byte, error) {
+func ComputeProofs(blobs []kzg4844.Blob, commitments []kzg4844.Commitment, enableCellProofs bool) ([]kzg4844.Proof, byte, error) {
 	if len(blobs) != len(commitments) {
-		return nil, 0, fmt.Errorf("ComputeBlobProofs got %v blobs but %v commitments", len(blobs), len(commitments))
+		return nil, 0, fmt.Errorf("ComputeProofs got %v blobs but %v commitments", len(blobs), len(commitments))
 	}
 
 	if enableCellProofs {
-		// Version1: Use cell proofs for Fusaka compatibility (EIP-7742)
+		// Version1: Use cell proofs for Fusaka compatibility
 		// Each blob generates CellProofsPerBlob (128) proofs
 		proofs := make([]kzg4844.Proof, 0, len(blobs)*kzg4844.CellProofsPerBlob)
 		for i := range blobs {

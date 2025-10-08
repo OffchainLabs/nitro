@@ -52,7 +52,7 @@ outer:
 	}
 }
 
-func TestComputeBlobProofsVersion0(t *testing.T) {
+func TestComputeProofsVersion0(t *testing.T) {
 	testData := []byte("test data for blob proof version 0")
 	blobs, err := EncodeBlobs(testData)
 	if err != nil {
@@ -66,7 +66,7 @@ func TestComputeBlobProofsVersion0(t *testing.T) {
 		t.Fatalf("failed to compute commitments: %v", err)
 	}
 
-	proofs, version, err := ComputeBlobProofs(blobs, commitments, false)
+	proofs, version, err := ComputeProofs(blobs, commitments, false)
 	if err != nil {
 		t.Fatalf("failed to compute version 0 proofs: %v", err)
 	}
@@ -91,7 +91,7 @@ func TestComputeBlobProofsVersion0(t *testing.T) {
 	}
 }
 
-func TestComputeBlobProofsVersion1(t *testing.T) {
+func TestComputeProofsVersion1(t *testing.T) {
 	testData := []byte("test data for blob proof version 1 with cell proofs")
 	blobs, err := EncodeBlobs(testData)
 	if err != nil {
@@ -105,7 +105,7 @@ func TestComputeBlobProofsVersion1(t *testing.T) {
 		t.Fatalf("failed to compute commitments: %v", err)
 	}
 
-	proofs, version, err := ComputeBlobProofs(blobs, commitments, true)
+	proofs, version, err := ComputeProofs(blobs, commitments, true)
 	if err != nil {
 		t.Fatalf("failed to compute version 1 proofs: %v", err)
 	}
@@ -128,20 +128,20 @@ func TestComputeBlobProofsVersion1(t *testing.T) {
 	}
 }
 
-func TestComputeBlobProofsMismatchedInputs(t *testing.T) {
+func TestComputeProofsMismatchedInputs(t *testing.T) {
 	testData := []byte("test data")
 	blobs, err := EncodeBlobs(testData)
 	if err != nil {
 		t.Fatalf("failed to encode blobs: %v", err)
 	}
 
-	_, _, err = ComputeBlobProofs(blobs, []kzg4844.Commitment{}, false)
+	_, _, err = ComputeProofs(blobs, []kzg4844.Commitment{}, false)
 	if err == nil {
 		t.Error("expected error for mismatched blobs and commitments, got nil")
 	}
 }
 
-func TestComputeBlobProofsMultipleBlobsVersion0(t *testing.T) {
+func TestComputeProofsMultipleBlobsVersion0(t *testing.T) {
 	// Create test data large enough to span multiple blobs
 	testData := make([]byte, bytesEncodedPerBlob*2)
 	for i := range testData {
@@ -160,7 +160,7 @@ func TestComputeBlobProofsMultipleBlobsVersion0(t *testing.T) {
 		t.Fatalf("failed to compute commitments: %v", err)
 	}
 
-	proofs, version, err := ComputeBlobProofs(multiBlobs, multiCommitments, false)
+	proofs, version, err := ComputeProofs(multiBlobs, multiCommitments, false)
 	if err != nil {
 		t.Fatalf("failed to compute proofs: %v", err)
 	}
@@ -183,7 +183,7 @@ func TestComputeBlobProofsMultipleBlobsVersion0(t *testing.T) {
 	}
 }
 
-func TestComputeBlobProofsMultipleBlobsVersion1(t *testing.T) {
+func TestComputeProofsMultipleBlobsVersion1(t *testing.T) {
 	// Create test data large enough to span multiple blobs
 	testData := make([]byte, bytesEncodedPerBlob*2)
 	for i := range testData {
@@ -202,7 +202,7 @@ func TestComputeBlobProofsMultipleBlobsVersion1(t *testing.T) {
 		t.Fatalf("failed to compute commitments: %v", err)
 	}
 
-	proofs, version, err := ComputeBlobProofs(multiBlobs, multiCommitments, true)
+	proofs, version, err := ComputeProofs(multiBlobs, multiCommitments, true)
 	if err != nil {
 		t.Fatalf("failed to compute proofs: %v", err)
 	}
