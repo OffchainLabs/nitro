@@ -833,7 +833,7 @@ func (p *DataPoster) postTransactionWithMutex(ctx context.Context, dataCreatedAt
 		if err != nil {
 			return nil, fmt.Errorf("failed to determine cell proof support: %w", err)
 		}
-		proofs, version, err := blobs.ComputeBlobProofs(kzgBlobs, commitments, enableCellProofs)
+		proofs, version, err := blobs.ComputeProofs(kzgBlobs, commitments, enableCellProofs)
 		if err != nil {
 			return nil, fmt.Errorf("failed to compute KZG proofs: %w", err)
 		}
