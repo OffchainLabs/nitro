@@ -45,7 +45,7 @@ type StatelessBlockValidator struct {
 	inboxTracker         InboxTrackerInterface
 	streamer             TransactionStreamerInterface
 	db                   ethdb.Database
-	dapReaders           []daprovider.Reader
+	dapReaders           *daprovider.ReaderRegistry
 	stack                *node.Node
 	latestWasmModuleRoot common.Hash
 }
@@ -238,7 +238,7 @@ func NewStatelessBlockValidator(
 	streamer TransactionStreamerInterface,
 	recorder execution.ExecutionRecorder,
 	arbdb ethdb.Database,
-	dapReaders []daprovider.Reader,
+	dapReaders *daprovider.ReaderRegistry,
 	config func() *BlockValidatorConfig,
 	stack *node.Node,
 	latestWasmModuleRoot common.Hash,
@@ -325,31 +325,30 @@ func (v *StatelessBlockValidator) readFullBatch(ctx context.Context, batchNum ui
 		return false, nil, err
 	}
 	preimages := make(daprovider.PreimagesMap)
-	if len(postedData) > 40 {
-		foundDA := false
-		for _, dapReader := range v.dapReaders {
-			if dapReader != nil && dapReader.IsValidHeaderByte(ctx, postedData[40]) {
-				var err error
-				var preimagesRecorded daprovider.PreimagesMap
-				_, preimagesRecorded, err = dapReader.RecoverPayloadFromBatch(ctx, batchNum, batchBlockHash, postedData, preimages, true)
-				if err != nil {
-					// Matches the way keyset validation was done inside DAS readers i.e logging the error
-					//  But other daproviders might just want to return the error
-					if strings.Contains(err.Error(), daprovider.ErrSeqMsgValidation.Error()) && daprovider.IsDASMessageHeaderByte(postedData[40]) {
-						log.Error(err.Error())
-					} else {
-						return false, nil, err
-					}
+	if len(postedData) > 40 && v.dapReaders != nil {
+		headerByte := postedData[40]
+		if dapReader, found := v.dapReaders.GetByHeaderByte(headerByte); found {
+			promise := dapReader.CollectPreimages(batchNum, batchBlockHash, postedData)
+			result, err := promise.Await(ctx)
+			if err != nil {
+				// Matches the way keyset validation was done inside DAS readers i.e logging the error
+				//  But other daproviders might just want to return the error
+				if strings.Contains(err.Error(), daprovider.ErrSeqMsgValidation.Error()) && daprovider.IsDASMessageHeaderByte(headerByte) {
+					log.Error(err.Error())
 				} else {
-					preimages = preimagesRecorded
+					return false, nil, err
 				}
-				foundDA = true
-				break
+			} else {
+				preimages = result.Preimages
 			}
-		}
-		if !foundDA {
-			if daprovider.IsDASMessageHeaderByte(postedData[40]) {
-				log.Error("No DAS Reader configured, but sequencer message found with DAS header")
+		} else {
+			// No reader found for this header byte - check if it's a known type
+			if daprovider.IsDASMessageHeaderByte(headerByte) {
+				log.Error("No DAS Reader configured for DAS message", "headerByte", fmt.Sprintf("0x%02x", headerByte))
+			} else if daprovider.IsBlobHashesHeaderByte(headerByte) {
+				log.Error("No Blob Reader configured for blob message", "headerByte", fmt.Sprintf("0x%02x", headerByte))
+			} else if daprovider.IsDACertificateMessageHeaderByte(headerByte) {
+				log.Error("No DACertificate Reader configured for certificate message", "headerByte", fmt.Sprintf("0x%02x", headerByte))
 			}
 		}
 	}

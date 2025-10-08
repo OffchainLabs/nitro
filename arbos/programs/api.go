@@ -76,6 +76,7 @@ func newApiClosures(
 	setTrieSlots := func(data []byte, gasLeft *uint64) apiStatus {
 		isOutOfGas := false
 		recording := db.Recording()
+		multiGas := multigas.ZeroGas()
 		for len(data) > 0 {
 			key := common.BytesToHash(data[:32])
 			value := common.BytesToHash(data[32:64])
@@ -85,7 +86,8 @@ func newApiClosures(
 				return WriteProtection
 			}
 
-			cost := vm.WasmStateStoreCost(db, actingAddress, key, value)
+			costMultiGas := vm.WasmStateStoreCost(db, actingAddress, key, value)
+			cost := costMultiGas.SingleGas()
 			if cost > *gasLeft {
 				*gasLeft = 0
 				isOutOfGas = true
@@ -95,11 +97,13 @@ func newApiClosures(
 				break
 			}
 			*gasLeft -= cost
+			multiGas.SaturatingAddInto(costMultiGas)
 			db.SetState(actingAddress, key, value)
 		}
 		if isOutOfGas {
 			return OutOfGas
 		}
+		scope.Contract.UsedMultiGas.SaturatingAddInto(multiGas)
 		return Success
 	}
 	getTransientBytes32 := func(key common.Hash) common.Hash {

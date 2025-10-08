@@ -118,6 +118,13 @@ func (c *ExecutionRPCClient) SetFinalityData(ctx context.Context, safeFinalityDa
 	})
 }
 
+func (c *ExecutionRPCClient) SetConsensusSyncData(ctx context.Context, syncData *execution.ConsensusSyncData) containers.PromiseInterface[struct{}] {
+	return stopwaiter.LaunchPromiseThread(c, func(ctx context.Context) (struct{}, error) {
+		err := c.client.CallContext(ctx, nil, execution.RPCNamespace+"_setConsensusSyncData", syncData)
+		return struct{}{}, convertError(err)
+	})
+}
+
 func (c *ExecutionRPCClient) MarkFeedStart(to arbutil.MessageIndex) containers.PromiseInterface[struct{}] {
 	return stopwaiter.LaunchPromiseThread(c, func(ctx context.Context) (struct{}, error) {
 		err := c.client.CallContext(ctx, nil, execution.RPCNamespace+"_markFeedStart", to)

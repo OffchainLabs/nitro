@@ -557,9 +557,6 @@ func createTestNodeOnL1ForBoldProtocol(
 		l2info = NewArbTestInfo(t, chainConfig.ChainID)
 	}
 
-	l1info.GenerateAccount("RollupOwner")
-	l1info.GenerateAccount("Sequencer")
-	l1info.GenerateAccount("User")
 	l1info.GenerateAccount("Asserter")
 	l1info.GenerateAccount("EvilAsserter")
 

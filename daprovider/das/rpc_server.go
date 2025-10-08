@@ -19,24 +19,19 @@ import (
 	"github.com/offchainlabs/nitro/blsSignatures"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/daprovider/das/dasutil"
-	"github.com/offchainlabs/nitro/daprovider/das/data_streaming"
+	"github.com/offchainlabs/nitro/daprovider/data_streaming"
 	"github.com/offchainlabs/nitro/util/pretty"
 )
 
 var (
-	rpcStoreRequestGauge      = metrics.NewRegisteredGauge("arb/das/rpc/store/requests", nil)
-	rpcStoreSuccessGauge      = metrics.NewRegisteredGauge("arb/das/rpc/store/success", nil)
-	rpcStoreFailureGauge      = metrics.NewRegisteredGauge("arb/das/rpc/store/failure", nil)
-	rpcStoreStoredBytesGauge  = metrics.NewRegisteredGauge("arb/das/rpc/store/bytes", nil)
-	rpcStoreDurationHistogram = metrics.NewRegisteredHistogram("arb/das/rpc/store/duration", nil, metrics.NewBoundedHistogramSample())
+	rpcStoreRequestCounter     = metrics.NewRegisteredCounter("arb/das/rpc/store/requests", nil)
+	rpcStoreSuccessCounter     = metrics.NewRegisteredCounter("arb/das/rpc/store/success", nil)
+	rpcStoreFailureCounter     = metrics.NewRegisteredCounter("arb/das/rpc/store/failure", nil)
+	rpcStoreStoredBytesCounter = metrics.NewRegisteredCounter("arb/das/rpc/store/bytes", nil)
+	rpcStoreDurationHistogram  = metrics.NewRegisteredHistogram("arb/das/rpc/store/duration", nil, metrics.NewBoundedHistogramSample())
 
-	rpcSendChunkSuccessGauge = metrics.NewRegisteredGauge("arb/das/rpc/sendchunk/success", nil)
-	rpcSendChunkFailureGauge = metrics.NewRegisteredGauge("arb/das/rpc/sendchunk/failure", nil)
-)
-
-const (
-	defaultMaxPendingMessages      = 10
-	defaultMessageCollectionExpiry = 1 * time.Minute
+	rpcSendChunkSuccessCounter = metrics.NewRegisteredCounter("arb/das/rpc/sendchunk/success", nil)
+	rpcSendChunkFailureCounter = metrics.NewRegisteredCounter("arb/das/rpc/sendchunk/failure", nil)
 )
 
 // lint:require-exhaustive-initialization
@@ -73,14 +68,18 @@ func StartDASRPCServerOnListener(ctx context.Context, listener net.Listener, rpc
 	dataStreamPayloadVerifier := data_streaming.CustomPayloadVerifier(func(ctx context.Context, signature []byte, bytes []byte, extras ...uint64) error {
 		return signatureVerifier.verify(ctx, bytes, signature, extras...)
 	})
+
+	dataStreamReceiver := data_streaming.NewDataStreamReceiver(dataStreamPayloadVerifier, data_streaming.DefaultMaxPendingMessages, data_streaming.DefaultMessageCollectionExpiry, data_streaming.DefaultRequestValidity, func(id data_streaming.MessageId) {
+		rpcStoreFailureCounter.Inc(1)
+	})
+	dataStreamReceiver.Start(ctx)
+
 	err := rpcServer.RegisterName("das", &DASRPCServer{
-		daReader:          daReader,
-		daWriter:          daWriter,
-		daHealthChecker:   daHealthChecker,
-		signatureVerifier: signatureVerifier,
-		dataStreamReceiver: data_streaming.NewDataStreamReceiver(dataStreamPayloadVerifier, defaultMaxPendingMessages, defaultMessageCollectionExpiry, func(id data_streaming.MessageId) {
-			rpcStoreFailureGauge.Inc(1)
-		}),
+		daReader:           daReader,
+		daWriter:           daWriter,
+		daHealthChecker:    daHealthChecker,
+		signatureVerifier:  signatureVerifier,
+		dataStreamReceiver: dataStreamReceiver,
 	})
 	if err != nil {
 		return nil, err
@@ -102,6 +101,7 @@ func StartDASRPCServerOnListener(ctx context.Context, listener net.Listener, rpc
 	}()
 	go func() {
 		<-ctx.Done()
+		dataStreamReceiver.StopAndWait()
 		_ = srv.Shutdown(context.Background())
 	}()
 	return srv, nil
@@ -121,14 +121,14 @@ type StoreResult struct {
 func (s *DASRPCServer) Store(ctx context.Context, message hexutil.Bytes, timeout hexutil.Uint64, sig hexutil.Bytes) (*StoreResult, error) {
 	// #nosec G115
 	log.Trace("dasRpc.DASRPCServer.Store", "message", pretty.FirstFewBytes(message), "message length", len(message), "timeout", time.Unix(int64(timeout), 0), "sig", pretty.FirstFewBytes(sig), "this", s)
-	rpcStoreRequestGauge.Inc(1)
+	rpcStoreRequestCounter.Inc(1)
 	start := time.Now()
 	success := false
 	defer func() {
 		if success {
-			rpcStoreSuccessGauge.Inc(1)
+			rpcStoreSuccessCounter.Inc(1)
 		} else {
-			rpcStoreFailureGauge.Inc(1)
+			rpcStoreFailureCounter.Inc(1)
 		}
 		rpcStoreDurationHistogram.Update(time.Since(start).Nanoseconds())
 	}()
@@ -141,7 +141,7 @@ func (s *DASRPCServer) Store(ctx context.Context, message hexutil.Bytes, timeout
 	if err != nil {
 		return nil, err
 	}
-	rpcStoreStoredBytesGauge.Inc(int64(len(message)))
+	rpcStoreStoredBytesCounter.Inc(int64(len(message)))
 	success = true
 	return &StoreResult{
 		KeysetHash:  cert.KeysetHash[:],
@@ -159,11 +159,11 @@ var (
 )
 
 func (s *DASRPCServer) StartChunkedStore(ctx context.Context, timestamp, nChunks, chunkSize, totalSize, timeout hexutil.Uint64, sig hexutil.Bytes) (*data_streaming.StartStreamingResult, error) {
-	rpcStoreRequestGauge.Inc(1)
+	rpcStoreRequestCounter.Inc(1)
 	failed := true
 	defer func() {
 		if failed {
-			rpcStoreFailureGauge.Inc(1)
+			rpcStoreFailureCounter.Inc(1)
 		}
 	}()
 
@@ -180,9 +180,9 @@ func (s *DASRPCServer) SendChunk(ctx context.Context, messageId, chunkId hexutil
 	success := false
 	defer func() {
 		if success {
-			rpcSendChunkSuccessGauge.Inc(1)
+			rpcSendChunkSuccessCounter.Inc(1)
 		} else {
-			rpcSendChunkFailureGauge.Inc(1)
+			rpcSendChunkFailureCounter.Inc(1)
 		}
 	}()
 
@@ -204,16 +204,16 @@ func (s *DASRPCServer) CommitChunkedStore(ctx context.Context, messageId hexutil
 	success := false
 	defer func() {
 		if success {
-			rpcStoreSuccessGauge.Inc(1)
+			rpcStoreSuccessCounter.Inc(1)
 		} else {
-			rpcStoreFailureGauge.Inc(1)
+			rpcStoreFailureCounter.Inc(1)
 		}
 		rpcStoreDurationHistogram.Update(time.Since(startTime).Nanoseconds())
 	}()
 	if err != nil {
 		return nil, err
 	}
-	rpcStoreStoredBytesGauge.Inc(int64(len(message)))
+	rpcStoreStoredBytesCounter.Inc(int64(len(message)))
 	success = true
 	return &StoreResult{
 		KeysetHash:  cert.KeysetHash[:],

@@ -23,6 +23,7 @@ import (
 	"path"
 	"runtime/pprof"
 	"runtime/trace"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -30,6 +31,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/ethereum/go-ethereum/arbitrum/multigas"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
@@ -54,14 +56,16 @@ import (
 )
 
 var (
-	l1GasPriceEstimateGauge    = metrics.NewRegisteredGauge("arb/l1gasprice/estimate", nil)
-	baseFeeGauge               = metrics.NewRegisteredGauge("arb/block/basefee", nil)
-	blockGasUsedHistogram      = metrics.NewRegisteredHistogram("arb/block/gasused", nil, metrics.NewBoundedHistogramSample())
-	txCountHistogram           = metrics.NewRegisteredHistogram("arb/block/transactions/count", nil, metrics.NewBoundedHistogramSample())
-	txGasUsedHistogram         = metrics.NewRegisteredHistogram("arb/block/transactions/gasused", nil, metrics.NewBoundedHistogramSample())
-	gasUsedSinceStartupCounter = metrics.NewRegisteredCounter("arb/gas_used", nil)
-	blockExecutionTimer        = metrics.NewRegisteredHistogram("arb/block/execution", nil, metrics.NewBoundedHistogramSample())
-	blockWriteToDbTimer        = metrics.NewRegisteredHistogram("arb/block/writetodb", nil, metrics.NewBoundedHistogramSample())
+	l1GasPriceEstimateGauge              = metrics.NewRegisteredGauge("arb/l1gasprice/estimate", nil)
+	baseFeeGauge                         = metrics.NewRegisteredGauge("arb/block/basefee", nil)
+	blockGasUsedHistogram                = metrics.NewRegisteredHistogram("arb/block/gasused", nil, metrics.NewBoundedHistogramSample())
+	txCountHistogram                     = metrics.NewRegisteredHistogram("arb/block/transactions/count", nil, metrics.NewBoundedHistogramSample())
+	txGasUsedHistogram                   = metrics.NewRegisteredHistogram("arb/block/transactions/gasused", nil, metrics.NewBoundedHistogramSample())
+	gasUsedSinceStartupCounter           = metrics.NewRegisteredCounter("arb/gas_used", nil)
+	multiGasUsedSinceStartupCounters     = make([]*metrics.Counter, multigas.NumResourceKind)
+	totalMultiGasUsedSinceStartupCounter = metrics.NewRegisteredCounter("arb/multigas_used/total", nil)
+	blockExecutionTimer                  = metrics.NewRegisteredHistogram("arb/block/execution", nil, metrics.NewBoundedHistogramSample())
+	blockWriteToDbTimer                  = metrics.NewRegisteredHistogram("arb/block/writetodb", nil, metrics.NewBoundedHistogramSample())
 )
 
 var ExecutionEngineBlockCreationStopped = errors.New("block creation stopped in execution engine")
@@ -116,6 +120,13 @@ type ExecutionEngine struct {
 func NewL1PriceData() *L1PriceData {
 	return &L1PriceData{
 		msgToL1PriceData: []L1PriceDataOfMsg{},
+	}
+}
+
+func init() {
+	for dimension := multigas.ResourceKind(0); dimension < multigas.NumResourceKind; dimension++ {
+		metricName := fmt.Sprintf("arb/multigas_used/%v", strings.ToLower(dimension.String()))
+		multiGasUsedSinceStartupCounters[dimension] = metrics.NewRegisteredCounter(metricName, nil)
 	}
 }
 
@@ -826,9 +837,20 @@ func (s *ExecutionEngine) appendBlock(block *types.Block, statedb *state.StateDB
 	txCountHistogram.Update(int64(len(block.Transactions()) - 1))
 	var blockGasused uint64
 	for i := 1; i < len(receipts); i++ {
-		val := arbmath.SaturatingUSub(receipts[i].GasUsed, receipts[i].GasUsedForL1)
+		receipt := receipts[i]
+		val := arbmath.SaturatingUSub(receipt.GasUsed, receipt.GasUsedForL1)
 		txGasUsedHistogram.Update(int64(val))
 		blockGasused += val
+
+		if s.exposeMultiGas {
+			for kind := range multiGasUsedSinceStartupCounters {
+				amount := receipt.MultiGasUsed.Get(multigas.ResourceKind(kind))
+				if amount > 0 {
+					multiGasUsedSinceStartupCounters[kind].Inc(int64(amount))
+				}
+			}
+			totalMultiGasUsedSinceStartupCounter.Inc(int64(receipt.MultiGasUsed.SingleGas()))
+		}
 	}
 	blockGasUsedHistogram.Update(int64(blockGasused))
 	gasUsedSinceStartupCounter.Inc(int64(blockGasused))

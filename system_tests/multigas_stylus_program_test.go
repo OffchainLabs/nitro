@@ -26,7 +26,6 @@ func TestMultigasStylus_GetBytes32(t *testing.T) {
 	defer cancel()
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
-	builder.execConfig.ExposeMultiGas = true
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -50,9 +49,8 @@ func TestMultigasStylus_GetBytes32(t *testing.T) {
 	require.Equal(t, params.TxGas+params.WarmStorageReadCostEIP2929, receipt.MultiGasUsed.Get(multigas.ResourceKindComputation))
 	require.Equal(t, receipt.GasUsed, receipt.MultiGasUsed.SingleGas())
 
-	// TODO(NIT-3793, NIT-3794): Once all WASM operations are instrumented, WasmComputation
-	// should be derived as the residual from SingleGas instead of asserted directly.
-	require.Greater(t, receipt.MultiGasUsed.Get(multigas.ResourceKindWasmComputation), uint64(0))
+	require.GreaterOrEqual(t, receipt.MultiGasUsed.Get(multigas.ResourceKindWasmComputation), uint64(12_000))
+	require.Equal(t, receipt.MultiGasUsed.Get(multigas.ResourceKindComputation), params.TxGas+params.WarmStorageReadCostEIP2929)
 }
 
 func TestMultigasStylus_AccountAccessHostIOs(t *testing.T) {
@@ -60,7 +58,6 @@ func TestMultigasStylus_AccountAccessHostIOs(t *testing.T) {
 	defer cancel()
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
-	builder.execConfig.ExposeMultiGas = true
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -131,7 +128,6 @@ func TestMultigasStylus_EmitLog(t *testing.T) {
 	defer cancel()
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
-	builder.execConfig.ExposeMultiGas = true
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -204,7 +200,6 @@ func TestMultigasStylus_Create(t *testing.T) {
 	defer cancel()
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
-	builder.execConfig.ExposeMultiGas = true
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -227,15 +222,9 @@ func TestMultigasStylus_Create(t *testing.T) {
 	receipt1, err := EnsureTxSucceeded(ctx, l2client, tx)
 	require.NoError(t, err)
 
-	// Both computation and wasm computation should be charged
-	// TODO(NIT-3888): Check for exact values after correct computation/wasm attribution
-	require.GreaterOrEqual(t,
-		receipt1.MultiGasUsed.Get(multigas.ResourceKindWasmComputation),
-		params.CreateGas,
-	)
-	require.GreaterOrEqual(t,
+	require.Greater(t,
 		receipt1.MultiGasUsed.Get(multigas.ResourceKindComputation),
-		params.TxGas,
+		uint64(21000+32000), // intrinsic + CREATE
 	)
 
 	require.Equalf(t,
@@ -279,7 +268,6 @@ func TestMultigasStylus_Calls(t *testing.T) {
 	defer cancel()
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
-	builder.execConfig.ExposeMultiGas = true
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -310,7 +298,7 @@ func TestMultigasStylus_Calls(t *testing.T) {
 				storageVal := testhelpers.RandomHash()
 				calldata = argsForMulticall(vm.CALL, storeAddr, nil, argsForStorageWrite(key, storageVal))
 
-				expectedStorageAccess = params.ColdAccountAccessCostEIP2929 - params.WarmStorageReadCostEIP2929
+				expectedStorageAccess = params.ColdAccountAccessCostEIP2929 - params.WarmStorageReadCostEIP2929 + params.ColdSloadCostEIP2929
 
 			case vm.DELEGATECALL:
 				calldata = argsForMulticall(vm.DELEGATECALL, callsAddr, nil, []byte{0})
@@ -344,6 +332,56 @@ func TestMultigasStylus_Calls(t *testing.T) {
 				expectedStorageAccess,
 				receipt.MultiGasUsed.Get(multigas.ResourceKindStorageAccess),
 			)
+		})
+	}
+}
+
+func TestMultigasStylus_StorageWrite(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	l2info := builder.L2Info
+	l2client := builder.L2.Client
+	owner := l2info.GetDefaultTransactOpts("Owner", ctx)
+
+	storage := deployWasm(t, ctx, owner, l2client, rustFile("storage"))
+
+	key := testhelpers.RandomHash()
+	val := testhelpers.RandomHash()
+	writeArgs := argsForStorageWrite(key, val)
+
+	cases := []struct {
+		name     string
+		gasLimit uint64
+		expectOK bool
+	}{
+		{"success", 1_000_000_000, true},
+		{"out_of_gas", 1_500_000, false}, // above intrinsic cost, below storage create slot cost
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			tx := l2info.PrepareTxTo("Owner", &storage, tc.gasLimit, nil, writeArgs)
+			require.NoError(t, l2client.SendTransaction(ctx, tx))
+
+			receipt, err := EnsureTxSucceeded(ctx, l2client, tx)
+			if tc.expectOK {
+				require.NoError(t, err)
+
+				// Expected multigas for create slot operation
+				require.Equal(t, receipt.GasUsed, receipt.MultiGasUsed.SingleGas())
+				require.Equal(t, params.ColdSloadCostEIP2929, receipt.MultiGasUsed.Get(multigas.ResourceKindStorageAccess))
+				require.Equal(t, params.SstoreSetGasEIP2200, receipt.MultiGasUsed.Get(multigas.ResourceKindStorageGrowth))
+			} else {
+				require.Error(t, err)
+				receipt, err := l2client.TransactionReceipt(ctx, tx.Hash())
+				require.NoError(t, err)
+				require.Equal(t, receipt.GasUsed, receipt.MultiGasUsed.SingleGas())
+			}
 		})
 	}
 }

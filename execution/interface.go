@@ -3,6 +3,7 @@ package execution
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
@@ -27,6 +28,14 @@ type RecordResult struct {
 	UserWasms state.UserWasms
 }
 
+// ConsensusSyncData contains sync status information pushed from consensus to execution
+type ConsensusSyncData struct {
+	Synced          bool
+	MaxMessageCount arbutil.MessageIndex
+	SyncProgressMap map[string]interface{} // Only populated when !Synced for debugging
+	UpdatedAt       time.Time
+}
+
 var ErrRetrySequencer = errors.New("please retry transaction")
 var ErrSequencerInsertLockTaken = errors.New("insert lock taken")
 
@@ -39,6 +48,7 @@ type ExecutionClient interface {
 	MessageIndexToBlockNumber(messageNum arbutil.MessageIndex) containers.PromiseInterface[uint64]
 	BlockNumberToMessageIndex(blockNum uint64) containers.PromiseInterface[arbutil.MessageIndex]
 	SetFinalityData(ctx context.Context, safeFinalityData *arbutil.FinalityData, finalizedFinalityData *arbutil.FinalityData, validatedFinalityData *arbutil.FinalityData) containers.PromiseInterface[struct{}]
+	SetConsensusSyncData(ctx context.Context, syncData *ConsensusSyncData) containers.PromiseInterface[struct{}]
 	MarkFeedStart(to arbutil.MessageIndex) containers.PromiseInterface[struct{}]
 
 	TriggerMaintenance() containers.PromiseInterface[struct{}]

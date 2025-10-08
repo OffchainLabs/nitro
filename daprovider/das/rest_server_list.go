@@ -61,6 +61,8 @@ func restfulServerURLsFromList(
 	if err != nil {
 		return nil, err
 	}
+	// Ensure response body is closed to avoid leaking connections and file descriptors
+	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
 		return nil, fmt.Errorf("received error response (%d) fetching online-url-list at %s", resp.StatusCode, listUrl)
 	}
