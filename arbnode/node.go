@@ -40,6 +40,7 @@ import (
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/daprovider/daclient"
 	"github.com/offchainlabs/nitro/daprovider/das"
+	"github.com/offchainlabs/nitro/daprovider/data_streaming"
 	dapserver "github.com/offchainlabs/nitro/daprovider/server"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/execution/gethexec"
@@ -192,6 +193,7 @@ func ConfigDefaultL1Test() *Config {
 	config.SeqCoordinator = TestSeqCoordinatorConfig
 	config.Sequencer = true
 	config.Dangerous.NoSequencerCoordinator = true
+	config.DAProvider.DataStream = data_streaming.TestDataStreamerConfig(daclient.DefaultStreamRpcMethods)
 
 	return config
 }
@@ -580,7 +582,7 @@ func getDAS(
 	var withDAWriter bool
 	var dasServerCloseFn func()
 	if config.DAProvider.Enable {
-		daClient, err = daclient.NewClient(ctx, func() *rpcclient.ClientConfig { return &config.DAProvider.RPC })
+		daClient, err = daclient.NewClient(ctx, &config.DAProvider, data_streaming.PayloadCommiter())
 		if err != nil {
 			return nil, nil, nil, err
 		}
@@ -609,10 +611,14 @@ func getDAS(
 		if err != nil {
 			return nil, nil, nil, err
 		}
-		clientConfig := rpcclient.DefaultClientConfig
-		clientConfig.URL = dasServer.Addr
-		clientConfig.JWTSecret = jwtPath
-		daClient, err = daclient.NewClient(ctx, func() *rpcclient.ClientConfig { return &clientConfig })
+		rpcClientConfig := rpcclient.DefaultClientConfig
+		rpcClientConfig.URL = dasServer.Addr
+		rpcClientConfig.JWTSecret = jwtPath
+
+		daClientConfig := config.DAProvider
+		daClientConfig.RPC = rpcClientConfig
+
+		daClient, err = daclient.NewClient(ctx, &daClientConfig, data_streaming.PayloadCommiter())
 		if err != nil {
 			return nil, nil, nil, err
 		}
