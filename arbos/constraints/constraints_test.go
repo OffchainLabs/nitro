@@ -12,65 +12,51 @@ import (
 	"github.com/ethereum/go-ethereum/arbitrum/multigas"
 )
 
-func TestResourceSetWithResources(t *testing.T) {
-	s := EmptyResourceSet()
-	resourceWeights := map[multigas.ResourceKind]uint8{
-		multigas.ResourceKindComputation:   1,
-		multigas.ResourceKindStorageAccess: 2,
-	}
-	s = s.WithResources(resourceWeights)
-	for resource := range resourceWeights {
+func TestResourceSetWithResource(t *testing.T) {
+	s := EmptyResourceSet().
+		WithResource(multigas.ResourceKindComputation, 1).
+		WithResource(multigas.ResourceKindStorageAccess, 2)
+	for resource, weight := range s.All() {
 		require.True(t, s.HasResource(resource))
+		require.Equal(t, weight, s.weights[resource])
 	}
-}
-
-func TestResourceSetHasResource(t *testing.T) {
-	s := EmptyResourceSet()
-	require.False(t, s.HasResource(multigas.ResourceKindComputation))
-	s = s.WithResources(map[multigas.ResourceKind]uint8{
-		multigas.ResourceKindComputation: 1,
-	})
-	require.True(t, s.HasResource(multigas.ResourceKindComputation))
 }
 
 func TestResourceSetGetResources(t *testing.T) {
-	s := EmptyResourceSet()
-	resourceWeights := map[multigas.ResourceKind]uint8{
+	s := EmptyResourceSet().
+		WithResource(multigas.ResourceKindComputation, 1).
+		WithResource(multigas.ResourceKindStorageAccess, 1)
+
+	expected := map[multigas.ResourceKind]ResourceWeight{
 		multigas.ResourceKindComputation:   1,
 		multigas.ResourceKindStorageAccess: 1,
 	}
-	s = s.WithResources(resourceWeights)
-	retrieved := s.GetResources()
-	expectedResources := []multigas.ResourceKind{
-		multigas.ResourceKindComputation,
-		multigas.ResourceKindStorageAccess,
+
+	actual := make(map[multigas.ResourceKind]ResourceWeight)
+	for resource, weight := range s.All() {
+		actual[resource] = weight
 	}
-	require.Equal(t, expectedResources, retrieved)
+
+	require.Equal(t, expected, actual)
 }
 
 func TestOverrideResourceWeights(t *testing.T) {
-	s := EmptyResourceSet()
-	resourceWeights := map[multigas.ResourceKind]uint8{
-		multigas.ResourceKindComputation:   1,
-		multigas.ResourceKindStorageAccess: 2,
-	}
-	s = s.WithResources(resourceWeights)
-	require.Equal(t, uint8(1), s.weights[multigas.ResourceKindComputation])
-	require.Equal(t, uint8(2), s.weights[multigas.ResourceKindStorageAccess])
+	s := EmptyResourceSet().
+		WithResource(multigas.ResourceKindComputation, 1).
+		WithResource(multigas.ResourceKindStorageAccess, 2)
+	require.Equal(t, ResourceWeight(1), s.weights[multigas.ResourceKindComputation])
+	require.Equal(t, ResourceWeight(2), s.weights[multigas.ResourceKindStorageAccess])
 
-	s = s.WithResources(map[multigas.ResourceKind]uint8{
-		multigas.ResourceKindComputation:   3,
-		multigas.ResourceKindStorageAccess: 0,
-	})
-	require.Equal(t, uint8(3), s.weights[multigas.ResourceKindComputation])
+	s = s.WithResource(multigas.ResourceKindComputation, 3).
+		WithResource(multigas.ResourceKindStorageAccess, 0)
+	require.Equal(t, ResourceWeight(3), s.weights[multigas.ResourceKindComputation])
 	require.False(t, s.HasResource(multigas.ResourceKindStorageAccess))
 }
 
 func TestAddToBacklog(t *testing.T) {
-	resources := EmptyResourceSet().WithResources(map[multigas.ResourceKind]uint8{
-		multigas.ResourceKindComputation:   1,
-		multigas.ResourceKindStorageAccess: 1,
-	})
+	resources := EmptyResourceSet().
+		WithResource(multigas.ResourceKindComputation, 1).
+		WithResource(multigas.ResourceKindStorageAccess, 1)
 	c := &ResourceConstraint{
 		Resources: resources,
 		Backlog:   0,
@@ -92,10 +78,9 @@ func TestAddToBacklog(t *testing.T) {
 }
 
 func TestAddToBacklogWithWeights(t *testing.T) {
-	resources := EmptyResourceSet().WithResources(map[multigas.ResourceKind]uint8{
-		multigas.ResourceKindComputation:   2,
-		multigas.ResourceKindStorageAccess: 3,
-	})
+	resources := EmptyResourceSet().
+		WithResource(multigas.ResourceKindComputation, 2).
+		WithResource(multigas.ResourceKindStorageAccess, 3)
 	c := &ResourceConstraint{
 		Resources: resources,
 		Backlog:   0,
@@ -140,9 +125,8 @@ func TestNewResourceConstraints(t *testing.T) {
 
 func TestSetResourceConstraints(t *testing.T) {
 	rc := NewResourceConstraints()
-	resources := EmptyResourceSet().WithResources(map[multigas.ResourceKind]uint8{
-		multigas.ResourceKindComputation: 1,
-	})
+	resources := EmptyResourceSet().
+		WithResource(multigas.ResourceKindComputation, 1)
 	periodSecs := PeriodSecs(10)
 	targetPerSec := uint64(100)
 
@@ -157,9 +141,8 @@ func TestSetResourceConstraints(t *testing.T) {
 
 func TestGetResourceConstraints(t *testing.T) {
 	rc := NewResourceConstraints()
-	resources := EmptyResourceSet().WithResources(map[multigas.ResourceKind]uint8{
-		multigas.ResourceKindComputation: 1,
-	})
+	resources := EmptyResourceSet().
+		WithResource(multigas.ResourceKindComputation, 1)
 	periodSecs := PeriodSecs(10)
 	targetPerSec := uint64(100)
 
@@ -174,18 +157,16 @@ func TestGetResourceConstraints(t *testing.T) {
 	require.Equal(t, uint64(0), constraint.Backlog)
 
 	// Test getting a non-existent constraint
-	nonExistentResources := EmptyResourceSet().WithResources(map[multigas.ResourceKind]uint8{
-		multigas.ResourceKindStorageAccess: 1,
-	})
+	nonExistentResources := EmptyResourceSet().
+		WithResource(multigas.ResourceKindStorageAccess, 1)
 	constraint = rc.Get(nonExistentResources, periodSecs)
 	require.Nil(t, constraint)
 }
 
 func TestClearResourceConstraints(t *testing.T) {
 	rc := NewResourceConstraints()
-	resources := EmptyResourceSet().WithResources(map[multigas.ResourceKind]uint8{
-		multigas.ResourceKindComputation: 1,
-	})
+	resources := EmptyResourceSet().
+		WithResource(multigas.ResourceKindComputation, 1)
 	periodSecs := PeriodSecs(10)
 	targetPerSec := uint64(100)
 
@@ -205,15 +186,13 @@ func TestClearResourceConstraints(t *testing.T) {
 
 func TestAllResourceConstraints(t *testing.T) {
 	rc := NewResourceConstraints()
-	resources1 := EmptyResourceSet().WithResources(map[multigas.ResourceKind]uint8{
-		multigas.ResourceKindComputation: 1,
-	})
+	resources1 := EmptyResourceSet().
+		WithResource(multigas.ResourceKindComputation, 1)
 	periodSecs1 := PeriodSecs(10)
 	targetPerSec1 := uint64(100)
 
-	resources2 := EmptyResourceSet().WithResources(map[multigas.ResourceKind]uint8{
-		multigas.ResourceKindStorageAccess: 1,
-	})
+	resources2 := EmptyResourceSet().
+		WithResource(multigas.ResourceKindStorageAccess, 1)
 	periodSecs2 := PeriodSecs(20)
 	targetPerSec2 := uint64(200)
 
