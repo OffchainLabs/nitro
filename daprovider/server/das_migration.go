@@ -21,7 +21,6 @@ import (
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/daprovider/das"
 	"github.com/offchainlabs/nitro/daprovider/das/dasutil"
-	"github.com/offchainlabs/nitro/daprovider/data_streaming"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/signature"
 )
@@ -142,7 +141,6 @@ func NewServerForDAS(
 			daprovider.DASMessageHeaderFlag,
 			daprovider.DASMessageHeaderFlag | daprovider.TreeDASMessageHeaderFlag,
 		},
-		data_streaming.PayloadCommitmentVerifier(),
 	)
 	if err != nil {
 		// Clean up lifecycle manager if server creation fails

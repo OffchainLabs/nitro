@@ -110,9 +110,7 @@ func ParseServices(config AggregatorConfig, signer signature.DataSignerFunc) ([]
 		}
 		metricName := metricsutil.CanonicalizeMetricName(url.Hostname())
 
-		clientConfig := config.DASRPCClient
-		clientConfig.ServerUrl = b.URL
-		service, err := NewDASRPCClient(&clientConfig, signer)
+		service, err := NewDASRPCClient(b.URL, signer, config.MaxStoreChunkBodySize, config.EnableChunkedStore)
 		if err != nil {
 			return nil, err
 		}

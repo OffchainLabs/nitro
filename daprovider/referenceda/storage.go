@@ -4,6 +4,7 @@
 package referenceda
 
 import (
+	"context"
 	"crypto/sha256"
 	"sync"
 
@@ -32,7 +33,7 @@ func GetInMemoryStorage() *InMemoryStorage {
 	return storageInstance
 }
 
-func (s *InMemoryStorage) Store(data []byte) error {
+func (s *InMemoryStorage) Store(ctx context.Context, data []byte) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -41,7 +42,7 @@ func (s *InMemoryStorage) Store(data []byte) error {
 	return nil
 }
 
-func (s *InMemoryStorage) GetByHash(hash common.Hash) ([]byte, error) {
+func (s *InMemoryStorage) GetByHash(ctx context.Context, hash common.Hash) ([]byte, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 

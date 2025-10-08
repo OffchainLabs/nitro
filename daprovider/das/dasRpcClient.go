@@ -9,8 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/spf13/pflag"
-
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/log"
@@ -19,9 +17,8 @@ import (
 
 	"github.com/offchainlabs/nitro/blsSignatures"
 	"github.com/offchainlabs/nitro/daprovider/das/dasutil"
-	"github.com/offchainlabs/nitro/daprovider/data_streaming"
+	"github.com/offchainlabs/nitro/daprovider/das/data_streaming"
 	"github.com/offchainlabs/nitro/util/pretty"
-	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/signature"
 )
 
@@ -45,52 +42,27 @@ func nilSigner(_ []byte) ([]byte, error) {
 	return []byte{}, nil
 }
 
-// lint:require-exhaustive-initialization
-type DASRPCClientConfig struct {
-	ServerUrl          string                            `koanf:"server-url"`
-	EnableChunkedStore bool                              `koanf:"enable-chunked-store"`
-	DataStream         data_streaming.DataStreamerConfig `koanf:"data-stream"`
-}
-
-func DASRPCClientConfigAddOptions(prefix string, f *pflag.FlagSet) {
-	f.String(prefix+".server-url", "", "URL of DAS server to connect to")
-	f.Bool(prefix+".enable-chunked-store", true, "enable data to be sent to DAS in chunks instead of all at once")
-	data_streaming.DataStreamerConfigAddOptions(prefix+".data-stream", f, DefaultDataStreamRpcMethods)
-}
-
-var DefaultDataStreamRpcMethods = data_streaming.DataStreamingRPCMethods{
-	StartStream:    "das_startChunkedStore",
-	StreamChunk:    "das_sendChunk",
-	FinalizeStream: "das_commitChunkedStore",
-}
-
-func NewDASRPCClient(config *DASRPCClientConfig, signer signature.DataSignerFunc) (*DASRPCClient, error) {
+func NewDASRPCClient(target string, signer signature.DataSignerFunc, maxStoreChunkBodySize int, enableChunkedStore bool) (*DASRPCClient, error) {
 	if signer == nil {
 		signer = nilSigner
 	}
 
-	clnt, err := rpc.Dial(config.ServerUrl)
+	clnt, err := rpc.Dial(target)
 	if err != nil {
 		return nil, err
 	}
 
 	var dataStreamer *data_streaming.DataStreamer[StoreResult]
-	if config.EnableChunkedStore {
+	if enableChunkedStore {
+		rpcMethods := data_streaming.DataStreamingRPCMethods{
+			StartStream:    "das_startChunkedStore",
+			StreamChunk:    "das_sendChunk",
+			FinalizeStream: "das_commitChunkedStore",
+		}
 		payloadSigner := data_streaming.CustomPayloadSigner(func(bytes []byte, extras ...uint64) ([]byte, error) {
 			return applyDasSigner(signer, bytes, extras...)
 		})
-
-		rpcClient := rpcclient.NewRpcClient(func() *rpcclient.ClientConfig {
-			rpcConfig := rpcclient.DefaultClientConfig
-			rpcConfig.URL = config.ServerUrl
-			return &rpcConfig
-		}, nil)
-		err := rpcClient.Start(context.Background())
-		if err != nil {
-			return nil, err
-		}
-
-		dataStreamer, err = data_streaming.NewDataStreamer[StoreResult](config.DataStream, payloadSigner, rpcClient)
+		dataStreamer, err = data_streaming.NewDataStreamer[StoreResult](target, maxStoreChunkBodySize, payloadSigner, rpcMethods)
 		if err != nil {
 			return nil, err
 		}
@@ -98,7 +70,7 @@ func NewDASRPCClient(config *DASRPCClientConfig, signer signature.DataSignerFunc
 
 	return &DASRPCClient{
 		clnt:         clnt,
-		url:          config.ServerUrl,
+		url:          target,
 		signer:       signer,
 		dataStreamer: dataStreamer,
 	}, nil
