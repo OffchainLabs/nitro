@@ -108,11 +108,11 @@ if [ "$run" != "" ]; then
   cmd="$cmd -run=\"$run\""
 fi
 
-if [ "$skip" != "" ]; then
+if [ "$skip" != "" ] && [ "$flaky" == false ]; then
+  cmd="$cmd -skip=\"$skip|Flaky\""
+elif [ "$skip" != "" ]; then
   cmd="$cmd -skip=\"$skip\""
-fi
-
-if [ "$flaky" == false ]; then
+elif [ "$flaky" == false ]; then
   cmd="$cmd -skip=Flaky"
 fi
 
