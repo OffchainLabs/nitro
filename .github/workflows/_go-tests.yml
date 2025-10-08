@@ -62,12 +62,12 @@ jobs:
         if: matrix.test-mode == 'defaults' && always()
         run: python3 ${{ github.workspace }}/.github/workflows/process_junit.py test-results/
 
-      - name: Upload Go test Artifacts
+      - name: Upload Go test artifacts
         if: matrix.test-mode == 'defaults' && always()
         uses: actions/upload-artifact@v4
         with:
           name: go-junit-reports
-          path: test-results/junit_*.xml
+          path: test-results/junit.xml
 
       - name: Fail if tests failed
         if: matrix.test-mode == 'defaults' && steps.run-tests-defaults.outcome == 'failure'
