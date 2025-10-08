@@ -918,7 +918,7 @@ func TestTimeboostedFieldInReceiptsObject(t *testing.T) {
 	}
 }
 
-func TestTimeboostBulkBlockMetadataAPIFlaky(t *testing.T) {
+func TestTimeboostBulkBlockMetadataAPI(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -1020,9 +1020,18 @@ func TestTimeboostBulkBlockMetadataAPIFlaky(t *testing.T) {
 
 	// A Reorg event should clear the cache, hence the data fetched now should be accurate
 	Require(t, builder.L2.ConsensusNode.TxStreamer.ReorgAt(10))
-	err = l2rpc.CallContext(ctx, &result, "arb_getRawBlockMetadata", rpc.BlockNumber(start), rpc.BlockNumber(end))
-	Require(t, err)
-	if !bytes.Equal(updatedBlockMetadata, result[0].RawMetadata) {
+	// Give time for BulkBlockMetadataFetcher to receive the reorg event and clear its cache
+	var succeeded bool
+	for range 10 {
+		err = l2rpc.CallContext(ctx, &result, "arb_getRawBlockMetadata", rpc.BlockNumber(start), rpc.BlockNumber(end))
+		Require(t, err)
+		if bytes.Equal(updatedBlockMetadata, result[0].RawMetadata) {
+			succeeded = true
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if !succeeded {
 		t.Fatal("BlockMetadata should've been fetched from db and not the cache")
 	}
 }
