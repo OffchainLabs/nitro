@@ -813,6 +813,7 @@ func (p *DataPoster) postTransactionWithMutex(ctx context.Context, dataCreatedAt
 		if err != nil {
 			return nil, fmt.Errorf("failed to compute KZG proofs: %w", err)
 		}
+		log.Debug("DataPoster blob transaction info", "numBlobs", len(kzgBlobs), "version", version, "commitments", commitments, "blobHashes", blobHashes)
 		inner = &types.BlobTx{
 			Nonce: nonce,
 			Gas:   gasLimit,
