@@ -66,7 +66,7 @@ jobs:
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh
           --tags cionly --timeout 60m --test_state_scheme hash
-          --junitfile test-results/junit-b.xml --run '^Test[M-Z]|Test[^A-Z]'
+          --junitfile test-results/junit-b.xml --skip '^Test[A-L]'
 
       - name: Process JUnit XML logs
         if: startsWith(matrix.test-mode, 'defaults') && always()

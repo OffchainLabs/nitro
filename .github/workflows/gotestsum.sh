@@ -10,6 +10,7 @@ check_missing_value() {
 timeout=""
 tags=""
 run=""
+skip=""
 test_state_scheme=""
 junitfile=""
 log=true
@@ -34,6 +35,12 @@ while [[ $# -gt 0 ]]; do
       shift
       check_missing_value $# "$1" "--run"
       run=$1
+      shift
+      ;;
+    --skip)
+      shift
+      check_missing_value $# "$1" "--skip"
+      skip=$1
       shift
       ;;
     --test_state_scheme)
@@ -99,6 +106,10 @@ fi
 
 if [ "$run" != "" ]; then
   cmd="$cmd -run=\"$run\""
+fi
+
+if [ "$skip" != "" ]; then
+  cmd="$cmd -skip=\"$skip\""
 fi
 
 if [ "$flaky" == false ]; then
