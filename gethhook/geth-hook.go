@@ -58,29 +58,38 @@ func init() {
 		}
 	}
 
-	addPrecompiles(&vm.PrecompiledAddressesBeforeArbOS30, vm.PrecompiledContractsBeforeArbOS30, vm.PrecompiledContractsBerlin)
-	addPrecompiles(&vm.PrecompiledAddressesStartingFromArbOS30, vm.PrecompiledContractsStartingFromArbOS30, vm.PrecompiledContractsCancun)
-	addPrecompiles(&vm.PrecompiledAddressesStartingFromArbOS50, vm.PrecompiledContractsStartingFromArbOS50, vm.PrecompiledContractsPrague)
-	addPrecompiles(&vm.PrecompiledAddressesStartingFromArbOS50, vm.PrecompiledContractsStartingFromArbOS50, vm.PrecompiledContractsOsaka)
-
 	precompileErrors := make(map[[4]byte]abi.Error)
-	for addr, precompile := range precompiles.Precompiles() {
-		for _, errABI := range precompile.Precompile().GetErrorABIs() {
-			precompileErrors[[4]byte(errABI.ID.Bytes())] = errABI
-		}
-		var wrapped vm.AdvancedPrecompile = ArbosPrecompileWrapper{precompile}
-		vm.PrecompiledContractsStartingFromArbOS30[addr] = wrapped
-		vm.PrecompiledAddressesStartingFromArbOS30 = append(vm.PrecompiledAddressesStartingFromArbOS30, addr)
 
+	// Add pre-ArbOS 30 precompiles
+	addPrecompiles(&vm.PrecompiledAddressesBeforeArbOS30, vm.PrecompiledContractsBeforeArbOS30, vm.PrecompiledContractsBerlin)
+	for addr, precompile := range precompiles.Precompiles() {
 		if precompile.Precompile().ArbosVersion() < params.ArbosVersion_Stylus {
-			vm.PrecompiledContractsBeforeArbOS30[addr] = wrapped
+			for _, errABI := range precompile.Precompile().GetErrorABIs() {
+				precompileErrors[[4]byte(errABI.ID.Bytes())] = errABI
+			}
+			vm.PrecompiledContractsBeforeArbOS30[addr] = ArbosPrecompileWrapper{precompile}
 			vm.PrecompiledAddressesBeforeArbOS30 = append(vm.PrecompiledAddressesBeforeArbOS30, addr)
 		}
 	}
 
+	// Add ArbOS 30 precompiles
 	addPrecompiles(&vm.PrecompiledAddressesStartingFromArbOS30, vm.PrecompiledContractsStartingFromArbOS30, vm.PrecompiledContractsBeforeArbOS30)
 	addPrecompiles(&vm.PrecompiledAddressesStartingFromArbOS30, vm.PrecompiledContractsStartingFromArbOS30, vm.PrecompiledContractsP256Verify)
+	addPrecompiles(&vm.PrecompiledAddressesStartingFromArbOS30, vm.PrecompiledContractsStartingFromArbOS30, vm.PrecompiledContractsCancun)
+	for addr, precompile := range precompiles.Precompiles() {
+		if precompile.Precompile().ArbosVersion() >= params.ArbosVersion_Stylus {
+			for _, errABI := range precompile.Precompile().GetErrorABIs() {
+				precompileErrors[[4]byte(errABI.ID.Bytes())] = errABI
+			}
+			vm.PrecompiledContractsStartingFromArbOS30[addr] = ArbosPrecompileWrapper{precompile}
+			vm.PrecompiledAddressesStartingFromArbOS30 = append(vm.PrecompiledAddressesStartingFromArbOS30, addr)
+		}
+	}
+
+	// Add ArbOS 50 precompiles
 	addPrecompiles(&vm.PrecompiledAddressesStartingFromArbOS50, vm.PrecompiledContractsStartingFromArbOS50, vm.PrecompiledContractsStartingFromArbOS30)
+	addPrecompiles(&vm.PrecompiledAddressesStartingFromArbOS50, vm.PrecompiledContractsStartingFromArbOS50, vm.PrecompiledContractsPrague)
+	addPrecompiles(&vm.PrecompiledAddressesStartingFromArbOS50, vm.PrecompiledContractsStartingFromArbOS50, vm.PrecompiledContractsOsaka)
 
 	core.RenderRPCError = func(data []byte) error {
 		if len(data) < 4 {
