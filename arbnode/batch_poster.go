@@ -1647,17 +1647,18 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 		return false, nil
 	}
 
-	sequencerMsg, err := b.building.segments.CloseAndGetBytes()
+	batchData, err := b.building.segments.CloseAndGetBytes()
 	defer func() {
 		b.building = nil // a closed batchSegments can't be reused
 	}()
 	if err != nil {
 		return false, err
 	}
-	if sequencerMsg == nil {
+	if batchData == nil {
 		log.Debug("BatchPoster: batch nil", "sequence nr.", batchPosition.NextSeqNum, "from", batchPosition.MessageCount, "prev delayed", batchPosition.DelayedMessageCount)
 		return false, nil
 	}
+	var sequencerMsg []byte
 
 	if b.dapWriter != nil {
 		if !b.redisLock.AttemptLock(ctx) {
@@ -1682,14 +1683,21 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 			return false, fmt.Errorf("%w: batch position changed from %v to %v while creating batch", storage.ErrStorageRace, batchPosition, actualBatchPosition)
 		}
 		// #nosec G115
-		sequencerMsg, err = b.dapWriter.Store(ctx, sequencerMsg, uint64(time.Now().Add(config.DASRetentionPeriod).Unix()), config.DisableDapFallbackStoreDataOnChain)
+		sequencerMsg, err = b.dapWriter.Store(batchData, uint64(time.Now().Add(config.DASRetentionPeriod).Unix())).Await(ctx)
 		if err != nil {
-			batchPosterDAFailureCounter.Inc(1)
-			return false, err
+			if config.DisableDapFallbackStoreDataOnChain {
+				batchPosterDAFailureCounter.Inc(1)
+				return false, err
+			} else {
+				// DAP on-chain fallback storage
+				sequencerMsg = batchData
+			}
 		}
 
 		batchPosterDASuccessCounter.Inc(1)
 		batchPosterDALastSuccessfulActionGauge.Update(time.Now().Unix())
+	} else {
+		sequencerMsg = batchData
 	}
 
 	prevMessageCount := batchPosition.MessageCount
