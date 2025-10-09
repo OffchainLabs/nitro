@@ -348,17 +348,21 @@ ENTRYPOINT [ "/usr/local/bin/nitro" , "--validation.wasm.allowed-wasm-module-roo
 
 USER user
 
+# The nitro-node-validator is needed in case some modifications are needed in arbitrator or jit API.
+# That was the case when enabling arbos30.
+# We no longer support pre-arbos-30 wasmmoduleroots (newer wasmmoduleroots can execute old blocks)
+# We keep the code (commented out), and the docker-target, for use in case such an update is needed again.
 FROM nitro-node AS nitro-node-validator
-USER root
-COPY --from=nitro-legacy /usr/local/bin/nitro-val /home/user/nitro-legacy/bin/nitro-val
-COPY --from=nitro-legacy /usr/local/bin/jit /home/user/nitro-legacy/bin/jit
-RUN export DEBIAN_FRONTEND=noninteractive && \
-    apt-get update && \
-    apt-get install -y xxd netcat-traditional && \
-    rm -rf /var/lib/apt/lists/* /usr/share/doc/* /var/cache/ldconfig/aux-cache /usr/lib/python3.9/__pycache__/ /usr/lib/python3.9/*/__pycache__/ /var/log/*
-COPY scripts/split-val-entry.sh /usr/local/bin
-ENTRYPOINT [ "/usr/local/bin/split-val-entry.sh" ]
-USER user
+# USER root
+# COPY --from=nitro-legacy /usr/local/bin/nitro-val /home/user/nitro-legacy/bin/nitro-val
+# COPY --from=nitro-legacy /usr/local/bin/jit /home/user/nitro-legacy/bin/jit
+# RUN export DEBIAN_FRONTEND=noninteractive && \
+#     apt-get update && \
+#     apt-get install -y xxd netcat-traditional && \
+#     rm -rf /var/lib/apt/lists/* /usr/share/doc/* /var/cache/ldconfig/aux-cache /usr/lib/python3.9/__pycache__/ /usr/lib/python3.9/*/__pycache__/ /var/log/*
+# COPY scripts/split-val-entry.sh /usr/local/bin
+# ENTRYPOINT [ "/usr/local/bin/split-val-entry.sh" ]
+# USER user
 
 FROM nitro-node-validator AS nitro-node-dev
 USER root
