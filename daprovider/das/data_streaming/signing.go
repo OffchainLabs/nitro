@@ -1,10 +1,8 @@
 package data_streaming
 
 import (
-	"bytes"
 	"context"
 	"encoding/binary"
-	"errors"
 
 	"github.com/ethereum/go-ethereum/crypto"
 
@@ -29,12 +27,6 @@ func CustomPayloadSigner(signingFunc func([]byte, ...uint64) ([]byte, error)) *P
 	}
 }
 
-func PayloadCommiter() *PayloadSigner {
-	return CustomPayloadSigner(func(bytes []byte, extras ...uint64) ([]byte, error) {
-		return crypto.Keccak256(flattenDataForSigning(bytes, extras...)), nil
-	})
-}
-
 // lint:require-exhaustive-initialization
 type PayloadVerifier struct {
 	verifyPayload func(ctx context.Context, signature []byte, bytes []byte, extras ...uint64) error
@@ -51,17 +43,6 @@ func CustomPayloadVerifier(verifyingFunc func(ctx context.Context, signature []b
 	return &PayloadVerifier{
 		verifyPayload: verifyingFunc,
 	}
-}
-
-func PayloadCommitmentVerifier() *PayloadVerifier {
-	return CustomPayloadVerifier(func(ctx context.Context, signature []byte, data []byte, extras ...uint64) error {
-		expectedCommitment := crypto.Keccak256(flattenDataForSigning(data, extras...))
-		if bytes.Equal(signature, expectedCommitment) {
-			return nil
-		} else {
-			return errors.New("signature does not match")
-		}
-	})
 }
 
 func flattenDataForSigning(bytes []byte, extras ...uint64) []byte {

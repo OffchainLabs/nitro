@@ -81,7 +81,7 @@ func (r *Reader) recoverInternal(
 	// Retrieve the data from storage using the hash
 	var payload []byte
 	if needPayload || needPreimages {
-		payload, err = r.storage.GetByHash(common.BytesToHash(cert.DataHash[:]))
+		payload, err = r.storage.GetByHash(ctx, common.BytesToHash(cert.DataHash[:]))
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to retrieve data from storage: %w", err)
 		}

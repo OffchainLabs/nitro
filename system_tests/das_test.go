@@ -22,7 +22,6 @@ import (
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/daprovider/das"
-	"github.com/offchainlabs/nitro/daprovider/data_streaming"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/headerreader"
@@ -82,14 +81,11 @@ func blsPubToBase64(pubkey *blsSignatures.PublicKey) string {
 
 func aggConfigForBackend(backendConfig das.BackendConfig) das.AggregatorConfig {
 	return das.AggregatorConfig{
-		Enable:        true,
-		AssumedHonest: 1,
-		Backends:      das.BackendConfigList{backendConfig},
-		DASRPCClient: das.DASRPCClientConfig{
-			ServerUrl:          backendConfig.URL,
-			EnableChunkedStore: true,
-			DataStream:         data_streaming.TestDataStreamerConfig(das.DefaultDataStreamRpcMethods),
-		},
+		Enable:                true,
+		AssumedHonest:         1,
+		Backends:              das.BackendConfigList{backendConfig},
+		MaxStoreChunkBodySize: 512 * 1024,
+		EnableChunkedStore:    true,
 	}
 }
 

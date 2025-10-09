@@ -114,17 +114,19 @@ type writerForDAS struct {
 	dasWriter DASWriter
 }
 
-func (d *writerForDAS) Store(message []byte, timeout uint64) containers.PromiseInterface[[]byte] {
-	promise, ctx := containers.NewPromiseWithContext[[]byte](context.Background())
-	go func() {
-		cert, err := d.dasWriter.Store(ctx, message, timeout)
-		if err != nil {
-			promise.ProduceError(err)
-		} else {
-			promise.Produce(Serialize(cert))
+func (d *writerForDAS) Store(ctx context.Context, message []byte, timeout uint64, disableFallbackStoreDataOnChain bool) ([]byte, error) {
+	cert, err := d.dasWriter.Store(ctx, message, timeout)
+	if errors.Is(err, ErrBatchToDasFailed) {
+		if disableFallbackStoreDataOnChain {
+			return nil, errors.New("unable to batch to DAS and fallback storing data on chain is disabled")
 		}
-	}()
-	return promise
+		log.Warn("Falling back to storing data on chain", "err", err)
+		return message, nil
+	} else if err != nil {
+		return nil, err
+	} else {
+		return Serialize(cert), nil
+	}
 }
 
 var (
