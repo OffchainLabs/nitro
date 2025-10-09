@@ -122,6 +122,8 @@ func (mr *MaintenanceRunner) MaybeRunMaintenance(ctx context.Context) time.Durat
 
 func (mr *MaintenanceRunner) waitMaintenanceToComplete(ctx context.Context) {
 	ticker := time.NewTicker(1 * time.Second)
+	// Ensure ticker is stopped to avoid leaking timers if this function returns early.
+    defer ticker.Stop()
 	for {
 		select {
 		case <-ctx.Done():
