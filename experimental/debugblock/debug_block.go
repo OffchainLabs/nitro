@@ -44,8 +44,9 @@ func (c *Config) Validate() error {
 func (c *Config) Apply(chainConfig *params.ChainConfig) {
 	if c.OverwriteChainConfig {
 		chainConfig.ArbitrumChainParams.AllowDebugPrecompiles = true
-		chainConfig.ArbitrumChainParams.DebugAddress = common.HexToAddress(c.DebugAddress)
 		chainConfig.ArbitrumChainParams.DebugBlock = c.DebugBlockNum
+		debugAddress := common.HexToAddress(c.DebugAddress)
+		chainConfig.ArbitrumChainParams.DebugAddress = &debugAddress
 	}
 }
 
@@ -88,7 +89,6 @@ func PrepareDebugTransaction(chainConfig *params.ChainConfig, lastHeader *types.
 		log.Error("debug block: failed to sign trigger tx", "address", address, "err", err)
 		return nil
 	}
-	log.Warn("debug block: PrepareDebugTransaction", "address", address)
 	return tx
 }
 
@@ -105,9 +105,12 @@ func DebugBlockStateUpdate(statedb *state.StateDB, expectedBalanceDelta *big.Int
 	expectedBalanceDelta.Add(expectedBalanceDelta, triggerCost.ToBig())
 
 	// fund debug account
-	balance := uint256.MustFromBig(new(big.Int).Lsh(big.NewInt(1), 254))
-	statedb.SetBalance(chainConfig.ArbitrumChainParams.DebugAddress, balance, tracing.BalanceChangeUnspecified)
-	expectedBalanceDelta.Add(expectedBalanceDelta, balance.ToBig())
+	if chainConfig.ArbitrumChainParams.DebugAddress != nil {
+		balance := uint256.MustFromBig(new(big.Int).Lsh(big.NewInt(1), 254))
+		statedb.SetBalance(*chainConfig.ArbitrumChainParams.DebugAddress, balance, tracing.BalanceChangeUnspecified)
+		expectedBalanceDelta.Add(expectedBalanceDelta, balance.ToBig())
+		log.Warn("DANGER! debug block: funding debug account", "debugAddress", chainConfig.ArbitrumChainParams.DebugAddress)
+	}
 
 	// save current chain config to arbos state in case it was changed to enable debug mode and debug block
 	// replay binary reads chain config from arbos state, that will enable successful validation of future blocks
@@ -119,5 +122,5 @@ func DebugBlockStateUpdate(statedb *state.StateDB, expectedBalanceDelta *big.Int
 	} else if err = arbStateWrite.SetChainConfig(serializedChainConfig); err != nil {
 		log.Error("debug block: failed to set chain config in arbos state", "err", err)
 	}
-	log.Warn("DANGER! Producing debug block and funding debug account", "debugAddress", chainConfig.ArbitrumChainParams.DebugAddress)
+	log.Warn("DANGER! debug block: state update applied")
 }
