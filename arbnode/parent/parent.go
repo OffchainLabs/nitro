@@ -9,6 +9,7 @@ import (
 	"errors"
 	"math/big"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus/misc/eip4844"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
@@ -16,12 +17,56 @@ import (
 	"github.com/offchainlabs/nitro/util/headerreader"
 )
 
+func newUint64(val uint64) *uint64 { return &val }
+
 var (
+	DevNet3ChainConfig = &params.ChainConfig{
+		ChainID:                 big.NewInt(7023102237),
+		HomesteadBlock:          big.NewInt(0),
+		DAOForkBlock:            nil,
+		DAOForkSupport:          true,
+		EIP150Block:             big.NewInt(0),
+		EIP155Block:             big.NewInt(0),
+		EIP158Block:             big.NewInt(0),
+		ByzantiumBlock:          big.NewInt(0),
+		ConstantinopleBlock:     big.NewInt(0),
+		PetersburgBlock:         big.NewInt(0),
+		IstanbulBlock:           big.NewInt(0),
+		MuirGlacierBlock:        nil,
+		BerlinBlock:             big.NewInt(0),
+		LondonBlock:             big.NewInt(0),
+		ArrowGlacierBlock:       nil,
+		GrayGlacierBlock:        nil,
+		TerminalTotalDifficulty: big.NewInt(0),
+		MergeNetsplitBlock:      nil,
+		ShanghaiTime:            newUint64(0),
+		CancunTime:              newUint64(0),
+		PragueTime:              newUint64(0),
+		OsakaTime:               newUint64(1753379304),
+		BPO1Time:                newUint64(1753477608),
+		BPO2Time:                newUint64(1753575912),
+		BPO3Time:                newUint64(1753674216),
+		BPO4Time:                newUint64(1753772520),
+		BPO5Time:                newUint64(1753889256),
+		DepositContractAddress:  common.HexToAddress("0x00000000219ab540356cBB839Cbe05303d7705Fa"),
+		Ethash:                  new(params.EthashConfig),
+		BlobScheduleConfig: &params.BlobScheduleConfig{
+			Cancun: params.DefaultCancunBlobConfig,
+			Prague: params.DefaultPragueBlobConfig,
+			Osaka:  params.DefaultOsakaBlobConfig,
+			BPO1:   &params.BlobConfig{Target: 9, Max: 12, UpdateFraction: 5007716},
+			BPO2:   &params.BlobConfig{Target: 12, Max: 15, UpdateFraction: 5007716},
+			BPO3:   &params.BlobConfig{Target: 15, Max: 18, UpdateFraction: 5007716},
+			BPO4:   &params.BlobConfig{Target: 6, Max: 9, UpdateFraction: 5007716},
+			BPO5:   &params.BlobConfig{Target: 15, Max: 20, UpdateFraction: 5007716},
+		},
+	}
 	knownConfigs = map[uint64]*params.ChainConfig{
 		params.MainnetChainConfig.ChainID.Uint64():         params.MainnetChainConfig,
 		params.HoleskyChainConfig.ChainID.Uint64():         params.HoleskyChainConfig,
 		params.SepoliaChainConfig.ChainID.Uint64():         params.SepoliaChainConfig,
 		params.AllDevChainProtocolChanges.ChainID.Uint64(): params.AllDevChainProtocolChanges,
+		DevNet3ChainConfig.ChainID.Uint64():                DevNet3ChainConfig,
 	}
 )
 
