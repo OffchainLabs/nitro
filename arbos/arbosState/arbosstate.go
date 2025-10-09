@@ -25,6 +25,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/blockhash"
 	"github.com/offchainlabs/nitro/arbos/burn"
+	"github.com/offchainlabs/nitro/arbos/constraints"
 	"github.com/offchainlabs/nitro/arbos/features"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
@@ -49,6 +50,7 @@ type ArbosState struct {
 	networkFeeAccount      storage.StorageBackedAddress
 	l1PricingState         *l1pricing.L1PricingState
 	l2PricingState         *l2pricing.L2PricingState
+	resourceConstraints    *constraints.StorageResourceConstraints
 	retryableState         *retryables.RetryableState
 	addressTable           *addressTable.AddressTable
 	chainOwners            *addressSet.AddressSet
@@ -79,6 +81,8 @@ func OpenArbosState(stateDB vm.StateDB, burner burn.Burner) (*ArbosState, error)
 	if arbosVersion == 0 {
 		return nil, ErrUninitializedArbOS
 	}
+	constraintsStorage := backingStorage.OpenStorageBackedBytes(constraintsSubspace)
+
 	return &ArbosState{
 		arbosVersion:           arbosVersion,
 		upgradeVersion:         backingStorage.OpenStorageBackedUint64(uint64(upgradeVersionOffset)),
@@ -86,6 +90,7 @@ func OpenArbosState(stateDB vm.StateDB, burner burn.Burner) (*ArbosState, error)
 		networkFeeAccount:      backingStorage.OpenStorageBackedAddress(uint64(networkFeeAccountOffset)),
 		l1PricingState:         l1pricing.OpenL1PricingState(backingStorage.OpenCachedSubStorage(l1PricingSubspace), arbosVersion),
 		l2PricingState:         l2pricing.OpenL2PricingState(backingStorage.OpenCachedSubStorage(l2PricingSubspace)),
+		resourceConstraints:    constraints.NewStorageResourceConstraints(&constraintsStorage),
 		retryableState:         retryables.OpenRetryableState(backingStorage.OpenCachedSubStorage(retryablesSubspace), stateDB),
 		addressTable:           addressTable.Open(backingStorage.OpenCachedSubStorage(addressTableSubspace)),
 		chainOwners:            addressSet.OpenAddressSet(backingStorage.OpenCachedSubStorage(chainOwnerSubspace)),
@@ -187,6 +192,7 @@ var (
 	programsSubspace         SubspaceID = []byte{8}
 	featuresSubspace         SubspaceID = []byte{9}
 	nativeTokenOwnerSubspace SubspaceID = []byte{10}
+	constraintsSubspace      SubspaceID = []byte{11}
 )
 
 var PrecompileMinArbOSVersions = make(map[common.Address]uint64)
