@@ -431,7 +431,9 @@ func (n *ExecutionNode) Start(ctx context.Context) error {
 	// if err != nil {
 	// 	return fmt.Errorf("error starting geth stack: %w", err)
 	// }
-	n.ExecEngine.Start(ctx)
+	if err := n.ExecEngine.Start(ctx); err != nil {
+		return fmt.Errorf("error starting execution engine: %w", err)
+	}
 	err := n.TxPublisher.Start(ctx)
 	if err != nil {
 		return fmt.Errorf("error starting transaction puiblisher: %w", err)
