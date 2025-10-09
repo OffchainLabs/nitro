@@ -114,15 +114,13 @@ func (e *EvilDAProvider) RecoverPayload(
 							"signer", signer.Hex(),
 							"dataHash", common.Hash(cert.DataHash).Hex())
 
-						// Get the data from the underlying storage (it was stored with untrusted signer)
-						// Delegate to underlying reader
-						delegatePromise := e.reader.RecoverPayload(batchNum, batchBlockHash, sequencerMsg)
-						ctx := context.Background()
-						result, err := delegatePromise.Await(ctx)
+						// Get the data directly from storage, bypassing validation
+						storage := referenceda.GetInMemoryStorage()
+						data, err := storage.GetByHash(common.Hash(cert.DataHash))
 						if err != nil {
-							promise.ProduceError(err)
+							promise.ProduceError(fmt.Errorf("failed to get data for untrusted cert: %w", err))
 						} else {
-							promise.Produce(result)
+							promise.Produce(daprovider.PayloadResult{Payload: data})
 						}
 						return
 					}
@@ -192,16 +190,19 @@ func (e *EvilDAProvider) CollectPreimages(
 				if signerErr == nil {
 					untrustedAddr := e.GetUntrustedSignerAddress()
 
-					// If this cert was signed by our known untrusted signer, delegate to reader
+					// If this cert was signed by our known untrusted signer, get data and collect preimages
 					if untrustedAddr != nil && signer == *untrustedAddr {
-						// Delegate to underlying reader which will get the data from storage
-						delegatePromise := e.reader.CollectPreimages(batchNum, batchBlockHash, sequencerMsg)
-						ctx := context.Background()
-						result, err := delegatePromise.Await(ctx)
+						// Get the data directly from storage, bypassing validation
+						storage := referenceda.GetInMemoryStorage()
+						data, err := storage.GetByHash(common.Hash(cert.DataHash))
 						if err != nil {
 							promise.ProduceError(err)
 						} else {
-							promise.Produce(result)
+							// Collect preimages with the untrusted cert data
+							preimages := make(daprovider.PreimagesMap)
+							preimageRecorder := daprovider.RecordPreimagesTo(preimages)
+							preimageRecorder(certKeccak, data, arbutil.DACertificatePreimageType)
+							promise.Produce(daprovider.PreimagesResult{Preimages: preimages})
 						}
 						return
 					}
