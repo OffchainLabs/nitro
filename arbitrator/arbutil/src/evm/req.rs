@@ -10,7 +10,7 @@ use crate::{
     Bytes20, Bytes32,
 };
 use eyre::{bail, eyre, Result};
-use std::collections::{hash_map::Entry};
+use std::collections::hash_map::Entry;
 
 use super::api::{Gas, Ink};
 
