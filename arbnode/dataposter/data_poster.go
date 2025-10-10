@@ -1423,9 +1423,6 @@ const (
 )
 
 func DataPosterConfigAddOptions(prefix string, f *pflag.FlagSet, defaultDataPosterConfig DataPosterConfig, usageContext DataPosterUsageContext) {
-	includeBlobEnableFlag := usageContext != DataPosterUsageStaker && usageContext != DataPosterUsageBatchPoster
-	includeBlobTuning := usageContext != DataPosterUsageStaker
-
 	f.DurationSlice(prefix+".replacement-times", defaultDataPosterConfig.ReplacementTimes, "comma-separated list of durations since first posting to attempt a replace-by-fee")
 	f.Bool(prefix+".wait-for-l1-finality", defaultDataPosterConfig.WaitForL1Finality, "only treat a transaction as confirmed after L1 finality has been achieved (recommended)")
 	f.Uint64(prefix+".max-mempool-transactions", defaultDataPosterConfig.MaxMempoolTransactions, "the maximum number of transactions to have queued in the mempool at once (0 = unlimited)")
@@ -1452,15 +1449,16 @@ func DataPosterConfigAddOptions(prefix string, f *pflag.FlagSet, defaultDataPost
 	addExternalSignerOptions(prefix+".external-signer", f)
 	f.Bool(prefix+".disable-new-tx", defaultDataPosterConfig.DisableNewTx, "disable posting new transactions, data poster will still keep confirming existing batches")
 
+	includeBlobTuning := usageContext != DataPosterUsageStaker
 	if includeBlobTuning {
 		f.DurationSlice(prefix+".blob-tx-replacement-times", defaultDataPosterConfig.BlobTxReplacementTimes, "comma-separated list of durations since first posting a blob transaction to attempt a replace-by-fee")
 		f.Float64(prefix+".min-blob-tx-tip-cap-gwei", defaultDataPosterConfig.MinBlobTxTipCapGwei, "the minimum tip cap to post EIP-4844 blob carrying transactions at")
 		f.Float64(prefix+".max-blob-tx-tip-cap-gwei", defaultDataPosterConfig.MaxBlobTxTipCapGwei, "the maximum tip cap to post EIP-4844 blob carrying transactions at")
 		f.String(prefix+".enable-cell-proofs", defaultDataPosterConfig.EnableCellProofs, "enable cell proofs in blob transactions for Fusaka compatibility. Valid values: \"\" or \"auto\" (auto-detect based on L1 Osaka fork), \"force-enable\", \"force-disable\"")
 	}
-	if includeBlobEnableFlag {
-		f.Bool(prefix+".post-4844-blobs", defaultDataPosterConfig.Post4844Blobs, "if the parent chain supports 4844 blobs and they're well priced, post EIP-4844 blobs")
-	}
+
+	// We intentionally don't expose an option to configure Post4844Blobs.
+	// Components using DataPoster should set it on DataPoster's config themselves.
 }
 
 func addDangerousOptions(prefix string, f *pflag.FlagSet) {
