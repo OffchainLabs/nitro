@@ -178,7 +178,7 @@ func TestExtractMessages(t *testing.T) {
 
 			require.NoError(t, err)
 			require.Equal(t, tt.expectedMsgCount, postState.MsgCount)
-            require.Equal(t, tt.expectedDelayedSeen, postState.DelayedMessagesSeen)
+			require.Equal(t, tt.expectedDelayedSeen, postState.DelayedMessagesSeen)
 			require.Len(t, messages, tt.expectedMessages)
 			require.Len(t, delayedMessages, tt.expectedDelayedMsgs)
 		})
