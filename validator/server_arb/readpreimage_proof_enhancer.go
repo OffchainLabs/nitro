@@ -1,3 +1,5 @@
+// Copyright 2025, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 package server_arb
 
 import (
@@ -50,16 +52,16 @@ func (e *ReadPreimageProofEnhancer) EnhanceProof(ctx context.Context, messageNum
 	}
 
 	// Extract and validate certificate from sequencer message
-	if len(sequencerMessage) < 41 {
-		return nil, fmt.Errorf("sequencer message too short: expected at least 41 bytes, got %d", len(sequencerMessage))
+	if len(sequencerMessage) < SequencerMessageHeaderSize+1 {
+		return nil, fmt.Errorf("sequencer message too short: expected at least %d bytes, got %d", SequencerMessageHeaderSize+1, len(sequencerMessage))
 	}
 
-	// Extract certificate (skip 40-byte header)
-	certificate := sequencerMessage[40:]
+	// Extract certificate (skip sequencer message header)
+	certificate := sequencerMessage[SequencerMessageHeaderSize:]
 
 	// Validate certificate format
-	if len(certificate) < 33 {
-		return nil, fmt.Errorf("certificate too short: expected at least 33 bytes, got %d", len(certificate))
+	if len(certificate) < MinCertificateSize {
+		return nil, fmt.Errorf("certificate too short: expected at least %d bytes, got %d", MinCertificateSize, len(certificate))
 	}
 
 	if certificate[0] != daprovider.DACertificateMessageHeaderFlag {
@@ -69,15 +71,16 @@ func (e *ReadPreimageProofEnhancer) EnhanceProof(ctx context.Context, messageNum
 
 	// Extract keccak256 of the certificate and offset from end of proof
 	// Format: [...proof..., certKeccak256(32), offset(8), marker(1)]
-	if len(proof) < 41 {
-		return nil, fmt.Errorf("proof too short for CustomDA enhancement: %d bytes", len(proof))
+	minProofSize := CertificateHashSize + OffsetSize + MarkerSize
+	if len(proof) < minProofSize {
+		return nil, fmt.Errorf("proof too short for CustomDA enhancement: expected at least %d bytes, got %d", minProofSize, len(proof))
 	}
 
 	// The entire proof is of variable length, so we work backwards from
 	// final marker byte to find all the marker data added by serialize_proof() for CustomDA ReadPreImage.
-	markerPos := len(proof) - 1
-	offsetPos := markerPos - 8
-	certKeccak256Pos := offsetPos - 32
+	markerPos := len(proof) - MarkerSize
+	offsetPos := markerPos - OffsetSize
+	certKeccak256Pos := offsetPos - CertificateHashSize
 
 	// Verify marker
 	if proof[markerPos] != MarkerCustomDAReadPreimage {
@@ -110,7 +113,7 @@ func (e *ReadPreimageProofEnhancer) EnhanceProof(ctx context.Context, messageNum
 	// available to the OSP in the instruction arguments.
 	certSize := uint64(len(certificate))
 	markerDataStart := certKeccak256Pos // Start of CustomDA marker data that we'll drop
-	enhancedProof := make([]byte, markerDataStart+8+len(certificate)+len(customProof))
+	enhancedProof := make([]byte, markerDataStart+CertificateSizeFieldSize+len(certificate)+len(customProof))
 
 	// Copy original proof up to the CustomDA marker data
 	copy(enhancedProof, proof[:markerDataStart])
@@ -119,10 +122,10 @@ func (e *ReadPreimageProofEnhancer) EnhanceProof(ctx context.Context, messageNum
 	binary.BigEndian.PutUint64(enhancedProof[markerDataStart:], certSize)
 
 	// Add certificate
-	copy(enhancedProof[markerDataStart+8:], certificate)
+	copy(enhancedProof[markerDataStart+CertificateSizeFieldSize:], certificate)
 
 	// Add custom proof
-	copy(enhancedProof[markerDataStart+8+len(certificate):], customProof)
+	copy(enhancedProof[markerDataStart+CertificateSizeFieldSize+len(certificate):], customProof)
 
 	return enhancedProof, nil
 }
