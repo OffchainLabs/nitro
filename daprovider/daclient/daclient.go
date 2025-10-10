@@ -13,19 +13,24 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 
 	"github.com/offchainlabs/nitro/daprovider"
+	"github.com/offchainlabs/nitro/daprovider/data_streaming"
 	"github.com/offchainlabs/nitro/daprovider/server_api"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/rpcclient"
 )
 
+// lint:require-exhaustive-initialization
 type Client struct {
 	*rpcclient.RpcClient
+	*data_streaming.DataStreamer[server_api.StoreResult]
 }
 
+// lint:require-exhaustive-initialization
 type ClientConfig struct {
-	Enable     bool                   `koanf:"enable"`
-	WithWriter bool                   `koanf:"with-writer"`
-	RPC        rpcclient.ClientConfig `koanf:"rpc" reload:"hot"`
+	Enable     bool                              `koanf:"enable"`
+	WithWriter bool                              `koanf:"with-writer"`
+	RPC        rpcclient.ClientConfig            `koanf:"rpc" reload:"hot"`
+	DataStream data_streaming.DataStreamerConfig `koanf:"data-stream"`
 }
 
 var DefaultClientConfig = ClientConfig{
@@ -37,17 +42,41 @@ var DefaultClientConfig = ClientConfig{
 		ArgLogLimit:               2048,
 		WebsocketMessageSizeLimit: 256 * 1024 * 1024,
 	},
+	DataStream: data_streaming.DefaultDataStreamerConfig(DefaultStreamRpcMethods),
+}
+
+func TestClientConfig(serverUrl string) *ClientConfig {
+	return &ClientConfig{
+		Enable:     true,
+		WithWriter: true,
+		RPC:        rpcclient.ClientConfig{URL: serverUrl},
+		DataStream: data_streaming.TestDataStreamerConfig(DefaultStreamRpcMethods),
+	}
+}
+
+var DefaultStreamRpcMethods = data_streaming.DataStreamingRPCMethods{
+	StartStream:    "daprovider_startChunkedStore",
+	StreamChunk:    "daprovider_sendChunk",
+	FinalizeStream: "daprovider_commitChunkedStore",
 }
 
 func ClientConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultClientConfig.Enable, "enable daprovider client")
 	f.Bool(prefix+".with-writer", DefaultClientConfig.WithWriter, "implies if the daprovider rpc server supports writer interface")
 	rpcclient.RPCClientAddOptions(prefix+".rpc", f, &DefaultClientConfig.RPC)
+	data_streaming.DataStreamerConfigAddOptions(prefix+".data-stream", f, DefaultStreamRpcMethods)
 }
 
-func NewClient(ctx context.Context, config rpcclient.ClientConfigFetcher) (*Client, error) {
-	client := &Client{rpcclient.NewRpcClient(config, nil)}
-	if err := client.Start(ctx); err != nil {
+func NewClient(ctx context.Context, config *ClientConfig, payloadSigner *data_streaming.PayloadSigner) (*Client, error) {
+	rpcClient := rpcclient.NewRpcClient(func() *rpcclient.ClientConfig { return &config.RPC }, nil)
+
+	dataStreamer, err := data_streaming.NewDataStreamer[server_api.StoreResult](config.DataStream, payloadSigner, rpcClient)
+	if err != nil {
+		return nil, err
+	}
+
+	client := &Client{rpcClient, dataStreamer}
+	if err = client.Start(ctx); err != nil {
 		return nil, fmt.Errorf("error starting daprovider client: %w", err)
 	}
 	return client, nil
@@ -107,16 +136,19 @@ func (c *Client) CollectPreimages(
 }
 
 func (c *Client) Store(
-	ctx context.Context,
 	message []byte,
 	timeout uint64,
-	disableFallbackStoreDataOnChain bool,
-) ([]byte, error) {
-	var storeResult server_api.StoreResult
-	if err := c.CallContext(ctx, &storeResult, "daprovider_store", hexutil.Bytes(message), hexutil.Uint64(timeout), disableFallbackStoreDataOnChain); err != nil {
-		return nil, fmt.Errorf("error returned from daprovider_store rpc method, err: %w", err)
-	}
-	return storeResult.SerializedDACert, nil
+) containers.PromiseInterface[[]byte] {
+	promise, ctx := containers.NewPromiseWithContext[[]byte](context.Background())
+	go func() {
+		storeResult, err := c.DataStreamer.StreamData(ctx, message, timeout)
+		if err != nil {
+			promise.ProduceError(fmt.Errorf("error returned from daprovider server (chunked store protocol), err: %w", err))
+		} else {
+			promise.Produce(storeResult.SerializedDACert)
+		}
+	}()
+	return promise
 }
 
 // GenerateReadPreimageProof generates a proof for a specific preimage at a given offset

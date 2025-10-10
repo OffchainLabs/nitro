@@ -4,6 +4,7 @@
 package data_streaming
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -11,7 +12,16 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
+
+	"github.com/offchainlabs/nitro/util/stopwaiter"
+)
+
+const (
+	DefaultMaxPendingMessages      = 10
+	DefaultMessageCollectionExpiry = 1 * time.Minute
+	DefaultRequestValidity         = 5 * time.Minute
 )
 
 // DataStreamReceiver implements the server side of the data streaming protocol. It stays compatible with `DataStreamer`
@@ -24,37 +34,82 @@ import (
 // the interrupted streams.
 // lint:require-exhaustive-initialization
 type DataStreamReceiver struct {
+	stopwaiter.StopWaiter
+
 	payloadVerifier *PayloadVerifier
 	messageStore    *messageStore
+	requestValidity time.Duration
+
+	mutex        sync.Mutex
+	seenRequests map[common.Hash]time.Time
+}
+
+func (dsr *DataStreamReceiver) Start(ctxIn context.Context) {
+	dsr.StopWaiter.Start(ctxIn, dsr)
+
+	dsr.StopWaiter.CallIteratively(func(ctx context.Context) time.Duration {
+		dsr.mutex.Lock()
+		defer dsr.mutex.Unlock()
+		cutoff := time.Now().Add(-dsr.requestValidity)
+		for hash, requestTime := range dsr.seenRequests {
+			if requestTime.Before(cutoff) {
+				delete(dsr.seenRequests, hash)
+			}
+		}
+		return dsr.requestValidity
+	})
 }
 
 // NewDataStreamReceiver sets up a new stream receiver. `payloadVerifier` must be compatible with message signing on
 // the `DataStreamer` sender side. `maxPendingMessages` limits how many parallel protocol instances are supported.
-// `messageCollectionExpiry` is the window in which a single message streaming must end - otherwise the protocol will
-// be closed and all related data will be removed.
-func NewDataStreamReceiver(payloadVerifier *PayloadVerifier, maxPendingMessages int, messageCollectionExpiry time.Duration, expirationCallback func(id MessageId)) *DataStreamReceiver {
+// `messageCollectionExpiry` is the window in which a protocol must end - otherwise the protocol will be closed and all
+// related data will be removed. This time window is reset after every _new_ protocol message received.
+// `requestValidity` is the maximum age of the incoming protocol opening message.
+func NewDataStreamReceiver(payloadVerifier *PayloadVerifier, maxPendingMessages int, messageCollectionExpiry, requestValidity time.Duration, expirationCallback func(id MessageId)) *DataStreamReceiver {
 	return &DataStreamReceiver{
+		StopWaiter: stopwaiter.StopWaiter{},
+
 		payloadVerifier: payloadVerifier,
 		messageStore:    newMessageStore(maxPendingMessages, messageCollectionExpiry, expirationCallback),
+		requestValidity: requestValidity,
+
+		mutex:        sync.Mutex{},
+		seenRequests: make(map[common.Hash]time.Time),
 	}
+}
+
+// NewDefaultDataStreamReceiver sets up a new stream receiver with default settings.
+func NewDefaultDataStreamReceiver(verifier *PayloadVerifier) *DataStreamReceiver {
+	return NewDataStreamReceiver(verifier, DefaultMaxPendingMessages, DefaultMessageCollectionExpiry, DefaultRequestValidity, nil)
 }
 
 // StartStreamingResult is expected by DataStreamer to be returned by the endpoint responsible for the StartReceiving method.
 // lint:require-exhaustive-initialization
 type StartStreamingResult struct {
-	MessageId hexutil.Uint64 `json:"MessageId,omitempty"`
+	MessageId hexutil.Uint64 `json:"BatchId,omitempty"` // For compatibility reasons we keep the old name "BatchId"
 }
 
 func (dsr *DataStreamReceiver) StartReceiving(ctx context.Context, timestamp, nChunks, chunkSize, totalSize, timeout uint64, signature []byte) (*StartStreamingResult, error) {
+	dsr.mutex.Lock()
+	defer dsr.mutex.Unlock()
+
 	if err := dsr.payloadVerifier.verifyPayload(ctx, signature, []byte{}, timestamp, nChunks, chunkSize, totalSize, timeout); err != nil {
 		return &StartStreamingResult{0}, err
 	}
 
-	// Prevent replay of old messages
-	// #nosec G115
-	if time.Since(time.Unix(int64(timestamp), 0)).Abs() > time.Minute {
+	requestTime := time.Unix(int64(timestamp), 0) // #nosec G115
+
+	// Deny too old or from-future requests. We keep the margin of `dsr.requestValidity` also to the future, in case of unsync clocks.
+	if time.Since(requestTime).Abs() > dsr.requestValidity {
 		return &StartStreamingResult{0}, errors.New("too much time has elapsed since request was signed")
 	}
+
+	// Save in a short-memory cache that request. We use the first 32 bytes of the signature as a sufficient, pseudorandom request identifier.
+	requestHash := common.BytesToHash(signature)
+	if _, ok := dsr.seenRequests[requestHash]; ok {
+		return &StartStreamingResult{0}, errors.New("we have already seen this request; aborting replayed protocol")
+	}
+	dsr.seenRequests[requestHash] = requestTime
 
 	messageId, err := dsr.messageStore.registerNewMessage(nChunks, timeout, chunkSize, totalSize)
 	return &StartStreamingResult{hexutil.Uint64(messageId)}, err
@@ -88,6 +143,7 @@ type partialMessage struct {
 	expectedTotalSize uint64
 	timeout           uint64
 	startTime         time.Time
+	lastUpdateTime    time.Time
 }
 
 // lint:require-exhaustive-initialization
@@ -137,22 +193,28 @@ func (ms *messageStore) registerNewMessage(nChunks, timeout, chunkSize, totalSiz
 		expectedTotalSize: totalSize,
 		timeout:           timeout,
 		startTime:         time.Now(),
+		lastUpdateTime:    time.Now(),
 	}
 
 	// Schedule garbage collection for the old incomplete messages.
-	go func(id MessageId) {
-		<-time.After(ms.messageCollectionExpiry)
+	var gcRoutine func()
+	gcRoutine = func() {
 		ms.mutex.Lock()
 		defer ms.mutex.Unlock()
 
-		// Message will only exist if expiry was reached without it being complete.
-		if _, stillExists := ms.messages[id]; stillExists {
+		message, stillExists := ms.messages[id]
+		if !stillExists {
+			return
+		} else if time.Since(message.lastUpdateTime) > ms.messageCollectionExpiry {
 			if ms.expirationCallback != nil {
 				ms.expirationCallback(id)
 			}
 			delete(ms.messages, id)
+			return
 		}
-	}(id)
+		time.AfterFunc(ms.messageCollectionExpiry, gcRoutine)
+	}
+	go gcRoutine()
 
 	return id, nil
 }
@@ -174,7 +236,14 @@ func (ms *messageStore) addNewChunk(id MessageId, chunkId uint64, chunk []byte) 
 	}
 
 	if message.chunks[chunkId] != nil {
-		return fmt.Errorf("message(%d): chunk(%d) already added", id, chunkId)
+		if bytes.Equal(message.chunks[chunkId], chunk) {
+			// Server idempotency: ignore duplicated request as long as it doesn't break consistency
+			return nil
+		} else {
+			// Inconsistency between chunks at the same index detected. Protocol must be aborted (no way of deciding what data is correct)
+			delete(ms.messages, id)
+			return errors.New("received different chunk data than previously; aborting protocol")
+		}
 	}
 
 	// Validate chunk size
@@ -192,6 +261,7 @@ func (ms *messageStore) addNewChunk(id MessageId, chunkId uint64, chunk []byte) 
 
 	message.chunks[chunkId] = chunk
 	message.seenChunks++
+	message.lastUpdateTime = time.Now()
 
 	return nil
 }
