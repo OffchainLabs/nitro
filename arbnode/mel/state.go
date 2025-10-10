@@ -92,7 +92,7 @@ func (s *State) Clone() *State {
 		DelayedMessagesSeenRoot:            delayedMsgSeenRoot,
 		MsgCount:                           s.MsgCount,
 		DelayedMessagesRead:                s.DelayedMessagesRead,
-		DelayedMessagesSeen:               s.DelayedMessagesSeen,
+		DelayedMessagesSeen:                s.DelayedMessagesSeen,
 	}
 }
 
