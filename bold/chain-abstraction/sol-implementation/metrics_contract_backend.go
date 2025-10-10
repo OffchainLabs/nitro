@@ -12,9 +12,10 @@ import (
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 
-	"github.com/offchainlabs/nitro/bold/chain-abstraction"
+	protocol "github.com/offchainlabs/nitro/bold/chain-abstraction"
 )
 
 var _ protocol.ChainBackend = &MetricsContractBackend{}
@@ -86,6 +87,9 @@ func (t *MetricsContractBackend) SendTransaction(ctx context.Context, tx *types.
 	if tx != nil && len(tx.Data()) >= 4 {
 		methodHash := fmt.Sprintf("%#x", tx.Data()[:4])
 		metrics.GetOrRegisterCounter("arb/backend/send_transaction/"+methodHash+"/count", nil).Inc(1)
+	}
+	if tx != nil {
+		log.Debug("MetricsContractBackend: SendTransaction", "to", tx.To(), "data", tx.Data(), "gas", tx.Gas())
 	}
 	return t.ChainBackend.SendTransaction(ctx, tx)
 }

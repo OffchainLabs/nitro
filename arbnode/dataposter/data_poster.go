@@ -264,6 +264,7 @@ func TxToSignTxArgs(addr common.Address, tx *types.Transaction) (*apitypes.SendT
 		commitments = tx.BlobTxSidecar().Commitments
 		proofs = tx.BlobTxSidecar().Proofs
 	}
+	log.Debug("TxToSignTxArgs", "gas", tx.Gas(), "Nonce", tx.Nonce(), "to", to, "data", &data)
 	return &apitypes.SendTxArgs{
 		From:                 common.NewMixedcaseAddress(addr),
 		To:                   to,
@@ -763,6 +764,8 @@ func (p *DataPoster) PostSimpleTransaction(ctx context.Context, to common.Addres
 	if err != nil {
 		return nil, err
 	}
+	log.Debug("DataPoster: PostSimpleTransaction", "nonce", nonce, "to", to, "limit", gasLimit)
+
 	return p.postTransactionWithMutex(ctx, time.Now(), nonce, nil, to, calldata, gasLimit, value, nil, nil)
 }
 
@@ -795,6 +798,7 @@ func (p *DataPoster) shouldEnableCellProofs(ctx context.Context) (bool, error) {
 
 func (p *DataPoster) postTransactionWithMutex(ctx context.Context, dataCreatedAt time.Time, nonce uint64, meta []byte, to common.Address, calldata []byte, gasLimit uint64, value *big.Int, kzgBlobs []kzg4844.Blob, accessList types.AccessList) (*types.Transaction, error) {
 
+	log.Debug("DataPoster: postTransactionWithMutex", "nonce", nonce, "to", to, "limit", gasLimit)
 	if p.config().DisableNewTx {
 		return nil, fmt.Errorf("posting new transaction is disabled")
 	}
@@ -850,6 +854,7 @@ func (p *DataPoster) postTransactionWithMutex(ctx context.Context, dataCreatedAt
 		if err != nil {
 			return nil, fmt.Errorf("failed to compute KZG proofs: %w", err)
 		}
+		log.Debug("DataPoster blob transaction info", "numBlobs", len(kzgBlobs), "version", version, "commitments", commitments, "blobHashes", blobHashes)
 		inner = &types.BlobTx{
 			Nonce: nonce,
 			Gas:   gasLimit,
@@ -1061,6 +1066,7 @@ func (p *DataPoster) replaceTx(ctx context.Context, prevTx *storage.QueuedTransa
 	}
 
 	newFeeCap, newTipCap, newBlobFeeCap, err := p.feeAndTipCaps(ctx, prevTx.FullTx.Nonce(), prevTx.FullTx.Gas(), uint64(len(prevTx.FullTx.BlobHashes())), prevTx.FullTx, prevTx.Created, backlogWeight, latestHeader)
+	log.Debug("replaceTx: feeAndTips", "feecap", newFeeCap, "tipCap", newTipCap, "gas", prevTx.FullTx.Gas(), "data", prevTx.FullTx.Data())
 	if err != nil {
 		return err
 	}
