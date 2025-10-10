@@ -46,9 +46,10 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbnode"
+	nitroversionalerter "github.com/offchainlabs/nitro/arbnode/nitro-version-alerter"
 	"github.com/offchainlabs/nitro/arbnode/resourcemanager"
 	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/offchainlabs/nitro/blocks_reexecutor"
+	blocksreexecutor "github.com/offchainlabs/nitro/blocks_reexecutor"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
@@ -61,7 +62,7 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
-	"github.com/offchainlabs/nitro/staker/legacy"
+	legacystaker "github.com/offchainlabs/nitro/staker/legacy"
 	"github.com/offchainlabs/nitro/staker/validatorwallet"
 	nitroutil "github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/colors"
@@ -701,6 +702,15 @@ func mainImpl() int {
 		deferFuncs = []func(){func() { currentNode.StopAndWait() }}
 	}
 
+	if nodeConfig.VersionAlerter.Enable {
+		alerter, err := nitroversionalerter.NewClient(ctx, &nodeConfig.VersionAlerter)
+		if err != nil {
+			fatalErrChan <- fmt.Errorf("error initializing nitro node version alerter: %w", err)
+		}
+		alerter.Start(ctx)
+		defer alerter.StopAndWait()
+	}
+
 	sigint := make(chan os.Signal, 1)
 	signal.Notify(sigint, os.Interrupt, syscall.SIGTERM)
 
@@ -740,29 +750,30 @@ func mainImpl() int {
 }
 
 type NodeConfig struct {
-	Conf                   genericconf.ConfConfig          `koanf:"conf" reload:"hot"`
-	Node                   arbnode.Config                  `koanf:"node" reload:"hot"`
-	Execution              gethexec.Config                 `koanf:"execution" reload:"hot"`
-	Validation             valnode.Config                  `koanf:"validation" reload:"hot"`
-	ParentChain            conf.ParentChainConfig          `koanf:"parent-chain" reload:"hot"`
-	Chain                  conf.L2Config                   `koanf:"chain"`
-	LogLevel               string                          `koanf:"log-level" reload:"hot"`
-	LogType                string                          `koanf:"log-type" reload:"hot"`
-	FileLogging            genericconf.FileLoggingConfig   `koanf:"file-logging" reload:"hot"`
-	Persistent             conf.PersistentConfig           `koanf:"persistent"`
-	HTTP                   genericconf.HTTPConfig          `koanf:"http"`
-	WS                     genericconf.WSConfig            `koanf:"ws"`
-	IPC                    genericconf.IPCConfig           `koanf:"ipc"`
-	Auth                   genericconf.AuthRPCConfig       `koanf:"auth"`
-	GraphQL                genericconf.GraphQLConfig       `koanf:"graphql"`
-	Metrics                bool                            `koanf:"metrics"`
-	MetricsServer          genericconf.MetricsServerConfig `koanf:"metrics-server"`
-	PProf                  bool                            `koanf:"pprof"`
-	PprofCfg               genericconf.PProf               `koanf:"pprof-cfg"`
-	Init                   conf.InitConfig                 `koanf:"init"`
-	Rpc                    genericconf.RpcConfig           `koanf:"rpc"`
-	BlocksReExecutor       blocksreexecutor.Config         `koanf:"blocks-reexecutor"`
-	EnsureRollupDeployment bool                            `koanf:"ensure-rollup-deployment" reload:"hot"`
+	Conf                   genericconf.ConfConfig           `koanf:"conf" reload:"hot"`
+	Node                   arbnode.Config                   `koanf:"node" reload:"hot"`
+	Execution              gethexec.Config                  `koanf:"execution" reload:"hot"`
+	Validation             valnode.Config                   `koanf:"validation" reload:"hot"`
+	ParentChain            conf.ParentChainConfig           `koanf:"parent-chain" reload:"hot"`
+	Chain                  conf.L2Config                    `koanf:"chain"`
+	LogLevel               string                           `koanf:"log-level" reload:"hot"`
+	LogType                string                           `koanf:"log-type" reload:"hot"`
+	FileLogging            genericconf.FileLoggingConfig    `koanf:"file-logging" reload:"hot"`
+	Persistent             conf.PersistentConfig            `koanf:"persistent"`
+	HTTP                   genericconf.HTTPConfig           `koanf:"http"`
+	WS                     genericconf.WSConfig             `koanf:"ws"`
+	IPC                    genericconf.IPCConfig            `koanf:"ipc"`
+	Auth                   genericconf.AuthRPCConfig        `koanf:"auth"`
+	GraphQL                genericconf.GraphQLConfig        `koanf:"graphql"`
+	Metrics                bool                             `koanf:"metrics"`
+	MetricsServer          genericconf.MetricsServerConfig  `koanf:"metrics-server"`
+	PProf                  bool                             `koanf:"pprof"`
+	PprofCfg               genericconf.PProf                `koanf:"pprof-cfg"`
+	Init                   conf.InitConfig                  `koanf:"init"`
+	Rpc                    genericconf.RpcConfig            `koanf:"rpc"`
+	BlocksReExecutor       blocksreexecutor.Config          `koanf:"blocks-reexecutor"`
+	EnsureRollupDeployment bool                             `koanf:"ensure-rollup-deployment" reload:"hot"`
+	VersionAlerter         nitroversionalerter.ClientConfig `koanf:"version-alerter" reload:"hot"`
 }
 
 var NodeConfigDefault = NodeConfig{
@@ -789,6 +800,7 @@ var NodeConfigDefault = NodeConfig{
 	PprofCfg:               genericconf.PProfDefault,
 	BlocksReExecutor:       blocksreexecutor.DefaultConfig,
 	EnsureRollupDeployment: true,
+	VersionAlerter:         nitroversionalerter.DefaultClientConfig,
 }
 
 func NodeConfigAddOptions(f *pflag.FlagSet) {
@@ -816,6 +828,7 @@ func NodeConfigAddOptions(f *pflag.FlagSet) {
 	genericconf.RpcConfigAddOptions("rpc", f)
 	blocksreexecutor.ConfigAddOptions("blocks-reexecutor", f)
 	f.Bool("ensure-rollup-deployment", NodeConfigDefault.EnsureRollupDeployment, "before starting the node, wait until the transaction that deployed rollup is finalized")
+	nitroversionalerter.ClientConfigAddOptions("version-alerter", f)
 }
 
 func (c *NodeConfig) ResolveDirectoryNames() error {
@@ -887,6 +900,9 @@ func (c *NodeConfig) Validate() error {
 	}
 	if c.Node.ValidatorRequired() && (c.Execution.Caching.StateScheme == rawdb.PathScheme) {
 		return errors.New("path cannot be used as execution.caching.state-scheme when validator is required")
+	}
+	if err := c.VersionAlerter.Validate(); err != nil {
+		return err
 	}
 	return c.Persistent.Validate()
 }
