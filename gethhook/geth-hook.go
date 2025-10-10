@@ -12,7 +12,6 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/precompiles"
@@ -65,10 +64,9 @@ func init() {
 			precompileErrors[[4]byte(errABI.ID.Bytes())] = errABI
 		}
 
+		// Arbos is a special case, Arbos handles versioning of precompiles internally, versioning of Ethereum/non-Arbos precompiles must be handled externally
 		var wrapped vm.AdvancedPrecompile = ArbosPrecompileWrapper{precompile}
-		if precompile.Precompile().ArbosVersion() < params.ArbosVersion_Stylus {
-			vm.PrecompiledContractsBeforeArbOS30[addr] = wrapped
-		}
+		vm.PrecompiledContractsBeforeArbOS30[addr] = wrapped
 		vm.PrecompiledContractsStartingFromArbOS30[addr] = wrapped
 		vm.PrecompiledContractsStartingFromArbOS50[addr] = wrapped
 	}
