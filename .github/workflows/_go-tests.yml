@@ -85,6 +85,12 @@ jobs:
           echo "One or more tests failed."
           exit 1
 
+      - name: run tests with consensus execution json rpc interconnect enabled
+        if: matrix.test-mode == 'defaults'
+        run: >-
+          ${{ github.workspace }}/.github/workflows/gotestsum.sh 
+          --tags cionly --timeout 60m --test_state_scheme hash --execution_consensus_jsonrpc_interconnect
+
       - name: run redis tests
         if: matrix.test-mode == 'defaults-A'
         run: >-
