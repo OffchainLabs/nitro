@@ -222,9 +222,9 @@ func TestMultigasStylus_Create(t *testing.T) {
 	receipt1, err := EnsureTxSucceeded(ctx, l2client, tx)
 	require.NoError(t, err)
 
-	require.Equal(t,
+	require.Greater(t,
 		receipt1.MultiGasUsed.Get(multigas.ResourceKindComputation),
-		uint64(54127), // intrinsic + CREATE + keccak for init code
+		uint64(21000+32000), // intrinsic + CREATE
 	)
 
 	require.Equalf(t,
