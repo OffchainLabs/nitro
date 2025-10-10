@@ -284,6 +284,19 @@ func TxToSignTxArgs(addr common.Address, tx *types.Transaction) (*apitypes.SendT
 	}, nil
 }
 
+func ExternalSignerTxOpts(ctx context.Context, opts *ExternalSignerCfg) (*bind.TransactOpts, error) {
+	signer, sender, err := externalSigner(ctx, opts)
+	if err != nil {
+		return nil, err
+	}
+	return &bind.TransactOpts{
+		From: sender,
+		Signer: func(address common.Address, tx *types.Transaction) (*types.Transaction, error) {
+			return signer(context.TODO(), address, tx)
+		},
+	}, nil
+}
+
 // externalSigner returns signer function and ethereum address of the signer.
 // Returns an error if address isn't specified or if it can't connect to the
 // signer RPC server.
