@@ -10,7 +10,7 @@ use crate::{
     Bytes20, Bytes32,
 };
 use eyre::{bail, eyre, Result};
-use std::collections::{hash_map::Entry, HashMap};
+use std::collections::{hash_map::Entry};
 
 use super::api::{Gas, Ink};
 
@@ -171,7 +171,6 @@ impl<D: DataReader, H: RequestHandler<D>> EvmApi<D> for EvmApiRequestor<D, H> {
         data.extend(value);
         let (res, ..) = self.request(EvmApiMethod::SetTransientBytes32, data);
         let status = res.first().copied().ok_or(eyre!("empty result!"))?;
-        let status: EvmApiStatus = status.try_into()?;
         let outcome = match status.try_into()? {
             EvmApiStatus::Success => UserOutcomeKind::Success,
             EvmApiStatus::WriteProtection => UserOutcomeKind::Revert,
