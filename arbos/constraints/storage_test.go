@@ -108,6 +108,42 @@ func TestStorageResourceConstraintsRLPRoundTrip(t *testing.T) {
 	}
 }
 
+func TestStorageResourceConstraintsRLPBacklogPersistence(t *testing.T) {
+	rc := NewResourceConstraints()
+	res := EmptyResourceSet().
+		WithResource(multigas.ResourceKindComputation, 1)
+	rc.Set(res, PeriodSecs(30), 10_000_000)
+	ptr := rc.Get(res, PeriodSecs(30))
+	ptr.Backlog = 12345 // initial backlog value
+
+	store := &mockStorageBytes{}
+	src := NewStorageResourceConstraints(store)
+
+	require.NoError(t, src.Write(rc))
+	require.Greater(t, len(store.buf), 0, "storage should contain RLP bytes after Write")
+
+	loaded, err := src.Load()
+	require.NoError(t, err, "Load() failed")
+	require.Equal(t, 1, len(loaded.constraints), "expected one constraint")
+
+	for got := range loaded.All() {
+		require.Equal(t, uint64(12345), got.Backlog,
+			"initial backlog not persisted correctly")
+	}
+
+	ptr.Backlog = 99999
+	require.NoError(t, src.Write(rc), "Write() after backlog update failed")
+
+	loaded2, err := src.Load()
+	require.NoError(t, err, "Load() after backlog update failed")
+	require.Equal(t, 1, len(loaded2.constraints), "expected one constraint")
+
+	for got := range loaded2.All() {
+		require.Equal(t, uint64(99999), got.Backlog,
+			"updated backlog not persisted correctly")
+	}
+}
+
 func TestStorageResourceConstraintsEmptyLoad(t *testing.T) {
 	store := &mockStorageBytes{}
 	src := NewStorageResourceConstraints(store)
