@@ -1508,6 +1508,11 @@ var DefaultDataPosterConfigForValidator = func() DataPosterConfig {
 	// the validator cannot queue transactions
 	config.MaxMempoolTransactions = 1
 	config.MaxMempoolWeight = 1
+	// Clear blob-related fields since they're not applicable to validator
+	config.BlobTxReplacementTimes = nil
+	config.MinBlobTxTipCapGwei = 0
+	config.MaxBlobTxTipCapGwei = 0
+	config.EnableCellProofs = ""
 	return config
 }()
 
