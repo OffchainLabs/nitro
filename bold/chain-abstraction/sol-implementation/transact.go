@@ -91,13 +91,7 @@ func (a *AssertionChain) transact(
 	if gas >= FUSAKA_MAX_GAS {
 		return nil, errors.Errorf("gas estimation received from ethclient too high: %d >= %d", gas, FUSAKA_MAX_GAS)
 	}
-
-	// Now, we send the tx with the estimated gas.
-	defaultGasUint64, err := safecast.ToUint64(defaultBaseGas)
-	if err != nil {
-		return nil, errors.Wrap(err, "could not convert default base gas to uint64")
-	}
-	opts.GasLimit = gas + defaultGasUint64
+	opts.GasLimit = gas
 	tx, err = a.transactor.SendTransaction(ctx, fn, opts, gas)
 	if err != nil {
 		return nil, err
