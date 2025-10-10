@@ -241,8 +241,9 @@ RUN ./download-machine.sh consensus-v41 0xa18d6266cef250802c3cb2bfefe947ea1aa9a3
 #RUN ./download-machine.sh consensus-v50-alpha.1 0x28cfd8d81613ce4ebe750e77bfd95d6d95d4f53240488095a11c1ad3a494fa82
 #RUN ./download-machine.sh consensus-v50-rc.1 0x8fd725477d8ef58183a1a943c375a8495a22cd2d7d701ac917fe20d69993e88e
 #RUN ./download-machine.sh consensus-v50-rc.2 0xc1ea4d6d2791bf5bdf6de3c2166ce4aab8fe16ca4ad5c226e8ae31a8b77f1a08
-RUN ./download-machine.sh consensus-v50-rc.3 0x385fa2524d86d4ebc340988224f8686b3f485c7c9f7bc1015a64c85a9c76a6b0
+#RUN ./download-machine.sh consensus-v50-rc.3 0x385fa2524d86d4ebc340988224f8686b3f485c7c9f7bc1015a64c85a9c76a6b0
 RUN ./download-machine.sh consensus-v50-rc.4 0x393be710f252e8217d66fe179739eba1ed471f0d5a847b5905c30926d853241a
+RUN ./download-machine.sh consensus-v50-rc.5 0xb90895a56a59c0267c2004a0e103ad725bd98d5a05c3262806ab4ccb3f997558
 RUN ./download-machine.sh consensus-v40 0xdb698a2576298f25448bc092e52cf13b1e24141c997135d70f217d674bbeb69a
 
 FROM golang:1.25-bookworm AS node-builder
@@ -345,17 +346,21 @@ ENTRYPOINT [ "/usr/local/bin/nitro" , "--validation.wasm.allowed-wasm-module-roo
 
 USER user
 
+# The nitro-node-validator is needed in case some modifications are needed in arbitrator or jit API.
+# That was the case when enabling arbos30.
+# We no longer support pre-arbos-30 wasmmoduleroots (newer wasmmoduleroots can execute old blocks)
+# We keep the code (commented out), and the docker-target, for use in case such an update is needed again.
 FROM nitro-node AS nitro-node-validator
-USER root
-COPY --from=nitro-legacy /usr/local/bin/nitro-val /home/user/nitro-legacy/bin/nitro-val
-COPY --from=nitro-legacy /usr/local/bin/jit /home/user/nitro-legacy/bin/jit
-RUN export DEBIAN_FRONTEND=noninteractive && \
-    apt-get update && \
-    apt-get install -y xxd netcat-traditional && \
-    rm -rf /var/lib/apt/lists/* /usr/share/doc/* /var/cache/ldconfig/aux-cache /usr/lib/python3.9/__pycache__/ /usr/lib/python3.9/*/__pycache__/ /var/log/*
-COPY scripts/split-val-entry.sh /usr/local/bin
-ENTRYPOINT [ "/usr/local/bin/split-val-entry.sh" ]
-USER user
+# USER root
+# COPY --from=nitro-legacy /usr/local/bin/nitro-val /home/user/nitro-legacy/bin/nitro-val
+# COPY --from=nitro-legacy /usr/local/bin/jit /home/user/nitro-legacy/bin/jit
+# RUN export DEBIAN_FRONTEND=noninteractive && \
+#     apt-get update && \
+#     apt-get install -y xxd netcat-traditional && \
+#     rm -rf /var/lib/apt/lists/* /usr/share/doc/* /var/cache/ldconfig/aux-cache /usr/lib/python3.9/__pycache__/ /usr/lib/python3.9/*/__pycache__/ /var/log/*
+# COPY scripts/split-val-entry.sh /usr/local/bin
+# ENTRYPOINT [ "/usr/local/bin/split-val-entry.sh" ]
+# USER user
 
 FROM nitro-node-validator AS nitro-node-dev
 USER root

@@ -8,31 +8,8 @@ on:
 jobs:
   # --- Determine which files have changed ---
   changes:
-    name: Detect file changes
-    runs-on: ubuntu-4
-    outputs:
-      arbitrator_changed: ${{ steps.changed.outputs.arbitrator_any_changed }}
-      bold_legacy_changed: ${{ steps.changed.outputs.bold_legacy_any_changed }}
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v5
-        with:
-          submodules: recursive
-          fetch-depth: 10            # Will cover most PRs
-          persist-credentials: true  # In case changed-files requires deeper depth
-
-      - name: Determine if Arbitrator or Bold Legacy changed
-        id: changed
-        uses: tj-actions/changed-files@v46.0.5
-        with:
-          files_yaml: |
-            arbitrator:
-              - 'arbitrator/**'
-              - 'contracts/**'
-              - 'Makefile'
-            bold_legacy:
-              - 'bold/legacy/**'
+    uses: ./.github/workflows/_detect-changes.yml
+    secrets: inherit
 
   # --- Fast: Build + Lint only ---
   fast:
@@ -57,6 +34,18 @@ jobs:
   go-tests:
     uses: ./.github/workflows/_go-tests.yml
     secrets: inherit
+
+  # --- Summarize test results ---
+  codecov:
+    needs: [go-tests, arbitrator]
+    if: always()
+    uses: ./.github/workflows/_codecov.yml
+    secrets: inherit
+    permissions:
+      pull-requests: write
+    with:
+      post_comment: false
+      upload_report: true
 
   can_proceed:
     runs-on: ubuntu-4
