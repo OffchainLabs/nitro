@@ -4,10 +4,14 @@
 package constraints
 
 import (
+	"fmt"
 	"io"
 
 	"github.com/ethereum/go-ethereum/rlp"
 )
+
+// Version of the RLP serialization format for ResourceConstraints.
+const ResourceConstraintsVersion uint8 = 1
 
 // storageBytes defines the interface for ArbOS storage.
 type storageBytes interface {
@@ -27,11 +31,17 @@ func NewStorageResourceConstraints(storage storageBytes) *StorageResourceConstra
 	}
 }
 
-type resourceConstraintRLP struct {
+type rlpResourceConstraint struct {
 	Resources    []ResourceWeight
 	Period       PeriodSecs
 	TargetPerSec uint64
 	Backlog      uint64
+}
+
+// rlpConstraints is the RLP-encoded wrapper used for persistence.
+type rlpConstraints struct {
+	Version     uint8
+	Constraints []*ResourceConstraint
 }
 
 // EncodeRLP encodes ResourceConstraint deterministically,
@@ -39,7 +49,7 @@ type resourceConstraintRLP struct {
 func (c *ResourceConstraint) EncodeRLP(w io.Writer) error {
 	weights := make([]ResourceWeight, len(c.Resources.weights))
 	copy(weights, c.Resources.weights[:])
-	return rlp.Encode(w, resourceConstraintRLP{
+	return rlp.Encode(w, rlpResourceConstraint{
 		Resources:    weights,
 		Period:       c.Period,
 		TargetPerSec: c.TargetPerSec,
@@ -50,7 +60,7 @@ func (c *ResourceConstraint) EncodeRLP(w io.Writer) error {
 // DecodeRLP decodes ResourceConstraint deterministically,
 // padding or truncating the weights slice to the correct array length.
 func (c *ResourceConstraint) DecodeRLP(s *rlp.Stream) error {
-	var raw resourceConstraintRLP
+	var raw rlpResourceConstraint
 	if err := s.Decode(&raw); err != nil {
 		return err
 	}
@@ -79,18 +89,20 @@ func (src *StorageResourceConstraints) Load() (*ResourceConstraints, error) {
 		return NewResourceConstraints(), nil
 	}
 
-	var list []*ResourceConstraint
-	if err := rlp.DecodeBytes(data, &list); err != nil {
+	var payload rlpConstraints
+	if err := rlp.DecodeBytes(data, &payload); err != nil {
 		return nil, err
+	}
+	if payload.Version != ResourceConstraintsVersion {
+		return nil, fmt.Errorf("unsupported constraints version %d", payload.Version)
 	}
 
 	rc := NewResourceConstraints()
-	for _, c := range list {
+	for _, c := range payload.Constraints {
 		rc.Set(c.Resources, c.Period, c.TargetPerSec)
 		ptr := rc.Get(c.Resources, c.Period)
 		ptr.Backlog = c.Backlog
 	}
-
 	return rc, nil
 }
 
@@ -106,7 +118,12 @@ func (src *StorageResourceConstraints) Write(rc *ResourceConstraints) error {
 		return src.storage.Set(nil)
 	}
 
-	data, err := rlp.EncodeToBytes(list)
+	payload := rlpConstraints{
+		Version:     ResourceConstraintsVersion,
+		Constraints: list,
+	}
+
+	data, err := rlp.EncodeToBytes(&payload)
 	if err != nil {
 		return err
 	}
