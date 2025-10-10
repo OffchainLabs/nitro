@@ -447,6 +447,11 @@ func (b *NodeBuilder) TakeOwnership() *NodeBuilder {
 	return b
 }
 
+func (b *NodeBuilder) DontSendL2SetupTxes() *NodeBuilder {
+	b.takeOwnership = false // taking ownership requires sequencing arbdebug call
+	return b
+}
+
 func (b *NodeBuilder) IgnoreExecConfigValidationError() *NodeBuilder {
 	b.ignoreExecConfigValidationError = true
 	return b
