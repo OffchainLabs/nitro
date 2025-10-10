@@ -40,6 +40,7 @@ import (
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/daprovider/daclient"
 	"github.com/offchainlabs/nitro/daprovider/das"
+	"github.com/offchainlabs/nitro/daprovider/data_streaming"
 	dapserver "github.com/offchainlabs/nitro/daprovider/server"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/execution/gethexec"
@@ -119,6 +120,12 @@ func (c *Config) Validate() error {
 	if c.TransactionStreamer.TrackBlockMetadataFrom != 0 && !c.BlockMetadataFetcher.Enable {
 		log.Warn("track-block-metadata-from is set but blockMetadata fetcher is not enabled")
 	}
+	// Check that sync-interval is not more than msg-lag / 2
+	if c.ConsensusExecutionSyncer.SyncInterval > c.SyncMonitor.MsgLag/2 {
+		log.Warn("consensus-execution-syncer.sync-interval is more than half of sync-monitor.msg-lag, which may cause sync issues",
+			"sync-interval", c.ConsensusExecutionSyncer.SyncInterval,
+			"msg-lag", c.SyncMonitor.MsgLag)
+	}
 	return nil
 }
 
@@ -186,6 +193,7 @@ func ConfigDefaultL1Test() *Config {
 	config.SeqCoordinator = TestSeqCoordinatorConfig
 	config.Sequencer = true
 	config.Dangerous.NoSequencerCoordinator = true
+	config.DAProvider.DataStream = data_streaming.TestDataStreamerConfig(daclient.DefaultStreamRpcMethods)
 
 	return config
 }
@@ -326,6 +334,10 @@ func checkArbDbSchemaVersion(arbDb ethdb.Database) error {
 		case 0:
 			// No database updates are necessary for database format version 0->1.
 			// This version adds a new format for delayed messages in the inbox tracker,
+			// but it can still read the old format for old messages.
+		case 1:
+			// No database updates are necessary for database format version 1->0.
+			// This version adds a new optional field to L1IncomingMessages,
 			// but it can still read the old format for old messages.
 		default:
 			return fmt.Errorf("unsupported database format version %v", version)
@@ -570,7 +582,7 @@ func getDAS(
 	var withDAWriter bool
 	var dasServerCloseFn func()
 	if config.DAProvider.Enable {
-		daClient, err = daclient.NewClient(ctx, func() *rpcclient.ClientConfig { return &config.DAProvider.RPC })
+		daClient, err = daclient.NewClient(ctx, &config.DAProvider, data_streaming.PayloadCommiter())
 		if err != nil {
 			return nil, nil, nil, err
 		}
@@ -599,10 +611,14 @@ func getDAS(
 		if err != nil {
 			return nil, nil, nil, err
 		}
-		clientConfig := rpcclient.DefaultClientConfig
-		clientConfig.URL = dasServer.Addr
-		clientConfig.JWTSecret = jwtPath
-		daClient, err = daclient.NewClient(ctx, func() *rpcclient.ClientConfig { return &clientConfig })
+		rpcClientConfig := rpcclient.DefaultClientConfig
+		rpcClientConfig.URL = dasServer.Addr
+		rpcClientConfig.JWTSecret = jwtPath
+
+		daClientConfig := config.DAProvider
+		daClientConfig.RPC = rpcClientConfig
+
+		daClient, err = daclient.NewClient(ctx, &daClientConfig, data_streaming.PayloadCommiter())
 		if err != nil {
 			return nil, nil, nil, err
 		}
@@ -991,32 +1007,46 @@ func getNodeParentChainReaderDisabled(
 	configFetcher ConfigFetcher,
 	blockMetadataFetcher *BlockMetadataFetcher,
 ) *Node {
+	// Create ConsensusExecutionSyncer even in L2-only mode to push sync data
+	consensusExecutionSyncerConfigFetcher := func() *ConsensusExecutionSyncerConfig {
+		return &configFetcher.Get().ConsensusExecutionSyncer
+	}
+	consensusExecutionSyncer := NewConsensusExecutionSyncer(
+		consensusExecutionSyncerConfigFetcher,
+		nil, // inboxReader
+		executionClient,
+		nil, // blockValidator
+		txStreamer,
+		syncMonitor,
+	)
+
 	return &Node{
-		ArbDB:                   arbDb,
-		Stack:                   stack,
-		ExecutionClient:         executionClient,
-		ExecutionSequencer:      executionSequencer,
-		ExecutionRecorder:       executionRecorder,
-		L1Reader:                nil,
-		TxStreamer:              txStreamer,
-		DeployInfo:              nil,
-		BlobReader:              blobReader,
-		InboxReader:             nil,
-		InboxTracker:            nil,
-		DelayedSequencer:        nil,
-		BatchPoster:             nil,
-		MessagePruner:           nil,
-		BlockValidator:          nil,
-		StatelessBlockValidator: nil,
-		Staker:                  nil,
-		BroadcastServer:         broadcastServer,
-		BroadcastClients:        broadcastClients,
-		SeqCoordinator:          coordinator,
-		MaintenanceRunner:       maintenanceRunner,
-		SyncMonitor:             syncMonitor,
-		configFetcher:           configFetcher,
-		ctx:                     ctx,
-		blockMetadataFetcher:    blockMetadataFetcher,
+		ArbDB:                    arbDb,
+		Stack:                    stack,
+		ExecutionClient:          executionClient,
+		ExecutionSequencer:       executionSequencer,
+		ExecutionRecorder:        executionRecorder,
+		L1Reader:                 nil,
+		TxStreamer:               txStreamer,
+		DeployInfo:               nil,
+		BlobReader:               blobReader,
+		InboxReader:              nil,
+		InboxTracker:             nil,
+		DelayedSequencer:         nil,
+		BatchPoster:              nil,
+		MessagePruner:            nil,
+		BlockValidator:           nil,
+		StatelessBlockValidator:  nil,
+		Staker:                   nil,
+		BroadcastServer:          broadcastServer,
+		BroadcastClients:         broadcastClients,
+		SeqCoordinator:           coordinator,
+		MaintenanceRunner:        maintenanceRunner,
+		SyncMonitor:              syncMonitor,
+		configFetcher:            configFetcher,
+		ctx:                      ctx,
+		blockMetadataFetcher:     blockMetadataFetcher,
+		ConsensusExecutionSyncer: consensusExecutionSyncer,
 	}
 }
 
@@ -1136,7 +1166,7 @@ func createNodeImpl(
 	consensusExecutionSyncerConfigFetcher := func() *ConsensusExecutionSyncerConfig {
 		return &configFetcher.Get().ConsensusExecutionSyncer
 	}
-	consensusExecutionSyncer := NewConsensusExecutionSyncer(consensusExecutionSyncerConfigFetcher, inboxReader, executionClient, blockValidator, txStreamer)
+	consensusExecutionSyncer := NewConsensusExecutionSyncer(consensusExecutionSyncerConfigFetcher, inboxReader, executionClient, blockValidator, txStreamer, syncMonitor)
 
 	return &Node{
 		ArbDB:                    arbDb,
@@ -1524,18 +1554,6 @@ func (n *Node) FindInboxBatchContainingMessage(message arbutil.MessageIndex) con
 
 func (n *Node) GetBatchParentChainBlock(seqNum uint64) containers.PromiseInterface[uint64] {
 	return containers.NewReadyPromise(n.InboxTracker.GetBatchParentChainBlock(seqNum))
-}
-
-func (n *Node) FullSyncProgressMap() containers.PromiseInterface[map[string]interface{}] {
-	return containers.NewReadyPromise(n.SyncMonitor.FullSyncProgressMap(), nil)
-}
-
-func (n *Node) Synced() containers.PromiseInterface[bool] {
-	return containers.NewReadyPromise(n.SyncMonitor.Synced(), nil)
-}
-
-func (n *Node) SyncTargetMessageCount() containers.PromiseInterface[arbutil.MessageIndex] {
-	return containers.NewReadyPromise(n.SyncMonitor.SyncTargetMessageCount(), nil)
 }
 
 func (n *Node) WriteMessageFromSequencer(pos arbutil.MessageIndex, msgWithMeta arbostypes.MessageWithMetadata, msgResult execution.MessageResult, blockMetadata common.BlockMetadata) containers.PromiseInterface[struct{}] {

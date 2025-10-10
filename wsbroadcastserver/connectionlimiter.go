@@ -85,7 +85,7 @@ func (l *ConnectionLimiter) getIpStringsAndLimits(ip net.IP) []ipStringAndLimit 
 	}
 
 	config := l.config()
-	result = append(result, ipStringAndLimit{string(ip), config.PerIpLimit})
+	result = append(result, ipStringAndLimit{ip.String(), config.PerIpLimit})
 
 	if isIpv6(ip) {
 		ipv6Slash48 := ip.Mask(net.CIDRMask(48, 128))

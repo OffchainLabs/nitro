@@ -10,11 +10,13 @@ check_missing_value() {
 timeout=""
 tags=""
 run=""
+skip=""
 test_state_scheme=""
 junitfile=""
 log=true
 race=false
 cover=false
+flaky=false
 while [[ $# -gt 0 ]]; do
   case $1 in
     --timeout)
@@ -33,6 +35,12 @@ while [[ $# -gt 0 ]]; do
       shift
       check_missing_value $# "$1" "--run"
       run=$1
+      shift
+      ;;
+    --skip)
+      shift
+      check_missing_value $# "$1" "--skip"
+      skip=$1
       shift
       ;;
     --test_state_scheme)
@@ -59,6 +67,10 @@ while [[ $# -gt 0 ]]; do
       junitfile=$1
       shift
       ;;
+    --flaky)
+      flaky=true
+      shift
+      ;;
     *)
       echo "Invalid argument: $1"
       exit 1
@@ -66,59 +78,67 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-packages=$(go list ./...)
-for package in $packages; do
-  # Add the gotestsum flags first
-  cmd="stdbuf -oL gotestsum --format short-verbose --packages=\"$package\" --rerun-fails=1 --rerun-fails-max-failures=30 --no-color=false"
-
-  if [ "$junitfile" != "" ]; then
-    # Since we run tests package-by-package, we must make the JUnit file name unique
-    # to avoid overwriting. We'll append the package name (slugified) to the base file.
-    sanitized_package_name=$(echo "$package" | tr -c '[:alnum:]' '_')
-    unique_junit_file="${junitfile%.*}_${sanitized_package_name}.xml"
-    cmd="$cmd --junitfile \"$unique_junit_file\""
-  fi
-
-  # Append the separator and go test arguments
-  cmd="$cmd --"
-
-  if [ "$timeout" != "" ]; then
-    cmd="$cmd -timeout $timeout"
-  fi
-
-  if [ "$tags" != "" ]; then
-    cmd="$cmd -tags=$tags"
-  fi
-
+if [ "$flaky" == true ]; then
   if [ "$run" != "" ]; then
-    cmd="$cmd -run=$run"
-  fi
-
-  if [ "$race" == true ]; then
-    cmd="$cmd -race"
-  fi
-
-  if [ "$cover" == true ]; then
-    cmd="$cmd -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/..."
-  fi
-
-  if [ "$test_state_scheme" != "" ]; then
-      cmd="$cmd -args -- --test_state_scheme=$test_state_scheme --test_loglevel=8"
+    run="Flaky/$run"
   else
-      cmd="$cmd -args -- --test_loglevel=8" # Use error log level, which is the value 8 in the slog level enum for tests.
+    run="Flaky"
   fi
+fi
 
-  if [ "$log" == true ]; then
-      cmd="$cmd > >(stdbuf -oL tee -a full.log | grep -vE \"DEBUG|TRACE|INFO|seal\")"
-  else
-      cmd="$cmd | grep -vE \"DEBUG|TRACE|INFO|seal\""
-  fi
+# Add the gotestsum flags first
+cmd="stdbuf -oL gotestsum --format short-verbose --packages=\"./...\" --rerun-fails=1 --rerun-fails-max-failures=30 --no-color=false"
 
-  echo ""
-  echo running tests for "$package"
-  echo "$cmd"
+if [ "$junitfile" != "" ]; then
+  cmd="$cmd --junitfile \"$junitfile\""
+fi
 
-  if ! eval "$cmd"; then
-    exit 1
-  fi
-done
+# Append the separator and go test arguments
+cmd="$cmd --"
+
+if [ "$timeout" != "" ]; then
+  cmd="$cmd -timeout $timeout"
+fi
+
+if [ "$tags" != "" ]; then
+  cmd="$cmd -tags=$tags"
+fi
+
+if [ "$run" != "" ]; then
+  cmd="$cmd -run=\"$run\""
+fi
+
+if [ "$skip" != "" ] && [ "$flaky" == false ]; then
+  cmd="$cmd -skip=\"$skip|Flaky\""
+elif [ "$skip" != "" ]; then
+  cmd="$cmd -skip=\"$skip\""
+elif [ "$flaky" == false ]; then
+  cmd="$cmd -skip=Flaky"
+fi
+
+if [ "$race" == true ]; then
+  cmd="$cmd -race"
+fi
+
+if [ "$cover" == true ]; then
+  cmd="$cmd -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/..."
+fi
+
+if [ "$test_state_scheme" != "" ]; then
+    cmd="$cmd -args -- --test_state_scheme=$test_state_scheme --test_loglevel=8"
+else
+    cmd="$cmd -args -- --test_loglevel=8" # Use error log level, which is the value 8 in the slog level enum for tests.
+fi
+
+if [ "$log" == true ]; then
+    cmd="$cmd > >(stdbuf -oL tee -a full.log | grep -vE \"DEBUG|TRACE|INFO|seal\")"
+else
+    cmd="$cmd | grep -vE \"DEBUG|TRACE|INFO|seal\""
+fi
+
+echo ""
+echo "$cmd"
+
+if ! eval "$cmd"; then
+  exit 1
+fi

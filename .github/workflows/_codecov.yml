@@ -2,6 +2,24 @@
 name: codecov
 on:
   workflow_call:
+    secrets:
+      CODECOV_TOKEN:
+        required: true
+        description: Token to upload reports to Codecov.
+    inputs:
+      post_comment:
+        description: 'Set to true to post a test summary comment on the PR.'
+        type: boolean
+        required: true
+      upload_report:
+        description: 'Set to true to upload test reports to Codecov.'
+        type: boolean
+        required: true
+      report-name:
+        description: 'Name to use when uploading reports to Codecov.'
+        type: string
+        required: false
+        default: 'CI Test Results'
 
 jobs:
   report_summary:
@@ -14,21 +32,23 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v5
 
-      - name: Download Go JUnit reports
+      - name: Download JUnit reports
         uses: actions/download-artifact@v4
         with:
-          name: go-junit-reports
-          path: downloaded-reports/go
+          pattern: junit-reports-*
+          path: downloaded-reports/
 
-      - name: Download Rust JUnit reports
-        uses: actions/download-artifact@v4
-        continue-on-error: true # Rust pipeline might have not been run
-        with:
-          name: rust-junit-reports
-          path: downloaded-reports/rust
-
-      - name: Run Basic Test Results Action (Unified Report)
+      - name: Post test summary comment
+        if: ${{ inputs.post_comment }}
         uses: codecov/basic-test-results@v1
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           directory: 'downloaded-reports/'
+
+      - name: Upload test results to Codecov
+        if: ${{ inputs.upload_report }}
+        uses: codecov/test-results-action@v1
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          directory: 'downloaded-reports/'
+          name: ${{ inputs.report-name }}
