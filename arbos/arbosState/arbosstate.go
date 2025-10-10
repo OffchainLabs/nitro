@@ -81,7 +81,7 @@ func OpenArbosState(stateDB vm.StateDB, burner burn.Burner) (*ArbosState, error)
 	if arbosVersion == 0 {
 		return nil, ErrUninitializedArbOS
 	}
-	constraintsStorage := backingStorage.OpenStorageBackedBytes(constraintsSubspace)
+	constraintsBytes := backingStorage.OpenStorageBackedBytes(constraintsSubspace)
 
 	return &ArbosState{
 		arbosVersion:           arbosVersion,
@@ -90,7 +90,7 @@ func OpenArbosState(stateDB vm.StateDB, burner burn.Burner) (*ArbosState, error)
 		networkFeeAccount:      backingStorage.OpenStorageBackedAddress(uint64(networkFeeAccountOffset)),
 		l1PricingState:         l1pricing.OpenL1PricingState(backingStorage.OpenCachedSubStorage(l1PricingSubspace), arbosVersion),
 		l2PricingState:         l2pricing.OpenL2PricingState(backingStorage.OpenCachedSubStorage(l2PricingSubspace)),
-		resourceConstraints:    constraints.NewStorageResourceConstraints(&constraintsStorage),
+		resourceConstraints:    constraints.NewStorageResourceConstraints(&constraintsBytes),
 		retryableState:         retryables.OpenRetryableState(backingStorage.OpenCachedSubStorage(retryablesSubspace), stateDB),
 		addressTable:           addressTable.Open(backingStorage.OpenCachedSubStorage(addressTableSubspace)),
 		chainOwners:            addressSet.OpenAddressSet(backingStorage.OpenCachedSubStorage(chainOwnerSubspace)),
@@ -528,6 +528,10 @@ func (state *ArbosState) Features() *features.Features {
 
 func (state *ArbosState) Blockhashes() *blockhash.Blockhashes {
 	return state.blockhashes
+}
+
+func (state *ArbosState) ResourceConstraints() *constraints.StorageResourceConstraints {
+	return state.resourceConstraints
 }
 
 func (state *ArbosState) NetworkFeeAccount() (common.Address, error) {
