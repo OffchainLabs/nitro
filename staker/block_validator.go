@@ -1298,13 +1298,6 @@ func (v *BlockValidator) Initialize(ctx context.Context) error {
 	if v.pendingWasmModuleRoot != v.currentWasmModuleRoot && v.pendingWasmModuleRoot != (common.Hash{}) {
 		moduleRoots = append(moduleRoots, v.pendingWasmModuleRoot)
 	}
-	// First spawner is always RedisValidationClient if RedisStreams are enabled.
-	if v.redisValidator != nil {
-		err := v.redisValidator.Initialize(ctx, moduleRoots)
-		if err != nil {
-			return err
-		}
-	}
 	v.chosenValidator = make(map[common.Hash]validator.ValidationSpawner)
 	for _, root := range moduleRoots {
 		if v.redisValidator != nil && validator.SpawnerSupportsModule(v.redisValidator, root) {
