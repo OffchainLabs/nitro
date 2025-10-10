@@ -165,7 +165,7 @@ all: build build-replay-env test-gen-proofs
 	@touch .make/all
 
 .PHONY: build
-build: $(patsubst %,$(output_root)/bin/%, nitro deploy relay daprovider daserver autonomous-auctioneer bidder-client datool el-proxy mockexternalsigner seq-coordinator-invalidate nitro-val seq-coordinator-manager dbconv genesis-generator)
+build: $(patsubst %,$(output_root)/bin/%, nitro deploy relay daprovider daserver autonomous-auctioneer bidder-client datool el-proxy mockexternalsigner seq-coordinator-invalidate nitro-val seq-coordinator-manager dbconv genesis-generator nitro-experimental)
 	@printf $(done)
 
 .PHONY: build-node-deps
@@ -347,6 +347,10 @@ $(output_root)/bin/seq-coordinator-manager: $(DEP_PREDICATE) build-node-deps
 
 $(output_root)/bin/dbconv: $(DEP_PREDICATE) build-node-deps
 	go build $(GOLANG_PARAMS) -o $@ "$(CURDIR)/cmd/dbconv"
+
+# nitro built with experimental tooling enabled
+$(output_root)/bin/nitro-experimental: $(DEP_PREDICATE) build-node-deps
+	go build $(GOLANG_PARAMS) --tags debugblock -o $@ "$(CURDIR)/cmd/nitro"
 
 # recompile wasm, but don't change timestamp unless files differ
 $(replay_wasm): $(DEP_PREDICATE) $(go_source) .make/solgen

@@ -40,7 +40,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
-	"github.com/offchainlabs/nitro/bold/chain-abstraction"
+	protocol "github.com/offchainlabs/nitro/bold/chain-abstraction"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/cmd/pruning"
@@ -620,6 +620,9 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 				}
 				if err := dbutil.UnfinishedConversionCheck(chainData); err != nil {
 					return nil, nil, fmt.Errorf("l2chaindata unfinished database conversion check error: %w", err)
+				}
+				if config.Execution.Dangerous.DebugBlock.OverwriteChainConfig {
+					config.Execution.Dangerous.DebugBlock.Apply(chainConfig)
 				}
 				wasmDb, err := stack.OpenDatabaseWithOptions("wasm", node.DatabaseOptions{Cache: config.Execution.Caching.DatabaseCache, Handles: config.Persistent.Handles, MetricsNamespace: "wasm/", PebbleExtraOptions: persistentConfig.Pebble.ExtraOptions("wasm")})
 				if err != nil {
