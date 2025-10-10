@@ -58,7 +58,9 @@ func testBlockValidatorSimple(t *testing.T, opts Options) {
 	defer cancel()
 
 	chainConfig, l1NodeConfigA, lifecycleManager, _, dasSignerKey := setupConfigWithDAS(t, ctx, opts.dasModeString)
-	defer lifecycleManager.StopAndWaitUntil(time.Second)
+	if lifecycleManager != nil {
+		defer lifecycleManager.StopAndWaitUntil(time.Second)
+	}
 	if opts.workload == upgradeArbOs {
 		chainConfig.ArbitrumChainParams.InitialArbOSVersion = params.ArbosVersion_10
 	}
@@ -79,15 +81,44 @@ func testBlockValidatorSimple(t *testing.T, opts Options) {
 		builder.WithArbOSVersion(opts.arbosVersion)
 	}
 	builder.L2Info = nil
+
+	// Configure for referenceda mode
+	if opts.dasModeString == "referenceda" {
+		builder.nodeConfig.BatchPoster.UseCustomDA = true
+		builder.WithReferenceDA()
+	}
+
 	cleanup := builder.Build(t)
 	defer cleanup()
 
-	authorizeDASKeyset(t, ctx, dasSignerKey, builder.L1Info, builder.L1.Client)
+	// Only authorize DAS keyset if we're using traditional DAS
+	if opts.dasModeString != "referenceda" && opts.dasModeString != "onchain" && dasSignerKey != nil {
+		authorizeDASKeyset(t, ctx, dasSignerKey, builder.L1Info, builder.L1.Client)
+	}
 
 	validatorConfig := arbnode.ConfigDefaultL1NonSequencerTest()
 	validatorConfig.BlockValidator.Enable = true
-	validatorConfig.DataAvailability = l1NodeConfigA.DataAvailability
-	validatorConfig.DataAvailability.RPCAggregator.Enable = false
+
+	// Configure validator based on DA mode
+	if opts.dasModeString == "referenceda" {
+		// For embedded referenceda, copy the configuration
+		validatorConfig.DA.Mode = "referenceda"
+		validatorConfig.DA.ReferenceDA.Enable = true
+
+		// Copy the validator contract address from builder's nodeConfig
+		if builder.nodeConfig.DA.ReferenceDA.ValidatorContract != "" {
+			validatorConfig.DA.ReferenceDA.ValidatorContract = builder.nodeConfig.DA.ReferenceDA.ValidatorContract
+		}
+
+		// Disable traditional DAS for validator
+		validatorConfig.DataAvailability.Enable = false
+
+		// No batch poster configuration needed for validator
+	} else {
+		// For traditional DAS, copy DataAvailability configuration
+		validatorConfig.DataAvailability = l1NodeConfigA.DataAvailability
+		validatorConfig.DataAvailability.RPCAggregator.Enable = false
+	}
 	redisURL := ""
 	if opts.useRedisStreams {
 		redisURL = redisutil.CreateTestRedis(ctx, t)
@@ -371,6 +402,30 @@ func TestBlockValidatorSimpleJITOnchain(t *testing.T) {
 		dasModeString: "files",
 		workloadLoops: 8,
 		workload:      smallContract,
+	}
+	testBlockValidatorSimple(t, opts)
+}
+
+// TestBlockValidatorReferenceDAWithProver tests the block validator with prover
+// with the embedded reference DA
+func TestBlockValidatorReferenceDAWithProver(t *testing.T) {
+	opts := Options{
+		dasModeString: "referenceda",
+		workloadLoops: 1,
+		workload:      ethSend,
+		arbitrator:    true,
+	}
+	testBlockValidatorSimple(t, opts)
+}
+
+// TestBlockValidatorReferenceDAWithJIT tests the block validator with JIT
+// with the embedded reference DA
+func TestBlockValidatorReferenceDAWithJIT(t *testing.T) {
+	opts := Options{
+		dasModeString: "referenceda",
+		workloadLoops: 1,
+		workload:      ethSend,
+		arbitrator:    false,
 	}
 	testBlockValidatorSimple(t, opts)
 }

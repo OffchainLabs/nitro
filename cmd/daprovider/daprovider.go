@@ -112,7 +112,8 @@ func parseDAProvider(args []string) (*Config, error) {
 
 	if config.Conf.Dump {
 		err = confighelpers.DumpConfig(k, map[string]interface{}{
-			"anytrust.key.priv-key": "",
+			"anytrust.key.priv-key":               "",
+			"referenceda.signing-key.private-key": "",
 		})
 		if err != nil {
 			return nil, fmt.Errorf("error removing extra parameters before dump: %w", err)

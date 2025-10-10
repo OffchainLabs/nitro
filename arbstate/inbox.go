@@ -84,12 +84,14 @@ func ParseSequencerMessage(ctx context.Context, batchNum uint64, batchBlockHash 
 			if err != nil {
 				// Matches the way keyset validation was done inside DAS readers i.e logging the error
 				//  But other daproviders might just want to return the error
-				if strings.Contains(err.Error(), daprovider.ErrSeqMsgValidation.Error()) && daprovider.IsDASMessageHeaderByte(payload[0]) {
+				if daprovider.IsDASMessageHeaderByte(payload[0]) && strings.Contains(err.Error(), daprovider.ErrSeqMsgValidation.Error()) {
 					if keysetValidationMode == daprovider.KeysetPanicIfInvalid {
 						panic(err.Error())
 					} else {
 						log.Error(err.Error())
 					}
+				} else if daprovider.IsDACertificateMessageHeaderByte(payload[0]) && daprovider.IsCertificateValidationError(err) {
+					log.Warn("Certificate validation of sequencer batch failed, treating it as an empty batch", "batch", batchNum, "error", err)
 				} else {
 					return nil, err
 				}

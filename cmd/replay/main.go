@@ -36,6 +36,7 @@ import (
 	"github.com/offchainlabs/nitro/daprovider/das/dastree"
 	"github.com/offchainlabs/nitro/daprovider/das/dasutil"
 	"github.com/offchainlabs/nitro/gethhook"
+	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/wavmio"
 )
 
@@ -166,6 +167,66 @@ func (r *BlobPreimageReader) Initialize(ctx context.Context) error {
 	return nil
 }
 
+type DACertificatePreimageReader struct {
+}
+
+func (r *DACertificatePreimageReader) RecoverPayload(
+	batchNum uint64,
+	batchBlockHash common.Hash,
+	sequencerMsg []byte,
+) containers.PromiseInterface[daprovider.PayloadResult] {
+	promise := containers.NewPromise[daprovider.PayloadResult](nil)
+	go func() {
+		if len(sequencerMsg) <= 40 {
+			promise.ProduceError(fmt.Errorf("sequencer message too small"))
+			return
+		}
+		certificate := sequencerMsg[40:]
+
+		// Hash the entire sequencer message to get the preimage key
+		customDAPreimageHash := crypto.Keccak256Hash(certificate)
+
+		// Validate the certificate before trying to read it
+		if !wavmio.ValidateCertificate(arbutil.DACertificatePreimageType, customDAPreimageHash) {
+			// Preimage is not available - treat as invalid batch
+			log.Info("DACertificate preimage validation failed, treating as invalid batch",
+				"batchNum", batchNum,
+				"hash", customDAPreimageHash.Hex())
+			promise.Produce(daprovider.PayloadResult{Payload: []byte{}})
+			return
+		}
+
+		// Read the preimage (which contains the actual batch data)
+		payload, err := wavmio.ResolveTypedPreimage(arbutil.DACertificatePreimageType, customDAPreimageHash)
+		if err != nil {
+			// This should not happen after successful validation
+			panic(fmt.Errorf("failed to resolve DACertificate preimage after validation: %w", err))
+		}
+
+		log.Info("DACertificate batch recovered",
+			"batchNum", batchNum,
+			"hash", customDAPreimageHash.Hex(),
+			"payloadSize", len(payload))
+
+		promise.Produce(daprovider.PayloadResult{Payload: payload})
+	}()
+	return &promise
+}
+
+func (r *DACertificatePreimageReader) CollectPreimages(
+	batchNum uint64,
+	batchBlockHash common.Hash,
+	sequencerMsg []byte,
+) containers.PromiseInterface[daprovider.PreimagesResult] {
+	promise := containers.NewPromise[daprovider.PreimagesResult](nil)
+	go func() {
+		// For the replay tool, we don't need to collect preimages
+		// Just return an empty map
+		promise.Produce(daprovider.PreimagesResult{Preimages: make(daprovider.PreimagesMap)})
+	}()
+	return &promise
+}
+
 // To generate:
 // key, _ := crypto.HexToECDSA("0000000000000000000000000000000000000000000000000000000000000001")
 // sig, _ := crypto.Sign(make([]byte, 32), key)
@@ -251,6 +312,11 @@ func main() {
 		if err != nil {
 			panic(fmt.Sprintf("Failed to register blob reader: %v", err))
 		}
+		err = dapReaders.SetupDACertificateReader(&DACertificatePreimageReader{})
+		if err != nil {
+			panic(fmt.Sprintf("Failed to register DA Certificate reader: %v", err))
+		}
+
 		inboxMultiplexer := arbstate.NewInboxMultiplexer(backend, delayedMessagesRead, dapReaders, keysetValidationMode)
 		ctx := context.Background()
 		message, err := inboxMultiplexer.Pop(ctx)

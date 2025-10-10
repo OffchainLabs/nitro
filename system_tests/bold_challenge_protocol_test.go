@@ -49,7 +49,9 @@ import (
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/challengeV2gen"
+	"github.com/offchainlabs/nitro/solgen/go/localgen"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
+	"github.com/offchainlabs/nitro/solgen/go/ospgen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/staker/bold"
@@ -115,6 +117,7 @@ func testChallengeProtocolBOLD(t *testing.T, spawnerOpts ...server_arb.SpawnerOp
 		nil,
 		sconf,
 		l2info,
+		false,
 	)
 	defer requireClose(t, l1stack)
 	defer l2nodeA.StopAndWait()
@@ -137,6 +140,7 @@ func testChallengeProtocolBOLD(t *testing.T, spawnerOpts ...server_arb.SpawnerOp
 		nil,
 		sconf,
 		stakeTokenAddr,
+		false,
 	)
 	defer l2nodeB.StopAndWait()
 
@@ -226,6 +230,7 @@ func testChallengeProtocolBOLD(t *testing.T, spawnerOpts ...server_arb.SpawnerOp
 		l2nodeA.InboxTracker,
 		l2nodeA.TxStreamer,
 		l2nodeA.InboxReader,
+		nil,
 	)
 	Require(t, err)
 
@@ -242,6 +247,7 @@ func testChallengeProtocolBOLD(t *testing.T, spawnerOpts ...server_arb.SpawnerOp
 		l2nodeB.InboxTracker,
 		l2nodeB.TxStreamer,
 		l2nodeB.InboxReader,
+		nil,
 	)
 	Require(t, err)
 
@@ -524,19 +530,17 @@ func keepChainMoving(t *testing.T, ctx context.Context, l1Info *BlockchainTestIn
 	}
 }
 
-func createTestNodeOnL1ForBoldProtocol(
+func setupL1ForBoldProtocol(
 	t *testing.T,
 	ctx context.Context,
-	isSequencer bool,
-	nodeConfig *arbnode.Config,
-	chainConfig *params.ChainConfig,
-	_ *node.Config,
 	rollupStackConf setup.RollupStackConfig,
 	l2infoIn info,
+	nodeConfig *arbnode.Config,
+	chainConfig *params.ChainConfig,
+	enableCustomDA bool,
 ) (
-	l2info info, currentNode *arbnode.Node, l2client *ethclient.Client, l2stack *node.Node,
 	l1info info, l1backend *eth.Ethereum, l1client *ethclient.Client, l1stack *node.Node,
-	assertionChain *solimpl.AssertionChain, stakeTokenAddr common.Address,
+	addresses *chaininfo.RollupAddresses, stakeTokenAddr common.Address,
 ) {
 	if nodeConfig == nil {
 		nodeConfig = arbnode.ConfigDefaultL1Test()
@@ -546,12 +550,9 @@ func createTestNodeOnL1ForBoldProtocol(
 		chainConfig = chaininfo.ArbitrumDevTestChainConfig()
 	}
 	nodeConfig.BatchPoster.DataPoster.MaxMempoolTransactions = 18
-	fatalErrChan := make(chan error, 10)
 	withoutClientWrapper := false
 	l1info, l1client, l1backend, l1stack, _ = createTestL1BlockChain(t, nil, withoutClientWrapper)
-	var l2chainDb ethdb.Database
-	var l2arbDb ethdb.Database
-	var l2blockchain *core.BlockChain
+	var l2info info
 	l2info = l2infoIn
 	if l2info == nil {
 		l2info = NewArbTestInfo(t, chainConfig.ChainID)
@@ -560,8 +561,11 @@ func createTestNodeOnL1ForBoldProtocol(
 	l1info.GenerateAccount("Asserter")
 	l1info.GenerateAccount("EvilAsserter")
 
+	startingBal := big.NewInt(params.Ether)
+	startingBal.Mul(startingBal, big.NewInt(100))
+
 	SendWaitTestTransactions(t, ctx, l1client, []*types.Transaction{
-		l1info.PrepareTx("Faucet", "RollupOwner", 30000, big.NewInt(9223372036854775807), nil),
+		l1info.PrepareTx("Faucet", "RollupOwner", 30000, startingBal, nil),
 		l1info.PrepareTx("Faucet", "Sequencer", 30000, big.NewInt(9223372036854775807), nil),
 		l1info.PrepareTx("Faucet", "User", 30000, big.NewInt(9223372036854775807), nil),
 		l1info.PrepareTx("Faucet", "Asserter", 30000, big.NewInt(9223372036854775807), nil),
@@ -590,21 +594,43 @@ func createTestNodeOnL1ForBoldProtocol(
 	Require(t, err)
 	l1TransactionOpts.Value = nil
 
-	addresses := deployContractsOnly(t, ctx, l1info, l1client, chainConfig.ChainID, rollupStackConf, stakeToken)
-	rollupUser, err := rollupgen.NewRollupUserLogic(addresses.Rollup, l1client)
-	Require(t, err)
-	chalManagerAddr, err := rollupUser.ChallengeManager(&bind.CallOpts{})
-	Require(t, err)
+	addresses = deployContractsOnly(t, ctx, l1info, l1client, chainConfig.ChainID, rollupStackConf, stakeToken, enableCustomDA)
 	l1info.SetContract("Bridge", addresses.Bridge)
 	l1info.SetContract("SequencerInbox", addresses.SequencerInbox)
 	l1info.SetContract("Inbox", addresses.Inbox)
 	l1info.SetContract("Rollup", addresses.Rollup)
 	l1info.SetContract("UpgradeExecutor", addresses.UpgradeExecutor)
 
+	return l1info, l1backend, l1client, l1stack, addresses, stakeTokenAddr
+}
+
+func createL2NodeForBoldProtocol(
+	t *testing.T,
+	ctx context.Context,
+	isSequencer bool,
+	nodeConfig *arbnode.Config,
+	chainConfig *params.ChainConfig,
+	l2infoIn info,
+	l1info info,
+	l1backend *eth.Ethereum,
+	l1client *ethclient.Client,
+	l1stack *node.Node,
+	addresses *chaininfo.RollupAddresses,
+	stakeTokenAddr common.Address,
+) (
+	l2info info, currentNode *arbnode.Node, l2client *ethclient.Client, l2stack *node.Node,
+	assertionChain *solimpl.AssertionChain,
+) {
+	fatalErrChan := make(chan error, 10)
+
 	execConfig := ExecConfigDefaultNonSequencerTest(t, rawdb.HashScheme)
+
 	Require(t, execConfig.Validate())
 	initMessage := getInitMessage(ctx, t, l1client, addresses)
-	_, l2stack, l2chainDb, l2arbDb, l2blockchain = createNonL1BlockChainWithStackConfig(t, l2info, "", chainConfig, nil, initMessage, nil, execConfig)
+	var l2chainDb ethdb.Database
+	var l2arbDb ethdb.Database
+	var l2blockchain *core.BlockChain
+	l2info, l2stack, l2chainDb, l2arbDb, l2blockchain = createNonL1BlockChainWithStackConfig(t, l2infoIn, "", chainConfig, nil, initMessage, nil, execConfig)
 	var sequencerTxOptsPtr *bind.TransactOpts
 	var dataSigner signature.DataSignerFunc
 	if isSequencer {
@@ -640,6 +666,12 @@ func createTestNodeOnL1ForBoldProtocol(
 
 	StartWatchChanErr(t, ctx, fatalErrChan, currentNode)
 
+	// Get challenge manager address from rollup contract
+	rollupUser, err := rollupgen.NewRollupUserLogic(addresses.Rollup, l1client)
+	Require(t, err)
+	chalManagerAddr, err := rollupUser.ChallengeManager(&bind.CallOpts{})
+	Require(t, err)
+
 	opts := l1info.GetDefaultTransactOpts("Asserter", ctx)
 	dp, err := arbnode.StakerDataposter(
 		ctx,
@@ -663,6 +695,36 @@ func createTestNodeOnL1ForBoldProtocol(
 	Require(t, err)
 	assertionChain = assertionChainBindings
 
+	return l2info, currentNode, l2client, l2stack, assertionChain
+}
+
+func createTestNodeOnL1ForBoldProtocol(
+	t *testing.T,
+	ctx context.Context,
+	isSequencer bool,
+	nodeConfig *arbnode.Config,
+	chainConfig *params.ChainConfig,
+	_ *node.Config,
+	rollupStackConf setup.RollupStackConfig,
+	l2infoIn info,
+	enableCustomDA bool,
+) (
+	l2info info, currentNode *arbnode.Node, l2client *ethclient.Client, l2stack *node.Node,
+	l1info info, l1backend *eth.Ethereum, l1client *ethclient.Client, l1stack *node.Node,
+	assertionChain *solimpl.AssertionChain, stakeTokenAddr common.Address,
+) {
+	// First set up L1 and deploy contracts
+	var addresses *chaininfo.RollupAddresses
+	l1info, l1backend, l1client, l1stack, addresses, stakeTokenAddr = setupL1ForBoldProtocol(
+		t, ctx, rollupStackConf, l2infoIn, nodeConfig, chainConfig, enableCustomDA,
+	)
+
+	// Then create L2 node
+	l2info, currentNode, l2client, l2stack, assertionChain = createL2NodeForBoldProtocol(
+		t, ctx, isSequencer, nodeConfig, chainConfig, l2infoIn,
+		l1info, l1backend, l1client, l1stack, addresses, stakeTokenAddr,
+	)
+
 	return
 }
 
@@ -674,6 +736,7 @@ func deployContractsOnly(
 	chainId *big.Int,
 	rollupStackConf setup.RollupStackConfig,
 	stakeToken common.Address,
+	enableCustomDA bool,
 ) *chaininfo.RollupAddresses {
 	l1TransactionOpts := l1info.GetDefaultTransactOpts("RollupOwner", ctx)
 	locator, err := server_common.NewMachineLocator("")
@@ -711,15 +774,78 @@ func deployContractsOnly(
 	config, err := json.Marshal(chaininfo.ArbitrumDevTestChainConfig())
 	Require(t, err)
 	cfg.ChainConfig = string(config)
-	addresses, err := setup.DeployFullRollupStack(
-		ctx,
-		butil.NewBackendWrapper(backend, rpc.LatestBlockNumber),
-		&l1TransactionOpts,
-		l1info.GetAddress("Sequencer"),
-		cfg,
-		rollupStackConf,
-	)
-	Require(t, err)
+
+	var addresses *setup.RollupAddresses
+
+	if enableCustomDA {
+		t.Log("Deploying ReferenceDAProofValidator and custom OSP for custom DA")
+
+		// Deploy ReferenceDAProofValidator with trusted signers
+		// Create a dedicated DA signer account
+		l1info.GenerateAccount("DASigner")
+		trustedSigners := []common.Address{l1info.GetAddress("DASigner")}
+		refDAValidatorAddr, tx, _, err := localgen.DeployReferenceDAProofValidator(&l1TransactionOpts, backend, trustedSigners)
+		Require(t, err)
+		_, err = EnsureTxSucceeded(ctx, backend, tx)
+		Require(t, err)
+		t.Logf("Deployed ReferenceDAProofValidator at %s", refDAValidatorAddr.Hex())
+		// Store the validator address so it can be accessed by tests
+		l1info.SetContract("ReferenceDAProofValidator", refDAValidatorAddr)
+
+		// Deploy custom OneStepProverHostIo with the ReferenceDAProofValidator
+		ospHostIoAddr, tx, _, err := ospgen.DeployOneStepProverHostIo(&l1TransactionOpts, backend, refDAValidatorAddr)
+		Require(t, err)
+		_, err = EnsureTxSucceeded(ctx, backend, tx)
+		Require(t, err)
+		t.Logf("Deployed custom OneStepProverHostIo at %s", ospHostIoAddr.Hex())
+
+		// Deploy the other OSP contracts
+		osp0Addr, tx, _, err := ospgen.DeployOneStepProver0(&l1TransactionOpts, backend)
+		Require(t, err)
+		_, err = EnsureTxSucceeded(ctx, backend, tx)
+		Require(t, err)
+
+		ospMemAddr, tx, _, err := ospgen.DeployOneStepProverMemory(&l1TransactionOpts, backend)
+		Require(t, err)
+		_, err = EnsureTxSucceeded(ctx, backend, tx)
+		Require(t, err)
+
+		ospMathAddr, tx, _, err := ospgen.DeployOneStepProverMath(&l1TransactionOpts, backend)
+		Require(t, err)
+		_, err = EnsureTxSucceeded(ctx, backend, tx)
+		Require(t, err)
+
+		// Deploy custom OneStepProofEntry with all the OSP contracts
+		customOspAddr, tx, _, err := ospgen.DeployOneStepProofEntry(&l1TransactionOpts, backend, osp0Addr, ospMemAddr, ospMathAddr, ospHostIoAddr)
+		Require(t, err)
+		_, err = EnsureTxSucceeded(ctx, backend, tx)
+		Require(t, err)
+		t.Logf("Deployed custom OneStepProofEntry at %s", customOspAddr.Hex())
+
+		// Deploy using the custom OSP
+		rollupStackConf.CustomOsp = customOspAddr
+		addresses, err = setup.DeployFullRollupStack(
+			ctx,
+			butil.NewBackendWrapper(backend, rpc.LatestBlockNumber),
+			&l1TransactionOpts,
+			l1info.GetAddress("Sequencer"),
+			cfg,
+			rollupStackConf,
+		)
+		Require(t, err)
+
+		t.Log("Successfully deployed with custom OneStepProofEntry for custom DA support")
+	} else {
+		addresses, err = setup.DeployFullRollupStack(
+			ctx,
+			butil.NewBackendWrapper(backend, rpc.LatestBlockNumber),
+			&l1TransactionOpts,
+			l1info.GetAddress("Sequencer"),
+			cfg,
+			rollupStackConf,
+		)
+		Require(t, err)
+	}
 
 	asserter := l1info.GetDefaultTransactOpts("Asserter", ctx)
 	evilAsserter := l1info.GetDefaultTransactOpts("EvilAsserter", ctx)
@@ -786,6 +912,7 @@ func create2ndNodeWithConfigForBoldProtocol(
 	stackConfig *node.Config,
 	rollupStackConf setup.RollupStackConfig,
 	stakeTokenAddr common.Address,
+	enableCustomDA bool,
 ) (*ethclient.Client, *arbnode.Node, *solimpl.AssertionChain) {
 	fatalErrChan := make(chan error, 10)
 	l1rpcClient := l1stack.Attach()
@@ -795,7 +922,7 @@ func create2ndNodeWithConfigForBoldProtocol(
 		Fatal(t, "not geth execution node")
 	}
 	chainConfig := firstExec.ArbInterface.BlockChain().Config()
-	addresses := deployContractsOnly(t, ctx, l1info, l1client, chainConfig.ChainID, rollupStackConf, stakeTokenAddr)
+	addresses := deployContractsOnly(t, ctx, l1info, l1client, chainConfig.ChainID, rollupStackConf, stakeTokenAddr, enableCustomDA)
 
 	l1info.SetContract("EvilBridge", addresses.Bridge)
 	l1info.SetContract("EvilSequencerInbox", addresses.SequencerInbox)
@@ -875,6 +1002,96 @@ func create2ndNodeWithConfigForBoldProtocol(
 	return l2client, l2node, assertionChain
 }
 
+// createBoldBatchData creates the compressed batch data
+func createBoldBatchData(
+	t *testing.T,
+	l2Info *BlockchainTestInfo,
+	numMessages int64,
+	divergeAtIndex int64,
+) []byte {
+	batchBuffer := bytes.NewBuffer([]byte{})
+	for i := int64(0); i < numMessages; i++ {
+		value := i
+		if i == divergeAtIndex {
+			value++
+		}
+		err := writeTxToBatchBold(batchBuffer, l2Info.PrepareTx("Owner", "Destination", 1000000, big.NewInt(value), []byte{}))
+		Require(t, err)
+	}
+	compressed, err := arbcompress.CompressWell(batchBuffer.Bytes())
+	Require(t, err)
+
+	// Add brotli header byte (0x00) to indicate this is a compressed batch
+	return append([]byte{0}, compressed...)
+}
+
+// postBatchToL1 posts a message to the sequencer inbox
+func postBatchToL1(
+	t *testing.T,
+	ctx context.Context,
+	backend *ethclient.Client,
+	sequencer *bind.TransactOpts,
+	seqInbox *bridgegen.SequencerInbox,
+	message []byte,
+) *types.Receipt {
+	seqNum := new(big.Int).Lsh(common.Big1, 256)
+	seqNum.Sub(seqNum, common.Big1)
+
+	tx, err := seqInbox.AddSequencerL2BatchFromOrigin8f111f3c(
+		sequencer, seqNum, message, big.NewInt(1), common.Address{}, big.NewInt(0), big.NewInt(0),
+	)
+	Require(t, err)
+
+	receipt, err := EnsureTxSucceeded(ctx, backend, tx)
+	Require(t, err)
+
+	return receipt
+}
+
+// syncBatchToNode waits for batch to appear on L1 and adds it to the node's tracker
+func syncBatchToNode(
+	t *testing.T,
+	ctx context.Context,
+	backend *ethclient.Client,
+	l2Node *arbnode.Node,
+	seqInboxAddr common.Address,
+	receipt *types.Receipt,
+	expectedFailure string,
+) {
+	nodeSeqInbox, err := arbnode.NewSequencerInbox(backend, seqInboxAddr, 0)
+	Require(t, err)
+
+	batches, err := nodeSeqInbox.LookupBatchesInRange(ctx, receipt.BlockNumber, receipt.BlockNumber)
+	Require(t, err)
+
+	if len(batches) == 0 {
+		Fatal(t, "batch not found after AddSequencerL2BatchFromOrigin")
+	}
+
+	err = l2Node.InboxTracker.AddSequencerBatches(ctx, backend, batches)
+
+	if expectedFailure != "" {
+		// We expect this sync to fail with a specific error
+		if err == nil {
+			Fatal(t, "Expected inbox sync to fail with error containing '", expectedFailure, "' but it succeeded")
+		}
+		if !strings.Contains(err.Error(), expectedFailure) {
+			Fatal(t, "Expected error containing '", expectedFailure, "' but got: ", err.Error())
+		}
+		// Expected failure occurred
+		t.Logf("✓ Sync failed as expected with: %v", err)
+		return
+	}
+
+	// Normal case - sync should succeed
+	Require(t, err)
+
+	// Optional: log batch metadata
+	batchMetaData, err := l2Node.InboxTracker.GetBatchMetadata(batches[0].SequenceNumber)
+	log.Info("Batch metadata", "md", batchMetaData)
+	Require(t, err, "failed to get batch metadata after adding batch:")
+}
+
 func makeBoldBatch(
 	t *testing.T,
 	l2Node *arbnode.Node,
@@ -888,38 +1105,14 @@ func makeBoldBatch(
 ) {
 	ctx := context.Background()
 
-	batchBuffer := bytes.NewBuffer([]byte{})
-	for i := int64(0); i < numMessages; i++ {
-		value := i
-		if i == divergeAtIndex {
-			value++
-		}
-		err := writeTxToBatchBold(batchBuffer, l2Info.PrepareTx("Owner", "Destination", 1000000, big.NewInt(value), []byte{}))
-		Require(t, err)
-	}
-	compressed, err := arbcompress.CompressWell(batchBuffer.Bytes())
-	Require(t, err)
-	message := append([]byte{0}, compressed...)
+	// Create compressed batch data
+	message := createBoldBatchData(t, l2Info, numMessages, divergeAtIndex)
 
-	seqNum := new(big.Int).Lsh(common.Big1, 256)
-	seqNum.Sub(seqNum, common.Big1)
-	tx, err := seqInbox.AddSequencerL2BatchFromOrigin8f111f3c(sequencer, seqNum, message, big.NewInt(1), common.Address{}, big.NewInt(0), big.NewInt(0))
-	Require(t, err)
-	receipt, err := EnsureTxSucceeded(ctx, backend, tx)
-	Require(t, err)
+	// Post to L1
+	receipt := postBatchToL1(t, ctx, backend, sequencer, seqInbox, message)
 
-	nodeSeqInbox, err := arbnode.NewSequencerInbox(backend, seqInboxAddr, 0)
-	Require(t, err)
-	batches, err := nodeSeqInbox.LookupBatchesInRange(ctx, receipt.BlockNumber, receipt.BlockNumber)
-	Require(t, err)
-	if len(batches) == 0 {
-		Fatal(t, "batch not found after AddSequencerL2BatchFromOrigin")
-	}
-	err = l2Node.InboxTracker.AddSequencerBatches(ctx, backend, batches)
-	Require(t, err)
-	batchMetaData, err := l2Node.InboxTracker.GetBatchMetadata(batches[0].SequenceNumber)
-	log.Info("Batch metadata", "md", batchMetaData)
-	Require(t, err, "failed to get batch metadata after adding batch:")
+	// Sync to node
+	syncBatchToNode(t, ctx, backend, l2Node, seqInboxAddr, receipt, "")
 }
 
 func writeTxToBatchBold(writer io.Writer, tx *types.Transaction) error {

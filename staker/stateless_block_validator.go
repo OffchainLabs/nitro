@@ -332,8 +332,10 @@ func (v *StatelessBlockValidator) readFullBatch(ctx context.Context, batchNum ui
 			if err != nil {
 				// Matches the way keyset validation was done inside DAS readers i.e logging the error
 				//  But other daproviders might just want to return the error
-				if strings.Contains(err.Error(), daprovider.ErrSeqMsgValidation.Error()) && daprovider.IsDASMessageHeaderByte(headerByte) {
+				if daprovider.IsDASMessageHeaderByte(headerByte) && strings.Contains(err.Error(), daprovider.ErrSeqMsgValidation.Error()) {
 					log.Error(err.Error())
+				} else if daprovider.IsDACertificateMessageHeaderByte(headerByte) && daprovider.IsCertificateValidationError(err) {
+					log.Warn("Certificate validation of sequencer batch failed, treating it as an empty batch", "batch", batchNum, "error", err)
 				} else {
 					return false, nil, err
 				}
