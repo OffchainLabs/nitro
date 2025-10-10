@@ -210,6 +210,7 @@ var DefaultDangerousConfig = DangerousConfig{
 func DangerousConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	debugblock.ConfigAddOptions(prefix+".debug-block", f)
 }
+
 func (c *DangerousConfig) Validate() error {
 	return c.DebugBlock.Validate()
 }
