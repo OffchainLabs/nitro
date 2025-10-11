@@ -429,7 +429,7 @@ func BenchmarkCache_Read_32Mb(b *testing.B) {
 		b.Fatal(err)
 	}
 	b.StartTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		readUpTo := uint64(1 << 20)
 		hashes, err := cache.Get(key, readUpTo)
 		if err != nil {
