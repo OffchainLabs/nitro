@@ -960,7 +960,7 @@ func Benchmark_expressLaneService_validateExpressLaneTx(b *testing.B) {
 
 	sub := buildValidSubmission(b, common.HexToAddress("0x2Aef36410182881a4b13664a1E079762D7F716e6"), testPriv, 0)
 	b.StartTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		err := tr.ValidateExpressLaneTx(sub)
 		require.NoError(b, err)
 	}

@@ -158,7 +158,7 @@ func BenchmarkBidValidation(b *testing.B) {
 	require.NoError(b, err)
 
 	b.StartTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, err = bv.validateBid(newBid, bv.auctionContract.BalanceOf)
 		require.NoError(b, err)
 	}

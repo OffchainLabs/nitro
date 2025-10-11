@@ -40,7 +40,7 @@ func FuzzHistoryCommitter(f *testing.F) {
 }
 
 func BenchmarkPrefixProofGeneration_Legacy(b *testing.B) {
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		prefixIndex := 13384
 		simpleHash := crypto.Keccak256Hash([]byte("foo"))
 		hashes := make([]common.Hash, 1<<14)
@@ -70,7 +70,7 @@ func BenchmarkPrefixProofGeneration_Optimized(b *testing.B) {
 	virtual := uint64(1 << 14)
 	committer := newCommitter()
 	b.StartTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _, err := committer.generatePrefixProof(prefixIndex, hashes, virtual)
 		require.NoError(b, err)
 	}
@@ -313,7 +313,7 @@ func BenchmarkMaximumDepthHistoryCommitment(b *testing.B) {
 		simpleHash,
 	}
 	b.StartTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, err := ComputeRoot(hashedLeaves, 1<<26)
 		_ = err
 	}
