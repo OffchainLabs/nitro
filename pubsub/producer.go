@@ -130,65 +130,105 @@ func cmpMsgId(msgId1, msgId2 string) int {
 
 // checkResponses checks iteratively whether response for the promise is ready.
 func (p *Producer[Request, Response]) checkResponses(ctx context.Context) time.Duration {
-	log.Debug("redis producer: check responses starting")
-	p.promisesLock.Lock()
-	defer p.promisesLock.Unlock()
-	responded := 0
-	errored := 0
-	checked := 0
-	allowedOldestID := fmt.Sprintf("%d-0", time.Now().Add(-p.cfg.RequestTimeout).UnixMilli())
-	for id, promise := range p.promises {
-		if ctx.Err() != nil {
-			return 0
-		}
-		checked++
-		// First check if there is an error for this promise
-		errorKey := ErrorKeyFor(p.redisStream, id)
-		errorResponse, err := p.client.Get(ctx, errorKey).Result()
-		if err != nil && !errors.Is(err, redis.Nil) {
-			// If we get an error that is not redis.Nil, then log it and continue.
-			log.Error("Error reading error in redis", "key", errorKey, "error", err)
-			continue
-		}
-		if err == nil {
-			// If we found the error key, then delete it and return the error to the promise and continue.
-			p.client.Del(ctx, errorKey)
-			promise.ProduceError(errors.New(errorResponse))
-			log.Debug("consumer returned error", "error", errorResponse, "msgId", id)
-			errored++
-			delete(p.promises, id)
-			continue
-		}
-		// If we do not find the error key, then check for the result key.
-		resultKey := ResultKeyFor(p.redisStream, id)
-		res, err := p.client.Get(ctx, resultKey).Result()
-		if err != nil {
-			if !errors.Is(err, redis.Nil) {
-				log.Error("Error reading value in redis", "key", resultKey, "error", err)
-			} else if cmpMsgId(id, allowedOldestID) == -1 {
-				// The request this producer is waiting for has been past its TTL or is older than current PEL's lower,
-				// so safe to error and stop tracking this promise
-				promise.ProduceError(errors.New("error getting response, request has been waiting for too long"))
-				log.Debug("request timed out waiting for response", "msgId", id, "allowedOldestId", allowedOldestID)
-				errored++
-				delete(p.promises, id)
-			}
-			continue
-		}
-		var resp Response
-		if err := json.Unmarshal([]byte(res), &resp); err != nil {
-			promise.ProduceError(fmt.Errorf("error unmarshalling: %w", err))
-			log.Error("redis producer: Error unmarshaling", "value", res, "error", err)
-			errored++
-		} else {
-			promise.Produce(resp)
-			responded++
-		}
-		p.client.Del(ctx, resultKey)
-		delete(p.promises, id)
+    log.Debug("redis producer: check responses starting")
+	// Build a snapshot of pending promises without holding the lock during network I/O.
+	// This avoids head-of-line blocking when Redis calls are slow.
+	type pendingPromise struct {
+		id      string
+		promise *containers.Promise[Response]
 	}
-	log.Debug("checkResponses", "responded", responded, "errored", errored, "checked", checked)
-	return p.cfg.CheckResultInterval
+	var pendings []pendingPromise
+	p.promisesLock.RLock()
+	if len(p.promises) > 0 {
+		pendings = make([]pendingPromise, 0, len(p.promises))
+		for id, pr := range p.promises {
+			pendings = append(pendings, pendingPromise{id: id, promise: pr})
+		}
+	}
+	p.promisesLock.RUnlock()
+
+    responded := 0
+    errored := 0
+    checked := 0
+    allowedOldestID := fmt.Sprintf("%d-0", time.Now().Add(-p.cfg.RequestTimeout).UnixMilli())
+
+	for _, item := range pendings {
+        if ctx.Err() != nil {
+            return 0
+        }
+        checked++
+
+        id := item.id
+        promise := item.promise
+
+        // First check if there is an error for this promise
+        errorKey := ErrorKeyFor(p.redisStream, id)
+        errorResponse, err := p.client.Get(ctx, errorKey).Result()
+        if err != nil && !errors.Is(err, redis.Nil) {
+            // If we get an error that is not redis.Nil, then log it and continue.
+            log.Error("Error reading error in redis", "key", errorKey, "error", err)
+            continue
+        }
+        if err == nil {
+            // If we found the error key, then delete it and return the error to the promise and continue.
+            p.client.Del(ctx, errorKey)
+            promise.ProduceError(errors.New(errorResponse))
+            log.Debug("consumer returned error", "error", errorResponse, "msgId", id)
+
+            // Remove from map under a short critical section if still present and unchanged.
+            p.promisesLock.Lock()
+            if cur, ok := p.promises[id]; ok && cur == promise {
+                delete(p.promises, id)
+            }
+            p.promisesLock.Unlock()
+            errored++
+            continue
+        }
+
+        // If we do not find the error key, then check for the result key.
+        resultKey := ResultKeyFor(p.redisStream, id)
+        res, err := p.client.Get(ctx, resultKey).Result()
+        if err != nil {
+            if !errors.Is(err, redis.Nil) {
+                log.Error("Error reading value in redis", "key", resultKey, "error", err)
+            } else if cmpMsgId(id, allowedOldestID) == -1 {
+                // The request this producer is waiting for has been past its TTL or is older than current PEL's lower,
+                // so safe to error and stop tracking this promise
+                promise.ProduceError(errors.New("error getting response, request has been waiting for too long"))
+                log.Debug("request timed out waiting for response", "msgId", id, "allowedOldestId", allowedOldestID)
+                p.promisesLock.Lock()
+                if cur, ok := p.promises[id]; ok && cur == promise {
+                    delete(p.promises, id)
+                }
+                p.promisesLock.Unlock()
+                errored++
+            }
+            continue
+        }
+
+        var resp Response
+        if err := json.Unmarshal([]byte(res), &resp); err != nil {
+            promise.ProduceError(fmt.Errorf("error unmarshalling: %w", err))
+            log.Error("redis producer: Error unmarshaling", "value", res, "error", err)
+            p.promisesLock.Lock()
+            if cur, ok := p.promises[id]; ok && cur == promise {
+                delete(p.promises, id)
+            }
+            p.promisesLock.Unlock()
+            errored++
+        } else {
+            promise.Produce(resp)
+            p.promisesLock.Lock()
+            if cur, ok := p.promises[id]; ok && cur == promise {
+                delete(p.promises, id)
+            }
+            p.promisesLock.Unlock()
+            responded++
+        }
+        p.client.Del(ctx, resultKey)
+    }
+    log.Debug("checkResponses", "responded", responded, "errored", errored, "checked", checked)
+    return p.cfg.CheckResultInterval
 }
 
 func (p *Producer[Request, Response]) clearMessages(ctx context.Context) time.Duration {
