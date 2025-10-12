@@ -76,7 +76,7 @@ func ParseMemLimit(limitStr string) (int, error) {
 		limit <<= 30
 	case "T", "TB":
 		limit <<= 40
-	case "B":
+	case "B", "": // Support empty suffix for bytes (default unit)
 	default:
 		return 0, fmt.Errorf("unsupported memory limit suffix string %s", s)
 	}
