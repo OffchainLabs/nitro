@@ -293,47 +293,6 @@ func (r *RollupWatcher) LatestConfirmedCreationBlock(ctx context.Context) (uint6
 	return creation.Uint64(), nil
 }
 
-func (r *RollupWatcher) LookupChallengedNode(ctx context.Context, address common.Address) (uint64, error) {
-	// TODO: This function is currently unused
-
-	// Assuming this function is only used to find information about an active challenge, it
-	// must be a challenge over an unconfirmed node and thus must have been created after the
-	// latest confirmed node was created
-	latestConfirmedCreated, err := r.LatestConfirmedCreationBlock(ctx)
-	if err != nil {
-		return 0, err
-	}
-
-	addressQuery := common.Hash{}
-	copy(addressQuery[12:], address.Bytes())
-
-	query := ethereum.FilterQuery{
-		FromBlock: new(big.Int).SetUint64(latestConfirmedCreated),
-		ToBlock:   nil,
-		Addresses: []common.Address{r.address},
-		Topics:    [][]common.Hash{{challengeCreatedID}, {addressQuery}},
-	}
-	logs, err := r.client.FilterLogs(ctx, query)
-	if err != nil {
-		return 0, err
-	}
-
-	if len(logs) == 0 {
-		return 0, errors.New("no matching challenge")
-	}
-
-	if len(logs) > 1 {
-		return 0, errors.New("too many matching challenges")
-	}
-
-	challenge, err := r.ParseRollupChallengeStarted(logs[0])
-	if err != nil {
-		return 0, err
-	}
-
-	return challenge.ChallengedNode, nil
-}
-
 func (r *RollupWatcher) StakerInfo(ctx context.Context, staker common.Address) (*StakerInfo, error) {
 	info, err := r.StakerMap(r.getCallOpts(ctx), staker)
 	if err != nil {
