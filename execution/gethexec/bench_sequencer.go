@@ -42,12 +42,6 @@ func (s *BenchSequencer) Start(ctx context.Context) error {
 	return nil
 }
 
-// TODO do we need this?
-func (s *BenchSequencer) StopAndWait() {
-	s.Sequencer.StopAndWait()
-	s.StopWaiter.StopAndWait()
-}
-
 func (s *BenchSequencer) TxQueueLength() int {
 	return len(s.Sequencer.txQueue)
 }
