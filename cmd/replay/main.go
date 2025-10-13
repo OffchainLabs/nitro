@@ -342,6 +342,7 @@ func main() {
 	}
 
 	newBlockHash := newBlock.Hash()
+	println("End of cmd/replay/main.go: Block Hash", newBlockHash.String())
 
 	log.Info("Final State", "newBlockHash", newBlockHash, "StateRoot", newBlock.Root())
 
