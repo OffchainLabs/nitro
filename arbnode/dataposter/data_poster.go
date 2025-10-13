@@ -284,6 +284,19 @@ func TxToSignTxArgs(addr common.Address, tx *types.Transaction) (*apitypes.SendT
 	}, nil
 }
 
+func ExternalSignerTxOpts(ctx context.Context, opts *ExternalSignerCfg) (*bind.TransactOpts, error) {
+	signer, sender, err := externalSigner(ctx, opts)
+	if err != nil {
+		return nil, err
+	}
+	return &bind.TransactOpts{
+		From: sender,
+		Signer: func(address common.Address, tx *types.Transaction) (*types.Transaction, error) {
+			return signer(context.TODO(), address, tx)
+		},
+	}, nil
+}
+
 // externalSigner returns signer function and ethereum address of the signer.
 // Returns an error if address isn't specified or if it can't connect to the
 // signer RPC server.
@@ -1407,9 +1420,23 @@ func (c *DataPosterConfig) Validate() error {
 // that flags can be reloaded dynamically.
 type ConfigFetcher func() *DataPosterConfig
 
-func DataPosterConfigAddOptions(prefix string, f *pflag.FlagSet, defaultDataPosterConfig DataPosterConfig) {
+// DataPosterUsageContext indicates what component is using the DataPoster to determine
+// which config options to expose.
+type DataPosterUsageContext int
+
+const (
+	// DataPosterUsageStaker indicates the DataPoster is being used by the staker/validator.
+	// Staker posts small (~250 byte) assertions, so blob options don't make sense.
+	// Blob reading is also not supported with assertions.
+	DataPosterUsageStaker DataPosterUsageContext = iota
+	// DataPosterUsageBatchPoster indicates the DataPoster is being used by the batch poster.
+	// Note: The enable flag (post-4844-blobs) is NOT exposed here because batch poster
+	// controls that at its own configuration level.
+	DataPosterUsageBatchPoster
+)
+
+func DataPosterConfigAddOptions(prefix string, f *pflag.FlagSet, defaultDataPosterConfig DataPosterConfig, usageContext DataPosterUsageContext) {
 	f.DurationSlice(prefix+".replacement-times", defaultDataPosterConfig.ReplacementTimes, "comma-separated list of durations since first posting to attempt a replace-by-fee")
-	f.DurationSlice(prefix+".blob-tx-replacement-times", defaultDataPosterConfig.BlobTxReplacementTimes, "comma-separated list of durations since first posting a blob transaction to attempt a replace-by-fee")
 	f.Bool(prefix+".wait-for-l1-finality", defaultDataPosterConfig.WaitForL1Finality, "only treat a transaction as confirmed after L1 finality has been achieved (recommended)")
 	f.Uint64(prefix+".max-mempool-transactions", defaultDataPosterConfig.MaxMempoolTransactions, "the maximum number of transactions to have queued in the mempool at once (0 = unlimited)")
 	f.Uint64(prefix+".max-mempool-weight", defaultDataPosterConfig.MaxMempoolWeight, "the maximum number of weight (weight = min(1, tx.blobs)) to have queued in the mempool at once (0 = unlimited)")
@@ -1417,16 +1444,12 @@ func DataPosterConfigAddOptions(prefix string, f *pflag.FlagSet, defaultDataPost
 	f.Float64(prefix+".target-price-gwei", defaultDataPosterConfig.TargetPriceGwei, "the target price to use for maximum fee cap calculation")
 	f.Float64(prefix+".urgency-gwei", defaultDataPosterConfig.UrgencyGwei, "the urgency to use for maximum fee cap calculation")
 	f.Float64(prefix+".min-tip-cap-gwei", defaultDataPosterConfig.MinTipCapGwei, "the minimum tip cap to post transactions at")
-	f.Float64(prefix+".min-blob-tx-tip-cap-gwei", defaultDataPosterConfig.MinBlobTxTipCapGwei, "the minimum tip cap to post EIP-4844 blob carrying transactions at")
 	f.Float64(prefix+".max-tip-cap-gwei", defaultDataPosterConfig.MaxTipCapGwei, "the maximum tip cap to post transactions at")
-	f.Float64(prefix+".max-blob-tx-tip-cap-gwei", defaultDataPosterConfig.MaxBlobTxTipCapGwei, "the maximum tip cap to post EIP-4844 blob carrying transactions at")
 	f.Uint64(prefix+".max-fee-bid-multiple-bips", uint64(defaultDataPosterConfig.MaxFeeBidMultipleBips), "the maximum multiple of the current price to bid for a transaction's fees (may be exceeded due to min rbf increase, 0 = unlimited)")
 	f.Uint64(prefix+".nonce-rbf-soft-confs", defaultDataPosterConfig.NonceRbfSoftConfs, "the maximum probable reorg depth, used to determine when a transaction will no longer likely need replaced-by-fee")
 	f.Bool(prefix+".allocate-mempool-balance", defaultDataPosterConfig.AllocateMempoolBalance, "if true, don't put transactions in the mempool that spend a total greater than the batch poster's balance")
 	f.Bool(prefix+".use-db-storage", defaultDataPosterConfig.UseDBStorage, "uses database storage when enabled")
 	f.Bool(prefix+".use-noop-storage", defaultDataPosterConfig.UseNoOpStorage, "uses noop storage, it doesn't store anything")
-	f.Bool(prefix+".post-4844-blobs", defaultDataPosterConfig.Post4844Blobs, "if the parent chain supports 4844 blobs and they're well priced, post EIP-4844 blobs")
-	f.String(prefix+".enable-cell-proofs", defaultDataPosterConfig.EnableCellProofs, "enable cell proofs in blob transactions for Fusaka compatibility. Valid values: \"\" or \"auto\" (auto-detect based on L1 Osaka fork), \"force-enable\", \"force-disable\"")
 	f.Bool(prefix+".legacy-storage-encoding", defaultDataPosterConfig.LegacyStorageEncoding, "encodes items in a legacy way (as it was before dropping generics)")
 	f.String(prefix+".max-fee-cap-formula", defaultDataPosterConfig.MaxFeeCapFormula, "mathematical formula to calculate maximum fee cap gwei the result of which would be float64.\n"+
 		"This expression is expected to be evaluated please refer https://github.com/Knetic/govaluate/blob/master/MANUAL.md to find all available mathematical operators.\n"+
@@ -1438,6 +1461,17 @@ func DataPosterConfigAddOptions(prefix string, f *pflag.FlagSet, defaultDataPost
 	addDangerousOptions(prefix+".dangerous", f)
 	addExternalSignerOptions(prefix+".external-signer", f)
 	f.Bool(prefix+".disable-new-tx", defaultDataPosterConfig.DisableNewTx, "disable posting new transactions, data poster will still keep confirming existing batches")
+
+	includeBlobTuning := usageContext != DataPosterUsageStaker
+	if includeBlobTuning {
+		f.DurationSlice(prefix+".blob-tx-replacement-times", defaultDataPosterConfig.BlobTxReplacementTimes, "comma-separated list of durations since first posting a blob transaction to attempt a replace-by-fee")
+		f.Float64(prefix+".min-blob-tx-tip-cap-gwei", defaultDataPosterConfig.MinBlobTxTipCapGwei, "the minimum tip cap to post EIP-4844 blob carrying transactions at")
+		f.Float64(prefix+".max-blob-tx-tip-cap-gwei", defaultDataPosterConfig.MaxBlobTxTipCapGwei, "the maximum tip cap to post EIP-4844 blob carrying transactions at")
+		f.String(prefix+".enable-cell-proofs", defaultDataPosterConfig.EnableCellProofs, "enable cell proofs in blob transactions for Fusaka compatibility. Valid values: \"\" or \"auto\" (auto-detect based on L1 Osaka fork), \"force-enable\", \"force-disable\"")
+	}
+
+	// We intentionally don't expose an option to configure Post4844Blobs.
+	// Components using DataPoster should set it on DataPoster's config themselves.
 }
 
 func addDangerousOptions(prefix string, f *pflag.FlagSet) {
@@ -1487,6 +1521,11 @@ var DefaultDataPosterConfigForValidator = func() DataPosterConfig {
 	// the validator cannot queue transactions
 	config.MaxMempoolTransactions = 1
 	config.MaxMempoolWeight = 1
+	// Clear blob-related fields since they're not applicable to validator
+	config.BlobTxReplacementTimes = nil
+	config.MinBlobTxTipCapGwei = 0
+	config.MaxBlobTxTipCapGwei = 0
+	config.EnableCellProofs = ""
 	return config
 }()
 
