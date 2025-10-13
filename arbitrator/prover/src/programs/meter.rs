@@ -267,6 +267,11 @@ pub trait MeteredMachine {
 
     fn buy_ink(&mut self, ink: Ink) -> Result<(), OutOfInkError> {
         let ink_left = self.ink_ready()?;
+        let after = ink_left.0.saturating_sub(ink.0);
+        eprintln!(
+            "[STYLUS_DEBUG] buy_ink: buying {} ink, before={}, after={}",
+            ink.0, ink_left.0, after
+        );
         if ink_left < ink {
             return self.out_of_ink();
         }

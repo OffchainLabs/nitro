@@ -74,11 +74,22 @@ impl PricingParams {
     }
 
     pub fn gas_to_ink(&self, gas: Gas) -> Ink {
-        Ink(gas.0.saturating_mul(self.ink_price.into()))
+        let ink = Ink(gas.0.saturating_mul(self.ink_price.into()));
+        eprintln!(
+            "[STYLUS_DEBUG] gas_to_ink: {} gas -> {} ink (price={})",
+            gas.0, ink.0, self.ink_price
+        );
+        ink
     }
 
     pub fn ink_to_gas(&self, ink: Ink) -> Gas {
-        Gas(ink.0 / self.ink_price as u64) // ink_price is never 0
+        let gas = Gas(ink.0 / self.ink_price as u64); // ink_price is never 0
+        let remainder = ink.0 % self.ink_price as u64;
+        eprintln!(
+            "[STYLUS_DEBUG] ink_to_gas: {} ink -> {} gas (price={}, remainder={})",
+            ink.0, gas.0, self.ink_price, remainder
+        );
+        gas
     }
 }
 

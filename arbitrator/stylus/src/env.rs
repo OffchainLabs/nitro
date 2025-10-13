@@ -81,7 +81,14 @@ impl<D: DataReader, E: EvmApi<D>> WasmEnv<D, E> {
         ink: Ink,
     ) -> Result<HostioInfo<'a, D, E>, Escape> {
         let mut info = Self::program(env)?;
-        info.buy_ink(pricing::HOSTIO_INK + ink)?;
+        let total_ink = pricing::HOSTIO_INK + ink;
+        eprintln!(
+            "[STYLUS_DEBUG] HostIO start: buying {} ink ({} HOSTIO_INK + {} requested)",
+            total_ink.0,
+            pricing::HOSTIO_INK.0,
+            ink.0
+        );
+        info.buy_ink(total_ink)?;
         Ok(info)
     }
 
