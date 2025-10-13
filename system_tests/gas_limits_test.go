@@ -79,7 +79,7 @@ func TestBlockGasLimit(t *testing.T) {
 		RequestId:   nil,
 		L1BaseFee:   nil,
 	}
-	hooks := arbos.NoopSequencingHooks(txes)
+	hooks := arbos.NewNoopSequencingHooks(txes, false, false, false)
 	_, err = b.L2.ExecNode.ExecEngine.SequenceTransactions(header, hooks, nil)
 	Require(t, err)
 

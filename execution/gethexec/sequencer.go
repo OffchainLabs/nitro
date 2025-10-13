@@ -910,34 +910,55 @@ func (s *Sequencer) handleInactive(ctx context.Context, queueItems []txQueueItem
 var sequencerInternalError = errors.New("sequencer internal error")
 
 type fullSequencingHooks struct {
-	arbos.SequencingHooks
 	queueItems               []txQueueItem
 	sequencedQueueItemsCount int
 	sequencedTxsSizeSoFar    int
 	maxSequencedTxsSize      int
+	txErrors                 []error
+	sequencer                Sequencer
 }
 
-// GetNextTx returns the next tx to be sequenced into a block while maintaining a running count of total block size so far, if adding a tx would exceed the allowed
-// max-size, then GetNextTx signals to stop adding txs to the block and instead try the remaining txs in the next block
-func (s *fullSequencingHooks) GetNextTx() (*types.Transaction, error) {
-	// This is not supposed to happen, if so we have a bug
-	if len(s.SequencingHooks.TxErrors) != s.sequencedQueueItemsCount {
-		return nil, fmt.Errorf("fullSequencingHooks: GetNextTx detected out of order request to sequence tx. hookTxErrors: %d, nextTxIdToBeSequenced: %d", len(s.SequencingHooks.TxErrors), s.sequencedQueueItemsCount)
-	}
-	if s.sequencedQueueItemsCount > 0 && s.TxErrors[s.sequencedQueueItemsCount-1] == nil {
-		s.sequencedTxsSizeSoFar += s.queueItems[s.sequencedQueueItemsCount-1].txSize
-	}
-	if s.sequencedQueueItemsCount >= len(s.queueItems) {
-		return nil, nil
-	}
-	if s.sequencedTxsSizeSoFar+s.queueItems[s.sequencedQueueItemsCount].txSize > s.maxSequencedTxsSize {
-		return nil, nil
-	}
-	s.sequencedQueueItemsCount += 1
-	return s.queueItems[s.sequencedQueueItemsCount-1].tx, nil
+func (s *fullSequencingHooks) GetTxErrors() []error {
+	return s.txErrors
 }
 
-func (s *fullSequencingHooks) GetScheduledTx(txId int) (*types.Transaction, error) {
+func (s *fullSequencingHooks) ClearTxErrors() {
+	s.txErrors = nil
+}
+
+func (s *fullSequencingHooks) InsertLastTxError(err error) {
+	s.txErrors = append(s.txErrors, err)
+}
+
+// NextTxToSequence returns the next transaction to be included in the block, or nil if there are no more transactions to include.
+// It will skip transactions that would cause the total size of included transactions to exceed maxSequencedTxsSize.
+func (s *fullSequencingHooks) NextTxToSequence() (*types.Transaction, *arbitrum_types.ConditionalOptions, error) {
+	for {
+		// This is not supposed to happen, if so we have a bug
+		if len(s.txErrors) != s.sequencedQueueItemsCount {
+			return nil, nil, fmt.Errorf("fullSequencingHooks: GetNextTx detected out of order request to sequence tx. hookTxErrors: %d, nextTxIdToBeSequenced: %d", len(s.txErrors), s.sequencedQueueItemsCount)
+		}
+		if s.sequencedQueueItemsCount > 0 && s.txErrors[s.sequencedQueueItemsCount-1] == nil {
+			s.sequencedTxsSizeSoFar += s.queueItems[s.sequencedQueueItemsCount-1].txSize
+		}
+		if s.sequencedQueueItemsCount >= len(s.queueItems) {
+			return nil, nil, nil
+		}
+		if s.sequencedTxsSizeSoFar+s.queueItems[s.sequencedQueueItemsCount].txSize > s.maxSequencedTxsSize {
+			s.sequencedQueueItemsCount += 1
+		} else {
+			s.sequencedQueueItemsCount += 1
+			break
+		}
+	}
+	return s.queueItems[s.sequencedQueueItemsCount-1].tx, s.queueItems[s.sequencedQueueItemsCount-1].options, nil
+}
+
+func (s *fullSequencingHooks) DiscardInvalidTxsEarly() bool {
+	return true
+}
+
+func (s *fullSequencingHooks) SequencedTx(txId int) (*types.Transaction, error) {
 	// This is not supposed to happen, if so we have a bug
 	if txId > s.sequencedQueueItemsCount {
 		return nil, fmt.Errorf("transaction queried for was not scheduled by the fullSequencingHooks. txId: %d, sequencedCount: %d", txId, s.sequencedQueueItemsCount)
@@ -945,22 +966,25 @@ func (s *fullSequencingHooks) GetScheduledTx(txId int) (*types.Transaction, erro
 	return s.queueItems[txId].tx, nil
 }
 
+func (s *fullSequencingHooks) PreTxFilter(config *params.ChainConfig, header *types.Header, db *state.StateDB, a *arbosState.ArbosState, transaction *types.Transaction, options *arbitrum_types.ConditionalOptions, address common.Address, info *arbos.L1Info) error {
+	return s.sequencer.preTxFilter(config, header, db, a, transaction, options, address, info)
+}
+
+func (s *fullSequencingHooks) PostTxFilter(header *types.Header, db *state.StateDB, a *arbosState.ArbosState, transaction *types.Transaction, address common.Address, u uint64, result *core.ExecutionResult) error {
+	return s.sequencer.postTxFilter(header, db, a, transaction, address, u, result)
+}
+
+func (s *fullSequencingHooks) BlockFilter(header *types.Header, db *state.StateDB, transactions types.Transactions, receipts types.Receipts) error {
+	return nil
+}
+
 func (s *Sequencer) makeSequencingHooks(items []txQueueItem) *fullSequencingHooks {
 	res := &fullSequencingHooks{
-		arbos.SequencingHooks{
-			PreTxFilter:             s.preTxFilter,
-			PostTxFilter:            s.postTxFilter,
-			DiscardInvalidTxsEarly:  true,
-			TxErrors:                []error{},
-			ConditionalOptionsForTx: nil,
-		},
-		items,
-		0,
-		0,
-		s.config().MaxTxDataSize,
+		queueItems:               items,
+		sequencedQueueItemsCount: 0,
+		sequencedTxsSizeSoFar:    0,
+		maxSequencedTxsSize:      s.config().MaxTxDataSize,
 	}
-	res.SequencingHooks.NextTxToSequence = res.GetNextTx
-	res.SequencingHooks.SequencedTx = res.GetScheduledTx
 	return res
 }
 
@@ -1213,9 +1237,7 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 	queueItems = s.precheckNonces(queueItems)
 	timeboostedTxs := make(map[common.Hash]struct{})
 	hooks := s.makeSequencingHooks(queueItems)
-	hooks.ConditionalOptionsForTx = make([]*arbitrum_types.ConditionalOptions, len(queueItems))
-	for i, queueItem := range queueItems {
-		hooks.ConditionalOptionsForTx[i] = queueItem.options
+	for _, queueItem := range queueItems {
 		if queueItem.isTimeboosted {
 			timeboostedTxs[queueItem.tx.Hash()] = struct{}{}
 		}
@@ -1260,9 +1282,9 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 		err   error
 	)
 	if config.EnableProfiling {
-		block, err = s.execEngine.SequenceTransactionsWithProfiling(header, &hooks.SequencingHooks, timeboostedTxs)
+		block, err = s.execEngine.SequenceTransactionsWithProfiling(header, hooks, timeboostedTxs)
 	} else {
-		block, err = s.execEngine.SequenceTransactions(header, &hooks.SequencingHooks, timeboostedTxs)
+		block, err = s.execEngine.SequenceTransactions(header, hooks, timeboostedTxs)
 	}
 	elapsed := time.Since(start)
 	blockCreationTimer.Update(elapsed.Nanoseconds())
@@ -1274,8 +1296,8 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 		log.Warn("took over 5 seconds to sequence a block", "elapsed", elapsed, "numTxes", hooks.sequencedQueueItemsCount, "success", block != nil, "l2Block", blockNum)
 	}
 	if err == nil {
-		if len(hooks.TxErrors) != hooks.sequencedQueueItemsCount { // This is not supposed to happen, if so we have a bug
-			err = fmt.Errorf("unexpected number of error results: %v vs number of txes %v", len(hooks.TxErrors), hooks.sequencedQueueItemsCount)
+		if len(hooks.GetTxErrors()) != hooks.sequencedQueueItemsCount { // This is not supposed to happen, if so we have a bug
+			err = fmt.Errorf("unexpected number of error results: %v vs number of txes %v", len(hooks.GetTxErrors()), hooks.sequencedQueueItemsCount)
 		} else {
 			for i := hooks.sequencedQueueItemsCount; i < len(hooks.queueItems); i++ {
 				s.txRetryQueue.Push(hooks.queueItems[i])
@@ -1316,7 +1338,7 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 	}
 
 	madeBlock := false
-	for i, err := range hooks.TxErrors {
+	for i, err := range hooks.GetTxErrors() {
 		if err == nil {
 			madeBlock = true
 		}

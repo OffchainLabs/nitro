@@ -707,7 +707,7 @@ func warpL1Time(t *testing.T, builder *NodeBuilder, ctx context.Context, current
 		L1BaseFee:   nil,
 	}
 	tx := builder.L2Info.PrepareTx("Faucet", "User2", 300000, big.NewInt(1), nil)
-	hooks := arbos.NoopSequencingHooks(types.Transactions{tx})
+	hooks := arbos.NewNoopSequencingHooks(types.Transactions{tx}, false, false, false)
 	_, err = builder.L2.ExecNode.ExecEngine.SequenceTransactions(timeWarpHeader, hooks, nil)
 	Require(t, err)
 	return newL1Timestamp

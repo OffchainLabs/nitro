@@ -386,9 +386,9 @@ func (s *ExecutionEngine) NextDelayedMessageNumber() (uint64, error) {
 	return currentHeader.Nonce.Uint64(), nil
 }
 
-func MessageFromTxes(header *arbostypes.L1IncomingMessageHeader, hooks *arbos.SequencingHooks) (*arbostypes.L1IncomingMessage, error) {
+func MessageFromTxes(header *arbostypes.L1IncomingMessageHeader, hooks arbos.SequencingHooks) (*arbostypes.L1IncomingMessage, error) {
 	var l2Message []byte
-	if len(hooks.TxErrors) == 1 && hooks.TxErrors[0] == nil {
+	if len(hooks.GetTxErrors()) == 1 && hooks.GetTxErrors()[0] == nil {
 		tx, err := hooks.SequencedTx(0)
 		if err != nil {
 			return nil, err
@@ -402,8 +402,8 @@ func MessageFromTxes(header *arbostypes.L1IncomingMessageHeader, hooks *arbos.Se
 	} else {
 		l2Message = append(l2Message, arbos.L2MessageKind_Batch)
 		sizeBuf := make([]byte, 8)
-		for i := 0; i < len(hooks.TxErrors); i++ {
-			if hooks.TxErrors[i] != nil {
+		for i := 0; i < len(hooks.GetTxErrors()); i++ {
+			if hooks.GetTxErrors()[i] != nil {
 				continue
 			}
 			tx, err := hooks.SequencedTx(i)
@@ -474,8 +474,7 @@ func (s *ExecutionEngine) resequenceReorgedMessages(messages []*arbostypes.Messa
 			log.Warn("failed to parse sequencer message found from reorg", "err", err)
 			continue
 		}
-		hooks := arbos.NoopSequencingHooks(txes)
-		hooks.DiscardInvalidTxsEarly = true
+		hooks := arbos.NewNoopSequencingHooks(txes, false, false, true)
 		block, err := s.sequenceTransactionsWithBlockMutex(msg.Message.Header, hooks, nil)
 		if err != nil {
 			log.Error("failed to re-sequence old user message removed by reorg", "err", err)
@@ -516,9 +515,9 @@ func (s *ExecutionEngine) sequencerWrapper(sequencerFunc func() (*types.Block, e
 	}
 }
 
-func (s *ExecutionEngine) SequenceTransactions(header *arbostypes.L1IncomingMessageHeader, hooks *arbos.SequencingHooks, timeboostedTxs map[common.Hash]struct{}) (*types.Block, error) {
+func (s *ExecutionEngine) SequenceTransactions(header *arbostypes.L1IncomingMessageHeader, hooks arbos.SequencingHooks, timeboostedTxs map[common.Hash]struct{}) (*types.Block, error) {
 	return s.sequencerWrapper(func() (*types.Block, error) {
-		hooks.TxErrors = nil
+		hooks.ClearTxErrors()
 		return s.sequenceTransactionsWithBlockMutex(header, hooks, timeboostedTxs)
 	})
 }
@@ -526,7 +525,7 @@ func (s *ExecutionEngine) SequenceTransactions(header *arbostypes.L1IncomingMess
 // SequenceTransactionsWithProfiling runs SequenceTransactions with tracing and
 // CPU profiling enabled. If the block creation takes longer than 2 seconds, it
 // keeps both and prints out filenames in an error log line.
-func (s *ExecutionEngine) SequenceTransactionsWithProfiling(header *arbostypes.L1IncomingMessageHeader, hooks *arbos.SequencingHooks, timeboostedTxs map[common.Hash]struct{}) (*types.Block, error) {
+func (s *ExecutionEngine) SequenceTransactionsWithProfiling(header *arbostypes.L1IncomingMessageHeader, hooks arbos.SequencingHooks, timeboostedTxs map[common.Hash]struct{}) (*types.Block, error) {
 	pprofBuf, traceBuf := bytes.NewBuffer(nil), bytes.NewBuffer(nil)
 	if err := pprof.StartCPUProfile(pprofBuf); err != nil {
 		log.Error("Starting CPU profiling", "error", err)
@@ -561,7 +560,7 @@ func writeAndLog(pprof, trace *bytes.Buffer) {
 	log.Info("Transactions sequencing took longer than 2 seconds, created pprof and trace files", "pprof", pprofFile, "traceFile", traceFile)
 }
 
-func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.L1IncomingMessageHeader, hooks *arbos.SequencingHooks, timeboostedTxs map[common.Hash]struct{}) (*types.Block, error) {
+func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.L1IncomingMessageHeader, hooks arbos.SequencingHooks, timeboostedTxs map[common.Hash]struct{}) (*types.Block, error) {
 	lastBlockHeader, err := s.getCurrentHeader()
 	if err != nil {
 		return nil, err
@@ -613,7 +612,7 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 	}
 
 	allTxsErrored := true
-	for _, err := range hooks.TxErrors {
+	for _, err := range hooks.GetTxErrors() {
 		if err == nil {
 			allTxsErrored = false
 			break
