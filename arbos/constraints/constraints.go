@@ -23,7 +23,7 @@ type ResourceSet struct {
 	weights [multigas.NumResourceKind]ResourceWeight
 }
 
-const MaxResourceWeight = 1_000_000
+const MaxResourceWeight = 1_000_000 // 1e6
 
 // EmptyResourceSet creates a new set with all weights initialized to zero.
 func EmptyResourceSet() ResourceSet {
@@ -69,14 +69,18 @@ type ResourceConstraint struct {
 // AddToBacklog increases the constraint backlog given the multi-dimensional gas used multiplied by their weights.
 func (c *ResourceConstraint) AddToBacklog(gasUsed multigas.MultiGas) {
 	for resource, weight := range c.Resources.All() {
-		weightedGas := gasUsed.Get(resource) * uint64(weight)
+		if weight == 0 {
+			continue
+		}
+		weightedGas := arbmath.SaturatingUMul(gasUsed.Get(resource), uint64(weight))
 		c.Backlog = arbmath.SaturatingUAdd(c.Backlog, weightedGas)
 	}
 }
 
 // RemoveFromBacklog decreases the backlog by its target given the amount of time passed.
 func (c *ResourceConstraint) RemoveFromBacklog(timeElapsed uint64) {
-	c.Backlog = arbmath.SaturatingUSub(c.Backlog, timeElapsed*c.TargetPerSec)
+	amount := arbmath.SaturatingUMul(timeElapsed, c.TargetPerSec)
+	c.Backlog = arbmath.SaturatingUSub(c.Backlog, amount)
 }
 
 // constraintKey identifies a resource constraint. There can be only one constraint given the
