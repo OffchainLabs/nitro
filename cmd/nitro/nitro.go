@@ -48,7 +48,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbnode/resourcemanager"
 	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/offchainlabs/nitro/blocks_reexecutor"
+	blocksreexecutor "github.com/offchainlabs/nitro/blocks_reexecutor"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
@@ -61,7 +61,7 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
-	"github.com/offchainlabs/nitro/staker/legacy"
+	legacystaker "github.com/offchainlabs/nitro/staker/legacy"
 	"github.com/offchainlabs/nitro/staker/validatorwallet"
 	nitroutil "github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/colors"
@@ -528,7 +528,7 @@ func mainImpl() int {
 		chainDb,
 		l2BlockChain,
 		l1Client,
-		func() *gethexec.Config { return &liveNodeConfig.Get().Execution },
+		&ExecutionNodeConfigFetcher{liveNodeConfig},
 		new(big.Int).SetUint64(nodeConfig.ParentChain.ID),
 		liveNodeConfig.Get().Node.TransactionStreamer.SyncTillBlock,
 	)
@@ -553,7 +553,7 @@ func mainImpl() int {
 		execNode,
 		execNode,
 		arbDb,
-		&NodeConfigFetcher{liveNodeConfig},
+		&ConsensusNodeConfigFetcher{liveNodeConfig},
 		l2BlockChain.Config(),
 		l1Client,
 		&rollupAddrs,
@@ -1087,12 +1087,20 @@ func initReorg(initConfig conf.InitConfig, chainConfig *params.ChainConfig, inbo
 	return inboxTracker.ReorgBatchesTo(batchCount)
 }
 
-type NodeConfigFetcher struct {
+type ConsensusNodeConfigFetcher struct {
 	*genericconf.LiveConfig[*NodeConfig]
 }
 
-func (f *NodeConfigFetcher) Get() *arbnode.Config {
+func (f *ConsensusNodeConfigFetcher) Get() *arbnode.Config {
 	return &f.LiveConfig.Get().Node
+}
+
+type ExecutionNodeConfigFetcher struct {
+	*genericconf.LiveConfig[*NodeConfig]
+}
+
+func (f *ExecutionNodeConfigFetcher) Get() *gethexec.Config {
+	return &f.LiveConfig.Get().Execution
 }
 
 func checkWasmModuleRootCompatibility(ctx context.Context, wasmConfig valnode.WasmConfig, l1Client *ethclient.Client, rollupAddrs chaininfo.RollupAddresses) error {

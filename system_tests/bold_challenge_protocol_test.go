@@ -265,7 +265,7 @@ func testChallengeProtocolBOLD(t *testing.T, useExternalSigner bool, spawnerOpts
 		rawdb.NewTable(l2nodeB.ArbDB, storage.StakerPrefix),
 		l2nodeB.L1Reader,
 		&evilOpts,
-		NewFetcherFromConfig(l2nodeConfig),
+		NewCommonConfigFetcher(l2nodeConfig),
 		l2nodeB.SyncMonitor,
 		l1ChainId,
 	)
@@ -662,7 +662,7 @@ func createTestNodeOnL1ForBoldProtocol(
 	locator, err := server_common.NewMachineLocator("")
 	Require(t, err)
 	currentNode, err = arbnode.CreateNodeFullExecutionClient(
-		ctx, l2stack, execNode, execNode, execNode, execNode, l2arbDb, NewFetcherFromConfig(nodeConfig), l2blockchain.Config(), l1client,
+		ctx, l2stack, execNode, execNode, execNode, execNode, l2arbDb, NewCommonConfigFetcher(nodeConfig), l2blockchain.Config(), l1client,
 		addresses, sequencerTxOptsPtr, sequencerTxOptsPtr, dataSigner, fatalErrChan, parentChainId,
 		nil, // Blob reader.
 		locator.LatestWasmModuleRoot(),
@@ -684,7 +684,7 @@ func createTestNodeOnL1ForBoldProtocol(
 		rawdb.NewTable(l2arbDb, storage.StakerPrefix),
 		currentNode.L1Reader,
 		dpOpts,
-		NewFetcherFromConfig(nodeConfig),
+		NewCommonConfigFetcher(nodeConfig),
 		currentNode.SyncMonitor,
 		parentChainId,
 	)
@@ -879,7 +879,7 @@ func create2ndNodeWithConfigForBoldProtocol(
 	Require(t, err)
 	locator, err := server_common.NewMachineLocator("")
 	Require(t, err)
-	l2node, err := arbnode.CreateNodeFullExecutionClient(ctx, l2stack, execNode, execNode, execNode, execNode, l2arbDb, NewFetcherFromConfig(nodeConfig), l2blockchain.Config(), l1client, addresses, &txOpts, &txOpts, dataSigner, fatalErrChan, l1ChainId, nil /* blob reader */, locator.LatestWasmModuleRoot())
+	l2node, err := arbnode.CreateNodeFullExecutionClient(ctx, l2stack, execNode, execNode, execNode, execNode, l2arbDb, NewCommonConfigFetcher(nodeConfig), l2blockchain.Config(), l1client, addresses, &txOpts, &txOpts, dataSigner, fatalErrChan, l1ChainId, nil /* blob reader */, locator.LatestWasmModuleRoot())
 	Require(t, err)
 
 	l2client := ClientForStack(t, l2stack)
@@ -896,7 +896,7 @@ func create2ndNodeWithConfigForBoldProtocol(
 		rawdb.NewTable(l2arbDb, storage.StakerPrefix),
 		l2node.L1Reader,
 		&evilOpts,
-		NewFetcherFromConfig(nodeConfig),
+		NewCommonConfigFetcher(nodeConfig),
 		l2node.SyncMonitor,
 		l1ChainId,
 	)

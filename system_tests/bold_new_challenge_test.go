@@ -21,12 +21,12 @@ import (
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
-	"github.com/offchainlabs/nitro/bold/chain-abstraction"
-	"github.com/offchainlabs/nitro/bold/chain-abstraction/sol-implementation"
-	"github.com/offchainlabs/nitro/bold/challenge-manager"
+	protocol "github.com/offchainlabs/nitro/bold/chain-abstraction"
+	solimpl "github.com/offchainlabs/nitro/bold/chain-abstraction/sol-implementation"
+	challengemanager "github.com/offchainlabs/nitro/bold/challenge-manager"
 	modes "github.com/offchainlabs/nitro/bold/challenge-manager/types"
 	"github.com/offchainlabs/nitro/bold/containers/option"
-	"github.com/offchainlabs/nitro/bold/layer2-state-provider"
+	l2stateprovider "github.com/offchainlabs/nitro/bold/layer2-state-provider"
 	"github.com/offchainlabs/nitro/bold/state-commitments/history"
 	"github.com/offchainlabs/nitro/bold/util"
 	"github.com/offchainlabs/nitro/solgen/go/challengeV2gen"
@@ -330,7 +330,7 @@ func startBoldChallengeManager(t *testing.T, ctx context.Context, builder *NodeB
 		rawdb.NewTable(node.ConsensusNode.ArbDB, storage.StakerPrefix),
 		node.ConsensusNode.L1Reader,
 		&txOpts,
-		NewFetcherFromConfig(builder.nodeConfig),
+		NewCommonConfigFetcher(builder.nodeConfig),
 		node.ConsensusNode.SyncMonitor,
 		builder.L1Info.Signer.ChainID(),
 	)
