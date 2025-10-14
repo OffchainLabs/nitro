@@ -35,6 +35,7 @@ type BlobClient struct {
 	secondaryBeaconUrl *url.URL
 	httpClient         atomic.Pointer[http.Client]
 	authorization      string
+	useLegacyEndpoint  bool
 
 	// Filled in in Initialize()
 	genesisTime    uint64
@@ -49,6 +50,7 @@ type BlobClientConfig struct {
 	SecondaryBeaconUrl string `koanf:"secondary-beacon-url"`
 	BlobDirectory      string `koanf:"blob-directory"`
 	Authorization      string `koanf:"authorization"`
+	UseLegacyEndpoint  bool   `koanf:"use-legacy-endpoint"`
 }
 
 var DefaultBlobClientConfig = BlobClientConfig{
@@ -56,6 +58,7 @@ var DefaultBlobClientConfig = BlobClientConfig{
 	SecondaryBeaconUrl: "",
 	BlobDirectory:      "",
 	Authorization:      "",
+	UseLegacyEndpoint:  false,
 }
 
 func BlobClientAddOptions(prefix string, f *pflag.FlagSet) {
@@ -63,6 +66,7 @@ func BlobClientAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".secondary-beacon-url", DefaultBlobClientConfig.SecondaryBeaconUrl, "Backup beacon Chain RPC URL to use for fetching blobs (normally on port 3500) when unable to fetch from primary")
 	f.String(prefix+".blob-directory", DefaultBlobClientConfig.BlobDirectory, "Full path of the directory to save fetched blobs")
 	f.String(prefix+".authorization", DefaultBlobClientConfig.Authorization, "Value to send with the HTTP Authorization: header for Beacon REST requests, must include both scheme and scheme parameters")
+	f.Bool(prefix+".use-legacy-endpoint", DefaultBlobClientConfig.UseLegacyEndpoint, "Use the legacy blob_sidecars endpoint instead of the blobs endpoint")
 }
 
 func NewBlobClient(config BlobClientConfig, ec *ethclient.Client) (*BlobClient, error) {
@@ -92,6 +96,7 @@ func NewBlobClient(config BlobClientConfig, ec *ethclient.Client) (*BlobClient, 
 		beaconUrl:          beaconUrl,
 		secondaryBeaconUrl: secondaryBeaconUrl,
 		authorization:      config.Authorization,
+		useLegacyEndpoint:  config.UseLegacyEndpoint,
 		blobDirectory:      config.BlobDirectory,
 	}
 	blobClient.httpClient.Store(&http.Client{})
@@ -102,14 +107,15 @@ type fullResult[T any] struct {
 	Data T `json:"data"`
 }
 
-func beaconRequest[T interface{}](b *BlobClient, ctx context.Context, beaconPath string) (T, error) {
-	// Unfortunately, methods on a struct can't be generic.
-
+func beaconRequest[T interface{}](b *BlobClient, ctx context.Context, beaconPath string, queryParams url.Values) (T, error) {
 	var empty T
 
-	fetchData := func(url url.URL) (*http.Response, error) {
-		url.Path = path.Join(url.Path, beaconPath)
-		req, err := http.NewRequestWithContext(ctx, "GET", url.String(), http.NoBody)
+	fetchData := func(beaconUrl url.URL) (*http.Response, error) {
+		beaconUrl.Path = path.Join(beaconUrl.Path, beaconPath)
+		if queryParams != nil {
+			beaconUrl.RawQuery = queryParams.Encode()
+		}
+		req, err := http.NewRequestWithContext(ctx, "GET", beaconUrl.String(), http.NoBody)
 		if err != nil {
 			return nil, err
 		}
@@ -171,7 +177,23 @@ func (b *BlobClient) GetBlobs(ctx context.Context, blockHash common.Hash, versio
 		return nil, errors.New("BlobClient hasn't been initialized")
 	}
 	slot := (header.Time - b.genesisTime) / b.secondsPerSlot
-	blobs, err := b.blobSidecars(ctx, slot, versionedHashes)
+
+	return b.GetBlobsBySlot(ctx, slot, versionedHashes)
+}
+
+// Get blobs for a specific beacon chain slot.
+func (b *BlobClient) GetBlobsBySlot(ctx context.Context, slot uint64, versionedHashes []common.Hash) ([]kzg4844.Blob, error) {
+	if b.secondsPerSlot == 0 {
+		return nil, errors.New("BlobClient hasn't been initialized")
+	}
+
+	var blobs []kzg4844.Blob
+	var err error
+	if b.useLegacyEndpoint {
+		blobs, err = b.blobSidecars(ctx, slot, versionedHashes)
+	} else {
+		blobs, err = b.getBlobs(ctx, slot, versionedHashes)
+	}
 	if err != nil {
 		// Creates a new http client to avoid reusing the same transport layer connection in the next request.
 		// This strategy can be useful if there is a network load balancer in front of the beacon chain server.
@@ -179,9 +201,52 @@ func (b *BlobClient) GetBlobs(ctx context.Context, blockHash common.Hash, versio
 		// we can potentially connect to a different, and healthy, beacon chain node in the next request.
 		b.httpClient.Store(&http.Client{})
 
-		return nil, fmt.Errorf("error fetching blobs in %d l1 block: %w", header.Number, err)
+		return nil, fmt.Errorf("error fetching blobs for slot %d: %w", slot, err)
 	}
 	return blobs, nil
+}
+
+func (b *BlobClient) getBlobs(ctx context.Context, slot uint64, versionedHashes []common.Hash) ([]kzg4844.Blob, error) {
+	queryParams := url.Values{}
+	for _, hash := range versionedHashes {
+		queryParams.Add("versioned_hashes", hash.Hex())
+	}
+
+	response, err := beaconRequest[[]hexutil.Bytes](b, ctx, fmt.Sprintf("/eth/v1/beacon/blobs/%d", slot), queryParams)
+	if err != nil {
+		// #nosec G115
+		roughAgeOfSlot := uint64(time.Now().Unix()) - (b.genesisTime + slot*b.secondsPerSlot)
+		if roughAgeOfSlot > b.secondsPerSlot*32*4096 {
+			return nil, fmt.Errorf("beacon client in getBlobs got error fetching older blobs in slot: %d, an archive endpoint is required, please refer to https://docs.arbitrum.io/run-arbitrum-node/l1-ethereum-beacon-chain-rpc-providers, err: %w", slot, err)
+		} else {
+			return nil, fmt.Errorf("beacon client in getBlobs got error fetching non-expired blobs in slot: %d, err: %w", slot, err)
+		}
+	}
+
+	if len(versionedHashes) > 0 && len(response) != len(versionedHashes) {
+		return nil, fmt.Errorf("expected %d blobs for slot %d but got %d", len(versionedHashes), slot, len(response))
+	}
+
+	output := make([]kzg4844.Blob, len(response))
+	for i, blobData := range response {
+		if len(blobData) != len(output[i]) {
+			return nil, fmt.Errorf("blob at index %d has incorrect length %d, expected %d", i, len(blobData), len(output[i]))
+		}
+		copy(output[i][:], blobData)
+
+		if len(versionedHashes) > 0 {
+			commitment, err := kzg4844.BlobToCommitment(&output[i])
+			if err != nil {
+				return nil, fmt.Errorf("failed to compute commitment for blob %d: %w", i, err)
+			}
+			computedHash := blobs.CommitmentToVersionedHash(commitment)
+			if computedHash != versionedHashes[i] {
+				return nil, fmt.Errorf("blob %d versioned hash mismatch: expected %s, got %s", i, versionedHashes[i].Hex(), computedHash.Hex())
+			}
+		}
+	}
+
+	return output, nil
 }
 
 type blobResponseItem struct {
@@ -198,7 +263,7 @@ type blobResponseItem struct {
 const trailingCharsOfResponse = 25
 
 func (b *BlobClient) blobSidecars(ctx context.Context, slot uint64, versionedHashes []common.Hash) ([]kzg4844.Blob, error) {
-	rawData, err := beaconRequest[json.RawMessage](b, ctx, fmt.Sprintf("/eth/v1/beacon/blob_sidecars/%d", slot))
+	rawData, err := beaconRequest[json.RawMessage](b, ctx, fmt.Sprintf("/eth/v1/beacon/blob_sidecars/%d", slot), nil)
 	if err != nil || len(rawData) == 0 {
 		// blobs are pruned after 4096 epochs (1 epoch = 32 slots), we determine if the requested slot was to be pruned by a non-archive endpoint
 		// #nosec G115
@@ -307,13 +372,13 @@ type getSpecResponse struct {
 }
 
 func (b *BlobClient) Initialize(ctx context.Context) error {
-	genesis, err := beaconRequest[genesisResponse](b, ctx, "/eth/v1/beacon/genesis")
+	genesis, err := beaconRequest[genesisResponse](b, ctx, "/eth/v1/beacon/genesis", nil)
 	if err != nil {
 		return fmt.Errorf("error calling beacon client to get genesisTime: %w", err)
 	}
 	b.genesisTime = uint64(genesis.GenesisTime)
 
-	spec, err := beaconRequest[getSpecResponse](b, ctx, "/eth/v1/config/spec")
+	spec, err := beaconRequest[getSpecResponse](b, ctx, "/eth/v1/config/spec", nil)
 	if err != nil {
 		return fmt.Errorf("error calling beacon client to get secondsPerSlot: %w", err)
 	}
