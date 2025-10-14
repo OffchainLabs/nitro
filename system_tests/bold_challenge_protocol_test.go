@@ -654,8 +654,7 @@ func createTestNodeOnL1ForBoldProtocol(
 	AddValNodeIfNeeded(t, ctx, nodeConfig, true, "", "")
 
 	parentChainId, err := l1client.ChainID(ctx)
-	execConfigFetcher := func() *gethexec.Config { return execConfig }
-	execNode, err := gethexec.CreateExecutionNode(ctx, l2stack, l2chainDb, l2blockchain, l1client, execConfigFetcher, parentChainId, 0)
+	execNode, err := gethexec.CreateExecutionNode(ctx, l2stack, l2chainDb, l2blockchain, l1client, NewCommonConfigFetcher(execConfig), parentChainId, 0)
 	Require(t, err)
 
 	Require(t, err)
@@ -872,10 +871,9 @@ func create2ndNodeWithConfigForBoldProtocol(
 	l2blockchain, err := gethexec.WriteOrTestBlockChain(l2chainDb, coreCacheConfig, initReader, chainConfig, nil, nil, initMessage, &execConfig.TxIndexer, 0)
 	Require(t, err)
 
-	execConfigFetcher := func() *gethexec.Config { return execConfig }
 	l1ChainId, err := l1client.ChainID(ctx)
 	Require(t, err)
-	execNode, err := gethexec.CreateExecutionNode(ctx, l2stack, l2chainDb, l2blockchain, l1client, execConfigFetcher, l1ChainId, 0)
+	execNode, err := gethexec.CreateExecutionNode(ctx, l2stack, l2chainDb, l2blockchain, l1client, NewCommonConfigFetcher(execConfig), l1ChainId, 0)
 	Require(t, err)
 	locator, err := server_common.NewMachineLocator("")
 	Require(t, err)
