@@ -292,7 +292,7 @@ func TestComplexAssertionForkScenario(t *testing.T) {
 
 	stateManagerOpts = []stateprovider.Opt{
 		stateprovider.WithNumBatchesRead(5),
-		stateprovider.WithBlockDivergenceHeight(36), // TODO: Make this more intuitive. This translates to batch 4 due to how our mock works.
+		stateprovider.WithBatchDivergence(4),
 		stateprovider.WithMachineDivergenceStep(1),
 	}
 	charlieStateManager, err := stateprovider.NewForSimpleMachine(t, stateManagerOpts...)
