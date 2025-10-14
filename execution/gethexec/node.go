@@ -445,9 +445,6 @@ func (n *ExecutionNode) Start(ctx context.Context) error {
 		n.ParentChainReader.Start(ctx)
 	}
 	n.bulkBlockMetadataFetcher.Start(ctx)
-	if n.configFetcher != nil {
-		n.configFetcher.Start(ctx)
-	}
 	return nil
 }
 
