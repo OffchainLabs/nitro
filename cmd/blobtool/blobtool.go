@@ -51,7 +51,7 @@ type FetchConfig struct {
 
 func parseFetchConfig(args []string) (*FetchConfig, error) {
 	f := flag.NewFlagSet("blobtool fetch", flag.ContinueOnError)
-	f.String("beacon-url", "", "Beacon Chain RPC URL")
+	f.String("beacon-url", "", "Beacon Chain RPC URL. For example with --beacon-url=http://localhost, an RPC call will be made to http://localhost/eth/v1/beacon/blobs")
 	f.Uint64("slot", 0, "Beacon chain slot number to fetch blobs from")
 	f.StringSlice("versioned-hashes", []string{}, "Comma-separated list of versioned hashes to fetch (optional - fetches all if not provided)")
 	f.Bool("use-legacy-endpoint", false, "Use the legacy blob_sidecars endpoint")
