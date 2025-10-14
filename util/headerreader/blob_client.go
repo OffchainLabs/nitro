@@ -200,6 +200,8 @@ func (b *BlobClient) GetBlobsBySlot(ctx context.Context, slot uint64, versionedH
 		// we can potentially connect to a different, and healthy, beacon chain node in the next request.
 		b.httpClient.Store(&http.Client{})
 
+		b.useLegacyEndpoint = !b.useLegacyEndpoint
+
 		return nil, fmt.Errorf("error fetching blobs for slot %d: %w", slot, err)
 	}
 	return blobs, nil
