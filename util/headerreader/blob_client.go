@@ -43,14 +43,26 @@ type BlobClient struct {
 
 	// Directory to save the fetched blobs
 	blobDirectory string
+
+	// Dangerous options
+	skipBlobProofVerification bool
+}
+
+type BlobClientDangerousConfig struct {
+	SkipBlobProofVerification bool `koanf:"skip-blob-proof-verification"`
 }
 
 type BlobClientConfig struct {
-	BeaconUrl          string `koanf:"beacon-url"`
-	SecondaryBeaconUrl string `koanf:"secondary-beacon-url"`
-	BlobDirectory      string `koanf:"blob-directory"`
-	Authorization      string `koanf:"authorization"`
-	UseLegacyEndpoint  bool   `koanf:"use-legacy-endpoint"`
+	BeaconUrl          string                    `koanf:"beacon-url"`
+	SecondaryBeaconUrl string                    `koanf:"secondary-beacon-url"`
+	BlobDirectory      string                    `koanf:"blob-directory"`
+	Authorization      string                    `koanf:"authorization"`
+	UseLegacyEndpoint  bool                      `koanf:"use-legacy-endpoint"`
+	Dangerous          BlobClientDangerousConfig `koanf:"dangerous"`
+}
+
+var DefaultDangerousConfig = BlobClientDangerousConfig{
+	SkipBlobProofVerification: false,
 }
 
 var DefaultBlobClientConfig = BlobClientConfig{
@@ -59,6 +71,7 @@ var DefaultBlobClientConfig = BlobClientConfig{
 	BlobDirectory:      "",
 	Authorization:      "",
 	UseLegacyEndpoint:  false,
+	Dangerous:          DefaultDangerousConfig,
 }
 
 func BlobClientAddOptions(prefix string, f *pflag.FlagSet) {
@@ -67,6 +80,11 @@ func BlobClientAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".blob-directory", DefaultBlobClientConfig.BlobDirectory, "Full path of the directory to save fetched blobs")
 	f.String(prefix+".authorization", DefaultBlobClientConfig.Authorization, "Value to send with the HTTP Authorization: header for Beacon REST requests, must include both scheme and scheme parameters")
 	f.Bool(prefix+".use-legacy-endpoint", DefaultBlobClientConfig.UseLegacyEndpoint, "Use the legacy blob_sidecars endpoint instead of the blobs endpoint")
+	BlobClientDangerousAddOptions(prefix+".dangerous", f)
+}
+
+func BlobClientDangerousAddOptions(prefix string, f *pflag.FlagSet) {
+	f.Bool(prefix+".skip-blob-proof-verification", DefaultDangerousConfig.SkipBlobProofVerification, "DANGEROUS! Skips verification of KZG proofs for blobs fetched from the beacon node.")
 }
 
 func NewBlobClient(config BlobClientConfig, ec *ethclient.Client) (*BlobClient, error) {
@@ -92,12 +110,13 @@ func NewBlobClient(config BlobClientConfig, ec *ethclient.Client) (*BlobClient, 
 		}
 	}
 	blobClient := &BlobClient{
-		ec:                 ec,
-		beaconUrl:          beaconUrl,
-		secondaryBeaconUrl: secondaryBeaconUrl,
-		authorization:      config.Authorization,
-		useLegacyEndpoint:  config.UseLegacyEndpoint,
-		blobDirectory:      config.BlobDirectory,
+		ec:                        ec,
+		beaconUrl:                 beaconUrl,
+		secondaryBeaconUrl:        secondaryBeaconUrl,
+		authorization:             config.Authorization,
+		useLegacyEndpoint:         config.UseLegacyEndpoint,
+		blobDirectory:             config.BlobDirectory,
+		skipBlobProofVerification: config.Dangerous.SkipBlobProofVerification,
 	}
 	blobClient.httpClient.Store(&http.Client{})
 	return blobClient, nil
@@ -321,12 +340,14 @@ func (b *BlobClient) blobSidecars(ctx context.Context, slot uint64, versionedHas
 
 		copy(output[outputIdx][:], blobItem.Blob)
 
-		var proof kzg4844.Proof
-		copy(proof[:], blobItem.KzgProof)
+		if !b.skipBlobProofVerification {
+			var proof kzg4844.Proof
+			copy(proof[:], blobItem.KzgProof)
 
-		err = kzg4844.VerifyBlobProof(&output[outputIdx], commitment, proof)
-		if err != nil {
-			return nil, fmt.Errorf("failed to verify blob proof for blob at slot(%d) at index(%d), blob(%s)", slot, blobItem.Index, pretty.FirstFewChars(blobItem.Blob.String()))
+			err = kzg4844.VerifyBlobProof(&output[outputIdx], commitment, proof)
+			if err != nil {
+				return nil, fmt.Errorf("failed to verify blob proof for blob at slot(%d) at index(%d), blob(%s)", slot, blobItem.Index, pretty.FirstFewChars(blobItem.Blob.String()))
+			}
 		}
 	}
 
