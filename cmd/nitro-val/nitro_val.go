@@ -58,7 +58,7 @@ func mainImpl() int {
 
 	pathResolver := func(workdir string) func(string) string {
 		if workdir == "" {
-			workdir, err = os.Getwd()
+			workdir, err := os.Getwd()
 			if err != nil {
 				log.Warn("Failed to get workdir", "err", err)
 			}
