@@ -284,3 +284,12 @@ func (con ArbGasInfo) GetL1PricingUnitsSinceUpdate(c ctx, evm mech) (uint64, err
 func (con ArbGasInfo) GetLastL1PricingSurplus(c ctx, evm mech) (*big.Int, error) {
 	return c.State.L1PricingState().LastSurplus()
 }
+
+// Lists all resource constraints currently configured in ArbOS.
+func (con ArbGasInfo) ListResourceConstraints(c ctx, evm mech) ([]resourceConstraint, error) {
+	constraints, err := c.State.ResourceConstraints().ListConstraints()
+	if err != nil {
+		return nil, err
+	}
+	return fromArbOsResourceConstraints(constraints), nil
+}

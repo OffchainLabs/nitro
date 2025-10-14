@@ -453,3 +453,21 @@ func (con ArbOwner) SetChainConfig(c ctx, evm mech, serializedChainConfig []byte
 func (con ArbOwner) SetCalldataPriceIncrease(c ctx, _ mech, enable bool) error {
 	return c.State.Features().SetCalldataPriceIncrease(enable)
 }
+
+// SetResourceConstraint adds or updates a resource constraint with specified resource kinds and weights
+func (con ArbOwner) SetResourceConstraint(c ctx, evm mech, resources []resourceWeight, periodSecs uint32, targetPerSec uint64) error {
+	res, err := toArbOsResourceSet(resources)
+	if err != nil {
+		return err
+	}
+	return c.State.ResourceConstraints().SetConstraint(res, periodSecs, targetPerSec)
+}
+
+// ClearConstraint removes a resource constraint
+func (con ArbOwner) ClearConstraint(c ctx, evm mech, resources []resourceWeight, periodSecs uint32) error {
+	res, err := toArbOsResourceSet(resources)
+	if err != nil {
+		return err
+	}
+	return c.State.ResourceConstraints().ClearConstraint(res, periodSecs)
+}

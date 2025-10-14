@@ -23,6 +23,8 @@ type ResourceSet struct {
 	weights [multigas.NumResourceKind]ResourceWeight
 }
 
+const MaxResourceWeight = 1_000_000
+
 // EmptyResourceSet creates a new set with all weights initialized to zero.
 func EmptyResourceSet() ResourceSet {
 	return ResourceSet{

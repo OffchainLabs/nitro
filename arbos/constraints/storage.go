@@ -129,3 +129,36 @@ func (src *StorageResourceConstraints) Write(rc *ResourceConstraints) error {
 	}
 	return src.storage.Set(data)
 }
+
+// SetConstraint adds or updates a resource constraint in storage.
+func (src *StorageResourceConstraints) SetConstraint(resources ResourceSet, periodSecs uint32, targetPerSec uint64) error {
+	rc, err := src.Load()
+	if err != nil {
+		return err
+	}
+	rc.Set(resources, PeriodSecs(periodSecs), targetPerSec)
+	return src.Write(rc)
+}
+
+// ClearConstraint removes a resource constraint from storage.
+func (src *StorageResourceConstraints) ClearConstraint(resources ResourceSet, periodSecs uint32) error {
+	rc, err := src.Load()
+	if err != nil {
+		return err
+	}
+	rc.Clear(resources, PeriodSecs(periodSecs))
+	return src.Write(rc)
+}
+
+// ListConstraints lists all resource constraints currently configured in storage.
+func (src *StorageResourceConstraints) ListConstraints() ([]*ResourceConstraint, error) {
+	rc, err := src.Load()
+	if err != nil {
+		return nil, err
+	}
+	var list []*ResourceConstraint
+	for c := range rc.All() {
+		list = append(list, c)
+	}
+	return list, nil
+}
