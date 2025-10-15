@@ -10,7 +10,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        test-mode: [defaults, flaky, pathdb, challenge, stylus, l3challenge]
+        test-mode: [defaults-A, defaults-B, flaky, pathdb, challenge, stylus, l3challenge]
     services:
       redis:
         image: redis
@@ -50,27 +50,37 @@ jobs:
 
       # --------------------- DEFAULTS MODE ---------------------
 
-      - name: run tests without race detection and hash state scheme
-        if: matrix.test-mode == 'defaults'
-        id: run-tests-defaults
+      - name: run tests without race detection and hash state scheme (A-batch)
+        if: matrix.test-mode == 'defaults-A'
+        id: run-tests-defaults-a
         continue-on-error: true
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh
-          --tags cionly --timeout 60m --test_state_scheme hash --junitfile test-results/junit.xml
+          --tags cionly --timeout 60m --test_state_scheme hash
+          --junitfile test-results/junit-a.xml --run '^Test[A-L]'
+
+      - name: run tests without race detection and hash state scheme (B-batch)
+        if: matrix.test-mode == 'defaults-B'
+        id: run-tests-defaults-b
+        continue-on-error: true
+        run: >-
+          ${{ github.workspace }}/.github/workflows/gotestsum.sh
+          --tags cionly --timeout 60m --test_state_scheme hash
+          --junitfile test-results/junit-b.xml --skip '^Test[A-L]'
 
       - name: Process JUnit XML logs
-        if: matrix.test-mode == 'defaults' && always()
+        if: startsWith(matrix.test-mode, 'defaults') && always()
         run: python3 ${{ github.workspace }}/.github/workflows/process_junit.py test-results/
 
-      - name: Upload Go test artifacts
-        if: matrix.test-mode == 'defaults' && always()
+      - name: Upload Go test Artifacts
+        if: startsWith(matrix.test-mode, 'defaults') && always()
         uses: actions/upload-artifact@v4
         with:
-          name: go-junit-reports
-          path: test-results/junit.xml
+          name: junit-reports-go-${{ matrix.test-mode }}
+          path: test-results/junit*.xml
 
       - name: Fail if tests failed
-        if: matrix.test-mode == 'defaults' && steps.run-tests-defaults.outcome == 'failure'
+        if: (matrix.test-mode == 'defaults-A' && steps.run-tests-defaults-a.outcome == 'failure') || (matrix.test-mode == 'defaults-B' && steps.run-tests-defaults-b.outcome == 'failure')
         run: |
           echo "One or more tests failed."
           exit 1
@@ -82,13 +92,13 @@ jobs:
           --tags cionly --timeout 60m --test_state_scheme hash --execution_consensus_jsonrpc_interconnect
 
       - name: run redis tests
-        if: matrix.test-mode == 'defaults'
+        if: matrix.test-mode == 'defaults-A'
         run: >-
           gotestsum --format short-verbose -- -p 1 -run TestRedis ./arbnode/... ./system_tests/...
           -coverprofile=coverage-redis.txt -covermode=atomic -coverpkg=./... -- --test_redis=redis://localhost:6379/0
 
       - name: Upload coverage to Codecov
-        if: matrix.test-mode == 'defaults'
+        if: startsWith(matrix.test-mode, 'defaults')
         uses: codecov/codecov-action@v5
         with:
           fail_ci_if_error: false
@@ -97,21 +107,21 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
 
       - name: create block input json file
-        if: matrix.test-mode == 'defaults'
+        if: matrix.test-mode == 'defaults-A'
         run: >-
           gotestsum --format short-verbose -- -run TestProgramStorage$ ./system_tests/... --count 1 --
           --recordBlockInputs.enable=true --recordBlockInputs.WithBaseDir="${{ github.workspace }}/target"
           --recordBlockInputs.WithTimestampDirEnabled=false --recordBlockInputs.WithBlockIdInFileNameEnabled=false
 
       - name: run arbitrator prover on block input json
-        if: matrix.test-mode == 'defaults'
+        if: matrix.test-mode == 'defaults-A'
         run: |
           make build-prover-bin
           target/bin/prover target/machines/latest/machine.wavm.br -b \
           --json-inputs="${{ github.workspace }}/target/TestProgramStorage/block_inputs.json"
 
       - name: run jit prover on block input json
-        if: matrix.test-mode == 'defaults'
+        if: matrix.test-mode == 'defaults-A'
         run: |
           make build-jit
           if [ -n "$(target/bin/jit \

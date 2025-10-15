@@ -6,7 +6,6 @@ package parent
 
 import (
 	"context"
-	"errors"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/consensus/misc/eip4844"
@@ -109,7 +108,7 @@ func (p *ParentChain) SupportsCellProofs(ctx context.Context, h *types.Header) (
 	}
 	if pCfg.IsArbitrum() {
 		// Arbitrum does not support blob transactions, so this should not have been called.
-		return false, errors.New("parent chain is Arbitrum and does not support blobs")
+		return false, nil
 	}
 	// arbosVersion 0 because we're checking L1 (not L2 Arbitrum)
 	return pCfg.IsOsaka(pCfg.LondonBlock, header.Time, 0), nil
