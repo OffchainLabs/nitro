@@ -946,6 +946,7 @@ func (s *fullSequencingHooks) NextTxToSequence() (*types.Transaction, *arbitrum_
 		}
 		if s.sequencedTxsSizeSoFar+s.queueItems[s.sequencedQueueItemsCount].txSize > s.maxSequencedTxsSize {
 			s.sequencedQueueItemsCount += 1
+			s.InsertLastTxError(core.ErrGasLimitReached)
 		} else {
 			s.sequencedQueueItemsCount += 1
 			break
