@@ -13,7 +13,7 @@ import (
 )
 
 func TestResourceSetWithResource(t *testing.T) {
-	s := EmptyResourceSet().
+	s := NewWeightedResourceSet().
 		WithResource(multigas.ResourceKindComputation, 1).
 		WithResource(multigas.ResourceKindStorageAccess, 2)
 	for resource, weight := range s.All() {
@@ -23,7 +23,7 @@ func TestResourceSetWithResource(t *testing.T) {
 }
 
 func TestResourceSetGetResources(t *testing.T) {
-	s := EmptyResourceSet().
+	s := NewWeightedResourceSet().
 		WithResource(multigas.ResourceKindComputation, 1).
 		WithResource(multigas.ResourceKindStorageAccess, 1)
 
@@ -41,20 +41,22 @@ func TestResourceSetGetResources(t *testing.T) {
 }
 
 func TestOverrideResourceWeights(t *testing.T) {
-	s := EmptyResourceSet().
+	s := NewWeightedResourceSet().
 		WithResource(multigas.ResourceKindComputation, 1).
 		WithResource(multigas.ResourceKindStorageAccess, 2)
 	require.Equal(t, ResourceWeight(1), s.weights[multigas.ResourceKindComputation])
 	require.Equal(t, ResourceWeight(2), s.weights[multigas.ResourceKindStorageAccess])
+	used := s.WithoutWeights()
 
 	s = s.WithResource(multigas.ResourceKindComputation, 3).
-		WithResource(multigas.ResourceKindStorageAccess, 0)
+		WithResource(multigas.ResourceKindStorageAccess, 10)
 	require.Equal(t, ResourceWeight(3), s.weights[multigas.ResourceKindComputation])
-	require.False(t, s.HasResource(multigas.ResourceKindStorageAccess))
+	require.Equal(t, ResourceWeight(10), s.weights[multigas.ResourceKindStorageAccess])
+	require.Equal(t, used, s.WithoutWeights())
 }
 
 func TestAddToBacklog(t *testing.T) {
-	resources := EmptyResourceSet().
+	resources := NewWeightedResourceSet().
 		WithResource(multigas.ResourceKindComputation, 1).
 		WithResource(multigas.ResourceKindStorageAccess, 1)
 	c := &ResourceConstraint{
@@ -78,7 +80,7 @@ func TestAddToBacklog(t *testing.T) {
 }
 
 func TestAddToBacklogWithWeights(t *testing.T) {
-	resources := EmptyResourceSet().
+	resources := NewWeightedResourceSet().
 		WithResource(multigas.ResourceKindComputation, 2).
 		WithResource(multigas.ResourceKindStorageAccess, 3)
 	c := &ResourceConstraint{
@@ -125,14 +127,14 @@ func TestNewResourceConstraints(t *testing.T) {
 
 func TestSetResourceConstraints(t *testing.T) {
 	rc := NewResourceConstraints()
-	resources := EmptyResourceSet().
+	resources := NewWeightedResourceSet().
 		WithResource(multigas.ResourceKindComputation, 1)
 	periodSecs := PeriodSecs(10)
 	targetPerSec := uint64(100)
 
 	rc.Set(resources, periodSecs, targetPerSec)
 
-	constraint := rc.Get(resources, periodSecs)
+	constraint := rc.Get(resources.WithoutWeights(), periodSecs)
 	require.NotNil(t, constraint)
 	require.Equal(t, resources, constraint.Resources)
 	require.Equal(t, periodSecs, constraint.Period)
@@ -141,7 +143,7 @@ func TestSetResourceConstraints(t *testing.T) {
 
 func TestGetResourceConstraints(t *testing.T) {
 	rc := NewResourceConstraints()
-	resources := EmptyResourceSet().
+	resources := NewWeightedResourceSet().
 		WithResource(multigas.ResourceKindComputation, 1)
 	periodSecs := PeriodSecs(10)
 	targetPerSec := uint64(100)
@@ -149,7 +151,7 @@ func TestGetResourceConstraints(t *testing.T) {
 	rc.Set(resources, periodSecs, targetPerSec)
 
 	// Test getting an existing constraint
-	constraint := rc.Get(resources, periodSecs)
+	constraint := rc.Get(resources.WithoutWeights(), periodSecs)
 	require.NotNil(t, constraint)
 	require.Equal(t, resources, constraint.Resources)
 	require.Equal(t, periodSecs, constraint.Period)
@@ -157,15 +159,15 @@ func TestGetResourceConstraints(t *testing.T) {
 	require.Equal(t, uint64(0), constraint.Backlog)
 
 	// Test getting a non-existent constraint
-	nonExistentResources := EmptyResourceSet().
+	nonExistentResources := NewWeightedResourceSet().
 		WithResource(multigas.ResourceKindStorageAccess, 1)
-	constraint = rc.Get(nonExistentResources, periodSecs)
+	constraint = rc.Get(nonExistentResources.WithoutWeights(), periodSecs)
 	require.Nil(t, constraint)
 }
 
 func TestClearResourceConstraints(t *testing.T) {
 	rc := NewResourceConstraints()
-	resources := EmptyResourceSet().
+	resources := NewWeightedResourceSet().
 		WithResource(multigas.ResourceKindComputation, 1)
 	periodSecs := PeriodSecs(10)
 	targetPerSec := uint64(100)
@@ -173,25 +175,25 @@ func TestClearResourceConstraints(t *testing.T) {
 	rc.Set(resources, periodSecs, targetPerSec)
 
 	// Ensure the constraint was set
-	constraint := rc.Get(resources, periodSecs)
+	constraint := rc.Get(resources.WithoutWeights(), periodSecs)
 	require.NotNil(t, constraint)
 
 	// Clear the constraint
-	rc.Clear(resources, periodSecs)
+	rc.Clear(resources.WithoutWeights(), periodSecs)
 
 	// Ensure the constraint is gone
-	constraint = rc.Get(resources, periodSecs)
+	constraint = rc.Get(resources.WithoutWeights(), periodSecs)
 	require.Nil(t, constraint)
 }
 
 func TestAllResourceConstraints(t *testing.T) {
 	rc := NewResourceConstraints()
-	resources1 := EmptyResourceSet().
+	resources1 := NewWeightedResourceSet().
 		WithResource(multigas.ResourceKindComputation, 1)
 	periodSecs1 := PeriodSecs(10)
 	targetPerSec1 := uint64(100)
 
-	resources2 := EmptyResourceSet().
+	resources2 := NewWeightedResourceSet().
 		WithResource(multigas.ResourceKindStorageAccess, 1)
 	periodSecs2 := PeriodSecs(20)
 	targetPerSec2 := uint64(200)

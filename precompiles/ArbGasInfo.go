@@ -287,9 +287,9 @@ func (con ArbGasInfo) GetLastL1PricingSurplus(c ctx, evm mech) (*big.Int, error)
 
 // Lists all resource constraints currently configured in ArbOS.
 func (con ArbGasInfo) ListResourceConstraints(c ctx, evm mech) ([]resourceConstraint, error) {
-	constraints, err := c.State.ResourceConstraints().ListConstraints()
+	rcs, err := c.State.ResourceConstraints().ListConstraints()
 	if err != nil {
 		return nil, err
 	}
-	return fromArbOsResourceConstraints(constraints), nil
+	return fromArbOsResourceConstraints(rcs), nil
 }

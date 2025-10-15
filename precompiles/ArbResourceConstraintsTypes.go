@@ -11,53 +11,66 @@ import (
 	"github.com/offchainlabs/nitro/arbos/constraints"
 )
 
-type resourceWeight struct {
-	ResourceKind multigas.ResourceKind
-	Weight       uint64
+type resourceWeight = struct {
+	Resource uint8  `json:"resource"`
+	Weight   uint64 `json:"weight"`
+}
+type resourceConstraint = struct {
+	Resources    []resourceWeight `json:"resources"`
+	PeriodSecs   uint32           `json:"periodSecs"`
+	TargetPerSec uint64           `json:"targetPerSec"`
 }
 
-type resourceConstraint struct {
-	ResourceWeight []resourceWeight
-	PeriodSecs     uint32
-	TargetPerSec   uint64
+func fromArbOsResourceConstraints(rcs []*constraints.ResourceConstraint) []resourceConstraint {
+	var out []resourceConstraint
+	for _, rc := range rcs {
+		var res []resourceWeight
+		for r, w := range rc.Resources.All() {
+			res = append(res, resourceWeight{
+				Resource: uint8(r),
+				Weight:   uint64(w),
+			})
+		}
+
+		out = append(out, resourceConstraint{
+			Resources:    res,
+			PeriodSecs:   uint32(rc.Period),
+			TargetPerSec: rc.TargetPerSec,
+		})
+	}
+	return out
 }
 
-func toArbOsResourceSet(resources []resourceWeight) (constraints.ResourceSet, error) {
-	rs := constraints.EmptyResourceSet()
+func toArbOsWeightedResourceSet(resources []resourceWeight) (constraints.WeightedResourceSet, error) {
+	rs := constraints.NewWeightedResourceSet()
 	if len(resources) == 0 {
-		return constraints.ResourceSet{}, fmt.Errorf("at least one resource is required")
+		return constraints.WeightedResourceSet{}, fmt.Errorf("at least one resource is required")
 	}
 	for _, r := range resources {
 		if r.Weight == 0 || r.Weight > constraints.MaxResourceWeight {
-			return constraints.ResourceSet{}, fmt.Errorf("resource weight for kind %d must be in range [1, %d]", r.ResourceKind, constraints.MaxResourceWeight)
+			return constraints.WeightedResourceSet{}, fmt.Errorf("resource weight must be in range [1, %d]", constraints.MaxResourceWeight)
 		}
-		if rs.HasResource(r.ResourceKind) {
-			return constraints.ResourceSet{}, fmt.Errorf("duplicate resource kind %d", r.ResourceKind)
+		resourceKind, err := multigas.CheckResourceKind(r.Resource)
+		if err != nil {
+			return constraints.WeightedResourceSet{}, err
 		}
-		rs = rs.WithResource(r.ResourceKind, constraints.ResourceWeight(r.Weight))
+
+		if rs.HasResource(resourceKind) {
+			return constraints.WeightedResourceSet{}, fmt.Errorf("duplicate resource kind %d", resourceKind)
+		}
+		rs = rs.WithResource(resourceKind, constraints.ResourceWeight(r.Weight))
 	}
 	return rs, nil
 }
 
-func fromArbOsResourceConstraint(rc *constraints.ResourceConstraint) resourceConstraint {
-	weights := make([]resourceWeight, 0)
-	for rk, w := range rc.Resources.All() {
-		weights = append(weights, resourceWeight{
-			ResourceKind: rk,
-			Weight:       uint64(w),
-		})
+func toArbOsResourceSet(resources []uint8) (constraints.ResourceSet, error) {
+	res := constraints.EmptyResourceSet()
+	for _, resource := range resources {
+		kind, err := multigas.CheckResourceKind(resource)
+		if err != nil {
+			return constraints.ResourceSet{}, err
+		}
+		res = res.WithResource(kind)
 	}
-	return resourceConstraint{
-		ResourceWeight: weights,
-		PeriodSecs:     uint32(rc.Period),
-		TargetPerSec:   rc.TargetPerSec,
-	}
-}
-
-func fromArbOsResourceConstraints(rcs []*constraints.ResourceConstraint) []resourceConstraint {
-	result := make([]resourceConstraint, 0, len(rcs))
-	for _, rc := range rcs {
-		result = append(result, fromArbOsResourceConstraint(rc))
-	}
-	return result
+	return res, nil
 }

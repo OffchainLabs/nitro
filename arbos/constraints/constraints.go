@@ -16,35 +16,65 @@ import (
 // Going over the target for this given period will increase the gas price.
 type PeriodSecs uint32
 
+// ResourceWeight is a multiplier applied to a resource’s gas usage when computing backlog.
 type ResourceWeight uint64
 
-// ResourceSet tracks resource weights for constraint calculation.
-type ResourceSet struct {
+// WeightedResourceSet tracks resource weights for constraint calculation.
+type WeightedResourceSet struct {
 	weights [multigas.NumResourceKind]ResourceWeight
+}
+
+// ResourceSet represents presence of each resource kind.
+type ResourceSet struct {
+	kinds [multigas.NumResourceKind]bool
 }
 
 const MaxResourceWeight = 1_000_000 // 1e6
 
-// EmptyResourceSet creates a new set with all weights initialized to zero.
-func EmptyResourceSet() ResourceSet {
-	return ResourceSet{
+// NewWeightedResourceSet creates a new weighted set with all weights initialized to zero.
+func NewWeightedResourceSet() WeightedResourceSet {
+	return WeightedResourceSet{
 		weights: [multigas.NumResourceKind]ResourceWeight{},
 	}
 }
 
 // WithResource sets the weight for a single resource.
-func (s ResourceSet) WithResource(resource multigas.ResourceKind, weight ResourceWeight) ResourceSet {
+func (s WeightedResourceSet) WithResource(resource multigas.ResourceKind, weight ResourceWeight) WeightedResourceSet {
 	s.weights[resource] = weight
 	return s
 }
 
 // HasResource returns true if the resource has a non-zero weight in the set.
-func (s ResourceSet) HasResource(resource multigas.ResourceKind) bool {
+func (s WeightedResourceSet) HasResource(resource multigas.ResourceKind) bool {
 	return s.weights[resource] != 0
 }
 
+// WithoutWeights returns resources set without weights
+func (s WeightedResourceSet) WithoutWeights() ResourceSet {
+	var rs ResourceSet
+	for i, weight := range s.weights {
+		if weight > 0 {
+			rs.kinds[i] = true
+		}
+	}
+	return rs
+}
+
+// EmptyResourceSet creates a new empty resource set.
+func EmptyResourceSet() ResourceSet {
+	return ResourceSet{
+		kinds: [multigas.NumResourceKind]bool{},
+	}
+}
+
+// WithResource returns a copy of the set with the given resource weight updated.
+func (s ResourceSet) WithResource(resource multigas.ResourceKind) ResourceSet {
+	s.kinds[resource] = true
+	return s
+}
+
 // All returns all resources with non-zero weights.
-func (s ResourceSet) All() iter.Seq2[multigas.ResourceKind, ResourceWeight] {
+func (s WeightedResourceSet) All() iter.Seq2[multigas.ResourceKind, ResourceWeight] {
 	return func(yield func(multigas.ResourceKind, ResourceWeight) bool) {
 		for i, weight := range s.weights {
 			if weight != 0 {
@@ -60,7 +90,7 @@ func (s ResourceSet) All() iter.Seq2[multigas.ResourceKind, ResourceWeight] {
 
 // ResourceConstraint defines the max gas target per second for the given period for a single resource.
 type ResourceConstraint struct {
-	Resources    ResourceSet
+	Resources    WeightedResourceSet
 	Period       PeriodSecs
 	TargetPerSec uint64
 	Backlog      uint64
@@ -114,10 +144,10 @@ func NewResourceConstraints() *ResourceConstraints {
 // Set adds or updates the given resource constraint.
 // The set of resources and the period are the key that defines the constraint.
 func (rc *ResourceConstraints) Set(
-	resources ResourceSet, periodSecs PeriodSecs, targetPerSec uint64,
+	resources WeightedResourceSet, periodSecs PeriodSecs, targetPerSec uint64,
 ) {
 	key := constraintKey{
-		resources: resources,
+		resources: resources.WithoutWeights(),
 		period:    periodSecs,
 	}
 	constraint := &ResourceConstraint{

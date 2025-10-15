@@ -54,14 +54,14 @@ func TestStorageResourceConstraintsManagment(t *testing.T) {
 
 	// Expect error when setting resource constraint with invalid weight
 	err = arbOwner.SetResourceConstraint(callCtx, evm, []resourceWeight{
-		{ResourceKind: multigas.ResourceKindComputation, Weight: 0},
+		{Resource: uint8(multigas.ResourceKindComputation), Weight: 0},
 	}, 0, 0)
 	require.Error(t, err)
 
 	// Expect error when setting resource constraint with duplicate resource kinds
 	err = arbOwner.SetResourceConstraint(callCtx, evm, []resourceWeight{
-		{ResourceKind: multigas.ResourceKindComputation, Weight: 1},
-		{ResourceKind: multigas.ResourceKindComputation, Weight: 2},
+		{Resource: uint8(multigas.ResourceKindComputation), Weight: 1},
+		{Resource: uint8(multigas.ResourceKindComputation), Weight: 2},
 	}, 0, 0)
 	require.Error(t, err)
 
@@ -72,8 +72,8 @@ func TestStorageResourceConstraintsManagment(t *testing.T) {
 
 	// Set a valid resource constraint
 	rc1 := []resourceWeight{
-		{ResourceKind: multigas.ResourceKindComputation, Weight: 1},
-		{ResourceKind: multigas.ResourceKindStorageAccess, Weight: 2},
+		{Resource: uint8(multigas.ResourceKindComputation), Weight: 1},
+		{Resource: uint8(multigas.ResourceKindStorageAccess), Weight: 2},
 	}
 	err = arbOwner.SetResourceConstraint(callCtx, evm, rc1, 12, 10_000_000)
 	require.NoError(t, err)
@@ -84,13 +84,13 @@ func TestStorageResourceConstraintsManagment(t *testing.T) {
 	require.Len(t, rcs, 1)
 	require.Equal(t, uint32(12), rcs[0].PeriodSecs)
 	require.Equal(t, uint64(10_000_000), rcs[0].TargetPerSec)
-	require.Len(t, rcs[0].ResourceWeight, 2)
-	require.Contains(t, rcs[0].ResourceWeight, resourceWeight{ResourceKind: multigas.ResourceKindComputation, Weight: 1})
-	require.Contains(t, rcs[0].ResourceWeight, resourceWeight{ResourceKind: multigas.ResourceKindStorageAccess, Weight: 2})
+	require.Len(t, rcs[0].Resources, 2)
+	require.Contains(t, rcs[0].Resources, resourceWeight{Resource: uint8(multigas.ResourceKindComputation), Weight: 1})
+	require.Contains(t, rcs[0].Resources, resourceWeight{Resource: uint8(multigas.ResourceKindStorageAccess), Weight: 2})
 
 	// Set another valid resource constraint
 	rc2 := []resourceWeight{
-		{ResourceKind: multigas.ResourceKindStorageGrowth, Weight: 5},
+		{Resource: uint8(multigas.ResourceKindStorageGrowth), Weight: 5},
 	}
 	err = arbOwner.SetResourceConstraint(callCtx, evm, rc2, 60, 50_000_000)
 	require.NoError(t, err)
@@ -101,7 +101,11 @@ func TestStorageResourceConstraintsManagment(t *testing.T) {
 	require.Len(t, rcs, 2)
 
 	// Remove the first resource constraint
-	err = arbOwner.ClearConstraint(callCtx, evm, rc1, 12)
+	rc1Kinds := []uint8{
+		uint8(multigas.ResourceKindStorageAccess),
+		uint8(multigas.ResourceKindComputation),
+	}
+	err = arbOwner.ClearConstraint(callCtx, evm, rc1Kinds, 12)
 	require.NoError(t, err)
 
 	// Reset the second resource constraint with new values
@@ -114,6 +118,6 @@ func TestStorageResourceConstraintsManagment(t *testing.T) {
 	require.Len(t, rcs, 1)
 	require.Equal(t, uint32(60), rcs[0].PeriodSecs)
 	require.Equal(t, uint64(20_000_000), rcs[0].TargetPerSec)
-	require.Len(t, rcs[0].ResourceWeight, 1)
-	require.Contains(t, rcs[0].ResourceWeight, resourceWeight{ResourceKind: multigas.ResourceKindStorageGrowth, Weight: 5})
+	require.Len(t, rcs[0].Resources, 1)
+	require.Contains(t, rcs[0].Resources, resourceWeight{Resource: uint8(multigas.ResourceKindStorageGrowth), Weight: 5})
 }

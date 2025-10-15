@@ -456,7 +456,7 @@ func (con ArbOwner) SetCalldataPriceIncrease(c ctx, _ mech, enable bool) error {
 
 // SetResourceConstraint adds or updates a resource constraint with specified resource kinds and weights
 func (con ArbOwner) SetResourceConstraint(c ctx, evm mech, resources []resourceWeight, periodSecs uint32, targetPerSec uint64) error {
-	res, err := toArbOsResourceSet(resources)
+	res, err := toArbOsWeightedResourceSet(resources)
 	if err != nil {
 		return err
 	}
@@ -464,7 +464,7 @@ func (con ArbOwner) SetResourceConstraint(c ctx, evm mech, resources []resourceW
 }
 
 // ClearConstraint removes a resource constraint
-func (con ArbOwner) ClearConstraint(c ctx, evm mech, resources []resourceWeight, periodSecs uint32) error {
+func (con ArbOwner) ClearConstraint(c ctx, evm mech, resources []uint8, periodSecs uint32) error {
 	res, err := toArbOsResourceSet(resources)
 	if err != nil {
 		return err

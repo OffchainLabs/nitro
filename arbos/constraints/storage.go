@@ -100,7 +100,7 @@ func (src *StorageResourceConstraints) Load() (*ResourceConstraints, error) {
 	rc := NewResourceConstraints()
 	for _, c := range payload.Constraints {
 		rc.Set(c.Resources, c.Period, c.TargetPerSec)
-		ptr := rc.Get(c.Resources, c.Period)
+		ptr := rc.Get(c.Resources.WithoutWeights(), c.Period)
 		ptr.Backlog = c.Backlog
 	}
 	return rc, nil
@@ -131,7 +131,7 @@ func (src *StorageResourceConstraints) Write(rc *ResourceConstraints) error {
 }
 
 // SetConstraint adds or updates a resource constraint in storage.
-func (src *StorageResourceConstraints) SetConstraint(resources ResourceSet, periodSecs uint32, targetPerSec uint64) error {
+func (src *StorageResourceConstraints) SetConstraint(resources WeightedResourceSet, periodSecs uint32, targetPerSec uint64) error {
 	rc, err := src.Load()
 	if err != nil {
 		return err

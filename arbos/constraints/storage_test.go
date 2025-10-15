@@ -34,10 +34,10 @@ func TestStorageResourceConstraintsRLPRoundTrip(t *testing.T) {
 			name: "SimpleResourceConstraints",
 			buildFunc: func() *ResourceConstraints {
 				rc := NewResourceConstraints()
-				res := EmptyResourceSet().
+				res := NewWeightedResourceSet().
 					WithResource(multigas.ResourceKindComputation, 1)
 				rc.Set(res, PeriodSecs(10), 5_000_000)
-				rc.Get(res, PeriodSecs(10)).Backlog = 12
+				rc.Get(res.WithoutWeights(), PeriodSecs(10)).Backlog = 12
 				return rc
 			},
 		},
@@ -46,17 +46,17 @@ func TestStorageResourceConstraintsRLPRoundTrip(t *testing.T) {
 			buildFunc: func() *ResourceConstraints {
 				rc := NewResourceConstraints()
 
-				res1 := EmptyResourceSet().
+				res1 := NewWeightedResourceSet().
 					WithResource(multigas.ResourceKindComputation, 1).
 					WithResource(multigas.ResourceKindHistoryGrowth, 2)
 				rc.Set(res1, PeriodSecs(12), 7_000_000)
-				rc.Get(res1, PeriodSecs(12)).Backlog = 42
+				rc.Get(res1.WithoutWeights(), PeriodSecs(12)).Backlog = 42
 
-				res2 := EmptyResourceSet().
+				res2 := NewWeightedResourceSet().
 					WithResource(multigas.ResourceKindWasmComputation, 3).
 					WithResource(multigas.ResourceKindStorageGrowth, 5)
 				rc.Set(res2, PeriodSecs(60), 3_500_000)
-				rc.Get(res2, PeriodSecs(60)).Backlog = 99
+				rc.Get(res2.WithoutWeights(), PeriodSecs(60)).Backlog = 99
 
 				return rc
 			},
@@ -110,10 +110,10 @@ func TestStorageResourceConstraintsRLPRoundTrip(t *testing.T) {
 
 func TestStorageResourceConstraintsRLPBacklogPersistence(t *testing.T) {
 	rc := NewResourceConstraints()
-	res := EmptyResourceSet().
+	res := NewWeightedResourceSet().
 		WithResource(multigas.ResourceKindComputation, 1)
 	rc.Set(res, PeriodSecs(30), 10_000_000)
-	ptr := rc.Get(res, PeriodSecs(30))
+	ptr := rc.Get(res.WithoutWeights(), PeriodSecs(30))
 	ptr.Backlog = 12345 // initial backlog value
 
 	store := &mockStorageBytes{}
@@ -152,4 +152,34 @@ func TestStorageResourceConstraintsEmptyLoad(t *testing.T) {
 	require.NoError(t, err, "Load() failed")
 	require.NotNil(t, loaded, "Load() returned nil ResourceConstraints")
 	require.Empty(t, loaded.constraints, "Loaded ResourceConstraints should be empty")
+}
+
+func TestStorageDoesNotDependOnWeights(t *testing.T) {
+	store := &mockStorageBytes{}
+	src := NewStorageResourceConstraints(store)
+
+	res1 := NewWeightedResourceSet().
+		WithResource(multigas.ResourceKindComputation, 1).
+		WithResource(multigas.ResourceKindStorageAccess, 2)
+
+	err := src.SetConstraint(res1, 200, 10_000_000)
+	require.NoError(t, err)
+
+	list, err := src.ListConstraints()
+	require.NoError(t, err)
+	require.Len(t, list, 1)
+	require.Equal(t, res1, list[0].Resources)
+
+	res2 := NewWeightedResourceSet().
+		WithResource(multigas.ResourceKindComputation, 50).
+		WithResource(multigas.ResourceKindStorageAccess, 10)
+
+	// with same period should override existing entity
+	err = src.SetConstraint(res2, 200, 1_000_000)
+	require.NoError(t, err)
+
+	list, err = src.ListConstraints()
+	require.NoError(t, err)
+	require.Len(t, list, 1)
+	require.Equal(t, res2, list[0].Resources)
 }
