@@ -579,13 +579,7 @@ func createDummyBatchPostingReportTransaction() ([]byte, error) {
 	l1BaseFee := new(big.Int)
 	l1BaseFee.SetUint64(0)
 
-	var data []byte
-	data, err := util.PackInternalTxDataBatchPostingReport(
+	return util.PackInternalTxDataBatchPostingReport(
 		batchTimestamp, batchPosterAddr, batchNum, batchGas, l1BaseFee,
 	)
-	if err != nil {
-		return nil, err
-	}
-
-	return data, nil
 }
