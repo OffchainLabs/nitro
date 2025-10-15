@@ -25,6 +25,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mitchellh/copystructure"
 	"github.com/redis/go-redis/v9"
 
 	"github.com/ethereum/go-ethereum"
@@ -1301,8 +1302,14 @@ type commonConfigFetcher[T any] struct {
 }
 
 func cloneAndValidateConfig[T any](cfg *T) *T {
-	clonedCfg := new(T)
-	*clonedCfg = *cfg
+	cloned, err := copystructure.Copy(cfg)
+	if err != nil {
+		panic("error deep copying config in cloneAndValidateConfig" + err.Error())
+	}
+	clonedCfg, ok := cloned.(*T)
+	if !ok {
+		panic("cannot convert cloned interface into appropriate config type")
+	}
 	if v, ok := any(clonedCfg).(interface{ Validate() error }); ok {
 		if err := v.Validate(); err != nil {
 			panic("invalid cloned config: " + err.Error())

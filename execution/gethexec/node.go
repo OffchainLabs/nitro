@@ -216,9 +216,6 @@ var ConfigDefault = Config{
 
 type ConfigFetcher interface {
 	Get() *Config
-	Start(context.Context)
-	StopAndWait()
-	Started() bool
 }
 
 type ExecutionNode struct {
