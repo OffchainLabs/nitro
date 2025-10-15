@@ -915,7 +915,7 @@ type fullSequencingHooks struct {
 	sequencedTxsSizeSoFar    int
 	maxSequencedTxsSize      int
 	txErrors                 []error
-	sequencer                Sequencer
+	sequencer                *Sequencer
 }
 
 func (s *fullSequencingHooks) GetTxErrors() []error {
@@ -984,6 +984,7 @@ func (s *Sequencer) makeSequencingHooks(items []txQueueItem) *fullSequencingHook
 		sequencedQueueItemsCount: 0,
 		sequencedTxsSizeSoFar:    0,
 		maxSequencedTxsSize:      s.config().MaxTxDataSize,
+		sequencer:                s,
 	}
 	return res
 }
