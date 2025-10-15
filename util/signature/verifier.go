@@ -112,7 +112,7 @@ func (v *Verifier) verifyClosure(ctx context.Context, sig []byte, hash common.Ha
 	}
 
 	if !v.config.AcceptSequencer || v.addrVerifier == nil {
-		return ErrSignerNotApproved
+		return fmt.Errorf("%w: addr: %v", ErrSignerNotApproved, addr)
 	}
 
 	batchPosterOrSequencer, err := v.addrVerifier.IsBatchPosterOrSequencer(ctx, addr)
@@ -121,7 +121,7 @@ func (v *Verifier) verifyClosure(ctx context.Context, sig []byte, hash common.Ha
 	}
 
 	if !batchPosterOrSequencer {
-		return ErrSignerNotApproved
+		return fmt.Errorf("%w: addr: %v", ErrSignerNotApproved, addr)
 	}
 
 	return nil
