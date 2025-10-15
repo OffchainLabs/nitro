@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"encoding/gob"
 	"encoding/hex"
 	"encoding/json"
 	"flag"
@@ -25,7 +26,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mitchellh/copystructure"
 	"github.com/redis/go-redis/v9"
 
 	"github.com/ethereum/go-ethereum"
@@ -1302,20 +1302,21 @@ type commonConfigFetcher[T any] struct {
 }
 
 func cloneAndValidateConfig[T any](cfg *T) *T {
-	cloned, err := copystructure.Copy(cfg)
-	if err != nil {
-		panic("error deep copying config in cloneAndValidateConfig" + err.Error())
+	var b bytes.Buffer
+	if err := gob.NewEncoder(&b).Encode(cfg); err != nil {
+		panic("error marshalling config using gob: " + err.Error())
 	}
-	clonedCfg, ok := cloned.(*T)
-	if !ok {
-		panic("cannot convert cloned interface into appropriate config type")
+	data := b.Bytes()
+	var clonedCfg T
+	if err := gob.NewDecoder(bytes.NewReader(data)).Decode(&clonedCfg); err != nil {
+		panic("error unmarshalling bytes using gob into clonedCfg: " + err.Error())
 	}
-	if v, ok := any(clonedCfg).(interface{ Validate() error }); ok {
+	if v, ok := any(&clonedCfg).(interface{ Validate() error }); ok {
 		if err := v.Validate(); err != nil {
 			panic("invalid cloned config: " + err.Error())
 		}
 	}
-	return clonedCfg
+	return &clonedCfg
 }
 
 func NewCommonConfigFetcher[T any](cfg *T) ConfigFetcher[T] {
