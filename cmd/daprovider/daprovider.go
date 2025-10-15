@@ -233,6 +233,10 @@ func startup() error {
 		if !config.ReferenceDA.Enable {
 			return errors.New("--referenceda.enable is required to start a ReferenceDA provider server")
 		}
+		l1Client, err = das.GetL1Client(ctx, config.ReferenceDA.ParentChainConnectionAttempts, config.ReferenceDA.ParentChainNodeURL)
+		if err != nil {
+			return err
+		}
 	}
 
 	// Create DA provider factory based on mode
