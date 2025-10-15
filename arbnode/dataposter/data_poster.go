@@ -284,6 +284,19 @@ func TxToSignTxArgs(addr common.Address, tx *types.Transaction) (*apitypes.SendT
 	}, nil
 }
 
+func ExternalSignerTxOpts(ctx context.Context, opts *ExternalSignerCfg) (*bind.TransactOpts, error) {
+	signer, sender, err := externalSigner(ctx, opts)
+	if err != nil {
+		return nil, err
+	}
+	return &bind.TransactOpts{
+		From: sender,
+		Signer: func(address common.Address, tx *types.Transaction) (*types.Transaction, error) {
+			return signer(context.TODO(), address, tx)
+		},
+	}, nil
+}
+
 // externalSigner returns signer function and ethereum address of the signer.
 // Returns an error if address isn't specified or if it can't connect to the
 // signer RPC server.
@@ -1213,7 +1226,10 @@ func (p *DataPoster) Start(ctxIn context.Context) {
 			log.Warn("failed to update tx poster nonce", "err", err)
 		}
 		now := time.Now()
-		nextCheck := now.Add(arbmath.MinInt(p.config().ReplacementTimes[0], p.config().BlobTxReplacementTimes[0]))
+		nextCheck := now.Add(p.config().ReplacementTimes[0])
+		if len(p.config().BlobTxReplacementTimes) > 0 {
+			nextCheck = now.Add(arbmath.MinInt(p.config().ReplacementTimes[0], p.config().BlobTxReplacementTimes[0]))
+		}
 		maxTxsToRbf := p.config().MaxMempoolTransactions
 		if maxTxsToRbf == 0 {
 			maxTxsToRbf = 512
@@ -1399,6 +1415,12 @@ func (c *DataPosterConfig) Validate() error {
 		// Valid values
 	default:
 		return fmt.Errorf("invalid enable-cell-proofs value %q (valid: \"\", \"auto\", \"force-enable\", \"force-disable\")", c.EnableCellProofs)
+	}
+	if len(c.ReplacementTimes) == 0 {
+		return fmt.Errorf("replacement-times must have at least one value")
+	}
+	if c.Post4844Blobs && len(c.BlobTxReplacementTimes) == 0 {
+		return fmt.Errorf("blob-tx-replacement-times must have at least one value when post-4844-blobs is enabled")
 	}
 	return nil
 }
