@@ -517,13 +517,6 @@ func TestRegressionInPopulateFeedBacklog(t *testing.T) {
 	_, err = builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
 
-	// Get index to override
-	messageCount, err := builder.L2.ConsensusNode.TxStreamer.GetMessageCount()
-	if err != nil {
-		panic(fmt.Sprintf("error getting tx streamer message count: %v", err))
-	}
-	indexToOverride := messageCount - 1
-
 	// Create dummy batch posting report data
 	data, err := createDummyBatchPostingReportTransaction()
 	Require(t, err)
@@ -548,7 +541,11 @@ func TestRegressionInPopulateFeedBacklog(t *testing.T) {
 	}
 
 	// Override last index to be a batch posting report
-	key := dbKey(dbschema.MessagePrefix, uint64(indexToOverride))
+	messageCount, err := builder.L2.ConsensusNode.TxStreamer.GetMessageCount()
+	if err != nil {
+		panic(fmt.Sprintf("error getting tx streamer message count: %v", err))
+	}
+	key := dbKey(dbschema.MessagePrefix, uint64(messageCount-1))
 	msgBytes, err := rlp.EncodeToBytes(dummyMessage)
 	if err != nil {
 		panic(fmt.Sprintf("error encoding dummy message: %v", err))
@@ -590,7 +587,5 @@ func createDummyBatchPostingReportTransaction() ([]byte, error) {
 		return nil, err
 	}
 
-	chainId := new(big.Int)
-	chainId.SetUint64(0)
 	return data, nil
 }
