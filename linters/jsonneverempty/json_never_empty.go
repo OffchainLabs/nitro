@@ -1,3 +1,8 @@
+// Copyright 2025, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
+//
+// Based on https://github.com/andydotdev/omitlint
+
 package jsonneverempty
 
 import (
@@ -58,7 +63,7 @@ func validateStruct(pass *analysis.Pass, structType *ast.StructType) {
 		if !typeCanBeEmpty(field) {
 			pass.Report(analysis.Diagnostic{
 				Pos:     field.Pos(),
-				Message: fmt.Sprintf("field `%v` is marked `omitempty`, but it can never be empty; consider making it a pointer", field.Name()),
+				Message: fmt.Sprintf("field '%v' is marked 'omitempty', but it can never be empty; consider making it a pointer", field.Name()),
 			})
 		}
 	}
