@@ -66,6 +66,7 @@ func (b *Broadcaster) NewBroadcastFeedMessage(
 		BlockHash:      messageWithInfo.BlockHash,
 		Signature:      messageSignature,
 		BlockMetadata:  messageWithInfo.BlockMetadata,
+		ArbOSVersion:   messageWithInfo.ArbOSVersion,
 	}, nil
 }
 
