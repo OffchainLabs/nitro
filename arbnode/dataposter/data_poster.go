@@ -191,7 +191,7 @@ func NewDataPoster(ctx context.Context, opts *DataPosterOpts) (*DataPoster, erro
 		dp.auth = &bind.TransactOpts{
 			From: sender,
 			Signer: func(address common.Address, tx *types.Transaction) (*types.Transaction, error) {
-				return signer(context.TODO(), address, tx)
+				return signer(ctx, address, tx)
 			},
 		}
 	}
