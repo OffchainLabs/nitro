@@ -47,7 +47,7 @@ func (b *Broadcaster) NewBroadcastFeedMessage(
 	blockMetadata common.BlockMetadata,
 	arbOSVersion uint64,
 ) (*m.BroadcastFeedMessage, error) {
-	if arbOSVersion < params.ArbosVersion_50 {
+	if arbOSVersion < params.ArbosVersion_50 && message.Message != nil {
 		message.Message.BatchDataStats = nil
 	}
 
