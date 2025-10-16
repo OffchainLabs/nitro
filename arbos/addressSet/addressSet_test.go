@@ -184,7 +184,8 @@ func TestRectifyMappingAgainstHistory(t *testing.T) {
 	aset := OpenAddressSet(sto)
 	version := uint64(10)
 
-	// Test Nova history
+	// Test Nova history - reproduces real corruption scenario from Nova mainnet
+	// where chain owner mappings became inconsistent after remove operations
 	addr1 := common.HexToAddress("0x9C040726F2A657226Ed95712245DeE84b650A1b5")
 	addr2 := common.HexToAddress("0xd345e41ae2cb00311956aa7109fc801ae8c81a52")
 	addr3 := common.HexToAddress("0xd0749b3e537ed52de4e6a3ae1eb6fc26059d0895")
@@ -198,9 +199,12 @@ func TestRectifyMappingAgainstHistory(t *testing.T) {
 	Require(t, aset.Remove(addr2, version))
 	Require(t, aset.Remove(addr3, version))
 	// Check if history's correct
-	CurrentOwner, _ := aset.backingStorage.GetByUint64(uint64(1))
-	isOwner, _ := aset.IsMember(addr2)
-	correctOwner, _ := aset.IsMember(addr4)
+	CurrentOwner, err := aset.backingStorage.GetByUint64(uint64(1))
+	Require(t, err)
+	isOwner, err := aset.IsMember(addr2)
+	Require(t, err)
+	correctOwner, err := aset.IsMember(addr4)
+	Require(t, err)
 	if size(t, aset) != uint64(1) || CurrentOwner != common.BytesToHash(addr2.Bytes()) || isOwner || !correctOwner {
 		Fail(t, "Logs and current state did not match")
 	}
@@ -208,7 +212,8 @@ func TestRectifyMappingAgainstHistory(t *testing.T) {
 	checkIfRectifyMappingWorks(t, aset, []common.Address{addr4}, true)
 	Require(t, aset.Clear())
 
-	// Test Arb1 history
+	// Test Arb1 history - reproduces real corruption scenario from Arbitrum One mainnet
+	// where chain owner mappings became inconsistent after remove operations
 	addr1 = common.HexToAddress("0xd345e41ae2cb00311956aa7109fc801ae8c81a52")
 	addr2 = common.HexToAddress("0x98e4db7e07e584f89a2f6043e7b7c89dc27769ed")
 	addr3 = common.HexToAddress("0xcf57572261c7c2bcf21ffd220ea7d1a27d40a827")
@@ -219,9 +224,12 @@ func TestRectifyMappingAgainstHistory(t *testing.T) {
 	Require(t, aset.Remove(addr1, version))
 	Require(t, aset.Remove(addr2, version))
 	// Check if history's correct
-	CurrentOwner, _ = aset.backingStorage.GetByUint64(uint64(1))
-	correctOwner, _ = aset.IsMember(addr3)
-	index, _ := aset.byAddress.GetUint64(common.BytesToHash(addr3.Bytes()))
+	CurrentOwner, err = aset.backingStorage.GetByUint64(uint64(1))
+	Require(t, err)
+	correctOwner, err = aset.IsMember(addr3)
+	Require(t, err)
+	index, err := aset.byAddress.GetUint64(common.BytesToHash(addr3.Bytes()))
+	Require(t, err)
 	if size(t, aset) != uint64(1) || index == 1 || CurrentOwner != common.BytesToHash(addr3.Bytes()) || !correctOwner {
 		Fail(t, "Logs and current state did not match")
 	}
@@ -229,7 +237,8 @@ func TestRectifyMappingAgainstHistory(t *testing.T) {
 	checkIfRectifyMappingWorks(t, aset, []common.Address{addr3}, true)
 	Require(t, aset.Clear())
 
-	// Test Goerli history
+	// Test Goerli history - reproduces real corruption scenario from Goerli testnet
+	// where chain owner mappings became inconsistent after remove operations
 	addr1 = common.HexToAddress("0x186B56023d42B2B4E7616589a5C62EEf5FCa21DD")
 	addr2 = common.HexToAddress("0xc8efdb677afeb775ce1617dd976b56b3a6e95bba")
 	addr3 = common.HexToAddress("0xc3f86bb81e32295d29c288ffb4828936538cf326")
@@ -243,9 +252,12 @@ func TestRectifyMappingAgainstHistory(t *testing.T) {
 	Require(t, aset.Remove(addr3, version))
 	Require(t, aset.Remove(addr2, version))
 	// Check if history's correct
-	CurrentOwner, _ = aset.backingStorage.GetByUint64(uint64(1))
-	isOwner, _ = aset.IsMember(addr3)
-	correctOwner, _ = aset.IsMember(addr4)
+	CurrentOwner, err = aset.backingStorage.GetByUint64(uint64(1))
+	Require(t, err)
+	isOwner, err = aset.IsMember(addr3)
+	Require(t, err)
+	correctOwner, err = aset.IsMember(addr4)
+	Require(t, err)
 	if size(t, aset) != uint64(1) || CurrentOwner != common.BytesToHash(addr3.Bytes()) || isOwner || !correctOwner {
 		Fail(t, "Logs and current state did not match")
 	}
