@@ -80,7 +80,7 @@ func NewClientConnection(
 		clientIp:        connectingIP,
 		desc:            desc,
 		creation:        time.Now(),
-		Name:            fmt.Sprintf("%s@%s-%d", connectingIP, conn.RemoteAddr(), rand.Intn(10)),
+		Name:            fmt.Sprintf("%s-%d", conn.RemoteAddr(), rand.Intn(10)),
 		clientAction:    clientAction,
 		requestedSeqNum: requestedSeqNum,
 		out:             make(chan message, maxSendQueue),
