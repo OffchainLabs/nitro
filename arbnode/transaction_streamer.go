@@ -1035,6 +1035,7 @@ func (s *TransactionStreamer) WriteMessageFromSequencer(
 	msgWithMeta arbostypes.MessageWithMetadata,
 	msgResult execution.MessageResult,
 	blockMetadata common.BlockMetadata,
+	arbOSVersion uint64,
 ) error {
 	if err := s.ExpectChosenSequencer(); err != nil {
 		return err
@@ -1118,7 +1119,7 @@ func (s *TransactionStreamer) WriteMessageFromSequencer(
 	if s.trackBlockMetadataFrom == 0 || msgIdx < s.trackBlockMetadataFrom {
 		msgWithBlockInfo.BlockMetadata = nil
 	}
-	s.broadcastMessages([]arbostypes.MessageWithMetadataAndBlockInfo{msgWithBlockInfo}, msgIdx)
+	s.broadcastMessages([]arbostypes.MessageWithMetadataAndBlockInfo{msgWithBlockInfo}, msgIdx, arbOSVersion)
 
 	return nil
 }
@@ -1189,11 +1190,12 @@ func (s *TransactionStreamer) writeMessage(msgIdx arbutil.MessageIndex, msg arbo
 func (s *TransactionStreamer) broadcastMessages(
 	msgs []arbostypes.MessageWithMetadataAndBlockInfo,
 	firstMsgIdx arbutil.MessageIndex,
+	arbOSVersion uint64,
 ) {
 	if s.broadcastServer == nil {
 		return
 	}
-	if err := s.broadcastServer.BroadcastMessages(msgs, firstMsgIdx); err != nil {
+	if err := s.broadcastServer.BroadcastMessages(msgs, firstMsgIdx, arbOSVersion); err != nil {
 		log.Error("failed broadcasting messages", "firstMsgIdx", firstMsgIdx, "err", err)
 	}
 }
