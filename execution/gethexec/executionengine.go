@@ -642,8 +642,13 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 		return nil, err
 	}
 
+	arbOSVersion, err := s.ArbOSVersionForMessageIndex(msgIdx)
+	if err != nil {
+		return nil, err
+	}
+
 	blockMetadata := s.blockMetadataFromBlock(block, timeboostedTxs)
-	_, err = s.consensus.WriteMessageFromSequencer(msgIdx, msgWithMeta, *msgResult, blockMetadata).Await(s.GetContext())
+	_, err = s.consensus.WriteMessageFromSequencer(msgIdx, msgWithMeta, *msgResult, blockMetadata, arbOSVersion).Await(s.GetContext())
 	if err != nil {
 		return nil, err
 	}
@@ -722,7 +727,12 @@ func (s *ExecutionEngine) sequenceDelayedMessageWithBlockMutex(message *arbostyp
 		return nil, err
 	}
 
-	_, err = s.consensus.WriteMessageFromSequencer(msgIdx, messageWithMeta, *msgResult, s.blockMetadataFromBlock(block, nil)).Await(s.GetContext())
+	arbOSVersion, err := s.ArbOSVersionForMessageIndex(msgIdx)
+	if err != nil {
+		return nil, err
+	}
+
+	_, err = s.consensus.WriteMessageFromSequencer(msgIdx, messageWithMeta, *msgResult, s.blockMetadataFromBlock(block, nil), arbOSVersion).Await(s.GetContext())
 	if err != nil {
 		return nil, err
 	}
