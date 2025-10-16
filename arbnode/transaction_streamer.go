@@ -404,6 +404,7 @@ func (s *TransactionStreamer) addMessagesAndReorg(batch ethdb.Batch, msgIdxOfFir
 		messagesWithComputedBlockHash = append(messagesWithComputedBlockHash, arbostypes.MessageWithMetadataAndBlockInfo{
 			MessageWithMeta: newMessages[i].MessageWithMeta,
 			BlockHash:       &messagesResults[i].BlockHash,
+			BlockMetadata:   common.EmptyBlockMetadata,
 		})
 	}
 	s.broadcastMessages(messagesWithComputedBlockHash, msgIdxOfFirstMsgToAdd)
@@ -736,6 +737,8 @@ func (s *TransactionStreamer) AddMessagesAndEndBatch(firstMsgIdx arbutil.Message
 	for _, message := range messages {
 		messagesWithBlockInfo = append(messagesWithBlockInfo, arbostypes.MessageWithMetadataAndBlockInfo{
 			MessageWithMeta: message,
+			BlockHash:       &common.Hash{},
+			BlockMetadata:   common.EmptyBlockMetadata,
 		})
 	}
 
