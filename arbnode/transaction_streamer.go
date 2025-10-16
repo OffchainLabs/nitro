@@ -404,6 +404,7 @@ func (s *TransactionStreamer) addMessagesAndReorg(batch ethdb.Batch, msgIdxOfFir
 		// #nosec G115
 		arbOSVersion, err := s.exec.ArbOSVersionForMessageIndex(msgIdxOfFirstMsgToAdd + arbutil.MessageIndex(i)).Await(s.GetContext())
 		if err != nil {
+			// #nosec G115
 			log.Warn("error getting arbOS version for message", "msgIdx", msgIdxOfFirstMsgToAdd+arbutil.MessageIndex(i), "err", err)
 		}
 
