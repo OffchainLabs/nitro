@@ -70,17 +70,17 @@ func TestBroadcasterMessagesRemovedOnConfirmation(t *testing.T) {
 	}
 
 	// Normal broadcasting and confirming
-	Require(t, b.BroadcastSingle(arbostypes.EmptyTestMessageWithMetadata, 1, nil, nil))
+	Require(t, b.BroadcastSingle(arbostypes.EmptyTestMessageWithMetadata, 1, nil, nil, 0))
 	waitUntilUpdated(t, expectMessageCount(1, "after 1 message"))
-	Require(t, b.BroadcastSingle(arbostypes.EmptyTestMessageWithMetadata, 2, nil, nil))
+	Require(t, b.BroadcastSingle(arbostypes.EmptyTestMessageWithMetadata, 2, nil, nil, 0))
 	waitUntilUpdated(t, expectMessageCount(2, "after 2 messages"))
-	Require(t, b.BroadcastSingle(arbostypes.EmptyTestMessageWithMetadata, 3, nil, nil))
+	Require(t, b.BroadcastSingle(arbostypes.EmptyTestMessageWithMetadata, 3, nil, nil, 0))
 	waitUntilUpdated(t, expectMessageCount(3, "after 3 messages"))
-	Require(t, b.BroadcastSingle(arbostypes.EmptyTestMessageWithMetadata, 4, nil, nil))
+	Require(t, b.BroadcastSingle(arbostypes.EmptyTestMessageWithMetadata, 4, nil, nil, 0))
 	waitUntilUpdated(t, expectMessageCount(4, "after 4 messages"))
-	Require(t, b.BroadcastSingle(arbostypes.EmptyTestMessageWithMetadata, 5, nil, nil))
+	Require(t, b.BroadcastSingle(arbostypes.EmptyTestMessageWithMetadata, 5, nil, nil, 0))
 	waitUntilUpdated(t, expectMessageCount(5, "after 4 messages"))
-	Require(t, b.BroadcastSingle(arbostypes.EmptyTestMessageWithMetadata, 6, nil, nil))
+	Require(t, b.BroadcastSingle(arbostypes.EmptyTestMessageWithMetadata, 6, nil, nil, 0))
 	waitUntilUpdated(t, expectMessageCount(6, "after 4 messages"))
 
 	b.Confirm(4)
@@ -96,7 +96,7 @@ func TestBroadcasterMessagesRemovedOnConfirmation(t *testing.T) {
 		"nothing changed because confirmed sequence number before cache"))
 
 	b.Confirm(5)
-	Require(t, b.BroadcastSingle(arbostypes.EmptyTestMessageWithMetadata, 7, nil, nil))
+	Require(t, b.BroadcastSingle(arbostypes.EmptyTestMessageWithMetadata, 7, nil, nil, 0))
 	waitUntilUpdated(t, expectMessageCount(2,
 		"after 7 messages, 5 cleared by confirm"))
 

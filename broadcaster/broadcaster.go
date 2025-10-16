@@ -77,6 +77,7 @@ func (b *Broadcaster) BroadcastSingle(
 	msgIdx arbutil.MessageIndex,
 	blockHash *common.Hash,
 	blockMetadata common.BlockMetadata,
+	arbOSVersion uint64,
 ) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -84,7 +85,7 @@ func (b *Broadcaster) BroadcastSingle(
 			err = errors.New("panic in BroadcastSingle")
 		}
 	}()
-	bfm, err := b.NewBroadcastFeedMessage(msg, msgIdx, blockHash, blockMetadata)
+	bfm, err := b.NewBroadcastFeedMessage(msg, msgIdx, blockHash, blockMetadata, arbOSVersion)
 	if err != nil {
 		return err
 	}
