@@ -9,6 +9,7 @@ import (
 	"net"
 	"runtime/debug"
 
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/gobwas/ws"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -44,7 +45,12 @@ func (b *Broadcaster) NewBroadcastFeedMessage(
 	sequenceNumber arbutil.MessageIndex,
 	blockHash *common.Hash,
 	blockMetadata common.BlockMetadata,
+	arbOSVersion uint64,
 ) (*m.BroadcastFeedMessage, error) {
+	if arbOSVersion < params.ArbosVersion_50 {
+		message.Message.BatchDataStats = nil
+	}
+
 	var messageSignature []byte
 	if b.dataSigner != nil {
 		hash, err := message.Hash(sequenceNumber, b.chainId)
