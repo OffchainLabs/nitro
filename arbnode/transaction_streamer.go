@@ -1136,7 +1136,7 @@ func (s *TransactionStreamer) PopulateFeedBacklog() error {
 	if s.broadcastServer == nil || s.inboxReader == nil {
 		return nil
 	}
-	return s.inboxReader.tracker.PopulateFeedBacklog(s.broadcastServer)
+	return s.inboxReader.tracker.PopulateFeedBacklog(s.GetContext(), s.broadcastServer)
 }
 
 func (s *TransactionStreamer) writeMessage(msgIdx arbutil.MessageIndex, msg arbostypes.MessageWithMetadataAndBlockInfo, batch ethdb.Batch) error {
@@ -1194,7 +1194,7 @@ func (s *TransactionStreamer) broadcastMessages(
 		return
 	}
 	arbOSVersion := func(idx arbutil.MessageIndex) (uint64, error) {
-		return s.exec.ArbOSVersionForMessageIndex(idx)
+		return s.exec.ArbOSVersionForMessageIndex(idx).Await(s.GetContext())
 	}
 	if err := s.broadcastServer.BroadcastMessages(msgs, firstMsgIdx, arbOSVersion); err != nil {
 		log.Error("failed broadcasting messages", "firstMsgIdx", firstMsgIdx, "err", err)
