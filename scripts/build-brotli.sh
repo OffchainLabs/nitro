@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 
-set -e
+set -euo pipefail
 
-mydir=$(dirname "$0")
+mydir=$(cd "$(dirname "$0")"; pwd)
 cd "$mydir"
 
 BUILD_WASM=false
@@ -64,53 +64,66 @@ while getopts "n:s:t:c:D:wldhf" option; do
             ;;
         *)
             usage
+            exit 1
             ;;
     esac
 done
 
 if ! $BUILD_WASM && ! $BUILD_LOCAL && ! $BUILD_SOFTFLOAT; then
     usage
-    exit
+    exit 1
 fi
 
 if [ ! -d "$TARGET_DIR" ]; then
     mkdir -p "${TARGET_DIR}/lib"
-    ln -s "lib" "${TARGET_DIR}/lib64" # Fedora build
+    ln -sf "lib" "${TARGET_DIR}/lib64" # Fedora build
 fi
 TARGET_DIR_ABS=$(cd -P "$TARGET_DIR"; pwd)
 
+docker_build() {
+    local target="$1"
+    DOCKER_BUILDKIT=1 docker build --target "$target" -o type=local,dest="$TARGET_DIR_ABS" "${NITRO_DIR}"
+}
 
 if $USE_DOCKER; then
-    if $BUILD_WASM; then
-        DOCKER_BUILDKIT=1 docker build --target brotli-wasm-export -o type=local,dest="$TARGET_DIR_ABS" "${NITRO_DIR}"
-    fi
-    if $BUILD_LOCAL; then
-        DOCKER_BUILDKIT=1 docker build --target brotli-library-export -o type=local,dest="$TARGET_DIR_ABS" "${NITRO_DIR}"
-    fi
-    if $BUILD_SOFTFLOAT; then
-        DOCKER_BUILDKIT=1 docker build --target wasm-libs-export -o type=local,dest="$TARGET_DIR_ABS" "${NITRO_DIR}"
-    fi
+    $BUILD_WASM && docker_build "brotli-wasm-export"
+    $BUILD_LOCAL && docker_build "brotli-library-export"
+    $BUILD_SOFTFLOAT && docker_build "wasm-libs-export"
     exit 0
 fi
 
 cd "$SOURCE_DIR"
-if $BUILD_WASM; then
-    mkdir -p buildfiles/build-wasm
-    mkdir -p buildfiles/install-wasm
-    TEMP_INSTALL_DIR_ABS=$(cd -P buildfiles/install-wasm; pwd)
-    cd buildfiles/build-wasm
-    cmake ../../ -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DCMAKE_C_COMPILER=emcc -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_FLAGS=-fPIC -DCMAKE_INSTALL_PREFIX="$TEMP_INSTALL_DIR_ABS" -DCMAKE_AR="$(which emar)" -DCMAKE_RANLIB="$(which touch)"
-    make -j
-    make install
-    cp -rv "$TEMP_INSTALL_DIR_ABS/lib" "$TARGET_DIR_ABS/lib-wasm"
-    cd ..
-fi
 
-if $BUILD_LOCAL; then
-    mkdir -p buildfiles/build-local
-    cd buildfiles/build-local
-    cmake ../../ -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$TARGET_DIR_ABS"
+cmake_build() {
+    local build_type="$1"
+    shift
+    local cmake_flags=("$@")
+
+    local build_dir="buildfiles/build-$build_type"
+    local install_dir="$TARGET_DIR_ABS"
+
+    if [ "$build_type" = "wasm" ]; then
+        mkdir -p buildfiles/install-wasm
+        install_dir=$(cd -P buildfiles/install-wasm; pwd)
+    fi
+
+    mkdir -p "$build_dir"
+    cd "$build_dir"
+
+    cmake ../../ -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
+                 -DCMAKE_BUILD_TYPE=Release \
+                 -DCMAKE_INSTALL_PREFIX="$install_dir" \
+                 "${cmake_flags[@]}"
+
     make -j
     make install
-    cd ..
-fi
+
+    if [ "$build_type" = "wasm" ]; then
+        cp -rv "$install_dir/lib" "$TARGET_DIR_ABS/lib-wasm"
+    fi
+
+    cd ../..
+}
+
+$BUILD_WASM && cmake_build "wasm" -DCMAKE_C_COMPILER=emcc -DCMAKE_C_FLAGS=-fPIC -DCMAKE_AR="$(which emar)" -DCMAKE_RANLIB="$(which touch)"
+$BUILD_LOCAL && cmake_build "local"
