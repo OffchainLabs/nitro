@@ -94,10 +94,11 @@ func (cm *ClientManager) registerClient(ctx context.Context, clientConnection *C
 
 // removeAll removes all clients after main ClientManager thread exits
 func (cm *ClientManager) removeAll() {
-	// Only called after main ClientManager thread exits, so remove client directly
-	for client := range cm.clientPtrMap {
-		cm.removeClientImpl(client)
-	}
+    // Only called after main ClientManager thread exits. Use removeClient to ensure
+    // connectionLimiter is released and clientPtrMap is cleaned consistently.
+    for client := range cm.clientPtrMap {
+        cm.removeClient(client)
+    }
 }
 
 func (cm *ClientManager) removeClientImpl(clientConnection *ClientConnection) {
