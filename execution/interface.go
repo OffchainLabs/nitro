@@ -93,7 +93,7 @@ type ExecutionSequencer interface {
 
 // needed for batch poster
 type ArbOSVersionGetter interface {
-	ArbOSVersionForMessageIndex(msgIdx arbutil.MessageIndex) (uint64, error)
+	ArbOSVersionForMessageIndex(msgIdx arbutil.MessageIndex) containers.PromiseInterface[uint64]
 }
 
 // not implemented in execution, used as input
