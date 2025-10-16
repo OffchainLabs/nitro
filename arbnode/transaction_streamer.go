@@ -401,11 +401,11 @@ func (s *TransactionStreamer) addMessagesAndReorg(batch ethdb.Batch, msgIdxOfFir
 
 	messagesWithComputedBlockHash := make([]arbostypes.MessageWithMetadataAndBlockInfo, 0, len(messagesResults))
 	for i := 0; i < len(messagesResults); i++ {
-		// #nosec G115
-		arbOSVersion, err := s.exec.ArbOSVersionForMessageIndex(msgIdxOfFirstMsgToAdd + arbutil.MessageIndex(i)).Await(s.GetContext())
+		// #nosec G115 -- message index arithmetic is safe within valid range
+		msgIdx := msgIdxOfFirstMsgToAdd + arbutil.MessageIndex(i)
+		arbOSVersion, err := s.exec.ArbOSVersionForMessageIndex(msgIdx).Await(s.GetContext())
 		if err != nil {
-			// #nosec G115
-			log.Warn("error getting arbOS version for message", "msgIdx", msgIdxOfFirstMsgToAdd+arbutil.MessageIndex(i), "err", err)
+			log.Warn("error getting arbOS version for message", "msgIdx", msgIdx, "err", err)
 		}
 
 		messagesWithComputedBlockHash = append(messagesWithComputedBlockHash, arbostypes.MessageWithMetadataAndBlockInfo{
