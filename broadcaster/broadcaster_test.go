@@ -9,10 +9,17 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
+	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
+	"github.com/stretchr/testify/require"
 )
+
+const chainId = uint64(5555)
 
 type predicate interface {
 	Test() bool
@@ -53,16 +60,8 @@ func (p *messageCountPredicate) Error() string {
 }
 
 func TestBroadcasterMessagesRemovedOnConfirmation(t *testing.T) {
-	ctx, cancelFunc := context.WithCancel(context.Background())
+	b, cancelFunc, _ := setup(t)
 	defer cancelFunc()
-
-	config := wsbroadcastserver.DefaultTestBroadcasterConfig
-
-	chainId := uint64(5555)
-	feedErrChan := make(chan error, 10)
-	b := NewBroadcaster(func() *wsbroadcastserver.BroadcasterConfig { return &config }, chainId, feedErrChan, nil)
-	Require(t, b.Initialize())
-	Require(t, b.Start(ctx))
 	defer b.StopAndWait()
 
 	expectMessageCount := func(count int, contextMessage string) predicate {
@@ -109,4 +108,58 @@ func TestBroadcasterMessagesRemovedOnConfirmation(t *testing.T) {
 func Require(t *testing.T, err error, printables ...interface{}) {
 	t.Helper()
 	testhelpers.RequireImpl(t, err, printables...)
+}
+
+func TestBatchDataStatsIsIncludedBasedOnArbOSVersion(t *testing.T) {
+	b, cancelFunc, signer := setup(t)
+	defer cancelFunc()
+	defer b.StopAndWait()
+
+	sequenceNumber := arbutil.MessageIndex(0)
+	message := arbostypes.EmptyTestMessageWithMetadata
+	batchDataStats := &arbostypes.BatchDataStats{1, 2}
+	message.Message.BatchDataStats = batchDataStats
+
+	// For ArbOS versions >= 50, BatchDataStats should be preserved
+	feedMsg, err := b.NewBroadcastFeedMessage(message, sequenceNumber, nil, nil, params.ArbosVersion_50)
+	Require(t, err)
+	require.Equal(t, batchDataStats, feedMsg.Message.Message.BatchDataStats)
+
+	hashWithStats, err := message.Hash(sequenceNumber, chainId)
+	Require(t, err)
+	signatureWithStats, err := signer(hashWithStats.Bytes())
+	Require(t, err)
+	require.Equal(t, signatureWithStats, feedMsg.Signature)
+
+	// For ArbOS versions < 50, BatchDataStats should be nil
+	feedMsg, err = b.NewBroadcastFeedMessage(message, sequenceNumber, nil, nil, params.ArbosVersion_41)
+	Require(t, err)
+	require.Nil(t, feedMsg.Message.Message.BatchDataStats)
+
+	message.Message.BatchDataStats = nil
+	hashWithoutStats, err := message.Hash(sequenceNumber, chainId)
+	Require(t, err)
+	signatureWithoutStats, err := signer(hashWithoutStats.Bytes())
+	Require(t, err)
+	require.Equal(t, signatureWithoutStats, feedMsg.Signature)
+}
+
+func setup(t *testing.T) (*Broadcaster, context.CancelFunc, signature.DataSignerFunc) {
+	ctx, cancelFunc := context.WithCancel(context.Background())
+
+	config := wsbroadcastserver.DefaultTestBroadcasterConfig
+
+	feedErrChan := make(chan error, 10)
+	signer := dataSigner(t)
+	b := NewBroadcaster(func() *wsbroadcastserver.BroadcasterConfig { return &config }, chainId, feedErrChan, signer)
+	Require(t, b.Initialize())
+	Require(t, b.Start(ctx))
+
+	return b, cancelFunc, signer
+}
+
+func dataSigner(t *testing.T) signature.DataSignerFunc {
+	testPrivateKey, err := crypto.GenerateKey()
+	testhelpers.RequireImpl(t, err)
+	return signature.DataSignerFromPrivateKey(testPrivateKey)
 }
