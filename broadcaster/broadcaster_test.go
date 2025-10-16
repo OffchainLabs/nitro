@@ -110,8 +110,3 @@ func Require(t *testing.T, err error, printables ...interface{}) {
 	t.Helper()
 	testhelpers.RequireImpl(t, err, printables...)
 }
-
-func Fail(t *testing.T, printables ...interface{}) {
-	t.Helper()
-	testhelpers.FailImpl(t, printables...)
-}
