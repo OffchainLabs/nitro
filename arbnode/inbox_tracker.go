@@ -314,15 +314,22 @@ func (t *InboxTracker) PopulateFeedBacklog(ctx context.Context, broadcastServer 
 
 		blockMetadata, err := t.txStreamer.BlockMetadataAtMessageIndex(seqNum)
 		if err != nil {
-			log.Warn("Error getting blockMetadata byte array from tx streamer", "err", err)
+			log.Warn("error getting blockMetadata byte array from tx streamer", "err", err)
 		}
 
 		arbOSVersion, err := t.txStreamer.exec.ArbOSVersionForMessageIndex(seqNum).Await(ctx)
 		if err != nil {
-			return fmt.Errorf("error getting ArbOS version for message %v: %w", seqNum, err)
+			log.Warn("error getting ArbOS version for message %v: %w", seqNum, err)
 		}
 
-		feedMessage, err := broadcastServer.NewBroadcastFeedMessage(*message, seqNum, blockHash, blockMetadata, arbOSVersion)
+		messageWithInfo := arbostypes.MessageWithMetadataAndBlockInfo{
+			MessageWithMeta: *message,
+			BlockHash:       blockHash,
+			BlockMetadata:   blockMetadata,
+			ArbOSVersion:    arbOSVersion,
+		}
+
+		feedMessage, err := broadcastServer.NewBroadcastFeedMessage(messageWithInfo, seqNum)
 		if err != nil {
 			return fmt.Errorf("error creating broadcast feed message %v: %w", seqNum, err)
 		}

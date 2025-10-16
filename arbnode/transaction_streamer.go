@@ -1035,9 +1035,7 @@ func (s *TransactionStreamer) ExpectChosenSequencer() error {
 
 func (s *TransactionStreamer) WriteMessageFromSequencer(
 	msgIdx arbutil.MessageIndex,
-	msgWithMeta arbostypes.MessageWithMetadata,
-	msgResult execution.MessageResult,
-	blockMetadata common.BlockMetadata,
+	msgWithInfo arbostypes.MessageWithMetadataAndBlockInfo,
 ) error {
 	if err := s.ExpectChosenSequencer(); err != nil {
 		return err
@@ -1104,24 +1102,18 @@ func (s *TransactionStreamer) WriteMessageFromSequencer(
 	}
 
 	if s.coordinator != nil {
-		if err := s.coordinator.SequencingMessage(msgIdx, &msgWithMeta, blockMetadata); err != nil {
+		if err := s.coordinator.SequencingMessage(msgIdx, &msgWithInfo.MessageWithMeta, msgWithInfo.BlockMetadata); err != nil {
 			return err
 		}
 	}
 
-	msgWithBlockInfo := arbostypes.MessageWithMetadataAndBlockInfo{
-		MessageWithMeta: msgWithMeta,
-		BlockHash:       &msgResult.BlockHash,
-		BlockMetadata:   blockMetadata,
-	}
-
-	if err := s.writeMessages(msgIdx, []arbostypes.MessageWithMetadataAndBlockInfo{msgWithBlockInfo}, nil); err != nil {
+	if err := s.writeMessages(msgIdx, []arbostypes.MessageWithMetadataAndBlockInfo{msgWithInfo}, nil); err != nil {
 		return err
 	}
 	if s.trackBlockMetadataFrom == 0 || msgIdx < s.trackBlockMetadataFrom {
-		msgWithBlockInfo.BlockMetadata = nil
+		msgWithInfo.BlockMetadata = nil
 	}
-	s.broadcastMessages([]arbostypes.MessageWithMetadataAndBlockInfo{msgWithBlockInfo}, msgIdx)
+	s.broadcastMessages([]arbostypes.MessageWithMetadataAndBlockInfo{msgWithInfo}, msgIdx)
 
 	return nil
 }
@@ -1403,12 +1395,7 @@ func (s *TransactionStreamer) ExecuteNextMsg(ctx context.Context) bool {
 		return false
 	}
 
-	msgWithBlockInfo := arbostypes.MessageWithMetadataAndBlockInfo{
-		MessageWithMeta: msgAndBlockInfo.MessageWithMeta,
-		BlockHash:       &msgResult.BlockHash,
-		BlockMetadata:   msgAndBlockInfo.BlockMetadata,
-	}
-	s.broadcastMessages([]arbostypes.MessageWithMetadataAndBlockInfo{msgWithBlockInfo}, msgIdxToExecute)
+	s.broadcastMessages([]arbostypes.MessageWithMetadataAndBlockInfo{*msgAndBlockInfo}, msgIdxToExecute)
 
 	return msgIdxToExecute+1 <= consensusHeadMsgIdx
 }
