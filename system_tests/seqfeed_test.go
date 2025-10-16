@@ -27,7 +27,7 @@ import (
 	"github.com/offchainlabs/nitro/broadcastclient"
 	"github.com/offchainlabs/nitro/broadcaster/backlog"
 	"github.com/offchainlabs/nitro/broadcaster/message"
-	"github.com/offchainlabs/nitro/execution"
+	"github.com/offchainlabs/nitro/consensus"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/relay"
 	"github.com/offchainlabs/nitro/util/signature"
@@ -156,7 +156,7 @@ func compareAllMsgResultsFromConsensusAndExecution(
 	ctx context.Context,
 	testClient *TestClient,
 	testScenario string,
-) *execution.MessageResult {
+) *consensus.MessageResult {
 	execHeadMsgIdx, err := testClient.ExecNode.HeadMessageIndex().Await(context.Background())
 	Require(t, err)
 	consensusHeadMsgIdx, err := testClient.ConsensusNode.TxStreamer.GetHeadMessageIndex()
@@ -168,7 +168,7 @@ func compareAllMsgResultsFromConsensusAndExecution(
 		)
 	}
 
-	var lastResult *execution.MessageResult
+	var lastResult *consensus.MessageResult
 	for msgIdx := arbutil.MessageIndex(0); msgIdx <= consensusHeadMsgIdx; msgIdx++ {
 		resultExec, err := testClient.ExecNode.ResultAtMessageIndex(arbutil.MessageIndex(msgIdx)).Await(ctx)
 		Require(t, err)

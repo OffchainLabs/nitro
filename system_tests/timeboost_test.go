@@ -757,6 +757,7 @@ func TestTimeboostBulkBlockMetadataFetcher(t *testing.T) {
 	rebuildStartPos := uint64(5)
 	blockMetadataFetcher, err := arbnode.NewBlockMetadataFetcher(ctx, arbnode.BlockMetadataFetcherConfig{Source: rpcclient.ClientConfig{URL: builder.L2.Stack.HTTPEndpoint()}}, arbDb, newNode.ExecNode, rebuildStartPos, builder.chainConfig.ChainID.Uint64())
 	Require(t, err)
+	Require(t, blockMetadataFetcher.InitializeTrackBlockMetadataFrom(ctx))
 	blockMetadataFetcher.Update(ctx)
 
 	// Check if all blockMetadata starting from rebuildStartPos was synced from bulk BlockMetadata API via the blockMetadataFetcher and that trackers for missing blockMetadata were cleared

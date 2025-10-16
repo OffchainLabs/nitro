@@ -71,6 +71,7 @@ type BlockMetadataFetcher struct {
 	db                     ethdb.Database
 	client                 *rpcclient.RpcClient
 	exec                   execution.ExecutionClient
+	startBlockNum          uint64
 	trackBlockMetadataFrom arbutil.MessageIndex
 	expectedChainId        uint64
 
@@ -84,17 +85,10 @@ func NewBlockMetadataFetcher(
 	c BlockMetadataFetcherConfig,
 	db ethdb.Database,
 	exec execution.ExecutionClient,
-	startPos uint64,
+	startBlockNum uint64,
 	expectedChainId uint64,
 ) (*BlockMetadataFetcher, error) {
-	var trackBlockMetadataFrom arbutil.MessageIndex
 	var err error
-	if startPos != 0 {
-		trackBlockMetadataFrom, err = exec.BlockNumberToMessageIndex(startPos).Await(ctx)
-		if err != nil {
-			return nil, err
-		}
-	}
 	client := rpcclient.NewRpcClient(func() *rpcclient.ClientConfig { return &c.Source }, nil)
 	if err = client.Start(ctx); err != nil {
 		return nil, err
@@ -110,14 +104,14 @@ func NewBlockMetadataFetcher(
 	}
 
 	fetcher := &BlockMetadataFetcher{
-		config:                 c,
-		db:                     db,
-		client:                 client,
-		exec:                   exec,
-		trackBlockMetadataFrom: trackBlockMetadataFrom,
-		expectedChainId:        expectedChainId,
-		chainIdChecked:         chainIdChecked,
-		currentSyncInterval:    c.SyncInterval,
+		config:              c,
+		db:                  db,
+		client:              client,
+		exec:                exec,
+		startBlockNum:       startBlockNum,
+		expectedChainId:     expectedChainId,
+		chainIdChecked:      chainIdChecked,
+		currentSyncInterval: c.SyncInterval,
 	}
 	return fetcher, nil
 }
@@ -247,9 +241,25 @@ func (b *BlockMetadataFetcher) Update(ctx context.Context) time.Duration {
 	return b.config.SyncInterval
 }
 
-func (b *BlockMetadataFetcher) Start(ctx context.Context) {
+// InitializeTrackBlockMetadataFrom is only used for testing purposes
+func (b *BlockMetadataFetcher) InitializeTrackBlockMetadataFrom(ctx context.Context) error {
+	var err error
+	if b.startBlockNum != 0 {
+		b.trackBlockMetadataFrom, err = b.exec.BlockNumberToMessageIndex(b.startBlockNum).Await(ctx)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (b *BlockMetadataFetcher) Start(ctx context.Context) error {
 	b.StopWaiter.Start(ctx, b)
+	if err := b.InitializeTrackBlockMetadataFrom(ctx); err != nil {
+		return err
+	}
 	b.CallIteratively(b.Update)
+	return nil
 }
 
 func (b *BlockMetadataFetcher) StopAndWait() {
