@@ -453,3 +453,30 @@ func (con ArbOwner) SetChainConfig(c ctx, evm mech, serializedChainConfig []byte
 func (con ArbOwner) SetCalldataPriceIncrease(c ctx, _ mech, enable bool) error {
 	return c.State.Features().SetCalldataPriceIncrease(enable)
 }
+
+// SetGasPricingConstraints sets the gas pricing constraints used by the Multi-Constraint Pricer.
+func (con ArbOwner) SetGasPricingConstraints(c ctx, evm mech, constraints [][2]uint64) error {
+	if len(constraints) == 0 {
+		return errors.New("must provide at least one constraint")
+	}
+
+	err := c.State.L2PricingState().ClearConstraints()
+	if err != nil {
+		return fmt.Errorf("failed to clear existing constraints: %w", err)
+	}
+
+	for _, constraint := range constraints {
+		target := constraint[0]
+		period := constraint[1]
+
+		if target == 0 || period == 0 {
+			return fmt.Errorf("invalid constraint with target %d and period %d", target, period)
+		}
+
+		err := c.State.L2PricingState().AddConstraint(target, period, 0)
+		if err != nil {
+			return fmt.Errorf("failed to add constraint (target: %d, period: %d): %w", target, period, err)
+		}
+	}
+	return nil
+}
