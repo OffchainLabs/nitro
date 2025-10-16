@@ -9,11 +9,11 @@ import (
 	"net"
 	"runtime/debug"
 
-	"github.com/ethereum/go-ethereum/params"
 	"github.com/gobwas/ws"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
