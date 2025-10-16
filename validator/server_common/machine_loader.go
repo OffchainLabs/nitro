@@ -69,7 +69,7 @@ func (l *MachineLoader[M]) ForEachReadyMachine(runme func(*M)) {
 	for _, stat := range l.machines {
 		if stat.Ready() {
 			machine, err := stat.Current()
-			if err != nil {
+			if err == nil {
 				runme(machine)
 			}
 		}
