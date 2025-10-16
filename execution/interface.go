@@ -108,7 +108,7 @@ type ConsensusInfo interface {
 }
 
 type ConsensusSequencer interface {
-	WriteMessageFromSequencer(msgIdx arbutil.MessageIndex, msgWithMeta arbostypes.MessageWithMetadata, msgResult MessageResult, blockMetadata common.BlockMetadata) containers.PromiseInterface[struct{}]
+	WriteMessageFromSequencer(msgIdx arbutil.MessageIndex, msgWithInfo arbostypes.MessageWithMetadataAndBlockInfo) containers.PromiseInterface[struct{}]
 	ExpectChosenSequencer() containers.PromiseInterface[struct{}]
 }
 
