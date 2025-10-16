@@ -488,7 +488,7 @@ func (n *ExecutionNode) SequenceDelayedMessage(message *arbostypes.L1IncomingMes
 func (n *ExecutionNode) ResultAtMessageIndex(msgIdx arbutil.MessageIndex) containers.PromiseInterface[*execution.MessageResult] {
 	return containers.NewReadyPromise(n.ExecEngine.ResultAtMessageIndex(msgIdx))
 }
-func (n *ExecutionNode) ArbOSVersionForMessageIndex(msgIdx arbutil.MessageIndex) (uint64, error) {
+func (n *ExecutionNode) ArbOSVersionForMessageIndex(msgIdx arbutil.MessageIndex) containers.PromiseInterface[uint64] {
 	return n.ExecEngine.ArbOSVersionForMessageIndex(msgIdx)
 }
 
