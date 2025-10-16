@@ -404,7 +404,7 @@ func (s *TransactionStreamer) addMessagesAndReorg(batch ethdb.Batch, msgIdxOfFir
 		// #nosec G115
 		arbOSVersion, err := s.exec.ArbOSVersionForMessageIndex(msgIdxOfFirstMsgToAdd + arbutil.MessageIndex(i)).Await(s.GetContext())
 		if err != nil {
-			return err
+			log.Warn("error getting arbOS version for message", "msgIdx", msgIdxOfFirstMsgToAdd+arbutil.MessageIndex(i), "err", err)
 		}
 
 		messagesWithComputedBlockHash = append(messagesWithComputedBlockHash, arbostypes.MessageWithMetadataAndBlockInfo{
@@ -535,7 +535,7 @@ func (s *TransactionStreamer) getMessageWithMetadataAndBlockInfo(msgIdx arbutil.
 
 	arbOSVersion, err := s.exec.ArbOSVersionForMessageIndex(msgIdx).Await(s.GetContext())
 	if err != nil {
-		return nil, err
+		log.Warn("Failed to get ArbOS version for message", "msgIdx", msgIdx, "err", err)
 	}
 
 	msgWithBlockInfo := arbostypes.MessageWithMetadataAndBlockInfo{
