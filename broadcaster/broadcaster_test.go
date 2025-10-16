@@ -9,14 +9,16 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
+
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
-	"github.com/stretchr/testify/require"
 )
 
 const chainId = uint64(5555)
@@ -117,19 +119,14 @@ func TestBatchDataStatsIsIncludedBasedOnArbOSVersion(t *testing.T) {
 
 	sequenceNumber := arbutil.MessageIndex(0)
 	message := arbostypes.EmptyTestMessageWithMetadata
-	batchDataStats := &arbostypes.BatchDataStats{1, 2}
+	batchDataStats := &arbostypes.BatchDataStats{Length: 1, NonZeros: 2}
 	message.Message.BatchDataStats = batchDataStats
 
 	// For ArbOS versions >= 50, BatchDataStats should be preserved
 	feedMsg, err := b.NewBroadcastFeedMessage(message, sequenceNumber, nil, nil, params.ArbosVersion_50)
 	Require(t, err)
 	require.Equal(t, batchDataStats, feedMsg.Message.Message.BatchDataStats)
-
-	hashWithStats, err := message.Hash(sequenceNumber, chainId)
-	Require(t, err)
-	signatureWithStats, err := signer(hashWithStats.Bytes())
-	Require(t, err)
-	require.Equal(t, signatureWithStats, feedMsg.Signature)
+	require.Equal(t, signMessage(t, message, sequenceNumber, signer), feedMsg.Signature)
 
 	// For ArbOS versions < 50, BatchDataStats should be nil
 	feedMsg, err = b.NewBroadcastFeedMessage(message, sequenceNumber, nil, nil, params.ArbosVersion_41)
@@ -137,11 +134,7 @@ func TestBatchDataStatsIsIncludedBasedOnArbOSVersion(t *testing.T) {
 	require.Nil(t, feedMsg.Message.Message.BatchDataStats)
 
 	message.Message.BatchDataStats = nil
-	hashWithoutStats, err := message.Hash(sequenceNumber, chainId)
-	Require(t, err)
-	signatureWithoutStats, err := signer(hashWithoutStats.Bytes())
-	Require(t, err)
-	require.Equal(t, signatureWithoutStats, feedMsg.Signature)
+	require.Equal(t, signMessage(t, message, sequenceNumber, signer), feedMsg.Signature)
 }
 
 func setup(t *testing.T) (*Broadcaster, context.CancelFunc, signature.DataSignerFunc) {
@@ -162,4 +155,12 @@ func dataSigner(t *testing.T) signature.DataSignerFunc {
 	testPrivateKey, err := crypto.GenerateKey()
 	testhelpers.RequireImpl(t, err)
 	return signature.DataSignerFromPrivateKey(testPrivateKey)
+}
+
+func signMessage(t *testing.T, message arbostypes.MessageWithMetadata, sequenceNumber arbutil.MessageIndex, signer signature.DataSignerFunc) []byte {
+	hash, err := message.Hash(sequenceNumber, chainId)
+	Require(t, err)
+	sig, err := signer(hash.Bytes())
+	Require(t, err)
+	return sig
 }
