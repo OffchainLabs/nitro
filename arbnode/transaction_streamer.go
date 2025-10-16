@@ -401,10 +401,16 @@ func (s *TransactionStreamer) addMessagesAndReorg(batch ethdb.Batch, msgIdxOfFir
 
 	messagesWithComputedBlockHash := make([]arbostypes.MessageWithMetadataAndBlockInfo, 0, len(messagesResults))
 	for i := 0; i < len(messagesResults); i++ {
+		arbOSVersion, err := s.exec.ArbOSVersionForMessageIndex(msgIdxOfFirstMsgToAdd + arbutil.MessageIndex(i)).Await(s.GetContext())
+		if err != nil {
+			return err
+		}
+
 		messagesWithComputedBlockHash = append(messagesWithComputedBlockHash, arbostypes.MessageWithMetadataAndBlockInfo{
 			MessageWithMeta: newMessages[i].MessageWithMeta,
 			BlockHash:       &messagesResults[i].BlockHash,
 			BlockMetadata:   common.EmptyBlockMetadata,
+			ArbOSVersion:    arbOSVersion,
 		})
 	}
 	s.broadcastMessages(messagesWithComputedBlockHash, msgIdxOfFirstMsgToAdd)
@@ -526,10 +532,16 @@ func (s *TransactionStreamer) getMessageWithMetadataAndBlockInfo(msgIdx arbutil.
 		return nil, err
 	}
 
+	arbOSVersion, err := s.exec.ArbOSVersionForMessageIndex(msgIdx).Await(s.GetContext())
+	if err != nil {
+		return nil, err
+	}
+
 	msgWithBlockInfo := arbostypes.MessageWithMetadataAndBlockInfo{
 		MessageWithMeta: *msg,
 		BlockHash:       blockHash,
 		BlockMetadata:   blockMetadata,
+		ArbOSVersion:    arbOSVersion,
 	}
 	return &msgWithBlockInfo, nil
 }
@@ -611,6 +623,7 @@ func (s *TransactionStreamer) AddBroadcastMessages(feedMessages []*message.Broad
 			MessageWithMeta: feedMessage.Message,
 			BlockHash:       feedMessage.BlockHash,
 			BlockMetadata:   feedMessage.BlockMetadata,
+			ArbOSVersion:    feedMessage.ArbOSVersion,
 		}
 		messages = append(messages, msgWithBlockInfo)
 		expectedMsgIdx++
@@ -739,6 +752,7 @@ func (s *TransactionStreamer) AddMessagesAndEndBatch(firstMsgIdx arbutil.Message
 			MessageWithMeta: message,
 			BlockHash:       &common.Hash{},
 			BlockMetadata:   common.EmptyBlockMetadata,
+			ArbOSVersion:    0,
 		})
 	}
 
