@@ -1,4 +1,4 @@
-package server_arb
+package proofenhancement
 
 import (
 	"context"
