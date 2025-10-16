@@ -325,6 +325,9 @@ func (cc *ClientConnection) writeRaw(p []byte) error {
 	cc.ioMutex.Lock()
 	defer cc.ioMutex.Unlock()
 
+	_ = cc.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+	defer cc.conn.SetWriteDeadline(time.Time{})
+	
 	_, err := cc.conn.Write(p)
 
 	return err
