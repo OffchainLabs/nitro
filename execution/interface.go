@@ -92,7 +92,7 @@ type ExecutionSequencer interface {
 }
 
 // needed for batch poster
-type ExecutionBatchPoster interface {
+type ArbOSVersionGetter interface {
 	ArbOSVersionForMessageIndex(msgIdx arbutil.MessageIndex) (uint64, error)
 }
 
