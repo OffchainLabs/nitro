@@ -256,7 +256,7 @@ func initTest(t *testing.T) int {
 	}
 	rand.Seed(seed)
 
-	runs := 2 ^ 32
+	runs := 1 << 32
 	if len(*testflag.RunsFlag) > 0 {
 		var err error
 		runs, err = strconv.Atoi(*testflag.RunsFlag)
