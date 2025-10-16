@@ -45,6 +45,7 @@ type L2StateBackend struct {
 	machineAtBlock          func(context.Context, uint64) (Machine, error)
 	maxWavmOpcodes          uint64
 	blockDivergenceHeight   uint64
+	divergenceBatch         uint64
 	posInBatchDivergence    int64
 	machineDivergenceStep   uint64
 	forceMachineBlockCompat bool
@@ -96,6 +97,14 @@ func WithMachineDivergenceStep(divergenceStep uint64) Opt {
 func WithBlockDivergenceHeight(divergenceHeight uint64) Opt {
 	return func(s *L2StateBackend) {
 		s.blockDivergenceHeight = divergenceHeight
+	}
+}
+
+// WithBatchDivergence configures the mock to diverge starting at the given batch number,
+// deriving the corresponding block divergence height during state construction.
+func WithBatchDivergence(batch uint64) Opt {
+	return func(s *L2StateBackend) {
+		s.divergenceBatch = batch
 	}
 }
 
@@ -168,7 +177,7 @@ func NewForSimpleMachine(
 	if s.maxWavmOpcodes == 0 {
 		return nil, errors.New("maxWavmOpcodes cannot be zero")
 	}
-	if s.blockDivergenceHeight > 0 && s.machineDivergenceStep == 0 {
+	if (s.blockDivergenceHeight > 0 || s.divergenceBatch > 0) && s.machineDivergenceStep == 0 {
 		return nil, errors.New("machineDivergenceStep cannot be zero if blockDivergenceHeight is non-zero")
 	}
 	nextMachineState := &protocol.ExecutionState{
@@ -182,6 +191,10 @@ func NewForSimpleMachine(
 		machHash := machine.Hash()
 		if machHash != state.GlobalState.Hash() {
 			return nil, fmt.Errorf("machine at block %v has hash %v but we expected hash %v", block, machine.Hash(), state.GlobalState.Hash())
+		}
+		// If divergence is configured by batch, derive the corresponding block height lazily.
+		if s.blockDivergenceHeight == 0 && s.divergenceBatch > 0 && state.GlobalState.Batch == s.divergenceBatch {
+			s.blockDivergenceHeight = block
 		}
 		if s.blockDivergenceHeight > 0 {
 			if block == s.blockDivergenceHeight {
