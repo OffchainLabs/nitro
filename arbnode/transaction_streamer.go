@@ -1318,7 +1318,7 @@ func (s *TransactionStreamer) checkResult(msgIdx arbutil.MessageIndex, msgResult
 			}
 		}
 		if s.config().ShutdownOnBlockhashMismatch {
-			s.fatalErrChan <- fmt.Errorf("%s: msgIdx: %d, expectedHash: %v actualHash: %v ", BlockHashMismatchLogMsg, msgIdx, msgAndBlockInfo.BlockHash, msgResult.BlockHash)
+			s.fatalErrChan <- fmt.Errorf("%s: msgIdx: %d, expectedHash: %v actualHash: %v", BlockHashMismatchLogMsg, msgIdx, msgAndBlockInfo.BlockHash, msgResult.BlockHash)
 		}
 	}
 }
