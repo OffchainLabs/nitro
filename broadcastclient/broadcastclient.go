@@ -462,6 +462,7 @@ func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
 				}
 				if res.Version == 1 {
 					if len(res.Messages) > 0 {
+						isValidSignature := true
 						for _, message := range res.Messages {
 							if message == nil {
 								log.Warn("ignoring nil feed message")
@@ -471,10 +472,15 @@ func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
 							err := bc.isValidSignature(ctx, message)
 							if err != nil {
 								log.Error("error validating feed signature", "error", err, "sequence number", message.SequenceNumber)
-								continue
+								isValidSignature = false
+								break
 							}
 
 							bc.nextSeqNum = message.SequenceNumber + 1
+						}
+						if !isValidSignature {
+							log.Error("error validating one or more feed signatures, skipping the message")
+							continue
 						}
 						if err := bc.txStreamer.AddBroadcastMessages(res.Messages); err != nil {
 							if errors.Is(err, TransactionStreamerBlockCreationStopped) {
