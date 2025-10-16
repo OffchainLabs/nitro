@@ -52,6 +52,22 @@ func (c *GasConstraint) Clear() error {
 	return nil
 }
 
+func (c *GasConstraint) Target() (uint64, error) {
+	return c.target.Get()
+}
+
+func (c *GasConstraint) Period() (uint64, error) {
+	return c.period.Get()
+}
+
+func (c *GasConstraint) Backlog() (uint64, error) {
+	return c.backlog.Get()
+}
+
+func (c *GasConstraint) SetBacklog(val uint64) error {
+	return c.backlog.Set(val)
+}
+
 type L2PricingState struct {
 	storage             *storage.Storage
 	speedLimitPerSecond storage.StorageBackedUint64
