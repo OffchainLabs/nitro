@@ -214,6 +214,10 @@ func (s *WSBroadcastServer) Start(ctx context.Context) error {
 	return err
 }
 
+func (s *WSBroadcastServer) GetContext() context.Context {
+	return s.clientManager.GetContext()
+}
+
 func (s *WSBroadcastServer) StartWithHeader(ctx context.Context, header ws.HandshakeHeader) error {
 	s.startMutex.Lock()
 	defer s.startMutex.Unlock()

@@ -105,7 +105,7 @@ func (b *Broadcaster) BroadcastSingleFeedMessage(bfm *m.BroadcastFeedMessage) {
 func (b *Broadcaster) BroadcastMessages(
 	messagesWithBlockInfo []arbostypes.MessageWithMetadataAndBlockInfo,
 	firstMsgIdx arbutil.MessageIndex,
-	arbOSVersion func(arbutil.MessageIndex) (uint64, error),
+	arbOSVersion func(context.Context, arbutil.MessageIndex) (uint64, error),
 ) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -118,7 +118,7 @@ func (b *Broadcaster) BroadcastMessages(
 		// #nosec G115
 		msgIdx := firstMsgIdx + arbutil.MessageIndex(i)
 
-		version, err := arbOSVersion(msgIdx)
+		version, err := arbOSVersion(b.server.GetContext(), msgIdx)
 		if err != nil {
 			return err
 		}

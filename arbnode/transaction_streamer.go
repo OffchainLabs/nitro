@@ -1193,8 +1193,8 @@ func (s *TransactionStreamer) broadcastMessages(
 	if s.broadcastServer == nil {
 		return
 	}
-	arbOSVersion := func(idx arbutil.MessageIndex) (uint64, error) {
-		return s.exec.ArbOSVersionForMessageIndex(idx).Await(s.GetContext())
+	arbOSVersion := func(ctx context.Context, idx arbutil.MessageIndex) (uint64, error) {
+		return s.exec.ArbOSVersionForMessageIndex(idx).Await(ctx)
 	}
 	if err := s.broadcastServer.BroadcastMessages(msgs, firstMsgIdx, arbOSVersion); err != nil {
 		log.Error("failed broadcasting messages", "firstMsgIdx", firstMsgIdx, "err", err)
