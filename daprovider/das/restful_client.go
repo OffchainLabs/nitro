@@ -79,15 +79,19 @@ func (c *RestfulDasClient) GetByHash(ctx context.Context, hash common.Hash) ([]b
 }
 
 func (c *RestfulDasClient) HealthCheck(ctx context.Context) error {
-	res, err := http.Get(c.url + healthRequestPath)
-	if err != nil {
-		return err
-	}
-	defer res.Body.Close()
-	if res.StatusCode != http.StatusOK {
-		return fmt.Errorf("HTTP error with status %d returned by server: %s", res.StatusCode, http.StatusText(res.StatusCode))
-	}
-	return nil
+    req, err := http.NewRequestWithContext(ctx, "GET", c.url+healthRequestPath, nil)
+    if err != nil {
+        return err
+    }
+    res, err := http.DefaultClient.Do(req)
+    if err != nil {
+        return err
+    }
+    defer res.Body.Close()
+    if res.StatusCode != http.StatusOK {
+        return fmt.Errorf("HTTP error with status %d returned by server: %s", res.StatusCode, http.StatusText(res.StatusCode))
+    }
+    return nil
 }
 
 func (c *RestfulDasClient) ExpirationPolicy(ctx context.Context) (dasutil.ExpirationPolicy, error) {
