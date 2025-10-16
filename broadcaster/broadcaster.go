@@ -11,7 +11,6 @@ import (
 
 	"github.com/gobwas/ws"
 
-	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 
@@ -41,13 +40,11 @@ func NewBroadcaster(config wsbroadcastserver.BroadcasterConfigFetcher, chainId u
 }
 
 func (b *Broadcaster) NewBroadcastFeedMessage(
-	message arbostypes.MessageWithMetadata,
+	messageWithInfo arbostypes.MessageWithMetadataAndBlockInfo,
 	sequenceNumber arbutil.MessageIndex,
-	blockHash *common.Hash,
-	blockMetadata common.BlockMetadata,
-	arbOSVersion uint64,
 ) (*m.BroadcastFeedMessage, error) {
-	if arbOSVersion < params.ArbosVersion_50 && message.Message != nil {
+	message := messageWithInfo.MessageWithMeta
+	if messageWithInfo.ArbOSVersion < params.ArbosVersion_50 && message.Message != nil {
 		message.Message.BatchDataStats = nil
 	}
 
@@ -66,18 +63,15 @@ func (b *Broadcaster) NewBroadcastFeedMessage(
 	return &m.BroadcastFeedMessage{
 		SequenceNumber: sequenceNumber,
 		Message:        message,
-		BlockHash:      blockHash,
+		BlockHash:      messageWithInfo.BlockHash,
 		Signature:      messageSignature,
-		BlockMetadata:  blockMetadata,
+		BlockMetadata:  messageWithInfo.BlockMetadata,
 	}, nil
 }
 
 func (b *Broadcaster) BroadcastSingle(
-	msg arbostypes.MessageWithMetadata,
+	msg arbostypes.MessageWithMetadataAndBlockInfo,
 	msgIdx arbutil.MessageIndex,
-	blockHash *common.Hash,
-	blockMetadata common.BlockMetadata,
-	arbOSVersion uint64,
 ) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -85,7 +79,7 @@ func (b *Broadcaster) BroadcastSingle(
 			err = errors.New("panic in BroadcastSingle")
 		}
 	}()
-	bfm, err := b.NewBroadcastFeedMessage(msg, msgIdx, blockHash, blockMetadata, arbOSVersion)
+	bfm, err := b.NewBroadcastFeedMessage(msg, msgIdx)
 	if err != nil {
 		return err
 	}
@@ -105,7 +99,6 @@ func (b *Broadcaster) BroadcastSingleFeedMessage(bfm *m.BroadcastFeedMessage) {
 func (b *Broadcaster) BroadcastMessages(
 	messagesWithBlockInfo []arbostypes.MessageWithMetadataAndBlockInfo,
 	firstMsgIdx arbutil.MessageIndex,
-	arbOSVersion func(arbutil.MessageIndex) (uint64, error),
 ) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -115,15 +108,7 @@ func (b *Broadcaster) BroadcastMessages(
 	}()
 	var feedMessages []*m.BroadcastFeedMessage
 	for i, msg := range messagesWithBlockInfo {
-		// #nosec G115
-		msgIdx := firstMsgIdx + arbutil.MessageIndex(i)
-
-		version, err := arbOSVersion(msgIdx)
-		if err != nil {
-			return err
-		}
-
-		bfm, err := b.NewBroadcastFeedMessage(msg.MessageWithMeta, msgIdx, msg.BlockHash, msg.BlockMetadata, version)
+		bfm, err := b.NewBroadcastFeedMessage(msg, firstMsgIdx+arbutil.MessageIndex(i)) // #nosec G115
 		if err != nil {
 			return err
 		}

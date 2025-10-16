@@ -24,6 +24,7 @@ type MessageWithMetadataAndBlockInfo struct {
 	MessageWithMeta MessageWithMetadata
 	BlockHash       *common.Hash
 	BlockMetadata   common.BlockMetadata
+	ArbOSVersion    uint64
 }
 
 var EmptyTestMessageWithMetadata = MessageWithMetadata{
