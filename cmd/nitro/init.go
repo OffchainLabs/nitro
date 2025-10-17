@@ -158,7 +158,7 @@ func downloadFile(ctx context.Context, initConfig *conf.InitConfig, url string, 
 				}
 			case <-resp.Done:
 				if err := resp.Err(); err != nil {
-					if resp.HTTPResponse.StatusCode == http.StatusNotFound {
+					if resp.HTTPResponse != nil && resp.HTTPResponse.StatusCode == http.StatusNotFound {
 						return "", notFoundError
 					}
 					fmt.Printf("\n  attempt %d failed: %v\n", attempt, err)
