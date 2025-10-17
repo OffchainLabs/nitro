@@ -12,10 +12,10 @@ import (
 )
 
 const (
-	// Enhancement flag in machine status byte
+	// Enhancement flag in machine status byte (first byte in proof)
 	ProofEnhancementFlag = 0x80
 
-	// Marker bytes for different enhancement types
+	// Marker bytes for different enhancement types (last byte in an un-enhanced proof)
 	MarkerCustomDAReadPreimage        = 0xDA
 	MarkerCustomDAValidateCertificate = 0xDB
 
