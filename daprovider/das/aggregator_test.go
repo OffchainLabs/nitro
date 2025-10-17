@@ -20,6 +20,7 @@ import (
 
 	"github.com/offchainlabs/nitro/blsSignatures"
 	"github.com/offchainlabs/nitro/daprovider/das/dasutil"
+	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/testhelpers/flag"
 )
 
@@ -147,19 +148,7 @@ func (w *WrapStore) Store(ctx context.Context, message []byte, timeout uint64) (
 	return nil, nil
 }
 
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
+// Use shared math helpers to avoid duplicating min/max logic in tests.
 
 func enableLogging() {
 	glogger := log.NewGlogHandler(
@@ -175,11 +164,11 @@ func testConfigurableStorageFailures(t *testing.T, shouldFailAggregation bool) {
 	numBackendDAS := (rand.Int() % 20) + 1
 	assumedHonest := (rand.Int() % numBackendDAS) + 1
 	var nFailures int
-	if shouldFailAggregation {
-		nFailures = max(assumedHonest, rand.Int()%(numBackendDAS+1))
-	} else {
-		nFailures = min(assumedHonest-1, rand.Int()%(numBackendDAS+1))
-	}
+    if shouldFailAggregation {
+        nFailures = int(arbmath.MaxInt(assumedHonest, rand.Int()%(numBackendDAS+1)))
+    } else {
+        nFailures = int(arbmath.MinInt(assumedHonest-1, rand.Int()%(numBackendDAS+1)))
+    }
 	nSuccesses := numBackendDAS - nFailures
 	log.Trace(fmt.Sprintf("Testing aggregator with K:%d with K=N+1-H, N:%d, H:%d, and %d successes", numBackendDAS+1-assumedHonest, numBackendDAS, assumedHonest, nSuccesses))
 
@@ -256,7 +245,7 @@ func initTest(t *testing.T) int {
 	}
 	rand.Seed(seed)
 
-	runs := 2 ^ 32
+	runs := 1 << 32
 	if len(*testflag.RunsFlag) > 0 {
 		var err error
 		runs, err = strconv.Atoi(*testflag.RunsFlag)
@@ -275,7 +264,7 @@ func initTest(t *testing.T) int {
 func TestDAS_LessThanHStorageFailures(t *testing.T) {
 	runs := initTest(t)
 
-	for i := 0; i < min(runs, 20); i++ {
+    for i := 0; i < int(arbmath.MinInt(runs, 20)); i++ {
 		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
 			t.Parallel()
 			testConfigurableStorageFailures(t, false)
@@ -285,7 +274,7 @@ func TestDAS_LessThanHStorageFailures(t *testing.T) {
 
 func TestDAS_AtLeastHStorageFailures(t *testing.T) {
 	runs := initTest(t)
-	for i := 0; i < min(runs, 10); i++ {
+    for i := 0; i < int(arbmath.MinInt(runs, 10)); i++ {
 		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
 			t.Parallel()
 			testConfigurableStorageFailures(t, true)
