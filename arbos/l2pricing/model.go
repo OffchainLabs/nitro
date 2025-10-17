@@ -29,7 +29,7 @@ func (ps *L2PricingState) AddToGasPool(gas int64) error {
 	if err != nil {
 		return err
 	}
-	backlog = addToBacklog(backlog, gas)
+	backlog = applyGasDelta(backlog, gas)
 	return ps.SetGasBacklog(backlog)
 }
 
@@ -44,7 +44,7 @@ func (ps *L2PricingState) AddToGasPoolMultiConstraints(gas int64) error {
 		if err != nil {
 			return fmt.Errorf("failed to get backlog of constraint %v: %w", i, err)
 		}
-		err = constraint.backlog.Set(addToBacklog(backlog, gas))
+		err = constraint.backlog.Set(applyGasDelta(backlog, gas))
 		if err != nil {
 			return fmt.Errorf("failed to set backlog of constraint %v: %w", i, err)
 		}
@@ -52,8 +52,8 @@ func (ps *L2PricingState) AddToGasPoolMultiConstraints(gas int64) error {
 	return nil
 }
 
-// addToBacklog grows the backlog if the gas is negative and pays off  if the gas is positive.
-func addToBacklog(backlog uint64, gas int64) uint64 {
+// applyGasDelta grows the backlog if the gas is negative and pays off  if the gas is positive.
+func applyGasDelta(backlog uint64, gas int64) uint64 {
 	if gas > 0 {
 		return arbmath.SaturatingUSub(backlog, uint64(gas))
 	} else {
@@ -89,7 +89,7 @@ func (ps *L2PricingState) UpdatePricingModelMultiConstraints(timePassed uint64) 
 		// Pay off backlog
 		backlog, _ := constraint.backlog.Get()
 		gas := arbmath.SaturatingCast[int64](arbmath.SaturatingUMul(timePassed, target))
-		backlog = addToBacklog(backlog, gas)
+		backlog = applyGasDelta(backlog, gas)
 		_ = constraint.backlog.Set(backlog)
 
 		// Calculate exponent with the formula backlog/divisor
