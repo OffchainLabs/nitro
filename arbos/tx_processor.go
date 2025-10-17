@@ -34,18 +34,19 @@ const GasEstimationL1PricePadding arbmath.Bips = 11000 // pad estimates by 10%
 // It tracks state for ArbOS, allowing it infuence in Geth's tx processing.
 // Public fields are accessible in precompiles.
 type TxProcessor struct {
-	msg              *core.Message
-	state            *arbosState.ArbosState
-	PosterFee        *big.Int // set once in GasChargingHook to track L1 calldata costs
-	posterGas        uint64
-	computeHoldGas   uint64 // amount of gas temporarily held to prevent compute from exceeding the gas limit
-	delayedInbox     bool   // whether this tx was submitted through the delayed inbox
-	Contracts        []*vm.Contract
-	Programs         map[common.Address]uint // # of distinct context spans for each program
-	TopTxType        *byte                   // set once in StartTxHook
-	evm              *vm.EVM
-	CurrentRetryable *common.Hash
-	CurrentRefundTo  *common.Address
+	msg                 *core.Message
+	state               *arbosState.ArbosState
+	PosterFee           *big.Int // set once in GasChargingHook to track L1 calldata costs
+	posterGas           uint64
+	computeHoldGas      uint64 // amount of gas temporarily held to prevent compute from exceeding the gas limit
+	delayedInbox        bool   // whether this tx was submitted through the delayed inbox
+	Contracts           []*vm.Contract
+	Programs            map[common.Address]uint // # of distinct context spans for each program
+	TopTxType           *byte                   // set once in StartTxHook
+	evm                 *vm.EVM
+	CurrentRetryable    *common.Hash
+	CurrentRefundTo     *common.Address
+	retryInfraFeePerGas *big.Int // snapshot of min(minBaseFee, effectiveBaseFee) for ArbitrumRetryTx
 
 	// Caches for the latest L1 block number and hash,
 	// for the NUMBER and BLOCKHASH opcodes.
@@ -68,6 +69,7 @@ func NewTxProcessor(evm *vm.EVM, msg *core.Message) *TxProcessor {
 		evm:                 evm,
 		CurrentRetryable:    nil,
 		CurrentRefundTo:     nil,
+		retryInfraFeePerGas: nil,
 		cachedL1BlockNumber: nil,
 		cachedL1BlockHashes: make(map[uint64]common.Hash),
 	}
@@ -407,6 +409,17 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, multiGasUsed multigas.MultiG
 		refundTo := tx.RefundTo
 		p.CurrentRetryable = &ticketId
 		p.CurrentRefundTo = &refundTo
+
+		// Snapshot infraFeePerGas = min(minBaseFee, effectiveBaseFee) for consistent refund split in EndTxHook
+		if p.state.ArbOSVersion() >= params.ArbosVersion_11 {
+			minBaseFee, err := p.state.L2PricingState().MinBaseFeeWei()
+			p.state.Restrict(err)
+			effectiveBaseFee := p.evm.Context.BaseFee
+			if effectiveBaseFee == nil {
+				effectiveBaseFee = big.NewInt(0)
+			}
+			p.retryInfraFeePerGas = arbmath.BigMin(minBaseFee, effectiveBaseFee)
+		}
 	}
 	return false, multigas.ZeroGas(), nil, nil
 }
@@ -605,10 +618,13 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 			infraFeeAccount, err := p.state.InfraFeeAccount()
 			p.state.Restrict(err)
 			if infraFeeAccount != (common.Address{}) {
-				minBaseFee, err := p.state.L2PricingState().MinBaseFeeWei()
-				p.state.Restrict(err)
-				// TODO MinBaseFeeWei change during RetryTx execution may cause incorrect calculation of the part of the refund that should be taken from infraFeeAccount. Unless the balances of network and infra fee accounts are too low, the amount transferred to refund address should remain correct.
-				infraFee := arbmath.BigMin(minBaseFee, effectiveBaseFee)
+				// Use the snapshot taken in StartTxHook to avoid changes mid-execution affecting refund split
+				infraFee := p.retryInfraFeePerGas
+				if infraFee == nil { // fallback for safety
+					minBaseFee, err := p.state.L2PricingState().MinBaseFeeWei()
+					p.state.Restrict(err)
+					infraFee = arbmath.BigMin(minBaseFee, effectiveBaseFee)
+				}
 				infraRefund := arbmath.BigMulByUint(infraFee, gasLeft)
 				infraRefund = takeFunds(networkRefund, infraRefund)
 				refund(infraFeeAccount, infraRefund, tracing.BalanceChangeTransferInfraRefund)
