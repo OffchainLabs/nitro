@@ -18,6 +18,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/triedb"
@@ -36,6 +37,7 @@ type Config struct {
 	Room               int    `koanf:"room"`
 	MinBlocksPerThread uint64 `koanf:"min-blocks-per-thread"`
 	TrieCleanLimit     int    `koanf:"trie-clean-limit"`
+	ValidateMultiGas   bool   `koanf:"validate-multigas"`
 
 	blocks [][2]uint64
 }
@@ -71,6 +73,7 @@ var DefaultConfig = Config{
 	Blocks:             `[[0,0]]`, // execute from chain start to chain end
 	MinBlocksPerThread: 0,
 	TrieCleanLimit:     0,
+	ValidateMultiGas:   false,
 	blocks:             nil,
 }
 
@@ -81,6 +84,7 @@ var TestConfig = Config{
 	Room:               util.GoMaxProcs(),
 	TrieCleanLimit:     600,
 	MinBlocksPerThread: 0,
+	ValidateMultiGas:   true,
 
 	blocks: [][2]uint64{},
 }
@@ -92,6 +96,7 @@ func ConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Int(prefix+".room", DefaultConfig.Room, "number of threads to parallelize blocks re-execution")
 	f.Uint64(prefix+".min-blocks-per-thread", DefaultConfig.MinBlocksPerThread, "minimum number of blocks to execute per thread. When mode is random this acts as the size of random block range sample")
 	f.Int(prefix+".trie-clean-limit", DefaultConfig.TrieCleanLimit, "memory allowance (MB) to use for caching trie nodes in memory")
+	f.Bool(prefix+".validate-multigas", DefaultConfig.ValidateMultiGas, "if set, validate the sum of multi-gas dimensions match the single-gas")
 }
 
 // lint:require-exhaustive-initialization
@@ -306,11 +311,25 @@ func (s *BlocksReExecutor) advanceStateUpToBlock(ctx context.Context, state *sta
 	}()
 	var block *types.Block
 	var err error
+	vmConfig := vm.Config{
+		ExposeMultiGas: s.config.ValidateMultiGas,
+	}
 	for ctx.Err() == nil {
-		state, block, err = arbitrum.AdvanceStateByBlock(ctx, s.blockchain, state, blockToRecreate, prevHash, nil)
+		var receipts types.Receipts
+		state, block, receipts, err = arbitrum.AdvanceStateByBlock(ctx, s.blockchain, state, blockToRecreate, prevHash, nil, vmConfig)
 		if err != nil {
 			return err
 		}
+
+		if vmConfig.ExposeMultiGas {
+			for _, receipt := range receipts {
+				if receipt.GasUsed != receipt.MultiGasUsed.SingleGas() {
+					return fmt.Errorf("multi-dimensional gas mismatch in block %d, txHash %s: gasUsed=%d, multiGasUsed=%d",
+						block.NumberU64(), receipt.TxHash, receipt.GasUsed, receipt.MultiGasUsed.SingleGas())
+				}
+			}
+		}
+
 		prevHash = block.Hash()
 		state, stateRelease, err = s.commitStateAndVerify(state, block.Root(), block.NumberU64())
 		if err != nil {
