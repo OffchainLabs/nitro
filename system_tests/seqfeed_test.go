@@ -19,7 +19,6 @@ import (
 
 	"github.com/offchainlabs/nitro/arbnode"
 	dbschema "github.com/offchainlabs/nitro/arbnode/db-schema"
-	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbos/util"
@@ -382,14 +381,11 @@ func testBlockHashComparison(t *testing.T, blockHash *common.Hash, mustMismatch 
 		RequestId:   nil,
 		L1BaseFee:   nil,
 	}
-	hooks := arbos.NewNoopSequencingHooks(types.Transactions{tx}, false)
+	hooks := gethexec.MakeZeroTxSizeSequencingHooks(types.Transactions{tx}, nil, nil, nil)
 	_, _, err = hooks.NextTxToSequence()
 	Require(t, err)
 	hooks.InsertLastTxError(nil)
-	l1IncomingMsg, err := gethexec.MessageFromTxes(
-		&l1IncomingMsgHeader,
-		hooks,
-	)
+	l1IncomingMsg, err := hooks.MessageFromTxes(&l1IncomingMsgHeader)
 	Require(t, err)
 
 	broadcastMessage := message.BroadcastMessage{

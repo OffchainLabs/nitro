@@ -17,6 +17,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
+	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
@@ -80,7 +81,7 @@ func TestSequencerBlockFilterAccept(t *testing.T) {
 	}
 }
 
-func setupSequencerFilterTest(t *testing.T, isBlockFilter bool) (*NodeBuilder, *arbostypes.L1IncomingMessageHeader, types.Transactions, arbos.SequencingHooks, func()) {
+func setupSequencerFilterTest(t *testing.T, isBlockFilter bool) (*NodeBuilder, *arbostypes.L1IncomingMessageHeader, types.Transactions, *gethexec.FullSequencingHooks, func()) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
@@ -109,53 +110,36 @@ func setupSequencerFilterTest(t *testing.T, isBlockFilter bool) (*NodeBuilder, *
 	txes = append(txes, builder.L2Info.PrepareTx("Owner", "User", builder.L2Info.TransferGas, big.NewInt(1e12), []byte{1, 2, 3}))
 	txes = append(txes, builder.L2Info.PrepareTx("User", "Owner", builder.L2Info.TransferGas, big.NewInt(1e12), nil))
 
-	hooks := NewTestSequencingHooks(txes, isBlockFilter, !isBlockFilter)
+	var preTxFilter func(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, *arbitrum_types.ConditionalOptions, common.Address, *arbos.L1Info) error
+	var postTxFilter func(*types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult) error
+	var blockFilter func(*types.Header, *state.StateDB, types.Transactions, types.Receipts) error
 
+	if isBlockFilter {
+		blockFilter = func(_ *types.Header, _ *state.StateDB, txes types.Transactions, _ types.Receipts) error {
+			if len(txes[1].Data()) > 0 {
+				return state.ErrArbTxFilter
+			}
+			return nil
+		}
+	} else {
+		preTxFilter = func(_ *params.ChainConfig, _ *types.Header, statedb *state.StateDB, _ *arbosState.ArbosState, tx *types.Transaction, _ *arbitrum_types.ConditionalOptions, _ common.Address, _ *arbos.L1Info) error {
+			if len(tx.Data()) > 0 {
+				statedb.FilterTx()
+			}
+			return nil
+		}
+		postTxFilter = func(_ *types.Header, statedb *state.StateDB, _ *arbosState.ArbosState, tx *types.Transaction, _ common.Address, _ uint64, _ *core.ExecutionResult) error {
+			if statedb.IsTxFiltered() {
+				return state.ErrArbTxFilter
+			}
+			return nil
+		}
+	}
+	hooks := gethexec.MakeZeroTxSizeSequencingHooks(txes, preTxFilter, postTxFilter, blockFilter)
 	cleanup := func() {
 		builderCleanup()
 		cancel()
 	}
 
 	return builder, header, txes, hooks, cleanup
-}
-
-type TestSequencingHooks struct {
-	*arbos.NoopSequencingHooks
-	isBlockFilter bool
-	isTxFilter    bool
-}
-
-func (t *TestSequencingHooks) PreTxFilter(config *params.ChainConfig, header *types.Header, db *state.StateDB, a *arbosState.ArbosState, transaction *types.Transaction, options *arbitrum_types.ConditionalOptions, address common.Address, info *arbos.L1Info) error {
-	if t.isTxFilter {
-		if len(transaction.Data()) > 0 {
-			db.FilterTx()
-		}
-	}
-	return nil
-}
-
-func (t *TestSequencingHooks) PostTxFilter(header *types.Header, db *state.StateDB, a *arbosState.ArbosState, transaction *types.Transaction, address common.Address, u uint64, result *core.ExecutionResult) error {
-	if t.isTxFilter {
-		if db.IsTxFiltered() {
-			return state.ErrArbTxFilter
-		}
-	}
-	return nil
-}
-
-func (t *TestSequencingHooks) BlockFilter(header *types.Header, db *state.StateDB, transactions types.Transactions, receipts types.Receipts) error {
-	if t.isBlockFilter {
-		if len(transactions[1].Data()) > 0 {
-			return state.ErrArbTxFilter
-		}
-	}
-	return nil
-}
-
-func NewTestSequencingHooks(txes types.Transactions, isBlockFilter bool, isTxFilter bool) *TestSequencingHooks {
-	return &TestSequencingHooks{
-		NoopSequencingHooks: arbos.NewNoopSequencingHooks(txes, false),
-		isBlockFilter:       isBlockFilter,
-		isTxFilter:          isTxFilter,
-	}
 }

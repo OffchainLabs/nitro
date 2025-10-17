@@ -122,16 +122,12 @@ type SequencingHooks interface {
 	PreTxFilter(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, *arbitrum_types.ConditionalOptions, common.Address, *L1Info) error
 	PostTxFilter(*types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult) error
 	BlockFilter(*types.Header, *state.StateDB, types.Transactions, types.Receipts) error
-	GetTxErrors() []error
 	InsertLastTxError(error)
-	ClearTxErrors()
 }
 
 type NoopSequencingHooks struct {
-	txs                    types.Transactions
-	scheduledTxsCount      int
-	discardInvalidTxsEarly bool
-	txErrors               []error
+	txs               types.Transactions
+	scheduledTxsCount int
 }
 
 func (n *NoopSequencingHooks) NextTxToSequence() (*types.Transaction, *arbitrum_types.ConditionalOptions, error) {
@@ -147,7 +143,7 @@ func (n *NoopSequencingHooks) NextTxToSequence() (*types.Transaction, *arbitrum_
 }
 
 func (n *NoopSequencingHooks) DiscardInvalidTxsEarly() bool {
-	return n.discardInvalidTxsEarly
+	return false
 }
 
 func (n *NoopSequencingHooks) SequencedTx(txId int) (*types.Transaction, error) {
@@ -174,24 +170,10 @@ func (n *NoopSequencingHooks) BlockFilter(header *types.Header, db *state.StateD
 	return nil
 }
 
-func (n *NoopSequencingHooks) GetTxErrors() []error {
-	return n.txErrors
-}
+func (n *NoopSequencingHooks) InsertLastTxError(err error) {}
 
-func (n *NoopSequencingHooks) InsertLastTxError(err error) {
-	n.txErrors = append(n.txErrors, err)
-}
-
-func (n *NoopSequencingHooks) ClearTxErrors() {
-	n.txErrors = nil
-}
-
-func NewNoopSequencingHooks(txes types.Transactions, discardInvalidTxsEarly bool) *NoopSequencingHooks {
-	return &NoopSequencingHooks{
-		txs:                    txes,
-		scheduledTxsCount:      0,
-		discardInvalidTxsEarly: discardInvalidTxsEarly,
-	}
+func NewNoopSequencingHooks(txes types.Transactions) *NoopSequencingHooks {
+	return &NoopSequencingHooks{txs: txes}
 }
 
 func ProduceBlock(
@@ -211,7 +193,7 @@ func ProduceBlock(
 		log.Warn("error parsing incoming message", "err", err)
 		txes = types.Transactions{}
 	}
-	hooks := NewNoopSequencingHooks(txes, false)
+	hooks := NewNoopSequencingHooks(txes)
 
 	return ProduceBlockAdvanced(
 		message.Header, delayedMessagesRead, lastBlockHeader, statedb, chainContext, hooks, isMsgForPrefetch, runCtx, exposeMultiGas,
@@ -299,7 +281,7 @@ func ProduceBlockAdvanced(
 			var conditionalOptions *arbitrum_types.ConditionalOptions
 			tx, conditionalOptions, err = sequencingHooks.NextTxToSequence()
 			if err != nil {
-				return nil, nil, fmt.Errorf("error fetching next transaction to sequence, userTxsProcessed: %d, hookTxErrors: %d, err: %w", userTxsProcessed, len(sequencingHooks.GetTxErrors()), err)
+				return nil, nil, fmt.Errorf("error fetching next transaction to sequence, userTxsProcessed: %d, err: %w", userTxsProcessed, err)
 			}
 			if tx == nil {
 				break
