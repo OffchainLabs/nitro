@@ -5,7 +5,7 @@ use crate::{ARGS, EVER_PAGES, EVM_DATA, KEYS, LOGS, OPEN_PAGES, OUTS};
 use arbutil::{
     benchmark::Benchmark,
     evm::{
-        api::{EvmApi, Gas, Ink, VecReader},
+        api::{CreateRespone, EvmApi, Gas, Ink, VecReader},
         user::UserOutcomeKind,
         EvmData,
     },
@@ -109,25 +109,25 @@ impl Program {
 pub struct MockEvmApi;
 
 impl EvmApi<VecReader> for MockEvmApi {
-    fn get_bytes32(&mut self, key: Bytes32, _evm_api_gas_to_use: Gas) -> (Bytes32, Gas) {
+    fn get_bytes32(&mut self, key: Bytes32, _evm_api_gas_to_use: Gas) -> Result<(Bytes32, Gas)> {
         let value = KEYS.lock().get(&key).cloned().unwrap_or_default();
-        (value, Gas(2100)) // pretend worst case
+        Ok((value, Gas(2100))) // pretend worst case
     }
 
-    fn cache_bytes32(&mut self, key: Bytes32, value: Bytes32) -> Gas {
+    fn cache_bytes32(&mut self, key: Bytes32, value: Bytes32) -> Result<Gas> {
         KEYS.lock().insert(key, value);
-        Gas(0)
+        Ok(Gas(0))
     }
 
-    fn flush_storage_cache(&mut self, _clear: bool, _gas_left: Gas) -> Result<Gas> {
-        Ok(Gas(22100) * KEYS.lock().len() as u64) // pretend worst case
+    fn flush_storage_cache(&mut self, _clear: bool, _gas_left: Gas) -> Result<(Gas, UserOutcomeKind)> {
+        Ok(((Gas(22100) * KEYS.lock().len() as u64), UserOutcomeKind::Success)) // pretend worst case
     }
 
-    fn get_transient_bytes32(&mut self, _key: Bytes32) -> Bytes32 {
+    fn get_transient_bytes32(&mut self, _key: Bytes32) -> Result<Bytes32> {
         unimplemented!()
     }
 
-    fn set_transient_bytes32(&mut self, _key: Bytes32, _value: Bytes32) -> Result<()> {
+    fn set_transient_bytes32(&mut self, _key: Bytes32, _value: Bytes32) -> Result<UserOutcomeKind> {
         unimplemented!()
     }
 
@@ -140,7 +140,7 @@ impl EvmApi<VecReader> for MockEvmApi {
         _gas_left: Gas,
         _gas_req: Gas,
         _value: Bytes32,
-    ) -> (u32, Gas, UserOutcomeKind) {
+    ) -> Result<(u32, Gas, UserOutcomeKind)> {
         unimplemented!()
     }
 
@@ -150,7 +150,7 @@ impl EvmApi<VecReader> for MockEvmApi {
         _calldata: &[u8],
         _gas_left: Gas,
         _gas_req: Gas,
-    ) -> (u32, Gas, UserOutcomeKind) {
+    ) -> Result<(u32, Gas, UserOutcomeKind)> {
         unimplemented!()
     }
 
@@ -160,7 +160,7 @@ impl EvmApi<VecReader> for MockEvmApi {
         _calldata: &[u8],
         _gas_left: Gas,
         _gas_req: Gas,
-    ) -> (u32, Gas, UserOutcomeKind) {
+    ) -> Result<(u32, Gas, UserOutcomeKind)> {
         unimplemented!()
     }
 
@@ -169,7 +169,7 @@ impl EvmApi<VecReader> for MockEvmApi {
         _code: Vec<u8>,
         _endowment: Bytes32,
         _gas: Gas,
-    ) -> (Result<Bytes20>, u32, Gas) {
+    ) -> Result<(CreateRespone, u32, Gas)> {
         unimplemented!()
     }
 
@@ -179,7 +179,7 @@ impl EvmApi<VecReader> for MockEvmApi {
         _endowment: Bytes32,
         _salt: Bytes32,
         _gas: Gas,
-    ) -> (Result<Bytes20>, u32, Gas) {
+    ) -> Result<(CreateRespone, u32, Gas)> {
         unimplemented!()
     }
 
@@ -192,7 +192,7 @@ impl EvmApi<VecReader> for MockEvmApi {
         Ok(())
     }
 
-    fn account_balance(&mut self, _address: Bytes20) -> (Bytes32, Gas) {
+    fn account_balance(&mut self, _address: Bytes20) -> Result<(Bytes32, Gas)> {
         unimplemented!()
     }
 
@@ -201,21 +201,21 @@ impl EvmApi<VecReader> for MockEvmApi {
         _arbos_version: u64,
         _address: Bytes20,
         _gas_left: Gas,
-    ) -> (VecReader, Gas) {
+    ) -> Result<(VecReader, Gas)> {
         unimplemented!()
     }
 
-    fn account_codehash(&mut self, _address: Bytes20) -> (Bytes32, Gas) {
+    fn account_codehash(&mut self, _address: Bytes20) -> Result<(Bytes32, Gas)> {
         unimplemented!()
     }
 
-    fn add_pages(&mut self, pages: u16) -> Gas {
+    fn add_pages(&mut self, pages: u16) ->Result<Gas> {
         let model = MemoryModel::new(2, 1000);
         unsafe {
             let (open, ever) = (OPEN_PAGES, EVER_PAGES);
             OPEN_PAGES = OPEN_PAGES.saturating_add(pages);
             EVER_PAGES = EVER_PAGES.max(OPEN_PAGES);
-            model.gas_cost(pages, open, ever)
+            Ok(model.gas_cost(pages, open, ever))
         }
     }
 

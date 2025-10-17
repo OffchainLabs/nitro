@@ -89,3 +89,27 @@ func (p *ParentChain) BlobFeePerByte(ctx context.Context, h *types.Header) (*big
 	}
 	return eip4844.CalcBlobFee(pCfg, header), nil
 }
+
+// SupportsCellProofs returns whether the parent chain has activated the Osaka fork
+// (Fusaka), which introduced cell proofs for blobs.
+// Passing in a nil header will use the time from the latest header.
+func (p *ParentChain) SupportsCellProofs(ctx context.Context, h *types.Header) (bool, error) {
+	header := h
+	if h == nil {
+		lh, err := p.L1Reader.LastHeader(ctx)
+		if err != nil {
+			return false, err
+		}
+		header = lh
+	}
+	pCfg, err := p.chainConfig()
+	if err != nil {
+		return false, err
+	}
+	if pCfg.IsArbitrum() {
+		// Arbitrum does not support blob transactions, so this should not have been called.
+		return false, nil
+	}
+	// arbosVersion 0 because we're checking L1 (not L2 Arbitrum)
+	return pCfg.IsOsaka(pCfg.LondonBlock, header.Time, 0), nil
+}
