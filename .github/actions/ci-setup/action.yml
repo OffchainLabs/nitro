@@ -23,6 +23,7 @@ runs:
       shell: bash
       run: echo -e "$(date +%s%3N)\tUpdate dependencies" >> "$TIMER_FILE"
 
+
     - name: Install dependencies
       run: sudo apt install -y wabt gotestsum
       shell: bash
