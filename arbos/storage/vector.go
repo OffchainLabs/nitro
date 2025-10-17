@@ -8,7 +8,7 @@ import (
 	"errors"
 )
 
-const storageVectorNumItensOffset uint64 = 0
+const subStorageVectorLengthOffset uint64 = 0
 
 // SubStorageVector is a storage space that contains a vector of sub-storages.
 // It keeps track of the number of sub-storages and It is possible to push and pop them.
@@ -21,7 +21,7 @@ type SubStorageVector struct {
 func OpenSubStorageVector(sto *Storage) *SubStorageVector {
 	return &SubStorageVector{
 		sto.WithoutCache(),
-		sto.OpenStorageBackedUint64(storageVectorNumItensOffset),
+		sto.OpenStorageBackedUint64(subStorageVectorLengthOffset),
 	}
 }
 
