@@ -80,7 +80,7 @@ func (b *Backend) GetAssertions(ctx context.Context, opts ...db.AssertionOption)
 		for _, a := range assertions {
 			fetchedAssertion, err := b.chainDataFetcher.GetAssertion(ctx, opts, protocol.AssertionHash{Hash: a.Hash})
 			if err != nil {
-				return nil, err
+				return nil, fmt.Errorf("failed to fetch assertion %#x: %w", a.Hash, err)
 			}
 			status, err := fetchedAssertion.Status(ctx, opts)
 			if err != nil {
@@ -157,7 +157,7 @@ func (b *Backend) GetEdges(ctx context.Context, opts ...db.EdgeOption) ([]*api.J
 		for _, e := range edges {
 			edgeOpt, err := chalManager.GetEdge(ctx, protocol.EdgeId{Hash: e.Id})
 			if err != nil {
-				return nil, err
+				return nil, fmt.Errorf("failed to get edge %#x: %w", e.Id, err)
 			}
 			if edgeOpt.IsNone() {
 				return nil, fmt.Errorf("edge with id %#x was nil onchain", e.Id)
@@ -165,33 +165,33 @@ func (b *Backend) GetEdges(ctx context.Context, opts ...db.EdgeOption) ([]*api.J
 			edge := edgeOpt.Unwrap()
 			status, err := edge.Status(ctx)
 			if err != nil {
-				return nil, err
+				return nil, fmt.Errorf("failed to get edge %#x status: %w", e.Id, err)
 			}
 			hasRival, err := edge.HasRival(ctx)
 			if err != nil {
-				return nil, err
+				return nil, fmt.Errorf("failed to check if edge %#x has rival: %w", e.Id, err)
 			}
 			hasLengthOneRival, err := edge.HasLengthOneRival(ctx)
 			if err != nil {
-				return nil, err
+				return nil, fmt.Errorf("failed to check if edge %#x has length one rival: %w", e.Id, err)
 			}
 			timeUnrivaled, err := edge.TimeUnrivaled(ctx)
 			if err != nil {
-				return nil, err
+				return nil, fmt.Errorf("failed to get edge %#x time unrivaled: %w", e.Id, err)
 			}
 			var lowerChildId, upperChildId common.Hash
 			var hasChildren bool
 			lowerChild, err := edge.LowerChild(ctx)
 			if err != nil {
-				return nil, err
+				return nil, fmt.Errorf("failed to get edge %#x lower child: %w", e.Id, err)
 			}
 			upperChild, err := edge.UpperChild(ctx)
 			if err != nil {
-				return nil, err
+				return nil, fmt.Errorf("failed to get edge %#x upper child: %w", e.Id, err)
 			}
 			assertionHash, err := edge.AssertionHash(ctx)
 			if err != nil {
-				return nil, err
+				return nil, fmt.Errorf("failed to get edge %#x assertion hash: %w", e.Id, err)
 			}
 			if lowerChild.IsSome() {
 				hasChildren = true
@@ -212,7 +212,7 @@ func (b *Backend) GetEdges(ctx context.Context, opts ...db.EdgeOption) ([]*api.J
 			if isRoyal {
 				inheritedTimer, err := b.chainWatcher.InheritedTimerForEdge(ctx, edge.Id())
 				if err != nil {
-					return nil, err
+					return nil, fmt.Errorf("failed to get inherited timer for edge %#x: %w", e.Id, err)
 				}
 				e.InheritedTimer = uint64(inheritedTimer)
 			}
