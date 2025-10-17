@@ -108,6 +108,48 @@ func getSpeedLimit(t *testing.T, pricing *L2PricingState) uint64 {
 	return value
 }
 
+func getConstraintsLength(t *testing.T, pricing *L2PricingState) uint64 {
+	length, err := pricing.ConstraintsLength()
+	Require(t, err)
+	return length
+}
+
+func TestGasConstraints(t *testing.T) {
+	pricing := PricingForTest(t)
+	if got := getConstraintsLength(t, pricing); got != 0 {
+		t.Fatalf("wrong number of constraints: got %v want 0", got)
+	}
+	const n uint64 = 10
+	for i := range n {
+		Require(t, pricing.AddConstraint(100*i+1, 100*i+2, 100*i+3))
+	}
+	if got := getConstraintsLength(t, pricing); got != n {
+		t.Fatalf("wrong number of constraints: got %v want %v", got, n)
+	}
+	for i := range n {
+		constraint := pricing.OpenConstraintAt(i)
+		target, err := constraint.target.Get()
+		Require(t, err)
+		if want := 100*i + 1; target != want {
+			t.Errorf("wrong target: got %v, want %v", target, want)
+		}
+		period, err := constraint.period.Get()
+		Require(t, err)
+		if want := 100*i + 2; period != want {
+			t.Errorf("wrong period: got %v, want %v", period, want)
+		}
+		backlog, err := constraint.backlog.Get()
+		Require(t, err)
+		if want := 100*i + 3; backlog != want {
+			t.Errorf("wrong backlog: got %v, want %v", backlog, want)
+		}
+	}
+	Require(t, pricing.ClearConstraints())
+	if got := getConstraintsLength(t, pricing); got != 0 {
+		t.Fatalf("wrong number of constraints: got %v want 0", got)
+	}
+}
+
 func Require(t *testing.T, err error, printables ...interface{}) {
 	t.Helper()
 	testhelpers.RequireImpl(t, err, printables...)
