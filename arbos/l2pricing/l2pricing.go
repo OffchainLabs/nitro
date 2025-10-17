@@ -13,6 +13,7 @@ import (
 
 const (
 	gasConstraintTargetOffset uint64 = iota
+	gasConstraintPeriodOffset
 	gasConstraintDivisorOffset
 	gasConstraintBacklogOffset
 )
@@ -21,6 +22,7 @@ const (
 // The divisor is based on the target and period, and can be computed by computeConstraintDivisor.
 type GasConstraint struct {
 	target  storage.StorageBackedUint64
+	period  storage.StorageBackedUint64
 	divisor storage.StorageBackedUint64
 	backlog storage.StorageBackedUint64
 }
@@ -28,6 +30,7 @@ type GasConstraint struct {
 func OpenGasConstraint(storage *storage.Storage) *GasConstraint {
 	return &GasConstraint{
 		target:  storage.OpenStorageBackedUint64(gasConstraintTargetOffset),
+		period:  storage.OpenStorageBackedUint64(gasConstraintPeriodOffset),
 		divisor: storage.OpenStorageBackedUint64(gasConstraintDivisorOffset),
 		backlog: storage.OpenStorageBackedUint64(gasConstraintBacklogOffset),
 	}
@@ -201,8 +204,11 @@ func (ps *L2PricingState) AddConstraint(target uint64, period uint64) error {
 	if err := constraint.target.Set(target); err != nil {
 		return fmt.Errorf("failed to set target: %w", err)
 	}
-	if err := constraint.divisor.Set(computeConstraintDivisor(target, period)); err != nil {
+	if err := constraint.period.Set(period); err != nil {
 		return fmt.Errorf("failed to set period: %w", err)
+	}
+	if err := constraint.divisor.Set(computeConstraintDivisor(target, period)); err != nil {
+		return fmt.Errorf("failed to set divisor: %w", err)
 	}
 	return nil
 }

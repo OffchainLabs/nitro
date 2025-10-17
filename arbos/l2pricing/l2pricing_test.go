@@ -133,10 +133,15 @@ func TestGasConstraints(t *testing.T) {
 		if want := 100*i + 1; target != want {
 			t.Errorf("wrong target: got %v, want %v", target, want)
 		}
-		period, err := constraint.divisor.Get()
+		period, err := constraint.period.Get()
 		Require(t, err)
-		if want := computeConstraintDivisor(100*i+1, 100*i+2); period != want {
+		if want := 100*i + 2; period != want {
 			t.Errorf("wrong period: got %v, want %v", period, want)
+		}
+		divisor, err := constraint.divisor.Get()
+		Require(t, err)
+		if want := computeConstraintDivisor(100*i+1, 100*i+2); divisor != want {
+			t.Errorf("wrong divisor: got %v, want %v", divisor, want)
 		}
 		backlog, err := constraint.backlog.Get()
 		Require(t, err)
