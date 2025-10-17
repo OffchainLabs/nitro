@@ -49,7 +49,7 @@ func TestCompareLecayPricingModelWithMultiConstraints(t *testing.T) {
 	_ = pricing.SetConstraintsFromLegacy()
 
 	// Compare the basefee for both models with different backlogs
-	for backlogShift := range uint64(16) {
+	for backlogShift := range uint64(32) {
 		for timePassed := range uint64(5) {
 			backlog := uint64(1 << backlogShift)
 
