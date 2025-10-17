@@ -103,11 +103,11 @@ func mainImpl() error {
 		return fmt.Errorf("failed to generate genesis hash: %w", err)
 	}
 	// To get send root from genesis block, we need to deserialize the header extra information
-	gensisBlockHeader := genesisBlock.Header()
-	gensisBlockHeaderInfo := types.DeserializeHeaderExtraInformation(gensisBlockHeader)
+	genesisBlockHeader := genesisBlock.Header()
+	genesisBlockHeaderInfo := types.DeserializeHeaderExtraInformation(genesisBlockHeader)
 	globalState := validator.GoGlobalState{
 		BlockHash:  genesisBlock.Hash(),
-		SendRoot:   gensisBlockHeaderInfo.SendRoot,
+		SendRoot:   genesisBlockHeaderInfo.SendRoot,
 		Batch:      1,
 		PosInBatch: 0,
 	}
@@ -147,7 +147,7 @@ func extractSerializedChainConfigFromJSON(genesisJson []byte) ([]byte, error) {
 	// Decode with json.NewDecoder
 	decoder := json.NewDecoder(strings.NewReader(jsonStr))
 
-	// Set decoded json feilds to map
+	// Set decoded json fields to map
 	var result map[string]json.RawMessage
 	if err := decoder.Decode(&result); err != nil {
 		return nil, fmt.Errorf("failed to decode JSON: %w", err)
