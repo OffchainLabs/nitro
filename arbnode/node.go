@@ -29,6 +29,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
+	nitroversionalerter "github.com/offchainlabs/nitro/arbnode/nitro-version-alerter"
 	"github.com/offchainlabs/nitro/arbnode/resourcemanager"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -48,8 +49,8 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/staker/bold"
-	"github.com/offchainlabs/nitro/staker/legacy"
-	"github.com/offchainlabs/nitro/staker/multi_protocol"
+	legacystaker "github.com/offchainlabs/nitro/staker/legacy"
+	multiprotocolstaker "github.com/offchainlabs/nitro/staker/multi_protocol"
 	"github.com/offchainlabs/nitro/staker/validatorwallet"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/contracts"
@@ -61,26 +62,27 @@ import (
 )
 
 type Config struct {
-	Sequencer                bool                           `koanf:"sequencer"`
-	ParentChainReader        headerreader.Config            `koanf:"parent-chain-reader" reload:"hot"`
-	InboxReader              InboxReaderConfig              `koanf:"inbox-reader" reload:"hot"`
-	DelayedSequencer         DelayedSequencerConfig         `koanf:"delayed-sequencer" reload:"hot"`
-	BatchPoster              BatchPosterConfig              `koanf:"batch-poster" reload:"hot"`
-	MessagePruner            MessagePrunerConfig            `koanf:"message-pruner" reload:"hot"`
-	BlockValidator           staker.BlockValidatorConfig    `koanf:"block-validator" reload:"hot"`
-	Feed                     broadcastclient.FeedConfig     `koanf:"feed" reload:"hot"`
-	Staker                   legacystaker.L1ValidatorConfig `koanf:"staker" reload:"hot"`
-	Bold                     bold.BoldConfig                `koanf:"bold"`
-	SeqCoordinator           SeqCoordinatorConfig           `koanf:"seq-coordinator"`
-	DataAvailability         das.DataAvailabilityConfig     `koanf:"data-availability"`
-	DAProvider               daclient.ClientConfig          `koanf:"da-provider" reload:"hot"`
-	SyncMonitor              SyncMonitorConfig              `koanf:"sync-monitor"`
-	Dangerous                DangerousConfig                `koanf:"dangerous"`
-	TransactionStreamer      TransactionStreamerConfig      `koanf:"transaction-streamer" reload:"hot"`
-	Maintenance              MaintenanceConfig              `koanf:"maintenance" reload:"hot"`
-	ResourceMgmt             resourcemanager.Config         `koanf:"resource-mgmt" reload:"hot"`
-	BlockMetadataFetcher     BlockMetadataFetcherConfig     `koanf:"block-metadata-fetcher" reload:"hot"`
-	ConsensusExecutionSyncer ConsensusExecutionSyncerConfig `koanf:"consensus-execution-syncer"`
+	Sequencer                bool                             `koanf:"sequencer"`
+	ParentChainReader        headerreader.Config              `koanf:"parent-chain-reader" reload:"hot"`
+	InboxReader              InboxReaderConfig                `koanf:"inbox-reader" reload:"hot"`
+	DelayedSequencer         DelayedSequencerConfig           `koanf:"delayed-sequencer" reload:"hot"`
+	BatchPoster              BatchPosterConfig                `koanf:"batch-poster" reload:"hot"`
+	MessagePruner            MessagePrunerConfig              `koanf:"message-pruner" reload:"hot"`
+	BlockValidator           staker.BlockValidatorConfig      `koanf:"block-validator" reload:"hot"`
+	Feed                     broadcastclient.FeedConfig       `koanf:"feed" reload:"hot"`
+	Staker                   legacystaker.L1ValidatorConfig   `koanf:"staker" reload:"hot"`
+	Bold                     bold.BoldConfig                  `koanf:"bold"`
+	SeqCoordinator           SeqCoordinatorConfig             `koanf:"seq-coordinator"`
+	DataAvailability         das.DataAvailabilityConfig       `koanf:"data-availability"`
+	DAProvider               daclient.ClientConfig            `koanf:"da-provider" reload:"hot"`
+	SyncMonitor              SyncMonitorConfig                `koanf:"sync-monitor"`
+	Dangerous                DangerousConfig                  `koanf:"dangerous"`
+	TransactionStreamer      TransactionStreamerConfig        `koanf:"transaction-streamer" reload:"hot"`
+	Maintenance              MaintenanceConfig                `koanf:"maintenance" reload:"hot"`
+	ResourceMgmt             resourcemanager.Config           `koanf:"resource-mgmt" reload:"hot"`
+	BlockMetadataFetcher     BlockMetadataFetcherConfig       `koanf:"block-metadata-fetcher" reload:"hot"`
+	ConsensusExecutionSyncer ConsensusExecutionSyncerConfig   `koanf:"consensus-execution-syncer"`
+	VersionAlerterServer     nitroversionalerter.ServerConfig `koanf:"version-alerter-server" reload:"hot"`
 	// SnapSyncConfig is only used for testing purposes, these should not be configured in production.
 	SnapSyncTest SnapSyncConfig
 }
@@ -160,6 +162,7 @@ func ConfigAddOptions(prefix string, f *pflag.FlagSet, feedInputEnable bool, fee
 	resourcemanager.ConfigAddOptions(prefix+".resource-mgmt", f)
 	BlockMetadataFetcherConfigAddOptions(prefix+".block-metadata-fetcher", f)
 	ConsensusExecutionSyncerConfigAddOptions(prefix+".consensus-execution-syncer", f)
+	nitroversionalerter.ServerConfigAddOptions(prefix+".version-alerter-server", f)
 }
 
 var ConfigDefault = Config{
@@ -183,6 +186,7 @@ var ConfigDefault = Config{
 	BlockMetadataFetcher:     DefaultBlockMetadataFetcherConfig,
 	Maintenance:              DefaultMaintenanceConfig,
 	ConsensusExecutionSyncer: DefaultConsensusExecutionSyncerConfig,
+	VersionAlerterServer:     nitroversionalerter.DefaultServerConfig,
 	SnapSyncTest:             DefaultSnapSyncConfig,
 }
 
@@ -1269,6 +1273,15 @@ func registerAPIs(currentNode *Node, stack *node.Node) {
 				val: currentNode.StatelessBlockValidator,
 			},
 			Public: false,
+		})
+	}
+	versionAlerterServerCfg := func() *nitroversionalerter.ServerConfig { return &currentNode.configFetcher.Get().VersionAlerterServer }
+	if versionAlerterServerCfg().Enable {
+		apis = append(apis, rpc.API{
+			Namespace: "arb",
+			Version:   "1.0",
+			Service:   nitroversionalerter.NewServer(versionAlerterServerCfg),
+			Public:    true,
 		})
 	}
 	stack.RegisterAPIs(apis)
