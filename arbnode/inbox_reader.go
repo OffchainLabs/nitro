@@ -665,7 +665,7 @@ func (r *InboxReader) getNextBlockToRead(ctx context.Context) (*big.Int, error) 
 	if delayedCount == 0 {
 		return new(big.Int).Set(r.firstMessageBlock), nil
 	}
-	_, _, parentChainBlockNumber, err := r.tracker.GetDelayedMessageAccumulatorAndParentChainBlockNumber(ctx, delayedCount-1)
+	parentChainBlockNumber, err := r.tracker.GetParentChainBlockNumberFor(ctx, delayedCount-1)
 	if err != nil {
 		return nil, err
 	}
