@@ -48,17 +48,17 @@ runs:
         path: ~/.cache/go-build
         key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
 
-    - name: Cache Rust build
-      uses: actions/cache@v4
-      with:
-        path: |
-          ~/.cargo/
-          arbitrator/target/
-          arbitrator/wasm-libraries/target/
-          arbitrator/wasm-libraries/soft-float/
-          target/etc/initial-machine-cache/
-          /home/runner/.rustup/toolchains/
-        key: ${{ runner.os }}-cargo-${{ steps.install-rust.outputs.version }}-${{ hashFiles('arbitrator/Cargo.lock') }}
+    # - name: Cache Rust build
+    #   uses: actions/cache@v4
+    #   with:
+    #     path: |
+    #       ~/.cargo/
+    #       arbitrator/target/
+    #       arbitrator/wasm-libraries/target/
+    #       arbitrator/wasm-libraries/soft-float/
+    #       target/etc/initial-machine-cache/
+    #       /home/runner/.rustup/toolchains/
+    #     key: ${{ runner.os }}-cargo-${{ steps.install-rust.outputs.version }}-${{ hashFiles('arbitrator/Cargo.lock') }}
 
     - name: Cache cbrotli
       id: cache-cbrotli
