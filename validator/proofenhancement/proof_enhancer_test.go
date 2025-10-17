@@ -322,6 +322,86 @@ func equal(a, b []byte) bool {
 	return true
 }
 
+func TestNewCustomDAProofEnhancer(t *testing.T) {
+	ctx := context.Background()
+
+	// Test data
+	testData := []byte("test custom DA data")
+	testCertificate := createTestCertificate(t, testData)
+	certHash := crypto.Keccak256Hash(testCertificate)
+	testOffset := uint64(10)
+
+	// Create sequencer message
+	sequencerMessage := make([]byte, 40+len(testCertificate))
+	copy(sequencerMessage[40:], testCertificate)
+
+	inboxTracker := &mockInboxTracker{
+		batchForMessage: 123,
+		found:           true,
+	}
+
+	inboxReader := &mockInboxReader{
+		sequencerMessage: sequencerMessage,
+	}
+
+	mockReadProof := []byte{0x01, 0x02, 0x03, 0x04}
+	mockValidityProof := []byte{0x01, 0x01}
+	mockValidator := &mockValidator{
+		generateReadPreimageProofResult: mockReadProof,
+		generateCertValidityProofResult: mockValidityProof,
+	}
+
+	// Create enhancer using convenience constructor
+	enhancer := NewCustomDAProofEnhancer(mockValidator, inboxTracker, inboxReader)
+
+	// Test ReadPreimage enhancement
+	t.Run("ReadPreimageEnhancement", func(t *testing.T) {
+		// Create proof with ReadPreimage marker
+		originalProofSize := 100
+		proof := make([]byte, originalProofSize+32+8+1)
+		proof[0] = ProofEnhancementFlag
+		for i := 1; i < originalProofSize; i++ {
+			proof[i] = byte(i)
+		}
+		copy(proof[originalProofSize:], certHash[:])
+		binary.BigEndian.PutUint64(proof[originalProofSize+32:], testOffset)
+		proof[originalProofSize+40] = MarkerCustomDAReadPreimage
+
+		enhanced, err := enhancer.EnhanceProof(ctx, arbutil.MessageIndex(42), proof)
+		if err != nil {
+			t.Fatalf("ReadPreimage enhancement failed: %v", err)
+		}
+
+		// Verify it was enhanced (flag removed)
+		if enhanced[0]&ProofEnhancementFlag != 0 {
+			t.Error("Enhancement flag not removed")
+		}
+	})
+
+	// Test ValidateCertificate enhancement
+	t.Run("ValidateCertificateEnhancement", func(t *testing.T) {
+		// Create proof with ValidateCertificate marker
+		originalProofSize := 100
+		proof := make([]byte, originalProofSize+32+1)
+		proof[0] = ProofEnhancementFlag
+		for i := 1; i < originalProofSize; i++ {
+			proof[i] = byte(i)
+		}
+		copy(proof[originalProofSize:], certHash[:])
+		proof[originalProofSize+32] = MarkerCustomDAValidateCertificate
+
+		enhanced, err := enhancer.EnhanceProof(ctx, arbutil.MessageIndex(789), proof)
+		if err != nil {
+			t.Fatalf("ValidateCertificate enhancement failed: %v", err)
+		}
+
+		// Verify it was enhanced (flag removed)
+		if enhanced[0]&ProofEnhancementFlag != 0 {
+			t.Error("Enhancement flag not removed")
+		}
+	})
+}
+
 func TestProofEnhancerErrorCases(t *testing.T) {
 	ctx := context.Background()
 

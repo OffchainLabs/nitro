@@ -7,6 +7,8 @@ import (
 	"fmt"
 
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/daprovider"
+	"github.com/offchainlabs/nitro/staker"
 )
 
 const (
@@ -60,6 +62,31 @@ func NewProofEnhancementManager() *ProofEnhancementManager {
 	return &ProofEnhancementManager{
 		enhancers: make(map[ProofMarker]ProofEnhancer),
 	}
+}
+
+// NewCustomDAProofEnhancer creates a ProofEnhancementManager pre-configured with both
+// CustomDA proof enhancers (ReadPreimage and ValidateCertificate). This is the recommended
+// constructor for production use with CustomDA systems.
+//
+// For testing or custom configurations, use NewProofEnhancementManager and RegisterEnhancer directly.
+func NewCustomDAProofEnhancer(
+	daValidator daprovider.Validator,
+	inboxTracker staker.InboxTrackerInterface,
+	inboxReader staker.InboxReaderInterface,
+) *ProofEnhancementManager {
+	manager := NewProofEnhancementManager()
+
+	// Register both CustomDA enhancers
+	manager.RegisterEnhancer(
+		MarkerCustomDAReadPreimage,
+		NewReadPreimageProofEnhancer(daValidator, inboxTracker, inboxReader),
+	)
+	manager.RegisterEnhancer(
+		MarkerCustomDAValidateCertificate,
+		NewValidateCertificateProofEnhancer(daValidator, inboxTracker, inboxReader),
+	)
+
+	return manager
 }
 
 // RegisterEnhancer registers an enhancer for a specific marker byte
