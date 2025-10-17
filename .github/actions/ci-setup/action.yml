@@ -15,17 +15,11 @@ runs:
         echo -e "$(date +%s%3N)\tBEGIN" >> "$TIMER_FILE"
         echo "TIMER_FILE=$TIMER_FILE" >> "$GITHUB_ENV"
 
-    - name: Update dependencies
-      run: sudo apt update
-      shell: bash
-    - name: ⏱️ mark — Update dependencies
-      if: always()
-      shell: bash
-      run: echo -e "$(date +%s%3N)\tUpdate dependencies" >> "$TIMER_FILE"
-
-
     - name: Install dependencies
-      run: sudo apt install -y wabt gotestsum
+      run: |
+        sudo apt-get -o Acquire::Retries=5 update
+        sudo apt-get install -y --no-install-recommends eatmydata
+        sudo eatmydata apt-get install -y --no-install-recommends wabt gotestsum
       shell: bash
     - name: ⏱️ mark — Install dependencies
       if: always()
