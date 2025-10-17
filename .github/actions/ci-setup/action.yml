@@ -15,17 +15,50 @@ runs:
         echo -e "$(date +%s%3N)\tBEGIN" >> "$TIMER_FILE"
         echo "TIMER_FILE=$TIMER_FILE" >> "$GITHUB_ENV"
 
-    - name: Install dependencies
-      run: |
-        sudo apt-get -o Acquire::Retries=5 update
-        sudo apt-get install -y --no-install-recommends eatmydata
-        sudo eatmydata apt-get install -y --no-install-recommends wabt gotestsum
+    - name: Update dependencies
+      run: sudo apt-get update
       shell: bash
+    - name: ⏱️ mark — Update dependencies
+      if: always()
+      shell: bash
+      run: echo -e "$(date +%s%3N)\tUpdate dependencies" >> "$TIMER_FILE"
+
+    # -------------------- HOST TOOLS CACHE --------------------
+    - name: Cache host tools (wabt, gotestsum)
+      id: cache-host-tools
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.local/bin/wat2wasm
+          ~/.local/bin/wasm2wat
+          ~/.local/bin/wabt-strip
+          ~/.local/bin/gotestsum
+        key: ${{ runner.os }}-hosttools-wabt-1.0.36-gotestsum-1.11.0
+
+    - name: Install host tools (wabt + gotestsum)
+      if: steps.cache-host-tools.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        set -euo pipefail
+        mkdir -p "$HOME/.local/bin"
+
+        # --- wabt (WebAssembly Binary Toolkit) ---
+        WABT_VERSION=1.0.36
+        TMP=$(mktemp -d)
+        curl -sSL "https://github.com/WebAssembly/wabt/releases/download/${WABT_VERSION}/wabt-${WABT_VERSION}-ubuntu-20.04.tar.gz" \
+          | tar -xz -C "$TMP"
+        cp "$TMP"/wabt-${WABT_VERSION}*/bin/* "$HOME/.local/bin/"
+
+        # --- gotestsum ---
+        go install gotest.tools/gotestsum@v1.11.0
+        ln -sf "$(go env GOPATH)/bin/gotestsum" "$HOME/.local/bin/gotestsum"
+
+        echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
     - name: ⏱️ mark — Install dependencies
       if: always()
       shell: bash
       run: echo -e "$(date +%s%3N)\tInstall dependencies" >> "$TIMER_FILE"
-
     - name: Setup Node.js
       uses: actions/setup-node@v5
       with:
