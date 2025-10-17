@@ -575,6 +575,7 @@ func testBatchPosterDelayBuffer(t *testing.T, delayBufferEnabled bool) {
 			// If the delay buffer is disabled, set max delay to zero to force it
 			CheckBatchCount(t, builder, initialBatchCount+batch)
 			builder.nodeConfig.BatchPoster.MaxDelay = 0
+			builder.L2.ConsensusConfigFetcher.Set(builder.nodeConfig)
 		}
 		// Run batch poster loop again, this one should post a batch
 		_, err = builder.L2.ConsensusNode.BatchPoster.MaybePostSequencerBatch(ctx)
@@ -586,6 +587,7 @@ func testBatchPosterDelayBuffer(t *testing.T, delayBufferEnabled bool) {
 		CheckBatchCount(t, builder, initialBatchCount+batch+1)
 		if !delayBufferEnabled {
 			builder.nodeConfig.BatchPoster.MaxDelay = time.Hour
+			builder.L2.ConsensusConfigFetcher.Set(builder.nodeConfig)
 		}
 	}
 }
@@ -629,6 +631,7 @@ func TestBatchPosterDelayBufferDontForceNonDelayedMessages(t *testing.T) {
 	builder.L2.ConsensusNode.BatchPoster.StopAndWait() // allow us to modify config and call loop at will
 	// Set delay to zero to force non-delayed messages
 	builder.nodeConfig.BatchPoster.MaxDelay = 0
+	builder.L2.ConsensusConfigFetcher.Set(builder.nodeConfig)
 	_, err := builder.L2.ConsensusNode.BatchPoster.MaybePostSequencerBatch(ctx)
 	Require(t, err)
 	for _, tx := range txs {
