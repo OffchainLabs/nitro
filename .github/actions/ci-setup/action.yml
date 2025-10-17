@@ -1,14 +1,27 @@
 ---
 name: Nitro CI Setup
-description: Common setup for Nitro CI jobs
+description: Common setup for Nitro CI jobs with per-step timing
 
 runs:
   using: composite
 
   steps:
+    # -------------------- TIMING: INIT --------------------
+    - name: ⏱️ Init timing
+      shell: bash
+      run: |
+        TIMER_FILE="$RUNNER_TEMP/step-marks.tsv"
+        echo -e "ts_ms\tlabel" > "$TIMER_FILE"
+        echo -e "$(date +%s%3N)\tBEGIN" >> "$TIMER_FILE"
+        echo "TIMER_FILE=$TIMER_FILE" >> "$GITHUB_ENV"
+
     - name: Install dependencies
       run: sudo apt update && sudo apt install -y wabt gotestsum
       shell: bash
+    - name: ⏱️ mark — Install dependencies
+      if: always()
+      shell: bash
+      run: echo -e "$(date +%s%3N)\tInstall dependencies" >> "$TIMER_FILE"
 
     - name: Setup Node.js
       uses: actions/setup-node@v5
@@ -16,49 +29,81 @@ runs:
         node-version: "24"
         cache: yarn
         cache-dependency-path: "**/yarn.lock"
+    - name: ⏱️ mark — Setup Node.js
+      if: always()
+      shell: bash
+      run: echo -e "$(date +%s%3N)\tSetup Node.js" >> "$TIMER_FILE"
 
     - name: Setup Go
       uses: actions/setup-go@v6
       with:
         go-version-file: "go.mod"
+    - name: ⏱️ mark — Setup Go
+      if: always()
+      shell: bash
+      run: echo -e "$(date +%s%3N)\tSetup Go" >> "$TIMER_FILE"
 
     - name: Install wasm-ld
       run: |
         sudo apt-get update && sudo apt-get install -y lld-14
         sudo ln -s /usr/bin/wasm-ld-14 /usr/local/bin/wasm-ld
       shell: bash
+    - name: ⏱️ mark — Install wasm-ld
+      if: always()
+      shell: bash
+      run: echo -e "$(date +%s%3N)\tInstall wasm-ld" >> "$TIMER_FILE"
 
     - name: Install rust
       id: install-rust
       uses: ./.github/actions/install-rust
+    - name: ⏱️ mark — Install rust
+      if: always()
+      shell: bash
+      run: echo -e "$(date +%s%3N)\tInstall rust" >> "$TIMER_FILE"
 
     - name: Setup Foundry
       uses: foundry-rs/foundry-toolchain@v1
       with:
         cache: false
         version: v1.0.0
+    - name: ⏱️ mark — Setup Foundry
+      if: always()
+      shell: bash
+      run: echo -e "$(date +%s%3N)\tSetup Foundry" >> "$TIMER_FILE"
 
     - name: Install cbindgen
       run: cargo install --force cbindgen
       shell: bash
+    - name: ⏱️ mark — Install cbindgen
+      if: always()
+      shell: bash
+      run: echo -e "$(date +%s%3N)\tInstall cbindgen" >> "$TIMER_FILE"
 
     - name: Cache Go build
       uses: actions/cache@v4
       with:
         path: ~/.cache/go-build
         key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+    - name: ⏱️ mark — Cache Go build
+      if: always()
+      shell: bash
+      run: echo -e "$(date +%s%3N)\tCache Go build" >> "$TIMER_FILE"
 
-    # - name: Cache Rust build
-    #   uses: actions/cache@v4
-    #   with:
-    #     path: |
-    #       ~/.cargo/
-    #       arbitrator/target/
-    #       arbitrator/wasm-libraries/target/
-    #       arbitrator/wasm-libraries/soft-float/
-    #       target/etc/initial-machine-cache/
-    #       /home/runner/.rustup/toolchains/
-    #     key: ${{ runner.os }}-cargo-${{ steps.install-rust.outputs.version }}-${{ hashFiles('arbitrator/Cargo.lock') }}
+    - name: Cache Rust build
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/
+          arbitrator/target/
+          arbitrator/wasm-libraries/target/
+          arbitrator/wasm-libraries/soft-float/
+          target/etc/initial-machine-cache/
+          /home/runner/.rustup/toolchains/
+        key: ${{ runner.os }}-cargo-${{ steps.install-rust.outputs.version }}-${{ hashFiles('arbitrator/Cargo.lock') }}
+    - name: ⏱️ mark — Cache Rust build
+      if: always()
+      shell: bash
+      run: echo -e "$(date +%s%3N)\tCache Rust build" >> "$TIMER_FILE"
 
     - name: Cache cbrotli
       id: cache-cbrotli
@@ -71,13 +116,55 @@ runs:
           target/lib/libbrotlienc-static.a
           target/lib/libbrotlidec-static.a
         key: ${{ runner.os }}-brotli-${{ hashFiles('scripts/build-brotli.sh') }}
+    - name: ⏱️ mark — Cache cbrotli
+      if: always()
+      shell: bash
+      run: echo -e "$(date +%s%3N)\tCache cbrotli" >> "$TIMER_FILE"
 
     - name: Build cbrotli-local
       if: steps.cache-cbrotli.outputs.cache-hit != 'true'
       run: ./scripts/build-brotli.sh -l
       shell: bash
+    - name: ⏱️ mark — Build cbrotli-local
+      if: always()
+      shell: bash
+      run: echo -e "$(date +%s%3N)\tBuild cbrotli-local" >> "$TIMER_FILE"
 
     - name: Build cbrotli-wasm in docker
       if: steps.cache-cbrotli.outputs.cache-hit != 'true'
       run: ./scripts/build-brotli.sh -w -d
       shell: bash
+    - name: ⏱️ mark — Build cbrotli-wasm in docker
+      if: always()
+      shell: bash
+      run: echo -e "$(date +%s%3N)\tBuild cbrotli-wasm in docker" >> "$TIMER_FILE"
+
+    # -------------------- TIMING: SUMMARIZE --------------------
+    - name: ⏱️ Summarize step timings
+      if: always()
+      shell: bash
+      run: |
+        python - <<'PY' | tee -a "$GITHUB_STEP_SUMMARY"
+        import os, sys
+        tf = os.environ.get("TIMER_FILE")
+        if not tf or not os.path.exists(tf):
+            print("No timing data found.")
+            sys.exit(0)
+        marks = []
+        with open(tf, "r") as f:
+            next(f)
+            for line in f:
+                line=line.strip()
+                if not line: continue
+                ts,label = line.split("\t", 1)
+                marks.append((int(ts), label))
+        print("## ⏱️ Nitro CI Setup — Per-Step Timings")
+        print()
+        print("| Step | Duration |")
+        print("|---|---|")
+        for i in range(1, len(marks)):
+            ms = marks[i][0] - marks[i-1][0]
+            s = ms // 1000
+            rem = ms % 1000
+            print(f"| {marks[i][1]} | {s}.{rem:03d}s |")
+        PY
