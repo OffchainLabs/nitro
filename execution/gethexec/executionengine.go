@@ -475,7 +475,7 @@ func (s *ExecutionEngine) resequenceReorgedMessages(messages []*arbostypes.Messa
 			log.Warn("failed to parse sequencer message found from reorg", "err", err)
 			continue
 		}
-		hooks := arbos.NewNoopSequencingHooks(txes, false, false, true)
+		hooks := arbos.NewNoopSequencingHooks(txes, true)
 		block, err := s.sequenceTransactionsWithBlockMutex(msg.Message.Header, hooks, nil)
 		if err != nil {
 			log.Error("failed to re-sequence old user message removed by reorg", "err", err)

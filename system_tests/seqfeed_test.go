@@ -382,7 +382,7 @@ func testBlockHashComparison(t *testing.T, blockHash *common.Hash, mustMismatch 
 		RequestId:   nil,
 		L1BaseFee:   nil,
 	}
-	hooks := arbos.NewNoopSequencingHooks(types.Transactions{tx}, false, false, false)
+	hooks := arbos.NewNoopSequencingHooks(types.Transactions{tx}, false)
 	_, _, err = hooks.NextTxToSequence()
 	Require(t, err)
 	hooks.InsertLastTxError(nil)

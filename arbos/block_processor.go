@@ -130,8 +130,6 @@ type SequencingHooks interface {
 type NoopSequencingHooks struct {
 	txs                    types.Transactions
 	scheduledTxsCount      int
-	isBlockFilter          bool
-	isTxFilter             bool
 	discardInvalidTxsEarly bool
 	txErrors               []error
 }
@@ -165,29 +163,14 @@ func (n *NoopSequencingHooks) SequencedTx(txId int) (*types.Transaction, error) 
 }
 
 func (n *NoopSequencingHooks) PreTxFilter(config *params.ChainConfig, header *types.Header, db *state.StateDB, a *arbosState.ArbosState, transaction *types.Transaction, options *arbitrum_types.ConditionalOptions, address common.Address, info *L1Info) error {
-	if n.isTxFilter {
-		if len(transaction.Data()) > 0 {
-			db.FilterTx()
-		}
-	}
 	return nil
 }
 
 func (n *NoopSequencingHooks) PostTxFilter(header *types.Header, db *state.StateDB, a *arbosState.ArbosState, transaction *types.Transaction, address common.Address, u uint64, result *core.ExecutionResult) error {
-	if n.isTxFilter {
-		if db.IsTxFiltered() {
-			return state.ErrArbTxFilter
-		}
-	}
 	return nil
 }
 
 func (n *NoopSequencingHooks) BlockFilter(header *types.Header, db *state.StateDB, transactions types.Transactions, receipts types.Receipts) error {
-	if n.isBlockFilter {
-		if len(transactions[1].Data()) > 0 {
-			return state.ErrArbTxFilter
-		}
-	}
 	return nil
 }
 
@@ -203,12 +186,10 @@ func (n *NoopSequencingHooks) ClearTxErrors() {
 	n.txErrors = nil
 }
 
-func NewNoopSequencingHooks(txes types.Transactions, isBlockFilter bool, isTxFilter bool, discardInvalidTxsEarly bool) *NoopSequencingHooks {
+func NewNoopSequencingHooks(txes types.Transactions, discardInvalidTxsEarly bool) *NoopSequencingHooks {
 	return &NoopSequencingHooks{
 		txs:                    txes,
 		scheduledTxsCount:      0,
-		isBlockFilter:          isBlockFilter,
-		isTxFilter:             isTxFilter,
 		discardInvalidTxsEarly: discardInvalidTxsEarly,
 	}
 }
@@ -230,7 +211,7 @@ func ProduceBlock(
 		log.Warn("error parsing incoming message", "err", err)
 		txes = types.Transactions{}
 	}
-	hooks := NewNoopSequencingHooks(txes, false, false, false)
+	hooks := NewNoopSequencingHooks(txes, false)
 
 	return ProduceBlockAdvanced(
 		message.Header, delayedMessagesRead, lastBlockHeader, statedb, chainContext, hooks, isMsgForPrefetch, runCtx, exposeMultiGas,

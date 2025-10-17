@@ -6,10 +6,15 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum/arbitrum_types"
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos"
+	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -104,7 +109,7 @@ func setupSequencerFilterTest(t *testing.T, isBlockFilter bool) (*NodeBuilder, *
 	txes = append(txes, builder.L2Info.PrepareTx("Owner", "User", builder.L2Info.TransferGas, big.NewInt(1e12), []byte{1, 2, 3}))
 	txes = append(txes, builder.L2Info.PrepareTx("User", "Owner", builder.L2Info.TransferGas, big.NewInt(1e12), nil))
 
-	hooks := arbos.NewNoopSequencingHooks(txes, isBlockFilter, !isBlockFilter, false)
+	hooks := NewTestSequencingHooks(txes, isBlockFilter, !isBlockFilter)
 
 	cleanup := func() {
 		builderCleanup()
@@ -112,4 +117,45 @@ func setupSequencerFilterTest(t *testing.T, isBlockFilter bool) (*NodeBuilder, *
 	}
 
 	return builder, header, txes, hooks, cleanup
+}
+
+type TestSequencingHooks struct {
+	*arbos.NoopSequencingHooks
+	isBlockFilter bool
+	isTxFilter    bool
+}
+
+func (t *TestSequencingHooks) PreTxFilter(config *params.ChainConfig, header *types.Header, db *state.StateDB, a *arbosState.ArbosState, transaction *types.Transaction, options *arbitrum_types.ConditionalOptions, address common.Address, info *arbos.L1Info) error {
+	if t.isTxFilter {
+		if len(transaction.Data()) > 0 {
+			db.FilterTx()
+		}
+	}
+	return nil
+}
+
+func (t *TestSequencingHooks) PostTxFilter(header *types.Header, db *state.StateDB, a *arbosState.ArbosState, transaction *types.Transaction, address common.Address, u uint64, result *core.ExecutionResult) error {
+	if t.isTxFilter {
+		if db.IsTxFiltered() {
+			return state.ErrArbTxFilter
+		}
+	}
+	return nil
+}
+
+func (t *TestSequencingHooks) BlockFilter(header *types.Header, db *state.StateDB, transactions types.Transactions, receipts types.Receipts) error {
+	if t.isBlockFilter {
+		if len(transactions[1].Data()) > 0 {
+			return state.ErrArbTxFilter
+		}
+	}
+	return nil
+}
+
+func NewTestSequencingHooks(txes types.Transactions, isBlockFilter bool, isTxFilter bool) *TestSequencingHooks {
+	return &TestSequencingHooks{
+		NoopSequencingHooks: arbos.NewNoopSequencingHooks(txes, false),
+		isBlockFilter:       isBlockFilter,
+		isTxFilter:          isTxFilter,
+	}
 }
