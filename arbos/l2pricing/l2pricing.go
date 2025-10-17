@@ -40,6 +40,9 @@ func (c *GasConstraint) Clear() error {
 	if err := c.target.Clear(); err != nil {
 		return err
 	}
+	if err := c.period.Clear(); err != nil {
+		return err
+	}
 	if err := c.divisor.Clear(); err != nil {
 		return err
 	}
