@@ -23,8 +23,7 @@ runs:
       shell: bash
       run: echo -e "$(date +%s%3N)\tUpdate dependencies" >> "$TIMER_FILE"
 
-    # -------------------- HOST TOOLS CACHE --------------------
-    - name: Cache host tools (wabt, gotestsum)
+    - name: Cache host tools (wabt, gotestsum, lld)
       id: cache-host-tools
       uses: actions/cache@v4
       with:
@@ -33,9 +32,11 @@ runs:
           ~/.local/bin/wasm2wat
           ~/.local/bin/wabt-strip
           ~/.local/bin/gotestsum
-        key: ${{ runner.os }}-hosttools-wabt-1.0.36-gotestsum-1.11.0
+          /usr/bin/ld.lld-14
+          /usr/bin/wasm-ld-14
+        key: ${{ runner.os }}-hosttools-wabt-1.0.36-gotestsum-1.11.0-lld-14
 
-    - name: Install host tools (wabt + gotestsum)
+    - name: Install host tools (wabt, gotestsum, lld)
       if: steps.cache-host-tools.outputs.cache-hit != 'true'
       shell: bash
       run: |
@@ -53,12 +54,19 @@ runs:
         go install gotest.tools/gotestsum@v1.11.0
         ln -sf "$(go env GOPATH)/bin/gotestsum" "$HOME/.local/bin/gotestsum"
 
+        # --- lld-14 (precompiled LLVM binaries) ---
+        sudo apt-get update && sudo apt-get install -y lld-14
+        sudo ln -s /usr/bin/wasm-ld-14 /usr/local/bin/wasm-ld
+
         echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
     - name: ⏱️ mark — Install dependencies
       if: always()
       shell: bash
       run: echo -e "$(date +%s%3N)\tInstall dependencies" >> "$TIMER_FILE"
+
+
+
     - name: Setup Node.js
       uses: actions/setup-node@v5
       with:
@@ -78,16 +86,6 @@ runs:
       if: always()
       shell: bash
       run: echo -e "$(date +%s%3N)\tSetup Go" >> "$TIMER_FILE"
-
-    - name: Install wasm-ld
-      run: |
-        sudo apt-get update && sudo apt-get install -y lld-14
-        sudo ln -s /usr/bin/wasm-ld-14 /usr/local/bin/wasm-ld
-      shell: bash
-    - name: ⏱️ mark — Install wasm-ld
-      if: always()
-      shell: bash
-      run: echo -e "$(date +%s%3N)\tInstall wasm-ld" >> "$TIMER_FILE"
 
     - name: Install rust
       id: install-rust
