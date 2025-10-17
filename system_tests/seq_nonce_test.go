@@ -201,11 +201,11 @@ func TestSequencerNonceHandling(t *testing.T) {
 	if blockNumsOfAcceptedTxs[0] != blockNumsOfAcceptedTxs[1] {
 		t.Fatal("first and second valid txs shouldnt have been sequenced in two different blocks")
 	}
-	if blockNumsOfAcceptedTxs[2] != blockNumsOfAcceptedTxs[0]+1 ||
-		blockNumsOfAcceptedTxs[3] != blockNumsOfAcceptedTxs[0]+1 ||
-		blockNumsOfAcceptedTxs[4] != blockNumsOfAcceptedTxs[0]+1 ||
-		blockNumsOfAcceptedTxs[5] != blockNumsOfAcceptedTxs[0]+1 ||
-		blockNumsOfAcceptedTxs[6] != blockNumsOfAcceptedTxs[0]+1 {
-		t.Fatal("all the following valid txs should have been sequenced in the immediate next block")
+	if blockNumsOfAcceptedTxs[2] != blockNumsOfAcceptedTxs[0] ||
+		blockNumsOfAcceptedTxs[3] != blockNumsOfAcceptedTxs[0] ||
+		blockNumsOfAcceptedTxs[4] != blockNumsOfAcceptedTxs[0] ||
+		blockNumsOfAcceptedTxs[5] != blockNumsOfAcceptedTxs[0] ||
+		blockNumsOfAcceptedTxs[6] != blockNumsOfAcceptedTxs[0] {
+		t.Fatal("all the following valid txs should have been sequenced in the same block")
 	}
 }
