@@ -32,11 +32,7 @@ runs:
           ~/.local/bin/wasm2wat
           ~/.local/bin/wabt-strip
           ~/.local/bin/gotestsum
-          ~/.local/llvm-14/bin/ld.lld
-          ~/.local/llvm-14/bin/ld.lld-14
-          ~/.local/llvm-14/bin/wasm-ld
-          ~/.local/llvm-14/bin/wasm-ld-14
-        key: ${{ runner.os }}-hosttools-wabt-1.0.36-gotestsum-1.11.0-llvm-14.0.6
+        key: ${{ runner.os }}-hosttools-wabt-1.0.36-gotestsum-1.11.0
 
     - name: Install host tools (wabt, gotestsum, lld) — user-space
       if: steps.cache-host-tools.outputs.cache-hit != 'true'
@@ -55,22 +51,6 @@ runs:
         # --- gotestsum ---
         go install gotest.tools/gotestsum@v1.11.0
         ln -sf "$(go env GOPATH)/bin/gotestsum" "$HOME/.local/bin/gotestsum"
-
-        # --- LLVM lld-14 in user-space (no /usr writes) ---
-        LLVM_VER=14.0.6
-        LLVM_PKG="clang+llvm-${LLVM_VER}-x86_64-linux-gnu-ubuntu-20.04"
-        TMP_LLVM=$(mktemp -d)
-        curl -sSL "https://github.com/llvm/llvm-project/releases/download/llvmorg-${LLVM_VER}/${LLVM_PKG}.tar.xz" \
-          | tar -xJ -C "$TMP_LLVM"
-        mkdir -p "$HOME/.local/llvm-14"
-        cp -R "$TMP_LLVM/${LLVM_PKG}/"* "$HOME/.local/llvm-14/"
-
-        # Provide stable names & PATH entries
-        ln -sf "$HOME/.local/llvm-14/bin/ld.lld"   "$HOME/.local/llvm-14/bin/ld.lld-14"
-        ln -sf "$HOME/.local/llvm-14/bin/wasm-ld"  "$HOME/.local/llvm-14/bin/wasm-ld-14"
-        ln -sf "$HOME/.local/llvm-14/bin/wasm-ld"  "$HOME/.local/bin/wasm-ld"
-        echo "$HOME/.local/llvm-14/bin" >> "$GITHUB_PATH"
-        echo "$HOME/.local/bin"         >> "$GITHUB_PATH"
 
     - name: ⏱️ mark — Install dependencies
       if: always()
@@ -98,6 +78,16 @@ runs:
       if: always()
       shell: bash
       run: echo -e "$(date +%s%3N)\tSetup Go" >> "$TIMER_FILE"
+
+    - name: Install wasm-ld
+      run: |
+        sudo apt-get update && sudo apt-get install -y lld-14
+        sudo ln -s /usr/bin/wasm-ld-14 /usr/local/bin/wasm-ld
+      shell: bash
+    - name: ⏱️ mark — Setup Go
+      if: always()
+      shell: bash
+      run: echo -e "$(date +%s%3N)\tSetup wasm-ld" >> "$TIMER_FILE"      
 
     - name: Install rust
       id: install-rust
