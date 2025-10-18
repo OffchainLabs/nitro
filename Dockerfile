@@ -139,8 +139,10 @@ WORKDIR /workspace
 RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
     apt-get install -y make wget gpg software-properties-common zlib1g-dev libstdc++-12-dev wabt
-RUN wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add - && \
-    add-apt-repository 'deb http://apt.llvm.org/bookworm/ llvm-toolchain-bookworm-15 main' && \
+RUN install -m 0755 -d /etc/apt/keyrings && \
+    wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | gpg --dearmor -o /etc/apt/keyrings/llvm-snapshot.gpg && \
+    chmod a+r /etc/apt/keyrings/llvm-snapshot.gpg && \
+    echo "deb [signed-by=/etc/apt/keyrings/llvm-snapshot.gpg] http://apt.llvm.org/bookworm/ llvm-toolchain-bookworm-15 main" > /etc/apt/sources.list.d/llvm-toolchain.list && \
     apt-get update && \
     apt-get install -y llvm-15-dev libclang-common-15-dev
 COPY --from=brotli-library-export / target/
@@ -389,3 +391,4 @@ USER user
 
 FROM nitro-node AS nitro-node-default
 # Just to ensure nitro-node-dist is default
+
