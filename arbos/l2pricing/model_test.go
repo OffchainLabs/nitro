@@ -33,7 +33,7 @@ func TestComputeConstraintDivisor(t *testing.T) {
 	}
 }
 
-func TestCompareLecayPricingModelWithMultiConstraints(t *testing.T) {
+func TestCompareLegacyPricingModelWithMultiConstraints(t *testing.T) {
 	pricing := PricingForTest(t)
 
 	// In this test, we don't check for storage set errors because they won't happen and they
