@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"math/big"
 	"os"
-	"strings"
 
 	"github.com/spf13/pflag"
 
@@ -60,10 +59,6 @@ func mainImpl() error {
 	if err != nil {
 		return fmt.Errorf("failed to read genesis JSON file %s: %w", config.GenesisJsonFile, err)
 	}
-	serializedChainConfig, err := extractSerializedChainConfigFromJSON(genesisJson)
-	if err != nil {
-		return fmt.Errorf("failed to extract serialized chain config from genesis JSON: %w", err)
-	}
 	var gen core.Genesis
 	if err := json.Unmarshal(genesisJson, &gen); err != nil {
 		return fmt.Errorf("failed to unmarshal genesis JSON: %w", err)
@@ -86,10 +81,9 @@ func mainImpl() error {
 	chainConfig := gen.Config
 	genesisArbOSInit := gen.ArbOSInit
 	parsedInitMessage := &arbostypes.ParsedInitMessage{
-		ChainId:               chainConfig.ChainID,
-		InitialL1BaseFee:      big.NewInt(config.InitialL1BaseFee),
-		ChainConfig:           chainConfig,
-		SerializedChainConfig: serializedChainConfig,
+		ChainId:          chainConfig.ChainID,
+		InitialL1BaseFee: big.NewInt(config.InitialL1BaseFee),
+		ChainConfig:      chainConfig,
 	}
 	genesisBlock, err := generateGenesisBlock(rawdb.NewMemoryDatabase(),
 		gethexec.DefaultCacheConfigFor(&config.Caching),
@@ -140,25 +134,6 @@ func generateGenesisBlock(chainDb ethdb.Database, cacheConfig *core.BlockChainCo
 	}
 
 	return arbosState.MakeGenesisBlock(prevHash, blockNumber, timestamp, stateRoot, chainConfig), nil
-}
-
-func extractSerializedChainConfigFromJSON(genesisJson []byte) ([]byte, error) {
-	jsonStr := string(genesisJson)
-	// Decode with json.NewDecoder
-	decoder := json.NewDecoder(strings.NewReader(jsonStr))
-
-	// Set decoded json fields to map
-	var result map[string]json.RawMessage
-	if err := decoder.Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode JSON: %w", err)
-	}
-
-	serializedChainConfig, exists := result["config"]
-	if !exists {
-		return nil, fmt.Errorf("config field not found")
-	}
-
-	return serializedChainConfig, nil
 }
 
 type Config struct {

@@ -7,7 +7,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"testing"
@@ -142,15 +141,10 @@ func FuzzStateTransition(f *testing.F) {
 		}
 		chainDb := rawdb.NewMemoryDatabase()
 		chainConfig := chaininfo.ArbitrumDevTestChainConfig()
-		serializedChainConfig, err := json.Marshal(chainConfig)
-		if err != nil {
-			panic(err)
-		}
 		initMessage := &arbostypes.ParsedInitMessage{
-			ChainId:               chainConfig.ChainID,
-			InitialL1BaseFee:      arbostypes.DefaultInitialL1BaseFee,
-			ChainConfig:           chainConfig,
-			SerializedChainConfig: serializedChainConfig,
+			ChainId:          chainConfig.ChainID,
+			InitialL1BaseFee: arbostypes.DefaultInitialL1BaseFee,
+			ChainConfig:      chainConfig,
 		}
 		options := core.DefaultConfig().WithStateScheme(env.GetTestStateScheme())
 		stateRoot, err := arbosState.InitializeArbosInDatabase(

@@ -278,8 +278,7 @@ type ParsedInitMessage struct {
 	InitialL1BaseFee *big.Int
 
 	// These may be nil
-	ChainConfig           *params.ChainConfig
-	SerializedChainConfig []byte
+	ChainConfig *params.ChainConfig
 }
 
 // The initial L1 pricing basefee starts at 50 GWei unless set in the init message
@@ -300,7 +299,7 @@ func (msg *L1IncomingMessage) ParseInitMessage() (*ParsedInitMessage, error) {
 	var chainId *big.Int
 	if len(msg.L2msg) == 32 {
 		chainId = new(big.Int).SetBytes(msg.L2msg[:32])
-		return &ParsedInitMessage{chainId, basefee, nil, nil}, nil
+		return &ParsedInitMessage{chainId, basefee, nil}, nil
 	}
 	if len(msg.L2msg) > 32 {
 		chainId = new(big.Int).SetBytes(msg.L2msg[:32])
@@ -323,7 +322,7 @@ func (msg *L1IncomingMessage) ParseInitMessage() (*ParsedInitMessage, error) {
 			if err != nil {
 				return nil, fmt.Errorf("failed to parse init message, err: %w, message data: %v", err, string(msg.L2msg))
 			}
-			return &ParsedInitMessage{chainId, basefee, &chainConfig, serializedChainConfig}, nil
+			return &ParsedInitMessage{chainId, basefee, &chainConfig}, nil
 		}
 	}
 	return nil, fmt.Errorf("invalid init message data %v", string(msg.L2msg))

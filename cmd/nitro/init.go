@@ -885,17 +885,15 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 					return chainDb, nil, fmt.Errorf("incompatible chain config read from init message in L1 inbox: %w", err)
 				}
 			}
-			log.Info("Read serialized chain config from init message", "json", string(parsedInitMessage.SerializedChainConfig))
 		} else {
 			serializedChainConfig, err := json.Marshal(chainConfig)
 			if err != nil {
 				return chainDb, nil, err
 			}
 			parsedInitMessage = &arbostypes.ParsedInitMessage{
-				ChainId:               chainConfig.ChainID,
-				InitialL1BaseFee:      arbostypes.DefaultInitialL1BaseFee,
-				ChainConfig:           chainConfig,
-				SerializedChainConfig: serializedChainConfig,
+				ChainId:          chainConfig.ChainID,
+				InitialL1BaseFee: arbostypes.DefaultInitialL1BaseFee,
+				ChainConfig:      chainConfig,
 			}
 			log.Warn("Created fake init message as L1Reader is disabled and serialized chain config from init message is not available", "json", string(serializedChainConfig))
 		}

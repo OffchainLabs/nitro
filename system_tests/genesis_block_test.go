@@ -62,10 +62,9 @@ func computeGenesisBlockHash(t *testing.T, serializedChainConfig []byte) common.
 	require.NoError(t, err)
 
 	parsedInitMessage := &arbostypes.ParsedInitMessage{
-		ChainId:               chainConfig.ChainID,
-		InitialL1BaseFee:      big.NewInt(1000000000),
-		ChainConfig:           &chainConfig,
-		SerializedChainConfig: serializedChainConfig,
+		ChainId:          chainConfig.ChainID,
+		InitialL1BaseFee: big.NewInt(1000000000),
+		ChainConfig:      &chainConfig,
 	}
 
 	genesisBlock := generateGenesisBlock(

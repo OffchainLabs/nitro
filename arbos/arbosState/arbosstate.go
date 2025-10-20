@@ -4,7 +4,6 @@
 package arbosState
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -16,7 +15,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/vm"
-	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/triedb"
 	"github.com/ethereum/go-ethereum/triedb/hashdb"
@@ -242,17 +240,12 @@ func InitializeArbosState(stateDB vm.StateDB, burner burn.Burner, chainConfig *p
 	}
 	_ = sto.SetByUint64(uint64(chainIdOffset), common.BigToHash(chainConfig.ChainID))
 
-	if initMessage.SerializedChainConfig != nil {
-		chainConfigStorage := sto.OpenStorageBackedBytes(chainConfigSubspace)
-		serializedChainConfig, err := canonicalizeChainConfig(initMessage.SerializedChainConfig)
-		if err != nil {
-			return nil, err
-		}
-		if !bytes.Equal(initMessage.SerializedChainConfig, serializedChainConfig) {
-			log.Warn("serialized chain config was not in canonical form; storing canonical form")
-		}
-		_ = chainConfigStorage.Set(serializedChainConfig)
+	chainConfigStorage := sto.OpenStorageBackedBytes(chainConfigSubspace)
+	serializedChainConfig, err := json.Marshal(chainConfig)
+	if err != nil {
+		return nil, err
 	}
+	_ = chainConfigStorage.Set(serializedChainConfig)
 
 	_ = sto.SetUint64ByUint64(uint64(genesisBlockNumOffset), chainConfig.ArbitrumChainParams.GenesisBlockNum)
 	_ = sto.SetUint64ByUint64(uint64(brotliCompressionLevelOffset), 0) // default brotliCompressionLevel for fast compression is 0
@@ -286,15 +279,6 @@ func InitializeArbosState(stateDB vm.StateDB, burner burn.Burner, chainConfig *p
 		}
 	}
 	return aState, nil
-}
-
-func canonicalizeChainConfig(serialized []byte) ([]byte, error) {
-	var deserialized params.ChainConfig
-	err := json.Unmarshal(serialized, &deserialized)
-	if err != nil {
-		return nil, fmt.Errorf("failed to deserialize chain config: %w", err)
-	}
-	return json.Marshal(&deserialized)
 }
 
 func (state *ArbosState) UpgradeArbosVersionIfNecessary(

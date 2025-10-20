@@ -1683,13 +1683,11 @@ func createNonL1BlockChainWithStackConfig(
 
 	initReader := statetransfer.NewMemoryInitDataReader(&info.ArbInitData)
 	if initMessage == nil {
-		serializedChainConfig, err := json.Marshal(chainConfig)
 		Require(t, err)
 		initMessage = &arbostypes.ParsedInitMessage{
-			ChainId:               chainConfig.ChainID,
-			InitialL1BaseFee:      arbostypes.DefaultInitialL1BaseFee,
-			ChainConfig:           chainConfig,
-			SerializedChainConfig: serializedChainConfig,
+			ChainId:          chainConfig.ChainID,
+			InitialL1BaseFee: arbostypes.DefaultInitialL1BaseFee,
+			ChainConfig:      chainConfig,
 		}
 	}
 	coreCacheConfig := gethexec.DefaultCacheConfigFor(&execConfig.Caching)
