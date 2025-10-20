@@ -170,7 +170,7 @@ func (c *Client) store(ctx context.Context, message []byte, timeout uint64) (*se
 
 	// Single-call store if data streaming is not enabled
 	if c.DataStreamer == nil {
-		if err := c.CallContext(ctx, storeResult, *c.storeRpcMethod, hexutil.Uint64(timeout)); err != nil {
+		if err := c.CallContext(ctx, &storeResult, *c.storeRpcMethod, hexutil.Bytes(message), hexutil.Uint64(timeout)); err != nil {
 			return nil, fmt.Errorf("error returned from daprovider server (single-call store protocol), err: %w", err)
 		}
 		return storeResult, nil
