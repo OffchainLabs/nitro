@@ -4,6 +4,7 @@
 package arbosState
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,6 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/triedb"
 	"github.com/ethereum/go-ethereum/triedb/hashdb"
@@ -244,6 +246,9 @@ func InitializeArbosState(stateDB vm.StateDB, burner burn.Burner, chainConfig *p
 	serializedChainConfig, err := canonicalizeChainConfig(initMessage.SerializedChainConfig)
 	if err != nil {
 		return nil, err
+	}
+	if !bytes.Equal(initMessage.SerializedChainConfig, serializedChainConfig) {
+		log.Warn("serialized chain config was not in canonical form; storing canonical form")
 	}
 	_ = chainConfigStorage.Set(serializedChainConfig)
 
