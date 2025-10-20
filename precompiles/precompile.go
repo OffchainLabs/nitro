@@ -535,6 +535,8 @@ func Precompiles() map[addr]ArbosPrecompile {
 	ArbGasInfo.methodsByName["GetL1PricingUnitsSinceUpdate"].arbosVersion = params.ArbosVersion_20
 	ArbGasInfo.methodsByName["GetLastL1PricingSurplus"].arbosVersion = params.ArbosVersion_20
 	ArbGasInfo.methodsByName["GetMaxTxGasLimit"].arbosVersion = params.ArbosVersion_50
+	ArbGasInfo.methodsByName["GetMaxBlockGasLimit"].arbosVersion = params.ArbosVersion_50
+	ArbGasInfo.methodsByName["GetGasPricingConstraints"].arbosVersion = params.ArbosVersion_50
 	insert(MakePrecompile(precompilesgen.ArbAggregatorMetaData, &ArbAggregator{Address: types.ArbAggregatorAddress}))
 	insert(MakePrecompile(precompilesgen.ArbStatisticsMetaData, &ArbStatistics{Address: types.ArbStatisticsAddress}))
 
@@ -615,6 +617,7 @@ func Precompiles() map[addr]ArbosPrecompile {
 	ArbOwner.methodsByName["ReleaseL1PricerSurplusFunds"].arbosVersion = params.ArbosVersion_10
 	ArbOwner.methodsByName["SetChainConfig"].arbosVersion = params.ArbosVersion_11
 	ArbOwner.methodsByName["SetBrotliCompressionLevel"].arbosVersion = params.ArbosVersion_20
+	ArbOwner.methodsByName["SetGasPricingConstraints"].arbosVersion = params.ArbosVersion_50
 	stylusMethods := []string{
 		"SetInkPrice", "SetWasmMaxStackDepth", "SetWasmFreePages", "SetWasmPageGas",
 		"SetWasmPageLimit", "SetWasmMinInitGas", "SetWasmInitCostScalar",
