@@ -130,7 +130,7 @@ func (c *ConsensusExecutionSyncer) pushFinalityDataFromConsensusToExecution(ctx 
 		}
 	}
 
-	_, err = c.execClient.SetFinalityData(ctx, safeFinalityData, finalizedFinalityData, validatedFinalityData).Await(ctx)
+	_, err = c.execClient.SetFinalityData(safeFinalityData, finalizedFinalityData, validatedFinalityData).Await(ctx)
 	if err != nil {
 		log.Error("Error pushing finality data from consensus to execution", "err", err)
 	} else {

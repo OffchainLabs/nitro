@@ -562,12 +562,11 @@ func (n *ExecutionNode) FullSyncProgressMap(ctx context.Context) map[string]inte
 }
 
 func (n *ExecutionNode) SetFinalityData(
-	ctx context.Context,
 	safeFinalityData *arbutil.FinalityData,
 	finalizedFinalityData *arbutil.FinalityData,
 	validatedFinalityData *arbutil.FinalityData,
 ) containers.PromiseInterface[struct{}] {
-	err := n.SyncMonitor.SetFinalityData(ctx, safeFinalityData, finalizedFinalityData, validatedFinalityData)
+	err := n.SyncMonitor.SetFinalityData(safeFinalityData, finalizedFinalityData, validatedFinalityData)
 	return containers.NewReadyPromise(struct{}{}, err)
 }
 

@@ -80,7 +80,6 @@ func (w *execClientWrapper) FullSyncProgressMap(ctx context.Context) map[string]
 	return nil
 }
 func (w *execClientWrapper) SetFinalityData(
-	ctx context.Context,
 	safeFinalityData *arbutil.FinalityData,
 	finalizedFinalityData *arbutil.FinalityData,
 	validatedFinalityData *arbutil.FinalityData,
