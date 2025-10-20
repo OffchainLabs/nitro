@@ -403,16 +403,16 @@ func (s *TransactionStreamer) addMessagesAndReorg(batch ethdb.Batch, msgIdxOfFir
 	for i := 0; i < len(messagesResults); i++ {
 		// #nosec G115 -- message index arithmetic is safe within valid range
 		msgIdx := msgIdxOfFirstMsgToAdd + arbutil.MessageIndex(i)
-		arbOSVersion, err := s.exec.ArbOSVersionForMessageIndex(msgIdx).Await(s.GetContext())
+		arbOSVersionBefore, err := s.exec.ArbOSVersionForMessageIndex(msgIdx - 1).Await(s.GetContext())
 		if err != nil {
-			log.Warn("error getting arbOS version for message", "msgIdx", msgIdx, "err", err)
+			log.Warn("error getting arbOS version for message", "msgIdx", msgIdx-1, "err", err)
 		}
 
 		messagesWithComputedBlockHash = append(messagesWithComputedBlockHash, arbostypes.MessageWithMetadataAndBlockInfo{
-			MessageWithMeta: newMessages[i].MessageWithMeta,
-			BlockHash:       &messagesResults[i].BlockHash,
-			BlockMetadata:   nil,
-			ArbOSVersion:    arbOSVersion,
+			MessageWithMeta:    newMessages[i].MessageWithMeta,
+			BlockHash:          &messagesResults[i].BlockHash,
+			BlockMetadata:      nil,
+			ArbOSVersionBefore: arbOSVersionBefore,
 		})
 	}
 	s.broadcastMessages(messagesWithComputedBlockHash, msgIdxOfFirstMsgToAdd)
@@ -534,16 +534,16 @@ func (s *TransactionStreamer) getMessageWithMetadataAndBlockInfo(msgIdx arbutil.
 		return nil, err
 	}
 
-	arbOSVersion, err := s.exec.ArbOSVersionForMessageIndex(msgIdx).Await(s.GetContext())
+	arbOSVersionBefore, err := s.exec.ArbOSVersionForMessageIndex(msgIdx - 1).Await(s.GetContext())
 	if err != nil {
-		log.Warn("Failed to get ArbOS version for message", "msgIdx", msgIdx, "err", err)
+		log.Warn("Failed to get ArbOS version for message", "msgIdx", msgIdx-1, "err", err)
 	}
 
 	msgWithBlockInfo := arbostypes.MessageWithMetadataAndBlockInfo{
-		MessageWithMeta: *msg,
-		BlockHash:       blockHash,
-		BlockMetadata:   blockMetadata,
-		ArbOSVersion:    arbOSVersion,
+		MessageWithMeta:    *msg,
+		BlockHash:          blockHash,
+		BlockMetadata:      blockMetadata,
+		ArbOSVersionBefore: arbOSVersionBefore,
 	}
 	return &msgWithBlockInfo, nil
 }
@@ -622,10 +622,10 @@ func (s *TransactionStreamer) AddBroadcastMessages(feedMessages []*message.Broad
 			return fmt.Errorf("invalid feed message at sequence number %v", feedMessage.SequenceNumber)
 		}
 		msgWithBlockInfo := arbostypes.MessageWithMetadataAndBlockInfo{
-			MessageWithMeta: feedMessage.Message,
-			BlockHash:       feedMessage.BlockHash,
-			BlockMetadata:   feedMessage.BlockMetadata,
-			ArbOSVersion:    feedMessage.ArbOSVersion,
+			MessageWithMeta:    feedMessage.Message,
+			BlockHash:          feedMessage.BlockHash,
+			BlockMetadata:      feedMessage.BlockMetadata,
+			ArbOSVersionBefore: feedMessage.ArbOSVersionBefore,
 		}
 		messages = append(messages, msgWithBlockInfo)
 		expectedMsgIdx++
@@ -751,10 +751,10 @@ func (s *TransactionStreamer) AddMessagesAndEndBatch(firstMsgIdx arbutil.Message
 	messagesWithBlockInfo := make([]arbostypes.MessageWithMetadataAndBlockInfo, 0, len(messages))
 	for _, message := range messages {
 		messagesWithBlockInfo = append(messagesWithBlockInfo, arbostypes.MessageWithMetadataAndBlockInfo{
-			MessageWithMeta: message,
-			BlockHash:       nil,
-			BlockMetadata:   nil,
-			ArbOSVersion:    0,
+			MessageWithMeta:    message,
+			BlockHash:          nil,
+			BlockMetadata:      nil,
+			ArbOSVersionBefore: 0,
 		})
 	}
 

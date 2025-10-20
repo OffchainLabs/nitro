@@ -54,10 +54,10 @@ func TestReceiveMessages(t *testing.T) {
 
 func testMessage() arbostypes.MessageWithMetadataAndBlockInfo {
 	return arbostypes.MessageWithMetadataAndBlockInfo{
-		MessageWithMeta: arbostypes.TestMessageWithMetadataAndRequestId,
-		BlockHash:       nil,
-		BlockMetadata:   nil,
-		ArbOSVersion:    0,
+		MessageWithMeta:    arbostypes.TestMessageWithMetadataAndRequestId,
+		BlockHash:          nil,
+		BlockMetadata:      nil,
+		ArbOSVersionBefore: 0,
 	}
 }
 

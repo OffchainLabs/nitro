@@ -21,10 +21,10 @@ type MessageWithMetadata struct {
 
 // lint:require-exhaustive-initialization
 type MessageWithMetadataAndBlockInfo struct {
-	MessageWithMeta MessageWithMetadata
-	BlockHash       *common.Hash
-	BlockMetadata   common.BlockMetadata
-	ArbOSVersion    uint64
+	MessageWithMeta    MessageWithMetadata
+	BlockHash          *common.Hash
+	BlockMetadata      common.BlockMetadata
+	ArbOSVersionBefore uint64
 }
 
 var EmptyTestMessageWithMetadata = MessageWithMetadata{

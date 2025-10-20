@@ -646,10 +646,10 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 	blockMetadata := s.blockMetadataFromBlock(block, timeboostedTxs)
 
 	msgWithInfo := arbostypes.MessageWithMetadataAndBlockInfo{
-		MessageWithMeta: msgWithMeta,
-		BlockHash:       &msgResult.BlockHash,
-		BlockMetadata:   blockMetadata,
-		ArbOSVersion:    types.DeserializeHeaderExtraInformation(block.Header()).ArbOSFormatVersion,
+		MessageWithMeta:    msgWithMeta,
+		BlockHash:          &msgResult.BlockHash,
+		BlockMetadata:      blockMetadata,
+		ArbOSVersionBefore: types.DeserializeHeaderExtraInformation(lastBlockHeader).ArbOSFormatVersion,
 	}
 
 	_, err = s.consensus.WriteMessageFromSequencer(msgIdx, msgWithInfo).Await(s.GetContext())
@@ -732,10 +732,10 @@ func (s *ExecutionEngine) sequenceDelayedMessageWithBlockMutex(message *arbostyp
 	}
 
 	msgWithInfo := arbostypes.MessageWithMetadataAndBlockInfo{
-		MessageWithMeta: messageWithMeta,
-		BlockHash:       &msgResult.BlockHash,
-		BlockMetadata:   s.blockMetadataFromBlock(block, nil),
-		ArbOSVersion:    types.DeserializeHeaderExtraInformation(block.Header()).ArbOSFormatVersion,
+		MessageWithMeta:    messageWithMeta,
+		BlockHash:          &msgResult.BlockHash,
+		BlockMetadata:      s.blockMetadataFromBlock(block, nil),
+		ArbOSVersionBefore: types.DeserializeHeaderExtraInformation(currentHeader).ArbOSFormatVersion,
 	}
 
 	_, err = s.consensus.WriteMessageFromSequencer(msgIdx, msgWithInfo).Await(s.GetContext())

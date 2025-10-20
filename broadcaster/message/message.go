@@ -34,12 +34,12 @@ type BroadcastMessage struct {
 }
 
 type BroadcastFeedMessage struct {
-	SequenceNumber arbutil.MessageIndex           `json:"sequenceNumber"`
-	Message        arbostypes.MessageWithMetadata `json:"message"`
-	BlockHash      *common.Hash                   `json:"blockHash,omitempty"`
-	Signature      []byte                         `json:"signature"`
-	BlockMetadata  common.BlockMetadata           `json:"blockMetadata,omitempty"`
-	ArbOSVersion   uint64                         `json:"arbOSVersion,omitempty"`
+	SequenceNumber     arbutil.MessageIndex           `json:"sequenceNumber"`
+	Message            arbostypes.MessageWithMetadata `json:"message"`
+	BlockHash          *common.Hash                   `json:"blockHash,omitempty"`
+	Signature          []byte                         `json:"signature"`
+	BlockMetadata      common.BlockMetadata           `json:"blockMetadata,omitempty"`
+	ArbOSVersionBefore uint64                         `json:"arbOSVersionBefore,omitempty"`
 
 	CumulativeSumMsgSize uint64 `json:"-"`
 }
