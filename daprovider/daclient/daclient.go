@@ -23,6 +23,7 @@ import (
 type Client struct {
 	*rpcclient.RpcClient
 	*data_streaming.DataStreamer[server_api.StoreResult]
+	storeRpcMethod *string
 }
 
 // lint:require-exhaustive-initialization
@@ -32,6 +33,7 @@ type ClientConfig struct {
 	RPC              rpcclient.ClientConfig            `koanf:"rpc" reload:"hot"`
 	UseDataStreaming bool                              `koanf:"use-data-streaming"`
 	DataStream       data_streaming.DataStreamerConfig `koanf:"data-stream"`
+	StoreRpcMethod   string                            `koanf:"store-rpc-method"`
 }
 
 var DefaultClientConfig = ClientConfig{
@@ -45,6 +47,7 @@ var DefaultClientConfig = ClientConfig{
 	},
 	UseDataStreaming: false,
 	DataStream:       data_streaming.DefaultDataStreamerConfig(DefaultStreamRpcMethods),
+	StoreRpcMethod:   DefaultStoreRpcMethod,
 }
 
 func TestClientConfig(serverUrl string) *ClientConfig {
@@ -54,6 +57,7 @@ func TestClientConfig(serverUrl string) *ClientConfig {
 		RPC:              rpcclient.ClientConfig{URL: serverUrl},
 		UseDataStreaming: false,
 		DataStream:       data_streaming.TestDataStreamerConfig(DefaultStreamRpcMethods),
+		StoreRpcMethod:   DefaultStoreRpcMethod,
 	}
 }
 
@@ -63,12 +67,15 @@ var DefaultStreamRpcMethods = data_streaming.DataStreamingRPCMethods{
 	FinalizeStream: "daprovider_commitChunkedStore",
 }
 
+var DefaultStoreRpcMethod = "daprovider_store"
+
 func ClientConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultClientConfig.Enable, "enable daprovider client")
 	f.Bool(prefix+".with-writer", DefaultClientConfig.WithWriter, "implies if the daprovider rpc server supports writer interface")
 	rpcclient.RPCClientAddOptions(prefix+".rpc", f, &DefaultClientConfig.RPC)
 	f.Bool(prefix+".use-data-streaming", DefaultClientConfig.UseDataStreaming, "use data streaming protocol for storing large payloads")
 	data_streaming.DataStreamerConfigAddOptions(prefix+".data-stream", f, DefaultStreamRpcMethods)
+	f.String(prefix+".store-rpc-method", DefaultClientConfig.StoreRpcMethod, "name of the store rpc method on the daprovider server (used when data streaming is disabled)")
 }
 
 func NewClient(ctx context.Context, config *ClientConfig, payloadSigner *data_streaming.PayloadSigner) (client *Client, err error) {
@@ -82,7 +89,7 @@ func NewClient(ctx context.Context, config *ClientConfig, payloadSigner *data_st
 		}
 	}
 
-	client = &Client{rpcClient, dataStreamer}
+	client = &Client{rpcClient, dataStreamer, &config.StoreRpcMethod}
 	if err = client.Start(ctx); err != nil {
 		return nil, fmt.Errorf("error starting daprovider client: %w", err)
 	}
@@ -162,7 +169,7 @@ func (c *Client) store(ctx context.Context, message []byte, timeout uint64) ([]b
 	// Single-call store if data streaming is not enabled
 	if c.DataStreamer == nil {
 		var storeResult []byte
-		if err := c.CallContext(ctx, &storeResult, "daprovider_store", hexutil.Uint64(timeout)); err != nil {
+		if err := c.CallContext(ctx, &storeResult, *c.storeRpcMethod, hexutil.Uint64(timeout)); err != nil {
 			return nil, fmt.Errorf("error returned from daprovider server (single-call store protocol), err: %w", err)
 		}
 		return storeResult, nil
