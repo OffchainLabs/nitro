@@ -570,7 +570,7 @@ func (n *ExecutionNode) SetFinalityData(
 	return containers.NewReadyPromise(struct{}{}, err)
 }
 
-func (n *ExecutionNode) SetConsensusSyncData(ctx context.Context, syncData *execution.ConsensusSyncData) containers.PromiseInterface[struct{}] {
+func (n *ExecutionNode) SetConsensusSyncData(syncData *execution.ConsensusSyncData) containers.PromiseInterface[struct{}] {
 	n.SyncMonitor.SetConsensusSyncData(syncData)
 	return containers.NewReadyPromise(struct{}{}, nil)
 }

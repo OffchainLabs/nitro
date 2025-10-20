@@ -172,7 +172,7 @@ func (c *ConsensusExecutionSyncer) pushConsensusSyncDataToExecution(ctx context.
 		UpdatedAt:       time.Now(),
 	}
 
-	_, err = c.execClient.SetConsensusSyncData(ctx, syncData).Await(ctx)
+	_, err = c.execClient.SetConsensusSyncData(syncData).Await(ctx)
 	if err != nil {
 		log.Error("Error pushing sync data from consensus to execution", "err", err)
 	} else {

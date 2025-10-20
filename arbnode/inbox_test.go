@@ -87,7 +87,7 @@ func (w *execClientWrapper) SetFinalityData(
 	return containers.NewReadyPromise(struct{}{}, nil)
 }
 
-func (w *execClientWrapper) SetConsensusSyncData(ctx context.Context, syncData *execution.ConsensusSyncData) containers.PromiseInterface[struct{}] {
+func (w *execClientWrapper) SetConsensusSyncData(syncData *execution.ConsensusSyncData) containers.PromiseInterface[struct{}] {
 	return containers.NewReadyPromise(struct{}{}, nil)
 }
 
