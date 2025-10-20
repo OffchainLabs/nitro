@@ -4,6 +4,7 @@
 package arbosState
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -238,8 +239,14 @@ func InitializeArbosState(stateDB vm.StateDB, burner burn.Burner, chainConfig *p
 		_ = sto.SetByUint64(uint64(networkFeeAccountOffset), common.Hash{}) // the 0 address until an owner sets it
 	}
 	_ = sto.SetByUint64(uint64(chainIdOffset), common.BigToHash(chainConfig.ChainID))
+
 	chainConfigStorage := sto.OpenStorageBackedBytes(chainConfigSubspace)
-	_ = chainConfigStorage.Set(initMessage.SerializedChainConfig)
+	serializedChainConfig, err := canonicalizeChainConfig(initMessage.SerializedChainConfig)
+	if err != nil {
+		return nil, err
+	}
+	_ = chainConfigStorage.Set(serializedChainConfig)
+
 	_ = sto.SetUint64ByUint64(uint64(genesisBlockNumOffset), chainConfig.ArbitrumChainParams.GenesisBlockNum)
 	_ = sto.SetUint64ByUint64(uint64(brotliCompressionLevelOffset), 0) // default brotliCompressionLevel for fast compression is 0
 
@@ -272,6 +279,15 @@ func InitializeArbosState(stateDB vm.StateDB, burner burn.Burner, chainConfig *p
 		}
 	}
 	return aState, nil
+}
+
+func canonicalizeChainConfig(serialized []byte) ([]byte, error) {
+	var deserialized params.ChainConfig
+	err := json.Unmarshal(serialized, &deserialized)
+	if err != nil {
+		return nil, fmt.Errorf("failed to deserialize chain config: %w", err)
+	}
+	return json.Marshal(&deserialized)
 }
 
 func (state *ArbosState) UpgradeArbosVersionIfNecessary(
