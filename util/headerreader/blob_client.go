@@ -373,6 +373,7 @@ func saveBlobDataToDisk(rawData json.RawMessage, slot uint64, blobDirectory stri
 	if err != nil {
 		return fmt.Errorf("could not create file to store fetched blobs")
 	}
+	defer file.Close()
 	full := fullResult[json.RawMessage]{Data: rawData}
 	fullbytes, err := json.Marshal(full)
 	if err != nil {
@@ -381,7 +382,6 @@ func saveBlobDataToDisk(rawData json.RawMessage, slot uint64, blobDirectory stri
 	if _, err := file.Write(fullbytes); err != nil {
 		return fmt.Errorf("failed to write blob data to disk")
 	}
-	file.Close()
 	return nil
 }
 
