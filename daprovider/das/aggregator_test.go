@@ -20,6 +20,7 @@ import (
 
 	"github.com/offchainlabs/nitro/blsSignatures"
 	"github.com/offchainlabs/nitro/daprovider/das/dasutil"
+	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/testhelpers/flag"
 )
 
@@ -147,20 +148,6 @@ func (w *WrapStore) Store(ctx context.Context, message []byte, timeout uint64) (
 	return nil, nil
 }
 
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
 func enableLogging() {
 	glogger := log.NewGlogHandler(
 		log.NewTerminalHandler(io.Writer(os.Stderr), false))
@@ -176,9 +163,9 @@ func testConfigurableStorageFailures(t *testing.T, shouldFailAggregation bool) {
 	assumedHonest := (rand.Int() % numBackendDAS) + 1
 	var nFailures int
 	if shouldFailAggregation {
-		nFailures = max(assumedHonest, rand.Int()%(numBackendDAS+1))
+		nFailures = arbmath.MaxInt(assumedHonest, rand.Int()%(numBackendDAS+1))
 	} else {
-		nFailures = min(assumedHonest-1, rand.Int()%(numBackendDAS+1))
+		nFailures = arbmath.MinInt(assumedHonest-1, rand.Int()%(numBackendDAS+1))
 	}
 	nSuccesses := numBackendDAS - nFailures
 	log.Trace(fmt.Sprintf("Testing aggregator with K:%d with K=N+1-H, N:%d, H:%d, and %d successes", numBackendDAS+1-assumedHonest, numBackendDAS, assumedHonest, nSuccesses))
