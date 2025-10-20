@@ -63,10 +63,10 @@ func (p *messageCountPredicate) Error() string {
 
 func testMessage() arbostypes.MessageWithMetadataAndBlockInfo {
 	return arbostypes.MessageWithMetadataAndBlockInfo{
-		MessageWithMeta: arbostypes.EmptyTestMessageWithMetadata,
-		BlockHash:       nil,
-		BlockMetadata:   nil,
-		ArbOSVersion:    0,
+		MessageWithMeta:    arbostypes.EmptyTestMessageWithMetadata,
+		BlockHash:          nil,
+		BlockMetadata:      nil,
+		ArbOSVersionBefore: 0,
 	}
 }
 
@@ -132,14 +132,14 @@ func TestBatchDataStatsIsIncludedBasedOnArbOSVersion(t *testing.T) {
 	message.MessageWithMeta.Message.BatchDataStats = batchDataStats
 
 	// For ArbOS versions >= 50, BatchDataStats should be preserved
-	message.ArbOSVersion = params.ArbosVersion_50
+	message.ArbOSVersionBefore = params.ArbosVersion_50
 	feedMsg, err := b.NewBroadcastFeedMessage(message, sequenceNumber)
 	Require(t, err)
 	require.Equal(t, batchDataStats, feedMsg.Message.Message.BatchDataStats)
 	require.Equal(t, signMessage(t, message, sequenceNumber, signer), feedMsg.Signature)
 
 	// For ArbOS versions < 50, BatchDataStats should be nil
-	message.ArbOSVersion = params.ArbosVersion_41
+	message.ArbOSVersionBefore = params.ArbosVersion_41
 	feedMsg, err = b.NewBroadcastFeedMessage(message, sequenceNumber)
 	Require(t, err)
 	require.Nil(t, feedMsg.Message.Message.BatchDataStats)

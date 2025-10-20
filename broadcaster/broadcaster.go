@@ -44,7 +44,7 @@ func (b *Broadcaster) NewBroadcastFeedMessage(
 	sequenceNumber arbutil.MessageIndex,
 ) (*m.BroadcastFeedMessage, error) {
 	message := messageWithInfo.MessageWithMeta
-	if messageWithInfo.ArbOSVersion < params.ArbosVersion_50 && message.Message != nil {
+	if messageWithInfo.ArbOSVersionBefore < params.ArbosVersion_50 && message.Message != nil {
 		message.Message.BatchDataStats = nil
 	}
 
@@ -61,12 +61,12 @@ func (b *Broadcaster) NewBroadcastFeedMessage(
 	}
 
 	return &m.BroadcastFeedMessage{
-		SequenceNumber: sequenceNumber,
-		Message:        message,
-		BlockHash:      messageWithInfo.BlockHash,
-		Signature:      messageSignature,
-		BlockMetadata:  messageWithInfo.BlockMetadata,
-		ArbOSVersion:   messageWithInfo.ArbOSVersion,
+		SequenceNumber:     sequenceNumber,
+		Message:            message,
+		BlockHash:          messageWithInfo.BlockHash,
+		Signature:          messageSignature,
+		BlockMetadata:      messageWithInfo.BlockMetadata,
+		ArbOSVersionBefore: messageWithInfo.ArbOSVersionBefore,
 	}, nil
 }
 

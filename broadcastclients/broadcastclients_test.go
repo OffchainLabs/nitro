@@ -49,10 +49,10 @@ func (ts *MockTransactionStreamer) AddBroadcastMessages(feedMessages []*message.
 
 func testMessage() arbostypes.MessageWithMetadataAndBlockInfo {
 	return arbostypes.MessageWithMetadataAndBlockInfo{
-		MessageWithMeta: arbostypes.EmptyTestMessageWithMetadata,
-		BlockHash:       nil,
-		BlockMetadata:   nil,
-		ArbOSVersion:    0,
+		MessageWithMeta:    arbostypes.EmptyTestMessageWithMetadata,
+		BlockHash:          nil,
+		BlockMetadata:      nil,
+		ArbOSVersionBefore: 0,
 	}
 }
 
