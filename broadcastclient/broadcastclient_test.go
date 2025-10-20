@@ -51,13 +51,13 @@ func TestReceiveMessages(t *testing.T) {
 	})
 }
 
-func testMessage() arbostypes.MessageWithMetadataAndBlockInfo {
-	return arbostypes.MessageWithMetadataAndBlockInfo{
+func testMessageSingleton() []arbostypes.MessageWithMetadataAndBlockInfo {
+	return []arbostypes.MessageWithMetadataAndBlockInfo{{
 		MessageWithMeta: arbostypes.TestMessageWithMetadataAndRequestId,
 		BlockHash:       nil,
 		BlockMetadata:   nil,
 		ArbOSVersion:    0,
-	}
+	}}
 }
 
 func testReceiveMessages(t *testing.T, clientCompression bool, serverCompression bool, serverRequire bool, expectNoMessagesReceived bool) {
@@ -101,7 +101,7 @@ func testReceiveMessages(t *testing.T, clientCompression bool, serverCompression
 	go func() {
 		for i := 0; i < messageCount; i++ {
 			// #nosec G115
-			Require(t, b.BroadcastSingle(testMessage(), arbutil.MessageIndex(i)))
+			Require(t, b.BroadcastMessages(testMessageSingleton(), arbutil.MessageIndex(i)))
 		}
 	}()
 
@@ -250,7 +250,7 @@ func TestServerClientDisconnect(t *testing.T) {
 	broadcastClient.Start(ctx)
 
 	t.Log("broadcasting seq 0 message")
-	Require(t, b.BroadcastSingle(testMessage(), 0))
+	Require(t, b.BroadcastMessages(testMessageSingleton(), 0))
 
 	// Wait for client to receive batch to ensure it is connected
 	timer := time.NewTimer(5 * time.Second)
@@ -322,7 +322,7 @@ func TestBroadcastClientConfirmedMessage(t *testing.T) {
 	broadcastClient.Start(ctx)
 
 	t.Log("broadcasting seq 0 message")
-	Require(t, b.BroadcastSingle(testMessage(), 0))
+	Require(t, b.BroadcastMessages(testMessageSingleton(), 0))
 
 	// Wait for client to receive batch to ensure it is connected
 	timer := time.NewTimer(5 * time.Second)
@@ -664,8 +664,8 @@ func TestBroadcasterSendsCachedMessagesOnClientConnect(t *testing.T) {
 	Require(t, b.Start(ctx))
 	defer b.StopAndWait()
 
-	Require(t, b.BroadcastSingle(testMessage(), 0))
-	Require(t, b.BroadcastSingle(testMessage(), 1))
+	Require(t, b.BroadcastMessages(testMessageSingleton(), 0))
+	Require(t, b.BroadcastMessages(testMessageSingleton(), 1))
 
 	var wg sync.WaitGroup
 	for i := 0; i < 2; i++ {

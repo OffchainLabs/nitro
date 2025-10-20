@@ -61,13 +61,13 @@ func (p *messageCountPredicate) Error() string {
 	return fmt.Sprintf("Expected %d, was %d: %s", p.expected, p.was, p.contextMessage)
 }
 
-func testMessage() arbostypes.MessageWithMetadataAndBlockInfo {
-	return arbostypes.MessageWithMetadataAndBlockInfo{
+func testMessageSingleton() []arbostypes.MessageWithMetadataAndBlockInfo {
+	return []arbostypes.MessageWithMetadataAndBlockInfo{{
 		MessageWithMeta: arbostypes.EmptyTestMessageWithMetadata,
 		BlockHash:       nil,
 		BlockMetadata:   nil,
 		ArbOSVersion:    0,
-	}
+	}}
 }
 
 func TestBroadcasterMessagesRemovedOnConfirmation(t *testing.T) {
@@ -80,17 +80,17 @@ func TestBroadcasterMessagesRemovedOnConfirmation(t *testing.T) {
 	}
 
 	// Normal broadcasting and confirming
-	Require(t, b.BroadcastSingle(testMessage(), 1))
+	Require(t, b.BroadcastMessages(testMessageSingleton(), 1))
 	waitUntilUpdated(t, expectMessageCount(1, "after 1 message"))
-	Require(t, b.BroadcastSingle(testMessage(), 2))
+	Require(t, b.BroadcastMessages(testMessageSingleton(), 2))
 	waitUntilUpdated(t, expectMessageCount(2, "after 2 messages"))
-	Require(t, b.BroadcastSingle(testMessage(), 3))
+	Require(t, b.BroadcastMessages(testMessageSingleton(), 3))
 	waitUntilUpdated(t, expectMessageCount(3, "after 3 messages"))
-	Require(t, b.BroadcastSingle(testMessage(), 4))
+	Require(t, b.BroadcastMessages(testMessageSingleton(), 4))
 	waitUntilUpdated(t, expectMessageCount(4, "after 4 messages"))
-	Require(t, b.BroadcastSingle(testMessage(), 5))
+	Require(t, b.BroadcastMessages(testMessageSingleton(), 5))
 	waitUntilUpdated(t, expectMessageCount(5, "after 4 messages"))
-	Require(t, b.BroadcastSingle(testMessage(), 6))
+	Require(t, b.BroadcastMessages(testMessageSingleton(), 6))
 	waitUntilUpdated(t, expectMessageCount(6, "after 4 messages"))
 
 	b.Confirm(4)
@@ -106,7 +106,7 @@ func TestBroadcasterMessagesRemovedOnConfirmation(t *testing.T) {
 		"nothing changed because confirmed sequence number before cache"))
 
 	b.Confirm(5)
-	Require(t, b.BroadcastSingle(testMessage(), 7))
+	Require(t, b.BroadcastMessages(testMessageSingleton(), 7))
 	waitUntilUpdated(t, expectMessageCount(2,
 		"after 7 messages, 5 cleared by confirm"))
 
@@ -127,7 +127,7 @@ func TestBatchDataStatsIsIncludedBasedOnArbOSVersion(t *testing.T) {
 	defer b.StopAndWait()
 
 	sequenceNumber := arbutil.MessageIndex(0)
-	message := testMessage()
+	message := testMessageSingleton()[0]
 	batchDataStats := &arbostypes.BatchDataStats{Length: 1, NonZeros: 2}
 	message.MessageWithMeta.Message.BatchDataStats = batchDataStats
 
