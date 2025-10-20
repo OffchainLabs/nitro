@@ -285,6 +285,11 @@ func (con ArbGasInfo) GetLastL1PricingSurplus(c ctx, evm mech) (*big.Int, error)
 	return c.State.L1PricingState().LastSurplus()
 }
 
+// GetMaxBlockGasLimit gets the maximum block gas limit
+func (con ArbGasInfo) GetMaxBlockGasLimit(c ctx, evm mech) (uint64, error) {
+	return c.State.L2PricingState().PerBlockGasLimit()
+}
+
 // GetGasPricingConstraints gets the current gas pricing constraints used by the Multi-Constraint Pricer.
 func (con ArbGasInfo) GetGasPricingConstraints(c ctx, evm mech) ([][3]uint64, error) {
 	len, err := c.State.L2PricingState().ConstraintsLength()
