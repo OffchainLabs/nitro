@@ -159,17 +159,18 @@ func (c *Client) Store(
 		if err != nil {
 			promise.ProduceError(err)
 		} else {
-			promise.Produce(storeResult)
+			promise.Produce(storeResult.SerializedDACert)
 		}
 	}()
 	return promise
 }
 
-func (c *Client) store(ctx context.Context, message []byte, timeout uint64) ([]byte, error) {
+func (c *Client) store(ctx context.Context, message []byte, timeout uint64) (*server_api.StoreResult, error) {
+	var storeResult *server_api.StoreResult
+
 	// Single-call store if data streaming is not enabled
 	if c.DataStreamer == nil {
-		var storeResult []byte
-		if err := c.CallContext(ctx, &storeResult, *c.storeRpcMethod, hexutil.Uint64(timeout)); err != nil {
+		if err := c.CallContext(ctx, storeResult, *c.storeRpcMethod, hexutil.Uint64(timeout)); err != nil {
 			return nil, fmt.Errorf("error returned from daprovider server (single-call store protocol), err: %w", err)
 		}
 		return storeResult, nil
@@ -180,7 +181,7 @@ func (c *Client) store(ctx context.Context, message []byte, timeout uint64) ([]b
 	if err != nil {
 		return nil, fmt.Errorf("error returned from daprovider server (chunked store protocol), err: %w", err)
 	} else {
-		return storeResult.SerializedDACert, nil
+		return storeResult, nil
 	}
 }
 
