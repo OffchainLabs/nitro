@@ -16,13 +16,20 @@ import (
 	"github.com/offchainlabs/nitro/util/signature"
 )
 
+// referenceDAProviderType identifies this as a ReferenceDA certificate.
+// It follows the DACertificateMessageHeaderFlag in the certificate format.
+// This allows for different DA providers using the CustomDA system to
+// differentiate themselves.
+const referenceDAProviderType byte = 0xFF
+
 // Certificate represents a ReferenceDA certificate with signature
 type Certificate struct {
-	Header   byte
-	DataHash [32]byte
-	V        uint8
-	R        [32]byte
-	S        [32]byte
+	Header       byte
+	ProviderType byte
+	DataHash     [32]byte
+	V            uint8
+	R            [32]byte
+	S            [32]byte
 }
 
 // NewCertificate creates a certificate from data and signs it
@@ -35,9 +42,10 @@ func NewCertificate(data []byte, signer signature.DataSignerFunc) (*Certificate,
 	}
 
 	cert := &Certificate{
-		Header:   daprovider.DACertificateMessageHeaderFlag,
-		DataHash: dataHash,
-		V:        sig[64] + 27,
+		Header:       daprovider.DACertificateMessageHeaderFlag,
+		ProviderType: referenceDAProviderType,
+		DataHash:     dataHash,
+		V:            sig[64] + 27,
 	}
 	copy(cert.R[:], sig[0:32])
 	copy(cert.S[:], sig[32:64])
@@ -45,33 +53,39 @@ func NewCertificate(data []byte, signer signature.DataSignerFunc) (*Certificate,
 	return cert, nil
 }
 
-// Serialize converts certificate to bytes (98 bytes total)
+// Serialize converts certificate to bytes (99 bytes total)
 func (c *Certificate) Serialize() []byte {
-	result := make([]byte, 98)
+	result := make([]byte, 99)
 	result[0] = c.Header
-	copy(result[1:33], c.DataHash[:])
-	result[33] = c.V
-	copy(result[34:66], c.R[:])
-	copy(result[66:98], c.S[:])
+	result[1] = c.ProviderType
+	copy(result[2:34], c.DataHash[:])
+	result[34] = c.V
+	copy(result[35:67], c.R[:])
+	copy(result[67:99], c.S[:])
 	return result
 }
 
 // Deserialize creates a certificate from bytes
 func Deserialize(data []byte) (*Certificate, error) {
-	if len(data) != 98 {
-		return nil, fmt.Errorf("invalid certificate length: expected 98, got %d", len(data))
+	if len(data) != 99 {
+		return nil, fmt.Errorf("invalid certificate length: expected 99, got %d", len(data))
 	}
 
 	cert := &Certificate{
-		Header: data[0],
-		V:      data[33],
+		Header:       data[0],
+		ProviderType: data[1],
+		V:            data[34],
 	}
-	copy(cert.DataHash[:], data[1:33])
-	copy(cert.R[:], data[34:66])
-	copy(cert.S[:], data[66:98])
+	copy(cert.DataHash[:], data[2:34])
+	copy(cert.R[:], data[35:67])
+	copy(cert.S[:], data[67:99])
 
 	if cert.Header != daprovider.DACertificateMessageHeaderFlag {
 		return nil, fmt.Errorf("invalid certificate header: %x", cert.Header)
+	}
+
+	if cert.ProviderType != referenceDAProviderType {
+		return nil, fmt.Errorf("invalid provider type: expected %x, got %x", referenceDAProviderType, cert.ProviderType)
 	}
 
 	return cert, nil
