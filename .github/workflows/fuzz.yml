@@ -13,13 +13,18 @@ permissions:
 jobs:
   list:
     runs-on: ubuntu-4
-    timeout-minutes: 10
 
     steps:
       - uses: actions/checkout@v5
-      - uses: actions/setup-go@v6
         with:
-          go-version-file: "go.mod"
+          submodules: recursive
+
+      - name: Setup CI
+        uses: ./.github/actions/ci-setup
+
+      - name: Build
+        run: make build test-go-deps -j
+
       - id: list
         uses: shogo82148/actions-go-fuzz/list@v1
     outputs:

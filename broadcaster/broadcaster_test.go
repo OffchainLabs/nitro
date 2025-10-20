@@ -9,10 +9,19 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
+	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/params"
+
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
+	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
+
+const chainId = uint64(5555)
 
 type predicate interface {
 	Test() bool
@@ -52,17 +61,18 @@ func (p *messageCountPredicate) Error() string {
 	return fmt.Sprintf("Expected %d, was %d: %s", p.expected, p.was, p.contextMessage)
 }
 
+func testMessage() arbostypes.MessageWithMetadataAndBlockInfo {
+	return arbostypes.MessageWithMetadataAndBlockInfo{
+		MessageWithMeta: arbostypes.EmptyTestMessageWithMetadata,
+		BlockHash:       nil,
+		BlockMetadata:   nil,
+		ArbOSVersion:    0,
+	}
+}
+
 func TestBroadcasterMessagesRemovedOnConfirmation(t *testing.T) {
-	ctx, cancelFunc := context.WithCancel(context.Background())
+	b, cancelFunc, _ := setup(t)
 	defer cancelFunc()
-
-	config := wsbroadcastserver.DefaultTestBroadcasterConfig
-
-	chainId := uint64(5555)
-	feedErrChan := make(chan error, 10)
-	b := NewBroadcaster(func() *wsbroadcastserver.BroadcasterConfig { return &config }, chainId, feedErrChan, nil)
-	Require(t, b.Initialize())
-	Require(t, b.Start(ctx))
 	defer b.StopAndWait()
 
 	expectMessageCount := func(count int, contextMessage string) predicate {
@@ -70,17 +80,17 @@ func TestBroadcasterMessagesRemovedOnConfirmation(t *testing.T) {
 	}
 
 	// Normal broadcasting and confirming
-	Require(t, b.BroadcastSingle(arbostypes.EmptyTestMessageWithMetadata, 1, nil, nil))
+	Require(t, b.BroadcastSingle(testMessage(), 1))
 	waitUntilUpdated(t, expectMessageCount(1, "after 1 message"))
-	Require(t, b.BroadcastSingle(arbostypes.EmptyTestMessageWithMetadata, 2, nil, nil))
+	Require(t, b.BroadcastSingle(testMessage(), 2))
 	waitUntilUpdated(t, expectMessageCount(2, "after 2 messages"))
-	Require(t, b.BroadcastSingle(arbostypes.EmptyTestMessageWithMetadata, 3, nil, nil))
+	Require(t, b.BroadcastSingle(testMessage(), 3))
 	waitUntilUpdated(t, expectMessageCount(3, "after 3 messages"))
-	Require(t, b.BroadcastSingle(arbostypes.EmptyTestMessageWithMetadata, 4, nil, nil))
+	Require(t, b.BroadcastSingle(testMessage(), 4))
 	waitUntilUpdated(t, expectMessageCount(4, "after 4 messages"))
-	Require(t, b.BroadcastSingle(arbostypes.EmptyTestMessageWithMetadata, 5, nil, nil))
+	Require(t, b.BroadcastSingle(testMessage(), 5))
 	waitUntilUpdated(t, expectMessageCount(5, "after 4 messages"))
-	Require(t, b.BroadcastSingle(arbostypes.EmptyTestMessageWithMetadata, 6, nil, nil))
+	Require(t, b.BroadcastSingle(testMessage(), 6))
 	waitUntilUpdated(t, expectMessageCount(6, "after 4 messages"))
 
 	b.Confirm(4)
@@ -96,7 +106,7 @@ func TestBroadcasterMessagesRemovedOnConfirmation(t *testing.T) {
 		"nothing changed because confirmed sequence number before cache"))
 
 	b.Confirm(5)
-	Require(t, b.BroadcastSingle(arbostypes.EmptyTestMessageWithMetadata, 7, nil, nil))
+	Require(t, b.BroadcastSingle(testMessage(), 7))
 	waitUntilUpdated(t, expectMessageCount(2,
 		"after 7 messages, 5 cleared by confirm"))
 
@@ -111,7 +121,57 @@ func Require(t *testing.T, err error, printables ...interface{}) {
 	testhelpers.RequireImpl(t, err, printables...)
 }
 
-func Fail(t *testing.T, printables ...interface{}) {
-	t.Helper()
-	testhelpers.FailImpl(t, printables...)
+func TestBatchDataStatsIsIncludedBasedOnArbOSVersion(t *testing.T) {
+	b, cancelFunc, signer := setup(t)
+	defer cancelFunc()
+	defer b.StopAndWait()
+
+	sequenceNumber := arbutil.MessageIndex(0)
+	message := testMessage()
+	batchDataStats := &arbostypes.BatchDataStats{Length: 1, NonZeros: 2}
+	message.MessageWithMeta.Message.BatchDataStats = batchDataStats
+
+	// For ArbOS versions >= 50, BatchDataStats should be preserved
+	message.ArbOSVersion = params.ArbosVersion_50
+	feedMsg, err := b.NewBroadcastFeedMessage(message, sequenceNumber)
+	Require(t, err)
+	require.Equal(t, batchDataStats, feedMsg.Message.Message.BatchDataStats)
+	require.Equal(t, signMessage(t, message, sequenceNumber, signer), feedMsg.Signature)
+
+	// For ArbOS versions < 50, BatchDataStats should be nil
+	message.ArbOSVersion = params.ArbosVersion_41
+	feedMsg, err = b.NewBroadcastFeedMessage(message, sequenceNumber)
+	Require(t, err)
+	require.Nil(t, feedMsg.Message.Message.BatchDataStats)
+
+	message.MessageWithMeta.Message.BatchDataStats = nil
+	require.Equal(t, signMessage(t, message, sequenceNumber, signer), feedMsg.Signature)
+}
+
+func setup(t *testing.T) (*Broadcaster, context.CancelFunc, signature.DataSignerFunc) {
+	ctx, cancelFunc := context.WithCancel(context.Background())
+
+	config := wsbroadcastserver.DefaultTestBroadcasterConfig
+
+	feedErrChan := make(chan error, 10)
+	signer := dataSigner(t)
+	b := NewBroadcaster(func() *wsbroadcastserver.BroadcasterConfig { return &config }, chainId, feedErrChan, signer)
+	Require(t, b.Initialize())
+	Require(t, b.Start(ctx))
+
+	return b, cancelFunc, signer
+}
+
+func dataSigner(t *testing.T) signature.DataSignerFunc {
+	testPrivateKey, err := crypto.GenerateKey()
+	testhelpers.RequireImpl(t, err)
+	return signature.DataSignerFromPrivateKey(testPrivateKey)
+}
+
+func signMessage(t *testing.T, message arbostypes.MessageWithMetadataAndBlockInfo, sequenceNumber arbutil.MessageIndex, signer signature.DataSignerFunc) []byte {
+	hash, err := message.MessageWithMeta.Hash(sequenceNumber, chainId)
+	Require(t, err)
+	sig, err := signer(hash.Bytes())
+	Require(t, err)
+	return sig
 }
