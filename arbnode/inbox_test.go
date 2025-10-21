@@ -120,10 +120,6 @@ func (w *execClientWrapper) BlockNumberToMessageIndex(blockNum uint64) container
 	return containers.NewReadyPromise(w.ExecutionEngine.BlockNumberToMessageIndex(blockNum))
 }
 
-func (w *execClientWrapper) ArbOSVersionForMessageIndex(msgIdx arbutil.MessageIndex) containers.PromiseInterface[uint64] {
-	return w.ExecutionEngine.ArbOSVersionForMessageIndex(msgIdx)
-}
-
 func (w *execClientWrapper) StopAndWait() {
 }
 

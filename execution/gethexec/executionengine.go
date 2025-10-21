@@ -49,7 +49,6 @@ import (
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/util/arbmath"
-	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/sharedmetrics"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
@@ -599,15 +598,7 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 	}
 
 	blockMetadata := s.blockMetadataFromBlock(block, timeboostedTxs)
-
-	msgWithInfo := arbostypes.MessageWithMetadataAndBlockInfo{
-		MessageWithMeta: msgWithMeta,
-		BlockHash:       &msgResult.BlockHash,
-		BlockMetadata:   blockMetadata,
-		ArbOSVersion:    types.DeserializeHeaderExtraInformation(block.Header()).ArbOSFormatVersion,
-	}
-
-	_, err = s.consensus.WriteMessageFromSequencer(msgIdx, msgWithInfo).Await(s.GetContext())
+	_, err = s.consensus.WriteMessageFromSequencer(msgIdx, msgWithMeta, *msgResult, blockMetadata).Await(s.GetContext())
 	if err != nil {
 		return nil, err
 	}
@@ -686,14 +677,7 @@ func (s *ExecutionEngine) sequenceDelayedMessageWithBlockMutex(message *arbostyp
 		return nil, err
 	}
 
-	msgWithInfo := arbostypes.MessageWithMetadataAndBlockInfo{
-		MessageWithMeta: messageWithMeta,
-		BlockHash:       &msgResult.BlockHash,
-		BlockMetadata:   s.blockMetadataFromBlock(block, nil),
-		ArbOSVersion:    types.DeserializeHeaderExtraInformation(block.Header()).ArbOSFormatVersion,
-	}
-
-	_, err = s.consensus.WriteMessageFromSequencer(msgIdx, msgWithInfo).Await(s.GetContext())
+	_, err = s.consensus.WriteMessageFromSequencer(msgIdx, messageWithMeta, *msgResult, s.blockMetadataFromBlock(block, nil)).Await(s.GetContext())
 	if err != nil {
 		return nil, err
 	}
@@ -1032,13 +1016,13 @@ func (s *ExecutionEngine) digestMessageWithBlockMutex(msgIdxToDigest arbutil.Mes
 	return msgResult, nil
 }
 
-func (s *ExecutionEngine) ArbOSVersionForMessageIndex(msgIdx arbutil.MessageIndex) containers.PromiseInterface[uint64] {
+func (s *ExecutionEngine) ArbOSVersionForMessageIndex(msgIdx arbutil.MessageIndex) (uint64, error) {
 	block := s.bc.GetBlockByNumber(s.MessageIndexToBlockNumber(msgIdx))
 	if block == nil {
-		return containers.NewReadyPromise(uint64(0), fmt.Errorf("couldn't find block for message index %d", msgIdx))
+		return 0, fmt.Errorf("couldn't find block for message index %d", msgIdx)
 	}
 	extra := types.DeserializeHeaderExtraInformation(block.Header())
-	return containers.NewReadyPromise(extra.ArbOSFormatVersion, nil)
+	return extra.ArbOSFormatVersion, nil
 }
 
 func (s *ExecutionEngine) Start(ctx_in context.Context) {

@@ -923,7 +923,7 @@ func getBatchPoster(
 	l1Reader *headerreader.HeaderReader,
 	inboxTracker *InboxTracker,
 	txStreamer *TransactionStreamer,
-	arbOSVersionGetter execution.ArbOSVersionGetter,
+	exec execution.ExecutionBatchPoster,
 	arbDb ethdb.Database,
 	syncMonitor *SyncMonitor,
 	deployInfo *chaininfo.RollupAddresses,
@@ -933,8 +933,8 @@ func getBatchPoster(
 ) (*BatchPoster, error) {
 	var batchPoster *BatchPoster
 	if config.BatchPoster.Enable {
-		if arbOSVersionGetter == nil {
-			return nil, errors.New("batch poster requires ArbOS version getter")
+		if exec == nil {
+			return nil, errors.New("batch poster requires an execution batch poster")
 		}
 
 		if txOptsBatchPoster == nil && config.BatchPoster.DataPoster.ExternalSigner.URL == "" {
@@ -949,7 +949,7 @@ func getBatchPoster(
 			L1Reader:      l1Reader,
 			Inbox:         inboxTracker,
 			Streamer:      txStreamer,
-			VersionGetter: arbOSVersionGetter,
+			VersionGetter: exec,
 			SyncMonitor:   syncMonitor,
 			Config:        func() *BatchPosterConfig { return &configFetcher.Get().BatchPoster },
 			DeployInfo:    deployInfo,
@@ -1056,7 +1056,7 @@ func createNodeImpl(
 	executionClient execution.ExecutionClient,
 	executionSequencer execution.ExecutionSequencer,
 	executionRecorder execution.ExecutionRecorder,
-	arbOSVersionGetter execution.ArbOSVersionGetter,
+	executionBatchPoster execution.ExecutionBatchPoster,
 	arbDb ethdb.Database,
 	configFetcher ConfigFetcher,
 	l2Config *params.ChainConfig,
@@ -1153,7 +1153,7 @@ func createNodeImpl(
 		return nil, err
 	}
 
-	batchPoster, err := getBatchPoster(ctx, config, configFetcher, txOptsBatchPoster, dapWriter, l1Reader, inboxTracker, txStreamer, arbOSVersionGetter, arbDb, syncMonitor, deployInfo, parentChainID, dapReaders, stakerAddr)
+	batchPoster, err := getBatchPoster(ctx, config, configFetcher, txOptsBatchPoster, dapWriter, l1Reader, inboxTracker, txStreamer, executionBatchPoster, arbDb, syncMonitor, deployInfo, parentChainID, dapReaders, stakerAddr)
 	if err != nil {
 		return nil, err
 	}
@@ -1308,7 +1308,7 @@ func CreateNodeFullExecutionClient(
 	executionClient execution.ExecutionClient,
 	executionSequencer execution.ExecutionSequencer,
 	executionRecorder execution.ExecutionRecorder,
-	arbOSVersionGetter execution.ArbOSVersionGetter,
+	executionBatchPoster execution.ExecutionBatchPoster,
 	arbDb ethdb.Database,
 	configFetcher ConfigFetcher,
 	l2Config *params.ChainConfig,
@@ -1322,10 +1322,10 @@ func CreateNodeFullExecutionClient(
 	blobReader daprovider.BlobReader,
 	latestWasmModuleRoot common.Hash,
 ) (*Node, error) {
-	if (executionClient == nil) || (executionSequencer == nil) || (executionRecorder == nil) || (arbOSVersionGetter == nil) {
-		return nil, errors.New("execution client, sequencer, recorder, and ArbOS version getter must be non-nil")
+	if (executionClient == nil) || (executionSequencer == nil) || (executionRecorder == nil) || (executionBatchPoster == nil) {
+		return nil, errors.New("execution client, sequencer, recorder, and batch poster must be non-nil")
 	}
-	currentNode, err := createNodeImpl(ctx, stack, executionClient, executionSequencer, executionRecorder, arbOSVersionGetter, arbDb, configFetcher, l2Config, l1client, deployInfo, txOptsValidator, txOptsBatchPoster, dataSigner, fatalErrChan, parentChainID, blobReader, latestWasmModuleRoot)
+	currentNode, err := createNodeImpl(ctx, stack, executionClient, executionSequencer, executionRecorder, executionBatchPoster, arbDb, configFetcher, l2Config, l1client, deployInfo, txOptsValidator, txOptsBatchPoster, dataSigner, fatalErrChan, parentChainID, blobReader, latestWasmModuleRoot)
 	if err != nil {
 		return nil, err
 	}
@@ -1386,7 +1386,7 @@ func (n *Node) Start(ctx context.Context) error {
 	if n.InboxTracker != nil && n.BroadcastServer != nil {
 		// Even if the sequencer coordinator will populate this backlog,
 		// we want to make sure it's populated before any clients connect.
-		err = n.InboxTracker.PopulateFeedBacklog(ctx, n.BroadcastServer)
+		err = n.InboxTracker.PopulateFeedBacklog(n.BroadcastServer)
 		if err != nil {
 			return fmt.Errorf("error populating feed backlog on startup: %w", err)
 		}
@@ -1556,8 +1556,8 @@ func (n *Node) GetBatchParentChainBlock(seqNum uint64) containers.PromiseInterfa
 	return containers.NewReadyPromise(n.InboxTracker.GetBatchParentChainBlock(seqNum))
 }
 
-func (n *Node) WriteMessageFromSequencer(pos arbutil.MessageIndex, msgWithInfo arbostypes.MessageWithMetadataAndBlockInfo) containers.PromiseInterface[struct{}] {
-	err := n.TxStreamer.WriteMessageFromSequencer(pos, msgWithInfo)
+func (n *Node) WriteMessageFromSequencer(pos arbutil.MessageIndex, msgWithMeta arbostypes.MessageWithMetadata, msgResult execution.MessageResult, blockMetadata common.BlockMetadata) containers.PromiseInterface[struct{}] {
+	err := n.TxStreamer.WriteMessageFromSequencer(pos, msgWithMeta, msgResult, blockMetadata)
 	return containers.NewReadyPromise(struct{}{}, err)
 }
 
