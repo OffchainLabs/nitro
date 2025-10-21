@@ -106,7 +106,7 @@ type BatchPoster struct {
 	bridgeAddr         common.Address
 	gasRefunderAddr    common.Address
 	building           *buildingBatch
-	dapWriter          daprovider.Writer
+	dapWriters         []daprovider.Writer
 	dapReaders         *daprovider.ReaderRegistry
 	dataPoster         *dataposter.DataPoster
 	redisLock          *redislock.Simple
@@ -121,6 +121,7 @@ type BatchPoster struct {
 	batchReverted        atomic.Bool // indicates whether data poster batch was reverted
 	nextRevertCheckBlock int64       // the last parent block scanned for reverting batches
 	postedFirstBatch     bool        // indicates if batch poster has posted the first batch
+	useEthDA             bool        // rebuild next batch with EthDA due to size constraints
 
 	accessList   func(SequencerInboxAccs, AfterDelayedMessagesRead uint64) types.AccessList
 	parentChain  *parent.ParentChain
@@ -332,7 +333,7 @@ type BatchPosterOpts struct {
 	Config        BatchPosterConfigFetcher
 	DeployInfo    *chaininfo.RollupAddresses
 	TransactOpts  *bind.TransactOpts
-	DAPWriter     daprovider.Writer
+	DAPWriters    []daprovider.Writer
 	ParentChainID *big.Int
 	DAPReaders    *daprovider.ReaderRegistry
 }
@@ -388,12 +389,13 @@ func NewBatchPoster(ctx context.Context, opts *BatchPosterOpts) (*BatchPoster, e
 		seqInboxAddr:       opts.DeployInfo.SequencerInbox,
 		gasRefunderAddr:    opts.Config().gasRefunder,
 		bridgeAddr:         opts.DeployInfo.Bridge,
-		dapWriter:          opts.DAPWriter,
+		dapWriters:         opts.DAPWriters,
 		redisLock:          redisLock,
 		dapReaders:         opts.DAPReaders,
 		parentChain:        &parent.ParentChain{ChainID: opts.ParentChainID, L1Reader: opts.L1Reader},
 		checkEip7623:       checkEip7623,
 		useEip7623:         useEip7623,
+		useEthDA:           false,
 	}
 	b.messagesPerBatch, err = arbmath.NewMovingAverage[uint64](20)
 	if err != nil {
@@ -890,7 +892,8 @@ type buildingBatch struct {
 	startMsgCount      arbutil.MessageIndex
 	msgCount           arbutil.MessageIndex
 	haveUsefulMessage  bool
-	use4844            bool
+	use4844            bool // Are we ACTUALLY using 4844 for THIS batch?
+	wouldUse4844       bool // WOULD we use 4844 if we fell back to EthDA?
 	useCustomDA        bool
 	muxBackend         *simulatedMuxBackend
 	firstDelayedMsg    *arbostypes.MessageWithMetadata
@@ -908,7 +911,7 @@ func (b *BatchPoster) newBatchSegments(ctx context.Context, firstDelayed uint64,
 			if err != nil {
 				return nil, err
 			}
-			// Try to fill 3 blobs per batch
+			// Try to fill under half of the parent chain's max blobs.
 			// #nosec G115
 			maxSize = blobs.BlobEncodableData*(int(maxBlobGasPerBlock)/params.BlobTxBlobGasPerBlob)/2 - 2000
 		}
@@ -1373,16 +1376,20 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 		if err != nil {
 			return false, err
 		}
-		var use4844 bool
 		config := b.config()
-		if config.Post4844Blobs && b.dapWriter == nil && latestHeader.ExcessBlobGas != nil && latestHeader.BlobGasUsed != nil {
+		// Determine if we WOULD use 4844 for EthDA posting (based on price/config)
+		// We need to know this even when using altDA, because we may fall back to EthDA
+		// and need to know which size limit to check against
+		var wouldUse4844ForEthDA bool
+		buildingForEthDA := len(b.dapWriters) == 0 || b.useEthDA
+		if config.Post4844Blobs && latestHeader.ExcessBlobGas != nil && latestHeader.BlobGasUsed != nil {
 			arbOSVersion, err := b.arbOSVersionGetter.ArbOSVersionForMessageIndex(arbutil.MessageIndex(arbmath.SaturatingUSub(uint64(batchPosition.MessageCount), 1)))
 			if err != nil {
 				return false, err
 			}
 			if arbOSVersion >= params.ArbosVersion_20 {
 				if config.IgnoreBlobPrice {
-					use4844 = true
+					wouldUse4844ForEthDA = true
 				} else {
 					backlog := b.backlog.Load()
 					// Logic to prevent switching from non-4844 batches to 4844 batches too often,
@@ -1423,15 +1430,23 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 						}
 
 						calldataFeePerByte := arbmath.BigMulByUint(latestHeader.BaseFee, calldataFeePerByteMultiplier)
-						use4844 = arbmath.BigLessThan(blobFeePerByte, calldataFeePerByte)
+						wouldUse4844ForEthDA = arbmath.BigLessThan(blobFeePerByte, calldataFeePerByte)
 					}
 				}
 			}
 		}
 
+		if b.useEthDA {
+			log.Info("Building batch for EthDA due to previous altDA failure", "wouldUse4844", wouldUse4844ForEthDA)
+		}
+
+		// Only use 4844 batching if we're actually posting to EthDA
+		// When posting to altDA, don't limit batch size with 4844 constraints
+		actuallyUse4844 := wouldUse4844ForEthDA && buildingForEthDA
+
 		// Use CustomDA if configured
 		useCustomDA := b.config().UseCustomDA
-		segments, err := b.newBatchSegments(ctx, batchPosition.DelayedMessageCount, use4844, useCustomDA)
+		segments, err := b.newBatchSegments(ctx, batchPosition.DelayedMessageCount, actuallyUse4844, useCustomDA)
 		if err != nil {
 			return false, err
 		}
@@ -1439,7 +1454,8 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 			segments:      segments,
 			msgCount:      batchPosition.MessageCount,
 			startMsgCount: batchPosition.MessageCount,
-			use4844:       use4844,
+			use4844:       actuallyUse4844,      // What we're actually using for THIS batch
+			wouldUse4844:  wouldUse4844ForEthDA, // What we WOULD use if posting to EthDA
 			useCustomDA:   useCustomDA,
 		}
 		if b.config().CheckBatchCorrectness {
@@ -1672,7 +1688,8 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 	}
 	var sequencerMsg []byte
 
-	if b.dapWriter != nil {
+	// Try DA writers if not forced to EthDA
+	if len(b.dapWriters) > 0 && !b.useEthDA {
 		if !b.redisLock.AttemptLock(ctx) {
 			return false, errAttemptLockFailed
 		}
@@ -1694,21 +1711,62 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 			}
 			return false, fmt.Errorf("%w: batch position changed from %v to %v while creating batch", storage.ErrStorageRace, batchPosition, actualBatchPosition)
 		}
-		// #nosec G115
-		sequencerMsg, err = b.dapWriter.Store(batchData, uint64(time.Now().Add(config.DASRetentionPeriod).Unix())).Await(ctx)
-		if err != nil {
-			if config.DisableDapFallbackStoreDataOnChain {
-				batchPosterDAFailureCounter.Inc(1)
-				return false, err
-			} else {
-				// DAP on-chain fallback storage
-				sequencerMsg = batchData
+
+		// Try each DA writer in order
+		var daSuccess bool
+		var lastErr error
+
+		for i, writer := range b.dapWriters {
+			log.Info("Attempting to store batch to DA", "writerIndex", i, "batchSize", len(batchData))
+
+			// #nosec G115
+			sequencerMsg, err = writer.Store(batchData, uint64(time.Now().Add(config.DASRetentionPeriod).Unix())).Await(ctx)
+			if err != nil {
+				log.Warn("DA writer failed, trying next", "writerIndex", i, "error", err)
+				lastErr = err
+				continue // Try next writer
 			}
+
+			// Success!
+			log.Info("Successfully stored batch to DA", "writerIndex", i)
+			daSuccess = true
+			batchPosterDASuccessCounter.Inc(1)
+			batchPosterDALastSuccessfulActionGauge.Update(time.Now().Unix())
+			break
 		}
 
-		batchPosterDASuccessCounter.Inc(1)
-		batchPosterDALastSuccessfulActionGauge.Update(time.Now().Unix())
+		// All DA writers failed
+		if !daSuccess {
+			batchPosterDAFailureCounter.Inc(1)
+
+			if config.DisableDapFallbackStoreDataOnChain {
+				return false, fmt.Errorf("all DA writers failed: %w", lastErr)
+			}
+
+			// Check if batch size is the issue for EthDA fallback
+			// Use wouldUse4844 to know which EthDA limit we'd be subject to
+			if b.building.wouldUse4844 {
+				if len(batchData) > config.Max4844BatchSize {
+					log.Warn("Batch too large for 4844, will rebuild smaller", "batchSize", len(batchData), "max4844Size", config.Max4844BatchSize)
+					b.useEthDA = true
+					b.building = nil
+					return false, nil // Trigger rebuild
+				}
+			} else {
+				if len(batchData) > config.MaxSize {
+					log.Warn("Batch too large for calldata, will rebuild smaller", "batchSize", len(batchData), "maxSize", config.MaxSize)
+					b.useEthDA = true
+					b.building = nil
+					return false, nil // Trigger rebuild
+				}
+			}
+
+			// Size is OK, fall back to EthDA
+			log.Warn("All DA writers failed, falling back to EthDA", "lastError", lastErr, "batchSize", len(batchData))
+			sequencerMsg = batchData
+		}
 	} else {
+		// No DA writers or forced to EthDA
 		sequencerMsg = batchData
 	}
 
@@ -1957,6 +2015,12 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 			return false, fmt.Errorf("error waiting for tx receipt: %w", err)
 		}
 		log.Info("Got successful receipt from batch poster transaction", "txHash", tx.Hash(), "blockNumber", receipt.BlockNumber, "blockHash", receipt.BlockHash)
+	}
+
+	// After successful batch post, reset useEthDA flag
+	if b.useEthDA {
+		log.Info("Resetting useEthDA flag after successful EthDA post")
+		b.useEthDA = false
 	}
 
 	return true, nil

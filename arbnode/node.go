@@ -575,7 +575,7 @@ func getDelayedBridgeAndSequencerInbox(
 	return delayedBridge, sequencerInbox, nil
 }
 
-func getDAProvider(
+func getDAProviders(
 	ctx context.Context,
 	config *Config,
 	l2Config *params.ChainConfig,
@@ -586,36 +586,38 @@ func getDAProvider(
 	dataSigner signature.DataSignerFunc,
 	l1client *ethclient.Client,
 	stack *node.Node,
-) (daprovider.Writer, func(), *daprovider.ReaderRegistry, daprovider.Validator, error) {
+) ([]daprovider.Writer, func(), *daprovider.ReaderRegistry, daprovider.Validator, error) {
 	// Validate DA configuration
 	if config.DA.Mode == "external" {
 		if !config.DA.ExternalProvider.Enable {
 			return nil, nil, nil, nil, errors.New("--node.da.external-provider.enable must be true when mode=external")
 		}
-		if config.DataAvailability.Enable {
-			return nil, nil, nil, nil, errors.New("cannot use external DA provider with embedded data-availability")
-		}
-		if config.DA.ReferenceDA.Enable {
-			return nil, nil, nil, nil, errors.New("cannot use external DA provider with embedded referenceda")
-		}
+		// Removed mutual exclusion check - now allow both external and embedded DA
 	}
 
 	var err error
-	var daClient *daclient.Client
-	var withDAWriter bool
+	var externalDAClient *daclient.Client
+	var embeddedDAClient *daclient.Client
+	var writers []daprovider.Writer
 	var providerServerCloseFn func()
 	var validator daprovider.Validator
 
+	// Create external DA client if enabled
 	if config.DA.Mode == "external" {
 		// External DA provider mode
-		daClient, err = daclient.NewClient(ctx, &config.DA.ExternalProvider, data_streaming.PayloadCommiter())
+		externalDAClient, err = daclient.NewClient(ctx, &config.DA.ExternalProvider, data_streaming.PayloadCommiter())
 		if err != nil {
 			return nil, nil, nil, nil, err
 		}
-		validator = daClient
-		// Only allow dawriter if batchposter is enabled
-		withDAWriter = config.DA.ExternalProvider.WithWriter && config.BatchPoster.Enable
-	} else if config.DataAvailability.Enable || config.DA.Mode != "" {
+		validator = externalDAClient
+		// Add to writers array if batch poster is enabled
+		if config.DA.ExternalProvider.WithWriter && config.BatchPoster.Enable {
+			writers = append(writers, externalDAClient)
+		}
+	}
+
+	// Create embedded DA client if enabled (can coexist with external DA)
+	if config.DataAvailability.Enable || (config.DA.Mode != "" && config.DA.Mode != "external") {
 		jwtPath := path.Join(filepath.Dir(stack.InstanceDir()), "dasserver-jwtsecret")
 		if err := genericconf.TryCreatingJWTSecret(jwtPath); err != nil {
 			return nil, nil, nil, nil, fmt.Errorf("error writing ephemeral jwtsecret of dasserver to file: %w", err)
@@ -632,7 +634,6 @@ func getDAProvider(
 		serverConfig.Port = 0 // Initializes server at a random available port
 		serverConfig.EnableDAWriter = config.BatchPoster.Enable
 		serverConfig.JWTSecret = jwtPath
-		withDAWriter = config.BatchPoster.Enable
 
 		// Determine effective DA mode and config
 		var effectiveMode factory.DAProviderMode
@@ -703,7 +704,7 @@ func getDAProvider(
 
 		// Create validator (may be nil for AnyTrust mode)
 		var validatorCleanup func()
-		validator, validatorCleanup, err = daFactory.CreateValidator(ctx)
+		embeddedValidator, validatorCleanup, err := daFactory.CreateValidator(ctx)
 		if err != nil {
 			return nil, nil, nil, nil, err
 		}
@@ -712,7 +713,7 @@ func getDAProvider(
 		}
 
 		headerBytes := daFactory.GetSupportedHeaderBytes()
-		providerServer, err := dapserver.NewServerWithDAPProvider(ctx, &serverConfig, reader, writer, validator, headerBytes, data_streaming.PayloadCommitmentVerifier())
+		providerServer, err := dapserver.NewServerWithDAPProvider(ctx, &serverConfig, reader, writer, embeddedValidator, headerBytes, data_streaming.PayloadCommitmentVerifier())
 
 		// Create combined cleanup function
 		closeFn := func() {
@@ -730,10 +731,22 @@ func getDAProvider(
 		daClientConfig := config.DA.ExternalProvider
 		daClientConfig.RPC = rpcClientConfig
 
-		daClient, err = daclient.NewClient(ctx, &daClientConfig, data_streaming.PayloadCommiter())
+		embeddedDAClient, err = daclient.NewClient(ctx, &daClientConfig, data_streaming.PayloadCommiter())
 		if err != nil {
 			return nil, nil, nil, nil, err
 		}
+
+		// Add embedded DA client to writers array if batch poster is enabled
+		if config.BatchPoster.Enable {
+			writers = append(writers, embeddedDAClient)
+		}
+
+		// Set validator if not already set by external DA
+		// NOTE: In the future we may support multiple validators, but for now only CustomDA validates
+		if validator == nil {
+			validator = embeddedValidator
+		}
+
 		providerServerCloseFn = func() {
 			_ = providerServer.Shutdown(ctx)
 			if closeFn != nil {
@@ -745,33 +758,43 @@ func getDAProvider(
 	}
 
 	// We support a nil txStreamer for the pruning code
-	if txStreamer != nil && txStreamer.chainConfig.ArbitrumChainParams.DataAvailabilityCommittee && daClient == nil {
+	if txStreamer != nil && txStreamer.chainConfig.ArbitrumChainParams.DataAvailabilityCommittee && externalDAClient == nil && embeddedDAClient == nil {
 		return nil, nil, nil, nil, errors.New("data availability service required but unconfigured")
 	}
 
 	dapReaders := daprovider.NewReaderRegistry()
-	if daClient != nil {
-		promise := daClient.GetSupportedHeaderBytes()
+
+	// Register external DA client as reader if present
+	if externalDAClient != nil {
+		promise := externalDAClient.GetSupportedHeaderBytes()
 		result, err := promise.Await(ctx)
 		if err != nil {
-			return nil, nil, nil, nil, fmt.Errorf("failed to get supported header bytes from DA client: %w", err)
+			return nil, nil, nil, nil, fmt.Errorf("failed to get supported header bytes from external DA client: %w", err)
 		}
-		if err := dapReaders.RegisterAll(result.HeaderBytes, daClient); err != nil {
-			return nil, nil, nil, nil, fmt.Errorf("failed to register DA client: %w", err)
+		if err := dapReaders.RegisterAll(result.HeaderBytes, externalDAClient); err != nil {
+			return nil, nil, nil, nil, fmt.Errorf("failed to register external DA client: %w", err)
 		}
 	}
+
+	// Register embedded DA client as reader if present
+	if embeddedDAClient != nil {
+		promise := embeddedDAClient.GetSupportedHeaderBytes()
+		result, err := promise.Await(ctx)
+		if err != nil {
+			return nil, nil, nil, nil, fmt.Errorf("failed to get supported header bytes from embedded DA client: %w", err)
+		}
+		if err := dapReaders.RegisterAll(result.HeaderBytes, embeddedDAClient); err != nil {
+			return nil, nil, nil, nil, fmt.Errorf("failed to register embedded DA client: %w", err)
+		}
+	}
+
 	if blobReader != nil {
 		if err := dapReaders.SetupBlobReader(daprovider.NewReaderForBlobReader(blobReader)); err != nil {
 			return nil, nil, nil, nil, fmt.Errorf("failed to register blob reader: %w", err)
 		}
 	}
-	// AnyTrust now always uses the daClient, which is already registered,
-	// so we don't need to register it separately here.
 
-	if withDAWriter {
-		return daClient, providerServerCloseFn, dapReaders, validator, nil
-	}
-	return nil, providerServerCloseFn, dapReaders, validator, nil
+	return writers, providerServerCloseFn, dapReaders, validator, nil
 }
 
 func getInboxTrackerAndReader(
@@ -1032,7 +1055,7 @@ func getBatchPoster(
 	config *Config,
 	configFetcher ConfigFetcher,
 	txOptsBatchPoster *bind.TransactOpts,
-	dapWriter daprovider.Writer,
+	dapWriters []daprovider.Writer,
 	l1Reader *headerreader.HeaderReader,
 	inboxTracker *InboxTracker,
 	txStreamer *TransactionStreamer,
@@ -1053,7 +1076,7 @@ func getBatchPoster(
 		if txOptsBatchPoster == nil && config.BatchPoster.DataPoster.ExternalSigner.URL == "" {
 			return nil, errors.New("batchposter, but no TxOpts")
 		}
-		if dapWriter != nil && !config.BatchPoster.CheckBatchCorrectness {
+		if len(dapWriters) > 0 && !config.BatchPoster.CheckBatchCorrectness {
 			return nil, errors.New("when da-provider is used by batch-poster for posting, check-batch-correctness needs to be enabled")
 		}
 		var err error
@@ -1067,7 +1090,7 @@ func getBatchPoster(
 			Config:        func() *BatchPosterConfig { return &configFetcher.Get().BatchPoster },
 			DeployInfo:    deployInfo,
 			TransactOpts:  txOptsBatchPoster,
-			DAPWriter:     dapWriter,
+			DAPWriters:    dapWriters,
 			ParentChainID: parentChainID,
 			DAPReaders:    dapReaders,
 		})
@@ -1241,7 +1264,7 @@ func createNodeImpl(
 		return nil, err
 	}
 
-	dapWriter, providerServerCloseFn, dapReaders, dapValidator, err := getDAProvider(ctx, config, l2Config, txStreamer, blobReader, l1Reader, deployInfo, dataSigner, l1client, stack)
+	dapWriters, providerServerCloseFn, dapReaders, dapValidator, err := getDAProviders(ctx, config, l2Config, txStreamer, blobReader, l1Reader, deployInfo, dataSigner, l1client, stack)
 	if err != nil {
 		return nil, err
 	}
@@ -1266,7 +1289,7 @@ func createNodeImpl(
 		return nil, err
 	}
 
-	batchPoster, err := getBatchPoster(ctx, config, configFetcher, txOptsBatchPoster, dapWriter, l1Reader, inboxTracker, txStreamer, executionBatchPoster, arbDb, syncMonitor, deployInfo, parentChainID, dapReaders, stakerAddr)
+	batchPoster, err := getBatchPoster(ctx, config, configFetcher, txOptsBatchPoster, dapWriters, l1Reader, inboxTracker, txStreamer, executionBatchPoster, arbDb, syncMonitor, deployInfo, parentChainID, dapReaders, stakerAddr)
 	if err != nil {
 		return nil, err
 	}
