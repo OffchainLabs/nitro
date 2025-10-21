@@ -4,6 +4,7 @@
 package precompiles
 
 import (
+	"fmt"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -283,4 +284,16 @@ func (con ArbGasInfo) GetL1PricingUnitsSinceUpdate(c ctx, evm mech) (uint64, err
 // GetLastL1PricingSurplus gets the L1 pricing surplus as of the last update (may be negative)
 func (con ArbGasInfo) GetLastL1PricingSurplus(c ctx, evm mech) (*big.Int, error) {
 	return c.State.L1PricingState().LastSurplus()
+}
+
+// GetMaxBlockGasLimit gets the maximum block gas limit
+func (con ArbGasInfo) GetMaxBlockGasLimit(c ctx, evm mech) (uint64, error) {
+	// todo: update with real code once https://github.com/OffchainLabs/nitro/pull/3860 is merged
+	return 0, fmt.Errorf("GetMaxBlockGasLimit is a stub implementation, since definitions were upstreamed, but implementations not done")
+}
+
+// GetGasPricingConstraints gets the current gas pricing constraints used by the Multi-Constraint Pricer.
+func (con ArbGasInfo) GetGasPricingConstraints(c ctx, evm mech) ([][3]uint64, error) {
+	// todo: update with real code once https://github.com/OffchainLabs/nitro/pull/3860 is merged
+	return nil, fmt.Errorf("GetGasPricingConstraints is a stub implementation, since definitions were upstreamed, but implementations not done")
 }

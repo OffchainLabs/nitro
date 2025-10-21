@@ -50,7 +50,6 @@ import (
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/util/arbmath"
-	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/sharedmetrics"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
@@ -1062,13 +1061,13 @@ func (s *ExecutionEngine) digestMessageWithBlockMutex(msgIdxToDigest arbutil.Mes
 	return msgResult, nil
 }
 
-func (s *ExecutionEngine) ArbOSVersionForMessageIndex(msgIdx arbutil.MessageIndex) containers.PromiseInterface[uint64] {
+func (s *ExecutionEngine) ArbOSVersionForMessageIndex(msgIdx arbutil.MessageIndex) (uint64, error) {
 	block := s.bc.GetBlockByNumber(s.MessageIndexToBlockNumber(msgIdx))
 	if block == nil {
-		return containers.NewReadyPromise(uint64(0), fmt.Errorf("couldn't find block for message index %d", msgIdx))
+		return 0, fmt.Errorf("couldn't find block for message index %d", msgIdx)
 	}
 	extra := types.DeserializeHeaderExtraInformation(block.Header())
-	return containers.NewReadyPromise(extra.ArbOSFormatVersion, nil)
+	return extra.ArbOSFormatVersion, nil
 }
 
 func (s *ExecutionEngine) Start(ctx_in context.Context) {

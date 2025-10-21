@@ -54,7 +54,6 @@ type ExecutionClient interface {
 	ResultAtMessageIndex(msgIdx arbutil.MessageIndex) containers.PromiseInterface[*MessageResult]
 	MessageIndexToBlockNumber(messageNum arbutil.MessageIndex) containers.PromiseInterface[uint64]
 	BlockNumberToMessageIndex(blockNum uint64) containers.PromiseInterface[arbutil.MessageIndex]
-	ArbOSVersionGetter
 	SetFinalityData(ctx context.Context, safeFinalityData *arbutil.FinalityData, finalizedFinalityData *arbutil.FinalityData, validatedFinalityData *arbutil.FinalityData) containers.PromiseInterface[struct{}]
 	SetConsensusSyncData(ctx context.Context, syncData *ConsensusSyncData) containers.PromiseInterface[struct{}]
 	MarkFeedStart(to arbutil.MessageIndex) containers.PromiseInterface[struct{}]
@@ -92,8 +91,8 @@ type ExecutionSequencer interface {
 }
 
 // needed for batch poster
-type ArbOSVersionGetter interface {
-	ArbOSVersionForMessageIndex(msgIdx arbutil.MessageIndex) containers.PromiseInterface[uint64]
+type ExecutionBatchPoster interface {
+	ArbOSVersionForMessageIndex(msgIdx arbutil.MessageIndex) (uint64, error)
 }
 
 // not implemented in execution, used as input

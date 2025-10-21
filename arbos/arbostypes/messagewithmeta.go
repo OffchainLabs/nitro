@@ -19,7 +19,6 @@ type MessageWithMetadata struct {
 	DelayedMessagesRead uint64             `json:"delayedMessagesRead"`
 }
 
-// lint:require-exhaustive-initialization
 type MessageWithMetadataAndBlockInfo struct {
 	MessageWithMeta MessageWithMetadata
 	BlockHash       *common.Hash
