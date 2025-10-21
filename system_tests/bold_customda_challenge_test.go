@@ -82,40 +82,6 @@ func TestChallengeProtocolBOLDCustomDA_ValidCertClaimedInvalid(t *testing.T) {
 	testChallengeProtocolBOLDCustomDA(t, ValidCertClaimedInvalid)
 }
 
-// createReferenceDAProviderServer creates and starts a ReferenceDA provider server with automatic port selection
-func createReferenceDAProviderServer(t *testing.T, ctx context.Context, l1Client *ethclient.Client, validatorAddr common.Address, dataSigner signature.DataSignerFunc) (*http.Server, string) {
-	// Create ReferenceDA components
-	storage := referenceda.GetInMemoryStorage()
-	reader := referenceda.NewReader(storage, l1Client, validatorAddr)
-	writer := referenceda.NewWriter(dataSigner)
-	validator := referenceda.NewValidator(l1Client, validatorAddr)
-
-	// Create server config with automatic port selection
-	serverConfig := &dapserver.ServerConfig{
-		Addr:               "127.0.0.1",
-		Port:               0, // 0 means automatic port selection
-		EnableDAWriter:     true,
-		ServerTimeouts:     dapserver.DefaultServerConfig.ServerTimeouts,
-		RPCServerBodyLimit: dapserver.DefaultServerConfig.RPCServerBodyLimit,
-	}
-
-	// Create the provider server
-	headerBytes := []byte{daprovider.DACertificateMessageHeaderFlag}
-	server, err := dapserver.NewServerWithDAPProvider(ctx, serverConfig, reader, writer, validator, headerBytes, data_streaming.PayloadCommitmentVerifier())
-	Require(t, err)
-
-	// Extract the actual address with port
-	// The server.Addr contains "http://" prefix, we need to strip it
-	serverAddr := strings.TrimPrefix(server.Addr, "http://")
-
-	// Create the full URL for client connection
-	serverURL := fmt.Sprintf("http://%s", serverAddr)
-
-	t.Logf("Started ReferenceDA provider server at %s", serverURL)
-
-	return server, serverURL
-}
-
 // postBatchWithDA posts a batch through DA and returns the certificate
 func postBatchWithDA(
 	t *testing.T,
@@ -298,7 +264,6 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, 
 
 	// Configure external DA (we'll update the URL after creating providers)
 	nodeConfigA := arbnode.ConfigDefaultL1Test()
-	nodeConfigA.DA.Mode = "external"
 	nodeConfigA.DA.ExternalProvider.Enable = true
 
 	// Set up L1 first to get validator address
@@ -365,7 +330,6 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, 
 
 	// Configure external DA for node B
 	l2nodeConfig := arbnode.ConfigDefaultL1Test()
-	l2nodeConfig.DA.Mode = "external"
 	l2nodeConfig.DA.ExternalProvider.Enable = true
 	l2nodeConfig.DA.ExternalProvider.RPC.URL = providerURLNodeB
 

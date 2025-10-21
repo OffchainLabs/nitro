@@ -65,8 +65,12 @@ import (
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
+	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/daprovider/das"
 	"github.com/offchainlabs/nitro/daprovider/das/dasutil"
+	"github.com/offchainlabs/nitro/daprovider/data_streaming"
+	"github.com/offchainlabs/nitro/daprovider/referenceda"
+	dapserver "github.com/offchainlabs/nitro/daprovider/server"
 	"github.com/offchainlabs/nitro/deploy"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	_ "github.com/offchainlabs/nitro/execution/nodeInterface"
@@ -771,19 +775,6 @@ func (b *NodeBuilder) BuildL3OnL2(t *testing.T) func() {
 }
 
 func (b *NodeBuilder) BuildL2OnL1(t *testing.T) func() {
-	// If ReferenceDA is deployed, set the validator contract address in nodeConfig
-	if b.deployReferenceDA {
-		if validatorInfo, ok := b.L1Info.Accounts["ReferenceDAProofValidator"]; ok {
-			validatorAddr := validatorInfo.Address
-			if validatorAddr != (common.Address{}) {
-				b.nodeConfig.DA.ReferenceDA.ValidatorContract = validatorAddr.Hex()
-				t.Logf("Using ReferenceDAProofValidator contract address in nodeConfig: %s", validatorAddr.Hex())
-			}
-		} else {
-			t.Logf("ReferenceDAProofValidator not found in L1Info.Accounts")
-		}
-	}
-
 	b.L2 = buildOnParentChain(
 		t,
 		b.ctx,
@@ -1980,9 +1971,9 @@ func setupConfigWithDAS(
 	case "onchain":
 		enableDas = false
 	case "referenceda":
-		// For referenceda, we use DAS chain config but will configure embedded referenceda later
-		chainConfig = chaininfo.ArbitrumDevTestDASChainConfig()
-		enableDas = false // We'll use referenceda instead of traditional DAS
+		// For referenceda, we use the standard dev chain config (not DAS/AnyTrust)
+		// chainConfig already initialized to ArbitrumDevTestChainConfig() above
+		enableDas = false // We'll use external referenceda provider instead of traditional DAS
 	default:
 		Fatal(t, "unknown storage type")
 	}
@@ -2036,14 +2027,47 @@ func setupConfigWithDAS(
 		l1NodeConfigA.DataAvailability.RestAggregator.Urls = []string{"http://" + restLis.Addr().String()}
 		l1NodeConfigA.DataAvailability.ParentChainNodeURL = "none"
 	} else if dasModeString == "referenceda" {
-		// Configure for embedded referenceda mode
-		l1NodeConfigA.DA.Mode = "referenceda"
-		l1NodeConfigA.DA.ReferenceDA.Enable = true
+		// For referenceda mode, we'll use external provider
+		// The URL will be configured after the validator contract is deployed and server is created
+		l1NodeConfigA.DA.ExternalProvider.Enable = true
 		l1NodeConfigA.DataAvailability.Enable = false
-		// Note: BatchPoster configuration is handled by the specific test that needs it
 	}
 
 	return chainConfig, l1NodeConfigA, lifecycleManager, dbPath, dasSignerKey
+}
+
+// createReferenceDAProviderServer creates and starts an external ReferenceDA provider server
+func createReferenceDAProviderServer(t *testing.T, ctx context.Context, l1Client *ethclient.Client, validatorAddr common.Address, dataSigner signature.DataSignerFunc) (*http.Server, string) {
+	// Create ReferenceDA components
+	storage := referenceda.GetInMemoryStorage()
+	reader := referenceda.NewReader(storage, l1Client, validatorAddr)
+	writer := referenceda.NewWriter(dataSigner)
+	validator := referenceda.NewValidator(l1Client, validatorAddr)
+
+	// Create server config with automatic port selection
+	serverConfig := &dapserver.ServerConfig{
+		Addr:               "127.0.0.1",
+		Port:               0, // 0 means automatic port selection
+		EnableDAWriter:     true,
+		ServerTimeouts:     dapserver.DefaultServerConfig.ServerTimeouts,
+		RPCServerBodyLimit: dapserver.DefaultServerConfig.RPCServerBodyLimit,
+	}
+
+	// Create the provider server
+	headerBytes := []byte{daprovider.DACertificateMessageHeaderFlag}
+	server, err := dapserver.NewServerWithDAPProvider(ctx, serverConfig, reader, writer, validator, headerBytes, data_streaming.PayloadCommitmentVerifier())
+	Require(t, err)
+
+	// Extract the actual address with port
+	// The server.Addr contains "http://" prefix, we need to strip it
+	serverAddr := strings.TrimPrefix(server.Addr, "http://")
+
+	// Create the full URL for client connection
+	serverURL := fmt.Sprintf("http://%s", serverAddr)
+
+	t.Logf("Started ReferenceDA provider server at %s", serverURL)
+
+	return server, serverURL
 }
 
 func getDeadlineTimeout(t *testing.T, defaultTimeout time.Duration) time.Duration {

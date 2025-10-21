@@ -42,7 +42,6 @@ import (
 	"github.com/offchainlabs/nitro/daprovider/das"
 	"github.com/offchainlabs/nitro/daprovider/data_streaming"
 	"github.com/offchainlabs/nitro/daprovider/factory"
-	"github.com/offchainlabs/nitro/daprovider/referenceda"
 	dapserver "github.com/offchainlabs/nitro/daprovider/server"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/execution/gethexec"
@@ -63,14 +62,10 @@ import (
 )
 
 type DAConfig struct {
-	Mode             string                `koanf:"mode"`
-	ReferenceDA      referenceda.Config    `koanf:"referenceda"`
 	ExternalProvider daclient.ClientConfig `koanf:"external-provider" reload:"hot"`
 }
 
 func DAConfigAddOptions(prefix string, f *pflag.FlagSet) {
-	f.String(prefix+".mode", "", "DA mode (anytrust, referenceda, or external)")
-	referenceda.ConfigAddOptions(prefix+".referenceda", f)
 	daclient.ClientConfigAddOptions(prefix+".external-provider", f)
 }
 
@@ -189,7 +184,7 @@ var ConfigDefault = Config{
 	Bold:                     bold.DefaultBoldConfig,
 	SeqCoordinator:           DefaultSeqCoordinatorConfig,
 	DataAvailability:         das.DefaultDataAvailabilityConfig,
-	DA:                       DAConfig{Mode: "", ReferenceDA: referenceda.DefaultConfig, ExternalProvider: daclient.DefaultClientConfig},
+	DA:                       DAConfig{ExternalProvider: daclient.DefaultClientConfig},
 	SyncMonitor:              DefaultSyncMonitorConfig,
 	Dangerous:                DefaultDangerousConfig,
 	TransactionStreamer:      DefaultTransactionStreamerConfig,
@@ -587,37 +582,39 @@ func getDAProviders(
 	l1client *ethclient.Client,
 	stack *node.Node,
 ) ([]daprovider.Writer, func(), *daprovider.ReaderRegistry, daprovider.Validator, error) {
-	// Validate DA configuration
-	if config.DA.Mode == "external" {
-		if !config.DA.ExternalProvider.Enable {
-			return nil, nil, nil, nil, errors.New("--node.da.external-provider.enable must be true when mode=external")
-		}
-	}
-
-	var err error
-	var externalDAClient *daclient.Client
-	var embeddedDAClient *daclient.Client
 	var writers []daprovider.Writer
-	var providerServerCloseFn func()
+	var cleanupFuncs []func()
 	var validator daprovider.Validator
+	var dapReaders = daprovider.NewReaderRegistry()
+
+	// Priority order for writers:
+	// 1. External DA (if enabled)
+	// 2. AnyTrust (if enabled)
 
 	// Create external DA client if enabled
-	if config.DA.Mode == "external" {
-		// External DA provider mode
-		externalDAClient, err = daclient.NewClient(ctx, &config.DA.ExternalProvider, data_streaming.PayloadCommiter())
+	if config.DA.ExternalProvider.Enable {
+		externalDAClient, err := daclient.NewClient(ctx, &config.DA.ExternalProvider, data_streaming.PayloadCommiter())
 		if err != nil {
 			return nil, nil, nil, nil, err
 		}
 		validator = externalDAClient
-		// Add to writers array if batch poster is enabled
+		// Add to writers array if batch poster is enabled and WithWriter is true
 		if config.DA.ExternalProvider.WithWriter && config.BatchPoster.Enable {
 			writers = append(writers, externalDAClient)
 		}
+		// Register external DA client as reader
+		promise := externalDAClient.GetSupportedHeaderBytes()
+		result, err := promise.Await(ctx)
+		if err != nil {
+			return nil, nil, nil, nil, fmt.Errorf("failed to get supported header bytes from external DA client: %w", err)
+		}
+		if err := dapReaders.RegisterAll(result.HeaderBytes, externalDAClient); err != nil {
+			return nil, nil, nil, nil, fmt.Errorf("failed to register external DA client: %w", err)
+		}
 	}
 
-	// Create embedded DA provider if enabled (can coexist with external DA).
-	// Anytrust mode always creates an embedded DA provider.
-	if config.DataAvailability.Enable || (config.DA.Mode != "" && config.DA.Mode != "external") {
+	// Create AnyTrust DA provider if enabled (can coexist with external DA)
+	if config.DataAvailability.Enable {
 		jwtPath := path.Join(filepath.Dir(stack.InstanceDir()), "dasserver-jwtsecret")
 		if err := genericconf.TryCreatingJWTSecret(jwtPath); err != nil {
 			return nil, nil, nil, nil, fmt.Errorf("error writing ephemeral jwtsecret of dasserver to file: %w", err)
@@ -635,38 +632,11 @@ func getDAProviders(
 		serverConfig.EnableDAWriter = config.BatchPoster.Enable
 		serverConfig.JWTSecret = jwtPath
 
-		// Determine effective DA mode and config
-		var effectiveMode factory.DAProviderMode
-		var anytrustConfig *das.DataAvailabilityConfig
-		var referencedaConfig *referenceda.Config
-
-		switch config.DA.Mode {
-		case "referenceda":
-			if !config.DA.ReferenceDA.Enable {
-				return nil, nil, nil, nil, errors.New("--node.da.referenceda.enable must be true when using referenceda mode")
-			}
-			effectiveMode = factory.ModeReferenceDA
-			referencedaConfig = &config.DA.ReferenceDA
-
-		case "anytrust", "": // Default to anytrust for backwards compatibility
-			if !config.DataAvailability.Enable {
-				return nil, nil, nil, nil, errors.New("--node.data-availability.enable must be true when using anytrust mode")
-			}
-			effectiveMode = factory.ModeAnyTrust
-			anytrustConfig = &config.DataAvailability
-
-		case "external":
-			return nil, nil, nil, nil, errors.New("external mode should not reach factory creation - this is a bug")
-
-		default:
-			return nil, nil, nil, nil, fmt.Errorf("unsupported embedded DA mode: %s (supported: anytrust, referenceda)", config.DA.Mode)
-		}
-
-		// Create factory with appropriate config
+		// Create AnyTrust factory
 		daFactory, err := factory.NewDAProviderFactory(
-			effectiveMode,
-			anytrustConfig,    // nil for referenceda mode
-			referencedaConfig, // nil for anytrust mode
+			factory.ModeAnyTrust,
+			&config.DataAvailability,
+			nil, // referencedaConfig
 			dataSigner,
 			l1client,
 			l1Reader,
@@ -681,13 +651,13 @@ func getDAProviders(
 			return nil, nil, nil, nil, err
 		}
 
-		var cleanupFuncs []func()
+		var localCleanupFuncs []func()
 		reader, readerCleanup, err := daFactory.CreateReader(ctx)
 		if err != nil {
 			return nil, nil, nil, nil, err
 		}
 		if readerCleanup != nil {
-			cleanupFuncs = append(cleanupFuncs, readerCleanup)
+			localCleanupFuncs = append(localCleanupFuncs, readerCleanup)
 		}
 
 		var writer daprovider.Writer
@@ -698,93 +668,65 @@ func getDAProviders(
 				return nil, nil, nil, nil, err
 			}
 			if writerCleanup != nil {
-				cleanupFuncs = append(cleanupFuncs, writerCleanup)
+				localCleanupFuncs = append(localCleanupFuncs, writerCleanup)
 			}
-		}
-
-		// Create validator (may be nil for AnyTrust mode)
-		var validatorCleanup func()
-		embeddedValidator, validatorCleanup, err := daFactory.CreateValidator(ctx)
-		if err != nil {
-			return nil, nil, nil, nil, err
-		}
-		if validatorCleanup != nil {
-			cleanupFuncs = append(cleanupFuncs, validatorCleanup)
 		}
 
 		headerBytes := daFactory.GetSupportedHeaderBytes()
-		providerServer, err := dapserver.NewServerWithDAPProvider(ctx, &serverConfig, reader, writer, embeddedValidator, headerBytes, data_streaming.PayloadCommitmentVerifier())
-
-		// Create combined cleanup function
-		closeFn := func() {
-			for _, cleanup := range cleanupFuncs {
-				cleanup()
-			}
-		}
+		providerServer, err := dapserver.NewServerWithDAPProvider(
+			ctx,
+			&serverConfig,
+			reader,
+			writer,
+			nil, // there is no anytrust Validator implementation
+			headerBytes,
+			data_streaming.PayloadCommitmentVerifier())
 		if err != nil {
 			return nil, nil, nil, nil, err
 		}
+
 		rpcClientConfig := rpcclient.DefaultClientConfig
 		rpcClientConfig.URL = providerServer.Addr
 		rpcClientConfig.JWTSecret = jwtPath
 
-		daClientConfig := config.DA.ExternalProvider
+		daClientConfig := daclient.ClientConfig{}
+		daClientConfig.Enable = true
 		daClientConfig.RPC = rpcClientConfig
 
-		embeddedDAClient, err = daclient.NewClient(ctx, &daClientConfig, data_streaming.PayloadCommiter())
+		anytrustClient, err := daclient.NewClient(ctx, &daClientConfig, data_streaming.PayloadCommiter())
 		if err != nil {
 			return nil, nil, nil, nil, err
 		}
 
-		// Add embedded DA client to writers array if batch poster is enabled
+		// Add AnyTrust client to writers array if batch poster is enabled
 		if config.BatchPoster.Enable {
-			writers = append(writers, embeddedDAClient)
+			writers = append(writers, anytrustClient)
 		}
 
-		// Set validator if not already set by external DA
-		// NOTE: In the future we may support multiple validators, but for now only CustomDA validates
-		if validator == nil {
-			validator = embeddedValidator
+		// Register AnyTrust client as reader
+		promise := anytrustClient.GetSupportedHeaderBytes()
+		result, err := promise.Await(ctx)
+		if err != nil {
+			return nil, nil, nil, nil, fmt.Errorf("failed to get supported header bytes from anytrust client: %w", err)
+		}
+		if err := dapReaders.RegisterAll(result.HeaderBytes, anytrustClient); err != nil {
+			return nil, nil, nil, nil, fmt.Errorf("failed to register anytrust client: %w", err)
 		}
 
-		providerServerCloseFn = func() {
+		// Create cleanup function for AnyTrust
+		anytrustCleanup := func() {
 			_ = providerServer.Shutdown(ctx)
-			if closeFn != nil {
-				closeFn()
+			for _, cleanup := range localCleanupFuncs {
+				cleanup()
 			}
 		}
-	} else if l2Config.ArbitrumChainParams.DataAvailabilityCommittee {
-		return nil, nil, nil, nil, errors.New("a data availability service is required for this chain, but it was not configured")
+		cleanupFuncs = append(cleanupFuncs, anytrustCleanup)
 	}
 
-	// We support a nil txStreamer for the pruning code
-	if txStreamer != nil && txStreamer.chainConfig.ArbitrumChainParams.DataAvailabilityCommittee && externalDAClient == nil && embeddedDAClient == nil {
-		return nil, nil, nil, nil, errors.New("data availability service required but unconfigured")
-	}
-
-	dapReaders := daprovider.NewReaderRegistry()
-
-	// Register external DA client as reader if present
-	if externalDAClient != nil {
-		promise := externalDAClient.GetSupportedHeaderBytes()
-		result, err := promise.Await(ctx)
-		if err != nil {
-			return nil, nil, nil, nil, fmt.Errorf("failed to get supported header bytes from external DA client: %w", err)
-		}
-		if err := dapReaders.RegisterAll(result.HeaderBytes, externalDAClient); err != nil {
-			return nil, nil, nil, nil, fmt.Errorf("failed to register external DA client: %w", err)
-		}
-	}
-
-	// Register embedded DA client as reader if present
-	if embeddedDAClient != nil {
-		promise := embeddedDAClient.GetSupportedHeaderBytes()
-		result, err := promise.Await(ctx)
-		if err != nil {
-			return nil, nil, nil, nil, fmt.Errorf("failed to get supported header bytes from embedded DA client: %w", err)
-		}
-		if err := dapReaders.RegisterAll(result.HeaderBytes, embeddedDAClient); err != nil {
-			return nil, nil, nil, nil, fmt.Errorf("failed to register embedded DA client: %w", err)
+	// Check if chain requires Anytrust but none is configured
+	if l2Config.ArbitrumChainParams.DataAvailabilityCommittee {
+		if !config.DataAvailability.Enable {
+			return nil, nil, nil, nil, errors.New("Anytrust is required for this chain, but it was not configured")
 		}
 	}
 
@@ -794,7 +736,14 @@ func getDAProviders(
 		}
 	}
 
-	return writers, providerServerCloseFn, dapReaders, validator, nil
+	// Combine all cleanup functions
+	combinedCleanup := func() {
+		for _, cleanup := range cleanupFuncs {
+			cleanup()
+		}
+	}
+
+	return writers, combinedCleanup, dapReaders, validator, nil
 }
 
 func getInboxTrackerAndReader(

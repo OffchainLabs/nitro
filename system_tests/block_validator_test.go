@@ -10,6 +10,7 @@ package arbtest
 import (
 	"context"
 	"math/big"
+	"net/http"
 	"testing"
 	"time"
 
@@ -29,6 +30,7 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/redisutil"
+	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/util/testhelpers/flag"
 	"github.com/offchainlabs/nitro/util/testhelpers/github"
 	"github.com/offchainlabs/nitro/validator/client/redis"
@@ -82,17 +84,49 @@ func testBlockValidatorSimple(t *testing.T, opts Options) {
 	}
 	builder.L2Info = nil
 
-	// Configure for referenceda mode
+	// Configure for referenceda mode - deploy validator contract
 	if opts.dasModeString == "referenceda" {
 		builder.WithReferenceDA()
 	}
 
-	cleanup := builder.Build(t)
-	defer cleanup()
+	// For ReferenceDA, we need to build L1 first, create the external provider server,
+	// then build L2. For other DA modes, we can build in one go.
+	var refDAURL string
+	var refDAServer *http.Server
+	if opts.dasModeString == "referenceda" {
+		// CheckConfig creates L2Info if it's nil
+		builder.CheckConfig(t)
 
-	// Only authorize DAS keyset if we're using traditional DAS
-	if opts.dasModeString != "referenceda" && opts.dasModeString != "onchain" && dasSignerKey != nil {
-		authorizeDASKeyset(t, ctx, dasSignerKey, builder.L1Info, builder.L1.Client)
+		// Build L1 only (deploys validator contract)
+		builder.BuildL1(t)
+
+		// Create external ReferenceDA provider server now that we have the validator address
+		validatorAddr := builder.L1Info.GetAddress("ReferenceDAProofValidator")
+		dataSigner := signature.DataSignerFromPrivateKey(builder.L1Info.GetInfoWithPrivKey("Sequencer").PrivateKey)
+
+		refDAServer, refDAURL = createReferenceDAProviderServer(t, ctx, builder.L1.Client, validatorAddr, dataSigner)
+		defer func() {
+			if err := refDAServer.Shutdown(context.Background()); err != nil {
+				t.Logf("Error shutting down ReferenceDA provider server: %v", err)
+			}
+		}()
+
+		// Update node config with external provider URL before building L2
+		builder.nodeConfig.DA.ExternalProvider.RPC.URL = refDAURL
+		builder.nodeConfig.DA.ExternalProvider.WithWriter = true
+
+		// Now build L2 with the configured external provider
+		cleanup := builder.BuildL2OnL1(t)
+		defer cleanup()
+	} else {
+		// For non-ReferenceDA modes, build normally
+		cleanup := builder.Build(t)
+		defer cleanup()
+
+		// Only authorize DAS keyset if we're using traditional DAS
+		if opts.dasModeString != "onchain" && dasSignerKey != nil {
+			authorizeDASKeyset(t, ctx, dasSignerKey, builder.L1Info, builder.L1.Client)
+		}
 	}
 
 	validatorConfig := arbnode.ConfigDefaultL1NonSequencerTest()
@@ -100,19 +134,10 @@ func testBlockValidatorSimple(t *testing.T, opts Options) {
 
 	// Configure validator based on DA mode
 	if opts.dasModeString == "referenceda" {
-		// For embedded referenceda, copy the configuration
-		validatorConfig.DA.Mode = "referenceda"
-		validatorConfig.DA.ReferenceDA.Enable = true
-
-		// Copy the validator contract address from builder's nodeConfig
-		if builder.nodeConfig.DA.ReferenceDA.ValidatorContract != "" {
-			validatorConfig.DA.ReferenceDA.ValidatorContract = builder.nodeConfig.DA.ReferenceDA.ValidatorContract
-		}
-
-		// Disable traditional DAS for validator
+		// For external referenceda, configure the validator to use external provider
+		validatorConfig.DA.ExternalProvider.Enable = true
+		validatorConfig.DA.ExternalProvider.RPC.URL = refDAURL
 		validatorConfig.DataAvailability.Enable = false
-
-		// No batch poster configuration needed for validator
 	} else {
 		// For traditional DAS, copy DataAvailability configuration
 		validatorConfig.DataAvailability = l1NodeConfigA.DataAvailability
