@@ -592,7 +592,6 @@ func getDAProviders(
 		if !config.DA.ExternalProvider.Enable {
 			return nil, nil, nil, nil, errors.New("--node.da.external-provider.enable must be true when mode=external")
 		}
-		// Removed mutual exclusion check - now allow both external and embedded DA
 	}
 
 	var err error
@@ -616,7 +615,8 @@ func getDAProviders(
 		}
 	}
 
-	// Create embedded DA client if enabled (can coexist with external DA)
+	// Create embedded DA provider if enabled (can coexist with external DA).
+	// Anytrust mode always creates an embedded DA provider.
 	if config.DataAvailability.Enable || (config.DA.Mode != "" && config.DA.Mode != "external") {
 		jwtPath := path.Join(filepath.Dir(stack.InstanceDir()), "dasserver-jwtsecret")
 		if err := genericconf.TryCreatingJWTSecret(jwtPath); err != nil {

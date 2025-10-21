@@ -1721,8 +1721,6 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 		var lastErr error
 
 		for i, writer := range b.dapWriters {
-			log.Info("Attempting to store batch to DA", "writerIndex", i, "batchSize", len(batchData))
-
 			// #nosec G115
 			sequencerMsg, err = writer.Store(batchData, uint64(time.Now().Add(config.DASRetentionPeriod).Unix())).Await(ctx)
 			if err != nil {
@@ -1731,8 +1729,6 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 				continue // Try next writer
 			}
 
-			// Success!
-			log.Info("Successfully stored batch to DA", "writerIndex", i)
 			daSuccess = true
 			batchPosterDASuccessCounter.Inc(1)
 			batchPosterDALastSuccessfulActionGauge.Update(time.Now().Unix())
@@ -2022,7 +2018,7 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 
 	// After successful batch post, reset useEthDA flag
 	if b.useEthDA {
-		log.Info("Resetting useEthDA flag after successful EthDA post")
+		log.Info("Successful EthDA post after AltDA failure. Will try AltDA next time.")
 		b.useEthDA = false
 	}
 
