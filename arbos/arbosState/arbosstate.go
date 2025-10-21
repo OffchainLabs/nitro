@@ -391,6 +391,7 @@ func (state *ArbosState) UpgradeArbosVersion(
 			ensure(p.UpgradeToArbosVersion(nextArbosVersion))
 			ensure(p.Save())
 			ensure(state.l2PricingState.SetMaxPerTxGasLimit(l2pricing.InitialPerTxGasLimitV50))
+			ensure(state.l2PricingState.SetConstraintsFromLegacy())
 		default:
 			return fmt.Errorf(
 				"the chain is upgrading to unsupported ArbOS version %v, %w",

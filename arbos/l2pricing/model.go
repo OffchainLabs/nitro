@@ -24,6 +24,14 @@ const InitialPerTxGasLimitV50 uint64 = 32 * 1000000
 
 const ConstraintDivisorMultiplier = 30
 
+func (ps *L2PricingState) AddToGasPoolWithArbosVersion(gas int64, arbosVersion uint64) error {
+	// For ArbOS version 50 and above call Multi-Constraint Pricer update
+	if arbosVersion >= params.ArbosVersion_50 {
+		return ps.AddToGasPoolMultiConstraints(gas)
+	}
+	return ps.AddToGasPool(gas)
+}
+
 func (ps *L2PricingState) AddToGasPool(gas int64) error {
 	backlog, err := ps.GasBacklog()
 	if err != nil {

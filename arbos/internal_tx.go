@@ -107,7 +107,12 @@ func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.Arbos
 		_ = state.RetryableState().TryToReapOneRetryable(currentTime, evm, util.TracingDuringEVM)
 		_ = state.RetryableState().TryToReapOneRetryable(currentTime, evm, util.TracingDuringEVM)
 
-		state.L2PricingState().UpdatePricingModel(l2BaseFee, timePassed, false)
+		// For ArbOS version 50 and above call Multi-Constraint Pricer update
+		if state.ArbOSVersion() >= params.ArbosVersion_50 {
+			state.L2PricingState().UpdatePricingModelMultiConstraints(timePassed)
+		} else {
+			state.L2PricingState().UpdatePricingModel(l2BaseFee, timePassed, false)
+		}
 
 		return state.UpgradeArbosVersionIfNecessary(currentTime, evm.StateDB, evm.ChainConfig())
 	case InternalTxBatchPostingReportMethodID:

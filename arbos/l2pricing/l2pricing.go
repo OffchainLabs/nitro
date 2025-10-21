@@ -211,10 +211,16 @@ func (ps *L2PricingState) SetConstraintsFromLegacy() error {
 		// Ensure the period is at least 1
 		period = 1
 	}
-	return ps.AddConstraint(target, period)
+
+	backlog, err := ps.GasBacklog()
+	if err != nil {
+		return err
+	}
+
+	return ps.AddConstraint(target, period, backlog)
 }
 
-func (ps *L2PricingState) AddConstraint(target uint64, period uint64) error {
+func (ps *L2PricingState) AddConstraint(target uint64, period uint64, backlog uint64) error {
 	subStorage, err := ps.constraints.Push()
 	if err != nil {
 		return fmt.Errorf("failed to push constraint: %w", err)
@@ -228,6 +234,9 @@ func (ps *L2PricingState) AddConstraint(target uint64, period uint64) error {
 	}
 	if err := constraint.divisor.Set(computeConstraintDivisor(target, period)); err != nil {
 		return fmt.Errorf("failed to set divisor: %w", err)
+	}
+	if err := constraint.backlog.Set(backlog); err != nil {
+		return fmt.Errorf("failed to set backlog: %w", err)
 	}
 	return nil
 }
