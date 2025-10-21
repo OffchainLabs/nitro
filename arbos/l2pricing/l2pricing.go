@@ -66,8 +66,8 @@ func (c *GasConstraint) ComputeInertiaFromPeriod() (uint64, error) {
 		return 0, err
 	}
 
-	// Approximate legacy inertia from the constraint period
-	periodSqrt := arbmath.SquareUint(period)
+	// Reverse of SetConstraintsFromLegacy: inertia ≈ sqrt(period) * ConstraintDivisorMultiplier
+	periodSqrt := arbmath.ApproxSquareRoot(period)
 	inertia := arbmath.SaturatingUMul(periodSqrt, ConstraintDivisorMultiplier)
 
 	return inertia, nil

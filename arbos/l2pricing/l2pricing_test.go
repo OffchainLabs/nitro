@@ -169,36 +169,38 @@ func TestComputeInertiaFromPeriod(t *testing.T) {
 	pricing := PricingForTest(t)
 	Require(t, pricing.ClearConstraints())
 
-	const n uint64 = 5
-	for i := range n {
-		inertia := (i + 1) * 100
-		// same approximation used in SetConstraintsFromLegacy
-		periodSqrt := inertia / ConstraintDivisorMultiplier
-		period := arbmath.SaturatingUMul(periodSqrt, periodSqrt)
-		if period == 0 {
-			period = 1
+	inertias := []uint64{1000, 10000, 120000, 500000}
+
+	for i, inertia := range inertias {
+		Require(t, pricing.SetSpeedLimitPerSecond(20_000_000))
+		Require(t, pricing.SetPricingInertia(inertia))
+		Require(t, pricing.SetBacklogTolerance(0))
+
+		Require(t, pricing.SetConstraintsFromLegacy())
+
+		length, err := pricing.ConstraintsLength()
+		Require(t, err)
+		if length != 1 {
+			t.Fatalf("expected 1 constraint after migration, got %v", length)
 		}
-		Require(t, pricing.AddConstraint(1000, period, 0))
-	}
 
-	length, err := pricing.ConstraintsLength()
-	Require(t, err)
-	if length != n {
-		t.Fatalf("wrong number of constraints: got %v want %v", length, n)
-	}
-
-	for i := range n {
-		constraint := pricing.OpenConstraintAt(i)
+		constraint := pricing.OpenConstraintAt(0)
 		computed, err := constraint.ComputeInertiaFromPeriod()
 		Require(t, err)
 
-		// Reconstruct original inertia for comparison
-		period, err := constraint.period.Get()
-		Require(t, err)
-		want := arbmath.SaturatingUMul(arbmath.SquareUint(period), ConstraintDivisorMultiplier)
-
-		if computed != want {
-			t.Errorf("wrong inertia for constraint %v: got %v, want %v", i, computed, want)
+		// Compare to original legacy inertia with 1% tolerance
+		var diff uint64
+		if computed > inertia {
+			diff = computed - inertia
+		} else {
+			diff = inertia - computed
 		}
+		tolerance := inertia / 100 // 1%
+		if diff > tolerance {
+			t.Errorf("inertia mismatch (case %d): got %v, want ~%v (diff=%v, tol=%v)",
+				i, computed, inertia, diff, tolerance)
+		}
+
+		Require(t, pricing.ClearConstraints())
 	}
 }
