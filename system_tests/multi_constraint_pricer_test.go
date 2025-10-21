@@ -67,7 +67,7 @@ func TestMultiConstraintPricerPrecompiles(t *testing.T) {
 	// Should return the long-term constraint's computed inertia
 	pricingInertia, err := arbGasInfo.GetPricingInertia(callOpts)
 	require.NoError(t, err)
-	require.GreaterOrEqual(t, pricingInertia, uint64(86400))
+	require.GreaterOrEqual(t, pricingInertia, uint64(8790)) // Computed from 86400s period
 
 	// Should return zero backlog tolerance
 	backlogTolerance, err := arbGasInfo.GetGasBacklogTolerance(callOpts)

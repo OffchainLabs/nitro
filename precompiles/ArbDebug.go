@@ -74,7 +74,3 @@ func (con ArbDebug) Panic(c ctx, evm mech) error {
 func (con ArbDebug) LegacyError(c ctx) error {
 	return errors.New("example legacy error")
 }
-
-func (con ArbDebug) OverwriteContractCode(c ctx, evm mech, target common.Address, newCode []byte) ([]byte, error) {
-	return nil, errors.New("not implemented")
-}
