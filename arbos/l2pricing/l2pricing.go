@@ -226,6 +226,9 @@ func (ps *L2PricingState) AddConstraint(target uint64, inertia uint64, backlog u
 	if err := constraint.backlog.Set(backlog); err != nil {
 		return fmt.Errorf("failed to set backlog: %w", err)
 	}
+	if err := constraint.backlog.Set(backlog); err != nil {
+		return fmt.Errorf("failed to set backlog: %w", err)
+	}
 	return nil
 }
 
