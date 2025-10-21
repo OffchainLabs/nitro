@@ -39,7 +39,6 @@ type BroadcastFeedMessage struct {
 	BlockHash      *common.Hash                   `json:"blockHash,omitempty"`
 	Signature      []byte                         `json:"signature"`
 	BlockMetadata  common.BlockMetadata           `json:"blockMetadata,omitempty"`
-	ArbOSVersion   uint64                         `json:"arbOSVersion,omitempty"`
 
 	CumulativeSumMsgSize uint64 `json:"-"`
 }
