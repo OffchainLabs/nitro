@@ -10,10 +10,10 @@ import (
 
 	"github.com/pkg/errors"
 
-	"github.com/offchainlabs/nitro/bold/chain-abstraction"
+	protocol "github.com/offchainlabs/nitro/bold/chain-abstraction"
 	"github.com/offchainlabs/nitro/bold/containers"
 	"github.com/offchainlabs/nitro/bold/containers/threadsafe"
-	"github.com/offchainlabs/nitro/bold/math"
+	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
 var (
@@ -169,7 +169,7 @@ func (ht *RoyalChallengeTree) findHonestAncestorsWithinChallengeLevel(
 
 		currStart, _ := cursor.StartCommitment()
 		currEnd, _ := cursor.EndCommitment()
-		bisectTo, err := math.Bisect(uint64(currStart), uint64(currEnd))
+		bisectTo, err := arbmath.Bisect(uint64(currStart), uint64(currEnd))
 		if err != nil {
 			return nil, nil, errors.Wrapf(err, "could not bisect start=%d, end=%d", currStart, currEnd)
 		}
