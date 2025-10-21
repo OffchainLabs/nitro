@@ -36,7 +36,6 @@ func NewReader(storage *InMemoryStorage, l1Client *ethclient.Client, validatorAd
 
 // recoverInternal is the shared implementation for both RecoverPayload and CollectPreimages
 func (r *Reader) recoverInternal(
-	ctx context.Context,
 	batchNum uint64,
 	batchBlockHash common.Hash,
 	sequencerMsg []byte,
@@ -98,7 +97,7 @@ func (r *Reader) recoverInternal(
 
 	// Record preimages if needed
 	var preimages daprovider.PreimagesMap
-	if needPreimages && payload != nil {
+	if needPreimages {
 		preimages = make(daprovider.PreimagesMap)
 		preimageRecorder := daprovider.RecordPreimagesTo(preimages)
 
@@ -123,12 +122,10 @@ func (r *Reader) RecoverPayload(
 	batchBlockHash common.Hash,
 	sequencerMsg []byte,
 ) containers.PromiseInterface[daprovider.PayloadResult] {
-	promise, ctx := containers.NewPromiseWithContext[daprovider.PayloadResult](context.Background())
-	go func() {
-		payload, _, err := r.recoverInternal(ctx, batchNum, batchBlockHash, sequencerMsg, true, false)
-		promise.ProduceResult(daprovider.PayloadResult{Payload: payload}, err)
-	}()
-	return promise
+	return containers.DoPromise(context.Background(), func(_ context.Context) (daprovider.PayloadResult, error) {
+		payload, _, err := r.recoverInternal(batchNum, batchBlockHash, sequencerMsg, true, false)
+		return daprovider.PayloadResult{Payload: payload}, err
+	})
 }
 
 // CollectPreimages collects preimages from the DA provider
@@ -137,10 +134,8 @@ func (r *Reader) CollectPreimages(
 	batchBlockHash common.Hash,
 	sequencerMsg []byte,
 ) containers.PromiseInterface[daprovider.PreimagesResult] {
-	promise, ctx := containers.NewPromiseWithContext[daprovider.PreimagesResult](context.Background())
-	go func() {
-		_, preimages, err := r.recoverInternal(ctx, batchNum, batchBlockHash, sequencerMsg, false, true)
-		promise.ProduceResult(daprovider.PreimagesResult{Preimages: preimages}, err)
-	}()
-	return promise
+	return containers.DoPromise(context.Background(), func(_ context.Context) (daprovider.PreimagesResult, error) {
+		_, preimages, err := r.recoverInternal(batchNum, batchBlockHash, sequencerMsg, false, true)
+		return daprovider.PreimagesResult{Preimages: preimages}, err
+	})
 }

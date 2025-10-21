@@ -112,6 +112,15 @@ func (p *Promise[R]) ProduceResult(value R, err error) {
 	}
 }
 
+func DoPromise[R any](parentCtx context.Context, promiseProducer func(context.Context) (R, error)) PromiseInterface[R] {
+	promise, ctx := NewPromiseWithContext[R](parentCtx)
+	go func() {
+		value, err := promiseProducer(ctx)
+		promise.ProduceResult(value, err)
+	}()
+	return promise
+}
+
 // cancel might be called multiple times while no value or error is produced
 // cancel will be called by Await if it's context is done
 func NewPromise[R any](cancel func()) Promise[R] {

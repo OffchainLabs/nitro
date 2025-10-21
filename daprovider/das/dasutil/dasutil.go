@@ -74,12 +74,10 @@ func (d *readerForDAS) RecoverPayload(
 	batchBlockHash common.Hash,
 	sequencerMsg []byte,
 ) containers.PromiseInterface[daprovider.PayloadResult] {
-	promise, ctx := containers.NewPromiseWithContext[daprovider.PayloadResult](context.Background())
-	go func() {
+	return containers.DoPromise(context.Background(), func(ctx context.Context) (daprovider.PayloadResult, error) {
 		payload, _, err := d.recoverInternal(ctx, batchNum, sequencerMsg, true, false)
-		promise.ProduceResult(daprovider.PayloadResult{Payload: payload}, err)
-	}()
-	return promise
+		return daprovider.PayloadResult{Payload: payload}, err
+	})
 }
 
 // CollectPreimages collects preimages from the DA provider
@@ -88,12 +86,10 @@ func (d *readerForDAS) CollectPreimages(
 	batchBlockHash common.Hash,
 	sequencerMsg []byte,
 ) containers.PromiseInterface[daprovider.PreimagesResult] {
-	promise, ctx := containers.NewPromiseWithContext[daprovider.PreimagesResult](context.Background())
-	go func() {
+	return containers.DoPromise(context.Background(), func(ctx context.Context) (daprovider.PreimagesResult, error) {
 		_, preimages, err := d.recoverInternal(ctx, batchNum, sequencerMsg, false, true)
-		promise.ProduceResult(daprovider.PreimagesResult{Preimages: preimages}, err)
-	}()
-	return promise
+		return daprovider.PreimagesResult{Preimages: preimages}, err
+	})
 }
 
 // NewWriterForDAS is generally meant to be only used by nitro.
@@ -107,16 +103,13 @@ type writerForDAS struct {
 }
 
 func (d *writerForDAS) Store(message []byte, timeout uint64) containers.PromiseInterface[[]byte] {
-	promise, ctx := containers.NewPromiseWithContext[[]byte](context.Background())
-	go func() {
+	return containers.DoPromise(context.Background(), func(ctx context.Context) ([]byte, error) {
 		cert, err := d.dasWriter.Store(ctx, message, timeout)
 		if err != nil {
-			promise.ProduceError(err)
-		} else {
-			promise.Produce(Serialize(cert))
+			return nil, err
 		}
-	}()
-	return promise
+		return Serialize(cert), nil
+	})
 }
 
 var (
