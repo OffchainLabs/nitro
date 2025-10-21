@@ -159,9 +159,38 @@ func (con ArbGasInfo) GetPricesInArbGas(c ctx, evm mech) (huge, huge, huge, erro
 // GetGasAccountingParams gets the rollup's speed limit, pool size, and block gas limit
 func (con ArbGasInfo) GetGasAccountingParams(c ctx, evm mech) (huge, huge, huge, error) {
 	l2pricing := c.State.L2PricingState()
-	speedLimit, _ := l2pricing.SpeedLimitPerSecond()
+
+	var (
+		speedLimit uint64
+		err        error
+	)
+
+	// For ArbOS version 50 and above, the speed limit is defined by the highest-period constraint
+	if c.State.ArbOSVersion() >= params.ArbosVersion_50 {
+		constraint, cerr := l2pricing.HighestPeriodConstraint()
+		if cerr != nil {
+			return nil, nil, nil, cerr
+		}
+		speedLimit, err = constraint.Target()
+	} else {
+		speedLimit, err = l2pricing.SpeedLimitPerSecond()
+	}
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
 	maxBlockGasLimit, err := l2pricing.PerBlockGasLimit()
-	return arbmath.UintToBig(speedLimit), arbmath.UintToBig(maxBlockGasLimit), arbmath.UintToBig(maxBlockGasLimit), err
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	// gasPoolMax is always zero under both pricing models.
+	gasPoolMax := uint64(0)
+
+	return arbmath.UintToBig(speedLimit),
+		arbmath.UintToBig(gasPoolMax),
+		arbmath.UintToBig(maxBlockGasLimit),
+		nil
 }
 
 // GetMaxTxGasLimit gets the max tx gas limit
@@ -208,16 +237,37 @@ func (con ArbGasInfo) GetCurrentTxL1GasFees(c ctx, evm mech) (huge, error) {
 
 // GetGasBacklog gets the backlogged amount of gas burnt in excess of the speed limit
 func (con ArbGasInfo) GetGasBacklog(c ctx, evm mech) (uint64, error) {
+	// For ArbOS version 50 and above, the backlog is defined by the highest-period constraint
+	if c.State.ArbOSVersion() >= params.ArbosVersion_50 {
+		constraint, err := c.State.L2PricingState().HighestPeriodConstraint()
+		if err != nil {
+			return 0, err
+		}
+		return constraint.Backlog()
+	}
 	return c.State.L2PricingState().GasBacklog()
 }
 
 // GetPricingInertia gets how slowly ArbOS updates the L2 basefee in response to backlogged gas
 func (con ArbGasInfo) GetPricingInertia(c ctx, evm mech) (uint64, error) {
+	// For ArbOS version 50 and above, compute the inertia from period of highest-period constraint
+	if c.State.ArbOSVersion() >= params.ArbosVersion_50 {
+		constraint, err := c.State.L2PricingState().HighestPeriodConstraint()
+		if err != nil {
+			return 0, err
+		}
+		return constraint.ComputeInertiaFromPeriod()
+	}
 	return c.State.L2PricingState().PricingInertia()
 }
 
 // GetGasBacklogTolerance gets the forgivable amount of backlogged gas ArbOS will ignore when raising the basefee
 func (con ArbGasInfo) GetGasBacklogTolerance(c ctx, evm mech) (uint64, error) {
+	// For ArbOS version 50 and above, the backlog tolerance is always zero
+	if c.State.ArbOSVersion() >= params.ArbosVersion_50 {
+		return 0, nil
+	}
+
 	return c.State.L2PricingState().BacklogTolerance()
 }
 

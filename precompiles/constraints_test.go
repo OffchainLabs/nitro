@@ -50,15 +50,15 @@ func TestFailToSetInvalidConstraints(t *testing.T) {
 	evm, _, callCtx, _, arbOwner := setupResourceConstraintHandles(t)
 
 	// Empty constraints
-	err := arbOwner.SetGasPricingConstraints(callCtx, evm, [][2]uint64{})
+	err := arbOwner.SetGasPricingConstraints(callCtx, evm, [][3]uint64{})
 	require.Error(t, err)
 
 	// Zero target
-	err = arbOwner.SetGasPricingConstraints(callCtx, evm, [][2]uint64{{0, 17}})
+	err = arbOwner.SetGasPricingConstraints(callCtx, evm, [][3]uint64{{0, 17, 1000}})
 	require.Error(t, err)
 
 	// Zero period
-	err = arbOwner.SetGasPricingConstraints(callCtx, evm, [][2]uint64{{10_000_000, 0}})
+	err = arbOwner.SetGasPricingConstraints(callCtx, evm, [][3]uint64{{10_000_000, 0, 0}})
 	require.Error(t, err)
 }
 
@@ -67,17 +67,12 @@ func TestConstraintsStorage(t *testing.T) {
 
 	evm, state, callCtx, arbGasInfo, arbOwner := setupResourceConstraintHandles(t)
 
-	// Check there is no constraints initially
-	result, err := arbGasInfo.GetGasPricingConstraints(callCtx, evm)
-	require.NoError(t, err)
-	require.Equal(t, len(result), 0)
-
 	// Set constraints
-	constraints := [][2]uint64{
-		{30_000_000, 1},     // short-term
-		{15_000_000, 86400}, // long-term
+	constraints := [][3]uint64{
+		{30_000_000, 1, 800_000},       // short-term
+		{15_000_000, 86400, 1_600_000}, // long-term
 	}
-	err = arbOwner.SetGasPricingConstraints(callCtx, evm, constraints)
+	err := arbOwner.SetGasPricingConstraints(callCtx, evm, constraints)
 	require.NoError(t, err)
 
 	// Verify constraints are stored correctly
@@ -96,6 +91,10 @@ func TestConstraintsStorage(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, uint64(1), firstPeriod)
 
+	firstBacklog, err := first.Backlog()
+	require.NoError(t, err)
+	require.Equal(t, uint64(800_000), firstBacklog)
+
 	secondTarget, err := second.Target()
 	require.NoError(t, err)
 	require.Equal(t, uint64(15_000_000), secondTarget)
@@ -104,8 +103,12 @@ func TestConstraintsStorage(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, uint64(86400), secondPeriod)
 
+	secondBacklog, err := second.Backlog()
+	require.NoError(t, err)
+	require.Equal(t, uint64(1_600_000), secondBacklog)
+
 	// Get constraints and verify
-	result, err = arbGasInfo.GetGasPricingConstraints(callCtx, evm)
+	result, err := arbGasInfo.GetGasPricingConstraints(callCtx, evm)
 	require.NoError(t, err)
 	require.Equal(t, 2, len(result))
 	require.Equal(t, uint64(30_000_000), result[0][0])
@@ -114,8 +117,8 @@ func TestConstraintsStorage(t *testing.T) {
 	require.Equal(t, uint64(86400), result[1][1])
 
 	// Set new constraints
-	constraints = [][2]uint64{
-		{7_000_000, 12},
+	constraints = [][3]uint64{
+		{7_000_000, 12, 50_000_000},
 	}
 	err = arbOwner.SetGasPricingConstraints(callCtx, evm, constraints)
 	require.NoError(t, err)
@@ -138,6 +141,7 @@ func TestConstraintsStorage(t *testing.T) {
 	require.Equal(t, len(result), 1)
 	require.Equal(t, result[0][0], uint64(7_000_000))
 	require.Equal(t, result[0][1], uint64(12))
+	require.Equal(t, result[0][2], uint64(50_000_000))
 }
 
 func TestConstraintsBacklogUpdate(t *testing.T) {
@@ -146,9 +150,9 @@ func TestConstraintsBacklogUpdate(t *testing.T) {
 	evm, state, callCtx, arbGasInfo, arbOwner := setupResourceConstraintHandles(t)
 
 	// Set constraints
-	constraints := [][2]uint64{
-		{30_000_000, 1},     // short-term
-		{15_000_000, 86400}, // long-term
+	constraints := [][3]uint64{
+		{30_000_000, 1, 0},        // short-term
+		{15_000_000, 86400, 8000}, // long-term
 	}
 	err := arbOwner.SetGasPricingConstraints(callCtx, evm, constraints)
 	require.NoError(t, err)

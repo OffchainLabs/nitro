@@ -55,6 +55,19 @@ func (c *GasConstraint) Period() (uint64, error) {
 	return c.period.Get()
 }
 
+func (c *GasConstraint) ComputeInertiaFromPeriod() (uint64, error) {
+	period, err := c.period.Get()
+	if err != nil {
+		return 0, err
+	}
+
+	// Approximate legacy inertia from the constraint period
+	periodSqrt := arbmath.SquareUint(period)
+	inertia := arbmath.SaturatingUMul(periodSqrt, ConstraintDivisorMultiplier)
+
+	return inertia, nil
+}
+
 func (c *GasConstraint) Backlog() (uint64, error) {
 	return c.backlog.Get()
 }
@@ -256,4 +269,32 @@ func (ps *L2PricingState) ClearConstraints() error {
 		}
 	}
 	return nil
+}
+
+func (ps *L2PricingState) HighestPeriodConstraint() (*GasConstraint, error) {
+	length, err := ps.ConstraintsLength()
+	if err != nil {
+		return nil, err
+	}
+	if length == 0 {
+		return nil, fmt.Errorf("no constraints configured")
+	}
+
+	var (
+		maxPeriod uint64
+		maxIdx    uint64
+	)
+	for i := uint64(0); i < length; i++ {
+		constraint := ps.OpenConstraintAt(uint64(i))
+		period, err := constraint.period.Get()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get period for constraint %d: %w", i, err)
+		}
+		if period > maxPeriod {
+			maxPeriod = period
+			maxIdx = uint64(i)
+		}
+	}
+
+	return ps.OpenConstraintAt(maxIdx), nil
 }
