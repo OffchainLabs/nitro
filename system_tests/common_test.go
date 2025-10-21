@@ -2048,6 +2048,7 @@ func createReferenceDAProviderServer(t *testing.T, ctx context.Context, l1Client
 	serverConfig := &dapserver.ServerConfig{
 		Addr:               "127.0.0.1",
 		Port:               0, // 0 means automatic port selection
+		JWTSecret:          "",
 		EnableDAWriter:     true,
 		ServerTimeouts:     dapserver.DefaultServerConfig.ServerTimeouts,
 		RPCServerBodyLimit: dapserver.DefaultServerConfig.RPCServerBodyLimit,

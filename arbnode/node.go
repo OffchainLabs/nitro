@@ -689,9 +689,12 @@ func getDAProviders(
 		rpcClientConfig.URL = providerServer.Addr
 		rpcClientConfig.JWTSecret = jwtPath
 
-		daClientConfig := daclient.ClientConfig{}
-		daClientConfig.Enable = true
-		daClientConfig.RPC = rpcClientConfig
+		daClientConfig := daclient.ClientConfig{
+			Enable:     true,
+			WithWriter: false,
+			RPC:        rpcClientConfig,
+			DataStream: data_streaming.DefaultDataStreamerConfig(daclient.DefaultStreamRpcMethods),
+		}
 
 		anytrustClient, err := daclient.NewClient(ctx, &daClientConfig, data_streaming.PayloadCommiter())
 		if err != nil {
