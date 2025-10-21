@@ -453,3 +453,9 @@ func (con ArbOwner) SetChainConfig(c ctx, evm mech, serializedChainConfig []byte
 func (con ArbOwner) SetCalldataPriceIncrease(c ctx, _ mech, enable bool) error {
 	return c.State.Features().SetCalldataPriceIncrease(enable)
 }
+
+// SetGasPricingConstraints sets the gas pricing constraints used by the Multi-Constraint Pricer.
+func (con ArbOwner) SetGasPricingConstraints(c ctx, evm mech, constraints [][3]uint64) error {
+	// todo: update with real code once https://github.com/OffchainLabs/nitro/pull/3860 is merged
+	return fmt.Errorf("SetGasPricingConstraints is a stub implementation, since definitions were upstreamed, but implementations not done")
+}
