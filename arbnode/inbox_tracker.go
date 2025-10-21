@@ -23,7 +23,6 @@ import (
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcaster"
-	"github.com/offchainlabs/nitro/broadcaster/message"
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/util/containers"
@@ -299,7 +298,7 @@ func (t *InboxTracker) PopulateFeedBacklog(ctx context.Context, broadcastServer 
 	if err != nil {
 		return fmt.Errorf("error getting tx streamer message count: %w", err)
 	}
-	var feedMessages []*message.BroadcastFeedMessage
+	var messagesToBroadcast []arbostypes.MessageWithMetadataAndBlockInfo
 	for seqNum := startMessage; seqNum < messageCount; seqNum++ {
 		message, err := t.txStreamer.GetMessage(seqNum)
 		if err != nil {
@@ -329,14 +328,9 @@ func (t *InboxTracker) PopulateFeedBacklog(ctx context.Context, broadcastServer 
 			ArbOSVersion:    arbOSVersion,
 		}
 
-		feedMessage, err := broadcastServer.NewBroadcastFeedMessage(messageWithInfo, seqNum)
-		if err != nil {
-			return fmt.Errorf("error creating broadcast feed message %v: %w", seqNum, err)
-		}
-		feedMessages = append(feedMessages, feedMessage)
+		messagesToBroadcast = append(messagesToBroadcast, messageWithInfo)
 	}
-	broadcastServer.BroadcastFeedMessages(feedMessages)
-	return nil
+	return broadcastServer.BroadcastMessages(messagesToBroadcast, startMessage)
 }
 
 func (t *InboxTracker) legacyGetDelayedMessageAndAccumulator(ctx context.Context, seqNum uint64) (*arbostypes.L1IncomingMessage, common.Hash, error) {
