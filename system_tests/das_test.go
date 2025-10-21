@@ -26,6 +26,7 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/headerreader"
+	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
@@ -49,8 +50,7 @@ func startLocalDASServer(
 	config.LocalFileStorage.DataDir = dataDir
 
 	storageService, lifecycleManager, err := das.CreatePersistentStorageService(ctx, &config)
-	defer lifecycleManager.StopAndWaitUntil(time.Second)
-
+	_ = lifecycleManager // Caller should manage lifecycle if needed
 	Require(t, err)
 	seqInboxCaller, err := bridgegen.NewSequencerInboxCaller(seqInboxAddress, l1client)
 	Require(t, err)
@@ -60,17 +60,28 @@ func startLocalDASServer(
 	Require(t, err)
 	rpcLis, err := net.Listen("tcp", "localhost:0")
 	Require(t, err)
+	rpcAddr := rpcLis.Addr().String()
+	t.Logf("DAS RPC listener created at: %s", rpcAddr)
+
 	rpcServer, err := das.StartDASRPCServerOnListener(ctx, rpcLis, genericconf.HTTPServerTimeoutConfigDefault, genericconf.HTTPServerBodyLimitDefault, storageService, daWriter, storageService, signatureVerifier)
 	Require(t, err)
+	t.Logf("DAS RPC server started and listening on: %s", rpcAddr)
+
 	restLis, err := net.Listen("tcp", "localhost:0")
 	Require(t, err)
+	restAddr := restLis.Addr().String()
+	t.Logf("DAS REST listener created at: %s", restAddr)
+
 	restServer, err := das.NewRestfulDasServerOnListener(restLis, genericconf.HTTPServerTimeoutConfigDefault, storageService, storageService)
 	Require(t, err)
+	t.Logf("DAS REST server started and listening on: %s", restAddr)
+
 	beConfig := das.BackendConfig{
-		URL:    "http://" + rpcLis.Addr().String(),
+		URL:    "http://" + rpcAddr,
 		Pubkey: blsPubToBase64(pubkey),
 	}
-	return rpcServer, pubkey, beConfig, restServer, "http://" + restLis.Addr().String()
+	t.Logf("DAS backend config created with URL: %s", beConfig.URL)
+	return rpcServer, pubkey, beConfig, restServer, "http://" + restAddr
 }
 
 func blsPubToBase64(pubkey *blsSignatures.PublicKey) string {
@@ -81,6 +92,8 @@ func blsPubToBase64(pubkey *blsSignatures.PublicKey) string {
 }
 
 func aggConfigForBackend(backendConfig das.BackendConfig) das.AggregatorConfig {
+	rpcConfig := rpcclient.DefaultClientConfig
+	rpcConfig.Timeout = 2 * time.Second // Short timeout for tests to fail fast
 	return das.AggregatorConfig{
 		Enable:        true,
 		AssumedHonest: 1,
@@ -89,6 +102,7 @@ func aggConfigForBackend(backendConfig das.BackendConfig) das.AggregatorConfig {
 			ServerUrl:          backendConfig.URL,
 			EnableChunkedStore: true,
 			DataStream:         data_streaming.TestDataStreamerConfig(das.DefaultDataStreamRpcMethods),
+			RPC:                rpcConfig,
 		},
 	}
 }

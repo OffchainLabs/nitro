@@ -50,12 +50,14 @@ type DASRPCClientConfig struct {
 	ServerUrl          string                            `koanf:"server-url"`
 	EnableChunkedStore bool                              `koanf:"enable-chunked-store"`
 	DataStream         data_streaming.DataStreamerConfig `koanf:"data-stream"`
+	RPC                rpcclient.ClientConfig            `koanf:"rpc"`
 }
 
 func DASRPCClientConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".server-url", "", "URL of DAS server to connect to")
 	f.Bool(prefix+".enable-chunked-store", true, "enable data to be sent to DAS in chunks instead of all at once")
 	data_streaming.DataStreamerConfigAddOptions(prefix+".data-stream", f, DefaultDataStreamRpcMethods)
+	rpcclient.RPCClientAddOptions(prefix+".rpc", f, &rpcclient.DefaultClientConfig)
 }
 
 var DefaultDataStreamRpcMethods = data_streaming.DataStreamingRPCMethods{
@@ -65,14 +67,17 @@ var DefaultDataStreamRpcMethods = data_streaming.DataStreamingRPCMethods{
 }
 
 func NewDASRPCClient(config *DASRPCClientConfig, signer signature.DataSignerFunc) (*DASRPCClient, error) {
+	log.Info("Creating DAS RPC client", "serverUrl", config.ServerUrl, "enableChunkedStore", config.EnableChunkedStore, "rpcTimeout", config.RPC.Timeout)
 	if signer == nil {
 		signer = nilSigner
 	}
 
 	clnt, err := rpc.Dial(config.ServerUrl)
 	if err != nil {
+		log.Error("Failed to dial DAS RPC server", "serverUrl", config.ServerUrl, "err", err)
 		return nil, err
 	}
+	log.Info("Successfully dialed DAS RPC server", "serverUrl", config.ServerUrl)
 
 	var dataStreamer *data_streaming.DataStreamer[StoreResult]
 	if config.EnableChunkedStore {
@@ -81,19 +86,25 @@ func NewDASRPCClient(config *DASRPCClientConfig, signer signature.DataSignerFunc
 		})
 
 		rpcClient := rpcclient.NewRpcClient(func() *rpcclient.ClientConfig {
-			rpcConfig := rpcclient.DefaultClientConfig
+			rpcConfig := config.RPC
+			// Always use ServerUrl from DAS config for the actual connection
 			rpcConfig.URL = config.ServerUrl
 			return &rpcConfig
 		}, nil)
+		log.Info("Starting DAS RPC client for chunked store", "url", config.ServerUrl, "timeout", config.RPC.Timeout)
 		err := rpcClient.Start(context.Background())
 		if err != nil {
+			log.Error("Failed to start DAS RPC client", "url", config.ServerUrl, "err", err)
 			return nil, err
 		}
+		log.Info("DAS RPC client started successfully", "url", config.ServerUrl)
 
 		dataStreamer, err = data_streaming.NewDataStreamer[StoreResult](config.DataStream, payloadSigner, rpcClient)
 		if err != nil {
+			log.Error("Failed to create data streamer", "url", config.ServerUrl, "err", err)
 			return nil, err
 		}
+		log.Info("Data streamer created successfully", "url", config.ServerUrl)
 	}
 
 	return &DASRPCClient{

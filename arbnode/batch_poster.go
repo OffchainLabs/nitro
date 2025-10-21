@@ -1720,15 +1720,20 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 		var daSuccess bool
 		var lastErr error
 
+		log.Info("Attempting to store batch with DA writers", "numWriters", len(b.dapWriters), "batchSize", len(batchData))
 		for i, writer := range b.dapWriters {
+			storeStart := time.Now()
+			log.Info("Trying DA writer", "writerIndex", i, "totalWriters", len(b.dapWriters))
 			// #nosec G115
 			sequencerMsg, err = writer.Store(batchData, uint64(time.Now().Add(config.DASRetentionPeriod).Unix())).Await(ctx)
+			storeDuration := time.Since(storeStart)
 			if err != nil {
-				log.Warn("DA writer failed, trying next", "writerIndex", i, "error", err)
+				log.Warn("DA writer failed, trying next", "writerIndex", i, "error", err, "duration", storeDuration)
 				lastErr = err
 				continue // Try next writer
 			}
 
+			log.Info("DA writer succeeded", "writerIndex", i, "duration", storeDuration)
 			daSuccess = true
 			batchPosterDASuccessCounter.Inc(1)
 			batchPosterDALastSuccessfulActionGauge.Update(time.Now().Unix())
@@ -1737,12 +1742,15 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 
 		// All DA writers failed
 		if !daSuccess {
+			log.Warn("All DA writers failed", "numWriters", len(b.dapWriters), "lastError", lastErr)
 			batchPosterDAFailureCounter.Inc(1)
 
 			if config.DisableDapFallbackStoreDataOnChain {
+				log.Error("DA fallback to EthDA is disabled, cannot post batch", "error", lastErr)
 				return false, fmt.Errorf("all DA writers failed: %w", lastErr)
 			}
 
+			log.Info("Checking if batch size is acceptable for EthDA fallback", "batchSize", len(batchData), "wouldUse4844", b.building.wouldUse4844)
 			// Check if batch size is the issue for EthDA fallback
 			// Use wouldUse4844 to know which EthDA limit we'd be subject to
 			if b.building.wouldUse4844 {

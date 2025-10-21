@@ -13,6 +13,7 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/spf13/pflag"
 
@@ -593,6 +594,7 @@ func getDAProviders(
 
 	// Create external DA client if enabled
 	if config.DA.ExternalProvider.Enable {
+		log.Info("Creating external DA client", "url", config.DA.ExternalProvider.RPC.URL, "withWriter", config.DA.ExternalProvider.WithWriter)
 		externalDAClient, err := daclient.NewClient(ctx, &config.DA.ExternalProvider, data_streaming.PayloadCommiter())
 		if err != nil {
 			return nil, nil, nil, nil, err
@@ -601,6 +603,7 @@ func getDAProviders(
 		// Add to writers array if batch poster is enabled and WithWriter is true
 		if config.DA.ExternalProvider.WithWriter && config.BatchPoster.Enable {
 			writers = append(writers, externalDAClient)
+			log.Info("Added external DA writer", "writerIndex", len(writers)-1, "totalWriters", len(writers))
 		}
 		// Register external DA client as reader
 		promise := externalDAClient.GetSupportedHeaderBytes()
@@ -615,6 +618,7 @@ func getDAProviders(
 
 	// Create AnyTrust DA provider if enabled (can coexist with external DA)
 	if config.DataAvailability.Enable {
+		log.Info("Creating AnyTrust DA provider", "batchPosterEnabled", config.BatchPoster.Enable)
 		jwtPath := path.Join(filepath.Dir(stack.InstanceDir()), "dasserver-jwtsecret")
 		if err := genericconf.TryCreatingJWTSecret(jwtPath); err != nil {
 			return nil, nil, nil, nil, fmt.Errorf("error writing ephemeral jwtsecret of dasserver to file: %w", err)
@@ -631,6 +635,7 @@ func getDAProviders(
 		serverConfig.Port = 0 // Initializes server at a random available port
 		serverConfig.EnableDAWriter = config.BatchPoster.Enable
 		serverConfig.JWTSecret = jwtPath
+		log.Info("AnyTrust server config", "enableDAWriter", serverConfig.EnableDAWriter, "port", serverConfig.Port)
 
 		// Create AnyTrust factory
 		daFactory, err := factory.NewDAProviderFactory(
@@ -646,6 +651,7 @@ func getDAProviders(
 		if err != nil {
 			return nil, nil, nil, nil, err
 		}
+		log.Info("Created AnyTrust DA factory")
 
 		if err := daFactory.ValidateConfig(); err != nil {
 			return nil, nil, nil, nil, err
@@ -684,10 +690,13 @@ func getDAProviders(
 		if err != nil {
 			return nil, nil, nil, nil, err
 		}
+		log.Info("AnyTrust provider server started", "addr", providerServer.Addr)
 
 		rpcClientConfig := rpcclient.DefaultClientConfig
 		rpcClientConfig.URL = providerServer.Addr
 		rpcClientConfig.JWTSecret = jwtPath
+		rpcClientConfig.Timeout = 1 * time.Second // Timeout for internal connection to DAS provider server
+		log.Info("Creating internal AnyTrust client", "url", rpcClientConfig.URL, "timeout", rpcClientConfig.Timeout)
 
 		daClientConfig := daclient.ClientConfig{
 			Enable:     true,
@@ -700,10 +709,12 @@ func getDAProviders(
 		if err != nil {
 			return nil, nil, nil, nil, err
 		}
+		log.Info("Created internal AnyTrust client")
 
 		// Add AnyTrust client to writers array if batch poster is enabled
 		if config.BatchPoster.Enable {
 			writers = append(writers, anytrustClient)
+			log.Info("Added AnyTrust writer", "writerIndex", len(writers)-1, "totalWriters", len(writers))
 		}
 
 		// Register AnyTrust client as reader
@@ -746,6 +757,7 @@ func getDAProviders(
 		}
 	}
 
+	log.Info("DA providers configured", "totalWriters", len(writers), "hasValidator", validator != nil)
 	return writers, combinedCleanup, dapReaders, validator, nil
 }
 
