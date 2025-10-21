@@ -84,7 +84,6 @@ func testBlockValidatorSimple(t *testing.T, opts Options) {
 
 	// Configure for referenceda mode
 	if opts.dasModeString == "referenceda" {
-		builder.nodeConfig.BatchPoster.UseCustomDA = true
 		builder.WithReferenceDA()
 	}
 
