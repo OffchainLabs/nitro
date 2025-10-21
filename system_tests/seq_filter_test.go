@@ -68,6 +68,7 @@ func TestSequencerBlockFilterAccept(t *testing.T) {
 	defer cleanup()
 	_, _, err := hooks.NextTxToSequence() // remove first transaction from hooks
 	Require(t, err)
+	hooks.InsertLastTxError(nil)
 	block, err := builder.L2.ExecNode.ExecEngine.SequenceTransactions(header, hooks, nil)
 	Require(t, err)
 	if block == nil {

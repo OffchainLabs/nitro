@@ -969,10 +969,6 @@ func (s *FullSequencingHooks) GetTxErrors() []error {
 	return s.txErrors
 }
 
-func (s *FullSequencingHooks) ClearTxErrors() {
-	s.txErrors = nil
-}
-
 func (s *FullSequencingHooks) InsertLastTxError(err error) {
 	s.txErrors = append(s.txErrors, err)
 }

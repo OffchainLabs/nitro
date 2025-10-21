@@ -473,7 +473,6 @@ func (s *ExecutionEngine) sequencerWrapper(sequencerFunc func() (*types.Block, e
 
 func (s *ExecutionEngine) SequenceTransactions(header *arbostypes.L1IncomingMessageHeader, hooks *FullSequencingHooks, timeboostedTxs map[common.Hash]struct{}) (*types.Block, error) {
 	return s.sequencerWrapper(func() (*types.Block, error) {
-		hooks.ClearTxErrors()
 		return s.sequenceTransactionsWithBlockMutex(header, hooks, timeboostedTxs)
 	})
 }
