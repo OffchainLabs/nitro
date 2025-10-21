@@ -89,8 +89,6 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	cleanupA := builder.Build(t)
 	defer cleanupA()
 
-	addNewBatchPoster(ctx, t, builder, srv.Address)
-
 	builder.L1.SendWaitTestTransactions(t, []*types.Transaction{
 		builder.L1Info.PrepareTxTo("Faucet", &srv.Address, 30000, big.NewInt(1).Mul(big.NewInt(1e18), big.NewInt(1e18)), nil)})
 
@@ -133,10 +131,6 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	builder.L1Info.GenerateAccount("ValidatorA")
 	builder.L1.TransferBalance(t, "Faucet", "ValidatorA", balance, builder.L1Info)
 	l1authA := builder.L1Info.GetDefaultTransactOpts("ValidatorA", ctx)
-
-	builder.L1Info.GenerateAccount("ValidatorB")
-	builder.L1.TransferBalance(t, "Faucet", "ValidatorB", balance, builder.L1Info)
-	l1authB := builder.L1Info.GetDefaultTransactOpts("ValidatorB", ctx)
 
 	rollup, err := rollup_legacy_gen.NewRollupAdminLogic(l2nodeA.DeployInfo.Rollup, builder.L1.Client)
 	Require(t, err)
@@ -189,7 +183,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		Require(t, err, "didn't cache validator wallet address", valWalletAddrA.String(), "vs", valWalletAddrCheck.String())
 	}
 
-	setValidatorCalldata, err := rollupABI.Pack("setValidator", []common.Address{valWalletAddrA, l1authB.From, srv.Address}, []bool{true, true, true})
+	setValidatorCalldata, err := rollupABI.Pack("setValidator", []common.Address{valWalletAddrA, srv.Address}, []bool{true, true})
 	Require(t, err, "unable to generate setValidator calldata")
 	tx, err = upgradeExecutor.ExecuteCall(&deployAuth, l2nodeA.DeployInfo.Rollup, setValidatorCalldata)
 	Require(t, err, "unable to set validators")
@@ -248,7 +242,8 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		ctx,
 		rawdb.NewTable(l2nodeB.ArbDB, storage.StakerPrefix),
 		l2nodeB.L1Reader,
-		&l1authB, NewFetcherFromConfig(cfg),
+		nil,
+		NewFetcherFromConfig(cfg),
 		nil,
 		parentChainID,
 	)
