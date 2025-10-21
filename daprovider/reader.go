@@ -121,11 +121,7 @@ func (b *readerForBlobReader) RecoverPayload(
 	promise, ctx := containers.NewPromiseWithContext[PayloadResult](context.Background())
 	go func() {
 		payload, _, err := b.recoverInternal(ctx, batchNum, batchBlockHash, sequencerMsg, true, false)
-		if err != nil {
-			promise.ProduceError(err)
-		} else {
-			promise.Produce(PayloadResult{Payload: payload})
-		}
+		promise.ProduceResult(PayloadResult{Payload: payload}, err)
 	}()
 	return promise
 }
@@ -139,11 +135,7 @@ func (b *readerForBlobReader) CollectPreimages(
 	promise, ctx := containers.NewPromiseWithContext[PreimagesResult](context.Background())
 	go func() {
 		_, preimages, err := b.recoverInternal(ctx, batchNum, batchBlockHash, sequencerMsg, false, true)
-		if err != nil {
-			promise.ProduceError(err)
-		} else {
-			promise.Produce(PreimagesResult{Preimages: preimages})
-		}
+		promise.ProduceResult(PreimagesResult{Preimages: preimages}, err)
 	}()
 	return promise
 }

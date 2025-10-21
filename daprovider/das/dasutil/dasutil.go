@@ -77,11 +77,7 @@ func (d *readerForDAS) RecoverPayload(
 	promise, ctx := containers.NewPromiseWithContext[daprovider.PayloadResult](context.Background())
 	go func() {
 		payload, _, err := d.recoverInternal(ctx, batchNum, sequencerMsg, true, false)
-		if err != nil {
-			promise.ProduceError(err)
-		} else {
-			promise.Produce(daprovider.PayloadResult{Payload: payload})
-		}
+		promise.ProduceResult(daprovider.PayloadResult{Payload: payload}, err)
 	}()
 	return promise
 }
@@ -95,11 +91,7 @@ func (d *readerForDAS) CollectPreimages(
 	promise, ctx := containers.NewPromiseWithContext[daprovider.PreimagesResult](context.Background())
 	go func() {
 		_, preimages, err := d.recoverInternal(ctx, batchNum, sequencerMsg, false, true)
-		if err != nil {
-			promise.ProduceError(err)
-		} else {
-			promise.Produce(daprovider.PreimagesResult{Preimages: preimages})
-		}
+		promise.ProduceResult(daprovider.PreimagesResult{Preimages: preimages}, err)
 	}()
 	return promise
 }

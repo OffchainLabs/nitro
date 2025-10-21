@@ -68,11 +68,7 @@ func (v *Validator) GenerateReadPreimageProof(certHash common.Hash, offset uint6
 	promise, ctx := containers.NewPromiseWithContext[daprovider.PreimageProofResult](context.Background())
 	go func() {
 		proof, err := v.generateReadPreimageProofInternal(ctx, certHash, offset, certificate)
-		if err != nil {
-			promise.ProduceError(err)
-		} else {
-			promise.Produce(daprovider.PreimageProofResult{Proof: proof})
-		}
+		promise.ProduceResult(daprovider.PreimageProofResult{Proof: proof}, err)
 	}()
 	return promise
 }
@@ -143,11 +139,7 @@ func (v *Validator) GenerateCertificateValidityProof(certificate []byte) contain
 	promise, ctx := containers.NewPromiseWithContext[daprovider.ValidityProofResult](context.Background())
 	go func() {
 		proof, err := v.generateCertificateValidityProofInternal(ctx, certificate)
-		if err != nil {
-			promise.ProduceError(err)
-		} else {
-			promise.Produce(daprovider.ValidityProofResult{Proof: proof})
-		}
+		promise.ProduceResult(daprovider.ValidityProofResult{Proof: proof}, err)
 	}()
 	return promise
 }

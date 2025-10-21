@@ -98,6 +98,20 @@ func (p *Promise[R]) Produce(value R) {
 	}
 }
 
+func (p *Promise[R]) ProduceResultSafe(value R, err error) error {
+	if err == nil {
+		return p.ProduceSafe(value)
+	}
+	return p.ProduceErrorSafe(err)
+}
+
+func (p *Promise[R]) ProduceResult(value R, err error) {
+	errSafe := p.ProduceResultSafe(value, err)
+	if errSafe != nil {
+		panic(errSafe)
+	}
+}
+
 // cancel might be called multiple times while no value or error is produced
 // cancel will be called by Await if it's context is done
 func NewPromise[R any](cancel func()) Promise[R] {
@@ -115,10 +129,6 @@ func NewPromiseWithContext[R any](parentCtx context.Context) (*Promise[R], conte
 
 func NewReadyPromise[R any](val R, err error) PromiseInterface[R] {
 	promise := NewPromise[R](nil)
-	if err == nil {
-		promise.Produce(val)
-	} else {
-		promise.ProduceError(err)
-	}
+	promise.ProduceResult(val, err)
 	return &promise
 }
