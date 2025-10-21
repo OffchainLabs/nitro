@@ -153,6 +153,9 @@ type BatchPosterConfig struct {
 	MaxSize int `koanf:"max-size" reload:"hot"`
 	// Maximum 4844 blob enabled batch size.
 	Max4844BatchSize int `koanf:"max-4844-batch-size" reload:"hot"`
+	// Maximum altDA batch size (for all allternative DA systems: external, AnyTrust).
+	// TODO In future it may be useful for different altDA sytems to have different limits.
+	MaxAltDABatchSize int `koanf:"max-altda-batch-size" reload:"hot"`
 	// Max batch post delay.
 	MaxDelay time.Duration `koanf:"max-delay" reload:"hot"`
 	// Wait for max BatchPost delay.
@@ -224,6 +227,7 @@ func BatchPosterConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".disable-dap-fallback-store-data-on-chain", DefaultBatchPosterConfig.DisableDapFallbackStoreDataOnChain, "If unable to batch to DA provider, disable fallback storing data on chain")
 	f.Int(prefix+".max-size", DefaultBatchPosterConfig.MaxSize, "maximum estimated compressed batch size")
 	f.Int(prefix+".max-4844-batch-size", DefaultBatchPosterConfig.Max4844BatchSize, "maximum estimated compressed 4844 blob enabled batch size")
+	f.Int(prefix+".max-altda-batch-size", DefaultBatchPosterConfig.MaxAltDABatchSize, "maximum estimated compressed batch size when using alternative data availability (eg Anytrust, external)")
 	f.Duration(prefix+".max-delay", DefaultBatchPosterConfig.MaxDelay, "maximum batch posting delay")
 	f.Bool(prefix+".wait-for-max-delay", DefaultBatchPosterConfig.WaitForMaxDelay, "wait for the max batch delay, even if the batch is full")
 	f.Duration(prefix+".poll-interval", DefaultBatchPosterConfig.PollInterval, "how long to wait after no batches are ready to be posted before checking again")
@@ -260,7 +264,9 @@ var DefaultBatchPosterConfig = BatchPosterConfig{
 	// The Max4844BatchSize should be calculated from the values from L1 chain configs
 	// using the eip4844 utility package from go-ethereum.
 	// The default value of 0 causes the batch poster to use the value from go-ethereum.
-	Max4844BatchSize:               0,
+	Max4844BatchSize: 0,
+	// MaxAltDABatchSize is the maximum batch size for all alt DA systems (Anytrust, external)
+	MaxAltDABatchSize:              1_000_000,
 	PollInterval:                   time.Second * 10,
 	ErrorDelay:                     time.Second * 10,
 	MaxDelay:                       time.Hour,
@@ -299,6 +305,7 @@ var TestBatchPosterConfig = BatchPosterConfig{
 	Enable:                         true,
 	MaxSize:                        100000,
 	Max4844BatchSize:               DefaultBatchPosterConfig.Max4844BatchSize,
+	MaxAltDABatchSize:              DefaultBatchPosterConfig.MaxAltDABatchSize,
 	PollInterval:                   time.Millisecond * 10,
 	ErrorDelay:                     time.Millisecond * 10,
 	MaxDelay:                       0,
@@ -901,11 +908,14 @@ type buildingBatch struct {
 	firstUsefulMsg     *arbostypes.MessageWithMetadata
 }
 
-func (b *BatchPoster) newBatchSegments(ctx context.Context, firstDelayed uint64, use4844 bool, useCustomDA bool) (*batchSegments, error) {
-	maxSize := b.config().MaxSize
+func (b *BatchPoster) newBatchSegments(ctx context.Context, firstDelayed uint64, use4844 bool, usingAltDA bool, useCustomDA bool) (*batchSegments, error) {
+	config := b.config()
+	maxSize := config.MaxSize
+
 	if use4844 {
-		if b.config().Max4844BatchSize != 0 {
-			maxSize = b.config().Max4844BatchSize
+		// Building 4844 blobs for EthDA
+		if config.Max4844BatchSize != 0 {
+			maxSize = config.Max4844BatchSize
 		} else {
 			maxBlobGasPerBlock, err := b.parentChain.MaxBlobGasPerBlock(ctx, nil)
 			if err != nil {
@@ -915,7 +925,10 @@ func (b *BatchPoster) newBatchSegments(ctx context.Context, firstDelayed uint64,
 			// #nosec G115
 			maxSize = blobs.BlobEncodableData*(int(maxBlobGasPerBlock)/params.BlobTxBlobGasPerBlob)/2 - 2000
 		}
+	} else if usingAltDA {
+		maxSize = config.MaxAltDABatchSize
 	} else {
+		// Using calldata for EthDA
 		if maxSize <= 40 {
 			panic("Maximum batch size too small")
 		}
@@ -1446,7 +1459,8 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 
 		// Use CustomDA if configured
 		useCustomDA := b.config().UseCustomDA
-		segments, err := b.newBatchSegments(ctx, batchPosition.DelayedMessageCount, actuallyUse4844, useCustomDA)
+		usingAltDA := !buildingForEthDA
+		segments, err := b.newBatchSegments(ctx, batchPosition.DelayedMessageCount, actuallyUse4844, usingAltDA, useCustomDA)
 		if err != nil {
 			return false, err
 		}
