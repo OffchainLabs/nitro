@@ -401,18 +401,9 @@ func (s *TransactionStreamer) addMessagesAndReorg(batch ethdb.Batch, msgIdxOfFir
 
 	messagesWithComputedBlockHash := make([]arbostypes.MessageWithMetadataAndBlockInfo, 0, len(messagesResults))
 	for i := 0; i < len(messagesResults); i++ {
-		// #nosec G115 -- message index arithmetic is safe within valid range
-		msgIdx := msgIdxOfFirstMsgToAdd + arbutil.MessageIndex(i)
-		arbOSVersion, err := s.exec.ArbOSVersionForMessageIndex(msgIdx).Await(s.GetContext())
-		if err != nil {
-			log.Warn("error getting arbOS version for message", "msgIdx", msgIdx, "err", err)
-		}
-
 		messagesWithComputedBlockHash = append(messagesWithComputedBlockHash, arbostypes.MessageWithMetadataAndBlockInfo{
 			MessageWithMeta: newMessages[i].MessageWithMeta,
 			BlockHash:       &messagesResults[i].BlockHash,
-			BlockMetadata:   nil,
-			ArbOSVersion:    arbOSVersion,
 		})
 	}
 	s.broadcastMessages(messagesWithComputedBlockHash, msgIdxOfFirstMsgToAdd)
@@ -534,16 +525,10 @@ func (s *TransactionStreamer) getMessageWithMetadataAndBlockInfo(msgIdx arbutil.
 		return nil, err
 	}
 
-	arbOSVersion, err := s.exec.ArbOSVersionForMessageIndex(msgIdx).Await(s.GetContext())
-	if err != nil {
-		log.Warn("Failed to get ArbOS version for message", "msgIdx", msgIdx, "err", err)
-	}
-
 	msgWithBlockInfo := arbostypes.MessageWithMetadataAndBlockInfo{
 		MessageWithMeta: *msg,
 		BlockHash:       blockHash,
 		BlockMetadata:   blockMetadata,
-		ArbOSVersion:    arbOSVersion,
 	}
 	return &msgWithBlockInfo, nil
 }
@@ -625,7 +610,6 @@ func (s *TransactionStreamer) AddBroadcastMessages(feedMessages []*message.Broad
 			MessageWithMeta: feedMessage.Message,
 			BlockHash:       feedMessage.BlockHash,
 			BlockMetadata:   feedMessage.BlockMetadata,
-			ArbOSVersion:    feedMessage.ArbOSVersion,
 		}
 		messages = append(messages, msgWithBlockInfo)
 		expectedMsgIdx++
@@ -752,9 +736,6 @@ func (s *TransactionStreamer) AddMessagesAndEndBatch(firstMsgIdx arbutil.Message
 	for _, message := range messages {
 		messagesWithBlockInfo = append(messagesWithBlockInfo, arbostypes.MessageWithMetadataAndBlockInfo{
 			MessageWithMeta: message,
-			BlockHash:       nil,
-			BlockMetadata:   nil,
-			ArbOSVersion:    0,
 		})
 	}
 
@@ -1051,7 +1032,9 @@ func (s *TransactionStreamer) ExpectChosenSequencer() error {
 
 func (s *TransactionStreamer) WriteMessageFromSequencer(
 	msgIdx arbutil.MessageIndex,
-	msgWithInfo arbostypes.MessageWithMetadataAndBlockInfo,
+	msgWithMeta arbostypes.MessageWithMetadata,
+	msgResult execution.MessageResult,
+	blockMetadata common.BlockMetadata,
 ) error {
 	if err := s.ExpectChosenSequencer(); err != nil {
 		return err
@@ -1118,18 +1101,24 @@ func (s *TransactionStreamer) WriteMessageFromSequencer(
 	}
 
 	if s.coordinator != nil {
-		if err := s.coordinator.SequencingMessage(msgIdx, &msgWithInfo.MessageWithMeta, msgWithInfo.BlockMetadata); err != nil {
+		if err := s.coordinator.SequencingMessage(msgIdx, &msgWithMeta, blockMetadata); err != nil {
 			return err
 		}
 	}
 
-	if err := s.writeMessages(msgIdx, []arbostypes.MessageWithMetadataAndBlockInfo{msgWithInfo}, nil); err != nil {
+	msgWithBlockInfo := arbostypes.MessageWithMetadataAndBlockInfo{
+		MessageWithMeta: msgWithMeta,
+		BlockHash:       &msgResult.BlockHash,
+		BlockMetadata:   blockMetadata,
+	}
+
+	if err := s.writeMessages(msgIdx, []arbostypes.MessageWithMetadataAndBlockInfo{msgWithBlockInfo}, nil); err != nil {
 		return err
 	}
 	if s.trackBlockMetadataFrom == 0 || msgIdx < s.trackBlockMetadataFrom {
-		msgWithInfo.BlockMetadata = nil
+		msgWithBlockInfo.BlockMetadata = nil
 	}
-	s.broadcastMessages([]arbostypes.MessageWithMetadataAndBlockInfo{msgWithInfo}, msgIdx)
+	s.broadcastMessages([]arbostypes.MessageWithMetadataAndBlockInfo{msgWithBlockInfo}, msgIdx)
 
 	return nil
 }
@@ -1147,7 +1136,7 @@ func (s *TransactionStreamer) PopulateFeedBacklog() error {
 	if s.broadcastServer == nil || s.inboxReader == nil {
 		return nil
 	}
-	return s.inboxReader.tracker.PopulateFeedBacklog(s.GetContext(), s.broadcastServer)
+	return s.inboxReader.tracker.PopulateFeedBacklog(s.broadcastServer)
 }
 
 func (s *TransactionStreamer) writeMessage(msgIdx arbutil.MessageIndex, msg arbostypes.MessageWithMetadataAndBlockInfo, batch ethdb.Batch) error {
@@ -1411,7 +1400,12 @@ func (s *TransactionStreamer) ExecuteNextMsg(ctx context.Context) bool {
 		return false
 	}
 
-	s.broadcastMessages([]arbostypes.MessageWithMetadataAndBlockInfo{*msgAndBlockInfo}, msgIdxToExecute)
+	msgWithBlockInfo := arbostypes.MessageWithMetadataAndBlockInfo{
+		MessageWithMeta: msgAndBlockInfo.MessageWithMeta,
+		BlockHash:       &msgResult.BlockHash,
+		BlockMetadata:   msgAndBlockInfo.BlockMetadata,
+	}
+	s.broadcastMessages([]arbostypes.MessageWithMetadataAndBlockInfo{msgWithBlockInfo}, msgIdxToExecute)
 
 	return msgIdxToExecute+1 <= consensusHeadMsgIdx
 }
