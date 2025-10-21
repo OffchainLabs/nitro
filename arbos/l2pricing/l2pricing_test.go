@@ -164,3 +164,41 @@ func Fail(t *testing.T, printables ...interface{}) {
 	t.Helper()
 	testhelpers.FailImpl(t, printables...)
 }
+
+func TestComputeInertiaFromPeriod(t *testing.T) {
+	pricing := PricingForTest(t)
+	Require(t, pricing.ClearConstraints())
+
+	const n uint64 = 5
+	for i := range n {
+		inertia := (i + 1) * 100
+		// same approximation used in SetConstraintsFromLegacy
+		periodSqrt := inertia / ConstraintDivisorMultiplier
+		period := arbmath.SaturatingUMul(periodSqrt, periodSqrt)
+		if period == 0 {
+			period = 1
+		}
+		Require(t, pricing.AddConstraint(1000, period, 0))
+	}
+
+	length, err := pricing.ConstraintsLength()
+	Require(t, err)
+	if length != n {
+		t.Fatalf("wrong number of constraints: got %v want %v", length, n)
+	}
+
+	for i := range n {
+		constraint := pricing.OpenConstraintAt(i)
+		computed, err := constraint.ComputeInertiaFromPeriod()
+		Require(t, err)
+
+		// Reconstruct original inertia for comparison
+		period, err := constraint.period.Get()
+		Require(t, err)
+		want := arbmath.SaturatingUMul(arbmath.SquareUint(period), ConstraintDivisorMultiplier)
+
+		if computed != want {
+			t.Errorf("wrong inertia for constraint %v: got %v, want %v", i, computed, want)
+		}
+	}
+}

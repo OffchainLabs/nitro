@@ -141,6 +141,9 @@ func (con ArbOwner) SetMinimumL2BaseFee(c ctx, evm mech, priceInWei huge) error 
 
 // SetSpeedLimit sets the computational speed limit for the chain
 func (con ArbOwner) SetSpeedLimit(c ctx, evm mech, limit uint64) error {
+	if c.State.ArbOSVersion() >= params.ArbosVersion_50 {
+		return fmt.Errorf("SetSpeedLimit is not supported in ArbOS version %d and above; use setGasPricingConstraints instead", params.ArbosVersion_50)
+	}
 	if limit == 0 {
 		return errors.New("speed limit must be nonzero")
 	}
@@ -162,6 +165,9 @@ func (con ArbOwner) SetMaxBlockGasLimit(c ctx, evm mech, limit uint64) error {
 
 // SetL2GasPricingInertia sets the L2 gas pricing inertia
 func (con ArbOwner) SetL2GasPricingInertia(c ctx, evm mech, sec uint64) error {
+	if c.State.ArbOSVersion() >= params.ArbosVersion_50 {
+		return fmt.Errorf("SetL2GasPricingInertia is not supported in ArbOS version %d and above; use setGasPricingConstraints instead", params.ArbosVersion_50)
+	}
 	if sec == 0 {
 		return errors.New("price inertia must be nonzero")
 	}
@@ -170,6 +176,9 @@ func (con ArbOwner) SetL2GasPricingInertia(c ctx, evm mech, sec uint64) error {
 
 // SetL2GasBacklogTolerance sets the L2 gas backlog tolerance
 func (con ArbOwner) SetL2GasBacklogTolerance(c ctx, evm mech, sec uint64) error {
+	if c.State.ArbOSVersion() >= params.ArbosVersion_50 {
+		return fmt.Errorf("SetL2GasBacklogTolerance is not supported in ArbOS version %d and above; use setGasPricingConstraints instead", params.ArbosVersion_50)
+	}
 	return c.State.L2PricingState().SetBacklogTolerance(sec)
 }
 
@@ -455,7 +464,7 @@ func (con ArbOwner) SetCalldataPriceIncrease(c ctx, _ mech, enable bool) error {
 }
 
 // SetGasPricingConstraints sets the gas pricing constraints used by the Multi-Constraint Pricer.
-func (con ArbOwner) SetGasPricingConstraints(c ctx, evm mech, constraints [][2]uint64) error {
+func (con ArbOwner) SetGasPricingConstraints(c ctx, evm mech, constraints [][3]uint64) error {
 	if len(constraints) == 0 {
 		return errors.New("must provide at least one constraint")
 	}
@@ -468,12 +477,13 @@ func (con ArbOwner) SetGasPricingConstraints(c ctx, evm mech, constraints [][2]u
 	for _, constraint := range constraints {
 		target := constraint[0]
 		period := constraint[1]
+		backlog := constraint[2]
 
 		if target == 0 || period == 0 {
 			return fmt.Errorf("invalid constraint with target %d and period %d", target, period)
 		}
 
-		err := c.State.L2PricingState().AddConstraint(target, period, 0)
+		err := c.State.L2PricingState().AddConstraint(target, period, backlog)
 		if err != nil {
 			return fmt.Errorf("failed to add constraint (target: %d, period: %d): %w", target, period, err)
 		}
