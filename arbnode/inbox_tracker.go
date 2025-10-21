@@ -274,7 +274,7 @@ func (t *InboxTracker) FindInboxBatchContainingMessage(pos arbutil.MessageIndex)
 	}
 }
 
-func (t *InboxTracker) PopulateFeedBacklog(ctx context.Context, broadcastServer *broadcaster.Broadcaster) error {
+func (t *InboxTracker) PopulateFeedBacklog(broadcastServer *broadcaster.Broadcaster) error {
 	batchCount, err := t.GetBatchCount()
 	if err != nil {
 		return fmt.Errorf("error getting batch count: %w", err)
@@ -290,11 +290,6 @@ func (t *InboxTracker) PopulateFeedBacklog(ctx context.Context, broadcastServer 
 			return fmt.Errorf("error getting batch %v message count: %w", batchIndex, err)
 		}
 	}
-
-	if t.txStreamer == nil {
-		return errors.New("txStreamer is nil")
-	}
-
 	messageCount, err := t.txStreamer.GetMessageCount()
 	if err != nil {
 		return fmt.Errorf("error getting tx streamer message count: %w", err)
@@ -314,22 +309,10 @@ func (t *InboxTracker) PopulateFeedBacklog(ctx context.Context, broadcastServer 
 
 		blockMetadata, err := t.txStreamer.BlockMetadataAtMessageIndex(seqNum)
 		if err != nil {
-			log.Warn("error getting blockMetadata byte array from tx streamer", "err", err)
+			log.Warn("Error getting blockMetadata byte array from tx streamer", "err", err)
 		}
 
-		arbOSVersion, err := t.txStreamer.exec.ArbOSVersionForMessageIndex(seqNum).Await(ctx)
-		if err != nil {
-			log.Warn("error getting ArbOS version for message %v: %w", seqNum, err)
-		}
-
-		messageWithInfo := arbostypes.MessageWithMetadataAndBlockInfo{
-			MessageWithMeta: *message,
-			BlockHash:       blockHash,
-			BlockMetadata:   blockMetadata,
-			ArbOSVersion:    arbOSVersion,
-		}
-
-		feedMessage, err := broadcastServer.NewBroadcastFeedMessage(messageWithInfo, seqNum)
+		feedMessage, err := broadcastServer.NewBroadcastFeedMessage(*message, seqNum, blockHash, blockMetadata)
 		if err != nil {
 			return fmt.Errorf("error creating broadcast feed message %v: %w", seqNum, err)
 		}
