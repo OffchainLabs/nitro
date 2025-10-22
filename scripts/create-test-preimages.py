@@ -12,7 +12,7 @@ def write_data_to_file(filename, preimages):
         for preimage in preimages:
             preimage_type, data = preimage
             file.write(struct.pack('B', preimage_type))
-            file.write(struct.pack('<Q', len(data)))
+            file.write(struct.pack('>Q', len(data)))
             file.write(data)
 
 def kzg_test_data():
