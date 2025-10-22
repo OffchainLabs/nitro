@@ -328,25 +328,6 @@ run-follower-compare-local:
 .PHONY: clean-run-follower-compare-local
 clean-run-follower-compare-local: clean-follower run-follower-compare-local
 
-.PHONY: run-follower-compare-sepolia
-run-follower-compare-sepolia:
-	@echo "Starting Nitro sequencer follower (Sepolia with Nethermind)..."
-	CGO_LDFLAGS=-Wl,-no_warn_duplicate_libraries \
-	PR_IGNORE_CALLSTACK=false \
-	PR_NETH_RPC_CLIENT_URL=http://localhost:20545 \
-	PR_EXECUTION_MODE=compare \
-	target/bin/nitro \
-		--persistent.global-config /tmp/sequencer_follower \
-		--parent-chain.connection.url=http://209.127.228.66/rpc/6ekWpL9BXR0aLXrd \
-        --parent-chain.blob-client.beacon-url=http://209.127.228.66/consensus/6ekWpL9BXR0aLXrd \
-		--chain.id=421614 \
-		--execution.forwarding-target null \
-		--http.addr=0.0.0.0 \
-		--http.port=8747
-
-.PHONY: clean-run-follower-compare-sepolia
-clean-run-follower-compare-sepolia: clean-follower run-follower-compare-sepolia
-
 .PHONY: run-follower-compare-mainnet
 run-follower-compare-mainnet: build-replay-env
 	@echo "Starting Nitro sequencer follower (Arbitrum One with Nethermind, external-only mode)..."
@@ -410,6 +391,7 @@ run-sequencer-nethermind: clean-sequencer-nethermind
 	PR_EXIT_AFTER_GENESIS=false PR_IGNORE_CALLSTACK=false \
 	PR_EXECUTION_MODE=compare \
 	PR_NETH_RPC_CLIENT_URL=http://localhost:20545 \
+	PR_NETH_WS_CLIENT_URL=ws://localhost:28551 \
 	target/bin/nitro \
 		--persistent.global-config /tmp/sequencer_neth \
 		--ipc.path /tmp/dev-test/geth.ipc \
