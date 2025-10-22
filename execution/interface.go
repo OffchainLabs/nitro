@@ -48,6 +48,8 @@ var ErrSequencerInsertLockTaken = errors.New("insert lock taken")
 
 // always needed
 type ExecutionClient interface {
+	ArbOSVersionGetter
+
 	DigestMessage(msgIdx arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, msgForPrefetch *arbostypes.MessageWithMetadata) containers.PromiseInterface[*MessageResult]
 	Reorg(msgIdxOfFirstMsgToAdd arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadataAndBlockInfo, oldMessages []*arbostypes.MessageWithMetadata) containers.PromiseInterface[[]*MessageResult]
 	HeadMessageIndex() containers.PromiseInterface[arbutil.MessageIndex]
@@ -91,8 +93,8 @@ type ExecutionSequencer interface {
 }
 
 // needed for batch poster
-type ExecutionBatchPoster interface {
-	ArbOSVersionForMessageIndex(msgIdx arbutil.MessageIndex) (uint64, error)
+type ArbOSVersionGetter interface {
+	ArbOSVersionForMessageIndex(msgIdx arbutil.MessageIndex) containers.PromiseInterface[uint64]
 }
 
 // not implemented in execution, used as input
