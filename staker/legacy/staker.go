@@ -236,7 +236,7 @@ func L1ValidatorConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".redis-url", DefaultL1ValidatorConfig.RedisUrl, "redis url for L1 validator")
 	f.Uint64(prefix+".extra-gas", DefaultL1ValidatorConfig.ExtraGas, "use this much more gas than estimation says is necessary to post transactions")
 	f.Uint64(prefix+".log-query-batch-size", DefaultL1ValidatorConfig.LogQueryBatchSize, "range ro query from eth_getLogs")
-	dataposter.DataPosterConfigAddOptions(prefix+".data-poster", f, dataposter.DefaultDataPosterConfigForValidator)
+	dataposter.DataPosterConfigAddOptions(prefix+".data-poster", f, dataposter.DefaultDataPosterConfigForValidator, dataposter.DataPosterUsageStaker)
 	DangerousConfigAddOptions(prefix+".dangerous", f)
 	genericconf.WalletConfigAddOptions(prefix+".parent-chain-wallet", f, DefaultL1ValidatorConfig.ParentChainWallet.Pathname)
 	f.Bool(prefix+".enable-fast-confirmation", DefaultL1ValidatorConfig.EnableFastConfirmation, "enable fast confirmation")
@@ -478,16 +478,38 @@ func (s *Staker) tryFastConfirmationNodeNumber(ctx context.Context, number uint6
 	return s.tryFastConfirmation(ctx, nodeInfo.AfterState().GlobalState.BlockHash, nodeInfo.AfterState().GlobalState.SendRoot, hash)
 }
 
+func (s *Staker) flushTransactions(ctx context.Context) error {
+	arbTx, err := s.builder.ExecuteTransactions(ctx)
+	if err != nil {
+		return err
+	}
+	if arbTx != nil {
+		_, err = s.l1Reader.WaitForTxApproval(ctx, arbTx)
+		if err == nil {
+			log.Info("successfully executed staker transaction", "hash", arbTx.Hash())
+		} else {
+			return fmt.Errorf("error waiting for tx receipt: %w", err)
+		}
+	}
+	return nil
+}
+
 func (s *Staker) tryFastConfirmation(ctx context.Context, blockHash common.Hash, sendRoot common.Hash, nodeHash common.Hash) error {
 	if !s.config().EnableFastConfirmation {
 		return nil
+	}
+	// Make sure all previous transactions are flushed before trying to fast confirm
+	// to ensure that the newly created node is known on-chain before fast confirming it.
+	err := s.flushTransactions(ctx)
+	if err != nil {
+		return err
 	}
 	if s.fastConfirmSafe != nil {
 		return s.fastConfirmSafe.tryFastConfirmation(ctx, blockHash, sendRoot, nodeHash)
 	}
 	auth := s.builder.Auth(ctx)
 	log.Info("Fast confirming node with wallet", "wallet", auth.From, "nodeHash", nodeHash)
-	_, err := s.rollup.FastConfirmNextNode(auth, blockHash, sendRoot, nodeHash)
+	_, err = s.rollup.FastConfirmNextNode(auth, blockHash, sendRoot, nodeHash)
 	return err
 }
 

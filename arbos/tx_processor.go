@@ -814,3 +814,7 @@ func (p *TxProcessor) IsCalldataPricingIncreaseEnabled() bool {
 	}
 	return enabled
 }
+
+func (p *TxProcessor) EVM() *vm.EVM {
+	return p.evm
+}
