@@ -273,7 +273,6 @@ func (s *SyncMonitor) getFinalityBlockHeader(
 }
 
 func (s *SyncMonitor) SetFinalityData(
-	ctx context.Context,
 	safeFinalityData *arbutil.FinalityData,
 	finalizedFinalityData *arbutil.FinalityData,
 	validatedFinalityData *arbutil.FinalityData,
