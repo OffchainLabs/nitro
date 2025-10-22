@@ -116,10 +116,13 @@ func (m limitedMarshal) String() string {
 	}
 	// #nosec G115
 	limit := int(m.limit)
-	if m.limit <= 0 || len(str) <= limit {
+	if limit <= 0 || len(str) <= limit {
 		return str
 	}
-	prefix := str[:m.limit/2-1]
+	if limit < 4 {
+		return str[:limit]
+	}
+	prefix := str[:limit/2-1]
 	postfix := str[len(str)-limit/2+1:]
 	return fmt.Sprintf("%v..%v", prefix, postfix)
 }
