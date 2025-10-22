@@ -108,7 +108,7 @@ func NewBroadcastClients(
 		clients.primaryClients = append(clients.primaryClients, client)
 	}
 	if len(clients.primaryClients) == 0 {
-		log.Error("no connected feed on startup, last error: %w", lastClientErr)
+		log.Error("no connected feed on startup", "err", lastClientErr)
 		return nil, nil
 	}
 

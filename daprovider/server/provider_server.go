@@ -235,7 +235,9 @@ func (s *ValidatorServer) GenerateCertificateValidityProof(ctx context.Context, 
 	return &server_api.GenerateCertificateValidityProofResult{Proof: hexutil.Bytes(result.Proof)}, nil
 }
 
-// WriterServer methods (Data Stream API)
+// WriterServer methods (Storing API)
+
+// Storing API: Data Stream methods
 
 func (s *WriterServer) StartChunkedStore(ctx context.Context, timestamp, nChunks, chunkSize, totalSize, timeout hexutil.Uint64, sig hexutil.Bytes) (*data_streaming.StartStreamingResult, error) {
 	return s.dataReceiver.StartReceiving(ctx, uint64(timestamp), uint64(nChunks), uint64(chunkSize), uint64(totalSize), uint64(timeout), sig)
@@ -251,6 +253,12 @@ func (s *WriterServer) CommitChunkedStore(ctx context.Context, messageId hexutil
 		return nil, err
 	}
 
-	serializedDACert, err := s.writer.Store(message, timeout).Await(ctx)
+	return s.Store(ctx, message, hexutil.Uint64(timeout))
+}
+
+// Storing API: Single-call Store method
+
+func (s *WriterServer) Store(ctx context.Context, message hexutil.Bytes, timeout hexutil.Uint64) (*server_api.StoreResult, error) {
+	serializedDACert, err := s.writer.Store(message, uint64(timeout)).Await(ctx)
 	return &server_api.StoreResult{SerializedDACert: serializedDACert}, err
 }
