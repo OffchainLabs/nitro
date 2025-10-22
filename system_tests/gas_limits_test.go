@@ -79,7 +79,7 @@ func TestBlockGasLimit(t *testing.T) {
 		RequestId:   nil,
 		L1BaseFee:   nil,
 	}
-	hooks := gethexec.MakeZeroTxSizeSequencingHooks(txes, nil, nil, nil)
+	hooks := gethexec.MakeZeroTxSizeSequencingHooksForTesting(txes, nil, nil, nil)
 	_, err = b.L2.ExecNode.ExecEngine.SequenceTransactions(header, hooks, nil)
 	Require(t, err)
 

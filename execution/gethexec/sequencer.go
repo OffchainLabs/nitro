@@ -923,7 +923,7 @@ type FullSequencingHooks struct {
 
 func (s *FullSequencingHooks) MessageFromTxes(header *arbostypes.L1IncomingMessageHeader) (*arbostypes.L1IncomingMessage, error) {
 	var l2Message []byte
-	if len(s.GetTxErrors()) == 1 && s.GetTxErrors()[0] == nil {
+	if len(s.txErrors) == 1 && s.txErrors[0] == nil {
 		tx, err := s.SequencedTx(0)
 		if err != nil {
 			return nil, err
@@ -937,8 +937,8 @@ func (s *FullSequencingHooks) MessageFromTxes(header *arbostypes.L1IncomingMessa
 	} else {
 		l2Message = append(l2Message, arbos.L2MessageKind_Batch)
 		sizeBuf := make([]byte, 8)
-		for i := 0; i < len(s.GetTxErrors()); i++ {
-			if s.GetTxErrors()[i] != nil {
+		for i := 0; i < len(s.txErrors); i++ {
+			if s.txErrors[i] != nil {
 				continue
 			}
 			tx, err := s.SequencedTx(i)
@@ -1050,7 +1050,9 @@ func MakeSequencingHooks(
 	return res
 }
 
-func MakeZeroTxSizeSequencingHooks(
+// MakeZeroTxSizeSequencingHooksForTesting creates sequencing hooks for testing with tx size always zero.
+// This allows all transactions to be included in a block regardless of size.
+func MakeZeroTxSizeSequencingHooksForTesting(
 	txes types.Transactions,
 	preTxFilter func(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, *arbitrum_types.ConditionalOptions, common.Address, *arbos.L1Info) error,
 	postTxFilter func(*types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult) error,
@@ -1386,8 +1388,8 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 		log.Warn("took over 5 seconds to sequence a block", "elapsed", elapsed, "numTxes", hooks.sequencedQueueItemsCount, "success", block != nil, "l2Block", blockNum)
 	}
 	if err == nil {
-		if len(hooks.GetTxErrors()) != hooks.sequencedQueueItemsCount { // This is not supposed to happen, if so we have a bug
-			err = fmt.Errorf("unexpected number of error results: %v vs number of txes %v", len(hooks.GetTxErrors()), hooks.sequencedQueueItemsCount)
+		if len(hooks.txErrors) != hooks.sequencedQueueItemsCount { // This is not supposed to happen, if so we have a bug
+			err = fmt.Errorf("unexpected number of error results: %v vs number of txes %v", len(hooks.txErrors), hooks.sequencedQueueItemsCount)
 		} else {
 			for i := hooks.sequencedQueueItemsCount; i < len(hooks.queueItems); i++ {
 				s.txRetryQueue.Push(hooks.queueItems[i])
@@ -1428,7 +1430,7 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 	}
 
 	madeBlock := false
-	for i, err := range hooks.GetTxErrors() {
+	for i, err := range hooks.txErrors {
 		if err == nil {
 			madeBlock = true
 		}

@@ -381,7 +381,7 @@ func testBlockHashComparison(t *testing.T, blockHash *common.Hash, mustMismatch 
 		RequestId:   nil,
 		L1BaseFee:   nil,
 	}
-	hooks := gethexec.MakeZeroTxSizeSequencingHooks(types.Transactions{tx}, nil, nil, nil)
+	hooks := gethexec.MakeZeroTxSizeSequencingHooksForTesting(types.Transactions{tx}, nil, nil, nil)
 	_, _, err = hooks.NextTxToSequence()
 	Require(t, err)
 	hooks.InsertLastTxError(nil)

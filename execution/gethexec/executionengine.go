@@ -430,7 +430,7 @@ func (s *ExecutionEngine) resequenceReorgedMessages(messages []*arbostypes.Messa
 			log.Warn("failed to parse sequencer message found from reorg", "err", err)
 			continue
 		}
-		hooks := MakeZeroTxSizeSequencingHooks(txes, nil, nil, nil)
+		hooks := MakeZeroTxSizeSequencingHooksForTesting(txes, nil, nil, nil)
 		block, err := s.sequenceTransactionsWithBlockMutex(msg.Message.Header, hooks, nil)
 		if err != nil {
 			log.Error("failed to re-sequence old user message removed by reorg", "err", err)
@@ -567,7 +567,7 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 	}
 
 	allTxsErrored := true
-	for _, err := range hooks.GetTxErrors() {
+	for _, err := range hooks.txErrors {
 		if err == nil {
 			allTxsErrored = false
 			break

@@ -118,7 +118,6 @@ type ConditionalOptionsForTx []*arbitrum_types.ConditionalOptions
 type SequencingHooks interface {
 	NextTxToSequence() (*types.Transaction, *arbitrum_types.ConditionalOptions, error)
 	DiscardInvalidTxsEarly() bool
-	SequencedTx(int) (*types.Transaction, error)
 	PreTxFilter(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, *arbitrum_types.ConditionalOptions, common.Address, *L1Info) error
 	PostTxFilter(*types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult) error
 	BlockFilter(*types.Header, *state.StateDB, types.Transactions, types.Receipts) error
@@ -144,18 +143,6 @@ func (n *NoopSequencingHooks) NextTxToSequence() (*types.Transaction, *arbitrum_
 
 func (n *NoopSequencingHooks) DiscardInvalidTxsEarly() bool {
 	return false
-}
-
-func (n *NoopSequencingHooks) SequencedTx(txId int) (*types.Transaction, error) {
-	// This is not supposed to happen, if so we have a bug
-	if txId > len(n.txs) {
-		return nil, errors.New("transaction queried for does not exist in the noopTxScheduler")
-	}
-	// This is not supposed to happen, if so we have a bug
-	if txId > n.scheduledTxsCount {
-		return nil, errors.New("transaction queried for was not scheduled by the noopTxScheduler")
-	}
-	return n.txs[txId], nil
 }
 
 func (n *NoopSequencingHooks) PreTxFilter(config *params.ChainConfig, header *types.Header, db *state.StateDB, a *arbosState.ArbosState, transaction *types.Transaction, options *arbitrum_types.ConditionalOptions, address common.Address, info *L1Info) error {
