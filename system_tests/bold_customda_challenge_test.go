@@ -277,7 +277,7 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, 
 	dataSigner := signature.DataSignerFromPrivateKey(l1info.GetInfoWithPrivKey("DASigner").PrivateKey)
 
 	// Create and start ReferenceDA provider server for node A
-	providerServerA, providerURLNodeA := createReferenceDAProviderServer(t, ctx, l1client, validatorAddr, dataSigner)
+	providerServerA, providerURLNodeA := createReferenceDAProviderServer(t, ctx, l1client, validatorAddr, dataSigner, 0)
 	t.Cleanup(func() {
 		if err := providerServerA.Shutdown(context.Background()); err != nil {
 			t.Logf("Error shutting down provider server A: %v", err)

@@ -2083,17 +2083,18 @@ func setupConfigWithDAS(
 }
 
 // createReferenceDAProviderServer creates and starts an external ReferenceDA provider server
-func createReferenceDAProviderServer(t *testing.T, ctx context.Context, l1Client *ethclient.Client, validatorAddr common.Address, dataSigner signature.DataSignerFunc) (*http.Server, string) {
+func createReferenceDAProviderServer(t *testing.T, ctx context.Context, l1Client *ethclient.Client, validatorAddr common.Address, dataSigner signature.DataSignerFunc, port int) (*http.Server, string) {
 	// Create ReferenceDA components
 	storage := referenceda.GetInMemoryStorage()
 	reader := referenceda.NewReader(storage, l1Client, validatorAddr)
 	writer := referenceda.NewWriter(dataSigner)
 	validator := referenceda.NewValidator(l1Client, validatorAddr)
 
-	// Create server config with automatic port selection
+	// Create server config
+	// Port 0 means automatic port selection, otherwise use the specified port
 	serverConfig := &dapserver.ServerConfig{
 		Addr:               "127.0.0.1",
-		Port:               0, // 0 means automatic port selection
+		Port:               uint64(port),
 		JWTSecret:          "",
 		EnableDAWriter:     true,
 		ServerTimeouts:     dapserver.DefaultServerConfig.ServerTimeouts,

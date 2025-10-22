@@ -104,7 +104,7 @@ func testBlockValidatorSimple(t *testing.T, opts Options) {
 		validatorAddr := builder.L1Info.GetAddress("ReferenceDAProofValidator")
 		dataSigner := signature.DataSignerFromPrivateKey(builder.L1Info.GetInfoWithPrivKey("Sequencer").PrivateKey)
 
-		refDAServer, refDAURL = createReferenceDAProviderServer(t, ctx, builder.L1.Client, validatorAddr, dataSigner)
+		refDAServer, refDAURL = createReferenceDAProviderServer(t, ctx, builder.L1.Client, validatorAddr, dataSigner, 0)
 		defer func() {
 			if err := refDAServer.Shutdown(context.Background()); err != nil {
 				t.Logf("Error shutting down ReferenceDA provider server: %v", err)

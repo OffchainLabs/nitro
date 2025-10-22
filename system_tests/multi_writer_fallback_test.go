@@ -8,6 +8,10 @@ package arbtest
 import (
 	"context"
 	"math/big"
+	"net"
+	"net/http"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -38,7 +42,7 @@ func TestMultiWriterFallback_CustomDAToAnyTrust(t *testing.T) {
 	l1info := builder.L1Info
 	dataSigner := signature.DataSignerFromPrivateKey(l1info.GetInfoWithPrivKey("Sequencer").PrivateKey)
 	validatorAddr := l1info.GetAddress("ReferenceDAProofValidator")
-	customDAServer, customDAURL := createReferenceDAProviderServer(t, ctx, builder.L1.Client, validatorAddr, dataSigner)
+	customDAServer, customDAURL := createReferenceDAProviderServer(t, ctx, builder.L1.Client, validatorAddr, dataSigner, 0)
 	defer func() {
 		if err := customDAServer.Shutdown(ctx); err != nil {
 			t.Logf("Error shutting down CustomDA server: %v", err)
@@ -138,30 +142,85 @@ func TestMultiWriterFallback_CustomDAToAnyTrust(t *testing.T) {
 
 	// Phase 4: CustomDA recovery
 	t.Log("Phase 4: Restarting CustomDA, testing recovery")
-	customDAServer2, customDAURL2 := createReferenceDAProviderServer(t, ctx,
-		builder.L1.Client, validatorAddr, dataSigner)
+
+	// Extract port from original CustomDA URL to restart on same port
+	customDAAddr := strings.TrimPrefix(customDAURL, "http://")
+	customDAAddr = strings.TrimPrefix(customDAAddr, "https://")
+	_, portStr, err := net.SplitHostPort(customDAAddr)
+	Require(t, err)
+	customDAPort, err := strconv.Atoi(portStr)
+	Require(t, err)
+	t.Logf("Phase 4: Restarting CustomDA on same port %d", customDAPort)
+
+	// Restart on same port with retry for port reuse issues
+	var customDAServer2 *http.Server
+	var customDAURL2 string
+	for i := 0; i < 5; i++ {
+		customDAServer2, customDAURL2 = createReferenceDAProviderServer(t, ctx,
+			builder.L1.Client, validatorAddr, dataSigner, customDAPort)
+		if customDAServer2 != nil {
+			break
+		}
+		t.Logf("Phase 4: Port not yet available, retrying... (attempt %d/5)", i+1)
+		time.Sleep(time.Millisecond * 100)
+	}
+	if customDAServer2 == nil {
+		t.Fatal("Phase 4: Failed to restart CustomDA server after 5 attempts")
+	}
 	defer func() {
 		if err := customDAServer2.Shutdown(ctx); err != nil {
 			t.Logf("Error shutting down CustomDA server 2: %v", err)
 		}
 	}()
 
-	// Update node config (hot reload)
-	builder.nodeConfig.DA.ExternalProvider.RPC.URL = customDAURL2
-	nodeConfigB.DA.ExternalProvider.RPC.URL = customDAURL2
+	t.Logf("CustomDA server restarted at: %s (same port as before)", customDAURL2)
 
-	t.Logf("CustomDA server restarted at: %s", customDAURL2)
-
-	// Give batch poster time to pick up new config
+	// Give batch poster time to reconnect
 	time.Sleep(time.Second * 2)
+
+	// Track L1 block range for Phase 4 to verify CustomDA was used
+	phase4StartBlock, err := builder.L1.Client.BlockNumber(ctx)
+	Require(t, err)
 
 	checkBatchPosting(t, ctx, builder.L1.Client, builder.L2.Client,
 		builder.L1Info, builder.L2Info, big.NewInt(4e12), l2B.Client)
 
-	// Verification: Check that sequencer inbox contains batches from all three DA types
-	t.Log("Verification: Checking sequencer inbox for all DA types")
+	phase4EndBlock, err := builder.L1.Client.BlockNumber(ctx)
+	Require(t, err)
+
+	// Verify Phase 4 batch used CustomDA
+	t.Log("Phase 4 Verification: Checking that batch posted during Phase 4 used CustomDA")
 	seqInbox, err := arbnode.NewSequencerInbox(builder.L1.Client, builder.addresses.SequencerInbox, 0)
 	Require(t, err)
+
+	phase4Batches, err := seqInbox.LookupBatchesInRange(ctx, new(big.Int).SetUint64(phase4StartBlock), new(big.Int).SetUint64(phase4EndBlock))
+	Require(t, err)
+
+	phase4CustomDAFound := false
+	for _, batch := range phase4Batches {
+		serializedBatch, err := batch.Serialize(ctx, builder.L1.Client)
+		Require(t, err)
+
+		if len(serializedBatch) <= 40 {
+			continue
+		}
+
+		headerByte := serializedBatch[40]
+		if daprovider.IsDACertificateMessageHeaderByte(headerByte) {
+			t.Logf("Phase 4: Found CustomDA batch (header byte: 0x%02x)", headerByte)
+			phase4CustomDAFound = true
+			break
+		} else {
+			t.Logf("Phase 4: Found non-CustomDA batch (header byte: 0x%02x)", headerByte)
+		}
+	}
+
+	if !phase4CustomDAFound {
+		t.Fatal("Phase 4: Expected CustomDA to be used after restart, but it was not")
+	}
+
+	// Verification: Check that sequencer inbox contains batches from all three DA types
+	t.Log("Verification: Checking sequencer inbox for all DA types")
 
 	latestBlock, err := builder.L1.Client.BlockNumber(ctx)
 	Require(t, err)
