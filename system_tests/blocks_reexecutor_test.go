@@ -7,7 +7,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 
-	"github.com/offchainlabs/nitro/blocks_reexecutor"
+	blocksreexecutor "github.com/offchainlabs/nitro/blocks_reexecutor"
 )
 
 func TestBlocksReExecutorModes(t *testing.T) {
@@ -53,7 +53,8 @@ func testBlocksReExecutorModes(t *testing.T, onMultipleRanges bool) {
 	}
 
 	// Set Blocks config field if running blocks reexecution on multiple ranges
-	c := &blocksreexecutor.TestConfig
+	c := blocksreexecutor.TestConfig
+	c.ValidateMultiGas = true
 	if onMultipleRanges {
 		c.Blocks = `[[0, 29], [30, 59], [60, 99]]`
 	}
@@ -61,7 +62,7 @@ func testBlocksReExecutorModes(t *testing.T, onMultipleRanges bool) {
 	// Reexecute blocks at mode full
 	c.MinBlocksPerThread = 10
 	Require(t, c.Validate())
-	executorFull, err := blocksreexecutor.New(c, blockchain, builder.L2.ExecNode.ChainDB, feedErrChan)
+	executorFull, err := blocksreexecutor.New(&c, blockchain, builder.L2.ExecNode.ChainDB, feedErrChan)
 	Require(t, err)
 	success := make(chan struct{})
 	executorFull.Start(ctx, success)
@@ -75,7 +76,7 @@ func testBlocksReExecutorModes(t *testing.T, onMultipleRanges bool) {
 	c.Mode = "random"
 	c.MinBlocksPerThread = 20
 	Require(t, c.Validate())
-	executorRandom, err := blocksreexecutor.New(c, blockchain, builder.L2.ExecNode.ChainDB, feedErrChan)
+	executorRandom, err := blocksreexecutor.New(&c, blockchain, builder.L2.ExecNode.ChainDB, feedErrChan)
 	Require(t, err)
 	success = make(chan struct{})
 	executorRandom.Start(ctx, success)
