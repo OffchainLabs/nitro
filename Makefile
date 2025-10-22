@@ -36,7 +36,7 @@ UNAME_S := $(shell uname -s)
 # In Mac OSX, there are a lot of warnings emitted if these environment variables aren't set.
 ifeq ($(UNAME_S), Darwin)
   export MACOSX_DEPLOYMENT_TARGET := $(shell sw_vers -productVersion)
-  export CGO_LDFLAGS := -Wl,-no_warn_duplicate_libraries
+  export CGO_LDFLAGS := -Wl,-no_warn_duplicate_libraries,-w
 endif
 
 precompile_names = AddressTable Aggregator BLS Debug FunctionTable GasInfo Info osTest Owner RetryableTx Statistics Sys
@@ -313,8 +313,10 @@ docker:
 run-follower-compare-local:
 	@echo "Starting Nitro sequencer follower..."
 	CGO_LDFLAGS=-Wl,-no_warn_duplicate_libraries \
+	PR_EXIT_AFTER_GENESIS=false \
 	PR_IGNORE_CALLSTACK=false \
 	PR_NETH_RPC_CLIENT_URL=http://localhost:20545 \
+	PR_NETH_WS_CLIENT_URL=ws://localhost:28551 \
 	PR_OVERRIDE_FORWARDER_URL=ws://localhost:8548 \
 	PR_EXECUTION_MODE=compare \
 	target/bin/nitro \
@@ -327,6 +329,32 @@ run-follower-compare-local:
 
 .PHONY: clean-run-follower-compare-local
 clean-run-follower-compare-local: clean-follower run-follower-compare-local
+
+.PHONY: run-follower-compare-sepolia
+run-follower-compare-sepolia:
+	@echo "Starting Nitro sequencer follower (Sepolia with Nethermind)..."
+	@if [ -z "$$SEPOLIA_RPC_API_KEY" ]; then \
+		echo "Error: SEPOLIA_RPC_API_KEY is not set. Please create a .env file or export the variable."; \
+		exit 1; \
+	fi
+	CGO_LDFLAGS=-Wl,-no_warn_duplicate_libraries \
+	PR_EXIT_AFTER_GENESIS=false \
+	PR_IGNORE_CALLSTACK=false \
+	PR_NETH_RPC_CLIENT_URL=http://localhost:20545 \
+	PR_NETH_WS_CLIENT_URL=ws://localhost:28551 \
+	PR_EXECUTION_MODE=compare \
+	target/bin/nitro \
+		--persistent.global-config /tmp/sequencer_follower \
+		--parent-chain.connection.url=http://209.127.228.66/rpc/$$SEPOLIA_RPC_API_KEY \
+		--parent-chain.blob-client.beacon-url=http://209.127.228.66/consensus/$$SEPOLIA_RPC_API_KEY \
+		--chain.id=421614 \
+		--execution.forwarding-target null \
+		--execution.enable-prefetch-block=false \
+		--http.addr=0.0.0.0 \
+		--http.port=8747
+
+.PHONY: clean-run-follower-compare-sepolia
+clean-run-follower-compare-sepolia: clean-follower run-follower-compare-sepolia
 
 .PHONY: run-follower-compare-mainnet
 run-follower-compare-mainnet: build-replay-env
