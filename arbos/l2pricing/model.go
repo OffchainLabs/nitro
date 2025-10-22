@@ -94,8 +94,9 @@ func (ps *L2PricingState) UpdatePricingModelMultiConstraints(timePassed uint64) 
 
 		// Calculate exponent with the formula backlog/divisor
 		if backlog > 0 {
-			divisor, _ := constraint.divisor.Get()
-			exponent := arbmath.NaturalToBips(arbmath.SaturatingCast[int64](backlog)) / arbmath.SaturatingCastToBips(divisor)
+			inertia, _ := constraint.inertia.Get()
+			divisor := arbmath.SaturatingCastToBips(arbmath.SaturatingUMul(inertia, target))
+			exponent := arbmath.NaturalToBips(arbmath.SaturatingCast[int64](backlog)) / divisor
 			totalExponent = arbmath.SaturatingBipsAdd(totalExponent, exponent)
 		}
 	}
@@ -109,9 +110,4 @@ func (ps *L2PricingState) UpdatePricingModelMultiConstraints(timePassed uint64) 
 		baseFee = minBaseFee
 	}
 	_ = ps.SetBaseFeeWei(baseFee)
-}
-
-func computeConstraintDivisor(target uint64, period uint64) uint64 {
-	inertia := arbmath.SaturatingUMul(ConstraintDivisorMultiplier, arbmath.ApproxSquareRoot(period))
-	return arbmath.SaturatingUMul(target, inertia)
 }
