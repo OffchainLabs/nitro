@@ -268,3 +268,347 @@ func TestMultiWriterFallback_CustomDAToAnyTrust(t *testing.T) {
 
 	t.Log("SUCCESS: All three DA types were used successfully")
 }
+
+// TestMultiWriterFallback_CustomDAToCalldata tests the two-way fallback chain:
+// CustomDA → EthDA (calldata/4844) without AnyTrust
+func TestMultiWriterFallback_CustomDAToCalldata(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// 1. Setup L1 chain and contracts
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	// Use standard dev test config (not DAS) since we're not using AnyTrust
+	builder.chainConfig = chaininfo.ArbitrumDevTestChainConfig()
+	builder.parallelise = false
+
+	// Deploy ReferenceDA validator contract
+	builder.WithReferenceDA()
+
+	builder.BuildL1(t)
+
+	// 2. Setup CustomDA provider server (ReferenceDA)
+	l1info := builder.L1Info
+	dataSigner := signature.DataSignerFromPrivateKey(l1info.GetInfoWithPrivKey("Sequencer").PrivateKey)
+	validatorAddr := l1info.GetAddress("ReferenceDAProofValidator")
+	customDAServer, customDAURL := createReferenceDAProviderServer(t, ctx, builder.L1.Client, validatorAddr, dataSigner, 0)
+	defer func() {
+		if err := customDAServer.Shutdown(ctx); err != nil {
+			t.Logf("Error shutting down CustomDA server: %v", err)
+		}
+	}()
+
+	t.Logf("CustomDA server running at: %s", customDAURL)
+
+	// 3. Configure sequencer node with CustomDA only (no AnyTrust)
+	builder.nodeConfig.DA.ExternalProvider.Enable = true
+	builder.nodeConfig.DA.ExternalProvider.RPC.URL = customDAURL
+	builder.nodeConfig.DA.ExternalProvider.WithWriter = true
+
+	// Disable AnyTrust
+	builder.nodeConfig.DataAvailability.Enable = false
+
+	// Enable fallback to on-chain
+	builder.nodeConfig.BatchPoster.DisableDapFallbackStoreDataOnChain = false
+
+	// 4. Build L2
+	builder.L2Info = NewArbTestInfo(t, builder.chainConfig.ChainID)
+	builder.L2Info.GenerateAccount("User2")
+	cleanup := builder.BuildL2OnL1(t)
+	defer cleanup()
+
+	// 5. Setup follower node with same DA config
+	nodeConfigB := arbnode.ConfigDefaultL1NonSequencerTest()
+	nodeConfigB.BlockValidator.Enable = false
+
+	// CustomDA config
+	nodeConfigB.DA.ExternalProvider.Enable = true
+	nodeConfigB.DA.ExternalProvider.RPC.URL = customDAURL
+
+	// Disable AnyTrust
+	nodeConfigB.DataAvailability.Enable = false
+
+	nodeBParams := SecondNodeParams{
+		nodeConfig: nodeConfigB,
+		initData:   &builder.L2Info.ArbInitData,
+	}
+	l2B, cleanupB := builder.Build2ndNode(t, &nodeBParams)
+	defer cleanupB()
+
+	// Phase 1: Normal CustomDA operation
+	t.Log("Phase 1: Testing normal CustomDA operation")
+	checkBatchPosting(t, ctx, builder.L1.Client, builder.L2.Client,
+		builder.L1Info, builder.L2Info, big.NewInt(1e12), l2B.Client)
+
+	// Phase 2: CustomDA failure → EthDA fallback
+	t.Log("Phase 2: Shutting down CustomDA, testing fallback to EthDA")
+	err := customDAServer.Shutdown(ctx)
+	Require(t, err)
+	t.Logf("Phase 2: CustomDA server shut down successfully")
+
+	checkBatchPosting(t, ctx, builder.L1.Client, builder.L2.Client,
+		builder.L1Info, builder.L2Info, big.NewInt(2e12), l2B.Client)
+
+	// Phase 3: CustomDA recovery
+	t.Log("Phase 3: Restarting CustomDA, testing recovery")
+
+	// Extract port from original CustomDA URL to restart on same port
+	customDAAddr := strings.TrimPrefix(customDAURL, "http://")
+	customDAAddr = strings.TrimPrefix(customDAAddr, "https://")
+	_, portStr, err := net.SplitHostPort(customDAAddr)
+	Require(t, err)
+	customDAPort, err := strconv.Atoi(portStr)
+	Require(t, err)
+	t.Logf("Phase 3: Restarting CustomDA on same port %d", customDAPort)
+
+	// Restart on same port with retry for port reuse issues
+	var customDAServer2 *http.Server
+	var customDAURL2 string
+	for i := 0; i < 5; i++ {
+		customDAServer2, customDAURL2 = createReferenceDAProviderServer(t, ctx,
+			builder.L1.Client, validatorAddr, dataSigner, customDAPort)
+		if customDAServer2 != nil {
+			break
+		}
+		t.Logf("Phase 3: Port not yet available, retrying... (attempt %d/5)", i+1)
+		time.Sleep(time.Millisecond * 100)
+	}
+	if customDAServer2 == nil {
+		t.Fatal("Phase 3: Failed to restart CustomDA server after 5 attempts")
+	}
+	defer func() {
+		if err := customDAServer2.Shutdown(ctx); err != nil {
+			t.Logf("Error shutting down CustomDA server 2: %v", err)
+		}
+	}()
+
+	t.Logf("CustomDA server restarted at: %s (same port as before)", customDAURL2)
+
+	// Give batch poster time to reconnect
+	time.Sleep(time.Second * 2)
+
+	// Track L1 block range for Phase 3 to verify CustomDA was used
+	phase3StartBlock, err := builder.L1.Client.BlockNumber(ctx)
+	Require(t, err)
+
+	checkBatchPosting(t, ctx, builder.L1.Client, builder.L2.Client,
+		builder.L1Info, builder.L2Info, big.NewInt(3e12), l2B.Client)
+
+	phase3EndBlock, err := builder.L1.Client.BlockNumber(ctx)
+	Require(t, err)
+
+	// Verify Phase 3 batch used CustomDA
+	t.Log("Phase 3 Verification: Checking that batch posted during Phase 3 used CustomDA")
+	seqInbox, err := arbnode.NewSequencerInbox(builder.L1.Client, builder.addresses.SequencerInbox, 0)
+	Require(t, err)
+
+	phase3Batches, err := seqInbox.LookupBatchesInRange(ctx, new(big.Int).SetUint64(phase3StartBlock), new(big.Int).SetUint64(phase3EndBlock))
+	Require(t, err)
+
+	phase3CustomDAFound := false
+	for _, batch := range phase3Batches {
+		serializedBatch, err := batch.Serialize(ctx, builder.L1.Client)
+		Require(t, err)
+
+		if len(serializedBatch) <= 40 {
+			continue
+		}
+
+		headerByte := serializedBatch[40]
+		if daprovider.IsDACertificateMessageHeaderByte(headerByte) {
+			t.Logf("Phase 3: Found CustomDA batch (header byte: 0x%02x)", headerByte)
+			phase3CustomDAFound = true
+			break
+		} else {
+			t.Logf("Phase 3: Found non-CustomDA batch (header byte: 0x%02x)", headerByte)
+		}
+	}
+
+	if !phase3CustomDAFound {
+		t.Fatal("Phase 3: Expected CustomDA to be used after restart, but it was not")
+	}
+
+	// Verification: Check that sequencer inbox contains batches from both DA types
+	t.Log("Verification: Checking sequencer inbox for both CustomDA and EthDA")
+
+	latestBlock, err := builder.L1.Client.BlockNumber(ctx)
+	Require(t, err)
+
+	batches, err := seqInbox.LookupBatchesInRange(ctx, big.NewInt(0), new(big.Int).SetUint64(latestBlock))
+	Require(t, err)
+
+	var customDASeen, ethDASeen bool
+
+	for _, batch := range batches {
+		serializedBatch, err := batch.Serialize(ctx, builder.L1.Client)
+		Require(t, err)
+
+		if len(serializedBatch) <= 40 {
+			continue
+		}
+
+		headerByte := serializedBatch[40]
+
+		if daprovider.IsDACertificateMessageHeaderByte(headerByte) {
+			t.Logf("Found CustomDA batch (header byte: 0x%02x)", headerByte)
+			customDASeen = true
+		} else if daprovider.IsBrotliMessageHeaderByte(headerByte) {
+			t.Logf("Found EthDA/Calldata batch (header byte: 0x%02x)", headerByte)
+			ethDASeen = true
+		}
+	}
+
+	if !customDASeen {
+		t.Error("Expected to see CustomDA batches in sequencer inbox")
+	}
+	if !ethDASeen {
+		t.Error("Expected to see EthDA batches in sequencer inbox")
+	}
+
+	if !customDASeen || !ethDASeen {
+		t.Fatal("Expected batches from both CustomDA and EthDA")
+	}
+
+	t.Log("SUCCESS: Both CustomDA and EthDA were used successfully")
+}
+
+// TestMultiWriterFallback_AnyTrustToCalldata tests the two-way fallback chain:
+// AnyTrust → EthDA (calldata/4844) without CustomDA
+func TestMultiWriterFallback_AnyTrustToCalldata(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// 1. Setup L1 chain and contracts
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder.chainConfig = chaininfo.ArbitrumDevTestDASChainConfig()
+	builder.parallelise = false
+
+	builder.BuildL1(t)
+
+	// 2. Setup AnyTrust/DAS server
+	dasDataDir := t.TempDir()
+	dasRpcServer, pubkey, backendConfig, restServer, restServerUrl := startLocalDASServer(
+		t, ctx, dasDataDir, builder.L1.Client, builder.addresses.SequencerInbox)
+	defer func() {
+		if err := dasRpcServer.Shutdown(ctx); err != nil {
+			t.Logf("Error shutting down DAS RPC server: %v", err)
+		}
+	}()
+	defer func() {
+		if err := restServer.Shutdown(); err != nil {
+			t.Logf("Error shutting down REST server: %v", err)
+		}
+	}()
+
+	authorizeDASKeyset(t, ctx, pubkey, builder.L1Info, builder.L1.Client)
+
+	// Mine L1 blocks to ensure keyset logs are queryable.
+	// The keyset fetcher queries from blockNum to blockNum+1, so we need
+	// at least one more block after the keyset transaction.
+	TransferBalance(t, "Faucet", "User", big.NewInt(1), builder.L1Info, builder.L1.Client, ctx)
+
+	t.Logf("AnyTrust DAS server running at: RPC=%s REST=%s", backendConfig.URL, restServerUrl)
+
+	// 3. Configure sequencer node with AnyTrust only (no CustomDA)
+	// Disable CustomDA
+	builder.nodeConfig.DA.ExternalProvider.Enable = false
+
+	// Enable AnyTrust
+	builder.nodeConfig.DataAvailability.Enable = true
+	builder.nodeConfig.DataAvailability.RPCAggregator = aggConfigForBackend(backendConfig)
+	builder.nodeConfig.DataAvailability.RestAggregator = das.DefaultRestfulClientAggregatorConfig
+	builder.nodeConfig.DataAvailability.RestAggregator.Enable = true
+	builder.nodeConfig.DataAvailability.RestAggregator.Urls = []string{restServerUrl}
+	builder.nodeConfig.DataAvailability.ParentChainNodeURL = "none"
+
+	// Enable fallback to on-chain
+	builder.nodeConfig.BatchPoster.DisableDapFallbackStoreDataOnChain = false
+
+	// 4. Build L2
+	builder.L2Info = NewArbTestInfo(t, builder.chainConfig.ChainID)
+	builder.L2Info.GenerateAccount("User2")
+	cleanup := builder.BuildL2OnL1(t)
+	defer cleanup()
+
+	// 5. Setup follower node with same DA config
+	nodeConfigB := arbnode.ConfigDefaultL1NonSequencerTest()
+	nodeConfigB.BlockValidator.Enable = false
+
+	// Disable CustomDA
+	nodeConfigB.DA.ExternalProvider.Enable = false
+
+	// Enable AnyTrust
+	nodeConfigB.DataAvailability.Enable = true
+	nodeConfigB.DataAvailability.RestAggregator = das.DefaultRestfulClientAggregatorConfig
+	nodeConfigB.DataAvailability.RestAggregator.Enable = true
+	nodeConfigB.DataAvailability.RestAggregator.Urls = []string{restServerUrl}
+	nodeConfigB.DataAvailability.ParentChainNodeURL = "none"
+
+	nodeBParams := SecondNodeParams{
+		nodeConfig: nodeConfigB,
+		initData:   &builder.L2Info.ArbInitData,
+	}
+	l2B, cleanupB := builder.Build2ndNode(t, &nodeBParams)
+	defer cleanupB()
+
+	// Phase 1: Normal AnyTrust operation
+	t.Log("Phase 1: Testing normal AnyTrust operation")
+	checkBatchPosting(t, ctx, builder.L1.Client, builder.L2.Client,
+		builder.L1Info, builder.L2Info, big.NewInt(1e12), l2B.Client)
+
+	// Phase 2: AnyTrust failure → EthDA fallback
+	t.Log("Phase 2: Shutting down AnyTrust, testing fallback to EthDA")
+	err := dasRpcServer.Shutdown(ctx)
+	Require(t, err)
+	t.Logf("Phase 2: AnyTrust DAS RPC server shut down successfully")
+	err = restServer.Shutdown()
+	Require(t, err)
+	t.Logf("Phase 2: AnyTrust DAS REST server shut down successfully")
+
+	checkBatchPosting(t, ctx, builder.L1.Client, builder.L2.Client,
+		builder.L1Info, builder.L2Info, big.NewInt(2e12), l2B.Client)
+
+	// Verification: Check that sequencer inbox contains batches from both DA types
+	t.Log("Verification: Checking sequencer inbox for both AnyTrust and EthDA")
+	seqInbox, err := arbnode.NewSequencerInbox(builder.L1.Client, builder.addresses.SequencerInbox, 0)
+	Require(t, err)
+
+	latestBlock, err := builder.L1.Client.BlockNumber(ctx)
+	Require(t, err)
+
+	batches, err := seqInbox.LookupBatchesInRange(ctx, big.NewInt(0), new(big.Int).SetUint64(latestBlock))
+	Require(t, err)
+
+	var anyTrustSeen, ethDASeen bool
+
+	for _, batch := range batches {
+		serializedBatch, err := batch.Serialize(ctx, builder.L1.Client)
+		Require(t, err)
+
+		if len(serializedBatch) <= 40 {
+			continue
+		}
+
+		headerByte := serializedBatch[40]
+
+		if daprovider.IsDASMessageHeaderByte(headerByte) {
+			t.Logf("Found AnyTrust batch (header byte: 0x%02x)", headerByte)
+			anyTrustSeen = true
+		} else if daprovider.IsBrotliMessageHeaderByte(headerByte) {
+			t.Logf("Found EthDA/Calldata batch (header byte: 0x%02x)", headerByte)
+			ethDASeen = true
+		}
+	}
+
+	if !anyTrustSeen {
+		t.Error("Expected to see AnyTrust batches in sequencer inbox")
+	}
+	if !ethDASeen {
+		t.Error("Expected to see EthDA batches in sequencer inbox")
+	}
+
+	if !anyTrustSeen || !ethDASeen {
+		t.Fatal("Expected batches from both AnyTrust and EthDA")
+	}
+
+	t.Log("SUCCESS: Both AnyTrust and EthDA were used successfully")
+}
