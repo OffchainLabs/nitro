@@ -22,7 +22,7 @@ func (c *BenchSequencerConfig) Validate() error {
 	return nil
 }
 
-func NewBenchSequencer(sequencer *Sequencer, config *BenchSequencerConfig) (TransactionPublisher, interface{}) {
+func NewBenchSequencer(sequencer *Sequencer) (TransactionPublisher, interface{}) {
 	benchSequencer := &BenchSequencer{
 		Sequencer: sequencer,
 		semaphore: make(chan struct{}, 1),

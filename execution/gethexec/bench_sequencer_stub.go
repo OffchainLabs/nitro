@@ -19,7 +19,7 @@ func (c *BenchSequencerConfig) Validate() error {
 	return nil
 }
 
-func NewBenchSequencer(sequencer *Sequencer, _ *BenchSequencerConfig) (TransactionPublisher, interface{}) {
+func NewBenchSequencer(sequencer *Sequencer) (TransactionPublisher, interface{}) {
 	// do nothing
 	return sequencer, nil
 }

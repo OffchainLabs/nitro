@@ -311,7 +311,7 @@ func CreateExecutionNode(
 		}
 		txPublisher = sequencer
 		if config.Dangerous.BenchSequencer.Enable {
-			txPublisher, benchSequencerService = NewBenchSequencer(sequencer, &config.Dangerous.BenchSequencer)
+			txPublisher, benchSequencerService = NewBenchSequencer(sequencer)
 		}
 	} else {
 		if config.Forwarder.RedisUrl != "" {
