@@ -4,8 +4,8 @@ on:
   workflow_call:
     secrets:
       CODECOV_TOKEN:
-        required: true
-        description: Token to upload reports to Codecov.
+        required: false
+        description: Token to upload reports to Codecov. Required if `upload_report` is on.
     inputs:
       post_comment:
         description: 'Set to true to post a test summary comment on the PR.'

@@ -134,7 +134,8 @@ func beaconRequest[T interface{}](b *BlobClient, ctx context.Context, beaconPath
 		if queryParams != nil {
 			beaconUrl.RawQuery = queryParams.Encode()
 		}
-		req, err := http.NewRequestWithContext(ctx, "GET", beaconUrl.String(), http.NoBody)
+		fullUrl := beaconUrl.String()
+		req, err := http.NewRequestWithContext(ctx, "GET", fullUrl, http.NoBody)
 		if err != nil {
 			return nil, err
 		}
@@ -149,12 +150,8 @@ func beaconRequest[T interface{}](b *BlobClient, ctx context.Context, beaconPath
 			defer resp.Body.Close()
 			body, _ := io.ReadAll(resp.Body)
 			bodyStr := string(body)
-			log.Debug("beacon request returned response with non 200 OK status", "status", resp.Status, "body", bodyStr)
-			if len(bodyStr) > 100 {
-				return nil, fmt.Errorf("response returned with status %s, want 200 OK. body: %s ", resp.Status, bodyStr[len(bodyStr)-trailingCharsOfResponse:])
-			} else {
-				return nil, fmt.Errorf("response returned with status %s, want 200 OK. body: %s", resp.Status, bodyStr)
-			}
+			log.Debug("beacon request returned response with non 200 OK status", "url", fullUrl, "status", resp.Status, "body", bodyStr)
+			return nil, fmt.Errorf("response returned with status %s, want 200 OK. url: %s, body: %s", resp.Status, fullUrl, bodyStr)
 		}
 		return resp, nil
 	}
@@ -214,11 +211,11 @@ func (b *BlobClient) GetBlobsBySlot(ctx context.Context, slot uint64, versionedH
 		blobs, err = b.getBlobs(ctx, slot, versionedHashes)
 	}
 	if err != nil {
-		// Creates a new http client to avoid reusing the same transport layer connection in the next request.
-		// This strategy can be useful if there is a network load balancer in front of the beacon chain server.
-		// So supposing that the error is due to a malfunctioning beacon chain node, by creating a new http client
-		// we can potentially connect to a different, and healthy, beacon chain node in the next request.
-		b.httpClient.Store(&http.Client{})
+		// Create a new HTTP client with a dedicated transport that disables connection reuse.
+		// With the default client (nil Transport), Go reuses the global DefaultTransport and its connection pool,
+		// which may keep using the same problematic backend connection. Disabling keep-alives forces a fresh TCP
+		// connection on the next request, increasing the chance of hitting a healthy backend behind a load balancer.
+		b.httpClient.Store(&http.Client{Transport: &http.Transport{DisableKeepAlives: true}})
 
 		b.useLegacyEndpoint = !b.useLegacyEndpoint
 
@@ -228,19 +225,25 @@ func (b *BlobClient) GetBlobsBySlot(ctx context.Context, slot uint64, versionedH
 }
 
 func (b *BlobClient) getBlobs(ctx context.Context, slot uint64, versionedHashes []common.Hash) ([]kzg4844.Blob, error) {
+	beaconPath := fmt.Sprintf("/eth/v1/beacon/blobs/%d", slot)
 	queryParams := url.Values{}
 	for _, hash := range versionedHashes {
 		queryParams.Add("versioned_hashes", hash.Hex())
 	}
 
-	response, err := beaconRequest[[]hexutil.Bytes](b, ctx, fmt.Sprintf("/eth/v1/beacon/blobs/%d", slot), queryParams)
+	// Construct the full URL for error reporting
+	fullUrl := *b.beaconUrl
+	fullUrl.Path = path.Join(fullUrl.Path, beaconPath)
+	fullUrl.RawQuery = queryParams.Encode()
+
+	response, err := beaconRequest[[]hexutil.Bytes](b, ctx, beaconPath, queryParams)
 	if err != nil {
 		// #nosec G115
 		roughAgeOfSlot := uint64(time.Now().Unix()) - (b.genesisTime + slot*b.secondsPerSlot)
 		if roughAgeOfSlot > b.secondsPerSlot*32*4096 {
-			return nil, fmt.Errorf("beacon client in getBlobs got error fetching older blobs in slot: %d, an archive endpoint is required, please refer to https://docs.arbitrum.io/run-arbitrum-node/l1-ethereum-beacon-chain-rpc-providers, err: %w", slot, err)
+			return nil, fmt.Errorf("beacon client in getBlobs got error fetching older blobs in slot: %d, url: %s, an archive endpoint is required, please refer to https://docs.arbitrum.io/run-arbitrum-node/l1-ethereum-beacon-chain-rpc-providers, err: %w", slot, fullUrl.String(), err)
 		} else {
-			return nil, fmt.Errorf("beacon client in getBlobs got error fetching non-expired blobs in slot: %d, err: %w", slot, err)
+			return nil, fmt.Errorf("beacon client in getBlobs got error fetching non-expired blobs in slot: %d, url: %s, err: %w", slot, fullUrl.String(), err)
 		}
 	}
 
@@ -281,29 +284,29 @@ type blobResponseItem struct {
 	KzgProof        hexutil.Bytes        `json:"kzg_proof"`
 }
 
-const trailingCharsOfResponse = 25
-
 func (b *BlobClient) blobSidecars(ctx context.Context, slot uint64, versionedHashes []common.Hash) ([]kzg4844.Blob, error) {
-	rawData, err := beaconRequest[json.RawMessage](b, ctx, fmt.Sprintf("/eth/v1/beacon/blob_sidecars/%d", slot), nil)
+	beaconPath := fmt.Sprintf("/eth/v1/beacon/blob_sidecars/%d", slot)
+
+	// Construct the full URL for error reporting
+	fullUrl := *b.beaconUrl
+	fullUrl.Path = path.Join(fullUrl.Path, beaconPath)
+
+	rawData, err := beaconRequest[json.RawMessage](b, ctx, beaconPath, nil)
 	if err != nil || len(rawData) == 0 {
 		// blobs are pruned after 4096 epochs (1 epoch = 32 slots), we determine if the requested slot was to be pruned by a non-archive endpoint
 		// #nosec G115
 		roughAgeOfSlot := uint64(time.Now().Unix()) - (b.genesisTime + slot*b.secondsPerSlot)
 		if roughAgeOfSlot > b.secondsPerSlot*32*4096 {
-			return nil, fmt.Errorf("beacon client in blobSidecars got error or empty response fetching older blobs in slot: %d, an archive endpoint is required, please refer to https://docs.arbitrum.io/run-arbitrum-node/l1-ethereum-beacon-chain-rpc-providers, err: %w", slot, err)
+			return nil, fmt.Errorf("beacon client in blobSidecars got error or empty response fetching older blobs in slot: %d, url: %s, an archive endpoint is required, please refer to https://docs.arbitrum.io/run-arbitrum-node/l1-ethereum-beacon-chain-rpc-providers, err: %w", slot, fullUrl.String(), err)
 		} else {
-			return nil, fmt.Errorf("beacon client in blobSidecars got error or empty response fetching non-expired blobs in slot: %d, if using a Prysm endpoint, try --enable-experimental-backfill flag, err: %w", slot, err)
+			return nil, fmt.Errorf("beacon client in blobSidecars got error or empty response fetching non-expired blobs in slot: %d, url: %s, if using a Prysm endpoint, try --enable-experimental-backfill flag, err: %w", slot, fullUrl.String(), err)
 		}
 	}
 	var response []blobResponseItem
 	if err := json.Unmarshal(rawData, &response); err != nil {
 		rawDataStr := string(rawData)
 		log.Debug("response from beacon URL cannot be unmarshalled into array of blobResponseItem in blobSidecars", "slot", slot, "responseLength", len(rawDataStr), "response", rawDataStr)
-		if len(rawDataStr) > 100 {
-			return nil, fmt.Errorf("error unmarshalling response from beacon URL into array of blobResponseItem in blobSidecars: %w. Trailing %d characters of the response: %s", err, trailingCharsOfResponse, rawDataStr[len(rawDataStr)-trailingCharsOfResponse:])
-		} else {
-			return nil, fmt.Errorf("error unmarshalling response from beacon URL into array of blobResponseItem in blobSidecars: %w. Response: %s", err, rawDataStr)
-		}
+		return nil, fmt.Errorf("error unmarshalling response from beacon URL into array of blobResponseItem in blobSidecars: %w. Response: %s", err, rawDataStr)
 	}
 
 	if len(response) < len(versionedHashes) {
