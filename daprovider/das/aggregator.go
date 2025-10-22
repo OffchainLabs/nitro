@@ -25,6 +25,7 @@ import (
 	"github.com/offchainlabs/nitro/daprovider/data_streaming"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/util/pretty"
+	"github.com/offchainlabs/nitro/util/rpcclient"
 )
 
 const metricBase string = "arb/das/rpc/aggregator/store"
@@ -51,6 +52,7 @@ var DefaultAggregatorConfig = AggregatorConfig{
 		ServerUrl:          "",
 		EnableChunkedStore: true,
 		DataStream:         data_streaming.DefaultDataStreamerConfig(DefaultDataStreamRpcMethods),
+		RPC:                rpcclient.DefaultClientConfig,
 	},
 }
 

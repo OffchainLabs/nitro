@@ -6,6 +6,7 @@ package daclient
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/spf13/pflag"
 
@@ -23,6 +24,7 @@ import (
 type Client struct {
 	*rpcclient.RpcClient
 	*data_streaming.DataStreamer[server_api.StoreResult]
+	rpcTimeout time.Duration
 }
 
 // lint:require-exhaustive-initialization
@@ -75,7 +77,11 @@ func NewClient(ctx context.Context, config *ClientConfig, payloadSigner *data_st
 		return nil, err
 	}
 
-	client := &Client{rpcClient, dataStreamer}
+	client := &Client{
+		RpcClient:    rpcClient,
+		DataStreamer: dataStreamer,
+		rpcTimeout:   config.RPC.Timeout,
+	}
 	if err = client.Start(ctx); err != nil {
 		return nil, fmt.Errorf("error starting daprovider client: %w", err)
 	}
@@ -139,7 +145,19 @@ func (c *Client) Store(
 	message []byte,
 	timeout uint64,
 ) containers.PromiseInterface[[]byte] {
-	promise, ctx := containers.NewPromiseWithContext[[]byte](context.Background())
+	var promise *containers.Promise[[]byte]
+	var ctx context.Context
+
+	// Create context with timeout if configured, otherwise use background
+	if c.rpcTimeout > 0 {
+		timeoutCtx, cancel := context.WithTimeout(context.Background(), c.rpcTimeout)
+		p := containers.NewPromise[[]byte](cancel)
+		promise = &p
+		ctx = timeoutCtx
+	} else {
+		promise, ctx = containers.NewPromiseWithContext[[]byte](context.Background())
+	}
+
 	go func() {
 		storeResult, err := c.DataStreamer.StreamData(ctx, message, timeout)
 		if err != nil {

@@ -26,6 +26,7 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/headerreader"
+	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
@@ -49,8 +50,7 @@ func startLocalDASServer(
 	config.LocalFileStorage.DataDir = dataDir
 
 	storageService, lifecycleManager, err := das.CreatePersistentStorageService(ctx, &config)
-	defer lifecycleManager.StopAndWaitUntil(time.Second)
-
+	_ = lifecycleManager // Caller should manage lifecycle if needed
 	Require(t, err)
 	seqInboxCaller, err := bridgegen.NewSequencerInboxCaller(seqInboxAddress, l1client)
 	Require(t, err)
@@ -60,17 +60,28 @@ func startLocalDASServer(
 	Require(t, err)
 	rpcLis, err := net.Listen("tcp", "localhost:0")
 	Require(t, err)
+	rpcAddr := rpcLis.Addr().String()
+	t.Logf("DAS RPC listener created at: %s", rpcAddr)
+
 	rpcServer, err := das.StartDASRPCServerOnListener(ctx, rpcLis, genericconf.HTTPServerTimeoutConfigDefault, genericconf.HTTPServerBodyLimitDefault, storageService, daWriter, storageService, signatureVerifier)
 	Require(t, err)
+	t.Logf("DAS RPC server started and listening on: %s", rpcAddr)
+
 	restLis, err := net.Listen("tcp", "localhost:0")
 	Require(t, err)
+	restAddr := restLis.Addr().String()
+	t.Logf("DAS REST listener created at: %s", restAddr)
+
 	restServer, err := das.NewRestfulDasServerOnListener(restLis, genericconf.HTTPServerTimeoutConfigDefault, storageService, storageService)
 	Require(t, err)
+	t.Logf("DAS REST server started and listening on: %s", restAddr)
+
 	beConfig := das.BackendConfig{
-		URL:    "http://" + rpcLis.Addr().String(),
+		URL:    "http://" + rpcAddr,
 		Pubkey: blsPubToBase64(pubkey),
 	}
-	return rpcServer, pubkey, beConfig, restServer, "http://" + restLis.Addr().String()
+	t.Logf("DAS backend config created with URL: %s", beConfig.URL)
+	return rpcServer, pubkey, beConfig, restServer, "http://" + restAddr
 }
 
 func blsPubToBase64(pubkey *blsSignatures.PublicKey) string {
@@ -81,6 +92,8 @@ func blsPubToBase64(pubkey *blsSignatures.PublicKey) string {
 }
 
 func aggConfigForBackend(backendConfig das.BackendConfig) das.AggregatorConfig {
+	rpcConfig := rpcclient.DefaultClientConfig
+	rpcConfig.Timeout = 2 * time.Second // Short timeout for tests to fail fast
 	return das.AggregatorConfig{
 		Enable:        true,
 		AssumedHonest: 1,
@@ -89,6 +102,7 @@ func aggConfigForBackend(backendConfig das.BackendConfig) das.AggregatorConfig {
 			ServerUrl:          backendConfig.URL,
 			EnableChunkedStore: true,
 			DataStream:         data_streaming.TestDataStreamerConfig(das.DefaultDataStreamRpcMethods),
+			RPC:                rpcConfig,
 		},
 	}
 }
@@ -160,38 +174,6 @@ func TestDASRekey(t *testing.T) {
 	l2B, cleanup := builder.Build2ndNode(t, &nodeBParams)
 	defer cleanup()
 	checkBatchPosting(t, ctx, builder.L1.Client, builder.L2.Client, builder.L1Info, builder.L2Info, big.NewInt(2e12), l2B.Client)
-}
-
-func checkBatchPosting(t *testing.T, ctx context.Context, l1client, l2clientA *ethclient.Client, l1info, l2info info, expectedBalance *big.Int, l2ClientsToCheck ...*ethclient.Client) {
-	tx := l2info.PrepareTx("Owner", "User2", l2info.TransferGas, big.NewInt(1e12), nil)
-	err := l2clientA.SendTransaction(ctx, tx)
-	Require(t, err)
-
-	_, err = EnsureTxSucceeded(ctx, l2clientA, tx)
-	Require(t, err)
-
-	// give the inbox reader a bit of time to pick up the delayed message
-	time.Sleep(time.Millisecond * 100)
-
-	// sending l1 messages creates l1 blocks.. make enough to get that delayed inbox message in
-	for i := 0; i < 30; i++ {
-		SendWaitTestTransactions(t, ctx, l1client, []*types.Transaction{
-			l1info.PrepareTx("Faucet", "User", 30000, big.NewInt(1e12), nil),
-		})
-	}
-
-	for _, client := range l2ClientsToCheck {
-		_, err = WaitForTx(ctx, client, tx.Hash(), time.Second*30)
-		Require(t, err)
-
-		l2balance, err := client.BalanceAt(ctx, l2info.GetAddress("User2"), nil)
-		Require(t, err)
-
-		if l2balance.Cmp(expectedBalance) != 0 {
-			Fatal(t, "Unexpected balance:", l2balance)
-		}
-
-	}
 }
 
 func TestDASComplexConfigAndRestMirror(t *testing.T) {
