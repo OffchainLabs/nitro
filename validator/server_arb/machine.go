@@ -11,25 +11,7 @@ package server_arb
 
 ResolvedPreimage preimageResolverC(size_t context, uint8_t preimageType, const uint8_t* hash);
 
-typedef struct {
-	uint64_t machines_created;
-	uint64_t machines_freed;
-	uint64_t machines_live;
-	uint64_t memory_current_bytes;
-	uint64_t memory_peak_bytes;
-	uint64_t stylus_bytes_current;
-	uint64_t stylus_bytes_peak;
-	uint64_t inbox_bytes_current;
-	uint64_t inbox_entries_current;
-	uint64_t last_destroy_steps;
-	uint64_t last_destroy_status;
-	uint64_t last_destroy_memory_bytes;
-	uint64_t last_destroy_stylus_bytes;
-	uint64_t last_destroy_inbox_bytes;
-} ArbitratorProfilerSnapshot;
-
 void arbitrator_profiler_set_enabled(bool enable);
-void arbitrator_profiler_snapshot(ArbitratorProfilerSnapshot* out);
 */
 import "C"
 
