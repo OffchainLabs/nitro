@@ -3,6 +3,7 @@ package server_jit
 import (
 	"context"
 	"fmt"
+	"runtime"
 	"sync/atomic"
 	"time"
 
@@ -24,7 +25,8 @@ type JitSpawnerConfig struct {
 	JitPath          string        `koanf:"jit-path"`
 
 	// TODO: change WasmMemoryUsageLimit to a string and use resourcemanager.ParseMemLimit
-	WasmMemoryUsageLimit int `koanf:"wasm-memory-usage-limit"`
+	WasmMemoryUsageLimit int               `koanf:"wasm-memory-usage-limit"`
+	Profiling            JitProfilerConfig `koanf:"profiling" reload:"hot"`
 }
 
 type JitSpawnerConfigFecher func() *JitSpawnerConfig
@@ -35,6 +37,7 @@ var DefaultJitSpawnerConfig = JitSpawnerConfig{
 	WasmMemoryUsageLimit: 4294967296, // 2^32 WASM memory limit
 	MaxExecutionTime:     time.Minute * 10,
 	JitPath:              "", // Empty string means use default path resolution
+	Profiling:            DefaultJitProfilerConfig,
 }
 
 func JitSpawnerConfigAddOptions(prefix string, f *pflag.FlagSet) {
@@ -43,6 +46,7 @@ func JitSpawnerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Int(prefix+".wasm-memory-usage-limit", DefaultJitSpawnerConfig.WasmMemoryUsageLimit, "if memory used by a jit wasm exceeds this limit, a warning is logged")
 	f.Duration(prefix+".max-execution-time", DefaultJitSpawnerConfig.MaxExecutionTime, "if execution time used by a jit wasm exceeds this limit, a rpc error is returned")
 	f.String(prefix+".jit-path", DefaultJitSpawnerConfig.JitPath, "path to jit executable, if empty, attempts to find jit executable relative to nitro binary or in PATH")
+	JitProfilerConfigAddOptions(prefix+".profiling", f)
 }
 
 type JitSpawner struct {
@@ -74,6 +78,7 @@ func NewJitSpawner(locator *server_common.MachineLocator, config JitSpawnerConfi
 
 func (v *JitSpawner) Start(ctx_in context.Context) error {
 	v.StopWaiter.Start(ctx_in, v)
+	v.LaunchThread(v.profilingLoop)
 	return nil
 }
 
@@ -124,4 +129,38 @@ func (v *JitSpawner) Room() int {
 func (v *JitSpawner) Stop() {
 	v.StopOnly()
 	v.machineLoader.Stop()
+}
+
+func (v *JitSpawner) profilingLoop(ctx context.Context) {
+	cfg := v.config().Profiling
+	interval := sanitizeJitProfilerInterval(cfg.LogInterval)
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	globalJitProfiler.SetEnabled(cfg.Enable)
+
+	for {
+		select {
+		case <-ctx.Done():
+			globalJitProfiler.SetEnabled(false)
+			return
+		case <-ticker.C:
+		}
+
+		cfg = v.config().Profiling
+		newInterval := sanitizeJitProfilerInterval(cfg.LogInterval)
+		if newInterval != interval {
+			interval = newInterval
+			ticker.Reset(interval)
+		}
+
+		globalJitProfiler.SetEnabled(cfg.Enable)
+		if !cfg.Enable {
+			continue
+		}
+
+		var mem runtime.MemStats
+		runtime.ReadMemStats(&mem)
+		snapshot := globalJitProfiler.Snapshot()
+		logJitProfilerSnapshot(snapshot, &mem)
+	}
 }

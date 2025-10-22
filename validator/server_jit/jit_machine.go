@@ -13,6 +13,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"sync/atomic"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -32,6 +33,8 @@ type JitMachine struct {
 	stdin                io.WriteCloser
 	wasmMemoryUsageLimit int
 	maxExecutionTime     time.Duration
+	pid                  int
+	reportExit           atomic.Bool
 }
 
 func createJitMachine(jitBinary string, binaryPath string, cranelift bool, wasmMemoryUsageLimit int, maxExecutionTime time.Duration, _ common.Hash, fatalErrChan chan error) (*JitMachine, error) {
@@ -46,11 +49,13 @@ func createJitMachine(jitBinary string, binaryPath string, cranelift bool, wasmM
 	}
 	process.Stdout = os.Stdout
 	process.Stderr = os.Stderr
-	go func() {
-		if err := process.Run(); err != nil {
-			fatalErrChan <- fmt.Errorf("lost jit block validator process: %w", err)
-		}
-	}()
+
+	if err := process.Start(); err != nil {
+		return nil, err
+	}
+
+	pid := process.Process.Pid
+	globalJitProfiler.OnMachineStarted(pid)
 
 	machine := &JitMachine{
 		binary:               binaryPath,
@@ -58,7 +63,21 @@ func createJitMachine(jitBinary string, binaryPath string, cranelift bool, wasmM
 		stdin:                stdin,
 		wasmMemoryUsageLimit: wasmMemoryUsageLimit,
 		maxExecutionTime:     maxExecutionTime,
+		pid:                  pid,
 	}
+
+	go func(m *JitMachine, p *exec.Cmd, pid int) {
+		waitErr := p.Wait()
+		globalJitProfiler.OnMachineExited(pid, waitErr)
+		if waitErr != nil && m.reportExit.Load() {
+			select {
+			case fatalErrChan <- fmt.Errorf("lost jit block validator process (pid %d): %w", pid, waitErr):
+			default:
+			}
+		}
+	}(machine, process, pid)
+
+	machine.reportExit.Store(true)
 	return machine, nil
 }
 
