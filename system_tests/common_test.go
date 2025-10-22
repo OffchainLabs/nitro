@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"encoding/gob"
 	"encoding/hex"
 	"encoding/json"
 	"flag"
@@ -109,13 +110,15 @@ type SecondNodeParams struct {
 }
 
 type TestClient struct {
-	ctx           context.Context
-	Client        *ethclient.Client
-	L1Backend     *eth.Ethereum
-	Stack         *node.Node
-	ConsensusNode *arbnode.Node
-	ExecNode      *gethexec.ExecutionNode
-	ClientWrapper *ClientWrapper
+	ctx                    context.Context
+	Client                 *ethclient.Client
+	L1Backend              *eth.Ethereum
+	Stack                  *node.Node
+	ConsensusNode          *arbnode.Node
+	ExecNode               *gethexec.ExecutionNode
+	ClientWrapper          *ClientWrapper
+	ConsensusConfigFetcher ConfigFetcher[arbnode.Config]
+	ExecutionConfigFetcher ConfigFetcher[gethexec.Config]
 
 	// having cleanup() field makes cleanup customizable from default cleanup methods after calling build
 	cleanup func()
@@ -702,19 +705,20 @@ func buildOnParentChain(
 
 	AddValNodeIfNeeded(t, ctx, nodeConfig, true, "", valnodeConfig.Wasm.RootPath)
 
-	Require(t, execConfig.Validate())
-	execConfigToBeUsedInConfigFetcher := execConfig
-	execConfigFetcher := func() *gethexec.Config { return execConfigToBeUsedInConfigFetcher }
+	execConfigFetcher := NewCommonConfigFetcher(execConfig)
 	execNode, err := gethexec.CreateExecutionNode(ctx, chainTestClient.Stack, chainDb, blockchain, parentChainTestClient.Client, execConfigFetcher, parentChainId, 0)
 	Require(t, err)
+	chainTestClient.ExecutionConfigFetcher = execConfigFetcher
 
 	fatalErrChan := make(chan error, 10)
 	locator, err := server_common.NewMachineLocator(valnodeConfig.Wasm.RootPath)
 	Require(t, err)
+	consensusConfigFetcher := NewCommonConfigFetcher(nodeConfig)
 	chainTestClient.ConsensusNode, err = arbnode.CreateConsensusNodeConnectedWithFullExecutionClient(
-		ctx, chainTestClient.Stack, execNode, arbDb, NewFetcherFromConfig(nodeConfig), blockchain.Config(), parentChainTestClient.Client,
+		ctx, chainTestClient.Stack, execNode, arbDb, consensusConfigFetcher, blockchain.Config(), parentChainTestClient.Client,
 		addresses, validatorTxOptsPtr, sequencerTxOptsPtr, dataSigner, fatalErrChan, parentChainId, nil, locator.LatestWasmModuleRoot())
 	Require(t, err)
+	chainTestClient.ConsensusConfigFetcher = consensusConfigFetcher
 
 	cleanup, err := execution_consensus.InitAndStartExecutionAndConsensusNodes(ctx, chainTestClient.Stack, execNode, chainTestClient.ConsensusNode)
 	Require(t, err)
@@ -852,19 +856,20 @@ func (b *NodeBuilder) BuildL2(t *testing.T) func() {
 	b.L2Info, b.L2.Stack, chainDb, arbDb, blockchain = createNonL1BlockChainWithStackConfig(
 		t, b.L2Info, b.dataDir, b.chainConfig, b.arbOSInit, nil, b.l2StackConfig, b.execConfig)
 
-	Require(t, b.execConfig.Validate())
-	execConfig := b.execConfig
-	execConfigFetcher := func() *gethexec.Config { return execConfig }
+	execConfigFetcher := NewCommonConfigFetcher(b.execConfig)
 	execNode, err := gethexec.CreateExecutionNode(b.ctx, b.L2.Stack, chainDb, blockchain, nil, execConfigFetcher, big.NewInt(1337), 0)
 	Require(t, err)
+	b.L2.ExecutionConfigFetcher = execConfigFetcher
 
 	fatalErrChan := make(chan error, 10)
 	locator, err := server_common.NewMachineLocator(b.valnodeConfig.Wasm.RootPath)
 	Require(t, err)
+	consensusConfigFetcher := NewCommonConfigFetcher(b.nodeConfig)
 	b.L2.ConsensusNode, err = arbnode.CreateConsensusNodeConnectedWithFullExecutionClient(
-		b.ctx, b.L2.Stack, execNode, arbDb, NewFetcherFromConfig(b.nodeConfig), blockchain.Config(),
+		b.ctx, b.L2.Stack, execNode, arbDb, consensusConfigFetcher, blockchain.Config(),
 		nil, nil, nil, nil, nil, fatalErrChan, big.NewInt(1337), nil, locator.LatestWasmModuleRoot())
 	Require(t, err)
+	b.L2.ConsensusConfigFetcher = consensusConfigFetcher
 
 	// Give the node an init message
 	err = b.L2.ConsensusNode.TxStreamer.AddFakeInitMessage()
@@ -912,7 +917,7 @@ func (b *NodeBuilder) RestartL2Node(t *testing.T) {
 
 	l2info, stack, chainDb, arbDb, blockchain := createNonL1BlockChainWithStackConfig(t, b.L2Info, b.dataDir, b.chainConfig, b.arbOSInit, b.initMessage, b.l2StackConfig, b.execConfig)
 
-	execConfigFetcher := func() *gethexec.Config { return b.execConfig }
+	execConfigFetcher := NewCommonConfigFetcher(b.execConfig)
 	execNode, err := gethexec.CreateExecutionNode(b.ctx, stack, chainDb, blockchain, nil, execConfigFetcher, big.NewInt(1337), 0)
 	Require(t, err)
 
@@ -931,7 +936,8 @@ func (b *NodeBuilder) RestartL2Node(t *testing.T) {
 		dataSigner = signature.DataSignerFromPrivateKey(b.L1Info.GetInfoWithPrivKey("Sequencer").PrivateKey)
 		l1Client = b.L1.Client
 	}
-	currentNode, err := arbnode.CreateConsensusNodeConnectedWithFullExecutionClient(b.ctx, stack, execNode, arbDb, NewFetcherFromConfig(b.nodeConfig), blockchain.Config(), l1Client, b.addresses, validatorTxOpts, sequencerTxOpts, dataSigner, feedErrChan, big.NewInt(1337), nil, locator.LatestWasmModuleRoot())
+	consensusConfigFetcher := NewCommonConfigFetcher(b.nodeConfig)
+	currentNode, err := arbnode.CreateConsensusNodeConnectedWithFullExecutionClient(b.ctx, stack, execNode, arbDb, consensusConfigFetcher, blockchain.Config(), l1Client, b.addresses, validatorTxOpts, sequencerTxOpts, dataSigner, feedErrChan, big.NewInt(1337), nil, locator.LatestWasmModuleRoot())
 	Require(t, err)
 
 	cleanup, err := execution_consensus.InitAndStartExecutionAndConsensusNodes(b.ctx, stack, execNode, currentNode)
@@ -946,6 +952,8 @@ func (b *NodeBuilder) RestartL2Node(t *testing.T) {
 	l2.ExecNode = execNode
 	l2.cleanup = cleanup
 	l2.Stack = stack
+	l2.ExecutionConfigFetcher = execConfigFetcher
+	l2.ConsensusConfigFetcher = consensusConfigFetcher
 
 	b.L2 = l2
 	b.L2Info = l2info
@@ -1007,7 +1015,7 @@ func build2ndNode(
 
 	var cleanup func()
 	testClient := NewTestClient(ctx)
-	testClient.Client, testClient.ConsensusNode, testClient.ExecNode, cleanup =
+	testClient.Client, testClient.ConsensusNode, testClient.ExecNode, cleanup, testClient.ConsensusConfigFetcher, testClient.ExecutionConfigFetcher =
 		Create2ndNodeWithConfig(t, ctx, firstNodeTestClient.ConsensusNode, firstNodeTestClient.ExecNode, parentChainTestClient.Stack, parentChainInfo, params.initData, params.nodeConfig, params.execConfig, params.stackConfig, valnodeConfig, params.addresses, initMessage, params.useExecutionClientOnly)
 	testClient.cleanup = cleanup
 	return testClient, func() { testClient.cleanup() }
@@ -1327,29 +1335,56 @@ func (l *lifecycle) Stop() error {
 	return nil
 }
 
-type staticNodeConfigFetcher struct {
-	config *arbnode.Config
+type ConfigFetcher[T any] interface {
+	Set(*T)
+	Get() *T
+	Start(context.Context)
+	StopAndWait()
+	Started() bool
 }
 
-func NewFetcherFromConfig(c *arbnode.Config) *staticNodeConfigFetcher {
-	err := c.Validate()
-	if err != nil {
-		panic("invalid static config: " + err.Error())
+type commonConfigFetcher[T any] struct {
+	config atomic.Pointer[T]
+}
+
+func cloneAndValidateConfig[T any](cfg *T) *T {
+	var b bytes.Buffer
+	if err := gob.NewEncoder(&b).Encode(cfg); err != nil {
+		panic("error marshalling config using gob: " + err.Error())
 	}
-	return &staticNodeConfigFetcher{c}
+	data := b.Bytes()
+	var clonedCfg T
+	if err := gob.NewDecoder(bytes.NewReader(data)).Decode(&clonedCfg); err != nil {
+		panic("error unmarshalling bytes using gob into clonedCfg: " + err.Error())
+	}
+	if v, ok := any(&clonedCfg).(interface{ Validate() error }); ok {
+		if err := v.Validate(); err != nil {
+			panic("invalid cloned config: " + err.Error())
+		}
+	}
+	return &clonedCfg
 }
 
-func (c *staticNodeConfigFetcher) Get() *arbnode.Config {
-	return c.config
+func NewCommonConfigFetcher[T any](cfg *T) ConfigFetcher[T] {
+	clonedCfg := cloneAndValidateConfig(cfg)
+	fetcher := &commonConfigFetcher[T]{}
+	fetcher.config.Store(clonedCfg)
+	return fetcher
 }
 
-func (c *staticNodeConfigFetcher) Start(context.Context) {}
-
-func (c *staticNodeConfigFetcher) StopAndWait() {}
-
-func (c *staticNodeConfigFetcher) Started() bool {
-	return true
+// Set first clones the cfg and then stores the new config atomically
+func (fetcher *commonConfigFetcher[T]) Set(cfg *T) {
+	clonedCfg := cloneAndValidateConfig(cfg)
+	fetcher.config.Store(clonedCfg)
 }
+
+func (fetcher *commonConfigFetcher[T]) Get() *T {
+	return fetcher.config.Load()
+}
+
+func (fetcher *commonConfigFetcher[T]) Start(context.Context) {}
+func (fetcher *commonConfigFetcher[T]) StopAndWait()          {}
+func (fetcher *commonConfigFetcher[T]) Started() bool         { return true }
 
 func createRedisGroup(ctx context.Context, t *testing.T, streamName string, client redis.UniversalClient) {
 	t.Helper()
@@ -1796,7 +1831,7 @@ func Create2ndNodeWithConfig(
 	addresses *chaininfo.RollupAddresses,
 	initMessage *arbostypes.ParsedInitMessage,
 	useExecutionClientOnly bool,
-) (*ethclient.Client, *arbnode.Node, *gethexec.ExecutionNode, func()) {
+) (*ethclient.Client, *arbnode.Node, *gethexec.ExecutionNode, func(), ConfigFetcher[arbnode.Config], ConfigFetcher[gethexec.Config]) {
 	if nodeConfig == nil {
 		nodeConfig = arbnode.ConfigDefaultL1NonSequencerTest()
 	}
@@ -1842,18 +1877,18 @@ func Create2ndNodeWithConfig(
 
 	AddValNodeIfNeeded(t, ctx, nodeConfig, true, "", valnodeConfig.Wasm.RootPath)
 
-	Require(t, nodeConfig.Validate())
-	configFetcher := func() *gethexec.Config { return execConfig }
-	currentExec, err := gethexec.CreateExecutionNode(ctx, chainStack, chainDb, blockchain, parentChainClient, configFetcher, big.NewInt(1337), 0)
+	execConfigFetcher := NewCommonConfigFetcher(execConfig)
+	currentExec, err := gethexec.CreateExecutionNode(ctx, chainStack, chainDb, blockchain, parentChainClient, execConfigFetcher, big.NewInt(1337), 0)
 	Require(t, err)
 
 	var currentNode *arbnode.Node
 	locator, err := server_common.NewMachineLocator(valnodeConfig.Wasm.RootPath)
 	Require(t, err)
+	consensusConfigFetcher := NewCommonConfigFetcher(nodeConfig)
 	if useExecutionClientOnly {
-		currentNode, err = arbnode.CreateNodeExecutionClient(ctx, chainStack, currentExec, arbDb, NewFetcherFromConfig(nodeConfig), blockchain.Config(), parentChainClient, addresses, &validatorTxOpts, &sequencerTxOpts, dataSigner, feedErrChan, big.NewInt(1337), nil, locator.LatestWasmModuleRoot())
+		currentNode, err = arbnode.CreateNodeExecutionClient(ctx, chainStack, currentExec, arbDb, consensusConfigFetcher, blockchain.Config(), parentChainClient, addresses, &validatorTxOpts, &sequencerTxOpts, dataSigner, feedErrChan, big.NewInt(1337), nil, locator.LatestWasmModuleRoot())
 	} else {
-		currentNode, err = arbnode.CreateConsensusNodeConnectedWithFullExecutionClient(ctx, chainStack, currentExec, arbDb, NewFetcherFromConfig(nodeConfig), blockchain.Config(), parentChainClient, addresses, &validatorTxOpts, &sequencerTxOpts, dataSigner, feedErrChan, big.NewInt(1337), nil, locator.LatestWasmModuleRoot())
+		currentNode, err = arbnode.CreateConsensusNodeConnectedWithFullExecutionClient(ctx, chainStack, currentExec, arbDb, consensusConfigFetcher, blockchain.Config(), parentChainClient, addresses, &validatorTxOpts, &sequencerTxOpts, dataSigner, feedErrChan, big.NewInt(1337), nil, locator.LatestWasmModuleRoot())
 	}
 
 	Require(t, err)
@@ -1864,7 +1899,7 @@ func Create2ndNodeWithConfig(
 
 	StartWatchChanErr(t, ctx, feedErrChan, currentNode)
 
-	return chainClient, currentNode, currentExec, cleanup
+	return chainClient, currentNode, currentExec, cleanup, consensusConfigFetcher, execConfigFetcher
 }
 
 func GetBalance(t *testing.T, ctx context.Context, client *ethclient.Client, account common.Address) *big.Int {

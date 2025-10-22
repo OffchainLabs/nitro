@@ -541,7 +541,7 @@ func mainImpl() int {
 			chainDb,
 			l2BlockChain,
 			l1Client,
-			func() *gethexec.Config { return &liveNodeConfig.Get().Execution },
+			&ExecutionNodeConfigFetcher{liveNodeConfig},
 			new(big.Int).SetUint64(nodeConfig.ParentChain.ID),
 			liveNodeConfig.Get().Node.TransactionStreamer.SyncTillBlock,
 		)
@@ -554,7 +554,7 @@ func mainImpl() int {
 			stack,
 			execNode,
 			arbDb,
-			&NodeConfigFetcher{liveNodeConfig},
+			&ConsensusNodeConfigFetcher{liveNodeConfig},
 			l2BlockChain.Config(),
 			l1Client,
 			&rollupAddrs,
@@ -576,7 +576,7 @@ func mainImpl() int {
 			stack,
 			nil,
 			arbDb,
-			&NodeConfigFetcher{liveNodeConfig},
+			&ConsensusNodeConfigFetcher{liveNodeConfig},
 			l2BlockChain.Config(),
 			l1Client,
 			&rollupAddrs,
@@ -1155,12 +1155,20 @@ func initReorg(initConfig conf.InitConfig, chainConfig *params.ChainConfig, inbo
 	return inboxTracker.ReorgBatchesTo(batchCount)
 }
 
-type NodeConfigFetcher struct {
+type ConsensusNodeConfigFetcher struct {
 	*genericconf.LiveConfig[*NodeConfig]
 }
 
-func (f *NodeConfigFetcher) Get() *arbnode.Config {
+func (f *ConsensusNodeConfigFetcher) Get() *arbnode.Config {
 	return &f.LiveConfig.Get().Node
+}
+
+type ExecutionNodeConfigFetcher struct {
+	*genericconf.LiveConfig[*NodeConfig]
+}
+
+func (f *ExecutionNodeConfigFetcher) Get() *gethexec.Config {
+	return &f.LiveConfig.Get().Execution
 }
 
 func checkWasmModuleRootCompatibility(ctx context.Context, wasmConfig valnode.WasmConfig, l1Client *ethclient.Client, rollupAddrs chaininfo.RollupAddresses) error {

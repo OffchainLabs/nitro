@@ -1738,6 +1738,7 @@ func setupExpressLaneAuction(
 
 	expressLaneTracker.Start(ctx)
 	builderSeq.execConfig.Sequencer.Timeboost.Enable = true // Prevents race in sequencer where expressLaneService is read inside publishTransactionToQueue
+	builderSeq.L2.ExecutionConfigFetcher.Set(builderSeq.execConfig)
 
 	// Set up an autonomous auction contract service that runs in the background in this test.
 	redisURL := redisutil.CreateTestRedis(ctx, t)
