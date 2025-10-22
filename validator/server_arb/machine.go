@@ -5,9 +5,31 @@ package server_arb
 
 /*
 #cgo CFLAGS: -g -I../../target/include/
+#include <stdbool.h>
+#include <stdint.h>
 #include "arbitrator.h"
 
 ResolvedPreimage preimageResolverC(size_t context, uint8_t preimageType, const uint8_t* hash);
+
+typedef struct {
+	uint64_t machines_created;
+	uint64_t machines_freed;
+	uint64_t machines_live;
+	uint64_t memory_current_bytes;
+	uint64_t memory_peak_bytes;
+	uint64_t stylus_bytes_current;
+	uint64_t stylus_bytes_peak;
+	uint64_t inbox_bytes_current;
+	uint64_t inbox_entries_current;
+	uint64_t last_destroy_steps;
+	uint64_t last_destroy_status;
+	uint64_t last_destroy_memory_bytes;
+	uint64_t last_destroy_stylus_bytes;
+	uint64_t last_destroy_inbox_bytes;
+} ArbitratorProfilerSnapshot;
+
+void arbitrator_profiler_set_enabled(bool enable);
+void arbitrator_profiler_snapshot(ArbitratorProfilerSnapshot* out);
 */
 import "C"
 
@@ -58,6 +80,23 @@ type ArbitratorMachine struct {
 	frozen    bool // does not allow anything that changes machine state, not cloned with the machine
 }
 
+type nativeProfilerSnapshot struct {
+	machinesCreated        uint64
+	machinesFreed          uint64
+	machinesLive           uint64
+	memoryCurrentBytes     uint64
+	memoryPeakBytes        uint64
+	stylusBytesCurrent     uint64
+	stylusBytesPeak        uint64
+	inboxBytesCurrent      uint64
+	inboxEntriesCurrent    uint64
+	lastDestroySteps       uint64
+	lastDestroyStatus      uint64
+	lastDestroyMemoryBytes uint64
+	lastDestroyStylusBytes uint64
+	lastDestroyInboxBytes  uint64
+}
+
 // Assert that ArbitratorMachine implements MachineInterface
 var _ MachineInterface = (*ArbitratorMachine)(nil)
 
@@ -72,27 +111,39 @@ func dereferenceContextId(contextId *int64) {
 		}
 
 		refCount := resolverWithRefCounter.refCounter.Add(-1)
+		globalMachineProfiler.OnPreimageRefDecrement()
 		if refCount < 0 {
 			panic(fmt.Sprintf("dereferenceContextId: ref counter is negative, contextId: %v", *contextId))
 		} else if refCount == 0 {
 			preimageResolvers.Delete(*contextId)
+			globalMachineProfiler.OnPreimageResolverReleased()
 		}
 	}
 }
 
 // Any future calls to this machine will result in a panic
 func (m *ArbitratorMachine) Destroy() {
+	m.destroy(false)
+}
+
+func (m *ArbitratorMachine) destroy(fromFinalizer bool) {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
+	didFree := false
 	if m.ptr != nil {
 		C.arbitrator_free_machine(m.ptr)
 		m.ptr = nil
 		// We no longer need a finalizer
 		runtime.SetFinalizer(m, nil)
+		didFree = true
 	}
 
 	dereferenceContextId(m.contextId)
 	m.contextId = nil
+
+	if didFree {
+		globalMachineProfiler.OnMachineDestroyed(fromFinalizer)
+	}
 }
 
 func machineFromPointer(ptr *C.struct_Machine) *ArbitratorMachine {
@@ -101,8 +152,13 @@ func machineFromPointer(ptr *C.struct_Machine) *ArbitratorMachine {
 	}
 	mach := &ArbitratorMachine{ptr: ptr}
 	C.arbitrator_set_preimage_resolver(ptr, (*[0]byte)(C.preimageResolverC))
-	runtime.SetFinalizer(mach, (*ArbitratorMachine).Destroy)
+	runtime.SetFinalizer(mach, finalizeArbitratorMachine)
+	globalMachineProfiler.OnMachineCreated()
 	return mach
+}
+
+func finalizeArbitratorMachine(m *ArbitratorMachine) {
+	m.destroy(true)
 }
 
 func LoadSimpleMachine(wasm string, libraries []string, debugChain bool) (*ArbitratorMachine, error) {
@@ -136,12 +192,16 @@ func (m *ArbitratorMachine) Clone() *ArbitratorMachine {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 	newMach := machineFromPointer(C.arbitrator_clone_machine(m.ptr))
+	if newMach != nil {
+		globalMachineProfiler.OnMachineCloned()
+	}
 	newMach.contextId = m.contextId
 
 	if m.contextId != nil {
 		resolverWithRefCounter, ok := preimageResolvers.Load(*m.contextId)
 		if ok {
 			resolverWithRefCounter.refCounter.Add(1)
+			globalMachineProfiler.OnPreimageRefIncrement()
 		} else {
 			panic(fmt.Sprintf("Clone: resolver with ref counter not found, contextId: %v", *m.contextId))
 		}
@@ -436,6 +496,8 @@ func (m *ArbitratorMachine) SetPreimageResolver(resolver GoPreimageResolver) err
 		refCounter: &refCounter,
 	}
 	preimageResolvers.Store(id, resolverWithRefCounter)
+	globalMachineProfiler.OnPreimageResolverRegistered()
+	globalMachineProfiler.OnPreimageRefIncrement()
 
 	m.contextId = &id
 	C.arbitrator_set_context(m.ptr, u64(id))
@@ -458,4 +520,35 @@ func (m *ArbitratorMachine) AddUserWasm(moduleHash common.Hash, module []byte) e
 		&C.struct_Bytes32{hashBytes},
 	)
 	return nil
+}
+
+func setNativeProfilerEnabled(enable bool) {
+	var cEnable C.bool
+	if enable {
+		cEnable = C.bool(true)
+	} else {
+		cEnable = C.bool(false)
+	}
+	C.arbitrator_profiler_set_enabled(cEnable)
+}
+
+func getNativeProfilerSnapshot() nativeProfilerSnapshot {
+	var cSnap C.ArbitratorProfilerSnapshot
+	C.arbitrator_profiler_snapshot(&cSnap)
+	return nativeProfilerSnapshot{
+		machinesCreated:        uint64(cSnap.machines_created),
+		machinesFreed:          uint64(cSnap.machines_freed),
+		machinesLive:           uint64(cSnap.machines_live),
+		memoryCurrentBytes:     uint64(cSnap.memory_current_bytes),
+		memoryPeakBytes:        uint64(cSnap.memory_peak_bytes),
+		stylusBytesCurrent:     uint64(cSnap.stylus_bytes_current),
+		stylusBytesPeak:        uint64(cSnap.stylus_bytes_peak),
+		inboxBytesCurrent:      uint64(cSnap.inbox_bytes_current),
+		inboxEntriesCurrent:    uint64(cSnap.inbox_entries_current),
+		lastDestroySteps:       uint64(cSnap.last_destroy_steps),
+		lastDestroyStatus:      uint64(cSnap.last_destroy_status),
+		lastDestroyMemoryBytes: uint64(cSnap.last_destroy_memory_bytes),
+		lastDestroyStylusBytes: uint64(cSnap.last_destroy_stylus_bytes),
+		lastDestroyInboxBytes:  uint64(cSnap.last_destroy_inbox_bytes),
+	}
 }
