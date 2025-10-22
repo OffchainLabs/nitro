@@ -253,6 +253,13 @@ func (c *nethRpcClient) Reorg(ctx context.Context, count arbutil.MessageIndex, n
 	return result, nil
 }
 
+func (c *nethRpcClient) Initialize(ctx context.Context, parsedInitMessage *arbostypes.ParsedInitMessage) error {
+	log.Info("Initialize called on Nethermind client - skipping as bootstrap already completed")
+	// When bootstrapping from execution client, initialization is already done
+	// We don't need to initialize Nethermind since it's already synced
+	return nil
+}
+
 func (c *nethRpcClient) SequenceDelayedMessage(ctx context.Context, message *arbostypes.L1IncomingMessage, delayedSeqNum uint64) error {
 	log.Debug("Making JSON-RPC call to SequenceDelayedMessage", "url", c.url, "delayedSeqNum", delayedSeqNum)
 	params := seqDelayedParams{DelayedSeqNum: delayedSeqNum, Message: message}
