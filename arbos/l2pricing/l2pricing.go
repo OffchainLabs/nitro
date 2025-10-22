@@ -18,6 +18,8 @@ const (
 )
 
 // GasConstraint tries to keep the gas backlog under the target (per second) for the given inertia factor.
+// The inertia can be computed as 30*sqrt(period), where period is the number of seconds which the
+// constraint is acting over. For instance, the default inertia of 102 is an approximation of 30*sqrt(12).
 type GasConstraint struct {
 	target  storage.StorageBackedUint64
 	inertia storage.StorageBackedUint64
