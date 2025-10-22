@@ -26,14 +26,8 @@ func TestCompareLegacyPricingModelWithMultiConstraints(t *testing.T) {
 	// In this test, we don't check for storage set errors because they won't happen and they
 	// are not the focus of the test.
 
-	// Set the tolerance to zero because this doesn't exist in the new model
-	_ = pricing.SetBacklogTolerance(0)
-
 	// Set the speed limit
 	_ = pricing.SetSpeedLimitPerSecond(InitialSpeedLimitPerSecondV6)
-
-	// Initialize with a single constraint based on the legacy model
-	_ = pricing.SetConstraintsFromLegacy()
 
 	// Compare the basefee for both models with different backlogs
 	var backlogs = []uint64{0}
@@ -48,11 +42,13 @@ func TestCompareLegacyPricingModelWithMultiConstraints(t *testing.T) {
 	for timePassed := range uint64(1) {
 		for _, backlog := range backlogs {
 			_ = pricing.gasBacklog.Set(backlog)
+
+			// Initialize with a single constraint based on the legacy model
+			_ = pricing.SetConstraintsFromLegacy()
+
 			pricing.UpdatePricingModel(nil, timePassed, false)
 			legacyPrice, _ := pricing.baseFeeWei.Get()
 
-			constraint := pricing.OpenConstraintAt(0)
-			_ = constraint.backlog.Set(backlog)
 			pricing.UpdatePricingModelMultiConstraints(timePassed)
 			multiPrice, _ := pricing.baseFeeWei.Get()
 

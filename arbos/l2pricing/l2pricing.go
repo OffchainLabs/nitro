@@ -8,6 +8,7 @@ import (
 	"math/big"
 
 	"github.com/offchainlabs/nitro/arbos/storage"
+	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
 const (
@@ -181,10 +182,19 @@ func (ps *L2PricingState) SetConstraintsFromLegacy() error {
 	if err != nil {
 		return err
 	}
-	return ps.AddConstraint(target, inertia)
+	oldBacklog, err := ps.GasBacklog()
+	if err != nil {
+		return err
+	}
+	backlogTolerance, err := ps.BacklogTolerance()
+	if err != nil {
+		return err
+	}
+	backlog := arbmath.SaturatingUSub(oldBacklog, arbmath.SaturatingUMul(backlogTolerance, target))
+	return ps.AddConstraint(target, inertia, backlog)
 }
 
-func (ps *L2PricingState) AddConstraint(target uint64, inertia uint64) error {
+func (ps *L2PricingState) AddConstraint(target uint64, inertia uint64, backlog uint64) error {
 	subStorage, err := ps.constraints.Push()
 	if err != nil {
 		return fmt.Errorf("failed to push constraint: %w", err)
@@ -195,6 +205,9 @@ func (ps *L2PricingState) AddConstraint(target uint64, inertia uint64) error {
 	}
 	if err := constraint.inertia.Set(inertia); err != nil {
 		return fmt.Errorf("failed to set inertia: %w", err)
+	}
+	if err := constraint.backlog.Set(backlog); err != nil {
+		return fmt.Errorf("failed to set backlog: %w", err)
 	}
 	return nil
 }

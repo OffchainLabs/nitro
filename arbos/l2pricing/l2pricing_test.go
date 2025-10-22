@@ -121,7 +121,7 @@ func TestGasConstraints(t *testing.T) {
 	}
 	const n uint64 = 10
 	for i := range n {
-		Require(t, pricing.AddConstraint(100*i+1, 100*i+2))
+		Require(t, pricing.AddConstraint(100*i+1, 100*i+2, 100*i+3))
 	}
 	if got := getConstraintsLength(t, pricing); got != n {
 		t.Fatalf("wrong number of constraints: got %v want %v", got, n)
@@ -140,7 +140,7 @@ func TestGasConstraints(t *testing.T) {
 		}
 		backlog, err := constraint.backlog.Get()
 		Require(t, err)
-		if want := uint64(0); backlog != want {
+		if want := 100*i + 3; backlog != want {
 			t.Errorf("wrong backlog: got %v, want %v", backlog, want)
 		}
 	}
