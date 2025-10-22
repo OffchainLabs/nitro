@@ -84,7 +84,7 @@ func TestSequencerReorgFromDelayed(t *testing.T) {
 		Serialized:             serializedInitMsgBatch,
 	}
 	serializedUserMsgBatch := make([]byte, 40)
-	binary.BigEndian.PutUint64(serializedUserMsgBatch[32:], 2)
+	binary.BigEndian.PutUint64(serializedUserMsgBatch[32:], 3)
 	userMsgBatch := &SequencerInboxBatch{
 		BlockHash:              [32]byte{},
 		ParentChainBlockNumber: 0,
@@ -284,7 +284,7 @@ func TestSequencerReorgFromLastDelayedMsg(t *testing.T) {
 		Serialized:             serializedInitMsgBatch,
 	}
 	serializedUserMsgBatch := make([]byte, 40)
-	binary.BigEndian.PutUint64(serializedUserMsgBatch[32:], 2)
+	binary.BigEndian.PutUint64(serializedUserMsgBatch[32:], 3)
 	userMsgBatch := &SequencerInboxBatch{
 		BlockHash:              [32]byte{},
 		ParentChainBlockNumber: 0,
