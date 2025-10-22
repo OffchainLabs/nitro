@@ -18,6 +18,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
+
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/daprovider"
@@ -779,6 +780,7 @@ func TestMultiWriterFallback_BatchResizing(t *testing.T) {
 	seqInbox, err := arbnode.NewSequencerInbox(builder.L1.Client, builder.addresses.SequencerInbox, 0)
 	Require(t, err)
 
+	// #nosec G115
 	phase1Batches, err := seqInbox.LookupBatchesInRange(ctx, big.NewInt(int64(l1BlockBeforePhase1)), big.NewInt(int64(l1BlockAfterPhase1)))
 	Require(t, err)
 
@@ -851,6 +853,7 @@ func TestMultiWriterFallback_BatchResizing(t *testing.T) {
 	Require(t, err)
 
 	// Check Phase 2 batches
+	// #nosec G115
 	phase2Batches, err := seqInbox.LookupBatchesInRange(ctx, big.NewInt(int64(l1BlockBeforePhase2)), big.NewInt(int64(l1BlockAfterPhase2)))
 	Require(t, err)
 
