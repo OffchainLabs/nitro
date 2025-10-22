@@ -47,12 +47,12 @@ func (c *ExecutionRPCServer) BlockNumberToMessageIndex(ctx context.Context, bloc
 }
 
 func (c *ExecutionRPCServer) SetFinalityData(ctx context.Context, safeFinalityData *arbutil.FinalityData, finalizedFinalityData *arbutil.FinalityData, validatedFinalityData *arbutil.FinalityData) error {
-	_, err := c.executionClient.SetFinalityData(ctx, safeFinalityData, finalizedFinalityData, validatedFinalityData).Await(ctx)
+	_, err := c.executionClient.SetFinalityData(safeFinalityData, finalizedFinalityData, validatedFinalityData).Await(ctx)
 	return err
 }
 
 func (c *ExecutionRPCServer) SetConsensusSyncData(ctx context.Context, syncData *execution.ConsensusSyncData) error {
-	_, err := c.executionClient.SetConsensusSyncData(ctx, syncData).Await(ctx)
+	_, err := c.executionClient.SetConsensusSyncData(syncData).Await(ctx)
 	return err
 }
 
