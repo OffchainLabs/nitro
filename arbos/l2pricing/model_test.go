@@ -38,8 +38,9 @@ func TestCompareLegacyPricingModelWithMultiConstraints(t *testing.T) {
 		backlogs = append(backlogs, 1_000_000_000*(1+i))
 		backlogs = append(backlogs, 10_000_000_000*(1+i))
 	}
+
 	slices.Sort(backlogs)
-	for timePassed := range uint64(1) {
+	for timePassed := range uint64(100) {
 		for _, backlog := range backlogs {
 			_ = pricing.gasBacklog.Set(backlog)
 
@@ -52,8 +53,10 @@ func TestCompareLegacyPricingModelWithMultiConstraints(t *testing.T) {
 			pricing.UpdatePricingModelMultiConstraints(timePassed)
 			multiPrice, _ := pricing.baseFeeWei.Get()
 
-			fmt.Printf("backlog=%vM\tlegacy=%v gwei\tmultiConstraints=%v gwei\ttimePassed=%v\n",
-				backlog/1_000_000, toGwei(legacyPrice), toGwei(multiPrice), timePassed)
+			if timePassed == 0 {
+				fmt.Printf("backlog=%vM\tlegacy=%v gwei\tmultiConstraints=%v gwei\ttimePassed=%v\n",
+					backlog/1_000_000, toGwei(legacyPrice), toGwei(multiPrice), timePassed)
+			}
 
 			if multiPrice.Cmp(legacyPrice) != 0 {
 				t.Errorf("wrong result: backlog=%v, timePassed=%v, multiPrice=%v, legacyPrice=%v",
