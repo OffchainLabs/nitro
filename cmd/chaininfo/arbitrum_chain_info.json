@@ -218,7 +218,7 @@
     "chain-name": "sepolia-rollup",
     "sequencer-url": "https://sepolia-rollup-sequencer.arbitrum.io/rpc",
     "feed-url": "wss://sepolia-rollup.arbitrum.io/feed",
-    "feed-signed": true,
+    "feed-signed": false,
     "block-metadata-url": "https://sepolia-rollup.arbitrum.io/rpc",
     "track-block-metadata-from": 123000000,
     "chain-config": {
