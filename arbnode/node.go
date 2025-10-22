@@ -13,7 +13,6 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/spf13/pflag"
 
@@ -695,7 +694,7 @@ func getDAProviders(
 		rpcClientConfig := rpcclient.DefaultClientConfig
 		rpcClientConfig.URL = providerServer.Addr
 		rpcClientConfig.JWTSecret = jwtPath
-		rpcClientConfig.Timeout = 1 * time.Second // Timeout for internal connection to DAS provider server
+		rpcClientConfig.Timeout = config.DataAvailability.InternalDAProviderTimeout
 		log.Info("Creating internal AnyTrust client", "url", rpcClientConfig.URL, "timeout", rpcClientConfig.Timeout)
 
 		daClientConfig := daclient.ClientConfig{
