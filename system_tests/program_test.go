@@ -1042,6 +1042,10 @@ func testMemory(t *testing.T, jit bool) {
 	l2client := builder.L2.Client
 	defer cleanup()
 
+	// Set gas price to 1 Gwei to handle base fee growth under new pricing model
+	// (base fee can climb to ~0.5 Gwei during this test)
+	l2info.GasPrice = big.NewInt(params.GWei)
+
 	ensure := func(tx *types.Transaction, err error) *types.Receipt {
 		t.Helper()
 		Require(t, err)

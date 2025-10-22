@@ -54,12 +54,12 @@ func TestCompareLegacyPricingModelWithMultiConstraints(t *testing.T) {
 			backlog := uint64(1 << backlogShift)
 
 			_ = pricing.gasBacklog.Set(backlog)
-			pricing.UpdatePricingModel(nil, timePassed, false)
+			pricing.updatePricingModelLegacy(timePassed)
 			legacyPrice, _ := pricing.baseFeeWei.Get()
 
 			constraint := pricing.OpenConstraintAt(0)
 			_ = constraint.backlog.Set(backlog)
-			pricing.UpdatePricingModelMultiConstraints(timePassed)
+			pricing.updatePricingModelMultiConstraints(timePassed)
 			multiPrice, _ := pricing.baseFeeWei.Get()
 
 			if multiPrice.Cmp(legacyPrice) != 0 {

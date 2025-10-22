@@ -14,6 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
+	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
@@ -141,8 +142,8 @@ func (con ArbOwner) SetMinimumL2BaseFee(c ctx, evm mech, priceInWei huge) error 
 
 // SetSpeedLimit sets the computational speed limit for the chain
 func (con ArbOwner) SetSpeedLimit(c ctx, evm mech, limit uint64) error {
-	if c.State.ArbOSVersion() >= params.ArbosVersion_50 {
-		return fmt.Errorf("SetSpeedLimit is not supported in ArbOS version %d and above; use setGasPricingConstraints instead", params.ArbosVersion_50)
+	if c.State.ArbOSVersion() >= l2pricing.ArbosMultiConstraintsVersion {
+		return fmt.Errorf("SetSpeedLimit is not supported in ArbOS version %d and above; use setGasPricingConstraints instead", l2pricing.ArbosMultiConstraintsVersion)
 	}
 	if limit == 0 {
 		return errors.New("speed limit must be nonzero")
@@ -165,8 +166,8 @@ func (con ArbOwner) SetMaxBlockGasLimit(c ctx, evm mech, limit uint64) error {
 
 // SetL2GasPricingInertia sets the L2 gas pricing inertia
 func (con ArbOwner) SetL2GasPricingInertia(c ctx, evm mech, sec uint64) error {
-	if c.State.ArbOSVersion() >= params.ArbosVersion_50 {
-		return fmt.Errorf("SetL2GasPricingInertia is not supported in ArbOS version %d and above; use setGasPricingConstraints instead", params.ArbosVersion_50)
+	if c.State.ArbOSVersion() >= l2pricing.ArbosMultiConstraintsVersion {
+		return fmt.Errorf("SetL2GasPricingInertia is not supported in ArbOS version %d and above; use setGasPricingConstraints instead", l2pricing.ArbosMultiConstraintsVersion)
 	}
 	if sec == 0 {
 		return errors.New("price inertia must be nonzero")
@@ -176,8 +177,8 @@ func (con ArbOwner) SetL2GasPricingInertia(c ctx, evm mech, sec uint64) error {
 
 // SetL2GasBacklogTolerance sets the L2 gas backlog tolerance
 func (con ArbOwner) SetL2GasBacklogTolerance(c ctx, evm mech, sec uint64) error {
-	if c.State.ArbOSVersion() >= params.ArbosVersion_50 {
-		return fmt.Errorf("SetL2GasBacklogTolerance is not supported in ArbOS version %d and above; use setGasPricingConstraints instead", params.ArbosVersion_50)
+	if c.State.ArbOSVersion() >= l2pricing.ArbosMultiConstraintsVersion {
+		return fmt.Errorf("SetL2GasBacklogTolerance is not supported in ArbOS version %d and above; use setGasPricingConstraints instead", l2pricing.ArbosMultiConstraintsVersion)
 	}
 	return c.State.L2PricingState().SetBacklogTolerance(sec)
 }

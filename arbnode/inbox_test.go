@@ -20,7 +20,6 @@ import (
 
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
-	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/execution"
@@ -189,7 +188,8 @@ func TestTransactionStreamer(t *testing.T) {
 	Require(t, err)
 	exec.Start(ctx)
 
-	maxExpectedGasCost := big.NewInt(l2pricing.InitialBaseFeeWei)
+	gasPrice := big.NewInt(params.GWei) // 1 Gwei to handle base fee growth
+	maxExpectedGasCost := new(big.Int).Set(gasPrice)
 	maxExpectedGasCost.Mul(maxExpectedGasCost, big.NewInt(2100*2))
 
 	minBalance := new(big.Int).Mul(maxExpectedGasCost, big.NewInt(100))
@@ -243,7 +243,7 @@ func TestTransactionStreamer(t *testing.T) {
 				var l2Message []byte
 				l2Message = append(l2Message, arbos.L2MessageKind_ContractTx)
 				l2Message = append(l2Message, arbmath.Uint64ToU256Bytes(gas)...)
-				l2Message = append(l2Message, arbmath.Uint64ToU256Bytes(l2pricing.InitialBaseFeeWei)...)
+				l2Message = append(l2Message, arbmath.Uint64ToU256Bytes(gasPrice.Uint64())...)
 				l2Message = append(l2Message, destHash.Bytes()...)
 				l2Message = append(l2Message, arbmath.U256Bytes(value)...)
 				var requestId common.Hash

@@ -12,6 +12,8 @@ import (
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
+const ArbosMultiConstraintsVersion = params.ArbosVersion_50
+
 const InitialSpeedLimitPerSecondV0 = 1000000
 const InitialPerBlockGasLimitV0 uint64 = 20 * 1000000
 const InitialSpeedLimitPerSecondV6 = 7000000
@@ -25,14 +27,14 @@ const InitialPerTxGasLimitV50 uint64 = 32 * 1000000
 const ConstraintDivisorMultiplier = 30
 
 func (ps *L2PricingState) AddToGasPoolWithArbosVersion(gas int64, arbosVersion uint64) error {
-	// For ArbOS version 50 and above call Multi-Constraint Pricer update
-	if arbosVersion >= params.ArbosVersion_50 {
-		return ps.AddToGasPoolMultiConstraints(gas)
+	// For ArbOS version 50 and above call Multi-Constraint Pricer add
+	if arbosVersion >= ArbosMultiConstraintsVersion {
+		return ps.addToGasPoolMultiConstraints(gas)
 	}
-	return ps.AddToGasPool(gas)
+	return ps.addToGasPool(gas)
 }
 
-func (ps *L2PricingState) AddToGasPool(gas int64) error {
+func (ps *L2PricingState) addToGasPool(gas int64) error {
 	backlog, err := ps.GasBacklog()
 	if err != nil {
 		return err
@@ -41,7 +43,7 @@ func (ps *L2PricingState) AddToGasPool(gas int64) error {
 	return ps.SetGasBacklog(backlog)
 }
 
-func (ps *L2PricingState) AddToGasPoolMultiConstraints(gas int64) error {
+func (ps *L2PricingState) addToGasPoolMultiConstraints(gas int64) error {
 	constraintsLength, err := ps.constraints.Length()
 	if err != nil {
 		return fmt.Errorf("failed to get number of constraints: %w", err)
@@ -60,6 +62,16 @@ func (ps *L2PricingState) AddToGasPoolMultiConstraints(gas int64) error {
 	return nil
 }
 
+// UpdatePricingModelWithArbosVersion updates the pricing model with info from the last block
+func (ps *L2PricingState) UpdatePricingModelWithArbosVersion(timePassed uint64, arbosVersion uint64) {
+	// For ArbOS version 50 and above call Multi-Constraint Pricer update
+	if arbosVersion >= ArbosMultiConstraintsVersion {
+		ps.updatePricingModelMultiConstraints(timePassed)
+	} else {
+		ps.updatePricingModelLegacy(timePassed)
+	}
+}
+
 // applyGasDelta grows the backlog if the gas is negative and pays off  if the gas is positive.
 func applyGasDelta(backlog uint64, gas int64) uint64 {
 	if gas > 0 {
@@ -69,10 +81,9 @@ func applyGasDelta(backlog uint64, gas int64) uint64 {
 	}
 }
 
-// UpdatePricingModel updates the pricing model with info from the last block
-func (ps *L2PricingState) UpdatePricingModel(l2BaseFee *big.Int, timePassed uint64, debug bool) {
+func (ps *L2PricingState) updatePricingModelLegacy(timePassed uint64) {
 	speedLimit, _ := ps.SpeedLimitPerSecond()
-	_ = ps.AddToGasPool(arbmath.SaturatingCast[int64](arbmath.SaturatingUMul(timePassed, speedLimit)))
+	_ = ps.addToGasPool(arbmath.SaturatingCast[int64](arbmath.SaturatingUMul(timePassed, speedLimit)))
 	inertia, _ := ps.PricingInertia()
 	tolerance, _ := ps.BacklogTolerance()
 	backlog, _ := ps.GasBacklog()
@@ -86,7 +97,7 @@ func (ps *L2PricingState) UpdatePricingModel(l2BaseFee *big.Int, timePassed uint
 	_ = ps.SetBaseFeeWei(baseFee)
 }
 
-func (ps *L2PricingState) UpdatePricingModelMultiConstraints(timePassed uint64) {
+func (ps *L2PricingState) updatePricingModelMultiConstraints(timePassed uint64) {
 	// Compute exponent used in the basefee formula
 	totalExponent := arbmath.Bips(0)
 	constraintsLength, _ := ps.constraints.Length()

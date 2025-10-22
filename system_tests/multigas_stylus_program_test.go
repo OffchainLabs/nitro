@@ -377,9 +377,9 @@ func TestMultigasStylus_StorageWrite(t *testing.T) {
 				require.Equal(t, params.ColdSloadCostEIP2929, receipt.MultiGasUsed.Get(multigas.ResourceKindStorageAccess))
 				require.Equal(t, params.SstoreSetGasEIP2200, receipt.MultiGasUsed.Get(multigas.ResourceKindStorageGrowth))
 			} else {
-				require.Error(t, err)
 				receipt, err := l2client.TransactionReceipt(ctx, tx.Hash())
 				require.NoError(t, err)
+				require.Equal(t, uint64(0), receipt.MultiGasUsed.Get(multigas.ResourceKindStorageGrowth))
 				require.Equal(t, receipt.GasUsed, receipt.MultiGasUsed.SingleGas())
 			}
 		})

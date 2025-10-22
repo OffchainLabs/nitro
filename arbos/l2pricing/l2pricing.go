@@ -236,7 +236,7 @@ func (ps *L2PricingState) SetConstraintsFromLegacy() error {
 	}
 
 	// Adjust the backlog to preserve the same effective gas price across the transition.
-	toleratedBacklog := arbmath.SaturatingUMul(target, arbmath.SaturatingUMul(tolerance, periodSqrt))
+	toleratedBacklog := arbmath.SaturatingUMul(target, tolerance)
 	backlog = arbmath.SaturatingUSub(backlog, toleratedBacklog)
 
 	return ps.AddConstraint(target, period, backlog)
@@ -302,15 +302,15 @@ func (ps *L2PricingState) HighestPeriodConstraint() (*GasConstraint, error) {
 		maxPeriod uint64
 		maxIdx    uint64
 	)
-	for i := uint64(0); i < length; i++ {
-		constraint := ps.OpenConstraintAt(uint64(i))
+	for i := range length {
+		constraint := ps.OpenConstraintAt(i)
 		period, err := constraint.period.Get()
 		if err != nil {
 			return nil, fmt.Errorf("failed to get period for constraint %d: %w", i, err)
 		}
 		if period > maxPeriod {
 			maxPeriod = period
-			maxIdx = uint64(i)
+			maxIdx = i
 		}
 	}
 

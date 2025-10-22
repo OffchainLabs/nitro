@@ -25,6 +25,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
+	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/solgen/go/localgen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
@@ -356,7 +357,7 @@ func TestL2GasPricingInertia(t *testing.T) {
 
 	inertia := uint64(14)
 	tx, err := arbOwner.SetL2GasPricingInertia(&auth, inertia)
-	if arbosVersion >= params.ArbosVersion_50 {
+	if arbosVersion >= l2pricing.ArbosMultiConstraintsVersion {
 		// Expect error for multi-constraint pricer
 		if err == nil {
 			t.Fatalf("expected an error, got nil")
@@ -380,7 +381,7 @@ func TestL2GasBacklogTolerance(t *testing.T) {
 
 	gasTolerance := uint64(15)
 	tx, err := arbOwner.SetL2GasBacklogTolerance(&auth, gasTolerance)
-	if arbosVersion >= params.ArbosVersion_50 {
+	if arbosVersion >= l2pricing.ArbosMultiConstraintsVersion {
 		// Expect error for multi-constraint pricer
 		if err == nil {
 			t.Fatalf("expected an error, got nil")
@@ -439,7 +440,7 @@ func TestGasAccountingParams(t *testing.T) {
 	speedLimit := uint64(18)
 	blockGasLimit := uint64(19)
 	tx, err := arbOwner.SetSpeedLimit(&auth, speedLimit)
-	if arbosVersion >= params.ArbosVersion_50 {
+	if arbosVersion >= l2pricing.ArbosMultiConstraintsVersion {
 		// Expect error for multi-constraint pricer
 		if err == nil {
 			t.Fatalf("expected an error, got nil")
