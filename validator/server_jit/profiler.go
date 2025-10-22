@@ -11,8 +11,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/ethereum/go-ethereum/log"
 	"github.com/spf13/pflag"
+
+	"github.com/ethereum/go-ethereum/log"
 )
 
 type JitProfilerConfig struct {
