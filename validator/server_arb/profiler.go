@@ -2,6 +2,7 @@ package server_arb
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"runtime"
 	"runtime/metrics"
@@ -10,8 +11,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/ethereum/go-ethereum/log"
 	"github.com/spf13/pflag"
+
+	"github.com/ethereum/go-ethereum/log"
 )
 
 type MachineProfilerConfig struct {
@@ -179,7 +181,11 @@ func readProcessRSSFromProc() (uint64, error) {
 	if err != nil {
 		return 0, err
 	}
-	return pages * uint64(os.Getpagesize()), nil
+	pageSize := os.Getpagesize()
+	if pageSize <= 0 {
+		return 0, fmt.Errorf("unexpected page size %d", pageSize)
+	}
+	return pages * uint64(pageSize), nil
 }
 
 func readProcessRSSFromMetrics() (uint64, error) {

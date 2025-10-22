@@ -174,9 +174,10 @@ func (m *ArbitratorMachine) Clone() *ArbitratorMachine {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 	newMach := machineFromPointer(C.arbitrator_clone_machine(m.ptr))
-	if newMach != nil {
-		globalMachineProfiler.OnMachineCloned()
+	if newMach == nil {
+		return nil
 	}
+	globalMachineProfiler.OnMachineCloned()
 	newMach.contextId = m.contextId
 
 	if m.contextId != nil {
