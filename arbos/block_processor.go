@@ -115,65 +115,52 @@ func createNewHeader(prevHeader *types.Header, l1info *L1Info, state *arbosState
 
 type ConditionalOptionsForTx []*arbitrum_types.ConditionalOptions
 
-type SequencingHooks struct {
-	NextTxToSequence        func() (*types.Transaction, error)                                                                                                                                      // Must be set
-	SequencedTx             func(int) (*types.Transaction, error)                                                                                                                                   // Must be set
-	TxErrors                []error                                                                                                                                                                 // This can be unset
-	DiscardInvalidTxsEarly  bool                                                                                                                                                                    // This can be unset
-	PreTxFilter             func(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, *arbitrum_types.ConditionalOptions, common.Address, *L1Info) error // This has to be set. Writes to *state.StateDB object should be avoided to prevent invalid state from permeating
-	PostTxFilter            func(*types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult) error                                    // This has to be set
-	BlockFilter             func(*types.Header, *state.StateDB, types.Transactions, types.Receipts) error                                                                                           // This can be unset
-	ConditionalOptionsForTx []*arbitrum_types.ConditionalOptions                                                                                                                                    // This can be unset
+type SequencingHooks interface {
+	NextTxToSequence() (*types.Transaction, *arbitrum_types.ConditionalOptions, error)
+	DiscardInvalidTxsEarly() bool
+	PreTxFilter(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, *arbitrum_types.ConditionalOptions, common.Address, *L1Info) error
+	PostTxFilter(*types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult) error
+	BlockFilter(*types.Header, *state.StateDB, types.Transactions, types.Receipts) error
+	InsertLastTxError(error)
 }
 
-type noopTxScheduler struct {
+type NoopSequencingHooks struct {
 	txs               types.Transactions
 	scheduledTxsCount int
 }
 
-func (s *noopTxScheduler) GetNextTx() (*types.Transaction, error) {
+func (n *NoopSequencingHooks) NextTxToSequence() (*types.Transaction, *arbitrum_types.ConditionalOptions, error) {
 	// This is not supposed to happen, if so we have a bug
-	if s.scheduledTxsCount > len(s.txs) {
-		return nil, errors.New("noopTxScheduler: requested too many transactions")
+	if n.scheduledTxsCount > len(n.txs) {
+		return nil, nil, errors.New("noopTxScheduler: requested too many transactions")
 	}
-	if s.scheduledTxsCount == len(s.txs) {
-		return nil, nil
+	if n.scheduledTxsCount == len(n.txs) {
+		return nil, nil, nil
 	}
-	s.scheduledTxsCount += 1
-	return s.txs[s.scheduledTxsCount-1], nil
+	n.scheduledTxsCount += 1
+	return n.txs[n.scheduledTxsCount-1], nil, nil
 }
 
-func (s *noopTxScheduler) GetScheduledTx(txId int) (*types.Transaction, error) {
-	// This is not supposed to happen, if so we have a bug
-	if txId > len(s.txs) {
-		return nil, errors.New("transaction queried for does not exist in the noopTxScheduler")
-	}
-	// This is not supposed to happen, if so we have a bug
-	if txId > s.scheduledTxsCount {
-		return nil, errors.New("transaction queried for was not scheduled by the noopTxScheduler")
-	}
-	return s.txs[txId], nil
+func (n *NoopSequencingHooks) DiscardInvalidTxsEarly() bool {
+	return false
 }
 
-func NoopSequencingHooks(txes types.Transactions) *SequencingHooks {
-	scheduler := &noopTxScheduler{
-		txes,
-		0,
-	}
-	return &SequencingHooks{
-		NextTxToSequence:       scheduler.GetNextTx,
-		SequencedTx:            scheduler.GetScheduledTx,
-		TxErrors:               []error{},
-		DiscardInvalidTxsEarly: false,
-		PreTxFilter: func(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, *arbitrum_types.ConditionalOptions, common.Address, *L1Info) error {
-			return nil
-		},
-		PostTxFilter: func(*types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult) error {
-			return nil
-		},
-		BlockFilter:             nil,
-		ConditionalOptionsForTx: nil,
-	}
+func (n *NoopSequencingHooks) PreTxFilter(config *params.ChainConfig, header *types.Header, db *state.StateDB, a *arbosState.ArbosState, transaction *types.Transaction, options *arbitrum_types.ConditionalOptions, address common.Address, info *L1Info) error {
+	return nil
+}
+
+func (n *NoopSequencingHooks) PostTxFilter(header *types.Header, db *state.StateDB, a *arbosState.ArbosState, transaction *types.Transaction, address common.Address, u uint64, result *core.ExecutionResult) error {
+	return nil
+}
+
+func (n *NoopSequencingHooks) BlockFilter(header *types.Header, db *state.StateDB, transactions types.Transactions, receipts types.Receipts) error {
+	return nil
+}
+
+func (n *NoopSequencingHooks) InsertLastTxError(err error) {}
+
+func NewNoopSequencingHooks(txes types.Transactions) *NoopSequencingHooks {
+	return &NoopSequencingHooks{txs: txes}
 }
 
 func ProduceBlock(
@@ -193,7 +180,7 @@ func ProduceBlock(
 		log.Warn("error parsing incoming message", "err", err)
 		txes = types.Transactions{}
 	}
-	hooks := NoopSequencingHooks(txes)
+	hooks := NewNoopSequencingHooks(txes)
 
 	return ProduceBlockAdvanced(
 		message.Header, delayedMessagesRead, lastBlockHeader, statedb, chainContext, hooks, isMsgForPrefetch, runCtx, exposeMultiGas,
@@ -207,7 +194,7 @@ func ProduceBlockAdvanced(
 	lastBlockHeader *types.Header,
 	statedb *state.StateDB,
 	chainContext core.ChainContext,
-	sequencingHooks *SequencingHooks,
+	sequencingHooks SequencingHooks,
 	isMsgForPrefetch bool,
 	runCtx *core.MessageRunContext,
 	exposeMultiGas bool,
@@ -259,7 +246,7 @@ func ProduceBlockAdvanced(
 
 		var tx *types.Transaction
 		var options *arbitrum_types.ConditionalOptions
-		var hooks *SequencingHooks
+		var hooks SequencingHooks
 		isUserTx := false
 		if firstTx != nil {
 			tx = firstTx
@@ -278,9 +265,10 @@ func ProduceBlockAdvanced(
 				continue
 			}
 		} else {
-			tx, err = sequencingHooks.NextTxToSequence()
+			var conditionalOptions *arbitrum_types.ConditionalOptions
+			tx, conditionalOptions, err = sequencingHooks.NextTxToSequence()
 			if err != nil {
-				return nil, nil, fmt.Errorf("error fetching next transaction to sequence, userTxsProcessed: %d, hookTxErrors: %d, err: %w", userTxsProcessed, len(sequencingHooks.TxErrors), err)
+				return nil, nil, fmt.Errorf("error fetching next transaction to sequence, userTxsProcessed: %d, err: %w", userTxsProcessed, err)
 			}
 			if tx == nil {
 				break
@@ -288,10 +276,7 @@ func ProduceBlockAdvanced(
 			if tx.Type() != types.ArbitrumInternalTxType {
 				hooks = sequencingHooks // the sequencer has the ability to drop this tx
 				isUserTx = true
-				if len(hooks.ConditionalOptionsForTx) > 0 {
-					options = hooks.ConditionalOptionsForTx[0]
-					hooks.ConditionalOptionsForTx = hooks.ConditionalOptionsForTx[1:]
-				}
+				options = conditionalOptions
 			}
 		}
 
@@ -353,7 +338,7 @@ func ProduceBlockAdvanced(
 			computeGas := tx.Gas() - dataGas
 
 			if computeGas < params.TxGas {
-				if hooks != nil && hooks.DiscardInvalidTxsEarly {
+				if hooks != nil && hooks.DiscardInvalidTxsEarly() {
 					return nil, nil, core.ErrIntrinsicGas
 				}
 				// ensure at least TxGas is left in the pool before trying a state transition
@@ -406,7 +391,7 @@ func ProduceBlockAdvanced(
 
 		// append the err, even if it is nil
 		if hooks != nil {
-			hooks.TxErrors = append(hooks.TxErrors, err)
+			hooks.InsertLastTxError(err)
 		}
 
 		if err != nil {
@@ -417,7 +402,7 @@ func ProduceBlockAdvanced(
 			if !isMsgForPrefetch {
 				logLevel("error applying transaction", "tx", printTxAsJson{tx}, "err", err)
 			}
-			if !(hooks != nil && hooks.DiscardInvalidTxsEarly) {
+			if !(hooks != nil && hooks.DiscardInvalidTxsEarly()) {
 				// we'll still deduct a TxGas's worth from the block-local rate limiter even if the tx was invalid
 				blockGasLeft = arbmath.SaturatingUSub(blockGasLeft, params.TxGas)
 				if isUserTx {
@@ -525,10 +510,8 @@ func ProduceBlockAdvanced(
 		return nil, nil, state.ErrArbTxFilter
 	}
 
-	if sequencingHooks.BlockFilter != nil {
-		if err = sequencingHooks.BlockFilter(header, statedb, complete, receipts); err != nil {
-			return nil, nil, err
-		}
+	if err = sequencingHooks.BlockFilter(header, statedb, complete, receipts); err != nil {
+		return nil, nil, err
 	}
 
 	binary.BigEndian.PutUint64(header.Nonce[:], delayedMessagesRead)
