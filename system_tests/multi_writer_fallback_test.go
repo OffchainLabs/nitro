@@ -11,8 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ethereum/go-ethereum/ethclient"
-
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/daprovider"
@@ -113,7 +111,7 @@ func TestMultiWriterFallback_CustomDAToAnyTrust(t *testing.T) {
 
 	// Phase 1: Normal CustomDA operation
 	t.Log("Phase 1: Testing normal CustomDA operation")
-	checkCustomDABatchPosting(t, ctx, builder.L1.Client, builder.L2.Client,
+	checkBatchPosting(t, ctx, builder.L1.Client, builder.L2.Client,
 		builder.L1Info, builder.L2Info, big.NewInt(1e12), l2B.Client)
 
 	// Phase 2: CustomDA failure → AnyTrust fallback
@@ -157,7 +155,7 @@ func TestMultiWriterFallback_CustomDAToAnyTrust(t *testing.T) {
 	// Give batch poster time to pick up new config
 	time.Sleep(time.Second * 2)
 
-	checkCustomDABatchPosting(t, ctx, builder.L1.Client, builder.L2.Client,
+	checkBatchPosting(t, ctx, builder.L1.Client, builder.L2.Client,
 		builder.L1Info, builder.L2Info, big.NewInt(4e12), l2B.Client)
 
 	// Verification: Check that sequencer inbox contains batches from all three DA types
@@ -210,39 +208,4 @@ func TestMultiWriterFallback_CustomDAToAnyTrust(t *testing.T) {
 	}
 
 	t.Log("SUCCESS: All three DA types were used successfully")
-}
-
-// checkCustomDABatchPosting posts a transaction and verifies it uses CustomDA and syncs to followers
-func checkCustomDABatchPosting(
-	t *testing.T,
-	ctx context.Context,
-	l1client, l2clientA *ethclient.Client,
-	l1info, l2info info,
-	expectedBalance *big.Int,
-	l2ClientsToCheck ...*ethclient.Client,
-) {
-	tx := l2info.PrepareTx("Owner", "User2", l2info.TransferGas, big.NewInt(1e12), nil)
-	err := l2clientA.SendTransaction(ctx, tx)
-	Require(t, err)
-
-	_, err = EnsureTxSucceeded(ctx, l2clientA, tx)
-	Require(t, err)
-
-	// Wait for batch to be posted
-	time.Sleep(time.Second * 3)
-
-	// Verify follower synced
-	for _, client := range l2ClientsToCheck {
-		_, err = WaitForTx(ctx, client, tx.Hash(), time.Second*5)
-		Require(t, err)
-
-		balance, err := client.BalanceAt(ctx, l2info.GetAddress("User2"), nil)
-		Require(t, err)
-
-		if balance.Cmp(expectedBalance) != 0 {
-			Fatal(t, "Unexpected balance:", balance, "expected:", expectedBalance)
-		}
-	}
-
-	t.Logf("Transaction %s confirmed with balance %s", tx.Hash().Hex(), expectedBalance.String())
 }

@@ -1067,6 +1067,52 @@ func SendWaitTestTransactions(t *testing.T, ctx context.Context, client *ethclie
 	return receipts
 }
 
+// checkBatchPosting sends a transaction and verifies it gets posted to L1 and syncs to followers.
+//
+// This function works quickly because TestBatchPosterConfig sets MaxDelay=0, which forces
+// the batch poster to post batches immediately rather than waiting (production uses MaxDelay=1 hour).
+// The L1 block creation loop provides additional insurance that the batch posts quickly by:
+//  1. Advancing L1 time to trigger any time-based posting logic
+//  2. Ensuring the sequencer "catches up" to recent L1 state
+//  3. Making the test deterministic and faster
+//
+// Note: In production with MaxDelay=1h, you'd need to wait much longer or have a full batch
+// before posting occurs. This aggressive test configuration (MaxDelay=0, PollInterval=10ms)
+// is designed for fast CI/CD, not realistic production behavior.
+func checkBatchPosting(t *testing.T, ctx context.Context, l1client, l2clientA *ethclient.Client, l1info, l2info info, expectedBalance *big.Int, l2ClientsToCheck ...*ethclient.Client) {
+	t.Helper()
+
+	// Send L2 transaction and wait for execution
+	tx := l2info.PrepareTx("Owner", "User2", l2info.TransferGas, big.NewInt(1e12), nil)
+	err := l2clientA.SendTransaction(ctx, tx)
+	Require(t, err)
+	_, err = EnsureTxSucceeded(ctx, l2clientA, tx)
+	Require(t, err)
+
+	// Brief pause for inbox reader to process the message
+	time.Sleep(time.Millisecond * 100)
+
+	// Create L1 blocks to trigger batch posting (with MaxDelay=0, this ensures immediate posting)
+	for i := 0; i < 30; i++ {
+		SendWaitTestTransactions(t, ctx, l1client, []*types.Transaction{
+			l1info.PrepareTx("Faucet", "User", 30000, big.NewInt(1e12), nil),
+		})
+	}
+
+	// Verify all follower nodes synced the transaction
+	for _, client := range l2ClientsToCheck {
+		_, err = WaitForTx(ctx, client, tx.Hash(), time.Second*30)
+		Require(t, err)
+
+		l2balance, err := client.BalanceAt(ctx, l2info.GetAddress("User2"), nil)
+		Require(t, err)
+
+		if l2balance.Cmp(expectedBalance) != 0 {
+			Fatal(t, "Unexpected balance:", l2balance)
+		}
+	}
+}
+
 func TransferBalance(
 	t *testing.T, from, to string, amount *big.Int, l2info info, client *ethclient.Client, ctx context.Context,
 ) (*types.Transaction, *types.Receipt) {
