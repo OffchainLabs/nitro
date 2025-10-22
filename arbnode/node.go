@@ -41,7 +41,7 @@ import (
 	"github.com/offchainlabs/nitro/daprovider/daclient"
 	"github.com/offchainlabs/nitro/daprovider/das"
 	"github.com/offchainlabs/nitro/daprovider/data_streaming"
-	dapserver "github.com/offchainlabs/nitro/daprovider/server"
+	"github.com/offchainlabs/nitro/daprovider/server"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
@@ -817,7 +817,12 @@ func getStaker(
 		if err != nil {
 			return nil, nil, common.Address{}, err
 		}
-		if err := wallet.Initialize(ctx); err != nil {
+		if config.Staker.UseSmartContractWallet {
+			err = wallet.InitializeAndCreateSCW(ctx)
+		} else {
+			err = wallet.Initialize(ctx)
+		}
+		if err != nil {
 			return nil, nil, common.Address{}, err
 		}
 		if dp != nil {
