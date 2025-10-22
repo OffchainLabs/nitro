@@ -13,8 +13,7 @@ import (
 
 const (
 	gasConstraintTargetOffset uint64 = iota
-	gasConstraintPeriodOffset
-	gasConstraintDivisorOffset
+	gasConstraintInertiaOffset
 	gasConstraintBacklogOffset
 )
 
@@ -28,7 +27,7 @@ type GasConstraint struct {
 func OpenGasConstraint(storage *storage.Storage) *GasConstraint {
 	return &GasConstraint{
 		target:  storage.OpenStorageBackedUint64(gasConstraintTargetOffset),
-		inertia: storage.OpenStorageBackedUint64(gasConstraintPeriodOffset),
+		inertia: storage.OpenStorageBackedUint64(gasConstraintInertiaOffset),
 		backlog: storage.OpenStorageBackedUint64(gasConstraintBacklogOffset),
 	}
 }
