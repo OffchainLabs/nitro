@@ -479,16 +479,38 @@ func (s *Staker) tryFastConfirmationNodeNumber(ctx context.Context, number uint6
 	return s.tryFastConfirmation(ctx, nodeInfo.AfterState().GlobalState.BlockHash, nodeInfo.AfterState().GlobalState.SendRoot, hash)
 }
 
+func (s *Staker) flushTransactions(ctx context.Context) error {
+	arbTx, err := s.builder.ExecuteTransactions(ctx)
+	if err != nil {
+		return err
+	}
+	if arbTx != nil {
+		_, err = s.l1Reader.WaitForTxApproval(ctx, arbTx)
+		if err == nil {
+			log.Info("successfully executed staker transaction", "hash", arbTx.Hash())
+		} else {
+			return fmt.Errorf("error waiting for tx receipt: %w", err)
+		}
+	}
+	return nil
+}
+
 func (s *Staker) tryFastConfirmation(ctx context.Context, blockHash common.Hash, sendRoot common.Hash, nodeHash common.Hash) error {
 	if !s.config().EnableFastConfirmation {
 		return nil
+	}
+	// Make sure all previous transactions are flushed before trying to fast confirm
+	// to ensure that the newly created node is known on-chain before fast confirming it.
+	err := s.flushTransactions(ctx)
+	if err != nil {
+		return err
 	}
 	if s.fastConfirmSafe != nil {
 		return s.fastConfirmSafe.tryFastConfirmation(ctx, blockHash, sendRoot, nodeHash)
 	}
 	auth := s.builder.Auth(ctx)
 	log.Info("Fast confirming node with wallet", "wallet", auth.From, "nodeHash", nodeHash)
-	_, err := s.rollup.FastConfirmNextNode(auth, blockHash, sendRoot, nodeHash)
+	_, err = s.rollup.FastConfirmNextNode(auth, blockHash, sendRoot, nodeHash)
 	return err
 }
 
