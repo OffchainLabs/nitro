@@ -22,8 +22,6 @@ const InitialPricingInertia = 102
 const InitialBacklogTolerance = 10
 const InitialPerTxGasLimitV50 uint64 = 32 * 1000000
 
-const ConstraintDivisorMultiplier = 30
-
 func (ps *L2PricingState) AddToGasPool(gas int64) error {
 	backlog, err := ps.GasBacklog()
 	if err != nil {
