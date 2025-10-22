@@ -272,7 +272,7 @@ type NodeBuilder struct {
 	isSequencer                 bool
 	takeOwnership               bool
 	withL1                      bool
-	defaultDbScheme             string
+	defaultStateScheme          string
 	addresses                   *chaininfo.RollupAddresses
 	l3Addresses                 *chaininfo.RollupAddresses
 	initMessage                 *arbostypes.ParsedInitMessage
@@ -360,11 +360,11 @@ func (b *NodeBuilder) DefaultConfig(t *testing.T, withL1 bool) *NodeBuilder {
 	b.l2StackConfig = testhelpers.CreateStackConfigForTest(b.dataDir)
 	cp := valnode.TestValidationConfig
 	b.valnodeConfig = &cp
-	b.defaultDbScheme = rawdb.HashScheme
+	b.defaultStateScheme = rawdb.HashScheme
 	if *testflag.StateSchemeFlag == rawdb.PathScheme || *testflag.StateSchemeFlag == rawdb.HashScheme {
-		b.defaultDbScheme = *testflag.StateSchemeFlag
+		b.defaultStateScheme = *testflag.StateSchemeFlag
 	}
-	b.execConfig = ExecConfigDefaultTest(t, b.defaultDbScheme)
+	b.execConfig = ExecConfigDefaultTest(t, b.defaultStateScheme)
 	b.l3Config = L3NitroConfigDefaultTest(t)
 	return b
 }
@@ -418,20 +418,20 @@ func (b *NodeBuilder) RequireScheme(t *testing.T, scheme string) *NodeBuilder {
 	if testflag.StateSchemeFlag != nil && *testflag.StateSchemeFlag != "" && *testflag.StateSchemeFlag != scheme {
 		t.Skip("skipping because db scheme is set and not ", scheme)
 	}
-	if b.defaultDbScheme != scheme && b.execConfig != nil {
+	if b.defaultStateScheme != scheme && b.execConfig != nil {
 		b.execConfig.Caching.StateScheme = scheme
 		b.execConfig.RPC.StateScheme = scheme
 		Require(t, b.execConfig.Validate())
 	}
-	b.defaultDbScheme = scheme
+	b.defaultStateScheme = scheme
 	return b
 }
 
 func (b *NodeBuilder) ExecConfigDefaultTest(t *testing.T, sequencer bool) *gethexec.Config {
 	if sequencer {
-		ExecConfigDefaultTest(t, b.defaultDbScheme)
+		ExecConfigDefaultTest(t, b.defaultStateScheme)
 	}
-	return ExecConfigDefaultNonSequencerTest(t, b.defaultDbScheme)
+	return ExecConfigDefaultNonSequencerTest(t, b.defaultStateScheme)
 }
 
 // WithL1ClientWrapper creates a ClientWrapper for the L1 RPC client before passing it to the L2 node.
@@ -563,8 +563,8 @@ func (b *NodeBuilder) CheckConfig(t *testing.T) {
 		// validation currently requires hash
 		b.RequireScheme(t, rawdb.HashScheme)
 	}
-	if b.defaultDbScheme == "" {
-		b.defaultDbScheme = env.GetTestStateScheme()
+	if b.defaultStateScheme == "" {
+		b.defaultStateScheme = env.GetTestStateScheme()
 	}
 	if b.execConfig == nil {
 		b.execConfig = b.ExecConfigDefaultTest(t, true)
@@ -1367,7 +1367,7 @@ func createTestValidationNode(t *testing.T, ctx context.Context, config *valnode
 	stackConf.WSModules = []string{server_api.Namespace}
 	stackConf.P2P.NoDiscovery = true
 	stackConf.P2P.ListenAddr = ""
-	stackConf.DBEngine = "leveldb" // TODO Try pebble again in future once iterator race condition issues are fixed
+	stackConf.DBEngine = env.GetTestDatabaseScheme()
 
 	valnode.EnsureValidationExposedViaAuthRPC(&stackConf)
 
@@ -1706,15 +1706,23 @@ func createNonL1BlockChainWithStackConfig(
 	stack, err := node.New(stackConfig)
 	Require(t, err)
 
-	chainData, err := stack.OpenDatabaseWithOptions("l2chaindata", node.DatabaseOptions{MetricsNamespace: "l2chaindata/", PebbleExtraOptions: conf.PersistentConfigDefault.Pebble.ExtraOptions("l2chaindata")})
-	Require(t, err)
-
-	wasmData, err := stack.OpenDatabaseWithOptions("wasm", node.DatabaseOptions{MetricsNamespace: "wasm/", PebbleExtraOptions: conf.PersistentConfigDefault.Pebble.ExtraOptions("wasm"), NoFreezer: true})
-	Require(t, err)
+	chainData := rawdb.NewMemoryDatabase()
+	if stack.Config().DBEngine != "in-memory" {
+		chainData, err = stack.OpenDatabaseWithOptions("l2chaindata", node.DatabaseOptions{MetricsNamespace: "l2chaindata/", PebbleExtraOptions: conf.PersistentConfigDefault.Pebble.ExtraOptions("l2chaindata")})
+		Require(t, err)
+	}
+	wasmData := rawdb.NewMemoryDatabase()
+	if stack.Config().DBEngine != "in-memory" {
+		wasmData, err = stack.OpenDatabaseWithOptions("wasm", node.DatabaseOptions{MetricsNamespace: "wasm/", PebbleExtraOptions: conf.PersistentConfigDefault.Pebble.ExtraOptions("wasm"), NoFreezer: true})
+		Require(t, err)
+	}
 
 	chainDb := rawdb.WrapDatabaseWithWasm(chainData, wasmData)
-	arbDb, err := stack.OpenDatabaseWithOptions("arbitrumdata", node.DatabaseOptions{MetricsNamespace: "arbitrumdata/", PebbleExtraOptions: conf.PersistentConfigDefault.Pebble.ExtraOptions("arbitrumdata"), NoFreezer: true})
-	Require(t, err)
+	arbDb := rawdb.NewMemoryDatabase()
+	if stack.Config().DBEngine != "in-memory" {
+		arbDb, err = stack.OpenDatabaseWithOptions("arbitrumdata", node.DatabaseOptions{MetricsNamespace: "arbitrumdata/", PebbleExtraOptions: conf.PersistentConfigDefault.Pebble.ExtraOptions("arbitrumdata"), NoFreezer: true})
+		Require(t, err)
+	}
 
 	initReader := statetransfer.NewMemoryInitDataReader(&info.ArbInitData)
 	if initMessage == nil {
@@ -1803,14 +1811,23 @@ func Create2ndNodeWithConfig(
 	chainStack, err := node.New(stackConfig)
 	Require(t, err)
 
-	chainData, err := chainStack.OpenDatabaseWithOptions("l2chaindata", node.DatabaseOptions{MetricsNamespace: "l2chaindata/", PebbleExtraOptions: conf.PersistentConfigDefault.Pebble.ExtraOptions("l2chaindata")})
-	Require(t, err)
-	wasmData, err := chainStack.OpenDatabaseWithOptions("wasm", node.DatabaseOptions{MetricsNamespace: "wasm/", PebbleExtraOptions: conf.PersistentConfigDefault.Pebble.ExtraOptions("wasm"), NoFreezer: true})
-	Require(t, err)
+	chainData := rawdb.NewMemoryDatabase()
+	if chainStack.Config().DBEngine != "in-memory" {
+		chainData, err = chainStack.OpenDatabaseWithOptions("l2chaindata", node.DatabaseOptions{MetricsNamespace: "l2chaindata/", PebbleExtraOptions: conf.PersistentConfigDefault.Pebble.ExtraOptions("l2chaindata")})
+		Require(t, err)
+	}
+	wasmData := rawdb.NewMemoryDatabase()
+	if chainStack.Config().DBEngine != "in-memory" {
+		wasmData, err = chainStack.OpenDatabaseWithOptions("wasm", node.DatabaseOptions{MetricsNamespace: "wasm/", PebbleExtraOptions: conf.PersistentConfigDefault.Pebble.ExtraOptions("wasm"), NoFreezer: true})
+		Require(t, err)
+	}
 	chainDb := rawdb.WrapDatabaseWithWasm(chainData, wasmData)
 
-	arbDb, err := chainStack.OpenDatabaseWithOptions("arbitrumdata", node.DatabaseOptions{MetricsNamespace: "arbitrumdata/", PebbleExtraOptions: conf.PersistentConfigDefault.Pebble.ExtraOptions("arbitrumdata"), NoFreezer: true})
-	Require(t, err)
+	arbDb := rawdb.NewMemoryDatabase()
+	if chainStack.Config().DBEngine != "in-memory" {
+		arbDb, err = chainStack.OpenDatabaseWithOptions("arbitrumdata", node.DatabaseOptions{MetricsNamespace: "arbitrumdata/", PebbleExtraOptions: conf.PersistentConfigDefault.Pebble.ExtraOptions("arbitrumdata"), NoFreezer: true})
+		Require(t, err)
+	}
 	initReader := statetransfer.NewMemoryInitDataReader(chainInitData)
 
 	dataSigner := signature.DataSignerFromPrivateKey(parentChainInfo.GetInfoWithPrivKey("Sequencer").PrivateKey)

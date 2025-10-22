@@ -78,9 +78,12 @@ func testPruning(t *testing.T, mode string, pruneParallelStorageTraversal bool) 
 		stack, err := node.New(builder.l2StackConfig)
 		Require(t, err)
 		defer stack.Close()
-		chainDb, err := stack.OpenDatabaseWithOptions("l2chaindata", node.DatabaseOptions{MetricsNamespace: "l2chaindata/", PebbleExtraOptions: conf.PersistentConfigDefault.Pebble.ExtraOptions("l2chaindata")})
-		Require(t, err)
-		defer chainDb.Close()
+		chainDb := rawdb.NewMemoryDatabase()
+		if stack.Config().DBEngine != "in-memory" {
+			chainDb, err = stack.OpenDatabaseWithOptions("l2chaindata", node.DatabaseOptions{MetricsNamespace: "l2chaindata/", PebbleExtraOptions: conf.PersistentConfigDefault.Pebble.ExtraOptions("l2chaindata")})
+			Require(t, err)
+			defer chainDb.Close()
+		}
 		chainDbEntriesBeforePruning := countStateEntries(chainDb)
 
 		prand := testhelpers.NewPseudoRandomDataSource(t, 1)

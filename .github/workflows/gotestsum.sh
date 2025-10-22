@@ -12,6 +12,7 @@ tags=""
 run=""
 skip=""
 test_state_scheme=""
+test_database_scheme=""
 junitfile=""
 log=true
 race=false
@@ -47,6 +48,12 @@ while [[ $# -gt 0 ]]; do
       shift
       check_missing_value $# "$1" "--test_state_scheme"
       test_state_scheme=$1
+      shift
+      ;;
+    --test_database_scheme)
+      shift
+      check_missing_value $# "$1" "--test_database_scheme"
+      test_database_scheme=$1
       shift
       ;;
     --race)
@@ -128,6 +135,10 @@ if [ "$test_state_scheme" != "" ]; then
     cmd="$cmd -args -- --test_state_scheme=$test_state_scheme --test_loglevel=8"
 else
     cmd="$cmd -args -- --test_loglevel=8" # Use error log level, which is the value 8 in the slog level enum for tests.
+fi
+
+if [ "$test_database_scheme" != "" ]; then
+    cmd="$cmd --test_database_scheme=$test_database_scheme"
 fi
 
 if [ "$log" == true ]; then
