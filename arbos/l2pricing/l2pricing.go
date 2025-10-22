@@ -284,15 +284,15 @@ func (ps *L2PricingState) HighestPeriodConstraint() (*GasConstraint, error) {
 		maxPeriod uint64
 		maxIdx    uint64
 	)
-	for i := uint64(0); i < length; i++ {
-		constraint := ps.OpenConstraintAt(uint64(i))
+	for i := range length {
+		constraint := ps.OpenConstraintAt(i)
 		period, err := constraint.period.Get()
 		if err != nil {
 			return nil, fmt.Errorf("failed to get period for constraint %d: %w", i, err)
 		}
 		if period > maxPeriod {
 			maxPeriod = period
-			maxIdx = uint64(i)
+			maxIdx = i
 		}
 	}
 

@@ -121,10 +121,9 @@ func TestMultiConstraintPricerMigration(t *testing.T) {
 	require.NoError(t, err)
 
 	// Check GetGasAccountingParams returns expected speed limit
-	speedLimit, gasPoolMax, _, err := arbGasInfo.GetGasAccountingParams(callOpts)
+	speedLimit, _, _, err := arbGasInfo.GetGasAccountingParams(callOpts)
 	require.NoError(t, err)
 	require.Zero(t, big.NewInt(20_000_000).Cmp(speedLimit))
-	require.Zero(t, big.NewInt(0).Cmp(gasPoolMax))
 
 	// Check GetPricingInertia returns expected inertia
 	pricingInertia, err := arbGasInfo.GetPricingInertia(callOpts)
