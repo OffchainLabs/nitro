@@ -82,9 +82,14 @@ func createJitMachine(jitBinary string, binaryPath string, cranelift bool, wasmM
 }
 
 func (machine *JitMachine) close() {
-	_, err := machine.stdin.Write([]byte("\n"))
-	if err != nil {
-		log.Error("error closing jit machine", "error", err)
+	machine.reportExit.Store(false)
+	if machine.stdin != nil {
+		if _, err := machine.stdin.Write([]byte("\n")); err != nil && !errors.Is(err, io.EOF) {
+			log.Warn("error signaling jit machine shutdown", "err", err, "pid", machine.pid)
+		}
+		if err := machine.stdin.Close(); err != nil && !errors.Is(err, os.ErrClosed) {
+			log.Warn("error closing jit machine stdin", "err", err, "pid", machine.pid)
+		}
 	}
 }
 

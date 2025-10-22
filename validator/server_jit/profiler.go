@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"runtime"
+	"runtime/metrics"
 	"strconv"
 	"strings"
 	"sync"
@@ -181,7 +182,35 @@ func bytesToMiB(b uint64) float64 {
 	return float64(b) * reciprocal
 }
 
-func logJitProfilerSnapshot(snapshot JitProfilerSnapshot, mem *runtime.MemStats) {
+func readCgoMetricsSummary() string {
+	descs := metrics.All()
+	samples := make([]metrics.Sample, 0, len(descs))
+	for _, desc := range descs {
+		if strings.HasPrefix(desc.Name, "/cgo/") {
+			samples = append(samples, metrics.Sample{Name: desc.Name})
+		}
+	}
+	if len(samples) == 0 {
+		return ""
+	}
+	metrics.Read(samples)
+	parts := make([]string, 0, len(samples))
+	for _, sample := range samples {
+		switch sample.Value.Kind() {
+		case metrics.KindUint64:
+			parts = append(parts, fmt.Sprintf("%s=%d", sample.Name, sample.Value.Uint64()))
+		case metrics.KindFloat64:
+			parts = append(parts, fmt.Sprintf("%s=%f", sample.Name, sample.Value.Float64()))
+		case metrics.KindFloat64Histogram:
+			// Skip histograms to avoid large log output.
+		default:
+			parts = append(parts, fmt.Sprintf("%s=<unavailable>", sample.Name))
+		}
+	}
+	return strings.Join(parts, ", ")
+}
+
+func logJitProfilerSnapshot(snapshot JitProfilerSnapshot, loaderTotal, loaderReady, loaderPending int, cgoSummary string, mem *runtime.MemStats) {
 	log.Info(
 		"jit profiler snapshot",
 		"machinesLive", snapshot.MachinesLive,
@@ -192,6 +221,10 @@ func logJitProfilerSnapshot(snapshot JitProfilerSnapshot, mem *runtime.MemStats)
 		"lastExitPID", snapshot.LastExitPID,
 		"lastExitErr", snapshot.LastExitErr,
 		"lastExitAt", snapshot.LastExitAt,
+		"loaderTotal", loaderTotal,
+		"loaderReady", loaderReady,
+		"loaderPending", loaderPending,
+		"cgoMetrics", cgoSummary,
 		"goHeapAllocMB", bytesToMiB(mem.HeapAlloc),
 		"goHeapInuseMB", bytesToMiB(mem.HeapInuse),
 		"goStackSysMB", bytesToMiB(mem.StackSys),

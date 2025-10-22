@@ -161,6 +161,8 @@ func (v *JitSpawner) profilingLoop(ctx context.Context) {
 		var mem runtime.MemStats
 		runtime.ReadMemStats(&mem)
 		snapshot := globalJitProfiler.Snapshot()
-		logJitProfilerSnapshot(snapshot, &mem)
+		loaderStats := v.machineLoader.Stats()
+		cgoSummary := readCgoMetricsSummary()
+		logJitProfilerSnapshot(snapshot, loaderStats.Total, loaderStats.Ready, loaderStats.Pending, cgoSummary, &mem)
 	}
 }
