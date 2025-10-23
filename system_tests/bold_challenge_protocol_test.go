@@ -33,6 +33,8 @@ import (
 
 	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/arbnode/dataposter"
+	"github.com/offchainlabs/nitro/arbnode/dataposter/externalsignertest"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
@@ -63,7 +65,11 @@ import (
 )
 
 func TestChallengeProtocolBOLDReadInboxChallenge(t *testing.T) {
-	testChallengeProtocolBOLD(t)
+	testChallengeProtocolBOLD(t, false)
+}
+
+func TestChallengeProtocolBOLDReadInboxChallengeWithExternalSigner(t *testing.T) {
+	testChallengeProtocolBOLD(t, true)
 }
 
 func TestChallengeProtocolBOLDStartStepChallenge(t *testing.T) {
@@ -75,10 +81,10 @@ func TestChallengeProtocolBOLDStartStepChallenge(t *testing.T) {
 			return NewIncorrectIntermediateMachine(inner, 1)
 		}),
 	}
-	testChallengeProtocolBOLD(t, opts...)
+	testChallengeProtocolBOLD(t, false, opts...)
 }
 
-func testChallengeProtocolBOLD(t *testing.T, spawnerOpts ...server_arb.SpawnerOption) {
+func testChallengeProtocolBOLD(t *testing.T, useExternalSigner bool, spawnerOpts ...server_arb.SpawnerOption) {
 	goodDir, err := os.MkdirTemp("", "good_*")
 	Require(t, err)
 	evilDir, err := os.MkdirTemp("", "evil_*")
@@ -106,7 +112,7 @@ func testChallengeProtocolBOLD(t *testing.T, spawnerOpts ...server_arb.SpawnerOp
 		MinimumAssertionPeriod: 0,
 	}
 
-	_, l2nodeA, _, _, l1info, _, l1client, l1stack, assertionChain, stakeTokenAddr := createTestNodeOnL1ForBoldProtocol(
+	_, l2nodeA, _, _, l1info, _, l1client, l1stack, assertionChain, stakeTokenAddr, asserterOpts := createTestNodeOnL1ForBoldProtocol(
 		t,
 		ctx,
 		true,
@@ -115,6 +121,7 @@ func testChallengeProtocolBOLD(t *testing.T, spawnerOpts ...server_arb.SpawnerOp
 		nil,
 		sconf,
 		l2info,
+		useExternalSigner,
 	)
 	defer requireClose(t, l1stack)
 	defer l2nodeA.StopAndWait()
@@ -137,6 +144,7 @@ func testChallengeProtocolBOLD(t *testing.T, spawnerOpts ...server_arb.SpawnerOp
 		nil,
 		sconf,
 		stakeTokenAddr,
+		asserterOpts,
 	)
 	defer l2nodeB.StopAndWait()
 
@@ -150,7 +158,7 @@ func testChallengeProtocolBOLD(t *testing.T, spawnerOpts ...server_arb.SpawnerOp
 
 	balance := big.NewInt(params.Ether)
 	balance.Mul(balance, big.NewInt(100))
-	TransferBalance(t, "Faucet", "Asserter", balance, l1info, l1client, ctx)
+	TransferBalanceTo(t, "Faucet", asserterOpts.From, balance, l1info, l1client, ctx)
 	TransferBalance(t, "Faucet", "EvilAsserter", balance, l1info, l1client, ctx)
 
 	valCfg := valnode.TestValidationConfig
@@ -257,7 +265,7 @@ func testChallengeProtocolBOLD(t *testing.T, spawnerOpts ...server_arb.SpawnerOp
 		rawdb.NewTable(l2nodeB.ArbDB, storage.StakerPrefix),
 		l2nodeB.L1Reader,
 		&evilOpts,
-		NewFetcherFromConfig(l2nodeConfig),
+		NewCommonConfigFetcher(l2nodeConfig),
 		l2nodeB.SyncMonitor,
 		l1ChainId,
 	)
@@ -485,7 +493,7 @@ func testChallengeProtocolBOLD(t *testing.T, spawnerOpts ...server_arb.SpawnerOp
 				signer := types.NewCancunSigner(tx.ChainId())
 				address, err := signer.Sender(tx)
 				Require(t, err)
-				if address == l1info.GetDefaultTransactOpts("Asserter", ctx).From {
+				if address == asserterOpts.From {
 					t.Log("Honest party won OSP, impossible for evil party to win if honest party continues")
 					Require(t, it.Close())
 					return
@@ -533,11 +541,23 @@ func createTestNodeOnL1ForBoldProtocol(
 	_ *node.Config,
 	rollupStackConf setup.RollupStackConfig,
 	l2infoIn info,
+	useExternalSigner bool,
 ) (
 	l2info info, currentNode *arbnode.Node, l2client *ethclient.Client, l2stack *node.Node,
 	l1info info, l1backend *eth.Ethereum, l1client *ethclient.Client, l1stack *node.Node,
-	assertionChain *solimpl.AssertionChain, stakeTokenAddr common.Address,
+	assertionChain *solimpl.AssertionChain, stakeTokenAddr common.Address, asserterOpts *bind.TransactOpts,
 ) {
+	var srv *externalsignertest.SignerServer
+	if useExternalSigner {
+		srv = externalsignertest.NewServer(t)
+		go func() {
+			if err := srv.Start(); err != nil {
+				log.Error("Failed to start external signer server:", err)
+				return
+			}
+		}()
+	}
+
 	if nodeConfig == nil {
 		nodeConfig = arbnode.ConfigDefaultL1Test()
 	}
@@ -557,14 +577,27 @@ func createTestNodeOnL1ForBoldProtocol(
 		l2info = NewArbTestInfo(t, chainConfig.ChainID)
 	}
 
-	l1info.GenerateAccount("Asserter")
+	var signerCfg *dataposter.ExternalSignerCfg
+	var err error
+	if useExternalSigner {
+		signerCfg, err = dataposter.ExternalSignerTestCfg(srv.Address, srv.URL())
+		if err != nil {
+			t.Fatalf("Error getting external signer config: %v", err)
+		}
+		asserterOpts, err = dataposter.ExternalSignerTxOpts(ctx, signerCfg)
+		Require(t, err)
+	} else {
+		l1info.GenerateAccount("Asserter")
+		tmpOpts := l1info.GetDefaultTransactOpts("Asserter", ctx)
+		asserterOpts = &tmpOpts
+	}
 	l1info.GenerateAccount("EvilAsserter")
 
 	SendWaitTestTransactions(t, ctx, l1client, []*types.Transaction{
 		l1info.PrepareTx("Faucet", "RollupOwner", 30000, big.NewInt(9223372036854775807), nil),
 		l1info.PrepareTx("Faucet", "Sequencer", 30000, big.NewInt(9223372036854775807), nil),
 		l1info.PrepareTx("Faucet", "User", 30000, big.NewInt(9223372036854775807), nil),
-		l1info.PrepareTx("Faucet", "Asserter", 30000, big.NewInt(9223372036854775807), nil),
+		l1info.PrepareTxTo("Faucet", &asserterOpts.From, 30000, big.NewInt(9223372036854775807), nil),
 		l1info.PrepareTx("Faucet", "EvilAsserter", 30000, big.NewInt(9223372036854775807), nil),
 	})
 
@@ -590,7 +623,7 @@ func createTestNodeOnL1ForBoldProtocol(
 	Require(t, err)
 	l1TransactionOpts.Value = nil
 
-	addresses := deployContractsOnly(t, ctx, l1info, l1client, chainConfig.ChainID, rollupStackConf, stakeToken)
+	addresses := deployContractsOnly(t, ctx, l1info, l1client, chainConfig.ChainID, rollupStackConf, stakeToken, asserterOpts)
 	rollupUser, err := rollupgen.NewRollupUserLogic(addresses.Rollup, l1client)
 	Require(t, err)
 	chalManagerAddr, err := rollupUser.ChallengeManager(&bind.CallOpts{})
@@ -621,15 +654,14 @@ func createTestNodeOnL1ForBoldProtocol(
 	AddValNodeIfNeeded(t, ctx, nodeConfig, true, "", "")
 
 	parentChainId, err := l1client.ChainID(ctx)
-	execConfigFetcher := func() *gethexec.Config { return execConfig }
-	execNode, err := gethexec.CreateExecutionNode(ctx, l2stack, l2chainDb, l2blockchain, l1client, execConfigFetcher, parentChainId, 0)
+	execNode, err := gethexec.CreateExecutionNode(ctx, l2stack, l2chainDb, l2blockchain, l1client, NewCommonConfigFetcher(execConfig), parentChainId, 0)
 	Require(t, err)
 
 	Require(t, err)
 	locator, err := server_common.NewMachineLocator("")
 	Require(t, err)
 	currentNode, err = arbnode.CreateNodeFullExecutionClient(
-		ctx, l2stack, execNode, execNode, execNode, execNode, l2arbDb, NewFetcherFromConfig(nodeConfig), l2blockchain.Config(), l1client,
+		ctx, l2stack, execNode, execNode, execNode, execNode, l2arbDb, NewCommonConfigFetcher(nodeConfig), l2blockchain.Config(), l1client,
 		addresses, sequencerTxOptsPtr, sequencerTxOptsPtr, dataSigner, fatalErrChan, parentChainId,
 		nil, // Blob reader.
 		locator.LatestWasmModuleRoot(),
@@ -640,13 +672,18 @@ func createTestNodeOnL1ForBoldProtocol(
 
 	StartWatchChanErr(t, ctx, fatalErrChan, currentNode)
 
-	opts := l1info.GetDefaultTransactOpts("Asserter", ctx)
+	var dpOpts *bind.TransactOpts
+	if useExternalSigner {
+		nodeConfig.Staker.DataPoster.ExternalSigner = *signerCfg
+	} else {
+		dpOpts = asserterOpts
+	}
 	dp, err := arbnode.StakerDataposter(
 		ctx,
 		rawdb.NewTable(l2arbDb, storage.StakerPrefix),
 		currentNode.L1Reader,
-		&opts,
-		NewFetcherFromConfig(nodeConfig),
+		dpOpts,
+		NewCommonConfigFetcher(nodeConfig),
 		currentNode.SyncMonitor,
 		parentChainId,
 	)
@@ -655,7 +692,7 @@ func createTestNodeOnL1ForBoldProtocol(
 		ctx,
 		addresses.Rollup,
 		chalManagerAddr,
-		&opts,
+		dp.Auth(),
 		butil.NewBackendWrapper(l1client, rpc.LatestBlockNumber),
 		bold.NewDataPosterTransactor(dp),
 		solimpl.WithRpcHeadBlockNumber(rpc.LatestBlockNumber),
@@ -674,6 +711,7 @@ func deployContractsOnly(
 	chainId *big.Int,
 	rollupStackConf setup.RollupStackConfig,
 	stakeToken common.Address,
+	asserterOpts *bind.TransactOpts,
 ) *chaininfo.RollupAddresses {
 	l1TransactionOpts := l1info.GetDefaultTransactOpts("RollupOwner", ctx)
 	locator, err := server_common.NewMachineLocator("")
@@ -721,7 +759,6 @@ func deployContractsOnly(
 	)
 	Require(t, err)
 
-	asserter := l1info.GetDefaultTransactOpts("Asserter", ctx)
 	evilAsserter := l1info.GetDefaultTransactOpts("EvilAsserter", ctx)
 	userLogic, err := rollupgen.NewRollupUserLogic(addresses.Rollup, backend)
 	Require(t, err)
@@ -737,15 +774,15 @@ func deployContractsOnly(
 	}
 	tokenBindings, err := mocksgen.NewTestWETH9(stakeToken, backend)
 	Require(t, err)
-	tx, err := tokenBindings.TestWETH9Transactor.Transfer(&l1TransactionOpts, asserter.From, seed)
+	tx, err := tokenBindings.TestWETH9Transactor.Transfer(&l1TransactionOpts, asserterOpts.From, seed)
 	Require(t, err)
 	_, err = EnsureTxSucceeded(ctx, backend, tx)
 	Require(t, err)
-	tx, err = tokenBindings.TestWETH9Transactor.Approve(&asserter, addresses.Rollup, value)
+	tx, err = tokenBindings.TestWETH9Transactor.Approve(asserterOpts, addresses.Rollup, value)
 	Require(t, err)
 	_, err = EnsureTxSucceeded(ctx, backend, tx)
 	Require(t, err)
-	tx, err = tokenBindings.TestWETH9Transactor.Approve(&asserter, chalManagerAddr, value)
+	tx, err = tokenBindings.TestWETH9Transactor.Approve(asserterOpts, chalManagerAddr, value)
 	Require(t, err)
 	_, err = EnsureTxSucceeded(ctx, backend, tx)
 	Require(t, err)
@@ -786,6 +823,7 @@ func create2ndNodeWithConfigForBoldProtocol(
 	stackConfig *node.Config,
 	rollupStackConf setup.RollupStackConfig,
 	stakeTokenAddr common.Address,
+	asserterOpts *bind.TransactOpts,
 ) (*ethclient.Client, *arbnode.Node, *solimpl.AssertionChain) {
 	fatalErrChan := make(chan error, 10)
 	l1rpcClient := l1stack.Attach()
@@ -795,7 +833,7 @@ func create2ndNodeWithConfigForBoldProtocol(
 		Fatal(t, "not geth execution node")
 	}
 	chainConfig := firstExec.ArbInterface.BlockChain().Config()
-	addresses := deployContractsOnly(t, ctx, l1info, l1client, chainConfig.ChainID, rollupStackConf, stakeTokenAddr)
+	addresses := deployContractsOnly(t, ctx, l1info, l1client, chainConfig.ChainID, rollupStackConf, stakeTokenAddr, asserterOpts)
 
 	l1info.SetContract("EvilBridge", addresses.Bridge)
 	l1info.SetContract("EvilSequencerInbox", addresses.SequencerInbox)
@@ -833,14 +871,13 @@ func create2ndNodeWithConfigForBoldProtocol(
 	l2blockchain, err := gethexec.WriteOrTestBlockChain(l2chainDb, coreCacheConfig, initReader, chainConfig, nil, nil, initMessage, &execConfig.TxIndexer, 0)
 	Require(t, err)
 
-	execConfigFetcher := func() *gethexec.Config { return execConfig }
 	l1ChainId, err := l1client.ChainID(ctx)
 	Require(t, err)
-	execNode, err := gethexec.CreateExecutionNode(ctx, l2stack, l2chainDb, l2blockchain, l1client, execConfigFetcher, l1ChainId, 0)
+	execNode, err := gethexec.CreateExecutionNode(ctx, l2stack, l2chainDb, l2blockchain, l1client, NewCommonConfigFetcher(execConfig), l1ChainId, 0)
 	Require(t, err)
 	locator, err := server_common.NewMachineLocator("")
 	Require(t, err)
-	l2node, err := arbnode.CreateNodeFullExecutionClient(ctx, l2stack, execNode, execNode, execNode, execNode, l2arbDb, NewFetcherFromConfig(nodeConfig), l2blockchain.Config(), l1client, addresses, &txOpts, &txOpts, dataSigner, fatalErrChan, l1ChainId, nil /* blob reader */, locator.LatestWasmModuleRoot())
+	l2node, err := arbnode.CreateNodeFullExecutionClient(ctx, l2stack, execNode, execNode, execNode, execNode, l2arbDb, NewCommonConfigFetcher(nodeConfig), l2blockchain.Config(), l1client, addresses, &txOpts, &txOpts, dataSigner, fatalErrChan, l1ChainId, nil /* blob reader */, locator.LatestWasmModuleRoot())
 	Require(t, err)
 
 	l2client := ClientForStack(t, l2stack)
@@ -857,7 +894,7 @@ func create2ndNodeWithConfigForBoldProtocol(
 		rawdb.NewTable(l2arbDb, storage.StakerPrefix),
 		l2node.L1Reader,
 		&evilOpts,
-		NewFetcherFromConfig(nodeConfig),
+		NewCommonConfigFetcher(nodeConfig),
 		l2node.SyncMonitor,
 		l1ChainId,
 	)
