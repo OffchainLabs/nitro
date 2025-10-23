@@ -24,15 +24,29 @@ const InitialPricingInertia = 102
 const InitialBacklogTolerance = 10
 const InitialPerTxGasLimitV50 uint64 = 32 * 1000000
 
-func (ps *L2PricingState) AddToGasPoolWithArbosVersion(gas int64, arbosVersion uint64) error {
-	// For ArbOS version 50 and above call Multi-Constraint Pricer add
+func (ps *L2PricingState) ShouldUseMultiConstraints(arbosVersion uint64) (bool, error) {
 	if arbosVersion >= ArbosMultiConstraintsVersion {
-		return ps.addToGasPoolMultiConstraints(gas)
+		constraintsLength, err := ps.ConstraintsLength()
+		if err != nil {
+			return false, err
+		}
+		return constraintsLength > 0, nil
 	}
-	return ps.addToGasPool(gas)
+	return false, nil
 }
 
-func (ps *L2PricingState) addToGasPool(gas int64) error {
+func (ps *L2PricingState) AddToGasPool(gas int64, arbosVersion uint64) error {
+	shouldUseMultiConstraints, err := ps.ShouldUseMultiConstraints(arbosVersion)
+	if err != nil {
+		return err
+	}
+	if shouldUseMultiConstraints {
+		return ps.addToGasPoolMultiConstraints(gas)
+	}
+	return ps.addToGasPoolLegacy(gas)
+}
+
+func (ps *L2PricingState) addToGasPoolLegacy(gas int64) error {
 	backlog, err := ps.GasBacklog()
 	if err != nil {
 		return err
@@ -60,10 +74,10 @@ func (ps *L2PricingState) addToGasPoolMultiConstraints(gas int64) error {
 	return nil
 }
 
-// UpdatePricingModelWithArbosVersion updates the pricing model with info from the last block
-func (ps *L2PricingState) UpdatePricingModelWithArbosVersion(timePassed uint64, arbosVersion uint64) {
-	// For ArbOS version 50 and above call Multi-Constraint Pricer update
-	if arbosVersion >= ArbosMultiConstraintsVersion {
+// UpdatePricingModel updates the pricing model with info from the last block
+func (ps *L2PricingState) UpdatePricingModel(timePassed uint64, arbosVersion uint64) {
+	shouldUseMultiConstraints, _ := ps.ShouldUseMultiConstraints(arbosVersion)
+	if shouldUseMultiConstraints {
 		ps.updatePricingModelMultiConstraints(timePassed)
 	} else {
 		ps.updatePricingModelLegacy(timePassed)
@@ -81,7 +95,7 @@ func applyGasDelta(backlog uint64, gas int64) uint64 {
 
 func (ps *L2PricingState) updatePricingModelLegacy(timePassed uint64) {
 	speedLimit, _ := ps.SpeedLimitPerSecond()
-	_ = ps.addToGasPool(arbmath.SaturatingCast[int64](arbmath.SaturatingUMul(timePassed, speedLimit)))
+	_ = ps.addToGasPoolLegacy(arbmath.SaturatingCast[int64](arbmath.SaturatingUMul(timePassed, speedLimit)))
 	inertia, _ := ps.PricingInertia()
 	tolerance, _ := ps.BacklogTolerance()
 	backlog, _ := ps.GasBacklog()

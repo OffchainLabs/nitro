@@ -24,7 +24,7 @@ func PricingForTest(t *testing.T) *L2PricingState {
 func fakeBlockUpdate(t *testing.T, pricing *L2PricingState, gasUsed int64, timePassed uint64) {
 	t.Helper()
 
-	pricing.storage.Burner().Restrict(pricing.addToGasPool(-gasUsed))
+	pricing.storage.Burner().Restrict(pricing.addToGasPoolLegacy(-gasUsed))
 	pricing.updatePricingModelLegacy(timePassed)
 }
 

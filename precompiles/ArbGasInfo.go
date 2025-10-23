@@ -159,30 +159,9 @@ func (con ArbGasInfo) GetPricesInArbGas(c ctx, evm mech) (huge, huge, huge, erro
 
 // GetGasAccountingParams gets the rollup's speed limit, pool size, and block gas limit
 func (con ArbGasInfo) GetGasAccountingParams(c ctx, evm mech) (huge, huge, huge, error) {
-	l2ps := c.State.L2PricingState()
-
-	maxBlockGasLimit, err := l2ps.PerBlockGasLimit()
-	if err != nil {
-		return nil, nil, nil, err
-	}
-
-	// For ArbOS version 50 and above, the speed limit is defined by the highest-period constraint
-	if c.State.ArbOSVersion() >= l2pricing.ArbosMultiConstraintsVersion {
-		constraint := l2ps.OpenConstraintAt(0)
-
-		speedLimit, err := constraint.Target()
-		if err != nil {
-			return nil, nil, nil, err
-		}
-
-		// gasPoolMax is always zero for multi-constraint pricer
-		return arbmath.UintToBig(speedLimit),
-			arbmath.UintToBig(uint64(0)),
-			arbmath.UintToBig(maxBlockGasLimit),
-			nil
-	}
-
-	speedLimit, err := l2ps.SpeedLimitPerSecond()
+	l2pricing := c.State.L2PricingState()
+	speedLimit, _ := l2pricing.SpeedLimitPerSecond()
+	maxBlockGasLimit, err := l2pricing.PerBlockGasLimit()
 	return arbmath.UintToBig(speedLimit), arbmath.UintToBig(maxBlockGasLimit), arbmath.UintToBig(maxBlockGasLimit), err
 }
 
@@ -230,21 +209,11 @@ func (con ArbGasInfo) GetCurrentTxL1GasFees(c ctx, evm mech) (huge, error) {
 
 // GetGasBacklog gets the backlogged amount of gas burnt in excess of the speed limit
 func (con ArbGasInfo) GetGasBacklog(c ctx, evm mech) (uint64, error) {
-	// For ArbOS version 50 and above, the backlog is defined by the highest-period constraint
-	if c.State.ArbOSVersion() >= l2pricing.ArbosMultiConstraintsVersion {
-		constraint := c.State.L2PricingState().OpenConstraintAt(0)
-		return constraint.Backlog()
-	}
 	return c.State.L2PricingState().GasBacklog()
 }
 
 // GetPricingInertia gets how slowly ArbOS updates the L2 basefee in response to backlogged gas
 func (con ArbGasInfo) GetPricingInertia(c ctx, evm mech) (uint64, error) {
-	// For ArbOS version 50 and above, compute the inertia from period of highest-period constraint
-	if c.State.ArbOSVersion() >= l2pricing.ArbosMultiConstraintsVersion {
-		constraint := c.State.L2PricingState().OpenConstraintAt(0)
-		return constraint.Inertia()
-	}
 	return c.State.L2PricingState().PricingInertia()
 }
 
