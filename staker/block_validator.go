@@ -25,7 +25,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbnode/resourcemanager"
 	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/offchainlabs/nitro/consensus"
+	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/rpcclient"
@@ -524,7 +524,7 @@ func GlobalStateToMsgCount(tracker InboxTrackerInterface, streamer TransactionSt
 	if processed < count {
 		return false, 0, nil
 	}
-	res := &consensus.MessageResult{}
+	res := &execution.MessageResult{}
 	if count > 0 {
 		res, err = streamer.ResultAtMessageIndex(count - 1)
 		if err != nil {
@@ -1252,7 +1252,7 @@ func (v *BlockValidator) Initialize(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		res := &consensus.MessageResult{}
+		res := &execution.MessageResult{}
 		if messageCount > 0 {
 			res, err = v.streamer.ResultAtMessageIndex(messageCount - 1)
 			if err != nil {
@@ -1364,7 +1364,7 @@ func (v *BlockValidator) checkLegacyValid() error {
 		return nil
 	}
 
-	result := &consensus.MessageResult{}
+	result := &execution.MessageResult{}
 	if msgCount > 0 {
 		result, err = v.streamer.ResultAtMessageIndex(msgCount - 1)
 		if err != nil {

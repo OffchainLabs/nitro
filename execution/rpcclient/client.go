@@ -8,7 +8,6 @@ import (
 
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/offchainlabs/nitro/consensus"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/rpcclient"
@@ -45,9 +44,9 @@ func convertError(err error) error {
 
 // ExecutionClient methods
 
-func (c *ExecutionRPCClient) DigestMessage(msgIdx arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, msgForPrefetch *arbostypes.MessageWithMetadata) containers.PromiseInterface[*consensus.MessageResult] {
-	return stopwaiter.LaunchPromiseThread(c, func(ctx context.Context) (*consensus.MessageResult, error) {
-		var res consensus.MessageResult
+func (c *ExecutionRPCClient) DigestMessage(msgIdx arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, msgForPrefetch *arbostypes.MessageWithMetadata) containers.PromiseInterface[*execution.MessageResult] {
+	return stopwaiter.LaunchPromiseThread(c, func(ctx context.Context) (*execution.MessageResult, error) {
+		var res execution.MessageResult
 		err := c.client.CallContext(ctx, &res, execution.RPCNamespace+"_digestMessage", msgIdx, msg, msgForPrefetch)
 		if err != nil {
 			return nil, convertError(err)
@@ -56,9 +55,9 @@ func (c *ExecutionRPCClient) DigestMessage(msgIdx arbutil.MessageIndex, msg *arb
 	})
 }
 
-func (c *ExecutionRPCClient) Reorg(msgIdxOfFirstMsgToAdd arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadataAndBlockInfo, oldMessages []*arbostypes.MessageWithMetadata) containers.PromiseInterface[[]*consensus.MessageResult] {
-	return stopwaiter.LaunchPromiseThread(c, func(ctx context.Context) ([]*consensus.MessageResult, error) {
-		var res []*consensus.MessageResult
+func (c *ExecutionRPCClient) Reorg(msgIdxOfFirstMsgToAdd arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadataAndBlockInfo, oldMessages []*arbostypes.MessageWithMetadata) containers.PromiseInterface[[]*execution.MessageResult] {
+	return stopwaiter.LaunchPromiseThread(c, func(ctx context.Context) ([]*execution.MessageResult, error) {
+		var res []*execution.MessageResult
 		err := c.client.CallContext(ctx, &res, execution.RPCNamespace+"_reorg", msgIdxOfFirstMsgToAdd, newMessages, oldMessages)
 		if err != nil {
 			return nil, convertError(err)
@@ -78,9 +77,9 @@ func (c *ExecutionRPCClient) HeadMessageIndex() containers.PromiseInterface[arbu
 	})
 }
 
-func (c *ExecutionRPCClient) ResultAtMessageIndex(msgIdx arbutil.MessageIndex) containers.PromiseInterface[*consensus.MessageResult] {
-	return stopwaiter.LaunchPromiseThread(c, func(ctx context.Context) (*consensus.MessageResult, error) {
-		var res *consensus.MessageResult
+func (c *ExecutionRPCClient) ResultAtMessageIndex(msgIdx arbutil.MessageIndex) containers.PromiseInterface[*execution.MessageResult] {
+	return stopwaiter.LaunchPromiseThread(c, func(ctx context.Context) (*execution.MessageResult, error) {
+		var res *execution.MessageResult
 		err := c.client.CallContext(ctx, &res, execution.RPCNamespace+"_resultAtMessageIndex", msgIdx)
 		if err != nil {
 			return nil, convertError(err)

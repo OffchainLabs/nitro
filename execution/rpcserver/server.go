@@ -5,7 +5,6 @@ import (
 
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/offchainlabs/nitro/consensus"
 	"github.com/offchainlabs/nitro/execution"
 )
 
@@ -22,11 +21,11 @@ func NewExecutionRpcServer(executionClient execution.ExecutionClient) *Execution
 
 // ExecutionClient methods
 
-func (c *ExecutionRPCServer) DigestMessage(ctx context.Context, msgIdx arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, msgForPrefetch *arbostypes.MessageWithMetadata) (*consensus.MessageResult, error) {
+func (c *ExecutionRPCServer) DigestMessage(ctx context.Context, msgIdx arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, msgForPrefetch *arbostypes.MessageWithMetadata) (*execution.MessageResult, error) {
 	return c.executionClient.DigestMessage(msgIdx, msg, msgForPrefetch).Await(ctx)
 }
 
-func (c *ExecutionRPCServer) Reorg(ctx context.Context, msgIdxOfFirstMsgToAdd arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadataAndBlockInfo, oldMessages []*arbostypes.MessageWithMetadata) ([]*consensus.MessageResult, error) {
+func (c *ExecutionRPCServer) Reorg(ctx context.Context, msgIdxOfFirstMsgToAdd arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadataAndBlockInfo, oldMessages []*arbostypes.MessageWithMetadata) ([]*execution.MessageResult, error) {
 	return c.executionClient.Reorg(msgIdxOfFirstMsgToAdd, newMessages, oldMessages).Await(ctx)
 }
 
@@ -34,7 +33,7 @@ func (c *ExecutionRPCServer) HeadMessageIndex(ctx context.Context) (arbutil.Mess
 	return c.executionClient.HeadMessageIndex().Await(ctx)
 }
 
-func (c *ExecutionRPCServer) ResultAtMessageIndex(ctx context.Context, msgIdx arbutil.MessageIndex) (*consensus.MessageResult, error) {
+func (c *ExecutionRPCServer) ResultAtMessageIndex(ctx context.Context, msgIdx arbutil.MessageIndex) (*execution.MessageResult, error) {
 	return c.executionClient.ResultAtMessageIndex(msgIdx).Await(ctx)
 }
 

@@ -285,7 +285,7 @@ func (s *ExecutionEngine) GetBatchFetcher() consensus.BatchFetcher {
 	return s.consensus
 }
 
-func (s *ExecutionEngine) Reorg(msgIdxOfFirstMsgToAdd arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadataAndBlockInfo, oldMessages []*arbostypes.MessageWithMetadata) ([]*consensus.MessageResult, error) {
+func (s *ExecutionEngine) Reorg(msgIdxOfFirstMsgToAdd arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadataAndBlockInfo, oldMessages []*arbostypes.MessageWithMetadata) ([]*execution.MessageResult, error) {
 	if msgIdxOfFirstMsgToAdd == 0 {
 		return nil, errors.New("cannot reorg out genesis")
 	}
@@ -334,7 +334,7 @@ func (s *ExecutionEngine) Reorg(msgIdxOfFirstMsgToAdd arbutil.MessageIndex, newM
 		}
 	}
 
-	newMessagesResults := make([]*consensus.MessageResult, 0, len(newMessages))
+	newMessagesResults := make([]*execution.MessageResult, 0, len(newMessages))
 	for i := range newMessages {
 		var msgForPrefetch *arbostypes.MessageWithMetadata
 		if i < len(newMessages)-1 {
@@ -858,18 +858,18 @@ func (s *ExecutionEngine) appendBlock(block *types.Block, statedb *state.StateDB
 	return nil
 }
 
-func (s *ExecutionEngine) resultFromHeader(header *types.Header) (*consensus.MessageResult, error) {
+func (s *ExecutionEngine) resultFromHeader(header *types.Header) (*execution.MessageResult, error) {
 	if header == nil {
 		return nil, ResultNotFound
 	}
 	info := types.DeserializeHeaderExtraInformation(header)
-	return &consensus.MessageResult{
+	return &execution.MessageResult{
 		BlockHash: header.Hash(),
 		SendRoot:  info.SendRoot,
 	}, nil
 }
 
-func (s *ExecutionEngine) ResultAtMessageIndex(msgIdx arbutil.MessageIndex) (*consensus.MessageResult, error) {
+func (s *ExecutionEngine) ResultAtMessageIndex(msgIdx arbutil.MessageIndex) (*execution.MessageResult, error) {
 	return s.resultFromHeader(s.bc.GetHeaderByNumber(s.MessageIndexToBlockNumber(msgIdx)))
 }
 
@@ -967,7 +967,7 @@ func (s *ExecutionEngine) cacheL1PriceDataOfMsg(msgIdx arbutil.MessageIndex, blo
 // in parallel, creates a block by executing msgForPrefetch (msg+1) against the latest state
 // but does not store the block.
 // This helps in filling the cache, so that the next block creation is faster.
-func (s *ExecutionEngine) DigestMessage(msgIdx arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, msgForPrefetch *arbostypes.MessageWithMetadata) (*consensus.MessageResult, error) {
+func (s *ExecutionEngine) DigestMessage(msgIdx arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, msgForPrefetch *arbostypes.MessageWithMetadata) (*execution.MessageResult, error) {
 	if !s.createBlocksMutex.TryLock() {
 		return nil, errors.New("createBlock mutex held")
 	}
@@ -975,7 +975,7 @@ func (s *ExecutionEngine) DigestMessage(msgIdx arbutil.MessageIndex, msg *arbost
 	return s.digestMessageWithBlockMutex(msgIdx, msg, msgForPrefetch)
 }
 
-func (s *ExecutionEngine) digestMessageWithBlockMutex(msgIdxToDigest arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, msgForPrefetch *arbostypes.MessageWithMetadata) (*consensus.MessageResult, error) {
+func (s *ExecutionEngine) digestMessageWithBlockMutex(msgIdxToDigest arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, msgForPrefetch *arbostypes.MessageWithMetadata) (*execution.MessageResult, error) {
 	currentHeader, err := s.getCurrentHeader()
 	if err != nil {
 		return nil, err

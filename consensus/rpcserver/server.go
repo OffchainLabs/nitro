@@ -8,6 +8,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/consensus"
+	"github.com/offchainlabs/nitro/execution"
 )
 
 type ConsensusRPCServer struct {
@@ -30,7 +31,7 @@ func (a *ConsensusRPCServer) BlockMetadataAtMessageIndex(ctx context.Context, ms
 	return a.consensus.BlockMetadataAtMessageIndex(msgIdx).Await(ctx)
 }
 
-func (a *ConsensusRPCServer) WriteMessageFromSequencer(ctx context.Context, msgIdx arbutil.MessageIndex, msgWithMeta arbostypes.MessageWithMetadata, msgResult consensus.MessageResult, blockMetadata common.BlockMetadata) error {
+func (a *ConsensusRPCServer) WriteMessageFromSequencer(ctx context.Context, msgIdx arbutil.MessageIndex, msgWithMeta arbostypes.MessageWithMetadata, msgResult execution.MessageResult, blockMetadata common.BlockMetadata) error {
 	_, err := a.consensus.WriteMessageFromSequencer(msgIdx, msgWithMeta, msgResult, blockMetadata).Await(ctx)
 	return err
 }

@@ -77,7 +77,7 @@ func (c *ConsensusRPCClient) BlockMetadataAtMessageIndex(msgIdx arbutil.MessageI
 	})
 }
 
-func (c *ConsensusRPCClient) WriteMessageFromSequencer(msgIdx arbutil.MessageIndex, msgWithMeta arbostypes.MessageWithMetadata, msgResult consensus.MessageResult, blockMetadata common.BlockMetadata) containers.PromiseInterface[struct{}] {
+func (c *ConsensusRPCClient) WriteMessageFromSequencer(msgIdx arbutil.MessageIndex, msgWithMeta arbostypes.MessageWithMetadata, msgResult execution.MessageResult, blockMetadata common.BlockMetadata) containers.PromiseInterface[struct{}] {
 	return stopwaiter.LaunchPromiseThread(c, func(ctx context.Context) (struct{}, error) {
 		var res struct{}
 		err := c.client.CallContext(ctx, &res, consensus.RPCNamespace+"_writeMessageFromSequencer", msgIdx, msgWithMeta, msgResult, blockMetadata)

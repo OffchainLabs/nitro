@@ -32,7 +32,6 @@ import (
 	"github.com/offchainlabs/nitro/broadcastclient"
 	"github.com/offchainlabs/nitro/broadcaster"
 	"github.com/offchainlabs/nitro/broadcaster/message"
-	"github.com/offchainlabs/nitro/consensus"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -1016,7 +1015,7 @@ func (s *TransactionStreamer) ExpectChosenSequencer() error {
 func (s *TransactionStreamer) WriteMessageFromSequencer(
 	msgIdx arbutil.MessageIndex,
 	msgWithMeta arbostypes.MessageWithMetadata,
-	msgResult consensus.MessageResult,
+	msgResult execution.MessageResult,
 	blockMetadata common.BlockMetadata,
 ) error {
 	if err := s.ExpectChosenSequencer(); err != nil {
@@ -1231,11 +1230,11 @@ func (s *TransactionStreamer) BlockMetadataAtMessageIndex(msgIdx arbutil.Message
 	return blockMetadata, nil
 }
 
-func (s *TransactionStreamer) ResultAtMessageIndex(msgIdx arbutil.MessageIndex) (*consensus.MessageResult, error) {
+func (s *TransactionStreamer) ResultAtMessageIndex(msgIdx arbutil.MessageIndex) (*execution.MessageResult, error) {
 	key := dbKey(messageResultPrefix, uint64(msgIdx))
 	data, err := s.db.Get(key)
 	if err == nil {
-		var msgResult consensus.MessageResult
+		var msgResult execution.MessageResult
 		err = rlp.DecodeBytes(data, &msgResult)
 		if err == nil {
 			return &msgResult, nil
@@ -1269,7 +1268,7 @@ func (s *TransactionStreamer) ResultAtMessageIndex(msgIdx arbutil.MessageIndex) 
 	return msgResult, nil
 }
 
-func (s *TransactionStreamer) checkResult(msgIdx arbutil.MessageIndex, msgResult *consensus.MessageResult, msgAndBlockInfo *arbostypes.MessageWithMetadataAndBlockInfo) {
+func (s *TransactionStreamer) checkResult(msgIdx arbutil.MessageIndex, msgResult *execution.MessageResult, msgAndBlockInfo *arbostypes.MessageWithMetadataAndBlockInfo) {
 	if msgAndBlockInfo.BlockHash == nil {
 		return
 	}
@@ -1301,7 +1300,7 @@ func (s *TransactionStreamer) checkResult(msgIdx arbutil.MessageIndex, msgResult
 
 func (s *TransactionStreamer) storeResult(
 	msgIdx arbutil.MessageIndex,
-	msgResult consensus.MessageResult,
+	msgResult execution.MessageResult,
 	batch ethdb.Batch,
 ) error {
 	msgResultBytes, err := rlp.EncodeToBytes(msgResult)
