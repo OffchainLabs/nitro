@@ -13,25 +13,23 @@ import (
 
 const (
 	gasConstraintTargetOffset uint64 = iota
-	gasConstraintPeriodOffset
-	gasConstraintDivisorOffset
+	gasConstraintInertiaOffset
 	gasConstraintBacklogOffset
 )
 
-// GasConstraint tries to keep the gas backlog under the target (per second) for the given period.
-// The divisor is based on the target and period, and can be computed by computeConstraintDivisor.
+// GasConstraint tries to keep the gas backlog under the target (per second) for the given inertia factor.
+// The inertia can be computed as 30*sqrt(period), where period is the number of seconds which the
+// constraint is acting over. For instance, the default inertia of 102 is an approximation of 30*sqrt(12).
 type GasConstraint struct {
 	target  storage.StorageBackedUint64
-	period  storage.StorageBackedUint64
-	divisor storage.StorageBackedUint64
+	inertia storage.StorageBackedUint64
 	backlog storage.StorageBackedUint64
 }
 
 func OpenGasConstraint(storage *storage.Storage) *GasConstraint {
 	return &GasConstraint{
 		target:  storage.OpenStorageBackedUint64(gasConstraintTargetOffset),
-		period:  storage.OpenStorageBackedUint64(gasConstraintPeriodOffset),
-		divisor: storage.OpenStorageBackedUint64(gasConstraintDivisorOffset),
+		inertia: storage.OpenStorageBackedUint64(gasConstraintInertiaOffset),
 		backlog: storage.OpenStorageBackedUint64(gasConstraintBacklogOffset),
 	}
 }
@@ -40,10 +38,7 @@ func (c *GasConstraint) Clear() error {
 	if err := c.target.Clear(); err != nil {
 		return err
 	}
-	if err := c.period.Clear(); err != nil {
-		return err
-	}
-	if err := c.divisor.Clear(); err != nil {
+	if err := c.inertia.Clear(); err != nil {
 		return err
 	}
 	if err := c.backlog.Clear(); err != nil {
@@ -56,21 +51,8 @@ func (c *GasConstraint) Target() (uint64, error) {
 	return c.target.Get()
 }
 
-func (c *GasConstraint) Period() (uint64, error) {
-	return c.period.Get()
-}
-
-func (c *GasConstraint) ComputeInertiaFromPeriod() (uint64, error) {
-	period, err := c.period.Get()
-	if err != nil {
-		return 0, err
-	}
-
-	// Reverse of SetConstraintsFromLegacy: inertia ≈ sqrt(period) * ConstraintDivisorMultiplier
-	periodSqrt := arbmath.ApproxSquareRoot(period)
-	inertia := arbmath.SaturatingUMul(periodSqrt, ConstraintDivisorMultiplier)
-
-	return inertia, nil
+func (c *GasConstraint) Inertia() (uint64, error) {
+	return c.inertia.Get()
 }
 
 func (c *GasConstraint) Backlog() (uint64, error) {
@@ -217,32 +199,19 @@ func (ps *L2PricingState) SetConstraintsFromLegacy() error {
 	if err != nil {
 		return err
 	}
-
-	// Make an approximation of the period based on the inertia
-	periodSqrt := inertia / ConstraintDivisorMultiplier
-	period := arbmath.SaturatingUMul(periodSqrt, periodSqrt)
-	if period == 0 {
-		// Ensure the period is at least 1
-		period = 1
-	}
-
-	backlog, err := ps.GasBacklog()
+	oldBacklog, err := ps.GasBacklog()
 	if err != nil {
 		return err
 	}
-	tolerance, err := ps.BacklogTolerance()
+	backlogTolerance, err := ps.BacklogTolerance()
 	if err != nil {
 		return err
 	}
-
-	// Adjust the backlog to preserve the same effective gas price across the transition.
-	toleratedBacklog := arbmath.SaturatingUMul(target, tolerance)
-	backlog = arbmath.SaturatingUSub(backlog, toleratedBacklog)
-
-	return ps.AddConstraint(target, period, backlog)
+	backlog := arbmath.SaturatingUSub(oldBacklog, arbmath.SaturatingUMul(backlogTolerance, target))
+	return ps.AddConstraint(target, inertia, backlog)
 }
 
-func (ps *L2PricingState) AddConstraint(target uint64, period uint64, backlog uint64) error {
+func (ps *L2PricingState) AddConstraint(target uint64, inertia uint64, backlog uint64) error {
 	subStorage, err := ps.constraints.Push()
 	if err != nil {
 		return fmt.Errorf("failed to push constraint: %w", err)
@@ -251,11 +220,11 @@ func (ps *L2PricingState) AddConstraint(target uint64, period uint64, backlog ui
 	if err := constraint.target.Set(target); err != nil {
 		return fmt.Errorf("failed to set target: %w", err)
 	}
-	if err := constraint.period.Set(period); err != nil {
-		return fmt.Errorf("failed to set period: %w", err)
+	if err := constraint.inertia.Set(inertia); err != nil {
+		return fmt.Errorf("failed to set inertia: %w", err)
 	}
-	if err := constraint.divisor.Set(computeConstraintDivisor(target, period)); err != nil {
-		return fmt.Errorf("failed to set divisor: %w", err)
+	if err := constraint.backlog.Set(backlog); err != nil {
+		return fmt.Errorf("failed to set backlog: %w", err)
 	}
 	if err := constraint.backlog.Set(backlog); err != nil {
 		return fmt.Errorf("failed to set backlog: %w", err)
@@ -287,32 +256,4 @@ func (ps *L2PricingState) ClearConstraints() error {
 		}
 	}
 	return nil
-}
-
-func (ps *L2PricingState) HighestPeriodConstraint() (*GasConstraint, error) {
-	length, err := ps.ConstraintsLength()
-	if err != nil {
-		return nil, err
-	}
-	if length == 0 {
-		return nil, fmt.Errorf("no constraints configured")
-	}
-
-	var (
-		maxPeriod uint64
-		maxIdx    uint64
-	)
-	for i := range length {
-		constraint := ps.OpenConstraintAt(i)
-		period, err := constraint.period.Get()
-		if err != nil {
-			return nil, fmt.Errorf("failed to get period for constraint %d: %w", i, err)
-		}
-		if period > maxPeriod {
-			maxPeriod = period
-			maxIdx = i
-		}
-	}
-
-	return ps.OpenConstraintAt(maxIdx), nil
 }

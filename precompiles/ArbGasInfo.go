@@ -168,10 +168,7 @@ func (con ArbGasInfo) GetGasAccountingParams(c ctx, evm mech) (huge, huge, huge,
 
 	// For ArbOS version 50 and above, the speed limit is defined by the highest-period constraint
 	if c.State.ArbOSVersion() >= l2pricing.ArbosMultiConstraintsVersion {
-		constraint, cerr := l2ps.HighestPeriodConstraint()
-		if cerr != nil {
-			return nil, nil, nil, cerr
-		}
+		constraint := l2ps.OpenConstraintAt(0)
 
 		speedLimit, err := constraint.Target()
 		if err != nil {
@@ -235,10 +232,7 @@ func (con ArbGasInfo) GetCurrentTxL1GasFees(c ctx, evm mech) (huge, error) {
 func (con ArbGasInfo) GetGasBacklog(c ctx, evm mech) (uint64, error) {
 	// For ArbOS version 50 and above, the backlog is defined by the highest-period constraint
 	if c.State.ArbOSVersion() >= l2pricing.ArbosMultiConstraintsVersion {
-		constraint, err := c.State.L2PricingState().HighestPeriodConstraint()
-		if err != nil {
-			return 0, err
-		}
+		constraint := c.State.L2PricingState().OpenConstraintAt(0)
 		return constraint.Backlog()
 	}
 	return c.State.L2PricingState().GasBacklog()
@@ -248,11 +242,8 @@ func (con ArbGasInfo) GetGasBacklog(c ctx, evm mech) (uint64, error) {
 func (con ArbGasInfo) GetPricingInertia(c ctx, evm mech) (uint64, error) {
 	// For ArbOS version 50 and above, compute the inertia from period of highest-period constraint
 	if c.State.ArbOSVersion() >= l2pricing.ArbosMultiConstraintsVersion {
-		constraint, err := c.State.L2PricingState().HighestPeriodConstraint()
-		if err != nil {
-			return 0, err
-		}
-		return constraint.ComputeInertiaFromPeriod()
+		constraint := c.State.L2PricingState().OpenConstraintAt(0)
+		return constraint.Inertia()
 	}
 	return c.State.L2PricingState().PricingInertia()
 }
@@ -350,7 +341,7 @@ func (con ArbGasInfo) GetGasPricingConstraints(c ctx, evm mech) ([][3]uint64, er
 		if err != nil {
 			return nil, err
 		}
-		period, err := constraint.Period()
+		period, err := constraint.Inertia()
 		if err != nil {
 			return nil, err
 		}
