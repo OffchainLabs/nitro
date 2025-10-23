@@ -716,9 +716,6 @@ func mainImpl() int {
 		}
 	}
 	if err == nil {
-		// In current model execution and consensus share the same stack, so starting and closing of this stack
-		// is handled externally here, but after the split when they have their own stacks- the responsibility
-		// of starting and closing their stacks belongs to them respectively
 		cleanup, err := execution_consensus.InitAndStartExecutionAndConsensusNodes(ctx, stack, execNode, consensusNode)
 		if err != nil {
 			log.Error("Error initializing and starting execution and consensus", "err", err)
