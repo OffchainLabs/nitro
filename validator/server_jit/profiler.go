@@ -186,16 +186,8 @@ func (p *jitProfiler) Snapshot() JitProfilerSnapshot {
 	}
 	if rec, ok := p.lastValidation.Load().(jitValidationRecord); ok {
 		snapshot.LastValidationInputBytes = rec.inputBytes
-		if rec.rssAfter >= rec.rssBefore {
-			snapshot.LastValidationRSSDelta = int64(rec.rssAfter - rec.rssBefore)
-		} else {
-			snapshot.LastValidationRSSDelta = -int64(rec.rssBefore - rec.rssAfter)
-		}
-		if rec.heapAllocAfter >= rec.heapAllocBefore {
-			snapshot.LastValidationHeapDelta = int64(rec.heapAllocAfter - rec.heapAllocBefore)
-		} else {
-			snapshot.LastValidationHeapDelta = -int64(rec.heapAllocBefore - rec.heapAllocAfter)
-		}
+		snapshot.LastValidationRSSDelta = dirSub(rec.rssAfter, rec.rssBefore)
+		snapshot.LastValidationHeapDelta = dirSub(rec.heapAllocAfter, rec.heapAllocBefore)
 		snapshot.LastValidationAt = rec.validationTime
 	}
 	return snapshot
@@ -241,6 +233,23 @@ const bytesPerMiB = 1024.0 * 1024.0
 func bytesToMiB(b uint64) float64 {
 	const reciprocal = 1.0 / (1024.0 * 1024.0)
 	return float64(b) * reciprocal
+}
+
+const maxInt64 = int64(^uint64(0) >> 1)
+
+func dirSub(after, before uint64) int64 {
+	if after >= before {
+		diff := after - before
+		if diff > uint64(maxInt64) {
+			return maxInt64
+		}
+		return int64(diff)
+	}
+	diff := before - after
+	if diff > uint64(maxInt64) {
+		return -maxInt64
+	}
+	return -int64(diff)
 }
 
 func bytesToMiBInt64(b int64) float64 {
