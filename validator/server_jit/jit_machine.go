@@ -13,6 +13,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"runtime"
 	"sync/atomic"
 	"time"
 
@@ -99,6 +100,25 @@ func (machine *JitMachine) prove(
 	ctx, cancel := context.WithCancel(ctxIn)
 	defer cancel() // ensure our cleanup functions run when we're done
 	state := validator.GoGlobalState{}
+
+	inputBytes := estimateValidationInputBytes(entry)
+	globalJitProfiler.OnValidationStart(inputBytes)
+	var memBefore runtime.MemStats
+	runtime.ReadMemStats(&memBefore)
+	rssBefore, _ := readParentProcessRSS()
+	defer func() {
+		var memAfter runtime.MemStats
+		runtime.ReadMemStats(&memAfter)
+		rssAfter, _ := readParentProcessRSS()
+		globalJitProfiler.OnValidationComplete(jitValidationRecord{
+			inputBytes:      inputBytes,
+			rssBefore:       rssBefore,
+			rssAfter:        rssAfter,
+			heapAllocBefore: memBefore.HeapAlloc,
+			heapAllocAfter:  memAfter.HeapAlloc,
+			validationTime:  time.Now(),
+		})
+	}()
 
 	timeout := time.Now().Add(machine.maxExecutionTime)
 	tcp, err := net.ListenTCP("tcp4", &net.TCPAddr{
@@ -346,4 +366,28 @@ func (machine *JitMachine) prove(
 			return state, errors.New("inter-process communication failure")
 		}
 	}
+}
+
+func estimateValidationInputBytes(entry *validator.ValidationInput) int64 {
+	if entry == nil {
+		return 0
+	}
+	var total int64
+	for _, batch := range entry.BatchInfo {
+		total += int64(len(batch.Data))
+	}
+	for _, modules := range entry.UserWasms {
+		for _, module := range modules {
+			total += int64(len(module))
+		}
+	}
+	if entry.HasDelayedMsg {
+		total += int64(len(entry.DelayedMsg))
+	}
+	for _, preimageMap := range entry.Preimages {
+		for _, value := range preimageMap {
+			total += int64(len(value))
+		}
+	}
+	return total
 }

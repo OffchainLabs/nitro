@@ -46,12 +46,16 @@ type jitExitRecord struct {
 type jitProfiler struct {
 	enabled atomic.Bool
 
-	machinesStarted atomic.Int64
-	machinesExited  atomic.Int64
-	machinesLive    atomic.Int64
+	machinesStarted      atomic.Int64
+	machinesExited       atomic.Int64
+	machinesLive         atomic.Int64
+	validationsStarted   atomic.Int64
+	validationsCompleted atomic.Int64
+	totalInputBytes      atomic.Int64
 
 	activeProcesses sync.Map // pid -> jitProcessInfo
 	lastExit        atomic.Value
+	lastValidation  atomic.Value
 }
 
 type JitProfilerSnapshot struct {
@@ -62,9 +66,27 @@ type JitProfilerSnapshot struct {
 	ActiveProcesses int
 	ActiveRSSBytes  uint64
 
+	ValidationsStarted   int64
+	ValidationsCompleted int64
+	TotalInputBytes      int64
+
 	LastExitPID int
 	LastExitErr string
 	LastExitAt  time.Time
+
+	LastValidationInputBytes int64
+	LastValidationRSSDelta   int64
+	LastValidationHeapDelta  int64
+	LastValidationAt         time.Time
+}
+
+type jitValidationRecord struct {
+	inputBytes      int64
+	rssBefore       uint64
+	rssAfter        uint64
+	heapAllocBefore uint64
+	heapAllocAfter  uint64
+	validationTime  time.Time
 }
 
 var globalJitProfiler = newJitProfiler()
@@ -115,11 +137,30 @@ func (p *jitProfiler) OnMachineExited(pid int, waitErr error) {
 	p.lastExit.Store(record)
 }
 
+func (p *jitProfiler) OnValidationStart(inputBytes int64) {
+	if !p.Enabled() {
+		return
+	}
+	p.validationsStarted.Add(1)
+	p.totalInputBytes.Add(inputBytes)
+}
+
+func (p *jitProfiler) OnValidationComplete(record jitValidationRecord) {
+	if !p.Enabled() {
+		return
+	}
+	p.validationsCompleted.Add(1)
+	p.lastValidation.Store(record)
+}
+
 func (p *jitProfiler) Snapshot() JitProfilerSnapshot {
 	snapshot := JitProfilerSnapshot{
-		MachinesStarted: p.machinesStarted.Load(),
-		MachinesExited:  p.machinesExited.Load(),
-		MachinesLive:    p.machinesLive.Load(),
+		MachinesStarted:      p.machinesStarted.Load(),
+		MachinesExited:       p.machinesExited.Load(),
+		MachinesLive:         p.machinesLive.Load(),
+		ValidationsStarted:   p.validationsStarted.Load(),
+		ValidationsCompleted: p.validationsCompleted.Load(),
+		TotalInputBytes:      p.totalInputBytes.Load(),
 	}
 
 	var rssTotal uint64
@@ -142,6 +183,20 @@ func (p *jitProfiler) Snapshot() JitProfilerSnapshot {
 		snapshot.LastExitPID = rec.pid
 		snapshot.LastExitErr = rec.errString
 		snapshot.LastExitAt = rec.finished
+	}
+	if rec, ok := p.lastValidation.Load().(jitValidationRecord); ok {
+		snapshot.LastValidationInputBytes = rec.inputBytes
+		if rec.rssAfter >= rec.rssBefore {
+			snapshot.LastValidationRSSDelta = int64(rec.rssAfter - rec.rssBefore)
+		} else {
+			snapshot.LastValidationRSSDelta = -int64(rec.rssBefore - rec.rssAfter)
+		}
+		if rec.heapAllocAfter >= rec.heapAllocBefore {
+			snapshot.LastValidationHeapDelta = int64(rec.heapAllocAfter - rec.heapAllocBefore)
+		} else {
+			snapshot.LastValidationHeapDelta = -int64(rec.heapAllocBefore - rec.heapAllocAfter)
+		}
+		snapshot.LastValidationAt = rec.validationTime
 	}
 	return snapshot
 }
@@ -177,9 +232,19 @@ func readProcessRSSForPID(pid int) (uint64, error) {
 	return pages * uint64(pageSize), nil
 }
 
+func readParentProcessRSS() (uint64, error) {
+	return readProcessRSSForPID(os.Getpid())
+}
+
+const bytesPerMiB = 1024.0 * 1024.0
+
 func bytesToMiB(b uint64) float64 {
 	const reciprocal = 1.0 / (1024.0 * 1024.0)
 	return float64(b) * reciprocal
+}
+
+func bytesToMiBInt64(b int64) float64 {
+	return float64(b) / bytesPerMiB
 }
 
 func readCgoMetricsSummary() string {
@@ -211,6 +276,16 @@ func readCgoMetricsSummary() string {
 }
 
 func logJitProfilerSnapshot(snapshot JitProfilerSnapshot, loaderTotal, loaderReady, loaderPending int, cgoSummary string, mem *runtime.MemStats) {
+	rssDeltaMB := bytesToMiBInt64(snapshot.LastValidationRSSDelta)
+	heapDeltaMB := bytesToMiBInt64(snapshot.LastValidationHeapDelta)
+	totalInputMB := 0.0
+	if snapshot.TotalInputBytes > 0 {
+		totalInputMB = bytesToMiB(uint64(snapshot.TotalInputBytes))
+	}
+	lastInputMB := 0.0
+	if snapshot.LastValidationInputBytes > 0 {
+		lastInputMB = bytesToMiB(uint64(snapshot.LastValidationInputBytes))
+	}
 	log.Info(
 		"jit profiler snapshot",
 		"machinesLive", snapshot.MachinesLive,
@@ -218,9 +293,16 @@ func logJitProfilerSnapshot(snapshot JitProfilerSnapshot, loaderTotal, loaderRea
 		"machinesExited", snapshot.MachinesExited,
 		"activeProcesses", snapshot.ActiveProcesses,
 		"activeRSSMB", bytesToMiB(snapshot.ActiveRSSBytes),
+		"validationsStarted", snapshot.ValidationsStarted,
+		"validationsCompleted", snapshot.ValidationsCompleted,
+		"totalInputMB", totalInputMB,
 		"lastExitPID", snapshot.LastExitPID,
 		"lastExitErr", snapshot.LastExitErr,
 		"lastExitAt", snapshot.LastExitAt,
+		"lastValidationInputMB", lastInputMB,
+		"lastValidationRSSDeltaMB", rssDeltaMB,
+		"lastValidationHeapDeltaMB", heapDeltaMB,
+		"lastValidationAt", snapshot.LastValidationAt,
 		"loaderTotal", loaderTotal,
 		"loaderReady", loaderReady,
 		"loaderPending", loaderPending,
