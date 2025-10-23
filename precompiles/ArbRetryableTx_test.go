@@ -80,7 +80,7 @@ func TestRetryableRedeem(t *testing.T) {
 	)
 	Require(t, err)
 
-	if gasLeft != storage.StorageWriteCost-storage.StorageWriteZeroCost-storage.StorageReadCost {
+	if gasLeft != storage.StorageWriteCost-storage.StorageWriteZeroCost {
 		// We expect to have some gas left over, because in this test we write a zero, but in other
 		//     use cases the precompile would cause a non-zero write. So the precompile allocates enough gas
 		//     to handle both cases, and some will be left over in this test's use case.
