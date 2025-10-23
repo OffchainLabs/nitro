@@ -73,6 +73,10 @@ func (c *ExecutionRPCServer) MaintenanceStatus(ctx context.Context) (*execution.
 	return c.executionClient.MaintenanceStatus().Await(ctx)
 }
 
+func (c *ExecutionRPCServer) ArbOSVersionForMessageIndex(ctx context.Context, msgIdx arbutil.MessageIndex) (uint64, error) {
+	return c.executionClient.ArbOSVersionForMessageIndex(msgIdx).Await(ctx)
+}
+
 // // ExecutionRecorder methods
 
 // func (c *ExecutionRPCServer) RecordBlockCreation(ctx context.Context, pos arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, wasmTargets []rawdb.WasmTarget) (*execution.RecordResult, error) {

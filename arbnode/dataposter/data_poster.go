@@ -258,11 +258,13 @@ func TxToSignTxArgs(addr common.Address, tx *types.Transaction) (*apitypes.SendT
 		blobs       []kzg4844.Blob
 		commitments []kzg4844.Commitment
 		proofs      []kzg4844.Proof
+		blobVersion byte
 	)
 	if tx.BlobTxSidecar() != nil {
 		blobs = tx.BlobTxSidecar().Blobs
 		commitments = tx.BlobTxSidecar().Commitments
 		proofs = tx.BlobTxSidecar().Proofs
+		blobVersion = tx.BlobTxSidecar().Version
 	}
 	return &apitypes.SendTxArgs{
 		From:                 common.NewMixedcaseAddress(addr),
@@ -278,6 +280,7 @@ func TxToSignTxArgs(addr common.Address, tx *types.Transaction) (*apitypes.SendT
 		ChainID:              (*hexutil.Big)(tx.ChainId()),
 		BlobFeeCap:           (*hexutil.Big)(tx.BlobGasFeeCap()),
 		BlobHashes:           tx.BlobHashes(),
+		BlobVersion:          blobVersion,
 		Blobs:                blobs,
 		Commitments:          commitments,
 		Proofs:               proofs,

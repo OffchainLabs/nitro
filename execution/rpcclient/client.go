@@ -160,6 +160,17 @@ func (c *ExecutionRPCClient) MaintenanceStatus() containers.PromiseInterface[*ex
 	})
 }
 
+func (c *ExecutionRPCClient) ArbOSVersionForMessageIndex(msgIdx arbutil.MessageIndex) containers.PromiseInterface[uint64] {
+	return stopwaiter.LaunchPromiseThread(c, func(ctx context.Context) (uint64, error) {
+		var res uint64
+		err := c.client.CallContext(ctx, &res, execution.RPCNamespace+"_messageIndexToBlockNumber", msgIdx)
+		if err != nil {
+			return 0, convertError(err)
+		}
+		return res, nil
+	})
+}
+
 // func (c *ExecutionRPCClient) RecordBlockCreation(ctx context.Context, pos arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, wasmTargets []rawdb.WasmTarget) (*execution.RecordResult, error) {
 // 	var res *execution.RecordResult
 // 	err := c.client.CallContext(ctx, &res, execution.RPCNamespace+"_recordBlockCreation", pos, msg, wasmTargets)
