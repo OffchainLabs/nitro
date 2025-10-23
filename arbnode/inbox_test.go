@@ -80,7 +80,6 @@ func (w *execClientWrapper) FullSyncProgressMap(ctx context.Context) map[string]
 	return nil
 }
 func (w *execClientWrapper) SetFinalityData(
-	ctx context.Context,
 	safeFinalityData *arbutil.FinalityData,
 	finalizedFinalityData *arbutil.FinalityData,
 	validatedFinalityData *arbutil.FinalityData,
@@ -88,7 +87,7 @@ func (w *execClientWrapper) SetFinalityData(
 	return containers.NewReadyPromise(struct{}{}, nil)
 }
 
-func (w *execClientWrapper) SetConsensusSyncData(ctx context.Context, syncData *execution.ConsensusSyncData) containers.PromiseInterface[struct{}] {
+func (w *execClientWrapper) SetConsensusSyncData(syncData *execution.ConsensusSyncData) containers.PromiseInterface[struct{}] {
 	return containers.NewReadyPromise(struct{}{}, nil)
 }
 

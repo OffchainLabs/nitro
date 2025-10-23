@@ -8,25 +8,28 @@ import (
 	"math/big"
 
 	"github.com/offchainlabs/nitro/arbos/storage"
+	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
 const (
 	gasConstraintTargetOffset uint64 = iota
-	gasConstraintPeriodOffset
+	gasConstraintInertiaOffset
 	gasConstraintBacklogOffset
 )
 
-// GasConstraint tries to keep the gas backlog under the target (per second) for the given period.
+// GasConstraint tries to keep the gas backlog under the target (per second) for the given inertia factor.
+// The inertia can be computed as 30*sqrt(period), where period is the number of seconds which the
+// constraint is acting over. For instance, the default inertia of 102 is an approximation of 30*sqrt(12).
 type GasConstraint struct {
 	target  storage.StorageBackedUint64
-	period  storage.StorageBackedUint64
+	inertia storage.StorageBackedUint64
 	backlog storage.StorageBackedUint64
 }
 
 func OpenGasConstraint(storage *storage.Storage) *GasConstraint {
 	return &GasConstraint{
 		target:  storage.OpenStorageBackedUint64(gasConstraintTargetOffset),
-		period:  storage.OpenStorageBackedUint64(gasConstraintPeriodOffset),
+		inertia: storage.OpenStorageBackedUint64(gasConstraintInertiaOffset),
 		backlog: storage.OpenStorageBackedUint64(gasConstraintBacklogOffset),
 	}
 }
@@ -35,7 +38,7 @@ func (c *GasConstraint) Clear() error {
 	if err := c.target.Clear(); err != nil {
 		return err
 	}
-	if err := c.period.Clear(); err != nil {
+	if err := c.inertia.Clear(); err != nil {
 		return err
 	}
 	if err := c.backlog.Clear(); err != nil {
@@ -168,7 +171,31 @@ func (ps *L2PricingState) Restrict(err error) {
 	ps.storage.Burner().Restrict(err)
 }
 
-func (ps *L2PricingState) AddConstraint(target uint64, period uint64, backlog uint64) error {
+func (ps *L2PricingState) SetConstraintsFromLegacy() error {
+	if err := ps.ClearConstraints(); err != nil {
+		return err
+	}
+	target, err := ps.SpeedLimitPerSecond()
+	if err != nil {
+		return err
+	}
+	inertia, err := ps.PricingInertia()
+	if err != nil {
+		return err
+	}
+	oldBacklog, err := ps.GasBacklog()
+	if err != nil {
+		return err
+	}
+	backlogTolerance, err := ps.BacklogTolerance()
+	if err != nil {
+		return err
+	}
+	backlog := arbmath.SaturatingUSub(oldBacklog, arbmath.SaturatingUMul(backlogTolerance, target))
+	return ps.AddConstraint(target, inertia, backlog)
+}
+
+func (ps *L2PricingState) AddConstraint(target uint64, inertia uint64, backlog uint64) error {
 	subStorage, err := ps.constraints.Push()
 	if err != nil {
 		return fmt.Errorf("failed to push constraint: %w", err)
@@ -177,8 +204,8 @@ func (ps *L2PricingState) AddConstraint(target uint64, period uint64, backlog ui
 	if err := constraint.target.Set(target); err != nil {
 		return fmt.Errorf("failed to set target: %w", err)
 	}
-	if err := constraint.period.Set(period); err != nil {
-		return fmt.Errorf("failed to set period: %w", err)
+	if err := constraint.inertia.Set(inertia); err != nil {
+		return fmt.Errorf("failed to set inertia: %w", err)
 	}
 	if err := constraint.backlog.Set(backlog); err != nil {
 		return fmt.Errorf("failed to set backlog: %w", err)

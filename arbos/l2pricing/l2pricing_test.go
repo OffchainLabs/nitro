@@ -133,10 +133,10 @@ func TestGasConstraints(t *testing.T) {
 		if want := 100*i + 1; target != want {
 			t.Errorf("wrong target: got %v, want %v", target, want)
 		}
-		period, err := constraint.period.Get()
+		inertia, err := constraint.inertia.Get()
 		Require(t, err)
-		if want := 100*i + 2; period != want {
-			t.Errorf("wrong period: got %v, want %v", period, want)
+		if want := 100*i + 2; inertia != want {
+			t.Errorf("wrong inertia: got %v, want %v", inertia, want)
 		}
 		backlog, err := constraint.backlog.Get()
 		Require(t, err)

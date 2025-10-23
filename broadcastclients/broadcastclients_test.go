@@ -47,15 +47,6 @@ func (ts *MockTransactionStreamer) AddBroadcastMessages(feedMessages []*message.
 	return nil
 }
 
-func testMessage() arbostypes.MessageWithMetadataAndBlockInfo {
-	return arbostypes.MessageWithMetadataAndBlockInfo{
-		MessageWithMeta: arbostypes.EmptyTestMessageWithMetadata,
-		BlockHash:       nil,
-		BlockMetadata:   nil,
-		ArbOSVersion:    0,
-	}
-}
-
 // Test that a basic setup of broadcaster and BroadcastClients works
 func TestBasicBroadcastClientSetup(t *testing.T) {
 	t.Parallel()
@@ -144,7 +135,7 @@ func TestBasicBroadcastClientSetup(t *testing.T) {
 	// Send messages with sequential sequence numbers
 	for i := 0; i < messageCount; i++ {
 		// #nosec G115
-		Require(t, b.BroadcastSingle(testMessage(), arbutil.MessageIndex(i)))
+		Require(t, b.BroadcastSingle(arbostypes.TestMessageWithMetadataAndRequestId, arbutil.MessageIndex(i), nil, nil))
 	}
 
 	wg.Wait()
@@ -293,7 +284,7 @@ func TestPrimaryToSecondaryFailover(t *testing.T) {
 	for i := 0; i < initialMessageCount; i++ {
 		// #nosec G115
 		seq := arbutil.MessageIndex(i)
-		err := primaryB.BroadcastSingle(testMessage(), seq)
+		err := primaryB.BroadcastSingle(arbostypes.TestMessageWithMetadataAndRequestId, seq, nil, nil)
 		Require(t, err)
 		time.Sleep(50 * time.Millisecond)
 	}
@@ -329,7 +320,7 @@ func TestPrimaryToSecondaryFailover(t *testing.T) {
 	for i := 0; i < secondaryMessageCount; i++ {
 		// #nosec G115
 		seq := arbutil.MessageIndex(startSeq + i)
-		err := secondaryB.BroadcastSingle(testMessage(), seq)
+		err := secondaryB.BroadcastSingle(arbostypes.TestMessageWithMetadataAndRequestId, seq, nil, nil)
 		Require(t, err)
 		time.Sleep(50 * time.Millisecond)
 	}

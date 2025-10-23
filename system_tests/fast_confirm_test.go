@@ -227,7 +227,7 @@ func setupFastConfirmation(ctx context.Context, t *testing.T) (*NodeBuilder, *le
 		ctx,
 		rawdb.NewTable(l2node.ArbDB, storage.StakerPrefix),
 		l2node.L1Reader,
-		&l1auth, NewFetcherFromConfig(arbnode.ConfigDefaultL1NonSequencerTest()),
+		&l1auth, NewCommonConfigFetcher(arbnode.ConfigDefaultL1NonSequencerTest()),
 		nil,
 		parentChainID,
 	)
@@ -421,7 +421,7 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 		ctx,
 		rawdb.NewTable(l2nodeB.ArbDB, storage.StakerPrefix),
 		l2nodeA.L1Reader,
-		&l1authA, NewFetcherFromConfig(arbnode.ConfigDefaultL1NonSequencerTest()),
+		&l1authA, NewCommonConfigFetcher(arbnode.ConfigDefaultL1NonSequencerTest()),
 		nil,
 		parentChainID,
 	)
@@ -506,7 +506,7 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 		ctx,
 		rawdb.NewTable(l2nodeB.ArbDB, storage.StakerPrefix),
 		l2nodeB.L1Reader,
-		&l1authB, NewFetcherFromConfig(cfg),
+		&l1authB, NewCommonConfigFetcher(cfg),
 		nil,
 		parentChainID,
 	)
