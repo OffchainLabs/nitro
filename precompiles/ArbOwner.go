@@ -454,7 +454,12 @@ func (con ArbOwner) SetCalldataPriceIncrease(c ctx, _ mech, enable bool) error {
 	return c.State.Features().SetCalldataPriceIncrease(enable)
 }
 
-// SetGasPricingConstraints sets the gas pricing constraints used by the Multi-Constraint Pricer.
+// SetGasBacklog sets the L2 gas backlog directly (used by single-constraint pricing model only)
+func (con ArbOwner) SetGasBacklog(c ctx, evm mech, backlog uint64) error {
+	return c.State.L2PricingState().SetGasBacklog(backlog)
+}
+
+// SetGasPricingConstraints sets the gas pricing constraints used by the multi-constraint pricing model
 func (con ArbOwner) SetGasPricingConstraints(c ctx, evm mech, constraints [][3]uint64) error {
 	err := c.State.L2PricingState().ClearConstraints()
 	if err != nil {

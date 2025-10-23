@@ -53,7 +53,7 @@ func TestFailToSetInvalidConstraints(t *testing.T) {
 	err := arbOwner.SetGasPricingConstraints(callCtx, evm, [][3]uint64{{0, 17, 1000}})
 	require.Error(t, err)
 
-	// Zero period
+	// Zero inertia
 	err = arbOwner.SetGasPricingConstraints(callCtx, evm, [][3]uint64{{10_000_000, 0, 0}})
 	require.Error(t, err)
 }
@@ -65,8 +65,8 @@ func TestConstraintsStorage(t *testing.T) {
 
 	// Set constraints
 	constraints := [][3]uint64{
-		{30_000_000, 1, 800_000},       // short-term
-		{15_000_000, 86400, 1_600_000}, // long-term
+		{30_000_000, 1, 800_000},     // short-term
+		{15_000_000, 102, 1_600_000}, // long-term
 	}
 	err := arbOwner.SetGasPricingConstraints(callCtx, evm, constraints)
 	require.NoError(t, err)
@@ -97,7 +97,7 @@ func TestConstraintsStorage(t *testing.T) {
 
 	secondPeriod, err := second.Period()
 	require.NoError(t, err)
-	require.Equal(t, uint64(86400), secondPeriod)
+	require.Equal(t, uint64(102), secondInertia)
 
 	secondBacklog, err := second.Backlog()
 	require.NoError(t, err)
@@ -110,7 +110,7 @@ func TestConstraintsStorage(t *testing.T) {
 	require.Equal(t, uint64(30_000_000), result[0][0])
 	require.Equal(t, uint64(1), result[0][1])
 	require.Equal(t, uint64(15_000_000), result[1][0])
-	require.Equal(t, uint64(86400), result[1][1])
+	require.Equal(t, uint64(102), result[1][1])
 
 	// Set new constraints
 	constraints = [][3]uint64{

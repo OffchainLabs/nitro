@@ -304,7 +304,7 @@ func (con ArbGasInfo) GetGasPricingConstraints(c ctx, evm mech) ([][3]uint64, er
 		if err != nil {
 			return nil, err
 		}
-		period, err := constraint.Period()
+		inertia, err := constraint.Inertia()
 		if err != nil {
 			return nil, err
 		}
@@ -315,7 +315,7 @@ func (con ArbGasInfo) GetGasPricingConstraints(c ctx, evm mech) ([][3]uint64, er
 
 		constraints = append(constraints, [3]uint64{
 			target,
-			period,
+			inertia,
 			backlog,
 		})
 	}
