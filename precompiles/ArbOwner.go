@@ -463,16 +463,16 @@ func (con ArbOwner) SetGasPricingConstraints(c ctx, evm mech, constraints [][3]u
 
 	for _, constraint := range constraints {
 		target := constraint[0]
-		period := constraint[1]
+		inertia := constraint[1]
 		backlog := constraint[2]
 
-		if target == 0 || period == 0 {
-			return fmt.Errorf("invalid constraint with target %d and period %d", target, period)
+		if target == 0 || inertia == 0 {
+			return fmt.Errorf("invalid constraint with target %d and inertia %d", target, inertia)
 		}
 
-		err := c.State.L2PricingState().AddConstraint(target, period, backlog)
+		err := c.State.L2PricingState().AddConstraint(target, inertia, backlog)
 		if err != nil {
-			return fmt.Errorf("failed to add constraint (target: %d, period: %d): %w", target, period, err)
+			return fmt.Errorf("failed to add constraint (target: %d, inertia: %d): %w", target, inertia, err)
 		}
 	}
 	return nil
