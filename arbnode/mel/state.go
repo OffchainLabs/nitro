@@ -27,7 +27,7 @@ type State struct {
 	MsgCount                           uint64
 	BatchCount                         uint64
 	DelayedMessagesRead                uint64
-	DelayedMessagedSeen                uint64
+	DelayedMessagesSeen                uint64
 	DelayedMessageMerklePartials       []common.Hash `rlp:"optional"`
 
 	delayedMessageBacklog *DelayedMessageBacklog // delayedMessageBacklog is initialized once in the Start fsm step of mel runner and is persisted across all future states
@@ -118,7 +118,7 @@ func (s *State) Clone() *State {
 		MsgCount:                           s.MsgCount,
 		BatchCount:                         s.BatchCount,
 		DelayedMessagesRead:                s.DelayedMessagesRead,
-		DelayedMessagedSeen:                s.DelayedMessagedSeen,
+		DelayedMessagesSeen:                s.DelayedMessagesSeen,
 		DelayedMessageMerklePartials:       delayedMessageMerklePartials,
 		delayedMessageBacklog:              delayedMessageBacklog,
 		readCountFromBacklog:               s.readCountFromBacklog,
@@ -147,14 +147,14 @@ func (s *State) AccumulateDelayedMessage(msg *DelayedInboxMessage) error {
 	if s.delayedMessageBacklog != nil {
 		if err := s.delayedMessageBacklog.Add(
 			&DelayedMessageBacklogEntry{
-				Index:                       s.DelayedMessagedSeen,
+				Index:                       s.DelayedMessagesSeen,
 				MsgHash:                     msgHash,
 				MelStateParentChainBlockNum: s.ParentChainBlockNumber,
 			}); err != nil {
 			return err
 		}
 		// Found init message
-		if s.DelayedMessagedSeen == 0 {
+		if s.DelayedMessagesSeen == 0 {
 			s.delayedMessageBacklog.setInitMsg(msg)
 		}
 	}
@@ -191,7 +191,7 @@ func (s *State) SetReadCountFromBacklog(count uint64) { s.readCountFromBacklog =
 
 func (s *State) ReorgTo(newState *State) error {
 	delayedMessageBacklog := s.delayedMessageBacklog
-	if err := delayedMessageBacklog.reorg(newState.DelayedMessagedSeen); err != nil {
+	if err := delayedMessageBacklog.reorg(newState.DelayedMessagesSeen); err != nil {
 		return err
 	}
 	newState.delayedMessageBacklog = delayedMessageBacklog

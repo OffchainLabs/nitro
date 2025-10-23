@@ -90,7 +90,7 @@ type MessageExtractor struct {
 	addrs             *chaininfo.RollupAddresses
 	melDB             *Database
 	msgConsumer       mel.MessageConsumer
-	dataProviders     []daprovider.Reader
+	dataProviders     *daprovider.ReaderRegistry
 	fsm               *fsm.Fsm[action, FSMState]
 	caughtUp          bool
 	caughtUpChan      chan struct{}
@@ -107,7 +107,7 @@ func NewMessageExtractor(
 	rollupAddrs *chaininfo.RollupAddresses,
 	melDB *Database,
 	msgConsumer mel.MessageConsumer,
-	dataProviders []daprovider.Reader,
+	dataProviders *daprovider.ReaderRegistry,
 ) (*MessageExtractor, error) {
 	fsm, err := newFSM(Start)
 	if err != nil {
@@ -247,7 +247,7 @@ func (m *MessageExtractor) GetDelayedCount(ctx context.Context, block uint64) (u
 	if err != nil {
 		return 0, err
 	}
-	return state.DelayedMessagedSeen, nil
+	return state.DelayedMessagesSeen, nil
 }
 
 func (m *MessageExtractor) GetBatchMetadata(seqNum uint64) (mel.BatchMetadata, error) {

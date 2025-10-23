@@ -9,7 +9,7 @@ import (
 
 // InitializeDelayedMessageBacklog is to be only called by the Start fsm step of MEL. This function fills the backlog based on the seen and read count from the given mel state
 func InitializeDelayedMessageBacklog(ctx context.Context, d *mel.DelayedMessageBacklog, db *Database, state *mel.State, finalizedAndReadIndexFetcher func(context.Context) (uint64, error)) error {
-	if state.DelayedMessagedSeen == 0 && state.DelayedMessagesRead == 0 { // this is the first mel state so no need to initialize backlog even if the state isnt finalized yet
+	if state.DelayedMessagesSeen == 0 && state.DelayedMessagesRead == 0 { // this is the first mel state so no need to initialize backlog even if the state isnt finalized yet
 		return nil
 	}
 	finalizedDelayedMessagesRead := state.DelayedMessagesRead // Assume to be finalized, then update if needed
@@ -20,7 +20,7 @@ func InitializeDelayedMessageBacklog(ctx context.Context, d *mel.DelayedMessageB
 			return err
 		}
 	}
-	if state.DelayedMessagedSeen == state.DelayedMessagesRead && state.DelayedMessagesRead <= finalizedDelayedMessagesRead {
+	if state.DelayedMessagesSeen == state.DelayedMessagesRead && state.DelayedMessagesRead <= finalizedDelayedMessagesRead {
 		return nil
 	}
 	// To make the delayedMessageBacklog reorg resistant we will need to add more delayedMessageBacklogEntry even though those messages are `Read`
@@ -30,12 +30,12 @@ func InitializeDelayedMessageBacklog(ctx context.Context, d *mel.DelayedMessageB
 	if err != nil {
 		return err
 	}
-	if uint64(len(delayedMsgIndexToParentChainBlockNum)) < state.DelayedMessagedSeen-targetDelayedMessagesRead {
-		return fmt.Errorf("number of mappings from index to ParentChainBlockNum: %d are insufficient, needed atleast: %d", uint64(len(delayedMsgIndexToParentChainBlockNum)), state.DelayedMessagedSeen-targetDelayedMessagesRead)
+	if uint64(len(delayedMsgIndexToParentChainBlockNum)) < state.DelayedMessagesSeen-targetDelayedMessagesRead {
+		return fmt.Errorf("number of mappings from index to ParentChainBlockNum: %d are insufficient, needed atleast: %d", uint64(len(delayedMsgIndexToParentChainBlockNum)), state.DelayedMessagesSeen-targetDelayedMessagesRead)
 	}
 
 	// Create DelayedMessageBacklogEntry for all the delayed messages that are seen but not read
-	for index := targetDelayedMessagesRead; index < state.DelayedMessagedSeen; index++ {
+	for index := targetDelayedMessagesRead; index < state.DelayedMessagesSeen; index++ {
 		msg, err := db.fetchDelayedMessage(index)
 		if err != nil {
 			return err
@@ -57,7 +57,7 @@ func InitializeDelayedMessageBacklog(ctx context.Context, d *mel.DelayedMessageB
 }
 
 func indexToParentChainBlockMap(ctx context.Context, targetDelayedMessagesRead uint64, db *Database, state *mel.State) (map[uint64]uint64, error) {
-	// We first find the melState whose DelayedMessagedSeen is just before the targetDelayedMessagesRead
+	// We first find the melState whose DelayedMessagesSeen is just before the targetDelayedMessagesRead
 	var prev *mel.State
 	var err error
 	delayedMsgIndexToParentChainBlockNum := make(map[uint64]uint64)
@@ -67,12 +67,12 @@ func indexToParentChainBlockMap(ctx context.Context, targetDelayedMessagesRead u
 		if err != nil {
 			return nil, err
 		}
-		if curr.DelayedMessagedSeen > prev.DelayedMessagedSeen { // Meaning the 'curr' melState has seen some delayed messages
-			for j := prev.DelayedMessagedSeen; j < curr.DelayedMessagedSeen; j++ {
+		if curr.DelayedMessagesSeen > prev.DelayedMessagesSeen { // Meaning the 'curr' melState has seen some delayed messages
+			for j := prev.DelayedMessagesSeen; j < curr.DelayedMessagesSeen; j++ {
 				delayedMsgIndexToParentChainBlockNum[j] = curr.ParentChainBlockNumber
 			}
 		}
-		if prev.DelayedMessagedSeen <= targetDelayedMessagesRead {
+		if prev.DelayedMessagesSeen <= targetDelayedMessagesRead {
 			break
 		}
 		curr = prev

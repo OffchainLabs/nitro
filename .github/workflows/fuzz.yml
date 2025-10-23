@@ -1,4 +1,6 @@
-name: "fuzz"
+---
+name: Fuzz Tests
+
 on:
   workflow_dispatch:
   schedule:
@@ -10,31 +12,38 @@ permissions:
 
 jobs:
   list:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
+    runs-on: ubuntu-4
+
     steps:
       - uses: actions/checkout@v5
-      - uses: actions/setup-go@v5
         with:
-          go-version: 1.24.x
+          submodules: recursive
+
+      - name: Setup CI
+        uses: ./.github/actions/ci-setup
+
+      - name: Build
+        run: make build test-go-deps -j
+
       - id: list
         uses: shogo82148/actions-go-fuzz/list@v1
     outputs:
       fuzz-tests: ${{steps.list.outputs.fuzz-tests}}
 
   fuzz:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-4
     timeout-minutes: 360
     needs: list
     strategy:
       fail-fast: false
       matrix:
         include: ${{fromJson(needs.list.outputs.fuzz-tests)}}
+
     steps:
       - uses: actions/checkout@v5
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
-          go-version: 1.24.x
+          go-version-file: "go.mod"
       - uses: shogo82148/actions-go-fuzz/run@v1
         with:
           packages: ${{ matrix.package }}

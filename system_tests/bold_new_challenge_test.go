@@ -134,7 +134,7 @@ func testChallengeProtocolBOLDVirtualBlocks(t *testing.T, wrongAtFirstVirtual bo
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithBoldDeployment()
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
 
 	// Block validation requires db hash scheme
 	builder.RequireScheme(t, rawdb.HashScheme)
@@ -330,7 +330,7 @@ func startBoldChallengeManager(t *testing.T, ctx context.Context, builder *NodeB
 		rawdb.NewTable(node.ConsensusNode.ArbDB, storage.StakerPrefix),
 		node.ConsensusNode.L1Reader,
 		&txOpts,
-		NewFetcherFromConfig(builder.nodeConfig),
+		NewCommonConfigFetcher(builder.nodeConfig),
 		node.ConsensusNode.SyncMonitor,
 		builder.L1Info.Signer.ChainID(),
 	)

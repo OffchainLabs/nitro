@@ -4,10 +4,48 @@
 package l2pricing
 
 import (
+	"fmt"
 	"math/big"
 
 	"github.com/offchainlabs/nitro/arbos/storage"
+	"github.com/offchainlabs/nitro/util/arbmath"
 )
+
+const (
+	gasConstraintTargetOffset uint64 = iota
+	gasConstraintInertiaOffset
+	gasConstraintBacklogOffset
+)
+
+// GasConstraint tries to keep the gas backlog under the target (per second) for the given inertia factor.
+// The inertia can be computed as 30*sqrt(period), where period is the number of seconds which the
+// constraint is acting over. For instance, the default inertia of 102 is an approximation of 30*sqrt(12).
+type GasConstraint struct {
+	target  storage.StorageBackedUint64
+	inertia storage.StorageBackedUint64
+	backlog storage.StorageBackedUint64
+}
+
+func OpenGasConstraint(storage *storage.Storage) *GasConstraint {
+	return &GasConstraint{
+		target:  storage.OpenStorageBackedUint64(gasConstraintTargetOffset),
+		inertia: storage.OpenStorageBackedUint64(gasConstraintInertiaOffset),
+		backlog: storage.OpenStorageBackedUint64(gasConstraintBacklogOffset),
+	}
+}
+
+func (c *GasConstraint) Clear() error {
+	if err := c.target.Clear(); err != nil {
+		return err
+	}
+	if err := c.inertia.Clear(); err != nil {
+		return err
+	}
+	if err := c.backlog.Clear(); err != nil {
+		return err
+	}
+	return nil
+}
 
 type L2PricingState struct {
 	storage             *storage.Storage
@@ -19,6 +57,7 @@ type L2PricingState struct {
 	pricingInertia      storage.StorageBackedUint64
 	backlogTolerance    storage.StorageBackedUint64
 	perTxGasLimit       storage.StorageBackedUint64
+	constraints         *storage.SubStorageVector
 }
 
 const (
@@ -31,6 +70,8 @@ const (
 	backlogToleranceOffset
 	perTxGasLimitOffset
 )
+
+var constraintsKey []byte = []byte{0}
 
 const GethBlockGasLimit = 1 << 50
 
@@ -55,6 +96,7 @@ func OpenL2PricingState(sto *storage.Storage) *L2PricingState {
 		pricingInertia:      sto.OpenStorageBackedUint64(pricingInertiaOffset),
 		backlogTolerance:    sto.OpenStorageBackedUint64(backlogToleranceOffset),
 		perTxGasLimit:       sto.OpenStorageBackedUint64(perTxGasLimitOffset),
+		constraints:         storage.OpenSubStorageVector(sto.OpenSubStorage(constraintsKey)),
 	}
 }
 
@@ -127,4 +169,72 @@ func (ps *L2PricingState) SetBacklogTolerance(val uint64) error {
 
 func (ps *L2PricingState) Restrict(err error) {
 	ps.storage.Burner().Restrict(err)
+}
+
+func (ps *L2PricingState) SetConstraintsFromLegacy() error {
+	if err := ps.ClearConstraints(); err != nil {
+		return err
+	}
+	target, err := ps.SpeedLimitPerSecond()
+	if err != nil {
+		return err
+	}
+	inertia, err := ps.PricingInertia()
+	if err != nil {
+		return err
+	}
+	oldBacklog, err := ps.GasBacklog()
+	if err != nil {
+		return err
+	}
+	backlogTolerance, err := ps.BacklogTolerance()
+	if err != nil {
+		return err
+	}
+	backlog := arbmath.SaturatingUSub(oldBacklog, arbmath.SaturatingUMul(backlogTolerance, target))
+	return ps.AddConstraint(target, inertia, backlog)
+}
+
+func (ps *L2PricingState) AddConstraint(target uint64, inertia uint64, backlog uint64) error {
+	subStorage, err := ps.constraints.Push()
+	if err != nil {
+		return fmt.Errorf("failed to push constraint: %w", err)
+	}
+	constraint := OpenGasConstraint(subStorage)
+	if err := constraint.target.Set(target); err != nil {
+		return fmt.Errorf("failed to set target: %w", err)
+	}
+	if err := constraint.inertia.Set(inertia); err != nil {
+		return fmt.Errorf("failed to set inertia: %w", err)
+	}
+	if err := constraint.backlog.Set(backlog); err != nil {
+		return fmt.Errorf("failed to set backlog: %w", err)
+	}
+	return nil
+}
+
+func (ps *L2PricingState) ConstraintsLength() (uint64, error) {
+	return ps.constraints.Length()
+}
+
+func (ps *L2PricingState) OpenConstraintAt(i uint64) *GasConstraint {
+	return OpenGasConstraint(ps.constraints.At(i))
+}
+
+func (ps *L2PricingState) ClearConstraints() error {
+	length, err := ps.ConstraintsLength()
+	if err != nil {
+		return err
+	}
+	for range length {
+		subStorage, err := ps.constraints.Pop()
+		if err != nil {
+			return err
+		}
+		constraint := OpenGasConstraint(subStorage)
+		if err := constraint.Clear(); err != nil {
+			return err
+		}
+	}
+	return nil
 }

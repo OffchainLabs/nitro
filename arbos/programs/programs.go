@@ -266,9 +266,9 @@ func (p Programs) CallProgram(
 
 		maxGasToReturn := startingGas - evmCost
 		contract.Gas = arbmath.MinInt(contract.Gas, maxGasToReturn)
-
-		attributeWasmComputation(contract, startingGas)
 	}
+	attributeWasmComputation(contract, startingGas)
+
 	// #nosec G115
 	metrics.GetOrRegisterCounter(fmt.Sprintf("arb/arbos/stylus/gas_used/%s", runCtx.RunModeMetricName()), nil).Inc(int64(startingGas - contract.Gas))
 	return ret, err
@@ -282,19 +282,15 @@ func attributeWasmComputation(contract *vm.Contract, startingGas uint64) {
 
 	var residual uint64
 	if accountedGas > usedGas {
-		log.Error("negative WASM computation residual, usedGas", usedGas, "accounted", accountedGas)
+		log.Trace("negative WASM computation residual", "usedGas", usedGas, "accountedGas", accountedGas)
 		residual = 0
 	} else {
 		residual = usedGas - accountedGas
 	}
 
-	if prev := contract.UsedMultiGas.Get(multigas.ResourceKindWasmComputation); prev != 0 {
-		log.Error("WASM computation gas already set, prev", prev)
-	}
-
 	var overflow bool
 	if contract.UsedMultiGas, overflow = contract.UsedMultiGas.SafeIncrement(multigas.ResourceKindWasmComputation, residual); overflow {
-		log.Error("WASM computation gas overflow, residual", residual)
+		log.Trace("WASM computation gas overflow", "residual", residual)
 	}
 }
 
@@ -455,7 +451,7 @@ func (p Programs) SetProgramCached(
 	}
 
 	// pay to cache the program, or to re-cache in case of upcoming revert
-	if err := p.programs.Burner().Burn(uint64(program.initCost)); err != nil {
+	if err := p.programs.Burner().Burn(multigas.ResourceKindStorageAccess, uint64(program.initCost)); err != nil {
 		return err
 	}
 	moduleHash, err := p.moduleHashes.Get(codeHash)

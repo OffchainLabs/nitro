@@ -131,10 +131,10 @@ func (d *Database) fetchBatchMetadata(seqNum uint64) (*mel.BatchMetadata, error)
 
 func (d *Database) SaveDelayedMessages(ctx context.Context, state *mel.State, delayedMessages []*mel.DelayedInboxMessage) error {
 	dbBatch := d.db.NewBatch()
-	if state.DelayedMessagedSeen < uint64(len(delayedMessages)) {
-		return fmt.Errorf("mel state's DelayedMessagedSeen: %d is lower than number of delayed messages: %d queued to be added", state.DelayedMessagedSeen, len(delayedMessages))
+	if state.DelayedMessagesSeen < uint64(len(delayedMessages)) {
+		return fmt.Errorf("mel state's DelayedMessagesSeen: %d is lower than number of delayed messages: %d queued to be added", state.DelayedMessagesSeen, len(delayedMessages))
 	}
-	firstPos := state.DelayedMessagedSeen - uint64(len(delayedMessages))
+	firstPos := state.DelayedMessagesSeen - uint64(len(delayedMessages))
 	for i, msg := range delayedMessages {
 		key := dbKey(dbschema.MelDelayedMessagePrefix, firstPos+uint64(i)) // #nosec G115
 		delayedBytes, err := rlp.EncodeToBytes(*msg)
@@ -209,7 +209,7 @@ func (d *Database) checkAgainstAccumulator(ctx context.Context, state *mel.State
 	if err != nil {
 		return false, err
 	}
-	for i := targetState.DelayedMessagedSeen; i < index; i++ {
+	for i := targetState.DelayedMessagesSeen; i < index; i++ {
 		delayed, err := d.fetchDelayedMessage(i)
 		if err != nil {
 			return false, err
@@ -225,7 +225,7 @@ func (d *Database) checkAgainstAccumulator(ctx context.Context, state *mel.State
 		return false, err
 	}
 	// Accumulate rest of the message-hashes in backlog
-	for i := index + 1; i < state.DelayedMessagedSeen; i++ {
+	for i := index + 1; i < state.DelayedMessagesSeen; i++ {
 		backlogEntry, err := delayedMessageBacklog.Get(i)
 		if err != nil {
 			return false, err
@@ -254,7 +254,7 @@ func (d *Database) checkAgainstAccumulator(ctx context.Context, state *mel.State
 		return false, err
 	}
 	if have == want {
-		state.SetReadCountFromBacklog(state.DelayedMessagedSeen) // meaning all messages from index to state.DelayedMessagedSeen-1 inclusive have been pre-read
+		state.SetReadCountFromBacklog(state.DelayedMessagesSeen) // meaning all messages from index to state.DelayedMessagesSeen-1 inclusive have been pre-read
 		return true, nil
 	}
 	return false, nil

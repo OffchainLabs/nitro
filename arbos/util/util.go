@@ -27,7 +27,9 @@ var ParseL2ToL1TxLog func(*types.Log) (*precompilesgen.ArbSysL2ToL1Tx, error)
 var PackInternalTxDataStartBlock func(...interface{}) ([]byte, error)
 var UnpackInternalTxDataStartBlock func([]byte) (map[string]interface{}, error)
 var PackInternalTxDataBatchPostingReport func(...interface{}) ([]byte, error)
+var PackInternalTxDataBatchPostingReportV2 func(...interface{}) ([]byte, error)
 var UnpackInternalTxDataBatchPostingReport func([]byte) (map[string]interface{}, error)
+var UnpackInternalTxDataBatchPostingReportV2 func([]byte) (map[string]interface{}, error)
 var PackArbRetryableTxRedeem func(...interface{}) ([]byte, error)
 
 func init() {
@@ -45,6 +47,7 @@ func init() {
 	acts := precompilesgen.ArbosActsABI
 	PackInternalTxDataStartBlock, UnpackInternalTxDataStartBlock = NewCallParser(acts, "startBlock")
 	PackInternalTxDataBatchPostingReport, UnpackInternalTxDataBatchPostingReport = NewCallParser(acts, "batchPostingReport")
+	PackInternalTxDataBatchPostingReportV2, UnpackInternalTxDataBatchPostingReportV2 = NewCallParser(acts, "batchPostingReportV2")
 	PackArbRetryableTxRedeem, _ = NewCallParser(precompilesgen.ArbRetryableTxABI, "redeem")
 }
 
@@ -195,10 +198,6 @@ func IntToHash(val int64) common.Hash {
 
 func UintToHash(val uint64) common.Hash {
 	return common.BigToHash(new(big.Int).SetUint64(val))
-}
-
-func HashPlusInt(x common.Hash, y int64) common.Hash {
-	return common.BigToHash(new(big.Int).Add(x.Big(), big.NewInt(y))) // BUGBUG: BigToHash(x) converts abs(x) to a Hash
 }
 
 func RemapL1Address(l1Addr common.Address) common.Address {

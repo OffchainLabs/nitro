@@ -37,7 +37,7 @@ func TestL3ChallengeProtocolBOLD(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithBoldDeployment()
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
 
 	// Block validation requires db hash scheme.
 	builder.execConfig.Caching.StateScheme = rawdb.HashScheme
@@ -251,7 +251,7 @@ func startL3BoldChallengeManager(t *testing.T, ctx context.Context, builder *Nod
 		rawdb.NewTable(node.ConsensusNode.ArbDB, storage.StakerPrefix),
 		builder.L3.ConsensusNode.L1Reader,
 		&txOpts,
-		NewFetcherFromConfig(builder.nodeConfig),
+		NewCommonConfigFetcher(builder.nodeConfig),
 		node.ConsensusNode.SyncMonitor,
 		builder.L2Info.Signer.ChainID(),
 	)

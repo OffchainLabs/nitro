@@ -38,7 +38,6 @@ func TestMessageExtractionLayer_SequencerBatchMessageEquivalence(t *testing.T) {
 
 	builder := NewNodeBuilder(ctx).
 		DefaultConfig(t, true).
-		WithBoldDeployment().
 		WithDelayBuffer(0)
 	builder.L2Info.GenerateAccount("User2")
 	builder.nodeConfig.BatchPoster.MaxDelay = time.Hour     // set high max-delay so we can test the delay buffer
@@ -172,7 +171,6 @@ func TestMessageExtractionLayer_SequencerBatchMessageEquivalence_Blobs(t *testin
 
 	builder := NewNodeBuilder(ctx).
 		DefaultConfig(t, true).
-		WithBoldDeployment().
 		WithDelayBuffer(threshold)
 	builder.L2Info.GenerateAccount("User2")
 	builder.nodeConfig.BatchPoster.Post4844Blobs = true
@@ -204,13 +202,15 @@ func TestMessageExtractionLayer_SequencerBatchMessageEquivalence_Blobs(t *testin
 	melDB := melrunner.NewDatabase(builder.L2.ConsensusNode.ArbDB)
 	Require(t, melDB.SaveState(ctx, melState)) // save head mel state
 	mockMsgConsumer := &mockMELDB{savedMsgs: make([]*arbostypes.MessageWithMetadata, 0)}
+	blobReaderRegistry := daprovider.NewReaderRegistry()
+	Require(t, blobReaderRegistry.SetupBlobReader(daprovider.NewReaderForBlobReader(builder.L1.blobReader)))
 	extractor, err := melrunner.NewMessageExtractor(
 		melrunner.DefaultMessageExtractionConfig,
 		l1Reader.Client(),
 		builder.addresses,
 		melDB,
 		mockMsgConsumer,
-		[]daprovider.Reader{daprovider.NewReaderForBlobReader(builder.L1.blobReader)},
+		blobReaderRegistry,
 	)
 	Require(t, err)
 	extractor.StopWaiter.Start(ctx, extractor)
@@ -223,6 +223,7 @@ func TestMessageExtractionLayer_SequencerBatchMessageEquivalence_Blobs(t *testin
 		txs = append(txs, tx)
 	}
 	builder.nodeConfig.BatchPoster.MaxDelay = 0
+	builder.L2.ConsensusConfigFetcher.Set(builder.nodeConfig)
 	_, err = builder.L2.ConsensusNode.BatchPoster.MaybePostSequencerBatch(ctx)
 	Require(t, err)
 	for _, tx := range txs {
@@ -279,22 +280,22 @@ func TestMessageExtractionLayer_SequencerBatchMessageEquivalence_Blobs(t *testin
 	}
 
 	// Check that MEL extracted the same number of delayed messages the inbox tracker has seen.
-	if lastState.DelayedMessagedSeen != numDelayedMessages {
+	if lastState.DelayedMessagesSeen != numDelayedMessages {
 		t.Fatalf(
 			"MEL delayed message count %d does not match inbox tracker %d",
-			lastState.DelayedMessagedSeen,
+			lastState.DelayedMessagesSeen,
 			numDelayedMessages,
 		)
 	}
 	// Start from 1 to ignore the init message.
-	readHelperState := &mel.State{DelayedMessagedSeen: 1}
+	readHelperState := &mel.State{DelayedMessagesSeen: 1}
 	readHelperState.SetDelayedMessageBacklog(&mel.DelayedMessageBacklog{})
 	readHelperState.SetReadCountFromBacklog(numDelayedMessages) // skip checking against accumulator- not the purpose of this test
 	for i := uint64(1); i < numDelayedMessages; i++ {
 		fromInboxTracker, err := builder.L2.ConsensusNode.InboxTracker.GetDelayedMessage(ctx, i)
 		Require(t, err)
 		Require(t, readHelperState.AccumulateDelayedMessage(&mel.DelayedInboxMessage{Message: fromInboxTracker}))
-		readHelperState.DelayedMessagedSeen++
+		readHelperState.DelayedMessagesSeen++
 		fromMelDB, err := melDB.ReadDelayedMessage(ctx, readHelperState, i)
 		Require(t, err)
 		// Check the messages we extracted from MEL and the inbox tracker are the same.
@@ -314,7 +315,6 @@ func TestMessageExtractionLayer_DelayedMessageEquivalence_Simple(t *testing.T) {
 
 	builder := NewNodeBuilder(ctx).
 		DefaultConfig(t, true).
-		WithBoldDeployment().
 		WithDelayBuffer(threshold)
 	builder.L2Info.GenerateAccount("User2")
 	builder.nodeConfig.BatchPoster.MaxDelay = time.Hour     // set high max-delay so we can test the delay buffer
@@ -374,23 +374,23 @@ func TestMessageExtractionLayer_DelayedMessageEquivalence_Simple(t *testing.T) {
 	Require(t, err)
 
 	// Check that MEL extracted the same number of delayed messages the inbox tracker has seen.
-	if lastState.DelayedMessagedSeen != numDelayedMessages {
+	if lastState.DelayedMessagesSeen != numDelayedMessages {
 		t.Fatalf(
 			"MEL delayed message count %d does not match inbox tracker %d",
-			lastState.DelayedMessagedSeen,
+			lastState.DelayedMessagesSeen,
 			numDelayedMessages,
 		)
 	}
 
 	// Start from 1 to ignore the init message.
-	readHelperState := &mel.State{DelayedMessagedSeen: 1}
+	readHelperState := &mel.State{DelayedMessagesSeen: 1}
 	readHelperState.SetDelayedMessageBacklog(&mel.DelayedMessageBacklog{})
 	readHelperState.SetReadCountFromBacklog(numDelayedMessages) // skip checking against accumulator- not the purpose of this test
 	for i := uint64(1); i < numDelayedMessages; i++ {
 		fromInboxTracker, err := builder.L2.ConsensusNode.InboxTracker.GetDelayedMessage(ctx, i)
 		Require(t, err)
 		Require(t, readHelperState.AccumulateDelayedMessage(&mel.DelayedInboxMessage{Message: fromInboxTracker}))
-		readHelperState.DelayedMessagedSeen++
+		readHelperState.DelayedMessagesSeen++
 		fromMelDB, err := melDB.ReadDelayedMessage(ctx, readHelperState, i)
 		Require(t, err)
 		// Check the messages we extracted from MEL and the inbox tracker are the same.
@@ -465,7 +465,6 @@ func TestMessageExtractionLayer_RunningNode(t *testing.T) {
 
 	builder := NewNodeBuilder(ctx).
 		DefaultConfig(t, true).
-		WithBoldDeployment().
 		WithDelayBuffer(threshold)
 
 	builder.nodeConfig.MessageExtraction.Enable = true
@@ -529,7 +528,6 @@ func TestMessageExtractionLayer_TxStreamerHandleReorg(t *testing.T) {
 
 	builder := NewNodeBuilder(ctx).
 		DefaultConfig(t, true).
-		WithBoldDeployment().
 		WithDelayBuffer(threshold)
 
 	builder.nodeConfig.MessageExtraction.Enable = true
@@ -600,6 +598,7 @@ func TestMessageExtractionLayer_TxStreamerHandleReorg(t *testing.T) {
 		txs = append(txs, tx)
 	}
 	builder.nodeConfig.BatchPoster.MaxDelay = 0
+	builder.L2.ConsensusConfigFetcher.Set(builder.nodeConfig)
 	_, err = builder.L2.ConsensusNode.BatchPoster.MaybePostSequencerBatch(ctx)
 	Require(t, err)
 	for _, tx := range txs {
@@ -637,7 +636,6 @@ func TestMessageExtractionLayer_UseArbDBForStoringDelayedMessages(t *testing.T) 
 
 	builder := NewNodeBuilder(ctx).
 		DefaultConfig(t, true).
-		WithBoldDeployment().
 		WithDelayBuffer(threshold)
 	builder.nodeConfig.BatchPoster.MaxDelay = time.Hour     // set high max-delay so we can test the delay buffer
 	builder.nodeConfig.BatchPoster.PollInterval = time.Hour // set a high poll interval to avoid continuous polling
@@ -705,10 +703,10 @@ func TestMessageExtractionLayer_UseArbDBForStoringDelayedMessages(t *testing.T) 
 	Require(t, err)
 
 	// Check that MEL extracted the same number of delayed messages the inbox tracker has seen.
-	if lastState.DelayedMessagedSeen != numDelayedMessages {
+	if lastState.DelayedMessagesSeen != numDelayedMessages {
 		t.Fatalf(
 			"MEL delayed message count %d does not match inbox tracker %d",
-			lastState.DelayedMessagedSeen,
+			lastState.DelayedMessagesSeen,
 			numDelayedMessages,
 		)
 	}
@@ -723,8 +721,8 @@ func TestMessageExtractionLayer_UseArbDBForStoringDelayedMessages(t *testing.T) 
 	err = melrunner.InitializeDelayedMessageBacklog(ctx, delayedMessageBacklog, melDB, newInitialState, extractor.GetFinalizedDelayedMessagesRead)
 	Require(t, err)
 	newInitialState.SetDelayedMessageBacklog(delayedMessageBacklog)
-	newInitialState.SetReadCountFromBacklog(newInitialState.DelayedMessagedSeen) // skip checking against accumulator- not the purpose of this test
-	for i := newInitialState.DelayedMessagesRead; i < newInitialState.DelayedMessagedSeen; i++ {
+	newInitialState.SetReadCountFromBacklog(newInitialState.DelayedMessagesSeen) // skip checking against accumulator- not the purpose of this test
+	for i := newInitialState.DelayedMessagesRead; i < newInitialState.DelayedMessagesSeen; i++ {
 		// Validates the pending unread delayed messages via accumulator
 		delayedMsgSavedByMel, err := melDB.ReadDelayedMessage(ctx, newInitialState, newInitialState.DelayedMessagesRead)
 		Require(t, err)
@@ -836,7 +834,7 @@ func createInitialMELState(
 		ParentChainBlockHash:               startBlock.Hash(),
 		ParentChainPreviousBlockHash:       startBlock.ParentHash(),
 		MessageAccumulator:                 common.Hash{},
-		DelayedMessagedSeen:                1,
+		DelayedMessagesSeen:                1,
 		DelayedMessagesRead:                1, // Assumes we have read the init message.
 		MsgCount:                           1,
 	}
@@ -867,8 +865,12 @@ func forceDelayedBatchPosting(
 	AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, int(threshold)) // #nosec G115
 
 	builder.nodeConfig.BatchPoster.MaxDelay = 0
-	_, err := builder.L2.ConsensusNode.BatchPoster.MaybePostSequencerBatch(ctx)
+	builder.L2.ConsensusConfigFetcher.Set(builder.nodeConfig)
+	posted, err := builder.L2.ConsensusNode.BatchPoster.MaybePostSequencerBatch(ctx)
 	Require(t, err)
+	if !posted {
+		t.Fatal("forceDelayedBatchPosting: sequencer batch was not posted")
+	}
 	for _, tx := range txs {
 		_, err := testClientB.EnsureTxSucceeded(tx)
 		Require(t, err, "tx not found on second node")
@@ -877,6 +879,7 @@ func forceDelayedBatchPosting(
 	CheckBatchCount(t, builder, initialBatchCount+1)
 	// Reset the max delay.
 	builder.nodeConfig.BatchPoster.MaxDelay = time.Hour
+	builder.L2.ConsensusConfigFetcher.Set(builder.nodeConfig)
 }
 
 func forceSequencerMessageBatchPosting(

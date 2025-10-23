@@ -67,7 +67,7 @@ func (s *SyncMonitor) Initialize(msgExtractor *melrunner.MessageExtractor, inbox
 }
 
 func (s *SyncMonitor) updateSyncTarget(ctx context.Context) time.Duration {
-	nextSyncTarget, err := s.maxMessageCount(ctx)
+	nextSyncTarget, err := s.maxMessageCount()
 	s.syncTargetLock.Lock()
 	defer s.syncTargetLock.Unlock()
 	if err == nil {
@@ -98,7 +98,11 @@ func (s *SyncMonitor) GetFinalizedMsgCount(ctx context.Context) (arbutil.Message
 	return 0, nil
 }
 
-func (s *SyncMonitor) maxMessageCount(ctx context.Context) (arbutil.MessageIndex, error) {
+func (s *SyncMonitor) GetMaxMessageCount() (arbutil.MessageIndex, error) {
+	return s.maxMessageCount()
+}
+
+func (s *SyncMonitor) maxMessageCount() (arbutil.MessageIndex, error) {
 	msgCount, err := s.txStreamer.GetMessageCount()
 	if err != nil {
 		return 0, err
@@ -110,7 +114,7 @@ func (s *SyncMonitor) maxMessageCount(ctx context.Context) (arbutil.MessageIndex
 	}
 
 	if s.msgExtractor != nil {
-		melMsgCount, err := s.msgExtractor.GetMsgCount(ctx)
+		melMsgCount, err := s.msgExtractor.GetMsgCount(s.GetContext())
 		if err != nil {
 			return msgCount, err
 		}
@@ -156,7 +160,14 @@ func (s *SyncMonitor) FullSyncProgressMap() map[string]interface{} {
 	}
 
 	syncTarget := s.SyncTargetMessageCount()
-	res["syncTargetMsgCount"] = syncTarget
+	res["consensusSyncTargetMsgCount"] = syncTarget
+
+	maxMsgCount, err := s.maxMessageCount()
+	if err != nil {
+		res["maxMessageCountError"] = err.Error()
+		return res
+	}
+	res["maxMessageCount"] = maxMsgCount
 
 	msgCount, err := s.txStreamer.GetMessageCount()
 	if err != nil {

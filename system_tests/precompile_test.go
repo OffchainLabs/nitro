@@ -4,6 +4,7 @@
 package arbtest
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"math/big"
@@ -196,11 +197,18 @@ func TestCustomSolidityErrors(t *testing.T) {
 		"arbosActs.StartBlock",
 	)
 
-	_, customError = arbosActs.BatchPostingReport(&auth, big.NewInt(0), common.Address{}, 0, 0, 0, 0, 0, big.NewInt(0))
+	_, customError = arbosActs.BatchPostingReport(&auth, big.NewInt(0), common.Address{}, 0, 0, big.NewInt(0))
 	ensure(
 		customError,
 		"CallerNotArbOS()",
 		"arbosActs.BatchPostingReport",
+	)
+
+	_, customError = arbosActs.BatchPostingReportV2(&auth, big.NewInt(0), common.Address{}, 0, 0, 0, 0, big.NewInt(0))
+	ensure(
+		customError,
+		"CallerNotArbOS()",
+		"arbosActs.BatchPostingReportV2",
 	)
 }
 
@@ -1303,5 +1311,57 @@ func TestArbAggregatorGetPreferredAggregator(t *testing.T) {
 	Require(t, err)
 	if prefAgg != l1pricing.BatchPosterAddress {
 		Fatal(t, "expected default preferred aggregator to be", l1pricing.BatchPosterAddress, "got", prefAgg)
+	}
+}
+
+func TestArbDebugOverwriteContractCode(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	// Become chain owner
+	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
+	arbDebug, err := precompilesgen.NewArbDebug(types.ArbDebugAddress, builder.L2.Client)
+	Require(t, err)
+	tx, err := arbDebug.BecomeChainOwner(&auth)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	// create EOA to test against
+	addr := common.BytesToAddress(crypto.Keccak256([]byte{})[:20])
+
+	// test that code is empty
+	code, err := builder.L2.Client.CodeAt(ctx, addr, nil)
+	Require(t, err)
+	if len(code) != 0 {
+		t.Fatal("expected code to be empty")
+	}
+
+	// overwrite with some code
+	testCodeA := []byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9}
+	tx, err = arbDebug.OverwriteContractCode(&auth, addr, testCodeA)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+	code, err = builder.L2.Client.CodeAt(ctx, addr, nil)
+	Require(t, err)
+	if !bytes.Equal(code, testCodeA) {
+		t.Fatal("expected code A to be", testCodeA, "got", code)
+	}
+
+	// overwrite with some other code
+	testCodeB := []byte{9, 8, 7, 6, 5, 4, 3, 2, 1, 0}
+	tx, err = arbDebug.OverwriteContractCode(&auth, addr, testCodeB)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+	code, err = builder.L2.Client.CodeAt(ctx, addr, nil)
+	Require(t, err)
+	if !bytes.Equal(code, testCodeB) {
+		t.Fatal("expected code B to be", testCodeB, "got", code)
 	}
 }

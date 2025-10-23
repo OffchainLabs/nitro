@@ -34,7 +34,6 @@ import (
 	"github.com/offchainlabs/nitro/arbos/storage"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
-	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/testhelpers/env"
 )
 
@@ -211,7 +210,7 @@ func InitializeArbosState(stateDB vm.StateDB, burner burn.Burner, chainConfig *p
 	// To work around this, we give precompiles fake code.
 	for addr, version := range PrecompileMinArbOSVersions {
 		if version == 0 {
-			stateDB.SetCode(addr, []byte{byte(vm.INVALID)})
+			stateDB.SetCode(addr, []byte{byte(vm.INVALID)}, tracing.CodeChangeUnspecified)
 		}
 	}
 
@@ -372,7 +371,7 @@ func (state *ArbosState) UpgradeArbosVersion(
 		case params.ArbosVersion_40:
 			// EIP-2935: Add support for historical block hashes.
 			stateDB.SetNonce(params.HistoryStorageAddress, 1, tracing.NonceChangeUnspecified)
-			stateDB.SetCode(params.HistoryStorageAddress, params.HistoryStorageCodeArbitrum)
+			stateDB.SetCode(params.HistoryStorageAddress, params.HistoryStorageCodeArbitrum, tracing.CodeChangeUnspecified)
 			// The MaxWasmSize was a constant before arbos version 40, and can
 			// be read as a parameter after arbos version 40.
 			params, err := state.Programs().Params()
@@ -392,10 +391,6 @@ func (state *ArbosState) UpgradeArbosVersion(
 			ensure(p.UpgradeToArbosVersion(nextArbosVersion))
 			ensure(p.Save())
 			ensure(state.l2PricingState.SetMaxPerTxGasLimit(l2pricing.InitialPerTxGasLimitV50))
-			oldBlockGasLimit, err := state.l2PricingState.PerBlockGasLimit()
-			ensure(err)
-			newBlockGasLimit := arbmath.SaturatingUMul(oldBlockGasLimit, 4)
-			ensure(state.l2PricingState.SetMaxPerBlockGasLimit(newBlockGasLimit))
 		default:
 			return fmt.Errorf(
 				"the chain is upgrading to unsupported ArbOS version %v, %w",
@@ -407,7 +402,7 @@ func (state *ArbosState) UpgradeArbosVersion(
 		// install any new precompiles
 		for addr, version := range PrecompileMinArbOSVersions {
 			if version == nextArbosVersion {
-				stateDB.SetCode(addr, []byte{byte(vm.INVALID)})
+				stateDB.SetCode(addr, []byte{byte(vm.INVALID)}, tracing.CodeChangeUnspecified)
 			}
 		}
 

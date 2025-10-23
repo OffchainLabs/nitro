@@ -29,7 +29,7 @@ func TestDelayedMessageBacklogInitialization(t *testing.T) {
 	// Add genesis melState
 	genesis := &mel.State{
 		ParentChainBlockNumber: 1,
-		DelayedMessagedSeen:    1,
+		DelayedMessagesSeen:    1,
 		DelayedMessagesRead:    1,
 	}
 	require.NoError(t, melDb.SaveState(ctx, genesis))
@@ -61,7 +61,7 @@ func TestDelayedMessageBacklogInitialization(t *testing.T) {
 		state := &mel.State{
 			ParentChainBlockNumber: i + 2,
 			ParentChainBlockHash:   common.BigToHash(new(big.Int).SetUint64(i + 2)),
-			DelayedMessagedSeen:    head.DelayedMessagedSeen + 5,
+			DelayedMessagesSeen:    head.DelayedMessagesSeen + 5,
 			DelayedMessagesRead:    1,
 		}
 		require.NoError(t, melDb.SaveDelayedMessages(ctx, state, delayedMsgs[(i)*5:(i+1)*5]))
@@ -71,14 +71,14 @@ func TestDelayedMessageBacklogInitialization(t *testing.T) {
 	state, err := melDb.GetHeadMelState(ctx)
 	require.NoError(t, err)
 
-	require.True(t, state.DelayedMessagedSeen == uint64(numMelStates)*5+1) // #nosec G115
+	require.True(t, state.DelayedMessagesSeen == uint64(numMelStates)*5+1) // #nosec G115
 	require.True(t, state.DelayedMessagesRead == 1)
 	delayedMessageBacklog, err := mel.NewDelayedMessageBacklog(ctx, 1, func(ctx context.Context) (uint64, error) { return 0, nil }, mel.WithUnboundedCapacity)
 	require.NoError(t, err)
 	require.NoError(t, InitializeDelayedMessageBacklog(ctx, delayedMessageBacklog, melDb, state, nil))
 	require.True(t, delayedMessageBacklog.Len() == 25)
 	state.SetDelayedMessageBacklog(delayedMessageBacklog)
-	state.SetReadCountFromBacklog(state.DelayedMessagedSeen) // skip checking against accumulator- not the purpose of this test
+	state.SetReadCountFromBacklog(state.DelayedMessagesSeen) // skip checking against accumulator- not the purpose of this test
 
 	// Lets read the delayed messages and verify that they match with what we stored
 	for i, wantDelayed := range delayedMsgs {
@@ -91,7 +91,7 @@ func TestDelayedMessageBacklogInitialization(t *testing.T) {
 	state = &mel.State{
 		ParentChainBlockNumber: 7,
 		ParentChainBlockHash:   common.BigToHash(new(big.Int).SetUint64(7)),
-		DelayedMessagedSeen:    26,
+		DelayedMessagesSeen:    26,
 		DelayedMessagesRead:    7,
 	}
 	require.NoError(t, melDb.SaveState(ctx, state))
@@ -100,7 +100,7 @@ func TestDelayedMessageBacklogInitialization(t *testing.T) {
 	newHeadState := &mel.State{
 		ParentChainBlockNumber: 8,
 		ParentChainBlockHash:   common.BigToHash(new(big.Int).SetUint64(8)),
-		DelayedMessagedSeen:    26,
+		DelayedMessagesSeen:    26,
 		DelayedMessagesRead:    13,
 	}
 	require.NoError(t, melDb.SaveState(ctx, newHeadState))
@@ -115,7 +115,7 @@ func TestDelayedMessageBacklogInitialization(t *testing.T) {
 	require.True(t, newDelayedMessageBacklog.Len() == 19)
 	newState.SetDelayedMessageBacklog(newDelayedMessageBacklog)
 
-	for i := uint64(7); i < newHeadState.DelayedMessagedSeen; i++ {
+	for i := uint64(7); i < newHeadState.DelayedMessagesSeen; i++ {
 		delayedMeta, err := newDelayedMessageBacklog.Get(i)
 		require.NoError(t, err)                                                                       // sanity check
 		require.True(t, delayedMeta.MelStateParentChainBlockNum == uint64(math.Ceil(float64(i)/5))+1) // sanity check
