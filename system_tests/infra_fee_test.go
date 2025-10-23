@@ -65,13 +65,10 @@ func TestInfraFee(t *testing.T) {
 	infraFeeBalanceAfter, err := builder.L2.Client.BalanceAt(ctx, infraFeeAddr, nil)
 	Require(t, err)
 
-	// For constraint-based pricer these balances would be different
-	if builder.chainConfig.ArbitrumChainParams.InitialArbOSVersion < l2pricing.ArbosMultiConstraintsVersion {
-		if !arbmath.BigEquals(netFeeBalanceBefore, netFeeBalanceAfter) {
-			Fatal(t, netFeeBalanceBefore, netFeeBalanceAfter)
-		}
-		if !arbmath.BigEquals(infraFeeBalanceAfter, expectedBalanceAfter) {
-			Fatal(t, infraFeeBalanceBefore, expectedFunds, infraFeeBalanceAfter, expectedBalanceAfter)
-		}
+	if !arbmath.BigEquals(netFeeBalanceBefore, netFeeBalanceAfter) {
+		Fatal(t, netFeeBalanceBefore, netFeeBalanceAfter)
+	}
+	if !arbmath.BigEquals(infraFeeBalanceAfter, expectedBalanceAfter) {
+		Fatal(t, infraFeeBalanceBefore, expectedFunds, infraFeeBalanceAfter, expectedBalanceAfter)
 	}
 }

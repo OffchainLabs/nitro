@@ -25,7 +25,6 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
-	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/solgen/go/localgen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
@@ -257,14 +256,11 @@ func setupArbOwnerAndArbGasInfo(
 	bind.TransactOpts,
 	*precompilesgen.ArbOwner,
 	*precompilesgen.ArbGasInfo,
-	uint64,
 ) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
 	builderCleanup := builder.Build(t)
-
-	arbosVersion := builder.chainConfig.ArbitrumChainParams.InitialArbOSVersion
 
 	cleanup := func() {
 		builderCleanup()
@@ -278,11 +274,11 @@ func setupArbOwnerAndArbGasInfo(
 	arbGasInfo, err := precompilesgen.NewArbGasInfo(common.HexToAddress("0x6c"), builder.L2.Client)
 	Require(t, err)
 
-	return builder, cleanup, auth, arbOwner, arbGasInfo, arbosVersion
+	return builder, cleanup, auth, arbOwner, arbGasInfo
 }
 
 func TestL1BaseFeeEstimateInertia(t *testing.T) {
-	builder, cleanup, auth, arbOwner, arbGasInfo, _ := setupArbOwnerAndArbGasInfo(t)
+	builder, cleanup, auth, arbOwner, arbGasInfo := setupArbOwnerAndArbGasInfo(t)
 	defer cleanup()
 	ctx := builder.ctx
 
@@ -300,7 +296,7 @@ func TestL1BaseFeeEstimateInertia(t *testing.T) {
 
 // Similar to TestL1BaseFeeEstimateInertia, but now using a different setter from ArbOwner
 func TestL1PricingInertia(t *testing.T) {
-	builder, cleanup, auth, arbOwner, arbGasInfo, _ := setupArbOwnerAndArbGasInfo(t)
+	builder, cleanup, auth, arbOwner, arbGasInfo := setupArbOwnerAndArbGasInfo(t)
 	defer cleanup()
 	ctx := builder.ctx
 
@@ -317,7 +313,7 @@ func TestL1PricingInertia(t *testing.T) {
 }
 
 func TestL1PricingRewardRate(t *testing.T) {
-	builder, cleanup, auth, arbOwner, arbGasInfo, _ := setupArbOwnerAndArbGasInfo(t)
+	builder, cleanup, auth, arbOwner, arbGasInfo := setupArbOwnerAndArbGasInfo(t)
 	defer cleanup()
 	ctx := builder.ctx
 
@@ -334,7 +330,7 @@ func TestL1PricingRewardRate(t *testing.T) {
 }
 
 func TestL1PricingRewardRecipient(t *testing.T) {
-	builder, cleanup, auth, arbOwner, arbGasInfo, _ := setupArbOwnerAndArbGasInfo(t)
+	builder, cleanup, auth, arbOwner, arbGasInfo := setupArbOwnerAndArbGasInfo(t)
 	defer cleanup()
 	ctx := builder.ctx
 
@@ -351,19 +347,12 @@ func TestL1PricingRewardRecipient(t *testing.T) {
 }
 
 func TestL2GasPricingInertia(t *testing.T) {
-	builder, cleanup, auth, arbOwner, arbGasInfo, arbosVersion := setupArbOwnerAndArbGasInfo(t)
+	builder, cleanup, auth, arbOwner, arbGasInfo := setupArbOwnerAndArbGasInfo(t)
 	defer cleanup()
 	ctx := builder.ctx
 
 	inertia := uint64(14)
 	tx, err := arbOwner.SetL2GasPricingInertia(&auth, inertia)
-	if arbosVersion >= l2pricing.ArbosMultiConstraintsVersion {
-		// Expect error for multi-constraint pricer
-		if err == nil {
-			t.Fatalf("expected an error, got nil")
-		}
-		return
-	}
 	Require(t, err)
 	_, err = builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
@@ -375,19 +364,12 @@ func TestL2GasPricingInertia(t *testing.T) {
 }
 
 func TestL2GasBacklogTolerance(t *testing.T) {
-	builder, cleanup, auth, arbOwner, arbGasInfo, arbosVersion := setupArbOwnerAndArbGasInfo(t)
+	builder, cleanup, auth, arbOwner, arbGasInfo := setupArbOwnerAndArbGasInfo(t)
 	defer cleanup()
 	ctx := builder.ctx
 
 	gasTolerance := uint64(15)
 	tx, err := arbOwner.SetL2GasBacklogTolerance(&auth, gasTolerance)
-	if arbosVersion >= l2pricing.ArbosMultiConstraintsVersion {
-		// Expect error for multi-constraint pricer
-		if err == nil {
-			t.Fatalf("expected an error, got nil")
-		}
-		return
-	}
 	Require(t, err)
 	_, err = builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
@@ -399,7 +381,7 @@ func TestL2GasBacklogTolerance(t *testing.T) {
 }
 
 func TestPerBatchGasCharge(t *testing.T) {
-	builder, cleanup, auth, arbOwner, arbGasInfo, _ := setupArbOwnerAndArbGasInfo(t)
+	builder, cleanup, auth, arbOwner, arbGasInfo := setupArbOwnerAndArbGasInfo(t)
 	defer cleanup()
 	ctx := builder.ctx
 
@@ -416,7 +398,7 @@ func TestPerBatchGasCharge(t *testing.T) {
 }
 
 func TestL1PricingEquilibrationUnits(t *testing.T) {
-	builder, cleanup, auth, arbOwner, arbGasInfo, _ := setupArbOwnerAndArbGasInfo(t)
+	builder, cleanup, auth, arbOwner, arbGasInfo := setupArbOwnerAndArbGasInfo(t)
 	defer cleanup()
 	ctx := builder.ctx
 
@@ -433,20 +415,13 @@ func TestL1PricingEquilibrationUnits(t *testing.T) {
 }
 
 func TestGasAccountingParams(t *testing.T) {
-	builder, cleanup, auth, arbOwner, arbGasInfo, arbosVersion := setupArbOwnerAndArbGasInfo(t)
+	builder, cleanup, auth, arbOwner, arbGasInfo := setupArbOwnerAndArbGasInfo(t)
 	defer cleanup()
 	ctx := builder.ctx
 
 	speedLimit := uint64(18)
 	blockGasLimit := uint64(19)
 	tx, err := arbOwner.SetSpeedLimit(&auth, speedLimit)
-	if arbosVersion >= l2pricing.ArbosMultiConstraintsVersion {
-		// Expect error for multi-constraint pricer
-		if err == nil {
-			t.Fatalf("expected an error, got nil")
-		}
-		return
-	}
 	Require(t, err)
 	_, err = builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
