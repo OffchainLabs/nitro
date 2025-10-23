@@ -10,7 +10,6 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
-	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbos/storage"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
@@ -219,11 +218,6 @@ func (con ArbGasInfo) GetPricingInertia(c ctx, evm mech) (uint64, error) {
 
 // GetGasBacklogTolerance gets the forgivable amount of backlogged gas ArbOS will ignore when raising the basefee
 func (con ArbGasInfo) GetGasBacklogTolerance(c ctx, evm mech) (uint64, error) {
-	// For ArbOS version 50 and above, the backlog tolerance is always zero
-	if c.State.ArbOSVersion() >= l2pricing.ArbosMultiConstraintsVersion {
-		return 0, nil
-	}
-
 	return c.State.L2PricingState().BacklogTolerance()
 }
 
