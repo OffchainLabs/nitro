@@ -6,7 +6,6 @@ package arbtest
 import (
 	"bytes"
 	"context"
-	"math/big"
 	"strings"
 	"testing"
 
@@ -63,15 +62,11 @@ func testContractDeployment(t *testing.T, ctx context.Context, client *ethclient
 	nonce, err := client.PendingNonceAt(ctx, accountInfo.Address)
 	Require(t, err)
 
-	// Raise gas fee cap by 25% because new multi-constraint pricing is slightly more aggressive
-	gasFeeCap := new(big.Int).Mul(latestHeader.BaseFee, big.NewInt(5))
-	gasFeeCap.Div(gasFeeCap, big.NewInt(4))
-
 	tx := types.NewTx(&types.DynamicFeeTx{
 		ChainID:   chainId,
 		Nonce:     nonce,
 		GasTipCap: common.Big0,
-		GasFeeCap: gasFeeCap,
+		GasFeeCap: latestHeader.BaseFee,
 		Gas:       deploymentGas,
 		To:        nil,
 		Value:     common.Big0,

@@ -51,20 +51,6 @@ func TestDeploy(t *testing.T) {
 	}
 }
 
-// equalWithinTolerance returns true if a and b differ by less than or equal to percent.
-func equalWithinTolerance(a, b *big.Int, percent int64) bool {
-	if a == nil || b == nil {
-		return false
-	}
-	diff := new(big.Int).Sub(a, b)
-	if diff.Sign() < 0 {
-		diff.Neg(diff)
-	}
-	allowed := new(big.Int).Mul(a, big.NewInt(percent))
-	allowed.Div(allowed, big.NewInt(100))
-	return diff.Cmp(allowed) <= 0
-}
-
 func TestEstimate(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -95,13 +81,13 @@ func TestEstimate(t *testing.T) {
 	numTriesLeft := 20
 	for !equilibrated && numTriesLeft > 0 {
 		// make an empty block to let the gas price update
+		builder.L2Info.GasPrice = new(big.Int).Mul(builder.L2Info.GasPrice, big.NewInt(2))
 		builder.L2.TransferBalance(t, "Owner", "Owner", common.Big0, builder.L2Info)
 
 		// check if the price has equilibrated
 		_, _, _, _, _, setPrice, err := arbGasInfo.GetPricesInWei(&bind.CallOpts{})
 		Require(t, err, "could not get L2 gas price")
-
-		if equalWithinTolerance(gasPrice, setPrice, 5) { // 5% tolerance for multi-constraint pricer
+		if gasPrice.Cmp(setPrice) == 0 {
 			equilibrated = true
 		}
 		numTriesLeft--
@@ -121,7 +107,7 @@ func TestEstimate(t *testing.T) {
 
 	header, err := builder.L2.Client.HeaderByNumber(ctx, receipt.BlockNumber)
 	Require(t, err, "could not get header")
-	if !equalWithinTolerance(gasPrice, header.BaseFee, 5) { // 5% tolerance for multi-constraint pricer
+	if header.BaseFee.Cmp(gasPrice) != 0 {
 		Fatal(t, "Header has wrong basefee", header.BaseFee, gasPrice)
 	}
 
@@ -129,8 +115,7 @@ func TestEstimate(t *testing.T) {
 	Require(t, err, "could not get balance")
 	expectedCost := receipt.GasUsed * gasPrice.Uint64()
 	observedCost := initialBalance.Uint64() - balance.Uint64()
-	// #nosec G115
-	if !equalWithinTolerance(big.NewInt(int64(expectedCost)), big.NewInt(int64(observedCost)), 5) {
+	if expectedCost != observedCost {
 		Fatal(t, "Expected deployment to cost", expectedCost, "instead of", observedCost)
 	}
 
@@ -291,7 +276,7 @@ func TestComponentEstimate(t *testing.T) {
 	if !arbmath.BigEquals(l1BaseFeeEstimate, l1BaseFee) {
 		Fatal(t, l1BaseFeeEstimate, l1BaseFee)
 	}
-	if !equalWithinTolerance(baseFee, l2BaseFee, 5) {
+	if !arbmath.BigEquals(baseFee, l2BaseFee) {
 		Fatal(t, baseFee, l2BaseFee.Uint64())
 	}
 
