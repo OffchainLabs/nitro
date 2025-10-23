@@ -45,7 +45,7 @@ func TestCompareLegacyPricingModelWithMultiConstraints(t *testing.T) {
 			_ = pricing.gasBacklog.Set(backlog)
 
 			// Initialize with a single constraint based on the legacy model
-			_ = pricing.SetConstraintsFromLegacy()
+			_ = pricing.setConstraintsFromLegacy()
 
 			pricing.UpdatePricingModel(nil, timePassed, false)
 			legacyPrice, _ := pricing.baseFeeWei.Get()

@@ -15,7 +15,6 @@ import (
 
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/burn"
-	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbos/storage"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/util/testhelpers"
@@ -47,14 +46,8 @@ func TestGetGasBacklog(t *testing.T) {
 	evm, state, callCtx, arbGasInfo := setupArbGasInfo(t)
 
 	backlog := uint64(1000)
-	if state.ArbOSVersion() < l2pricing.ArbosMultiConstraintsVersion {
-		err := state.L2PricingState().SetGasBacklog(backlog)
-		Require(t, err)
-	} else {
-		constraint := state.L2PricingState().OpenConstraintAt(0)
-		err := constraint.SetBacklog(backlog)
-		Require(t, err)
-	}
+	err := state.L2PricingState().SetGasBacklog(backlog)
+	Require(t, err)
 	retrievedBacklog, err := arbGasInfo.GetGasBacklog(callCtx, evm)
 	Require(t, err)
 	if retrievedBacklog != backlog {

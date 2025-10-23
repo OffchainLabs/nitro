@@ -200,7 +200,7 @@ func (ps *L2PricingState) Restrict(err error) {
 	ps.storage.Burner().Restrict(err)
 }
 
-func (ps *L2PricingState) SetConstraintsFromLegacy() error {
+func (ps *L2PricingState) setConstraintsFromLegacy() error {
 	if err := ps.ClearConstraints(); err != nil {
 		return err
 	}

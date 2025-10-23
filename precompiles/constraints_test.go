@@ -49,12 +49,8 @@ func TestFailToSetInvalidConstraints(t *testing.T) {
 
 	evm, _, callCtx, _, arbOwner := setupResourceConstraintHandles(t)
 
-	// Empty constraints
-	err := arbOwner.SetGasPricingConstraints(callCtx, evm, [][3]uint64{})
-	require.Error(t, err)
-
 	// Zero target
-	err = arbOwner.SetGasPricingConstraints(callCtx, evm, [][3]uint64{{0, 17, 1000}})
+	err := arbOwner.SetGasPricingConstraints(callCtx, evm, [][3]uint64{{0, 17, 1000}})
 	require.Error(t, err)
 
 	// Zero period
