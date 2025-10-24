@@ -126,6 +126,10 @@ type Config struct {
 	BlockMetadataApiBlocksLimit uint64              `koanf:"block-metadata-api-blocks-limit"`
 	VmTrace                     LiveTracingConfig   `koanf:"vmtrace"`
 
+	NethermindUrl   string `koanf:"nethermind-url"`
+	NethermindWsUrl string `koanf:"nethermind-ws-url"`
+	ExecutionMode   string `koanf:"execution-mode"`
+
 	forwardingTarget string
 }
 
@@ -153,6 +157,21 @@ func (c *Config) Validate() error {
 	if err := c.RPC.Validate(); err != nil {
 		return err
 	}
+
+	if c.ExecutionMode != "" {
+		switch c.ExecutionMode {
+		case "internal", "external", "compare":
+			// Valid modes
+		default:
+			return fmt.Errorf("invalid execution-mode: %s (must be 'internal', 'external', or 'compare')", c.ExecutionMode)
+		}
+
+		// Validate Nethermind URL is set when using external or compare mode
+		if (c.ExecutionMode == "external" || c.ExecutionMode == "compare") && c.NethermindUrl == "" {
+			return fmt.Errorf("nethermind-url is required when execution-mode is '%s'", c.ExecutionMode)
+		}
+	}
+
 	return nil
 }
 
@@ -173,6 +192,11 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Uint64(prefix+".block-metadata-api-cache-size", ConfigDefault.BlockMetadataApiCacheSize, "size (in bytes) of lru cache storing the blockMetadata to service arb_getRawBlockMetadata")
 	f.Uint64(prefix+".block-metadata-api-blocks-limit", ConfigDefault.BlockMetadataApiBlocksLimit, "maximum number of blocks allowed to be queried for blockMetadata per arb_getRawBlockMetadata query. Enabled by default, set 0 to disable the limit")
 	LiveTracingConfigAddOptions(prefix+".vmtrace", f)
+
+	f.String(prefix+".nethermind-url", ConfigDefault.NethermindUrl, "URL of external Nethermind execution client (e.g., http://localhost:20545)")
+	f.String(prefix+".nethermind-ws-url", ConfigDefault.NethermindWsUrl, "WebSocket URL of external Nethermind execution client (e.g., ws://localhost:28551, optional)")
+	f.String(prefix+".execution-mode", ConfigDefault.ExecutionMode, "execution mode: 'internal' (default, use built-in Geth), 'external' (use Nethermind), 'compare' (run both and compare)")
+
 }
 
 type LiveTracingConfig struct {
@@ -206,6 +230,10 @@ var ConfigDefault = Config{
 	BlockMetadataApiCacheSize:   100 * 1024 * 1024,
 	BlockMetadataApiBlocksLimit: 100,
 	VmTrace:                     DefaultLiveTracingConfig,
+
+	NethermindUrl:   "",
+	NethermindWsUrl: "",
+	ExecutionMode:   "internal",
 }
 
 type ConfigFetcher func() *Config

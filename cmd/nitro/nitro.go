@@ -434,14 +434,14 @@ func mainImpl() int {
 		log.Info("enabling custom tracer", "name", traceConfig.TracerName)
 	}
 
-	execMode := nethexec.GetExecutionModeFromEnv()
+	execMode := nethexec.GetExecutionMode(&nodeConfig.Execution)
 
 	var initDigester nethexec.InitMessageDigester
 	switch execMode {
 	case nethexec.ModeInternalOnly:
 		initDigester = nethexec.NewFakeRemoteExecutionRpcClient()
 	case nethexec.ModeDualCompare, nethexec.ModeExternalOnly:
-		rpcClient, newClientErr := nethexec.NewNethRpcClient()
+		rpcClient, newClientErr := nethexec.NewNethRpcClient(nodeConfig.Execution.NethermindUrl, nodeConfig.Execution.NethermindWsUrl)
 		if newClientErr != nil {
 			log.Crit("failed to create real RPC client", "err", newClientErr)
 			return 1
@@ -564,19 +564,23 @@ func mainImpl() int {
 	case nethexec.ModeInternalOnly:
 		execNode = gethNode
 	case nethexec.ModeExternalOnly:
-		execNode, err = nethexec.NewNethermindExecutionClient()
+		execNode, err = nethexec.NewNethermindExecutionClient(
+			nodeConfig.Execution.NethermindUrl,
+			nodeConfig.Execution.NethermindWsUrl,
+		)
 		if err != nil {
 			log.Error("failed to create nethermind execution client", "err", err)
 			return 1
 		}
-		log.Info("Created nethermind execution client")
 	case nethexec.ModeDualCompare:
-		nmExec, err := nethexec.NewNethermindExecutionClient()
+		nmExec, err := nethexec.NewNethermindExecutionClient(
+			nodeConfig.Execution.NethermindUrl,
+			nodeConfig.Execution.NethermindWsUrl,
+		)
 		if err != nil {
 			log.Error("failed to create nethermind execution client", "err", err)
 			return 1
 		}
-		log.Info("Created nethermind execution client")
 		execNode = nethexec.NewCompareExecutionClient(gethNode, nmExec, fatalErrChan)
 		log.Info("Created compare execution client")
 	}

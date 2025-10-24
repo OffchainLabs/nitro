@@ -155,6 +155,9 @@ func (c *InitConfig) Validate() error {
 		if c.ExecutionClientUrl == "" {
 			return fmt.Errorf("execution-client-url is required when bootstrap-from-execution is enabled")
 		}
+		// StartBlock == 0 is valid for chains with genesis at block 0, but bootstrap is typically
+		// used for starting at a later block. If starting from genesis (block 0), standard init
+		// methods should be used instead of bootstrap.
 		if c.StartBlock == 0 {
 			return fmt.Errorf("start-block must be greater than 0 when bootstrap-from-execution is enabled")
 		}

@@ -26,8 +26,8 @@ type nethermindExecutionClient struct {
 	rpcClient *nethRpcClient
 }
 
-func NewNethermindExecutionClient() (*nethermindExecutionClient, error) {
-	rpcClient, err := NewNethRpcClient()
+func NewNethermindExecutionClient(url string, wsUrl string) (*nethermindExecutionClient, error) {
+	rpcClient, err := NewNethRpcClient(url, wsUrl)
 	if err != nil {
 		return nil, err
 	}

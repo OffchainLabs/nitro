@@ -120,7 +120,7 @@ func downloadInit(ctx context.Context, initConfig *conf.InitConfig) (string, err
 	return file, err
 }
 
-func createGenesisFromExecution(ctx context.Context, nethermindURL string, blockNum uint64, chainConfig *params.ChainConfig) (*types.Block, error) {
+func createGenesisFromExecution(ctx context.Context, nethermindURL string, blockNum uint64) (*types.Block, error) {
 	log.Info("Retrieving block from execution client", "url", nethermindURL, "block", blockNum)
 
 	client, err := ethclient.Dial(nethermindURL)
@@ -716,7 +716,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 
 		// Verify target block exists in Nethermind
 		targetBlock, err := createGenesisFromExecution(ctx, config.Init.ExecutionClientUrl,
-			config.Init.StartBlock, chainConfig)
+			config.Init.StartBlock)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to get block from execution: %w", err)
 		}
