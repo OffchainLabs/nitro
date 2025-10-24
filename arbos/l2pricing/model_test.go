@@ -47,10 +47,10 @@ func TestCompareLegacyPricingModelWithMultiConstraints(t *testing.T) {
 			// Initialize with a single constraint based on the legacy model
 			_ = pricing.setConstraintsFromLegacy()
 
-			pricing.UpdatePricingModel(nil, timePassed, false)
+			pricing.updatePricingModelLegacy(timePassed)
 			legacyPrice, _ := pricing.baseFeeWei.Get()
 
-			pricing.UpdatePricingModelMultiConstraints(timePassed)
+			pricing.updatePricingModelMultiConstraints(timePassed)
 			multiPrice, _ := pricing.baseFeeWei.Get()
 
 			if timePassed == 0 {

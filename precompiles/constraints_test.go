@@ -58,6 +58,24 @@ func TestFailToSetInvalidConstraints(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestSetLegacyBacklog(t *testing.T) {
+	t.Parallel()
+
+	evm, _, callCtx, arbGasInfo, arbOwner := setupResourceConstraintHandles(t)
+
+	backlog, err := arbGasInfo.GetGasBacklog(callCtx, evm)
+	require.NoError(t, err)
+	require.Equal(t, uint64(0), backlog)
+
+	newBacklog := uint64(80_000)
+	err = arbOwner.SetGasBacklog(callCtx, evm, newBacklog)
+	require.NoError(t, err)
+
+	backlog, err = arbGasInfo.GetGasBacklog(callCtx, evm)
+	require.NoError(t, err)
+	require.Equal(t, newBacklog, backlog)
+}
+
 func TestConstraintsStorage(t *testing.T) {
 	t.Parallel()
 
@@ -83,9 +101,9 @@ func TestConstraintsStorage(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, uint64(30_000_000), firstTarget)
 
-	firstPeriod, err := first.Period()
+	firstInertia, err := first.Inertia()
 	require.NoError(t, err)
-	require.Equal(t, uint64(1), firstPeriod)
+	require.Equal(t, uint64(1), firstInertia)
 
 	firstBacklog, err := first.Backlog()
 	require.NoError(t, err)
@@ -95,7 +113,7 @@ func TestConstraintsStorage(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, uint64(15_000_000), secondTarget)
 
-	secondPeriod, err := second.Period()
+	secondInertia, err := second.Inertia()
 	require.NoError(t, err)
 	require.Equal(t, uint64(102), secondInertia)
 
@@ -127,10 +145,10 @@ func TestConstraintsStorage(t *testing.T) {
 	first = state.L2PricingState().OpenConstraintAt(0)
 	target, err := first.Target()
 	require.NoError(t, err)
-	period, err := first.Period()
+	inertia, err := first.Inertia()
 	require.NoError(t, err)
 	require.Equal(t, uint64(7_000_000), target)
-	require.Equal(t, uint64(12), period)
+	require.Equal(t, uint64(12), inertia)
 
 	result, err = arbGasInfo.GetGasPricingConstraints(callCtx, evm)
 	require.NoError(t, err)

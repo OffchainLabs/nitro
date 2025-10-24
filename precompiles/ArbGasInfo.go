@@ -300,11 +300,11 @@ func (con ArbGasInfo) GetGasPricingConstraints(c ctx, evm mech) ([][3]uint64, er
 	constraints := make([][3]uint64, 0, len)
 	for i := range len {
 		constraint := c.State.L2PricingState().OpenConstraintAt(i)
-		target, err := constraint.Target()
+		gasTargetPerSecond, err := constraint.Target()
 		if err != nil {
 			return nil, err
 		}
-		inertia, err := constraint.Inertia()
+		adjustmentWindowSeconds, err := constraint.Inertia()
 		if err != nil {
 			return nil, err
 		}
@@ -314,8 +314,8 @@ func (con ArbGasInfo) GetGasPricingConstraints(c ctx, evm mech) ([][3]uint64, er
 		}
 
 		constraints = append(constraints, [3]uint64{
-			target,
-			inertia,
+			gasTargetPerSecond,
+			adjustmentWindowSeconds,
 			backlog,
 		})
 	}

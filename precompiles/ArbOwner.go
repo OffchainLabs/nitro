@@ -467,17 +467,17 @@ func (con ArbOwner) SetGasPricingConstraints(c ctx, evm mech, constraints [][3]u
 	}
 
 	for _, constraint := range constraints {
-		target := constraint[0]
-		inertia := constraint[1]
-		backlog := constraint[2]
+		gasTargetPerSecond := constraint[0]
+		adjustmentWindowSeconds := constraint[1]
+		startingBacklogValue := constraint[2]
 
-		if target == 0 || inertia == 0 {
-			return fmt.Errorf("invalid constraint with target %d and inertia %d", target, inertia)
+		if gasTargetPerSecond == 0 || adjustmentWindowSeconds == 0 {
+			return fmt.Errorf("invalid constraint with target %d and adjustment window %d", gasTargetPerSecond, adjustmentWindowSeconds)
 		}
 
-		err := c.State.L2PricingState().AddConstraint(target, inertia, backlog)
+		err := c.State.L2PricingState().AddConstraint(gasTargetPerSecond, adjustmentWindowSeconds, startingBacklogValue)
 		if err != nil {
-			return fmt.Errorf("failed to add constraint (target: %d, inertia: %d): %w", target, inertia, err)
+			return fmt.Errorf("failed to add constraint (target: %d, adjustment window: %d): %w", gasTargetPerSecond, adjustmentWindowSeconds, err)
 		}
 	}
 	return nil

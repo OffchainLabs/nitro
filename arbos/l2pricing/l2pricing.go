@@ -18,8 +18,8 @@ const (
 )
 
 // GasConstraint tries to keep the gas backlog under the target (per second) for the given inertia factor.
-// The inertia can be computed as 30*sqrt(period), where period is the number of seconds which the
-// constraint is acting over. For instance, the default inertia of 102 is an approximation of 30*sqrt(12).
+// Target stands for gas usage per second
+// The inertia is the time over which the price will rise by a factor of e if demand is 2x the target
 type GasConstraint struct {
 	target  storage.StorageBackedUint64
 	inertia storage.StorageBackedUint64
@@ -51,21 +51,8 @@ func (c *GasConstraint) Target() (uint64, error) {
 	return c.target.Get()
 }
 
-func (c *GasConstraint) Period() (uint64, error) {
-	return c.period.Get()
-}
-
-func (c *GasConstraint) ComputeInertiaFromPeriod() (uint64, error) {
-	period, err := c.period.Get()
-	if err != nil {
-		return 0, err
-	}
-
-	// Reverse of SetConstraintsFromLegacy: inertia ≈ sqrt(period) * ConstraintDivisorMultiplier
-	periodSqrt := arbmath.ApproxSquareRoot(period)
-	inertia := arbmath.SaturatingUMul(periodSqrt, ConstraintDivisorMultiplier)
-
-	return inertia, nil
+func (c *GasConstraint) Inertia() (uint64, error) {
+	return c.inertia.Get()
 }
 
 func (c *GasConstraint) Backlog() (uint64, error) {
@@ -239,9 +226,6 @@ func (ps *L2PricingState) AddConstraint(target uint64, inertia uint64, backlog u
 	if err := constraint.backlog.Set(backlog); err != nil {
 		return fmt.Errorf("failed to set backlog: %w", err)
 	}
-	if err := constraint.backlog.Set(backlog); err != nil {
-		return fmt.Errorf("failed to set backlog: %w", err)
-	}
 	return nil
 }
 
@@ -269,32 +253,4 @@ func (ps *L2PricingState) ClearConstraints() error {
 		}
 	}
 	return nil
-}
-
-func (ps *L2PricingState) HighestPeriodConstraint() (*GasConstraint, error) {
-	length, err := ps.ConstraintsLength()
-	if err != nil {
-		return nil, err
-	}
-	if length == 0 {
-		return nil, fmt.Errorf("no constraints configured")
-	}
-
-	var (
-		maxPeriod uint64
-		maxIdx    uint64
-	)
-	for i := range length {
-		constraint := ps.OpenConstraintAt(i)
-		period, err := constraint.period.Get()
-		if err != nil {
-			return nil, fmt.Errorf("failed to get period for constraint %d: %w", i, err)
-		}
-		if period > maxPeriod {
-			maxPeriod = period
-			maxIdx = i
-		}
-	}
-
-	return ps.OpenConstraintAt(maxIdx), nil
 }
