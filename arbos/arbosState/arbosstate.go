@@ -229,37 +229,84 @@ func InitializeArbosState(stateDB vm.StateDB, burner burn.Burner, chainConfig *p
 		return nil, err
 	}
 
-	_ = sto.SetUint64ByUint64(uint64(versionOffset), 1) // initialize to version 1; upgrade at end of this func if needed
-	_ = sto.SetUint64ByUint64(uint64(upgradeVersionOffset), 0)
-	_ = sto.SetUint64ByUint64(uint64(upgradeTimestampOffset), 0)
-	if desiredArbosVersion >= params.ArbosVersion_2 {
-		_ = sto.SetByUint64(uint64(networkFeeAccountOffset), util.AddressToHash(initialChainOwner))
-	} else {
-		_ = sto.SetByUint64(uint64(networkFeeAccountOffset), common.Hash{}) // the 0 address until an owner sets it
+	err = sto.SetUint64ByUint64(uint64(versionOffset), 1) // initialize to version 1; upgrade at end of this func if needed
+	if err != nil {
+		return nil, err
 	}
-	_ = sto.SetByUint64(uint64(chainIdOffset), common.BigToHash(chainConfig.ChainID))
+	err = sto.SetUint64ByUint64(uint64(upgradeVersionOffset), 0)
+	if err != nil {
+		return nil, err
+	}
+	err = sto.SetUint64ByUint64(uint64(upgradeTimestampOffset), 0)
+	if err != nil {
+		return nil, err
+	}
+
+	if desiredArbosVersion >= params.ArbosVersion_2 {
+		err = sto.SetByUint64(uint64(networkFeeAccountOffset), util.AddressToHash(initialChainOwner))
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		err = sto.SetByUint64(uint64(networkFeeAccountOffset), common.Hash{}) // the 0 address until an owner sets it
+		if err != nil {
+			return nil, err
+		}
+	}
+	err = sto.SetByUint64(uint64(chainIdOffset), common.BigToHash(chainConfig.ChainID))
+	if err != nil {
+		return nil, err
+	}
+
 	chainConfigStorage := sto.OpenStorageBackedBytes(chainConfigSubspace)
-	_ = chainConfigStorage.Set(initMessage.SerializedChainConfig)
-	_ = sto.SetUint64ByUint64(uint64(genesisBlockNumOffset), chainConfig.ArbitrumChainParams.GenesisBlockNum)
-	_ = sto.SetUint64ByUint64(uint64(brotliCompressionLevelOffset), 0) // default brotliCompressionLevel for fast compression is 0
+	err = chainConfigStorage.Set(initMessage.SerializedChainConfig)
+	if err != nil {
+		return nil, err
+	}
+	err = sto.SetUint64ByUint64(uint64(genesisBlockNumOffset), chainConfig.ArbitrumChainParams.GenesisBlockNum)
+	if err != nil {
+		return nil, err
+	}
+	err = sto.SetUint64ByUint64(uint64(brotliCompressionLevelOffset), 0) // default brotliCompressionLevel for fast compression is 0
+	if err != nil {
+		return nil, err
+	}
 
 	initialRewardsRecipient := l1pricing.BatchPosterAddress
 	if desiredArbosVersion >= params.ArbosVersion_2 {
 		initialRewardsRecipient = initialChainOwner
 	}
-	_ = l1pricing.InitializeL1PricingState(sto.OpenCachedSubStorage(l1PricingSubspace), initialRewardsRecipient, initMessage.InitialL1BaseFee)
-	_ = l2pricing.InitializeL2PricingState(sto.OpenCachedSubStorage(l2PricingSubspace))
-	_ = retryables.InitializeRetryableState(sto.OpenCachedSubStorage(retryablesSubspace))
+	err = l1pricing.InitializeL1PricingState(sto.OpenCachedSubStorage(l1PricingSubspace), initialRewardsRecipient, initMessage.InitialL1BaseFee)
+	if err != nil {
+		return nil, err
+	}
+	err = l2pricing.InitializeL2PricingState(sto.OpenCachedSubStorage(l2PricingSubspace))
+	if err != nil {
+		return nil, err
+	}
+	err = retryables.InitializeRetryableState(sto.OpenCachedSubStorage(retryablesSubspace))
+	if err != nil {
+		return nil, err
+	}
 	addressTable.Initialize(sto.OpenCachedSubStorage(addressTableSubspace))
 	merkleAccumulator.InitializeMerkleAccumulator(sto.OpenCachedSubStorage(sendMerkleSubspace))
 	blockhash.InitializeBlockhashes(sto.OpenCachedSubStorage(blockhashesSubspace))
 
 	ownersStorage := sto.OpenCachedSubStorage(chainOwnerSubspace)
-	_ = addressSet.Initialize(ownersStorage)
-	_ = addressSet.OpenAddressSet(ownersStorage).Add(initialChainOwner)
+	err = addressSet.Initialize(ownersStorage)
+	if err != nil {
+		return nil, err
+	}
+	err = addressSet.OpenAddressSet(ownersStorage).Add(initialChainOwner)
+	if err != nil {
+		return nil, err
+	}
 
 	nativeTokenOwnersStorage := sto.OpenCachedSubStorage(nativeTokenOwnerSubspace)
-	_ = addressSet.Initialize(nativeTokenOwnersStorage)
+	err = addressSet.Initialize(nativeTokenOwnersStorage)
+	if err != nil {
+		return nil, err
+	}
 
 	aState, err := OpenArbosState(stateDB, burner)
 	if err != nil {
