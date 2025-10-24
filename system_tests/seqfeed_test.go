@@ -505,6 +505,7 @@ func TestRegressionInPopulateFeedBacklog(t *testing.T) {
 
 	// Guarantees that nodes will rely only on the feed to receive messages
 	builder.nodeConfig.BatchPoster.Enable = false
+	builder.nodeConfig.MessageExtraction.Enable = false
 	builder.BuildL2OnL1(t)
 
 	// Sends a transaction
