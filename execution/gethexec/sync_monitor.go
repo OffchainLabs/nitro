@@ -278,9 +278,6 @@ func (s *SyncMonitor) SetFinalityData(
 	finalizedFinalityData *arbutil.FinalityData,
 	validatedFinalityData *arbutil.FinalityData,
 ) error {
-	s.exec.createBlocksMutex.Lock()
-	defer s.exec.createBlocksMutex.Unlock()
-
 	finalizedBlockHeader, err := s.getFinalityBlockHeader(
 		s.config.FinalizedBlockWaitForBlockValidator,
 		validatedFinalityData,

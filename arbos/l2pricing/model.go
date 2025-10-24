@@ -12,6 +12,8 @@ import (
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
+const ArbosMultiConstraintsVersion = params.ArbosVersion_50
+
 const InitialSpeedLimitPerSecondV0 = 1000000
 const InitialPerBlockGasLimitV0 uint64 = 20 * 1000000
 const InitialSpeedLimitPerSecondV6 = 7000000
@@ -22,7 +24,29 @@ const InitialPricingInertia = 102
 const InitialBacklogTolerance = 10
 const InitialPerTxGasLimitV50 uint64 = 32 * 1000000
 
-func (ps *L2PricingState) AddToGasPool(gas int64) error {
+func (ps *L2PricingState) ShouldUseMultiConstraints(arbosVersion uint64) (bool, error) {
+	if arbosVersion >= ArbosMultiConstraintsVersion {
+		constraintsLength, err := ps.ConstraintsLength()
+		if err != nil {
+			return false, err
+		}
+		return constraintsLength > 0, nil
+	}
+	return false, nil
+}
+
+func (ps *L2PricingState) AddToGasPool(gas int64, arbosVersion uint64) error {
+	shouldUseMultiConstraints, err := ps.ShouldUseMultiConstraints(arbosVersion)
+	if err != nil {
+		return err
+	}
+	if shouldUseMultiConstraints {
+		return ps.addToGasPoolMultiConstraints(gas)
+	}
+	return ps.addToGasPoolLegacy(gas)
+}
+
+func (ps *L2PricingState) addToGasPoolLegacy(gas int64) error {
 	backlog, err := ps.GasBacklog()
 	if err != nil {
 		return err
@@ -31,7 +55,7 @@ func (ps *L2PricingState) AddToGasPool(gas int64) error {
 	return ps.SetGasBacklog(backlog)
 }
 
-func (ps *L2PricingState) AddToGasPoolMultiConstraints(gas int64) error {
+func (ps *L2PricingState) addToGasPoolMultiConstraints(gas int64) error {
 	constraintsLength, err := ps.constraints.Length()
 	if err != nil {
 		return fmt.Errorf("failed to get number of constraints: %w", err)
@@ -50,6 +74,16 @@ func (ps *L2PricingState) AddToGasPoolMultiConstraints(gas int64) error {
 	return nil
 }
 
+// UpdatePricingModel updates the pricing model with info from the last block
+func (ps *L2PricingState) UpdatePricingModel(timePassed uint64, arbosVersion uint64) {
+	shouldUseMultiConstraints, _ := ps.ShouldUseMultiConstraints(arbosVersion)
+	if shouldUseMultiConstraints {
+		ps.updatePricingModelMultiConstraints(timePassed)
+	} else {
+		ps.updatePricingModelLegacy(timePassed)
+	}
+}
+
 // applyGasDelta grows the backlog if the gas is negative and pays off  if the gas is positive.
 func applyGasDelta(backlog uint64, gas int64) uint64 {
 	if gas > 0 {
@@ -59,10 +93,9 @@ func applyGasDelta(backlog uint64, gas int64) uint64 {
 	}
 }
 
-// UpdatePricingModel updates the pricing model with info from the last block
-func (ps *L2PricingState) UpdatePricingModel(l2BaseFee *big.Int, timePassed uint64, debug bool) {
+func (ps *L2PricingState) updatePricingModelLegacy(timePassed uint64) {
 	speedLimit, _ := ps.SpeedLimitPerSecond()
-	_ = ps.AddToGasPool(arbmath.SaturatingCast[int64](arbmath.SaturatingUMul(timePassed, speedLimit)))
+	_ = ps.addToGasPoolLegacy(arbmath.SaturatingCast[int64](arbmath.SaturatingUMul(timePassed, speedLimit)))
 	inertia, _ := ps.PricingInertia()
 	tolerance, _ := ps.BacklogTolerance()
 	backlog, _ := ps.GasBacklog()
@@ -76,23 +109,23 @@ func (ps *L2PricingState) UpdatePricingModel(l2BaseFee *big.Int, timePassed uint
 	_ = ps.SetBaseFeeWei(baseFee)
 }
 
-func (ps *L2PricingState) UpdatePricingModelMultiConstraints(timePassed uint64) {
+func (ps *L2PricingState) updatePricingModelMultiConstraints(timePassed uint64) {
 	// Compute exponent used in the basefee formula
 	totalExponent := arbmath.Bips(0)
 	constraintsLength, _ := ps.constraints.Length()
 	for i := range constraintsLength {
 		constraint := ps.OpenConstraintAt(i)
-		target, _ := constraint.target.Get()
+		target, _ := constraint.Target()
 
 		// Pay off backlog
-		backlog, _ := constraint.backlog.Get()
+		backlog, _ := constraint.Backlog()
 		gas := arbmath.SaturatingCast[int64](arbmath.SaturatingUMul(timePassed, target))
 		backlog = applyGasDelta(backlog, gas)
 		_ = constraint.backlog.Set(backlog)
 
 		// Calculate exponent with the formula backlog/divisor
 		if backlog > 0 {
-			inertia, _ := constraint.inertia.Get()
+			inertia, _ := constraint.AdjustmentWindow()
 			divisor := arbmath.SaturatingCastToBips(arbmath.SaturatingUMul(inertia, target))
 			exponent := arbmath.NaturalToBips(arbmath.SaturatingCast[int64](backlog)) / divisor
 			totalExponent = arbmath.SaturatingBipsAdd(totalExponent, exponent)
