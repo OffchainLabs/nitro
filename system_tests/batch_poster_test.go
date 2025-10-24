@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/andybalholm/brotli"
+	"github.com/stretchr/testify/require"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -849,4 +850,40 @@ func TestBatchPosterL1SurplusMatchesBatchGasFlaky(t *testing.T) {
 	t.Log("BATCH prices", "from-receipt", batchL1PostCost, "surplus-delta", delta)
 
 	checkPercentDiff(t, delta, batchL1PostCost, 0.1)
+}
+
+func TestBatchPosterActuallyPostsBlobsToL1(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	// Turn on unconditional blob posting
+	builder.nodeConfig.BatchPoster.Post4844Blobs = true
+	builder.nodeConfig.BatchPoster.IgnoreBlobPrice = true
+
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	l1HeightBeforeBatch, err := builder.L1.Client.BlockNumber(ctx)
+	require.NoError(t, err)
+
+	// Do some L2 action (to become the batch content)
+	_ = builder.L2.SendWaitTestTransactions(t, []*types.Transaction{
+		builder.L2Info.PrepareTx("Faucet", "Owner", builder.L2Info.TransferGas, common.Big1, nil),
+	})[0]
+
+	_, _ = builder.L2.ConsensusNode.BatchPoster.MaybePostSequencerBatch(ctx)
+
+	// Advance L1 enough to have the batch included
+	AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, 1)
+
+	for l1BlockNum := l1HeightBeforeBatch + 1; ; l1BlockNum++ {
+		l1Block, err := builder.L1.Client.BlockByNumber(ctx, new(big.Int).SetUint64(l1BlockNum))
+		Require(t, err)
+		require.NotNil(t, l1Block, "We didn't find the L1 block that includes the batch")
+
+		if *l1Block.BlobGasUsed() != 0 { // found a blob tx in L1 block
+			break
+		}
+	}
 }
