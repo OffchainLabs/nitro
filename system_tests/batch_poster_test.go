@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/andybalholm/brotli"
+	"github.com/offchainlabs/nitro/util/blobs"
 	"github.com/stretchr/testify/require"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
@@ -861,29 +862,54 @@ func TestBatchPosterActuallyPostsBlobsToL1(t *testing.T) {
 	builder.nodeConfig.BatchPoster.Post4844Blobs = true
 	builder.nodeConfig.BatchPoster.IgnoreBlobPrice = true
 
+	// Build L1 + L2
 	cleanup := builder.Build(t)
 	defer cleanup()
+	// Create 2nd node to verify batch gets there
+	testClientB, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{})
+	defer cleanupB()
 
 	l1HeightBeforeBatch, err := builder.L1.Client.BlockNumber(ctx)
 	require.NoError(t, err)
 
 	// Do some L2 action (to become the batch content)
-	_ = builder.L2.SendWaitTestTransactions(t, []*types.Transaction{
-		builder.L2Info.PrepareTx("Faucet", "Owner", builder.L2Info.TransferGas, common.Big1, nil),
-	})[0]
+	tx := builder.L2Info.PrepareTx("Faucet", "Owner", builder.L2Info.TransferGas, common.Big1, nil)
+	_ = builder.L2.SendWaitTestTransactions(t, []*types.Transaction{tx})[0]
 
-	_, _ = builder.L2.ConsensusNode.BatchPoster.MaybePostSequencerBatch(ctx)
+	// Advance L1 enough to ensure everything is synced
+	AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, 30)
 
-	// Advance L1 enough to have the batch included
-	AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, 1)
+	// Wait for the batch to be posted and processed by node B
+	_, err = WaitForTx(ctx, testClientB.Client, tx.Hash(), 5*time.Second)
+	Require(t, err)
 
-	for l1BlockNum := l1HeightBeforeBatch + 1; ; l1BlockNum++ {
-		l1Block, err := builder.L1.Client.BlockByNumber(ctx, new(big.Int).SetUint64(l1BlockNum))
+	l1HeightAfterBatch, err := builder.L1.Client.BlockNumber(ctx)
+	require.NoError(t, err)
+
+	// Look up the batches posted between the two L1 heights
+	seqInbox, err := arbnode.NewSequencerInbox(builder.L1.Client, builder.addresses.SequencerInbox, int64(l1HeightBeforeBatch))
+	Require(t, err)
+	batches, err := seqInbox.LookupBatchesInRange(ctx, new(big.Int).SetUint64(l1HeightBeforeBatch), new(big.Int).SetUint64(l1HeightAfterBatch))
+	Require(t, err)
+	require.NotZero(t, len(batches), "no batches found between L1 blocks %d and %d", l1HeightBeforeBatch, l1HeightAfterBatch)
+
+	for _, batch := range batches {
+		sequenceNum := batch.SequenceNumber
+		sequencerMessageBytes, _, err := builder.L2.ConsensusNode.InboxReader.GetSequencerMessageBytes(ctx, sequenceNum)
 		Require(t, err)
-		require.NotNil(t, l1Block, "We didn't find the L1 block that includes the batch")
 
-		if *l1Block.BlobGasUsed() != 0 { // found a blob tx in L1 block
-			break
-		}
+		l1Block, err := builder.L1.Client.HeaderByNumber(ctx, big.NewInt(int64(batch.ParentChainBlockNumber)))
+		Require(t, err)
+		require.NotZero(t, l1Block.BlobGasUsed)
+
+		kzgBlobs, err := blobs.EncodeBlobs(sequencerMessageBytes)
+		Require(t, err)
+		require.Len(t, kzgBlobs, 1, "expected exactly one blob in sequencer message for batch %d", sequenceNum) // we are posting small data
+		commitments, _, err := blobs.ComputeCommitmentsAndHashes(kzgBlobs)
+		versionedHash := blobs.CommitmentToVersionedHash(commitments[0])
+
+		restoredBlobs, err := builder.L1.L1BlobReader.GetBlobs(ctx, l1Block.Hash(), []common.Hash{versionedHash})
+		Require(t, err)
+		require.Len(t, restoredBlobs, 1)
 	}
 }
