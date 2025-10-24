@@ -47,6 +47,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/consensus"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/containers"
@@ -86,7 +87,7 @@ type ExecutionEngine struct {
 	stopwaiter.StopWaiter
 
 	bc        *core.BlockChain
-	consensus execution.FullConsensusClient
+	consensus consensus.FullConsensusClient
 	recorder  *BlockRecorder
 
 	resequenceChan    chan []*arbostypes.MessageWithMetadata
@@ -263,7 +264,7 @@ func (s *ExecutionEngine) EnablePrefetchBlock() {
 	s.prefetchBlock = true
 }
 
-func (s *ExecutionEngine) SetConsensus(consensus execution.FullConsensusClient) {
+func (s *ExecutionEngine) SetConsensus(consensus consensus.FullConsensusClient) {
 	if s.Started() {
 		panic("trying to set transaction consensus after start")
 	}
@@ -280,7 +281,7 @@ func (s *ExecutionEngine) BlockMetadataAtMessageIndex(ctx context.Context, msgId
 	return nil, errors.New("FullConsensusClient is not accessible to execution")
 }
 
-func (s *ExecutionEngine) GetBatchFetcher() execution.BatchFetcher {
+func (s *ExecutionEngine) GetBatchFetcher() consensus.BatchFetcher {
 	return s.consensus
 }
 

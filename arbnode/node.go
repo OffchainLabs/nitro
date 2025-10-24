@@ -37,19 +37,21 @@ import (
 	"github.com/offchainlabs/nitro/broadcaster"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
+	"github.com/offchainlabs/nitro/consensus"
+	consensusrpcserver "github.com/offchainlabs/nitro/consensus/rpcserver"
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/daprovider/daclient"
 	"github.com/offchainlabs/nitro/daprovider/das"
 	"github.com/offchainlabs/nitro/daprovider/data_streaming"
 	"github.com/offchainlabs/nitro/daprovider/server"
 	"github.com/offchainlabs/nitro/execution"
-	"github.com/offchainlabs/nitro/execution/gethexec"
+	executionrpcclient "github.com/offchainlabs/nitro/execution/rpcclient"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/staker/bold"
-	"github.com/offchainlabs/nitro/staker/legacy"
-	"github.com/offchainlabs/nitro/staker/multi_protocol"
+	legacystaker "github.com/offchainlabs/nitro/staker/legacy"
+	multiprotocolstaker "github.com/offchainlabs/nitro/staker/multi_protocol"
 	"github.com/offchainlabs/nitro/staker/validatorwallet"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/contracts"
@@ -59,6 +61,24 @@ import (
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
+
+type RPCServerConfig struct {
+	Enable        bool `koanf:"enable"`
+	Public        bool `koanf:"public"`
+	Authenticated bool `koanf:"authenticated"`
+}
+
+var DefaultRPCServerConfig = RPCServerConfig{
+	Enable:        false,
+	Public:        false,
+	Authenticated: true,
+}
+
+func RPCServerAddOptions(prefix string, f *pflag.FlagSet) {
+	f.Bool(prefix+".enable", DefaultRPCServerConfig.Enable, "enable consensus node to serve over rpc")
+	f.Bool(prefix+".public", DefaultRPCServerConfig.Public, "rpc is public")
+	f.Bool(prefix+".authenticated", DefaultRPCServerConfig.Authenticated, "rpc is authenticated")
+}
 
 type Config struct {
 	Sequencer                bool                           `koanf:"sequencer"`
@@ -81,6 +101,8 @@ type Config struct {
 	ResourceMgmt             resourcemanager.Config         `koanf:"resource-mgmt" reload:"hot"`
 	BlockMetadataFetcher     BlockMetadataFetcherConfig     `koanf:"block-metadata-fetcher" reload:"hot"`
 	ConsensusExecutionSyncer ConsensusExecutionSyncerConfig `koanf:"consensus-execution-syncer"`
+	RPCServer                RPCServerConfig                `koanf:"rpc-server"`
+	ExecutionRPCClient       rpcclient.ClientConfig         `koanf:"execution-rpc-client" reload:"hot"`
 	// SnapSyncConfig is only used for testing purposes, these should not be configured in production.
 	SnapSyncTest SnapSyncConfig
 }
@@ -119,6 +141,9 @@ func (c *Config) Validate() error {
 	}
 	if c.TransactionStreamer.TrackBlockMetadataFrom != 0 && !c.BlockMetadataFetcher.Enable {
 		log.Warn("track-block-metadata-from is set but blockMetadata fetcher is not enabled")
+	}
+	if err := c.ExecutionRPCClient.Validate(); err != nil {
+		return fmt.Errorf("error validating ExecutionRPCClient config: %w", err)
 	}
 	// Check that sync-interval is not more than msg-lag / 2
 	if c.ConsensusExecutionSyncer.SyncInterval > c.SyncMonitor.MsgLag/2 {
@@ -160,6 +185,8 @@ func ConfigAddOptions(prefix string, f *pflag.FlagSet, feedInputEnable bool, fee
 	resourcemanager.ConfigAddOptions(prefix+".resource-mgmt", f)
 	BlockMetadataFetcherConfigAddOptions(prefix+".block-metadata-fetcher", f)
 	ConsensusExecutionSyncerConfigAddOptions(prefix+".consensus-execution-syncer", f)
+	RPCServerAddOptions(prefix+".rpc-server", f)
+	rpcclient.RPCClientAddOptions(prefix+".execution-rpc-client", f, &ConfigDefault.ExecutionRPCClient)
 }
 
 var ConfigDefault = Config{
@@ -184,6 +211,15 @@ var ConfigDefault = Config{
 	Maintenance:              DefaultMaintenanceConfig,
 	ConsensusExecutionSyncer: DefaultConsensusExecutionSyncerConfig,
 	SnapSyncTest:             DefaultSnapSyncConfig,
+	RPCServer:                DefaultRPCServerConfig,
+	ExecutionRPCClient: rpcclient.ClientConfig{
+		URL:                       "",
+		JWTSecret:                 "",
+		Retries:                   3,
+		RetryErrors:               "websocket: close.*|dial tcp .*|.*i/o timeout|.*connection reset by peer|.*connection refused",
+		ArgLogLimit:               2048,
+		WebsocketMessageSizeLimit: 256 * 1024 * 1024,
+	},
 }
 
 func ConfigDefaultL1Test() *Config {
@@ -1276,6 +1312,16 @@ func registerAPIs(currentNode *Node, stack *node.Node) {
 			Public: false,
 		})
 	}
+	config := currentNode.configFetcher.Get()
+	if config.RPCServer.Enable {
+		apis = append(apis, rpc.API{
+			Namespace:     consensus.RPCNamespace,
+			Version:       "1.0",
+			Service:       consensusrpcserver.NewConsensusRpcServer(currentNode),
+			Public:        config.RPCServer.Public,
+			Authenticated: config.RPCServer.Authenticated,
+		})
+	}
 	stack.RegisterAPIs(apis)
 }
 
@@ -1296,6 +1342,10 @@ func CreateNodeExecutionClient(
 	blobReader daprovider.BlobReader,
 	latestWasmModuleRoot common.Hash,
 ) (*Node, error) {
+	if configFetcher.Get().ExecutionRPCClient.URL != "" {
+		execConfigFetcher := func() *rpcclient.ClientConfig { return &configFetcher.Get().ExecutionRPCClient }
+		executionClient = executionrpcclient.NewExecutionRpcClient(execConfigFetcher, nil)
+	}
 	if executionClient == nil {
 		return nil, errors.New("execution client must be non-nil")
 	}
@@ -1307,13 +1357,10 @@ func CreateNodeExecutionClient(
 	return currentNode, nil
 }
 
-func CreateNodeFullExecutionClient(
+func CreateConsensusNodeConnectedWithFullExecutionClient(
 	ctx context.Context,
 	stack *node.Node,
-	executionClient execution.ExecutionClient,
-	executionSequencer execution.ExecutionSequencer,
-	executionRecorder execution.ExecutionRecorder,
-	arbOSVersionGetter execution.ArbOSVersionGetter,
+	fullExecutionClient execution.FullExecutionClient,
 	arbDb ethdb.Database,
 	configFetcher ConfigFetcher,
 	l2Config *params.ChainConfig,
@@ -1327,10 +1374,17 @@ func CreateNodeFullExecutionClient(
 	blobReader daprovider.BlobReader,
 	latestWasmModuleRoot common.Hash,
 ) (*Node, error) {
-	if (executionClient == nil) || (executionSequencer == nil) || (executionRecorder == nil) || (arbOSVersionGetter == nil) {
-		return nil, errors.New("execution client, sequencer, recorder, and ArbOS version getter must be non-nil")
+	if fullExecutionClient == nil {
+		return nil, errors.New("full execution client must be non-nil")
 	}
-	currentNode, err := createNodeImpl(ctx, stack, executionClient, executionSequencer, executionRecorder, arbOSVersionGetter, arbDb, configFetcher, l2Config, l1client, deployInfo, txOptsValidator, txOptsBatchPoster, dataSigner, fatalErrChan, parentChainID, blobReader, latestWasmModuleRoot)
+	var executionClient execution.ExecutionClient
+	if configFetcher.Get().ExecutionRPCClient.URL != "" {
+		execConfigFetcher := func() *rpcclient.ClientConfig { return &configFetcher.Get().ExecutionRPCClient }
+		executionClient = executionrpcclient.NewExecutionRpcClient(execConfigFetcher, nil)
+	} else {
+		executionClient = fullExecutionClient
+	}
+	currentNode, err := createNodeImpl(ctx, stack, executionClient, fullExecutionClient, fullExecutionClient, fullExecutionClient, arbDb, configFetcher, l2Config, l1client, deployInfo, txOptsValidator, txOptsBatchPoster, dataSigner, fatalErrChan, parentChainID, blobReader, latestWasmModuleRoot)
 	if err != nil {
 		return nil, err
 	}
@@ -1339,26 +1393,11 @@ func CreateNodeFullExecutionClient(
 }
 
 func (n *Node) Start(ctx context.Context) error {
-	execClient, ok := n.ExecutionClient.(*gethexec.ExecutionNode)
-	if !ok {
-		execClient = nil
-	}
-	if execClient != nil {
-		err := execClient.Initialize(ctx)
-		if err != nil {
-			return fmt.Errorf("error initializing exec client: %w", err)
+	var err error
+	if execRPCClient, ok := n.ExecutionClient.(*executionrpcclient.ExecutionRPCClient); ok {
+		if err = execRPCClient.Start(ctx); err != nil {
+			return fmt.Errorf("error starting exec rpc client: %w", err)
 		}
-	}
-	err := n.Stack.Start()
-	if err != nil {
-		return fmt.Errorf("error starting geth stack: %w", err)
-	}
-	if execClient != nil {
-		execClient.SetConsensusClient(n)
-	}
-	err = n.ExecutionClient.Start(ctx)
-	if err != nil {
-		return fmt.Errorf("error starting exec client: %w", err)
 	}
 	if n.BlobReader != nil {
 		err = n.BlobReader.Initialize(ctx)
@@ -1466,7 +1505,10 @@ func (n *Node) Start(ctx context.Context) error {
 		}()
 	}
 	if n.blockMetadataFetcher != nil {
-		n.blockMetadataFetcher.Start(ctx)
+		err = n.blockMetadataFetcher.Start(ctx)
+		if err != nil {
+			return fmt.Errorf("error starting block metadata fetcher: %w", err)
+		}
 	}
 	if n.configFetcher != nil {
 		n.configFetcher.Start(ctx)
@@ -1541,16 +1583,15 @@ func (n *Node) StopAndWait() {
 		n.dasServerCloseFn()
 	}
 	if n.ExecutionClient != nil {
-		n.ExecutionClient.StopAndWait()
-	}
-	if err := n.Stack.Close(); err != nil {
-		log.Error("error on stack close", "err", err)
+		if _, ok := n.ExecutionClient.(*executionrpcclient.ExecutionRPCClient); ok {
+			n.ExecutionClient.StopAndWait()
+		}
 	}
 }
 
-func (n *Node) FindInboxBatchContainingMessage(message arbutil.MessageIndex) containers.PromiseInterface[execution.InboxBatch] {
+func (n *Node) FindInboxBatchContainingMessage(message arbutil.MessageIndex) containers.PromiseInterface[consensus.InboxBatch] {
 	batchNum, found, err := n.InboxTracker.FindInboxBatchContainingMessage(message)
-	inboxBatch := execution.InboxBatch{
+	inboxBatch := consensus.InboxBatch{
 		BatchNum: batchNum,
 		Found:    found,
 	}
