@@ -44,7 +44,7 @@ func testPruning(t *testing.T, mode string, pruneParallelStorageTraversal bool) 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithDatabase(rawdb.DBPebble)
 	// PathScheme prunes the state trie by itself, so only HashScheme should be tested
 	builder.RequireScheme(t, rawdb.HashScheme)
 

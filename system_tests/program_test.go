@@ -1933,7 +1933,7 @@ func formatTime(duration time.Duration) string {
 	return fmt.Sprintf("%.2f%s", span, units[unit])
 }
 
-func testWasmRecreate(t *testing.T, builder *NodeBuilder, targetsBefore, targetsAfter []string, numModules int, removeWasmDbBetween bool, storeTx, loadTx *types.Transaction, want []byte) {
+func testWasmRecreate(t *testing.T, builder *NodeBuilder, targetsBefore, targetsAfter []string, numModules int, removeWasmDbBetween bool, storeTx, loadTx *types.Transaction, want []byte, databaseScheme string) {
 	ctx := builder.ctx
 	l2info := builder.L2Info
 	l2client := builder.L2.Client
@@ -1945,6 +1945,7 @@ func testWasmRecreate(t *testing.T, builder *NodeBuilder, targetsBefore, targets
 
 	testDir := t.TempDir()
 	nodeBStack := testhelpers.CreateStackConfigForTest(testDir)
+	nodeBStack.DBEngine = databaseScheme
 	nodeBExecConfigBefore := *builder.execConfig
 	nodeBExecConfigBefore.StylusTarget.ExtraArchs = targetsBefore
 	nodeB, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{stackConfig: nodeBStack, execConfig: &nodeBExecConfigBefore})
@@ -2067,18 +2068,21 @@ func TestWasmRecreate(t *testing.T) {
 			targetsAfter:        localTargetOnly,
 		},
 	}
+	databaseScheme := rawdb.DBPebble
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			testWasmRecreateWithCall(t, tc.targetsBefore, tc.targetsAfter, tc.removeWasmDbBetween)
+			testWasmRecreateWithCall(t, tc.targetsBefore, tc.targetsAfter, tc.removeWasmDbBetween, databaseScheme)
 		})
 		t.Run(tc.name+" with delegate call", func(t *testing.T) {
-			testWasmRecreateWithDelegatecall(t, tc.targetsBefore, tc.targetsAfter, tc.removeWasmDbBetween)
+			testWasmRecreateWithDelegatecall(t, tc.targetsBefore, tc.targetsAfter, tc.removeWasmDbBetween, databaseScheme)
 		})
 	}
 }
 
-func testWasmRecreateWithCall(t *testing.T, targetsBefore, targetsAfter []string, removeWasmDbBetween bool) {
-	builder, auth, cleanup := setupProgramTest(t, true)
+func testWasmRecreateWithCall(t *testing.T, targetsBefore, targetsAfter []string, removeWasmDbBetween bool, databaseScheme string) {
+	builder, auth, cleanup := setupProgramTest(t, true, func(b *NodeBuilder) {
+		b.WithDatabase(rawdb.DBLeveldb)
+	})
 	ctx := builder.ctx
 	l2info := builder.L2Info
 	l2client := builder.L2.Client
@@ -2092,11 +2096,13 @@ func testWasmRecreateWithCall(t *testing.T, targetsBefore, targetsAfter []string
 	storeTx := l2info.PrepareTxTo("Owner", &storage, l2info.TransferGas, nil, argsForStorageWrite(zero, val))
 	loadTx := l2info.PrepareTxTo("Owner", &storage, l2info.TransferGas, nil, argsForStorageRead(zero))
 
-	testWasmRecreate(t, builder, localTargetOnly, allWasmTargets, 1, false, storeTx, loadTx, val[:])
+	testWasmRecreate(t, builder, localTargetOnly, allWasmTargets, 1, false, storeTx, loadTx, val[:], databaseScheme)
 }
 
-func testWasmRecreateWithDelegatecall(t *testing.T, targetsBefore, targetsAfter []string, removeWasmDbBetween bool) {
-	builder, auth, cleanup := setupProgramTest(t, true)
+func testWasmRecreateWithDelegatecall(t *testing.T, targetsBefore, targetsAfter []string, removeWasmDbBetween bool, databaseScheme string) {
+	builder, auth, cleanup := setupProgramTest(t, true, func(b *NodeBuilder) {
+		b.WithDatabase(rawdb.DBLeveldb)
+	})
 	ctx := builder.ctx
 	l2info := builder.L2Info
 	l2client := builder.L2.Client
@@ -2114,7 +2120,7 @@ func testWasmRecreateWithDelegatecall(t *testing.T, targetsBefore, targetsAfter 
 	data = argsForMulticall(vm.DELEGATECALL, storage, big.NewInt(0), argsForStorageRead(zero))
 	loadTx := l2info.PrepareTxTo("Owner", &multicall, l2info.TransferGas, nil, data)
 
-	testWasmRecreate(t, builder, localTargetOnly, allWasmTargets, 2, true, storeTx, loadTx, val[:])
+	testWasmRecreate(t, builder, localTargetOnly, allWasmTargets, 2, true, storeTx, loadTx, val[:], databaseScheme)
 }
 
 // createMapFromDb is used in verifying if wasm store rebuilding works
@@ -2139,8 +2145,10 @@ func createMapFromDb(db ethdb.KeyValueStore) (map[string][]byte, error) {
 }
 
 func TestWasmStoreRebuilding(t *testing.T) {
+	databaseScheme := rawdb.DBLeveldb
 	builder, auth, cleanup := setupProgramTest(t, true, func(b *NodeBuilder) {
 		b.WithExtraArchs(allWasmTargets)
+		b.WithDatabase(databaseScheme)
 	})
 	ctx := builder.ctx
 	l2info := builder.L2Info
@@ -2160,6 +2168,7 @@ func TestWasmStoreRebuilding(t *testing.T) {
 
 	testDir := t.TempDir()
 	nodeBStack := testhelpers.CreateStackConfigForTest(testDir)
+	nodeBStack.DBEngine = databaseScheme
 	nodeB, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{stackConfig: nodeBStack})
 
 	_, err = EnsureTxSucceeded(ctx, nodeB.Client, storeTx)
