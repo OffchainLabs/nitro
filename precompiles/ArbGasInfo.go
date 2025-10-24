@@ -304,7 +304,7 @@ func (con ArbGasInfo) GetGasPricingConstraints(c ctx, evm mech) ([][3]uint64, er
 		if err != nil {
 			return nil, err
 		}
-		adjustmentWindowSeconds, err := constraint.Inertia()
+		adjustmentWindowSeconds, err := constraint.AdjustmentWindow()
 		if err != nil {
 			return nil, err
 		}

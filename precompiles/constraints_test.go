@@ -53,7 +53,7 @@ func TestFailToSetInvalidConstraints(t *testing.T) {
 	err := arbOwner.SetGasPricingConstraints(callCtx, evm, [][3]uint64{{0, 17, 1000}})
 	require.Error(t, err)
 
-	// Zero inertia
+	// Zero adjustment window
 	err = arbOwner.SetGasPricingConstraints(callCtx, evm, [][3]uint64{{10_000_000, 0, 0}})
 	require.Error(t, err)
 }
@@ -101,9 +101,9 @@ func TestConstraintsStorage(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, uint64(30_000_000), firstTarget)
 
-	firstInertia, err := first.Inertia()
+	firstWindow, err := first.AdjustmentWindow()
 	require.NoError(t, err)
-	require.Equal(t, uint64(1), firstInertia)
+	require.Equal(t, uint64(1), firstWindow)
 
 	firstBacklog, err := first.Backlog()
 	require.NoError(t, err)
@@ -113,9 +113,9 @@ func TestConstraintsStorage(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, uint64(15_000_000), secondTarget)
 
-	secondInertia, err := second.Inertia()
+	secondWindow, err := second.AdjustmentWindow()
 	require.NoError(t, err)
-	require.Equal(t, uint64(102), secondInertia)
+	require.Equal(t, uint64(102), secondWindow)
 
 	secondBacklog, err := second.Backlog()
 	require.NoError(t, err)
@@ -145,10 +145,10 @@ func TestConstraintsStorage(t *testing.T) {
 	first = state.L2PricingState().OpenConstraintAt(0)
 	target, err := first.Target()
 	require.NoError(t, err)
-	inertia, err := first.Inertia()
+	window, err := first.AdjustmentWindow()
 	require.NoError(t, err)
 	require.Equal(t, uint64(7_000_000), target)
-	require.Equal(t, uint64(12), inertia)
+	require.Equal(t, uint64(12), window)
 
 	result, err = arbGasInfo.GetGasPricingConstraints(callCtx, evm)
 	require.NoError(t, err)

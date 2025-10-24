@@ -115,17 +115,17 @@ func (ps *L2PricingState) updatePricingModelMultiConstraints(timePassed uint64) 
 	constraintsLength, _ := ps.constraints.Length()
 	for i := range constraintsLength {
 		constraint := ps.OpenConstraintAt(i)
-		target, _ := constraint.target.Get()
+		target, _ := constraint.Target()
 
 		// Pay off backlog
-		backlog, _ := constraint.backlog.Get()
+		backlog, _ := constraint.Backlog()
 		gas := arbmath.SaturatingCast[int64](arbmath.SaturatingUMul(timePassed, target))
 		backlog = applyGasDelta(backlog, gas)
 		_ = constraint.backlog.Set(backlog)
 
 		// Calculate exponent with the formula backlog/divisor
 		if backlog > 0 {
-			inertia, _ := constraint.inertia.Get()
+			inertia, _ := constraint.AdjustmentWindow()
 			divisor := arbmath.SaturatingCastToBips(arbmath.SaturatingUMul(inertia, target))
 			exponent := arbmath.NaturalToBips(arbmath.SaturatingCast[int64](backlog)) / divisor
 			totalExponent = arbmath.SaturatingBipsAdd(totalExponent, exponent)
