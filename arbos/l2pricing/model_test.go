@@ -4,63 +4,59 @@
 package l2pricing
 
 import (
+	"fmt"
+	"math/big"
+	"slices"
 	"testing"
-)
 
-func TestComputeConstraintDivisor(t *testing.T) {
-	cases := []struct {
-		target uint64
-		period uint64
-		want   uint64
-	}{
-		{
-			target: 7_000_000,
-			period: 12,
-			want:   630_000_000,
-		},
-		{
-			target: 15_000_000,
-			period: 86_400, // one day
-			want:   131_850_000_000,
-		},
-	}
-	for _, test := range cases {
-		got := computeConstraintDivisor(test.target, test.period)
-		if got != test.want {
-			t.Errorf("wrong result for target=%v period=%v: got %v, want %v",
-				test.target, test.period, got, test.want)
-		}
-	}
-}
+	"github.com/ethereum/go-ethereum/params"
+)
 
 func TestCompareLegacyPricingModelWithMultiConstraints(t *testing.T) {
 	pricing := PricingForTest(t)
 
+	toGwei := func(wei *big.Int) string {
+		gweiDivisor := big.NewInt(params.GWei)
+		weiRat := new(big.Rat).SetInt(wei)
+		gweiDivisorRat := new(big.Rat).SetInt(gweiDivisor)
+		gweiRat := new(big.Rat).Quo(weiRat, gweiDivisorRat)
+		return gweiRat.FloatString(3)
+	}
+
 	// In this test, we don't check for storage set errors because they won't happen and they
 	// are not the focus of the test.
 
-	// Set the innertia to a value that is divisible by 30 to negate the rounding error
-	_ = pricing.SetPricingInertia(120)
-
-	// Set the tolerance to zero because this doesn't exist in the new model
-	_ = pricing.SetBacklogTolerance(0)
-
-	// Initialize with a single constraint based on the legacy model
-	_ = pricing.SetConstraintsFromLegacy()
+	// Set the speed limit
+	_ = pricing.SetSpeedLimitPerSecond(InitialSpeedLimitPerSecondV6)
 
 	// Compare the basefee for both models with different backlogs
-	for backlogShift := range uint64(32) {
-		for timePassed := range uint64(5) {
-			backlog := uint64(1 << backlogShift)
+	var backlogs = []uint64{0}
+	for i := range uint64(9) {
+		backlogs = append(backlogs, 1_000_000*(1+i))
+		backlogs = append(backlogs, 10_000_000*(1+i))
+		backlogs = append(backlogs, 100_000_000*(1+i))
+		backlogs = append(backlogs, 1_000_000_000*(1+i))
+		backlogs = append(backlogs, 10_000_000_000*(1+i))
+	}
 
+	slices.Sort(backlogs)
+	for timePassed := range uint64(100) {
+		for _, backlog := range backlogs {
 			_ = pricing.gasBacklog.Set(backlog)
+
+			// Initialize with a single constraint based on the legacy model
+			_ = pricing.SetConstraintsFromLegacy()
+
 			pricing.UpdatePricingModel(nil, timePassed, false)
 			legacyPrice, _ := pricing.baseFeeWei.Get()
 
-			constraint := pricing.OpenConstraintAt(0)
-			_ = constraint.backlog.Set(backlog)
 			pricing.UpdatePricingModelMultiConstraints(timePassed)
 			multiPrice, _ := pricing.baseFeeWei.Get()
+
+			if timePassed == 0 {
+				fmt.Printf("backlog=%vM\tlegacy=%v gwei\tmultiConstraints=%v gwei\ttimePassed=%v\n",
+					backlog/1_000_000, toGwei(legacyPrice), toGwei(multiPrice), timePassed)
+			}
 
 			if multiPrice.Cmp(legacyPrice) != 0 {
 				t.Errorf("wrong result: backlog=%v, timePassed=%v, multiPrice=%v, legacyPrice=%v",
