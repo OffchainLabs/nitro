@@ -128,6 +128,8 @@ func ValidationInputFromJson(entry *InputJSON) (*validator.ValidationInput, erro
 		StartState:    entry.StartState,
 		Preimages:     preimages,
 		UserWasms:     make(map[rawdb.WasmTarget]map[common.Hash][]byte),
+		BatchInfo:     nil,
+		DelayedMsg:    nil,
 		DebugChain:    entry.DebugChain,
 	}
 	delayed, err := base64.StdEncoding.DecodeString(entry.DelayedMsgB64)
