@@ -12,6 +12,7 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/rollup_legacy_gen"
 )
 
+// lint:require-exhaustive-initialization
 type GoGlobalState struct {
 	BlockHash  common.Hash
 	SendRoot   common.Hash
@@ -35,6 +36,7 @@ const (
 	MachineStatusTooFar   MachineStatus = 3
 )
 
+// lint:require-exhaustive-initialization
 type ExecutionState struct {
 	GlobalState   GoGlobalState
 	MachineStatus MachineStatus
@@ -124,6 +126,7 @@ func (s *ExecutionState) RequiredBatches() uint64 {
 	return count
 }
 
+// lint:require-exhaustive-initialization
 type MachineStepResult struct {
 	Hash        common.Hash
 	Position    uint64

@@ -739,6 +739,7 @@ func mainImpl() int {
 	return 0
 }
 
+// lint:require-exhaustive-initialization
 type NodeConfig struct {
 	Conf                   genericconf.ConfConfig          `koanf:"conf" reload:"hot"`
 	Node                   arbnode.Config                  `koanf:"node" reload:"hot"`

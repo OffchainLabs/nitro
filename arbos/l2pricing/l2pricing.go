@@ -63,6 +63,7 @@ func (c *GasConstraint) SetBacklog(val uint64) error {
 	return c.backlog.Set(val)
 }
 
+// lint:require-exhaustive-initialization
 type L2PricingState struct {
 	storage             *storage.Storage
 	speedLimitPerSecond storage.StorageBackedUint64

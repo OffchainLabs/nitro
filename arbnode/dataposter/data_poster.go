@@ -1335,6 +1335,7 @@ type QueueStorage interface {
 	IsPersistent() bool
 }
 
+// lint:require-exhaustive-initialization
 type DataPosterConfig struct {
 	RedisSigner            signature.SimpleHmacConfig `koanf:"redis-signer"`
 	ReplacementTimes       []time.Duration            `koanf:"replacement-times"`

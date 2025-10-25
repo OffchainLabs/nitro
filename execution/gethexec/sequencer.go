@@ -62,6 +62,7 @@ var (
 	expectedSurplusGauge                    = metrics.NewRegisteredGauge("arb/sequencer/expectedsurplus", nil)
 )
 
+// lint:require-exhaustive-initialization
 type SequencerConfig struct {
 	Enable                       bool            `koanf:"enable"`
 	MaxBlockSpeed                time.Duration   `koanf:"max-block-speed" reload:"hot"`
@@ -91,6 +92,7 @@ type DangerousConfig struct {
 	DisableBlobBaseFeeCheck         bool `koanf:"disable-blob-base-fee-check"`
 }
 
+// lint:require-exhaustive-initialization
 type TimeboostConfig struct {
 	Enable                       bool          `koanf:"enable"`
 	AuctionContractAddress       string        `koanf:"auction-contract-address"`

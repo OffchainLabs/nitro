@@ -42,6 +42,7 @@ import (
 // has the definitive state, stored persistently. (Note that some tests use memory-backed StateDB's that aren't
 // persisted beyond the end of the test.)
 
+// lint:require-exhaustive-initialization
 type ArbosState struct {
 	arbosVersion           uint64                      // version of the ArbOS storage format and semantics
 	upgradeVersion         storage.StorageBackedUint64 // version we're planning to upgrade to, or 0 if not planning to upgrade

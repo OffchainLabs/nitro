@@ -24,6 +24,7 @@ import (
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
+// lint:require-exhaustive-initialization
 type L1PricingState struct {
 	storage *storage.Storage
 

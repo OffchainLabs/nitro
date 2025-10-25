@@ -145,6 +145,7 @@ type BatchPosterDangerousConfig struct {
 	FixedGasLimit                                           uint64 `koanf:"fixed-gas-limit"`
 }
 
+// lint:require-exhaustive-initialization
 type BatchPosterConfig struct {
 	Enable                             bool `koanf:"enable"`
 	DisableDapFallbackStoreDataOnChain bool `koanf:"disable-dap-fallback-store-data-on-chain" reload:"hot"`

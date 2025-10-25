@@ -64,6 +64,7 @@ type SeqCoordinator struct {
 	redisErrors int // error counter, from workthread
 }
 
+// lint:require-exhaustive-initialization
 type SeqCoordinatorConfig struct {
 	Enable                bool          `koanf:"enable"`
 	ChosenHealthcheckAddr string        `koanf:"chosen-healthcheck-addr"`

@@ -109,6 +109,7 @@ type BlockValidator struct {
 	MemoryFreeLimitChecker resourcemanager.LimitChecker
 }
 
+// lint:require-exhaustive-initialization
 type BlockValidatorConfig struct {
 	Enable                            bool                          `koanf:"enable"`
 	RedisValidationClientConfig       redis.ValidationClientConfig  `koanf:"redis-validation-client-config"`
