@@ -183,3 +183,34 @@ func TestConstraintsBacklogUpdate(t *testing.T) {
 	require.Equal(t, uint64(5_000_000), result[0][2])
 	require.Equal(t, uint64(10_000_000), result[1][2])
 }
+
+func TestEnableAndDisableMultiConstraints(t *testing.T) {
+	t.Parallel()
+
+	evm, state, callCtx, _, arbOwner := setupResourceConstraintHandles(t)
+
+	// Initially multi-constraints should be disabled
+	shouldUseMultiConstraints, err := state.L2PricingState().ShouldUseMultiConstraints(state.ArbOSVersion())
+	require.NoError(t, err)
+	require.False(t, shouldUseMultiConstraints)
+
+	// Set constraints to enable multi-constraints
+	constraints := [][3]uint64{
+		{30_000_000, 1, 800_000},
+		{15_000_000, 102, 1_600_000},
+	}
+	err = arbOwner.SetGasPricingConstraints(callCtx, evm, constraints)
+	require.NoError(t, err)
+
+	shouldUseMultiConstraints, err = state.L2PricingState().ShouldUseMultiConstraints(state.ArbOSVersion())
+	require.NoError(t, err)
+	require.True(t, shouldUseMultiConstraints)
+
+	// Clear constraints to disable multi-constraints
+	err = arbOwner.SetGasPricingConstraints(callCtx, evm, [][3]uint64{})
+	require.NoError(t, err)
+
+	shouldUseMultiConstraints, err = state.L2PricingState().ShouldUseMultiConstraints(state.ArbOSVersion())
+	require.NoError(t, err)
+	require.False(t, shouldUseMultiConstraints)
+}
