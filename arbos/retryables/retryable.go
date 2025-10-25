@@ -23,6 +23,7 @@ import (
 const RetryableLifetimeSeconds = 7 * 24 * 60 * 60 // one week
 const RetryableReapPrice = 58000
 
+// lint:require-exhaustive-initialization
 type RetryableState struct {
 	retryables   *storage.Storage
 	TimeoutQueue *storage.Queue

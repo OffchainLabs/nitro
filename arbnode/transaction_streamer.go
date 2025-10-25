@@ -73,6 +73,7 @@ type TransactionStreamer struct {
 	syncTillMessage        arbutil.MessageIndex
 }
 
+// lint:require-exhaustive-initialization
 type TransactionStreamerConfig struct {
 	MaxBroadcasterQueueSize     int           `koanf:"max-broadcaster-queue-size"`
 	MaxReorgResequenceDepth     int64         `koanf:"max-reorg-resequence-depth" reload:"hot"`
