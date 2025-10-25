@@ -4,7 +4,11 @@
 package testhelpers
 
 import (
+	"fmt"
+
 	"github.com/ethereum/go-ethereum/node"
+
+	"github.com/offchainlabs/nitro/util/testhelpers/env"
 )
 
 func CreateStackConfigForTest(dataDir string) *node.Config {
@@ -26,6 +30,7 @@ func CreateStackConfigForTest(dataDir string) *node.Config {
 	stackConf.P2P.NoDial = true
 	stackConf.P2P.ListenAddr = ""
 	stackConf.P2P.NAT = nil
-	stackConf.DBEngine = "leveldb"
+	fmt.Println("Using test database scheme ff22ff:", env.GetTestDatabaseScheme())
+	stackConf.DBEngine = env.GetTestDatabaseScheme()
 	return &stackConf
 }

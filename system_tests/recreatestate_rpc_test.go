@@ -332,7 +332,7 @@ func testSkippingSavingStateAndRecreatingAfterRestart(t *testing.T, cacheConfig 
 	maxRecreateStateDepth := int64(30 * 1000 * 1000)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false).WithDatabase(rawdb.DBPebble)
 
 	builder.execConfig.RPC.MaxRecreateStateDepth = maxRecreateStateDepth
 	builder.execConfig.Sequencer.MaxBlockSpeed = 0
@@ -376,6 +376,7 @@ func testSkippingSavingStateAndRecreatingAfterRestart(t *testing.T, cacheConfig 
 	expectedBalance, err := client.BalanceAt(ctx, GetTestAddressForAccountName(t, "User2"), new(big.Int).SetUint64(lastBlock))
 	Require(t, err)
 
+	fmt.Println("GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG")
 	builder.RestartL2Node(t)
 	t.Log("restarted the node")
 
