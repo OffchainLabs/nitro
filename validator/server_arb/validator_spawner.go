@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"runtime"
 	"sync/atomic"
 	"time"
 
@@ -31,6 +32,7 @@ type ArbitratorSpawnerConfig struct {
 	Execution                   MachineCacheConfig           `koanf:"execution" reload:"hot"` // hot reloading for new executions only
 	ExecutionRunTimeout         time.Duration                `koanf:"execution-run-timeout" reload:"hot"`
 	RedisValidationServerConfig redis.ValidationServerConfig `koanf:"redis-validation-server-config"`
+	Profiling                   MachineProfilerConfig        `koanf:"profiling" reload:"hot"`
 }
 
 type ArbitratorSpawnerConfigFetcher func() *ArbitratorSpawnerConfig
@@ -41,6 +43,7 @@ var DefaultArbitratorSpawnerConfig = ArbitratorSpawnerConfig{
 	Execution:                   DefaultMachineCacheConfig,
 	ExecutionRunTimeout:         time.Minute * 15,
 	RedisValidationServerConfig: redis.DefaultValidationServerConfig,
+	Profiling:                   DefaultMachineProfilerConfig,
 }
 
 func ArbitratorSpawnerConfigAddOptions(prefix string, f *pflag.FlagSet) {
@@ -49,6 +52,7 @@ func ArbitratorSpawnerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".output-path", DefaultArbitratorSpawnerConfig.OutputPath, "path to write machines to")
 	MachineCacheConfigConfigAddOptions(prefix+".execution", f)
 	redis.ValidationServerConfigAddOptions(prefix+".redis-validation-server-config", f)
+	MachineProfilerConfigAddOptions(prefix+".profiling", f)
 }
 
 func DefaultArbitratorSpawnerConfigFetcher() *ArbitratorSpawnerConfig {
@@ -97,6 +101,7 @@ func NewArbitratorSpawner(locator *server_common.MachineLocator, config Arbitrat
 
 func (s *ArbitratorSpawner) Start(ctx_in context.Context) error {
 	s.StopWaiter.Start(ctx_in, s)
+	s.LaunchThread(s.profilingLoop)
 	return nil
 }
 
@@ -257,4 +262,42 @@ func (v *ArbitratorSpawner) CreateExecutionRun(wasmModuleRoot common.Hash, input
 
 func (v *ArbitratorSpawner) Stop() {
 	v.StopOnly()
+}
+
+func (s *ArbitratorSpawner) profilingLoop(ctx context.Context) {
+	cfg := s.config().Profiling
+	interval := sanitizeProfilerInterval(cfg.LogInterval)
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	globalMachineProfiler.SetEnabled(cfg.Enable)
+	setNativeProfilerEnabled(cfg.Enable)
+
+	for {
+		select {
+		case <-ctx.Done():
+			globalMachineProfiler.SetEnabled(false)
+			setNativeProfilerEnabled(false)
+			return
+		case <-ticker.C:
+		}
+
+		cfg = s.config().Profiling
+		newInterval := sanitizeProfilerInterval(cfg.LogInterval)
+		if newInterval != interval {
+			interval = newInterval
+			ticker.Reset(interval)
+		}
+
+		globalMachineProfiler.SetEnabled(cfg.Enable)
+		setNativeProfilerEnabled(cfg.Enable)
+		if !cfg.Enable {
+			continue
+		}
+
+		var mem runtime.MemStats
+		runtime.ReadMemStats(&mem)
+		snapshot := globalMachineProfiler.Snapshot()
+		nativeSnapshot := getNativeProfilerSnapshot()
+		logProfilerSnapshot(snapshot, nativeSnapshot, &mem)
+	}
 }
