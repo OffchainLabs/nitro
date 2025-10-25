@@ -4,12 +4,17 @@
 use eyre::{eyre, OptionExt, Result};
 use lazy_static::lazy_static;
 use parking_lot::RwLock;
-use std::{collections::HashMap, str::FromStr};
+use std::{
+    collections::HashMap,
+    str::FromStr,
+    sync::atomic::{AtomicUsize, Ordering},
+};
 use wasmer_types::{CpuFeature, Target, Triple};
 
 lazy_static! {
     static ref TARGET_CACHE: RwLock<HashMap<String, Target>> = RwLock::new(HashMap::new());
     static ref TARGET_NATIVE: RwLock<Target> = RwLock::new(Target::default());
+    static ref TARGET_CACHE_UNIQUE_INSERTS: AtomicUsize = AtomicUsize::new(0);
 }
 
 fn target_from_string(input: String) -> Result<Target> {
@@ -55,6 +60,7 @@ fn target_from_string(input: String) -> Result<Target> {
 /// Populates `TARGET_CACHE` inserting target specified by `description` under `name` key.
 /// Additionally, if `native` is set it sets `TARGET_NATIVE` to the specified target.
 pub fn target_cache_set(name: String, description: String, native: bool) -> Result<()> {
+    let desc_for_log = description.clone();
     let target = target_from_string(description)?;
 
     if native {
@@ -77,7 +83,22 @@ pub fn target_cache_set(name: String, description: String, native: bool) -> Resu
         *TARGET_NATIVE.write() = target.clone();
     }
 
-    TARGET_CACHE.write().insert(name, target);
+    let mut cache = TARGET_CACHE.write();
+    let is_new_entry = !cache.contains_key(&name);
+    cache.insert(name.clone(), target);
+
+    let total = if is_new_entry {
+        TARGET_CACHE_UNIQUE_INSERTS.fetch_add(1, Ordering::Relaxed) + 1
+    } else {
+        TARGET_CACHE_UNIQUE_INSERTS.load(Ordering::Relaxed)
+    };
+    eprintln!(
+        "stylus target cache {}: name=\"{}\" description=\"{}\" unique_entries={}",
+        if is_new_entry { "insert" } else { "update" },
+        name,
+        desc_for_log,
+        total
+    );
 
     Ok(())
 }
@@ -95,4 +116,8 @@ pub fn target_cache_get(name: &str) -> Result<Target> {
         .get(name)
         .cloned()
         .ok_or_eyre("arch not set")
+}
+
+pub fn target_cache_unique_inserts() -> usize {
+    TARGET_CACHE_UNIQUE_INSERTS.load(Ordering::Relaxed)
 }
