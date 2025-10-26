@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/andybalholm/brotli"
-	"github.com/offchainlabs/nitro/util/blobs"
 	"github.com/stretchr/testify/require"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
@@ -883,6 +882,7 @@ func TestBatchPosterActuallyPostsBlobsToL1(t *testing.T) {
 	_, err = WaitForTx(ctx, testClientB.Client, tx.Hash(), 5*time.Second)
 	Require(t, err)
 
+	// We assume that `builder.L1.Client` has the L1 block that made `testClientB.Client` notice `tx`.
 	l1HeightAfterBatch, err := builder.L1.Client.BlockNumber(ctx)
 	require.NoError(t, err)
 
@@ -898,17 +898,13 @@ func TestBatchPosterActuallyPostsBlobsToL1(t *testing.T) {
 		sequencerMessageBytes, _, err := builder.L2.ConsensusNode.InboxReader.GetSequencerMessageBytes(ctx, sequenceNum)
 		Require(t, err)
 
+		blobVersionedHash := common.BytesToHash(sequencerMessageBytes[41:])
+
 		l1Block, err := builder.L1.Client.HeaderByNumber(ctx, big.NewInt(int64(batch.ParentChainBlockNumber)))
 		Require(t, err)
 		require.NotZero(t, l1Block.BlobGasUsed)
 
-		kzgBlobs, err := blobs.EncodeBlobs(sequencerMessageBytes)
-		Require(t, err)
-		require.Len(t, kzgBlobs, 1, "expected exactly one blob in sequencer message for batch %d", sequenceNum) // we are posting small data
-		commitments, _, err := blobs.ComputeCommitmentsAndHashes(kzgBlobs)
-		versionedHash := blobs.CommitmentToVersionedHash(commitments[0])
-
-		restoredBlobs, err := builder.L1.L1BlobReader.GetBlobs(ctx, l1Block.Hash(), []common.Hash{versionedHash})
+		restoredBlobs, err := builder.L1.L1BlobReader.GetBlobs(ctx, l1Block.Hash(), []common.Hash{blobVersionedHash})
 		Require(t, err)
 		require.Len(t, restoredBlobs, 1)
 	}
