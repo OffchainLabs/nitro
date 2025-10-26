@@ -42,7 +42,8 @@ type DAServerConfig struct {
 	RESTPort           uint64                              `koanf:"rest-port"`
 	RESTServerTimeouts genericconf.HTTPServerTimeoutConfig `koanf:"rest-server-timeouts"`
 
-	DataAvailability das.DataAvailabilityConfig `koanf:"data-availability"`
+	DataAvailability  das.DataAvailabilityConfig `koanf:"data-availability"`
+	ParentChainReader headerreader.Config        `koanf:"parent-chain-reader"`
 
 	Conf     genericconf.ConfConfig `koanf:"conf"`
 	LogLevel string                 `koanf:"log-level"`
@@ -65,6 +66,7 @@ var DefaultDAServerConfig = DAServerConfig{
 	RESTPort:           9877,
 	RESTServerTimeouts: genericconf.HTTPServerTimeoutConfigDefault,
 	DataAvailability:   das.DefaultDataAvailabilityConfig,
+	ParentChainReader:  headerreader.DefaultConfig,
 	Conf:               genericconf.ConfConfigDefault,
 	LogLevel:           "INFO",
 	LogType:            "plaintext",
@@ -108,6 +110,7 @@ func parseDAServer(args []string) (*DAServerConfig, error) {
 	f.String("log-type", DefaultDAServerConfig.LogType, "log type (plaintext or json)")
 
 	das.DataAvailabilityConfigAddDaserverOptions("data-availability", f)
+	headerreader.AddOptions("parent-chain-reader", f)
 	genericconf.ConfConfigAddOptions("conf", f)
 
 	k, err := confighelpers.BeginCommonParse(f, args)
@@ -210,13 +213,13 @@ func startup() error {
 	defer cancel()
 
 	var l1Reader *headerreader.HeaderReader
-	if serverConfig.DataAvailability.ParentChainNodeURL != "" && serverConfig.DataAvailability.ParentChainNodeURL != "none" {
+	if serverConfig.DataAvailability.ParentChainNodeURL != "" && serverConfig.DataAvailability.ParentChainNodeURL != "none" && serverConfig.ParentChainReader.Enable {
 		l1Client, err := das.GetL1Client(ctx, serverConfig.DataAvailability.ParentChainConnectionAttempts, serverConfig.DataAvailability.ParentChainNodeURL)
 		if err != nil {
 			return err
 		}
 		arbSys, _ := precompilesgen.NewArbSys(types.ArbSysAddress, l1Client)
-		l1Reader, err = headerreader.New(ctx, l1Client, func() *headerreader.Config { return &headerreader.DefaultConfig }, arbSys) // TODO: config
+		l1Reader, err = headerreader.New(ctx, l1Client, func() *headerreader.Config { return &serverConfig.ParentChainReader }, arbSys)
 		if err != nil {
 			return err
 		}
