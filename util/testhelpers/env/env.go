@@ -7,7 +7,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/log"
 
-	"github.com/offchainlabs/nitro/util/testhelpers/flag"
+	testflag "github.com/offchainlabs/nitro/util/testhelpers/flag"
 )
 
 // There are two CI steps, one to run tests using the path state scheme, and one to run tests using the hash state scheme.
@@ -19,4 +19,13 @@ func GetTestStateScheme() string {
 	}
 	log.Debug("test state scheme", "testStateScheme", stateScheme)
 	return stateScheme
+}
+
+func GetTestDatabaseScheme() string {
+	databaseScheme := "in-memory"
+	if *testflag.DatabaseSchemeFlag == "leveldb" || *testflag.DatabaseSchemeFlag == "pebble" {
+		databaseScheme = *testflag.DatabaseSchemeFlag
+	}
+	log.Debug("test database scheme", "testDatabaseScheme", databaseScheme)
+	return databaseScheme
 }

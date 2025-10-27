@@ -16,7 +16,7 @@ import (
 	"github.com/offchainlabs/nitro/execution/gethexec"
 )
 
-func TestRectreateMissingStates(t *testing.T) {
+func TestRecreateMissingStates(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
@@ -52,9 +52,12 @@ func TestRectreateMissingStates(t *testing.T) {
 		stack, err := node.New(builder.l2StackConfig)
 		Require(t, err)
 		defer stack.Close()
-		chainDb, err := stack.OpenDatabaseWithOptions("l2chaindata", node.DatabaseOptions{MetricsNamespace: "l2chaindata/", PebbleExtraOptions: conf.PersistentConfigDefault.Pebble.ExtraOptions("l2chaindata")})
-		Require(t, err)
-		defer chainDb.Close()
+		chainDb := rawdb.NewMemoryDatabase()
+		if stack.Config().DBEngine != "in-memory" {
+			chainDb, err := stack.OpenDatabaseWithOptions("l2chaindata", node.DatabaseOptions{MetricsNamespace: "l2chaindata/", PebbleExtraOptions: conf.PersistentConfigDefault.Pebble.ExtraOptions("l2chaindata")})
+			Require(t, err)
+			defer chainDb.Close()
+		}
 		cachingConfig := gethexec.DefaultCachingConfig
 		// For now Archive node should use HashScheme
 		cachingConfig.StateScheme = rawdb.HashScheme
