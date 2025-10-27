@@ -887,7 +887,7 @@ func TestBatchPosterActuallyPostsBlobsToL1(t *testing.T) {
 	require.NoError(t, err)
 
 	// Look up the batches posted between the two L1 heights
-	seqInbox, err := arbnode.NewSequencerInbox(builder.L1.Client, builder.addresses.SequencerInbox, int64(l1HeightBeforeBatch))
+	seqInbox, err := arbnode.NewSequencerInbox(builder.L1.Client, builder.addresses.SequencerInbox, int64(l1HeightBeforeBatch)) // nolint: gosec
 	Require(t, err)
 	batches, err := seqInbox.LookupBatchesInRange(ctx, new(big.Int).SetUint64(l1HeightBeforeBatch), new(big.Int).SetUint64(l1HeightAfterBatch))
 	Require(t, err)
@@ -900,7 +900,7 @@ func TestBatchPosterActuallyPostsBlobsToL1(t *testing.T) {
 
 		blobVersionedHash := common.BytesToHash(sequencerMessageBytes[41:])
 
-		l1Block, err := builder.L1.Client.HeaderByNumber(ctx, big.NewInt(int64(batch.ParentChainBlockNumber)))
+		l1Block, err := builder.L1.Client.HeaderByNumber(ctx, big.NewInt(int64(batch.ParentChainBlockNumber))) // nolint: gosec
 		Require(t, err)
 		require.NotZero(t, l1Block.BlobGasUsed)
 
