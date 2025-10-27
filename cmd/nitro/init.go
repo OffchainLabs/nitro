@@ -691,12 +691,12 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 
 	if config.Init.BootstrapFromExecution {
 		log.Info("Bootstrap mode: creating genesis from execution client",
-			"url", config.Init.ExecutionClientUrl,
+			"url", config.Execution.NethermindUrl,
 			"startBlock", config.Init.StartBlock)
 
 		// Validate parameters
-		if config.Init.ExecutionClientUrl == "" {
-			return nil, nil, errors.New("--init.execution-client-url required when --init.bootstrap-from-execution=true")
+		if config.Execution.NethermindUrl == "" {
+			return nil, nil, errors.New("--execution.nethermind-url required when --init.bootstrap-from-execution=true")
 		}
 		if config.Init.StartBlock == 0 {
 			return nil, nil, errors.New("--init.start-block required when --init.bootstrap-from-execution=true")
@@ -715,7 +715,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 		}
 
 		// Verify target block exists in Nethermind
-		targetBlock, err := createGenesisFromExecution(ctx, config.Init.ExecutionClientUrl,
+		targetBlock, err := createGenesisFromExecution(ctx, config.Execution.NethermindUrl,
 			config.Init.StartBlock)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to get block from execution: %w", err)

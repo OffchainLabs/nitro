@@ -43,9 +43,7 @@ type InitConfig struct {
 	ReorgToBlockBatch             int64         `koanf:"reorg-to-block-batch"`
 	ValidateGenesisAssertion      bool          `koanf:"validate-genesis-assertion"`
 	BootstrapFromExecution        bool          `koanf:"bootstrap-from-execution"`
-	ExecutionClientUrl            string        `koanf:"execution-client-url"`
 	StartBlock                    uint64        `koanf:"start-block"`
-	ValidateBootstrap             bool          `koanf:"validate-bootstrap"`
 }
 
 var InitConfigDefault = InitConfig{
@@ -79,9 +77,7 @@ var InitConfigDefault = InitConfig{
 	ValidateGenesisAssertion:      true,
 
 	BootstrapFromExecution: false,
-	ExecutionClientUrl:     "",
 	StartBlock:             0,
-	ValidateBootstrap:      false,
 }
 
 func InitConfigAddOptions(prefix string, f *pflag.FlagSet) {
@@ -119,9 +115,7 @@ func InitConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".validate-genesis-assertion", InitConfigDefault.ValidateGenesisAssertion, "tests genesis assertion posted on parent chain against the genesis block created on init")
 
 	f.Bool(prefix+".bootstrap-from-execution", InitConfigDefault.BootstrapFromExecution, "bootstrap chain database from execution client instead of downloading snapshot")
-	f.String(prefix+".execution-client-url", InitConfigDefault.ExecutionClientUrl, "execution client RPC URL for bootstrapping (required when bootstrap-from-execution is true)")
 	f.Uint64(prefix+".start-block", InitConfigDefault.StartBlock, "block number to start from when bootstrapping from execution client (required when bootstrap-from-execution is true)")
-	f.Bool(prefix+".validate-bootstrap", InitConfigDefault.ValidateBootstrap, "if true: validate bootstrap state root against L1 assertion")
 }
 
 func (c *InitConfig) Validate() error {
@@ -152,9 +146,6 @@ func (c *InitConfig) Validate() error {
 	}
 
 	if c.BootstrapFromExecution {
-		if c.ExecutionClientUrl == "" {
-			return fmt.Errorf("execution-client-url is required when bootstrap-from-execution is enabled")
-		}
 		// StartBlock == 0 is valid for chains with genesis at block 0, but bootstrap is typically
 		// used for starting at a later block. If starting from genesis (block 0), standard init
 		// methods should be used instead of bootstrap.

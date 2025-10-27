@@ -368,7 +368,6 @@ run-follower-compare-mainnet:
 		--chain.id=42161 \
 		--chain.name=arb1 \
 		--init.bootstrap-from-execution=true \
-		--init.execution-client-url=http://localhost:20545 \
 		--init.start-block=22207817 \
 		--execution.nethermind-url=http://localhost:20545 \
 		--execution.nethermind-ws-url ws://localhost:28551 \
