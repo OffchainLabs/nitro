@@ -94,9 +94,6 @@ func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.Arbos
 		oldL1BlockNumber, err := state.Blockhashes().L1BlockNumber()
 		state.Restrict(err)
 
-		l2BaseFee, err := state.L2PricingState().BaseFeeWei()
-		state.Restrict(err)
-
 		if l1BlockNumber > oldL1BlockNumber {
 			state.Restrict(state.Blockhashes().RecordNewL1Block(l1BlockNumber-1, prevHash, state.ArbOSVersion()))
 		}
@@ -107,7 +104,7 @@ func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.Arbos
 		_ = state.RetryableState().TryToReapOneRetryable(currentTime, evm, util.TracingDuringEVM)
 		_ = state.RetryableState().TryToReapOneRetryable(currentTime, evm, util.TracingDuringEVM)
 
-		state.L2PricingState().UpdatePricingModel(l2BaseFee, timePassed, false)
+		state.L2PricingState().UpdatePricingModel(timePassed, state.ArbOSVersion())
 
 		return state.UpgradeArbosVersionIfNecessary(currentTime, evm.StateDB, evm.ChainConfig())
 	case InternalTxBatchPostingReportMethodID:
