@@ -23,7 +23,6 @@ func testTwoNodesSimple(t *testing.T, dasModeStr string) {
 	builder.nodeConfig = l1NodeConfigA
 	builder.chainConfig = chainConfig
 	builder.L2Info = nil
-	builder.nodeConfig.BatchPoster.DisableDapFallbackStoreDataOnChain = true
 	cleanup := builder.Build(t)
 	defer cleanup()
 
