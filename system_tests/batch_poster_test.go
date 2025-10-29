@@ -157,7 +157,7 @@ func testBatchPosterParallel(t *testing.T, useRedis bool, useRedisLock bool) {
 				Config:        func() *arbnode.BatchPosterConfig { return &batchPosterConfig },
 				DeployInfo:    builder.L2.ConsensusNode.DeployInfo,
 				TransactOpts:  &seqTxOpts,
-				DAPWriter:     nil,
+				DAPWriters:    nil,
 				ParentChainID: parentChainID,
 			},
 		)
@@ -297,7 +297,7 @@ func TestRedisBatchPosterHandoff(t *testing.T) {
 				Config:        func() *arbnode.BatchPosterConfig { return &batchPosterConfig },
 				DeployInfo:    builder.L2.ConsensusNode.DeployInfo,
 				TransactOpts:  &seqTxOpts,
-				DAPWriter:     nil,
+				DAPWriters:    nil,
 				ParentChainID: parentChainID,
 			},
 		)

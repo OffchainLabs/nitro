@@ -39,7 +39,6 @@ func TestDAS_BasicAggregationLocal(t *testing.T) {
 			Key: KeyConfig{
 				PrivKey: privKey,
 			},
-			ParentChainNodeURL: "none",
 		}
 
 		storageServices = append(storageServices, NewMemoryBackedStorageService(ctx))
@@ -53,7 +52,7 @@ func TestDAS_BasicAggregationLocal(t *testing.T) {
 
 	aggregatorConfig := DefaultAggregatorConfig
 	aggregatorConfig.AssumedHonest = 1
-	aggregator, err := NewAggregator(ctx, DataAvailabilityConfig{RPCAggregator: aggregatorConfig, ParentChainNodeURL: "none"}, backends)
+	aggregator, err := NewAggregatorWithSeqInboxCaller(DataAvailabilityConfig{RPCAggregator: aggregatorConfig}, backends, nil)
 	Require(t, err)
 
 	rawMsg := []byte("It's time for you to see the fnords.")
@@ -195,7 +194,6 @@ func testConfigurableStorageFailures(t *testing.T, shouldFailAggregation bool) {
 			Key: KeyConfig{
 				PrivKey: privKey,
 			},
-			ParentChainNodeURL: "none",
 		}
 
 		storageServices = append(storageServices, NewMemoryBackedStorageService(ctx))
@@ -209,13 +207,11 @@ func testConfigurableStorageFailures(t *testing.T, shouldFailAggregation bool) {
 
 	aggregatorConfig := DefaultAggregatorConfig
 	aggregatorConfig.AssumedHonest = assumedHonest
-	aggregator, err := NewAggregator(
-		ctx,
+	aggregator, err := NewAggregatorWithSeqInboxCaller(
 		DataAvailabilityConfig{
-			RPCAggregator:      aggregatorConfig,
-			ParentChainNodeURL: "none",
-			RequestTimeout:     time.Millisecond * 2000,
-		}, backends)
+			RPCAggregator:  aggregatorConfig,
+			RequestTimeout: time.Millisecond * 2000,
+		}, backends, nil)
 	Require(t, err)
 
 	rawMsg := []byte("It's time for you to see the fnords.")

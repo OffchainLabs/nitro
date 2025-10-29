@@ -4,21 +4,7 @@
 
 pragma solidity ^0.8.0;
 
-/* TODO Once the Custom DA contracts branch is merged we can uncomment this
-   and remove the interface definition below.
 import "@nitro-contracts/osp/ICustomDAProofValidator.sol";
-*/
-interface ICustomDAProofValidator {
-    function validateReadPreimage(
-        bytes32 certHash,
-        uint256 offset,
-        bytes calldata proof
-    ) external view returns (bytes memory preimageChunk);
-
-    function validateCertificate(
-        bytes calldata proof
-    ) external view returns (bool isValid);
-}
 
 /**
  * @title ReferenceDAProofValidator
@@ -172,6 +158,7 @@ contract ReferenceDAProofValidator is ICustomDAProofValidator {
         if (certificate[0] != bytes1(uint8(CERT_HEADER))) {
             return false; // Invalid certificate header
         }
+
         if (certificate[1] != bytes1(uint8(PROVIDER_TYPE))) {
             return false; // Invalid provider type
         }

@@ -1,7 +1,6 @@
-package proofenhancement
+package server_arb
 
 import (
-	"bytes"
 	"context"
 	"encoding/binary"
 	"strings"
@@ -184,7 +183,7 @@ func TestCustomDAProofEnhancement(t *testing.T) {
 	// 5. Verify certificate
 	// #nosec G115
 	gotCertificate := enhancedProof[offset : offset+int(certSize)]
-	if !bytes.Equal(gotCertificate, testCertificate) {
+	if !equal(gotCertificate, testCertificate) {
 		t.Errorf("Wrong certificate in enhanced proof")
 	}
 	// #nosec G115
@@ -192,7 +191,7 @@ func TestCustomDAProofEnhancement(t *testing.T) {
 
 	// 6. Verify custom proof from validator
 	gotCustomProof := enhancedProof[offset:]
-	if !bytes.Equal(gotCustomProof, mockProof) {
+	if !equal(gotCustomProof, mockProof) {
 		t.Errorf("Wrong custom proof: got %v, expected %v", gotCustomProof, mockProof)
 	}
 }
@@ -297,7 +296,7 @@ func TestValidateCertificateProofEnhancement(t *testing.T) {
 
 	// #nosec G115
 	gotCertificate := enhancedProof[offset : offset+int(certSize)]
-	if !bytes.Equal(gotCertificate, testCertificate) {
+	if !equal(gotCertificate, testCertificate) {
 		t.Errorf("Wrong certificate in enhanced proof")
 	}
 	// #nosec G115
@@ -305,89 +304,22 @@ func TestValidateCertificateProofEnhancement(t *testing.T) {
 
 	// Verify validity proof
 	gotValidityProof := enhancedProof[offset:]
-	if !bytes.Equal(gotValidityProof, mockValidityProof) {
+	if !equal(gotValidityProof, mockValidityProof) {
 		t.Errorf("Wrong validity proof: got %v, expected %v", gotValidityProof, mockValidityProof)
 	}
 }
 
-func TestNewCustomDAProofEnhancer(t *testing.T) {
-	ctx := context.Background()
-
-	// Test data
-	testData := []byte("test custom DA data")
-	testCertificate := createTestCertificate(t, testData)
-	certHash := crypto.Keccak256Hash(testCertificate)
-	testOffset := uint64(10)
-
-	// Create sequencer message
-	sequencerMessage := make([]byte, 40+len(testCertificate))
-	copy(sequencerMessage[40:], testCertificate)
-
-	inboxTracker := &mockInboxTracker{
-		batchForMessage: 123,
-		found:           true,
+// Helper function to compare byte slices
+func equal(a, b []byte) bool {
+	if len(a) != len(b) {
+		return false
 	}
-
-	inboxReader := &mockInboxReader{
-		sequencerMessage: sequencerMessage,
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
 	}
-
-	mockReadProof := []byte{0x01, 0x02, 0x03, 0x04}
-	mockValidityProof := []byte{0x01, 0x01}
-	mockValidator := &mockValidator{
-		generateReadPreimageProofResult: mockReadProof,
-		generateCertValidityProofResult: mockValidityProof,
-	}
-
-	// Create enhancer using convenience constructor
-	enhancer := NewCustomDAProofEnhancer(mockValidator, inboxTracker, inboxReader)
-
-	// Test ReadPreimage enhancement
-	t.Run("ReadPreimageEnhancement", func(t *testing.T) {
-		// Create proof with ReadPreimage marker
-		originalProofSize := 100
-		proof := make([]byte, originalProofSize+32+8+1)
-		proof[0] = ProofEnhancementFlag
-		for i := 1; i < originalProofSize; i++ {
-			proof[i] = byte(i)
-		}
-		copy(proof[originalProofSize:], certHash[:])
-		binary.BigEndian.PutUint64(proof[originalProofSize+32:], testOffset)
-		proof[originalProofSize+40] = MarkerCustomDAReadPreimage
-
-		enhanced, err := enhancer.EnhanceProof(ctx, arbutil.MessageIndex(42), proof)
-		if err != nil {
-			t.Fatalf("ReadPreimage enhancement failed: %v", err)
-		}
-
-		// Verify it was enhanced (flag removed)
-		if enhanced[0]&ProofEnhancementFlag != 0 {
-			t.Error("Enhancement flag not removed")
-		}
-	})
-
-	// Test ValidateCertificate enhancement
-	t.Run("ValidateCertificateEnhancement", func(t *testing.T) {
-		// Create proof with ValidateCertificate marker
-		originalProofSize := 100
-		proof := make([]byte, originalProofSize+32+1)
-		proof[0] = ProofEnhancementFlag
-		for i := 1; i < originalProofSize; i++ {
-			proof[i] = byte(i)
-		}
-		copy(proof[originalProofSize:], certHash[:])
-		proof[originalProofSize+32] = MarkerCustomDAValidateCertificate
-
-		enhanced, err := enhancer.EnhanceProof(ctx, arbutil.MessageIndex(789), proof)
-		if err != nil {
-			t.Fatalf("ValidateCertificate enhancement failed: %v", err)
-		}
-
-		// Verify it was enhanced (flag removed)
-		if enhanced[0]&ProofEnhancementFlag != 0 {
-			t.Error("Enhancement flag not removed")
-		}
-	})
+	return true
 }
 
 func TestProofEnhancerErrorCases(t *testing.T) {
