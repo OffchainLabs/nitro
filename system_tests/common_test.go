@@ -67,6 +67,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/daprovider/das"
+	"github.com/offchainlabs/nitro/daprovider/das/dastree"
 	"github.com/offchainlabs/nitro/daprovider/das/dasutil"
 	"github.com/offchainlabs/nitro/deploy"
 	"github.com/offchainlabs/nitro/execution/gethexec"
@@ -1899,8 +1900,34 @@ func authorizeDASKeyset(
 	tx, err := upgradeExecutor.ExecuteCall(&trOps, l1info.Accounts["SequencerInbox"].Address, setKeysetCalldata)
 	Require(t, err, "unable to set valid keyset")
 
-	_, err = EnsureTxSucceeded(ctx, l1client, tx)
+	receipt, err := EnsureTxSucceeded(ctx, l1client, tx)
 	Require(t, err, "unable to ensure transaction success for setting valid keyset")
+
+	// Wait for the keyset event to be queryable via eth_getLogs
+	// This prevents race conditions where batch posting happens before L1 indexing completes
+	keysetHash := dastree.Hash(keysetBytes)
+	seqInbox, err := bridgegen.NewSequencerInbox(l1info.Accounts["SequencerInbox"].Address, l1client)
+	Require(t, err, "unable to bind sequencer inbox")
+
+	blockNum := receipt.BlockNumber.Uint64()
+	maxRetries := 10
+	for i := 0; i < maxRetries; i++ {
+		filterOpts := &bind.FilterOpts{
+			Start:   blockNum,
+			End:     &blockNum,
+			Context: ctx,
+		}
+		iter, err := seqInbox.FilterSetValidKeyset(filterOpts, [][32]byte{keysetHash})
+		if err == nil {
+			// Successfully queried logs, keyset is now fetchable
+			iter.Close()
+			break
+		}
+		if i == maxRetries-1 {
+			Require(t, err, "unable to query keyset logs after retries")
+		}
+		time.Sleep(250 * time.Millisecond)
+	}
 }
 
 func setupConfigWithDAS(
