@@ -22,9 +22,10 @@ func PricingForTest(t *testing.T) *L2PricingState {
 }
 
 func fakeBlockUpdate(t *testing.T, pricing *L2PricingState, gasUsed int64, timePassed uint64) {
-	basefee := getPrice(t, pricing)
-	pricing.storage.Burner().Restrict(pricing.AddToGasPool(-gasUsed))
-	pricing.UpdatePricingModel(arbmath.UintToBig(basefee), timePassed, true)
+	t.Helper()
+
+	pricing.storage.Burner().Restrict(pricing.addToGasPoolLegacy(-gasUsed))
+	pricing.updatePricingModelLegacy(timePassed)
 }
 
 func TestPricingModelExp(t *testing.T) {
@@ -106,6 +107,48 @@ func getSpeedLimit(t *testing.T, pricing *L2PricingState) uint64 {
 	value, err := pricing.SpeedLimitPerSecond()
 	Require(t, err)
 	return value
+}
+
+func getConstraintsLength(t *testing.T, pricing *L2PricingState) uint64 {
+	length, err := pricing.ConstraintsLength()
+	Require(t, err)
+	return length
+}
+
+func TestGasConstraints(t *testing.T) {
+	pricing := PricingForTest(t)
+	if got := getConstraintsLength(t, pricing); got != 0 {
+		t.Fatalf("wrong number of constraints: got %v want 0", got)
+	}
+	const n uint64 = 10
+	for i := range n {
+		Require(t, pricing.AddConstraint(100*i+1, 100*i+2, 100*i+3))
+	}
+	if got := getConstraintsLength(t, pricing); got != n {
+		t.Fatalf("wrong number of constraints: got %v want %v", got, n)
+	}
+	for i := range n {
+		constraint := pricing.OpenConstraintAt(i)
+		target, err := constraint.target.Get()
+		Require(t, err)
+		if want := 100*i + 1; target != want {
+			t.Errorf("wrong target: got %v, want %v", target, want)
+		}
+		inertia, err := constraint.adjustmentWindow.Get()
+		Require(t, err)
+		if want := 100*i + 2; inertia != want {
+			t.Errorf("wrong inertia: got %v, want %v", inertia, want)
+		}
+		backlog, err := constraint.backlog.Get()
+		Require(t, err)
+		if want := 100*i + 3; backlog != want {
+			t.Errorf("wrong backlog: got %v, want %v", backlog, want)
+		}
+	}
+	Require(t, pricing.ClearConstraints())
+	if got := getConstraintsLength(t, pricing); got != 0 {
+		t.Fatalf("wrong number of constraints: got %v want 0", got)
+	}
 }
 
 func Require(t *testing.T, err error, printables ...interface{}) {

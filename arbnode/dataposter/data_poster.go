@@ -258,11 +258,13 @@ func TxToSignTxArgs(addr common.Address, tx *types.Transaction) (*apitypes.SendT
 		blobs       []kzg4844.Blob
 		commitments []kzg4844.Commitment
 		proofs      []kzg4844.Proof
+		blobVersion byte
 	)
 	if tx.BlobTxSidecar() != nil {
 		blobs = tx.BlobTxSidecar().Blobs
 		commitments = tx.BlobTxSidecar().Commitments
 		proofs = tx.BlobTxSidecar().Proofs
+		blobVersion = tx.BlobTxSidecar().Version
 	}
 	return &apitypes.SendTxArgs{
 		From:                 common.NewMixedcaseAddress(addr),
@@ -278,6 +280,7 @@ func TxToSignTxArgs(addr common.Address, tx *types.Transaction) (*apitypes.SendT
 		ChainID:              (*hexutil.Big)(tx.ChainId()),
 		BlobFeeCap:           (*hexutil.Big)(tx.BlobGasFeeCap()),
 		BlobHashes:           tx.BlobHashes(),
+		BlobVersion:          blobVersion,
 		Blobs:                blobs,
 		Commitments:          commitments,
 		Proofs:               proofs,
@@ -1226,7 +1229,10 @@ func (p *DataPoster) Start(ctxIn context.Context) {
 			log.Warn("failed to update tx poster nonce", "err", err)
 		}
 		now := time.Now()
-		nextCheck := now.Add(arbmath.MinInt(p.config().ReplacementTimes[0], p.config().BlobTxReplacementTimes[0]))
+		nextCheck := now.Add(p.config().ReplacementTimes[0])
+		if len(p.config().BlobTxReplacementTimes) > 0 {
+			nextCheck = now.Add(arbmath.MinInt(p.config().ReplacementTimes[0], p.config().BlobTxReplacementTimes[0]))
+		}
 		maxTxsToRbf := p.config().MaxMempoolTransactions
 		if maxTxsToRbf == 0 {
 			maxTxsToRbf = 512
@@ -1412,6 +1418,12 @@ func (c *DataPosterConfig) Validate() error {
 		// Valid values
 	default:
 		return fmt.Errorf("invalid enable-cell-proofs value %q (valid: \"\", \"auto\", \"force-enable\", \"force-disable\")", c.EnableCellProofs)
+	}
+	if len(c.ReplacementTimes) == 0 {
+		return fmt.Errorf("replacement-times must have at least one value")
+	}
+	if c.Post4844Blobs && len(c.BlobTxReplacementTimes) == 0 {
+		return fmt.Errorf("blob-tx-replacement-times must have at least one value when post-4844-blobs is enabled")
 	}
 	return nil
 }
