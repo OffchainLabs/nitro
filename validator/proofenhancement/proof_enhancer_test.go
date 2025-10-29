@@ -1,6 +1,7 @@
 package proofenhancement
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
 	"strings"
@@ -183,7 +184,7 @@ func TestCustomDAProofEnhancement(t *testing.T) {
 	// 5. Verify certificate
 	// #nosec G115
 	gotCertificate := enhancedProof[offset : offset+int(certSize)]
-	if !equal(gotCertificate, testCertificate) {
+	if !bytes.Equal(gotCertificate, testCertificate) {
 		t.Errorf("Wrong certificate in enhanced proof")
 	}
 	// #nosec G115
@@ -191,7 +192,7 @@ func TestCustomDAProofEnhancement(t *testing.T) {
 
 	// 6. Verify custom proof from validator
 	gotCustomProof := enhancedProof[offset:]
-	if !equal(gotCustomProof, mockProof) {
+	if !bytes.Equal(gotCustomProof, mockProof) {
 		t.Errorf("Wrong custom proof: got %v, expected %v", gotCustomProof, mockProof)
 	}
 }
@@ -296,7 +297,7 @@ func TestValidateCertificateProofEnhancement(t *testing.T) {
 
 	// #nosec G115
 	gotCertificate := enhancedProof[offset : offset+int(certSize)]
-	if !equal(gotCertificate, testCertificate) {
+	if !bytes.Equal(gotCertificate, testCertificate) {
 		t.Errorf("Wrong certificate in enhanced proof")
 	}
 	// #nosec G115
@@ -304,22 +305,9 @@ func TestValidateCertificateProofEnhancement(t *testing.T) {
 
 	// Verify validity proof
 	gotValidityProof := enhancedProof[offset:]
-	if !equal(gotValidityProof, mockValidityProof) {
+	if !bytes.Equal(gotValidityProof, mockValidityProof) {
 		t.Errorf("Wrong validity proof: got %v, expected %v", gotValidityProof, mockValidityProof)
 	}
-}
-
-// Helper function to compare byte slices
-func equal(a, b []byte) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
 }
 
 func TestNewCustomDAProofEnhancer(t *testing.T) {
