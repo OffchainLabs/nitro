@@ -96,7 +96,6 @@ func (v *Validator) generateCertificateValidityProofInternal(ctx context.Context
 		return []byte{0, 0x01}, nil //nolint:nilerr // Invalid certificate, version 1
 	}
 
-	// TODO: This will need to be commented out until we have merged customda contracts
 	// Create contract binding
 	validator, err := localgen.NewReferenceDAProofValidator(v.validatorAddr, v.l1Client)
 	if err != nil {

@@ -204,8 +204,7 @@ func createNodeBWithSharedContracts(
 	l2blockchain, err := gethexec.WriteOrTestBlockChain(l2chainDb, coreCacheConfig, initReader, chainConfig, nil, nil, initMessage, &execConfig.TxIndexer, 0)
 	Require(t, err)
 
-	execConfigFetcher := func() *gethexec.Config { return execConfig }
-	execNode, err := gethexec.CreateExecutionNode(ctx, l2stack, l2chainDb, l2blockchain, l1client, execConfigFetcher, big.NewInt(1337), 0)
+	execNode, err := gethexec.CreateExecutionNode(ctx, l2stack, l2chainDb, l2blockchain, l1client, NewCommonConfigFetcher(execConfig), big.NewInt(1337), 0)
 	Require(t, err)
 	l1ChainId, err := l1client.ChainID(ctx)
 	Require(t, err)
@@ -213,7 +212,7 @@ func createNodeBWithSharedContracts(
 	Require(t, err)
 
 	// Create node using the same addresses as the first node
-	l2node, err := arbnode.CreateNodeFullExecutionClient(ctx, l2stack, execNode, execNode, execNode, execNode, l2arbDb, NewFetcherFromConfig(nodeConfig), l2blockchain.Config(), l1client, addresses, &txOpts, &txOpts, dataSigner, fatalErrChan, l1ChainId, nil /* blob reader */, locator.LatestWasmModuleRoot())
+	l2node, err := arbnode.CreateNodeFullExecutionClient(ctx, l2stack, execNode, execNode, execNode, execNode, l2arbDb, NewCommonConfigFetcher(nodeConfig), l2blockchain.Config(), l1client, addresses, &txOpts, &txOpts, dataSigner, fatalErrChan, l1ChainId, nil /* blob reader */, locator.LatestWasmModuleRoot())
 	Require(t, err)
 
 	l2client := ClientForStack(t, l2stack)
@@ -267,8 +266,8 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, 
 	nodeConfigA.DA.ExternalProvider.Enable = true
 
 	// Set up L1 first to get validator address
-	l1info, l1backend, l1client, l1stack, addresses, stakeTokenAddr := setupL1ForBoldProtocol(
-		t, ctx, sconf, l2info, nodeConfigA, l2chainConfig, true, // enableCustomDA
+	l1info, l1backend, l1client, l1stack, addresses, stakeTokenAddr, asserterOpts, signerCfg := setupL1ForBoldProtocol(
+		t, ctx, sconf, l2info, false, nodeConfigA, l2chainConfig, true, // useExternalSigner=false, enableCustomDA=true
 	)
 	defer requireClose(t, l1stack)
 
@@ -319,6 +318,7 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, 
 	l2info, l2nodeA, _, _, assertionChain := createL2NodeForBoldProtocol(
 		t, ctx, true, nodeConfigA, l2chainConfig, l2info,
 		l1info, l1backend, l1client, l1stack, addresses, stakeTokenAddr,
+		false, asserterOpts, signerCfg, // useExternalSigner=false
 	)
 	defer l2nodeA.StopAndWait()
 
@@ -508,7 +508,7 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, 
 		rawdb.NewTable(l2nodeB.ArbDB, storage.StakerPrefix),
 		l2nodeB.L1Reader,
 		&evilOpts,
-		NewFetcherFromConfig(l2nodeConfig),
+		NewCommonConfigFetcher(l2nodeConfig),
 		l2nodeB.SyncMonitor,
 		l1ChainId,
 	)

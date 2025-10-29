@@ -101,7 +101,11 @@ func newApiClosures(
 			db.SetState(actingAddress, key, value)
 		}
 		if isOutOfGas {
-			return OutOfGas
+			if evm.Context.ArbOSVersion < 50 {
+				return Failure
+			} else {
+				return OutOfGas
+			}
 		}
 		scope.Contract.UsedMultiGas.SaturatingAddInto(multiGas)
 		return Success

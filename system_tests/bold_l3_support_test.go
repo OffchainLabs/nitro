@@ -252,7 +252,7 @@ func startL3BoldChallengeManager(t *testing.T, ctx context.Context, builder *Nod
 		rawdb.NewTable(node.ConsensusNode.ArbDB, storage.StakerPrefix),
 		builder.L3.ConsensusNode.L1Reader,
 		&txOpts,
-		NewFetcherFromConfig(builder.nodeConfig),
+		NewCommonConfigFetcher(builder.nodeConfig),
 		node.ConsensusNode.SyncMonitor,
 		builder.L2Info.Signer.ChainID(),
 	)

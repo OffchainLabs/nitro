@@ -16,7 +16,8 @@ contract ReferenceDAProofValidator is ICustomDAProofValidator {
     uint256 private constant VERSION_LEN = 1;
     uint256 private constant PREIMAGE_SIZE_LEN = 8;
     uint256 private constant CERT_HEADER = 0x01;
-    uint256 private constant CERT_TOTAL_LEN = 98;
+    uint256 private constant PROVIDER_TYPE = 0xFF;
+    uint256 private constant CERT_TOTAL_LEN = 99;
     uint256 private constant PROOF_VERSION = 0x01;
 
     mapping(address => bool) public trustedSigners;
@@ -50,10 +51,12 @@ contract ReferenceDAProofValidator is ICustomDAProofValidator {
         // Verify certificate hash matches what OSP validated
         require(keccak256(certificate) == certHash, "Certificate hash mismatch");
 
-        // Validate certificate format: [prefix(1), dataHash(32), v(1), r(32), s(32)] = 98 bytes
+        // Validate certificate format: [header(1), providerType(1), dataHash(32), v(1), r(32), s(32)] = 99 bytes
         // First byte must be 0x01 (CustomDA message header flag)
+        // Second byte must be 0xFF (ReferenceDA provider type)
         require(certificate.length == CERT_TOTAL_LEN, "Invalid certificate length");
         require(certificate[0] == bytes1(uint8(CERT_HEADER)), "Invalid certificate header");
+        require(certificate[1] == bytes1(uint8(PROVIDER_TYPE)), "Invalid provider type");
 
         // Custom data starts after certificate
         uint256 customDataStart = CERT_SIZE_LEN + certSize;
@@ -87,7 +90,7 @@ contract ReferenceDAProofValidator is ICustomDAProofValidator {
             customDataStart + VERSION_LEN + PREIMAGE_SIZE_LEN:
                 customDataStart + VERSION_LEN + PREIMAGE_SIZE_LEN + preimageSize
         ];
-        bytes32 dataHashFromCert = bytes32(certificate[1:33]);
+        bytes32 dataHashFromCert = bytes32(certificate[2:34]);
         require(sha256(preimage) == dataHashFromCert, "Invalid preimage hash");
 
         // Extract chunk at offset, matching the behavior of other preimage types
@@ -142,8 +145,9 @@ contract ReferenceDAProofValidator is ICustomDAProofValidator {
 
         bytes calldata certificate = proof[CERT_SIZE_LEN:CERT_SIZE_LEN + certSize];
 
-        // Certificate format is: [prefix(1), dataHash(32), v(1), r(32), s(32)] = 98 bytes total
+        // Certificate format is: [header(1), providerType(1), dataHash(32), v(1), r(32), s(32)] = 99 bytes total
         // First byte must be 0x01 (CustomDA message header flag)
+        // Second byte must be 0xFF (ReferenceDA provider type)
         // Note: We return false for invalid certificates instead of reverting
         // because the certificate is already onchain. An honest validator must be able
         // to win a challenge to prove that ValidatePreImage should return false
@@ -155,11 +159,15 @@ contract ReferenceDAProofValidator is ICustomDAProofValidator {
             return false; // Invalid certificate header
         }
 
+        if (certificate[1] != bytes1(uint8(PROVIDER_TYPE))) {
+            return false; // Invalid provider type
+        }
+
         // Extract data hash and signature components
-        bytes32 dataHash = bytes32(certificate[1:33]);
-        uint8 v = uint8(certificate[33]);
-        bytes32 r = bytes32(certificate[34:66]);
-        bytes32 s = bytes32(certificate[66:98]);
+        bytes32 dataHash = bytes32(certificate[2:34]);
+        uint8 v = uint8(certificate[34]);
+        bytes32 r = bytes32(certificate[35:67]);
+        bytes32 s = bytes32(certificate[67:99]);
 
         // Recover signer from signature
         address signer = ecrecover(dataHash, v, r, s);

@@ -6,7 +6,9 @@ package parent
 
 import (
 	"context"
-	"errors"
+	_ "embed"
+	"encoding/json"
+	"fmt"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/consensus/misc/eip4844"
@@ -16,6 +18,10 @@ import (
 	"github.com/offchainlabs/nitro/util/headerreader"
 )
 
+// knownConfigs maps known Ethereum chain IDs to their chain configurations.
+// Note that this is not exhaustive; users can add more configurations via
+// chain_config.json files or can even override existing known configurations by providing
+// the same chain ID.
 var (
 	knownConfigs = map[uint64]*params.ChainConfig{
 		params.MainnetChainConfig.ChainID.Uint64():         params.MainnetChainConfig,
@@ -24,6 +30,20 @@ var (
 		params.AllDevChainProtocolChanges.ChainID.Uint64(): params.AllDevChainProtocolChanges,
 	}
 )
+
+//go:embed chain_config.json
+var DefaultChainsConfigBytes []byte
+
+func init() {
+	var chainsConfig []*params.ChainConfig
+	err := json.Unmarshal(DefaultChainsConfigBytes, &chainsConfig)
+	if err != nil {
+		panic(fmt.Errorf("error marshalling default chainsConfig: %w", err))
+	}
+	for _, chainConfig := range chainsConfig {
+		knownConfigs[chainConfig.ChainID.Uint64()] = chainConfig
+	}
+}
 
 type ParentChain struct {
 	ChainID  *big.Int
@@ -109,7 +129,7 @@ func (p *ParentChain) SupportsCellProofs(ctx context.Context, h *types.Header) (
 	}
 	if pCfg.IsArbitrum() {
 		// Arbitrum does not support blob transactions, so this should not have been called.
-		return false, errors.New("parent chain is Arbitrum and does not support blobs")
+		return false, nil
 	}
 	// arbosVersion 0 because we're checking L1 (not L2 Arbitrum)
 	return pCfg.IsOsaka(pCfg.LondonBlock, header.Time, 0), nil
