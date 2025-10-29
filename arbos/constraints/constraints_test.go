@@ -45,8 +45,8 @@ func TestResourceSetGetResources(t *testing.T) {
 func TestAddToBacklog(t *testing.T) {
 	resources := EmptyResourceSet().WithResources(multigas.ResourceKindComputation, multigas.ResourceKindStorageAccess)
 	c := &ResourceConstraint{
-		Resources: resources,
-		Backlog:   0,
+		resources: resources,
+		backlog:   0,
 	}
 
 	gasUsed := multigas.MultiGasFromPairs(
@@ -56,32 +56,32 @@ func TestAddToBacklog(t *testing.T) {
 	)
 
 	c.AddToBacklog(gasUsed)
-	require.Equal(t, uint64(125), c.Backlog) // 50 + 75
+	require.Equal(t, uint64(125), c.backlog) // 50 + 75
 
 	// Test saturation
-	c.Backlog = math.MaxUint64 - 10
+	c.backlog = math.MaxUint64 - 10
 	c.AddToBacklog(gasUsed)
-	require.Equal(t, c.Backlog, uint64(math.MaxUint64))
+	require.Equal(t, c.backlog, uint64(math.MaxUint64))
 }
 
 func TestRemoveFromBacklog(t *testing.T) {
 	c := &ResourceConstraint{
-		Backlog:      1000,
-		TargetPerSec: 50,
+		backlog:      1000,
+		targetPerSec: 50,
 	}
 
 	// Remove a small amount
 	c.RemoveFromBacklog(10) // Remove 10 * 50 = 500
-	require.Equal(t, uint64(500), c.Backlog)
+	require.Equal(t, uint64(500), c.backlog)
 
 	// Remove the rest
 	c.RemoveFromBacklog(10) // Remove 10 * 50 = 500
-	require.Equal(t, uint64(0), c.Backlog)
+	require.Equal(t, uint64(0), c.backlog)
 
 	// Test saturation (underflow)
-	c.Backlog = 100
+	c.backlog = 100
 	c.RemoveFromBacklog(10) // Attempt to remove 500
-	require.Equal(t, uint64(0), c.Backlog)
+	require.Equal(t, uint64(0), c.backlog)
 }
 
 func TestNewResourceConstraints(t *testing.T) {
@@ -101,9 +101,9 @@ func TestSetResourceConstraints(t *testing.T) {
 
 	constraint := rc.Get(resources, periodSecs)
 	require.NotNil(t, constraint)
-	require.Equal(t, resources, constraint.Resources)
-	require.Equal(t, periodSecs, constraint.Period)
-	require.Equal(t, targetPerSec, constraint.TargetPerSec)
+	require.Equal(t, resources, constraint.resources)
+	require.Equal(t, periodSecs, constraint.period)
+	require.Equal(t, targetPerSec, constraint.targetPerSec)
 }
 
 func TestGetResourceConstraints(t *testing.T) {
@@ -117,10 +117,10 @@ func TestGetResourceConstraints(t *testing.T) {
 	// Test getting an existing constraint
 	constraint := rc.Get(resources, periodSecs)
 	require.NotNil(t, constraint)
-	require.Equal(t, resources, constraint.Resources)
-	require.Equal(t, periodSecs, constraint.Period)
-	require.Equal(t, targetPerSec, constraint.TargetPerSec)
-	require.Equal(t, uint64(0), constraint.Backlog)
+	require.Equal(t, resources, constraint.resources)
+	require.Equal(t, periodSecs, constraint.period)
+	require.Equal(t, targetPerSec, constraint.targetPerSec)
+	require.Equal(t, uint64(0), constraint.backlog)
 
 	// Test getting a non-existent constraint
 	nonExistentResources := EmptyResourceSet().WithResources(multigas.ResourceKindStorageAccess)
@@ -172,12 +172,12 @@ func TestAllResourceConstraints(t *testing.T) {
 	found1 := false
 	found2 := false
 	for _, c := range constraints {
-		if c.Resources == resources1 && c.Period == periodSecs1 {
-			require.Equal(t, targetPerSec1, c.TargetPerSec)
+		if c.resources == resources1 && c.period == periodSecs1 {
+			require.Equal(t, targetPerSec1, c.targetPerSec)
 			found1 = true
 		}
-		if c.Resources == resources2 && c.Period == periodSecs2 {
-			require.Equal(t, targetPerSec2, c.TargetPerSec)
+		if c.resources == resources2 && c.period == periodSecs2 {
+			require.Equal(t, targetPerSec2, c.targetPerSec)
 			found2 = true
 		}
 	}
