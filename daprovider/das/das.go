@@ -25,7 +25,8 @@ type DataAvailabilityServiceHealthChecker interface {
 type DataAvailabilityConfig struct {
 	Enable bool `koanf:"enable"`
 
-	RequestTimeout time.Duration `koanf:"request-timeout"`
+	RequestTimeout            time.Duration `koanf:"request-timeout"`
+	InternalDAProviderTimeout time.Duration `koanf:"internal-da-provider-timeout"`
 
 	LocalCache CacheConfig `koanf:"local-cache"`
 	RedisCache RedisConfig `koanf:"redis-cache"`
@@ -50,6 +51,7 @@ type DataAvailabilityConfig struct {
 
 var DefaultDataAvailabilityConfig = DataAvailabilityConfig{
 	RequestTimeout:                5 * time.Second,
+	InternalDAProviderTimeout:     15 * time.Second,
 	Enable:                        false,
 	RestAggregator:                DefaultRestfulClientAggregatorConfig,
 	RPCAggregator:                 DefaultAggregatorConfig,
@@ -111,6 +113,7 @@ func dataAvailabilityConfigAddOptions(prefix string, f *pflag.FlagSet, r role) {
 		// These are only for batch poster
 		AggregatorConfigAddOptions(prefix+".rpc-aggregator", f)
 		f.Duration(prefix+".request-timeout", DefaultDataAvailabilityConfig.RequestTimeout, "Data Availability Service timeout duration for Store requests")
+		f.Duration(prefix+".internal-da-provider-timeout", DefaultDataAvailabilityConfig.InternalDAProviderTimeout, "timeout for RPCs to internal DA provider (co-located AnyTrust provider server)")
 	}
 
 	// Both the Nitro node and daserver can use these options.
