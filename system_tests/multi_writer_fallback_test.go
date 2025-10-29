@@ -85,7 +85,6 @@ func TestMultiWriterFallback_CustomDAToAnyTrust(t *testing.T) {
 	builder.nodeConfig.DataAvailability.RestAggregator = das.DefaultRestfulClientAggregatorConfig
 	builder.nodeConfig.DataAvailability.RestAggregator.Enable = true
 	builder.nodeConfig.DataAvailability.RestAggregator.Urls = []string{restServerUrl}
-	builder.nodeConfig.DataAvailability.ParentChainNodeURL = "none"
 	builder.nodeConfig.DataAvailability.InternalDAProviderTimeout = 1 * time.Second
 
 	// Enable fallback to on-chain
@@ -110,7 +109,6 @@ func TestMultiWriterFallback_CustomDAToAnyTrust(t *testing.T) {
 	nodeConfigB.DataAvailability.RestAggregator = das.DefaultRestfulClientAggregatorConfig
 	nodeConfigB.DataAvailability.RestAggregator.Enable = true
 	nodeConfigB.DataAvailability.RestAggregator.Urls = []string{restServerUrl}
-	nodeConfigB.DataAvailability.ParentChainNodeURL = "none"
 	nodeConfigB.DataAvailability.InternalDAProviderTimeout = 1 * time.Second
 
 	nodeBParams := SecondNodeParams{
@@ -525,7 +523,6 @@ func TestMultiWriterFallback_AnyTrustToCalldata(t *testing.T) {
 	builder.nodeConfig.DataAvailability.RestAggregator = das.DefaultRestfulClientAggregatorConfig
 	builder.nodeConfig.DataAvailability.RestAggregator.Enable = true
 	builder.nodeConfig.DataAvailability.RestAggregator.Urls = []string{restServerUrl}
-	builder.nodeConfig.DataAvailability.ParentChainNodeURL = "none"
 	builder.nodeConfig.DataAvailability.InternalDAProviderTimeout = 1 * time.Second
 
 	// Enable fallback to on-chain
@@ -549,7 +546,6 @@ func TestMultiWriterFallback_AnyTrustToCalldata(t *testing.T) {
 	nodeConfigB.DataAvailability.RestAggregator = das.DefaultRestfulClientAggregatorConfig
 	nodeConfigB.DataAvailability.RestAggregator.Enable = true
 	nodeConfigB.DataAvailability.RestAggregator.Urls = []string{restServerUrl}
-	nodeConfigB.DataAvailability.ParentChainNodeURL = "none"
 	nodeConfigB.DataAvailability.InternalDAProviderTimeout = 1 * time.Second
 
 	nodeBParams := SecondNodeParams{

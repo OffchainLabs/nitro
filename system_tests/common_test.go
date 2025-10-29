@@ -2100,8 +2100,6 @@ func setupConfigWithDAS(
 			MaxRetention: time.Hour * 24 * 30,
 		},
 		RequestTimeout:           5 * time.Second,
-		ParentChainNodeURL:       "none",
-		SequencerInboxAddress:    "none",
 		PanicOnError:             true,
 		DisableSignatureChecking: true,
 	}
@@ -2134,7 +2132,6 @@ func setupConfigWithDAS(
 		l1NodeConfigA.DataAvailability.RestAggregator = das.DefaultRestfulClientAggregatorConfig
 		l1NodeConfigA.DataAvailability.RestAggregator.Enable = true
 		l1NodeConfigA.DataAvailability.RestAggregator.Urls = []string{"http://" + restLis.Addr().String()}
-		l1NodeConfigA.DataAvailability.ParentChainNodeURL = "none"
 	} else if dasModeString == "referenceda" {
 		// For referenceda mode, we'll use external provider
 		// The URL will be configured after the validator contract is deployed and server is created

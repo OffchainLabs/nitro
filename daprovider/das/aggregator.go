@@ -100,24 +100,6 @@ func NewServiceDetails(service dasutil.DASWriter, pubKey blsSignatures.PublicKey
 	}, nil
 }
 
-func NewAggregator(ctx context.Context, config DataAvailabilityConfig, services []ServiceDetails) (*Aggregator, error) {
-	if config.ParentChainNodeURL == "none" {
-		return NewAggregatorWithSeqInboxCaller(config, services, nil)
-	}
-	l1client, err := GetL1Client(ctx, config.ParentChainConnectionAttempts, config.ParentChainNodeURL)
-	if err != nil {
-		return nil, err
-	}
-	seqInboxAddress, err := OptionalAddressFromString(config.SequencerInboxAddress)
-	if err != nil {
-		return nil, err
-	}
-	if seqInboxAddress == nil {
-		return NewAggregatorWithSeqInboxCaller(config, services, nil)
-	}
-	return NewAggregatorWithL1Info(config, services, l1client, *seqInboxAddress)
-}
-
 func NewAggregatorWithL1Info(
 	config DataAvailabilityConfig,
 	services []ServiceDetails,

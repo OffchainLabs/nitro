@@ -50,8 +50,7 @@ func testRpcImpl(t *testing.T, size, times int, concurrent bool) {
 			Enable:  true,
 			DataDir: dataDir,
 		},
-		ParentChainNodeURL: "none",
-		RequestTimeout:     5 * time.Second,
+		RequestTimeout: 5 * time.Second,
 	}
 
 	storageService, lifecycleManager, err := CreatePersistentStorageService(ctx, &config)

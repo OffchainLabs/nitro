@@ -44,7 +44,6 @@ func startLocalDASServer(
 	config := das.DefaultDataAvailabilityConfig
 	config.Enable = true
 	config.Key = das.KeyConfig{KeyDir: keyDir}
-	config.ParentChainNodeURL = "none"
 	config.LocalFileStorage = das.DefaultLocalFileStorageConfig
 	config.LocalFileStorage.Enable = true
 	config.LocalFileStorage.DataDir = dataDir
@@ -128,7 +127,6 @@ func TestDASRekey(t *testing.T) {
 		builder.nodeConfig.DataAvailability.RestAggregator = das.DefaultRestfulClientAggregatorConfig
 		builder.nodeConfig.DataAvailability.RestAggregator.Enable = true
 		builder.nodeConfig.DataAvailability.RestAggregator.Urls = []string{restServerUrlA}
-		builder.nodeConfig.DataAvailability.ParentChainNodeURL = "none"
 
 		// Setup L2 chain
 		builder.L2Info.GenerateAccount("User2")
@@ -140,7 +138,6 @@ func TestDASRekey(t *testing.T) {
 		l1NodeConfigB.DataAvailability.RestAggregator = das.DefaultRestfulClientAggregatorConfig
 		l1NodeConfigB.DataAvailability.RestAggregator.Enable = true
 		l1NodeConfigB.DataAvailability.RestAggregator.Urls = []string{restServerUrlA}
-		l1NodeConfigB.DataAvailability.ParentChainNodeURL = "none"
 		nodeBParams := SecondNodeParams{
 			nodeConfig: l1NodeConfigB,
 			initData:   &builder.L2Info.ArbInitData,
@@ -244,7 +241,6 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 	builder.nodeConfig.DataAvailability.RestAggregator = das.DefaultRestfulClientAggregatorConfig
 	builder.nodeConfig.DataAvailability.RestAggregator.Enable = true
 	builder.nodeConfig.DataAvailability.RestAggregator.Urls = []string{"http://" + restLis.Addr().String()}
-	builder.nodeConfig.DataAvailability.ParentChainNodeURL = "none"
 
 	// Setup L2 chain
 	builder.L2Info = NewArbTestInfo(t, builder.chainConfig.ChainID)
@@ -259,8 +255,7 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 
 		// AggregatorConfig set up below
 
-		ParentChainNodeURL: "none",
-		RequestTimeout:     5 * time.Second,
+		RequestTimeout: 5 * time.Second,
 	}
 
 	l1NodeConfigB.BlockValidator.Enable = false
@@ -268,7 +263,6 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 	l1NodeConfigB.DataAvailability.RestAggregator = das.DefaultRestfulClientAggregatorConfig
 	l1NodeConfigB.DataAvailability.RestAggregator.Enable = true
 	l1NodeConfigB.DataAvailability.RestAggregator.Urls = []string{"http://" + restLis.Addr().String()}
-	l1NodeConfigB.DataAvailability.ParentChainNodeURL = "none"
 	nodeBParams := SecondNodeParams{
 		nodeConfig: l1NodeConfigB,
 		initData:   &builder.L2Info.ArbInitData,
@@ -305,7 +299,6 @@ func TestDASBatchPosterFallback(t *testing.T) {
 	builder.nodeConfig.DataAvailability.RestAggregator = das.DefaultRestfulClientAggregatorConfig
 	builder.nodeConfig.DataAvailability.RestAggregator.Enable = true
 	builder.nodeConfig.DataAvailability.RestAggregator.Urls = []string{restServerUrl}
-	builder.nodeConfig.DataAvailability.ParentChainNodeURL = "none"
 	builder.nodeConfig.BatchPoster.DisableDapFallbackStoreDataOnChain = true // Disable DAS fallback
 	builder.nodeConfig.BatchPoster.ErrorDelay = time.Millisecond * 250       // Increase error delay because we expect errors
 	builder.L2Info = NewArbTestInfo(t, builder.chainConfig.ChainID)
@@ -322,7 +315,6 @@ func TestDASBatchPosterFallback(t *testing.T) {
 	nodeConfigB.DataAvailability.RestAggregator = das.DefaultRestfulClientAggregatorConfig
 	nodeConfigB.DataAvailability.RestAggregator.Enable = true
 	nodeConfigB.DataAvailability.RestAggregator.Urls = []string{restServerUrl}
-	nodeConfigB.DataAvailability.ParentChainNodeURL = "none"
 	nodeBParams := SecondNodeParams{
 		nodeConfig: nodeConfigB,
 		initData:   &l2info.ArbInitData,
