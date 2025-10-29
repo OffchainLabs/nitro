@@ -1958,8 +1958,9 @@ func setupConfigWithDAS(
 			KeyDir: dbPath,
 		},
 		LocalFileStorage: das.LocalFileStorageConfig{
-			Enable:  enableFileStorage,
-			DataDir: dbPath,
+			Enable:       enableFileStorage,
+			DataDir:      dbPath,
+			MaxRetention: time.Hour * 24 * 30,
 		},
 		RequestTimeout:           5 * time.Second,
 		ParentChainNodeURL:       "none",
