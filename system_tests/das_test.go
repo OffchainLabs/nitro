@@ -201,8 +201,9 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 		LocalCache: das.TestCacheConfig,
 
 		LocalFileStorage: das.LocalFileStorageConfig{
-			Enable:  true,
-			DataDir: fileDataDir,
+			Enable:       true,
+			DataDir:      fileDataDir,
+			MaxRetention: time.Hour * 24 * 30,
 		},
 
 		Key: das.KeyConfig{

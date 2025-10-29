@@ -5,6 +5,7 @@ package das
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -67,7 +68,12 @@ var DefaultDataStreamRpcMethods = data_streaming.DataStreamingRPCMethods{
 }
 
 func NewDASRPCClient(config *DASRPCClientConfig, signer signature.DataSignerFunc) (*DASRPCClient, error) {
-	log.Info("Creating DAS RPC client", "serverUrl", config.ServerUrl, "enableChunkedStore", config.EnableChunkedStore, "rpcTimeout", config.RPC.Timeout)
+	// Chunked store requires a valid signer for replay protection.
+	// The signature is used as a unique request identifier, so nil/empty signatures would cause all requests to be blocked after the first one.
+	if config.EnableChunkedStore && signer == nil {
+		return nil, errors.New("chunked store requires a valid signer for replay protection; cannot use nil signer")
+	}
+
 	if signer == nil {
 		signer = nilSigner
 	}
