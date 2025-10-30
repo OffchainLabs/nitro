@@ -995,6 +995,16 @@ pub struct Machine {
     debug_info: bool, // Not part of machine hash
 }
 
+#[derive(Clone, Copy, Default)]
+pub(crate) struct MachineTelemetry {
+    pub memory_bytes: u64,
+    pub stylus_module_bytes: u64,
+    pub inbox_entries: u64,
+    pub inbox_bytes: u64,
+    pub steps: u64,
+    pub status: u8,
+}
+
 type FrameStackHash = Bytes32;
 type ValueStackHash = Bytes32;
 type MultiStackHash = Bytes32;
@@ -1750,6 +1760,34 @@ impl Machine {
 
     pub fn main_module_memory(&self) -> &Memory {
         &self.modules.last().expect("no module").memory
+    }
+
+    pub(crate) fn telemetry(&self) -> MachineTelemetry {
+        let memory_bytes = self
+            .modules
+            .iter()
+            .map(|module| module.memory.size())
+            .sum::<u64>();
+        let stylus_module_bytes = self
+            .stylus_modules
+            .values()
+            .map(|module| module.len() as u64)
+            .sum::<u64>();
+        let inbox_entries = self.inbox_contents.len() as u64;
+        let inbox_bytes = self
+            .inbox_contents
+            .values()
+            .map(|data| data.len() as u64)
+            .sum::<u64>();
+
+        MachineTelemetry {
+            memory_bytes,
+            stylus_module_bytes,
+            inbox_entries,
+            inbox_bytes,
+            steps: self.steps,
+            status: self.status as u8,
+        }
     }
 
     pub fn main_module_hash(&self) -> Bytes32 {
