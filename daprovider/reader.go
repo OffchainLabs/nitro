@@ -69,7 +69,6 @@ type readerForBlobReader struct {
 // recoverInternal is the shared implementation for both RecoverPayload and CollectPreimages
 func (b *readerForBlobReader) recoverInternal(
 	ctx context.Context,
-	batchNum uint64,
 	batchBlockHash common.Hash,
 	sequencerMsg []byte,
 	needPayload bool,
@@ -118,16 +117,10 @@ func (b *readerForBlobReader) RecoverPayload(
 	batchBlockHash common.Hash,
 	sequencerMsg []byte,
 ) containers.PromiseInterface[PayloadResult] {
-	promise, ctx := containers.NewPromiseWithContext[PayloadResult](context.Background())
-	go func() {
-		payload, _, err := b.recoverInternal(ctx, batchNum, batchBlockHash, sequencerMsg, true, false)
-		if err != nil {
-			promise.ProduceError(err)
-		} else {
-			promise.Produce(PayloadResult{Payload: payload})
-		}
-	}()
-	return promise
+	return containers.DoPromise(context.Background(), func(ctx context.Context) (PayloadResult, error) {
+		payload, _, err := b.recoverInternal(ctx, batchBlockHash, sequencerMsg, true, false)
+		return PayloadResult{Payload: payload}, err
+	})
 }
 
 // CollectPreimages collects preimages from the DA provider
@@ -136,14 +129,8 @@ func (b *readerForBlobReader) CollectPreimages(
 	batchBlockHash common.Hash,
 	sequencerMsg []byte,
 ) containers.PromiseInterface[PreimagesResult] {
-	promise, ctx := containers.NewPromiseWithContext[PreimagesResult](context.Background())
-	go func() {
-		_, preimages, err := b.recoverInternal(ctx, batchNum, batchBlockHash, sequencerMsg, false, true)
-		if err != nil {
-			promise.ProduceError(err)
-		} else {
-			promise.Produce(PreimagesResult{Preimages: preimages})
-		}
-	}()
-	return promise
+	return containers.DoPromise(context.Background(), func(ctx context.Context) (PreimagesResult, error) {
+		_, preimages, err := b.recoverInternal(ctx, batchBlockHash, sequencerMsg, false, true)
+		return PreimagesResult{Preimages: preimages}, err
+	})
 }
