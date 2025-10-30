@@ -93,7 +93,7 @@ for pkg in "${prerequisites[@]}"; do
     [[ "$pkg" == "wasm2wat" ]] && display_name="wabt"
     [[ "$pkg" == "clang" ]] && display_name="llvm"
     [[ "$pkg" == "wasm-ld" ]] && display_name="lld"
-    
+
     if command_exists "$pkg"; then
         exists=true
     else
@@ -138,8 +138,10 @@ fi
 
 # Check Go version
 if command_exists go; then
-    GO_INSTALLED_VERSION=$(go version | awk '{print $3}' | sed 's/go//')
-    if [[ "$GO_INSTALLED_VERSION" == "$go_version_needed" ]]; then
+    GO_INSTALLED_FULL_VERSION=$(go version | awk '{print $3}' | sed 's/go//')
+    # Strip patch number: turn 1.25.0 → 1.25
+    GO_INSTALLED_MAJOR_MINOR="${GO_INSTALLED_FULL_VERSION%.*}"
+    if [[ "$GO_INSTALLED_MAJOR_MINOR" == "$go_version_needed" ]]; then
         echo -e "${GREEN}Go version $go_version_needed is installed.${NC}"
     else
         echo -e "${RED}Go version $go_version_needed not installed.${NC}"
