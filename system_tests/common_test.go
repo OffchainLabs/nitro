@@ -2162,7 +2162,7 @@ func createReferenceDAProviderServer(t *testing.T, ctx context.Context, l1Client
 	}
 
 	// Create the provider server
-	headerBytes := []byte{daprovider.DACertificateMessageHeaderFlag}
+	headerBytes := [][]byte{{daprovider.DACertificateMessageHeaderFlag, 0xFF}}
 	server, err := dapserver.NewServerWithDAPProvider(ctx, serverConfig, reader, writer, validator, headerBytes, data_streaming.PayloadCommitmentVerifier())
 	Require(t, err)
 

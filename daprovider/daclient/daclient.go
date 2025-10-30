@@ -160,7 +160,7 @@ func NewClient(ctx context.Context, config *ClientConfig, payloadSigner *data_st
 }
 
 type SupportedHeaderBytesResult struct {
-	HeaderBytes []byte
+	HeaderBytes [][]byte
 }
 
 func (c *Client) GetSupportedHeaderBytes() containers.PromiseInterface[SupportedHeaderBytesResult] {
@@ -170,7 +170,12 @@ func (c *Client) GetSupportedHeaderBytes() containers.PromiseInterface[Supported
 		if err := c.CallContext(ctx, &result, "daprovider_getSupportedHeaderBytes"); err != nil {
 			promise.ProduceError(fmt.Errorf("error returned from daprovider_getSupportedHeaderBytes rpc method: %w", err))
 		} else {
-			promise.Produce(SupportedHeaderBytesResult{HeaderBytes: result.HeaderBytes})
+			// Convert []hexutil.Bytes to [][]byte
+			headerBytes := make([][]byte, len(result.HeaderBytes))
+			for i, hb := range result.HeaderBytes {
+				headerBytes[i] = []byte(hb)
+			}
+			promise.Produce(SupportedHeaderBytesResult{HeaderBytes: headerBytes})
 		}
 	}()
 	return promise

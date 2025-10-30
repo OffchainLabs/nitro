@@ -326,7 +326,7 @@ func (v *StatelessBlockValidator) readFullBatch(ctx context.Context, batchNum ui
 	preimages := make(daprovider.PreimagesMap)
 	if len(postedData) > 40 && v.dapReaders != nil {
 		headerByte := postedData[40]
-		if dapReader, found := v.dapReaders.GetByHeaderByte(headerByte); found {
+		if dapReader, found := v.dapReaders.GetByHeaderBytes(postedData[40:]); found {
 			promise := dapReader.CollectPreimages(batchNum, batchBlockHash, postedData)
 			result, err := promise.Await(ctx)
 			if err != nil {

@@ -76,9 +76,9 @@ func ParseSequencerMessage(ctx context.Context, batchNum uint64, batchBlockHash 
 	// Stage 1: Extract the payload from any data availability header.
 	// It's important that multiple DAS strategies can't both be invoked in the same batch,
 	// as these headers are validated by the sequencer inbox and not other DASs.
-	// Use the registry to find the appropriate reader for the header byte
+	// Use the registry to find the appropriate reader for the header byte string
 	if len(payload) > 0 && dapReaders != nil {
-		if dapReader, found := dapReaders.GetByHeaderByte(payload[0]); found {
+		if dapReader, found := dapReaders.GetByHeaderBytes(payload); found {
 			promise := dapReader.RecoverPayload(batchNum, batchBlockHash, data)
 			result, err := promise.Await(ctx)
 			if err != nil {

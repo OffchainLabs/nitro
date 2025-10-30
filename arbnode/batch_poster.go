@@ -1888,14 +1888,15 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 		// These readers can fetch data that was already posted to
 		// external DA systems (eg AnyTrust) before this batch transaction
 		if b.dapReaders != nil {
-			for _, headerByte := range b.dapReaders.SupportedHeaderBytes() {
+			for _, headerBytes := range b.dapReaders.SupportedHeaderBytes() {
 				// Skip blob reader, we'll add simulated reader instead after this loop
-				if headerByte == daprovider.BlobHashesHeaderFlag {
+				if len(headerBytes) > 0 && headerBytes[0] == daprovider.BlobHashesHeaderFlag {
 					continue
 				}
-				if reader, found := b.dapReaders.GetByHeaderByte(headerByte); found {
-					if err := dapReaders.Register(headerByte, reader); err != nil {
-						return false, fmt.Errorf("failed to register reader for header byte 0x%02x: %w", headerByte, err)
+				// Use the headerBytes itself as the message for lookup (prefix matching will match exactly)
+				if reader, found := b.dapReaders.GetByHeaderBytes(headerBytes); found {
+					if err := dapReaders.Register(headerBytes, reader); err != nil {
+						return false, fmt.Errorf("failed to register reader for header bytes %x: %w", headerBytes, err)
 					}
 				}
 			}

@@ -128,7 +128,7 @@ func createEvilDAProviderServer(t *testing.T, ctx context.Context, l1Client *eth
 	// Use asserting writer to ensure evil provider is never used for writing.
 	// In this test we call the writers directly to have more control over batch posting.
 	writer := &assertingWriter{}
-	headerBytes := []byte{daprovider.DACertificateMessageHeaderFlag}
+	headerBytes := [][]byte{{daprovider.DACertificateMessageHeaderFlag, 0xFF}}
 	server, err := dapserver.NewServerWithDAPProvider(ctx, serverConfig, evilProvider, writer, evilProvider, headerBytes, data_streaming.PayloadCommitmentVerifier())
 	Require(t, err)
 
