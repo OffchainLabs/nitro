@@ -5,9 +5,12 @@ package daclient
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
+	"github.com/knadh/koanf"
+	"github.com/knadh/koanf/providers/confmap"
 	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -71,6 +74,32 @@ var DefaultStreamRpcMethods = data_streaming.DataStreamingRPCMethods{
 
 var DefaultStoreRpcMethod = "daprovider_store"
 
+type ExternalProviderConfigList []ClientConfig
+
+func (l *ExternalProviderConfigList) String() string {
+	b, _ := json.Marshal(*l)
+	return string(b)
+}
+
+func (l *ExternalProviderConfigList) Set(value string) error {
+	return l.UnmarshalJSON([]byte(value))
+}
+
+func (l *ExternalProviderConfigList) UnmarshalJSON(data []byte) error {
+	var tmp []ClientConfig
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+	*l = tmp
+	return nil
+}
+
+func (l *ExternalProviderConfigList) Type() string {
+	return "externalProviderConfigList"
+}
+
+var parsedExternalProvidersConf ExternalProviderConfigList
+
 func ClientConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultClientConfig.Enable, "enable daprovider client")
 	f.Bool(prefix+".with-writer", DefaultClientConfig.WithWriter, "implies if the daprovider rpc server supports writer interface")
@@ -78,6 +107,29 @@ func ClientConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".use-data-streaming", DefaultClientConfig.UseDataStreaming, "use data streaming protocol for storing large payloads")
 	data_streaming.DataStreamerConfigAddOptions(prefix+".data-stream", f, DefaultStreamRpcMethods)
 	f.String(prefix+".store-rpc-method", DefaultClientConfig.StoreRpcMethod, "name of the store rpc method on the daprovider server (used when data streaming is disabled)")
+}
+
+func ExternalProviderConfigAddPluralOptions(prefix string, f *pflag.FlagSet) {
+	f.Var(&parsedExternalProvidersConf, prefix+"s", "JSON array of external DA provider configurations. This can be specified on the command line as a JSON array, eg: [{\"rpc\":{\"url\":\"...\"},\"with-writer\":true},...], or as a JSON array in the config file.")
+}
+
+func FixExternalProvidersCLIParsing(path string, k *koanf.Koanf) error {
+	rawProviders := k.Get(path)
+	if providers, ok := rawProviders.(string); ok {
+		err := parsedExternalProvidersConf.UnmarshalJSON([]byte(providers))
+		if err != nil {
+			return err
+		}
+
+		tempMap := map[string]interface{}{
+			path: parsedExternalProvidersConf,
+		}
+
+		if err = k.Load(confmap.Provider(tempMap, "."), nil); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func NewClient(ctx context.Context, config *ClientConfig, payloadSigner *data_streaming.PayloadSigner) (*Client, error) {

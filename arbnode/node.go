@@ -38,6 +38,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/daprovider"
+	daconfig "github.com/offchainlabs/nitro/daprovider/config"
 	"github.com/offchainlabs/nitro/daprovider/daclient"
 	"github.com/offchainlabs/nitro/daprovider/das"
 	"github.com/offchainlabs/nitro/daprovider/data_streaming"
@@ -61,14 +62,6 @@ import (
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
 
-type DAConfig struct {
-	ExternalProvider daclient.ClientConfig `koanf:"external-provider" reload:"hot"`
-}
-
-func DAConfigAddOptions(prefix string, f *pflag.FlagSet) {
-	daclient.ClientConfigAddOptions(prefix+".external-provider", f)
-}
-
 type Config struct {
 	Sequencer                bool                           `koanf:"sequencer"`
 	ParentChainReader        headerreader.Config            `koanf:"parent-chain-reader" reload:"hot"`
@@ -82,7 +75,7 @@ type Config struct {
 	Bold                     bold.BoldConfig                `koanf:"bold"`
 	SeqCoordinator           SeqCoordinatorConfig           `koanf:"seq-coordinator"`
 	DataAvailability         das.DataAvailabilityConfig     `koanf:"data-availability"`
-	DA                       DAConfig                       `koanf:"da" reload:"hot"`
+	DA                       daconfig.DAConfig              `koanf:"da" reload:"hot"`
 	SyncMonitor              SyncMonitorConfig              `koanf:"sync-monitor"`
 	Dangerous                DangerousConfig                `koanf:"dangerous"`
 	TransactionStreamer      TransactionStreamerConfig      `koanf:"transaction-streamer" reload:"hot"`
@@ -126,6 +119,9 @@ func (c *Config) Validate() error {
 	if err := c.SeqCoordinator.Validate(); err != nil {
 		return err
 	}
+	if err := c.DA.Validate(); err != nil {
+		return err
+	}
 	if c.TransactionStreamer.TrackBlockMetadataFrom != 0 && !c.BlockMetadataFetcher.Enable {
 		log.Warn("track-block-metadata-from is set but blockMetadata fetcher is not enabled")
 	}
@@ -161,7 +157,7 @@ func ConfigAddOptions(prefix string, f *pflag.FlagSet, feedInputEnable bool, fee
 	bold.BoldConfigAddOptions(prefix+".bold", f)
 	SeqCoordinatorConfigAddOptions(prefix+".seq-coordinator", f)
 	das.DataAvailabilityConfigAddNodeOptions(prefix+".data-availability", f)
-	DAConfigAddOptions(prefix+".da", f)
+	daconfig.DAConfigAddOptions(prefix+".da", f)
 	SyncMonitorConfigAddOptions(prefix+".sync-monitor", f)
 	DangerousConfigAddOptions(prefix+".dangerous", f)
 	TransactionStreamerConfigAddOptions(prefix+".transaction-streamer", f)
@@ -184,7 +180,7 @@ var ConfigDefault = Config{
 	Bold:                     bold.DefaultBoldConfig,
 	SeqCoordinator:           DefaultSeqCoordinatorConfig,
 	DataAvailability:         das.DefaultDataAvailabilityConfig,
-	DA:                       DAConfig{ExternalProvider: daclient.DefaultClientConfig},
+	DA:                       daconfig.DAConfig{ExternalProvider: daclient.DefaultClientConfig},
 	SyncMonitor:              DefaultSyncMonitorConfig,
 	Dangerous:                DefaultDangerousConfig,
 	TransactionStreamer:      DefaultTransactionStreamerConfig,
@@ -593,27 +589,41 @@ func getDAProviders(
 	// 1. External DA (if enabled)
 	// 2. AnyTrust (if enabled)
 
-	// Create external DA client if enabled
-	if config.DA.ExternalProvider.Enable {
-		log.Info("Creating external DA client", "url", config.DA.ExternalProvider.RPC.URL, "withWriter", config.DA.ExternalProvider.WithWriter)
-		externalDAClient, err := daclient.NewClient(ctx, &config.DA.ExternalProvider, data_streaming.PayloadCommiter())
+	// Create external DA clients for each configured provider
+	for i := range config.DA.ExternalProviders {
+		providerConfig := &config.DA.ExternalProviders[i]
+		if !providerConfig.Enable {
+			log.Info("Skipping disabled external DA provider", "providerIndex", i)
+			continue
+		}
+
+		log.Info("Creating external DA client", "providerIndex", i, "url", providerConfig.RPC.URL, "withWriter", providerConfig.WithWriter)
+		externalDAClient, err := daclient.NewClient(ctx, providerConfig, data_streaming.PayloadCommiter())
 		if err != nil {
-			return nil, nil, nil, nil, err
+			return nil, nil, nil, nil, fmt.Errorf("failed to create external DA client[%d]: %w", i, err)
 		}
-		validator = externalDAClient
+
+		// TODO: Add support for multiple validators
+		// Currently we only support a single validator, so we use the first enabled provider
+		if validator == nil {
+			validator = externalDAClient
+			log.Info("Set external DA validator", "providerIndex", i)
+		}
+
 		// Add to writers array if batch poster is enabled and WithWriter is true
-		if config.DA.ExternalProvider.WithWriter && config.BatchPoster.Enable {
+		if providerConfig.WithWriter && config.BatchPoster.Enable {
 			writers = append(writers, externalDAClient)
-			log.Info("Added external DA writer", "writerIndex", len(writers)-1, "totalWriters", len(writers))
+			log.Info("Added external DA writer", "providerIndex", i, "writerIndex", len(writers)-1, "totalWriters", len(writers))
 		}
+
 		// Register external DA client as reader
 		promise := externalDAClient.GetSupportedHeaderBytes()
 		result, err := promise.Await(ctx)
 		if err != nil {
-			return nil, nil, nil, nil, fmt.Errorf("failed to get supported header bytes from external DA client: %w", err)
+			return nil, nil, nil, nil, fmt.Errorf("failed to get supported header bytes from external DA client[%d]: %w", i, err)
 		}
 		if err := dapReaders.RegisterAll(result.HeaderBytes, externalDAClient); err != nil {
-			return nil, nil, nil, nil, fmt.Errorf("failed to register external DA client: %w", err)
+			return nil, nil, nil, nil, fmt.Errorf("failed to register external DA client[%d]: %w", i, err)
 		}
 	}
 

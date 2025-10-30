@@ -55,6 +55,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
 	"github.com/offchainlabs/nitro/daprovider"
+	"github.com/offchainlabs/nitro/daprovider/daclient"
 	"github.com/offchainlabs/nitro/daprovider/das"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	_ "github.com/offchainlabs/nitro/execution/nodeInterface"
@@ -921,6 +922,10 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 	}
 
 	if err = das.FixKeysetCLIParsing("node.data-availability.rpc-aggregator.backends", k); err != nil {
+		return nil, nil, err
+	}
+
+	if err = daclient.FixExternalProvidersCLIParsing("node.da.external-providers", k); err != nil {
 		return nil, nil, err
 	}
 
