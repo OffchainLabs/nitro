@@ -380,12 +380,12 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, 
 	Require(t, err)
 
 	// Create DA readers for validators
-	dapReadersA := daprovider.NewReaderRegistry()
-	err = dapReadersA.SetupDACertificateReader(daClientA)
+	dapReadersA := daprovider.NewDAProviderRegistry()
+	err = dapReadersA.SetupDACertificateReader(daClientA, daClientA)
 	Require(t, err)
 
-	dapReadersB := daprovider.NewReaderRegistry()
-	err = dapReadersB.SetupDACertificateReader(daClientB)
+	dapReadersB := daprovider.NewDAProviderRegistry()
+	err = dapReadersB.SetupDACertificateReader(daClientB, daClientB)
 	Require(t, err)
 
 	statelessA, err := staker.NewStatelessBlockValidator(
@@ -443,14 +443,14 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, 
 
 	// Create ProofEnhancers from DA validators
 	proofEnhancerA := server_arb.NewProofEnhancementManager()
-	customDAEnhancerA := server_arb.NewReadPreimageProofEnhancer(daClientA, l2nodeA.InboxTracker, l2nodeA.InboxReader)
+	customDAEnhancerA := server_arb.NewReadPreimageProofEnhancer(dapReadersA, l2nodeA.InboxTracker, l2nodeA.InboxReader)
 	proofEnhancerA.RegisterEnhancer(server_arb.MarkerCustomDAReadPreimage, customDAEnhancerA)
-	validateCertificateEnhancerA := server_arb.NewValidateCertificateProofEnhancer(daClientA, l2nodeA.InboxTracker, l2nodeA.InboxReader)
+	validateCertificateEnhancerA := server_arb.NewValidateCertificateProofEnhancer(dapReadersA, l2nodeA.InboxTracker, l2nodeA.InboxReader)
 	proofEnhancerA.RegisterEnhancer(server_arb.MarkerCustomDAValidateCertificate, validateCertificateEnhancerA)
 
 	proofEnhancerB := server_arb.NewProofEnhancementManager()
-	customDAEnhancerB := server_arb.NewReadPreimageProofEnhancer(daClientB, l2nodeB.InboxTracker, l2nodeB.InboxReader)
-	validateCertificateEnhancerB := server_arb.NewValidateCertificateProofEnhancer(daClientB, l2nodeB.InboxTracker, l2nodeB.InboxReader)
+	customDAEnhancerB := server_arb.NewReadPreimageProofEnhancer(dapReadersB, l2nodeB.InboxTracker, l2nodeB.InboxReader)
+	validateCertificateEnhancerB := server_arb.NewValidateCertificateProofEnhancer(dapReadersB, l2nodeB.InboxTracker, l2nodeB.InboxReader)
 	proofEnhancerB.RegisterEnhancer(server_arb.MarkerCustomDAValidateCertificate, validateCertificateEnhancerB)
 
 	// For EvilDataEvilCert strategy, wrap the enhancer to inject evil certificates

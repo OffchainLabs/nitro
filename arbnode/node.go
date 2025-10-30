@@ -579,11 +579,10 @@ func getDAProviders(
 	dataSigner signature.DataSignerFunc,
 	l1client *ethclient.Client,
 	stack *node.Node,
-) ([]daprovider.Writer, func(), *daprovider.ReaderRegistry, daprovider.Validator, error) {
+) ([]daprovider.Writer, func(), *daprovider.DAProviderRegistry, error) {
 	var writers []daprovider.Writer
 	var cleanupFuncs []func()
-	var validator daprovider.Validator
-	var dapReaders = daprovider.NewReaderRegistry()
+	var dapRegistry = daprovider.NewDAProviderRegistry()
 
 	// Priority order for writers:
 	// 1. External DA (if enabled)
@@ -600,14 +599,7 @@ func getDAProviders(
 		log.Info("Creating external DA client", "providerIndex", i, "url", providerConfig.RPC.URL, "withWriter", providerConfig.WithWriter)
 		externalDAClient, err := daclient.NewClient(ctx, providerConfig, data_streaming.PayloadCommiter())
 		if err != nil {
-			return nil, nil, nil, nil, fmt.Errorf("failed to create external DA client[%d]: %w", i, err)
-		}
-
-		// TODO: Add support for multiple validators
-		// Currently we only support a single validator, so we use the first enabled provider
-		if validator == nil {
-			validator = externalDAClient
-			log.Info("Set external DA validator", "providerIndex", i)
+			return nil, nil, nil, fmt.Errorf("failed to create external DA client[%d]: %w", i, err)
 		}
 
 		// Add to writers array if batch poster is enabled and WithWriter is true
@@ -616,14 +608,16 @@ func getDAProviders(
 			log.Info("Added external DA writer", "providerIndex", i, "writerIndex", len(writers)-1, "totalWriters", len(writers))
 		}
 
-		// Register external DA client as reader
+		// Register external DA client as both reader and validator
 		promise := externalDAClient.GetSupportedHeaderBytes()
 		result, err := promise.Await(ctx)
 		if err != nil {
-			return nil, nil, nil, nil, fmt.Errorf("failed to get supported header bytes from external DA client[%d]: %w", i, err)
+			return nil, nil, nil, fmt.Errorf("failed to get supported header bytes from external DA client[%d]: %w", i, err)
 		}
-		if err := dapReaders.RegisterAll(result.HeaderBytes, externalDAClient); err != nil {
-			return nil, nil, nil, nil, fmt.Errorf("failed to register external DA client[%d]: %w", i, err)
+		for _, hb := range result.HeaderBytes {
+			if err := dapRegistry.Register(hb, externalDAClient, externalDAClient); err != nil {
+				return nil, nil, nil, fmt.Errorf("failed to register DA provider[%d]: %w", i, err)
+			}
 		}
 	}
 
@@ -632,7 +626,7 @@ func getDAProviders(
 		log.Info("Creating AnyTrust DA provider", "batchPosterEnabled", config.BatchPoster.Enable)
 		jwtPath := path.Join(filepath.Dir(stack.InstanceDir()), "dasserver-jwtsecret")
 		if err := genericconf.TryCreatingJWTSecret(jwtPath); err != nil {
-			return nil, nil, nil, nil, fmt.Errorf("error writing ephemeral jwtsecret of dasserver to file: %w", err)
+			return nil, nil, nil, fmt.Errorf("error writing ephemeral jwtsecret of dasserver to file: %w", err)
 		}
 		log.Info("Generated ephemeral JWT secret for dasserver", "jwtPath", jwtPath)
 		// JWTSecret is no longer needed, cleanup when returning
@@ -660,18 +654,18 @@ func getDAProviders(
 			config.BatchPoster.Enable,
 		)
 		if err != nil {
-			return nil, nil, nil, nil, err
+			return nil, nil, nil, err
 		}
 		log.Info("Created AnyTrust DA factory")
 
 		if err := daFactory.ValidateConfig(); err != nil {
-			return nil, nil, nil, nil, err
+			return nil, nil, nil, err
 		}
 
 		var localCleanupFuncs []func()
 		reader, readerCleanup, err := daFactory.CreateReader(ctx)
 		if err != nil {
-			return nil, nil, nil, nil, err
+			return nil, nil, nil, err
 		}
 		if readerCleanup != nil {
 			localCleanupFuncs = append(localCleanupFuncs, readerCleanup)
@@ -682,7 +676,7 @@ func getDAProviders(
 			var writerCleanup func()
 			writer, writerCleanup, err = daFactory.CreateWriter(ctx)
 			if err != nil {
-				return nil, nil, nil, nil, err
+				return nil, nil, nil, err
 			}
 			if writerCleanup != nil {
 				localCleanupFuncs = append(localCleanupFuncs, writerCleanup)
@@ -699,7 +693,7 @@ func getDAProviders(
 			headerBytes,
 			data_streaming.PayloadCommitmentVerifier())
 		if err != nil {
-			return nil, nil, nil, nil, err
+			return nil, nil, nil, err
 		}
 		log.Info("AnyTrust provider server started", "addr", providerServer.Addr)
 
@@ -720,7 +714,7 @@ func getDAProviders(
 
 		anytrustClient, err := daclient.NewClient(ctx, &daClientConfig, data_streaming.PayloadCommiter())
 		if err != nil {
-			return nil, nil, nil, nil, err
+			return nil, nil, nil, err
 		}
 		log.Info("Created internal AnyTrust client")
 
@@ -730,14 +724,16 @@ func getDAProviders(
 			log.Info("Added AnyTrust writer", "writerIndex", len(writers)-1, "totalWriters", len(writers))
 		}
 
-		// Register AnyTrust client as reader
+		// Register AnyTrust client as reader (no validator for AnyTrust)
 		promise := anytrustClient.GetSupportedHeaderBytes()
 		result, err := promise.Await(ctx)
 		if err != nil {
-			return nil, nil, nil, nil, fmt.Errorf("failed to get supported header bytes from anytrust client: %w", err)
+			return nil, nil, nil, fmt.Errorf("failed to get supported header bytes from anytrust client: %w", err)
 		}
-		if err := dapReaders.RegisterAll(result.HeaderBytes, anytrustClient); err != nil {
-			return nil, nil, nil, nil, fmt.Errorf("failed to register anytrust client: %w", err)
+		for _, hb := range result.HeaderBytes {
+			if err := dapRegistry.Register(hb, anytrustClient, nil); err != nil {
+				return nil, nil, nil, fmt.Errorf("failed to register anytrust client: %w", err)
+			}
 		}
 
 		// Create cleanup function for AnyTrust
@@ -753,13 +749,13 @@ func getDAProviders(
 	// Check if chain requires Anytrust but none is configured
 	if l2Config.ArbitrumChainParams.DataAvailabilityCommittee {
 		if !config.DataAvailability.Enable {
-			return nil, nil, nil, nil, errors.New("Anytrust is required for this chain, but it was not configured")
+			return nil, nil, nil, errors.New("Anytrust is required for this chain, but it was not configured")
 		}
 	}
 
 	if blobReader != nil {
-		if err := dapReaders.SetupBlobReader(daprovider.NewReaderForBlobReader(blobReader)); err != nil {
-			return nil, nil, nil, nil, fmt.Errorf("failed to register blob reader: %w", err)
+		if err := dapRegistry.SetupBlobReader(daprovider.NewReaderForBlobReader(blobReader)); err != nil {
+			return nil, nil, nil, fmt.Errorf("failed to register blob reader: %w", err)
 		}
 	}
 
@@ -770,15 +766,15 @@ func getDAProviders(
 		}
 	}
 
-	log.Info("DA providers configured", "totalWriters", len(writers), "hasValidator", validator != nil)
-	return writers, combinedCleanup, dapReaders, validator, nil
+	log.Info("DA providers configured", "totalWriters", len(writers))
+	return writers, combinedCleanup, dapRegistry, nil
 }
 
 func getInboxTrackerAndReader(
 	ctx context.Context,
 	arbDb ethdb.Database,
 	txStreamer *TransactionStreamer,
-	dapReaders *daprovider.ReaderRegistry,
+	dapReaders *daprovider.DAProviderRegistry,
 	config *Config,
 	configFetcher ConfigFetcher,
 	l1client *ethclient.Client,
@@ -870,7 +866,7 @@ func getStaker(
 	fatalErrChan chan error,
 	statelessBlockValidator *staker.StatelessBlockValidator,
 	blockValidator *staker.BlockValidator,
-	dapValidator daprovider.Validator,
+	dapRegistry *daprovider.DAProviderRegistry,
 ) (*multiprotocolstaker.MultiProtocolStaker, *MessagePruner, common.Address, error) {
 	var stakerObj *multiprotocolstaker.MultiProtocolStaker
 	var messagePruner *MessagePruner
@@ -926,7 +922,7 @@ func getStaker(
 			confirmedNotifiers = append(confirmedNotifiers, messagePruner)
 		}
 
-		stakerObj, err = multiprotocolstaker.NewMultiProtocolStaker(stack, l1Reader, wallet, bind.CallOpts{}, func() *legacystaker.L1ValidatorConfig { return &configFetcher.Get().Staker }, &configFetcher.Get().Bold, blockValidator, statelessBlockValidator, nil, deployInfo.StakeToken, deployInfo.Rollup, confirmedNotifiers, deployInfo.ValidatorUtils, deployInfo.Bridge, txStreamer, inboxTracker, inboxReader, dapValidator, fatalErrChan)
+		stakerObj, err = multiprotocolstaker.NewMultiProtocolStaker(stack, l1Reader, wallet, bind.CallOpts{}, func() *legacystaker.L1ValidatorConfig { return &configFetcher.Get().Staker }, &configFetcher.Get().Bold, blockValidator, statelessBlockValidator, nil, deployInfo.StakeToken, deployInfo.Rollup, confirmedNotifiers, deployInfo.ValidatorUtils, deployInfo.Bridge, txStreamer, inboxTracker, inboxReader, dapRegistry, fatalErrChan)
 		if err != nil {
 			return nil, nil, common.Address{}, err
 		}
@@ -996,7 +992,7 @@ func getStatelessBlockValidator(
 	txStreamer *TransactionStreamer,
 	exec execution.ExecutionRecorder,
 	arbDb ethdb.Database,
-	dapReaders *daprovider.ReaderRegistry,
+	dapReaders *daprovider.DAProviderRegistry,
 	stack *node.Node,
 	latestWasmModuleRoot common.Hash,
 ) (*staker.StatelessBlockValidator, error) {
@@ -1046,7 +1042,7 @@ func getBatchPoster(
 	syncMonitor *SyncMonitor,
 	deployInfo *chaininfo.RollupAddresses,
 	parentChainID *big.Int,
-	dapReaders *daprovider.ReaderRegistry,
+	dapReaders *daprovider.DAProviderRegistry,
 	stakerAddr common.Address,
 ) (*BatchPoster, error) {
 	var batchPoster *BatchPoster
@@ -1246,17 +1242,17 @@ func createNodeImpl(
 		return nil, err
 	}
 
-	dapWriters, providerServerCloseFn, dapReaders, dapValidator, err := getDAProviders(ctx, config, l2Config, txStreamer, blobReader, l1Reader, deployInfo, dataSigner, l1client, stack)
+	dapWriters, providerServerCloseFn, dapRegistry, err := getDAProviders(ctx, config, l2Config, txStreamer, blobReader, l1Reader, deployInfo, dataSigner, l1client, stack)
 	if err != nil {
 		return nil, err
 	}
 
-	inboxTracker, inboxReader, err := getInboxTrackerAndReader(ctx, arbDb, txStreamer, dapReaders, config, configFetcher, l1client, l1Reader, deployInfo, delayedBridge, sequencerInbox, executionSequencer)
+	inboxTracker, inboxReader, err := getInboxTrackerAndReader(ctx, arbDb, txStreamer, dapRegistry, config, configFetcher, l1client, l1Reader, deployInfo, delayedBridge, sequencerInbox, executionSequencer)
 	if err != nil {
 		return nil, err
 	}
 
-	statelessBlockValidator, err := getStatelessBlockValidator(config, configFetcher, inboxReader, inboxTracker, txStreamer, executionRecorder, arbDb, dapReaders, stack, latestWasmModuleRoot)
+	statelessBlockValidator, err := getStatelessBlockValidator(config, configFetcher, inboxReader, inboxTracker, txStreamer, executionRecorder, arbDb, dapRegistry, stack, latestWasmModuleRoot)
 	if err != nil {
 		return nil, err
 	}
@@ -1266,12 +1262,12 @@ func createNodeImpl(
 		return nil, err
 	}
 
-	stakerObj, messagePruner, stakerAddr, err := getStaker(ctx, config, configFetcher, arbDb, l1Reader, txOptsValidator, syncMonitor, parentChainID, l1client, deployInfo, txStreamer, inboxTracker, inboxReader, stack, fatalErrChan, statelessBlockValidator, blockValidator, dapValidator)
+	stakerObj, messagePruner, stakerAddr, err := getStaker(ctx, config, configFetcher, arbDb, l1Reader, txOptsValidator, syncMonitor, parentChainID, l1client, deployInfo, txStreamer, inboxTracker, inboxReader, stack, fatalErrChan, statelessBlockValidator, blockValidator, dapRegistry)
 	if err != nil {
 		return nil, err
 	}
 
-	batchPoster, err := getBatchPoster(ctx, config, configFetcher, txOptsBatchPoster, dapWriters, l1Reader, inboxTracker, txStreamer, arbOSVersionGetter, arbDb, syncMonitor, deployInfo, parentChainID, dapReaders, stakerAddr)
+	batchPoster, err := getBatchPoster(ctx, config, configFetcher, txOptsBatchPoster, dapWriters, l1Reader, inboxTracker, txStreamer, arbOSVersionGetter, arbDb, syncMonitor, deployInfo, parentChainID, dapRegistry, stakerAddr)
 	if err != nil {
 		return nil, err
 	}

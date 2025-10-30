@@ -225,24 +225,24 @@ func NewBOLDStaker(
 	inboxTracker staker.InboxTrackerInterface,
 	inboxStreamer staker.TransactionStreamerInterface,
 	inboxReader staker.InboxReaderInterface,
-	dapValidator daprovider.Validator,
+	dapRegistry *daprovider.DAProviderRegistry,
 	fatalErr chan<- error,
 ) (*BOLDStaker, error) {
 	if err := config.Validate(); err != nil {
 		return nil, err
 	}
 
-	// Create proof enhancer if validator is available
+	// Create proof enhancer if registry is available
 	var proofEnhancer server_arb.ProofEnhancer
-	if dapValidator != nil {
+	if dapRegistry != nil {
 		enhancerManager := server_arb.NewProofEnhancementManager()
 		enhancerManager.RegisterEnhancer(
 			server_arb.MarkerCustomDAReadPreimage,
-			server_arb.NewReadPreimageProofEnhancer(dapValidator, inboxTracker, inboxReader),
+			server_arb.NewReadPreimageProofEnhancer(dapRegistry, inboxTracker, inboxReader),
 		)
 		enhancerManager.RegisterEnhancer(
 			server_arb.MarkerCustomDAValidateCertificate,
-			server_arb.NewValidateCertificateProofEnhancer(dapValidator, inboxTracker, inboxReader),
+			server_arb.NewValidateCertificateProofEnhancer(dapRegistry, inboxTracker, inboxReader),
 		)
 		proofEnhancer = enhancerManager
 	}

@@ -107,7 +107,7 @@ type BatchPoster struct {
 	gasRefunderAddr    common.Address
 	building           *buildingBatch
 	dapWriters         []daprovider.Writer
-	dapReaders         *daprovider.ReaderRegistry
+	dapReaders         *daprovider.DAProviderRegistry
 	dataPoster         *dataposter.DataPoster
 	redisLock          *redislock.Simple
 	messagesPerBatch   *arbmath.MovingAverage[uint64]
@@ -339,7 +339,7 @@ type BatchPosterOpts struct {
 	TransactOpts  *bind.TransactOpts
 	DAPWriters    []daprovider.Writer
 	ParentChainID *big.Int
-	DAPReaders    *daprovider.ReaderRegistry
+	DAPReaders    *daprovider.DAProviderRegistry
 }
 
 func NewBatchPoster(ctx context.Context, opts *BatchPosterOpts) (*BatchPoster, error) {
@@ -1882,7 +1882,7 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 	if config.CheckBatchCorrectness {
 		// Create a new registry for checking batch correctness
 		// We need to copy existing readers and potentially add a simulated blob reader
-		dapReaders := daprovider.NewReaderRegistry()
+		dapReaders := daprovider.NewDAProviderRegistry()
 
 		// Copy all existing readers from the batch poster's registry
 		// These readers can fetch data that was already posted to
@@ -1894,8 +1894,9 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 					continue
 				}
 				// Use the headerBytes itself as the message for lookup (prefix matching will match exactly)
-				if reader, found := b.dapReaders.GetByHeaderBytes(headerBytes); found {
-					if err := dapReaders.Register(headerBytes, reader); err != nil {
+				reader := b.dapReaders.GetReader(headerBytes)
+				if reader != nil {
+					if err := dapReaders.Register(headerBytes, reader, nil); err != nil {
 						return false, fmt.Errorf("failed to register reader for header bytes %x: %w", headerBytes, err)
 					}
 				}

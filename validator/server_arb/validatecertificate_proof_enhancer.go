@@ -16,18 +16,18 @@ import (
 )
 
 type ValidateCertificateProofEnhancer struct {
-	daValidator  daprovider.Validator
+	dapRegistry  *daprovider.DAProviderRegistry
 	inboxTracker staker.InboxTrackerInterface
 	inboxReader  staker.InboxReaderInterface
 }
 
 func NewValidateCertificateProofEnhancer(
-	daValidator daprovider.Validator,
+	dapRegistry *daprovider.DAProviderRegistry,
 	inboxTracker staker.InboxTrackerInterface,
 	inboxReader staker.InboxReaderInterface,
 ) *ValidateCertificateProofEnhancer {
 	return &ValidateCertificateProofEnhancer{
-		daValidator:  daValidator,
+		dapRegistry:  dapRegistry,
 		inboxTracker: inboxTracker,
 		inboxReader:  inboxReader,
 	}
@@ -80,8 +80,14 @@ func (e *ValidateCertificateProofEnhancer) EnhanceProof(ctx context.Context, mes
 		return nil, fmt.Errorf("certificate hash mismatch: expected %x, got %x", certHash, actualHash)
 	}
 
+	// Get validator for this certificate type
+	validator := e.dapRegistry.GetValidator(certificate)
+	if validator == nil {
+		return nil, fmt.Errorf("no validator registered for certificate type %x", certificate[0:min(2, len(certificate))])
+	}
+
 	// Generate certificate validity proof
-	promise := e.daValidator.GenerateCertificateValidityProof(certificate)
+	promise := validator.GenerateCertificateValidityProof(certificate)
 	result, err := promise.Await(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate certificate validity proof: %w", err)

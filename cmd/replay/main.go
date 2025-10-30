@@ -301,9 +301,9 @@ func main() {
 		if backend.GetPositionWithinMessage() > 0 {
 			keysetValidationMode = daprovider.KeysetDontValidate
 		}
-		dapReaders := daprovider.NewReaderRegistry()
+		dapReaders := daprovider.NewDAProviderRegistry()
 		if dasReader != nil {
-			err = dapReaders.SetupDASReader(dasutil.NewReaderForDAS(dasReader, dasKeysetFetcher, keysetValidationMode))
+			err = dapReaders.SetupDASReader(dasutil.NewReaderForDAS(dasReader, dasKeysetFetcher, keysetValidationMode), nil)
 			if err != nil {
 				panic(fmt.Sprintf("Failed to register DAS reader: %v", err))
 			}
@@ -312,7 +312,7 @@ func main() {
 		if err != nil {
 			panic(fmt.Sprintf("Failed to register blob reader: %v", err))
 		}
-		err = dapReaders.SetupDACertificateReader(&DACertificatePreimageReader{})
+		err = dapReaders.SetupDACertificateReader(&DACertificatePreimageReader{}, nil)
 		if err != nil {
 			panic(fmt.Sprintf("Failed to register DA Certificate reader: %v", err))
 		}

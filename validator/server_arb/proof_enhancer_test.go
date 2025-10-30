@@ -123,9 +123,16 @@ func TestCustomDAProofEnhancement(t *testing.T) {
 		generateReadPreimageProofResult: mockProof,
 	}
 
+	// Create DA provider registry and register the mock validator
+	registry := daprovider.NewDAProviderRegistry()
+	err := registry.Register([]byte{0x01, 0xFF}, nil, mockValidator)
+	if err != nil {
+		t.Fatalf("Failed to register mock validator: %v", err)
+	}
+
 	// Create proof enhancer
 	enhancerManager := NewProofEnhancementManager()
-	customDAEnhancer := NewReadPreimageProofEnhancer(mockValidator, inboxTracker, inboxReader)
+	customDAEnhancer := NewReadPreimageProofEnhancer(registry, inboxTracker, inboxReader)
 	enhancerManager.RegisterEnhancer(MarkerCustomDAReadPreimage, customDAEnhancer)
 
 	// Create a mock proof with enhancement flag and marker
@@ -252,9 +259,16 @@ func TestValidateCertificateProofEnhancement(t *testing.T) {
 		generateCertValidityProofResult: mockValidityProof,
 	}
 
+	// Create DA provider registry and register the mock validator
+	registry := daprovider.NewDAProviderRegistry()
+	err := registry.Register([]byte{0x01, 0xFF}, nil, mockValidator)
+	if err != nil {
+		t.Fatalf("Failed to register mock validator: %v", err)
+	}
+
 	// Create proof enhancer
 	enhancerManager := NewProofEnhancementManager()
-	certEnhancer := NewValidateCertificateProofEnhancer(mockValidator, inboxTracker, inboxReader)
+	certEnhancer := NewValidateCertificateProofEnhancer(registry, inboxTracker, inboxReader)
 	enhancerManager.RegisterEnhancer(MarkerCustomDAValidateCertificate, certEnhancer)
 
 	// Create a mock proof with enhancement flag and marker
@@ -375,8 +389,14 @@ func TestProofEnhancerErrorCases(t *testing.T) {
 
 		validator := &mockValidator{}
 
+		// Create DA provider registry and register the mock validator
+		registry := daprovider.NewDAProviderRegistry()
+		if err := registry.Register([]byte{0x01, 0xFF}, nil, validator); err != nil {
+			t.Fatalf("Failed to register mock validator: %v", err)
+		}
+
 		enhancerManager := NewProofEnhancementManager()
-		enhancer := NewReadPreimageProofEnhancer(validator, inboxTracker, inboxReader)
+		enhancer := NewReadPreimageProofEnhancer(registry, inboxTracker, inboxReader)
 		enhancerManager.RegisterEnhancer(MarkerCustomDAReadPreimage, enhancer)
 
 		// Create proof with wrong hash
@@ -403,8 +423,14 @@ func TestProofEnhancerErrorCases(t *testing.T) {
 		inboxReader := &mockInboxReader{}
 		validator := &mockValidator{}
 
+		// Create DA provider registry and register the mock validator
+		registry := daprovider.NewDAProviderRegistry()
+		if err := registry.Register([]byte{0x01, 0xFF}, nil, validator); err != nil {
+			t.Fatalf("Failed to register mock validator: %v", err)
+		}
+
 		enhancerManager := NewProofEnhancementManager()
-		enhancer := NewReadPreimageProofEnhancer(validator, inboxTracker, inboxReader)
+		enhancer := NewReadPreimageProofEnhancer(registry, inboxTracker, inboxReader)
 		enhancerManager.RegisterEnhancer(MarkerCustomDAReadPreimage, enhancer)
 
 		certHash := crypto.Keccak256Hash([]byte("test"))

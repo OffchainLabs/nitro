@@ -18,19 +18,19 @@ import (
 
 // ReadPreimageProofEnhancer enhances proofs that involve CustomDA preimage operations
 type ReadPreimageProofEnhancer struct {
-	daValidator  daprovider.Validator
+	dapRegistry  *daprovider.DAProviderRegistry
 	inboxTracker staker.InboxTrackerInterface
 	inboxReader  staker.InboxReaderInterface
 }
 
 // NewReadPreimageProofEnhancer creates a new CustomDA proof enhancer
 func NewReadPreimageProofEnhancer(
-	validator daprovider.Validator,
+	dapRegistry *daprovider.DAProviderRegistry,
 	inboxTracker staker.InboxTrackerInterface,
 	inboxReader staker.InboxReaderInterface,
 ) *ReadPreimageProofEnhancer {
 	return &ReadPreimageProofEnhancer{
-		daValidator:  validator,
+		dapRegistry:  dapRegistry,
 		inboxTracker: inboxTracker,
 		inboxReader:  inboxReader,
 	}
@@ -98,8 +98,14 @@ func (e *ReadPreimageProofEnhancer) EnhanceProof(ctx context.Context, messageNum
 		return nil, fmt.Errorf("certificate hash mismatch: expected %x, got %x", certKeccak256, certHash)
 	}
 
+	// Get validator for this certificate type
+	validator := e.dapRegistry.GetValidator(certificate)
+	if validator == nil {
+		return nil, fmt.Errorf("no validator registered for certificate type %x", certificate[0:min(2, len(certificate))])
+	}
+
 	// Generate custom proof with certificate
-	promise := e.daValidator.GenerateReadPreimageProof(common.BytesToHash(certKeccak256[:]), offset, certificate)
+	promise := validator.GenerateReadPreimageProof(common.BytesToHash(certKeccak256[:]), offset, certificate)
 	result, err := promise.Await(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate custom DA proof: %w", err)

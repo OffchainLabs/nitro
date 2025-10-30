@@ -8,37 +8,38 @@ import (
 	"fmt"
 )
 
-// registeredReader associates a byte string prefix with a reader
-type registeredReader struct {
+// registeredProvider associates a byte string prefix with a reader and/or validator
+type registeredProvider struct {
 	headerBytes []byte
 	reader      Reader
+	validator   Validator
 }
 
-// ReaderRegistry maintains a mapping of header byte strings to their corresponding readers
-type ReaderRegistry struct {
-	readers []registeredReader
+// DAProviderRegistry maintains a mapping of header byte strings to their corresponding DA providers
+type DAProviderRegistry struct {
+	providers []registeredProvider
 }
 
-// NewReaderRegistry creates a new reader registry
-func NewReaderRegistry() *ReaderRegistry {
-	return &ReaderRegistry{
-		readers: make([]registeredReader, 0),
+// NewDAProviderRegistry creates a new DA provider registry
+func NewDAProviderRegistry() *DAProviderRegistry {
+	return &DAProviderRegistry{
+		providers: make([]registeredProvider, 0),
 	}
 }
 
-// Register associates a header byte string with a reader
+// Register associates a header byte string with a reader and/or validator
 // Prevents shadowing: rejects registration if the new headerBytes is a prefix of any existing registration,
 // or if any existing registration is a prefix of the new headerBytes
-func (r *ReaderRegistry) Register(headerBytes []byte, reader Reader) error {
-	if reader == nil {
-		return fmt.Errorf("cannot register nil reader")
+func (r *DAProviderRegistry) Register(headerBytes []byte, reader Reader, validator Validator) error {
+	if reader == nil && validator == nil {
+		return fmt.Errorf("cannot register with both reader and validator nil")
 	}
 	if len(headerBytes) == 0 {
 		return fmt.Errorf("cannot register empty header bytes")
 	}
 
 	// Check for exact matches and shadowing
-	for _, registered := range r.readers {
+	for _, registered := range r.providers {
 		// If exact match, always error
 		if bytes.Equal(registered.headerBytes, headerBytes) {
 			return fmt.Errorf("header bytes %x already registered", headerBytes)
@@ -56,59 +57,73 @@ func (r *ReaderRegistry) Register(headerBytes []byte, reader Reader) error {
 	}
 
 	// No conflicts found, add the registration
-	r.readers = append(r.readers, registeredReader{
+	r.providers = append(r.providers, registeredProvider{
 		headerBytes: headerBytes,
 		reader:      reader,
+		validator:   validator,
 	})
 	return nil
 }
 
-// RegisterAll associates multiple header byte strings with a reader
-func (r *ReaderRegistry) RegisterAll(headerBytesList [][]byte, reader Reader) error {
+// RegisterAll associates multiple header byte strings with a reader and validator
+func (r *DAProviderRegistry) RegisterAll(headerBytesList [][]byte, reader Reader, validator Validator) error {
 	for _, headerBytes := range headerBytesList {
-		if err := r.Register(headerBytes, reader); err != nil {
+		if err := r.Register(headerBytes, reader, validator); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// GetByHeaderBytes returns the reader associated with a message by matching registered header byte prefixes
+// GetReader returns the reader associated with a message by matching registered header byte prefixes
 // Uses first-match strategy since shadowing prevention ensures at most one match
-func (r *ReaderRegistry) GetByHeaderBytes(message []byte) (Reader, bool) {
-	for _, registered := range r.readers {
+// Returns nil if no matching reader is found
+func (r *DAProviderRegistry) GetReader(message []byte) Reader {
+	for _, registered := range r.providers {
 		if bytes.HasPrefix(message, registered.headerBytes) {
-			return registered.reader, true
+			return registered.reader
 		}
 	}
-	return nil, false
+	return nil
+}
+
+// GetValidator returns the validator associated with a certificate by matching registered header byte prefixes
+// Uses first-match strategy since shadowing prevention ensures at most one match
+// Returns nil if no matching validator is found
+func (r *DAProviderRegistry) GetValidator(certificate []byte) Validator {
+	for _, registered := range r.providers {
+		if bytes.HasPrefix(certificate, registered.headerBytes) {
+			return registered.validator
+		}
+	}
+	return nil
 }
 
 // SupportedHeaderBytes returns all registered header byte strings
-func (r *ReaderRegistry) SupportedHeaderBytes() [][]byte {
-	result := make([][]byte, 0, len(r.readers))
-	for _, registered := range r.readers {
+func (r *DAProviderRegistry) SupportedHeaderBytes() [][]byte {
+	result := make([][]byte, 0, len(r.providers))
+	for _, registered := range r.providers {
 		result = append(result, registered.headerBytes)
 	}
 	return result
 }
 
-// SetupDASReader registers a DAS reader for the DAS header bytes (with and without Tree flag)
-func (r *ReaderRegistry) SetupDASReader(reader Reader) error {
+// SetupDASReader registers a DAS reader and validator for the DAS header bytes (with and without Tree flag)
+func (r *DAProviderRegistry) SetupDASReader(reader Reader, validator Validator) error {
 	// Register for DAS without tree flag (0x80)
-	if err := r.Register([]byte{DASMessageHeaderFlag}, reader); err != nil {
+	if err := r.Register([]byte{DASMessageHeaderFlag}, reader, validator); err != nil {
 		return err
 	}
 	// Register for DAS with tree flag (0x88 = 0x80 | 0x08)
-	return r.Register([]byte{DASMessageHeaderFlag | TreeDASMessageHeaderFlag}, reader)
+	return r.Register([]byte{DASMessageHeaderFlag | TreeDASMessageHeaderFlag}, reader, validator)
 }
 
-// SetupBlobReader registers a blob reader for the blob header byte
-func (r *ReaderRegistry) SetupBlobReader(reader Reader) error {
-	return r.Register([]byte{BlobHashesHeaderFlag}, reader)
+// SetupBlobReader registers a blob reader for the blob header byte (no validator)
+func (r *DAProviderRegistry) SetupBlobReader(reader Reader) error {
+	return r.Register([]byte{BlobHashesHeaderFlag}, reader, nil)
 }
 
-// SetupDACertificateReader registers a DA certificate reader for the certificate header byte
-func (r *ReaderRegistry) SetupDACertificateReader(reader Reader) error {
-	return r.Register([]byte{DACertificateMessageHeaderFlag}, reader)
+// SetupDACertificateReader registers a DA certificate reader and validator for the certificate header byte
+func (r *DAProviderRegistry) SetupDACertificateReader(reader Reader, validator Validator) error {
+	return r.Register([]byte{DACertificateMessageHeaderFlag}, reader, validator)
 }

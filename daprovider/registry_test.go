@@ -33,6 +33,25 @@ func (m *mockReader) CollectPreimages(
 	panic("not implemented in mock")
 }
 
+// mockValidator is a simple mock implementation of the Validator interface for testing
+type mockValidator struct {
+	name string
+}
+
+func (m *mockValidator) GenerateReadPreimageProof(
+	certHash common.Hash,
+	offset uint64,
+	certificate []byte,
+) containers.PromiseInterface[PreimageProofResult] {
+	panic("not implemented in mock")
+}
+
+func (m *mockValidator) GenerateCertificateValidityProof(
+	certificate []byte,
+) containers.PromiseInterface[ValidityProofResult] {
+	panic("not implemented in mock")
+}
+
 func TestRegister_ShadowingPrevention(t *testing.T) {
 	tests := []struct {
 		name          string
@@ -73,18 +92,18 @@ func TestRegister_ShadowingPrevention(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			registry := NewReaderRegistry()
+			registry := NewDAProviderRegistry()
 			reader1 := &mockReader{name: "reader1"}
 			reader2 := &mockReader{name: "reader2"}
 
 			// Register first header bytes
-			err := registry.Register(tt.first, reader1)
+			err := registry.Register(tt.first, reader1, nil)
 			if err != nil {
 				t.Fatalf("unexpected error registering first: %v", err)
 			}
 
 			// Attempt to register second header bytes
-			err = registry.Register(tt.second, reader2)
+			err = registry.Register(tt.second, reader2, nil)
 			if tt.expectError {
 				if err == nil {
 					t.Fatal("expected error but got none")
@@ -92,10 +111,8 @@ func TestRegister_ShadowingPrevention(t *testing.T) {
 				if !strings.Contains(err.Error(), tt.errorContains) {
 					t.Errorf("expected error containing %q, got: %v", tt.errorContains, err)
 				}
-			} else {
-				if err != nil {
-					t.Fatalf("unexpected error: %v", err)
-				}
+			} else if err != nil {
+				t.Fatalf("unexpected error: %v", err)
 			}
 		})
 	}
@@ -140,11 +157,11 @@ func TestRegister_NonOverlappingSucceeds(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			registry := NewReaderRegistry()
+			registry := NewDAProviderRegistry()
 			reader := &mockReader{name: "reader"}
 
 			for i, hb := range tt.headerBytes {
-				err := registry.Register(hb, reader)
+				err := registry.Register(hb, reader, nil)
 				if err != nil {
 					t.Fatalf("unexpected error registering header bytes %d (%x): %v", i, hb, err)
 				}
@@ -176,18 +193,18 @@ func TestRegister_DuplicateRegistration(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			registry := NewReaderRegistry()
+			registry := NewDAProviderRegistry()
 			reader1 := &mockReader{name: "reader1"}
 			headerBytes := []byte{0x01, 0xFF}
 
 			// Register once
-			err := registry.Register(headerBytes, reader1)
+			err := registry.Register(headerBytes, reader1, nil)
 			if err != nil {
 				t.Fatalf("unexpected error on first registration: %v", err)
 			}
 
 			// Attempt to register again - should fail regardless of reader
-			err = registry.Register(headerBytes, tt.reader)
+			err = registry.Register(headerBytes, tt.reader, nil)
 			if err == nil {
 				t.Fatal("expected error when registering duplicate header bytes")
 			}
@@ -202,18 +219,21 @@ func TestRegister_InvalidInputs(t *testing.T) {
 	tests := []struct {
 		name          string
 		reader        Reader
+		validator     Validator
 		headerBytes   []byte
 		errorContains string
 	}{
 		{
-			name:          "nil reader",
+			name:          "nil reader and validator",
 			reader:        nil,
+			validator:     nil,
 			headerBytes:   []byte{0x01},
-			errorContains: "cannot register nil reader",
+			errorContains: "cannot register with both reader and validator nil",
 		},
 		{
 			name:          "empty header bytes",
 			reader:        &mockReader{name: "reader"},
+			validator:     nil,
 			headerBytes:   []byte{},
 			errorContains: "cannot register empty header bytes",
 		},
@@ -221,8 +241,8 @@ func TestRegister_InvalidInputs(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			registry := NewReaderRegistry()
-			err := registry.Register(tt.headerBytes, tt.reader)
+			registry := NewDAProviderRegistry()
+			err := registry.Register(tt.headerBytes, tt.reader, tt.validator)
 			if err == nil {
 				t.Fatal("expected error but got none")
 			}
@@ -233,12 +253,12 @@ func TestRegister_InvalidInputs(t *testing.T) {
 	}
 }
 
-func TestGetByHeaderBytes_PrefixMatching(t *testing.T) {
-	registry := NewReaderRegistry()
+func TestGetReader_PrefixMatching(t *testing.T) {
+	registry := NewDAProviderRegistry()
 	reader := &mockReader{name: "reader"}
 	headerBytes := []byte{0x01, 0xFF}
 
-	err := registry.Register(headerBytes, reader)
+	err := registry.Register(headerBytes, reader, nil)
 	if err != nil {
 		t.Fatalf("unexpected error registering: %v", err)
 	}
@@ -289,7 +309,8 @@ func TestGetByHeaderBytes_PrefixMatching(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			foundReader, found := registry.GetByHeaderBytes(tt.message)
+			foundReader := registry.GetReader(tt.message)
+			found := foundReader != nil
 			if found != tt.shouldFind {
 				t.Errorf("%s: expected found=%v, got %v", tt.description, tt.shouldFind, found)
 			}
@@ -300,17 +321,17 @@ func TestGetByHeaderBytes_PrefixMatching(t *testing.T) {
 	}
 }
 
-func TestGetByHeaderBytes_FirstMatch(t *testing.T) {
-	registry := NewReaderRegistry()
+func TestGetReader_FirstMatch(t *testing.T) {
+	registry := NewDAProviderRegistry()
 	reader1 := &mockReader{name: "reader1"}
 	reader2 := &mockReader{name: "reader2"}
 
 	// Register two non-overlapping patterns
-	err := registry.Register([]byte{0x80}, reader1)
+	err := registry.Register([]byte{0x80}, reader1, nil)
 	if err != nil {
 		t.Fatalf("unexpected error registering first: %v", err)
 	}
-	err = registry.Register([]byte{0x88}, reader2)
+	err = registry.Register([]byte{0x88}, reader2, nil)
 	if err != nil {
 		t.Fatalf("unexpected error registering second: %v", err)
 	}
@@ -334,8 +355,8 @@ func TestGetByHeaderBytes_FirstMatch(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			foundReader, found := registry.GetByHeaderBytes(tt.message)
-			if !found {
+			foundReader := registry.GetReader(tt.message)
+			if foundReader == nil {
 				t.Fatal("expected to find reader")
 			}
 			if foundReader != tt.expectedReader {
@@ -346,22 +367,22 @@ func TestGetByHeaderBytes_FirstMatch(t *testing.T) {
 }
 
 func TestRegisterAll_Success(t *testing.T) {
-	registry := NewReaderRegistry()
+	registry := NewDAProviderRegistry()
 	reader := &mockReader{name: "reader"}
 	headerBytesList := [][]byte{
 		{0x80},
 		{0x88},
 	}
 
-	err := registry.RegisterAll(headerBytesList, reader)
+	err := registry.RegisterAll(headerBytesList, reader, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
 	// Verify both are registered and can be looked up
 	for _, hb := range headerBytesList {
-		foundReader, found := registry.GetByHeaderBytes(hb)
-		if !found {
+		foundReader := registry.GetReader(hb)
+		if foundReader == nil {
 			t.Errorf("header bytes %x not found", hb)
 		}
 		if foundReader != reader {
@@ -376,12 +397,12 @@ func TestRegisterAll_Success(t *testing.T) {
 }
 
 func TestRegisterAll_FailsOnShadowing(t *testing.T) {
-	registry := NewReaderRegistry()
+	registry := NewDAProviderRegistry()
 	reader1 := &mockReader{name: "reader1"}
 	reader2 := &mockReader{name: "reader2"}
 
 	// Pre-register a pattern
-	err := registry.Register([]byte{0x01, 0xFF}, reader1)
+	err := registry.Register([]byte{0x01, 0xFF}, reader1, nil)
 	if err != nil {
 		t.Fatalf("unexpected error in setup: %v", err)
 	}
@@ -392,7 +413,7 @@ func TestRegisterAll_FailsOnShadowing(t *testing.T) {
 		{0x01},       // This should fail (would shadow existing 0x01, 0xFF)
 	}
 
-	err = registry.RegisterAll(headerBytesList, reader2)
+	err = registry.RegisterAll(headerBytesList, reader2, nil)
 	if err == nil {
 		t.Fatal("expected error due to shadowing")
 	}
@@ -401,8 +422,8 @@ func TestRegisterAll_FailsOnShadowing(t *testing.T) {
 	}
 
 	// Verify first item was registered
-	foundReader, found := registry.GetByHeaderBytes([]byte{0x01, 0xFE})
-	if !found {
+	foundReader := registry.GetReader([]byte{0x01, 0xFE})
+	if foundReader == nil {
 		t.Error("expected first item to be registered before error")
 	}
 	if foundReader != reader2 {
@@ -410,14 +431,14 @@ func TestRegisterAll_FailsOnShadowing(t *testing.T) {
 	}
 
 	// Verify second item was NOT registered
-	_, found = registry.GetByHeaderBytes([]byte{0x01, 0x00, 0x00})
-	if found {
+	foundReader = registry.GetReader([]byte{0x01, 0x00, 0x00})
+	if foundReader != nil {
 		t.Error("second item should not have been registered")
 	}
 }
 
 func TestSupportedHeaderBytes(t *testing.T) {
-	registry := NewReaderRegistry()
+	registry := NewDAProviderRegistry()
 	reader := &mockReader{name: "reader"}
 
 	expected := [][]byte{
@@ -427,7 +448,7 @@ func TestSupportedHeaderBytes(t *testing.T) {
 	}
 
 	for _, hb := range expected {
-		err := registry.Register(hb, reader)
+		err := registry.Register(hb, reader, nil)
 		if err != nil {
 			t.Fatalf("unexpected error registering %x: %v", hb, err)
 		}
@@ -448,5 +469,127 @@ func TestSupportedHeaderBytes(t *testing.T) {
 		if !supportedMap[string(hb)] {
 			t.Errorf("expected header bytes %x not found in supported list", hb)
 		}
+	}
+}
+
+func TestGetValidator_PrefixMatching(t *testing.T) {
+	registry := NewDAProviderRegistry()
+	validator := &mockValidator{name: "validator"}
+	headerBytes := []byte{0x01, 0xFF}
+
+	err := registry.Register(headerBytes, nil, validator)
+	if err != nil {
+		t.Fatalf("unexpected error registering: %v", err)
+	}
+
+	tests := []struct {
+		name        string
+		certificate []byte
+		shouldFind  bool
+		description string
+	}{
+		{
+			name:        "exact match",
+			certificate: []byte{0x01, 0xFF},
+			shouldFind:  true,
+			description: "exact match should find validator",
+		},
+		{
+			name:        "certificate with suffix",
+			certificate: []byte{0x01, 0xFF, 0x11, 0x22, 0x33},
+			shouldFind:  true,
+			description: "prefix match should find validator",
+		},
+		{
+			name:        "different second byte",
+			certificate: []byte{0x01, 0xFE, 0x11, 0x22},
+			shouldFind:  false,
+			description: "different prefix should not match",
+		},
+		{
+			name:        "too short",
+			certificate: []byte{0x01},
+			shouldFind:  false,
+			description: "certificate shorter than registered bytes should not match",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			foundValidator := registry.GetValidator(tt.certificate)
+			found := foundValidator != nil
+			if found != tt.shouldFind {
+				t.Errorf("%s: expected found=%v, got %v", tt.description, tt.shouldFind, found)
+			}
+			if tt.shouldFind && foundValidator != validator {
+				t.Errorf("found wrong validator")
+			}
+		})
+	}
+}
+
+func TestRegister_SameObjectAsReaderAndValidator(t *testing.T) {
+	registry := NewDAProviderRegistry()
+
+	// Use mockReader which can act as both (though not implementing Validator interface,
+	// we're just testing the registration mechanism)
+	provider := &mockReader{name: "provider"}
+	headerBytes := []byte{0x01, 0xFF}
+
+	// Register same object as both reader and validator
+	err := registry.Register(headerBytes, provider, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Verify reader can be retrieved
+	foundReader := registry.GetReader(headerBytes)
+	if foundReader == nil {
+		t.Fatal("expected to find reader")
+	}
+	if foundReader != provider {
+		t.Error("found wrong reader")
+	}
+}
+
+func TestRegister_ReaderOnly(t *testing.T) {
+	registry := NewDAProviderRegistry()
+	reader := &mockReader{name: "reader"}
+	headerBytes := []byte{0x50}
+
+	err := registry.Register(headerBytes, reader, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Verify reader works
+	if foundReader := registry.GetReader(headerBytes); foundReader != reader {
+		t.Error("reader not found or wrong reader")
+	}
+
+	// Verify no validator registered
+	if foundValidator := registry.GetValidator(headerBytes); foundValidator != nil {
+		t.Error("expected no validator to be registered")
+	}
+}
+
+func TestRegister_ValidatorOnly(t *testing.T) {
+	registry := NewDAProviderRegistry()
+	validator := &mockValidator{name: "validator"}
+	headerBytes := []byte{0x01, 0xAA}
+
+	err := registry.Register(headerBytes, nil, validator)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Verify validator works
+	if foundValidator := registry.GetValidator(headerBytes); foundValidator != validator {
+		t.Error("validator not found or wrong validator")
+	}
+
+	// Verify no reader registered
+	if foundReader := registry.GetReader(headerBytes); foundReader != nil {
+		t.Error("expected no reader to be registered")
 	}
 }

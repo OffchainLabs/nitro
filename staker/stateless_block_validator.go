@@ -44,7 +44,7 @@ type StatelessBlockValidator struct {
 	inboxTracker         InboxTrackerInterface
 	streamer             TransactionStreamerInterface
 	db                   ethdb.Database
-	dapReaders           *daprovider.ReaderRegistry
+	dapReaders           *daprovider.DAProviderRegistry
 	stack                *node.Node
 	latestWasmModuleRoot common.Hash
 }
@@ -237,7 +237,7 @@ func NewStatelessBlockValidator(
 	streamer TransactionStreamerInterface,
 	recorder execution.ExecutionRecorder,
 	arbdb ethdb.Database,
-	dapReaders *daprovider.ReaderRegistry,
+	dapReaders *daprovider.DAProviderRegistry,
 	config func() *BlockValidatorConfig,
 	stack *node.Node,
 	latestWasmModuleRoot common.Hash,
@@ -326,7 +326,8 @@ func (v *StatelessBlockValidator) readFullBatch(ctx context.Context, batchNum ui
 	preimages := make(daprovider.PreimagesMap)
 	if len(postedData) > 40 && v.dapReaders != nil {
 		headerByte := postedData[40]
-		if dapReader, found := v.dapReaders.GetByHeaderBytes(postedData[40:]); found {
+		dapReader := v.dapReaders.GetReader(postedData[40:])
+		if dapReader != nil {
 			promise := dapReader.CollectPreimages(batchNum, batchBlockHash, postedData)
 			result, err := promise.Await(ctx)
 			if err != nil {
