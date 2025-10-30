@@ -114,6 +114,9 @@ func ExternalProviderConfigAddPluralOptions(prefix string, f *pflag.FlagSet) {
 }
 
 func FixExternalProvidersCLIParsing(path string, k *koanf.Koanf) error {
+	// Reset global variable at start to avoid test pollution
+	parsedExternalProvidersConf = nil
+
 	rawProviders := k.Get(path)
 	if providers, ok := rawProviders.(string); ok {
 		err := parsedExternalProvidersConf.UnmarshalJSON([]byte(providers))
