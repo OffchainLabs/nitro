@@ -209,6 +209,26 @@ var PProfDefault = PProf{
 	Port: 6071,
 }
 
+type PrometheusPushgatewayConfig struct {
+	Enabled        bool          `koanf:"enabled"`
+	Addr           string        `koanf:"addr"`
+	Port           int           `koanf:"port"`
+	JobName        string        `koanf:"job-name"`
+	Prefix         string        `koanf:"prefix"`
+	Instance       string        `koanf:"instance"`
+	UpdateInterval time.Duration `koanf:"update-interval"`
+}
+
+var PrometheusPushgatewayConfigDefault = PrometheusPushgatewayConfig{
+	Enabled:        false,
+	Addr:           "127.0.0.1",
+	Port:           9091,
+	JobName:        "arbitrum-nitro",
+	Prefix:         "",
+	Instance:       "",
+	UpdateInterval: 5 * time.Second,
+}
+
 func MetricsServerAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".addr", MetricsServerConfigDefault.Addr, "metrics server address")
 	f.Int(prefix+".port", MetricsServerConfigDefault.Port, "metrics server port")
@@ -218,4 +238,14 @@ func MetricsServerAddOptions(prefix string, f *flag.FlagSet) {
 func PProfAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".addr", PProfDefault.Addr, "pprof server address")
 	f.Int(prefix+".port", PProfDefault.Port, "pprof server port")
+}
+
+func PrometheusPushgatewayAddOptions(prefix string, f *flag.FlagSet) {
+	f.Bool(prefix+".enabled", PrometheusPushgatewayConfigDefault.Enabled, "enable prometheus pushgateway")
+	f.String(prefix+".addr", PrometheusPushgatewayConfigDefault.Addr, "prometheus push gateway address")
+	f.Int(prefix+".port", PrometheusPushgatewayConfigDefault.Port, "prometheus push gateway port")
+	f.String(prefix+".job-name", PrometheusPushgatewayConfigDefault.JobName, "prometheus push gateway job name")
+	f.String(prefix+".prefix", PrometheusPushgatewayConfigDefault.Prefix, "metric name prefix to avoid collisions")
+	f.String(prefix+".instance", PrometheusPushgatewayConfigDefault.Instance, "instance label to distinguish multiple nodes")
+	f.Duration(prefix+".update-interval", PrometheusPushgatewayConfigDefault.UpdateInterval, "prometheus push gateway update interval")
 }
