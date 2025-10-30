@@ -3,7 +3,6 @@
 
 use std::fmt;
 use std::fmt::{Debug, Display, Formatter};
-use std::hash::Hash;
 use wasmparser::Operator;
 
 #[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
