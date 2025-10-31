@@ -10,7 +10,7 @@ NC='\033[0m' # No Color
 
 node_version_needed="v24"
 rust_version_needed="1.88.0"
-golangci_lint_version_needed="2.3.0"
+golangci_lint_version_needed="2.4.0"
 
 if [[ -f go.mod ]]; then
     go_version_needed=$(grep "^go " go.mod | awk '{print $2}')
@@ -93,7 +93,7 @@ for pkg in "${prerequisites[@]}"; do
     [[ "$pkg" == "wasm2wat" ]] && display_name="wabt"
     [[ "$pkg" == "clang" ]] && display_name="llvm"
     [[ "$pkg" == "wasm-ld" ]] && display_name="lld"
-    
+
     if command_exists "$pkg"; then
         exists=true
     else
