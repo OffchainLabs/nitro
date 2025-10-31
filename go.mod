@@ -1,6 +1,6 @@
 module github.com/offchainlabs/nitro
 
-go 1.25
+go 1.25.0
 
 replace github.com/ethereum/go-ethereum => ./go-ethereum
 
