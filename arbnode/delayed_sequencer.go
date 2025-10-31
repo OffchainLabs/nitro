@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
-	"sync"
 	"time"
 
 	"github.com/spf13/pflag"
@@ -33,7 +32,6 @@ type DelayedSequencer struct {
 	exec                     execution.ExecutionSequencer
 	coordinator              *SeqCoordinator
 	waitingForFinalizedBlock *uint64
-	mutex                    sync.Mutex
 	config                   DelayedSequencerConfigFetcher
 }
 
@@ -91,18 +89,15 @@ func (d *DelayedSequencer) getDelayedMessagesRead() (uint64, error) {
 	return d.exec.NextDelayedMessageNumber()
 }
 
-func (d *DelayedSequencer) trySequence(ctx context.Context, lastBlockHeader *types.Header) error {
+func (d *DelayedSequencer) tryToEnqueue(ctx context.Context, lastBlockHeader *types.Header) error {
 	if d.coordinator != nil && !d.coordinator.CurrentlyChosen() {
 		return nil
 	}
 
-	return d.sequenceWithoutLockout(ctx, lastBlockHeader)
+	return d.enqueueWithoutLockout(ctx, lastBlockHeader)
 }
 
-func (d *DelayedSequencer) sequenceWithoutLockout(ctx context.Context, lastBlockHeader *types.Header) error {
-	d.mutex.Lock()
-	defer d.mutex.Unlock()
-
+func (d *DelayedSequencer) enqueueWithoutLockout(ctx context.Context, lastBlockHeader *types.Header) error {
 	config := d.config()
 	if !config.Enable {
 		return nil
@@ -195,26 +190,20 @@ func (d *DelayedSequencer) sequenceWithoutLockout(ctx context.Context, lastBlock
 			// Probably a reorg that hasn't been picked up by the inbox reader
 			return fmt.Errorf("inbox reader at delayed message %v db accumulator %v doesn't match delayed bridge accumulator %v at L1 block %v", pos-1, lastDelayedAcc, delayedBridgeAcc, finalized)
 		}
-		for i, msg := range messages {
-			// #nosec G115
-			err = d.exec.SequenceDelayedMessage(msg, startPos+uint64(i))
-			if err != nil {
-				return err
-			}
-		}
-		log.Info("DelayedSequencer: Sequenced", "msgnum", len(messages), "startpos", startPos)
+		d.exec.EnqueueDelayedMessages(messages, startPos)
+		log.Info("Delayed messages enqueued", "msgnum", len(messages), "startpos", startPos)
 	}
 
 	return nil
 }
 
 // Dangerous: bypasses lockout check!
-func (d *DelayedSequencer) ForceSequenceDelayed(ctx context.Context) error {
+func (d *DelayedSequencer) ForceEnqueue(ctx context.Context) error {
 	lastBlockHeader, err := d.l1Reader.LastHeader(ctx)
 	if err != nil {
 		return err
 	}
-	return d.sequenceWithoutLockout(ctx, lastBlockHeader)
+	return d.enqueueWithoutLockout(ctx, lastBlockHeader)
 }
 
 func (d *DelayedSequencer) run(ctx context.Context) {
@@ -252,7 +241,7 @@ func (d *DelayedSequencer) run(ctx context.Context) {
 			log.Debug("delayed sequencer: context done", "err", ctx.Err())
 			return
 		}
-		if err := d.trySequence(ctx, latestHeader); err != nil {
+		if err := d.tryToEnqueue(ctx, latestHeader); err != nil {
 			if errors.Is(err, gethexec.ExecutionEngineBlockCreationStopped) {
 				log.Info("stopping block creation in delayed sequencer because execution engine has stopped")
 				return
