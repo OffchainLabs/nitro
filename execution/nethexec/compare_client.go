@@ -7,6 +7,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/google/go-cmp/cmp"
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
@@ -50,8 +51,41 @@ func comparePromises[T any](fatalErrChan chan error, op string,
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 		defer cancel()
 
-		intRes, intErr := internal.Await(ctx)
-		extRes, extErr := external.Await(ctx)
+		var intRes, extRes T
+		var intErr, extErr error
+		var internalDuration, externalDuration time.Duration
+
+		internalStart := time.Now()
+		externalStart := time.Now()
+
+		internalDone := false
+		externalDone := false
+
+		// Wait for both promises in parallel using select
+		for !internalDone || !externalDone {
+			select {
+			case <-internal.ReadyChan():
+				if !internalDone {
+					intRes, intErr = internal.Current()
+					internalDuration = time.Since(internalStart)
+					internalDone = true
+				}
+			case <-external.ReadyChan():
+				if !externalDone {
+					extRes, extErr = external.Current()
+					externalDuration = time.Since(externalStart)
+					externalDone = true
+				}
+			case <-ctx.Done():
+				// Handle timeout
+				promise.ProduceError(ctx.Err())
+				return
+			}
+		}
+
+		// Record metrics
+		metrics.GetOrRegisterHistogram("arb/compare/internal/"+op+"/duration", nil, metrics.NewBoundedHistogramSample()).Update(internalDuration.Nanoseconds())
+		metrics.GetOrRegisterHistogram("arb/compare/external/"+op+"/duration", nil, metrics.NewBoundedHistogramSample()).Update(externalDuration.Nanoseconds())
 
 		if err := compare(op, intRes, intErr, extRes, extErr); err != nil {
 			select {
