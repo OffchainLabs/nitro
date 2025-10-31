@@ -11,7 +11,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode"
 )
 
-func testExecutionClientOnly(t *testing.T, useExternalExecutionClient bool) {
+func testExecutionClientOnly(t *testing.T, executionClientMode ExecutionClientMode) {
 	ctx := t.Context()
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
@@ -21,9 +21,9 @@ func testExecutionClientOnly(t *testing.T, useExternalExecutionClient bool) {
 
 	replicaConfig := arbnode.ConfigDefaultL1NonSequencerTest()
 	replicaParams := &SecondNodeParams{
-		nodeConfig:                 replicaConfig,
-		useExecutionClientOnly:     true,
-		useExternalExecutionClient: useExternalExecutionClient,
+		nodeConfig:             replicaConfig,
+		useExecutionClientOnly: true,
+		executionClientMode:    executionClientMode,
 	}
 
 	replicaTestClient, replicaCleanup := builder.Build2ndNode(t, replicaParams)
@@ -51,9 +51,13 @@ func testExecutionClientOnly(t *testing.T, useExternalExecutionClient bool) {
 }
 
 func TestExecutionClientOnlyInternal(t *testing.T) {
-	testExecutionClientOnly(t, false)
+	testExecutionClientOnly(t, ExecutionClientModeInternal)
 }
 
 func TestExecutionClientOnlyExternal(t *testing.T) {
-	testExecutionClientOnly(t, true)
+	testExecutionClientOnly(t, ExecutionClientModeExternal)
+}
+
+func TestExecutionClientOnlyComparison(t *testing.T) {
+	testExecutionClientOnly(t, ExecutionClientModeComparison)
 }

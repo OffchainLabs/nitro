@@ -97,15 +97,23 @@ import (
 
 type info = *BlockchainTestInfo
 
+type ExecutionClientMode int
+
+const (
+	ExecutionClientModeInternal   ExecutionClientMode = iota + 1 // internal geth
+	ExecutionClientModeExternal                                  // external Nethermind
+	ExecutionClientModeComparison                                // both, compare results
+)
+
 type SecondNodeParams struct {
-	nodeConfig                 *arbnode.Config
-	execConfig                 *gethexec.Config
-	stackConfig                *node.Config
-	dasConfig                  *das.DataAvailabilityConfig
-	initData                   *statetransfer.ArbosInitializationInfo
-	addresses                  *chaininfo.RollupAddresses
-	useExecutionClientOnly     bool
-	useExternalExecutionClient bool // Use external Nethermind execution client instead of internal geth
+	nodeConfig             *arbnode.Config
+	execConfig             *gethexec.Config
+	stackConfig            *node.Config
+	dasConfig              *das.DataAvailabilityConfig
+	initData               *statetransfer.ArbosInitializationInfo
+	addresses              *chaininfo.RollupAddresses
+	useExecutionClientOnly bool
+	executionClientMode    ExecutionClientMode
 }
 
 type TestClient struct {
@@ -944,7 +952,7 @@ func build2ndNode(
 
 	testClient := NewTestClient(ctx)
 	testClient.Client, testClient.ConsensusNode =
-		Create2ndNodeWithConfig(t, ctx, firstNodeTestClient.ConsensusNode, parentChainTestClient.Stack, parentChainInfo, params.initData, params.nodeConfig, params.execConfig, params.stackConfig, valnodeConfig, params.addresses, initMessage, params.useExecutionClientOnly, params.useExternalExecutionClient)
+		Create2ndNodeWithConfig(t, ctx, firstNodeTestClient.ConsensusNode, parentChainTestClient.Stack, parentChainInfo, params.initData, params.nodeConfig, params.execConfig, params.stackConfig, valnodeConfig, params.addresses, initMessage, params.useExecutionClientOnly, params.executionClientMode)
 	testClient.cleanup = func() { testClient.ConsensusNode.StopAndWait() }
 	return testClient, func() { testClient.cleanup() }
 }
@@ -1721,7 +1729,7 @@ func Create2ndNodeWithConfig(
 	addresses *chaininfo.RollupAddresses,
 	initMessage *arbostypes.ParsedInitMessage,
 	useExecutionClientOnly bool,
-	useExternalExecutionClient bool,
+	executionClientMode ExecutionClientMode,
 ) (*ethclient.Client, *arbnode.Node) {
 	if nodeConfig == nil {
 		nodeConfig = arbnode.ConfigDefaultL1NonSequencerTest()
@@ -1777,7 +1785,13 @@ func Create2ndNodeWithConfig(
 	Require(t, err)
 
 	var currentExec nethexec.FullExecutionClient
-	if useExternalExecutionClient {
+	switch executionClientMode {
+	case ExecutionClientModeInternal:
+		// Create internal geth execution client
+		currentExec, err = gethexec.CreateExecutionNode(ctx, chainStack, chainDb, blockchain, parentChainClient, configFetcher, 0)
+		Require(t, err)
+
+	case ExecutionClientModeExternal:
 		// Create external Nethermind execution client
 		nethermindExecClient, err := nethexec.NewNethermindExecutionClient()
 		Require(t, err)
@@ -1790,9 +1804,28 @@ func Create2ndNodeWithConfig(
 			}
 		}
 		currentExec = nethermindExecClient
-	} else {
-		currentExec, err = gethexec.CreateExecutionNode(ctx, chainStack, chainDb, blockchain, parentChainClient, configFetcher, 0)
+
+	case ExecutionClientModeComparison:
+		// Create both internal geth and external Nethermind execution clients
+		gethExecClient, err := gethexec.CreateExecutionNode(ctx, chainStack, chainDb, blockchain, parentChainClient, configFetcher, 0)
 		Require(t, err)
+
+		nethermindExecClient, err := nethexec.NewNethermindExecutionClient()
+		Require(t, err)
+
+		// Call DigestInitMessage to initialize the external execution client with genesis block
+		if initMessage != nil {
+			result := nethermindExecClient.DigestInitMessage(ctx, initMessage.InitialL1BaseFee, initMessage.SerializedChainConfig)
+			if result == nil {
+				t.Fatal("DigestInitMessage returned nil for external execution client")
+			}
+		}
+
+		// Wrap both in comparison client
+		currentExec = nethexec.NewCompareExecutionClient(gethExecClient, nethermindExecClient, feedErrChan)
+
+	default:
+		t.Fatalf("unsupported execution client mode: %v", executionClientMode)
 	}
 
 	if useExecutionClientOnly {
@@ -1806,9 +1839,11 @@ func Create2ndNodeWithConfig(
 	err = currentNode.Start(ctx)
 	Require(t, err)
 
-	// For external execution client, connect directly to Nethermind for RPC calls
+	// Connect RPC client based on execution mode
 	var chainClient *ethclient.Client
-	if useExternalExecutionClient {
+	switch executionClientMode {
+	case ExecutionClientModeExternal:
+		// For external execution client, connect directly to Nethermind for RPC calls
 		nethRpcUrl := os.Getenv("PR_NETH_RPC_CLIENT_URL")
 		if nethRpcUrl == "" {
 			nethRpcUrl = "http://localhost:20545"
@@ -1816,8 +1851,11 @@ func Create2ndNodeWithConfig(
 		externalRpcClient, err := rpc.Dial(nethRpcUrl)
 		Require(t, err)
 		chainClient = ethclient.NewClient(externalRpcClient)
-	} else {
+	case ExecutionClientModeInternal, ExecutionClientModeComparison:
+		// For internal and comparison modes, use internal geth client
 		chainClient = ClientForStack(t, chainStack)
+	default:
+		t.Fatalf("unsupported execution client mode: %v", executionClientMode)
 	}
 
 	StartWatchChanErr(t, ctx, feedErrChan, currentNode)

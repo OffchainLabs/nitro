@@ -252,6 +252,16 @@ test-go-gas-dimensions: test-go-deps
 	.github/workflows/gotestsum.sh --timeout 120m --run "TestDim(Log|TxOp)" --tags gasdimensionstest --nolog
 	@printf $(done)
 
+.PHONY: test-comparison
+test-comparison: test-go-deps
+	@echo "Running Nethermind comparison test..."
+	@./scripts/run-comparison-test.sh
+
+.PHONY: test-comparison-verbose
+test-comparison-verbose: test-go-deps
+	@echo "Running Nethermind comparison test (verbose mode)..."
+	@./scripts/run-comparison-test.sh --verbose
+
 .PHONY: test-gen-proofs
 test-gen-proofs: \
         $(arbitrator_test_wasms) \
