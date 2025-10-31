@@ -711,15 +711,7 @@ func warpL1Time(t *testing.T, builder *NodeBuilder, ctx context.Context, current
 	}
 	tx := builder.L2Info.PrepareTx("Faucet", "User2", 300000, big.NewInt(1), nil)
 	hooks := gethexec.MakeZeroTxSizeSequencingHooksForTesting(types.Transactions{tx}, nil, nil, nil)
-	sequencedMsg, _, err := builder.L2.ExecNode.ExecEngine.SequenceTransactions(timeWarpHeader, hooks, nil)
-	Require(t, err)
-	if sequencedMsg == nil {
-		Fatal(t, "sequencedMsg is nil")
-	}
-	err = builder.L2.ConsensusNode.TxStreamer.WriteSequencedMsg(sequencedMsg)
-	Require(t, err)
-	err = builder.L2.ExecNode.AppendLastSequencedBlock()
-	Require(t, err)
+	sequenceTransactions(t, builder, timeWarpHeader, hooks, nil)
 	return newL1Timestamp
 }
 
