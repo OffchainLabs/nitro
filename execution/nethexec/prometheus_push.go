@@ -4,8 +4,14 @@
 package nethexec
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
+	"errors"
 	"fmt"
+	"io"
+	"net/http"
+	"net/url"
 	"sort"
 	"strings"
 	"sync"
@@ -13,8 +19,10 @@ import (
 
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
-	"github.com/prometheus/client_golang/prometheus/push"
+	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
+	"github.com/prometheus/common/expfmt"
+	"github.com/prometheus/common/model"
 )
 
 // RegistryGatherer implements prometheus.Gatherer interface for metrics.Registry
@@ -241,14 +249,173 @@ func (rg *RegistryGatherer) applyPrefix(name string) string {
 	return name
 }
 
+const (
+	contentTypeHeader = "Content-Type"
+	base64Suffix      = "@base64"
+)
+
+var errJobEmpty = errors.New("job name is empty")
+
+// nethPusher manages a push to the Pushgateway with custom URL handling
+type nethPusher struct {
+	error error
+
+	url      string
+	job      string
+	grouping map[string]string
+
+	gatherers prometheus.Gatherers
+
+	client HTTPDoer
+
+	expfmt expfmt.Format
+}
+
+// HTTPDoer is an interface for the one method of http.Client that is used by nethPusher
+type HTTPDoer interface {
+	Do(*http.Request) (*http.Response, error)
+}
+
+// newNethPusher creates a new nethPusher to push to the provided URL with the provided job name.
+// The URL should already include the /metrics path if needed.
+func newNethPusher(pushURL string, job string) *nethPusher {
+	var err error
+	if job == "" {
+		err = errJobEmpty
+	}
+	if !strings.Contains(pushURL, "://") {
+		pushURL = "http://" + pushURL
+	}
+	pushURL = strings.TrimSuffix(pushURL, "/")
+
+	return &nethPusher{
+		error:     err,
+		url:       pushURL,
+		job:       job,
+		grouping:  map[string]string{},
+		gatherers: prometheus.Gatherers{},
+		client:    &http.Client{},
+		expfmt:    expfmt.FmtProtoDelim,
+	}
+}
+
+// Gatherer adds a Gatherer to the nethPusher
+func (p *nethPusher) Gatherer(g prometheus.Gatherer) *nethPusher {
+	p.gatherers = append(p.gatherers, g)
+	return p
+}
+
+// Grouping adds a label pair to the grouping key of the nethPusher
+func (p *nethPusher) Grouping(name string, value string) *nethPusher {
+	if p.error == nil {
+		if !model.LabelName(name).IsValid() {
+			p.error = fmt.Errorf("grouping label has invalid name: %s", name)
+			return p
+		}
+		p.grouping[name] = value
+	}
+	return p
+}
+
+// AddContext works like Add but includes a context
+func (p *nethPusher) AddContext(ctx context.Context) error {
+	return p.push(ctx, http.MethodPost)
+}
+
+// Push uses POST method to add/merge metrics
+func (p *nethPusher) Push() error {
+	return p.push(context.Background(), http.MethodPost)
+}
+
+func (p *nethPusher) push(ctx context.Context, method string) error {
+	if p.error != nil {
+		return p.error
+	}
+	mfs, err := p.gatherers.Gather()
+	if err != nil {
+		return err
+	}
+	buf := &bytes.Buffer{}
+	enc := expfmt.NewEncoder(buf, p.expfmt)
+	// Check for pre-existing grouping labels:
+	for _, mf := range mfs {
+		for _, m := range mf.GetMetric() {
+			for _, l := range m.GetLabel() {
+				if l.GetName() == "job" {
+					return fmt.Errorf("pushed metric %s (%s) already contains a job label", mf.GetName(), m)
+				}
+				if _, ok := p.grouping[l.GetName()]; ok {
+					return fmt.Errorf(
+						"pushed metric %s (%s) already contains grouping label %s",
+						mf.GetName(), m, l.GetName(),
+					)
+				}
+			}
+		}
+		if err := enc.Encode(mf); err != nil {
+			return fmt.Errorf(
+				"failed to encode metric family %s, error is %w",
+				mf.GetName(), err)
+		}
+	}
+	req, err := http.NewRequestWithContext(ctx, method, p.fullURL(), buf)
+	if err != nil {
+		return err
+	}
+	req.Header.Set(contentTypeHeader, string(p.expfmt))
+	resp, err := p.client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	// Depending on version and configuration of the PGW, StatusOK or StatusAccepted may be returned.
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusAccepted {
+		body, _ := io.ReadAll(resp.Body) // Ignore any further error as this is for an error message only.
+		return fmt.Errorf("unexpected status code %d while pushing to %s: %s", resp.StatusCode, p.fullURL(), body)
+	}
+	return nil
+}
+
+// fullURL constructs the full URL by appending job and grouping labels to the base URL.
+// Unlike the standard Prometheus pusher, this does NOT add /metrics prefix - it expects
+// the base URL to already contain it if needed.
+func (p *nethPusher) fullURL() string {
+	urlComponents := []string{}
+	if encodedJob, isBase64 := p.encodeComponent(p.job); isBase64 {
+		urlComponents = append(urlComponents, "job"+base64Suffix, encodedJob)
+	} else {
+		urlComponents = append(urlComponents, "job", encodedJob)
+	}
+	for ln, lv := range p.grouping {
+		if encodedLV, isBase64 := p.encodeComponent(lv); isBase64 {
+			urlComponents = append(urlComponents, ln+base64Suffix, encodedLV)
+		} else {
+			urlComponents = append(urlComponents, ln, encodedLV)
+		}
+	}
+	return fmt.Sprintf("%s/%s", p.url, strings.Join(urlComponents, "/"))
+}
+
+// encodeComponent encodes the provided string with base64.RawURLEncoding in
+// case it contains '/' and as "=" in case it is empty. If neither is the case,
+// it uses url.QueryEscape instead. It returns true in the former two cases.
+func (p *nethPusher) encodeComponent(s string) (string, bool) {
+	if s == "" {
+		return "=", true
+	}
+	if strings.Contains(s, "/") {
+		return base64.RawURLEncoding.EncodeToString([]byte(s)), true
+	}
+	return url.QueryEscape(s), false
+}
+
 // StartPrometheusPusher starts a background goroutine that periodically pushes metrics to Prometheus Pushgateway.
 // Returns a cleanup function that should be called to stop the pusher gracefully.
-func StartPrometheusPusher(ctx context.Context, addr string, port int, jobName string, prefix string, instance string, updateInterval time.Duration, registry metrics.Registry) func() {
+func StartPrometheusPusher(ctx context.Context, pushgatewayURL string, jobName string, prefix string, instance string, updateInterval time.Duration, registry metrics.Registry) func() {
 	gatherer := NewRegistryGatherer(registry, prefix)
-	pushgatewayURL := fmt.Sprintf("http://%s:%d", addr, port)
 
 	// Create pusher once with optional instance grouping
-	pusher := push.New(pushgatewayURL, jobName).Gatherer(gatherer)
+	pusher := newNethPusher(pushgatewayURL, jobName).Gatherer(gatherer)
 	if instance != "" {
 		pusher = pusher.Grouping("instance", instance)
 	}

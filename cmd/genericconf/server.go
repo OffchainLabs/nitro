@@ -211,8 +211,7 @@ var PProfDefault = PProf{
 
 type PrometheusPushgatewayConfig struct {
 	Enabled        bool          `koanf:"enabled"`
-	Addr           string        `koanf:"addr"`
-	Port           int           `koanf:"port"`
+	URL            string        `koanf:"url"`
 	JobName        string        `koanf:"job-name"`
 	Prefix         string        `koanf:"prefix"`
 	Instance       string        `koanf:"instance"`
@@ -221,8 +220,7 @@ type PrometheusPushgatewayConfig struct {
 
 var PrometheusPushgatewayConfigDefault = PrometheusPushgatewayConfig{
 	Enabled:        false,
-	Addr:           "127.0.0.1",
-	Port:           9091,
+	URL:            "http://127.0.0.1:9091/metrics",
 	JobName:        "arbitrum-nitro",
 	Prefix:         "",
 	Instance:       "",
@@ -242,8 +240,7 @@ func PProfAddOptions(prefix string, f *flag.FlagSet) {
 
 func PrometheusPushgatewayAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enabled", PrometheusPushgatewayConfigDefault.Enabled, "enable prometheus pushgateway")
-	f.String(prefix+".addr", PrometheusPushgatewayConfigDefault.Addr, "prometheus push gateway address")
-	f.Int(prefix+".port", PrometheusPushgatewayConfigDefault.Port, "prometheus push gateway port")
+	f.String(prefix+".url", PrometheusPushgatewayConfigDefault.URL, "prometheus push gateway URL (should include /metrics path if needed)")
 	f.String(prefix+".job-name", PrometheusPushgatewayConfigDefault.JobName, "prometheus push gateway job name")
 	f.String(prefix+".prefix", PrometheusPushgatewayConfigDefault.Prefix, "metric name prefix to avoid collisions")
 	f.String(prefix+".instance", PrometheusPushgatewayConfigDefault.Instance, "instance label to distinguish multiple nodes")

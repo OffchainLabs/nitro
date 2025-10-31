@@ -459,8 +459,7 @@ func mainImpl() int {
 	if nodeConfig.PrometheusPushgateway.Enabled {
 		stopPusher := nethexec.StartPrometheusPusher(
 			ctx,
-			nodeConfig.PrometheusPushgateway.Addr,
-			nodeConfig.PrometheusPushgateway.Port,
+			nodeConfig.PrometheusPushgateway.URL,
 			nodeConfig.PrometheusPushgateway.JobName,
 			nodeConfig.PrometheusPushgateway.Prefix,
 			nodeConfig.PrometheusPushgateway.Instance,
@@ -469,8 +468,7 @@ func mainImpl() int {
 		)
 		deferFuncs = append(deferFuncs, stopPusher)
 		log.Info("Started Prometheus Pushgateway pusher",
-			"addr", nodeConfig.PrometheusPushgateway.Addr,
-			"port", nodeConfig.PrometheusPushgateway.Port,
+			"url", nodeConfig.PrometheusPushgateway.URL,
 			"job", nodeConfig.PrometheusPushgateway.JobName,
 			"prefix", nodeConfig.PrometheusPushgateway.Prefix,
 			"instance", nodeConfig.PrometheusPushgateway.Instance,
