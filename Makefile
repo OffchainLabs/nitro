@@ -315,15 +315,15 @@ run-follower-compare-local:
 	CGO_LDFLAGS=-Wl,-no_warn_duplicate_libraries \
 	PR_EXIT_AFTER_GENESIS=false \
 	PR_IGNORE_CALLSTACK=false \
-	PR_NETH_RPC_CLIENT_URL=http://localhost:20545 \
-	PR_NETH_WS_CLIENT_URL=ws://localhost:28551 \
 	PR_OVERRIDE_FORWARDER_URL=ws://localhost:8548 \
-	PR_EXECUTION_MODE=compare \
 	target/bin/nitro \
 		--persistent.global-config /tmp/sequencer_follower \
 		--ipc.path /tmp/dev-test/geth.ipc \
 		--conf.file ../arbitrum-nitro-testnode/data/config/sequencer_follower_config_native.json \
 		--node.seq-coordinator.my-url ws://follower:8548 \
+		--execution.nethermind-url http://localhost:20545 \
+		--execution.nethermind-ws-url ws://localhost:28551 \
+		--execution.execution-mode compare \
 		--http.port 7547 \
 		--ws.port 7548
 
@@ -340,14 +340,14 @@ run-follower-compare-sepolia:
 	CGO_LDFLAGS=-Wl,-no_warn_duplicate_libraries \
 	PR_EXIT_AFTER_GENESIS=false \
 	PR_IGNORE_CALLSTACK=false \
-	PR_NETH_RPC_CLIENT_URL=http://localhost:20545 \
-	PR_NETH_WS_CLIENT_URL=ws://localhost:28551 \
-	PR_EXECUTION_MODE=compare \
 	target/bin/nitro \
 		--persistent.global-config /tmp/sequencer_follower \
 		--parent-chain.connection.url=http://209.127.228.66/rpc/$$SEPOLIA_RPC_API_KEY \
 		--parent-chain.blob-client.beacon-url=http://209.127.228.66/consensus/$$SEPOLIA_RPC_API_KEY \
 		--chain.id=421614 \
+		--execution.nethermind-url http://localhost:20545 \
+		--execution.nethermind-ws-url ws://localhost:28551 \
+		--execution.execution-mode compare \
 		--execution.forwarding-target null \
 		--execution.enable-prefetch-block=false \
 		--http.addr=0.0.0.0 \
@@ -356,10 +356,39 @@ run-follower-compare-sepolia:
 .PHONY: clean-run-follower-compare-sepolia
 clean-run-follower-compare-sepolia: clean-follower run-follower-compare-sepolia
 
+.PHONY: run-follower-compare-mainnet
+run-follower-compare-mainnet:
+	@echo "Starting Nitro sequencer follower (Arbitrum One with Nethermind, external-only mode)..."
+	CGO_LDFLAGS=-Wl,-no_warn_duplicate_libraries \
+	PR_IGNORE_CALLSTACK=false \
+	target/bin/nitro \
+		--persistent.global-config /tmp/sequencer_follower_mainnet \
+		--parent-chain.connection.url=http://38.154.254.162:8545 \
+		--parent-chain.blob-client.beacon-url=http://38.154.254.162:4000 \
+		--chain.id=42161 \
+		--chain.name=arb1 \
+		--init.bootstrap-from-execution=true \
+		--init.start-block=22207817 \
+		--execution.nethermind-url=http://localhost:20545 \
+		--execution.nethermind-ws-url ws://localhost:28551 \
+		--execution.execution-mode=external \
+		--validation.wasm.allowed-wasm-module-roots=0x184884e1eb9fefdc158f6c8ac912bb183bf3cf83f0090317e0bc4ac5860baa39 \
+		--execution.forwarding-target=null \
+		--http.addr=0.0.0.0 \
+		--http.port=8747
+
+.PHONY: clean-run-follower-compare-mainnet
+clean-run-follower-compare-mainnet: clean-follower-mainnet run-follower-compare-mainnet
+
 .PHONY: clean-follower
 clean-follower:
 	@echo "Cleaning sequencer follower directory..."
 	@rm -rf /tmp/sequencer_follower
+
+.PHONY: clean-follower-mainnet
+clean-follower-mainnet:
+	@echo "Cleaning sequencer follower (Mainnet) directory..."
+	@rm -rf /tmp/sequencer_follower_mainnet
 
 .PHONY: run-sequencer
 run-sequencer: clean-sequencer
@@ -388,14 +417,14 @@ run-sequencer-nethermind: clean-sequencer-nethermind
 	@echo "Ensure Nethermind is running at http://localhost:20545"
 	CGO_LDFLAGS=-Wl,-no_warn_duplicate_libraries \
 	PR_EXIT_AFTER_GENESIS=false PR_IGNORE_CALLSTACK=false \
-	PR_EXECUTION_MODE=compare \
-	PR_NETH_RPC_CLIENT_URL=http://localhost:20545 \
-	PR_NETH_WS_CLIENT_URL=ws://localhost:28551 \
 	target/bin/nitro \
 		--persistent.global-config /tmp/sequencer_neth \
 		--ipc.path /tmp/dev-test/geth.ipc \
 		--conf.file ../arbitrum-nitro-testnode/data/config/sequencer_config_native.json \
 		--node.feed.output.enable --node.feed.output.port 9642 \
+		--execution.nethermind-url http://localhost:20545 \
+		--execution.nethermind-ws-url ws://localhost:28551 \
+		--execution.execution-mode compare \
 		--http.api net,web3,eth,txpool,debug,timeboost,auctioneer \
 		--http.port 8547 --ws.port 8548
 

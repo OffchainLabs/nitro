@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"math/big"
 	"net/http"
-	"os"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -80,10 +79,9 @@ var (
 	_ InitMessageDigester = (*nethRpcClient)(nil)
 )
 
-func NewNethRpcClient() (*nethRpcClient, error) {
-	url, exists := os.LookupEnv("PR_NETH_RPC_CLIENT_URL")
-	if !exists {
-		log.Warn("Wasn't able to read PR_NETH_RPC_CLIENT_URL, using default url", "url", defaultUrl)
+func NewNethRpcClient(url string, wsUrl string) (*nethRpcClient, error) {
+	if url == "" {
+		log.Warn("No Nethermind URL provided, using default", "url", defaultUrl)
 		url = defaultUrl
 	}
 
@@ -91,10 +89,10 @@ func NewNethRpcClient() (*nethRpcClient, error) {
 		Timeout: 30 * time.Second,
 	})
 
-	wsUrl, exists := os.LookupEnv("PR_NETH_WS_CLIENT_URL")
-	if !exists {
-		log.Warn("Wasn't able to read PR_NETH_WS_CLIENT_URL, using default url", "url", defaultWsUrl)
-		wsUrl = defaultWsUrl
+	// WebSocket is optional - only needed for subscriptions
+	if wsUrl == "" {
+		log.Info("No Nethermind WebSocket URL provided, subscriptions will not be available")
+		wsUrl = defaultWsUrl // Fallback to default
 	}
 
 	ctx := context.Background()
@@ -251,6 +249,13 @@ func (c *nethRpcClient) Reorg(ctx context.Context, count arbutil.MessageIndex, n
 		return nil, fmt.Errorf("failed to call Reorg: %w", err)
 	}
 	return result, nil
+}
+
+func (c *nethRpcClient) Initialize(ctx context.Context, parsedInitMessage *arbostypes.ParsedInitMessage) error {
+	log.Info("Initialize called on Nethermind client - skipping as bootstrap already completed")
+	// When bootstrapping from execution client, initialization is already done
+	// We don't need to initialize Nethermind since it's already synced
+	return nil
 }
 
 func (c *nethRpcClient) SequenceDelayedMessage(ctx context.Context, message *arbostypes.L1IncomingMessage, delayedSeqNum uint64) error {

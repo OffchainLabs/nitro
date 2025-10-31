@@ -120,6 +120,28 @@ func downloadInit(ctx context.Context, initConfig *conf.InitConfig) (string, err
 	return file, err
 }
 
+func createGenesisFromExecution(ctx context.Context, nethermindURL string, blockNum uint64) (*types.Block, error) {
+	log.Info("Retrieving block from execution client", "url", nethermindURL, "block", blockNum)
+
+	client, err := ethclient.Dial(nethermindURL)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to execution client: %w", err)
+	}
+	defer client.Close()
+
+	block, err := client.BlockByNumber(ctx, new(big.Int).SetUint64(blockNum))
+	if err != nil {
+		return nil, fmt.Errorf("failed to get block %d: %w", blockNum, err)
+	}
+
+	log.Info("Retrieved block from execution client",
+		"number", block.NumberU64(),
+		"hash", block.Hash().Hex(),
+		"stateRoot", block.Root().Hex())
+
+	return block, nil
+}
+
 func downloadFile(ctx context.Context, initConfig *conf.InitConfig, url string, checksum []byte) (string, error) {
 	grabclient := grab.NewClient()
 	printTicker := time.NewTicker(time.Second)
@@ -665,6 +687,135 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 			// we only want to continue if the database does not exist
 			return nil, nil, fmt.Errorf("Failed to open database: %w", err)
 		}
+	}
+
+	if config.Init.BootstrapFromExecution {
+		log.Info("Bootstrap mode: creating genesis from execution client",
+			"url", config.Execution.NethermindUrl,
+			"startBlock", config.Init.StartBlock)
+
+		// Validate parameters
+		if config.Execution.NethermindUrl == "" {
+			return nil, nil, errors.New("--execution.nethermind-url required when --init.bootstrap-from-execution=true")
+		}
+		if config.Init.StartBlock == 0 {
+			return nil, nil, errors.New("--init.start-block required when --init.bootstrap-from-execution=true")
+		}
+
+		// Check database is empty
+		if err := checkEmptyDatabaseDir(stack.InstanceDir(), config.Init.Force); err != nil {
+			return nil, nil, err
+		}
+
+		// Get chain config
+		chainConfig, err := chaininfo.GetChainConfig(chainId, config.Chain.Name,
+			0, config.Chain.InfoFiles, config.Chain.InfoJson)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to get chain config: %w", err)
+		}
+
+		// Verify target block exists in Nethermind
+		targetBlock, err := createGenesisFromExecution(ctx, config.Execution.NethermindUrl,
+			config.Init.StartBlock)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to get block from execution: %w", err)
+		}
+
+		// Open databases
+		chainData, err := stack.OpenDatabaseWithFreezerWithExtraOptions("l2chaindata",
+			config.Execution.Caching.DatabaseCache, config.Persistent.Handles,
+			config.Persistent.Ancient, "l2chaindata/", false,
+			persistentConfig.Pebble.ExtraOptions("l2chaindata"))
+		if err != nil {
+			return nil, nil, err
+		}
+
+		wasmDb, err := stack.OpenDatabaseWithExtraOptions("wasm",
+			config.Execution.Caching.DatabaseCache, config.Persistent.Handles,
+			"wasm/", false, persistentConfig.Pebble.ExtraOptions("wasm"))
+		if err != nil {
+			return nil, nil, err
+		}
+
+		if err := validateOrUpgradeWasmStoreSchemaVersion(wasmDb); err != nil {
+			return nil, nil, err
+		}
+
+		chainDb := rawdb.WrapDatabaseWithWasm(chainData, wasmDb)
+
+		_, err = rawdb.ParseStateScheme(cacheConfig.StateScheme, chainDb)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		// Create minimal ArbOS initialization at block 0
+		initData := &statetransfer.ArbosInitializationInfo{
+			NextBlockNumber: 0,
+			Accounts:        []statetransfer.AccountInitializationInfo{},
+		}
+		initDataReader := statetransfer.NewMemoryInitDataReader(initData)
+
+		// Serialize chain config for ArbOS
+		serializedChainConfig, err := json.Marshal(chainConfig)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to serialize chain config: %w", err)
+		}
+
+		parsedInitMessage := &arbostypes.ParsedInitMessage{
+			ChainId:               chainConfig.ChainID,
+			InitialL1BaseFee:      arbostypes.DefaultInitialL1BaseFee,
+			ChainConfig:           chainConfig,
+			SerializedChainConfig: serializedChainConfig,
+		}
+
+		log.Info("Initializing ArbOS at genesis")
+
+		// Use Arbitrum's initialization to create genesis with ArbOS state
+		l2BlockChain, err := gethexec.WriteOrTestBlockChain(
+			chainDb,
+			cacheConfig,
+			initDataReader,
+			chainConfig,
+			nil,
+			tracer,
+			parsedInitMessage,
+			&config.Execution.TxIndexer,
+			100000,
+		)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to initialize blockchain: %w", err)
+		}
+
+		log.Info("ArbOS genesis created",
+			"number", l2BlockChain.Genesis().NumberU64(),
+			"hash", l2BlockChain.Genesis().Hash().Hex())
+
+		// Now store the bootstrap block from Nethermind and update head
+		log.Info("Storing bootstrap block from Nethermind", "block", config.Init.StartBlock)
+
+		rawdb.WriteHeader(chainDb, targetBlock.Header())
+		rawdb.WriteBody(chainDb, targetBlock.Hash(), config.Init.StartBlock, targetBlock.Body())
+		rawdb.WriteReceipts(chainDb, targetBlock.Hash(), config.Init.StartBlock, types.Receipts{})
+		rawdb.WriteCanonicalHash(chainDb, targetBlock.Hash(), config.Init.StartBlock)
+		rawdb.WriteHeaderNumber(chainDb, targetBlock.Hash(), config.Init.StartBlock)
+
+		// Update head pointers
+		rawdb.WriteHeadHeaderHash(chainDb, targetBlock.Hash())
+		rawdb.WriteHeadBlockHash(chainDb, targetBlock.Hash())
+		rawdb.WriteHeadFastBlockHash(chainDb, targetBlock.Hash())
+
+		// Skip wasm rebuilding
+		err = gethexec.WriteToKeyValueStore(wasmDb, gethexec.RebuildingPositionKey,
+			gethexec.RebuildingDone)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to set wasm rebuilding done: %w", err)
+		}
+
+		log.Info("Bootstrap complete - Nitro will sync from bootstrap block",
+			"genesisBlock", 0,
+			"headBlock", config.Init.StartBlock)
+
+		return chainDb, l2BlockChain, nil
 	}
 
 	// Check if database was misplaced in parent dir
