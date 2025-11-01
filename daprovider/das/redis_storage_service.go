@@ -10,12 +10,11 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/redis/go-redis/v9"
 	"github.com/spf13/pflag"
 	"golang.org/x/crypto/sha3"
-
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/daprovider/das/dastree"
 	"github.com/offchainlabs/nitro/daprovider/das/dasutil"
