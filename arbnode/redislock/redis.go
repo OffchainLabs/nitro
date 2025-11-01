@@ -147,29 +147,22 @@ func (l *Simple) AttemptLockAndPeriodicallyRefreshIt(ctx context.Context, releas
 	refreshLock := func() {
 		defer l.Release(ctx)
 		refreshTick := time.Tick(l.config().RefreshDuration)
-		for {
-			select {
-			case <-release:
-				return
-			case <-ctx.Done():
-				return
-			default:
-				select {
-				case <-release:
-					return
-				case <-ctx.Done():
-					return
-				case <-refreshTick:
-					gotLock, err := l.attemptLock(ctx)
-					if err != nil {
-						log.Error("attemptLock returned error during refresh: %w", err)
-					}
-					if !gotLock {
-						log.Error("unable to refresh lock since it is already taken by other")
-					}
-				}
+	for {
+		select {
+		case <-release:
+			return
+		case <-ctx.Done():
+			return
+		case <-refreshTick:
+			gotLock, err := l.attemptLock(ctx)
+			if err != nil {
+				log.Error("attemptLock returned error during refresh: %w", err)
+			}
+			if !gotLock {
+				log.Error("unable to refresh lock since it is already taken by other")
 			}
 		}
+	}
 	}
 	go refreshLock()
 
