@@ -69,7 +69,10 @@ impl Display for UserOutcome {
             OutOfInk => write!(f, "out of ink"),
             OutOfStack => write!(f, "out of stack"),
             Revert(data) => {
-                let text = String::from_utf8(data.clone()).unwrap_or_else(|_| hex::encode(data));
+                let text = match std::str::from_utf8(data) {
+                    Ok(s) => s.to_owned(),
+                    Err(_) => hex::encode(data),
+                };
                 write!(f, "revert {text}")
             }
         }
