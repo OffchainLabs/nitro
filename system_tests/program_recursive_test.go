@@ -48,8 +48,8 @@ func testProgramRecursiveCall(t *testing.T, builder *NodeBuilder, slotVals map[s
 	delegateChangesStorageDest := true
 	storageDest := recurse[0].Name
 	for i := 0; i < len(recurse)-1; i++ {
-		call := recurse[i]
-		prev := recurse[i+1]
+		call := recurse[i+1]
+		prev := recurse[i]
 		args = argsForMulticall(call.opcode, builder.L2Info.GetAddress(prev.Name), nil, args)
 		if call.opcode == vm.STATICCALL && recurse[0].opcode == vm.SSTORE {
 			shouldSucceed = false
@@ -64,7 +64,7 @@ func testProgramRecursiveCall(t *testing.T, builder *NodeBuilder, slotVals map[s
 		// send event from caller on sload
 		args[5] = args[5] | 0x8
 	}
-	if len(recurse) < 1 {
+	if len(recurse) == 0 {
 		t.Fatal("no recurse steps")
 	}
 	multiCaller, err := localgen.NewMultiCallTest(builder.L2Info.GetAddress(recurse[len(recurse)-1].Name), builder.L2.Client)
