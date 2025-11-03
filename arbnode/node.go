@@ -604,8 +604,7 @@ func getDAProviders(
 		}
 
 		// Register external DA client as both reader and validator
-		promise := externalDAClient.GetSupportedHeaderBytes()
-		result, err := promise.Await(ctx)
+		result, err := externalDAClient.GetSupportedHeaderBytes().Await(ctx)
 		if err != nil {
 			return nil, nil, nil, fmt.Errorf("failed to get supported header bytes from external DA client[%d]: %w", i, err)
 		}

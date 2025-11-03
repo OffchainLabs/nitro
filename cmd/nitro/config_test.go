@@ -136,7 +136,7 @@ func TestReloads(t *testing.T) {
 
 	config := NodeConfigDefault
 	update := NodeConfigDefault
-	update.Node.BatchPoster.MaxSize++
+	update.Node.BatchPoster.MaxCalldataBatchSize++
 
 	check(reflect.ValueOf(config), false, "config")
 	Require(t, config.CanReload(&config))
@@ -181,8 +181,8 @@ func TestLiveNodeConfig(t *testing.T) {
 	// check updating the config
 	update := config.ShallowClone()
 	expected := config.ShallowClone()
-	update.Node.BatchPoster.MaxSize += 100
-	expected.Node.BatchPoster.MaxSize += 100
+	update.Node.BatchPoster.MaxCalldataBatchSize += 100
+	expected.Node.BatchPoster.MaxCalldataBatchSize += 100
 	Require(t, liveConfig.Set(update))
 	if !reflect.DeepEqual(liveConfig.Get(), expected) {
 		Fail(t, "failed to set config")
@@ -217,19 +217,19 @@ func TestLiveNodeConfig(t *testing.T) {
 
 	// change the config file
 	expected = config.ShallowClone()
-	expected.Node.BatchPoster.MaxSize += 100
-	jsonConfig = fmt.Sprintf("{\"node\":{\"batch-poster\":{\"max-size\":\"%d\"}}, \"chain\":{\"id\":421613}}", expected.Node.BatchPoster.MaxSize)
+	expected.Node.BatchPoster.MaxCalldataBatchSize += 100
+	jsonConfig = fmt.Sprintf("{\"node\":{\"batch-poster\":{\"max-calldata-batch-size\":\"%d\"}}, \"chain\":{\"id\":421613}}", expected.Node.BatchPoster.MaxCalldataBatchSize)
 	Require(t, WriteToConfigFile(configFile, jsonConfig))
 
 	// trigger LiveConfig reload
 	Require(t, syscall.Kill(syscall.Getpid(), syscall.SIGUSR1))
 
 	if !PollLiveConfigUntilEqual(liveConfig, expected) {
-		Fail(t, "failed to update config", config.Node.BatchPoster.MaxSize, update.Node.BatchPoster.MaxSize)
+		Fail(t, "failed to update config", config.Node.BatchPoster.MaxCalldataBatchSize, update.Node.BatchPoster.MaxCalldataBatchSize)
 	}
 
 	// change chain.id in the config file (currently non-reloadable)
-	jsonConfig = fmt.Sprintf("{\"node\":{\"batch-poster\":{\"max-size\":\"%d\"}}, \"chain\":{\"id\":421703}}", expected.Node.BatchPoster.MaxSize)
+	jsonConfig = fmt.Sprintf("{\"node\":{\"batch-poster\":{\"max-calldata-batch-size\":\"%d\"}}, \"chain\":{\"id\":421703}}", expected.Node.BatchPoster.MaxCalldataBatchSize)
 	Require(t, WriteToConfigFile(configFile, jsonConfig))
 
 	// trigger LiveConfig reload

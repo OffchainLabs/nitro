@@ -683,10 +683,10 @@ func TestMultiWriterFallback_CustomDAToCalldataWithBatchResizing(t *testing.T) {
 
 	// Configure small batch size limits for testing
 	// MaxAltDABatchSize: 10KB - large enough for Phase 1 batch
-	// MaxSize: 3KB - forces multiple smaller batches in Phase 2
+	// MaxCalldataBatchSize: 3KB - forces multiple smaller batches in Phase 2
 	// MaxDelay: 60s - safety net (should not be hit, we rely on size-based posting)
 	builder.nodeConfig.BatchPoster.MaxAltDABatchSize = 10_000
-	builder.nodeConfig.BatchPoster.MaxSize = 3_000
+	builder.nodeConfig.BatchPoster.MaxCalldataBatchSize = 3_000
 	builder.nodeConfig.BatchPoster.MaxDelay = 60 * time.Second
 
 	// 4. Build L2

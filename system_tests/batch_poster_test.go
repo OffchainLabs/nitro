@@ -136,7 +136,7 @@ func testBatchPosterParallel(t *testing.T, useRedis bool, useRedisLock bool) {
 	Require(t, err)
 	seqTxOpts := builder.L1Info.GetDefaultTransactOpts("Sequencer", ctx)
 	builder.nodeConfig.BatchPoster.Enable = true
-	builder.nodeConfig.BatchPoster.MaxSize = len(firstTxData) * 2
+	builder.nodeConfig.BatchPoster.MaxCalldataBatchSize = len(firstTxData) * 2
 	startL1Block, err := builder.L1.Client.BlockNumber(ctx)
 	Require(t, err)
 	parentChainID, err := builder.L1.Client.ChainID(ctx)
@@ -277,7 +277,7 @@ func TestRedisBatchPosterHandoff(t *testing.T) {
 	Require(t, err)
 	seqTxOpts := builder.L1Info.GetDefaultTransactOpts("Sequencer", ctx)
 	builder.nodeConfig.BatchPoster.Enable = true
-	builder.nodeConfig.BatchPoster.MaxSize = len(firstTxData) * 2
+	builder.nodeConfig.BatchPoster.MaxCalldataBatchSize = len(firstTxData) * 2
 	parentChainID, err := builder.L1.Client.ChainID(ctx)
 	if err != nil {
 		t.Fatalf("Failed to get parent chain id: %v", err)

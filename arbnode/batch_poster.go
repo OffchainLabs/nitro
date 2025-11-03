@@ -84,6 +84,11 @@ const (
 	sequencerBatchPostWithBlobsMethodName           = "addSequencerL2BatchFromBlobs"
 	sequencerBatchPostDelayProofMethodName          = "addSequencerL2BatchFromOriginDelayProof"
 	sequencerBatchPostWithBlobsDelayProofMethodName = "addSequencerL2BatchFromBlobsDelayProof"
+
+	// Overhead/safety margin for 4844 blob batch encoding (subtracted from max blob capacity)
+	blobBatchEncodingOverhead = 2000
+	// Size of the L1 sequencer message header (5 uint64 fields: min/max timestamp, min/max block number, after delayed messages read)
+	SequencerMessageHeaderSize = 40
 )
 
 type batchPosterPosition struct {
@@ -149,11 +154,11 @@ type BatchPosterDangerousConfig struct {
 type BatchPosterConfig struct {
 	Enable                             bool `koanf:"enable"`
 	DisableDapFallbackStoreDataOnChain bool `koanf:"disable-dap-fallback-store-data-on-chain" reload:"hot"`
-	// Max batch size.
-	MaxSize int `koanf:"max-size" reload:"hot"`
+	// Maximum calldata batch size for EthDA.
+	MaxCalldataBatchSize int `koanf:"max-calldata-batch-size" reload:"hot"`
 	// Maximum 4844 blob enabled batch size.
 	Max4844BatchSize int `koanf:"max-4844-batch-size" reload:"hot"`
-	// Maximum altDA batch size (for all allternative DA systems: external, AnyTrust).
+	// Maximum altDA batch size (for all alternative DA systems: external, AnyTrust).
 	// TODO In future it may be useful for different altDA sytems to have different limits.
 	MaxAltDABatchSize int `koanf:"max-altda-batch-size" reload:"hot"`
 	// Max batch post delay.
@@ -195,8 +200,8 @@ func (c *BatchPosterConfig) Validate() error {
 		return fmt.Errorf("invalid gas refunder address \"%v\"", c.GasRefunderAddress)
 	}
 	c.gasRefunder = common.HexToAddress(c.GasRefunderAddress)
-	if c.MaxSize <= 40 {
-		return errors.New("MaxBatchSize too small")
+	if c.MaxCalldataBatchSize <= SequencerMessageHeaderSize {
+		return errors.New("MaxCalldataBatchSize too small")
 	}
 	if c.L1BlockBound == "" {
 		c.l1BlockBound = l1BlockBoundDefault
@@ -224,7 +229,7 @@ func DangerousBatchPosterConfigAddOptions(prefix string, f *pflag.FlagSet) {
 func BatchPosterConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultBatchPosterConfig.Enable, "enable posting batches to l1")
 	f.Bool(prefix+".disable-dap-fallback-store-data-on-chain", DefaultBatchPosterConfig.DisableDapFallbackStoreDataOnChain, "If unable to batch to DA provider, disable fallback storing data on chain")
-	f.Int(prefix+".max-size", DefaultBatchPosterConfig.MaxSize, "maximum estimated compressed batch size")
+	f.Int(prefix+".max-calldata-batch-size", DefaultBatchPosterConfig.MaxCalldataBatchSize, "maximum estimated compressed calldata batch size")
 	f.Int(prefix+".max-4844-batch-size", DefaultBatchPosterConfig.Max4844BatchSize, "maximum estimated compressed 4844 blob enabled batch size")
 	f.Int(prefix+".max-altda-batch-size", DefaultBatchPosterConfig.MaxAltDABatchSize, "maximum estimated compressed batch size when using alternative data availability (eg Anytrust, external)")
 	f.Duration(prefix+".max-delay", DefaultBatchPosterConfig.MaxDelay, "maximum batch posting delay")
@@ -258,7 +263,7 @@ var DefaultBatchPosterConfig = BatchPosterConfig{
 	Enable:                             false,
 	DisableDapFallbackStoreDataOnChain: false,
 	// This default is overridden for L3 chains in applyChainParameters in cmd/nitro/nitro.go
-	MaxSize: 100000,
+	MaxCalldataBatchSize: 100000,
 	// The Max4844BatchSize should be calculated from the values from L1 chain configs
 	// using the eip4844 utility package from go-ethereum.
 	// The default value of 0 causes the batch poster to use the value from go-ethereum.
@@ -301,7 +306,7 @@ var DefaultBatchPosterL1WalletConfig = genericconf.WalletConfig{
 var TestBatchPosterConfig = BatchPosterConfig{
 	Enable:                             true,
 	DisableDapFallbackStoreDataOnChain: true,
-	MaxSize:                            100000,
+	MaxCalldataBatchSize:               100000,
 	Max4844BatchSize:                   DefaultBatchPosterConfig.Max4844BatchSize,
 	MaxAltDABatchSize:                  DefaultBatchPosterConfig.MaxAltDABatchSize,
 	PollInterval:                       time.Millisecond * 10,
@@ -905,7 +910,7 @@ type buildingBatch struct {
 
 func (b *BatchPoster) newBatchSegments(ctx context.Context, firstDelayed uint64, use4844 bool, usingAltDA bool) (*batchSegments, error) {
 	config := b.config()
-	maxSize := config.MaxSize
+	maxSize := config.MaxCalldataBatchSize
 
 	if use4844 {
 		// Building 4844 blobs for EthDA
@@ -918,16 +923,16 @@ func (b *BatchPoster) newBatchSegments(ctx context.Context, firstDelayed uint64,
 			}
 			// Try to fill under half of the parent chain's max blobs.
 			// #nosec G115
-			maxSize = blobs.BlobEncodableData*(int(maxBlobGasPerBlock)/params.BlobTxBlobGasPerBlob)/2 - 2000
+			maxSize = blobs.BlobEncodableData*(int(maxBlobGasPerBlock)/params.BlobTxBlobGasPerBlob)/2 - blobBatchEncodingOverhead
 		}
 	} else if usingAltDA {
 		maxSize = config.MaxAltDABatchSize
 	} else {
 		// Using calldata for EthDA
-		if maxSize <= 40 {
+		if maxSize <= SequencerMessageHeaderSize {
 			panic("Maximum batch size too small")
 		}
-		maxSize -= 40
+		maxSize -= SequencerMessageHeaderSize
 	}
 	compressedBuffer := bytes.NewBuffer(make([]byte, 0, maxSize*2))
 	compressionLevel := b.config().CompressionLevel
@@ -1776,8 +1781,8 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 					return false, nil // Trigger rebuild
 				}
 			} else {
-				if len(batchData) > config.MaxSize {
-					log.Warn("Batch too large for calldata, will rebuild smaller", "batchSize", len(batchData), "maxSize", config.MaxSize)
+				if len(batchData) > config.MaxCalldataBatchSize {
+					log.Warn("Batch too large for calldata, will rebuild smaller", "batchSize", len(batchData), "maxCalldataBatchSize", config.MaxCalldataBatchSize)
 					b.useEthDA = true
 					b.building = nil
 					return false, nil // Trigger rebuild
