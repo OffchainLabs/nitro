@@ -6,7 +6,6 @@ package arbtest
 import (
 	"context"
 	"encoding/base64"
-	"errors"
 	"math/big"
 	"net"
 	"net/http"
@@ -276,7 +275,10 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 	Require(t, err)
 }
 
-func TestDASBatchPosterFallback(t *testing.T) {
+// TestDASBatchPosterFailure tests that batch posting fails when DAS shuts down without explicit
+// fallback signal. This verifies that the batch poster does not automatically fall back to EthDA
+// when DAS becomes unavailable.
+func TestDASBatchPosterFailure(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -299,8 +301,7 @@ func TestDASBatchPosterFallback(t *testing.T) {
 	builder.nodeConfig.DataAvailability.RestAggregator = das.DefaultRestfulClientAggregatorConfig
 	builder.nodeConfig.DataAvailability.RestAggregator.Enable = true
 	builder.nodeConfig.DataAvailability.RestAggregator.Urls = []string{restServerUrl}
-	builder.nodeConfig.BatchPoster.DisableDapFallbackStoreDataOnChain = true // Disable DAS fallback
-	builder.nodeConfig.BatchPoster.ErrorDelay = time.Millisecond * 250       // Increase error delay because we expect errors
+	builder.nodeConfig.BatchPoster.DisableDapFallbackStoreDataOnChain = false // Allow fallback if explicitly signaled
 	builder.L2Info = NewArbTestInfo(t, builder.chainConfig.ChainID)
 	builder.L2Info.GenerateAccount("User2")
 	cleanup := builder.BuildL2OnL1(t)
@@ -322,32 +323,49 @@ func TestDASBatchPosterFallback(t *testing.T) {
 	l2B, cleanupB := builder.Build2ndNode(t, &nodeBParams)
 	defer cleanupB()
 
-	// Check batch posting using the DAS
+	// Phase 1: Check batch posting using the DAS
+	t.Log("Phase 1: Testing normal DAS operation")
 	checkBatchPosting(t, ctx, l1client, l2client, l1info, l2info, big.NewInt(1e12), l2B.Client)
 
-	// Shutdown the DAS
+	// Phase 2: Shutdown the DAS and verify batch posting fails
+	t.Log("Phase 2: Shutting down DAS, expecting batch posting to fail")
 	err := dasRpcServer.Shutdown(ctx)
 	Require(t, err)
+	t.Log("Phase 2: DAS server shut down successfully")
 
-	// Send 2nd transaction and check it doesn't arrive on second node
-	tx, _ := TransferBalanceTo(t, "Owner", l2info.GetAddress("User2"), big.NewInt(1e12), l2info, l2client, ctx)
-	_, err = WaitForTx(ctx, l2B.Client, tx.Hash(), time.Second*3)
-	if err == nil || !errors.Is(err, context.DeadlineExceeded) {
-		Fatal(t, "expected context-deadline exceeded error, but got:", err)
+	// Record the follower's current block before generating transactions
+	followerBlockBefore, err := l2B.Client.BlockNumber(ctx)
+	Require(t, err)
+	t.Logf("Phase 2: Follower block before shutdown: %d", followerBlockBefore)
+
+	// Send transactions that would normally trigger a batch
+	for i := 0; i < 10; i++ {
+		tx := l2info.PrepareTx("Owner", "User2", l2info.TransferGas, big.NewInt(1e12), nil)
+		err := l2client.SendTransaction(ctx, tx)
+		Require(t, err)
+	}
+	t.Log("Phase 2: Generated transactions on sequencer")
+
+	// Mine L1 blocks to give batch poster opportunities to post (and fail)
+	for i := 0; i < 10; i++ {
+		SendWaitTestTransactions(t, ctx, l1client, []*types.Transaction{
+			l1info.PrepareTx("Faucet", "User", 30000, big.NewInt(1e12), nil),
+		})
+	}
+	t.Log("Phase 2: Mined L1 blocks")
+
+	// Wait for batch poster to attempt and fail
+	time.Sleep(5 * time.Second)
+
+	// Verify follower did NOT sync (batch was not posted)
+	followerBlockAfter, err := l2B.Client.BlockNumber(ctx)
+	Require(t, err)
+	t.Logf("Phase 2: Follower block after waiting: %d", followerBlockAfter)
+
+	if followerBlockAfter > followerBlockBefore {
+		t.Fatalf("Phase 2: Follower synced when it should not have (before=%d, after=%d)",
+			followerBlockBefore, followerBlockAfter)
 	}
 
-	// Enable the DAP fallback and check the transaction on the second node.
-	// (We don't need to restart the node because of the hot-reload.)
-	builder.nodeConfig.BatchPoster.DisableDapFallbackStoreDataOnChain = false
-	builder.L2.ConsensusConfigFetcher.Set(builder.nodeConfig)
-	_, err = WaitForTx(ctx, l2B.Client, tx.Hash(), time.Second*5)
-	Require(t, err)
-	l2balance, err := l2B.Client.BalanceAt(ctx, l2info.GetAddress("User2"), nil)
-	Require(t, err)
-	if l2balance.Cmp(big.NewInt(2e12)) != 0 {
-		Fatal(t, "Unexpected balance:", l2balance)
-	}
-
-	// Send another transaction with fallback on
-	checkBatchPosting(t, ctx, l1client, l2client, l1info, l2info, big.NewInt(3e12), l2B.Client)
+	t.Log("SUCCESS: Batch posting failed as expected when DAS shut down without fallback signal")
 }

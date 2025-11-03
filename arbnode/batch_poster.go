@@ -1720,18 +1720,28 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 		// Try each DA writer in order
 		var daSuccess bool
 		var lastErr error
+		var fallbackRequested bool
 
-		log.Info("Attempting to store batch with DA writers", "numWriters", len(b.dapWriters), "batchSize", len(batchData))
+		log.Debug("Attempting to store batch with DA writers", "numWriters", len(b.dapWriters), "batchSize", len(batchData))
 		for i, writer := range b.dapWriters {
 			storeStart := time.Now()
-			log.Info("Trying DA writer", "writerIndex", i, "totalWriters", len(b.dapWriters))
+			log.Debug("Trying DA writer", "writerIndex", i, "totalWriters", len(b.dapWriters))
 			// #nosec G115
 			sequencerMsg, err = writer.Store(batchData, uint64(time.Now().Add(config.DASRetentionPeriod).Unix())).Await(ctx)
 			storeDuration := time.Since(storeStart)
 			if err != nil {
-				log.Warn("DA writer failed, trying next", "writerIndex", i, "error", err, "duration", storeDuration)
 				lastErr = err
-				continue // Try next writer
+				// Check for fallback request - need to check both errors.Is (for local errors)
+				// and string matching (for RPC errors that lose identity across the wire)
+				if errors.Is(err, daprovider.ErrFallbackRequested) || strings.Contains(err.Error(), daprovider.ErrFallbackRequested.Error()) {
+					log.Warn("DA writer explicitly requested fallback", "writerIndex", i, "error", err, "duration", storeDuration)
+					fallbackRequested = true
+					continue // Try next writer
+				}
+				// Non-fallback error - fail immediately
+				log.Error("DA writer failed, operator action required", "writerIndex", i, "error", err, "duration", storeDuration)
+				batchPosterDAFailureCounter.Inc(1)
+				return false, fmt.Errorf("DA writer %d failed: %w", i, err)
 			}
 
 			log.Info("DA writer succeeded", "writerIndex", i, "duration", storeDuration)
@@ -1745,6 +1755,12 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 		if !daSuccess {
 			log.Warn("All DA writers failed", "numWriters", len(b.dapWriters), "lastError", lastErr)
 			batchPosterDAFailureCounter.Inc(1)
+
+			// Only fall back to EthDA if explicitly requested via ErrFallbackRequested
+			if !fallbackRequested {
+				log.Error("DA writers failed without requesting fallback, operator action required", "error", lastErr)
+				return false, fmt.Errorf("all DA writers failed: %w", lastErr)
+			}
 
 			if config.DisableDapFallbackStoreDataOnChain {
 				log.Error("DA fallback to EthDA is disabled, cannot post batch", "error", lastErr)
@@ -1771,7 +1787,7 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 			}
 
 			// Size is OK, fall back to EthDA
-			log.Warn("All DA writers failed, falling back to EthDA", "lastError", lastErr, "batchSize", len(batchData))
+			log.Warn("DA writers explicitly requested fallback, falling back to EthDA", "lastError", lastErr, "batchSize", len(batchData))
 			sequencerMsg = batchData
 		}
 	} else {

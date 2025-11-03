@@ -85,6 +85,7 @@ import (
 	"github.com/offchainlabs/nitro/statetransfer"
 	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/redisutil"
 	"github.com/offchainlabs/nitro/util/signature"
@@ -2142,16 +2143,72 @@ func setupConfigWithDAS(
 	return chainConfig, l1NodeConfigA, lifecycleManager, dbPath, dasSignerKey
 }
 
-// createReferenceDAProviderServer creates and starts an external ReferenceDA provider server
+// errorHolder wraps an error pointer to allow storing nil in atomic.Value
+type errorHolder struct {
+	err error
+}
+
+// controllableWriter wraps a DA writer and can be controlled via HTTP endpoints to return specific errors
+type controllableWriter struct {
+	writer         daprovider.Writer
+	shouldFallback *atomic.Bool
+	customError    *atomic.Value // stores *errorHolder
+}
+
+func (w *controllableWriter) Store(msg []byte, timeout uint64) containers.PromiseInterface[[]byte] {
+	log.Info("controllableWriter.Store called", "msgLen", len(msg), "timeout", timeout, "shouldFallback", w.shouldFallback.Load())
+
+	// Check for custom error first
+	if holder := w.customError.Load(); holder != nil {
+		if eh, ok := holder.(*errorHolder); ok && eh.err != nil {
+			log.Info("controllableWriter returning custom error", "error", eh.err)
+			promise := containers.NewPromise[[]byte](func() {})
+			promise.ProduceError(eh.err)
+			return &promise
+		}
+	}
+
+	// Check for fallback signal
+	if w.shouldFallback.Load() {
+		log.Warn("controllableWriter returning ErrFallbackRequested")
+		promise := containers.NewPromise[[]byte](func() {})
+		promise.ProduceError(daprovider.ErrFallbackRequested)
+		return &promise
+	}
+
+	// Normal operation
+	log.Info("controllableWriter delegating to underlying writer")
+	return w.writer.Store(msg, timeout)
+}
+
+// createReferenceDAProviderServer creates and starts a basic ReferenceDA provider server.
+// This is a convenience wrapper around createReferenceDAProviderServerWithControl
+// for tests that don't need runtime control of error injection.
 func createReferenceDAProviderServer(t *testing.T, ctx context.Context, l1Client *ethclient.Client, validatorAddr common.Address, dataSigner signature.DataSignerFunc, port int) (*http.Server, string) {
+	server, url, _, _ := createReferenceDAProviderServerWithControl(t, ctx, l1Client, validatorAddr, dataSigner, port)
+	return server, url
+}
+
+// createReferenceDAProviderServerWithControl creates a ReferenceDA provider server with controllable error injection.
+// Returns: server, URL, and control handles (shouldFallback, customError) for direct manipulation in tests.
+func createReferenceDAProviderServerWithControl(t *testing.T, ctx context.Context, l1Client *ethclient.Client, validatorAddr common.Address, dataSigner signature.DataSignerFunc, port int) (*http.Server, string, *atomic.Bool, *atomic.Value) {
 	// Create ReferenceDA components
 	storage := referenceda.GetInMemoryStorage()
 	reader := referenceda.NewReader(storage, l1Client, validatorAddr)
 	writer := referenceda.NewWriter(dataSigner)
 	validator := referenceda.NewValidator(l1Client, validatorAddr)
 
+	// Create controllable wrapper
+	shouldFallback := &atomic.Bool{}
+	customError := &atomic.Value{}
+	customError.Store(&errorHolder{err: nil}) // Initialize with nil error
+	wrappedWriter := &controllableWriter{
+		writer:         writer,
+		shouldFallback: shouldFallback,
+		customError:    customError,
+	}
+
 	// Create server config
-	// Port 0 means automatic port selection, otherwise use the specified port
 	serverConfig := &dapserver.ServerConfig{
 		Addr:               "127.0.0.1",
 		Port:               uint64(port), // #nosec G115
@@ -2163,19 +2220,17 @@ func createReferenceDAProviderServer(t *testing.T, ctx context.Context, l1Client
 
 	// Create the provider server
 	headerBytes := [][]byte{{daprovider.DACertificateMessageHeaderFlag, 0xFF}}
-	server, err := dapserver.NewServerWithDAPProvider(ctx, serverConfig, reader, writer, validator, headerBytes, data_streaming.PayloadCommitmentVerifier())
+	server, err := dapserver.NewServerWithDAPProvider(ctx, serverConfig, reader, wrappedWriter, validator, headerBytes, data_streaming.PayloadCommitmentVerifier())
 	Require(t, err)
 
-	// Extract the actual address with port
-	// The server.Addr contains "http://" prefix, we need to strip it
+	// Extract server address
 	serverAddr := strings.TrimPrefix(server.Addr, "http://")
-
-	// Create the full URL for client connection
 	serverURL := fmt.Sprintf("http://%s", serverAddr)
 
-	t.Logf("Started ReferenceDA provider server at %s", serverURL)
+	t.Logf("Started controllable ReferenceDA provider server at %s", serverURL)
 
-	return server, serverURL
+	// Return server, URL, and control handles for direct manipulation
+	return server, serverURL, shouldFallback, customError
 }
 
 func getDeadlineTimeout(t *testing.T, defaultTimeout time.Duration) time.Duration {
