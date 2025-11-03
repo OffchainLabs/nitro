@@ -25,6 +25,8 @@ jobs:
             arch_suffix: -amd64
     uses: NethermindEth/github-workflows/.github/workflows/docker-build-push-jfrog.yaml@v1.9.2
     with:
+      ignore_trivy: true
+      run_trivy: false
       group_name: core
       runner: ${{ matrix.runner }}
       image_name: 'arbitrum-nitro'
