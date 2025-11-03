@@ -122,10 +122,11 @@ type BatchPoster struct {
 	nextRevertCheckBlock int64       // the last parent block scanned for reverting batches
 	postedFirstBatch     bool        // indicates if batch poster has posted the first batch
 
-	accessList   func(SequencerInboxAccs, AfterDelayedMessagesRead uint64) types.AccessList
-	parentChain  *parent.ParentChain
-	checkEip7623 bool
-	useEip7623   bool
+	accessList               func(SequencerInboxAccs, AfterDelayedMessagesRead uint64) types.AccessList
+	parentChain              *parent.ParentChain
+	checkEip7623             bool
+	useEip7623               bool
+	maxUncompressedBatchSize uint64
 }
 
 type l1BlockBound int
@@ -319,18 +320,19 @@ var TestBatchPosterConfig = BatchPosterConfig{
 }
 
 type BatchPosterOpts struct {
-	DataPosterDB  ethdb.Database
-	L1Reader      *headerreader.HeaderReader
-	Inbox         *InboxTracker
-	Streamer      *TransactionStreamer
-	VersionGetter execution.ArbOSVersionGetter
-	SyncMonitor   *SyncMonitor
-	Config        BatchPosterConfigFetcher
-	DeployInfo    *chaininfo.RollupAddresses
-	TransactOpts  *bind.TransactOpts
-	DAPWriter     daprovider.Writer
-	ParentChainID *big.Int
-	DAPReaders    *daprovider.ReaderRegistry
+	DataPosterDB        ethdb.Database
+	L1Reader            *headerreader.HeaderReader
+	Inbox               *InboxTracker
+	Streamer            *TransactionStreamer
+	VersionGetter       execution.ArbOSVersionGetter
+	SyncMonitor         *SyncMonitor
+	Config              BatchPosterConfigFetcher
+	DeployInfo          *chaininfo.RollupAddresses
+	TransactOpts        *bind.TransactOpts
+	DAPWriter           daprovider.Writer
+	ParentChainID       *big.Int
+	DAPReaders          *daprovider.ReaderRegistry
+	ArbitrumChainParams *params.ArbitrumChainParams
 }
 
 func NewBatchPoster(ctx context.Context, opts *BatchPosterOpts) (*BatchPoster, error) {
@@ -373,23 +375,24 @@ func NewBatchPoster(ctx context.Context, opts *BatchPosterOpts) (*BatchPoster, e
 		return nil, err
 	}
 	b := &BatchPoster{
-		l1Reader:           opts.L1Reader,
-		inbox:              opts.Inbox,
-		streamer:           opts.Streamer,
-		arbOSVersionGetter: opts.VersionGetter,
-		syncMonitor:        opts.SyncMonitor,
-		config:             opts.Config,
-		seqInbox:           seqInbox,
-		seqInboxABI:        seqInboxABI,
-		seqInboxAddr:       opts.DeployInfo.SequencerInbox,
-		gasRefunderAddr:    opts.Config().gasRefunder,
-		bridgeAddr:         opts.DeployInfo.Bridge,
-		dapWriter:          opts.DAPWriter,
-		redisLock:          redisLock,
-		dapReaders:         opts.DAPReaders,
-		parentChain:        &parent.ParentChain{ChainID: opts.ParentChainID, L1Reader: opts.L1Reader},
-		checkEip7623:       checkEip7623,
-		useEip7623:         useEip7623,
+		l1Reader:                 opts.L1Reader,
+		inbox:                    opts.Inbox,
+		streamer:                 opts.Streamer,
+		arbOSVersionGetter:       opts.VersionGetter,
+		syncMonitor:              opts.SyncMonitor,
+		config:                   opts.Config,
+		seqInbox:                 seqInbox,
+		seqInboxABI:              seqInboxABI,
+		seqInboxAddr:             opts.DeployInfo.SequencerInbox,
+		gasRefunderAddr:          opts.Config().gasRefunder,
+		bridgeAddr:               opts.DeployInfo.Bridge,
+		dapWriter:                opts.DAPWriter,
+		redisLock:                redisLock,
+		dapReaders:               opts.DAPReaders,
+		parentChain:              &parent.ParentChain{ChainID: opts.ParentChainID, L1Reader: opts.L1Reader},
+		checkEip7623:             checkEip7623,
+		useEip7623:               useEip7623,
+		maxUncompressedBatchSize: opts.ArbitrumChainParams.MaxUncompressedBatchSize,
 	}
 	b.messagesPerBatch, err = arbmath.NewMovingAverage[uint64](20)
 	if err != nil {
@@ -875,6 +878,7 @@ type batchSegments struct {
 	recompressionLevel    int
 	newUncompressedSize   int
 	totalUncompressedSize int
+	maxUncompressedSize   int
 	lastCompressedSize    int
 	trailingHeaders       int // how many trailing segments are headers
 	isDone                bool
@@ -934,12 +938,13 @@ func (b *BatchPoster) newBatchSegments(ctx context.Context, firstDelayed uint64,
 		recompressionLevel = compressionLevel
 	}
 	return &batchSegments{
-		compressedBuffer:   compressedBuffer,
-		compressedWriter:   brotli.NewWriterLevel(compressedBuffer, compressionLevel),
-		sizeLimit:          maxSize,
-		recompressionLevel: recompressionLevel,
-		rawSegments:        make([][]byte, 0, 128),
-		delayedMsg:         firstDelayed,
+		compressedBuffer:    compressedBuffer,
+		compressedWriter:    brotli.NewWriterLevel(compressedBuffer, compressionLevel),
+		sizeLimit:           maxSize,
+		recompressionLevel:  recompressionLevel,
+		rawSegments:         make([][]byte, 0, 128),
+		delayedMsg:          firstDelayed,
+		maxUncompressedSize: int(b.maxUncompressedBatchSize), // #nosec G115
 	}, nil
 }
 
@@ -954,8 +959,8 @@ func (s *batchSegments) recompressAll() error {
 			return err
 		}
 	}
-	if s.totalUncompressedSize > arbstate.MaxDecompressedLen {
-		return fmt.Errorf("batch size %v exceeds maximum decompressed length %v", s.totalUncompressedSize, arbstate.MaxDecompressedLen)
+	if s.totalUncompressedSize > s.maxUncompressedSize {
+		return fmt.Errorf("batch size %v exceeds maximum uncompressed length %v", s.totalUncompressedSize, s.maxUncompressedSize)
 	}
 	if len(s.rawSegments) >= arbstate.MaxSegmentsPerSequencerMessage {
 		return fmt.Errorf("number of raw segments %v excees maximum number %v", len(s.rawSegments), arbstate.MaxSegmentsPerSequencerMessage)
@@ -965,10 +970,10 @@ func (s *batchSegments) recompressAll() error {
 
 func (s *batchSegments) testForOverflow(isHeader bool) (bool, error) {
 	// we've reached the max decompressed size
-	if s.totalUncompressedSize > arbstate.MaxDecompressedLen {
-		log.Info("Batch full: max decompressed length exceeded",
+	if s.totalUncompressedSize > s.maxUncompressedSize {
+		log.Info("Batch full: max uncompressed length exceeded",
 			"current", s.totalUncompressedSize,
-			"max", arbstate.MaxDecompressedLen,
+			"max", s.maxUncompressedSize,
 			"isHeader", isHeader)
 		return true, nil
 	}
