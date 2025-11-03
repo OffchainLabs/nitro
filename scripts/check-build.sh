@@ -30,6 +30,35 @@ command_exists() {
     command -v "$1" >/dev/null 2>&1
 }
 
+# compare_versions <needed> <installed> [min|exact]
+# - needed may be major.minor OR major.minor.patch
+# - mode=min  : installed >= needed
+# - mode=exact: installed == needed
+compare_versions() {
+  local n="$1" i="$2" mode="${3:-min}"
+
+  # If installed has no patch, append .0
+  [[ "$i" =~ ^[0-9]+\.[0-9]+$ ]] && i="${i}.0"
+
+  IFS='.' read -r iM iN iP <<<"$i"
+
+  if [[ "$n" == *.*.* ]]; then
+    IFS='.' read -r nM nN nP <<<"$n"
+    if [[ "$mode" == "exact" ]]; then
+      (( iM==nM && iN==nN && iP==nP ))
+    else
+      (( iM>nM )) || { (( iM==nM && iN>nN )); } || { (( iM==nM && iN==nN && iP>=nP )); }
+    fi
+  else
+    IFS='.' read -r nM nN <<<"$n"
+    if [[ "$mode" == "exact" ]]; then
+      (( iM==nM && iN==nN ))
+    else
+      (( iM>nM )) || { (( iM==nM && iN>=nN )); }
+    fi
+  fi
+}
+
 EXIT_CODE=0
 
 # Detect operating system
@@ -139,7 +168,7 @@ fi
 # Check Go version
 if command_exists go; then
     GO_INSTALLED_VERSION=$(go version | awk '{print $3}' | sed 's/go//')
-    if [[ "$GO_INSTALLED_VERSION" == "$go_version_needed" ]]; then
+    if compare_versions "$go_version_needed" "$GO_INSTALLED_VERSION" "min"; then
         echo -e "${GREEN}Go version $go_version_needed is installed.${NC}"
     else
         echo -e "${RED}Go version $go_version_needed not installed.${NC}"
