@@ -23,7 +23,7 @@ const test_redisKey_prefix = "__TEMP_SimpleRedisLockTest__"
 
 func attemptLock(ctx context.Context, s *redislock.Simple, flag *atomic.Int32, wg *sync.WaitGroup) {
 	defer wg.Done()
-	for i := 0; i < test_attempts; i++ {
+	for range test_attempts {
 		if s.AttemptLock(ctx) {
 			flag.Add(1)
 		} else if rand.Intn(test_release_frac) == 0 {
@@ -84,9 +84,10 @@ func simpleRedisLockTest(t *testing.T, redisKeySuffix string, chosen int, backgr
 	wg.Wait()
 	successful := -1
 	for i := range counters {
-		if counters[i].Load() != 0 {
-			if counters[i].Load() != test_attempts {
-				t.Fatalf("counter %d value %d", i, counters[i].Load())
+		cntr := &counters[i]
+		if cntr.Load() != 0 {
+			if cntr.Load() != test_attempts {
+				t.Fatalf("counter %d value %d", i, cntr.Load())
 			}
 			if successful > 0 {
 				t.Fatalf("counter %d and %d both positive", i, successful)

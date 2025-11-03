@@ -304,7 +304,7 @@ func (h *historyCommitter) hashLeaves(leaves []common.Hash) []common.Hash {
 //     by recursion.
 func (h *historyCommitter) partialRoot(leaves []common.Hash, virtual, limit uint64) (common.Hash, error) {
 	lvLen := uint64(len(leaves))
-	if lvLen == 0 {
+	if len(leaves) == 0 {
 		return emptyHash, errors.New("nil leaves")
 	}
 	if uint64(virtual) < lvLen {

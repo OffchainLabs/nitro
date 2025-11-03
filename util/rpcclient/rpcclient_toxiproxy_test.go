@@ -1,6 +1,3 @@
-//go:build toxiproxy
-// +build toxiproxy
-
 package rpcclient
 
 import (
@@ -20,7 +17,11 @@ func TestToxiRpcClient(t *testing.T) {
 	toxiprox := toxiproxy.NewClient("localhost:8474")
 	proxy, err := toxiprox.CreateProxy("testRpc", "", server1.WSEndpoint()[5:])
 	Require(t, err)
-	defer proxy.Delete()
+	defer func() {
+		if err := proxy.Delete(); err != nil {
+			t.Logf("failed to delete proxy: %v", err)
+		}
+	}()
 
 	config := DefaultClientConfig
 	config.URL = "ws://" + proxy.Listen

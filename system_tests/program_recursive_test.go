@@ -33,22 +33,23 @@ func testProgramRecursiveCall(t *testing.T, builder *NodeBuilder, slotVals map[s
 	slot := common.HexToHash("0x11223344556677889900aabbccddeeff")
 	val := common.Hash{}
 	var args []byte
-	if recurse[0].opcode == vm.SSTORE {
+	switch recurse[0].opcode {
+	case vm.SSTORE:
 		// send event from storage on sstore
 		val = rander.GetHash()
 		args = append([]byte{0x1, 0, 0, 0, 65, 0x18}, slot[:]...)
 		args = append(args, val[:]...)
-	} else if recurse[0].opcode == vm.SLOAD {
+	case vm.SLOAD:
 		args = append([]byte{0x1, 0, 0, 0, 33, 0x11}, slot[:]...)
-	} else {
+	default:
 		t.Fatal("first level must be sload or sstore")
 	}
 	shouldSucceed := true
 	delegateChangesStorageDest := true
 	storageDest := recurse[0].Name
-	for i := 1; i < len(recurse); i++ {
+	for i := 0; i < len(recurse)-1; i++ {
 		call := recurse[i]
-		prev := recurse[i-1]
+		prev := recurse[i+1]
 		args = argsForMulticall(call.opcode, builder.L2Info.GetAddress(prev.Name), nil, args)
 		if call.opcode == vm.STATICCALL && recurse[0].opcode == vm.SSTORE {
 			shouldSucceed = false
@@ -62,6 +63,9 @@ func testProgramRecursiveCall(t *testing.T, builder *NodeBuilder, slotVals map[s
 	if recurse[0].opcode == vm.SLOAD {
 		// send event from caller on sload
 		args[5] = args[5] | 0x8
+	}
+	if len(recurse) < 1 {
+		t.Fatal("no recurse steps")
 	}
 	multiCaller, err := localgen.NewMultiCallTest(builder.L2Info.GetAddress(recurse[len(recurse)-1].Name), builder.L2.Client)
 	Require(t, err)
@@ -80,7 +84,7 @@ func testProgramRecursiveCall(t *testing.T, builder *NodeBuilder, slotVals map[s
 		if len(receipt.Logs) != 1 {
 			Fatal(t, "incorrect number of logs: ", len(receipt.Logs))
 		}
-		if recurse[0].opcode == vm.SSTORE {
+		if len(recurse) > 0 && recurse[0].opcode == vm.SSTORE {
 			slotVals[storageDest] = val
 			storageEvt, err := multiCaller.ParseStorage(*receipt.Logs[0])
 			Require(t, err)
