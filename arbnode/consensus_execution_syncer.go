@@ -28,6 +28,10 @@ var DefaultConsensusExecutionSyncerConfig = ConsensusExecutionSyncerConfig{
 	SyncInterval: 300 * time.Millisecond,
 }
 
+var TestConsensusExecutionSyncerConfig = ConsensusExecutionSyncerConfig{
+	SyncInterval: TestSyncMonitorConfig.MsgLag / 2,
+}
+
 // We don't define a Test config. For most tests we want the Syncer to behave
 // the same as in production.
 
@@ -130,7 +134,7 @@ func (c *ConsensusExecutionSyncer) pushFinalityDataFromConsensusToExecution(ctx 
 		}
 	}
 
-	_, err = c.execClient.SetFinalityData(ctx, safeFinalityData, finalizedFinalityData, validatedFinalityData).Await(ctx)
+	_, err = c.execClient.SetFinalityData(safeFinalityData, finalizedFinalityData, validatedFinalityData).Await(ctx)
 	if err != nil {
 		log.Error("Error pushing finality data from consensus to execution", "err", err)
 	} else {
@@ -172,7 +176,7 @@ func (c *ConsensusExecutionSyncer) pushConsensusSyncDataToExecution(ctx context.
 		UpdatedAt:       time.Now(),
 	}
 
-	_, err = c.execClient.SetConsensusSyncData(ctx, syncData).Await(ctx)
+	_, err = c.execClient.SetConsensusSyncData(syncData).Await(ctx)
 	if err != nil {
 		log.Error("Error pushing sync data from consensus to execution", "err", err)
 	} else {

@@ -8,26 +8,29 @@ import (
 	"math/big"
 
 	"github.com/offchainlabs/nitro/arbos/storage"
+	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
 const (
 	gasConstraintTargetOffset uint64 = iota
-	gasConstraintPeriodOffset
+	gasConstraintAdjustmentWindowOffset
 	gasConstraintBacklogOffset
 )
 
-// GasConstraint tries to keep the gas backlog under the target (per second) for the given period.
+// GasConstraint tries to keep the gas backlog under the target (per second) for the given adjustment window.
+// Target stands for gas usage per second
+// Adjustment window is the time frame over which the price will rise by a factor of e if demand is 2x the target
 type GasConstraint struct {
-	target  storage.StorageBackedUint64
-	period  storage.StorageBackedUint64
-	backlog storage.StorageBackedUint64
+	target           storage.StorageBackedUint64
+	adjustmentWindow storage.StorageBackedUint64
+	backlog          storage.StorageBackedUint64
 }
 
 func OpenGasConstraint(storage *storage.Storage) *GasConstraint {
 	return &GasConstraint{
-		target:  storage.OpenStorageBackedUint64(gasConstraintTargetOffset),
-		period:  storage.OpenStorageBackedUint64(gasConstraintPeriodOffset),
-		backlog: storage.OpenStorageBackedUint64(gasConstraintBacklogOffset),
+		target:           storage.OpenStorageBackedUint64(gasConstraintTargetOffset),
+		adjustmentWindow: storage.OpenStorageBackedUint64(gasConstraintAdjustmentWindowOffset),
+		backlog:          storage.OpenStorageBackedUint64(gasConstraintBacklogOffset),
 	}
 }
 
@@ -35,13 +38,29 @@ func (c *GasConstraint) Clear() error {
 	if err := c.target.Clear(); err != nil {
 		return err
 	}
-	if err := c.period.Clear(); err != nil {
+	if err := c.adjustmentWindow.Clear(); err != nil {
 		return err
 	}
 	if err := c.backlog.Clear(); err != nil {
 		return err
 	}
 	return nil
+}
+
+func (c *GasConstraint) Target() (uint64, error) {
+	return c.target.Get()
+}
+
+func (c *GasConstraint) AdjustmentWindow() (uint64, error) {
+	return c.adjustmentWindow.Get()
+}
+
+func (c *GasConstraint) Backlog() (uint64, error) {
+	return c.backlog.Get()
+}
+
+func (c *GasConstraint) SetBacklog(val uint64) error {
+	return c.backlog.Set(val)
 }
 
 type L2PricingState struct {
@@ -168,7 +187,31 @@ func (ps *L2PricingState) Restrict(err error) {
 	ps.storage.Burner().Restrict(err)
 }
 
-func (ps *L2PricingState) AddConstraint(target uint64, period uint64, backlog uint64) error {
+func (ps *L2PricingState) setConstraintsFromLegacy() error {
+	if err := ps.ClearConstraints(); err != nil {
+		return err
+	}
+	target, err := ps.SpeedLimitPerSecond()
+	if err != nil {
+		return err
+	}
+	adjustmentWindow, err := ps.PricingInertia()
+	if err != nil {
+		return err
+	}
+	oldBacklog, err := ps.GasBacklog()
+	if err != nil {
+		return err
+	}
+	backlogTolerance, err := ps.BacklogTolerance()
+	if err != nil {
+		return err
+	}
+	backlog := arbmath.SaturatingUSub(oldBacklog, arbmath.SaturatingUMul(backlogTolerance, target))
+	return ps.AddConstraint(target, adjustmentWindow, backlog)
+}
+
+func (ps *L2PricingState) AddConstraint(target uint64, adjustmentWindow uint64, backlog uint64) error {
 	subStorage, err := ps.constraints.Push()
 	if err != nil {
 		return fmt.Errorf("failed to push constraint: %w", err)
@@ -177,8 +220,8 @@ func (ps *L2PricingState) AddConstraint(target uint64, period uint64, backlog ui
 	if err := constraint.target.Set(target); err != nil {
 		return fmt.Errorf("failed to set target: %w", err)
 	}
-	if err := constraint.period.Set(period); err != nil {
-		return fmt.Errorf("failed to set period: %w", err)
+	if err := constraint.adjustmentWindow.Set(adjustmentWindow); err != nil {
+		return fmt.Errorf("failed to set adjustment window: %w", err)
 	}
 	if err := constraint.backlog.Set(backlog); err != nil {
 		return fmt.Errorf("failed to set backlog: %w", err)

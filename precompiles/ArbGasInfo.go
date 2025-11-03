@@ -284,3 +284,40 @@ func (con ArbGasInfo) GetL1PricingUnitsSinceUpdate(c ctx, evm mech) (uint64, err
 func (con ArbGasInfo) GetLastL1PricingSurplus(c ctx, evm mech) (*big.Int, error) {
 	return c.State.L1PricingState().LastSurplus()
 }
+
+// GetMaxBlockGasLimit gets the maximum block gas limit
+func (con ArbGasInfo) GetMaxBlockGasLimit(c ctx, evm mech) (uint64, error) {
+	return c.State.L2PricingState().PerBlockGasLimit()
+}
+
+// GetGasPricingConstraints gets the current gas pricing constraints used by the Multi-Constraint Pricer.
+func (con ArbGasInfo) GetGasPricingConstraints(c ctx, evm mech) ([][3]uint64, error) {
+	len, err := c.State.L2PricingState().ConstraintsLength()
+	if err != nil {
+		return nil, err
+	}
+
+	constraints := make([][3]uint64, 0, len)
+	for i := range len {
+		constraint := c.State.L2PricingState().OpenConstraintAt(i)
+		gasTargetPerSecond, err := constraint.Target()
+		if err != nil {
+			return nil, err
+		}
+		adjustmentWindowSeconds, err := constraint.AdjustmentWindow()
+		if err != nil {
+			return nil, err
+		}
+		backlog, err := constraint.Backlog()
+		if err != nil {
+			return nil, err
+		}
+
+		constraints = append(constraints, [3]uint64{
+			gasTargetPerSecond,
+			adjustmentWindowSeconds,
+			backlog,
+		})
+	}
+	return constraints, nil
+}

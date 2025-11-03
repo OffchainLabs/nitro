@@ -22,9 +22,10 @@ func PricingForTest(t *testing.T) *L2PricingState {
 }
 
 func fakeBlockUpdate(t *testing.T, pricing *L2PricingState, gasUsed int64, timePassed uint64) {
-	basefee := getPrice(t, pricing)
-	pricing.storage.Burner().Restrict(pricing.AddToGasPool(-gasUsed))
-	pricing.UpdatePricingModel(arbmath.UintToBig(basefee), timePassed, true)
+	t.Helper()
+
+	pricing.storage.Burner().Restrict(pricing.addToGasPoolLegacy(-gasUsed))
+	pricing.updatePricingModelLegacy(timePassed)
 }
 
 func TestPricingModelExp(t *testing.T) {
@@ -133,10 +134,10 @@ func TestGasConstraints(t *testing.T) {
 		if want := 100*i + 1; target != want {
 			t.Errorf("wrong target: got %v, want %v", target, want)
 		}
-		period, err := constraint.period.Get()
+		inertia, err := constraint.adjustmentWindow.Get()
 		Require(t, err)
-		if want := 100*i + 2; period != want {
-			t.Errorf("wrong period: got %v, want %v", period, want)
+		if want := 100*i + 2; inertia != want {
+			t.Errorf("wrong inertia: got %v, want %v", inertia, want)
 		}
 		backlog, err := constraint.backlog.Get()
 		Require(t, err)
