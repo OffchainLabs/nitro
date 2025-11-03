@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/knadh/koanf"
@@ -251,6 +252,11 @@ func (c *Client) store(ctx context.Context, message []byte, timeout uint64) (*se
 	// Single-call store if data streaming is not enabled
 	if c.DataStreamer == nil {
 		if err := c.CallContext(ctx, &storeResult, *c.storeRpcMethod, hexutil.Bytes(message), hexutil.Uint64(timeout)); err != nil {
+			// Restore error identity lost over RPC for external DA providers
+			// by wrapping the original error so we preserve context for debugging
+			if strings.Contains(err.Error(), daprovider.ErrFallbackRequested.Error()) {
+				return nil, fmt.Errorf("%w (from external DA provider: %w)", daprovider.ErrFallbackRequested, err)
+			}
 			return nil, fmt.Errorf("error returned from daprovider server (single-call store protocol), err: %w", err)
 		}
 		return storeResult, nil
@@ -259,6 +265,11 @@ func (c *Client) store(ctx context.Context, message []byte, timeout uint64) (*se
 	// Otherwise, use the data streaming protocol
 	storeResult, err := c.DataStreamer.StreamData(ctx, message, timeout)
 	if err != nil {
+		// Restore error identity lost over RPC for external DA providers
+		// by wrapping the original error so we preserve context for debugging
+		if strings.Contains(err.Error(), daprovider.ErrFallbackRequested.Error()) {
+			return nil, fmt.Errorf("%w (from external DA provider: %w)", daprovider.ErrFallbackRequested, err)
+		}
 		return nil, fmt.Errorf("error returned from daprovider server (chunked store protocol), err: %w", err)
 	} else {
 		return storeResult, nil

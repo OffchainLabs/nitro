@@ -9,9 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
-	"os"
-	"path"
-	"path/filepath"
 	"strings"
 
 	"github.com/spf13/pflag"
@@ -36,14 +33,12 @@ import (
 	"github.com/offchainlabs/nitro/broadcastclients"
 	"github.com/offchainlabs/nitro/broadcaster"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
-	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/daprovider"
 	daconfig "github.com/offchainlabs/nitro/daprovider/config"
 	"github.com/offchainlabs/nitro/daprovider/daclient"
 	"github.com/offchainlabs/nitro/daprovider/das"
 	"github.com/offchainlabs/nitro/daprovider/data_streaming"
 	"github.com/offchainlabs/nitro/daprovider/factory"
-	dapserver "github.com/offchainlabs/nitro/daprovider/server"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
@@ -624,23 +619,6 @@ func getDAProviders(
 	// Create AnyTrust DA provider if enabled (can coexist with external DA)
 	if config.DataAvailability.Enable {
 		log.Info("Creating AnyTrust DA provider", "batchPosterEnabled", config.BatchPoster.Enable)
-		jwtPath := path.Join(filepath.Dir(stack.InstanceDir()), "dasserver-jwtsecret")
-		if err := genericconf.TryCreatingJWTSecret(jwtPath); err != nil {
-			return nil, nil, nil, fmt.Errorf("error writing ephemeral jwtsecret of dasserver to file: %w", err)
-		}
-		log.Info("Generated ephemeral JWT secret for dasserver", "jwtPath", jwtPath)
-		// JWTSecret is no longer needed, cleanup when returning
-		defer func() {
-			if err := os.Remove(jwtPath); err != nil {
-				log.Error("error deleting generated ephemeral JWT secret of dasserver", "jwtPath", jwtPath)
-			}
-		}()
-
-		serverConfig := dapserver.DefaultServerConfig
-		serverConfig.Port = 0 // Initializes server at a random available port
-		serverConfig.EnableDAWriter = config.BatchPoster.Enable
-		serverConfig.JWTSecret = jwtPath
-		log.Info("AnyTrust server config", "enableDAWriter", serverConfig.EnableDAWriter, "port", serverConfig.Port)
 
 		// Create AnyTrust factory
 		daFactory, err := factory.NewDAProviderFactory(
@@ -684,61 +662,22 @@ func getDAProviders(
 		}
 
 		headerBytes := daFactory.GetSupportedHeaderBytes()
-		providerServer, err := dapserver.NewServerWithDAPProvider(
-			ctx,
-			&serverConfig,
-			reader,
-			writer,
-			nil, // there is no anytrust Validator implementation
-			headerBytes,
-			data_streaming.PayloadCommitmentVerifier())
-		if err != nil {
-			return nil, nil, nil, err
-		}
-		log.Info("AnyTrust provider server started", "addr", providerServer.Addr)
 
-		rpcClientConfig := rpcclient.DefaultClientConfig
-		rpcClientConfig.URL = providerServer.Addr
-		rpcClientConfig.JWTSecret = jwtPath
-		rpcClientConfig.Timeout = config.DataAvailability.InternalDAProviderTimeout
-		log.Info("Creating internal AnyTrust client", "url", rpcClientConfig.URL, "timeout", rpcClientConfig.Timeout)
-
-		daClientConfig := daclient.ClientConfig{
-			Enable:           true,
-			WithWriter:       false,
-			RPC:              rpcClientConfig,
-			UseDataStreaming: false,
-			DataStream:       data_streaming.DefaultDataStreamerConfig(daclient.DefaultStreamRpcMethods),
-			StoreRpcMethod:   daclient.DefaultStoreRpcMethod,
-		}
-
-		anytrustClient, err := daclient.NewClient(ctx, &daClientConfig, data_streaming.PayloadCommiter())
-		if err != nil {
-			return nil, nil, nil, err
-		}
-		log.Info("Created internal AnyTrust client")
-
-		// Add AnyTrust client to writers array if batch poster is enabled
-		if config.BatchPoster.Enable {
-			writers = append(writers, anytrustClient)
+		// Add AnyTrust writer to writers array if batch poster is enabled
+		if config.BatchPoster.Enable && writer != nil {
+			writers = append(writers, writer)
 			log.Info("Added AnyTrust writer", "writerIndex", len(writers)-1, "totalWriters", len(writers))
 		}
 
-		// Register AnyTrust client as reader (no validator for AnyTrust)
-		promise := anytrustClient.GetSupportedHeaderBytes()
-		result, err := promise.Await(ctx)
-		if err != nil {
-			return nil, nil, nil, fmt.Errorf("failed to get supported header bytes from anytrust client: %w", err)
-		}
-		for _, hb := range result.HeaderBytes {
-			if err := dapRegistry.Register(hb, anytrustClient, nil); err != nil {
-				return nil, nil, nil, fmt.Errorf("failed to register anytrust client: %w", err)
+		// Register AnyTrust reader directly (no validator for AnyTrust)
+		for _, hb := range headerBytes {
+			if err := dapRegistry.Register(hb, reader, nil); err != nil {
+				return nil, nil, nil, fmt.Errorf("failed to register anytrust reader: %w", err)
 			}
 		}
 
 		// Create cleanup function for AnyTrust
 		anytrustCleanup := func() {
-			_ = providerServer.Shutdown(ctx)
 			for _, cleanup := range localCleanupFuncs {
 				cleanup()
 			}

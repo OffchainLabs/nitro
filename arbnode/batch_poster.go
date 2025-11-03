@@ -1731,9 +1731,7 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 			storeDuration := time.Since(storeStart)
 			if err != nil {
 				lastErr = err
-				// Check for fallback request - need to check both errors.Is (for local errors)
-				// and string matching (for RPC errors that lose identity across the wire)
-				if errors.Is(err, daprovider.ErrFallbackRequested) || strings.Contains(err.Error(), daprovider.ErrFallbackRequested.Error()) {
+				if errors.Is(err, daprovider.ErrFallbackRequested) {
 					log.Warn("DA writer explicitly requested fallback", "writerIndex", i, "error", err, "duration", storeDuration)
 					fallbackRequested = true
 					continue // Try next writer
