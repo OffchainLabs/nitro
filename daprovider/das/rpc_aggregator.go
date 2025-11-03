@@ -5,7 +5,6 @@ package das
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -74,14 +73,6 @@ func FixKeysetCLIParsing(path string, k *koanf.Koanf) error {
 
 	}
 	return nil
-}
-
-func NewRPCAggregator(ctx context.Context, config DataAvailabilityConfig, signer signature.DataSignerFunc) (*Aggregator, error) {
-	services, err := ParseServices(config.RPCAggregator, signer)
-	if err != nil {
-		return nil, err
-	}
-	return NewAggregator(ctx, config, services)
 }
 
 func NewRPCAggregatorWithL1Info(config DataAvailabilityConfig, l1client *ethclient.Client, seqInboxAddress common.Address, signer signature.DataSignerFunc) (*Aggregator, error) {

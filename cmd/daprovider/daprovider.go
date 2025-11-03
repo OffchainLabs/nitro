@@ -32,11 +32,20 @@ import (
 	"github.com/offchainlabs/nitro/util/signature"
 )
 
+type ParentChainConfig struct {
+	NodeURL               string `koanf:"node-url"`
+	ConnectionAttempts    int    `koanf:"connection-attempts"`
+	SequencerInboxAddress string `koanf:"sequencer-inbox-address"`
+}
+
 type Config struct {
 	Mode             factory.DAProviderMode   `koanf:"mode"`
 	ProviderServer   dapserver.ServerConfig   `koanf:"provider-server"`
 	WithDataSigner   bool                     `koanf:"with-data-signer"`
 	DataSignerWallet genericconf.WalletConfig `koanf:"data-signer-wallet"`
+
+	// Shared parent chain connection config
+	ParentChain ParentChainConfig `koanf:"parent-chain"`
 
 	// Mode-specific configs
 	Anytrust    das.DataAvailabilityConfig `koanf:"anytrust"`
@@ -52,11 +61,18 @@ type Config struct {
 	PprofCfg      genericconf.PProf               `koanf:"pprof-cfg"`
 }
 
+var DefaultParentChainConfig = ParentChainConfig{
+	NodeURL:               "",
+	ConnectionAttempts:    15,
+	SequencerInboxAddress: "",
+}
+
 var DefaultConfig = Config{
 	Mode:             "", // Must be explicitly set
 	ProviderServer:   dapserver.DefaultServerConfig,
 	WithDataSigner:   false,
 	DataSignerWallet: arbnode.DefaultBatchPosterL1WalletConfig,
+	ParentChain:      DefaultParentChainConfig,
 	Anytrust:         das.DefaultDataAvailabilityConfig,
 	ReferenceDA:      referenceda.DefaultConfig,
 	Conf:             genericconf.ConfConfigDefault,
@@ -89,6 +105,11 @@ func parseDAProvider(args []string) (*Config, error) {
 	f.String("log-type", DefaultConfig.LogType, "log type (plaintext or json)")
 
 	dapserver.ServerConfigAddOptions("provider-server", f)
+
+	// Add shared parent chain connection options
+	f.String("parent-chain.node-url", DefaultParentChainConfig.NodeURL, "URL for parent chain node")
+	f.Int("parent-chain.connection-attempts", DefaultParentChainConfig.ConnectionAttempts, "parent chain RPC connection attempts (spaced out at least 1 second per attempt, 0 to retry infinitely)")
+	f.String("parent-chain.sequencer-inbox-address", DefaultParentChainConfig.SequencerInboxAddress, "parent chain address of SequencerInbox contract")
 
 	// Add mode-specific options
 	das.DataAvailabilityConfigAddDaserverOptions("anytrust", f)
@@ -192,15 +213,15 @@ func startup() error {
 			return errors.New("--anytrust.enable is required to start an AnyTrust provider server")
 		}
 
-		if config.Anytrust.ParentChainNodeURL == "" || config.Anytrust.ParentChainNodeURL == "none" {
-			return errors.New("--anytrust.parent-chain-node-url is required to start an AnyTrust provider server")
+		if config.ParentChain.NodeURL == "" || config.ParentChain.NodeURL == "none" {
+			return errors.New("--parent-chain.node-url is required to start an AnyTrust provider server")
 		}
 
-		if config.Anytrust.SequencerInboxAddress == "" || config.Anytrust.SequencerInboxAddress == "none" {
-			return errors.New("--anytrust.sequencer-inbox-address must be set to a valid L1 contract address")
+		if config.ParentChain.SequencerInboxAddress == "" || config.ParentChain.SequencerInboxAddress == "none" {
+			return errors.New("--parent-chain.sequencer-inbox-address must be set to a valid L1 contract address")
 		}
 
-		l1Client, err = das.GetL1Client(ctx, config.Anytrust.ParentChainConnectionAttempts, config.Anytrust.ParentChainNodeURL)
+		l1Client, err = das.GetL1Client(ctx, config.ParentChain.ConnectionAttempts, config.ParentChain.NodeURL)
 		if err != nil {
 			return err
 		}
@@ -211,12 +232,12 @@ func startup() error {
 			return err
 		}
 
-		seqInboxAddrPtr, err := das.OptionalAddressFromString(config.Anytrust.SequencerInboxAddress)
+		seqInboxAddrPtr, err := das.OptionalAddressFromString(config.ParentChain.SequencerInboxAddress)
 		if err != nil {
 			return err
 		}
 		if seqInboxAddrPtr == nil {
-			return errors.New("must provide --anytrust.sequencer-inbox-address set to a valid contract address")
+			return errors.New("must provide --parent-chain.sequencer-inbox-address set to a valid contract address")
 		}
 		seqInboxAddr = *seqInboxAddrPtr
 
@@ -233,7 +254,7 @@ func startup() error {
 		if !config.ReferenceDA.Enable {
 			return errors.New("--referenceda.enable is required to start a ReferenceDA provider server")
 		}
-		l1Client, err = das.GetL1Client(ctx, config.ReferenceDA.ParentChainConnectionAttempts, config.ReferenceDA.ParentChainNodeURL)
+		l1Client, err = das.GetL1Client(ctx, config.ParentChain.ConnectionAttempts, config.ParentChain.NodeURL)
 		if err != nil {
 			return err
 		}

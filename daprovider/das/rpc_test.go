@@ -18,6 +18,7 @@ import (
 	"github.com/offchainlabs/nitro/blsSignatures"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/daprovider/data_streaming"
+	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
@@ -49,8 +50,7 @@ func testRpcImpl(t *testing.T, size, times int, concurrent bool) {
 			Enable:  true,
 			DataDir: dataDir,
 		},
-		ParentChainNodeURL: "none",
-		RequestTimeout:     5 * time.Second,
+		RequestTimeout: 5 * time.Second,
 	}
 
 	storageService, lifecycleManager, err := CreatePersistentStorageService(ctx, &config)
@@ -88,6 +88,7 @@ func testRpcImpl(t *testing.T, size, times int, concurrent bool) {
 				ServerUrl:          "",
 				EnableChunkedStore: true,
 				DataStream:         data_streaming.TestDataStreamerConfig(DefaultDataStreamRpcMethods),
+				RPC:                rpcclient.TestClientConfig,
 			},
 		},
 		RequestTimeout: time.Minute,

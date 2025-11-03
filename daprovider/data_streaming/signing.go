@@ -64,6 +64,12 @@ func PayloadCommitmentVerifier() *PayloadVerifier {
 	})
 }
 
+func NoopPayloadVerifier() *PayloadVerifier {
+	return CustomPayloadVerifier(func(ctx context.Context, signature []byte, data []byte, extras ...uint64) error {
+		return nil
+	})
+}
+
 func flattenDataForSigning(bytes []byte, extras ...uint64) []byte {
 	var bufferForExtras []byte
 	for _, field := range extras {

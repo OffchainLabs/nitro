@@ -65,9 +65,15 @@ func StartDASRPCServerOnListener(ctx context.Context, listener net.Listener, rpc
 		rpcServer.SetHTTPBodyLimit(rpcServerBodyLimit)
 	}
 
-	dataStreamPayloadVerifier := data_streaming.CustomPayloadVerifier(func(ctx context.Context, signature []byte, bytes []byte, extras ...uint64) error {
-		return signatureVerifier.verify(ctx, bytes, signature, extras...)
-	})
+	var dataStreamPayloadVerifier *data_streaming.PayloadVerifier
+	if signatureVerifier == nil {
+		// When signature checking is disabled, accept any signature without verification
+		dataStreamPayloadVerifier = data_streaming.NoopPayloadVerifier()
+	} else {
+		dataStreamPayloadVerifier = data_streaming.CustomPayloadVerifier(func(ctx context.Context, signature []byte, bytes []byte, extras ...uint64) error {
+			return signatureVerifier.verify(ctx, bytes, signature, extras...)
+		})
+	}
 
 	dataStreamReceiver := data_streaming.NewDataStreamReceiver(dataStreamPayloadVerifier, data_streaming.DefaultMaxPendingMessages, data_streaming.DefaultMessageCollectionExpiry, data_streaming.DefaultRequestValidity, func(id data_streaming.MessageId) {
 		rpcStoreFailureCounter.Inc(1)
@@ -133,8 +139,10 @@ func (s *DASRPCServer) Store(ctx context.Context, message hexutil.Bytes, timeout
 		rpcStoreDurationHistogram.Update(time.Since(start).Nanoseconds())
 	}()
 
-	if err := s.signatureVerifier.verify(ctx, message, sig, uint64(timeout)); err != nil {
-		return nil, err
+	if s.signatureVerifier != nil {
+		if err := s.signatureVerifier.verify(ctx, message, sig, uint64(timeout)); err != nil {
+			return nil, err
+		}
 	}
 
 	cert, err := s.daWriter.Store(ctx, message, uint64(timeout))
