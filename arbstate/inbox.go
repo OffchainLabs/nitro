@@ -130,7 +130,7 @@ func ParseSequencerMessage(ctx context.Context, batchNum uint64, batchBlockHash 
 		decompressed, err := arbcompress.Decompress(payload[1:], MaxDecompressedLen)
 		if err == nil {
 			reader := bytes.NewReader(decompressed)
-			stream := rlp.NewStream(reader, uint64(MaxDecompressedLen))
+			stream := rlp.NewStream(reader, 0)
 			for {
 				var segment []byte
 				err := stream.Decode(&segment)
