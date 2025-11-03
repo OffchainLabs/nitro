@@ -15,6 +15,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
 
 	"github.com/offchainlabs/nitro/arbcompress"
@@ -47,11 +48,9 @@ type SequencerMessage struct {
 	Segments             [][]byte
 }
 
-const MaxDecompressedLen int = 1024 * 1024 * 16 // 16 MiB
-const maxZeroheavyDecompressedLen = 101*MaxDecompressedLen/100 + 64
 const MaxSegmentsPerSequencerMessage = 100 * 1024
 
-func ParseSequencerMessage(ctx context.Context, batchNum uint64, batchBlockHash common.Hash, data []byte, dapReaders *daprovider.ReaderRegistry, keysetValidationMode daprovider.KeysetValidationMode) (*SequencerMessage, error) {
+func ParseSequencerMessage(ctx context.Context, batchNum uint64, batchBlockHash common.Hash, data []byte, dapReaders *daprovider.ReaderRegistry, keysetValidationMode daprovider.KeysetValidationMode, arbitrumChainParams *params.ArbitrumChainParams) (*SequencerMessage, error) {
 	if len(data) < 40 {
 		return nil, errors.New("sequencer message missing L1 header")
 	}
@@ -117,6 +116,7 @@ func ParseSequencerMessage(ctx context.Context, batchNum uint64, batchBlockHash 
 
 	// Stage 2: If enabled, decode the zero heavy payload (saves gas based on calldata charging).
 	if len(payload) > 0 && daprovider.IsZeroheavyEncodedHeaderByte(payload[0]) {
+		maxZeroheavyDecompressedLen := 101*arbitrumChainParams.MaxUncompressedBatchSize/100 + 64
 		pl, err := io.ReadAll(io.LimitReader(zeroheavy.NewZeroheavyDecoder(bytes.NewReader(payload[1:])), int64(maxZeroheavyDecompressedLen)))
 		if err != nil {
 			log.Warn("error reading from zeroheavy decoder", err.Error())
@@ -127,7 +127,7 @@ func ParseSequencerMessage(ctx context.Context, batchNum uint64, batchBlockHash 
 
 	// Stage 3: Decompress the brotli payload and fill the parsedMsg.segments list.
 	if len(payload) > 0 && daprovider.IsBrotliMessageHeaderByte(payload[0]) {
-		decompressed, err := arbcompress.Decompress(payload[1:], MaxDecompressedLen)
+		decompressed, err := arbcompress.Decompress(payload[1:], int(arbitrumChainParams.MaxUncompressedBatchSize))
 		if err == nil {
 			reader := bytes.NewReader(decompressed)
 			stream := rlp.NewStream(reader, 0)
@@ -166,6 +166,7 @@ func ParseSequencerMessage(ctx context.Context, batchNum uint64, batchBlockHash 
 type inboxMultiplexer struct {
 	backend                   InboxBackend
 	delayedMessagesRead       uint64
+	arbitrumChainParams       *params.ArbitrumChainParams
 	dapReaders                *daprovider.ReaderRegistry
 	cachedSequencerMessage    *SequencerMessage
 	cachedSequencerMessageNum uint64
@@ -180,10 +181,11 @@ type inboxMultiplexer struct {
 	keysetValidationMode daprovider.KeysetValidationMode
 }
 
-func NewInboxMultiplexer(backend InboxBackend, delayedMessagesRead uint64, dapReaders *daprovider.ReaderRegistry, keysetValidationMode daprovider.KeysetValidationMode) arbostypes.InboxMultiplexer {
+func NewInboxMultiplexer(backend InboxBackend, delayedMessagesRead uint64, dapReaders *daprovider.ReaderRegistry, keysetValidationMode daprovider.KeysetValidationMode, arbitrumChainParams *params.ArbitrumChainParams) arbostypes.InboxMultiplexer {
 	return &inboxMultiplexer{
 		backend:                   backend,
 		delayedMessagesRead:       delayedMessagesRead,
+		arbitrumChainParams:       arbitrumChainParams,
 		dapReaders:                dapReaders,
 		cachedSequencerMessage:    nil,
 		cachedSequencerMessageNum: 0,
@@ -212,7 +214,7 @@ func (r *inboxMultiplexer) Pop(ctx context.Context) (*arbostypes.MessageWithMeta
 		}
 		r.cachedSequencerMessageNum = r.backend.GetSequencerInboxPosition()
 		var err error
-		r.cachedSequencerMessage, err = ParseSequencerMessage(ctx, r.cachedSequencerMessageNum, batchBlockHash, bytes, r.dapReaders, r.keysetValidationMode)
+		r.cachedSequencerMessage, err = ParseSequencerMessage(ctx, r.cachedSequencerMessageNum, batchBlockHash, bytes, r.dapReaders, r.keysetValidationMode, r.arbitrumChainParams)
 		if err != nil {
 			return nil, err
 		}

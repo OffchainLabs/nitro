@@ -44,7 +44,13 @@ func BuildBlock(
 	if lastBlockHeader != nil {
 		delayedMessagesRead = lastBlockHeader.Nonce.Uint64()
 	}
-	inboxMultiplexer := arbstate.NewInboxMultiplexer(inbox, delayedMessagesRead, nil, daprovider.KeysetValidate)
+	inboxMultiplexer := arbstate.NewInboxMultiplexer(
+		inbox,
+		delayedMessagesRead,
+		nil,
+		daprovider.KeysetValidate,
+		&getChainConfig().ArbitrumChainParams,
+	)
 
 	ctx := context.Background()
 	message, err := inboxMultiplexer.Pop(ctx)
@@ -231,11 +237,15 @@ func FuzzStateTransition(f *testing.F) {
 			runCtx = core.NewMessageGasEstimationContext()
 		}
 
-		_, err = BuildBlock(statedb, genesis.Header(), noopChainContext{chainConfig: chaininfo.ArbitrumDevTestChainConfig()}, inbox, seqBatch, runCtx)
+		_, err = BuildBlock(statedb, genesis.Header(), noopChainContext{chainConfig: getChainConfig()}, inbox, seqBatch, runCtx)
 		if err != nil {
 			// With the fixed header it shouldn't be possible to read a delayed message,
 			// and no other type of error should be possible.
 			panic(err)
 		}
 	})
+}
+
+func getChainConfig() *params.ChainConfig {
+	return chaininfo.ArbitrumDevTestChainConfig()
 }

@@ -769,7 +769,13 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client *ethclien
 		ctx:    ctx,
 		client: client,
 	}
-	multiplexer := arbstate.NewInboxMultiplexer(backend, prevbatchmeta.DelayedMessageCount, t.dapReaders, daprovider.KeysetValidate)
+	multiplexer := arbstate.NewInboxMultiplexer(
+		backend,
+		prevbatchmeta.DelayedMessageCount,
+		t.dapReaders,
+		daprovider.KeysetValidate,
+		&t.txStreamer.chainConfig.ArbitrumChainParams,
+	)
 	batchMessageCounts := make(map[uint64]arbutil.MessageIndex)
 	currentPos := prevbatchmeta.MessageCount + 1
 	for {
