@@ -23,10 +23,11 @@ import (
 	"github.com/offchainlabs/nitro/util/signature"
 )
 
-// TestMultiWriterFailure_CustomDAShutdown tests that batch posting fails when CustomDA shuts down
+// TestMultiWriterFailure_CustomDAShutdownWithAnyTrustAvailable tests that batch posting fails when CustomDA shuts down
 // without explicit fallback signal. This verifies the new behavior where DA errors must be
-// explicitly signaled via ErrFallbackRequested to trigger fallback.
-func TestMultiWriterFailure_CustomDAShutdown(t *testing.T) {
+// explicitly signaled via ErrFallbackRequested to trigger fallback. Even though AnyTrust is configured
+// and available, it should not be used without an explicit fallback signal.
+func TestMultiWriterFailure_CustomDAShutdownWithAnyTrustAvailable(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -162,9 +163,10 @@ func TestMultiWriterFailure_CustomDAShutdown(t *testing.T) {
 	t.Log("SUCCESS: Batch posting failed as expected when CustomDA shut down without fallback signal")
 }
 
-// TestMultiWriterFailure_CustomDAShutdown_NoAnyTrust tests that batch posting fails when CustomDA
-// shuts down without AnyTrust configured. This verifies failure behavior in a CustomDA-only setup.
-func TestMultiWriterFailure_CustomDAShutdown_NoAnyTrust(t *testing.T) {
+// TestMultiWriterFailure_CustomDAShutdownNoFallbackAvailable tests that batch posting fails when CustomDA
+// shuts down without AnyTrust configured. This verifies failure behavior in a CustomDA-only setup
+// where no fallback DA provider is available.
+func TestMultiWriterFailure_CustomDAShutdownNoFallbackAvailable(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -276,9 +278,11 @@ func TestMultiWriterFailure_CustomDAShutdown_NoAnyTrust(t *testing.T) {
 	t.Log("SUCCESS: Batch posting failed as expected when CustomDA shut down without fallback signal")
 }
 
-// TestMultiWriterFailure_AnyTrustShutdown tests that batch posting fails when AnyTrust shuts down
-// without explicit fallback signal. This verifies failure behavior in an AnyTrust-only setup.
-func TestMultiWriterFailure_AnyTrustShutdown(t *testing.T) {
+// TestMultiWriterFailure_AnyTrustShutdownFallbackDisabled tests that batch posting fails when AnyTrust shuts down
+// and the operator has disabled automatic fallback to calldata. Even though AnyTrust returns
+// ErrFallbackRequested (explicit fallback signal), the operator's DisableDapFallbackStoreDataOnChain
+// setting takes precedence, causing batch posting to fail as intended.
+func TestMultiWriterFailure_AnyTrustShutdownFallbackDisabled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -324,8 +328,8 @@ func TestMultiWriterFailure_AnyTrustShutdown(t *testing.T) {
 	builder.nodeConfig.DataAvailability.RestAggregator.Enable = true
 	builder.nodeConfig.DataAvailability.RestAggregator.Urls = []string{restServerUrl}
 
-	// Enable fallback to on-chain
-	builder.nodeConfig.BatchPoster.DisableDapFallbackStoreDataOnChain = false
+	// Disable fallback to on-chain (operator choice to prevent automatic expensive fallback)
+	builder.nodeConfig.BatchPoster.DisableDapFallbackStoreDataOnChain = true
 
 	// 4. Build L2
 	builder.L2Info = NewArbTestInfo(t, builder.chainConfig.ChainID)
@@ -402,12 +406,12 @@ func TestMultiWriterFailure_AnyTrustShutdown(t *testing.T) {
 			followerBlockBefore, followerBlockAfter)
 	}
 
-	t.Log("SUCCESS: Batch posting failed as expected when AnyTrust shut down without fallback signal")
+	t.Log("SUCCESS: Batch posting failed as expected when operator disabled fallback to calldata")
 }
 
-// TestExplicitFallback_CustomDAToAnyTrust tests that explicit fallback signals work correctly.
+// TestMultiWriterFallback_CustomDAToAnyTrustExplicit tests that explicit fallback signals work correctly.
 // When CustomDA returns ErrFallbackRequested, the batch poster should fall back to AnyTrust.
-func TestExplicitFallback_CustomDAToAnyTrust(t *testing.T) {
+func TestMultiWriterFallback_CustomDAToAnyTrustExplicit(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -636,10 +640,10 @@ func getCustomDAPayloadSize(
 	return len(payloadResult.Payload)
 }
 
-// TestMultiWriterFallback_BatchResizing tests batch resizing when falling back to size-constrained EthDA.
+// TestMultiWriterFallback_CustomDAToCalldataWithBatchResizing tests batch resizing when falling back to size-constrained EthDA.
 // This test verifies that when a large batch built for AltDA (CustomDA) needs to fall back to EthDA,
 // the batch poster correctly splits it into multiple smaller batches that fit within the calldata size limit.
-func TestMultiWriterFallback_BatchResizing(t *testing.T) {
+func TestMultiWriterFallback_CustomDAToCalldataWithBatchResizing(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -868,9 +872,9 @@ func TestMultiWriterFallback_BatchResizing(t *testing.T) {
 	t.Log("Batch resizing worked correctly: large batch for CustomDA split into multiple smaller batches for EthDA")
 }
 
-// TestMultiWriterFallback_AnyTrustBackendFailures tests that when AnyTrust aggregator
-// fails due to insufficient backends, it triggers explicit fallback to the next DA provider.
-func TestMultiWriterFallback_AnyTrustBackendFailures(t *testing.T) {
+// TestMultiWriterFallback_AnyTrustToCalldataOnBackendFailure tests that when AnyTrust aggregator
+// fails due to insufficient backends, it triggers explicit fallback to the next DA provider (Calldata).
+func TestMultiWriterFallback_AnyTrustToCalldataOnBackendFailure(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
