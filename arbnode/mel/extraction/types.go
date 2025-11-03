@@ -8,6 +8,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbnode/mel"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
@@ -64,6 +65,7 @@ type sequencerMessageParserFunc func(
 	data []byte,
 	dapReaders *daprovider.ReaderRegistry,
 	keysetValidationMode daprovider.KeysetValidationMode,
+	arbitrumChainParams *params.ArbitrumChainParams,
 ) (*arbstate.SequencerMessage, error)
 
 // Defines a function that can extract messages from a batch.

@@ -9,6 +9,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbnode/mel"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
@@ -55,11 +56,13 @@ func ExtractMessages(
 	delayedMsgDatabase DelayedMessageDatabase,
 	receiptFetcher ReceiptFetcher,
 	txsFetcher TransactionsFetcher,
+	arbitrumChainParams *params.ArbitrumChainParams,
 ) (*mel.State, []*arbostypes.MessageWithMetadata, []*mel.DelayedInboxMessage, error) {
 	return extractMessagesImpl(
 		ctx,
 		inputState,
 		parentChainHeader,
+		arbitrumChainParams,
 		dataProviders,
 		delayedMsgDatabase,
 		txsFetcher,
@@ -81,6 +84,7 @@ func extractMessagesImpl(
 	ctx context.Context,
 	inputState *mel.State,
 	parentChainHeader *types.Header,
+	arbitrumChainParams *params.ArbitrumChainParams,
 	dataProviders *daprovider.ReaderRegistry,
 	delayedMsgDatabase DelayedMessageDatabase,
 	txsFetcher TransactionsFetcher,
@@ -200,6 +204,7 @@ func extractMessagesImpl(
 			serialized,
 			dataProviders,
 			daprovider.KeysetValidate,
+			arbitrumChainParams,
 		)
 		if err != nil {
 			return nil, nil, nil, err

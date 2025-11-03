@@ -11,6 +11,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbnode/mel"
 	"github.com/offchainlabs/nitro/arbnode/mel/extraction"
@@ -37,6 +38,7 @@ type ParentChainReader interface {
 type MessageExtractor struct {
 	stopwaiter.StopWaiter
 	parentChainReader         ParentChainReader
+	arbitrumChainParams       *params.ArbitrumChainParams
 	addrs                     *chaininfo.RollupAddresses
 	melDB                     *Database
 	msgConsumer               mel.MessageConsumer
@@ -51,6 +53,7 @@ type MessageExtractor struct {
 // to be used when extracting messages from the parent chain.
 func NewMessageExtractor(
 	parentChainReader ParentChainReader,
+	arbitrumChainParams *params.ArbitrumChainParams,
 	rollupAddrs *chaininfo.RollupAddresses,
 	melDB *Database,
 	msgConsumer mel.MessageConsumer,
@@ -67,6 +70,7 @@ func NewMessageExtractor(
 	}
 	return &MessageExtractor{
 		parentChainReader:         parentChainReader,
+		arbitrumChainParams:       arbitrumChainParams,
 		addrs:                     rollupAddrs,
 		melDB:                     melDB,
 		msgConsumer:               msgConsumer,
@@ -223,6 +227,7 @@ func (m *MessageExtractor) Act(ctx context.Context) (time.Duration, error) {
 			m.melDB,
 			receiptFetcher,
 			txsFetcher,
+			m.arbitrumChainParams,
 		)
 		if err != nil {
 			return m.retryInterval, err

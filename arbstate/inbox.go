@@ -117,7 +117,7 @@ func ParseSequencerMessage(ctx context.Context, batchNum uint64, batchBlockHash 
 	// Stage 2: If enabled, decode the zero heavy payload (saves gas based on calldata charging).
 	if len(payload) > 0 && daprovider.IsZeroheavyEncodedHeaderByte(payload[0]) {
 		maxZeroheavyDecompressedLen := 101*arbitrumChainParams.MaxUncompressedBatchSize/100 + 64
-		pl, err := io.ReadAll(io.LimitReader(zeroheavy.NewZeroheavyDecoder(bytes.NewReader(payload[1:])), int64(maxZeroheavyDecompressedLen)))
+		pl, err := io.ReadAll(io.LimitReader(zeroheavy.NewZeroheavyDecoder(bytes.NewReader(payload[1:])), int64(maxZeroheavyDecompressedLen))) // #nosec G115
 		if err != nil {
 			log.Warn("error reading from zeroheavy decoder", err.Error())
 			return parsedMsg, nil
@@ -127,7 +127,7 @@ func ParseSequencerMessage(ctx context.Context, batchNum uint64, batchBlockHash 
 
 	// Stage 3: Decompress the brotli payload and fill the parsedMsg.segments list.
 	if len(payload) > 0 && daprovider.IsBrotliMessageHeaderByte(payload[0]) {
-		decompressed, err := arbcompress.Decompress(payload[1:], int(arbitrumChainParams.MaxUncompressedBatchSize))
+		decompressed, err := arbcompress.Decompress(payload[1:], int(arbitrumChainParams.MaxUncompressedBatchSize)) // #nosec G115
 		if err == nil {
 			reader := bytes.NewReader(decompressed)
 			stream := rlp.NewStream(reader, 0)
