@@ -79,16 +79,17 @@ func (m *mockValidator) GenerateCertificateValidityProof(certificate []byte) con
 
 func createTestCertificate(t *testing.T, data []byte) []byte {
 	// Create a simple test certificate
-	// Format: [header(1), dataHash(32), v(1), r(32), s(32)]
-	cert := make([]byte, 1+32+1+32+32)
+	// Format: [header(1), providerType(1), dataHash(32), v(1), r(32), s(32)]
+	cert := make([]byte, 1+1+32+1+32+32)
 	cert[0] = daprovider.DACertificateMessageHeaderFlag
+	cert[1] = 0xFF // Provider type byte
 
 	// Use Keccak256 for data hash
 	dataHash := crypto.Keccak256(data)
-	copy(cert[1:33], dataHash)
+	copy(cert[2:34], dataHash)
 
 	// Mock signature values (v, r, s)
-	cert[33] = 27 // v
+	cert[34] = 27 // v
 	// r and s are left as zeros for simplicity
 
 	return cert
