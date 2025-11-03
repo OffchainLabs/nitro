@@ -105,10 +105,6 @@ func LoadSigningKey(keyConfig string) (*common.Hash, error) {
 	return &hash, nil
 }
 
-func prependBytes(first []byte, rest ...[]byte) [][]byte {
-	return append([][]byte{first}, rest...)
-}
-
 // On success, extracts the message from the message+signature data passed in, and returns it
 func (h *SimpleHmac) VerifySignature(sig []byte, data ...[]byte) error {
 	if h.config.Dangerous.DisableSignatureVerification {
@@ -118,13 +114,13 @@ func (h *SimpleHmac) VerifySignature(sig []byte, data ...[]byte) error {
 		return fmt.Errorf("%w: signature must be exactly 32 bytes", ErrSignatureNotVerified)
 	}
 
-	expectHmac := crypto.Keccak256Hash(prependBytes(h.signingKey[:], data...)...)
+	expectHmac := crypto.Keccak256Hash(h.signingKey[:], data...)
 	if subtle.ConstantTimeCompare(expectHmac[:], sig) == 1 {
 		return nil
 	}
 
 	if h.fallbackVerificationKey != nil {
-		expectHmac = crypto.Keccak256Hash(prependBytes(h.fallbackVerificationKey[:], data...)...)
+		expectHmac = crypto.Keccak256Hash(h.fallbackVerificationKey[:], data...)
 		if subtle.ConstantTimeCompare(expectHmac[:], sig) == 1 {
 			return nil
 		}
@@ -136,7 +132,7 @@ func (h *SimpleHmac) VerifySignature(sig []byte, data ...[]byte) error {
 func (h *SimpleHmac) SignMessage(data ...[]byte) ([]byte, error) {
 	var hmac [32]byte
 	if h.signingKey != nil {
-		hmac = crypto.Keccak256Hash(prependBytes(h.signingKey[:], data...)...)
+		hmac = crypto.Keccak256Hash(h.signingKey[:], data...)
 	}
 	return hmac[:], nil
 }
