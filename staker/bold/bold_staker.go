@@ -38,7 +38,7 @@ import (
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
-	"github.com/offchainlabs/nitro/validator/server_arb"
+	"github.com/offchainlabs/nitro/validator/proofenhancement"
 )
 
 var (
@@ -233,16 +233,16 @@ func NewBOLDStaker(
 	}
 
 	// Create proof enhancer if registry is available
-	var proofEnhancer server_arb.ProofEnhancer
+	var proofEnhancer proofenhancement.ProofEnhancer
 	if dapRegistry != nil {
-		enhancerManager := server_arb.NewProofEnhancementManager()
+		enhancerManager := proofenhancement.NewProofEnhancementManager()
 		enhancerManager.RegisterEnhancer(
-			server_arb.MarkerCustomDAReadPreimage,
-			server_arb.NewReadPreimageProofEnhancer(dapRegistry, inboxTracker, inboxReader),
+			proofenhancement.MarkerCustomDAReadPreimage,
+			proofenhancement.NewReadPreimageProofEnhancer(dapRegistry, inboxTracker, inboxReader),
 		)
 		enhancerManager.RegisterEnhancer(
-			server_arb.MarkerCustomDAValidateCertificate,
-			server_arb.NewValidateCertificateProofEnhancer(dapRegistry, inboxTracker, inboxReader),
+			proofenhancement.MarkerCustomDAValidateCertificate,
+			proofenhancement.NewValidateCertificateProofEnhancer(dapRegistry, inboxTracker, inboxReader),
 		)
 		proofEnhancer = enhancerManager
 	}
@@ -481,7 +481,7 @@ func newBOLDChallengeManager(
 	inboxTracker staker.InboxTrackerInterface,
 	inboxStreamer staker.TransactionStreamerInterface,
 	inboxReader staker.InboxReaderInterface,
-	proofEnhancer server_arb.ProofEnhancer,
+	proofEnhancer proofenhancement.ProofEnhancer,
 ) (*challengemanager.Manager, error) {
 	// Initializes the BOLD contract bindings and the assertion chain abstraction.
 	rollupBindings, err := rollupgen.NewRollupUserLogic(rollupAddress, client)

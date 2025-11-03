@@ -24,6 +24,7 @@ import (
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/staker/challenge-cache"
 	"github.com/offchainlabs/nitro/validator"
+	"github.com/offchainlabs/nitro/validator/proofenhancement"
 	"github.com/offchainlabs/nitro/validator/server_arb"
 )
 
@@ -43,7 +44,7 @@ type BOLDStateProvider struct {
 	inboxTracker             staker.InboxTrackerInterface
 	inboxStreamer            staker.TransactionStreamerInterface
 	inboxReader              staker.InboxReaderInterface
-	proofEnhancer            server_arb.ProofEnhancer
+	proofEnhancer            proofenhancement.ProofEnhancer
 	sync.RWMutex
 }
 
@@ -56,7 +57,7 @@ func NewBOLDStateProvider(
 	inboxTracker staker.InboxTrackerInterface,
 	inboxStreamer staker.TransactionStreamerInterface,
 	inboxReader staker.InboxReaderInterface,
-	proofEnhancer server_arb.ProofEnhancer,
+	proofEnhancer proofenhancement.ProofEnhancer,
 ) (*BOLDStateProvider, error) {
 	historyCache, err := challengecache.New(machineHashesCachePath)
 	if err != nil {

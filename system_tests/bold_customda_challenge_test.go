@@ -53,6 +53,7 @@ import (
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/util/testhelpers"
+	"github.com/offchainlabs/nitro/validator/proofenhancement"
 	"github.com/offchainlabs/nitro/validator/server_arb"
 	"github.com/offchainlabs/nitro/validator/server_common"
 	"github.com/offchainlabs/nitro/validator/valnode"
@@ -442,24 +443,24 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, 
 	Require(t, blockValidatorB.Start(ctx))
 
 	// Create ProofEnhancers from DA validators
-	proofEnhancerA := server_arb.NewProofEnhancementManager()
-	customDAEnhancerA := server_arb.NewReadPreimageProofEnhancer(dapReadersA, l2nodeA.InboxTracker, l2nodeA.InboxReader)
-	proofEnhancerA.RegisterEnhancer(server_arb.MarkerCustomDAReadPreimage, customDAEnhancerA)
-	validateCertificateEnhancerA := server_arb.NewValidateCertificateProofEnhancer(dapReadersA, l2nodeA.InboxTracker, l2nodeA.InboxReader)
-	proofEnhancerA.RegisterEnhancer(server_arb.MarkerCustomDAValidateCertificate, validateCertificateEnhancerA)
+	proofEnhancerA := proofenhancement.NewProofEnhancementManager()
+	customDAEnhancerA := proofenhancement.NewReadPreimageProofEnhancer(dapReadersA, l2nodeA.InboxTracker, l2nodeA.InboxReader)
+	proofEnhancerA.RegisterEnhancer(proofenhancement.MarkerCustomDAReadPreimage, customDAEnhancerA)
+	validateCertificateEnhancerA := proofenhancement.NewValidateCertificateProofEnhancer(dapReadersA, l2nodeA.InboxTracker, l2nodeA.InboxReader)
+	proofEnhancerA.RegisterEnhancer(proofenhancement.MarkerCustomDAValidateCertificate, validateCertificateEnhancerA)
 
-	proofEnhancerB := server_arb.NewProofEnhancementManager()
-	customDAEnhancerB := server_arb.NewReadPreimageProofEnhancer(dapReadersB, l2nodeB.InboxTracker, l2nodeB.InboxReader)
-	validateCertificateEnhancerB := server_arb.NewValidateCertificateProofEnhancer(dapReadersB, l2nodeB.InboxTracker, l2nodeB.InboxReader)
-	proofEnhancerB.RegisterEnhancer(server_arb.MarkerCustomDAValidateCertificate, validateCertificateEnhancerB)
+	proofEnhancerB := proofenhancement.NewProofEnhancementManager()
+	customDAEnhancerB := proofenhancement.NewReadPreimageProofEnhancer(dapReadersB, l2nodeB.InboxTracker, l2nodeB.InboxReader)
+	validateCertificateEnhancerB := proofenhancement.NewValidateCertificateProofEnhancer(dapReadersB, l2nodeB.InboxTracker, l2nodeB.InboxReader)
+	proofEnhancerB.RegisterEnhancer(proofenhancement.MarkerCustomDAValidateCertificate, validateCertificateEnhancerB)
 
 	// For EvilDataEvilCert strategy, wrap the enhancer to inject evil certificates
 	var evilEnhancer *EvilCustomDAProofEnhancer
 	if evilStrategy == EvilDataEvilCert {
 		evilEnhancer = NewEvilCustomDAProofEnhancer(customDAEnhancerB)
-		proofEnhancerB.RegisterEnhancer(server_arb.MarkerCustomDAReadPreimage, evilEnhancer)
+		proofEnhancerB.RegisterEnhancer(proofenhancement.MarkerCustomDAReadPreimage, evilEnhancer)
 	} else {
-		proofEnhancerB.RegisterEnhancer(server_arb.MarkerCustomDAReadPreimage, customDAEnhancerB)
+		proofEnhancerB.RegisterEnhancer(proofenhancement.MarkerCustomDAReadPreimage, customDAEnhancerB)
 	}
 
 	stateManager, err := bold.NewBOLDStateProvider(

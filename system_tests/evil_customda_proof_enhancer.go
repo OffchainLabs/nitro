@@ -8,7 +8,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 
 	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/offchainlabs/nitro/validator/server_arb"
+	"github.com/offchainlabs/nitro/validator/proofenhancement"
 )
 
 type EvilStrategy int
@@ -23,12 +23,12 @@ const (
 
 // EvilCustomDAProofEnhancer wraps the standard ReadPreimageProofEnhancer to inject evil certificates
 type EvilCustomDAProofEnhancer struct {
-	*server_arb.ReadPreimageProofEnhancer
+	*proofenhancement.ReadPreimageProofEnhancer
 	evilMappings map[common.Hash][]byte // goodCertKeccak -> evil certificate
 }
 
 func NewEvilCustomDAProofEnhancer(
-	standardEnhancer *server_arb.ReadPreimageProofEnhancer,
+	standardEnhancer *proofenhancement.ReadPreimageProofEnhancer,
 ) *EvilCustomDAProofEnhancer {
 	return &EvilCustomDAProofEnhancer{
 		ReadPreimageProofEnhancer: standardEnhancer,
@@ -53,7 +53,7 @@ func (e *EvilCustomDAProofEnhancer) EnhanceProof(ctx context.Context, messageNum
 	certKeccak256Pos := offsetPos - 32
 
 	// Verify marker
-	if proof[markerPos] != server_arb.MarkerCustomDAReadPreimage {
+	if proof[markerPos] != proofenhancement.MarkerCustomDAReadPreimage {
 		return nil, fmt.Errorf("invalid marker for CustomDA enhancer: 0x%02x", proof[markerPos])
 	}
 
