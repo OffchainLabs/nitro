@@ -40,6 +40,7 @@ import (
 	"github.com/offchainlabs/nitro/util/dbutil"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/rpcclient"
+	"github.com/offchainlabs/nitro/util/rpcserver"
 )
 
 type StylusTargetConfig struct {
@@ -113,24 +114,6 @@ func TxIndexerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Duration(prefix+".min-batch-delay", DefaultTxIndexerConfig.MinBatchDelay, "minimum delay between transaction indexing/unindexing batches; the bigger the delay, the more blocks can be included in each batch")
 }
 
-type RPCServerConfig struct {
-	Enable        bool `koanf:"enable"`
-	Public        bool `koanf:"public"`
-	Authenticated bool `koanf:"authenticated"`
-}
-
-var DefaultRPCServerConfig = RPCServerConfig{
-	Enable:        false,
-	Public:        false,
-	Authenticated: true,
-}
-
-func RPCServerAddOptions(prefix string, f *pflag.FlagSet) {
-	f.Bool(prefix+".enable", DefaultRPCServerConfig.Enable, "enable execution node to serve over rpc")
-	f.Bool(prefix+".public", DefaultRPCServerConfig.Public, "rpc is public")
-	f.Bool(prefix+".authenticated", DefaultRPCServerConfig.Authenticated, "rpc is authenticated")
-}
-
 type Config struct {
 	ParentChainReader           headerreader.Config    `koanf:"parent-chain-reader" reload:"hot"`
 	Sequencer                   SequencerConfig        `koanf:"sequencer" reload:"hot"`
@@ -149,7 +132,7 @@ type Config struct {
 	BlockMetadataApiBlocksLimit uint64                 `koanf:"block-metadata-api-blocks-limit"`
 	VmTrace                     LiveTracingConfig      `koanf:"vmtrace"`
 	ExposeMultiGas              bool                   `koanf:"expose-multi-gas"`
-	RPCServer                   RPCServerConfig        `koanf:"rpc-server"`
+	RPCServer                   rpcserver.Config       `koanf:"rpc-server"`
 	ConsensusRPCClient          rpcclient.ClientConfig `koanf:"consensus-rpc-client" reload:"hot"`
 
 	forwardingTarget string
@@ -179,6 +162,9 @@ func (c *Config) Validate() error {
 	if err := c.RPC.Validate(); err != nil {
 		return err
 	}
+	if err := c.ConsensusRPCClient.Validate(); err != nil {
+		return fmt.Errorf("error validating ConsensusRPCClient config: %w", err)
+	}
 	return nil
 }
 
@@ -200,7 +186,7 @@ func ConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Uint64(prefix+".block-metadata-api-blocks-limit", ConfigDefault.BlockMetadataApiBlocksLimit, "maximum number of blocks allowed to be queried for blockMetadata per arb_getRawBlockMetadata query. Enabled by default, set 0 to disable the limit")
 	f.Bool(prefix+".expose-multi-gas", false, "experimental: expose multi-dimensional gas in transaction receipts")
 	LiveTracingConfigAddOptions(prefix+".vmtrace", f)
-	RPCServerAddOptions(prefix+".rpc-server", f)
+	rpcserver.ConfigAddOptions(prefix+".rpc-server", f)
 	rpcclient.RPCClientAddOptions(prefix+".consensus-rpc-client", f, &ConfigDefault.ConsensusRPCClient)
 }
 
@@ -239,9 +225,9 @@ var ConfigDefault = Config{
 	VmTrace:                     DefaultLiveTracingConfig,
 	ExposeMultiGas:              false,
 
-	RPCServer: DefaultRPCServerConfig,
+	RPCServer: rpcserver.DefaultConfig,
 	ConsensusRPCClient: rpcclient.ClientConfig{
-		URL:                       "", // TODO: currently we are implementing json rpc communication with in the same node execution <-> consensus, so for now url=="" implies interconnecting directly instead of over jsonrpc. When enabled url would be 0.0.0.0:8547
+		URL:                       "",
 		JWTSecret:                 "",
 		Retries:                   3,
 		RetryErrors:               "websocket: close.*|dial tcp .*|.*i/o timeout|.*connection reset by peer|.*connection refused",
@@ -385,7 +371,7 @@ func CreateExecutionNode(
 
 	if config.ConsensusRPCClient.URL != "" {
 		consensusConfigFetcher := func() *rpcclient.ClientConfig { return &config.ConsensusRPCClient }
-		execNode.consensusRPCClient = consensusrpcclient.NewConsensusRpcClient(consensusConfigFetcher, nil)
+		execNode.consensusRPCClient = consensusrpcclient.NewConsensusRPCClient(consensusConfigFetcher, nil)
 	}
 
 	apis := []rpc.API{{
@@ -436,7 +422,7 @@ func CreateExecutionNode(
 		apis = append(apis, rpc.API{
 			Namespace:     execution.RPCNamespace,
 			Version:       "1.0",
-			Service:       executionrpcserver.NewExecutionRpcServer(execNode),
+			Service:       executionrpcserver.NewExecutionRPCServer(execNode),
 			Public:        config.RPCServer.Public,
 			Authenticated: config.RPCServer.Authenticated,
 		})

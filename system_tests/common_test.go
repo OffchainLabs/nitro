@@ -377,12 +377,12 @@ func (b *NodeBuilder) DontParalellise() *NodeBuilder {
 	return b
 }
 
-func (b *NodeBuilder) WithJsonRPCInterconnect(t *testing.T) *NodeBuilder {
-	configureJsonRPCInterconnect(t, b.execConfig, b.nodeConfig, b.l2StackConfig)
+func (b *NodeBuilder) WithConsensusExecutionOverRPC(t *testing.T) *NodeBuilder {
+	configureConsensusExecutionOverRPC(t, b.execConfig, b.nodeConfig, b.l2StackConfig)
 	return b
 }
 
-func configureJsonRPCInterconnect(t *testing.T, execConfig *gethexec.Config, nodeConfig *arbnode.Config, l2StackConfig *node.Config) {
+func configureConsensusExecutionOverRPC(t *testing.T, execConfig *gethexec.Config, nodeConfig *arbnode.Config, l2StackConfig *node.Config) {
 	var httpHost string
 	if l2StackConfig.HTTPHost == "" || l2StackConfig.HTTPHost == "localhost" {
 		l2StackConfig.HTTPHost = "localhost"
@@ -479,8 +479,8 @@ func (b *NodeBuilder) TakeOwnership() *NodeBuilder {
 }
 
 func (b *NodeBuilder) Build(t *testing.T) func() {
-	if *testflag.ExecutionConsensusJSONRPCInterconnect {
-		b.WithJsonRPCInterconnect(t)
+	if *testflag.ConsensusExecutionUseRPC {
+		b.WithConsensusExecutionOverRPC(t)
 	}
 	if b.parallelise {
 		b.parallelise = false
@@ -988,7 +988,7 @@ func build2ndNode(
 		params.stackConfig = firstNodeStackConfig
 		// should use different dataDir from the previously used ones
 		params.stackConfig.DataDir = t.TempDir()
-		params.stackConfig.HTTPPort = 0 // to avoid using the same http port as first node, in case firstNodeStackConfig has jsonrpcinterconnect enabled
+		params.stackConfig.HTTPPort = 0
 	}
 	if params.initData == nil {
 		params.initData = &firstNodeInfo.ArbInitData
@@ -1009,8 +1009,8 @@ func build2ndNode(
 	if firstNodeNodeConfig.BatchPoster.Enable && params.nodeConfig.BatchPoster.Enable && params.nodeConfig.BatchPoster.RedisUrl == "" {
 		t.Fatal("The batch poster must use Redis when enabled for multiple nodes")
 	}
-	if *testflag.ExecutionConsensusJSONRPCInterconnect {
-		configureJsonRPCInterconnect(t, params.execConfig, params.nodeConfig, params.stackConfig)
+	if *testflag.ConsensusExecutionUseRPC {
+		configureConsensusExecutionOverRPC(t, params.execConfig, params.nodeConfig, params.stackConfig)
 	}
 
 	var cleanup func()
@@ -1886,7 +1886,7 @@ func Create2ndNodeWithConfig(
 	Require(t, err)
 	consensusConfigFetcher := NewCommonConfigFetcher(nodeConfig)
 	if useExecutionClientOnly {
-		currentNode, err = arbnode.CreateNodeExecutionClient(ctx, chainStack, currentExec, arbDb, consensusConfigFetcher, blockchain.Config(), parentChainClient, addresses, &validatorTxOpts, &sequencerTxOpts, dataSigner, feedErrChan, big.NewInt(1337), nil, locator.LatestWasmModuleRoot())
+		currentNode, err = arbnode.CreateConsensusNodeConnectedWithSimpleExecutionClient(ctx, chainStack, currentExec, arbDb, consensusConfigFetcher, blockchain.Config(), parentChainClient, addresses, &validatorTxOpts, &sequencerTxOpts, dataSigner, feedErrChan, big.NewInt(1337), nil, locator.LatestWasmModuleRoot())
 	} else {
 		currentNode, err = arbnode.CreateConsensusNodeConnectedWithFullExecutionClient(ctx, chainStack, currentExec, arbDb, consensusConfigFetcher, blockchain.Config(), parentChainClient, addresses, &validatorTxOpts, &sequencerTxOpts, dataSigner, feedErrChan, big.NewInt(1337), nil, locator.LatestWasmModuleRoot())
 	}

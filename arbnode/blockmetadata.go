@@ -241,7 +241,6 @@ func (b *BlockMetadataFetcher) Update(ctx context.Context) time.Duration {
 	return b.config.SyncInterval
 }
 
-// InitializeTrackBlockMetadataFrom is only used for testing purposes
 func (b *BlockMetadataFetcher) InitializeTrackBlockMetadataFrom(ctx context.Context) error {
 	var err error
 	if b.startBlockNum != 0 {

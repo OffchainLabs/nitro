@@ -571,7 +571,7 @@ func mainImpl() int {
 			return 1
 		}
 	} else {
-		consensusNode, err = arbnode.CreateNodeExecutionClient(
+		consensusNode, err = arbnode.CreateConsensusNodeConnectedWithSimpleExecutionClient(
 			ctx,
 			stack,
 			nil,
@@ -766,33 +766,31 @@ func mainImpl() int {
 }
 
 type NodeConfig struct {
-	Conf                   genericconf.ConfConfig          `koanf:"conf" reload:"hot"`
-	Node                   arbnode.Config                  `koanf:"node" reload:"hot"`
-	Execution              gethexec.Config                 `koanf:"execution" reload:"hot"`
-	Validation             valnode.Config                  `koanf:"validation" reload:"hot"`
-	ParentChain            conf.ParentChainConfig          `koanf:"parent-chain" reload:"hot"`
-	Chain                  conf.L2Config                   `koanf:"chain"`
-	LogLevel               string                          `koanf:"log-level" reload:"hot"`
-	LogType                string                          `koanf:"log-type" reload:"hot"`
-	FileLogging            genericconf.FileLoggingConfig   `koanf:"file-logging" reload:"hot"`
-	Persistent             conf.PersistentConfig           `koanf:"persistent"`
-	HTTP                   genericconf.HTTPConfig          `koanf:"http"`
-	WS                     genericconf.WSConfig            `koanf:"ws"`
-	IPC                    genericconf.IPCConfig           `koanf:"ipc"`
-	Auth                   genericconf.AuthRPCConfig       `koanf:"auth"`
-	GraphQL                genericconf.GraphQLConfig       `koanf:"graphql"`
-	Metrics                bool                            `koanf:"metrics"`
-	MetricsServer          genericconf.MetricsServerConfig `koanf:"metrics-server"`
-	PProf                  bool                            `koanf:"pprof"`
-	PprofCfg               genericconf.PProf               `koanf:"pprof-cfg"`
-	Init                   conf.InitConfig                 `koanf:"init"`
-	Rpc                    genericconf.RpcConfig           `koanf:"rpc"`
-	BlocksReExecutor       blocksreexecutor.Config         `koanf:"blocks-reexecutor"`
-	EnsureRollupDeployment bool                            `koanf:"ensure-rollup-deployment" reload:"hot"`
-
-	// Below options allow users either
-	ExecutionNode            bool `koanf:"execution-node"` // true- just using execution client interface for now
-	ConsensusExecutionUseRPC bool `koanf:"consensus-execution-use-rpc"`
+	Conf                     genericconf.ConfConfig          `koanf:"conf" reload:"hot"`
+	Node                     arbnode.Config                  `koanf:"node" reload:"hot"`
+	Execution                gethexec.Config                 `koanf:"execution" reload:"hot"`
+	Validation               valnode.Config                  `koanf:"validation" reload:"hot"`
+	ParentChain              conf.ParentChainConfig          `koanf:"parent-chain" reload:"hot"`
+	Chain                    conf.L2Config                   `koanf:"chain"`
+	LogLevel                 string                          `koanf:"log-level" reload:"hot"`
+	LogType                  string                          `koanf:"log-type" reload:"hot"`
+	FileLogging              genericconf.FileLoggingConfig   `koanf:"file-logging" reload:"hot"`
+	Persistent               conf.PersistentConfig           `koanf:"persistent"`
+	HTTP                     genericconf.HTTPConfig          `koanf:"http"`
+	WS                       genericconf.WSConfig            `koanf:"ws"`
+	IPC                      genericconf.IPCConfig           `koanf:"ipc"`
+	Auth                     genericconf.AuthRPCConfig       `koanf:"auth"`
+	GraphQL                  genericconf.GraphQLConfig       `koanf:"graphql"`
+	Metrics                  bool                            `koanf:"metrics"`
+	MetricsServer            genericconf.MetricsServerConfig `koanf:"metrics-server"`
+	PProf                    bool                            `koanf:"pprof"`
+	PprofCfg                 genericconf.PProf               `koanf:"pprof-cfg"`
+	Init                     conf.InitConfig                 `koanf:"init"`
+	Rpc                      genericconf.RpcConfig           `koanf:"rpc"`
+	BlocksReExecutor         blocksreexecutor.Config         `koanf:"blocks-reexecutor"`
+	EnsureRollupDeployment   bool                            `koanf:"ensure-rollup-deployment" reload:"hot"`
+	ExecutionNode            bool                            `koanf:"execution-node"`
+	ConsensusExecutionUseRPC bool                            `koanf:"consensus_execution_use_rpc"`
 }
 
 var NodeConfigDefault = NodeConfig{
@@ -849,7 +847,7 @@ func NodeConfigAddOptions(f *pflag.FlagSet) {
 	blocksreexecutor.ConfigAddOptions("blocks-reexecutor", f)
 	f.Bool("ensure-rollup-deployment", NodeConfigDefault.EnsureRollupDeployment, "before starting the node, wait until the transaction that deployed rollup is finalized")
 	f.Bool("execution-node", NodeConfigDefault.ExecutionNode, "implies running nitro with both consensus and execution nodes, if false, then requires --node.execution-rpc-client.* config to connect to execution client over rpc")
-	f.Bool("consensus-execution-use-rpc", NodeConfigDefault.ConsensusExecutionUseRPC, "when both consensus and execution node are enabled this options allow them to communicate over rpc- mainly for testing purpose")
+	f.Bool("consensus_execution_use_rpc", NodeConfigDefault.ConsensusExecutionUseRPC, "when both consensus and execution node are enabled this options allow them to communicate over rpc- mainly for testing purpose")
 }
 
 func (c *NodeConfig) ResolveDirectoryNames() error {
@@ -919,9 +917,6 @@ func (c *NodeConfig) Validate() error {
 	if !c.ExecutionNode {
 		if c.Node.ExecutionRPCClient.URL == "" {
 			return errors.New("starting consensus only node with empty executionRPCClient url")
-		}
-		if c.ConsensusExecutionUseRPC {
-			return errors.New("starting without an execution node but have ConsensusExecutionUseRPC set")
 		}
 	} else {
 		if c.ConsensusExecutionUseRPC {

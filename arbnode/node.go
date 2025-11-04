@@ -43,7 +43,7 @@ import (
 	"github.com/offchainlabs/nitro/daprovider/daclient"
 	"github.com/offchainlabs/nitro/daprovider/das"
 	"github.com/offchainlabs/nitro/daprovider/data_streaming"
-	"github.com/offchainlabs/nitro/daprovider/server"
+	dapserver "github.com/offchainlabs/nitro/daprovider/server"
 	"github.com/offchainlabs/nitro/execution"
 	executionrpcclient "github.com/offchainlabs/nitro/execution/rpcclient"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
@@ -58,27 +58,10 @@ import (
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/redisutil"
 	"github.com/offchainlabs/nitro/util/rpcclient"
+	"github.com/offchainlabs/nitro/util/rpcserver"
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
-
-type RPCServerConfig struct {
-	Enable        bool `koanf:"enable"`
-	Public        bool `koanf:"public"`
-	Authenticated bool `koanf:"authenticated"`
-}
-
-var DefaultRPCServerConfig = RPCServerConfig{
-	Enable:        false,
-	Public:        false,
-	Authenticated: true,
-}
-
-func RPCServerAddOptions(prefix string, f *pflag.FlagSet) {
-	f.Bool(prefix+".enable", DefaultRPCServerConfig.Enable, "enable consensus node to serve over rpc")
-	f.Bool(prefix+".public", DefaultRPCServerConfig.Public, "rpc is public")
-	f.Bool(prefix+".authenticated", DefaultRPCServerConfig.Authenticated, "rpc is authenticated")
-}
 
 type Config struct {
 	Sequencer                bool                           `koanf:"sequencer"`
@@ -101,7 +84,7 @@ type Config struct {
 	ResourceMgmt             resourcemanager.Config         `koanf:"resource-mgmt" reload:"hot"`
 	BlockMetadataFetcher     BlockMetadataFetcherConfig     `koanf:"block-metadata-fetcher" reload:"hot"`
 	ConsensusExecutionSyncer ConsensusExecutionSyncerConfig `koanf:"consensus-execution-syncer"`
-	RPCServer                RPCServerConfig                `koanf:"rpc-server"`
+	RPCServer                rpcserver.Config               `koanf:"rpc-server"`
 	ExecutionRPCClient       rpcclient.ClientConfig         `koanf:"execution-rpc-client" reload:"hot"`
 	// SnapSyncConfig is only used for testing purposes, these should not be configured in production.
 	SnapSyncTest SnapSyncConfig
@@ -185,7 +168,7 @@ func ConfigAddOptions(prefix string, f *pflag.FlagSet, feedInputEnable bool, fee
 	resourcemanager.ConfigAddOptions(prefix+".resource-mgmt", f)
 	BlockMetadataFetcherConfigAddOptions(prefix+".block-metadata-fetcher", f)
 	ConsensusExecutionSyncerConfigAddOptions(prefix+".consensus-execution-syncer", f)
-	RPCServerAddOptions(prefix+".rpc-server", f)
+	rpcserver.ConfigAddOptions(prefix+".rpc-server", f)
 	rpcclient.RPCClientAddOptions(prefix+".execution-rpc-client", f, &ConfigDefault.ExecutionRPCClient)
 }
 
@@ -211,7 +194,7 @@ var ConfigDefault = Config{
 	Maintenance:              DefaultMaintenanceConfig,
 	ConsensusExecutionSyncer: DefaultConsensusExecutionSyncerConfig,
 	SnapSyncTest:             DefaultSnapSyncConfig,
-	RPCServer:                DefaultRPCServerConfig,
+	RPCServer:                rpcserver.DefaultConfig,
 	ExecutionRPCClient: rpcclient.ClientConfig{
 		URL:                       "",
 		JWTSecret:                 "",
@@ -1317,7 +1300,7 @@ func registerAPIs(currentNode *Node, stack *node.Node) {
 		apis = append(apis, rpc.API{
 			Namespace:     consensus.RPCNamespace,
 			Version:       "1.0",
-			Service:       consensusrpcserver.NewConsensusRpcServer(currentNode),
+			Service:       consensusrpcserver.NewConsensusRPCServer(currentNode),
 			Public:        config.RPCServer.Public,
 			Authenticated: config.RPCServer.Authenticated,
 		})
@@ -1325,7 +1308,7 @@ func registerAPIs(currentNode *Node, stack *node.Node) {
 	stack.RegisterAPIs(apis)
 }
 
-func CreateNodeExecutionClient(
+func CreateConsensusNodeConnectedWithSimpleExecutionClient(
 	ctx context.Context,
 	stack *node.Node,
 	executionClient execution.ExecutionClient,
@@ -1344,7 +1327,7 @@ func CreateNodeExecutionClient(
 ) (*Node, error) {
 	if configFetcher.Get().ExecutionRPCClient.URL != "" {
 		execConfigFetcher := func() *rpcclient.ClientConfig { return &configFetcher.Get().ExecutionRPCClient }
-		executionClient = executionrpcclient.NewExecutionRpcClient(execConfigFetcher, nil)
+		executionClient = executionrpcclient.NewExecutionRPCClient(execConfigFetcher, nil)
 	}
 	if executionClient == nil {
 		return nil, errors.New("execution client must be non-nil")
@@ -1380,7 +1363,7 @@ func CreateConsensusNodeConnectedWithFullExecutionClient(
 	var executionClient execution.ExecutionClient
 	if configFetcher.Get().ExecutionRPCClient.URL != "" {
 		execConfigFetcher := func() *rpcclient.ClientConfig { return &configFetcher.Get().ExecutionRPCClient }
-		executionClient = executionrpcclient.NewExecutionRpcClient(execConfigFetcher, nil)
+		executionClient = executionrpcclient.NewExecutionRPCClient(execConfigFetcher, nil)
 	} else {
 		executionClient = fullExecutionClient
 	}

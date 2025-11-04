@@ -151,8 +151,8 @@ func TestDASRekey(t *testing.T) {
 	// Restart the node on the new keyset against the new DAS server running on the same disk as the first with new keys
 	builder.nodeConfig.DataAvailability.RPCAggregator = aggConfigForBackend(backendConfigB)
 	builder.l2StackConfig = testhelpers.CreateStackConfigForTest(builder.dataDir)
-	if *testflag.ExecutionConsensusJSONRPCInterconnect {
-		configureJsonRPCInterconnect(t, builder.execConfig, builder.nodeConfig, builder.l2StackConfig)
+	if *testflag.ConsensusExecutionUseRPC {
+		configureConsensusExecutionOverRPC(t, builder.execConfig, builder.nodeConfig, builder.l2StackConfig)
 	}
 	cleanup := builder.BuildL2OnL1(t)
 	defer cleanup()

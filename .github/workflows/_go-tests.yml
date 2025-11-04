@@ -89,7 +89,7 @@ jobs:
         if: matrix.test-mode == 'defaults'
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh 
-          --tags cionly --timeout 60m --test_state_scheme hash --execution_consensus_jsonrpc_interconnect
+          --tags cionly --timeout 60m --test_state_scheme hash --consensus_execution_use_rpc
 
       - name: run redis tests
         if: matrix.test-mode == 'defaults-A'

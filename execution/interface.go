@@ -95,6 +95,7 @@ type ArbOSVersionGetter interface {
 }
 
 type FullExecutionClient interface {
+	ExecutionClient
 	ExecutionSequencer
 	ExecutionRecorder
 }

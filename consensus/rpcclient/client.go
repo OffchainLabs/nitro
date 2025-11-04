@@ -21,7 +21,7 @@ type ConsensusRPCClient struct {
 	client *rpcclient.RpcClient
 }
 
-func NewConsensusRpcClient(config rpcclient.ClientConfigFetcher, stack *node.Node) *ConsensusRPCClient {
+func NewConsensusRPCClient(config rpcclient.ClientConfigFetcher, stack *node.Node) *ConsensusRPCClient {
 	return &ConsensusRPCClient{
 		client: rpcclient.NewRpcClient(config, stack),
 	}
@@ -48,10 +48,7 @@ func (c *ConsensusRPCClient) FindInboxBatchContainingMessage(message arbutil.Mes
 	return stopwaiter.LaunchPromiseThread(c, func(ctx context.Context) (consensus.InboxBatch, error) {
 		var res consensus.InboxBatch
 		err := c.client.CallContext(ctx, &res, consensus.RPCNamespace+"_findInboxBatchContainingMessage", message)
-		if err != nil {
-			return consensus.InboxBatch{BatchNum: 0, Found: false}, convertError(err)
-		}
-		return res, nil
+		return res, convertError(err)
 	})
 }
 
@@ -59,10 +56,7 @@ func (c *ConsensusRPCClient) GetBatchParentChainBlock(seqNum uint64) containers.
 	return stopwaiter.LaunchPromiseThread(c, func(ctx context.Context) (uint64, error) {
 		var res uint64
 		err := c.client.CallContext(ctx, &res, consensus.RPCNamespace+"_getBatchParentChainBlock", seqNum)
-		if err != nil {
-			return 0, convertError(err)
-		}
-		return res, nil
+		return res, convertError(err)
 	})
 }
 
@@ -70,10 +64,7 @@ func (c *ConsensusRPCClient) BlockMetadataAtMessageIndex(msgIdx arbutil.MessageI
 	return stopwaiter.LaunchPromiseThread(c, func(ctx context.Context) (common.BlockMetadata, error) {
 		var res common.BlockMetadata
 		err := c.client.CallContext(ctx, &res, consensus.RPCNamespace+"_blockMetadataAtMessageIndex", msgIdx)
-		if err != nil {
-			return nil, convertError(err)
-		}
-		return res, nil
+		return res, convertError(err)
 	})
 }
 
@@ -81,10 +72,7 @@ func (c *ConsensusRPCClient) WriteMessageFromSequencer(msgIdx arbutil.MessageInd
 	return stopwaiter.LaunchPromiseThread(c, func(ctx context.Context) (struct{}, error) {
 		var res struct{}
 		err := c.client.CallContext(ctx, &res, consensus.RPCNamespace+"_writeMessageFromSequencer", msgIdx, msgWithMeta, msgResult, blockMetadata)
-		if err != nil {
-			return struct{}{}, convertError(err)
-		}
-		return res, nil
+		return res, convertError(err)
 	})
 }
 
@@ -92,9 +80,6 @@ func (c *ConsensusRPCClient) ExpectChosenSequencer() containers.PromiseInterface
 	return stopwaiter.LaunchPromiseThread(c, func(ctx context.Context) (struct{}, error) {
 		var res struct{}
 		err := c.client.CallContext(ctx, &res, consensus.RPCNamespace+"_expectChosenSequencer")
-		if err != nil {
-			return struct{}{}, convertError(err)
-		}
-		return res, nil
+		return res, convertError(err)
 	})
 }

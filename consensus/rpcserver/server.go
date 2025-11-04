@@ -15,7 +15,7 @@ type ConsensusRPCServer struct {
 	consensus consensus.FullConsensusClient
 }
 
-func NewConsensusRpcServer(consensus consensus.FullConsensusClient) *ConsensusRPCServer {
+func NewConsensusRPCServer(consensus consensus.FullConsensusClient) *ConsensusRPCServer {
 	return &ConsensusRPCServer{consensus}
 }
 

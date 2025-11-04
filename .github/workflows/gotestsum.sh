@@ -16,7 +16,7 @@ junitfile=""
 log=true
 race=false
 cover=false
-execution_consensus_jsonrpc_interconnect=false
+consensus_execution_use_rpc=false
 flaky=false
 while [[ $# -gt 0 ]]; do
   case $1 in
@@ -58,8 +58,8 @@ while [[ $# -gt 0 ]]; do
       cover=true
       shift
       ;;
-    --execution_consensus_jsonrpc_interconnect)
-      execution_consensus_jsonrpc_interconnect=true
+    --consensus_execution_use_rpc)
+     consensus_execution_use_rpc=true
       shift
       ;;
     --nolog)
@@ -135,8 +135,8 @@ else
     cmd="$cmd -args -- --test_loglevel=8" # Use error log level, which is the value 8 in the slog level enum for tests.
 fi
 
-if [ "$execution_consensus_jsonrpc_interconnect" == true ]; then
-    cmd="$cmd --execution_consensus_jsonrpc_interconnect=true"
+if [ "$consensus_execution_use_rpc" == true ]; then
+    cmd="$cmd --consensus_execution_use_rpc=true"
 fi
 
 if [ "$log" == true ]; then
