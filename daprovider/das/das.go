@@ -21,6 +21,7 @@ type DataAvailabilityServiceHealthChecker interface {
 	HealthCheck(ctx context.Context) error
 }
 
+// This specifically refers to AnyTrust DA Config and will be moved/renamed in future.
 type DataAvailabilityConfig struct {
 	Enable bool `koanf:"enable"`
 
@@ -38,9 +39,6 @@ type DataAvailabilityConfig struct {
 	RPCAggregator  AggregatorConfig              `koanf:"rpc-aggregator"`
 	RestAggregator RestfulClientAggregatorConfig `koanf:"rest-aggregator"`
 
-	ParentChainNodeURL              string `koanf:"parent-chain-node-url"`
-	ParentChainConnectionAttempts   int    `koanf:"parent-chain-connection-attempts"`
-	SequencerInboxAddress           string `koanf:"sequencer-inbox-address"`
 	ExtraSignatureCheckingPublicKey string `koanf:"extra-signature-checking-public-key"`
 
 	PanicOnError             bool `koanf:"panic-on-error"`
@@ -48,12 +46,11 @@ type DataAvailabilityConfig struct {
 }
 
 var DefaultDataAvailabilityConfig = DataAvailabilityConfig{
-	RequestTimeout:                5 * time.Second,
-	Enable:                        false,
-	RestAggregator:                DefaultRestfulClientAggregatorConfig,
-	RPCAggregator:                 DefaultAggregatorConfig,
-	ParentChainConnectionAttempts: 15,
-	PanicOnError:                  false,
+	RequestTimeout: 5 * time.Second,
+	Enable:         false,
+	RestAggregator: DefaultRestfulClientAggregatorConfig,
+	RPCAggregator:  DefaultAggregatorConfig,
+	PanicOnError:   false,
 }
 
 func OptionalAddressFromString(s string) (*common.Address, error) {
@@ -114,10 +111,6 @@ func dataAvailabilityConfigAddOptions(prefix string, f *pflag.FlagSet, r role) {
 
 	// Both the Nitro node and daserver can use these options.
 	RestfulClientAggregatorConfigAddOptions(prefix+".rest-aggregator", f)
-
-	f.String(prefix+".parent-chain-node-url", DefaultDataAvailabilityConfig.ParentChainNodeURL, "URL for parent chain node, only used in standalone daserver and daprovider; when running as part of a node that node's L1 configuration is used")
-	f.Int(prefix+".parent-chain-connection-attempts", DefaultDataAvailabilityConfig.ParentChainConnectionAttempts, "parent chain RPC connection attempts (spaced out at least 1 second per attempt, 0 to retry infinitely), only used in standalone daserver; when running as part of a node that node's parent chain configuration is used")
-	f.String(prefix+".sequencer-inbox-address", DefaultDataAvailabilityConfig.SequencerInboxAddress, "parent chain address of SequencerInbox contract")
 }
 
 func GetL1Client(ctx context.Context, maxConnectionAttempts int, l1URL string) (*ethclient.Client, error) {

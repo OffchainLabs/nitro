@@ -120,7 +120,7 @@ func CreateDAReaderAndWriter(
 	// Done checking config requirements
 
 	var daWriter dasutil.DASWriter
-	daWriter, err := NewRPCAggregator(ctx, *config, dataSigner)
+	daWriter, err := NewRPCAggregatorWithL1Info(*config, l1Reader, sequencerInboxAddr, dataSigner)
 	if err != nil {
 		return nil, nil, nil, nil, err
 	}

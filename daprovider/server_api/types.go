@@ -7,9 +7,9 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 )
 
-// SupportedHeaderBytesResult is the result struct that data availability providers should use to respond with their supported header bytes
+// SupportedHeaderBytesResult is the result struct that data availability providers should use to respond with their supported header byte strings
 type SupportedHeaderBytesResult struct {
-	HeaderBytes hexutil.Bytes `json:"headerBytes,omitempty"`
+	HeaderBytes []hexutil.Bytes `json:"headerBytes,omitempty"`
 }
 
 // StoreResult is the result struct that data availability providers should use to respond with a commitment to a Store request for posting batch data to their DA service

@@ -138,9 +138,9 @@ func NewServerForDAS(
 		reader,
 		writer,
 		nil, // DAS doesn't use a validator
-		[]byte{
-			daprovider.DASMessageHeaderFlag,
-			daprovider.DASMessageHeaderFlag | daprovider.TreeDASMessageHeaderFlag,
+		[][]byte{
+			{daprovider.DASMessageHeaderFlag},
+			{daprovider.DASMessageHeaderFlag | daprovider.TreeDASMessageHeaderFlag},
 		},
 		data_streaming.PayloadCommitmentVerifier(),
 	)

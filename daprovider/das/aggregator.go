@@ -25,6 +25,7 @@ import (
 	"github.com/offchainlabs/nitro/daprovider/data_streaming"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/util/pretty"
+	"github.com/offchainlabs/nitro/util/rpcclient"
 )
 
 const metricBase string = "arb/das/rpc/aggregator/store"
@@ -51,6 +52,7 @@ var DefaultAggregatorConfig = AggregatorConfig{
 		ServerUrl:          "",
 		EnableChunkedStore: true,
 		DataStream:         data_streaming.DefaultDataStreamerConfig(DefaultDataStreamRpcMethods),
+		RPC:                rpcclient.DefaultClientConfig,
 	},
 }
 
@@ -96,24 +98,6 @@ func NewServiceDetails(service dasutil.DASWriter, pubKey blsSignatures.PublicKey
 		signersMask: signersMask,
 		metricName:  metricName,
 	}, nil
-}
-
-func NewAggregator(ctx context.Context, config DataAvailabilityConfig, services []ServiceDetails) (*Aggregator, error) {
-	if config.ParentChainNodeURL == "none" {
-		return NewAggregatorWithSeqInboxCaller(config, services, nil)
-	}
-	l1client, err := GetL1Client(ctx, config.ParentChainConnectionAttempts, config.ParentChainNodeURL)
-	if err != nil {
-		return nil, err
-	}
-	seqInboxAddress, err := OptionalAddressFromString(config.SequencerInboxAddress)
-	if err != nil {
-		return nil, err
-	}
-	if seqInboxAddress == nil {
-		return NewAggregatorWithSeqInboxCaller(config, services, nil)
-	}
-	return NewAggregatorWithL1Info(config, services, l1client, *seqInboxAddress)
 }
 
 func NewAggregatorWithL1Info(

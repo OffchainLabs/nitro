@@ -34,7 +34,7 @@ type DAProviderFactory interface {
 	CreateWriter(ctx context.Context) (daprovider.Writer, func(), error)
 	CreateValidator(ctx context.Context) (daprovider.Validator, func(), error)
 	ValidateConfig() error
-	GetSupportedHeaderBytes() []byte
+	GetSupportedHeaderBytes() [][]byte
 }
 
 type AnyTrustFactory struct {
@@ -87,11 +87,11 @@ func NewDAProviderFactory(
 }
 
 // AnyTrust Factory Implementation
-func (f *AnyTrustFactory) GetSupportedHeaderBytes() []byte {
+func (f *AnyTrustFactory) GetSupportedHeaderBytes() [][]byte {
 	// Support both DAS without tree flag (0x80) and with tree flag (0x88)
-	return []byte{
-		daprovider.DASMessageHeaderFlag,
-		daprovider.DASMessageHeaderFlag | daprovider.TreeDASMessageHeaderFlag,
+	return [][]byte{
+		{daprovider.DASMessageHeaderFlag},
+		{daprovider.DASMessageHeaderFlag | daprovider.TreeDASMessageHeaderFlag},
 	}
 }
 
@@ -178,8 +178,11 @@ func (f *AnyTrustFactory) CreateValidator(ctx context.Context) (daprovider.Valid
 }
 
 // ReferenceDA Factory Implementation
-func (f *ReferenceDAFactory) GetSupportedHeaderBytes() []byte {
-	return []byte{daprovider.DACertificateMessageHeaderFlag}
+func (f *ReferenceDAFactory) GetSupportedHeaderBytes() [][]byte {
+	// ReferenceDA uses DACertificateMessageHeaderFlag (0x01) followed by referenceDAProviderType (0xFF)
+	return [][]byte{
+		{daprovider.DACertificateMessageHeaderFlag, 0xFF},
+	}
 }
 
 func (f *ReferenceDAFactory) ValidateConfig() error {

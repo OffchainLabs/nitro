@@ -9,9 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
-	"os"
-	"path"
-	"path/filepath"
 	"strings"
 
 	"github.com/spf13/pflag"
@@ -36,12 +33,12 @@ import (
 	"github.com/offchainlabs/nitro/broadcastclients"
 	"github.com/offchainlabs/nitro/broadcaster"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
-	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/daprovider"
+	daconfig "github.com/offchainlabs/nitro/daprovider/config"
 	"github.com/offchainlabs/nitro/daprovider/daclient"
 	"github.com/offchainlabs/nitro/daprovider/das"
 	"github.com/offchainlabs/nitro/daprovider/data_streaming"
-	"github.com/offchainlabs/nitro/daprovider/server"
+	"github.com/offchainlabs/nitro/daprovider/factory"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
@@ -73,7 +70,7 @@ type Config struct {
 	Bold                     bold.BoldConfig                `koanf:"bold"`
 	SeqCoordinator           SeqCoordinatorConfig           `koanf:"seq-coordinator"`
 	DataAvailability         das.DataAvailabilityConfig     `koanf:"data-availability"`
-	DAProvider               daclient.ClientConfig          `koanf:"da-provider" reload:"hot"`
+	DA                       daconfig.DAConfig              `koanf:"da" reload:"hot"`
 	SyncMonitor              SyncMonitorConfig              `koanf:"sync-monitor"`
 	Dangerous                DangerousConfig                `koanf:"dangerous"`
 	TransactionStreamer      TransactionStreamerConfig      `koanf:"transaction-streamer" reload:"hot"`
@@ -117,6 +114,9 @@ func (c *Config) Validate() error {
 	if err := c.SeqCoordinator.Validate(); err != nil {
 		return err
 	}
+	if err := c.DA.Validate(); err != nil {
+		return err
+	}
 	if c.TransactionStreamer.TrackBlockMetadataFrom != 0 && !c.BlockMetadataFetcher.Enable {
 		log.Warn("track-block-metadata-from is set but blockMetadata fetcher is not enabled")
 	}
@@ -152,7 +152,7 @@ func ConfigAddOptions(prefix string, f *pflag.FlagSet, feedInputEnable bool, fee
 	bold.BoldConfigAddOptions(prefix+".bold", f)
 	SeqCoordinatorConfigAddOptions(prefix+".seq-coordinator", f)
 	das.DataAvailabilityConfigAddNodeOptions(prefix+".data-availability", f)
-	daclient.ClientConfigAddOptions(prefix+".da-provider", f)
+	daconfig.DAConfigAddOptions(prefix+".da", f)
 	SyncMonitorConfigAddOptions(prefix+".sync-monitor", f)
 	DangerousConfigAddOptions(prefix+".dangerous", f)
 	TransactionStreamerConfigAddOptions(prefix+".transaction-streamer", f)
@@ -175,7 +175,7 @@ var ConfigDefault = Config{
 	Bold:                     bold.DefaultBoldConfig,
 	SeqCoordinator:           DefaultSeqCoordinatorConfig,
 	DataAvailability:         das.DefaultDataAvailabilityConfig,
-	DAProvider:               daclient.DefaultClientConfig,
+	DA:                       daconfig.DAConfig{ExternalProvider: daclient.DefaultClientConfig},
 	SyncMonitor:              DefaultSyncMonitorConfig,
 	Dangerous:                DefaultDangerousConfig,
 	TransactionStreamer:      DefaultTransactionStreamerConfig,
@@ -193,7 +193,7 @@ func ConfigDefaultL1Test() *Config {
 	config.SeqCoordinator = TestSeqCoordinatorConfig
 	config.Sequencer = true
 	config.Dangerous.NoSequencerCoordinator = true
-	config.DAProvider.DataStream = data_streaming.TestDataStreamerConfig(daclient.DefaultStreamRpcMethods)
+	config.DA.ExternalProvider.DataStream = data_streaming.TestDataStreamerConfig(daclient.DefaultStreamRpcMethods)
 
 	return config
 }
@@ -283,7 +283,7 @@ type Node struct {
 	BroadcastClients         *broadcastclients.BroadcastClients
 	SeqCoordinator           *SeqCoordinator
 	MaintenanceRunner        *MaintenanceRunner
-	dasServerCloseFn         func()
+	providerServerCloseFn    func()
 	DASLifecycleManager      *das.LifecycleManager
 	SyncMonitor              *SyncMonitor
 	blockMetadataFetcher     *BlockMetadataFetcher
@@ -563,7 +563,7 @@ func getDelayedBridgeAndSequencerInbox(
 	return delayedBridge, sequencerInbox, nil
 }
 
-func getDAS(
+func getDAProviders(
 	ctx context.Context,
 	config *Config,
 	l2Config *params.ChainConfig,
@@ -574,101 +574,145 @@ func getDAS(
 	dataSigner signature.DataSignerFunc,
 	l1client *ethclient.Client,
 	stack *node.Node,
-) (daprovider.Writer, func(), *daprovider.ReaderRegistry, error) {
-	if config.DAProvider.Enable && config.DataAvailability.Enable {
-		return nil, nil, nil, errors.New("da-provider and data-availability cannot be enabled together")
-	}
+) ([]daprovider.Writer, func(), *daprovider.DAProviderRegistry, error) {
+	var writers []daprovider.Writer
+	var cleanupFuncs []func()
+	var dapRegistry = daprovider.NewDAProviderRegistry()
 
-	var err error
-	var daClient *daclient.Client
-	var withDAWriter bool
-	var dasServerCloseFn func()
-	if config.DAProvider.Enable {
-		daClient, err = daclient.NewClient(ctx, &config.DAProvider, data_streaming.PayloadCommiter())
+	// Priority order for writers:
+	// 1. External DA (if enabled)
+	// 2. AnyTrust (if enabled)
+
+	// Create external DA clients for each configured provider
+	for i := range config.DA.ExternalProviders {
+		providerConfig := &config.DA.ExternalProviders[i]
+		if !providerConfig.Enable {
+			log.Info("Skipping disabled external DA provider", "providerIndex", i)
+			continue
+		}
+
+		log.Info("Creating external DA client", "providerIndex", i, "url", providerConfig.RPC.URL, "withWriter", providerConfig.WithWriter)
+		externalDAClient, err := daclient.NewClient(ctx, providerConfig, data_streaming.PayloadCommiter())
 		if err != nil {
-			return nil, nil, nil, err
+			return nil, nil, nil, fmt.Errorf("failed to create external DA client[%d]: %w", i, err)
 		}
-		// Only allow dawriter if batchposter is enabled
-		withDAWriter = config.DAProvider.WithWriter && config.BatchPoster.Enable
-	} else if config.DataAvailability.Enable {
-		jwtPath := path.Join(filepath.Dir(stack.InstanceDir()), "dasserver-jwtsecret")
-		if err := genericconf.TryCreatingJWTSecret(jwtPath); err != nil {
-			return nil, nil, nil, fmt.Errorf("error writing ephemeral jwtsecret of dasserver to file: %w", err)
-		}
-		log.Info("Generated ephemeral JWT secret for dasserver", "jwtPath", jwtPath)
-		// JWTSecret is no longer needed, cleanup when returning
-		defer func() {
-			if err := os.Remove(jwtPath); err != nil {
-				log.Error("error deleting generated ephemeral JWT secret of dasserver", "jwtPath", jwtPath)
-			}
-		}()
 
-		serverConfig := dapserver.DefaultDASServerConfig
-		serverConfig.Port = 0 // Initializes server at a random available port
-		serverConfig.DataAvailability = config.DataAvailability
-		serverConfig.EnableDAWriter = config.BatchPoster.Enable
-		serverConfig.JWTSecret = jwtPath
-		withDAWriter = config.BatchPoster.Enable
-		dasServer, closeFn, err := dapserver.NewServerForDAS(ctx, &serverConfig, dataSigner, l1client, l1Reader, deployInfo.SequencerInbox)
+		// Add to writers array if batch poster is enabled and WithWriter is true
+		if providerConfig.WithWriter && config.BatchPoster.Enable {
+			writers = append(writers, externalDAClient)
+			log.Info("Added external DA writer", "providerIndex", i, "writerIndex", len(writers)-1, "totalWriters", len(writers))
+		}
+
+		// Register external DA client as both reader and validator
+		result, err := externalDAClient.GetSupportedHeaderBytes().Await(ctx)
 		if err != nil {
-			return nil, nil, nil, err
+			return nil, nil, nil, fmt.Errorf("failed to get supported header bytes from external DA client[%d]: %w", i, err)
 		}
-		rpcClientConfig := rpcclient.DefaultClientConfig
-		rpcClientConfig.URL = dasServer.Addr
-		rpcClientConfig.JWTSecret = jwtPath
-
-		daClientConfig := config.DAProvider
-		daClientConfig.RPC = rpcClientConfig
-
-		daClient, err = daclient.NewClient(ctx, &daClientConfig, data_streaming.PayloadCommiter())
-		if err != nil {
-			return nil, nil, nil, err
-		}
-		dasServerCloseFn = func() {
-			_ = dasServer.Shutdown(ctx)
-			if closeFn != nil {
-				closeFn()
+		for _, hb := range result.HeaderBytes {
+			if err := dapRegistry.Register(hb, externalDAClient, externalDAClient); err != nil {
+				return nil, nil, nil, fmt.Errorf("failed to register DA provider[%d]: %w", i, err)
 			}
 		}
-	} else if l2Config.ArbitrumChainParams.DataAvailabilityCommittee {
-		return nil, nil, nil, errors.New("a data availability service is required for this chain, but it was not configured")
 	}
 
-	// We support a nil txStreamer for the pruning code
-	if txStreamer != nil && txStreamer.chainConfig.ArbitrumChainParams.DataAvailabilityCommittee && daClient == nil {
-		return nil, nil, nil, errors.New("data availability service required but unconfigured")
-	}
+	// Create AnyTrust DA provider if enabled (can coexist with external DA)
+	if config.DataAvailability.Enable {
+		log.Info("Creating AnyTrust DA provider", "batchPosterEnabled", config.BatchPoster.Enable)
 
-	dapReaders := daprovider.NewReaderRegistry()
-	if daClient != nil {
-		promise := daClient.GetSupportedHeaderBytes()
-		result, err := promise.Await(ctx)
+		// Create AnyTrust factory
+		daFactory, err := factory.NewDAProviderFactory(
+			factory.ModeAnyTrust,
+			&config.DataAvailability,
+			nil, // referencedaConfig
+			dataSigner,
+			l1client,
+			l1Reader,
+			deployInfo.SequencerInbox,
+			config.BatchPoster.Enable,
+		)
 		if err != nil {
-			return nil, nil, nil, fmt.Errorf("failed to get supported header bytes from DA client: %w", err)
+			return nil, nil, nil, err
 		}
-		if err := dapReaders.RegisterAll(result.HeaderBytes, daClient); err != nil {
-			return nil, nil, nil, fmt.Errorf("failed to register DA client: %w", err)
+		log.Info("Created AnyTrust DA factory")
+
+		if err := daFactory.ValidateConfig(); err != nil {
+			return nil, nil, nil, err
+		}
+
+		var localCleanupFuncs []func()
+		reader, readerCleanup, err := daFactory.CreateReader(ctx)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		if readerCleanup != nil {
+			localCleanupFuncs = append(localCleanupFuncs, readerCleanup)
+		}
+
+		var writer daprovider.Writer
+		if config.BatchPoster.Enable {
+			var writerCleanup func()
+			writer, writerCleanup, err = daFactory.CreateWriter(ctx)
+			if err != nil {
+				return nil, nil, nil, err
+			}
+			if writerCleanup != nil {
+				localCleanupFuncs = append(localCleanupFuncs, writerCleanup)
+			}
+		}
+
+		headerBytes := daFactory.GetSupportedHeaderBytes()
+
+		// Add AnyTrust writer to writers array if batch poster is enabled
+		if config.BatchPoster.Enable && writer != nil {
+			writers = append(writers, writer)
+			log.Info("Added AnyTrust writer", "writerIndex", len(writers)-1, "totalWriters", len(writers))
+		}
+
+		// Register AnyTrust reader directly (no validator for AnyTrust)
+		for _, hb := range headerBytes {
+			if err := dapRegistry.Register(hb, reader, nil); err != nil {
+				return nil, nil, nil, fmt.Errorf("failed to register anytrust reader: %w", err)
+			}
+		}
+
+		// Create cleanup function for AnyTrust
+		anytrustCleanup := func() {
+			for _, cleanup := range localCleanupFuncs {
+				cleanup()
+			}
+		}
+		cleanupFuncs = append(cleanupFuncs, anytrustCleanup)
+	}
+
+	// Check if chain requires Anytrust but none is configured
+	if l2Config.ArbitrumChainParams.DataAvailabilityCommittee {
+		if !config.DataAvailability.Enable {
+			return nil, nil, nil, errors.New("Anytrust is required for this chain, but it was not configured")
 		}
 	}
+
 	if blobReader != nil {
-		if err := dapReaders.SetupBlobReader(daprovider.NewReaderForBlobReader(blobReader)); err != nil {
+		if err := dapRegistry.SetupBlobReader(daprovider.NewReaderForBlobReader(blobReader)); err != nil {
 			return nil, nil, nil, fmt.Errorf("failed to register blob reader: %w", err)
 		}
 	}
-	// AnyTrust now always uses the daClient, which is already registered,
-	// so we don't need to register it separately here.
 
-	if withDAWriter {
-		return daClient, dasServerCloseFn, dapReaders, nil
+	// Combine all cleanup functions
+	combinedCleanup := func() {
+		for _, cleanup := range cleanupFuncs {
+			cleanup()
+		}
 	}
-	return nil, dasServerCloseFn, dapReaders, nil
+
+	log.Info("DA providers configured", "totalWriters", len(writers))
+	return writers, combinedCleanup, dapRegistry, nil
 }
 
 func getInboxTrackerAndReader(
 	ctx context.Context,
 	arbDb ethdb.Database,
 	txStreamer *TransactionStreamer,
-	dapReaders *daprovider.ReaderRegistry,
+	dapReaders *daprovider.DAProviderRegistry,
 	config *Config,
 	configFetcher ConfigFetcher,
 	l1client *ethclient.Client,
@@ -760,6 +804,7 @@ func getStaker(
 	fatalErrChan chan error,
 	statelessBlockValidator *staker.StatelessBlockValidator,
 	blockValidator *staker.BlockValidator,
+	dapRegistry *daprovider.DAProviderRegistry,
 ) (*multiprotocolstaker.MultiProtocolStaker, *MessagePruner, common.Address, error) {
 	var stakerObj *multiprotocolstaker.MultiProtocolStaker
 	var messagePruner *MessagePruner
@@ -815,7 +860,7 @@ func getStaker(
 			confirmedNotifiers = append(confirmedNotifiers, messagePruner)
 		}
 
-		stakerObj, err = multiprotocolstaker.NewMultiProtocolStaker(stack, l1Reader, wallet, bind.CallOpts{}, func() *legacystaker.L1ValidatorConfig { return &configFetcher.Get().Staker }, &configFetcher.Get().Bold, blockValidator, statelessBlockValidator, nil, deployInfo.StakeToken, deployInfo.Rollup, confirmedNotifiers, deployInfo.ValidatorUtils, deployInfo.Bridge, txStreamer, inboxTracker, inboxReader, fatalErrChan)
+		stakerObj, err = multiprotocolstaker.NewMultiProtocolStaker(stack, l1Reader, wallet, bind.CallOpts{}, func() *legacystaker.L1ValidatorConfig { return &configFetcher.Get().Staker }, &configFetcher.Get().Bold, blockValidator, statelessBlockValidator, nil, deployInfo.StakeToken, deployInfo.Rollup, confirmedNotifiers, deployInfo.ValidatorUtils, deployInfo.Bridge, txStreamer, inboxTracker, inboxReader, dapRegistry, fatalErrChan)
 		if err != nil {
 			return nil, nil, common.Address{}, err
 		}
@@ -885,7 +930,7 @@ func getStatelessBlockValidator(
 	txStreamer *TransactionStreamer,
 	exec execution.ExecutionRecorder,
 	arbDb ethdb.Database,
-	dapReaders *daprovider.ReaderRegistry,
+	dapReaders *daprovider.DAProviderRegistry,
 	stack *node.Node,
 	latestWasmModuleRoot common.Hash,
 ) (*staker.StatelessBlockValidator, error) {
@@ -926,7 +971,7 @@ func getBatchPoster(
 	config *Config,
 	configFetcher ConfigFetcher,
 	txOptsBatchPoster *bind.TransactOpts,
-	dapWriter daprovider.Writer,
+	dapWriters []daprovider.Writer,
 	l1Reader *headerreader.HeaderReader,
 	inboxTracker *InboxTracker,
 	txStreamer *TransactionStreamer,
@@ -935,7 +980,7 @@ func getBatchPoster(
 	syncMonitor *SyncMonitor,
 	deployInfo *chaininfo.RollupAddresses,
 	parentChainID *big.Int,
-	dapReaders *daprovider.ReaderRegistry,
+	dapReaders *daprovider.DAProviderRegistry,
 	stakerAddr common.Address,
 ) (*BatchPoster, error) {
 	var batchPoster *BatchPoster
@@ -947,7 +992,7 @@ func getBatchPoster(
 		if txOptsBatchPoster == nil && config.BatchPoster.DataPoster.ExternalSigner.URL == "" {
 			return nil, errors.New("batchposter, but no TxOpts")
 		}
-		if dapWriter != nil && !config.BatchPoster.CheckBatchCorrectness {
+		if len(dapWriters) > 0 && !config.BatchPoster.CheckBatchCorrectness {
 			return nil, errors.New("when da-provider is used by batch-poster for posting, check-batch-correctness needs to be enabled")
 		}
 		var err error
@@ -961,7 +1006,7 @@ func getBatchPoster(
 			Config:        func() *BatchPosterConfig { return &configFetcher.Get().BatchPoster },
 			DeployInfo:    deployInfo,
 			TransactOpts:  txOptsBatchPoster,
-			DAPWriter:     dapWriter,
+			DAPWriters:    dapWriters,
 			ParentChainID: parentChainID,
 			DAPReaders:    dapReaders,
 		})
@@ -1135,17 +1180,17 @@ func createNodeImpl(
 		return nil, err
 	}
 
-	dapWriter, dasServerCloseFn, dapReaders, err := getDAS(ctx, config, l2Config, txStreamer, blobReader, l1Reader, deployInfo, dataSigner, l1client, stack)
+	dapWriters, providerServerCloseFn, dapRegistry, err := getDAProviders(ctx, config, l2Config, txStreamer, blobReader, l1Reader, deployInfo, dataSigner, l1client, stack)
 	if err != nil {
 		return nil, err
 	}
 
-	inboxTracker, inboxReader, err := getInboxTrackerAndReader(ctx, arbDb, txStreamer, dapReaders, config, configFetcher, l1client, l1Reader, deployInfo, delayedBridge, sequencerInbox, executionSequencer)
+	inboxTracker, inboxReader, err := getInboxTrackerAndReader(ctx, arbDb, txStreamer, dapRegistry, config, configFetcher, l1client, l1Reader, deployInfo, delayedBridge, sequencerInbox, executionSequencer)
 	if err != nil {
 		return nil, err
 	}
 
-	statelessBlockValidator, err := getStatelessBlockValidator(config, configFetcher, inboxReader, inboxTracker, txStreamer, executionRecorder, arbDb, dapReaders, stack, latestWasmModuleRoot)
+	statelessBlockValidator, err := getStatelessBlockValidator(config, configFetcher, inboxReader, inboxTracker, txStreamer, executionRecorder, arbDb, dapRegistry, stack, latestWasmModuleRoot)
 	if err != nil {
 		return nil, err
 	}
@@ -1155,12 +1200,12 @@ func createNodeImpl(
 		return nil, err
 	}
 
-	stakerObj, messagePruner, stakerAddr, err := getStaker(ctx, config, configFetcher, arbDb, l1Reader, txOptsValidator, syncMonitor, parentChainID, l1client, deployInfo, txStreamer, inboxTracker, inboxReader, stack, fatalErrChan, statelessBlockValidator, blockValidator)
+	stakerObj, messagePruner, stakerAddr, err := getStaker(ctx, config, configFetcher, arbDb, l1Reader, txOptsValidator, syncMonitor, parentChainID, l1client, deployInfo, txStreamer, inboxTracker, inboxReader, stack, fatalErrChan, statelessBlockValidator, blockValidator, dapRegistry)
 	if err != nil {
 		return nil, err
 	}
 
-	batchPoster, err := getBatchPoster(ctx, config, configFetcher, txOptsBatchPoster, dapWriter, l1Reader, inboxTracker, txStreamer, arbOSVersionGetter, arbDb, syncMonitor, deployInfo, parentChainID, dapReaders, stakerAddr)
+	batchPoster, err := getBatchPoster(ctx, config, configFetcher, txOptsBatchPoster, dapWriters, l1Reader, inboxTracker, txStreamer, arbOSVersionGetter, arbDb, syncMonitor, deployInfo, parentChainID, dapRegistry, stakerAddr)
 	if err != nil {
 		return nil, err
 	}
@@ -1197,7 +1242,7 @@ func createNodeImpl(
 		BroadcastClients:         broadcastClients,
 		SeqCoordinator:           coordinator,
 		MaintenanceRunner:        maintenanceRunner,
-		dasServerCloseFn:         dasServerCloseFn,
+		providerServerCloseFn:    providerServerCloseFn,
 		SyncMonitor:              syncMonitor,
 		blockMetadataFetcher:     blockMetadataFetcher,
 		configFetcher:            configFetcher,
@@ -1539,8 +1584,8 @@ func (n *Node) StopAndWait() {
 		n.SeqCoordinator.StopAndWait()
 	}
 	n.SyncMonitor.StopAndWait()
-	if n.dasServerCloseFn != nil {
-		n.dasServerCloseFn()
+	if n.providerServerCloseFn != nil {
+		n.providerServerCloseFn()
 	}
 	if n.ExecutionClient != nil {
 		n.ExecutionClient.StopAndWait()
