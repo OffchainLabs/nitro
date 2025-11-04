@@ -918,6 +918,9 @@ func (c *NodeConfig) Validate() error {
 		if c.Node.ExecutionRPCClient.URL == "" {
 			return errors.New("starting consensus only node with empty executionRPCClient url")
 		}
+		if c.Node.Sequencer || c.Node.BatchPoster.Enable || c.Node.BlockValidator.Enable {
+			return errors.New("sequencing, validation and batch-posting are currently not supported when connecting to an execution client over RPC")
+		}
 	} else {
 		if c.ConsensusExecutionUseRPC {
 			if !c.Execution.RPCServer.Enable {
