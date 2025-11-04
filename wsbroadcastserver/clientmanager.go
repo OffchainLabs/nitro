@@ -151,6 +151,15 @@ func (cm *ClientManager) Broadcast(bm *m.BroadcastMessage) {
 	cm.broadcastChan <- bm
 }
 
+// populateFeedBacklog adds the given BroadcastMessage to backlog, and also broadcasts it to feed if the ClientManager is started
+func (cm *ClientManager) populateFeedBacklog(bm *m.BroadcastMessage) error {
+	if cm.Started() {
+		cm.Broadcast(bm)
+		return nil
+	}
+	return cm.backlog.Append(bm)
+}
+
 func (cm *ClientManager) doBroadcast(bm *m.BroadcastMessage) ([]*ClientConnection, error) {
 	if err := cm.backlog.Append(bm); err != nil {
 		return nil, err
