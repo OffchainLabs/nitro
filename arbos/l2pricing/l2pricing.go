@@ -23,6 +23,7 @@ type L2PricingState struct {
 	backlogTolerance    storage.StorageBackedUint64
 	perTxGasLimit       storage.StorageBackedUint64
 	gasConstraints      *storage.SubStorageVector
+	multigasConstraints *storage.SubStorageVector
 }
 
 const (
@@ -37,6 +38,7 @@ const (
 )
 
 var gasConstraintsKey []byte = []byte{0}
+var multigasConstraintsKey []byte = []byte{1}
 
 const GethBlockGasLimit = 1 << 50
 
@@ -62,6 +64,7 @@ func OpenL2PricingState(sto *storage.Storage) *L2PricingState {
 		backlogTolerance:    sto.OpenStorageBackedUint64(backlogToleranceOffset),
 		perTxGasLimit:       sto.OpenStorageBackedUint64(perTxGasLimitOffset),
 		gasConstraints:      storage.OpenSubStorageVector(sto.OpenSubStorage(gasConstraintsKey)),
+		multigasConstraints: storage.OpenSubStorageVector(sto.OpenSubStorage(multigasConstraintsKey)),
 	}
 }
 
@@ -197,6 +200,62 @@ func (ps *L2PricingState) ClearGasConstraints() error {
 			return err
 		}
 		constraint := constraints.OpenGasConstraint(subStorage)
+		if err := constraint.Clear(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (ps *L2PricingState) MultiGasConstraintsLength() (uint64, error) {
+	return ps.multigasConstraints.Length()
+}
+
+func (ps *L2PricingState) OpenMultiGasConstraintAt(i uint64) *constraints.MultiGasConstraint {
+	return constraints.OpenMultiGasConstraint(ps.multigasConstraints.At(i))
+}
+
+func (ps *L2PricingState) AddMultiGasConstraint(
+	target uint64,
+	adjustmentWindow uint64,
+	backlog uint64,
+	resourceWeights map[uint8]uint64,
+) error {
+	subStorage, err := ps.multigasConstraints.Push()
+	if err != nil {
+		return fmt.Errorf("failed to push multi-gas constraint: %w", err)
+	}
+
+	constraint := constraints.OpenMultiGasConstraint(subStorage)
+	if err := constraint.SetTarget(target); err != nil {
+		return fmt.Errorf("failed to set target: %w", err)
+	}
+	if err := constraint.SetAdjustmentWindow(adjustmentWindow); err != nil {
+		return fmt.Errorf("failed to set adjustment window: %w", err)
+	}
+	if err := constraint.SetBacklog(backlog); err != nil {
+		return fmt.Errorf("failed to set backlog: %w", err)
+	}
+
+	for kind, weight := range resourceWeights {
+		if err := constraint.SetResourceWeight(kind, weight); err != nil {
+			return fmt.Errorf("failed to set resource %d weight: %w", kind, err)
+		}
+	}
+	return nil
+}
+
+func (ps *L2PricingState) ClearMultiGasConstraints() error {
+	length, err := ps.MultiGasConstraintsLength()
+	if err != nil {
+		return err
+	}
+	for range length {
+		subStorage, err := ps.multigasConstraints.Pop()
+		if err != nil {
+			return err
+		}
+		constraint := constraints.OpenMultiGasConstraint(subStorage)
 		if err := constraint.Clear(); err != nil {
 			return err
 		}

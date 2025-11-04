@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/ethereum/go-ethereum/arbitrum/multigas"
+
 	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbos/storage"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -148,6 +150,72 @@ func TestGasConstraints(t *testing.T) {
 	Require(t, pricing.ClearGasConstraints())
 	if got := getConstraintsLength(t, pricing); got != 0 {
 		t.Fatalf("wrong number of constraints: got %v want 0", got)
+	}
+}
+
+func TestMultiGasConstraints(t *testing.T) {
+	pricing := PricingForTest(t)
+
+	// initially empty
+	length, err := pricing.MultiGasConstraintsLength()
+	Require(t, err)
+	if length != 0 {
+		t.Fatalf("wrong number of constraints: got %v want 0", length)
+	}
+
+	const n uint64 = 5
+	for i := range n {
+		resourceWeights := map[uint8]uint64{
+			uint8(multigas.ResourceKindComputation):   10 + i,
+			uint8(multigas.ResourceKindStorageAccess): 20 + i,
+		}
+		Require(t,
+			pricing.AddMultiGasConstraint(100*i+1, 100*i+2, 100*i+3, resourceWeights),
+		)
+	}
+
+	length, err = pricing.MultiGasConstraintsLength()
+	Require(t, err)
+	if length != n {
+		t.Fatalf("wrong number of constraints: got %v want %v", length, n)
+	}
+
+	for i := range n {
+		c := pricing.OpenMultiGasConstraintAt(i)
+
+		target, err := c.Target()
+		Require(t, err)
+		if want := 100*i + 1; target != want {
+			t.Errorf("wrong target: got %v, want %v", target, want)
+		}
+
+		window, err := c.AdjustmentWindow()
+		Require(t, err)
+		if want := 100*i + 2; window != want {
+			t.Errorf("wrong window: got %v, want %v", window, want)
+		}
+
+		backlog, err := c.Backlog()
+		Require(t, err)
+		if want := 100*i + 3; backlog != want {
+			t.Errorf("wrong backlog: got %v, want %v", backlog, want)
+		}
+
+		weights, err := c.ResourcesWithWeights()
+		Require(t, err)
+		if weights[multigas.ResourceKindComputation] != 10+i {
+			t.Errorf("wrong computation weight: got %v, want %v", weights[multigas.ResourceKindComputation], 10+i)
+		}
+		if weights[multigas.ResourceKindStorageAccess] != 20+i {
+			t.Errorf("wrong storage weight: got %v, want %v", weights[multigas.ResourceKindStorageAccess], 20+i)
+		}
+	}
+
+	Require(t, pricing.ClearMultiGasConstraints())
+	length, err = pricing.MultiGasConstraintsLength()
+	Require(t, err)
+	if length != 0 {
+		t.Fatalf("wrong number of constraints: got %v want 0", length)
 	}
 }
 
