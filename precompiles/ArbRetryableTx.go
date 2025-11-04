@@ -100,9 +100,13 @@ func (con ArbRetryableTx) Redeem(c ctx, evm mech, ticketId bytes32) (bytes32, er
 	// Result is 32 bytes long which is 1 word
 	gasCostToReturnResult := params.CopyGas
 	gasPoolUpdateCost := storage.StorageReadCost + storage.StorageWriteCost
+
+	// Multi-Constraint pricer requires an extra storage read, since ArbOS must load the constraints from state.
+	// This overhead applies even when no constraints are configured.
 	if c.State.ArbOSVersion() >= l2pricing.ArbosMultiConstraintsVersion {
 		gasPoolUpdateCost += storage.StorageReadCost
 	}
+
 	futureGasCosts := eventCost + gasCostToReturnResult + gasPoolUpdateCost
 	if c.GasLeft() < futureGasCosts {
 		return hash{}, c.Burn(multigas.ResourceKindComputation, futureGasCosts) // this will error
