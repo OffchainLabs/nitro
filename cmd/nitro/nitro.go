@@ -790,7 +790,7 @@ type NodeConfig struct {
 	BlocksReExecutor         blocksreexecutor.Config         `koanf:"blocks-reexecutor"`
 	EnsureRollupDeployment   bool                            `koanf:"ensure-rollup-deployment" reload:"hot"`
 	ExecutionNode            bool                            `koanf:"execution-node"`
-	ConsensusExecutionUseRPC bool                            `koanf:"consensus_execution_use_rpc"`
+	ConsensusExecutionUseRPC bool                            `koanf:"consensus-execution-use-rpc"`
 }
 
 var NodeConfigDefault = NodeConfig{
@@ -847,7 +847,7 @@ func NodeConfigAddOptions(f *pflag.FlagSet) {
 	blocksreexecutor.ConfigAddOptions("blocks-reexecutor", f)
 	f.Bool("ensure-rollup-deployment", NodeConfigDefault.EnsureRollupDeployment, "before starting the node, wait until the transaction that deployed rollup is finalized")
 	f.Bool("execution-node", NodeConfigDefault.ExecutionNode, "implies running nitro with both consensus and execution nodes, if false, then requires --node.execution-rpc-client.* config to connect to execution client over rpc")
-	f.Bool("consensus_execution_use_rpc", NodeConfigDefault.ConsensusExecutionUseRPC, "when both consensus and execution node are enabled this options allow them to communicate over rpc- mainly for testing purpose")
+	f.Bool("consensus-execution-use-rpc", NodeConfigDefault.ConsensusExecutionUseRPC, "when both consensus and execution node are enabled this options allow them to communicate over rpc- mainly for testing purpose")
 }
 
 func (c *NodeConfig) ResolveDirectoryNames() error {
