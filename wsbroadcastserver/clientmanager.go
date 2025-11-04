@@ -157,7 +157,23 @@ func (cm *ClientManager) populateFeedBacklog(bm *m.BroadcastMessage) error {
 		cm.Broadcast(bm)
 		return nil
 	}
-	return cm.backlog.Append(bm)
+	if len(bm.Messages) == 0 {
+		return cm.backlog.Append(bm)
+	}
+	for i, msg := range bm.Messages {
+		m := &m.BroadcastMessage{
+			Version:  bm.Version,
+			Messages: []*m.BroadcastFeedMessage{msg},
+		}
+		// This ensures that only one message is added to backlog with the confirmed sequence number
+		if i == 0 {
+			m.ConfirmedSequenceNumberMessage = bm.ConfirmedSequenceNumberMessage
+		}
+		if err := cm.backlog.Append(m); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (cm *ClientManager) doBroadcast(bm *m.BroadcastMessage) ([]*ClientConnection, error) {
