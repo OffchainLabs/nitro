@@ -13,7 +13,6 @@ pub mod pricing;
 pub mod types;
 
 pub use color::{Color, DebugColor};
-use num_traits::Unsigned;
 pub use types::{Bytes20, Bytes32, PreimageType};
 
 /// Puts an arbitrary type on the heap.
@@ -25,7 +24,7 @@ pub fn heapify<T>(value: T) -> *mut T {
 /// Equivalent to &[start..offset], but truncates when out of bounds rather than panicking.
 pub fn slice_with_runoff<T, I>(data: &impl AsRef<[T]>, start: I, end: I) -> &[T]
 where
-    I: TryInto<usize> + Unsigned,
+    I: TryInto<usize>,
 {
     let start = start.try_into().unwrap_or(usize::MAX);
     let end = end.try_into().unwrap_or(usize::MAX);
