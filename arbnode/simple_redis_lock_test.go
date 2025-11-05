@@ -84,10 +84,10 @@ func simpleRedisLockTest(t *testing.T, redisKeySuffix string, chosen int, backgr
 	wg.Wait()
 	successful := -1
 	for i := range counters {
-		cntr := &counters[i]
-		if cntr.Load() != 0 {
-			if cntr.Load() != test_attempts {
-				t.Fatalf("counter %d value %d", i, cntr.Load())
+		cntVal := counters[i].Load()
+		if cntVal != 0 {
+			if cntVal != test_attempts {
+				t.Fatalf("counter %d value %d", i, cntVal)
 			}
 			if successful > 0 {
 				t.Fatalf("counter %d and %d both positive", i, successful)
