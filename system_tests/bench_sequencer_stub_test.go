@@ -19,20 +19,13 @@ func TestBenchSequencerStub(t *testing.T) {
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
 	builder.execConfig.Dangerous.BenchSequencer.Enable = true
 
-	err := builder.execConfig.Validate()
-	if err == nil {
-		t.Fatal("validation of execution config with BenchSequencer enabled should have failed in production build")
-	}
-
-	// bypass the execution config validation to validate that stubs don't change node behaviour
-	builder = builder.IgnoreExecConfigValidationError()
 	cleanup := builder.Build(t)
 	defer cleanup()
 
 	// check benchseq rpc is not available
 	rpcClient := builder.L2.Client.Client()
 	var txQueueLen int
-	err = rpcClient.CallContext(ctx, &txQueueLen, "benchseq_txQueueLength")
+	err := rpcClient.CallContext(ctx, &txQueueLen, "benchseq_txQueueLength")
 	if err == nil {
 		Fatal(t, "benchseq_txQueueLength should not have succeeded")
 	} else if !strings.Contains(err.Error(), "the method benchseq_txQueueLength does not exist") {

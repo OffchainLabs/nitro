@@ -3,7 +3,6 @@
 package debugblock
 
 import (
-	"errors"
 	"math/big"
 
 	"github.com/spf13/pflag"
@@ -16,7 +15,7 @@ import (
 
 func (c *Config) Validate() error {
 	if c.OverwriteChainConfig || c.DebugAddress != "" || c.DebugBlockNum != 0 {
-		return errors.New("debug block injection is not supported in this build")
+		log.Warn("debug block injection is not supported in this build")
 	}
 	return nil
 }

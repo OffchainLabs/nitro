@@ -245,7 +245,9 @@ var ConfigDefault = Config{
 	ExposeMultiGas:              false,
 }
 
-type ConfigFetcher func() *Config
+type ConfigFetcher interface {
+	Get() *Config
+}
 
 type ExecutionNode struct {
 	ChainDB                  ethdb.Database
@@ -258,7 +260,7 @@ type ExecutionNode struct {
 	TxPreChecker             *TxPreChecker
 	TxPublisher              TransactionPublisher
 	ExpressLaneService       *expressLaneService
-	ConfigFetcher            ConfigFetcher
+	configFetcher            ConfigFetcher
 	SyncMonitor              *SyncMonitor
 	ParentChainReader        *headerreader.HeaderReader
 	ClassicOutbox            *ClassicOutboxRetriever
@@ -276,7 +278,7 @@ func CreateExecutionNode(
 	parentChainID *big.Int,
 	syncTillBlock uint64,
 ) (*ExecutionNode, error) {
-	config := configFetcher()
+	config := configFetcher.Get()
 	execEngine, err := NewExecutionEngine(l2BlockChain, syncTillBlock, config.ExposeMultiGas)
 	if config.EnablePrefetchBlock {
 		execEngine.EnablePrefetchBlock()
@@ -294,7 +296,7 @@ func CreateExecutionNode(
 	var parentChainReader *headerreader.HeaderReader
 	if l1client != nil && !reflect.ValueOf(l1client).IsNil() {
 		arbSys, _ := precompilesgen.NewArbSys(types.ArbSysAddress, l1client)
-		parentChainReader, err = headerreader.New(ctx, l1client, func() *headerreader.Config { return &configFetcher().ParentChainReader }, arbSys)
+		parentChainReader, err = headerreader.New(ctx, l1client, func() *headerreader.Config { return &configFetcher.Get().ParentChainReader }, arbSys)
 		if err != nil {
 			return nil, err
 		}
@@ -304,7 +306,7 @@ func CreateExecutionNode(
 
 	var benchSequencerService interface{}
 	if config.Sequencer.Enable {
-		seqConfigFetcher := func() *SequencerConfig { return &configFetcher().Sequencer }
+		seqConfigFetcher := func() *SequencerConfig { return &configFetcher.Get().Sequencer }
 		sequencer, err = NewSequencer(execEngine, parentChainReader, seqConfigFetcher, parentChainID)
 		if err != nil {
 			return nil, err
@@ -324,7 +326,7 @@ func CreateExecutionNode(
 		}
 	}
 
-	txprecheckConfigFetcher := func() *TxPreCheckerConfig { return &configFetcher().TxPreChecker }
+	txprecheckConfigFetcher := func() *TxPreCheckerConfig { return &configFetcher.Get().TxPreChecker }
 
 	txPreChecker := NewTxPreChecker(txPublisher, l2BlockChain, txprecheckConfigFetcher)
 	txPublisher = txPreChecker
@@ -426,7 +428,7 @@ func CreateExecutionNode(
 		Sequencer:                sequencer,
 		TxPreChecker:             txPreChecker,
 		TxPublisher:              txPublisher,
-		ConfigFetcher:            configFetcher,
+		configFetcher:            configFetcher,
 		SyncMonitor:              syncMon,
 		ParentChainReader:        parentChainReader,
 		ClassicOutbox:            classicOutbox,
@@ -441,7 +443,7 @@ func (n *ExecutionNode) MarkFeedStart(to arbutil.MessageIndex) containers.Promis
 }
 
 func (n *ExecutionNode) Initialize(ctx context.Context) error {
-	config := n.ConfigFetcher()
+	config := n.configFetcher.Get()
 	err := n.ExecEngine.Initialize(config.Caching.StylusLRUCacheCapacity, &config.StylusTarget)
 	if err != nil {
 		return fmt.Errorf("error initializing execution engine: %w", err)
@@ -530,7 +532,7 @@ func (n *ExecutionNode) SequenceDelayedMessage(message *arbostypes.L1IncomingMes
 func (n *ExecutionNode) ResultAtMessageIndex(msgIdx arbutil.MessageIndex) containers.PromiseInterface[*execution.MessageResult] {
 	return containers.NewReadyPromise(n.ExecEngine.ResultAtMessageIndex(msgIdx))
 }
-func (n *ExecutionNode) ArbOSVersionForMessageIndex(msgIdx arbutil.MessageIndex) (uint64, error) {
+func (n *ExecutionNode) ArbOSVersionForMessageIndex(msgIdx arbutil.MessageIndex) containers.PromiseInterface[uint64] {
 	return n.ExecEngine.ArbOSVersionForMessageIndex(msgIdx)
 }
 
@@ -583,14 +585,14 @@ func (n *ExecutionNode) BlockNumberToMessageIndex(blockNum uint64) containers.Pr
 }
 
 func (n *ExecutionNode) ShouldTriggerMaintenance() containers.PromiseInterface[bool] {
-	return containers.NewReadyPromise(n.ExecEngine.ShouldTriggerMaintenance(n.ConfigFetcher().Caching.TrieTimeLimitBeforeFlushMaintenance), nil)
+	return containers.NewReadyPromise(n.ExecEngine.ShouldTriggerMaintenance(n.configFetcher.Get().Caching.TrieTimeLimitBeforeFlushMaintenance), nil)
 }
 func (n *ExecutionNode) MaintenanceStatus() containers.PromiseInterface[*execution.MaintenanceStatus] {
 	return containers.NewReadyPromise(n.ExecEngine.MaintenanceStatus(), nil)
 }
 
 func (n *ExecutionNode) TriggerMaintenance() containers.PromiseInterface[struct{}] {
-	trieCapLimitBytes := arbmath.SaturatingUMul(uint64(n.ConfigFetcher().Caching.TrieCapLimit), 1024*1024)
+	trieCapLimitBytes := arbmath.SaturatingUMul(uint64(n.configFetcher.Get().Caching.TrieCapLimit), 1024*1024)
 	n.ExecEngine.TriggerMaintenance(trieCapLimitBytes)
 	return containers.NewReadyPromise(struct{}{}, nil)
 }
@@ -604,22 +606,21 @@ func (n *ExecutionNode) FullSyncProgressMap(ctx context.Context) map[string]inte
 }
 
 func (n *ExecutionNode) SetFinalityData(
-	ctx context.Context,
 	safeFinalityData *arbutil.FinalityData,
 	finalizedFinalityData *arbutil.FinalityData,
 	validatedFinalityData *arbutil.FinalityData,
 ) containers.PromiseInterface[struct{}] {
-	err := n.SyncMonitor.SetFinalityData(ctx, safeFinalityData, finalizedFinalityData, validatedFinalityData)
+	err := n.SyncMonitor.SetFinalityData(safeFinalityData, finalizedFinalityData, validatedFinalityData)
 	return containers.NewReadyPromise(struct{}{}, err)
 }
 
-func (n *ExecutionNode) SetConsensusSyncData(ctx context.Context, syncData *execution.ConsensusSyncData) containers.PromiseInterface[struct{}] {
+func (n *ExecutionNode) SetConsensusSyncData(syncData *execution.ConsensusSyncData) containers.PromiseInterface[struct{}] {
 	n.SyncMonitor.SetConsensusSyncData(syncData)
 	return containers.NewReadyPromise(struct{}{}, nil)
 }
 
 func (n *ExecutionNode) InitializeTimeboost(ctx context.Context, chainConfig *params.ChainConfig) error {
-	execNodeConfig := n.ConfigFetcher()
+	execNodeConfig := n.configFetcher.Get()
 	if execNodeConfig.Sequencer.Timeboost.Enable {
 		auctionContractAddr := common.HexToAddress(execNodeConfig.Sequencer.Timeboost.AuctionContractAddress)
 

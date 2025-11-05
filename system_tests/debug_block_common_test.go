@@ -2,7 +2,6 @@ package arbtest
 
 import (
 	"context"
-	"strings"
 	"testing"
 	"time"
 
@@ -10,17 +9,16 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 )
 
-func testDebugBlockInjection(t *testing.T, production bool) {
+func testDebugBlockInjection(t *testing.T, expectInject bool) {
 	t.Run("with-other-tx", func(t *testing.T) {
-		testDebugBlockInjectionImpl(t, production, true)
+		testDebugBlockInjectionImpl(t, expectInject, true)
 	})
 	t.Run("without-other-tx", func(t *testing.T) {
-		testDebugBlockInjectionImpl(t, production, false)
+		testDebugBlockInjectionImpl(t, expectInject, false)
 	})
 }
 
-func testDebugBlockInjectionImpl(t *testing.T, production bool, withOtherTx bool) {
-	expectInject := !production
+func testDebugBlockInjectionImpl(t *testing.T, expectInject bool, withOtherTx bool) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -65,17 +63,6 @@ func testDebugBlockInjectionImpl(t *testing.T, production bool, withOtherTx bool
 	builder.execConfig.Dangerous.DebugBlock.OverwriteChainConfig = true
 	builder.execConfig.Dangerous.DebugBlock.DebugBlockNum = debugBlockNum
 	builder.execConfig.Dangerous.DebugBlock.DebugAddress = builder.L2Info.GetInfoWithPrivKey("DebugUser").Address.String()
-
-	if production {
-		err := builder.execConfig.Validate()
-		if err == nil {
-			t.Fatal("execConfig validation should have failed in production build when chain config overwrite is specified")
-		} else if !strings.Contains(err.Error(), "debug block injection is not supported") {
-			t.Fatal("execConfig validation failed with unexpected error, err:", err)
-		}
-		// ignore execConfig validation failure during restart, to test that the dangerous configs don't have effect in production
-		builder.IgnoreExecConfigValidationError()
-	}
 
 	builder.RestartL2Node(t)
 	t.Log("restarted l2 node")

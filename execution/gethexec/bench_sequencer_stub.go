@@ -3,8 +3,7 @@
 package gethexec
 
 import (
-	"errors"
-
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/spf13/pflag"
 )
 
@@ -14,7 +13,7 @@ func BenchSequencerConfigAddOptions(_ string, _ *pflag.FlagSet) {
 
 func (c *BenchSequencerConfig) Validate() error {
 	if c.Enable {
-		return errors.New("BenchSeqeuncer is not supported in this build")
+		log.Warn("BenchSequencer is not supported in this build")
 	}
 	return nil
 }
