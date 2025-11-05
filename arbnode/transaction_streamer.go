@@ -1422,8 +1422,8 @@ func (s *TransactionStreamer) ExecuteNextMsg(ctx context.Context) bool {
 		BlockMetadata:   msgAndBlockInfo.BlockMetadata,
 	}
 	s.broadcastMessages([]arbostypes.MessageWithMetadataAndBlockInfo{msgWithBlockInfo}, msgIdxToExecute)
-  
-  messageTimer.Update(time.Since(start).Nanoseconds())
+
+	messageTimer.Update(time.Since(start).Nanoseconds())
 
 	return msgIdxToExecute+1 <= consensusHeadMsgIdx
 }
