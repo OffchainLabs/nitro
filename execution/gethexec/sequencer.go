@@ -1232,7 +1232,7 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 					if err := s.PublishTransaction(ctx, tx, nil); err != nil {
 						log.Error("debug block: failed to publish tx", "err", err)
 					} else {
-						log.Warn("published tx", "txHash", tx.Hash())
+						log.Warn("published dangerous debug block tx", "txHash", tx.Hash())
 					}
 				}()
 			}
