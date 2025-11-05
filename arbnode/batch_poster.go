@@ -1597,6 +1597,16 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 		if time.Since(firstUsefulMsgTime) >= config.MaxDelay {
 			forcePostBatch = true
 		}
+	} else if b.building.firstDelayedMsg != nil && config.MaxEmptyBatchDelay > 0 {
+		// #nosec G115
+		timeSinceMsg := time.Unix(int64(b.building.firstDelayedMsg.Message.Header.Timestamp), 0)
+		latestHeader, _ := b.l1Reader.LastHeader(ctx)
+		// #nosec G115
+		l1Now := time.Unix(int64(latestHeader.Time), 0)
+		if l1Now.Sub(timeSinceMsg) >= config.MaxEmptyBatchDelay {
+			forcePostBatch = true
+			b.building.haveUsefulMessage = true
+		}
 	}
 
 	var delayBufferConfig *DelayBufferConfig
