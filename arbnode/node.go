@@ -9,9 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
-	"os"
-	"path"
-	"path/filepath"
 	"strings"
 
 	"github.com/spf13/pflag"
@@ -36,12 +33,11 @@ import (
 	"github.com/offchainlabs/nitro/broadcastclients"
 	"github.com/offchainlabs/nitro/broadcaster"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
-	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/daprovider/daclient"
 	"github.com/offchainlabs/nitro/daprovider/das"
 	"github.com/offchainlabs/nitro/daprovider/data_streaming"
-	dapserver "github.com/offchainlabs/nitro/daprovider/server"
+	"github.com/offchainlabs/nitro/daprovider/factory"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
@@ -579,6 +575,8 @@ func getDAS(
 
 	var err error
 	var daClient *daclient.Client
+	var anytrustWriter daprovider.Writer
+	var anytrustReader daprovider.Reader
 	var withDAWriter bool
 	var dasServerCloseFn func()
 	if config.DAProvider.Enable {
@@ -589,43 +587,49 @@ func getDAS(
 		// Only allow dawriter if batchposter is enabled
 		withDAWriter = config.DAProvider.WithWriter && config.BatchPoster.Enable
 	} else if config.DataAvailability.Enable {
-		jwtPath := path.Join(filepath.Dir(stack.InstanceDir()), "dasserver-jwtsecret")
-		if err := genericconf.TryCreatingJWTSecret(jwtPath); err != nil {
-			return nil, nil, nil, fmt.Errorf("error writing ephemeral jwtsecret of dasserver to file: %w", err)
+		// Create AnyTrust factory
+		daFactory, err := factory.NewDAProviderFactory(
+			factory.ModeAnyTrust,
+			&config.DataAvailability,
+			nil, // referencedaCfg
+			dataSigner,
+			l1client,
+			l1Reader,
+			deployInfo.SequencerInbox,
+			config.BatchPoster.Enable,
+		)
+		if err != nil {
+			return nil, nil, nil, err
 		}
-		log.Info("Generated ephemeral JWT secret for dasserver", "jwtPath", jwtPath)
-		// JWTSecret is no longer needed, cleanup when returning
-		defer func() {
-			if err := os.Remove(jwtPath); err != nil {
-				log.Error("error deleting generated ephemeral JWT secret of dasserver", "jwtPath", jwtPath)
+
+		if err := daFactory.ValidateConfig(); err != nil {
+			return nil, nil, nil, err
+		}
+
+		// Create writer if batch poster is enabled
+		var writerCleanup func()
+		if config.BatchPoster.Enable {
+			anytrustWriter, writerCleanup, err = daFactory.CreateWriter(ctx)
+			if err != nil {
+				return nil, nil, nil, err
 			}
-		}()
+			withDAWriter = true
+		}
 
-		serverConfig := dapserver.DefaultDASServerConfig
-		serverConfig.Port = 0 // Initializes server at a random available port
-		serverConfig.DataAvailability = config.DataAvailability
-		serverConfig.EnableDAWriter = config.BatchPoster.Enable
-		serverConfig.JWTSecret = jwtPath
-		withDAWriter = config.BatchPoster.Enable
-		dasServer, closeFn, err := dapserver.NewServerForDAS(ctx, &serverConfig, dataSigner, l1client, l1Reader, deployInfo.SequencerInbox)
+		// Create reader
+		var readerCleanup func()
+		anytrustReader, readerCleanup, err = daFactory.CreateReader(ctx)
 		if err != nil {
 			return nil, nil, nil, err
 		}
-		rpcClientConfig := rpcclient.DefaultClientConfig
-		rpcClientConfig.URL = dasServer.Addr
-		rpcClientConfig.JWTSecret = jwtPath
 
-		daClientConfig := config.DAProvider
-		daClientConfig.RPC = rpcClientConfig
-
-		daClient, err = daclient.NewClient(ctx, &daClientConfig, data_streaming.PayloadCommiter())
-		if err != nil {
-			return nil, nil, nil, err
-		}
+		// Set up cleanup function
 		dasServerCloseFn = func() {
-			_ = dasServer.Shutdown(ctx)
-			if closeFn != nil {
-				closeFn()
+			if writerCleanup != nil {
+				writerCleanup()
+			}
+			if readerCleanup != nil {
+				readerCleanup()
 			}
 		}
 	} else if l2Config.ArbitrumChainParams.DataAvailabilityCommittee {
@@ -633,7 +637,7 @@ func getDAS(
 	}
 
 	// We support a nil txStreamer for the pruning code
-	if txStreamer != nil && txStreamer.chainConfig.ArbitrumChainParams.DataAvailabilityCommittee && daClient == nil {
+	if txStreamer != nil && txStreamer.chainConfig.ArbitrumChainParams.DataAvailabilityCommittee && daClient == nil && anytrustReader == nil {
 		return nil, nil, nil, errors.New("data availability service required but unconfigured")
 	}
 
@@ -648,15 +652,26 @@ func getDAS(
 			return nil, nil, nil, fmt.Errorf("failed to register DA client: %w", err)
 		}
 	}
+	if anytrustReader != nil {
+		headerBytes := []byte{
+			daprovider.DASMessageHeaderFlag,
+			daprovider.DASMessageHeaderFlag | daprovider.TreeDASMessageHeaderFlag,
+		}
+		if err := dapReaders.RegisterAll(headerBytes, anytrustReader); err != nil {
+			return nil, nil, nil, fmt.Errorf("failed to register AnyTrust reader: %w", err)
+		}
+	}
 	if blobReader != nil {
 		if err := dapReaders.SetupBlobReader(daprovider.NewReaderForBlobReader(blobReader)); err != nil {
 			return nil, nil, nil, fmt.Errorf("failed to register blob reader: %w", err)
 		}
 	}
-	// AnyTrust now always uses the daClient, which is already registered,
-	// so we don't need to register it separately here.
 
 	if withDAWriter {
+		// Return anytrustWriter if it exists, otherwise daClient
+		if anytrustWriter != nil {
+			return anytrustWriter, dasServerCloseFn, dapReaders, nil
+		}
 		return daClient, dasServerCloseFn, dapReaders, nil
 	}
 	return nil, dasServerCloseFn, dapReaders, nil
