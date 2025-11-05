@@ -3,8 +3,9 @@
 package gethexec
 
 import (
-	"github.com/ethereum/go-ethereum/log"
 	"github.com/spf13/pflag"
+
+	"github.com/ethereum/go-ethereum/log"
 )
 
 func BenchSequencerConfigAddOptions(_ string, _ *pflag.FlagSet) {
