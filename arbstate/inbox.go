@@ -50,9 +50,10 @@ type SequencerMessage struct {
 const MaxDecompressedLen int = 1024 * 1024 * 16 // 16 MiB
 const maxZeroheavyDecompressedLen = 101*MaxDecompressedLen/100 + 64
 const MaxSegmentsPerSequencerMessage = 100 * 1024
+const L1HeaderSize = 40
 
 func ParseSequencerMessage(ctx context.Context, batchNum uint64, batchBlockHash common.Hash, data []byte, dapReaders *daprovider.ReaderRegistry, keysetValidationMode daprovider.KeysetValidationMode) (*SequencerMessage, error) {
-	if len(data) < 40 {
+	if len(data) < L1HeaderSize {
 		return nil, errors.New("sequencer message missing L1 header")
 	}
 	parsedMsg := &SequencerMessage{
@@ -63,7 +64,7 @@ func ParseSequencerMessage(ctx context.Context, batchNum uint64, batchBlockHash 
 		AfterDelayedMessages: binary.BigEndian.Uint64(data[32:40]),
 		Segments:             [][]byte{},
 	}
-	payload := data[40:]
+	payload := data[L1HeaderSize:]
 
 	// Stage 0: Check if our node is out of date and we don't understand this batch type
 	// If the parent chain sequencer inbox smart contract authenticated this batch,

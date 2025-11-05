@@ -368,7 +368,12 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 				missingDelayed = true
 			} else if ourLatestDelayedCount > checkingDelayedCount {
 				log.Info("backwards reorg of delayed messages", "from", ourLatestDelayedCount, "to", checkingDelayedCount)
-				err = r.tracker.ReorgDelayedTo(checkingDelayedCount)
+				batch, prevMessageCount, err := r.tracker.ReorgDelayedTo(checkingDelayedCount)
+				if err != nil {
+					return err
+				}
+
+				err = r.tracker.ReorgAtAndEndBatch(batch, prevMessageCount)
 				if err != nil {
 					return err
 				}
@@ -633,16 +638,26 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 }
 
 func (r *InboxReader) addMessages(ctx context.Context, sequencerBatches []*SequencerInboxBatch, delayedMessages []*DelayedInboxMessage) (bool, error) {
-	err := r.tracker.AddDelayedMessages(delayedMessages)
+	batch, prevMessageCount, err := r.tracker.AddDelayedMessages(delayedMessages)
 	if err != nil {
 		return false, err
 	}
+
 	err = r.tracker.AddSequencerBatches(ctx, r.client, sequencerBatches)
 	if errors.Is(err, delayedMessagesMismatch) {
 		return true, nil
 	} else if err != nil {
 		return false, err
 	}
+
+	// Only stream batches if there are batches to stream
+	if batch != nil {
+		err = r.tracker.ReorgAtAndEndBatch(batch, prevMessageCount)
+		if err != nil {
+			return false, err
+		}
+	}
+
 	return false, nil
 }
 

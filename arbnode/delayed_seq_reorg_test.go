@@ -64,7 +64,7 @@ func TestSequencerReorgFromDelayed(t *testing.T) {
 			},
 		},
 	}
-	err = tracker.AddDelayedMessages([]*DelayedInboxMessage{initMsgDelayed, userDelayed, userDelayed2})
+	_, _, err = tracker.AddDelayedMessages([]*DelayedInboxMessage{initMsgDelayed, userDelayed, userDelayed2})
 	Require(t, err)
 
 	serializedInitMsgBatch := make([]byte, 40)
@@ -149,7 +149,10 @@ func TestSequencerReorgFromDelayed(t *testing.T) {
 			},
 		},
 	}
-	err = tracker.AddDelayedMessages([]*DelayedInboxMessage{userDelayedModified})
+	batch, prevMessageCount, err := tracker.AddDelayedMessages([]*DelayedInboxMessage{userDelayedModified})
+	Require(t, err)
+
+	err = tracker.ReorgAtAndEndBatch(batch, prevMessageCount)
 	Require(t, err)
 
 	// userMsgBatch, and emptyBatch will be reorged out
@@ -264,7 +267,7 @@ func TestSequencerReorgFromLastDelayedMsg(t *testing.T) {
 			},
 		},
 	}
-	err = tracker.AddDelayedMessages([]*DelayedInboxMessage{initMsgDelayed, userDelayed, userDelayed2})
+	_, _, err = tracker.AddDelayedMessages([]*DelayedInboxMessage{initMsgDelayed, userDelayed, userDelayed2})
 	Require(t, err)
 
 	serializedInitMsgBatch := make([]byte, 40)
@@ -350,7 +353,7 @@ func TestSequencerReorgFromLastDelayedMsg(t *testing.T) {
 			},
 		},
 	}
-	err = tracker.AddDelayedMessages([]*DelayedInboxMessage{userDelayed2, userDelayed3})
+	_, _, err = tracker.AddDelayedMessages([]*DelayedInboxMessage{userDelayed2, userDelayed3})
 	Require(t, err)
 
 	msgCount, err = streamer.GetMessageCount()
@@ -380,7 +383,10 @@ func TestSequencerReorgFromLastDelayedMsg(t *testing.T) {
 			},
 		},
 	}
-	err = tracker.AddDelayedMessages([]*DelayedInboxMessage{userDelayed2Modified})
+	batch, prevMessageCount, err := tracker.AddDelayedMessages([]*DelayedInboxMessage{userDelayed2Modified})
+	Require(t, err)
+
+	err = tracker.ReorgAtAndEndBatch(batch, prevMessageCount)
 	Require(t, err)
 
 	msgCount, err = streamer.GetMessageCount()
