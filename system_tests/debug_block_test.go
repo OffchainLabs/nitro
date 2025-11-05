@@ -7,5 +7,5 @@ import (
 )
 
 func TestExperimentalDebugBlockInjection(t *testing.T) {
-	testDebugBlockInjection(t, false)
+	testDebugBlockInjection(t, true)
 }
