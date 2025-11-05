@@ -158,7 +158,7 @@ func downloadFile(ctx context.Context, initConfig *conf.InitConfig, url string, 
 				}
 			case <-resp.Done:
 				if err := resp.Err(); err != nil {
-					if resp.HTTPResponse.StatusCode == http.StatusNotFound {
+					if resp.HTTPResponse != nil && resp.HTTPResponse.StatusCode == http.StatusNotFound {
 						return "", notFoundError
 					}
 					fmt.Printf("\n  attempt %d failed: %v\n", attempt, err)
@@ -624,7 +624,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 				if config.Execution.Dangerous.DebugBlock.OverwriteChainConfig {
 					config.Execution.Dangerous.DebugBlock.Apply(chainConfig)
 				}
-				wasmDb, err := stack.OpenDatabaseWithOptions("wasm", node.DatabaseOptions{Cache: config.Execution.Caching.DatabaseCache, Handles: config.Persistent.Handles, MetricsNamespace: "wasm/", PebbleExtraOptions: persistentConfig.Pebble.ExtraOptions("wasm")})
+				wasmDb, err := stack.OpenDatabaseWithOptions("wasm", node.DatabaseOptions{Cache: config.Execution.Caching.DatabaseCache, Handles: config.Persistent.Handles, MetricsNamespace: "wasm/", PebbleExtraOptions: persistentConfig.Pebble.ExtraOptions("wasm"), NoFreezer: true})
 				if err != nil {
 					return nil, nil, err
 				}
@@ -706,7 +706,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 	if err != nil {
 		return nil, nil, err
 	}
-	wasmDb, err := stack.OpenDatabaseWithOptions("wasm", node.DatabaseOptions{Cache: config.Execution.Caching.DatabaseCache, Handles: config.Persistent.Handles, MetricsNamespace: "wasm/", PebbleExtraOptions: persistentConfig.Pebble.ExtraOptions("wasm")})
+	wasmDb, err := stack.OpenDatabaseWithOptions("wasm", node.DatabaseOptions{Cache: config.Execution.Caching.DatabaseCache, Handles: config.Persistent.Handles, MetricsNamespace: "wasm/", PebbleExtraOptions: persistentConfig.Pebble.ExtraOptions("wasm"), NoFreezer: true})
 	if err != nil {
 		return nil, nil, err
 	}

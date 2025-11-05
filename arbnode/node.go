@@ -41,7 +41,7 @@ import (
 	"github.com/offchainlabs/nitro/daprovider/daclient"
 	"github.com/offchainlabs/nitro/daprovider/das"
 	"github.com/offchainlabs/nitro/daprovider/data_streaming"
-	dapserver "github.com/offchainlabs/nitro/daprovider/server"
+	"github.com/offchainlabs/nitro/daprovider/server"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
@@ -817,7 +817,12 @@ func getStaker(
 		if err != nil {
 			return nil, nil, common.Address{}, err
 		}
-		if err := wallet.Initialize(ctx); err != nil {
+		if config.Staker.UseSmartContractWallet {
+			err = wallet.InitializeAndCreateSCW(ctx)
+		} else {
+			err = wallet.Initialize(ctx)
+		}
+		if err != nil {
 			return nil, nil, common.Address{}, err
 		}
 		if dp != nil {
@@ -1373,14 +1378,6 @@ func (n *Node) Start(ctx context.Context) error {
 			return fmt.Errorf("error initializing feed broadcast server: %w", err)
 		}
 	}
-	if n.InboxTracker != nil && n.BroadcastServer != nil {
-		// Even if the sequencer coordinator will populate this backlog,
-		// we want to make sure it's populated before any clients connect.
-		err = n.InboxTracker.PopulateFeedBacklog(n.BroadcastServer)
-		if err != nil {
-			return fmt.Errorf("error populating feed backlog on startup: %w", err)
-		}
-	}
 	err = n.TxStreamer.Start(ctx)
 	if err != nil {
 		return fmt.Errorf("error starting transaction streamer: %w", err)
@@ -1389,6 +1386,14 @@ func (n *Node) Start(ctx context.Context) error {
 		err = n.InboxReader.Start(ctx)
 		if err != nil {
 			return fmt.Errorf("error starting inbox reader: %w", err)
+		}
+	}
+	if n.InboxTracker != nil && n.BroadcastServer != nil {
+		// Even if the sequencer coordinator will populate this backlog,
+		// we want to make sure it's populated before any clients connect.
+		err = n.InboxTracker.PopulateFeedBacklog(n.BroadcastServer)
+		if err != nil {
+			return fmt.Errorf("error populating feed backlog on startup: %w", err)
 		}
 	}
 	// must init broadcast server before trying to sequence anything

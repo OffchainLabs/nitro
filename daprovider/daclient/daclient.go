@@ -23,14 +23,17 @@ import (
 type Client struct {
 	*rpcclient.RpcClient
 	*data_streaming.DataStreamer[server_api.StoreResult]
+	storeRpcMethod *string
 }
 
 // lint:require-exhaustive-initialization
 type ClientConfig struct {
-	Enable     bool                              `koanf:"enable"`
-	WithWriter bool                              `koanf:"with-writer"`
-	RPC        rpcclient.ClientConfig            `koanf:"rpc" reload:"hot"`
-	DataStream data_streaming.DataStreamerConfig `koanf:"data-stream"`
+	Enable           bool                              `koanf:"enable"`
+	WithWriter       bool                              `koanf:"with-writer"`
+	RPC              rpcclient.ClientConfig            `koanf:"rpc" reload:"hot"`
+	UseDataStreaming bool                              `koanf:"use-data-streaming" reload:"hot"`
+	DataStream       data_streaming.DataStreamerConfig `koanf:"data-stream"`
+	StoreRpcMethod   string                            `koanf:"store-rpc-method" reload:"hot"`
 }
 
 var DefaultClientConfig = ClientConfig{
@@ -42,15 +45,19 @@ var DefaultClientConfig = ClientConfig{
 		ArgLogLimit:               2048,
 		WebsocketMessageSizeLimit: 256 * 1024 * 1024,
 	},
-	DataStream: data_streaming.DefaultDataStreamerConfig(DefaultStreamRpcMethods),
+	UseDataStreaming: false,
+	DataStream:       data_streaming.DefaultDataStreamerConfig(DefaultStreamRpcMethods),
+	StoreRpcMethod:   DefaultStoreRpcMethod,
 }
 
 func TestClientConfig(serverUrl string) *ClientConfig {
 	return &ClientConfig{
-		Enable:     true,
-		WithWriter: true,
-		RPC:        rpcclient.ClientConfig{URL: serverUrl},
-		DataStream: data_streaming.TestDataStreamerConfig(DefaultStreamRpcMethods),
+		Enable:           true,
+		WithWriter:       true,
+		RPC:              rpcclient.ClientConfig{URL: serverUrl},
+		UseDataStreaming: false,
+		DataStream:       data_streaming.TestDataStreamerConfig(DefaultStreamRpcMethods),
+		StoreRpcMethod:   DefaultStoreRpcMethod,
 	}
 }
 
@@ -60,22 +67,29 @@ var DefaultStreamRpcMethods = data_streaming.DataStreamingRPCMethods{
 	FinalizeStream: "daprovider_commitChunkedStore",
 }
 
+var DefaultStoreRpcMethod = "daprovider_store"
+
 func ClientConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultClientConfig.Enable, "enable daprovider client")
 	f.Bool(prefix+".with-writer", DefaultClientConfig.WithWriter, "implies if the daprovider rpc server supports writer interface")
 	rpcclient.RPCClientAddOptions(prefix+".rpc", f, &DefaultClientConfig.RPC)
+	f.Bool(prefix+".use-data-streaming", DefaultClientConfig.UseDataStreaming, "use data streaming protocol for storing large payloads")
 	data_streaming.DataStreamerConfigAddOptions(prefix+".data-stream", f, DefaultStreamRpcMethods)
+	f.String(prefix+".store-rpc-method", DefaultClientConfig.StoreRpcMethod, "name of the store rpc method on the daprovider server (used when data streaming is disabled)")
 }
 
-func NewClient(ctx context.Context, config *ClientConfig, payloadSigner *data_streaming.PayloadSigner) (*Client, error) {
+func NewClient(ctx context.Context, config *ClientConfig, payloadSigner *data_streaming.PayloadSigner) (client *Client, err error) {
 	rpcClient := rpcclient.NewRpcClient(func() *rpcclient.ClientConfig { return &config.RPC }, nil)
 
-	dataStreamer, err := data_streaming.NewDataStreamer[server_api.StoreResult](config.DataStream, payloadSigner, rpcClient)
-	if err != nil {
-		return nil, err
+	var dataStreamer *data_streaming.DataStreamer[server_api.StoreResult]
+	if config.UseDataStreaming {
+		dataStreamer, err = data_streaming.NewDataStreamer[server_api.StoreResult](config.DataStream, payloadSigner, rpcClient)
+		if err != nil {
+			return nil, err
+		}
 	}
 
-	client := &Client{rpcClient, dataStreamer}
+	client = &Client{rpcClient, dataStreamer, &config.StoreRpcMethod}
 	if err = client.Start(ctx); err != nil {
 		return nil, fmt.Errorf("error starting daprovider client: %w", err)
 	}
@@ -141,14 +155,34 @@ func (c *Client) Store(
 ) containers.PromiseInterface[[]byte] {
 	promise, ctx := containers.NewPromiseWithContext[[]byte](context.Background())
 	go func() {
-		storeResult, err := c.DataStreamer.StreamData(ctx, message, timeout)
+		storeResult, err := c.store(ctx, message, timeout)
 		if err != nil {
-			promise.ProduceError(fmt.Errorf("error returned from daprovider server (chunked store protocol), err: %w", err))
+			promise.ProduceError(err)
 		} else {
 			promise.Produce(storeResult.SerializedDACert)
 		}
 	}()
 	return promise
+}
+
+func (c *Client) store(ctx context.Context, message []byte, timeout uint64) (*server_api.StoreResult, error) {
+	var storeResult *server_api.StoreResult
+
+	// Single-call store if data streaming is not enabled
+	if c.DataStreamer == nil {
+		if err := c.CallContext(ctx, &storeResult, *c.storeRpcMethod, hexutil.Bytes(message), hexutil.Uint64(timeout)); err != nil {
+			return nil, fmt.Errorf("error returned from daprovider server (single-call store protocol), err: %w", err)
+		}
+		return storeResult, nil
+	}
+
+	// Otherwise, use the data streaming protocol
+	storeResult, err := c.DataStreamer.StreamData(ctx, message, timeout)
+	if err != nil {
+		return nil, fmt.Errorf("error returned from daprovider server (chunked store protocol), err: %w", err)
+	} else {
+		return storeResult, nil
+	}
 }
 
 // GenerateReadPreimageProof generates a proof for a specific preimage at a given offset

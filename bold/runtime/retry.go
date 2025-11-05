@@ -27,6 +27,7 @@ var (
 type RetryConfig struct {
 	sleepTime         time.Duration
 	LevelWarningError string // can be extended to a list or regex if demanded in future, currently supporting for one error
+	LevelInfoError    string // can be extended to a list or regex if demanded in future, currently supporting for one error
 }
 
 type Opt func(*RetryConfig)
@@ -62,6 +63,9 @@ func UntilSucceedsMultipleReturnValue[T, U any](ctx context.Context, fn func() (
 			logLevel = commonEphemeralErrorHandler.LogLevel(err, logLevel)
 			if cfg.LevelWarningError != "" && strings.Contains(err.Error(), cfg.LevelWarningError) {
 				logLevel = log.Warn
+			}
+			if cfg.LevelInfoError != "" && strings.Contains(err.Error(), cfg.LevelInfoError) {
+				logLevel = log.Info
 			}
 			logLevel("Could not succeed function after retries",
 				"retryCount", count,
