@@ -9,12 +9,12 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 )
 
-func testDebugBlockInjection(t *testing.T, production bool) {
+func testDebugBlockInjection(t *testing.T, expectInject bool) {
 	t.Run("with-other-tx", func(t *testing.T) {
-		testDebugBlockInjectionImpl(t, production, true)
+		testDebugBlockInjectionImpl(t, expectInject, true)
 	})
 	t.Run("without-other-tx", func(t *testing.T) {
-		testDebugBlockInjectionImpl(t, production, false)
+		testDebugBlockInjectionImpl(t, expectInject, false)
 	})
 }
 
