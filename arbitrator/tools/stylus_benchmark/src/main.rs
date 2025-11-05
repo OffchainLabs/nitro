@@ -5,7 +5,7 @@ mod benchmark;
 mod scenario;
 mod scenarios;
 
-use clap::{Parser, ValueEnum};
+use clap::Parser;
 use scenario::Scenario;
 use std::path::PathBuf;
 
