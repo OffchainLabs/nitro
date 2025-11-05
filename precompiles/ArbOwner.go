@@ -454,8 +454,31 @@ func (con ArbOwner) SetCalldataPriceIncrease(c ctx, _ mech, enable bool) error {
 	return c.State.Features().SetCalldataPriceIncrease(enable)
 }
 
-// SetGasPricingConstraints sets the gas pricing constraints used by the Multi-Constraint Pricer.
+// SetGasBacklog sets the L2 gas backlog directly (used by single-constraint pricing model only)
+func (con ArbOwner) SetGasBacklog(c ctx, evm mech, backlog uint64) error {
+	return c.State.L2PricingState().SetGasBacklog(backlog)
+}
+
+// SetGasPricingConstraints sets the gas pricing constraints used by the multi-constraint pricing model
 func (con ArbOwner) SetGasPricingConstraints(c ctx, evm mech, constraints [][3]uint64) error {
-	// todo: update with real code once https://github.com/OffchainLabs/nitro/pull/3860 is merged
-	return fmt.Errorf("SetGasPricingConstraints is a stub implementation, since definitions were upstreamed, but implementations not done")
+	err := c.State.L2PricingState().ClearConstraints()
+	if err != nil {
+		return fmt.Errorf("failed to clear existing constraints: %w", err)
+	}
+
+	for _, constraint := range constraints {
+		gasTargetPerSecond := constraint[0]
+		adjustmentWindowSeconds := constraint[1]
+		startingBacklogValue := constraint[2]
+
+		if gasTargetPerSecond == 0 || adjustmentWindowSeconds == 0 {
+			return fmt.Errorf("invalid constraint with target %d and adjustment window %d", gasTargetPerSecond, adjustmentWindowSeconds)
+		}
+
+		err := c.State.L2PricingState().AddConstraint(gasTargetPerSecond, adjustmentWindowSeconds, startingBacklogValue)
+		if err != nil {
+			return fmt.Errorf("failed to add constraint (target: %d, adjustment window: %d): %w", gasTargetPerSecond, adjustmentWindowSeconds, err)
+		}
+	}
+	return nil
 }

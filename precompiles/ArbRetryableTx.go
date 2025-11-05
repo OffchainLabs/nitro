@@ -12,6 +12,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
 
+	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbos/retryables"
 	"github.com/offchainlabs/nitro/arbos/storage"
 	"github.com/offchainlabs/nitro/arbos/util"
@@ -99,6 +100,13 @@ func (con ArbRetryableTx) Redeem(c ctx, evm mech, ticketId bytes32) (bytes32, er
 	// Result is 32 bytes long which is 1 word
 	gasCostToReturnResult := params.CopyGas
 	gasPoolUpdateCost := storage.StorageReadCost + storage.StorageWriteCost
+
+	// Multi-Constraint pricer requires an extra storage read, since ArbOS must load the constraints from state.
+	// This overhead applies even when no constraints are configured.
+	if c.State.ArbOSVersion() >= l2pricing.ArbosMultiConstraintsVersion {
+		gasPoolUpdateCost += storage.StorageReadCost
+	}
+
 	futureGasCosts := eventCost + gasCostToReturnResult + gasPoolUpdateCost
 	if c.GasLeft() < futureGasCosts {
 		return hash{}, c.Burn(multigas.ResourceKindComputation, futureGasCosts) // this will error
@@ -128,7 +136,7 @@ func (con ArbRetryableTx) Redeem(c ctx, evm mech, ticketId bytes32) (bytes32, er
 
 	// Add the gasToDonate back to the gas pool: the retryable attempt will then consume it.
 	// This ensures that the gas pool has enough gas to run the retryable attempt.
-	return retryTxHash, c.State.L2PricingState().AddToGasPool(arbmath.SaturatingCast[int64](gasToDonate))
+	return retryTxHash, c.State.L2PricingState().AddToGasPool(arbmath.SaturatingCast[int64](gasToDonate), c.State.ArbOSVersion())
 }
 
 // GetLifetime gets the default lifetime period a retryable has at creation
