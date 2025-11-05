@@ -2,6 +2,7 @@ package arbtest
 
 import (
 	"context"
+	"fmt"
 	"math/big"
 	"testing"
 
@@ -10,14 +11,10 @@ import (
 	"github.com/ethereum/go-ethereum/core/rawdb"
 )
 
-func TestAccessingPathSchemeArchivalState(t *testing.T) {
+func TestAccessingPathSchemeState(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
-	scheme := rawdb.PathScheme
-	builder.defaultDbScheme = scheme
-	builder.execConfig.Caching.StateScheme = scheme
-	builder.execConfig.RPC.StateScheme = scheme
 
 	// This test is PathScheme specific, it shouldn't be run with HashScheme
 	builder.RequireScheme(t, rawdb.PathScheme)
@@ -34,10 +31,10 @@ func TestAccessingPathSchemeArchivalState(t *testing.T) {
 	}
 
 	head := header.Number.Uint64()
-	start := head - 128
-	if start < 1 {
+	if head < 129 {
 		t.Fatalf("chain height (%d) too low — need at least 129 blocks to check last 128", head)
 	}
+	start := head - 128
 
 	for height := head; height > start; height-- {
 		_, err := l2client.BalanceAt(ctx, GetTestAddressForAccountName(t, "User2"), new(big.Int).SetUint64(height))
@@ -54,5 +51,45 @@ func TestAccessingPathSchemeArchivalState(t *testing.T) {
 	require.Error(t, err, "expected BalanceAt to fail for missing historical state")
 	require.Contains(t, err.Error(), "historical state", "unexpected error message: %v", err)
 	require.Contains(t, err.Error(), "is not available", "unexpected error message: %v", err)
+}
 
+func TestAccessingPathSchemeArchivalState(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder.execConfig.Caching.Archive = true
+	builder.execConfig.Caching.StateHistory = 2
+
+	// This test is PathScheme specific, it shouldn't be run with HashScheme
+	builder.RequireScheme(t, rawdb.PathScheme)
+
+	// Build a node with history past the 128 block diff threshold
+	cancelNode := buildWithHistory(t, ctx, builder, 150)
+	fmt.Println("bluebird 5-3", builder.execConfig.Caching.StateScheme)
+	execNode, l2client := builder.L2.ExecNode, builder.L2.Client
+	defer cancelNode()
+	bc := execNode.Backend.ArbInterface().BlockChain()
+
+	header := bc.CurrentBlock()
+	if header == nil {
+		Fatal(t, "failed to get current block header")
+	}
+
+	head := header.Number.Uint64()
+	if head < 132 {
+		t.Fatalf("chain height (%d) too low — need at least 129 blocks to check last 128", head)
+	}
+	start := head - 131
+
+	for height := head; height > start; height-- {
+		_, err := l2client.BalanceAt(ctx, GetTestAddressForAccountName(t, "User2"), new(big.Int).SetUint64(height))
+		Require(t, err, "Failed to get balance at height", height)
+	}
+
+	// Now try to access state older than 131 blocks ago, which should be missing
+	heightWhereStateShouldBeMissing := head - 132
+	_, err := l2client.BalanceAt(ctx, GetTestAddressForAccountName(t, "User2"), new(big.Int).SetUint64(heightWhereStateShouldBeMissing))
+	require.Error(t, err, "expected BalanceAt to fail for missing historical state")
+	// `metadata is not found` is the error returned when archival data is pruned for some reason
+	require.Contains(t, err.Error(), "metadata is not found", "unexpected error message: %v", err)
 }
