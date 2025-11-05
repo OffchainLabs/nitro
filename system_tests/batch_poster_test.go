@@ -909,3 +909,49 @@ func TestBatchPosterActuallyPostsBlobsToL1(t *testing.T) {
 		require.Len(t, restoredBlobs, 1)
 	}
 }
+
+func TestBatchPosterPostsReportOnlyBatchAfterMaxEmptyBatchDelay(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).
+		DefaultConfig(t, true).
+		TakeOwnership()
+
+	builder.nodeConfig.DelayedSequencer.Enable = true
+	builder.nodeConfig.DelayedSequencer.FinalizeDistance = 1
+	builder.nodeConfig.BatchPoster.MaxEmptyBatchDelay = time.Second
+	builder.nodeConfig.BatchPoster.PollInterval = time.Hour
+	builder.nodeConfig.BatchPoster.MaxDelay = 0
+
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	initialBatchCount := GetBatchCount(t, builder)
+
+	// Force immediate post of first batch.
+	builder.L2.ConsensusConfigFetcher.Set(builder.nodeConfig)
+	posted, err := builder.L2.ConsensusNode.BatchPoster.MaybePostSequencerBatch(ctx)
+	require.NoError(t, err)
+	require.True(t, posted, "expected first batch to post immediately")
+
+	// Wait until batch appears on L1, measuring how long it takes.
+	start := time.Now()
+	AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, 1)
+	require.Eventually(t, func() bool {
+		return GetBatchCount(t, builder) == initialBatchCount+1
+	}, 15*time.Second, 200*time.Millisecond, "batch not observed on L1 (BatchCount didn't increase)")
+	elapsed := time.Since(start)
+
+	// Compute remaining delay
+	delay := builder.nodeConfig.BatchPoster.MaxEmptyBatchDelay + 300*time.Millisecond
+	if elapsed < delay {
+		time.Sleep(delay - elapsed)
+	}
+
+	// Force second batch
+	builder.L2.ConsensusConfigFetcher.Set(builder.nodeConfig)
+	posted, err = builder.L2.ConsensusNode.BatchPoster.MaybePostSequencerBatch(ctx)
+	require.NoError(t, err)
+	require.True(t, posted, "expected second batch to be posted by MaxEmptyBatchDelay")
+}
