@@ -1,3 +1,6 @@
+// Copyright 2025, Offchain Labs, Inc.
+// For license information, see https://github.com/offchainlabs/nitro/blob/master/LICENSE.md
+
 // DANGER! this file is included in all builds
 // DANGER! do not place any of the experimental logic and features here
 
