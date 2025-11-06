@@ -918,11 +918,13 @@ func TestBatchPosterPostsReportOnlyBatchAfterMaxEmptyBatchDelay(t *testing.T) {
 		DefaultConfig(t, true).
 		TakeOwnership()
 
+	// Enable delayed sequencer and set fast finalization so reports appear quickly on L2
 	builder.nodeConfig.DelayedSequencer.Enable = true
 	builder.nodeConfig.DelayedSequencer.FinalizeDistance = 1
+	// Post an empty batch if no useful messages appear within 1 second.
 	builder.nodeConfig.BatchPoster.MaxEmptyBatchDelay = time.Second
+	// Disable automatic background posting
 	builder.nodeConfig.BatchPoster.PollInterval = time.Hour
-	builder.nodeConfig.BatchPoster.MaxDelay = 0
 
 	cleanup := builder.Build(t)
 	defer cleanup()
@@ -930,7 +932,6 @@ func TestBatchPosterPostsReportOnlyBatchAfterMaxEmptyBatchDelay(t *testing.T) {
 	initialBatchCount := GetBatchCount(t, builder)
 
 	// Force immediate post of first batch.
-	builder.L2.ConsensusConfigFetcher.Set(builder.nodeConfig)
 	posted, err := builder.L2.ConsensusNode.BatchPoster.MaybePostSequencerBatch(ctx)
 	require.NoError(t, err)
 	require.True(t, posted, "expected first batch to post immediately")
@@ -950,7 +951,6 @@ func TestBatchPosterPostsReportOnlyBatchAfterMaxEmptyBatchDelay(t *testing.T) {
 	}
 
 	// Force second batch
-	builder.L2.ConsensusConfigFetcher.Set(builder.nodeConfig)
 	posted, err = builder.L2.ConsensusNode.BatchPoster.MaybePostSequencerBatch(ctx)
 	require.NoError(t, err)
 	require.True(t, posted, "expected second batch to be posted by MaxEmptyBatchDelay")
