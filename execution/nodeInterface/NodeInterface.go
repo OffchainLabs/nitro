@@ -20,6 +20,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/arbos"
@@ -52,6 +53,11 @@ type NodeInterface struct {
 var merkleTopic common.Hash
 var l2ToL1TxTopic common.Hash
 var l2ToL1TransactionTopic common.Hash
+
+var (
+	getL1ConfirmationCallsCounter        = metrics.NewRegisteredCounter("arb/node_interface_get_l1_confirmation_calls", nil)
+	findBatchContainingBlockCallsCounter = metrics.NewRegisteredCounter("arb/node_interface_find_batch_containing_block_calls", nil)
+)
 
 func (n NodeInterface) NitroGenesisBlock(c ctx) (huge, error) {
 	block := n.backend.ChainConfig().ArbitrumChainParams.GenesisBlockNum
@@ -92,6 +98,8 @@ func (n NodeInterface) msgNumToInboxBatch(msgIndex arbutil.MessageIndex) (uint64
 }
 
 func (n NodeInterface) FindBatchContainingBlock(c ctx, evm mech, blockNum uint64) (uint64, error) {
+	findBatchContainingBlockCallsCounter.Inc(1)
+
 	msgIndex, found, err := n.blockNumToMessageIndex(blockNum)
 	if err != nil {
 		return 0, err
@@ -107,6 +115,8 @@ func (n NodeInterface) FindBatchContainingBlock(c ctx, evm mech, blockNum uint64
 }
 
 func (n NodeInterface) GetL1Confirmations(c ctx, evm mech, blockHash bytes32) (uint64, error) {
+	getL1ConfirmationCallsCounter.Inc(1)
+
 	node, err := gethExecFromNodeInterfaceBackend(n.backend)
 	if err != nil {
 		return 0, err
