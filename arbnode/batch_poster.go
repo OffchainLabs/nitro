@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/andybalholm/brotli"
+	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum"
@@ -872,12 +873,15 @@ type batchSegments struct {
 	blockNum              uint64
 	delayedMsg            uint64
 	sizeLimit             int
+	compressionLevel      int
 	recompressionLevel    int
 	newUncompressedSize   int
 	totalUncompressedSize int
 	lastCompressedSize    int
 	trailingHeaders       int // how many trailing segments are headers
 	isDone                bool
+
+	useNativeBrotli bool
 }
 
 type buildingBatch struct {
@@ -937,6 +941,7 @@ func (b *BatchPoster) newBatchSegments(ctx context.Context, firstDelayed uint64,
 		compressedBuffer:   compressedBuffer,
 		compressedWriter:   brotli.NewWriterLevel(compressedBuffer, compressionLevel),
 		sizeLimit:          maxSize,
+		compressionLevel:   compressionLevel,
 		recompressionLevel: recompressionLevel,
 		rawSegments:        make([][]byte, 0, 128),
 		delayedMsg:         firstDelayed,
@@ -988,9 +993,11 @@ func (s *batchSegments) testForOverflow(isHeader bool) (bool, error) {
 	if isHeader || len(s.rawSegments) == s.trailingHeaders {
 		return false, nil
 	}
-	err := s.compressedWriter.Flush()
-	if err != nil {
-		return true, err
+	if !s.useNativeBrotli {
+		err := s.compressedWriter.Flush()
+		if err != nil {
+			return true, err
+		}
 	}
 	s.lastCompressedSize = s.compressedBuffer.Len()
 	s.newUncompressedSize = 0
@@ -1020,7 +1027,19 @@ func (s *batchSegments) addSegmentToCompressed(segment []byte) error {
 	if err != nil {
 		return err
 	}
-	lenWritten, err := s.compressedWriter.Write(encoded)
+	var lenWritten int
+	if !s.useNativeBrotli {
+		lenWritten, err = s.compressedWriter.Write(encoded)
+	} else {
+		compressedSegment, err := arbcompress.CompressLevel(encoded, uint64(s.compressionLevel))
+		if err != nil {
+			return err
+		}
+		lenWritten, err = s.compressedBuffer.Write(compressedSegment)
+		if err != nil {
+			return err
+		}
+	}
 	s.newUncompressedSize += lenWritten
 	s.totalUncompressedSize += lenWritten
 	return err
@@ -1130,9 +1149,11 @@ func (s *batchSegments) CloseAndGetBytes() ([]byte, error) {
 	if len(s.rawSegments) == 0 {
 		return nil, nil
 	}
-	err := s.compressedWriter.Close()
-	if err != nil {
-		return nil, err
+	if !s.useNativeBrotli {
+		err := s.compressedWriter.Close()
+		if err != nil {
+			return nil, err
+		}
 	}
 	compressedBytes := s.compressedBuffer.Bytes()
 	fullMsg := make([]byte, 1, len(compressedBytes)+1)

@@ -19,19 +19,30 @@ const (
 )
 
 func TestGoLangBrotliPerformance(t *testing.T) {
-	bs := createNewBatchSegments(t)
+	bs := createNewBatchSegments(false)
+	finalized := fillBatch(t, bs)
+	println(len(finalized))
+}
+
+func TestNativeBrotliPerformance(t *testing.T) {
+	bs := createNewBatchSegments(true)
+	finalized := fillBatch(t, bs)
+	println(len(finalized))
+}
+
+func fillBatch(t *testing.T, bs *batchSegments) []byte {
 	for i := 0; i < NumMessages; i++ {
-		msg := getMessage(t, i)
+		msg := getMessage(i)
 		added, err := bs.AddMessage(msg)
 		require.NoError(t, err)
 		require.True(t, added, "message %d not added to batch", i)
 	}
 	finalized, err := bs.CloseAndGetBytes()
 	require.NoError(t, err)
-	println(len(finalized))
+	return finalized
 }
 
-func getMessage(t *testing.T, i int) *arbostypes.MessageWithMetadata {
+func getMessage(i int) *arbostypes.MessageWithMetadata {
 	return &arbostypes.MessageWithMetadata{
 		Message: &arbostypes.L1IncomingMessage{
 			Header: &arbostypes.L1IncomingMessageHeader{},
@@ -40,7 +51,7 @@ func getMessage(t *testing.T, i int) *arbostypes.MessageWithMetadata {
 	}
 }
 
-func createNewBatchSegments(t *testing.T) *batchSegments {
+func createNewBatchSegments(useNativeBrotli bool) *batchSegments {
 	compressedBuffer := bytes.NewBuffer(make([]byte, 0, BatchSizeLimit*2))
 
 	return &batchSegments{
@@ -49,5 +60,6 @@ func createNewBatchSegments(t *testing.T) *batchSegments {
 		rawSegments:        make([][]byte, 0, NumMessages),
 		sizeLimit:          BatchSizeLimit,
 		recompressionLevel: RecompressionLevel,
+		useNativeBrotli:    useNativeBrotli,
 	}
 }
