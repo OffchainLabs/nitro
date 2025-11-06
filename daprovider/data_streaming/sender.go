@@ -213,7 +213,14 @@ func (ds *DataStreamer[Result]) call(ctx context.Context, result interface{}, me
 		if !proceed {
 			return fmt.Errorf("failed after %d attempts: %w", attempt, err)
 		}
-		time.Sleep(delay)
+
+		// Sleep with context awareness - return immediately if context is canceled
+		select {
+		case <-time.After(delay):
+			// Continue to next retry attempt
+		case <-ctx.Done():
+			return ctx.Err()
+		}
 	}
 }
 

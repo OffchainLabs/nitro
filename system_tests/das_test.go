@@ -6,7 +6,6 @@ package arbtest
 import (
 	"context"
 	"encoding/base64"
-	"errors"
 	"math/big"
 	"net"
 	"net/http"
@@ -26,6 +25,7 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/headerreader"
+	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
@@ -43,14 +43,12 @@ func startLocalDASServer(
 	config := das.DefaultDataAvailabilityConfig
 	config.Enable = true
 	config.Key = das.KeyConfig{KeyDir: keyDir}
-	config.ParentChainNodeURL = "none"
 	config.LocalFileStorage = das.DefaultLocalFileStorageConfig
 	config.LocalFileStorage.Enable = true
 	config.LocalFileStorage.DataDir = dataDir
 
 	storageService, lifecycleManager, err := das.CreatePersistentStorageService(ctx, &config)
-	defer lifecycleManager.StopAndWaitUntil(time.Second)
-
+	_ = lifecycleManager // Caller should manage lifecycle if needed
 	Require(t, err)
 	seqInboxCaller, err := bridgegen.NewSequencerInboxCaller(seqInboxAddress, l1client)
 	Require(t, err)
@@ -60,17 +58,28 @@ func startLocalDASServer(
 	Require(t, err)
 	rpcLis, err := net.Listen("tcp", "localhost:0")
 	Require(t, err)
+	rpcAddr := rpcLis.Addr().String()
+	t.Logf("DAS RPC listener created at: %s", rpcAddr)
+
 	rpcServer, err := das.StartDASRPCServerOnListener(ctx, rpcLis, genericconf.HTTPServerTimeoutConfigDefault, genericconf.HTTPServerBodyLimitDefault, storageService, daWriter, storageService, signatureVerifier)
 	Require(t, err)
+	t.Logf("DAS RPC server started and listening on: %s", rpcAddr)
+
 	restLis, err := net.Listen("tcp", "localhost:0")
 	Require(t, err)
+	restAddr := restLis.Addr().String()
+	t.Logf("DAS REST listener created at: %s", restAddr)
+
 	restServer, err := das.NewRestfulDasServerOnListener(restLis, genericconf.HTTPServerTimeoutConfigDefault, storageService, storageService)
 	Require(t, err)
+	t.Logf("DAS REST server started and listening on: %s", restAddr)
+
 	beConfig := das.BackendConfig{
-		URL:    "http://" + rpcLis.Addr().String(),
+		URL:    "http://" + rpcAddr,
 		Pubkey: blsPubToBase64(pubkey),
 	}
-	return rpcServer, pubkey, beConfig, restServer, "http://" + restLis.Addr().String()
+	t.Logf("DAS backend config created with URL: %s", beConfig.URL)
+	return rpcServer, pubkey, beConfig, restServer, "http://" + restAddr
 }
 
 func blsPubToBase64(pubkey *blsSignatures.PublicKey) string {
@@ -81,6 +90,8 @@ func blsPubToBase64(pubkey *blsSignatures.PublicKey) string {
 }
 
 func aggConfigForBackend(backendConfig das.BackendConfig) das.AggregatorConfig {
+	rpcConfig := rpcclient.DefaultClientConfig
+	rpcConfig.Timeout = 2 * time.Second // Short timeout for tests to fail fast
 	return das.AggregatorConfig{
 		Enable:        true,
 		AssumedHonest: 1,
@@ -89,6 +100,7 @@ func aggConfigForBackend(backendConfig das.BackendConfig) das.AggregatorConfig {
 			ServerUrl:          backendConfig.URL,
 			EnableChunkedStore: true,
 			DataStream:         data_streaming.TestDataStreamerConfig(das.DefaultDataStreamRpcMethods),
+			RPC:                rpcConfig,
 		},
 	}
 }
@@ -114,7 +126,6 @@ func TestDASRekey(t *testing.T) {
 		builder.nodeConfig.DataAvailability.RestAggregator = das.DefaultRestfulClientAggregatorConfig
 		builder.nodeConfig.DataAvailability.RestAggregator.Enable = true
 		builder.nodeConfig.DataAvailability.RestAggregator.Urls = []string{restServerUrlA}
-		builder.nodeConfig.DataAvailability.ParentChainNodeURL = "none"
 
 		// Setup L2 chain
 		builder.L2Info.GenerateAccount("User2")
@@ -126,7 +137,6 @@ func TestDASRekey(t *testing.T) {
 		l1NodeConfigB.DataAvailability.RestAggregator = das.DefaultRestfulClientAggregatorConfig
 		l1NodeConfigB.DataAvailability.RestAggregator.Enable = true
 		l1NodeConfigB.DataAvailability.RestAggregator.Urls = []string{restServerUrlA}
-		l1NodeConfigB.DataAvailability.ParentChainNodeURL = "none"
 		nodeBParams := SecondNodeParams{
 			nodeConfig: l1NodeConfigB,
 			initData:   &builder.L2Info.ArbInitData,
@@ -160,38 +170,6 @@ func TestDASRekey(t *testing.T) {
 	l2B, cleanup := builder.Build2ndNode(t, &nodeBParams)
 	defer cleanup()
 	checkBatchPosting(t, ctx, builder.L1.Client, builder.L2.Client, builder.L1Info, builder.L2Info, big.NewInt(2e12), l2B.Client)
-}
-
-func checkBatchPosting(t *testing.T, ctx context.Context, l1client, l2clientA *ethclient.Client, l1info, l2info info, expectedBalance *big.Int, l2ClientsToCheck ...*ethclient.Client) {
-	tx := l2info.PrepareTx("Owner", "User2", l2info.TransferGas, big.NewInt(1e12), nil)
-	err := l2clientA.SendTransaction(ctx, tx)
-	Require(t, err)
-
-	_, err = EnsureTxSucceeded(ctx, l2clientA, tx)
-	Require(t, err)
-
-	// give the inbox reader a bit of time to pick up the delayed message
-	time.Sleep(time.Millisecond * 100)
-
-	// sending l1 messages creates l1 blocks.. make enough to get that delayed inbox message in
-	for i := 0; i < 30; i++ {
-		SendWaitTestTransactions(t, ctx, l1client, []*types.Transaction{
-			l1info.PrepareTx("Faucet", "User", 30000, big.NewInt(1e12), nil),
-		})
-	}
-
-	for _, client := range l2ClientsToCheck {
-		_, err = WaitForTx(ctx, client, tx.Hash(), time.Second*30)
-		Require(t, err)
-
-		l2balance, err := client.BalanceAt(ctx, l2info.GetAddress("User2"), nil)
-		Require(t, err)
-
-		if l2balance.Cmp(expectedBalance) != 0 {
-			Fatal(t, "Unexpected balance:", l2balance)
-		}
-
-	}
 }
 
 func TestDASComplexConfigAndRestMirror(t *testing.T) {
@@ -262,7 +240,6 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 	builder.nodeConfig.DataAvailability.RestAggregator = das.DefaultRestfulClientAggregatorConfig
 	builder.nodeConfig.DataAvailability.RestAggregator.Enable = true
 	builder.nodeConfig.DataAvailability.RestAggregator.Urls = []string{"http://" + restLis.Addr().String()}
-	builder.nodeConfig.DataAvailability.ParentChainNodeURL = "none"
 
 	// Setup L2 chain
 	builder.L2Info = NewArbTestInfo(t, builder.chainConfig.ChainID)
@@ -277,8 +254,7 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 
 		// AggregatorConfig set up below
 
-		ParentChainNodeURL: "none",
-		RequestTimeout:     5 * time.Second,
+		RequestTimeout: 5 * time.Second,
 	}
 
 	l1NodeConfigB.BlockValidator.Enable = false
@@ -286,7 +262,6 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 	l1NodeConfigB.DataAvailability.RestAggregator = das.DefaultRestfulClientAggregatorConfig
 	l1NodeConfigB.DataAvailability.RestAggregator.Enable = true
 	l1NodeConfigB.DataAvailability.RestAggregator.Urls = []string{"http://" + restLis.Addr().String()}
-	l1NodeConfigB.DataAvailability.ParentChainNodeURL = "none"
 	nodeBParams := SecondNodeParams{
 		nodeConfig: l1NodeConfigB,
 		initData:   &builder.L2Info.ArbInitData,
@@ -298,82 +273,4 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 
 	err = restServer.Shutdown()
 	Require(t, err)
-}
-
-func TestDASBatchPosterFallback(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	// Setup L1
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
-	builder.chainConfig = chaininfo.ArbitrumDevTestDASChainConfig()
-	builder.BuildL1(t)
-	l1client := builder.L1.Client
-	l1info := builder.L1Info
-
-	// Setup DAS server
-	dasDataDir := t.TempDir()
-	dasRpcServer, pubkey, backendConfig, _, restServerUrl := startLocalDASServer(
-		t, ctx, dasDataDir, l1client, builder.addresses.SequencerInbox)
-	authorizeDASKeyset(t, ctx, pubkey, l1info, l1client)
-
-	// Setup sequence/batch-poster L2 node
-	builder.nodeConfig.DataAvailability.Enable = true
-	builder.nodeConfig.DataAvailability.RPCAggregator = aggConfigForBackend(backendConfig)
-	builder.nodeConfig.DataAvailability.RestAggregator = das.DefaultRestfulClientAggregatorConfig
-	builder.nodeConfig.DataAvailability.RestAggregator.Enable = true
-	builder.nodeConfig.DataAvailability.RestAggregator.Urls = []string{restServerUrl}
-	builder.nodeConfig.DataAvailability.ParentChainNodeURL = "none"
-	builder.nodeConfig.BatchPoster.DisableDapFallbackStoreDataOnChain = true // Disable DAS fallback
-	builder.nodeConfig.BatchPoster.ErrorDelay = time.Millisecond * 250       // Increase error delay because we expect errors
-	builder.L2Info = NewArbTestInfo(t, builder.chainConfig.ChainID)
-	builder.L2Info.GenerateAccount("User2")
-	cleanup := builder.BuildL2OnL1(t)
-	defer cleanup()
-	l2client := builder.L2.Client
-	l2info := builder.L2Info
-
-	// Setup secondary L2 node
-	nodeConfigB := arbnode.ConfigDefaultL1NonSequencerTest()
-	nodeConfigB.BlockValidator.Enable = false
-	nodeConfigB.DataAvailability.Enable = true
-	nodeConfigB.DataAvailability.RestAggregator = das.DefaultRestfulClientAggregatorConfig
-	nodeConfigB.DataAvailability.RestAggregator.Enable = true
-	nodeConfigB.DataAvailability.RestAggregator.Urls = []string{restServerUrl}
-	nodeConfigB.DataAvailability.ParentChainNodeURL = "none"
-	nodeBParams := SecondNodeParams{
-		nodeConfig: nodeConfigB,
-		initData:   &l2info.ArbInitData,
-	}
-	l2B, cleanupB := builder.Build2ndNode(t, &nodeBParams)
-	defer cleanupB()
-
-	// Check batch posting using the DAS
-	checkBatchPosting(t, ctx, l1client, l2client, l1info, l2info, big.NewInt(1e12), l2B.Client)
-
-	// Shutdown the DAS
-	err := dasRpcServer.Shutdown(ctx)
-	Require(t, err)
-
-	// Send 2nd transaction and check it doesn't arrive on second node
-	tx, _ := TransferBalanceTo(t, "Owner", l2info.GetAddress("User2"), big.NewInt(1e12), l2info, l2client, ctx)
-	_, err = WaitForTx(ctx, l2B.Client, tx.Hash(), time.Second*3)
-	if err == nil || !errors.Is(err, context.DeadlineExceeded) {
-		Fatal(t, "expected context-deadline exceeded error, but got:", err)
-	}
-
-	// Enable the DAP fallback and check the transaction on the second node.
-	// (We don't need to restart the node because of the hot-reload.)
-	builder.nodeConfig.BatchPoster.DisableDapFallbackStoreDataOnChain = false
-	builder.L2.ConsensusConfigFetcher.Set(builder.nodeConfig)
-	_, err = WaitForTx(ctx, l2B.Client, tx.Hash(), time.Second*5)
-	Require(t, err)
-	l2balance, err := l2B.Client.BalanceAt(ctx, l2info.GetAddress("User2"), nil)
-	Require(t, err)
-	if l2balance.Cmp(big.NewInt(2e12)) != 0 {
-		Fatal(t, "Unexpected balance:", l2balance)
-	}
-
-	// Send another transaction with fallback on
-	checkBatchPosting(t, ctx, l1client, l2client, l1info, l2info, big.NewInt(3e12), l2B.Client)
 }
