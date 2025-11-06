@@ -1806,6 +1806,7 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 		// Create a new registry for checking batch correctness
 		// We need to copy existing readers and potentially add a simulated blob reader
 		dapReaders := daprovider.NewReaderRegistry()
+		// TODO: Initialize caching of blobs here?
 
 		// Copy all existing readers from the batch poster's registry
 		// These readers can fetch data that was already posted to
@@ -1843,7 +1844,10 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 		b.building.muxBackend.seqMsg = seqMsg
 		b.building.muxBackend.delayedInboxStart = batchPosition.DelayedMessageCount
 		b.building.muxBackend.SetPositionWithinMessage(0)
-		simMux := arbstate.NewInboxMultiplexer(b.building.muxBackend, batchPosition.DelayedMessageCount, dapReaders, daprovider.KeysetValidate)
+
+		cachedPayloadMap := make(arbstate.BatchPayloadMap)
+		simMux := arbstate.NewInboxMultiplexer(b.building.muxBackend, batchPosition.DelayedMessageCount, dapReaders, &cachedPayloadMap, daprovider.KeysetValidate)
+		simMux.CacheBlobs(ctx)
 		log.Debug("Begin checking the correctness of batch against inbox multiplexer", "startMsgSeqNum", batchPosition.MessageCount, "endMsgSeqNum", b.building.msgCount-1)
 		for i := batchPosition.MessageCount; i < b.building.msgCount; i++ {
 			msg, err := simMux.Pop(ctx)

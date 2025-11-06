@@ -41,6 +41,7 @@ type InboxTracker struct {
 	validator      *staker.BlockValidator
 	dapReaders     *daprovider.ReaderRegistry
 	snapSyncConfig SnapSyncConfig
+	cachedPayload  arbstate.BatchPayloadMap
 
 	batchMetaMutex sync.Mutex
 	batchMeta      *containers.LruCache[uint64, BatchMetadata]
@@ -51,6 +52,7 @@ func NewInboxTracker(db ethdb.Database, txStreamer *TransactionStreamer, dapRead
 		db:             db,
 		txStreamer:     txStreamer,
 		dapReaders:     dapReaders,
+		cachedPayload:  make(arbstate.BatchPayloadMap),
 		batchMeta:      containers.NewLruCache[uint64, BatchMetadata](1000),
 		snapSyncConfig: snapSyncConfig,
 	}
@@ -456,7 +458,8 @@ func (t *InboxTracker) AddDelayedMessages(messages []*DelayedInboxMessage) error
 	defer t.mutex.Unlock()
 
 	// This math is safe to do as we know len(messages) > 0
-	haveLastAcc, err := t.GetDelayedAcc(pos + uint64(len(messages)) - 1)
+	targetAcc := pos + uint64(len(messages)) - 1
+	haveLastAcc, err := t.GetDelayedAcc(targetAcc)
 	if err == nil {
 		if haveLastAcc == messages[len(messages)-1].AfterInboxAcc() {
 			// We already have these delayed messages
@@ -673,12 +676,38 @@ func (b *multiplexerBackend) ReadDelayedInbox(seqNum uint64) (*arbostypes.L1Inco
 
 var delayedMessagesMismatch = errors.New("sequencer batch delayed messages missing or different")
 
-func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client *ethclient.Client, batches []*SequencerInboxBatch) error {
+func (t *InboxTracker) CacheBlobs(ctx context.Context, client *ethclient.Client, batches []*SequencerInboxBatch) error {
+	var prevbatchmeta BatchMetadata
+	if len(batches) == 0 {
+		return nil
+	}
+	_, prevbatchmeta = t.HandleSnapSyncConfig(ctx, client, batches)
+
+	backend := &multiplexerBackend{
+		batchSeqNum: batches[0].SequenceNumber,
+		batches:     batches,
+
+		inbox:  t,
+		ctx:    ctx,
+		client: client,
+	}
+	// TODO: Isn't it wasteful to create a NewInboxMultiplexer just to call CacheBlobs?
+	multiplexer := arbstate.NewInboxMultiplexer(backend, prevbatchmeta.DelayedMessageCount, t.dapReaders, &t.cachedPayload, daprovider.KeysetValidate)
+
+	err := multiplexer.CacheBlobs(ctx)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (t *InboxTracker) HandleSnapSyncConfig(ctx context.Context, client *ethclient.Client, batches []*SequencerInboxBatch) (common.Hash, BatchMetadata) {
 	var nextAcc common.Hash
 	var prevbatchmeta BatchMetadata
 	sequenceNumberToKeep := uint64(0)
 	if len(batches) == 0 {
-		return nil
+		return nextAcc, prevbatchmeta
 	}
 	if t.snapSyncConfig.Enabled && batches[0].SequenceNumber < t.snapSyncConfig.BatchCount {
 		sequenceNumberToKeep = t.snapSyncConfig.BatchCount
@@ -687,7 +716,7 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client *ethclien
 		}
 		for {
 			if len(batches) == 0 {
-				return nil
+				return nextAcc, prevbatchmeta
 			}
 			if batches[0].SequenceNumber+1 == sequenceNumberToKeep {
 				nextAcc = batches[0].AfterInboxAcc
@@ -705,6 +734,18 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client *ethclien
 			}
 		}
 	}
+
+	return nextAcc, prevbatchmeta
+}
+
+func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client *ethclient.Client, batches []*SequencerInboxBatch) error {
+	var nextAcc common.Hash
+	var prevbatchmeta BatchMetadata
+	sequenceNumberToKeep := uint64(0)
+	if len(batches) == 0 {
+		return nil
+	}
+	nextAcc, prevbatchmeta = t.HandleSnapSyncConfig(ctx, client, batches)
 	t.mutex.Lock()
 	defer t.mutex.Unlock()
 
@@ -747,6 +788,7 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client *ethclien
 					"Delayed message accumulator doesn't match sequencer batch",
 					"batch", batch.SequenceNumber,
 					"delayedPosition", batch.AfterDelayedCount-1,
+					"notFound", notFound,
 					"haveDelayedAcc", haveDelayedAcc,
 					"batchDelayedAcc", batch.AfterDelayedAcc,
 				)
@@ -768,7 +810,7 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client *ethclien
 		ctx:    ctx,
 		client: client,
 	}
-	multiplexer := arbstate.NewInboxMultiplexer(backend, prevbatchmeta.DelayedMessageCount, t.dapReaders, daprovider.KeysetValidate)
+	multiplexer := arbstate.NewInboxMultiplexer(backend, prevbatchmeta.DelayedMessageCount, t.dapReaders, &t.cachedPayload, daprovider.KeysetValidate)
 	batchMessageCounts := make(map[uint64]arbutil.MessageIndex)
 	currentPos := prevbatchmeta.MessageCount + 1
 	for {
