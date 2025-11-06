@@ -93,7 +93,7 @@ func testRpcImpl(t *testing.T, size, times int, concurrent bool) {
 		},
 		RequestTimeout: time.Minute,
 	}
-	rpcAgg, err := NewRPCAggregatorWithSeqInboxCaller(aggConf, nil, signer)
+	rpcAgg, err := NewRPCAggregator(aggConf, signer)
 	testhelpers.RequireImpl(t, err)
 
 	var wg sync.WaitGroup
