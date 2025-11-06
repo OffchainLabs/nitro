@@ -124,7 +124,7 @@ func parseDAServer(args []string) (*DAServerConfig, error) {
 
 	f.String("parent-chain.node-url", DefaultParentChainConfig.NodeURL, "URL for parent chain node")
 	f.Int("parent-chain.connection-attempts", DefaultParentChainConfig.ConnectionAttempts, "parent chain RPC connection attempts (spaced out at least 1 second per attempt, 0 to retry infinitely)")
-	f.String("parent-chain.sequencer-inbox-address", DefaultParentChainConfig.SequencerInboxAddress, "parent chain address of SequencerInbox contract")
+	f.String("parent-chain.sequencer-inbox-address", DefaultParentChainConfig.SequencerInboxAddress, "parent chain address of SequencerInbox contract to use for validating requests to store data. Can be set to \"none\" for testing")
 
 	das.DataAvailabilityConfigAddDaserverOptions("data-availability", f)
 	genericconf.ConfConfigAddOptions("conf", f)
@@ -229,7 +229,7 @@ func startup() error {
 	defer cancel()
 
 	var l1Reader *headerreader.HeaderReader
-	if serverConfig.ParentChain.NodeURL != "" && serverConfig.ParentChain.NodeURL != "none" {
+	if serverConfig.ParentChain.NodeURL != "" {
 		l1Client, err := das.GetL1Client(ctx, serverConfig.ParentChain.ConnectionAttempts, serverConfig.ParentChain.NodeURL)
 		if err != nil {
 			return err
