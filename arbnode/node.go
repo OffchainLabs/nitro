@@ -44,8 +44,8 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/staker/bold"
-	"github.com/offchainlabs/nitro/staker/legacy"
-	"github.com/offchainlabs/nitro/staker/multi_protocol"
+	legacystaker "github.com/offchainlabs/nitro/staker/legacy"
+	multiprotocolstaker "github.com/offchainlabs/nitro/staker/multi_protocol"
 	"github.com/offchainlabs/nitro/staker/validatorwallet"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/contracts"
@@ -1279,7 +1279,7 @@ func registerAPIs(currentNode *Node, stack *node.Node) {
 		apis = append(apis, rpc.API{
 			Namespace: "arb",
 			Version:   "1.0",
-			Service:   &BlockValidatorAPI{val: currentNode.BlockValidator},
+			Service:   &ArbAPI{val: currentNode.BlockValidator},
 			Public:    false,
 		})
 	}
@@ -1287,7 +1287,7 @@ func registerAPIs(currentNode *Node, stack *node.Node) {
 		apis = append(apis, rpc.API{
 			Namespace: "arbdebug",
 			Version:   "1.0",
-			Service: &BlockValidatorDebugAPI{
+			Service: &ArbDebugAPI{
 				val: currentNode.StatelessBlockValidator,
 			},
 			Public: false,
