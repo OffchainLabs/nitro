@@ -532,6 +532,7 @@ func mainImpl() int {
 		wasmModuleRoot = locator.LatestWasmModuleRoot()
 	}
 
+	directConnect := nodeConfig.ExecutionNode && !nodeConfig.ConsensusExecutionInSameProcessUseRPC
 	var execNode *gethexec.ExecutionNode
 	var consensusNode *arbnode.Node
 	if nodeConfig.ExecutionNode {
@@ -544,6 +545,7 @@ func mainImpl() int {
 			&ExecutionNodeConfigFetcher{liveNodeConfig},
 			new(big.Int).SetUint64(nodeConfig.ParentChain.ID),
 			liveNodeConfig.Get().Node.TransactionStreamer.SyncTillBlock,
+			directConnect,
 		)
 		if err != nil {
 			log.Error("failed to create execution node", "err", err)
@@ -565,6 +567,7 @@ func mainImpl() int {
 			new(big.Int).SetUint64(nodeConfig.ParentChain.ID),
 			blobReader,
 			wasmModuleRoot,
+			directConnect,
 		)
 		if err != nil {
 			log.Error("failed to create consensus node", "err", err)
@@ -766,59 +769,59 @@ func mainImpl() int {
 }
 
 type NodeConfig struct {
-	Conf                     genericconf.ConfConfig          `koanf:"conf" reload:"hot"`
-	Node                     arbnode.Config                  `koanf:"node" reload:"hot"`
-	Execution                gethexec.Config                 `koanf:"execution" reload:"hot"`
-	Validation               valnode.Config                  `koanf:"validation" reload:"hot"`
-	ParentChain              conf.ParentChainConfig          `koanf:"parent-chain" reload:"hot"`
-	Chain                    conf.L2Config                   `koanf:"chain"`
-	LogLevel                 string                          `koanf:"log-level" reload:"hot"`
-	LogType                  string                          `koanf:"log-type" reload:"hot"`
-	FileLogging              genericconf.FileLoggingConfig   `koanf:"file-logging" reload:"hot"`
-	Persistent               conf.PersistentConfig           `koanf:"persistent"`
-	HTTP                     genericconf.HTTPConfig          `koanf:"http"`
-	WS                       genericconf.WSConfig            `koanf:"ws"`
-	IPC                      genericconf.IPCConfig           `koanf:"ipc"`
-	Auth                     genericconf.AuthRPCConfig       `koanf:"auth"`
-	GraphQL                  genericconf.GraphQLConfig       `koanf:"graphql"`
-	Metrics                  bool                            `koanf:"metrics"`
-	MetricsServer            genericconf.MetricsServerConfig `koanf:"metrics-server"`
-	PProf                    bool                            `koanf:"pprof"`
-	PprofCfg                 genericconf.PProf               `koanf:"pprof-cfg"`
-	Init                     conf.InitConfig                 `koanf:"init"`
-	Rpc                      genericconf.RpcConfig           `koanf:"rpc"`
-	BlocksReExecutor         blocksreexecutor.Config         `koanf:"blocks-reexecutor"`
-	EnsureRollupDeployment   bool                            `koanf:"ensure-rollup-deployment" reload:"hot"`
-	ExecutionNode            bool                            `koanf:"execution-node"`
-	ConsensusExecutionUseRPC bool                            `koanf:"consensus-execution-use-rpc"`
+	Conf                                  genericconf.ConfConfig          `koanf:"conf" reload:"hot"`
+	Node                                  arbnode.Config                  `koanf:"node" reload:"hot"`
+	Execution                             gethexec.Config                 `koanf:"execution" reload:"hot"`
+	Validation                            valnode.Config                  `koanf:"validation" reload:"hot"`
+	ParentChain                           conf.ParentChainConfig          `koanf:"parent-chain" reload:"hot"`
+	Chain                                 conf.L2Config                   `koanf:"chain"`
+	LogLevel                              string                          `koanf:"log-level" reload:"hot"`
+	LogType                               string                          `koanf:"log-type" reload:"hot"`
+	FileLogging                           genericconf.FileLoggingConfig   `koanf:"file-logging" reload:"hot"`
+	Persistent                            conf.PersistentConfig           `koanf:"persistent"`
+	HTTP                                  genericconf.HTTPConfig          `koanf:"http"`
+	WS                                    genericconf.WSConfig            `koanf:"ws"`
+	IPC                                   genericconf.IPCConfig           `koanf:"ipc"`
+	Auth                                  genericconf.AuthRPCConfig       `koanf:"auth"`
+	GraphQL                               genericconf.GraphQLConfig       `koanf:"graphql"`
+	Metrics                               bool                            `koanf:"metrics"`
+	MetricsServer                         genericconf.MetricsServerConfig `koanf:"metrics-server"`
+	PProf                                 bool                            `koanf:"pprof"`
+	PprofCfg                              genericconf.PProf               `koanf:"pprof-cfg"`
+	Init                                  conf.InitConfig                 `koanf:"init"`
+	Rpc                                   genericconf.RpcConfig           `koanf:"rpc"`
+	BlocksReExecutor                      blocksreexecutor.Config         `koanf:"blocks-reexecutor"`
+	EnsureRollupDeployment                bool                            `koanf:"ensure-rollup-deployment" reload:"hot"`
+	ExecutionNode                         bool                            `koanf:"execution-node"`
+	ConsensusExecutionInSameProcessUseRPC bool                            `koanf:"consensus-execution-in-same-process-use-rpc"`
 }
 
 var NodeConfigDefault = NodeConfig{
-	Conf:                     genericconf.ConfConfigDefault,
-	Node:                     arbnode.ConfigDefault,
-	Execution:                gethexec.ConfigDefault,
-	Validation:               valnode.DefaultValidationConfig,
-	ParentChain:              conf.L1ConfigDefault,
-	Chain:                    conf.L2ConfigDefault,
-	LogLevel:                 "INFO",
-	LogType:                  "plaintext",
-	FileLogging:              genericconf.DefaultFileLoggingConfig,
-	Persistent:               conf.PersistentConfigDefault,
-	HTTP:                     genericconf.HTTPConfigDefault,
-	WS:                       genericconf.WSConfigDefault,
-	IPC:                      genericconf.IPCConfigDefault,
-	Auth:                     genericconf.AuthRPCConfigDefault,
-	GraphQL:                  genericconf.GraphQLConfigDefault,
-	Metrics:                  false,
-	MetricsServer:            genericconf.MetricsServerConfigDefault,
-	Init:                     conf.InitConfigDefault,
-	Rpc:                      genericconf.DefaultRpcConfig,
-	PProf:                    false,
-	PprofCfg:                 genericconf.PProfDefault,
-	BlocksReExecutor:         blocksreexecutor.DefaultConfig,
-	EnsureRollupDeployment:   true,
-	ExecutionNode:            true,
-	ConsensusExecutionUseRPC: false,
+	Conf:                                  genericconf.ConfConfigDefault,
+	Node:                                  arbnode.ConfigDefault,
+	Execution:                             gethexec.ConfigDefault,
+	Validation:                            valnode.DefaultValidationConfig,
+	ParentChain:                           conf.L1ConfigDefault,
+	Chain:                                 conf.L2ConfigDefault,
+	LogLevel:                              "INFO",
+	LogType:                               "plaintext",
+	FileLogging:                           genericconf.DefaultFileLoggingConfig,
+	Persistent:                            conf.PersistentConfigDefault,
+	HTTP:                                  genericconf.HTTPConfigDefault,
+	WS:                                    genericconf.WSConfigDefault,
+	IPC:                                   genericconf.IPCConfigDefault,
+	Auth:                                  genericconf.AuthRPCConfigDefault,
+	GraphQL:                               genericconf.GraphQLConfigDefault,
+	Metrics:                               false,
+	MetricsServer:                         genericconf.MetricsServerConfigDefault,
+	Init:                                  conf.InitConfigDefault,
+	Rpc:                                   genericconf.DefaultRpcConfig,
+	PProf:                                 false,
+	PprofCfg:                              genericconf.PProfDefault,
+	BlocksReExecutor:                      blocksreexecutor.DefaultConfig,
+	EnsureRollupDeployment:                true,
+	ExecutionNode:                         true,
+	ConsensusExecutionInSameProcessUseRPC: false,
 }
 
 func NodeConfigAddOptions(f *pflag.FlagSet) {
@@ -847,7 +850,7 @@ func NodeConfigAddOptions(f *pflag.FlagSet) {
 	blocksreexecutor.ConfigAddOptions("blocks-reexecutor", f)
 	f.Bool("ensure-rollup-deployment", NodeConfigDefault.EnsureRollupDeployment, "before starting the node, wait until the transaction that deployed rollup is finalized")
 	f.Bool("execution-node", NodeConfigDefault.ExecutionNode, "implies running nitro with both consensus and execution nodes, if false, then requires --node.execution-rpc-client.* config to connect to execution client over rpc")
-	f.Bool("consensus-execution-use-rpc", NodeConfigDefault.ConsensusExecutionUseRPC, "when both consensus and execution node are enabled this options allow them to communicate over rpc- mainly for testing purpose")
+	f.Bool("consensus-execution-in-same-process-use-rpc", NodeConfigDefault.ConsensusExecutionInSameProcessUseRPC, "when both consensus and execution node are enabled this options allow them to communicate over rpc- mainly for testing purpose")
 }
 
 func (c *NodeConfig) ResolveDirectoryNames() error {
@@ -921,27 +924,18 @@ func (c *NodeConfig) Validate() error {
 		if c.Node.Sequencer || c.Node.BatchPoster.Enable || c.Node.BlockValidator.Enable {
 			return errors.New("sequencing, validation and batch-posting are currently not supported when connecting to an execution client over RPC")
 		}
-	} else {
-		if c.ConsensusExecutionUseRPC {
-			if !c.Execution.RPCServer.Enable {
-				return errors.New("ConsensusExecutionUseRPC is set but execution node has not enabled rpc server")
-			}
-			if c.Execution.ConsensusRPCClient.URL == "" {
-				return errors.New("ConsensusExecutionUseRPC is set but execution node has empty consensusRPCClient url")
-			}
-			if !c.Node.RPCServer.Enable {
-				return errors.New("ConsensusExecutionUseRPC is set but consensus node has not enabled rpc server")
-			}
-			if c.Node.ExecutionRPCClient.URL == "" {
-				return errors.New("ConsensusExecutionUseRPC is set but consensus node has empty executionRPCClient url")
-			}
-		} else {
-			if c.Execution.ConsensusRPCClient.URL != "" {
-				return fmt.Errorf("consensus and execution are configured to communicate directly but execution node has non-empty consensusRPCClient url: %s", c.Execution.ConsensusRPCClient.URL)
-			}
-			if c.Node.ExecutionRPCClient.URL != "" {
-				return fmt.Errorf("consensus and execution are configured to communicate directly but consensus node has non-empty executionRPCClient url: %s", c.Node.ExecutionRPCClient.URL)
-			}
+	} else if c.ConsensusExecutionInSameProcessUseRPC {
+		if !c.Execution.RPCServer.Enable {
+			return errors.New("ConsensusExecutionInSameProcessUseRPC is set but execution node has not enabled rpc server")
+		}
+		if c.Execution.ConsensusRPCClient.URL == "" {
+			return errors.New("ConsensusExecutionInSameProcessUseRPC is set but execution node has empty consensusRPCClient url")
+		}
+		if !c.Node.RPCServer.Enable {
+			return errors.New("ConsensusExecutionInSameProcessUseRPC is set but consensus node has not enabled rpc server")
+		}
+		if c.Node.ExecutionRPCClient.URL == "" {
+			return errors.New("ConsensusExecutionInSameProcessUseRPC is set but consensus node has empty executionRPCClient url")
 		}
 	}
 	if err := c.BlocksReExecutor.Validate(); err != nil {

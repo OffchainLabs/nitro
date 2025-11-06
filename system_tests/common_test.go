@@ -481,9 +481,6 @@ func (b *NodeBuilder) TakeOwnership() *NodeBuilder {
 }
 
 func (b *NodeBuilder) Build(t *testing.T) func() {
-	if *testflag.ConsensusExecutionUseRPC {
-		b.WithConsensusExecutionOverRPC(t)
-	}
 	if b.parallelise {
 		b.parallelise = false
 		t.Parallel()
@@ -673,6 +670,7 @@ func buildOnParentChain(
 
 	initMessage *arbostypes.ParsedInitMessage,
 	addresses *chaininfo.RollupAddresses,
+	isL3 bool,
 ) *TestClient {
 	if parentChainTestClient == nil {
 		t.Fatal("must build parent chain before building chain")
@@ -708,7 +706,7 @@ func buildOnParentChain(
 	AddValNodeIfNeeded(t, ctx, nodeConfig, true, "", valnodeConfig.Wasm.RootPath)
 
 	execConfigFetcher := NewCommonConfigFetcher(execConfig)
-	execNode, err := gethexec.CreateExecutionNode(ctx, chainTestClient.Stack, chainDb, blockchain, parentChainTestClient.Client, execConfigFetcher, parentChainId, 0)
+	execNode, err := gethexec.CreateExecutionNode(ctx, chainTestClient.Stack, chainDb, blockchain, parentChainTestClient.Client, execConfigFetcher, parentChainId, 0, isL3 || !*testflag.ConsensusExecutionUseRPC)
 	Require(t, err)
 	chainTestClient.ExecutionConfigFetcher = execConfigFetcher
 
@@ -718,7 +716,7 @@ func buildOnParentChain(
 	consensusConfigFetcher := NewCommonConfigFetcher(nodeConfig)
 	chainTestClient.ConsensusNode, err = arbnode.CreateConsensusNodeConnectedWithFullExecutionClient(
 		ctx, chainTestClient.Stack, execNode, arbDb, consensusConfigFetcher, blockchain.Config(), parentChainTestClient.Client,
-		addresses, validatorTxOptsPtr, sequencerTxOptsPtr, dataSigner, fatalErrChan, parentChainId, parentChainTestClient.L1BlobReader, locator.LatestWasmModuleRoot())
+		addresses, validatorTxOptsPtr, sequencerTxOptsPtr, dataSigner, fatalErrChan, parentChainId, parentChainTestClient.L1BlobReader, locator.LatestWasmModuleRoot(), isL3 || !*testflag.ConsensusExecutionUseRPC)
 	Require(t, err)
 	chainTestClient.ConsensusConfigFetcher = consensusConfigFetcher
 
@@ -729,11 +727,7 @@ func buildOnParentChain(
 
 	StartWatchChanErr(t, ctx, fatalErrChan, chainTestClient.ConsensusNode)
 
-	if nodeConfig.ExecutionRPCClient.URL == "" {
-		chainTestClient.ExecNode = getExecNode(t, chainTestClient.ConsensusNode)
-	} else {
-		chainTestClient.ExecNode = execNode
-	}
+	chainTestClient.ExecNode = execNode
 	chainTestClient.cleanup = cleanup
 
 	chainTestClient.L1BlobReader = parentChainTestClient.L1BlobReader
@@ -785,6 +779,7 @@ func (b *NodeBuilder) BuildL3OnL2(t *testing.T) func() {
 
 		b.l3InitMessage,
 		b.l3Addresses,
+		true,
 	)
 
 	return func() {
@@ -793,6 +788,9 @@ func (b *NodeBuilder) BuildL3OnL2(t *testing.T) func() {
 }
 
 func (b *NodeBuilder) BuildL2OnL1(t *testing.T) func() {
+	if *testflag.ConsensusExecutionUseRPC {
+		b.WithConsensusExecutionOverRPC(t)
+	}
 	b.L2 = buildOnParentChain(
 		t,
 		b.ctx,
@@ -814,6 +812,7 @@ func (b *NodeBuilder) BuildL2OnL1(t *testing.T) func() {
 
 		b.initMessage,
 		b.addresses,
+		false,
 	)
 
 	if b.takeOwnership {
@@ -842,6 +841,9 @@ func (b *NodeBuilder) BuildL2OnL1(t *testing.T) func() {
 // L2 -Only. Enough for tests that needs no interface to L1
 // Requires precompiles.AllowDebugPrecompiles = true
 func (b *NodeBuilder) BuildL2(t *testing.T) func() {
+	if *testflag.ConsensusExecutionUseRPC {
+		b.WithConsensusExecutionOverRPC(t)
+	}
 	if b.parallelise {
 		b.parallelise = false
 		t.Parallel()
@@ -861,7 +863,7 @@ func (b *NodeBuilder) BuildL2(t *testing.T) func() {
 		t, b.L2Info, b.dataDir, b.chainConfig, b.arbOSInit, nil, b.l2StackConfig, b.execConfig)
 
 	execConfigFetcher := NewCommonConfigFetcher(b.execConfig)
-	execNode, err := gethexec.CreateExecutionNode(b.ctx, b.L2.Stack, chainDb, blockchain, nil, execConfigFetcher, big.NewInt(1337), 0)
+	execNode, err := gethexec.CreateExecutionNode(b.ctx, b.L2.Stack, chainDb, blockchain, nil, execConfigFetcher, big.NewInt(1337), 0, !*testflag.ConsensusExecutionUseRPC)
 	Require(t, err)
 	b.L2.ExecutionConfigFetcher = execConfigFetcher
 
@@ -871,7 +873,7 @@ func (b *NodeBuilder) BuildL2(t *testing.T) func() {
 	consensusConfigFetcher := NewCommonConfigFetcher(b.nodeConfig)
 	b.L2.ConsensusNode, err = arbnode.CreateConsensusNodeConnectedWithFullExecutionClient(
 		b.ctx, b.L2.Stack, execNode, arbDb, consensusConfigFetcher, blockchain.Config(),
-		nil, nil, nil, nil, nil, fatalErrChan, big.NewInt(1337), nil, locator.LatestWasmModuleRoot())
+		nil, nil, nil, nil, nil, fatalErrChan, big.NewInt(1337), nil, locator.LatestWasmModuleRoot(), !*testflag.ConsensusExecutionUseRPC)
 	Require(t, err)
 	b.L2.ConsensusConfigFetcher = consensusConfigFetcher
 
@@ -900,11 +902,7 @@ func (b *NodeBuilder) BuildL2(t *testing.T) func() {
 
 	StartWatchChanErr(t, b.ctx, fatalErrChan, b.L2.ConsensusNode)
 
-	if b.nodeConfig.ExecutionRPCClient.URL == "" {
-		b.L2.ExecNode = getExecNode(t, b.L2.ConsensusNode)
-	} else {
-		b.L2.ExecNode = execNode
-	}
+	b.L2.ExecNode = execNode
 	b.L2.cleanup = cleanup
 	return func() {
 		b.L2.cleanup()
@@ -922,7 +920,7 @@ func (b *NodeBuilder) RestartL2Node(t *testing.T) {
 	l2info, stack, chainDb, arbDb, blockchain := createNonL1BlockChainWithStackConfig(t, b.L2Info, b.dataDir, b.chainConfig, b.arbOSInit, b.initMessage, b.l2StackConfig, b.execConfig)
 
 	execConfigFetcher := NewCommonConfigFetcher(b.execConfig)
-	execNode, err := gethexec.CreateExecutionNode(b.ctx, stack, chainDb, blockchain, nil, execConfigFetcher, big.NewInt(1337), 0)
+	execNode, err := gethexec.CreateExecutionNode(b.ctx, stack, chainDb, blockchain, nil, execConfigFetcher, big.NewInt(1337), 0, !*testflag.ConsensusExecutionUseRPC)
 	Require(t, err)
 
 	feedErrChan := make(chan error, 10)
@@ -941,7 +939,7 @@ func (b *NodeBuilder) RestartL2Node(t *testing.T) {
 		l1Client = b.L1.Client
 	}
 	consensusConfigFetcher := NewCommonConfigFetcher(b.nodeConfig)
-	currentNode, err := arbnode.CreateConsensusNodeConnectedWithFullExecutionClient(b.ctx, stack, execNode, arbDb, consensusConfigFetcher, blockchain.Config(), l1Client, b.addresses, validatorTxOpts, sequencerTxOpts, dataSigner, feedErrChan, big.NewInt(1337), nil, locator.LatestWasmModuleRoot())
+	currentNode, err := arbnode.CreateConsensusNodeConnectedWithFullExecutionClient(b.ctx, stack, execNode, arbDb, consensusConfigFetcher, blockchain.Config(), l1Client, b.addresses, validatorTxOpts, sequencerTxOpts, dataSigner, feedErrChan, big.NewInt(1337), nil, locator.LatestWasmModuleRoot(), !*testflag.ConsensusExecutionUseRPC)
 	Require(t, err)
 
 	cleanup, err := execution_consensus.InitAndStartExecutionAndConsensusNodes(b.ctx, stack, execNode, currentNode)
@@ -1885,7 +1883,7 @@ func Create2ndNodeWithConfig(
 	AddValNodeIfNeeded(t, ctx, nodeConfig, true, "", valnodeConfig.Wasm.RootPath)
 
 	execConfigFetcher := NewCommonConfigFetcher(execConfig)
-	currentExec, err := gethexec.CreateExecutionNode(ctx, chainStack, chainDb, blockchain, parentChainClient, execConfigFetcher, big.NewInt(1337), 0)
+	currentExec, err := gethexec.CreateExecutionNode(ctx, chainStack, chainDb, blockchain, parentChainClient, execConfigFetcher, big.NewInt(1337), 0, !*testflag.ConsensusExecutionUseRPC)
 	Require(t, err)
 
 	var currentNode *arbnode.Node
@@ -1895,7 +1893,7 @@ func Create2ndNodeWithConfig(
 	if useExecutionClientOnly {
 		currentNode, err = arbnode.CreateConsensusNodeConnectedWithSimpleExecutionClient(ctx, chainStack, currentExec, arbDb, consensusConfigFetcher, blockchain.Config(), parentChainClient, addresses, &validatorTxOpts, &sequencerTxOpts, dataSigner, feedErrChan, big.NewInt(1337), blobReader, locator.LatestWasmModuleRoot())
 	} else {
-		currentNode, err = arbnode.CreateConsensusNodeConnectedWithFullExecutionClient(ctx, chainStack, currentExec, arbDb, consensusConfigFetcher, blockchain.Config(), parentChainClient, addresses, &validatorTxOpts, &sequencerTxOpts, dataSigner, feedErrChan, big.NewInt(1337), blobReader, locator.LatestWasmModuleRoot())
+		currentNode, err = arbnode.CreateConsensusNodeConnectedWithFullExecutionClient(ctx, chainStack, currentExec, arbDb, consensusConfigFetcher, blockchain.Config(), parentChainClient, addresses, &validatorTxOpts, &sequencerTxOpts, dataSigner, feedErrChan, big.NewInt(1337), blobReader, locator.LatestWasmModuleRoot(), !*testflag.ConsensusExecutionUseRPC)
 	}
 
 	Require(t, err)
@@ -2151,15 +2149,6 @@ func TestMain(m *testing.M) {
 	initTestCollection()
 	code := m.Run()
 	os.Exit(code)
-}
-
-func getExecNode(t *testing.T, node *arbnode.Node) *gethexec.ExecutionNode {
-	t.Helper()
-	gethExec, ok := node.ExecutionClient.(*gethexec.ExecutionNode)
-	if !ok {
-		t.Fatal("failed to get exec node from arbnode")
-	}
-	return gethExec
 }
 
 func logParser[T any](t *testing.T, source string, name string) func(*types.Log) *T {

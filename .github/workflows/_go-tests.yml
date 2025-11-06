@@ -85,7 +85,7 @@ jobs:
           echo "One or more tests failed."
           exit 1
 
-      - name: run tests with consensus execution json rpc interconnect enabled
+      - name: run tests with consensus and execution nodes connected over json rpc
         if: matrix.test-mode == 'defaults'
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh 
