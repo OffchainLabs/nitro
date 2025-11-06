@@ -17,7 +17,6 @@ import (
 	"time"
 
 	"github.com/andybalholm/brotli"
-	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum"
@@ -34,6 +33,7 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/rpc"
 
+	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbnode/parent"
@@ -1031,7 +1031,7 @@ func (s *batchSegments) addSegmentToCompressed(segment []byte) error {
 	if !s.useNativeBrotli {
 		lenWritten, err = s.compressedWriter.Write(encoded)
 	} else {
-		compressedSegment, err := arbcompress.CompressLevel(encoded, uint64(s.compressionLevel))
+		compressedSegment, err := arbcompress.CompressLevel(encoded, uint64(s.compressionLevel)) // nolint: gosec
 		if err != nil {
 			return err
 		}
