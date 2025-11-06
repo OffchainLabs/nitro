@@ -88,7 +88,7 @@ import (
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 	"github.com/offchainlabs/nitro/util/testhelpers/env"
-	testflag "github.com/offchainlabs/nitro/util/testhelpers/flag"
+	"github.com/offchainlabs/nitro/util/testhelpers/flag"
 	"github.com/offchainlabs/nitro/util/testhelpers/github"
 	"github.com/offchainlabs/nitro/validator/inputs"
 	"github.com/offchainlabs/nitro/validator/server_api"
