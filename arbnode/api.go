@@ -15,15 +15,15 @@ import (
 	"github.com/offchainlabs/nitro/validator/server_api"
 )
 
-type BlockValidatorAPI struct {
+type ArbAPI struct {
 	val *staker.BlockValidator
 }
 
-func (a *BlockValidatorAPI) LatestValidated(ctx context.Context) (*staker.GlobalStateValidatedInfo, error) {
+func (a *ArbAPI) LatestValidated(ctx context.Context) (*staker.GlobalStateValidatedInfo, error) {
 	return a.val.ReadLastValidatedInfo()
 }
 
-type BlockValidatorDebugAPI struct {
+type ArbDebugAPI struct {
 	val *staker.StatelessBlockValidator
 }
 
@@ -33,7 +33,7 @@ type ValidateBlockResult struct {
 	GlobalState validator.GoGlobalState `json:"globalstate"`
 }
 
-func (a *BlockValidatorDebugAPI) ValidateMessageNumber(
+func (a *ArbDebugAPI) ValidateMessageNumber(
 	ctx context.Context, msgNum hexutil.Uint64, full bool, moduleRootOptional *common.Hash,
 ) (ValidateBlockResult, error) {
 	result := ValidateBlockResult{}
@@ -54,7 +54,7 @@ func (a *BlockValidatorDebugAPI) ValidateMessageNumber(
 	return result, err
 }
 
-func (a *BlockValidatorDebugAPI) ValidationInputsAt(ctx context.Context, msgNum hexutil.Uint64, target rawdb.WasmTarget,
+func (a *ArbDebugAPI) ValidationInputsAt(ctx context.Context, msgNum hexutil.Uint64, target rawdb.WasmTarget,
 ) (server_api.InputJSON, error) {
 	return a.val.ValidationInputsAt(ctx, arbutil.MessageIndex(msgNum), target)
 }

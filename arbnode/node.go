@@ -1306,7 +1306,7 @@ func registerAPIs(currentNode *Node, stack *node.Node) {
 		apis = append(apis, rpc.API{
 			Namespace: "arb",
 			Version:   "1.0",
-			Service:   &BlockValidatorAPI{val: currentNode.BlockValidator},
+			Service:   &ArbAPI{val: currentNode.BlockValidator},
 			Public:    false,
 		})
 	}
@@ -1314,7 +1314,7 @@ func registerAPIs(currentNode *Node, stack *node.Node) {
 		apis = append(apis, rpc.API{
 			Namespace: "arbdebug",
 			Version:   "1.0",
-			Service: &BlockValidatorDebugAPI{
+			Service: &ArbDebugAPI{
 				val: currentNode.StatelessBlockValidator,
 			},
 			Public: false,
