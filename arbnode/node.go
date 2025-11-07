@@ -1279,12 +1279,12 @@ func registerAPIs(currentNode *Node, stack *node.Node) {
 		apis = append(apis, rpc.API{
 			Namespace: "arb",
 			Version:   "1.0",
-			Service: &ArbAPI{
-				val:               currentNode.BlockValidator,
-				execClient:        currentNode.ExecutionClient,
-				inboxTracker:      currentNode.InboxTracker,
-				parentChainReader: currentNode.L1Reader,
-			},
+			Service: NewArbAPI(
+				currentNode.BlockValidator,
+				currentNode.ExecutionClient,
+				currentNode.InboxTracker,
+				currentNode.L1Reader,
+			),
 			Public: false,
 		})
 	}
@@ -1292,10 +1292,8 @@ func registerAPIs(currentNode *Node, stack *node.Node) {
 		apis = append(apis, rpc.API{
 			Namespace: "arbdebug",
 			Version:   "1.0",
-			Service: &ArbDebugAPI{
-				val: currentNode.StatelessBlockValidator,
-			},
-			Public: false,
+			Service:   NewArbDebugAPI(currentNode.StatelessBlockValidator),
+			Public:    false,
 		})
 	}
 	stack.RegisterAPIs(apis)
