@@ -48,7 +48,10 @@ func BuildBlock(
 	inboxMultiplexer := arbstate.NewInboxMultiplexer(inbox, delayedMessagesRead, nil, batchPayloadMap, daprovider.KeysetValidate)
 	ctx := context.Background()
 
-	inboxMultiplexer.CacheBlobs(ctx)
+	err := inboxMultiplexer.CacheBlobs(ctx)
+	if err != nil {
+		return nil, err
+	}
 	message, err := inboxMultiplexer.Pop(ctx)
 	if err != nil {
 		return nil, err
