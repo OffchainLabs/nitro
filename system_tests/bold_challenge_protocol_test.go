@@ -59,6 +59,7 @@ import (
 	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/util/testhelpers"
+	"github.com/offchainlabs/nitro/util/testhelpers/flag"
 	"github.com/offchainlabs/nitro/validator/server_arb"
 	"github.com/offchainlabs/nitro/validator/server_common"
 	"github.com/offchainlabs/nitro/validator/valnode"
