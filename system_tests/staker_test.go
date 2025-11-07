@@ -3,7 +3,6 @@
 
 // race detection makes things slow and miss timeouts
 //go:build !race
-// +build !race
 
 package arbtest
 
@@ -159,7 +158,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		ctx,
 		rawdb.NewTable(l2nodeB.ArbDB, storage.StakerPrefix),
 		l2nodeA.L1Reader,
-		&l1authA, NewFetcherFromConfig(arbnode.ConfigDefaultL1NonSequencerTest()),
+		&l1authA, NewCommonConfigFetcher(arbnode.ConfigDefaultL1NonSequencerTest()),
 		nil,
 		parentChainID,
 	)
@@ -243,7 +242,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		rawdb.NewTable(l2nodeB.ArbDB, storage.StakerPrefix),
 		l2nodeB.L1Reader,
 		nil,
-		NewFetcherFromConfig(cfg),
+		NewCommonConfigFetcher(cfg),
 		nil,
 		parentChainID,
 	)
