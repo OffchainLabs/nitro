@@ -1302,24 +1302,30 @@ func (n *Node) OnConfigReload(_ *Config, _ *Config) error {
 
 func registerAPIs(currentNode *Node, stack *node.Node) {
 	var apis []rpc.API
+	apis = append(apis, rpc.API{
+		Namespace: "arb",
+		Version:   "1.0",
+		Service: NewArbAPI(
+			currentNode.ExecutionClient,
+			currentNode.InboxTracker,
+			currentNode.L1Reader,
+		),
+		Public: true,
+	})
+
 	if currentNode.BlockValidator != nil {
 		apis = append(apis, rpc.API{
 			Namespace: "arb",
 			Version:   "1.0",
-			Service: NewArbAPI(
-				currentNode.BlockValidator,
-				currentNode.ExecutionClient,
-				currentNode.InboxTracker,
-				currentNode.L1Reader,
-			),
-			Public: false,
+			Service:   NewBlockValidatorAPI(currentNode.BlockValidator),
+			Public:    false,
 		})
 	}
 	if currentNode.StatelessBlockValidator != nil {
 		apis = append(apis, rpc.API{
 			Namespace: "arbdebug",
 			Version:   "1.0",
-			Service:   NewArbDebugAPI(currentNode.StatelessBlockValidator),
+			Service:   NewBlockValidatorDebugAPI(currentNode.StatelessBlockValidator),
 			Public:    false,
 		})
 	}
