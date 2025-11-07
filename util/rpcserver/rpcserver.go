@@ -1,6 +1,10 @@
 package rpcserver
 
-import "github.com/spf13/pflag"
+import (
+	"fmt"
+
+	"github.com/spf13/pflag"
+)
 
 type Config struct {
 	Enable        bool `koanf:"enable"`
@@ -14,8 +18,8 @@ var DefaultConfig = Config{
 	Authenticated: true,
 }
 
-func ConfigAddOptions(prefix string, f *pflag.FlagSet) {
-	f.Bool(prefix+".enable", DefaultConfig.Enable, "enable execution node to serve over rpc")
+func ConfigAddOptions(prefix, nodeType string, f *pflag.FlagSet) {
+	f.Bool(prefix+".enable", DefaultConfig.Enable, fmt.Sprintf("enable %s node to serve over rpc", nodeType))
 	f.Bool(prefix+".public", DefaultConfig.Public, "rpc is public")
 	f.Bool(prefix+".authenticated", DefaultConfig.Authenticated, "rpc is authenticated")
 }

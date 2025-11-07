@@ -168,7 +168,7 @@ func ConfigAddOptions(prefix string, f *pflag.FlagSet, feedInputEnable bool, fee
 	resourcemanager.ConfigAddOptions(prefix+".resource-mgmt", f)
 	BlockMetadataFetcherConfigAddOptions(prefix+".block-metadata-fetcher", f)
 	ConsensusExecutionSyncerConfigAddOptions(prefix+".consensus-execution-syncer", f)
-	rpcserver.ConfigAddOptions(prefix+".rpc-server", f)
+	rpcserver.ConfigAddOptions(prefix+".rpc-server", "consensus", f)
 	rpcclient.RPCClientAddOptions(prefix+".execution-rpc-client", f, &ConfigDefault.ExecutionRPCClient)
 }
 
@@ -1358,13 +1358,13 @@ func CreateConsensusNodeConnectedWithFullExecutionClient(
 	parentChainID *big.Int,
 	blobReader daprovider.BlobReader,
 	latestWasmModuleRoot common.Hash,
-	directConnect bool,
+	userRPC bool,
 ) (*Node, error) {
 	if fullExecutionClient == nil {
 		return nil, errors.New("full execution client must be non-nil")
 	}
 	var executionClient execution.ExecutionClient
-	if directConnect {
+	if userRPC {
 		executionClient = fullExecutionClient
 	} else {
 		execConfigFetcher := func() *rpcclient.ClientConfig { return &configFetcher.Get().ExecutionRPCClient }

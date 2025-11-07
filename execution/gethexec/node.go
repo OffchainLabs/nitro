@@ -186,7 +186,7 @@ func ConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Uint64(prefix+".block-metadata-api-blocks-limit", ConfigDefault.BlockMetadataApiBlocksLimit, "maximum number of blocks allowed to be queried for blockMetadata per arb_getRawBlockMetadata query. Enabled by default, set 0 to disable the limit")
 	f.Bool(prefix+".expose-multi-gas", false, "experimental: expose multi-dimensional gas in transaction receipts")
 	LiveTracingConfigAddOptions(prefix+".vmtrace", f)
-	rpcserver.ConfigAddOptions(prefix+".rpc-server", f)
+	rpcserver.ConfigAddOptions(prefix+".rpc-server", "execution", f)
 	rpcclient.RPCClientAddOptions(prefix+".consensus-rpc-client", f, &ConfigDefault.ConsensusRPCClient)
 }
 

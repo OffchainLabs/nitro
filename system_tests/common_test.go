@@ -671,7 +671,6 @@ func buildOnParentChain(
 
 	initMessage *arbostypes.ParsedInitMessage,
 	addresses *chaininfo.RollupAddresses,
-	isL3 bool,
 ) *TestClient {
 	if parentChainTestClient == nil {
 		t.Fatal("must build parent chain before building chain")
@@ -707,7 +706,7 @@ func buildOnParentChain(
 	AddValNodeIfNeeded(t, ctx, nodeConfig, true, "", valnodeConfig.Wasm.RootPath)
 
 	execConfigFetcher := NewCommonConfigFetcher(execConfig)
-	execNode, err := gethexec.CreateExecutionNode(ctx, chainTestClient.Stack, chainDb, blockchain, parentChainTestClient.Client, execConfigFetcher, parentChainId, 0, isL3 || !*testflag.ConsensusExecutionUseRPC)
+	execNode, err := gethexec.CreateExecutionNode(ctx, chainTestClient.Stack, chainDb, blockchain, parentChainTestClient.Client, execConfigFetcher, parentChainId, 0, !*testflag.ConsensusExecutionUseRPC)
 	Require(t, err)
 	chainTestClient.ExecutionConfigFetcher = execConfigFetcher
 
@@ -717,7 +716,7 @@ func buildOnParentChain(
 	consensusConfigFetcher := NewCommonConfigFetcher(nodeConfig)
 	chainTestClient.ConsensusNode, err = arbnode.CreateConsensusNodeConnectedWithFullExecutionClient(
 		ctx, chainTestClient.Stack, execNode, arbDb, consensusConfigFetcher, blockchain.Config(), parentChainTestClient.Client,
-		addresses, validatorTxOptsPtr, sequencerTxOptsPtr, dataSigner, fatalErrChan, parentChainId, parentChainTestClient.L1BlobReader, locator.LatestWasmModuleRoot(), isL3 || !*testflag.ConsensusExecutionUseRPC)
+		addresses, validatorTxOptsPtr, sequencerTxOptsPtr, dataSigner, fatalErrChan, parentChainId, parentChainTestClient.L1BlobReader, locator.LatestWasmModuleRoot(), !*testflag.ConsensusExecutionUseRPC)
 	Require(t, err)
 	chainTestClient.ConsensusConfigFetcher = consensusConfigFetcher
 
@@ -759,6 +758,9 @@ func (b *NodeBuilder) BuildL3OnL2(t *testing.T) func() {
 		0,
 	)
 
+	if *testflag.ConsensusExecutionUseRPC {
+		configureConsensusExecutionOverRPC(t, b.l3Config.execConfig, b.l3Config.nodeConfig, b.l3Config.stackConfig)
+	}
 	b.L3 = buildOnParentChain(
 		t,
 		b.ctx,
@@ -780,7 +782,6 @@ func (b *NodeBuilder) BuildL3OnL2(t *testing.T) func() {
 
 		b.l3InitMessage,
 		b.l3Addresses,
-		true,
 	)
 
 	return func() {
@@ -813,7 +814,6 @@ func (b *NodeBuilder) BuildL2OnL1(t *testing.T) func() {
 
 		b.initMessage,
 		b.addresses,
-		false,
 	)
 
 	if b.takeOwnership {

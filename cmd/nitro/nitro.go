@@ -532,7 +532,7 @@ func mainImpl() int {
 		wasmModuleRoot = locator.LatestWasmModuleRoot()
 	}
 
-	directConnect := nodeConfig.ExecutionNode && !nodeConfig.ConsensusExecutionInSameProcessUseRPC
+	userRPC := nodeConfig.ExecutionNode && !nodeConfig.ConsensusExecutionInSameProcessUseRPC
 	var execNode *gethexec.ExecutionNode
 	var consensusNode *arbnode.Node
 	if nodeConfig.ExecutionNode {
@@ -545,7 +545,7 @@ func mainImpl() int {
 			&ExecutionNodeConfigFetcher{liveNodeConfig},
 			new(big.Int).SetUint64(nodeConfig.ParentChain.ID),
 			liveNodeConfig.Get().Node.TransactionStreamer.SyncTillBlock,
-			directConnect,
+			userRPC,
 		)
 		if err != nil {
 			log.Error("failed to create execution node", "err", err)
@@ -567,7 +567,7 @@ func mainImpl() int {
 			new(big.Int).SetUint64(nodeConfig.ParentChain.ID),
 			blobReader,
 			wasmModuleRoot,
-			directConnect,
+			userRPC,
 		)
 		if err != nil {
 			log.Error("failed to create consensus node", "err", err)
