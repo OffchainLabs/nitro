@@ -16,7 +16,7 @@ junitfile=""
 log=true
 race=false
 cover=false
---consensus_execution_in_same_process_use_rpc=false
+consensus_execution_in_same_process_use_rpc=false
 flaky=false
 while [[ $# -gt 0 ]]; do
   case $1 in
