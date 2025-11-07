@@ -450,6 +450,11 @@ func (b *NodeBuilder) TakeOwnership() *NodeBuilder {
 	return b
 }
 
+func (b *NodeBuilder) DontSendL2SetupTxes() *NodeBuilder {
+	b.takeOwnership = false // taking ownership requires sequencing arbdebug call
+	return b
+}
+
 func (b *NodeBuilder) Build(t *testing.T) func() {
 	if b.parallelise {
 		b.parallelise = false

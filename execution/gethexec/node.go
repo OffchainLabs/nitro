@@ -200,19 +200,28 @@ func LiveTracingConfigAddOptions(prefix string, f *pflag.FlagSet) {
 }
 
 type DangerousConfig struct {
-	DebugBlock debugblock.Config `koanf:"debug-block"`
+	DebugBlock     debugblock.Config    `koanf:"debug-block"`
+	BenchSequencer BenchSequencerConfig `koanf:"bench-sequencer"`
 }
 
 var DefaultDangerousConfig = DangerousConfig{
-	DebugBlock: debugblock.ConfigDefault,
+	DebugBlock:     debugblock.ConfigDefault,
+	BenchSequencer: BenchSequencerConfigDefault,
 }
 
 func DangerousConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	debugblock.ConfigAddOptions(prefix+".debug-block", f)
+	BenchSequencerConfigAddOptions(prefix+".bench-sequencer", f)
 }
 
 func (c *DangerousConfig) Validate() error {
-	return c.DebugBlock.Validate()
+	if err := c.DebugBlock.Validate(); err != nil {
+		return err
+	}
+	if err := c.BenchSequencer.Validate(); err != nil {
+		return err
+	}
+	return nil
 }
 
 var ConfigDefault = Config{
@@ -295,6 +304,7 @@ func CreateExecutionNode(
 		log.Warn("sequencer enabled without l1 client")
 	}
 
+	var benchSequencerService interface{}
 	if config.Sequencer.Enable {
 		seqConfigFetcher := func() *SequencerConfig { return &configFetcher.Get().Sequencer }
 		sequencer, err = NewSequencer(execEngine, parentChainReader, seqConfigFetcher, parentChainID)
@@ -302,6 +312,9 @@ func CreateExecutionNode(
 			return nil, err
 		}
 		txPublisher = sequencer
+		if config.Dangerous.BenchSequencer.Enable {
+			txPublisher, benchSequencerService = NewBenchSequencer(sequencer)
+		}
 	} else {
 		if config.Forwarder.RedisUrl != "" {
 			txPublisher = NewRedisTxForwarder(config.forwardingTarget, &config.Forwarder)
@@ -395,6 +408,13 @@ func CreateExecutionNode(
 		Service:   eth.NewDebugAPI(eth.NewArbEthereum(l2BlockChain, chainDB)),
 		Public:    false,
 	})
+	if benchSequencerService != nil {
+		apis = append(apis, rpc.API{
+			Namespace: "benchseq",
+			Service:   benchSequencerService,
+			Public:    false,
+		})
+	}
 
 	stack.RegisterAPIs(apis)
 
