@@ -24,29 +24,36 @@ import (
 	"github.com/offchainlabs/nitro/validator/server_api"
 )
 
+type BlockValidatorAPI struct {
+	val *staker.BlockValidator
+}
+
+func NewBlockValidatorAPI(val *staker.BlockValidator) *BlockValidatorAPI {
+	return &BlockValidatorAPI{
+		val: val,
+	}
+}
+
+func (a *BlockValidatorAPI) LatestValidated(ctx context.Context) (*staker.GlobalStateValidatedInfo, error) {
+	return a.val.ReadLastValidatedInfo()
+}
+
 type ArbAPI struct {
-	val               *staker.BlockValidator
 	execClient        execution.ExecutionClient
 	inboxTracker      *InboxTracker
 	parentChainReader *headerreader.HeaderReader
 }
 
 func NewArbAPI(
-	val *staker.BlockValidator,
 	execClient execution.ExecutionClient,
 	inboxTracker *InboxTracker,
 	parentChainReader *headerreader.HeaderReader,
 ) *ArbAPI {
 	return &ArbAPI{
-		val:               val,
 		execClient:        execClient,
 		inboxTracker:      inboxTracker,
 		parentChainReader: parentChainReader,
 	}
-}
-
-func (a *ArbAPI) LatestValidated(ctx context.Context) (*staker.GlobalStateValidatedInfo, error) {
-	return a.val.ReadLastValidatedInfo()
 }
 
 func (a *ArbAPI) GetL1Confirmations(ctx context.Context, blockNum uint64) (uint64, error) {
@@ -128,12 +135,12 @@ func (a *ArbAPI) FindBatchContainingBlock(ctx context.Context, blockNum uint64) 
 	return res, err
 }
 
-type ArbDebugAPI struct {
+type BlockValidatorDebugAPI struct {
 	val *staker.StatelessBlockValidator
 }
 
-func NewArbDebugAPI(val *staker.StatelessBlockValidator) *ArbDebugAPI {
-	return &ArbDebugAPI{
+func NewBlockValidatorDebugAPI(val *staker.StatelessBlockValidator) *BlockValidatorDebugAPI {
+	return &BlockValidatorDebugAPI{
 		val: val,
 	}
 }
@@ -144,7 +151,7 @@ type ValidateBlockResult struct {
 	GlobalState validator.GoGlobalState `json:"globalstate"`
 }
 
-func (a *ArbDebugAPI) ValidateMessageNumber(
+func (a *BlockValidatorDebugAPI) ValidateMessageNumber(
 	ctx context.Context, msgNum hexutil.Uint64, full bool, moduleRootOptional *common.Hash,
 ) (ValidateBlockResult, error) {
 	result := ValidateBlockResult{}
@@ -165,7 +172,7 @@ func (a *ArbDebugAPI) ValidateMessageNumber(
 	return result, err
 }
 
-func (a *ArbDebugAPI) ValidationInputsAt(ctx context.Context, msgNum hexutil.Uint64, target rawdb.WasmTarget,
+func (a *BlockValidatorDebugAPI) ValidationInputsAt(ctx context.Context, msgNum hexutil.Uint64, target rawdb.WasmTarget,
 ) (server_api.InputJSON, error) {
 	return a.val.ValidationInputsAt(ctx, arbutil.MessageIndex(msgNum), target)
 }
