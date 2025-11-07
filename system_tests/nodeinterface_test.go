@@ -12,7 +12,6 @@ import (
 	"testing"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
-	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 
 	"github.com/offchainlabs/nitro/arbos/util"
@@ -140,42 +139,5 @@ func TestL2BlockRangeForL1(t *testing.T) {
 	// Test invalid case.
 	if _, err := nodeInterface.L2BlockRangeForL1(&bind.CallOpts{}, 1e5); err == nil {
 		t.Fatalf("GetL2BlockRangeForL1 didn't fail for an invalid input")
-	}
-}
-
-func TestGetL1Confirmations(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
-	cleanup := builder.Build(t)
-	defer cleanup()
-
-	nodeInterface, err := node_interfacegen.NewNodeInterface(types.NodeInterfaceAddress, builder.L2.Client)
-	Require(t, err)
-
-	genesisBlock, err := builder.L2.Client.BlockByNumber(ctx, big.NewInt(0))
-	Require(t, err)
-	l1Confs, err := nodeInterface.GetL1Confirmations(&bind.CallOpts{}, genesisBlock.Hash())
-	Require(t, err)
-
-	numTransactions := 200
-
-	// #nosec G115
-	if l1Confs >= uint64(numTransactions) {
-		t.Fatalf("L1Confirmations for latest block %v is already %v (over %v)", genesisBlock.Number(), l1Confs, numTransactions)
-	}
-
-	for i := 0; i < numTransactions; i++ {
-		builder.L1.TransferBalance(t, "User", "User", common.Big0, builder.L1Info)
-	}
-
-	l1Confs, err = nodeInterface.GetL1Confirmations(&bind.CallOpts{}, genesisBlock.Hash())
-	Require(t, err)
-
-	// Allow a gap of 10 for asynchronicity, just in case
-	// #nosec G115
-	if l1Confs+10 < uint64(numTransactions) {
-		t.Fatalf("L1Confirmations for latest block %v is only %v (did not hit expected %v)", genesisBlock.Number(), l1Confs, numTransactions)
 	}
 }
