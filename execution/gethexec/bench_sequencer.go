@@ -42,8 +42,15 @@ func (s *BenchSequencer) Start(ctx context.Context) error {
 	return nil
 }
 
-func (s *BenchSequencer) TxQueueLength() int {
+func (s *BenchSequencer) TxQueueLength(includeRetryTxQueue bool) int {
+	if includeRetryTxQueue {
+		return len(s.Sequencer.txQueue) + s.Sequencer.txRetryQueue.Len()
+	}
 	return len(s.Sequencer.txQueue)
+}
+
+func (s *BenchSequencer) TxRetryQueueLength() int {
+	return s.Sequencer.txRetryQueue.Len()
 }
 
 func (s *BenchSequencer) CreateBlock() containers.PromiseInterface[bool] {
@@ -66,8 +73,12 @@ type BenchSequencerAPI struct {
 	benchSequencer *BenchSequencer
 }
 
-func (a *BenchSequencerAPI) TxQueueLength() int {
-	return a.benchSequencer.TxQueueLength()
+func (a *BenchSequencerAPI) TxQueueLength(includeRetryTxQueue bool) int {
+	return a.benchSequencer.TxQueueLength(includeRetryTxQueue)
+}
+
+func (a *BenchSequencerAPI) TxRetryQueueLength() int {
+	return a.benchSequencer.TxRetryQueueLength()
 }
 
 func (a *BenchSequencerAPI) CreateBlock(ctx context.Context) (bool, error) {

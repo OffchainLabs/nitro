@@ -25,11 +25,17 @@ func TestBenchSequencerStub(t *testing.T) {
 	// check benchseq rpc is not available
 	rpcClient := builder.L2.Client.Client()
 	var txQueueLen int
-	err := rpcClient.CallContext(ctx, &txQueueLen, "benchseq_txQueueLength")
+	err := rpcClient.CallContext(ctx, &txQueueLen, "benchseq_txQueueLength", false)
 	if err == nil {
 		Fatal(t, "benchseq_txQueueLength should not have succeeded")
 	} else if !strings.Contains(err.Error(), "the method benchseq_txQueueLength does not exist") {
 		Fatal(t, "benchseq_txQueueLength failed with unexpected error:", err)
+	}
+	err = rpcClient.CallContext(ctx, &txQueueLen, "benchseq_txRetryQueueLength")
+	if err == nil {
+		Fatal(t, "benchseq_txRetryQueueLength should not have succeeded")
+	} else if !strings.Contains(err.Error(), "the method benchseq_txRetryQueueLength does not exist") {
+		Fatal(t, "benchseq_txRetryQueueLength failed with unexpected error:", err)
 	}
 	var blockCreated bool
 	// create block with all of the transactions (they should fit)

@@ -43,11 +43,11 @@ func TestExperimentalBenchSequencer(t *testing.T) {
 
 		// wait for the transaction to be enqueued
 		var txQueueLen int
-		err := rpcClient.CallContext(ctx, &txQueueLen, "benchseq_txQueueLength")
+		err := rpcClient.CallContext(ctx, &txQueueLen, "benchseq_txQueueLength", false)
 		Require(t, err)
 		timeout := time.After(5 * time.Second)
 		for txQueueLen < i+1 {
-			err := rpcClient.CallContext(ctx, &txQueueLen, "benchseq_txQueueLength")
+			err := rpcClient.CallContext(ctx, &txQueueLen, "benchseq_txQueueLength", false)
 			Require(t, err)
 			select {
 			case <-timeout:
@@ -72,7 +72,7 @@ func TestExperimentalBenchSequencer(t *testing.T) {
 	}
 	// check that tx queue is empty
 	var txQueueLen int
-	err = rpcClient.CallContext(ctx, &txQueueLen, "benchseq_txQueueLength")
+	err = rpcClient.CallContext(ctx, &txQueueLen, "benchseq_txQueueLength", false)
 	Require(t, err)
 	if txQueueLen != 0 {
 		Fatal(t, "benchseq_txQueueLenght reported non empty queue, want: 0, have:", txQueueLen)
