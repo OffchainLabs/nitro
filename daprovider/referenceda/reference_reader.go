@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/daprovider"
+	"github.com/offchainlabs/nitro/solgen/go/localgen"
 	"github.com/offchainlabs/nitro/util/containers"
 )
 
@@ -57,21 +59,18 @@ func (r *Reader) recoverInternal(
 	}
 
 	// Validate certificate - always validate for ReferenceDA
-	// TODO: Uncomment the following once we have merged customda contracts changes.
-	/*
-		// Create contract binding
-		validator, err := ospgen.NewReferenceDAProofValidator(r.validatorAddr, r.l1Client)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to create validator binding: %w", err)
-		}
+	// Create contract binding
+	validator, err := localgen.NewReferenceDAProofValidator(r.validatorAddr, r.l1Client)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to create validator binding: %w", err)
+	}
 
-		// Validate using contract
-		callOpts := &bind.CallOpts{Context: ctx}
-		err = cert.ValidateWithContract(validator, callOpts)
-		if err != nil {
-			return nil, nil, fmt.Errorf("certificate validation failed: %w", err)
-		}
-	*/
+	// Validate using contract
+	callOpts := &bind.CallOpts{Context: ctx}
+	err = cert.ValidateWithContract(validator, callOpts)
+	if err != nil {
+		return nil, nil, fmt.Errorf("certificate validation failed: %w", err)
+	}
 
 	log.Debug("ReferenceDA reader extracting hash",
 		"certificateLen", len(certBytes),
@@ -98,7 +97,7 @@ func (r *Reader) recoverInternal(
 
 	// Record preimages if needed
 	var preimages daprovider.PreimagesMap
-	if needPreimages && payload != nil {
+	if needPreimages {
 		preimages = make(daprovider.PreimagesMap)
 		preimageRecorder := daprovider.RecordPreimagesTo(preimages)
 
@@ -123,16 +122,10 @@ func (r *Reader) RecoverPayload(
 	batchBlockHash common.Hash,
 	sequencerMsg []byte,
 ) containers.PromiseInterface[daprovider.PayloadResult] {
-	promise, ctx := containers.NewPromiseWithContext[daprovider.PayloadResult](context.Background())
-	go func() {
+	return containers.DoPromise(context.Background(), func(ctx context.Context) (daprovider.PayloadResult, error) {
 		payload, _, err := r.recoverInternal(ctx, batchNum, batchBlockHash, sequencerMsg, true, false)
-		if err != nil {
-			promise.ProduceError(err)
-		} else {
-			promise.Produce(daprovider.PayloadResult{Payload: payload})
-		}
-	}()
-	return promise
+		return daprovider.PayloadResult{Payload: payload}, err
+	})
 }
 
 // CollectPreimages collects preimages from the DA provider
@@ -141,14 +134,8 @@ func (r *Reader) CollectPreimages(
 	batchBlockHash common.Hash,
 	sequencerMsg []byte,
 ) containers.PromiseInterface[daprovider.PreimagesResult] {
-	promise, ctx := containers.NewPromiseWithContext[daprovider.PreimagesResult](context.Background())
-	go func() {
+	return containers.DoPromise(context.Background(), func(ctx context.Context) (daprovider.PreimagesResult, error) {
 		_, preimages, err := r.recoverInternal(ctx, batchNum, batchBlockHash, sequencerMsg, false, true)
-		if err != nil {
-			promise.ProduceError(err)
-		} else {
-			promise.Produce(daprovider.PreimagesResult{Preimages: preimages})
-		}
-	}()
-	return promise
+		return daprovider.PreimagesResult{Preimages: preimages}, err
+	})
 }

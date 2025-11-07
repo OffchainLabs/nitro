@@ -112,7 +112,8 @@ func parseDAProvider(args []string) (*Config, error) {
 
 	if config.Conf.Dump {
 		err = confighelpers.DumpConfig(k, map[string]interface{}{
-			"anytrust.key.priv-key": "",
+			"anytrust.key.priv-key":               "",
+			"referenceda.signing-key.private-key": "",
 		})
 		if err != nil {
 			return nil, fmt.Errorf("error removing extra parameters before dump: %w", err)
@@ -231,6 +232,10 @@ func startup() error {
 	} else if config.Mode == factory.ModeReferenceDA {
 		if !config.ReferenceDA.Enable {
 			return errors.New("--referenceda.enable is required to start a ReferenceDA provider server")
+		}
+		l1Client, err = das.GetL1Client(ctx, config.ReferenceDA.ParentChainConnectionAttempts, config.ReferenceDA.ParentChainNodeURL)
+		if err != nil {
+			return err
 		}
 	}
 

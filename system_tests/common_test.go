@@ -66,7 +66,9 @@ import (
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
+	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/daprovider/das"
+	"github.com/offchainlabs/nitro/daprovider/das/dastree"
 	"github.com/offchainlabs/nitro/daprovider/das/dasutil"
 	"github.com/offchainlabs/nitro/deploy"
 	"github.com/offchainlabs/nitro/execution/gethexec"
@@ -110,6 +112,7 @@ type TestClient struct {
 	ctx                    context.Context
 	Client                 *ethclient.Client
 	L1Backend              *eth.Ethereum
+	L1BlobReader           daprovider.BlobReader
 	Stack                  *node.Node
 	ConsensusNode          *arbnode.Node
 	ExecNode               *gethexec.ExecutionNode
@@ -222,7 +225,6 @@ var TestSequencerConfig = gethexec.SequencerConfig{
 func ExecConfigDefaultNonSequencerTest(t *testing.T, stateScheme string) *gethexec.Config {
 	config := gethexec.ConfigDefault
 	config.Caching.StateScheme = stateScheme
-	config.RPC.StateScheme = stateScheme
 	config.ParentChainReader = headerreader.TestConfig
 	config.Sequencer.Enable = false
 	config.Forwarder = DefaultTestForwarderConfig
@@ -237,7 +239,6 @@ func ExecConfigDefaultNonSequencerTest(t *testing.T, stateScheme string) *gethex
 func ExecConfigDefaultTest(t *testing.T, stateScheme string) *gethexec.Config {
 	config := gethexec.ConfigDefault
 	config.Caching.StateScheme = stateScheme
-	config.RPC.StateScheme = stateScheme
 	config.Sequencer = TestSequencerConfig
 	config.ParentChainReader = headerreader.TestConfig
 	config.ForwardingTarget = "null"
@@ -420,7 +421,6 @@ func (b *NodeBuilder) RequireScheme(t *testing.T, scheme string) *NodeBuilder {
 	}
 	if b.defaultDbScheme != scheme && b.execConfig != nil {
 		b.execConfig.Caching.StateScheme = scheme
-		b.execConfig.RPC.StateScheme = scheme
 		Require(t, b.execConfig.Validate())
 	}
 	b.defaultDbScheme = scheme
@@ -569,10 +569,6 @@ func (b *NodeBuilder) CheckConfig(t *testing.T) {
 	if b.execConfig == nil {
 		b.execConfig = b.ExecConfigDefaultTest(t, true)
 	}
-	if b.execConfig.Caching.Archive {
-		// archive currently requires hash
-		b.RequireScheme(t, rawdb.HashScheme)
-	}
 	if b.L1Info == nil {
 		b.L1Info = NewL1TestInfo(t)
 	}
@@ -598,7 +594,7 @@ func (b *NodeBuilder) BuildL1(t *testing.T) {
 		t.Fatal(err)
 	}
 	b.L1 = NewTestClient(b.ctx)
-	b.L1Info, b.L1.Client, b.L1.L1Backend, b.L1.Stack, b.L1.ClientWrapper = createTestL1BlockChain(t, b.L1Info, b.withL1ClientWrapper)
+	b.L1Info, b.L1.Client, b.L1.L1Backend, b.L1.Stack, b.L1.ClientWrapper, b.L1.L1BlobReader = createTestL1BlockChain(t, b.L1Info, b.withL1ClientWrapper)
 	locator, err := server_common.NewMachineLocator(b.valnodeConfig.Wasm.RootPath)
 	Require(t, err)
 	b.addresses, b.initMessage = deployOnParentChain(
@@ -683,7 +679,7 @@ func buildOnParentChain(
 	consensusConfigFetcher := NewCommonConfigFetcher(nodeConfig)
 	chainTestClient.ConsensusNode, err = arbnode.CreateNodeFullExecutionClient(
 		ctx, chainTestClient.Stack, execNode, execNode, execNode, execNode, arbDb, consensusConfigFetcher, blockchain.Config(), parentChainTestClient.Client,
-		addresses, validatorTxOptsPtr, sequencerTxOptsPtr, dataSigner, fatalErrChan, parentChainId, nil, locator.LatestWasmModuleRoot())
+		addresses, validatorTxOptsPtr, sequencerTxOptsPtr, dataSigner, fatalErrChan, parentChainId, parentChainTestClient.L1BlobReader, locator.LatestWasmModuleRoot())
 	Require(t, err)
 	chainTestClient.ConsensusConfigFetcher = consensusConfigFetcher
 
@@ -696,6 +692,8 @@ func buildOnParentChain(
 
 	chainTestClient.ExecNode = getExecNode(t, chainTestClient.ConsensusNode)
 	chainTestClient.cleanup = func() { chainTestClient.ConsensusNode.StopAndWait() }
+
+	chainTestClient.L1BlobReader = parentChainTestClient.L1BlobReader
 
 	return chainTestClient
 }
@@ -969,9 +967,12 @@ func build2ndNode(
 
 	testClient := NewTestClient(ctx)
 	testClient.Client, testClient.ConsensusNode, testClient.ExecutionConfigFetcher, testClient.ConsensusConfigFetcher =
-		Create2ndNodeWithConfig(t, ctx, firstNodeTestClient.ConsensusNode, parentChainTestClient.Stack, parentChainInfo, params.initData, params.nodeConfig, params.execConfig, params.stackConfig, valnodeConfig, params.addresses, initMessage, params.useExecutionClientOnly)
+		Create2ndNodeWithConfig(t, ctx, firstNodeTestClient.ConsensusNode, parentChainTestClient.Stack, parentChainInfo, params.initData, params.nodeConfig, params.execConfig, params.stackConfig, valnodeConfig, params.addresses, initMessage, params.useExecutionClientOnly, parentChainTestClient.L1BlobReader)
 	testClient.ExecNode = getExecNode(t, testClient.ConsensusNode)
 	testClient.cleanup = func() { testClient.ConsensusNode.StopAndWait() }
+
+	testClient.L1BlobReader = parentChainTestClient.L1BlobReader
+
 	return testClient, func() { testClient.cleanup() }
 }
 
@@ -1452,7 +1453,7 @@ func AddValNode(t *testing.T, ctx context.Context, nodeConfig *arbnode.Config, u
 	configByValidationNode(nodeConfig, valStack)
 }
 
-func createTestL1BlockChain(t *testing.T, l1info info, withClientWrapper bool) (info, *ethclient.Client, *eth.Ethereum, *node.Node, *ClientWrapper) {
+func createTestL1BlockChain(t *testing.T, l1info info, withClientWrapper bool) (info, *ethclient.Client, *eth.Ethereum, *node.Node, *ClientWrapper, daprovider.BlobReader) {
 	if l1info == nil {
 		l1info = NewL1TestInfo(t)
 	}
@@ -1528,7 +1529,7 @@ func createTestL1BlockChain(t *testing.T, l1info info, withClientWrapper bool) (
 
 	l1Client := ethclient.NewClient(rpcClient)
 
-	return l1info, l1Client, l1backend, stack, clientWrapper
+	return l1info, l1Client, l1backend, stack, clientWrapper, simBeacon
 }
 
 func getInitMessage(ctx context.Context, t *testing.T, parentChainClient *ethclient.Client, addresses *chaininfo.RollupAddresses) *arbostypes.ParsedInitMessage {
@@ -1784,6 +1785,7 @@ func Create2ndNodeWithConfig(
 	addresses *chaininfo.RollupAddresses,
 	initMessage *arbostypes.ParsedInitMessage,
 	useExecutionClientOnly bool,
+	blobReader daprovider.BlobReader,
 ) (*ethclient.Client, *arbnode.Node, ConfigFetcher[gethexec.Config], ConfigFetcher[arbnode.Config]) {
 	if nodeConfig == nil {
 		nodeConfig = arbnode.ConfigDefaultL1NonSequencerTest()
@@ -1840,9 +1842,9 @@ func Create2ndNodeWithConfig(
 	Require(t, err)
 	consensusConfigFetcher := NewCommonConfigFetcher(nodeConfig)
 	if useExecutionClientOnly {
-		currentNode, err = arbnode.CreateNodeExecutionClient(ctx, chainStack, currentExec, arbDb, consensusConfigFetcher, blockchain.Config(), parentChainClient, addresses, &validatorTxOpts, &sequencerTxOpts, dataSigner, feedErrChan, big.NewInt(1337), nil, locator.LatestWasmModuleRoot())
+		currentNode, err = arbnode.CreateNodeExecutionClient(ctx, chainStack, currentExec, arbDb, consensusConfigFetcher, blockchain.Config(), parentChainClient, addresses, &validatorTxOpts, &sequencerTxOpts, dataSigner, feedErrChan, big.NewInt(1337), blobReader, locator.LatestWasmModuleRoot())
 	} else {
-		currentNode, err = arbnode.CreateNodeFullExecutionClient(ctx, chainStack, currentExec, currentExec, currentExec, currentExec, arbDb, consensusConfigFetcher, blockchain.Config(), parentChainClient, addresses, &validatorTxOpts, &sequencerTxOpts, dataSigner, feedErrChan, big.NewInt(1337), nil, locator.LatestWasmModuleRoot())
+		currentNode, err = arbnode.CreateNodeFullExecutionClient(ctx, chainStack, currentExec, currentExec, currentExec, currentExec, arbDb, consensusConfigFetcher, blockchain.Config(), parentChainClient, addresses, &validatorTxOpts, &sequencerTxOpts, dataSigner, feedErrChan, big.NewInt(1337), blobReader, locator.LatestWasmModuleRoot())
 	}
 
 	Require(t, err)
@@ -1899,8 +1901,34 @@ func authorizeDASKeyset(
 	tx, err := upgradeExecutor.ExecuteCall(&trOps, l1info.Accounts["SequencerInbox"].Address, setKeysetCalldata)
 	Require(t, err, "unable to set valid keyset")
 
-	_, err = EnsureTxSucceeded(ctx, l1client, tx)
+	receipt, err := EnsureTxSucceeded(ctx, l1client, tx)
 	Require(t, err, "unable to ensure transaction success for setting valid keyset")
+
+	// Wait for the keyset event to be queryable via eth_getLogs
+	// This prevents race conditions where batch posting happens before L1 indexing completes
+	keysetHash := dastree.Hash(keysetBytes)
+	seqInbox, err := bridgegen.NewSequencerInbox(l1info.Accounts["SequencerInbox"].Address, l1client)
+	Require(t, err, "unable to bind sequencer inbox")
+
+	blockNum := receipt.BlockNumber.Uint64()
+	maxRetries := 10
+	for i := 0; i < maxRetries; i++ {
+		filterOpts := &bind.FilterOpts{
+			Start:   blockNum,
+			End:     &blockNum,
+			Context: ctx,
+		}
+		iter, err := seqInbox.FilterSetValidKeyset(filterOpts, [][32]byte{keysetHash})
+		if err == nil {
+			// Successfully queried logs, keyset is now fetchable
+			iter.Close()
+			break
+		}
+		if i == maxRetries-1 {
+			Require(t, err, "unable to query keyset logs after retries")
+		}
+		time.Sleep(250 * time.Millisecond)
+	}
 }
 
 func setupConfigWithDAS(
@@ -1931,8 +1959,9 @@ func setupConfigWithDAS(
 			KeyDir: dbPath,
 		},
 		LocalFileStorage: das.LocalFileStorageConfig{
-			Enable:  enableFileStorage,
-			DataDir: dbPath,
+			Enable:       enableFileStorage,
+			DataDir:      dbPath,
+			MaxRetention: time.Hour * 24 * 30,
 		},
 		RequestTimeout:           5 * time.Second,
 		ParentChainNodeURL:       "none",

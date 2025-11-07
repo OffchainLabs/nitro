@@ -8,10 +8,12 @@ import (
 	"encoding/binary"
 	"fmt"
 
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
 
 	"github.com/offchainlabs/nitro/daprovider"
+	"github.com/offchainlabs/nitro/solgen/go/localgen"
 	"github.com/offchainlabs/nitro/util/containers"
 )
 
@@ -65,16 +67,10 @@ func (v *Validator) generateReadPreimageProofInternal(ctx context.Context, certH
 // The proof enhancer will prepend the standardized header [certKeccak256, offset, certSize, certificate]
 // So we only need to return the custom data: [Version(1), PreimageSize(8), PreimageData]
 func (v *Validator) GenerateReadPreimageProof(certHash common.Hash, offset uint64, certificate []byte) containers.PromiseInterface[daprovider.PreimageProofResult] {
-	promise, ctx := containers.NewPromiseWithContext[daprovider.PreimageProofResult](context.Background())
-	go func() {
+	return containers.DoPromise(context.Background(), func(ctx context.Context) (daprovider.PreimageProofResult, error) {
 		proof, err := v.generateReadPreimageProofInternal(ctx, certHash, offset, certificate)
-		if err != nil {
-			promise.ProduceError(err)
-		} else {
-			promise.Produce(daprovider.PreimageProofResult{Proof: proof})
-		}
-	}()
-	return promise
+		return daprovider.PreimageProofResult{Proof: proof}, err
+	})
 }
 
 // GenerateCertificateValidityProof creates a certificate validity proof for ReferenceDA
@@ -94,6 +90,13 @@ func (v *Validator) generateCertificateValidityProofInternal(ctx context.Context
 		return []byte{0, 0x01}, nil //nolint:nilerr // Invalid certificate, version 1
 	}
 
+	// Create contract binding
+	validator, err := localgen.NewReferenceDAProofValidator(v.validatorAddr, v.l1Client)
+	if err != nil {
+		// This is a transient error - can't connect to contract
+		return nil, fmt.Errorf("failed to create validator binding: %w", err)
+	}
+
 	// Check if signer is trusted using contract
 	signer, err := cert.RecoverSigner()
 	if err != nil {
@@ -102,25 +105,12 @@ func (v *Validator) generateCertificateValidityProofInternal(ctx context.Context
 		return []byte{0, 0x01}, nil //nolint:nilerr // Invalid certificate, version 1
 	}
 
-	// TODO: Remove/uncomment the following once we have merged customda contracts changes.
-	// For now we will always just say the cert is untrusted.
-	_ = signer
-	isTrusted := false
-	/*
-		// Create contract binding
-		validator, err := ospgen.NewReferenceDAProofValidator(v.validatorAddr, v.l1Client)
-		if err != nil {
-			// This is a transient error - can't connect to contract
-			return nil, fmt.Errorf("failed to create validator binding: %w", err)
-		}
-
-		// Query contract to check if signer is trusted
-		isTrusted, err = validator.TrustedSigners(&bind.CallOpts{Context: ctx}, signer)
-		if err != nil {
-			// This is a transient error - RPC call failed
-			return nil, fmt.Errorf("failed to check trusted signer: %w", err)
-		}
-	*/
+	// Query contract to check if signer is trusted
+	isTrusted, err := validator.TrustedSigners(&bind.CallOpts{Context: ctx}, signer)
+	if err != nil {
+		// This is a transient error - RPC call failed
+		return nil, fmt.Errorf("failed to check trusted signer: %w", err)
+	}
 
 	if !isTrusted {
 		// Signer is not trusted
@@ -140,14 +130,8 @@ func (v *Validator) generateCertificateValidityProofInternal(ctx context.Context
 // Invalid certificates (wrong format, untrusted signer) return claimedValid=0.
 // Only transient errors (like RPC failures) return an error.
 func (v *Validator) GenerateCertificateValidityProof(certificate []byte) containers.PromiseInterface[daprovider.ValidityProofResult] {
-	promise, ctx := containers.NewPromiseWithContext[daprovider.ValidityProofResult](context.Background())
-	go func() {
+	return containers.DoPromise(context.Background(), func(ctx context.Context) (daprovider.ValidityProofResult, error) {
 		proof, err := v.generateCertificateValidityProofInternal(ctx, certificate)
-		if err != nil {
-			promise.ProduceError(err)
-		} else {
-			promise.Produce(daprovider.ValidityProofResult{Proof: proof})
-		}
-	}()
-	return promise
+		return daprovider.ValidityProofResult{Proof: proof}, err
+	})
 }
