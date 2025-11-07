@@ -94,7 +94,7 @@ jobs:
         run: ${{ github.workspace }}/.github/workflows/runExecutionSpecTests.sh
 
       - name: Archive detailed run log
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: ${{ matrix.test-mode }}-full.log
           path: full.log
