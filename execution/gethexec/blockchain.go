@@ -131,7 +131,7 @@ func (c *CachingConfig) validateStateScheme() error {
 	switch c.StateScheme {
 	case rawdb.HashScheme:
 	case rawdb.PathScheme:
-		if c.StateHistory != 0 {
+		if c.Archive && c.StateHistory != 0 {
 			log.Warn("Path scheme archive mode enabled, but state-history is not zero - the persisted state history will be limited to recent blocks", "StateHistory", c.StateHistory)
 		}
 	default:

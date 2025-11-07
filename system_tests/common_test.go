@@ -569,10 +569,6 @@ func (b *NodeBuilder) CheckConfig(t *testing.T) {
 	if b.execConfig == nil {
 		b.execConfig = b.ExecConfigDefaultTest(t, true)
 	}
-	if b.execConfig.Caching.Archive {
-		// archive currently requires hash
-		b.RequireScheme(t, rawdb.HashScheme)
-	}
 	if b.L1Info == nil {
 		b.L1Info = NewL1TestInfo(t)
 	}
