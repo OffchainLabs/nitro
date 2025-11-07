@@ -17,7 +17,6 @@ import (
 	"time"
 
 	"github.com/andybalholm/brotli"
-	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum"
@@ -34,6 +33,7 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/rpc"
 
+	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbnode/parent"
@@ -865,9 +865,16 @@ func (b *BatchPoster) getBatchPosterPosition(ctx context.Context, blockNum *big.
 
 var errBatchAlreadyClosed = errors.New("batch segments already closed")
 
+// brotliWriter is an interface that both brotli.Writer and arbcompress.Writer satisfy
+type brotliWriter interface {
+	Write(p []byte) (n int, err error)
+	Flush() error
+	Close() error
+}
+
 type batchSegments struct {
 	compressedBuffer      *bytes.Buffer
-	compressedWriter      *brotli.Writer
+	compressedWriter      brotliWriter
 	rawSegments           [][]byte
 	timestamp             uint64
 	blockNum              uint64
@@ -937,20 +944,36 @@ func (b *BatchPoster) newBatchSegments(ctx context.Context, firstDelayed uint64,
 		)
 		recompressionLevel = compressionLevel
 	}
+
+	// Default to Go brotli for now. The useNativeBrotli flag can be set
+	// later for testing/benchmarking purposes.
+	useNative := false
+	var writer brotliWriter
+	if useNative {
+		writer = arbcompress.NewWriterLevel(compressedBuffer, compressionLevel)
+	} else {
+		writer = brotli.NewWriterLevel(compressedBuffer, compressionLevel)
+	}
+
 	return &batchSegments{
 		compressedBuffer:   compressedBuffer,
-		compressedWriter:   brotli.NewWriterLevel(compressedBuffer, compressionLevel),
+		compressedWriter:   writer,
 		sizeLimit:          maxSize,
 		compressionLevel:   compressionLevel,
 		recompressionLevel: recompressionLevel,
 		rawSegments:        make([][]byte, 0, 128),
 		delayedMsg:         firstDelayed,
+		useNativeBrotli:    useNative,
 	}, nil
 }
 
 func (s *batchSegments) recompressAll() error {
 	s.compressedBuffer = bytes.NewBuffer(make([]byte, 0, s.sizeLimit*2))
-	s.compressedWriter = brotli.NewWriterLevel(s.compressedBuffer, s.recompressionLevel)
+	if s.useNativeBrotli {
+		s.compressedWriter = arbcompress.NewWriterLevel(s.compressedBuffer, s.recompressionLevel)
+	} else {
+		s.compressedWriter = brotli.NewWriterLevel(s.compressedBuffer, s.recompressionLevel)
+	}
 	s.newUncompressedSize = 0
 	s.totalUncompressedSize = 0
 	for _, segment := range s.rawSegments {
@@ -993,11 +1016,9 @@ func (s *batchSegments) testForOverflow(isHeader bool) (bool, error) {
 	if isHeader || len(s.rawSegments) == s.trailingHeaders {
 		return false, nil
 	}
-	if !s.useNativeBrotli {
-		err := s.compressedWriter.Flush()
-		if err != nil {
-			return true, err
-		}
+	err := s.compressedWriter.Flush()
+	if err != nil {
+		return true, err
 	}
 	s.lastCompressedSize = s.compressedBuffer.Len()
 	s.newUncompressedSize = 0
@@ -1027,22 +1048,13 @@ func (s *batchSegments) addSegmentToCompressed(segment []byte) error {
 	if err != nil {
 		return err
 	}
-	var lenWritten int
-	if !s.useNativeBrotli {
-		lenWritten, err = s.compressedWriter.Write(encoded)
-	} else {
-		compressedSegment, err := arbcompress.CompressLevel(encoded, uint64(s.compressionLevel))
-		if err != nil {
-			return err
-		}
-		lenWritten, err = s.compressedBuffer.Write(compressedSegment)
-		if err != nil {
-			return err
-		}
+	lenWritten, err := s.compressedWriter.Write(encoded)
+	if err != nil {
+		return err
 	}
 	s.newUncompressedSize += lenWritten
 	s.totalUncompressedSize += lenWritten
-	return err
+	return nil
 }
 
 // returns false if segment was too large, error in case of real error
@@ -1149,11 +1161,9 @@ func (s *batchSegments) CloseAndGetBytes() ([]byte, error) {
 	if len(s.rawSegments) == 0 {
 		return nil, nil
 	}
-	if !s.useNativeBrotli {
-		err := s.compressedWriter.Close()
-		if err != nil {
-			return nil, err
-		}
+	err := s.compressedWriter.Close()
+	if err != nil {
+		return nil, err
 	}
 	compressedBytes := s.compressedBuffer.Bytes()
 	fullMsg := make([]byte, 1, len(compressedBytes)+1)

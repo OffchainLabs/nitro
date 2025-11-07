@@ -5,9 +5,12 @@ import (
 	"testing"
 
 	"github.com/andybalholm/brotli"
-	"github.com/offchainlabs/nitro/arbos/arbostypes"
-	"github.com/offchainlabs/nitro/util/testhelpers"
 	"github.com/stretchr/testify/require"
+
+	"github.com/offchainlabs/nitro/arbcompress"
+	"github.com/offchainlabs/nitro/arbos/arbostypes"
+	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
 const (
@@ -21,13 +24,30 @@ const (
 func TestGoLangBrotliPerformance(t *testing.T) {
 	bs := createNewBatchSegments(false)
 	finalized := fillBatch(t, bs)
-	println(len(finalized))
+	t.Logf("Go brotli compressed size: %d bytes", len(finalized))
+
+	// Verify the output is valid by decompressing it
+	verifyDecompression(t, finalized)
 }
 
 func TestNativeBrotliPerformance(t *testing.T) {
 	bs := createNewBatchSegments(true)
 	finalized := fillBatch(t, bs)
-	println(len(finalized))
+	t.Logf("Native brotli compressed size: %d bytes", len(finalized))
+
+	// Verify the output is valid by decompressing it
+	verifyDecompression(t, finalized)
+}
+
+func verifyDecompression(t *testing.T, compressed []byte) {
+	// Skip the brotli header byte
+	require.Greater(t, len(compressed), 1, "compressed data too short")
+
+	decompressed, err := arbcompress.Decompress(compressed[1:], arbstate.MaxDecompressedLen)
+	require.NoError(t, err, "decompression failed")
+	require.Greater(t, len(decompressed), 0, "decompressed data is empty")
+
+	t.Logf("Decompressed size: %d bytes", len(decompressed))
 }
 
 func fillBatch(t *testing.T, bs *batchSegments) []byte {
@@ -54,11 +74,19 @@ func getMessage(i int) *arbostypes.MessageWithMetadata {
 func createNewBatchSegments(useNativeBrotli bool) *batchSegments {
 	compressedBuffer := bytes.NewBuffer(make([]byte, 0, BatchSizeLimit*2))
 
+	var writer brotliWriter
+	if useNativeBrotli {
+		writer = arbcompress.NewWriterLevel(compressedBuffer, CompressionLevel)
+	} else {
+		writer = brotli.NewWriterLevel(compressedBuffer, CompressionLevel)
+	}
+
 	return &batchSegments{
 		compressedBuffer:   compressedBuffer,
-		compressedWriter:   brotli.NewWriterLevel(compressedBuffer, CompressionLevel),
+		compressedWriter:   writer,
 		rawSegments:        make([][]byte, 0, NumMessages),
 		sizeLimit:          BatchSizeLimit,
+		compressionLevel:   CompressionLevel,
 		recompressionLevel: RecompressionLevel,
 		useNativeBrotli:    useNativeBrotli,
 	}
