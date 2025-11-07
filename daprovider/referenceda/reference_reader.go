@@ -38,6 +38,7 @@ func NewReader(storage *InMemoryStorage, l1Client *ethclient.Client, validatorAd
 
 // recoverInternal is the shared implementation for both RecoverPayload and CollectPreimages
 func (r *Reader) recoverInternal(
+	ctx context.Context,
 	batchNum uint64,
 	batchBlockHash common.Hash,
 	sequencerMsg []byte,
@@ -121,8 +122,8 @@ func (r *Reader) RecoverPayload(
 	batchBlockHash common.Hash,
 	sequencerMsg []byte,
 ) containers.PromiseInterface[daprovider.PayloadResult] {
-	return containers.DoPromise(context.Background(), func(_ context.Context) (daprovider.PayloadResult, error) {
-		payload, _, err := r.recoverInternal(batchNum, batchBlockHash, sequencerMsg, true, false)
+	return containers.DoPromise(context.Background(), func(ctx context.Context) (daprovider.PayloadResult, error) {
+		payload, _, err := r.recoverInternal(ctx, batchNum, batchBlockHash, sequencerMsg, true, false)
 		return daprovider.PayloadResult{Payload: payload}, err
 	})
 }
@@ -133,8 +134,8 @@ func (r *Reader) CollectPreimages(
 	batchBlockHash common.Hash,
 	sequencerMsg []byte,
 ) containers.PromiseInterface[daprovider.PreimagesResult] {
-	return containers.DoPromise(context.Background(), func(_ context.Context) (daprovider.PreimagesResult, error) {
-		_, preimages, err := r.recoverInternal(batchNum, batchBlockHash, sequencerMsg, false, true)
+	return containers.DoPromise(context.Background(), func(ctx context.Context) (daprovider.PreimagesResult, error) {
+		_, preimages, err := r.recoverInternal(ctx, batchNum, batchBlockHash, sequencerMsg, false, true)
 		return daprovider.PreimagesResult{Preimages: preimages}, err
 	})
 }
