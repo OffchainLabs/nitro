@@ -31,6 +31,20 @@ type ArbAPI struct {
 	parentChainReader *headerreader.HeaderReader
 }
 
+func NewArbAPI(
+	val *staker.BlockValidator,
+	execClient execution.ExecutionClient,
+	inboxTracker *InboxTracker,
+	parentChainReader *headerreader.HeaderReader,
+) *ArbAPI {
+	return &ArbAPI{
+		val:               val,
+		execClient:        execClient,
+		inboxTracker:      inboxTracker,
+		parentChainReader: parentChainReader,
+	}
+}
+
 func (a *ArbAPI) LatestValidated(ctx context.Context) (*staker.GlobalStateValidatedInfo, error) {
 	return a.val.ReadLastValidatedInfo()
 }
@@ -116,6 +130,12 @@ func (a *ArbAPI) FindBatchContainingBlock(ctx context.Context, blockNum uint64) 
 
 type ArbDebugAPI struct {
 	val *staker.StatelessBlockValidator
+}
+
+func NewArbDebugAPI(val *staker.StatelessBlockValidator) *ArbDebugAPI {
+	return &ArbDebugAPI{
+		val: val,
+	}
 }
 
 type ValidateBlockResult struct {
