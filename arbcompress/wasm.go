@@ -1,8 +1,7 @@
-// Copyright 2021-2024, Offchain Labs, Inc.
+// Copyright 2021-2025, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 //go:build wasm
-// +build wasm
 
 package arbcompress
 

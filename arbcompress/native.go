@@ -1,8 +1,7 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2025, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 //go:build !wasm
-// +build !wasm
 
 package arbcompress
 
@@ -22,13 +21,7 @@ type u8 = C.uint8_t
 type u32 = C.uint32_t
 type usize = C.size_t
 
-type brotliBool = uint32
 type brotliBuffer = C.BrotliBuffer
-
-const (
-	brotliFalse brotliBool = iota
-	brotliTrue
-)
 
 func CompressWell(input []byte) ([]byte, error) {
 	return Compress(input, LEVEL_WELL, EmptyDictionary)
