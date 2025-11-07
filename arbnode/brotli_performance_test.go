@@ -7,7 +7,9 @@ import (
 	"time"
 
 	"github.com/andybalholm/brotli"
+	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
+	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 	"github.com/stretchr/testify/require"
 )
@@ -24,10 +26,8 @@ type testConfig struct {
 }
 
 type runResult struct {
-	name       string
 	timeGoLang time.Duration
 	timeNative time.Duration
-	ratio      float64
 }
 
 func getRandomContent(size int) []byte {
@@ -58,54 +58,67 @@ func getStructuredContent(size int) []byte {
 	return data[:size]
 }
 
-func getMessage(cfg testConfig) *arbostypes.MessageWithMetadata {
-	return &arbostypes.MessageWithMetadata{
-		Message: &arbostypes.L1IncomingMessage{
-			Header: &arbostypes.L1IncomingMessageHeader{},
-			L2msg:  cfg.messageGenerator(cfg.messageSize),
-		},
+func generateMessages(b *testing.B, cfg testConfig) ([]*arbostypes.MessageWithMetadata, []byte) {
+	messages := make([]*arbostypes.MessageWithMetadata, cfg.numMessages)
+	for i := 0; i < cfg.numMessages; i++ {
+		messages[i] = &arbostypes.MessageWithMetadata{
+			Message: &arbostypes.L1IncomingMessage{
+				Header: &arbostypes.L1IncomingMessageHeader{},
+				L2msg:  cfg.messageGenerator(cfg.messageSize),
+			},
+		}
 	}
+
+	expectedBatch := make([]byte, 0, BenchmarkBatchSizeLimit)
+	for _, msg := range messages {
+		segment := make([]byte, 1, len(msg.Message.L2msg)+1)
+		segment[0] = arbstate.BatchSegmentKindL2Message
+		segment = append(segment, msg.Message.L2msg...)
+
+		encoded, err := rlp.EncodeToBytes(segment)
+		require.NoError(b, err)
+
+		expectedBatch = append(expectedBatch, encoded...)
+	}
+
+	return messages, expectedBatch
 }
 
 var configs = []testConfig{
 	{
-		name:               "Random_Small_Level1",
+		name:               "small/low",
 		compressionLevel:   1,
 		recompressionLevel: 1,
-		numMessages:        50,
+		numMessages:        40,
 		messageSize:        1024 * 64,
-		messageGenerator:   getRandomContent,
 	},
 	{
-		name:               "Random_Large_Level11",
+		name:               "large/high",
 		compressionLevel:   11,
 		recompressionLevel: 11,
 		numMessages:        100,
 		messageSize:        1024 * 128,
-		messageGenerator:   getRandomContent,
 	},
 	{
-		name:               "Structured_Small_Level1",
-		compressionLevel:   1,
-		recompressionLevel: 1,
-		numMessages:        50,
-		messageSize:        1024 * 64,
-		messageGenerator:   getStructuredContent,
-	},
-	{
-		name:               "Structured_Large_Level11",
-		compressionLevel:   11,
+		name:               "large/mid-then-high",
+		compressionLevel:   6,
 		recompressionLevel: 11,
 		numMessages:        100,
 		messageSize:        1024 * 128,
-		messageGenerator:   getStructuredContent,
+	},
+	{
+		name:               "large/low-then-high",
+		compressionLevel:   1,
+		recompressionLevel: 11,
+		numMessages:        100,
+		messageSize:        1024 * 128,
 	},
 }
 
 const BenchmarkBatchSizeLimit = 50_000_000
 
 func createNewBatchSegments(cfg testConfig, useNativeBrotli bool) *batchSegments {
-	compressedBuffer := bytes.NewBuffer(make([]byte, 0, BenchmarkBatchSizeLimit))
+	compressedBuffer := bytes.NewBuffer(make([]byte, 0, 2*BenchmarkBatchSizeLimit))
 	return &batchSegments{
 		compressedBuffer:   compressedBuffer,
 		compressedWriter:   brotli.NewWriterLevel(compressedBuffer, cfg.compressionLevel),
@@ -116,45 +129,49 @@ func createNewBatchSegments(cfg testConfig, useNativeBrotli bool) *batchSegments
 	}
 }
 
-func BenchmarkBrotli(b *testing.B) {
-	allResults := make([]runResult, len(configs))
-
-	for cfgIndex, cfg := range configs {
-		messages := make([]*arbostypes.MessageWithMetadata, cfg.numMessages)
-		for i := 0; i < cfg.numMessages; i++ {
-			messages[i] = getMessage(cfg)
+func benchCompression(b *testing.B, cfg testConfig, messages []*arbostypes.MessageWithMetadata, useNativeBrotli bool) {
+	for b.Loop() {
+		bs := createNewBatchSegments(cfg, useNativeBrotli)
+		for _, msg := range messages {
+			added, err := bs.AddMessage(msg)
+			require.NoError(b, err)
+			require.True(b, added)
 		}
+		_, err := bs.CloseAndGetBytes()
+		require.NoError(b, err)
+	}
+}
 
-		res := &allResults[cfgIndex]
-		res.name = cfg.name
+func BenchmarkBrotli(b *testing.B) {
+	msgTypes := []struct {
+		typ string
+		gen messageGenerator
+	}{{"rand", getRandomContent}, {"strct", getStructuredContent}}
 
-		b.Run(fmt.Sprintf("%s/Native", cfg.name), func(b *testing.B) {
-			for b.Loop() {
-				bs := createNewBatchSegments(cfg, true)
-				for _, msg := range messages {
-					added, err := bs.AddMessage(msg)
-					require.NoError(b, err)
-					require.True(b, added)
-				}
-				_, err := bs.CloseAndGetBytes()
-				require.NoError(b, err)
-			}
-			res.timeNative = b.Elapsed() / time.Duration(b.N)
-		})
+	allResults := make(map[string]runResult, len(configs)*len(msgTypes))
 
-		b.Run(fmt.Sprintf("%s/GoLang", cfg.name), func(b *testing.B) {
-			for b.Loop() {
-				bs := createNewBatchSegments(cfg, false)
-				for _, msg := range messages {
-					added, err := bs.AddMessage(msg)
-					require.NoError(b, err)
-					require.True(b, added)
-				}
-				_, err := bs.CloseAndGetBytes()
-				require.NoError(b, err)
-			}
-			res.timeGoLang = b.Elapsed() / time.Duration(b.N)
-		})
+	for _, cfg := range configs {
+		for _, msgType := range msgTypes {
+			cfg := cfg
+			cfg.name = fmt.Sprintf("%s/%s", cfg.name, msgType.typ)
+			cfg.messageGenerator = msgType.gen
+
+			res := &runResult{}
+
+			messages, _ := generateMessages(b, cfg)
+
+			b.Run(fmt.Sprintf("%s/Native", cfg.name), func(b *testing.B) {
+				benchCompression(b, cfg, messages, true)
+				res.timeNative = b.Elapsed() / time.Duration(b.N)
+			})
+
+			b.Run(fmt.Sprintf("%s/GoLang", cfg.name), func(b *testing.B) {
+				benchCompression(b, cfg, messages, false)
+				res.timeGoLang = b.Elapsed() / time.Duration(b.N)
+			})
+
+			allResults[cfg.name] = *res
+		}
 	}
 
 	b.Logf("------------------------------------------------------------------------------------------------------------------")
@@ -162,11 +179,11 @@ func BenchmarkBrotli(b *testing.B) {
 	b.Logf("| %-25s |   (per op)    |   (per op)    |  (time per op)  |", "")
 	b.Logf("------------------------------------------------------------------------------------------------------------------")
 
-	for _, res := range allResults {
+	for config, res := range allResults {
 		nativeToGoRatio := float64(res.timeNative) / float64(res.timeGoLang)
 
 		b.Logf("| %-25s | %13v | %13v | %14.2f%% |",
-			res.name,
+			config,
 			res.timeGoLang,
 			res.timeNative,
 			nativeToGoRatio*100,
