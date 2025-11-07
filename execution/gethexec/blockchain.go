@@ -45,6 +45,7 @@ type CachingConfig struct {
 	StateScheme                         string        `koanf:"state-scheme"`
 	StateHistory                        uint64        `koanf:"state-history"`
 	EnablePreimages                     bool          `koanf:"enable-preimages"`
+	PathdbMaxDiffLayers                 int           `koanf:"pathdb-max-diff-layers"`
 }
 
 func CachingConfigAddOptions(prefix string, f *pflag.FlagSet) {
@@ -68,6 +69,7 @@ func CachingConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".state-scheme", DefaultCachingConfig.StateScheme, "scheme to use for state trie storage (hash, path)")
 	f.Uint64(prefix+".state-history", DefaultCachingConfig.StateHistory, "number of recent blocks to retain state history for (path state-scheme only)")
 	f.Bool(prefix+".enable-preimages", DefaultCachingConfig.EnablePreimages, "enable recording of preimages")
+	f.Int(prefix+".pathdb-max-diff-layers", DefaultCachingConfig.PathdbMaxDiffLayers, "maximum number of diff layers to keep in pathdb (path state-scheme only)")
 }
 
 func getStateHistory(maxBlockSpeed time.Duration) uint64 {
@@ -94,6 +96,8 @@ var DefaultCachingConfig = CachingConfig{
 	StylusLRUCacheCapacity:              256,
 	StateScheme:                         rawdb.HashScheme,
 	StateHistory:                        getStateHistory(DefaultSequencerConfig.MaxBlockSpeed),
+	EnablePreimages:                     false,
+	PathdbMaxDiffLayers:                 128,
 }
 
 func DefaultCacheConfigFor(cachingConfig *CachingConfig) *core.BlockChainConfig {
@@ -119,6 +123,7 @@ func DefaultCacheConfigFor(cachingConfig *CachingConfig) *core.BlockChainConfig 
 		MaxAmountOfGasToSkipStateSaving:    cachingConfig.MaxAmountOfGasToSkipStateSaving,
 		StateScheme:                        cachingConfig.StateScheme,
 		StateHistory:                       cachingConfig.StateHistory,
+		MaxDiffLayers:                      cachingConfig.PathdbMaxDiffLayers,
 	}
 }
 
