@@ -249,3 +249,5 @@ func (m *mockParentChainReader) FilterLogs(ctx context.Context, q ethereum.Filte
 	}
 	return result, nil
 }
+
+func (m *mockParentChainReader) Client() rpc.ClientInterface { return nil }

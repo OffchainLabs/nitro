@@ -85,7 +85,7 @@ func TestLogsFetcher(t *testing.T) {
 	}
 
 	parentChainReader := &mockParentChainReader{logs: append(batchTxLogs, delayedMsgTxLogs...)}
-	fetcher := newLogsFetcher(parentChainReader, 10)
+	fetcher := newLogsAndHeadersFetcher(parentChainReader, 10)
 	fetcher.chainHeight = 100
 	melState := &mel.State{
 		ParentChainBlockNumber:             1,

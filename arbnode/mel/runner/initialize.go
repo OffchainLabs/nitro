@@ -41,7 +41,7 @@ func (m *MessageExtractor) initialize(ctx context.Context, current *fsm.CurrentS
 		})
 	}
 	// Initialize logsPreFetcher
-	m.logsPreFetcher = newLogsFetcher(m.parentChainReader, m.config.BlocksToPrefetch)
+	m.logsAndHeadersPreFetcher = newLogsAndHeadersFetcher(m.parentChainReader, m.config.BlocksToPrefetch)
 	// Begin the next FSM state immediately.
 	return 0, m.fsm.Do(processNextBlock{
 		melState: melState,
