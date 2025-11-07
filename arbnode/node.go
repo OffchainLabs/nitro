@@ -1279,8 +1279,13 @@ func registerAPIs(currentNode *Node, stack *node.Node) {
 		apis = append(apis, rpc.API{
 			Namespace: "arb",
 			Version:   "1.0",
-			Service:   &ArbAPI{val: currentNode.BlockValidator},
-			Public:    false,
+			Service: &ArbAPI{
+				val:               currentNode.BlockValidator,
+				execClient:        currentNode.ExecutionClient,
+				inboxTracker:      currentNode.InboxTracker,
+				parentChainReader: currentNode.L1Reader,
+			},
+			Public: false,
 		})
 	}
 	if currentNode.StatelessBlockValidator != nil {

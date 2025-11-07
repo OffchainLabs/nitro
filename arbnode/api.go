@@ -2,25 +2,100 @@ package arbnode
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"math/big"
 	"time"
 
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/rawdb"
+	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/execution"
+	"github.com/offchainlabs/nitro/execution/gethexec"
+	"github.com/offchainlabs/nitro/solgen/go/node_interfacegen"
 	"github.com/offchainlabs/nitro/staker"
+	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/validator"
 	"github.com/offchainlabs/nitro/validator/server_api"
 )
 
 type ArbAPI struct {
-	val *staker.BlockValidator
+	val               *staker.BlockValidator
+	execClient        execution.ExecutionClient
+	inboxTracker      *InboxTracker
+	parentChainReader *headerreader.HeaderReader
 }
 
 func (a *ArbAPI) LatestValidated(ctx context.Context) (*staker.GlobalStateValidatedInfo, error) {
 	return a.val.ReadLastValidatedInfo()
+}
+
+func (a *ArbAPI) GetL1Confirmations(ctx context.Context, blockNum uint64) (uint64, error) {
+	// blocks behind genesis are treated as belonging to batch 0
+	msgNum, err := a.execClient.BlockNumberToMessageIndex(blockNum).Await(ctx)
+	if err != nil {
+		if !errors.Is(err, gethexec.BlockNumBeforeGenesis) {
+			return 0, err
+		}
+		msgNum = 0
+	}
+
+	// batches not yet posted have 0 confirmations but no error
+	batchNum, found, err := a.inboxTracker.FindInboxBatchContainingMessage(msgNum)
+	if err != nil {
+		return 0, err
+	}
+	if !found {
+		return 0, nil
+	}
+	parentChainBlockNum, err := a.inboxTracker.GetBatchParentChainBlock(batchNum)
+	if err != nil {
+		return 0, err
+	}
+
+	if a.parentChainReader.IsParentChainArbitrum() {
+		parentChainClient := a.parentChainReader.Client()
+		parentNodeInterface, err := node_interfacegen.NewNodeInterface(types.NodeInterfaceAddress, parentChainClient)
+		if err != nil {
+			return 0, err
+		}
+		parentChainBlock, err := parentChainClient.BlockByNumber(ctx, new(big.Int).SetUint64(parentChainBlockNum))
+		if err != nil {
+			// Hide the parent chain RPC error from the client in case it contains sensitive information.
+			// Likely though, this error is just "not found" because the block got reorg'd.
+			return 0, fmt.Errorf("failed to get parent chain block %v containing batch", parentChainBlockNum)
+		}
+		confs, err := parentNodeInterface.GetL1Confirmations(&bind.CallOpts{Context: ctx}, parentChainBlock.Hash())
+		if err != nil {
+			log.Warn(
+				"Failed to get L1 confirmations from parent chain",
+				"blockNumber", parentChainBlockNum,
+				"blockHash", parentChainBlock.Hash(), "err", err,
+			)
+			return 0, fmt.Errorf("failed to get L1 confirmations from parent chain for block %v", parentChainBlock.Hash())
+		}
+		return confs, nil
+	}
+	if a.parentChainReader == nil {
+		return 0, nil
+	}
+	latestHeader, err := a.parentChainReader.LastHeaderWithError()
+	if err != nil {
+		return 0, err
+	}
+	if latestHeader == nil {
+		return 0, errors.New("no headers read from l1")
+	}
+	latestBlockNum := latestHeader.Number.Uint64()
+	if latestBlockNum < parentChainBlockNum {
+		return 0, nil
+	}
+	return (latestBlockNum - parentChainBlockNum), nil
 }
 
 type ArbDebugAPI struct {
