@@ -200,7 +200,7 @@ func New(c *Config, blockchain *core.BlockChain, ethDb ethdb.Database, fatalErrC
 
 func logState(header *types.Header, hasState bool) {
 	if height := header.Number.Uint64(); height%1_000_000 == 0 {
-		log.Info("Finding last available state.", "block", height, "hash", header.Hash(), "hasState", hasState)
+		log.Info("Finding last available state", "block", height, "hash", header.Hash(), "hasState", hasState)
 	}
 }
 
