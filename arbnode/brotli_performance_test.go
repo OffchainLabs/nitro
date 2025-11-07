@@ -8,12 +8,14 @@ import (
 	"time"
 
 	"github.com/andybalholm/brotli"
+	"github.com/stretchr/testify/require"
+
 	"github.com/ethereum/go-ethereum/rlp"
+
 	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/util/testhelpers"
-	"github.com/stretchr/testify/require"
 )
 
 const BatchSizeLimit = 50_000_000
@@ -67,9 +69,9 @@ func TestBrotliCompressionValidity(t *testing.T) {
 				require.Equal(t, decompressedBatch, expectedBatch)
 			}
 
-			//t.Run(fmt.Sprintf("%s/Native", cfg.name), func(b *testing.T) {
-			//	batchVerification(t, true)
-			//})
+			t.Run(fmt.Sprintf("%s/Native", cfg.name), func(b *testing.T) {
+				batchVerification(t, true)
+			})
 			t.Run(fmt.Sprintf("%s/GoLang", cfg.name), func(b *testing.T) {
 				batchVerification(t, false)
 			})
@@ -155,7 +157,7 @@ type runResult struct {
 }
 
 func getRandomContent(size int) []byte {
-	return testhelpers.RandomSlice(uint64(size))
+	return testhelpers.RandomSlice(uint64(size)) // nolint: gosec
 }
 
 func getStructuredContent(size int) []byte {

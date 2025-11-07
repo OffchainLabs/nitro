@@ -953,12 +953,36 @@ func (s *batchSegments) recompressAll() error {
 	s.compressedWriter = brotli.NewWriterLevel(s.compressedBuffer, s.recompressionLevel)
 	s.newUncompressedSize = 0
 	s.totalUncompressedSize = 0
-	for _, segment := range s.rawSegments {
-		err := s.addSegmentToCompressed(segment)
+
+	if s.useNativeBrotli { // one-shot compression
+		segmentsFlattened := make([]byte, 0)
+		for _, segment := range s.rawSegments {
+			encoded, err := rlp.EncodeToBytes(segment)
+			if err != nil {
+				return err
+			}
+			segmentsFlattened = append(segmentsFlattened, encoded...)
+		}
+
+		compressedSegments, err := arbcompress.CompressLevel(segmentsFlattened, uint64(s.recompressionLevel)) // nolint: gosec
 		if err != nil {
 			return err
 		}
+		lenWritten, err := s.compressedBuffer.Write(compressedSegments)
+		if err != nil {
+			return err
+		}
+		s.newUncompressedSize = lenWritten
+		s.totalUncompressedSize = lenWritten
+	} else { // we are using streaming compressor
+		for _, segment := range s.rawSegments {
+			err := s.addSegmentToCompressed(segment)
+			if err != nil {
+				return err
+			}
+		}
 	}
+
 	if s.totalUncompressedSize > arbstate.MaxDecompressedLen {
 		return fmt.Errorf("batch size %v exceeds maximum decompressed length %v", s.totalUncompressedSize, arbstate.MaxDecompressedLen)
 	}
@@ -2066,12 +2090,6 @@ func (b *BatchPoster) StopAndWait() {
 type BoolRing struct {
 	buffer         []bool
 	bufferPosition int
-}
-
-func NewBoolRing(size int) *BoolRing {
-	return &BoolRing{
-		buffer: make([]bool, 0, size),
-	}
 }
 
 func (b *BoolRing) Update(value bool) {
