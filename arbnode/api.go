@@ -98,6 +98,22 @@ func (a *ArbAPI) GetL1Confirmations(ctx context.Context, blockNum uint64) (uint6
 	return (latestBlockNum - parentChainBlockNum), nil
 }
 
+func (a *ArbAPI) FindBatchContainingBlock(ctx context.Context, blockNum uint64) (uint64, error) {
+	msgIndex, err := a.execClient.BlockNumberToMessageIndex(blockNum).Await(ctx)
+	if err != nil {
+		if errors.Is(err, gethexec.BlockNumBeforeGenesis) {
+			return 0, fmt.Errorf("block %v is part of genesis", blockNum)
+		}
+		return 0, err
+	}
+
+	res, found, err := a.inboxTracker.FindInboxBatchContainingMessage(msgIndex)
+	if err == nil && !found {
+		return 0, errors.New("block not yet found on any batch")
+	}
+	return res, err
+}
+
 type ArbDebugAPI struct {
 	val *staker.StatelessBlockValidator
 }
