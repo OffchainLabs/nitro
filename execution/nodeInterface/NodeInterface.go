@@ -149,6 +149,9 @@ func (n NodeInterface) GetL1Confirmations(c ctx, evm mech, blockHash bytes32) (u
 		return 0, err
 	}
 
+	if node.ParentChainReader == nil {
+		return 0, nil
+	}
 	if node.ParentChainReader.IsParentChainArbitrum() {
 		parentChainClient := node.ParentChainReader.Client()
 		parentNodeInterface, err := node_interfacegen.NewNodeInterface(types.NodeInterfaceAddress, parentChainClient)
@@ -171,9 +174,6 @@ func (n NodeInterface) GetL1Confirmations(c ctx, evm mech, blockHash bytes32) (u
 			return 0, fmt.Errorf("failed to get L1 confirmations from parent chain for block %v", parentChainBlock.Hash())
 		}
 		return confs, nil
-	}
-	if node.ParentChainReader == nil {
-		return 0, nil
 	}
 	latestHeader, err := node.ParentChainReader.LastHeaderWithError()
 	if err != nil {
