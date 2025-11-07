@@ -681,7 +681,10 @@ func (t *InboxTracker) CacheBlobs(ctx context.Context, client *ethclient.Client,
 	if len(batches) == 0 {
 		return nil
 	}
-	_, prevbatchmeta = t.HandleSnapSyncConfig(ctx, client, batches)
+	batches, _, _, prevbatchmeta, returnEarly := t.HandleSnapSyncConfig(ctx, client, batches)
+	if returnEarly {
+		return nil
+	}
 
 	backend := &multiplexerBackend{
 		batchSeqNum: batches[0].SequenceNumber,
@@ -702,13 +705,11 @@ func (t *InboxTracker) CacheBlobs(ctx context.Context, client *ethclient.Client,
 	return nil
 }
 
-func (t *InboxTracker) HandleSnapSyncConfig(ctx context.Context, client *ethclient.Client, batches []*SequencerInboxBatch) (common.Hash, BatchMetadata) {
-	var nextAcc common.Hash
-	var prevbatchmeta BatchMetadata
+func (t *InboxTracker) HandleSnapSyncConfig(ctx context.Context, client *ethclient.Client, batches []*SequencerInboxBatch) ([]*SequencerInboxBatch, uint64, common.Hash, BatchMetadata, bool) {
+	nextAcc := common.Hash{}
+	prevbatchmeta := BatchMetadata{}
 	sequenceNumberToKeep := uint64(0)
-	if len(batches) == 0 {
-		return nextAcc, prevbatchmeta
-	}
+
 	if t.snapSyncConfig.Enabled && batches[0].SequenceNumber < t.snapSyncConfig.BatchCount {
 		sequenceNumberToKeep = t.snapSyncConfig.BatchCount
 		if sequenceNumberToKeep > 0 {
@@ -716,7 +717,7 @@ func (t *InboxTracker) HandleSnapSyncConfig(ctx context.Context, client *ethclie
 		}
 		for {
 			if len(batches) == 0 {
-				return nextAcc, prevbatchmeta
+				return batches, sequenceNumberToKeep, nextAcc, prevbatchmeta, true
 			}
 			if batches[0].SequenceNumber+1 == sequenceNumberToKeep {
 				nextAcc = batches[0].AfterInboxAcc
@@ -735,17 +736,21 @@ func (t *InboxTracker) HandleSnapSyncConfig(ctx context.Context, client *ethclie
 		}
 	}
 
-	return nextAcc, prevbatchmeta
+	return batches, sequenceNumberToKeep, nextAcc, prevbatchmeta, false
 }
 
 func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client *ethclient.Client, batches []*SequencerInboxBatch) error {
 	var nextAcc common.Hash
 	var prevbatchmeta BatchMetadata
 	sequenceNumberToKeep := uint64(0)
+	returnEarly := false
 	if len(batches) == 0 {
 		return nil
 	}
-	nextAcc, prevbatchmeta = t.HandleSnapSyncConfig(ctx, client, batches)
+	batches, sequenceNumberToKeep, nextAcc, prevbatchmeta, returnEarly = t.HandleSnapSyncConfig(ctx, client, batches)
+	if returnEarly {
+		return nil
+	}
 	t.mutex.Lock()
 	defer t.mutex.Unlock()
 
