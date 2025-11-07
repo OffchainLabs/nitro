@@ -72,6 +72,9 @@ func (a *ArbAPI) GetL1Confirmations(ctx context.Context, blockNum uint64) (uint6
 		return 0, err
 	}
 
+	if a.parentChainReader == nil {
+		return 0, nil
+	}
 	if a.parentChainReader.IsParentChainArbitrum() {
 		parentChainClient := a.parentChainReader.Client()
 		parentNodeInterface, err := node_interfacegen.NewNodeInterface(types.NodeInterfaceAddress, parentChainClient)
@@ -94,9 +97,6 @@ func (a *ArbAPI) GetL1Confirmations(ctx context.Context, blockNum uint64) (uint6
 			return 0, fmt.Errorf("failed to get L1 confirmations from parent chain for block %v", parentChainBlock.Hash())
 		}
 		return confs, nil
-	}
-	if a.parentChainReader == nil {
-		return 0, nil
 	}
 	latestHeader, err := a.parentChainReader.LastHeaderWithError()
 	if err != nil {
