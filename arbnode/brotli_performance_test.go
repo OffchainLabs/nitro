@@ -158,18 +158,18 @@ func BenchmarkBrotli(b *testing.B) {
 	}
 
 	b.Logf("------------------------------------------------------------------------------------------------------------------")
-	b.Logf("| %-25s | GoLang Time | Native Time | Native/Go Ratio |", "Configuration")
-	b.Logf("| %-25s | (per op)    | (per op)    | (Time Native / Time Go) |", "")
+	b.Logf("| %-25s | GoLang Time   | Native Time   | Native/Go Ratio |", "Configuration")
+	b.Logf("| %-25s |   (per op)    |   (per op)    |  (time per op)  |", "")
 	b.Logf("------------------------------------------------------------------------------------------------------------------")
 
 	for _, res := range allResults {
 		nativeToGoRatio := float64(res.timeNative) / float64(res.timeGoLang)
 
-		b.Logf("| %-25s | %11v | %11v | %15.2f X |",
+		b.Logf("| %-25s | %13v | %13v | %14.2f%% |",
 			res.name,
 			res.timeGoLang,
 			res.timeNative,
-			nativeToGoRatio,
+			nativeToGoRatio*100,
 		)
 	}
 	b.Logf("------------------------------------------------------------------------------------------------------------------")
