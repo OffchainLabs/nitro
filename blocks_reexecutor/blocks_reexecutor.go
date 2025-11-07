@@ -198,13 +198,19 @@ func New(c *Config, blockchain *core.BlockChain, ethDb ethdb.Database, fatalErrC
 	return blocksReExecutor, nil
 }
 
+func logState(header *types.Header, hasState bool) {
+	if height := header.Number.Uint64(); height%1_000_000 == 0 {
+		log.Info("Finding last available state", "block", height, "hash", header.Hash(), "hasState", hasState)
+	}
+}
+
 // LaunchBlocksReExecution launches the thread to apply blocks of range [currentBlock-s.config.MinBlocksPerThread, currentBlock] to the last available valid state
 func (s *BlocksReExecutor) LaunchBlocksReExecution(ctx context.Context, startBlock, currentBlock, minBlocksPerThread uint64) uint64 {
 	start := arbmath.SaturatingUSub(currentBlock, minBlocksPerThread)
 	if start < startBlock {
 		start = startBlock
 	}
-	startState, startHeader, release, err := arbitrum.FindLastAvailableState(ctx, s.blockchain, s.stateFor, s.blockchain.GetHeaderByNumber(start), nil, -1)
+	startState, startHeader, release, err := arbitrum.FindLastAvailableState(ctx, s.blockchain, s.stateFor, s.blockchain.GetHeaderByNumber(start), logState, -1)
 	if err != nil {
 		s.fatalErrChan <- fmt.Errorf("blocksReExecutor failed to get last available state while searching for state at %d, err: %w", start, err)
 		return startBlock
