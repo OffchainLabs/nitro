@@ -90,6 +90,8 @@ func (b *inboxBackend) GetDAPayload() (*daprovider.PayloadResult, error) {
 	return nil, nil
 }
 
+func (b *inboxBackend) SetDAPayload(payload *daprovider.PayloadResult) {}
+
 func (b *inboxBackend) GetSequencerInboxPosition() uint64 {
 	return b.batchSeqNum
 }

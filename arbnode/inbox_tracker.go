@@ -659,6 +659,10 @@ func (b *multiplexerBackend) GetDAPayload() (*daprovider.PayloadResult, error) {
 	return b.dasPayload, nil
 }
 
+func (b *multiplexerBackend) SetDAPayload(payload *daprovider.PayloadResult) {
+	b.dasPayload = payload
+}
+
 func (b *multiplexerBackend) AdvanceSequencerInbox() {
 	b.batchSeqNum++
 	if len(b.batches) > 0 {
@@ -788,7 +792,7 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client *ethclien
 	backend := &multiplexerBackend{
 		batchSeqNum: batches[0].SequenceNumber,
 		batches:     batches,
-		dasPayload:  &batches[0].dasPayload,
+		dasPayload:  &batches[0].daPayload,
 		inbox:       t,
 		ctx:         ctx,
 		client:      client,

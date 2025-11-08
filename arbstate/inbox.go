@@ -28,6 +28,7 @@ type InboxBackend interface {
 	PeekSequencerInbox() ([]byte, common.Hash, error)
 
 	GetDAPayload() (*daprovider.PayloadResult, error)
+	SetDAPayload(*daprovider.PayloadResult)
 
 	GetSequencerInboxPosition() uint64
 	AdvanceSequencerInbox()
@@ -84,7 +85,7 @@ func ParseSequencerMessage(ctx context.Context, batchNum uint64, batchBlockHash 
 			// We don't try to re-fetch DA payload from cache if not available since blob availability
 			// could have changed since CacheDAPayload() call.
 			if cachedPayload == nil {
-				return nil, fmt.Errorf("DA payload should have been fetch earlier using CacheDAPayload")
+				return nil, fmt.Errorf("DA payload should have been fetched earlier using CacheDAPayload")
 			} else {
 				payload = cachedPayload.Payload
 			}
@@ -186,6 +187,21 @@ func NewInboxMultiplexer(backend InboxBackend, delayedMessagesRead uint64, dapRe
 		cachedSubMessageNumber:    0,
 		keysetValidationMode:      keysetValidationMode,
 	}
+}
+
+func CacheDAPayload(ctx context.Context, backend InboxBackend, dapReaders *daprovider.ReaderRegistry) error {
+	seqNum := backend.GetSequencerInboxPosition()
+	dataPayload, batchBlockHash, err := backend.PeekSequencerInbox()
+	if err != nil {
+		panic(fmt.Sprintf("Error trying to get dataPayload: %v", err.Error()))
+	}
+	payload, err := daprovider.FetchDAPayload(ctx, dapReaders, seqNum, batchBlockHash, dataPayload, daprovider.KeysetValidate)
+	if err != nil {
+		panic(fmt.Sprintf("Error fetching DA payload: %v", err.Error()))
+	}
+	// This is okay since Go escape analysis stores payload in the heap
+	backend.SetDAPayload(&payload)
+	return err
 }
 
 const BatchSegmentKindL2Message uint8 = 0

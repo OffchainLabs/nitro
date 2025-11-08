@@ -454,6 +454,7 @@ type simulatedMuxBackend struct {
 	allMsgs               map[arbutil.MessageIndex]*arbostypes.MessageWithMetadata
 	delayedInboxStart     uint64
 	delayedInbox          []*arbostypes.MessageWithMetadata
+	daPayload             *daprovider.PayloadResult
 }
 
 func (b *simulatedMuxBackend) PeekSequencerInbox() ([]byte, common.Hash, error) {
@@ -462,7 +463,10 @@ func (b *simulatedMuxBackend) PeekSequencerInbox() ([]byte, common.Hash, error) 
 
 func (b *simulatedMuxBackend) GetSequencerInboxPosition() uint64 { return b.batchSeqNum }
 func (b *simulatedMuxBackend) GetDAPayload() (*daprovider.PayloadResult, error) {
-	return nil, nil
+	return b.daPayload, nil
+}
+func (b *simulatedMuxBackend) SetDAPayload(payload *daprovider.PayloadResult) {
+	b.daPayload = payload
 }
 func (b *simulatedMuxBackend) AdvanceSequencerInbox()              {}
 func (b *simulatedMuxBackend) GetPositionWithinMessage() uint64    { return b.positionWithinMessage }
@@ -1848,12 +1852,8 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 		b.building.muxBackend.delayedInboxStart = batchPosition.DelayedMessageCount
 		b.building.muxBackend.SetPositionWithinMessage(0)
 
-		// cachedPayloadMap := make(arbstate.BatchPayloadMap)
 		simMux := arbstate.NewInboxMultiplexer(b.building.muxBackend, batchPosition.DelayedMessageCount, dapReaders, daprovider.KeysetValidate)
-		// err = simMux.CacheBlobs(ctx)
-		// if err != nil {
-		// 	return false, fmt.Errorf("error trying to cache blobs payload: %w", err)
-		// }
+		arbstate.CacheDAPayload(ctx, b.building.muxBackend, dapReaders)
 		log.Debug("Begin checking the correctness of batch against inbox multiplexer", "startMsgSeqNum", batchPosition.MessageCount, "endMsgSeqNum", b.building.msgCount-1)
 		for i := batchPosition.MessageCount; i < b.building.msgCount; i++ {
 			msg, err := simMux.Pop(ctx)

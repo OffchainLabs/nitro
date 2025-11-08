@@ -6,10 +6,12 @@ package daprovider
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto/kzg4844"
+	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/arbutil"
 )
@@ -120,4 +122,30 @@ func IsBrotliMessageHeaderByte(b uint8) bool {
 // IsKnownHeaderByte returns true if the supplied header byte has only known bits
 func IsKnownHeaderByte(b uint8) bool {
 	return b&^KnownHeaderBits == 0
+}
+
+func FetchDAPayload(ctx context.Context, dapReaders *ReaderRegistry, seqNum uint64, batchBlockHash common.Hash, dataPayload []byte, keysetValidationMode KeysetValidationMode) (PayloadResult, error) {
+	payload := dataPayload[40:]
+	if len(payload) > 0 && dapReaders != nil {
+		if dapReader, found := dapReaders.GetByHeaderByte(payload[0]); found {
+			promise := dapReader.RecoverPayload(seqNum, batchBlockHash, dataPayload)
+			res, err := promise.Await(ctx)
+			if err != nil {
+				// Matches the way keyset validation was done inside DAS readers i.e logging the error
+				// But other daproviders might just want to return the error
+				if strings.Contains(err.Error(), ErrSeqMsgValidation.Error()) && IsDASMessageHeaderByte(payload[0]) {
+					if keysetValidationMode == KeysetPanicIfInvalid {
+						panic(err.Error())
+					} else {
+						log.Error(err.Error())
+					}
+				} else {
+					return PayloadResult{}, err
+				}
+			}
+			return res, nil
+		}
+	}
+
+	return PayloadResult{}, nil
 }

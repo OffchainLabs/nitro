@@ -110,7 +110,7 @@ type SequencerInboxBatch struct {
 	DataLocation           BatchDataLocation
 	BridgeAddress          common.Address
 	Serialized             []byte                   // nil if serialization isn't cached yet
-	dasPayload             daprovider.PayloadResult // nil if blob's payload isn't cached yet
+	daPayload              daprovider.PayloadResult // nil if blob's payload isn't cached yet
 }
 
 func (m *SequencerInboxBatch) getSequencerData(ctx context.Context, client *ethclient.Client) ([]byte, error) {

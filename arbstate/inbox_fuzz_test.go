@@ -21,6 +21,7 @@ type multiplexerBackend struct {
 	batch                 []byte
 	delayedMessage        []byte
 	positionWithinMessage uint64
+	dasPayload            *daprovider.PayloadResult
 }
 
 func (b *multiplexerBackend) PeekSequencerInbox() ([]byte, common.Hash, error) {
@@ -35,7 +36,11 @@ func (b *multiplexerBackend) GetSequencerInboxPosition() uint64 {
 }
 
 func (b *multiplexerBackend) GetDAPayload() (*daprovider.PayloadResult, error) {
-	return nil, nil
+	return b.dasPayload, nil
+}
+
+func (b *multiplexerBackend) SetDAPayload(payload *daprovider.PayloadResult) {
+	b.dasPayload = payload
 }
 
 func (b *multiplexerBackend) AdvanceSequencerInbox() {

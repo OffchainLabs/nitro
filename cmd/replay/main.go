@@ -72,7 +72,9 @@ func (c WavmChainContext) GetHeader(hash common.Hash, num uint64) *types.Header 
 	return header
 }
 
-type WavmInbox struct{}
+type WavmInbox struct {
+	daPayload *daprovider.PayloadResult
+}
 
 func (i WavmInbox) PeekSequencerInbox() ([]byte, common.Hash, error) {
 	pos := wavmio.GetInboxPosition()
@@ -83,7 +85,11 @@ func (i WavmInbox) PeekSequencerInbox() ([]byte, common.Hash, error) {
 }
 
 func (i WavmInbox) GetDAPayload() (*daprovider.PayloadResult, error) {
-	return nil, nil
+	return i.daPayload, nil
+}
+
+func (i WavmInbox) SetDAPayload(payload *daprovider.PayloadResult) {
+	i.daPayload = payload
 }
 
 func (i WavmInbox) GetSequencerInboxPosition() uint64 {
@@ -257,6 +263,8 @@ func main() {
 		}
 		inboxMultiplexer := arbstate.NewInboxMultiplexer(backend, delayedMessagesRead, dapReaders, keysetValidationMode)
 		ctx := context.Background()
+		arbstate.CacheDAPayload(ctx, backend, dapReaders)
+
 		message, err := inboxMultiplexer.Pop(ctx)
 		if err != nil {
 			panic(fmt.Sprintf("Error reading from inbox multiplexer: %v", err.Error()))

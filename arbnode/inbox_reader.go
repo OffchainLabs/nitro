@@ -644,38 +644,18 @@ func (r *InboxReader) CacheDAPayload(ctx context.Context, batches []*SequencerIn
 			return err
 		}
 
-		payload := dataPayload[40:]
-		if len(payload) > 0 && r.tracker.dapReaders != nil {
-			if dapReader, found := r.tracker.dapReaders.GetByHeaderByte(payload[0]); found {
-				promise := dapReader.RecoverPayload(batches[0].SequenceNumber, batchBlockHash, dataPayload)
-				res, err := promise.Await(ctx)
-				if err != nil {
-					// Matches the way keyset validation was done inside DAS readers i.e logging the error
-					// But other daproviders might just want to return the error
-					if strings.Contains(err.Error(), daprovider.ErrSeqMsgValidation.Error()) && daprovider.IsDASMessageHeaderByte(payload[0]) {
-						if keysetValidationMode == daprovider.KeysetPanicIfInvalid {
-							panic(err.Error())
-						} else {
-							log.Error(err.Error())
-						}
-					} else {
-						return err
-					}
-				}
-				batches[0].dasPayload = res
-			}
+		res, err := daprovider.FetchDAPayload(ctx, r.tracker.dapReaders, batches[0].SequenceNumber, batchBlockHash, dataPayload, keysetValidationMode)
+		if err != nil {
+			return err
 		}
+
+		batches[0].daPayload = res
 	}
 
 	return nil
 }
 
 func (r *InboxReader) addMessages(ctx context.Context, sequencerBatches []*SequencerInboxBatch, delayedMessages []*DelayedInboxMessage) (bool, error) {
-	// err := r.tracker.CacheBlobs(ctx, r.client, sequencerBatches)
-	// if err != nil {
-	// 	return false, err
-	// }
-
 	err := r.tracker.AddDelayedMessages(delayedMessages)
 	if err != nil {
 		return false, err
