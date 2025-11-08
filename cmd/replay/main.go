@@ -263,7 +263,10 @@ func main() {
 		}
 		inboxMultiplexer := arbstate.NewInboxMultiplexer(backend, delayedMessagesRead, dapReaders, keysetValidationMode)
 		ctx := context.Background()
-		arbstate.CacheDAPayload(ctx, backend, dapReaders)
+		err = arbstate.CacheDAPayload(ctx, backend, dapReaders)
+		if err != nil {
+			panic(fmt.Sprintf("error trying to cache DA payload: %v", err.Error()))
+		}
 
 		message, err := inboxMultiplexer.Pop(ctx)
 		if err != nil {

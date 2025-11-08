@@ -1853,7 +1853,10 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 		b.building.muxBackend.SetPositionWithinMessage(0)
 
 		simMux := arbstate.NewInboxMultiplexer(b.building.muxBackend, batchPosition.DelayedMessageCount, dapReaders, daprovider.KeysetValidate)
-		arbstate.CacheDAPayload(ctx, b.building.muxBackend, dapReaders)
+		err = arbstate.CacheDAPayload(ctx, b.building.muxBackend, dapReaders)
+		if err != nil {
+			return false, fmt.Errorf("error trying to cache DA payload: %w", err)
+		}
 		log.Debug("Begin checking the correctness of batch against inbox multiplexer", "startMsgSeqNum", batchPosition.MessageCount, "endMsgSeqNum", b.building.msgCount-1)
 		for i := batchPosition.MessageCount; i < b.building.msgCount; i++ {
 			msg, err := simMux.Pop(ctx)
