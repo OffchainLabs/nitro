@@ -82,6 +82,10 @@ func (i WavmInbox) PeekSequencerInbox() ([]byte, common.Hash, error) {
 	return res, common.Hash{}, nil
 }
 
+func (i WavmInbox) GetDAPayload() (*daprovider.PayloadResult, error) {
+	return nil, nil
+}
+
 func (i WavmInbox) GetSequencerInboxPosition() uint64 {
 	pos := wavmio.GetInboxPosition()
 	log.Info("GetSequencerInboxPosition", "pos", pos)
@@ -251,7 +255,7 @@ func main() {
 		if err != nil {
 			panic(fmt.Sprintf("Failed to register blob reader: %v", err))
 		}
-		inboxMultiplexer := arbstate.NewInboxMultiplexer(backend, delayedMessagesRead, dapReaders, nil, keysetValidationMode)
+		inboxMultiplexer := arbstate.NewInboxMultiplexer(backend, delayedMessagesRead, dapReaders, keysetValidationMode)
 		ctx := context.Background()
 		message, err := inboxMultiplexer.Pop(ctx)
 		if err != nil {

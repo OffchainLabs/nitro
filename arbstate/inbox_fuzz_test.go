@@ -34,6 +34,10 @@ func (b *multiplexerBackend) GetSequencerInboxPosition() uint64 {
 	return b.batchSeqNum
 }
 
+func (b *multiplexerBackend) GetDAPayload() (*daprovider.PayloadResult, error) {
+	return nil, nil
+}
+
 func (b *multiplexerBackend) AdvanceSequencerInbox() {
 	b.batchSeqNum++
 }
@@ -70,7 +74,7 @@ func FuzzInboxMultiplexer(f *testing.F) {
 			delayedMessage:        delayedMsg,
 			positionWithinMessage: 0,
 		}
-		multiplexer := NewInboxMultiplexer(backend, 0, nil, nil, daprovider.KeysetValidate)
+		multiplexer := NewInboxMultiplexer(backend, 0, nil, daprovider.KeysetValidate)
 		_, err := multiplexer.Pop(context.TODO())
 		if err != nil {
 			panic(err)

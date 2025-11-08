@@ -38,20 +38,15 @@ func BuildBlock(
 	chainContext core.ChainContext,
 	inbox arbstate.InboxBackend,
 	seqBatch []byte,
-	batchPayloadMap *arbstate.BatchPayloadMap,
 	runCtx *core.MessageRunContext,
 ) (*types.Block, error) {
 	var delayedMessagesRead uint64
 	if lastBlockHeader != nil {
 		delayedMessagesRead = lastBlockHeader.Nonce.Uint64()
 	}
-	inboxMultiplexer := arbstate.NewInboxMultiplexer(inbox, delayedMessagesRead, nil, batchPayloadMap, daprovider.KeysetValidate)
+	inboxMultiplexer := arbstate.NewInboxMultiplexer(inbox, delayedMessagesRead, nil, daprovider.KeysetValidate)
 	ctx := context.Background()
 
-	err := inboxMultiplexer.CacheBlobs(ctx)
-	if err != nil {
-		return nil, err
-	}
 	message, err := inboxMultiplexer.Pop(ctx)
 	if err != nil {
 		return nil, err
@@ -89,6 +84,10 @@ func (b *inboxBackend) PeekSequencerInbox() ([]byte, common.Hash, error) {
 		return nil, common.Hash{}, errors.New("read past end of specified sequencer batches")
 	}
 	return b.batches[0], common.Hash{}, nil
+}
+
+func (b *inboxBackend) GetDAPayload() (*daprovider.PayloadResult, error) {
+	return nil, nil
 }
 
 func (b *inboxBackend) GetSequencerInboxPosition() uint64 {
@@ -236,7 +235,7 @@ func FuzzStateTransition(f *testing.F) {
 			runCtx = core.NewMessageGasEstimationContext()
 		}
 
-		_, err = BuildBlock(statedb, genesis.Header(), noopChainContext{chainConfig: chaininfo.ArbitrumDevTestChainConfig()}, inbox, seqBatch, nil, runCtx)
+		_, err = BuildBlock(statedb, genesis.Header(), noopChainContext{chainConfig: chaininfo.ArbitrumDevTestChainConfig()}, inbox, seqBatch, runCtx)
 		if err != nil {
 			// With the fixed header it shouldn't be possible to read a delayed message,
 			// and no other type of error should be possible.

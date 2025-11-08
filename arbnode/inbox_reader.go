@@ -21,6 +21,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcastclient"
+	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
@@ -473,6 +474,10 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 			if err != nil {
 				return err
 			}
+			err = r.CacheDAPayload(ctx, sequencerBatches, daprovider.KeysetValidate)
+			if err != nil {
+				return err
+			}
 			delayedMessages, err := r.delayedBridge.LookupMessagesInRange(ctx, from, to, func(batchNum uint64) ([]byte, error) {
 				if len(sequencerBatches) > 0 && batchNum >= sequencerBatches[0].SequenceNumber {
 					idx := batchNum - sequencerBatches[0].SequenceNumber
@@ -632,13 +637,46 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 	}
 }
 
-func (r *InboxReader) addMessages(ctx context.Context, sequencerBatches []*SequencerInboxBatch, delayedMessages []*DelayedInboxMessage) (bool, error) {
-	err := r.tracker.CacheBlobs(ctx, r.client, sequencerBatches)
-	if err != nil {
-		return false, err
+func (r *InboxReader) CacheDAPayload(ctx context.Context, batches []*SequencerInboxBatch, keysetValidationMode daprovider.KeysetValidationMode) error {
+	if len(batches) != 0 {
+		dataPayload, batchBlockHash, err := PeekSequencerInboxImpl(ctx, batches, r.client)
+		if err != nil {
+			return err
+		}
+
+		payload := dataPayload[40:]
+		if len(payload) > 0 && r.tracker.dapReaders != nil {
+			if dapReader, found := r.tracker.dapReaders.GetByHeaderByte(payload[0]); found {
+				promise := dapReader.RecoverPayload(batches[0].SequenceNumber, batchBlockHash, dataPayload)
+				res, err := promise.Await(ctx)
+				if err != nil {
+					// Matches the way keyset validation was done inside DAS readers i.e logging the error
+					// But other daproviders might just want to return the error
+					if strings.Contains(err.Error(), daprovider.ErrSeqMsgValidation.Error()) && daprovider.IsDASMessageHeaderByte(payload[0]) {
+						if keysetValidationMode == daprovider.KeysetPanicIfInvalid {
+							panic(err.Error())
+						} else {
+							log.Error(err.Error())
+						}
+					} else {
+						return err
+					}
+				}
+				batches[0].dasPayload = res
+			}
+		}
 	}
 
-	err = r.tracker.AddDelayedMessages(delayedMessages)
+	return nil
+}
+
+func (r *InboxReader) addMessages(ctx context.Context, sequencerBatches []*SequencerInboxBatch, delayedMessages []*DelayedInboxMessage) (bool, error) {
+	// err := r.tracker.CacheBlobs(ctx, r.client, sequencerBatches)
+	// if err != nil {
+	// 	return false, err
+	// }
+
+	err := r.tracker.AddDelayedMessages(delayedMessages)
 	if err != nil {
 		return false, err
 	}

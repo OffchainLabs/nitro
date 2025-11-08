@@ -109,7 +109,8 @@ type SequencerInboxBatch struct {
 	RawLog                 types.Log
 	DataLocation           BatchDataLocation
 	BridgeAddress          common.Address
-	Serialized             []byte // nil if serialization isn't cached yet
+	Serialized             []byte                   // nil if serialization isn't cached yet
+	dasPayload             daprovider.PayloadResult // nil if blob's payload isn't cached yet
 }
 
 func (m *SequencerInboxBatch) getSequencerData(ctx context.Context, client *ethclient.Client) ([]byte, error) {
