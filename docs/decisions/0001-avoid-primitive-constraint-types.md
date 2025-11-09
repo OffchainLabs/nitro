@@ -16,8 +16,6 @@ positive values. For example:
 
 ```go
 // Pos64 is a type which represents a positive uint64.
-//
-// The "zero" value of Pos64 is 1.
 type Pos64 struct {
 	uint64
 }
@@ -44,7 +42,7 @@ func MustPos64(v uint64) Pos64 {
 
 // Val returns the value of the Pos64.
 func (p Pos64) Val() uint64 {
-	// The zero value of Pos64 is 1.
+	// Handle invalid zero value by returning 1 as a safe default.
 	if p.uint64 == 0 {
 		return 1
 	}
