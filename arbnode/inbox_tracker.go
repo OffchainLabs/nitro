@@ -632,7 +632,7 @@ type multiplexerBackend struct {
 	batchSeqNum           uint64
 	batches               []*SequencerInboxBatch
 	positionWithinMessage uint64
-	dasPayload            *daprovider.PayloadResult
+	daPayloadMap          arbstate.BatchPayloadMap
 
 	ctx    context.Context
 	client *ethclient.Client
@@ -655,12 +655,15 @@ func (b *multiplexerBackend) GetSequencerInboxPosition() uint64 {
 	return b.batchSeqNum
 }
 
-func (b *multiplexerBackend) GetDAPayload() (*daprovider.PayloadResult, error) {
-	return b.dasPayload, nil
+func (b *multiplexerBackend) GetDAPayload(batchHash common.Hash) (*daprovider.PayloadResult, error) {
+	return arbstate.GetPayloadFromMap(b.daPayloadMap, batchHash)
+}
+func (b *multiplexerBackend) SetDAPayload(batchHash common.Hash, payload *daprovider.PayloadResult) {
+	b.daPayloadMap[batchHash] = *payload
 }
 
-func (b *multiplexerBackend) SetDAPayload(payload *daprovider.PayloadResult) {
-	b.dasPayload = payload
+func (b *multiplexerBackend) DeleteDAPayload(batchHash common.Hash) {
+	delete(b.daPayloadMap, batchHash)
 }
 
 func (b *multiplexerBackend) AdvanceSequencerInbox() {
@@ -788,14 +791,17 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client *ethclien
 		pos++
 	}
 
+	cachedPayloadMap := make(arbstate.BatchPayloadMap)
+	cachedPayloadMap[batches[0].BlockHash] = batches[0].daPayload
+
 	var messages []arbostypes.MessageWithMetadata
 	backend := &multiplexerBackend{
-		batchSeqNum: batches[0].SequenceNumber,
-		batches:     batches,
-		dasPayload:  &batches[0].daPayload,
-		inbox:       t,
-		ctx:         ctx,
-		client:      client,
+		batchSeqNum:  batches[0].SequenceNumber,
+		batches:      batches,
+		daPayloadMap: cachedPayloadMap,
+		inbox:        t,
+		ctx:          ctx,
+		client:       client,
 	}
 	multiplexer := arbstate.NewInboxMultiplexer(backend, prevbatchmeta.DelayedMessageCount, t.dapReaders, daprovider.KeysetValidate)
 	batchMessageCounts := make(map[uint64]arbutil.MessageIndex)

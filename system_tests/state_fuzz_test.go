@@ -86,11 +86,12 @@ func (b *inboxBackend) PeekSequencerInbox() ([]byte, common.Hash, error) {
 	return b.batches[0], common.Hash{}, nil
 }
 
-func (b *inboxBackend) GetDAPayload() (*daprovider.PayloadResult, error) {
+func (b *inboxBackend) GetDAPayload(batchHash common.Hash) (*daprovider.PayloadResult, error) {
 	return nil, nil
 }
+func (b *inboxBackend) SetDAPayload(batchHash common.Hash, payload *daprovider.PayloadResult) {}
 
-func (b *inboxBackend) SetDAPayload(payload *daprovider.PayloadResult) {}
+func (b *inboxBackend) DeleteDAPayload(batchHash common.Hash) {}
 
 func (b *inboxBackend) GetSequencerInboxPosition() uint64 {
 	return b.batchSeqNum

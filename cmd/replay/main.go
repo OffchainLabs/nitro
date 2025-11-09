@@ -73,7 +73,7 @@ func (c WavmChainContext) GetHeader(hash common.Hash, num uint64) *types.Header 
 }
 
 type WavmInbox struct {
-	daPayload *daprovider.PayloadResult
+	daPayloadMap arbstate.BatchPayloadMap
 }
 
 func (i WavmInbox) PeekSequencerInbox() ([]byte, common.Hash, error) {
@@ -84,12 +84,16 @@ func (i WavmInbox) PeekSequencerInbox() ([]byte, common.Hash, error) {
 	return res, common.Hash{}, nil
 }
 
-func (i WavmInbox) GetDAPayload() (*daprovider.PayloadResult, error) {
-	return i.daPayload, nil
+func (i WavmInbox) GetDAPayload(batchHash common.Hash) (*daprovider.PayloadResult, error) {
+	return arbstate.GetPayloadFromMap(i.daPayloadMap, batchHash)
 }
 
-func (i WavmInbox) SetDAPayload(payload *daprovider.PayloadResult) {
-	i.daPayload = payload
+func (i WavmInbox) SetDAPayload(batchHash common.Hash, payload *daprovider.PayloadResult) {
+	i.daPayloadMap[batchHash] = *payload
+}
+
+func (i WavmInbox) DeleteDAPayload(batchHash common.Hash) {
+	delete(i.daPayloadMap, batchHash)
 }
 
 func (i WavmInbox) GetSequencerInboxPosition() uint64 {
@@ -245,7 +249,9 @@ func main() {
 			dasReader = &PreimageDASReader{}
 			dasKeysetFetcher = &PreimageDASReader{}
 		}
-		backend := WavmInbox{}
+		backend := WavmInbox{
+			daPayloadMap: make(arbstate.BatchPayloadMap),
+		}
 		var keysetValidationMode = daprovider.KeysetPanicIfInvalid
 		if backend.GetPositionWithinMessage() > 0 {
 			keysetValidationMode = daprovider.KeysetDontValidate

@@ -27,8 +27,9 @@ import (
 type InboxBackend interface {
 	PeekSequencerInbox() ([]byte, common.Hash, error)
 
-	GetDAPayload() (*daprovider.PayloadResult, error)
-	SetDAPayload(*daprovider.PayloadResult)
+	GetDAPayload(common.Hash) (*daprovider.PayloadResult, error)
+	SetDAPayload(common.Hash, *daprovider.PayloadResult)
+	DeleteDAPayload(common.Hash)
 
 	GetSequencerInboxPosition() uint64
 	AdvanceSequencerInbox()
@@ -48,6 +49,8 @@ type SequencerMessage struct {
 	AfterDelayedMessages uint64
 	Segments             [][]byte
 }
+
+type BatchPayloadMap map[common.Hash]daprovider.PayloadResult
 
 const MaxDecompressedLen int = 1024 * 1024 * 16 // 16 MiB
 const maxZeroheavyDecompressedLen = 101*MaxDecompressedLen/100 + 64
@@ -200,7 +203,7 @@ func CacheDAPayload(ctx context.Context, backend InboxBackend, dapReaders *dapro
 		panic(fmt.Sprintf("Error fetching DA payload: %v", err.Error()))
 	}
 	// This is okay since Go escape analysis stores payload in the heap
-	backend.SetDAPayload(&payload)
+	backend.SetDAPayload(batchBlockHash, &payload)
 	return err
 }
 
@@ -220,10 +223,12 @@ func (r *inboxMultiplexer) Pop(ctx context.Context) (*arbostypes.MessageWithMeta
 			return nil, realErr
 		}
 		r.cachedSequencerMessageNum = r.backend.GetSequencerInboxPosition()
-		payload, err := r.backend.GetDAPayload()
+		payload, err := r.backend.GetDAPayload(batchBlockHash)
 		if err != nil {
 			return nil, err
 		}
+
+		defer r.backend.DeleteDAPayload(batchBlockHash)
 
 		r.cachedSequencerMessage, err = ParseSequencerMessage(ctx, r.cachedSequencerMessageNum, batchBlockHash, bytes, r.dapReaders, payload, r.keysetValidationMode)
 		if err != nil {
@@ -414,4 +419,15 @@ func (r *inboxMultiplexer) getNextMsg() (*arbostypes.MessageWithMetadata, error)
 
 func (r *inboxMultiplexer) DelayedMessagesRead() uint64 {
 	return r.delayedMessagesRead
+}
+
+func GetPayloadFromMap(daPayloadMap BatchPayloadMap, batchHash common.Hash) (*daprovider.PayloadResult, error) {
+	if daPayloadMap != nil {
+		result, ok := daPayloadMap[batchHash]
+		if !ok {
+			return nil, fmt.Errorf("error, could not find payload for batchHash %v", batchHash)
+		}
+		return &result, nil
+	}
+	return nil, nil
 }

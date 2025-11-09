@@ -454,7 +454,7 @@ type simulatedMuxBackend struct {
 	allMsgs               map[arbutil.MessageIndex]*arbostypes.MessageWithMetadata
 	delayedInboxStart     uint64
 	delayedInbox          []*arbostypes.MessageWithMetadata
-	daPayload             *daprovider.PayloadResult
+	daPayloadMap          arbstate.BatchPayloadMap
 }
 
 func (b *simulatedMuxBackend) PeekSequencerInbox() ([]byte, common.Hash, error) {
@@ -462,11 +462,14 @@ func (b *simulatedMuxBackend) PeekSequencerInbox() ([]byte, common.Hash, error) 
 }
 
 func (b *simulatedMuxBackend) GetSequencerInboxPosition() uint64 { return b.batchSeqNum }
-func (b *simulatedMuxBackend) GetDAPayload() (*daprovider.PayloadResult, error) {
-	return b.daPayload, nil
+func (b *simulatedMuxBackend) GetDAPayload(batchHash common.Hash) (*daprovider.PayloadResult, error) {
+	return arbstate.GetPayloadFromMap(b.daPayloadMap, batchHash)
 }
-func (b *simulatedMuxBackend) SetDAPayload(payload *daprovider.PayloadResult) {
-	b.daPayload = payload
+func (b *simulatedMuxBackend) SetDAPayload(batchHash common.Hash, payload *daprovider.PayloadResult) {
+	b.daPayloadMap[batchHash] = *payload
+}
+func (b *simulatedMuxBackend) DeleteDAPayload(batchHash common.Hash) {
+	delete(b.daPayloadMap, batchHash)
 }
 func (b *simulatedMuxBackend) AdvanceSequencerInbox()              {}
 func (b *simulatedMuxBackend) GetPositionWithinMessage() uint64    { return b.positionWithinMessage }
@@ -1441,8 +1444,9 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 		}
 		if b.config().CheckBatchCorrectness {
 			b.building.muxBackend = &simulatedMuxBackend{
-				batchSeqNum: batchPosition.NextSeqNum,
-				allMsgs:     make(map[arbutil.MessageIndex]*arbostypes.MessageWithMetadata),
+				batchSeqNum:  batchPosition.NextSeqNum,
+				allMsgs:      make(map[arbutil.MessageIndex]*arbostypes.MessageWithMetadata),
+				daPayloadMap: make(arbstate.BatchPayloadMap),
 			}
 		}
 	}
