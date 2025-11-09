@@ -17,6 +17,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 
+	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
@@ -258,4 +259,13 @@ func (i *SequencerInbox) LookupBatchesInRange(ctx context.Context, from, to *big
 		messages = append(messages, batch)
 	}
 	return messages, nil
+}
+
+func NewPayLoadMapFromBatches(batches []*SequencerInboxBatch) arbstate.BatchPayloadMap {
+	daPayloadMap := make(arbstate.BatchPayloadMap)
+	for _, batch := range batches {
+		daPayloadMap[batch.BlockHash] = batch.daPayload
+	}
+
+	return daPayloadMap
 }

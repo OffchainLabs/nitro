@@ -1817,7 +1817,6 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 		// Create a new registry for checking batch correctness
 		// We need to copy existing readers and potentially add a simulated blob reader
 		dapReaders := daprovider.NewReaderRegistry()
-		// TODO: Initialize caching of blobs here?
 
 		// Copy all existing readers from the batch poster's registry
 		// These readers can fetch data that was already posted to
@@ -1857,6 +1856,12 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 		b.building.muxBackend.SetPositionWithinMessage(0)
 
 		simMux := arbstate.NewInboxMultiplexer(b.building.muxBackend, batchPosition.DelayedMessageCount, dapReaders, daprovider.KeysetValidate)
+		// TODO: DA payload caching uses a map `map[common.Hash]daprovider.PayloadResult` where the key
+		// is batch hash and value is DA payload; such map is stored in muxBackend. The problem with
+		// MaybePostSequencerBatch is that it doesn't have a batch hash in the first place, if we look
+		// at simulatedMuxBackend.PeekSequencerInbox we return de seqMsg and an empty hash. meaning, if
+		// there are multiple messages, they will be override each other. We could make the key the
+		// concatenation of `seqMsg + hash`, but was worried that `seqMsg` can get quite large.
 		err = arbstate.CacheDAPayload(ctx, b.building.muxBackend, dapReaders)
 		if err != nil {
 			return false, fmt.Errorf("error trying to cache DA payload: %w", err)

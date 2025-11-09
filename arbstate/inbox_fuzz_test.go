@@ -81,6 +81,7 @@ func FuzzInboxMultiplexer(f *testing.F) {
 			batch:                 seqMsg,
 			delayedMessage:        delayedMsg,
 			positionWithinMessage: 0,
+			daPayloadMap:          BatchPayloadMap{},
 		}
 		multiplexer := NewInboxMultiplexer(backend, 0, nil, daprovider.KeysetValidate)
 		_, err := multiplexer.Pop(context.TODO())

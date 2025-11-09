@@ -474,7 +474,7 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 			if err != nil {
 				return err
 			}
-			err = r.CacheDAPayload(ctx, sequencerBatches, daprovider.KeysetValidate)
+			err = r.CacheDAPayloads(ctx, sequencerBatches, daprovider.KeysetValidate)
 			if err != nil {
 				return err
 			}
@@ -637,19 +637,24 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 	}
 }
 
-func (r *InboxReader) CacheDAPayload(ctx context.Context, batches []*SequencerInboxBatch, keysetValidationMode daprovider.KeysetValidationMode) error {
-	if len(batches) != 0 {
-		dataPayload, batchBlockHash, err := PeekSequencerInboxImpl(ctx, batches, r.client)
-		if err != nil {
-			return err
+func (r *InboxReader) CacheDAPayloads(ctx context.Context, batches []*SequencerInboxBatch, keysetValidationMode daprovider.KeysetValidationMode) error {
+	for len(batches) > 0 {
+		batch := batches[0]
+
+		if batch.daPayload.Payload == nil {
+			dataPayload, batchBlockHash, err := PeekSequencerInboxImpl(ctx, batches, r.client)
+			if err != nil {
+				return err
+			}
+
+			res, err := daprovider.FetchDAPayload(ctx, r.tracker.dapReaders, batch.SequenceNumber, batchBlockHash, dataPayload, keysetValidationMode)
+			if err != nil {
+				return err
+			}
+			batch.daPayload = res
 		}
 
-		res, err := daprovider.FetchDAPayload(ctx, r.tracker.dapReaders, batches[0].SequenceNumber, batchBlockHash, dataPayload, keysetValidationMode)
-		if err != nil {
-			return err
-		}
-
-		batches[0].daPayload = res
+		batches = batches[1:]
 	}
 
 	return nil
