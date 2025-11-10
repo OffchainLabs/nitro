@@ -10,7 +10,6 @@ import (
 	"github.com/Knetic/govaluate"
 	"github.com/google/go-cmp/cmp"
 	"github.com/holiman/uint256"
-	"github.com/offchainlabs/nitro/arbnode/dataposter/state"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -22,6 +21,7 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/arbnode/dataposter/externalsignertest"
+	"github.com/offchainlabs/nitro/arbnode/dataposter/state"
 	"github.com/offchainlabs/nitro/arbnode/parent"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )

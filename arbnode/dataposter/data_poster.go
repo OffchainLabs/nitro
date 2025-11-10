@@ -20,7 +20,6 @@ import (
 
 	"github.com/Knetic/govaluate"
 	"github.com/holiman/uint256"
-	"github.com/offchainlabs/nitro/arbnode/dataposter/state"
 	"github.com/redis/go-redis/v9"
 	"github.com/spf13/pflag"
 
@@ -45,6 +44,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode/dataposter/noop"
 	redisstorage "github.com/offchainlabs/nitro/arbnode/dataposter/redis"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/slice"
+	"github.com/offchainlabs/nitro/arbnode/dataposter/state"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbnode/parent"
 	"github.com/offchainlabs/nitro/util/arbmath"
