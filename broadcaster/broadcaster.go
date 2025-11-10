@@ -5,9 +5,7 @@ package broadcaster
 
 import (
 	"context"
-	"errors"
 	"net"
-	"runtime/debug"
 
 	"github.com/gobwas/ws"
 
@@ -61,31 +59,6 @@ func (b *Broadcaster) NewBroadcastFeedMessage(
 		Signature:      messageSignature,
 		BlockMetadata:  message.BlockMetadata,
 	}, nil
-}
-
-func (b *Broadcaster) BroadcastMessages(
-	messagesWithBlockInfo []arbostypes.MessageWithMetadataAndBlockInfo,
-	firstMsgIdx arbutil.MessageIndex,
-) (err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			log.Error("recovered error in BroadcastMessages", "recover", r, "backtrace", string(debug.Stack()))
-			err = errors.New("panic in BroadcastMessages")
-		}
-	}()
-	var feedMessages []*m.BroadcastFeedMessage
-	for i, msg := range messagesWithBlockInfo {
-		// #nosec G115
-		bfm, err := b.NewBroadcastFeedMessage(msg, firstMsgIdx+arbutil.MessageIndex(i))
-		if err != nil {
-			return err
-		}
-		feedMessages = append(feedMessages, bfm)
-	}
-
-	b.BroadcastFeedMessages(feedMessages)
-
-	return nil
 }
 
 func (b *Broadcaster) BroadcastFeedMessages(messages []*m.BroadcastFeedMessage) {

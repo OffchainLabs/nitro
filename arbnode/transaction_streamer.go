@@ -1205,9 +1205,19 @@ func (s *TransactionStreamer) broadcastMessages(
 	if s.broadcastServer == nil {
 		return
 	}
-	if err := s.broadcastServer.BroadcastMessages(msgs, firstMsgIdx); err != nil {
-		log.Error("failed broadcasting messages", "firstMsgIdx", firstMsgIdx, "err", err)
+
+	feedMsgs := make([]*message.BroadcastFeedMessage, 0, len(msgs))
+	for i, msg := range msgs {
+		idx := firstMsgIdx + arbutil.MessageIndex(i) // #nosec G115
+		feedMsg, err := s.broadcastServer.NewBroadcastFeedMessage(msg, idx)
+		if err != nil {
+			log.Error("failed creating broadcast feed message", "msgIdx", idx, "err", err)
+			return
+		}
+		feedMsgs = append(feedMsgs, feedMsg)
 	}
+
+	s.broadcastServer.BroadcastFeedMessages(feedMsgs)
 }
 
 // The mutex must be held, and firstMsgIdx must be the latest message count.
