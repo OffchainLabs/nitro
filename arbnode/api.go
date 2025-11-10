@@ -47,9 +47,7 @@ func NewArbAPI(consensusNode *Node) *ArbAPI {
 	}
 }
 
-func (a *ArbAPI) GetL1Confirmations(ctx context.Context, blockNum uint64) (uint64, error) {
-	getL1ConfirmationCallsCounter.Inc(1)
-
+func (a *ArbAPI) blockNumberToMessageIndex(ctx context.Context, blockNum uint64) (arbutil.MessageIndex, error) {
 	// blocks behind genesis are treated as belonging to batch 0
 	msgIdx, err := a.consensusNode.ExecutionClient.BlockNumberToMessageIndex(blockNum).Await(ctx)
 	if err != nil {
@@ -58,20 +56,26 @@ func (a *ArbAPI) GetL1Confirmations(ctx context.Context, blockNum uint64) (uint6
 		}
 		msgIdx = 0
 	}
+	return msgIdx, nil
+}
+
+func (a *ArbAPI) GetL1Confirmations(ctx context.Context, blockNum uint64) (uint64, error) {
+	getL1ConfirmationCallsCounter.Inc(1)
+
+	msgIdx, err := a.blockNumberToMessageIndex(ctx, blockNum)
+	if err != nil {
+		return 0, err
+	}
 	return a.consensusNode.GetL1Confirmations(ctx, msgIdx).Await(ctx)
 }
 
 func (a *ArbAPI) FindBatchContainingBlock(ctx context.Context, blockNum uint64) (uint64, error) {
 	findBatchContainingBlockCallsCounter.Inc(1)
 
-	msgIdx, err := a.consensusNode.ExecutionClient.BlockNumberToMessageIndex(blockNum).Await(ctx)
+	msgIdx, err := a.blockNumberToMessageIndex(ctx, blockNum)
 	if err != nil {
-		if errors.Is(err, gethexec.BlockNumBeforeGenesis) {
-			return 0, fmt.Errorf("block %v is part of genesis", blockNum)
-		}
 		return 0, err
 	}
-
 	return a.consensusNode.FindBatchContainingMessage(msgIdx).Await(ctx)
 }
 
