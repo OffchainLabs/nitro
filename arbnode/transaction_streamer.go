@@ -24,6 +24,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
 
@@ -39,6 +40,10 @@ import (
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/sharedmetrics"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
+)
+
+var (
+	messageTimer = metrics.NewRegisteredHistogram("arb/txstreamer/message/duration", nil, metrics.NewBoundedHistogramSample())
 )
 
 // TransactionStreamer produces blocks from a node's L1 messages, storing the results in the blockchain and recording their positions
@@ -1429,6 +1434,7 @@ func (s *TransactionStreamer) ExecuteNextMsg(ctx context.Context) bool {
 		return false
 	}
 	defer s.reorgMutex.RUnlock()
+	start := time.Now()
 
 	prevHeadMsgIdx := s.prevHeadMsgIdx
 	consensusHeadMsgIdx, err := s.GetHeadMessageIndex()
@@ -1496,6 +1502,8 @@ func (s *TransactionStreamer) ExecuteNextMsg(ctx context.Context) bool {
 		BlockMetadata:   msgAndBlockInfo.BlockMetadata,
 	}
 	s.broadcastMessages([]arbostypes.MessageWithMetadataAndBlockInfo{msgWithBlockInfo}, msgIdxToExecute)
+
+	messageTimer.Update(time.Since(start).Nanoseconds())
 
 	return msgIdxToExecute+1 <= consensusHeadMsgIdx
 }

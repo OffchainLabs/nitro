@@ -217,6 +217,7 @@ func ConfigDefaultL1NonSequencerTest() *Config {
 	config.SeqCoordinator.Enable = false
 	config.BlockValidator = staker.TestBlockValidatorConfig
 	config.SyncMonitor = TestSyncMonitorConfig
+	config.ConsensusExecutionSyncer = TestConsensusExecutionSyncerConfig
 	config.Staker = legacystaker.TestL1ValidatorConfig
 	config.Staker.Enable = false
 	config.BlockValidator.ValidationServerConfigs = []rpcclient.ClientConfig{{URL: ""}}
@@ -236,6 +237,7 @@ func ConfigDefaultL2Test() *Config {
 	config.SeqCoordinator.Signer.ECDSA.Dangerous.AcceptMissing = true
 	config.Staker = legacystaker.TestL1ValidatorConfig
 	config.SyncMonitor = TestSyncMonitorConfig
+	config.ConsensusExecutionSyncer = TestConsensusExecutionSyncerConfig
 	config.Staker.Enable = false
 	config.BlockValidator.ValidationServerConfigs = []rpcclient.ClientConfig{{URL: ""}}
 	config.TransactionStreamer = DefaultTransactionStreamerConfig
@@ -1498,6 +1500,8 @@ func (n *Node) Start(ctx context.Context) error {
 	}
 	// must init broadcast server before trying to sequence anything
 	if n.BroadcastServer != nil {
+		// PopulateFeedBacklog is a synchronous operation, hence we first
+		// call it to populate the backlog and then start the broadcastServer
 		err = n.BroadcastServer.Start(ctx)
 		if err != nil {
 			return fmt.Errorf("error starting feed broadcast server: %w", err)

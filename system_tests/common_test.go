@@ -68,6 +68,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/daprovider/das"
+	"github.com/offchainlabs/nitro/daprovider/das/dastree"
 	"github.com/offchainlabs/nitro/daprovider/das/dasutil"
 	"github.com/offchainlabs/nitro/deploy"
 	"github.com/offchainlabs/nitro/execution/gethexec"
@@ -111,11 +112,11 @@ type TestClient struct {
 	ctx                    context.Context
 	Client                 *ethclient.Client
 	L1Backend              *eth.Ethereum
+	L1BlobReader           daprovider.BlobReader
 	Stack                  *node.Node
 	ConsensusNode          *arbnode.Node
 	ExecNode               *gethexec.ExecutionNode
 	ClientWrapper          *ClientWrapper
-	blobReader             daprovider.BlobReader
 	ConsensusConfigFetcher ConfigFetcher[arbnode.Config]
 	ExecutionConfigFetcher ConfigFetcher[gethexec.Config]
 
@@ -224,7 +225,6 @@ var TestSequencerConfig = gethexec.SequencerConfig{
 func ExecConfigDefaultNonSequencerTest(t *testing.T, stateScheme string) *gethexec.Config {
 	config := gethexec.ConfigDefault
 	config.Caching.StateScheme = stateScheme
-	config.RPC.StateScheme = stateScheme
 	config.ParentChainReader = headerreader.TestConfig
 	config.Sequencer.Enable = false
 	config.Forwarder = DefaultTestForwarderConfig
@@ -239,7 +239,6 @@ func ExecConfigDefaultNonSequencerTest(t *testing.T, stateScheme string) *gethex
 func ExecConfigDefaultTest(t *testing.T, stateScheme string) *gethexec.Config {
 	config := gethexec.ConfigDefault
 	config.Caching.StateScheme = stateScheme
-	config.RPC.StateScheme = stateScheme
 	config.Sequencer = TestSequencerConfig
 	config.ParentChainReader = headerreader.TestConfig
 	config.ForwardingTarget = "null"
@@ -424,7 +423,6 @@ func (b *NodeBuilder) RequireScheme(t *testing.T, scheme string) *NodeBuilder {
 	}
 	if b.defaultDbScheme != scheme && b.execConfig != nil {
 		b.execConfig.Caching.StateScheme = scheme
-		b.execConfig.RPC.StateScheme = scheme
 		Require(t, b.execConfig.Validate())
 	}
 	b.defaultDbScheme = scheme
@@ -592,10 +590,6 @@ func (b *NodeBuilder) CheckConfig(t *testing.T) {
 	if b.execConfig == nil {
 		b.execConfig = b.ExecConfigDefaultTest(t, true)
 	}
-	if b.execConfig.Caching.Archive {
-		// archive currently requires hash
-		b.RequireScheme(t, rawdb.HashScheme)
-	}
 	if b.L1Info == nil {
 		b.L1Info = NewL1TestInfo(t)
 	}
@@ -624,9 +618,9 @@ func (b *NodeBuilder) BuildL1(t *testing.T) {
 		t.Fatal(err)
 	}
 	b.L1 = NewTestClient(b.ctx)
-	b.L1Info, b.L1.Client, b.L1.L1Backend, b.L1.Stack, b.L1.ClientWrapper, b.L1.blobReader = createTestL1BlockChain(t, b.L1Info, b.withL1ClientWrapper)
+	b.L1Info, b.L1.Client, b.L1.L1Backend, b.L1.Stack, b.L1.ClientWrapper, b.L1.L1BlobReader = createTestL1BlockChain(t, b.L1Info, b.withL1ClientWrapper)
 	if !b.withBlobReader {
-		b.L1.blobReader = nil
+		b.L1.L1BlobReader = nil
 	}
 	locator, err := server_common.NewMachineLocator(b.valnodeConfig.Wasm.RootPath)
 	Require(t, err)
@@ -667,8 +661,6 @@ func buildOnParentChain(
 
 	initMessage *arbostypes.ParsedInitMessage,
 	addresses *chaininfo.RollupAddresses,
-
-	blobReader daprovider.BlobReader,
 ) *TestClient {
 	if parentChainTestClient == nil {
 		t.Fatal("must build parent chain before building chain")
@@ -714,7 +706,7 @@ func buildOnParentChain(
 	consensusConfigFetcher := NewCommonConfigFetcher(nodeConfig)
 	chainTestClient.ConsensusNode, err = arbnode.CreateNodeFullExecutionClient(
 		ctx, chainTestClient.Stack, execNode, execNode, execNode, execNode, arbDb, consensusConfigFetcher, blockchain.Config(), parentChainTestClient.Client,
-		addresses, validatorTxOptsPtr, sequencerTxOptsPtr, dataSigner, fatalErrChan, parentChainId, blobReader, locator.LatestWasmModuleRoot())
+		addresses, validatorTxOptsPtr, sequencerTxOptsPtr, dataSigner, fatalErrChan, parentChainId, parentChainTestClient.L1BlobReader, locator.LatestWasmModuleRoot())
 	Require(t, err)
 	chainTestClient.ConsensusConfigFetcher = consensusConfigFetcher
 
@@ -727,6 +719,8 @@ func buildOnParentChain(
 
 	chainTestClient.ExecNode = getExecNode(t, chainTestClient.ConsensusNode)
 	chainTestClient.cleanup = func() { chainTestClient.ConsensusNode.StopAndWait() }
+
+	chainTestClient.L1BlobReader = parentChainTestClient.L1BlobReader
 
 	return chainTestClient
 }
@@ -775,8 +769,6 @@ func (b *NodeBuilder) BuildL3OnL2(t *testing.T) func() {
 
 		b.l3InitMessage,
 		b.l3Addresses,
-
-		nil,
 	)
 
 	return func() {
@@ -806,8 +798,6 @@ func (b *NodeBuilder) BuildL2OnL1(t *testing.T) func() {
 
 		b.initMessage,
 		b.addresses,
-
-		b.L1.blobReader,
 	)
 
 	if b.takeOwnership {
@@ -970,7 +960,6 @@ func build2ndNode(
 
 	addresses *chaininfo.RollupAddresses,
 	initMessage *arbostypes.ParsedInitMessage,
-	blobReader daprovider.BlobReader,
 ) (*TestClient, func()) {
 	if params.nodeConfig == nil {
 		params.nodeConfig = arbnode.ConfigDefaultL1NonSequencerTest()
@@ -1005,9 +994,12 @@ func build2ndNode(
 
 	testClient := NewTestClient(ctx)
 	testClient.Client, testClient.ConsensusNode, testClient.ExecutionConfigFetcher, testClient.ConsensusConfigFetcher =
-		Create2ndNodeWithConfig(t, ctx, firstNodeTestClient.ConsensusNode, parentChainTestClient.Stack, parentChainInfo, params.initData, params.nodeConfig, params.execConfig, params.stackConfig, valnodeConfig, params.addresses, initMessage, params.useExecutionClientOnly, blobReader)
+		Create2ndNodeWithConfig(t, ctx, firstNodeTestClient.ConsensusNode, parentChainTestClient.Stack, parentChainInfo, params.initData, params.nodeConfig, params.execConfig, params.stackConfig, valnodeConfig, params.addresses, initMessage, params.useExecutionClientOnly, parentChainTestClient.L1BlobReader)
 	testClient.ExecNode = getExecNode(t, testClient.ConsensusNode)
 	testClient.cleanup = func() { testClient.ConsensusNode.StopAndWait() }
+
+	testClient.L1BlobReader = parentChainTestClient.L1BlobReader
+
 	return testClient, func() { testClient.cleanup() }
 }
 
@@ -1018,10 +1010,6 @@ func (b *NodeBuilder) Build2ndNode(t *testing.T, params *SecondNodeParams) (*Tes
 	}
 	if b.L1 == nil {
 		t.Fatal("builder did not previously build an L1 Node")
-	}
-	var blobReader daprovider.BlobReader
-	if b.L1 != nil {
-		blobReader = b.L1.blobReader
 	}
 	return build2ndNode(
 		t,
@@ -1041,7 +1029,6 @@ func (b *NodeBuilder) Build2ndNode(t *testing.T, params *SecondNodeParams) (*Tes
 
 		b.addresses,
 		b.initMessage,
-		blobReader,
 	)
 }
 
@@ -1068,7 +1055,6 @@ func (b *NodeBuilder) Build2ndNodeOnL3(t *testing.T, params *SecondNodeParams) (
 
 		b.l3Addresses,
 		b.l3InitMessage,
-		nil,
 	)
 }
 
@@ -1942,8 +1928,34 @@ func authorizeDASKeyset(
 	tx, err := upgradeExecutor.ExecuteCall(&trOps, l1info.Accounts["SequencerInbox"].Address, setKeysetCalldata)
 	Require(t, err, "unable to set valid keyset")
 
-	_, err = EnsureTxSucceeded(ctx, l1client, tx)
+	receipt, err := EnsureTxSucceeded(ctx, l1client, tx)
 	Require(t, err, "unable to ensure transaction success for setting valid keyset")
+
+	// Wait for the keyset event to be queryable via eth_getLogs
+	// This prevents race conditions where batch posting happens before L1 indexing completes
+	keysetHash := dastree.Hash(keysetBytes)
+	seqInbox, err := bridgegen.NewSequencerInbox(l1info.Accounts["SequencerInbox"].Address, l1client)
+	Require(t, err, "unable to bind sequencer inbox")
+
+	blockNum := receipt.BlockNumber.Uint64()
+	maxRetries := 10
+	for i := 0; i < maxRetries; i++ {
+		filterOpts := &bind.FilterOpts{
+			Start:   blockNum,
+			End:     &blockNum,
+			Context: ctx,
+		}
+		iter, err := seqInbox.FilterSetValidKeyset(filterOpts, [][32]byte{keysetHash})
+		if err == nil {
+			// Successfully queried logs, keyset is now fetchable
+			iter.Close()
+			break
+		}
+		if i == maxRetries-1 {
+			Require(t, err, "unable to query keyset logs after retries")
+		}
+		time.Sleep(250 * time.Millisecond)
+	}
 }
 
 func setupConfigWithDAS(
@@ -1974,8 +1986,9 @@ func setupConfigWithDAS(
 			KeyDir: dbPath,
 		},
 		LocalFileStorage: das.LocalFileStorageConfig{
-			Enable:  enableFileStorage,
-			DataDir: dbPath,
+			Enable:       enableFileStorage,
+			DataDir:      dbPath,
+			MaxRetention: time.Hour * 24 * 30,
 		},
 		RequestTimeout:           5 * time.Second,
 		ParentChainNodeURL:       "none",
