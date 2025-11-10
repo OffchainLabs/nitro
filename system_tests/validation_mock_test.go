@@ -238,10 +238,17 @@ func TestValidationServerAPI(t *testing.T) {
 	}
 
 	valInput := validator.ValidationInput{
-		StartState: startState,
+		Id:            0,
+		HasDelayedMsg: false,
+		DelayedMsgNr:  0,
 		Preimages: daprovider.PreimagesMap{
 			arbutil.Keccak256PreimageType: globalstateToTestPreimages(endState),
 		},
+		UserWasms:  make(map[rawdb.WasmTarget]map[common.Hash][]byte),
+		BatchInfo:  []validator.BatchInfo{},
+		DelayedMsg: []byte{},
+		StartState: startState,
+		DebugChain: false,
 	}
 	valRun := client.Launch(&valInput, mockWasmModuleRoots[0])
 	res, err := valRun.Await(ctx)
@@ -300,10 +307,17 @@ func TestValidationClientRoom(t *testing.T) {
 	}
 
 	valInput := validator.ValidationInput{
-		StartState: startState,
+		Id:            0,
+		HasDelayedMsg: false,
+		DelayedMsgNr:  0,
 		Preimages: daprovider.PreimagesMap{
 			arbutil.Keccak256PreimageType: globalstateToTestPreimages(endState),
 		},
+		UserWasms:  make(map[rawdb.WasmTarget]map[common.Hash][]byte),
+		BatchInfo:  []validator.BatchInfo{},
+		DelayedMsg: []byte{},
+		StartState: startState,
+		DebugChain: false,
 	}
 
 	valRuns := make([]validator.ValidationRun, 0, 4)
@@ -365,7 +379,17 @@ func TestExecutionKeepAlive(t *testing.T) {
 	err = clientShortTO.Start(ctx)
 	Require(t, err)
 
-	valInput := validator.ValidationInput{}
+	valInput := validator.ValidationInput{
+		Id:            0,
+		HasDelayedMsg: false,
+		DelayedMsgNr:  0,
+		Preimages:     daprovider.PreimagesMap{},
+		UserWasms:     make(map[rawdb.WasmTarget]map[common.Hash][]byte),
+		BatchInfo:     []validator.BatchInfo{},
+		DelayedMsg:    []byte{},
+		StartState:    validator.GoGlobalState{},
+		DebugChain:    false,
+	}
 	runDefault, err := clientDefault.CreateExecutionRun(mockWasmModuleRoots[0], &valInput, false).Await(ctx)
 	Require(t, err)
 	runShortTO, err := clientShortTO.CreateExecutionRun(mockWasmModuleRoots[0], &valInput, false).Await(ctx)

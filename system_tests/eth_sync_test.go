@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/offchainlabs/nitro/arbutil"
 )
 
 func TestEthSyncing(t *testing.T) {
@@ -18,6 +18,7 @@ func TestEthSyncing(t *testing.T) {
 	cleanup := builder.Build(t)
 	defer cleanup()
 
+	builder.execConfig.SyncMonitor.MsgLag = builder.nodeConfig.SyncMonitor.MsgLag
 	testClientB, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{})
 	defer cleanupB()
 
@@ -29,33 +30,26 @@ func TestEthSyncing(t *testing.T) {
 
 	builder.L2Info.GenerateAccount("User2")
 
-	tx := builder.L2Info.PrepareTx("Owner", "User2", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
-
-	err = builder.L2.Client.SendTransaction(ctx, tx)
-	Require(t, err)
-
-	_, err = builder.L2.EnsureTxSucceeded(tx)
-	Require(t, err)
-
-	// give the inbox reader a bit of time to pick up the delayed message
-	time.Sleep(time.Millisecond * 100)
-
-	// sending l1 messages creates l1 blocks.. make enough to get that delayed inbox message in
-	for i := 0; i < 30; i++ {
-		builder.L1.SendWaitTestTransactions(t, []*types.Transaction{
-			builder.L1Info.PrepareTx("Faucet", "User", 30000, big.NewInt(1e12), nil),
-		})
+	numTxs := uint64(5)
+	for range numTxs {
+		builder.L2.TransferBalance(t, "Owner", "User2", big.NewInt(1e12), builder.L2Info)
 	}
+
+	// Give the inbox reader of testClientB a bit of time to pick up batches from L1 and add it to the consensus db
+	time.Sleep(time.Millisecond * 500)
+
+	// Advance parent chain enough to get the batches in
+	AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, 30)
 
 	attempt := 0
 	for {
 		if attempt > 30 {
-			Fatal(t, "2nd node didn't get tx on time")
+			Fatal(t, "2nd node didn't get all txs on time")
 		}
 		Require(t, ctx.Err())
 		countAfter, err := testClientB.ConsensusNode.TxStreamer.GetMessageCount()
 		Require(t, err)
-		if countAfter > countBefore {
+		if countAfter >= countBefore+arbutil.MessageIndex(numTxs) {
 			break
 		}
 		select {

@@ -203,7 +203,7 @@ func TestMessageExtractionLayer_SequencerBatchMessageEquivalence_Blobs(t *testin
 	Require(t, melDB.SaveState(ctx, melState)) // save head mel state
 	mockMsgConsumer := &mockMELDB{savedMsgs: make([]*arbostypes.MessageWithMetadata, 0)}
 	blobReaderRegistry := daprovider.NewReaderRegistry()
-	Require(t, blobReaderRegistry.SetupBlobReader(daprovider.NewReaderForBlobReader(builder.L1.blobReader)))
+	Require(t, blobReaderRegistry.SetupBlobReader(daprovider.NewReaderForBlobReader(builder.L1.L1BlobReader)))
 	extractor, err := melrunner.NewMessageExtractor(
 		melrunner.DefaultMessageExtractionConfig,
 		l1Reader.Client(),

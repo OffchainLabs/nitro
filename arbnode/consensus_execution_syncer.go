@@ -29,6 +29,10 @@ var DefaultConsensusExecutionSyncerConfig = ConsensusExecutionSyncerConfig{
 	SyncInterval: 300 * time.Millisecond,
 }
 
+var TestConsensusExecutionSyncerConfig = ConsensusExecutionSyncerConfig{
+	SyncInterval: TestSyncMonitorConfig.MsgLag / 2,
+}
+
 // We don't define a Test config. For most tests we want the Syncer to behave
 // the same as in production.
 
