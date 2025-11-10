@@ -113,10 +113,16 @@ func ParseSequencerMessage(ctx context.Context, batchNum uint64, batchBlockHash 
 
 	// At this point, `payload` has not been validated by the sequencer inbox at all.
 	// It's not safe to trust any part of the payload from this point onwards.
+	var uncompressedBatchSizeLimit uint64
+	if chainConfig != nil {
+		uncompressedBatchSizeLimit = chainConfig.MaxUncompressedBatchSize()
+	} else { // In case chainConfig is nil, fall back to params default (e.g. in tests or for the genesis block)
+		uncompressedBatchSizeLimit = params.DefaultMaxUncompressedBatchSize
+	}
 
 	// Stage 2: If enabled, decode the zero heavy payload (saves gas based on calldata charging).
 	if len(payload) > 0 && daprovider.IsZeroheavyEncodedHeaderByte(payload[0]) {
-		maxZeroheavyDecompressedLen := 101*chainConfig.MaxUncompressedBatchSize()/100 + 64
+		maxZeroheavyDecompressedLen := 101*uncompressedBatchSizeLimit/100 + 64
 		pl, err := io.ReadAll(io.LimitReader(zeroheavy.NewZeroheavyDecoder(bytes.NewReader(payload[1:])), int64(maxZeroheavyDecompressedLen))) // #nosec G115
 		if err != nil {
 			log.Warn("error reading from zeroheavy decoder", err.Error())
@@ -127,7 +133,7 @@ func ParseSequencerMessage(ctx context.Context, batchNum uint64, batchBlockHash 
 
 	// Stage 3: Decompress the brotli payload and fill the parsedMsg.segments list.
 	if len(payload) > 0 && daprovider.IsBrotliMessageHeaderByte(payload[0]) {
-		decompressed, err := arbcompress.Decompress(payload[1:], int(chainConfig.MaxUncompressedBatchSize())) // #nosec G115
+		decompressed, err := arbcompress.Decompress(payload[1:], int(uncompressedBatchSizeLimit)) // #nosec G115
 		if err == nil {
 			reader := bytes.NewReader(decompressed)
 			stream := rlp.NewStream(reader, 0)
