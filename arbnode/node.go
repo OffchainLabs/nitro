@@ -1402,6 +1402,8 @@ func (n *Node) Start(ctx context.Context) error {
 	}
 	// must init broadcast server before trying to sequence anything
 	if n.BroadcastServer != nil {
+		// PopulateFeedBacklog is a synchronous operation, hence we first
+		// call it to populate the backlog and then start the broadcastServer
 		err = n.BroadcastServer.Start(ctx)
 		if err != nil {
 			return fmt.Errorf("error starting feed broadcast server: %w", err)

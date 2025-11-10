@@ -8,6 +8,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rpc"
 
@@ -20,6 +21,7 @@ func TestTrieDBCommitRace(t *testing.T) {
 	defer cancel()
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder.RequireScheme(t, rawdb.HashScheme)
 	builder.execConfig.RPC.MaxRecreateStateDepth = arbitrum.InfiniteMaxRecreateStateDepth
 	builder.execConfig.Sequencer.MaxBlockSpeed = 0
 	builder.execConfig.Sequencer.MaxTxDataSize = 150 // 1 test tx ~= 110

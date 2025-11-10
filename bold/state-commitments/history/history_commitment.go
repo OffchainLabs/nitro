@@ -303,10 +303,10 @@ func (h *historyCommitter) hashLeaves(leaves []common.Hash) []common.Hash {
 //  3. If the leaves do not fit in the left half, then both halves are computed
 //     by recursion.
 func (h *historyCommitter) partialRoot(leaves []common.Hash, virtual, limit uint64) (common.Hash, error) {
-	lvLen := uint64(len(leaves))
-	if lvLen == 0 {
+	if len(leaves) == 0 {
 		return emptyHash, errors.New("nil leaves")
 	}
+	lvLen := uint64(len(leaves))
 	if uint64(virtual) < lvLen {
 		return emptyHash, fmt.Errorf("virtual %d should be >= num leaves %d", virtual, lvLen)
 	}
