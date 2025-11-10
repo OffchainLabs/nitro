@@ -160,6 +160,7 @@ func testBatchPosterParallel(t *testing.T, useRedis bool, useRedisLock bool) {
 				TransactOpts:  &seqTxOpts,
 				DAPWriter:     nil,
 				ParentChainID: parentChainID,
+				ChainConfig:   builder.chainConfig,
 			},
 		)
 		Require(t, err)
@@ -300,6 +301,7 @@ func TestRedisBatchPosterHandoff(t *testing.T) {
 				TransactOpts:  &seqTxOpts,
 				DAPWriter:     nil,
 				ParentChainID: parentChainID,
+				ChainConfig:   builder.chainConfig,
 			},
 		)
 		Require(t, err)

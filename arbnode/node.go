@@ -925,6 +925,7 @@ func getBatchPoster(
 	ctx context.Context,
 	config *Config,
 	configFetcher ConfigFetcher,
+	l2Config *params.ChainConfig,
 	txOptsBatchPoster *bind.TransactOpts,
 	dapWriter daprovider.Writer,
 	l1Reader *headerreader.HeaderReader,
@@ -964,6 +965,7 @@ func getBatchPoster(
 			DAPWriter:     dapWriter,
 			ParentChainID: parentChainID,
 			DAPReaders:    dapReaders,
+			ChainConfig:   l2Config,
 		})
 		if err != nil {
 			return nil, err
@@ -1160,7 +1162,7 @@ func createNodeImpl(
 		return nil, err
 	}
 
-	batchPoster, err := getBatchPoster(ctx, config, configFetcher, txOptsBatchPoster, dapWriter, l1Reader, inboxTracker, txStreamer, arbOSVersionGetter, arbDb, syncMonitor, deployInfo, parentChainID, dapReaders, stakerAddr)
+	batchPoster, err := getBatchPoster(ctx, config, configFetcher, l2Config, txOptsBatchPoster, dapWriter, l1Reader, inboxTracker, txStreamer, arbOSVersionGetter, arbDb, syncMonitor, deployInfo, parentChainID, dapReaders, stakerAddr)
 	if err != nil {
 		return nil, err
 	}

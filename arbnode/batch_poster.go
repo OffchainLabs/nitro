@@ -99,6 +99,7 @@ type BatchPoster struct {
 	inbox              *InboxTracker
 	streamer           *TransactionStreamer
 	arbOSVersionGetter execution.ArbOSVersionGetter
+	chainConfig        *params.ChainConfig
 	config             BatchPosterConfigFetcher
 	seqInbox           *bridgegen.SequencerInbox
 	syncMonitor        *SyncMonitor
@@ -333,6 +334,7 @@ type BatchPosterOpts struct {
 	DAPWriter     daprovider.Writer
 	ParentChainID *big.Int
 	DAPReaders    *daprovider.ReaderRegistry
+	ChainConfig   *params.ChainConfig
 }
 
 func NewBatchPoster(ctx context.Context, opts *BatchPosterOpts) (*BatchPoster, error) {
@@ -379,6 +381,7 @@ func NewBatchPoster(ctx context.Context, opts *BatchPosterOpts) (*BatchPoster, e
 		inbox:              opts.Inbox,
 		streamer:           opts.Streamer,
 		arbOSVersionGetter: opts.VersionGetter,
+		chainConfig:        opts.ChainConfig,
 		syncMonitor:        opts.SyncMonitor,
 		config:             opts.Config,
 		seqInbox:           seqInbox,
@@ -877,6 +880,7 @@ type batchSegments struct {
 	recompressionLevel    int
 	newUncompressedSize   int
 	totalUncompressedSize int
+	maxUncompressedSize   int
 	lastCompressedSize    int
 	trailingHeaders       int // how many trailing segments are headers
 	isDone                bool
@@ -936,12 +940,13 @@ func (b *BatchPoster) newBatchSegments(ctx context.Context, firstDelayed uint64,
 		recompressionLevel = compressionLevel
 	}
 	return &batchSegments{
-		compressedBuffer:   compressedBuffer,
-		compressedWriter:   brotli.NewWriterLevel(compressedBuffer, compressionLevel),
-		sizeLimit:          maxSize,
-		recompressionLevel: recompressionLevel,
-		rawSegments:        make([][]byte, 0, 128),
-		delayedMsg:         firstDelayed,
+		compressedBuffer:    compressedBuffer,
+		compressedWriter:    brotli.NewWriterLevel(compressedBuffer, compressionLevel),
+		sizeLimit:           maxSize,
+		recompressionLevel:  recompressionLevel,
+		rawSegments:         make([][]byte, 0, 128),
+		delayedMsg:          firstDelayed,
+		maxUncompressedSize: int(b.chainConfig.MaxUncompressedBatchSize()), // #nosec G115
 	}, nil
 }
 
@@ -956,8 +961,8 @@ func (s *batchSegments) recompressAll() error {
 			return err
 		}
 	}
-	if s.totalUncompressedSize > arbstate.MaxDecompressedLen {
-		return fmt.Errorf("batch size %v exceeds maximum decompressed length %v", s.totalUncompressedSize, arbstate.MaxDecompressedLen)
+	if s.totalUncompressedSize > s.maxUncompressedSize {
+		return fmt.Errorf("batch size %v exceeds maximum uncompressed length %v", s.totalUncompressedSize, s.maxUncompressedSize)
 	}
 	if len(s.rawSegments) >= arbstate.MaxSegmentsPerSequencerMessage {
 		return fmt.Errorf("number of raw segments %v excees maximum number %v", len(s.rawSegments), arbstate.MaxSegmentsPerSequencerMessage)
@@ -967,10 +972,10 @@ func (s *batchSegments) recompressAll() error {
 
 func (s *batchSegments) testForOverflow(isHeader bool) (bool, error) {
 	// we've reached the max decompressed size
-	if s.totalUncompressedSize > arbstate.MaxDecompressedLen {
-		log.Info("Batch full: max decompressed length exceeded",
+	if s.totalUncompressedSize > s.maxUncompressedSize {
+		log.Info("Batch full: max uncompressed length exceeded",
 			"current", s.totalUncompressedSize,
-			"max", arbstate.MaxDecompressedLen,
+			"max", s.maxUncompressedSize,
 			"isHeader", isHeader)
 		return true, nil
 	}
@@ -1843,7 +1848,7 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 		b.building.muxBackend.seqMsg = seqMsg
 		b.building.muxBackend.delayedInboxStart = batchPosition.DelayedMessageCount
 		b.building.muxBackend.SetPositionWithinMessage(0)
-		simMux := arbstate.NewInboxMultiplexer(b.building.muxBackend, batchPosition.DelayedMessageCount, dapReaders, daprovider.KeysetValidate)
+		simMux := arbstate.NewInboxMultiplexer(b.building.muxBackend, batchPosition.DelayedMessageCount, dapReaders, daprovider.KeysetValidate, b.chainConfig) // nolint:gosec
 		log.Debug("Begin checking the correctness of batch against inbox multiplexer", "startMsgSeqNum", batchPosition.MessageCount, "endMsgSeqNum", b.building.msgCount-1)
 		for i := batchPosition.MessageCount; i < b.building.msgCount; i++ {
 			msg, err := simMux.Pop(ctx)
