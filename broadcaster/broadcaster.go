@@ -14,6 +14,8 @@ import (
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
 
+const SupportedBroadcastVersion = m.V1
+
 type Broadcaster struct {
 	*wsbroadcastserver.WSBroadcastServer
 	backlog    backlog.Backlog
@@ -58,7 +60,7 @@ func (b *Broadcaster) NewBroadcastFeedMessage(
 
 func (b *Broadcaster) BroadcastFeedMessages(messages []*m.BroadcastFeedMessage) {
 	bm := &m.BroadcastMessage{
-		Version:  m.V1,
+		Version:  SupportedBroadcastVersion,
 		Messages: messages,
 	}
 	b.Broadcast(bm)
@@ -66,7 +68,7 @@ func (b *Broadcaster) BroadcastFeedMessages(messages []*m.BroadcastFeedMessage) 
 
 func (b *Broadcaster) PopulateBacklog(messages []*m.BroadcastFeedMessage) error {
 	bm := &m.BroadcastMessage{
-		Version:  m.V1,
+		Version:  SupportedBroadcastVersion,
 		Messages: messages,
 	}
 	return b.PopulateFeedBacklog(bm)
@@ -75,7 +77,7 @@ func (b *Broadcaster) PopulateBacklog(messages []*m.BroadcastFeedMessage) error 
 func (b *Broadcaster) Confirm(msgIdx arbutil.MessageIndex) {
 	log.Debug("confirming msgIdx", "msgIdx", msgIdx)
 	b.Broadcast(&m.BroadcastMessage{
-		Version: m.V1,
+		Version: SupportedBroadcastVersion,
 		ConfirmedSequenceNumberMessage: &m.ConfirmedSequenceNumberMessage{
 			SequenceNumber: msgIdx,
 		},
