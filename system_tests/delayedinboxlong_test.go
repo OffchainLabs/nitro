@@ -24,7 +24,6 @@ func TestDelayInboxLong(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).DontParalellise()
-	builder.nodeConfig.MessageExtraction.Enable = false // TODO: investigate why this test fails on CI, it passes locally with MEL
 	cleanup := builder.Build(t)
 	defer cleanup()
 
