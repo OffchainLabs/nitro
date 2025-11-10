@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2025, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package broadcaster
@@ -63,7 +63,7 @@ func (b *Broadcaster) NewBroadcastFeedMessage(
 
 func (b *Broadcaster) BroadcastFeedMessages(messages []*m.BroadcastFeedMessage) {
 	bm := &m.BroadcastMessage{
-		Version:  1,
+		Version:  m.V1,
 		Messages: messages,
 	}
 	b.server.Broadcast(bm)
@@ -71,7 +71,7 @@ func (b *Broadcaster) BroadcastFeedMessages(messages []*m.BroadcastFeedMessage) 
 
 func (b *Broadcaster) PopulateFeedBacklog(messages []*m.BroadcastFeedMessage) error {
 	bm := &m.BroadcastMessage{
-		Version:  1,
+		Version:  m.V1,
 		Messages: messages,
 	}
 	return b.server.PopulateFeedBacklog(bm)
@@ -80,7 +80,7 @@ func (b *Broadcaster) PopulateFeedBacklog(messages []*m.BroadcastFeedMessage) er
 func (b *Broadcaster) Confirm(msgIdx arbutil.MessageIndex) {
 	log.Debug("confirming msgIdx", "msgIdx", msgIdx)
 	b.server.Broadcast(&m.BroadcastMessage{
-		Version: 1,
+		Version: m.V1,
 		ConfirmedSequenceNumberMessage: &m.ConfirmedSequenceNumberMessage{
 			SequenceNumber: msgIdx,
 		},
