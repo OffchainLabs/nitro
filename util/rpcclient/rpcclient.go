@@ -96,6 +96,10 @@ func NewRpcClient(config ClientConfigFetcher, stack *node.Node) *RpcClient {
 	}
 }
 
+func (c *RpcClient) Timeout() time.Duration {
+	return c.config().Timeout
+}
+
 func (c *RpcClient) Close() {
 	if c.client != nil {
 		c.client.Close()

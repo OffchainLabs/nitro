@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/knadh/koanf"
 	"github.com/knadh/koanf/providers/confmap"
@@ -28,7 +27,6 @@ import (
 type Client struct {
 	*rpcclient.RpcClient
 	*data_streaming.DataStreamer[server_api.StoreResult]
-	rpcTimeout     time.Duration
 	storeRpcMethod *string
 }
 
@@ -151,7 +149,6 @@ func NewClient(ctx context.Context, config *ClientConfig, payloadSigner *data_st
 	client := &Client{
 		RpcClient:      rpcClient,
 		DataStreamer:   dataStreamer,
-		rpcTimeout:     config.RPC.Timeout,
 		storeRpcMethod: &config.StoreRpcMethod,
 	}
 	if err = client.Start(ctx); err != nil {
@@ -226,8 +223,8 @@ func (c *Client) Store(
 	var ctx context.Context
 
 	// Create context with timeout if configured, otherwise use background
-	if c.rpcTimeout > 0 {
-		timeoutCtx, cancel := context.WithTimeout(context.Background(), c.rpcTimeout)
+	if c.RpcClient.Timeout() > 0 {
+		timeoutCtx, cancel := context.WithTimeout(context.Background(), c.RpcClient.Timeout())
 		p := containers.NewPromise[[]byte](cancel)
 		promise = &p
 		ctx = timeoutCtx
