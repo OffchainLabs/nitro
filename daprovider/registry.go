@@ -65,16 +65,6 @@ func (r *DAProviderRegistry) Register(headerBytes []byte, reader Reader, validat
 	return nil
 }
 
-// RegisterAll associates multiple header byte strings with a reader and validator
-func (r *DAProviderRegistry) RegisterAll(headerBytesList [][]byte, reader Reader, validator Validator) error {
-	for _, headerBytes := range headerBytesList {
-		if err := r.Register(headerBytes, reader, validator); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 // GetReader returns the reader associated with a message by matching registered header byte prefixes
 // Uses first-match strategy since shadowing prevention ensures at most one match
 // Returns nil if no matching reader is found
