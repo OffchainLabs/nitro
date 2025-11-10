@@ -46,7 +46,6 @@ var DefaultAggregatorConfig = AggregatorConfig{
 	AssumedHonest: 0,
 	Backends:      nil,
 	DASRPCClient: DASRPCClientConfig{
-		ServerUrl:          "",
 		EnableChunkedStore: true,
 		DataStream:         data_streaming.DefaultDataStreamerConfig(DefaultDataStreamRpcMethods),
 		RPC:                rpcclient.DefaultClientConfig,
