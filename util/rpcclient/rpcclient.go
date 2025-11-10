@@ -24,11 +24,11 @@ import (
 type ClientConfig struct {
 	URL                       string        `json:"url,omitempty" koanf:"url"`
 	JWTSecret                 string        `json:"jwtsecret,omitempty" koanf:"jwtsecret"`
-	Timeout                   time.Duration `json:"timeout,omitempty" koanf:"timeout"`
-	Retries                   uint          `json:"retries,omitempty" koanf:"retries"`
+	Timeout                   time.Duration `json:"timeout,omitempty" koanf:"timeout" reload:"hot"`
+	Retries                   uint          `json:"retries,omitempty" koanf:"retries" reload:"hot"`
 	ConnectionWait            time.Duration `json:"connection-wait,omitempty" koanf:"connection-wait"`
-	ArgLogLimit               uint          `json:"arg-log-limit,omitempty" koanf:"arg-log-limit"`
-	RetryErrors               string        `json:"retry-errors,omitempty" koanf:"retry-errors"`
+	ArgLogLimit               uint          `json:"arg-log-limit,omitempty" koanf:"arg-log-limit" reload:"hot"`
+	RetryErrors               string        `json:"retry-errors,omitempty" koanf:"retry-errors" reload:"hot"`
 	RetryDelay                time.Duration `json:"retry-delay,omitempty" koanf:"retry-delay"`
 	WebsocketMessageSizeLimit int64         `json:"websocket-message-size-limit,omitempty" koanf:"websocket-message-size-limit"`
 
