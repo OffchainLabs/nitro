@@ -1,6 +1,6 @@
 # Contribution Guidelines
 
-Note: The latest and most up-to-date documentation can be found on our [docs portal](https://docs.arbitrum.io/how-arbitrum-works/a-gentle-introduction).
+Note: The latest and most up-to-date documentation can be found on our [docs portal](https://docs.arbitrum.io/launch-arbitrum-chain/a-gentle-introduction).
 
 Excited by our work want to get more involved in making Arbitrum more successful? Or maybe you want to learn more about Layer 2 technologies and want to contribute as a first step?
 
