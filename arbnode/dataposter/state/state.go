@@ -14,8 +14,17 @@ type InternalState struct {
 	lockedState LockedInternalState
 }
 
-func NewInternalState() *InternalState {
-	return &InternalState{}
+func NewInternalState(queue QueueStorage) *InternalState {
+	return &InternalState{
+		mutex: sync.Mutex{},
+		lockedState: LockedInternalState{
+			LastBlock:  big.NewInt(0),
+			Balance:    big.NewInt(0),
+			Nonce:      0,
+			Queue:      queue,
+			ErrorCount: make(map[uint64]int),
+		},
+	}
 }
 
 func (s *InternalState) Lock() *LockedInternalState {
@@ -27,6 +36,10 @@ func (s *InternalState) Unlock() {
 	s.mutex.Unlock()
 }
 
+func (s *InternalState) View() LockedInternalState {
+	return s.lockedState.deepCopy()
+}
+
 // lint:require-exhaustive-initialization
 type LockedInternalState struct {
 	LastBlock  *big.Int
@@ -34,6 +47,16 @@ type LockedInternalState struct {
 	Nonce      uint64
 	Queue      QueueStorage
 	ErrorCount map[uint64]int // number of consecutive intermittent errors rbf-ing or sending, per nonce
+}
+
+func (s *LockedInternalState) deepCopy() LockedInternalState {
+	lastBlock, balance := new(big.Int), new(big.Int)
+
+	return LockedInternalState{
+		LastBlock: lastBlock.Set(s.LastBlock),
+		Balance:   balance.Set(s.Balance),
+		Nonce:     s.Nonce,
+	}
 }
 
 // QueueStorage implements queue-alike storage that can
