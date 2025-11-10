@@ -281,7 +281,6 @@ type NodeBuilder struct {
 	withProdConfirmPeriodBlocks bool
 	delayBufferThreshold        uint64
 	withL1ClientWrapper         bool
-	withBlobReader              bool
 
 	// Created nodes
 	L1 *TestClient
@@ -619,9 +618,6 @@ func (b *NodeBuilder) BuildL1(t *testing.T) {
 	}
 	b.L1 = NewTestClient(b.ctx)
 	b.L1Info, b.L1.Client, b.L1.L1Backend, b.L1.Stack, b.L1.ClientWrapper, b.L1.L1BlobReader = createTestL1BlockChain(t, b.L1Info, b.withL1ClientWrapper)
-	if !b.withBlobReader {
-		b.L1.L1BlobReader = nil
-	}
 	locator, err := server_common.NewMachineLocator(b.valnodeConfig.Wasm.RootPath)
 	Require(t, err)
 	b.addresses, b.initMessage = deployOnParentChain(

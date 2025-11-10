@@ -862,6 +862,7 @@ func TestBatchPosterActuallyPostsBlobsToL1(t *testing.T) {
 	defer cancel()
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder.nodeConfig.MessageExtraction.Enable = false // TODO: unskip this once GetSequencerMessageBytes method is implemented on MessageExtractor
 	// Turn on unconditional blob posting
 	builder.nodeConfig.BatchPoster.Post4844Blobs = true
 	builder.nodeConfig.BatchPoster.IgnoreBlobPrice = true
