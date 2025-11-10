@@ -235,16 +235,15 @@ func NewBOLDStaker(
 	// Create proof enhancer if registry is available
 	var proofEnhancer proofenhancement.ProofEnhancer
 	if dapRegistry != nil {
-		enhancerManager := proofenhancement.NewProofEnhancementManager()
-		enhancerManager.RegisterEnhancer(
+		proofEnhancer := proofenhancement.NewProofEnhancementManager()
+		proofEnhancer.RegisterEnhancer(
 			proofenhancement.MarkerCustomDAReadPreimage,
 			proofenhancement.NewReadPreimageProofEnhancer(dapRegistry, inboxTracker, inboxReader),
 		)
-		enhancerManager.RegisterEnhancer(
+		proofEnhancer.RegisterEnhancer(
 			proofenhancement.MarkerCustomDAValidateCertificate,
 			proofenhancement.NewValidateCertificateProofEnhancer(dapRegistry, inboxTracker, inboxReader),
 		)
-		proofEnhancer = enhancerManager
 	}
 
 	wrappedClient := util.NewBackendWrapper(l1Reader.Client(), rpc.LatestBlockNumber)
