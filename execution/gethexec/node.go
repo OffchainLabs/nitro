@@ -338,7 +338,7 @@ func CreateExecutionNode(
 		LogCacheSize: config.RPC.FilterLogCacheSize,
 		Timeout:      config.RPC.FilterTimeout,
 	}
-	backend, filterSystem, err := arbitrum.NewBackend(stack, &config.RPC, chainDB, arbInterface, filterConfig)
+	backend, filterSystem, err := arbitrum.NewBackend(stack, &config.RPC, chainDB, arbInterface, filterConfig, config.Caching.StateScheme)
 	if err != nil {
 		return nil, err
 	}

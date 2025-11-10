@@ -68,6 +68,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/daprovider/das"
+	"github.com/offchainlabs/nitro/daprovider/das/dastree"
 	"github.com/offchainlabs/nitro/daprovider/das/dasutil"
 	"github.com/offchainlabs/nitro/deploy"
 	"github.com/offchainlabs/nitro/execution/gethexec"
@@ -224,7 +225,6 @@ var TestSequencerConfig = gethexec.SequencerConfig{
 func ExecConfigDefaultNonSequencerTest(t *testing.T, stateScheme string) *gethexec.Config {
 	config := gethexec.ConfigDefault
 	config.Caching.StateScheme = stateScheme
-	config.RPC.StateScheme = stateScheme
 	config.ParentChainReader = headerreader.TestConfig
 	config.Sequencer.Enable = false
 	config.Forwarder = DefaultTestForwarderConfig
@@ -239,7 +239,6 @@ func ExecConfigDefaultNonSequencerTest(t *testing.T, stateScheme string) *gethex
 func ExecConfigDefaultTest(t *testing.T, stateScheme string) *gethexec.Config {
 	config := gethexec.ConfigDefault
 	config.Caching.StateScheme = stateScheme
-	config.RPC.StateScheme = stateScheme
 	config.Sequencer = TestSequencerConfig
 	config.ParentChainReader = headerreader.TestConfig
 	config.ForwardingTarget = "null"
@@ -422,7 +421,6 @@ func (b *NodeBuilder) RequireScheme(t *testing.T, scheme string) *NodeBuilder {
 	}
 	if b.defaultDbScheme != scheme && b.execConfig != nil {
 		b.execConfig.Caching.StateScheme = scheme
-		b.execConfig.RPC.StateScheme = scheme
 		Require(t, b.execConfig.Validate())
 	}
 	b.defaultDbScheme = scheme
@@ -575,10 +573,6 @@ func (b *NodeBuilder) CheckConfig(t *testing.T) {
 	}
 	if b.execConfig == nil {
 		b.execConfig = b.ExecConfigDefaultTest(t, true)
-	}
-	if b.execConfig.Caching.Archive {
-		// archive currently requires hash
-		b.RequireScheme(t, rawdb.HashScheme)
 	}
 	if b.L1Info == nil {
 		b.L1Info = NewL1TestInfo(t)
@@ -1916,8 +1910,34 @@ func authorizeDASKeyset(
 	tx, err := upgradeExecutor.ExecuteCall(&trOps, l1info.Accounts["SequencerInbox"].Address, setKeysetCalldata)
 	Require(t, err, "unable to set valid keyset")
 
-	_, err = EnsureTxSucceeded(ctx, l1client, tx)
+	receipt, err := EnsureTxSucceeded(ctx, l1client, tx)
 	Require(t, err, "unable to ensure transaction success for setting valid keyset")
+
+	// Wait for the keyset event to be queryable via eth_getLogs
+	// This prevents race conditions where batch posting happens before L1 indexing completes
+	keysetHash := dastree.Hash(keysetBytes)
+	seqInbox, err := bridgegen.NewSequencerInbox(l1info.Accounts["SequencerInbox"].Address, l1client)
+	Require(t, err, "unable to bind sequencer inbox")
+
+	blockNum := receipt.BlockNumber.Uint64()
+	maxRetries := 10
+	for i := 0; i < maxRetries; i++ {
+		filterOpts := &bind.FilterOpts{
+			Start:   blockNum,
+			End:     &blockNum,
+			Context: ctx,
+		}
+		iter, err := seqInbox.FilterSetValidKeyset(filterOpts, [][32]byte{keysetHash})
+		if err == nil {
+			// Successfully queried logs, keyset is now fetchable
+			iter.Close()
+			break
+		}
+		if i == maxRetries-1 {
+			Require(t, err, "unable to query keyset logs after retries")
+		}
+		time.Sleep(250 * time.Millisecond)
+	}
 }
 
 func setupConfigWithDAS(
@@ -1948,8 +1968,9 @@ func setupConfigWithDAS(
 			KeyDir: dbPath,
 		},
 		LocalFileStorage: das.LocalFileStorageConfig{
-			Enable:  enableFileStorage,
-			DataDir: dbPath,
+			Enable:       enableFileStorage,
+			DataDir:      dbPath,
+			MaxRetention: time.Hour * 24 * 30,
 		},
 		RequestTimeout:           5 * time.Second,
 		ParentChainNodeURL:       "none",
