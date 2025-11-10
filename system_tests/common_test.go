@@ -1104,11 +1104,7 @@ func checkBatchPosting(t *testing.T, ctx context.Context, l1client, l2clientA *e
 	time.Sleep(time.Millisecond * 100)
 
 	// Create L1 blocks to trigger batch posting (with MaxDelay=0, this ensures immediate posting)
-	for i := 0; i < 30; i++ {
-		SendWaitTestTransactions(t, ctx, l1client, []*types.Transaction{
-			l1info.PrepareTx("Faucet", "User", 30000, big.NewInt(1e12), nil),
-		})
-	}
+	AdvanceL1(t, ctx, l1client, l1info, 30)
 
 	// Verify all follower nodes synced the transaction
 	for _, client := range l2ClientsToCheck {
