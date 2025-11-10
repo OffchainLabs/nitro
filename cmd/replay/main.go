@@ -317,7 +317,9 @@ func main() {
 	} else {
 		// Initialize ArbOS with this init message and create the genesis block.
 
-		message := readMessage(false, nil) // TODO: no idea how to correctly get chain config here (through the `initialArbosState` as above?)
+		// Currently, the only use of `chainConfig` argument is to get a limit on the uncompressed batch size.
+		// However, the init message is never compressed, so we can safely pass nil here.
+		message := readMessage(false, nil)
 
 		initMessage, err := message.Message.ParseInitMessage()
 		if err != nil {
