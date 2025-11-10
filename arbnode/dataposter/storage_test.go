@@ -11,6 +11,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+	"github.com/offchainlabs/nitro/arbnode/dataposter/state"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -117,7 +118,7 @@ func values(t *testing.T, from, to int) []*storage.QueuedTransaction {
 }
 
 // Initializes the QueueStorage. Returns the same object (for convenience).
-func initStorage(ctx context.Context, t *testing.T, s QueueStorage) QueueStorage {
+func initStorage(ctx context.Context, t *testing.T, s state.QueueStorage) state.QueueStorage {
 	t.Helper()
 	for i := 0; i < 20; i++ {
 		// #nosec G115
@@ -129,14 +130,14 @@ func initStorage(ctx context.Context, t *testing.T, s QueueStorage) QueueStorage
 }
 
 // Returns a map of all empty storages.
-func storages(t *testing.T) map[string]QueueStorage {
+func storages(t *testing.T) map[string]state.QueueStorage {
 	t.Helper()
 	f := func(enc storage.EncoderDecoderInterface) storage.EncoderDecoderF {
 		return func() storage.EncoderDecoderInterface {
 			return enc
 		}
 	}
-	return map[string]QueueStorage{
+	return map[string]state.QueueStorage{
 		"levelDBLegacy": newLevelDBStorage(t, f(&storage.LegacyEncoderDecoder{})),
 		"sliceLegacy":   newSliceStorage(f(&storage.LegacyEncoderDecoder{})),
 		"redisLegacy":   newRedisStorage(context.Background(), t, f(&storage.LegacyEncoderDecoder{})),
@@ -148,9 +149,9 @@ func storages(t *testing.T) map[string]QueueStorage {
 }
 
 // Returns a map of all initialized storages.
-func initStorages(ctx context.Context, t *testing.T) map[string]QueueStorage {
+func initStorages(ctx context.Context, t *testing.T) map[string]state.QueueStorage {
 	t.Helper()
-	m := map[string]QueueStorage{}
+	m := map[string]state.QueueStorage{}
 	for k, v := range storages(t) {
 		m[k] = initStorage(ctx, t, v)
 	}

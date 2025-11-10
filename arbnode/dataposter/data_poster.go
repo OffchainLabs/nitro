@@ -21,6 +21,7 @@ import (
 
 	"github.com/Knetic/govaluate"
 	"github.com/holiman/uint256"
+	"github.com/offchainlabs/nitro/arbnode/dataposter/state"
 	"github.com/redis/go-redis/v9"
 	"github.com/spf13/pflag"
 
@@ -93,7 +94,7 @@ type DataPoster struct {
 	lastBlock  *big.Int
 	balance    *big.Int
 	nonce      uint64
-	queue      QueueStorage
+	queue      state.QueueStorage
 	errorCount map[uint64]int // number of consecutive intermittent errors rbf-ing or sending, per nonce
 
 	maxFeeCapExpression *govaluate.EvaluableExpression
@@ -132,7 +133,7 @@ func NewDataPoster(ctx context.Context, opts *DataPosterOpts) (*DataPoster, erro
 		}
 		return &storage.EncoderDecoder{}
 	}
-	var queue QueueStorage
+	var queue state.QueueStorage
 	switch {
 	case useNoOpStorage:
 		queue = &noop.Storage{}
@@ -1309,30 +1310,6 @@ func (p *DataPoster) Start(ctxIn context.Context) {
 		}
 		return wait
 	})
-}
-
-// Implements queue-alike storage that can
-// - Insert item at specified index
-// - Update item with the condition that existing value equals assumed value
-// - Delete all the items up to specified index (prune)
-// - Calculate length
-// Note: one of the implementation of this interface (Redis storage) does not
-// support duplicate values.
-type QueueStorage interface {
-	// Returns at most maxResults items starting from specified index.
-	FetchContents(ctx context.Context, startingIndex uint64, maxResults uint64) ([]*storage.QueuedTransaction, error)
-	// Returns the item at index, or nil if not found.
-	Get(ctx context.Context, index uint64) (*storage.QueuedTransaction, error)
-	// Returns item with the biggest index, or nil if the queue is empty.
-	FetchLast(ctx context.Context) (*storage.QueuedTransaction, error)
-	// Prunes items up to (excluding) specified index.
-	Prune(ctx context.Context, until uint64) error
-	// Inserts new item at specified index if previous value matches specified value.
-	Put(ctx context.Context, index uint64, prevItem, newItem *storage.QueuedTransaction) error
-	// Returns the size of a queue.
-	Length(ctx context.Context) (int, error)
-	// Indicates whether queue stored at disk.
-	IsPersistent() bool
 }
 
 type DataPosterConfig struct {
