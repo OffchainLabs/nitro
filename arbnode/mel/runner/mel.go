@@ -38,7 +38,7 @@ type ParentChainReader interface {
 type MessageExtractor struct {
 	stopwaiter.StopWaiter
 	parentChainReader         ParentChainReader
-	arbitrumChainParams       *params.ArbitrumChainParams
+	chainConfig               *params.ChainConfig
 	addrs                     *chaininfo.RollupAddresses
 	melDB                     *Database
 	msgConsumer               mel.MessageConsumer
@@ -53,7 +53,7 @@ type MessageExtractor struct {
 // to be used when extracting messages from the parent chain.
 func NewMessageExtractor(
 	parentChainReader ParentChainReader,
-	arbitrumChainParams *params.ArbitrumChainParams,
+	chainConfig *params.ChainConfig,
 	rollupAddrs *chaininfo.RollupAddresses,
 	melDB *Database,
 	msgConsumer mel.MessageConsumer,
@@ -70,7 +70,7 @@ func NewMessageExtractor(
 	}
 	return &MessageExtractor{
 		parentChainReader:         parentChainReader,
-		arbitrumChainParams:       arbitrumChainParams,
+		chainConfig:               chainConfig,
 		addrs:                     rollupAddrs,
 		melDB:                     melDB,
 		msgConsumer:               msgConsumer,
@@ -227,7 +227,7 @@ func (m *MessageExtractor) Act(ctx context.Context) (time.Duration, error) {
 			m.melDB,
 			receiptFetcher,
 			txsFetcher,
-			m.arbitrumChainParams,
+			m.chainConfig,
 		)
 		if err != nil {
 			return m.retryInterval, err

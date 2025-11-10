@@ -94,25 +94,25 @@ type batchPosterPosition struct {
 
 type BatchPoster struct {
 	stopwaiter.StopWaiter
-	l1Reader            *headerreader.HeaderReader
-	inbox               *InboxTracker
-	streamer            *TransactionStreamer
-	arbOSVersionGetter  execution.ArbOSVersionGetter
-	arbitrumChainParams *params.ArbitrumChainParams
-	config              BatchPosterConfigFetcher
-	seqInbox            *bridgegen.SequencerInbox
-	syncMonitor         *SyncMonitor
-	seqInboxABI         *abi.ABI
-	seqInboxAddr        common.Address
-	bridgeAddr          common.Address
-	gasRefunderAddr     common.Address
-	building            *buildingBatch
-	dapWriter           daprovider.Writer
-	dapReaders          *daprovider.ReaderRegistry
-	dataPoster          *dataposter.DataPoster
-	redisLock           *redislock.Simple
-	messagesPerBatch    *arbmath.MovingAverage[uint64]
-	non4844BatchCount   int // Count of consecutive non-4844 batches posted
+	l1Reader           *headerreader.HeaderReader
+	inbox              *InboxTracker
+	streamer           *TransactionStreamer
+	arbOSVersionGetter execution.ArbOSVersionGetter
+	chainConfig        *params.ChainConfig
+	config             BatchPosterConfigFetcher
+	seqInbox           *bridgegen.SequencerInbox
+	syncMonitor        *SyncMonitor
+	seqInboxABI        *abi.ABI
+	seqInboxAddr       common.Address
+	bridgeAddr         common.Address
+	gasRefunderAddr    common.Address
+	building           *buildingBatch
+	dapWriter          daprovider.Writer
+	dapReaders         *daprovider.ReaderRegistry
+	dataPoster         *dataposter.DataPoster
+	redisLock          *redislock.Simple
+	messagesPerBatch   *arbmath.MovingAverage[uint64]
+	non4844BatchCount  int // Count of consecutive non-4844 batches posted
 	// This is an atomic variable that should only be accessed atomically.
 	// An estimate of the number of batches we want to post but haven't yet.
 	// This doesn't include batches which we don't want to post yet due to the L1 bounds.
@@ -320,19 +320,19 @@ var TestBatchPosterConfig = BatchPosterConfig{
 }
 
 type BatchPosterOpts struct {
-	DataPosterDB        ethdb.Database
-	L1Reader            *headerreader.HeaderReader
-	Inbox               *InboxTracker
-	Streamer            *TransactionStreamer
-	VersionGetter       execution.ArbOSVersionGetter
-	SyncMonitor         *SyncMonitor
-	Config              BatchPosterConfigFetcher
-	DeployInfo          *chaininfo.RollupAddresses
-	TransactOpts        *bind.TransactOpts
-	DAPWriter           daprovider.Writer
-	ParentChainID       *big.Int
-	DAPReaders          *daprovider.ReaderRegistry
-	ArbitrumChainParams *params.ArbitrumChainParams
+	DataPosterDB  ethdb.Database
+	L1Reader      *headerreader.HeaderReader
+	Inbox         *InboxTracker
+	Streamer      *TransactionStreamer
+	VersionGetter execution.ArbOSVersionGetter
+	SyncMonitor   *SyncMonitor
+	Config        BatchPosterConfigFetcher
+	DeployInfo    *chaininfo.RollupAddresses
+	TransactOpts  *bind.TransactOpts
+	DAPWriter     daprovider.Writer
+	ParentChainID *big.Int
+	DAPReaders    *daprovider.ReaderRegistry
+	ChainConfig   *params.ChainConfig
 }
 
 func NewBatchPoster(ctx context.Context, opts *BatchPosterOpts) (*BatchPoster, error) {
@@ -375,24 +375,24 @@ func NewBatchPoster(ctx context.Context, opts *BatchPosterOpts) (*BatchPoster, e
 		return nil, err
 	}
 	b := &BatchPoster{
-		l1Reader:            opts.L1Reader,
-		inbox:               opts.Inbox,
-		streamer:            opts.Streamer,
-		arbOSVersionGetter:  opts.VersionGetter,
-		arbitrumChainParams: opts.ArbitrumChainParams,
-		syncMonitor:         opts.SyncMonitor,
-		config:              opts.Config,
-		seqInbox:            seqInbox,
-		seqInboxABI:         seqInboxABI,
-		seqInboxAddr:        opts.DeployInfo.SequencerInbox,
-		gasRefunderAddr:     opts.Config().gasRefunder,
-		bridgeAddr:          opts.DeployInfo.Bridge,
-		dapWriter:           opts.DAPWriter,
-		redisLock:           redisLock,
-		dapReaders:          opts.DAPReaders,
-		parentChain:         &parent.ParentChain{ChainID: opts.ParentChainID, L1Reader: opts.L1Reader},
-		checkEip7623:        checkEip7623,
-		useEip7623:          useEip7623,
+		l1Reader:           opts.L1Reader,
+		inbox:              opts.Inbox,
+		streamer:           opts.Streamer,
+		arbOSVersionGetter: opts.VersionGetter,
+		chainConfig:        opts.ChainConfig,
+		syncMonitor:        opts.SyncMonitor,
+		config:             opts.Config,
+		seqInbox:           seqInbox,
+		seqInboxABI:        seqInboxABI,
+		seqInboxAddr:       opts.DeployInfo.SequencerInbox,
+		gasRefunderAddr:    opts.Config().gasRefunder,
+		bridgeAddr:         opts.DeployInfo.Bridge,
+		dapWriter:          opts.DAPWriter,
+		redisLock:          redisLock,
+		dapReaders:         opts.DAPReaders,
+		parentChain:        &parent.ParentChain{ChainID: opts.ParentChainID, L1Reader: opts.L1Reader},
+		checkEip7623:       checkEip7623,
+		useEip7623:         useEip7623,
 	}
 	b.messagesPerBatch, err = arbmath.NewMovingAverage[uint64](20)
 	if err != nil {
@@ -944,7 +944,7 @@ func (b *BatchPoster) newBatchSegments(ctx context.Context, firstDelayed uint64,
 		recompressionLevel:  recompressionLevel,
 		rawSegments:         make([][]byte, 0, 128),
 		delayedMsg:          firstDelayed,
-		maxUncompressedSize: int(b.arbitrumChainParams.MaxUncompressedBatchSize), // #nosec G115
+		maxUncompressedSize: int(b.chainConfig.MaxUncompressedBatchSize()), // #nosec G115
 	}, nil
 }
 
@@ -1846,7 +1846,7 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 		b.building.muxBackend.seqMsg = seqMsg
 		b.building.muxBackend.delayedInboxStart = batchPosition.DelayedMessageCount
 		b.building.muxBackend.SetPositionWithinMessage(0)
-		simMux := arbstate.NewInboxMultiplexer(b.building.muxBackend, batchPosition.DelayedMessageCount, dapReaders, daprovider.KeysetValidate, b.arbitrumChainParams) // nolint:gosec
+		simMux := arbstate.NewInboxMultiplexer(b.building.muxBackend, batchPosition.DelayedMessageCount, dapReaders, daprovider.KeysetValidate, b.chainConfig) // nolint:gosec
 		log.Debug("Begin checking the correctness of batch against inbox multiplexer", "startMsgSeqNum", batchPosition.MessageCount, "endMsgSeqNum", b.building.msgCount-1)
 		for i := batchPosition.MessageCount; i < b.building.msgCount; i++ {
 			msg, err := simMux.Pop(ctx)

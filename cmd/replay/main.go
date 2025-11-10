@@ -223,7 +223,7 @@ func main() {
 		}
 		return wavmio.ReadInboxMessage(batchNum), nil
 	}
-	readMessage := func(dasEnabled bool, arbitrumChainParams *params.ArbitrumChainParams) *arbostypes.MessageWithMetadata {
+	readMessage := func(dasEnabled bool, chainConfig *params.ChainConfig) *arbostypes.MessageWithMetadata {
 		var delayedMessagesRead uint64
 		if lastBlockHeader != nil {
 			delayedMessagesRead = lastBlockHeader.Nonce.Uint64()
@@ -251,7 +251,7 @@ func main() {
 		if err != nil {
 			panic(fmt.Sprintf("Failed to register blob reader: %v", err))
 		}
-		inboxMultiplexer := arbstate.NewInboxMultiplexer(backend, delayedMessagesRead, dapReaders, keysetValidationMode, arbitrumChainParams)
+		inboxMultiplexer := arbstate.NewInboxMultiplexer(backend, delayedMessagesRead, dapReaders, keysetValidationMode, chainConfig)
 		ctx := context.Background()
 		message, err := inboxMultiplexer.Pop(ctx)
 		if err != nil {
@@ -307,7 +307,7 @@ func main() {
 			}
 		}
 
-		message := readMessage(chainConfig.ArbitrumChainParams.DataAvailabilityCommittee, &chainConfig.ArbitrumChainParams)
+		message := readMessage(chainConfig.ArbitrumChainParams.DataAvailabilityCommittee, chainConfig)
 
 		chainContext := WavmChainContext{chainConfig: chainConfig}
 		newBlock, _, err = arbos.ProduceBlock(message.Message, message.DelayedMessagesRead, lastBlockHeader, statedb, chainContext, false, core.NewMessageReplayContext(), false)

@@ -953,19 +953,19 @@ func getBatchPoster(
 		}
 		var err error
 		batchPoster, err = NewBatchPoster(ctx, &BatchPosterOpts{
-			DataPosterDB:        rawdb.NewTable(arbDb, storage.BatchPosterPrefix),
-			L1Reader:            l1Reader,
-			Inbox:               inboxTracker,
-			Streamer:            txStreamer,
-			VersionGetter:       arbOSVersionGetter,
-			SyncMonitor:         syncMonitor,
-			Config:              func() *BatchPosterConfig { return &configFetcher.Get().BatchPoster },
-			DeployInfo:          deployInfo,
-			TransactOpts:        txOptsBatchPoster,
-			DAPWriter:           dapWriter,
-			ParentChainID:       parentChainID,
-			DAPReaders:          dapReaders,
-			ArbitrumChainParams: &l2Config.ArbitrumChainParams,
+			DataPosterDB:  rawdb.NewTable(arbDb, storage.BatchPosterPrefix),
+			L1Reader:      l1Reader,
+			Inbox:         inboxTracker,
+			Streamer:      txStreamer,
+			VersionGetter: arbOSVersionGetter,
+			SyncMonitor:   syncMonitor,
+			Config:        func() *BatchPosterConfig { return &configFetcher.Get().BatchPoster },
+			DeployInfo:    deployInfo,
+			TransactOpts:  txOptsBatchPoster,
+			DAPWriter:     dapWriter,
+			ParentChainID: parentChainID,
+			DAPReaders:    dapReaders,
+			ChainConfig:   l2Config,
 		})
 		if err != nil {
 			return nil, err

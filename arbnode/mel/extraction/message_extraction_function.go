@@ -56,13 +56,13 @@ func ExtractMessages(
 	delayedMsgDatabase DelayedMessageDatabase,
 	receiptFetcher ReceiptFetcher,
 	txsFetcher TransactionsFetcher,
-	arbitrumChainParams *params.ArbitrumChainParams,
+	chainConfig *params.ChainConfig,
 ) (*mel.State, []*arbostypes.MessageWithMetadata, []*mel.DelayedInboxMessage, error) {
 	return extractMessagesImpl(
 		ctx,
 		inputState,
 		parentChainHeader,
-		arbitrumChainParams,
+		chainConfig,
 		dataProviders,
 		delayedMsgDatabase,
 		txsFetcher,
@@ -84,7 +84,7 @@ func extractMessagesImpl(
 	ctx context.Context,
 	inputState *mel.State,
 	parentChainHeader *types.Header,
-	arbitrumChainParams *params.ArbitrumChainParams,
+	chainConfig *params.ChainConfig,
 	dataProviders *daprovider.ReaderRegistry,
 	delayedMsgDatabase DelayedMessageDatabase,
 	txsFetcher TransactionsFetcher,
@@ -204,7 +204,7 @@ func extractMessagesImpl(
 			serialized,
 			dataProviders,
 			daprovider.KeysetValidate,
-			arbitrumChainParams,
+			chainConfig,
 		)
 		if err != nil {
 			return nil, nil, nil, err

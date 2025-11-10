@@ -774,7 +774,7 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client *ethclien
 		prevbatchmeta.DelayedMessageCount,
 		t.dapReaders,
 		daprovider.KeysetValidate,
-		&t.txStreamer.chainConfig.ArbitrumChainParams,
+		t.txStreamer.chainConfig,
 	)
 	batchMessageCounts := make(map[uint64]arbutil.MessageIndex)
 	currentPos := prevbatchmeta.MessageCount + 1

@@ -39,7 +39,7 @@ func TestMessageExtractor(t *testing.T) {
 	messageConsumer := &mockMessageConsumer{}
 	extractor, err := NewMessageExtractor(
 		parentChainReader,
-		&chaininfo.ArbitrumDevTestChainConfig().ArbitrumChainParams,
+		chaininfo.ArbitrumDevTestChainConfig(),
 		&chaininfo.RollupAddresses{},
 		melDb,
 		messageConsumer,

@@ -49,7 +49,7 @@ func BuildBlock(
 		delayedMessagesRead,
 		nil,
 		daprovider.KeysetValidate,
-		&getChainConfig().ArbitrumChainParams,
+		getChainConfig(),
 	)
 
 	ctx := context.Background()

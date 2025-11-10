@@ -65,7 +65,7 @@ type sequencerMessageParserFunc func(
 	data []byte,
 	dapReaders *daprovider.ReaderRegistry,
 	keysetValidationMode daprovider.KeysetValidationMode,
-	arbitrumChainParams *params.ArbitrumChainParams,
+	chainConfig *params.ChainConfig,
 ) (*arbstate.SequencerMessage, error)
 
 // Defines a function that can extract messages from a batch.
