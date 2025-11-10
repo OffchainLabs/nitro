@@ -11,13 +11,14 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/offchainlabs/nitro/solgen/go/node_interfacegen"
 )
 
 func getL1Confirmations(
 	ctx context.Context,
 	nodeInterface *node_interfacegen.NodeInterface,
-	builder *NodeBuilder,
+	client *ethclient.Client,
 	block *types.Block,
 ) (uint64, uint64, error) {
 	l1ConfsNodeInterface, err := nodeInterface.GetL1Confirmations(&bind.CallOpts{}, block.Hash())
@@ -26,30 +27,29 @@ func getL1Confirmations(
 	}
 
 	var l1ConfsRPC uint64
-	err = builder.L2.Client.Client().CallContext(ctx, &l1ConfsRPC, "arb_getL1Confirmations", block.Number())
+	err = client.Client().CallContext(ctx, &l1ConfsRPC, "arb_getL1Confirmations", block.Number())
 
 	return l1ConfsNodeInterface, l1ConfsRPC, err
 }
 
-func TestGetL1Confirmations(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
-	cleanup := builder.Build(t)
-	defer cleanup()
-
-	// Wait so ConsensusNode.L1Reader has some time to read L1 headers,
+func testGetL1Confirmations(
+	t *testing.T,
+	ctx context.Context,
+	childChainTestClient *TestClient,
+	parentChainTestClient *TestClient,
+	parentChainInfo info,
+) {
+	// Wait so ConsensusNode.L1Reader has some time to read parent chain headers,
 	// which is needed for the RPC GetL1Confirmations call to work.
 	time.Sleep(time.Second)
 
-	nodeInterface, err := node_interfacegen.NewNodeInterface(types.NodeInterfaceAddress, builder.L2.Client)
+	nodeInterface, err := node_interfacegen.NewNodeInterface(types.NodeInterfaceAddress, childChainTestClient.Client)
 	Require(t, err)
 
-	genesisBlock, err := builder.L2.Client.BlockByNumber(ctx, big.NewInt(0))
+	genesisBlock, err := childChainTestClient.Client.BlockByNumber(ctx, big.NewInt(0))
 	Require(t, err)
 
-	l1ConfsNodeInterface, l1ConfsRPC, err := getL1Confirmations(ctx, nodeInterface, builder, genesisBlock)
+	l1ConfsNodeInterface, l1ConfsRPC, err := getL1Confirmations(ctx, nodeInterface, childChainTestClient.Client, genesisBlock)
 	Require(t, err)
 
 	numTransactions := 200
@@ -61,10 +61,10 @@ func TestGetL1Confirmations(t *testing.T) {
 	}
 
 	for i := 0; i < numTransactions; i++ {
-		builder.L1.TransferBalance(t, "User", "User", common.Big0, builder.L1Info)
+		parentChainTestClient.TransferBalance(t, "User", "User", common.Big0, parentChainInfo)
 	}
 
-	l1ConfsNodeInterface, l1ConfsRPC, err = getL1Confirmations(ctx, nodeInterface, builder, genesisBlock)
+	l1ConfsNodeInterface, l1ConfsRPC, err = getL1Confirmations(ctx, nodeInterface, childChainTestClient.Client, genesisBlock)
 	Require(t, err)
 
 	// Allow a gap of 10 for asynchronicity, just in case
@@ -73,4 +73,29 @@ func TestGetL1Confirmations(t *testing.T) {
 		t.Fatalf("L1Confirmations for latest block %v is only l1ConfsNodeInterface=%v, l1ConfsRPC=%v (did not hit expected %v)",
 			genesisBlock.Number(), l1ConfsNodeInterface, l1ConfsRPC, numTransactions)
 	}
+}
+
+func TestGetL1ConfirmationsForL2(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	testGetL1Confirmations(t, ctx, builder.L2, builder.L1, builder.L1Info)
+}
+
+func TestGetL1ConfirmationsForL3(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	cleanupL1AndL2 := builder.Build(t)
+	defer cleanupL1AndL2()
+
+	cleanupL3 := builder.BuildL3OnL2(t)
+	defer cleanupL3()
+
+	testGetL1Confirmations(t, ctx, builder.L3, builder.L2, builder.L2Info)
 }
