@@ -786,6 +786,10 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client *ethclien
 		ctx:          ctx,
 		client:       client,
 	}
+
+	// Don't wait for GC to collect, just clear daPayloadMap after we return from AddSequencerBatches
+	defer clear(backend.daPayloadMap)
+
 	multiplexer := arbstate.NewInboxMultiplexer(backend, prevbatchmeta.DelayedMessageCount, t.dapReaders, daprovider.KeysetValidate)
 	batchMessageCounts := make(map[uint64]arbutil.MessageIndex)
 	currentPos := prevbatchmeta.MessageCount + 1

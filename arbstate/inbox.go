@@ -228,10 +228,6 @@ func (r *inboxMultiplexer) Pop(ctx context.Context) (*arbostypes.MessageWithMeta
 			return nil, err
 		}
 
-		// TODO: not safe to defer deletion of payload here as the payload could still be needed. So
-		// what can we do to clean such cache? We don't want to let it grow indefinitely.
-		// defer r.backend.DeleteDAPayload(batchBlockHash)
-
 		r.cachedSequencerMessage, err = ParseSequencerMessage(ctx, r.cachedSequencerMessageNum, batchBlockHash, bytes, r.dapReaders, payload, r.keysetValidationMode)
 		if err != nil {
 			return nil, err
