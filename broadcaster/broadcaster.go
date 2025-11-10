@@ -120,12 +120,12 @@ func (b *Broadcaster) BroadcastFeedMessages(messages []*m.BroadcastFeedMessage) 
 	b.server.Broadcast(bm)
 }
 
-func (s *Broadcaster) PopulateFeedBacklog(messages []*m.BroadcastFeedMessage) error {
+func (b *Broadcaster) PopulateFeedBacklog(messages []*m.BroadcastFeedMessage) error {
 	bm := &m.BroadcastMessage{
 		Version:  1,
 		Messages: messages,
 	}
-	return s.server.PopulateFeedBacklog(bm)
+	return b.server.PopulateFeedBacklog(bm)
 }
 
 func (b *Broadcaster) Confirm(msgIdx arbutil.MessageIndex) {
