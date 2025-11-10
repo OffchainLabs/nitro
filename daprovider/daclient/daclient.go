@@ -126,6 +126,15 @@ func (c *Client) RecoverPayload(
 	})
 }
 
+func (c *Client) GetCachedPayload(
+	batchBlockHash common.Hash,
+	sequencerMsg []byte,
+) (daprovider.PayloadResult, error) {
+	return daprovider.PayloadResult{}, nil
+}
+
+func (c *Client) ClearCachedPayload() {}
+
 // CollectPreimages collects preimages from the DA provider
 func (c *Client) CollectPreimages(
 	batchNum uint64,

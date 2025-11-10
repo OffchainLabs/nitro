@@ -5,6 +5,7 @@ package daprovider
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"strings"
 
@@ -40,13 +41,27 @@ type PreimagesResult struct {
 	Preimages PreimagesMap
 }
 
+type BatchKey struct {
+	Data      [32]byte
+	BatchHash common.Hash
+}
+
+type BatchPayloadMap map[BatchKey]PayloadResult
+
 type Reader interface {
-	// RecoverPayload fetches the underlying payload from the DA provider given the batch header information
+	// RecoverPayload fetches and caches the underlying payload from the DA provider given the batch header information
 	RecoverPayload(
 		batchNum uint64,
 		batchBlockHash common.Hash,
 		sequencerMsg []byte,
 	) containers.PromiseInterface[PayloadResult]
+
+	GetCachedPayload(
+		batchBlockHash common.Hash,
+		sequencerMsg []byte,
+	) (PayloadResult, error)
+
+	ClearCachedPayload()
 
 	// CollectPreimages collects preimages from the DA provider given the batch header information
 	CollectPreimages(
@@ -59,11 +74,15 @@ type Reader interface {
 // NewReaderForBlobReader is generally meant to be only used by nitro.
 // DA Providers should implement methods in the Reader interface independently
 func NewReaderForBlobReader(blobReader BlobReader) *readerForBlobReader {
-	return &readerForBlobReader{blobReader: blobReader}
+	return &readerForBlobReader{
+		blobReader: blobReader,
+		daPayload:  make(BatchPayloadMap),
+	}
 }
 
 type readerForBlobReader struct {
 	blobReader BlobReader
+	daPayload  BatchPayloadMap
 }
 
 // recoverInternal is the shared implementation for both RecoverPayload and CollectPreimages
@@ -119,8 +138,38 @@ func (b *readerForBlobReader) RecoverPayload(
 ) containers.PromiseInterface[PayloadResult] {
 	return containers.DoPromise(context.Background(), func(ctx context.Context) (PayloadResult, error) {
 		payload, _, err := b.recoverInternal(ctx, batchBlockHash, sequencerMsg, true, false)
-		return PayloadResult{Payload: payload}, err
+		dataHash := sha256.Sum256(sequencerMsg)
+
+		key := BatchKey{
+			Data:      dataHash,
+			BatchHash: batchBlockHash,
+		}
+
+		resPayload := PayloadResult{Payload: payload}
+		b.daPayload[key] = resPayload
+		return resPayload, err
 	})
+}
+
+func (b *readerForBlobReader) GetCachedPayload(
+	batchBlockHash common.Hash,
+	sequencerMsg []byte,
+) (PayloadResult, error) {
+	dataHash := sha256.Sum256(sequencerMsg)
+	key := BatchKey{
+		Data:      dataHash,
+		BatchHash: batchBlockHash,
+	}
+	res, ok := b.daPayload[key]
+
+	if !ok {
+		return PayloadResult{}, fmt.Errorf("no cached DA payload found for key %v", key)
+	}
+	return res, nil
+}
+
+func (b *readerForBlobReader) ClearCachedPayload() {
+	clear(b.daPayload)
 }
 
 // CollectPreimages collects preimages from the DA provider

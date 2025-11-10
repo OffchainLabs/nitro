@@ -21,6 +21,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcastclient"
+	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
@@ -473,6 +474,10 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 			if err != nil {
 				return err
 			}
+			err = r.cacheDAPayloads(ctx, sequencerBatches, daprovider.KeysetValidate)
+			if err != nil {
+				return err
+			}
 			delayedMessages, err := r.delayedBridge.LookupMessagesInRange(ctx, from, to, func(batchNum uint64) ([]byte, error) {
 				if len(sequencerBatches) > 0 && batchNum >= sequencerBatches[0].SequenceNumber {
 					idx := batchNum - sequencerBatches[0].SequenceNumber
@@ -623,6 +628,8 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 			} else {
 				from = arbmath.BigAddByUint(to, 1)
 			}
+
+			r.tracker.dapReaders.ClearDACacheForAll()
 		}
 
 		if !readAnyBatches {
@@ -630,6 +637,23 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 			storeSeenBatchCount()
 		}
 	}
+}
+
+func (r *InboxReader) cacheDAPayloads(ctx context.Context, batches []*SequencerInboxBatch, keysetValidationMode daprovider.KeysetValidationMode) error {
+	for len(batches) > 0 {
+		batch := batches[0]
+		dataPayload, batchBlockHash, err := PeekSequencerInboxImpl(ctx, batches, r.client)
+		if err != nil {
+			return err
+		}
+		err = daprovider.TriggerDAPayload(ctx, r.tracker.dapReaders, batch.SequenceNumber, batchBlockHash, dataPayload, keysetValidationMode)
+		if err != nil {
+			return err
+		}
+		batches = batches[1:]
+	}
+
+	return nil
 }
 
 func (r *InboxReader) addMessages(ctx context.Context, sequencerBatches []*SequencerInboxBatch, delayedMessages []*DelayedInboxMessage) (bool, error) {

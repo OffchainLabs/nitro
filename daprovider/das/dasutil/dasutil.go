@@ -80,6 +80,15 @@ func (d *readerForDAS) RecoverPayload(
 	})
 }
 
+func (d *readerForDAS) GetCachedPayload(
+	batchBlockHash common.Hash,
+	sequencerMsg []byte,
+) (daprovider.PayloadResult, error) {
+	return daprovider.PayloadResult{}, nil
+}
+
+func (d *readerForDAS) ClearCachedPayload() {}
+
 // CollectPreimages collects preimages from the DA provider
 func (d *readerForDAS) CollectPreimages(
 	batchNum uint64,

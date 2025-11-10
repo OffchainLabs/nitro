@@ -638,11 +638,16 @@ type multiplexerBackend struct {
 }
 
 func (b *multiplexerBackend) PeekSequencerInbox() ([]byte, common.Hash, error) {
-	if len(b.batches) == 0 {
+	return PeekSequencerInboxImpl(b.ctx, b.batches, b.client)
+}
+
+func PeekSequencerInboxImpl(ctx context.Context, batches []*SequencerInboxBatch, client *ethclient.Client) ([]byte, common.Hash, error) {
+	if len(batches) == 0 {
 		return nil, common.Hash{}, errors.New("read past end of specified sequencer batches")
 	}
-	bytes, err := b.batches[0].Serialize(b.ctx, b.client)
-	return bytes, b.batches[0].BlockHash, err
+
+	bytes, err := batches[0].Serialize(ctx, client)
+	return bytes, batches[0].BlockHash, err
 }
 
 func (b *multiplexerBackend) GetSequencerInboxPosition() uint64 {
