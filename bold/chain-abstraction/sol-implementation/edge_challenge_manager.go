@@ -20,12 +20,12 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/metrics"
 
-	protocol "github.com/offchainlabs/bold/chain-abstraction"
-	challengetree "github.com/offchainlabs/bold/challenge-manager/challenge-tree"
-	edgetracker "github.com/offchainlabs/bold/challenge-manager/edge-tracker"
-	"github.com/offchainlabs/bold/containers"
-	"github.com/offchainlabs/bold/containers/option"
-	"github.com/offchainlabs/bold/state-commitments/history"
+	"github.com/offchainlabs/nitro/bold/chain-abstraction"
+	"github.com/offchainlabs/nitro/bold/challenge-manager/challenge-tree"
+	"github.com/offchainlabs/nitro/bold/challenge-manager/edge-tracker"
+	"github.com/offchainlabs/nitro/bold/containers"
+	"github.com/offchainlabs/nitro/bold/containers/option"
+	"github.com/offchainlabs/nitro/bold/state-commitments/history"
 	"github.com/offchainlabs/nitro/solgen/go/challengeV2gen"
 	"github.com/offchainlabs/nitro/solgen/go/ospgen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
@@ -167,7 +167,7 @@ func (e *specEdge) UpperChild(ctx context.Context) (option.Option[protocol.EdgeI
 	if err != nil {
 		return option.None[protocol.EdgeId](), err
 	}
-	if edge.LowerChildId == ([32]byte{}) {
+	if edge.UpperChildId == ([32]byte{}) {
 		return option.None[protocol.EdgeId](), nil
 	}
 	return option.Some(protocol.EdgeId{

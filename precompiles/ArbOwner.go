@@ -147,8 +147,16 @@ func (con ArbOwner) SetSpeedLimit(c ctx, evm mech, limit uint64) error {
 	return c.State.L2PricingState().SetSpeedLimitPerSecond(limit)
 }
 
-// SetMaxTxGasLimit sets the maximum size a tx (and block) can be
+// SetMaxTxGasLimit sets the maximum size a tx can be
 func (con ArbOwner) SetMaxTxGasLimit(c ctx, evm mech, limit uint64) error {
+	if c.State.ArbOSVersion() < params.ArbosVersion_50 {
+		return c.State.L2PricingState().SetMaxPerBlockGasLimit(limit)
+	}
+	return c.State.L2PricingState().SetMaxPerTxGasLimit(limit)
+}
+
+// SetMaxBlockGasLimit sets the maximum size a block can be
+func (con ArbOwner) SetMaxBlockGasLimit(c ctx, evm mech, limit uint64) error {
 	return c.State.L2PricingState().SetMaxPerBlockGasLimit(limit)
 }
 
@@ -213,6 +221,11 @@ func (con ArbOwner) SetL1PricingRewardRate(c ctx, evm mech, weiPerUnit uint64) e
 // Set how much ArbOS charges per L1 gas spent on transaction data.
 func (con ArbOwner) SetL1PricePerUnit(c ctx, evm mech, pricePerUnit *big.Int) error {
 	return c.State.L1PricingState().SetPricePerUnit(pricePerUnit)
+}
+
+// Set how much L1 charges per non-zero byte of calldata
+func (con ArbOwner) SetParentGasFloorPerToken(c ctx, evm mech, gasFloorPerToken uint64) error {
+	return c.State.L1PricingState().SetParentGasFloorPerToken(gasFloorPerToken)
 }
 
 // Sets the base charge (in L1 gas) attributed to each data batch in the calldata pricer
@@ -439,4 +452,33 @@ func (con ArbOwner) SetChainConfig(c ctx, evm mech, serializedChainConfig []byte
 // (EIP-7623)
 func (con ArbOwner) SetCalldataPriceIncrease(c ctx, _ mech, enable bool) error {
 	return c.State.Features().SetCalldataPriceIncrease(enable)
+}
+
+// SetGasBacklog sets the L2 gas backlog directly (used by single-constraint pricing model only)
+func (con ArbOwner) SetGasBacklog(c ctx, evm mech, backlog uint64) error {
+	return c.State.L2PricingState().SetGasBacklog(backlog)
+}
+
+// SetGasPricingConstraints sets the gas pricing constraints used by the multi-constraint pricing model
+func (con ArbOwner) SetGasPricingConstraints(c ctx, evm mech, constraints [][3]uint64) error {
+	err := c.State.L2PricingState().ClearConstraints()
+	if err != nil {
+		return fmt.Errorf("failed to clear existing constraints: %w", err)
+	}
+
+	for _, constraint := range constraints {
+		gasTargetPerSecond := constraint[0]
+		adjustmentWindowSeconds := constraint[1]
+		startingBacklogValue := constraint[2]
+
+		if gasTargetPerSecond == 0 || adjustmentWindowSeconds == 0 {
+			return fmt.Errorf("invalid constraint with target %d and adjustment window %d", gasTargetPerSecond, adjustmentWindowSeconds)
+		}
+
+		err := c.State.L2PricingState().AddConstraint(gasTargetPerSecond, adjustmentWindowSeconds, startingBacklogValue)
+		if err != nil {
+			return fmt.Errorf("failed to add constraint (target: %d, adjustment window: %d): %w", gasTargetPerSecond, adjustmentWindowSeconds, err)
+		}
+	}
+	return nil
 }

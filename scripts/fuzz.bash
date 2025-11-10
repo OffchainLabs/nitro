@@ -2,7 +2,7 @@
 
 set -e
 
-mydir=$(dirname "$0")
+mydir=$(cd "$(dirname "$0")" && pwd)
 cd "$mydir"
 
 function printusage {
@@ -19,7 +19,7 @@ function printusage {
 
 if [[ $# -eq 0 ]]; then
     printusage
-    exit
+    exit 1
 fi
 
 binpath=../target/bin/
@@ -28,6 +28,8 @@ nitropath=../
 run_build=false
 test_group=""
 duration=60
+exit_status=0
+
 while [[ $# -gt 0 ]]; do
     case $1 in
         --nitro-path)
@@ -50,7 +52,7 @@ while [[ $# -gt 0 ]]; do
             ;;
         --fuzzcache-path)
             fuzzcachepath="$2"
-            if [[ ! -d "$binpath" ]]; then
+            if [[ ! -d "$fuzzcachepath" ]]; then
                 echo must supply valid path for fuzzcache-path
                 exit 1
             fi
@@ -90,13 +92,14 @@ while [[ $# -gt 0 ]]; do
             ;;
         *)
             printusage
-            exit
+            exit 1
     esac
 done
 
 if [[ "$run_build" == "false" && -z "$test_group" ]]; then
     echo you must specify either --build flag or fuzzer-name
     printusage
+    exit 1
 fi
 
 if $run_build; then

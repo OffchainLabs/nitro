@@ -12,9 +12,9 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 
-	protocol "github.com/offchainlabs/bold/chain-abstraction"
-	"github.com/offchainlabs/bold/challenge-manager/challenge-tree/mock"
-	"github.com/offchainlabs/bold/containers/threadsafe"
+	"github.com/offchainlabs/nitro/bold/chain-abstraction"
+	"github.com/offchainlabs/nitro/bold/challenge-manager/challenge-tree/mock"
+	"github.com/offchainlabs/nitro/bold/containers/threadsafe"
 )
 
 func TestClosestEssentialAncestor(t *testing.T) {
@@ -216,6 +216,8 @@ func setupBlockChallengeTreeSnapshot(t *testing.T, tree *RoyalChallengeTree, cla
 	key = buildEdgeCreationTimeKey(protocol.OriginId{}, mutual)
 	tree.edgeCreationTimes.Put(key, threadsafe.NewMap[protocol.EdgeId, creationTime]())
 	mutuals = tree.edgeCreationTimes.Get(key)
+	a = aliceEdges["blk-4.a-6.a"]
+	b = bobEdges["blk-4.a-6.b"]
 	aCreation, err = a.CreatedAtBlock()
 	require.NoError(t, err)
 	bCreation, err = b.CreatedAtBlock()

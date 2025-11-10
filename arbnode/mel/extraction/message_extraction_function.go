@@ -51,7 +51,7 @@ func ExtractMessages(
 	ctx context.Context,
 	inputState *mel.State,
 	parentChainHeader *types.Header,
-	dataProviders []daprovider.Reader,
+	dataProviders *daprovider.ReaderRegistry,
 	delayedMsgDatabase DelayedMessageDatabase,
 	receiptFetcher ReceiptFetcher,
 	txsFetcher TransactionsFetcher,
@@ -81,7 +81,7 @@ func extractMessagesImpl(
 	ctx context.Context,
 	inputState *mel.State,
 	parentChainHeader *types.Header,
-	dataProviders []daprovider.Reader,
+	dataProviders *daprovider.ReaderRegistry,
 	delayedMsgDatabase DelayedMessageDatabase,
 	txsFetcher TransactionsFetcher,
 	receiptFetcher ReceiptFetcher,
@@ -100,7 +100,7 @@ func extractMessagesImpl(
 	if state.ParentChainBlockHash != parentChainHeader.ParentHash {
 		return nil, nil, nil, fmt.Errorf(
 			"parent chain block hash in MEL state does not match incoming block's parent hash: expected %s, got %s",
-			state.ParentChainPreviousBlockHash.Hex(),
+			state.ParentChainBlockHash.Hex(),
 			parentChainHeader.ParentHash.Hex(),
 		)
 	}
@@ -144,7 +144,7 @@ func extractMessagesImpl(
 		if err = state.AccumulateDelayedMessage(delayed); err != nil {
 			return nil, nil, nil, err
 		}
-		state.DelayedMessagedSeen += 1
+		state.DelayedMessagesSeen += 1
 	}
 
 	// Batch posting reports are included in the same transaction as a batch, so there should
@@ -187,11 +187,9 @@ func extractMessagesImpl(
 					batch.SequenceNumber,
 				)
 			}
-			gas := arbostypes.ComputeBatchGasCost(serialized)
-
-			// Fill in the batch gas cost into the batch posting report.
-			batchPostReport.Message.BatchGasCost = &gas
-		} else if !(inputState.DelayedMessagedSeen == 0 && i == 0 && delayedMessages[i] == batchPostReport) {
+			// Fill in the batch gas stats into the batch posting report.
+			batchPostReport.Message.BatchDataStats = arbostypes.GetDataStats(serialized)
+		} else if !(inputState.DelayedMessagesSeen == 0 && i == 0 && delayedMessages[i] == batchPostReport) {
 			return nil, nil, nil, errors.New("encountered initialize message that is not the first delayed message and the first batch ")
 		}
 

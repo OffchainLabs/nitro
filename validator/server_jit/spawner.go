@@ -6,7 +6,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	flag "github.com/spf13/pflag"
+	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
@@ -37,7 +37,7 @@ var DefaultJitSpawnerConfig = JitSpawnerConfig{
 	JitPath:              "", // Empty string means use default path resolution
 }
 
-func JitSpawnerConfigAddOptions(prefix string, f *flag.FlagSet) {
+func JitSpawnerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Int(prefix+".workers", DefaultJitSpawnerConfig.Workers, "number of concurrent validation threads")
 	f.Bool(prefix+".cranelift", DefaultJitSpawnerConfig.Cranelift, "use Cranelift instead of LLVM when validating blocks using the jit-accelerated block validator")
 	f.Int(prefix+".wasm-memory-usage-limit", DefaultJitSpawnerConfig.WasmMemoryUsageLimit, "if memory used by a jit wasm exceeds this limit, a warning is logged")

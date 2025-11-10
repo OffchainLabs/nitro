@@ -48,7 +48,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 
-	"github.com/offchainlabs/bold/math"
+	"github.com/offchainlabs/nitro/bold/math"
 )
 
 var (
@@ -318,8 +318,8 @@ func (h *historyCommitter) partialRoot(leaves []common.Hash, virtual, limit uint
 		return emptyHash, fmt.Errorf("insufficient fillers, want %d, got %d", minFillers, len(h.fillers))
 	}
 	if limit == 1 {
-		h.handle(leaves[0])
-		return leaves[0], nil
+		h.handle(leaves[0])   //nolint:gosec // limit == 1 ensures leaves[0] exists
+		return leaves[0], nil //nolint:gosec // limit == 1 ensures leaves[0] exists
 	}
 
 	h.cursor.layer--

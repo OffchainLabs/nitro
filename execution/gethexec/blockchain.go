@@ -3,24 +3,19 @@ package gethexec
 import (
 	"errors"
 	"fmt"
-	"os"
-	"strings"
 	"time"
 
-	flag "github.com/spf13/pflag"
+	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
-	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/vm"
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/eth/ethconfig"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/ethereum/go-ethereum/triedb"
 
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
@@ -52,7 +47,7 @@ type CachingConfig struct {
 	EnablePreimages                     bool          `koanf:"enable-preimages"`
 }
 
-func CachingConfigAddOptions(prefix string, f *flag.FlagSet) {
+func CachingConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".archive", DefaultCachingConfig.Archive, "retain past block state")
 	f.Uint64(prefix+".block-count", DefaultCachingConfig.BlockCount, "minimum number of recent blocks to keep in memory")
 	f.Duration(prefix+".block-age", DefaultCachingConfig.BlockAge, "minimum age of recent blocks to keep in memory")
@@ -101,17 +96,17 @@ var DefaultCachingConfig = CachingConfig{
 	StateHistory:                        getStateHistory(DefaultSequencerConfig.MaxBlockSpeed),
 }
 
-func DefaultCacheConfigFor(cachingConfig *CachingConfig) *core.CacheConfig {
+func DefaultCacheConfigFor(cachingConfig *CachingConfig) *core.BlockChainConfig {
 	baseConf := ethconfig.Defaults
 	if cachingConfig.Archive {
 		baseConf = ethconfig.ArchiveDefaults
 	}
 
-	return &core.CacheConfig{
+	return &core.BlockChainConfig{
 		TrieCleanLimit:                     cachingConfig.TrieCleanCache,
-		TrieCleanNoPrefetch:                baseConf.NoPrefetch,
+		NoPrefetch:                         baseConf.NoPrefetch,
 		TrieDirtyLimit:                     cachingConfig.TrieDirtyCache,
-		TrieDirtyDisabled:                  cachingConfig.Archive,
+		ArchiveMode:                        cachingConfig.Archive,
 		TrieTimeLimit:                      cachingConfig.TrieTimeLimit,
 		TrieTimeLimitRandomOffset:          cachingConfig.TrieTimeLimitRandomOffset,
 		TriesInMemory:                      cachingConfig.BlockCount,
@@ -144,7 +139,7 @@ func (c *CachingConfig) Validate() error {
 	return c.validateStateScheme()
 }
 
-func WriteOrTestGenblock(chainDb ethdb.Database, cacheConfig *core.CacheConfig, initData statetransfer.InitDataReader, chainConfig *params.ChainConfig, genesisArbOSInit *params.ArbOSInit, initMessage *arbostypes.ParsedInitMessage, accountsPerSync uint) error {
+func WriteOrTestGenblock(chainDb ethdb.Database, cacheConfig *core.BlockChainConfig, initData statetransfer.InitDataReader, chainConfig *params.ChainConfig, genesisArbOSInit *params.ArbOSInit, initMessage *arbostypes.ParsedInitMessage, accountsPerSync uint) error {
 	EmptyHash := common.Hash{}
 	prevHash := EmptyHash
 	blockNumber, err := initData.GetNextBlockNumber()
@@ -157,11 +152,11 @@ func WriteOrTestGenblock(chainDb ethdb.Database, cacheConfig *core.CacheConfig, 
 	if blockNumber > 0 {
 		prevHash = rawdb.ReadCanonicalHash(chainDb, blockNumber-1)
 		if prevHash == EmptyHash {
-			return fmt.Errorf("block number %d not found in database", chainDb)
+			return fmt.Errorf("block number %d not found in database", blockNumber-1)
 		}
 		prevHeader := rawdb.ReadHeader(chainDb, prevHash, blockNumber-1)
 		if prevHeader == nil {
-			return fmt.Errorf("block header for block %d not found in database", chainDb)
+			return fmt.Errorf("block header for block %d not found in database", blockNumber-1)
 		}
 		timestamp = prevHeader.Time
 	}
@@ -169,25 +164,6 @@ func WriteOrTestGenblock(chainDb ethdb.Database, cacheConfig *core.CacheConfig, 
 	if err != nil {
 		return err
 	}
-
-	arbosAccountAddress := common.HexToAddress("0xA4B05FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF")
-
-	log.Info("Address 0xA4B05FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF hash", crypto.Keccak256Hash(arbosAccountAddress.Bytes()).String())
-
-	log.Info("Precompiles hashes")
-	for addr := range arbosState.PrecompileMinArbOSVersions {
-		log.Info("Address 0xA4B05FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF hash", crypto.Keccak256Hash(addr.Bytes()).String())
-	}
-
-	triedbConfig := cacheConfig.TriedbConfig()
-	triedbConfig.Preimages = false
-	stateDatabase := state.NewDatabase(triedb.NewDatabase(chainDb, triedbConfig), nil)
-
-	statedb, _ := state.New(stateRoot, stateDatabase)
-	arbosAccountStorageRoot := statedb.GetStorageRoot(arbosAccountAddress)
-
-	log.Info("ArbOS account storage root from StateDB", "root", arbosAccountStorageRoot.String())
-	log.Info("Genesis block state root", stateRoot.String())
 
 	genBlock := arbosState.MakeGenesisBlock(prevHash, blockNumber, timestamp, stateRoot, chainConfig)
 	blockHash := genBlock.Hash()
@@ -205,11 +181,6 @@ func WriteOrTestGenblock(chainDb ethdb.Database, cacheConfig *core.CacheConfig, 
 		return fmt.Errorf("database contains data inconsistent with initialization: database has genesis hash %v but we built genesis hash %v", storedGenHash, blockHash)
 	} else {
 		log.Info("recreated existing genesis block", "number", blockNumber, "hash", blockHash)
-	}
-
-	exitAfterGenesis, exists := os.LookupEnv("PR_EXIT_AFTER_GENESIS")
-	if exists && strings.ToUpper(exitAfterGenesis) == "TRUE" {
-		panic("GENESIS BLOCK IS BUILT: " + blockHash.String())
 	}
 
 	return nil
@@ -237,11 +208,11 @@ func WriteOrTestChainConfig(chainDb ethdb.Database, config *params.ChainConfig) 
 		rawdb.WriteChainConfig(chainDb, block0Hash, config)
 		return nil
 	}
-	height := rawdb.ReadHeaderNumber(chainDb, rawdb.ReadHeadHeaderHash(chainDb))
-	if height == nil {
+	height, found := rawdb.ReadHeaderNumber(chainDb, rawdb.ReadHeadHeaderHash(chainDb))
+	if !found {
 		return errors.New("non empty chain config but empty chain")
 	}
-	err := storedConfig.CheckCompatible(config, *height, 0)
+	err := storedConfig.CheckCompatible(config, height, 0)
 	if err != nil {
 		return err
 	}
@@ -251,7 +222,7 @@ func WriteOrTestChainConfig(chainDb ethdb.Database, config *params.ChainConfig) 
 
 func GetBlockChain(
 	chainDb ethdb.Database,
-	cacheConfig *core.CacheConfig,
+	cacheConfig *core.BlockChainConfig,
 	chainConfig *params.ChainConfig,
 	tracer *tracing.Hooks,
 	txIndexerConfig *TxIndexerConfig,
@@ -264,6 +235,7 @@ func GetBlockChain(
 		EnablePreimageRecording: false,
 		Tracer:                  tracer,
 	}
+	cacheConfig.VmConfig = vmConfig
 
 	var coreTxIndexerConfig *core.TxIndexerConfig // nil if disabled
 	if txIndexerConfig.Enable {
@@ -273,12 +245,13 @@ func GetBlockChain(
 			MinBatchDelay: txIndexerConfig.MinBatchDelay,
 		}
 	}
-	return core.NewBlockChainExtended(chainDb, cacheConfig, chainConfig, nil, nil, engine, vmConfig, coreTxIndexerConfig)
+	cacheConfig.TxIndexer = coreTxIndexerConfig
+	return core.NewBlockChain(chainDb, chainConfig, nil, engine, cacheConfig)
 }
 
 func WriteOrTestBlockChain(
 	chainDb ethdb.Database,
-	cacheConfig *core.CacheConfig,
+	cacheConfig *core.BlockChainConfig,
 	initData statetransfer.InitDataReader,
 	chainConfig *params.ChainConfig,
 	genesisArbOSInit *params.ArbOSInit,

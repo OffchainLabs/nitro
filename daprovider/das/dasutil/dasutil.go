@@ -20,11 +20,13 @@ import (
 	"github.com/offchainlabs/nitro/blsSignatures"
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/daprovider/das/dastree"
+	"github.com/offchainlabs/nitro/util/containers"
 )
 
 type DASReader interface {
 	GetByHash(ctx context.Context, hash common.Hash) ([]byte, error)
 	ExpirationPolicy(ctx context.Context) (ExpirationPolicy, error)
+	fmt.Stringer
 }
 
 type DASWriter interface {
@@ -39,31 +41,67 @@ type DASKeysetFetcher interface {
 
 // NewReaderForDAS is generally meant to be only used by nitro.
 // DA Providers should implement methods in the Reader interface independently
-func NewReaderForDAS(dasReader DASReader, keysetFetcher DASKeysetFetcher) *readerForDAS {
+func NewReaderForDAS(dasReader DASReader, keysetFetcher DASKeysetFetcher, validationMode daprovider.KeysetValidationMode) *readerForDAS {
 	return &readerForDAS{
-		dasReader:     dasReader,
-		keysetFetcher: keysetFetcher,
+		dasReader:      dasReader,
+		keysetFetcher:  keysetFetcher,
+		validationMode: validationMode,
 	}
 }
 
 type readerForDAS struct {
-	dasReader     DASReader
-	keysetFetcher DASKeysetFetcher
+	dasReader      DASReader
+	keysetFetcher  DASKeysetFetcher
+	validationMode daprovider.KeysetValidationMode
 }
 
-func (d *readerForDAS) IsValidHeaderByte(ctx context.Context, headerByte byte) bool {
-	return daprovider.IsDASMessageHeaderByte(headerByte)
-}
-
-func (d *readerForDAS) RecoverPayloadFromBatch(
+// recoverInternal is the shared implementation for both RecoverPayload and CollectPreimages
+func (d *readerForDAS) recoverInternal(
 	ctx context.Context,
+	batchNum uint64,
+	sequencerMsg []byte,
+	needPayload bool,
+	needPreimages bool,
+) ([]byte, daprovider.PreimagesMap, error) {
+	// Convert validation mode to boolean for the internal function
+	validateSeqMsg := d.validationMode != daprovider.KeysetDontValidate
+	return recoverPayloadFromDasBatchInternal(ctx, batchNum, sequencerMsg, d.dasReader, d.keysetFetcher, validateSeqMsg, needPayload, needPreimages)
+}
+
+// RecoverPayload fetches the underlying payload from the DA provider
+func (d *readerForDAS) RecoverPayload(
 	batchNum uint64,
 	batchBlockHash common.Hash,
 	sequencerMsg []byte,
-	preimages daprovider.PreimagesMap,
-	validateSeqMsg bool,
-) ([]byte, daprovider.PreimagesMap, error) {
-	return RecoverPayloadFromDasBatch(ctx, batchNum, sequencerMsg, d.dasReader, d.keysetFetcher, preimages, validateSeqMsg)
+) containers.PromiseInterface[daprovider.PayloadResult] {
+	promise, ctx := containers.NewPromiseWithContext[daprovider.PayloadResult](context.Background())
+	go func() {
+		payload, _, err := d.recoverInternal(ctx, batchNum, sequencerMsg, true, false)
+		if err != nil {
+			promise.ProduceError(err)
+		} else {
+			promise.Produce(daprovider.PayloadResult{Payload: payload})
+		}
+	}()
+	return promise
+}
+
+// CollectPreimages collects preimages from the DA provider
+func (d *readerForDAS) CollectPreimages(
+	batchNum uint64,
+	batchBlockHash common.Hash,
+	sequencerMsg []byte,
+) containers.PromiseInterface[daprovider.PreimagesResult] {
+	promise, ctx := containers.NewPromiseWithContext[daprovider.PreimagesResult](context.Background())
+	go func() {
+		_, preimages, err := d.recoverInternal(ctx, batchNum, sequencerMsg, false, true)
+		if err != nil {
+			promise.ProduceError(err)
+		} else {
+			promise.Produce(daprovider.PreimagesResult{Preimages: preimages})
+		}
+	}()
+	return promise
 }
 
 // NewWriterForDAS is generally meant to be only used by nitro.
@@ -76,19 +114,17 @@ type writerForDAS struct {
 	dasWriter DASWriter
 }
 
-func (d *writerForDAS) Store(ctx context.Context, message []byte, timeout uint64, disableFallbackStoreDataOnChain bool) ([]byte, error) {
-	cert, err := d.dasWriter.Store(ctx, message, timeout)
-	if errors.Is(err, ErrBatchToDasFailed) {
-		if disableFallbackStoreDataOnChain {
-			return nil, errors.New("unable to batch to DAS and fallback storing data on chain is disabled")
+func (d *writerForDAS) Store(message []byte, timeout uint64) containers.PromiseInterface[[]byte] {
+	promise, ctx := containers.NewPromiseWithContext[[]byte](context.Background())
+	go func() {
+		cert, err := d.dasWriter.Store(ctx, message, timeout)
+		if err != nil {
+			promise.ProduceError(err)
+		} else {
+			promise.Produce(Serialize(cert))
 		}
-		log.Warn("Falling back to storing data on chain", "err", err)
-		return message, nil
-	} else if err != nil {
-		return nil, err
-	} else {
-		return Serialize(cert), nil
-	}
+	}()
+	return promise
 }
 
 var (
@@ -98,6 +134,7 @@ var (
 
 const MinLifetimeSecondsForDataAvailabilityCert = 7 * 24 * 60 * 60 // one week
 
+// RecoverPayloadFromDasBatch is deprecated, use recoverPayloadFromDasBatchInternal
 func RecoverPayloadFromDasBatch(
 	ctx context.Context,
 	batchNum uint64,
@@ -107,8 +144,41 @@ func RecoverPayloadFromDasBatch(
 	preimages daprovider.PreimagesMap,
 	validateSeqMsg bool,
 ) ([]byte, daprovider.PreimagesMap, error) {
+	needPreimages := preimages != nil
+	payload, recoveredPreimages, err := recoverPayloadFromDasBatchInternal(ctx, batchNum, sequencerMsg, dasReader, keysetFetcher, validateSeqMsg, true, needPreimages)
+	if err != nil {
+		return nil, nil, err
+	}
+	// If preimages were passed in, copy recovered preimages into the provided map
+	if preimages != nil && recoveredPreimages != nil {
+		for piType, piMap := range recoveredPreimages {
+			if preimages[piType] == nil {
+				preimages[piType] = make(map[common.Hash][]byte)
+			}
+			for hash, preimage := range piMap {
+				preimages[piType][hash] = preimage
+			}
+		}
+		return payload, preimages, nil
+	}
+	return payload, recoveredPreimages, nil
+}
+
+// recoverPayloadFromDasBatchInternal is the shared implementation
+func recoverPayloadFromDasBatchInternal(
+	ctx context.Context,
+	batchNum uint64,
+	sequencerMsg []byte,
+	dasReader DASReader,
+	keysetFetcher DASKeysetFetcher,
+	validateSeqMsg bool,
+	needPayload bool,
+	needPreimages bool,
+) ([]byte, daprovider.PreimagesMap, error) {
+	var preimages daprovider.PreimagesMap
 	var preimageRecorder daprovider.PreimageRecorder
-	if preimages != nil {
+	if needPreimages {
+		preimages = make(daprovider.PreimagesMap)
 		preimageRecorder = daprovider.RecordPreimagesTo(preimages)
 	}
 	cert, err := DeserializeDASCertFrom(bytes.NewReader(sequencerMsg[40:]))
@@ -177,13 +247,17 @@ func RecoverPayloadFromDasBatch(
 	}
 
 	dataHash := cert.DataHash
-	payload, err := getByHash(ctx, dataHash)
-	if err != nil {
-		log.Error("Couldn't fetch DAS batch contents", "err", err)
-		return nil, nil, err
+	var payload []byte
+	// We need to fetch the payload if either we need to return it or need to record preimages
+	if needPayload || needPreimages {
+		payload, err = getByHash(ctx, dataHash)
+		if err != nil {
+			log.Error("Couldn't fetch DAS batch contents", "err", err)
+			return nil, nil, err
+		}
 	}
 
-	if preimageRecorder != nil {
+	if preimageRecorder != nil && payload != nil {
 		if version == 0 {
 			treeLeaf := dastree.FlatHashToTreeLeaf(dataHash)
 			preimageRecorder(dataHash, payload, arbutil.Keccak256PreimageType)

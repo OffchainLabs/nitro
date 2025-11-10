@@ -9,7 +9,7 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 node_version_needed="v24"
-rust_version_needed="1.83.0"
+rust_version_needed="1.88.0"
 golangci_lint_version_needed="2.3.0"
 
 if [[ -f go.mod ]]; then
@@ -45,14 +45,20 @@ else
 fi
 
 # Check if Docker service is running
-if [[ "$OS" == "Linux" ]] && ! pidof dockerd >/dev/null; then
-    echo -e "${YELLOW}Docker service is not running on Linux. Start it with: sudo service docker start${NC}"
-    EXIT_CODE=1
-elif [[ "$OS" == "Darwin" ]] && ! docker info >/dev/null 2>&1; then
-    echo -e "${YELLOW}Docker service is not running on macOS. Ensure Docker Desktop is started.${NC}"
-   EXIT_CODE=1
-else
-    echo -e "${GREEN}Docker service is running.${NC}"
+if [[ "$OS" == "Linux" ]]; then
+    if ! pidof dockerd >/dev/null; then
+        echo -e "${YELLOW}Docker service is not running on Linux. Start it with: sudo service docker start${NC}"
+        EXIT_CODE=1
+    else
+        echo -e "${GREEN}Docker service is running.${NC}"
+    fi
+elif [[ "$OS" == "Darwin" ]]; then
+    if ! docker info >/dev/null 2>&1; then
+        echo -e "${YELLOW}Docker service is not running on macOS. Ensure Docker Desktop is started.${NC}"
+        EXIT_CODE=1
+    else
+        echo -e "${GREEN}Docker service is running.${NC}"
+    fi
 fi
 
 # Check the version tag
@@ -80,63 +86,67 @@ fi
 
 # Check prerequisites for building binaries
 prerequisites=(git go curl clang make cmake npm wasm2wat wasm-ld yarn gotestsum python3)
-if [[ "$OS" == "Linux" ]]; then
-    prerequisites+=()
-else
-    prerequisites+=()
-fi
 
 for pkg in "${prerequisites[@]}"; do
+    display_name="$pkg"
+    [[ "$pkg" == "make" ]] && display_name="build-essential"
+    [[ "$pkg" == "wasm2wat" ]] && display_name="wabt"
+    [[ "$pkg" == "clang" ]] && display_name="llvm"
+    [[ "$pkg" == "wasm-ld" ]] && display_name="lld"
+    
     if command_exists "$pkg"; then
         exists=true
     else
         exists=false
     fi
-    [[ "$pkg" == "make" ]] && pkg="build-essential"
-    [[ "$pkg" == "wasm2wat" ]] && pkg="wabt"
-    [[ "$pkg" == "clang" ]] && pkg="llvm"
-    [[ "$pkg" == "wasm-ld" ]] && pkg="lld"
-    if $exists; then
-        # There is no way to check for wabt / llvm directly, since they install multiple tools
-        # So instead, we check for wasm2wat and clang, which are part of wabt and llvm respectively
-        # and if they are installed, we assume wabt / llvm is installed else we ask the user to install wabt / llvm
 
-        echo -e "${GREEN}$pkg is installed.${NC}"
+    if $exists; then
+        echo -e "${GREEN}$display_name is installed.${NC}"
     else
-        echo -e "${RED}$pkg is not installed. Please install $pkg.${NC}"
+        echo -e "${RED}$display_name is not installed. Please install $display_name.${NC}"
         EXIT_CODE=1
     fi
 done
 
 # Check Node.js version
-if command_exists node && node -v | grep -q "$node_version_needed"; then
-    echo -e "${GREEN}Node.js version $node_version_needed is installed.${NC}"
+if command_exists node; then
+    NODE_INSTALLED_VERSION=$(node -v | cut -d. -f1)
+    if [[ "$NODE_INSTALLED_VERSION" == "$node_version_needed" ]]; then
+        echo -e "${GREEN}Node.js version $node_version_needed is installed.${NC}"
+    else
+        echo -e "${RED}Node.js version $node_version_needed not installed.${NC}"
+        EXIT_CODE=1
+    fi
 else
-    echo -e "${RED}Node.js version $node_version_needed not installed.${NC}"
+    echo -e "${RED}Node.js not installed.${NC}"
     EXIT_CODE=1
 fi
 
 # Check Rust version
-if command_exists rustc && rustc --version | grep -q "$rust_version_needed"; then
-    echo -e "${GREEN}Rust version $rust_version_needed is installed.${NC}"
+if command_exists rustc; then
+    RUST_INSTALLED_VERSION=$(rustc --version | awk '{print $2}')
+    if [[ "$RUST_INSTALLED_VERSION" == "$rust_version_needed" ]]; then
+        echo -e "${GREEN}Rust version $rust_version_needed is installed.${NC}"
+    else
+        echo -e "${RED}Rust version $rust_version_needed is not installed.${NC}"
+        EXIT_CODE=1
+    fi
 else
-    echo -e "${RED}Rust version $rust_version_needed is not installed.${NC}"
-    EXIT_CODE=1
-fi
-
-# Check Rust nightly toolchain
-if rustup toolchain list | grep -q "nightly"; then
-    echo -e "${GREEN}Rust nightly toolchain is installed.${NC}"
-else
-    echo -e "${RED}Rust nightly toolchain is not installed. Install it using: rustup toolchain install nightly${NC}"
+    echo -e "${RED}Rust not installed.${NC}"
     EXIT_CODE=1
 fi
 
 # Check Go version
-if command_exists go && go version | grep -q "$go_version_needed"; then
-    echo -e "${GREEN}Go version $go_version_needed is installed.${NC}"
+if command_exists go; then
+    GO_INSTALLED_VERSION=$(go version | awk '{print $3}' | sed 's/go//')
+    if [[ "$GO_INSTALLED_VERSION" == "$go_version_needed" ]]; then
+        echo -e "${GREEN}Go version $go_version_needed is installed.${NC}"
+    else
+        echo -e "${RED}Go version $go_version_needed not installed.${NC}"
+        EXIT_CODE=1
+    fi
 else
-    echo -e "${RED}Go version $go_version_needed not installed.${NC}"
+    echo -e "${RED}Go not installed.${NC}"
     EXIT_CODE=1
 fi
 
@@ -155,7 +165,6 @@ else
     echo -e "${RED}Foundry is not installed.${NC}"
     EXIT_CODE=1
 fi
-
 
 if [ $EXIT_CODE != 0 ]; then
     echo -e "${RED}One or more dependencies missing. $INSTALLATION_DOCS_URL${NC}"

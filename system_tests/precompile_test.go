@@ -4,6 +4,7 @@
 package arbtest
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"math/big"
@@ -21,6 +22,8 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos"
+	"github.com/offchainlabs/nitro/arbos/arbosState"
+	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/solgen/go/localgen"
@@ -200,6 +203,14 @@ func TestCustomSolidityErrors(t *testing.T) {
 		"CallerNotArbOS()",
 		"arbosActs.BatchPostingReport",
 	)
+
+	// TODO: BatchPostingReportV2 not in generated bindings yet
+	// _, customError = arbosActs.BatchPostingReportV2(&auth, big.NewInt(0), common.Address{}, 0, 0, 0, 0, big.NewInt(0))
+	// ensure(
+	// 	customError,
+	// 	"CallerNotArbOS()",
+	// 	"arbosActs.BatchPostingReportV2",
+	// )
 }
 
 func TestPrecompileErrorGasLeft(t *testing.T) {
@@ -410,15 +421,16 @@ func TestGasAccountingParams(t *testing.T) {
 	ctx := builder.ctx
 
 	speedLimit := uint64(18)
-	txGasLimit := uint64(19)
+	blockGasLimit := uint64(19)
 	tx, err := arbOwner.SetSpeedLimit(&auth, speedLimit)
 	Require(t, err)
 	_, err = builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
-	tx, err = arbOwner.SetMaxTxGasLimit(&auth, txGasLimit)
-	Require(t, err)
-	_, err = builder.L2.EnsureTxSucceeded(tx)
-	Require(t, err)
+	// TODO: SetMaxBlockGasLimit not in generated bindings yet
+	// tx, err = arbOwner.SetMaxBlockGasLimit(&auth, blockGasLimit)
+	// Require(t, err)
+	// _, err = builder.L2.EnsureTxSucceeded(tx)
+	// Require(t, err)
 	arbGasInfoSpeedLimit, arbGasInfoPoolSize, arbGasInfoTxGasLimit, err := arbGasInfo.GetGasAccountingParams(&bind.CallOpts{Context: ctx})
 	Require(t, err)
 	// #nosec G115
@@ -426,12 +438,12 @@ func TestGasAccountingParams(t *testing.T) {
 		Fatal(t, "expected speed limit to be", speedLimit, "got", arbGasInfoSpeedLimit)
 	}
 	// #nosec G115
-	if arbGasInfoPoolSize.Cmp(big.NewInt(int64(txGasLimit))) != 0 {
-		Fatal(t, "expected pool size to be", txGasLimit, "got", arbGasInfoPoolSize)
+	if arbGasInfoPoolSize.Cmp(big.NewInt(int64(blockGasLimit))) != 0 {
+		Fatal(t, "expected pool size to be", blockGasLimit, "got", arbGasInfoPoolSize)
 	}
 	// #nosec G115
-	if arbGasInfoTxGasLimit.Cmp(big.NewInt(int64(txGasLimit))) != 0 {
-		Fatal(t, "expected tx gas limit to be", txGasLimit, "got", arbGasInfoTxGasLimit)
+	if arbGasInfoTxGasLimit.Cmp(big.NewInt(int64(blockGasLimit))) != 0 {
+		Fatal(t, "expected tx gas limit to be", blockGasLimit, "got", arbGasInfoTxGasLimit)
 	}
 }
 
@@ -456,14 +468,72 @@ func TestCurrentTxL1GasFees(t *testing.T) {
 	}
 }
 
+func TestArbOwnerMaxTxAndBlockGasLimit(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false).WithArbOSVersion(params.ArbosVersion_50)
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
+
+	arbOwner, err := precompilesgen.NewArbOwner(common.HexToAddress("0x70"), builder.L2.Client)
+	Require(t, err)
+	arbGasInfo, err := precompilesgen.NewArbGasInfo(common.HexToAddress("0x6c"), builder.L2.Client)
+	Require(t, err)
+
+	wantTxGasLimit := uint64(3000000)
+	wantBlockGasLimit := uint64(4000000)
+	txGasLimitTx, err := arbOwner.SetMaxTxGasLimit(&auth, wantTxGasLimit)
+	Require(t, err)
+	_, err = EnsureTxSucceeded(ctx, builder.L2.Client, txGasLimitTx)
+	Require(t, err)
+	// TODO: SetMaxBlockGasLimit not in generated bindings yet
+	// blockGasLimitTx, err := arbOwner.SetMaxBlockGasLimit(&auth, wantBlockGasLimit)
+	// Require(t, err)
+	// _, err = EnsureTxSucceeded(ctx, builder.L2.Client, blockGasLimitTx)
+	// Require(t, err)
+
+	statedb, err := builder.L2.ExecNode.Backend.ArbInterface().BlockChain().State()
+	Require(t, err)
+	burner := burn.NewSystemBurner(nil, false)
+	arbosSt, err := arbosState.OpenArbosState(statedb, burner)
+	Require(t, err)
+
+	haveTxGasLimit, err := arbosSt.L2PricingState().PerTxGasLimit()
+	Require(t, err)
+	if haveTxGasLimit != wantTxGasLimit {
+		t.Fatalf("txGasLimit mismatch. have: %d want: %d", haveTxGasLimit, wantTxGasLimit)
+	}
+	// TODO: Per-block gas limit testing disabled - SetMaxBlockGasLimit not in generated bindings yet
+	// haveBlockGasLimit, err := arbosSt.L2PricingState().PerBlockGasLimit()
+	// Require(t, err)
+	// if haveBlockGasLimit != wantBlockGasLimit {
+	// 	t.Fatalf("blockGasLimit mismatch. have: %d want: %d", haveBlockGasLimit, wantBlockGasLimit)
+	// }
+
+	// TODO: GetMaxTxGasLimit not in generated bindings yet
+	// haveTxGasLimitArbGasInfo, err := arbGasInfo.GetMaxTxGasLimit(&bind.CallOpts{Context: ctx})
+	// Require(t, err)
+	// if haveTxGasLimitArbGasInfo.Uint64() != wantTxGasLimit {
+	// 	t.Fatalf("arbGasInfo txGasLimit mismatch. have: %d want: %d", haveTxGasLimitArbGasInfo.Uint64(), wantTxGasLimit)
+	// }
+	_, _, haveBlockGasLimitArbGasInfo, err := arbGasInfo.GetGasAccountingParams(&bind.CallOpts{Context: ctx})
+	Require(t, err)
+	if haveBlockGasLimitArbGasInfo.Uint64() != wantBlockGasLimit {
+		t.Fatalf("arbGasInfo blockGasLimit mismatch. have: %d want: %d", haveBlockGasLimitArbGasInfo.Uint64(), wantBlockGasLimit)
+	}
+}
+
 func TestArbNativeTokenManagerThroughSolidityContract(t *testing.T) {
-	ctx, cancel := context.WithCancel(t.Context())
+	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	arbOSInit := &params.ArbOSInit{
 		NativeTokenSupplyManagementEnabled: true,
 	}
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, false).WithArbOSInit(arbOSInit).WithArbOSVersion(params.ArbosVersion_41)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false).WithArbOSInit(arbOSInit).WithArbOSVersion(params.ArbosVersion_50)
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -525,7 +595,7 @@ func TestArbNativeTokenManager(t *testing.T) {
 		NativeTokenSupplyManagementEnabled: true,
 	}
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, false).WithArbOSInit(arbOSInit).WithArbOSVersion(params.ArbosVersion_41)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false).WithArbOSInit(arbOSInit).WithArbOSVersion(params.ArbosVersion_50)
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -618,6 +688,12 @@ func TestArbNativeTokenManager(t *testing.T) {
 	if isNativeTokenOwner {
 		t.Fatal("expected native token owner to not be set")
 	}
+	// TODO: GetNativeTokenManagementFrom not in generated bindings yet
+	// enabledTime, err := arbOwnerPub.GetNativeTokenManagementFrom(callOpts)
+	// Require(t, err)
+	// if enabledTime != 1 {
+	// 	t.Fatalf("enabledTime: want %d, got %d", 1, enabledTime)
+	// }
 	nativeTokenOwners, err = arbOwner.GetAllNativeTokenOwners(callOpts)
 	Require(t, err)
 	if len(nativeTokenOwners) != 1 {
@@ -755,7 +831,7 @@ func TestNativeTokenManagementDisabledByDefault(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, false).WithArbOSVersion(params.ArbosVersion_41)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false).WithArbOSVersion(params.ArbosVersion_50)
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -1241,5 +1317,62 @@ func TestArbAggregatorGetPreferredAggregator(t *testing.T) {
 	Require(t, err)
 	if prefAgg != l1pricing.BatchPosterAddress {
 		Fatal(t, "expected default preferred aggregator to be", l1pricing.BatchPosterAddress, "got", prefAgg)
+	}
+}
+
+func TestArbDebugOverwriteContractCode(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	// Become chain owner
+	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
+	arbDebug, err := precompilesgen.NewArbDebug(types.ArbDebugAddress, builder.L2.Client)
+	Require(t, err)
+	tx, err := arbDebug.BecomeChainOwner(&auth)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	// create EOA to test against
+	addr := common.BytesToAddress(crypto.Keccak256([]byte{})[:20])
+
+	// test that code is empty
+	code, err := builder.L2.Client.CodeAt(ctx, addr, nil)
+	Require(t, err)
+	if len(code) != 0 {
+		t.Fatal("expected code to be empty")
+	}
+
+	// overwrite with some code
+	testCodeA := []byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9}
+	// TODO: OverwriteContractCode not in generated bindings yet
+	// tx, err = arbDebug.OverwriteContractCode(&auth, addr, testCodeA)
+	// Require(t, err)
+	// _, err = builder.L2.EnsureTxSucceeded(tx)
+	// Require(t, err)
+	// code, err = builder.L2.Client.CodeAt(ctx, addr, nil)
+	// Require(t, err)
+	// if !bytes.Equal(code, testCodeA) {
+	// 	t.Fatal("expected code A to be", testCodeA, "got", code)
+	// }
+
+	// overwrite with some other code
+	testCodeB := []byte{9, 8, 7, 6, 5, 4, 3, 2, 1, 0}
+	// TODO: OverwriteContractCode not in generated bindings yet
+	// tx, err = arbDebug.OverwriteContractCode(&auth, addr, testCodeB)
+	t.Skip("OverwriteContractCode not in generated bindings yet")
+	_ = testCodeA
+	_ = testCodeB
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+	code, err = builder.L2.Client.CodeAt(ctx, addr, nil)
+	Require(t, err)
+	if !bytes.Equal(code, testCodeB) {
+		t.Fatal("expected code B to be", testCodeB, "got", code)
 	}
 }

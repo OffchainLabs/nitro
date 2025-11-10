@@ -13,7 +13,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcastclient"
-	m "github.com/offchainlabs/nitro/broadcaster/message"
+	"github.com/offchainlabs/nitro/broadcaster/message"
 	"github.com/offchainlabs/nitro/util/contracts"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
@@ -26,14 +26,14 @@ const PRIMARY_FEED_UPTIME = time.Minute * 10
 
 type Router struct {
 	stopwaiter.StopWaiter
-	messageChan                 chan m.BroadcastFeedMessage
+	messageChan                 chan message.BroadcastFeedMessage
 	confirmedSequenceNumberChan chan arbutil.MessageIndex
 
 	forwardTxStreamer       broadcastclient.TransactionStreamerInterface
 	forwardConfirmationChan chan arbutil.MessageIndex
 }
 
-func (r *Router) AddBroadcastMessages(feedMessages []*m.BroadcastFeedMessage) error {
+func (r *Router) AddBroadcastMessages(feedMessages []*message.BroadcastFeedMessage) error {
 	for _, feedMessage := range feedMessages {
 		r.messageChan <- *feedMessage
 	}
@@ -69,7 +69,7 @@ func NewBroadcastClients(
 	}
 	newStandardRouter := func() *Router {
 		return &Router{
-			messageChan:                 make(chan m.BroadcastFeedMessage, ROUTER_QUEUE_SIZE),
+			messageChan:                 make(chan message.BroadcastFeedMessage, ROUTER_QUEUE_SIZE),
 			confirmedSequenceNumberChan: make(chan arbutil.MessageIndex, ROUTER_QUEUE_SIZE),
 			forwardTxStreamer:           txStreamer,
 			forwardConfirmationChan:     confirmedSequenceNumberListener,
@@ -108,7 +108,7 @@ func NewBroadcastClients(
 		clients.primaryClients = append(clients.primaryClients, client)
 	}
 	if len(clients.primaryClients) == 0 {
-		log.Error("no connected feed on startup, last error: %w", lastClientErr)
+		log.Error("no connected feed on startup", "err", lastClientErr)
 		return nil, nil
 	}
 
@@ -155,7 +155,7 @@ func (bcs *BroadcastClients) Start(ctx context.Context) {
 		defer stopSecondaryFeedTimer.Stop()
 		defer primaryFeedIsDownTimer.Stop()
 
-		msgHandler := func(msg m.BroadcastFeedMessage, router *Router) error {
+		msgHandler := func(msg message.BroadcastFeedMessage, router *Router) error {
 			if _, ok := recentFeedItemsNew[msg.SequenceNumber]; ok {
 				return nil
 			}
@@ -174,7 +174,7 @@ func (bcs *BroadcastClients) Start(ctx context.Context) {
 				currentLatest = bcs.latestSequenceNum.Load()
 			}
 
-			if err := router.forwardTxStreamer.AddBroadcastMessages([]*m.BroadcastFeedMessage{&msg}); err != nil {
+			if err := router.forwardTxStreamer.AddBroadcastMessages([]*message.BroadcastFeedMessage{&msg}); err != nil {
 				return err
 			}
 			return nil

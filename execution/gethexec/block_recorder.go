@@ -3,14 +3,16 @@ package gethexec
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sync"
 	"testing"
 
-	flag "github.com/spf13/pflag"
+	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
@@ -57,7 +59,7 @@ var DefaultBlockRecorderConfig = BlockRecorderConfig{
 	MaxPrepared:    1000,
 }
 
-func BlockRecorderConfigAddOptions(prefix string, f *flag.FlagSet) {
+func BlockRecorderConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Int(prefix+".trie-dirty-cache", DefaultBlockRecorderConfig.TrieDirtyCache, "like trie-dirty-cache for the separate, recording database (used for validation)")
 	f.Int(prefix+".trie-clean-cache", DefaultBlockRecorderConfig.TrieCleanCache, "like trie-clean-cache for the separate, recording database (used for validation)")
 	f.Int(prefix+".max-prepared", DefaultBlockRecorderConfig.MaxPrepared, "max references to store in the recording database")
@@ -99,17 +101,17 @@ func stateLogFunc(targetHeader *types.Header) arbitrum.StateBuildingLogFunction 
 // If keepreference == true, reference to state of prevHeader is added (no reference added if an error is returned)
 func (r *BlockRecorder) RecordBlockCreation(
 	ctx context.Context,
-	index arbutil.MessageIndex,
+	pos arbutil.MessageIndex,
 	msg *arbostypes.MessageWithMetadata,
+	wasmTargets []rawdb.WasmTarget,
 ) (*execution.RecordResult, error) {
-
-	blockNum := r.execEngine.MessageIndexToBlockNumber(index)
+	blockNum := r.execEngine.MessageIndexToBlockNumber(pos)
 
 	var prevHeader *types.Header
-	if index != 0 {
+	if pos != 0 {
 		prevHeader = r.execEngine.bc.GetHeaderByNumber(uint64(blockNum - 1))
 		if prevHeader == nil {
-			return nil, fmt.Errorf("index %d prevHeader not found", index)
+			return nil, fmt.Errorf("pos %d prevHeader not found", pos)
 		}
 	}
 
@@ -151,6 +153,9 @@ func (r *BlockRecorder) RecordBlockCreation(
 
 	var blockHash common.Hash
 	if msg != nil {
+		if !slices.Contains(wasmTargets, rawdb.LocalTarget()) {
+			wasmTargets = append(wasmTargets, rawdb.LocalTarget())
+		}
 		block, _, err := arbos.ProduceBlock(
 			msg.Message,
 			msg.DelayedMessagesRead,
@@ -158,7 +163,8 @@ func (r *BlockRecorder) RecordBlockCreation(
 			recordingdb,
 			chaincontext,
 			false,
-			core.NewMessageRecordingContext(r.execEngine.wasmTargets),
+			core.NewMessageRecordingContext(wasmTargets),
+			false,
 		)
 		if err != nil {
 			return nil, err
@@ -182,7 +188,7 @@ func (r *BlockRecorder) RecordBlockCreation(
 	r.updateValidCandidateHdr(prevHeader)
 
 	return &execution.RecordResult{
-		Index:     index,
+		Index:     pos,
 		BlockHash: blockHash,
 		Preimages: preimages,
 		UserWasms: recordingdb.UserWasms(),
@@ -234,20 +240,20 @@ func (r *BlockRecorder) updateValidCandidateHdr(hdr *types.Header) {
 	r.validHdrCandidate = hdr
 }
 
-func (r *BlockRecorder) MarkValid(index arbutil.MessageIndex, resultHash common.Hash) {
+func (r *BlockRecorder) MarkValid(pos arbutil.MessageIndex, resultHash common.Hash) {
 	r.validHdrLock.Lock()
 	defer r.validHdrLock.Unlock()
 	if r.validHdrCandidate == nil {
 		return
 	}
-	validNum := r.execEngine.MessageIndexToBlockNumber(index)
+	validNum := r.execEngine.MessageIndexToBlockNumber(pos)
 	if r.validHdrCandidate.Number.Uint64() > validNum {
 		return
 	}
 	// make sure the valid is canonical
 	canonicalResultHash := r.execEngine.bc.GetCanonicalHash(uint64(validNum))
 	if canonicalResultHash != resultHash {
-		log.Warn("markvalid hash not canonical", "index", index, "result", resultHash, "canonical", canonicalResultHash)
+		log.Warn("markvalid hash not canonical", "pos", pos, "result", resultHash, "canonical", canonicalResultHash)
 		return
 	}
 	// make sure the candidate is still canonical

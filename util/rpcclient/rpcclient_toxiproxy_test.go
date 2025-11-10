@@ -1,5 +1,4 @@
 //go:build toxiproxy
-// +build toxiproxy
 
 package rpcclient
 

@@ -38,3 +38,7 @@ arbos/testdata/*
 #other temporaries
 tmp/*
 .env
+go.work
+go.work.sum
+CLAUDE.md
+.claude*

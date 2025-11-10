@@ -6,49 +6,21 @@ import (
 	"fmt"
 	"io"
 	"math/big"
-	"strconv"
-	"sync/atomic"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/params"
+
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/util"
-	"github.com/offchainlabs/nitro/callstack"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
-var msgCounter uint64
-
-func ParseL2Transactions(msg *arbostypes.L1IncomingMessage, chainId *big.Int) (types.Transactions, error) {
-	txs, err := parseL2Transactions(msg, chainId)
-	if err != nil {
-		log.Error("Failed to parse L2 transactions", "error", err)
-		return nil, err
-	}
-
-	atomic.AddUint64(&msgCounter, 1)
-	dump := make(map[string]string)
-	dump["$index"] = strconv.FormatUint(atomic.LoadUint64(&msgCounter), 10)
-	ignoredFields := []string{"L2msg", "signer"}
-	whitelistedMethods := []string{"Type", "Time", "Hash", "Size", "GetInner"}
-	callstack.FillMapWithStructFields(dump, msg, "msg", ignoredFields, whitelistedMethods)
-
-	// Log each transaction
-	for i, tx := range txs {
-		callstack.FillMapWithStructFields(dump, tx, fmt.Sprintf("tx[%d]", i), ignoredFields, whitelistedMethods)
-	}
-
-	// callstack.PrintPrettyJson(dump)
-
-	return txs, err
-}
-
-func parseL2Transactions(msg *arbostypes.L1IncomingMessage, chainId *big.Int) (types.Transactions, error) {
-	callstack.LogCallStack("")
-
+// note: lastArbosVersion is arbos version in previous block, not current!
+func ParseL2Transactions(msg *arbostypes.L1IncomingMessage, chainId *big.Int, lastArbosVersion uint64) (types.Transactions, error) {
 	if len(msg.L2msg) > arbostypes.MaxL2MessageSize {
 		// ignore the message if l2msg is too large
 		return nil, errors.New("message too large")
@@ -100,7 +72,7 @@ func parseL2Transactions(msg *arbostypes.L1IncomingMessage, chainId *big.Int) (t
 		log.Debug("ignoring rollup event message")
 		return types.Transactions{}, nil
 	case arbostypes.L1MessageType_BatchPostingReport:
-		tx, err := parseBatchPostingReportMessage(bytes.NewReader(msg.L2msg), chainId, msg.BatchGasCost)
+		tx, err := createBatchPostingReportTransaction(bytes.NewReader(msg.L2msg), chainId, lastArbosVersion, msg.BatchDataStats, msg.LegacyBatchGasCost)
 		if err != nil {
 			return nil, err
 		}
@@ -210,7 +182,7 @@ func parseL2Message(rd io.Reader, poster common.Address, timestamp uint64, reque
 		return nil, errors.New("L2 message kind SignedCompressedTx is unimplemented")
 	default:
 		// ignore invalid message kind
-		return nil, fmt.Errorf("unknown L2 message kind %v", l2KindBuf[0])
+		return nil, fmt.Errorf("unknown L2 message kind %v", l2KindBuf[0]) //nolint:gosec // l2KindBuf length checked above
 	}
 }
 
@@ -399,25 +371,47 @@ func parseSubmitRetryableMessage(rd io.Reader, header *arbostypes.L1IncomingMess
 	return types.NewTx(tx), err
 }
 
-func parseBatchPostingReportMessage(rd io.Reader, chainId *big.Int, msgBatchGasCost *uint64) (*types.Transaction, error) {
+// if lastArbosVersion is under 50: we'll create a legacy batch-posting report
+// arbos-50+ can parse both legacy and v2 batch posting report, so it's o.k. that we rely on previous block
+func createBatchPostingReportTransaction(rd io.Reader, chainId *big.Int, lastArbosVersion uint64, batchDataStats *arbostypes.BatchDataStats, legacyBatchGas *uint64) (*types.Transaction, error) {
 	batchTimestamp, batchPosterAddr, _, batchNum, l1BaseFee, extraGas, err := arbostypes.ParseBatchPostingReportMessageFields(rd)
 	if err != nil {
 		return nil, err
 	}
-	var batchDataGas uint64
-	if msgBatchGasCost != nil {
-		batchDataGas = *msgBatchGasCost
+	var legacyGas uint64
+	if batchDataStats != nil {
+		legacyGas = arbostypes.LegacyCostForStats(batchDataStats)
+		if legacyBatchGas != nil && *legacyBatchGas != legacyGas {
+			log.Error("legacy gas doesn't fit local compute", "local", legacyGas, "legacy", legacyBatchGas, "timestamp", batchTimestamp)
+		}
 	} else {
-		return nil, errors.New("cannot compute batch gas cost")
+		if legacyBatchGas == nil {
+			return nil, fmt.Errorf("no gas data field in a batch posting report")
+		}
+		legacyGas = *legacyBatchGas
 	}
-	batchDataGas = arbmath.SaturatingUAdd(batchDataGas, extraGas)
 
-	data, err := util.PackInternalTxDataBatchPostingReport(
-		batchTimestamp, batchPosterAddr, batchNum, batchDataGas, l1BaseFee,
-	)
-	if err != nil {
-		return nil, err
+	var data []byte
+	if lastArbosVersion < params.ArbosVersion_50 {
+		batchGas := arbmath.SaturatingUAdd(legacyGas, extraGas)
+		data, err = util.PackInternalTxDataBatchPostingReport(
+			batchTimestamp, batchPosterAddr, batchNum, batchGas, l1BaseFee,
+		)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		if batchDataStats == nil {
+			return nil, fmt.Errorf("no gas data stats in a batch posting report post arbos 50")
+		}
+		data, err = util.PackInternalTxDataBatchPostingReportV2(
+			batchTimestamp, batchPosterAddr, batchNum, batchDataStats.Length, batchDataStats.NonZeros, extraGas, l1BaseFee,
+		)
+		if err != nil {
+			return nil, err
+		}
 	}
+
 	return types.NewTx(&types.ArbitrumInternalTx{
 		ChainId: chainId,
 		Data:    data,

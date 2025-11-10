@@ -6,8 +6,9 @@ use arbutil::{
     crypto,
     evm::{
         self,
-        api::{DataReader, EvmApi, Gas, Ink},
+        api::{CreateRespone, DataReader, EvmApi, Gas, Ink},
         storage::StorageCache,
+        user::UserOutcomeKind,
         EvmData, ARBOS_VERSION_STYLUS_CHARGING_FIXES,
     },
     pricing::{hostio, EVM_API_INK},
@@ -190,7 +191,7 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
         )?;
         let key = self.read_bytes32(key)?;
 
-        let (value, gas_cost) = self.evm_api().get_bytes32(key, evm_api_gas_to_use);
+        let (value, gas_cost) = self.evm_api().get_bytes32(key, evm_api_gas_to_use)?;
         self.buy_gas(gas_cost)?;
         self.write_bytes32(dest, value)?;
         trace!("storage_load_bytes32", self, key, value)
@@ -214,7 +215,7 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
         let key = self.read_bytes32(key)?;
         let value = self.read_bytes32(value)?;
 
-        let gas_cost = self.evm_api().cache_bytes32(key, value);
+        let gas_cost = self.evm_api().cache_bytes32(key, value)?;
         self.buy_gas(gas_cost)?;
         trace!("storage_cache_bytes32", self, [key, value], &[])
     }
@@ -228,9 +229,14 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
         self.require_gas(evm::SSTORE_SENTRY_GAS)?; // see operations_acl_arbitrum.go
 
         let gas_left = self.gas_left()?;
-        let gas_cost = self.evm_api().flush_storage_cache(clear, gas_left)?;
+        let (gas_cost, outcome) = self
+            .evm_api()
+            .flush_storage_cache(clear, gas_left + Gas(1))?;
         if self.evm_data().arbos_version >= ARBOS_VERSION_STYLUS_CHARGING_FIXES {
             self.buy_gas(gas_cost)?;
+        }
+        if outcome != UserOutcomeKind::Success {
+            return Err(eyre!("outcome {outcome:?}").into());
         }
         trace!("storage_flush_cache", self, [be!(clear as u8)], &[])
     }
@@ -246,7 +252,7 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
         self.buy_gas(evm::TLOAD_GAS)?;
 
         let key = self.read_bytes32(key)?;
-        let value = self.evm_api().get_transient_bytes32(key);
+        let value = self.evm_api().get_transient_bytes32(key)?;
         self.write_bytes32(dest, value)?;
         trace!("transient_load_bytes32", self, key, value)
     }
@@ -263,7 +269,10 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
 
         let key = self.read_bytes32(key)?;
         let value = self.read_bytes32(value)?;
-        self.evm_api().set_transient_bytes32(key, value)?;
+        let outcome = self.evm_api().set_transient_bytes32(key, value)?;
+        if outcome != UserOutcomeKind::Success {
+            return Err(eyre!("outcome {outcome:?}").into());
+        }
         trace!("transient_store_bytes32", self, [key, value], &[])
     }
 
@@ -304,7 +313,7 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
 
         let (outs_len, gas_cost, status) =
             self.evm_api()
-                .contract_call(contract, &input, gas_left, gas_req, value.unwrap());
+                .contract_call(contract, &input, gas_left, gas_req, value.unwrap())?;
 
         self.buy_gas(gas_cost)?;
         *self.evm_return_data_len() = outs_len;
@@ -360,7 +369,7 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
 
         let (outs_len, gas_cost, status) = self
             .evm_api()
-            .delegate_call(contract, &input, gas_left, gas_req);
+            .delegate_call(contract, &input, gas_left, gas_req)?;
 
         self.buy_gas(gas_cost)?;
         *self.evm_return_data_len() = outs_len;
@@ -415,7 +424,7 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
 
         let (outs_len, gas_cost, status) = self
             .evm_api()
-            .static_call(contract, &input, gas_left, gas_req);
+            .static_call(contract, &input, gas_left, gas_req)?;
 
         self.buy_gas(gas_cost)?;
         *self.evm_return_data_len() = outs_len;
@@ -468,19 +477,23 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
         let gas = self.gas_left()?;
         let api = self.evm_api();
 
-        let (result, ret_len, gas_cost) = api.create1(code, endowment, gas);
-        let result = result?;
+        let (response, ret_len, gas_cost) = api.create1(code, endowment, gas)?;
+
+        let address = match response {
+            CreateRespone::Fail(reason) => return Err(eyre!(reason).into()),
+            CreateRespone::Succes(addr) => addr,
+        };
 
         self.buy_gas(gas_cost)?;
         *self.evm_return_data_len() = ret_len;
         self.write_u32(revert_data_len, ret_len)?;
-        self.write_bytes20(contract, result)?;
+        self.write_bytes20(contract, address)?;
 
         trace!(
             "create1",
             self,
             [endowment, code_copy.unwrap()],
-            [result, be!(ret_len)],
+            [address, be!(ret_len)],
             ()
         )
     }
@@ -521,20 +534,24 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
         let gas = self.gas_left()?;
         let api = self.evm_api();
 
-        let (result, ret_len, gas_cost) = api.create2(code, endowment, salt, gas);
-        let result = result?;
+        let (response, ret_len, gas_cost) = api.create2(code, endowment, salt, gas)?;
+
+        let address = match response {
+            CreateRespone::Fail(reason) => return Err(eyre!(reason).into()),
+            CreateRespone::Succes(addr) => addr,
+        };
 
         self.buy_gas(gas_cost)?;
         *self.evm_return_data_len() = ret_len;
         self.write_u32(revert_data_len, ret_len)?;
-        self.write_bytes20(contract, result)?;
+        self.write_bytes20(contract, address)?;
 
         let salt = salt.into_iter();
         trace!(
             "create2",
             self,
             [endowment, salt, code_copy.unwrap()],
-            [result, be!(ret_len)],
+            [address, be!(ret_len)],
             ()
         )
     }
@@ -622,7 +639,7 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
         self.require_gas(evm::COLD_ACCOUNT_GAS)?;
         let address = self.read_bytes20(address)?;
 
-        let (balance, gas_cost) = self.evm_api().account_balance(address);
+        let (balance, gas_cost) = self.evm_api().account_balance(address)?;
         self.buy_gas(gas_cost)?;
         self.write_bytes32(ptr, balance)?;
         trace!("account_balance", self, address, balance)
@@ -650,7 +667,7 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
         let arbos_version = self.evm_data().arbos_version;
 
         // we pass `gas` to check if there's enough before loading from the db
-        let (code, gas_cost) = self.evm_api().account_code(arbos_version, address, gas);
+        let (code, gas_cost) = self.evm_api().account_code(arbos_version, address, gas)?;
         self.buy_gas(gas_cost)?;
 
         let code = code.slice();
@@ -682,7 +699,7 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
         let arbos_version = self.evm_data().arbos_version;
 
         // we pass `gas` to check if there's enough before loading from the db
-        let (code, gas_cost) = self.evm_api().account_code(arbos_version, address, gas);
+        let (code, gas_cost) = self.evm_api().account_code(arbos_version, address, gas)?;
         self.buy_gas(gas_cost)?;
 
         let code = code.slice();
@@ -701,7 +718,7 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
         self.require_gas(evm::COLD_ACCOUNT_GAS)?;
         let address = self.read_bytes20(address)?;
 
-        let (hash, gas_cost) = self.evm_api().account_codehash(address);
+        let (hash, gas_cost) = self.evm_api().account_codehash(address)?;
         self.buy_gas(gas_cost)?;
         self.write_bytes32(ptr, hash)?;
         trace!("account_codehash", self, address, hash)
@@ -982,7 +999,7 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
             self.buy_ink(hostio::PAY_FOR_MEMORY_GROW_BASE_INK)?;
             return trace!("pay_for_memory_grow", self, be!(pages), &[]);
         }
-        let gas_cost = self.evm_api().add_pages(pages); // no sentry needed since the work happens after the hostio
+        let gas_cost = self.evm_api().add_pages(pages)?; // no sentry needed since the work happens after the hostio
         self.buy_gas(gas_cost)?;
         trace!("pay_for_memory_grow", self, be!(pages), &[])
     }

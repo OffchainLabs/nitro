@@ -1,0 +1,39 @@
+---
+name: 'Install stable Rust'
+description: 'Installs stable Rust toolchain with appropriate targets and components.'
+
+inputs:
+  toolchain:
+    required: true
+    description: 'Toolchain to install'
+    default: '1.88.0'
+  targets:
+    required: true
+    description: 'Compilation targets to install'
+    default: 'wasm32-wasip1, wasm32-unknown-unknown'
+  components:
+    required: true
+    description: 'Cargo components to include'
+    default: 'llvm-tools-preview, rustfmt, clippy'
+
+outputs:
+  version:
+    description: 'The installed Rust version'
+    value: ${{ steps.get-version.outputs.version }}
+
+runs:
+  using: composite
+
+  steps:
+    - name: Install Rust stable
+      id: install-rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        toolchain: ${{ inputs.toolchain }}
+        targets: ${{ inputs.targets }}
+        components: ${{ inputs.components }}
+
+    - name: Get Rust version
+      id: get-version
+      shell: bash
+      run: echo "version=$(rustc --version | cut -d' ' -f2)" >> $GITHUB_OUTPUT

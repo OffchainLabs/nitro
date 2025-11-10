@@ -259,12 +259,12 @@ func formatValue(v reflect.Value) string {
 
 	// Handle special types
 	typeName := v.Type().String()
-	switch {
-	case typeName == "big.Int":
+	switch typeName {
+	case "big.Int":
 		if bigInt, ok := v.Interface().(big.Int); ok {
 			return bigInt.String()
 		}
-	case typeName == "time.Time":
+	case "time.Time":
 		if t, ok := v.Interface().(time.Time); ok {
 			return strconv.FormatInt(t.UnixNano(), 10)
 		}

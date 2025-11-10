@@ -80,7 +80,6 @@ func (w *execClientWrapper) FullSyncProgressMap(ctx context.Context) map[string]
 	return nil
 }
 func (w *execClientWrapper) SetFinalityData(
-	ctx context.Context,
 	safeFinalityData *arbutil.FinalityData,
 	finalizedFinalityData *arbutil.FinalityData,
 	validatedFinalityData *arbutil.FinalityData,
@@ -88,8 +87,12 @@ func (w *execClientWrapper) SetFinalityData(
 	return containers.NewReadyPromise(struct{}{}, nil)
 }
 
-func (w *execClientWrapper) DigestMessage(index arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, msgForPrefetch *arbostypes.MessageWithMetadata) containers.PromiseInterface[*execution.MessageResult] {
-	return containers.NewReadyPromise(w.ExecutionEngine.DigestMessage(index, msg, msgForPrefetch))
+func (w *execClientWrapper) SetConsensusSyncData(syncData *execution.ConsensusSyncData) containers.PromiseInterface[struct{}] {
+	return containers.NewReadyPromise(struct{}{}, nil)
+}
+
+func (w *execClientWrapper) DigestMessage(num arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, msgForPrefetch *arbostypes.MessageWithMetadata) containers.PromiseInterface[*execution.MessageResult] {
+	return containers.NewReadyPromise(w.ExecutionEngine.DigestMessage(num, msg, msgForPrefetch))
 }
 
 func (w *execClientWrapper) Reorg(count arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadataAndBlockInfo, oldMessages []*arbostypes.MessageWithMetadata) containers.PromiseInterface[[]*execution.MessageResult] {
@@ -100,20 +103,24 @@ func (w *execClientWrapper) HeadMessageIndex() containers.PromiseInterface[arbut
 	return containers.NewReadyPromise(w.ExecutionEngine.HeadMessageIndex())
 }
 
-func (w *execClientWrapper) ResultAtMessageIndex(index arbutil.MessageIndex) containers.PromiseInterface[*execution.MessageResult] {
-	return containers.NewReadyPromise(w.ExecutionEngine.ResultAtMessageIndex(index))
+func (w *execClientWrapper) ResultAtMessageIndex(pos arbutil.MessageIndex) containers.PromiseInterface[*execution.MessageResult] {
+	return containers.NewReadyPromise(w.ExecutionEngine.ResultAtMessageIndex(pos))
 }
 
 func (w *execClientWrapper) Start(ctx context.Context) error {
 	return nil
 }
 
-func (w *execClientWrapper) MessageIndexToBlockNumber(messageIndex arbutil.MessageIndex) containers.PromiseInterface[uint64] {
-	return containers.NewReadyPromise(w.ExecutionEngine.MessageIndexToBlockNumber(messageIndex), nil)
+func (w *execClientWrapper) MessageIndexToBlockNumber(messageNum arbutil.MessageIndex) containers.PromiseInterface[uint64] {
+	return containers.NewReadyPromise(w.ExecutionEngine.MessageIndexToBlockNumber(messageNum), nil)
 }
 
 func (w *execClientWrapper) BlockNumberToMessageIndex(blockNum uint64) containers.PromiseInterface[arbutil.MessageIndex] {
 	return containers.NewReadyPromise(w.ExecutionEngine.BlockNumberToMessageIndex(blockNum))
+}
+
+func (w *execClientWrapper) ArbOSVersionForMessageIndex(msgIdx arbutil.MessageIndex) containers.PromiseInterface[uint64] {
+	return w.ExecutionEngine.ArbOSVersionForMessageIndex(msgIdx)
 }
 
 func (w *execClientWrapper) StopAndWait() {
@@ -135,15 +142,15 @@ func NewTransactionStreamerForTest(t *testing.T, ctx context.Context, ownerAddre
 	arbDb := rawdb.NewMemoryDatabase()
 	initReader := statetransfer.NewMemoryInitDataReader(&initData)
 
-	cacheConfig := core.DefaultCacheConfigWithScheme(env.GetTestStateScheme())
-	bc, err := gethexec.WriteOrTestBlockChain(chainDb, cacheConfig, initReader, chainConfig, nil, nil, arbostypes.TestInitMessage, &gethexec.ConfigDefault.TxIndexer, 0)
+	options := core.DefaultConfig().WithStateScheme(env.GetTestStateScheme())
+	bc, err := gethexec.WriteOrTestBlockChain(chainDb, options, initReader, chainConfig, nil, nil, arbostypes.TestInitMessage, &gethexec.ConfigDefault.TxIndexer, 0)
 
 	if err != nil {
 		Fail(t, err)
 	}
 
 	transactionStreamerConfigFetcher := func() *TransactionStreamerConfig { return &DefaultTransactionStreamerConfig }
-	execEngine, err := gethexec.NewExecutionEngine(bc, 0)
+	execEngine, err := gethexec.NewExecutionEngine(bc, 0, false)
 	if err != nil {
 		Fail(t, err)
 	}

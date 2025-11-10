@@ -2,10 +2,11 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"reflect"
 	"time"
 
-	flag "github.com/spf13/pflag"
+	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/p2p"
@@ -75,7 +76,7 @@ var ValidationNodeConfigDefault = ValidationNodeConfig{
 	Workdir:       "",
 }
 
-func ValidationNodeConfigAddOptions(f *flag.FlagSet) {
+func ValidationNodeConfigAddOptions(f *pflag.FlagSet) {
 	genericconf.ConfConfigAddOptions("conf", f)
 	valnode.ValidationConfigAddOptions("validation", f)
 	f.String("log-level", ValidationNodeConfigDefault.LogLevel, "log level, valid values are CRIT, ERROR, WARN, INFO, DEBUG, TRACE")
@@ -145,8 +146,13 @@ func (c *ValidationNodeConfig) GetReloadInterval() time.Duration {
 }
 
 func (c *ValidationNodeConfig) Validate() error {
-	// TODO
-	return nil
+	if _, err := genericconf.HandlerFromLogType(c.LogType, io.Discard); err != nil {
+		return fmt.Errorf("invalid log-type: %w", err)
+	}
+	if _, err := genericconf.ToSlogLevel(c.LogLevel); err != nil {
+		return fmt.Errorf("invalid log-level: %w", err)
+	}
+	return c.Persistent.Validate()
 }
 
 var DefaultValidationNodeStackConfig = node.Config{

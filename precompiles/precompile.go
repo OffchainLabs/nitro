@@ -16,6 +16,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/arbitrum/multigas"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
@@ -26,8 +27,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/programs"
-	"github.com/offchainlabs/nitro/arbos/util"
-	pgen "github.com/offchainlabs/nitro/solgen/go/precompilesgen"
+	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
@@ -38,16 +38,17 @@ type ArbosPrecompile interface {
 	// In that case, unless this precompile is pure, it should probably revert.
 	Call(
 		input []byte,
-		precompileAddress common.Address,
 		actingAsAddress common.Address,
 		caller common.Address,
 		value *big.Int,
 		readOnly bool,
 		gasSupplied uint64,
 		evm *vm.EVM,
-	) (output []byte, gasLeft uint64, err error)
+	) (output []byte, gasLeft uint64, usedMultiGas multigas.MultiGas, err error)
 
 	Precompile() *Precompile
+	Name() string
+	Address() common.Address
 }
 
 type purity uint8
@@ -220,12 +221,12 @@ func MakePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, *Pr
 		}
 
 		method := PrecompileMethod{
-			name,
-			method,
-			purity,
-			handler,
-			0,
-			0,
+			name:            name,
+			template:        method,
+			purity:          purity,
+			handler:         handler,
+			arbosVersion:    0,
+			maxArbosVersion: 0,
 		}
 		methods[id] = &method
 		methodsByName[name] = &method
@@ -366,7 +367,7 @@ func MakePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, *Pr
 				// an error occurred during gascost()
 				return []reflect.Value{emitCost[1]}
 			}
-			if err := callerCtx.Burn(cost); err != nil {
+			if err := callerCtx.Burn(multigas.ResourceKindHistoryGrowth, cost); err != nil {
 				// the user has run out of gas
 				return []reflect.Value{reflect.ValueOf(vm.ErrOutOfGas)}
 			}
@@ -500,14 +501,14 @@ func MakePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, *Pr
 	}
 
 	return address, &Precompile{
-		methods,
-		methodsByName,
-		events,
-		errors,
-		contract,
-		reflect.ValueOf(implementer),
-		address,
-		0,
+		methods:       methods,
+		methodsByName: methodsByName,
+		events:        events,
+		errors:        errors,
+		name:          contract,
+		implementer:   reflect.ValueOf(implementer),
+		address:       address,
+		arbosVersion:  0,
 	}
 }
 
@@ -519,12 +520,12 @@ func Precompiles() map[addr]ArbosPrecompile {
 		return impl.Precompile()
 	}
 
-	insert(MakePrecompile(pgen.ArbInfoMetaData, &ArbInfo{Address: types.ArbInfoAddress}))
-	insert(MakePrecompile(pgen.ArbAddressTableMetaData, &ArbAddressTable{Address: types.ArbAddressTableAddress}))
-	insert(MakePrecompile(pgen.ArbBLSMetaData, &ArbBLS{Address: types.ArbBLSAddress}))
-	insert(MakePrecompile(pgen.ArbFunctionTableMetaData, &ArbFunctionTable{Address: types.ArbFunctionTableAddress}))
-	insert(MakePrecompile(pgen.ArbosTestMetaData, &ArbosTest{Address: types.ArbosTestAddress}))
-	ArbGasInfo := insert(MakePrecompile(pgen.ArbGasInfoMetaData, &ArbGasInfo{Address: types.ArbGasInfoAddress}))
+	insert(MakePrecompile(precompilesgen.ArbInfoMetaData, &ArbInfo{Address: types.ArbInfoAddress}))
+	insert(MakePrecompile(precompilesgen.ArbAddressTableMetaData, &ArbAddressTable{Address: types.ArbAddressTableAddress}))
+	insert(MakePrecompile(precompilesgen.ArbBLSMetaData, &ArbBLS{Address: types.ArbBLSAddress}))
+	insert(MakePrecompile(precompilesgen.ArbFunctionTableMetaData, &ArbFunctionTable{Address: types.ArbFunctionTableAddress}))
+	insert(MakePrecompile(precompilesgen.ArbosTestMetaData, &ArbosTest{Address: types.ArbosTestAddress}))
+	ArbGasInfo := insert(MakePrecompile(precompilesgen.ArbGasInfoMetaData, &ArbGasInfo{Address: types.ArbGasInfoAddress}))
 	ArbGasInfo.methodsByName["GetL1FeesAvailable"].arbosVersion = params.ArbosVersion_10
 	ArbGasInfo.methodsByName["GetL1RewardRate"].arbosVersion = params.ArbosVersion_11
 	ArbGasInfo.methodsByName["GetL1RewardRecipient"].arbosVersion = params.ArbosVersion_11
@@ -533,8 +534,11 @@ func Precompiles() map[addr]ArbosPrecompile {
 	ArbGasInfo.methodsByName["GetL1PricingFundsDueForRewards"].arbosVersion = params.ArbosVersion_20
 	ArbGasInfo.methodsByName["GetL1PricingUnitsSinceUpdate"].arbosVersion = params.ArbosVersion_20
 	ArbGasInfo.methodsByName["GetLastL1PricingSurplus"].arbosVersion = params.ArbosVersion_20
-	insert(MakePrecompile(pgen.ArbAggregatorMetaData, &ArbAggregator{Address: types.ArbAggregatorAddress}))
-	insert(MakePrecompile(pgen.ArbStatisticsMetaData, &ArbStatistics{Address: types.ArbStatisticsAddress}))
+	ArbGasInfo.methodsByName["GetMaxTxGasLimit"].arbosVersion = params.ArbosVersion_50
+	ArbGasInfo.methodsByName["GetMaxBlockGasLimit"].arbosVersion = params.ArbosVersion_50
+	ArbGasInfo.methodsByName["GetGasPricingConstraints"].arbosVersion = params.ArbosVersion_50
+	insert(MakePrecompile(precompilesgen.ArbAggregatorMetaData, &ArbAggregator{Address: types.ArbAggregatorAddress}))
+	insert(MakePrecompile(precompilesgen.ArbStatisticsMetaData, &ArbStatistics{Address: types.ArbStatisticsAddress}))
 
 	eventCtx := func(gasLimit uint64, err error) *Context {
 		if err != nil {
@@ -542,21 +546,22 @@ func Precompiles() map[addr]ArbosPrecompile {
 		}
 		return &Context{
 			gasSupplied: gasLimit,
-			gasLeft:     gasLimit,
+			gasUsed:     multigas.ZeroGas(),
 		}
 	}
 
 	ArbOwnerPublicImpl := &ArbOwnerPublic{Address: types.ArbOwnerPublicAddress}
-	ArbOwnerPublic := insert(MakePrecompile(pgen.ArbOwnerPublicMetaData, ArbOwnerPublicImpl))
+	ArbOwnerPublic := insert(MakePrecompile(precompilesgen.ArbOwnerPublicMetaData, ArbOwnerPublicImpl))
 	ArbOwnerPublic.methodsByName["GetInfraFeeAccount"].arbosVersion = params.ArbosVersion_5
 	ArbOwnerPublic.methodsByName["RectifyChainOwner"].arbosVersion = params.ArbosVersion_11
 	ArbOwnerPublic.methodsByName["GetBrotliCompressionLevel"].arbosVersion = params.ArbosVersion_20
 	ArbOwnerPublic.methodsByName["GetScheduledUpgrade"].arbosVersion = params.ArbosVersion_20
 	ArbOwnerPublic.methodsByName["IsNativeTokenOwner"].arbosVersion = params.ArbosVersion_41
 	ArbOwnerPublic.methodsByName["GetAllNativeTokenOwners"].arbosVersion = params.ArbosVersion_41
+	ArbOwnerPublic.methodsByName["GetParentGasFloorPerToken"].arbosVersion = params.ArbosVersion_50
 
 	ArbWasmImpl := &ArbWasm{Address: types.ArbWasmAddress}
-	ArbWasm := insert(MakePrecompile(pgen.ArbWasmMetaData, ArbWasmImpl))
+	ArbWasm := insert(MakePrecompile(precompilesgen.ArbWasmMetaData, ArbWasmImpl))
 	ArbWasm.arbosVersion = params.ArbosVersion_Stylus
 	programs.ProgramNotWasmError = ArbWasmImpl.ProgramNotWasmError
 	programs.ProgramNotActivatedError = ArbWasmImpl.ProgramNotActivatedError
@@ -569,7 +574,7 @@ func Precompiles() map[addr]ArbosPrecompile {
 	}
 
 	ArbWasmCacheImpl := &ArbWasmCache{Address: types.ArbWasmCacheAddress}
-	ArbWasmCache := insert(MakePrecompile(pgen.ArbWasmCacheMetaData, ArbWasmCacheImpl))
+	ArbWasmCache := insert(MakePrecompile(precompilesgen.ArbWasmCacheMetaData, ArbWasmCacheImpl))
 	ArbWasmCache.arbosVersion = params.ArbosVersion_Stylus
 	for _, method := range ArbWasmCache.methods {
 		method.arbosVersion = ArbWasmCache.arbosVersion
@@ -578,7 +583,7 @@ func Precompiles() map[addr]ArbosPrecompile {
 	ArbWasmCache.methodsByName["CacheProgram"].arbosVersion = params.ArbosVersion_StylusFixes
 
 	ArbRetryableImpl := &ArbRetryableTx{Address: types.ArbRetryableTxAddress}
-	ArbRetryable := insert(MakePrecompile(pgen.ArbRetryableTxMetaData, ArbRetryableImpl))
+	ArbRetryable := insert(MakePrecompile(precompilesgen.ArbRetryableTxMetaData, ArbRetryableImpl))
 	arbos.ArbRetryableTxAddress = ArbRetryable.address
 	arbos.RedeemScheduledEventID = ArbRetryable.events["RedeemScheduled"].template.ID
 	arbos.EmitReedeemScheduledEvent = func(
@@ -596,7 +601,7 @@ func Precompiles() map[addr]ArbosPrecompile {
 		return ArbRetryableImpl.TicketCreated(context, evm, ticketId)
 	}
 
-	ArbSys := insert(MakePrecompile(pgen.ArbSysMetaData, &ArbSys{Address: types.ArbSysAddress}))
+	ArbSys := insert(MakePrecompile(precompilesgen.ArbSysMetaData, &ArbSys{Address: types.ArbSysAddress}))
 	arbos.ArbSysAddress = ArbSys.address
 	arbos.L2ToL1TransactionEventID = ArbSys.events["L2ToL1Transaction"].template.ID
 	arbos.L2ToL1TxEventID = ArbSys.events["L2ToL1Tx"].template.ID
@@ -606,12 +611,14 @@ func Precompiles() map[addr]ArbosPrecompile {
 		context := eventCtx(ArbOwnerImpl.OwnerActsGasCost(method, owner, data))
 		return ArbOwnerImpl.OwnerActs(context, evm, method, owner, data)
 	}
-	_, ArbOwner := MakePrecompile(pgen.ArbOwnerMetaData, ArbOwnerImpl)
+	_, ArbOwner := MakePrecompile(precompilesgen.ArbOwnerMetaData, ArbOwnerImpl)
 	ArbOwner.methodsByName["GetInfraFeeAccount"].arbosVersion = params.ArbosVersion_5
 	ArbOwner.methodsByName["SetInfraFeeAccount"].arbosVersion = params.ArbosVersion_5
 	ArbOwner.methodsByName["ReleaseL1PricerSurplusFunds"].arbosVersion = params.ArbosVersion_10
 	ArbOwner.methodsByName["SetChainConfig"].arbosVersion = params.ArbosVersion_11
 	ArbOwner.methodsByName["SetBrotliCompressionLevel"].arbosVersion = params.ArbosVersion_20
+	ArbOwner.methodsByName["SetGasPricingConstraints"].arbosVersion = params.ArbosVersion_50
+	ArbOwner.methodsByName["SetGasBacklog"].arbosVersion = params.ArbosVersion_50
 	stylusMethods := []string{
 		"SetInkPrice", "SetWasmMaxStackDepth", "SetWasmFreePages", "SetWasmPageGas",
 		"SetWasmPageLimit", "SetWasmMinInitGas", "SetWasmInitCostScalar",
@@ -623,13 +630,14 @@ func Precompiles() map[addr]ArbosPrecompile {
 	}
 
 	insert(ownerOnly(ArbOwnerImpl.Address, ArbOwner, emitOwnerActs))
-	_, arbDebug := MakePrecompile(pgen.ArbDebugMetaData, &ArbDebug{Address: types.ArbDebugAddress})
+	_, arbDebug := MakePrecompile(precompilesgen.ArbDebugMetaData, &ArbDebug{Address: types.ArbDebugAddress})
 	arbDebug.methodsByName["Panic"].arbosVersion = params.ArbosVersion_Stylus
 	insert(debugOnly(arbDebug.address, arbDebug))
 
-	ArbosActs := insert(MakePrecompile(pgen.ArbosActsMetaData, &ArbosActs{Address: types.ArbosAddress}))
+	ArbosActs := insert(MakePrecompile(precompilesgen.ArbosActsMetaData, &ArbosActs{Address: types.ArbosAddress}))
 	arbos.InternalTxStartBlockMethodID = ArbosActs.GetMethodID("StartBlock")
 	arbos.InternalTxBatchPostingReportMethodID = ArbosActs.GetMethodID("BatchPostingReport")
+	arbos.InternalTxBatchPostingReportV2MethodID = ArbosActs.GetMethodID("BatchPostingReportV2")
 
 	ArbOwner.methodsByName["SetCalldataPriceIncrease"].arbosVersion = params.ArbosVersion_40
 	ArbOwnerPublic.methodsByName["IsCalldataPriceIncreaseEnabled"].arbosVersion = params.ArbosVersion_40
@@ -641,8 +649,12 @@ func Precompiles() map[addr]ArbosPrecompile {
 	ArbOwner.methodsByName["RemoveNativeTokenOwner"].arbosVersion = params.ArbosVersion_41
 	ArbOwner.methodsByName["IsNativeTokenOwner"].arbosVersion = params.ArbosVersion_41
 	ArbOwner.methodsByName["GetAllNativeTokenOwners"].arbosVersion = params.ArbosVersion_41
+	ArbOwner.methodsByName["SetParentGasFloorPerToken"].arbosVersion = params.ArbosVersion_50
+	ArbOwner.methodsByName["SetMaxBlockGasLimit"].arbosVersion = params.ArbosVersion_50
 
-	ArbNativeTokenManager := insert(MakePrecompile(pgen.ArbNativeTokenManagerMetaData, &ArbNativeTokenManager{Address: types.ArbNativeTokenManagerAddress}))
+	ArbOwnerPublic.methodsByName["GetNativeTokenManagementFrom"].arbosVersion = params.ArbosVersion_50
+
+	ArbNativeTokenManager := insert(MakePrecompile(precompilesgen.ArbNativeTokenManagerMetaData, &ArbNativeTokenManager{Address: types.ArbNativeTokenManagerAddress}))
 	ArbNativeTokenManager.arbosVersion = params.ArbosVersion_41
 	ArbNativeTokenManager.methodsByName["MintNativeToken"].arbosVersion = params.ArbosVersion_41
 	ArbNativeTokenManager.methodsByName["BurnNativeToken"].arbosVersion = params.ArbosVersion_41
@@ -674,84 +686,64 @@ func (p *Precompile) ArbosVersion() uint64 {
 	return p.arbosVersion
 }
 
+func (p *Precompile) Address() common.Address {
+	return p.address
+}
+
 // Call a precompile in typed form, deserializing its inputs and serializing its outputs
 func (p *Precompile) Call(
 	input []byte,
-	precompileAddress common.Address,
 	actingAsAddress common.Address,
 	caller common.Address,
 	value *big.Int,
 	readOnly bool,
 	gasSupplied uint64,
 	evm *vm.EVM,
-) (output []byte, gasLeft uint64, err error) {
+) (output []byte, gasLeft uint64, multiGasUsed multigas.MultiGas, err error) {
 	arbosVersion := arbosState.ArbOSVersion(evm.StateDB)
 
 	if arbosVersion < p.arbosVersion {
 		// the precompile isn't yet active, so treat this call as if it were to a contract that doesn't exist
-		return []byte{}, gasSupplied, nil
+		return []byte{}, gasSupplied, multigas.ZeroGas(), nil
 	}
 
 	if len(input) < 4 {
 		// ArbOS precompiles always have canonical method selectors
-		return nil, 0, vm.ErrExecutionReverted
+		return nil, 0, multigas.ComputationGas(gasSupplied), vm.ErrExecutionReverted
 	}
 	id := *(*[4]byte)(input)
 	method, ok := p.methods[id]
 	if !ok || arbosVersion < method.arbosVersion || (method.maxArbosVersion > 0 && arbosVersion > method.maxArbosVersion) {
 		// method does not exist or hasn't yet been activated
-		return nil, 0, vm.ErrExecutionReverted
+		return nil, 0, multigas.ComputationGas(gasSupplied), vm.ErrExecutionReverted
 	}
 
-	if method.purity >= view && actingAsAddress != precompileAddress {
+	if method.purity >= view && actingAsAddress != p.address {
 		// should not access precompile superpowers when not acting as the precompile
-		return nil, 0, vm.ErrExecutionReverted
+		return nil, 0, multigas.ComputationGas(gasSupplied), vm.ErrExecutionReverted
 	}
 
 	if method.purity >= write && readOnly {
 		// tried to write to global state in read-only mode
-		return nil, 0, vm.ErrExecutionReverted
+		return nil, 0, multigas.ComputationGas(gasSupplied), vm.ErrExecutionReverted
 	}
 
 	if method.purity < payable && value.Sign() != 0 {
 		// tried to pay something that's non-payable
-		return nil, 0, vm.ErrExecutionReverted
+		return nil, 0, multigas.ComputationGas(gasSupplied), vm.ErrExecutionReverted
 	}
 
-	callerCtx := &Context{
-		caller:      caller,
-		gasSupplied: gasSupplied,
-		gasLeft:     gasSupplied,
-		readOnly:    method.purity <= view,
-		tracingInfo: util.NewTracingInfo(evm, caller, precompileAddress, util.TracingDuringEVM),
+	callerCtx, err := makeContext(p, method, caller, gasSupplied, evm)
+	if err != nil {
+		return nil, 0, multigas.ComputationGas(gasSupplied), err
 	}
 
 	// len(input) must be at least 4 because of the check near the start of this function
 	// #nosec G115
 	argsCost := params.CopyGas * arbmath.WordsForBytes(uint64(len(input)-4))
-	if err := callerCtx.Burn(argsCost); err != nil {
+	if err := callerCtx.Burn(multigas.ResourceKindL2Calldata, argsCost); err != nil {
 		// user cannot afford the argument data supplied
-		return nil, 0, vm.ErrExecutionReverted
-	}
-
-	if method.purity != pure {
-		// impure methods may need the ArbOS state, so open & update the call context now
-		state, err := arbosState.OpenArbosState(evm.StateDB, callerCtx)
-		if err != nil {
-			return nil, 0, err
-		}
-		callerCtx.State = state
-	}
-
-	switch txProcessor := evm.ProcessingHook.(type) {
-	case *arbos.TxProcessor:
-		callerCtx.txProcessor = txProcessor
-	case *vm.DefaultTxProcessor:
-		log.Error("processing hook not set")
-		return nil, 0, vm.ErrExecutionReverted
-	default:
-		log.Error("unknown processing hook")
-		return nil, 0, vm.ErrExecutionReverted
+		return nil, 0, multigas.ComputationGas(gasSupplied), vm.ErrExecutionReverted
 	}
 
 	reflectArgs := []reflect.Value{
@@ -775,7 +767,7 @@ func (p *Precompile) Call(
 	args, err := method.template.Inputs.Unpack(input[4:])
 	if err != nil {
 		// calldata does not match the method's signature
-		return nil, 0, vm.ErrExecutionReverted
+		return nil, 0, multigas.ComputationGas(gasSupplied), vm.ErrExecutionReverted
 	}
 	for _, arg := range args {
 		converted := reflect.ValueOf(arg).Convert(method.handler.Type.In(len(reflectArgs)))
@@ -789,33 +781,36 @@ func (p *Precompile) Call(
 		errRet, ok := reflectResult[resultCount].Interface().(error)
 		if !ok {
 			log.Error("final precompile return value must be error")
-			return nil, callerCtx.gasLeft, vm.ErrExecutionReverted
+			return nil, callerCtx.GasLeft(), callerCtx.gasUsed, vm.ErrExecutionReverted
 		}
 		var solErr *SolError
 		isSolErr := errors.As(errRet, &solErr)
 		if isSolErr {
 			resultCost := params.CopyGas * arbmath.WordsForBytes(uint64(len(solErr.data)))
-			if err := callerCtx.Burn(resultCost); err != nil {
+			if err := callerCtx.Burn(multigas.ResourceKindComputation, resultCost); err != nil {
 				// user cannot afford the result data returned
-				return nil, 0, vm.ErrExecutionReverted
+				return nil, 0, callerCtx.gasUsed, vm.ErrExecutionReverted
 			}
-			return solErr.data, callerCtx.gasLeft, vm.ErrExecutionReverted
+			return solErr.data, callerCtx.GasLeft(), callerCtx.gasUsed, vm.ErrExecutionReverted
 		}
 		if errors.Is(errRet, programs.ErrProgramActivation) {
-			return nil, 0, errRet
+			// Ensure we burn all remaining gas
+			callerCtx.BurnOut() //nolint:errcheck
+			return nil, 0, callerCtx.gasUsed, errRet
 		}
 		if !errors.Is(errRet, vm.ErrOutOfGas) {
 			log.Debug(
 				"precompile reverted with non-solidity error",
-				"precompile", precompileAddress, "input", input, "err", errRet,
+				"precompile", p.address, "input", input, "err", errRet,
 			)
 		}
 		// nolint:errorlint
 		if arbosVersion >= params.ArbosVersion_11 || errRet == vm.ErrExecutionReverted {
-			return nil, callerCtx.gasLeft, vm.ErrExecutionReverted
+			return nil, callerCtx.GasLeft(), callerCtx.gasUsed, vm.ErrExecutionReverted
 		}
 		// Preserve behavior with old versions which would zero out gas on this type of error
-		return nil, 0, errRet
+		callerCtx.BurnOut() //nolint:errcheck
+		return nil, 0, callerCtx.gasUsed, errRet
 	}
 	result := make([]interface{}, resultCount)
 	for i := 0; i < resultCount; i++ {
@@ -825,20 +820,25 @@ func (p *Precompile) Call(
 	encoded, err := method.template.Outputs.PackValues(result)
 	if err != nil {
 		log.Error("could not encode precompile result", "err", err)
-		return nil, callerCtx.gasLeft, vm.ErrExecutionReverted
+		return nil, callerCtx.GasLeft(), callerCtx.gasUsed, vm.ErrExecutionReverted
 	}
 
 	resultCost := params.CopyGas * arbmath.WordsForBytes(uint64(len(encoded)))
-	if err := callerCtx.Burn(resultCost); err != nil {
+	if err := callerCtx.Burn(multigas.ResourceKindComputation, resultCost); err != nil {
 		// user cannot afford the result data returned
-		return nil, 0, vm.ErrExecutionReverted
+		return nil, 0, callerCtx.gasUsed, vm.ErrExecutionReverted
 	}
 
-	return encoded, callerCtx.gasLeft, nil
+	return encoded, callerCtx.GasLeft(), callerCtx.gasUsed, nil
 }
 
 func (p *Precompile) Precompile() *Precompile {
 	return p
+}
+
+// Name returns the name of the precompile.
+func (p *Precompile) Name() string {
+	return p.name
 }
 
 // Get4ByteMethodSignatures is needed for the fuzzing harness

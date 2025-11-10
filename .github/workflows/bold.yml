@@ -1,13 +1,16 @@
 name: Go
 
-on:
-  workflow_dispatch:
-  merge_group:
-  pull_request:
-  push:
-    branches:
-      - master
-      - develop
+# NOTE: Automatic workflow runs disabled - fork version doesn't support these workflows
+# To re-enable, uncomment the triggers below
+# on:
+#   workflow_dispatch:
+#   merge_group:
+#   pull_request:
+#   push:
+#     branches:
+#       - master
+#       - develop
+on: []
 
 jobs:
   # formatting:

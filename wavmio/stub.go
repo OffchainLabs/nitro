@@ -2,7 +2,6 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 //go:build !wasm
-// +build !wasm
 
 package wavmio
 
@@ -143,6 +142,12 @@ func ResolveTypedPreimage(ty arbutil.PreimageType, hash common.Hash) ([]byte, er
 		return []byte{}, errors.New("preimage not found")
 	}
 	return val, nil
+}
+
+func ValidateCertificate(ty arbutil.PreimageType, hash common.Hash) bool {
+	// In stub mode, check if the preimage exists
+	_, ok := preimages[hash]
+	return ok
 }
 
 func SetLastBlockHash(hash [32]byte) {

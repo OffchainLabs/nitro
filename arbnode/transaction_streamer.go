@@ -18,7 +18,7 @@ import (
 	"testing"
 	"time"
 
-	flag "github.com/spf13/pflag"
+	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
@@ -31,7 +31,7 @@ import (
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcastclient"
 	"github.com/offchainlabs/nitro/broadcaster"
-	m "github.com/offchainlabs/nitro/broadcaster/message"
+	"github.com/offchainlabs/nitro/broadcaster/message"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -74,37 +74,41 @@ type TransactionStreamer struct {
 }
 
 type TransactionStreamerConfig struct {
-	MaxBroadcasterQueueSize int           `koanf:"max-broadcaster-queue-size"`
-	MaxReorgResequenceDepth int64         `koanf:"max-reorg-resequence-depth" reload:"hot"`
-	ExecuteMessageLoopDelay time.Duration `koanf:"execute-message-loop-delay" reload:"hot"`
-	SyncTillBlock           uint64        `koanf:"sync-till-block"`
-	TrackBlockMetadataFrom  uint64        `koanf:"track-block-metadata-from"`
+	MaxBroadcasterQueueSize     int           `koanf:"max-broadcaster-queue-size"`
+	MaxReorgResequenceDepth     int64         `koanf:"max-reorg-resequence-depth" reload:"hot"`
+	ExecuteMessageLoopDelay     time.Duration `koanf:"execute-message-loop-delay" reload:"hot"`
+	SyncTillBlock               uint64        `koanf:"sync-till-block"`
+	TrackBlockMetadataFrom      uint64        `koanf:"track-block-metadata-from"`
+	ShutdownOnBlockhashMismatch bool          `koanf:"shutdown-on-blockhash-mismatch"`
 }
 
 type TransactionStreamerConfigFetcher func() *TransactionStreamerConfig
 
 var DefaultTransactionStreamerConfig = TransactionStreamerConfig{
-	MaxBroadcasterQueueSize: 50_000,
-	MaxReorgResequenceDepth: 1024,
-	ExecuteMessageLoopDelay: time.Millisecond * 100,
-	SyncTillBlock:           0,
-	TrackBlockMetadataFrom:  0,
+	MaxBroadcasterQueueSize:     50_000,
+	MaxReorgResequenceDepth:     1024,
+	ExecuteMessageLoopDelay:     time.Millisecond * 100,
+	SyncTillBlock:               0,
+	TrackBlockMetadataFrom:      0,
+	ShutdownOnBlockhashMismatch: false,
 }
 
 var TestTransactionStreamerConfig = TransactionStreamerConfig{
-	MaxBroadcasterQueueSize: 10_000,
-	MaxReorgResequenceDepth: 128 * 1024,
-	ExecuteMessageLoopDelay: time.Millisecond,
-	SyncTillBlock:           0,
-	TrackBlockMetadataFrom:  0,
+	MaxBroadcasterQueueSize:     10_000,
+	MaxReorgResequenceDepth:     128 * 1024,
+	ExecuteMessageLoopDelay:     time.Millisecond,
+	SyncTillBlock:               0,
+	TrackBlockMetadataFrom:      0,
+	ShutdownOnBlockhashMismatch: false,
 }
 
-func TransactionStreamerConfigAddOptions(prefix string, f *flag.FlagSet) {
+func TransactionStreamerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Int(prefix+".max-broadcaster-queue-size", DefaultTransactionStreamerConfig.MaxBroadcasterQueueSize, "maximum cache of pending broadcaster messages")
 	f.Int64(prefix+".max-reorg-resequence-depth", DefaultTransactionStreamerConfig.MaxReorgResequenceDepth, "maximum number of messages to attempt to resequence on reorg (0 = never resequence, -1 = always resequence)")
 	f.Duration(prefix+".execute-message-loop-delay", DefaultTransactionStreamerConfig.ExecuteMessageLoopDelay, "delay when polling calls to execute messages")
 	f.Uint64(prefix+".sync-till-block", DefaultTransactionStreamerConfig.SyncTillBlock, "node will not sync past this block")
 	f.Uint64(prefix+".track-block-metadata-from", DefaultTransactionStreamerConfig.TrackBlockMetadataFrom, "block number to start saving blockmetadata, 0 to disable")
+	f.Bool(prefix+".shutdown-on-blockhash-mismatch", DefaultTransactionStreamerConfig.ShutdownOnBlockhashMismatch, "if set the node gracefully shuts down upon detecting mismatch in feed and locally computed blockhash. This is turned off by default")
 }
 
 func NewTransactionStreamer(
@@ -404,6 +408,7 @@ func (s *TransactionStreamer) addMessagesAndReorg(batch ethdb.Batch, msgIdxOfFir
 		messagesWithComputedBlockHash = append(messagesWithComputedBlockHash, arbostypes.MessageWithMetadataAndBlockInfo{
 			MessageWithMeta: newMessages[i].MessageWithMeta,
 			BlockHash:       &messagesResults[i].BlockHash,
+			BlockMetadata:   nil,
 		})
 	}
 	s.broadcastMessages(messagesWithComputedBlockHash, msgIdxOfFirstMsgToAdd)
@@ -482,7 +487,7 @@ func (s *TransactionStreamer) GetMessage(msgIdx arbutil.MessageIndex) (*arbostyp
 		return nil, err
 	}
 
-	err = message.Message.FillInBatchGasCost(func(batchNum uint64) ([]byte, error) {
+	err = message.Message.FillInBatchGasFields(func(batchNum uint64) ([]byte, error) {
 		ctx, err := s.GetContextSafe()
 		if err != nil {
 			return nil, err
@@ -592,7 +597,7 @@ func (s *TransactionStreamer) FeedPendingMessageCount() arbutil.MessageIndex {
 	return arbutil.MessageIndex(firstMsgIdx + uint64(len(s.broadcasterQueuedMessages)))
 }
 
-func (s *TransactionStreamer) AddBroadcastMessages(feedMessages []*m.BroadcastFeedMessage) error {
+func (s *TransactionStreamer) AddBroadcastMessages(feedMessages []*message.BroadcastFeedMessage) error {
 	if len(feedMessages) == 0 {
 		return nil
 	}
@@ -736,6 +741,8 @@ func (s *TransactionStreamer) AddMessagesAndEndBatch(firstMsgIdx arbutil.Message
 	for _, message := range messages {
 		messagesWithBlockInfo = append(messagesWithBlockInfo, arbostypes.MessageWithMetadataAndBlockInfo{
 			MessageWithMeta: message,
+			BlockHash:       nil,
+			BlockMetadata:   nil,
 		})
 	}
 
@@ -830,19 +837,22 @@ func (s *TransactionStreamer) countDuplicateMessages(
 			}
 			var duplicateMessage bool
 			if nextMessage.MessageWithMeta.Message != nil {
-				if dbMessageParsed.Message.BatchGasCost == nil || nextMessage.MessageWithMeta.Message.BatchGasCost == nil {
+				if dbMessageParsed.Message.BatchDataStats == nil || nextMessage.MessageWithMeta.Message.BatchDataStats == nil {
 					// Remove both of the batch gas costs and see if the messages still differ
 					nextMessageCopy := nextMessage.MessageWithMeta
 					nextMessageCopy.Message = new(arbostypes.L1IncomingMessage)
 					*nextMessageCopy.Message = *nextMessage.MessageWithMeta.Message
-					batchGasCostBkup := dbMessageParsed.Message.BatchGasCost
-					dbMessageParsed.Message.BatchGasCost = nil
-					nextMessageCopy.Message.BatchGasCost = nil
+					batchGasCostBkup := dbMessageParsed.Message.LegacyBatchGasCost
+					statsBkup := dbMessageParsed.Message.BatchDataStats
+					dbMessageParsed.Message.LegacyBatchGasCost = nil
+					nextMessageCopy.Message.LegacyBatchGasCost = nil
+					dbMessageParsed.Message.BatchDataStats = nil
+					nextMessageCopy.Message.BatchDataStats = nil
 					if reflect.DeepEqual(dbMessageParsed, nextMessageCopy) {
 						// Actually this isn't a reorg; only the batch gas costs differed
 						duplicateMessage = true
 						// If possible - update the message in the database to add the gas cost cache.
-						if batch != nil && nextMessage.MessageWithMeta.Message.BatchGasCost != nil {
+						if batch != nil && nextMessage.MessageWithMeta.Message.BatchDataStats != nil {
 							if *batch == nil {
 								*batch = s.db.NewBatch()
 							}
@@ -851,7 +861,8 @@ func (s *TransactionStreamer) countDuplicateMessages(
 							}
 						}
 					}
-					dbMessageParsed.Message.BatchGasCost = batchGasCostBkup
+					dbMessageParsed.Message.LegacyBatchGasCost = batchGasCostBkup
+					dbMessageParsed.Message.BatchDataStats = statsBkup
 				}
 			}
 
@@ -1059,17 +1070,19 @@ func (s *TransactionStreamer) WriteMessageFromSequencer(
 		if s.insertionMutex.TryLock() {
 			return true
 		}
-		lockTick := time.Tick(5 * time.Millisecond)
-		lockTimeout := time.After(50 * time.Millisecond)
+		lockTicker := time.NewTicker(5 * time.Millisecond)
+		defer lockTicker.Stop()
+		lockTimeout := time.NewTimer(50 * time.Millisecond)
+		defer lockTimeout.Stop()
 		for {
 			select {
-			case <-lockTimeout:
+			case <-lockTimeout.C:
 				return false
 			default:
 				select {
-				case <-lockTimeout:
+				case <-lockTimeout.C:
 					return false
-				case <-lockTick:
+				case <-lockTicker.C:
 					if s.insertionMutex.TryLock() {
 						return true
 					}
@@ -1315,6 +1328,9 @@ func (s *TransactionStreamer) checkResult(msgIdx arbutil.MessageIndex, msgResult
 			if err := batch.Write(); err != nil {
 				log.Error("error writing batch that deletes blockMetadata of the block whose BlockHash from feed doesn't match locally computed hash", "msgIdx", msgIdx, "err", err)
 			}
+		}
+		if s.config().ShutdownOnBlockhashMismatch {
+			s.fatalErrChan <- fmt.Errorf("%s: msgIdx: %d, expectedHash: %v actualHash: %v", BlockHashMismatchLogMsg, msgIdx, msgAndBlockInfo.BlockHash, msgResult.BlockHash)
 		}
 	}
 }

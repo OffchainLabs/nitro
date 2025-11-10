@@ -118,6 +118,9 @@ type DataPosterOpts struct {
 
 func NewDataPoster(ctx context.Context, opts *DataPosterOpts) (*DataPoster, error) {
 	cfg := opts.Config()
+	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
 	useNoOpStorage := cfg.UseNoOpStorage
 	if opts.HeaderReader.IsParentChainArbitrum() && !cfg.UseNoOpStorage {
 		useNoOpStorage = true
@@ -255,11 +258,13 @@ func TxToSignTxArgs(addr common.Address, tx *types.Transaction) (*apitypes.SendT
 		blobs       []kzg4844.Blob
 		commitments []kzg4844.Commitment
 		proofs      []kzg4844.Proof
+		blobVersion byte
 	)
 	if tx.BlobTxSidecar() != nil {
 		blobs = tx.BlobTxSidecar().Blobs
 		commitments = tx.BlobTxSidecar().Commitments
 		proofs = tx.BlobTxSidecar().Proofs
+		blobVersion = tx.BlobTxSidecar().Version
 	}
 	return &apitypes.SendTxArgs{
 		From:                 common.NewMixedcaseAddress(addr),
@@ -275,9 +280,23 @@ func TxToSignTxArgs(addr common.Address, tx *types.Transaction) (*apitypes.SendT
 		ChainID:              (*hexutil.Big)(tx.ChainId()),
 		BlobFeeCap:           (*hexutil.Big)(tx.BlobGasFeeCap()),
 		BlobHashes:           tx.BlobHashes(),
+		BlobVersion:          blobVersion,
 		Blobs:                blobs,
 		Commitments:          commitments,
 		Proofs:               proofs,
+	}, nil
+}
+
+func ExternalSignerTxOpts(ctx context.Context, opts *ExternalSignerCfg) (*bind.TransactOpts, error) {
+	signer, sender, err := externalSigner(ctx, opts)
+	if err != nil {
+		return nil, err
+	}
+	return &bind.TransactOpts{
+		From: sender,
+		Signer: func(address common.Address, tx *types.Transaction) (*types.Transaction, error) {
+			return signer(context.TODO(), address, tx)
+		},
 	}, nil
 }
 
@@ -317,6 +336,17 @@ func externalSigner(ctx context.Context, opts *ExternalSignerCfg) (signerFn, com
 		}
 		if h := hasher.Hash(gotTx); h != hasher.Hash(signedTx) {
 			return nil, fmt.Errorf("transaction: %x from external signer differs from request: %x", hasher.Hash(signedTx), h)
+		}
+		// Ensure the returned transaction is signed by the expected address.
+		// Use the hasher derived from the signed transaction's chain ID to
+		// correctly recover the sender address regardless of the input tx fields.
+		recoveryHasher := types.LatestSignerForChainID(signedTx.ChainId())
+		from, err := types.Sender(recoveryHasher, signedTx)
+		if err != nil {
+			return nil, fmt.Errorf("recovering signer address: %w", err)
+		}
+		if from != sender {
+			return nil, fmt.Errorf("external signer returned tx from %s, expected %s", from.Hex(), sender.Hex())
 		}
 		return signedTx, nil
 	}, sender, nil
@@ -745,6 +775,27 @@ func (p *DataPoster) PostTransaction(ctx context.Context, dataCreatedAt time.Tim
 	return p.postTransactionWithMutex(ctx, dataCreatedAt, nonce, meta, to, calldata, gasLimit, value, kzgBlobs, accessList)
 }
 
+// shouldEnableCellProofs determines whether to use cell proofs based on the config and L1 state.
+// Returns true if cell proofs should be used, false otherwise.
+func (p *DataPoster) shouldEnableCellProofs(ctx context.Context) (bool, error) {
+	config := p.config().EnableCellProofs
+
+	switch config {
+	case "force-enable":
+		return true, nil
+	case "force-disable":
+		return false, nil
+	case "", "auto":
+		// Auto-detect based on L1 Osaka fork activation
+		if p.parentChain == nil {
+			return false, fmt.Errorf("cannot auto-detect cell proof support: parent chain not configured")
+		}
+		return p.parentChain.SupportsCellProofs(ctx, nil)
+	default:
+		return false, fmt.Errorf("invalid enable-cell-proofs config value: %q (valid values: \"\", \"auto\", \"force-enable\", \"force-disable\")", config)
+	}
+}
+
 func (p *DataPoster) postTransactionWithMutex(ctx context.Context, dataCreatedAt time.Time, nonce uint64, meta []byte, to common.Address, calldata []byte, gasLimit uint64, value *big.Int, kzgBlobs []kzg4844.Blob, accessList types.AccessList) (*types.Transaction, error) {
 
 	if p.config().DisableNewTx {
@@ -794,7 +845,11 @@ func (p *DataPoster) postTransactionWithMutex(ctx context.Context, dataCreatedAt
 		if err != nil {
 			return nil, fmt.Errorf("failed to compute KZG commitments: %w", err)
 		}
-		proofs, err := blobs.ComputeBlobProofs(kzgBlobs, commitments)
+		enableCellProofs, err := p.shouldEnableCellProofs(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to determine cell proof support: %w", err)
+		}
+		proofs, version, err := blobs.ComputeProofs(kzgBlobs, commitments, enableCellProofs)
 		if err != nil {
 			return nil, fmt.Errorf("failed to compute KZG proofs: %w", err)
 		}
@@ -805,6 +860,7 @@ func (p *DataPoster) postTransactionWithMutex(ctx context.Context, dataCreatedAt
 			Value: value256,
 			Data:  calldata,
 			Sidecar: &types.BlobTxSidecar{
+				Version:     version,
 				Blobs:       kzgBlobs,
 				Commitments: commitments,
 				Proofs:      proofs,
@@ -1173,7 +1229,10 @@ func (p *DataPoster) Start(ctxIn context.Context) {
 			log.Warn("failed to update tx poster nonce", "err", err)
 		}
 		now := time.Now()
-		nextCheck := now.Add(arbmath.MinInt(p.config().ReplacementTimes[0], p.config().BlobTxReplacementTimes[0]))
+		nextCheck := now.Add(p.config().ReplacementTimes[0])
+		if len(p.config().BlobTxReplacementTimes) > 0 {
+			nextCheck = now.Add(arbmath.MinInt(p.config().ReplacementTimes[0], p.config().BlobTxReplacementTimes[0]))
+		}
 		maxTxsToRbf := p.config().MaxMempoolTransactions
 		if maxTxsToRbf == 0 {
 			maxTxsToRbf = 512
@@ -1213,7 +1272,6 @@ func (p *DataPoster) Start(ctxIn context.Context) {
 			} else {
 				log.Error("Failed to fetch latest confirmed tx from queue", "confirmedNonce", confirmedNonce, "err", err, "confirmedMeta", confirmedMeta)
 			}
-
 		}
 
 		for _, tx := range queueContents {
@@ -1226,9 +1284,14 @@ func (p *DataPoster) Start(ctxIn context.Context) {
 				err := p.sendTx(ctx, tx, tx)
 				p.maybeLogError(err, tx, "failed to re-send transaction")
 			}
-			tx, err = p.queue.Get(ctx, tx.FullTx.Nonce())
+			nonce := tx.FullTx.Nonce()
+			tx, err = p.queue.Get(ctx, nonce)
 			if err != nil {
-				log.Error("Failed to fetch tx from queue to check updated status", "nonce", tx.FullTx.Nonce(), "err", err)
+				log.Error("Failed to fetch tx from queue to check updated status", "nonce", nonce, "err", err)
+				return minWait
+			}
+			if tx == nil {
+				log.Error("Failed to fetch tx from queue to check updated status, got tx == nil", "nonce", nonce)
 				return minWait
 			}
 			if nextCheck.After(tx.NextReplacement) {
@@ -1291,6 +1354,7 @@ type DataPosterConfig struct {
 	MaxFeeBidMultipleBips  arbmath.UBips     `koanf:"max-fee-bid-multiple-bips" reload:"hot"`
 	NonceRbfSoftConfs      uint64            `koanf:"nonce-rbf-soft-confs" reload:"hot"`
 	Post4844Blobs          bool              `koanf:"post-4844-blobs" reload:"hot"`
+	EnableCellProofs       string            `koanf:"enable-cell-proofs" reload:"hot"`
 	AllocateMempoolBalance bool              `koanf:"allocate-mempool-balance" reload:"hot"`
 	UseDBStorage           bool              `koanf:"use-db-storage"`
 	UseNoOpStorage         bool              `koanf:"use-noop-storage"`
@@ -1347,13 +1411,44 @@ type DangerousConfig struct {
 	ClearDBStorage bool `koanf:"clear-dbstorage"`
 }
 
+// Validate checks that the DataPosterConfig is valid.
+func (c *DataPosterConfig) Validate() error {
+	switch c.EnableCellProofs {
+	case "", "auto", "force-enable", "force-disable":
+		// Valid values
+	default:
+		return fmt.Errorf("invalid enable-cell-proofs value %q (valid: \"\", \"auto\", \"force-enable\", \"force-disable\")", c.EnableCellProofs)
+	}
+	if len(c.ReplacementTimes) == 0 {
+		return fmt.Errorf("replacement-times must have at least one value")
+	}
+	if c.Post4844Blobs && len(c.BlobTxReplacementTimes) == 0 {
+		return fmt.Errorf("blob-tx-replacement-times must have at least one value when post-4844-blobs is enabled")
+	}
+	return nil
+}
+
 // ConfigFetcher function type is used instead of directly passing config so
 // that flags can be reloaded dynamically.
 type ConfigFetcher func() *DataPosterConfig
 
-func DataPosterConfigAddOptions(prefix string, f *pflag.FlagSet, defaultDataPosterConfig DataPosterConfig) {
+// DataPosterUsageContext indicates what component is using the DataPoster to determine
+// which config options to expose.
+type DataPosterUsageContext int
+
+const (
+	// DataPosterUsageStaker indicates the DataPoster is being used by the staker/validator.
+	// Staker posts small (~250 byte) assertions, so blob options don't make sense.
+	// Blob reading is also not supported with assertions.
+	DataPosterUsageStaker DataPosterUsageContext = iota
+	// DataPosterUsageBatchPoster indicates the DataPoster is being used by the batch poster.
+	// Note: The enable flag (post-4844-blobs) is NOT exposed here because batch poster
+	// controls that at its own configuration level.
+	DataPosterUsageBatchPoster
+)
+
+func DataPosterConfigAddOptions(prefix string, f *pflag.FlagSet, defaultDataPosterConfig DataPosterConfig, usageContext DataPosterUsageContext) {
 	f.DurationSlice(prefix+".replacement-times", defaultDataPosterConfig.ReplacementTimes, "comma-separated list of durations since first posting to attempt a replace-by-fee")
-	f.DurationSlice(prefix+".blob-tx-replacement-times", defaultDataPosterConfig.BlobTxReplacementTimes, "comma-separated list of durations since first posting a blob transaction to attempt a replace-by-fee")
 	f.Bool(prefix+".wait-for-l1-finality", defaultDataPosterConfig.WaitForL1Finality, "only treat a transaction as confirmed after L1 finality has been achieved (recommended)")
 	f.Uint64(prefix+".max-mempool-transactions", defaultDataPosterConfig.MaxMempoolTransactions, "the maximum number of transactions to have queued in the mempool at once (0 = unlimited)")
 	f.Uint64(prefix+".max-mempool-weight", defaultDataPosterConfig.MaxMempoolWeight, "the maximum number of weight (weight = min(1, tx.blobs)) to have queued in the mempool at once (0 = unlimited)")
@@ -1361,15 +1456,12 @@ func DataPosterConfigAddOptions(prefix string, f *pflag.FlagSet, defaultDataPost
 	f.Float64(prefix+".target-price-gwei", defaultDataPosterConfig.TargetPriceGwei, "the target price to use for maximum fee cap calculation")
 	f.Float64(prefix+".urgency-gwei", defaultDataPosterConfig.UrgencyGwei, "the urgency to use for maximum fee cap calculation")
 	f.Float64(prefix+".min-tip-cap-gwei", defaultDataPosterConfig.MinTipCapGwei, "the minimum tip cap to post transactions at")
-	f.Float64(prefix+".min-blob-tx-tip-cap-gwei", defaultDataPosterConfig.MinBlobTxTipCapGwei, "the minimum tip cap to post EIP-4844 blob carrying transactions at")
 	f.Float64(prefix+".max-tip-cap-gwei", defaultDataPosterConfig.MaxTipCapGwei, "the maximum tip cap to post transactions at")
-	f.Float64(prefix+".max-blob-tx-tip-cap-gwei", defaultDataPosterConfig.MaxBlobTxTipCapGwei, "the maximum tip cap to post EIP-4844 blob carrying transactions at")
 	f.Uint64(prefix+".max-fee-bid-multiple-bips", uint64(defaultDataPosterConfig.MaxFeeBidMultipleBips), "the maximum multiple of the current price to bid for a transaction's fees (may be exceeded due to min rbf increase, 0 = unlimited)")
 	f.Uint64(prefix+".nonce-rbf-soft-confs", defaultDataPosterConfig.NonceRbfSoftConfs, "the maximum probable reorg depth, used to determine when a transaction will no longer likely need replaced-by-fee")
 	f.Bool(prefix+".allocate-mempool-balance", defaultDataPosterConfig.AllocateMempoolBalance, "if true, don't put transactions in the mempool that spend a total greater than the batch poster's balance")
 	f.Bool(prefix+".use-db-storage", defaultDataPosterConfig.UseDBStorage, "uses database storage when enabled")
 	f.Bool(prefix+".use-noop-storage", defaultDataPosterConfig.UseNoOpStorage, "uses noop storage, it doesn't store anything")
-	f.Bool(prefix+".post-4844-blobs", defaultDataPosterConfig.Post4844Blobs, "if the parent chain supports 4844 blobs and they're well priced, post EIP-4844 blobs")
 	f.Bool(prefix+".legacy-storage-encoding", defaultDataPosterConfig.LegacyStorageEncoding, "encodes items in a legacy way (as it was before dropping generics)")
 	f.String(prefix+".max-fee-cap-formula", defaultDataPosterConfig.MaxFeeCapFormula, "mathematical formula to calculate maximum fee cap gwei the result of which would be float64.\n"+
 		"This expression is expected to be evaluated please refer https://github.com/Knetic/govaluate/blob/master/MANUAL.md to find all available mathematical operators.\n"+
@@ -1381,6 +1473,17 @@ func DataPosterConfigAddOptions(prefix string, f *pflag.FlagSet, defaultDataPost
 	addDangerousOptions(prefix+".dangerous", f)
 	addExternalSignerOptions(prefix+".external-signer", f)
 	f.Bool(prefix+".disable-new-tx", defaultDataPosterConfig.DisableNewTx, "disable posting new transactions, data poster will still keep confirming existing batches")
+
+	includeBlobTuning := usageContext != DataPosterUsageStaker
+	if includeBlobTuning {
+		f.DurationSlice(prefix+".blob-tx-replacement-times", defaultDataPosterConfig.BlobTxReplacementTimes, "comma-separated list of durations since first posting a blob transaction to attempt a replace-by-fee")
+		f.Float64(prefix+".min-blob-tx-tip-cap-gwei", defaultDataPosterConfig.MinBlobTxTipCapGwei, "the minimum tip cap to post EIP-4844 blob carrying transactions at")
+		f.Float64(prefix+".max-blob-tx-tip-cap-gwei", defaultDataPosterConfig.MaxBlobTxTipCapGwei, "the maximum tip cap to post EIP-4844 blob carrying transactions at")
+		f.String(prefix+".enable-cell-proofs", defaultDataPosterConfig.EnableCellProofs, "enable cell proofs in blob transactions for Fusaka compatibility. Valid values: \"\" or \"auto\" (auto-detect based on L1 Osaka fork), \"force-enable\", \"force-disable\"")
+	}
+
+	// We intentionally don't expose an option to configure Post4844Blobs.
+	// Components using DataPoster should set it on DataPoster's config themselves.
 }
 
 func addDangerousOptions(prefix string, f *pflag.FlagSet) {
@@ -1412,6 +1515,7 @@ var DefaultDataPosterConfig = DataPosterConfig{
 	MaxFeeBidMultipleBips:  arbmath.OneInUBips * 10,
 	NonceRbfSoftConfs:      1,
 	Post4844Blobs:          false,
+	EnableCellProofs:       "", // empty string = auto-detect based on L1 Osaka fork
 	AllocateMempoolBalance: true,
 	UseDBStorage:           true,
 	UseNoOpStorage:         false,
@@ -1429,6 +1533,11 @@ var DefaultDataPosterConfigForValidator = func() DataPosterConfig {
 	// the validator cannot queue transactions
 	config.MaxMempoolTransactions = 1
 	config.MaxMempoolWeight = 1
+	// Clear blob-related fields since they're not applicable to validator
+	config.BlobTxReplacementTimes = nil
+	config.MinBlobTxTipCapGwei = 0
+	config.MaxBlobTxTipCapGwei = 0
+	config.EnableCellProofs = ""
 	return config
 }()
 
@@ -1448,6 +1557,7 @@ var TestDataPosterConfig = DataPosterConfig{
 	MaxFeeBidMultipleBips:  arbmath.OneInUBips * 10,
 	NonceRbfSoftConfs:      1,
 	Post4844Blobs:          false,
+	EnableCellProofs:       "", // empty string = auto-detect based on L1 Osaka fork
 	AllocateMempoolBalance: true,
 	UseDBStorage:           false,
 	UseNoOpStorage:         false,

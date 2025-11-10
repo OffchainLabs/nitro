@@ -25,11 +25,11 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rpc"
 
-	protocol "github.com/offchainlabs/bold/chain-abstraction"
-	"github.com/offchainlabs/bold/containers"
-	"github.com/offchainlabs/bold/containers/option"
-	"github.com/offchainlabs/bold/containers/threadsafe"
-	retry "github.com/offchainlabs/bold/runtime"
+	protocol "github.com/offchainlabs/nitro/bold/chain-abstraction"
+	"github.com/offchainlabs/nitro/bold/containers"
+	"github.com/offchainlabs/nitro/bold/containers/option"
+	"github.com/offchainlabs/nitro/bold/containers/threadsafe"
+	retry "github.com/offchainlabs/nitro/bold/runtime"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
@@ -45,8 +45,6 @@ var (
 )
 
 var assertionCreatedId common.Hash
-
-var defaultBaseGas = int64(500000)
 
 func init() {
 	rollupAbi, err := rollupgen.RollupCoreMetaData.GetAbi()
@@ -663,7 +661,7 @@ func (a *AssertionChain) createAndStakeOnAssertion(
 	})
 	opts := a.GetCallOptsWithDesiredRpcHeadBlockNumber(&bind.CallOpts{Context: ctx})
 	if createErr := handleCreateAssertionError(err, postState.GlobalState.BlockHash); createErr != nil {
-		if strings.Contains(err.Error(), "already exists") {
+		if strings.Contains(createErr.Error(), "already exists") {
 			assertionItem, err2 := a.GetAssertion(ctx, opts, protocol.AssertionHash{Hash: computedHash})
 			if err2 != nil {
 				return nil, err2

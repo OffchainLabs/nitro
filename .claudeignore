@@ -1,0 +1,78 @@
+# .claudeignore for Arbitrum Nitro
+# Excludes files that shouldn't be indexed by Claude Code
+
+# Dependencies
+vendor/
+node_modules/
+go-ethereum/vendor/
+
+# Build artifacts
+build/
+dist/
+target/
+*.exe
+*.test
+*.out
+*.wasm
+*.a
+
+# IDE and editor files
+.vscode/
+.idea/
+.cursor/
+.windsurf/
+.DS_Store
+*.swp
+*~
+
+# Logs and temporary files
+*.log
+*.tmp
+*.temp
+
+# Test artifacts
+*.prof
+*.test
+coverage.txt
+coverage.html
+
+# Database files
+*.db
+*.sqlite
+*.ldb
+
+# Data directories
+.arbitrum/
+.data/
+data/
+
+# C# files (those belong to Nethermind repo)
+**/*.cs
+**/*.csproj
+**/*.sln
+
+# Documentation that's redundant with rules
+.cursor/rules/*.mdc
+.windsurf/rules/*.md
+
+# Generated files
+**/mocks/
+**/*_mock.go
+**/bindings/
+solgen/go/**/*_gen.go
+
+# Large binary files
+*.bin
+*.so
+*.dylib
+*.dll
+
+# Git metadata (keep repo clean)
+.git/objects/
+.git/logs/
+
+# Environment files
+.env
+.env.local
+*.pem
+*.key

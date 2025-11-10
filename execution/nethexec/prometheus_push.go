@@ -17,12 +17,13 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ethereum/go-ethereum/log"
-	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
 	"github.com/prometheus/common/model"
+
+	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/metrics"
 )
 
 // RegistryGatherer implements prometheus.Gatherer interface for metrics.Registry
@@ -157,7 +158,7 @@ func (rg *RegistryGatherer) addHistogramMetric(familyMap map[string]*dto.MetricF
 		}
 	}
 
-	count := uint64(h.Count())
+	count := uint64(h.Count()) //nolint:gosec // Count() returns non-negative value
 	metric := &dto.Metric{
 		Summary: &dto.Summary{
 			SampleCount: &count,
@@ -185,7 +186,7 @@ func (rg *RegistryGatherer) addTimerMetric(familyMap map[string]*dto.MetricFamil
 		}
 	}
 
-	count := uint64(t.Count())
+	count := uint64(t.Count()) //nolint:gosec // Count() returns non-negative value
 	metric := &dto.Metric{
 		Summary: &dto.Summary{
 			SampleCount: &count,
@@ -213,7 +214,7 @@ func (rg *RegistryGatherer) addResettingTimerMetric(familyMap map[string]*dto.Me
 		}
 	}
 
-	count := uint64(t.Count())
+	count := uint64(t.Count()) //nolint:gosec // Count() returns non-negative value
 	metric := &dto.Metric{
 		Summary: &dto.Summary{
 			SampleCount: &count,

@@ -179,8 +179,8 @@ func LogCallStack(tag string) {
 	}
 
 	// Format and log the call stack with => separators
-	//formattedStack := FormatCallStack(stackFrames)
-	//log.Println("Call stack:", formattedStack)
+	// formattedStack := FormatCallStack(stackFrames)
+	// log.Println("Call stack:", formattedStack)
 
 	// Create the full stack trace object for posting
 	stackTrace := StackTrace{

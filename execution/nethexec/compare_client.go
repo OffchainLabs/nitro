@@ -5,10 +5,13 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
+
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
-	"github.com/google/go-cmp/cmp"
+
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -20,7 +23,7 @@ import (
 type FullExecutionClient interface {
 	execution.ExecutionSequencer // includes ExecutionClient
 	execution.ExecutionRecorder
-	execution.ExecutionBatchPoster
+	execution.ArbOSVersionGetter
 }
 
 var (
@@ -107,11 +110,11 @@ func comparePromises[T any](fatalErrChan chan error, op string,
 func compare[T any](op string, intRes T, intErr error, extRes T, extErr error) error {
 	switch {
 	case intErr != nil && extErr != nil:
-		return fmt.Errorf("both operations failed: internal=%v external=%v", intErr, extErr)
+		return fmt.Errorf("both operations failed: internal=%w external=%w", intErr, extErr)
 	case intErr != nil && extErr == nil:
-		return fmt.Errorf("internal operation failed: %v", intErr)
+		return fmt.Errorf("internal operation failed: %w", intErr)
 	case intErr == nil && extErr != nil:
-		return fmt.Errorf("external operation failed: %v", extErr)
+		return fmt.Errorf("external operation failed: %w", extErr)
 	default:
 		if !cmp.Equal(intRes, extRes) {
 			opts := cmp.Options{
@@ -194,15 +197,23 @@ func (w *compareExecutionClient) BlockNumberToMessageIndex(blockNum uint64) cont
 	return result
 }
 
-func (w *compareExecutionClient) SetFinalityData(ctx context.Context, finalityData *arbutil.FinalityData, finalizedFinalityData *arbutil.FinalityData, validatedFinalityData *arbutil.FinalityData) containers.PromiseInterface[struct{}] {
+func (w *compareExecutionClient) SetFinalityData(finalityData *arbutil.FinalityData, finalizedFinalityData *arbutil.FinalityData, validatedFinalityData *arbutil.FinalityData) containers.PromiseInterface[struct{}] {
 	log.Info("CompareExecutionClient: SetFinalityData",
 		"safeFinalityData", finalityData,
 		"finalizedFinalityData", finalizedFinalityData,
 		"validatedFinalityData", validatedFinalityData)
 
-	internal := w.gethExecutionClient.SetFinalityData(ctx, finalityData, finalizedFinalityData, validatedFinalityData)
-	external := w.nethermindExecutionClient.SetFinalityData(ctx, finalityData, finalizedFinalityData, validatedFinalityData)
+	internal := w.gethExecutionClient.SetFinalityData(finalityData, finalizedFinalityData, validatedFinalityData)
+	external := w.nethermindExecutionClient.SetFinalityData(finalityData, finalizedFinalityData, validatedFinalityData)
 	return comparePromises(w.fatalErrChan, "SetFinalityData", internal, external)
+}
+
+func (w *compareExecutionClient) SetConsensusSyncData(syncData *execution.ConsensusSyncData) containers.PromiseInterface[struct{}] {
+	start := time.Now()
+	log.Info("CompareExecutionClient: SetConsensusSyncData")
+	result := w.gethExecutionClient.SetConsensusSyncData(syncData)
+	log.Info("CompareExecutionClient: SetConsensusSyncData completed", "elapsed", time.Since(start))
+	return result
 }
 
 func (w *compareExecutionClient) MarkFeedStart(to arbutil.MessageIndex) containers.PromiseInterface[struct{}] {
@@ -330,10 +341,10 @@ func (w *compareExecutionClient) FullSyncProgressMap(ctx context.Context) map[st
 
 // ---- execution.ExecutionRecorder interface methods ----
 
-func (w *compareExecutionClient) RecordBlockCreation(ctx context.Context, index arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata) (*execution.RecordResult, error) {
+func (w *compareExecutionClient) RecordBlockCreation(ctx context.Context, index arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, wasmTargets []rawdb.WasmTarget) (*execution.RecordResult, error) {
 	start := time.Now()
 	log.Info("CompareExecutionClient: RecordBlockCreation", "index", index)
-	result, err := w.gethExecutionClient.RecordBlockCreation(ctx, index, msg)
+	result, err := w.gethExecutionClient.RecordBlockCreation(ctx, index, msg, wasmTargets)
 	log.Info("CompareExecutionClient: RecordBlockCreation completed", "index", index, "err", err, "elapsed", time.Since(start))
 	return result, err
 }
@@ -355,12 +366,16 @@ func (w *compareExecutionClient) PrepareForRecord(ctx context.Context, start, en
 
 // ---- execution.ExecutionBatchindexter interface methods ----
 
-func (w *compareExecutionClient) ArbOSVersionForMessageIndex(msgIdx arbutil.MessageIndex) (uint64, error) {
+func (w *compareExecutionClient) ArbOSVersionForMessageIndex(msgIdx arbutil.MessageIndex) containers.PromiseInterface[uint64] {
 	start := time.Now()
 	log.Info("CompareExecutionClient: ArbOSVersionForMessageIndex", "msgIdx", msgIdx)
-	result, err := w.gethExecutionClient.ArbOSVersionForMessageIndex(msgIdx)
-	log.Info("CompareExecutionClient: ArbOSVersionForMessageIndex completed", "msgIdx", msgIdx, "result", result, "err", err, "elapsed", time.Since(start))
-	return result, err
+	promise := w.gethExecutionClient.ArbOSVersionForMessageIndex(msgIdx)
+	// Wait for promise to resolve for logging
+	go func() {
+		result, err := promise.Await(context.Background())
+		log.Info("CompareExecutionClient: ArbOSVersionForMessageIndex completed", "msgIdx", msgIdx, "result", result, "err", err, "elapsed", time.Since(start))
+	}()
+	return promise
 }
 
 func (w *compareExecutionClient) SetConsensusClient(consensus execution.FullConsensusClient) {

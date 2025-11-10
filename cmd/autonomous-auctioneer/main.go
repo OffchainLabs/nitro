@@ -9,7 +9,7 @@ import (
 	"syscall"
 	"time"
 
-	flag "github.com/spf13/pflag"
+	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
@@ -135,7 +135,7 @@ func mainImpl() int {
 		log.Info("Running Arbitrum express lane bid validator", "revision", vcsRevision, "vcs.time", vcsTime)
 		stack, err := node.New(&stackConf)
 		if err != nil {
-			flag.Usage()
+			pflag.Usage()
 			log.Crit("failed to initialize geth stack", "err", err)
 		}
 		bidValidator, err := timeboost.NewBidValidator(
@@ -180,7 +180,7 @@ func mainImpl() int {
 }
 
 func parseAuctioneerArgs(ctx context.Context, args []string) (*AutonomousAuctioneerConfig, error) {
-	f := flag.NewFlagSet("", flag.ContinueOnError)
+	f := pflag.NewFlagSet("", pflag.ContinueOnError)
 
 	AuctioneerConfigAddOptions(f)
 

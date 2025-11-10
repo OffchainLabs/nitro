@@ -115,6 +115,10 @@ func (i WavmInbox) ReadDelayedInbox(seqNum uint64) (*arbostypes.L1IncomingMessag
 type PreimageDASReader struct {
 }
 
+func (*PreimageDASReader) String() string {
+	return "PreimageDASReader"
+}
+
 func (dasReader *PreimageDASReader) GetByHash(ctx context.Context, hash common.Hash) ([]byte, error) {
 	oracle := func(hash common.Hash) ([]byte, error) {
 		return wavmio.ResolveTypedPreimage(arbutil.Keccak256PreimageType, hash)
@@ -236,11 +240,17 @@ func main() {
 		if backend.GetPositionWithinMessage() > 0 {
 			keysetValidationMode = daprovider.KeysetDontValidate
 		}
-		var dapReaders []daprovider.Reader
+		dapReaders := daprovider.NewReaderRegistry()
 		if dasReader != nil {
-			dapReaders = append(dapReaders, dasutil.NewReaderForDAS(dasReader, dasKeysetFetcher))
+			err = dapReaders.SetupDASReader(dasutil.NewReaderForDAS(dasReader, dasKeysetFetcher, keysetValidationMode))
+			if err != nil {
+				panic(fmt.Sprintf("Failed to register DAS reader: %v", err))
+			}
 		}
-		dapReaders = append(dapReaders, daprovider.NewReaderForBlobReader(&BlobPreimageReader{}))
+		err = dapReaders.SetupBlobReader(daprovider.NewReaderForBlobReader(&BlobPreimageReader{}))
+		if err != nil {
+			panic(fmt.Sprintf("Failed to register blob reader: %v", err))
+		}
 		inboxMultiplexer := arbstate.NewInboxMultiplexer(backend, delayedMessagesRead, dapReaders, keysetValidationMode)
 		ctx := context.Background()
 		message, err := inboxMultiplexer.Pop(ctx)
@@ -248,7 +258,7 @@ func main() {
 			panic(fmt.Sprintf("Error reading from inbox multiplexer: %v", err.Error()))
 		}
 
-		err = message.Message.FillInBatchGasCost(batchFetcher)
+		err = message.Message.FillInBatchGasFields(batchFetcher)
 		if err != nil {
 			message.Message = arbostypes.InvalidL1Message
 		}
@@ -300,7 +310,7 @@ func main() {
 		message := readMessage(chainConfig.ArbitrumChainParams.DataAvailabilityCommittee)
 
 		chainContext := WavmChainContext{chainConfig: chainConfig}
-		newBlock, _, err = arbos.ProduceBlock(message.Message, message.DelayedMessagesRead, lastBlockHeader, statedb, chainContext, false, core.NewMessageReplayContext())
+		newBlock, _, err = arbos.ProduceBlock(message.Message, message.DelayedMessagesRead, lastBlockHeader, statedb, chainContext, false, core.NewMessageReplayContext(), false)
 		if err != nil {
 			panic(err)
 		}
