@@ -175,7 +175,7 @@ var ConfigDefault = Config{
 	Bold:                     bold.DefaultBoldConfig,
 	SeqCoordinator:           DefaultSeqCoordinatorConfig,
 	DataAvailability:         das.DefaultDataAvailabilityConfig,
-	DA:                       daconfig.DAConfig{ExternalProvider: daclient.DefaultClientConfig},
+	DA:                       daconfig.DefaultDAConfig,
 	SyncMonitor:              DefaultSyncMonitorConfig,
 	Dangerous:                DefaultDangerousConfig,
 	TransactionStreamer:      DefaultTransactionStreamerConfig,

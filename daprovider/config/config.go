@@ -18,6 +18,11 @@ type DAConfig struct {
 	ExternalProviders daclient.ExternalProviderConfigList `koanf:"external-providers" reload:"hot"`
 }
 
+var DefaultDAConfig = DAConfig{
+	ExternalProvider:  daclient.DefaultClientConfig,
+	ExternalProviders: nil,
+}
+
 func DAConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	daclient.ClientConfigAddOptions(prefix+".external-provider", f)
 	daclient.ExternalProviderConfigAddPluralOptions(prefix+".external-provider", f)
