@@ -179,9 +179,9 @@ func (f *AnyTrustFactory) CreateValidator(ctx context.Context) (daprovider.Valid
 
 // ReferenceDA Factory Implementation
 func (f *ReferenceDAFactory) GetSupportedHeaderBytes() [][]byte {
-	// ReferenceDA uses DACertificateMessageHeaderFlag (0x01) followed by referenceDAProviderType (0xFF)
+	// ReferenceDA uses DACertificateMessageHeaderFlag (0x01) followed by ReferenceDAProviderType (0xFF)
 	return [][]byte{
-		{daprovider.DACertificateMessageHeaderFlag, 0xFF},
+		{daprovider.DACertificateMessageHeaderFlag, referenceda.ReferenceDAProviderType},
 	}
 }
 
