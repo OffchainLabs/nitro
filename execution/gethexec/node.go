@@ -30,6 +30,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/execution"
+	"github.com/offchainlabs/nitro/experimental/debugblock"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -127,6 +128,7 @@ type Config struct {
 	BlockMetadataApiBlocksLimit uint64              `koanf:"block-metadata-api-blocks-limit"`
 	VmTrace                     LiveTracingConfig   `koanf:"vmtrace"`
 	ExposeMultiGas              bool                `koanf:"expose-multi-gas"`
+	Dangerous                   DangerousConfig     `koanf:"dangerous"`
 
 	forwardingTarget string
 }
@@ -155,6 +157,9 @@ func (c *Config) Validate() error {
 	if err := c.RPC.Validate(); err != nil {
 		return err
 	}
+	if err := c.Dangerous.Validate(); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -176,6 +181,7 @@ func ConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Uint64(prefix+".block-metadata-api-blocks-limit", ConfigDefault.BlockMetadataApiBlocksLimit, "maximum number of blocks allowed to be queried for blockMetadata per arb_getRawBlockMetadata query. Enabled by default, set 0 to disable the limit")
 	f.Bool(prefix+".expose-multi-gas", false, "experimental: expose multi-dimensional gas in transaction receipts")
 	LiveTracingConfigAddOptions(prefix+".vmtrace", f)
+	DangerousConfigAddOptions(prefix+".dangerous", f)
 }
 
 type LiveTracingConfig struct {
@@ -191,6 +197,31 @@ var DefaultLiveTracingConfig = LiveTracingConfig{
 func LiveTracingConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".tracer-name", DefaultLiveTracingConfig.TracerName, "(experimental) Name of tracer which should record internal VM operations (costly)")
 	f.String(prefix+".json-config", DefaultLiveTracingConfig.JSONConfig, "(experimental) Tracer configuration in JSON format")
+}
+
+type DangerousConfig struct {
+	DebugBlock     debugblock.Config    `koanf:"debug-block"`
+	BenchSequencer BenchSequencerConfig `koanf:"bench-sequencer"`
+}
+
+var DefaultDangerousConfig = DangerousConfig{
+	DebugBlock:     debugblock.ConfigDefault,
+	BenchSequencer: BenchSequencerConfigDefault,
+}
+
+func DangerousConfigAddOptions(prefix string, f *pflag.FlagSet) {
+	debugblock.ConfigAddOptions(prefix+".debug-block", f)
+	BenchSequencerConfigAddOptions(prefix+".bench-sequencer", f)
+}
+
+func (c *DangerousConfig) Validate() error {
+	if err := c.DebugBlock.Validate(); err != nil {
+		return err
+	}
+	if err := c.BenchSequencer.Validate(); err != nil {
+		return err
+	}
+	return nil
 }
 
 var ConfigDefault = Config{
@@ -273,6 +304,7 @@ func CreateExecutionNode(
 		log.Warn("sequencer enabled without l1 client")
 	}
 
+	var benchSequencerService interface{}
 	if config.Sequencer.Enable {
 		seqConfigFetcher := func() *SequencerConfig { return &configFetcher.Get().Sequencer }
 		sequencer, err = NewSequencer(execEngine, parentChainReader, seqConfigFetcher, parentChainID)
@@ -280,6 +312,9 @@ func CreateExecutionNode(
 			return nil, err
 		}
 		txPublisher = sequencer
+		if config.Dangerous.BenchSequencer.Enable {
+			txPublisher, benchSequencerService = NewBenchSequencer(sequencer)
+		}
 	} else {
 		if config.Forwarder.RedisUrl != "" {
 			txPublisher = NewRedisTxForwarder(config.forwardingTarget, &config.Forwarder)
@@ -373,6 +408,13 @@ func CreateExecutionNode(
 		Service:   eth.NewDebugAPI(eth.NewArbEthereum(l2BlockChain, chainDB)),
 		Public:    false,
 	})
+	if benchSequencerService != nil {
+		apis = append(apis, rpc.API{
+			Namespace: "benchseq",
+			Service:   benchSequencerService,
+			Public:    false,
+		})
+	}
 
 	stack.RegisterAPIs(apis)
 

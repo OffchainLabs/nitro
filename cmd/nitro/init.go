@@ -621,6 +621,9 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 				if err := dbutil.UnfinishedConversionCheck(chainData); err != nil {
 					return nil, nil, fmt.Errorf("l2chaindata unfinished database conversion check error: %w", err)
 				}
+				if config.Execution.Dangerous.DebugBlock.OverwriteChainConfig {
+					config.Execution.Dangerous.DebugBlock.Apply(chainConfig)
+				}
 				wasmDb, err := stack.OpenDatabaseWithOptions("wasm", node.DatabaseOptions{Cache: config.Execution.Caching.DatabaseCache, Handles: config.Persistent.Handles, MetricsNamespace: "wasm/", PebbleExtraOptions: persistentConfig.Pebble.ExtraOptions("wasm"), NoFreezer: true})
 				if err != nil {
 					return nil, nil, err
