@@ -63,6 +63,7 @@ type sequencerMessageParserFunc func(
 	batchBlockHash common.Hash,
 	data []byte,
 	dapReaders *daprovider.ReaderRegistry,
+	cachedPayloads *daprovider.PayloadResult,
 	keysetValidationMode daprovider.KeysetValidationMode,
 ) (*arbstate.SequencerMessage, error)
 

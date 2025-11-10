@@ -21,6 +21,7 @@ type multiplexerBackend struct {
 	batch                 []byte
 	delayedMessage        []byte
 	positionWithinMessage uint64
+	daPayloadMap          BatchPayloadMap
 }
 
 func (b *multiplexerBackend) PeekSequencerInbox() ([]byte, common.Hash, error) {
@@ -32,6 +33,17 @@ func (b *multiplexerBackend) PeekSequencerInbox() ([]byte, common.Hash, error) {
 
 func (b *multiplexerBackend) GetSequencerInboxPosition() uint64 {
 	return b.batchSeqNum
+}
+
+func (b *multiplexerBackend) GetDAPayload(batchHash common.Hash) (*daprovider.PayloadResult, error) {
+	return GetPayloadFromMap(b.daPayloadMap, batchHash)
+}
+func (b *multiplexerBackend) SetDAPayload(batchHash common.Hash, payload *daprovider.PayloadResult) {
+	b.daPayloadMap[batchHash] = *payload
+}
+
+func (b *multiplexerBackend) DeleteDAPayload(batchHash common.Hash) {
+	delete(b.daPayloadMap, batchHash)
 }
 
 func (b *multiplexerBackend) AdvanceSequencerInbox() {
@@ -69,6 +81,7 @@ func FuzzInboxMultiplexer(f *testing.F) {
 			batch:                 seqMsg,
 			delayedMessage:        delayedMsg,
 			positionWithinMessage: 0,
+			daPayloadMap:          BatchPayloadMap{},
 		}
 		multiplexer := NewInboxMultiplexer(backend, 0, nil, daprovider.KeysetValidate)
 		_, err := multiplexer.Pop(context.TODO())

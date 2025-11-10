@@ -41,15 +41,15 @@ import (
 	"github.com/offchainlabs/nitro/daprovider/daclient"
 	"github.com/offchainlabs/nitro/daprovider/das"
 	"github.com/offchainlabs/nitro/daprovider/data_streaming"
-	"github.com/offchainlabs/nitro/daprovider/server"
+	dapserver "github.com/offchainlabs/nitro/daprovider/server"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/staker/bold"
-	"github.com/offchainlabs/nitro/staker/legacy"
-	"github.com/offchainlabs/nitro/staker/multi_protocol"
+	legacystaker "github.com/offchainlabs/nitro/staker/legacy"
+	multiprotocolstaker "github.com/offchainlabs/nitro/staker/multi_protocol"
 	"github.com/offchainlabs/nitro/staker/validatorwallet"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/contracts"
@@ -657,7 +657,6 @@ func getDAS(
 	}
 	// AnyTrust now always uses the daClient, which is already registered,
 	// so we don't need to register it separately here.
-
 	if withDAWriter {
 		return daClient, dasServerCloseFn, dapReaders, nil
 	}

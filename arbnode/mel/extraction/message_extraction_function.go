@@ -199,6 +199,7 @@ func extractMessagesImpl(
 			batch.BlockHash,
 			serialized,
 			dataProviders,
+			nil,
 			daprovider.KeysetValidate,
 		)
 		if err != nil {

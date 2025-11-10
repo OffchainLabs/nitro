@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"io"
 	"math/big"
-	"strings"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
@@ -27,6 +26,10 @@ import (
 
 type InboxBackend interface {
 	PeekSequencerInbox() ([]byte, common.Hash, error)
+
+	GetDAPayload(common.Hash) (*daprovider.PayloadResult, error)
+	SetDAPayload(common.Hash, *daprovider.PayloadResult)
+	DeleteDAPayload(common.Hash)
 
 	GetSequencerInboxPosition() uint64
 	AdvanceSequencerInbox()
@@ -47,12 +50,15 @@ type SequencerMessage struct {
 	Segments             [][]byte
 }
 
+type BatchPayloadMap map[common.Hash]daprovider.PayloadResult
+
 const MaxDecompressedLen int = 1024 * 1024 * 16 // 16 MiB
 const maxZeroheavyDecompressedLen = 101*MaxDecompressedLen/100 + 64
 const MaxSegmentsPerSequencerMessage = 100 * 1024
+const L1HeaderSize = 40
 
-func ParseSequencerMessage(ctx context.Context, batchNum uint64, batchBlockHash common.Hash, data []byte, dapReaders *daprovider.ReaderRegistry, keysetValidationMode daprovider.KeysetValidationMode) (*SequencerMessage, error) {
-	if len(data) < 40 {
+func ParseSequencerMessage(ctx context.Context, batchNum uint64, batchBlockHash common.Hash, data []byte, dapReaders *daprovider.ReaderRegistry, cachedPayload *daprovider.PayloadResult, keysetValidationMode daprovider.KeysetValidationMode) (*SequencerMessage, error) {
+	if len(data) < L1HeaderSize {
 		return nil, errors.New("sequencer message missing L1 header")
 	}
 	parsedMsg := &SequencerMessage{
@@ -63,7 +69,7 @@ func ParseSequencerMessage(ctx context.Context, batchNum uint64, batchBlockHash 
 		AfterDelayedMessages: binary.BigEndian.Uint64(data[32:40]),
 		Segments:             [][]byte{},
 	}
-	payload := data[40:]
+	payload := data[L1HeaderSize:]
 
 	// Stage 0: Check if our node is out of date and we don't understand this batch type
 	// If the parent chain sequencer inbox smart contract authenticated this batch,
@@ -78,24 +84,15 @@ func ParseSequencerMessage(ctx context.Context, batchNum uint64, batchBlockHash 
 	// as these headers are validated by the sequencer inbox and not other DASs.
 	// Use the registry to find the appropriate reader for the header byte
 	if len(payload) > 0 && dapReaders != nil {
-		if dapReader, found := dapReaders.GetByHeaderByte(payload[0]); found {
-			promise := dapReader.RecoverPayload(batchNum, batchBlockHash, data)
-			result, err := promise.Await(ctx)
-			if err != nil {
-				// Matches the way keyset validation was done inside DAS readers i.e logging the error
-				//  But other daproviders might just want to return the error
-				if strings.Contains(err.Error(), daprovider.ErrSeqMsgValidation.Error()) && daprovider.IsDASMessageHeaderByte(payload[0]) {
-					if keysetValidationMode == daprovider.KeysetPanicIfInvalid {
-						panic(err.Error())
-					} else {
-						log.Error(err.Error())
-					}
-				} else {
-					return nil, err
-				}
+		if _, found := dapReaders.GetByHeaderByte(payload[0]); found {
+			// We don't try to re-fetch DA payload from cache if not available since blob availability
+			// could have changed since CacheDAPayload() call.
+			if cachedPayload == nil {
+				return nil, fmt.Errorf("DA payload should have been fetched earlier using CacheDAPayload")
 			} else {
-				payload = result.Payload
+				payload = cachedPayload.Payload
 			}
+
 			if payload == nil {
 				return parsedMsg, nil
 			}
@@ -195,6 +192,21 @@ func NewInboxMultiplexer(backend InboxBackend, delayedMessagesRead uint64, dapRe
 	}
 }
 
+func CacheDAPayload(ctx context.Context, backend InboxBackend, dapReaders *daprovider.ReaderRegistry) error {
+	seqNum := backend.GetSequencerInboxPosition()
+	dataPayload, batchBlockHash, err := backend.PeekSequencerInbox()
+	if err != nil {
+		panic(fmt.Sprintf("Error trying to get dataPayload: %v", err.Error()))
+	}
+	payload, err := daprovider.FetchDAPayload(ctx, dapReaders, seqNum, batchBlockHash, dataPayload, daprovider.KeysetValidate)
+	if err != nil {
+		panic(fmt.Sprintf("Error fetching DA payload: %v", err.Error()))
+	}
+	// This is okay since Go escape analysis stores payload in the heap
+	backend.SetDAPayload(batchBlockHash, &payload)
+	return err
+}
+
 const BatchSegmentKindL2Message uint8 = 0
 const BatchSegmentKindL2MessageBrotli uint8 = 1
 const BatchSegmentKindDelayedMessages uint8 = 2
@@ -211,8 +223,12 @@ func (r *inboxMultiplexer) Pop(ctx context.Context) (*arbostypes.MessageWithMeta
 			return nil, realErr
 		}
 		r.cachedSequencerMessageNum = r.backend.GetSequencerInboxPosition()
-		var err error
-		r.cachedSequencerMessage, err = ParseSequencerMessage(ctx, r.cachedSequencerMessageNum, batchBlockHash, bytes, r.dapReaders, r.keysetValidationMode)
+		payload, err := r.backend.GetDAPayload(batchBlockHash)
+		if err != nil {
+			return nil, err
+		}
+
+		r.cachedSequencerMessage, err = ParseSequencerMessage(ctx, r.cachedSequencerMessageNum, batchBlockHash, bytes, r.dapReaders, payload, r.keysetValidationMode)
 		if err != nil {
 			return nil, err
 		}
@@ -401,4 +417,15 @@ func (r *inboxMultiplexer) getNextMsg() (*arbostypes.MessageWithMetadata, error)
 
 func (r *inboxMultiplexer) DelayedMessagesRead() uint64 {
 	return r.delayedMessagesRead
+}
+
+func GetPayloadFromMap(daPayloadMap BatchPayloadMap, batchHash common.Hash) (*daprovider.PayloadResult, error) {
+	if daPayloadMap != nil {
+		result, ok := daPayloadMap[batchHash]
+		if !ok {
+			return nil, fmt.Errorf("error, could not find payload for batchHash %v", batchHash)
+		}
+		return &result, nil
+	}
+	return nil, nil
 }

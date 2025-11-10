@@ -456,7 +456,8 @@ func (t *InboxTracker) AddDelayedMessages(messages []*DelayedInboxMessage) error
 	defer t.mutex.Unlock()
 
 	// This math is safe to do as we know len(messages) > 0
-	haveLastAcc, err := t.GetDelayedAcc(pos + uint64(len(messages)) - 1)
+	targetAcc := pos + uint64(len(messages)) - 1
+	haveLastAcc, err := t.GetDelayedAcc(targetAcc)
 	if err == nil {
 		if haveLastAcc == messages[len(messages)-1].AfterInboxAcc() {
 			// We already have these delayed messages
@@ -631,6 +632,7 @@ type multiplexerBackend struct {
 	batchSeqNum           uint64
 	batches               []*SequencerInboxBatch
 	positionWithinMessage uint64
+	daPayloadMap          arbstate.BatchPayloadMap
 
 	ctx    context.Context
 	client *ethclient.Client
@@ -638,15 +640,30 @@ type multiplexerBackend struct {
 }
 
 func (b *multiplexerBackend) PeekSequencerInbox() ([]byte, common.Hash, error) {
-	if len(b.batches) == 0 {
+	return PeekSequencerInboxImpl(b.ctx, b.batches, b.client)
+}
+
+func PeekSequencerInboxImpl(ctx context.Context, batches []*SequencerInboxBatch, client *ethclient.Client) ([]byte, common.Hash, error) {
+	if len(batches) == 0 {
 		return nil, common.Hash{}, errors.New("read past end of specified sequencer batches")
 	}
-	bytes, err := b.batches[0].Serialize(b.ctx, b.client)
-	return bytes, b.batches[0].BlockHash, err
+	bytes, err := batches[0].Serialize(ctx, client)
+	return bytes, batches[0].BlockHash, err
 }
 
 func (b *multiplexerBackend) GetSequencerInboxPosition() uint64 {
 	return b.batchSeqNum
+}
+
+func (b *multiplexerBackend) GetDAPayload(batchHash common.Hash) (*daprovider.PayloadResult, error) {
+	return arbstate.GetPayloadFromMap(b.daPayloadMap, batchHash)
+}
+func (b *multiplexerBackend) SetDAPayload(batchHash common.Hash, payload *daprovider.PayloadResult) {
+	b.daPayloadMap[batchHash] = *payload
+}
+
+func (b *multiplexerBackend) DeleteDAPayload(batchHash common.Hash) {
+	delete(b.daPayloadMap, batchHash)
 }
 
 func (b *multiplexerBackend) AdvanceSequencerInbox() {
@@ -747,6 +764,7 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client *ethclien
 					"Delayed message accumulator doesn't match sequencer batch",
 					"batch", batch.SequenceNumber,
 					"delayedPosition", batch.AfterDelayedCount-1,
+					"notFound", notFound,
 					"haveDelayedAcc", haveDelayedAcc,
 					"batchDelayedAcc", batch.AfterDelayedAcc,
 				)
@@ -761,13 +779,17 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client *ethclien
 
 	var messages []arbostypes.MessageWithMetadata
 	backend := &multiplexerBackend{
-		batchSeqNum: batches[0].SequenceNumber,
-		batches:     batches,
-
-		inbox:  t,
-		ctx:    ctx,
-		client: client,
+		batchSeqNum:  batches[0].SequenceNumber,
+		batches:      batches,
+		daPayloadMap: NewPayLoadMapFromBatches(batches),
+		inbox:        t,
+		ctx:          ctx,
+		client:       client,
 	}
+
+	// Don't wait for GC to collect, just clear daPayloadMap after we return from AddSequencerBatches
+	defer clear(backend.daPayloadMap)
+
 	multiplexer := arbstate.NewInboxMultiplexer(backend, prevbatchmeta.DelayedMessageCount, t.dapReaders, daprovider.KeysetValidate)
 	batchMessageCounts := make(map[uint64]arbutil.MessageIndex)
 	currentPos := prevbatchmeta.MessageCount + 1

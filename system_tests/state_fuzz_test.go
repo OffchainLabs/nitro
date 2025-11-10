@@ -45,8 +45,8 @@ func BuildBlock(
 		delayedMessagesRead = lastBlockHeader.Nonce.Uint64()
 	}
 	inboxMultiplexer := arbstate.NewInboxMultiplexer(inbox, delayedMessagesRead, nil, daprovider.KeysetValidate)
-
 	ctx := context.Background()
+
 	message, err := inboxMultiplexer.Pop(ctx)
 	if err != nil {
 		return nil, err
@@ -85,6 +85,13 @@ func (b *inboxBackend) PeekSequencerInbox() ([]byte, common.Hash, error) {
 	}
 	return b.batches[0], common.Hash{}, nil
 }
+
+func (b *inboxBackend) GetDAPayload(batchHash common.Hash) (*daprovider.PayloadResult, error) {
+	return nil, nil
+}
+func (b *inboxBackend) SetDAPayload(batchHash common.Hash, payload *daprovider.PayloadResult) {}
+
+func (b *inboxBackend) DeleteDAPayload(batchHash common.Hash) {}
 
 func (b *inboxBackend) GetSequencerInboxPosition() uint64 {
 	return b.batchSeqNum
