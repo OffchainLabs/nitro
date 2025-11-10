@@ -290,6 +290,11 @@ func (t *InboxTracker) PopulateFeedBacklog(broadcastServer *broadcaster.Broadcas
 			return fmt.Errorf("error getting batch %v message count: %w", batchIndex, err)
 		}
 	}
+
+	if t.txStreamer == nil {
+		return errors.New("txStreamer is nil")
+	}
+
 	messageCount, err := t.txStreamer.GetMessageCount()
 	if err != nil {
 		return fmt.Errorf("error getting tx streamer message count: %w", err)
