@@ -63,25 +63,6 @@ func (b *Broadcaster) NewBroadcastFeedMessage(
 	}, nil
 }
 
-func (b *Broadcaster) BroadcastSingle(
-	msg arbostypes.MessageWithMetadataAndBlockInfo,
-	msgIdx arbutil.MessageIndex,
-) (err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			log.Error("recovered error in BroadcastSingle", "recover", r, "backtrace", string(debug.Stack()))
-			err = errors.New("panic in BroadcastSingle")
-		}
-	}()
-	bfm, err := b.NewBroadcastFeedMessage(msg, msgIdx)
-	if err != nil {
-		return err
-	}
-
-	b.BroadcastFeedMessages([]*m.BroadcastFeedMessage{bfm})
-	return nil
-}
-
 func (b *Broadcaster) BroadcastMessages(
 	messagesWithBlockInfo []arbostypes.MessageWithMetadataAndBlockInfo,
 	firstMsgIdx arbutil.MessageIndex,

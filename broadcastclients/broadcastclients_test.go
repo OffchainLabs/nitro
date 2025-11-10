@@ -47,12 +47,15 @@ func (ts *MockTransactionStreamer) AddBroadcastMessages(feedMessages []*message.
 	return nil
 }
 
-func testMessage() arbostypes.MessageWithMetadataAndBlockInfo {
-	return arbostypes.MessageWithMetadataAndBlockInfo{
+func feedMessage(t *testing.T, b *broadcaster.Broadcaster, seqNum arbutil.MessageIndex) []*message.BroadcastFeedMessage {
+	msg := arbostypes.MessageWithMetadataAndBlockInfo{
 		MessageWithMeta: arbostypes.EmptyTestMessageWithMetadata,
 		BlockHash:       nil,
 		BlockMetadata:   nil,
 	}
+	broadcastMsg, err := b.NewBroadcastFeedMessage(msg, seqNum)
+	Require(t, err)
+	return []*message.BroadcastFeedMessage{broadcastMsg}
 }
 
 // Test that a basic setup of broadcaster and BroadcastClients works
@@ -143,7 +146,7 @@ func TestBasicBroadcastClientSetup(t *testing.T) {
 	// Send messages with sequential sequence numbers
 	for i := 0; i < messageCount; i++ {
 		// #nosec G115
-		Require(t, b.BroadcastSingle(testMessage(), arbutil.MessageIndex(i)))
+		b.BroadcastFeedMessages(feedMessage(t, b, arbutil.MessageIndex(i)))
 	}
 
 	wg.Wait()
@@ -290,10 +293,7 @@ func TestPrimaryToSecondaryFailover(t *testing.T) {
 	// Send 5 messages from primary
 	const initialMessageCount = 5
 	for i := 0; i < initialMessageCount; i++ {
-		// #nosec G115
-		seq := arbutil.MessageIndex(i)
-		err := primaryB.BroadcastSingle(testMessage(), seq)
-		Require(t, err)
+		primaryB.BroadcastFeedMessages(feedMessage(t, primaryB, arbutil.MessageIndex(i))) // #nosec G115
 		time.Sleep(50 * time.Millisecond)
 	}
 
@@ -326,10 +326,7 @@ func TestPrimaryToSecondaryFailover(t *testing.T) {
 	t.Logf("Sending %d messages from secondary starting at sequence %d", secondaryMessageCount, startSeq)
 
 	for i := 0; i < secondaryMessageCount; i++ {
-		// #nosec G115
-		seq := arbutil.MessageIndex(startSeq + i)
-		err := secondaryB.BroadcastSingle(testMessage(), seq)
-		Require(t, err)
+		secondaryB.BroadcastFeedMessages(feedMessage(t, secondaryB, arbutil.MessageIndex(startSeq+i))) // #nosec G115
 		time.Sleep(50 * time.Millisecond)
 	}
 

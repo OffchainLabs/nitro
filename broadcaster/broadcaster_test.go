@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
+	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/broadcaster/message"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
@@ -52,12 +54,15 @@ func (p *messageCountPredicate) Error() string {
 	return fmt.Sprintf("Expected %d, was %d: %s", p.expected, p.was, p.contextMessage)
 }
 
-func testMessage() arbostypes.MessageWithMetadataAndBlockInfo {
-	return arbostypes.MessageWithMetadataAndBlockInfo{
+func feedMessage(t *testing.T, b *Broadcaster, seqNum arbutil.MessageIndex) []*message.BroadcastFeedMessage {
+	msg := arbostypes.MessageWithMetadataAndBlockInfo{
 		MessageWithMeta: arbostypes.EmptyTestMessageWithMetadata,
 		BlockHash:       nil,
 		BlockMetadata:   nil,
 	}
+	broadcastMsg, err := b.NewBroadcastFeedMessage(msg, seqNum)
+	Require(t, err)
+	return []*message.BroadcastFeedMessage{broadcastMsg}
 }
 
 func TestBroadcasterMessagesRemovedOnConfirmation(t *testing.T) {
@@ -78,18 +83,18 @@ func TestBroadcasterMessagesRemovedOnConfirmation(t *testing.T) {
 	}
 
 	// Normal broadcasting and confirming
-	Require(t, b.BroadcastSingle(testMessage(), 1))
+	b.BroadcastFeedMessages(feedMessage(t, b, 1))
 	waitUntilUpdated(t, expectMessageCount(1, "after 1 message"))
-	Require(t, b.BroadcastSingle(testMessage(), 2))
+	b.BroadcastFeedMessages(feedMessage(t, b, 2))
 	waitUntilUpdated(t, expectMessageCount(2, "after 2 messages"))
-	Require(t, b.BroadcastSingle(testMessage(), 3))
+	b.BroadcastFeedMessages(feedMessage(t, b, 3))
 	waitUntilUpdated(t, expectMessageCount(3, "after 3 messages"))
-	Require(t, b.BroadcastSingle(testMessage(), 4))
+	b.BroadcastFeedMessages(feedMessage(t, b, 4))
 	waitUntilUpdated(t, expectMessageCount(4, "after 4 messages"))
-	Require(t, b.BroadcastSingle(testMessage(), 5))
-	waitUntilUpdated(t, expectMessageCount(5, "after 4 messages"))
-	Require(t, b.BroadcastSingle(testMessage(), 6))
-	waitUntilUpdated(t, expectMessageCount(6, "after 4 messages"))
+	b.BroadcastFeedMessages(feedMessage(t, b, 5))
+	waitUntilUpdated(t, expectMessageCount(5, "after 5 messages"))
+	b.BroadcastFeedMessages(feedMessage(t, b, 6))
+	waitUntilUpdated(t, expectMessageCount(6, "after 6 messages"))
 
 	b.Confirm(4)
 	waitUntilUpdated(t, expectMessageCount(2,
@@ -104,7 +109,7 @@ func TestBroadcasterMessagesRemovedOnConfirmation(t *testing.T) {
 		"nothing changed because confirmed sequence number before cache"))
 
 	b.Confirm(5)
-	Require(t, b.BroadcastSingle(testMessage(), 7))
+	b.BroadcastFeedMessages(feedMessage(t, b, 7))
 	waitUntilUpdated(t, expectMessageCount(2,
 		"after 7 messages, 5 cleared by confirm"))
 
