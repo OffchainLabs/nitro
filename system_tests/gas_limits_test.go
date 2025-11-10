@@ -80,8 +80,7 @@ func TestBlockGasLimit(t *testing.T) {
 		L1BaseFee:   nil,
 	}
 	hooks := gethexec.MakeZeroTxSizeSequencingHooksForTesting(txes, nil, nil, nil)
-	_, err = b.L2.ExecNode.ExecEngine.SequenceTransactions(header, hooks, nil)
-	Require(t, err)
+	sequenceTransactions(t, b, header, hooks, nil)
 
 	// as block gas-limit is 1.5txs, and it's a soft limit - first two transactions should pass
 	// 3rd tx will never be included because the block is over the soft limit before reaching it
