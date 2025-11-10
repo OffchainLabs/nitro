@@ -83,16 +83,8 @@ func (b *Broadcaster) BroadcastSingle(
 		return err
 	}
 
-	b.BroadcastSingleFeedMessage(bfm)
+	b.BroadcastFeedMessages([]*m.BroadcastFeedMessage{bfm})
 	return nil
-}
-
-func (b *Broadcaster) BroadcastSingleFeedMessage(bfm *m.BroadcastFeedMessage) {
-	broadcastFeedMessages := make([]*m.BroadcastFeedMessage, 0, 1)
-
-	broadcastFeedMessages = append(broadcastFeedMessages, bfm)
-
-	b.BroadcastFeedMessages(broadcastFeedMessages)
 }
 
 func (b *Broadcaster) BroadcastMessages(
