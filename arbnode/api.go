@@ -13,6 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/metrics"
 
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/execution"
@@ -22,6 +23,11 @@ import (
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/validator"
 	"github.com/offchainlabs/nitro/validator/server_api"
+)
+
+var (
+	getL1ConfirmationCallsCounter        = metrics.NewRegisteredCounter("arb/consensus_rpc_get_l1_confirmation_calls", nil)
+	findBatchContainingBlockCallsCounter = metrics.NewRegisteredCounter("arb/consensus_rpc_find_batch_containing_block_calls", nil)
 )
 
 type BlockValidatorAPI struct {
@@ -57,6 +63,8 @@ func NewArbAPI(
 }
 
 func (a *ArbAPI) GetL1Confirmations(ctx context.Context, blockNum uint64) (uint64, error) {
+	getL1ConfirmationCallsCounter.Inc(1)
+
 	// blocks behind genesis are treated as belonging to batch 0
 	msgIdx, err := a.execClient.BlockNumberToMessageIndex(blockNum).Await(ctx)
 	if err != nil {
@@ -120,6 +128,8 @@ func (a *ArbAPI) GetL1Confirmations(ctx context.Context, blockNum uint64) (uint6
 }
 
 func (a *ArbAPI) FindBatchContainingBlock(ctx context.Context, blockNum uint64) (uint64, error) {
+	findBatchContainingBlockCallsCounter.Inc(1)
+
 	msgIdx, err := a.execClient.BlockNumberToMessageIndex(blockNum).Await(ctx)
 	if err != nil {
 		if errors.Is(err, gethexec.BlockNumBeforeGenesis) {
