@@ -58,16 +58,16 @@ func NewArbAPI(
 
 func (a *ArbAPI) GetL1Confirmations(ctx context.Context, blockNum uint64) (uint64, error) {
 	// blocks behind genesis are treated as belonging to batch 0
-	msgNum, err := a.execClient.BlockNumberToMessageIndex(blockNum).Await(ctx)
+	msgIdx, err := a.execClient.BlockNumberToMessageIndex(blockNum).Await(ctx)
 	if err != nil {
 		if !errors.Is(err, gethexec.BlockNumBeforeGenesis) {
 			return 0, err
 		}
-		msgNum = 0
+		msgIdx = 0
 	}
 
 	// batches not yet posted have 0 confirmations but no error
-	batchNum, found, err := a.inboxTracker.FindInboxBatchContainingMessage(msgNum)
+	batchNum, found, err := a.inboxTracker.FindInboxBatchContainingMessage(msgIdx)
 	if err != nil {
 		return 0, err
 	}
@@ -120,7 +120,7 @@ func (a *ArbAPI) GetL1Confirmations(ctx context.Context, blockNum uint64) (uint6
 }
 
 func (a *ArbAPI) FindBatchContainingBlock(ctx context.Context, blockNum uint64) (uint64, error) {
-	msgIndex, err := a.execClient.BlockNumberToMessageIndex(blockNum).Await(ctx)
+	msgIdx, err := a.execClient.BlockNumberToMessageIndex(blockNum).Await(ctx)
 	if err != nil {
 		if errors.Is(err, gethexec.BlockNumBeforeGenesis) {
 			return 0, fmt.Errorf("block %v is part of genesis", blockNum)
@@ -128,11 +128,11 @@ func (a *ArbAPI) FindBatchContainingBlock(ctx context.Context, blockNum uint64) 
 		return 0, err
 	}
 
-	res, found, err := a.inboxTracker.FindInboxBatchContainingMessage(msgIndex)
+	batchNum, found, err := a.inboxTracker.FindInboxBatchContainingMessage(msgIdx)
 	if err == nil && !found {
 		return 0, errors.New("block not yet found on any batch")
 	}
-	return res, err
+	return batchNum, err
 }
 
 type BlockValidatorDebugAPI struct {
