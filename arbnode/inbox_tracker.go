@@ -328,7 +328,7 @@ func (t *InboxTracker) PopulateFeedBacklog(broadcastServer *broadcaster.Broadcas
 		}
 		feedMessages = append(feedMessages, feedMessage)
 	}
-	return broadcastServer.PopulateFeedBacklog(feedMessages)
+	return broadcastServer.PopulateBacklog(feedMessages)
 }
 
 func (t *InboxTracker) legacyGetDelayedMessageAndAccumulator(ctx context.Context, seqNum uint64) (*arbostypes.L1IncomingMessage, common.Hash, error) {

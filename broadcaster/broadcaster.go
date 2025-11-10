@@ -4,11 +4,6 @@
 package broadcaster
 
 import (
-	"context"
-	"net"
-
-	"github.com/gobwas/ws"
-
 	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
@@ -20,7 +15,7 @@ import (
 )
 
 type Broadcaster struct {
-	server     *wsbroadcastserver.WSBroadcastServer
+	*wsbroadcastserver.WSBroadcastServer
 	backlog    backlog.Backlog
 	chainId    uint64
 	dataSigner signature.DataSignerFunc
@@ -29,10 +24,10 @@ type Broadcaster struct {
 func NewBroadcaster(config wsbroadcastserver.BroadcasterConfigFetcher, chainId uint64, feedErrChan chan error, dataSigner signature.DataSignerFunc) *Broadcaster {
 	bklg := backlog.NewBacklog(func() *backlog.Config { return &config().Backlog })
 	return &Broadcaster{
-		server:     wsbroadcastserver.NewWSBroadcastServer(config, bklg, chainId, feedErrChan),
-		backlog:    bklg,
-		chainId:    chainId,
-		dataSigner: dataSigner,
+		wsbroadcastserver.NewWSBroadcastServer(config, bklg, chainId, feedErrChan),
+		bklg,
+		chainId,
+		dataSigner,
 	}
 }
 
@@ -66,20 +61,20 @@ func (b *Broadcaster) BroadcastFeedMessages(messages []*m.BroadcastFeedMessage) 
 		Version:  m.V1,
 		Messages: messages,
 	}
-	b.server.Broadcast(bm)
+	b.Broadcast(bm)
 }
 
-func (b *Broadcaster) PopulateFeedBacklog(messages []*m.BroadcastFeedMessage) error {
+func (b *Broadcaster) PopulateBacklog(messages []*m.BroadcastFeedMessage) error {
 	bm := &m.BroadcastMessage{
 		Version:  m.V1,
 		Messages: messages,
 	}
-	return b.server.PopulateFeedBacklog(bm)
+	return b.PopulateFeedBacklog(bm)
 }
 
 func (b *Broadcaster) Confirm(msgIdx arbutil.MessageIndex) {
 	log.Debug("confirming msgIdx", "msgIdx", msgIdx)
-	b.server.Broadcast(&m.BroadcastMessage{
+	b.Broadcast(&m.BroadcastMessage{
 		Version: m.V1,
 		ConfirmedSequenceNumberMessage: &m.ConfirmedSequenceNumberMessage{
 			SequenceNumber: msgIdx,
@@ -87,35 +82,7 @@ func (b *Broadcaster) Confirm(msgIdx arbutil.MessageIndex) {
 	})
 }
 
-func (b *Broadcaster) ClientCount() int32 {
-	return b.server.ClientCount()
-}
-
-func (b *Broadcaster) ListenerAddr() net.Addr {
-	return b.server.ListenerAddr()
-}
-
 func (b *Broadcaster) GetCachedMessageCount() int {
 	// #nosec G115
 	return int(b.backlog.Count())
-}
-
-func (b *Broadcaster) Initialize() error {
-	return b.server.Initialize()
-}
-
-func (b *Broadcaster) Start(ctx context.Context) error {
-	return b.server.Start(ctx)
-}
-
-func (b *Broadcaster) StartWithHeader(ctx context.Context, header ws.HandshakeHeader) error {
-	return b.server.StartWithHeader(ctx, header)
-}
-
-func (b *Broadcaster) StopAndWait() {
-	b.server.StopAndWait()
-}
-
-func (b *Broadcaster) Started() bool {
-	return b.server.Started()
 }
