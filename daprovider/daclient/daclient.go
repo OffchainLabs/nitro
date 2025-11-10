@@ -174,7 +174,7 @@ func (c *Client) GetSupportedHeaderBytes() containers.PromiseInterface[Supported
 			// Convert []hexutil.Bytes to [][]byte
 			headerBytes := make([][]byte, len(result.HeaderBytes))
 			for i, hb := range result.HeaderBytes {
-				headerBytes[i] = []byte(hb)
+				headerBytes[i] = hb
 			}
 			promise.Produce(SupportedHeaderBytesResult{HeaderBytes: headerBytes})
 		}
