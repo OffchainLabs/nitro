@@ -25,9 +25,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/externalsignertest"
-	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/offchainlabs/nitro/broadcaster/message"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/solgen/go/upgrade_executorgen"
@@ -925,6 +923,8 @@ func TestBatchPosterPostsReportOnlyBatchAfterMaxEmptyBatchDelay(t *testing.T) {
 	builder.nodeConfig.DelayedSequencer.FinalizeDistance = 1
 	// Post an empty batch if no useful messages appear within 1 second.
 	builder.nodeConfig.BatchPoster.MaxEmptyBatchDelay = time.Second
+	// Use a very short non-zero max delay to trigger first batch immediately.
+	builder.nodeConfig.BatchPoster.MaxDelay = time.Millisecond
 	// Disable automatic background posting
 	builder.nodeConfig.BatchPoster.PollInterval = time.Hour
 
@@ -936,37 +936,14 @@ func TestBatchPosterPostsReportOnlyBatchAfterMaxEmptyBatchDelay(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, posted, "expected first batch to post immediately")
 
-	// Manually inject a delayed message into the inbox.
-	seqNum, err := builder.L2.ConsensusNode.TxStreamer.GetMessageCount()
-	require.NoError(t, err)
+	// Spin L1 to get batch poster report
+	AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, 1)
 
-	requestId := common.BigToHash(big.NewInt(1))
-	require.NoError(t, err)
+	// Wait long enough for both the MaxEmptyBatchDelay window and one full Ethereum PoS block interval (12 sec)
+	// to elapse, ensuring that the next batch becomes eligible for posting.
+	time.Sleep(builder.nodeConfig.BatchPoster.MaxEmptyBatchDelay + 12*time.Second + 500*time.Millisecond)
 
-	feedMsg := &message.BroadcastFeedMessage{
-		SequenceNumber: seqNum,
-		Message: arbostypes.MessageWithMetadata{
-			Message: &arbostypes.L1IncomingMessage{
-				Header: &arbostypes.L1IncomingMessageHeader{
-					Kind:        arbostypes.L1MessageType_EndOfBlock,
-					Poster:      [20]byte{},
-					BlockNumber: 0,
-					Timestamp:   uint64(time.Now().Unix()),
-					RequestId:   &requestId,
-					L1BaseFee:   big.NewInt(0),
-				},
-			},
-			DelayedMessagesRead: 2,
-		},
-	}
-
-	// Wait for little more than MaxEmptyBatchDelay
-	time.Sleep(builder.nodeConfig.BatchPoster.MaxEmptyBatchDelay + time.Millisecond)
-
-	err = builder.L2.ConsensusNode.TxStreamer.AddBroadcastMessages([]*message.BroadcastFeedMessage{feedMsg})
-	require.NoError(t, err, "failed to inject BatchPostingReport broadcast message")
-
-	// Force second batch
+	// Force second batch, posting should be triggered by MaxEmptyBatchDelay
 	posted, err = builder.L2.ConsensusNode.BatchPoster.MaybePostSequencerBatch(ctx)
 	require.NoError(t, err)
 	require.True(t, posted, "expected second batch to be posted by MaxEmptyBatchDelay")
