@@ -13,7 +13,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 
-	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/solgen/go/node_interfacegen"
 )
 
@@ -39,7 +38,6 @@ func testGetL1Confirmations(
 	ctx context.Context,
 	childChainTestClient *TestClient,
 	parentChainTestClient *TestClient,
-	parentChainTestClientSecondNode *TestClient,
 	parentChainInfo info,
 ) {
 	// Wait so ConsensusNode.L1Reader has some time to read parent chain headers,
@@ -63,13 +61,8 @@ func testGetL1Confirmations(
 			genesisBlock.Number(), l1ConfsNodeInterface, l1ConfsRPC, numTransactions)
 	}
 
-	var tx *types.Transaction
 	for i := 0; i < numTransactions; i++ {
-		tx, _ = parentChainTestClient.TransferBalance(t, "User", "User", common.Big0, parentChainInfo)
-	}
-	if parentChainTestClientSecondNode != nil {
-		_, err = WaitForTx(ctx, parentChainTestClientSecondNode.Client, tx.Hash(), time.Second*5)
-		Require(t, err)
+		parentChainTestClient.TransferBalance(t, "User", "User", common.Big0, parentChainInfo)
 	}
 
 	l1ConfsNodeInterface, l1ConfsRPC, err = getL1Confirmations(ctx, nodeInterface, childChainTestClient.Client, genesisBlock)
@@ -91,7 +84,7 @@ func TestGetL1ConfirmationsForL2(t *testing.T) {
 	cleanup := builder.Build(t)
 	defer cleanup()
 
-	testGetL1Confirmations(t, ctx, builder.L2, builder.L1, nil, builder.L1Info)
+	testGetL1Confirmations(t, ctx, builder.L2, builder.L1, builder.L1Info)
 }
 
 func TestGetL1ConfirmationsForL3(t *testing.T) {
@@ -102,14 +95,10 @@ func TestGetL1ConfirmationsForL3(t *testing.T) {
 	cleanupL1AndL2 := builder.Build(t)
 	defer cleanupL1AndL2()
 
-	l2SecondNodeNodeConfig := arbnode.ConfigDefaultL1NonSequencerTest()
-	testClientL2SecondNode, cleanupL2SecondNode := builder.Build2ndNode(t, &SecondNodeParams{nodeConfig: l2SecondNodeNodeConfig})
-	defer cleanupL2SecondNode()
-
 	cleanupL3 := builder.BuildL3OnL2(t)
 	defer cleanupL3()
 
-	testGetL1Confirmations(t, ctx, builder.L3, builder.L2, testClientL2SecondNode, builder.L2Info)
+	testGetL1Confirmations(t, ctx, builder.L3, builder.L2, builder.L2Info)
 }
 
 func TestFindBatch(t *testing.T) {
