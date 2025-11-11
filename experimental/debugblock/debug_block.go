@@ -97,21 +97,19 @@ func PrepareDebugTransaction(chainConfig *params.ChainConfig, lastHeader *types.
 
 func DebugBlockStateUpdate(statedb *state.StateDB, expectedBalanceDelta *big.Int, chainConfig *params.ChainConfig) {
 	// fund trigger account - used to send the transaction that triggered this block and needs pre-funding to succeed (at least one successful tx is required for the block to be appended to the chain)
-	transferGas := util.NormalizeL2GasForL1GasInitial(800_000, params.GWei) // include room for L1 costs
-	triggerCost := uint256.MustFromBig(new(big.Int).Mul(big.NewInt(int64(transferGas)), big.NewInt(params.GWei)))
+	transferGas := util.NormalizeL2GasForL1GasInitial(800_000, 100*params.GWei) // include room for L1 costs
+	triggerCost := uint256.MustFromBig(new(big.Int).Mul(big.NewInt(int64(transferGas)), big.NewInt(100*params.GWei)))
 	_, triggerAddress, err := triggerPrivateKeyAndAddress()
 	if err != nil {
 		log.Error("debug block: failed to get hardcoded address", "err", err)
 		return
 	}
-	statedb.SetBalance(triggerAddress, triggerCost, tracing.BalanceChangeUnspecified)
-	expectedBalanceDelta.Add(expectedBalanceDelta, triggerCost.ToBig())
+	statedb.AddBalance(triggerAddress, triggerCost, tracing.BalanceChangeUnspecified)
 
 	// fund debug account
 	if chainConfig.ArbitrumChainParams.DebugAddress != nil {
 		balance := uint256.MustFromBig(new(big.Int).Lsh(big.NewInt(1), 254))
-		statedb.SetBalance(*chainConfig.ArbitrumChainParams.DebugAddress, balance, tracing.BalanceChangeUnspecified)
-		expectedBalanceDelta.Add(expectedBalanceDelta, balance.ToBig())
+		statedb.AddBalance(*chainConfig.ArbitrumChainParams.DebugAddress, balance, tracing.BalanceChangeUnspecified)
 		log.Warn("DANGER! debug block: funding debug account", "debugAddress", chainConfig.ArbitrumChainParams.DebugAddress)
 	}
 
