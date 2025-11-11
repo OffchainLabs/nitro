@@ -1636,24 +1636,32 @@ func (n *Node) GetL1Confirmations(ctx context.Context, msgIdx arbutil.MessageInd
 	}
 	if n.L1Reader.IsParentChainArbitrum() {
 		parentChainClient := n.L1Reader.Client()
-		parentNodeInterface, err := node_interfacegen.NewNodeInterface(types.NodeInterfaceAddress, parentChainClient)
-		if err != nil {
-			return containers.NewReadyPromise(uint64(0), err)
-		}
 		parentChainBlock, err := parentChainClient.BlockByNumber(ctx, new(big.Int).SetUint64(parentChainBlockNum))
 		if err != nil {
 			// Hide the parent chain RPC error from the client in case it contains sensitive information.
 			// Likely though, this error is just "not found" because the block got reorg'd.
 			return containers.NewReadyPromise(uint64(0), fmt.Errorf("failed to get parent chain block %v containing batch", parentChainBlockNum))
 		}
-		confs, err := parentNodeInterface.GetL1Confirmations(&bind.CallOpts{Context: ctx}, parentChainBlock.Hash())
+
+		var confs uint64
+		err = parentChainClient.Client().CallContext(ctx, &confs, "arb_getL1Confirmations", parentChainBlock.Number())
 		if err != nil {
-			log.Warn(
-				"Failed to get L1 confirmations from parent chain",
-				"blockNumber", parentChainBlockNum,
-				"blockHash", parentChainBlock.Hash(), "err", err,
-			)
-			return containers.NewReadyPromise(uint64(0), fmt.Errorf("failed to get L1 confirmations from parent chain for block %v", parentChainBlock.Hash()))
+			// falls back to node interface method
+			log.Debug("Failed to get L1 confirmations from parent chain via arb_getL1Confirmations", "blockNumber", parentChainBlockNum, "blockHash", parentChainBlock.Hash(), "err", err)
+
+			parentNodeInterface, err := node_interfacegen.NewNodeInterface(types.NodeInterfaceAddress, parentChainClient)
+			if err != nil {
+				return containers.NewReadyPromise(uint64(0), err)
+			}
+			confs, err = parentNodeInterface.GetL1Confirmations(&bind.CallOpts{Context: ctx}, parentChainBlock.Hash())
+			if err != nil {
+				log.Warn(
+					"Failed to get L1 confirmations from parent chain",
+					"blockNumber", parentChainBlockNum,
+					"blockHash", parentChainBlock.Hash(), "err", err,
+				)
+				return containers.NewReadyPromise(uint64(0), fmt.Errorf("failed to get L1 confirmations from parent chain for block %v", parentChainBlock.Hash()))
+			}
 		}
 		return containers.NewReadyPromise(confs, nil)
 	}
