@@ -15,6 +15,7 @@ import "C"
 import (
 	"errors"
 	"fmt"
+	"unsafe"
 )
 
 type u8 = C.uint8_t
@@ -23,8 +24,30 @@ type usize = C.size_t
 
 type brotliBuffer = C.BrotliBuffer
 
+type StreamingCompressor = unsafe.Pointer
+
 func CompressWell(input []byte) ([]byte, error) {
 	return Compress(input, LEVEL_WELL, EmptyDictionary)
+}
+
+func CreateStreamingCompressor(level uint32) StreamingCompressor {
+	return C.brotli_create_compressing_writer(u32(level))
+}
+
+func WriteToStreamingCompressor(state StreamingCompressor, input []byte, output []byte) int {
+	outbuf := sliceToBuffer(output)
+	inbuf := sliceToBuffer(input)
+	return int(C.brotli_write_to_stream(state, inbuf, outbuf))
+}
+
+func FlushStreamingCompressor(state StreamingCompressor, output []byte) {
+	outbuf := sliceToBuffer(output)
+	C.brotli_flush_stream(state, outbuf)
+}
+
+func CloseStreamingCompressor(state StreamingCompressor, output []byte) {
+	outbuf := sliceToBuffer(output)
+	C.brotli_close_stream(state, outbuf)
 }
 
 func Compress(input []byte, level uint32, dictionary Dictionary) ([]byte, error) {
