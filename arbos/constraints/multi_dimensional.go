@@ -15,12 +15,14 @@ import (
 // [0] target (uint64)
 // [1] adjustmentWindow (uint64)
 // [2] backlog (uint64)
-// [3..3+NumResourceKind-1] weighted resources (uint64 each)
+// [3] sumWeights (uint64)
+// [4..4+NumResourceKind-1] weighted resources (uint64 each)
 
 const (
 	targetOffset uint64 = iota
 	adjustmentWindowOffset
 	backlogOffset
+	sumWeightsOffset
 	weightedResourcesBaseOffset
 )
 
@@ -30,6 +32,7 @@ type MultiGasConstraint struct {
 	target            storage.StorageBackedUint64
 	adjustmentWindow  storage.StorageBackedUint64
 	backlog           storage.StorageBackedUint64
+	sumWeights        storage.StorageBackedUint64
 	weightedResources [multigas.NumResourceKind]storage.StorageBackedUint64
 }
 
@@ -39,6 +42,7 @@ func OpenMultiGasConstraint(sto *storage.Storage) *MultiGasConstraint {
 		target:           sto.OpenStorageBackedUint64(targetOffset),
 		adjustmentWindow: sto.OpenStorageBackedUint64(adjustmentWindowOffset),
 		backlog:          sto.OpenStorageBackedUint64(backlogOffset),
+		sumWeights:       sto.OpenStorageBackedUint64(sumWeightsOffset),
 	}
 	for i := range int(multigas.NumResourceKind) {
 		// #nosec G115 safe: NumResourceKind < 2^32
@@ -59,6 +63,9 @@ func (c *MultiGasConstraint) Clear() error {
 	if err := c.backlog.Clear(); err != nil {
 		return err
 	}
+	if err := c.sumWeights.Clear(); err != nil {
+		return err
+	}
 	for i := range int(multigas.NumResourceKind) {
 		if err := c.weightedResources[i].Clear(); err != nil {
 			return err
@@ -67,24 +74,39 @@ func (c *MultiGasConstraint) Clear() error {
 	return nil
 }
 
-// ResourceWeightedBacklog returns the portion of the total backlog
-// attributed to the given resource kind, proportional to its configured weight.
-// If the resource kind is out of range or has zero weight, it returns zero.
-func (c *MultiGasConstraint) ResourceWeightedBacklog(kind uint8) (uint64, error) {
-	_, err := multigas.CheckResourceKind(kind)
-	if err != nil {
+// SetResourceWeights assigns per-resource weight multipliers for this constraint.
+func (c *MultiGasConstraint) SetResourceWeights(weights map[uint8]uint64) error {
+	var total uint64
+	for kind, weight := range weights {
+		if _, err := multigas.CheckResourceKind(kind); err != nil {
+			return err
+		}
+		total = arbmath.SaturatingUAdd(total, weight)
+	}
+	for i := range int(multigas.NumResourceKind) {
+		// #nosec G115 safe: NumResourceKind < 2^32
+		weight, ok := weights[uint8(i)]
+		if ok {
+			if err := c.weightedResources[i].Set(weight); err != nil {
+				return err
+			}
+		} else {
+			// zeroise weight for unspecified resources
+			if err := c.weightedResources[i].Set(0); err != nil {
+				return err
+			}
+		}
+	}
+	return c.sumWeights.Set(total)
+}
+
+// ConstraintContribution returns the normalized backlog contribution for a specific resource kind.
+func (c *MultiGasConstraint) ConstraintContribution(kind uint8) (uint64, error) {
+	if _, err := multigas.CheckResourceKind(kind); err != nil {
 		return 0, err
 	}
 
-	backlog, err := c.backlog.Get()
-	if err != nil {
-		return 0, err
-	}
-	if backlog == 0 {
-		return 0, nil
-	}
-
-	weight, err := c.weightedResources[kind].Get()
+	weight, err := c.weightedResources[int(kind)].Get()
 	if err != nil {
 		return 0, err
 	}
@@ -92,29 +114,41 @@ func (c *MultiGasConstraint) ResourceWeightedBacklog(kind uint8) (uint64, error)
 		return 0, nil
 	}
 
-	// Compute total weight across all resources
-	var totalWeight uint64
-	for i := range int(multigas.NumResourceKind) {
-		w, err := c.weightedResources[i].Get()
-		if err != nil {
-			return 0, err
-		}
-		totalWeight = arbmath.SaturatingUAdd(totalWeight, w)
+	backlog, err := c.backlog.Get()
+	if err != nil || backlog == 0 {
+		return 0, err
 	}
 
-	// Compute proportional backlog share
-	contrib := arbmath.SaturatingUMul(backlog, weight) / totalWeight
+	target, err := c.target.Get()
+	if err != nil || target == 0 {
+		return 0, err
+	}
+
+	adjustmentWindow, err := c.adjustmentWindow.Get()
+	if err != nil || adjustmentWindow == 0 {
+		return 0, err
+	}
+
+	sumWeights, err := c.sumWeights.Get()
+	if err != nil || sumWeights == 0 {
+		return 0, err
+	}
+
+	contrib := arbmath.SaturatingUMul(backlog, weight) /
+		arbmath.SaturatingUMul(adjustmentWindow,
+			arbmath.SaturatingUMul(target, sumWeights),
+		)
+
 	return contrib, nil
 }
 
 // SetBacklogWithMultigas aggregates multi-dimensional gas usage into a single backlog value.
-//
-// Each resource kind's usage from the provided MultiGas vector is multiplied by its
-// configured weight in this constraint. The weighted values are then summed (with
-// saturating arithmetic) to form the total backlog, which represents the combined
-// resource pressure for this constraint.
 func (c *MultiGasConstraint) SetBacklogWithMultigas(multiGas multigas.MultiGas) error {
-	var totalBacklog uint64
+	totalBacklog, err := c.backlog.Get()
+	if err != nil {
+		return err
+	}
+
 	for i := range uint8(multigas.NumResourceKind) {
 		weight, err := c.weightedResources[i].Get()
 		if err != nil {
@@ -125,7 +159,7 @@ func (c *MultiGasConstraint) SetBacklogWithMultigas(multiGas multigas.MultiGas) 
 		}
 
 		resourceAmount := multiGas.Get(multigas.ResourceKind(i))
-		weightedAmount := arbmath.SaturatingUMul(weight, resourceAmount)
+		weightedAmount := arbmath.SaturatingUMul(resourceAmount, uint64(weight))
 
 		totalBacklog = arbmath.SaturatingUAdd(totalBacklog, weightedAmount)
 	}
@@ -176,12 +210,4 @@ func (c *MultiGasConstraint) ResourcesWithWeights() (map[multigas.ResourceKind]u
 		}
 	}
 	return result, nil
-}
-
-func (c *MultiGasConstraint) SetResourceWeight(kind uint8, value uint64) error {
-	_, err := multigas.CheckResourceKind(kind)
-	if err != nil {
-		return err
-	}
-	return c.weightedResources[kind].Set(value)
 }

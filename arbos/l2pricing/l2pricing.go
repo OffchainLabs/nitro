@@ -237,10 +237,8 @@ func (ps *L2PricingState) AddMultiGasConstraint(
 		return fmt.Errorf("failed to set backlog: %w", err)
 	}
 
-	for kind, weight := range resourceWeights {
-		if err := constraint.SetResourceWeight(kind, weight); err != nil {
-			return fmt.Errorf("failed to set resource %d weight: %w", kind, err)
-		}
+	if err := constraint.SetResourceWeights(resourceWeights); err != nil {
+		return fmt.Errorf("failed to set resource weights: %w", err)
 	}
 	return nil
 }

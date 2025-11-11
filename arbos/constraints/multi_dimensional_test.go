@@ -26,9 +26,11 @@ func TestMultiGasConstraint(t *testing.T) {
 	require.Equal(t, uint64(456), window)
 	require.Equal(t, uint64(789), backlog)
 
-	require.NoError(t, c.SetResourceWeight(uint8(multigas.ResourceKindComputation), 10))
-	require.NoError(t, c.SetResourceWeight(uint8(multigas.ResourceKindStorageAccess), 20))
-	require.NoError(t, c.SetResourceWeight(uint8(multigas.ResourceKindL1Calldata), 0)) // unused
+	weights := map[uint8]uint64{
+		uint8(multigas.ResourceKindComputation):   10,
+		uint8(multigas.ResourceKindStorageAccess): 20,
+	}
+	require.NoError(t, c.SetResourceWeights(weights))
 
 	w1, _ := c.ResourceWeight(uint8(multigas.ResourceKindComputation))
 	w2, _ := c.ResourceWeight(uint8(multigas.ResourceKindStorageAccess))
@@ -50,70 +52,99 @@ func TestMultiGasConstraint(t *testing.T) {
 	require.Empty(t, res)
 }
 
-func TestMultiGasConstraintResourceKindEdgeCases(t *testing.T) {
+func TestMultiGasConstraintResourceWeightsValidation(t *testing.T) {
 	sto := storage.NewMemoryBacked(burn.NewSystemBurner(nil, false))
 	c := OpenMultiGasConstraint(sto)
 
-	require.Error(t, c.SetResourceWeight(0, 111))
-	_, err := c.ResourceWeight(0)
-	require.Error(t, err)
+	// invalid kind
+	weights := map[uint8]uint64{
+		uint8(multigas.NumResourceKind): 10,
+	}
+	require.Error(t, c.SetResourceWeights(weights))
 
-	lastKind := uint8(multigas.NumResourceKind - 1)
-	require.NoError(t, c.SetResourceWeight(lastKind, 222))
-	v, err := c.ResourceWeight(lastKind)
+	// valid set
+	valid := map[uint8]uint64{
+		uint8(multigas.ResourceKindComputation):   3,
+		uint8(multigas.ResourceKindStorageAccess): 7,
+	}
+	require.NoError(t, c.SetResourceWeights(valid))
+
+	total, err := c.sumWeights.Get()
 	require.NoError(t, err)
-	require.Equal(t, uint64(222), v)
-
-	outOfRange := uint8(multigas.NumResourceKind)
-	err = c.SetResourceWeight(outOfRange, 333)
-	require.Error(t, err)
-	_, err = c.ResourceWeight(outOfRange)
-	require.Error(t, err)
-
-	res, err := c.ResourcesWithWeights()
-	require.NoError(t, err)
-	require.Len(t, res, 1)
-	require.Equal(t, uint64(222), res[multigas.ResourceKindWasmComputation])
+	require.Equal(t, uint64(10), total)
 }
 
-func TestMultiGasConstraintBacklogAggregationAndDecomposition(t *testing.T) {
+func TestMultiGasConstraintBacklogAggregationAndContribution(t *testing.T) {
 	sto := storage.NewMemoryBacked(burn.NewSystemBurner(nil, false))
 	c := OpenMultiGasConstraint(sto)
 
-	require.NoError(t, c.SetResourceWeight(uint8(multigas.ResourceKindComputation), 2))
-	require.NoError(t, c.SetResourceWeight(uint8(multigas.ResourceKindStorageAccess), 3))
-	require.NoError(t, c.SetResourceWeight(uint8(multigas.ResourceKindL1Calldata), 5))
-	require.NoError(t, c.SetResourceWeight(uint8(multigas.ResourceKindL2Calldata), 0)) // unused
+	require.NoError(t, c.SetTarget(5))
+	require.NoError(t, c.SetAdjustmentWindow(2))
+
+	require.NoError(t, c.SetResourceWeights(map[uint8]uint64{
+		uint8(multigas.ResourceKindComputation):   1,
+		uint8(multigas.ResourceKindStorageAccess): 2,
+	}))
 
 	mg := multigas.MultiGasFromPairs(
 		multigas.Pair{Kind: multigas.ResourceKindComputation, Amount: 10},
-		multigas.Pair{Kind: multigas.ResourceKindHistoryGrowth, Amount: 11},
-		multigas.Pair{Kind: multigas.ResourceKindStorageAccess, Amount: 12},
-		multigas.Pair{Kind: multigas.ResourceKindStorageGrowth, Amount: 13},
-		multigas.Pair{Kind: multigas.ResourceKindL1Calldata, Amount: 14},
-		multigas.Pair{Kind: multigas.ResourceKindL2Calldata, Amount: 15},
-		multigas.Pair{Kind: multigas.ResourceKindWasmComputation, Amount: 16},
+		multigas.Pair{Kind: multigas.ResourceKindStorageAccess, Amount: 10},
 	)
 
 	require.NoError(t, c.SetBacklogWithMultigas(mg))
 
 	backlog, err := c.Backlog()
 	require.NoError(t, err)
-	require.Equal(t, uint64(126), backlog)
+	require.Equal(t, uint64(30), backlog) // 1*10 + 2*10 = 30
 
-	v1, err := c.ResourceWeightedBacklog(uint8(multigas.ResourceKindComputation))
+	compContrib, err := c.ConstraintContribution(uint8(multigas.ResourceKindComputation))
 	require.NoError(t, err)
-	require.Equal(t, uint64(25), v1) // 126 * 2 / 10 = 25.2 → 25
+	storContrib, err := c.ConstraintContribution(uint8(multigas.ResourceKindStorageAccess))
+	require.NoError(t, err)
 
-	v2, err := c.ResourceWeightedBacklog(uint8(multigas.ResourceKindStorageAccess))
-	require.NoError(t, err)
-	require.Equal(t, uint64(37), v2) // 126 * 3 / 10 = 37.8 → 37
+	// expected: backlog * weight / (A * T * sumWeights)
+	// backlog=30, target=5, window=2, sumWeights=3
+	// computation: (30*1)/(2*5*3) = 1
+	// storage:     (30*2)/(2*5*3) = 2
+	require.Equal(t, uint64(1), compContrib)
+	require.Equal(t, uint64(2), storContrib)
 
-	v3, err := c.ResourceWeightedBacklog(uint8(multigas.ResourceKindL1Calldata))
-	require.NoError(t, err)
-	require.Equal(t, uint64(63), v3) // 126 * 5 / 10 = 63
+	// ratio must reflect weights (1:2)
+	require.Equal(t, 2*compContrib, storContrib)
+}
 
-	v4, err := c.ResourceWeightedBacklog(uint8(multigas.ResourceKindL2Calldata))
+func TestMultiGasConstraintBacklogGrowth(t *testing.T) {
+	sto := storage.NewMemoryBacked(burn.NewSystemBurner(nil, false))
+	c := OpenMultiGasConstraint(sto)
+
+	require.NoError(t, c.SetTarget(10))
+	require.NoError(t, c.SetAdjustmentWindow(5))
+
+	require.NoError(t, c.SetResourceWeights(map[uint8]uint64{
+		uint8(multigas.ResourceKindComputation):   1,
+		uint8(multigas.ResourceKindStorageAccess): 2,
+	}))
+
+	mg1 := multigas.MultiGasFromPairs(
+		multigas.Pair{Kind: multigas.ResourceKindComputation, Amount: 10},
+		multigas.Pair{Kind: multigas.ResourceKindStorageAccess, Amount: 10},
+	)
+
+	require.NoError(t, c.SetBacklogWithMultigas(mg1))
+
+	b1, err := c.Backlog()
 	require.NoError(t, err)
-	require.Zero(t, v4)
+	require.Equal(t, uint64(30), b1, "initial backlog: 1*10 + 2*10 = 30")
+
+	mg2 := multigas.MultiGasFromPairs(
+		multigas.Pair{Kind: multigas.ResourceKindComputation, Amount: 5},
+		multigas.Pair{Kind: multigas.ResourceKindStorageAccess, Amount: 15},
+	)
+
+	require.NoError(t, c.SetBacklogWithMultigas(mg2))
+
+	b2, err := c.Backlog()
+	require.NoError(t, err)
+	// new backlog = old (30) + 1*5 + 2*15 = 30 + 35 = 65
+	require.Equal(t, uint64(65), b2, "backlog should accumulate across calls")
 }
