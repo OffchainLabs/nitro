@@ -102,7 +102,8 @@ func testReceiveMessages(t *testing.T, clientCompression bool, serverCompression
 
 	go func() {
 		for i := 0; i < messageCount; i++ {
-			b.BroadcastFeedMessages(feedMessage(t, b, arbutil.MessageIndex(i))) // #nosec G115
+			err = b.BroadcastFeedMessages(feedMessage(t, b, arbutil.MessageIndex(i))) // #nosec G115
+			Require(t, err)
 		}
 	}()
 
@@ -251,7 +252,8 @@ func TestServerClientDisconnect(t *testing.T) {
 	broadcastClient.Start(ctx)
 
 	t.Log("broadcasting seq 0 message")
-	b.BroadcastFeedMessages(feedMessage(t, b, 0))
+	err = b.BroadcastFeedMessages(feedMessage(t, b, 0))
+	Require(t, err)
 
 	// Wait for client to receive batch to ensure it is connected
 	timer := time.NewTimer(5 * time.Second)
@@ -323,7 +325,8 @@ func TestBroadcastClientConfirmedMessage(t *testing.T) {
 	broadcastClient.Start(ctx)
 
 	t.Log("broadcasting seq 0 message")
-	b.BroadcastFeedMessages(feedMessage(t, b, 0))
+	err = b.BroadcastFeedMessages(feedMessage(t, b, 0))
+	Require(t, err)
 
 	// Wait for client to receive batch to ensure it is connected
 	timer := time.NewTimer(5 * time.Second)
@@ -665,8 +668,10 @@ func TestBroadcasterSendsCachedMessagesOnClientConnect(t *testing.T) {
 	Require(t, b.Start(ctx))
 	defer b.StopAndWait()
 
-	b.BroadcastFeedMessages(feedMessage(t, b, 0))
-	b.BroadcastFeedMessages(feedMessage(t, b, 1))
+	err = b.BroadcastFeedMessages(feedMessage(t, b, 0))
+	Require(t, err)
+	err = b.BroadcastFeedMessages(feedMessage(t, b, 1))
+	Require(t, err)
 
 	var wg sync.WaitGroup
 	for i := 0; i < 2; i++ {

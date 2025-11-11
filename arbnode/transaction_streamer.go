@@ -1217,7 +1217,9 @@ func (s *TransactionStreamer) broadcastMessages(
 		feedMsgs = append(feedMsgs, feedMsg)
 	}
 
-	s.broadcastServer.BroadcastFeedMessages(feedMsgs)
+	if err := s.broadcastServer.BroadcastFeedMessages(feedMsgs); err != nil {
+		log.Error("failed broadcasting messages", "firstMsgIdx", firstMsgIdx, "err", err)
+	}
 }
 
 // The mutex must be held, and firstMsgIdx must be the latest message count.

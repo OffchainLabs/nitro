@@ -146,7 +146,8 @@ func TestBasicBroadcastClientSetup(t *testing.T) {
 	// Send messages with sequential sequence numbers
 	for i := 0; i < messageCount; i++ {
 		// #nosec G115
-		b.BroadcastFeedMessages(feedMessage(t, b, arbutil.MessageIndex(i)))
+		err = b.BroadcastFeedMessages(feedMessage(t, b, arbutil.MessageIndex(i)))
+		Require(t, err)
 	}
 
 	wg.Wait()
@@ -293,7 +294,8 @@ func TestPrimaryToSecondaryFailover(t *testing.T) {
 	// Send 5 messages from primary
 	const initialMessageCount = 5
 	for i := 0; i < initialMessageCount; i++ {
-		primaryB.BroadcastFeedMessages(feedMessage(t, primaryB, arbutil.MessageIndex(i))) // #nosec G115
+		err = primaryB.BroadcastFeedMessages(feedMessage(t, primaryB, arbutil.MessageIndex(i))) // #nosec G115
+		Require(t, err)
 		time.Sleep(50 * time.Millisecond)
 	}
 
@@ -326,7 +328,8 @@ func TestPrimaryToSecondaryFailover(t *testing.T) {
 	t.Logf("Sending %d messages from secondary starting at sequence %d", secondaryMessageCount, startSeq)
 
 	for i := 0; i < secondaryMessageCount; i++ {
-		secondaryB.BroadcastFeedMessages(feedMessage(t, secondaryB, arbutil.MessageIndex(startSeq+i))) // #nosec G115
+		err = secondaryB.BroadcastFeedMessages(feedMessage(t, secondaryB, arbutil.MessageIndex(startSeq+i))) // #nosec G115
+		Require(t, err)
 		time.Sleep(50 * time.Millisecond)
 	}
 

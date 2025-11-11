@@ -5,7 +5,9 @@ package broadcaster
 
 import (
 	"context"
+	"errors"
 	"net"
+	"runtime/debug"
 
 	"github.com/gobwas/ws"
 
@@ -63,12 +65,20 @@ func (b *Broadcaster) NewBroadcastFeedMessage(
 	}, nil
 }
 
-func (b *Broadcaster) BroadcastFeedMessages(messages []*m.BroadcastFeedMessage) {
+func (b *Broadcaster) BroadcastFeedMessages(messages []*m.BroadcastFeedMessage) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Error("recovered error in BroadcastFeedMessages", "recover", r, "backtrace", string(debug.Stack()))
+			err = errors.New("panic in BroadcastSingle")
+		}
+	}()
+
 	bm := &m.BroadcastMessage{
 		Version:  SupportedBroadcastVersion,
 		Messages: messages,
 	}
 	b.server.Broadcast(bm)
+	return
 }
 
 func (b *Broadcaster) PopulateFeedBacklog(messages []*m.BroadcastFeedMessage) error {

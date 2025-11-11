@@ -95,7 +95,9 @@ func (r *Relay) Start(ctx context.Context) error {
 				return
 			case msg := <-r.messageChan:
 				sharedmetrics.UpdateSequenceNumberGauge(msg.SequenceNumber)
-				r.broadcaster.BroadcastFeedMessages([]*message.BroadcastFeedMessage{&msg})
+				if err = r.broadcaster.BroadcastFeedMessages([]*message.BroadcastFeedMessage{&msg}); err != nil {
+					return
+				}
 			case cs := <-r.confirmedSequenceNumberChan:
 				r.broadcaster.Confirm(cs)
 			}
