@@ -25,6 +25,7 @@ type Reader struct {
 	storage       *InMemoryStorage
 	l1Client      *ethclient.Client
 	validatorAddr common.Address
+	daPayload     daprovider.BatchPayloadMap
 }
 
 // NewReader creates a new ReferenceDA reader
@@ -33,6 +34,7 @@ func NewReader(storage *InMemoryStorage, l1Client *ethclient.Client, validatorAd
 		storage:       storage,
 		l1Client:      l1Client,
 		validatorAddr: validatorAddr,
+		daPayload:     make(daprovider.BatchPayloadMap),
 	}
 }
 
@@ -124,7 +126,10 @@ func (r *Reader) RecoverPayload(
 ) containers.PromiseInterface[daprovider.PayloadResult] {
 	return containers.DoPromise(context.Background(), func(ctx context.Context) (daprovider.PayloadResult, error) {
 		payload, _, err := r.recoverInternal(ctx, batchNum, batchBlockHash, sequencerMsg, true, false)
-		return daprovider.PayloadResult{Payload: payload}, err
+		result := daprovider.PayloadResult{Payload: payload}
+		daprovider.CacheDAPayload(&r.daPayload, batchBlockHash, sequencerMsg, &result)
+
+		return result, err
 	})
 }
 
@@ -132,10 +137,12 @@ func (r *Reader) GetCachedPayload(
 	batchBlockHash common.Hash,
 	sequencerMsg []byte,
 ) (daprovider.PayloadResult, error) {
-	return daprovider.PayloadResult{}, nil
+	return daprovider.GetCachedPayload(&r.daPayload, batchBlockHash, sequencerMsg)
 }
 
-func (r *Reader) ClearCachedPayload() {}
+func (r *Reader) ClearCachedPayload() {
+	clear(r.daPayload)
+}
 
 // CollectPreimages collects preimages from the DA provider
 func (r *Reader) CollectPreimages(

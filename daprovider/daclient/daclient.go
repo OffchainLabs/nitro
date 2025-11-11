@@ -24,6 +24,7 @@ type Client struct {
 	*rpcclient.RpcClient
 	*data_streaming.DataStreamer[server_api.StoreResult]
 	storeRpcMethod *string
+	daPayload      daprovider.BatchPayloadMap
 }
 
 // lint:require-exhaustive-initialization
@@ -89,7 +90,12 @@ func NewClient(ctx context.Context, config *ClientConfig, payloadSigner *data_st
 		}
 	}
 
-	client = &Client{rpcClient, dataStreamer, &config.StoreRpcMethod}
+	client = &Client{
+		rpcClient,
+		dataStreamer,
+		&config.StoreRpcMethod,
+		make(daprovider.BatchPayloadMap),
+	}
 	if err = client.Start(ctx); err != nil {
 		return nil, fmt.Errorf("error starting daprovider client: %w", err)
 	}
@@ -122,6 +128,8 @@ func (c *Client) RecoverPayload(
 		if err != nil {
 			err = fmt.Errorf("error returned from daprovider_recoverPayload rpc method, err: %w", err)
 		}
+		daprovider.CacheDAPayload(&c.daPayload, batchBlockHash, sequencerMsg, &result)
+
 		return result, err
 	})
 }
@@ -130,10 +138,12 @@ func (c *Client) GetCachedPayload(
 	batchBlockHash common.Hash,
 	sequencerMsg []byte,
 ) (daprovider.PayloadResult, error) {
-	return daprovider.PayloadResult{}, nil
+	return daprovider.GetCachedPayload(&c.daPayload, batchBlockHash, sequencerMsg)
 }
 
-func (c *Client) ClearCachedPayload() {}
+func (c *Client) ClearCachedPayload() {
+	clear(c.daPayload)
+}
 
 // CollectPreimages collects preimages from the DA provider
 func (c *Client) CollectPreimages(
