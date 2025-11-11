@@ -31,10 +31,10 @@ type Broadcaster struct {
 func NewBroadcaster(config wsbroadcastserver.BroadcasterConfigFetcher, chainId uint64, feedErrChan chan error, dataSigner signature.DataSignerFunc) *Broadcaster {
 	bklg := backlog.NewBacklog(func() *backlog.Config { return &config().Backlog })
 	return &Broadcaster{
-		wsbroadcastserver.NewWSBroadcastServer(config, bklg, chainId, feedErrChan),
-		bklg,
-		chainId,
-		dataSigner,
+		server:     wsbroadcastserver.NewWSBroadcastServer(config, bklg, chainId, feedErrChan),
+		backlog:    bklg,
+		chainId:    chainId,
+		dataSigner: dataSigner,
 	}
 }
 
