@@ -46,7 +46,7 @@ type BatchKey struct {
 	BatchHash common.Hash
 }
 
-type BatchPayloadMap map[BatchKey]PayloadResult
+type BatchPayloadMap map[BatchKey]*PayloadResult
 
 type Reader interface {
 	// RecoverPayload fetches and caches the underlying payload from the DA provider given the batch header information
@@ -138,15 +138,9 @@ func (b *readerForBlobReader) RecoverPayload(
 ) containers.PromiseInterface[PayloadResult] {
 	return containers.DoPromise(context.Background(), func(ctx context.Context) (PayloadResult, error) {
 		payload, _, err := b.recoverInternal(ctx, batchBlockHash, sequencerMsg, true, false)
-		dataHash := sha256.Sum256(sequencerMsg)
-
-		key := BatchKey{
-			Data:      dataHash,
-			BatchHash: batchBlockHash,
-		}
-
 		resPayload := PayloadResult{Payload: payload}
-		b.daPayload[key] = resPayload
+		CacheDAPayload(&b.daPayload, batchBlockHash, sequencerMsg, &resPayload)
+
 		return resPayload, err
 	})
 }
@@ -155,17 +149,7 @@ func (b *readerForBlobReader) GetCachedPayload(
 	batchBlockHash common.Hash,
 	sequencerMsg []byte,
 ) (PayloadResult, error) {
-	dataHash := sha256.Sum256(sequencerMsg)
-	key := BatchKey{
-		Data:      dataHash,
-		BatchHash: batchBlockHash,
-	}
-	res, ok := b.daPayload[key]
-
-	if !ok {
-		return PayloadResult{}, fmt.Errorf("no cached DA payload found for key %v", key)
-	}
-	return res, nil
+	return GetCachedPayload(&b.daPayload, batchBlockHash, sequencerMsg)
 }
 
 func (b *readerForBlobReader) ClearCachedPayload() {
@@ -182,4 +166,37 @@ func (b *readerForBlobReader) CollectPreimages(
 		_, preimages, err := b.recoverInternal(ctx, batchBlockHash, sequencerMsg, false, true)
 		return PreimagesResult{Preimages: preimages}, err
 	})
+}
+
+func GetCachedPayload(
+	daPayload *BatchPayloadMap,
+	batchBlockHash common.Hash,
+	sequencerMsg []byte,
+) (PayloadResult, error) {
+	dataHash := sha256.Sum256(sequencerMsg)
+	key := BatchKey{
+		Data:      dataHash,
+		BatchHash: batchBlockHash,
+	}
+	res, ok := (*daPayload)[key]
+
+	if !ok {
+		return PayloadResult{}, fmt.Errorf("no cached DA payload found for key %v", key)
+	}
+	return *res, nil
+}
+
+func CacheDAPayload(
+	daPayload *BatchPayloadMap,
+	batchBlockHash common.Hash,
+	sequencerMsg []byte,
+	payload *PayloadResult,
+) {
+	dataHash := sha256.Sum256(sequencerMsg)
+	key := BatchKey{
+		Data:      dataHash,
+		BatchHash: batchBlockHash,
+	}
+
+	(*daPayload)[key] = payload
 }

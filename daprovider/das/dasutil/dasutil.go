@@ -46,6 +46,7 @@ func NewReaderForDAS(dasReader DASReader, keysetFetcher DASKeysetFetcher, valida
 		dasReader:      dasReader,
 		keysetFetcher:  keysetFetcher,
 		validationMode: validationMode,
+		daPayload:      make(daprovider.BatchPayloadMap),
 	}
 }
 
@@ -53,6 +54,7 @@ type readerForDAS struct {
 	dasReader      DASReader
 	keysetFetcher  DASKeysetFetcher
 	validationMode daprovider.KeysetValidationMode
+	daPayload      daprovider.BatchPayloadMap
 }
 
 // recoverInternal is the shared implementation for both RecoverPayload and CollectPreimages
@@ -76,7 +78,10 @@ func (d *readerForDAS) RecoverPayload(
 ) containers.PromiseInterface[daprovider.PayloadResult] {
 	return containers.DoPromise(context.Background(), func(ctx context.Context) (daprovider.PayloadResult, error) {
 		payload, _, err := d.recoverInternal(ctx, batchNum, sequencerMsg, true, false)
-		return daprovider.PayloadResult{Payload: payload}, err
+		result := daprovider.PayloadResult{Payload: payload}
+		daprovider.CacheDAPayload(&d.daPayload, batchBlockHash, sequencerMsg, &result)
+
+		return result, err
 	})
 }
 
@@ -84,10 +89,12 @@ func (d *readerForDAS) GetCachedPayload(
 	batchBlockHash common.Hash,
 	sequencerMsg []byte,
 ) (daprovider.PayloadResult, error) {
-	return daprovider.PayloadResult{}, nil
+	return daprovider.GetCachedPayload(&d.daPayload, batchBlockHash, sequencerMsg)
 }
 
-func (d *readerForDAS) ClearCachedPayload() {}
+func (d *readerForDAS) ClearCachedPayload() {
+	clear(d.daPayload)
+}
 
 // CollectPreimages collects preimages from the DA provider
 func (d *readerForDAS) CollectPreimages(
