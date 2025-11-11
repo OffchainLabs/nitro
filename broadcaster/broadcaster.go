@@ -4,7 +4,11 @@
 package broadcaster
 
 import (
+	"context"
+	"net"
+
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/gobwas/ws"
 
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -17,7 +21,7 @@ import (
 const SupportedBroadcastVersion = m.V1
 
 type Broadcaster struct {
-	*wsbroadcastserver.WSBroadcastServer
+	server     *wsbroadcastserver.WSBroadcastServer
 	backlog    backlog.Backlog
 	chainId    uint64
 	dataSigner signature.DataSignerFunc
@@ -63,20 +67,20 @@ func (b *Broadcaster) BroadcastFeedMessages(messages []*m.BroadcastFeedMessage) 
 		Version:  SupportedBroadcastVersion,
 		Messages: messages,
 	}
-	b.Broadcast(bm)
+	b.server.Broadcast(bm)
 }
 
-func (b *Broadcaster) PopulateBacklog(messages []*m.BroadcastFeedMessage) error {
+func (b *Broadcaster) PopulateFeedBacklog(messages []*m.BroadcastFeedMessage) error {
 	bm := &m.BroadcastMessage{
 		Version:  SupportedBroadcastVersion,
 		Messages: messages,
 	}
-	return b.PopulateFeedBacklog(bm)
+	return b.server.PopulateFeedBacklog(bm)
 }
 
 func (b *Broadcaster) Confirm(msgIdx arbutil.MessageIndex) {
 	log.Debug("confirming msgIdx", "msgIdx", msgIdx)
-	b.Broadcast(&m.BroadcastMessage{
+	b.server.Broadcast(&m.BroadcastMessage{
 		Version: SupportedBroadcastVersion,
 		ConfirmedSequenceNumberMessage: &m.ConfirmedSequenceNumberMessage{
 			SequenceNumber: msgIdx,
@@ -84,7 +88,35 @@ func (b *Broadcaster) Confirm(msgIdx arbutil.MessageIndex) {
 	})
 }
 
+func (b *Broadcaster) ClientCount() int32 {
+	return b.server.ClientCount()
+}
+
+func (b *Broadcaster) ListenerAddr() net.Addr {
+	return b.server.ListenerAddr()
+}
+
 func (b *Broadcaster) GetCachedMessageCount() int {
 	// #nosec G115
 	return int(b.backlog.Count())
+}
+
+func (b *Broadcaster) Initialize() error {
+	return b.server.Initialize()
+}
+
+func (b *Broadcaster) Start(ctx context.Context) error {
+	return b.server.Start(ctx)
+}
+
+func (b *Broadcaster) StartWithHeader(ctx context.Context, header ws.HandshakeHeader) error {
+	return b.server.StartWithHeader(ctx, header)
+}
+
+func (b *Broadcaster) StopAndWait() {
+	b.server.StopAndWait()
+}
+
+func (b *Broadcaster) Started() bool {
+	return b.server.Started()
 }
