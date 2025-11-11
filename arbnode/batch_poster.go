@@ -178,7 +178,8 @@ type BatchPosterConfig struct {
 	Dangerous                      BatchPosterDangerousConfig  `koanf:"dangerous"`
 	ReorgResistanceMargin          time.Duration               `koanf:"reorg-resistance-margin" reload:"hot"`
 	CheckBatchCorrectness          bool                        `koanf:"check-batch-correctness"`
-	// MaxEmptyBatchDelay sets how long to wait before posting a report-only batch; 0 disables automatic posting.
+	// MaxEmptyBatchDelay defines how long the batch poster waits before submitting a batch
+	// that contains no new useful transactions (a “report-only” or “empty” batch). Set to 0 to disable it.
 	MaxEmptyBatchDelay         time.Duration `koanf:"max-empty-batch-delay"`
 	DelayBufferThresholdMargin uint64        `koanf:"delay-buffer-threshold-margin"`
 	DelayBufferAlwaysUpdatable bool          `koanf:"delay-buffer-always-updatable"`
