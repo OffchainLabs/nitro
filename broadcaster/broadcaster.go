@@ -7,8 +7,9 @@ import (
 	"context"
 	"net"
 
-	"github.com/ethereum/go-ethereum/log"
 	"github.com/gobwas/ws"
+
+	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
