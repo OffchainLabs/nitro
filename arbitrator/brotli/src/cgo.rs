@@ -73,30 +73,33 @@ pub extern "C" fn brotli_create_compressing_writer(level: u32) -> *mut EncoderSt
     }
 }
 
-#[no_mangle]
-pub extern "C" fn brotli_write_to_stream(
+fn brotli_stream_op(
     state: *mut EncoderState,
-    input: BrotliBuffer,
+    input: Option<BrotliBuffer>,
     mut output: BrotliBuffer,
+    op: BrotliEncoderOperation,
 ) -> usize {
     unsafe {
         let buffer = output.as_uninit();
-        let input = input.as_slice();
+        let input_slice = match &input {
+            Some(buf) => buf.as_slice(),
+            None => &[],
+        };
 
-        let mut in_len = input.len();
-        let mut in_ptr = input.as_ptr();
+        let mut in_len = input_slice.len();
+        let mut in_ptr = input_slice.as_ptr();
         let mut out_left = buffer.len();
         let mut out_ptr = buffer.as_mut_ptr() as *mut u8;
         let mut out_len = out_left;
 
         let status = BrotliEncoderCompressStream(
             state,
-            BrotliEncoderOperation::Process,
-            &mut in_len as _,
-            &mut in_ptr as _,
-            &mut out_left as _,
-            &mut out_ptr as _,
-            &mut out_len as _,
+            op,
+            &mut in_len,
+            &mut in_ptr,
+            &mut out_left,
+            &mut out_ptr,
+            &mut out_len,
         );
 
         if status.is_err() {
@@ -107,59 +110,22 @@ pub extern "C" fn brotli_write_to_stream(
 }
 
 #[no_mangle]
-pub extern "C" fn brotli_flush_stream(state: *mut EncoderState, mut output: BrotliBuffer) {
-    unsafe {
-        let buffer = output.as_uninit();
-        let input = &[];
-
-        let mut in_len = input.len();
-        let mut in_ptr = input.as_ptr();
-        let mut out_left = buffer.len();
-        let mut out_ptr = buffer.as_mut_ptr() as *mut u8;
-        let mut out_len = out_left;
-
-        let status = BrotliEncoderCompressStream(
-            state,
-            BrotliEncoderOperation::Flush,
-            &mut in_len as _,
-            &mut in_ptr as _,
-            &mut out_left as _,
-            &mut out_ptr as _,
-            &mut out_len as _,
-        );
-
-        if status.is_err() {
-            panic!("Error compressing stream");
-        }
-    }
+pub extern "C" fn brotli_write_to_stream(
+    state: *mut EncoderState,
+    input: BrotliBuffer,
+    output: BrotliBuffer,
+) -> usize {
+    brotli_stream_op(state, Some(input), output, BrotliEncoderOperation::Process)
 }
 
 #[no_mangle]
-pub extern "C" fn brotli_close_stream(state: *mut EncoderState, mut output: BrotliBuffer) {
-    unsafe {
-        let buffer = output.as_uninit();
-        let input = &[];
+pub extern "C" fn brotli_flush_stream(state: *mut EncoderState, output: BrotliBuffer) {
+    brotli_stream_op(state, None, output, BrotliEncoderOperation::Flush);
+}
 
-        let mut in_len = input.len();
-        let mut in_ptr = input.as_ptr();
-        let mut out_left = buffer.len();
-        let mut out_ptr = buffer.as_mut_ptr() as *mut u8;
-        let mut out_len = out_left;
-
-        let status = BrotliEncoderCompressStream(
-            state,
-            BrotliEncoderOperation::Finish,
-            &mut in_len as _,
-            &mut in_ptr as _,
-            &mut out_left as _,
-            &mut out_ptr as _,
-            &mut out_len as _,
-        );
-
-        if status.is_err() {
-            panic!("Error compressing stream");
-        }
-    }
+#[no_mangle]
+pub extern "C" fn brotli_close_stream(state: *mut EncoderState, output: BrotliBuffer) {
+    brotli_stream_op(state, None, output, BrotliEncoderOperation::Finish);
 }
 
 /// Brotli decompresses the given Go data into a buffer of limited capacity.
