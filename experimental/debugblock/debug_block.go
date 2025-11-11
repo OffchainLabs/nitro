@@ -105,11 +105,13 @@ func DebugBlockStateUpdate(statedb *state.StateDB, expectedBalanceDelta *big.Int
 		return
 	}
 	statedb.AddBalance(triggerAddress, triggerCost, tracing.BalanceChangeUnspecified)
+	expectedBalanceDelta.Add(expectedBalanceDelta, triggerCost.ToBig())
 
 	// fund debug account
 	if chainConfig.ArbitrumChainParams.DebugAddress != nil {
 		balance := uint256.MustFromBig(new(big.Int).Lsh(big.NewInt(1), 254))
 		statedb.AddBalance(*chainConfig.ArbitrumChainParams.DebugAddress, balance, tracing.BalanceChangeUnspecified)
+		expectedBalanceDelta.Add(expectedBalanceDelta, balance.ToBig())
 		log.Warn("DANGER! debug block: funding debug account", "debugAddress", chainConfig.ArbitrumChainParams.DebugAddress)
 	}
 
