@@ -224,13 +224,17 @@ func doCompression(t testing.TB, cfg testConfig, messages []*arbostypes.MessageW
 
 func createNewBatchSegments(cfg testConfig, useNativeBrotli bool) *batchSegments {
 	compressedBuffer := bytes.NewBuffer(make([]byte, 0, 2*BatchSizeLimit))
+
+	nativeStreamer := arbcompress.CreateStreamingCompressor(uint32(cfg.compressionLevel))
+
 	return &batchSegments{
-		compressedBuffer:   compressedBuffer,
-		compressedWriter:   brotli.NewWriterLevel(compressedBuffer, cfg.compressionLevel),
-		rawSegments:        make([][]byte, 0, cfg.numMessages),
-		sizeLimit:          BatchSizeLimit,
-		compressionLevel:   cfg.compressionLevel,
-		recompressionLevel: cfg.recompressionLevel,
-		useNativeBrotli:    useNativeBrotli,
+		compressedBuffer:       compressedBuffer,
+		compressedWriter:       brotli.NewWriterLevel(compressedBuffer, cfg.compressionLevel),
+		compressedNativeWriter: &nativeStreamer,
+		rawSegments:            make([][]byte, 0, cfg.numMessages),
+		sizeLimit:              BatchSizeLimit,
+		compressionLevel:       cfg.compressionLevel,
+		recompressionLevel:     cfg.recompressionLevel,
+		useNativeBrotli:        useNativeBrotli,
 	}
 }

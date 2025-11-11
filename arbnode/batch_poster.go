@@ -868,20 +868,21 @@ func (b *BatchPoster) getBatchPosterPosition(ctx context.Context, blockNum *big.
 var errBatchAlreadyClosed = errors.New("batch segments already closed")
 
 type batchSegments struct {
-	compressedBuffer      *bytes.Buffer
-	compressedWriter      *brotli.Writer
-	rawSegments           [][]byte
-	timestamp             uint64
-	blockNum              uint64
-	delayedMsg            uint64
-	sizeLimit             int
-	compressionLevel      int
-	recompressionLevel    int
-	newUncompressedSize   int
-	totalUncompressedSize int
-	lastCompressedSize    int
-	trailingHeaders       int // how many trailing segments are headers
-	isDone                bool
+	compressedBuffer       *bytes.Buffer
+	compressedWriter       *brotli.Writer
+	compressedNativeWriter *arbcompress.StreamingCompressor
+	rawSegments            [][]byte
+	timestamp              uint64
+	blockNum               uint64
+	delayedMsg             uint64
+	sizeLimit              int
+	compressionLevel       int
+	recompressionLevel     int
+	newUncompressedSize    int
+	totalUncompressedSize  int
+	lastCompressedSize     int
+	trailingHeaders        int // how many trailing segments are headers
+	isDone                 bool
 
 	useNativeBrotli bool
 }
@@ -899,6 +900,7 @@ type buildingBatch struct {
 }
 
 func (b *BatchPoster) newBatchSegments(ctx context.Context, firstDelayed uint64, use4844 bool) (*batchSegments, error) {
+	panic("we shouldn't use this constructor in tests and benches")
 	maxSize := b.config().MaxSize
 	if use4844 {
 		if b.config().Max4844BatchSize != 0 {
@@ -943,7 +945,6 @@ func (b *BatchPoster) newBatchSegments(ctx context.Context, firstDelayed uint64,
 		compressedBuffer:   compressedBuffer,
 		compressedWriter:   brotli.NewWriterLevel(compressedBuffer, compressionLevel),
 		sizeLimit:          maxSize,
-		compressionLevel:   compressionLevel,
 		recompressionLevel: recompressionLevel,
 		rawSegments:        make([][]byte, 0, 128),
 		delayedMsg:         firstDelayed,
@@ -953,38 +954,16 @@ func (b *BatchPoster) newBatchSegments(ctx context.Context, firstDelayed uint64,
 func (s *batchSegments) recompressAll() error {
 	s.compressedBuffer = bytes.NewBuffer(make([]byte, 0, s.sizeLimit*2))
 	s.compressedWriter = brotli.NewWriterLevel(s.compressedBuffer, s.recompressionLevel)
+	nativeWriter := arbcompress.CreateStreamingCompressor(uint32(s.recompressionLevel))
+	s.compressedNativeWriter = &nativeWriter
 	s.newUncompressedSize = 0
 	s.totalUncompressedSize = 0
-
-	if s.useNativeBrotli { // one-shot compression
-		segmentsFlattened := make([]byte, 0)
-		for _, segment := range s.rawSegments {
-			encoded, err := rlp.EncodeToBytes(segment)
-			if err != nil {
-				return err
-			}
-			segmentsFlattened = append(segmentsFlattened, encoded...)
-		}
-
-		compressedSegments, err := arbcompress.CompressLevel(segmentsFlattened, uint64(s.recompressionLevel)) // nolint: gosec
+	for _, segment := range s.rawSegments {
+		err := s.addSegmentToCompressed(segment)
 		if err != nil {
 			return err
-		}
-		lenWritten, err := s.compressedBuffer.Write(compressedSegments)
-		if err != nil {
-			return err
-		}
-		s.newUncompressedSize = lenWritten
-		s.totalUncompressedSize = lenWritten
-	} else { // we are using streaming compressor
-		for _, segment := range s.rawSegments {
-			err := s.addSegmentToCompressed(segment)
-			if err != nil {
-				return err
-			}
 		}
 	}
-
 	if s.totalUncompressedSize > arbstate.MaxDecompressedLen {
 		return fmt.Errorf("batch size %v exceeds maximum decompressed length %v", s.totalUncompressedSize, arbstate.MaxDecompressedLen)
 	}
@@ -1019,7 +998,9 @@ func (s *batchSegments) testForOverflow(isHeader bool) (bool, error) {
 	if isHeader || len(s.rawSegments) == s.trailingHeaders {
 		return false, nil
 	}
-	if !s.useNativeBrotli {
+	if s.useNativeBrotli {
+		arbcompress.FlushStreamingCompressor(*s.compressedNativeWriter, s.compressedBuffer.Bytes())
+	} else {
 		err := s.compressedWriter.Flush()
 		if err != nil {
 			return true, err
@@ -1054,17 +1035,10 @@ func (s *batchSegments) addSegmentToCompressed(segment []byte) error {
 		return err
 	}
 	var lenWritten int
-	if !s.useNativeBrotli {
-		lenWritten, err = s.compressedWriter.Write(encoded)
+	if s.useNativeBrotli {
+		lenWritten = arbcompress.WriteToStreamingCompressor(*s.compressedNativeWriter, encoded, s.compressedBuffer.Bytes())
 	} else {
-		compressedSegment, err := arbcompress.CompressLevel(encoded, uint64(s.compressionLevel)) // nolint: gosec
-		if err != nil {
-			return err
-		}
-		lenWritten, err = s.compressedBuffer.Write(compressedSegment)
-		if err != nil {
-			return err
-		}
+		lenWritten, err = s.compressedWriter.Write(encoded)
 	}
 	s.newUncompressedSize += lenWritten
 	s.totalUncompressedSize += lenWritten
@@ -1175,7 +1149,9 @@ func (s *batchSegments) CloseAndGetBytes() ([]byte, error) {
 	if len(s.rawSegments) == 0 {
 		return nil, nil
 	}
-	if !s.useNativeBrotli {
+	if s.useNativeBrotli {
+		arbcompress.CloseStreamingCompressor(*s.compressedNativeWriter, s.compressedBuffer.Bytes())
+	} else {
 		err := s.compressedWriter.Close()
 		if err != nil {
 			return nil, err
