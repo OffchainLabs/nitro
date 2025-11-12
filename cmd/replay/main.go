@@ -265,6 +265,8 @@ func populateEcdsaCaches() {
 }
 
 func main() {
+	gcTweaks()
+
 	wavmio.StubInit()
 	gethhook.RequireHookedGeth()
 
