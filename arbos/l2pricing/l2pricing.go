@@ -217,7 +217,7 @@ func (ps *L2PricingState) OpenMultiGasConstraintAt(i uint64) *constraints.MultiG
 
 func (ps *L2PricingState) AddMultiGasConstraint(
 	target uint64,
-	adjustmentWindow uint64,
+	adjustmentWindow uint32,
 	backlog uint64,
 	resourceWeights map[uint8]uint64,
 ) error {
