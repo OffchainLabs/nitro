@@ -20,41 +20,41 @@ import (
 
 const BatchSizeLimit = 50_000_000
 
+// from Maciek: I think that for messageSize we can use the maximal size that sequencer can produce (100kB).
+// I am not sure if we need to check the smaller messages - we could run the benchmark for 100kB input with different
+// number of messages to compare if number of messages negatively affects the processing time.
+const MessageSize = 100_000
+
 var configs = []testConfig{
 	{
 		name:               "100kB/low-then-high",
 		compressionLevel:   1,
 		recompressionLevel: 11,
 		numMessages:        10,
-		messageSize:        10_000,
 	},
 	{
 		name:               "100kB/low-then-mid",
 		compressionLevel:   1,
 		recompressionLevel: 6,
 		numMessages:        10,
-		messageSize:        10_000,
 	},
 	{
 		name:               "100kB/mid-then-high",
 		compressionLevel:   6,
 		recompressionLevel: 11,
 		numMessages:        10,
-		messageSize:        10_000,
 	},
 	{
 		name:               "100kB/high",
 		compressionLevel:   11,
 		recompressionLevel: 11,
 		numMessages:        10,
-		messageSize:        10_000,
 	},
 	{
 		name:               "1MB/mid-then-high",
 		compressionLevel:   6,
 		recompressionLevel: 11,
 		numMessages:        10,
-		messageSize:        100_000,
 	},
 }
 
@@ -152,7 +152,6 @@ type testConfig struct {
 	compressionLevel   int
 	recompressionLevel int
 	numMessages        int
-	messageSize        int
 	messageGenerator   messageGenerator
 }
 
@@ -197,7 +196,7 @@ func generateMessages(t testing.TB, cfg testConfig) ([]*arbostypes.MessageWithMe
 		messages[i] = &arbostypes.MessageWithMetadata{
 			Message: &arbostypes.L1IncomingMessage{
 				Header: &arbostypes.L1IncomingMessageHeader{},
-				L2msg:  cfg.messageGenerator(cfg.messageSize),
+				L2msg:  cfg.messageGenerator(MessageSize),
 			},
 		}
 	}
