@@ -59,6 +59,22 @@ var configs = []testConfig{
 	},
 }
 
+type testConfig struct {
+	name               string
+	compressionLevel   int
+	recompressionLevel int
+	numMessages        int
+	messageGenerator   messageGenerator
+}
+
+type messageGenerator func(size int) []byte
+
+type runResult struct {
+	timeGoLang    time.Duration
+	timeNative    time.Duration
+	dataProcessed int
+}
+
 func BenchmarkBrotli(b *testing.B) {
 	msgTypes := []struct {
 		typ string
@@ -79,14 +95,7 @@ func BenchmarkBrotli(b *testing.B) {
 
 			messages, _ := generateMessages(b, cfg)
 
-			b.Run(fmt.Sprintf("%s/Native", cfg.name), func(b *testing.B) {
-				for b.Loop() {
-					doCompression(b, cfg, messages, true)
-				}
-				res.timeNative = b.Elapsed() / time.Duration(b.N)
-			})
-
-			b.Run(fmt.Sprintf("%s/GoLang", cfg.name), func(b *testing.B) {
+			b.Run(cfg.name, func(b *testing.B) {
 				for b.Loop() {
 					doCompression(b, cfg, messages, false)
 				}
@@ -97,10 +106,10 @@ func BenchmarkBrotli(b *testing.B) {
 		}
 	}
 
-	b.Logf("------------------------------------------------------------------------------------------------------------------------------------------------------")
-	b.Logf("| %-25s | GoLang Time   | Native Time   | Native/Go Ratio | GoLang Throughput | Native Throughput |", "Configuration")
-	b.Logf("| %-25s |   (per op)    |   (per op)    |  (time per op)  | (Bytes/sec)       | (Bytes/sec)       |", "")
-	b.Logf("------------------------------------------------------------------------------------------------------------------------------------------------------")
+	b.Logf("-----------------------------------------------------------------")
+	b.Logf("| %-25s |     Time      |     Throughput    |", "Configuration")
+	b.Logf("| %-25s |   (per op)    |    (Bytes/sec)    |", "")
+	b.Logf("-----------------------------------------------------------------")
 
 	configNames := make([]string, 0, len(allResults))
 	for name := range allResults {
@@ -112,37 +121,16 @@ func BenchmarkBrotli(b *testing.B) {
 
 	for _, configName := range configNames {
 		res := allResults[configName]
-		nativeToGoRatio := float64(res.timeNative) / float64(res.timeGoLang)
 
 		goLangThroughput := float64(res.dataProcessed) / res.timeGoLang.Seconds()
-		nativeThroughput := float64(res.dataProcessed) / res.timeNative.Seconds()
 
-		b.Logf("| %-25s | %13v | %13v | %14.2f%% | %s | %s |",
+		b.Logf("| %-25s | %13v | %s |",
 			configName,
 			res.timeGoLang,
-			res.timeNative,
-			nativeToGoRatio*100,
 			p.Sprintf("%17.0f", goLangThroughput),
-			p.Sprintf("%17.0f", nativeThroughput),
 		)
 	}
-	b.Logf("------------------------------------------------------------------------------------------------------------------")
-}
-
-type testConfig struct {
-	name               string
-	compressionLevel   int
-	recompressionLevel int
-	numMessages        int
-	messageGenerator   messageGenerator
-}
-
-type messageGenerator func(size int) []byte
-
-type runResult struct {
-	timeGoLang    time.Duration
-	timeNative    time.Duration
-	dataProcessed int
+	b.Logf("-----------------------------------------------------------------")
 }
 
 func getRandomContent(size int) []byte {
