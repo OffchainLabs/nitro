@@ -101,7 +101,7 @@ type ArbOSVersionGetter interface {
 // BatchFetcher is required for any execution node
 type BatchFetcher interface {
 	FindBatchContainingMessage(msgIdx arbutil.MessageIndex) containers.PromiseInterface[uint64]
-	GetL1Confirmations(ctx context.Context, msgIdx arbutil.MessageIndex) containers.PromiseInterface[uint64]
+	GetL1Confirmations(msgIdx arbutil.MessageIndex) containers.PromiseInterface[uint64]
 }
 
 type ConsensusInfo interface {

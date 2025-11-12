@@ -122,7 +122,7 @@ func (n NodeInterface) GetL1Confirmations(c ctx, evm mech, blockHash bytes32) (u
 		return 0, err
 	}
 
-	return node.ExecEngine.GetBatchFetcher().GetL1Confirmations(n.context, msgNum).Await(n.context)
+	return node.ExecEngine.GetBatchFetcher().GetL1Confirmations(msgNum).Await(n.context)
 }
 
 func (n NodeInterface) EstimateRetryableTicket(
