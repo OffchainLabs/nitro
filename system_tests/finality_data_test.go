@@ -43,7 +43,6 @@ func TestFinalizedBlocksMovedToAncients(t *testing.T) {
 	// at least while HEAD is smaller than the params.FullImmutabilityThreshold const defined in go-ethereum.
 	// In that way we can control in this test which blocks are moved to ancients by calling ExecEngine.SetFinalized.
 	builder.nodeConfig.ParentChainReader.UseFinalityData = false
-	builder.nodeConfig.MessageExtraction.Enable = false
 
 	cleanup := builder.Build(t)
 	defer cleanup()
@@ -223,7 +222,6 @@ func TestFinalityDataPushedFromConsensusToExecution(t *testing.T) {
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
 	builder.nodeConfig.ParentChainReader.UseFinalityData = false
-	builder.nodeConfig.MessageExtraction.Enable = false
 	cleanup := builder.Build(t)
 	defer cleanup()
 

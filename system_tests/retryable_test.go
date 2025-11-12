@@ -514,9 +514,7 @@ func insertRetriables(
 }
 
 func TestSubmitManyRetryableFailThenRetry(t *testing.T) {
-	builder, delayedInbox, lookupL2Tx, ctx, teardown := retryableSetup(t, func(builder *NodeBuilder) {
-		builder.nodeConfig.MessageExtraction.Enable = false
-	})
+	builder, delayedInbox, lookupL2Tx, ctx, teardown := retryableSetup(t)
 	defer teardown()
 	infraFeeAddr, networkFeeAddr := setupFeeAddresses(t, ctx, builder)
 	elevateL2Basefee(t, ctx, builder)
@@ -1303,9 +1301,7 @@ func TestL1FundedUnsignedTransaction(t *testing.T) {
 }
 
 func TestRetryableSubmissionAndRedeemFees(t *testing.T) {
-	builder, delayedInbox, lookupL2Tx, ctx, teardown := retryableSetup(t, func(builder *NodeBuilder) {
-		builder.nodeConfig.MessageExtraction.Enable = false
-	})
+	builder, delayedInbox, lookupL2Tx, ctx, teardown := retryableSetup(t)
 	defer teardown()
 	infraFeeAddr, networkFeeAddr := setupFeeAddresses(t, ctx, builder)
 

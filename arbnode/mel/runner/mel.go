@@ -63,13 +63,14 @@ func MessageExtractionConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultMessageExtractionConfig.Enable, "enable message extraction service")
 	f.Duration(prefix+".retry-interval", DefaultMessageExtractionConfig.RetryInterval, "wait time before retring upon a failure")
 	f.Int(prefix+".delayed-message-backlog-capacity", DefaultMessageExtractionConfig.DelayedMessageBacklogCapacity, "target capacity of the delayed message backlog")
-	f.Uint64(prefix+".blocks-to-prefetch", DefaultMessageExtractionConfig.BlocksToPrefetch, "the number of blocks to prefetch relevant logs from")
+	f.Uint64(prefix+".blocks-to-prefetch", DefaultMessageExtractionConfig.BlocksToPrefetch, "the number of blocks to prefetch headers and relevant logs from")
 	f.String(prefix+".read-mode", DefaultMessageExtractionConfig.ReadMode, "mode to only read latest or safe or finalized L1 blocks. Enabling safe or finalized disables feed input and output. Defaults to latest. Takes string input, valid strings- latest, safe, finalized")
 	f.Uint64(prefix+".stall-tolerance", DefaultMessageExtractionConfig.StallTolerance, "max times the MEL fsm is allowed to be stuck without logging error")
 }
 
 // TODO (ganesh): cleanup unused methods from this interface after checking with wasm mode
 type ParentChainReader interface {
+	Client() rpc.ClientInterface // to make BatchCallContext requests
 	HeaderByNumber(ctx context.Context, number *big.Int) (*types.Header, error)
 	BlockByNumber(ctx context.Context, number *big.Int) (*types.Block, error)
 	BlockByHash(ctx context.Context, hash common.Hash) (*types.Block, error)
@@ -84,18 +85,18 @@ type ParentChainReader interface {
 // blocks one by one to transform them into messages for the execution layer.
 type MessageExtractor struct {
 	stopwaiter.StopWaiter
-	config            MessageExtractionConfig
-	parentChainReader ParentChainReader
-	logsPreFetcher    *logsFetcher
-	addrs             *chaininfo.RollupAddresses
-	melDB             *Database
-	msgConsumer       mel.MessageConsumer
-	dataProviders     *daprovider.ReaderRegistry
-	fsm               *fsm.Fsm[action, FSMState]
-	caughtUp          bool
-	caughtUpChan      chan struct{}
-	lastBlockToRead   atomic.Uint64
-	stuckCount        uint64
+	config                   MessageExtractionConfig
+	parentChainReader        ParentChainReader
+	logsAndHeadersPreFetcher *logsAndHeadersFetcher
+	addrs                    *chaininfo.RollupAddresses
+	melDB                    *Database
+	msgConsumer              mel.MessageConsumer
+	dataProviders            *daprovider.ReaderRegistry
+	fsm                      *fsm.Fsm[action, FSMState]
+	caughtUp                 bool
+	caughtUpChan             chan struct{}
+	lastBlockToRead          atomic.Uint64
+	stuckCount               uint64
 }
 
 // Creates a message extractor instance with the specified parameters,

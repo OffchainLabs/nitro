@@ -26,7 +26,7 @@ func (m *MessageExtractor) reorg(ctx context.Context, current *fsm.CurrentState[
 	if err := currentDirtyState.ReorgTo(previousState); err != nil {
 		return m.config.RetryInterval, err
 	}
-	m.logsPreFetcher.reset()
+	m.logsAndHeadersPreFetcher.reset()
 	return 0, m.fsm.Do(processNextBlock{
 		melState: previousState,
 	})
