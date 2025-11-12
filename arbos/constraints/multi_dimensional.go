@@ -85,23 +85,16 @@ func (c *MultiGasConstraint) SetResourceWeights(weights map[uint8]uint64) error 
 	}
 	for i := range int(multigas.NumResourceKind) {
 		// #nosec G115 safe: NumResourceKind < 2^32
-		weight, ok := weights[uint8(i)]
-		if ok {
-			if err := c.weightedResources[i].Set(weight); err != nil {
-				return err
-			}
-		} else {
-			// zeroise weight for unspecified resources
-			if err := c.weightedResources[i].Set(0); err != nil {
-				return err
-			}
+		weight := weights[uint8(i)]
+		if err := c.weightedResources[i].Set(weight); err != nil {
+			return err
 		}
 	}
 	return c.sumWeights.Set(total)
 }
 
-// ConstraintContribution returns the normalized backlog contribution for a specific resource kind.
-func (c *MultiGasConstraint) ConstraintContribution(kind uint8) (uint64, error) {
+// ComputeExponent returns the exponent of the given constraint for the given resource kind.
+func (c *MultiGasConstraint) ComputeExponent(kind uint8) (arbmath.Bips, error) {
 	if _, err := multigas.CheckResourceKind(kind); err != nil {
 		return 0, err
 	}
@@ -134,16 +127,18 @@ func (c *MultiGasConstraint) ConstraintContribution(kind uint8) (uint64, error) 
 		return 0, err
 	}
 
-	contrib := arbmath.SaturatingUMul(backlog, weight) /
+	dividend := arbmath.NaturalToBips(
+		arbmath.SaturatingCast[int64](arbmath.SaturatingUMul(backlog, weight)))
+	divisor := arbmath.SaturatingCastToBips(
 		arbmath.SaturatingUMul(adjustmentWindow,
-			arbmath.SaturatingUMul(target, sumWeights),
-		)
+			arbmath.SaturatingUMul(target, sumWeights)))
+	exponent := dividend / divisor
 
-	return contrib, nil
+	return exponent, nil
 }
 
-// SetBacklogWithMultigas aggregates multi-dimensional gas usage into a single backlog value.
-func (c *MultiGasConstraint) SetBacklogWithMultigas(multiGas multigas.MultiGas) error {
+// IncrementBacklog increments multi-dimensional gas usage into a single backlog value.
+func (c *MultiGasConstraint) IncrementBacklog(multiGas multigas.MultiGas) error {
 	totalBacklog, err := c.backlog.Get()
 	if err != nil {
 		return err
