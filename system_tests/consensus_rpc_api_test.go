@@ -66,10 +66,11 @@ func testGetL1Confirmations(
 	var tx *types.Transaction
 	for i := 0; i < numTransactions; i++ {
 		tx, _ = parentChainTestClient.TransferBalance(t, "User", "User", common.Big0, parentChainInfo)
-	}
-	if parentChainTestClientSecondNode != nil {
-		_, err = WaitForTx(ctx, parentChainTestClientSecondNode.Client, tx.Hash(), time.Second*5)
-		Require(t, err)
+		if parentChainTestClientSecondNode != nil {
+			// guarantees that each tx will be included in a different batch
+			_, err = WaitForTx(ctx, parentChainTestClientSecondNode.Client, tx.Hash(), time.Second*5)
+			Require(t, err)
+		}
 	}
 
 	l1ConfsNodeInterface, l1ConfsRPC, err = getL1Confirmations(ctx, nodeInterface, childChainTestClient.Client, genesisBlock)
