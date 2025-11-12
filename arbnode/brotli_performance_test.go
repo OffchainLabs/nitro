@@ -49,6 +49,20 @@ var configs = []testConfig{
 		numMessages:        100,
 		messageSize:        1024 * 128,
 	},
+	{
+		name:               "100_000/low-then-high",
+		compressionLevel:   1,
+		recompressionLevel: 11,
+		numMessages:        10,
+		messageSize:        10_000,
+	},
+	{
+		name:               "100_000/low-then-mid",
+		compressionLevel:   1,
+		recompressionLevel: 6,
+		numMessages:        10,
+		messageSize:        10_000,
+	},
 }
 
 func TestBrotliCompressionValidity(t *testing.T) {
