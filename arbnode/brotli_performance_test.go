@@ -28,34 +28,28 @@ const MessageSize = 100_000
 
 var configs = []testConfig{
 	{
-		name:               "100kB/low-then-high",
-		compressionLevel:   1,
-		recompressionLevel: 11,
-		numMessages:        10,
-	},
-	{
-		name:               "100kB/low-then-mid",
-		compressionLevel:   1,
-		recompressionLevel: 6,
-		numMessages:        10,
-	},
-	{
-		name:               "100kB/mid-then-high",
-		compressionLevel:   6,
-		recompressionLevel: 11,
-		numMessages:        10,
-	},
-	{
-		name:               "100kB/high",
+		name:               "100kB/bklg 0-20 (11)",
 		compressionLevel:   11,
 		recompressionLevel: 11,
-		numMessages:        10,
+		numMessages:        160,
 	},
 	{
-		name:               "1MB/mid-then-high",
+		name:               "100kB/bklg 21-40 (6/11)",
 		compressionLevel:   6,
 		recompressionLevel: 11,
-		numMessages:        10,
+		numMessages:        160,
+	},
+	{
+		name:               "100kB/bklg 41-60 (6)",
+		compressionLevel:   6,
+		recompressionLevel: 6,
+		numMessages:        160,
+	},
+	{
+		name:               "100kB/bklg 61+ (4/6)",
+		compressionLevel:   4,
+		recompressionLevel: 6,
+		numMessages:        160,
 	},
 }
 
@@ -107,8 +101,8 @@ func BenchmarkBrotli(b *testing.B) {
 	}
 
 	b.Logf("-----------------------------------------------------------------")
-	b.Logf("| %-25s |     Time      |     Throughput    |", "Configuration")
-	b.Logf("| %-25s |   (per op)    |    (Bytes/sec)    |", "")
+	b.Logf("| %-35s |     Time      |     Throughput    |", "Configuration")
+	b.Logf("| %-35s |   (per op)    |    (Bytes/sec)    |", "")
 	b.Logf("-----------------------------------------------------------------")
 
 	configNames := make([]string, 0, len(allResults))
@@ -124,7 +118,7 @@ func BenchmarkBrotli(b *testing.B) {
 
 		goLangThroughput := float64(res.dataProcessed) / res.timeGoLang.Seconds()
 
-		b.Logf("| %-25s | %13v | %s |",
+		b.Logf("| %-35s | %13v | %s |",
 			configName,
 			res.timeGoLang,
 			p.Sprintf("%17.0f", goLangThroughput),
