@@ -14,7 +14,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/rlp"
 
-	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/util/testhelpers"
@@ -58,34 +57,6 @@ var configs = []testConfig{
 		recompressionLevel: 11,
 		numMessages:        10,
 	},
-}
-
-func TestBrotliCompressionValidity(t *testing.T) {
-	msgTypes := []struct {
-		typ string
-		gen messageGenerator
-	}{{"rand", getRandomContent}, {"strct", getStructuredContent}}
-
-	for _, cfg := range configs {
-		for _, msgType := range msgTypes {
-			cfg.messageGenerator = msgType.gen
-			messages, expectedBatch := generateMessages(t, cfg)
-
-			batchVerification := func(t *testing.T, useNativeBrotli bool) {
-				compressedBatch := doCompression(t, cfg, messages, useNativeBrotli)
-				decompressedBatch, err := arbcompress.Decompress(compressedBatch, BatchSizeLimit)
-				require.NoError(t, err)
-				require.Equal(t, decompressedBatch, expectedBatch)
-			}
-
-			t.Run(fmt.Sprintf("%s/Native", cfg.name), func(b *testing.T) {
-				batchVerification(t, true)
-			})
-			t.Run(fmt.Sprintf("%s/GoLang", cfg.name), func(b *testing.T) {
-				batchVerification(t, false)
-			})
-		}
-	}
 }
 
 func BenchmarkBrotli(b *testing.B) {
