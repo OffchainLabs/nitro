@@ -13,6 +13,7 @@ import (
 )
 
 const ArbosMultiConstraintsVersion = params.ArbosVersion_50
+const ArbosMultiGasMultiConstraintsVersion = params.ArbosVersion_60
 
 const InitialSpeedLimitPerSecondV0 = 1000000
 const InitialPerBlockGasLimitV0 uint64 = 20 * 1000000
