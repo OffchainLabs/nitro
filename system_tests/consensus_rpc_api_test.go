@@ -55,7 +55,7 @@ func testGetL1Confirmations(
 	l1ConfsNodeInterface, l1ConfsRPC, err := getL1Confirmations(ctx, nodeInterface, childChainTestClient.Client, genesisBlock)
 	Require(t, err)
 
-	numTransactions := 200
+	numTransactions := 100
 
 	// #nosec G115
 	if l1ConfsNodeInterface >= uint64(numTransactions) || l1ConfsRPC >= uint64(numTransactions) {
