@@ -65,9 +65,6 @@ func testGetL1Confirmations(
 		parentChainTestClient.TransferBalance(t, "User", "User", common.Big0, parentChainInfo)
 	}
 
-	// wait a bit for the parent/grandparent chains to process the transactions
-	time.Sleep(2 * time.Second)
-
 	l1ConfsNodeInterface, l1ConfsRPC, err = getL1Confirmations(ctx, nodeInterface, childChainTestClient.Client, genesisBlock)
 	Require(t, err)
 
