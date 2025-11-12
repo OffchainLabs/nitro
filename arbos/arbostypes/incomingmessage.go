@@ -5,6 +5,7 @@ package arbostypes
 
 import (
 	"bytes"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -134,6 +135,21 @@ func (msg *L1IncomingMessage) Serialize() ([]byte, error) {
 
 func (msg *L1IncomingMessage) Equals(other *L1IncomingMessage) bool {
 	return msg.Header.Equals(other.Header) && bytes.Equal(msg.L2msg, other.L2msg)
+}
+
+// Hash returns an unique hash for the message that only includes the relevant fields to be signed.
+func (msg *L1IncomingMessage) Hash() common.Hash {
+	header := []byte{msg.Header.Kind}
+	header = append(header, msg.Header.Poster.Bytes()...)
+	header = binary.BigEndian.AppendUint64(header, msg.Header.BlockNumber)
+	header = binary.BigEndian.AppendUint64(header, msg.Header.Timestamp)
+	if msg.Header.RequestId != nil {
+		header = append(header, msg.Header.RequestId.Bytes()...)
+	}
+	if msg.Header.L1BaseFee != nil {
+		header = append(header, msg.Header.L1BaseFee.Bytes()...)
+	}
+	return crypto.Keccak256Hash(header, msg.L2msg)
 }
 
 func hashesEqual(ha, hb *common.Hash) bool {

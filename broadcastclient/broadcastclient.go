@@ -563,9 +563,6 @@ func (bc *BroadcastClient) isValidSignature(ctx context.Context, message *messag
 		// Verifier disabled
 		return nil
 	}
-	hash, err := message.Hash(bc.chainId)
-	if err != nil {
-		return fmt.Errorf("error getting message hash for sequence number %v: %w", message.SequenceNumber, err)
-	}
+	hash := message.Hash(bc.chainId)
 	return bc.sigVerifier.VerifyHash(ctx, message.Signature, hash)
 }

@@ -47,10 +47,8 @@ func (b *Broadcaster) NewBroadcastFeedMessage(
 ) (*m.BroadcastFeedMessage, error) {
 	var messageSignature []byte
 	if b.dataSigner != nil {
-		hash, err := message.Hash(sequenceNumber, b.chainId)
-		if err != nil {
-			return nil, err
-		}
+		hash := message.Hash(sequenceNumber, b.chainId)
+		var err error
 		messageSignature, err = b.dataSigner(hash.Bytes())
 		if err != nil {
 			return nil, err
