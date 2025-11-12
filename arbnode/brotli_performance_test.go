@@ -22,14 +22,14 @@ const BatchSizeLimit = 50_000_000
 
 var configs = []testConfig{
 	{
-		name:               "100_000/low-then-high",
+		name:               "100k/low-then-high",
 		compressionLevel:   1,
 		recompressionLevel: 11,
 		numMessages:        10,
 		messageSize:        10_000,
 	},
 	{
-		name:               "100_000/low-then-mid",
+		name:               "100k/low-then-mid",
 		compressionLevel:   1,
 		recompressionLevel: 6,
 		numMessages:        10,
