@@ -28,25 +28,25 @@ const MessageSize = 100_000
 
 var configs = []testConfig{
 	{
-		name:               "100kB/bklg 0-20 (11)",
+		name:               "16MB/bklg 0-20 (11)",
 		compressionLevel:   11,
 		recompressionLevel: 11,
 		numMessages:        160,
 	},
 	{
-		name:               "100kB/bklg 21-40 (6/11)",
+		name:               "16MB/bklg 21-40 (6/11)",
 		compressionLevel:   6,
 		recompressionLevel: 11,
 		numMessages:        160,
 	},
 	{
-		name:               "100kB/bklg 41-60 (6)",
+		name:               "16MB/bklg 41-60 (6)",
 		compressionLevel:   6,
 		recompressionLevel: 6,
 		numMessages:        160,
 	},
 	{
-		name:               "100kB/bklg 61+ (4/6)",
+		name:               "16MB/bklg 61+ (4/6)",
 		compressionLevel:   4,
 		recompressionLevel: 6,
 		numMessages:        160,
