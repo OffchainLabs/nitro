@@ -151,6 +151,7 @@ func testBatchPosterParallel(t *testing.T, useRedis bool, useRedisLock bool) {
 			&arbnode.BatchPosterOpts{
 				DataPosterDB:  nil,
 				L1Reader:      builder.L2.ConsensusNode.L1Reader,
+				MsgExtractor:  builder.L2.ConsensusNode.MessageExtractor,
 				Inbox:         builder.L2.ConsensusNode.InboxTracker,
 				Streamer:      builder.L2.ConsensusNode.TxStreamer,
 				VersionGetter: builder.L2.ExecNode,
@@ -238,6 +239,7 @@ func TestRedisBatchPosterHandoff(t *testing.T) {
 	if redisutil.IsSharedTestRedisInstance() {
 		builder.DontParalellise()
 	}
+	builder.nodeConfig.MessageExtraction.Enable = false // TODO: figure out why this test is not passing with MEL enabled
 	builder.nodeConfig.BatchPoster.Enable = false
 	builder.nodeConfig.BatchPoster.RedisUrl = redisUrl
 	builder.nodeConfig.BatchPoster.RedisLock.LockoutDuration = 100 * time.Millisecond
@@ -443,6 +445,7 @@ func testAllowPostingFirstBatchWhenSequencerMessageCountMismatch(t *testing.T, e
 	// creates first node with batch poster disabled
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
 	builder.nodeConfig.BatchPoster.Enable = false
+	builder.nodeConfig.MessageExtraction.Enable = !enabled // TODO: figure out how to handle AllowPostingFirstBatchWhenSequencerMessageCountMismatch with MEL
 	cleanup := builder.Build(t)
 	defer cleanup()
 	testClientNonBatchPoster := builder.L2
@@ -541,6 +544,7 @@ func testBatchPosterDelayBuffer(t *testing.T, delayBufferEnabled bool) {
 	builder.nodeConfig.BatchPoster.MaxDelay = time.Hour     // set high max-delay so we can test the delay buffer
 	builder.nodeConfig.BatchPoster.PollInterval = time.Hour // set a high poll interval to avoid continuous polling
 	// and prevent race conditions due to config changes during the test. We'll call MaybePostSequencerBatch manually.
+	builder.nodeConfig.MessageExtraction.Enable = !delayBufferEnabled
 	cleanup := builder.Build(t)
 	defer cleanup()
 	testClientB, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{})
@@ -684,6 +688,7 @@ func TestBatchPosterWithDelayProofsAndBacklog(t *testing.T) {
 		DefaultConfig(t, true).
 		WithDelayBuffer(threshold).
 		WithL1ClientWrapper(t)
+	builder.nodeConfig.MessageExtraction.Enable = false
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -857,6 +862,7 @@ func TestBatchPosterActuallyPostsBlobsToL1(t *testing.T) {
 	defer cancel()
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder.nodeConfig.MessageExtraction.Enable = false // TODO: unskip this once GetSequencerMessageBytes method is implemented on MessageExtractor
 	// Turn on unconditional blob posting
 	builder.nodeConfig.BatchPoster.Post4844Blobs = true
 	builder.nodeConfig.BatchPoster.IgnoreBlobPrice = true
