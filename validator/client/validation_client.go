@@ -8,7 +8,6 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"sync/atomic"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -32,7 +31,6 @@ type ValidationClient struct {
 	client          *rpcclient.RpcClient
 	name            string
 	stylusArchs     []rawdb.WasmTarget
-	room            atomic.Int32
 	wasmModuleRoots []common.Hash
 }
 
@@ -45,12 +43,10 @@ func NewValidationClient(config rpcclient.ClientConfigFetcher, stack *node.Node)
 }
 
 func (c *ValidationClient) Launch(entry *validator.ValidationInput, moduleRoot common.Hash) validator.ValidationRun {
-	c.room.Add(-1)
 	promise := stopwaiter.LaunchPromiseThread[validator.GoGlobalState](c, func(ctx context.Context) (validator.GoGlobalState, error) {
 		input := server_api.ValidationInputToJson(entry)
 		var res validator.GoGlobalState
 		err := c.client.CallContext(ctx, &res, server_api.Namespace+"_validate", input, moduleRoot)
-		c.room.Add(1)
 		return res, err
 	})
 	return server_common.NewValRun(promise, moduleRoot)
@@ -91,14 +87,7 @@ func (c *ValidationClient) Start(ctx context.Context) error {
 	if err := c.client.CallContext(ctx, &room, server_api.Namespace+"_room"); err != nil {
 		return err
 	}
-	if room < 2 {
-		log.Warn("validation server not enough room, overriding to 2", "name", name, "room", room)
-		room = 2
-	} else {
-		log.Info("connected to validation server", "name", name, "room", room)
-	}
-	// #nosec G115
-	c.room.Store(int32(room))
+	log.Info("connected to validation server", "name", name, "room", room)
 	c.wasmModuleRoots = moduleRoots
 	c.name = name
 	c.stylusArchs = stylusArchs
@@ -129,14 +118,6 @@ func (c *ValidationClient) Stop() {
 
 func (c *ValidationClient) Name() string {
 	return c.name
-}
-
-func (c *ValidationClient) Room() int {
-	room32 := c.room.Load()
-	if room32 < 0 {
-		return 0
-	}
-	return int(room32)
 }
 
 type ExecutionClient struct {

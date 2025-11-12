@@ -3,7 +3,6 @@ package redis
 import (
 	"context"
 	"fmt"
-	"sync/atomic"
 
 	"github.com/redis/go-redis/v9"
 	"github.com/spf13/pflag"
@@ -24,7 +23,6 @@ import (
 type ValidationClientConfig struct {
 	Name           string                `koanf:"name"`
 	StreamPrefix   string                `koanf:"stream-prefix"`
-	Room           int32                 `koanf:"room"`
 	RedisURL       string                `koanf:"redis-url"`
 	StylusArchs    []string              `koanf:"stylus-archs"`
 	ProducerConfig pubsub.ProducerConfig `koanf:"producer-config"`
@@ -38,7 +36,7 @@ func (c ValidationClientConfig) Enabled() bool {
 func (c ValidationClientConfig) Validate() error {
 	for _, arch := range c.StylusArchs {
 		if !rawdb.IsSupportedWasmTarget(rawdb.WasmTarget(arch)) {
-			return fmt.Errorf("Invalid stylus arch: %v", arch)
+			return fmt.Errorf("invalid stylus arch: %v", arch)
 		}
 	}
 	return nil
@@ -46,7 +44,6 @@ func (c ValidationClientConfig) Validate() error {
 
 var DefaultValidationClientConfig = ValidationClientConfig{
 	Name:           "redis validation client",
-	Room:           2,
 	RedisURL:       "",
 	StylusArchs:    []string{string(rawdb.TargetWavm)},
 	ProducerConfig: pubsub.DefaultProducerConfig,
@@ -55,7 +52,6 @@ var DefaultValidationClientConfig = ValidationClientConfig{
 
 var TestValidationClientConfig = ValidationClientConfig{
 	Name:           "test redis validation client",
-	Room:           2,
 	RedisURL:       "",
 	StreamPrefix:   "test-",
 	StylusArchs:    []string{string(rawdb.TargetWavm)},
@@ -65,7 +61,6 @@ var TestValidationClientConfig = ValidationClientConfig{
 
 func ValidationClientConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".name", DefaultValidationClientConfig.Name, "validation client name")
-	f.Int32(prefix+".room", DefaultValidationClientConfig.Room, "validation client room")
 	f.String(prefix+".redis-url", DefaultValidationClientConfig.RedisURL, "redis url")
 	f.String(prefix+".stream-prefix", DefaultValidationClientConfig.StreamPrefix, "prefix for stream name")
 	f.StringSlice(prefix+".stylus-archs", DefaultValidationClientConfig.StylusArchs, "archs required for stylus workers")
@@ -77,7 +72,6 @@ func ValidationClientConfigAddOptions(prefix string, f *pflag.FlagSet) {
 type ValidationClient struct {
 	stopwaiter.StopWaiter
 	config *ValidationClientConfig
-	room   atomic.Int32
 	// producers stores moduleRoot to producer mapping.
 	producers   map[common.Hash]*pubsub.Producer[*validator.ValidationInput, validator.GoGlobalState]
 	redisClient redis.UniversalClient
@@ -97,7 +91,6 @@ func NewValidationClient(cfg *ValidationClientConfig) (*ValidationClient, error)
 		producers:   make(map[common.Hash]*pubsub.Producer[*validator.ValidationInput, validator.GoGlobalState]),
 		redisClient: redisClient,
 	}
-	validationClient.room.Store(cfg.Room)
 	return validationClient, nil
 }
 
@@ -130,8 +123,6 @@ func (c *ValidationClient) WasmModuleRoots() ([]common.Hash, error) {
 }
 
 func (c *ValidationClient) Launch(entry *validator.ValidationInput, moduleRoot common.Hash) validator.ValidationRun {
-	c.room.Add(-1)
-	defer c.room.Add(1)
 	producer, found := c.producers[moduleRoot]
 	if !found {
 		errPromise := containers.NewReadyPromise(validator.GoGlobalState{}, fmt.Errorf("no validation is configured for wasm root %v", moduleRoot))
@@ -170,8 +161,4 @@ func (c *ValidationClient) StylusArchs() []rawdb.WasmTarget {
 		stylusArchs = append(stylusArchs, rawdb.WasmTarget(arch))
 	}
 	return stylusArchs
-}
-
-func (c *ValidationClient) Room() int {
-	return int(c.room.Load())
 }

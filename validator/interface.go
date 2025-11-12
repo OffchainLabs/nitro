@@ -16,6 +16,9 @@ type ValidationSpawner interface {
 	Stop()
 	Name() string
 	StylusArchs() []rawdb.WasmTarget
+}
+
+type CapacityChecker interface {
 	Room() int
 }
 

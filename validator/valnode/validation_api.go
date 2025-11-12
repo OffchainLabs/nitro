@@ -29,7 +29,11 @@ func (a *ValidationServerAPI) Name() string {
 }
 
 func (a *ValidationServerAPI) Room() int {
-	return a.spawner.Room()
+	if capacityChecker, ok := a.spawner.(validator.CapacityChecker); ok {
+		return capacityChecker.Room()
+	}
+	// Return a default value for spawners that don't implement CapacityChecker
+	return 0
 }
 
 func (a *ValidationServerAPI) Validate(ctx context.Context, entry *server_api.InputJSON, moduleRoot common.Hash) (validator.GoGlobalState, error) {

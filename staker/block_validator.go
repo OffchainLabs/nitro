@@ -960,9 +960,11 @@ func (v *BlockValidator) sendValidations(ctx context.Context) (*arbutil.MessageI
 				v.possiblyFatal(notFoundErr)
 				return nil, notFoundErr
 			}
-			if spawner.Room() == 0 {
-				log.Trace("sendValidations: no more room", "moduleRoot", moduleRoot)
-				return nil, nil
+			if capacityChecker, ok := spawner.(validator.CapacityChecker); ok {
+				if capacityChecker.Room() == 0 {
+					log.Trace("sendValidations: no more room", "moduleRoot", moduleRoot)
+					return nil, nil
+				}
 			}
 		}
 		if v.isMemoryLimitExceeded() {
