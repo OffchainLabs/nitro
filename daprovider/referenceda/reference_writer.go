@@ -4,7 +4,7 @@
 package referenceda
 
 import (
-	"fmt"
+	"errors"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
@@ -39,7 +39,7 @@ func (w *Writer) store(
 	message []byte,
 ) ([]byte, error) {
 	if w.signer == nil {
-		return nil, fmt.Errorf("no signer configured")
+		return nil, errors.New("no signer configured")
 	}
 
 	// Create and sign certificate
