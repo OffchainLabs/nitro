@@ -9,6 +9,8 @@ import (
 
 	"github.com/andybalholm/brotli"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/text/language"
+	"golang.org/x/text/message"
 
 	"github.com/ethereum/go-ethereum/rlp"
 
@@ -100,7 +102,9 @@ func BenchmarkBrotli(b *testing.B) {
 			cfg.name = fmt.Sprintf("%s/%s", cfg.name, msgType.typ)
 			cfg.messageGenerator = msgType.gen
 
-			res := &runResult{}
+			res := &runResult{
+				dataProcessed: cfg.numMessages * MessageSize,
+			}
 
 			messages, _ := generateMessages(b, cfg)
 
@@ -122,10 +126,10 @@ func BenchmarkBrotli(b *testing.B) {
 		}
 	}
 
-	b.Logf("------------------------------------------------------------------------------------------------------------------")
-	b.Logf("| %-25s | GoLang Time   | Native Time   | Native/Go Ratio |", "Configuration")
-	b.Logf("| %-25s |   (per op)    |   (per op)    |  (time per op)  |", "")
-	b.Logf("------------------------------------------------------------------------------------------------------------------")
+	b.Logf("------------------------------------------------------------------------------------------------------------------------------------------------------")
+	b.Logf("| %-25s | GoLang Time   | Native Time   | Native/Go Ratio | GoLang Throughput | Native Throughput |", "Configuration")
+	b.Logf("| %-25s |   (per op)    |   (per op)    |  (time per op)  | (Bytes/sec)       | (Bytes/sec)       |", "")
+	b.Logf("------------------------------------------------------------------------------------------------------------------------------------------------------")
 
 	configNames := make([]string, 0, len(allResults))
 	for name := range allResults {
@@ -133,15 +137,22 @@ func BenchmarkBrotli(b *testing.B) {
 	}
 	sort.Strings(configNames)
 
+	p := message.NewPrinter(language.English)
+
 	for _, configName := range configNames {
 		res := allResults[configName]
 		nativeToGoRatio := float64(res.timeNative) / float64(res.timeGoLang)
 
-		b.Logf("| %-25s | %13v | %13v | %14.2f%% |",
+		goLangThroughput := float64(res.dataProcessed) / res.timeGoLang.Seconds()
+		nativeThroughput := float64(res.dataProcessed) / res.timeNative.Seconds()
+
+		b.Logf("| %-25s | %13v | %13v | %14.2f%% | %s | %s |",
 			configName,
 			res.timeGoLang,
 			res.timeNative,
 			nativeToGoRatio*100,
+			p.Sprintf("%17.0f", goLangThroughput),
+			p.Sprintf("%17.0f", nativeThroughput),
 		)
 	}
 	b.Logf("------------------------------------------------------------------------------------------------------------------")
@@ -158,8 +169,9 @@ type testConfig struct {
 type messageGenerator func(size int) []byte
 
 type runResult struct {
-	timeGoLang time.Duration
-	timeNative time.Duration
+	timeGoLang    time.Duration
+	timeNative    time.Duration
+	dataProcessed int
 }
 
 func getRandomContent(size int) []byte {
