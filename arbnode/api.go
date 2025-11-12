@@ -66,7 +66,7 @@ func (a *ArbAPI) GetL1Confirmations(ctx context.Context, blockNum uint64) (uint6
 	if err != nil {
 		return 0, err
 	}
-	return a.consensusNode.GetL1Confirmations(ctx, msgIdx).Await(ctx)
+	return a.consensusNode.GetL1Confirmations(msgIdx).Await(ctx)
 }
 
 func (a *ArbAPI) FindBatchContainingBlock(ctx context.Context, blockNum uint64) (uint64, error) {
