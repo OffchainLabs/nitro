@@ -365,16 +365,16 @@ var ErrExceedsMaxMempoolSize = errors.New("posting this transaction will exceed 
 
 // Does basic check whether posting transaction with specified nonce would
 // result in exceeding maximum queue length or maximum transactions in mempool.
-func (p *DataPoster) canPostWithNonce(ctx context.Context, state *state.LockedInternalState, nextNonce uint64, thisWeight uint64) error {
+func (p *DataPoster) canPostWithNonce(ctx context.Context, s *state.LockedInternalState, nextNonce uint64, thisWeight uint64) error {
 	cfg := p.config()
 	// If the queue has reached configured max size, don't post a transaction.
 	if cfg.MaxQueuedTransactions > 0 {
-		queueLen, err := state.Queue.Length(ctx)
+		queueLen, err := s.Queue.Length(ctx)
 		if err != nil {
 			return fmt.Errorf("getting queue length: %w", err)
 		}
 		if queueLen >= cfg.MaxQueuedTransactions {
-			return fmt.Errorf("posting a transaction with nonce: %d will exceed max allowed dataposter queued transactions: %d, current nonce: %d", nextNonce, cfg.MaxQueuedTransactions, state.Nonce)
+			return fmt.Errorf("posting a transaction with nonce: %d will exceed max allowed dataposter queued transactions: %d, current nonce: %d", nextNonce, cfg.MaxQueuedTransactions, s.Nonce)
 		}
 	}
 	// Check that posting a new transaction won't exceed maximum pending
@@ -405,7 +405,7 @@ func (p *DataPoster) canPostWithNonce(ctx context.Context, state *state.LockedIn
 
 		var confirmedWeight uint64
 		if unconfirmedNonce > 0 {
-			confirmedMeta, err := state.Queue.Get(ctx, unconfirmedNonce-1)
+			confirmedMeta, err := s.Queue.Get(ctx, unconfirmedNonce-1)
 			if err != nil {
 				return err
 			}
@@ -413,7 +413,7 @@ func (p *DataPoster) canPostWithNonce(ctx context.Context, state *state.LockedIn
 				confirmedWeight = confirmedMeta.CumulativeWeight()
 			}
 		}
-		previousTxMeta, err := state.Queue.FetchLast(ctx)
+		previousTxMeta, err := s.Queue.FetchLast(ctx)
 		if err != nil {
 			return err
 		}
@@ -445,26 +445,26 @@ func (p *DataPoster) waitForL1Finality() bool {
 
 // Returns the next nonce, its metadata if stored, a bool indicating if the metadata is present, the cumulative weight, and an error if present.
 // Unlike GetNextNonceAndMeta, this does not call the metadataRetriever if the metadata is not stored in the queue.
-func (p *DataPoster) getNextNonceAndMaybeMeta(ctx context.Context, state *state.LockedInternalState, thisWeight uint64) (uint64, []byte, bool, uint64, error) {
+func (p *DataPoster) getNextNonceAndMaybeMeta(ctx context.Context, s *state.LockedInternalState, thisWeight uint64) (uint64, []byte, bool, uint64, error) {
 	// Ensure latest finalized block state is available.
 	blockNum, err := p.client.BlockNumber(ctx)
 	if err != nil {
 		return 0, nil, false, 0, err
 	}
-	lastQueueItem, err := state.Queue.FetchLast(ctx)
+	lastQueueItem, err := s.Queue.FetchLast(ctx)
 	if err != nil {
 		return 0, nil, false, 0, fmt.Errorf("fetching last element from queue: %w", err)
 	}
 	if lastQueueItem != nil {
 		nextNonce := lastQueueItem.FullTx.Nonce() + 1
-		if err := p.canPostWithNonce(ctx, state, nextNonce, thisWeight); err != nil {
+		if err := p.canPostWithNonce(ctx, s, nextNonce, thisWeight); err != nil {
 			return 0, nil, false, 0, err
 		}
 		return nextNonce, lastQueueItem.Meta, true, lastQueueItem.CumulativeWeight(), nil
 	}
 
-	if err := p.updateNonce(ctx, state); err != nil {
-		if !state.Queue.IsPersistent() && p.waitForL1Finality() {
+	if err := p.updateNonce(ctx, s); err != nil {
+		if !s.Queue.IsPersistent() && p.waitForL1Finality() {
 			return 0, nil, false, 0, fmt.Errorf("error getting latest finalized nonce (and queue is not persistent): %w", err)
 		}
 		// Fall back to using a recent block to get the nonce. This is safe because there's nothing in the queue.
@@ -474,10 +474,10 @@ func (p *DataPoster) getNextNonceAndMaybeMeta(ctx context.Context, state *state.
 		if err != nil {
 			return 0, nil, false, 0, fmt.Errorf("failed to get nonce at block %v: %w", nonceQueryBlock, err)
 		}
-		state.LastBlock = nonceQueryBlock
-		state.Nonce = nonce
+		s.LastBlock = nonceQueryBlock
+		s.Nonce = nonce
 	}
-	return state.Nonce, nil, false, state.Nonce, nil
+	return s.Nonce, nil, false, s.Nonce, nil
 }
 
 // GetNextNonceAndMeta retrieves generates next nonce, validates that a
@@ -536,7 +536,7 @@ func (p *DataPoster) evalMaxFeeCapExpr(backlogOfBatches uint64, elapsed time.Dur
 var big4 = big.NewInt(4)
 
 // The dataPosterBacklog argument should *not* include extraBacklog (it's added in this function)
-func (p *DataPoster) feeAndTipCaps(ctx context.Context, state *state.LockedInternalState, nonce uint64, gasLimit uint64, numBlobs uint64, lastTx *types.Transaction, dataCreatedAt time.Time, dataPosterBacklog uint64, latestHeader *types.Header) (*big.Int, *big.Int, *big.Int, error) {
+func (p *DataPoster) feeAndTipCaps(ctx context.Context, s *state.LockedInternalState, nonce uint64, gasLimit uint64, numBlobs uint64, lastTx *types.Transaction, dataCreatedAt time.Time, dataPosterBacklog uint64, latestHeader *types.Header) (*big.Int, *big.Int, *big.Int, error) {
 	config := p.config()
 	dataPosterBacklog += p.extraBacklog()
 
@@ -591,7 +591,7 @@ func (p *DataPoster) feeAndTipCaps(ctx context.Context, state *state.LockedInter
 
 	maxMempoolWeight := arbmath.MinInt(config.MaxMempoolWeight, config.MaxMempoolTransactions)
 
-	latestBalance := state.Balance
+	latestBalance := s.Balance
 	balanceForTx := new(big.Int).Set(latestBalance)
 	weight := arbmath.MaxInt(1, numBlobs)
 	weightRemaining := weight
@@ -784,7 +784,7 @@ func (p *DataPoster) shouldEnableCellProofs(ctx context.Context) (bool, error) {
 	}
 }
 
-func (p *DataPoster) postTransaction(ctx context.Context, state *state.LockedInternalState, dataCreatedAt time.Time, nonce uint64, meta []byte, to common.Address, calldata []byte, gasLimit uint64, value *big.Int, kzgBlobs []kzg4844.Blob, accessList types.AccessList) (*types.Transaction, error) {
+func (p *DataPoster) postTransaction(ctx context.Context, s *state.LockedInternalState, dataCreatedAt time.Time, nonce uint64, meta []byte, to common.Address, calldata []byte, gasLimit uint64, value *big.Int, kzgBlobs []kzg4844.Blob, accessList types.AccessList) (*types.Transaction, error) {
 	if p.config().DisableNewTx {
 		return nil, fmt.Errorf("posting new transaction is disabled")
 	}
@@ -793,7 +793,7 @@ func (p *DataPoster) postTransaction(ctx context.Context, state *state.LockedInt
 	if len(kzgBlobs) > 0 {
 		weight = uint64(len(kzgBlobs))
 	}
-	expectedNonce, _, _, lastCumulativeWeight, err := p.getNextNonceAndMaybeMeta(ctx, state, weight)
+	expectedNonce, _, _, lastCumulativeWeight, err := p.getNextNonceAndMaybeMeta(ctx, s, weight)
 	if err != nil {
 		return nil, err
 	}
@@ -801,7 +801,7 @@ func (p *DataPoster) postTransaction(ctx context.Context, state *state.LockedInt
 		return nil, fmt.Errorf("%w: data poster expected next transaction to have nonce %v but was requested to post transaction with nonce %v", storage.ErrStorageRace, expectedNonce, nonce)
 	}
 
-	err = p.updateBalance(ctx, state)
+	err = p.updateBalance(ctx, s)
 	if err != nil {
 		return nil, fmt.Errorf("failed to update data poster balance: %w", err)
 	}
@@ -811,7 +811,7 @@ func (p *DataPoster) postTransaction(ctx context.Context, state *state.LockedInt
 		return nil, err
 	}
 
-	feeCap, tipCap, blobFeeCap, err := p.feeAndTipCaps(ctx, state, nonce, gasLimit, uint64(len(kzgBlobs)), nil, dataCreatedAt, 0, latestHeader)
+	feeCap, tipCap, blobFeeCap, err := p.feeAndTipCaps(ctx, s, nonce, gasLimit, uint64(len(kzgBlobs)), nil, dataCreatedAt, 0, latestHeader)
 	if err != nil {
 		return nil, err
 	}
@@ -889,10 +889,10 @@ func (p *DataPoster) postTransaction(ctx context.Context, state *state.LockedInt
 		NextReplacement:        time.Now().Add(replacementTimes[0]),
 		StoredCumulativeWeight: &cumulativeWeight,
 	}
-	return fullTx, p.sendTx(ctx, state, nil, &queuedTx)
+	return fullTx, p.sendTx(ctx, s, nil, &queuedTx)
 }
 
-func (p *DataPoster) saveTx(ctx context.Context, state *state.LockedInternalState, prevTx, newTx *storage.QueuedTransaction) error {
+func (p *DataPoster) saveTx(ctx context.Context, s *state.LockedInternalState, prevTx, newTx *storage.QueuedTransaction) error {
 	if prevTx != nil {
 		if prevTx.FullTx.Nonce() != newTx.FullTx.Nonce() {
 			return fmt.Errorf("prevTx nonce %v doesn't match newTx nonce %v", prevTx.FullTx.Nonce(), newTx.FullTx.Nonce())
@@ -912,13 +912,13 @@ func (p *DataPoster) saveTx(ctx context.Context, state *state.LockedInternalStat
 			return nil
 		}
 	}
-	if err := state.Queue.Put(ctx, newTx.FullTx.Nonce(), prevTx, newTx); err != nil {
+	if err := s.Queue.Put(ctx, newTx.FullTx.Nonce(), prevTx, newTx); err != nil {
 		return fmt.Errorf("putting new tx in the queue: %w", err)
 	}
 	return nil
 }
 
-func (p *DataPoster) sendTx(ctx context.Context, state *state.LockedInternalState, prevTx *storage.QueuedTransaction, newTx *storage.QueuedTransaction) error {
+func (p *DataPoster) sendTx(ctx context.Context, s *state.LockedInternalState, prevTx *storage.QueuedTransaction, newTx *storage.QueuedTransaction) error {
 	latestHeader, err := p.client.HeaderByNumber(ctx, nil)
 	if err != nil {
 		return err
@@ -949,7 +949,7 @@ func (p *DataPoster) sendTx(ctx context.Context, state *state.LockedInternalStat
 		)
 	}
 
-	if err := p.saveTx(ctx, state, prevTx, newTx); err != nil {
+	if err := p.saveTx(ctx, s, prevTx, newTx); err != nil {
 		return err
 	}
 
@@ -961,7 +961,7 @@ func (p *DataPoster) sendTx(ctx context.Context, state *state.LockedInternalStat
 	// The resending/repricing loop in DataPoster.Start will keep trying.
 	previouslySent := newTx.Sent || (prevTx != nil && prevTx.Sent) // if we've previously sent this nonce
 	if !previouslySent && newTx.FullTx.Nonce() > 0 {
-		precedingTx, err := state.Queue.Get(ctx, arbmath.SaturatingUSub(newTx.FullTx.Nonce(), 1))
+		precedingTx, err := s.Queue.Get(ctx, arbmath.SaturatingUSub(newTx.FullTx.Nonce(), 1))
 		if err != nil {
 			return fmt.Errorf("couldn't get preceding tx in DataPoster to check if should send tx with nonce %d: %w", newTx.FullTx.Nonce(), err)
 		}
@@ -1004,7 +1004,7 @@ func (p *DataPoster) sendTx(ctx context.Context, state *state.LockedInternalStat
 	}
 	newerTx := *newTx
 	newerTx.Sent = true
-	return p.saveTx(ctx, state, newTx, &newerTx)
+	return p.saveTx(ctx, s, newTx, &newerTx)
 }
 
 func updateTxDataGasCaps(data types.TxData, newFeeCap, newTipCap, newBlobFeeCap *big.Int) error {
@@ -1042,13 +1042,13 @@ func updateGasCaps(tx *types.Transaction, newFeeCap, newTipCap, newBlobFeeCap *b
 	return types.NewTx(data), nil
 }
 
-func (p *DataPoster) replaceTx(ctx context.Context, state *state.LockedInternalState, prevTx *storage.QueuedTransaction, backlogWeight uint64) error {
+func (p *DataPoster) replaceTx(ctx context.Context, s *state.LockedInternalState, prevTx *storage.QueuedTransaction, backlogWeight uint64) error {
 	latestHeader, err := p.headerReader.LastHeader(ctx)
 	if err != nil {
 		return err
 	}
 
-	newFeeCap, newTipCap, newBlobFeeCap, err := p.feeAndTipCaps(ctx, state, prevTx.FullTx.Nonce(), prevTx.FullTx.Gas(), uint64(len(prevTx.FullTx.BlobHashes())), prevTx.FullTx, prevTx.Created, backlogWeight, latestHeader)
+	newFeeCap, newTipCap, newBlobFeeCap, err := p.feeAndTipCaps(ctx, s, prevTx.FullTx.Nonce(), prevTx.FullTx.Gas(), uint64(len(prevTx.FullTx.BlobHashes())), prevTx.FullTx, prevTx.Created, backlogWeight, latestHeader)
 	if err != nil {
 		return err
 	}
@@ -1072,7 +1072,7 @@ func (p *DataPoster) replaceTx(ctx context.Context, state *state.LockedInternalS
 			"recommendedBlobFeeCap", newBlobFeeCap,
 		)
 		newTx.NextReplacement = time.Now().Add(time.Minute)
-		return p.sendTx(ctx, state, prevTx, &newTx)
+		return p.sendTx(ctx, s, prevTx, &newTx)
 	}
 
 	replacementTimes := p.config().ReplacementTimes
@@ -1100,12 +1100,12 @@ func (p *DataPoster) replaceTx(ctx context.Context, state *state.LockedInternalS
 		return err
 	}
 
-	return p.sendTx(ctx, state, prevTx, &newTx)
+	return p.sendTx(ctx, s, prevTx, &newTx)
 }
 
 // Gets latest known or finalized block header (depending on config flag),
 // gets the nonce of the dataposter sender and stores it if it has increased.
-func (p *DataPoster) updateNonce(ctx context.Context, state *state.LockedInternalState) error {
+func (p *DataPoster) updateNonce(ctx context.Context, s *state.LockedInternalState) error {
 	var blockNumQuery *big.Int
 	if p.waitForL1Finality() {
 		blockNumQuery = big.NewInt(int64(rpc.FinalizedBlockNumber))
@@ -1114,63 +1114,63 @@ func (p *DataPoster) updateNonce(ctx context.Context, state *state.LockedInterna
 	if err != nil {
 		return fmt.Errorf("failed to get the latest or finalized L1 header: %w", err)
 	}
-	if state.LastBlock != nil && arbmath.BigEquals(state.LastBlock, header.Number) {
+	if s.LastBlock != nil && arbmath.BigEquals(s.LastBlock, header.Number) {
 		return nil
 	}
 	nonce, err := p.client.NonceAt(ctx, p.Sender(), header.Number)
 	if err != nil {
-		if state.LastBlock != nil {
-			log.Warn("Failed to get current nonce", "lastBlock", state.LastBlock, "newBlock", header.Number, "err", err)
+		if s.LastBlock != nil {
+			log.Warn("Failed to get current nonce", "lastBlock", s.LastBlock, "newBlock", header.Number, "err", err)
 			return nil
 		}
 		return err
 	}
 	// Ignore if nonce hasn't increased.
-	if nonce <= state.Nonce {
+	if nonce <= s.Nonce {
 		// Still update last block number.
-		if nonce == state.Nonce {
-			state.LastBlock = header.Number
+		if nonce == s.Nonce {
+			s.LastBlock = header.Number
 		}
 		return nil
 	}
 	// #nosec G115
 	latestFinalizedNonceGauge.Update(int64(nonce))
-	log.Info("Data poster transactions confirmed", "previousNonce", state.Nonce, "newNonce", nonce, "previousL1Block", state.LastBlock, "newL1Block", header.Number)
-	if len(state.ErrorCount) > 0 {
-		for x := state.Nonce; x < nonce; x++ {
-			delete(state.ErrorCount, x)
+	log.Info("Data poster transactions confirmed", "previousNonce", s.Nonce, "newNonce", nonce, "previousL1Block", s.LastBlock, "newL1Block", header.Number)
+	if len(s.ErrorCount) > 0 {
+		for x := s.Nonce; x < nonce; x++ {
+			delete(s.ErrorCount, x)
 		}
 	}
 	// We don't prune the most recent transaction in order to ensure that the data poster
 	// always has a reference point in its queue of the latest transaction nonce and metadata.
 	// nonce > 0 is implied by nonce > p.nonce, so this won't underflow.
-	if err := state.Queue.Prune(ctx, nonce-1); err != nil {
+	if err := s.Queue.Prune(ctx, nonce-1); err != nil {
 		return err
 	}
 	// We update these two variables together because they should remain in sync even if there's an error.
-	state.LastBlock = header.Number
-	state.Nonce = nonce
+	s.LastBlock = header.Number
+	s.Nonce = nonce
 	return nil
 }
 
 // Updates dataposter balance to balance at pending block.
-func (p *DataPoster) updateBalance(ctx context.Context, state *state.LockedInternalState) error {
+func (p *DataPoster) updateBalance(ctx context.Context, s *state.LockedInternalState) error {
 	// Use the pending (represented as -1) balance because we're looking at batches we'd post,
 	// so we want to see how much gas we could afford with our pending state.
 	balance, err := p.client.BalanceAt(ctx, p.Sender(), big.NewInt(-1))
 	if err != nil {
 		return err
 	}
-	state.Balance = balance
+	s.Balance = balance
 	return nil
 }
 
 const maxConsecutiveIntermittentErrors = 20
 
-func (p *DataPoster) maybeLogError(err error, state *state.LockedInternalState, tx *storage.QueuedTransaction, msg string) {
+func (p *DataPoster) maybeLogError(err error, s *state.LockedInternalState, tx *storage.QueuedTransaction, msg string) {
 	nonce := tx.FullTx.Nonce()
 	if err == nil {
-		delete(state.ErrorCount, nonce)
+		delete(s.ErrorCount, nonce)
 		return
 	}
 	logLevel := log.Error
@@ -1178,8 +1178,8 @@ func (p *DataPoster) maybeLogError(err error, state *state.LockedInternalState, 
 	isFutureReplacePending := strings.Contains(err.Error(), legacypool.ErrFutureReplacePending.Error())
 	isNonceTooHigh := strings.Contains(err.Error(), core.ErrNonceTooHigh.Error())
 	if isStorageRace || isFutureReplacePending || isNonceTooHigh {
-		state.ErrorCount[nonce]++
-		if state.ErrorCount[nonce] <= maxConsecutiveIntermittentErrors {
+		s.ErrorCount[nonce]++
+		if s.ErrorCount[nonce] <= maxConsecutiveIntermittentErrors {
 			if isStorageRace {
 				logLevel = log.Debug
 			} else {
@@ -1189,7 +1189,7 @@ func (p *DataPoster) maybeLogError(err error, state *state.LockedInternalState, 
 			logLevel = log.Warn
 		}
 	} else {
-		delete(state.ErrorCount, nonce)
+		delete(s.ErrorCount, nonce)
 	}
 	logLevel(msg, "err", err, "nonce", nonce, "feeCap", tx.FullTx.GasFeeCap(), "tipCap", tx.FullTx.GasTipCap(), "blobFeeCap", tx.FullTx.BlobGasFeeCap(), "gas", tx.FullTx.Gas())
 }
