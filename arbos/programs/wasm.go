@@ -118,6 +118,20 @@ func newProgram(
 	gas uint64,
 ) uint32
 
+//go:wasmimport programs program_requires_prepare
+func programRequiresPrepare(
+	moduleHashPtr unsafe.Pointer,
+) uint32
+
+//go:wasmimport programs program_prepare
+func programPrepare(
+	ctxPtr unsafe.Pointer,
+	moduleHashPtr unsafe.Pointer,
+	codePtr unsafe.Pointer,
+	stylusVersion uint32,
+	debug uint32,
+)
+
 //go:wasmimport programs pop
 func popProgram()
 
@@ -172,6 +186,16 @@ func CallProgramLoop(
 	configHandler := params.createHandler()
 	dataHandler := evmData.createHandler()
 	debug := params.DebugMode
+
+	requiresPrepare := programRequiresPrepare(unsafe.Pointer(&moduleHash[0]))
+	if requiresPrepare != 0 {
+		var debugInt uint32
+		if debug {
+			debugInt = 1
+		}
+
+		programPrepare(unsafe.Pointer(&moduleHash[0]), unsafe.Pointer(&moduleHash[0]), arbutil.SliceToUnsafePointer(calldata), uint32(params.Version), debugInt)
+	}
 
 	module := newProgram(
 		unsafe.Pointer(&moduleHash[0]),
