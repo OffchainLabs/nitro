@@ -4,8 +4,9 @@ import (
 	"context"
 	"errors"
 
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/spf13/pflag"
+
+	"github.com/ethereum/go-ethereum/crypto"
 
 	"github.com/offchainlabs/nitro/util/contracts"
 )

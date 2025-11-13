@@ -9,7 +9,6 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/ethereum/go-ethereum/arbitrum_types"
-
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"

@@ -7,6 +7,7 @@ import (
 	"errors"
 
 	"github.com/ethereum/go-ethereum/crypto"
+
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/signature"
 )
