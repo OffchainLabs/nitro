@@ -188,9 +188,9 @@ func (con ArbOwner) SetNetworkFeeAccount(c ctx, evm mech, newNetworkFeeAccount a
 	return c.State.SetNetworkFeeAccount(newNetworkFeeAccount)
 }
 
-// SetInfraFeeAccount sets the infra fee collector to the new network fee account
-func (con ArbOwner) SetInfraFeeAccount(c ctx, evm mech, newNetworkFeeAccount addr) error {
-	return c.State.SetInfraFeeAccount(newNetworkFeeAccount)
+// SetInfraFeeAccount sets the infrastructure fee collector address
+func (con ArbOwner) SetInfraFeeAccount(c ctx, evm mech, newInfraFeeAccount addr) error {
+	return c.State.SetInfraFeeAccount(newInfraFeeAccount)
 }
 
 // ScheduleArbOSUpgrade to the requested version at the requested timestamp
@@ -239,7 +239,7 @@ func (con ArbOwner) SetAmortizedCostCapBips(c ctx, evm mech, cap uint64) error {
 }
 
 // Sets the Brotli compression level used for fast compression
-// Available in ArbOS version 12 with default level as 1
+// Available starting in ArbOS version 20, which also raises the default to level 1
 func (con ArbOwner) SetBrotliCompressionLevel(c ctx, evm mech, level uint64) error {
 	return c.State.SetBrotliCompressionLevel(level)
 }
@@ -289,7 +289,7 @@ func (con ArbOwner) SetWasmMaxStackDepth(c ctx, evm mech, depth uint32) error {
 	return params.Save()
 }
 
-// Gets the number of free wasm pages a tx gets
+// Sets the number of free wasm pages a tx receives
 func (con ArbOwner) SetWasmFreePages(c ctx, evm mech, pages uint16) error {
 	params, err := c.State.Programs().Params()
 	if err != nil {
