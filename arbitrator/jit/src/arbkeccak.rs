@@ -11,8 +11,6 @@ pub fn keccak256(
 ) -> MaybeEscape {
     let (mut mem, wenv) = src.jit_env();
 
-    eprintln!("HELLO");
-
     Ok(caller_env::arbkeccak::keccak256(
         &mut mem,
         &mut JitExecEnv { wenv },
