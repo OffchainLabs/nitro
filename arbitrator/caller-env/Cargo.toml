@@ -4,6 +4,7 @@ version = "0.1.0"
 edition.workspace = true
 
 [dependencies]
+tiny-keccak = { version = "2.0.2", features = ["keccak"] }
 brotli = { path = "../brotli/", optional = true }
 num_enum.workspace = true
 rand_pcg = { version = "0.3.1", default-features = false }
