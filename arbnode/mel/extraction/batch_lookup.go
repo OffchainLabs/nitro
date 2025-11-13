@@ -12,17 +12,16 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 )
 
-type eventUnpacker interface {
-	unpackLogTo(event any, abi *abi.ABI, eventName string, log types.Log) error
+type EventUnpacker interface {
+	UnpackLogTo(event any, abi *abi.ABI, eventName string, log types.Log) error
 }
 
-func parseBatchesFromBlock(
+func ParseBatchesFromBlock(
 	ctx context.Context,
-	melState *mel.State,
 	parentChainHeader *types.Header,
 	txFetcher TransactionFetcher,
 	logsFetcher LogsFetcher,
-	eventUnpacker eventUnpacker,
+	eventUnpacker EventUnpacker,
 ) ([]*mel.SequencerInboxBatch, []*types.Transaction, error) {
 	batches := make([]*mel.SequencerInboxBatch, 0)
 	batchTxs := make([]*types.Transaction, 0)
@@ -36,7 +35,7 @@ func parseBatchesFromBlock(
 			continue
 		}
 		event := new(bridgegen.SequencerInboxSequencerBatchDelivered)
-		if err := eventUnpacker.unpackLogTo(event, SeqInboxABI, "SequencerBatchDelivered", *log); err != nil {
+		if err := eventUnpacker.UnpackLogTo(event, SeqInboxABI, "SequencerBatchDelivered", *log); err != nil {
 			return nil, nil, err
 		}
 		if !event.BatchSequenceNumber.IsUint64() {
@@ -56,7 +55,7 @@ func parseBatchesFromBlock(
 
 		tx, err := txFetcher.TransactionByLog(ctx, log)
 		if err != nil {
-			return nil, nil, fmt.Errorf("error fetching tx by hash: %v in parseBatchesFromBlock: %w ", log.TxHash, err)
+			return nil, nil, fmt.Errorf("error fetching tx by hash: %v in ParseBatchesFromBlock: %w ", log.TxHash, err)
 		}
 
 		batch := &mel.SequencerInboxBatch{

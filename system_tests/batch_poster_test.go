@@ -862,7 +862,6 @@ func TestBatchPosterActuallyPostsBlobsToL1(t *testing.T) {
 	defer cancel()
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
-	builder.nodeConfig.MessageExtraction.Enable = false // TODO: unskip this once GetSequencerMessageBytes method is implemented on MessageExtractor
 	// Turn on unconditional blob posting
 	builder.nodeConfig.BatchPoster.Post4844Blobs = true
 	builder.nodeConfig.BatchPoster.IgnoreBlobPrice = true
@@ -899,9 +898,25 @@ func TestBatchPosterActuallyPostsBlobsToL1(t *testing.T) {
 	Require(t, err)
 	require.NotZero(t, len(batches), "no batches found between L1 blocks %d and %d", l1HeightBeforeBatch, l1HeightAfterBatch)
 
+	// Make sure mel has read the batch that the node has posted
+	batchCount, err := seqInbox.GetBatchCount(ctx, new(big.Int).SetUint64(l1HeightAfterBatch))
+	Require(t, err)
+	var melBatchCount uint64
+	for range 10 {
+		melBatchCount, err = builder.L2.ConsensusNode.MessageExtractor.GetBatchCount(ctx)
+		Require(t, err)
+		if melBatchCount == batchCount {
+			break
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	if melBatchCount != batchCount {
+		t.Fatalf("batch count from sequencer inbox: %d doesn't match with MEL: %d", batchCount, melBatchCount)
+	}
+
 	for _, batch := range batches {
 		sequenceNum := batch.SequenceNumber
-		sequencerMessageBytes, _, err := builder.L2.ConsensusNode.InboxReader.GetSequencerMessageBytes(ctx, sequenceNum)
+		sequencerMessageBytes, _, err := builder.L2.ConsensusNode.MessageExtractor.GetSequencerMessageBytes(ctx, sequenceNum)
 		Require(t, err)
 
 		blobVersionedHash := common.BytesToHash(sequencerMessageBytes[41:])

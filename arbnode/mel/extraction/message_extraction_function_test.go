@@ -27,7 +27,7 @@ func TestExtractMessages(t *testing.T) {
 		name                 string
 		melStateParentHash   common.Hash
 		useExtractMessages   bool // If true, use ExtractMessages instead of extractMessagesImpl
-		lookupBatches        func(context.Context, *mel.State, *types.Header, TransactionFetcher, LogsFetcher, eventUnpacker) ([]*mel.SequencerInboxBatch, []*types.Transaction, error)
+		lookupBatches        func(context.Context, *types.Header, TransactionFetcher, LogsFetcher, EventUnpacker) ([]*mel.SequencerInboxBatch, []*types.Transaction, error)
 		lookupDelayedMsgs    func(context.Context, *mel.State, *types.Header, TransactionFetcher, LogsFetcher) ([]*mel.DelayedInboxMessage, error)
 		serializer           func(context.Context, *mel.SequencerInboxBatch, *types.Transaction, LogsFetcher) ([]byte, error)
 		parseReport          func(io.Reader) (*big.Int, common.Address, common.Hash, uint64, *big.Int, uint64, error)
@@ -205,11 +205,10 @@ func createBlockHeader(parentHash common.Hash) *types.Header {
 // Mock functions
 func successfulLookupBatches(
 	ctx context.Context,
-	melState *mel.State,
 	parentChainBlock *types.Header,
 	txFetcher TransactionFetcher,
 	logsFetcher LogsFetcher,
-	eventUnpacker eventUnpacker,
+	eventUnpacker EventUnpacker,
 ) ([]*mel.SequencerInboxBatch, []*types.Transaction, error) {
 	batches := []*mel.SequencerInboxBatch{{}}
 	txs := []*types.Transaction{{}}
@@ -218,22 +217,20 @@ func successfulLookupBatches(
 
 func emptyLookupBatches(
 	ctx context.Context,
-	melState *mel.State,
 	parentChainBlock *types.Header,
 	txFetcher TransactionFetcher,
 	logsFetcher LogsFetcher,
-	eventUnpacker eventUnpacker,
+	eventUnpacker EventUnpacker,
 ) ([]*mel.SequencerInboxBatch, []*types.Transaction, error) {
 	return nil, nil, nil
 }
 
 func failingLookupBatches(
 	ctx context.Context,
-	melState *mel.State,
 	parentChainBlock *types.Header,
 	txFetcher TransactionFetcher,
 	logsFetcher LogsFetcher,
-	eventUnpacker eventUnpacker,
+	eventUnpacker EventUnpacker,
 ) ([]*mel.SequencerInboxBatch, []*types.Transaction, error) {
 	return nil, nil, errors.New("failed to lookup batches")
 }

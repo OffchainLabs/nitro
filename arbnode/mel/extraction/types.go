@@ -17,22 +17,21 @@ import (
 
 // Satisfies an eventUnpacker interface that can unpack logs
 // to a specific event type using the provided ABI and event name.
-type logUnpacker struct{}
+type LogUnpacker struct{}
 
-func (*logUnpacker) unpackLogTo(
+func (*LogUnpacker) UnpackLogTo(
 	event any, abi *abi.ABI, eventName string, log types.Log) error {
 	return unpackLogTo(event, abi, eventName, log)
 }
 
 // Defines a function that can lookup batches for a given parent chain block.
-// See: parseBatchesFromBlock.
+// See: ParseBatchesFromBlock.
 type batchLookupFunc func(
 	ctx context.Context,
-	melState *mel.State,
 	parentChainHeader *types.Header,
 	txFetcher TransactionFetcher,
 	logsFetcher LogsFetcher,
-	eventUnpacker eventUnpacker,
+	eventUnpacker EventUnpacker,
 ) ([]*mel.SequencerInboxBatch, []*types.Transaction, error)
 
 // Defines a function that can lookup delayed messages for a given parent chain block.
