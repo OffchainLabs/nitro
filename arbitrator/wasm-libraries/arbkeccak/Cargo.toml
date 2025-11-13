@@ -1,0 +1,11 @@
+[package]
+name = "arbkeccak"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+caller-env = { path = "../../caller-env/", features = ["static_caller"] }
