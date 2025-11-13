@@ -370,7 +370,6 @@ dependencies = [
  "num_enum",
  "rand",
  "rand_pcg",
- "tiny-keccak",
  "wasmer",
 ]
 
@@ -1216,6 +1215,7 @@ dependencies = [
  "structopt",
  "stylus",
  "thiserror",
+ "tiny-keccak",
  "wasmer",
  "wasmer-compiler-cranelift",
  "wasmer-compiler-llvm",

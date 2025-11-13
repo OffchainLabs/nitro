@@ -222,7 +222,6 @@ dependencies = [
  "num_enum",
  "rand",
  "rand_pcg",
- "tiny-keccak",
 ]
 
 [[package]]
