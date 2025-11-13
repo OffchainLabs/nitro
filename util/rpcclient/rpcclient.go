@@ -145,10 +145,7 @@ func (m limitedArgumentsMarshal) String() string {
 // This check is based on the error's string form and is not precise.
 func IsAlreadyKnownError(err error) bool {
 	s := err.Error()
-	if strings.Contains(s, txpool.ErrAlreadyKnown.Error()) || strings.Contains(s, "AlreadyKnown") {
-		return true
-	}
-	return false
+		return strings.Contains(s, txpool.ErrAlreadyKnown.Error()) || strings.Contains(s, "AlreadyKnown")
 }
 
 func (c *RpcClient) CallContext(ctx_in context.Context, result interface{}, method string, args ...interface{}) error {
