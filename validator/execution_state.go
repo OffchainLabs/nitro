@@ -7,6 +7,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/arbkeccak"
 	"github.com/ethereum/go-ethereum/common"
+
 	"github.com/offchainlabs/nitro/solgen/go/challenge_legacy_gen"
 	"github.com/offchainlabs/nitro/solgen/go/rollup_legacy_gen"
 )

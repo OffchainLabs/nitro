@@ -10,6 +10,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/arbkeccak"
 	"github.com/ethereum/go-ethereum/common"
+
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/staker"

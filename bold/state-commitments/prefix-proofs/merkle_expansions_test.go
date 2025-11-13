@@ -7,8 +7,9 @@ package prefixproofs
 import (
 	"testing"
 
-	"github.com/ethereum/go-ethereum/arbkeccak"
 	"github.com/stretchr/testify/require"
+
+	"github.com/ethereum/go-ethereum/arbkeccak"
 )
 
 func TestMerkleExpansion(t *testing.T) {

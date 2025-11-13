@@ -44,9 +44,10 @@ import (
 	"fmt"
 
 	"github.com/ccoveille/go-safecast"
-	"github.com/ethereum/go-ethereum/arbkeccak"
 
+	"github.com/ethereum/go-ethereum/arbkeccak"
 	"github.com/ethereum/go-ethereum/common"
+
 	"github.com/offchainlabs/nitro/bold/math"
 )
 

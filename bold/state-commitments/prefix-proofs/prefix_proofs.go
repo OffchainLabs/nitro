@@ -108,9 +108,9 @@ import (
 	"math/bits"
 
 	"github.com/ccoveille/go-safecast"
-	"github.com/ethereum/go-ethereum/arbkeccak"
 	"github.com/pkg/errors"
 
+	"github.com/ethereum/go-ethereum/arbkeccak"
 	"github.com/ethereum/go-ethereum/common"
 )
 

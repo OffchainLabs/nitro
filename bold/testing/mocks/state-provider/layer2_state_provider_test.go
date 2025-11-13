@@ -12,10 +12,11 @@ import (
 	"math"
 	"testing"
 
-	"github.com/ethereum/go-ethereum/arbkeccak"
 	"github.com/stretchr/testify/require"
 
+	"github.com/ethereum/go-ethereum/arbkeccak"
 	"github.com/ethereum/go-ethereum/common"
+
 	"github.com/offchainlabs/nitro/bold/chain-abstraction"
 	"github.com/offchainlabs/nitro/bold/layer2-state-provider"
 	"github.com/offchainlabs/nitro/bold/testing"

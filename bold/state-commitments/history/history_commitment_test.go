@@ -8,10 +8,11 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/ethereum/go-ethereum/arbkeccak"
 	"github.com/stretchr/testify/require"
 
+	"github.com/ethereum/go-ethereum/arbkeccak"
 	"github.com/ethereum/go-ethereum/common"
+
 	"github.com/offchainlabs/nitro/bold/state-commitments/legacy"
 	"github.com/offchainlabs/nitro/bold/state-commitments/prefix-proofs"
 	"github.com/offchainlabs/nitro/bold/testing/casttest"

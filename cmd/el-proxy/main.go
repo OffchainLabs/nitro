@@ -25,9 +25,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/ethereum/go-ethereum/arbkeccak"
 	"github.com/spf13/pflag"
 
+	"github.com/ethereum/go-ethereum/arbkeccak"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
