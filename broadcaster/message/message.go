@@ -1,7 +1,10 @@
 package message
 
 import (
+	"encoding/binary"
+
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
 
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -11,6 +14,8 @@ const (
 	V1                 = 1
 	TimeboostedVersion = byte(0)
 )
+
+var uniquifyingPrefix = []byte("Arbitrum Nitro Feed:")
 
 // BroadcastMessage is the base message type for messages to send over the network.
 //
@@ -52,8 +57,33 @@ func (m *BroadcastFeedMessage) UpdateCumulativeSumMsgSize(val uint64) {
 	m.CumulativeSumMsgSize += val + m.Size()
 }
 
-func (m *BroadcastFeedMessage) Hash(chainId uint64) common.Hash {
-	return m.Message.Hash(m.SequenceNumber, chainId)
+// SignaturePreimage creates a preimage for the feed signature that include all fields that need to
+// be signed. Be aware that changing this function can break compatibility with older clients.
+func (m *BroadcastFeedMessage) SignaturePreimage(chainId uint64) common.Hash {
+	preimage := []byte{}
+	preimage = append(preimage, uniquifyingPrefix...)
+
+	preimage = binary.BigEndian.AppendUint64(preimage, chainId)
+	preimage = binary.BigEndian.AppendUint64(preimage, uint64(m.SequenceNumber))
+	if m.BlockHash != nil {
+		preimage = append(preimage, m.BlockHash.Bytes()...)
+	}
+	preimage = append(preimage, m.BlockMetadata...)
+	preimage = binary.BigEndian.AppendUint64(preimage, m.Message.DelayedMessagesRead)
+
+	l1IncomingMessage := m.Message.Message
+	preimage = append(preimage, l1IncomingMessage.Header.Poster.Bytes()...)
+	preimage = binary.BigEndian.AppendUint64(preimage, l1IncomingMessage.Header.BlockNumber)
+	preimage = binary.BigEndian.AppendUint64(preimage, l1IncomingMessage.Header.Timestamp)
+	if l1IncomingMessage.Header.RequestId != nil {
+		preimage = append(preimage, l1IncomingMessage.Header.RequestId.Bytes()...)
+	}
+	if l1IncomingMessage.Header.L1BaseFee != nil {
+		preimage = append(preimage, l1IncomingMessage.Header.L1BaseFee.Bytes()...)
+	}
+	preimage = append(preimage, l1IncomingMessage.L2msg...)
+
+	return crypto.Keccak256Hash(preimage)
 }
 
 type ConfirmedSequenceNumberMessage struct {

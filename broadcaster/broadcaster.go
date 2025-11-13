@@ -45,23 +45,22 @@ func (b *Broadcaster) NewBroadcastFeedMessage(
 	blockHash *common.Hash,
 	blockMetadata common.BlockMetadata,
 ) (*m.BroadcastFeedMessage, error) {
-	var messageSignature []byte
+	feedMessage := m.BroadcastFeedMessage{
+		SequenceNumber: sequenceNumber,
+		Message:        message,
+		BlockHash:      blockHash,
+		Signature:      []byte{},
+		BlockMetadata:  blockMetadata,
+	}
 	if b.dataSigner != nil {
-		hash := message.Hash(sequenceNumber, b.chainId)
+		preimage := feedMessage.SignaturePreimage(b.chainId)
 		var err error
-		messageSignature, err = b.dataSigner(hash.Bytes())
+		feedMessage.Signature, err = b.dataSigner(preimage.Bytes())
 		if err != nil {
 			return nil, err
 		}
 	}
-
-	return &m.BroadcastFeedMessage{
-		SequenceNumber: sequenceNumber,
-		Message:        message,
-		BlockHash:      blockHash,
-		Signature:      messageSignature,
-		BlockMetadata:  blockMetadata,
-	}, nil
+	return &feedMessage, nil
 }
 
 func (b *Broadcaster) BroadcastSingle(

@@ -563,6 +563,6 @@ func (bc *BroadcastClient) isValidSignature(ctx context.Context, message *messag
 		// Verifier disabled
 		return nil
 	}
-	hash := message.Hash(bc.chainId)
+	hash := message.SignaturePreimage(bc.chainId)
 	return bc.sigVerifier.VerifyHash(ctx, message.Signature, hash)
 }
