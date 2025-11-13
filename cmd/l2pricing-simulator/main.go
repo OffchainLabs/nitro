@@ -87,7 +87,7 @@ func runConstraintsModel(args []string) error {
 		if i < len(config.Backlogs) {
 			backlog = arbmath.SaturatingUCast[uint64](config.Backlogs[i])
 		}
-		if err := pricing.AddConstraint(target, window, backlog); err != nil {
+		if err := pricing.AddGasConstraint(target, window, backlog); err != nil {
 			return fmt.Errorf("failed to add constraint: %w", err)
 		}
 		if window > longTermWindow {
