@@ -44,10 +44,9 @@ import (
 	"fmt"
 
 	"github.com/ccoveille/go-safecast"
+	"github.com/ethereum/go-ethereum/arbkeccak"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/crypto"
-
 	"github.com/offchainlabs/nitro/bold/math"
 )
 
@@ -75,7 +74,7 @@ type treePosition struct {
 
 type historyCommitter struct {
 	fillers        []common.Hash
-	keccak         crypto.KeccakState
+	keccak         arbkeccak.KeccakState
 	cursor         treePosition
 	lastLeafProver *lastLeafProver
 }
@@ -83,7 +82,7 @@ type historyCommitter struct {
 func newCommitter() *historyCommitter {
 	return &historyCommitter{
 		fillers: make([]common.Hash, 0),
-		keccak:  crypto.NewKeccakState(),
+		keccak:  arbkeccak.NewKeccakState(),
 	}
 }
 

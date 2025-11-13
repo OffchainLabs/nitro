@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/ethereum/go-ethereum/arbkeccak"
 	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -83,7 +84,7 @@ func (v *Verifier) VerifyHash(ctx context.Context, signature []byte, hash common
 }
 
 func (v *Verifier) VerifyData(ctx context.Context, signature []byte, data ...[]byte) error {
-	return v.verifyClosure(ctx, signature, crypto.Keccak256Hash(data...))
+	return v.verifyClosure(ctx, signature, arbkeccak.Keccak256Hash(data...))
 }
 
 func (v *Verifier) verifyClosure(ctx context.Context, sig []byte, hash common.Hash) error {

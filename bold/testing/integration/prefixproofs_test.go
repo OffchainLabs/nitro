@@ -11,6 +11,7 @@ import (
 	"math/big"
 	"testing"
 
+	"github.com/ethereum/go-ethereum/arbkeccak"
 	"github.com/stretchr/testify/require"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -109,7 +110,7 @@ type prefixProofComputation struct {
 
 func computeOptimizedPrefixProof(t *testing.T, numRealHashes uint64, virtual uint64, prefixIndex uint64) *prefixProofComputation {
 	// Computes the prefix proof and expansion.
-	simpleHash := crypto.Keccak256Hash([]byte("foo"))
+	simpleHash := arbkeccak.Keccak256Hash([]byte("foo"))
 	hashes := make([]common.Hash, prefixIndex+1)
 	for i := 0; i < len(hashes); i++ {
 		hashes[i] = simpleHash
@@ -145,7 +146,7 @@ func computeOptimizedPrefixProof(t *testing.T, numRealHashes uint64, virtual uin
 }
 
 func computeLegacyPrefixProof(t *testing.T, ctx context.Context, numHashes uint64, prefixIndex uint64) *prefixProofComputation {
-	simpleHash := crypto.Keccak256Hash([]byte("foo"))
+	simpleHash := arbkeccak.Keccak256Hash([]byte("foo"))
 	hashes := make([]common.Hash, numHashes)
 	for i := 0; i < len(hashes); i++ {
 		hashes[i] = simpleHash

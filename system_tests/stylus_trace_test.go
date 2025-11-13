@@ -11,6 +11,7 @@ import (
 	"math/big"
 	"testing"
 
+	"github.com/ethereum/go-ethereum/arbkeccak"
 	"github.com/holiman/uint256"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -138,7 +139,7 @@ func TestStylusOpcodeTraceNativeKeccak(t *testing.T) {
 
 	args := binary.LittleEndian.AppendUint32(nil, 1) // rounds
 	args = append(args, testhelpers.RandomSlice(123)...)
-	hash := crypto.Keccak256Hash(args) // the keccak.wat program computes the hash of the whole args
+	hash := arbkeccak.Keccak256Hash(args) // the keccak.wat program computes the hash of the whole args
 
 	// native_keccak256
 	result := sendAndTraceTransaction(t, builder, program, nil, args)
@@ -244,7 +245,7 @@ func TestStylusOpcodeTraceEvmData(t *testing.T) {
 	Require(t, err)
 	programCode, err := l2client.CodeAt(ctx, program, nil)
 	Require(t, err)
-	programCodehash := crypto.Keccak256(programCode)
+	programCodehash := arbkeccak.Keccak256(programCode)
 	owner := l2info.GetAddress("Owner")
 
 	// read_args
@@ -411,7 +412,7 @@ func TestStylusOpcodeTraceCreate(t *testing.T) {
 	startValue := testhelpers.RandomCallValue(1e5)
 	salt := testhelpers.RandomHash()
 	create1Addr := crypto.CreateAddress(program, 1)
-	create2Addr := crypto.CreateAddress2(program, salt, crypto.Keccak256(deployCode))
+	create2Addr := crypto.CreateAddress2(program, salt, arbkeccak.Keccak256(deployCode))
 
 	// create1
 	create1Args := []byte{0x01}

@@ -4,10 +4,10 @@ import (
 	"context"
 	"testing"
 
+	"github.com/ethereum/go-ethereum/arbkeccak"
 	"github.com/stretchr/testify/require"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/rlp"
 
 	"github.com/offchainlabs/nitro/arbnode/mel"
@@ -164,7 +164,7 @@ func buildMerkleTree(t *testing.T, messages []*mel.DelayedInboxMessage) (map[com
 	for i, msg := range messages {
 		encoded, err := rlp.EncodeToBytes(msg)
 		require.NoError(t, err)
-		hash := crypto.Keccak256Hash(encoded)
+		hash := arbkeccak.Keccak256Hash(encoded)
 		preimages[hash] = encoded
 		leafHashes[i] = hash
 	}
@@ -186,7 +186,7 @@ func buildMerkleTree(t *testing.T, messages []*mel.DelayedInboxMessage) (map[com
 			preimage := make([]byte, 0)
 			preimage = append(preimage, left[:]...)
 			preimage = append(preimage, right[:]...)
-			parent := crypto.Keccak256Hash(left[:], right[:])
+			parent := arbkeccak.Keccak256Hash(left[:], right[:])
 			preimages[parent] = preimage
 			nextLevel = append(nextLevel, parent)
 		}

@@ -8,9 +8,9 @@ import (
 	"math/big"
 	"time"
 
+	"github.com/ethereum/go-ethereum/arbkeccak"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 
@@ -40,8 +40,8 @@ func ParseL2Transactions(msg *arbostypes.L1IncomingMessage, chainId *big.Int, la
 			return nil, errors.New("cannot issue L2 funded by L1 tx without L1 request id")
 		}
 		kind := msg.L2msg[0]
-		depositRequestId := crypto.Keccak256Hash(msg.Header.RequestId[:], arbmath.U256Bytes(common.Big0))
-		unsignedRequestId := crypto.Keccak256Hash(msg.Header.RequestId[:], arbmath.U256Bytes(common.Big1))
+		depositRequestId := arbkeccak.Keccak256Hash(msg.Header.RequestId[:], arbmath.U256Bytes(common.Big0))
+		unsignedRequestId := arbkeccak.Keccak256Hash(msg.Header.RequestId[:], arbmath.U256Bytes(common.Big1))
 		tx, err := parseUnsignedTx(bytes.NewReader(msg.L2msg[1:]), msg.Header.Poster, &unsignedRequestId, chainId, kind)
 		if err != nil {
 			return nil, err
@@ -146,7 +146,7 @@ func parseL2Message(rd io.Reader, poster common.Address, timestamp uint64, reque
 
 			var nextRequestId *common.Hash
 			if requestId != nil {
-				subRequestId := crypto.Keccak256Hash(requestId[:], arbmath.U256Bytes(index))
+				subRequestId := arbkeccak.Keccak256Hash(requestId[:], arbmath.U256Bytes(index))
 				nextRequestId = &subRequestId
 			}
 			nestedSegments, err := parseL2Message(bytes.NewReader(nextMsg), poster, timestamp, nextRequestId, chainId, depth+1)

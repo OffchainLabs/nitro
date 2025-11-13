@@ -5,8 +5,8 @@ import (
 	"encoding/binary"
 	"fmt"
 
+	"github.com/ethereum/go-ethereum/arbkeccak"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/rlp"
 
 	"github.com/offchainlabs/nitro/arbutil"
@@ -46,7 +46,7 @@ func (m *MessageWithMetadata) Hash(sequenceNumber arbutil.MessageIndex, chainId 
 		return common.Hash{}, fmt.Errorf("unable to serialize message %v: %w", sequenceNumber, err)
 	}
 
-	return crypto.Keccak256Hash(uniquifyingPrefix, serializedExtraData, serializedMessage), nil
+	return arbkeccak.Keccak256Hash(uniquifyingPrefix, serializedExtraData, serializedMessage), nil
 }
 
 type InboxMultiplexer interface {

@@ -8,9 +8,8 @@ import (
 	"encoding/binary"
 	"fmt"
 
+	"github.com/ethereum/go-ethereum/arbkeccak"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/crypto"
-
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/staker"
@@ -93,7 +92,7 @@ func (e *ReadPreimageProofEnhancer) EnhanceProof(ctx context.Context, messageNum
 	offset := binary.BigEndian.Uint64(proof[offsetPos:markerPos])
 
 	// Verify the certificate hash matches what's in the proof
-	certHash := crypto.Keccak256Hash(certificate)
+	certHash := arbkeccak.Keccak256Hash(certificate)
 	if !bytes.Equal(certHash[:], certKeccak256[:]) {
 		return nil, fmt.Errorf("certificate hash mismatch: expected %x, got %x", certKeccak256, certHash)
 	}

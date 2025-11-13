@@ -7,12 +7,11 @@ import (
 	"math/big"
 	"testing"
 
+	"github.com/ethereum/go-ethereum/arbkeccak"
 	"github.com/stretchr/testify/require"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/crypto"
-
 	"github.com/offchainlabs/nitro/arbnode/mel"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbstate"
@@ -299,7 +298,7 @@ func failingSerializer(ctx context.Context,
 func successfulParseReport(
 	rd io.Reader,
 ) (*big.Int, common.Address, common.Hash, uint64, *big.Int, uint64, error) {
-	return nil, common.Address{}, crypto.Keccak256Hash([]byte("foobar")), 0, nil, 0, nil
+	return nil, common.Address{}, arbkeccak.Keccak256Hash([]byte("foobar")), 0, nil, 0, nil
 }
 
 func emptyParseReport(

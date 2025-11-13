@@ -13,12 +13,12 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/arbitrum"
+	"github.com/ethereum/go-ethereum/arbkeccak"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rpc"
 
@@ -386,7 +386,7 @@ func (n NodeInterface) ConstructOutboxProof(c ctx, evm mech, size, leaf uint64) 
 		}
 
 		if level == 0 {
-			hash = crypto.Keccak256Hash(hash.Bytes())
+			hash = arbkeccak.Keccak256Hash(hash.Bytes())
 		}
 
 		place := merkletree.NewLevelAndLeaf(level, leafAdded)
@@ -444,7 +444,7 @@ func (n NodeInterface) ConstructOutboxProof(c ctx, evm mech, size, leaf uint64) 
 			// move to the parent
 			step.Level += 1
 			step.Leaf |= 1 << (step.Level - 1)
-			known[step] = crypto.Keccak256Hash(left.Bytes(), right.Bytes())
+			known[step] = arbkeccak.Keccak256Hash(left.Bytes(), right.Bytes())
 		}
 	}
 
@@ -458,13 +458,13 @@ func (n NodeInterface) ConstructOutboxProof(c ctx, evm mech, size, leaf uint64) 
 	}
 
 	// recover the root and check correctness
-	recovery := crypto.Keccak256Hash(send.Bytes())
+	recovery := arbkeccak.Keccak256Hash(send.Bytes())
 	recoveryStep := leaf
 	for _, hash := range hashes {
 		if recoveryStep&1 == 0 {
-			recovery = crypto.Keccak256Hash(recovery.Bytes(), hash.Bytes())
+			recovery = arbkeccak.Keccak256Hash(recovery.Bytes(), hash.Bytes())
 		} else {
-			recovery = crypto.Keccak256Hash(hash.Bytes(), recovery.Bytes())
+			recovery = arbkeccak.Keccak256Hash(hash.Bytes(), recovery.Bytes())
 		}
 		recoveryStep >>= 1
 	}
@@ -472,7 +472,7 @@ func (n NodeInterface) ConstructOutboxProof(c ctx, evm mech, size, leaf uint64) 
 
 	proof := merkletree.MerkleProof{
 		RootHash:  root, // now resolved
-		LeafHash:  crypto.Keccak256Hash(send.Bytes()),
+		LeafHash:  arbkeccak.Keccak256Hash(send.Bytes()),
 		LeafIndex: leaf,
 		Proof:     hashes,
 	}

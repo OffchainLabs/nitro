@@ -10,9 +10,8 @@ import (
 	"context"
 	"testing"
 
+	"github.com/ethereum/go-ethereum/arbkeccak"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/crypto"
-
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -38,7 +37,7 @@ func TestInfraFee(t *testing.T) {
 	Require(t, err)
 	networkFeeAddr, err := arbownerPublic.GetNetworkFeeAccount(ownerCallOpts)
 	Require(t, err)
-	infraFeeAddr := common.BytesToAddress(crypto.Keccak256([]byte{3, 2, 6}))
+	infraFeeAddr := common.BytesToAddress(arbkeccak.Keccak256([]byte{3, 2, 6}))
 	tx, err := arbowner.SetInfraFeeAccount(&ownerTxOpts, infraFeeAddr)
 	Require(t, err)
 	_, err = builder.L2.EnsureTxSucceeded(tx)

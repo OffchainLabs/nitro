@@ -6,8 +6,8 @@ package blockhash
 import (
 	"testing"
 
+	"github.com/ethereum/go-ethereum/arbkeccak"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos/burn"
@@ -36,7 +36,7 @@ func TestBlockhash(t *testing.T) {
 		Fail(t, "should have generated error on Blockhash(4242) in new Blockhashes")
 	}
 
-	hash0 := common.BytesToHash(crypto.Keccak256([]byte{0}))
+	hash0 := common.BytesToHash(arbkeccak.Keccak256([]byte{0}))
 	err = bh.RecordNewL1Block(0, hash0, arbosVersion)
 	Require(t, err)
 	bnum, err = bh.L1BlockNumber()
@@ -50,7 +50,7 @@ func TestBlockhash(t *testing.T) {
 		Fail(t, "incorrect hash return for initial Blockhash(0)")
 	}
 
-	hash4242 := common.BytesToHash(crypto.Keccak256([]byte{42, 42}))
+	hash4242 := common.BytesToHash(arbkeccak.Keccak256([]byte{42, 42}))
 	err = bh.RecordNewL1Block(4242, hash4242, arbosVersion)
 	Require(t, err)
 	bnum, err = bh.L1BlockNumber()

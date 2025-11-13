@@ -11,13 +11,13 @@ import (
 	"strings"
 
 	"github.com/ccoveille/go-safecast"
+	"github.com/ethereum/go-ethereum/arbkeccak"
 	"github.com/pkg/errors"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/metrics"
 
 	"github.com/offchainlabs/nitro/bold/chain-abstraction"
@@ -535,7 +535,7 @@ func calculateMutualId(level uint8, originId [32]byte, startHeight *big.Int, sta
 		return common.Hash{}, err
 	}
 	// Pack stores level(uint8) as 32 bytes, so we need to slice off the first 31 bytes
-	return crypto.Keccak256Hash(mutualIdByte[31:]), nil
+	return arbkeccak.Keccak256Hash(mutualIdByte[31:]), nil
 }
 
 // GetEdge gets an edge by its hash.

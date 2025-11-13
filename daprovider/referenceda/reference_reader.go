@@ -9,8 +9,8 @@ import (
 	"fmt"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/arbkeccak"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 
@@ -103,7 +103,7 @@ func (r *Reader) recoverInternal(
 
 		// Record the mapping from certificate hash to actual payload data
 		// This is what the replay binary expects: keccak256(certificate) -> payload
-		certHash := crypto.Keccak256Hash(certBytes)
+		certHash := arbkeccak.Keccak256Hash(certBytes)
 		preimageRecorder(certHash, payload, arbutil.DACertificatePreimageType)
 	}
 

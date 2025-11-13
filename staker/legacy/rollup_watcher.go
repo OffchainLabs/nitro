@@ -15,9 +15,9 @@ import (
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/arbkeccak"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rpc"
 
@@ -259,7 +259,7 @@ func (r *RollupWatcher) LookupNodeChildren(ctx context.Context, nodeNum uint64, 
 		if i > 0 {
 			lastHashIsSibling[0] = 1
 		}
-		lastHash = crypto.Keccak256Hash(lastHashIsSibling[:], lastHash[:], parsedLog.ExecutionHash[:], parsedLog.AfterInboxBatchAcc[:], parsedLog.WasmModuleRoot[:])
+		lastHash = arbkeccak.Keccak256Hash(lastHashIsSibling[:], lastHash[:], parsedLog.ExecutionHash[:], parsedLog.AfterInboxBatchAcc[:], parsedLog.WasmModuleRoot[:])
 		l1BlockProposed, err := arbutil.CorrespondingL1BlockNumber(ctx, r.client, ethLog.BlockNumber)
 		if err != nil {
 			return nil, err

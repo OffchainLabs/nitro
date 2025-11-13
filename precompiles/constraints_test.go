@@ -6,13 +6,12 @@ package precompiles
 import (
 	"testing"
 
+	"github.com/ethereum/go-ethereum/arbkeccak"
 	"github.com/stretchr/testify/require"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
-	"github.com/ethereum/go-ethereum/crypto"
-
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbos/util"
@@ -31,7 +30,7 @@ func setupResourceConstraintHandles(
 	t.Helper()
 
 	evm := newMockEVMForTesting()
-	caller := common.BytesToAddress(crypto.Keccak256([]byte{})[:20])
+	caller := common.BytesToAddress(arbkeccak.Keccak256([]byte{})[:20])
 	tracer := util.NewTracingInfo(evm, testhelpers.RandomAddress(), types.ArbosAddress, util.TracingDuringEVM)
 	state, err := arbosState.OpenArbosState(evm.StateDB, burn.NewSystemBurner(tracer, false))
 	require.NoError(t, err)

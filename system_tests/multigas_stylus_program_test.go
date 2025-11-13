@@ -8,12 +8,12 @@ import (
 	"math/big"
 	"testing"
 
+	"github.com/ethereum/go-ethereum/arbkeccak"
 	"github.com/stretchr/testify/require"
 
 	"github.com/ethereum/go-ethereum/arbitrum/multigas"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/vm"
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
@@ -95,7 +95,7 @@ func TestMultigasStylus_AccountAccessHostIOs(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			selector := crypto.Keccak256([]byte(tc.selectorSignature))[:4]
+			selector := arbkeccak.Keccak256([]byte(tc.selectorSignature))[:4]
 			callData := append([]byte{}, selector...)
 			callData = append(callData, common.LeftPadBytes(target.Bytes(), 32)...)
 

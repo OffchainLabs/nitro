@@ -11,8 +11,8 @@ import (
 	"io"
 	"math/big"
 
+	"github.com/ethereum/go-ethereum/arbkeccak"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos/util"
@@ -191,7 +191,7 @@ func (msg *L1IncomingMessage) FillInBatchGasFields(batchFetcher FallibleBatchFet
 		if err != nil {
 			return fmt.Errorf("failed to fetch batch mentioned by batch posting report: %w", err)
 		}
-		gotHash := crypto.Keccak256Hash(batchData)
+		gotHash := arbkeccak.Keccak256Hash(batchData)
 		if gotHash != batchHash {
 			return fmt.Errorf("batch fetcher returned incorrect data hash %v (wanted %v for batch %v)", gotHash, batchHash, batchNum)
 		}

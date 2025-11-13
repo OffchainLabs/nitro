@@ -11,13 +11,13 @@ import (
 	"sync/atomic"
 
 	"github.com/ethereum/go-ethereum/arbitrum/multigas"
+	"github.com/ethereum/go-ethereum/arbkeccak"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/lru"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/vm"
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/triedb"
@@ -333,7 +333,7 @@ func (s *Storage) Keccak(data ...[]byte) ([]byte, error) {
 	if err := s.burner.Burn(multigas.ResourceKindComputation, cost); err != nil {
 		return nil, err
 	}
-	return crypto.Keccak256(data...), nil
+	return arbkeccak.Keccak256(data...), nil
 }
 
 func (s *Storage) KeccakHash(data ...[]byte) (common.Hash, error) {
@@ -348,13 +348,13 @@ func (s *Storage) KeccakHash(data ...[]byte) (common.Hash, error) {
 // note: returned slice is not thread-safe
 func (s *Storage) cachedKeccak(data ...[]byte) []byte {
 	if s.hashCache == nil {
-		return crypto.Keccak256(data...)
+		return arbkeccak.Keccak256(data...)
 	}
 	keyString := string(bytes.Join(data, []byte{}))
 	if hash, wasCached := s.hashCache.Get(keyString); wasCached {
 		return hash
 	}
-	hash := crypto.Keccak256(data...)
+	hash := arbkeccak.Keccak256(data...)
 	evicted := s.hashCache.Add(keyString, hash)
 	if evicted && cacheFullLogged.CompareAndSwap(false, true) {
 		log.Warn("Hash cache full, we didn't expect that. Some non-static storage keys may fill up the cache.")

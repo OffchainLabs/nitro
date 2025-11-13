@@ -9,12 +9,11 @@ import (
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/arbitrum/multigas"
+	"github.com/ethereum/go-ethereum/arbkeccak"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
-	"github.com/ethereum/go-ethereum/crypto"
-
 	"github.com/offchainlabs/nitro/arbos/storage"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -366,7 +365,7 @@ func (retryable *Retryable) MakeTx(chainId *big.Int, nonce uint64, gasFeeCap *bi
 }
 
 func RetryableEscrowAddress(ticketId common.Hash) common.Address {
-	return common.BytesToAddress(crypto.Keccak256([]byte("retryable escrow"), ticketId.Bytes()))
+	return common.BytesToAddress(arbkeccak.Keccak256([]byte("retryable escrow"), ticketId.Bytes()))
 }
 
 func RetryableSubmissionFee(calldataLengthInBytes int, l1BaseFee *big.Int) *big.Int {

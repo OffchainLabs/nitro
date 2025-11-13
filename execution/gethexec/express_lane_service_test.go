@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum/arbkeccak"
 	"github.com/stretchr/testify/require"
 
 	"github.com/ethereum/go-ethereum/arbitrum_types"
@@ -967,7 +968,7 @@ func Benchmark_expressLaneService_validateExpressLaneTx(b *testing.B) {
 }
 
 func buildSignature(privateKey *ecdsa.PrivateKey, data []byte) ([]byte, error) {
-	prefixedData := crypto.Keccak256(append([]byte(fmt.Sprintf("\x19Ethereum Signed Message:\n%d", len(data))), data...))
+	prefixedData := arbkeccak.Keccak256(append([]byte(fmt.Sprintf("\x19Ethereum Signed Message:\n%d", len(data))), data...))
 	signature, err := crypto.Sign(prefixedData, privateKey)
 	if err != nil {
 		return nil, err

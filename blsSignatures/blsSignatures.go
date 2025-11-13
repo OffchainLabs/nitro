@@ -9,7 +9,7 @@ import (
 	"errors"
 	"math/big"
 
-	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/arbkeccak"
 	"github.com/ethereum/go-ethereum/crypto/bls12381"
 )
 
@@ -181,7 +181,7 @@ func VerifyAggregatedSignatureDifferentMessages(sig Signature, messages [][]byte
 // so that the result will not collide with a result generated in an ordinary signature.
 func hashToG1Curve(message []byte, keyValidationMode bool) (*bls12381.PointG1, error) {
 	var padding [16]byte
-	h := crypto.Keccak256(message)
+	h := arbkeccak.Keccak256(message)
 	if keyValidationMode {
 		// modify padding, for domain separation
 		padding[0] = 1

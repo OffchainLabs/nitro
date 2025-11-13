@@ -25,12 +25,12 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/ethereum/go-ethereum/arbkeccak"
 	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
@@ -199,7 +199,7 @@ func GetClientFromURL(ctx context.Context, rawUrl string, transport *http.Transp
 }
 
 func (p *ExpressLaneProxy) buildSignature(data []byte) ([]byte, error) {
-	prefixedData := crypto.Keccak256(append([]byte(fmt.Sprintf("\x19Ethereum Signed Message:\n%d", len(data))), data...))
+	prefixedData := arbkeccak.Keccak256(append([]byte(fmt.Sprintf("\x19Ethereum Signed Message:\n%d", len(data))), data...))
 	signature, err := p.dataSignerFunc(prefixedData)
 	if err != nil {
 		return nil, err

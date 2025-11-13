@@ -13,12 +13,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum/arbkeccak"
 	"github.com/google/go-cmp/cmp"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos"
@@ -334,7 +334,7 @@ func TestL1PricingRewardRecipient(t *testing.T) {
 	defer cleanup()
 	ctx := builder.ctx
 
-	rewardRecipient := common.BytesToAddress(crypto.Keccak256([]byte{})[:20])
+	rewardRecipient := common.BytesToAddress(arbkeccak.Keccak256([]byte{})[:20])
 	tx, err := arbOwner.SetL1PricingRewardRecipient(&auth, rewardRecipient)
 	Require(t, err)
 	_, err = builder.L2.EnsureTxSucceeded(tx)
@@ -1077,7 +1077,7 @@ func TestArbFunctionTable(t *testing.T) {
 	arbFunctionTable, err := precompilesgen.NewArbFunctionTable(types.ArbFunctionTableAddress, builder.L2.Client)
 	Require(t, err)
 
-	addr := common.BytesToAddress(crypto.Keccak256([]byte{})[:20])
+	addr := common.BytesToAddress(arbkeccak.Keccak256([]byte{})[:20])
 
 	// should be a noop
 	tx, err := arbFunctionTable.Upload(&auth, []byte{0, 0, 0, 0})
@@ -1253,7 +1253,7 @@ func TestArbAggregatorBatchPosters(t *testing.T) {
 	arbDebug, err := precompilesgen.NewArbDebug(types.ArbDebugAddress, builder.L2.Client)
 	Require(t, err)
 
-	addr := common.BytesToAddress(crypto.Keccak256([]byte{})[:20])
+	addr := common.BytesToAddress(arbkeccak.Keccak256([]byte{})[:20])
 
 	// initially should have one batch poster
 	bps, err := arbAggregator.GetBatchPosters(callOpts)
@@ -1296,7 +1296,7 @@ func TestArbAggregatorGetPreferredAggregator(t *testing.T) {
 	arbAggregator, err := precompilesgen.NewArbAggregator(types.ArbAggregatorAddress, builder.L2.Client)
 	Require(t, err)
 
-	addr := common.BytesToAddress(crypto.Keccak256([]byte{})[:20])
+	addr := common.BytesToAddress(arbkeccak.Keccak256([]byte{})[:20])
 
 	prefAgg, isDefault, err := arbAggregator.GetPreferredAggregator(callOpts, addr)
 	Require(t, err)
@@ -1332,7 +1332,7 @@ func TestArbDebugOverwriteContractCode(t *testing.T) {
 	Require(t, err)
 
 	// create EOA to test against
-	addr := common.BytesToAddress(crypto.Keccak256([]byte{})[:20])
+	addr := common.BytesToAddress(arbkeccak.Keccak256([]byte{})[:20])
 
 	// test that code is empty
 	code, err := builder.L2.Client.CodeAt(ctx, addr, nil)

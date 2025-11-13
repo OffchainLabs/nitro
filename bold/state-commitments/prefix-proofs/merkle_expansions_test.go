@@ -7,15 +7,14 @@ package prefixproofs
 import (
 	"testing"
 
+	"github.com/ethereum/go-ethereum/arbkeccak"
 	"github.com/stretchr/testify/require"
-
-	"github.com/ethereum/go-ethereum/crypto"
 )
 
 func TestMerkleExpansion(t *testing.T) {
 	me := NewEmptyMerkleExpansion()
 
-	h0 := crypto.Keccak256Hash([]byte{0})
+	h0 := arbkeccak.Keccak256Hash([]byte{0})
 	me, err := AppendCompleteSubTree(me, 0, h0)
 	require.NoError(t, err)
 	root, err := Root(me)
@@ -23,25 +22,25 @@ func TestMerkleExpansion(t *testing.T) {
 	require.Equal(t, h0, root)
 	compUncompTest(t, me)
 
-	h1 := crypto.Keccak256Hash([]byte{1})
+	h1 := arbkeccak.Keccak256Hash([]byte{1})
 	me, err = AppendCompleteSubTree(me, 0, h1)
 	require.NoError(t, err)
 	root, err = Root(me)
 	require.NoError(t, err)
-	require.Equal(t, crypto.Keccak256Hash(h0.Bytes(), h1.Bytes()), root)
+	require.Equal(t, arbkeccak.Keccak256Hash(h0.Bytes(), h1.Bytes()), root)
 	compUncompTest(t, me)
 
 	me2 := me.Clone()
-	h2 := crypto.Keccak256Hash([]byte{2})
-	h3 := crypto.Keccak256Hash([]byte{2})
-	h23 := crypto.Keccak256Hash(h2.Bytes(), h3.Bytes())
+	h2 := arbkeccak.Keccak256Hash([]byte{2})
+	h3 := arbkeccak.Keccak256Hash([]byte{2})
+	h23 := arbkeccak.Keccak256Hash(h2.Bytes(), h3.Bytes())
 	me, err = AppendCompleteSubTree(me, 1, h23)
 	require.NoError(t, err)
 	root, err = Root(me)
 	require.NoError(t, err)
 	root2, err := Root(me2)
 	require.NoError(t, err)
-	require.Equal(t, crypto.Keccak256Hash(root2.Bytes(), h23.Bytes()), root)
+	require.Equal(t, arbkeccak.Keccak256Hash(root2.Bytes(), h23.Bytes()), root)
 	compUncompTest(t, me)
 
 	me4 := me.Clone()

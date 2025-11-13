@@ -11,9 +11,9 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/arbkeccak"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 
@@ -530,7 +530,7 @@ func (v *L1Validator) createNewNodeAction(
 	}
 
 	executionHash := assertion.ExecutionHash()
-	newNodeHash := crypto.Keccak256Hash(hasSiblingByte[:], lastHash[:], executionHash[:], validatedBatchAcc[:], wasmModuleRoot[:])
+	newNodeHash := arbkeccak.Keccak256Hash(hasSiblingByte[:], lastHash[:], executionHash[:], validatedBatchAcc[:], wasmModuleRoot[:])
 
 	action := createNodeAction{
 		assertion:         assertion,

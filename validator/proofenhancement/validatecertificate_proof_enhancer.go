@@ -7,9 +7,8 @@ import (
 	"encoding/binary"
 	"fmt"
 
+	"github.com/ethereum/go-ethereum/arbkeccak"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/crypto"
-
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/staker"
@@ -75,7 +74,7 @@ func (e *ValidateCertificateProofEnhancer) EnhanceProof(ctx context.Context, mes
 	certificate := sequencerMessage[SequencerMessageHeaderSize:]
 
 	// Verify the certificate hash matches what's requested
-	actualHash := crypto.Keccak256Hash(certificate)
+	actualHash := arbkeccak.Keccak256Hash(certificate)
 	if actualHash != common.BytesToHash(certHash[:]) {
 		return nil, fmt.Errorf("certificate hash mismatch: expected %x, got %x", certHash, actualHash)
 	}

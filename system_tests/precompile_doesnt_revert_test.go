@@ -10,10 +10,9 @@ import (
 	"testing"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/arbkeccak"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/crypto"
-
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
@@ -37,7 +36,7 @@ func TestArbAddressTableDoesntRevert(t *testing.T) {
 	arbAddressTable, err := precompilesgen.NewArbAddressTable(types.ArbAddressTableAddress, builder.L2.Client)
 	Require(t, err)
 
-	addr := common.BytesToAddress(crypto.Keccak256([]byte{})[:20])
+	addr := common.BytesToAddress(arbkeccak.Keccak256([]byte{})[:20])
 
 	exists, err := arbAddressTable.AddressExists(callOpts, addr)
 	Require(t, err)
@@ -128,8 +127,8 @@ func TestArbSysDoesntRevert(t *testing.T) {
 	arbSys, err := precompilesgen.NewArbSys(types.ArbSysAddress, builder.L2.Client)
 	Require(t, err)
 
-	addr1 := common.BytesToAddress(crypto.Keccak256([]byte{})[:20])
-	addr2 := common.BytesToAddress(crypto.Keccak256([]byte{})[:20])
+	addr1 := common.BytesToAddress(arbkeccak.Keccak256([]byte{})[:20])
+	addr2 := common.BytesToAddress(arbkeccak.Keccak256([]byte{})[:20])
 	_, err = arbSys.MapL1SenderContractAddressToL2Alias(callOpts, addr1, addr2)
 	Require(t, err)
 }
@@ -181,7 +180,7 @@ func TestArbGasInfoDoesntRevert(t *testing.T) {
 	defer cleanup()
 
 	callOpts := &bind.CallOpts{Context: ctx}
-	addr := common.BytesToAddress(crypto.Keccak256([]byte{})[:20])
+	addr := common.BytesToAddress(arbkeccak.Keccak256([]byte{})[:20])
 
 	arbGasInfo, err := precompilesgen.NewArbGasInfo(types.ArbGasInfoAddress, builder.L2.Client)
 	Require(t, err)

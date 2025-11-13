@@ -8,10 +8,9 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/ethereum/go-ethereum/arbkeccak"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
-	"github.com/ethereum/go-ethereum/crypto"
-
 	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
@@ -106,7 +105,7 @@ func TestOpenCachedSubStorage(t *testing.T) {
 	}
 	var expectedKeys [][]byte
 	for _, subSpaceID := range subSpaceIDs {
-		expectedKeys = append(expectedKeys, crypto.Keccak256(s.storageKey, subSpaceID))
+		expectedKeys = append(expectedKeys, arbkeccak.Keccak256(s.storageKey, subSpaceID))
 	}
 	n := len(subSpaceIDs) * 50
 	start := make(chan struct{})

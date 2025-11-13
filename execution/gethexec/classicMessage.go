@@ -10,8 +10,8 @@ import (
 	"math/big"
 	"math/bits"
 
+	"github.com/ethereum/go-ethereum/arbkeccak"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethdb"
 )
 
@@ -32,7 +32,7 @@ type ClassicOutboxMsg struct {
 }
 
 func msgBatchKey(batchNum *big.Int) []byte {
-	return crypto.Keccak256(append([]byte("msgBatch"), batchNum.Bytes()...))
+	return arbkeccak.Keccak256(append([]byte("msgBatch"), batchNum.Bytes()...))
 }
 
 func (m *ClassicOutboxRetriever) GetMsg(batchNum *big.Int, index uint64) (*ClassicOutboxMsg, error) {

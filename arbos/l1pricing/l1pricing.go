@@ -9,12 +9,12 @@ import (
 	"fmt"
 	"math/big"
 
+	"github.com/ethereum/go-ethereum/arbkeccak"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbcompress"
@@ -558,13 +558,13 @@ var estimationPaddingUnits uint64 = 16 * params.TxDataNonZeroGasEIP2028
 
 const estimationPaddingBasisPoints = 100
 
-var randomNonce = binary.BigEndian.Uint64(crypto.Keccak256([]byte("Nonce"))[:8])
-var randomGasTipCap = new(big.Int).SetBytes(crypto.Keccak256([]byte("GasTipCap"))[:4])
-var randomGasFeeCap = new(big.Int).SetBytes(crypto.Keccak256([]byte("GasFeeCap"))[:4])
-var RandomGas = uint64(binary.BigEndian.Uint32(crypto.Keccak256([]byte("Gas"))[:4]))
+var randomNonce = binary.BigEndian.Uint64(arbkeccak.Keccak256([]byte("Nonce"))[:8])
+var randomGasTipCap = new(big.Int).SetBytes(arbkeccak.Keccak256([]byte("GasTipCap"))[:4])
+var randomGasFeeCap = new(big.Int).SetBytes(arbkeccak.Keccak256([]byte("GasFeeCap"))[:4])
+var RandomGas = uint64(binary.BigEndian.Uint32(arbkeccak.Keccak256([]byte("Gas"))[:4]))
 var randV = arbmath.BigMulByUint(chaininfo.ArbitrumOneChainConfig().ChainID, 3)
-var randR = crypto.Keccak256Hash([]byte("R")).Big()
-var randS = crypto.Keccak256Hash([]byte("S")).Big()
+var randR = arbkeccak.Keccak256Hash([]byte("R")).Big()
+var randS = arbkeccak.Keccak256Hash([]byte("S")).Big()
 
 // The returned tx will be invalid, likely for a number of reasons such as an invalid signature.
 // It's only used to check how large it is after brotli level 0 compression.

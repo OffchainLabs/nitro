@@ -5,9 +5,8 @@ import (
 	"fmt"
 	"math"
 
+	"github.com/ethereum/go-ethereum/arbkeccak"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/crypto"
-
 	"github.com/offchainlabs/nitro/solgen/go/challenge_legacy_gen"
 	"github.com/offchainlabs/nitro/solgen/go/rollup_legacy_gen"
 )
@@ -52,7 +51,7 @@ func (s GoGlobalState) Hash() common.Hash {
 	data = append(data, s.SendRoot.Bytes()...)
 	data = append(data, u64ToBe(s.Batch)...)
 	data = append(data, u64ToBe(s.PosInBatch)...)
-	return crypto.Keccak256Hash(data)
+	return arbkeccak.Keccak256Hash(data)
 }
 
 func (s GoGlobalState) AsLegacySolidityStruct() rollup_legacy_gen.GlobalState {
@@ -96,11 +95,11 @@ func (s *ExecutionState) AsLegacySolidityStruct() rollup_legacy_gen.ExecutionSta
 
 func (s *ExecutionState) BlockStateHash() common.Hash {
 	if s.MachineStatus == MachineStatusFinished {
-		return crypto.Keccak256Hash([]byte("Block state:"), s.GlobalState.Hash().Bytes())
+		return arbkeccak.Keccak256Hash([]byte("Block state:"), s.GlobalState.Hash().Bytes())
 	} else if s.MachineStatus == MachineStatusErrored {
-		return crypto.Keccak256Hash([]byte("Block state, errored:"), s.GlobalState.Hash().Bytes())
+		return arbkeccak.Keccak256Hash([]byte("Block state, errored:"), s.GlobalState.Hash().Bytes())
 	} else if s.MachineStatus == MachineStatusTooFar {
-		return crypto.Keccak256Hash([]byte("Block state, too far:"))
+		return arbkeccak.Keccak256Hash([]byte("Block state, too far:"))
 	} else {
 		panic(fmt.Sprintf("invalid machine status %v", s.MachineStatus))
 	}

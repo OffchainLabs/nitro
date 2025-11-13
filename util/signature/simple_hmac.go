@@ -8,10 +8,10 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/ethereum/go-ethereum/arbkeccak"
 	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/crypto"
 )
 
 type SimpleHmac struct {
@@ -118,13 +118,13 @@ func (h *SimpleHmac) VerifySignature(sig []byte, data ...[]byte) error {
 		return fmt.Errorf("%w: signature must be exactly 32 bytes", ErrSignatureNotVerified)
 	}
 
-	expectHmac := crypto.Keccak256Hash(prependBytes(h.signingKey[:], data...)...)
+	expectHmac := arbkeccak.Keccak256Hash(prependBytes(h.signingKey[:], data...)...)
 	if subtle.ConstantTimeCompare(expectHmac[:], sig) == 1 {
 		return nil
 	}
 
 	if h.fallbackVerificationKey != nil {
-		expectHmac = crypto.Keccak256Hash(prependBytes(h.fallbackVerificationKey[:], data...)...)
+		expectHmac = arbkeccak.Keccak256Hash(prependBytes(h.fallbackVerificationKey[:], data...)...)
 		if subtle.ConstantTimeCompare(expectHmac[:], sig) == 1 {
 			return nil
 		}
@@ -136,7 +136,7 @@ func (h *SimpleHmac) VerifySignature(sig []byte, data ...[]byte) error {
 func (h *SimpleHmac) SignMessage(data ...[]byte) ([]byte, error) {
 	var hmac [32]byte
 	if h.signingKey != nil {
-		hmac = crypto.Keccak256Hash(prependBytes(h.signingKey[:], data...)...)
+		hmac = arbkeccak.Keccak256Hash(prependBytes(h.signingKey[:], data...)...)
 	}
 	return hmac[:], nil
 }

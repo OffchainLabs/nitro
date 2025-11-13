@@ -12,9 +12,8 @@ import (
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/arbkeccak"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/crypto"
-
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/util/headerreader"
@@ -94,7 +93,7 @@ func GenDelayProof(ctx context.Context, message *arbostypes.MessageWithMetadata,
 		Timestamp:       message.Message.Header.Timestamp,
 		InboxSeqNum:     new(big.Int).SetUint64(seqNum),
 		BaseFeeL1:       message.Message.Header.L1BaseFee,
-		MessageDataHash: crypto.Keccak256Hash(message.Message.L2msg),
+		MessageDataHash: arbkeccak.Keccak256Hash(message.Message.L2msg),
 	}
 	delayProof := &bridgegen.DelayProof{
 		BeforeDelayedAcc: beforeDelayedAcc,

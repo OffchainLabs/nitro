@@ -6,9 +6,8 @@ package legacystaker
 import (
 	"math/big"
 
+	"github.com/ethereum/go-ethereum/arbkeccak"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/crypto"
-
 	"github.com/offchainlabs/nitro/solgen/go/rollup_legacy_gen"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/validator"
@@ -39,7 +38,7 @@ func HashChallengeState(
 	for _, h := range hashes {
 		hashesBytes = append(hashesBytes, h[:]...)
 	}
-	return crypto.Keccak256Hash(
+	return arbkeccak.Keccak256Hash(
 		arbmath.Uint64ToU256Bytes(segmentStart),
 		arbmath.Uint64ToU256Bytes(segmentLength),
 		hashesBytes,
