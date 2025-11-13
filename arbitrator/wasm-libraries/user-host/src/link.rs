@@ -136,6 +136,25 @@ pub unsafe extern "C" fn programs__new_program(
     module
 }
 
+/// consumes module hash
+/// returns true if we should call into program_prepare, false otherwise
+#[no_mangle]
+pub unsafe extern "C" fn programs__program_requires_prepare(module_hash_ptr: GuestPtr) -> u32 {
+    0
+}
+
+/// prepares program by recompiling wasm for all targets if not already compiled
+/// consumes activated program module hash and wasm code
+#[no_mangle]
+pub unsafe extern "C" fn programs__program_prepare(
+    ctx_ptr: GuestPtr,
+    module_hash_ptr: GuestPtr,
+    code_ptr: GuestPtr,
+    stylus_version: u32,
+    debug: u32,
+) {
+}
+
 /// Gets information about request according to id.
 ///
 /// # Safety
