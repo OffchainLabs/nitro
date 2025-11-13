@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use structopt::StructOpt;
 
 mod arbcompress;
+mod arbkeccak;
 mod caller_env;
 pub mod machine;
 mod prepare;
