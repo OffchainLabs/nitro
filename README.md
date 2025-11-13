@@ -1,6 +1,6 @@
 <br />
 <p align="center">
-  <a href="https://arbitrum.io/">
+  <a href="https://docs.arbitrum.io/get-started/overview">
     <img src="https://arbitrum.io/assets/arbitrum/logo_color.png" alt="Logo" width="80" height="80">
   </a>
 
