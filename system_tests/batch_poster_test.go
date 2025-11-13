@@ -864,6 +864,9 @@ func TestBatchPosterActuallyPostsBlobsToL1(t *testing.T) {
 	// Build L1 + L2
 	cleanup := builder.Build(t)
 	defer cleanup()
+	// Create 2nd node to verify batch gets there
+	testClientB, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{})
+	defer cleanupB()
 
 	l1HeightBeforeBatch, err := builder.L1.Client.BlockNumber(ctx)
 	require.NoError(t, err)
@@ -875,10 +878,9 @@ func TestBatchPosterActuallyPostsBlobsToL1(t *testing.T) {
 	// Advance L1 enough to ensure everything is synced
 	AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, 30)
 
-	initialBatchCount := GetBatchCount(t, builder)
-	require.Eventually(t, func() bool {
-		return GetBatchCount(t, builder) == initialBatchCount+1
-	}, 15*time.Second, 200*time.Millisecond, "batch not observed on L1 (BatchCount didn't increase)")
+	// Wait for the batch to be posted and processed by node B
+	_, err = WaitForTx(ctx, testClientB.Client, tx.Hash(), 5*time.Second)
+	Require(t, err)
 
 	// We assume that `builder.L1.Client` has the L1 block that made `testClientB.Client` notice `tx`.
 	l1HeightAfterBatch, err := builder.L1.Client.BlockNumber(ctx)
