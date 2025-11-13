@@ -20,7 +20,7 @@ Nitro is the latest iteration of the Arbitrum technology. It is a fully integrat
 layer 2 optimistic rollup system, including fraud proofs, the sequencer, the token bridges,
 advanced calldata compression, and more.
 
-See the live docs-site [here](https://developer.arbitrum.io/) (or [here](https://github.com/OffchainLabs/arbitrum-docs) for markdown docs source.)
+See the live docs-site [here](https://docs.arbitrum.io/get-started/overview) (or [here](https://github.com/OffchainLabs/arbitrum-docs) for markdown docs source.)
 
 See [here](https://docs.arbitrum.io/audit-reports) for security audit reports.
 
