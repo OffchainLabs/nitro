@@ -43,5 +43,4 @@ func init() {
 		panic(err)
 	}
 	iInboxABI = parsedIInboxABI
-	BatchDeliveredID = sequencerBridgeABI.Events["SequencerBatchDelivered"].ID
 }

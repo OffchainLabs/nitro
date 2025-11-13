@@ -14,7 +14,7 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 )
 
-func serializeBatch(
+func SerializeBatch(
 	ctx context.Context,
 	batch *mel.SequencerInboxBatch,
 	tx *types.Transaction,

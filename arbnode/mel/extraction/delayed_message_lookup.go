@@ -168,7 +168,7 @@ func parseDelayedMessage(
 		args := make(map[string]any)
 		tx, err := txFetcher.TransactionByLog(ctx, ethLog)
 		if err != nil {
-			return nil, nil, fmt.Errorf("error fetching tx by hash: %v in parseBatchesFromBlock: %w ", ethLog.TxHash, err)
+			return nil, nil, fmt.Errorf("error fetching tx by hash: %v in ParseBatchesFromBlock: %w ", ethLog.TxHash, err)
 		}
 		data := tx.Data()
 		if len(data) < 4 {

@@ -29,7 +29,7 @@ func Test_serializeBatch(t *testing.T) {
 			AfterDelayedCount: 1,
 			DataLocation:      mel.BatchDataLocation(99),
 		}
-		_, err := serializeBatch(ctx, batch, nil, nil)
+		_, err := SerializeBatch(ctx, batch, nil, nil)
 		require.ErrorContains(t, err, "invalid data location")
 	})
 	t.Run("OK", func(t *testing.T) {
@@ -54,7 +54,7 @@ func Test_serializeBatch(t *testing.T) {
 			AfterDelayedCount: 1,
 			DataLocation:      mel.BatchDataBlobHashes,
 		}
-		serialized, err := serializeBatch(ctx, batch, tx, nil)
+		serialized, err := SerializeBatch(ctx, batch, tx, nil)
 		require.NoError(t, err)
 		// Serialization includes 5 uint64 values (8 bytes each) and the full batch
 		// data appended at the end of the batch.
@@ -63,7 +63,7 @@ func Test_serializeBatch(t *testing.T) {
 		require.Equal(t, 105, len(serialized))
 
 		// Expect some caching of serialized data.
-		secondRound, err := serializeBatch(ctx, batch, tx, nil)
+		secondRound, err := SerializeBatch(ctx, batch, tx, nil)
 		require.NoError(t, err)
 		require.Equal(t, serialized, secondRound)
 	})
