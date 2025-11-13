@@ -69,6 +69,9 @@ pub fn create(opts: &Opts, env: WasmEnv) -> (Instance, FunctionEnv<WasmEnv>, Sto
             "brotli_compress" => func!(arbcompress::brotli_compress),
             "brotli_decompress" => func!(arbcompress::brotli_decompress),
         },
+        "arbkeccak" => {
+            "keccak256" => func!(),
+        },
         "wavmio" => {
             "getGlobalStateBytes32" => func!(wavmio::get_global_state_bytes32),
             "setGlobalStateBytes32" => func!(wavmio::set_global_state_bytes32),
