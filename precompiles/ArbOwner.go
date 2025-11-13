@@ -188,7 +188,7 @@ func (con ArbOwner) SetNetworkFeeAccount(c ctx, evm mech, newNetworkFeeAccount a
 	return c.State.SetNetworkFeeAccount(newNetworkFeeAccount)
 }
 
-// SetInfraFeeAccount sets the infra fee collector to the new infra fee account
+// SetInfraFeeAccount sets the infrastructure fee collector address
 func (con ArbOwner) SetInfraFeeAccount(c ctx, evm mech, newInfraFeeAccount addr) error {
 	return c.State.SetInfraFeeAccount(newInfraFeeAccount)
 }
