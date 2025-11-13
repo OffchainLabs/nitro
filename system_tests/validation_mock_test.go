@@ -7,10 +7,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ethereum/go-ethereum/arbkeccak"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/rpc"
 
@@ -117,7 +117,7 @@ func (r *mockExecRun) GetStepAt(position uint64) containers.PromiseInterface[*va
 		resState = r.endState
 	}
 	return containers.NewReadyPromise[*validator.MachineStepResult](&validator.MachineStepResult{
-		Hash:        arbkeccak.Keccak256Hash(new(big.Int).SetUint64(position).Bytes()),
+		Hash:        crypto.Keccak256Hash(new(big.Int).SetUint64(position).Bytes()),
 		Position:    position,
 		Status:      status,
 		GlobalState: resState,

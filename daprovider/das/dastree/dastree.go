@@ -7,8 +7,8 @@ import (
 	"encoding/binary"
 	"fmt"
 
-	"github.com/ethereum/go-ethereum/arbkeccak"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
 
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -49,7 +49,7 @@ func RecordHash(record func(bytes32, []byte, arbutil.PreimageType), preimage ...
 	//
 
 	keccord := func(value []byte) bytes32 {
-		hash := arbkeccak.Keccak256Hash(value)
+		hash := crypto.Keccak256Hash(value)
 		record(hash, value, arbutil.Keccak256PreimageType)
 		return hash
 	}
@@ -107,7 +107,7 @@ func HashBytes(preimage ...[]byte) []byte {
 func FlatHashToTreeHash(flat bytes32) bytes32 {
 	// Forms a degenerate dastree that's just a single leaf
 	// note: the inner preimage may be larger than the 64 kB standard
-	return arbmath.FlipBit(arbkeccak.Keccak256Hash(FlatHashToTreeLeaf(flat)), 0)
+	return arbmath.FlipBit(crypto.Keccak256Hash(FlatHashToTreeLeaf(flat)), 0)
 }
 
 func FlatHashToTreeLeaf(flat bytes32) []byte {
@@ -121,7 +121,7 @@ func ValidHash(hash bytes32, preimage []byte) bool {
 	}
 	if len(preimage) > 0 {
 		kind := preimage[0]
-		return kind != NodeByte && kind != LeafByte && hash == arbkeccak.Keccak256Hash(preimage)
+		return kind != NodeByte && kind != LeafByte && hash == crypto.Keccak256Hash(preimage)
 	}
 	return false
 }

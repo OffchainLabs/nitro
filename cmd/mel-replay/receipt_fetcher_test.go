@@ -9,9 +9,9 @@ import (
 	"math/big"
 	"testing"
 
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/stretchr/testify/require"
 
-	"github.com/ethereum/go-ethereum/arbkeccak"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/trie"
@@ -90,7 +90,7 @@ func (h *preimageRecordingHasher) Reset() {
 }
 
 func (h *preimageRecordingHasher) Update(key, value []byte) error {
-	valueHash := arbkeccak.Keccak256Hash(value)
+	valueHash := crypto.Keccak256Hash(value)
 	h.preimages[valueHash] = common.CopyBytes(value)
 	return h.trie.Update(key, value)
 }

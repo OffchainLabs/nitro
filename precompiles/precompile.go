@@ -17,7 +17,8 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/arbitrum/multigas"
-	"github.com/ethereum/go-ethereum/arbkeccak"
+	"github.com/ethereum/go-ethereum/crypto"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
@@ -413,7 +414,7 @@ func MakePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, *Pr
 				var topic [32]byte
 
 				if len(bytes) > 32 {
-					topic = *(*[32]byte)(arbkeccak.Keccak256(bytes))
+					topic = *(*[32]byte)(crypto.Keccak256(bytes))
 				} else {
 					offset := 32 - len(bytes)
 					copy(topic[offset:], bytes)

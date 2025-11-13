@@ -15,7 +15,8 @@ import (
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
-	"github.com/ethereum/go-ethereum/arbkeccak"
+	"github.com/ethereum/go-ethereum/crypto"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -143,16 +144,16 @@ type DelayedInboxMessage struct {
 }
 
 func (m *DelayedInboxMessage) AfterInboxAcc() common.Hash {
-	hash := arbkeccak.Keccak256(
+	hash := crypto.Keccak256(
 		[]byte{m.Message.Header.Kind},
 		m.Message.Header.Poster.Bytes(),
 		arbmath.UintToBytes(m.Message.Header.BlockNumber),
 		arbmath.UintToBytes(m.Message.Header.Timestamp),
 		m.Message.Header.RequestId.Bytes(),
 		arbmath.U256Bytes(m.Message.Header.L1BaseFee),
-		arbkeccak.Keccak256(m.Message.L2msg),
+		crypto.Keccak256(m.Message.L2msg),
 	)
-	return arbkeccak.Keccak256Hash(m.BeforeInboxAcc[:], hash)
+	return crypto.Keccak256Hash(m.BeforeInboxAcc[:], hash)
 }
 
 func (b *DelayedBridge) LookupMessagesInRange(ctx context.Context, from, to *big.Int, batchFetcher arbostypes.FallibleBatchFetcher) ([]*DelayedInboxMessage, error) {
@@ -224,7 +225,7 @@ func (b *DelayedBridge) logsToDeliveredMessages(ctx context.Context, logs []type
 		if !ok {
 			return nil, fmt.Errorf("message %v data not found", parsedLog.MessageIndex)
 		}
-		if arbkeccak.Keccak256Hash(data) != parsedLog.MessageDataHash {
+		if crypto.Keccak256Hash(data) != parsedLog.MessageDataHash {
 			return nil, fmt.Errorf("found message %v data with mismatched hash", parsedLog.MessageIndex)
 		}
 

@@ -6,9 +6,9 @@ import (
 	"sort"
 	"testing"
 
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/stretchr/testify/require"
 
-	"github.com/ethereum/go-ethereum/arbkeccak"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/trie"
@@ -257,7 +257,7 @@ func Test_parseDelayedMessagesFromBlock(t *testing.T) {
 			Inbox:           common.HexToAddress("0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"),
 			Kind:            1,
 			Sender:          [20]byte{},
-			MessageDataHash: arbkeccak.Keccak256Hash(msgData),
+			MessageDataHash: crypto.Keccak256Hash(msgData),
 			BaseFeeL1:       big.NewInt(2),
 			Timestamp:       0,
 		}
@@ -359,7 +359,7 @@ func Test_parseDelayedMessagesFromBlock(t *testing.T) {
 			Inbox:           common.HexToAddress("0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"),
 			Kind:            1,
 			Sender:          [20]byte{},
-			MessageDataHash: arbkeccak.Keccak256Hash(msgData),
+			MessageDataHash: crypto.Keccak256Hash(msgData),
 			BaseFeeL1:       big.NewInt(2),
 			Timestamp:       0,
 		}
@@ -451,7 +451,7 @@ func Test_parseDelayedMessagesFromBlock(t *testing.T) {
 			Inbox:           common.HexToAddress("0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"),
 			Kind:            1,
 			Sender:          [20]byte{},
-			MessageDataHash: arbkeccak.Keccak256Hash(msgData),
+			MessageDataHash: crypto.Keccak256Hash(msgData),
 			BaseFeeL1:       big.NewInt(2),
 			Timestamp:       0,
 		}

@@ -8,9 +8,9 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/stretchr/testify/require"
 
-	"github.com/ethereum/go-ethereum/arbkeccak"
 	"github.com/ethereum/go-ethereum/common"
 
 	"github.com/offchainlabs/nitro/bold/state-commitments/legacy"
@@ -19,7 +19,7 @@ import (
 )
 
 func FuzzHistoryCommitter(f *testing.F) {
-	simpleHash := arbkeccak.Keccak256Hash([]byte("foo"))
+	simpleHash := crypto.Keccak256Hash([]byte("foo"))
 	f.Fuzz(func(t *testing.T, numReal uint64, virtual uint64, limit uint64) {
 		// Set some bounds.
 		numReal = numReal % (1 << 10)
@@ -42,7 +42,7 @@ func FuzzHistoryCommitter(f *testing.F) {
 func BenchmarkPrefixProofGeneration_Legacy(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		prefixIndex := 13384
-		simpleHash := arbkeccak.Keccak256Hash([]byte("foo"))
+		simpleHash := crypto.Keccak256Hash([]byte("foo"))
 		hashes := make([]common.Hash, 1<<14)
 		for i := 0; i < len(hashes); i++ {
 			hashes[i] = simpleHash
@@ -64,8 +64,8 @@ func BenchmarkPrefixProofGeneration_Legacy(b *testing.B) {
 
 func BenchmarkPrefixProofGeneration_Optimized(b *testing.B) {
 	b.StopTimer()
-	simpleHash := arbkeccak.Keccak256Hash([]byte("foo"))
-	hashes := []common.Hash{arbkeccak.Keccak256Hash(simpleHash[:])}
+	simpleHash := crypto.Keccak256Hash([]byte("foo"))
+	hashes := []common.Hash{crypto.Keccak256Hash(simpleHash[:])}
 	prefixIndex := uint64(13384)
 	virtual := uint64(1 << 14)
 	committer := newCommitter()
@@ -80,20 +80,20 @@ func TestSimpleHistoryCommitment(t *testing.T) {
 	aLeaf := common.HexToHash("0xA")
 	bLeaf := common.HexToHash("0xB")
 	// Level 0
-	aHash := arbkeccak.Keccak256Hash(aLeaf[:])
-	bHash := arbkeccak.Keccak256Hash(bLeaf[:])
+	aHash := crypto.Keccak256Hash(aLeaf[:])
+	bHash := crypto.Keccak256Hash(bLeaf[:])
 	// Level 1
-	abHash := arbkeccak.Keccak256Hash(append(aHash[:], bHash[:]...))
-	bzHash := arbkeccak.Keccak256Hash(append(bHash[:], emptyHash[:]...))
-	bbHash := arbkeccak.Keccak256Hash(append(bHash[:], bHash[:]...))
+	abHash := crypto.Keccak256Hash(append(aHash[:], bHash[:]...))
+	bzHash := crypto.Keccak256Hash(append(bHash[:], emptyHash[:]...))
+	bbHash := crypto.Keccak256Hash(append(bHash[:], bHash[:]...))
 	// Level 2
-	abbzHash := arbkeccak.Keccak256Hash(append(abHash[:], bzHash[:]...))
-	abbbHash := arbkeccak.Keccak256Hash(append(abHash[:], bbHash[:]...))
-	ababHash := arbkeccak.Keccak256Hash(append(abHash[:], abHash[:]...))
-	bbbbHash := arbkeccak.Keccak256Hash(append(bbHash[:], bbHash[:]...))
+	abbzHash := crypto.Keccak256Hash(append(abHash[:], bzHash[:]...))
+	abbbHash := crypto.Keccak256Hash(append(abHash[:], bbHash[:]...))
+	ababHash := crypto.Keccak256Hash(append(abHash[:], abHash[:]...))
+	bbbbHash := crypto.Keccak256Hash(append(bbHash[:], bbHash[:]...))
 	// Level 3
-	ababbbbbHash := arbkeccak.Keccak256Hash(append(ababHash[:], bbbbHash[:]...))
-	abababbbHash := arbkeccak.Keccak256Hash(append(ababHash[:], abbbHash[:]...))
+	ababbbbbHash := crypto.Keccak256Hash(append(ababHash[:], bbbbHash[:]...))
+	abababbbHash := crypto.Keccak256Hash(append(ababHash[:], abbbHash[:]...))
 
 	tests := []struct {
 		name string
@@ -167,7 +167,7 @@ func TestSimpleHistoryCommitment(t *testing.T) {
 func TestLegacyVsOptimized(t *testing.T) {
 	t.Parallel()
 	end := uint64(1 << 6)
-	simpleHash := arbkeccak.Keccak256Hash([]byte("foo"))
+	simpleHash := crypto.Keccak256Hash([]byte("foo"))
 	for i := uint64(1); i < end; i++ {
 		limit := nextPowerOf2(i)
 		for j := i; j < limit; j++ {
@@ -192,7 +192,7 @@ func TestLegacyVsOptimized(t *testing.T) {
 
 func TestLegacyVsOptimizedEdgeCases(t *testing.T) {
 	t.Parallel()
-	simpleHash := arbkeccak.Keccak256Hash([]byte("foo"))
+	simpleHash := crypto.Keccak256Hash([]byte("foo"))
 
 	tests := []struct {
 		realLength    int
@@ -233,7 +233,7 @@ func TestLegacyVsOptimizedEdgeCases(t *testing.T) {
 
 func TestVirtualSparse(t *testing.T) {
 	t.Parallel()
-	simpleHash := arbkeccak.Keccak256Hash([]byte("foo"))
+	simpleHash := crypto.Keccak256Hash([]byte("foo"))
 	makeLeaves := func(n int) []common.Hash {
 		leaves := make([]common.Hash, n)
 		for i := range leaves {
@@ -298,7 +298,7 @@ func TestVirtualSparse(t *testing.T) {
 
 func TestMaximumDepthHistoryCommitment(t *testing.T) {
 	t.Parallel()
-	simpleHash := arbkeccak.Keccak256Hash([]byte("foo"))
+	simpleHash := crypto.Keccak256Hash([]byte("foo"))
 	hashedLeaves := []common.Hash{
 		simpleHash,
 	}
@@ -308,7 +308,7 @@ func TestMaximumDepthHistoryCommitment(t *testing.T) {
 
 func BenchmarkMaximumDepthHistoryCommitment(b *testing.B) {
 	b.StopTimer()
-	simpleHash := arbkeccak.Keccak256Hash([]byte("foo"))
+	simpleHash := crypto.Keccak256Hash([]byte("foo"))
 	hashedLeaves := []common.Hash{
 		simpleHash,
 	}
@@ -320,7 +320,7 @@ func BenchmarkMaximumDepthHistoryCommitment(b *testing.B) {
 }
 
 func TestInclusionProofEquivalence(t *testing.T) {
-	simpleHash := arbkeccak.Keccak256Hash([]byte("foo"))
+	simpleHash := crypto.Keccak256Hash([]byte("foo"))
 	leaves := []common.Hash{
 		simpleHash,
 		simpleHash,
@@ -335,7 +335,7 @@ func TestInclusionProofEquivalence(t *testing.T) {
 }
 
 func TestHashInto(t *testing.T) {
-	simpleHash := arbkeccak.Keccak256Hash([]byte("foo"))
+	simpleHash := crypto.Keccak256Hash([]byte("foo"))
 	leaves := []common.Hash{
 		simpleHash,
 		simpleHash,
@@ -343,7 +343,7 @@ func TestHashInto(t *testing.T) {
 		simpleHash,
 	}
 	comm := newCommitter()
-	want := arbkeccak.Keccak256Hash(simpleHash[:], simpleHash[:], simpleHash[:], simpleHash[:])
+	want := crypto.Keccak256Hash(simpleHash[:], simpleHash[:], simpleHash[:], simpleHash[:])
 	var got common.Hash
 	comm.hashInto(&got, &leaves[0], &leaves[1], &leaves[2], &leaves[3])
 	if got != want {

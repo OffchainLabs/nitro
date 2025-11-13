@@ -8,8 +8,8 @@ import (
 	"io"
 	"math/big"
 
-	"github.com/ethereum/go-ethereum/arbkeccak"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
 
 	"github.com/offchainlabs/nitro/arbos/util"
 )
@@ -67,7 +67,7 @@ func newMerkleLeafFromReader(rd io.Reader) (MerkleTree, error) {
 }
 
 func (leaf *merkleTreeLeaf) Hash() common.Hash {
-	return arbkeccak.Keccak256Hash(leaf.hash.Bytes())
+	return crypto.Keccak256Hash(leaf.hash.Bytes())
 }
 
 func (leaf *merkleTreeLeaf) Size() uint64 {
@@ -149,7 +149,7 @@ type merkleInternal struct {
 
 func NewMerkleInternal(left, right MerkleTree) MerkleTree {
 	return &merkleInternal{
-		arbkeccak.Keccak256Hash(left.Hash().Bytes(), right.Hash().Bytes()),
+		crypto.Keccak256Hash(left.Hash().Bytes(), right.Hash().Bytes()),
 		left.Size() + right.Size(),
 		left.Capacity() + right.Capacity(),
 		left,
@@ -308,9 +308,9 @@ func (proof *MerkleProof) IsCorrect() bool {
 	for _, hashFromProof := range proof.Proof {
 
 		if index&1 == 0 {
-			hash = arbkeccak.Keccak256Hash(hash.Bytes(), hashFromProof.Bytes())
+			hash = crypto.Keccak256Hash(hash.Bytes(), hashFromProof.Bytes())
 		} else {
-			hash = arbkeccak.Keccak256Hash(hashFromProof.Bytes(), hash.Bytes())
+			hash = crypto.Keccak256Hash(hashFromProof.Bytes(), hash.Bytes())
 		}
 		index = index / 2
 	}

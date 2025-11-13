@@ -8,7 +8,6 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/ethereum/go-ethereum/arbkeccak"
 	"github.com/ethereum/go-ethereum/crypto"
 
 	"github.com/offchainlabs/nitro/util/contracts"
@@ -30,7 +29,7 @@ func TestVerifier(t *testing.T) {
 	Require(t, err)
 
 	data := []byte{0, 1, 2, 3, 4, 5, 6, 7}
-	hash := arbkeccak.Keccak256Hash(data)
+	hash := crypto.Keccak256Hash(data)
 
 	signature, err := dataSigner(hash.Bytes())
 	Require(t, err, "error signing data")
@@ -90,7 +89,7 @@ func TestVerifierBatchPoster(t *testing.T) {
 	Require(t, err)
 
 	data := []byte{0, 1, 2, 3, 4, 5, 6, 7}
-	hash := arbkeccak.Keccak256Hash(data)
+	hash := crypto.Keccak256Hash(data)
 
 	signature, err := dataSigner(hash.Bytes())
 	Require(t, err, "error signing data")

@@ -10,8 +10,8 @@ import (
 	"encoding/binary"
 	"math"
 
-	"github.com/ethereum/go-ethereum/arbkeccak"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
 
 	"github.com/offchainlabs/nitro/solgen/go/challengeV2gen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
@@ -51,7 +51,7 @@ func (s GoGlobalState) Hash() common.Hash {
 	data = append(data, s.SendRoot.Bytes()...)
 	data = append(data, u64ToBe(s.Batch)...)
 	data = append(data, u64ToBe(s.PosInBatch)...)
-	return arbkeccak.Keccak256Hash(data)
+	return crypto.Keccak256Hash(data)
 }
 
 func (s GoGlobalState) AsSolidityStruct() challengeV2gen.GlobalState {

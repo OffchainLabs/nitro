@@ -7,8 +7,8 @@ import (
 	"math/big"
 	"testing"
 
-	"github.com/ethereum/go-ethereum/arbkeccak"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
 
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 )
@@ -18,8 +18,8 @@ func TestFeeCollector(t *testing.T) {
 	agg := ArbAggregator{}
 
 	aggAddr := l1pricing.BatchPosterAddress
-	collectorAddr := common.BytesToAddress(arbkeccak.Keccak256([]byte{1})[:20])
-	impostorAddr := common.BytesToAddress(arbkeccak.Keccak256([]byte{2})[:20])
+	collectorAddr := common.BytesToAddress(crypto.Keccak256([]byte{1})[:20])
+	impostorAddr := common.BytesToAddress(crypto.Keccak256([]byte{2})[:20])
 
 	aggCtx := testContext(aggAddr, evm)
 	callerCtx := testContext(common.Address{}, evm)
@@ -57,7 +57,7 @@ func TestTxBaseFee(t *testing.T) {
 	evm := newMockEVMForTesting()
 	agg := ArbAggregator{}
 
-	aggAddr := common.BytesToAddress(arbkeccak.Keccak256([]byte{0})[:20])
+	aggAddr := common.BytesToAddress(crypto.Keccak256([]byte{0})[:20])
 	targetFee := big.NewInt(973)
 
 	aggCtx := testContext(aggAddr, evm)

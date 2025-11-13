@@ -17,7 +17,8 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
-	"github.com/ethereum/go-ethereum/arbkeccak"
+	"github.com/ethereum/go-ethereum/crypto"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -384,7 +385,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 					managerAddr, err := stakerA.Rollup().ChallengeManager(&bind.CallOpts{Context: ctx})
 					Require(t, err)
 					// 0xb53127684a568b3173ae13b9f8a6016e243e63b6e8ee1178d6a717850b5d6103
-					proxyAdminSlot := common.BigToHash(arbmath.BigSub(arbkeccak.Keccak256Hash([]byte("eip1967.proxy.admin")).Big(), common.Big1))
+					proxyAdminSlot := common.BigToHash(arbmath.BigSub(crypto.Keccak256Hash([]byte("eip1967.proxy.admin")).Big(), common.Big1))
 					proxyAdminBytes, err := builder.L1.Client.StorageAt(ctx, managerAddr, proxyAdminSlot, nil)
 					Require(t, err)
 					proxyAdminAddr := common.BytesToAddress(proxyAdminBytes)

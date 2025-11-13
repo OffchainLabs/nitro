@@ -12,7 +12,7 @@ import (
 	"testing"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
-	"github.com/ethereum/go-ethereum/arbkeccak"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -83,7 +83,7 @@ func NewL1TestInfo(t *testing.T) *BlockchainTestInfo {
 }
 
 func GetTestKeyForAccountName(t *testing.T, name string) *ecdsa.PrivateKey {
-	keyBytes := arbkeccak.Keccak256([]byte(name))
+	keyBytes := crypto.Keccak256([]byte(name))
 	keyBytes[0] = 0
 	privateKey, err := crypto.ToECDSA(keyBytes)
 	if err != nil {

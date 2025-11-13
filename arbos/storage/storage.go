@@ -11,7 +11,8 @@ import (
 	"sync/atomic"
 
 	"github.com/ethereum/go-ethereum/arbitrum/multigas"
-	"github.com/ethereum/go-ethereum/arbkeccak"
+	"github.com/ethereum/go-ethereum/crypto"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/lru"
 	"github.com/ethereum/go-ethereum/core/rawdb"
@@ -333,7 +334,7 @@ func (s *Storage) Keccak(data ...[]byte) ([]byte, error) {
 	if err := s.burner.Burn(multigas.ResourceKindComputation, cost); err != nil {
 		return nil, err
 	}
-	return arbkeccak.Keccak256(data...), nil
+	return crypto.Keccak256(data...), nil
 }
 
 func (s *Storage) KeccakHash(data ...[]byte) (common.Hash, error) {
@@ -348,13 +349,13 @@ func (s *Storage) KeccakHash(data ...[]byte) (common.Hash, error) {
 // note: returned slice is not thread-safe
 func (s *Storage) cachedKeccak(data ...[]byte) []byte {
 	if s.hashCache == nil {
-		return arbkeccak.Keccak256(data...)
+		return crypto.Keccak256(data...)
 	}
 	keyString := string(bytes.Join(data, []byte{}))
 	if hash, wasCached := s.hashCache.Get(keyString); wasCached {
 		return hash
 	}
-	hash := arbkeccak.Keccak256(data...)
+	hash := crypto.Keccak256(data...)
 	evicted := s.hashCache.Add(keyString, hash)
 	if evicted && cacheFullLogged.CompareAndSwap(false, true) {
 		log.Warn("Hash cache full, we didn't expect that. Some non-static storage keys may fill up the cache.")

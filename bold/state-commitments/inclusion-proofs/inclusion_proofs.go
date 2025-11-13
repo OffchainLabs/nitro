@@ -10,9 +10,9 @@ import (
 	"runtime"
 	"sync"
 
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/pkg/errors"
 
-	"github.com/ethereum/go-ethereum/arbkeccak"
 	"github.com/ethereum/go-ethereum/common"
 
 	"github.com/offchainlabs/nitro/bold/state-commitments/prefix-proofs"
@@ -47,9 +47,9 @@ func FullTree(leaves []common.Hash) ([][]common.Hash, error) {
 		nextLayer := make([]common.Hash, (len(prevLayer)+1)/2)
 		for i := 0; i < len(nextLayer); i++ {
 			if 2*i+1 < len(prevLayer) {
-				nextLayer[i] = arbkeccak.Keccak256Hash(prevLayer[2*i].Bytes(), prevLayer[2*i+1].Bytes())
+				nextLayer[i] = crypto.Keccak256Hash(prevLayer[2*i].Bytes(), prevLayer[2*i+1].Bytes())
 			} else {
-				nextLayer[i] = arbkeccak.Keccak256Hash(prevLayer[2*i].Bytes(), (common.Hash{}).Bytes())
+				nextLayer[i] = crypto.Keccak256Hash(prevLayer[2*i].Bytes(), (common.Hash{}).Bytes())
 			}
 		}
 		layers[l] = nextLayer
@@ -81,7 +81,7 @@ func GenerateInclusionProof(leaves []common.Hash, idx uint64) ([]common.Hash, er
 		go func() {
 			defer waitGroup.Done()
 			for j := start; j < start+batchSize; j++ {
-				rehashed[j] = arbkeccak.Keccak256Hash(leaves[j].Bytes())
+				rehashed[j] = crypto.Keccak256Hash(leaves[j].Bytes())
 			}
 		}()
 	}
@@ -89,7 +89,7 @@ func GenerateInclusionProof(leaves []common.Hash, idx uint64) ([]common.Hash, er
 	go func() {
 		defer waitGroup.Done()
 		for j := start; j < start+batchSize+batchRemainder; j++ {
-			rehashed[j] = arbkeccak.Keccak256Hash(leaves[j].Bytes())
+			rehashed[j] = crypto.Keccak256Hash(leaves[j].Bytes())
 		}
 	}()
 	waitGroup.Wait()
@@ -123,13 +123,13 @@ func CalculateRootFromProof(proof []common.Hash, index uint64, leaf common.Hash)
 	if len(proof) > 256 {
 		return common.Hash{}, ErrProofTooLong
 	}
-	h := arbkeccak.Keccak256Hash(leaf[:])
+	h := crypto.Keccak256Hash(leaf[:])
 	for i := 0; i < len(proof); i++ {
 		node := proof[i]
 		if index&(1<<i) == 0 {
-			h = arbkeccak.Keccak256Hash(h[:], node[:])
+			h = crypto.Keccak256Hash(h[:], node[:])
 		} else {
-			h = arbkeccak.Keccak256Hash(node[:], h[:])
+			h = crypto.Keccak256Hash(node[:], h[:])
 		}
 	}
 	return h, nil

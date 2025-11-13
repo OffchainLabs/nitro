@@ -12,10 +12,11 @@ import (
 	"strconv"
 
 	"github.com/ccoveille/go-safecast"
+	"github.com/ethereum/go-ethereum/crypto"
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
-	"github.com/ethereum/go-ethereum/arbkeccak"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/rpc"
@@ -134,7 +135,7 @@ type AssertionCreatedInfo struct {
 
 func (i AssertionCreatedInfo) ExecutionHash() common.Hash {
 	afterGlobalStateHash := GoGlobalStateFromSolidity(i.AfterState.GlobalState).Hash()
-	return arbkeccak.Keccak256Hash(append([]byte{i.AfterState.MachineStatus}, afterGlobalStateHash.Bytes()...))
+	return crypto.Keccak256Hash(append([]byte{i.AfterState.MachineStatus}, afterGlobalStateHash.Bytes()...))
 }
 
 // AssertionChain can manage assertions in the protocol and retrieve

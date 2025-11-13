@@ -15,10 +15,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/stretchr/testify/require"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
-	"github.com/ethereum/go-ethereum/arbkeccak"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/common/math"
@@ -1995,7 +1996,7 @@ func (elc *expressLaneClient) sendExpressLaneRPC(msg *timeboost.JsonExpressLaneS
 }
 
 func signSubmission(message []byte, key *ecdsa.PrivateKey) ([]byte, error) {
-	prefixed := arbkeccak.Keccak256(append([]byte(fmt.Sprintf("\x19Ethereum Signed Message:\n%d", len(message))), message...))
+	prefixed := crypto.Keccak256(append([]byte(fmt.Sprintf("\x19Ethereum Signed Message:\n%d", len(message))), message...))
 	sig, err := secp256k1.Sign(prefixed, math.PaddedBigBytes(key.D, 32))
 	if err != nil {
 		return nil, err

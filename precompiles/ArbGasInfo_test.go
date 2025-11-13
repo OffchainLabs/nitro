@@ -7,10 +7,10 @@ import (
 	"math/big"
 	"testing"
 
-	"github.com/ethereum/go-ethereum/arbkeccak"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos/arbosState"
@@ -29,7 +29,7 @@ func setupArbGasInfo(
 	*ArbGasInfo,
 ) {
 	evm := newMockEVMForTesting()
-	caller := common.BytesToAddress(arbkeccak.Keccak256([]byte{})[:20])
+	caller := common.BytesToAddress(crypto.Keccak256([]byte{})[:20])
 	tracer := util.NewTracingInfo(evm, testhelpers.RandomAddress(), types.ArbosAddress, util.TracingDuringEVM)
 	state, err := arbosState.OpenArbosState(evm.StateDB, burn.NewSystemBurner(tracer, false))
 	Require(t, err)
@@ -119,7 +119,7 @@ func TestGetPricesInArbGas(t *testing.T) {
 	t.Parallel()
 
 	evm := newMockEVMForTesting()
-	caller := common.BytesToAddress(arbkeccak.Keccak256([]byte{})[:20])
+	caller := common.BytesToAddress(crypto.Keccak256([]byte{})[:20])
 	arbGasInfo := &ArbGasInfo{}
 	callCtx := testContext(caller, evm)
 

@@ -10,9 +10,9 @@ import (
 	"math"
 	"math/big"
 
-	"github.com/ethereum/go-ethereum/arbkeccak"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/crypto"
 
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/execution"
@@ -184,9 +184,9 @@ func (b *BlockChallengeBackend) GetHashAtStep(_ context.Context, position uint64
 	if status == StatusFinished {
 		data := []byte("Block state:")
 		data = append(data, gs.Hash().Bytes()...)
-		return arbkeccak.Keccak256Hash(data), nil
+		return crypto.Keccak256Hash(data), nil
 	} else if status == StatusTooFar {
-		return arbkeccak.Keccak256Hash([]byte("Block state, too far:")), nil
+		return crypto.Keccak256Hash([]byte("Block state, too far:")), nil
 	} else {
 		panic(fmt.Sprintf("Unknown block status: %v", status))
 	}

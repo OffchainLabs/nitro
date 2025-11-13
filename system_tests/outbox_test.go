@@ -13,7 +13,8 @@ import (
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
-	"github.com/ethereum/go-ethereum/arbkeccak"
+	"github.com/ethereum/go-ethereum/crypto"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
@@ -247,7 +248,7 @@ func TestOutboxProofs(t *testing.T) {
 				leaf := new(big.Int).SetBytes(position[8:]).Uint64()
 
 				if level == 0 {
-					hash = arbkeccak.Keccak256Hash(hash.Bytes())
+					hash = crypto.Keccak256Hash(hash.Bytes())
 				}
 
 				place := merkletree.LevelAndLeaf{
@@ -321,7 +322,7 @@ func TestOutboxProofs(t *testing.T) {
 					// move to the parent
 					step.Level += 1
 					step.Leaf |= 1 << (step.Level - 1)
-					known[step] = arbkeccak.Keccak256Hash(left.Bytes(), right.Bytes())
+					known[step] = crypto.Keccak256Hash(left.Bytes(), right.Bytes())
 				}
 
 				if known[step] != rootHash {
@@ -348,7 +349,7 @@ func TestOutboxProofs(t *testing.T) {
 
 			proof := merkletree.MerkleProof{
 				RootHash:  rootHash,
-				LeafHash:  arbkeccak.Keccak256Hash(provable.hash.Bytes()),
+				LeafHash:  crypto.Keccak256Hash(provable.hash.Bytes()),
 				LeafIndex: provable.leaf,
 				Proof:     hashes,
 			}

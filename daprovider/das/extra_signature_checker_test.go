@@ -10,7 +10,6 @@ import (
 	"io/ioutil"
 	"testing"
 
-	"github.com/ethereum/go-ethereum/arbkeccak"
 	"github.com/ethereum/go-ethereum/crypto"
 
 	"github.com/offchainlabs/nitro/daprovider/das/dasutil"
@@ -59,7 +58,7 @@ func TestSimpleSignatureCheck(t *testing.T) {
 	Require(t, err)
 
 	data := []byte("Hello World")
-	dataHash := arbkeccak.Keccak256(data)
+	dataHash := crypto.Keccak256(data)
 	sig, err := crypto.Sign(dataHash, privateKey)
 	Require(t, err)
 
@@ -80,7 +79,7 @@ func TestEvenSimplerSignatureCheck(t *testing.T) {
 	Require(t, err)
 
 	data := []byte("Hello World")
-	dataHash := arbkeccak.Keccak256(data)
+	dataHash := crypto.Keccak256(data)
 	sig, err := crypto.Sign(dataHash, privateKey)
 	Require(t, err)
 

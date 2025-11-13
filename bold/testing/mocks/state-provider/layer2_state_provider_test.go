@@ -12,9 +12,9 @@ import (
 	"math"
 	"testing"
 
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/stretchr/testify/require"
 
-	"github.com/ethereum/go-ethereum/arbkeccak"
 	"github.com/ethereum/go-ethereum/common"
 
 	"github.com/offchainlabs/nitro/bold/chain-abstraction"
@@ -27,7 +27,7 @@ func mockMachineAtBlock(_ context.Context, block uint64) (Machine, error) {
 	binary.BigEndian.PutUint64(blockBytes, block)
 	startState := &protocol.ExecutionState{
 		GlobalState: protocol.GoGlobalState{
-			BlockHash: arbkeccak.Keccak256Hash(blockBytes),
+			BlockHash: crypto.Keccak256Hash(blockBytes),
 		},
 		MachineStatus: protocol.MachineStatusFinished,
 	}
@@ -40,12 +40,12 @@ func setupStates(t *testing.T, numStates, divergenceHeight uint64) ([]*protocol.
 	for i := uint64(0); i < numStates; i++ {
 		var blockHash common.Hash
 		if divergenceHeight == 0 || i < divergenceHeight {
-			blockHash = arbkeccak.Keccak256Hash([]byte(fmt.Sprintf("%d", i)))
+			blockHash = crypto.Keccak256Hash([]byte(fmt.Sprintf("%d", i)))
 		} else {
 			junkRoot := make([]byte, 32)
 			_, err := rand.Read(junkRoot)
 			require.NoError(t, err)
-			blockHash = arbkeccak.Keccak256Hash(junkRoot)
+			blockHash = crypto.Keccak256Hash(junkRoot)
 		}
 		state := &protocol.ExecutionState{
 			GlobalState: protocol.GoGlobalState{

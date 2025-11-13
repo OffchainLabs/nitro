@@ -9,10 +9,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ethereum/go-ethereum/arbkeccak"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/arbos/util"
@@ -623,7 +623,7 @@ func encodeHostioTestCalldata(t *testing.T, solFunc string, args []any) []byte {
 
 // For the functions that are not in the Hostio interface, we encoded them manually
 func encodeHostioFromSignature(t *testing.T, signature string, args []uint64) []byte {
-	data := arbkeccak.Keccak256([]byte(signature))[:4]
+	data := crypto.Keccak256([]byte(signature))[:4]
 	for _, arg := range args {
 		data = append(data, make([]byte, 24)...) // padding
 		data = binary.BigEndian.AppendUint64(data, arg)

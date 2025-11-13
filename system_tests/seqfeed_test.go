@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ethereum/go-ethereum/arbkeccak"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rlp"
 
@@ -520,7 +520,7 @@ func TestRegressionInPopulateFeedBacklog(t *testing.T) {
 	// sub in correct batch hash
 	batchData, _, err := builder.L2.ConsensusNode.InboxReader.GetSequencerMessageBytes(ctx, 0)
 	Require(t, err)
-	expectedBatchHash := arbkeccak.Keccak256Hash(batchData)
+	expectedBatchHash := crypto.Keccak256Hash(batchData)
 	copy(data[52:52+32], expectedBatchHash[:])
 
 	dummyMessage := arbostypes.MessageWithMetadata{

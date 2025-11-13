@@ -3,8 +3,8 @@ package arbutil
 import (
 	"math/big"
 
-	"github.com/ethereum/go-ethereum/arbkeccak"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
 )
 
 // PaddedKeccak256 pads each argument to 32 bytes, concatenates and returns
@@ -14,7 +14,7 @@ func PaddedKeccak256(args ...[]byte) []byte {
 	for _, arg := range args {
 		data = append(data, common.BytesToHash(arg).Bytes()...)
 	}
-	return arbkeccak.Keccak256(data)
+	return crypto.Keccak256(data)
 }
 
 // SumBytes sums two byte slices and returns the result.

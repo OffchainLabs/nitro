@@ -4,9 +4,8 @@ import (
 	"context"
 	"errors"
 
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/spf13/pflag"
-
-	"github.com/ethereum/go-ethereum/arbkeccak"
 
 	"github.com/offchainlabs/nitro/util/contracts"
 )
@@ -69,7 +68,7 @@ func NewSignVerify(config *SignVerifyConfig, signerFunc DataSignerFunc, bpValida
 }
 
 func (v *SignVerify) VerifySignature(ctx context.Context, signature []byte, data ...[]byte) error {
-	ecdsaErr := v.verifier.verifyClosure(ctx, signature, arbkeccak.Keccak256Hash(data...))
+	ecdsaErr := v.verifier.verifyClosure(ctx, signature, crypto.Keccak256Hash(data...))
 	if ecdsaErr == nil {
 		return nil
 	}
@@ -89,5 +88,5 @@ func (v *SignVerify) SignMessage(data ...[]byte) ([]byte, error) {
 		}
 		return nil, errors.New("no private key. cannot sign messages")
 	}
-	return v.signerFunc(arbkeccak.Keccak256Hash(data...).Bytes())
+	return v.signerFunc(crypto.Keccak256Hash(data...).Bytes())
 }

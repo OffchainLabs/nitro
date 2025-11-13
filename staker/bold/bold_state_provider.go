@@ -10,9 +10,9 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/ethereum/go-ethereum/arbkeccak"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/arbutil"
@@ -255,7 +255,7 @@ func (s *BOLDStateProvider) StatesInBatchRange(
 }
 
 func machineHash(gs validator.GoGlobalState) common.Hash {
-	return arbkeccak.Keccak256Hash([]byte("Machine finished:"), gs.Hash().Bytes())
+	return crypto.Keccak256Hash([]byte("Machine finished:"), gs.Hash().Bytes())
 }
 
 func (s *BOLDStateProvider) findGlobalStateFromMessageCountAndBatch(count arbutil.MessageIndex, batchIndex l2stateprovider.Batch) (validator.GoGlobalState, error) {

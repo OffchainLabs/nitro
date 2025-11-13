@@ -18,7 +18,7 @@ import (
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
-	"github.com/ethereum/go-ethereum/arbkeccak"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/rawdb"
@@ -118,7 +118,7 @@ func keccakTest(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder)) {
 	}
 
 	preimage := []byte("°º¤ø,¸,ø¤°º¤ø,¸,ø¤°º¤ø,¸ nyan nyan ~=[,,_,,]:3 nyan nyan")
-	correct := arbkeccak.Keccak256Hash(preimage)
+	correct := crypto.Keccak256Hash(preimage)
 
 	args := []byte{0x01} // keccak the preimage once
 	args = append(args, preimage...)
@@ -986,7 +986,7 @@ func testCreate(t *testing.T, jit bool) {
 	create2Args = append(create2Args, deployCode...)
 
 	create1Addr := crypto.CreateAddress(createAddr, 1)
-	create2Addr := crypto.CreateAddress2(createAddr, salt, arbkeccak.Keccak256(deployCode))
+	create2Addr := crypto.CreateAddress2(createAddr, salt, crypto.Keccak256(deployCode))
 	create(create1Args, create1Addr)
 	create(create2Args, create2Addr)
 
@@ -1412,7 +1412,7 @@ func TestStylusPrecompileMethodsSimple(t *testing.T) {
 	_, err = arbWasm.PageRamp(nil)
 	Require(t, err)
 
-	codehash := arbkeccak.Keccak256Hash(wasm)
+	codehash := crypto.Keccak256Hash(wasm)
 	cas, err := arbWasm.CodehashAsmSize(nil, codehash)
 	Require(t, err)
 	if cas == 0 {
@@ -1458,7 +1458,7 @@ func TestProgramActivationLogs(t *testing.T) {
 	if log.Program != programAddress {
 		Fatal(t, "unexpected program in activation log: ", log.Program)
 	}
-	if arbkeccak.Keccak256Hash(wasm) != log.Codehash {
+	if crypto.Keccak256Hash(wasm) != log.Codehash {
 		Fatal(t, "unexpected codehash in activation log: ", log.Codehash)
 	}
 }
@@ -1553,7 +1553,7 @@ func TestProgramCacheManager(t *testing.T) {
 	// deploy without activating a wasm
 	wasm, _ := readWasmFile(t, rustFile("keccak"))
 	program := deployContract(t, ctx, userAuth, l2client, wasm)
-	codehash := arbkeccak.Keccak256Hash(wasm)
+	codehash := crypto.Keccak256Hash(wasm)
 
 	// try to manage the cache without authorization
 	manager, tx, mock, err := localgen.DeploySimpleCacheManager(&ownerAuth, l2client)

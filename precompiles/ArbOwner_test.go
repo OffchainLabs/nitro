@@ -9,9 +9,9 @@ import (
 	"math/big"
 	"testing"
 
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/holiman/uint256"
 
-	"github.com/ethereum/go-ethereum/arbkeccak"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/tracing"
@@ -28,15 +28,15 @@ import (
 
 func TestArbOwner(t *testing.T) {
 	evm := newMockEVMForTesting()
-	caller := common.BytesToAddress(arbkeccak.Keccak256([]byte{})[:20])
+	caller := common.BytesToAddress(crypto.Keccak256([]byte{})[:20])
 	tracer := util.NewTracingInfo(evm, testhelpers.RandomAddress(), types.ArbosAddress, util.TracingDuringEVM)
 	state, err := arbosState.OpenArbosState(evm.StateDB, burn.NewSystemBurner(tracer, false))
 	Require(t, err)
 	Require(t, state.ChainOwners().Add(caller))
 
-	addr1 := common.BytesToAddress(arbkeccak.Keccak256([]byte{1})[:20])
-	addr2 := common.BytesToAddress(arbkeccak.Keccak256([]byte{2})[:20])
-	addr3 := common.BytesToAddress(arbkeccak.Keccak256([]byte{3})[:20])
+	addr1 := common.BytesToAddress(crypto.Keccak256([]byte{1})[:20])
+	addr2 := common.BytesToAddress(crypto.Keccak256([]byte{2})[:20])
+	addr3 := common.BytesToAddress(crypto.Keccak256([]byte{3})[:20])
 
 	prec := &ArbOwner{}
 	gasInfo := &ArbGasInfo{}
@@ -210,7 +210,7 @@ func TestArbOwner(t *testing.T) {
 
 func TestArbOwnerSetChainConfig(t *testing.T) {
 	evm := newMockEVMForTestingWithVersionAndRunMode(nil, core.NewMessageGasEstimationContext())
-	caller := common.BytesToAddress(arbkeccak.Keccak256([]byte{})[:20])
+	caller := common.BytesToAddress(crypto.Keccak256([]byte{})[:20])
 	tracer := util.NewTracingInfo(evm, testhelpers.RandomAddress(), types.ArbosAddress, util.TracingDuringEVM)
 	state, err := arbosState.OpenArbosState(evm.StateDB, burn.NewSystemBurner(tracer, false))
 	Require(t, err)
@@ -245,8 +245,8 @@ func TestArbOwnerSetChainConfig(t *testing.T) {
 func TestArbInfraFeeAccount(t *testing.T) {
 	version0 := uint64(0)
 	evm := newMockEVMForTestingWithVersion(&version0)
-	caller := common.BytesToAddress(arbkeccak.Keccak256([]byte{})[:20])
-	newAddr := common.BytesToAddress(arbkeccak.Keccak256([]byte{0})[:20])
+	caller := common.BytesToAddress(crypto.Keccak256([]byte{})[:20])
+	newAddr := common.BytesToAddress(crypto.Keccak256([]byte{0})[:20])
 	callCtx := testContext(caller, evm)
 	prec := &ArbOwner{}
 	_, err := prec.GetInfraFeeAccount(callCtx, evm)

@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ethereum/go-ethereum/arbkeccak"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
 
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/daprovider"
@@ -84,7 +84,7 @@ func createTestCertificate(t *testing.T, data []byte) []byte {
 	cert[0] = daprovider.DACertificateMessageHeaderFlag
 
 	// Use Keccak256 for data hash
-	dataHash := arbkeccak.Keccak256(data)
+	dataHash := crypto.Keccak256(data)
 	copy(cert[1:33], dataHash)
 
 	// Mock signature values (v, r, s)
@@ -100,7 +100,7 @@ func TestCustomDAProofEnhancement(t *testing.T) {
 	// Test data
 	testData := []byte("test custom DA preimage data")
 	testCertificate := createTestCertificate(t, testData)
-	certHash := arbkeccak.Keccak256Hash(testCertificate)
+	certHash := crypto.Keccak256Hash(testCertificate)
 	testOffset := uint64(10)
 
 	// Create sequencer message with 40-byte header + certificate
@@ -230,7 +230,7 @@ func TestValidateCertificateProofEnhancement(t *testing.T) {
 	// Test data
 	testData := []byte("test data for certificate validation")
 	testCertificate := createTestCertificate(t, testData)
-	certHash := arbkeccak.Keccak256Hash(testCertificate)
+	certHash := crypto.Keccak256Hash(testCertificate)
 
 	// Create sequencer message with 40-byte header + certificate
 	sequencerMessage := make([]byte, 40+len(testCertificate))
@@ -328,7 +328,7 @@ func TestNewCustomDAProofEnhancer(t *testing.T) {
 	// Test data
 	testData := []byte("test custom DA data")
 	testCertificate := createTestCertificate(t, testData)
-	certHash := arbkeccak.Keccak256Hash(testCertificate)
+	certHash := crypto.Keccak256Hash(testCertificate)
 	testOffset := uint64(10)
 
 	// Create sequencer message
@@ -439,7 +439,7 @@ func TestProofEnhancerErrorCases(t *testing.T) {
 
 	t.Run("CertificateHashMismatch", func(t *testing.T) {
 		testCertificate := createTestCertificate(t, []byte("test data"))
-		wrongHash := arbkeccak.Keccak256Hash([]byte("wrong data"))
+		wrongHash := crypto.Keccak256Hash([]byte("wrong data"))
 
 		sequencerMessage := make([]byte, 40+len(testCertificate))
 		copy(sequencerMessage[40:], testCertificate)
@@ -487,7 +487,7 @@ func TestProofEnhancerErrorCases(t *testing.T) {
 		enhancer := NewReadPreimageProofEnhancer(validator, inboxTracker, inboxReader)
 		enhancerManager.RegisterEnhancer(MarkerCustomDAReadPreimage, enhancer)
 
-		certHash := arbkeccak.Keccak256Hash([]byte("test"))
+		certHash := crypto.Keccak256Hash([]byte("test"))
 		mockProof := make([]byte, 100+32+8+1)
 		mockProof[0] = ProofEnhancementFlag
 		copy(mockProof[100:132], certHash[:])

@@ -6,8 +6,8 @@ package merkletree
 import (
 	"testing"
 
-	"github.com/ethereum/go-ethereum/arbkeccak"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
 
 	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbos/merkleAccumulator"
@@ -34,7 +34,7 @@ func TestProofForNext(t *testing.T) {
 		if proof == nil {
 			Fail(t, i)
 		}
-		if proof.LeafHash != arbkeccak.Keccak256Hash(leaf.Bytes()) {
+		if proof.LeafHash != crypto.Keccak256Hash(leaf.Bytes()) {
 			Fail(t, i)
 		}
 		if !proof.IsCorrect() {
@@ -75,7 +75,7 @@ func ProofFromAccumulator(acc *merkleAccumulator.MerkleAccumulator, nextHash com
 
 	return &MerkleProof{
 		RootHash:  root,
-		LeafHash:  arbkeccak.Keccak256Hash(nextHash.Bytes()),
+		LeafHash:  crypto.Keccak256Hash(nextHash.Bytes()),
 		LeafIndex: size,
 		Proof:     partials,
 	}, nil

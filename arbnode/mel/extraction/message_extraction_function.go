@@ -6,9 +6,9 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/ethereum/go-ethereum/arbkeccak"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/crypto"
 
 	"github.com/offchainlabs/nitro/arbnode/mel"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
@@ -178,7 +178,7 @@ func extractMessagesImpl(
 			if err != nil {
 				return nil, nil, nil, fmt.Errorf("failed to parse batch posting report: %w", err)
 			}
-			gotHash := arbkeccak.Keccak256Hash(serialized)
+			gotHash := crypto.Keccak256Hash(serialized)
 			if gotHash != batchHash {
 				return nil, nil, nil, fmt.Errorf(
 					"batch data hash incorrect %v (wanted %v for batch %v)",

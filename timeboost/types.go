@@ -9,7 +9,7 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/ethereum/go-ethereum/arbitrum_types"
-	"github.com/ethereum/go-ethereum/arbkeccak"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -65,7 +65,7 @@ func (b *Bid) ToEIP712Hash(domainSeparator [32]byte) (common.Hash, error) {
 		return common.Hash{}, err
 	}
 
-	bidHash := arbkeccak.Keccak256Hash(
+	bidHash := crypto.Keccak256Hash(
 		[]byte("\x19\x01"),
 		domainSeparator[:],
 		messageHash,
@@ -113,7 +113,7 @@ func (v *ValidatedBid) BigIntHash(domainSeparator [32]byte) *big.Int {
 	bidHash, _ := bid.ToEIP712Hash(domainSeparator)
 	bidder := v.Bidder.Bytes()
 
-	return new(big.Int).SetBytes(arbkeccak.Keccak256Hash(bidder, bidHash.Bytes()).Bytes())
+	return new(big.Int).SetBytes(crypto.Keccak256Hash(bidder, bidHash.Bytes()).Bytes())
 }
 
 func (v *ValidatedBid) ToJson() *JsonValidatedBid {
@@ -236,7 +236,7 @@ func (els *ExpressLaneSubmission) Sender() (common.Address, error) {
 		return common.Address{}, errors.Wrap(ErrMalformedData, "signature length is not 65")
 	}
 	// Recover the public key.
-	prefixed := arbkeccak.Keccak256(append([]byte(fmt.Sprintf("\x19Ethereum Signed Message:\n%d", len(signingMessage))), signingMessage...))
+	prefixed := crypto.Keccak256(append([]byte(fmt.Sprintf("\x19Ethereum Signed Message:\n%d", len(signingMessage))), signingMessage...))
 	sigItem := make([]byte, len(els.Signature))
 	copy(sigItem, els.Signature)
 	// Signature verification expects the last byte of the signature to have 27 subtracted,

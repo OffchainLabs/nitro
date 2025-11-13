@@ -14,7 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
-	"github.com/ethereum/go-ethereum/arbkeccak"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -93,7 +93,7 @@ func TestVerifyPrefixProof_GoSolidityEquivalence(t *testing.T) {
 	ctx := context.Background()
 	hashes := make([]common.Hash, 10)
 	for i := 0; i < len(hashes); i++ {
-		hashes[i] = arbkeccak.Keccak256Hash([]byte(fmt.Sprintf("%d", i)))
+		hashes[i] = crypto.Keccak256Hash([]byte(fmt.Sprintf("%d", i)))
 	}
 	manager, err := stateprovider.NewWithMockedStateRoots(hashes)
 	require.NoError(t, err)
@@ -167,7 +167,7 @@ func TestVerifyPrefixProofWithHeight7_GoSolidityEquivalence1(t *testing.T) {
 	ctx := context.Background()
 	hashes := make([]common.Hash, 10)
 	for i := 0; i < len(hashes); i++ {
-		hashes[i] = arbkeccak.Keccak256Hash([]byte(fmt.Sprintf("%d", i)))
+		hashes[i] = crypto.Keccak256Hash([]byte(fmt.Sprintf("%d", i)))
 	}
 	manager, err := stateprovider.NewWithMockedStateRoots(hashes)
 	require.NoError(t, err)
@@ -251,7 +251,7 @@ func FuzzPrefixProof_Verify(f *testing.F) {
 	ctx := context.Background()
 	hashes := make([]common.Hash, 10)
 	for i := 0; i < len(hashes); i++ {
-		hashes[i] = arbkeccak.Keccak256Hash([]byte(fmt.Sprintf("%d", i)))
+		hashes[i] = crypto.Keccak256Hash([]byte(fmt.Sprintf("%d", i)))
 	}
 	manager, err := stateprovider.NewWithMockedStateRoots(hashes)
 	require.NoError(f, err)

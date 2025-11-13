@@ -13,8 +13,8 @@ import (
 	"io"
 	"os"
 
-	"github.com/ethereum/go-ethereum/arbkeccak"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/arbutil"
@@ -70,7 +70,7 @@ func parsePreimageBytes(path string) {
 		if uint64(read) != fieldSize {
 			panic("missing bytes reading data")
 		}
-		hash := arbkeccak.Keccak256Hash(dataBuf)
+		hash := crypto.Keccak256Hash(dataBuf)
 		preimages[hash] = dataBuf
 	}
 }

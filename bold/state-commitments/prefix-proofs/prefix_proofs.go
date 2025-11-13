@@ -108,9 +108,9 @@ import (
 	"math/bits"
 
 	"github.com/ccoveille/go-safecast"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/pkg/errors"
 
-	"github.com/ethereum/go-ethereum/arbkeccak"
 	"github.com/ethereum/go-ethereum/common"
 )
 
@@ -181,16 +181,16 @@ func Root(me []common.Hash) (common.Hash, error) {
 				// otherwise the lowest level entry needs to be combined with a zero to balance the bottom
 				// level, after which zeros in the merkle extension above that will balance the rest
 				if i != len(me)-1 {
-					accum = arbkeccak.Keccak256Hash(accum.Bytes(), (common.Hash{}).Bytes())
+					accum = crypto.Keccak256Hash(accum.Bytes(), (common.Hash{}).Bytes())
 				}
 			}
 		} else if (val != common.Hash{}) {
 			// accum represents the smaller sub trees, since it is earlier in the expansion we put
 			// the larger subtrees on the left
-			accum = arbkeccak.Keccak256Hash(val.Bytes(), accum.Bytes())
+			accum = crypto.Keccak256Hash(val.Bytes(), accum.Bytes())
 		} else {
 			// by definition we always complete trees by appending zeros to the right
-			accum = arbkeccak.Keccak256Hash(accum.Bytes(), (common.Hash{}).Bytes())
+			accum = crypto.Keccak256Hash(accum.Bytes(), (common.Hash{}).Bytes())
 		}
 	}
 	return accum, nil
@@ -273,7 +273,7 @@ func AppendCompleteSubTree(
 					// change, and propagate that to the level above. This level is now part of a complete subtree
 					// so we zero it out
 					next[i] = common.Hash{}
-					accumHash = arbkeccak.Keccak256Hash(me[i].Bytes(), accumHash.Bytes())
+					accumHash = crypto.Keccak256Hash(me[i].Bytes(), accumHash.Bytes())
 				}
 			}
 		}
@@ -299,7 +299,7 @@ func AppendLeaf(
 ) ([]common.Hash, error) {
 	// it's important that we hash the leaf, this ensures that this leaf cannot be a collision with any other non leaf
 	// or root node, since these are always the hash of 64 bytes of data, and we're hashing 32 bytes
-	return AppendCompleteSubTree(me, 0, arbkeccak.Keccak256Hash(leaf[:]))
+	return AppendCompleteSubTree(me, 0, crypto.Keccak256Hash(leaf[:]))
 }
 
 // MaximumAppendBetween finds the highest level which can be appended to tree of size startSize without

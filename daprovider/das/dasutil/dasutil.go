@@ -11,8 +11,8 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/ethereum/go-ethereum/arbkeccak"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/arbos/util"
@@ -194,7 +194,7 @@ func recoverPayloadFromDasBatchInternal(
 		}
 
 		switch {
-		case version == 0 && arbkeccak.Keccak256Hash(preimage) != hash:
+		case version == 0 && crypto.Keccak256Hash(preimage) != hash:
 			fallthrough
 		case version == 1 && dastree.Hash(preimage) != hash:
 			log.Error(
@@ -246,7 +246,7 @@ func recoverPayloadFromDasBatchInternal(
 		if version == 0 {
 			treeLeaf := dastree.FlatHashToTreeLeaf(dataHash)
 			preimageRecorder(dataHash, payload, arbutil.Keccak256PreimageType)
-			preimageRecorder(arbkeccak.Keccak256Hash(treeLeaf), treeLeaf, arbutil.Keccak256PreimageType)
+			preimageRecorder(crypto.Keccak256Hash(treeLeaf), treeLeaf, arbutil.Keccak256PreimageType)
 		} else {
 			dastree.RecordHash(preimageRecorder, payload)
 		}

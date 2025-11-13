@@ -8,9 +8,9 @@ import (
 	"math/big"
 	"testing"
 
-	"github.com/ethereum/go-ethereum/arbkeccak"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/state"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos/storage"
@@ -35,7 +35,7 @@ func TestEvents(t *testing.T) {
 		}
 	}
 
-	zeroHash := arbkeccak.Keccak256Hash([]byte{0x00})
+	zeroHash := crypto.Keccak256Hash([]byte{0x00})
 	falseHash := common.Hash{}
 
 	var data []byte

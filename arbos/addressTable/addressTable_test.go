@@ -7,8 +7,8 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/ethereum/go-ethereum/arbkeccak"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
 
 	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbos/storage"
@@ -39,7 +39,7 @@ func TestAddressTable1(t *testing.T) {
 	sto := storage.NewMemoryBacked(burn.NewSystemBurner(nil, false))
 	Initialize(sto)
 	atab := Open(sto)
-	addr := common.BytesToAddress(arbkeccak.Keccak256([]byte{})[:20])
+	addr := common.BytesToAddress(crypto.Keccak256([]byte{})[:20])
 	_, err := atab.Register(addr)
 	Require(t, err)
 	if size(t, atab) != 1 {
@@ -85,7 +85,7 @@ func TestAddressTableCompressNotInTable(t *testing.T) {
 	sto := storage.NewMemoryBacked(burn.NewSystemBurner(nil, false))
 	Initialize(sto)
 	atab := Open(sto)
-	addr := common.BytesToAddress(arbkeccak.Keccak256([]byte{})[:20])
+	addr := common.BytesToAddress(crypto.Keccak256([]byte{})[:20])
 
 	res, err := atab.Compress(addr)
 	Require(t, err)
@@ -112,7 +112,7 @@ func TestAddressTableCompressInTable(t *testing.T) {
 	sto := storage.NewMemoryBacked(burn.NewSystemBurner(nil, false))
 	Initialize(sto)
 	atab := Open(sto)
-	addr := common.BytesToAddress(arbkeccak.Keccak256([]byte{})[:20])
+	addr := common.BytesToAddress(crypto.Keccak256([]byte{})[:20])
 
 	_, err := atab.Register(addr)
 	Require(t, err)

@@ -8,10 +8,10 @@ import (
 	"math/big"
 	"testing"
 
-	"github.com/ethereum/go-ethereum/arbkeccak"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos"
@@ -47,7 +47,7 @@ func TestAddressTable1(t *testing.T) {
 	atab := ArbAddressTable{}
 	context := testContext(common.Address{}, evm)
 
-	addr := common.BytesToAddress(arbkeccak.Keccak256([]byte{})[:20])
+	addr := common.BytesToAddress(crypto.Keccak256([]byte{})[:20])
 
 	exists, err := atab.AddressExists(context, evm, addr)
 	Require(t, err)
@@ -107,7 +107,7 @@ func TestAddressTableCompressNotInTable(t *testing.T) {
 	atab := ArbAddressTable{}
 	context := testContext(common.Address{}, evm)
 
-	addr := common.BytesToAddress(arbkeccak.Keccak256([]byte{})[:20])
+	addr := common.BytesToAddress(crypto.Keccak256([]byte{})[:20])
 
 	// verify that compressing addr produces the 21-byte format
 	res, err := atab.Compress(context, evm, addr)
@@ -135,7 +135,7 @@ func TestAddressTableCompressInTable(t *testing.T) {
 	atab := ArbAddressTable{}
 	context := testContext(common.Address{}, evm)
 
-	addr := common.BytesToAddress(arbkeccak.Keccak256([]byte{})[:20])
+	addr := common.BytesToAddress(crypto.Keccak256([]byte{})[:20])
 
 	// Register addr
 	if _, err := atab.Register(context, evm, addr); err != nil {

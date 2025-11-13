@@ -9,7 +9,8 @@ import (
 	"sort"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
-	"github.com/ethereum/go-ethereum/arbkeccak"
+	"github.com/ethereum/go-ethereum/crypto"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 
@@ -118,7 +119,7 @@ func parseDelayedMessagesFromBlock(
 		if !ok {
 			return nil, fmt.Errorf("message %v data not found", parsedLog.MessageIndex)
 		}
-		if arbkeccak.Keccak256Hash(data) != parsedLog.MessageDataHash {
+		if crypto.Keccak256Hash(data) != parsedLog.MessageDataHash {
 			return nil, fmt.Errorf("found message %v data with mismatched hash", parsedLog.MessageIndex)
 		}
 		// Fill in the message data for the delayed message scaffolds.

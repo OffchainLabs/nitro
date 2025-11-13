@@ -8,8 +8,8 @@ import (
 	"encoding/binary"
 	"testing"
 
-	"github.com/ethereum/go-ethereum/arbkeccak"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
 
 	"github.com/offchainlabs/nitro/arbos/merkleAccumulator"
 )
@@ -43,7 +43,7 @@ func TestAccumulator1(t *testing.T) {
 	if mt.Size() != 1 {
 		t.Fatal(mt.Size())
 	}
-	if root(t, acc) != arbkeccak.Keccak256Hash(itemHash.Bytes()) {
+	if root(t, acc) != crypto.Keccak256Hash(itemHash.Bytes()) {
 		Fail(t)
 	}
 	if root(t, acc) != mt.Hash() {
@@ -78,9 +78,9 @@ func TestAccumulator3(t *testing.T) {
 		Fail(t)
 	}
 
-	expectedHash := arbkeccak.Keccak256(
-		arbkeccak.Keccak256(arbkeccak.Keccak256(itemHash0.Bytes()), arbkeccak.Keccak256(itemHash1.Bytes())),
-		arbkeccak.Keccak256(arbkeccak.Keccak256(itemHash2.Bytes()), make([]byte, 32)),
+	expectedHash := crypto.Keccak256(
+		crypto.Keccak256(crypto.Keccak256(itemHash0.Bytes()), crypto.Keccak256(itemHash1.Bytes())),
+		crypto.Keccak256(crypto.Keccak256(itemHash2.Bytes()), make([]byte, 32)),
 	)
 	if root(t, acc) != common.BytesToHash(expectedHash) {
 		Fail(t)
@@ -120,9 +120,9 @@ func TestAccumulator4(t *testing.T) {
 		Fail(t)
 	}
 
-	expectedHash := arbkeccak.Keccak256(
-		arbkeccak.Keccak256(arbkeccak.Keccak256(itemHash0.Bytes()), arbkeccak.Keccak256(itemHash1.Bytes())),
-		arbkeccak.Keccak256(arbkeccak.Keccak256(itemHash2.Bytes()), arbkeccak.Keccak256(itemHash3.Bytes())),
+	expectedHash := crypto.Keccak256(
+		crypto.Keccak256(crypto.Keccak256(itemHash0.Bytes()), crypto.Keccak256(itemHash1.Bytes())),
+		crypto.Keccak256(crypto.Keccak256(itemHash2.Bytes()), crypto.Keccak256(itemHash3.Bytes())),
 	)
 	if root(t, acc) != common.BytesToHash(expectedHash) {
 		Fail(t)
@@ -168,7 +168,7 @@ func testSerDe(tree MerkleTree, t *testing.T) {
 func pseudorandomForTesting(x uint64) common.Hash {
 	var buf [8]byte
 	binary.BigEndian.PutUint64(buf[:], x)
-	return arbkeccak.Keccak256Hash(buf[:])
+	return crypto.Keccak256Hash(buf[:])
 }
 
 func accAppend(t *testing.T, acc *merkleAccumulator.MerkleAccumulator, itemHash common.Hash) {

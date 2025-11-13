@@ -4,8 +4,8 @@
 package merkleAccumulator
 
 import (
-	"github.com/ethereum/go-ethereum/arbkeccak"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
 
 	"github.com/offchainlabs/nitro/arbos/storage"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -69,14 +69,14 @@ func (acc *MerkleAccumulator) Keccak(data ...[]byte) ([]byte, error) {
 	if acc.backingStorage != nil {
 		return acc.backingStorage.Keccak(data...)
 	}
-	return arbkeccak.Keccak256(data...), nil
+	return crypto.Keccak256(data...), nil
 }
 
 func (acc *MerkleAccumulator) KeccakHash(data ...[]byte) (common.Hash, error) {
 	if acc.backingStorage != nil {
 		return acc.backingStorage.KeccakHash(data...)
 	}
-	return arbkeccak.Keccak256Hash(data...), nil
+	return crypto.Keccak256Hash(data...), nil
 }
 
 func (acc *MerkleAccumulator) getPartial(level uint64) (*common.Hash, error) {
@@ -131,7 +131,7 @@ func (acc *MerkleAccumulator) Append(itemHash common.Hash) ([]MerkleTreeNodeEven
 	events := []MerkleTreeNodeEvent{}
 
 	level := uint64(0)
-	soFar := arbkeccak.Keccak256(itemHash.Bytes())
+	soFar := crypto.Keccak256(itemHash.Bytes())
 	for {
 		if level == CalcNumPartials(size-1) { // -1 to counteract the acc.size++ at top of this function
 			h := common.BytesToHash(soFar)

@@ -6,8 +6,7 @@ import (
 	"encoding/binary"
 	"errors"
 
-	"github.com/ethereum/go-ethereum/arbkeccak"
-
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/signature"
 )
@@ -19,7 +18,7 @@ type PayloadSigner struct {
 
 func DefaultPayloadSigner(signer signature.DataSignerFunc) *PayloadSigner {
 	return CustomPayloadSigner(func(bytes []byte, extras ...uint64) ([]byte, error) {
-		return signer(arbkeccak.Keccak256(flattenDataForSigning(bytes, extras...)))
+		return signer(crypto.Keccak256(flattenDataForSigning(bytes, extras...)))
 	})
 }
 
@@ -31,7 +30,7 @@ func CustomPayloadSigner(signingFunc func([]byte, ...uint64) ([]byte, error)) *P
 
 func PayloadCommiter() *PayloadSigner {
 	return CustomPayloadSigner(func(bytes []byte, extras ...uint64) ([]byte, error) {
-		return arbkeccak.Keccak256(flattenDataForSigning(bytes, extras...)), nil
+		return crypto.Keccak256(flattenDataForSigning(bytes, extras...)), nil
 	})
 }
 
@@ -55,7 +54,7 @@ func CustomPayloadVerifier(verifyingFunc func(ctx context.Context, signature []b
 
 func PayloadCommitmentVerifier() *PayloadVerifier {
 	return CustomPayloadVerifier(func(ctx context.Context, signature []byte, data []byte, extras ...uint64) error {
-		expectedCommitment := arbkeccak.Keccak256(flattenDataForSigning(data, extras...))
+		expectedCommitment := crypto.Keccak256(flattenDataForSigning(data, extras...))
 		if bytes.Equal(signature, expectedCommitment) {
 			return nil
 		} else {

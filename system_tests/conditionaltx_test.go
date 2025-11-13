@@ -15,7 +15,8 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/arbitrum_types"
-	"github.com/ethereum/go-ethereum/arbkeccak"
+	"github.com/ethereum/go-ethereum/crypto"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core/state"
@@ -188,7 +189,7 @@ func dedupOptions(t *testing.T, options []*arbitrum_types.ConditionalOptions) []
 	for _, opt := range options {
 		data, err := json.Marshal(opt)
 		Require(t, err)
-		dataHash := arbkeccak.Keccak256Hash(data)
+		dataHash := crypto.Keccak256Hash(data)
 		_, seen := seenBefore[dataHash]
 		if !seen {
 			result = append(result, opt)

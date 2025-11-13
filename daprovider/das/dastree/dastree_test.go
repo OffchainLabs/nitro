@@ -8,8 +8,7 @@ import (
 	"math/rand"
 	"testing"
 
-	"github.com/ethereum/go-ethereum/arbkeccak"
-
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/colors"
 	"github.com/offchainlabs/nitro/util/pretty"
@@ -19,7 +18,7 @@ import (
 func TestDASTree(t *testing.T) {
 	store := make(map[bytes32][]byte)
 	tests := [][]byte{
-		{}, {0x32}, arbkeccak.Keccak256(),
+		{}, {0x32}, crypto.Keccak256(),
 		make([]byte, BinSize), make([]byte, BinSize+1), make([]byte, 4*BinSize),
 	}
 	for i := 0; i < 64; i++ {
@@ -30,7 +29,7 @@ func TestDASTree(t *testing.T) {
 	record := func(key bytes32, value []byte, ty arbutil.PreimageType) {
 		colors.PrintGrey("storing ", key, " ", pretty.PrettyBytes(value))
 		store[key] = value
-		if arbkeccak.Keccak256Hash(value) != key {
+		if crypto.Keccak256Hash(value) != key {
 			Fail(t, "key not the hash of value")
 		}
 	}
@@ -39,7 +38,7 @@ func TestDASTree(t *testing.T) {
 		if !ok {
 			Fail(t, "no preimage for key", key)
 		}
-		if arbkeccak.Keccak256Hash(preimage) != key {
+		if crypto.Keccak256Hash(preimage) != key {
 			Fail(t, "key not the hash of preimage")
 		}
 		colors.PrintBlue("loading ", key, " ", pretty.PrettyBytes(preimage))
