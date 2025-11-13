@@ -1358,17 +1358,17 @@ func CreateConsensusNodeConnectedWithFullExecutionClient(
 	parentChainID *big.Int,
 	blobReader daprovider.BlobReader,
 	latestWasmModuleRoot common.Hash,
-	userRPC bool,
+	useRPC bool,
 ) (*Node, error) {
 	if fullExecutionClient == nil {
 		return nil, errors.New("full execution client must be non-nil")
 	}
 	var executionClient execution.ExecutionClient
-	if userRPC {
-		executionClient = fullExecutionClient
-	} else {
+	if useRPC {
 		execConfigFetcher := func() *rpcclient.ClientConfig { return &configFetcher.Get().ExecutionRPCClient }
 		executionClient = executionrpcclient.NewExecutionRPCClient(execConfigFetcher, nil)
+	} else {
+		executionClient = fullExecutionClient
 	}
 	currentNode, err := createNodeImpl(ctx, stack, executionClient, fullExecutionClient, fullExecutionClient, fullExecutionClient, arbDb, configFetcher, l2Config, l1client, deployInfo, txOptsValidator, txOptsBatchPoster, dataSigner, fatalErrChan, parentChainID, blobReader, latestWasmModuleRoot)
 	if err != nil {

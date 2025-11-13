@@ -269,7 +269,7 @@ func CreateExecutionNode(
 	configFetcher ConfigFetcher,
 	parentChainID *big.Int,
 	syncTillBlock uint64,
-	directConnect bool,
+	useRPC bool,
 ) (*ExecutionNode, error) {
 	config := configFetcher.Get()
 	execEngine, err := NewExecutionEngine(l2BlockChain, syncTillBlock, config.ExposeMultiGas)
@@ -370,7 +370,7 @@ func CreateExecutionNode(
 		bulkBlockMetadataFetcher: bulkBlockMetadataFetcher,
 	}
 
-	if !directConnect {
+	if useRPC {
 		consensusConfigFetcher := func() *rpcclient.ClientConfig { return &config.ConsensusRPCClient }
 		execNode.consensusRPCClient = consensusrpcclient.NewConsensusRPCClient(consensusConfigFetcher, nil)
 	}
