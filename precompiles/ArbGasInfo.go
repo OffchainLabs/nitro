@@ -292,14 +292,14 @@ func (con ArbGasInfo) GetMaxBlockGasLimit(c ctx, evm mech) (uint64, error) {
 
 // GetGasPricingConstraints gets the current gas pricing constraints used by the Multi-Constraint Pricer.
 func (con ArbGasInfo) GetGasPricingConstraints(c ctx, evm mech) ([][3]uint64, error) {
-	len, err := c.State.L2PricingState().ConstraintsLength()
+	len, err := c.State.L2PricingState().GasConstraintsLength()
 	if err != nil {
 		return nil, err
 	}
 
 	constraints := make([][3]uint64, 0, len)
 	for i := range len {
-		constraint := c.State.L2PricingState().OpenConstraintAt(i)
+		constraint := c.State.L2PricingState().OpenGasConstraintAt(i)
 		gasTargetPerSecond, err := constraint.Target()
 		if err != nil {
 			return nil, err

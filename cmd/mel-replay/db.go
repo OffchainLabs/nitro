@@ -88,6 +88,10 @@ func (d *DB) AncientRange(kind string, start, count, maxBytes uint64) ([][]byte,
 	return nil, errors.New("unimplemented")
 }
 
+func (d *DB) AncientBytes(kind string, id, offset, length uint64) ([]byte, error) {
+	return nil, errors.New("unimplemented")
+}
+
 func (d *DB) Ancients() (uint64, error) {
 	return 0, errors.New("unimplemented")
 }

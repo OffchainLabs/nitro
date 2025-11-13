@@ -52,8 +52,28 @@ func getBlockHeaderByHash(hash common.Hash) *types.Header {
 	return header
 }
 
+func getLastBlockHeader() *types.Header {
+	lastBlockHash := wavmio.GetLastBlockHash()
+	if lastBlockHash == (common.Hash{}) {
+		return nil
+	}
+	return getBlockHeaderByHash(lastBlockHash)
+}
+
 type WavmChainContext struct {
 	chainConfig *params.ChainConfig
+}
+
+func (c WavmChainContext) CurrentHeader() *types.Header {
+	return getLastBlockHeader()
+}
+
+func (c WavmChainContext) GetHeaderByNumber(number uint64) *types.Header {
+	panic("GetHeaderByNumber should not be called in WavmChainContext")
+}
+
+func (c WavmChainContext) GetHeaderByHash(hash common.Hash) *types.Header {
+	return getBlockHeaderByHash(hash)
 }
 
 func (c WavmChainContext) Config() *params.ChainConfig {
