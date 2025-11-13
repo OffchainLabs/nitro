@@ -28,6 +28,18 @@ type TestChainContext struct {
 	chainConfig *params.ChainConfig
 }
 
+func (r *TestChainContext) CurrentHeader() *types.Header {
+	return &types.Header{}
+}
+
+func (r *TestChainContext) GetHeaderByNumber(number uint64) *types.Header {
+	return &types.Header{}
+}
+
+func (r *TestChainContext) GetHeaderByHash(hash common.Hash) *types.Header {
+	return &types.Header{}
+}
+
 func (r *TestChainContext) Engine() consensus.Engine {
 	return arbos.Engine{}
 }
