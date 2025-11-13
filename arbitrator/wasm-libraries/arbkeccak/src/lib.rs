@@ -8,9 +8,9 @@ use caller_env::{self, GuestPtr};
 #[no_mangle]
 pub unsafe extern "C" fn arbkeccak__keccak256(in_buf_ptr: GuestPtr, in_buf_len: u32, out_buf_ptr: GuestPtr)
 {
-    caller_env::brotli::brotli_compress(
+    caller_env::arbkeccak::keccak256(
         &mut caller_env::static_caller::STATIC_MEM,
         &mut caller_env::static_caller::STATIC_ENV,
-        in_buf_ptr, in_buf_len, out_buf_ptr, out_len_ptr, level, window_size,
+        in_buf_ptr, in_buf_len, out_buf_ptr
     )
 }
