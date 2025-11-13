@@ -24,6 +24,7 @@ echo launching validation servers
 # add their port to wait loop
 # edit validation-server-configs-list to include the other nodes
 /usr/local/bin/nitro-val --file-logging.enable=false --auth.addr 127.0.0.10 --auth.origins 127.0.0.1 --auth.jwtsecret /tmp/nitro-val.jwt --auth.port 52000 "${latestvalopts[@]}" &
+# shellcheck disable=SC2043
 for port in 52000; do
     while ! nc -w1 -z 127.0.0.10 $port; do
         echo waiting for validation port $port
