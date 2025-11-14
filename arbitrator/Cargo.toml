@@ -23,7 +23,7 @@ edition = "2021"
 homepage = "https://arbitrum.io"
 license = "BSL"
 repository = "https://github.com/OffchainLabs/nitro.git"
-rust-version = "1.67"
+rust-version = "1.88"
 
 [workspace.dependencies]
 lazy_static = "1.4.0"
