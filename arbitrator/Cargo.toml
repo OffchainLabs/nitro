@@ -1,18 +1,19 @@
 [workspace]
 members = [
-        "arbutil",
-        "bench",
-        "brotli",
-        "brotli/fuzz",
-        "caller-env",
-        "prover",
-        "stylus",
-        "jit",
+    "arbutil",
+    "bench",
+    "brotli",
+    "caller-env",
+    "jit",
+    "prover",
+    "stylus",
 ]
 exclude = [
-        "stylus/tests/",
-        "tools/wasmer/",
-        "tools/stylus_benchmark",
+    "langs",
+    "stylus/tests",
+    "tools",
+    "wasm-libraries",
+    "wasm-testsuite",
 ]
 resolver = "2"
 
