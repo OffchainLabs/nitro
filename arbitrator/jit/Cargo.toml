@@ -10,23 +10,24 @@ repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-arbutil = { path = "../arbutil/" }
-brotli = { path = "../brotli/", features = ["wasmer_traits"] }
-caller-env = { path = "../caller-env/", features = ["wasmer_traits"] }
-prover = { path = "../prover/", default-features = false, features = ["native"] }
-stylus = { path = "../stylus/", default-features = false }
-wasmer = { path = "../tools/wasmer/lib/api/" }
-wasmer-compiler-llvm = { path = "../tools/wasmer/lib/compiler-llvm/", optional = true }
-wasmer-compiler-cranelift = { path = "../tools/wasmer/lib/compiler-cranelift/" }
-eyre = "0.6.5"
-rand = { version = "0.8.4", default-features = false }
-rand_pcg = { version = "0.3.1", default-features = false }
-thiserror = "1.0.33"
-hex = "0.4.3"
-structopt = "0.3.26"
-sha3 = "0.9.1"
-libc = "0.2.132"
-sha2 = "0.9.9"
+arbutil = { workspace = true }
+brotli = { workspace = true, features = ["wasmer_traits"] }
+caller-env = { workspace = true, features = ["wasmer_traits"] }
+prover = { workspace = true, features = ["native"] }
+stylus = { workspace = true }
+wasmer = { workspace = true }
+wasmer-compiler-llvm = { workspace = true, optional = true }
+wasmer-compiler-cranelift = { workspace = true }
+
+eyre = { workspace = true }
+rand = { workspace = true }
+rand_pcg = { workspace = true }
+thiserror = { workspace = true }
+hex = { workspace = true }
+libc = { workspace = true }
+sha2 = { workspace = true }
+sha3 = { workspace = true }
+structopt = { workspace = true }
 
 [features]
 llvm = ["dep:wasmer-compiler-llvm"]
