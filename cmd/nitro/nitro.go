@@ -564,6 +564,7 @@ func mainImpl() int {
 		new(big.Int).SetUint64(nodeConfig.ParentChain.ID),
 		blobReader,
 		wasmModuleRoot,
+		true,
 	)
 	if err != nil {
 		log.Error("failed to create node", "err", err)
