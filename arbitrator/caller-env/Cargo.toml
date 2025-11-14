@@ -10,10 +10,10 @@ repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-brotli = { path = "../brotli/", optional = true }
-rand_pcg = { version = "0.3.1", default-features = false }
-rand = { version = "0.8.4", default-features = false }
-wasmer = { path = "../tools/wasmer/lib/api", optional = true }
+brotli = { workspace = true, optional = true }
+rand_pcg = { workspace = true }
+rand = { workspace = true }
+wasmer = { workspace = true, optional = true }
 
 [features]
 default = ["brotli"]
