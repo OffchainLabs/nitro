@@ -931,6 +931,9 @@ func TestBatchPosterPostsReportOnlyBatchAfterMaxEmptyBatchDelay(t *testing.T) {
 	cleanup := builder.Build(t)
 	defer cleanup()
 
+	// Prevent background batchposter goroutine from racing our manual call.
+	builder.L2.ConsensusNode.BatchPoster.StopAndWait()
+
 	// Force immediate post of first batch.
 	posted, err := builder.L2.ConsensusNode.BatchPoster.MaybePostSequencerBatch(ctx)
 	require.NoError(t, err)
