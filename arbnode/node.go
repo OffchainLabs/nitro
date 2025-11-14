@@ -1341,8 +1341,9 @@ func CreateConsensusNodeConnectedWithSimpleExecutionClient(
 	parentChainID *big.Int,
 	blobReader daprovider.BlobReader,
 	latestWasmModuleRoot common.Hash,
+	useRPC bool,
 ) (*Node, error) {
-	if configFetcher.Get().ExecutionRPCClient.URL != "" {
+	if useRPC {
 		execConfigFetcher := func() *rpcclient.ClientConfig { return &configFetcher.Get().ExecutionRPCClient }
 		executionClient = executionrpcclient.NewExecutionRPCClient(execConfigFetcher, nil)
 	}

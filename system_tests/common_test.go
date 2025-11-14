@@ -1885,7 +1885,7 @@ func Create2ndNodeWithConfig(
 	Require(t, err)
 	consensusConfigFetcher := NewCommonConfigFetcher(nodeConfig)
 	if useExecutionClientOnly {
-		currentNode, err = arbnode.CreateConsensusNodeConnectedWithSimpleExecutionClient(ctx, chainStack, currentExec, arbDb, consensusConfigFetcher, blockchain.Config(), parentChainClient, addresses, &validatorTxOpts, &sequencerTxOpts, dataSigner, feedErrChan, big.NewInt(1337), blobReader, locator.LatestWasmModuleRoot())
+		currentNode, err = arbnode.CreateConsensusNodeConnectedWithSimpleExecutionClient(ctx, chainStack, currentExec, arbDb, consensusConfigFetcher, blockchain.Config(), parentChainClient, addresses, &validatorTxOpts, &sequencerTxOpts, dataSigner, feedErrChan, big.NewInt(1337), blobReader, locator.LatestWasmModuleRoot(), *testflag.ConsensusExecutionInSameProcessUseRPC)
 	} else {
 		currentNode, err = arbnode.CreateConsensusNodeConnectedWithFullExecutionClient(ctx, chainStack, currentExec, arbDb, consensusConfigFetcher, blockchain.Config(), parentChainClient, addresses, &validatorTxOpts, &sequencerTxOpts, dataSigner, feedErrChan, big.NewInt(1337), blobReader, locator.LatestWasmModuleRoot(), *testflag.ConsensusExecutionInSameProcessUseRPC)
 	}
