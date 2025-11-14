@@ -39,6 +39,6 @@ func TestBroadcastFeedMessageSignature(t *testing.T) {
 	const chainId = 0xa4b1
 	preimage := msg.SignaturePreimage(chainId)
 	// Compare against hard-coded preimage to ensure it won't break in the future
-	expected := common.HexToHash("0x42a956aed0c4b4b1e5167461cfcbebf88f526f01828e7e78ff0283f6d60302ef")
+	expected := common.HexToHash("0x3d79853de5f9e4354e5d6c6d4cad19dcd969f9646f0cab21e5bdfee4902dfa2e")
 	require.Equal(t, expected, preimage)
 }

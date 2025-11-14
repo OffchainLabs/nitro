@@ -72,6 +72,7 @@ func (m *BroadcastFeedMessage) SignaturePreimage(chainId uint64) common.Hash {
 	preimage = binary.BigEndian.AppendUint64(preimage, m.Message.DelayedMessagesRead)
 
 	l1IncomingMessage := m.Message.Message
+	preimage = append(preimage, l1IncomingMessage.Header.Kind)
 	preimage = append(preimage, l1IncomingMessage.Header.Poster.Bytes()...)
 	preimage = binary.BigEndian.AppendUint64(preimage, l1IncomingMessage.Header.BlockNumber)
 	preimage = binary.BigEndian.AppendUint64(preimage, l1IncomingMessage.Header.Timestamp)
