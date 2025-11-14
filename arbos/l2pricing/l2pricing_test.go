@@ -221,6 +221,36 @@ func TestMultiGasConstraints(t *testing.T) {
 	}
 }
 
+func TestMultiGasConstraintExponentSafety(t *testing.T) {
+	pricing := PricingForTest(t)
+
+	weights := map[uint8]uint64{
+		uint8(multigas.ResourceKindComputation): 1,
+	}
+	// backlog=100, target=100, A=10 -> exponent = (100*1)/(10*100*1) = 0.01 -> safe
+	err := pricing.AddMultiGasConstraint(
+		100,
+		10,
+		100,
+		weights,
+	)
+	if err != nil {
+		t.Fatalf("expected valid constraint, got error: %v", err)
+	}
+
+	// backlog very large -> exponent blows past MaxExponentBips
+	err = pricing.AddMultiGasConstraint(
+		1,
+		1,
+		1_000_000_000_000,
+		weights,
+	)
+
+	if err == nil {
+		t.Fatalf("expected AddMultiGasConstraint to reject unsafe exponent, but got no error")
+	}
+}
+
 func Require(t *testing.T, err error, printables ...interface{}) {
 	t.Helper()
 	testhelpers.RequireImpl(t, err, printables...)

@@ -222,20 +222,9 @@ func TestMultiGasConstraintsStorage(t *testing.T) {
 	evm, state, callCtx, arbGasInfo, arbOwner := setupResourceConstraintHandles(t)
 
 	// Set two multi-gas constraints
-	constraints := []struct {
-		Resources []struct {
-			Resource uint8
-			Weight   uint64
-		}
-		AdjustmentWindowSecs uint32
-		TargetPerSec         uint64
-		Backlog              uint64
-	}{
+	constraints := []MultiGasConstraint{
 		{
-			Resources: []struct {
-				Resource uint8
-				Weight   uint64
-			}{
+			Resources: []WeightedResource{
 				{uint8(multigas.ResourceKindComputation), 1},
 				{uint8(multigas.ResourceKindStorageAccess), 2},
 			},
@@ -244,10 +233,7 @@ func TestMultiGasConstraintsStorage(t *testing.T) {
 			Backlog:              800_000,
 		},
 		{
-			Resources: []struct {
-				Resource uint8
-				Weight   uint64
-			}{
+			Resources: []WeightedResource{
 				{uint8(multigas.ResourceKindComputation), 2},
 				{uint8(multigas.ResourceKindStorageAccess), 3},
 			},
@@ -315,20 +301,9 @@ func TestMultiGasConstraintsStorage(t *testing.T) {
 	require.Equal(t, 2, len(results[1].Resources))
 
 	// Replace with a single new constraint
-	newConstraints := []struct {
-		Resources []struct {
-			Resource uint8
-			Weight   uint64
-		}
-		AdjustmentWindowSecs uint32
-		TargetPerSec         uint64
-		Backlog              uint64
-	}{
+	newConstraints := []MultiGasConstraint{
 		{
-			Resources: []struct {
-				Resource uint8
-				Weight   uint64
-			}{
+			Resources: []WeightedResource{
 				{uint8(multigas.ResourceKindComputation), 5},
 				{uint8(multigas.ResourceKindStorageAccess), 7},
 			},
