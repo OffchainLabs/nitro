@@ -11,7 +11,6 @@ rust-version.workspace = true
 
 [dependencies]
 brotli = { path = "../brotli/", optional = true }
-num_enum.workspace = true
 rand_pcg = { version = "0.3.1", default-features = false }
 rand = { version = "0.8.4", default-features = false }
 wasmer = { path = "../tools/wasmer/lib/api", optional = true }
