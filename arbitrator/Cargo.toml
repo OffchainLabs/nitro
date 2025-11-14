@@ -29,6 +29,7 @@ rust-version = "1.88"
 [workspace.dependencies]
 clap = { version = "4.4.8" }
 clru = { version = "0.6.2" }
+criterion = { version = "0.5.0" }
 derivative = { version = "2.2.0" }
 digest = { version = "0.10.7" }
 eyre = { version = "0.6.5" }

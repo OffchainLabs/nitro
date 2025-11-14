@@ -13,23 +13,22 @@ rust-version.workspace = true
 arbutil = { workspace = true }
 brotli = { workspace = true }
 caller-env = { workspace = true, features = ["wasmer_traits"] }
+clru = { workspace = true }
+derivative = { workspace = true }
+eyre = { workspace = true }
+hex = { workspace = true }
+lazy_static = { workspace = true }
+parking_lot = { workspace = true }
 prover = { workspace = true, features = ["native"] }
+rand = { workspace = true }
+thiserror = { workspace = true }
+user-host-trait = { workspace = true }
 wasmer = { workspace = true }
-wasmer-vm = { workspace = true }
-wasmer-types = { workspace = true }
-wasmer-compiler-singlepass = { workspace = true, features = ["std", "unwind", "avx"] }
 wasmer-compiler-cranelift = { workspace = true }
 wasmer-compiler-llvm = { workspace = true, optional = true }
-user-host-trait = { workspace = true }
-
-derivative = { workspace = true }
-parking_lot = { workspace = true }
-thiserror = { workspace = true }
-lazy_static = { workspace = true }
-eyre = { workspace = true }
-rand = { workspace = true }
-hex = { workspace = true }
-clru = { workspace = true }
+wasmer-compiler-singlepass = { workspace = true, features = ["std", "unwind", "avx"] }
+wasmer-types = { workspace = true }
+wasmer-vm = { workspace = true }
 
 [dev-dependencies]
 num-bigint = { workspace = true }

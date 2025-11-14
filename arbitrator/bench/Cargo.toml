@@ -14,10 +14,10 @@ name = "benchbin"
 path = "src/bin.rs"
 
 [dependencies]
-eyre = { workspace = true }
-prover = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
+eyre = { workspace = true }
 gperftools = { workspace = true, optional = true }
+prover = { workspace = true }
 
 [features]
 counters = []

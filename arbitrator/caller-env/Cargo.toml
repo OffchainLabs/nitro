@@ -11,8 +11,8 @@ rust-version.workspace = true
 
 [dependencies]
 brotli = { workspace = true, optional = true }
-rand_pcg = { workspace = true }
 rand = { workspace = true }
+rand_pcg = { workspace = true }
 wasmer = { workspace = true, optional = true }
 
 [features]
