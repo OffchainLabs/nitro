@@ -10,6 +10,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/ethclient"
 
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
@@ -64,8 +65,7 @@ func TestSequencerReorgFromDelayed(t *testing.T) {
 			},
 		},
 	}
-	err = tracker.AddDelayedMessages([]*DelayedInboxMessage{initMsgDelayed, userDelayed, userDelayed2})
-	Require(t, err)
+	testAddDelayedMessages(t, tracker, []*DelayedInboxMessage{initMsgDelayed, userDelayed, userDelayed2})
 
 	serializedInitMsgBatch := make([]byte, 40)
 	binary.BigEndian.PutUint64(serializedInitMsgBatch[32:], 1)
@@ -113,8 +113,7 @@ func TestSequencerReorgFromDelayed(t *testing.T) {
 		BridgeAddress:          [20]byte{},
 		Serialized:             serializedUserMsgBatch,
 	}
-	err = tracker.AddSequencerBatches(ctx, nil, []*SequencerInboxBatch{initMsgBatch, userMsgBatch, emptyBatch})
-	Require(t, err)
+	testAddSequencerBatches(t, tracker, ctx, nil, []*SequencerInboxBatch{initMsgBatch, userMsgBatch, emptyBatch})
 
 	msgCount, err := streamer.GetMessageCount()
 	Require(t, err)
@@ -149,8 +148,7 @@ func TestSequencerReorgFromDelayed(t *testing.T) {
 			},
 		},
 	}
-	err = tracker.AddDelayedMessages([]*DelayedInboxMessage{userDelayedModified})
-	Require(t, err)
+	testAddDelayedMessages(t, tracker, []*DelayedInboxMessage{userDelayedModified})
 
 	// userMsgBatch, and emptyBatch will be reorged out
 	msgCount, err = streamer.GetMessageCount()
@@ -199,8 +197,7 @@ func TestSequencerReorgFromDelayed(t *testing.T) {
 		BridgeAddress:          [20]byte{},
 		Serialized:             serializedInitMsgBatch,
 	}
-	err = tracker.AddSequencerBatches(ctx, nil, []*SequencerInboxBatch{emptyBatch})
-	Require(t, err)
+	testAddSequencerBatches(t, tracker, ctx, nil, []*SequencerInboxBatch{emptyBatch})
 
 	msgCount, err = streamer.GetMessageCount()
 	Require(t, err)
@@ -264,8 +261,7 @@ func TestSequencerReorgFromLastDelayedMsg(t *testing.T) {
 			},
 		},
 	}
-	err = tracker.AddDelayedMessages([]*DelayedInboxMessage{initMsgDelayed, userDelayed, userDelayed2})
-	Require(t, err)
+	testAddDelayedMessages(t, tracker, []*DelayedInboxMessage{initMsgDelayed, userDelayed, userDelayed2})
 
 	serializedInitMsgBatch := make([]byte, 40)
 	binary.BigEndian.PutUint64(serializedInitMsgBatch[32:], 1)
@@ -313,8 +309,7 @@ func TestSequencerReorgFromLastDelayedMsg(t *testing.T) {
 		BridgeAddress:          [20]byte{},
 		Serialized:             serializedUserMsgBatch,
 	}
-	err = tracker.AddSequencerBatches(ctx, nil, []*SequencerInboxBatch{initMsgBatch, userMsgBatch, emptyBatch})
-	Require(t, err)
+	testAddSequencerBatches(t, tracker, ctx, nil, []*SequencerInboxBatch{initMsgBatch, userMsgBatch, emptyBatch})
 
 	msgCount, err := streamer.GetMessageCount()
 	Require(t, err)
@@ -350,8 +345,7 @@ func TestSequencerReorgFromLastDelayedMsg(t *testing.T) {
 			},
 		},
 	}
-	err = tracker.AddDelayedMessages([]*DelayedInboxMessage{userDelayed2, userDelayed3})
-	Require(t, err)
+	testAddDelayedMessages(t, tracker, []*DelayedInboxMessage{userDelayed2, userDelayed3})
 
 	msgCount, err = streamer.GetMessageCount()
 	Require(t, err)
@@ -380,8 +374,7 @@ func TestSequencerReorgFromLastDelayedMsg(t *testing.T) {
 			},
 		},
 	}
-	err = tracker.AddDelayedMessages([]*DelayedInboxMessage{userDelayed2Modified})
-	Require(t, err)
+	testAddDelayedMessages(t, tracker, []*DelayedInboxMessage{userDelayed2Modified})
 
 	msgCount, err = streamer.GetMessageCount()
 	Require(t, err)
@@ -428,8 +421,7 @@ func TestSequencerReorgFromLastDelayedMsg(t *testing.T) {
 		BridgeAddress:          [20]byte{},
 		Serialized:             serializedInitMsgBatch,
 	}
-	err = tracker.AddSequencerBatches(ctx, nil, []*SequencerInboxBatch{emptyBatch})
-	Require(t, err)
+	testAddSequencerBatches(t, tracker, ctx, nil, []*SequencerInboxBatch{emptyBatch})
 
 	msgCount, err = streamer.GetMessageCount()
 	Require(t, err)
@@ -441,5 +433,39 @@ func TestSequencerReorgFromLastDelayedMsg(t *testing.T) {
 	Require(t, err)
 	if batchCount != 2 {
 		Fail(t, "Unexpected tracker batch count", batchCount, "(expected 2)")
+	}
+}
+
+// Test helper - wraps AddDelayedMessages with automatic batch management
+func testAddDelayedMessages(t *testing.T, tracker *InboxTracker, messages []*DelayedInboxMessage) {
+	batch := tracker.db.NewBatch()
+	defer batch.Reset()
+	validatorReorg, err := tracker.AddDelayedMessages(batch, messages)
+	Require(t, err)
+	err = batch.Write()
+	Require(t, err)
+	if validatorReorg != nil {
+		validatorReorg()
+	}
+}
+
+// Test helper - wraps AddSequencerBatches with automatic batch management
+func testAddSequencerBatches(t *testing.T, tracker *InboxTracker, ctx context.Context, client *ethclient.Client, batches []*SequencerInboxBatch) {
+	batch := tracker.db.NewBatch()
+	defer batch.Reset()
+	sideEffects, err := tracker.AddSequencerBatches(batch, ctx, client, batches)
+	Require(t, err)
+	err = batch.Write()
+	Require(t, err)
+	if sideEffects != nil {
+		if sideEffects.ValidatorReorg != nil {
+			sideEffects.ValidatorReorg()
+		}
+		if sideEffects.CacheUpdate != nil {
+			sideEffects.CacheUpdate()
+		}
+		if sideEffects.BroadcastConfirm != nil {
+			sideEffects.BroadcastConfirm()
+		}
 	}
 }

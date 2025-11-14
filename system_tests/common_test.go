@@ -2217,3 +2217,24 @@ func populateMachineDir(t *testing.T, cr *github.ConsensusRelease) string {
 	Require(t, err)
 	return machineDir
 }
+
+// Test helper - wraps InboxTracker.AddSequencerBatches with automatic batch management
+func testAddSequencerBatches(t *testing.T, tracker *arbnode.InboxTracker, ctx context.Context, client *ethclient.Client, batches []*arbnode.SequencerInboxBatch) {
+	batch := tracker.Database().NewBatch()
+	defer batch.Reset()
+	sideEffects, err := tracker.AddSequencerBatches(batch, ctx, client, batches)
+	Require(t, err)
+	err = batch.Write()
+	Require(t, err)
+	if sideEffects != nil {
+		if sideEffects.ValidatorReorg != nil {
+			sideEffects.ValidatorReorg()
+		}
+		if sideEffects.CacheUpdate != nil {
+			sideEffects.CacheUpdate()
+		}
+		if sideEffects.BroadcastConfirm != nil {
+			sideEffects.BroadcastConfirm()
+		}
+	}
+}

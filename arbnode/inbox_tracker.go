@@ -163,6 +163,11 @@ func (t *InboxTracker) GetDelayedCount() (uint64, error) {
 	return count, nil
 }
 
+// Database returns the underlying database for test purposes
+func (t *InboxTracker) Database() ethdb.Database {
+	return t.db
+}
+
 type BatchMetadata struct {
 	Accumulator         common.Hash
 	MessageCount        arbutil.MessageIndex

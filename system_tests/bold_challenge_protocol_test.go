@@ -952,8 +952,7 @@ func makeBoldBatch(
 	if len(batches) == 0 {
 		Fatal(t, "batch not found after AddSequencerL2BatchFromOrigin")
 	}
-	err = l2Node.InboxTracker.AddSequencerBatches(ctx, backend, batches)
-	Require(t, err)
+	testAddSequencerBatches(t, l2Node.InboxTracker, ctx, backend, batches)
 	batchMetaData, err := l2Node.InboxTracker.GetBatchMetadata(batches[0].SequenceNumber)
 	log.Info("Batch metadata", "md", batchMetaData)
 	Require(t, err, "failed to get batch metadata after adding batch:")
