@@ -53,9 +53,9 @@ func (b *Broadcaster) NewBroadcastFeedMessage(
 		BlockMetadata:  blockMetadata,
 	}
 	if b.dataSigner != nil {
-		preimage := feedMessage.SignaturePreimage(b.chainId)
+		hash := feedMessage.SignatureHash(b.chainId)
 		var err error
-		feedMessage.Signature, err = b.dataSigner(preimage.Bytes())
+		feedMessage.Signature, err = b.dataSigner(hash.Bytes())
 		if err != nil {
 			return nil, err
 		}

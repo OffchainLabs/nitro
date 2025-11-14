@@ -57,34 +57,34 @@ func (m *BroadcastFeedMessage) UpdateCumulativeSumMsgSize(val uint64) {
 	m.CumulativeSumMsgSize += val + m.Size()
 }
 
-// SignaturePreimage creates a preimage for the feed signature that include all fields that need to
+// SignatureHash creates a hash for the feed message that include all fields that need to
 // be signed. Be aware that changing this function can break compatibility with older clients.
-func (m *BroadcastFeedMessage) SignaturePreimage(chainId uint64) common.Hash {
-	preimage := []byte{}
-	preimage = append(preimage, uniquifyingPrefix...)
+func (m *BroadcastFeedMessage) SignatureHash(chainId uint64) common.Hash {
+	data := []byte{}
+	data = append(data, uniquifyingPrefix...)
 
-	preimage = binary.BigEndian.AppendUint64(preimage, chainId)
-	preimage = binary.BigEndian.AppendUint64(preimage, uint64(m.SequenceNumber))
+	data = binary.BigEndian.AppendUint64(data, chainId)
+	data = binary.BigEndian.AppendUint64(data, uint64(m.SequenceNumber))
 	if m.BlockHash != nil {
-		preimage = append(preimage, m.BlockHash.Bytes()...)
+		data = append(data, m.BlockHash.Bytes()...)
 	}
-	preimage = append(preimage, m.BlockMetadata...)
-	preimage = binary.BigEndian.AppendUint64(preimage, m.Message.DelayedMessagesRead)
+	data = append(data, m.BlockMetadata...)
+	data = binary.BigEndian.AppendUint64(data, m.Message.DelayedMessagesRead)
 
 	l1IncomingMessage := m.Message.Message
-	preimage = append(preimage, l1IncomingMessage.Header.Kind)
-	preimage = append(preimage, l1IncomingMessage.Header.Poster.Bytes()...)
-	preimage = binary.BigEndian.AppendUint64(preimage, l1IncomingMessage.Header.BlockNumber)
-	preimage = binary.BigEndian.AppendUint64(preimage, l1IncomingMessage.Header.Timestamp)
+	data = append(data, l1IncomingMessage.Header.Kind)
+	data = append(data, l1IncomingMessage.Header.Poster.Bytes()...)
+	data = binary.BigEndian.AppendUint64(data, l1IncomingMessage.Header.BlockNumber)
+	data = binary.BigEndian.AppendUint64(data, l1IncomingMessage.Header.Timestamp)
 	if l1IncomingMessage.Header.RequestId != nil {
-		preimage = append(preimage, l1IncomingMessage.Header.RequestId.Bytes()...)
+		data = append(data, l1IncomingMessage.Header.RequestId.Bytes()...)
 	}
 	if l1IncomingMessage.Header.L1BaseFee != nil {
-		preimage = append(preimage, l1IncomingMessage.Header.L1BaseFee.Bytes()...)
+		data = append(data, l1IncomingMessage.Header.L1BaseFee.Bytes()...)
 	}
-	preimage = append(preimage, l1IncomingMessage.L2msg...)
+	data = append(data, l1IncomingMessage.L2msg...)
 
-	return crypto.Keccak256Hash(preimage)
+	return crypto.Keccak256Hash(data)
 }
 
 type ConfirmedSequenceNumberMessage struct {
