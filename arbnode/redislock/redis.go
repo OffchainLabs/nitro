@@ -240,7 +240,7 @@ func (l *Simple) Release(ctx context.Context) {
 			return nil
 		}
 		pipe := tx.TxPipeline()
-		pipe.Del(ctx, config.Key, l.myId)
+		pipe.Del(ctx, config.Key)
 		err = execTestPipe(pipe, ctx)
 		if errors.Is(err, redis.TxFailedErr) {
 			return nil
