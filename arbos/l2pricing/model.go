@@ -25,26 +25,52 @@ const InitialPricingInertia = 102
 const InitialBacklogTolerance = 10
 const InitialPerTxGasLimitV50 uint64 = 32 * 1000000
 
-func (ps *L2PricingState) ShouldUseGasConstraints(arbosVersion uint64) (bool, error) {
+type GasModel int
+
+const (
+	GasModelUnknown GasModel = iota
+	GasModelLegacy
+	GasModelSingleGasConstraints
+	GasModelMultiGasConstraints
+)
+
+func (ps *L2PricingState) GasModelToUse(arbosVersion uint64) (GasModel, error) {
+	if arbosVersion >= ArbosMultiGasConstraintsVersion {
+		constraintsLength, err := ps.MultiGasConstraintsLength()
+		if err != nil {
+			return GasModelUnknown, err
+		}
+		if constraintsLength > 0 {
+			return GasModelMultiGasConstraints, nil
+		}
+	}
 	if arbosVersion >= ArbosSingleGasConstraintsVersion {
 		constraintsLength, err := ps.GasConstraintsLength()
 		if err != nil {
-			return false, err
+			return GasModelUnknown, err
 		}
-		return constraintsLength > 0, nil
+		if constraintsLength > 0 {
+			return GasModelSingleGasConstraints, nil
+		}
 	}
-	return false, nil
+	return GasModelLegacy, nil
 }
 
 func (ps *L2PricingState) AddToGasPool(gas int64, arbosVersion uint64) error {
-	shouldUseGasConstraints, err := ps.ShouldUseGasConstraints(arbosVersion)
+	gasModel, err := ps.GasModelToUse(arbosVersion)
 	if err != nil {
 		return err
 	}
-	if shouldUseGasConstraints {
-		return ps.addToGasPoolWithGasConstraints(gas)
+	switch gasModel {
+	case GasModelLegacy:
+		return ps.addToGasPoolLegacy(gas)
+	case GasModelSingleGasConstraints:
+		return ps.addToGasPoolWithSingleGasConstraints(gas)
+	case GasModelMultiGasConstraints:
+		return ps.addToGasPoolWithMultiGasConstraints(gas)
+	default:
+		return fmt.Errorf("can not determine gas model")
 	}
-	return ps.addToGasPoolLegacy(gas)
 }
 
 func (ps *L2PricingState) addToGasPoolLegacy(gas int64) error {
@@ -56,7 +82,7 @@ func (ps *L2PricingState) addToGasPoolLegacy(gas int64) error {
 	return ps.SetGasBacklog(backlog)
 }
 
-func (ps *L2PricingState) addToGasPoolWithGasConstraints(gas int64) error {
+func (ps *L2PricingState) addToGasPoolWithSingleGasConstraints(gas int64) error {
 	constraintsLength, err := ps.gasConstraints.Length()
 	if err != nil {
 		return fmt.Errorf("failed to get number of constraints: %w", err)
@@ -75,13 +101,20 @@ func (ps *L2PricingState) addToGasPoolWithGasConstraints(gas int64) error {
 	return nil
 }
 
+func (ps *L2PricingState) addToGasPoolWithMultiGasConstraints(_gas int64) error {
+	return fmt.Errorf("addToGasPoolWithMultiGasConstraints not implemented")
+}
+
 // UpdatePricingModel updates the pricing model with info from the last block
 func (ps *L2PricingState) UpdatePricingModel(timePassed uint64, arbosVersion uint64) {
-	shouldUseGasConstraints, _ := ps.ShouldUseGasConstraints(arbosVersion)
-	if shouldUseGasConstraints {
-		ps.updatePricingModelGasConstraints(timePassed)
-	} else {
+	gasModel, _ := ps.GasModelToUse(arbosVersion)
+	switch gasModel {
+	case GasModelLegacy:
 		ps.updatePricingModelLegacy(timePassed)
+	case GasModelSingleGasConstraints:
+		ps.updatePricingModelGasConstraints(timePassed)
+	case GasModelMultiGasConstraints:
+		// TODO: Implement updatePricingModelMultiGasConstraints
 	}
 }
 
