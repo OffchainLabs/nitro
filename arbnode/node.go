@@ -58,6 +58,8 @@ import (
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
 
+var FailedToUseArbGetL1ConfirmationsRPCFromParentChainLogMsg = "Failed to get L1 confirmations from parent chain via arb_getL1Confirmations"
+
 type Config struct {
 	Sequencer                bool                           `koanf:"sequencer"`
 	ParentChainReader        headerreader.Config            `koanf:"parent-chain-reader" reload:"hot"`
@@ -1319,6 +1321,7 @@ func CreateNodeExecutionClient(
 	parentChainID *big.Int,
 	blobReader daprovider.BlobReader,
 	latestWasmModuleRoot common.Hash,
+	enableConsensusRPC bool,
 ) (*Node, error) {
 	if executionClient == nil {
 		return nil, errors.New("execution client must be non-nil")
@@ -1327,7 +1330,9 @@ func CreateNodeExecutionClient(
 	if err != nil {
 		return nil, err
 	}
-	registerAPIs(currentNode, stack)
+	if enableConsensusRPC {
+		registerAPIs(currentNode, stack)
+	}
 	return currentNode, nil
 }
 
@@ -1350,6 +1355,7 @@ func CreateNodeFullExecutionClient(
 	parentChainID *big.Int,
 	blobReader daprovider.BlobReader,
 	latestWasmModuleRoot common.Hash,
+	enableConsensusRPC bool,
 ) (*Node, error) {
 	if (executionClient == nil) || (executionSequencer == nil) || (executionRecorder == nil) || (arbOSVersionGetter == nil) {
 		return nil, errors.New("execution client, sequencer, recorder, and ArbOS version getter must be non-nil")
@@ -1358,7 +1364,9 @@ func CreateNodeFullExecutionClient(
 	if err != nil {
 		return nil, err
 	}
-	registerAPIs(currentNode, stack)
+	if enableConsensusRPC {
+		registerAPIs(currentNode, stack)
+	}
 	return currentNode, nil
 }
 
@@ -1619,7 +1627,7 @@ func (n *Node) GetL1Confirmations(msgIdx arbutil.MessageIndex) containers.Promis
 			err = parentChainClient.Client().CallContext(ctx, &confs, "arb_getL1Confirmations", parentChainBlock.Number())
 			if err != nil {
 				// falls back to node interface method
-				log.Debug("Failed to get L1 confirmations from parent chain via arb_getL1Confirmations", "blockNumber", parentChainBlockNum, "blockHash", parentChainBlock.Hash(), "err", err)
+				log.Debug(FailedToUseArbGetL1ConfirmationsRPCFromParentChainLogMsg, "blockNumber", parentChainBlockNum, "blockHash", parentChainBlock.Hash(), "err", err)
 
 				parentNodeInterface, err := node_interfacegen.NewNodeInterface(types.NodeInterfaceAddress, parentChainClient)
 				if err != nil {

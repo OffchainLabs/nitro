@@ -252,21 +252,22 @@ func ExecConfigDefaultTest(t *testing.T, stateScheme string) *gethexec.Config {
 
 type NodeBuilder struct {
 	// NodeBuilder configuration
-	ctx           context.Context
-	ctxCancel     context.CancelFunc
-	chainConfig   *params.ChainConfig
-	arbOSInit     *params.ArbOSInit
-	nodeConfig    *arbnode.Config
-	execConfig    *gethexec.Config
-	l1StackConfig *node.Config
-	l2StackConfig *node.Config
-	valnodeConfig *valnode.Config
-	l3Config      *NitroConfig
-	deployBold    bool
-	parallelise   bool
-	L1Info        info
-	L2Info        info
-	L3Info        info
+	ctx                context.Context
+	ctxCancel          context.CancelFunc
+	chainConfig        *params.ChainConfig
+	arbOSInit          *params.ArbOSInit
+	nodeConfig         *arbnode.Config
+	execConfig         *gethexec.Config
+	l1StackConfig      *node.Config
+	l2StackConfig      *node.Config
+	valnodeConfig      *valnode.Config
+	l3Config           *NitroConfig
+	deployBold         bool
+	parallelise        bool
+	enableConsensusRPC bool
+	L1Info             info
+	L2Info             info
+	L3Info             info
 
 	// L1, L2, L3 Node parameters
 	dataDir                     string
@@ -298,6 +299,7 @@ type NitroConfig struct {
 
 	withProdConfirmPeriodBlocks bool
 	isSequencer                 bool
+	enableConsensusRPC          bool
 }
 
 func L3NitroConfigDefaultTest(t *testing.T) *NitroConfig {
@@ -333,6 +335,7 @@ func L3NitroConfigDefaultTest(t *testing.T) *NitroConfig {
 
 		withProdConfirmPeriodBlocks: false,
 		isSequencer:                 true,
+		enableConsensusRPC:          true,
 	}
 }
 
@@ -344,6 +347,7 @@ func NewNodeBuilder(ctxIn context.Context) *NodeBuilder {
 func (b *NodeBuilder) DefaultConfig(t *testing.T, withL1 bool) *NodeBuilder {
 	// most used values across current tests are set here as default
 	b.withL1 = withL1
+	b.enableConsensusRPC = true
 	b.parallelise = true
 	b.deployBold = true
 	if withL1 {
@@ -372,6 +376,11 @@ func (b *NodeBuilder) DefaultConfig(t *testing.T, withL1 bool) *NodeBuilder {
 
 func (b *NodeBuilder) DontParalellise() *NodeBuilder {
 	b.parallelise = false
+	return b
+}
+
+func (b *NodeBuilder) DisableConsensusRPC() *NodeBuilder {
+	b.enableConsensusRPC = false
 	return b
 }
 
@@ -632,6 +641,7 @@ func buildOnParentChain(
 	isSequencer bool,
 	chainInfo info,
 
+	enableConsensusRPC bool,
 	initMessage *arbostypes.ParsedInitMessage,
 	addresses *chaininfo.RollupAddresses,
 ) *TestClient {
@@ -679,7 +689,7 @@ func buildOnParentChain(
 	consensusConfigFetcher := NewCommonConfigFetcher(nodeConfig)
 	chainTestClient.ConsensusNode, err = arbnode.CreateNodeFullExecutionClient(
 		ctx, chainTestClient.Stack, execNode, execNode, execNode, execNode, arbDb, consensusConfigFetcher, blockchain.Config(), parentChainTestClient.Client,
-		addresses, validatorTxOptsPtr, sequencerTxOptsPtr, dataSigner, fatalErrChan, parentChainId, parentChainTestClient.L1BlobReader, locator.LatestWasmModuleRoot())
+		addresses, validatorTxOptsPtr, sequencerTxOptsPtr, dataSigner, fatalErrChan, parentChainId, parentChainTestClient.L1BlobReader, locator.LatestWasmModuleRoot(), enableConsensusRPC)
 	Require(t, err)
 	chainTestClient.ConsensusConfigFetcher = consensusConfigFetcher
 
@@ -740,6 +750,7 @@ func (b *NodeBuilder) BuildL3OnL2(t *testing.T) func() {
 		b.l3Config.isSequencer,
 		b.L3Info,
 
+		b.l3Config.enableConsensusRPC,
 		b.l3InitMessage,
 		b.l3Addresses,
 	)
@@ -769,6 +780,7 @@ func (b *NodeBuilder) BuildL2OnL1(t *testing.T) func() {
 		b.isSequencer,
 		b.L2Info,
 
+		b.enableConsensusRPC,
 		b.initMessage,
 		b.addresses,
 	)
@@ -828,7 +840,7 @@ func (b *NodeBuilder) BuildL2(t *testing.T) func() {
 	consensusConfigFetcher := NewCommonConfigFetcher(b.nodeConfig)
 	b.L2.ConsensusNode, err = arbnode.CreateNodeFullExecutionClient(
 		b.ctx, b.L2.Stack, execNode, execNode, execNode, execNode, arbDb, consensusConfigFetcher, blockchain.Config(),
-		nil, nil, nil, nil, nil, fatalErrChan, big.NewInt(1337), nil, locator.LatestWasmModuleRoot())
+		nil, nil, nil, nil, nil, fatalErrChan, big.NewInt(1337), nil, locator.LatestWasmModuleRoot(), b.enableConsensusRPC)
 	Require(t, err)
 	b.L2.ConsensusConfigFetcher = consensusConfigFetcher
 
@@ -894,7 +906,7 @@ func (b *NodeBuilder) RestartL2Node(t *testing.T) {
 		l1Client = b.L1.Client
 	}
 	consensusConfigFetcher := NewCommonConfigFetcher(b.nodeConfig)
-	currentNode, err := arbnode.CreateNodeFullExecutionClient(b.ctx, stack, execNode, execNode, execNode, execNode, arbDb, consensusConfigFetcher, blockchain.Config(), l1Client, b.addresses, validatorTxOpts, sequencerTxOpts, dataSigner, feedErrChan, big.NewInt(1337), nil, locator.LatestWasmModuleRoot())
+	currentNode, err := arbnode.CreateNodeFullExecutionClient(b.ctx, stack, execNode, execNode, execNode, execNode, arbDb, consensusConfigFetcher, blockchain.Config(), l1Client, b.addresses, validatorTxOpts, sequencerTxOpts, dataSigner, feedErrChan, big.NewInt(1337), nil, locator.LatestWasmModuleRoot(), b.enableConsensusRPC)
 	Require(t, err)
 
 	Require(t, currentNode.Start(b.ctx))
@@ -931,6 +943,7 @@ func build2ndNode(
 
 	params *SecondNodeParams,
 
+	enableConsensusRPC bool,
 	addresses *chaininfo.RollupAddresses,
 	initMessage *arbostypes.ParsedInitMessage,
 ) (*TestClient, func()) {
@@ -967,7 +980,7 @@ func build2ndNode(
 
 	testClient := NewTestClient(ctx)
 	testClient.Client, testClient.ConsensusNode, testClient.ExecutionConfigFetcher, testClient.ConsensusConfigFetcher =
-		Create2ndNodeWithConfig(t, ctx, firstNodeTestClient.ConsensusNode, parentChainTestClient.Stack, parentChainInfo, params.initData, params.nodeConfig, params.execConfig, params.stackConfig, valnodeConfig, params.addresses, initMessage, params.useExecutionClientOnly, parentChainTestClient.L1BlobReader)
+		Create2ndNodeWithConfig(t, ctx, firstNodeTestClient.ConsensusNode, parentChainTestClient.Stack, parentChainInfo, params.initData, params.nodeConfig, params.execConfig, params.stackConfig, valnodeConfig, params.addresses, initMessage, params.useExecutionClientOnly, parentChainTestClient.L1BlobReader, enableConsensusRPC)
 	testClient.ExecNode = getExecNode(t, testClient.ConsensusNode)
 	testClient.cleanup = func() { testClient.ConsensusNode.StopAndWait() }
 
@@ -1000,6 +1013,7 @@ func (b *NodeBuilder) Build2ndNode(t *testing.T, params *SecondNodeParams) (*Tes
 
 		params,
 
+		b.enableConsensusRPC,
 		b.addresses,
 		b.initMessage,
 	)
@@ -1026,6 +1040,7 @@ func (b *NodeBuilder) Build2ndNodeOnL3(t *testing.T, params *SecondNodeParams) (
 
 		params,
 
+		b.l3Config.enableConsensusRPC,
 		b.l3Addresses,
 		b.l3InitMessage,
 	)
@@ -1786,6 +1801,7 @@ func Create2ndNodeWithConfig(
 	initMessage *arbostypes.ParsedInitMessage,
 	useExecutionClientOnly bool,
 	blobReader daprovider.BlobReader,
+	enableConsensusRPC bool,
 ) (*ethclient.Client, *arbnode.Node, ConfigFetcher[gethexec.Config], ConfigFetcher[arbnode.Config]) {
 	if nodeConfig == nil {
 		nodeConfig = arbnode.ConfigDefaultL1NonSequencerTest()
@@ -1842,9 +1858,9 @@ func Create2ndNodeWithConfig(
 	Require(t, err)
 	consensusConfigFetcher := NewCommonConfigFetcher(nodeConfig)
 	if useExecutionClientOnly {
-		currentNode, err = arbnode.CreateNodeExecutionClient(ctx, chainStack, currentExec, arbDb, consensusConfigFetcher, blockchain.Config(), parentChainClient, addresses, &validatorTxOpts, &sequencerTxOpts, dataSigner, feedErrChan, big.NewInt(1337), blobReader, locator.LatestWasmModuleRoot())
+		currentNode, err = arbnode.CreateNodeExecutionClient(ctx, chainStack, currentExec, arbDb, consensusConfigFetcher, blockchain.Config(), parentChainClient, addresses, &validatorTxOpts, &sequencerTxOpts, dataSigner, feedErrChan, big.NewInt(1337), blobReader, locator.LatestWasmModuleRoot(), enableConsensusRPC)
 	} else {
-		currentNode, err = arbnode.CreateNodeFullExecutionClient(ctx, chainStack, currentExec, currentExec, currentExec, currentExec, arbDb, consensusConfigFetcher, blockchain.Config(), parentChainClient, addresses, &validatorTxOpts, &sequencerTxOpts, dataSigner, feedErrChan, big.NewInt(1337), blobReader, locator.LatestWasmModuleRoot())
+		currentNode, err = arbnode.CreateNodeFullExecutionClient(ctx, chainStack, currentExec, currentExec, currentExec, currentExec, arbDb, consensusConfigFetcher, blockchain.Config(), parentChainClient, addresses, &validatorTxOpts, &sequencerTxOpts, dataSigner, feedErrChan, big.NewInt(1337), blobReader, locator.LatestWasmModuleRoot(), enableConsensusRPC)
 	}
 
 	Require(t, err)
