@@ -22,6 +22,7 @@ authors = ["Offchain Labs"]
 edition = "2021"
 homepage = "https://arbitrum.io"
 license = "BSL"
+publish = false
 repository = "https://github.com/OffchainLabs/nitro.git"
 rust-version = "1.88"
 
