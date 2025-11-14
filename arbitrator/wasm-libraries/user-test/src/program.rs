@@ -119,8 +119,15 @@ impl EvmApi<VecReader> for MockEvmApi {
         Ok(Gas(0))
     }
 
-    fn flush_storage_cache(&mut self, _clear: bool, _gas_left: Gas) -> Result<(Gas, UserOutcomeKind)> {
-        Ok(((Gas(22100) * KEYS.lock().len() as u64), UserOutcomeKind::Success)) // pretend worst case
+    fn flush_storage_cache(
+        &mut self,
+        _clear: bool,
+        _gas_left: Gas,
+    ) -> Result<(Gas, UserOutcomeKind)> {
+        Ok((
+            (Gas(22100) * KEYS.lock().len() as u64),
+            UserOutcomeKind::Success,
+        )) // pretend worst case
     }
 
     fn get_transient_bytes32(&mut self, _key: Bytes32) -> Result<Bytes32> {
@@ -209,7 +216,7 @@ impl EvmApi<VecReader> for MockEvmApi {
         unimplemented!()
     }
 
-    fn add_pages(&mut self, pages: u16) ->Result<Gas> {
+    fn add_pages(&mut self, pages: u16) -> Result<Gas> {
         let model = MemoryModel::new(2, 1000);
         unsafe {
             let (open, ever) = (OPEN_PAGES, EVER_PAGES);
