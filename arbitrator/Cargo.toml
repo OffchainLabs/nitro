@@ -28,6 +28,8 @@ rust-version = "1.88"
 
 [workspace.dependencies]
 clap = { version = "4.4.8" }
+clru = { version = "0.6.2" }
+derivative = { version = "2.2.0" }
 digest = { version = "0.10.7" }
 eyre = { version = "0.6.5" }
 fnv = { version = "1.0.7" }
@@ -35,8 +37,10 @@ gperftools = { version = "0.2.0" }
 hex = { version = "0.4.3" }
 lazy_static = { version = "1.4.0" }
 libc = { version = "0.2.132" }
+num-bigint = { version = "0.4.4" }
 num_enum = { version = "0.7.2", default-features = false }
 num-traits = { version = "0.2.17" }
+parking_lot = { version = "0.12.1" }
 rand = { version = "0.8.4", default-features = false }
 rand_pcg = { version = "0.3.1", default-features = false }
 ruint2 = { version = "1.9.0" }
@@ -54,9 +58,13 @@ brotli = { path = "brotli" }
 caller-env = { path = "caller-env" }
 prover = { path = "prover", default-features = false }
 stylus = { path = "stylus", default-features = false }
+user-host-trait = { path = "wasm-libraries/user-host-trait" }
 wasmer = { path = "tools/wasmer/lib/api" }
-wasmer-compiler-llvm = { path = "tools/wasmer/lib/compiler-llvm" }
 wasmer-compiler-cranelift = { path = "tools/wasmer/lib/compiler-cranelift" }
+wasmer-compiler-llvm = { path = "tools/wasmer/lib/compiler-llvm" }
+wasmer-compiler-singlepass = { path = "tools/wasmer/lib/compiler-singlepass", default-features = false }
+wasmer-types = { path = "tools/wasmer/lib/types" }
+wasmer-vm = { path = "tools/wasmer/lib/vm" }
 
 [profile.release]
 debug = true

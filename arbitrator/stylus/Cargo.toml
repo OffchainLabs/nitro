@@ -10,28 +10,29 @@ repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-arbutil = { path = "../arbutil/" }
-brotli = { path = "../brotli" }
-caller-env = { path = "../caller-env", features = ["wasmer_traits"] }
-prover = { path = "../prover/", default-features = false, features = ["native"] }
-wasmer = { path = "../tools/wasmer/lib/api" }
-wasmer-vm = { path = "../tools/wasmer/lib/vm/" }
-wasmer-types = { path = "../tools/wasmer/lib/types/" }
-wasmer-compiler-singlepass = { path = "../tools/wasmer/lib/compiler-singlepass", default-features = false, features = ["std", "unwind", "avx"] }
-wasmer-compiler-cranelift = { path = "../tools/wasmer/lib/compiler-cranelift" }
-wasmer-compiler-llvm = { path = "../tools/wasmer/lib/compiler-llvm", optional = true }
-user-host-trait = { path = "../wasm-libraries/user-host-trait/" }
-derivative = "2.2.0"
-parking_lot = "0.12.1"
-thiserror = "1.0.33"
-lazy_static.workspace = true
-eyre = "0.6.5"
-rand = "0.8.5"
-hex = "0.4.3"
-clru = "0.6.2"
+arbutil = { workspace = true }
+brotli = { workspace = true }
+caller-env = { workspace = true, features = ["wasmer_traits"] }
+prover = { workspace = true, features = ["native"] }
+wasmer = { workspace = true }
+wasmer-vm = { workspace = true }
+wasmer-types = { workspace = true }
+wasmer-compiler-singlepass = { workspace = true, features = ["std", "unwind", "avx"] }
+wasmer-compiler-cranelift = { workspace = true }
+wasmer-compiler-llvm = { workspace = true, optional = true }
+user-host-trait = { workspace = true }
+
+derivative = { workspace = true }
+parking_lot = { workspace = true }
+thiserror = { workspace = true }
+lazy_static = { workspace = true }
+eyre = { workspace = true }
+rand = { workspace = true }
+hex = { workspace = true }
+clru = { workspace = true }
 
 [dev-dependencies]
-num-bigint = "0.4.4"
+num-bigint = { workspace = true }
 
 [features]
 default = ["rayon", "singlepass_rayon"]
