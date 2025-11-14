@@ -43,6 +43,7 @@ tiny-keccak = { version = "2.0.2" }
 wasmparser = { version = "0.121" }
 
 prover = { path = "prover" }
+wasmer = { path = "tools/wasmer/lib/api" }
 
 [profile.release]
 debug = true

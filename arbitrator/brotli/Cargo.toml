@@ -10,9 +10,9 @@ repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-lazy_static.workspace = true
-num_enum.workspace = true
-wasmer = { path = "../tools/wasmer/lib/api", optional = true }
+lazy_static = { workspace = true }
+num_enum = { workspace = true }
+wasmer = { workspace = true, optional = true }
 
 [lib]
 crate-type = ["lib"]
