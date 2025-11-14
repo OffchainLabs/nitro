@@ -1,4 +1,6 @@
-<br />
+<br />> Note: Arbitrum Nitro performs state writes optimistically during execution.
+> Final state is confirmed only after dispute resolution completes on L1.
+
 <p align="center">
   <a href="https://arbitrum.io/">
     <img src="https://arbitrum.io/assets/arbitrum/logo_color.png" alt="Logo" width="80" height="80">
