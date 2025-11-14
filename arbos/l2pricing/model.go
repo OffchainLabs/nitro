@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math/big"
 
+	"github.com/ethereum/go-ethereum/arbitrum/multigas"
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -56,16 +57,16 @@ func (ps *L2PricingState) GasModelToUse(arbosVersion uint64) (GasModel, error) {
 	return GasModelLegacy, nil
 }
 
-func (ps *L2PricingState) AddToGasPool(gas int64, arbosVersion uint64) error {
+func (ps *L2PricingState) AddToGasPool(gas multigas.MultiGas, arbosVersion uint64) error {
 	gasModel, err := ps.GasModelToUse(arbosVersion)
 	if err != nil {
 		return err
 	}
 	switch gasModel {
 	case GasModelLegacy:
-		return ps.addToGasPoolLegacy(gas)
+		return ps.addToGasPoolLegacy(arbmath.SaturatingCast[int64](gas.SingleGas()))
 	case GasModelSingleGasConstraints:
-		return ps.addToGasPoolWithSingleGasConstraints(gas)
+		return ps.addToGasPoolWithSingleGasConstraints(arbmath.SaturatingCast[int64](gas.SingleGas()))
 	case GasModelMultiGasConstraints:
 		return ps.addToGasPoolWithMultiGasConstraints(gas)
 	default:
@@ -101,7 +102,7 @@ func (ps *L2PricingState) addToGasPoolWithSingleGasConstraints(gas int64) error 
 	return nil
 }
 
-func (ps *L2PricingState) addToGasPoolWithMultiGasConstraints(_gas int64) error {
+func (ps *L2PricingState) addToGasPoolWithMultiGasConstraints(_gas multigas.MultiGas) error {
 	return fmt.Errorf("addToGasPoolWithMultiGasConstraints not implemented")
 }
 
