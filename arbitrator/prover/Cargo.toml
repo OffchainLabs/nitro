@@ -10,40 +10,40 @@ repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+arbutil = { workspace = true }
 bincode = { workspace = true }
+bitvec = { workspace = true, features = ["serde"] }
+brotli = { workspace = true }
+c-kzg = { workspace = true, optional = true }
 derivative = { workspace = true }
 digest = { workspace = true }
-bitvec = { workspace = true, features = ["serde"] }
+enum-iterator = { workspace = true }
 eyre = { workspace = true }
 fnv = { workspace = true }
 hex = { workspace = true }
+lazy_static = { workspace = true }
 libc = { workspace = true }
+lru = { workspace = true }
 nom = { workspace = true }
+num-derive = { workspace = true }
+num-traits = { workspace = true }
+once_cell = { workspace = true }
+parking_lot = { workspace = true }
+rayon = { workspace = true, optional = true }
 rustc-demangle = { workspace = true }
 serde = { workspace = true, features = ["derive", "rc"] }
 serde_json = { workspace = true }
 serde_with = { workspace = true, features = ["base64"] }
+sha2 = { workspace = true }
 sha3 = { workspace = true }
+smallvec = { workspace = true, features = ["serde"] }
 static_assertions = { workspace = true }
 structopt = { workspace = true }
-parking_lot = { workspace = true }
-lazy_static = { workspace = true }
-wat = { workspace = true }
-smallvec = { workspace = true, features = ["serde"] }
-rayon = { workspace = true, optional = true }
-arbutil = { workspace = true }
-brotli = { workspace = true }
 wasmer = { workspace = true, optional = true }
+wasmer-compiler-singlepass = { workspace = true, optional = true, features = ["std", "unwind", "avx"] }
 wasmer-types = { workspace = true }
-wasmer-compiler-singlepass = { workspace = true, optional = true, default-features = false, features = ["std", "unwind", "avx"] }
 wasmparser = { workspace = true }
-num-derive = { workspace = true }
-num-traits = { workspace = true }
-c-kzg = { workspace = true, optional = true }
-sha2 = { workspace = true }
-lru = { workspace = true }
-once_cell = { workspace = true }
-enum-iterator = { workspace = true }
+wat = { workspace = true }
 
 [dev-dependencies]
 criterion = { workspace = true, features = ["html_reports"] }
