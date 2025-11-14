@@ -327,29 +327,13 @@ func (con ArbGasInfo) GetGasPricingConstraints(c ctx, evm mech) ([][3]uint64, er
 func (con ArbGasInfo) GetMultiGasPricingConstraints(
 	c ctx,
 	evm mech,
-) ([]struct {
-	Resources []struct {
-		Resource uint8
-		Weight   uint64
-	}
-	AdjustmentWindowSecs uint32
-	TargetPerSec         uint64
-	Backlog              uint64
-}, error) {
+) ([]MultiGasConstraint, error) {
 	length, err := c.State.L2PricingState().MultiGasConstraintsLength()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get multi-gas constraint count: %w", err)
 	}
 
-	result := make([]struct {
-		Resources []struct {
-			Resource uint8
-			Weight   uint64
-		}
-		AdjustmentWindowSecs uint32
-		TargetPerSec         uint64
-		Backlog              uint64
-	}, 0, length)
+	result := make([]MultiGasConstraint, 0, length)
 
 	for i := range length {
 		constraint := c.State.L2PricingState().OpenMultiGasConstraintAt(i)
@@ -372,29 +356,15 @@ func (con ArbGasInfo) GetMultiGasPricingConstraints(
 			return nil, fmt.Errorf("failed to read resource weights for constraint %d: %w", i, err)
 		}
 
-		resources := make([]struct {
-			Resource uint8
-			Weight   uint64
-		}, 0, len(resourceMap))
+		resources := make([]WeightedResource, 0, len(resourceMap))
 		for kind, weight := range resourceMap {
-			resources = append(resources, struct {
-				Resource uint8
-				Weight   uint64
-			}{
+			resources = append(resources, WeightedResource{
 				Resource: uint8(kind),
 				Weight:   weight,
 			})
 		}
 
-		result = append(result, struct {
-			Resources []struct {
-				Resource uint8
-				Weight   uint64
-			}
-			AdjustmentWindowSecs uint32
-			TargetPerSec         uint64
-			Backlog              uint64
-		}{
+		result = append(result, MultiGasConstraint{
 			Resources:            resources,
 			AdjustmentWindowSecs: window,
 			TargetPerSec:         target,

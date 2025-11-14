@@ -12,8 +12,8 @@ import (
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
-const ArbosMultiConstraintsVersion = params.ArbosVersion_50
-const ArbosMultiGasMultiConstraintsVersion = params.ArbosVersion_60
+const ArbosSingleGasConstraintsVersion = params.ArbosVersion_50
+const ArbosMultiGasConstraintsVersion = params.ArbosVersion_60
 
 const InitialSpeedLimitPerSecondV0 = 1000000
 const InitialPerBlockGasLimitV0 uint64 = 20 * 1000000
@@ -26,7 +26,7 @@ const InitialBacklogTolerance = 10
 const InitialPerTxGasLimitV50 uint64 = 32 * 1000000
 
 func (ps *L2PricingState) ShouldUseGasConstraints(arbosVersion uint64) (bool, error) {
-	if arbosVersion >= ArbosMultiConstraintsVersion {
+	if arbosVersion >= ArbosSingleGasConstraintsVersion {
 		constraintsLength, err := ps.GasConstraintsLength()
 		if err != nil {
 			return false, err

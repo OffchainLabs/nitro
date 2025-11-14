@@ -487,15 +487,7 @@ func (con ArbOwner) SetGasPricingConstraints(c ctx, evm mech, constraints [][3]u
 func (con ArbOwner) SetMultiGasPricingConstraints(
 	c ctx,
 	evm mech,
-	constraints []struct {
-		Resources []struct {
-			Resource uint8
-			Weight   uint64
-		}
-		AdjustmentWindowSecs uint32
-		TargetPerSec         uint64
-		Backlog              uint64
-	},
+	constraints []MultiGasConstraint,
 ) error {
 	if err := c.State.L2PricingState().ClearMultiGasConstraints(); err != nil {
 		return fmt.Errorf("failed to clear existing multi-gas constraints: %w", err)

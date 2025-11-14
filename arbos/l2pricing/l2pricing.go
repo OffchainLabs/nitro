@@ -41,6 +41,7 @@ var gasConstraintsKey []byte = []byte{0}
 var multigasConstraintsKey []byte = []byte{1}
 
 const GethBlockGasLimit = 1 << 50
+const MaxExponentBips = arbmath.Bips(85_000)
 
 func InitializeL2PricingState(sto *storage.Storage) error {
 	_ = sto.SetUint64ByUint64(speedLimitPerSecondOffset, InitialSpeedLimitPerSecondV0)
@@ -236,10 +237,20 @@ func (ps *L2PricingState) AddMultiGasConstraint(
 	if err := constraint.SetBacklog(backlog); err != nil {
 		return fmt.Errorf("failed to set backlog: %w", err)
 	}
-
 	if err := constraint.SetResourceWeights(resourceWeights); err != nil {
 		return fmt.Errorf("failed to set resource weights: %w", err)
 	}
+
+	for kind := range resourceWeights {
+		exp, err := constraint.ComputeExponent(kind)
+		if err != nil {
+			return fmt.Errorf("failed to compute exponent for resource kind %v: %w", kind, err)
+		}
+		if exp > MaxExponentBips {
+			return fmt.Errorf("resource kind %v has exponent %v bips exceeding max of %v bips", kind, exp, MaxExponentBips)
+		}
+	}
+
 	return nil
 }
 
