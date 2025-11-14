@@ -1027,7 +1027,7 @@ where
             heights = &heights[1..];
         }
 
-        use digest::Update as _;
+        use digest::Update;
 
         hash = Keccak256::new()
             .chain(prefix)
