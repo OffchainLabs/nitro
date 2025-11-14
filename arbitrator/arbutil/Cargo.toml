@@ -14,7 +14,7 @@ digest = { workspace = true }
 eyre = { workspace = true }
 fnv = { workspace = true }
 hex = { workspace = true }
-num_enum = { workspace = true }
+num_enum = { workspace = true, default-features = true }
 num-traits = { workspace = true }
 ruint2 = { workspace = true }
 serde = { workspace = true, features = ["derive", "rc"] }
