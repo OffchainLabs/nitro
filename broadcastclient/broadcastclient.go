@@ -137,9 +137,7 @@ type BroadcastClient struct {
 	conn        net.Conn
 	compression bool
 
-	retryCount atomic.Int64
-
-	retrying                        bool
+	retryCount                      atomic.Int64
 	shuttingDown                    bool
 	firstReconnectAttempt           bool
 	confirmedSequenceNumberListener chan arbutil.MessageIndex
