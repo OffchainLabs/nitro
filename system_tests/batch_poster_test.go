@@ -909,3 +909,45 @@ func TestBatchPosterActuallyPostsBlobsToL1(t *testing.T) {
 		require.Len(t, restoredBlobs, 1)
 	}
 }
+
+func TestBatchPosterPostsReportOnlyBatchAfterMaxEmptyBatchDelay(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).
+		DefaultConfig(t, true).
+		TakeOwnership()
+
+	// Enable delayed sequencer and set fast finalization so reports appear quickly on L2
+	builder.nodeConfig.DelayedSequencer.Enable = true
+	builder.nodeConfig.DelayedSequencer.FinalizeDistance = 1
+	// Post an empty batch if no useful messages appear within 1 second.
+	builder.nodeConfig.BatchPoster.MaxEmptyBatchDelay = time.Second
+	// Use a very short non-zero max delay to trigger first batch immediately.
+	builder.nodeConfig.BatchPoster.MaxDelay = time.Millisecond
+	// Disable automatic background posting
+	builder.nodeConfig.BatchPoster.PollInterval = time.Hour
+
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	// Prevent background batchposter goroutine from racing our manual call.
+	builder.L2.ConsensusNode.BatchPoster.StopAndWait()
+
+	// Force immediate post of first batch.
+	posted, err := builder.L2.ConsensusNode.BatchPoster.MaybePostSequencerBatch(ctx)
+	require.NoError(t, err)
+	require.True(t, posted, "expected first batch to post immediately")
+
+	// Spin L1 to get batch poster report
+	AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, 1)
+
+	// Wait long enough for both the MaxEmptyBatchDelay window and one full Ethereum PoS block interval (12 sec)
+	// to elapse, ensuring that the next batch becomes eligible for posting.
+	time.Sleep(builder.nodeConfig.BatchPoster.MaxEmptyBatchDelay + 12*time.Second + 500*time.Millisecond)
+
+	// Force second batch, posting should be triggered by MaxEmptyBatchDelay
+	posted, err = builder.L2.ConsensusNode.BatchPoster.MaybePostSequencerBatch(ctx)
+	require.NoError(t, err)
+	require.True(t, posted, "expected second batch to be posted by MaxEmptyBatchDelay")
+}
