@@ -27,9 +27,11 @@ repository = "https://github.com/OffchainLabs/nitro.git"
 rust-version = "1.88"
 
 [workspace.dependencies]
+clap = { version = "4.4.8" }
 digest = { version = "0.10.7" }
 eyre = { version = "0.6.5" }
 fnv = { version = "1.0.7" }
+gperftools = { version = "0.2.0" }
 hex = { version = "0.4.3" }
 lazy_static = { version = "1.4.0" }
 num_enum = { version = "0.7.2", default-features = false }
@@ -39,6 +41,8 @@ serde = { version = "1.0.130" }
 siphasher = { version = "0.3.10" }
 tiny-keccak = { version = "2.0.2" }
 wasmparser = { version = "0.121" }
+
+prover = { path = "prover" }
 
 [profile.release]
 debug = true
