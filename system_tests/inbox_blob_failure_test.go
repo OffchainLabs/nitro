@@ -230,8 +230,10 @@ func TestInboxReaderBlobFailureWithDelayedMessage(t *testing.T) {
 		checkBlockNum = seqBlockNum
 	}
 
+	// #nosec G115
 	seqBlock, err := builder.L2.Client.BlockByNumber(ctx, big.NewInt(int64(checkBlockNum)))
 	Require(t, err)
+	// #nosec G115
 	follBlock, err := testClientB.Client.BlockByNumber(ctx, big.NewInt(int64(checkBlockNum)))
 	Require(t, err)
 
