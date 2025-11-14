@@ -2222,7 +2222,8 @@ func populateMachineDir(t *testing.T, cr *github.ConsensusRelease) string {
 func testAddSequencerBatches(t *testing.T, tracker *arbnode.InboxTracker, ctx context.Context, client *ethclient.Client, batches []*arbnode.SequencerInboxBatch) {
 	batch := tracker.Database().NewBatch()
 	defer batch.Reset()
-	sideEffects, err := tracker.AddSequencerBatches(batch, ctx, client, batches)
+	// Pass nil for uncommitted delayed messages and empty map for accumulators since we're not testing atomic batch behavior
+	sideEffects, err := tracker.AddSequencerBatches(batch, ctx, client, batches, nil, make(map[uint64]common.Hash))
 	Require(t, err)
 	err = batch.Write()
 	Require(t, err)

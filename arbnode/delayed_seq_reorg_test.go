@@ -440,7 +440,7 @@ func TestSequencerReorgFromLastDelayedMsg(t *testing.T) {
 func testAddDelayedMessages(t *testing.T, tracker *InboxTracker, messages []*DelayedInboxMessage) {
 	batch := tracker.db.NewBatch()
 	defer batch.Reset()
-	validatorReorg, err := tracker.AddDelayedMessages(batch, messages)
+	validatorReorg, _, err := tracker.AddDelayedMessages(batch, messages)
 	Require(t, err)
 	err = batch.Write()
 	Require(t, err)
@@ -453,7 +453,8 @@ func testAddDelayedMessages(t *testing.T, tracker *InboxTracker, messages []*Del
 func testAddSequencerBatches(t *testing.T, tracker *InboxTracker, ctx context.Context, client *ethclient.Client, batches []*SequencerInboxBatch) {
 	batch := tracker.db.NewBatch()
 	defer batch.Reset()
-	sideEffects, err := tracker.AddSequencerBatches(batch, ctx, client, batches)
+	// Pass empty slices/maps since we're not testing atomic batch behavior in this test
+	sideEffects, err := tracker.AddSequencerBatches(batch, ctx, client, batches, nil, make(map[uint64]common.Hash))
 	Require(t, err)
 	err = batch.Write()
 	Require(t, err)

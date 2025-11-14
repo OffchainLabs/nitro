@@ -427,15 +427,16 @@ func (t *InboxTracker) GetDelayedMessageBytes(ctx context.Context, seqNum uint64
 // AddDelayedMessages adds delayed messages to the database using the provided batch.
 // It does not commit the batch - the caller is responsible for committing.
 // Returns a validator reorg callback that should be executed after successful commit.
-func (t *InboxTracker) AddDelayedMessages(batch ethdb.Batch, messages []*DelayedInboxMessage) (validatorReorgFunc, error) {
+func (t *InboxTracker) AddDelayedMessages(batch ethdb.Batch, messages []*DelayedInboxMessage) (validatorReorgFunc, map[uint64]common.Hash, error) {
 	var nextAcc common.Hash
 	firstDelayedMsgToKeep := uint64(0)
+	uncommittedAccs := make(map[uint64]common.Hash)
 	if len(messages) == 0 {
-		return nil, nil
+		return nil, uncommittedAccs, nil
 	}
 	pos, err := messages[0].Message.Header.SeqNum()
 	if err != nil {
-		return nil, err
+		return nil, uncommittedAccs, err
 	}
 	if t.snapSyncConfig.Enabled && pos < t.snapSyncConfig.DelayedCount {
 		firstDelayedMsgToKeep = t.snapSyncConfig.DelayedCount
@@ -444,11 +445,11 @@ func (t *InboxTracker) AddDelayedMessages(batch ethdb.Batch, messages []*Delayed
 		}
 		for {
 			if len(messages) == 0 {
-				return nil, nil
+				return nil, uncommittedAccs, nil
 			}
 			pos, err = messages[0].Message.Header.SeqNum()
 			if err != nil {
-				return nil, err
+				return nil, uncommittedAccs, err
 			}
 			if pos+1 == firstDelayedMsgToKeep {
 				nextAcc = messages[0].AfterInboxAcc()
@@ -468,10 +469,10 @@ func (t *InboxTracker) AddDelayedMessages(batch ethdb.Batch, messages []*Delayed
 	if err == nil {
 		if haveLastAcc == messages[len(messages)-1].AfterInboxAcc() {
 			// We already have these delayed messages
-			return nil, nil
+			return nil, uncommittedAccs, nil
 		}
 	} else if !errors.Is(err, AccumulatorNotFoundErr) {
-		return nil, err
+		return nil, uncommittedAccs, err
 	}
 
 	if pos > firstDelayedMsgToKeep {
@@ -479,9 +480,9 @@ func (t *InboxTracker) AddDelayedMessages(batch ethdb.Batch, messages []*Delayed
 		nextAcc, err = t.GetDelayedAcc(pos - 1)
 		if err != nil {
 			if errors.Is(err, AccumulatorNotFoundErr) {
-				return nil, errors.New("missing previous delayed message")
+				return nil, uncommittedAccs, errors.New("missing previous delayed message")
 			}
-			return nil, err
+			return nil, uncommittedAccs, err
 		}
 	}
 
@@ -489,15 +490,15 @@ func (t *InboxTracker) AddDelayedMessages(batch ethdb.Batch, messages []*Delayed
 	for _, message := range messages {
 		seqNum, err := message.Message.Header.SeqNum()
 		if err != nil {
-			return nil, err
+			return nil, uncommittedAccs, err
 		}
 
 		if seqNum != pos {
-			return nil, fmt.Errorf("unexpected delayed sequence number %v, expected %v", seqNum, pos)
+			return nil, uncommittedAccs, fmt.Errorf("unexpected delayed sequence number %v, expected %v", seqNum, pos)
 		}
 
 		if nextAcc != message.BeforeInboxAcc {
-			return nil, fmt.Errorf("previous delayed accumulator mismatch for message %v", seqNum)
+			return nil, uncommittedAccs, fmt.Errorf("previous delayed accumulator mismatch for message %v", seqNum)
 		}
 		nextAcc = message.AfterInboxAcc()
 
@@ -513,7 +514,7 @@ func (t *InboxTracker) AddDelayedMessages(batch ethdb.Batch, messages []*Delayed
 					continue
 				}
 			} else if !errors.Is(err, AccumulatorNotFoundErr) {
-				return nil, err
+				return nil, uncommittedAccs, err
 			}
 		}
 
@@ -521,13 +522,13 @@ func (t *InboxTracker) AddDelayedMessages(batch ethdb.Batch, messages []*Delayed
 
 		msgData, err := rlp.EncodeToBytes(message.Message)
 		if err != nil {
-			return nil, err
+			return nil, uncommittedAccs, err
 		}
 		data := nextAcc.Bytes()
 		data = append(data, msgData...)
 		err = batch.Put(delayedMsgKey, data)
 		if err != nil {
-			return nil, err
+			return nil, uncommittedAccs, err
 		}
 
 		if message.ParentChainBlockNumber != message.Message.Header.BlockNumber {
@@ -536,14 +537,21 @@ func (t *InboxTracker) AddDelayedMessages(batch ethdb.Batch, messages []*Delayed
 			binary.BigEndian.PutUint64(parentChainBlockNumberByte, message.ParentChainBlockNumber)
 			err = batch.Put(parentChainBlockNumberKey, parentChainBlockNumberByte)
 			if err != nil {
-				return nil, err
+				return nil, uncommittedAccs, err
 			}
 		}
+
+		// Track the accumulator for this uncommitted delayed message
+		uncommittedAccs[seqNum] = nextAcc
 
 		pos++
 	}
 
-	return t.setDelayedCountReorgToBatch(batch, firstPos, pos, true, true)
+	validatorReorg, err := t.setDelayedCountReorgToBatch(batch, firstPos, pos, true, true)
+	if err != nil {
+		return nil, uncommittedAccs, err
+	}
+	return validatorReorg, uncommittedAccs, nil
 }
 
 // validatorReorgFunc is a callback to execute validator reorg after batch commit
@@ -652,9 +660,12 @@ func (t *InboxTracker) setDelayedCountReorgToBatch(batch ethdb.Batch, firstNewDe
 
 	if deferCommit {
 		// Prepare reorg but don't commit - caller will commit
-		err = t.txStreamer.addMessagesAndReorg(batch, prevMessageCount, nil)
-		if err != nil {
-			return nil, err
+		// Don't call addMessagesAndReorg if prevMessageCount == 0 as it cannot reorg out the init message
+		if prevMessageCount > 0 {
+			err = t.txStreamer.addMessagesAndReorg(batch, prevMessageCount, nil)
+			if err != nil {
+				return nil, err
+			}
 		}
 		return validatorReorg, nil
 	}
@@ -684,9 +695,10 @@ type multiplexerBackend struct {
 	batches               []*SequencerInboxBatch
 	positionWithinMessage uint64
 
-	ctx    context.Context
-	client *ethclient.Client
-	inbox  *InboxTracker
+	ctx                        context.Context
+	client                     *ethclient.Client
+	inbox                      *InboxTracker
+	uncommittedDelayedMessages []*DelayedInboxMessage // For reading uncommitted delayed messages
 }
 
 func (b *multiplexerBackend) PeekSequencerInbox() ([]byte, common.Hash, error) {
@@ -720,6 +732,19 @@ func (b *multiplexerBackend) ReadDelayedInbox(seqNum uint64) (*arbostypes.L1Inco
 	if len(b.batches) == 0 || seqNum >= b.batches[0].AfterDelayedCount {
 		return nil, errors.New("attempted to read past end of sequencer batch delayed messages")
 	}
+
+	// First check uncommitted delayed messages
+	for _, dm := range b.uncommittedDelayedMessages {
+		msgSeqNum, err := dm.Message.Header.SeqNum()
+		if err != nil {
+			return nil, err
+		}
+		if msgSeqNum == seqNum {
+			return dm.Message, nil
+		}
+	}
+
+	// Fall back to database
 	return b.inbox.GetDelayedMessage(b.ctx, seqNum)
 }
 
@@ -727,8 +752,10 @@ var delayedMessagesMismatch = errors.New("sequencer batch delayed messages missi
 
 // AddSequencerBatches adds sequencer batches to the database using the provided batch.
 // It does not commit the batch - the caller is responsible for committing.
+// The uncommittedDelayedMessages contains delayed messages that were written to the batch but not yet committed.
+// The uncommittedDelayedAccs map contains accumulators for those messages, allowing validation against uncommitted data.
 // Returns side effect callbacks that should be executed after successful commit.
-func (t *InboxTracker) AddSequencerBatches(batch ethdb.Batch, ctx context.Context, client *ethclient.Client, batches []*SequencerInboxBatch) (*BatchSideEffects, error) {
+func (t *InboxTracker) AddSequencerBatches(batch ethdb.Batch, ctx context.Context, client *ethclient.Client, batches []*SequencerInboxBatch, uncommittedDelayedMessages []*DelayedInboxMessage, uncommittedDelayedAccs map[uint64]common.Hash) (*BatchSideEffects, error) {
 	var nextAcc common.Hash
 	var prevbatchmeta BatchMetadata
 	sequenceNumberToKeep := uint64(0)
@@ -791,18 +818,31 @@ func (t *InboxTracker) AddSequencerBatches(batch ethdb.Batch, ctx context.Contex
 		}
 
 		if batchItem.AfterDelayedCount > 0 {
-			haveDelayedAcc, err := t.GetDelayedAcc(batchItem.AfterDelayedCount - 1)
-			notFound := errors.Is(err, AccumulatorNotFoundErr)
-			if err != nil && !notFound {
-				return nil, err
+			delayedSeqNum := batchItem.AfterDelayedCount - 1
+
+			// First check if this delayed message is in the uncommitted batch
+			haveDelayedAcc, inUncommitted := uncommittedDelayedAccs[delayedSeqNum]
+			var notFound bool
+
+			if !inUncommitted {
+				// Not in uncommitted data, check the database
+				var err error
+				haveDelayedAcc, err = t.GetDelayedAcc(delayedSeqNum)
+				notFound = errors.Is(err, AccumulatorNotFoundErr)
+				if err != nil && !notFound {
+					return nil, err
+				}
 			}
-			if notFound || haveDelayedAcc != batchItem.AfterDelayedAcc {
+
+			if (!inUncommitted && notFound) || haveDelayedAcc != batchItem.AfterDelayedAcc {
 				log.Debug(
 					"Delayed message accumulator doesn't match sequencer batch",
 					"batch", batchItem.SequenceNumber,
-					"delayedPosition", batchItem.AfterDelayedCount-1,
+					"delayedPosition", delayedSeqNum,
 					"haveDelayedAcc", haveDelayedAcc,
 					"batchDelayedAcc", batchItem.AfterDelayedAcc,
+					"inUncommitted", inUncommitted,
+					"notFound", notFound,
 				)
 				// We somehow missed a delayed message reorg; go back and look for it
 				return nil, delayedMessagesMismatch
@@ -818,9 +858,10 @@ func (t *InboxTracker) AddSequencerBatches(batch ethdb.Batch, ctx context.Contex
 		batchSeqNum: batches[0].SequenceNumber,
 		batches:     batches,
 
-		inbox:  t,
-		ctx:    ctx,
-		client: client,
+		inbox:                      t,
+		ctx:                        ctx,
+		client:                     client,
+		uncommittedDelayedMessages: uncommittedDelayedMessages,
 	}
 	multiplexer := arbstate.NewInboxMultiplexer(backend, prevbatchmeta.DelayedMessageCount, t.dapReaders, daprovider.KeysetValidate)
 	batchMessageCounts := make(map[uint64]arbutil.MessageIndex)

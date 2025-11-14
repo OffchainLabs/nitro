@@ -637,49 +637,67 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 // where a batch-posting-report delayed message is stored but the batch it references fails
 // to be stored due to blob fetch failure (issue NIT-4065).
 func (r *InboxReader) addMessages(ctx context.Context, sequencerBatches []*SequencerInboxBatch, delayedMessages []*DelayedInboxMessage) (bool, error) {
+	log.Info("addMessages: START", "numDelayed", len(delayedMessages), "numBatches", len(sequencerBatches))
+
 	// Create single atomic batch for both delayed messages and sequencer batches
 	batch := r.tracker.db.NewBatch()
 	defer batch.Reset()
 
 	// Step 1: Add delayed messages to batch (does not commit)
-	delayedValidatorReorg, err := r.tracker.AddDelayedMessages(batch, delayedMessages)
+	log.Info("addMessages: calling AddDelayedMessages", "numDelayed", len(delayedMessages))
+	delayedValidatorReorg, uncommittedDelayedAccs, err := r.tracker.AddDelayedMessages(batch, delayedMessages)
 	if err != nil {
+		log.Error("addMessages: AddDelayedMessages failed", "err", err)
 		return false, err
 	}
+	log.Info("addMessages: AddDelayedMessages succeeded", "hasValidatorReorg", delayedValidatorReorg != nil, "numUncommittedAccs", len(uncommittedDelayedAccs))
 
 	// Step 2: Add sequencer batches to batch (includes blob fetching, may fail)
-	batchSideEffects, err := r.tracker.AddSequencerBatches(batch, ctx, r.client, sequencerBatches)
+	// Pass the uncommitted delayed messages and accumulator map so AddSequencerBatches can work with uncommitted data
+	log.Info("addMessages: calling AddSequencerBatches", "numBatches", len(sequencerBatches))
+	batchSideEffects, err := r.tracker.AddSequencerBatches(batch, ctx, r.client, sequencerBatches, delayedMessages, uncommittedDelayedAccs)
 	if errors.Is(err, delayedMessagesMismatch) {
 		// Special case: delayed message mismatch detected
+		log.Warn("addMessages: delayed message mismatch detected, returning true for reorg")
 		return true, nil
 	} else if err != nil {
 		// Blob fetch or other error - nothing committed yet
+		log.Error("addMessages: AddSequencerBatches failed", "err", err)
 		return false, err
 	}
+	log.Info("addMessages: AddSequencerBatches succeeded", "hasSideEffects", batchSideEffects != nil)
 
 	// Step 3: Atomic commit - BOTH delayed messages AND batches committed together
+	log.Info("addMessages: committing atomic batch")
 	err = batch.Write()
 	if err != nil {
+		log.Error("addMessages: batch.Write() failed", "err", err)
 		return false, err
 	}
+	log.Info("addMessages: atomic batch committed successfully")
 
 	// Step 4: Execute side effects AFTER successful commit
 	// These are safe to execute now because the batch commit succeeded
 	if delayedValidatorReorg != nil {
+		log.Info("addMessages: executing delayed validator reorg")
 		delayedValidatorReorg()
 	}
 	if batchSideEffects != nil {
 		if batchSideEffects.ValidatorReorg != nil {
+			log.Info("addMessages: executing batch validator reorg")
 			batchSideEffects.ValidatorReorg()
 		}
 		if batchSideEffects.CacheUpdate != nil {
+			log.Info("addMessages: executing cache update")
 			batchSideEffects.CacheUpdate()
 		}
 		if batchSideEffects.BroadcastConfirm != nil {
+			log.Info("addMessages: executing broadcast confirm")
 			batchSideEffects.BroadcastConfirm()
 		}
 	}
 
+	log.Info("addMessages: COMPLETE")
 	return false, nil
 }
 
