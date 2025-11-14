@@ -1571,7 +1571,7 @@ dependencies = [
  "c-kzg",
  "criterion",
  "derivative",
- "digest 0.9.0",
+ "digest 0.10.7",
  "enum-iterator 2.1.0",
  "eyre",
  "fnv",
