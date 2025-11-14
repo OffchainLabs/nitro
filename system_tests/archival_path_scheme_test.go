@@ -56,7 +56,7 @@ func TestAccessingPathSchemeState(t *testing.T) {
 func TestAccessingPathSchemeArchivalState(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithDatabase(rawdb.DBPebble)
 	builder.execConfig.Caching.Archive = true
 	builder.execConfig.Caching.StateHistory = 2
 
