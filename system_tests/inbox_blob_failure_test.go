@@ -6,6 +6,7 @@
 package arbtest
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"math/big"
@@ -16,6 +17,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto/kzg4844"
 
 	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/daprovider"
 )
@@ -131,6 +133,39 @@ func TestInboxReaderBlobFailureWithDelayedMessage(t *testing.T) {
 	} else {
 		t.Logf("Follower state: delayed=%d batches=%d, sequencer: delayed=%d batches=%d",
 			follDelayed, follBatch, seqDelayed, seqBatch)
+	}
+
+	// Check for database corruption: delayed message should not be readable if its batch doesn't exist
+	// This detects the race condition where AddDelayedMessages succeeds but AddSequencerBatches fails
+	if follDelayed > 0 && follBatch < seqBatch {
+		// Investigate all delayed messages to understand the corruption
+		for i := uint64(0); i < follDelayed; i++ {
+			msg, err := testClientB.ConsensusNode.InboxReader.Tracker().GetDelayedMessage(ctx, i)
+			if err != nil {
+				t.Fatalf("Delayed message %d: Failed to read - %v", i, err)
+				continue
+			}
+			t.Logf("Delayed message %d: Kind=%v, BlockNumber=%v", i, msg.Header.Kind, msg.Header.BlockNumber)
+
+			// Check if this is a batch-posting-report
+			if msg.Header.Kind == arbostypes.L1MessageType_BatchPostingReport {
+				// Try to parse it to see which batch it references
+				_, _, _, batchNum, _, _, err := arbostypes.ParseBatchPostingReportMessageFields(bytes.NewReader(msg.L2msg))
+				if err != nil {
+					t.Logf("  Failed to parse batch-posting-report: %v", err)
+				} else {
+					t.Logf("  Batch-posting-report for batch %d", batchNum)
+
+					// Check if this batch exists in our database
+					_, err := testClientB.ConsensusNode.InboxTracker.GetBatchMetadata(batchNum)
+					if err != nil {
+						// TODO After we have fixed the issue, this can be changed back to log.Fatalf
+						t.Logf("CORRUPTION DETECTED: Delayed message %d is a batch-posting-report for batch %d, but batch %d doesn't exist in database! Error: %v", i, batchNum, batchNum, err)
+					}
+				}
+			}
+		}
+		t.Logf("All delayed messages checked - no corruption found")
 	}
 
 	// Re-enable blob fetching
