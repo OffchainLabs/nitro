@@ -132,7 +132,8 @@ func (con ArbRetryableTx) Redeem(c ctx, evm mech, ticketId bytes32) (bytes32, er
 
 	// Add the gasToDonate back to the gas pool: the retryable attempt will then consume it.
 	// This ensures that the gas pool has enough gas to run the retryable attempt.
-	return retryTxHash, c.State.L2PricingState().AddToGasPool(arbmath.SaturatingCast[int64](gasToDonate))
+	// TODO(NIT-4120): clarify the gas dimension for gasToDonate
+	return retryTxHash, c.State.L2PricingState().AddToGasPool(false, gasToDonate, multigas.ComputationGas(gasToDonate))
 }
 
 // GetLifetime gets the default lifetime period a retryable has at creation

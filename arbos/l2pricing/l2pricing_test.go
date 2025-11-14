@@ -24,10 +24,10 @@ func PricingForTest(t *testing.T) *L2PricingState {
 	return OpenL2PricingState(storage, params.MaxDebugArbosVersionSupported)
 }
 
-func fakeBlockUpdate(t *testing.T, pricing *L2PricingState, gasUsed int64, timePassed uint64) {
+func fakeBlockUpdate(t *testing.T, pricing *L2PricingState, gasUsed uint64, timePassed uint64) {
 	t.Helper()
 
-	pricing.storage.Burner().Restrict(pricing.addToGasPoolLegacy(-gasUsed))
+	pricing.storage.Burner().Restrict(pricing.addToGasPoolLegacy(true, gasUsed))
 	pricing.updatePricingModelLegacy(timePassed)
 }
 
@@ -43,9 +43,9 @@ func TestPricingModelExp(t *testing.T) {
 
 	// show that running at the speed limit with a full pool is a steady-state
 	colors.PrintBlue("full pool & speed limit")
-	for seconds := 0; seconds < 4; seconds++ {
+	for seconds := range uint64(4) {
 		// #nosec G115
-		fakeBlockUpdate(t, pricing, int64(seconds)*int64(limit), uint64(seconds))
+		fakeBlockUpdate(t, pricing, seconds*limit, seconds)
 		if getPrice(t, pricing) != minPrice {
 			Fail(t, "price changed when it shouldn't have")
 		}
@@ -54,9 +54,9 @@ func TestPricingModelExp(t *testing.T) {
 	// show that running at the speed limit with a target pool is close to a steady-state
 	// note that for large enough spans of time the price will rise a minuscule amount due to the pool's avg
 	colors.PrintBlue("pool target & speed limit")
-	for seconds := 0; seconds < 4; seconds++ {
+	for seconds := range uint64(4) {
 		// #nosec G115
-		fakeBlockUpdate(t, pricing, int64(seconds)*int64(limit), uint64(seconds))
+		fakeBlockUpdate(t, pricing, seconds*limit, seconds)
 		if getPrice(t, pricing) != minPrice {
 			Fail(t, "price changed when it shouldn't have")
 		}
@@ -66,7 +66,7 @@ func TestPricingModelExp(t *testing.T) {
 	colors.PrintBlue("exceeding the speed limit")
 	for {
 		// #nosec G115
-		fakeBlockUpdate(t, pricing, 8*int64(limit), 1)
+		fakeBlockUpdate(t, pricing, 8*limit, 1)
 		newPrice := getPrice(t, pricing)
 		if newPrice < price {
 			Fail(t, "the price shouldn't have fallen")
