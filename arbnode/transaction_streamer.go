@@ -742,6 +742,10 @@ func endBatch(batch ethdb.Batch) error {
 }
 
 func (s *TransactionStreamer) AddMessagesAndEndBatch(firstMsgIdx arbutil.MessageIndex, messagesAreConfirmed bool, messages []arbostypes.MessageWithMetadata, blockMetadataArr []common.BlockMetadata, batch ethdb.Batch) error {
+	return s.AddMessagesAndEndBatchWithDeferredCommit(firstMsgIdx, messagesAreConfirmed, messages, blockMetadataArr, batch, false)
+}
+
+func (s *TransactionStreamer) AddMessagesAndEndBatchWithDeferredCommit(firstMsgIdx arbutil.MessageIndex, messagesAreConfirmed bool, messages []arbostypes.MessageWithMetadata, blockMetadataArr []common.BlockMetadata, batch ethdb.Batch, deferCommit bool) error {
 	messagesWithBlockInfo := make([]arbostypes.MessageWithMetadataAndBlockInfo, 0, len(messages))
 	for _, message := range messages {
 		messagesWithBlockInfo = append(messagesWithBlockInfo, arbostypes.MessageWithMetadataAndBlockInfo{
@@ -772,7 +776,10 @@ func (s *TransactionStreamer) AddMessagesAndEndBatch(firstMsgIdx arbutil.Message
 			return err
 		}
 		if numberOfDuplicates == uint64(len(messages)) {
-			return endBatch(batch)
+			if !deferCommit {
+				return endBatch(batch)
+			}
+			return nil
 		}
 		// can't keep reorg lock when catching insertionMutex.
 		// we have to re-evaluate all messages
@@ -783,7 +790,7 @@ func (s *TransactionStreamer) AddMessagesAndEndBatch(firstMsgIdx arbutil.Message
 	s.insertionMutex.Lock()
 	defer s.insertionMutex.Unlock()
 
-	return s.addMessagesAndEndBatchImpl(firstMsgIdx, messagesAreConfirmed, messagesWithBlockInfo, batch)
+	return s.addMessagesAndEndBatchImplInternal(firstMsgIdx, messagesAreConfirmed, messagesWithBlockInfo, batch, deferCommit)
 }
 
 func (s *TransactionStreamer) getPrevPrevDelayedRead(msgIdx arbutil.MessageIndex) (uint64, error) {
@@ -903,6 +910,10 @@ func (s *TransactionStreamer) logReorg(msgIdx arbutil.MessageIndex, dbMsg *arbos
 }
 
 func (s *TransactionStreamer) addMessagesAndEndBatchImpl(firstMsgIdx arbutil.MessageIndex, messagesAreConfirmed bool, messages []arbostypes.MessageWithMetadataAndBlockInfo, batch ethdb.Batch) error {
+	return s.addMessagesAndEndBatchImplInternal(firstMsgIdx, messagesAreConfirmed, messages, batch, false)
+}
+
+func (s *TransactionStreamer) addMessagesAndEndBatchImplInternal(firstMsgIdx arbutil.MessageIndex, messagesAreConfirmed bool, messages []arbostypes.MessageWithMetadataAndBlockInfo, batch ethdb.Batch, deferCommit bool) error {
 	var confirmedReorg bool
 	var oldMsg *arbostypes.MessageWithMetadata
 	var lastDelayedRead uint64
@@ -971,7 +982,10 @@ func (s *TransactionStreamer) addMessagesAndEndBatchImpl(firstMsgIdx arbutil.Mes
 	if feedReorg {
 		// Never allow feed to reorg confirmed messages
 		// Note that any remaining messages must be feed messages, so we're done here
-		return endBatch(batch)
+		if !deferCommit {
+			return endBatch(batch)
+		}
+		return nil
 	}
 
 	if lastDelayedRead == 0 {
@@ -1008,10 +1022,13 @@ func (s *TransactionStreamer) addMessagesAndEndBatchImpl(firstMsgIdx arbutil.Mes
 		}
 	}
 	if len(messages) == 0 {
-		return endBatch(batch)
+		if !deferCommit {
+			return endBatch(batch)
+		}
+		return nil
 	}
 
-	err := s.writeMessages(firstMsgIdx, messages, batch)
+	err := s.writeMessagesInternal(firstMsgIdx, messages, batch, deferCommit)
 	if err != nil {
 		return err
 	}
@@ -1213,6 +1230,10 @@ func (s *TransactionStreamer) broadcastMessages(
 // The mutex must be held, and firstMsgIdx must be the latest message count.
 // `batch` may be nil, which initializes a new batch. The batch is closed out in this function.
 func (s *TransactionStreamer) writeMessages(firstMsgIdx arbutil.MessageIndex, messages []arbostypes.MessageWithMetadataAndBlockInfo, batch ethdb.Batch) error {
+	return s.writeMessagesInternal(firstMsgIdx, messages, batch, false)
+}
+
+func (s *TransactionStreamer) writeMessagesInternal(firstMsgIdx arbutil.MessageIndex, messages []arbostypes.MessageWithMetadataAndBlockInfo, batch ethdb.Batch, deferCommit bool) error {
 	if s.syncTillMessage > 0 && firstMsgIdx > s.syncTillMessage {
 		return broadcastclient.TransactionStreamerBlockCreationStopped
 	}
@@ -1231,9 +1252,12 @@ func (s *TransactionStreamer) writeMessages(firstMsgIdx arbutil.MessageIndex, me
 	if err != nil {
 		return err
 	}
-	err = batch.Write()
-	if err != nil {
-		return err
+
+	if !deferCommit {
+		err = batch.Write()
+		if err != nil {
+			return err
+		}
 	}
 
 	select {

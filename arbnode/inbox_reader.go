@@ -632,17 +632,54 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 	}
 }
 
+// addMessages atomically adds delayed messages and sequencer batches to the database.
+// Both operations are committed in a single atomic transaction to prevent the race condition
+// where a batch-posting-report delayed message is stored but the batch it references fails
+// to be stored due to blob fetch failure (issue NIT-4065).
 func (r *InboxReader) addMessages(ctx context.Context, sequencerBatches []*SequencerInboxBatch, delayedMessages []*DelayedInboxMessage) (bool, error) {
-	err := r.tracker.AddDelayedMessages(delayedMessages)
+	// Create single atomic batch for both delayed messages and sequencer batches
+	batch := r.tracker.db.NewBatch()
+	defer batch.Reset()
+
+	// Step 1: Add delayed messages to batch (does not commit)
+	delayedValidatorReorg, err := r.tracker.AddDelayedMessages(batch, delayedMessages)
 	if err != nil {
 		return false, err
 	}
-	err = r.tracker.AddSequencerBatches(ctx, r.client, sequencerBatches)
+
+	// Step 2: Add sequencer batches to batch (includes blob fetching, may fail)
+	batchSideEffects, err := r.tracker.AddSequencerBatches(batch, ctx, r.client, sequencerBatches)
 	if errors.Is(err, delayedMessagesMismatch) {
+		// Special case: delayed message mismatch detected
 		return true, nil
 	} else if err != nil {
+		// Blob fetch or other error - nothing committed yet
 		return false, err
 	}
+
+	// Step 3: Atomic commit - BOTH delayed messages AND batches committed together
+	err = batch.Write()
+	if err != nil {
+		return false, err
+	}
+
+	// Step 4: Execute side effects AFTER successful commit
+	// These are safe to execute now because the batch commit succeeded
+	if delayedValidatorReorg != nil {
+		delayedValidatorReorg()
+	}
+	if batchSideEffects != nil {
+		if batchSideEffects.ValidatorReorg != nil {
+			batchSideEffects.ValidatorReorg()
+		}
+		if batchSideEffects.CacheUpdate != nil {
+			batchSideEffects.CacheUpdate()
+		}
+		if batchSideEffects.BroadcastConfirm != nil {
+			batchSideEffects.BroadcastConfirm()
+		}
+	}
+
 	return false, nil
 }
 

@@ -419,15 +419,18 @@ func (t *InboxTracker) GetDelayedMessageBytes(ctx context.Context, seqNum uint64
 	return msg.Serialize()
 }
 
-func (t *InboxTracker) AddDelayedMessages(messages []*DelayedInboxMessage) error {
+// AddDelayedMessages adds delayed messages to the database using the provided batch.
+// It does not commit the batch - the caller is responsible for committing.
+// Returns a validator reorg callback that should be executed after successful commit.
+func (t *InboxTracker) AddDelayedMessages(batch ethdb.Batch, messages []*DelayedInboxMessage) (validatorReorgFunc, error) {
 	var nextAcc common.Hash
 	firstDelayedMsgToKeep := uint64(0)
 	if len(messages) == 0 {
-		return nil
+		return nil, nil
 	}
 	pos, err := messages[0].Message.Header.SeqNum()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if t.snapSyncConfig.Enabled && pos < t.snapSyncConfig.DelayedCount {
 		firstDelayedMsgToKeep = t.snapSyncConfig.DelayedCount
@@ -436,11 +439,11 @@ func (t *InboxTracker) AddDelayedMessages(messages []*DelayedInboxMessage) error
 		}
 		for {
 			if len(messages) == 0 {
-				return nil
+				return nil, nil
 			}
 			pos, err = messages[0].Message.Header.SeqNum()
 			if err != nil {
-				return err
+				return nil, err
 			}
 			if pos+1 == firstDelayedMsgToKeep {
 				nextAcc = messages[0].AfterInboxAcc()
@@ -460,10 +463,10 @@ func (t *InboxTracker) AddDelayedMessages(messages []*DelayedInboxMessage) error
 	if err == nil {
 		if haveLastAcc == messages[len(messages)-1].AfterInboxAcc() {
 			// We already have these delayed messages
-			return nil
+			return nil, nil
 		}
 	} else if !errors.Is(err, AccumulatorNotFoundErr) {
-		return err
+		return nil, err
 	}
 
 	if pos > firstDelayedMsgToKeep {
@@ -471,26 +474,25 @@ func (t *InboxTracker) AddDelayedMessages(messages []*DelayedInboxMessage) error
 		nextAcc, err = t.GetDelayedAcc(pos - 1)
 		if err != nil {
 			if errors.Is(err, AccumulatorNotFoundErr) {
-				return errors.New("missing previous delayed message")
+				return nil, errors.New("missing previous delayed message")
 			}
-			return err
+			return nil, err
 		}
 	}
 
 	firstPos := pos
-	batch := t.db.NewBatch()
 	for _, message := range messages {
 		seqNum, err := message.Message.Header.SeqNum()
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		if seqNum != pos {
-			return fmt.Errorf("unexpected delayed sequence number %v, expected %v", seqNum, pos)
+			return nil, fmt.Errorf("unexpected delayed sequence number %v, expected %v", seqNum, pos)
 		}
 
 		if nextAcc != message.BeforeInboxAcc {
-			return fmt.Errorf("previous delayed accumulator mismatch for message %v", seqNum)
+			return nil, fmt.Errorf("previous delayed accumulator mismatch for message %v", seqNum)
 		}
 		nextAcc = message.AfterInboxAcc()
 
@@ -506,7 +508,7 @@ func (t *InboxTracker) AddDelayedMessages(messages []*DelayedInboxMessage) error
 					continue
 				}
 			} else if !errors.Is(err, AccumulatorNotFoundErr) {
-				return err
+				return nil, err
 			}
 		}
 
@@ -514,13 +516,13 @@ func (t *InboxTracker) AddDelayedMessages(messages []*DelayedInboxMessage) error
 
 		msgData, err := rlp.EncodeToBytes(message.Message)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		data := nextAcc.Bytes()
 		data = append(data, msgData...)
 		err = batch.Put(delayedMsgKey, data)
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		if message.ParentChainBlockNumber != message.Message.Header.BlockNumber {
@@ -529,43 +531,54 @@ func (t *InboxTracker) AddDelayedMessages(messages []*DelayedInboxMessage) error
 			binary.BigEndian.PutUint64(parentChainBlockNumberByte, message.ParentChainBlockNumber)
 			err = batch.Put(parentChainBlockNumberKey, parentChainBlockNumberByte)
 			if err != nil {
-				return err
+				return nil, err
 			}
 		}
 
 		pos++
 	}
 
-	return t.setDelayedCountReorgAndWriteBatch(batch, firstPos, pos, true)
+	return t.setDelayedCountReorgToBatch(batch, firstPos, pos, true, true)
 }
 
-// All-in-one delayed message count adjuster. Can go forwards or backwards.
+// validatorReorgFunc is a callback to execute validator reorg after batch commit
+type validatorReorgFunc func()
+
+// BatchSideEffects holds callbacks for side effects that should be executed after batch commit
+type BatchSideEffects struct {
+	ValidatorReorg   validatorReorgFunc
+	CacheUpdate      func()
+	BroadcastConfirm func()
+}
+
+// setDelayedCountReorgToBatch is like setDelayedCountReorgAndWriteBatch but doesn't commit the batch.
+// It returns a callback function for validator reorg side effects that should be executed after commit.
 // Requires the mutex is held. Sets the delayed count and performs any sequencer batch reorg necessary.
 // Also deletes any future delayed messages.
-func (t *InboxTracker) setDelayedCountReorgAndWriteBatch(batch ethdb.Batch, firstNewDelayedMessagePos uint64, newDelayedCount uint64, canReorgBatches bool) error {
+func (t *InboxTracker) setDelayedCountReorgToBatch(batch ethdb.Batch, firstNewDelayedMessagePos uint64, newDelayedCount uint64, canReorgBatches bool, deferCommit bool) (validatorReorgFunc, error) {
 	if firstNewDelayedMessagePos > newDelayedCount {
-		return fmt.Errorf("firstNewDelayedMessagePos %v is after newDelayedCount %v", firstNewDelayedMessagePos, newDelayedCount)
+		return nil, fmt.Errorf("firstNewDelayedMessagePos %v is after newDelayedCount %v", firstNewDelayedMessagePos, newDelayedCount)
 	}
 	err := deleteStartingAt(t.db, batch, rlpDelayedMessagePrefix, uint64ToKey(newDelayedCount))
 	if err != nil {
-		return err
+		return nil, err
 	}
 	err = deleteStartingAt(t.db, batch, parentChainBlockNumberPrefix, uint64ToKey(newDelayedCount))
 	if err != nil {
-		return err
+		return nil, err
 	}
 	err = deleteStartingAt(t.db, batch, legacyDelayedMessagePrefix, uint64ToKey(newDelayedCount))
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	countData, err := rlp.EncodeToBytes(newDelayedCount)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	err = batch.Put(delayedMessageCountKey, countData)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	seqBatchIter := t.db.NewIterator(delayedSequencedPrefix, uint64ToKey(firstNewDelayedMessagePos+1))
@@ -574,13 +587,13 @@ func (t *InboxTracker) setDelayedCountReorgAndWriteBatch(batch ethdb.Batch, firs
 	for seqBatchIter.Next() {
 		var batchSeqNum uint64
 		if err := rlp.DecodeBytes(seqBatchIter.Value(), &batchSeqNum); err != nil {
-			return err
+			return nil, err
 		}
 		if !canReorgBatches {
-			return fmt.Errorf("reorging of sequencer batch number %v via delayed messages reorg to count %v disabled in this instance", batchSeqNum, newDelayedCount)
+			return nil, fmt.Errorf("reorging of sequencer batch number %v via delayed messages reorg to count %v disabled in this instance", batchSeqNum, newDelayedCount)
 		}
 		if err := batch.Delete(seqBatchIter.Key()); err != nil {
-			return err
+			return nil, err
 		}
 		if reorgSeqBatchesToCount == nil {
 			// Set the count to the first deleted sequence number.
@@ -590,41 +603,75 @@ func (t *InboxTracker) setDelayedCountReorgAndWriteBatch(batch ethdb.Batch, firs
 		}
 	}
 	if err := seqBatchIter.Error(); err != nil {
-		return err
+		return nil, err
 	}
 	// Release the iterator early.
 	// It's fine to call Release multiple times,
 	// which we'll do because of the defer.
 	seqBatchIter.Release()
 	if reorgSeqBatchesToCount == nil {
-		return batch.Write()
+		if !deferCommit {
+			return nil, batch.Write()
+		}
+		return nil, nil
 	}
 
 	count := *reorgSeqBatchesToCount
-	if t.validator != nil {
-		t.validator.ReorgToBatchCount(count)
+
+	// Capture validator reorg as side effect
+	validatorReorg := func() {
+		if t.validator != nil {
+			t.validator.ReorgToBatchCount(count)
+		}
 	}
+
 	countData, err = rlp.EncodeToBytes(count)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if err := batch.Put(sequencerBatchCountKey, countData); err != nil {
-		return err
+		return nil, err
 	}
 	log.Warn("InboxTracker delayed message reorg is causing a sequencer batch reorg", "sequencerBatchCount", count, "delayedCount", newDelayedCount)
 
 	if err := t.deleteBatchMetadataStartingAt(batch, count); err != nil {
-		return err
+		return nil, err
 	}
 	var prevMessageCount arbutil.MessageIndex
 	if count > 0 {
 		prevMessageCount, err = t.GetBatchMessageCount(count - 1)
 		if err != nil {
-			return err
+			return nil, err
 		}
 	}
-	// Writes batch
-	return t.txStreamer.ReorgAtAndEndBatch(batch, prevMessageCount)
+
+	if deferCommit {
+		// Prepare reorg but don't commit - caller will commit
+		err = t.txStreamer.addMessagesAndReorg(batch, prevMessageCount, nil)
+		if err != nil {
+			return nil, err
+		}
+		return validatorReorg, nil
+	}
+
+	// Original behavior: commit via ReorgAtAndEndBatch
+	return validatorReorg, t.txStreamer.ReorgAtAndEndBatch(batch, prevMessageCount)
+}
+
+// All-in-one delayed message count adjuster. Can go forwards or backwards.
+// Requires the mutex is held. Sets the delayed count and performs any sequencer batch reorg necessary.
+// Also deletes any future delayed messages.
+// This is the legacy version that commits the batch immediately.
+func (t *InboxTracker) setDelayedCountReorgAndWriteBatch(batch ethdb.Batch, firstNewDelayedMessagePos uint64, newDelayedCount uint64, canReorgBatches bool) error {
+	validatorReorg, err := t.setDelayedCountReorgToBatch(batch, firstNewDelayedMessagePos, newDelayedCount, canReorgBatches, false)
+	if err != nil {
+		return err
+	}
+	// Execute validator reorg side effect if needed
+	if validatorReorg != nil {
+		validatorReorg()
+	}
+	return nil
 }
 
 type multiplexerBackend struct {
@@ -673,12 +720,15 @@ func (b *multiplexerBackend) ReadDelayedInbox(seqNum uint64) (*arbostypes.L1Inco
 
 var delayedMessagesMismatch = errors.New("sequencer batch delayed messages missing or different")
 
-func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client *ethclient.Client, batches []*SequencerInboxBatch) error {
+// AddSequencerBatches adds sequencer batches to the database using the provided batch.
+// It does not commit the batch - the caller is responsible for committing.
+// Returns side effect callbacks that should be executed after successful commit.
+func (t *InboxTracker) AddSequencerBatches(batch ethdb.Batch, ctx context.Context, client *ethclient.Client, batches []*SequencerInboxBatch) (*BatchSideEffects, error) {
 	var nextAcc common.Hash
 	var prevbatchmeta BatchMetadata
 	sequenceNumberToKeep := uint64(0)
 	if len(batches) == 0 {
-		return nil
+		return nil, nil
 	}
 	if t.snapSyncConfig.Enabled && batches[0].SequenceNumber < t.snapSyncConfig.BatchCount {
 		sequenceNumberToKeep = t.snapSyncConfig.BatchCount
@@ -687,7 +737,7 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client *ethclien
 		}
 		for {
 			if len(batches) == 0 {
-				return nil
+				return nil, nil
 			}
 			if batches[0].SequenceNumber+1 == sequenceNumberToKeep {
 				nextAcc = batches[0].AfterInboxAcc
@@ -716,46 +766,45 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client *ethclien
 		prevbatchmeta, err = t.GetBatchMetadata(pos - 1)
 		nextAcc = prevbatchmeta.Accumulator
 		if errors.Is(err, AccumulatorNotFoundErr) {
-			return errors.New("missing previous sequencer batch")
+			return nil, errors.New("missing previous sequencer batch")
 		} else if err != nil {
-			return err
+			return nil, err
 		}
 	}
 
-	dbBatch := t.db.NewBatch()
-	err := deleteStartingAt(t.db, dbBatch, delayedSequencedPrefix, uint64ToKey(prevbatchmeta.DelayedMessageCount+1))
+	err := deleteStartingAt(t.db, batch, delayedSequencedPrefix, uint64ToKey(prevbatchmeta.DelayedMessageCount+1))
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	for _, batch := range batches {
-		if batch.SequenceNumber != pos {
-			return fmt.Errorf("unexpected batch sequence number %v expected %v", batch.SequenceNumber, pos)
+	for _, batchItem := range batches {
+		if batchItem.SequenceNumber != pos {
+			return nil, fmt.Errorf("unexpected batch sequence number %v expected %v", batchItem.SequenceNumber, pos)
 		}
-		if nextAcc != batch.BeforeInboxAcc {
-			return fmt.Errorf("previous batch accumulator %v mismatch expected %v", batch.BeforeInboxAcc, nextAcc)
+		if nextAcc != batchItem.BeforeInboxAcc {
+			return nil, fmt.Errorf("previous batch accumulator %v mismatch expected %v", batchItem.BeforeInboxAcc, nextAcc)
 		}
 
-		if batch.AfterDelayedCount > 0 {
-			haveDelayedAcc, err := t.GetDelayedAcc(batch.AfterDelayedCount - 1)
+		if batchItem.AfterDelayedCount > 0 {
+			haveDelayedAcc, err := t.GetDelayedAcc(batchItem.AfterDelayedCount - 1)
 			notFound := errors.Is(err, AccumulatorNotFoundErr)
 			if err != nil && !notFound {
-				return err
+				return nil, err
 			}
-			if notFound || haveDelayedAcc != batch.AfterDelayedAcc {
+			if notFound || haveDelayedAcc != batchItem.AfterDelayedAcc {
 				log.Debug(
 					"Delayed message accumulator doesn't match sequencer batch",
-					"batch", batch.SequenceNumber,
-					"delayedPosition", batch.AfterDelayedCount-1,
+					"batch", batchItem.SequenceNumber,
+					"delayedPosition", batchItem.AfterDelayedCount-1,
 					"haveDelayedAcc", haveDelayedAcc,
-					"batchDelayedAcc", batch.AfterDelayedAcc,
+					"batchDelayedAcc", batchItem.AfterDelayedAcc,
 				)
 				// We somehow missed a delayed message reorg; go back and look for it
-				return delayedMessagesMismatch
+				return nil, delayedMessagesMismatch
 			}
 		}
 
-		nextAcc = batch.AfterInboxAcc
+		nextAcc = batchItem.AfterInboxAcc
 		pos++
 	}
 
@@ -778,7 +827,7 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client *ethclien
 		batchSeqNum := backend.batches[0].SequenceNumber
 		msg, err := multiplexer.Pop(ctx)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		messages = append(messages, *msg)
 		batchMessageCounts[batchSeqNum] = currentPos
@@ -787,50 +836,50 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client *ethclien
 
 	lastBatchMeta := prevbatchmeta
 	batchMetas := make(map[uint64]BatchMetadata, len(batches))
-	for _, batch := range batches {
+	for _, batchItem := range batches {
 		meta := BatchMetadata{
-			Accumulator:         batch.AfterInboxAcc,
-			DelayedMessageCount: batch.AfterDelayedCount,
-			MessageCount:        batchMessageCounts[batch.SequenceNumber],
-			ParentChainBlock:    batch.ParentChainBlockNumber,
+			Accumulator:         batchItem.AfterInboxAcc,
+			DelayedMessageCount: batchItem.AfterDelayedCount,
+			MessageCount:        batchMessageCounts[batchItem.SequenceNumber],
+			ParentChainBlock:    batchItem.ParentChainBlockNumber,
 		}
-		batchMetas[batch.SequenceNumber] = meta
+		batchMetas[batchItem.SequenceNumber] = meta
 		metaBytes, err := rlp.EncodeToBytes(meta)
 		if err != nil {
-			return err
+			return nil, err
 		}
-		err = dbBatch.Put(dbKey(sequencerBatchMetaPrefix, batch.SequenceNumber), metaBytes)
+		err = batch.Put(dbKey(sequencerBatchMetaPrefix, batchItem.SequenceNumber), metaBytes)
 		if err != nil {
-			return err
+			return nil, err
 		}
 
-		seqNumData, err := rlp.EncodeToBytes(batch.SequenceNumber)
+		seqNumData, err := rlp.EncodeToBytes(batchItem.SequenceNumber)
 		if err != nil {
-			return err
+			return nil, err
 		}
-		if batch.AfterDelayedCount < lastBatchMeta.DelayedMessageCount {
-			return errors.New("batch delayed message count went backwards")
+		if batchItem.AfterDelayedCount < lastBatchMeta.DelayedMessageCount {
+			return nil, errors.New("batch delayed message count went backwards")
 		}
-		if batch.AfterDelayedCount > lastBatchMeta.DelayedMessageCount {
-			err = dbBatch.Put(dbKey(delayedSequencedPrefix, batch.AfterDelayedCount), seqNumData)
+		if batchItem.AfterDelayedCount > lastBatchMeta.DelayedMessageCount {
+			err = batch.Put(dbKey(delayedSequencedPrefix, batchItem.AfterDelayedCount), seqNumData)
 			if err != nil {
-				return err
+				return nil, err
 			}
 		}
 		lastBatchMeta = meta
 	}
 
-	err = t.deleteBatchMetadataStartingAt(dbBatch, pos)
+	err = t.deleteBatchMetadataStartingAt(batch, pos)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	countData, err := rlp.EncodeToBytes(pos)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	err = dbBatch.Put(sequencerBatchCountKey, countData)
+	err = batch.Put(sequencerBatchCountKey, countData)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	newMessageCount := prevbatchmeta.MessageCount + arbutil.MessageIndex(len(messages))
@@ -855,38 +904,46 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client *ethclien
 	// #nosec G115
 	inboxLatestBatchMessageGauge.Update(int64(newMessageCount))
 
-	if t.validator != nil {
-		t.validator.ReorgToBatchCount(startPos)
+	// Capture side effects as closures - execute these AFTER batch commit succeeds
+	sideEffects := &BatchSideEffects{
+		ValidatorReorg: func() {
+			if t.validator != nil {
+				t.validator.ReorgToBatchCount(startPos)
+			}
+		},
+		CacheUpdate: func() {
+			t.batchMetaMutex.Lock()
+			for seqNum, meta := range batchMetas {
+				t.batchMeta.Add(seqNum, meta)
+			}
+			t.batchMetaMutex.Unlock()
+		},
+		BroadcastConfirm: func() {
+			if t.txStreamer.broadcastServer != nil && pos > 1 {
+				prevprevbatchmeta, err := t.GetBatchMetadata(pos - 2)
+				if errors.Is(err, AccumulatorNotFoundErr) {
+					log.Error("missing previous previous sequencer batch during broadcast confirm")
+					return
+				}
+				if err != nil {
+					log.Error("failed to get previous previous batch metadata", "err", err)
+					return
+				}
+				if prevprevbatchmeta.MessageCount > 0 {
+					// Confirm messages from batch before last batch
+					t.txStreamer.broadcastServer.Confirm(prevprevbatchmeta.MessageCount - 1)
+				}
+			}
+		},
 	}
 
-	// This also writes the batch
-	err = t.txStreamer.AddMessagesAndEndBatch(prevbatchmeta.MessageCount, true, messages, nil, dbBatch)
+	// This also writes to the batch but does NOT commit
+	err = t.txStreamer.AddMessagesAndEndBatchWithDeferredCommit(prevbatchmeta.MessageCount, true, messages, nil, batch, true)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	// Update the batchMeta cache immediately after writing the batch
-	t.batchMetaMutex.Lock()
-	for seqNum, meta := range batchMetas {
-		t.batchMeta.Add(seqNum, meta)
-	}
-	t.batchMetaMutex.Unlock()
-
-	if t.txStreamer.broadcastServer != nil && pos > 1 {
-		prevprevbatchmeta, err := t.GetBatchMetadata(pos - 2)
-		if errors.Is(err, AccumulatorNotFoundErr) {
-			return errors.New("missing previous previous sequencer batch")
-		}
-		if err != nil {
-			return err
-		}
-		if prevprevbatchmeta.MessageCount > 0 {
-			// Confirm messages from batch before last batch
-			t.txStreamer.broadcastServer.Confirm(prevprevbatchmeta.MessageCount - 1)
-		}
-	}
-
-	return nil
+	return sideEffects, nil
 }
 
 func (t *InboxTracker) ReorgDelayedTo(count uint64) error {
