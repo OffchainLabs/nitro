@@ -58,6 +58,7 @@ import (
 	"github.com/offchainlabs/nitro/daprovider/das"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	_ "github.com/offchainlabs/nitro/execution/nodeInterface"
+	"github.com/offchainlabs/nitro/execution_consensus"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
@@ -522,20 +523,6 @@ func mainImpl() int {
 		}
 	}
 
-	execNode, err := gethexec.CreateExecutionNode(
-		ctx,
-		stack,
-		chainDb,
-		l2BlockChain,
-		l1Client,
-		&ExecutionNodeConfigFetcher{liveNodeConfig},
-		new(big.Int).SetUint64(nodeConfig.ParentChain.ID),
-		liveNodeConfig.Get().Node.TransactionStreamer.SyncTillBlock,
-	)
-	if err != nil {
-		log.Error("failed to create execution node", "err", err)
-		return 1
-	}
 	var wasmModuleRoot common.Hash
 	if liveNodeConfig.Get().Node.ValidatorRequired() {
 		locator, err := server_common.NewMachineLocator(liveNodeConfig.Get().Validation.Wasm.RootPath)
@@ -545,31 +532,71 @@ func mainImpl() int {
 		wasmModuleRoot = locator.LatestWasmModuleRoot()
 	}
 
-	currentNode, err := arbnode.CreateNodeFullExecutionClient(
-		ctx,
-		stack,
-		execNode,
-		execNode,
-		execNode,
-		execNode,
-		arbDb,
-		&ConsensusNodeConfigFetcher{liveNodeConfig},
-		l2BlockChain.Config(),
-		l1Client,
-		&rollupAddrs,
-		l1TransactionOptsValidator,
-		l1TransactionOptsBatchPoster,
-		dataSigner,
-		fatalErrChan,
-		new(big.Int).SetUint64(nodeConfig.ParentChain.ID),
-		blobReader,
-		wasmModuleRoot,
-	)
-	if err != nil {
-		log.Error("failed to create node", "err", err)
-		return 1
+	useRPC := !nodeConfig.ExecutionNode || nodeConfig.ConsensusExecutionInSameProcessUseRPC
+	var execNode *gethexec.ExecutionNode
+	var consensusNode *arbnode.Node
+	if nodeConfig.ExecutionNode {
+		execNode, err = gethexec.CreateExecutionNode(
+			ctx,
+			stack,
+			chainDb,
+			l2BlockChain,
+			l1Client,
+			&ExecutionNodeConfigFetcher{liveNodeConfig},
+			new(big.Int).SetUint64(nodeConfig.ParentChain.ID),
+			liveNodeConfig.Get().Node.TransactionStreamer.SyncTillBlock,
+			useRPC,
+		)
+		if err != nil {
+			log.Error("failed to create execution node", "err", err)
+			return 1
+		}
+		consensusNode, err = arbnode.CreateConsensusNodeConnectedWithFullExecutionClient(
+			ctx,
+			stack,
+			execNode,
+			arbDb,
+			&ConsensusNodeConfigFetcher{liveNodeConfig},
+			l2BlockChain.Config(),
+			l1Client,
+			&rollupAddrs,
+			l1TransactionOptsValidator,
+			l1TransactionOptsBatchPoster,
+			dataSigner,
+			fatalErrChan,
+			new(big.Int).SetUint64(nodeConfig.ParentChain.ID),
+			blobReader,
+			wasmModuleRoot,
+			useRPC,
+		)
+		if err != nil {
+			log.Error("failed to create consensus node", "err", err)
+			return 1
+		}
+	} else {
+		consensusNode, err = arbnode.CreateConsensusNodeConnectedWithSimpleExecutionClient(
+			ctx,
+			stack,
+			nil,
+			arbDb,
+			&ConsensusNodeConfigFetcher{liveNodeConfig},
+			l2BlockChain.Config(),
+			l1Client,
+			&rollupAddrs,
+			l1TransactionOptsValidator,
+			l1TransactionOptsBatchPoster,
+			dataSigner,
+			fatalErrChan,
+			new(big.Int).SetUint64(nodeConfig.ParentChain.ID),
+			blobReader,
+			wasmModuleRoot,
+			true,
+		)
+		if err != nil {
+			log.Error("failed to create consensus node", "err", err)
+			return 1
+		}
 	}
-
 	// Validate sequencer's MaxTxDataSize and batchPoster's MaxSize params.
 	// SequencerInbox's maxDataSize is defaulted to 117964 which is 90% of Geth's 128KB tx size limit, leaving ~13KB for proving.
 	seqInboxMaxDataSize := 117964
@@ -613,19 +640,19 @@ func mainImpl() int {
 		if err := genericconf.InitLog(newCfg.LogType, newCfg.LogLevel, &newCfg.FileLogging, pathResolver(nodeConfig.Persistent.LogDir)); err != nil {
 			return fmt.Errorf("failed to re-init logging: %w", err)
 		}
-		return currentNode.OnConfigReload(&oldCfg.Node, &newCfg.Node)
+		return consensusNode.OnConfigReload(&oldCfg.Node, &newCfg.Node)
 	})
 
 	if nodeConfig.Node.Dangerous.NoL1Listener && nodeConfig.Init.DevInit {
 		// If we don't have any messages, we're not connected to the L1, and we're using a dev init,
 		// we should create our own fake init message.
-		count, err := currentNode.TxStreamer.GetMessageCount()
+		count, err := consensusNode.TxStreamer.GetMessageCount()
 		if err != nil {
 			log.Warn("Getmessagecount failed. Assuming new database", "err", err)
 			count = 0
 		}
 		if count == 0 {
-			err = currentNode.TxStreamer.AddFakeInitMessage()
+			err = consensusNode.TxStreamer.AddFakeInitMessage()
 			if err != nil {
 				panic(err)
 			}
@@ -676,7 +703,7 @@ func mainImpl() int {
 	}
 
 	gqlConf := nodeConfig.GraphQL
-	if gqlConf.Enable {
+	if execNode != nil && gqlConf.Enable {
 		if err := graphql.New(stack, execNode.Backend.APIBackend(), execNode.FilterSystem, gqlConf.CORSDomain, gqlConf.VHosts); err != nil {
 			log.Error("failed to register the GraphQL service", "err", err)
 			return 1
@@ -693,19 +720,20 @@ func mainImpl() int {
 		}
 	}
 	if err == nil {
-		err = currentNode.Start(ctx)
+		cleanup, err := execution_consensus.InitAndStartExecutionAndConsensusNodes(ctx, stack, execNode, consensusNode)
 		if err != nil {
-			fatalErrChan <- fmt.Errorf("error starting node: %w", err)
+			log.Error("Error initializing and starting execution and consensus", "err", err)
+			return 1
 		}
 		// remove previous deferFuncs, StopAndWait closes database and blockchain.
-		deferFuncs = []func(){func() { currentNode.StopAndWait() }}
+		deferFuncs = []func(){cleanup}
 	}
 
 	sigint := make(chan os.Signal, 1)
 	signal.Notify(sigint, os.Interrupt, syscall.SIGTERM)
 
 	if err == nil && nodeConfig.Init.IsReorgRequested() {
-		err = initReorg(nodeConfig.Init, chainInfo.ChainConfig, currentNode.InboxTracker)
+		err = initReorg(nodeConfig.Init, chainInfo.ChainConfig, consensusNode.InboxTracker)
 		if err != nil {
 			fatalErrChan <- fmt.Errorf("error reorging per init config: %w", err)
 		} else if nodeConfig.Init.ThenQuit {
@@ -713,9 +741,11 @@ func mainImpl() int {
 		}
 	}
 
-	err = execNode.InitializeTimeboost(ctx, chainInfo.ChainConfig)
-	if err != nil {
-		fatalErrChan <- fmt.Errorf("error initializing timeboost: %w", err)
+	if execNode != nil {
+		err = execNode.InitializeTimeboost(ctx, chainInfo.ChainConfig)
+		if err != nil {
+			fatalErrChan <- fmt.Errorf("error initializing timeboost: %w", err)
+		}
 	}
 
 	err = nil
@@ -740,55 +770,59 @@ func mainImpl() int {
 }
 
 type NodeConfig struct {
-	Conf                   genericconf.ConfConfig          `koanf:"conf" reload:"hot"`
-	Node                   arbnode.Config                  `koanf:"node" reload:"hot"`
-	Execution              gethexec.Config                 `koanf:"execution" reload:"hot"`
-	Validation             valnode.Config                  `koanf:"validation" reload:"hot"`
-	ParentChain            conf.ParentChainConfig          `koanf:"parent-chain" reload:"hot"`
-	Chain                  conf.L2Config                   `koanf:"chain"`
-	LogLevel               string                          `koanf:"log-level" reload:"hot"`
-	LogType                string                          `koanf:"log-type" reload:"hot"`
-	FileLogging            genericconf.FileLoggingConfig   `koanf:"file-logging" reload:"hot"`
-	Persistent             conf.PersistentConfig           `koanf:"persistent"`
-	HTTP                   genericconf.HTTPConfig          `koanf:"http"`
-	WS                     genericconf.WSConfig            `koanf:"ws"`
-	IPC                    genericconf.IPCConfig           `koanf:"ipc"`
-	Auth                   genericconf.AuthRPCConfig       `koanf:"auth"`
-	GraphQL                genericconf.GraphQLConfig       `koanf:"graphql"`
-	Metrics                bool                            `koanf:"metrics"`
-	MetricsServer          genericconf.MetricsServerConfig `koanf:"metrics-server"`
-	PProf                  bool                            `koanf:"pprof"`
-	PprofCfg               genericconf.PProf               `koanf:"pprof-cfg"`
-	Init                   conf.InitConfig                 `koanf:"init"`
-	Rpc                    genericconf.RpcConfig           `koanf:"rpc"`
-	BlocksReExecutor       blocksreexecutor.Config         `koanf:"blocks-reexecutor"`
-	EnsureRollupDeployment bool                            `koanf:"ensure-rollup-deployment" reload:"hot"`
+	Conf                                  genericconf.ConfConfig          `koanf:"conf" reload:"hot"`
+	Node                                  arbnode.Config                  `koanf:"node" reload:"hot"`
+	Execution                             gethexec.Config                 `koanf:"execution" reload:"hot"`
+	Validation                            valnode.Config                  `koanf:"validation" reload:"hot"`
+	ParentChain                           conf.ParentChainConfig          `koanf:"parent-chain" reload:"hot"`
+	Chain                                 conf.L2Config                   `koanf:"chain"`
+	LogLevel                              string                          `koanf:"log-level" reload:"hot"`
+	LogType                               string                          `koanf:"log-type" reload:"hot"`
+	FileLogging                           genericconf.FileLoggingConfig   `koanf:"file-logging" reload:"hot"`
+	Persistent                            conf.PersistentConfig           `koanf:"persistent"`
+	HTTP                                  genericconf.HTTPConfig          `koanf:"http"`
+	WS                                    genericconf.WSConfig            `koanf:"ws"`
+	IPC                                   genericconf.IPCConfig           `koanf:"ipc"`
+	Auth                                  genericconf.AuthRPCConfig       `koanf:"auth"`
+	GraphQL                               genericconf.GraphQLConfig       `koanf:"graphql"`
+	Metrics                               bool                            `koanf:"metrics"`
+	MetricsServer                         genericconf.MetricsServerConfig `koanf:"metrics-server"`
+	PProf                                 bool                            `koanf:"pprof"`
+	PprofCfg                              genericconf.PProf               `koanf:"pprof-cfg"`
+	Init                                  conf.InitConfig                 `koanf:"init"`
+	Rpc                                   genericconf.RpcConfig           `koanf:"rpc"`
+	BlocksReExecutor                      blocksreexecutor.Config         `koanf:"blocks-reexecutor"`
+	EnsureRollupDeployment                bool                            `koanf:"ensure-rollup-deployment" reload:"hot"`
+	ExecutionNode                         bool                            `koanf:"execution-node"`
+	ConsensusExecutionInSameProcessUseRPC bool                            `koanf:"consensus-execution-in-same-process-use-rpc"`
 }
 
 var NodeConfigDefault = NodeConfig{
-	Conf:                   genericconf.ConfConfigDefault,
-	Node:                   arbnode.ConfigDefault,
-	Execution:              gethexec.ConfigDefault,
-	Validation:             valnode.DefaultValidationConfig,
-	ParentChain:            conf.L1ConfigDefault,
-	Chain:                  conf.L2ConfigDefault,
-	LogLevel:               "INFO",
-	LogType:                "plaintext",
-	FileLogging:            genericconf.DefaultFileLoggingConfig,
-	Persistent:             conf.PersistentConfigDefault,
-	HTTP:                   genericconf.HTTPConfigDefault,
-	WS:                     genericconf.WSConfigDefault,
-	IPC:                    genericconf.IPCConfigDefault,
-	Auth:                   genericconf.AuthRPCConfigDefault,
-	GraphQL:                genericconf.GraphQLConfigDefault,
-	Metrics:                false,
-	MetricsServer:          genericconf.MetricsServerConfigDefault,
-	Init:                   conf.InitConfigDefault,
-	Rpc:                    genericconf.DefaultRpcConfig,
-	PProf:                  false,
-	PprofCfg:               genericconf.PProfDefault,
-	BlocksReExecutor:       blocksreexecutor.DefaultConfig,
-	EnsureRollupDeployment: true,
+	Conf:                                  genericconf.ConfConfigDefault,
+	Node:                                  arbnode.ConfigDefault,
+	Execution:                             gethexec.ConfigDefault,
+	Validation:                            valnode.DefaultValidationConfig,
+	ParentChain:                           conf.L1ConfigDefault,
+	Chain:                                 conf.L2ConfigDefault,
+	LogLevel:                              "INFO",
+	LogType:                               "plaintext",
+	FileLogging:                           genericconf.DefaultFileLoggingConfig,
+	Persistent:                            conf.PersistentConfigDefault,
+	HTTP:                                  genericconf.HTTPConfigDefault,
+	WS:                                    genericconf.WSConfigDefault,
+	IPC:                                   genericconf.IPCConfigDefault,
+	Auth:                                  genericconf.AuthRPCConfigDefault,
+	GraphQL:                               genericconf.GraphQLConfigDefault,
+	Metrics:                               false,
+	MetricsServer:                         genericconf.MetricsServerConfigDefault,
+	Init:                                  conf.InitConfigDefault,
+	Rpc:                                   genericconf.DefaultRpcConfig,
+	PProf:                                 false,
+	PprofCfg:                              genericconf.PProfDefault,
+	BlocksReExecutor:                      blocksreexecutor.DefaultConfig,
+	EnsureRollupDeployment:                true,
+	ExecutionNode:                         true,
+	ConsensusExecutionInSameProcessUseRPC: false,
 }
 
 func NodeConfigAddOptions(f *pflag.FlagSet) {
@@ -816,6 +850,8 @@ func NodeConfigAddOptions(f *pflag.FlagSet) {
 	genericconf.RpcConfigAddOptions("rpc", f)
 	blocksreexecutor.ConfigAddOptions("blocks-reexecutor", f)
 	f.Bool("ensure-rollup-deployment", NodeConfigDefault.EnsureRollupDeployment, "before starting the node, wait until the transaction that deployed rollup is finalized")
+	f.Bool("execution-node", NodeConfigDefault.ExecutionNode, "implies running nitro with both consensus and execution nodes, if false, then requires --node.execution-rpc-client.* config to connect to execution client over rpc")
+	f.Bool("consensus-execution-in-same-process-use-rpc", NodeConfigDefault.ConsensusExecutionInSameProcessUseRPC, "when both consensus and execution node are enabled this options allow them to communicate over rpc- mainly for testing purpose")
 }
 
 func (c *NodeConfig) ResolveDirectoryNames() error {
@@ -881,6 +917,27 @@ func (c *NodeConfig) Validate() error {
 	}
 	if err := c.Execution.Validate(); err != nil {
 		return err
+	}
+	if !c.ExecutionNode {
+		if c.Node.ExecutionRPCClient.URL == "" {
+			return errors.New("starting consensus only node with empty executionRPCClient url")
+		}
+		if c.Node.Sequencer || c.Node.BatchPoster.Enable || c.Node.BlockValidator.Enable {
+			return errors.New("sequencing, validation and batch-posting are currently not supported when connecting to an execution client over RPC")
+		}
+	} else if c.ConsensusExecutionInSameProcessUseRPC {
+		if !c.Execution.RPCServer.Enable {
+			return errors.New("ConsensusExecutionInSameProcessUseRPC is set but execution node has not enabled rpc server")
+		}
+		if c.Execution.ConsensusRPCClient.URL == "" {
+			return errors.New("ConsensusExecutionInSameProcessUseRPC is set but execution node has empty consensusRPCClient url")
+		}
+		if !c.Node.RPCServer.Enable {
+			return errors.New("ConsensusExecutionInSameProcessUseRPC is set but consensus node has not enabled rpc server")
+		}
+		if c.Node.ExecutionRPCClient.URL == "" {
+			return errors.New("ConsensusExecutionInSameProcessUseRPC is set but consensus node has empty executionRPCClient url")
+		}
 	}
 	if err := c.BlocksReExecutor.Validate(); err != nil {
 		return err
@@ -1043,6 +1100,7 @@ func applyChainParameters(k *koanf.Koanf, chainId uint64, chainName string, l2Ch
 	if chainInfo.TrackBlockMetadataFrom > 0 && chainInfo.BlockMetadataUrl != "" {
 		chainDefaults["node.block-metadata-fetcher.enable"] = true
 	}
+
 	err = k.Load(confmap.Provider(chainDefaults, "."), nil)
 	if err != nil {
 		return err

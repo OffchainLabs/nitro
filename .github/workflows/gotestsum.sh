@@ -16,6 +16,7 @@ junitfile=""
 log=true
 race=false
 cover=false
+consensus_execution_in_same_process_use_rpc=false
 flaky=false
 while [[ $# -gt 0 ]]; do
   case $1 in
@@ -55,6 +56,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --cover)
       cover=true
+      shift
+      ;;
+    --consensus_execution_in_same_process_use_rpc)
+     consensus_execution_in_same_process_use_rpc=true
       shift
       ;;
     --nolog)
@@ -128,6 +133,10 @@ if [ "$test_state_scheme" != "" ]; then
     cmd="$cmd -args -- --test_state_scheme=$test_state_scheme --test_loglevel=8"
 else
     cmd="$cmd -args -- --test_loglevel=8" # Use error log level, which is the value 8 in the slog level enum for tests.
+fi
+
+if [ "$consensus_execution_in_same_process_use_rpc" == true ]; then
+    cmd="$cmd --consensus_execution_in_same_process_use_rpc=true"
 fi
 
 if [ "$log" == true ]; then
