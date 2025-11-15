@@ -482,3 +482,39 @@ func (con ArbOwner) SetGasPricingConstraints(c ctx, evm mech, constraints [][3]u
 	}
 	return nil
 }
+
+// SetMultiGasPricingConstraints configures the multi-dimensional gas pricing model
+func (con ArbOwner) SetMultiGasPricingConstraints(
+	c ctx,
+	evm mech,
+	constraints []MultiGasConstraint,
+) error {
+	if err := c.State.L2PricingState().ClearMultiGasConstraints(); err != nil {
+		return fmt.Errorf("failed to clear existing multi-gas constraints: %w", err)
+	}
+
+	for _, constraint := range constraints {
+		if constraint.TargetPerSec == 0 || constraint.AdjustmentWindowSecs == 0 {
+			return fmt.Errorf(
+				"invalid constraint: target=%d adjustmentWindow=%d",
+				constraint.TargetPerSec, constraint.AdjustmentWindowSecs,
+			)
+		}
+
+		// Build map of resource weights
+		resourceWeights := make(map[uint8]uint64, len(constraint.Resources))
+		for _, r := range constraint.Resources {
+			resourceWeights[r.Resource] = r.Weight
+		}
+
+		if err := c.State.L2PricingState().AddMultiGasConstraint(
+			constraint.TargetPerSec,
+			constraint.AdjustmentWindowSecs,
+			constraint.Backlog,
+			resourceWeights,
+		); err != nil {
+			return fmt.Errorf("failed to add multi-gas constraint: %w", err)
+		}
+	}
+	return nil
+}
