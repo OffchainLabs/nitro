@@ -30,7 +30,7 @@ const (
 // gas resource types, each with a corresponding weight (0 = unused).
 type MultiGasConstraint struct {
 	target            storage.StorageBackedUint64
-	adjustmentWindow  storage.StorageBackedUint64
+	adjustmentWindow  storage.StorageBackedUint32
 	backlog           storage.StorageBackedUint64
 	sumWeights        storage.StorageBackedUint64
 	weightedResources [multigas.NumResourceKind]storage.StorageBackedUint64
@@ -40,7 +40,7 @@ type MultiGasConstraint struct {
 func OpenMultiGasConstraint(sto *storage.Storage) *MultiGasConstraint {
 	c := &MultiGasConstraint{
 		target:           sto.OpenStorageBackedUint64(targetOffset),
-		adjustmentWindow: sto.OpenStorageBackedUint64(adjustmentWindowOffset),
+		adjustmentWindow: sto.OpenStorageBackedUint32(adjustmentWindowOffset),
 		backlog:          sto.OpenStorageBackedUint64(backlogOffset),
 		sumWeights:       sto.OpenStorageBackedUint64(sumWeightsOffset),
 	}
@@ -57,7 +57,7 @@ func (c *MultiGasConstraint) Clear() error {
 	if err := c.target.Clear(); err != nil {
 		return err
 	}
-	if err := c.adjustmentWindow.Clear(); err != nil {
+	if err := c.adjustmentWindow.Set(0); err != nil {
 		return err
 	}
 	if err := c.backlog.Clear(); err != nil {
@@ -130,7 +130,7 @@ func (c *MultiGasConstraint) ComputeExponent(kind uint8) (arbmath.Bips, error) {
 	dividend := arbmath.NaturalToBips(
 		arbmath.SaturatingCast[int64](arbmath.SaturatingUMul(backlog, weight)))
 	divisor := arbmath.SaturatingCastToBips(
-		arbmath.SaturatingUMul(adjustmentWindow,
+		arbmath.SaturatingUMul(uint64(adjustmentWindow),
 			arbmath.SaturatingUMul(target, sumWeights)))
 	exponent := dividend / divisor
 
@@ -169,11 +169,11 @@ func (c *MultiGasConstraint) SetTarget(v uint64) error {
 	return c.target.Set(v)
 }
 
-func (c *MultiGasConstraint) AdjustmentWindow() (uint64, error) {
+func (c *MultiGasConstraint) AdjustmentWindow() (uint32, error) {
 	return c.adjustmentWindow.Get()
 }
 
-func (c *MultiGasConstraint) SetAdjustmentWindow(v uint64) error {
+func (c *MultiGasConstraint) SetAdjustmentWindow(v uint32) error {
 	return c.adjustmentWindow.Set(v)
 }
 

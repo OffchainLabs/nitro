@@ -170,7 +170,8 @@ func TestMultiGasConstraints(t *testing.T) {
 			uint8(multigas.ResourceKindStorageAccess): 20 + i,
 		}
 		Require(t,
-			pricing.AddMultiGasConstraint(100*i+1, 100*i+2, 100*i+3, resourceWeights),
+			// #nosec G115
+			pricing.AddMultiGasConstraint(100*i+1, uint32(100*i+2), 100*i+3, resourceWeights),
 		)
 	}
 
@@ -191,7 +192,8 @@ func TestMultiGasConstraints(t *testing.T) {
 
 		window, err := c.AdjustmentWindow()
 		Require(t, err)
-		if want := 100*i + 2; window != want {
+		// #nosec G115
+		if want := uint32(100*i + 2); window != want {
 			t.Errorf("wrong window: got %v, want %v", window, want)
 		}
 
