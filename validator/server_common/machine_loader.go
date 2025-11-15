@@ -26,6 +26,12 @@ type MachineLoader[M any] struct {
 	createMachine func(ctx context.Context, moduleRoot common.Hash) (*M, error)
 }
 
+type MachineLoaderStats struct {
+	Total   int
+	Ready   int
+	Pending int
+}
+
 func NewMachineLoader[M any](
 	locator *MachineLocator,
 	createMachine func(ctx context.Context, moduleRoot common.Hash) (*M, error),
@@ -74,4 +80,19 @@ func (l *MachineLoader[M]) ForEachReadyMachine(runme func(*M)) {
 			}
 		}
 	}
+}
+
+func (l *MachineLoader[M]) Stats() MachineLoaderStats {
+	l.mapMutex.Lock()
+	defer l.mapMutex.Unlock()
+	stats := MachineLoaderStats{
+		Total: len(l.machines),
+	}
+	for _, stat := range l.machines {
+		if stat.Ready() {
+			stats.Ready++
+		}
+	}
+	stats.Pending = stats.Total - stats.Ready
+	return stats
 }

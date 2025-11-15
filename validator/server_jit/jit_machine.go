@@ -13,6 +13,8 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"runtime"
+	"sync/atomic"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -32,6 +34,8 @@ type JitMachine struct {
 	stdin                io.WriteCloser
 	wasmMemoryUsageLimit int
 	maxExecutionTime     time.Duration
+	pid                  int
+	reportExit           atomic.Bool
 }
 
 func createJitMachine(jitBinary string, binaryPath string, cranelift bool, wasmMemoryUsageLimit int, maxExecutionTime time.Duration, _ common.Hash, fatalErrChan chan error) (*JitMachine, error) {
@@ -46,11 +50,13 @@ func createJitMachine(jitBinary string, binaryPath string, cranelift bool, wasmM
 	}
 	process.Stdout = os.Stdout
 	process.Stderr = os.Stderr
-	go func() {
-		if err := process.Run(); err != nil {
-			fatalErrChan <- fmt.Errorf("lost jit block validator process: %w", err)
-		}
-	}()
+
+	if err := process.Start(); err != nil {
+		return nil, err
+	}
+
+	pid := process.Process.Pid
+	globalJitProfiler.OnMachineStarted(pid)
 
 	machine := &JitMachine{
 		binary:               binaryPath,
@@ -58,14 +64,33 @@ func createJitMachine(jitBinary string, binaryPath string, cranelift bool, wasmM
 		stdin:                stdin,
 		wasmMemoryUsageLimit: wasmMemoryUsageLimit,
 		maxExecutionTime:     maxExecutionTime,
+		pid:                  pid,
 	}
+
+	go func(m *JitMachine, p *exec.Cmd, pid int) {
+		waitErr := p.Wait()
+		globalJitProfiler.OnMachineExited(pid, waitErr)
+		if waitErr != nil && m.reportExit.Load() {
+			select {
+			case fatalErrChan <- fmt.Errorf("lost jit block validator process (pid %d): %w", pid, waitErr):
+			default:
+			}
+		}
+	}(machine, process, pid)
+
+	machine.reportExit.Store(true)
 	return machine, nil
 }
 
 func (machine *JitMachine) close() {
-	_, err := machine.stdin.Write([]byte("\n"))
-	if err != nil {
-		log.Error("error closing jit machine", "error", err)
+	machine.reportExit.Store(false)
+	if machine.stdin != nil {
+		if _, err := machine.stdin.Write([]byte("\n")); err != nil && !errors.Is(err, io.EOF) {
+			log.Warn("error signaling jit machine shutdown", "err", err, "pid", machine.pid)
+		}
+		if err := machine.stdin.Close(); err != nil && !errors.Is(err, os.ErrClosed) {
+			log.Warn("error closing jit machine stdin", "err", err, "pid", machine.pid)
+		}
 	}
 }
 
@@ -75,6 +100,25 @@ func (machine *JitMachine) prove(
 	ctx, cancel := context.WithCancel(ctxIn)
 	defer cancel() // ensure our cleanup functions run when we're done
 	state := validator.GoGlobalState{}
+
+	inputBytes := estimateValidationInputBytes(entry)
+	globalJitProfiler.OnValidationStart(inputBytes)
+	var memBefore runtime.MemStats
+	runtime.ReadMemStats(&memBefore)
+	rssBefore, _ := readParentProcessRSS()
+	defer func() {
+		var memAfter runtime.MemStats
+		runtime.ReadMemStats(&memAfter)
+		rssAfter, _ := readParentProcessRSS()
+		globalJitProfiler.OnValidationComplete(jitValidationRecord{
+			inputBytes:      inputBytes,
+			rssBefore:       rssBefore,
+			rssAfter:        rssAfter,
+			heapAllocBefore: memBefore.HeapAlloc,
+			heapAllocAfter:  memAfter.HeapAlloc,
+			validationTime:  time.Now(),
+		})
+	}()
 
 	timeout := time.Now().Add(machine.maxExecutionTime)
 	tcp, err := net.ListenTCP("tcp4", &net.TCPAddr{
@@ -322,4 +366,28 @@ func (machine *JitMachine) prove(
 			return state, errors.New("inter-process communication failure")
 		}
 	}
+}
+
+func estimateValidationInputBytes(entry *validator.ValidationInput) int64 {
+	if entry == nil {
+		return 0
+	}
+	var total int64
+	for _, batch := range entry.BatchInfo {
+		total += int64(len(batch.Data))
+	}
+	for _, modules := range entry.UserWasms {
+		for _, module := range modules {
+			total += int64(len(module))
+		}
+	}
+	if entry.HasDelayedMsg {
+		total += int64(len(entry.DelayedMsg))
+	}
+	for _, preimageMap := range entry.Preimages {
+		for _, value := range preimageMap {
+			total += int64(len(value))
+		}
+	}
+	return total
 }
