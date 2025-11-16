@@ -125,9 +125,11 @@ func programRequiresPrepare(
 
 //go:wasmimport programs program_prepare
 func programPrepare(
-	ctxPtr unsafe.Pointer,
 	moduleHashPtr unsafe.Pointer,
 	codePtr unsafe.Pointer,
+	codeHashPtr unsafe.Pointer,
+	pageLimit uint32,
+	arbosVersionForGas uint32,
 	stylusVersion uint32,
 	debug uint32,
 )
@@ -194,7 +196,15 @@ func CallProgramLoop(
 			debugInt = 1
 		}
 
-		programPrepare(unsafe.Pointer(&moduleHash[0]), unsafe.Pointer(&moduleHash[0]), arbutil.SliceToUnsafePointer(calldata), uint32(params.Version), debugInt)
+		programPrepare(
+			unsafe.Pointer(&moduleHash[0]),
+			arbutil.SliceToUnsafePointer(calldata),
+			arbutil.SliceToUnsafePointer(calldata),
+			0,
+			0,
+			uint32(params.Version),
+			debugInt,
+		)
 	}
 
 	module := newProgram(
