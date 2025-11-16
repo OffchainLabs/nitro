@@ -147,9 +147,11 @@ pub unsafe extern "C" fn programs__program_requires_prepare(module_hash_ptr: Gue
 /// consumes activated program module hash and wasm code
 #[no_mangle]
 pub unsafe extern "C" fn programs__program_prepare(
-    ctx_ptr: GuestPtr,
     module_hash_ptr: GuestPtr,
     code_ptr: GuestPtr,
+    _code_hash_ptr: GuestPtr,
+    _page_limit: u32,
+    _arbos_version_for_gas: u32,
     stylus_version: u32,
     debug: u32,
 ) {
