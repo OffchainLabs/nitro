@@ -188,9 +188,11 @@ pub fn program_requires_prepare(
 /// program_prepare
 pub fn program_prepare(
     mut _env: WasmEnvMut,
-    _ctx_ptr: GuestPtr,
     _module_hash_ptr: GuestPtr,
     _code_ptr: GuestPtr,
+    _code_hash_ptr: GuestPtr,
+    _page_limit: u32,
+    _arbos_version_for_gas: u32,
     _stylus_version: u32,
     _debug: u32,
 ) -> MaybeEscape {
