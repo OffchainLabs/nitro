@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"log"
 	"math/big"
 	"testing"
 	"time"
@@ -159,8 +160,7 @@ func TestInboxReaderBlobFailureWithDelayedMessage(t *testing.T) {
 					// Check if this batch exists in our database
 					_, err := testClientB.ConsensusNode.InboxTracker.GetBatchMetadata(batchNum)
 					if err != nil {
-						// TODO After we have fixed the issue, this can be changed back to log.Fatalf
-						t.Logf("CORRUPTION DETECTED: Delayed message %d is a batch-posting-report for batch %d, but batch %d doesn't exist in database! Error: %v", i, batchNum, batchNum, err)
+						log.Fatalf("CORRUPTION DETECTED: Delayed message %d is a batch-posting-report for batch %d, but batch %d doesn't exist in database! Error: %v", i, batchNum, batchNum, err)
 					}
 				}
 			}
