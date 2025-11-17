@@ -24,10 +24,19 @@ func GetTestStateScheme() string {
 }
 
 func GetTestDatabaseEngine() string {
+	engineFlag := *testflag.DatabaseEngineFlag
 	databaseEngine := MemoryDB
-	if *testflag.DatabaseEngineFlag == "leveldb" || *testflag.DatabaseEngineFlag == "pebble" {
-		databaseEngine = *testflag.DatabaseEngineFlag
+
+	switch engineFlag {
+	case rawdb.DBLeveldb, rawdb.DBPebble, MemoryDB:
+		databaseEngine = engineFlag
+	default:
+		log.Warn("invalid test database engine flag; using default",
+			"provided", engineFlag,
+			"default", MemoryDB,
+		)
 	}
+
 	log.Debug("test database scheme", "testDatabaseEngine", databaseEngine)
 	return databaseEngine
 }

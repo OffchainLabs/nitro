@@ -2089,7 +2089,7 @@ func TestWasmRecreate(t *testing.T) {
 
 func testWasmRecreateWithCall(t *testing.T, targetsBefore, targetsAfter []string, removeWasmDbBetween bool, databaseEngine string) {
 	builder, auth, cleanup := setupProgramTest(t, true, func(b *NodeBuilder) {
-		b.WithDatabase(rawdb.DBLeveldb)
+		b.WithDatabase(rawdb.DBPebble)
 	})
 	ctx := builder.ctx
 	l2info := builder.L2Info
@@ -2109,7 +2109,7 @@ func testWasmRecreateWithCall(t *testing.T, targetsBefore, targetsAfter []string
 
 func testWasmRecreateWithDelegatecall(t *testing.T, targetsBefore, targetsAfter []string, removeWasmDbBetween bool, databaseEngine string) {
 	builder, auth, cleanup := setupProgramTest(t, true, func(b *NodeBuilder) {
-		b.WithDatabase(rawdb.DBLeveldb)
+		b.WithDatabase(rawdb.DBPebble)
 	})
 	ctx := builder.ctx
 	l2info := builder.L2Info
