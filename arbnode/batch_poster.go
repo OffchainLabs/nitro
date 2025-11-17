@@ -1593,17 +1593,17 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 		b.building.msgCount++
 	}
 
-	firstIncludedMsgTime := time.Now()
+	feeEscalationBaseTime := time.Now()
 	if b.building.firstUsefulMsg != nil {
 		// #nosec G115
-		firstIncludedMsgTime = time.Unix(int64(b.building.firstUsefulMsg.Message.Header.Timestamp), 0)
-		if time.Since(firstIncludedMsgTime) >= config.MaxDelay {
+		feeEscalationBaseTime = time.Unix(int64(b.building.firstUsefulMsg.Message.Header.Timestamp), 0)
+		if time.Since(feeEscalationBaseTime) >= config.MaxDelay {
 			forcePostBatch = true
 		}
 	} else if b.building.firstDelayedMsg != nil && config.MaxEmptyBatchDelay > 0 {
 		// #nosec G115
-		firstIncludedMsgTime := time.Unix(int64(b.building.firstDelayedMsg.Message.Header.Timestamp), 0)
-		if time.Since(firstIncludedMsgTime) >= config.MaxEmptyBatchDelay {
+		feeEscalationBaseTime = time.Unix(int64(b.building.firstDelayedMsg.Message.Header.Timestamp), 0)
+		if time.Since(feeEscalationBaseTime) >= config.MaxEmptyBatchDelay {
 			forcePostBatch = true
 			b.building.haveUsefulMessage = true
 		}
@@ -1875,7 +1875,7 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 	}
 
 	tx, err := b.dataPoster.PostTransaction(ctx,
-		firstIncludedMsgTime,
+		feeEscalationBaseTime,
 		nonce,
 		newMeta,
 		b.seqInboxAddr,
