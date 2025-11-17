@@ -686,7 +686,7 @@ func TestOpenInitializeChainDbEmptyInit(t *testing.T) {
 	defer cancel()
 
 	stackConfig := testhelpers.CreateStackConfigForTest(t.TempDir())
-	stackConfig.DBEngine = rawdb.DBLeveldb
+	stackConfig.DBEngine = rawdb.DBPebble
 	stack, err := node.New(stackConfig)
 	Require(t, err)
 	defer stack.Close()
