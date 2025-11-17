@@ -79,7 +79,7 @@ type SeqCoordinatorConfig struct {
 	HandoffTimeout        time.Duration `koanf:"handoff-timeout"`
 	SafeShutdownDelay     time.Duration `koanf:"safe-shutdown-delay"`
 	ReleaseRetries        int           `koanf:"release-retries"`
-	// Max message per poll.
+	// Maximum messages to fetch from Redis per update.
 	MsgPerPoll          arbutil.MessageIndex       `koanf:"msg-per-poll"`
 	MyUrl               string                     `koanf:"my-url"`
 	DeleteFinalizedMsgs bool                       `koanf:"delete-finalized-msgs"`
@@ -108,7 +108,7 @@ func SeqCoordinatorConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Duration(prefix+".handoff-timeout", DefaultSeqCoordinatorConfig.HandoffTimeout, "the maximum amount of time to spend waiting for another sequencer to accept the lockout when handing it off on shutdown or db compaction")
 	f.Duration(prefix+".safe-shutdown-delay", DefaultSeqCoordinatorConfig.SafeShutdownDelay, "if non-zero will add delay after transferring control")
 	f.Int(prefix+".release-retries", DefaultSeqCoordinatorConfig.ReleaseRetries, "the number of times to retry releasing the wants lockout and chosen one status on shutdown")
-	f.Uint64(prefix+".msg-per-poll", uint64(DefaultSeqCoordinatorConfig.MsgPerPoll), "will only be marked as wanting the lockout if not too far behind")
+	f.Uint64(prefix+".msg-per-poll", uint64(DefaultSeqCoordinatorConfig.MsgPerPoll), "maximum number of messages to read from Redis each poll iteration")
 	f.String(prefix+".my-url", DefaultSeqCoordinatorConfig.MyUrl, "url for this sequencer if it is the chosen")
 	f.Bool(prefix+".delete-finalized-msgs", DefaultSeqCoordinatorConfig.DeleteFinalizedMsgs, "enable deleting of finalized messages from redis")
 	signature.SignVerifyConfigAddOptions(prefix+".signer", f)

@@ -291,7 +291,7 @@ func serializeMessage(bm *m.BroadcastMessage, enableNonCompressedOutput, enableC
 	return notCompressed, compressed, nil
 }
 
-// verifyClients should be called every cm.config.ClientPingInterval
+// verifyClients should be called every cm.config().Ping interval
 func (cm *ClientManager) verifyClients() []*ClientConnection {
 	clientConnectionCount := len(cm.clientPtrMap)
 
