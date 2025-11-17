@@ -137,7 +137,7 @@ func (c *MultiGasConstraint) ComputeExponent(kind uint8) (arbmath.Bips, error) {
 	return exponent, nil
 }
 
-// IncrementBacklog increments multi-dimensional gas usage into a single backlog value.
+// IncrementBacklog increments the constraint backlog based on multi-dimensional gas usage
 func (c *MultiGasConstraint) IncrementBacklog(multiGas multigas.MultiGas) error {
 	totalBacklog, err := c.backlog.Get()
 	if err != nil {
@@ -158,6 +158,31 @@ func (c *MultiGasConstraint) IncrementBacklog(multiGas multigas.MultiGas) error 
 
 		totalBacklog = arbmath.SaturatingUAdd(totalBacklog, weightedAmount)
 	}
+	return c.SetBacklog(totalBacklog)
+}
+
+// DecrementBacklog decreases the constraint backlog based on multi-dimensional gas usage
+func (c *MultiGasConstraint) DecrementBacklog(multiGas multigas.MultiGas) error {
+	totalBacklog, err := c.backlog.Get()
+	if err != nil {
+		return err
+	}
+
+	for i := range uint8(multigas.NumResourceKind) {
+		weight, err := c.weightedResources[i].Get()
+		if err != nil {
+			return err
+		}
+		if weight == 0 {
+			continue
+		}
+
+		resourceAmount := multiGas.Get(multigas.ResourceKind(i))
+		weightedAmount := arbmath.SaturatingUMul(resourceAmount, uint64(weight))
+
+		totalBacklog = arbmath.SaturatingUSub(totalBacklog, weightedAmount)
+	}
+
 	return c.SetBacklog(totalBacklog)
 }
 

@@ -149,3 +149,49 @@ func TestMultiGasConstraintBacklogGrowth(t *testing.T) {
 	// new backlog = old (30) + 1*5 + 2*15 = 30 + 35 = 65
 	require.Equal(t, uint64(65), b2, "backlog should accumulate across calls")
 }
+
+func TestMultiGasConstraintBacklogDecay(t *testing.T) {
+	sto := storage.NewMemoryBacked(burn.NewSystemBurner(nil, false))
+	c := OpenMultiGasConstraint(sto)
+
+	require.NoError(t, c.SetTarget(10))
+	require.NoError(t, c.SetAdjustmentWindow(5))
+
+	require.NoError(t, c.SetResourceWeights(map[uint8]uint64{
+		uint8(multigas.ResourceKindComputation):   1,
+		uint8(multigas.ResourceKindStorageAccess): 2,
+	}))
+
+	// Initial backlog: 1*10 + 2*10 = 30
+	mgGrow := multigas.MultiGasFromPairs(
+		multigas.Pair{Kind: multigas.ResourceKindComputation, Amount: 10},
+		multigas.Pair{Kind: multigas.ResourceKindStorageAccess, Amount: 10},
+	)
+	require.NoError(t, c.IncrementBacklog(mgGrow))
+
+	b1, err := c.Backlog()
+	require.NoError(t, err)
+	require.Equal(t, uint64(30), b1)
+
+	// First decay: 1*3 + 2*4 = 11 → new backlog = 30 - 11 = 19
+	mgDecay1 := multigas.MultiGasFromPairs(
+		multigas.Pair{Kind: multigas.ResourceKindComputation, Amount: 3},
+		multigas.Pair{Kind: multigas.ResourceKindStorageAccess, Amount: 4},
+	)
+	require.NoError(t, c.DecrementBacklog(mgDecay1))
+
+	b2, err := c.Backlog()
+	require.NoError(t, err)
+	require.Equal(t, uint64(19), b2, "30 - (1*3 + 2*4) = 19")
+
+	// Second decay underflows: 1*50 + 2*50 = 150 → should clamp to zero
+	mgDecay2 := multigas.MultiGasFromPairs(
+		multigas.Pair{Kind: multigas.ResourceKindComputation, Amount: 50},
+		multigas.Pair{Kind: multigas.ResourceKindStorageAccess, Amount: 50},
+	)
+	require.NoError(t, c.DecrementBacklog(mgDecay2))
+
+	b3, err := c.Backlog()
+	require.NoError(t, err)
+	require.Equal(t, uint64(0), b3, "backlog must clamp to zero on underflow")
+}
