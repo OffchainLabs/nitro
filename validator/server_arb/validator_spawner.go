@@ -218,7 +218,7 @@ func (v *ArbitratorSpawner) Launch(entry *validator.ValidationInput, moduleRoot 
 	return server_common.NewValRun(promise, moduleRoot)
 }
 
-func (v *ArbitratorSpawner) Room() int {
+func (v *ArbitratorSpawner) ServerMaxConcurrentValidations() int {
 	avail := v.config().Workers
 	if avail == 0 {
 		avail = util.GoMaxProcs()

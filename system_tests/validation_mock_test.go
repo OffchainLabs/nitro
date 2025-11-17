@@ -286,8 +286,8 @@ func TestValidationClientRoom(t *testing.T) {
 	err := client.Start(ctx)
 	Require(t, err)
 
-	if client.Room() != 4 {
-		Fatal(t, "wrong initial room ", client.Room())
+	if client.RemainingConcurrentSlots() != 4 {
+		Fatal(t, "wrong initial available workers ", client.RemainingConcurrentSlots())
 	}
 
 	hash1 := common.HexToHash("0x11223344556677889900aabbccddeeff")
@@ -332,8 +332,8 @@ func TestValidationClientRoom(t *testing.T) {
 		Require(t, err)
 	}
 
-	if client.Room() != 4 {
-		Fatal(t, "wrong room after launch", client.Room())
+	if client.RemainingConcurrentSlots() != 4 {
+		Fatal(t, "wrong available concurrent slots after launch", client.RemainingConcurrentSlots())
 	}
 
 	mockSpawner.LaunchDelay = time.Hour
@@ -343,9 +343,9 @@ func TestValidationClientRoom(t *testing.T) {
 	for i := 0; i < 4; i++ {
 		valRun := client.Launch(&valInput, mockWasmModuleRoots[0])
 		valRuns = append(valRuns, valRun)
-		room := client.Room()
-		if room != 3-i {
-			Fatal(t, "wrong room after launch ", room, " expected: ", 4-i)
+		availableWorkers := client.RemainingConcurrentSlots()
+		if availableWorkers != 3-i {
+			Fatal(t, "wrong available workers after launch ", availableWorkers, " expected: ", 4-i)
 		}
 	}
 
@@ -357,9 +357,9 @@ func TestValidationClientRoom(t *testing.T) {
 		}
 	}
 
-	room := client.Room()
-	if room != 4 {
-		Fatal(t, "wrong room after canceling runs: ", room)
+	availableConcurrentSlots := client.RemainingConcurrentSlots()
+	if availableConcurrentSlots != 4 {
+		Fatal(t, "wrong available concurrent validation slots after canceling runs: ", availableConcurrentSlots)
 	}
 }
 

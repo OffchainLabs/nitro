@@ -22,13 +22,13 @@ import (
 )
 
 type ValidationClientConfig struct {
-	Name           string                `koanf:"name"`
-	StreamPrefix   string                `koanf:"stream-prefix"`
-	Room           int32                 `koanf:"room"`
-	RedisURL       string                `koanf:"redis-url"`
-	StylusArchs    []string              `koanf:"stylus-archs"`
-	ProducerConfig pubsub.ProducerConfig `koanf:"producer-config"`
-	CreateStreams  bool                  `koanf:"create-streams"`
+	Name                  string                `koanf:"name"`
+	StreamPrefix          string                `koanf:"stream-prefix"`
+	MaxConcurrentRequests int32                 `koanf:"max-concurrent-requests"`
+	RedisURL              string                `koanf:"redis-url"`
+	StylusArchs           []string              `koanf:"stylus-archs"`
+	ProducerConfig        pubsub.ProducerConfig `koanf:"producer-config"`
+	CreateStreams         bool                  `koanf:"create-streams"`
 }
 
 func (c ValidationClientConfig) Enabled() bool {
@@ -45,27 +45,27 @@ func (c ValidationClientConfig) Validate() error {
 }
 
 var DefaultValidationClientConfig = ValidationClientConfig{
-	Name:           "redis validation client",
-	Room:           2,
-	RedisURL:       "",
-	StylusArchs:    []string{string(rawdb.TargetWavm)},
-	ProducerConfig: pubsub.DefaultProducerConfig,
-	CreateStreams:  true,
+	Name:                  "redis validation client",
+	MaxConcurrentRequests: 2,
+	RedisURL:              "",
+	StylusArchs:           []string{string(rawdb.TargetWavm)},
+	ProducerConfig:        pubsub.DefaultProducerConfig,
+	CreateStreams:         true,
 }
 
 var TestValidationClientConfig = ValidationClientConfig{
-	Name:           "test redis validation client",
-	Room:           2,
-	RedisURL:       "",
-	StreamPrefix:   "test-",
-	StylusArchs:    []string{string(rawdb.TargetWavm)},
-	ProducerConfig: pubsub.TestProducerConfig,
-	CreateStreams:  false,
+	Name:                  "test redis validation client",
+	MaxConcurrentRequests: 2,
+	RedisURL:              "",
+	StreamPrefix:          "test-",
+	StylusArchs:           []string{string(rawdb.TargetWavm)},
+	ProducerConfig:        pubsub.TestProducerConfig,
+	CreateStreams:         false,
 }
 
 func ValidationClientConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".name", DefaultValidationClientConfig.Name, "validation client name")
-	f.Int32(prefix+".room", DefaultValidationClientConfig.Room, "validation client room")
+	f.Int32(prefix+".max-concurrent-requests", DefaultValidationClientConfig.MaxConcurrentRequests, "validation client room")
 	f.String(prefix+".redis-url", DefaultValidationClientConfig.RedisURL, "redis url")
 	f.String(prefix+".stream-prefix", DefaultValidationClientConfig.StreamPrefix, "prefix for stream name")
 	f.StringSlice(prefix+".stylus-archs", DefaultValidationClientConfig.StylusArchs, "archs required for stylus workers")
@@ -76,8 +76,8 @@ func ValidationClientConfigAddOptions(prefix string, f *pflag.FlagSet) {
 // ValidationClient implements validation client through redis streams.
 type ValidationClient struct {
 	stopwaiter.StopWaiter
-	config *ValidationClientConfig
-	room   atomic.Int32
+	config                   *ValidationClientConfig
+	remainingConcurrentSlots atomic.Int32
 	// producers stores moduleRoot to producer mapping.
 	producers   map[common.Hash]*pubsub.Producer[*validator.ValidationInput, validator.GoGlobalState]
 	redisClient redis.UniversalClient
@@ -97,7 +97,7 @@ func NewValidationClient(cfg *ValidationClientConfig) (*ValidationClient, error)
 		producers:   make(map[common.Hash]*pubsub.Producer[*validator.ValidationInput, validator.GoGlobalState]),
 		redisClient: redisClient,
 	}
-	validationClient.room.Store(cfg.Room)
+	validationClient.remainingConcurrentSlots.Store(cfg.MaxConcurrentRequests)
 	return validationClient, nil
 }
 
@@ -130,8 +130,8 @@ func (c *ValidationClient) WasmModuleRoots() ([]common.Hash, error) {
 }
 
 func (c *ValidationClient) Launch(entry *validator.ValidationInput, moduleRoot common.Hash) validator.ValidationRun {
-	c.room.Add(-1)
-	defer c.room.Add(1)
+	c.remainingConcurrentSlots.Add(-1)
+	defer c.remainingConcurrentSlots.Add(1)
 	producer, found := c.producers[moduleRoot]
 	if !found {
 		errPromise := containers.NewReadyPromise(validator.GoGlobalState{}, fmt.Errorf("no validation is configured for wasm root %v", moduleRoot))
@@ -172,6 +172,10 @@ func (c *ValidationClient) StylusArchs() []rawdb.WasmTarget {
 	return stylusArchs
 }
 
-func (c *ValidationClient) Room() int {
-	return int(c.room.Load())
+func (c *ValidationClient) HasAvailableConcurrency() bool {
+	return c.remainingConcurrentSlots.Load() > 0
+}
+
+func (c *ValidationClient) RemainingConcurrentSlots() int {
+	return int(c.remainingConcurrentSlots.Load())
 }

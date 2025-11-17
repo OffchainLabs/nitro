@@ -13,6 +13,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
+	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
@@ -28,8 +29,15 @@ func (a *ValidationServerAPI) Name() string {
 	return a.spawner.Name()
 }
 
-func (a *ValidationServerAPI) Room() int {
-	return a.spawner.Room()
+// ServerMaxConcurrentValidations returns the server's configured maximum
+// concurrent validation capacity. This is a static configuration value.
+func (a *ValidationServerAPI) ServerMaxConcurrentValidations() int {
+	if configProvider, ok := a.spawner.(validator.ValidationServerCapacityConfig); ok {
+		return configProvider.ServerMaxConcurrentValidations()
+	}
+	// Fallback for spawners that don't implement ValidationServerConfigProvider
+	log.Warn("Spawner does not implement ValidationServerConfigProvider", "name", a.spawner.Name())
+	return 0
 }
 
 func (a *ValidationServerAPI) Validate(ctx context.Context, entry *server_api.InputJSON, moduleRoot common.Hash) (validator.GoGlobalState, error) {

@@ -29,11 +29,11 @@ var executionNodeOfflineCounter = metrics.NewRegisteredCounter("arb/state_provid
 
 type ValidationClient struct {
 	stopwaiter.StopWaiter
-	client          *rpcclient.RpcClient
-	name            string
-	stylusArchs     []rawdb.WasmTarget
-	room            atomic.Int32
-	wasmModuleRoots []common.Hash
+	client                   *rpcclient.RpcClient
+	name                     string
+	stylusArchs              []rawdb.WasmTarget
+	remainingConcurrentSlots atomic.Int32
+	wasmModuleRoots          []common.Hash
 }
 
 func NewValidationClient(config rpcclient.ClientConfigFetcher, stack *node.Node) *ValidationClient {
@@ -45,12 +45,12 @@ func NewValidationClient(config rpcclient.ClientConfigFetcher, stack *node.Node)
 }
 
 func (c *ValidationClient) Launch(entry *validator.ValidationInput, moduleRoot common.Hash) validator.ValidationRun {
-	c.room.Add(-1)
+	c.remainingConcurrentSlots.Add(-1)
 	promise := stopwaiter.LaunchPromiseThread[validator.GoGlobalState](c, func(ctx context.Context) (validator.GoGlobalState, error) {
 		input := server_api.ValidationInputToJson(entry)
 		var res validator.GoGlobalState
 		err := c.client.CallContext(ctx, &res, server_api.Namespace+"_validate", input, moduleRoot)
-		c.room.Add(1)
+		c.remainingConcurrentSlots.Add(1)
 		return res, err
 	})
 	return server_common.NewValRun(promise, moduleRoot)
@@ -87,18 +87,19 @@ func (c *ValidationClient) Start(ctx context.Context) error {
 	if len(moduleRoots) == 0 {
 		return fmt.Errorf("server reported no wasmModuleRoots")
 	}
-	var room int
-	if err := c.client.CallContext(ctx, &room, server_api.Namespace+"_room"); err != nil {
+	var serverCapacity int
+	if err := c.client.CallContext(ctx, &serverCapacity, server_api.Namespace+"_serverMaxConcurrentValidations"); err != nil {
 		return err
 	}
-	if room < 2 {
-		log.Warn("validation server not enough room, overriding to 2", "name", name, "room", room)
-		room = 2
+	if serverCapacity < 2 {
+		log.Warn("validation server reports low configured capacity, overriding to 2", "name", name, "serverCapacity", serverCapacity)
+		serverCapacity = 2
 	} else {
-		log.Info("connected to validation server", "name", name, "room", room)
+		log.Info("connected to validation server", "name", name, "serverCapacity", serverCapacity)
 	}
+	// Initialize client-side worker tracking with server's reported capacity
 	// #nosec G115
-	c.room.Store(int32(room))
+	c.remainingConcurrentSlots.Store(int32(serverCapacity))
 	c.wasmModuleRoots = moduleRoots
 	c.name = name
 	c.stylusArchs = stylusArchs
@@ -131,12 +132,18 @@ func (c *ValidationClient) Name() string {
 	return c.name
 }
 
-func (c *ValidationClient) Room() int {
-	room32 := c.room.Load()
-	if room32 < 0 {
+// HasAvailableConcurrency returns true if the client has available worker
+// capacity to send new validations to the server.
+func (c *ValidationClient) HasAvailableConcurrency() bool {
+	return c.remainingConcurrentSlots.Load() > 0
+}
+
+func (c *ValidationClient) RemainingConcurrentSlots() int {
+	workers := c.remainingConcurrentSlots.Load()
+	if workers < 0 {
 		return 0
 	}
-	return int(room32)
+	return int(workers)
 }
 
 type ExecutionClient struct {

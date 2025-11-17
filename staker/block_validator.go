@@ -960,10 +960,18 @@ func (v *BlockValidator) sendValidations(ctx context.Context) (*arbutil.MessageI
 				v.possiblyFatal(notFoundErr)
 				return nil, notFoundErr
 			}
-			if spawner.Room() == 0 {
-				log.Trace("sendValidations: no more room", "moduleRoot", moduleRoot)
-				return nil, nil
+			// Check if this spawner has client-side concurrency tracking
+			// (only ValidationClient and RedisValidationClient implement this)
+			if clientTracker, ok := spawner.(validator.ClientConcurrencyTracker); ok {
+				if !clientTracker.HasAvailableConcurrency() {
+					log.Trace("sendValidations: client concurrency limit reached",
+						"moduleRoot", moduleRoot,
+						"availableWorkers", clientTracker.RemainingConcurrentSlots())
+					return nil, nil
+				}
 			}
+			// Server-side spawners (ArbitratorSpawner, JitSpawner) don't implement
+			// ClientConcurrencyTracker, so they bypass this check entirely
 		}
 		if v.isMemoryLimitExceeded() {
 			log.Error("sendValidations: aborting due to running low on memory")

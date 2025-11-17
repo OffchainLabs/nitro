@@ -16,12 +16,26 @@ type ValidationSpawner interface {
 	Stop()
 	Name() string
 	StylusArchs() []rawdb.WasmTarget
-	Room() int
 }
 
 type ValidationRun interface {
 	containers.PromiseInterface[GoGlobalState]
 	WasmModuleRoot() common.Hash
+}
+
+// ValidationServerCapacityConfig is implemented by validation servers (not clients)
+// to report their configured maximum concurrent validation capacity to clients.
+type ValidationServerCapacityConfig interface {
+	ServerMaxConcurrentValidations() int
+}
+
+// ClientConcurrencyTracker is implemented by validation clients (not servers)
+// to track remaining concurrent requests for client-side flow control.
+// This interface enables clients to throttle validation requests to avoid
+// overwhelming remote validation servers.
+type ClientConcurrencyTracker interface {
+	HasAvailableConcurrency() bool
+	RemainingConcurrentSlots() int
 }
 
 type ExecutionSpawner interface {
