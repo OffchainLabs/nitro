@@ -135,8 +135,27 @@ func (ps *L2PricingState) GasPoolUpdateCost() uint64 {
 
 	return result
 }
-func (ps *L2PricingState) addToGasPoolWithMultiGasConstraints(_growBacklog bool, _gas multigas.MultiGas) error {
-	return fmt.Errorf("addToGasPoolWithMultiGasConstraints not implemented")
+
+func (ps *L2PricingState) addToGasPoolWithMultiGasConstraints(growBacklog bool, usedGas multigas.MultiGas) error {
+	constraintsLength, err := ps.multigasConstraints.Length()
+	if err != nil {
+		return fmt.Errorf("failed to get number of multi-gas constraints: %w", err)
+	}
+	for i := range constraintsLength {
+		constraint := ps.OpenMultiGasConstraintAt(i)
+		if growBacklog {
+			err = constraint.IncrementBacklog(usedGas)
+			if err != nil {
+				return fmt.Errorf("failed to increment backlog of multi-gas constraint %v: %w", i, err)
+			}
+		} else {
+			err = constraint.DecrementBacklog(usedGas)
+			if err != nil {
+				return fmt.Errorf("failed to decrement backlog of multi-gas constraint %v: %w", i, err)
+			}
+		}
+	}
+	return nil
 }
 
 // UpdatePricingModel updates the pricing model with info from the last block
@@ -146,9 +165,9 @@ func (ps *L2PricingState) UpdatePricingModel(timePassed uint64) {
 	case GasModelLegacy:
 		ps.updatePricingModelLegacy(timePassed)
 	case GasModelSingleGasConstraints:
-		ps.updatePricingModelGasConstraints(timePassed)
+		ps.updatePricingModelSingleConstraints(timePassed)
 	case GasModelMultiGasConstraints:
-		// TODO: Implement updatePricingModelMultiGasConstraints
+		ps.updatePricingModelMultiConstraints(timePassed)
 	}
 }
 
@@ -177,7 +196,7 @@ func (ps *L2PricingState) updatePricingModelLegacy(timePassed uint64) {
 	_ = ps.SetBaseFeeWei(baseFee)
 }
 
-func (ps *L2PricingState) updatePricingModelGasConstraints(timePassed uint64) {
+func (ps *L2PricingState) updatePricingModelSingleConstraints(timePassed uint64) {
 	// Compute exponent used in the basefee formula
 	totalExponent := arbmath.Bips(0)
 	constraintsLength, _ := ps.gasConstraints.Length()
@@ -201,12 +220,53 @@ func (ps *L2PricingState) updatePricingModelGasConstraints(timePassed uint64) {
 	}
 
 	// Compute base fee
-	minBaseFee, _ := ps.MinBaseFeeWei()
-	var baseFee *big.Int
-	if totalExponent > 0 {
-		baseFee = arbmath.BigMulByBips(minBaseFee, arbmath.ApproxExpBasisPoints(totalExponent, 4))
-	} else {
-		baseFee = minBaseFee
-	}
+	baseFee, _ := ps.calcBaseFeeFromExponent(totalExponent)
 	_ = ps.SetBaseFeeWei(baseFee)
+}
+
+func (ps *L2PricingState) updatePricingModelMultiConstraints(timePassed uint64) {
+	var exponentPerKind [multigas.NumResourceKind]arbmath.Bips
+	constraintsLength, _ := ps.MultiGasConstraintsLength()
+	for i := range constraintsLength {
+		constraint := ps.OpenMultiGasConstraintAt(i)
+		target, _ := constraint.Target()
+
+		// Pay off backlog
+		backlog, _ := constraint.Backlog()
+		gas := arbmath.SaturatingUMul(timePassed, target)
+		backlog = applyGasDelta(backlog, false, gas)
+		_ = constraint.SetBacklog(backlog)
+
+		// Calculate exponents per resource kind
+		if backlog > 0 {
+			for _, kind := range FeeRelevantResourceKinds {
+				exp, _ := constraint.ComputeExponent(uint8(kind))
+				exponentPerKind[kind] = arbmath.SaturatingBipsAdd(exponentPerKind[kind], exp)
+			}
+		}
+	}
+
+	// Choose the most congested resource
+	maxExponent := arbmath.Bips(0)
+	for _, exp := range exponentPerKind {
+		if exp > maxExponent {
+			maxExponent = exp
+		}
+	}
+
+	// Compute base fee
+	baseFee, _ := ps.calcBaseFeeFromExponent(maxExponent)
+	_ = ps.SetBaseFeeWei(baseFee)
+}
+
+func (ps *L2PricingState) calcBaseFeeFromExponent(exponent arbmath.Bips) (*big.Int, error) {
+	minBaseFee, err := ps.MinBaseFeeWei()
+	if err != nil {
+		return nil, err
+	}
+	if exponent > 0 {
+		return arbmath.BigMulByBips(minBaseFee, arbmath.ApproxExpBasisPoints(exponent, 4)), nil
+	} else {
+		return minBaseFee, nil
+	}
 }
