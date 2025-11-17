@@ -233,6 +233,9 @@ func (t *InboxTracker) FindInboxBatchContainingMessage(pos arbutil.MessageIndex)
 	if err != nil {
 		return 0, false, err
 	}
+	if batchCount == 0 {
+		return 0, false, nil
+	}
 	low := uint64(0)
 	high := batchCount - 1
 	lastBatchMessageCount, err := t.GetBatchMessageCount(high)
