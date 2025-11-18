@@ -3,6 +3,15 @@
 
 package dbschema
 
+import (
+	"encoding/binary"
+
+	"github.com/ethereum/go-ethereum/ethdb"
+	"github.com/ethereum/go-ethereum/rlp"
+
+	"github.com/offchainlabs/nitro/arbnode/mel"
+)
+
 var (
 	MessagePrefix                       []byte = []byte("m") // maps a message sequence number to a message
 	BlockHashInputFeedPrefix            []byte = []byte("b") // maps a message sequence number to a block hash received through the input feed
@@ -28,3 +37,48 @@ var (
 )
 
 const CurrentDbSchemaVersion uint64 = 2
+
+func GetSequencerBatchCount(db ethdb.KeyValueStore, melEnabled bool) (uint64, error) {
+	if !melEnabled {
+		return Value[uint64](db, SequencerBatchCountKey)
+	}
+	headStateBlockNum, err := Value[uint64](db, HeadMelStateBlockNumKey)
+	if err != nil {
+		return 0, err
+	}
+	headState, err := Value[mel.State](db, DbKey(MelStatePrefix, headStateBlockNum))
+	if err != nil {
+		return 0, err
+	}
+	return headState.BatchCount, nil
+}
+
+func GetBatchMetadata(db ethdb.KeyValueStore, seqNum uint64, melEnabled bool) (mel.BatchMetadata, error) {
+	if !melEnabled {
+		return Value[mel.BatchMetadata](db, DbKey(SequencerBatchMetaPrefix, seqNum))
+	}
+	return Value[mel.BatchMetadata](db, DbKey(MelSequencerBatchMetaPrefix, seqNum))
+}
+
+func DbKey(prefix []byte, pos uint64) []byte {
+	var key []byte
+	key = append(key, prefix...)
+	data := make([]byte, 8)
+	binary.BigEndian.PutUint64(data, pos)
+	key = append(key, data...)
+	return key
+}
+
+func Value[T any](db ethdb.KeyValueStore, key []byte) (T, error) {
+	var empty T
+	data, err := db.Get(key)
+	if err != nil {
+		return empty, err
+	}
+	var val T
+	err = rlp.DecodeBytes(data, &val)
+	if err != nil {
+		return empty, err
+	}
+	return val, nil
+}

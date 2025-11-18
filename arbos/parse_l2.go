@@ -385,7 +385,7 @@ func createBatchPostingReportTransaction(rd io.Reader, chainId *big.Int, lastArb
 	if batchDataStats != nil {
 		legacyGas = arbostypes.LegacyCostForStats(batchDataStats)
 		if legacyBatchGas != nil && *legacyBatchGas != legacyGas {
-			log.Error("legacy gas doesn't fit local compute", "local", legacyGas, "legacy", legacyBatchGas, "timestamp", batchTimestamp)
+			log.Error("legacy gas doesn't fit local compute", "local", legacyGas, "legacy", *legacyBatchGas, "timestamp", batchTimestamp)
 		}
 	} else {
 		if legacyBatchGas == nil {
