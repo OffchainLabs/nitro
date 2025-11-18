@@ -1,15 +1,20 @@
 [package]
 name = "caller-env"
 version = "0.1.0"
+authors.workspace = true
 edition.workspace = true
+homepage.workspace = true
+license.workspace = true
+publish.workspace = true
+repository.workspace = true
+rust-version.workspace = true
 
 [dependencies]
-tiny-keccak = { version = "2.0.2", features = ["keccak"] }
-brotli = { path = "../brotli/", optional = true }
-num_enum.workspace = true
-rand_pcg = { version = "0.3.1", default-features = false }
-rand = { version = "0.8.4", default-features = false }
-wasmer = { path = "../tools/wasmer/lib/api", optional = true }
+brotli = { workspace = true, optional = true }
+rand = { workspace = true }
+rand_pcg = { workspace = true }
+tiny-keccak = { workspace = true, features = ["keccak"] }
+wasmer = { workspace = true, optional = true }
 
 [features]
 default = ["brotli"]
