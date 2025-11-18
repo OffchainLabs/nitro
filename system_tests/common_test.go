@@ -707,6 +707,13 @@ func (b *NodeBuilder) BuildL1(t *testing.T) {
 	b.L1.cleanup = func() { requireClose(t, b.L1.Stack) }
 }
 
+func clientForStackUseHTTP(stackConfig *node.Config) bool {
+	if stackConfig.HTTPHost != "" {
+		return true
+	}
+	return false
+}
+
 func buildOnParentChain(
 	t *testing.T,
 	ctx context.Context,
@@ -781,11 +788,7 @@ func buildOnParentChain(
 	err = chainTestClient.ConsensusNode.Start(ctx)
 	Require(t, err)
 
-	useHttp := false
-	if stackConfig.HTTPHost != "" {
-		useHttp = true
-	}
-	chainTestClient.Client = ClientForStack(t, chainTestClient.Stack, useHttp)
+	chainTestClient.Client = ClientForStack(t, chainTestClient.Stack, clientForStackUseHTTP(stackConfig))
 
 	StartWatchChanErr(t, ctx, fatalErrChan, chainTestClient.ConsensusNode)
 
@@ -959,11 +962,7 @@ func (b *NodeBuilder) BuildL2(t *testing.T) func() {
 	err = b.L2.ConsensusNode.Start(b.ctx)
 	Require(t, err)
 
-	useHttp := false
-	if b.l2StackConfig.HTTPHost != "" {
-		useHttp = true
-	}
-	b.L2.Client = ClientForStack(t, b.L2.Stack, useHttp)
+	b.L2.Client = ClientForStack(t, b.L2.Stack, clientForStackUseHTTP(b.l2StackConfig))
 
 	if b.takeOwnership {
 		debugAuth := b.L2Info.GetDefaultTransactOpts("Owner", b.ctx)
@@ -1021,12 +1020,7 @@ func (b *NodeBuilder) RestartL2Node(t *testing.T) {
 	currentNode, err := arbnode.CreateNodeFullExecutionClient(b.ctx, stack, execNode, execNode, execNode, execNode, arbDb, consensusConfigFetcher, blockchain.Config(), l1Client, b.addresses, validatorTxOpts, sequencerTxOpts, dataSigner, feedErrChan, big.NewInt(1337), nil, locator.LatestWasmModuleRoot())
 	Require(t, err)
 
-	Require(t, currentNode.Start(b.ctx))
-	useHttp := false
-	if b.l2StackConfig.HTTPHost != "" {
-		useHttp = true
-	}
-	client := ClientForStack(t, stack, useHttp)
+	client := ClientForStack(t, stack, clientForStackUseHTTP(b.l2StackConfig))
 
 	StartWatchChanErr(t, b.ctx, feedErrChan, currentNode)
 
@@ -2117,11 +2111,7 @@ func Create2ndNodeWithConfig(
 
 	err = currentNode.Start(ctx)
 	Require(t, err)
-	useHttp := false
-	if stackConfig.HTTPHost != "" {
-		useHttp = true
-	}
-	chainClient := ClientForStack(t, chainStack, useHttp)
+	chainClient := ClientForStack(t, chainStack, clientForStackUseHTTP(stackConfig))
 
 	StartWatchChanErr(t, ctx, feedErrChan, currentNode)
 
