@@ -129,8 +129,10 @@ func TestGetL1ConfirmationsForL3WithL2WithoutConsensusArbRPC(t *testing.T) {
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).DontParalellise()
 
+	// forces using http RPC instead of direct method call
 	builder.l2StackConfig.HTTPHost = "localhost"
 	builder.l2StackConfig.HTTPPort = getRandomPort(t)
+	// disables arb module on HTTP RPC
 	httpModulesWithoutArb := make([]string, 0)
 	for i, module := range builder.l2StackConfig.HTTPModules {
 		if module != "arb" {
