@@ -58,6 +58,8 @@ import (
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
 
+var FailedToUseArbGetL1ConfirmationsRPCFromParentChainLogMsg = "Failed to get L1 confirmations from parent chain via arb_getL1Confirmations"
+
 type Config struct {
 	Sequencer                bool                           `koanf:"sequencer"`
 	ParentChainReader        headerreader.Config            `koanf:"parent-chain-reader" reload:"hot"`
@@ -1649,7 +1651,7 @@ func (n *Node) GetL1Confirmations(msgIdx arbutil.MessageIndex) containers.Promis
 			err = parentChainClient.Client().CallContext(ctx, &confs, "arb_getL1Confirmations", parentChainBlock.Number())
 			if err != nil {
 				// falls back to node interface method
-				log.Debug("Failed to get L1 confirmations from parent chain via arb_getL1Confirmations", "blockNumber", parentChainBlockNum, "blockHash", parentChainBlock.Hash(), "err", err)
+				log.Debug(FailedToUseArbGetL1ConfirmationsRPCFromParentChainLogMsg, "blockNumber", parentChainBlockNum, "blockHash", parentChainBlock.Hash(), "err", err)
 
 				parentNodeInterface, err := node_interfacegen.NewNodeInterface(types.NodeInterfaceAddress, parentChainClient)
 				if err != nil {
