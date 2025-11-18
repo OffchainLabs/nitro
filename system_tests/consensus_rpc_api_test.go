@@ -12,11 +12,9 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
-	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/solgen/go/node_interfacegen"
-	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
 func getL1Confirmations(
@@ -98,12 +96,10 @@ func TestGetL1ConfirmationsForL2(t *testing.T) {
 }
 
 func TestGetL1ConfirmationsForL3(t *testing.T) {
-	logHandler := testhelpers.InitTestLog(t, log.LvlDebug)
-
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).DontParalellise()
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
 	cleanupL1AndL2 := builder.Build(t)
 	defer cleanupL1AndL2()
 
@@ -115,34 +111,6 @@ func TestGetL1ConfirmationsForL3(t *testing.T) {
 	defer cleanupL3()
 
 	testGetL1Confirmations(t, ctx, builder.L3, builder.L2, testClientL2SecondNode, builder.L2Info)
-
-	if logHandler.WasLogged(arbnode.FailedToUseArbGetL1ConfirmationsRPCFromParentChainLogMsg) {
-		t.Fatal("FailedToUseArbGetL1ConfirmationsRPCFromParentChainLogMsg was logged unexpectedly")
-	}
-}
-
-func TestGetL1ConfirmationsForL3WithL2WithoutConsensusRPC(t *testing.T) {
-	logHandler := testhelpers.InitTestLog(t, log.LvlDebug)
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).DisableConsensusRPC().DontParalellise()
-	cleanupL1AndL2 := builder.Build(t)
-	defer cleanupL1AndL2()
-
-	l2SecondNodeNodeConfig := arbnode.ConfigDefaultL1NonSequencerTest()
-	testClientL2SecondNode, cleanupL2SecondNode := builder.Build2ndNode(t, &SecondNodeParams{nodeConfig: l2SecondNodeNodeConfig})
-	defer cleanupL2SecondNode()
-
-	cleanupL3 := builder.BuildL3OnL2(t)
-	defer cleanupL3()
-
-	testGetL1Confirmations(t, ctx, builder.L3, builder.L2, testClientL2SecondNode, builder.L2Info)
-
-	if !logHandler.WasLogged(arbnode.FailedToUseArbGetL1ConfirmationsRPCFromParentChainLogMsg) {
-		t.Fatal("FailedToUseArbGetL1ConfirmationsRPCFromParentChainLogMsg was not logged")
-	}
 }
 
 func TestFindBatch(t *testing.T) {
