@@ -44,25 +44,22 @@ func (b *Broadcaster) NewBroadcastFeedMessage(
 	message arbostypes.MessageWithMetadataAndBlockInfo,
 	sequenceNumber arbutil.MessageIndex,
 ) (*m.BroadcastFeedMessage, error) {
-	var messageSignature []byte
+	feedMessage := m.BroadcastFeedMessage{
+		SequenceNumber: sequenceNumber,
+		Message:        message.MessageWithMeta,
+		BlockHash:      message.BlockHash,
+		Signature:      []byte{},
+		BlockMetadata:  message.BlockMetadata,
+	}
 	if b.dataSigner != nil {
-		hash, err := message.MessageWithMeta.Hash(sequenceNumber, b.chainId)
-		if err != nil {
-			return nil, err
-		}
-		messageSignature, err = b.dataSigner(hash.Bytes())
+		hash := feedMessage.SignatureHash(b.chainId)
+		var err error
+		feedMessage.Signature, err = b.dataSigner(hash.Bytes())
 		if err != nil {
 			return nil, err
 		}
 	}
-
-	return &m.BroadcastFeedMessage{
-		SequenceNumber: sequenceNumber,
-		Message:        message.MessageWithMeta,
-		BlockHash:      message.BlockHash,
-		Signature:      messageSignature,
-		BlockMetadata:  message.BlockMetadata,
-	}, nil
+	return &feedMessage, nil
 }
 
 func (b *Broadcaster) BroadcastFeedMessages(messages []*m.BroadcastFeedMessage) (err error) {
