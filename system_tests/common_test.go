@@ -357,7 +357,7 @@ func (b *NodeBuilder) DefaultConfig(t *testing.T, withL1 bool) *NodeBuilder {
 	b.L1Info = NewL1TestInfo(t)
 	b.L2Info = NewArbTestInfo(t, b.chainConfig.ChainID)
 	b.dataDir = t.TempDir()
-	b.l1StackConfig = testhelpers.CreateStackConfigForTest("")
+	b.l1StackConfig = testhelpers.CreateStackConfigForTest(b.dataDir)
 	b.l2StackConfig = testhelpers.CreateStackConfigForTest(b.dataDir)
 	cp := valnode.TestValidationConfig
 	b.valnodeConfig = &cp
@@ -1480,6 +1480,7 @@ func createTestL1BlockChain(t *testing.T, l1info info, withClientWrapper bool, s
 	chainConfig := chaininfo.ArbitrumDevTestChainConfig()
 	chainConfig.ArbitrumChainParams = params.ArbitrumChainParams{}
 
+	stackConfig.DataDir = ""
 	stack, err := node.New(stackConfig)
 	Require(t, err)
 
