@@ -695,7 +695,7 @@ func createL2NodeForBoldProtocol(
 	)
 	Require(t, err)
 
-	l2client = ClientForStack(t, l2stack)
+	l2client = ClientForStack(t, l2stack, false)
 
 	StartWatchChanErr(t, ctx, fatalErrChan, currentNode)
 
@@ -986,7 +986,7 @@ func create2ndNodeWithConfigForBoldProtocol(
 	l2node, err := arbnode.CreateNodeFullExecutionClient(ctx, l2stack, execNode, execNode, execNode, execNode, l2arbDb, NewCommonConfigFetcher(nodeConfig), l2blockchain.Config(), l1client, addresses, &txOpts, &txOpts, dataSigner, fatalErrChan, l1ChainId, nil /* blob reader */, locator.LatestWasmModuleRoot())
 	Require(t, err)
 
-	l2client := ClientForStack(t, l2stack)
+	l2client := ClientForStack(t, l2stack, clientForStackUseHTTP(stackConfig))
 
 	StartWatchChanErr(t, ctx, fatalErrChan, l2node)
 
