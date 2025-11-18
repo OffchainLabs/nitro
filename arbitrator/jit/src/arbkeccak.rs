@@ -2,7 +2,6 @@ use caller_env::GuestPtr;
 use crate::caller_env::{JitEnv, JitExecEnv};
 use crate::machine::{MaybeEscape, WasmEnvMut};
 
-#[allow(clippy::too_many_arguments)]
 pub fn keccak256(
     mut src: WasmEnvMut,
     in_buf_ptr: GuestPtr,
