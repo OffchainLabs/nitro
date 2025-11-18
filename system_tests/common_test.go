@@ -686,7 +686,11 @@ func buildOnParentChain(
 	err = chainTestClient.ConsensusNode.Start(ctx)
 	Require(t, err)
 
-	chainTestClient.Client = ClientForStack(t, chainTestClient.Stack)
+	useHttp := false
+	if stackConfig.HTTPHost != "" {
+		useHttp = true
+	}
+	chainTestClient.Client = ClientForStack(t, chainTestClient.Stack, useHttp)
 
 	StartWatchChanErr(t, ctx, fatalErrChan, chainTestClient.ConsensusNode)
 
@@ -839,7 +843,11 @@ func (b *NodeBuilder) BuildL2(t *testing.T) func() {
 	err = b.L2.ConsensusNode.Start(b.ctx)
 	Require(t, err)
 
-	b.L2.Client = ClientForStack(t, b.L2.Stack)
+	useHttp := false
+	if b.l2StackConfig.HTTPHost != "" {
+		useHttp = true
+	}
+	b.L2.Client = ClientForStack(t, b.L2.Stack, useHttp)
 
 	if b.takeOwnership {
 		debugAuth := b.L2Info.GetDefaultTransactOpts("Owner", b.ctx)
@@ -898,7 +906,11 @@ func (b *NodeBuilder) RestartL2Node(t *testing.T) {
 	Require(t, err)
 
 	Require(t, currentNode.Start(b.ctx))
-	client := ClientForStack(t, stack)
+	useHttp := false
+	if b.l2StackConfig.HTTPHost != "" {
+		useHttp = true
+	}
+	client := ClientForStack(t, stack, useHttp)
 
 	StartWatchChanErr(t, b.ctx, feedErrChan, currentNode)
 
@@ -1735,9 +1747,15 @@ func createNonL1BlockChainWithStackConfig(
 	return info, stack, chainDb, arbDb, blockchain
 }
 
-func ClientForStack(t *testing.T, backend *node.Node) *ethclient.Client {
-	rpcClient := backend.Attach()
-	return ethclient.NewClient(rpcClient)
+func ClientForStack(t *testing.T, backend *node.Node, useHTTP bool) *ethclient.Client {
+	if useHTTP {
+		ethClient, err := ethclient.Dial(backend.HTTPEndpoint())
+		if err != nil {
+			t.Fatalf("Failed to create client for stack with HTTP: %v", err)
+		}
+		return ethClient
+	}
+	return ethclient.NewClient(backend.Attach())
 }
 
 func StartWatchChanErr(t *testing.T, ctx context.Context, feedErrChan chan error, node *arbnode.Node) {
@@ -1851,7 +1869,11 @@ func Create2ndNodeWithConfig(
 
 	err = currentNode.Start(ctx)
 	Require(t, err)
-	chainClient := ClientForStack(t, chainStack)
+	useHttp := false
+	if stackConfig.HTTPHost != "" {
+		useHttp = true
+	}
+	chainClient := ClientForStack(t, chainStack, useHttp)
 
 	StartWatchChanErr(t, ctx, feedErrChan, currentNode)
 

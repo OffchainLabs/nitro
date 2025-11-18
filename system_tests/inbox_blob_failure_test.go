@@ -294,7 +294,7 @@ func (b *NodeBuilder) Build2ndNodeWithBlobReader(t *testing.T, params *SecondNod
 
 	testClient := NewTestClient(b.ctx)
 	testClient.Client, testClient.ConsensusNode, testClient.ExecutionConfigFetcher, testClient.ConsensusConfigFetcher =
-		Create2ndNodeWithConfig(t, b.ctx, b.L2.ConsensusNode, b.L1.Stack, b.L1Info, params.initData, params.nodeConfig, params.execConfig, params.stackConfig, b.valnodeConfig, params.addresses, b.initMessage, params.useExecutionClientOnly, blobReader, true)
+		Create2ndNodeWithConfig(t, b.ctx, b.L2.ConsensusNode, b.L1.Stack, b.L1Info, params.initData, params.nodeConfig, params.execConfig, params.stackConfig, b.valnodeConfig, params.addresses, b.initMessage, params.useExecutionClientOnly, blobReader)
 	testClient.ExecNode = getExecNode(t, testClient.ConsensusNode)
 	testClient.cleanup = func() { testClient.ConsensusNode.StopAndWait() }
 	testClient.L1BlobReader = blobReader
