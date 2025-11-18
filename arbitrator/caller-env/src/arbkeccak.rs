@@ -1,6 +1,6 @@
+use crate::{ExecEnv, GuestPtr, MemAccess};
 use core::mem::MaybeUninit;
 use tiny_keccak::{Hasher, Keccak};
-use crate::{ExecEnv, GuestPtr, MemAccess};
 
 pub fn keccak256<M: MemAccess, E: ExecEnv>(
     mem: &mut M,
