@@ -43,6 +43,7 @@ var gasConstraintsKey []byte = []byte{0}
 var multigasConstraintsKey []byte = []byte{1}
 
 const GethBlockGasLimit = 1 << 50
+const GasConstraintsLimit = 20
 
 func InitializeL2PricingState(sto *storage.Storage) error {
 	_ = sto.SetUint64ByUint64(speedLimitPerSecondOffset, InitialSpeedLimitPerSecondV0)
@@ -167,6 +168,14 @@ func (ps *L2PricingState) setGasConstraintsFromLegacy() error {
 }
 
 func (ps *L2PricingState) AddGasConstraint(target uint64, adjustmentWindow uint64, backlog uint64) error {
+	length, err := ps.GasConstraintsLength()
+	if err != nil {
+		return fmt.Errorf("failed to get number of constraints: %w", err)
+	}
+	if length >= GasConstraintsLimit {
+		return fmt.Errorf("cannot add more than %d gas constraints", GasConstraintsLimit)
+	}
+
 	subStorage, err := ps.gasConstraints.Push()
 	if err != nil {
 		return fmt.Errorf("failed to push constraint: %w", err)

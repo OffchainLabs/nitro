@@ -9,6 +9,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/params"
 
+	"github.com/offchainlabs/nitro/arbos/storage"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
@@ -72,6 +73,31 @@ func (ps *L2PricingState) addToGasPoolWithGasConstraints(gas int64) error {
 		}
 	}
 	return nil
+}
+
+func (ps *L2PricingState) GasPoolUpdateCost(arbosVersion uint64) uint64 {
+	var result uint64
+
+	fallBackToLegacy := true
+	if arbosVersion >= ArbosMultiConstraintsVersion {
+		// Extra read for gas constraints length
+		result += storage.StorageReadCost
+
+		// addToGasPoolWithGasConstraints costs
+		constraintsLength, _ := ps.gasConstraints.Length()
+		if constraintsLength > 0 {
+			// reading length one more time + read and write each constraint's Backlog value
+			result += storage.StorageReadCost + uint64(constraintsLength)*(storage.StorageReadCost+storage.StorageWriteCost)
+			fallBackToLegacy = false
+		}
+	}
+
+	// addToGasPoolLegacy costs
+	if fallBackToLegacy {
+		// read and write Backlog value
+		result += storage.StorageReadCost + storage.StorageWriteCost
+	}
+	return result
 }
 
 // UpdatePricingModel updates the pricing model with info from the last block

@@ -12,6 +12,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/vm"
 
 	"github.com/offchainlabs/nitro/arbos"
+	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbos/storage"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 )
@@ -92,10 +93,13 @@ func TestRetryableRedeemWithGasConstraints(t *testing.T) {
 	evm := newMockEVMForTesting()
 	precompileCtx := testContext(common.Address{}, evm)
 
-	for i := range 2 {
-		target0 := uint64(i * 1000000)
-		window0 := uint64(i * 10)
-		backlog0 := uint64(i * 500000)
+	for i := range l2pricing.GasConstraintsLimit {
+		// #nosec G115
+		target0 := uint64((i + 1) * 1000000)
+		// #nosec G115
+		window0 := uint64((i + 1) * 10)
+		// #nosec G115
+		backlog0 := uint64((i + 1) * 500000)
 
 		err := precompileCtx.State.L2PricingState().AddGasConstraint(target0, window0, backlog0)
 		Require(t, err)
@@ -139,10 +143,20 @@ func TestRetryableRedeemWithGasConstraints(t *testing.T) {
 	)
 	Require(t, err)
 
-	if gasLeft != storage.StorageWriteCost-storage.StorageWriteZeroCost {
-		// We expect to have some gas left over, because in this test we write a zero, but in other
-		//     use cases the precompile would cause a non-zero write. So the precompile allocates enough gas
-		//     to handle both cases, and some will be left over in this test's use case.
-		Fail(t, "didn't consume all the expected gas")
+	expected := storage.StorageWriteCost - storage.StorageWriteZeroCost
+	if gasLeft != expected {
+		// Say how much different the result is (and in which direction).
+		var delta uint64
+		var relation string
+		if gasLeft > expected {
+			delta = gasLeft - expected
+			relation = "more"
+		} else {
+			delta = expected - gasLeft
+			relation = "less"
+		}
+
+		t.Fatalf("unexpected gas left: got %d, want %d (%d %s than expected)",
+			gasLeft, expected, delta, relation)
 	}
 }
