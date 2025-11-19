@@ -20,7 +20,7 @@ import (
 const stopDelayWarningTimeout = 30 * time.Second
 
 type StopWaiterSafe struct {
-	mutex     sync.Mutex // protects started, stopped, ctx, parentCtx, stopFunc
+	mutex     sync.RWMutex // protects started, stopped, ctx, parentCtx, stopFunc
 	started   bool
 	stopped   bool
 	ctx       context.Context
@@ -33,27 +33,27 @@ type StopWaiterSafe struct {
 }
 
 func (s *StopWaiterSafe) Started() bool {
-	s.mutex.Lock()
-	defer s.mutex.Unlock()
+	s.mutex.RLock()
+	defer s.mutex.RUnlock()
 	return s.started
 }
 
 func (s *StopWaiterSafe) Stopped() bool {
-	s.mutex.Lock()
-	defer s.mutex.Unlock()
+	s.mutex.RLock()
+	defer s.mutex.RUnlock()
 	return s.stopped
 }
 
 func (s *StopWaiterSafe) GetContextSafe() (context.Context, error) {
-	s.mutex.Lock()
-	defer s.mutex.Unlock()
+	s.mutex.RLock()
+	defer s.mutex.RUnlock()
 	return s.getContext()
 }
 
 // this context is not cancelled even after someone calls Stop
 func (s *StopWaiterSafe) GetParentContextSafe() (context.Context, error) {
-	s.mutex.Lock()
-	defer s.mutex.Unlock()
+	s.mutex.RLock()
+	defer s.mutex.RUnlock()
 	return s.getParentContext()
 }
 
@@ -304,32 +304,6 @@ func LaunchPromiseThread[T any](
 		promise.ProduceError(err)
 	}
 	return &promise
-}
-
-func ChanRateLimiter[T any](s *StopWaiterSafe, inChan <-chan T, maxRateCallback func() time.Duration) (<-chan T, error) {
-	outChan := make(chan T)
-	err := s.LaunchThreadSafe(func(ctx context.Context) {
-		nextAllowedTriggerTime := time.Now()
-		for {
-			select {
-			case <-ctx.Done():
-				close(outChan)
-				return
-			case data := <-inChan:
-				now := time.Now()
-				if now.After(nextAllowedTriggerTime) {
-					outChan <- data
-					nextAllowedTriggerTime = now.Add(maxRateCallback())
-				}
-			}
-		}
-	})
-	if err != nil {
-		close(outChan)
-		return nil, err
-	}
-
-	return outChan, nil
 }
 
 // StopWaiter may panic on race conditions instead of returning errors
