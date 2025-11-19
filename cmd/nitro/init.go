@@ -909,7 +909,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 			return chainDb, nil, err
 		}
 		if config.Init.ValidateGenesisAssertion {
-			if err := validateGenesisAssertion(ctx, rollupAddrs.Rollup, l1Client, l2BlockChain.Genesis().Hash(), initDataReaderHasAccounts); err != nil {
+			if err := validateGenesisAssertion(ctx, rollupAddrs.Rollup, l1Client, l2BlockChain.Genesis(), initDataReaderHasAccounts); err != nil {
 				if !config.Init.Force {
 					return chainDb, nil, fmt.Errorf("error testing genesis assertion: %w", err)
 				}
@@ -937,7 +937,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 	return rebuildLocalWasm(ctx, &config.Execution, l2BlockChain, chainDb, wasmDb, config.Init.RebuildLocalWasm)
 }
 
-func validateGenesisAssertion(ctx context.Context, rollupAddress common.Address, l1Client *ethclient.Client, genesisBlockHash common.Hash, initDataReaderHasAccounts bool) error {
+func validateGenesisAssertion(ctx context.Context, rollupAddress common.Address, l1Client *ethclient.Client, genesis *types.Block, initDataReaderHasAccounts bool) error {
 	if l1Client == nil {
 		return fmt.Errorf("no l1 client")
 	}
@@ -959,7 +959,29 @@ func validateGenesisAssertion(ctx context.Context, rollupAddress common.Address,
 	}
 	genesisAssertionCreationInfo, err := bold.ReadBoldAssertionCreationInfo(ctx, userLogic, l1Client, rollupAddress, genesisAssertionHash)
 	if err != nil {
-		return err
+		// If we can't find the empty genesis assertion, try to compute the assertion for non-empty genesis
+		genesisGlobalState := protocol.GoGlobalState{
+			BlockHash:  genesis.Hash(),
+			SendRoot:   types.DeserializeHeaderExtraInformation(genesis.Header()).SendRoot,
+			Batch:      1,
+			PosInBatch: 0,
+		}
+		genesisAssertionState := rollupgen.AssertionState{
+			GlobalState: rollupgen.GlobalState{
+				Bytes32Vals: genesisGlobalState.AsSolidityStruct().Bytes32Vals,
+				U64Vals:     genesisGlobalState.AsSolidityStruct().U64Vals,
+			},
+			MachineStatus:  1,
+			EndHistoryRoot: [32]byte{},
+		}
+		genesisAssertionHash, err = userLogic.ComputeAssertionHash(&bind.CallOpts{Context: ctx}, common.Hash{}, genesisAssertionState, common.Hash{})
+		if err != nil {
+			return err
+		}
+		genesisAssertionCreationInfo, err = bold.ReadBoldAssertionCreationInfo(ctx, userLogic, l1Client, rollupAddress, genesisAssertionHash)
+		if err != nil {
+			return err
+		}
 	}
 	beforeGlobalState := protocol.GoGlobalStateFromSolidity(genesisAssertionCreationInfo.BeforeState.GlobalState)
 	afterGlobalState := protocol.GoGlobalStateFromSolidity(genesisAssertionCreationInfo.AfterState.GlobalState)
@@ -967,7 +989,7 @@ func validateGenesisAssertion(ctx context.Context, rollupAddress common.Address,
 	if isNullAssertion && initDataReaderHasAccounts {
 		return errors.New("genesis assertion is null but there are accounts in the init data")
 	}
-	if !isNullAssertion && afterGlobalState.BlockHash != genesisBlockHash {
+	if !isNullAssertion && afterGlobalState.BlockHash != genesis.Hash() {
 		return errors.New("genesis assertion is non null and its afterGlobalState.BlockHash doesn't match the genesis blockHash")
 	}
 	return nil

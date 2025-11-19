@@ -1027,6 +1027,8 @@ where
             heights = &heights[1..];
         }
 
+        use digest::Update;
+
         hash = Keccak256::new()
             .chain(prefix)
             .chain(item.as_ref())
@@ -2831,6 +2833,8 @@ impl Machine {
                 hash
             }};
         }
+
+        use digest::Update;
         let frame_stacks = compute_multistack!(
             |x| x.frame_stack,
             self.get_frame_stacks(),
