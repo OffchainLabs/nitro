@@ -708,10 +708,7 @@ func (b *NodeBuilder) BuildL1(t *testing.T) {
 }
 
 func clientForStackUseHTTP(stackConfig *node.Config) bool {
-	if stackConfig.HTTPHost != "" {
-		return true
-	}
-	return false
+	return stackConfig.HTTPHost != ""
 }
 
 func buildOnParentChain(
