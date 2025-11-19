@@ -917,6 +917,9 @@ func getStaker(
 			return nil, nil, common.Address{}, err
 		}
 		if config.Staker.UseSmartContractWallet {
+			if !l1Reader.Started() {
+				l1Reader.Start(ctx)
+			}
 			err = wallet.InitializeAndCreateSCW(ctx)
 		} else {
 			err = wallet.Initialize(ctx)
@@ -1569,7 +1572,7 @@ func (n *Node) Start(ctx context.Context) error {
 	if n.Staker != nil {
 		n.Staker.Start(ctx)
 	}
-	if n.L1Reader != nil {
+	if n.L1Reader != nil && !n.L1Reader.Started() {
 		n.L1Reader.Start(ctx)
 	}
 	if n.BroadcastClients != nil {
@@ -1615,6 +1618,9 @@ func (n *Node) StopAndWait() {
 	}
 	if n.configFetcher != nil && n.configFetcher.Started() {
 		n.configFetcher.StopAndWait()
+	}
+	if n.blockMetadataFetcher != nil {
+		n.blockMetadataFetcher.StopAndWait()
 	}
 	if n.SeqCoordinator != nil && n.SeqCoordinator.Started() {
 		// Releases the chosen sequencer lockout,

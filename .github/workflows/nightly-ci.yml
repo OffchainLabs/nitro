@@ -35,17 +35,15 @@ jobs:
         uses: ./.github/actions/ci-setup
 
       - name: Build
-        run: make build test-go-deps -j
+        run: make -j8 build test-go-deps
 
       - name: Build all lint dependencies
-        run: make -j build-node-deps
+        run: make -j8 build-node-deps
 
-      - name: Lint
+      - name: GolangCI Lint
         uses: golangci/golangci-lint-action@v9
         with:
-          version: latest
-          skip-cache: true
-          skip-save-cache: true
+          version: v2.5
 
       - name: Custom Lint
         run: |
