@@ -7,61 +7,10 @@ import (
 	"fmt"
 	"math/big"
 
+	"github.com/offchainlabs/nitro/arbos/constraints"
 	"github.com/offchainlabs/nitro/arbos/storage"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
-
-const (
-	gasConstraintTargetOffset uint64 = iota
-	gasConstraintAdjustmentWindowOffset
-	gasConstraintBacklogOffset
-)
-
-// GasConstraint tries to keep the gas backlog under the target (per second) for the given adjustment window.
-// Target stands for gas usage per second
-// Adjustment window is the time frame over which the price will rise by a factor of e if demand is 2x the target
-type GasConstraint struct {
-	target           storage.StorageBackedUint64
-	adjustmentWindow storage.StorageBackedUint64
-	backlog          storage.StorageBackedUint64
-}
-
-func OpenGasConstraint(storage *storage.Storage) *GasConstraint {
-	return &GasConstraint{
-		target:           storage.OpenStorageBackedUint64(gasConstraintTargetOffset),
-		adjustmentWindow: storage.OpenStorageBackedUint64(gasConstraintAdjustmentWindowOffset),
-		backlog:          storage.OpenStorageBackedUint64(gasConstraintBacklogOffset),
-	}
-}
-
-func (c *GasConstraint) Clear() error {
-	if err := c.target.Clear(); err != nil {
-		return err
-	}
-	if err := c.adjustmentWindow.Clear(); err != nil {
-		return err
-	}
-	if err := c.backlog.Clear(); err != nil {
-		return err
-	}
-	return nil
-}
-
-func (c *GasConstraint) Target() (uint64, error) {
-	return c.target.Get()
-}
-
-func (c *GasConstraint) AdjustmentWindow() (uint64, error) {
-	return c.adjustmentWindow.Get()
-}
-
-func (c *GasConstraint) Backlog() (uint64, error) {
-	return c.backlog.Get()
-}
-
-func (c *GasConstraint) SetBacklog(val uint64) error {
-	return c.backlog.Set(val)
-}
 
 type L2PricingState struct {
 	storage             *storage.Storage
@@ -73,7 +22,8 @@ type L2PricingState struct {
 	pricingInertia      storage.StorageBackedUint64
 	backlogTolerance    storage.StorageBackedUint64
 	perTxGasLimit       storage.StorageBackedUint64
-	constraints         *storage.SubStorageVector
+	gasConstraints      *storage.SubStorageVector
+	multigasConstraints *storage.SubStorageVector
 }
 
 const (
@@ -87,7 +37,8 @@ const (
 	perTxGasLimitOffset
 )
 
-var constraintsKey []byte = []byte{0}
+var gasConstraintsKey []byte = []byte{0}
+var multigasConstraintsKey []byte = []byte{1}
 
 const GethBlockGasLimit = 1 << 50
 
@@ -112,7 +63,8 @@ func OpenL2PricingState(sto *storage.Storage) *L2PricingState {
 		pricingInertia:      sto.OpenStorageBackedUint64(pricingInertiaOffset),
 		backlogTolerance:    sto.OpenStorageBackedUint64(backlogToleranceOffset),
 		perTxGasLimit:       sto.OpenStorageBackedUint64(perTxGasLimitOffset),
-		constraints:         storage.OpenSubStorageVector(sto.OpenSubStorage(constraintsKey)),
+		gasConstraints:      storage.OpenSubStorageVector(sto.OpenSubStorage(gasConstraintsKey)),
+		multigasConstraints: storage.OpenSubStorageVector(sto.OpenSubStorage(multigasConstraintsKey)),
 	}
 }
 
@@ -187,8 +139,8 @@ func (ps *L2PricingState) Restrict(err error) {
 	ps.storage.Burner().Restrict(err)
 }
 
-func (ps *L2PricingState) setConstraintsFromLegacy() error {
-	if err := ps.ClearConstraints(); err != nil {
+func (ps *L2PricingState) setGasConstraintsFromLegacy() error {
+	if err := ps.ClearGasConstraints(); err != nil {
 		return err
 	}
 	target, err := ps.SpeedLimitPerSecond()
@@ -208,46 +160,100 @@ func (ps *L2PricingState) setConstraintsFromLegacy() error {
 		return err
 	}
 	backlog := arbmath.SaturatingUSub(oldBacklog, arbmath.SaturatingUMul(backlogTolerance, target))
-	return ps.AddConstraint(target, adjustmentWindow, backlog)
+	return ps.AddGasConstraint(target, adjustmentWindow, backlog)
 }
 
-func (ps *L2PricingState) AddConstraint(target uint64, adjustmentWindow uint64, backlog uint64) error {
-	subStorage, err := ps.constraints.Push()
+func (ps *L2PricingState) AddGasConstraint(target uint64, adjustmentWindow uint64, backlog uint64) error {
+	subStorage, err := ps.gasConstraints.Push()
 	if err != nil {
 		return fmt.Errorf("failed to push constraint: %w", err)
 	}
-	constraint := OpenGasConstraint(subStorage)
-	if err := constraint.target.Set(target); err != nil {
+	constraint := constraints.OpenGasConstraint(subStorage)
+	if err := constraint.SetTarget(target); err != nil {
 		return fmt.Errorf("failed to set target: %w", err)
 	}
-	if err := constraint.adjustmentWindow.Set(adjustmentWindow); err != nil {
+	if err := constraint.SetAdjustmentWindow(adjustmentWindow); err != nil {
 		return fmt.Errorf("failed to set adjustment window: %w", err)
 	}
-	if err := constraint.backlog.Set(backlog); err != nil {
+	if err := constraint.SetBacklog(backlog); err != nil {
 		return fmt.Errorf("failed to set backlog: %w", err)
 	}
 	return nil
 }
 
-func (ps *L2PricingState) ConstraintsLength() (uint64, error) {
-	return ps.constraints.Length()
+func (ps *L2PricingState) GasConstraintsLength() (uint64, error) {
+	return ps.gasConstraints.Length()
 }
 
-func (ps *L2PricingState) OpenConstraintAt(i uint64) *GasConstraint {
-	return OpenGasConstraint(ps.constraints.At(i))
+func (ps *L2PricingState) OpenGasConstraintAt(i uint64) *constraints.GasConstraint {
+	return constraints.OpenGasConstraint(ps.gasConstraints.At(i))
 }
 
-func (ps *L2PricingState) ClearConstraints() error {
-	length, err := ps.ConstraintsLength()
+func (ps *L2PricingState) ClearGasConstraints() error {
+	length, err := ps.GasConstraintsLength()
 	if err != nil {
 		return err
 	}
 	for range length {
-		subStorage, err := ps.constraints.Pop()
+		subStorage, err := ps.gasConstraints.Pop()
 		if err != nil {
 			return err
 		}
-		constraint := OpenGasConstraint(subStorage)
+		constraint := constraints.OpenGasConstraint(subStorage)
+		if err := constraint.Clear(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (ps *L2PricingState) MultiGasConstraintsLength() (uint64, error) {
+	return ps.multigasConstraints.Length()
+}
+
+func (ps *L2PricingState) OpenMultiGasConstraintAt(i uint64) *constraints.MultiGasConstraint {
+	return constraints.OpenMultiGasConstraint(ps.multigasConstraints.At(i))
+}
+
+func (ps *L2PricingState) AddMultiGasConstraint(
+	target uint64,
+	adjustmentWindow uint64,
+	backlog uint64,
+	resourceWeights map[uint8]uint64,
+) error {
+	subStorage, err := ps.multigasConstraints.Push()
+	if err != nil {
+		return fmt.Errorf("failed to push multi-gas constraint: %w", err)
+	}
+
+	constraint := constraints.OpenMultiGasConstraint(subStorage)
+	if err := constraint.SetTarget(target); err != nil {
+		return fmt.Errorf("failed to set target: %w", err)
+	}
+	if err := constraint.SetAdjustmentWindow(adjustmentWindow); err != nil {
+		return fmt.Errorf("failed to set adjustment window: %w", err)
+	}
+	if err := constraint.SetBacklog(backlog); err != nil {
+		return fmt.Errorf("failed to set backlog: %w", err)
+	}
+
+	if err := constraint.SetResourceWeights(resourceWeights); err != nil {
+		return fmt.Errorf("failed to set resource weights: %w", err)
+	}
+	return nil
+}
+
+func (ps *L2PricingState) ClearMultiGasConstraints() error {
+	length, err := ps.MultiGasConstraintsLength()
+	if err != nil {
+		return err
+	}
+	for range length {
+		subStorage, err := ps.multigasConstraints.Pop()
+		if err != nil {
+			return err
+		}
+		constraint := constraints.OpenMultiGasConstraint(subStorage)
 		if err := constraint.Clear(); err != nil {
 			return err
 		}
