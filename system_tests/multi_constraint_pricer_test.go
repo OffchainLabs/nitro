@@ -10,8 +10,10 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/arbitrum/multigas"
 	"github.com/ethereum/go-ethereum/core/types"
 
+	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 )
 
@@ -50,4 +52,71 @@ func TestSetAndGetGasPricingConstraints(t *testing.T) {
 	require.Equal(t, uint64(15_000_000), constraints[1][0])
 	require.Equal(t, uint64(600), constraints[1][1])
 	require.GreaterOrEqual(t, constraints[1][2], uint64(1_600_000))
+}
+
+func TestSetAndGetMultiGasPricingConstraints(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false).WithArbOSVersion(l2pricing.ArbosMultiGasConstraintsVersion)
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
+	callOpts := &bind.CallOpts{Context: ctx}
+
+	arbOwner, err := precompilesgen.NewArbOwner(types.ArbOwnerAddress, builder.L2.Client)
+	require.NoError(t, err)
+
+	arbGasInfo, err := precompilesgen.NewArbGasInfo(types.ArbGasInfoAddress, builder.L2.Client)
+	require.NoError(t, err)
+
+	constraints := []precompilesgen.ArbMultiGasConstraintsTypesResourceConstraint{
+		{
+			Resources: []precompilesgen.ArbMultiGasConstraintsTypesWeightedResource{
+				{Resource: uint8(multigas.ResourceKindComputation), Weight: 1},
+				{Resource: uint8(multigas.ResourceKindHistoryGrowth), Weight: 1},
+				{Resource: uint8(multigas.ResourceKindStorageAccess), Weight: 1},
+				{Resource: uint8(multigas.ResourceKindStorageGrowth), Weight: 1},
+				{Resource: uint8(multigas.ResourceKindL1Calldata), Weight: 1},
+			},
+			AdjustmentWindowSecs: 102,
+			TargetPerSec:         30_000_000,
+			Backlog:              800_000,
+		},
+		{
+			Resources: []precompilesgen.ArbMultiGasConstraintsTypesWeightedResource{
+				{Resource: uint8(multigas.ResourceKindComputation), Weight: 1},
+				{Resource: uint8(multigas.ResourceKindHistoryGrowth), Weight: 1},
+				{Resource: uint8(multigas.ResourceKindStorageAccess), Weight: 1},
+				{Resource: uint8(multigas.ResourceKindStorageGrowth), Weight: 1},
+				{Resource: uint8(multigas.ResourceKindL1Calldata), Weight: 1},
+			},
+			AdjustmentWindowSecs: 600,
+			TargetPerSec:         15_000_000,
+			Backlog:              1_600_000,
+		},
+	}
+
+	tx, err := arbOwner.SetMultiGasPricingConstraints(&auth, constraints)
+	require.NoError(t, err)
+	require.NotNil(t, tx)
+
+	readBack, err := arbGasInfo.GetMultiGasPricingConstraints(callOpts)
+	require.NoError(t, err)
+	require.Equal(t, 2, len(readBack))
+
+	require.Equal(t, uint64(30_000_000), readBack[0].TargetPerSec)
+	require.Equal(t, uint32(102), readBack[0].AdjustmentWindowSecs)
+	require.GreaterOrEqual(t, readBack[0].Backlog, uint64(800_000))
+	require.Equal(t, 5, len(readBack[0].Resources))
+	require.Equal(t, uint8(multigas.ResourceKindComputation), readBack[0].Resources[0].Resource)
+	require.Equal(t, uint64(1), readBack[0].Resources[0].Weight)
+
+	require.Equal(t, uint64(15_000_000), readBack[1].TargetPerSec)
+	require.Equal(t, uint32(600), readBack[1].AdjustmentWindowSecs)
+	require.GreaterOrEqual(t, readBack[1].Backlog, uint64(1_600_000))
+	require.Equal(t, 5, len(readBack[1].Resources))
+	require.Equal(t, uint8(multigas.ResourceKindStorageGrowth), readBack[1].Resources[3].Resource)
+	require.Equal(t, uint64(1), readBack[1].Resources[3].Weight)
 }

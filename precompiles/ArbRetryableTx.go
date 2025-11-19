@@ -101,9 +101,17 @@ func (con ArbRetryableTx) Redeem(c ctx, evm mech, ticketId bytes32) (bytes32, er
 	gasCostToReturnResult := params.CopyGas
 	gasPoolUpdateCost := storage.StorageReadCost + storage.StorageWriteCost
 
-	// Multi-Constraint pricer requires an extra storage read, since ArbOS must load the constraints from state.
-	// This overhead applies even when no constraints are configured.
+	// Multi-constraint pricers pay one extra storage read here to load the number
+	// of configured constraints from state (GasConstraintsLength / MultiGasConstraintsLength).
+	//
+	// TODO(NIT-4120): When constraints are actually configured, AddToGasPool will perform
+	// additional per-constraint storage reads/writes. Clarify whether and how those
+	// extra touches should be reflected here.
 	if c.State.ArbOSVersion() >= l2pricing.ArbosSingleGasConstraintsVersion {
+		gasPoolUpdateCost += storage.StorageReadCost
+	}
+
+	if c.State.ArbOSVersion() >= l2pricing.ArbosMultiGasConstraintsVersion {
 		gasPoolUpdateCost += storage.StorageReadCost
 	}
 
