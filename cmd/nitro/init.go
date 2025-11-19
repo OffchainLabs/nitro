@@ -24,7 +24,6 @@ import (
 
 	"github.com/cavaliergopher/grab/v3"
 	"github.com/codeclysm/extract/v3"
-	"github.com/offchainlabs/nitro/validator"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -910,7 +909,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 			return chainDb, nil, err
 		}
 		if config.Init.ValidateGenesisAssertion {
-			if err := validateGenesisAssertion(ctx, rollupAddrs.Rollup, l1Client, l2BlockChain.Genesis(), l2BlockChain.Genesis().Root(), initDataReaderHasAccounts); err != nil {
+			if err := validateGenesisAssertion(ctx, rollupAddrs.Rollup, l1Client, l2BlockChain.Genesis(), initDataReaderHasAccounts); err != nil {
 				if !config.Init.Force {
 					return chainDb, nil, fmt.Errorf("error testing genesis assertion: %w", err)
 				}
