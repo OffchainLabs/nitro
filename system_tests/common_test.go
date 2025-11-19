@@ -708,7 +708,6 @@ func (b *NodeBuilder) BuildL1(t *testing.T) {
 }
 
 func clientForStackUseHTTP(stackConfig *node.Config) bool {
-	log.Error("clientForStackUseHTTP", "stackConfig.HTTPHost", stackConfig.HTTPHost)
 	if stackConfig.HTTPHost != "" {
 		return true
 	}
@@ -1983,7 +1982,6 @@ func createNonL1BlockChainWithStackConfig(
 }
 
 func ClientForStack(t *testing.T, backend *node.Node, useHTTP bool) *ethclient.Client {
-	log.Error("ClientForStack useHTTP", "useHTTP", useHTTP)
 	if useHTTP {
 		ethClient, err := ethclient.Dial(backend.HTTPEndpoint())
 		if err != nil {
