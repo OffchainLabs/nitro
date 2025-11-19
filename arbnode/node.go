@@ -209,6 +209,7 @@ func ConfigDefaultL1Test() *Config {
 
 func ConfigDefaultL1NonSequencerTest() *Config {
 	config := ConfigDefault
+	config.MessageExtraction = melrunner.TestMessageExtractionConfig
 	config.Dangerous = TestDangerousConfig
 	config.ParentChainReader = headerreader.TestConfig
 	config.InboxReader = TestInboxReaderConfig
@@ -228,6 +229,7 @@ func ConfigDefaultL1NonSequencerTest() *Config {
 
 func ConfigDefaultL2Test() *Config {
 	config := ConfigDefault
+	config.MessageExtraction = melrunner.TestMessageExtractionConfig
 	config.Dangerous = TestDangerousConfig
 	config.ParentChainReader.Enable = false
 	config.SeqCoordinator = TestSeqCoordinatorConfig
