@@ -16,7 +16,7 @@ type ValidationSpawner interface {
 	Stop()
 	Name() string
 	StylusArchs() []rawdb.WasmTarget
-	Room() int
+	MaxAvailableWorkers() int
 }
 
 type ValidationRun interface {

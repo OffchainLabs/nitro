@@ -3,7 +3,6 @@ package redis
 import (
 	"context"
 	"fmt"
-	"sync/atomic"
 
 	"github.com/redis/go-redis/v9"
 	"github.com/spf13/pflag"
@@ -76,8 +75,8 @@ func ValidationClientConfigAddOptions(prefix string, f *pflag.FlagSet) {
 // ValidationClient implements validation client through redis streams.
 type ValidationClient struct {
 	stopwaiter.StopWaiter
-	config *ValidationClientConfig
-	room   atomic.Int32
+	config              *ValidationClientConfig
+	maxAvailableWorkers int32
 	// producers stores moduleRoot to producer mapping.
 	producers   map[common.Hash]*pubsub.Producer[*validator.ValidationInput, validator.GoGlobalState]
 	redisClient redis.UniversalClient
@@ -93,11 +92,11 @@ func NewValidationClient(cfg *ValidationClientConfig) (*ValidationClient, error)
 		return nil, err
 	}
 	validationClient := &ValidationClient{
-		config:      cfg,
-		producers:   make(map[common.Hash]*pubsub.Producer[*validator.ValidationInput, validator.GoGlobalState]),
-		redisClient: redisClient,
+		config:              cfg,
+		producers:           make(map[common.Hash]*pubsub.Producer[*validator.ValidationInput, validator.GoGlobalState]),
+		redisClient:         redisClient,
+		maxAvailableWorkers: cfg.Room,
 	}
-	validationClient.room.Store(cfg.Room)
 	return validationClient, nil
 }
 
@@ -130,8 +129,6 @@ func (c *ValidationClient) WasmModuleRoots() ([]common.Hash, error) {
 }
 
 func (c *ValidationClient) Launch(entry *validator.ValidationInput, moduleRoot common.Hash) validator.ValidationRun {
-	c.room.Add(-1)
-	defer c.room.Add(1)
 	producer, found := c.producers[moduleRoot]
 	if !found {
 		errPromise := containers.NewReadyPromise(validator.GoGlobalState{}, fmt.Errorf("no validation is configured for wasm root %v", moduleRoot))
@@ -172,6 +169,6 @@ func (c *ValidationClient) StylusArchs() []rawdb.WasmTarget {
 	return stylusArchs
 }
 
-func (c *ValidationClient) Room() int {
-	return int(c.room.Load())
+func (c *ValidationClient) MaxAvailableWorkers() int {
+	return int(c.maxAvailableWorkers)
 }
