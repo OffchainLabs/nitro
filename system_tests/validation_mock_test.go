@@ -32,6 +32,7 @@ import (
 type mockSpawner struct {
 	ExecSpawned []uint64
 	LaunchDelay time.Duration
+	MaxWorkers  int // if 0, defaults to 4
 }
 
 var blockHashKey = common.HexToHash("0x11223344")
@@ -83,7 +84,9 @@ func (s *mockSpawner) Start(context.Context) error {
 }
 func (s *mockSpawner) Stop()        {}
 func (s *mockSpawner) Name() string { return "mock" }
-func (s *mockSpawner) Room() int    { return 4 }
+func (s *mockSpawner) MaxAvailableWorkers() int {
+	return s.MaxWorkers
+}
 
 func (s *mockSpawner) CreateExecutionRun(wasmModuleRoot common.Hash, input *validator.ValidationInput, _ bool) containers.PromiseInterface[validator.ExecutionRun] {
 	s.ExecSpawned = append(s.ExecSpawned, input.Id)
@@ -275,91 +278,6 @@ func TestValidationServerAPI(t *testing.T) {
 	Require(t, err)
 	if !bytes.Equal(proof, mockProof) {
 		t.Error("mock proof not expected")
-	}
-}
-
-func TestValidationClientRoom(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	mockSpawner, spawnerStack := createMockValidationNode(t, ctx, nil)
-	client := client.NewExecutionClient(StaticFetcherFrom(t, &rpcclient.TestClientConfig), spawnerStack)
-	err := client.Start(ctx)
-	Require(t, err)
-
-	if client.Room() != 4 {
-		Fatal(t, "wrong initial room ", client.Room())
-	}
-
-	hash1 := common.HexToHash("0x11223344556677889900aabbccddeeff")
-	hash2 := common.HexToHash("0x11111111122222223333333444444444")
-
-	startState := validator.GoGlobalState{
-		BlockHash:  hash1,
-		SendRoot:   hash2,
-		Batch:      300,
-		PosInBatch: 3000,
-	}
-	endState := validator.GoGlobalState{
-		BlockHash:  hash2,
-		SendRoot:   hash1,
-		Batch:      3000,
-		PosInBatch: 300,
-	}
-
-	valInput := validator.ValidationInput{
-		Id:            0,
-		HasDelayedMsg: false,
-		DelayedMsgNr:  0,
-		Preimages: daprovider.PreimagesMap{
-			arbutil.Keccak256PreimageType: globalstateToTestPreimages(endState),
-		},
-		UserWasms:  make(map[rawdb.WasmTarget]map[common.Hash][]byte),
-		BatchInfo:  []validator.BatchInfo{},
-		DelayedMsg: []byte{},
-		StartState: startState,
-		DebugChain: false,
-	}
-
-	valRuns := make([]validator.ValidationRun, 0, 4)
-
-	for i := 0; i < 4; i++ {
-		valRun := client.Launch(&valInput, mockWasmModuleRoots[0])
-		valRuns = append(valRuns, valRun)
-	}
-
-	for i := range valRuns {
-		_, err := valRuns[i].Await(ctx)
-		Require(t, err)
-	}
-
-	if client.Room() != 4 {
-		Fatal(t, "wrong room after launch", client.Room())
-	}
-
-	mockSpawner.LaunchDelay = time.Hour
-
-	valRuns = make([]validator.ValidationRun, 0, 3)
-
-	for i := 0; i < 4; i++ {
-		valRun := client.Launch(&valInput, mockWasmModuleRoots[0])
-		valRuns = append(valRuns, valRun)
-		room := client.Room()
-		if room != 3-i {
-			Fatal(t, "wrong room after launch ", room, " expected: ", 4-i)
-		}
-	}
-
-	for i := range valRuns {
-		valRuns[i].Cancel()
-		_, err := valRuns[i].Await(ctx)
-		if err == nil {
-			Fatal(t, "no error returned after cancel i:", i)
-		}
-	}
-
-	room := client.Room()
-	if room != 4 {
-		Fatal(t, "wrong room after canceling runs: ", room)
 	}
 }
 

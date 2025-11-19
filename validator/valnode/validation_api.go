@@ -28,8 +28,8 @@ func (a *ValidationServerAPI) Name() string {
 	return a.spawner.Name()
 }
 
-func (a *ValidationServerAPI) Room() int {
-	return a.spawner.Room()
+func (a *ValidationServerAPI) MaxAvailableWorkers() int {
+	return a.spawner.MaxAvailableWorkers()
 }
 
 func (a *ValidationServerAPI) Validate(ctx context.Context, entry *server_api.InputJSON, moduleRoot common.Hash) (validator.GoGlobalState, error) {
