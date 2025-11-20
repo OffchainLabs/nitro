@@ -18,6 +18,7 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/arbnode/mel"
+	"github.com/offchainlabs/nitro/arbnode/mel/extraction"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/bold/containers/fsm"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
@@ -265,6 +266,35 @@ func (m *MessageExtractor) GetBatchMetadata(seqNum uint64) (mel.BatchMetadata, e
 		return mel.BatchMetadata{}, err
 	}
 	return *batchMetadata, nil
+}
+
+func (m *MessageExtractor) GetSequencerMessageBytes(ctx context.Context, seqNum uint64) ([]byte, common.Hash, error) {
+	metadata, err := m.GetBatchMetadata(seqNum)
+	if err != nil {
+		return nil, common.Hash{}, err
+	}
+    // No need to specify a max headers to fetch, as we are using the logs fetcher only, so we can pass in a 0.
+	logsFetcher := newLogsAndHeadersFetcher(m.parentChainReader, 0)
+	if err = logsFetcher.fetchSequencerBatchLogs(ctx, metadata.ParentChainBlock, metadata.ParentChainBlock); err != nil {
+		return nil, common.Hash{}, err
+	}
+	parentChainHeader, err := m.parentChainReader.HeaderByNumber(ctx, new(big.Int).SetUint64(metadata.ParentChainBlock))
+	if err != nil {
+		return nil, common.Hash{}, err
+	}
+	seqBatches, batchTxs, err := melextraction.ParseBatchesFromBlock(ctx, parentChainHeader, &txByLogFetcher{m.parentChainReader}, logsFetcher, &melextraction.LogUnpacker{})
+	if err != nil {
+		return nil, common.Hash{}, err
+	}
+	var seenBatches []uint64
+	for i, batch := range seqBatches {
+		if batch.SequenceNumber == seqNum {
+			data, err := melextraction.SerializeBatch(ctx, batch, batchTxs[i], logsFetcher)
+			return data, batch.BlockHash, err
+		}
+		seenBatches = append(seenBatches, batch.SequenceNumber)
+	}
+	return nil, common.Hash{}, fmt.Errorf("sequencer batch %v not found in L1 block %v (found batches %v)", seqNum, metadata.ParentChainBlock, seenBatches)
 }
 
 func (m *MessageExtractor) GetBatchMessageCount(seqNum uint64) (arbutil.MessageIndex, error) {

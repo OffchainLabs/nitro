@@ -32,9 +32,8 @@ func Test_parseBatchesFromBlock(t *testing.T) {
 			nil,
 			trie.NewStackTrie(nil),
 		)
-		batches, txs, err := parseBatchesFromBlock(
+		batches, txs, err := ParseBatchesFromBlock(
 			ctx,
-			nil,
 			block.Header(),
 			nil,
 			&mockBlockLogsFetcher{},
@@ -68,15 +67,11 @@ func Test_parseBatchesFromBlock(t *testing.T) {
 			nil,
 			trie.NewStackTrie(nil),
 		)
-		melState := &mel.State{
-			BatchPostingTargetAddress: batchPostingTargetAddr,
-		}
 		blockLogsFetcher := &mockBlockLogsFetcher{
 			err: errors.New("oops"),
 		}
-		_, _, err := parseBatchesFromBlock(
+		_, _, err := ParseBatchesFromBlock(
 			ctx,
-			melState,
 			block.Header(),
 			txFetcher,
 			blockLogsFetcher,
@@ -112,15 +107,11 @@ func Test_parseBatchesFromBlock(t *testing.T) {
 			receipts,
 			trie.NewStackTrie(nil),
 		)
-		melState := &mel.State{
-			BatchPostingTargetAddress: batchPostingTargetAddr,
-		}
 		blockLogsFetcher := &mockBlockLogsFetcher{
 			err: nil,
 		}
-		batches, txs, err := parseBatchesFromBlock(
+		batches, txs, err := ParseBatchesFromBlock(
 			ctx,
-			melState,
 			block.Header(),
 			txFetcher,
 			blockLogsFetcher,
@@ -159,16 +150,12 @@ func Test_parseBatchesFromBlock(t *testing.T) {
 			receipts,
 			trie.NewStackTrie(nil),
 		)
-		melState := &mel.State{
-			BatchPostingTargetAddress: batchPostingTargetAddr,
-		}
 		blockLogsFetcher := newMockBlockLogsFetcher(receipts)
 		txFetcher := &mockTxFetcher{
 			txs: []*types.Transaction{tx},
 		}
-		batches, txs, err := parseBatchesFromBlock(
+		batches, txs, err := ParseBatchesFromBlock(
 			ctx,
-			melState,
 			block.Header(),
 			txFetcher,
 			blockLogsFetcher,
@@ -208,9 +195,6 @@ func Test_parseBatchesFromBlock(t *testing.T) {
 			receipts,
 			trie.NewStackTrie(nil),
 		)
-		melState := &mel.State{
-			BatchPostingTargetAddress: batchPostingTargetAddr,
-		}
 		blockLogsFetcher := newMockBlockLogsFetcher(receipts)
 		eventUnpacker := &mockEventUnpacker{
 			events: []*bridgegen.SequencerInboxSequencerBatchDelivered{event},
@@ -220,9 +204,8 @@ func Test_parseBatchesFromBlock(t *testing.T) {
 		txFetcher := &mockTxFetcher{
 			txs: []*types.Transaction{tx},
 		}
-		_, _, err := parseBatchesFromBlock(
+		_, _, err := ParseBatchesFromBlock(
 			ctx,
-			melState,
 			block.Header(),
 			txFetcher,
 			blockLogsFetcher,
@@ -261,9 +244,6 @@ func Test_parseBatchesFromBlock(t *testing.T) {
 			receipts,
 			trie.NewStackTrie(nil),
 		)
-		melState := &mel.State{
-			BatchPostingTargetAddress: batchPostingTargetAddr,
-		}
 		blockLogsFetcher := newMockBlockLogsFetcher(receipts)
 		eventUnpacker := &mockEventUnpacker{
 			events: []*bridgegen.SequencerInboxSequencerBatchDelivered{event},
@@ -272,9 +252,8 @@ func Test_parseBatchesFromBlock(t *testing.T) {
 		txFetcher := &mockTxFetcher{
 			txs: []*types.Transaction{tx},
 		}
-		batches, txs, err := parseBatchesFromBlock(
+		batches, txs, err := ParseBatchesFromBlock(
 			ctx,
-			melState,
 			block.Header(),
 			txFetcher,
 			blockLogsFetcher,
@@ -343,9 +322,6 @@ func Test_parseBatchesFromBlock_outOfOrderBatches(t *testing.T) {
 		receipts,
 		trie.NewStackTrie(nil),
 	)
-	melState := &mel.State{
-		BatchPostingTargetAddress: batchPostingTargetAddr,
-	}
 	blockLogsFetcher := newMockBlockLogsFetcher(receipts)
 	eventUnpacker := &mockEventUnpacker{
 		events: []*bridgegen.SequencerInboxSequencerBatchDelivered{
@@ -357,9 +333,8 @@ func Test_parseBatchesFromBlock_outOfOrderBatches(t *testing.T) {
 	txFetcher := &mockTxFetcher{
 		txs: []*types.Transaction{tx1, tx2},
 	}
-	_, _, err := parseBatchesFromBlock(
+	_, _, err := ParseBatchesFromBlock(
 		ctx,
-		melState,
 		block.Header(),
 		txFetcher,
 		blockLogsFetcher,
@@ -414,7 +389,7 @@ type mockEventUnpacker struct {
 	err    error
 }
 
-func (m *mockEventUnpacker) unpackLogTo(
+func (m *mockEventUnpacker) UnpackLogTo(
 	event any, abi *abi.ABI, eventName string, log types.Log,
 ) error {
 	if m.err != nil {
