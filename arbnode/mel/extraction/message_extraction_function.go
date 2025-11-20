@@ -198,6 +198,8 @@ func extractMessagesImpl(
 			}
 			// Fill in the batch gas stats into the batch posting report.
 			batchPostReport.Message.BatchDataStats = arbostypes.GetDataStats(serialized)
+			legacyCost := arbostypes.LegacyCostForStats(batchPostReport.Message.BatchDataStats)
+			batchPostReport.Message.LegacyBatchGasCost = &legacyCost
 		} else if !(inputState.DelayedMessagesSeen == 0 && i == 0 && delayedMessages[i] == batchPostReport) {
 			return nil, nil, nil, nil, errors.New("encountered initialize message that is not the first delayed message and the first batch ")
 		}

@@ -161,7 +161,7 @@ func TestMelDelayedMessagesAccumulation(t *testing.T) {
 	corruptIndex := uint64(3)
 	corruptDelayed := delayedMsgs[corruptIndex]
 	corruptDelayed.Message.L2msg = []byte("corrupt")
-	key := dbKey(dbschema.MelDelayedMessagePrefix, corruptIndex) // #nosec G115
+	key := dbschema.DbKey(dbschema.MelDelayedMessagePrefix, corruptIndex) // #nosec G115
 	delayedBytes, err := rlp.EncodeToBytes(*corruptDelayed)
 	require.NoError(t, err)
 	require.NoError(t, arbDb.Put(key, delayedBytes))

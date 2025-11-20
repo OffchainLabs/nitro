@@ -239,7 +239,6 @@ func TestRedisBatchPosterHandoff(t *testing.T) {
 	if redisutil.IsSharedTestRedisInstance() {
 		builder.DontParalellise()
 	}
-	builder.nodeConfig.MessageExtraction.Enable = false // TODO: figure out why this test is not passing with MEL enabled
 	builder.nodeConfig.BatchPoster.Enable = false
 	builder.nodeConfig.BatchPoster.RedisUrl = redisUrl
 	builder.nodeConfig.BatchPoster.RedisLock.LockoutDuration = 100 * time.Millisecond
@@ -294,6 +293,7 @@ func TestRedisBatchPosterHandoff(t *testing.T) {
 				DataPosterDB:  nil,
 				L1Reader:      builder.L2.ConsensusNode.L1Reader,
 				Inbox:         builder.L2.ConsensusNode.InboxTracker,
+				MsgExtractor:  builder.L2.ConsensusNode.MessageExtractor,
 				Streamer:      builder.L2.ConsensusNode.TxStreamer,
 				VersionGetter: builder.L2.ExecNode,
 				SyncMonitor:   builder.L2.ConsensusNode.SyncMonitor,

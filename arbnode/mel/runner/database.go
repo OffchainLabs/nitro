@@ -2,7 +2,6 @@ package melrunner
 
 import (
 	"context"
-	"encoding/binary"
 	"errors"
 	"fmt"
 
@@ -45,7 +44,7 @@ func (d *Database) SaveState(ctx context.Context, state *mel.State) error {
 }
 
 func (d *Database) setMelState(batch ethdb.KeyValueWriter, parentChainBlockNumber uint64, state mel.State) error {
-	key := dbKey(dbschema.MelStatePrefix, parentChainBlockNumber)
+	key := dbschema.DbKey(dbschema.MelStatePrefix, parentChainBlockNumber)
 	melStateBytes, err := rlp.EncodeToBytes(state)
 	if err != nil {
 		return err
@@ -69,26 +68,11 @@ func (d *Database) setHeadMelStateBlockNum(batch ethdb.KeyValueWriter, parentCha
 }
 
 func (d *Database) GetHeadMelStateBlockNum() (uint64, error) {
-	parentChainBlockNumberBytes, err := d.db.Get(dbschema.HeadMelStateBlockNumKey)
-	if err != nil {
-		return 0, err
-	}
-	var parentChainBlockNumber uint64
-	err = rlp.DecodeBytes(parentChainBlockNumberBytes, &parentChainBlockNumber)
-	if err != nil {
-		return 0, err
-	}
-	return parentChainBlockNumber, nil
+	return dbschema.Value[uint64](d.db, dbschema.HeadMelStateBlockNumKey)
 }
 
 func (d *Database) State(ctx context.Context, parentChainBlockNumber uint64) (*mel.State, error) {
-	key := dbKey(dbschema.MelStatePrefix, parentChainBlockNumber)
-	data, err := d.db.Get(key)
-	if err != nil {
-		return nil, err
-	}
-	var state mel.State
-	err = rlp.DecodeBytes(data, &state)
+	state, err := dbschema.Value[mel.State](d.db, dbschema.DbKey(dbschema.MelStatePrefix, parentChainBlockNumber))
 	if err != nil {
 		return nil, err
 	}
@@ -102,7 +86,7 @@ func (d *Database) SaveBatchMetas(ctx context.Context, state *mel.State, batchMe
 	}
 	firstPos := state.BatchCount - uint64(len(batchMetas))
 	for i, batchMetadata := range batchMetas {
-		key := dbKey(dbschema.MelSequencerBatchMetaPrefix, firstPos+uint64(i)) // #nosec G115
+		key := dbschema.DbKey(dbschema.MelSequencerBatchMetaPrefix, firstPos+uint64(i)) // #nosec G115
 		batchMetadataBytes, err := rlp.EncodeToBytes(*batchMetadata)
 		if err != nil {
 			return err
@@ -117,13 +101,8 @@ func (d *Database) SaveBatchMetas(ctx context.Context, state *mel.State, batchMe
 }
 
 func (d *Database) fetchBatchMetadata(seqNum uint64) (*mel.BatchMetadata, error) {
-	key := dbKey(dbschema.MelSequencerBatchMetaPrefix, seqNum)
-	batchMetadataBytes, err := d.db.Get(key)
+	batchMetadata, err := dbschema.Value[mel.BatchMetadata](d.db, dbschema.DbKey(dbschema.MelSequencerBatchMetaPrefix, seqNum))
 	if err != nil {
-		return nil, err
-	}
-	var batchMetadata mel.BatchMetadata
-	if err = rlp.DecodeBytes(batchMetadataBytes, &batchMetadata); err != nil {
 		return nil, err
 	}
 	return &batchMetadata, nil
@@ -136,7 +115,7 @@ func (d *Database) SaveDelayedMessages(ctx context.Context, state *mel.State, de
 	}
 	firstPos := state.DelayedMessagesSeen - uint64(len(delayedMessages))
 	for i, msg := range delayedMessages {
-		key := dbKey(dbschema.MelDelayedMessagePrefix, firstPos+uint64(i)) // #nosec G115
+		key := dbschema.DbKey(dbschema.MelDelayedMessagePrefix, firstPos+uint64(i)) // #nosec G115
 		delayedBytes, err := rlp.EncodeToBytes(*msg)
 		if err != nil {
 			return err
@@ -168,13 +147,8 @@ func (d *Database) ReadDelayedMessage(ctx context.Context, state *mel.State, ind
 }
 
 func (d *Database) fetchDelayedMessage(index uint64) (*mel.DelayedInboxMessage, error) {
-	key := dbKey(dbschema.MelDelayedMessagePrefix, index)
-	delayedBytes, err := d.db.Get(key)
+	delayed, err := dbschema.Value[mel.DelayedInboxMessage](d.db, dbschema.DbKey(dbschema.MelDelayedMessagePrefix, index))
 	if err != nil {
-		return nil, err
-	}
-	var delayed mel.DelayedInboxMessage
-	if err = rlp.DecodeBytes(delayedBytes, &delayed); err != nil {
 		return nil, err
 	}
 	return &delayed, nil
@@ -258,13 +232,4 @@ func (d *Database) checkAgainstAccumulator(ctx context.Context, state *mel.State
 		return true, nil
 	}
 	return false, nil
-}
-
-func dbKey(prefix []byte, pos uint64) []byte {
-	var key []byte
-	key = append(key, prefix...)
-	data := make([]byte, 8)
-	binary.BigEndian.PutUint64(data, pos)
-	key = append(key, data...)
-	return key
 }

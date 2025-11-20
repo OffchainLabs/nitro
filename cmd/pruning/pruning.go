@@ -21,8 +21,8 @@ import (
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/rpc"
 
-	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
+	"github.com/offchainlabs/nitro/arbnode/db-schema"
 	"github.com/offchainlabs/nitro/arbutil"
 	protocol "github.com/offchainlabs/nitro/bold/chain-abstraction"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
@@ -88,7 +88,7 @@ func (r *importantRoots) addHeader(header *types.Header, overwrite bool) error {
 var hashListRegex = regexp.MustCompile("^(0x)?[0-9a-fA-F]{64}(,(0x)?[0-9a-fA-F]{64})*$")
 
 // Finds important roots to retain while proving
-func findImportantRoots(ctx context.Context, chainDb ethdb.Database, stack *node.Node, initConfig *conf.InitConfig, cacheConfig *core.BlockChainConfig, persistentConfig *conf.PersistentConfig, l1Client *ethclient.Client, rollupAddrs chaininfo.RollupAddresses, validatorRequired bool) ([]common.Hash, error) {
+func findImportantRoots(ctx context.Context, chainDb ethdb.Database, stack *node.Node, initConfig *conf.InitConfig, cacheConfig *core.BlockChainConfig, persistentConfig *conf.PersistentConfig, l1Client *ethclient.Client, rollupAddrs chaininfo.RollupAddresses, validatorRequired, melEnabled bool) ([]common.Hash, error) {
 	chainConfig := gethexec.TryReadStoredChainConfig(chainDb)
 	if chainConfig == nil {
 		return nil, errors.New("database doesn't have a chain config (was this node initialized?)")
@@ -184,11 +184,7 @@ func findImportantRoots(ctx context.Context, chainDb ethdb.Database, stack *node
 			return nil, fmt.Errorf("failed to get finalized block: %w", err)
 		}
 		l1BlockNum := l1Block.NumberU64()
-		tracker, err := arbnode.NewInboxTracker(arbDb, nil, nil, arbnode.DefaultSnapSyncConfig)
-		if err != nil {
-			return nil, err
-		}
-		batch, err := tracker.GetBatchCount()
+		batch, err := dbschema.GetSequencerBatchCount(arbDb, melEnabled)
 		if err != nil {
 			return nil, err
 		}
@@ -201,7 +197,7 @@ func findImportantRoots(ctx context.Context, chainDb ethdb.Database, stack *node
 				break
 			}
 			batch -= 1
-			meta, err := tracker.GetBatchMetadata(batch)
+			meta, err := dbschema.GetBatchMetadata(arbDb, batch, melEnabled)
 			if err != nil {
 				return nil, err
 			}
@@ -278,7 +274,7 @@ func getLatestConfirmedHash(ctx context.Context, rollupAddrs chaininfo.RollupAdd
 	}
 }
 
-func PruneChainDb(ctx context.Context, chainDb ethdb.Database, stack *node.Node, initConfig *conf.InitConfig, cacheConfig *core.BlockChainConfig, persistentConfig *conf.PersistentConfig, l1Client *ethclient.Client, rollupAddrs chaininfo.RollupAddresses, validatorRequired bool) error {
+func PruneChainDb(ctx context.Context, chainDb ethdb.Database, stack *node.Node, initConfig *conf.InitConfig, cacheConfig *core.BlockChainConfig, persistentConfig *conf.PersistentConfig, l1Client *ethclient.Client, rollupAddrs chaininfo.RollupAddresses, validatorRequired, melEnabled bool) error {
 	if cacheConfig.StateScheme == rawdb.PathScheme {
 		return nil
 	}
@@ -286,7 +282,7 @@ func PruneChainDb(ctx context.Context, chainDb ethdb.Database, stack *node.Node,
 	if initConfig.Prune == "" {
 		return pruner.RecoverPruning(stack.InstanceDir(), chainDb, initConfig.PruneThreads)
 	}
-	root, err := findImportantRoots(ctx, chainDb, stack, initConfig, cacheConfig, persistentConfig, l1Client, rollupAddrs, validatorRequired)
+	root, err := findImportantRoots(ctx, chainDb, stack, initConfig, cacheConfig, persistentConfig, l1Client, rollupAddrs, validatorRequired, melEnabled)
 	if err != nil {
 		return fmt.Errorf("failed to find root to retain for pruning: %w", err)
 	}
