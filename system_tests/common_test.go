@@ -346,11 +346,11 @@ func (b *NodeBuilder) DefaultConfig(t *testing.T, withL1 bool) *NodeBuilder {
 	b.withL1 = withL1
 	b.parallelise = true
 	b.deployBold = true
+	b.takeOwnership = true
 	if withL1 {
 		b.isSequencer = true
 		b.nodeConfig = arbnode.ConfigDefaultL1Test()
 	} else {
-		b.takeOwnership = true
 		b.nodeConfig = arbnode.ConfigDefaultL2Test()
 	}
 	b.chainConfig = chaininfo.ArbitrumDevTestChainConfig()
@@ -445,6 +445,11 @@ func (b *NodeBuilder) WithL1ClientWrapper(t *testing.T) *NodeBuilder {
 
 func (b *NodeBuilder) TakeOwnership() *NodeBuilder {
 	b.takeOwnership = true
+	return b
+}
+
+func (b *NodeBuilder) WithTakeOwnership(takeOwnership bool) *NodeBuilder {
+	b.takeOwnership = takeOwnership
 	return b
 }
 
@@ -785,6 +790,15 @@ func (b *NodeBuilder) BuildL2OnL1(t *testing.T) func() {
 
 		_, err = EnsureTxSucceeded(b.ctx, b.L2.Client, tx)
 		Require(t, err)
+
+		if b.chainConfig.ArbitrumChainParams.InitialArbOSVersion >= params.ArbosVersion_MultiConstraintFix {
+			arbowner, err := precompilesgen.NewArbOwner(common.HexToAddress("70"), b.L2.Client)
+			Require(t, err)
+			tx, err = arbowner.SetGasPricingConstraints(&debugAuth, [][3]uint64{{30_000_000, 102, 800_000}, {15_000_000, 600, 1_600_000}})
+			Require(t, err)
+			_, err = EnsureTxSucceeded(b.ctx, b.L2.Client, tx)
+			Require(t, err)
+		}
 	}
 
 	return func() {
