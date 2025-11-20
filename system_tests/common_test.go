@@ -469,15 +469,9 @@ func (b *NodeBuilder) Build(t *testing.T) func() {
 	if b.withL1 {
 		b.BuildL1(t)
 		cleanup := b.BuildL2OnL1(t)
-		if b.nodeConfig.MessageExtraction.Enable {
-			b.waitForMelToReadInitMsg(t, b.L2)
-		}
 		return cleanup
 	}
 	cleanup := b.BuildL2(t)
-	if b.nodeConfig.MessageExtraction.Enable {
-		b.waitForMelToReadInitMsg(t, b.L2)
-	}
 	return cleanup
 }
 
@@ -810,6 +804,9 @@ func (b *NodeBuilder) BuildL2OnL1(t *testing.T) func() {
 		Require(t, err)
 	}
 
+	if b.nodeConfig.MessageExtraction.Enable {
+		b.waitForMelToReadInitMsg(t, b.L2)
+	}
 	return func() {
 		b.L2.cleanup()
 		if b.L1 != nil && b.L1.cleanup != nil {
@@ -882,6 +879,9 @@ func (b *NodeBuilder) BuildL2(t *testing.T) func() {
 
 	b.L2.ExecNode = getExecNode(t, b.L2.ConsensusNode)
 	b.L2.cleanup = func() { b.L2.ConsensusNode.StopAndWait() }
+	if b.nodeConfig.MessageExtraction.Enable {
+		b.waitForMelToReadInitMsg(t, b.L2)
+	}
 	return func() {
 		b.L2.cleanup()
 		b.ctxCancel()

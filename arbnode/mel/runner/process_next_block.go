@@ -43,10 +43,7 @@ func (m *MessageExtractor) processNextBlock(ctx context.Context, current *fsm.Cu
 	if m.config.ReadMode != "latest" && preState.ParentChainBlockNumber+1 > m.lastBlockToRead.Load() {
 		return m.config.RetryInterval, nil
 	}
-	parentChainBlock, err := m.parentChainReader.HeaderByNumber(
-		ctx,
-		new(big.Int).SetUint64(preState.ParentChainBlockNumber+1),
-	)
+	parentChainBlock, err := m.logsAndHeadersPreFetcher.getHeaderByNumber(ctx, preState.ParentChainBlockNumber+1)
 	if err != nil {
 		if errors.Is(err, ethereum.NotFound) {
 			// If the block with the specified number is not found, it likely has not
@@ -71,8 +68,8 @@ func (m *MessageExtractor) processNextBlock(ctx context.Context, current *fsm.Cu
 			melState: preState,
 		})
 	}
-	// Conditionally prefetch logs for upcoming block/s
-	if err = m.logsPreFetcher.fetch(ctx, preState); err != nil {
+	// Conditionally prefetch headers and logs for upcoming block/s
+	if err = m.logsAndHeadersPreFetcher.fetch(ctx, preState); err != nil {
 		return m.config.RetryInterval, err
 	}
 	postState, msgs, delayedMsgs, batchMetas, err := melextraction.ExtractMessages(
@@ -82,7 +79,7 @@ func (m *MessageExtractor) processNextBlock(ctx context.Context, current *fsm.Cu
 		m.dataProviders,
 		m.melDB,
 		&txByLogFetcher{m.parentChainReader},
-		m.logsPreFetcher,
+		m.logsAndHeadersPreFetcher,
 	)
 	if err != nil {
 		return m.config.RetryInterval, err

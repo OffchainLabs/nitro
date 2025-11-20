@@ -77,6 +77,7 @@ func MessageExtractionConfigAddOptions(prefix string, f *pflag.FlagSet) {
 
 // TODO (ganesh): cleanup unused methods from this interface after checking with wasm mode
 type ParentChainReader interface {
+	Client() rpc.ClientInterface // to make BatchCallContext requests
 	HeaderByNumber(ctx context.Context, number *big.Int) (*types.Header, error)
 	BlockByNumber(ctx context.Context, number *big.Int) (*types.Block, error)
 	BlockByHash(ctx context.Context, hash common.Hash) (*types.Block, error)
@@ -91,18 +92,18 @@ type ParentChainReader interface {
 // blocks one by one to transform them into messages for the execution layer.
 type MessageExtractor struct {
 	stopwaiter.StopWaiter
-	config            MessageExtractionConfig
-	parentChainReader ParentChainReader
-	logsPreFetcher    *logsFetcher
-	addrs             *chaininfo.RollupAddresses
-	melDB             *Database
-	msgConsumer       mel.MessageConsumer
-	dataProviders     *daprovider.ReaderRegistry
-	fsm               *fsm.Fsm[action, FSMState]
-	caughtUp          bool
-	caughtUpChan      chan struct{}
-	lastBlockToRead   atomic.Uint64
-	stuckCount        uint64
+	config                   MessageExtractionConfig
+	parentChainReader        ParentChainReader
+	logsAndHeadersPreFetcher *logsAndHeadersFetcher
+	addrs                    *chaininfo.RollupAddresses
+	melDB                    *Database
+	msgConsumer              mel.MessageConsumer
+	dataProviders            *daprovider.ReaderRegistry
+	fsm                      *fsm.Fsm[action, FSMState]
+	caughtUp                 bool
+	caughtUpChan             chan struct{}
+	lastBlockToRead          atomic.Uint64
+	stuckCount               uint64
 }
 
 // Creates a message extractor instance with the specified parameters,
