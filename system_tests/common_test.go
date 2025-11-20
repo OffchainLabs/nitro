@@ -794,7 +794,8 @@ func (b *NodeBuilder) BuildL2OnL1(t *testing.T) func() {
 		b.addresses,
 	)
 
-	if b.takeOwnership {
+	_, hasOwnerAccount := b.L2Info.Accounts["Owner"]
+	if b.takeOwnership && hasOwnerAccount {
 		debugAuth := b.L2Info.GetDefaultTransactOpts("Owner", b.ctx)
 
 		// make auth a chain owner
