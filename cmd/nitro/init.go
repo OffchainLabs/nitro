@@ -992,7 +992,7 @@ func validateGenesisAssertion(ctx context.Context, rollupAddress common.Address,
 	if !isNullAssertion && afterGlobalState.BlockHash != genesis.Hash() {
 		return errors.New("genesis assertion is non null and its afterGlobalState.BlockHash doesn't match the genesis blockHash")
 	}
-	log.Info("Genesis assertion validated", "assertionHash", genesisAssertionHash, "genesisBlockHash", genesis.Hash(), "genesisSendRoot", types.DeserializeHeaderExtraInformation(genesis.Header()).SendRoot)
+	log.Info("Genesis assertion validated", "genesisAssertionHash", genesisAssertionHash, "genesisBlockHash", genesis.Hash(), "genesisSendRoot", types.DeserializeHeaderExtraInformation(genesis.Header()).SendRoot)
 	return nil
 }
 
