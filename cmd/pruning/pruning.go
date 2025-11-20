@@ -23,6 +23,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbnode/db-schema"
+	"github.com/offchainlabs/nitro/arbnode/mel"
 	"github.com/offchainlabs/nitro/arbutil"
 	protocol "github.com/offchainlabs/nitro/bold/chain-abstraction"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
@@ -184,7 +185,12 @@ func findImportantRoots(ctx context.Context, chainDb ethdb.Database, stack *node
 			return nil, fmt.Errorf("failed to get finalized block: %w", err)
 		}
 		l1BlockNum := l1Block.NumberU64()
-		batch, err := dbschema.GetSequencerBatchCount(arbDb, melEnabled)
+		var batch uint64
+		if melEnabled {
+			batch, err = dbschema.GetMelSequencerBatchCount(arbDb)
+		} else {
+			batch, err = dbschema.GetSequencerBatchCount(arbDb)
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -197,7 +203,12 @@ func findImportantRoots(ctx context.Context, chainDb ethdb.Database, stack *node
 				break
 			}
 			batch -= 1
-			meta, err := dbschema.GetBatchMetadata(arbDb, batch, melEnabled)
+			var meta mel.BatchMetadata
+			if melEnabled {
+				meta, err = dbschema.GetMelBatchMetadata(arbDb, batch)
+			} else {
+				meta, err = dbschema.GetBatchMetadata(arbDb, batch)
+			}
 			if err != nil {
 				return nil, err
 			}

@@ -38,10 +38,7 @@ var (
 
 const CurrentDbSchemaVersion uint64 = 2
 
-func GetSequencerBatchCount(db ethdb.KeyValueStore, melEnabled bool) (uint64, error) {
-	if !melEnabled {
-		return Value[uint64](db, SequencerBatchCountKey)
-	}
+func GetMelSequencerBatchCount(db ethdb.KeyValueStore) (uint64, error) {
 	headStateBlockNum, err := Value[uint64](db, HeadMelStateBlockNumKey)
 	if err != nil {
 		return 0, err
@@ -53,11 +50,16 @@ func GetSequencerBatchCount(db ethdb.KeyValueStore, melEnabled bool) (uint64, er
 	return headState.BatchCount, nil
 }
 
-func GetBatchMetadata(db ethdb.KeyValueStore, seqNum uint64, melEnabled bool) (mel.BatchMetadata, error) {
-	if !melEnabled {
-		return Value[mel.BatchMetadata](db, DbKey(SequencerBatchMetaPrefix, seqNum))
-	}
+func GetSequencerBatchCount(db ethdb.KeyValueStore) (uint64, error) {
+	return Value[uint64](db, SequencerBatchCountKey)
+}
+
+func GetMelBatchMetadata(db ethdb.KeyValueStore, seqNum uint64) (mel.BatchMetadata, error) {
 	return Value[mel.BatchMetadata](db, DbKey(MelSequencerBatchMetaPrefix, seqNum))
+}
+
+func GetBatchMetadata(db ethdb.KeyValueStore, seqNum uint64) (mel.BatchMetadata, error) {
+	return Value[mel.BatchMetadata](db, DbKey(SequencerBatchMetaPrefix, seqNum))
 }
 
 func DbKey(prefix []byte, pos uint64) []byte {
