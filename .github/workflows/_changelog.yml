@@ -1,0 +1,30 @@
+---
+name: changelog
+on:
+  workflow_call:
+    inputs:
+      changelog_fragments:
+        description: 'New changelog fragments.'
+        required: true
+        type: string
+
+jobs:
+  report_summary:
+    name: Check if changelog is updated
+    runs-on: ubuntu-4
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Download unclog binary
+        uses: dsaltares/fetch-gh-release-asset@1.1.2
+        with:
+          repo: OffchainLabs/unclog
+          version: "tags/v0.1.5"
+          file: "unclog"
+
+      - name: Run lint command
+        env:
+          ALL_ADDED_MARKDOWN: ${{ inputs.changelog_fragments }}
+        run: chmod +x unclog && ./unclog check -fragment-env=ALL_ADDED_MARKDOWN
