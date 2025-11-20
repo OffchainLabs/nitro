@@ -9,7 +9,7 @@ on:
         type: string
 
 jobs:
-  report_summary:
+  changelog-check:
     name: Check if changelog is updated
     runs-on: ubuntu-4
 
