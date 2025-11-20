@@ -29,10 +29,6 @@ var (
 	stuckFSMIndicatingGauge = metrics.NewRegisteredGauge("arb/mel/stuck", nil) // 1-stuck, 0-not_stuck
 )
 
-// The default retry interval for the message extractor FSM. After each tick of the FSM,
-// the extractor service stop waiter will wait for this duration before trying to act again.
-const defaultRetryInterval = time.Second
-
 type MessageExtractionConfig struct {
 	Enable                        bool          `koanf:"enable"`
 	RetryInterval                 time.Duration `koanf:"retry-interval"`
@@ -51,10 +47,21 @@ func (c *MessageExtractionConfig) Validate() error {
 }
 
 var DefaultMessageExtractionConfig = MessageExtractionConfig{
-	Enable:                        false,
-	RetryInterval:                 defaultRetryInterval,
+	Enable: false,
+	// The retry interval for the message extractor FSM. After each tick of the FSM,
+	// the extractor service stop waiter will wait for this duration before trying to act again.
+	RetryInterval:                 time.Millisecond * 500,
 	DelayedMessageBacklogCapacity: 100, // TODO: right default? setting to a lower value means more calls to l1reader
 	BlocksToPrefetch:              499, // 500 is the eth_getLogs block range limit
+	ReadMode:                      "latest",
+	StallTolerance:                10,
+}
+
+var TestMessageExtractionConfig = MessageExtractionConfig{
+	Enable:                        false,
+	RetryInterval:                 time.Millisecond * 10,
+	DelayedMessageBacklogCapacity: 100,
+	BlocksToPrefetch:              499,
 	ReadMode:                      "latest",
 	StallTolerance:                10,
 }
