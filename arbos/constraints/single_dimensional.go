@@ -6,6 +6,7 @@ package constraints
 
 import (
 	"github.com/ethereum/go-ethereum/params"
+
 	"github.com/offchainlabs/nitro/arbos/storage"
 )
 
