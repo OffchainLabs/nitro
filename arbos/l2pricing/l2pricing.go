@@ -24,6 +24,8 @@ type L2PricingState struct {
 	perTxGasLimit       storage.StorageBackedUint64
 	gasConstraints      *storage.SubStorageVector
 	multigasConstraints *storage.SubStorageVector
+
+	ArbosVersion uint64
 }
 
 const (
@@ -52,7 +54,7 @@ func InitializeL2PricingState(sto *storage.Storage) error {
 	return sto.SetUint64ByUint64(minBaseFeeWeiOffset, InitialMinimumBaseFeeWei)
 }
 
-func OpenL2PricingState(sto *storage.Storage) *L2PricingState {
+func OpenL2PricingState(sto *storage.Storage, arbosVersion uint64) *L2PricingState {
 	return &L2PricingState{
 		storage:             sto,
 		speedLimitPerSecond: sto.OpenStorageBackedUint64(speedLimitPerSecondOffset),
@@ -65,6 +67,7 @@ func OpenL2PricingState(sto *storage.Storage) *L2PricingState {
 		perTxGasLimit:       sto.OpenStorageBackedUint64(perTxGasLimitOffset),
 		gasConstraints:      storage.OpenSubStorageVector(sto.OpenSubStorage(gasConstraintsKey)),
 		multigasConstraints: storage.OpenSubStorageVector(sto.OpenSubStorage(multigasConstraintsKey)),
+		ArbosVersion:        arbosVersion,
 	}
 }
 
