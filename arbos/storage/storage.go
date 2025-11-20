@@ -367,16 +367,23 @@ type StorageSlot struct {
 	db      vm.StateDB
 	slot    common.Hash
 	burner  burn.Burner
+	free    bool
 }
 
 func (s *Storage) NewSlot(offset uint64) StorageSlot {
-	return StorageSlot{s.account, s.db, s.mapAddress(util.UintToHash(offset)), s.burner}
+	return StorageSlot{s.account, s.db, s.mapAddress(util.UintToHash(offset)), s.burner, false}
+}
+
+func (s *Storage) NewFreeSlot(offset uint64) StorageSlot {
+	return StorageSlot{s.account, s.db, s.mapAddress(util.UintToHash(offset)), s.burner, true}
 }
 
 func (ss *StorageSlot) Get() (common.Hash, error) {
-	err := ss.burner.Burn(multigas.ResourceKindStorageAccess, StorageReadCost)
-	if err != nil {
-		return common.Hash{}, err
+	if !ss.free {
+		err := ss.burner.Burn(multigas.ResourceKindStorageAccess, StorageReadCost)
+		if err != nil {
+			return common.Hash{}, err
+		}
 	}
 	if info := ss.burner.TracingInfo(); info != nil {
 		info.RecordStorageGet(ss.slot)
@@ -389,9 +396,11 @@ func (ss *StorageSlot) Set(value common.Hash) error {
 		log.Error("Read-only burner attempted to mutate state", "value", value)
 		return vm.ErrWriteProtection
 	}
-	err := ss.burner.Burn(multigas.ResourceKindStorageAccess, writeCost(value))
-	if err != nil {
-		return err
+	if !ss.free {
+		err := ss.burner.Burn(multigas.ResourceKindStorageAccess, writeCost(value))
+		if err != nil {
+			return err
+		}
 	}
 	if info := ss.burner.TracingInfo(); info != nil {
 		info.RecordStorageSet(ss.slot, value)
@@ -533,6 +542,10 @@ type StorageBackedUint64 struct {
 
 func (s *Storage) OpenStorageBackedUint64(offset uint64) StorageBackedUint64 {
 	return StorageBackedUint64{s.NewSlot(offset)}
+}
+
+func (s *Storage) OpenFreeStorageBackedUint64(offset uint64) StorageBackedUint64 {
+	return StorageBackedUint64{s.NewFreeSlot(offset)}
 }
 
 func (sbu *StorageBackedUint64) Get() (uint64, error) {
