@@ -22,8 +22,7 @@ const stopDelayWarningTimeout = 30 * time.Second
 
 type StopWaiterSafe struct {
 	state.InternalState
-	name string
-	wg   sync.WaitGroup
+	wg sync.WaitGroup
 }
 
 func (s *StopWaiterSafe) Started() bool {
@@ -64,7 +63,7 @@ func (s *StopWaiterSafe) Start(ctx context.Context, parent any) error {
 		return errors.New("start after start")
 	}
 	st.Started = true
-	s.name = getParentName(parent)
+	st.Name = getParentName(parent)
 
 	var childCtx context.Context
 	childCtx, st.StopFunc = context.WithCancel(ctx)
@@ -119,7 +118,9 @@ func (s *StopWaiterSafe) stopAndWaitImpl(warningTimeout time.Duration) error {
 	select {
 	case <-timer.C:
 		traces := getAllStackTraces()
-		log.Warn("taking too long to stop", "name", s.name, "delay[s]", warningTimeout.Seconds())
+		st := s.Lock()
+		defer s.Unlock()
+		log.Warn("taking too long to stop", "name", st.Name, "delay[s]", warningTimeout.Seconds())
 		log.Warn(traces)
 	case <-waitChan:
 		timer.Stop()

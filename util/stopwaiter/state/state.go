@@ -25,6 +25,7 @@ func (s *InternalState) Unlock() {
 type LockedInternalState struct {
 	Started   bool
 	Stopped   bool
+	Name      string
 	ctx       context.Context
 	parentCtx context.Context
 	StopFunc  func()
