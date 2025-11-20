@@ -441,7 +441,7 @@ func testAllowPostingFirstBatchWhenSequencerMessageCountMismatch(t *testing.T, e
 	defer cancel()
 
 	// creates first node with batch poster disabled
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithTakeOwnership(false)
 	builder.nodeConfig.BatchPoster.Enable = false
 	cleanup := builder.Build(t)
 	defer cleanup()
