@@ -193,6 +193,22 @@ func (tc *TestClient) EnsureTxSucceededWithTimeout(transaction *types.Transactio
 	return EnsureTxSucceededWithTimeout(tc.ctx, tc.Client, transaction, timeout)
 }
 
+func (tc *TestClient) BalanceDifferenceAtBlock(address common.Address, blockNum *big.Int) (*big.Int, error) {
+	if blockNum.Cmp(common.Big1) < 0 {
+		return nil, fmt.Errorf("blocknum must be > 1")
+	}
+	prevBlock := arbmath.BigSub(blockNum, common.Big1)
+	prevBalance, err := tc.Client.BalanceAt(tc.ctx, address, prevBlock)
+	if err != nil {
+		return nil, err
+	}
+	newBalance, err := tc.Client.BalanceAt(tc.ctx, address, blockNum)
+	if err != nil {
+		return nil, err
+	}
+	return arbmath.BigSub(newBalance, prevBalance), nil
+}
+
 var DefaultTestForwarderConfig = gethexec.ForwarderConfig{
 	ConnectionTimeout:     2 * time.Second,
 	IdleConnectionTimeout: 2 * time.Second,
