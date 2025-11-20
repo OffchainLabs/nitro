@@ -24,7 +24,7 @@ jobs:
           version: "tags/v0.1.5"
           file: "unclog"
 
-      - name: Run lint command
+      - name: Check changelog fragments
         env:
           ALL_ADDED_MARKDOWN: ${{ inputs.changelog_fragments }}
         run: chmod +x unclog && ./unclog check -fragment-env=ALL_ADDED_MARKDOWN
