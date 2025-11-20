@@ -86,9 +86,10 @@ func median(gasCosts []big.Int) *big.Int {
 	})
 	mid := len(sorted) / 2
 	if len(sorted)%2 == 0 {
-		return new(big.Int).Add(&sorted[mid-1], &sorted[mid]).Div(&sorted[mid], big.NewInt(2))
+		sum := new(big.Int).Add(&sorted[mid-1], &sorted[mid])
+		return sum.Div(sum, big.NewInt(2))
 	}
-	return &sorted[mid]
+	return new(big.Int).Set(&sorted[mid])
 }
 
 func (t *TrackedContractBackend) PrintMetrics() {

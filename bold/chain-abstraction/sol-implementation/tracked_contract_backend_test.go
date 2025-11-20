@@ -60,10 +60,10 @@ func Test_median(t *testing.T) {
 		require.Equal(t, big.NewInt(5), med)
 	})
 
-	t.Run("Two values takes mean", func(t *testing.T) {
+	t.Run("Two values arithmetic mean", func(t *testing.T) {
 		gasCosts := []big.Int{*big.NewInt(5), *big.NewInt(15)}
 		med := median(gasCosts)
-		require.Equal(t, big.NewInt(7), med)
+		require.Equal(t, big.NewInt(10), med)
 	})
 
 	t.Run("Odd number of values", func(t *testing.T) {
@@ -76,6 +76,28 @@ func Test_median(t *testing.T) {
 		gasCosts := []big.Int{*big.NewInt(25), *big.NewInt(5), *big.NewInt(15)}
 		med := median(gasCosts)
 		require.Equal(t, big.NewInt(15), med)
+	})
+
+	t.Run("Even values distinguishes mean vs second-half/2", func(t *testing.T) {
+		// Correct median is (5 + 14) / 2 = 9; the previous bug would produce 14/2 = 7
+		gasCosts := []big.Int{*big.NewInt(5), *big.NewInt(14)}
+		med := median(gasCosts)
+		require.Equal(t, big.NewInt(9), med)
+	})
+
+	t.Run("Even length with more elements", func(t *testing.T) {
+		// Sorted is [1, 9, 10, 100]; median should be (9 + 10) / 2 = 9
+		gasCosts := []big.Int{*big.NewInt(100), *big.NewInt(10), *big.NewInt(1), *big.NewInt(9)}
+		med := median(gasCosts)
+		require.Equal(t, big.NewInt(9), med)
+	})
+
+	t.Run("Input slice not mutated", func(t *testing.T) {
+		gasCosts := []big.Int{*big.NewInt(3), *big.NewInt(1), *big.NewInt(2)}
+		original := make([]big.Int, len(gasCosts))
+		copy(original, gasCosts)
+		_ = median(gasCosts)
+		require.Equal(t, original, gasCosts)
 	})
 }
 
