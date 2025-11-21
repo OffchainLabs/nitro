@@ -2,7 +2,7 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 use crate::{
-    arbcompress, caller_env::GoRuntimeState, prepare::prepare_env, program, socket,
+    arbcompress, arbkeccak, caller_env::GoRuntimeState, prepare::prepare_env, program, socket,
     stylus_backend::CothreadHandler, wasip1_stub, wavmio, Opts,
 };
 use arbutil::{Bytes32, Color, PreimageType};
@@ -68,6 +68,9 @@ pub fn create(opts: &Opts, env: WasmEnv) -> (Instance, FunctionEnv<WasmEnv>, Sto
         "arbcompress" => {
             "brotli_compress" => func!(arbcompress::brotli_compress),
             "brotli_decompress" => func!(arbcompress::brotli_decompress),
+        },
+        "arbkeccak" => {
+            "keccak256" => func!(arbkeccak::keccak256),
         },
         "wavmio" => {
             "getGlobalStateBytes32" => func!(wavmio::get_global_state_bytes32),
