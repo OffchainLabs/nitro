@@ -2,29 +2,91 @@ package arbnode
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/rawdb"
+	"github.com/ethereum/go-ethereum/metrics"
 
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/validator"
 	"github.com/offchainlabs/nitro/validator/server_api"
+)
+
+var (
+	getL1ConfirmationCallsCounter        = metrics.NewRegisteredCounter("arb/consensus_rpc_get_l1_confirmation_calls", nil)
+	findBatchContainingBlockCallsCounter = metrics.NewRegisteredCounter("arb/consensus_rpc_find_batch_containing_block_calls", nil)
 )
 
 type BlockValidatorAPI struct {
 	val *staker.BlockValidator
 }
 
+func NewBlockValidatorAPI(val *staker.BlockValidator) *BlockValidatorAPI {
+	return &BlockValidatorAPI{
+		val: val,
+	}
+}
+
 func (a *BlockValidatorAPI) LatestValidated(ctx context.Context) (*staker.GlobalStateValidatedInfo, error) {
 	return a.val.ReadLastValidatedInfo()
 }
 
+type ArbAPI struct {
+	consensusNode *Node
+}
+
+func NewArbAPI(consensusNode *Node) *ArbAPI {
+	return &ArbAPI{
+		consensusNode: consensusNode,
+	}
+}
+
+func (a *ArbAPI) blockNumberToMessageIndex(ctx context.Context, blockNum uint64) (arbutil.MessageIndex, error) {
+	// blocks behind genesis are treated as belonging to batch 0
+	msgIdx, err := a.consensusNode.ExecutionClient.BlockNumberToMessageIndex(blockNum).Await(ctx)
+	if err != nil {
+		if !errors.Is(err, gethexec.BlockNumBeforeGenesis) {
+			return 0, err
+		}
+		msgIdx = 0
+	}
+	return msgIdx, nil
+}
+
+func (a *ArbAPI) GetL1Confirmations(ctx context.Context, blockNum uint64) (uint64, error) {
+	getL1ConfirmationCallsCounter.Inc(1)
+
+	msgIdx, err := a.blockNumberToMessageIndex(ctx, blockNum)
+	if err != nil {
+		return 0, err
+	}
+	return a.consensusNode.GetL1Confirmations(msgIdx).Await(ctx)
+}
+
+func (a *ArbAPI) FindBatchContainingBlock(ctx context.Context, blockNum uint64) (uint64, error) {
+	findBatchContainingBlockCallsCounter.Inc(1)
+
+	msgIdx, err := a.blockNumberToMessageIndex(ctx, blockNum)
+	if err != nil {
+		return 0, err
+	}
+	return a.consensusNode.FindBatchContainingMessage(msgIdx).Await(ctx)
+}
+
 type BlockValidatorDebugAPI struct {
 	val *staker.StatelessBlockValidator
+}
+
+func NewBlockValidatorDebugAPI(val *staker.StatelessBlockValidator) *BlockValidatorDebugAPI {
+	return &BlockValidatorDebugAPI{
+		val: val,
+	}
 }
 
 type ValidateBlockResult struct {
