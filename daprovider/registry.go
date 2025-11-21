@@ -41,6 +41,12 @@ func (r *ReaderRegistry) RegisterAll(headerBytes []byte, reader Reader) error {
 	return nil
 }
 
+func (r *ReaderRegistry) ClearDACacheForAll() {
+	for _, reader := range r.readers {
+		reader.ClearCachedPayload()
+	}
+}
+
 // GetByHeaderByte returns the reader associated with the given header byte
 func (r *ReaderRegistry) GetByHeaderByte(headerByte byte) (Reader, bool) {
 	reader, exists := r.readers[headerByte]

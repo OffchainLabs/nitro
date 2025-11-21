@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"io"
 	"math/big"
-	"strings"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
@@ -79,23 +78,11 @@ func ParseSequencerMessage(ctx context.Context, batchNum uint64, batchBlockHash 
 	// Use the registry to find the appropriate reader for the header byte
 	if len(payload) > 0 && dapReaders != nil {
 		if dapReader, found := dapReaders.GetByHeaderByte(payload[0]); found {
-			promise := dapReader.RecoverPayload(batchNum, batchBlockHash, data)
-			result, err := promise.Await(ctx)
+			res, err := dapReader.GetCachedPayload(batchBlockHash, data)
 			if err != nil {
-				// Matches the way keyset validation was done inside DAS readers i.e logging the error
-				//  But other daproviders might just want to return the error
-				if strings.Contains(err.Error(), daprovider.ErrSeqMsgValidation.Error()) && daprovider.IsDASMessageHeaderByte(payload[0]) {
-					if keysetValidationMode == daprovider.KeysetPanicIfInvalid {
-						panic(err.Error())
-					} else {
-						log.Error(err.Error())
-					}
-				} else {
-					return nil, err
-				}
-			} else {
-				payload = result.Payload
+				return nil, fmt.Errorf("DA payload should have been cached earlier by dapReader.RecoverPayload")
 			}
+			payload = res.Payload
 			if payload == nil {
 				return parsedMsg, nil
 			}
@@ -193,6 +180,19 @@ func NewInboxMultiplexer(backend InboxBackend, delayedMessagesRead uint64, dapRe
 		cachedSubMessageNumber:    0,
 		keysetValidationMode:      keysetValidationMode,
 	}
+}
+
+func CacheDAPayload(ctx context.Context, backend InboxBackend, dapReaders *daprovider.ReaderRegistry) error {
+	seqNum := backend.GetSequencerInboxPosition()
+	dataPayload, batchBlockHash, err := backend.PeekSequencerInbox()
+	if err != nil {
+		panic(fmt.Sprintf("Error trying to get dataPayload: %v", err.Error()))
+	}
+	err = daprovider.TriggerDAPayload(ctx, dapReaders, seqNum, batchBlockHash, dataPayload, daprovider.KeysetValidate)
+	if err != nil {
+		panic(fmt.Sprintf("Error fetching DA payload: %v", err.Error()))
+	}
+	return err
 }
 
 const BatchSegmentKindL2Message uint8 = 0
