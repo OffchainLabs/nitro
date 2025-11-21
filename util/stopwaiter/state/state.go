@@ -8,7 +8,7 @@ import (
 
 // lint:require-exhaustive-initialization
 type InternalState struct {
-	mutex       sync.Mutex
+	mutex       sync.RWMutex
 	lockedState LockedInternalState
 }
 
@@ -17,8 +17,17 @@ func (s *InternalState) Lock() *LockedInternalState {
 	return &s.lockedState
 }
 
+func (s *InternalState) RLock() *LockedInternalState {
+	s.mutex.RLock()
+	return &s.lockedState
+}
+
 func (s *InternalState) Unlock() {
 	s.mutex.Unlock()
+}
+
+func (s *InternalState) RUnlock() {
+	s.mutex.RUnlock()
 }
 
 // lint:require-exhaustive-initialization
