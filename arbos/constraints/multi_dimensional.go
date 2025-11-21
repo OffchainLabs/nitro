@@ -93,50 +93,6 @@ func (c *MultiGasConstraint) SetResourceWeights(weights map[uint8]uint64) error 
 	return c.sumWeights.Set(total)
 }
 
-// ComputeExponent returns the exponent of the given constraint for the given resource kind.
-func (c *MultiGasConstraint) ComputeExponent(kind uint8) (arbmath.Bips, error) {
-	if _, err := multigas.CheckResourceKind(kind); err != nil {
-		return 0, err
-	}
-
-	weight, err := c.weightedResources[int(kind)].Get()
-	if err != nil {
-		return 0, err
-	}
-	if weight == 0 {
-		return 0, nil
-	}
-
-	backlog, err := c.backlog.Get()
-	if err != nil || backlog == 0 {
-		return 0, err
-	}
-
-	target, err := c.target.Get()
-	if err != nil || target == 0 {
-		return 0, err
-	}
-
-	adjustmentWindow, err := c.adjustmentWindow.Get()
-	if err != nil || adjustmentWindow == 0 {
-		return 0, err
-	}
-
-	sumWeights, err := c.sumWeights.Get()
-	if err != nil || sumWeights == 0 {
-		return 0, err
-	}
-
-	dividend := arbmath.NaturalToBips(
-		arbmath.SaturatingCast[int64](arbmath.SaturatingUMul(backlog, weight)))
-	divisor := arbmath.SaturatingCastToBips(
-		arbmath.SaturatingUMul(uint64(adjustmentWindow),
-			arbmath.SaturatingUMul(target, sumWeights)))
-	exponent := dividend / divisor
-
-	return exponent, nil
-}
-
 // IncrementBacklog increments the constraint backlog based on multi-dimensional gas usage
 func (c *MultiGasConstraint) IncrementBacklog(multiGas multigas.MultiGas) error {
 	totalBacklog, err := c.backlog.Get()
@@ -218,6 +174,10 @@ func (c *MultiGasConstraint) ResourceWeight(kind uint8) (uint64, error) {
 	return c.weightedResources[kind].Get()
 }
 
+func (c *MultiGasConstraint) SumWeights() (uint64, error) {
+	return c.sumWeights.Get()
+}
+
 func (c *MultiGasConstraint) ResourcesWithWeights() (map[multigas.ResourceKind]uint64, error) {
 	result := make(map[multigas.ResourceKind]uint64)
 	for i := range uint8(multigas.NumResourceKind) {
@@ -227,6 +187,20 @@ func (c *MultiGasConstraint) ResourcesWithWeights() (map[multigas.ResourceKind]u
 		}
 		if weight != 0 {
 			result[multigas.ResourceKind(i)] = weight
+		}
+	}
+	return result, nil
+}
+
+func (c *MultiGasConstraint) UsedResources() ([]multigas.ResourceKind, error) {
+	var result []multigas.ResourceKind
+	for i := range uint8(multigas.NumResourceKind) {
+		weight, err := c.weightedResources[i].Get()
+		if err != nil {
+			return nil, err
+		}
+		if weight != 0 {
+			result = append(result, multigas.ResourceKind(i))
 		}
 	}
 	return result, nil

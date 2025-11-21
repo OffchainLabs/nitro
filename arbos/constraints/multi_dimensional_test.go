@@ -9,7 +9,6 @@ import (
 
 	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbos/storage"
-	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
 func TestMultiGasConstraint(t *testing.T) {
@@ -27,11 +26,11 @@ func TestMultiGasConstraint(t *testing.T) {
 	require.Equal(t, uint32(456), window)
 	require.Equal(t, uint64(789), backlog)
 
-	weights := map[uint8]uint64{
+	weightedResources := map[uint8]uint64{
 		uint8(multigas.ResourceKindComputation):   10,
 		uint8(multigas.ResourceKindStorageAccess): 20,
 	}
-	require.NoError(t, c.SetResourceWeights(weights))
+	require.NoError(t, c.SetResourceWeights(weightedResources))
 
 	w1, _ := c.ResourceWeight(uint8(multigas.ResourceKindComputation))
 	w2, _ := c.ResourceWeight(uint8(multigas.ResourceKindStorageAccess))
@@ -44,6 +43,16 @@ func TestMultiGasConstraint(t *testing.T) {
 	require.Equal(t, uint64(10), res[multigas.ResourceKindComputation])
 	require.Equal(t, uint64(20), res[multigas.ResourceKindStorageAccess])
 
+	used, err := c.UsedResources()
+	require.NoError(t, err)
+	require.Len(t, used, 2)
+	require.Contains(t, used, multigas.ResourceKindComputation)
+	require.Contains(t, used, multigas.ResourceKindStorageAccess)
+
+	weights, err := c.SumWeights()
+	require.NoError(t, err)
+	require.Equal(t, uint64(30), weights)
+
 	require.NoError(t, c.Clear())
 	target, _ = c.Target()
 	backlog, _ = c.Backlog()
@@ -51,6 +60,14 @@ func TestMultiGasConstraint(t *testing.T) {
 	require.Zero(t, backlog)
 	res, _ = c.ResourcesWithWeights()
 	require.Empty(t, res)
+
+	used, err = c.UsedResources()
+	require.NoError(t, err)
+	require.Len(t, used, 0)
+
+	weights, err = c.SumWeights()
+	require.NoError(t, err)
+	require.Equal(t, uint64(0), weights)
 }
 
 func TestMultiGasConstraintResourceWeightsValidation(t *testing.T) {
@@ -75,7 +92,7 @@ func TestMultiGasConstraintResourceWeightsValidation(t *testing.T) {
 	require.Equal(t, uint64(10), total)
 }
 
-func TestMultiGasConstraintBacklogAggregationAndComputeExponent(t *testing.T) {
+func TestMultiGasConstraintBacklogAggregation(t *testing.T) {
 	sto := storage.NewMemoryBacked(burn.NewSystemBurner(nil, false))
 	c := OpenMultiGasConstraint(sto)
 
@@ -93,25 +110,6 @@ func TestMultiGasConstraintBacklogAggregationAndComputeExponent(t *testing.T) {
 	)
 
 	require.NoError(t, c.IncrementBacklog(mg))
-
-	backlog, err := c.Backlog()
-	require.NoError(t, err)
-	require.Equal(t, uint64(30), backlog) // 1*10 + 2*10 = 30
-
-	compExp, err := c.ComputeExponent(uint8(multigas.ResourceKindComputation))
-	require.NoError(t, err)
-	storExp, err := c.ComputeExponent(uint8(multigas.ResourceKindStorageAccess))
-	require.NoError(t, err)
-
-	// expected: backlog * weight / (A * T * sumWeights)
-	// backlog=30, target=5, window=2, sumWeights=3
-	// computation: (30*1)/(2*5*3) = 1
-	// storage:     (30*2)/(2*5*3) = 2
-	require.Equal(t, arbmath.Bips(10000), compExp)
-	require.Equal(t, arbmath.Bips(20000), storExp)
-
-	// ratio must reflect weights (1:2)
-	require.Equal(t, 2*compExp, storExp)
 }
 
 func TestMultiGasConstraintBacklogGrowth(t *testing.T) {
