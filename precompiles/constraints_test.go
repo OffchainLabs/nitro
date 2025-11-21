@@ -90,12 +90,12 @@ func TestConstraintsStorage(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify constraints are stored correctly
-	length, err := state.L2PricingState().ConstraintsLength()
+	length, err := state.L2PricingState().GasConstraintsLength()
 	require.NoError(t, err)
 	require.Equal(t, uint64(2), length)
 
-	first := state.L2PricingState().OpenConstraintAt(0)
-	second := state.L2PricingState().OpenConstraintAt(1)
+	first := state.L2PricingState().OpenGasConstraintAt(0)
+	second := state.L2PricingState().OpenGasConstraintAt(1)
 
 	firstTarget, err := first.Target()
 	require.NoError(t, err)
@@ -138,11 +138,11 @@ func TestConstraintsStorage(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify old constraints are cleared and new constraint is stored correctly
-	length, err = state.L2PricingState().ConstraintsLength()
+	length, err = state.L2PricingState().GasConstraintsLength()
 	require.NoError(t, err)
 	require.Equal(t, uint64(1), length)
 
-	first = state.L2PricingState().OpenConstraintAt(0)
+	first = state.L2PricingState().OpenGasConstraintAt(0)
 	target, err := first.Target()
 	require.NoError(t, err)
 	window, err := first.AdjustmentWindow()
@@ -171,9 +171,9 @@ func TestConstraintsBacklogUpdate(t *testing.T) {
 	err := arbOwner.SetGasPricingConstraints(callCtx, evm, constraints)
 	require.NoError(t, err)
 
-	err = state.L2PricingState().OpenConstraintAt(0).SetBacklog(5_000_000)
+	err = state.L2PricingState().OpenGasConstraintAt(0).SetBacklog(5_000_000)
 	require.NoError(t, err)
-	err = state.L2PricingState().OpenConstraintAt(1).SetBacklog(10_000_000)
+	err = state.L2PricingState().OpenGasConstraintAt(1).SetBacklog(10_000_000)
 	require.NoError(t, err)
 
 	// Verify backlogs are updated correctly
@@ -190,7 +190,7 @@ func TestEnableAndDisableMultiConstraints(t *testing.T) {
 	evm, state, callCtx, _, arbOwner := setupResourceConstraintHandles(t)
 
 	// Initially multi-constraints should be disabled
-	shouldUseMultiConstraints, err := state.L2PricingState().ShouldUseMultiConstraints(state.ArbOSVersion())
+	shouldUseMultiConstraints, err := state.L2PricingState().ShouldUseGasConstraints(state.ArbOSVersion())
 	require.NoError(t, err)
 	require.False(t, shouldUseMultiConstraints)
 
@@ -202,7 +202,7 @@ func TestEnableAndDisableMultiConstraints(t *testing.T) {
 	err = arbOwner.SetGasPricingConstraints(callCtx, evm, constraints)
 	require.NoError(t, err)
 
-	shouldUseMultiConstraints, err = state.L2PricingState().ShouldUseMultiConstraints(state.ArbOSVersion())
+	shouldUseMultiConstraints, err = state.L2PricingState().ShouldUseGasConstraints(state.ArbOSVersion())
 	require.NoError(t, err)
 	require.True(t, shouldUseMultiConstraints)
 
@@ -210,7 +210,7 @@ func TestEnableAndDisableMultiConstraints(t *testing.T) {
 	err = arbOwner.SetGasPricingConstraints(callCtx, evm, [][3]uint64{})
 	require.NoError(t, err)
 
-	shouldUseMultiConstraints, err = state.L2PricingState().ShouldUseMultiConstraints(state.ArbOSVersion())
+	shouldUseMultiConstraints, err = state.L2PricingState().ShouldUseGasConstraints(state.ArbOSVersion())
 	require.NoError(t, err)
 	require.False(t, shouldUseMultiConstraints)
 }

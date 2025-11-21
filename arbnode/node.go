@@ -45,8 +45,8 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/staker/bold"
-	"github.com/offchainlabs/nitro/staker/legacy"
-	"github.com/offchainlabs/nitro/staker/multi_protocol"
+	legacystaker "github.com/offchainlabs/nitro/staker/legacy"
+	multiprotocolstaker "github.com/offchainlabs/nitro/staker/multi_protocol"
 	"github.com/offchainlabs/nitro/staker/validatorwallet"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/contracts"
@@ -685,9 +685,10 @@ func getDAProviders(
 	}
 
 	// Check if chain requires Anytrust but none is configured
-	if l2Config.ArbitrumChainParams.DataAvailabilityCommittee {
+	// We support a nil txStreamer for the pruning code
+	if txStreamer != nil && txStreamer.chainConfig.ArbitrumChainParams.DataAvailabilityCommittee {
 		if !config.DataAvailability.Enable {
-			return nil, nil, nil, errors.New("Anytrust is required for this chain, but it was not configured")
+			return nil, nil, nil, errors.New("data availability service required but unconfigured")
 		}
 	}
 
@@ -865,6 +866,9 @@ func getStaker(
 			return nil, nil, common.Address{}, err
 		}
 		if config.Staker.UseSmartContractWallet {
+			if !l1Reader.Started() {
+				l1Reader.Start(ctx)
+			}
 			err = wallet.InitializeAndCreateSCW(ctx)
 		} else {
 			err = wallet.Initialize(ctx)
@@ -1445,6 +1449,8 @@ func (n *Node) Start(ctx context.Context) error {
 	}
 	// must init broadcast server before trying to sequence anything
 	if n.BroadcastServer != nil {
+		// PopulateFeedBacklog is a synchronous operation, hence we first
+		// call it to populate the backlog and then start the broadcastServer
 		err = n.BroadcastServer.Start(ctx)
 		if err != nil {
 			return fmt.Errorf("error starting feed broadcast server: %w", err)
@@ -1497,7 +1503,7 @@ func (n *Node) Start(ctx context.Context) error {
 	if n.Staker != nil {
 		n.Staker.Start(ctx)
 	}
-	if n.L1Reader != nil {
+	if n.L1Reader != nil && !n.L1Reader.Started() {
 		n.L1Reader.Start(ctx)
 	}
 	if n.BroadcastClients != nil {
@@ -1537,6 +1543,9 @@ func (n *Node) StopAndWait() {
 	}
 	if n.configFetcher != nil && n.configFetcher.Started() {
 		n.configFetcher.StopAndWait()
+	}
+	if n.blockMetadataFetcher != nil {
+		n.blockMetadataFetcher.StopAndWait()
 	}
 	if n.SeqCoordinator != nil && n.SeqCoordinator.Started() {
 		// Releases the chosen sequencer lockout,

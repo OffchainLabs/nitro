@@ -1,0 +1,16 @@
+---
+name: 'Lint Go Code'
+description: 'Runs both golangci-lint and custom linters on the Go codebase.'
+
+runs:
+  using: composite
+
+  steps:
+    - name: GolangCI Lint
+      uses: golangci/golangci-lint-action@v9
+      with:
+        version: v2.5
+
+    - name: Custom Lint
+      shell: bash
+      run: go run ./linters ./...

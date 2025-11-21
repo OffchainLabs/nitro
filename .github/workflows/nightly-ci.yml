@@ -35,21 +35,13 @@ jobs:
         uses: ./.github/actions/ci-setup
 
       - name: Build
-        run: make build test-go-deps -j
+        run: make -j8 build test-go-deps
 
       - name: Build all lint dependencies
-        run: make -j build-node-deps
+        run: make -j8 build-node-deps
 
-      - name: Lint
-        uses: golangci/golangci-lint-action@v8
-        with:
-          version: latest
-          skip-cache: true
-          skip-save-cache: true
-
-      - name: Custom Lint
-        run: |
-          go run ./linters ./...
+      - name: Setup CI
+        uses: ./.github/actions/lint-go
 
       - name: Set environment variables
         run: |
@@ -94,7 +86,7 @@ jobs:
         run: ${{ github.workspace }}/.github/workflows/runExecutionSpecTests.sh
 
       - name: Archive detailed run log
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: ${{ matrix.test-mode }}-full.log
           path: full.log

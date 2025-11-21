@@ -1,5 +1,5 @@
 // Copyright 2025, Offchain Labs, Inc.
-// For license information, see https://github.com/offchainlabs/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 // el-proxy is an example implementation of a Timeboost Express Lane proxy
 // and should only be used for testing purposes. It listens for
