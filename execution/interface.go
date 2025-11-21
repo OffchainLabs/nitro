@@ -12,6 +12,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/containers"
+	"github.com/offchainlabs/nitro/validator"
 )
 
 type MaintenanceStatus struct {
@@ -69,15 +70,20 @@ type ExecutionClient interface {
 }
 
 // needed for validators / stakers
+type RecordingPreparer interface {
+	MarkValid(pos arbutil.MessageIndex, gs validator.GoGlobalState)
+	PrepareForRecord(ctx context.Context, start, end arbutil.MessageIndex) error
+}
+
+// needed for validators / stakers
 type ExecutionRecorder interface {
+	RecordingPreparer
 	RecordBlockCreation(
 		ctx context.Context,
 		pos arbutil.MessageIndex,
 		msg *arbostypes.MessageWithMetadata,
 		wasmTargets []rawdb.WasmTarget,
 	) (*RecordResult, error)
-	MarkValid(pos arbutil.MessageIndex, resultHash common.Hash)
-	PrepareForRecord(ctx context.Context, start, end arbutil.MessageIndex) error
 }
 
 // needed for sequencer

@@ -199,8 +199,13 @@ func testChallengeProtocolBOLD(t *testing.T, useExternalSigner bool, spawnerOpts
 	err = statelessB.Start(ctx)
 	Require(t, err)
 
-	blockValidatorA, err := staker.NewBlockValidator(
+	instance := staker.NewBlockValidatorInstance(
 		statelessA,
+		StaticFetcherFrom(t, &blockValidatorConfig),
+	)
+	blockValidatorA, err := staker.NewBlockValidator(
+		instance,
+		statelessA.GetRecorder(),
 		l2nodeA.InboxTracker,
 		l2nodeA.TxStreamer,
 		StaticFetcherFrom(t, &blockValidatorConfig),
@@ -210,8 +215,13 @@ func testChallengeProtocolBOLD(t *testing.T, useExternalSigner bool, spawnerOpts
 	Require(t, blockValidatorA.Initialize(ctx))
 	Require(t, blockValidatorA.Start(ctx))
 
-	blockValidatorB, err := staker.NewBlockValidator(
+	instanceB := staker.NewBlockValidatorInstance(
 		statelessB,
+		StaticFetcherFrom(t, &blockValidatorConfig),
+	)
+	blockValidatorB, err := staker.NewBlockValidator(
+		instanceB,
+		statelessB.GetRecorder(),
 		l2nodeB.InboxTracker,
 		l2nodeB.TxStreamer,
 		StaticFetcherFrom(t, &blockValidatorConfig),

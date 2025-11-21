@@ -277,7 +277,7 @@ func (v *L1Validator) generateNodeAction(
 		var current staker.GlobalStatePosition
 		head, err := v.txStreamer.GetProcessedMessageCount()
 		if err != nil {
-			_, current, err = v.blockValidator.GlobalStatePositionsAtCount(head)
+			_, current, err = v.blockValidator.GlobalStatePositionsAtCount(uint64(head))
 		}
 		if err != nil {
 			log.Info("catching up to chain messages", "target", target)
