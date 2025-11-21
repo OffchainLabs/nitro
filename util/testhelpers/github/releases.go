@@ -15,6 +15,7 @@ import (
 var wasmRootExp = regexp.MustCompile(`\*\*WAVM Module Root\*\*: (0x[a-f0-9]{64})`)
 
 type ConsensusRelease struct {
+	ArbosVersion   uint64
 	WavmModuleRoot string
 	MachineWavmURL url.URL
 	ReplayWasmURL  url.URL
@@ -33,7 +34,7 @@ func getAuthGitClient(ctx context.Context) *github.Client {
 func NitroReleases(ctx context.Context) ([]*github.RepositoryRelease, error) {
 	client := getAuthGitClient(ctx)
 	opts := &github.ListOptions{
-		PerPage: 50,
+		PerPage: 100,
 	}
 	releases, _, err := client.Repositories.ListReleases(ctx, "OffchainLabs", "nitro", opts)
 	return releases, err
@@ -86,7 +87,12 @@ func fromRelease(release *github.RepositoryRelease) (*ConsensusRelease, error) {
 			replayWasmURL = *rURL
 		}
 	}
+	var arbosVersion uint64
+	if _, err := fmt.Sscanf(release.GetTagName(), "consensus-v%d", &arbosVersion); err != nil {
+		return nil, fmt.Errorf("error identifying arbosVersion number from consensus release's tagName: %w", err)
+	}
 	return &ConsensusRelease{
+		ArbosVersion:   arbosVersion,
 		WavmModuleRoot: wavmModuleRoot,
 		MachineWavmURL: machineWavmURL,
 		ReplayWasmURL:  replayWasmURL,

@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/google/btree"
-	flag "github.com/spf13/pflag"
+	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -36,8 +36,8 @@ import (
 )
 
 var (
-	stakerBalanceGauge              = metrics.NewRegisteredGaugeFloat64("arb/staker/balance", nil)
-	stakerAmountStakedGauge         = metrics.NewRegisteredGauge("arb/staker/amount_staked", nil)
+	stakerBalanceGauge              = metrics.GetOrRegisterGaugeFloat64("arb/staker/balance", nil)
+	stakerAmountStakedGauge         = metrics.GetOrRegisterGauge("arb/staker/amount_staked", nil)
 	stakerLatestStakedNodeGauge     = metrics.NewRegisteredGauge("arb/staker/staked_node", nil)
 	stakerLatestConfirmedNodeGauge  = metrics.NewRegisteredGauge("arb/staker/confirmed_node", nil)
 	stakerLastSuccessfulActionGauge = metrics.NewRegisteredGauge("arb/staker/action/last_success", nil)
@@ -71,7 +71,7 @@ var DefaultL1PostingStrategy = L1PostingStrategy{
 	HighGasDelayBlocks: 0,
 }
 
-func L1PostingStrategyAddOptions(prefix string, f *flag.FlagSet) {
+func L1PostingStrategyAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Float64(prefix+".high-gas-threshold", DefaultL1PostingStrategy.HighGasThreshold, "high gas threshold")
 	f.Int64(prefix+".high-gas-delay-blocks", DefaultL1PostingStrategy.HighGasDelayBlocks, "high gas delay blocks")
 }
@@ -115,6 +115,23 @@ func ParseStrategy(strategy string) (StakerStrategy, error) {
 		return MakeNodesStrategy, nil
 	default:
 		return WatchtowerStrategy, fmt.Errorf("unknown staker strategy \"%v\"", strategy)
+	}
+}
+
+func (s StakerStrategy) ToString() string {
+	switch s {
+	case WatchtowerStrategy:
+		return "watchtower"
+	case DefensiveStrategy:
+		return "defensive"
+	case StakeLatestStrategy:
+		return "stakelatest"
+	case ResolveNodesStrategy:
+		return "resolvenodes"
+	case MakeNodesStrategy:
+		return "makenodes"
+	default:
+		return "Unknown"
 	}
 }
 
@@ -203,7 +220,7 @@ var DefaultValidatorL1WalletConfig = genericconf.WalletConfig{
 	OnlyCreateKey: genericconf.WalletConfigDefault.OnlyCreateKey,
 }
 
-func L1ValidatorConfigAddOptions(prefix string, f *flag.FlagSet) {
+func L1ValidatorConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultL1ValidatorConfig.Enable, "enable validator")
 	f.String(prefix+".strategy", DefaultL1ValidatorConfig.Strategy, "L1 validator strategy, either watchtower, defensive, stakeLatest, or makeNodes")
 	f.Duration(prefix+".staker-interval", DefaultL1ValidatorConfig.StakerInterval, "how often the L1 validator should check the status of the L1 rollup and maybe take action with its stake")
@@ -219,7 +236,7 @@ func L1ValidatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".redis-url", DefaultL1ValidatorConfig.RedisUrl, "redis url for L1 validator")
 	f.Uint64(prefix+".extra-gas", DefaultL1ValidatorConfig.ExtraGas, "use this much more gas than estimation says is necessary to post transactions")
 	f.Uint64(prefix+".log-query-batch-size", DefaultL1ValidatorConfig.LogQueryBatchSize, "range ro query from eth_getLogs")
-	dataposter.DataPosterConfigAddOptions(prefix+".data-poster", f, dataposter.DefaultDataPosterConfigForValidator)
+	dataposter.DataPosterConfigAddOptions(prefix+".data-poster", f, dataposter.DefaultDataPosterConfigForValidator, dataposter.DataPosterUsageStaker)
 	DangerousConfigAddOptions(prefix+".dangerous", f)
 	genericconf.WalletConfigAddOptions(prefix+".parent-chain-wallet", f, DefaultL1ValidatorConfig.ParentChainWallet.Pathname)
 	f.Bool(prefix+".enable-fast-confirmation", DefaultL1ValidatorConfig.EnableFastConfirmation, "enable fast confirmation")
@@ -235,7 +252,7 @@ var DefaultDangerousConfig = DangerousConfig{
 	WithoutBlockValidator:      false,
 }
 
-func DangerousConfigAddOptions(prefix string, f *flag.FlagSet) {
+func DangerousConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".ignore-rollup-wasm-module-root", DefaultL1ValidatorConfig.Dangerous.IgnoreRollupWasmModuleRoot, "DANGEROUS! make assertions even when the wasm module root is wrong")
 	f.Bool(prefix+".without-block-validator", DefaultL1ValidatorConfig.Dangerous.WithoutBlockValidator, "DANGEROUS! allows running an L1 validator without a block validator")
 }
@@ -282,6 +299,7 @@ type Staker struct {
 
 type ValidatorWalletInterface interface {
 	Initialize(context.Context) error
+	InitializeAndCreateSCW(context.Context) error
 	// Address must be able to be called concurrently with other functions
 	Address() *common.Address
 	// Address must be able to be called concurrently with other functions
@@ -461,16 +479,38 @@ func (s *Staker) tryFastConfirmationNodeNumber(ctx context.Context, number uint6
 	return s.tryFastConfirmation(ctx, nodeInfo.AfterState().GlobalState.BlockHash, nodeInfo.AfterState().GlobalState.SendRoot, hash)
 }
 
+func (s *Staker) flushTransactions(ctx context.Context) error {
+	arbTx, err := s.builder.ExecuteTransactions(ctx)
+	if err != nil {
+		return err
+	}
+	if arbTx != nil {
+		_, err = s.l1Reader.WaitForTxApproval(ctx, arbTx)
+		if err == nil {
+			log.Info("successfully executed staker transaction", "hash", arbTx.Hash())
+		} else {
+			return fmt.Errorf("error waiting for tx receipt: %w", err)
+		}
+	}
+	return nil
+}
+
 func (s *Staker) tryFastConfirmation(ctx context.Context, blockHash common.Hash, sendRoot common.Hash, nodeHash common.Hash) error {
 	if !s.config().EnableFastConfirmation {
 		return nil
+	}
+	// Make sure all previous transactions are flushed before trying to fast confirm
+	// to ensure that the newly created node is known on-chain before fast confirming it.
+	err := s.flushTransactions(ctx)
+	if err != nil {
+		return err
 	}
 	if s.fastConfirmSafe != nil {
 		return s.fastConfirmSafe.tryFastConfirmation(ctx, blockHash, sendRoot, nodeHash)
 	}
 	auth := s.builder.Auth(ctx)
 	log.Info("Fast confirming node with wallet", "wallet", auth.From, "nodeHash", nodeHash)
-	_, err := s.rollup.FastConfirmNextNode(auth, blockHash, sendRoot, nodeHash)
+	_, err = s.rollup.FastConfirmNextNode(auth, blockHash, sendRoot, nodeHash)
 	return err
 }
 

@@ -5,7 +5,6 @@ package broadcastclient
 
 import (
 	"context"
-	"crypto/ecdsa"
 	"errors"
 	"fmt"
 	"net"
@@ -23,7 +22,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcaster"
-	m "github.com/offchainlabs/nitro/broadcaster/message"
+	"github.com/offchainlabs/nitro/broadcaster/message"
 	"github.com/offchainlabs/nitro/util/contracts"
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/util/testhelpers"
@@ -101,92 +100,21 @@ func testReceiveMessages(t *testing.T, clientCompression bool, serverCompression
 
 }
 
-func TestInvalidSignature(t *testing.T) {
-	t.Parallel()
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	settings := wsbroadcastserver.DefaultTestBroadcasterConfig
-
-	messageCount := 1
-	chainId := uint64(9742)
-
-	privateKey, err := crypto.GenerateKey()
-	Require(t, err)
-	dataSigner := signature.DataSignerFromPrivateKey(privateKey)
-
-	fatalErrChan := make(chan error, 10)
-	b := broadcaster.NewBroadcaster(func() *wsbroadcastserver.BroadcasterConfig { return &settings }, chainId, fatalErrChan, dataSigner)
-
-	Require(t, b.Initialize())
-	Require(t, b.Start(ctx))
-	defer b.StopAndWait()
-
-	badPrivateKey, err := crypto.GenerateKey()
-	Require(t, err)
-	badPublicKey := badPrivateKey.Public()
-	badECDSA, ok := badPublicKey.(*ecdsa.PublicKey)
-	if !ok {
-		t.Fatal("badPublicKey is not an ecdsa.PublicKey")
-	}
-	badSequencerAddr := crypto.PubkeyToAddress(*badECDSA)
-	config := DefaultTestConfig
-
-	ts := NewDummyTransactionStreamer(chainId, &badSequencerAddr)
-	broadcastClient, err := newTestBroadcastClient(
-		config,
-		b.ListenerAddr(),
-		chainId,
-		0,
-		ts,
-		nil,
-		fatalErrChan,
-		&badSequencerAddr,
-		t,
-	)
-	Require(t, err)
-	broadcastClient.Start(ctx)
-
-	go func() {
-		for i := 0; i < messageCount; i++ {
-			// #nosec G115
-			Require(t, b.BroadcastSingle(arbostypes.TestMessageWithMetadataAndRequestId, arbutil.MessageIndex(i), nil, nil))
-		}
-	}()
-
-	timer := time.NewTimer(2 * time.Second)
-	select {
-	case err := <-fatalErrChan:
-		if errors.Is(err, signature.ErrSignatureNotVerified) {
-			t.Log("feed error found as expected")
-			return
-		}
-		t.Errorf("unexpected error occurred: %v", err)
-		return
-	case <-timer.C:
-		t.Error("no feed errors detected")
-		return
-	case <-ctx.Done():
-		timer.Stop()
-		return
-	}
-}
-
 type dummyTransactionStreamer struct {
-	messageReceiver chan m.BroadcastFeedMessage
+	messageReceiver chan message.BroadcastFeedMessage
 	chainId         uint64
 	sequencerAddr   *common.Address
 }
 
 func NewDummyTransactionStreamer(chainId uint64, sequencerAddr *common.Address) *dummyTransactionStreamer {
 	return &dummyTransactionStreamer{
-		messageReceiver: make(chan m.BroadcastFeedMessage),
+		messageReceiver: make(chan message.BroadcastFeedMessage),
 		chainId:         chainId,
 		sequencerAddr:   sequencerAddr,
 	}
 }
 
-func (ts *dummyTransactionStreamer) AddBroadcastMessages(feedMessages []*m.BroadcastFeedMessage) error {
+func (ts *dummyTransactionStreamer) AddBroadcastMessages(feedMessages []*message.BroadcastFeedMessage) error {
 	for _, feedMessage := range feedMessages {
 		ts.messageReceiver <- *feedMessage
 	}
@@ -264,7 +192,7 @@ func startMakeBroadcastClient(ctx context.Context, t *testing.T, clientConfig Co
 			}
 			timer.Stop()
 			if (!gotMsg && expectedCount > 0) || (gotMsg && expectedCount == 0) {
-				t.Errorf("Client %d expected %d meesages, got %d messages\n", index, expectedCount, messageCount)
+				t.Errorf("Client %d expected %d messages, got %d messages\n", index, expectedCount, messageCount)
 				return
 			}
 

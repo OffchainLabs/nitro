@@ -49,8 +49,8 @@ FROM wasm-base AS wasm-libs-builder
 	# clang / lld used by soft-float wasm
 RUN apt-get update && \
     apt-get install -y clang=1:14.0-55.7~deb12u1 lld=1:14.0-55.7~deb12u1 wabt
-    # pinned rust 1.84.1
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.84.1 --target x86_64-unknown-linux-gnu,wasm32-unknown-unknown,wasm32-wasip1
+    # pinned rust 1.88.0
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.88.0 --target x86_64-unknown-linux-gnu,wasm32-unknown-unknown,wasm32-wasip1
 COPY ./Makefile ./
 COPY arbitrator/Cargo.* arbitrator/
 COPY arbitrator/arbutil arbitrator/arbutil
@@ -72,7 +72,7 @@ COPY --from=wasm-libs-builder /workspace/ /
 FROM wasm-base AS wasm-bin-builder
 RUN apt update && apt install -y wabt
 # pinned go version
-RUN curl -L https://golang.org/dl/go1.24.5.linux-`dpkg --print-architecture`.tar.gz | tar -C /usr/local -xzf -
+RUN curl -L https://golang.org/dl/go1.25.1.linux-`dpkg --print-architecture`.tar.gz | tar -C /usr/local -xzf -
 COPY ./Makefile ./go.mod ./go.sum ./
 COPY ./arbcompress ./arbcompress
 COPY ./arbos ./arbos
@@ -99,7 +99,6 @@ COPY ./contracts/src/precompiles/ ./contracts/src/precompiles/
 COPY ./contracts/package.json ./contracts/yarn.lock ./contracts/
 COPY ./safe-smart-account ./safe-smart-account
 COPY ./solgen/gen.go ./solgen/
-COPY ./fastcache ./fastcache
 COPY ./go-ethereum ./go-ethereum
 COPY scripts/remove_reference_types.sh scripts/
 COPY --from=brotli-wasm-export / target/
@@ -109,12 +108,12 @@ COPY --from=contracts-builder workspace/contracts-legacy/build/contracts/src/pre
 COPY --from=contracts-builder workspace/.make/ .make/
 RUN PATH="$PATH:/usr/local/go/bin" NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-wasm-bin
 
-FROM rust:1.84.1-slim-bookworm AS prover-header-builder
+FROM rust:1.88.0-slim-bookworm AS prover-header-builder
 WORKDIR /workspace
 RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
     apt-get install -y make clang wabt && \
-    cargo install --force cbindgen
+    cargo install --force cbindgen --version 0.24.3
 COPY arbitrator/Cargo.* arbitrator/
 COPY ./Makefile ./
 COPY arbitrator/arbutil arbitrator/arbutil
@@ -135,7 +134,7 @@ RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-prover-header
 FROM scratch AS prover-header-export
 COPY --from=prover-header-builder /workspace/target/ /
 
-FROM rust:1.84.1-slim-bookworm AS prover-builder
+FROM rust:1.88.0-slim-bookworm AS prover-builder
 WORKDIR /workspace
 RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
@@ -233,16 +232,23 @@ COPY ./scripts/download-machine.sh .
 #RUN ./download-machine.sh consensus-v11 0xf4389b835497a910d7ba3ebfb77aa93da985634f3c052de1290360635be40c4a
 #RUN ./download-machine.sh consensus-v11.1 0x68e4fe5023f792d4ef584796c84d710303a5e12ea02d6e37e2b5e9c4332507c4
 #RUN ./download-machine.sh consensus-v20 0x8b104a2e80ac6165dc58b9048de12f301d70b02a0ab51396c22b4b4b802a16a4
-RUN ./download-machine.sh consensus-v30 0xb0de9cb89e4d944ae6023a3b62276e54804c242fd8c4c2d8e6cc4450f5fa8b1b && true
-RUN ./download-machine.sh consensus-v31 0x260f5fa5c3176a856893642e149cf128b5a8de9f828afec8d11184415dd8dc69
-RUN ./download-machine.sh consensus-v32 0x184884e1eb9fefdc158f6c8ac912bb183bf3cf83f0090317e0bc4ac5860baa39
+#RUN ./download-machine.sh consensus-v30 0xb0de9cb89e4d944ae6023a3b62276e54804c242fd8c4c2d8e6cc4450f5fa8b1b && true
+#RUN ./download-machine.sh consensus-v31 0x260f5fa5c3176a856893642e149cf128b5a8de9f828afec8d11184415dd8dc69
+#RUN ./download-machine.sh consensus-v32 0x184884e1eb9fefdc158f6c8ac912bb183bf3cf83f0090317e0bc4ac5860baa39
 #RUN ./download-machine.sh consensus-v40-rc.1 0x6dae396b0b7644a2d63b4b22e6452b767aa6a04b6778dadebdd74aa40f40a5c5
 #RUN ./download-machine.sh consensus-v40-rc.2 0xa8206be13d53e456c7ab061d94bab5b229d674ac57ffe7281216479a8820fcc0
-RUN ./download-machine.sh consensus-v42-rc.1 0x1be44d9f74056fc12af97ccbef7a2668bc5c946fe210505957b0a08b954b907f
-RUN ./download-machine.sh consensus-v50-alpha.1 0x28cfd8d81613ce4ebe750e77bfd95d6d95d4f53240488095a11c1ad3a494fa82
-RUN ./download-machine.sh consensus-v40 0xdb698a2576298f25448bc092e52cf13b1e24141c997135d70f217d674bbeb69a
+#RUN ./download-machine.sh consensus-v41 0xa18d6266cef250802c3cb2bfefe947ea1aa9a32dd30a8d1dfc4568a8714d3a7a
+#RUN ./download-machine.sh consensus-v50-alpha.1 0x28cfd8d81613ce4ebe750e77bfd95d6d95d4f53240488095a11c1ad3a494fa82
+#RUN ./download-machine.sh consensus-v50-rc.1 0x8fd725477d8ef58183a1a943c375a8495a22cd2d7d701ac917fe20d69993e88e
+#RUN ./download-machine.sh consensus-v50-rc.2 0xc1ea4d6d2791bf5bdf6de3c2166ce4aab8fe16ca4ad5c226e8ae31a8b77f1a08
+#RUN ./download-machine.sh consensus-v50-rc.3 0x385fa2524d86d4ebc340988224f8686b3f485c7c9f7bc1015a64c85a9c76a6b0
+#RUN ./download-machine.sh consensus-v50-rc.4 0x393be710f252e8217d66fe179739eba1ed471f0d5a847b5905c30926d853241a
+#RUN ./download-machine.sh consensus-v50-rc.5 0xb90895a56a59c0267c2004a0e103ad725bd98d5a05c3262806ab4ccb3f997558
+#RUN ./download-machine.sh consensus-v50-rc.6 0x2c54f6e9e378ba320ed9c713a1d9f067a572b1437e4f1c40b1a915d3066c04f2
+#RUN ./download-machine.sh consensus-v40 0xdb698a2576298f25448bc092e52cf13b1e24141c997135d70f217d674bbeb69a
+RUN ./download-machine.sh consensus-v50 0x2c54f6e9e378ba320ed9c713a1d9f067a572b1437e4f1c40b1a915d3066c04f2
 
-FROM golang:1.24.5-bookworm AS node-builder
+FROM golang:1.25-bookworm AS node-builder
 WORKDIR /workspace
 ARG version=""
 ARG datetime=""
@@ -255,8 +261,6 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get install -y wabt
 COPY go.mod go.sum ./
 COPY go-ethereum/go.mod go-ethereum/go.sum go-ethereum/
-COPY fastcache/go.mod fastcache/go.sum fastcache/
-COPY bold/go.mod bold/go.sum bold/
 RUN go mod download
 COPY . ./
 COPY --from=contracts-builder workspace/contracts/build/ contracts/build/
@@ -317,7 +321,7 @@ USER user
 WORKDIR /home/user/
 ENTRYPOINT [ "/usr/local/bin/nitro" ]
 
-FROM offchainlabs/nitro-node:v2.3.4-rc.5-b4cc111 AS nitro-legacy
+FROM offchainlabs/nitro-node:v3.7.6-c0fe95e AS nitro-legacy
 
 FROM nitro-node-slim AS nitro-node
 USER root
@@ -329,6 +333,8 @@ COPY --from=node-builder  /workspace/target/bin/bidder-client  /usr/local/bin/
 COPY --from=node-builder  /workspace/target/bin/el-proxy  /usr/local/bin/
 COPY --from=node-builder  /workspace/target/bin/datool    /usr/local/bin/
 COPY --from=node-builder  /workspace/target/bin/genesis-generator  /usr/local/bin/
+COPY --from=contracts-builder  /workspace/contracts/  /contracts/
+COPY --from=contracts-builder  /workspace/contracts-local/  /contracts-local/
 COPY --from=nitro-legacy /home/user/target/machines /home/user/nitro-legacy/machines
 RUN rm -rf /workspace/target/legacy-machines/latest
 RUN export DEBIAN_FRONTEND=noninteractive && \
@@ -344,6 +350,10 @@ ENTRYPOINT [ "/usr/local/bin/nitro" , "--validation.wasm.allowed-wasm-module-roo
 
 USER user
 
+# The nitro-node-validator is needed in case some modifications are needed in arbitrator or jit API.
+# That was the case when enabling arbos30.
+# We no longer support pre-arbos-30 wasmmoduleroots (newer wasmmoduleroots can execute old blocks)
+# We keep the code (commented out), and the docker-target, for use in case such an update is needed again.
 FROM nitro-node AS nitro-node-validator
 USER root
 COPY --from=nitro-legacy /usr/local/bin/nitro-val /home/user/nitro-legacy/bin/nitro-val

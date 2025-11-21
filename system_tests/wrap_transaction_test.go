@@ -84,7 +84,7 @@ func EnsureTxSucceeded(ctx context.Context, client *ethclient.Client, tx *types.
 func EnsureTxSucceededWithTimeout(ctx context.Context, client *ethclient.Client, tx *types.Transaction, timeout time.Duration) (*types.Receipt, error) {
 	receipt, err := WaitForTx(ctx, client, tx.Hash(), timeout)
 	if err != nil {
-		return nil, fmt.Errorf("waitFoxTx (tx=%s) got: %w", tx.Hash().Hex(), err)
+		return nil, fmt.Errorf("waitForTx (tx=%s) got: %w", tx.Hash().Hex(), err)
 	}
 	if receipt.Status == types.ReceiptStatusSuccessful && tx.ChainId().Cmp(simulatedChainID) == 0 {
 		for {
@@ -102,6 +102,11 @@ func EnsureTxSucceededWithTimeout(ctx context.Context, client *ethclient.Client,
 			}
 		}
 	}
+
+	// Don't perform gas check if multigas is zero, as that indicates multigas is disabled
+	if !receipt.MultiGasUsed.IsZero() && receipt.GasUsed != receipt.MultiGasUsed.SingleGas() {
+		return receipt, fmt.Errorf("receipt gas used %d doesn't match multigas single gas used %d", receipt.GasUsed, receipt.MultiGasUsed.SingleGas())
+	}
 	return receipt, arbutil.DetailTxError(ctx, client, tx, receipt)
 }
 
@@ -115,7 +120,7 @@ func EnsureTxFailedWithTimeout(t *testing.T, ctx context.Context, client *ethcli
 	receipt, err := WaitForTx(ctx, client, tx.Hash(), timeout)
 	Require(t, err)
 	if receipt.Status != types.ReceiptStatusFailed {
-		Fatal(t, "unexpected succeess")
+		Fatal(t, "unexpected success")
 	}
 	return receipt
 }

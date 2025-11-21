@@ -241,11 +241,11 @@ func testAuctionResolutionDuringATie(t *testing.T, multiRuns bool) {
 	}
 }
 
-func TestTimeboostExpressLaneTxsHandlingDuringSequencerSwapDueToPriorities(t *testing.T) {
+func TestTimeboostExpressLaneTxsHandlingDuringSequencerSwapDueToPrioritiesFlaky(t *testing.T) {
 	testTxsHandlingDuringSequencerSwap(t, false)
 }
 
-func TestTimeboostExpressLaneTxsHandlingDuringSequencerSwapDueToActiveSequencerCrashing(t *testing.T) {
+func TestTimeboostExpressLaneTxsHandlingDuringSequencerSwapDueToActiveSequencerCrashingFlaky(t *testing.T) {
 	testTxsHandlingDuringSequencerSwap(t, true)
 }
 
@@ -325,7 +325,7 @@ func testTxsHandlingDuringSequencerSwap(t *testing.T, dueToCrash bool) {
 	currentChosen, err := redisCoordinatorGetter.CurrentChosenSequencer(ctx)
 	Require(t, err)
 	if currentChosen != seqB.Stack.HTTPEndpoint() {
-		t.Fatalf("unexepcted current chosen sequencer. Want: %s, Got: %s", seqB.Stack.HTTPEndpoint(), currentChosen)
+		t.Fatalf("unexpected current chosen sequencer. Want: %s, Got: %s", seqB.Stack.HTTPEndpoint(), currentChosen)
 	}
 	redisCoordinatorSetter := &rediscoordinator.RedisCoordinator{RedisCoordinator: redisCoordinatorGetter}
 
@@ -377,7 +377,7 @@ func testTxsHandlingDuringSequencerSwap(t *testing.T, dueToCrash bool) {
 	}
 }
 
-func TestTimeboostForwardingExpressLaneTxs(t *testing.T) {
+func TestTimeboostForwardingExpressLaneTxsFlaky(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -417,7 +417,7 @@ func TestTimeboostForwardingExpressLaneTxs(t *testing.T) {
 	verifyControllerAdvantage(t, ctx, seqClient, expressLaneClient, seqInfo, "Bob", "Alice")
 }
 
-func TestTimeboostExpressLaneTransactionHandlingComplex(t *testing.T) {
+func TestTimeboostExpressLaneTransactionHandlingComplexFlaky(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -1020,9 +1020,18 @@ func TestTimeboostBulkBlockMetadataAPI(t *testing.T) {
 
 	// A Reorg event should clear the cache, hence the data fetched now should be accurate
 	Require(t, builder.L2.ConsensusNode.TxStreamer.ReorgAt(10))
-	err = l2rpc.CallContext(ctx, &result, "arb_getRawBlockMetadata", rpc.BlockNumber(start), rpc.BlockNumber(end))
-	Require(t, err)
-	if !bytes.Equal(updatedBlockMetadata, result[0].RawMetadata) {
+	// Give time for BulkBlockMetadataFetcher to receive the reorg event and clear its cache
+	var succeeded bool
+	for range 10 {
+		err = l2rpc.CallContext(ctx, &result, "arb_getRawBlockMetadata", rpc.BlockNumber(start), rpc.BlockNumber(end))
+		Require(t, err)
+		if bytes.Equal(updatedBlockMetadata, result[0].RawMetadata) {
+			succeeded = true
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if !succeeded {
 		t.Fatal("BlockMetadata should've been fetched from db and not the cache")
 	}
 }
@@ -1128,7 +1137,7 @@ func TestTimeboostBulkBlockMetadataAPI(t *testing.T) {
 // 	verifyControllerChange(winnerRound, aliceOpts.From, bobOpts.From)     // Alice transfers control to Bob before the round begins
 // }
 
-func TestTimeboostSequencerFeed_ExpressLaneAuction_ExpressLaneTxsHaveAdvantage(t *testing.T) {
+func TestTimeboostSequencerFeed_ExpressLaneAuction_ExpressLaneTxsHaveAdvantageFlaky(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -1167,7 +1176,7 @@ func TestTimeboostSequencerFeed_ExpressLaneAuction_ExpressLaneTxsHaveAdvantage(t
 	verifyControllerAdvantage(t, ctx, seqClient, expressLaneClient, seqInfo, "Bob", "Alice")
 }
 
-func TestTimeboostSequencerFeed_ExpressLaneAuction_InnerPayloadNoncesAreRespected_TimeboostedFieldIsCorrect(t *testing.T) {
+func TestTimeboostSequencerFeed_ExpressLaneAuction_InnerPayloadNoncesAreRespected_TimeboostedFieldIsCorrectFlaky(t *testing.T) {
 	logHandler := testhelpers.InitTestLog(t, log.LevelInfo)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -1289,7 +1298,7 @@ func TestTimeboostSequencerFeed_ExpressLaneAuction_InnerPayloadNoncesAreRespecte
 	verifyTimeboostedCorrectness(t, ctx, "Alice", seq, seqClient, false, aliceTx, aliceBlock)
 	verifyTimeboostedCorrectness(t, ctx, "Charlie", seq, seqClient, true, charlie0, charlieBlock)
 
-	// Verify that timeboosted byte array receieved via sequencer feed is correct
+	// Verify that timeboosted byte array received via sequencer feed is correct
 	_, err = WaitForTx(ctx, feedListener.Client, charlie0.Hash(), time.Second*5)
 	Require(t, err)
 	_, err = WaitForTx(ctx, feedListener.Client, aliceTx.Hash(), time.Second*5)
@@ -1345,7 +1354,7 @@ func verifyTimeboostedCorrectness(t *testing.T, ctx context.Context, user string
 				t.Fatalf("incorrect timeboosted bit for %s's tx, it should be timeboosted", user)
 			}
 		} else if got {
-			// Other tx's right now shouln't be timeboosted
+			// Other tx's right now shouldn't be timeboosted
 			t.Fatalf("incorrect timeboosted bit for nonspecified tx with index: %d, it shouldn't be timeboosted", txIndex)
 		}
 	}
@@ -1728,6 +1737,7 @@ func setupExpressLaneAuction(
 
 	expressLaneTracker.Start(ctx)
 	builderSeq.execConfig.Sequencer.Timeboost.Enable = true // Prevents race in sequencer where expressLaneService is read inside publishTransactionToQueue
+	builderSeq.L2.ExecutionConfigFetcher.Set(builderSeq.execConfig)
 
 	// Set up an autonomous auction contract service that runs in the background in this test.
 	redisURL := redisutil.CreateTestRedis(ctx, t)

@@ -7,10 +7,11 @@ import (
 	"errors"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
+	"github.com/ethereum/go-ethereum/arbitrum/multigas"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/precompiles"
@@ -28,11 +29,15 @@ func (p ArbosPrecompileWrapper) Run(input []byte) ([]byte, error) {
 	panic("Non-advanced precompile method called")
 }
 
+func (p ArbosPrecompileWrapper) Name() string {
+	return p.inner.Name()
+}
+
 func (p ArbosPrecompileWrapper) RunAdvanced(
 	input []byte,
 	gasSupplied uint64,
 	info *vm.AdvancedPrecompileCall,
-) (ret []byte, gasLeft uint64, err error) {
+) (ret []byte, gasLeft uint64, usedMultiGas multigas.MultiGas, err error) {
 
 	// Precompiles don't actually enter evm execution like normal calls do,
 	// so we need to increment the depth here to simulate the callstack change.
@@ -40,7 +45,7 @@ func (p ArbosPrecompileWrapper) RunAdvanced(
 	defer info.Evm.DecrementDepth()
 
 	return p.inner.Call(
-		input, info.PrecompileAddress, info.ActingAsAddress,
+		input, info.ActingAsAddress,
 		info.Caller, info.Value, info.ReadOnly, gasSupplied, info.Evm,
 	)
 }
@@ -52,39 +57,30 @@ func init() {
 		}
 	}
 
-	for k, v := range vm.PrecompiledContractsBerlin {
-		vm.PrecompiledAddressesArbitrum = append(vm.PrecompiledAddressesArbitrum, k)
-		vm.PrecompiledContractsArbitrum[k] = v
-	}
-
-	for k, v := range vm.PrecompiledContractsCancun {
-		vm.PrecompiledAddressesArbOS30 = append(vm.PrecompiledAddressesArbOS30, k)
-		vm.PrecompiledContractsArbOS30[k] = v
-	}
-
+	// process arbos precompiles
 	precompileErrors := make(map[[4]byte]abi.Error)
 	for addr, precompile := range precompiles.Precompiles() {
 		for _, errABI := range precompile.Precompile().GetErrorABIs() {
 			precompileErrors[[4]byte(errABI.ID.Bytes())] = errABI
 		}
+
+		// Arbos is a special case, Arbos handles versioning of precompiles internally, versioning of Ethereum/non-Arbos precompiles must be handled externally
 		var wrapped vm.AdvancedPrecompile = ArbosPrecompileWrapper{precompile}
-		vm.PrecompiledContractsArbOS30[addr] = wrapped
-		vm.PrecompiledAddressesArbOS30 = append(vm.PrecompiledAddressesArbOS30, addr)
-
-		if precompile.Precompile().ArbosVersion() < params.ArbosVersion_Stylus {
-			vm.PrecompiledContractsArbitrum[addr] = wrapped
-			vm.PrecompiledAddressesArbitrum = append(vm.PrecompiledAddressesArbitrum, addr)
-		}
+		vm.PrecompiledContractsBeforeArbOS30[addr] = wrapped
+		vm.PrecompiledContractsStartingFromArbOS30[addr] = wrapped
+		vm.PrecompiledContractsStartingFromArbOS50[addr] = wrapped
 	}
 
-	for addr, precompile := range vm.PrecompiledContractsArbitrum {
-		vm.PrecompiledContractsArbOS30[addr] = precompile
-		vm.PrecompiledAddressesArbOS30 = append(vm.PrecompiledAddressesArbOS30, addr)
-	}
-	for addr, precompile := range vm.PrecompiledContractsP256Verify {
-		vm.PrecompiledContractsArbOS30[addr] = precompile
-		vm.PrecompiledAddressesArbOS30 = append(vm.PrecompiledAddressesArbOS30, addr)
-	}
+	// process Ethereum precompiles for respective arbos versions
+	addPrecompiles(vm.PrecompiledContractsBeforeArbOS30, vm.PrecompiledContractsBerlin)
+	addPrecompiles(vm.PrecompiledContractsStartingFromArbOS30, vm.PrecompiledContractsCancun)
+	addPrecompiles(vm.PrecompiledContractsStartingFromArbOS30, vm.PrecompiledContractsP256Verify)
+	addPrecompiles(vm.PrecompiledContractsStartingFromArbOS50, vm.PrecompiledContractsOsaka)
+
+	// process addresses for respective arbos version precompile maps
+	addAddresses(&vm.PrecompiledAddressesBeforeArbOS30, vm.PrecompiledContractsBeforeArbOS30)
+	addAddresses(&vm.PrecompiledAddressesStartingFromArbOS30, vm.PrecompiledContractsStartingFromArbOS30)
+	addAddresses(&vm.PrecompiledAddressesStartingFromArbOS50, vm.PrecompiledContractsStartingFromArbOS50)
 
 	core.RenderRPCError = func(data []byte) error {
 		if len(data) < 4 {
@@ -102,6 +98,18 @@ func init() {
 			return nil
 		}
 		return errors.New(rendered)
+	}
+}
+
+func addPrecompiles(contracts map[common.Address]vm.PrecompiledContract, toAdd map[common.Address]vm.PrecompiledContract) {
+	for addr, precompile := range toAdd {
+		contracts[addr] = precompile
+	}
+}
+
+func addAddresses(addresses *[]common.Address, toAdd map[common.Address]vm.PrecompiledContract) {
+	for addr := range toAdd {
+		*addresses = append(*addresses, addr)
 	}
 }
 

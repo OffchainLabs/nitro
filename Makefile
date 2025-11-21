@@ -116,10 +116,6 @@ stylus_lang_rust = $(wildcard $(rust_sdk)/*/src/*.rs $(rust_sdk)/*/src/*/*.rs $(
 stylus_lang_c    = $(wildcard $(c_sdk)/*/*.c $(c_sdk)/*/*.h)
 stylus_lang_bf   = $(wildcard arbitrator/langs/bf/src/*.* arbitrator/langs/bf/src/*.toml)
 
-STYLUS_NIGHTLY_VER ?= "+nightly"
-
-cargo_nightly = cargo $(STYLUS_NIGHTLY_VER) build -Z build-std=std,panic_abort -Z build-std-features=panic_immediate_abort
-
 get_stylus_test_wasm = $(stylus_test_dir)/$(1)/$(wasm32_unknown)/$(1).wasm
 get_stylus_test_rust = $(wildcard $(stylus_test_dir)/$(1)/*.toml $(stylus_test_dir)/$(1)/src/*.rs) $(stylus_cargo) $(stylus_lang_rust)
 get_stylus_test_c    = $(wildcard $(c_sdk)/examples/$(1)/*.c $(c_sdk)/examples/$(1)/*.h) $(stylus_lang_c)
@@ -169,7 +165,7 @@ all: build build-replay-env test-gen-proofs
 	@touch .make/all
 
 .PHONY: build
-build: $(patsubst %,$(output_root)/bin/%, nitro deploy relay daprovider daserver autonomous-auctioneer bidder-client datool el-proxy mockexternalsigner seq-coordinator-invalidate nitro-val seq-coordinator-manager dbconv genesis-generator)
+build: $(patsubst %,$(output_root)/bin/%, nitro deploy relay daprovider daserver autonomous-auctioneer bidder-client datool blobtool el-proxy mockexternalsigner seq-coordinator-invalidate nitro-val seq-coordinator-manager dbconv genesis-generator)
 	@printf $(done)
 
 .PHONY: build-node-deps
@@ -334,6 +330,9 @@ $(output_root)/bin/el-proxy: $(DEP_PREDICATE) build-node-deps
 $(output_root)/bin/datool: $(DEP_PREDICATE) build-node-deps
 	go build $(GOLANG_PARAMS) -o $@ "$(CURDIR)/cmd/datool"
 
+$(output_root)/bin/blobtool: $(DEP_PREDICATE) build-node-deps
+	go build $(GOLANG_PARAMS) -o $@ "$(CURDIR)/cmd/blobtool"
+
 $(output_root)/bin/genesis-generator: $(DEP_PREDICATE) build-node-deps
 	go build $(GOLANG_PARAMS) -o $@ "$(CURDIR)/cmd/genesis-generator"
 
@@ -473,67 +472,67 @@ $(stylus_test_dir)/%.wasm: $(stylus_test_dir)/%.b $(stylus_lang_bf)
 	cargo run --manifest-path arbitrator/langs/bf/Cargo.toml $< -o $@
 
 $(stylus_test_keccak_wasm): $(stylus_test_keccak_src)
-	$(cargo_nightly) --manifest-path $< --release --config $(stylus_cargo)
+	cargo build --manifest-path $< --release --config $(stylus_cargo)
 	./scripts/remove_reference_types.sh $@
 	@touch -c $@ # cargo might decide to not rebuild the binary
 
 $(stylus_test_keccak-100_wasm): $(stylus_test_keccak-100_src)
-	$(cargo_nightly) --manifest-path $< --release --config $(stylus_cargo)
+	cargo build --manifest-path $< --release --config $(stylus_cargo)
 	./scripts/remove_reference_types.sh $@
 	@touch -c $@ # cargo might decide to not rebuild the binary
 
 $(stylus_test_fallible_wasm): $(stylus_test_fallible_src)
-	$(cargo_nightly) --manifest-path $< --release --config $(stylus_cargo)
+	cargo build --manifest-path $< --release --config $(stylus_cargo)
 	./scripts/remove_reference_types.sh $@
 	@touch -c $@ # cargo might decide to not rebuild the binary
 
 $(stylus_test_storage_wasm): $(stylus_test_storage_src)
-	$(cargo_nightly) --manifest-path $< --release --config $(stylus_cargo)
+	cargo build --manifest-path $< --release --config $(stylus_cargo)
 	./scripts/remove_reference_types.sh $@
 	@touch -c $@ # cargo might decide to not rebuild the binary
 
 $(stylus_test_multicall_wasm): $(stylus_test_multicall_src)
-	$(cargo_nightly) --manifest-path $< --release --config $(stylus_cargo)
+	cargo build --manifest-path $< --release --config $(stylus_cargo)
 	./scripts/remove_reference_types.sh $@
 	@touch -c $@ # cargo might decide to not rebuild the binary
 
 $(stylus_test_log_wasm): $(stylus_test_log_src)
-	$(cargo_nightly) --manifest-path $< --release --config $(stylus_cargo)
+	cargo build --manifest-path $< --release --config $(stylus_cargo)
 	./scripts/remove_reference_types.sh $@
 	@touch -c $@ # cargo might decide to not rebuild the binary
 
 $(stylus_test_create_wasm): $(stylus_test_create_src)
-	$(cargo_nightly) --manifest-path $< --release --config $(stylus_cargo)
+	cargo build --manifest-path $< --release --config $(stylus_cargo)
 	./scripts/remove_reference_types.sh $@
 	@touch -c $@ # cargo might decide to not rebuild the binary
 
 $(stylus_test_math_wasm): $(stylus_test_math_src)
-	$(cargo_nightly) --manifest-path $< --release --config $(stylus_cargo)
+	cargo build --manifest-path $< --release --config $(stylus_cargo)
 	./scripts/remove_reference_types.sh $@
 	@touch -c $@ # cargo might decide to not rebuild the binary
 
 $(stylus_test_evm-data_wasm): $(stylus_test_evm-data_src)
-	$(cargo_nightly) --manifest-path $< --release --config $(stylus_cargo)
+	cargo build --manifest-path $< --release --config $(stylus_cargo)
 	./scripts/remove_reference_types.sh $@
 	@touch -c $@ # cargo might decide to not rebuild the binary
 
 $(stylus_test_read-return-data_wasm): $(stylus_test_read-return-data_src)
-	$(cargo_nightly) --manifest-path $< --release --config $(stylus_cargo)
+	cargo build --manifest-path $< --release --config $(stylus_cargo)
 	./scripts/remove_reference_types.sh $@
 	@touch -c $@ # cargo might decide to not rebuild the binary
 
 $(stylus_test_sdk-storage_wasm): $(stylus_test_sdk-storage_src)
-	$(cargo_nightly) --manifest-path $< --release --config $(stylus_cargo)
+	cargo build --manifest-path $< --release --config $(stylus_cargo)
 	./scripts/remove_reference_types.sh $@
 	@touch -c $@ # cargo might decide to not rebuild the binary
 
 $(stylus_test_erc20_wasm): $(stylus_test_erc20_src)
-	$(cargo_nightly) --manifest-path $< --release --config $(stylus_cargo)
+	cargo build --manifest-path $< --release --config $(stylus_cargo)
 	./scripts/remove_reference_types.sh $@
 	@touch -c $@ # cargo might decide to not rebuild the binary
 
 $(stylus_test_hostio-test_wasm): $(stylus_test_hostio-test_src)
-	$(cargo_nightly) --manifest-path $< --release --config $(stylus_cargo)
+	cargo build --manifest-path $< --release --config $(stylus_cargo)
 	./scripts/remove_reference_types.sh $@
 	@touch -c $@ # cargo might decide to not rebuild the binary
 
@@ -613,14 +612,14 @@ contracts/test/prover/proofs/%.json: $(arbitrator_cases)/%.wasm $(prover_bin)
 	yarn --cwd contracts build:forge:yul
 	yarn --cwd contracts-legacy build
 	yarn --cwd contracts-legacy build:forge:yul
-	make -C contracts-local build
+	+make -C contracts-local build
 	@touch $@
 
 .make/yarndeps: $(DEP_PREDICATE) */package.json */yarn.lock $(ORDER_ONLY_PREDICATE) .make
 	npm --prefix safe-smart-account install
 	yarn --cwd contracts install
 	yarn --cwd contracts-legacy install
-	make -C contracts-local install
+	+make -C contracts-local install
 	@touch $@
 
 .make/cbrotli-lib: $(DEP_PREDICATE) $(ORDER_ONLY_PREDICATE) .make

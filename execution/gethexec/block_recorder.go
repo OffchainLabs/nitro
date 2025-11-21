@@ -3,14 +3,16 @@ package gethexec
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sync"
 	"testing"
 
-	flag "github.com/spf13/pflag"
+	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
@@ -58,7 +60,7 @@ var DefaultBlockRecorderConfig = BlockRecorderConfig{
 	MaxPrepared:    1000,
 }
 
-func BlockRecorderConfigAddOptions(prefix string, f *flag.FlagSet) {
+func BlockRecorderConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Int(prefix+".trie-dirty-cache", DefaultBlockRecorderConfig.TrieDirtyCache, "like trie-dirty-cache for the separate, recording database (used for validation)")
 	f.Int(prefix+".trie-clean-cache", DefaultBlockRecorderConfig.TrieCleanCache, "like trie-clean-cache for the separate, recording database (used for validation)")
 	f.Int(prefix+".max-prepared", DefaultBlockRecorderConfig.MaxPrepared, "max references to store in the recording database")
@@ -102,8 +104,8 @@ func (r *BlockRecorder) RecordBlockCreation(
 	ctx context.Context,
 	pos arbutil.MessageIndex,
 	msg *arbostypes.MessageWithMetadata,
+	wasmTargets []rawdb.WasmTarget,
 ) (*execution.RecordResult, error) {
-
 	blockNum := r.execEngine.MessageIndexToBlockNumber(pos)
 
 	var prevHeader *types.Header
@@ -152,6 +154,9 @@ func (r *BlockRecorder) RecordBlockCreation(
 
 	var blockHash common.Hash
 	if msg != nil {
+		if !slices.Contains(wasmTargets, rawdb.LocalTarget()) {
+			wasmTargets = append(wasmTargets, rawdb.LocalTarget())
+		}
 		block, _, err := arbos.ProduceBlock(
 			msg.Message,
 			msg.DelayedMessagesRead,
@@ -159,7 +164,8 @@ func (r *BlockRecorder) RecordBlockCreation(
 			recordingdb,
 			chaincontext,
 			false,
-			core.NewMessageRecordingContext(r.execEngine.wasmTargets),
+			core.NewMessageRecordingContext(wasmTargets),
+			false,
 		)
 		if err != nil {
 			return nil, err

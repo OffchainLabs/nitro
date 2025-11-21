@@ -15,6 +15,7 @@ import (
 	"github.com/offchainlabs/nitro/daprovider"
 )
 
+// lint:require-exhaustive-initialization
 type multiplexerBackend struct {
 	batchSeqNum           uint64
 	batch                 []byte

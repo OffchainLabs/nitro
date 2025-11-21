@@ -15,7 +15,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 
-	prefixproofs "github.com/offchainlabs/bold/state-commitments/prefix-proofs"
+	"github.com/offchainlabs/nitro/bold/state-commitments/prefix-proofs"
 )
 
 var (

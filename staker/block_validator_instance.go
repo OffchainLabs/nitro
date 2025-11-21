@@ -28,7 +28,7 @@ type BlockValidatorInstance struct {
 	nextCreateStartGS     validator.GoGlobalState
 	nextCreatePrevDelayed uint64
 
-	// can only be accessed from from validation thread or if holding reorg-write
+	// can only be accessed from validation thread or if holding reorg-write
 	lastValidGS     validator.GoGlobalState
 	legacyValidInfo *legacyLastBlockValidatedDbInfo
 

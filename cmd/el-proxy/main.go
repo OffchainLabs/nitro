@@ -1,5 +1,5 @@
 // Copyright 2025, Offchain Labs, Inc.
-// For license information, see https://github.com/offchainlabs/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 // el-proxy is an example implementation of a Timeboost Express Lane proxy
 // and should only be used for testing purposes. It listens for
@@ -25,7 +25,7 @@ import (
 	"syscall"
 	"time"
 
-	flag "github.com/spf13/pflag"
+	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -378,7 +378,7 @@ func mainImpl() int {
 	log.Info("Running Arbitrum Express Lane Proxy", "revision", vcsRevision, "vcs.time", vcsTime)
 	stack, err := node.New(&stackConf)
 	if err != nil {
-		flag.Usage()
+		pflag.Usage()
 		log.Crit("failed to initialize geth stack", "err", err)
 	}
 	proxy, err := NewExpressLaneProxy(ctx, expressLaneProxyConfig, stack)
@@ -418,7 +418,7 @@ func mainImpl() int {
 }
 
 func parseExpressLaneProxyArgs(ctx context.Context, args []string) (*ExpressLaneProxyConfig, error) {
-	f := flag.NewFlagSet("", flag.ContinueOnError)
+	f := pflag.NewFlagSet("", pflag.ContinueOnError)
 
 	ExpressLaneProxyConfigAddOptions(f)
 

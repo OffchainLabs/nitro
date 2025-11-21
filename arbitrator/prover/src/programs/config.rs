@@ -129,8 +129,6 @@ pub struct CompileDebugParams {
     pub debug_info: bool,
     /// Add instrumentation to count the number of times each kind of opcode is executed
     pub count_ops: bool,
-    /// Whether to use the Cranelift compiler
-    pub cranelift: bool,
 }
 
 impl Default for CompilePricingParams {
@@ -181,10 +179,10 @@ impl CompileConfig {
     }
 
     #[cfg(feature = "native")]
-    pub fn engine(&self, target: Target) -> Engine {
+    fn engine_type(&self, target: Target, cranelift: bool) -> Engine {
         use wasmer::sys::EngineBuilder;
 
-        let mut wasmer_config: Box<dyn wasmer::CompilerConfig> = match self.debug.cranelift {
+        let mut wasmer_config: Box<dyn wasmer::CompilerConfig> = match cranelift {
             true => {
                 let mut wasmer_config = Cranelift::new();
                 wasmer_config.opt_level(CraneliftOptLevel::Speed);
@@ -220,7 +218,13 @@ impl CompileConfig {
     }
 
     #[cfg(feature = "native")]
-    pub fn store(&self, target: Target) -> Store {
-        Store::new(self.engine(target))
+    // cranelift only matters for compilation and not usually needed
+    pub fn engine(&self, target: Target) -> Engine {
+        self.engine_type(target, true)
+    }
+
+    #[cfg(feature = "native")]
+    pub fn store(&self, target: Target, cranelift: bool) -> Store {
+        Store::new(self.engine_type(target, cranelift))
     }
 }

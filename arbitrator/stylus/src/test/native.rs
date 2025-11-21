@@ -392,7 +392,10 @@ fn test_storage() -> Result<()> {
 
     let (mut native, mut evm) = TestInstance::new_with_evm(filename, &compile, config)?;
     run_native(&mut native, &store_args, ink)?;
-    assert_eq!(evm.get_bytes32(key.into(), Gas(0)).0, Bytes32(value));
+    assert_eq!(
+        evm.get_bytes32(key.into(), Gas(0)).unwrap().0,
+        Bytes32(value)
+    );
     assert_eq!(run_native(&mut native, &load_args, ink)?, value);
 
     let mut machine = Machine::from_user_path(Path::new(filename), &compile)?;
@@ -416,8 +419,8 @@ fn test_calls() -> Result<()> {
 
     let calls_addr = random_bytes20();
     let store_addr = random_bytes20();
-    println!("calls.wasm {}", calls_addr);
-    println!("store.wasm {}", store_addr);
+    println!("calls.wasm {calls_addr}");
+    println!("store.wasm {store_addr}");
 
     let mut slots = HashMap::new();
 
@@ -476,7 +479,7 @@ fn test_calls() -> Result<()> {
     run_native(&mut native, &args, ink)?;
 
     for (key, value) in slots {
-        assert_eq!(evm.get_bytes32(key, Gas(0)).0, value);
+        assert_eq!(evm.get_bytes32(key, Gas(0)).unwrap().0, value);
     }
     Ok(())
 }

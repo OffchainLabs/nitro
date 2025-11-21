@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	flag "github.com/spf13/pflag"
+	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
@@ -45,9 +45,10 @@ type CachingConfig struct {
 	StateScheme                         string        `koanf:"state-scheme"`
 	StateHistory                        uint64        `koanf:"state-history"`
 	EnablePreimages                     bool          `koanf:"enable-preimages"`
+	PathdbMaxDiffLayers                 int           `koanf:"pathdb-max-diff-layers"`
 }
 
-func CachingConfigAddOptions(prefix string, f *flag.FlagSet) {
+func CachingConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".archive", DefaultCachingConfig.Archive, "retain past block state")
 	f.Uint64(prefix+".block-count", DefaultCachingConfig.BlockCount, "minimum number of recent blocks to keep in memory")
 	f.Duration(prefix+".block-age", DefaultCachingConfig.BlockAge, "minimum age of recent blocks to keep in memory")
@@ -68,6 +69,7 @@ func CachingConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".state-scheme", DefaultCachingConfig.StateScheme, "scheme to use for state trie storage (hash, path)")
 	f.Uint64(prefix+".state-history", DefaultCachingConfig.StateHistory, "number of recent blocks to retain state history for (path state-scheme only)")
 	f.Bool(prefix+".enable-preimages", DefaultCachingConfig.EnablePreimages, "enable recording of preimages")
+	f.Int(prefix+".pathdb-max-diff-layers", DefaultCachingConfig.PathdbMaxDiffLayers, "maximum number of diff layers to keep in pathdb (path state-scheme only)")
 }
 
 func getStateHistory(maxBlockSpeed time.Duration) uint64 {
@@ -94,19 +96,21 @@ var DefaultCachingConfig = CachingConfig{
 	StylusLRUCacheCapacity:              256,
 	StateScheme:                         rawdb.HashScheme,
 	StateHistory:                        getStateHistory(DefaultSequencerConfig.MaxBlockSpeed),
+	EnablePreimages:                     false,
+	PathdbMaxDiffLayers:                 128,
 }
 
-func DefaultCacheConfigFor(cachingConfig *CachingConfig) *core.CacheConfig {
+func DefaultCacheConfigFor(cachingConfig *CachingConfig) *core.BlockChainConfig {
 	baseConf := ethconfig.Defaults
 	if cachingConfig.Archive {
 		baseConf = ethconfig.ArchiveDefaults
 	}
 
-	return &core.CacheConfig{
+	return &core.BlockChainConfig{
 		TrieCleanLimit:                     cachingConfig.TrieCleanCache,
-		TrieCleanNoPrefetch:                baseConf.NoPrefetch,
+		NoPrefetch:                         baseConf.NoPrefetch,
 		TrieDirtyLimit:                     cachingConfig.TrieDirtyCache,
-		TrieDirtyDisabled:                  cachingConfig.Archive,
+		ArchiveMode:                        cachingConfig.Archive,
 		TrieTimeLimit:                      cachingConfig.TrieTimeLimit,
 		TrieTimeLimitRandomOffset:          cachingConfig.TrieTimeLimitRandomOffset,
 		TriesInMemory:                      cachingConfig.BlockCount,
@@ -119,6 +123,7 @@ func DefaultCacheConfigFor(cachingConfig *CachingConfig) *core.CacheConfig {
 		MaxAmountOfGasToSkipStateSaving:    cachingConfig.MaxAmountOfGasToSkipStateSaving,
 		StateScheme:                        cachingConfig.StateScheme,
 		StateHistory:                       cachingConfig.StateHistory,
+		MaxDiffLayers:                      cachingConfig.PathdbMaxDiffLayers,
 	}
 }
 
@@ -126,8 +131,8 @@ func (c *CachingConfig) validateStateScheme() error {
 	switch c.StateScheme {
 	case rawdb.HashScheme:
 	case rawdb.PathScheme:
-		if c.Archive {
-			return errors.New("archive cannot be set when using path as the state-scheme")
+		if c.Archive && c.StateHistory != 0 {
+			log.Warn("Path scheme archive mode enabled, but state-history is not zero - the persisted state history will be limited to recent blocks", "StateHistory", c.StateHistory)
 		}
 	default:
 		return errors.New("Invalid StateScheme")
@@ -139,7 +144,7 @@ func (c *CachingConfig) Validate() error {
 	return c.validateStateScheme()
 }
 
-func WriteOrTestGenblock(chainDb ethdb.Database, cacheConfig *core.CacheConfig, initData statetransfer.InitDataReader, chainConfig *params.ChainConfig, genesisArbOSInit *params.ArbOSInit, initMessage *arbostypes.ParsedInitMessage, accountsPerSync uint) error {
+func WriteOrTestGenblock(chainDb ethdb.Database, cacheConfig *core.BlockChainConfig, initData statetransfer.InitDataReader, chainConfig *params.ChainConfig, genesisArbOSInit *params.ArbOSInit, initMessage *arbostypes.ParsedInitMessage, accountsPerSync uint) error {
 	EmptyHash := common.Hash{}
 	prevHash := EmptyHash
 	blockNumber, err := initData.GetNextBlockNumber()
@@ -152,11 +157,11 @@ func WriteOrTestGenblock(chainDb ethdb.Database, cacheConfig *core.CacheConfig, 
 	if blockNumber > 0 {
 		prevHash = rawdb.ReadCanonicalHash(chainDb, blockNumber-1)
 		if prevHash == EmptyHash {
-			return fmt.Errorf("block number %d not found in database", chainDb)
+			return fmt.Errorf("block number %d not found in database", blockNumber-1)
 		}
 		prevHeader := rawdb.ReadHeader(chainDb, prevHash, blockNumber-1)
 		if prevHeader == nil {
-			return fmt.Errorf("block header for block %d not found in database", chainDb)
+			return fmt.Errorf("block header for block %d not found in database", blockNumber-1)
 		}
 		timestamp = prevHeader.Time
 	}
@@ -208,11 +213,11 @@ func WriteOrTestChainConfig(chainDb ethdb.Database, config *params.ChainConfig) 
 		rawdb.WriteChainConfig(chainDb, block0Hash, config)
 		return nil
 	}
-	height := rawdb.ReadHeaderNumber(chainDb, rawdb.ReadHeadHeaderHash(chainDb))
-	if height == nil {
+	height, found := rawdb.ReadHeaderNumber(chainDb, rawdb.ReadHeadHeaderHash(chainDb))
+	if !found {
 		return errors.New("non empty chain config but empty chain")
 	}
-	err := storedConfig.CheckCompatible(config, *height, 0)
+	err := storedConfig.CheckCompatible(config, height, 0)
 	if err != nil {
 		return err
 	}
@@ -222,7 +227,7 @@ func WriteOrTestChainConfig(chainDb ethdb.Database, config *params.ChainConfig) 
 
 func GetBlockChain(
 	chainDb ethdb.Database,
-	cacheConfig *core.CacheConfig,
+	cacheConfig *core.BlockChainConfig,
 	chainConfig *params.ChainConfig,
 	tracer *tracing.Hooks,
 	txIndexerConfig *TxIndexerConfig,
@@ -235,6 +240,7 @@ func GetBlockChain(
 		EnablePreimageRecording: false,
 		Tracer:                  tracer,
 	}
+	cacheConfig.VmConfig = vmConfig
 
 	var coreTxIndexerConfig *core.TxIndexerConfig // nil if disabled
 	if txIndexerConfig.Enable {
@@ -244,12 +250,13 @@ func GetBlockChain(
 			MinBatchDelay: txIndexerConfig.MinBatchDelay,
 		}
 	}
-	return core.NewBlockChainExtended(chainDb, cacheConfig, chainConfig, nil, nil, engine, vmConfig, coreTxIndexerConfig)
+	cacheConfig.TxIndexer = coreTxIndexerConfig
+	return core.NewBlockChain(chainDb, chainConfig, nil, engine, cacheConfig)
 }
 
 func WriteOrTestBlockChain(
 	chainDb ethdb.Database,
-	cacheConfig *core.CacheConfig,
+	cacheConfig *core.BlockChainConfig,
 	initData statetransfer.InitDataReader,
 	chainConfig *params.ChainConfig,
 	genesisArbOSInit *params.ArbOSInit,

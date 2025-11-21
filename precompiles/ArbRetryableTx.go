@@ -7,10 +7,12 @@ import (
 	"errors"
 	"math/big"
 
+	"github.com/ethereum/go-ethereum/arbitrum/multigas"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
 
+	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbos/retryables"
 	"github.com/offchainlabs/nitro/arbos/storage"
 	"github.com/offchainlabs/nitro/arbos/util"
@@ -56,7 +58,7 @@ func (con ArbRetryableTx) Redeem(c ctx, evm mech, ticketId bytes32) (bytes32, er
 		return hash{}, err
 	}
 	writeBytes := arbmath.WordsForBytes(byteCount)
-	if err := c.Burn(params.SloadGas * writeBytes); err != nil {
+	if err := c.Burn(multigas.ResourceKindStorageAccess, params.SloadGas*writeBytes); err != nil {
 		return hash{}, err
 	}
 
@@ -98,11 +100,18 @@ func (con ArbRetryableTx) Redeem(c ctx, evm mech, ticketId bytes32) (bytes32, er
 	// Result is 32 bytes long which is 1 word
 	gasCostToReturnResult := params.CopyGas
 	gasPoolUpdateCost := storage.StorageReadCost + storage.StorageWriteCost
-	futureGasCosts := eventCost + gasCostToReturnResult + gasPoolUpdateCost
-	if c.gasLeft < futureGasCosts {
-		return hash{}, c.Burn(futureGasCosts) // this will error
+
+	// Multi-Constraint pricer requires an extra storage read, since ArbOS must load the constraints from state.
+	// This overhead applies even when no constraints are configured.
+	if c.State.ArbOSVersion() >= l2pricing.ArbosMultiConstraintsVersion {
+		gasPoolUpdateCost += storage.StorageReadCost
 	}
-	gasToDonate := c.gasLeft - futureGasCosts
+
+	futureGasCosts := eventCost + gasCostToReturnResult + gasPoolUpdateCost
+	if c.GasLeft() < futureGasCosts {
+		return hash{}, c.Burn(multigas.ResourceKindComputation, futureGasCosts) // this will error
+	}
+	gasToDonate := c.GasLeft() - futureGasCosts
 	if gasToDonate < params.TxGas {
 		return hash{}, errors.New("not enough gas to run redeem attempt")
 	}
@@ -121,13 +130,13 @@ func (con ArbRetryableTx) Redeem(c ctx, evm mech, ticketId bytes32) (bytes32, er
 	// To prepare for the enqueued retry event, we burn gas here, adding it back to the pool right before retrying.
 	// The gas payer for this tx will get a credit for the wei they paid for this gas when retrying.
 	// We burn as much gas as we can, leaving only enough to pay for copying out the return data.
-	if err := c.Burn(gasToDonate); err != nil {
+	if err := c.Burn(multigas.ResourceKindComputation, gasToDonate); err != nil {
 		return hash{}, err
 	}
 
 	// Add the gasToDonate back to the gas pool: the retryable attempt will then consume it.
 	// This ensures that the gas pool has enough gas to run the retryable attempt.
-	return retryTxHash, c.State.L2PricingState().AddToGasPool(arbmath.SaturatingCast[int64](gasToDonate))
+	return retryTxHash, c.State.L2PricingState().AddToGasPool(arbmath.SaturatingCast[int64](gasToDonate), c.State.ArbOSVersion())
 }
 
 // GetLifetime gets the default lifetime period a retryable has at creation
@@ -164,7 +173,7 @@ func (con ArbRetryableTx) Keepalive(c ctx, evm mech, ticketId bytes32) (huge, er
 		return nil, con.oldNotFoundError(c)
 	}
 	updateCost := arbmath.WordsForBytes(nbytes) * params.SstoreSetGas / 100
-	if err := c.Burn(updateCost); err != nil {
+	if err := c.Burn(multigas.ResourceKindStorageAccess, updateCost); err != nil {
 		return big.NewInt(0), err
 	}
 

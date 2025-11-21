@@ -337,7 +337,7 @@ func (s *validationStatus) replaceStatus(old, new valStatusField) bool {
 	return s.Status.CompareAndSwap(uint32(old), uint32(new))
 }
 
-// gets how many miliseconds last step took, and starts measuring a new step
+// gets how many milliseconds last step took, and starts measuring a new step
 func (s *validationStatus) profileStep() int64 {
 	start := s.profileTS
 	s.profileTS = time.Now().UnixMilli()
@@ -426,7 +426,7 @@ func NewBlockValidator(
 	streamer.SetBlockValidator(ret)
 	inbox.SetBlockValidator(ret)
 	if config().MemoryFreeLimit != "" {
-		limtchecker, err := resourcemanager.NewCgroupsMemoryLimitCheckerIfSupported(config().memoryFreeLimit)
+		limitchecker, err := resourcemanager.NewCgroupsMemoryLimitCheckerIfSupported(config().memoryFreeLimit)
 		if err != nil {
 			if config().MemoryFreeLimit == "default" {
 				log.Warn("Cgroups V1 or V2 is unsupported, memory-free-limit feature inside block-validator is disabled")
@@ -434,7 +434,7 @@ func NewBlockValidator(
 				return nil, fmt.Errorf("failed to create MemoryFreeLimitChecker, Cgroups V1 or V2 is unsupported")
 			}
 		} else {
-			ret.MemoryFreeLimitChecker = limtchecker
+			ret.MemoryFreeLimitChecker = limitchecker
 		}
 	}
 	return ret, nil
@@ -618,7 +618,7 @@ func (v *BlockValidator) SetCurrentWasmModuleRoot(hash common.Hash) error {
 		return nil
 	}
 	return fmt.Errorf(
-		"unexpected wasmModuleRoot! cannot validate! found %v , current %v, pending %v",
+		"unexpected wasmModuleRoot! cannot validate! found %v, current %v, pending %v",
 		hash, v.currentWasmModuleRoot, v.pendingWasmModuleRoot,
 	)
 }
@@ -674,7 +674,7 @@ func (v *BlockValidator) isMemoryLimitExceeded() bool {
 
 func (v *BlockValidator) sendNextRecordRequests(ctx context.Context) (bool, error) {
 	if v.isMemoryLimitExceeded() {
-		log.Warn("sendNextRecordRequests: aborting due to running low on memory")
+		log.Error("sendNextRecordRequests: aborting due to running low on memory")
 		return false, nil
 	}
 	v.reorgMutex.RLock()
@@ -711,7 +711,7 @@ func (v *BlockValidator) sendNextRecordRequests(ctx context.Context) (bool, erro
 	}
 	for pos <= recordUntil {
 		if v.isMemoryLimitExceeded() {
-			log.Warn("sendNextRecordRequests: aborting due to running low on memory")
+			log.Error("sendNextRecordRequests: aborting due to running low on memory")
 			return false, nil
 		}
 		validationStatus, found := v.validations.Load(pos)
@@ -877,7 +877,7 @@ func (v *BlockValidator) sendValidations(ctx context.Context) (*arbutil.MessageI
 			}
 		}
 		if v.isMemoryLimitExceeded() {
-			log.Warn("sendValidations: aborting due to running low on memory")
+			log.Error("sendValidations: aborting due to running low on memory")
 			return nil, nil
 		}
 		replaced := validationStatus.replaceStatus(Prepared, SendingValidation)

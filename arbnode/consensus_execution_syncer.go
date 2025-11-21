@@ -8,7 +8,7 @@ import (
 	"errors"
 	"time"
 
-	flag "github.com/spf13/pflag"
+	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/log"
 
@@ -25,11 +25,18 @@ type ConsensusExecutionSyncerConfig struct {
 }
 
 var DefaultConsensusExecutionSyncerConfig = ConsensusExecutionSyncerConfig{
-	SyncInterval: 1 * time.Second,
+	SyncInterval: 300 * time.Millisecond,
 }
 
-func ConsensusExecutionSyncerConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.Duration(prefix+".sync-interval", DefaultConsensusExecutionSyncerConfig.SyncInterval, "Interval in which finality data is pushed from consensus to execution")
+var TestConsensusExecutionSyncerConfig = ConsensusExecutionSyncerConfig{
+	SyncInterval: TestSyncMonitorConfig.MsgLag / 2,
+}
+
+// We don't define a Test config. For most tests we want the Syncer to behave
+// the same as in production.
+
+func ConsensusExecutionSyncerConfigAddOptions(prefix string, f *pflag.FlagSet) {
+	f.Duration(prefix+".sync-interval", DefaultConsensusExecutionSyncerConfig.SyncInterval, "Interval in which finality and sync data is pushed from consensus to execution")
 }
 
 type ConsensusExecutionSyncer struct {
@@ -41,6 +48,7 @@ type ConsensusExecutionSyncer struct {
 	execClient     execution.ExecutionClient
 	blockValidator *staker.BlockValidator
 	txStreamer     *TransactionStreamer
+	syncMonitor    *SyncMonitor
 }
 
 func NewConsensusExecutionSyncer(
@@ -49,6 +57,7 @@ func NewConsensusExecutionSyncer(
 	execClient execution.ExecutionClient,
 	blockValidator *staker.BlockValidator,
 	txStreamer *TransactionStreamer,
+	syncMonitor *SyncMonitor,
 ) *ConsensusExecutionSyncer {
 	return &ConsensusExecutionSyncer{
 		config:         config,
@@ -56,12 +65,16 @@ func NewConsensusExecutionSyncer(
 		execClient:     execClient,
 		blockValidator: blockValidator,
 		txStreamer:     txStreamer,
+		syncMonitor:    syncMonitor,
 	}
 }
 
 func (c *ConsensusExecutionSyncer) Start(ctx_in context.Context) {
 	c.StopWaiter.Start(ctx_in, c)
-	c.CallIteratively(c.pushFinalityDataFromConsensusToExecution)
+	if c.inboxReader != nil {
+		c.CallIteratively(c.pushFinalityDataFromConsensusToExecution)
+	}
+	c.CallIteratively(c.pushConsensusSyncDataToExecution)
 }
 
 func (c *ConsensusExecutionSyncer) getFinalityData(
@@ -121,7 +134,7 @@ func (c *ConsensusExecutionSyncer) pushFinalityDataFromConsensusToExecution(ctx 
 		}
 	}
 
-	_, err = c.execClient.SetFinalityData(ctx, safeFinalityData, finalizedFinalityData, validatedFinalityData).Await(ctx)
+	_, err = c.execClient.SetFinalityData(safeFinalityData, finalizedFinalityData, validatedFinalityData).Await(ctx)
 	if err != nil {
 		log.Error("Error pushing finality data from consensus to execution", "err", err)
 	} else {
@@ -135,6 +148,43 @@ func (c *ConsensusExecutionSyncer) pushFinalityDataFromConsensusToExecution(ctx 
 			"safeMsgCount", finalityMsgCount(safeFinalityData),
 			"finalizedMsgCount", finalityMsgCount(finalizedFinalityData),
 			"validatedMsgCount", finalityMsgCount(validatedFinalityData),
+		)
+	}
+
+	return c.config().SyncInterval
+}
+
+func (c *ConsensusExecutionSyncer) pushConsensusSyncDataToExecution(ctx context.Context) time.Duration {
+	synced := c.syncMonitor.Synced()
+
+	maxMessageCount, err := c.syncMonitor.GetMaxMessageCount()
+	if err != nil {
+		log.Error("Error getting max message count", "err", err)
+		return c.config().SyncInterval
+	}
+
+	var syncProgressMap map[string]interface{}
+	if !synced {
+		// Only populate the full progress map when not synced (for debugging)
+		syncProgressMap = c.syncMonitor.FullSyncProgressMap()
+	}
+
+	syncData := &execution.ConsensusSyncData{
+		Synced:          synced,
+		MaxMessageCount: maxMessageCount,
+		SyncProgressMap: syncProgressMap,
+		UpdatedAt:       time.Now(),
+	}
+
+	_, err = c.execClient.SetConsensusSyncData(syncData).Await(ctx)
+	if err != nil {
+		log.Error("Error pushing sync data from consensus to execution", "err", err)
+	} else {
+		log.Debug("Pushed sync data from consensus to execution",
+			"synced", syncData.Synced,
+			"maxMessageCount", syncData.MaxMessageCount,
+			"updatedAt", syncData.UpdatedAt,
+			"hasProgressMap", syncData.SyncProgressMap != nil,
 		)
 	}
 

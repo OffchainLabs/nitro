@@ -45,25 +45,22 @@ func (b *Broadcaster) NewBroadcastFeedMessage(
 	blockHash *common.Hash,
 	blockMetadata common.BlockMetadata,
 ) (*m.BroadcastFeedMessage, error) {
-	var messageSignature []byte
+	feedMessage := m.BroadcastFeedMessage{
+		SequenceNumber: sequenceNumber,
+		Message:        message,
+		BlockHash:      blockHash,
+		Signature:      []byte{},
+		BlockMetadata:  blockMetadata,
+	}
 	if b.dataSigner != nil {
-		hash, err := message.Hash(sequenceNumber, b.chainId)
-		if err != nil {
-			return nil, err
-		}
-		messageSignature, err = b.dataSigner(hash.Bytes())
+		hash := feedMessage.SignatureHash(b.chainId)
+		var err error
+		feedMessage.Signature, err = b.dataSigner(hash.Bytes())
 		if err != nil {
 			return nil, err
 		}
 	}
-
-	return &m.BroadcastFeedMessage{
-		SequenceNumber: sequenceNumber,
-		Message:        message,
-		BlockHash:      blockHash,
-		Signature:      messageSignature,
-		BlockMetadata:  blockMetadata,
-	}, nil
+	return &feedMessage, nil
 }
 
 func (b *Broadcaster) BroadcastSingle(
@@ -126,6 +123,14 @@ func (b *Broadcaster) BroadcastFeedMessages(messages []*m.BroadcastFeedMessage) 
 		Messages: messages,
 	}
 	b.server.Broadcast(bm)
+}
+
+func (s *Broadcaster) PopulateFeedBacklog(messages []*m.BroadcastFeedMessage) error {
+	bm := &m.BroadcastMessage{
+		Version:  1,
+		Messages: messages,
+	}
+	return s.server.PopulateFeedBacklog(bm)
 }
 
 func (b *Broadcaster) Confirm(msgIdx arbutil.MessageIndex) {
