@@ -14,6 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
+	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
@@ -521,6 +522,18 @@ func (con ArbOwner) SetMultiGasPricingConstraints(
 			resourceWeights,
 		); err != nil {
 			return fmt.Errorf("failed to add multi-gas constraint: %w", err)
+		}
+
+		exps, err := c.State.L2PricingState().CalcMultiGasConstraintsExponents()
+		if err != nil {
+			return fmt.Errorf("failed to calculate multi-gas constraint exponents: %w", err)
+		}
+
+		// Ensure no exponent exceeds the maximum allowed value
+		for _, exp := range exps {
+			if exp > l2pricing.MaxPricingExponentBips {
+				return fmt.Errorf("calculated exponent %d exceeds maximum allowed %d", exp, l2pricing.MaxPricingExponentBips)
+			}
 		}
 	}
 	return nil

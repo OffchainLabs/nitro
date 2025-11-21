@@ -222,33 +222,42 @@ func TestMultiGasConstraints(t *testing.T) {
 	}
 }
 
-func TestMultiGasConstraintExponentSafety(t *testing.T) {
+func TestMultiGasConstraintsExponents(t *testing.T) {
 	pricing := PricingForTest(t)
 
-	weights := map[uint8]uint64{
-		uint8(multigas.ResourceKindComputation): 1,
-	}
-	// backlog=100, target=100, A=10 -> exponent = (100*1)/(10*100*1) = 0.01 -> safe
+	// backlog=100, target=100, A=10 -> exponent = (100*1)/(10*100*1) = 1000 bips
 	err := pricing.AddMultiGasConstraint(
 		100,
 		10,
 		100,
-		weights,
+		map[uint8]uint64{
+			uint8(multigas.ResourceKindComputation): 1,
+		},
 	)
-	if err != nil {
-		t.Fatalf("expected valid constraint, got error: %v", err)
+	Require(t, err)
+
+	// backlog=200, target=40, A=20 -> exponent = (200*1)/(20*40*1) = 2500 bips
+	err = pricing.AddMultiGasConstraint(
+		40,
+		20,
+		200,
+		map[uint8]uint64{
+			uint8(multigas.ResourceKindStorageAccess): 2,
+		},
+	)
+	Require(t, err)
+
+	exps, err := pricing.CalcMultiGasConstraintsExponents()
+	Require(t, err)
+
+	expected := arbmath.Bips(1000)
+	if exps[multigas.ResourceKindComputation] != expected {
+		t.Fatalf("wrong exponent: got %v, want %v", exps[multigas.ResourceKindComputation], expected)
 	}
 
-	// backlog very large -> exponent blows past MaxExponentBips
-	err = pricing.AddMultiGasConstraint(
-		1,
-		1,
-		1_000_000_000_000,
-		weights,
-	)
-
-	if err == nil {
-		t.Fatalf("expected AddMultiGasConstraint to reject unsafe exponent, but got no error")
+	expected = arbmath.Bips(2500)
+	if exps[multigas.ResourceKindStorageAccess] != expected {
+		t.Fatalf("wrong exponent: got %v, want %v", exps[multigas.ResourceKindStorageAccess], expected)
 	}
 }
 

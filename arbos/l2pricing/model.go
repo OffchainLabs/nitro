@@ -225,26 +225,21 @@ func (ps *L2PricingState) updatePricingModelSingleConstraints(timePassed uint64)
 }
 
 func (ps *L2PricingState) updatePricingModelMultiConstraints(timePassed uint64) {
-	var exponentPerKind [multigas.NumResourceKind]arbmath.Bips
 	constraintsLength, _ := ps.MultiGasConstraintsLength()
+
+	// Pay off backlog per constraint
 	for i := range constraintsLength {
 		constraint := ps.OpenMultiGasConstraintAt(i)
 		target, _ := constraint.Target()
 
-		// Pay off backlog
 		backlog, _ := constraint.Backlog()
 		gas := arbmath.SaturatingUMul(timePassed, target)
 		backlog = applyGasDelta(backlog, false, gas)
 		_ = constraint.SetBacklog(backlog)
-
-		// Calculate exponents per resource kind
-		if backlog > 0 {
-			for _, kind := range FeeRelevantResourceKinds {
-				exp, _ := constraint.ComputeExponent(uint8(kind))
-				exponentPerKind[kind] = arbmath.SaturatingBipsAdd(exponentPerKind[kind], exp)
-			}
-		}
 	}
+
+	// Calculate exponents per resource kind for all constraints
+	exponentPerKind, _ := ps.CalcMultiGasConstraintsExponents()
 
 	// Choose the most congested resource
 	maxExponent := arbmath.Bips(0)
@@ -257,6 +252,51 @@ func (ps *L2PricingState) updatePricingModelMultiConstraints(timePassed uint64) 
 	// Compute base fee
 	baseFee, _ := ps.calcBaseFeeFromExponent(maxExponent)
 	_ = ps.SetBaseFeeWei(baseFee)
+}
+
+func (ps *L2PricingState) CalcMultiGasConstraintsExponents() ([multigas.NumResourceKind]arbmath.Bips, error) {
+	var exponentPerKind [multigas.NumResourceKind]arbmath.Bips
+	constraintsLength, _ := ps.MultiGasConstraintsLength()
+	for i := range constraintsLength {
+		constraint := ps.OpenMultiGasConstraintAt(i)
+		target, err := constraint.Target()
+		if err != nil {
+			return exponentPerKind, fmt.Errorf("failed to read target from constraint %d: %w", i, err)
+		}
+		backlog, err := constraint.Backlog()
+		if err != nil {
+			return exponentPerKind, fmt.Errorf("failed to read backlog from constraint %d: %w", i, err)
+		}
+
+		if backlog > 0 {
+			adjustmentWindow, _ := constraint.AdjustmentWindow()
+			sumWeights, _ := constraint.SumWeights()
+
+			divisor := arbmath.SaturatingCastToBips(
+				arbmath.SaturatingUMul(uint64(adjustmentWindow),
+					arbmath.SaturatingUMul(target, sumWeights)))
+
+			// NOTE: Code below kept for apprach without weight normalization
+			// Keeping sumWeights in the divisor would dilute the
+			// exponent by that factor and produce lower prices than the old model. Removing
+			// it restores the exact legacy exponent behavior.
+			//
+			// divisor := arbmath.SaturatingCastToBips(
+			// 	arbmath.SaturatingUMul(uint64(adjustmentWindow), target))
+
+			usedResources, _ := constraint.UsedResources()
+			for _, kind := range usedResources {
+				weight, _ := constraint.ResourceWeight(uint8(kind))
+
+				dividend := arbmath.NaturalToBips(
+					arbmath.SaturatingCast[int64](arbmath.SaturatingUMul(backlog, weight)))
+
+				exp := dividend / divisor
+				exponentPerKind[kind] = arbmath.SaturatingBipsAdd(exponentPerKind[kind], exp)
+			}
+		}
+	}
+	return exponentPerKind, nil
 }
 
 func (ps *L2PricingState) calcBaseFeeFromExponent(exponent arbmath.Bips) (*big.Int, error) {

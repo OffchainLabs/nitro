@@ -377,3 +377,26 @@ func TestMultiGasConstraintsStorage(t *testing.T) {
 	require.Equal(t, uint8(multigas.ResourceKindStorageAccess), results[0].Resources[1].Resource)
 	require.Equal(t, uint64(7), results[0].Resources[1].Weight)
 }
+
+func TestMultiGasConstraintsCantExceedLimit(t *testing.T) {
+	t.Parallel()
+
+	evm, _, callCtx, _, arbOwner := setupResourceConstraintHandles(t)
+
+	// Try to set a constraint that exceeds the MaxPricingExponentBips
+	constraints := []MultiGasConstraint{
+		{
+			Resources: []WeightedResource{
+				{Resource: uint8(multigas.ResourceKindComputation), Weight: 1},
+				{Resource: uint8(multigas.ResourceKindStorageAccess), Weight: 2},
+			},
+			AdjustmentWindowSecs: 1,
+			TargetPerSec:         30_000_000,
+			Backlog:              800_000_000_000,
+		},
+	}
+
+	err := arbOwner.SetMultiGasPricingConstraints(callCtx, evm, constraints)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "exceeds maximum allowed")
+}
