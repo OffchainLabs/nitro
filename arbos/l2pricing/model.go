@@ -8,6 +8,7 @@ import (
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/arbitrum/multigas"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos/storage"
@@ -78,7 +79,7 @@ func (ps *L2PricingState) AddToGasPool(growBacklog bool, usedGas uint64, usedMul
 	case GasModelSingleGasConstraints:
 		return ps.addToGasPoolWithSingleGasConstraints(growBacklog, usedGas)
 	case GasModelMultiGasConstraints:
-		return ps.addToGasPoolWithMultiGasConstraints(growBacklog, usedMultiGas)
+		return ps.addToGasPoolWithMultiGasConstraints(growBacklog, usedGas, usedMultiGas)
 	default:
 		return fmt.Errorf("can not determine gas model")
 	}
@@ -136,7 +137,11 @@ func (ps *L2PricingState) GasPoolUpdateCost() uint64 {
 	return result
 }
 
-func (ps *L2PricingState) addToGasPoolWithMultiGasConstraints(growBacklog bool, usedGas multigas.MultiGas) error {
+func (ps *L2PricingState) addToGasPoolWithMultiGasConstraints(growBacklog bool, usedGas uint64, usedMultiGas multigas.MultiGas) error {
+	if usedMultiGas.SingleGas() != usedGas {
+		log.Warn("usedGas does not match sum of usedMultiGas", "usedGas", usedGas, "usedMultiGas", usedMultiGas.SingleGas())
+	}
+
 	constraintsLength, err := ps.multigasConstraints.Length()
 	if err != nil {
 		return fmt.Errorf("failed to get number of multi-gas constraints: %w", err)
@@ -144,12 +149,12 @@ func (ps *L2PricingState) addToGasPoolWithMultiGasConstraints(growBacklog bool, 
 	for i := range constraintsLength {
 		constraint := ps.OpenMultiGasConstraintAt(i)
 		if growBacklog {
-			err = constraint.IncrementBacklog(usedGas)
+			err = constraint.IncrementBacklog(usedMultiGas)
 			if err != nil {
 				return fmt.Errorf("failed to increment backlog of multi-gas constraint %v: %w", i, err)
 			}
 		} else {
-			err = constraint.DecrementBacklog(usedGas)
+			err = constraint.DecrementBacklog(usedMultiGas)
 			if err != nil {
 				return fmt.Errorf("failed to decrement backlog of multi-gas constraint %v: %w", i, err)
 			}
