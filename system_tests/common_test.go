@@ -61,8 +61,8 @@ import (
 	arbosutil "github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/blsSignatures"
-	"github.com/offchainlabs/nitro/bold/testing/setup"
-	butil "github.com/offchainlabs/nitro/bold/util"
+	"github.com/offchainlabs/nitro/bold/backend"
+	"github.com/offchainlabs/nitro/bold/challenge/testing/setup"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
@@ -1690,7 +1690,7 @@ func deployOnParentChain(
 			ChallengeGracePeriodBlocks:   3,
 			BufferConfig:                 bufferConfig,
 		}
-		wrappedClient := butil.NewBackendWrapper(parentChainReader.Client(), rpc.LatestBlockNumber)
+		wrappedClient := backend.NewBackendWrapper(parentChainReader.Client(), rpc.LatestBlockNumber)
 		boldAddresses, err := setup.DeployFullRollupStack(
 			ctx,
 			wrappedClient,

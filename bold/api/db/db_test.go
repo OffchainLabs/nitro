@@ -16,9 +16,9 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 
 	"github.com/offchainlabs/nitro/bold/api"
-	"github.com/offchainlabs/nitro/bold/chain-abstraction"
-	"github.com/offchainlabs/nitro/bold/state-commitments/history"
-	"github.com/offchainlabs/nitro/bold/testing/casttest"
+	"github.com/offchainlabs/nitro/bold/challenge/testing/casttest"
+	"github.com/offchainlabs/nitro/bold/protocol"
+	"github.com/offchainlabs/nitro/bold/statecommitments/history"
 )
 
 func TestSqliteDatabase_CollectMachineHashes(t *testing.T) {

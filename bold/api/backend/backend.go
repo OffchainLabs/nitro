@@ -20,10 +20,10 @@ import (
 
 	"github.com/offchainlabs/nitro/bold/api"
 	"github.com/offchainlabs/nitro/bold/api/db"
-	"github.com/offchainlabs/nitro/bold/chain-abstraction"
-	"github.com/offchainlabs/nitro/bold/challenge-manager/chain-watcher"
-	"github.com/offchainlabs/nitro/bold/challenge-manager/edge-tracker"
+	"github.com/offchainlabs/nitro/bold/challenge/chainwatcher"
+	"github.com/offchainlabs/nitro/bold/challenge/edgetracker"
 	"github.com/offchainlabs/nitro/bold/containers/option"
+	"github.com/offchainlabs/nitro/bold/protocol"
 )
 
 type BusinessLogicProvider interface {
@@ -41,14 +41,14 @@ type EdgeTrackerFetcher interface {
 type Backend struct {
 	db               db.ReadUpdateDatabase
 	chainDataFetcher protocol.AssertionChain
-	chainWatcher     *watcher.Watcher
+	chainWatcher     *chainwatcher.Watcher
 	trackerFetcher   EdgeTrackerFetcher
 }
 
 func NewBackend(
 	db db.ReadUpdateDatabase,
 	chainDataFetcher protocol.AssertionChain,
-	chainWatcher *watcher.Watcher,
+	chainWatcher *chainwatcher.Watcher,
 ) *Backend {
 	return &Backend{
 		db:               db,

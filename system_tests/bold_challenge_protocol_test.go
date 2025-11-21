@@ -39,14 +39,14 @@ import (
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbstate"
-	protocol "github.com/offchainlabs/nitro/bold/chain-abstraction"
-	solimpl "github.com/offchainlabs/nitro/bold/chain-abstraction/sol-implementation"
-	challengemanager "github.com/offchainlabs/nitro/bold/challenge-manager"
-	modes "github.com/offchainlabs/nitro/bold/challenge-manager/types"
-	l2stateprovider "github.com/offchainlabs/nitro/bold/layer2-state-provider"
-	challenge_testing "github.com/offchainlabs/nitro/bold/testing"
-	"github.com/offchainlabs/nitro/bold/testing/setup"
-	butil "github.com/offchainlabs/nitro/bold/util"
+	"github.com/offchainlabs/nitro/bold/backend"
+	"github.com/offchainlabs/nitro/bold/challenge"
+	challengetesting "github.com/offchainlabs/nitro/bold/challenge/testing"
+	"github.com/offchainlabs/nitro/bold/challenge/testing/setup"
+	modes "github.com/offchainlabs/nitro/bold/challenge/types"
+	"github.com/offchainlabs/nitro/bold/l2stateprovider"
+	"github.com/offchainlabs/nitro/bold/protocol"
+	"github.com/offchainlabs/nitro/bold/protocol/solimpl"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
@@ -275,7 +275,7 @@ func testChallengeProtocolBOLD(t *testing.T, useExternalSigner bool, spawnerOpts
 		assertionChain.RollupAddress(),
 		chalManagerAddr.Address(),
 		&evilOpts,
-		butil.NewBackendWrapper(l1client, rpc.LatestBlockNumber),
+		backend.NewBackendWrapper(l1client, rpc.LatestBlockNumber),
 		bold.NewDataPosterTransactor(dp),
 		solimpl.WithRpcHeadBlockNumber(rpc.LatestBlockNumber),
 	)
@@ -432,25 +432,25 @@ func testChallengeProtocolBOLD(t *testing.T, useExternalSigner bool, spawnerOpts
 		nil, // Api db
 	)
 
-	stackOpts := []challengemanager.StackOpt{
-		challengemanager.StackWithName("honest"),
-		challengemanager.StackWithMode(modes.MakeMode),
-		challengemanager.StackWithPostingInterval(time.Second * 3),
-		challengemanager.StackWithPollingInterval(time.Second),
-		challengemanager.StackWithMinimumGapToParentAssertion(0),
-		challengemanager.StackWithAverageBlockCreationTime(time.Second),
+	stackOpts := []challenge.StackOpt{
+		challenge.StackWithName("honest"),
+		challenge.StackWithMode(modes.MakeMode),
+		challenge.StackWithPostingInterval(time.Second * 3),
+		challenge.StackWithPollingInterval(time.Second),
+		challenge.StackWithMinimumGapToParentAssertion(0),
+		challenge.StackWithAverageBlockCreationTime(time.Second),
 	}
 
-	manager, err := challengemanager.NewChallengeStack(
+	manager, err := challenge.NewChallengeStack(
 		assertionChain,
 		provider,
 		stackOpts...,
 	)
 	Require(t, err)
 
-	evilStackOpts := append(stackOpts, challengemanager.StackWithName("evil"))
+	evilStackOpts := append(stackOpts, challenge.StackWithName("evil"))
 
-	managerB, err := challengemanager.NewChallengeStack(
+	managerB, err := challenge.NewChallengeStack(
 		chainB,
 		evilProvider,
 		evilStackOpts...,
@@ -695,7 +695,7 @@ func createTestNodeOnL1ForBoldProtocol(
 		addresses.Rollup,
 		chalManagerAddr,
 		dp.Auth(),
-		butil.NewBackendWrapper(l1client, rpc.LatestBlockNumber),
+		backend.NewBackendWrapper(l1client, rpc.LatestBlockNumber),
 		bold.NewDataPosterTransactor(dp),
 		solimpl.WithRpcHeadBlockNumber(rpc.LatestBlockNumber),
 	)
@@ -709,7 +709,7 @@ func deployContractsOnly(
 	t *testing.T,
 	ctx context.Context,
 	l1info info,
-	backend *ethclient.Client,
+	client *ethclient.Client,
 	chainId *big.Int,
 	rollupStackConf setup.RollupStackConfig,
 	stakeToken common.Address,
@@ -729,7 +729,7 @@ func deployContractsOnly(
 	genesisInboxCount := big.NewInt(0)
 	anyTrustFastConfirmer := common.Address{}
 	miniStakeValues := []*big.Int{big.NewInt(5), big.NewInt(4), big.NewInt(3), big.NewInt(2), big.NewInt(1)}
-	cfg := challenge_testing.GenerateRollupConfig(
+	cfg := challengetesting.GenerateRollupConfig(
 		false,
 		wasmModuleRoot,
 		l1TransactionOpts.From,
@@ -740,20 +740,20 @@ func deployContractsOnly(
 		genesisExecutionState,
 		genesisInboxCount,
 		anyTrustFastConfirmer,
-		challenge_testing.WithLayerZeroHeights(&protocol.LayerZeroHeights{
+		challengetesting.WithLayerZeroHeights(&protocol.LayerZeroHeights{
 			BlockChallengeHeight:     protocol.Height(blockChallengeLeafHeight),
 			BigStepChallengeHeight:   protocol.Height(bigStepChallengeLeafHeight),
 			SmallStepChallengeHeight: protocol.Height(smallStepChallengeLeafHeight),
 		}),
-		challenge_testing.WithNumBigStepLevels(uint8(3)),       // TODO: Hardcoded.
-		challenge_testing.WithConfirmPeriodBlocks(uint64(120)), // TODO: Hardcoded.
+		challengetesting.WithNumBigStepLevels(uint8(3)),       // TODO: Hardcoded.
+		challengetesting.WithConfirmPeriodBlocks(uint64(120)), // TODO: Hardcoded.
 	)
 	config, err := json.Marshal(chaininfo.ArbitrumDevTestChainConfig())
 	Require(t, err)
 	cfg.ChainConfig = string(config)
 	addresses, err := setup.DeployFullRollupStack(
 		ctx,
-		butil.NewBackendWrapper(backend, rpc.LatestBlockNumber),
+		backend.NewBackendWrapper(client, rpc.LatestBlockNumber),
 		&l1TransactionOpts,
 		l1info.GetAddress("Sequencer"),
 		cfg,
@@ -762,7 +762,7 @@ func deployContractsOnly(
 	Require(t, err)
 
 	evilAsserter := l1info.GetDefaultTransactOpts("EvilAsserter", ctx)
-	userLogic, err := rollupgen.NewRollupUserLogic(addresses.Rollup, backend)
+	userLogic, err := rollupgen.NewRollupUserLogic(addresses.Rollup, client)
 	Require(t, err)
 	chalManagerAddr, err := userLogic.ChallengeManager(&bind.CallOpts{})
 	Require(t, err)
@@ -774,32 +774,32 @@ func deployContractsOnly(
 	if !ok {
 		t.Fatal(t, "could not set value")
 	}
-	tokenBindings, err := mocksgen.NewTestWETH9(stakeToken, backend)
+	tokenBindings, err := mocksgen.NewTestWETH9(stakeToken, client)
 	Require(t, err)
 	tx, err := tokenBindings.TestWETH9Transactor.Transfer(&l1TransactionOpts, asserterOpts.From, seed)
 	Require(t, err)
-	_, err = EnsureTxSucceeded(ctx, backend, tx)
+	_, err = EnsureTxSucceeded(ctx, client, tx)
 	Require(t, err)
 	tx, err = tokenBindings.TestWETH9Transactor.Approve(asserterOpts, addresses.Rollup, value)
 	Require(t, err)
-	_, err = EnsureTxSucceeded(ctx, backend, tx)
+	_, err = EnsureTxSucceeded(ctx, client, tx)
 	Require(t, err)
 	tx, err = tokenBindings.TestWETH9Transactor.Approve(asserterOpts, chalManagerAddr, value)
 	Require(t, err)
-	_, err = EnsureTxSucceeded(ctx, backend, tx)
+	_, err = EnsureTxSucceeded(ctx, client, tx)
 	Require(t, err)
 
 	tx, err = tokenBindings.TestWETH9Transactor.Transfer(&l1TransactionOpts, evilAsserter.From, seed)
 	Require(t, err)
-	_, err = EnsureTxSucceeded(ctx, backend, tx)
+	_, err = EnsureTxSucceeded(ctx, client, tx)
 	Require(t, err)
 	tx, err = tokenBindings.TestWETH9Transactor.Approve(&evilAsserter, addresses.Rollup, value)
 	Require(t, err)
-	_, err = EnsureTxSucceeded(ctx, backend, tx)
+	_, err = EnsureTxSucceeded(ctx, client, tx)
 	Require(t, err)
 	tx, err = tokenBindings.TestWETH9Transactor.Approve(&evilAsserter, chalManagerAddr, value)
 	Require(t, err)
-	_, err = EnsureTxSucceeded(ctx, backend, tx)
+	_, err = EnsureTxSucceeded(ctx, client, tx)
 	Require(t, err)
 
 	return &chaininfo.RollupAddresses{
@@ -907,7 +907,7 @@ func create2ndNodeWithConfigForBoldProtocol(
 		addresses.Rollup,
 		chalManagerAddr,
 		&evilOpts,
-		butil.NewBackendWrapper(l1client, rpc.LatestBlockNumber),
+		backend.NewBackendWrapper(l1client, rpc.LatestBlockNumber),
 		bold.NewDataPosterTransactor(dp),
 	)
 	Require(t, err)

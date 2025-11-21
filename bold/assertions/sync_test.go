@@ -15,12 +15,12 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 
-	"github.com/offchainlabs/nitro/bold/chain-abstraction"
+	challengetesting "github.com/offchainlabs/nitro/bold/challenge/testing"
+	"github.com/offchainlabs/nitro/bold/challenge/testing/casttest"
+	"github.com/offchainlabs/nitro/bold/challenge/testing/mocks/stateprovider"
+	"github.com/offchainlabs/nitro/bold/challenge/testing/setup"
 	"github.com/offchainlabs/nitro/bold/containers/threadsafe"
-	"github.com/offchainlabs/nitro/bold/testing"
-	"github.com/offchainlabs/nitro/bold/testing/casttest"
-	"github.com/offchainlabs/nitro/bold/testing/mocks/state-provider"
-	"github.com/offchainlabs/nitro/bold/testing/setup"
+	"github.com/offchainlabs/nitro/bold/protocol"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 )
@@ -40,7 +40,7 @@ func Test_extractAssertionFromEvent(t *testing.T) {
 	setup, err := setup.ChainsWithEdgeChallengeManager(
 		setup.WithMockOneStepProver(),
 		setup.WithChallengeTestingOpts(
-			challenge_testing.WithLayerZeroHeights(&protocol.LayerZeroHeights{
+			challengetesting.WithLayerZeroHeights(&protocol.LayerZeroHeights{
 				BlockChallengeHeight:     64,
 				BigStepChallengeHeight:   32,
 				SmallStepChallengeHeight: 32,
@@ -101,7 +101,7 @@ func Test_findCanonicalAssertionBranch(t *testing.T) {
 	setup, err := setup.ChainsWithEdgeChallengeManager(
 		setup.WithMockOneStepProver(),
 		setup.WithChallengeTestingOpts(
-			challenge_testing.WithLayerZeroHeights(&protocol.LayerZeroHeights{
+			challengetesting.WithLayerZeroHeights(&protocol.LayerZeroHeights{
 				BlockChallengeHeight:     32,
 				BigStepChallengeHeight:   32,
 				SmallStepChallengeHeight: 32,

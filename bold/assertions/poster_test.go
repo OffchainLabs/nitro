@@ -18,12 +18,12 @@ import (
 	gethtypes "github.com/ethereum/go-ethereum/core/types"
 
 	"github.com/offchainlabs/nitro/bold/assertions"
-	"github.com/offchainlabs/nitro/bold/chain-abstraction"
-	"github.com/offchainlabs/nitro/bold/challenge-manager"
-	"github.com/offchainlabs/nitro/bold/challenge-manager/types"
-	"github.com/offchainlabs/nitro/bold/testing"
-	"github.com/offchainlabs/nitro/bold/testing/mocks/state-provider"
-	"github.com/offchainlabs/nitro/bold/testing/setup"
+	"github.com/offchainlabs/nitro/bold/challenge"
+	challengetesting "github.com/offchainlabs/nitro/bold/challenge/testing"
+	"github.com/offchainlabs/nitro/bold/challenge/testing/mocks/stateprovider"
+	"github.com/offchainlabs/nitro/bold/challenge/testing/setup"
+	"github.com/offchainlabs/nitro/bold/challenge/types"
+	"github.com/offchainlabs/nitro/bold/protocol"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
@@ -131,12 +131,12 @@ func TestPostAssertion(t *testing.T) {
 	require.Equal(t, 1, totalTransfers, "Expected only one deposit event by the staker")
 }
 
-func setupAssertionPosting(t *testing.T) (*setup.ChainSetup, *challengemanager.Manager, *assertions.Manager, *stateprovider.L2StateBackend) {
+func setupAssertionPosting(t *testing.T) (*setup.ChainSetup, *challenge.Manager, *assertions.Manager, *stateprovider.L2StateBackend) {
 	setup, err := setup.ChainsWithEdgeChallengeManager(
 		setup.WithMockOneStepProver(),
 		setup.WithAutoDeposit(),
 		setup.WithChallengeTestingOpts(
-			challenge_testing.WithLayerZeroHeights(&protocol.LayerZeroHeights{
+			challengetesting.WithLayerZeroHeights(&protocol.LayerZeroHeights{
 				BlockChallengeHeight:     64,
 				BigStepChallengeHeight:   32,
 				SmallStepChallengeHeight: 32,
@@ -170,12 +170,12 @@ func setupAssertionPosting(t *testing.T) (*setup.ChainSetup, *challengemanager.M
 		assertions.WithMinimumGapToParentAssertion(time.Second),
 	)
 	require.NoError(t, err)
-	chalManager, err := challengemanager.NewChallengeStack(
+	chalManager, err := challenge.NewChallengeStack(
 		aliceChain,
 		stateManager,
-		challengemanager.StackWithMode(types.DefensiveMode),
-		challengemanager.StackWithName("alice"),
-		challengemanager.OverrideAssertionManager(assertionManager),
+		challenge.StackWithMode(types.DefensiveMode),
+		challenge.StackWithName("alice"),
+		challenge.OverrideAssertionManager(assertionManager),
 	)
 	require.NoError(t, err)
 	return setup, chalManager, assertionManager, stateManager
@@ -198,7 +198,7 @@ func forceSequencerMessageBatchPosting(
 		sequencerOpts, seqNum, message, big.NewInt(1), common.Address{}, big.NewInt(0), big.NewInt(0),
 	)
 	require.NoError(t, err)
-	require.NoError(t, challenge_testing.WaitForTx(ctx, backend, tx))
+	require.NoError(t, challengetesting.WaitForTx(ctx, backend, tx))
 	receipt, err := backend.TransactionReceipt(ctx, tx.Hash())
 	require.NoError(t, err)
 	require.Equal(t, gethtypes.ReceiptStatusSuccessful, receipt.Status)
