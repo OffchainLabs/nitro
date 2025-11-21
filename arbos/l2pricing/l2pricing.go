@@ -181,7 +181,7 @@ func (ps *L2PricingState) AddGasConstraint(target uint64, adjustmentWindow uint6
 	if err != nil {
 		return fmt.Errorf("failed to push constraint: %w", err)
 	}
-	constraint := constraints.OpenGasConstraint(ps.ArbosVersion, subStorage)
+	constraint := constraints.OpenGasConstraint(subStorage)
 	if err := constraint.SetTarget(target); err != nil {
 		return fmt.Errorf("failed to set target: %w", err)
 	}
@@ -199,7 +199,7 @@ func (ps *L2PricingState) GasConstraintsLength() (uint64, error) {
 }
 
 func (ps *L2PricingState) OpenGasConstraintAt(i uint64) *constraints.GasConstraint {
-	return constraints.OpenGasConstraint(ps.ArbosVersion, ps.gasConstraints.At(i))
+	return constraints.OpenGasConstraint(ps.gasConstraints.At(i))
 }
 
 func (ps *L2PricingState) ClearGasConstraints() error {
@@ -212,7 +212,7 @@ func (ps *L2PricingState) ClearGasConstraints() error {
 		if err != nil {
 			return err
 		}
-		constraint := constraints.OpenGasConstraint(ps.ArbosVersion, subStorage)
+		constraint := constraints.OpenGasConstraint(subStorage)
 		if err := constraint.Clear(); err != nil {
 			return err
 		}
