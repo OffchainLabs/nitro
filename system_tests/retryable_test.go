@@ -1294,7 +1294,7 @@ func TestL1FundedUnsignedTransaction(t *testing.T) {
 }
 
 func TestRetryableSubmissionAndRedeemFees(t *testing.T) {
-	builder, delayedInbox, lookupL2Tx, ctx, teardown := retryableSetup(t)
+	builder, delayedInbox, lookupL2Tx, ctx, teardown := retryableSetup(t, func(b *NodeBuilder) { b.TakeOwnership(); b.WithArbOSVersion(51) })
 	defer teardown()
 	infraFeeAddr, networkFeeAddr := setupFeeAddresses(t, ctx, builder)
 
@@ -1303,12 +1303,23 @@ func TestRetryableSubmissionAndRedeemFees(t *testing.T) {
 	simpleABI, err := localgen.SimpleMetaData.GetAbi()
 	Require(t, err)
 
-	elevateL2Basefee(t, ctx, builder)
+	gasInfo, err := precompilesgen.NewArbGasInfo(common.HexToAddress("6c"), builder.L2.Client)
+	Require(t, err)
 
-	infraBalanceBefore, err := builder.L2.Client.BalanceAt(ctx, infraFeeAddr, nil)
+	arbowner, err := precompilesgen.NewArbOwner(common.HexToAddress("70"), builder.L2.Client)
 	Require(t, err)
-	networkBalanceBefore, err := builder.L2.Client.BalanceAt(ctx, networkFeeAddr, nil)
+	setConstrainTx, err := arbowner.SetGasPricingConstraints(&ownerTxOpts, [][3]uint64{{30_000_000, 102, 800_000}, {15_000_000, 600, 1_600_000}})
 	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(setConstrainTx)
+	Require(t, err)
+
+	constraints, err := gasInfo.GetGasPricingConstraints(nil)
+	Require(t, err)
+	if len(constraints) != 2 {
+		Fatal(t, "expected 2 constraints got", constraints)
+	}
+
+	elevateL2Basefee(t, ctx, builder)
 
 	beneficiaryAddress := builder.L2Info.GetAddress("Beneficiary")
 	deposit := arbmath.BigMul(big.NewInt(1e12), big.NewInt(1e12))
@@ -1335,7 +1346,11 @@ func TestRetryableSubmissionAndRedeemFees(t *testing.T) {
 		Fatal(t, "l1Receipt indicated failure")
 	}
 
+	elevateL2Basefee(t, ctx, builder)
+
 	waitForL1DelayBlocks(t, builder)
+
+	elevateL2Basefee(t, ctx, builder)
 
 	submissionTxOuter := lookupL2Tx(l1Receipt)
 	submissionReceipt, err := builder.L2.EnsureTxSucceeded(submissionTxOuter)
@@ -1352,11 +1367,6 @@ func TestRetryableSubmissionAndRedeemFees(t *testing.T) {
 		Fatal(t, "first retry tx shouldn't have succeeded")
 	}
 
-	infraBalanceAfterSubmission, err := builder.L2.Client.BalanceAt(ctx, infraFeeAddr, nil)
-	Require(t, err)
-	networkBalanceAfterSubmission, err := builder.L2.Client.BalanceAt(ctx, networkFeeAddr, nil)
-	Require(t, err)
-
 	usertxoptsL2 := builder.L2Info.GetDefaultTransactOpts("Faucet", ctx)
 	arbRetryableTx, err := precompilesgen.NewArbRetryableTx(common.HexToAddress("6e"), builder.L2.Client)
 	Require(t, err)
@@ -1372,11 +1382,6 @@ func TestRetryableSubmissionAndRedeemFees(t *testing.T) {
 	if retryReceipt.Status != types.ReceiptStatusSuccessful {
 		Fatal(t, "retry failed")
 	}
-
-	infraBalanceAfterRedeem, err := builder.L2.Client.BalanceAt(ctx, infraFeeAddr, nil)
-	Require(t, err)
-	networkBalanceAfterRedeem, err := builder.L2.Client.BalanceAt(ctx, networkFeeAddr, nil)
-	Require(t, err)
 
 	// verify that the increment happened, so we know the retry succeeded
 	counter, err := simple.Counter(&bind.CallOpts{})
@@ -1399,10 +1404,14 @@ func TestRetryableSubmissionAndRedeemFees(t *testing.T) {
 		Fatal(t, "Unexpected redeemer", parsed.Redeemer, "expected", usertxoptsL2.From)
 	}
 
-	infraSubmissionFee := arbmath.BigSub(infraBalanceAfterSubmission, infraBalanceBefore)
-	networkSubmissionFee := arbmath.BigSub(networkBalanceAfterSubmission, networkBalanceBefore)
-	infraRedeemFee := arbmath.BigSub(infraBalanceAfterRedeem, infraBalanceAfterSubmission)
-	networkRedeemFee := arbmath.BigSub(networkBalanceAfterRedeem, networkBalanceAfterSubmission)
+	infraSubmissionFee, err := builder.L2.BalanceDifferenceAtBlock(infraFeeAddr, submissionReceipt.BlockNumber)
+	Require(t, err)
+	networkSubmissionFee, err := builder.L2.BalanceDifferenceAtBlock(networkFeeAddr, submissionReceipt.BlockNumber)
+	Require(t, err)
+	infraRedeemFee, err := builder.L2.BalanceDifferenceAtBlock(infraFeeAddr, retryReceipt.BlockNumber)
+	Require(t, err)
+	networkRedeemFee, err := builder.L2.BalanceDifferenceAtBlock(networkFeeAddr, retryReceipt.BlockNumber)
+	Require(t, err)
 
 	arbGasInfo, err := precompilesgen.NewArbGasInfo(common.HexToAddress("0x6c"), builder.L2.Client)
 	Require(t, err)
