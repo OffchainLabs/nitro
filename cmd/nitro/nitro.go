@@ -211,17 +211,27 @@ func mainImpl() int {
 		nodeConfig.Node.ParentChainReader.Enable = true
 	}
 
+	// This code block considers configs from Consensus and Execution.
+	// Consensus will provide nodeConfig.Node.Sequencer to Execution,
+	// through ExecutionNode.Start, which will run this check.
 	if nodeConfig.Execution.Sequencer.Enable != nodeConfig.Node.Sequencer {
 		log.Error("consensus and execution must agree if sequencing is enabled or not", "Execution.Sequencer.Enable", nodeConfig.Execution.Sequencer.Enable, "Node.Sequencer", nodeConfig.Node.Sequencer)
 	}
+
+	// consensus-node=true
 	if nodeConfig.Node.SeqCoordinator.Enable && !nodeConfig.Node.ParentChainReader.Enable {
 		log.Error("Sequencer coordinator must be enabled with parent chain reader, try starting node with --parent-chain.connection.url")
 		return 1
 	}
+
+	// This code block considers configs from Consensus and Execution.
+	// Consensus will provide nodeConfig.Node.TransactionStreamer.TrackBlockMetadataFrom to Execution,
+	// through ExecutionNode.Start, which will run this check.
 	if nodeConfig.Execution.Sequencer.Enable && !nodeConfig.Execution.Sequencer.Timeboost.Enable && nodeConfig.Node.TransactionStreamer.TrackBlockMetadataFrom != 0 {
 		log.Warn("Sequencer node's track-block-metadata-from is set but timeboost is not enabled")
 	}
 
+	// consensus-node=true
 	var dataSigner signature.DataSignerFunc
 	var l1TransactionOptsValidator *bind.TransactOpts
 	var l1TransactionOptsBatchPoster *bind.TransactOpts
@@ -231,18 +241,16 @@ func mainImpl() int {
 		(nodeConfig.Node.BatchPoster.Enable && (nodeConfig.Node.BatchPoster.DataPoster.ExternalSigner.URL == "" || nodeConfig.Node.DataAvailability.Enable))
 	validatorNeedsKey := nodeConfig.Node.Staker.OnlyCreateWalletContract ||
 		(nodeConfig.Node.Staker.Enable && !strings.EqualFold(nodeConfig.Node.Staker.Strategy, "watchtower") && nodeConfig.Node.Staker.DataPoster.ExternalSigner.URL == "")
-
 	defaultL1WalletConfig := conf.DefaultL1WalletConfig
 	defaultL1WalletConfig.ResolveDirectoryNames(nodeConfig.Persistent.Chain)
-
 	nodeConfig.Node.Staker.ParentChainWallet.ResolveDirectoryNames(nodeConfig.Persistent.Chain)
 	defaultValidatorL1WalletConfig := legacystaker.DefaultValidatorL1WalletConfig
 	defaultValidatorL1WalletConfig.ResolveDirectoryNames(nodeConfig.Persistent.Chain)
-
 	nodeConfig.Node.BatchPoster.ParentChainWallet.ResolveDirectoryNames(nodeConfig.Persistent.Chain)
 	defaultBatchPosterL1WalletConfig := arbnode.DefaultBatchPosterL1WalletConfig
 	defaultBatchPosterL1WalletConfig.ResolveDirectoryNames(nodeConfig.Persistent.Chain)
 
+	// consensus-node=true
 	if sequencerNeedsKey || nodeConfig.Node.BatchPoster.ParentChainWallet.OnlyCreateKey {
 		l1TransactionOptsBatchPoster, dataSigner, err = util.OpenWallet("l1-batch-poster", &nodeConfig.Node.BatchPoster.ParentChainWallet, new(big.Int).SetUint64(nodeConfig.ParentChain.ID))
 		if err != nil {
@@ -264,6 +272,7 @@ func mainImpl() int {
 		}
 	}
 
+	// consensus-node=true
 	if nodeConfig.Node.Staker.Enable {
 		if !nodeConfig.Node.ParentChainReader.Enable {
 			pflag.Usage()
@@ -278,6 +287,7 @@ func mainImpl() int {
 		}
 	}
 
+	// execution-node=true
 	if nodeConfig.Execution.RPC.MaxRecreateStateDepth == arbitrum.UninitializedMaxRecreateStateDepth {
 		if nodeConfig.Execution.Caching.Archive {
 			nodeConfig.Execution.RPC.MaxRecreateStateDepth = arbitrum.DefaultArchiveNodeMaxRecreateStateDepth
@@ -285,15 +295,16 @@ func mainImpl() int {
 			nodeConfig.Execution.RPC.MaxRecreateStateDepth = arbitrum.DefaultNonArchiveNodeMaxRecreateStateDepth
 		}
 	}
+
 	liveNodeConfig := genericconf.NewLiveConfig[*NodeConfig](args, nodeConfig, func(ctx context.Context, args []string) (*NodeConfig, error) {
 		nodeConfig, _, err := ParseNode(ctx, args)
 		return nodeConfig, err
 	})
 
-	var rollupAddrs chaininfo.RollupAddresses
+	var rollupAddrs chaininfo.RollupAddresses // consensus-node=true
 	var l1Client *ethclient.Client
 	var l1Reader *headerreader.HeaderReader
-	var blobReader daprovider.BlobReader
+	var blobReader daprovider.BlobReader // consensus-node=true
 	if nodeConfig.Node.ParentChainReader.Enable {
 		confFetcher := func() *rpcclient.ClientConfig { return &liveNodeConfig.Get().ParentChain.Connection }
 		rpcClient := rpcclient.NewRpcClient(confFetcher, nil)
@@ -334,6 +345,7 @@ func mainImpl() int {
 		}
 	}
 
+	// consensus-node=true
 	if nodeConfig.Node.Staker.OnlyCreateWalletContract {
 		if !nodeConfig.Node.Staker.UseSmartContractWallet {
 			pflag.Usage()
@@ -375,11 +387,13 @@ func mainImpl() int {
 		log.Crit("Failed to start resource management module", "err", err)
 	}
 
+	// TODO: it seems that this should require that consensus-node=true and execution-node=true, check that
 	var sameProcessValidationNodeEnabled bool
 	if nodeConfig.Node.BlockValidator.Enable && (nodeConfig.Node.BlockValidator.ValidationServerConfigs[0].URL == "self" || nodeConfig.Node.BlockValidator.ValidationServerConfigs[0].URL == "self-auth") {
 		sameProcessValidationNodeEnabled = true
 		valnode.EnsureValidationExposedViaAuthRPC(&stackConf)
 	}
+
 	stack, err := node.New(&stackConf)
 	if err != nil {
 		pflag.Usage()
@@ -418,6 +432,7 @@ func mainImpl() int {
 		}
 	}()
 
+	// consensus-node=true
 	// Check that node is compatible with on-chain WASM module root on startup and before any ArbOS upgrades take effect to prevent divergences
 	if nodeConfig.Node.ParentChainReader.Enable && nodeConfig.Validation.Wasm.EnableWasmrootsCheck {
 		err := checkWasmModuleRootCompatibility(ctx, nodeConfig.Validation.Wasm, l1Client, rollupAddrs)
@@ -437,11 +452,26 @@ func mainImpl() int {
 		log.Info("enabling custom tracer", "name", traceConfig.TracerName)
 	}
 
+	// execution-node=true
 	if err := gethexec.PopulateStylusTargetCache(&nodeConfig.Execution.StylusTarget); err != nil {
 		log.Error("error populating stylus target cache", "err", err)
 		return 1
 	}
 
+	// This code block will be changed to something like:
+	// obs: error handling omitted for brevity
+	// if execution-node=true {
+	//   chainDB, l2BlockChain := openExistingExecutionDB(...)
+	//	 if chainDB == nil {
+	//		downloadDB(...)
+	//		chainDB = openDownloadedExecutionDB(...)
+	//		initDataReader, chainConfig, genesisArbOSInit = getInit(..)
+	//	 }
+	// }
+	// if consensus-node=true {
+	//		parsedInitMsg := getParsedInitMsg(...)
+	//		genesisAssertionCreationInfo = getGenesisAssertionCreationInfo(...)
+	// }
 	chainDb, l2BlockChain, err := openInitializeChainDb(ctx, stack, nodeConfig, new(big.Int).SetUint64(nodeConfig.Chain.ID), gethexec.DefaultCacheConfigFor(&nodeConfig.Execution.Caching), &nodeConfig.Execution.StylusTarget, tracer, &nodeConfig.Persistent, l1Client, rollupAddrs)
 	if l2BlockChain != nil {
 		deferFuncs = append(deferFuncs, func() { l2BlockChain.Stop() })
@@ -453,6 +483,15 @@ func mainImpl() int {
 		return 1
 	}
 
+	// consensus-node=true
+	// This code block will be changed to something like:
+	// if consensus-node=true {
+	//		arbDb = openExistingConsensusDB(...)
+	//		if arbDb == nil {
+	//			downloadDB(...)
+	//			arbDb = openDownloadedConsensusDB(...)
+	//		}
+	// }
 	arbDb, err := stack.OpenDatabaseWithOptions("arbitrumdata", node.DatabaseOptions{MetricsNamespace: "arbitrumdata/", PebbleExtraOptions: nodeConfig.Persistent.Pebble.ExtraOptions("arbitrumdata"), NoFreezer: true})
 	deferFuncs = append(deferFuncs, func() { closeDb(arbDb, "arbDb") })
 	if err != nil {
@@ -467,6 +506,8 @@ func mainImpl() int {
 
 	fatalErrChan := make(chan error, 10)
 
+	// execution-node=true
+	// This code block will be moved to ExecutionNode.Start, blocksReexecutor will be an object inside ExecutionNode
 	if nodeConfig.BlocksReExecutor.Enable && l2BlockChain != nil {
 		if !nodeConfig.Init.ThenQuit {
 			log.Error("blocks-reexecutor cannot be enabled without --init.then-quit")
@@ -498,11 +539,17 @@ func mainImpl() int {
 		log.Error("error processing l2 chain info", "err", err)
 		return 1
 	}
+
+	// execution-node=true
+	// This code block will be moved to ExecutionNode.Start
 	if err := validateBlockChain(l2BlockChain, chainInfo.ChainConfig); err != nil {
 		log.Error("user provided chain config is not compatible with onchain chain config", "err", err)
 		return 1
 	}
 
+	// This check will be moved to ExecutionNode.Start.
+	// Consensus will provide nodeConfig.Node.DataAvailability.Enable to Execution,
+	// through ExecutionNode.Start, which will run this check.
 	if l2BlockChain.Config().ArbitrumChainParams.DataAvailabilityCommittee != nodeConfig.Node.DataAvailability.Enable {
 		pflag.Usage()
 		log.Error(fmt.Sprintf("data availability service usage for this chain is set to %v but --node.data-availability.enable is set to %v", l2BlockChain.Config().ArbitrumChainParams.DataAvailabilityCommittee, nodeConfig.Node.DataAvailability.Enable))
@@ -522,7 +569,11 @@ func mainImpl() int {
 		}
 	}
 
+	// execution-node=true
 	execNode, err := gethexec.CreateExecutionNode(
+		// initDataReader,
+		// chainConfig,
+		// genesisArbOSInit,
 		ctx,
 		stack,
 		chainDb,
@@ -536,6 +587,8 @@ func mainImpl() int {
 		log.Error("failed to create execution node", "err", err)
 		return 1
 	}
+
+	// consensus-node=true
 	var wasmModuleRoot common.Hash
 	if liveNodeConfig.Get().Node.ValidatorRequired() {
 		locator, err := server_common.NewMachineLocator(liveNodeConfig.Get().Validation.Wasm.RootPath)
@@ -544,8 +597,9 @@ func mainImpl() int {
 		}
 		wasmModuleRoot = locator.LatestWasmModuleRoot()
 	}
-
 	currentNode, err := arbnode.CreateNodeFullExecutionClient(
+		// parsedInitMsg,
+		// genesisAssertionCreationInfo,
 		ctx,
 		stack,
 		execNode,
@@ -570,6 +624,7 @@ func mainImpl() int {
 		return 1
 	}
 
+	// consensus-node=true
 	// Validate sequencer's MaxTxDataSize and batchPoster's MaxSize params.
 	// SequencerInbox's maxDataSize is defaulted to 117964 which is 90% of Geth's 128KB tx size limit, leaving ~13KB for proving.
 	seqInboxMaxDataSize := 117964
@@ -596,6 +651,9 @@ func mainImpl() int {
 		}
 	}
 
+	// This code block considers configs from Consensus and Execution.
+	// Consensus will provide seqInboxMaxDataSize and nodeConfig.Node.BatchPoster.MaxSize to Execution,
+	// through ExecutionNode.Start, which will run this check.
 	if nodeConfig.Execution.Sequencer.Enable {
 		// Validate MaxTxDataSize to be at least 5kB below the batch poster's MaxSize to allow space for headers and such.
 		if nodeConfig.Execution.Sequencer.MaxTxDataSize > nodeConfig.Node.BatchPoster.MaxSize-5000 {
@@ -616,6 +674,7 @@ func mainImpl() int {
 		return currentNode.OnConfigReload(&oldCfg.Node, &newCfg.Node)
 	})
 
+	// consensus-node=true
 	if nodeConfig.Node.Dangerous.NoL1Listener && nodeConfig.Init.DevInit {
 		// If we don't have any messages, we're not connected to the L1, and we're using a dev init,
 		// we should create our own fake init message.
@@ -632,6 +691,7 @@ func mainImpl() int {
 		}
 	}
 
+	// consensus-node=true
 	// Before starting the node, wait until the transaction that deployed rollup is finalized
 	if nodeConfig.EnsureRollupDeployment &&
 		nodeConfig.Node.ParentChainReader.Enable &&
@@ -675,6 +735,8 @@ func mainImpl() int {
 		}
 	}
 
+	// execution-node=true
+	// This will be moved to ExecutionNode.Start
 	gqlConf := nodeConfig.GraphQL
 	if gqlConf.Enable {
 		if err := graphql.New(stack, execNode.Backend.APIBackend(), execNode.FilterSystem, gqlConf.CORSDomain, gqlConf.VHosts); err != nil {
@@ -692,6 +754,7 @@ func mainImpl() int {
 			defer valNode.Stop()
 		}
 	}
+	// add check if currentNode != nil
 	if err == nil {
 		err = currentNode.Start(ctx)
 		if err != nil {
@@ -704,6 +767,7 @@ func mainImpl() int {
 	sigint := make(chan os.Signal, 1)
 	signal.Notify(sigint, os.Interrupt, syscall.SIGTERM)
 
+	// consensus-node=true
 	if err == nil && nodeConfig.Init.IsReorgRequested() {
 		err = initReorg(nodeConfig.Init, chainInfo.ChainConfig, currentNode.InboxTracker)
 		if err != nil {
@@ -713,6 +777,8 @@ func mainImpl() int {
 		}
 	}
 
+	// execution-node=true
+	// This will be moved to ExecutionNode.Start
 	err = execNode.InitializeTimeboost(ctx, chainInfo.ChainConfig)
 	if err != nil {
 		fatalErrChan <- fmt.Errorf("error initializing timeboost: %w", err)

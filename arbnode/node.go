@@ -1363,12 +1363,15 @@ func (n *Node) Start(ctx context.Context) error {
 	if !ok {
 		execClient = nil
 	}
+
+	// This code block will be removed
 	if execClient != nil {
 		err := execClient.Initialize(ctx)
 		if err != nil {
 			return fmt.Errorf("error initializing exec client: %w", err)
 		}
 	}
+
 	err := n.Stack.Start()
 	if err != nil {
 		return fmt.Errorf("error starting geth stack: %w", err)
@@ -1376,10 +1379,13 @@ func (n *Node) Start(ctx context.Context) error {
 	if execClient != nil {
 		execClient.SetConsensusClient(n)
 	}
+
+	// This code block will be removed, ExecutionClient.Start will be called by TransactionStreamer
 	err = n.ExecutionClient.Start(ctx)
 	if err != nil {
 		return fmt.Errorf("error starting exec client: %w", err)
 	}
+
 	if n.BlobReader != nil {
 		err = n.BlobReader.Initialize(ctx)
 		if err != nil {
