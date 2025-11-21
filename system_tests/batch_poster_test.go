@@ -683,7 +683,8 @@ func TestBatchPosterWithDelayProofsAndBacklog(t *testing.T) {
 	builder := NewNodeBuilder(ctx).
 		DefaultConfig(t, true).
 		WithDelayBuffer(threshold).
-		WithL1ClientWrapper(t)
+		WithL1ClientWrapper(t).
+		WithTakeOwnership(false)
 	cleanup := builder.Build(t)
 	defer cleanup()
 
