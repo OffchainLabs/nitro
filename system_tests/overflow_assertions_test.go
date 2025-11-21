@@ -134,6 +134,7 @@ func TestOverflowAssertions(t *testing.T) {
 		l2node.InboxTracker,
 		l2node.TxStreamer,
 		l2node.InboxReader,
+		nil,
 	)
 	Require(t, err)
 

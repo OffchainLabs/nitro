@@ -5,8 +5,12 @@ package daclient
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"strings"
 
+	"github.com/knadh/koanf"
+	"github.com/knadh/koanf/providers/confmap"
 	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -69,6 +73,32 @@ var DefaultStreamRpcMethods = data_streaming.DataStreamingRPCMethods{
 
 var DefaultStoreRpcMethod = "daprovider_store"
 
+type ExternalProviderConfigList []ClientConfig
+
+func (l *ExternalProviderConfigList) String() string {
+	b, _ := json.Marshal(*l)
+	return string(b)
+}
+
+func (l *ExternalProviderConfigList) Set(value string) error {
+	return l.UnmarshalJSON([]byte(value))
+}
+
+func (l *ExternalProviderConfigList) UnmarshalJSON(data []byte) error {
+	var tmp []ClientConfig
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+	*l = tmp
+	return nil
+}
+
+func (l *ExternalProviderConfigList) Type() string {
+	return "externalProviderConfigList"
+}
+
+var parsedExternalProvidersConf ExternalProviderConfigList
+
 func ClientConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultClientConfig.Enable, "enable daprovider client")
 	f.Bool(prefix+".with-writer", DefaultClientConfig.WithWriter, "implies if the daprovider rpc server supports writer interface")
@@ -78,8 +108,35 @@ func ClientConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".store-rpc-method", DefaultClientConfig.StoreRpcMethod, "name of the store rpc method on the daprovider server (used when data streaming is disabled)")
 }
 
-func NewClient(ctx context.Context, config *ClientConfig, payloadSigner *data_streaming.PayloadSigner) (client *Client, err error) {
+func ExternalProviderConfigAddPluralOptions(prefix string, f *pflag.FlagSet) {
+	f.Var(&parsedExternalProvidersConf, prefix+"s", "JSON array of external DA provider configurations. This can be specified on the command line as a JSON array, eg: [{\"rpc\":{\"url\":\"...\"},\"with-writer\":true},...], or as a JSON array in the config file.")
+}
+
+func FixExternalProvidersCLIParsing(path string, k *koanf.Koanf) error {
+	// Reset global variable at start to avoid test pollution
+	parsedExternalProvidersConf = nil
+
+	rawProviders := k.Get(path)
+	if providers, ok := rawProviders.(string); ok {
+		err := parsedExternalProvidersConf.UnmarshalJSON([]byte(providers))
+		if err != nil {
+			return err
+		}
+
+		tempMap := map[string]interface{}{
+			path: parsedExternalProvidersConf,
+		}
+
+		if err = k.Load(confmap.Provider(tempMap, "."), nil); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func NewClient(ctx context.Context, config *ClientConfig, payloadSigner *data_streaming.PayloadSigner) (*Client, error) {
 	rpcClient := rpcclient.NewRpcClient(func() *rpcclient.ClientConfig { return &config.RPC }, nil)
+	var err error
 
 	var dataStreamer *data_streaming.DataStreamer[server_api.StoreResult]
 	if config.UseDataStreaming {
@@ -89,7 +146,11 @@ func NewClient(ctx context.Context, config *ClientConfig, payloadSigner *data_st
 		}
 	}
 
-	client = &Client{rpcClient, dataStreamer, &config.StoreRpcMethod}
+	client := &Client{
+		RpcClient:      rpcClient,
+		DataStreamer:   dataStreamer,
+		storeRpcMethod: &config.StoreRpcMethod,
+	}
 	if err = client.Start(ctx); err != nil {
 		return nil, fmt.Errorf("error starting daprovider client: %w", err)
 	}
@@ -97,7 +158,7 @@ func NewClient(ctx context.Context, config *ClientConfig, payloadSigner *data_st
 }
 
 type SupportedHeaderBytesResult struct {
-	HeaderBytes []byte
+	HeaderBytes [][]byte
 }
 
 func (c *Client) GetSupportedHeaderBytes() containers.PromiseInterface[SupportedHeaderBytesResult] {
@@ -106,7 +167,12 @@ func (c *Client) GetSupportedHeaderBytes() containers.PromiseInterface[Supported
 		if err := c.CallContext(ctx, &result, "daprovider_getSupportedHeaderBytes"); err != nil {
 			return SupportedHeaderBytesResult{}, fmt.Errorf("error returned from daprovider_getSupportedHeaderBytes rpc method: %w", err)
 		}
-		return SupportedHeaderBytesResult{HeaderBytes: result.HeaderBytes}, nil
+		// Convert []hexutil.Bytes to [][]byte
+		headerBytes := make([][]byte, len(result.HeaderBytes))
+		for i, hb := range result.HeaderBytes {
+			headerBytes[i] = hb
+		}
+		return SupportedHeaderBytesResult{HeaderBytes: headerBytes}, nil
 	})
 }
 
@@ -161,6 +227,11 @@ func (c *Client) store(ctx context.Context, message []byte, timeout uint64) (*se
 	// Single-call store if data streaming is not enabled
 	if c.DataStreamer == nil {
 		if err := c.CallContext(ctx, &storeResult, *c.storeRpcMethod, hexutil.Bytes(message), hexutil.Uint64(timeout)); err != nil {
+			// Restore error identity lost over RPC for external DA providers
+			// by wrapping the original error so we preserve context for debugging
+			if strings.Contains(err.Error(), daprovider.ErrFallbackRequested.Error()) {
+				return nil, fmt.Errorf("%w (from external DA provider: %w)", daprovider.ErrFallbackRequested, err)
+			}
 			return nil, fmt.Errorf("error returned from daprovider server (single-call store protocol), err: %w", err)
 		}
 		return storeResult, nil
@@ -169,6 +240,11 @@ func (c *Client) store(ctx context.Context, message []byte, timeout uint64) (*se
 	// Otherwise, use the data streaming protocol
 	storeResult, err := c.DataStreamer.StreamData(ctx, message, timeout)
 	if err != nil {
+		// Restore error identity lost over RPC for external DA providers
+		// by wrapping the original error so we preserve context for debugging
+		if strings.Contains(err.Error(), daprovider.ErrFallbackRequested.Error()) {
+			return nil, fmt.Errorf("%w (from external DA provider: %w)", daprovider.ErrFallbackRequested, err)
+		}
 		return nil, fmt.Errorf("error returned from daprovider server (chunked store protocol), err: %w", err)
 	} else {
 		return storeResult, nil

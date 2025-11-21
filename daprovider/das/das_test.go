@@ -39,7 +39,6 @@ func testDASStoreRetrieveMultipleInstances(t *testing.T, storageType string) {
 			DataDir:      dbPath,
 			MaxRetention: DefaultLocalFileStorageConfig.MaxRetention,
 		},
-		ParentChainNodeURL: "none",
 	}
 
 	storageService, lifecycleManager, err := CreatePersistentStorageService(firstCtx, &config)
@@ -119,7 +118,6 @@ func testDASMissingMessage(t *testing.T, storageType string) {
 			DataDir:      dbPath,
 			MaxRetention: DefaultLocalFileStorageConfig.MaxRetention,
 		},
-		ParentChainNodeURL: "none",
 	}
 
 	storageService, lifecycleManager, err := CreatePersistentStorageService(ctx, &config)

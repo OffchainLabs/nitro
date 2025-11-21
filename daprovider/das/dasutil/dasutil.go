@@ -106,6 +106,15 @@ func (d *writerForDAS) Store(message []byte, timeout uint64) containers.PromiseI
 	return containers.DoPromise(context.Background(), func(ctx context.Context) ([]byte, error) {
 		cert, err := d.dasWriter.Store(ctx, message, timeout)
 		if err != nil {
+			// If the aggregator failed due to insufficient backends, signal explicit fallback
+			// to allow batch poster to try the next DA provider in the chain. The Aggregator
+			// has a loud ERROR if the threshold of failing committee members is approaching,
+			// which should give time to correct any errors to avoid fallback. Otherwise
+			// the operator can set disable-dap-fallback-store-data-on-chain to totally
+			// disable automatic fallback to EthDA.
+			if errors.Is(err, ErrBatchToDasFailed) {
+				return nil, fmt.Errorf("%w: %w", daprovider.ErrFallbackRequested, err)
+			}
 			return nil, err
 		}
 		return Serialize(cert), nil
