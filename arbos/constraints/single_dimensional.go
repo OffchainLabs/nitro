@@ -4,11 +4,7 @@
 // The constraints package tracks the multi-dimensional gas usage to apply constraint-based pricing.
 package constraints
 
-import (
-	"github.com/ethereum/go-ethereum/params"
-
-	"github.com/offchainlabs/nitro/arbos/storage"
-)
+import "github.com/offchainlabs/nitro/arbos/storage"
 
 const (
 	gasConstraintTargetOffset uint64 = iota
@@ -25,19 +21,11 @@ type GasConstraint struct {
 	backlog          storage.StorageBackedUint64
 }
 
-func OpenGasConstraint(arbosVerion uint64, storage *storage.Storage) *GasConstraint {
-	if arbosVerion < params.ArbosVersion_MultiConstraintFix {
-		return &GasConstraint{
-			target:           storage.OpenStorageBackedUint64(gasConstraintTargetOffset),
-			adjustmentWindow: storage.OpenStorageBackedUint64(gasConstraintAdjustmentWindowOffset),
-			backlog:          storage.OpenStorageBackedUint64(gasConstraintBacklogOffset),
-		}
-
-	}
+func OpenGasConstraint(storage *storage.Storage) *GasConstraint {
 	return &GasConstraint{
-		target:           storage.OpenFreeStorageBackedUint64(gasConstraintTargetOffset),
-		adjustmentWindow: storage.OpenFreeStorageBackedUint64(gasConstraintAdjustmentWindowOffset),
-		backlog:          storage.OpenFreeStorageBackedUint64(gasConstraintBacklogOffset),
+		target:           storage.OpenStorageBackedUint64(gasConstraintTargetOffset),
+		adjustmentWindow: storage.OpenStorageBackedUint64(gasConstraintAdjustmentWindowOffset),
+		backlog:          storage.OpenStorageBackedUint64(gasConstraintBacklogOffset),
 	}
 }
 
