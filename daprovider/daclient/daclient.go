@@ -167,7 +167,12 @@ func (c *Client) GetSupportedHeaderBytes() containers.PromiseInterface[Supported
 		if err := c.CallContext(ctx, &result, "daprovider_getSupportedHeaderBytes"); err != nil {
 			return SupportedHeaderBytesResult{}, fmt.Errorf("error returned from daprovider_getSupportedHeaderBytes rpc method: %w", err)
 		}
-		return SupportedHeaderBytesResult{HeaderBytes: result.HeaderBytes}, nil
+		// Convert []hexutil.Bytes to [][]byte
+		headerBytes := make([][]byte, len(result.HeaderBytes))
+		for i, hb := range result.HeaderBytes {
+			headerBytes[i] = hb
+		}
+		return SupportedHeaderBytesResult{HeaderBytes: headerBytes}, nil
 	})
 }
 
