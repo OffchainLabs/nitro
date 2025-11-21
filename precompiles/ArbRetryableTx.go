@@ -101,9 +101,17 @@ func (con ArbRetryableTx) Redeem(c ctx, evm mech, ticketId bytes32) (bytes32, er
 	gasCostToReturnResult := params.CopyGas
 	gasPoolUpdateCost := storage.StorageReadCost + storage.StorageWriteCost
 
-	// Multi-Constraint pricer requires an extra storage read, since ArbOS must load the constraints from state.
-	// This overhead applies even when no constraints are configured.
-	if c.State.ArbOSVersion() >= l2pricing.ArbosMultiConstraintsVersion {
+	// Multi-constraint pricers pay one extra storage read here to load the number
+	// of configured constraints from state (GasConstraintsLength / MultiGasConstraintsLength).
+	//
+	// TODO(NIT-4120): When constraints are actually configured, AddToGasPool will perform
+	// additional per-constraint storage reads/writes. Clarify whether and how those
+	// extra touches should be reflected here.
+	if c.State.ArbOSVersion() >= l2pricing.ArbosSingleGasConstraintsVersion {
+		gasPoolUpdateCost += storage.StorageReadCost
+	}
+
+	if c.State.ArbOSVersion() >= l2pricing.ArbosMultiGasConstraintsVersion {
 		gasPoolUpdateCost += storage.StorageReadCost
 	}
 
@@ -136,7 +144,8 @@ func (con ArbRetryableTx) Redeem(c ctx, evm mech, ticketId bytes32) (bytes32, er
 
 	// Add the gasToDonate back to the gas pool: the retryable attempt will then consume it.
 	// This ensures that the gas pool has enough gas to run the retryable attempt.
-	return retryTxHash, c.State.L2PricingState().AddToGasPool(arbmath.SaturatingCast[int64](gasToDonate), c.State.ArbOSVersion())
+	// TODO(NIT-4120): clarify the gas dimension for gasToDonate
+	return retryTxHash, c.State.L2PricingState().AddToGasPool(false, gasToDonate, multigas.ComputationGas(gasToDonate), c.State.ArbOSVersion())
 }
 
 // GetLifetime gets the default lifetime period a retryable has at creation

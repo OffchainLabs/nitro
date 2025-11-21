@@ -10,6 +10,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/ethereum/go-ethereum/arbitrum/multigas"
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos/burn"
@@ -53,8 +54,8 @@ func runLegacyModel(args []string) error {
 	for i := range config.Iterations() {
 		baseFee, _ := pricing.BaseFeeWei()
 		gas := gasSimulator.compute(i, baseFee)
-		_ = pricing.AddToGasPool(-arbmath.SaturatingCast[int64](gas), l2pricing.ArbosMultiConstraintsVersion)
-		pricing.UpdatePricingModel(1, l2pricing.ArbosMultiConstraintsVersion)
+		_ = pricing.AddToGasPool(true, gas, multigas.ComputationGas(gas), l2pricing.ArbosSingleGasConstraintsVersion)
+		pricing.UpdatePricingModel(1, l2pricing.ArbosSingleGasConstraintsVersion)
 		baseFee, _ = pricing.BaseFeeWei()
 		results = append(results, Result{
 			baseFee:  baseFee,
@@ -102,8 +103,8 @@ func runConstraintsModel(args []string) error {
 	for i := range config.Iterations() {
 		baseFee, _ := pricing.BaseFeeWei()
 		gas := gasSimulator.compute(i, baseFee)
-		_ = pricing.AddToGasPool(-arbmath.SaturatingCast[int64](gas), l2pricing.ArbosMultiConstraintsVersion)
-		pricing.UpdatePricingModel(1, l2pricing.ArbosMultiConstraintsVersion)
+		_ = pricing.AddToGasPool(true, gas, multigas.ComputationGas(gas), l2pricing.ArbosSingleGasConstraintsVersion)
+		pricing.UpdatePricingModel(1, l2pricing.ArbosSingleGasConstraintsVersion)
 		baseFee, _ = pricing.BaseFeeWei()
 		results = append(results, Result{
 			baseFee:  baseFee,

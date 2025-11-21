@@ -5,7 +5,10 @@ package l2pricing
 
 import (
 	"fmt"
+	"math"
 	"math/big"
+
+	"github.com/ethereum/go-ethereum/arbitrum/multigas"
 
 	"github.com/offchainlabs/nitro/arbos/constraints"
 	"github.com/offchainlabs/nitro/arbos/storage"
@@ -41,6 +44,7 @@ var gasConstraintsKey []byte = []byte{0}
 var multigasConstraintsKey []byte = []byte{1}
 
 const GethBlockGasLimit = 1 << 50
+const MaxPricingExponentBips = arbmath.Bips(85_000)
 
 func InitializeL2PricingState(sto *storage.Storage) error {
 	_ = sto.SetUint64ByUint64(speedLimitPerSecondOffset, InitialSpeedLimitPerSecondV0)
@@ -163,6 +167,59 @@ func (ps *L2PricingState) setGasConstraintsFromLegacy() error {
 	return ps.AddGasConstraint(target, adjustmentWindow, backlog)
 }
 
+func (ps *L2PricingState) setMultiGasConstraintsFromSingleGasConstraints() error {
+	if err := ps.ClearMultiGasConstraints(); err != nil {
+		return err
+	}
+
+	length, err := ps.GasConstraintsLength()
+	if err != nil {
+		return err
+	}
+
+	for i := range length {
+		c := ps.OpenGasConstraintAt(i)
+
+		target, err := c.Target()
+		if err != nil {
+			return fmt.Errorf("failed to read target from constraint %d: %w", i, err)
+		}
+		window, err := c.AdjustmentWindow()
+		if err != nil {
+			return fmt.Errorf("failed to read adjustment window from constraint %d: %w", i, err)
+		}
+		backlog, err := c.Backlog()
+		if err != nil {
+			return fmt.Errorf("failed to read backlog from constraint %d: %w", i, err)
+		}
+
+		// NOTE: this code kept for pricing algorithm without wight normalization
+		//
+		// resourceWeights := make(map[uint8]uint64, len(FeeRelevantResourceKinds))
+		// for _, kind := range FeeRelevantResourceKinds {
+		// 	resourceWeights[uint8(kind)] = 1
+		// }
+		resourceWeights := map[uint8]uint64{uint8(multigas.ResourceKindComputation): 1}
+
+		var uint32Window uint32
+		if window > math.MaxUint32 {
+			uint32Window = math.MaxUint32
+		} else {
+			uint32Window = uint32(window)
+		}
+
+		if err := ps.AddMultiGasConstraint(
+			target,
+			uint32Window,
+			backlog,
+			resourceWeights,
+		); err != nil {
+			return fmt.Errorf("failed to add multi-gas constraint %d: %w", i, err)
+		}
+	}
+	return nil
+}
+
 func (ps *L2PricingState) AddGasConstraint(target uint64, adjustmentWindow uint64, backlog uint64) error {
 	subStorage, err := ps.gasConstraints.Push()
 	if err != nil {
@@ -217,7 +274,7 @@ func (ps *L2PricingState) OpenMultiGasConstraintAt(i uint64) *constraints.MultiG
 
 func (ps *L2PricingState) AddMultiGasConstraint(
 	target uint64,
-	adjustmentWindow uint64,
+	adjustmentWindow uint32,
 	backlog uint64,
 	resourceWeights map[uint8]uint64,
 ) error {
@@ -236,7 +293,6 @@ func (ps *L2PricingState) AddMultiGasConstraint(
 	if err := constraint.SetBacklog(backlog); err != nil {
 		return fmt.Errorf("failed to set backlog: %w", err)
 	}
-
 	if err := constraint.SetResourceWeights(resourceWeights); err != nil {
 		return fmt.Errorf("failed to set resource weights: %w", err)
 	}
