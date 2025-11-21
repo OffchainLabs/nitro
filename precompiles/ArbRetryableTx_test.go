@@ -12,7 +12,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/vm"
 
 	"github.com/offchainlabs/nitro/arbos"
-	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbos/storage"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 )
@@ -93,7 +92,8 @@ func TestRetryableRedeemWithGasConstraints(t *testing.T) {
 	evm := newMockEVMForTesting()
 	precompileCtx := testContext(common.Address{}, evm)
 
-	for i := range l2pricing.GasConstraintsLimit {
+	numConstraints := precompileCtx.State.L2PricingState().GasConstraintsMaxNum()
+	for i := range numConstraints {
 		// #nosec G115
 		target0 := uint64((i + 1) * 1000000)
 		// #nosec G115
