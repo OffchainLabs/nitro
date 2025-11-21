@@ -24,11 +24,11 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/bold/api/db"
-	protocol "github.com/offchainlabs/nitro/bold/chain-abstraction"
-	"github.com/offchainlabs/nitro/bold/challenge-manager/types"
+	"github.com/offchainlabs/nitro/bold/chainabstraction"
+	"github.com/offchainlabs/nitro/bold/challengemanager/types"
 	"github.com/offchainlabs/nitro/bold/containers/threadsafe"
-	l2stateprovider "github.com/offchainlabs/nitro/bold/layer2-state-provider"
-	retry "github.com/offchainlabs/nitro/bold/runtime"
+	"github.com/offchainlabs/nitro/bold/layer2stateprovider"
+	"github.com/offchainlabs/nitro/bold/retry"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
@@ -71,19 +71,19 @@ var defaultTimings = timings{
 // available in its local execution provider.
 type Manager struct {
 	stopwaiter.StopWaiter
-	chain                       protocol.AssertionChain
-	backend                     protocol.ChainBackend
-	execProvider                l2stateprovider.ExecutionProvider
+	chain                       chainabstraction.AssertionChain
+	backend                     chainabstraction.ChainBackend
+	execProvider                layer2stateprovider.ExecutionProvider
 	times                       timings
 	rollupAddr                  common.Address
 	validatorName               string
 	forksDetectedCount          uint64
 	assertionsProcessedCount    uint64
 	submittedRivalsCount        uint64
-	submittedAssertions         *threadsafe.LruSet[protocol.AssertionHash]
+	submittedAssertions         *threadsafe.LruSet[chainabstraction.AssertionHash]
 	apiDB                       db.Database
 	assertionChainData          *assertionChainData
-	observedCanonicalAssertions chan protocol.AssertionHash
+	observedCanonicalAssertions chan chainabstraction.AssertionHash
 	isReadyToPost               bool
 	disablePosting              bool
 	startPostingSignal          chan struct{}
@@ -94,14 +94,14 @@ type Manager struct {
 	autoDeposit                 bool
 	autoAllowanceApproval       bool
 	maxGetLogBlocks             uint64
-	confirming                  *threadsafe.LruSet[protocol.AssertionHash]
+	confirming                  *threadsafe.LruSet[chainabstraction.AssertionHash]
 	confirmQueueMutex           sync.Mutex
 }
 
 type assertionChainData struct {
 	sync.RWMutex
-	latestAgreedAssertion protocol.AssertionHash
-	canonicalAssertions   map[protocol.AssertionHash]*protocol.AssertionCreatedInfo
+	latestAgreedAssertion chainabstraction.AssertionHash
+	canonicalAssertions   map[chainabstraction.AssertionHash]*chainabstraction.AssertionCreatedInfo
 }
 
 type Opt func(*Manager)
@@ -217,8 +217,8 @@ func WithMinimumGapToParentAssertion(t time.Duration) Opt {
 
 // NewManager creates a manager from the required dependencies.
 func NewManager(
-	chain protocol.AssertionChain,
-	execProvider l2stateprovider.ExecutionProvider,
+	chain chainabstraction.AssertionChain,
+	execProvider layer2stateprovider.ExecutionProvider,
 	validatorName string,
 	mode types.Mode,
 	opts ...Opt,
@@ -237,12 +237,12 @@ func NewManager(
 		times:                    defaultTimings,
 		forksDetectedCount:       0,
 		assertionsProcessedCount: 0,
-		submittedAssertions:      threadsafe.NewLruSet(maxAssertions, threadsafe.LruSetWithMetric[protocol.AssertionHash]("submittedAssertions")),
+		submittedAssertions:      threadsafe.NewLruSet(maxAssertions, threadsafe.LruSetWithMetric[chainabstraction.AssertionHash]("submittedAssertions")),
 		assertionChainData: &assertionChainData{
-			latestAgreedAssertion: protocol.AssertionHash{},
-			canonicalAssertions:   make(map[protocol.AssertionHash]*protocol.AssertionCreatedInfo),
+			latestAgreedAssertion: chainabstraction.AssertionHash{},
+			canonicalAssertions:   make(map[chainabstraction.AssertionHash]*chainabstraction.AssertionCreatedInfo),
 		},
-		observedCanonicalAssertions: make(chan protocol.AssertionHash, maxAssertions),
+		observedCanonicalAssertions: make(chan chainabstraction.AssertionHash, maxAssertions),
 		isReadyToPost:               false,
 		startPostingSignal:          make(chan struct{}),
 		mode:                        mode,
@@ -250,7 +250,7 @@ func NewManager(
 		autoDeposit:                 true,
 		autoAllowanceApproval:       true,
 		maxGetLogBlocks:             1000,
-		confirming:                  threadsafe.NewLruSet[protocol.AssertionHash](maxAssertions),
+		confirming:                  threadsafe.NewLruSet[chainabstraction.AssertionHash](maxAssertions),
 		confirmQueueMutex:           sync.Mutex{},
 	}
 	for _, o := range opts {
@@ -378,8 +378,8 @@ func (m *Manager) checkLatestDesiredBlock(ctx context.Context) {
 	}
 }
 
-func (m *Manager) ExecutionStateAfterParent(ctx context.Context, parentInfo *protocol.AssertionCreatedInfo) (*protocol.ExecutionState, error) {
-	goGlobalState := protocol.GoGlobalStateFromSolidity(parentInfo.AfterState.GlobalState)
+func (m *Manager) ExecutionStateAfterParent(ctx context.Context, parentInfo *chainabstraction.AssertionCreatedInfo) (*chainabstraction.ExecutionState, error) {
+	goGlobalState := chainabstraction.GoGlobalStateFromSolidity(parentInfo.AfterState.GlobalState)
 	return m.execProvider.ExecutionStateAfterPreviousState(ctx, parentInfo.InboxMaxCount.Uint64(), goGlobalState)
 }
 
@@ -395,15 +395,15 @@ func (m *Manager) SubmittedRivals() uint64 {
 	return m.submittedRivalsCount
 }
 
-func (m *Manager) AssertionsSubmittedInProcess() []protocol.AssertionHash {
-	hashes := make([]protocol.AssertionHash, 0)
-	m.submittedAssertions.ForEach(func(elem protocol.AssertionHash) {
+func (m *Manager) AssertionsSubmittedInProcess() []chainabstraction.AssertionHash {
+	hashes := make([]chainabstraction.AssertionHash, 0)
+	m.submittedAssertions.ForEach(func(elem chainabstraction.AssertionHash) {
 		hashes = append(hashes, elem)
 	})
 	return hashes
 }
 
-func (m *Manager) LatestAgreedAssertion() protocol.AssertionHash {
+func (m *Manager) LatestAgreedAssertion() chainabstraction.AssertionHash {
 	m.assertionChainData.RLock()
 	defer m.assertionChainData.RUnlock()
 	return m.assertionChainData.latestAgreedAssertion

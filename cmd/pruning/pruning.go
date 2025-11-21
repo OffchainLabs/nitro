@@ -24,7 +24,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbutil"
-	protocol "github.com/offchainlabs/nitro/bold/chain-abstraction"
+	"github.com/offchainlabs/nitro/bold/chainabstraction"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/execution/gethexec"
@@ -260,7 +260,7 @@ func getLatestConfirmedHash(ctx context.Context, rollupAddrs chaininfo.RollupAdd
 		if err != nil {
 			return common.Hash{}, err
 		}
-		return protocol.GoGlobalStateFromSolidity(assertion.AfterState.GlobalState).BlockHash, nil
+		return chainabstraction.GoGlobalStateFromSolidity(assertion.AfterState.GlobalState).BlockHash, nil
 	} else {
 		rollup, err := legacystaker.NewRollupWatcher(rollupAddrs.Rollup, l1Client, callOpts)
 		if err != nil {

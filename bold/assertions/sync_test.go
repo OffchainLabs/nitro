@@ -15,12 +15,12 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 
-	"github.com/offchainlabs/nitro/bold/chain-abstraction"
+	"github.com/offchainlabs/nitro/bold/chainabstraction"
+	"github.com/offchainlabs/nitro/bold/challengetesting"
+	"github.com/offchainlabs/nitro/bold/challengetesting/casttest"
+	"github.com/offchainlabs/nitro/bold/challengetesting/mocks/stateprovider"
+	"github.com/offchainlabs/nitro/bold/challengetesting/setup"
 	"github.com/offchainlabs/nitro/bold/containers/threadsafe"
-	"github.com/offchainlabs/nitro/bold/testing"
-	"github.com/offchainlabs/nitro/bold/testing/casttest"
-	"github.com/offchainlabs/nitro/bold/testing/mocks/state-provider"
-	"github.com/offchainlabs/nitro/bold/testing/setup"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 )
@@ -40,7 +40,7 @@ func Test_extractAssertionFromEvent(t *testing.T) {
 	setup, err := setup.ChainsWithEdgeChallengeManager(
 		setup.WithMockOneStepProver(),
 		setup.WithChallengeTestingOpts(
-			challenge_testing.WithLayerZeroHeights(&protocol.LayerZeroHeights{
+			challengetesting.WithLayerZeroHeights(&chainabstraction.LayerZeroHeights{
 				BlockChallengeHeight:     64,
 				BigStepChallengeHeight:   32,
 				SmallStepChallengeHeight: 32,
@@ -60,14 +60,14 @@ func Test_extractAssertionFromEvent(t *testing.T) {
 	aliceChain := setup.Chains[0]
 	genesisHash, err := setup.Chains[1].GenesisAssertionHash(ctx)
 	require.NoError(t, err)
-	genesisCreationInfo, err := setup.Chains[1].ReadAssertionCreationInfo(ctx, protocol.AssertionHash{Hash: genesisHash})
+	genesisCreationInfo, err := setup.Chains[1].ReadAssertionCreationInfo(ctx, chainabstraction.AssertionHash{Hash: genesisHash})
 	require.NoError(t, err)
 
 	stateManagerOpts := setup.StateManagerOpts
 	aliceStateManager, err := stateprovider.NewForSimpleMachine(t, stateManagerOpts...)
 	require.NoError(t, err)
 
-	preState, err := aliceStateManager.ExecutionStateAfterPreviousState(ctx, 0, protocol.GoGlobalState{})
+	preState, err := aliceStateManager.ExecutionStateAfterPreviousState(ctx, 0, chainabstraction.GoGlobalState{})
 	require.NoError(t, err)
 	postState, err := aliceStateManager.ExecutionStateAfterPreviousState(ctx, 1, preState.GlobalState)
 	require.NoError(t, err)
@@ -101,7 +101,7 @@ func Test_findCanonicalAssertionBranch(t *testing.T) {
 	setup, err := setup.ChainsWithEdgeChallengeManager(
 		setup.WithMockOneStepProver(),
 		setup.WithChallengeTestingOpts(
-			challenge_testing.WithLayerZeroHeights(&protocol.LayerZeroHeights{
+			challengetesting.WithLayerZeroHeights(&chainabstraction.LayerZeroHeights{
 				BlockChallengeHeight:     32,
 				BigStepChallengeHeight:   32,
 				SmallStepChallengeHeight: 32,
@@ -112,7 +112,7 @@ func Test_findCanonicalAssertionBranch(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	agreesWithIds := map[uint64]*protocol.AssertionCreatedInfo{
+	agreesWithIds := map[uint64]*chainabstraction.AssertionCreatedInfo{
 		2: {
 			ParentAssertionHash: numToHash(1),
 			AssertionHash:       numToHash(2),
@@ -135,11 +135,11 @@ func Test_findCanonicalAssertionBranch(t *testing.T) {
 	manager := &Manager{
 		execProvider:                provider,
 		chain:                       setup.Chains[0],
-		observedCanonicalAssertions: make(chan protocol.AssertionHash),
-		confirming:                  threadsafe.NewLruSet[protocol.AssertionHash](1000),
+		observedCanonicalAssertions: make(chan chainabstraction.AssertionHash),
+		confirming:                  threadsafe.NewLruSet[chainabstraction.AssertionHash](1000),
 		assertionChainData: &assertionChainData{
 			latestAgreedAssertion: numToAssertionHash(1),
-			canonicalAssertions:   make(map[protocol.AssertionHash]*protocol.AssertionCreatedInfo),
+			canonicalAssertions:   make(map[chainabstraction.AssertionHash]*chainabstraction.AssertionCreatedInfo),
 		},
 	}
 	go func() {
@@ -155,60 +155,60 @@ func Test_findCanonicalAssertionBranch(t *testing.T) {
 		ctx,
 		[]assertionAndParentCreationInfo{
 			{
-				parent: &protocol.AssertionCreatedInfo{
+				parent: &chainabstraction.AssertionCreatedInfo{
 					InboxMaxCount: big.NewInt(2),
 				},
-				assertion: &protocol.AssertionCreatedInfo{
+				assertion: &chainabstraction.AssertionCreatedInfo{
 					ParentAssertionHash: numToHash(1),
 					AssertionHash:       numToHash(2),
 					AfterState:          numToState(2, t),
 				},
 			},
 			{
-				parent: &protocol.AssertionCreatedInfo{
+				parent: &chainabstraction.AssertionCreatedInfo{
 					InboxMaxCount: big.NewInt(3),
 				},
-				assertion: &protocol.AssertionCreatedInfo{
+				assertion: &chainabstraction.AssertionCreatedInfo{
 					ParentAssertionHash: numToHash(1),
 					AssertionHash:       numToHash(3),
 					AfterState:          numToState(3, t),
 				},
 			},
 			{
-				parent: &protocol.AssertionCreatedInfo{
+				parent: &chainabstraction.AssertionCreatedInfo{
 					InboxMaxCount: big.NewInt(4),
 				},
-				assertion: &protocol.AssertionCreatedInfo{
+				assertion: &chainabstraction.AssertionCreatedInfo{
 					ParentAssertionHash: numToHash(2),
 					AssertionHash:       numToHash(4),
 					AfterState:          numToState(4, t),
 				},
 			},
 			{
-				parent: &protocol.AssertionCreatedInfo{
+				parent: &chainabstraction.AssertionCreatedInfo{
 					InboxMaxCount: big.NewInt(5),
 				},
-				assertion: &protocol.AssertionCreatedInfo{
+				assertion: &chainabstraction.AssertionCreatedInfo{
 					ParentAssertionHash: numToHash(2),
 					AssertionHash:       numToHash(5),
 					AfterState:          numToState(5, t),
 				},
 			},
 			{
-				parent: &protocol.AssertionCreatedInfo{
+				parent: &chainabstraction.AssertionCreatedInfo{
 					InboxMaxCount: big.NewInt(6),
 				},
-				assertion: &protocol.AssertionCreatedInfo{
+				assertion: &chainabstraction.AssertionCreatedInfo{
 					ParentAssertionHash: numToHash(4),
 					AssertionHash:       numToHash(6),
 					AfterState:          numToState(6, t),
 				},
 			},
 			{
-				parent: &protocol.AssertionCreatedInfo{
+				parent: &chainabstraction.AssertionCreatedInfo{
 					InboxMaxCount: big.NewInt(7),
 				},
-				assertion: &protocol.AssertionCreatedInfo{
+				assertion: &chainabstraction.AssertionCreatedInfo{
 					ParentAssertionHash: numToHash(4),
 					AssertionHash:       numToHash(7),
 					AfterState:          numToState(7, t),
@@ -217,7 +217,7 @@ func Test_findCanonicalAssertionBranch(t *testing.T) {
 		},
 	))
 	require.Equal(t, numToAssertionHash(6), manager.assertionChainData.latestAgreedAssertion)
-	wanted := make(map[protocol.AssertionHash]bool)
+	wanted := make(map[chainabstraction.AssertionHash]bool)
 	for id := range agreesWithIds {
 		wanted[numToAssertionHash(casttest.ToInt(t, id))] = true
 	}
@@ -226,12 +226,12 @@ func Test_findCanonicalAssertionBranch(t *testing.T) {
 	}
 }
 
-func numToAssertionHash(i int) protocol.AssertionHash {
-	return protocol.AssertionHash{Hash: common.BytesToHash([]byte(fmt.Sprintf("%d", i)))}
+func numToAssertionHash(i int) chainabstraction.AssertionHash {
+	return chainabstraction.AssertionHash{Hash: common.BytesToHash([]byte(fmt.Sprintf("%d", i)))}
 }
 
-func numToHash(i int) protocol.AssertionHash {
-	return protocol.AssertionHash{Hash: common.BytesToHash([]byte(fmt.Sprintf("%d", i)))}
+func numToHash(i int) chainabstraction.AssertionHash {
+	return chainabstraction.AssertionHash{Hash: common.BytesToHash([]byte(fmt.Sprintf("%d", i)))}
 }
 
 func numToState(i int, t *testing.T) rollupgen.AssertionState {
@@ -243,35 +243,35 @@ func numToState(i int, t *testing.T) rollupgen.AssertionState {
 }
 
 type mockStateProvider struct {
-	agreesWith map[uint64]*protocol.AssertionCreatedInfo
+	agreesWith map[uint64]*chainabstraction.AssertionCreatedInfo
 }
 
 func (m *mockStateProvider) ExecutionStateAfterPreviousState(
 	ctx context.Context,
 	maxInboxCount uint64,
-	previousGlobalState protocol.GoGlobalState,
-) (*protocol.ExecutionState, error) {
+	previousGlobalState chainabstraction.GoGlobalState,
+) (*chainabstraction.ExecutionState, error) {
 	agreement, ok := m.agreesWith[maxInboxCount]
 	if !ok {
-		return &protocol.ExecutionState{
-			GlobalState: protocol.GoGlobalState{
+		return &chainabstraction.ExecutionState{
+			GlobalState: chainabstraction.GoGlobalState{
 				BlockHash: common.BytesToHash([]byte("wrong")),
 			},
 		}, nil
 	}
-	return protocol.GoExecutionStateFromSolidity(agreement.AfterState), nil
+	return chainabstraction.GoExecutionStateFromSolidity(agreement.AfterState), nil
 }
 
 func Test_respondToAnyInvalidAssertions(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	manager := &Manager{
-		observedCanonicalAssertions: make(chan protocol.AssertionHash),
-		submittedAssertions:         threadsafe.NewLruSet(1000, threadsafe.LruSetWithMetric[protocol.AssertionHash]("submittedAssertions")),
-		confirming:                  threadsafe.NewLruSet[protocol.AssertionHash](1000),
+		observedCanonicalAssertions: make(chan chainabstraction.AssertionHash),
+		submittedAssertions:         threadsafe.NewLruSet(1000, threadsafe.LruSetWithMetric[chainabstraction.AssertionHash]("submittedAssertions")),
+		confirming:                  threadsafe.NewLruSet[chainabstraction.AssertionHash](1000),
 		assertionChainData: &assertionChainData{
 			latestAgreedAssertion: numToAssertionHash(1),
-			canonicalAssertions:   make(map[protocol.AssertionHash]*protocol.AssertionCreatedInfo),
+			canonicalAssertions:   make(map[chainabstraction.AssertionHash]*chainabstraction.AssertionCreatedInfo),
 		},
 	}
 	go func() {
@@ -284,14 +284,14 @@ func Test_respondToAnyInvalidAssertions(t *testing.T) {
 		}
 	}()
 
-	manager.assertionChainData.canonicalAssertions[numToAssertionHash(1)] = &protocol.AssertionCreatedInfo{}
-	manager.assertionChainData.canonicalAssertions[numToAssertionHash(2)] = &protocol.AssertionCreatedInfo{
+	manager.assertionChainData.canonicalAssertions[numToAssertionHash(1)] = &chainabstraction.AssertionCreatedInfo{}
+	manager.assertionChainData.canonicalAssertions[numToAssertionHash(2)] = &chainabstraction.AssertionCreatedInfo{
 		ParentAssertionHash: numToHash(1),
 	}
-	manager.assertionChainData.canonicalAssertions[numToAssertionHash(4)] = &protocol.AssertionCreatedInfo{
+	manager.assertionChainData.canonicalAssertions[numToAssertionHash(4)] = &chainabstraction.AssertionCreatedInfo{
 		ParentAssertionHash: numToHash(2),
 	}
-	manager.assertionChainData.canonicalAssertions[numToAssertionHash(6)] = &protocol.AssertionCreatedInfo{
+	manager.assertionChainData.canonicalAssertions[numToAssertionHash(6)] = &chainabstraction.AssertionCreatedInfo{
 		ParentAssertionHash: numToHash(4),
 	}
 
@@ -301,16 +301,16 @@ func Test_respondToAnyInvalidAssertions(t *testing.T) {
 			ctx,
 			[]assertionAndParentCreationInfo{
 				{
-					parent: &protocol.AssertionCreatedInfo{},
-					assertion: &protocol.AssertionCreatedInfo{
+					parent: &chainabstraction.AssertionCreatedInfo{},
+					assertion: &chainabstraction.AssertionCreatedInfo{
 						ParentAssertionHash: numToHash(2),
 						AssertionHash:       numToHash(4),
 						AfterState:          numToState(4, t),
 					},
 				},
 				{
-					parent: &protocol.AssertionCreatedInfo{},
-					assertion: &protocol.AssertionCreatedInfo{
+					parent: &chainabstraction.AssertionCreatedInfo{},
+					assertion: &chainabstraction.AssertionCreatedInfo{
 						ParentAssertionHash: numToHash(4),
 						AssertionHash:       numToHash(6),
 						AfterState:          numToState(6, t),
@@ -327,16 +327,16 @@ func Test_respondToAnyInvalidAssertions(t *testing.T) {
 			ctx,
 			[]assertionAndParentCreationInfo{
 				{
-					parent: &protocol.AssertionCreatedInfo{},
-					assertion: &protocol.AssertionCreatedInfo{
+					parent: &chainabstraction.AssertionCreatedInfo{},
+					assertion: &chainabstraction.AssertionCreatedInfo{
 						ParentAssertionHash: numToHash(200),
 						AssertionHash:       numToHash(400),
 						AfterState:          numToState(400, t),
 					},
 				},
 				{
-					parent: &protocol.AssertionCreatedInfo{},
-					assertion: &protocol.AssertionCreatedInfo{
+					parent: &chainabstraction.AssertionCreatedInfo{},
+					assertion: &chainabstraction.AssertionCreatedInfo{
 						ParentAssertionHash: numToHash(400),
 						AssertionHash:       numToHash(600),
 						AfterState:          numToState(600, t),
@@ -354,16 +354,16 @@ func Test_respondToAnyInvalidAssertions(t *testing.T) {
 			[]assertionAndParentCreationInfo{
 				// Some evil hashes which must be acted upon.
 				{
-					parent: &protocol.AssertionCreatedInfo{},
-					assertion: &protocol.AssertionCreatedInfo{
+					parent: &chainabstraction.AssertionCreatedInfo{},
+					assertion: &chainabstraction.AssertionCreatedInfo{
 						ParentAssertionHash: numToHash(2),
 						AssertionHash:       numToHash(3),
 						AfterState:          numToState(3, t),
 					},
 				},
 				{
-					parent: &protocol.AssertionCreatedInfo{},
-					assertion: &protocol.AssertionCreatedInfo{
+					parent: &chainabstraction.AssertionCreatedInfo{},
+					assertion: &chainabstraction.AssertionCreatedInfo{
 						ParentAssertionHash: numToHash(4),
 						AssertionHash:       numToHash(5),
 						AfterState:          numToState(5, t),
@@ -382,14 +382,14 @@ type mockRivalPoster struct {
 func (m *mockRivalPoster) maybePostRivalAssertionAndChallenge(
 	ctx context.Context,
 	args rivalPosterArgs,
-) (*protocol.AssertionCreatedInfo, error) {
+) (*chainabstraction.AssertionCreatedInfo, error) {
 	if args.invalidAssertion.AssertionHash == numToHash(3) {
-		return &protocol.AssertionCreatedInfo{
+		return &chainabstraction.AssertionCreatedInfo{
 			AssertionHash: numToHash(300),
 		}, nil
 	}
 	if args.invalidAssertion.AssertionHash == numToHash(5) {
-		return &protocol.AssertionCreatedInfo{
+		return &chainabstraction.AssertionCreatedInfo{
 			AssertionHash: numToHash(500),
 		}, nil
 	}

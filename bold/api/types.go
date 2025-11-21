@@ -10,35 +10,35 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 
-	"github.com/offchainlabs/nitro/bold/chain-abstraction"
+	"github.com/offchainlabs/nitro/bold/chainabstraction"
 )
 
 type JsonAssertion struct {
-	Hash                     common.Hash            `json:"hash" db:"Hash"`
-	ConfirmPeriodBlocks      uint64                 `json:"confirmPeriodBlocks" db:"ConfirmPeriodBlocks"`
-	RequiredStake            string                 `json:"requiredStake" db:"RequiredStake"`
-	ParentAssertionHash      common.Hash            `json:"parentAssertionHash" db:"ParentAssertionHash"`
-	InboxMaxCount            string                 `json:"inboxMaxCount" db:"InboxMaxCount"`
-	AfterInboxBatchAcc       common.Hash            `json:"afterInboxBatchAcc" db:"AfterInboxBatchAcc"`
-	WasmModuleRoot           common.Hash            `json:"wasmModuleRoot" db:"WasmModuleRoot"`
-	ChallengeManager         common.Address         `json:"challengeManager" db:"ChallengeManager"`
-	CreationBlock            uint64                 `json:"creationBlock" db:"CreationBlock"`
-	TransactionHash          common.Hash            `json:"transactionHash" db:"TransactionHash"`
-	BeforeStateBlockHash     common.Hash            `json:"beforeStateBlockHash" db:"BeforeStateBlockHash"`
-	BeforeStateSendRoot      common.Hash            `json:"beforeStateSendRoot" db:"BeforeStateSendRoot"`
-	BeforeStateBatch         uint64                 `json:"beforeStateBatch" db:"BeforeStateBatch"`
-	BeforeStatePosInBatch    uint64                 `json:"beforeStatePosInBatch" db:"BeforeStatePosInBatch"`
-	BeforeStateMachineStatus protocol.MachineStatus `json:"beforeStateMachineStatus" db:"BeforeStateMachineStatus"`
-	AfterStateBlockHash      common.Hash            `json:"afterStateBlockHash" db:"AfterStateBlockHash"`
-	AfterStateSendRoot       common.Hash            `json:"afterStateSendRoot" db:"AfterStateSendRoot"`
-	AfterStateBatch          uint64                 `json:"afterStateBatch" db:"AfterStateBatch"`
-	AfterStatePosInBatch     uint64                 `json:"afterStatePosInBatch" db:"AfterStatePosInBatch"`
-	AfterStateMachineStatus  protocol.MachineStatus `json:"afterStateMachineStatus" db:"AfterStateMachineStatus"`
-	FirstChildBlock          *uint64                `json:"firstChildBlock" db:"FirstChildBlock"`
-	SecondChildBlock         *uint64                `json:"secondChildBlock" db:"SecondChildBlock"`
-	IsFirstChild             bool                   `json:"isFirstChild" db:"IsFirstChild"`
-	Status                   string                 `json:"status" db:"Status"`
-	LastUpdatedAt            time.Time              `json:"lastUpdatedAt" db:"LastUpdatedAt"`
+	Hash                     common.Hash                    `json:"hash" db:"Hash"`
+	ConfirmPeriodBlocks      uint64                         `json:"confirmPeriodBlocks" db:"ConfirmPeriodBlocks"`
+	RequiredStake            string                         `json:"requiredStake" db:"RequiredStake"`
+	ParentAssertionHash      common.Hash                    `json:"parentAssertionHash" db:"ParentAssertionHash"`
+	InboxMaxCount            string                         `json:"inboxMaxCount" db:"InboxMaxCount"`
+	AfterInboxBatchAcc       common.Hash                    `json:"afterInboxBatchAcc" db:"AfterInboxBatchAcc"`
+	WasmModuleRoot           common.Hash                    `json:"wasmModuleRoot" db:"WasmModuleRoot"`
+	ChallengeManager         common.Address                 `json:"challengeManager" db:"ChallengeManager"`
+	CreationBlock            uint64                         `json:"creationBlock" db:"CreationBlock"`
+	TransactionHash          common.Hash                    `json:"transactionHash" db:"TransactionHash"`
+	BeforeStateBlockHash     common.Hash                    `json:"beforeStateBlockHash" db:"BeforeStateBlockHash"`
+	BeforeStateSendRoot      common.Hash                    `json:"beforeStateSendRoot" db:"BeforeStateSendRoot"`
+	BeforeStateBatch         uint64                         `json:"beforeStateBatch" db:"BeforeStateBatch"`
+	BeforeStatePosInBatch    uint64                         `json:"beforeStatePosInBatch" db:"BeforeStatePosInBatch"`
+	BeforeStateMachineStatus chainabstraction.MachineStatus `json:"beforeStateMachineStatus" db:"BeforeStateMachineStatus"`
+	AfterStateBlockHash      common.Hash                    `json:"afterStateBlockHash" db:"AfterStateBlockHash"`
+	AfterStateSendRoot       common.Hash                    `json:"afterStateSendRoot" db:"AfterStateSendRoot"`
+	AfterStateBatch          uint64                         `json:"afterStateBatch" db:"AfterStateBatch"`
+	AfterStatePosInBatch     uint64                         `json:"afterStatePosInBatch" db:"AfterStatePosInBatch"`
+	AfterStateMachineStatus  chainabstraction.MachineStatus `json:"afterStateMachineStatus" db:"AfterStateMachineStatus"`
+	FirstChildBlock          *uint64                        `json:"firstChildBlock" db:"FirstChildBlock"`
+	SecondChildBlock         *uint64                        `json:"secondChildBlock" db:"SecondChildBlock"`
+	IsFirstChild             bool                           `json:"isFirstChild" db:"IsFirstChild"`
+	Status                   string                         `json:"status" db:"Status"`
+	LastUpdatedAt            time.Time                      `json:"lastUpdatedAt" db:"LastUpdatedAt"`
 }
 
 type JsonEdge struct {
@@ -97,8 +97,8 @@ type JsonEdgesByChallengedAssertion struct {
 }
 
 type JsonMiniStakes struct {
-	ChallengedAssertionHash common.Hash                                      `json:"challengedAssertionHash"`
-	StakesByLvlAndOrigin    map[protocol.ChallengeLevel][]*JsonMiniStakeInfo `json:"stakesByLvlAndOrigin"`
+	ChallengedAssertionHash common.Hash                                              `json:"challengedAssertionHash"`
+	StakesByLvlAndOrigin    map[chainabstraction.ChallengeLevel][]*JsonMiniStakeInfo `json:"stakesByLvlAndOrigin"`
 }
 
 type JsonMiniStakeInfo struct {

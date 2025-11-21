@@ -22,11 +22,11 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
-	protocol "github.com/offchainlabs/nitro/bold/chain-abstraction"
-	challengemanager "github.com/offchainlabs/nitro/bold/challenge-manager"
-	modes "github.com/offchainlabs/nitro/bold/challenge-manager/types"
-	l2stateprovider "github.com/offchainlabs/nitro/bold/layer2-state-provider"
-	"github.com/offchainlabs/nitro/bold/testing/setup"
+	"github.com/offchainlabs/nitro/bold/chainabstraction"
+	"github.com/offchainlabs/nitro/bold/challengemanager"
+	modes "github.com/offchainlabs/nitro/bold/challengemanager/types"
+	"github.com/offchainlabs/nitro/bold/challengetesting/setup"
+	"github.com/offchainlabs/nitro/bold/layer2stateprovider"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
@@ -124,7 +124,7 @@ func TestOverflowAssertions(t *testing.T) {
 	stateManager, err := bold.NewBOLDStateProvider(
 		blockValidator,
 		stateless,
-		l2stateprovider.Height(blockChallengeLeafHeight),
+		layer2stateprovider.Height(blockChallengeLeafHeight),
 		&bold.StateProviderConfig{
 			ValidatorName:          "good",
 			MachineLeavesCachePath: goodDir,
@@ -214,14 +214,14 @@ func TestOverflowAssertions(t *testing.T) {
 		time.Sleep(time.Millisecond * 200)
 	}
 
-	provider := l2stateprovider.NewHistoryCommitmentProvider(
+	provider := layer2stateprovider.NewHistoryCommitmentProvider(
 		stateManager,
 		stateManager,
 		stateManager,
-		[]l2stateprovider.Height{
-			l2stateprovider.Height(blockChallengeLeafHeight),
-			l2stateprovider.Height(bigStepChallengeLeafHeight),
-			l2stateprovider.Height(smallStepChallengeLeafHeight),
+		[]layer2stateprovider.Height{
+			layer2stateprovider.Height(blockChallengeLeafHeight),
+			layer2stateprovider.Height(bigStepChallengeLeafHeight),
+			layer2stateprovider.Height(smallStepChallengeLeafHeight),
 		},
 		stateManager,
 		nil, // Api db
@@ -288,11 +288,11 @@ func TestOverflowAssertions(t *testing.T) {
 					t.Fatalf("Error in filter iterator: %v", it.Error())
 				}
 				t.Log("Received event of assertion created!")
-				assertionHash := protocol.AssertionHash{Hash: it.Event.AssertionHash}
+				assertionHash := chainabstraction.AssertionHash{Hash: it.Event.AssertionHash}
 				creationInfo, err := assertionChain.ReadAssertionCreationInfo(ctx, assertionHash)
 				Require(t, err)
 				t.Logf("Created assertion in block: %d", creationInfo.CreationL1Block)
-				newState := protocol.GoGlobalStateFromSolidity(creationInfo.AfterState.GlobalState)
+				newState := chainabstraction.GoGlobalStateFromSolidity(creationInfo.AfterState.GlobalState)
 				t.Logf("NewState PosInBatch: %d", newState.PosInBatch)
 				inboxMax := creationInfo.InboxMaxCount.Uint64()
 				t.Logf("InboxMax: %d", inboxMax)

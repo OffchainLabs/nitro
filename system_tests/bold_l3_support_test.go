@@ -21,10 +21,10 @@ import (
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
-	solimpl "github.com/offchainlabs/nitro/bold/chain-abstraction/sol-implementation"
-	challengemanager "github.com/offchainlabs/nitro/bold/challenge-manager"
-	modes "github.com/offchainlabs/nitro/bold/challenge-manager/types"
-	l2stateprovider "github.com/offchainlabs/nitro/bold/layer2-state-provider"
+	"github.com/offchainlabs/nitro/bold/chainabstraction/solimplementation"
+	"github.com/offchainlabs/nitro/bold/challengemanager"
+	modes "github.com/offchainlabs/nitro/bold/challengemanager/types"
+	"github.com/offchainlabs/nitro/bold/layer2stateprovider"
 	"github.com/offchainlabs/nitro/bold/util"
 	"github.com/offchainlabs/nitro/solgen/go/challengeV2gen"
 	"github.com/offchainlabs/nitro/solgen/go/localgen"
@@ -194,7 +194,7 @@ func fundL3Staker(t *testing.T, ctx context.Context, builder *NodeBuilder, l2Cli
 	Require(t, err)
 }
 
-func startL3BoldChallengeManager(t *testing.T, ctx context.Context, builder *NodeBuilder, node *TestClient, addressName string, mockStateProvider func(BoldStateProviderInterface) BoldStateProviderInterface) (*solimpl.AssertionChain, func()) {
+func startL3BoldChallengeManager(t *testing.T, ctx context.Context, builder *NodeBuilder, node *TestClient, addressName string, mockStateProvider func(BoldStateProviderInterface) BoldStateProviderInterface) (*solimplementation.AssertionChain, func()) {
 	if !builder.deployBold {
 		t.Fatal("bold deployment not enabled")
 	}
@@ -205,7 +205,7 @@ func startL3BoldChallengeManager(t *testing.T, ctx context.Context, builder *Nod
 	stateManager, err = bold.NewBOLDStateProvider(
 		node.ConsensusNode.BlockValidator,
 		node.ConsensusNode.StatelessBlockValidator,
-		l2stateprovider.Height(blockChallengeLeafHeight),
+		layer2stateprovider.Height(blockChallengeLeafHeight),
 		&bold.StateProviderConfig{
 			ValidatorName:          addressName,
 			MachineLeavesCachePath: cacheDir,
@@ -222,16 +222,16 @@ func startL3BoldChallengeManager(t *testing.T, ctx context.Context, builder *Nod
 		stateManager = mockStateProvider(stateManager)
 	}
 
-	provider := l2stateprovider.NewHistoryCommitmentProvider(
+	provider := layer2stateprovider.NewHistoryCommitmentProvider(
 		stateManager,
 		stateManager,
 		stateManager,
-		[]l2stateprovider.Height{
-			l2stateprovider.Height(blockChallengeLeafHeight),
-			l2stateprovider.Height(bigStepChallengeLeafHeight),
-			l2stateprovider.Height(bigStepChallengeLeafHeight),
-			l2stateprovider.Height(bigStepChallengeLeafHeight),
-			l2stateprovider.Height(smallStepChallengeLeafHeight),
+		[]layer2stateprovider.Height{
+			layer2stateprovider.Height(blockChallengeLeafHeight),
+			layer2stateprovider.Height(bigStepChallengeLeafHeight),
+			layer2stateprovider.Height(bigStepChallengeLeafHeight),
+			layer2stateprovider.Height(bigStepChallengeLeafHeight),
+			layer2stateprovider.Height(smallStepChallengeLeafHeight),
 		},
 		stateManager,
 		nil, // Api db
@@ -255,14 +255,14 @@ func startL3BoldChallengeManager(t *testing.T, ctx context.Context, builder *Nod
 	)
 	Require(t, err)
 
-	assertionChain, err := solimpl.NewAssertionChain(
+	assertionChain, err := solimplementation.NewAssertionChain(
 		ctx,
 		builder.l3Addresses.Rollup,
 		chalManagerAddr,
 		&txOpts,
 		util.NewBackendWrapper(builder.L2.Client, rpc.LatestBlockNumber),
 		bold.NewDataPosterTransactor(dp),
-		solimpl.WithRpcHeadBlockNumber(rpc.LatestBlockNumber),
+		solimplementation.WithRpcHeadBlockNumber(rpc.LatestBlockNumber),
 	)
 	Require(t, err)
 

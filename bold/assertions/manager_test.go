@@ -18,14 +18,14 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 
 	"github.com/offchainlabs/nitro/bold/assertions"
-	"github.com/offchainlabs/nitro/bold/chain-abstraction"
-	"github.com/offchainlabs/nitro/bold/challenge-manager"
-	"github.com/offchainlabs/nitro/bold/challenge-manager/types"
-	"github.com/offchainlabs/nitro/bold/runtime"
-	"github.com/offchainlabs/nitro/bold/testing"
-	"github.com/offchainlabs/nitro/bold/testing/casttest"
-	"github.com/offchainlabs/nitro/bold/testing/mocks/state-provider"
-	"github.com/offchainlabs/nitro/bold/testing/setup"
+	"github.com/offchainlabs/nitro/bold/chainabstraction"
+	"github.com/offchainlabs/nitro/bold/challengemanager"
+	"github.com/offchainlabs/nitro/bold/challengemanager/types"
+	"github.com/offchainlabs/nitro/bold/challengetesting"
+	"github.com/offchainlabs/nitro/bold/challengetesting/casttest"
+	"github.com/offchainlabs/nitro/bold/challengetesting/mocks/stateprovider"
+	"github.com/offchainlabs/nitro/bold/challengetesting/setup"
+	"github.com/offchainlabs/nitro/bold/retry"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
@@ -37,7 +37,7 @@ func TestSkipsProcessingAssertionFromEvilFork(t *testing.T) {
 		setup.WithMockOneStepProver(),
 		setup.WithMockBridge(),
 		setup.WithChallengeTestingOpts(
-			challenge_testing.WithLayerZeroHeights(&protocol.LayerZeroHeights{
+			challengetesting.WithLayerZeroHeights(&chainabstraction.LayerZeroHeights{
 				BlockChallengeHeight:     64,
 				BigStepChallengeHeight:   32,
 				SmallStepChallengeHeight: 32,
@@ -60,7 +60,7 @@ func TestSkipsProcessingAssertionFromEvilFork(t *testing.T) {
 	ctx := context.Background()
 	genesisHash, err := testData.Chains[1].GenesisAssertionHash(ctx)
 	require.NoError(t, err)
-	genesisCreationInfo, err := testData.Chains[1].ReadAssertionCreationInfo(ctx, protocol.AssertionHash{Hash: genesisHash})
+	genesisCreationInfo, err := testData.Chains[1].ReadAssertionCreationInfo(ctx, chainabstraction.AssertionHash{Hash: genesisHash})
 	require.NoError(t, err)
 
 	stateManagerOpts := testData.StateManagerOpts
@@ -102,7 +102,7 @@ func TestSkipsProcessingAssertionFromEvilFork(t *testing.T) {
 	// rival assertion can be posted with identical content, so, if alice wins,
 	// charlie's attempt below will fail because the rival assertion he is trying
 	// to post already exists.
-	genesisGlobalState := protocol.GoGlobalStateFromSolidity(genesisCreationInfo.AfterState.GlobalState)
+	genesisGlobalState := chainabstraction.GoGlobalStateFromSolidity(genesisCreationInfo.AfterState.GlobalState)
 	bobPostState, err := bobStateManager.ExecutionStateAfterPreviousState(ctx, 1, genesisGlobalState)
 	require.NoError(t, err)
 	t.Logf("%+v", bobPostState)
@@ -153,7 +153,7 @@ func TestSkipsProcessingAssertionFromEvilFork(t *testing.T) {
 		},
 	)
 
-	genesisState, err := bobStateManager.ExecutionStateAfterPreviousState(ctx, 0, protocol.GoGlobalState{})
+	genesisState, err := bobStateManager.ExecutionStateAfterPreviousState(ctx, 0, chainabstraction.GoGlobalState{})
 	require.NoError(t, err)
 	preState, err := bobStateManager.ExecutionStateAfterPreviousState(ctx, 1, genesisState.GlobalState)
 	require.NoError(t, err)
@@ -183,7 +183,7 @@ func TestComplexAssertionForkScenario(t *testing.T) {
 	testData, err := setup.ChainsWithEdgeChallengeManager(
 		setup.WithMockOneStepProver(),
 		setup.WithChallengeTestingOpts(
-			challenge_testing.WithLayerZeroHeights(&protocol.LayerZeroHeights{
+			challengetesting.WithLayerZeroHeights(&chainabstraction.LayerZeroHeights{
 				BlockChallengeHeight:     64,
 				BigStepChallengeHeight:   32,
 				SmallStepChallengeHeight: 32,
@@ -205,7 +205,7 @@ func TestComplexAssertionForkScenario(t *testing.T) {
 	ctx := context.Background()
 	genesisHash, err := testData.Chains[1].GenesisAssertionHash(ctx)
 	require.NoError(t, err)
-	genesisCreationInfo, err := testData.Chains[1].ReadAssertionCreationInfo(ctx, protocol.AssertionHash{Hash: genesisHash})
+	genesisCreationInfo, err := testData.Chains[1].ReadAssertionCreationInfo(ctx, chainabstraction.AssertionHash{Hash: genesisHash})
 	require.NoError(t, err)
 
 	stateManagerOpts := testData.StateManagerOpts
@@ -227,7 +227,7 @@ func TestComplexAssertionForkScenario(t *testing.T) {
 	bobStateManager, err := stateprovider.NewForSimpleMachine(t, stateManagerOpts...)
 	require.NoError(t, err)
 
-	genesisState, err := aliceStateManager.ExecutionStateAfterPreviousState(ctx, 0, protocol.GoGlobalState{})
+	genesisState, err := aliceStateManager.ExecutionStateAfterPreviousState(ctx, 0, chainabstraction.GoGlobalState{})
 	require.NoError(t, err)
 	alicePostState, err := aliceStateManager.ExecutionStateAfterPreviousState(ctx, 1, genesisState.GlobalState)
 	require.NoError(t, err)
@@ -272,7 +272,7 @@ func TestComplexAssertionForkScenario(t *testing.T) {
 
 		prevInfo, err2 := aliceChain.ReadAssertionCreationInfo(ctx, aliceAssertion.Id())
 		require.NoError(t, err2)
-		prevGlobalState := protocol.GoGlobalStateFromSolidity(prevInfo.AfterState.GlobalState)
+		prevGlobalState := chainabstraction.GoGlobalStateFromSolidity(prevInfo.AfterState.GlobalState)
 		preState, err2 := aliceStateManager.ExecutionStateAfterPreviousState(ctx, casttest.ToUint64(t, batch-1), prevGlobalState)
 		require.NoError(t, err2)
 		alicePostState, err2 = aliceStateManager.ExecutionStateAfterPreviousState(ctx, casttest.ToUint64(t, batch), preState.GlobalState)
@@ -330,7 +330,7 @@ func TestComplexAssertionForkScenario(t *testing.T) {
 	charlieAssertion := charlieSubmitted[0]
 	charlieAssertionInfo, err := charlieChain.ReadAssertionCreationInfo(ctx, charlieAssertion)
 	require.NoError(t, err)
-	charliePostState := protocol.GoExecutionStateFromSolidity(charlieAssertionInfo.AfterState)
+	charliePostState := chainabstraction.GoExecutionStateFromSolidity(charlieAssertionInfo.AfterState)
 
 	// Alice and Charlie batch should match.
 	require.Equal(t, charliePostState.GlobalState.Batch, alicePostState.GlobalState.Batch)
@@ -346,7 +346,7 @@ func TestFastConfirmation(t *testing.T) {
 		setup.WithMockOneStepProver(),
 		setup.WithAutoDeposit(),
 		setup.WithChallengeTestingOpts(
-			challenge_testing.WithLayerZeroHeights(&protocol.LayerZeroHeights{
+			challengetesting.WithLayerZeroHeights(&chainabstraction.LayerZeroHeights{
 				BlockChallengeHeight:     64,
 				BigStepChallengeHeight:   32,
 				SmallStepChallengeHeight: 32,
@@ -395,7 +395,7 @@ func TestFastConfirmation(t *testing.T) {
 	require.NoError(t, err)
 	chalManager.Start(ctx)
 
-	preState, err := stateManager.ExecutionStateAfterPreviousState(ctx, 0, protocol.GoGlobalState{})
+	preState, err := stateManager.ExecutionStateAfterPreviousState(ctx, 0, chainabstraction.GoGlobalState{})
 	require.NoError(t, err)
 	postState, err := stateManager.ExecutionStateAfterPreviousState(ctx, 1, preState.GlobalState)
 	require.NoError(t, err)
@@ -407,7 +407,7 @@ func TestFastConfirmation(t *testing.T) {
 	require.Equal(t, true, posted.IsSome())
 	creationInfo, err := aliceChain.ReadAssertionCreationInfo(ctx, posted.Unwrap().Id())
 	require.NoError(t, err)
-	require.Equal(t, postState, protocol.GoExecutionStateFromSolidity(creationInfo.AfterState))
+	require.Equal(t, postState, chainabstraction.GoExecutionStateFromSolidity(creationInfo.AfterState))
 
 	ctx, cancel := context.WithTimeout(ctx, time.Second)
 	defer cancel()
@@ -420,7 +420,7 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 		setup.WithAutoDeposit(),
 		setup.WithMockOneStepProver(),
 		setup.WithChallengeTestingOpts(
-			challenge_testing.WithLayerZeroHeights(&protocol.LayerZeroHeights{
+			challengetesting.WithLayerZeroHeights(&chainabstraction.LayerZeroHeights{
 				BlockChallengeHeight:     64,
 				BigStepChallengeHeight:   32,
 				SmallStepChallengeHeight: 32,
@@ -472,7 +472,7 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 	require.NoError(t, err)
 	chalManagerAlice.Start(ctx)
 
-	preState, err := stateManager.ExecutionStateAfterPreviousState(ctx, 0, protocol.GoGlobalState{})
+	preState, err := stateManager.ExecutionStateAfterPreviousState(ctx, 0, chainabstraction.GoGlobalState{})
 	require.NoError(t, err)
 	postState, err := stateManager.ExecutionStateAfterPreviousState(ctx, 1, preState.GlobalState)
 	require.NoError(t, err)
@@ -484,13 +484,13 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 	require.Equal(t, true, posted.IsSome())
 	creationInfo, err := aliceChain.ReadAssertionCreationInfo(ctx, posted.Unwrap().Id())
 	require.NoError(t, err)
-	require.Equal(t, postState, protocol.GoExecutionStateFromSolidity(creationInfo.AfterState))
+	require.Equal(t, postState, chainabstraction.GoExecutionStateFromSolidity(creationInfo.AfterState))
 
 	<-time.After(time.Second)
 	status, err := aliceChain.AssertionStatus(ctx, posted.Unwrap().Id())
 	require.NoError(t, err)
 	// Just one fast confirmation is not enough to confirm the assertion.
-	require.Equal(t, protocol.AssertionPending, status)
+	require.Equal(t, chainabstraction.AssertionPending, status)
 
 	assertionManagerBob, err := assertions.NewManager(
 		bobChain,
@@ -563,7 +563,7 @@ func enqueueSequencerMessageAsExecutor(
 func expectAssertionConfirmed(
 	t *testing.T,
 	ctx context.Context,
-	backend protocol.ChainBackend,
+	backend chainabstraction.ChainBackend,
 	rollupAddr common.Address,
 ) {
 	rc, err := rollupgen.NewRollupCore(rollupAddr, backend)
@@ -579,7 +579,7 @@ func expectAssertionConfirmed(
 				return rc.GetAssertion(&bind.CallOpts{Context: ctx}, i.Event.AssertionHash)
 			})
 			require.NoError(t, err)
-			if assertionNode.Status != uint8(protocol.AssertionConfirmed) {
+			if assertionNode.Status != uint8(chainabstraction.AssertionConfirmed) {
 				t.Fatal("Confirmed assertion with unfinished state")
 			}
 			confirmed = true

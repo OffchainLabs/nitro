@@ -16,29 +16,29 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/offchainlabs/nitro/bold/chain-abstraction"
+	"github.com/offchainlabs/nitro/bold/chainabstraction"
 	"github.com/offchainlabs/nitro/bold/containers/option"
-	"github.com/offchainlabs/nitro/bold/layer2-state-provider"
-	"github.com/offchainlabs/nitro/bold/state-commitments/history"
+	"github.com/offchainlabs/nitro/bold/layer2stateprovider"
+	"github.com/offchainlabs/nitro/bold/statecommitments/history"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/staker"
-	"github.com/offchainlabs/nitro/staker/challenge-cache"
+	challengecache "github.com/offchainlabs/nitro/staker/challenge-cache"
 	"github.com/offchainlabs/nitro/validator"
 	"github.com/offchainlabs/nitro/validator/server_arb"
 )
 
 var (
-	_ l2stateprovider.ProofCollector          = (*BOLDStateProvider)(nil)
-	_ l2stateprovider.L2MessageStateCollector = (*BOLDStateProvider)(nil)
-	_ l2stateprovider.MachineHashCollector    = (*BOLDStateProvider)(nil)
-	_ l2stateprovider.ExecutionProvider       = (*BOLDStateProvider)(nil)
+	_ layer2stateprovider.ProofCollector          = (*BOLDStateProvider)(nil)
+	_ layer2stateprovider.L2MessageStateCollector = (*BOLDStateProvider)(nil)
+	_ layer2stateprovider.MachineHashCollector    = (*BOLDStateProvider)(nil)
+	_ layer2stateprovider.ExecutionProvider       = (*BOLDStateProvider)(nil)
 )
 
 type BOLDStateProvider struct {
 	validator                *staker.BlockValidator
 	statelessValidator       *staker.StatelessBlockValidator
 	historyCache             challengecache.HistoryCommitmentCacher
-	blockChallengeLeafHeight l2stateprovider.Height
+	blockChallengeLeafHeight layer2stateprovider.Height
 	stateProviderConfig      *StateProviderConfig
 	inboxTracker             staker.InboxTrackerInterface
 	inboxStreamer            staker.TransactionStreamerInterface
@@ -49,7 +49,7 @@ type BOLDStateProvider struct {
 func NewBOLDStateProvider(
 	blockValidator *staker.BlockValidator,
 	statelessValidator *staker.StatelessBlockValidator,
-	blockChallengeLeafHeight l2stateprovider.Height,
+	blockChallengeLeafHeight layer2stateprovider.Height,
 	stateProviderConfig *StateProviderConfig,
 	machineHashesCachePath string,
 	inboxTracker staker.InboxTrackerInterface,
@@ -80,8 +80,8 @@ func NewBOLDStateProvider(
 func (s *BOLDStateProvider) ExecutionStateAfterPreviousState(
 	ctx context.Context,
 	maxSeqInboxCount uint64,
-	previousGlobalState protocol.GoGlobalState,
-) (*protocol.ExecutionState, error) {
+	previousGlobalState chainabstraction.GoGlobalState,
+) (*chainabstraction.ExecutionState, error) {
 	if maxSeqInboxCount == 0 {
 		return nil, errors.New("max inbox count cannot be zero")
 	}
@@ -90,7 +90,7 @@ func (s *BOLDStateProvider) ExecutionStateAfterPreviousState(
 	messageCount, err := s.inboxTracker.GetBatchMessageCount(batchIndex - 1)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
-			return nil, fmt.Errorf("%w: batch count %d", l2stateprovider.ErrChainCatchingUp, maxSeqInboxCount)
+			return nil, fmt.Errorf("%w: batch count %d", layer2stateprovider.ErrChainCatchingUp, maxSeqInboxCount)
 		}
 		return nil, err
 	}
@@ -99,7 +99,7 @@ func (s *BOLDStateProvider) ExecutionStateAfterPreviousState(
 		previousMessageCount, err = s.inboxTracker.GetBatchMessageCount(previousGlobalState.Batch - 1)
 		if err != nil {
 			if strings.Contains(err.Error(), "not found") {
-				return nil, fmt.Errorf("%w: batch count %d", l2stateprovider.ErrChainCatchingUp, maxSeqInboxCount)
+				return nil, fmt.Errorf("%w: batch count %d", layer2stateprovider.ErrChainCatchingUp, maxSeqInboxCount)
 			}
 			return nil, err
 		}
@@ -114,7 +114,7 @@ func (s *BOLDStateProvider) ExecutionStateAfterPreviousState(
 			return nil, err
 		}
 	}
-	globalState, err := s.findGlobalStateFromMessageCountAndBatch(messageCount, l2stateprovider.Batch(batchIndex))
+	globalState, err := s.findGlobalStateFromMessageCountAndBatch(messageCount, layer2stateprovider.Batch(batchIndex))
 	if err != nil {
 		return nil, err
 	}
@@ -125,19 +125,19 @@ func (s *BOLDStateProvider) ExecutionStateAfterPreviousState(
 		return nil, err
 	}
 	if !stateValidatedAndMessageCountPastThreshold {
-		return nil, fmt.Errorf("%w: batch count %d", l2stateprovider.ErrChainCatchingUp, maxSeqInboxCount)
+		return nil, fmt.Errorf("%w: batch count %d", layer2stateprovider.ErrChainCatchingUp, maxSeqInboxCount)
 	}
 
-	executionState := &protocol.ExecutionState{
-		GlobalState:   protocol.GoGlobalState(globalState),
-		MachineStatus: protocol.MachineStatusFinished,
+	executionState := &chainabstraction.ExecutionState{
+		GlobalState:   chainabstraction.GoGlobalState(globalState),
+		MachineStatus: chainabstraction.MachineStatusFinished,
 	}
 	toBatch := executionState.GlobalState.Batch
 	historyCommitStates, _, err := s.StatesInBatchRange(
 		ctx,
 		previousGlobalState,
 		toBatch,
-		l2stateprovider.Height(maxNumberOfBlocks),
+		layer2stateprovider.Height(maxNumberOfBlocks),
 	)
 	if err != nil {
 		return nil, err
@@ -172,7 +172,7 @@ func (s *BOLDStateProvider) isStateValidatedAndMessageCountPastThreshold(
 		return false, err
 	}
 	if lastValidatedGs == nil {
-		return false, l2stateprovider.ErrChainCatchingUp
+		return false, layer2stateprovider.ErrChainCatchingUp
 	}
 	stateValidated := gs.Batch < lastValidatedGs.GlobalState.Batch || (gs.Batch == lastValidatedGs.GlobalState.Batch && gs.PosInBatch <= lastValidatedGs.GlobalState.PosInBatch)
 	return stateValidated, nil
@@ -180,9 +180,9 @@ func (s *BOLDStateProvider) isStateValidatedAndMessageCountPastThreshold(
 
 func (s *BOLDStateProvider) StatesInBatchRange(
 	ctx context.Context,
-	fromState protocol.GoGlobalState,
+	fromState chainabstraction.GoGlobalState,
 	batchLimit uint64,
-	toHeight l2stateprovider.Height,
+	toHeight layer2stateprovider.Height,
 ) ([]common.Hash, []validator.GoGlobalState, error) {
 	// Check the integrity of the arguments.
 	if batchLimit < fromState.Batch || (batchLimit == fromState.Batch && fromState.PosInBatch > 0) {
@@ -258,7 +258,7 @@ func machineHash(gs validator.GoGlobalState) common.Hash {
 	return crypto.Keccak256Hash([]byte("Machine finished:"), gs.Hash().Bytes())
 }
 
-func (s *BOLDStateProvider) findGlobalStateFromMessageCountAndBatch(count arbutil.MessageIndex, batchIndex l2stateprovider.Batch) (validator.GoGlobalState, error) {
+func (s *BOLDStateProvider) findGlobalStateFromMessageCountAndBatch(count arbutil.MessageIndex, batchIndex layer2stateprovider.Batch) (validator.GoGlobalState, error) {
 	var prevBatchMsgCount arbutil.MessageIndex
 	var err error
 	if batchIndex > 0 {
@@ -300,11 +300,11 @@ func (s *BOLDStateProvider) findGlobalStateFromMessageCountAndBatch(count arbuti
 // number.
 func (s *BOLDStateProvider) L2MessageStatesUpTo(
 	ctx context.Context,
-	fromState protocol.GoGlobalState,
-	batchLimit l2stateprovider.Batch,
-	toHeight option.Option[l2stateprovider.Height],
+	fromState chainabstraction.GoGlobalState,
+	batchLimit layer2stateprovider.Batch,
+	toHeight option.Option[layer2stateprovider.Height],
 ) ([]common.Hash, error) {
-	var to l2stateprovider.Height
+	var to layer2stateprovider.Height
 	if !toHeight.IsNone() {
 		to = toHeight.Unwrap()
 	} else {
@@ -320,7 +320,7 @@ func (s *BOLDStateProvider) L2MessageStatesUpTo(
 // CollectMachineHashes Collects a list of machine hashes at a message number
 // based on some configuration parameters.
 func (s *BOLDStateProvider) CollectMachineHashes(
-	ctx context.Context, cfg *l2stateprovider.HashCollectorConfig,
+	ctx context.Context, cfg *layer2stateprovider.HashCollectorConfig,
 ) ([]common.Hash, error) {
 	s.RLock()
 	defer s.RUnlock()
@@ -403,7 +403,7 @@ func (s *BOLDStateProvider) CollectMachineHashes(
 // messageNum returns the message number at which the BoLD protocol should
 // process machine hashes based on the AssociatedAssertionMetadata and
 // chalHeight.
-func (s *BOLDStateProvider) messageNum(md *l2stateprovider.AssociatedAssertionMetadata, chalHeight l2stateprovider.Height) (arbutil.MessageIndex, error) {
+func (s *BOLDStateProvider) messageNum(md *layer2stateprovider.AssociatedAssertionMetadata, chalHeight layer2stateprovider.Height) (arbutil.MessageIndex, error) {
 	var prevBatchMsgCount arbutil.MessageIndex
 	bNum := md.FromState.Batch
 	posInBatch := md.FromState.PosInBatch
@@ -433,7 +433,7 @@ func (s *BOLDStateProvider) messageNum(md *l2stateprovider.AssociatedAssertionMe
 // to actually step through a machine to produce a series of hashes, because all
 // of the hashes can just be "virtual" copies of a single machine in the
 // FINISHED state's hash.
-func (s *BOLDStateProvider) virtualState(msgNum arbutil.MessageIndex, limit l2stateprovider.Batch) (option.Option[validator.GoGlobalState], error) {
+func (s *BOLDStateProvider) virtualState(msgNum arbutil.MessageIndex, limit layer2stateprovider.Batch) (option.Option[validator.GoGlobalState], error) {
 	gs := option.None[validator.GoGlobalState]()
 	limitMsgCount, err := s.inboxTracker.GetBatchMessageCount(uint64(limit) - 1)
 	if err != nil {
@@ -460,9 +460,9 @@ func (s *BOLDStateProvider) virtualState(msgNum arbutil.MessageIndex, limit l2st
 // CollectProof collects a one-step proof at a message number and OpcodeIndex.
 func (s *BOLDStateProvider) CollectProof(
 	ctx context.Context,
-	assertionMetadata *l2stateprovider.AssociatedAssertionMetadata,
-	blockChallengeHeight l2stateprovider.Height,
-	machineIndex l2stateprovider.OpcodeIndex,
+	assertionMetadata *layer2stateprovider.AssociatedAssertionMetadata,
+	blockChallengeHeight layer2stateprovider.Height,
+	machineIndex layer2stateprovider.OpcodeIndex,
 ) ([]byte, error) {
 	messageNum, err := s.messageNum(assertionMetadata, blockChallengeHeight)
 	if err != nil {
