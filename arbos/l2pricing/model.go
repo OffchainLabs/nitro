@@ -82,13 +82,14 @@ func (ps *L2PricingState) GasPoolUpdateCost() uint64 {
 	// Multi-Constraint pricer requires an extra storage read, since ArbOS must load the constraints from state.
 	// This overhead applies even when no constraints are configured.
 	if ps.ArbosVersion >= params.ArbosVersion_50 {
-		result += storage.StorageReadCost
+		result += storage.StorageReadCost // read length for "souldUseGasConstraints"
 	}
 
 	if ps.ArbosVersion >= params.ArbosVersion_MultiConstraintFix {
 		// addToGasPoolWithGasConstraints costs (ArbOS 51 and later)
 		constraintsLength, _ := ps.gasConstraints.Length()
 		if constraintsLength > 0 {
+			result += storage.StorageReadCost // read length to traverse
 			// updating (read+write) all constraints, first one was already accounted for
 			result += uint64(constraintsLength-1) * (storage.StorageReadCost + storage.StorageWriteCost)
 		}
