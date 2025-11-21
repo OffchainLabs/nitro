@@ -207,7 +207,12 @@ func (p Programs) CallProgram(
 	callCost := model.GasCost(program.footprint, open, ever)
 
 	// pay for program init
-	cached := program.cached || statedb.GetRecentWasms().Insert(codeHash, params.BlockCacheSize)
+
+	recentWasmsCacheHit := false
+	if p.ArbosVersion >= gethParams.ArbosVersion_60 {
+		recentWasmsCacheHit = statedb.GetRecentWasms().Insert(codeHash, params.BlockCacheSize)
+	}
+	cached := program.cached || recentWasmsCacheHit
 	if cached || program.version > 1 { // in version 1 cached cost is part of init cost
 		callCost = arbmath.SaturatingUAdd(callCost, program.cachedGas(params))
 	}
