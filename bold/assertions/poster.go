@@ -16,12 +16,12 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 
-	"github.com/offchainlabs/nitro/bold/chain-abstraction"
-	"github.com/offchainlabs/nitro/bold/chain-abstraction/sol-implementation"
+	"github.com/offchainlabs/nitro/bold/chainabstraction"
+	"github.com/offchainlabs/nitro/bold/chainabstraction/solimplementation"
 	"github.com/offchainlabs/nitro/bold/containers"
 	"github.com/offchainlabs/nitro/bold/containers/option"
-	"github.com/offchainlabs/nitro/bold/layer2-state-provider"
-	"github.com/offchainlabs/nitro/bold/logs/ephemeral"
+	"github.com/offchainlabs/nitro/bold/ephemerallogs"
+	"github.com/offchainlabs/nitro/bold/layer2stateprovider"
 )
 
 var (
@@ -36,8 +36,8 @@ func (m *Manager) postAssertionRoutine(ctx context.Context) {
 		return
 	}
 
-	exceedsMaxMempoolSizeEphemeralErrorHandler := ephemeral.NewEphemeralErrorHandler(10*time.Minute, "posting this transaction will exceed max mempool size", 0)
-	gasEstimationEphemeralErrorHandler := ephemeral.NewEphemeralErrorHandler(10*time.Minute, "gas estimation errored for tx with hash", 0)
+	exceedsMaxMempoolSizeEphemeralErrorHandler := ephemerallogs.NewEphemeralErrorHandler(10*time.Minute, "posting this transaction will exceed max mempool size", 0)
+	gasEstimationEphemeralErrorHandler := ephemerallogs.NewEphemeralErrorHandler(10*time.Minute, "gas estimation errored for tx with hash", 0)
 
 	log.Info("Ready to post")
 	ticker := time.NewTicker(m.times.postInterval)
@@ -46,8 +46,8 @@ func (m *Manager) postAssertionRoutine(ctx context.Context) {
 		_, err := m.PostAssertion(ctx)
 		if err != nil {
 			switch {
-			case errors.Is(err, solimpl.ErrAlreadyExists):
-			case errors.Is(err, solimpl.ErrBatchNotYetFound):
+			case errors.Is(err, solimplementation.ErrAlreadyExists):
+			case errors.Is(err, solimplementation.ErrBatchNotYetFound):
 				log.Info("Waiting for more batches to post assertions about them onchain")
 			default:
 				logLevel := log.Error
@@ -88,7 +88,7 @@ func (m *Manager) awaitPostingSignal(ctx context.Context) {
 }
 
 // PostAssertion differs depending on whether or not the validator is currently staked.
-func (m *Manager) PostAssertion(ctx context.Context) (option.Option[protocol.Assertion], error) {
+func (m *Manager) PostAssertion(ctx context.Context) (option.Option[chainabstraction.Assertion], error) {
 	if !m.isReadyToPost {
 		m.awaitPostingSignal(ctx)
 	}
@@ -98,7 +98,7 @@ func (m *Manager) PostAssertion(ctx context.Context) (option.Option[protocol.Ass
 	m.assertionChainData.Lock()
 	parentAssertionCreationInfo, ok := m.assertionChainData.canonicalAssertions[m.assertionChainData.latestAgreedAssertion]
 	m.assertionChainData.Unlock()
-	none := option.None[protocol.Assertion]()
+	none := option.None[chainabstraction.Assertion]()
 	if !ok {
 		return none, fmt.Errorf(
 			"latest agreed assertion %#x not part of canonical mapping, something is wrong",
@@ -110,7 +110,7 @@ func (m *Manager) PostAssertion(ctx context.Context) (option.Option[protocol.Ass
 		return none, err
 	}
 	// If the validator is already staked, we post an assertion and move existing stake to it.
-	var assertionOpt option.Option[protocol.Assertion]
+	var assertionOpt option.Option[chainabstraction.Assertion]
 	var postErr error
 	if staked {
 		assertionOpt, postErr = m.PostAssertionBasedOnParent(
@@ -134,24 +134,24 @@ func (m *Manager) PostAssertion(ctx context.Context) (option.Option[protocol.Ass
 // Posts a new assertion onchain based on a parent assertion we agree with.
 func (m *Manager) PostAssertionBasedOnParent(
 	ctx context.Context,
-	parentCreationInfo *protocol.AssertionCreatedInfo,
+	parentCreationInfo *chainabstraction.AssertionCreatedInfo,
 	submitFn func(
 		ctx context.Context,
-		parentCreationInfo *protocol.AssertionCreatedInfo,
-		newState *protocol.ExecutionState,
-	) (protocol.Assertion, error),
-) (option.Option[protocol.Assertion], error) {
-	none := option.None[protocol.Assertion]()
+		parentCreationInfo *chainabstraction.AssertionCreatedInfo,
+		newState *chainabstraction.ExecutionState,
+	) (chainabstraction.Assertion, error),
+) (option.Option[chainabstraction.Assertion], error) {
+	none := option.None[chainabstraction.Assertion]()
 	if !parentCreationInfo.InboxMaxCount.IsUint64() {
 		return none, errors.New("inbox max count not a uint64")
 	}
 	// The parent assertion tells us what the next posted assertion's batch should be.
 	// We read this value and use it to compute the required execution state we must post.
 	batchCount := parentCreationInfo.InboxMaxCount.Uint64()
-	parentBlockHash := protocol.GoGlobalStateFromSolidity(parentCreationInfo.AfterState.GlobalState).BlockHash
+	parentBlockHash := chainabstraction.GoGlobalStateFromSolidity(parentCreationInfo.AfterState.GlobalState).BlockHash
 	newState, err := m.ExecutionStateAfterParent(ctx, parentCreationInfo)
 	if err != nil {
-		if errors.Is(err, l2stateprovider.ErrChainCatchingUp) {
+		if errors.Is(err, layer2stateprovider.ErrChainCatchingUp) {
 			chainCatchingUpCounter.Inc(1)
 			log.Info(
 				"Waiting for more batches to post next assertion",
@@ -169,7 +169,7 @@ func (m *Manager) PostAssertionBasedOnParent(
 	// contracts check for overflow assertion => assertion.afterState.globalState.u64Vals[0] < assertion.beforeStateData.configData.nextInboxPosition)
 	// then should check if we need to wait for the minimum number of blocks between assertions and a minimum time since parent assertion creation.
 	// Overflow ones are not subject to this check onchain.
-	isOverflowAssertion := newState.MachineStatus != protocol.MachineStatusErrored && newState.GlobalState.Batch < batchCount
+	isOverflowAssertion := newState.MachineStatus != chainabstraction.MachineStatusErrored && newState.GlobalState.Batch < batchCount
 	if !isOverflowAssertion {
 		if err = m.waitToPostIfNeeded(ctx, parentCreationInfo); err != nil {
 			return none, err
@@ -203,7 +203,7 @@ func (m *Manager) PostAssertionBasedOnParent(
 
 func (m *Manager) waitToPostIfNeeded(
 	ctx context.Context,
-	parentCreationInfo *protocol.AssertionCreatedInfo,
+	parentCreationInfo *chainabstraction.AssertionCreatedInfo,
 ) error {
 	if m.times.minGapToParent != 0 {
 		parentCreationBlock, err := m.backend.HeaderByNumber(ctx, new(big.Int).SetUint64(parentCreationInfo.CreationParentBlock))

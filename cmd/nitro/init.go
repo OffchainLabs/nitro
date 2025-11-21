@@ -40,7 +40,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
-	protocol "github.com/offchainlabs/nitro/bold/chain-abstraction"
+	"github.com/offchainlabs/nitro/bold/chainabstraction"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/cmd/pruning"
@@ -960,7 +960,7 @@ func validateGenesisAssertion(ctx context.Context, rollupAddress common.Address,
 	genesisAssertionCreationInfo, err := bold.ReadBoldAssertionCreationInfo(ctx, userLogic, l1Client, rollupAddress, genesisAssertionHash)
 	if err != nil {
 		// If we can't find the empty genesis assertion, try to compute the assertion for non-empty genesis
-		genesisGlobalState := protocol.GoGlobalState{
+		genesisGlobalState := chainabstraction.GoGlobalState{
 			BlockHash:  genesis.Hash(),
 			SendRoot:   types.DeserializeHeaderExtraInformation(genesis.Header()).SendRoot,
 			Batch:      1,
@@ -983,8 +983,8 @@ func validateGenesisAssertion(ctx context.Context, rollupAddress common.Address,
 			return err
 		}
 	}
-	beforeGlobalState := protocol.GoGlobalStateFromSolidity(genesisAssertionCreationInfo.BeforeState.GlobalState)
-	afterGlobalState := protocol.GoGlobalStateFromSolidity(genesisAssertionCreationInfo.AfterState.GlobalState)
+	beforeGlobalState := chainabstraction.GoGlobalStateFromSolidity(genesisAssertionCreationInfo.BeforeState.GlobalState)
+	afterGlobalState := chainabstraction.GoGlobalStateFromSolidity(genesisAssertionCreationInfo.AfterState.GlobalState)
 	isNullAssertion := beforeGlobalState.Batch == afterGlobalState.Batch && beforeGlobalState.PosInBatch == afterGlobalState.PosInBatch
 	if isNullAssertion && initDataReaderHasAccounts {
 		return errors.New("genesis assertion is null but there are accounts in the init data")

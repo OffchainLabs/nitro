@@ -20,9 +20,9 @@ import (
 
 	"github.com/offchainlabs/nitro/bold/api"
 	"github.com/offchainlabs/nitro/bold/api/db"
-	"github.com/offchainlabs/nitro/bold/chain-abstraction"
-	"github.com/offchainlabs/nitro/bold/challenge-manager/chain-watcher"
-	"github.com/offchainlabs/nitro/bold/challenge-manager/edge-tracker"
+	"github.com/offchainlabs/nitro/bold/chainabstraction"
+	"github.com/offchainlabs/nitro/bold/challengemanager/chainwatcher"
+	"github.com/offchainlabs/nitro/bold/challengemanager/edgetracker"
 	"github.com/offchainlabs/nitro/bold/containers/option"
 )
 
@@ -31,24 +31,24 @@ type BusinessLogicProvider interface {
 	GetCollectMachineHashes(ctx context.Context, opts ...db.CollectMachineHashesOption) ([]*api.JsonCollectMachineHashes, error)
 	GetEdges(ctx context.Context, opts ...db.EdgeOption) ([]*api.JsonEdge, error)
 	GetTrackedRoyalEdges(ctx context.Context) ([]*api.JsonEdgesByChallengedAssertion, error)
-	GetMiniStakes(ctx context.Context, assertionHash protocol.AssertionHash, opts ...db.EdgeOption) (*api.JsonMiniStakes, error)
+	GetMiniStakes(ctx context.Context, assertionHash chainabstraction.AssertionHash, opts ...db.EdgeOption) (*api.JsonMiniStakes, error)
 }
 
 type EdgeTrackerFetcher interface {
-	GetEdgeTracker(edgeId protocol.EdgeId) option.Option[*edgetracker.Tracker]
+	GetEdgeTracker(edgeId chainabstraction.EdgeId) option.Option[*edgetracker.Tracker]
 }
 
 type Backend struct {
 	db               db.ReadUpdateDatabase
-	chainDataFetcher protocol.AssertionChain
-	chainWatcher     *watcher.Watcher
+	chainDataFetcher chainabstraction.AssertionChain
+	chainWatcher     *chainwatcher.Watcher
 	trackerFetcher   EdgeTrackerFetcher
 }
 
 func NewBackend(
 	db db.ReadUpdateDatabase,
-	chainDataFetcher protocol.AssertionChain,
-	chainWatcher *watcher.Watcher,
+	chainDataFetcher chainabstraction.AssertionChain,
+	chainWatcher *chainwatcher.Watcher,
 ) *Backend {
 	return &Backend{
 		db:               db,
@@ -78,7 +78,7 @@ func (b *Backend) GetAssertions(ctx context.Context, opts ...db.AssertionOption)
 	if query.ShouldForceUpdate() {
 		opts := &bind.CallOpts{Context: ctx}
 		for _, a := range assertions {
-			fetchedAssertion, err := b.chainDataFetcher.GetAssertion(ctx, opts, protocol.AssertionHash{Hash: a.Hash})
+			fetchedAssertion, err := b.chainDataFetcher.GetAssertion(ctx, opts, chainabstraction.AssertionHash{Hash: a.Hash})
 			if err != nil {
 				return nil, err
 			}
@@ -155,7 +155,7 @@ func (b *Backend) GetEdges(ctx context.Context, opts ...db.EdgeOption) ([]*api.J
 	if query.ShouldForceUpdate() {
 		chalManager := b.chainDataFetcher.SpecChallengeManager()
 		for _, e := range edges {
-			edgeOpt, err := chalManager.GetEdge(ctx, protocol.EdgeId{Hash: e.Id})
+			edgeOpt, err := chalManager.GetEdge(ctx, chainabstraction.EdgeId{Hash: e.Id})
 			if err != nil {
 				return nil, err
 			}
@@ -233,7 +233,7 @@ func (b *Backend) GetEdges(ctx context.Context, opts ...db.EdgeOption) ([]*api.J
 	return edges, nil
 }
 
-func (b *Backend) GetMiniStakes(ctx context.Context, assertionHash protocol.AssertionHash, opts ...db.EdgeOption) (*api.JsonMiniStakes, error) {
+func (b *Backend) GetMiniStakes(ctx context.Context, assertionHash chainabstraction.AssertionHash, opts ...db.EdgeOption) (*api.JsonMiniStakes, error) {
 	edgeOpts := opts
 	edgeOpts = append(
 		edgeOpts,
@@ -247,14 +247,14 @@ func (b *Backend) GetMiniStakes(ctx context.Context, assertionHash protocol.Asse
 	}
 	stakeInfo := &api.JsonMiniStakes{
 		ChallengedAssertionHash: assertionHash.Hash,
-		StakesByLvlAndOrigin:    make(map[protocol.ChallengeLevel][]*api.JsonMiniStakeInfo),
+		StakesByLvlAndOrigin:    make(map[chainabstraction.ChallengeLevel][]*api.JsonMiniStakeInfo),
 	}
 	edgesByOriginId := make(map[common.Hash][]*api.JsonEdge)
 	for _, e := range edges {
 		edgesByOriginId[e.OriginId] = append(edgesByOriginId[e.OriginId], e)
 	}
 	for originId, originDefinedEdges := range edgesByOriginId {
-		lvl := protocol.ChallengeLevel(originDefinedEdges[0].ChallengeLevel)
+		lvl := chainabstraction.ChallengeLevel(originDefinedEdges[0].ChallengeLevel)
 		if stakeInfo.StakesByLvlAndOrigin[lvl] == nil {
 			stakeInfo.StakesByLvlAndOrigin[lvl] = make([]*api.JsonMiniStakeInfo, 0)
 		}

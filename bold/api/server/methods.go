@@ -20,8 +20,8 @@ import (
 
 	"github.com/offchainlabs/nitro/bold/api"
 	"github.com/offchainlabs/nitro/bold/api/db"
-	"github.com/offchainlabs/nitro/bold/chain-abstraction"
-	"github.com/offchainlabs/nitro/bold/state-commitments/history"
+	"github.com/offchainlabs/nitro/bold/chainabstraction"
+	"github.com/offchainlabs/nitro/bold/statecommitments/history"
 )
 
 var contentType = "application/json"
@@ -163,7 +163,7 @@ func (s *Server) AssertionByIdentifier(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("Could not parse assertion hash: %v", err), http.StatusBadRequest)
 		return
 	}
-	opts = append(opts, db.WithAssertionHash(protocol.AssertionHash{Hash: common.BytesToHash(hash)}))
+	opts = append(opts, db.WithAssertionHash(chainabstraction.AssertionHash{Hash: common.BytesToHash(hash)}))
 	assertions, err := s.backend.GetAssertions(r.Context(), opts...)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Could not get assertions from backend: %v", err), http.StatusInternalServerError)
@@ -224,7 +224,7 @@ func (s *Server) AllChallengeEdges(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("Could not parse assertion hash: %v", err), http.StatusBadRequest)
 		return
 	}
-	assertionHash := protocol.AssertionHash{Hash: common.BytesToHash(hash)}
+	assertionHash := chainabstraction.AssertionHash{Hash: common.BytesToHash(hash)}
 	opts := []db.EdgeOption{
 		db.WithEdgeAssertionHash(assertionHash),
 	}
@@ -308,7 +308,7 @@ func (s *Server) AllChallengeEdges(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, fmt.Sprintf("Could not parse origin_id: %v", err2), http.StatusBadRequest)
 			return
 		}
-		opts = append(opts, db.WithOriginId(protocol.OriginId(common.BytesToHash(hash))))
+		opts = append(opts, db.WithOriginId(chainabstraction.OriginId(common.BytesToHash(hash))))
 	}
 	if val, ok := query["mutual_id"]; ok && len(val) > 0 {
 		hash, err2 := hexutil.Decode(strings.Join(val, ""))
@@ -316,7 +316,7 @@ func (s *Server) AllChallengeEdges(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, fmt.Sprintf("Could not parse mutual_id: %v", err2), http.StatusBadRequest)
 			return
 		}
-		opts = append(opts, db.WithMutualId(protocol.MutualId(common.BytesToHash(hash))))
+		opts = append(opts, db.WithMutualId(chainabstraction.MutualId(common.BytesToHash(hash))))
 	}
 	if val, ok := query["claim_id"]; ok && len(val) > 0 {
 		hash, err2 := hexutil.Decode(strings.Join(val, ""))
@@ -324,7 +324,7 @@ func (s *Server) AllChallengeEdges(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, fmt.Sprintf("Could not parse claim_id: %v", err2), http.StatusBadRequest)
 			return
 		}
-		opts = append(opts, db.WithClaimId(protocol.ClaimId(common.BytesToHash(hash))))
+		opts = append(opts, db.WithClaimId(chainabstraction.ClaimId(common.BytesToHash(hash))))
 	}
 	if val, ok := query["start_commitment"]; ok && len(val) > 0 {
 		commitStr := strings.Join(val, "")
@@ -383,15 +383,15 @@ func (s *Server) AllChallengeEdges(w http.ResponseWriter, r *http.Request) {
 	writeJSONResponse(w, edges)
 }
 
-func parseEdgeStatus(str string) (protocol.EdgeStatus, error) {
+func parseEdgeStatus(str string) (chainabstraction.EdgeStatus, error) {
 	s := strings.TrimSpace(strings.ToLower(str))
 	switch s {
 	case "pending":
-		return protocol.EdgePending, nil
+		return chainabstraction.EdgePending, nil
 	case "confirmed":
-		return protocol.EdgeConfirmed, nil
+		return chainabstraction.EdgeConfirmed, nil
 	}
-	return protocol.EdgePending, errors.New("unknown edge status, expected pending or confirmed")
+	return chainabstraction.EdgePending, errors.New("unknown edge status, expected pending or confirmed")
 }
 
 // EdgeByIdentifier fetches an edge by its specific id in a challenge.
@@ -423,8 +423,8 @@ func (s *Server) EdgeByIdentifier(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("Could not parse edge id: %v", err), http.StatusBadRequest)
 		return
 	}
-	assertionHash := protocol.AssertionHash{Hash: common.BytesToHash(hash)}
-	edgeId := protocol.EdgeId{Hash: common.BytesToHash(id)}
+	assertionHash := chainabstraction.AssertionHash{Hash: common.BytesToHash(hash)}
+	edgeId := chainabstraction.EdgeId{Hash: common.BytesToHash(id)}
 	opts := []db.EdgeOption{
 		db.WithLimit(1),
 		db.WithEdgeAssertionHash(assertionHash),
@@ -487,7 +487,7 @@ func (s *Server) EdgeByHistoryCommitment(w http.ResponseWriter, r *http.Request)
 		http.Error(w, fmt.Sprintf("Could not parse assertion hash: %v", err), http.StatusBadRequest)
 		return
 	}
-	assertionHash := protocol.AssertionHash{Hash: common.BytesToHash(hash)}
+	assertionHash := chainabstraction.AssertionHash{Hash: common.BytesToHash(hash)}
 	historyCommitment := vars["history-commitment"]
 	parts := strings.Split(historyCommitment, ":")
 	if len(parts) != 4 {
@@ -569,7 +569,7 @@ func (s *Server) MiniStakes(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("Could not parse assertion hash: %v", err), http.StatusBadRequest)
 		return
 	}
-	assertionHash := protocol.AssertionHash{Hash: common.BytesToHash(hash)}
+	assertionHash := chainabstraction.AssertionHash{Hash: common.BytesToHash(hash)}
 	query := r.URL.Query()
 	opts := make([]db.EdgeOption, 0)
 	if val, ok := query["limit"]; ok && len(val) > 0 {

@@ -16,22 +16,22 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/bold/api"
-	"github.com/offchainlabs/nitro/bold/chain-abstraction"
+	"github.com/offchainlabs/nitro/bold/chainabstraction"
 	"github.com/offchainlabs/nitro/bold/containers/option"
-	"github.com/offchainlabs/nitro/bold/layer2-state-provider"
-	"github.com/offchainlabs/nitro/bold/runtime"
+	"github.com/offchainlabs/nitro/bold/layer2stateprovider"
+	"github.com/offchainlabs/nitro/bold/retry"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 )
 
 func (m *Manager) syncAssertions(ctx context.Context) {
-	latestConfirmed, err := retry.UntilSucceeds(ctx, func() (protocol.Assertion, error) {
+	latestConfirmed, err := retry.UntilSucceeds(ctx, func() (chainabstraction.Assertion, error) {
 		return m.chain.LatestConfirmed(ctx, m.chain.GetCallOptsWithDesiredRpcHeadBlockNumber(&bind.CallOpts{Context: ctx}))
 	})
 	if err != nil {
 		log.Error("Could not get latest confirmed assertion", "err", err)
 		return
 	}
-	latestConfirmedInfo, err := retry.UntilSucceeds(ctx, func() (*protocol.AssertionCreatedInfo, error) {
+	latestConfirmedInfo, err := retry.UntilSucceeds(ctx, func() (*chainabstraction.AssertionCreatedInfo, error) {
 		return m.chain.ReadAssertionCreationInfo(ctx, latestConfirmed.Id())
 	})
 	if err != nil {
@@ -136,8 +136,8 @@ func (m *Manager) syncAssertions(ctx context.Context) {
 }
 
 type assertionAndParentCreationInfo struct {
-	assertion *protocol.AssertionCreatedInfo
-	parent    *protocol.AssertionCreatedInfo
+	assertion *chainabstraction.AssertionCreatedInfo
+	parent    *chainabstraction.AssertionCreatedInfo
 }
 
 // This function will scan for all assertion creation events to determine which
@@ -159,7 +159,7 @@ func (m *Manager) processAllAssertionsInRange(
 
 	// Extract all assertion creation events from the log filter iterator.
 	assertions := make([]assertionAndParentCreationInfo, 0)
-	assertionsByHash := make(map[protocol.AssertionHash]*protocol.AssertionCreatedInfo)
+	assertionsByHash := make(map[chainabstraction.AssertionHash]*chainabstraction.AssertionCreatedInfo)
 	for it.Next() {
 		if it.Error() != nil {
 			return errors.Wrapf(
@@ -169,11 +169,11 @@ func (m *Manager) processAllAssertionsInRange(
 				*filterOpts.End,
 			)
 		}
-		assertionOpt, err := retry.UntilSucceeds(ctx, func() (option.Option[*protocol.AssertionCreatedInfo], error) {
+		assertionOpt, err := retry.UntilSucceeds(ctx, func() (option.Option[*chainabstraction.AssertionCreatedInfo], error) {
 			item, innerErr := m.extractAssertionFromEvent(ctx, it.Event)
 			if innerErr != nil {
 				log.Error("Could not extract assertion from event", "err", innerErr)
-				return option.None[*protocol.AssertionCreatedInfo](), innerErr
+				return option.None[*chainabstraction.AssertionCreatedInfo](), innerErr
 			}
 			return item, nil
 		})
@@ -188,7 +188,7 @@ func (m *Manager) processAllAssertionsInRange(
 				parent:    assertionsByHash[creationInfo.ParentAssertionHash],
 			}
 			if fullInfo.parent == nil {
-				parentInfo, err := retry.UntilSucceeds(ctx, func() (*protocol.AssertionCreatedInfo, error) {
+				parentInfo, err := retry.UntilSucceeds(ctx, func() (*chainabstraction.AssertionCreatedInfo, error) {
 					return m.chain.ReadAssertionCreationInfo(ctx, creationInfo.ParentAssertionHash)
 				})
 				if err != nil {
@@ -249,15 +249,15 @@ func (m *Manager) processAllAssertionsInRange(
 func (m *Manager) extractAssertionFromEvent(
 	ctx context.Context,
 	event *rollupgen.RollupUserLogicAssertionCreated,
-) (option.Option[*protocol.AssertionCreatedInfo], error) {
-	none := option.None[*protocol.AssertionCreatedInfo]()
+) (option.Option[*chainabstraction.AssertionCreatedInfo], error) {
+	none := option.None[*chainabstraction.AssertionCreatedInfo]()
 	if event.AssertionHash == (common.Hash{}) {
 		log.Warn("Encountered an assertion with a zero hash",
 			"creationEvent", fmt.Sprintf("%+v", event),
 		)
 		return none, nil
 	}
-	assertionHash := protocol.AssertionHash{Hash: event.AssertionHash}
+	assertionHash := chainabstraction.AssertionHash{Hash: event.AssertionHash}
 	creationInfo, err := m.chain.ReadAssertionCreationInfo(ctx, assertionHash)
 	if err != nil {
 		return none, errors.Wrapf(err, "could not read assertion creation info for %#x", assertionHash.Hash)
@@ -286,7 +286,7 @@ func (m *Manager) findCanonicalAssertionBranch(
 			agreedWithAssertion, err := retry.UntilSucceeds(ctx, func() (bool, error) {
 				expectedState, err := m.ExecutionStateAfterParent(ctx, fullInfo.parent)
 				switch {
-				case errors.Is(err, l2stateprovider.ErrChainCatchingUp):
+				case errors.Is(err, layer2stateprovider.ErrChainCatchingUp):
 					// Otherwise, we return the error that we are still catching up to the
 					// execution state claimed by the assertion, and this function will be retried
 					// by the caller if wrapped in a retryable call.
@@ -295,14 +295,14 @@ func (m *Manager) findCanonicalAssertionBranch(
 						"will reattempt processing when caught up", "err", err)
 					// If the chain is catching up, we wait for a bit and try again.
 					time.Sleep(m.times.avgBlockTime / 10)
-					return false, l2stateprovider.ErrChainCatchingUp
+					return false, layer2stateprovider.ErrChainCatchingUp
 				case err != nil:
 					return false, err
 				}
-				return expectedState.Equals(protocol.GoExecutionStateFromSolidity(assertion.AfterState)), nil
+				return expectedState.Equals(chainabstraction.GoExecutionStateFromSolidity(assertion.AfterState)), nil
 			}, func(rc *retry.RetryConfig) {
 				rc.LevelWarningError = "could not check if we have result at count"
-				rc.LevelInfoError = l2stateprovider.ErrChainCatchingUp.Error()
+				rc.LevelInfoError = layer2stateprovider.ErrChainCatchingUp.Error()
 			})
 			if err != nil {
 				return errors.New("could not check for assertion agreements")
@@ -319,15 +319,15 @@ func (m *Manager) findCanonicalAssertionBranch(
 }
 
 type rivalPosterArgs struct {
-	canonicalParent  *protocol.AssertionCreatedInfo
-	invalidAssertion *protocol.AssertionCreatedInfo
+	canonicalParent  *chainabstraction.AssertionCreatedInfo
+	invalidAssertion *chainabstraction.AssertionCreatedInfo
 }
 
 type rivalPoster interface {
 	maybePostRivalAssertionAndChallenge(
 		ctx context.Context,
 		args rivalPosterArgs,
-	) (*protocol.AssertionCreatedInfo, error)
+	) (*chainabstraction.AssertionCreatedInfo, error)
 }
 
 // Finds all canonical assertions from a list. Starts by setting a cursor to the
@@ -348,7 +348,7 @@ func (m *Manager) respondToAnyInvalidAssertions(
 		// then we should challenge the assertion if we are configured to do so,
 		// or raise an alarm if we are only a watchtower validator.
 		if hasCanonicalParent && !isCanonical {
-			postedRival, err := retry.UntilSucceeds(ctx, func() (*protocol.AssertionCreatedInfo, error) {
+			postedRival, err := retry.UntilSucceeds(ctx, func() (*chainabstraction.AssertionCreatedInfo, error) {
 				posted, innerErr := rivalPoster.maybePostRivalAssertionAndChallenge(ctx, rivalPosterArgs{
 					canonicalParent:  canonicalParent,
 					invalidAssertion: assertion,
@@ -382,7 +382,7 @@ func (m *Manager) respondToAnyInvalidAssertions(
 func (m *Manager) maybePostRivalAssertionAndChallenge(
 	ctx context.Context,
 	args rivalPosterArgs,
-) (*protocol.AssertionCreatedInfo, error) {
+) (*chainabstraction.AssertionCreatedInfo, error) {
 	if !args.invalidAssertion.InboxMaxCount.IsUint64() {
 		return nil, errors.New("inbox max count not a uint64")
 	}
@@ -452,16 +452,16 @@ func (m *Manager) maybePostRivalAssertionAndChallenge(
 // then this function will return that assertion.
 func (m *Manager) maybePostRivalAssertion(
 	ctx context.Context,
-	canonicalParent *protocol.AssertionCreatedInfo,
-) (option.Option[*protocol.AssertionCreatedInfo], error) {
-	none := option.None[*protocol.AssertionCreatedInfo]()
+	canonicalParent *chainabstraction.AssertionCreatedInfo,
+) (option.Option[*chainabstraction.AssertionCreatedInfo], error) {
+	none := option.None[*chainabstraction.AssertionCreatedInfo]()
 	// Post what we believe is the correct assertion that follows the ancestor we agree with.
 	staked, err := m.chain.IsStaked(ctx)
 	if err != nil {
 		return none, err
 	}
 	// If the validator is already staked, we post an assertion and move existing stake to it.
-	var assertionOpt option.Option[protocol.Assertion]
+	var assertionOpt option.Option[chainabstraction.Assertion]
 	var postErr error
 	if staked {
 		assertionOpt, postErr = m.PostAssertionBasedOnParent(
@@ -505,12 +505,12 @@ func (m *Manager) maybePostRivalAssertion(
 	return none, nil
 }
 
-func (m *Manager) saveAssertionToDB(ctx context.Context, creationInfo *protocol.AssertionCreatedInfo) error {
+func (m *Manager) saveAssertionToDB(ctx context.Context, creationInfo *chainabstraction.AssertionCreatedInfo) error {
 	if api.IsNil(m.apiDB) {
 		return nil
 	}
-	beforeState := protocol.GoExecutionStateFromSolidity(creationInfo.BeforeState)
-	afterState := protocol.GoExecutionStateFromSolidity(creationInfo.AfterState)
+	beforeState := chainabstraction.GoExecutionStateFromSolidity(creationInfo.BeforeState)
+	afterState := chainabstraction.GoExecutionStateFromSolidity(creationInfo.AfterState)
 	assertionHash := creationInfo.AssertionHash
 	// Because the BoLD database is for exploratory purposes, we don't care about using a reorg-safe
 	// RPC block number for reading data here. Latest block number will suffice to ensure we capture
@@ -565,7 +565,7 @@ func (m *Manager) saveAssertionToDB(ctx context.Context, creationInfo *protocol.
 }
 
 // Send assertion to confirmation queue
-func (m *Manager) sendToConfirmationQueue(assertionHash protocol.AssertionHash, addedBy string) {
+func (m *Manager) sendToConfirmationQueue(assertionHash chainabstraction.AssertionHash, addedBy string) {
 	m.confirmQueueMutex.Lock()
 	defer m.confirmQueueMutex.Unlock()
 

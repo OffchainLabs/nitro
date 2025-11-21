@@ -18,12 +18,12 @@ import (
 	gethtypes "github.com/ethereum/go-ethereum/core/types"
 
 	"github.com/offchainlabs/nitro/bold/assertions"
-	"github.com/offchainlabs/nitro/bold/chain-abstraction"
-	"github.com/offchainlabs/nitro/bold/challenge-manager"
-	"github.com/offchainlabs/nitro/bold/challenge-manager/types"
-	"github.com/offchainlabs/nitro/bold/testing"
-	"github.com/offchainlabs/nitro/bold/testing/mocks/state-provider"
-	"github.com/offchainlabs/nitro/bold/testing/setup"
+	"github.com/offchainlabs/nitro/bold/chainabstraction"
+	"github.com/offchainlabs/nitro/bold/challengemanager"
+	"github.com/offchainlabs/nitro/bold/challengemanager/types"
+	"github.com/offchainlabs/nitro/bold/challengetesting"
+	"github.com/offchainlabs/nitro/bold/challengetesting/mocks/stateprovider"
+	"github.com/offchainlabs/nitro/bold/challengetesting/setup"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
@@ -61,7 +61,7 @@ func TestPostAssertion(t *testing.T) {
 	// Wait a little for the chain watcher to be ready.
 	time.Sleep(time.Second)
 
-	preState, err := stateManager.ExecutionStateAfterPreviousState(ctx, 0, protocol.GoGlobalState{})
+	preState, err := stateManager.ExecutionStateAfterPreviousState(ctx, 0, chainabstraction.GoGlobalState{})
 	require.NoError(t, err)
 	postState, err := stateManager.ExecutionStateAfterPreviousState(ctx, 1, preState.GlobalState)
 	require.NoError(t, err)
@@ -80,7 +80,7 @@ func TestPostAssertion(t *testing.T) {
 
 	creationInfo, err := aliceChain.ReadAssertionCreationInfo(ctx, posted.Unwrap().Id())
 	require.NoError(t, err)
-	require.Equal(t, postState, protocol.GoExecutionStateFromSolidity(creationInfo.AfterState))
+	require.Equal(t, postState, chainabstraction.GoExecutionStateFromSolidity(creationInfo.AfterState))
 
 	// Wait a little and advance the chain to allow the next assertion to be posted.
 	time.Sleep(time.Second * 5)
@@ -97,7 +97,7 @@ func TestPostAssertion(t *testing.T) {
 
 	creationInfo, err = aliceChain.ReadAssertionCreationInfo(ctx, posted.Unwrap().Id())
 	require.NoError(t, err)
-	require.Equal(t, nextState, protocol.GoExecutionStateFromSolidity(creationInfo.AfterState))
+	require.Equal(t, nextState, chainabstraction.GoExecutionStateFromSolidity(creationInfo.AfterState))
 
 	// Continue to expect a zero ERC20 balance after the second assertion was posted, as no new
 	// stake was expected for the validator.
@@ -136,7 +136,7 @@ func setupAssertionPosting(t *testing.T) (*setup.ChainSetup, *challengemanager.M
 		setup.WithMockOneStepProver(),
 		setup.WithAutoDeposit(),
 		setup.WithChallengeTestingOpts(
-			challenge_testing.WithLayerZeroHeights(&protocol.LayerZeroHeights{
+			challengetesting.WithLayerZeroHeights(&chainabstraction.LayerZeroHeights{
 				BlockChallengeHeight:     64,
 				BigStepChallengeHeight:   32,
 				SmallStepChallengeHeight: 32,
@@ -198,7 +198,7 @@ func forceSequencerMessageBatchPosting(
 		sequencerOpts, seqNum, message, big.NewInt(1), common.Address{}, big.NewInt(0), big.NewInt(0),
 	)
 	require.NoError(t, err)
-	require.NoError(t, challenge_testing.WaitForTx(ctx, backend, tx))
+	require.NoError(t, challengetesting.WaitForTx(ctx, backend, tx))
 	receipt, err := backend.TransactionReceipt(ctx, tx.Hash())
 	require.NoError(t, err)
 	require.Equal(t, gethtypes.ReceiptStatusSuccessful, receipt.Status)

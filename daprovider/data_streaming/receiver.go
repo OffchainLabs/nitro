@@ -24,7 +24,7 @@ const (
 	DefaultRequestValidity         = 5 * time.Minute
 )
 
-// DataStreamReceiver implements the server side of the data streaming protocol. It stays compatible with `DataStreamer`
+// DataStreamReceiver implements the server side of the data streaming chainabstraction. It stays compatible with `DataStreamer`
 // client, although is able to talk to many senders at the same time.
 //
 // DataStreamReceiver is responsible only for the protocol level communication. Usually it will be wrapped within an

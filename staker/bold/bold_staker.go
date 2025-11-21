@@ -23,16 +23,16 @@ import (
 
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
 	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/offchainlabs/nitro/bold/chain-abstraction"
-	"github.com/offchainlabs/nitro/bold/chain-abstraction/sol-implementation"
-	"github.com/offchainlabs/nitro/bold/challenge-manager"
-	"github.com/offchainlabs/nitro/bold/challenge-manager/types"
-	"github.com/offchainlabs/nitro/bold/layer2-state-provider"
+	"github.com/offchainlabs/nitro/bold/chainabstraction"
+	"github.com/offchainlabs/nitro/bold/chainabstraction/solimplementation"
+	"github.com/offchainlabs/nitro/bold/challengemanager"
+	"github.com/offchainlabs/nitro/bold/challengemanager/types"
+	"github.com/offchainlabs/nitro/bold/layer2stateprovider"
 	"github.com/offchainlabs/nitro/bold/util"
 	"github.com/offchainlabs/nitro/solgen/go/challengeV2gen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/staker"
-	"github.com/offchainlabs/nitro/staker/legacy"
+	legacystaker "github.com/offchainlabs/nitro/staker/legacy"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
@@ -291,7 +291,7 @@ func (b *BOLDStaker) Initialize(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		afterState := protocol.GoGlobalStateFromSolidity(assertion.AfterState.GlobalState)
+		afterState := chainabstraction.GoGlobalStateFromSolidity(assertion.AfterState.GlobalState)
 		return b.blockValidator.InitAssumeValid(validator.GoGlobalState(afterState))
 	}
 	return nil
@@ -374,7 +374,7 @@ func (b *BOLDStaker) updateStakerBalanceMetric(ctx context.Context) error {
 }
 
 func (b *BOLDStaker) getLatestState(ctx context.Context, confirmed bool) (arbutil.MessageIndex, *validator.GoGlobalState, error) {
-	var globalState protocol.GoGlobalState
+	var globalState chainabstraction.GoGlobalState
 	var err error
 	if confirmed {
 		globalState, err = b.chalManager.LatestConfirmedState(ctx)
@@ -453,7 +453,7 @@ func newBOLDChallengeManager(
 	rollupAddress common.Address,
 	txOpts *bind.TransactOpts,
 	l1Reader *headerreader.HeaderReader,
-	client protocol.ChainBackend,
+	client chainabstraction.ChainBackend,
 	blockValidator *staker.BlockValidator,
 	statelessBlockValidator *staker.StatelessBlockValidator,
 	config *BoldConfig,
@@ -476,22 +476,22 @@ func newBOLDChallengeManager(
 	if err != nil {
 		return nil, fmt.Errorf("could not create challenge manager bindings: %w", err)
 	}
-	assertionChainOpts := []solimpl.Opt{
-		solimpl.WithRpcHeadBlockNumber(config.blockNum),
-		solimpl.WithParentChainBlockCreationTime(config.ParentChainBlockTime),
+	assertionChainOpts := []solimplementation.Opt{
+		solimplementation.WithRpcHeadBlockNumber(config.blockNum),
+		solimplementation.WithParentChainBlockCreationTime(config.ParentChainBlockTime),
 	}
 	if config.DelegatedStaking.Enable && config.DelegatedStaking.CustomWithdrawalAddress != "" {
 		withdrawalAddr := common.HexToAddress(config.DelegatedStaking.CustomWithdrawalAddress)
-		assertionChainOpts = append(assertionChainOpts, solimpl.WithCustomWithdrawalAddress(withdrawalAddr))
+		assertionChainOpts = append(assertionChainOpts, solimplementation.WithCustomWithdrawalAddress(withdrawalAddr))
 	}
 	if !config.AutoDeposit {
-		assertionChainOpts = append(assertionChainOpts, solimpl.WithoutAutoDeposit())
+		assertionChainOpts = append(assertionChainOpts, solimplementation.WithoutAutoDeposit())
 	}
 
 	if config.EnableFastConfirmation {
-		assertionChainOpts = append(assertionChainOpts, solimpl.WithFastConfirmation())
+		assertionChainOpts = append(assertionChainOpts, solimplementation.WithFastConfirmation())
 	}
-	assertionChain, err := solimpl.NewAssertionChain(
+	assertionChain, err := solimplementation.NewAssertionChain(
 		ctx,
 		rollupAddress,
 		chalManager,
@@ -529,9 +529,9 @@ func newBOLDChallengeManager(
 	if err != nil {
 		return nil, fmt.Errorf("could not get number of big steps: %w", err)
 	}
-	blockChallengeLeafHeight := l2stateprovider.Height(blockChallengeHeightBig.Uint64())
-	bigStepHeight := l2stateprovider.Height(bigStepHeightBig.Uint64())
-	smallStepHeight := l2stateprovider.Height(smallStepHeightBig.Uint64())
+	blockChallengeLeafHeight := layer2stateprovider.Height(blockChallengeHeightBig.Uint64())
+	bigStepHeight := layer2stateprovider.Height(bigStepHeightBig.Uint64())
+	smallStepHeight := layer2stateprovider.Height(smallStepHeightBig.Uint64())
 
 	apiDBPath := config.APIDBPath
 	if apiDBPath != "" {
@@ -559,12 +559,12 @@ func newBOLDChallengeManager(
 	if err != nil {
 		return nil, fmt.Errorf("could not create state manager: %w", err)
 	}
-	providerHeights := []l2stateprovider.Height{blockChallengeLeafHeight}
+	providerHeights := []layer2stateprovider.Height{blockChallengeLeafHeight}
 	for i := uint8(0); i < numBigSteps; i++ {
 		providerHeights = append(providerHeights, bigStepHeight)
 	}
 	providerHeights = append(providerHeights, smallStepHeight)
-	provider := l2stateprovider.NewHistoryCommitmentProvider(
+	provider := layer2stateprovider.NewHistoryCommitmentProvider(
 		stateProvider,
 		stateProvider,
 		stateProvider,
@@ -627,7 +627,7 @@ func ReadBoldAssertionCreationInfo(
 	client bind.ContractBackend,
 	rollupAddress common.Address,
 	assertionHash common.Hash,
-) (*protocol.AssertionCreatedInfo, error) {
+) (*chainabstraction.AssertionCreatedInfo, error) {
 	var creationBlock uint64
 	var topics [][]common.Hash
 	if assertionHash == (common.Hash{}) {
@@ -678,15 +678,15 @@ func ReadBoldAssertionCreationInfo(
 	if err != nil {
 		return nil, err
 	}
-	return &protocol.AssertionCreatedInfo{
+	return &chainabstraction.AssertionCreatedInfo{
 		ConfirmPeriodBlocks: parsedLog.ConfirmPeriodBlocks,
 		RequiredStake:       parsedLog.RequiredStake,
-		ParentAssertionHash: protocol.AssertionHash{Hash: parsedLog.ParentAssertionHash},
+		ParentAssertionHash: chainabstraction.AssertionHash{Hash: parsedLog.ParentAssertionHash},
 		BeforeState:         parsedLog.Assertion.BeforeState,
 		AfterState:          afterState,
 		InboxMaxCount:       parsedLog.InboxMaxCount,
 		AfterInboxBatchAcc:  parsedLog.AfterInboxBatchAcc,
-		AssertionHash:       protocol.AssertionHash{Hash: parsedLog.AssertionHash},
+		AssertionHash:       chainabstraction.AssertionHash{Hash: parsedLog.AssertionHash},
 		WasmModuleRoot:      parsedLog.WasmModuleRoot,
 		ChallengeManager:    parsedLog.ChallengeManager,
 		TransactionHash:     ethLog.TxHash,

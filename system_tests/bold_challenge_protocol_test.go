@@ -39,13 +39,13 @@ import (
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbstate"
-	protocol "github.com/offchainlabs/nitro/bold/chain-abstraction"
-	solimpl "github.com/offchainlabs/nitro/bold/chain-abstraction/sol-implementation"
-	challengemanager "github.com/offchainlabs/nitro/bold/challenge-manager"
-	modes "github.com/offchainlabs/nitro/bold/challenge-manager/types"
-	l2stateprovider "github.com/offchainlabs/nitro/bold/layer2-state-provider"
-	challenge_testing "github.com/offchainlabs/nitro/bold/testing"
-	"github.com/offchainlabs/nitro/bold/testing/setup"
+	"github.com/offchainlabs/nitro/bold/chainabstraction"
+	"github.com/offchainlabs/nitro/bold/chainabstraction/solimplementation"
+	"github.com/offchainlabs/nitro/bold/challengemanager"
+	modes "github.com/offchainlabs/nitro/bold/challengemanager/types"
+	"github.com/offchainlabs/nitro/bold/challengetesting"
+	"github.com/offchainlabs/nitro/bold/challengetesting/setup"
+	"github.com/offchainlabs/nitro/bold/layer2stateprovider"
 	butil "github.com/offchainlabs/nitro/bold/util"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/execution/gethexec"
@@ -224,7 +224,7 @@ func testChallengeProtocolBOLD(t *testing.T, useExternalSigner bool, spawnerOpts
 	stateManager, err := bold.NewBOLDStateProvider(
 		blockValidatorA,
 		statelessA,
-		l2stateprovider.Height(blockChallengeLeafHeight),
+		layer2stateprovider.Height(blockChallengeLeafHeight),
 		&bold.StateProviderConfig{
 			ValidatorName:          "good",
 			MachineLeavesCachePath: goodDir,
@@ -240,7 +240,7 @@ func testChallengeProtocolBOLD(t *testing.T, useExternalSigner bool, spawnerOpts
 	stateManagerB, err := bold.NewBOLDStateProvider(
 		blockValidatorB,
 		statelessB,
-		l2stateprovider.Height(blockChallengeLeafHeight),
+		layer2stateprovider.Height(blockChallengeLeafHeight),
 		&bold.StateProviderConfig{
 			ValidatorName:          "evil",
 			MachineLeavesCachePath: evilDir,
@@ -270,14 +270,14 @@ func testChallengeProtocolBOLD(t *testing.T, useExternalSigner bool, spawnerOpts
 		l1ChainId,
 	)
 	Require(t, err)
-	chainB, err := solimpl.NewAssertionChain(
+	chainB, err := solimplementation.NewAssertionChain(
 		ctx,
 		assertionChain.RollupAddress(),
 		chalManagerAddr.Address(),
 		&evilOpts,
 		butil.NewBackendWrapper(l1client, rpc.LatestBlockNumber),
 		bold.NewDataPosterTransactor(dp),
-		solimpl.WithRpcHeadBlockNumber(rpc.LatestBlockNumber),
+		solimplementation.WithRpcHeadBlockNumber(rpc.LatestBlockNumber),
 	)
 	Require(t, err)
 
@@ -402,31 +402,31 @@ func testChallengeProtocolBOLD(t *testing.T, useExternalSigner bool, spawnerOpts
 		time.Sleep(time.Millisecond * 200)
 	}
 
-	provider := l2stateprovider.NewHistoryCommitmentProvider(
+	provider := layer2stateprovider.NewHistoryCommitmentProvider(
 		stateManager,
 		stateManager,
 		stateManager,
-		[]l2stateprovider.Height{
-			l2stateprovider.Height(blockChallengeLeafHeight),
-			l2stateprovider.Height(bigStepChallengeLeafHeight),
-			l2stateprovider.Height(bigStepChallengeLeafHeight),
-			l2stateprovider.Height(bigStepChallengeLeafHeight),
-			l2stateprovider.Height(smallStepChallengeLeafHeight),
+		[]layer2stateprovider.Height{
+			layer2stateprovider.Height(blockChallengeLeafHeight),
+			layer2stateprovider.Height(bigStepChallengeLeafHeight),
+			layer2stateprovider.Height(bigStepChallengeLeafHeight),
+			layer2stateprovider.Height(bigStepChallengeLeafHeight),
+			layer2stateprovider.Height(smallStepChallengeLeafHeight),
 		},
 		stateManager,
 		nil, // Api db
 	)
 
-	evilProvider := l2stateprovider.NewHistoryCommitmentProvider(
+	evilProvider := layer2stateprovider.NewHistoryCommitmentProvider(
 		stateManagerB,
 		stateManagerB,
 		stateManagerB,
-		[]l2stateprovider.Height{
-			l2stateprovider.Height(blockChallengeLeafHeight),
-			l2stateprovider.Height(bigStepChallengeLeafHeight),
-			l2stateprovider.Height(bigStepChallengeLeafHeight),
-			l2stateprovider.Height(bigStepChallengeLeafHeight),
-			l2stateprovider.Height(smallStepChallengeLeafHeight),
+		[]layer2stateprovider.Height{
+			layer2stateprovider.Height(blockChallengeLeafHeight),
+			layer2stateprovider.Height(bigStepChallengeLeafHeight),
+			layer2stateprovider.Height(bigStepChallengeLeafHeight),
+			layer2stateprovider.Height(bigStepChallengeLeafHeight),
+			layer2stateprovider.Height(smallStepChallengeLeafHeight),
 		},
 		stateManagerB,
 		nil, // Api db
@@ -545,7 +545,7 @@ func createTestNodeOnL1ForBoldProtocol(
 ) (
 	l2info info, currentNode *arbnode.Node, l2client *ethclient.Client, l2stack *node.Node,
 	l1info info, l1backend *eth.Ethereum, l1client *ethclient.Client, l1stack *node.Node,
-	assertionChain *solimpl.AssertionChain, stakeTokenAddr common.Address, asserterOpts *bind.TransactOpts,
+	assertionChain *solimplementation.AssertionChain, stakeTokenAddr common.Address, asserterOpts *bind.TransactOpts,
 ) {
 	var srv *externalsignertest.SignerServer
 	if useExternalSigner {
@@ -688,14 +688,14 @@ func createTestNodeOnL1ForBoldProtocol(
 		parentChainId,
 	)
 	Require(t, err)
-	assertionChainBindings, err := solimpl.NewAssertionChain(
+	assertionChainBindings, err := solimplementation.NewAssertionChain(
 		ctx,
 		addresses.Rollup,
 		chalManagerAddr,
 		dp.Auth(),
 		butil.NewBackendWrapper(l1client, rpc.LatestBlockNumber),
 		bold.NewDataPosterTransactor(dp),
-		solimpl.WithRpcHeadBlockNumber(rpc.LatestBlockNumber),
+		solimplementation.WithRpcHeadBlockNumber(rpc.LatestBlockNumber),
 	)
 	Require(t, err)
 	assertionChain = assertionChainBindings
@@ -727,7 +727,7 @@ func deployContractsOnly(
 	genesisInboxCount := big.NewInt(0)
 	anyTrustFastConfirmer := common.Address{}
 	miniStakeValues := []*big.Int{big.NewInt(5), big.NewInt(4), big.NewInt(3), big.NewInt(2), big.NewInt(1)}
-	cfg := challenge_testing.GenerateRollupConfig(
+	cfg := challengetesting.GenerateRollupConfig(
 		false,
 		wasmModuleRoot,
 		l1TransactionOpts.From,
@@ -738,13 +738,13 @@ func deployContractsOnly(
 		genesisExecutionState,
 		genesisInboxCount,
 		anyTrustFastConfirmer,
-		challenge_testing.WithLayerZeroHeights(&protocol.LayerZeroHeights{
-			BlockChallengeHeight:     protocol.Height(blockChallengeLeafHeight),
-			BigStepChallengeHeight:   protocol.Height(bigStepChallengeLeafHeight),
-			SmallStepChallengeHeight: protocol.Height(smallStepChallengeLeafHeight),
+		challengetesting.WithLayerZeroHeights(&chainabstraction.LayerZeroHeights{
+			BlockChallengeHeight:     chainabstraction.Height(blockChallengeLeafHeight),
+			BigStepChallengeHeight:   chainabstraction.Height(bigStepChallengeLeafHeight),
+			SmallStepChallengeHeight: chainabstraction.Height(smallStepChallengeLeafHeight),
 		}),
-		challenge_testing.WithNumBigStepLevels(uint8(3)),       // TODO: Hardcoded.
-		challenge_testing.WithConfirmPeriodBlocks(uint64(120)), // TODO: Hardcoded.
+		challengetesting.WithNumBigStepLevels(uint8(3)),       // TODO: Hardcoded.
+		challengetesting.WithConfirmPeriodBlocks(uint64(120)), // TODO: Hardcoded.
 	)
 	config, err := json.Marshal(chaininfo.ArbitrumDevTestChainConfig())
 	Require(t, err)
@@ -824,7 +824,7 @@ func create2ndNodeWithConfigForBoldProtocol(
 	rollupStackConf setup.RollupStackConfig,
 	stakeTokenAddr common.Address,
 	asserterOpts *bind.TransactOpts,
-) (*ethclient.Client, *arbnode.Node, *solimpl.AssertionChain) {
+) (*ethclient.Client, *arbnode.Node, *solimplementation.AssertionChain) {
 	fatalErrChan := make(chan error, 10)
 	l1rpcClient := l1stack.Attach()
 	l1client := ethclient.NewClient(l1rpcClient)
@@ -899,7 +899,7 @@ func create2ndNodeWithConfigForBoldProtocol(
 		l1ChainId,
 	)
 	Require(t, err)
-	assertionChain, err := solimpl.NewAssertionChain(
+	assertionChain, err := solimplementation.NewAssertionChain(
 		ctx,
 		addresses.Rollup,
 		chalManagerAddr,

@@ -16,9 +16,9 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 
 	"github.com/offchainlabs/nitro/bold/api"
-	"github.com/offchainlabs/nitro/bold/chain-abstraction"
-	"github.com/offchainlabs/nitro/bold/state-commitments/history"
-	"github.com/offchainlabs/nitro/bold/testing/casttest"
+	"github.com/offchainlabs/nitro/bold/chainabstraction"
+	"github.com/offchainlabs/nitro/bold/challengetesting/casttest"
+	"github.com/offchainlabs/nitro/bold/statecommitments/history"
 )
 
 func TestSqliteDatabase_CollectMachineHashes(t *testing.T) {
@@ -133,7 +133,7 @@ func TestSqliteDatabase_Updates(t *testing.T) {
 	require.NoError(t, db.UpdateAssertions([]*api.JsonAssertion{lastAssertion}))
 
 	// Check the last updated timestamp gets increased.
-	updatedAssertions, err := db.GetAssertions(WithAssertionHash(protocol.AssertionHash{Hash: lastAssertion.Hash}), WithAssertionLimit(1))
+	updatedAssertions, err := db.GetAssertions(WithAssertionHash(chainabstraction.AssertionHash{Hash: lastAssertion.Hash}), WithAssertionLimit(1))
 	require.NoError(t, err)
 	require.Equal(t, 1, len(updatedAssertions))
 	require.Equal(t, "confirmed", updatedAssertions[0].Status)
@@ -155,7 +155,7 @@ func TestSqliteDatabase_Updates(t *testing.T) {
 	require.NoError(t, db.UpdateEdges([]*api.JsonEdge{edge}))
 
 	// Check the last updated timestamp gets increased.
-	updatedEdges, err := db.GetEdges(WithEdgeAssertionHash(protocol.AssertionHash{Hash: lastAssertion.Hash}), WithLimit(1))
+	updatedEdges, err := db.GetEdges(WithEdgeAssertionHash(chainabstraction.AssertionHash{Hash: lastAssertion.Hash}), WithLimit(1))
 	require.NoError(t, err)
 	require.Equal(t, 1, len(updatedEdges))
 	require.Equal(t, "confirmed", updatedEdges[0].Status)
@@ -193,7 +193,7 @@ func TestSqliteDatabase_Assertions(t *testing.T) {
 			b2 := uint64(3)
 			base.FirstChildBlock = &b1
 			base.SecondChildBlock = &b2
-			base.Status = protocol.AssertionConfirmed.String()
+			base.Status = chainabstraction.AssertionConfirmed.String()
 		}
 		if i == 4 {
 			base.ParentAssertionHash = common.BytesToHash([]byte("3"))
@@ -222,11 +222,11 @@ func TestSqliteDatabase_Assertions(t *testing.T) {
 	require.Equal(t, 0, len(challengedAssertions))
 
 	t.Run("query options", func(t *testing.T) {
-		assertions, err := db.GetAssertions(WithAssertionHash(protocol.AssertionHash{Hash: common.BytesToHash([]byte("3"))}))
+		assertions, err := db.GetAssertions(WithAssertionHash(chainabstraction.AssertionHash{Hash: common.BytesToHash([]byte("3"))}))
 		require.NoError(t, err)
 		require.Equal(t, 1, len(assertions))
 
-		assertions, err = db.GetAssertions(WithAssertionHash(protocol.AssertionHash{Hash: common.BytesToHash([]byte("100"))}))
+		assertions, err = db.GetAssertions(WithAssertionHash(chainabstraction.AssertionHash{Hash: common.BytesToHash([]byte("100"))}))
 		require.NoError(t, err)
 		require.Equal(t, 0, len(assertions))
 
@@ -238,7 +238,7 @@ func TestSqliteDatabase_Assertions(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, 2, len(assertions))
 
-		assertions, err = db.GetAssertions(WithParentAssertionHash(protocol.AssertionHash{Hash: common.BytesToHash([]byte("3"))}))
+		assertions, err = db.GetAssertions(WithParentAssertionHash(chainabstraction.AssertionHash{Hash: common.BytesToHash([]byte("3"))}))
 		require.NoError(t, err)
 		require.Equal(t, 1, len(assertions))
 
@@ -270,26 +270,26 @@ func TestSqliteDatabase_Assertions(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, 1, len(assertions))
 
-		assertions, err = db.GetAssertions(WithBeforeState(&protocol.ExecutionState{
-			GlobalState: protocol.GoGlobalState{
+		assertions, err = db.GetAssertions(WithBeforeState(&chainabstraction.ExecutionState{
+			GlobalState: chainabstraction.GoGlobalState{
 				BlockHash:  common.BytesToHash([]byte("block")),
 				SendRoot:   common.BytesToHash([]byte("send")),
 				PosInBatch: 0,
 				Batch:      4,
 			},
-			MachineStatus: protocol.MachineStatusFinished,
+			MachineStatus: chainabstraction.MachineStatusFinished,
 		}))
 		require.NoError(t, err)
 		require.Equal(t, 1, len(assertions))
 
-		assertions, err = db.GetAssertions(WithAfterState(&protocol.ExecutionState{
-			GlobalState: protocol.GoGlobalState{
+		assertions, err = db.GetAssertions(WithAfterState(&chainabstraction.ExecutionState{
+			GlobalState: chainabstraction.GoGlobalState{
 				BlockHash:  common.BytesToHash([]byte("block2")),
 				SendRoot:   common.BytesToHash([]byte("send2")),
 				PosInBatch: 2,
 				Batch:      6,
 			},
-			MachineStatus: protocol.MachineStatusFinished,
+			MachineStatus: chainabstraction.MachineStatusFinished,
 		}))
 		require.NoError(t, err)
 		require.Equal(t, 1, len(assertions))
@@ -306,23 +306,23 @@ func TestSqliteDatabase_Assertions(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, 1, len(assertions))
 
-		assertions, err = db.GetAssertions(WithAssertionStatus(protocol.AssertionConfirmed))
+		assertions, err = db.GetAssertions(WithAssertionStatus(chainabstraction.AssertionConfirmed))
 		require.NoError(t, err)
 		require.Equal(t, 2, len(assertions))
 	})
 	t.Run("orderings limits and offsets", func(t *testing.T) {
-		gotIds := make([]protocol.AssertionHash, 0)
-		wantIds := make([]protocol.AssertionHash, 0)
+		gotIds := make([]chainabstraction.AssertionHash, 0)
+		wantIds := make([]chainabstraction.AssertionHash, 0)
 
 		expectedAssertions := assertionsToCreate[2:4]
 		for _, a := range expectedAssertions {
-			wantIds = append(wantIds, protocol.AssertionHash{Hash: a.Hash})
+			wantIds = append(wantIds, chainabstraction.AssertionHash{Hash: a.Hash})
 		}
 
 		assertions, err := db.GetAssertions(WithAssertionLimit(2), WithAssertionOffset(2), WithAssertionOrderBy("CreationBlock ASC"))
 		require.NoError(t, err)
 		for _, a := range assertions {
-			gotIds = append(gotIds, protocol.AssertionHash{Hash: a.Hash})
+			gotIds = append(gotIds, chainabstraction.AssertionHash{Hash: a.Hash})
 		}
 		require.Equal(t, wantIds, gotIds)
 	})
@@ -391,7 +391,7 @@ func TestSqliteDatabase_Edges(t *testing.T) {
 	require.Equal(t, 1, len(challengedAssertions))
 
 	t.Run("query options", func(t *testing.T) {
-		edges, err = db.GetEdges(WithId(protocol.EdgeId{Hash: common.BytesToHash([]byte("0"))}))
+		edges, err = db.GetEdges(WithId(chainabstraction.EdgeId{Hash: common.BytesToHash([]byte("0"))}))
 		require.NoError(t, err)
 		require.Equal(t, 1, len(edges))
 
@@ -403,7 +403,7 @@ func TestSqliteDatabase_Edges(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, 0, len(edges))
 
-		edges, err = db.GetEdges(WithOriginId(protocol.OriginId(common.BytesToHash([]byte("foo")))))
+		edges, err = db.GetEdges(WithOriginId(chainabstraction.OriginId(common.BytesToHash([]byte("foo")))))
 		require.NoError(t, err)
 		require.Equal(t, 1, len(edges))
 
@@ -434,7 +434,7 @@ func TestSqliteDatabase_Edges(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, 1, len(edges))
 
-		edges, err = db.GetEdges(WithMutualId(protocol.MutualId(common.BytesToHash([]byte("bar")))))
+		edges, err = db.GetEdges(WithMutualId(chainabstraction.MutualId(common.BytesToHash([]byte("bar")))))
 		require.NoError(t, err)
 		require.Equal(t, 1, len(edges))
 
@@ -442,11 +442,11 @@ func TestSqliteDatabase_Edges(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, 2, len(edges))
 
-		edges, err = db.GetEdges(WithLowerChildId(protocol.EdgeId{Hash: common.BytesToHash([]byte("0"))}))
+		edges, err = db.GetEdges(WithLowerChildId(chainabstraction.EdgeId{Hash: common.BytesToHash([]byte("0"))}))
 		require.NoError(t, err)
 		require.Equal(t, 2, len(edges))
 
-		edges, err = db.GetEdges(WithUpperChildId(protocol.EdgeId{Hash: common.BytesToHash([]byte("1"))}))
+		edges, err = db.GetEdges(WithUpperChildId(chainabstraction.EdgeId{Hash: common.BytesToHash([]byte("1"))}))
 		require.NoError(t, err)
 		require.Equal(t, 2, len(edges))
 
@@ -454,11 +454,11 @@ func TestSqliteDatabase_Edges(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, 1, len(edges))
 
-		edges, err = db.GetEdges(WithEdgeAssertionHash(protocol.AssertionHash{Hash: common.BytesToHash([]byte("1"))}))
+		edges, err = db.GetEdges(WithEdgeAssertionHash(chainabstraction.AssertionHash{Hash: common.BytesToHash([]byte("1"))}))
 		require.NoError(t, err)
 		require.Equal(t, numEdges, len(edges))
 
-		edges, err = db.GetEdges(WithEdgeAssertionHash(protocol.AssertionHash{Hash: common.BytesToHash([]byte("0"))}))
+		edges, err = db.GetEdges(WithEdgeAssertionHash(chainabstraction.AssertionHash{Hash: common.BytesToHash([]byte("0"))}))
 		require.NoError(t, err)
 		require.Equal(t, 0, len(edges))
 
@@ -466,7 +466,7 @@ func TestSqliteDatabase_Edges(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, 2, len(edges))
 
-		edges, err = db.GetEdges(WithEdgeStatus(protocol.EdgeConfirmed))
+		edges, err = db.GetEdges(WithEdgeStatus(chainabstraction.EdgeConfirmed))
 		require.NoError(t, err)
 		require.Equal(t, 1, len(edges))
 
@@ -474,7 +474,7 @@ func TestSqliteDatabase_Edges(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, 2, len(edges))
 
-		edges, err = db.GetEdges(WithClaimId(protocol.ClaimId(common.BytesToHash([]byte("1")))))
+		edges, err = db.GetEdges(WithClaimId(chainabstraction.ClaimId(common.BytesToHash([]byte("1")))))
 		require.NoError(t, err)
 		require.Equal(t, 2, len(edges))
 
@@ -495,18 +495,18 @@ func TestSqliteDatabase_Edges(t *testing.T) {
 		require.Equal(t, 0, len(edges))
 	})
 	t.Run("orderings limits and offsets", func(t *testing.T) {
-		gotIds := make([]protocol.EdgeId, 0)
-		wantIds := make([]protocol.EdgeId, 0)
+		gotIds := make([]chainabstraction.EdgeId, 0)
+		wantIds := make([]chainabstraction.EdgeId, 0)
 
 		expectedEdges := edgesToCreate[2:4]
 		for _, e := range expectedEdges {
-			wantIds = append(wantIds, protocol.EdgeId{Hash: e.Id})
+			wantIds = append(wantIds, chainabstraction.EdgeId{Hash: e.Id})
 		}
 
 		edges, err = db.GetEdges(WithLimit(2), WithOffset(2), WithOrderBy("CreatedAtBlock ASC"))
 		require.NoError(t, err)
 		for _, e := range edges {
-			gotIds = append(gotIds, protocol.EdgeId{Hash: e.Id})
+			gotIds = append(gotIds, chainabstraction.EdgeId{Hash: e.Id})
 		}
 		require.Equal(t, wantIds, gotIds)
 	})
@@ -576,16 +576,16 @@ func baseAssertion() *api.JsonAssertion {
 		BeforeStateSendRoot:      common.Hash{},
 		BeforeStateBatch:         0,
 		BeforeStatePosInBatch:    0,
-		BeforeStateMachineStatus: protocol.MachineStatusFinished,
+		BeforeStateMachineStatus: chainabstraction.MachineStatusFinished,
 		AfterStateBlockHash:      common.Hash{},
 		AfterStateSendRoot:       common.Hash{},
 		AfterStateBatch:          0,
 		AfterStatePosInBatch:     0,
-		AfterStateMachineStatus:  protocol.MachineStatusFinished,
+		AfterStateMachineStatus:  chainabstraction.MachineStatusFinished,
 		FirstChildBlock:          nil,
 		SecondChildBlock:         nil,
 		IsFirstChild:             false,
-		Status:                   protocol.AssertionPending.String(),
+		Status:                   chainabstraction.AssertionPending.String(),
 	}
 }
 

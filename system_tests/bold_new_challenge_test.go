@@ -21,13 +21,13 @@ import (
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
-	"github.com/offchainlabs/nitro/bold/chain-abstraction"
-	"github.com/offchainlabs/nitro/bold/chain-abstraction/sol-implementation"
-	"github.com/offchainlabs/nitro/bold/challenge-manager"
-	modes "github.com/offchainlabs/nitro/bold/challenge-manager/types"
+	"github.com/offchainlabs/nitro/bold/chainabstraction"
+	"github.com/offchainlabs/nitro/bold/chainabstraction/solimplementation"
+	"github.com/offchainlabs/nitro/bold/challengemanager"
+	modes "github.com/offchainlabs/nitro/bold/challengemanager/types"
 	"github.com/offchainlabs/nitro/bold/containers/option"
-	"github.com/offchainlabs/nitro/bold/layer2-state-provider"
-	"github.com/offchainlabs/nitro/bold/state-commitments/history"
+	"github.com/offchainlabs/nitro/bold/layer2stateprovider"
+	"github.com/offchainlabs/nitro/bold/statecommitments/history"
 	"github.com/offchainlabs/nitro/bold/util"
 	"github.com/offchainlabs/nitro/solgen/go/challengeV2gen"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
@@ -37,7 +37,7 @@ import (
 
 type incorrectBlockStateProvider struct {
 	honest              BoldStateProviderInterface
-	chain               protocol.AssertionChain
+	chain               chainabstraction.AssertionChain
 	wrongAtFirstVirtual bool
 	wrongAtBlockHeight  uint64
 	honestMachineHash   common.Hash
@@ -47,14 +47,14 @@ type incorrectBlockStateProvider struct {
 func (s *incorrectBlockStateProvider) ExecutionStateAfterPreviousState(
 	ctx context.Context,
 	maxInboxCount uint64,
-	previousGlobalState protocol.GoGlobalState,
-) (*protocol.ExecutionState, error) {
+	previousGlobalState chainabstraction.GoGlobalState,
+) (*chainabstraction.ExecutionState, error) {
 	maxNumberOfBlocks := s.chain.SpecChallengeManager().LayerZeroHeights().BlockChallengeHeight.Uint64()
 	executionState, err := s.honest.ExecutionStateAfterPreviousState(ctx, maxInboxCount, previousGlobalState)
 	if err != nil {
 		return nil, err
 	}
-	evilStates, err := s.L2MessageStatesUpTo(ctx, previousGlobalState, l2stateprovider.Batch(maxInboxCount), option.Some(l2stateprovider.Height(maxNumberOfBlocks)))
+	evilStates, err := s.L2MessageStatesUpTo(ctx, previousGlobalState, layer2stateprovider.Batch(maxInboxCount), option.Some(layer2stateprovider.Height(maxNumberOfBlocks)))
 	if err != nil {
 		return nil, err
 	}
@@ -68,9 +68,9 @@ func (s *incorrectBlockStateProvider) ExecutionStateAfterPreviousState(
 
 func (s *incorrectBlockStateProvider) L2MessageStatesUpTo(
 	ctx context.Context,
-	fromState protocol.GoGlobalState,
-	batchLimit l2stateprovider.Batch,
-	toHeight option.Option[l2stateprovider.Height],
+	fromState chainabstraction.GoGlobalState,
+	batchLimit layer2stateprovider.Batch,
+	toHeight option.Option[layer2stateprovider.Height],
 ) ([]common.Hash, error) {
 	states, err := s.honest.L2MessageStatesUpTo(ctx, fromState, batchLimit, toHeight)
 	if err != nil {
@@ -105,7 +105,7 @@ func (s *incorrectBlockStateProvider) L2MessageStatesUpTo(
 }
 
 func (s *incorrectBlockStateProvider) CollectMachineHashes(
-	ctx context.Context, cfg *l2stateprovider.HashCollectorConfig,
+	ctx context.Context, cfg *layer2stateprovider.HashCollectorConfig,
 ) ([]common.Hash, error) {
 	honestHashes, err := s.honest.CollectMachineHashes(ctx, cfg)
 	if err != nil {
@@ -123,9 +123,9 @@ func (s *incorrectBlockStateProvider) CollectMachineHashes(
 
 func (s *incorrectBlockStateProvider) CollectProof(
 	ctx context.Context,
-	assertionMetadata *l2stateprovider.AssociatedAssertionMetadata,
-	blockChallengeHeight l2stateprovider.Height,
-	machineIndex l2stateprovider.OpcodeIndex,
+	assertionMetadata *layer2stateprovider.AssociatedAssertionMetadata,
+	blockChallengeHeight layer2stateprovider.Height,
+	machineIndex layer2stateprovider.OpcodeIndex,
 ) ([]byte, error) {
 	return s.honest.CollectProof(ctx, assertionMetadata, blockChallengeHeight, machineIndex)
 }
@@ -269,13 +269,13 @@ func TestChallengeProtocolBOLDFirstVirtualBlock(t *testing.T) {
 }
 
 type BoldStateProviderInterface interface {
-	l2stateprovider.L2MessageStateCollector
-	l2stateprovider.MachineHashCollector
-	l2stateprovider.ProofCollector
-	l2stateprovider.ExecutionProvider
+	layer2stateprovider.L2MessageStateCollector
+	layer2stateprovider.MachineHashCollector
+	layer2stateprovider.ProofCollector
+	layer2stateprovider.ExecutionProvider
 }
 
-func startBoldChallengeManager(t *testing.T, ctx context.Context, builder *NodeBuilder, node *TestClient, addressName string, mockStateProvider func(BoldStateProviderInterface) BoldStateProviderInterface) (*solimpl.AssertionChain, func()) {
+func startBoldChallengeManager(t *testing.T, ctx context.Context, builder *NodeBuilder, node *TestClient, addressName string, mockStateProvider func(BoldStateProviderInterface) BoldStateProviderInterface) (*solimplementation.AssertionChain, func()) {
 	if !builder.deployBold {
 		t.Fatal("bold deployment not enabled")
 	}
@@ -286,7 +286,7 @@ func startBoldChallengeManager(t *testing.T, ctx context.Context, builder *NodeB
 	stateManager, err = bold.NewBOLDStateProvider(
 		node.ConsensusNode.BlockValidator,
 		node.ConsensusNode.StatelessBlockValidator,
-		l2stateprovider.Height(blockChallengeLeafHeight),
+		layer2stateprovider.Height(blockChallengeLeafHeight),
 		&bold.StateProviderConfig{
 			ValidatorName:          addressName,
 			MachineLeavesCachePath: cacheDir,
@@ -303,16 +303,16 @@ func startBoldChallengeManager(t *testing.T, ctx context.Context, builder *NodeB
 		stateManager = mockStateProvider(stateManager)
 	}
 
-	provider := l2stateprovider.NewHistoryCommitmentProvider(
+	provider := layer2stateprovider.NewHistoryCommitmentProvider(
 		stateManager,
 		stateManager,
 		stateManager,
-		[]l2stateprovider.Height{
-			l2stateprovider.Height(blockChallengeLeafHeight),
-			l2stateprovider.Height(bigStepChallengeLeafHeight),
-			l2stateprovider.Height(bigStepChallengeLeafHeight),
-			l2stateprovider.Height(bigStepChallengeLeafHeight),
-			l2stateprovider.Height(smallStepChallengeLeafHeight),
+		[]layer2stateprovider.Height{
+			layer2stateprovider.Height(blockChallengeLeafHeight),
+			layer2stateprovider.Height(bigStepChallengeLeafHeight),
+			layer2stateprovider.Height(bigStepChallengeLeafHeight),
+			layer2stateprovider.Height(bigStepChallengeLeafHeight),
+			layer2stateprovider.Height(smallStepChallengeLeafHeight),
 		},
 		stateManager,
 		nil, // Api db
@@ -336,14 +336,14 @@ func startBoldChallengeManager(t *testing.T, ctx context.Context, builder *NodeB
 	)
 	Require(t, err)
 
-	assertionChain, err := solimpl.NewAssertionChain(
+	assertionChain, err := solimplementation.NewAssertionChain(
 		ctx,
 		builder.addresses.Rollup,
 		chalManagerAddr,
 		&txOpts,
 		util.NewBackendWrapper(builder.L1.Client, rpc.LatestBlockNumber),
 		bold.NewDataPosterTransactor(dp),
-		solimpl.WithRpcHeadBlockNumber(rpc.LatestBlockNumber),
+		solimplementation.WithRpcHeadBlockNumber(rpc.LatestBlockNumber),
 	)
 	Require(t, err)
 

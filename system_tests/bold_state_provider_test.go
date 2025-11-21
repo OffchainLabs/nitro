@@ -24,12 +24,12 @@ import (
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
-	protocol "github.com/offchainlabs/nitro/bold/chain-abstraction"
+	"github.com/offchainlabs/nitro/bold/chainabstraction"
+	"github.com/offchainlabs/nitro/bold/challengetesting/mocks/stateprovider"
+	"github.com/offchainlabs/nitro/bold/challengetesting/setup"
 	"github.com/offchainlabs/nitro/bold/containers/option"
-	l2stateprovider "github.com/offchainlabs/nitro/bold/layer2-state-provider"
-	prefixproofs "github.com/offchainlabs/nitro/bold/state-commitments/prefix-proofs"
-	stateprovider "github.com/offchainlabs/nitro/bold/testing/mocks/state-provider"
-	"github.com/offchainlabs/nitro/bold/testing/setup"
+	"github.com/offchainlabs/nitro/bold/layer2stateprovider"
+	"github.com/offchainlabs/nitro/bold/statecommitments/prefixproofs"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
@@ -105,10 +105,10 @@ func TestChallengeProtocolBOLD_Bisections(t *testing.T) {
 		}
 	}
 
-	historyCommitter := l2stateprovider.NewHistoryCommitmentProvider(
+	historyCommitter := layer2stateprovider.NewHistoryCommitmentProvider(
 		stateManager,
 		stateManager,
-		stateManager, []l2stateprovider.Height{
+		stateManager, []layer2stateprovider.Height{
 			1 << 5,
 			1 << 5,
 			1 << 5,
@@ -116,22 +116,22 @@ func TestChallengeProtocolBOLD_Bisections(t *testing.T) {
 		stateManager,
 		nil, // api db
 	)
-	bisectionHeight := l2stateprovider.Height(16)
-	request := &l2stateprovider.HistoryCommitmentRequest{
-		AssertionMetadata: &l2stateprovider.AssociatedAssertionMetadata{
-			FromState: protocol.GoGlobalState{
+	bisectionHeight := layer2stateprovider.Height(16)
+	request := &layer2stateprovider.HistoryCommitmentRequest{
+		AssertionMetadata: &layer2stateprovider.AssociatedAssertionMetadata{
+			FromState: chainabstraction.GoGlobalState{
 				Batch: 1,
 			},
 			BatchLimit:     3,
 			WasmModuleRoot: common.Hash{},
 		},
-		UpperChallengeOriginHeights: []l2stateprovider.Height{},
+		UpperChallengeOriginHeights: []layer2stateprovider.Height{},
 		UpToHeight:                  option.Some(bisectionHeight),
 	}
 	bisectionCommitment, err := historyCommitter.HistoryCommitment(ctx, request)
 	Require(t, err)
 
-	request.UpToHeight = option.None[l2stateprovider.Height]()
+	request.UpToHeight = option.None[layer2stateprovider.Height]()
 	packedProof, err := historyCommitter.PrefixProof(ctx, request, bisectionHeight)
 	Require(t, err)
 
@@ -213,8 +213,8 @@ func TestChallengeProtocolBOLD_StateProvider(t *testing.T) {
 
 	t.Run("StatesInBatchRange", func(t *testing.T) {
 		toBatch := uint64(3)
-		toHeight := l2stateprovider.Height(10)
-		fromState := protocol.GoGlobalState{
+		toHeight := layer2stateprovider.Height(10)
+		fromState := chainabstraction.GoGlobalState{
 			Batch: 1,
 		}
 		stateRoots, states, err := stateManager.StatesInBatchRange(ctx, fromState, toBatch, toHeight)
@@ -239,7 +239,7 @@ func TestChallengeProtocolBOLD_StateProvider(t *testing.T) {
 		_, err = stateManager.ExecutionStateAfterPreviousState(
 			ctx,
 			0,
-			protocol.GoGlobalState{
+			chainabstraction.GoGlobalState{
 				Batch:      0,
 				PosInBatch: 1,
 			},
@@ -255,7 +255,7 @@ func TestChallengeProtocolBOLD_StateProvider(t *testing.T) {
 		genesis, err := stateManager.ExecutionStateAfterPreviousState(
 			ctx,
 			1,
-			protocol.GoGlobalState{
+			chainabstraction.GoGlobalState{
 				Batch:      0,
 				PosInBatch: 0,
 			},
@@ -285,7 +285,7 @@ func TestChallengeProtocolBOLD_StateProvider(t *testing.T) {
 		if err == nil {
 			Fatal(t, "should not agree with execution state")
 		}
-		if !errors.Is(err, l2stateprovider.ErrChainCatchingUp) {
+		if !errors.Is(err, layer2stateprovider.ErrChainCatchingUp) {
 			Fatal(t, "wrong error")
 		}
 
@@ -294,7 +294,7 @@ func TestChallengeProtocolBOLD_StateProvider(t *testing.T) {
 		Require(t, err)
 		_ = result
 
-		state := protocol.GoGlobalState{
+		state := chainabstraction.GoGlobalState{
 			BlockHash: result.BlockHash,
 			SendRoot:  result.SendRoot,
 			Batch:     3,
@@ -321,12 +321,12 @@ func TestChallengeProtocolBOLD_StateProvider(t *testing.T) {
 		if err == nil {
 			Fatal(t, "should not agree with execution state")
 		}
-		if !errors.Is(err, l2stateprovider.ErrChainCatchingUp) {
+		if !errors.Is(err, layer2stateprovider.ErrChainCatchingUp) {
 			Fatal(t, "wrong error")
 		}
 	})
 	t.Run("ExecutionStateAfterBatchCount", func(t *testing.T) {
-		_, err = stateManager.ExecutionStateAfterPreviousState(ctx, 0, protocol.GoGlobalState{})
+		_, err = stateManager.ExecutionStateAfterPreviousState(ctx, 0, chainabstraction.GoGlobalState{})
 		if err == nil {
 			Fatal(t, "should have failed")
 		}
@@ -334,7 +334,7 @@ func TestChallengeProtocolBOLD_StateProvider(t *testing.T) {
 			Fatal(t, "wrong error message", err)
 		}
 
-		genesis, err := stateManager.ExecutionStateAfterPreviousState(ctx, 1, protocol.GoGlobalState{})
+		genesis, err := stateManager.ExecutionStateAfterPreviousState(ctx, 1, chainabstraction.GoGlobalState{})
 		Require(t, err)
 		execState, err := stateManager.ExecutionStateAfterPreviousState(ctx, totalBatches, genesis.GlobalState)
 		Require(t, err)
@@ -409,7 +409,7 @@ func setupBoldStateProvider(t *testing.T, ctx context.Context, blockChallengeHei
 	stateManager, err := bold.NewBOLDStateProvider(
 		blockValidator,
 		stateless,
-		l2stateprovider.Height(blockChallengeHeight),
+		layer2stateprovider.Height(blockChallengeHeight),
 		&bold.StateProviderConfig{
 			ValidatorName:          "",
 			MachineLeavesCachePath: dir,

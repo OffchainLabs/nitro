@@ -15,12 +15,12 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/log"
 
-	"github.com/offchainlabs/nitro/bold/chain-abstraction"
-	"github.com/offchainlabs/nitro/bold/chain-abstraction/sol-implementation"
-	"github.com/offchainlabs/nitro/bold/challenge-manager/types"
+	"github.com/offchainlabs/nitro/bold/chainabstraction"
+	"github.com/offchainlabs/nitro/bold/chainabstraction/solimplementation"
+	"github.com/offchainlabs/nitro/bold/challengemanager/types"
 	"github.com/offchainlabs/nitro/bold/containers/option"
-	"github.com/offchainlabs/nitro/bold/logs/ephemeral"
-	"github.com/offchainlabs/nitro/bold/runtime"
+	"github.com/offchainlabs/nitro/bold/ephemerallogs"
+	"github.com/offchainlabs/nitro/bold/retry"
 )
 
 func (m *Manager) queueCanonicalAssertionsForConfirmation(ctx context.Context) {
@@ -34,12 +34,12 @@ func (m *Manager) queueCanonicalAssertionsForConfirmation(ctx context.Context) {
 	}
 }
 
-func (m *Manager) keepTryingAssertionConfirmation(ctx context.Context, assertionHash protocol.AssertionHash) {
+func (m *Manager) keepTryingAssertionConfirmation(ctx context.Context, assertionHash chainabstraction.AssertionHash) {
 	// Only resolve mode strategies or higher should be confirming assertions.
 	if m.mode < types.ResolveMode {
 		return
 	}
-	creationInfo, err := retry.UntilSucceeds(ctx, func() (*protocol.AssertionCreatedInfo, error) {
+	creationInfo, err := retry.UntilSucceeds(ctx, func() (*chainabstraction.AssertionCreatedInfo, error) {
 		return m.chain.ReadAssertionCreationInfo(ctx, assertionHash)
 	})
 	if err != nil {
@@ -57,15 +57,15 @@ func (m *Manager) keepTryingAssertionConfirmation(ctx context.Context, assertion
 			return
 		}
 	}
-	prevCreationInfo, err := retry.UntilSucceeds(ctx, func() (*protocol.AssertionCreatedInfo, error) {
+	prevCreationInfo, err := retry.UntilSucceeds(ctx, func() (*chainabstraction.AssertionCreatedInfo, error) {
 		return m.chain.ReadAssertionCreationInfo(ctx, creationInfo.ParentAssertionHash)
 	})
 	if err != nil {
 		log.Error("Could not get prev assertion creation info", "err", err)
 		return
 	}
-	exceedsMaxMempoolSizeEphemeralErrorHandler := ephemeral.NewEphemeralErrorHandler(10*time.Minute, "posting this transaction will exceed max mempool size", 0)
-	gasEstimationEphemeralErrorHandler := ephemeral.NewEphemeralErrorHandler(10*time.Minute, "gas estimation errored for tx with hash", 0)
+	exceedsMaxMempoolSizeEphemeralErrorHandler := ephemerallogs.NewEphemeralErrorHandler(10*time.Minute, "posting this transaction will exceed max mempool size", 0)
+	gasEstimationEphemeralErrorHandler := ephemerallogs.NewEphemeralErrorHandler(10*time.Minute, "gas estimation errored for tx with hash", 0)
 	ticker := time.NewTicker(m.times.confInterval)
 	defer ticker.Stop()
 	for {
@@ -103,7 +103,7 @@ func (m *Manager) keepTryingAssertionConfirmation(ctx context.Context, assertion
 			if parentAssertionHasSecondChild {
 				return
 			}
-			confirmed, err := solimpl.TryConfirmingAssertion(ctx, creationInfo.AssertionHash, prevCreationInfo.ConfirmPeriodBlocks+creationInfo.CreationL1Block, m.chain, m.times.avgBlockTime, option.None[protocol.EdgeId]())
+			confirmed, err := solimplementation.TryConfirmingAssertion(ctx, creationInfo.AssertionHash, prevCreationInfo.ConfirmPeriodBlocks+creationInfo.CreationL1Block, m.chain, m.times.avgBlockTime, option.None[chainabstraction.EdgeId]())
 			if err != nil {
 				if !strings.Contains(err.Error(), "PREV_NOT_LATEST_CONFIRMED") {
 					logLevel := log.Error
@@ -144,7 +144,7 @@ func (m *Manager) updateLatestConfirmedMetrics(ctx context.Context) {
 				log.Debug("Could not fetch latest confirmed assertion", "err", err)
 				continue
 			}
-			afterState := protocol.GoExecutionStateFromSolidity(info.AfterState)
+			afterState := chainabstraction.GoExecutionStateFromSolidity(info.AfterState)
 			log.Info("Latest confirmed assertion", "assertionAfterState", fmt.Sprintf("%+v", afterState))
 
 			// TODO: Check if the latest assertion that was confirmed is one we agree with.

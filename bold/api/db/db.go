@@ -18,9 +18,9 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 
 	"github.com/offchainlabs/nitro/bold/api"
-	"github.com/offchainlabs/nitro/bold/chain-abstraction"
+	"github.com/offchainlabs/nitro/bold/chainabstraction"
 	"github.com/offchainlabs/nitro/bold/containers/option"
-	"github.com/offchainlabs/nitro/bold/state-commitments/history"
+	"github.com/offchainlabs/nitro/bold/statecommitments/history"
 )
 
 type Database interface {
@@ -176,7 +176,7 @@ func WithChallenge() AssertionOption {
 		q.withChallenge = true
 	}
 }
-func WithAssertionHash(hash protocol.AssertionHash) AssertionOption {
+func WithAssertionHash(hash chainabstraction.AssertionHash) AssertionOption {
 	return func(q *AssertionQuery) {
 		q.filters = append(q.filters, "Hash = ?")
 		q.args = append(q.args, hash.Hash)
@@ -194,7 +194,7 @@ func WithRequiredStake(requiredStake string) AssertionOption {
 		q.args = append(q.args, requiredStake)
 	}
 }
-func WithParentAssertionHash(hash protocol.AssertionHash) AssertionOption {
+func WithParentAssertionHash(hash chainabstraction.AssertionHash) AssertionOption {
 	return func(q *AssertionQuery) {
 		q.filters = append(q.filters, "ParentAssertionHash = ?")
 		q.args = append(q.args, hash.Hash)
@@ -230,7 +230,7 @@ func WithTransactionHash(hash common.Hash) AssertionOption {
 		q.args = append(q.args, hash)
 	}
 }
-func WithBeforeState(state *protocol.ExecutionState) AssertionOption {
+func WithBeforeState(state *chainabstraction.ExecutionState) AssertionOption {
 	return func(q *AssertionQuery) {
 		q.filters = append(q.filters, "BeforeStateBlockHash = ?")
 		q.args = append(q.args, state.GlobalState.BlockHash)
@@ -244,7 +244,7 @@ func WithBeforeState(state *protocol.ExecutionState) AssertionOption {
 		q.args = append(q.args, state.MachineStatus)
 	}
 }
-func WithAfterState(state *protocol.ExecutionState) AssertionOption {
+func WithAfterState(state *chainabstraction.ExecutionState) AssertionOption {
 	return func(q *AssertionQuery) {
 		q.filters = append(q.filters, "AfterStateBlockHash = ?")
 		q.args = append(q.args, state.GlobalState.BlockHash)
@@ -275,7 +275,7 @@ func WithIsFirstChild() AssertionOption {
 		q.filters = append(q.filters, "IsFirstChild = true")
 	}
 }
-func WithAssertionStatus(status protocol.AssertionStatus) AssertionOption {
+func WithAssertionStatus(status chainabstraction.AssertionStatus) AssertionOption {
 	return func(q *AssertionQuery) {
 		q.filters = append(q.filters, "Status = ?")
 		q.args = append(q.args, status.String())
@@ -398,7 +398,7 @@ func NewEdgeQuery(opts ...EdgeOption) *EdgeQuery {
 
 type EdgeOption func(e *EdgeQuery)
 
-func WithId(id protocol.EdgeId) EdgeOption {
+func WithId(id chainabstraction.EdgeId) EdgeOption {
 	return func(q *EdgeQuery) {
 		q.filters = append(q.filters, "Id = ?")
 		q.args = append(q.args, id)
@@ -410,7 +410,7 @@ func WithChallengeLevel(level uint8) EdgeOption {
 		q.args = append(q.args, level)
 	}
 }
-func WithOriginId(originId protocol.OriginId) EdgeOption {
+func WithOriginId(originId chainabstraction.OriginId) EdgeOption {
 	return func(q *EdgeQuery) {
 		q.filters = append(q.filters, "OriginId = ?")
 		q.args = append(q.args, common.Hash(originId))
@@ -444,13 +444,13 @@ func WithEndHistoryCommitment(endHistory history.History) EdgeOption {
 		q.args = append(q.args, endHistory.Height)
 	}
 }
-func WithMutualId(mutualId protocol.MutualId) EdgeOption {
+func WithMutualId(mutualId chainabstraction.MutualId) EdgeOption {
 	return func(q *EdgeQuery) {
 		q.filters = append(q.filters, "MutualId = ?")
 		q.args = append(q.args, common.Hash(mutualId))
 	}
 }
-func WithClaimId(claimId protocol.ClaimId) EdgeOption {
+func WithClaimId(claimId chainabstraction.ClaimId) EdgeOption {
 	return func(q *EdgeQuery) {
 		q.filters = append(q.filters, "ClaimId = ?")
 		q.args = append(q.args, common.Hash(claimId))
@@ -462,13 +462,13 @@ func HasChildren(x bool) EdgeOption {
 		q.args = append(q.args, x)
 	}
 }
-func WithLowerChildId(id protocol.EdgeId) EdgeOption {
+func WithLowerChildId(id chainabstraction.EdgeId) EdgeOption {
 	return func(q *EdgeQuery) {
 		q.filters = append(q.filters, "LowerChildId = ?")
 		q.args = append(q.args, id.Hash)
 	}
 }
-func WithUpperChildId(id protocol.EdgeId) EdgeOption {
+func WithUpperChildId(id chainabstraction.EdgeId) EdgeOption {
 	return func(q *EdgeQuery) {
 		q.filters = append(q.filters, "UpperChildId = ?")
 		q.args = append(q.args, id.Hash)
@@ -486,7 +486,7 @@ func WithMiniStakerDefined() EdgeOption {
 		q.args = append(q.args, common.Address{})
 	}
 }
-func WithEdgeAssertionHash(hash protocol.AssertionHash) EdgeOption {
+func WithEdgeAssertionHash(hash chainabstraction.AssertionHash) EdgeOption {
 	return func(q *EdgeQuery) {
 		q.filters = append(q.filters, "AssertionHash = ?")
 		q.args = append(q.args, hash.Hash)
@@ -503,7 +503,7 @@ func WithSubchallenge() EdgeOption {
 		q.onlySubchallenged = true
 	}
 }
-func WithEdgeStatus(st protocol.EdgeStatus) EdgeOption {
+func WithEdgeStatus(st chainabstraction.EdgeStatus) EdgeOption {
 	return func(q *EdgeQuery) {
 		q.filters = append(q.filters, "Status = ?")
 		q.args = append(q.args, st.String())
