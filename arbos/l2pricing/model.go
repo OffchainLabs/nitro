@@ -81,10 +81,12 @@ func (ps *L2PricingState) GasPoolUpdateCost(arbosVersion uint64) uint64 {
 
 	fallBackToLegacy := true
 	if arbosVersion >= ArbosMultiConstraintsVersion {
-		// Extra read for gas constraints length
+		// Extra read for gas constraints length (ArbOS 50)
 		result += storage.StorageReadCost
+	}
 
-		// addToGasPoolWithGasConstraints costs
+	if arbosVersion >= params.ArbosVersion_MultiConstraintFix {
+		// addToGasPoolWithGasConstraints costs (ArbOS 51 and later)
 		constraintsLength, _ := ps.gasConstraints.Length()
 		if constraintsLength > 0 {
 			// reading length one more time + read and write each constraint's Backlog value
@@ -93,7 +95,7 @@ func (ps *L2PricingState) GasPoolUpdateCost(arbosVersion uint64) uint64 {
 		}
 	}
 
-	// addToGasPoolLegacy costs
+	// addToGasPoolLegacy costs (ArbOS prior to 50, or if no gas constraints are set)
 	if fallBackToLegacy {
 		// read and write Backlog value
 		result += storage.StorageReadCost + storage.StorageWriteCost
