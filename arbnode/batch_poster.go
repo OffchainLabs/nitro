@@ -1778,14 +1778,14 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 					log.Warn("Batch too large for 4844, will rebuild smaller", "batchSize", len(batchData), "max4844Size", config.Max4844BatchSize)
 					b.useEthDA = true
 					b.building = nil
-					return false, nil // Trigger rebuild
+					return true, nil // Trigger immediate rebuild
 				}
 			} else {
 				if len(batchData) > config.MaxCalldataBatchSize {
 					log.Warn("Batch too large for calldata, will rebuild smaller", "batchSize", len(batchData), "maxCalldataBatchSize", config.MaxCalldataBatchSize)
 					b.useEthDA = true
 					b.building = nil
-					return false, nil // Trigger rebuild
+					return true, nil // Trigger immediate rebuild
 				}
 			}
 
