@@ -251,8 +251,7 @@ func TestInboxReaderBlobFailureWithDelayedMessage(t *testing.T) {
 		t.Logf("PASS: Follower is fully synced")
 	}
 
-	// Prevent unused variable warning
-	_ = batchNum
+
 }
 
 // Build2ndNodeWithBlobReader builds a second node with a custom blob reader.
