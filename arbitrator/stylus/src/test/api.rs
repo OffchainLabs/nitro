@@ -4,7 +4,7 @@
 use crate::{native, run::RunProgram};
 use arbutil::{
     evm::{
-        api::{EvmApi, Gas, Ink, VecReader},
+        api::{CreateRespone, EvmApi, Gas, Ink, VecReader},
         user::UserOutcomeKind,
         EvmData,
     },
@@ -54,7 +54,7 @@ impl TestEvmApi {
     pub fn deploy(&mut self, address: Bytes20, config: StylusConfig, name: &str) -> Result<()> {
         let file = format!("tests/{name}/target/wasm32-unknown-unknown/release/{name}.wasm");
         let wasm = std::fs::read(file)?;
-        let module = native::module(&wasm, self.compile.clone(), Target::default())?;
+        let module = native::module(&wasm, self.compile.clone(), Target::default(), false)?;
         self.contracts.lock().insert(address, module);
         self.configs.lock().insert(address, config);
         Ok(())
@@ -68,31 +68,35 @@ impl TestEvmApi {
 }
 
 impl EvmApi<VecReader> for TestEvmApi {
-    fn get_bytes32(&mut self, key: Bytes32, _evm_api_gas_to_use: Gas) -> (Bytes32, Gas) {
+    fn get_bytes32(&mut self, key: Bytes32, _evm_api_gas_to_use: Gas) -> Result<(Bytes32, Gas)> {
         let storage = &mut self.storage.lock();
         let storage = storage.get_mut(&self.program).unwrap();
         let value = storage.get(&key).cloned().unwrap_or_default();
-        (value, Gas(2100)) // pretend worst case
+        Ok((value, Gas(2100))) // pretend worst case
     }
 
-    fn cache_bytes32(&mut self, key: Bytes32, value: Bytes32) -> Gas {
+    fn cache_bytes32(&mut self, key: Bytes32, value: Bytes32) -> Result<Gas> {
         let storage = &mut self.storage.lock();
         let storage = storage.get_mut(&self.program).unwrap();
         storage.insert(key, value);
-        Gas(0)
+        Ok(Gas(0))
     }
 
-    fn flush_storage_cache(&mut self, _clear: bool, _gas_left: Gas) -> Result<Gas> {
+    fn flush_storage_cache(
+        &mut self,
+        _clear: bool,
+        _gas_left: Gas,
+    ) -> Result<(Gas, UserOutcomeKind)> {
         let storage = &mut self.storage.lock();
         let storage = storage.get_mut(&self.program).unwrap();
-        Ok(Gas(22100) * storage.len() as u64) // pretend worst case
+        Ok((Gas(22100) * storage.len() as u64, UserOutcomeKind::Success)) // pretend worst case
     }
 
-    fn get_transient_bytes32(&mut self, _key: Bytes32) -> Bytes32 {
+    fn get_transient_bytes32(&mut self, _key: Bytes32) -> Result<Bytes32> {
         unimplemented!("tload not supported")
     }
 
-    fn set_transient_bytes32(&mut self, _key: Bytes32, _value: Bytes32) -> Result<()> {
+    fn set_transient_bytes32(&mut self, _key: Bytes32, _value: Bytes32) -> Result<UserOutcomeKind> {
         unimplemented!("tstore not supported")
     }
 
@@ -105,7 +109,7 @@ impl EvmApi<VecReader> for TestEvmApi {
         _gas_left: Gas,
         gas_req: Gas,
         _value: Bytes32,
-    ) -> (u32, Gas, UserOutcomeKind) {
+    ) -> Result<(u32, Gas, UserOutcomeKind)> {
         let compile = self.compile.clone();
         let evm_data = self.evm_data;
         let config = *self.configs.lock().get(&contract).unwrap();
@@ -125,7 +129,7 @@ impl EvmApi<VecReader> for TestEvmApi {
         let ink_left: Ink = native.ink_left().into();
         let gas_left = config.pricing.ink_to_gas(ink_left);
         *self.write_result.lock() = outs;
-        (outs_len, gas - gas_left, status)
+        Ok((outs_len, gas - gas_left, status))
     }
 
     fn delegate_call(
@@ -134,7 +138,7 @@ impl EvmApi<VecReader> for TestEvmApi {
         _calldata: &[u8],
         _gas_left: Gas,
         _gas_req: Gas,
-    ) -> (u32, Gas, UserOutcomeKind) {
+    ) -> Result<(u32, Gas, UserOutcomeKind)> {
         todo!("delegate call not yet supported")
     }
 
@@ -144,7 +148,7 @@ impl EvmApi<VecReader> for TestEvmApi {
         calldata: &[u8],
         gas_left: Gas,
         gas_req: Gas,
-    ) -> (u32, Gas, UserOutcomeKind) {
+    ) -> Result<(u32, Gas, UserOutcomeKind)> {
         println!("note: overriding static call with call");
         self.contract_call(contract, calldata, gas_left, gas_req, Bytes32::default())
     }
@@ -154,7 +158,7 @@ impl EvmApi<VecReader> for TestEvmApi {
         _code: Vec<u8>,
         _endowment: Bytes32,
         _gas: Gas,
-    ) -> (Result<Bytes20>, u32, Gas) {
+    ) -> Result<(CreateRespone, u32, Gas)> {
         unimplemented!("create1 not supported")
     }
 
@@ -164,7 +168,7 @@ impl EvmApi<VecReader> for TestEvmApi {
         _endowment: Bytes32,
         _salt: Bytes32,
         _gas: Gas,
-    ) -> (Result<Bytes20>, u32, Gas) {
+    ) -> Result<(CreateRespone, u32, Gas)> {
         unimplemented!("create2 not supported")
     }
 
@@ -176,7 +180,7 @@ impl EvmApi<VecReader> for TestEvmApi {
         Ok(()) // pretend a log was emitted
     }
 
-    fn account_balance(&mut self, _address: Bytes20) -> (Bytes32, Gas) {
+    fn account_balance(&mut self, _address: Bytes20) -> Result<(Bytes32, Gas)> {
         unimplemented!()
     }
 
@@ -185,22 +189,22 @@ impl EvmApi<VecReader> for TestEvmApi {
         _arbos_version: u64,
         _address: Bytes20,
         _gas_left: Gas,
-    ) -> (VecReader, Gas) {
+    ) -> Result<(VecReader, Gas)> {
         unimplemented!()
     }
 
-    fn account_codehash(&mut self, _address: Bytes20) -> (Bytes32, Gas) {
+    fn account_codehash(&mut self, _address: Bytes20) -> Result<(Bytes32, Gas)> {
         unimplemented!()
     }
 
-    fn add_pages(&mut self, new: u16) -> Gas {
+    fn add_pages(&mut self, new: u16) -> Result<Gas> {
         let model = MemoryModel::new(2, 1000);
         let (open, ever) = *self.pages.lock();
 
         let mut pages = self.pages.lock();
         pages.0 = pages.0.saturating_add(new);
         pages.1 = pages.1.max(pages.0);
-        model.gas_cost(new, open, ever)
+        Ok(model.gas_cost(new, open, ever))
     }
 
     fn capture_hostio(

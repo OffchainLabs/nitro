@@ -98,7 +98,30 @@ func (p *Promise[R]) Produce(value R) {
 	}
 }
 
-// cancel might be called multiple times while no value or error produced
+func (p *Promise[R]) ProduceResultSafe(value R, err error) error {
+	if err == nil {
+		return p.ProduceSafe(value)
+	}
+	return p.ProduceErrorSafe(err)
+}
+
+func (p *Promise[R]) ProduceResult(value R, err error) {
+	errSafe := p.ProduceResultSafe(value, err)
+	if errSafe != nil {
+		panic(errSafe)
+	}
+}
+
+func DoPromise[R any](parentCtx context.Context, promiseProducer func(context.Context) (R, error)) PromiseInterface[R] {
+	promise, ctx := NewPromiseWithContext[R](parentCtx)
+	go func() {
+		value, err := promiseProducer(ctx)
+		promise.ProduceResult(value, err)
+	}()
+	return promise
+}
+
+// cancel might be called multiple times while no value or error is produced
 // cancel will be called by Await if it's context is done
 func NewPromise[R any](cancel func()) Promise[R] {
 	return Promise[R]{
@@ -107,12 +130,14 @@ func NewPromise[R any](cancel func()) Promise[R] {
 	}
 }
 
+func NewPromiseWithContext[R any](parentCtx context.Context) (*Promise[R], context.Context) {
+	ctx, cancel := context.WithCancel(parentCtx)
+	promise := NewPromise[R](cancel)
+	return &promise, ctx
+}
+
 func NewReadyPromise[R any](val R, err error) PromiseInterface[R] {
 	promise := NewPromise[R](nil)
-	if err == nil {
-		promise.Produce(val)
-	} else {
-		promise.ProduceError(err)
-	}
+	promise.ProduceResult(val, err)
 	return &promise
 }

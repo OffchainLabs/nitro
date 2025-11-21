@@ -12,7 +12,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 
-	inclusionproofs "github.com/offchainlabs/bold/state-commitments/inclusion-proofs"
+	"github.com/offchainlabs/nitro/bold/state-commitments/inclusion-proofs"
 )
 
 func TestHistoryCommitment_LeafProofs(t *testing.T) {

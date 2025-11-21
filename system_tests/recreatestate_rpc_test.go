@@ -97,6 +97,7 @@ func TestRecreateStateForRPCNoDepthLimit(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder.RequireScheme(t, rawdb.HashScheme)
 	builder.execConfig.RPC.MaxRecreateStateDepth = arbitrum.InfiniteMaxRecreateStateDepth
 	builder.execConfig.Sequencer.MaxBlockSpeed = 0
 	builder.execConfig.Sequencer.MaxTxDataSize = 150 // 1 test tx ~= 110
@@ -134,6 +135,7 @@ func TestRecreateStateForRPCBigEnoughDepthLimit(t *testing.T) {
 	// #nosec G115
 	depthGasLimit := int64(256 * util.NormalizeL2GasForL1GasInitial(800_000, params.GWei))
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder.RequireScheme(t, rawdb.HashScheme)
 	builder.execConfig.RPC.MaxRecreateStateDepth = depthGasLimit
 	builder.execConfig.Sequencer.MaxBlockSpeed = 0
 	builder.execConfig.Sequencer.MaxTxDataSize = 150 // 1 test tx ~= 110
@@ -169,6 +171,7 @@ func TestRecreateStateForRPCDepthLimitExceeded(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder.RequireScheme(t, rawdb.HashScheme)
 	builder.execConfig.RPC.MaxRecreateStateDepth = int64(200)
 	builder.execConfig.Sequencer.MaxBlockSpeed = 0
 	builder.execConfig.Sequencer.MaxTxDataSize = 150 // 1 test tx ~= 110
@@ -204,7 +207,7 @@ func TestRecreateStateForRPCMissingBlockParent(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
-
+	builder.RequireScheme(t, rawdb.HashScheme)
 	builder.execConfig.RPC.MaxRecreateStateDepth = arbitrum.InfiniteMaxRecreateStateDepth
 	builder.execConfig.Sequencer.MaxBlockSpeed = 0
 	builder.execConfig.Sequencer.MaxTxDataSize = 150 // 1 test tx ~= 110
@@ -250,7 +253,7 @@ func TestRecreateStateForRPCBeyondGenesis(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
-
+	builder.RequireScheme(t, rawdb.HashScheme)
 	builder.execConfig.RPC.MaxRecreateStateDepth = arbitrum.InfiniteMaxRecreateStateDepth
 	builder.execConfig.Sequencer.MaxBlockSpeed = 0
 	builder.execConfig.Sequencer.MaxTxDataSize = 150 // 1 test tx ~= 110
@@ -287,7 +290,7 @@ func TestRecreateStateForRPCBlockNotFoundWhileRecreating(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
-
+	builder.RequireScheme(t, rawdb.HashScheme)
 	builder.execConfig.RPC.MaxRecreateStateDepth = arbitrum.InfiniteMaxRecreateStateDepth
 	builder.execConfig.Sequencer.MaxBlockSpeed = 0
 	builder.execConfig.Sequencer.MaxTxDataSize = 150 // 1 test tx ~= 110
@@ -482,6 +485,8 @@ func testGettingState(t *testing.T, execConfig *gethexec.Config) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	// This test is HashScheme specific, it shouldn't be run with Pathdb
+	builder.RequireScheme(t, rawdb.HashScheme)
 	builder.execConfig = execConfig
 	cancelNode := buildWithHistory(t, ctx, builder, 16)
 	execNode := builder.L2.ExecNode
@@ -552,7 +557,7 @@ func TestGettingState(t *testing.T) {
 	execConfig.Caching.BlockAge = 0      // use only Caching.BlockCount to keep only last N blocks in dirties cache, no matter how new they are
 	execConfig.Sequencer.MaxBlockSpeed = 0
 	execConfig.Sequencer.MaxTxDataSize = 150 // 1 test tx ~= 110
-	t.Run("archive-node", func(t *testing.T) {
+	t.Run("sparse-archive-node", func(t *testing.T) {
 		testGettingState(t, execConfig)
 	})
 }

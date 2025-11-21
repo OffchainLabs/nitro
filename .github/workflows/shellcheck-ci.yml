@@ -1,3 +1,4 @@
+---
 name: ShellCheck CI
 run-name: ShellCheck CI triggered from @${{ github.actor }} of ${{ github.head_ref }}
 
@@ -6,16 +7,16 @@ on:
   merge_group:
   pull_request:
   push:
-    branches:
-      - master
+    branches: [master, main]
 
 jobs:
   shellcheck:
     name: Run ShellCheck
-    runs-on: ubuntu-8
+    runs-on: ubuntu-4
+
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Run ShellCheck
         uses: ludeeus/action-shellcheck@master

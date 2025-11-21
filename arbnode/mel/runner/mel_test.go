@@ -49,7 +49,7 @@ func TestMessageExtractor(t *testing.T) {
 		&chaininfo.RollupAddresses{},
 		melDb,
 		messageConsumer,
-		[]daprovider.Reader{},
+		daprovider.NewReaderRegistry(),
 		0,
 	)
 	extractor.StopWaiter.Start(ctx, extractor)

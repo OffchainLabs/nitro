@@ -3,7 +3,6 @@
 
 // race detection makes things slow and miss timeouts
 //go:build block_validator_bench
-// +build block_validator_bench
 
 package arbtest
 
@@ -12,5 +11,11 @@ import (
 )
 
 func TestBlockValidatorBenchmark(t *testing.T) {
-	testBlockValidatorSimple(t, "onchain", 1, depleteGas, true)
+	opts := Options{
+		dasModeString: "onchain",
+		workloadLoops: 1,
+		workload:      depleteGas,
+		arbitrator:    true,
+	}
+	testBlockValidatorSimple(t, opts)
 }

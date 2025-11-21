@@ -21,12 +21,12 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
 
-	protocol "github.com/offchainlabs/bold/chain-abstraction"
-	challengemanager "github.com/offchainlabs/bold/challenge-manager"
-	modes "github.com/offchainlabs/bold/challenge-manager/types"
-	l2stateprovider "github.com/offchainlabs/bold/layer2-state-provider"
-	"github.com/offchainlabs/bold/testing/setup"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
+	protocol "github.com/offchainlabs/nitro/bold/chain-abstraction"
+	challengemanager "github.com/offchainlabs/nitro/bold/challenge-manager"
+	modes "github.com/offchainlabs/nitro/bold/challenge-manager/types"
+	l2stateprovider "github.com/offchainlabs/nitro/bold/layer2-state-provider"
+	"github.com/offchainlabs/nitro/bold/testing/setup"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
@@ -74,7 +74,7 @@ func TestOverflowAssertions(t *testing.T) {
 		UseBlobs:               true,
 	}
 
-	_, l2node, _, _, l1info, _, l1client, l1stack, assertionChain, _ := createTestNodeOnL1ForBoldProtocol(t, ctx, true, nil, l2chainConfig, nil, sconf, l2info)
+	_, l2node, _, _, l1info, _, l1client, l1stack, assertionChain, _, _ := createTestNodeOnL1ForBoldProtocol(t, ctx, true, nil, l2chainConfig, nil, sconf, l2info, false)
 	defer requireClose(t, l1stack)
 	defer l2node.StopAndWait()
 

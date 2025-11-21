@@ -10,9 +10,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	protocol "github.com/offchainlabs/bold/chain-abstraction"
-	"github.com/offchainlabs/bold/challenge-manager/challenge-tree/mock"
-	"github.com/offchainlabs/bold/containers/threadsafe"
+	"github.com/offchainlabs/nitro/bold/chain-abstraction"
+	"github.com/offchainlabs/nitro/bold/challenge-manager/challenge-tree/mock"
+	"github.com/offchainlabs/nitro/bold/containers/threadsafe"
 )
 
 func TestIsConfirmableEssentialEdge(t *testing.T) {

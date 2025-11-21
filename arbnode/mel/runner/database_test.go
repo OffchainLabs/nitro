@@ -90,7 +90,7 @@ func TestMelDatabaseReadAndWriteDelayedMessages(t *testing.T) {
 	state := &mel.State{}
 	state.SetDelayedMessageBacklog(&mel.DelayedMessageBacklog{})
 	require.NoError(t, state.AccumulateDelayedMessage(delayedMsg)) // Initialize delayedMessageBacklog
-	state.DelayedMessagedSeen++
+	state.DelayedMessagesSeen++
 
 	require.NoError(t, melDb.SaveDelayedMessages(ctx, state, []*mel.DelayedInboxMessage{delayedMsg}))
 	have, err := melDb.ReadDelayedMessage(ctx, state, 0)
@@ -147,7 +147,7 @@ func TestMelDelayedMessagesAccumulation(t *testing.T) {
 	// See 3 delayed messages and accumulate them
 	for i := 0; i < numDelayed; i++ {
 		require.NoError(t, state.AccumulateDelayedMessage(delayedMsgs[i]))
-		state.DelayedMessagedSeen++
+		state.DelayedMessagesSeen++
 	}
 	require.NoError(t, melDb.SaveDelayedMessages(ctx, state, delayedMsgs[:numDelayed]))
 	// We can read all of these and prove that they are correct, by checking that ReadDelayedMessage doesnt error

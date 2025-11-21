@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2025, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package das
@@ -17,6 +17,7 @@ import (
 
 	"github.com/offchainlabs/nitro/blsSignatures"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
+	"github.com/offchainlabs/nitro/daprovider/data_streaming"
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
@@ -28,9 +29,9 @@ func blsPubToBase64(pubkey *blsSignatures.PublicKey) string {
 	return string(encodedPubkey)
 }
 
-func testRpcImpl(t *testing.T, size, times int, concurrent bool) {
-	// enableLogging()
+const sendChunkJSONBoilerplate = "{\"jsonrpc\":\"2.0\",\"id\":4294967295,\"method\":\"das_sendChunked\",\"params\":[\"\"]}"
 
+func testRpcImpl(t *testing.T, size, times int, concurrent bool) {
 	ctx := context.Background()
 	lis, err := net.Listen("tcp", "localhost:0")
 	testhelpers.RequireImpl(t, err)
@@ -81,10 +82,13 @@ func testRpcImpl(t *testing.T, size, times int, concurrent bool) {
 	testhelpers.RequireImpl(t, err)
 	aggConf := DataAvailabilityConfig{
 		RPCAggregator: AggregatorConfig{
-			AssumedHonest:         1,
-			Backends:              beConfigs,
-			MaxStoreChunkBodySize: (chunkSize * 2) + len(sendChunkJSONBoilerplate),
-			EnableChunkedStore:    true,
+			AssumedHonest: 1,
+			Backends:      beConfigs,
+			DASRPCClient: DASRPCClientConfig{
+				ServerUrl:          "",
+				EnableChunkedStore: true,
+				DataStream:         data_streaming.TestDataStreamerConfig(DefaultDataStreamRpcMethods),
+			},
 		},
 		RequestTimeout: time.Minute,
 	}
@@ -95,17 +99,10 @@ func testRpcImpl(t *testing.T, size, times int, concurrent bool) {
 	runStore := func() {
 		defer wg.Done()
 		msg := testhelpers.RandomizeSlice(make([]byte, size))
-		cert, err := rpcAgg.Store(ctx, msg, 0)
+		cert, err := rpcAgg.Store(ctx, msg, testhelpers.RandomUint64(0, uint64(defaultStorageRetention.Seconds()))) // we use random timeouts as a random nonce to differentiate between request signatures to avoid replay-protection issues
 		testhelpers.RequireImpl(t, err)
 
 		retrievedMessage, err := storageService.GetByHash(ctx, cert.DataHash)
-		testhelpers.RequireImpl(t, err)
-
-		if !bytes.Equal(msg, retrievedMessage) {
-			testhelpers.FailImpl(t, "failed to retrieve correct message")
-		}
-
-		retrievedMessage, err = storageService.GetByHash(ctx, cert.DataHash)
 		testhelpers.RequireImpl(t, err)
 
 		if !bytes.Equal(msg, retrievedMessage) {
@@ -125,23 +122,23 @@ func testRpcImpl(t *testing.T, size, times int, concurrent bool) {
 	wg.Wait()
 }
 
-const chunkSize = 512 * 1024
+const chunkSize = (data_streaming.TestHttpBodyLimit - len(sendChunkJSONBoilerplate)) / 2
 
 func TestRPCStore(t *testing.T) {
 	for _, tc := range []struct {
 		desc             string
 		totalSize, times int
 		concurrent       bool
-		leagcyAPIOnly    bool
+		legacyAPIOnly    bool
 	}{
 		{desc: "small store", totalSize: 100, times: 1, concurrent: false},
 		{desc: "chunked store - last chunk full", totalSize: chunkSize * 20, times: 10, concurrent: true},
 		{desc: "chunked store - last chunk not full", totalSize: chunkSize*31 + 123, times: 10, concurrent: true},
 		{desc: "chunked store - overflow cache - sequential", totalSize: chunkSize * 3, times: 15, concurrent: false},
-		{desc: "new client falls back to old api for old server", totalSize: (5*1024*1024)/2 - len(sendChunkJSONBoilerplate) - 100 /* geth counts headers too */, times: 5, concurrent: true, leagcyAPIOnly: true},
+		{desc: "new client falls back to old api for old server", totalSize: (5*1024*1024)/2 - len(sendChunkJSONBoilerplate) - 100 /* geth counts headers too */, times: 5, concurrent: true, legacyAPIOnly: true},
 	} {
 		t.Run(tc.desc, func(t *testing.T) {
-			legacyDASStoreAPIOnly = tc.leagcyAPIOnly
+			legacyDASStoreAPIOnly = tc.legacyAPIOnly
 			testRpcImpl(t, tc.totalSize, tc.times, tc.concurrent)
 		})
 	}

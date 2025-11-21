@@ -15,9 +15,9 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rpc"
 
-	"github.com/offchainlabs/bold/containers/fsm"
 	"github.com/offchainlabs/nitro/arbnode/mel"
-	melextraction "github.com/offchainlabs/nitro/arbnode/mel/extraction"
+	"github.com/offchainlabs/nitro/arbnode/mel/extraction"
+	"github.com/offchainlabs/nitro/bold/containers/fsm"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
@@ -74,7 +74,7 @@ type MessageExtractor struct {
 	addrs             *chaininfo.RollupAddresses
 	melDB             *Database
 	msgConsumer       mel.MessageConsumer
-	dataProviders     []daprovider.Reader
+	dataProviders     *daprovider.ReaderRegistry
 	fsm               *fsm.Fsm[action, FSMState]
 	retryInterval     time.Duration
 }
@@ -87,7 +87,7 @@ func NewMessageExtractor(
 	rollupAddrs *chaininfo.RollupAddresses,
 	melDB *Database,
 	msgConsumer mel.MessageConsumer,
-	dataProviders []daprovider.Reader,
+	dataProviders *daprovider.ReaderRegistry,
 	retryInterval time.Duration,
 ) (*MessageExtractor, error) {
 	if retryInterval == 0 {

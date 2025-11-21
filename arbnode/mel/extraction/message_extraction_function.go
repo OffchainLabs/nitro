@@ -56,7 +56,7 @@ func ExtractMessages(
 	ctx context.Context,
 	inputState *mel.State,
 	parentChainHeader *types.Header,
-	dataProviders []daprovider.Reader,
+	dataProviders *daprovider.ReaderRegistry,
 	delayedMsgDatabase DelayedMessageDatabase,
 	txFetcher TransactionFetcher,
 	logsFetcher LogsFetcher,
@@ -86,7 +86,7 @@ func extractMessagesImpl(
 	ctx context.Context,
 	inputState *mel.State,
 	parentChainHeader *types.Header,
-	dataProviders []daprovider.Reader,
+	dataProviders *daprovider.ReaderRegistry,
 	delayedMsgDatabase DelayedMessageDatabase,
 	txFetcher TransactionFetcher,
 	logsFetcher LogsFetcher,
@@ -105,7 +105,7 @@ func extractMessagesImpl(
 	if state.ParentChainBlockHash != parentChainHeader.ParentHash {
 		return nil, nil, nil, nil, fmt.Errorf(
 			"parent chain block hash in MEL state does not match incoming block's parent hash: expected %s, got %s",
-			state.ParentChainPreviousBlockHash.Hex(),
+			state.ParentChainBlockHash.Hex(),
 			parentChainHeader.ParentHash.Hex(),
 		)
 	}
@@ -149,7 +149,7 @@ func extractMessagesImpl(
 		if err = state.AccumulateDelayedMessage(delayed); err != nil {
 			return nil, nil, nil, nil, err
 		}
-		state.DelayedMessagedSeen += 1
+		state.DelayedMessagesSeen += 1
 	}
 	if len(delayedMessages) > 0 {
 		// Only need to calculate partials once, after all the delayed messages are `seen`
@@ -197,11 +197,11 @@ func extractMessagesImpl(
 					batch.SequenceNumber,
 				)
 			}
-			gas := arbostypes.ComputeBatchGasCost(serialized)
-
-			// Fill in the batch gas cost into the batch posting report.
-			batchPostReport.Message.BatchGasCost = &gas
-		} else if !(inputState.DelayedMessagedSeen == 0 && i == 0 && delayedMessages[i] == batchPostReport) {
+			// Fill in the batch gas stats into the batch posting report.
+			batchPostReport.Message.BatchDataStats = arbostypes.GetDataStats(serialized)
+			legacyCost := arbostypes.LegacyCostForStats(batchPostReport.Message.BatchDataStats)
+			batchPostReport.Message.LegacyBatchGasCost = &legacyCost
+		} else if !(inputState.DelayedMessagesSeen == 0 && i == 0 && delayedMessages[i] == batchPostReport) {
 			return nil, nil, nil, nil, errors.New("encountered initialize message that is not the first delayed message and the first batch ")
 		}
 

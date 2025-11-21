@@ -47,7 +47,7 @@ pub trait DebugBytes {
 
 impl<T: Debug> DebugBytes for T {
     fn debug_bytes(self) -> Vec<u8> {
-        format!("{:?}", self).as_bytes().to_vec()
+        format!("{self:?}").as_bytes().to_vec()
     }
 }
 

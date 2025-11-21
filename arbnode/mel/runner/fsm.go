@@ -3,9 +3,9 @@ package melrunner
 import (
 	"fmt"
 
-	"github.com/offchainlabs/bold/containers/fsm"
 	"github.com/offchainlabs/nitro/arbnode/mel"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
+	"github.com/offchainlabs/nitro/bold/containers/fsm"
 )
 
 // Defines a finite state machine (FSM) for the message extraction process.

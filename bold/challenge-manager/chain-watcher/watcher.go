@@ -7,7 +7,7 @@
 // trackers and it tracks common information such as the edges' ancestors and an
 // edge's time unrivaled.
 //
-// See: [github.com/offchainlabs/bold/challenge-manager/edge-tracker]
+// See: [github.com/offchainlabs/nitro/bold/challenge-manager/edge-tracker]
 package watcher
 
 import (
@@ -24,18 +24,18 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 
-	"github.com/offchainlabs/bold/api"
-	"github.com/offchainlabs/bold/api/db"
-	protocol "github.com/offchainlabs/bold/chain-abstraction"
-	solimpl "github.com/offchainlabs/bold/chain-abstraction/sol-implementation"
-	challengetree "github.com/offchainlabs/bold/challenge-manager/challenge-tree"
-	"github.com/offchainlabs/bold/containers/option"
-	"github.com/offchainlabs/bold/containers/threadsafe"
-	l2stateprovider "github.com/offchainlabs/bold/layer2-state-provider"
-	"github.com/offchainlabs/bold/logs/ephemeral"
-	retry "github.com/offchainlabs/bold/runtime"
-	"github.com/offchainlabs/bold/util/stopwaiter"
+	"github.com/offchainlabs/nitro/bold/api"
+	"github.com/offchainlabs/nitro/bold/api/db"
+	protocol "github.com/offchainlabs/nitro/bold/chain-abstraction"
+	solimpl "github.com/offchainlabs/nitro/bold/chain-abstraction/sol-implementation"
+	challengetree "github.com/offchainlabs/nitro/bold/challenge-manager/challenge-tree"
+	"github.com/offchainlabs/nitro/bold/containers/option"
+	"github.com/offchainlabs/nitro/bold/containers/threadsafe"
+	l2stateprovider "github.com/offchainlabs/nitro/bold/layer2-state-provider"
+	"github.com/offchainlabs/nitro/bold/logs/ephemeral"
+	retry "github.com/offchainlabs/nitro/bold/runtime"
 	"github.com/offchainlabs/nitro/solgen/go/challengeV2gen"
+	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
 var (

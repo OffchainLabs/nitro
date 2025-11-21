@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/offchainlabs/nitro/daprovider/das/dasutil"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
@@ -20,19 +21,13 @@ func testDASStoreRetrieveMultipleInstances(t *testing.T, storageType string) {
 	_, _, err := GenerateAndStoreKeys(dbPath)
 	Require(t, err)
 
-	enableFileStorage, enableDbStorage := false, false
+	enableFileStorage := false
 	switch storageType {
-	case "db":
-		enableDbStorage = true
 	case "files":
 		enableFileStorage = true
 	default:
 		Fail(t, "unknown storage type")
 	}
-
-	dbConfig := DefaultLocalDBStorageConfig
-	dbConfig.Enable = enableDbStorage
-	dbConfig.DataDir = dbPath
 
 	config := DataAvailabilityConfig{
 		Enable: true,
@@ -44,7 +39,6 @@ func testDASStoreRetrieveMultipleInstances(t *testing.T, storageType string) {
 			DataDir:      dbPath,
 			MaxRetention: DefaultLocalFileStorageConfig.MaxRetention,
 		},
-		LocalDBStorage:     dbConfig,
 		ParentChainNodeURL: "none",
 	}
 
@@ -53,7 +47,7 @@ func testDASStoreRetrieveMultipleInstances(t *testing.T, storageType string) {
 	defer lifecycleManager.StopAndWaitUntil(time.Second)
 	daWriter, err := NewSignAfterStoreDASWriter(firstCtx, config, storageService)
 	Require(t, err, "no das")
-	var daReader DataAvailabilityServiceReader = storageService
+	var daReader dasutil.DASReader = storageService
 
 	// #nosec G115
 	timeout := uint64(time.Now().Add(time.Hour * 24).Unix())
@@ -80,7 +74,7 @@ func testDASStoreRetrieveMultipleInstances(t *testing.T, storageType string) {
 	storageService2, lifecycleManager, err := CreatePersistentStorageService(secondCtx, &config)
 	Require(t, err)
 	defer lifecycleManager.StopAndWaitUntil(time.Second)
-	var daReader2 DataAvailabilityServiceReader = storageService2
+	var daReader2 dasutil.DASReader = storageService2
 
 	messageRetrieved2, err := daReader2.GetByHash(secondCtx, cert.DataHash)
 	Require(t, err, "Failed to retrieve message")
@@ -99,10 +93,6 @@ func TestDASStoreRetrieveMultipleInstancesFiles(t *testing.T) {
 	testDASStoreRetrieveMultipleInstances(t, "files")
 }
 
-func TestDASStoreRetrieveMultipleInstancesDB(t *testing.T) {
-	testDASStoreRetrieveMultipleInstances(t, "db")
-}
-
 func testDASMissingMessage(t *testing.T, storageType string) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -111,19 +101,13 @@ func testDASMissingMessage(t *testing.T, storageType string) {
 	_, _, err := GenerateAndStoreKeys(dbPath)
 	Require(t, err)
 
-	enableFileStorage, enableDbStorage := false, false
+	enableFileStorage := false
 	switch storageType {
-	case "db":
-		enableDbStorage = true
 	case "files":
 		enableFileStorage = true
 	default:
 		Fail(t, "unknown storage type")
 	}
-
-	dbConfig := DefaultLocalDBStorageConfig
-	dbConfig.Enable = enableDbStorage
-	dbConfig.DataDir = dbPath
 
 	config := DataAvailabilityConfig{
 		Enable: true,
@@ -135,7 +119,6 @@ func testDASMissingMessage(t *testing.T, storageType string) {
 			DataDir:      dbPath,
 			MaxRetention: DefaultLocalFileStorageConfig.MaxRetention,
 		},
-		LocalDBStorage:     dbConfig,
 		ParentChainNodeURL: "none",
 	}
 
@@ -144,7 +127,7 @@ func testDASMissingMessage(t *testing.T, storageType string) {
 	defer lifecycleManager.StopAndWaitUntil(time.Second)
 	daWriter, err := NewSignAfterStoreDASWriter(ctx, config, storageService)
 	Require(t, err, "no das")
-	var daReader DataAvailabilityServiceReader = storageService
+	var daReader dasutil.DASReader = storageService
 
 	messageSaved := []byte("hello world")
 	// #nosec G115
@@ -171,10 +154,6 @@ func testDASMissingMessage(t *testing.T, storageType string) {
 
 func TestDASMissingMessageFiles(t *testing.T) {
 	testDASMissingMessage(t, "files")
-}
-
-func TestDASMissingMessageDB(t *testing.T) {
-	testDASMissingMessage(t, "db")
 }
 
 func Require(t *testing.T, err error, printables ...interface{}) {

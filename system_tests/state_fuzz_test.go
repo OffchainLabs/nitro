@@ -58,7 +58,7 @@ func BuildBlock(
 	batchFetcher := func(uint64) ([]byte, error) {
 		return seqBatch, nil
 	}
-	err = l1Message.FillInBatchGasCost(batchFetcher)
+	err = l1Message.FillInBatchGasFields(batchFetcher)
 	if err != nil {
 		// skip malformed batch posting report
 		// nolint:nilerr
@@ -66,7 +66,7 @@ func BuildBlock(
 	}
 
 	block, _, err := arbos.ProduceBlock(
-		l1Message, delayedMessagesRead, lastBlockHeader, statedb, chainContext, false, runCtx,
+		l1Message, delayedMessagesRead, lastBlockHeader, statedb, chainContext, false, runCtx, false,
 	)
 	return block, err
 }
@@ -123,6 +123,18 @@ type noopChainContext struct {
 	chainConfig *params.ChainConfig
 }
 
+func (c noopChainContext) CurrentHeader() *types.Header {
+	return nil
+}
+
+func (c noopChainContext) GetHeaderByNumber(number uint64) *types.Header {
+	return nil
+}
+
+func (c noopChainContext) GetHeaderByHash(hash common.Hash) *types.Header {
+	return nil
+}
+
 func (c noopChainContext) Config() *params.ChainConfig {
 	return c.chainConfig
 }
@@ -152,10 +164,10 @@ func FuzzStateTransition(f *testing.F) {
 			ChainConfig:           chainConfig,
 			SerializedChainConfig: serializedChainConfig,
 		}
-		cacheConfig := core.DefaultCacheConfigWithScheme(env.GetTestStateScheme())
+		options := core.DefaultConfig().WithStateScheme(env.GetTestStateScheme())
 		stateRoot, err := arbosState.InitializeArbosInDatabase(
 			chainDb,
-			cacheConfig,
+			options,
 			statetransfer.NewMemoryInitDataReader(&statetransfer.ArbosInitializationInfo{}),
 			chainConfig,
 			nil,
@@ -166,7 +178,7 @@ func FuzzStateTransition(f *testing.F) {
 		if err != nil {
 			panic(err)
 		}
-		trieDBConfig := cacheConfig.TriedbConfig()
+		trieDBConfig := options.TriedbConfig()
 		statedb, err := state.New(stateRoot, state.NewDatabase(triedb.NewDatabase(chainDb, trieDBConfig), nil))
 		if err != nil {
 			panic(err)

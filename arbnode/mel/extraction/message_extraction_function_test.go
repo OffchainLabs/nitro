@@ -31,7 +31,7 @@ func TestExtractMessages(t *testing.T) {
 		lookupDelayedMsgs    func(context.Context, *mel.State, *types.Header, TransactionFetcher, LogsFetcher) ([]*mel.DelayedInboxMessage, error)
 		serializer           func(context.Context, *mel.SequencerInboxBatch, *types.Transaction, LogsFetcher) ([]byte, error)
 		parseReport          func(io.Reader) (*big.Int, common.Address, common.Hash, uint64, *big.Int, uint64, error)
-		parseSequencerMsg    func(context.Context, uint64, common.Hash, []byte, []daprovider.Reader, daprovider.KeysetValidationMode) (*arbstate.SequencerMessage, error)
+		parseSequencerMsg    func(context.Context, uint64, common.Hash, []byte, *daprovider.ReaderRegistry, daprovider.KeysetValidationMode) (*arbstate.SequencerMessage, error)
 		extractBatchMessages func(context.Context, *mel.State, *arbstate.SequencerMessage, DelayedMessageDatabase) ([]*arbostypes.MessageWithMetadata, error)
 		expectedError        string
 		expectedMsgCount     uint64
@@ -180,7 +180,7 @@ func TestExtractMessages(t *testing.T) {
 
 			require.NoError(t, err)
 			require.Equal(t, tt.expectedMsgCount, postState.MsgCount)
-			require.Equal(t, tt.expectedDelayedSeen, postState.DelayedMessagedSeen)
+			require.Equal(t, tt.expectedDelayedSeen, postState.DelayedMessagesSeen)
 			require.Len(t, messages, tt.expectedMessages)
 			require.Len(t, delayedMessages, tt.expectedDelayedMsgs)
 			require.Len(t, batchMetas, int(postState.BatchCount-melState.BatchCount)) // #nosec G115
@@ -318,7 +318,7 @@ func successfulParseSequencerMsg(
 	batchNum uint64,
 	batchBlockHash common.Hash,
 	data []byte,
-	dapReaders []daprovider.Reader,
+	dapReaders *daprovider.ReaderRegistry,
 	keysetValidationMode daprovider.KeysetValidationMode,
 ) (*arbstate.SequencerMessage, error) {
 	return nil, nil
@@ -329,7 +329,7 @@ func failingParseSequencerMsg(
 	batchNum uint64,
 	batchBlockHash common.Hash,
 	data []byte,
-	dapReaders []daprovider.Reader,
+	dapReaders *daprovider.ReaderRegistry,
 	keysetValidationMode daprovider.KeysetValidationMode,
 ) (*arbstate.SequencerMessage, error) {
 	return nil, errors.New("failed to parse sequencer message")

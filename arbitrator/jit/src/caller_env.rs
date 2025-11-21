@@ -6,11 +6,7 @@ use arbutil::{Bytes20, Bytes32};
 use caller_env::{ExecEnv, GuestPtr, MemAccess};
 use rand::RngCore;
 use rand_pcg::Pcg32;
-use std::{
-    cmp::Ordering,
-    fmt::Debug,
-    mem::{self, MaybeUninit},
-};
+use std::mem::{self, MaybeUninit};
 use wasmer::{Memory, MemoryView, StoreMut, WasmPtr};
 
 pub struct JitMemAccess<'s> {
@@ -35,7 +31,7 @@ impl<'a> JitEnv<'a> for WasmEnvMut<'a> {
 }
 
 impl JitMemAccess<'_> {
-    fn view(&self) -> MemoryView {
+    fn view(&self) -> MemoryView<'_> {
         self.memory.view(&self.store)
     }
 
@@ -151,26 +147,5 @@ impl Default for GoRuntimeState {
             time: 0,
             rng: caller_env::create_pcg(),
         }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TimeoutInfo {
-    pub time: u64,
-    pub id: u32,
-}
-
-impl Ord for TimeoutInfo {
-    fn cmp(&self, other: &Self) -> Ordering {
-        other
-            .time
-            .cmp(&self.time)
-            .then_with(|| other.id.cmp(&self.id))
-    }
-}
-
-impl PartialOrd for TimeoutInfo {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
     }
 }

@@ -17,7 +17,7 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
-	flag "github.com/spf13/pflag"
+	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
@@ -93,7 +93,7 @@ func (c *SeqCoordinatorConfig) Url() string {
 	return c.MyUrl
 }
 
-func SeqCoordinatorConfigAddOptions(prefix string, f *flag.FlagSet) {
+func SeqCoordinatorConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultSeqCoordinatorConfig.Enable, "enable sequence coordinator")
 	f.String(prefix+".redis-url", DefaultSeqCoordinatorConfig.RedisUrl, "the Redis URL to coordinate via")
 	f.String(prefix+".new-redis-url", DefaultSeqCoordinatorConfig.NewRedisUrl, "switch to the new Redis URL to coordinate via")
@@ -153,6 +153,16 @@ var TestSeqCoordinatorConfig = SeqCoordinatorConfig{
 	MyUrl:                 redisutil.INVALID_URL,
 	DeleteFinalizedMsgs:   true,
 	Signer:                signature.DefaultSignVerifyConfig,
+}
+
+func (c *SeqCoordinatorConfig) Validate() error {
+	if !c.Enable {
+		return nil
+	}
+	if c.RedisUrl == "" {
+		return errors.New("seq-coordinator.redis-url is required when seq-coordinator is enabled")
+	}
+	return nil
 }
 
 func NewSeqCoordinator(

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"math/big"
 
+	"github.com/ethereum/go-ethereum/arbitrum/multigas"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -77,16 +78,16 @@ func (rs *RetryableState) CreateRetryable(
 ) (*Retryable, error) {
 	sto := rs.retryables.OpenSubStorage(id.Bytes())
 	ret := &Retryable{
-		id,
-		sto,
-		sto.OpenStorageBackedUint64(numTriesOffset),
-		sto.OpenStorageBackedAddress(fromOffset),
-		sto.OpenStorageBackedAddressOrNil(toOffset),
-		sto.OpenStorageBackedBigUint(callvalueOffset),
-		sto.OpenStorageBackedAddress(beneficiaryOffset),
-		sto.OpenStorageBackedBytes(calldataKey),
-		sto.OpenStorageBackedUint64(timeoutOffset),
-		sto.OpenStorageBackedUint64(timeoutWindowsLeftOffset),
+		id:                 id,
+		backingStorage:     sto,
+		numTries:           sto.OpenStorageBackedUint64(numTriesOffset),
+		from:               sto.OpenStorageBackedAddress(fromOffset),
+		to:                 sto.OpenStorageBackedAddressOrNil(toOffset),
+		callvalue:          sto.OpenStorageBackedBigUint(callvalueOffset),
+		beneficiary:        sto.OpenStorageBackedAddress(beneficiaryOffset),
+		calldata:           sto.OpenStorageBackedBytes(calldataKey),
+		timeout:            sto.OpenStorageBackedUint64(timeoutOffset),
+		timeoutWindowsLeft: sto.OpenStorageBackedUint64(timeoutWindowsLeftOffset),
 	}
 	_ = ret.numTries.Set(0)
 	_ = ret.from.Set(from)
@@ -246,7 +247,7 @@ func (rs *RetryableState) Keepalive(
 	newTimeout := timeout + RetryableLifetimeSeconds
 
 	// Pay in advance for the work needed to reap the duplicate from the timeout queue
-	return newTimeout, rs.retryables.Burner().Burn(RetryableReapPrice)
+	return newTimeout, rs.retryables.Burner().Burn(multigas.ResourceKindComputation, RetryableReapPrice)
 }
 
 func (retryable *Retryable) Equals(other *Retryable) (bool, error) { // for testing

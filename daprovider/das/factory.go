@@ -11,6 +11,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
 
+	"github.com/offchainlabs/nitro/daprovider/das/dasutil"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/signature"
@@ -38,22 +39,6 @@ func CreatePersistentStorageService(
 		}
 		lifecycleManager.Register(fs)
 		storageServices = append(storageServices, fs)
-	}
-
-	if config.LocalDBStorage.Enable {
-		var s *DBStorageService
-		if config.MigrateLocalDBToFileStorage {
-			s, err = NewDBStorageService(ctx, &config.LocalDBStorage, fs)
-		} else {
-			s, err = NewDBStorageService(ctx, &config.LocalDBStorage, nil)
-		}
-		if err != nil {
-			return nil, nil, err
-		}
-		if s != nil {
-			lifecycleManager.Register(s)
-			storageServices = append(storageServices, s)
-		}
 	}
 
 	if config.S3Storage.Enable {
@@ -123,7 +108,7 @@ func CreateDAReaderAndWriter(
 	dataSigner signature.DataSignerFunc,
 	l1Reader *ethclient.Client,
 	sequencerInboxAddr common.Address,
-) (DataAvailabilityServiceWriter, DataAvailabilityServiceReader, *KeysetFetcher, *LifecycleManager, error) {
+) (dasutil.DASWriter, dasutil.DASReader, *KeysetFetcher, *LifecycleManager, error) {
 	if !config.Enable {
 		return nil, nil, nil, nil, nil
 	}
@@ -134,7 +119,7 @@ func CreateDAReaderAndWriter(
 	}
 	// Done checking config requirements
 
-	var daWriter DataAvailabilityServiceWriter
+	var daWriter dasutil.DASWriter
 	daWriter, err := NewRPCAggregator(ctx, *config, dataSigner)
 	if err != nil {
 		return nil, nil, nil, nil, err
@@ -147,7 +132,7 @@ func CreateDAReaderAndWriter(
 	restAgg.Start(ctx)
 	var lifecycleManager LifecycleManager
 	lifecycleManager.Register(restAgg)
-	var daReader DataAvailabilityServiceReader = restAgg
+	var daReader dasutil.DASReader = restAgg
 	keysetFetcher, err := NewKeysetFetcher(l1Reader, sequencerInboxAddr)
 	if err != nil {
 		return nil, nil, nil, nil, err
@@ -161,16 +146,15 @@ func CreateDAComponentsForDaserver(
 	config *DataAvailabilityConfig,
 	l1Reader *headerreader.HeaderReader,
 	seqInboxAddress *common.Address,
-) (DataAvailabilityServiceReader, DataAvailabilityServiceWriter, *SignatureVerifier, DataAvailabilityServiceHealthChecker, *LifecycleManager, error) {
+) (dasutil.DASReader, dasutil.DASWriter, *SignatureVerifier, DataAvailabilityServiceHealthChecker, *LifecycleManager, error) {
 	if !config.Enable {
 		return nil, nil, nil, nil, nil, nil
 	}
 
 	// Check config requirements
-	if !config.LocalDBStorage.Enable &&
-		!config.LocalFileStorage.Enable &&
+	if !config.LocalFileStorage.Enable &&
 		!config.S3Storage.Enable {
-		return nil, nil, nil, nil, nil, errors.New("At least one of --data-availability.(local-db-storage|local-file-storage|s3-storage) must be enabled.")
+		return nil, nil, nil, nil, nil, errors.New("At least one of --data-availability.(local-file-storage|s3-storage) must be enabled.")
 	}
 	// Done checking config requirements
 
@@ -221,36 +205,36 @@ func CreateDAComponentsForDaserver(
 
 	}
 
-	var daWriter DataAvailabilityServiceWriter
-	var daReader DataAvailabilityServiceReader = storageService
+	var daWriter dasutil.DASWriter
+	var daReader dasutil.DASReader = storageService
 	var daHealthChecker DataAvailabilityServiceHealthChecker = storageService
 	var signatureVerifier *SignatureVerifier
 
 	if config.Key.KeyDir != "" || config.Key.PrivKey != "" {
-		var seqInboxCaller *bridgegen.SequencerInboxCaller
-		if seqInboxAddress != nil {
-			seqInbox, err := bridgegen.NewSequencerInbox(*seqInboxAddress, (*l1Reader).Client())
-			if err != nil {
-				return nil, nil, nil, nil, nil, err
-			}
-
-			seqInboxCaller = &seqInbox.SequencerInboxCaller
-		}
-		if config.DisableSignatureChecking {
-			seqInboxCaller = nil
-		}
-
 		daWriter, err = NewSignAfterStoreDASWriter(ctx, *config, storageService)
 		if err != nil {
 			return nil, nil, nil, nil, nil, err
 		}
 
-		signatureVerifier, err = NewSignatureVerifierWithSeqInboxCaller(
-			seqInboxCaller,
-			config.ExtraSignatureCheckingPublicKey,
-		)
-		if err != nil {
-			return nil, nil, nil, nil, nil, err
+		// Only create SignatureVerifier if signature checking is enabled
+		if !config.DisableSignatureChecking {
+			var seqInboxCaller *bridgegen.SequencerInboxCaller
+			if seqInboxAddress != nil {
+				seqInbox, err := bridgegen.NewSequencerInbox(*seqInboxAddress, (*l1Reader).Client())
+				if err != nil {
+					return nil, nil, nil, nil, nil, err
+				}
+
+				seqInboxCaller = &seqInbox.SequencerInboxCaller
+			}
+
+			signatureVerifier, err = NewSignatureVerifierWithSeqInboxCaller(
+				seqInboxCaller,
+				config.ExtraSignatureCheckingPublicKey,
+			)
+			if err != nil {
+				return nil, nil, nil, nil, nil, err
+			}
 		}
 	}
 
@@ -262,7 +246,7 @@ func CreateDAReader(
 	config *DataAvailabilityConfig,
 	l1Reader *headerreader.HeaderReader,
 	seqInboxAddress *common.Address,
-) (DataAvailabilityServiceReader, *KeysetFetcher, *LifecycleManager, error) {
+) (dasutil.DASReader, *KeysetFetcher, *LifecycleManager, error) {
 	if !config.Enable {
 		return nil, nil, nil, nil
 	}
@@ -278,7 +262,7 @@ func CreateDAReader(
 	// Done checking config requirements
 
 	var lifecycleManager LifecycleManager
-	var daReader DataAvailabilityServiceReader
+	var daReader dasutil.DASReader
 	if config.RestAggregator.Enable {
 		var restAgg *SimpleDASReaderAggregator
 		restAgg, err := NewRestfulClientAggregator(ctx, &config.RestAggregator)
