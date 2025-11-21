@@ -394,7 +394,7 @@ func setupBoldStateProvider(t *testing.T, ctx context.Context, blockChallengeHei
 	Require(t, err)
 	Require(t, stateless.Start(ctx))
 
-	instance, err := staker.NewBlockValidatorInstance(
+	instance := staker.NewBlockValidatorInstance(
 		stateless,
 		StaticFetcherFrom(t, &blockValidatorConfig),
 	)
