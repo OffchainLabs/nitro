@@ -80,6 +80,7 @@ import (
 	"github.com/offchainlabs/nitro/statetransfer"
 	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/util/colors"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/redisutil"
 	"github.com/offchainlabs/nitro/util/signature"
@@ -198,6 +199,31 @@ func (tc *TestClient) EnsureTxSucceeded(transaction *types.Transaction) (*types.
 
 func (tc *TestClient) EnsureTxSucceededWithTimeout(transaction *types.Transaction, timeout time.Duration) (*types.Receipt, error) {
 	return EnsureTxSucceededWithTimeout(tc.ctx, tc.Client, transaction, timeout)
+}
+
+// GetCodeHash retrieves the code hash for a contract address via RPC.
+// This works with any execution client (geth or external like Nethermind).
+func GetCodeHash(t *testing.T, ctx context.Context, client *ethclient.Client, address common.Address) common.Hash {
+	t.Helper()
+	code, err := client.CodeAt(ctx, address, nil)
+	Require(t, err)
+	if len(code) == 0 {
+		return common.Hash{} // Empty codehash for no code
+	}
+	return crypto.Keccak256Hash(code)
+}
+
+// CheckWasmStore verifies WASM store content if using internal geth execution.
+// For external execution clients, this check is skipped as they don't expose
+// the internal WASM store database.
+func CheckWasmStore(t *testing.T, testClient *TestClient, expectedTargets []rawdb.WasmTarget, numModules int) {
+	t.Helper()
+	if testClient.ExecNode == nil {
+		colors.PrintGrey("Skipping WasmStore content check for external execution client")
+		return
+	}
+	wasmDb := testClient.ExecNode.Backend.ArbInterface().BlockChain().StateCache().WasmStore()
+	checkWasmStoreContent(t, wasmDb, expectedTargets, numModules)
 }
 
 var DefaultTestForwarderConfig = gethexec.ForwarderConfig{

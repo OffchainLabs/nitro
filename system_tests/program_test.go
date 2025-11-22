@@ -30,7 +30,6 @@ import (
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
-
 	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos/programs"
@@ -53,31 +52,30 @@ var localTargetOnly = []string{string(rawdb.LocalTarget())}
 
 func TestProgramKeccak(t *testing.T) {
 	t.Run("WithDefaultWasmTargets", func(t *testing.T) {
-		keccakTest(t, true)
+		keccakTest(t, true, nil)
 	})
 
 	t.Run("WithAllWasmTargets", func(t *testing.T) {
-		keccakTest(t, true, func(builder *NodeBuilder) {
+		keccakTest(t, true, nil, func(builder *NodeBuilder) {
 			builder.WithExtraArchs(allWasmTargets)
 		})
 	})
 
 	t.Run("WithOnlyLocalTarget", func(t *testing.T) {
-		keccakTest(t, true, func(builder *NodeBuilder) {
+		keccakTest(t, true, nil, func(builder *NodeBuilder) {
 			builder.WithExtraArchs(localTargetOnly)
 		})
 	})
 }
 
-func keccakTest(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder)) {
+func keccakTest(t *testing.T, jit bool, executionClientMode *ExecutionClientMode, builderOpts ...func(*NodeBuilder)) {
 	builder, auth, cleanup := setupProgramTest(t, jit, builderOpts...)
 	ctx := builder.ctx
 	l2client := builder.L2.Client
 	defer cleanup()
 	programAddress := deployWasm(t, ctx, auth, l2client, rustFile("keccak"))
 
-	wasmDb := builder.L2.ExecNode.Backend.ArbInterface().BlockChain().StateCache().WasmStore()
-	checkWasmStoreContent(t, wasmDb, builder.execConfig.StylusTarget.WasmTargets(), 1)
+	CheckWasmStore(t, builder.L2, builder.execConfig.StylusTarget.WasmTargets(), 1)
 
 	wasm, _ := readWasmFile(t, rustFile("keccak"))
 	otherAddressSameCode := deployContract(t, ctx, auth, l2client, wasm)
@@ -90,7 +88,7 @@ func keccakTest(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder)) {
 			Fatal(t, "activate should have failed with ProgramUpToDate", err)
 		}
 	})
-	checkWasmStoreContent(t, wasmDb, builder.execConfig.StylusTarget.WasmTargets(), 1)
+	CheckWasmStore(t, builder.L2, builder.execConfig.StylusTarget.WasmTargets(), 1)
 
 	if programAddress == otherAddressSameCode {
 		Fatal(t, "expected to deploy at two separate program addresses")
@@ -98,9 +96,8 @@ func keccakTest(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder)) {
 
 	stylusVersion, err := arbWasm.StylusVersion(nil)
 	Require(t, err)
-	statedb, err := builder.L2.ExecNode.Backend.ArbInterface().BlockChain().State()
-	Require(t, err)
-	codehashVersion, err := arbWasm.CodehashVersion(nil, statedb.GetCodeHash(programAddress))
+	codehash := GetCodeHash(t, ctx, l2client, programAddress)
+	codehashVersion, err := arbWasm.CodehashVersion(nil, codehash)
 	Require(t, err)
 	if codehashVersion != stylusVersion || stylusVersion == 0 {
 		Fatal(t, "unexpected versions", stylusVersion, codehashVersion)
@@ -155,11 +152,144 @@ func keccakTest(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder)) {
 
 	// do a mutating call for proving's sake
 	_, tx, mock, err := localgen.DeployProgramTest(&auth, l2client)
+
 	ensure(tx, err)
 	ensure(mock.CallKeccak(&auth, programAddress, args))
 	ensure(mock.CallKeccak(&auth, otherAddressSameCode, args))
 
+	_ = ensure(tx, err)
+	_ = ensure(mock.CallKeccak(&auth, programAddress, args))
+	receipt := ensure(mock.CallKeccak(&auth, otherAddressSameCode, args))
+	lastTxHash := receipt.TxHash
+
+	// If execution client mode is specified, test on replica
+	if executionClientMode != nil {
+		replicaConfig := arbnode.ConfigDefaultL1NonSequencerTest()
+		replicaParams := &SecondNodeParams{
+			nodeConfig:             replicaConfig,
+			useExecutionClientOnly: true,
+			executionClientMode:    *executionClientMode,
+		}
+
+		replicaTestClient, replicaCleanup := builder.Build2ndNode(t, replicaParams)
+		defer replicaCleanup()
+		replicaClient := replicaTestClient.Client
+
+		// Wait for the replica to sync the last transaction
+		_, err = WaitForTx(ctx, replicaClient, lastTxHash, time.Second*15)
+		Require(t, err)
+
+		// Verify replica can execute the same contract calls
+		colors.PrintMint("Testing on replica execution client...")
+		replicaResult := sendContractCall(t, ctx, programAddress, replicaClient, args)
+		if len(replicaResult) != 32 {
+			Fatal(t, "replica: unexpected return result: ", "result", replicaResult)
+		}
+		replicaHash := common.BytesToHash(replicaResult)
+		if replicaHash != correct {
+			Fatal(t, "replica: computed hash mismatch", replicaHash, correct)
+		}
+		colors.PrintGrey("replica: keccak(x) = ", replicaHash)
+
+		// Verify the same code at different address on replica
+		replicaResult = sendContractCall(t, ctx, otherAddressSameCode, replicaClient, args)
+		if len(replicaResult) != 32 {
+			Fatal(t, "replica: unexpected return result for otherAddress: ", "result", replicaResult)
+		}
+		replicaHash = common.BytesToHash(replicaResult)
+		if replicaHash != correct {
+			Fatal(t, "replica: computed hash mismatch for otherAddress", replicaHash, correct)
+		}
+		colors.PrintGrey("replica: keccak(x) for otherAddress = ", replicaHash)
+
+		// TODO: Add WASM validator support for comparison mode testing
+		// Currently, validateBlocks only runs on the primary node (geth-only execution).
+		// Future enhancement: Implement StatelessBlockValidator integration with Nethermind
+		// to enable triple validation: Geth ↔ Nethermind ↔ WASM fraud-proof.
+		// See GitHub issue: [issue number to be added]
+	}
+
+	// Validate blocks using WASM fraud-proof validator
+	// Note: This validates the primary node's geth execution against WASM.
+	// For External/Comparison modes, this validates geth, while the replica tests validate Nethermind.
 	validateBlocks(t, 1, jit, builder)
+}
+
+// TestProgramKeccakInternal tests the keccak program with internal geth execution client on a replica node
+func TestProgramKeccakInternal(t *testing.T) {
+	mode := ExecutionClientModeInternal
+	keccakTest(t, true, &mode)
+}
+
+// TestProgramKeccakExternal tests the keccak program with external Nethermind execution client on a replica node
+// Requires Nethermind to be running with environment variables:
+// - PR_NETH_RPC_CLIENT_URL (default: http://localhost:20545)
+// - PR_NETH_WS_URL (default: ws://localhost:28551)
+func TestProgramKeccakExternal(t *testing.T) {
+	mode := ExecutionClientModeExternal
+	keccakTest(t, true, &mode)
+}
+
+// TestProgramKeccakComparison tests the keccak program comparing internal geth and external Nethermind on a replica node
+// Runs both execution clients in parallel and compares all results for correctness
+// Requires Nethermind to be running (same as TestProgramKeccakExternal)
+func TestProgramKeccakComparison(t *testing.T) {
+	mode := ExecutionClientModeComparison
+	keccakTest(t, true, &mode)
+}
+
+// TestProgramKeccakInternalAllTargets tests the keccak program with internal geth execution client on a replica node with all WASM targets
+func TestProgramKeccakInternalAllTargets(t *testing.T) {
+	mode := ExecutionClientModeInternal
+	keccakTest(t, true, &mode, func(builder *NodeBuilder) {
+		builder.WithExtraArchs(allWasmTargets)
+	})
+}
+
+// TestProgramKeccakInternalLocalOnly tests the keccak program with internal geth execution client on a replica node with local target only
+func TestProgramKeccakInternalLocalOnly(t *testing.T) {
+	mode := ExecutionClientModeInternal
+	keccakTest(t, true, &mode, func(builder *NodeBuilder) {
+		builder.WithExtraArchs(localTargetOnly)
+	})
+}
+
+// TestProgramKeccakExternalAllTargets tests the keccak program with external Nethermind execution client on a replica node with all WASM targets
+// Requires Nethermind to be running (same as TestProgramKeccakExternal)
+func TestProgramKeccakExternalAllTargets(t *testing.T) {
+	mode := ExecutionClientModeExternal
+	keccakTest(t, true, &mode, func(builder *NodeBuilder) {
+		builder.WithExtraArchs(allWasmTargets)
+	})
+}
+
+// TestProgramKeccakExternalLocalOnly tests the keccak program with external Nethermind execution client on a replica node with local target only
+// Requires Nethermind to be running (same as TestProgramKeccakExternal)
+func TestProgramKeccakExternalLocalOnly(t *testing.T) {
+	mode := ExecutionClientModeExternal
+	keccakTest(t, true, &mode, func(builder *NodeBuilder) {
+		builder.WithExtraArchs(localTargetOnly)
+	})
+}
+
+// TestProgramKeccakComparisonAllTargets tests the keccak program comparing internal geth and external Nethermind on a replica node with all WASM targets
+// Runs both execution clients in parallel and compares all results for correctness
+// Requires Nethermind to be running (same as TestProgramKeccakExternal)
+func TestProgramKeccakComparisonAllTargets(t *testing.T) {
+	mode := ExecutionClientModeComparison
+	keccakTest(t, true, &mode, func(builder *NodeBuilder) {
+		builder.WithExtraArchs(allWasmTargets)
+	})
+}
+
+// TestProgramKeccakComparisonLocalOnly tests the keccak program comparing internal geth and external Nethermind on a replica node with local target only
+// Runs both execution clients in parallel and compares all results for correctness
+// Requires Nethermind to be running (same as TestProgramKeccakExternal)
+func TestProgramKeccakComparisonLocalOnly(t *testing.T) {
+	mode := ExecutionClientModeComparison
+	keccakTest(t, true, &mode, func(builder *NodeBuilder) {
+		builder.WithExtraArchs(localTargetOnly)
+	})
 }
 
 func TestProgramActivateTwice(t *testing.T) {
