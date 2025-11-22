@@ -432,6 +432,13 @@ func GetPosterGas(state *arbosState.ArbosState, baseFee *big.Int, runCtx *core.M
 	return arbmath.BigToUintSaturating(arbmath.BigDiv(posterCost, baseFee))
 }
 
+func (p *TxProcessor) getBaseFee() *big.Int {
+	if p.evm.Context.BaseFeeInBlock != nil {
+		return p.evm.Context.BaseFeeInBlock
+	}
+	return p.evm.Context.BaseFee
+}
+
 func (p *TxProcessor) GasChargingHook(gasRemaining *uint64, intrinsicGas uint64) (common.Address, multigas.MultiGas, error) {
 	// Because a user pays a 1-dimensional gas price, we must re-express poster L1 calldata costs
 	// as if the user was buying an equivalent amount of L2 compute gas. This hook determines what
@@ -439,12 +446,7 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64, intrinsicGas uint64)
 
 	var gasNeededToStartEVM uint64
 	tipReceipient, _ := p.state.NetworkFeeAccount()
-	var basefee *big.Int
-	if p.evm.Context.BaseFeeInBlock != nil {
-		basefee = p.evm.Context.BaseFeeInBlock
-	} else {
-		basefee = p.evm.Context.BaseFee
-	}
+	basefee := p.getBaseFee()
 
 	var poster common.Address
 	if !p.msg.TxRunContext.IsExecutedOnChain() {
@@ -636,12 +638,7 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 		return
 	}
 
-	var basefee *big.Int
-	if p.evm.Context.BaseFeeInBlock != nil {
-		basefee = p.evm.Context.BaseFeeInBlock
-	} else {
-		basefee = p.evm.Context.BaseFee
-	}
+	basefee := p.getBaseFee()
 	totalCost := arbmath.BigMul(basefee, arbmath.UintToBig(gasUsed)) // total cost = price of gas * gas burnt
 	computeCost := arbmath.BigSub(totalCost, p.PosterFee)            // total cost = network's compute + poster's L1 costs
 	if computeCost.Sign() < 0 {
