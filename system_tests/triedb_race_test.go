@@ -20,7 +20,7 @@ func TestTrieDBCommitRace(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithTakeOwnership(false)
 	builder.RequireScheme(t, rawdb.HashScheme)
 	builder.execConfig.RPC.MaxRecreateStateDepth = arbitrum.InfiniteMaxRecreateStateDepth
 	builder.execConfig.Sequencer.MaxBlockSpeed = 0

@@ -466,6 +466,13 @@ func (con ArbOwner) SetGasPricingConstraints(c ctx, evm mech, constraints [][3]u
 		return fmt.Errorf("failed to clear existing constraints: %w", err)
 	}
 
+	if c.State.ArbOSVersion() >= params.ArbosVersion_MultiConstraintFix {
+		limit := c.State.L2PricingState().GasConstraintsMaxNum()
+		if len(constraints) > limit {
+			return fmt.Errorf("too many constraints. Max: %d", limit)
+		}
+	}
+
 	for _, constraint := range constraints {
 		gasTargetPerSecond := constraint[0]
 		adjustmentWindowSeconds := constraint[1]
