@@ -6,7 +6,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 
 	"github.com/offchainlabs/nitro/bold/testing/endtoend/backend"
-	"github.com/offchainlabs/nitro/bold/util/stopwaiter"
+	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
 type simpleHeaderProvider struct {
