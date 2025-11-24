@@ -14,6 +14,7 @@ import (
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/validator"
 	"github.com/offchainlabs/nitro/validator/client/redis"
+	"github.com/offchainlabs/nitro/validator/inputs"
 )
 
 var _ ValidatorInstance = (*BlockValidatorInstance)(nil)
@@ -44,6 +45,16 @@ func NewBlockValidatorInstance(
 		config:         config,
 		prevBatchCache: make(map[uint64][]byte),
 	}
+}
+
+func (bv *BlockValidatorInstance) ValidatorInputsWriter() (*inputs.Writer, error) {
+	valInputsWriter, err := inputs.NewWriter(
+		inputs.WithBaseDir(bv.stateless.stack.InstanceDir()),
+		inputs.WithSlug("BlockValidator"))
+	if err != nil {
+		return nil, err
+	}
+	return valInputsWriter, nil
 }
 
 func (bv *BlockValidatorInstance) InstanceDir() string {

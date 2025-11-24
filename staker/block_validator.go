@@ -51,42 +51,29 @@ var (
 )
 
 type ValidatorInstance interface {
-	CreateValidationEntry(
-		ctx context.Context,
-		position uint64,
-	) (*validationEntry, bool, error)
-	NextCreationGlobalState() validator.GoGlobalState
-	LastValidGlobalState() validator.GoGlobalState
-	InstanceDir() string
-	LatestWasmModuleRoot() common.Hash
-	RedisValidator() *redis.ValidationClient
+	CheckLegacyValid() error
+	CheckValidatedStateCaughtUp() (uint64, bool, error)
+	CreateValidationEntry(ctx context.Context, position uint64) (*validationEntry, bool, error)
 	ExecSpawners() []validator.ExecutionSpawner
-	PositionsAtCount(count uint64) (GlobalStatePosition, GlobalStatePosition, error)
-	WriteLastValidated(
-		gs validator.GoGlobalState,
-		wasmRoots []common.Hash,
-	) error
+	LatestSeenCount() (uint64, error)
+	LatestWasmModuleRoot() common.Hash
+	LastValidGlobalState() validator.GoGlobalState
 	LastValidatedInfo() (*GlobalStateValidatedInfo, error)
 	LegacyLastValidatedInfo() (*legacyLastBlockValidatedDbInfo, error)
-	ValidatedCount(validatedGs validator.GoGlobalState) int64
-	RecordEntry(ctx context.Context, entry *validationEntry) error
-	SetLegacyValidInfo(info *legacyLastBlockValidatedDbInfo)
-	SetLastValidGlobalState(gs validator.GoGlobalState)
-	ValidGlobalStateIsNew(gs validator.GoGlobalState) bool
-	CheckValidatedStateCaughtUp() (uint64, bool, error)
-	CheckLegacyValid() error
+	NextCreationGlobalState() validator.GoGlobalState
+	OnLatestStakedUpdate(globalState validator.GoGlobalState, count uint64)
 	OnReorg(count uint64) error
-	OnLatestStakedUpdate(
-		globalState validator.GoGlobalState,
-		count uint64,
-	)
-	UpdateNextCreationState(
-		nextCreateStartGS validator.GoGlobalState,
-		nextCreatePrevDelayed uint64,
-		nextCreateBatchReread bool,
-	)
+	PositionsAtCount(count uint64) (GlobalStatePosition, GlobalStatePosition, error)
+	RecordEntry(ctx context.Context, entry *validationEntry) error
+	RedisValidator() *redis.ValidationClient
 	ResetCaches()
-	LatestSeenCount() (uint64, error)
+	SetLastValidGlobalState(gs validator.GoGlobalState)
+	SetLegacyValidInfo(info *legacyLastBlockValidatedDbInfo)
+	UpdateNextCreationState(nextCreateStartGS validator.GoGlobalState, nextCreatePrevDelayed uint64, nextCreateBatchReread bool)
+	ValidGlobalStateIsNew(gs validator.GoGlobalState) bool
+	ValidatedCount(validatedGs validator.GoGlobalState) int64
+	ValidatorInputsWriter() (*inputs.Writer, error)
+	WriteLastValidated(gs validator.GoGlobalState, wasmRoots []common.Hash) error
 }
 
 type BlockValidator struct {
@@ -353,6 +340,7 @@ func NewBlockValidator(
 	fatalErr chan<- error,
 ) (*BlockValidator, error) {
 	ret := &BlockValidator{
+		instance:                instance,
 		createNodesChan:         make(chan struct{}, 1),
 		sendRecordChan:          make(chan struct{}, 1),
 		sendValidationsChan:     make(chan struct{}, 1),
@@ -361,9 +349,7 @@ func NewBlockValidator(
 		fatalErr:                fatalErr,
 		recordingPreparer:       recorder,
 	}
-	valInputsWriter, err := inputs.NewWriter(
-		inputs.WithBaseDir(instance.InstanceDir()),
-		inputs.WithSlug("BlockValidator"))
+	valInputsWriter, err := ret.instance.ValidatorInputsWriter()
 	if err != nil {
 		return nil, err
 	}
@@ -413,7 +399,7 @@ func NewBlockValidator(
 				return nil, err
 			}
 		}
-		_, endPos, err := instance.PositionsAtCount(uint64(messageCount))
+		_, endPos, err := ret.instance.PositionsAtCount(uint64(messageCount))
 		if err != nil {
 			return nil, err
 		}
