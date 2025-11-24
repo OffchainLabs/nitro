@@ -17,23 +17,22 @@ import (
 
 // Satisfies an eventUnpacker interface that can unpack logs
 // to a specific event type using the provided ABI and event name.
-type logUnpacker struct{}
+type LogUnpacker struct{}
 
-func (*logUnpacker) unpackLogTo(
+func (*LogUnpacker) UnpackLogTo(
 	event any, abi *abi.ABI, eventName string, log types.Log) error {
 	return unpackLogTo(event, abi, eventName, log)
 }
 
 // Defines a function that can lookup batches for a given parent chain block.
-// See: parseBatchesFromBlock.
+// See: ParseBatchesFromBlock.
 type batchLookupFunc func(
 	ctx context.Context,
-	melState *mel.State,
 	parentChainHeader *types.Header,
-	txsFetcher TransactionsFetcher,
-	receiptFetcher ReceiptFetcher,
-	eventUnpacker eventUnpacker,
-) ([]*mel.SequencerInboxBatch, []*types.Transaction, []uint, error)
+	txFetcher TransactionFetcher,
+	logsFetcher LogsFetcher,
+	eventUnpacker EventUnpacker,
+) ([]*mel.SequencerInboxBatch, []*types.Transaction, error)
 
 // Defines a function that can lookup delayed messages for a given parent chain block.
 // See: parseDelayedMessagesFromBlock.
@@ -41,8 +40,8 @@ type delayedMsgLookupFunc func(
 	ctx context.Context,
 	melState *mel.State,
 	parentChainHeader *types.Header,
-	receiptFetcher ReceiptFetcher,
-	txsFetcher TransactionsFetcher,
+	txFetcher TransactionFetcher,
+	logsFetcher LogsFetcher,
 ) ([]*mel.DelayedInboxMessage, error)
 
 // Defines a function that can serialize a batch.
@@ -51,8 +50,7 @@ type batchSerializingFunc func(
 	ctx context.Context,
 	batch *mel.SequencerInboxBatch,
 	tx *types.Transaction,
-	txIndex uint,
-	receiptFetcher ReceiptFetcher,
+	logsFetcher LogsFetcher,
 ) ([]byte, error)
 
 // Defines a function that can parse a sequencer message from a batch.

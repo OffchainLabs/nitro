@@ -27,9 +27,9 @@ func TestExtractMessages(t *testing.T) {
 		name                 string
 		melStateParentHash   common.Hash
 		useExtractMessages   bool // If true, use ExtractMessages instead of extractMessagesImpl
-		lookupBatches        func(context.Context, *mel.State, *types.Header, TransactionsFetcher, ReceiptFetcher, eventUnpacker) ([]*mel.SequencerInboxBatch, []*types.Transaction, []uint, error)
-		lookupDelayedMsgs    func(context.Context, *mel.State, *types.Header, ReceiptFetcher, TransactionsFetcher) ([]*mel.DelayedInboxMessage, error)
-		serializer           func(context.Context, *mel.SequencerInboxBatch, *types.Transaction, uint, ReceiptFetcher) ([]byte, error)
+		lookupBatches        func(context.Context, *types.Header, TransactionFetcher, LogsFetcher, EventUnpacker) ([]*mel.SequencerInboxBatch, []*types.Transaction, error)
+		lookupDelayedMsgs    func(context.Context, *mel.State, *types.Header, TransactionFetcher, LogsFetcher) ([]*mel.DelayedInboxMessage, error)
+		serializer           func(context.Context, *mel.SequencerInboxBatch, *types.Transaction, LogsFetcher) ([]byte, error)
 		parseReport          func(io.Reader) (*big.Int, common.Address, common.Hash, uint64, *big.Int, uint64, error)
 		parseSequencerMsg    func(context.Context, uint64, common.Hash, []byte, *daprovider.ReaderRegistry, daprovider.KeysetValidationMode) (*arbstate.SequencerMessage, error)
 		extractBatchMessages func(context.Context, *mel.State, *arbstate.SequencerMessage, DelayedMessageDatabase) ([]*arbostypes.MessageWithMetadata, error)
@@ -133,34 +133,36 @@ func TestExtractMessages(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			header := createBlockHeader(prevParentBlockHash)
 			melState := createMelState(tt.melStateParentHash)
-			txsFetcher := &mockTxsFetcher{}
+			blockLogsFetcher := &mockBlockLogsFetcher{}
+			txFetcher := &mockTxFetcher{}
 
 			var postState *mel.State
 			var messages []*arbostypes.MessageWithMetadata
 			var delayedMessages []*mel.DelayedInboxMessage
+			var batchMetas []*mel.BatchMetadata
 			var err error
 
 			if tt.useExtractMessages {
 				// Test the public ExtractMessages function
-				postState, messages, delayedMessages, err = ExtractMessages(
+				postState, messages, delayedMessages, batchMetas, err = ExtractMessages(
 					ctx,
 					melState,
 					header,
 					nil,
 					nil,
-					nil,
-					txsFetcher,
+					txFetcher,
+					blockLogsFetcher,
 				)
 			} else {
 				// Test the internal extractMessagesImpl function
-				postState, messages, delayedMessages, err = extractMessagesImpl(
+				postState, messages, delayedMessages, batchMetas, err = extractMessagesImpl(
 					ctx,
 					melState,
 					header,
 					nil,
 					nil,
-					txsFetcher,
-					nil,
+					txFetcher,
+					blockLogsFetcher,
 					nil,
 					tt.lookupBatches,
 					tt.lookupDelayedMsgs,
@@ -181,6 +183,7 @@ func TestExtractMessages(t *testing.T) {
 			require.Equal(t, tt.expectedDelayedSeen, postState.DelayedMessagesSeen)
 			require.Len(t, messages, tt.expectedMessages)
 			require.Len(t, delayedMessages, tt.expectedDelayedMsgs)
+			require.Len(t, batchMetas, int(postState.BatchCount-melState.BatchCount)) // #nosec G115
 		})
 	}
 }
@@ -202,46 +205,42 @@ func createBlockHeader(parentHash common.Hash) *types.Header {
 // Mock functions
 func successfulLookupBatches(
 	ctx context.Context,
-	melState *mel.State,
 	parentChainBlock *types.Header,
-	txsFetcher TransactionsFetcher,
-	receiptFetcher ReceiptFetcher,
-	eventUnpacker eventUnpacker,
-) ([]*mel.SequencerInboxBatch, []*types.Transaction, []uint, error) {
+	txFetcher TransactionFetcher,
+	logsFetcher LogsFetcher,
+	eventUnpacker EventUnpacker,
+) ([]*mel.SequencerInboxBatch, []*types.Transaction, error) {
 	batches := []*mel.SequencerInboxBatch{{}}
 	txs := []*types.Transaction{{}}
-	txIndices := []uint{0}
-	return batches, txs, txIndices, nil
+	return batches, txs, nil
 }
 
 func emptyLookupBatches(
 	ctx context.Context,
-	melState *mel.State,
 	parentChainBlock *types.Header,
-	txsFetcher TransactionsFetcher,
-	receiptFetcher ReceiptFetcher,
-	eventUnpacker eventUnpacker,
-) ([]*mel.SequencerInboxBatch, []*types.Transaction, []uint, error) {
-	return nil, nil, nil, nil
+	txFetcher TransactionFetcher,
+	logsFetcher LogsFetcher,
+	eventUnpacker EventUnpacker,
+) ([]*mel.SequencerInboxBatch, []*types.Transaction, error) {
+	return nil, nil, nil
 }
 
 func failingLookupBatches(
 	ctx context.Context,
-	melState *mel.State,
 	parentChainBlock *types.Header,
-	txsFetcher TransactionsFetcher,
-	receiptFetcher ReceiptFetcher,
-	eventUnpacker eventUnpacker,
-) ([]*mel.SequencerInboxBatch, []*types.Transaction, []uint, error) {
-	return nil, nil, nil, errors.New("failed to lookup batches")
+	txFetcher TransactionFetcher,
+	logsFetcher LogsFetcher,
+	eventUnpacker EventUnpacker,
+) ([]*mel.SequencerInboxBatch, []*types.Transaction, error) {
+	return nil, nil, errors.New("failed to lookup batches")
 }
 
 func successfulLookupDelayedMsgs(
 	ctx context.Context,
 	melState *mel.State,
 	parentChainBlock *types.Header,
-	receiptFetcher ReceiptFetcher,
-	txsFetcher TransactionsFetcher,
+	txFetcher TransactionFetcher,
+	logsFetcher LogsFetcher,
 ) ([]*mel.DelayedInboxMessage, error) {
 	hash := common.MaxHash
 	delayedMsgs := []*mel.DelayedInboxMessage{
@@ -263,8 +262,8 @@ func failingLookupDelayedMsgs(
 	ctx context.Context,
 	melState *mel.State,
 	parentChainBlock *types.Header,
-	receiptFetcher ReceiptFetcher,
-	txsFetcher TransactionsFetcher,
+	txFetcher TransactionFetcher,
+	logsFetcher LogsFetcher,
 ) ([]*mel.DelayedInboxMessage, error) {
 	return nil, errors.New("failed to lookup delayed messages")
 }
@@ -272,8 +271,7 @@ func failingLookupDelayedMsgs(
 func successfulSerializer(ctx context.Context,
 	batch *mel.SequencerInboxBatch,
 	tx *types.Transaction,
-	txIndex uint,
-	receiptFetcher ReceiptFetcher,
+	logsFetcher LogsFetcher,
 ) ([]byte, error) {
 	return []byte("foobar"), nil
 }
@@ -281,8 +279,7 @@ func successfulSerializer(ctx context.Context,
 func emptySerializer(ctx context.Context,
 	batch *mel.SequencerInboxBatch,
 	tx *types.Transaction,
-	txIndex uint,
-	receiptFetcher ReceiptFetcher,
+	logsFetcher LogsFetcher,
 ) ([]byte, error) {
 	return nil, nil
 }
@@ -290,8 +287,7 @@ func emptySerializer(ctx context.Context,
 func failingSerializer(ctx context.Context,
 	batch *mel.SequencerInboxBatch,
 	tx *types.Transaction,
-	txIndex uint,
-	receiptFetcher ReceiptFetcher,
+	logsFetcher LogsFetcher,
 ) ([]byte, error) {
 	return nil, errors.New("serialization error")
 }
