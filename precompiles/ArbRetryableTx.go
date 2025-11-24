@@ -103,7 +103,7 @@ func (con ArbRetryableTx) Redeem(c ctx, evm mech, ticketId bytes32) (bytes32, er
 
 	// Multi-Constraint pricer requires an extra storage read, since ArbOS must load the constraints from state.
 	// This overhead applies even when no constraints are configured.
-	if c.State.ArbOSVersion() >= l2pricing.ArbosMultiConstraintsVersion {
+	if c.State.ArbOSVersion() >= l2pricing.ArbosSingleGasConstraintsVersion {
 		gasPoolUpdateCost += storage.StorageReadCost
 	}
 
