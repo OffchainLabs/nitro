@@ -18,7 +18,7 @@ func TestMeaninglessBatchReorg(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithTakeOwnership(false)
 	builder.nodeConfig.BatchPoster.Enable = false
 	cleanup := builder.Build(t)
 	defer cleanup()
