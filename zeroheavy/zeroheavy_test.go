@@ -26,10 +26,10 @@ func TestZeroheavyNullInput(t *testing.T) {
 	var buf [256]byte
 	n, err := dec.Read(buf[:])
 	if !errors.Is(err, io.EOF) {
-		Fail(t)
+		testhelpers.FailImpl(t)
 	}
 	if n != 0 {
-		Fail(t, n, buf[0])
+		testhelpers.FailImpl(t, n, buf[0])
 	}
 }
 
@@ -41,13 +41,15 @@ func TestZeroHeavyOneByte(t *testing.T) {
 		dec := NewZeroheavyDecoder(enc)
 
 		buf, err := io.ReadAll(dec)
-		ShowError(t, err)
+		if err != nil {
+			t.Error(err)
+		}
 
 		if len(buf) != 1 {
-			Fail(t, i, len(buf))
+			testhelpers.FailImpl(t, i, len(bu
 		}
 		if buf[0] != byte(i) {
-			Fail(t, buf[0], i)
+			testhelpers.FailImpl(t, buf[0], i)
 		}
 	}
 }
@@ -75,7 +77,9 @@ func TestZeroHeavyRandomDataRandom(t *testing.T) {
 		inBuf := testhelpers.RandomizeSlice(make([]byte, size))
 		enc := NewZeroheavyEncoder(bytes.NewReader(inBuf))
 		encoded, err := io.ReadAll(enc)
-		ShowError(t, err)
+		if err != nil {
+			t.Error(err)
+		}
 
 		improvement := 100.0 * float64(l1Cost(inBuf)-l1Cost(encoded)) / float64(l1Cost(inBuf))
 		if improvement > best {
@@ -91,9 +95,11 @@ func TestZeroHeavyRandomDataRandom(t *testing.T) {
 
 		dec := NewZeroheavyDecoder(bytes.NewReader(encoded))
 		res, err := io.ReadAll(dec)
-		ShowError(t, err)
+		if err != nil {
+			t.Error(err)
+		}
 		if !bytes.Equal(inBuf, res) {
-			Fail(t, size, inBuf)
+			testhelpers.FailImpl(t, size, inBuf)
 		}
 	}
 
@@ -124,12 +130,13 @@ func TestZeroHeavyRandomDataBrotli(t *testing.T) {
 			}
 		}
 		input, err := arbcompress.CompressWell(randomBytes)
-		Require(t, err)
-
-		ShowError(t, err)
+		testhelpers.RequireImpl(t, err)
+		
 		enc := NewZeroheavyEncoder(bytes.NewReader(input))
 		encoded, err := io.ReadAll(enc)
-		ShowError(t, err)
+		if err != nil {
+			t.Error(err)
+		}
 
 		improvement := 100.0 * float64(l1Cost(input)-l1Cost(encoded)) / float64(l1Cost(input))
 		if improvement > best {
@@ -145,9 +152,11 @@ func TestZeroHeavyRandomDataBrotli(t *testing.T) {
 
 		dec := NewZeroheavyDecoder(bytes.NewReader(encoded))
 		res, err := io.ReadAll(dec)
-		ShowError(t, err)
+		if err != nil {
+			t.Error(err)
+		}
 		if !bytes.Equal(input, res) {
-			Fail(t, size, input)
+			testhelpers.FailImpl(t, size, input)
 		}
 	}
 
@@ -158,18 +167,26 @@ func TestZeroHeavyRandomDataBrotli(t *testing.T) {
 
 func TestZeroHeavyAndBrotli(t *testing.T) {
 	inData, err := os.ReadFile("../go.sum")
-	ShowError(t, err)
+	if err != nil {
+		t.Error(err)
+	}
 
 	bout, err := arbcompress.CompressWell(inData)
-	ShowError(t, err)
+	if err != nil {
+		t.Error(err)
+	}
 
 	zhout, err := io.ReadAll(NewZeroheavyDecoder(NewZeroheavyEncoder(bytes.NewReader(bout))))
-	ShowError(t, err)
+	if err != nil {
+		t.Error(err)
+	}
 
 	res, err := arbcompress.Decompress(zhout, len(inData))
-	ShowError(t, err)
+	if err != nil {
+		t.Error(err)
+	}
 
 	if !bytes.Equal(inData, res) {
-		Fail(t)
+		testhelpers.FailImpl(t)
 	}
 }
