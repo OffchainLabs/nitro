@@ -58,7 +58,10 @@ func TestSetAndGetMultiGasPricingConstraints(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, false).WithArbOSVersion(l2pricing.ArbosMultiGasConstraintsVersion)
+	builder := NewNodeBuilder(ctx).
+		DefaultConfig(t, false).
+		WithArbOSVersion(l2pricing.ArbosMultiGasConstraintsVersion)
+
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -71,31 +74,33 @@ func TestSetAndGetMultiGasPricingConstraints(t *testing.T) {
 	arbGasInfo, err := precompilesgen.NewArbGasInfo(types.ArbGasInfoAddress, builder.L2.Client)
 	require.NoError(t, err)
 
+	constraint0 := precompilesgen.ArbMultiGasConstraintsTypesResourceConstraint{
+		Resources: []precompilesgen.ArbMultiGasConstraintsTypesWeightedResource{
+			{Resource: uint8(multigas.ResourceKindComputation), Weight: 3},
+			{Resource: uint8(multigas.ResourceKindHistoryGrowth), Weight: 2},
+			{Resource: uint8(multigas.ResourceKindStorageAccess), Weight: 1},
+			{Resource: uint8(multigas.ResourceKindStorageGrowth), Weight: 4},
+			{Resource: uint8(multigas.ResourceKindL1Calldata), Weight: 5},
+		},
+		AdjustmentWindowSecs: 102,
+		TargetPerSec:         30_000_000,
+		Backlog:              800_000,
+	}
+
+	constraint1 := precompilesgen.ArbMultiGasConstraintsTypesResourceConstraint{
+		Resources: []precompilesgen.ArbMultiGasConstraintsTypesWeightedResource{
+			{Resource: uint8(multigas.ResourceKindStorageAccess), Weight: 7},
+			{Resource: uint8(multigas.ResourceKindL1Calldata), Weight: 9},
+			{Resource: uint8(multigas.ResourceKindHistoryGrowth), Weight: 11},
+		},
+		AdjustmentWindowSecs: 600,
+		TargetPerSec:         15_000_000,
+		Backlog:              1_600_000,
+	}
+
 	constraints := []precompilesgen.ArbMultiGasConstraintsTypesResourceConstraint{
-		{
-			Resources: []precompilesgen.ArbMultiGasConstraintsTypesWeightedResource{
-				{Resource: uint8(multigas.ResourceKindComputation), Weight: 1},
-				{Resource: uint8(multigas.ResourceKindHistoryGrowth), Weight: 1},
-				{Resource: uint8(multigas.ResourceKindStorageAccess), Weight: 1},
-				{Resource: uint8(multigas.ResourceKindStorageGrowth), Weight: 1},
-				{Resource: uint8(multigas.ResourceKindL1Calldata), Weight: 1},
-			},
-			AdjustmentWindowSecs: 102,
-			TargetPerSec:         30_000_000,
-			Backlog:              800_000,
-		},
-		{
-			Resources: []precompilesgen.ArbMultiGasConstraintsTypesWeightedResource{
-				{Resource: uint8(multigas.ResourceKindComputation), Weight: 1},
-				{Resource: uint8(multigas.ResourceKindHistoryGrowth), Weight: 1},
-				{Resource: uint8(multigas.ResourceKindStorageAccess), Weight: 1},
-				{Resource: uint8(multigas.ResourceKindStorageGrowth), Weight: 1},
-				{Resource: uint8(multigas.ResourceKindL1Calldata), Weight: 1},
-			},
-			AdjustmentWindowSecs: 600,
-			TargetPerSec:         15_000_000,
-			Backlog:              1_600_000,
-		},
+		constraint0,
+		constraint1,
 	}
 
 	tx, err := arbOwner.SetMultiGasPricingConstraints(&auth, constraints)
@@ -106,17 +111,28 @@ func TestSetAndGetMultiGasPricingConstraints(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 2, len(readBack))
 
+	toMap := func(list []precompilesgen.ArbMultiGasConstraintsTypesWeightedResource) map[uint8]uint64 {
+		m := make(map[uint8]uint64, len(list))
+		for _, r := range list {
+			m[r.Resource] = r.Weight
+		}
+		return m
+	}
+
+	want0 := toMap(constraint0.Resources)
+	want1 := toMap(constraint1.Resources)
+
 	require.Equal(t, uint64(30_000_000), readBack[0].TargetPerSec)
 	require.Equal(t, uint32(102), readBack[0].AdjustmentWindowSecs)
 	require.GreaterOrEqual(t, readBack[0].Backlog, uint64(800_000))
-	require.Equal(t, 5, len(readBack[0].Resources))
-	require.Equal(t, uint8(multigas.ResourceKindComputation), readBack[0].Resources[0].Resource)
-	require.Equal(t, uint64(1), readBack[0].Resources[0].Weight)
+
+	got0 := toMap(readBack[0].Resources)
+	require.Equal(t, want0, got0)
 
 	require.Equal(t, uint64(15_000_000), readBack[1].TargetPerSec)
 	require.Equal(t, uint32(600), readBack[1].AdjustmentWindowSecs)
 	require.GreaterOrEqual(t, readBack[1].Backlog, uint64(1_600_000))
-	require.Equal(t, 5, len(readBack[1].Resources))
-	require.Equal(t, uint8(multigas.ResourceKindStorageGrowth), readBack[1].Resources[3].Resource)
-	require.Equal(t, uint64(1), readBack[1].Resources[3].Weight)
+
+	got1 := toMap(readBack[1].Resources)
+	require.Equal(t, want1, got1)
 }
