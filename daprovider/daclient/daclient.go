@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/knadh/koanf"
 	"github.com/knadh/koanf/providers/confmap"
@@ -28,7 +27,6 @@ import (
 type Client struct {
 	*rpcclient.RpcClient
 	*data_streaming.DataStreamer[server_api.StoreResult]
-	rpcTimeout     time.Duration
 	storeRpcMethod *string
 }
 
@@ -151,7 +149,6 @@ func NewClient(ctx context.Context, config *ClientConfig, payloadSigner *data_st
 	client := &Client{
 		RpcClient:      rpcClient,
 		DataStreamer:   dataStreamer,
-		rpcTimeout:     config.RPC.Timeout,
 		storeRpcMethod: &config.StoreRpcMethod,
 	}
 	if err = client.Start(ctx); err != nil {
@@ -165,21 +162,18 @@ type SupportedHeaderBytesResult struct {
 }
 
 func (c *Client) GetSupportedHeaderBytes() containers.PromiseInterface[SupportedHeaderBytesResult] {
-	promise, ctx := containers.NewPromiseWithContext[SupportedHeaderBytesResult](context.Background())
-	go func() {
+	return containers.DoPromise(context.Background(), func(ctx context.Context) (SupportedHeaderBytesResult, error) {
 		var result server_api.SupportedHeaderBytesResult
 		if err := c.CallContext(ctx, &result, "daprovider_getSupportedHeaderBytes"); err != nil {
-			promise.ProduceError(fmt.Errorf("error returned from daprovider_getSupportedHeaderBytes rpc method: %w", err))
-		} else {
-			// Convert []hexutil.Bytes to [][]byte
-			headerBytes := make([][]byte, len(result.HeaderBytes))
-			for i, hb := range result.HeaderBytes {
-				headerBytes[i] = []byte(hb)
-			}
-			promise.Produce(SupportedHeaderBytesResult{HeaderBytes: headerBytes})
+			return SupportedHeaderBytesResult{}, fmt.Errorf("error returned from daprovider_getSupportedHeaderBytes rpc method: %w", err)
 		}
-	}()
-	return promise
+		// Convert []hexutil.Bytes to [][]byte
+		headerBytes := make([][]byte, len(result.HeaderBytes))
+		for i, hb := range result.HeaderBytes {
+			headerBytes[i] = hb
+		}
+		return SupportedHeaderBytesResult{HeaderBytes: headerBytes}, nil
+	})
 }
 
 // RecoverPayload fetches the underlying payload from the DA provider
@@ -188,16 +182,14 @@ func (c *Client) RecoverPayload(
 	batchBlockHash common.Hash,
 	sequencerMsg []byte,
 ) containers.PromiseInterface[daprovider.PayloadResult] {
-	promise, ctx := containers.NewPromiseWithContext[daprovider.PayloadResult](context.Background())
-	go func() {
+	return containers.DoPromise(context.Background(), func(ctx context.Context) (daprovider.PayloadResult, error) {
 		var result daprovider.PayloadResult
-		if err := c.CallContext(ctx, &result, "daprovider_recoverPayload", hexutil.Uint64(batchNum), batchBlockHash, hexutil.Bytes(sequencerMsg)); err != nil {
-			promise.ProduceError(fmt.Errorf("error returned from daprovider_recoverPayload rpc method, err: %w", err))
-		} else {
-			promise.Produce(result)
+		err := c.CallContext(ctx, &result, "daprovider_recoverPayload", hexutil.Uint64(batchNum), batchBlockHash, hexutil.Bytes(sequencerMsg))
+		if err != nil {
+			err = fmt.Errorf("error returned from daprovider_recoverPayload rpc method, err: %w", err)
 		}
-	}()
-	return promise
+		return result, err
+	})
 }
 
 // CollectPreimages collects preimages from the DA provider
@@ -206,44 +198,27 @@ func (c *Client) CollectPreimages(
 	batchBlockHash common.Hash,
 	sequencerMsg []byte,
 ) containers.PromiseInterface[daprovider.PreimagesResult] {
-	promise, ctx := containers.NewPromiseWithContext[daprovider.PreimagesResult](context.Background())
-	go func() {
+	return containers.DoPromise(context.Background(), func(ctx context.Context) (daprovider.PreimagesResult, error) {
 		var result daprovider.PreimagesResult
-		if err := c.CallContext(ctx, &result, "daprovider_collectPreimages", hexutil.Uint64(batchNum), batchBlockHash, hexutil.Bytes(sequencerMsg)); err != nil {
-			promise.ProduceError(fmt.Errorf("error returned from daprovider_collectPreimages rpc method, err: %w", err))
-		} else {
-			promise.Produce(result)
+		err := c.CallContext(ctx, &result, "daprovider_collectPreimages", hexutil.Uint64(batchNum), batchBlockHash, hexutil.Bytes(sequencerMsg))
+		if err != nil {
+			err = fmt.Errorf("error returned from daprovider_collectPreimages rpc method, err: %w", err)
 		}
-	}()
-	return promise
+		return result, err
+	})
 }
 
 func (c *Client) Store(
 	message []byte,
 	timeout uint64,
 ) containers.PromiseInterface[[]byte] {
-	var promise *containers.Promise[[]byte]
-	var ctx context.Context
-
-	// Create context with timeout if configured, otherwise use background
-	if c.rpcTimeout > 0 {
-		timeoutCtx, cancel := context.WithTimeout(context.Background(), c.rpcTimeout)
-		p := containers.NewPromise[[]byte](cancel)
-		promise = &p
-		ctx = timeoutCtx
-	} else {
-		promise, ctx = containers.NewPromiseWithContext[[]byte](context.Background())
-	}
-
-	go func() {
+	return containers.DoPromise(context.Background(), func(ctx context.Context) ([]byte, error) {
 		storeResult, err := c.store(ctx, message, timeout)
 		if err != nil {
-			promise.ProduceError(err)
-		} else {
-			promise.Produce(storeResult.SerializedDACert)
+			return nil, err
 		}
-	}()
-	return promise
+		return storeResult.SerializedDACert, nil
+	})
 }
 
 func (c *Client) store(ctx context.Context, message []byte, timeout uint64) (*server_api.StoreResult, error) {
@@ -283,29 +258,23 @@ func (c *Client) GenerateReadPreimageProof(
 	offset uint64,
 	certificate []byte,
 ) containers.PromiseInterface[daprovider.PreimageProofResult] {
-	promise, ctx := containers.NewPromiseWithContext[daprovider.PreimageProofResult](context.Background())
-	go func() {
+	return containers.DoPromise(context.Background(), func(ctx context.Context) (daprovider.PreimageProofResult, error) {
 		var generateProofResult server_api.GenerateReadPreimageProofResult
 		if err := c.CallContext(ctx, &generateProofResult, "daprovider_generateReadPreimageProof", certHash, hexutil.Uint64(offset), hexutil.Bytes(certificate)); err != nil {
-			promise.ProduceError(fmt.Errorf("error returned from daprovider_generateProof rpc method, err: %w", err))
-		} else {
-			promise.Produce(daprovider.PreimageProofResult{Proof: generateProofResult.Proof})
+			return daprovider.PreimageProofResult{}, fmt.Errorf("error returned from daprovider_generateProof rpc method, err: %w", err)
 		}
-	}()
-	return promise
+		return daprovider.PreimageProofResult{Proof: generateProofResult.Proof}, nil
+	})
 }
 
 func (c *Client) GenerateCertificateValidityProof(
 	certificate []byte,
 ) containers.PromiseInterface[daprovider.ValidityProofResult] {
-	promise, ctx := containers.NewPromiseWithContext[daprovider.ValidityProofResult](context.Background())
-	go func() {
+	return containers.DoPromise(context.Background(), func(ctx context.Context) (daprovider.ValidityProofResult, error) {
 		var generateCertificateValidityProofResult server_api.GenerateCertificateValidityProofResult
 		if err := c.CallContext(ctx, &generateCertificateValidityProofResult, "daprovider_generateCertificateValidityProof", hexutil.Bytes(certificate)); err != nil {
-			promise.ProduceError(fmt.Errorf("error returned from daprovider_generateCertificateValidityProof rpc method, err: %w", err))
-		} else {
-			promise.Produce(daprovider.ValidityProofResult{Proof: generateCertificateValidityProofResult.Proof})
+			return daprovider.ValidityProofResult{}, fmt.Errorf("error returned from daprovider_generateCertificateValidityProof rpc method, err: %w", err)
 		}
-	}()
-	return promise
+		return daprovider.ValidityProofResult{Proof: generateCertificateValidityProofResult.Proof}, nil
+	})
 }

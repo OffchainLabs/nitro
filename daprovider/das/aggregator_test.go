@@ -53,7 +53,7 @@ func TestDAS_BasicAggregationLocal(t *testing.T) {
 
 	aggregatorConfig := DefaultAggregatorConfig
 	aggregatorConfig.AssumedHonest = 1
-	aggregator, err := NewAggregatorWithSeqInboxCaller(DataAvailabilityConfig{RPCAggregator: aggregatorConfig}, backends, nil)
+	aggregator, err := newAggregator(DataAvailabilityConfig{RPCAggregator: aggregatorConfig}, backends)
 	Require(t, err)
 
 	rawMsg := []byte("It's time for you to see the fnords.")
@@ -208,11 +208,11 @@ func testConfigurableStorageFailures(t *testing.T, shouldFailAggregation bool) {
 
 	aggregatorConfig := DefaultAggregatorConfig
 	aggregatorConfig.AssumedHonest = assumedHonest
-	aggregator, err := NewAggregatorWithSeqInboxCaller(
+	aggregator, err := newAggregator(
 		DataAvailabilityConfig{
 			RPCAggregator:  aggregatorConfig,
 			RequestTimeout: time.Millisecond * 2000,
-		}, backends, nil)
+		}, backends)
 	Require(t, err)
 
 	rawMsg := []byte("It's time for you to see the fnords.")
@@ -328,11 +328,11 @@ func TestDAS_InsufficientBackendsTriggersFallback(t *testing.T) {
 
 	aggregatorConfig := DefaultAggregatorConfig
 	aggregatorConfig.AssumedHonest = assumedHonest
-	aggregator, err := NewAggregatorWithSeqInboxCaller(
+	aggregator, err := newAggregator(
 		DataAvailabilityConfig{
 			RPCAggregator:  aggregatorConfig,
 			RequestTimeout: time.Millisecond * 2000,
-		}, backends, nil)
+		}, backends)
 	Require(t, err)
 
 	// Wrap the aggregator with writerForDAS to test error conversion

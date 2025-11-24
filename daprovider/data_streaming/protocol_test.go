@@ -5,7 +5,6 @@ package data_streaming
 
 import (
 	"context"
-	"errors"
 	"math/rand"
 	"net"
 	"net/http"
@@ -165,23 +164,6 @@ func TestDataStreaming_ProtocolSucceedsEvenWithDelays(t *testing.T) {
 	// 3. Ensure we can still finalize the protocol.
 	time.Sleep(messageCollectionExpiry * 9 / 10)
 	result, err := streamer.finalizeStream(ctx, messageId)
-	testhelpers.RequireImpl(t, err)
-	require.Equal(t, message, ([]byte)(result.Message), "protocol resulted in an incorrect message")
-}
-
-func TestDataStreaming_ClientRetriesWhenThereAreConnectionProblems(t *testing.T) {
-	// Server 'goes offline' for a moment just before reading the second chunk
-	var alreadyWentOffline = false
-	ctx, streamer := prepareTestEnv(t, func(i uint64) error {
-		if i == 1 && !alreadyWentOffline {
-			alreadyWentOffline = true
-			return errors.New("service unavailable")
-		}
-		return nil
-
-	})
-	message, _ := getLongRandomMessage(streamer.chunkSize)
-	result, err := streamer.StreamData(ctx, message, timeout)
 	testhelpers.RequireImpl(t, err)
 	require.Equal(t, message, ([]byte)(result.Message), "protocol resulted in an incorrect message")
 }

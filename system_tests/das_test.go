@@ -92,12 +92,12 @@ func blsPubToBase64(pubkey *blsSignatures.PublicKey) string {
 func aggConfigForBackend(backendConfig das.BackendConfig) das.AggregatorConfig {
 	rpcConfig := rpcclient.DefaultClientConfig
 	rpcConfig.Timeout = 2 * time.Second // Short timeout for tests to fail fast
+	rpcConfig.URL = backendConfig.URL
 	return das.AggregatorConfig{
 		Enable:        true,
 		AssumedHonest: 1,
 		Backends:      das.BackendConfigList{backendConfig},
 		DASRPCClient: das.DASRPCClientConfig{
-			ServerUrl:          backendConfig.URL,
 			EnableChunkedStore: true,
 			DataStream:         data_streaming.TestDataStreamerConfig(das.DefaultDataStreamRpcMethods),
 			RPC:                rpcConfig,

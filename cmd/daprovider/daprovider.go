@@ -213,11 +213,11 @@ func startup() error {
 			return errors.New("--anytrust.enable is required to start an AnyTrust provider server")
 		}
 
-		if config.ParentChain.NodeURL == "" || config.ParentChain.NodeURL == "none" {
+		if config.ParentChain.NodeURL == "" {
 			return errors.New("--parent-chain.node-url is required to start an AnyTrust provider server")
 		}
 
-		if config.ParentChain.SequencerInboxAddress == "" || config.ParentChain.SequencerInboxAddress == "none" {
+		if config.ParentChain.SequencerInboxAddress == "" {
 			return errors.New("--parent-chain.sequencer-inbox-address must be set to a valid L1 contract address")
 		}
 

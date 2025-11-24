@@ -24,6 +24,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto/kzg4844"
 	"github.com/ethereum/go-ethereum/ethdb"
@@ -186,10 +187,12 @@ type BatchPosterConfig struct {
 	Dangerous                      BatchPosterDangerousConfig  `koanf:"dangerous"`
 	ReorgResistanceMargin          time.Duration               `koanf:"reorg-resistance-margin" reload:"hot"`
 	CheckBatchCorrectness          bool                        `koanf:"check-batch-correctness"`
-	MaxEmptyBatchDelay             time.Duration               `koanf:"max-empty-batch-delay"`
-	DelayBufferThresholdMargin     uint64                      `koanf:"delay-buffer-threshold-margin"`
-	DelayBufferAlwaysUpdatable     bool                        `koanf:"delay-buffer-always-updatable"`
-	ParentChainEip7623             string                      `koanf:"parent-chain-eip7623"`
+	// MaxEmptyBatchDelay defines how long the batch poster waits before submitting a batch
+	// that contains no new useful transactions (a “report-only” or “empty” batch). Set to 0 to disable it.
+	MaxEmptyBatchDelay         time.Duration `koanf:"max-empty-batch-delay"`
+	DelayBufferThresholdMargin uint64        `koanf:"delay-buffer-threshold-margin"`
+	DelayBufferAlwaysUpdatable bool          `koanf:"delay-buffer-always-updatable"`
+	ParentChainEip7623         string        `koanf:"parent-chain-eip7623"`
 
 	gasRefunder  common.Address
 	l1BlockBound l1BlockBound
@@ -249,7 +252,7 @@ func BatchPosterConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Uint64(prefix+".gas-estimate-base-fee-multiple-bips", uint64(DefaultBatchPosterConfig.GasEstimateBaseFeeMultipleBips), "for gas estimation, use this multiple of the basefee (measured in basis points) as the max fee per gas")
 	f.Duration(prefix+".reorg-resistance-margin", DefaultBatchPosterConfig.ReorgResistanceMargin, "do not post batch if its within this duration from layer 1 minimum bounds. Requires l1-block-bound option not be set to \"ignore\"")
 	f.Bool(prefix+".check-batch-correctness", DefaultBatchPosterConfig.CheckBatchCorrectness, "setting this to true will run the batch against an inbox multiplexer and verifies that it produces the correct set of messages")
-	f.Duration(prefix+".max-empty-batch-delay", DefaultBatchPosterConfig.MaxEmptyBatchDelay, "maximum empty batch posting delay, batch poster will only be able to post an empty batch if this time period building a batch has passed")
+	f.Duration(prefix+".max-empty-batch-delay", DefaultBatchPosterConfig.MaxEmptyBatchDelay, "maximum empty batch posting delay, batch poster will only be able to post an empty batch if this time period building a batch has passed; if 0, disable automatic empty batch posting")
 	f.Uint64(prefix+".delay-buffer-threshold-margin", DefaultBatchPosterConfig.DelayBufferThresholdMargin, "the number of blocks to post the batch before reaching the delay buffer threshold")
 	f.String(prefix+".parent-chain-eip7623", DefaultBatchPosterConfig.ParentChainEip7623, "if parent chain uses EIP7623 (\"yes\", \"no\", \"auto\")")
 	f.Bool(prefix+".delay-buffer-always-updatable", DefaultBatchPosterConfig.DelayBufferAlwaysUpdatable, "always treat delay buffer as updatable")
@@ -1610,7 +1613,8 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 		}
 		// #nosec G115
 		timeSinceMsg := time.Since(time.Unix(int64(msg.Message.Header.Timestamp), 0))
-		if (msg.Message.Header.Kind != arbostypes.L1MessageType_BatchPostingReport) || (timeSinceMsg >= config.MaxEmptyBatchDelay) {
+		if (msg.Message.Header.Kind != arbostypes.L1MessageType_BatchPostingReport) ||
+			(config.MaxEmptyBatchDelay > 0 && timeSinceMsg >= config.MaxEmptyBatchDelay) {
 			b.building.haveUsefulMessage = true
 			if b.building.firstUsefulMsg == nil {
 				b.building.firstUsefulMsg = msg
@@ -1626,12 +1630,19 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 		b.building.msgCount++
 	}
 
-	firstUsefulMsgTime := time.Now()
+	feeEscalationBaseTime := time.Now()
 	if b.building.firstUsefulMsg != nil {
 		// #nosec G115
-		firstUsefulMsgTime = time.Unix(int64(b.building.firstUsefulMsg.Message.Header.Timestamp), 0)
-		if time.Since(firstUsefulMsgTime) >= config.MaxDelay {
+		feeEscalationBaseTime = time.Unix(int64(b.building.firstUsefulMsg.Message.Header.Timestamp), 0)
+		if time.Since(feeEscalationBaseTime) >= config.MaxDelay {
 			forcePostBatch = true
+		}
+	} else if b.building.firstDelayedMsg != nil && config.MaxEmptyBatchDelay > 0 {
+		// #nosec G115
+		feeEscalationBaseTime = time.Unix(int64(b.building.firstDelayedMsg.Message.Header.Timestamp), 0)
+		if time.Since(feeEscalationBaseTime) >= config.MaxEmptyBatchDelay {
+			forcePostBatch = true
+			b.building.haveUsefulMessage = true
 		}
 	}
 
@@ -1778,14 +1789,14 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 					log.Warn("Batch too large for 4844, will rebuild smaller", "batchSize", len(batchData), "max4844Size", config.Max4844BatchSize)
 					b.useEthDA = true
 					b.building = nil
-					return false, nil // Trigger rebuild
+					return true, nil // Trigger immediate rebuild
 				}
 			} else {
 				if len(batchData) > config.MaxCalldataBatchSize {
 					log.Warn("Batch too large for calldata, will rebuild smaller", "batchSize", len(batchData), "maxCalldataBatchSize", config.MaxCalldataBatchSize)
 					b.useEthDA = true
 					b.building = nil
-					return false, nil // Trigger rebuild
+					return true, nil // Trigger immediate rebuild
 				}
 			}
 
@@ -1963,7 +1974,7 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 	}
 
 	tx, err := b.dataPoster.PostTransaction(ctx,
-		firstUsefulMsgTime,
+		feeEscalationBaseTime,
 		nonce,
 		newMeta,
 		b.seqInboxAddr,
@@ -2070,12 +2081,14 @@ func (b *BatchPoster) Start(ctxIn context.Context) {
 	storageRaceEphemeralErrorHandler := util.NewEphemeralErrorHandler(5*time.Minute, storage.ErrStorageRace.Error(), time.Minute)
 	normalGasEstimationFailedEphemeralErrorHandler := util.NewEphemeralErrorHandler(5*time.Minute, ErrNormalGasEstimationFailed.Error(), time.Minute)
 	accumulatorNotFoundEphemeralErrorHandler := util.NewEphemeralErrorHandler(5*time.Minute, AccumulatorNotFoundErr.Error(), time.Minute)
+	nonceTooHighEphemeralErrorHandler := util.NewEphemeralErrorHandler(5*time.Minute, core.ErrNonceTooHigh.Error(), time.Minute)
 	resetAllEphemeralErrs := func() {
 		commonEphemeralErrorHandler.Reset()
 		exceedMaxMempoolSizeEphemeralErrorHandler.Reset()
 		storageRaceEphemeralErrorHandler.Reset()
 		normalGasEstimationFailedEphemeralErrorHandler.Reset()
 		accumulatorNotFoundEphemeralErrorHandler.Reset()
+		nonceTooHighEphemeralErrorHandler.Reset()
 	}
 	b.CallIteratively(func(ctx context.Context) time.Duration {
 		var err error
@@ -2128,6 +2141,7 @@ func (b *BatchPoster) Start(ctxIn context.Context) {
 			logLevel = storageRaceEphemeralErrorHandler.LogLevel(err, logLevel)
 			logLevel = normalGasEstimationFailedEphemeralErrorHandler.LogLevel(err, logLevel)
 			logLevel = accumulatorNotFoundEphemeralErrorHandler.LogLevel(err, logLevel)
+			logLevel = nonceTooHighEphemeralErrorHandler.LogLevel(err, logLevel)
 			logLevel("error posting batch", "err", err)
 			// Only increment batchPosterFailureCounter metric in cases of non-ephemeral errors
 			if util.CompareLogLevels(logLevel, log.Error) {

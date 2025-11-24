@@ -24,9 +24,9 @@ const InitialPricingInertia = 102
 const InitialBacklogTolerance = 10
 const InitialPerTxGasLimitV50 uint64 = 32 * 1000000
 
-func (ps *L2PricingState) ShouldUseMultiConstraints(arbosVersion uint64) (bool, error) {
+func (ps *L2PricingState) ShouldUseGasConstraints(arbosVersion uint64) (bool, error) {
 	if arbosVersion >= ArbosMultiConstraintsVersion {
-		constraintsLength, err := ps.ConstraintsLength()
+		constraintsLength, err := ps.GasConstraintsLength()
 		if err != nil {
 			return false, err
 		}
@@ -36,12 +36,12 @@ func (ps *L2PricingState) ShouldUseMultiConstraints(arbosVersion uint64) (bool, 
 }
 
 func (ps *L2PricingState) AddToGasPool(gas int64, arbosVersion uint64) error {
-	shouldUseMultiConstraints, err := ps.ShouldUseMultiConstraints(arbosVersion)
+	shouldUseGasConstraints, err := ps.ShouldUseGasConstraints(arbosVersion)
 	if err != nil {
 		return err
 	}
-	if shouldUseMultiConstraints {
-		return ps.addToGasPoolMultiConstraints(gas)
+	if shouldUseGasConstraints {
+		return ps.addToGasPoolWithGasConstraints(gas)
 	}
 	return ps.addToGasPoolLegacy(gas)
 }
@@ -55,18 +55,18 @@ func (ps *L2PricingState) addToGasPoolLegacy(gas int64) error {
 	return ps.SetGasBacklog(backlog)
 }
 
-func (ps *L2PricingState) addToGasPoolMultiConstraints(gas int64) error {
-	constraintsLength, err := ps.constraints.Length()
+func (ps *L2PricingState) addToGasPoolWithGasConstraints(gas int64) error {
+	constraintsLength, err := ps.gasConstraints.Length()
 	if err != nil {
 		return fmt.Errorf("failed to get number of constraints: %w", err)
 	}
 	for i := range constraintsLength {
-		constraint := ps.OpenConstraintAt(i)
-		backlog, err := constraint.backlog.Get()
+		constraint := ps.OpenGasConstraintAt(i)
+		backlog, err := constraint.Backlog()
 		if err != nil {
 			return fmt.Errorf("failed to get backlog of constraint %v: %w", i, err)
 		}
-		err = constraint.backlog.Set(applyGasDelta(backlog, gas))
+		err = constraint.SetBacklog(applyGasDelta(backlog, gas))
 		if err != nil {
 			return fmt.Errorf("failed to set backlog of constraint %v: %w", i, err)
 		}
@@ -76,9 +76,9 @@ func (ps *L2PricingState) addToGasPoolMultiConstraints(gas int64) error {
 
 // UpdatePricingModel updates the pricing model with info from the last block
 func (ps *L2PricingState) UpdatePricingModel(timePassed uint64, arbosVersion uint64) {
-	shouldUseMultiConstraints, _ := ps.ShouldUseMultiConstraints(arbosVersion)
-	if shouldUseMultiConstraints {
-		ps.updatePricingModelMultiConstraints(timePassed)
+	shouldUseGasConstraints, _ := ps.ShouldUseGasConstraints(arbosVersion)
+	if shouldUseGasConstraints {
+		ps.updatePricingModelGasConstraints(timePassed)
 	} else {
 		ps.updatePricingModelLegacy(timePassed)
 	}
@@ -109,19 +109,19 @@ func (ps *L2PricingState) updatePricingModelLegacy(timePassed uint64) {
 	_ = ps.SetBaseFeeWei(baseFee)
 }
 
-func (ps *L2PricingState) updatePricingModelMultiConstraints(timePassed uint64) {
+func (ps *L2PricingState) updatePricingModelGasConstraints(timePassed uint64) {
 	// Compute exponent used in the basefee formula
 	totalExponent := arbmath.Bips(0)
-	constraintsLength, _ := ps.constraints.Length()
+	constraintsLength, _ := ps.gasConstraints.Length()
 	for i := range constraintsLength {
-		constraint := ps.OpenConstraintAt(i)
+		constraint := ps.OpenGasConstraintAt(i)
 		target, _ := constraint.Target()
 
 		// Pay off backlog
 		backlog, _ := constraint.Backlog()
 		gas := arbmath.SaturatingCast[int64](arbmath.SaturatingUMul(timePassed, target))
 		backlog = applyGasDelta(backlog, gas)
-		_ = constraint.backlog.Set(backlog)
+		_ = constraint.SetBacklog(backlog)
 
 		// Calculate exponent with the formula backlog/divisor
 		if backlog > 0 {

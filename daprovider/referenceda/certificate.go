@@ -1,5 +1,5 @@
 // Copyright 2025, Offchain Labs, Inc.
-// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package referenceda
 
@@ -16,11 +16,16 @@ import (
 	"github.com/offchainlabs/nitro/util/signature"
 )
 
-// referenceDAProviderType identifies this as a ReferenceDA certificate.
+// ReferenceDAProviderType identifies this as a ReferenceDA certificate.
 // It follows the DACertificateMessageHeaderFlag in the certificate format.
 // This allows for different DA providers using the CustomDA system to
 // differentiate themselves.
-const referenceDAProviderType byte = 0xFF
+// It is not required for external DA providers to use a byte to distinguish
+// providers if there will only ever be one provider on a given chain.
+// Providers can also use more than one byte, using a single byte is just
+// an example. Unrelated providers don't need to coordinate their header
+// bytes unless they intend to coexist on the same chain.
+const ReferenceDAProviderType byte = 0xFF
 
 // Certificate represents a ReferenceDA certificate with signature
 type Certificate struct {
@@ -43,7 +48,7 @@ func NewCertificate(data []byte, signer signature.DataSignerFunc) (*Certificate,
 
 	cert := &Certificate{
 		Header:       daprovider.DACertificateMessageHeaderFlag,
-		ProviderType: referenceDAProviderType,
+		ProviderType: ReferenceDAProviderType,
 		DataHash:     dataHash,
 		V:            sig[64] + 27,
 	}
@@ -84,8 +89,8 @@ func Deserialize(data []byte) (*Certificate, error) {
 		return nil, fmt.Errorf("invalid certificate header: %x", cert.Header)
 	}
 
-	if cert.ProviderType != referenceDAProviderType {
-		return nil, fmt.Errorf("invalid provider type: expected %x, got %x", referenceDAProviderType, cert.ProviderType)
+	if cert.ProviderType != ReferenceDAProviderType {
+		return nil, fmt.Errorf("invalid provider type: expected %x, got %x", ReferenceDAProviderType, cert.ProviderType)
 	}
 
 	return cert, nil
