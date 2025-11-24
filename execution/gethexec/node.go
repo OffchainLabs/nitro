@@ -313,7 +313,13 @@ func CreateExecutionNode(
 	var classicOutbox *ClassicOutboxRetriever
 
 	if l2BlockChain.Config().ArbitrumChainParams.GenesisBlockNum > 0 {
-		classicMsgDb, err := stack.OpenDatabase("classic-msg", 0, 0, "classicmsg/", true)
+		classicMsgDb, err := stack.OpenDatabaseWithOptions("classic-msg", node.DatabaseOptions{
+			MetricsNamespace: "classicmsg/",
+			Cache:            16,
+			Handles:          16,
+			ReadOnly:         true,
+			NoFreezer:        true,
+		})
 		if dbutil.IsNotExistError(err) {
 			log.Warn("Classic Msg Database not found", "err", err)
 			classicOutbox = nil
