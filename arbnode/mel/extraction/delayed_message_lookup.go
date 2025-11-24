@@ -22,24 +22,40 @@ func parseDelayedMessagesFromBlock(
 	ctx context.Context,
 	melState *mel.State,
 	parentChainHeader *types.Header,
-	txFetcher TransactionFetcher,
-	logsFetcher LogsFetcher,
+	receiptFetcher ReceiptFetcher,
+	txsFetcher TransactionsFetcher,
 ) ([]*mel.DelayedInboxMessage, error) {
 	msgScaffolds := make([]*mel.DelayedInboxMessage, 0)
 	messageDeliveredEvents := make([]*bridgegen.IBridgeMessageDelivered, 0)
-	logs, err := logsFetcher.LogsForBlockHash(ctx, parentChainHeader.Hash())
+	parentChainBlockTxs, err := txsFetcher.TransactionsByHeader(
+		ctx,
+		parentChainHeader.Hash(),
+	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch logs from parent chain block %v: %w", parentChainHeader.Hash(), err)
+		return nil, err
 	}
-	relevantLogs := make([]*types.Log, 0, len(logs))
-	for _, log := range logs {
-		// Check if the log was emitted by the delayed message posting address.
-		// On Arbitrum One, this is the bridge contract which emits a MessageDelivered event.
-		if log.Address == melState.DelayedMessagePostingTargetAddress {
-			relevantLogs = append(relevantLogs, log)
+	for i, tx := range parentChainBlockTxs {
+		if tx.To() == nil {
+			continue
 		}
-	}
-	if len(relevantLogs) > 0 {
+		// Fetch the receipts for the transaction to get the logs.
+		txIndex := uint(i) // #nosec G115
+		receipt, err := receiptFetcher.ReceiptForTransactionIndex(ctx, txIndex)
+		if err != nil {
+			return nil, err
+		}
+		relevantLogs := make([]*types.Log, 0, len(receipt.Logs))
+		// Check all logs in the receipt.
+		for _, log := range receipt.Logs {
+			// Check if the log was emitted by the delayed message posting address.
+			// On Arbitrum One, this is the bridge contract which emits a MessageDelivered event.
+			if log.Address == melState.DelayedMessagePostingTargetAddress {
+				relevantLogs = append(relevantLogs, log)
+			}
+		}
+		if len(relevantLogs) == 0 {
+			continue
+		}
 		delayedMessageScaffolds, parsedLogs, err := delayedMessageScaffoldsFromLogs(
 			parentChainHeader.Number,
 			relevantLogs,
@@ -61,21 +77,40 @@ func parseDelayedMessagesFromBlock(
 		inboxAddressList = append(inboxAddressList, addr)
 	}
 	messageData := make(map[common.Hash][]byte)
-	topics := [][]common.Hash{
-		{InboxMessageDeliveredID, InboxMessageFromOriginID}, // matches either of these IDs.
-		messageIds, // matches any of the message IDs.
-	}
-	filteredInboxMessageLogs := types.FilterLogs(logs, nil, nil, inboxAddressList, topics)
-	for _, inboxMsgLog := range filteredInboxMessageLogs {
-		msgNum, msg, err := parseDelayedMessage(
-			ctx,
-			inboxMsgLog,
-			txFetcher,
-		)
+	for i, tx := range parentChainBlockTxs {
+		// TODO: remove this temporary work around for handling init message, i.e skipping the check when msgCount==0
+		if melState.MsgCount != 0 {
+			if tx.To() == nil {
+				continue
+			}
+			_, ok := inboxAddressSet[*tx.To()]
+			if !ok {
+				continue
+			}
+		}
+		txIndex := uint(i) // #nosec G115
+		receipt, err := receiptFetcher.ReceiptForTransactionIndex(ctx, txIndex)
 		if err != nil {
 			return nil, err
 		}
-		messageData[common.BigToHash(msgNum)] = msg
+		if len(receipt.Logs) == 0 {
+			continue
+		}
+		topics := [][]common.Hash{
+			{inboxMessageDeliveredID, inboxMessageFromOriginID}, // matches either of these IDs.
+			messageIds, // matches any of the message IDs.
+		}
+		filteredInboxMessageLogs := types.FilterLogs(receipt.Logs, nil, nil, inboxAddressList, topics)
+		for _, inboxMsgLog := range filteredInboxMessageLogs {
+			msgNum, msg, err := parseDelayedMessage(
+				inboxMsgLog,
+				tx,
+			)
+			if err != nil {
+				return nil, err
+			}
+			messageData[common.BigToHash(msgNum)] = msg
+		}
 	}
 	for i, parsedLog := range messageDeliveredEvents {
 		msgKey := common.BigToHash(parsedLog.MessageIndex)
@@ -105,11 +140,11 @@ func delayedMessageScaffoldsFromLogs(
 	// First, do a pass over the logs to extract message delivered events, which
 	// contain an inbox address and a message index.
 	for _, ethLog := range logs {
-		if ethLog == nil || len(ethLog.Topics) == 0 || ethLog.Topics[0] != IBridgeABI.Events["MessageDelivered"].ID {
+		if ethLog == nil || len(ethLog.Topics) == 0 || ethLog.Topics[0] != iBridgeABI.Events["MessageDelivered"].ID {
 			continue
 		}
 		event := new(bridgegen.IBridgeMessageDelivered)
-		if err := unpackLogTo(event, IBridgeABI, "MessageDelivered", *ethLog); err != nil {
+		if err := unpackLogTo(event, iBridgeABI, "MessageDelivered", *ethLog); err != nil {
 			return nil, nil, err
 		}
 		parsedLogs = append(parsedLogs, event)
@@ -146,30 +181,25 @@ func delayedMessageScaffoldsFromLogs(
 }
 
 func parseDelayedMessage(
-	ctx context.Context,
 	ethLog *types.Log,
-	txFetcher TransactionFetcher,
+	tx *types.Transaction,
 ) (*big.Int, []byte, error) {
 	if ethLog == nil {
 		return nil, nil, nil
 	}
 	switch ethLog.Topics[0] {
-	case InboxMessageDeliveredID:
+	case inboxMessageDeliveredID:
 		event := new(bridgegen.IDelayedMessageProviderInboxMessageDelivered)
 		if err := unpackLogTo(event, iDelayedMessageProviderABI, "InboxMessageDelivered", *ethLog); err != nil {
 			return nil, nil, err
 		}
 		return event.MessageNum, event.Data, nil
-	case InboxMessageFromOriginID:
+	case inboxMessageFromOriginID:
 		event := new(bridgegen.IDelayedMessageProviderInboxMessageDeliveredFromOrigin)
 		if err := unpackLogTo(event, iDelayedMessageProviderABI, "InboxMessageDeliveredFromOrigin", *ethLog); err != nil {
 			return nil, nil, err
 		}
 		args := make(map[string]any)
-		tx, err := txFetcher.TransactionByLog(ctx, ethLog)
-		if err != nil {
-			return nil, nil, fmt.Errorf("error fetching tx by hash: %v in parseBatchesFromBlock: %w ", ethLog.TxHash, err)
-		}
 		data := tx.Data()
 		if len(data) < 4 {
 			return nil, nil, fmt.Errorf("tx data %#x too short", data)

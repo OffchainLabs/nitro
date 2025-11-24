@@ -30,10 +30,10 @@ type batchLookupFunc func(
 	ctx context.Context,
 	melState *mel.State,
 	parentChainHeader *types.Header,
-	txFetcher TransactionFetcher,
-	logsFetcher LogsFetcher,
+	txsFetcher TransactionsFetcher,
+	receiptFetcher ReceiptFetcher,
 	eventUnpacker eventUnpacker,
-) ([]*mel.SequencerInboxBatch, []*types.Transaction, error)
+) ([]*mel.SequencerInboxBatch, []*types.Transaction, []uint, error)
 
 // Defines a function that can lookup delayed messages for a given parent chain block.
 // See: parseDelayedMessagesFromBlock.
@@ -41,8 +41,8 @@ type delayedMsgLookupFunc func(
 	ctx context.Context,
 	melState *mel.State,
 	parentChainHeader *types.Header,
-	txFetcher TransactionFetcher,
-	logsFetcher LogsFetcher,
+	receiptFetcher ReceiptFetcher,
+	txsFetcher TransactionsFetcher,
 ) ([]*mel.DelayedInboxMessage, error)
 
 // Defines a function that can serialize a batch.
@@ -51,7 +51,8 @@ type batchSerializingFunc func(
 	ctx context.Context,
 	batch *mel.SequencerInboxBatch,
 	tx *types.Transaction,
-	logsFetcher LogsFetcher,
+	txIndex uint,
+	receiptFetcher ReceiptFetcher,
 ) ([]byte, error)
 
 // Defines a function that can parse a sequencer message from a batch.
