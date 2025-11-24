@@ -24,7 +24,7 @@ func TestMultiGasConstraint(t *testing.T) {
 	window, _ := c.AdjustmentWindow()
 	backlog, _ := c.Backlog()
 	require.Equal(t, uint64(123), target)
-	require.Equal(t, uint64(456), window)
+	require.Equal(t, uint32(456), window)
 	require.Equal(t, uint64(789), backlog)
 
 	weights := map[uint8]uint64{
