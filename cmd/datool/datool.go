@@ -158,17 +158,18 @@ func startClientStore(args []string) error {
 	ctx := context.Background()
 	var cert *dasutil.DataAvailabilityCertificate
 
+
+	// #nosec G115
+	expiry := uint64(time.Now().Add(config.DASRetentionPeriod).Unix())
 	if config.RandomMessageSize > 0 {
 		message := make([]byte, config.RandomMessageSize)
 		_, err = rand.Read(message)
 		if err != nil {
 			return err
 		}
-		// #nosec G115
-		cert, err = client.Store(ctx, message, uint64(time.Now().Add(config.DASRetentionPeriod).Unix()))
+		cert, err = client.Store(ctx, message, expiry)
 	} else if len(config.Message) > 0 {
-		// #nosec G115
-		cert, err = client.Store(ctx, []byte(config.Message), uint64(time.Now().Add(config.DASRetentionPeriod).Unix()))
+		cert, err = client.Store(ctx, []byte(config.Message), expiry)
 	} else {
 		return errors.New("--message or --random-message-size must be specified")
 	}
