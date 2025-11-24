@@ -43,7 +43,7 @@ var gasConstraintsKey []byte = []byte{0}
 var multigasConstraintsKey []byte = []byte{1}
 
 const GethBlockGasLimit = 1 << 50
-const GasConstraintsLimit = 20
+const gasConstraintsMaxNum = 20
 const MaxExponentBips = arbmath.Bips(85_000)
 
 func InitializeL2PricingState(sto *storage.Storage) error {
