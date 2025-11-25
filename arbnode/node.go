@@ -44,8 +44,8 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/staker/bold"
-	"github.com/offchainlabs/nitro/staker/legacy"
-	"github.com/offchainlabs/nitro/staker/multi_protocol"
+	legacystaker "github.com/offchainlabs/nitro/staker/legacy"
+	multiprotocolstaker "github.com/offchainlabs/nitro/staker/multi_protocol"
 	"github.com/offchainlabs/nitro/staker/validatorwallet"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/contracts"
@@ -1512,6 +1512,9 @@ func (n *Node) StopAndWait() {
 	}
 	if n.configFetcher != nil && n.configFetcher.Started() {
 		n.configFetcher.StopAndWait()
+	}
+	if n.blockMetadataFetcher != nil {
+		n.blockMetadataFetcher.StopAndWait()
 	}
 	if n.SeqCoordinator != nil && n.SeqCoordinator.Started() {
 		// Releases the chosen sequencer lockout,
