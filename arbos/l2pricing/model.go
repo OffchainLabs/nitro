@@ -59,27 +59,37 @@ func (ps *L2PricingState) GasModelToUse() (GasModel, error) {
 	return GasModelLegacy, nil
 }
 
-// AddToGasPool updates the backlog(s) for the active gas pricing model.
-//
-//	growBacklog = true  -> backlog increases (gas was consumed)
-//	growBacklog = false -> backlog decreases (unused capacity pays down backlog)
-//
-// Model behavior:
-//   - Legacy and single-constraint models use only `usedGas`.
-//   - Multi-dimensional model uses `usedMultiGas` to update each constraint,
-//     but `usedGas` must still match `usedMultiGas.SingleGas()`.
-func (ps *L2PricingState) AddToGasPool(growBacklog bool, usedGas uint64, usedMultiGas multigas.MultiGas) error {
+// AddToGasPool increases gas amount in backlog(s) for the active gas pricing model:
+func (ps *L2PricingState) AddToGasPool(usedGas uint64, usedMultiGas multigas.MultiGas) error {
 	gasModel, err := ps.GasModelToUse()
 	if err != nil {
 		return err
 	}
 	switch gasModel {
 	case GasModelLegacy:
-		return ps.addToGasPoolLegacy(growBacklog, usedGas)
+		return ps.addToGasPoolLegacy(true, usedGas)
 	case GasModelSingleGasConstraints:
-		return ps.addToGasPoolWithSingleGasConstraints(growBacklog, usedGas)
+		return ps.addToGasPoolWithSingleGasConstraints(true, usedGas)
 	case GasModelMultiGasConstraints:
-		return ps.addToGasPoolWithMultiGasConstraints(growBacklog, usedGas, usedMultiGas)
+		return ps.addToGasPoolWithMultiGasConstraints(true, usedGas, usedMultiGas)
+	default:
+		return fmt.Errorf("can not determine gas model")
+	}
+}
+
+// SubstractGasFromPool decreases gas amount in backlog(s) for the active gas pricing model:
+func (ps *L2PricingState) SubstractGasFromPool(usedGas uint64, usedMultiGas multigas.MultiGas) error {
+	gasModel, err := ps.GasModelToUse()
+	if err != nil {
+		return err
+	}
+	switch gasModel {
+	case GasModelLegacy:
+		return ps.addToGasPoolLegacy(false, usedGas)
+	case GasModelSingleGasConstraints:
+		return ps.addToGasPoolWithSingleGasConstraints(false, usedGas)
+	case GasModelMultiGasConstraints:
+		return ps.addToGasPoolWithMultiGasConstraints(false, usedGas, usedMultiGas)
 	default:
 		return fmt.Errorf("can not determine gas model")
 	}
@@ -127,9 +137,10 @@ func (ps *L2PricingState) GasPoolUpdateCost() uint64 {
 			result += uint64(constraintsLength) * (storage.StorageReadCost + storage.StorageWriteCost)
 			return result
 		}
+		// no return here, fallthrough to single-constraint costs
 	}
 
-	// Single-dimensional constraint pricer requires an extra storage read, since ArbOS must load the constraints from state.
+	// Single-dimensional constraint pricer costs
 	// This overhead applies even when no constraints are configured.
 	if ps.ArbosVersion >= ArbosSingleGasConstraintsVersion {
 		result += storage.StorageReadCost // read gas constraints length for "GasModelToUse()"
@@ -144,6 +155,7 @@ func (ps *L2PricingState) GasPoolUpdateCost() uint64 {
 			result += uint64(constraintsLength) * (storage.StorageReadCost + storage.StorageWriteCost)
 			return result
 		}
+		// no return here, fallthrough to legacy costs
 	}
 
 	// Legacy pricer costs

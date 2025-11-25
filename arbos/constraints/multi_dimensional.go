@@ -57,7 +57,7 @@ func (c *MultiGasConstraint) Clear() error {
 	if err := c.target.Clear(); err != nil {
 		return err
 	}
-	if err := c.adjustmentWindow.Set(0); err != nil {
+	if err := c.adjustmentWindow.Clear(); err != nil {
 		return err
 	}
 	if err := c.backlog.Clear(); err != nil {
