@@ -375,7 +375,7 @@ func (bv *BlockValidatorInstance) CreateValidationEntry(
 	return entry, true, nil
 }
 
-func (bv *BlockValidatorInstance) OnReorg(count uint64) error {
+func (bv *BlockValidatorInstance) UpdateNextCreationByCount(count uint64) error {
 	msgCount := arbutil.MessageIndex(count)
 	_, endPosition, err := bv.stateless.GlobalStatePositionsAtCount(msgCount)
 	if err != nil {
@@ -389,16 +389,15 @@ func (bv *BlockValidatorInstance) OnReorg(count uint64) error {
 	if err != nil {
 		return err
 	}
-	bv.UpdateNextCreationState(
+	bv.UpdateNextCreation(
 		BuildGlobalState(*res, endPosition),
 		msg.DelayedMessagesRead,
 		true, /* Reread next batch on creation */
 	)
-	bv.ResetCaches()
 	return nil
 }
 
-func (bv *BlockValidatorInstance) OnLatestStakedUpdate(
+func (bv *BlockValidatorInstance) UpdateNextCreationByStateAndCount(
 	globalState validator.GoGlobalState,
 	count uint64,
 ) {
@@ -407,14 +406,14 @@ func (bv *BlockValidatorInstance) OnLatestStakedUpdate(
 		log.Error("getMessage error", "err", err, "count", count)
 		return
 	}
-	bv.UpdateNextCreationState(
+	bv.UpdateNextCreation(
 		globalState,
 		msg.DelayedMessagesRead,
 		true, /* Should reread next batch on creation */
 	)
 }
 
-func (bv *BlockValidatorInstance) UpdateNextCreationState(
+func (bv *BlockValidatorInstance) UpdateNextCreation(
 	nextCreateStartGS validator.GoGlobalState,
 	nextCreatePrevDelayed uint64,
 	nextCreateBatchReread bool,

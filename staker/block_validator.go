@@ -61,15 +61,15 @@ type ValidatorInstance interface {
 	LastValidatedInfo() (*GlobalStateValidatedInfo, error)
 	LegacyLastValidatedInfo() (*legacyLastBlockValidatedDbInfo, error)
 	NextCreationGlobalState() validator.GoGlobalState
-	OnLatestStakedUpdate(globalState validator.GoGlobalState, count uint64)
-	OnReorg(count uint64) error
 	PositionsAtCount(count uint64) (GlobalStatePosition, GlobalStatePosition, error)
 	RecordEntry(ctx context.Context, entry *validationEntry) error
 	RedisValidator() *redis.ValidationClient
 	ResetCaches()
 	SetLastValidGlobalState(gs validator.GoGlobalState)
 	SetLegacyValidInfo(info *legacyLastBlockValidatedDbInfo)
-	UpdateNextCreationState(nextCreateStartGS validator.GoGlobalState, nextCreatePrevDelayed uint64, nextCreateBatchReread bool)
+	UpdateNextCreation(nextCreateStartGS validator.GoGlobalState, nextCreatePrevDelayed uint64, nextCreateBatchReread bool)
+	UpdateNextCreationByCount(count uint64) error
+	UpdateNextCreationByStateAndCount(globalState validator.GoGlobalState, count uint64)
 	ValidGlobalStateIsNew(gs validator.GoGlobalState) bool
 	ValidatedCount(validatedGs validator.GoGlobalState) int64
 	ValidatorInputsWriter() (*inputs.Writer, error)
@@ -1018,7 +1018,7 @@ func (v *BlockValidator) UpdateLatestStaked(count arbutil.MessageIndex, globalSt
 		v.validations.Delete(iPos)
 	}
 	if v.created() < count {
-		v.instance.OnLatestStakedUpdate(globalState, countUint64)
+		v.instance.UpdateNextCreationByStateAndCount(globalState, countUint64)
 		v.createdA.Store(countUint64)
 	}
 	// under the reorg mutex we don't need atomic access
@@ -1071,10 +1071,11 @@ func (v *BlockValidator) Reorg(ctx context.Context, count arbutil.MessageIndex) 
 		v.validations.Delete(iPos)
 	}
 	countUint64 := uint64(count)
-	if err := v.instance.OnReorg(countUint64); err != nil {
+	if err := v.instance.UpdateNextCreationByCount(countUint64); err != nil {
 		v.possiblyFatal(err)
 		return err
 	}
+	v.instance.ResetCaches()
 	v.createdA.Store(countUint64)
 	// under the reorg mutex we don't need atomic access
 	if v.recordSentA.Load() > countUint64 {
