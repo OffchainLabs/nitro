@@ -1725,6 +1725,7 @@ func deployOnParentChain(
 			NumBigStepLevel:              3,
 			ChallengeGracePeriodBlocks:   3,
 			BufferConfig:                 bufferConfig,
+			DataCostEstimate:             big.NewInt(0),
 		}
 
 		// Deploy custom OSP for ReferenceDA if enabled
