@@ -7,6 +7,9 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/ethereum/go-ethereum/arbitrum/multigas"
+	"github.com/ethereum/go-ethereum/params"
+
 	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbos/storage"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -18,7 +21,7 @@ func PricingForTest(t *testing.T) *L2PricingState {
 	storage := storage.NewMemoryBacked(burn.NewSystemBurner(nil, false))
 	err := InitializeL2PricingState(storage)
 	Require(t, err)
-	return OpenL2PricingState(storage)
+	return OpenL2PricingState(storage, params.MaxDebugArbosVersionSupported)
 }
 
 func fakeBlockUpdate(t *testing.T, pricing *L2PricingState, gasUsed int64, timePassed uint64) {

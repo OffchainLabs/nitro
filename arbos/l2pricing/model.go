@@ -9,6 +9,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/params"
 
+	"github.com/offchainlabs/nitro/arbos/storage"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
@@ -24,9 +25,9 @@ const InitialPricingInertia = 102
 const InitialBacklogTolerance = 10
 const InitialPerTxGasLimitV50 uint64 = 32 * 1000000
 
-func (ps *L2PricingState) ShouldUseMultiConstraints(arbosVersion uint64) (bool, error) {
-	if arbosVersion >= ArbosMultiConstraintsVersion {
-		constraintsLength, err := ps.ConstraintsLength()
+func (ps *L2PricingState) ShouldUseGasConstraints() (bool, error) {
+	if ps.ArbosVersion >= ArbosSingleGasConstraintsVersion {
+		constraintsLength, err := ps.GasConstraintsLength()
 		if err != nil {
 			return false, err
 		}
@@ -35,8 +36,8 @@ func (ps *L2PricingState) ShouldUseMultiConstraints(arbosVersion uint64) (bool, 
 	return false, nil
 }
 
-func (ps *L2PricingState) AddToGasPool(gas int64, arbosVersion uint64) error {
-	shouldUseMultiConstraints, err := ps.ShouldUseMultiConstraints(arbosVersion)
+func (ps *L2PricingState) AddToGasPool(gas int64) error {
+	shouldUseGasConstraints, err := ps.ShouldUseGasConstraints()
 	if err != nil {
 		return err
 	}
@@ -74,11 +75,33 @@ func (ps *L2PricingState) addToGasPoolMultiConstraints(gas int64) error {
 	return nil
 }
 
+func (ps *L2PricingState) GasPoolUpdateCost() uint64 {
+	result := storage.StorageReadCost + storage.StorageWriteCost
+
+	// Multi-Constraint pricer requires an extra storage read, since ArbOS must load the constraints from state.
+	// This overhead applies even when no constraints are configured.
+	if ps.ArbosVersion >= params.ArbosVersion_50 {
+		result += storage.StorageReadCost // read length for "souldUseGasConstraints"
+	}
+
+	if ps.ArbosVersion >= params.ArbosVersion_MultiConstraintFix {
+		// addToGasPoolWithGasConstraints costs (ArbOS 51 and later)
+		constraintsLength, _ := ps.gasConstraints.Length()
+		if constraintsLength > 0 {
+			result += storage.StorageReadCost // read length to traverse
+			// updating (read+write) all constraints, first one was already accounted for
+			result += uint64(constraintsLength-1) * (storage.StorageReadCost + storage.StorageWriteCost)
+		}
+	}
+
+	return result
+}
+
 // UpdatePricingModel updates the pricing model with info from the last block
-func (ps *L2PricingState) UpdatePricingModel(timePassed uint64, arbosVersion uint64) {
-	shouldUseMultiConstraints, _ := ps.ShouldUseMultiConstraints(arbosVersion)
-	if shouldUseMultiConstraints {
-		ps.updatePricingModelMultiConstraints(timePassed)
+func (ps *L2PricingState) UpdatePricingModel(timePassed uint64) {
+	shouldUseGasConstraints, _ := ps.ShouldUseGasConstraints()
+	if shouldUseGasConstraints {
+		ps.updatePricingModelGasConstraints(timePassed)
 	} else {
 		ps.updatePricingModelLegacy(timePassed)
 	}
