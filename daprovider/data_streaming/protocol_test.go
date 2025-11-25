@@ -42,20 +42,20 @@ func TestDataStreaming_PositiveScenario(t *testing.T) {
 	t.Run("Single sender, short message", func(t *testing.T) {
 		testBasic(t, TestHttpBodyLimit/2, 10, 1)
 	})
-	t.Run("Single sender, message of chunk-size multiple length", func(t *testing.T) {
-		msgLength, err := calculateEffectiveChunkSize(TestHttpBodyLimit, rpcMethods)
-		testhelpers.RequireImpl(t, err)
-		testBasic(t, int(msgLength*3), 0, 1) //nolint:gosec
-	})
 	t.Run("Single sender, long message", func(t *testing.T) {
 		testBasic(t, 2*TestHttpBodyLimit, 50, 1)
+	})
+	t.Run("Single sender, message of chunk-multiple length", func(t *testing.T) {
+		msgLength, err := calculateEffectiveChunkSize(TestHttpBodyLimit, rpcMethods)
+		testhelpers.RequireImpl(t, err)
+		testBasic(t, int(3*msgLength), 0, 1) //nolint:gosec
 	})
 	t.Run("Many senders, long messages", func(t *testing.T) {
 		testBasic(t, 10*TestHttpBodyLimit, TestHttpBodyLimit, maxPendingMessages)
 	})
 }
 
-func TestDataStreaming_ServerRejectsEmptyMessageParameters(t *testing.T) {
+func TestDataStreaming_ServerRejectsEmptyMessage(t *testing.T) {
 	ctx, streamer := prepareTestEnv(t, nil)
 	message, _ := getLongRandomMessage(streamer.chunkSize)
 
