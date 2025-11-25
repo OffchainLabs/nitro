@@ -548,7 +548,7 @@ func DeployFullRollupStack(
 
 	log.Info("Creating rollup")
 	tx, err := retry.UntilSucceeds(ctx, func() (*types.Transaction, error) {
-		creationTx, creationErr := rollupCreator.CreateRollupfdc3c7fc(
+		creationTx, creationErr := rollupCreator.CreateRollup(
 			deployAuth,
 			rollupgen.RollupCreatorRollupDeploymentParams{
 				Config:                    config,
