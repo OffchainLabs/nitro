@@ -38,6 +38,8 @@ func setupResourceConstraintHandles(
 	state, err := arbosState.OpenArbosState(evm.StateDB, burn.NewSystemBurner(tracer, false))
 	require.NoError(t, err)
 
+	state.L2PricingState().ArbosVersion = l2pricing.ArbosMultiGasConstraintsVersion
+
 	arbGasInfo := &ArbGasInfo{}
 	arbOwner := &ArbOwner{}
 

@@ -7,11 +7,13 @@ import (
 	"math/big"
 	"testing"
 
+	"github.com/ethereum/go-ethereum/arbitrum/multigas"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/vm"
 
 	"github.com/offchainlabs/nitro/arbos"
+	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbos/storage"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 )
@@ -38,9 +40,8 @@ func TestGetCurrentRedeemer(t *testing.T) {
 	}
 }
 
-func TestRetryableRedeem(t *testing.T) {
-	evm := newMockEVMForTesting()
-	precompileCtx := testContext(common.Address{}, evm)
+func testRetryableRedeem(t *testing.T, evm *vm.EVM, precompileCtx *Context) {
+	t.Helper()
 
 	id := common.BigToHash(big.NewInt(978645611142))
 	timeout := evm.Context.Time + 10000000
@@ -88,7 +89,14 @@ func TestRetryableRedeem(t *testing.T) {
 	}
 }
 
-func TestRetryableRedeemWithGasConstraints(t *testing.T) {
+func TestRetryableRedeem(t *testing.T) {
+	evm := newMockEVMForTesting()
+	precompileCtx := testContext(common.Address{}, evm)
+
+	testRetryableRedeem(t, evm, precompileCtx)
+}
+
+func TestRetryableRedeemWithSingleGasConstraints(t *testing.T) {
 	evm := newMockEVMForTesting()
 	precompileCtx := testContext(common.Address{}, evm)
 
@@ -105,58 +113,31 @@ func TestRetryableRedeemWithGasConstraints(t *testing.T) {
 		Require(t, err)
 	}
 
-	id := common.BigToHash(big.NewInt(978645611142))
-	timeout := evm.Context.Time + 10000000
-	from := common.HexToAddress("0x030405")
-	to := common.HexToAddress("0x06070809")
-	callvalue := big.NewInt(0)
-	beneficiary := common.HexToAddress("0x0301040105090206")
-	calldata := make([]byte, 42)
-	for i := range calldata {
-		calldata[i] = byte(i + 3)
-	}
-	_, err := precompileCtx.State.RetryableState().CreateRetryable(
-		id,
-		timeout,
-		from,
-		&to,
-		callvalue,
-		beneficiary,
-		calldata,
-	)
-	Require(t, err)
+	testRetryableRedeem(t, evm, precompileCtx)
+}
 
-	retryABI, err := precompilesgen.ArbRetryableTxMetaData.GetAbi()
-	Require(t, err)
-	redeemCalldata, err := retryABI.Pack("redeem", id)
-	Require(t, err)
+func TestRetryableRedeemWithMultiGasConstraints(t *testing.T) {
+	evm := newMockEVMForTesting()
+	precompileCtx := testContext(common.Address{}, evm)
+	precompileCtx.State.L2PricingState().ArbosVersion = l2pricing.ArbosMultiGasConstraintsVersion
 
-	retryAddress := common.HexToAddress("6e")
-	_, gasLeft, _, err := Precompiles()[retryAddress].Call(
-		redeemCalldata,
-		retryAddress,
-		common.Address{},
-		big.NewInt(0),
-		false,
-		1000000,
-		evm,
-	)
-	Require(t, err)
+	numConstraints := precompileCtx.State.L2PricingState().GasConstraintsMaxNum()
+	for i := range numConstraints {
+		// #nosec G115
+		target := uint64((i + 1) * 1000000)
+		// #nosec G115
+		window := uint32((i + 1) * 10)
+		// #nosec G115
+		backlog := uint64((i + 1) * 500000)
 
-	expected := storage.StorageWriteCost - storage.StorageWriteZeroCost
-	if gasLeft != expected {
-		// Say how much different the result is (and in which direction).
-		var delta uint64
-		var relation string
-		if gasLeft > expected {
-			delta = gasLeft - expected
-			relation = "more"
-		} else {
-			delta = expected - gasLeft
-			relation = "less"
+		resourceWeights := map[uint8]uint64{
+			uint8(multigas.ResourceKindComputation):   1,
+			uint8(multigas.ResourceKindStorageAccess): 2,
 		}
 
-		t.Fatalf("unexpected gas left: got %d, want %d (%d %s than expected)",
-			gasLeft, expected, delta, relation)
+		err := precompileCtx.State.L2PricingState().AddMultiGasConstraint(target, window, backlog, resourceWeights)
+		Require(t, err)
 	}
+
+	testRetryableRedeem(t, evm, precompileCtx)
 }

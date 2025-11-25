@@ -114,12 +114,25 @@ func (ps *L2PricingState) addToGasPoolWithSingleGasConstraints(growBacklog bool,
 }
 
 func (ps *L2PricingState) GasPoolUpdateCost() uint64 {
-	result := storage.StorageReadCost + storage.StorageWriteCost
+	result := uint64(0)
 
-	// Multi-Constraint pricer requires an extra storage read, since ArbOS must load the constraints from state.
+	// Multi-dimensional constraint pricer costs
+	if ps.ArbosVersion >= ArbosMultiGasConstraintsVersion {
+		result += storage.StorageReadCost // read multi gas constraints length for "GasModelToUse()"
+
+		constraintsLength, _ := ps.multigasConstraints.Length()
+		if constraintsLength > 0 {
+			result += storage.StorageReadCost // read length to traverse
+			// updating (read+write) all constraints, first one was already accounted for
+			result += uint64(constraintsLength) * (storage.StorageReadCost + storage.StorageWriteCost)
+			return result
+		}
+	}
+
+	// Single-dimensional constraint pricer requires an extra storage read, since ArbOS must load the constraints from state.
 	// This overhead applies even when no constraints are configured.
-	if ps.ArbosVersion >= params.ArbosVersion_50 {
-		result += storage.StorageReadCost // read length for "souldUseGasConstraints"
+	if ps.ArbosVersion >= ArbosSingleGasConstraintsVersion {
+		result += storage.StorageReadCost // read gas constraints length for "GasModelToUse()"
 	}
 
 	if ps.ArbosVersion >= params.ArbosVersion_MultiConstraintFix {
@@ -128,11 +141,13 @@ func (ps *L2PricingState) GasPoolUpdateCost() uint64 {
 		if constraintsLength > 0 {
 			result += storage.StorageReadCost // read length to traverse
 			// updating (read+write) all constraints, first one was already accounted for
-			result += uint64(constraintsLength-1) * (storage.StorageReadCost + storage.StorageWriteCost)
+			result += uint64(constraintsLength) * (storage.StorageReadCost + storage.StorageWriteCost)
+			return result
 		}
 	}
 
-	// TODO: multi-dimensional gas pricing would add even more overhead here
+	// Legacy pricer costs
+	result += storage.StorageReadCost + storage.StorageWriteCost
 
 	return result
 }
