@@ -5,18 +5,16 @@ import (
 	"fmt"
 	"math/big"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 )
 
 func TestAccessingPathSchemeState(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithDatabase(rawdb.DBPebble)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false).WithDatabase(rawdb.DBPebble)
 
 	// This test is PathScheme specific, it shouldn't be run with HashScheme
 	builder.RequireScheme(t, rawdb.PathScheme)
@@ -58,9 +56,15 @@ func TestAccessingPathSchemeState(t *testing.T) {
 func TestAccessingPathSchemeArchivalState(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithDatabase(rawdb.DBPebble)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false).WithDatabase(rawdb.DBPebble)
 	builder.execConfig.Caching.Archive = true
 	builder.execConfig.Caching.StateHistory = 2
+	// There's a race condition for when persisted state ID is updated and checked against
+	// the first history block, meaning sometimes state pruning is skipped to make sure
+	// the persisted state ID is ahead. NoAsyncFlush config makes the flush synchronous
+	// when set to true, that way disklayer.writeStateHistory won't skip calls to
+	// trancateFromTail.
+	builder.TrieNoAsyncFlush = true
 
 	// This test is PathScheme specific, it shouldn't be run with HashScheme
 	builder.RequireScheme(t, rawdb.PathScheme)
@@ -70,21 +74,6 @@ func TestAccessingPathSchemeArchivalState(t *testing.T) {
 	fmt.Println("bluebird 5-3", builder.execConfig.Caching.StateScheme)
 	execNode, l2client := builder.L2.ExecNode, builder.L2.Client
 	defer cancelNode()
-
-	// There's a race condition for when persisted state ID is updated and checked against
-	// the first history block, meaning sometimes state pruning is skipped to make sure
-	// the persisted state ID is ahead. To make sure we trigger state prunning for the last
-	// block we sleep a little bit to wait for threads to catch up and trigger another block
-	// production just before we check the history of blocks, that way we're sure the
-	// persisted state ID will always be ahead of the first history block, forcing state pruning
-	time.Sleep(time.Second)
-
-	tx := builder.L2Info.PrepareTx("Owner", "User2", builder.L2Info.TransferGas, common.Big1, nil)
-	err := l2client.SendTransaction(ctx, tx)
-	Require(t, err)
-	_, err = builder.L2.EnsureTxSucceeded(tx)
-	Require(t, err)
-
 	bc := execNode.Backend.ArbInterface().BlockChain()
 
 	header := bc.CurrentBlock()
@@ -105,7 +94,7 @@ func TestAccessingPathSchemeArchivalState(t *testing.T) {
 
 	// Now try to access state older than 131 blocks ago, which should be missing
 	heightWhereStateShouldBeMissing := head - 132
-	_, err = l2client.BalanceAt(ctx, GetTestAddressForAccountName(t, "User2"), new(big.Int).SetUint64(heightWhereStateShouldBeMissing))
+	_, err := l2client.BalanceAt(ctx, GetTestAddressForAccountName(t, "User2"), new(big.Int).SetUint64(heightWhereStateShouldBeMissing))
 	require.Error(t, err, "expected BalanceAt to fail for missing historical state")
 	// `metadata is not found` is the error returned when archival data is pruned for some reason
 	require.Contains(t, err.Error(), "metadata is not found", "unexpected error message: %v", err)
