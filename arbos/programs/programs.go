@@ -464,6 +464,9 @@ func (p Programs) SetProgramCached(
 		if err != nil {
 			return err
 		}
+		if len(code) == 0 {
+			return fmt.Errorf("code not found for codeHash: %x", codeHash)
+		}
 		cacheProgram(db, moduleHash, program, address, code, codeHash, params, debug, time, runCtx)
 	} else {
 		evictProgram(db, moduleHash, program.version, debug, runCtx, expired)
