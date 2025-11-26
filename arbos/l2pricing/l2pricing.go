@@ -24,6 +24,8 @@ type L2PricingState struct {
 	perTxGasLimit       storage.StorageBackedUint64
 	gasConstraints      *storage.SubStorageVector
 	multigasConstraints *storage.SubStorageVector
+
+	ArbosVersion uint64
 }
 
 const (
@@ -41,6 +43,8 @@ var gasConstraintsKey []byte = []byte{0}
 var multigasConstraintsKey []byte = []byte{1}
 
 const GethBlockGasLimit = 1 << 50
+const gasConstraintsMaxNum = 20
+const MaxExponentBips = arbmath.Bips(85_000)
 
 func InitializeL2PricingState(sto *storage.Storage) error {
 	_ = sto.SetUint64ByUint64(speedLimitPerSecondOffset, InitialSpeedLimitPerSecondV0)
@@ -52,7 +56,7 @@ func InitializeL2PricingState(sto *storage.Storage) error {
 	return sto.SetUint64ByUint64(minBaseFeeWeiOffset, InitialMinimumBaseFeeWei)
 }
 
-func OpenL2PricingState(sto *storage.Storage) *L2PricingState {
+func OpenL2PricingState(sto *storage.Storage, arbosVersion uint64) *L2PricingState {
 	return &L2PricingState{
 		storage:             sto,
 		speedLimitPerSecond: sto.OpenStorageBackedUint64(speedLimitPerSecondOffset),
@@ -65,6 +69,7 @@ func OpenL2PricingState(sto *storage.Storage) *L2PricingState {
 		perTxGasLimit:       sto.OpenStorageBackedUint64(perTxGasLimitOffset),
 		gasConstraints:      storage.OpenSubStorageVector(sto.OpenSubStorage(gasConstraintsKey)),
 		multigasConstraints: storage.OpenSubStorageVector(sto.OpenSubStorage(multigasConstraintsKey)),
+		ArbosVersion:        arbosVersion,
 	}
 }
 
@@ -207,6 +212,10 @@ func (ps *L2PricingState) ClearGasConstraints() error {
 	return nil
 }
 
+func (ps *L2PricingState) GasConstraintsMaxNum() int {
+	return gasConstraintsMaxNum
+}
+
 func (ps *L2PricingState) MultiGasConstraintsLength() (uint64, error) {
 	return ps.multigasConstraints.Length()
 }
@@ -217,7 +226,7 @@ func (ps *L2PricingState) OpenMultiGasConstraintAt(i uint64) *constraints.MultiG
 
 func (ps *L2PricingState) AddMultiGasConstraint(
 	target uint64,
-	adjustmentWindow uint64,
+	adjustmentWindow uint32,
 	backlog uint64,
 	resourceWeights map[uint8]uint64,
 ) error {
@@ -236,10 +245,20 @@ func (ps *L2PricingState) AddMultiGasConstraint(
 	if err := constraint.SetBacklog(backlog); err != nil {
 		return fmt.Errorf("failed to set backlog: %w", err)
 	}
-
 	if err := constraint.SetResourceWeights(resourceWeights); err != nil {
 		return fmt.Errorf("failed to set resource weights: %w", err)
 	}
+
+	for kind := range resourceWeights {
+		exp, err := constraint.ComputeExponent(kind)
+		if err != nil {
+			return fmt.Errorf("failed to compute exponent for resource kind %v: %w", kind, err)
+		}
+		if exp > MaxExponentBips {
+			return fmt.Errorf("resource kind %v has exponent %v bips exceeding max of %v bips", kind, exp, MaxExponentBips)
+		}
+	}
+
 	return nil
 }
 
