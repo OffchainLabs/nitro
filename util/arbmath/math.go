@@ -394,10 +394,11 @@ func SaturatingNeg[T Signed](value T) T {
 
 // Integer division but rounding up
 func DivCeil[T Unsigned](value, divisor T) T {
+	quotient := value / divisor
 	if value%divisor == 0 {
-		return value / divisor
+		return quotient
 	}
-	return value/divisor + 1
+	return quotient + 1
 }
 
 // ApproxExpBasisPoints return the Maclaurin series approximation of e^x, where
