@@ -59,6 +59,7 @@ type DelayedBridge struct {
 	con              *bridgegen.IBridge
 	address          common.Address
 	fromBlock        uint64
+	fromBlockBig     *big.Int // cached to avoid repeated allocations
 	client           *ethclient.Client
 	messageProviders map[common.Address]*bridgegen.IDelayedMessageProvider
 }
@@ -73,17 +74,19 @@ func NewDelayedBridge(client *ethclient.Client, addr common.Address, fromBlock u
 		con:              con,
 		address:          addr,
 		fromBlock:        fromBlock,
+		fromBlockBig:     new(big.Int).SetUint64(fromBlock),
 		client:           client,
 		messageProviders: make(map[common.Address]*bridgegen.IDelayedMessageProvider),
 	}, nil
 }
 
 func (b *DelayedBridge) FirstBlock() *big.Int {
-	return new(big.Int).SetUint64(b.fromBlock)
+	// Return a copy to prevent external modification of cached value
+	return new(big.Int).Set(b.fromBlockBig)
 }
 
 func (b *DelayedBridge) GetMessageCount(ctx context.Context, blockNumber *big.Int) (uint64, error) {
-	if (blockNumber != nil) && blockNumber.Cmp(new(big.Int).SetUint64(b.fromBlock)) < 0 {
+	if (blockNumber != nil) && blockNumber.Cmp(b.fromBlockBig) < 0 {
 		return 0, nil
 	}
 	opts := &bind.CallOpts{
