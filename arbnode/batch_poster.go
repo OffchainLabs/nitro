@@ -127,7 +127,8 @@ type BatchPoster struct {
 	batchReverted        atomic.Bool // indicates whether data poster batch was reverted
 	nextRevertCheckBlock int64       // the last parent block scanned for reverting batches
 	postedFirstBatch     bool        // indicates if batch poster has posted the first batch
-	useEthDA             bool        // rebuild next batch with EthDA due to size constraints
+	fallbackToEthDA      bool        // use EthDA due to AltDA failure
+	ethDAFallbackCounter int         // counts batches posted in EthDA fallback mode
 
 	accessList   func(SequencerInboxAccs, AfterDelayedMessagesRead uint64) types.AccessList
 	parentChain  *parent.ParentChain
@@ -155,12 +156,15 @@ type BatchPosterDangerousConfig struct {
 type BatchPosterConfig struct {
 	Enable                             bool `koanf:"enable"`
 	DisableDapFallbackStoreDataOnChain bool `koanf:"disable-dap-fallback-store-data-on-chain" reload:"hot"`
+	// Number of batches to post to EthDA before retrying AltDA after a fallback.
+	EthDAFallbackBatchCount int `koanf:"ethda-fallback-batch-count" reload:"hot"`
 	// Maximum calldata batch size for EthDA.
 	MaxCalldataBatchSize int `koanf:"max-calldata-batch-size" reload:"hot"`
 	// Maximum 4844 blob enabled batch size.
 	Max4844BatchSize int `koanf:"max-4844-batch-size" reload:"hot"`
 	// Maximum altDA batch size (for all alternative DA systems: external, AnyTrust).
-	// TODO In future it may be useful for different altDA sytems to have different limits.
+	// TODO In future it may be useful for different altDA sytems to have different limits,
+	// and the limits should be determined from the provider using the DA API.
 	MaxAltDABatchSize int `koanf:"max-altda-batch-size" reload:"hot"`
 	// Max batch post delay.
 	MaxDelay time.Duration `koanf:"max-delay" reload:"hot"`
@@ -232,6 +236,7 @@ func DangerousBatchPosterConfigAddOptions(prefix string, f *pflag.FlagSet) {
 func BatchPosterConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultBatchPosterConfig.Enable, "enable posting batches to l1")
 	f.Bool(prefix+".disable-dap-fallback-store-data-on-chain", DefaultBatchPosterConfig.DisableDapFallbackStoreDataOnChain, "If unable to batch to DA provider, disable fallback storing data on chain")
+	f.Int(prefix+".ethda-fallback-batch-count", DefaultBatchPosterConfig.EthDAFallbackBatchCount, "number of batches to post to EthDA before retrying AltDA after a fallback")
 	f.Int(prefix+".max-calldata-batch-size", DefaultBatchPosterConfig.MaxCalldataBatchSize, "maximum estimated compressed calldata batch size")
 	f.Int(prefix+".max-4844-batch-size", DefaultBatchPosterConfig.Max4844BatchSize, "maximum estimated compressed 4844 blob enabled batch size")
 	f.Int(prefix+".max-altda-batch-size", DefaultBatchPosterConfig.MaxAltDABatchSize, "maximum estimated compressed batch size when using alternative data availability (eg Anytrust, external)")
@@ -265,6 +270,7 @@ func BatchPosterConfigAddOptions(prefix string, f *pflag.FlagSet) {
 var DefaultBatchPosterConfig = BatchPosterConfig{
 	Enable:                             false,
 	DisableDapFallbackStoreDataOnChain: false,
+	EthDAFallbackBatchCount:            10,
 	// This default is overridden for L3 chains in applyChainParameters in cmd/nitro/nitro.go
 	MaxCalldataBatchSize: 100000,
 	// The Max4844BatchSize should be calculated from the values from L1 chain configs
@@ -407,7 +413,7 @@ func NewBatchPoster(ctx context.Context, opts *BatchPosterOpts) (*BatchPoster, e
 		parentChain:        &parent.ParentChain{ChainID: opts.ParentChainID, L1Reader: opts.L1Reader},
 		checkEip7623:       checkEip7623,
 		useEip7623:         useEip7623,
-		useEthDA:           false,
+		fallbackToEthDA:    false,
 	}
 	b.messagesPerBatch, err = arbmath.NewMovingAverage[uint64](20)
 	if err != nil {
@@ -903,8 +909,7 @@ type buildingBatch struct {
 	startMsgCount      arbutil.MessageIndex
 	msgCount           arbutil.MessageIndex
 	haveUsefulMessage  bool
-	use4844            bool // Are we ACTUALLY using 4844 for THIS batch?
-	wouldUse4844       bool // WOULD we use 4844 if we fell back to EthDA?
+	use4844            bool
 	muxBackend         *simulatedMuxBackend
 	firstDelayedMsg    *arbostypes.MessageWithMetadata
 	firstNonDelayedMsg *arbostypes.MessageWithMetadata
@@ -1392,11 +1397,9 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 			return false, err
 		}
 		config := b.config()
-		// Determine if we WOULD use 4844 for EthDA posting (based on price/config)
-		// We need to know this even when using altDA, because we may fall back to EthDA
-		// and need to know which size limit to check against
-		var wouldUse4844ForEthDA bool
-		buildingForEthDA := len(b.dapWriters) == 0 || b.useEthDA
+		buildingForEthDA := len(b.dapWriters) == 0 || b.fallbackToEthDA
+		// Determine if we should use 4844 blobs (only relevant when posting to EthDA)
+		var use4844 bool
 		if config.Post4844Blobs && latestHeader.ExcessBlobGas != nil && latestHeader.BlobGasUsed != nil {
 			arbOSVersion, err := b.arbOSVersionGetter.ArbOSVersionForMessageIndex(arbutil.MessageIndex(arbmath.SaturatingUSub(uint64(batchPosition.MessageCount), 1))).Await(ctx)
 			if err != nil {
@@ -1404,7 +1407,7 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 			}
 			if arbOSVersion >= params.ArbosVersion_20 {
 				if config.IgnoreBlobPrice {
-					wouldUse4844ForEthDA = true
+					use4844 = true
 				} else {
 					backlog := b.backlog.Load()
 					// Logic to prevent switching from non-4844 batches to 4844 batches too often,
@@ -1445,22 +1448,20 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 						}
 
 						calldataFeePerByte := arbmath.BigMulByUint(latestHeader.BaseFee, calldataFeePerByteMultiplier)
-						wouldUse4844ForEthDA = arbmath.BigLessThan(blobFeePerByte, calldataFeePerByte)
+						use4844 = arbmath.BigLessThan(blobFeePerByte, calldataFeePerByte)
 					}
 				}
 			}
 		}
 
-		if b.useEthDA {
-			log.Info("Building batch for EthDA due to previous altDA failure", "wouldUse4844", wouldUse4844ForEthDA)
+		if b.fallbackToEthDA {
+			log.Info("Building batch for EthDA due to previous altDA failure", "use4844", use4844)
 		}
 
-		// Only use 4844 batching if we're actually posting to EthDA
-		// When posting to altDA, don't limit batch size with 4844 constraints
-		actuallyUse4844 := wouldUse4844ForEthDA && buildingForEthDA
-
+		// Only use 4844 batching when posting to EthDA
+		use4844 = use4844 && buildingForEthDA
 		usingAltDA := !buildingForEthDA
-		segments, err := b.newBatchSegments(ctx, batchPosition.DelayedMessageCount, actuallyUse4844, usingAltDA)
+		segments, err := b.newBatchSegments(ctx, batchPosition.DelayedMessageCount, use4844, usingAltDA)
 		if err != nil {
 			return false, err
 		}
@@ -1468,8 +1469,7 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 			segments:      segments,
 			msgCount:      batchPosition.MessageCount,
 			startMsgCount: batchPosition.MessageCount,
-			use4844:       actuallyUse4844,      // What we're actually using for THIS batch
-			wouldUse4844:  wouldUse4844ForEthDA, // What we WOULD use if posting to EthDA
+			use4844:       use4844,
 		}
 		if b.config().CheckBatchCorrectness {
 			b.building.muxBackend = &simulatedMuxBackend{
@@ -1710,7 +1710,7 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 	var sequencerMsg []byte
 
 	// Try DA writers if not forced to EthDA
-	if len(b.dapWriters) > 0 && !b.useEthDA {
+	if len(b.dapWriters) > 0 && !b.fallbackToEthDA {
 		if !b.redisLock.AttemptLock(ctx) {
 			return false, errAttemptLockFailed
 		}
@@ -1781,28 +1781,12 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 				return false, fmt.Errorf("all DA writers failed: %w", lastErr)
 			}
 
-			log.Info("Checking if batch size is acceptable for EthDA fallback", "batchSize", len(batchData), "wouldUse4844", b.building.wouldUse4844)
-			// Check if batch size is the issue for EthDA fallback
-			// Use wouldUse4844 to know which EthDA limit we'd be subject to
-			if b.building.wouldUse4844 {
-				if len(batchData) > config.Max4844BatchSize {
-					log.Warn("Batch too large for 4844, will rebuild smaller", "batchSize", len(batchData), "max4844Size", config.Max4844BatchSize)
-					b.useEthDA = true
-					b.building = nil
-					return true, nil // Trigger immediate rebuild
-				}
-			} else {
-				if len(batchData) > config.MaxCalldataBatchSize {
-					log.Warn("Batch too large for calldata, will rebuild smaller", "batchSize", len(batchData), "maxCalldataBatchSize", config.MaxCalldataBatchSize)
-					b.useEthDA = true
-					b.building = nil
-					return true, nil // Trigger immediate rebuild
-				}
-			}
-
-			// Size is OK, fall back to EthDA
-			log.Warn("DA writers explicitly requested fallback, falling back to EthDA", "lastError", lastErr, "batchSize", len(batchData))
-			sequencerMsg = batchData
+			// Fall back to EthDA by triggering a rebuild with EthDA size constraints
+			log.Warn("DA writers explicitly requested fallback, will rebuild for EthDA", "lastError", lastErr, "batchSize", len(batchData))
+			b.fallbackToEthDA = true
+			b.ethDAFallbackCounter = 0
+			b.building = nil
+			return true, nil // Trigger immediate rebuild
 		}
 	} else {
 		// No DA writers or forced to EthDA
@@ -2057,10 +2041,20 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 		log.Info("Got successful receipt from batch poster transaction", "txHash", tx.Hash(), "blockNumber", receipt.BlockNumber, "blockHash", receipt.BlockHash)
 	}
 
-	// After successful batch post, reset useEthDA flag
-	if b.useEthDA {
-		log.Info("Successful EthDA post after AltDA failure. Will try AltDA next time.")
-		b.useEthDA = false
+	// After successful EthDA batch post in fallback mode, track batches and potentially retry AltDA
+	if b.fallbackToEthDA {
+		b.ethDAFallbackCounter++
+		if b.ethDAFallbackCounter >= config.EthDAFallbackBatchCount {
+			log.Info("Posted enough EthDA batches after AltDA failure, will retry AltDA",
+				"batchesPosted", b.ethDAFallbackCounter,
+				"threshold", config.EthDAFallbackBatchCount)
+			b.fallbackToEthDA = false
+			b.ethDAFallbackCounter = 0
+		} else {
+			log.Info("Successful EthDA batch post, continuing fallback mode",
+				"batchesPosted", b.ethDAFallbackCounter,
+				"threshold", config.EthDAFallbackBatchCount)
+		}
 	}
 
 	return true, nil
