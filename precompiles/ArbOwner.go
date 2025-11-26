@@ -466,6 +466,13 @@ func (con ArbOwner) SetGasPricingConstraints(c ctx, evm mech, constraints [][3]u
 		return fmt.Errorf("failed to clear existing constraints: %w", err)
 	}
 
+	if c.State.ArbOSVersion() >= params.ArbosVersion_MultiConstraintFix {
+		limit := c.State.L2PricingState().GasConstraintsMaxNum()
+		if len(constraints) > limit {
+			return fmt.Errorf("too many constraints. Max: %d", limit)
+		}
+	}
+
 	for _, constraint := range constraints {
 		gasTargetPerSecond := constraint[0]
 		adjustmentWindowSeconds := constraint[1]
@@ -478,6 +485,42 @@ func (con ArbOwner) SetGasPricingConstraints(c ctx, evm mech, constraints [][3]u
 		err := c.State.L2PricingState().AddGasConstraint(gasTargetPerSecond, adjustmentWindowSeconds, startingBacklogValue)
 		if err != nil {
 			return fmt.Errorf("failed to add constraint (target: %d, adjustment window: %d): %w", gasTargetPerSecond, adjustmentWindowSeconds, err)
+		}
+	}
+	return nil
+}
+
+// SetMultiGasPricingConstraints configures the multi-dimensional gas pricing model
+func (con ArbOwner) SetMultiGasPricingConstraints(
+	c ctx,
+	evm mech,
+	constraints []MultiGasConstraint,
+) error {
+	if err := c.State.L2PricingState().ClearMultiGasConstraints(); err != nil {
+		return fmt.Errorf("failed to clear existing multi-gas constraints: %w", err)
+	}
+
+	for _, constraint := range constraints {
+		if constraint.TargetPerSec == 0 || constraint.AdjustmentWindowSecs == 0 {
+			return fmt.Errorf(
+				"invalid constraint: target=%d adjustmentWindow=%d",
+				constraint.TargetPerSec, constraint.AdjustmentWindowSecs,
+			)
+		}
+
+		// Build map of resource weights
+		resourceWeights := make(map[uint8]uint64, len(constraint.Resources))
+		for _, r := range constraint.Resources {
+			resourceWeights[r.Resource] = r.Weight
+		}
+
+		if err := c.State.L2PricingState().AddMultiGasConstraint(
+			constraint.TargetPerSec,
+			constraint.AdjustmentWindowSecs,
+			constraint.Backlog,
+			resourceWeights,
+		); err != nil {
+			return fmt.Errorf("failed to add multi-gas constraint: %w", err)
 		}
 	}
 	return nil

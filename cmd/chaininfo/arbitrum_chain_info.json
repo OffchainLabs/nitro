@@ -173,7 +173,7 @@
         "EnableArbOS": true,
         "AllowDebugPrecompiles": true,
         "DataAvailabilityCommittee": false,
-        "InitialArbOSVersion": 50,
+        "InitialArbOSVersion": 51,
         "InitialChainOwner": "0x0000000000000000000000000000000000000000",
         "GenesisBlockNum": 0
       }
