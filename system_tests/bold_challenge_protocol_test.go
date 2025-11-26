@@ -205,6 +205,7 @@ func testChallengeProtocolBOLD(t *testing.T, useExternalSigner bool, spawnerOpts
 	)
 	blockValidatorA, err := staker.NewBlockValidator(
 		instance,
+		instance,
 		statelessA.GetRecorder(),
 		l2nodeA.InboxTracker,
 		l2nodeA.TxStreamer,
@@ -220,6 +221,7 @@ func testChallengeProtocolBOLD(t *testing.T, useExternalSigner bool, spawnerOpts
 		StaticFetcherFrom(t, &blockValidatorConfig),
 	)
 	blockValidatorB, err := staker.NewBlockValidator(
+		instanceB,
 		instanceB,
 		statelessB.GetRecorder(),
 		l2nodeB.InboxTracker,

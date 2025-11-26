@@ -400,6 +400,7 @@ func setupBoldStateProvider(t *testing.T, ctx context.Context, blockChallengeHei
 	)
 	blockValidator, err := staker.NewBlockValidator(
 		instance,
+		instance,
 		stateless.GetRecorder(),
 		l2node.InboxTracker,
 		l2node.TxStreamer,

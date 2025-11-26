@@ -116,6 +116,7 @@ func TestOverflowAssertions(t *testing.T) {
 	)
 	blockValidator, err := staker.NewBlockValidator(
 		instance,
+		instance,
 		stateless.GetRecorder(),
 		l2node.InboxTracker,
 		l2node.TxStreamer,

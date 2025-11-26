@@ -749,6 +749,7 @@ func getBlockValidator(
 		)
 		blockValidator, err = staker.NewBlockValidator(
 			instance,
+			instance,
 			statelessBlockValidator.GetRecorder(),
 			inboxTracker,
 			txStreamer,

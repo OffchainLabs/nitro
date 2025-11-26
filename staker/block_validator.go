@@ -50,30 +50,42 @@ var (
 	validatorMsgCountLastValidationSentGauge = metrics.NewRegisteredGauge("arb/validator/msg_count_last_validation_sent", nil)
 )
 
-type ValidatorInstance interface {
+type LegacyValidatorInstance interface {
 	CheckLegacyValid() error
-	CheckValidatedStateCaughtUp() (uint64, bool, error)
-	CreateValidationEntry(ctx context.Context, position uint64) (*validationEntry, bool, error)
-	ExecSpawners() []validator.ExecutionSpawner
-	LatestSeenCount() (uint64, error)
-	LatestWasmModuleRoot() common.Hash
-	LastValidGlobalState() validator.GoGlobalState
-	LastValidatedInfo() (*GlobalStateValidatedInfo, error)
 	LegacyLastValidatedInfo() (*legacyLastBlockValidatedDbInfo, error)
-	NextCreationGlobalState() validator.GoGlobalState
-	PositionsAtCount(count uint64) (GlobalStatePosition, GlobalStatePosition, error)
-	RecordEntry(ctx context.Context, entry *validationEntry) error
-	RedisValidator() *redis.ValidationClient
-	ResetCaches()
-	SetLastValidGlobalState(gs validator.GoGlobalState)
 	SetLegacyValidInfo(info *legacyLastBlockValidatedDbInfo)
-	UpdateNextCreation(nextCreateStartGS validator.GoGlobalState, nextCreatePrevDelayed uint64, nextCreateBatchReread bool)
-	UpdateNextCreationByCount(count uint64) error
-	UpdateNextCreationByStateAndCount(globalState validator.GoGlobalState, count uint64)
-	ValidGlobalStateIsNew(gs validator.GoGlobalState) bool
-	ValidatedCount(validatedGs validator.GoGlobalState) int64
+}
+
+// ValidatorInstance is an interface used by BlockValidator to carry out block and MEL-state validations. BlockValidatorInstance implements
+// this interface to carry out block validations and MELValidatorInstance (TODO) implements this to carry out MEL-state validation
+type ValidatorInstance interface {
+	// Methods corresponding to ValidatorInstance's overall context
+	IsValidatedGlobalStateNew(gs validator.GoGlobalState) bool
+	LastValidatedGlobalState() validator.GoGlobalState
+	SetLastValidatedGlobalState(gs validator.GoGlobalState)
+	LastValidatedCount() (count uint64, isCaughtup bool, err error)                     // returns last validated count and a boolean indicating if the chain has caught up to that count
+	LatestProcessedMessageCount() (uint64, error)                                       // latest processed but not validated message count
+	CountAtValidatedGlobalState(gs validator.GoGlobalState) int64                       // the last validated message count correspoding to a given validated global state
+	PositionsAtCount(count uint64) (beforePos, AfterPos GlobalStatePosition, err error) // returns the globalState position before and after processing message at the specified count
+	CurrentGlobalState() validator.GoGlobalState                                        // last global state for which a validation entry was created
+	ResetContextByCount(count uint64) error                                             // resets ValidatorInstance context to the context corresponding to the given message count
+	ResetContextByGlobalStateAndCount(gs validator.GoGlobalState, count uint64)         // resets ValidatorInstance context to the context corresponding to given global state and message count
+	ResetCaches()
+
+	// Methods exposing validation specific components needed by BlockValidator
+	LatestWasmModuleRoot() common.Hash
+	ExecSpawners() []validator.ExecutionSpawner
 	ValidatorInputsWriter() (*inputs.Writer, error)
-	WriteLastValidated(gs validator.GoGlobalState, wasmRoots []common.Hash) error
+	RedisValidator() *redis.ValidationClient
+
+	// Methods corresponding to ValidationEntry
+	CanCreateValidationEntry(position uint64) (bool, error)
+	CreateValidationEntry(ctx context.Context, position uint64) (*validationEntry, error)
+	RecordEntry(ctx context.Context, entry *validationEntry) error
+
+	// Methods to read and write GlobalStateValidatedInfo to database
+	ReadLastValidatedInfo() (*GlobalStateValidatedInfo, error)
+	WriteLastValidatedInfo(info GlobalStateValidatedInfo) error
 }
 
 type BlockValidator struct {
@@ -83,7 +95,8 @@ type BlockValidator struct {
 
 	chainCaughtUp bool
 
-	instance ValidatorInstance
+	legacyInstance LegacyValidatorInstance
+	instance       ValidatorInstance
 
 	recordingPreparer execution.RecordingPreparer
 
@@ -332,6 +345,7 @@ func (s *validationStatus) profileStep() int64 {
 }
 
 func NewBlockValidator(
+	legacyInstance LegacyValidatorInstance,
 	instance ValidatorInstance,
 	recorder execution.RecordingPreparer,
 	inbox InboxTrackerInterface,
@@ -340,6 +354,7 @@ func NewBlockValidator(
 	fatalErr chan<- error,
 ) (*BlockValidator, error) {
 	ret := &BlockValidator{
+		legacyInstance:          legacyInstance,
 		instance:                instance,
 		createNodesChan:         make(chan struct{}, 1),
 		sendRecordChan:          make(chan struct{}, 1),
@@ -360,26 +375,29 @@ func NewBlockValidator(
 			return nil, err
 		}
 		if validated != nil {
-			ret.instance.SetLastValidGlobalState(validated.GlobalState)
-		} else {
-			legacyInfo, err := ret.instance.LegacyLastValidatedInfo()
+			ret.instance.SetLastValidatedGlobalState(validated.GlobalState)
+		} else if ret.legacyInstance != nil {
+			legacyInfo, err := ret.legacyInstance.LegacyLastValidatedInfo()
 			if err != nil {
 				return nil, err
 			}
-			ret.instance.SetLegacyValidInfo(legacyInfo)
+			ret.legacyInstance.SetLegacyValidInfo(legacyInfo)
 		}
 	}
 	// genesis block is impossible to validate unless genesis state is empty
-	legacy, err := ret.instance.LegacyLastValidatedInfo()
-	if err != nil {
-		return nil, err
+	var legacy *legacyLastBlockValidatedDbInfo
+	if ret.legacyInstance != nil {
+		legacy, err = ret.legacyInstance.LegacyLastValidatedInfo()
+		if err != nil {
+			return nil, err
+		}
 	}
-	if ret.instance.LastValidGlobalState().Batch == 0 && legacy == nil {
+	if ret.instance.LastValidatedGlobalState().Batch == 0 && legacy == nil {
 		genesis, err := streamer.ResultAtMessageIndex(0)
 		if err != nil {
 			return nil, err
 		}
-		ret.instance.SetLastValidGlobalState(validator.GoGlobalState{
+		ret.instance.SetLastValidatedGlobalState(validator.GoGlobalState{
 			BlockHash:  genesis.BlockHash,
 			SendRoot:   genesis.SendRoot,
 			Batch:      1,
@@ -404,7 +422,7 @@ func NewBlockValidator(
 			return nil, err
 		}
 		gs := BuildGlobalState(*res, endPos)
-		err = ret.instance.WriteLastValidated(gs, nil)
+		err = ret.instance.WriteLastValidatedInfo(GlobalStateValidatedInfo{gs, nil})
 		if err != nil {
 			return nil, err
 		}
@@ -495,7 +513,7 @@ func (v *BlockValidator) GetModuleRootsToValidate() []common.Hash {
 }
 
 func (v *BlockValidator) ReadLastValidatedInfo() (*GlobalStateValidatedInfo, error) {
-	return v.instance.LastValidatedInfo()
+	return v.instance.ReadLastValidatedInfo()
 }
 
 var ErrGlobalStateNotInChain = errors.New("globalstate not in chain")
@@ -617,12 +635,16 @@ func (v *BlockValidator) createNextValidationEntry(ctx context.Context) (bool, e
 		log.Trace("create validation entry: nothing to do", "pos", pos, "validated", v.validated())
 		return false, nil
 	}
-	entry, shouldCreate, err := v.instance.CreateValidationEntry(ctx, uint64(pos))
+	shouldCreate, err := v.instance.CanCreateValidationEntry(uint64(pos))
 	if err != nil {
 		return false, err
 	}
 	if !shouldCreate {
 		return false, nil
+	}
+	entry, err := v.instance.CreateValidationEntry(ctx, uint64(pos))
+	if err != nil {
+		return false, err
 	}
 	status := &validationStatus{
 		Entry:     entry,
@@ -638,7 +660,7 @@ func (v *BlockValidator) createNextValidationEntry(ctx context.Context) (bool, e
 func (v *BlockValidator) iterativeValidationEntryCreator(ctx context.Context, ignored struct{}) time.Duration {
 	moreWork, err := v.createNextValidationEntry(ctx)
 	if err != nil {
-		processed, processedErr := v.instance.LatestSeenCount()
+		processed, processedErr := v.instance.LatestProcessedMessageCount()
 		log.Error("error trying to create validation node", "err", err, "created", v.created()+1, "processed", processed, "processedErr", processedErr)
 	}
 	if moreWork {
@@ -745,7 +767,7 @@ func (v *BlockValidator) iterativeValidationPrint(ctx context.Context) time.Dura
 			return time.Second
 		}
 	}
-	printedCount := v.instance.ValidatedCount(validated.GlobalState)
+	printedCount := v.instance.CountAtValidatedGlobalState(validated.GlobalState)
 	log.Info("validated execution", "messageCount", printedCount, "globalstate", validated.GlobalState, "WasmRoots", validated.WasmRoots)
 	v.lastValidInfoPrinted = validated
 	revalidationConfig := v.config().Dangerous.Revalidation
@@ -787,8 +809,8 @@ func (v *BlockValidator) advanceValidations(ctx context.Context) (*arbutil.Messa
 			log.Trace("advanceValidations: validation not done", "pos", pos, "status", validationStatus.getStatus())
 			return nil, nil
 		}
-		if validationStatus.DoneEntry.Start != v.instance.LastValidGlobalState() {
-			log.Warn("Validation entry has wrong start state", "pos", pos, "start", validationStatus.DoneEntry.Start, "expected", v.instance.LastValidGlobalState())
+		if validationStatus.DoneEntry.Start != v.instance.LastValidatedGlobalState() {
+			log.Warn("Validation entry has wrong start state", "pos", pos, "start", validationStatus.DoneEntry.Start, "expected", v.instance.LastValidatedGlobalState())
 			validationStatus.Cancel()
 			return &pos, nil
 		}
@@ -796,11 +818,11 @@ func (v *BlockValidator) advanceValidations(ctx context.Context) (*arbutil.Messa
 			v.possiblyFatal(fmt.Errorf("validation: failed entry pos %d, start %v", pos, validationStatus.DoneEntry.Start))
 			return &pos, nil // if not fatal - retry
 		}
-		err := v.instance.WriteLastValidated(validationStatus.DoneEntry.End, validationStatus.DoneEntry.WasmModuleRoots)
+		err := v.instance.WriteLastValidatedInfo(GlobalStateValidatedInfo{validationStatus.DoneEntry.End, validationStatus.DoneEntry.WasmModuleRoots})
 		if err != nil {
 			log.Error("failed writing new validated to database", "pos", pos, "err", err)
 		}
-		go v.recordingPreparer.MarkValid(pos, v.instance.LastValidGlobalState())
+		go v.recordingPreparer.MarkValid(pos, v.instance.LastValidatedGlobalState())
 		atomicStorePos(&v.validatedA, pos+1, validatorMsgCountValidatedGauge)
 		v.validations.Delete(pos)
 		nonBlockingTrigger(v.createNodesChan)
@@ -812,7 +834,7 @@ func (v *BlockValidator) advanceValidations(ctx context.Context) (*arbutil.Messa
 		}
 		v.testingProgressMadeMutex.Unlock()
 
-		log.Trace("result validated", "count", v.validated(), "blockHash", v.instance.LastValidGlobalState().BlockHash)
+		log.Trace("result validated", "count", v.validated(), "blockHash", v.instance.LastValidatedGlobalState().BlockHash)
 	}
 }
 
@@ -969,15 +991,17 @@ func (v *BlockValidator) InitAssumeValid(globalState validator.GoGlobalState) er
 	}
 
 	// don't do anything if we already validated past that
-	if !v.instance.ValidGlobalStateIsNew(globalState) {
+	if !v.instance.IsValidatedGlobalStateNew(globalState) {
 		return nil
 	}
 
-	v.instance.SetLegacyValidInfo(nil)
+	if v.legacyInstance != nil {
+		v.legacyInstance.SetLegacyValidInfo(nil)
+	}
 
-	err := v.instance.WriteLastValidated(globalState, nil)
+	err := v.instance.WriteLastValidatedInfo(GlobalStateValidatedInfo{globalState, nil})
 	if err != nil {
-		log.Error("failed writing new validated to database", "pos", v.instance.LastValidGlobalState(), "err", err)
+		log.Error("failed writing new validated to database", "pos", v.instance.LastValidatedGlobalState(), "err", err)
 	}
 
 	return nil
@@ -997,11 +1021,13 @@ func (v *BlockValidator) UpdateLatestStaked(count arbutil.MessageIndex, globalSt
 	}
 
 	if !v.chainCaughtUp {
-		if !v.instance.ValidGlobalStateIsNew(globalState) {
+		if !v.instance.IsValidatedGlobalStateNew(globalState) {
 			return
 		}
-		v.instance.SetLegacyValidInfo(nil)
-		err := v.instance.WriteLastValidated(globalState, nil)
+		if v.legacyInstance != nil {
+			v.legacyInstance.SetLegacyValidInfo(nil)
+		}
+		err := v.instance.WriteLastValidatedInfo(GlobalStateValidatedInfo{globalState, nil})
 		if err != nil {
 			log.Error("error writing last validated", "err", err)
 		}
@@ -1018,7 +1044,7 @@ func (v *BlockValidator) UpdateLatestStaked(count arbutil.MessageIndex, globalSt
 		v.validations.Delete(iPos)
 	}
 	if v.created() < count {
-		v.instance.UpdateNextCreationByStateAndCount(globalState, countUint64)
+		v.instance.ResetContextByGlobalStateAndCount(globalState, countUint64)
 		v.createdA.Store(countUint64)
 	}
 	// under the reorg mutex we don't need atomic access
@@ -1033,7 +1059,7 @@ func (v *BlockValidator) UpdateLatestStaked(count arbutil.MessageIndex, globalSt
 	v.validatedA.Store(countUint64)
 	// #nosec G115
 	validatorMsgCountValidatedGauge.Update(int64(countUint64))
-	err := v.instance.WriteLastValidated(globalState, nil) // we don't know which wasm roots were validated
+	err := v.instance.WriteLastValidatedInfo(GlobalStateValidatedInfo{globalState, nil}) // we don't know which wasm roots were validated
 	if err != nil {
 		log.Error("failed writing valid state after reorg", "err", err)
 	}
@@ -1046,7 +1072,7 @@ func (v *BlockValidator) UpdateLatestStaked(count arbutil.MessageIndex, globalSt
 func (v *BlockValidator) ReorgToBatchCount(count uint64) {
 	v.reorgMutex.Lock()
 	defer v.reorgMutex.Unlock()
-	if v.instance.NextCreationGlobalState().Batch >= count {
+	if v.instance.CurrentGlobalState().Batch >= count {
 		v.instance.ResetCaches()
 	}
 }
@@ -1071,11 +1097,10 @@ func (v *BlockValidator) Reorg(ctx context.Context, count arbutil.MessageIndex) 
 		v.validations.Delete(iPos)
 	}
 	countUint64 := uint64(count)
-	if err := v.instance.UpdateNextCreationByCount(countUint64); err != nil {
+	if err := v.instance.ResetContextByCount(countUint64); err != nil {
 		v.possiblyFatal(err)
 		return err
 	}
-	v.instance.ResetCaches()
 	v.createdA.Store(countUint64)
 	// under the reorg mutex we don't need atomic access
 	if v.recordSentA.Load() > countUint64 {
@@ -1090,7 +1115,7 @@ func (v *BlockValidator) Reorg(ctx context.Context, count arbutil.MessageIndex) 
 		v.validatedA.Store(countUint64)
 		// #nosec G115
 		validatorMsgCountValidatedGauge.Update(int64(countUint64))
-		err := v.instance.WriteLastValidated(v.instance.NextCreationGlobalState(), nil) // we don't know which wasm roots were validated
+		err := v.instance.WriteLastValidatedInfo(GlobalStateValidatedInfo{v.instance.CurrentGlobalState(), nil}) // we don't know which wasm roots were validated
 		if err != nil {
 			log.Error("failed writing valid state after reorg", "err", err)
 		}
@@ -1163,9 +1188,12 @@ func (v *BlockValidator) Initialize(ctx context.Context) error {
 }
 
 func (v *BlockValidator) checkLegacyValid() error {
+	if v.legacyInstance == nil {
+		return nil
+	}
 	v.reorgMutex.Lock()
 	defer v.reorgMutex.Unlock()
-	return v.instance.CheckLegacyValid()
+	return v.legacyInstance.CheckLegacyValid()
 }
 
 // checks that the chain caught up to lastValidGS, used in startup
@@ -1175,7 +1203,7 @@ func (v *BlockValidator) checkValidatedGSCaughtUp() (bool, error) {
 	if v.chainCaughtUp {
 		return true, nil
 	}
-	count, caughtUp, err := v.instance.CheckValidatedStateCaughtUp()
+	count, caughtUp, err := v.instance.LastValidatedCount()
 	if err != nil {
 		return false, err
 	}

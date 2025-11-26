@@ -57,11 +57,7 @@ func (bv *BlockValidatorInstance) ValidatorInputsWriter() (*inputs.Writer, error
 	return valInputsWriter, nil
 }
 
-func (bv *BlockValidatorInstance) InstanceDir() string {
-	return bv.stateless.stack.InstanceDir()
-}
-
-func (bv *BlockValidatorInstance) NextCreationGlobalState() validator.GoGlobalState {
+func (bv *BlockValidatorInstance) CurrentGlobalState() validator.GoGlobalState {
 	return bv.nextCreateStartGS
 }
 
@@ -81,15 +77,8 @@ func (bv *BlockValidatorInstance) PositionsAtCount(count uint64) (GlobalStatePos
 	return bv.stateless.GlobalStatePositionsAtCount(arbutil.MessageIndex(count))
 }
 
-func (bv *BlockValidatorInstance) WriteLastValidated(
-	gs validator.GoGlobalState,
-	wasmRoots []common.Hash,
-) error {
-	bv.lastValidGS = gs
-	info := GlobalStateValidatedInfo{
-		GlobalState: gs,
-		WasmRoots:   wasmRoots,
-	}
+func (bv *BlockValidatorInstance) WriteLastValidatedInfo(info GlobalStateValidatedInfo) error {
+	bv.lastValidGS = info.GlobalState
 	encoded, err := rlp.EncodeToBytes(info)
 	if err != nil {
 		return err
@@ -101,7 +90,7 @@ func (bv *BlockValidatorInstance) WriteLastValidated(
 	return nil
 }
 
-func (bv *BlockValidatorInstance) LastValidatedInfo() (*GlobalStateValidatedInfo, error) {
+func (bv *BlockValidatorInstance) ReadLastValidatedInfo() (*GlobalStateValidatedInfo, error) {
 	return ReadLastValidatedInfo(bv.stateless.db)
 }
 
@@ -125,7 +114,7 @@ func (bv *BlockValidatorInstance) LegacyLastValidatedInfo() (*legacyLastBlockVal
 	return &validated, nil
 }
 
-func (bv *BlockValidatorInstance) ValidatedCount(validatedGs validator.GoGlobalState) int64 {
+func (bv *BlockValidatorInstance) CountAtValidatedGlobalState(validatedGs validator.GoGlobalState) int64 {
 	var count int64
 	var batchMsgs arbutil.MessageIndex
 	var err error
@@ -149,15 +138,15 @@ func (bv *BlockValidatorInstance) SetLegacyValidInfo(info *legacyLastBlockValida
 	bv.legacyValidInfo = info
 }
 
-func (bv *BlockValidatorInstance) SetLastValidGlobalState(gs validator.GoGlobalState) {
+func (bv *BlockValidatorInstance) SetLastValidatedGlobalState(gs validator.GoGlobalState) {
 	bv.lastValidGS = gs
 }
 
-func (bv *BlockValidatorInstance) LastValidGlobalState() validator.GoGlobalState {
+func (bv *BlockValidatorInstance) LastValidatedGlobalState() validator.GoGlobalState {
 	return bv.lastValidGS
 }
 
-func (bv *BlockValidatorInstance) ValidGlobalStateIsNew(gs validator.GoGlobalState) bool {
+func (bv *BlockValidatorInstance) IsValidatedGlobalStateNew(gs validator.GoGlobalState) bool {
 	if bv.legacyValidInfo != nil {
 		if bv.legacyValidInfo.AfterPosition.BatchNumber > gs.Batch {
 			return false
@@ -177,7 +166,7 @@ func (bv *BlockValidatorInstance) ValidGlobalStateIsNew(gs validator.GoGlobalSta
 }
 
 // Not thread safe against reorgs. Caller must hold a reorgMutex.
-func (bv *BlockValidatorInstance) CheckValidatedStateCaughtUp() (uint64, bool, error) {
+func (bv *BlockValidatorInstance) LastValidatedCount() (uint64, bool, error) {
 	if bv.legacyValidInfo != nil {
 		return 0, false, nil
 	}
@@ -270,7 +259,7 @@ func (bv *BlockValidatorInstance) CheckLegacyValid() error {
 		Batch:      bv.legacyValidInfo.AfterPosition.BatchNumber,
 		PosInBatch: bv.legacyValidInfo.AfterPosition.PosInBatch,
 	}
-	err = bv.WriteLastValidated(validGS, nil)
+	err = bv.WriteLastValidatedInfo(GlobalStateValidatedInfo{validGS, nil})
 	if err == nil {
 		err = bv.stateless.db.Delete(legacyLastBlockValidatedInfoKey)
 		if err != nil {
@@ -286,32 +275,37 @@ func (bv *BlockValidatorInstance) CheckLegacyValid() error {
 	return nil
 }
 
-func (bv *BlockValidatorInstance) CreateValidationEntry(
-	ctx context.Context,
-	position uint64,
-) (*validationEntry, bool, error) {
+func (bv *BlockValidatorInstance) CanCreateValidationEntry(position uint64) (bool, error) {
 	streamerMsgCount, err := bv.stateless.streamer.GetProcessedMessageCount()
 	if err != nil {
-		return nil, false, err
+		return false, err
 	}
 	msgPos := arbutil.MessageIndex(position)
 	if msgPos >= streamerMsgCount {
 		log.Trace("create validation entry: nothing to do", "pos", msgPos, "streamerMsgCount", streamerMsgCount)
-		return nil, false, nil
+		return false, nil
 	}
+	return true, nil
+}
+
+func (bv *BlockValidatorInstance) CreateValidationEntry(
+	ctx context.Context,
+	position uint64,
+) (*validationEntry, error) {
+	msgPos := arbutil.MessageIndex(position)
 	msg, err := bv.stateless.streamer.GetMessage(msgPos)
 	if err != nil {
-		return nil, false, err
+		return nil, err
 	}
 	endRes, err := bv.stateless.streamer.ResultAtMessageIndex(msgPos)
 	if err != nil {
-		return nil, false, err
+		return nil, err
 	}
 	if bv.nextCreateStartGS.PosInBatch == 0 || bv.nextCreateBatchReread {
 		// new batch
 		found, fullBatchInfo, err := bv.stateless.readFullBatch(ctx, bv.nextCreateStartGS.Batch)
 		if !found {
-			return nil, false, err
+			return nil, err
 		}
 		if bv.nextCreateBatch != nil {
 			bv.prevBatchCache[bv.nextCreateBatch.Number] = bv.nextCreateBatch.PostedData
@@ -340,12 +334,12 @@ func (bv *BlockValidatorInstance) CreateValidationEntry(
 		endGS.Batch = bv.nextCreateStartGS.Batch + 1
 		endGS.PosInBatch = 0
 	} else {
-		return nil, false, fmt.Errorf("illegal batch msg count %d pos %d batch %d", bv.nextCreateBatch.MsgCount, msgPos, endGS.Batch)
+		return nil, fmt.Errorf("illegal batch msg count %d pos %d batch %d", bv.nextCreateBatch.MsgCount, msgPos, endGS.Batch)
 	}
 	chainConfig := bv.stateless.streamer.ChainConfig()
 	prevBatchNums, err := msg.Message.PastBatchesRequired()
 	if err != nil {
-		return nil, false, err
+		return nil, err
 	}
 	prevBatches := make([]validator.BatchInfo, 0, len(prevBatchNums))
 	// prevBatchNums are only used for batch reports, each is only used once
@@ -356,7 +350,7 @@ func (bv *BlockValidatorInstance) CreateValidationEntry(
 		} else {
 			data, err = bv.stateless.readPostedBatch(ctx, batchNum)
 			if err != nil {
-				return nil, false, err
+				return nil, err
 			}
 		}
 		prevBatches = append(prevBatches, validator.BatchInfo{
@@ -368,14 +362,14 @@ func (bv *BlockValidatorInstance) CreateValidationEntry(
 		msgPos, bv.nextCreateStartGS, endGS, msg, bv.nextCreateBatch, prevBatches, bv.nextCreatePrevDelayed, chainConfig,
 	)
 	if err != nil {
-		return nil, false, err
+		return nil, err
 	}
 	bv.nextCreateStartGS = entry.End
 	bv.nextCreatePrevDelayed = entry.msg.DelayedMessagesRead
-	return entry, true, nil
+	return entry, nil
 }
 
-func (bv *BlockValidatorInstance) UpdateNextCreationByCount(count uint64) error {
+func (bv *BlockValidatorInstance) ResetContextByCount(count uint64) error {
 	msgCount := arbutil.MessageIndex(count)
 	_, endPosition, err := bv.stateless.GlobalStatePositionsAtCount(msgCount)
 	if err != nil {
@@ -394,10 +388,11 @@ func (bv *BlockValidatorInstance) UpdateNextCreationByCount(count uint64) error 
 		msg.DelayedMessagesRead,
 		true, /* Reread next batch on creation */
 	)
+	bv.ResetCaches()
 	return nil
 }
 
-func (bv *BlockValidatorInstance) UpdateNextCreationByStateAndCount(
+func (bv *BlockValidatorInstance) ResetContextByGlobalStateAndCount(
 	globalState validator.GoGlobalState,
 	count uint64,
 ) {
@@ -431,7 +426,7 @@ func (bv *BlockValidatorInstance) ResetCaches() {
 	bv.prevBatchCache = make(map[uint64][]byte)
 }
 
-func (bv *BlockValidatorInstance) LatestSeenCount() (uint64, error) {
+func (bv *BlockValidatorInstance) LatestProcessedMessageCount() (uint64, error) {
 	count, err := bv.stateless.streamer.GetProcessedMessageCount()
 	if err != nil {
 		return 0, err
