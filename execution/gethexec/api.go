@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"math/big"
 	"sync"
 	"sync/atomic"
@@ -27,6 +28,8 @@ import (
 	"github.com/offchainlabs/nitro/timeboost"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
+
+var errSubClosed = errors.New("chain subscription closed")
 
 type ArbAPI struct {
 	txPublisher              TransactionPublisher
@@ -75,11 +78,12 @@ func (a *ArbTimeboostAuctioneerAPI) SubmitAuctionResolutionTransaction(ctx conte
 }
 
 type ArbTimeboostAPI struct {
+	backend     *arbitrum.Backend
 	txPublisher TransactionPublisher
 }
 
-func NewArbTimeboostAPI(publisher TransactionPublisher) *ArbTimeboostAPI {
-	return &ArbTimeboostAPI{publisher}
+func NewArbTimeboostAPI(backend *arbitrum.Backend, publisher TransactionPublisher) *ArbTimeboostAPI {
+	return &ArbTimeboostAPI{backend, publisher}
 }
 
 func (a *ArbTimeboostAPI) SendExpressLaneTransaction(ctx context.Context, msg *timeboost.JsonExpressLaneSubmission) error {
@@ -91,6 +95,75 @@ func (a *ArbTimeboostAPI) SendExpressLaneTransaction(ctx context.Context, msg *t
 		return err
 	}
 	return a.txPublisher.PublishExpressLaneTransaction(ctx, goMsg)
+}
+
+func (a *ArbTimeboostAPI) SendExpressLaneTransactionSync(ctx context.Context, msg *timeboost.JsonExpressLaneSubmission, timeoutMs *hexutil.Uint64) (map[string]interface{}, error) {
+	if msg == nil {
+		return nil, errors.New("missing required parameter")
+	}
+	goMsg, err := timeboost.JsonSubmissionToGo(msg)
+	if err != nil {
+		return nil, err
+	}
+	chainEvent := make(chan core.ChainEvent, 128)
+	sub := a.backend.BlockChain().SubscribeChainEvent(chainEvent)
+	subErrCh := sub.Err()
+	defer sub.Unsubscribe()
+
+	hash := goMsg.Transaction.Hash()
+	err = a.txPublisher.PublishExpressLaneTransaction(ctx, goMsg)
+	if err != nil {
+		return nil, err
+	}
+
+	maxTimeout := a.backend.Config().TxSyncMaxTimeout
+	defaultTimeout := a.backend.Config().TxSyncDefaultTimeout
+
+	timeout := defaultTimeout
+	if timeoutMs != nil && *timeoutMs > 0 {
+		timeoutMs := int64(math.Min(float64(*timeoutMs), math.MaxInt64))
+		req := time.Duration(timeoutMs) * time.Millisecond
+		if req > maxTimeout {
+			timeout = maxTimeout
+		} else {
+			timeout = req
+		}
+	}
+
+	receiptCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	// Fast path.
+	if r, err := a.backend.ReceiptFetcher().GetTransactionReceipt(receiptCtx, hash); err == nil && r != nil {
+		return r, nil
+	}
+
+	for {
+		select {
+		case <-receiptCtx.Done():
+			// If server-side wait window elapsed, return the structured timeout.
+			if errors.Is(receiptCtx.Err(), context.DeadlineExceeded) {
+				return nil, &txSyncTimeoutError{
+					msg:  fmt.Sprintf("The transaction was added to the transaction pool but wasn't processed in %v", timeout),
+					hash: hash,
+				}
+			}
+			return nil, receiptCtx.Err()
+		case err, ok := <-subErrCh:
+			if !ok {
+				return nil, errSubClosed
+			}
+			return nil, err
+
+		case _, ok := <-chainEvent:
+			if !ok {
+				return nil, errSubClosed
+			}
+			if r, err := a.backend.ReceiptFetcher().GetTransactionReceipt(receiptCtx, hash); err == nil && r != nil {
+				return r, nil
+			}
+		}
+	}
 }
 
 type ArbDebugAPI struct {
