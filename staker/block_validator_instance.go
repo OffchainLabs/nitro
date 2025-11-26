@@ -285,6 +285,13 @@ func (bv *BlockValidatorInstance) CanCreateValidationEntry(position uint64) (boo
 		log.Trace("create validation entry: nothing to do", "pos", msgPos, "streamerMsgCount", streamerMsgCount)
 		return false, nil
 	}
+	batchCount, err := bv.stateless.inboxTracker.GetBatchCount()
+	if err != nil {
+		return false, err
+	}
+	if batchCount <= bv.nextCreateStartGS.Batch {
+		return false, nil
+	}
 	return true, nil
 }
 
@@ -304,8 +311,11 @@ func (bv *BlockValidatorInstance) CreateValidationEntry(
 	if bv.nextCreateStartGS.PosInBatch == 0 || bv.nextCreateBatchReread {
 		// new batch
 		found, fullBatchInfo, err := bv.stateless.readFullBatch(ctx, bv.nextCreateStartGS.Batch)
-		if !found {
+		if err != nil {
 			return nil, err
+		}
+		if !found {
+			return nil, fmt.Errorf("CanCreateValidationEntry returned true but CreateValidationEntry failed at finding the batch")
 		}
 		if bv.nextCreateBatch != nil {
 			bv.prevBatchCache[bv.nextCreateBatch.Number] = bv.nextCreateBatch.PostedData
