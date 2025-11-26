@@ -15,62 +15,39 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/util/containers"
+	"github.com/offchainlabs/nitro/util/stopwaiter/state"
 )
 
 const stopDelayWarningTimeout = 30 * time.Second
 
 type StopWaiterSafe struct {
-	mutex     sync.Mutex // protects started, stopped, ctx, parentCtx, stopFunc
-	started   bool
-	stopped   bool
-	ctx       context.Context
-	parentCtx context.Context
-	stopFunc  func()
-	name      string
-	waitChan  <-chan interface{}
-
+	state.InternalState
 	wg sync.WaitGroup
 }
 
 func (s *StopWaiterSafe) Started() bool {
-	s.mutex.Lock()
-	defer s.mutex.Unlock()
-	return s.started
+	st := s.RLock()
+	defer s.RUnlock()
+	return st.Started
 }
 
 func (s *StopWaiterSafe) Stopped() bool {
-	s.mutex.Lock()
-	defer s.mutex.Unlock()
-	return s.stopped
+	st := s.RLock()
+	defer s.RUnlock()
+	return st.Stopped
 }
 
 func (s *StopWaiterSafe) GetContextSafe() (context.Context, error) {
-	s.mutex.Lock()
-	defer s.mutex.Unlock()
-	return s.getContext()
+	st := s.RLock()
+	defer s.RUnlock()
+	return st.GetContext()
 }
 
 // this context is not cancelled even after someone calls Stop
 func (s *StopWaiterSafe) GetParentContextSafe() (context.Context, error) {
-	s.mutex.Lock()
-	defer s.mutex.Unlock()
-	return s.getParentContext()
-}
-
-// Only call this internally with the mutex held.
-func (s *StopWaiterSafe) getContext() (context.Context, error) {
-	if s.started {
-		return s.ctx, nil
-	}
-	return nil, errors.New("not started")
-}
-
-// Only call this internally with the mutex held.
-func (s *StopWaiterSafe) getParentContext() (context.Context, error) {
-	if s.started {
-		return s.parentCtx, nil
-	}
-	return nil, errors.New("not started")
+	st := s.RLock()
+	defer s.RUnlock()
+	return st.GetParentContext()
 }
 
 func getParentName(parent any) string {
@@ -80,28 +57,33 @@ func getParentName(parent any) string {
 
 // start-after-start will error, start-after-stop will immediately cancel
 func (s *StopWaiterSafe) Start(ctx context.Context, parent any) error {
-	s.mutex.Lock()
-	defer s.mutex.Unlock()
-	if s.started {
+	st := s.Lock()
+	defer s.Unlock()
+	if st.Started {
 		return errors.New("start after start")
 	}
-	s.started = true
-	s.name = getParentName(parent)
-	s.parentCtx = ctx
-	s.ctx, s.stopFunc = context.WithCancel(s.parentCtx)
-	if s.stopped {
-		s.stopFunc()
+	st.Started = true
+	st.Name = getParentName(parent)
+
+	var childCtx context.Context
+	childCtx, st.StopFunc = context.WithCancel(ctx)
+
+	st.SetCtx(childCtx)
+	st.SetParentCtx(ctx)
+
+	if st.Stopped {
+		st.StopFunc()
 	}
 	return nil
 }
 
 func (s *StopWaiterSafe) StopOnly() {
-	s.mutex.Lock()
-	defer s.mutex.Unlock()
-	if s.started && !s.stopped {
-		s.stopFunc()
+	st := s.Lock()
+	defer s.Unlock()
+	if st.Started && !st.Stopped {
+		st.StopFunc()
 	}
-	s.stopped = true
+	st.Stopped = true
 }
 
 // StopAndWait may be called multiple times, even before start.
@@ -136,7 +118,9 @@ func (s *StopWaiterSafe) stopAndWaitImpl(warningTimeout time.Duration) error {
 	select {
 	case <-timer.C:
 		traces := getAllStackTraces()
-		log.Warn("taking too long to stop", "name", s.name, "delay[s]", warningTimeout.Seconds())
+		st := s.RLock()
+		defer s.RUnlock()
+		log.Warn("taking too long to stop", "name", st.Name, "delay[s]", warningTimeout.Seconds())
 		log.Warn(traces)
 	case <-waitChan:
 		timer.Stop()
@@ -147,10 +131,10 @@ func (s *StopWaiterSafe) stopAndWaitImpl(warningTimeout time.Duration) error {
 }
 
 func (s *StopWaiterSafe) GetWaitChannel() (<-chan interface{}, error) {
-	s.mutex.Lock()
-	defer s.mutex.Unlock()
-	if s.waitChan == nil {
-		ctx, err := s.getContext()
+	st := s.Lock()
+	defer s.Unlock()
+	if st.WaitChan == nil {
+		ctx, err := st.GetContext()
 		if err != nil {
 			return nil, err
 		}
@@ -160,9 +144,9 @@ func (s *StopWaiterSafe) GetWaitChannel() (<-chan interface{}, error) {
 			s.wg.Wait()
 			close(waitChan)
 		}()
-		s.waitChan = waitChan
+		st.WaitChan = waitChan
 	}
-	return s.waitChan, nil
+	return st.WaitChan, nil
 }
 
 // If stop was already called, thread might silently not be launched
@@ -304,32 +288,6 @@ func LaunchPromiseThread[T any](
 		promise.ProduceError(err)
 	}
 	return &promise
-}
-
-func ChanRateLimiter[T any](s *StopWaiterSafe, inChan <-chan T, maxRateCallback func() time.Duration) (<-chan T, error) {
-	outChan := make(chan T)
-	err := s.LaunchThreadSafe(func(ctx context.Context) {
-		nextAllowedTriggerTime := time.Now()
-		for {
-			select {
-			case <-ctx.Done():
-				close(outChan)
-				return
-			case data := <-inChan:
-				now := time.Now()
-				if now.After(nextAllowedTriggerTime) {
-					outChan <- data
-					nextAllowedTriggerTime = now.Add(maxRateCallback())
-				}
-			}
-		}
-	})
-	if err != nil {
-		close(outChan)
-		return nil, err
-	}
-
-	return outChan, nil
 }
 
 // StopWaiter may panic on race conditions instead of returning errors
