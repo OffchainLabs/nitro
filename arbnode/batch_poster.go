@@ -158,6 +158,8 @@ type BatchPosterConfig struct {
 	DisableDapFallbackStoreDataOnChain bool `koanf:"disable-dap-fallback-store-data-on-chain" reload:"hot"`
 	// Number of batches to post to EthDA before retrying AltDA after a fallback.
 	EthDAFallbackBatchCount int `koanf:"ethda-fallback-batch-count" reload:"hot"`
+	// Deprecated: use MaxCalldataBatchSize instead. Will be removed in next version.
+	MaxSize int `koanf:"max-size" reload:"hot"`
 	// Maximum calldata batch size for EthDA.
 	MaxCalldataBatchSize int `koanf:"max-calldata-batch-size" reload:"hot"`
 	// Maximum 4844 blob enabled batch size.
@@ -207,6 +209,12 @@ func (c *BatchPosterConfig) Validate() error {
 		return fmt.Errorf("invalid gas refunder address \"%v\"", c.GasRefunderAddress)
 	}
 	c.gasRefunder = common.HexToAddress(c.GasRefunderAddress)
+	if c.MaxSize != 0 {
+		log.Error("max-size is deprecated, use max-calldata-batch-size instead; max-size will be removed in a future release")
+		if c.MaxCalldataBatchSize == DefaultBatchPosterConfig.MaxCalldataBatchSize {
+			c.MaxCalldataBatchSize = c.MaxSize
+		}
+	}
 	if c.MaxCalldataBatchSize <= SequencerMessageHeaderSize {
 		return errors.New("MaxCalldataBatchSize too small")
 	}
@@ -237,6 +245,7 @@ func BatchPosterConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultBatchPosterConfig.Enable, "enable posting batches to l1")
 	f.Bool(prefix+".disable-dap-fallback-store-data-on-chain", DefaultBatchPosterConfig.DisableDapFallbackStoreDataOnChain, "If unable to batch to DA provider, disable fallback storing data on chain")
 	f.Int(prefix+".ethda-fallback-batch-count", DefaultBatchPosterConfig.EthDAFallbackBatchCount, "number of batches to post to EthDA before retrying AltDA after a fallback")
+	f.Int(prefix+".max-size", DefaultBatchPosterConfig.MaxSize, "DEPRECATED: use "+prefix+".max-calldata-batch-size instead")
 	f.Int(prefix+".max-calldata-batch-size", DefaultBatchPosterConfig.MaxCalldataBatchSize, "maximum estimated compressed calldata batch size")
 	f.Int(prefix+".max-4844-batch-size", DefaultBatchPosterConfig.Max4844BatchSize, "maximum estimated compressed 4844 blob enabled batch size")
 	f.Int(prefix+".max-altda-batch-size", DefaultBatchPosterConfig.MaxAltDABatchSize, "maximum estimated compressed batch size when using alternative data availability (eg Anytrust, external)")
@@ -271,6 +280,7 @@ var DefaultBatchPosterConfig = BatchPosterConfig{
 	Enable:                             false,
 	DisableDapFallbackStoreDataOnChain: false,
 	EthDAFallbackBatchCount:            10,
+	MaxSize:                            0, // Deprecated
 	// This default is overridden for L3 chains in applyChainParameters in cmd/nitro/nitro.go
 	MaxCalldataBatchSize: 100000,
 	// The Max4844BatchSize should be calculated from the values from L1 chain configs
