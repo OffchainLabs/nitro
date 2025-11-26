@@ -8,6 +8,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/ethereum/go-ethereum/arbitrum/multigas"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
@@ -190,7 +191,7 @@ func TestEnableAndDisableMultiConstraints(t *testing.T) {
 	evm, state, callCtx, _, arbOwner := setupResourceConstraintHandles(t)
 
 	// Initially multi-constraints should be disabled
-	shouldUseMultiConstraints, err := state.L2PricingState().ShouldUseGasConstraints(state.ArbOSVersion())
+	shouldUseMultiConstraints, err := state.L2PricingState().ShouldUseGasConstraints()
 	require.NoError(t, err)
 	require.False(t, shouldUseMultiConstraints)
 
@@ -202,7 +203,7 @@ func TestEnableAndDisableMultiConstraints(t *testing.T) {
 	err = arbOwner.SetGasPricingConstraints(callCtx, evm, constraints)
 	require.NoError(t, err)
 
-	shouldUseMultiConstraints, err = state.L2PricingState().ShouldUseGasConstraints(state.ArbOSVersion())
+	shouldUseMultiConstraints, err = state.L2PricingState().ShouldUseGasConstraints()
 	require.NoError(t, err)
 	require.True(t, shouldUseMultiConstraints)
 
@@ -210,7 +211,140 @@ func TestEnableAndDisableMultiConstraints(t *testing.T) {
 	err = arbOwner.SetGasPricingConstraints(callCtx, evm, [][3]uint64{})
 	require.NoError(t, err)
 
-	shouldUseMultiConstraints, err = state.L2PricingState().ShouldUseGasConstraints(state.ArbOSVersion())
+	shouldUseMultiConstraints, err = state.L2PricingState().ShouldUseGasConstraints()
 	require.NoError(t, err)
 	require.False(t, shouldUseMultiConstraints)
+}
+
+func TestMultiGasConstraintsStorage(t *testing.T) {
+	t.Parallel()
+
+	evm, state, callCtx, arbGasInfo, arbOwner := setupResourceConstraintHandles(t)
+
+	// Set two multi-gas constraints
+	constraints := []MultiGasConstraint{
+		{
+			Resources: []WeightedResource{
+				{uint8(multigas.ResourceKindComputation), 1},
+				{uint8(multigas.ResourceKindStorageAccess), 2},
+			},
+			AdjustmentWindowSecs: 1,
+			TargetPerSec:         30_000_000,
+			Backlog:              800_000,
+		},
+		{
+			Resources: []WeightedResource{
+				{uint8(multigas.ResourceKindComputation), 2},
+				{uint8(multigas.ResourceKindStorageAccess), 3},
+			},
+			AdjustmentWindowSecs: 102,
+			TargetPerSec:         15_000_000,
+			Backlog:              1_600_000,
+		},
+	}
+
+	err := arbOwner.SetMultiGasPricingConstraints(callCtx, evm, constraints)
+	require.NoError(t, err)
+
+	length, err := state.L2PricingState().MultiGasConstraintsLength()
+	require.NoError(t, err)
+	require.Equal(t, uint64(2), length)
+
+	first := state.L2PricingState().OpenMultiGasConstraintAt(0)
+	second := state.L2PricingState().OpenMultiGasConstraintAt(1)
+
+	// First constraint
+	target, err := first.Target()
+	require.NoError(t, err)
+	require.Equal(t, uint64(30_000_000), target)
+	window, err := first.AdjustmentWindow()
+	require.NoError(t, err)
+	require.Equal(t, uint32(1), window)
+	backlog, err := first.Backlog()
+	require.NoError(t, err)
+	require.Equal(t, uint64(800_000), backlog)
+
+	resMap, err := first.ResourcesWithWeights()
+	require.NoError(t, err)
+	require.Equal(t, uint64(1), resMap[multigas.ResourceKindComputation])
+	require.Equal(t, uint64(2), resMap[multigas.ResourceKindStorageAccess])
+
+	// Second constraint
+	target, err = second.Target()
+	require.NoError(t, err)
+	require.Equal(t, uint64(15_000_000), target)
+	window, err = second.AdjustmentWindow()
+	require.NoError(t, err)
+	require.Equal(t, uint32(102), window)
+	backlog, err = second.Backlog()
+	require.NoError(t, err)
+	require.Equal(t, uint64(1_600_000), backlog)
+
+	resMap, err = second.ResourcesWithWeights()
+	require.NoError(t, err)
+	require.Equal(t, uint64(2), resMap[multigas.ResourceKindComputation])
+	require.Equal(t, uint64(3), resMap[multigas.ResourceKindStorageAccess])
+
+	// Verify via getter precompile
+	results, err := arbGasInfo.GetMultiGasPricingConstraints(callCtx, evm)
+	require.NoError(t, err)
+	require.Equal(t, 2, len(results))
+
+	require.Equal(t, uint32(1), results[0].AdjustmentWindowSecs)
+	require.Equal(t, uint64(30_000_000), results[0].TargetPerSec)
+	require.Equal(t, uint64(800_000), results[0].Backlog)
+	require.Equal(t, 2, len(results[0].Resources))
+
+	require.Equal(t, uint32(102), results[1].AdjustmentWindowSecs)
+	require.Equal(t, uint64(15_000_000), results[1].TargetPerSec)
+	require.Equal(t, uint64(1_600_000), results[1].Backlog)
+	require.Equal(t, 2, len(results[1].Resources))
+
+	// Replace with a single new constraint
+	newConstraints := []MultiGasConstraint{
+		{
+			Resources: []WeightedResource{
+				{uint8(multigas.ResourceKindComputation), 5},
+				{uint8(multigas.ResourceKindStorageAccess), 7},
+			},
+			AdjustmentWindowSecs: 12,
+			TargetPerSec:         7_000_000,
+			Backlog:              50_000_000,
+		},
+	}
+
+	err = arbOwner.SetMultiGasPricingConstraints(callCtx, evm, newConstraints)
+	require.NoError(t, err)
+
+	length, err = state.L2PricingState().MultiGasConstraintsLength()
+	require.NoError(t, err)
+	require.Equal(t, uint64(1), length)
+
+	first = state.L2PricingState().OpenMultiGasConstraintAt(0)
+	target, err = first.Target()
+	require.NoError(t, err)
+	require.Equal(t, uint64(7_000_000), target)
+	window, err = first.AdjustmentWindow()
+	require.NoError(t, err)
+	require.Equal(t, uint32(12), window)
+	backlog, err = first.Backlog()
+	require.NoError(t, err)
+	require.Equal(t, uint64(50_000_000), backlog)
+
+	resMap, err = first.ResourcesWithWeights()
+	require.NoError(t, err)
+	require.Equal(t, uint64(5), resMap[multigas.ResourceKindComputation])
+	require.Equal(t, uint64(7), resMap[multigas.ResourceKindStorageAccess])
+
+	results, err = arbGasInfo.GetMultiGasPricingConstraints(callCtx, evm)
+	require.NoError(t, err)
+	require.Equal(t, 1, len(results))
+	require.Equal(t, uint32(12), results[0].AdjustmentWindowSecs)
+	require.Equal(t, uint64(7_000_000), results[0].TargetPerSec)
+	require.Equal(t, uint64(50_000_000), results[0].Backlog)
+	require.Equal(t, 2, len(results[0].Resources))
+	require.Equal(t, uint8(multigas.ResourceKindComputation), results[0].Resources[0].Resource)
+	require.Equal(t, uint64(5), results[0].Resources[0].Weight)
+	require.Equal(t, uint8(multigas.ResourceKindStorageAccess), results[0].Resources[1].Resource)
+	require.Equal(t, uint64(7), results[0].Resources[1].Weight)
 }

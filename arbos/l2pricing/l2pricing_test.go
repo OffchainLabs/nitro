@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/ethereum/go-ethereum/arbitrum/multigas"
+	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbos/storage"
@@ -20,7 +21,7 @@ func PricingForTest(t *testing.T) *L2PricingState {
 	storage := storage.NewMemoryBacked(burn.NewSystemBurner(nil, false))
 	err := InitializeL2PricingState(storage)
 	Require(t, err)
-	return OpenL2PricingState(storage)
+	return OpenL2PricingState(storage, params.MaxDebugArbosVersionSupported)
 }
 
 func fakeBlockUpdate(t *testing.T, pricing *L2PricingState, gasUsed int64, timePassed uint64) {
@@ -170,7 +171,8 @@ func TestMultiGasConstraints(t *testing.T) {
 			uint8(multigas.ResourceKindStorageAccess): 20 + i,
 		}
 		Require(t,
-			pricing.AddMultiGasConstraint(100*i+1, 100*i+2, 100*i+3, resourceWeights),
+			// #nosec G115
+			pricing.AddMultiGasConstraint(100*i+1, uint32(100*i+2), 100*i+3, resourceWeights),
 		)
 	}
 
@@ -191,7 +193,8 @@ func TestMultiGasConstraints(t *testing.T) {
 
 		window, err := c.AdjustmentWindow()
 		Require(t, err)
-		if want := 100*i + 2; window != want {
+		// #nosec G115
+		if want := uint32(100*i + 2); window != want {
 			t.Errorf("wrong window: got %v, want %v", window, want)
 		}
 
@@ -216,6 +219,36 @@ func TestMultiGasConstraints(t *testing.T) {
 	Require(t, err)
 	if length != 0 {
 		t.Fatalf("wrong number of constraints: got %v want 0", length)
+	}
+}
+
+func TestMultiGasConstraintExponentSafety(t *testing.T) {
+	pricing := PricingForTest(t)
+
+	weights := map[uint8]uint64{
+		uint8(multigas.ResourceKindComputation): 1,
+	}
+	// backlog=100, target=100, A=10 -> exponent = (100*1)/(10*100*1) = 0.01 -> safe
+	err := pricing.AddMultiGasConstraint(
+		100,
+		10,
+		100,
+		weights,
+	)
+	if err != nil {
+		t.Fatalf("expected valid constraint, got error: %v", err)
+	}
+
+	// backlog very large -> exponent blows past MaxExponentBips
+	err = pricing.AddMultiGasConstraint(
+		1,
+		1,
+		1_000_000_000_000,
+		weights,
+	)
+
+	if err == nil {
+		t.Fatalf("expected AddMultiGasConstraint to reject unsafe exponent, but got no error")
 	}
 }
 
