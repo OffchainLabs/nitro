@@ -115,7 +115,7 @@ func (c *ValidationClient) Initialize(ctx context.Context, moduleRoots []common.
 		p, err := pubsub.NewProducer[*validator.ValidationInput, validator.GoGlobalState](
 			c.redisClient, server_api.RedisStreamForRoot(c.config.StreamPrefix, mr), &c.config.ProducerConfig)
 		if err != nil {
-			log.Warn("failed init redis for %v: %w", mr, err)
+			log.Warn("failed init redis", "moduleRoot", mr, "err", err)
 			continue
 		}
 		p.Start(c.GetContext())

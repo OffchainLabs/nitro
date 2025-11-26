@@ -517,7 +517,7 @@ func validateOrUpgradeWasmerSerializeVersion(db ethdb.Database) error {
 			}
 		}
 		if versionInDB != WasmerSerializeVersion {
-			log.Warn("Detected wasmer serialize version %v, expected version %v - removing old wasm entries", versionInDB, WasmerSerializeVersion)
+			log.Warn("Detected wasmer serialize version mismatch - removing old wasm entries", "versionInDB", versionInDB, "expectedVersion", WasmerSerializeVersion)
 			prefixes := rawdb.WasmPrefixesExceptWavm()
 			if err := deleteWasmEntries(db, prefixes, false, 0); err != nil {
 				return fmt.Errorf("Failed to purge wasm entries: %w", err)

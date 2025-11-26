@@ -476,7 +476,7 @@ func (c *SeqCoordinator) chosenOneRelease(ctx context.Context) error {
 	// got error - was it still released?
 	current, err := c.CurrentChosenSequencer(ctx)
 	if err != nil {
-		log.Warn("unable to verify sequencer release status due to Redis error: %v", err)
+		log.Warn("unable to verify sequencer release status due to Redis error", "err", err)
 		return releaseErr
 	}
 	if current != c.config.Url() {
