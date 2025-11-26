@@ -54,7 +54,7 @@ func runLegacyModel(args []string) error {
 	for i := range config.Iterations() {
 		baseFee, _ := pricing.BaseFeeWei()
 		gas := gasSimulator.compute(i, baseFee)
-		_ = pricing.AddToGasPool(gas, multigas.ComputationGas(gas))
+		_ = pricing.GrowBacklog(gas, multigas.ComputationGas(gas))
 		pricing.UpdatePricingModel(1)
 		baseFee, _ = pricing.BaseFeeWei()
 		results = append(results, Result{
@@ -103,7 +103,7 @@ func runConstraintsModel(args []string) error {
 	for i := range config.Iterations() {
 		baseFee, _ := pricing.BaseFeeWei()
 		gas := gasSimulator.compute(i, baseFee)
-		_ = pricing.AddToGasPool(gas, multigas.ComputationGas(gas))
+		_ = pricing.GrowBacklog(gas, multigas.ComputationGas(gas))
 		pricing.UpdatePricingModel(1)
 		baseFee, _ = pricing.BaseFeeWei()
 		results = append(results, Result{

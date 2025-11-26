@@ -497,6 +497,11 @@ func (con ArbOwner) SetMultiGasPricingConstraints(
 	evm mech,
 	constraints []MultiGasConstraint,
 ) error {
+	limit := c.State.L2PricingState().MultiGasConstraintsMaxNum()
+	if len(constraints) > limit {
+		return fmt.Errorf("too many constraints. Max: %d", limit)
+	}
+
 	if err := c.State.L2PricingState().ClearMultiGasConstraints(); err != nil {
 		return fmt.Errorf("failed to clear existing multi-gas constraints: %w", err)
 	}

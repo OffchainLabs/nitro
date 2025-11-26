@@ -37,6 +37,8 @@ const (
 	GasModelMultiGasConstraints
 )
 
+// GasModelToUse returns the active gas-pricing model based on ArbOS version
+// and whether the corresponding constraints are currently configured.
 func (ps *L2PricingState) GasModelToUse() (GasModel, error) {
 	if ps.ArbosVersion >= ArbosMultiGasConstraintsVersion {
 		constraintsLength, err := ps.MultiGasConstraintsLength()
@@ -59,43 +61,43 @@ func (ps *L2PricingState) GasModelToUse() (GasModel, error) {
 	return GasModelLegacy, nil
 }
 
-// AddToGasPool increases gas amount in backlog(s) for the active gas pricing model:
-func (ps *L2PricingState) AddToGasPool(usedGas uint64, usedMultiGas multigas.MultiGas) error {
+// GrowBacklog increases the backlog for the active pricing model.
+func (ps *L2PricingState) GrowBacklog(usedGas uint64, usedMultiGas multigas.MultiGas) error {
 	gasModel, err := ps.GasModelToUse()
 	if err != nil {
 		return err
 	}
 	switch gasModel {
 	case GasModelLegacy:
-		return ps.addToGasPoolLegacy(true, usedGas)
+		return ps.updateLegacyBacklog(true, usedGas)
 	case GasModelSingleGasConstraints:
-		return ps.addToGasPoolWithSingleGasConstraints(true, usedGas)
+		return ps.updateSingleGasConstraintsBacklogs(true, usedGas)
 	case GasModelMultiGasConstraints:
-		return ps.addToGasPoolWithMultiGasConstraints(true, usedGas, usedMultiGas)
+		return ps.updateMultiGasConstraintsBacklogs(true, usedGas, usedMultiGas)
 	default:
 		return fmt.Errorf("can not determine gas model")
 	}
 }
 
-// SubstractGasFromPool decreases gas amount in backlog(s) for the active gas pricing model:
-func (ps *L2PricingState) SubstractGasFromPool(usedGas uint64, usedMultiGas multigas.MultiGas) error {
+// ShrinkBacklog reduces the backlog for the active pricing model.
+func (ps *L2PricingState) ShrinkBacklog(usedGas uint64, usedMultiGas multigas.MultiGas) error {
 	gasModel, err := ps.GasModelToUse()
 	if err != nil {
 		return err
 	}
 	switch gasModel {
 	case GasModelLegacy:
-		return ps.addToGasPoolLegacy(false, usedGas)
+		return ps.updateLegacyBacklog(false, usedGas)
 	case GasModelSingleGasConstraints:
-		return ps.addToGasPoolWithSingleGasConstraints(false, usedGas)
+		return ps.updateSingleGasConstraintsBacklogs(false, usedGas)
 	case GasModelMultiGasConstraints:
-		return ps.addToGasPoolWithMultiGasConstraints(false, usedGas, usedMultiGas)
+		return ps.updateMultiGasConstraintsBacklogs(false, usedGas, usedMultiGas)
 	default:
 		return fmt.Errorf("can not determine gas model")
 	}
 }
 
-func (ps *L2PricingState) addToGasPoolLegacy(growBacklog bool, usedGas uint64) error {
+func (ps *L2PricingState) updateLegacyBacklog(growBacklog bool, usedGas uint64) error {
 	backlog, err := ps.GasBacklog()
 	if err != nil {
 		return err
@@ -104,90 +106,107 @@ func (ps *L2PricingState) addToGasPoolLegacy(growBacklog bool, usedGas uint64) e
 	return ps.SetGasBacklog(backlog)
 }
 
-func (ps *L2PricingState) addToGasPoolWithSingleGasConstraints(growBacklog bool, usedGas uint64) error {
+func (ps *L2PricingState) updateSingleGasConstraintsBacklogs(growBacklog bool, usedGas uint64) error {
 	constraintsLength, err := ps.gasConstraints.Length()
 	if err != nil {
-		return fmt.Errorf("failed to get number of constraints: %w", err)
+		return err
 	}
 	for i := range constraintsLength {
 		constraint := ps.OpenGasConstraintAt(i)
 		backlog, err := constraint.Backlog()
 		if err != nil {
-			return fmt.Errorf("failed to get backlog of constraint %v: %w", i, err)
+			return err
 		}
 		err = constraint.SetBacklog(applyGasDelta(backlog, growBacklog, usedGas))
 		if err != nil {
-			return fmt.Errorf("failed to set backlog of constraint %v: %w", i, err)
+			return err
 		}
 	}
 	return nil
 }
 
-func (ps *L2PricingState) GasPoolUpdateCost() uint64 {
-	result := uint64(0)
-
-	// Multi-dimensional constraint pricer costs
-	if ps.ArbosVersion >= ArbosMultiGasConstraintsVersion {
-		result += storage.StorageReadCost // read multi gas constraints length for "GasModelToUse()"
-
-		constraintsLength, _ := ps.multigasConstraints.Length()
-		if constraintsLength > 0 {
-			result += storage.StorageReadCost // read length to traverse
-			// updating (read+write) all constraints, first one was already accounted for
-			result += uint64(constraintsLength) * (storage.StorageReadCost + storage.StorageWriteCost)
-			return result
-		}
-		// no return here, fallthrough to single-constraint costs
-	}
-
-	// Single-dimensional constraint pricer costs
-	// This overhead applies even when no constraints are configured.
-	if ps.ArbosVersion >= ArbosSingleGasConstraintsVersion {
-		result += storage.StorageReadCost // read gas constraints length for "GasModelToUse()"
-	}
-
-	if ps.ArbosVersion >= params.ArbosVersion_MultiConstraintFix {
-		// addToGasPoolWithGasConstraints costs (ArbOS 51 and later)
-		constraintsLength, _ := ps.gasConstraints.Length()
-		if constraintsLength > 0 {
-			result += storage.StorageReadCost // read length to traverse
-			// updating (read+write) all constraints, first one was already accounted for
-			result += uint64(constraintsLength) * (storage.StorageReadCost + storage.StorageWriteCost)
-			return result
-		}
-		// no return here, fallthrough to legacy costs
-	}
-
-	// Legacy pricer costs
-	result += storage.StorageReadCost + storage.StorageWriteCost
-
-	return result
-}
-
-func (ps *L2PricingState) addToGasPoolWithMultiGasConstraints(growBacklog bool, usedGas uint64, usedMultiGas multigas.MultiGas) error {
+func (ps *L2PricingState) updateMultiGasConstraintsBacklogs(growBacklog bool, usedGas uint64, usedMultiGas multigas.MultiGas) error {
 	if usedMultiGas.SingleGas() != usedGas {
 		log.Warn("usedGas does not match sum of usedMultiGas", "usedGas", usedGas, "usedMultiGas", usedMultiGas.SingleGas())
 	}
 
 	constraintsLength, err := ps.multigasConstraints.Length()
 	if err != nil {
-		return fmt.Errorf("failed to get number of multi-gas constraints: %w", err)
+		return err
 	}
 	for i := range constraintsLength {
 		constraint := ps.OpenMultiGasConstraintAt(i)
 		if growBacklog {
 			err = constraint.IncrementBacklog(usedMultiGas)
 			if err != nil {
-				return fmt.Errorf("failed to increment backlog of multi-gas constraint %v: %w", i, err)
+				return err
 			}
 		} else {
 			err = constraint.DecrementBacklog(usedMultiGas)
 			if err != nil {
-				return fmt.Errorf("failed to decrement backlog of multi-gas constraint %v: %w", i, err)
+				return err
 			}
 		}
 	}
 	return nil
+}
+
+// applyGasDelta adds delta to backlog if growBacklog=true, otherwise subtracts delta (saturating at zero).
+func applyGasDelta(backlog uint64, growBacklog bool, delta uint64) uint64 {
+	if growBacklog {
+		return arbmath.SaturatingUAdd(backlog, delta)
+	} else {
+		return arbmath.SaturatingUSub(backlog, delta)
+	}
+}
+
+// TODO(NIT-4152): eliminate manual gas calculation
+// BacklogUpdateCost returns the gas cost for updating the backlog in the active pricing model.
+func (ps *L2PricingState) BacklogUpdateCost() uint64 {
+	result := uint64(0)
+
+	// Multi-dimensional pricer overhead (ArbOS 60 and later)
+	if ps.ArbosVersion >= ArbosMultiGasConstraintsVersion {
+		// Read multi-gas constraints length (GasModelToUse)
+		// This overhead applies even when no constraints are configured.
+		result += storage.StorageReadCost
+
+		// updateMultiGasConstraintsBacklogs costs
+		constraintsLength, _ := ps.multigasConstraints.Length()
+		if constraintsLength > 0 {
+			result += storage.StorageReadCost // read length to traverse
+
+			// DecrementBacklog costs for each multi-dimensional constraint
+			result += constraintsLength * uint64(multigas.NumResourceKind) * storage.StorageReadCost
+			result += constraintsLength * (storage.StorageReadCost + storage.StorageWriteCost)
+			return result
+		}
+		// No return here, fallthrough to single-constraint costs
+	}
+
+	// Single-dimensional constraint pricer costs
+	// This overhead applies even when no constraints are configured.
+	if ps.ArbosVersion >= ArbosSingleGasConstraintsVersion {
+		// Read gas constraints length for "GasModelToUse()"
+		result += storage.StorageReadCost
+	}
+
+	if ps.ArbosVersion >= params.ArbosVersion_MultiConstraintFix {
+		// updateSingleGasConstraintsBacklogs costs (ArbOS 51 and later)
+		constraintsLength, _ := ps.gasConstraints.Length()
+		if constraintsLength > 0 {
+			result += storage.StorageReadCost // read length to traverse
+			// Update backlog (read+write) for each constraint
+			result += uint64(constraintsLength) * (storage.StorageReadCost + storage.StorageWriteCost)
+			return result
+		}
+		// No return here, fallthrough to legacy costs
+	}
+
+	// Legacy pricer costs
+	result += storage.StorageReadCost + storage.StorageWriteCost
+
+	return result
 }
 
 // UpdatePricingModel updates the pricing model with info from the last block
@@ -203,18 +222,9 @@ func (ps *L2PricingState) UpdatePricingModel(timePassed uint64) {
 	}
 }
 
-// applyGasDelta grows the backlog if the gas is negative and pays off  if the gas is positive.
-func applyGasDelta(backlog uint64, growBacklog bool, delta uint64) uint64 {
-	if growBacklog {
-		return arbmath.SaturatingUAdd(backlog, delta)
-	} else {
-		return arbmath.SaturatingUSub(backlog, delta)
-	}
-}
-
 func (ps *L2PricingState) updatePricingModelLegacy(timePassed uint64) {
 	speedLimit, _ := ps.SpeedLimitPerSecond()
-	_ = ps.addToGasPoolLegacy(false, arbmath.SaturatingUMul(timePassed, speedLimit))
+	_ = ps.updateLegacyBacklog(false, arbmath.SaturatingUMul(timePassed, speedLimit))
 	inertia, _ := ps.PricingInertia()
 	tolerance, _ := ps.BacklogTolerance()
 	backlog, _ := ps.GasBacklog()
@@ -286,39 +296,59 @@ func (ps *L2PricingState) updatePricingModelMultiConstraints(timePassed uint64) 
 	_ = ps.SetBaseFeeWei(baseFee)
 }
 
+// CalcMultiGasConstraintsExponents calculates the exponents for each resource kind
 func (ps *L2PricingState) CalcMultiGasConstraintsExponents() ([multigas.NumResourceKind]arbmath.Bips, error) {
-	var exponentPerKind [multigas.NumResourceKind]arbmath.Bips
 	constraintsLength, _ := ps.MultiGasConstraintsLength()
+	var exponentPerKind [multigas.NumResourceKind]arbmath.Bips
 	for i := range constraintsLength {
 		constraint := ps.OpenMultiGasConstraintAt(i)
 		target, err := constraint.Target()
 		if err != nil {
-			return exponentPerKind, fmt.Errorf("failed to read target from constraint %d: %w", i, err)
+			return [multigas.NumResourceKind]arbmath.Bips{}, err
 		}
 		backlog, err := constraint.Backlog()
 		if err != nil {
-			return exponentPerKind, fmt.Errorf("failed to read backlog from constraint %d: %w", i, err)
+			return [multigas.NumResourceKind]arbmath.Bips{}, err
 		}
 
 		if backlog > 0 {
-			adjustmentWindow, _ := constraint.AdjustmentWindow()
-			sumWeights, _ := constraint.SumWeights()
+			adjustmentWindow, err := constraint.AdjustmentWindow()
+			if err != nil {
+				return [multigas.NumResourceKind]arbmath.Bips{}, err
+			}
+			sumWeights, err := constraint.SumWeights()
+			if err != nil {
+				return [multigas.NumResourceKind]arbmath.Bips{}, err
+			}
 
+			// NOTE: The active divisor follows the multi-dimensional spec:
+			//
+			//     divisor = A_j * T_j * sum(a_j^i)
+			//
+			// With this form, the exponent for each resource is scaled by 1/sumWeights
+			// compared to the legacy single-gas model. In the compatibility tests we
+			// sometimes build a constraint where only ResourceKindComputation has
+			// weight=1 (all other weights are 0); in that case sumWeights=1 and this
+			// reduces to the legacy exponent. The commented alternative below shows the
+			// unnormalized divisor (A_j * T_j) that was used when we wanted to match the
+			// old single-gas behavior exactly:
+			//
+			//     // divisor := arbmath.SaturatingCastToBips(
+			//     //     arbmath.SaturatingUMul(uint64(adjustmentWindow), target))
 			divisor := arbmath.SaturatingCastToBips(
 				arbmath.SaturatingUMul(uint64(adjustmentWindow),
 					arbmath.SaturatingUMul(target, sumWeights)))
 
-			// NOTE: Code below kept for apprach without weight normalization
-			// Keeping sumWeights in the divisor would dilute the
-			// exponent by that factor and produce lower prices than the old model. Removing
-			// it restores the exact legacy exponent behavior.
-			//
-			// divisor := arbmath.SaturatingCastToBips(
-			// 	arbmath.SaturatingUMul(uint64(adjustmentWindow), target))
+			usedResources, err := constraint.UsedResources()
+			if err != nil {
+				return [multigas.NumResourceKind]arbmath.Bips{}, err
+			}
 
-			usedResources, _ := constraint.UsedResources()
 			for _, kind := range usedResources {
-				weight, _ := constraint.ResourceWeight(uint8(kind))
+				weight, err := constraint.ResourceWeight(uint8(kind))
+				if err != nil {
+					return [multigas.NumResourceKind]arbmath.Bips{}, err
+				}
 
 				dividend := arbmath.NaturalToBips(
 					arbmath.SaturatingCast[int64](arbmath.SaturatingUMul(backlog, weight)))

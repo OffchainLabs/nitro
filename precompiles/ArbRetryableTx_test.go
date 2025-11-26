@@ -13,6 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/vm"
 
 	"github.com/offchainlabs/nitro/arbos"
+	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbos/storage"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
@@ -81,17 +82,36 @@ func testRetryableRedeem(t *testing.T, evm *vm.EVM, precompileCtx *Context) {
 	)
 	Require(t, err)
 
-	if gasLeft != storage.StorageWriteCost-storage.StorageWriteZeroCost {
+	expected := storage.StorageWriteCost - storage.StorageWriteZeroCost
+	if gasLeft != expected {
 		// We expect to have some gas left over, because in this test we write a zero, but in other
 		//     use cases the precompile would cause a non-zero write. So the precompile allocates enough gas
 		//     to handle both cases, and some will be left over in this test's use case.
-		Fail(t, "didn't consume all the expected gas")
+
+		var delta uint64
+		var relation string
+		if gasLeft > expected {
+			delta = gasLeft - expected
+			relation = "more"
+		} else {
+			delta = expected - gasLeft
+			relation = "less"
+		}
+		t.Fatalf("unexpected gas left: got %d, want %d (%d %s than expected)",
+			gasLeft, expected, delta, relation)
 	}
 }
 
 func TestRetryableRedeem(t *testing.T) {
 	evm := newMockEVMForTesting()
 	precompileCtx := testContext(common.Address{}, evm)
+
+	model, err := precompileCtx.State.L2PricingState().GasModelToUse()
+	Require(t, err)
+
+	if model != l2pricing.GasModelLegacy {
+		Fail(t, "should use legacy model")
+	}
 
 	testRetryableRedeem(t, evm, precompileCtx)
 }
@@ -113,6 +133,13 @@ func TestRetryableRedeemWithSingleGasConstraints(t *testing.T) {
 		Require(t, err)
 	}
 
+	model, err := precompileCtx.State.L2PricingState().GasModelToUse()
+	Require(t, err)
+
+	if model != l2pricing.GasModelSingleGasConstraints {
+		Fail(t, "should use single-gas constraints model")
+	}
+
 	testRetryableRedeem(t, evm, precompileCtx)
 }
 
@@ -121,7 +148,15 @@ func TestRetryableRedeemWithMultiGasConstraints(t *testing.T) {
 	precompileCtx := testContext(common.Address{}, evm)
 	precompileCtx.State.L2PricingState().ArbosVersion = l2pricing.ArbosMultiGasConstraintsVersion
 
-	numConstraints := precompileCtx.State.L2PricingState().GasConstraintsMaxNum()
+	// Override default ArbOS varsion in the database
+	versionSlot := uint64(0)
+	version := new(big.Int).SetUint64(l2pricing.ArbosMultiGasConstraintsVersion)
+	burner := burn.NewSystemBurner(nil, false)
+	sto := storage.NewGeth(evm.StateDB, burner)
+	err := sto.SetByUint64(versionSlot, common.BigToHash(version))
+	Require(t, err)
+
+	numConstraints := precompileCtx.State.L2PricingState().MultiGasConstraintsMaxNum()
 	for i := range numConstraints {
 		// #nosec G115
 		target := uint64((i + 1) * 1000000)
@@ -131,12 +166,23 @@ func TestRetryableRedeemWithMultiGasConstraints(t *testing.T) {
 		backlog := uint64((i + 1) * 500000)
 
 		resourceWeights := map[uint8]uint64{
-			uint8(multigas.ResourceKindComputation):   1,
-			uint8(multigas.ResourceKindStorageAccess): 2,
+			uint8(multigas.ResourceKindComputation):     1,
+			uint8(multigas.ResourceKindStorageAccess):   2,
+			uint8(multigas.ResourceKindStorageGrowth):   3,
+			uint8(multigas.ResourceKindL1Calldata):      4,
+			uint8(multigas.ResourceKindL2Calldata):      5,
+			uint8(multigas.ResourceKindWasmComputation): 6,
 		}
 
-		err := precompileCtx.State.L2PricingState().AddMultiGasConstraint(target, window, backlog, resourceWeights)
+		err = precompileCtx.State.L2PricingState().AddMultiGasConstraint(target, window, backlog, resourceWeights)
 		Require(t, err)
+	}
+
+	model, err := precompileCtx.State.L2PricingState().GasModelToUse()
+	Require(t, err)
+
+	if model != l2pricing.GasModelMultiGasConstraints {
+		Fail(t, "should use multi-gas constraints model")
 	}
 
 	testRetryableRedeem(t, evm, precompileCtx)

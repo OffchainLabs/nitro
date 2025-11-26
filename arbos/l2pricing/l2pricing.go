@@ -47,6 +47,7 @@ var multigasConstraintsKey []byte = []byte{1}
 
 const GethBlockGasLimit = 1 << 50
 const gasConstraintsMaxNum = 20
+const multiGasConstraintsMaxNum = 10
 const MaxPricingExponentBips = arbmath.Bips(85_000)
 
 func InitializeL2PricingState(sto *storage.Storage) error {
@@ -197,11 +198,14 @@ func (ps *L2PricingState) setMultiGasConstraintsFromSingleGasConstraints() error
 			return fmt.Errorf("failed to read backlog from constraint %d: %w", i, err)
 		}
 
-		// NOTE: this code kept for pricing algorithm without wight normalization
+		// NOTE: We intentionally set all fee‑relevant resource weights to 1 so the pricing
+		// code treats every resource kind equally. This is used only in tests to verify
+		// that the new model (which normally applies weight normalization) matches the
+		// results of the old single-gas model.
 		//
 		// resourceWeights := make(map[uint8]uint64, len(FeeRelevantResourceKinds))
 		// for _, kind := range FeeRelevantResourceKinds {
-		// 	resourceWeights[uint8(kind)] = 1
+		//     resourceWeights[uint8(kind)] = 1
 		// }
 		resourceWeights := map[uint8]uint64{uint8(multigas.ResourceKindComputation): 1}
 
@@ -270,6 +274,10 @@ func (ps *L2PricingState) ClearGasConstraints() error {
 
 func (ps *L2PricingState) GasConstraintsMaxNum() int {
 	return gasConstraintsMaxNum
+}
+
+func (ps *L2PricingState) MultiGasConstraintsMaxNum() int {
+	return multiGasConstraintsMaxNum
 }
 
 func (ps *L2PricingState) MultiGasConstraintsLength() (uint64, error) {
