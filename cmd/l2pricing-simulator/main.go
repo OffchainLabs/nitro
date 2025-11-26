@@ -20,13 +20,13 @@ import (
 
 var minBaseFee = big.NewInt(params.GWei)
 
-func newPricingState() (*l2pricing.L2PricingState, error) {
+func newPricingState(arbosVersion uint64) (*l2pricing.L2PricingState, error) {
 	storage := storage.NewMemoryBacked(burn.NewSystemBurner(nil, false))
 	err := l2pricing.InitializeL2PricingState(storage)
 	if err != nil {
 		return nil, err
 	}
-	pricing := l2pricing.OpenL2PricingState(storage)
+	pricing := l2pricing.OpenL2PricingState(storage, arbosVersion)
 	_ = pricing.SetMinBaseFeeWei(minBaseFee)
 	_ = pricing.SetBaseFeeWei(minBaseFee)
 	return pricing, nil
@@ -38,7 +38,7 @@ func runLegacyModel(args []string) error {
 		return err
 	}
 
-	pricing, err := newPricingState()
+	pricing, err := newPricingState(params.ArbosVersion_40)
 	if err != nil {
 		return err
 	}
@@ -53,8 +53,8 @@ func runLegacyModel(args []string) error {
 	for i := range config.Iterations() {
 		baseFee, _ := pricing.BaseFeeWei()
 		gas := gasSimulator.compute(i, baseFee)
-		_ = pricing.AddToGasPool(-arbmath.SaturatingCast[int64](gas), l2pricing.ArbosSingleGasConstraintsVersion)
-		pricing.UpdatePricingModel(1, l2pricing.ArbosSingleGasConstraintsVersion)
+		_ = pricing.AddToGasPool(-arbmath.SaturatingCast[int64](gas))
+		pricing.UpdatePricingModel(1)
 		baseFee, _ = pricing.BaseFeeWei()
 		results = append(results, Result{
 			baseFee:  baseFee,
@@ -72,7 +72,7 @@ func runConstraintsModel(args []string) error {
 		return err
 	}
 
-	pricing, err := newPricingState()
+	pricing, err := newPricingState(params.ArbosVersion_MultiConstraintFix)
 	if err != nil {
 		return err
 	}
@@ -102,8 +102,8 @@ func runConstraintsModel(args []string) error {
 	for i := range config.Iterations() {
 		baseFee, _ := pricing.BaseFeeWei()
 		gas := gasSimulator.compute(i, baseFee)
-		_ = pricing.AddToGasPool(-arbmath.SaturatingCast[int64](gas), l2pricing.ArbosSingleGasConstraintsVersion)
-		pricing.UpdatePricingModel(1, l2pricing.ArbosSingleGasConstraintsVersion)
+		_ = pricing.AddToGasPool(-arbmath.SaturatingCast[int64](gas))
+		pricing.UpdatePricingModel(1)
 		baseFee, _ = pricing.BaseFeeWei()
 		results = append(results, Result{
 			baseFee:  baseFee,
