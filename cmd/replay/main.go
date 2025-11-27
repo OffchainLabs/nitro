@@ -236,8 +236,9 @@ func (r *DACertificatePreimageReader) CollectPreimages(
 	sequencerMsg []byte,
 ) containers.PromiseInterface[daprovider.PreimagesResult] {
 	return containers.DoPromise(context.Background(), func(ctx context.Context) (daprovider.PreimagesResult, error) {
-		// For the replay tool, we don't need to collect preimages
-		// Just return an empty map
+		// Stub implementation: CollectPreimages is only called by the stateless validator
+		// to gather preimages before replay. In replay context, preimages have already been
+		// collected and injected into the execution environment.
 		return daprovider.PreimagesResult{Preimages: make(daprovider.PreimagesMap)}, nil
 	})
 }
