@@ -329,3 +329,29 @@ func (ps *L2PricingState) ClearMultiGasConstraints() error {
 	}
 	return nil
 }
+
+func (ps *L2PricingState) MultiDimensionalPriceForGas(gasUsed multigas.MultiGas) (*big.Int, error) {
+	if ps.ArbosVersion < ArbosMultiGasConstraintsVersion {
+		return big.NewInt(0), nil
+	}
+	total := new(big.Int)
+
+	for kind := range multigas.ResourceKind(multigas.NumResourceKind) {
+		baseFee, err := ps.multiGasBaseFees.Get(kind)
+		if err != nil {
+			return nil, err
+		}
+
+		amount := gasUsed.Get(kind)
+		if amount == 0 {
+			continue
+		}
+
+		part := new(big.Int).Mul(
+			new(big.Int).SetUint64(amount),
+			baseFee,
+		)
+		total.Add(total, part)
+	}
+	return total, nil
+}
