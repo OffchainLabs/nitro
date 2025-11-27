@@ -834,9 +834,6 @@ func TestTimeboostedFieldInReceiptsObject(t *testing.T) {
 	Require(t, arbDb.Put(dbKey([]byte("t"), blockNum.Uint64()), []byte{0, 2}))
 	l2rpc := builder.L2.Stack.Attach()
 	// Extra timeboosted field in pointer form to check for its existence
-	type timeboostedFromReceipt struct {
-		Timeboosted *bool `json:"timeboosted"`
-	}
 	var receiptResult []timeboostedFromReceipt
 	err = l2rpc.CallContext(ctx, &receiptResult, "eth_getBlockReceipts", rpc.BlockNumber(blockNum.Int64()))
 	Require(t, err)
@@ -1344,7 +1341,7 @@ func verifyTimeboostedCorrectness(t *testing.T, ctx context.Context, user string
 	Require(t, err)
 	var foundUserTx bool
 	for txIndex, tx := range userTxBlock.Transactions() {
-		got, err := blockMetadataOfBlock.IsTxTimeboosted(txIndex)
+		got, err := blockMetadataOfBlock.IsTxTimeboosted(uint64(txIndex)) //nolint:gosec // G115: txIndex comes from range, so it's never negative
 		Require(t, err)
 		if tx.Hash() == userTx.Hash() {
 			foundUserTx = true
@@ -1934,11 +1931,15 @@ func (elc *expressLaneClient) Start(ctxIn context.Context) {
 	elc.StopWaiter.Start(ctxIn, elc)
 }
 
-func (elc *expressLaneClient) QueueTransactionWithSequence(ctx context.Context, transaction *types.Transaction, seq uint64) error {
+func (elc *expressLaneClient) buildSignedExpressLaneSubmission(
+	transaction *types.Transaction,
+	seq uint64,
+) (*timeboost.JsonExpressLaneSubmission, error) {
 	encodedTx, err := transaction.MarshalBinary()
 	if err != nil {
-		return err
+		return nil, err
 	}
+
 	msg := &timeboost.JsonExpressLaneSubmission{
 		ChainId:                (*hexutil.Big)(elc.chainId),
 		Round:                  hexutil.Uint64(elc.roundTimingInfo.RoundNumber()),
@@ -1947,21 +1948,37 @@ func (elc *expressLaneClient) QueueTransactionWithSequence(ctx context.Context, 
 		SequenceNumber:         hexutil.Uint64(seq),
 		Signature:              hexutil.Bytes{},
 	}
+
 	msgGo, err := timeboost.JsonSubmissionToGo(msg)
 	if err != nil {
-		return err
+		return nil, err
 	}
+
 	signingMsg, err := msgGo.ToMessageBytes()
 	if err != nil {
-		return err
+		return nil, err
 	}
+
 	signature, err := signSubmission(signingMsg, elc.privKey)
+	if err != nil {
+		return nil, err
+	}
+
+	msg.Signature = signature
+	return msg, nil
+}
+
+func (elc *expressLaneClient) QueueTransactionWithSequence(
+	ctx context.Context,
+	transaction *types.Transaction,
+	seq uint64,
+) error {
+	msg, err := elc.buildSignedExpressLaneSubmission(transaction, seq)
 	if err != nil {
 		return err
 	}
-	msg.Signature = signature
-	promise := elc.sendExpressLaneRPC(msg)
-	if _, err := promise.Await(ctx); err != nil {
+
+	if _, err := elc.sendExpressLaneTransactionRPC(msg).Await(ctx); err != nil {
 		return err
 	}
 	return nil
@@ -1977,6 +1994,19 @@ func (elc *expressLaneClient) SendTransactionWithSequence(ctx context.Context, t
 	return nil
 }
 
+func (elc *expressLaneClient) SendTransactionSyncWithSequence(ctx context.Context, transaction *types.Transaction, seq uint64, timeoutMs *hexutil.Uint64) (*timeboostedFromReceipt, error) {
+	msg, err := elc.buildSignedExpressLaneSubmission(transaction, seq)
+	if err != nil {
+		return nil, err
+	}
+
+	isTimeboosted, err := elc.sendExpressLaneTransactionSyncRPC(msg, timeoutMs).Await(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return &isTimeboosted, nil
+}
+
 func (elc *expressLaneClient) SendTransaction(ctx context.Context, transaction *types.Transaction) error {
 	elc.Lock()
 	defer elc.Unlock()
@@ -1987,10 +2017,28 @@ func (elc *expressLaneClient) SendTransaction(ctx context.Context, transaction *
 	return err
 }
 
-func (elc *expressLaneClient) sendExpressLaneRPC(msg *timeboost.JsonExpressLaneSubmission) containers.PromiseInterface[struct{}] {
+func (elc *expressLaneClient) SendTransactionSync(ctx context.Context, transaction *types.Transaction, timeoutMs *hexutil.Uint64) (*timeboostedFromReceipt, error) {
+	elc.Lock()
+	defer elc.Unlock()
+	isTimeboosted, err := elc.SendTransactionSyncWithSequence(ctx, transaction, elc.sequence, timeoutMs)
+	if err == nil {
+		elc.sequence += 1
+	}
+	return isTimeboosted, err
+}
+
+func (elc *expressLaneClient) sendExpressLaneTransactionRPC(msg *timeboost.JsonExpressLaneSubmission) containers.PromiseInterface[struct{}] {
 	return stopwaiter.LaunchPromiseThread(elc, func(ctx context.Context) (struct{}, error) {
 		err := elc.client.CallContext(ctx, nil, "timeboost_sendExpressLaneTransaction", msg)
 		return struct{}{}, err
+	})
+}
+
+func (elc *expressLaneClient) sendExpressLaneTransactionSyncRPC(msg *timeboost.JsonExpressLaneSubmission, timeoutMs *hexutil.Uint64) containers.PromiseInterface[timeboostedFromReceipt] {
+	return stopwaiter.LaunchPromiseThread(elc, func(ctx context.Context) (timeboostedFromReceipt, error) {
+		var txReceipt timeboostedFromReceipt
+		err := elc.client.CallContext(ctx, &txReceipt, "timeboost_sendExpressLaneTransactionSync", msg, timeoutMs)
+		return txReceipt, err
 	})
 }
 
@@ -2013,4 +2061,8 @@ func getRandomPort(t testing.TB) int {
 		t.Fatalf("failed to cast listener address to *net.TCPAddr")
 	}
 	return tcpAddr.Port
+}
+
+type timeboostedFromReceipt struct {
+	Timeboosted *bool `json:"timeboosted"`
 }

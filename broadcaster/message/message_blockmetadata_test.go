@@ -31,7 +31,7 @@ func TestTimeboostedInDifferentScenarios(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			for txIndex, want := range tc.txs {
-				have, err := tc.blockMetadata.IsTxTimeboosted(txIndex)
+				have, err := tc.blockMetadata.IsTxTimeboosted(uint64(txIndex)) //nolint:gosec // G115: txIndex comes from range, so it's never negative
 				if err != nil {
 					t.Fatalf("error getting timeboosted bit for tx of index %d: %v", txIndex, err)
 				}
