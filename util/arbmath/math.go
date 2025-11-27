@@ -374,16 +374,6 @@ func SaturatingUUCast[U, T Unsigned](value T) U {
 	return U(value)
 }
 
-func SaturatingCastToUint(value *big.Int) uint64 {
-	if value.Sign() < 0 {
-		return 0
-	}
-	if !value.IsUint64() {
-		return math.MaxUint64
-	}
-	return value.Uint64()
-}
-
 // Negates an int without underflow
 func SaturatingNeg[T Signed](value T) T {
 	if value < 0 && value == MinSignedValue[T]() {
