@@ -195,11 +195,9 @@ func (r *DACertificatePreimageReader) RecoverPayload(
 	batchBlockHash common.Hash,
 	sequencerMsg []byte,
 ) containers.PromiseInterface[daprovider.PayloadResult] {
-	promise := containers.NewPromise[daprovider.PayloadResult](nil)
-	go func() {
+	return containers.DoPromise(context.Background(), func(ctx context.Context) (daprovider.PayloadResult, error) {
 		if len(sequencerMsg) <= 40 {
-			promise.ProduceError(fmt.Errorf("sequencer message too small"))
-			return
+			return daprovider.PayloadResult{}, fmt.Errorf("sequencer message too small")
 		}
 		certificate := sequencerMsg[40:]
 
@@ -209,11 +207,11 @@ func (r *DACertificatePreimageReader) RecoverPayload(
 		// Validate the certificate before trying to read it
 		if !wavmio.ValidateCertificate(arbutil.DACertificatePreimageType, customDAPreimageHash) {
 			// Preimage is not available - treat as invalid batch
-			log.Info("DACertificate preimage validation failed, treating as invalid batch",
+			log.Warn("DACertificate preimage validation failed, treating as invalid batch",
 				"batchNum", batchNum,
+				"batchBlockHash", batchBlockHash,
 				"hash", customDAPreimageHash.Hex())
-			promise.Produce(daprovider.PayloadResult{Payload: []byte{}})
-			return
+			return daprovider.PayloadResult{Payload: []byte{}}, nil
 		}
 
 		// Read the preimage (which contains the actual batch data)
@@ -228,9 +226,8 @@ func (r *DACertificatePreimageReader) RecoverPayload(
 			"hash", customDAPreimageHash.Hex(),
 			"payloadSize", len(payload))
 
-		promise.Produce(daprovider.PayloadResult{Payload: payload})
-	}()
-	return &promise
+		return daprovider.PayloadResult{Payload: payload}, nil
+	})
 }
 
 func (r *DACertificatePreimageReader) CollectPreimages(
@@ -238,13 +235,11 @@ func (r *DACertificatePreimageReader) CollectPreimages(
 	batchBlockHash common.Hash,
 	sequencerMsg []byte,
 ) containers.PromiseInterface[daprovider.PreimagesResult] {
-	promise := containers.NewPromise[daprovider.PreimagesResult](nil)
-	go func() {
+	return containers.DoPromise(context.Background(), func(ctx context.Context) (daprovider.PreimagesResult, error) {
 		// For the replay tool, we don't need to collect preimages
 		// Just return an empty map
-		promise.Produce(daprovider.PreimagesResult{Preimages: make(daprovider.PreimagesMap)})
-	}()
-	return &promise
+		return daprovider.PreimagesResult{Preimages: make(daprovider.PreimagesMap)}, nil
+	})
 }
 
 // To generate:
