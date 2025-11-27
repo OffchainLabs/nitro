@@ -861,7 +861,7 @@ func deployContractsOnly(
 		t.Logf("Deployed custom OneStepProofEntry at %s", customOspAddr.Hex())
 
 		// Deploy using the custom OSP
-		rollupStackConf.CustomOsp = customOspAddr
+		rollupStackConf.CustomDAOsp = customOspAddr
 		addresses, err = setup.DeployFullRollupStack(
 			ctx,
 			butil.NewBackendWrapper(backend, rpc.LatestBlockNumber),

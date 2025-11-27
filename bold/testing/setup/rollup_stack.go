@@ -529,7 +529,7 @@ type RollupStackConfig struct {
 	UseMockOneStepProver   bool
 	UseBlobs               bool
 	MinimumAssertionPeriod int64
-	CustomOsp              common.Address
+	CustomDAOsp            common.Address
 }
 
 func DeployFullRollupStack(
@@ -560,7 +560,7 @@ func DeployFullRollupStack(
 				BatchPosters:              []common.Address{},
 				BatchPosterManager:        common.Address{},
 				FeeTokenPricer:            common.Address{},
-				CustomOsp:                 stackConf.CustomOsp,
+				CustomOsp:                 stackConf.CustomDAOsp,
 			},
 		)
 		if creationErr != nil {

@@ -1773,7 +1773,7 @@ func deployOnParentChain(
 			MinimumAssertionPeriod: 0,
 		}
 		if deployConfig.DeployReferenceDA {
-			rollupStackConfig.CustomOsp = customOspAddr
+			rollupStackConfig.CustomDAOsp = customOspAddr
 		}
 
 		boldAddresses, err := setup.DeployFullRollupStack(
