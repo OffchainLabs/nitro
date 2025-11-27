@@ -21,6 +21,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
+	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbos/retryables"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -534,6 +535,10 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, usedMultiGas multigas.MultiGas, 
 	}
 	gasUsed := p.msg.GasLimit - gasLeft
 
+	gasModel, err := p.state.L2PricingState().GasModelToUse()
+	p.state.Restrict(err)
+	shouldRefundMultiGas := gasModel == l2pricing.GasModelMultiGasConstraints
+
 	if underlyingTx != nil && underlyingTx.Type() == types.ArbitrumRetryTxType {
 		inner, _ := underlyingTx.GetInner().(*types.ArbitrumRetryTx)
 		effectiveBaseFee := inner.GasFeeCap
@@ -677,6 +682,27 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, usedMultiGas multigas.MultiGas, 
 	if p.state.ArbOSVersion() >= params.ArbosVersion_10 {
 		if _, err := p.state.L1PricingState().AddToL1FeesAvailable(p.PosterFee); err != nil {
 			log.Error("failed to update L1FeesAvailable: ", "err", err)
+		}
+	}
+
+	// Multi-dimensional refund (normal tx path)
+	if shouldRefundMultiGas {
+		detailedPrice, err := p.state.L2PricingState().MultiDimensionalPriceForGas(usedMultiGas)
+		p.state.Restrict(err)
+
+		amount := new(big.Int).Sub(totalCost, detailedPrice)
+		if amount.Sign() > 0 {
+			err := util.TransferBalance(
+				&networkFeeAccount,
+				&p.msg.From,
+				amount,
+				p.evm,
+				scenario,
+				tracing.BalanceChangeTransferNetworkRefund, // TODO: clarify reason
+			)
+			p.state.Restrict(err)
+		} else if amount.Sign() < 0 {
+			log.Warn("multi dimensional gas price exceeded simple gas price", "amount", amount)
 		}
 	}
 
