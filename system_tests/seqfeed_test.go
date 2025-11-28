@@ -199,7 +199,7 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 
 	nodeConfigA.BatchPoster.Enable = true
 	nodeConfigA.Feed.Output.Enable = false
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).DontParalellise()
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).DontParalellise().WithTakeOwnership(false)
 	builder.nodeConfig = nodeConfigA
 	builder.chainConfig = chainConfig
 	builder.L2Info = nil
@@ -364,7 +364,7 @@ func testBlockHashComparison(t *testing.T, blockHash *common.Hash, mustMismatch 
 
 	port := testhelpers.AddrTCPPort(wsBroadcastServer.ListenerAddr(), t)
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).DontParalellise()
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).DontParalellise().WithTakeOwnership(false)
 	builder.nodeConfig.Feed.Input = *newBroadcastClientConfigTest(port)
 	cleanup := builder.Build(t)
 	defer cleanup()

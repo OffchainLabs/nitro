@@ -4,6 +4,7 @@
 package precompiles
 
 import (
+	"fmt"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -320,4 +321,56 @@ func (con ArbGasInfo) GetGasPricingConstraints(c ctx, evm mech) ([][3]uint64, er
 		})
 	}
 	return constraints, nil
+}
+
+// GetMultiGasPricingConstraints returns the current configuration of multi-gas pricing constraints
+func (con ArbGasInfo) GetMultiGasPricingConstraints(
+	c ctx,
+	evm mech,
+) ([]MultiGasConstraint, error) {
+	length, err := c.State.L2PricingState().MultiGasConstraintsLength()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get multi-gas constraint count: %w", err)
+	}
+
+	result := make([]MultiGasConstraint, 0, length)
+
+	for i := range length {
+		constraint := c.State.L2PricingState().OpenMultiGasConstraintAt(i)
+
+		target, err := constraint.Target()
+		if err != nil {
+			return nil, fmt.Errorf("failed to read target for constraint %d: %w", i, err)
+		}
+		window, err := constraint.AdjustmentWindow()
+		if err != nil {
+			return nil, fmt.Errorf("failed to read adjustment window for constraint %d: %w", i, err)
+		}
+		backlog, err := constraint.Backlog()
+		if err != nil {
+			return nil, fmt.Errorf("failed to read backlog for constraint %d: %w", i, err)
+		}
+
+		resourceMap, err := constraint.ResourcesWithWeights()
+		if err != nil {
+			return nil, fmt.Errorf("failed to read resource weights for constraint %d: %w", i, err)
+		}
+
+		resources := make([]WeightedResource, 0, len(resourceMap))
+		for kind, weight := range resourceMap {
+			resources = append(resources, WeightedResource{
+				Resource: uint8(kind),
+				Weight:   weight,
+			})
+		}
+
+		result = append(result, MultiGasConstraint{
+			Resources:            resources,
+			AdjustmentWindowSecs: window,
+			TargetPerSec:         target,
+			Backlog:              backlog,
+		})
+	}
+
+	return result, nil
 }
