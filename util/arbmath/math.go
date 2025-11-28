@@ -172,18 +172,16 @@ func BigGreaterThanOrEqual(first, second *big.Int) bool {
 func BigMin(first, second *big.Int) *big.Int {
 	if BigLessThan(first, second) {
 		return new(big.Int).Set(first)
-	} else {
-		return new(big.Int).Set(second)
 	}
+	return new(big.Int).Set(second)
 }
 
 // BigMax returns a clone of the maximum of two big integers
 func BigMax(first, second *big.Int) *big.Int {
 	if BigGreaterThan(first, second) {
 		return new(big.Int).Set(first)
-	} else {
-		return new(big.Int).Set(second)
 	}
+	return new(big.Int).Set(second)
 }
 
 // BigAdd add a huge to another
