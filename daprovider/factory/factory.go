@@ -230,7 +230,7 @@ func (f *ReferenceDAFactory) CreateWriter(ctx context.Context) (daprovider.Write
 		f.dataSigner = signer
 	}
 
-	writer := referenceda.NewWriter(f.dataSigner)
+	writer := referenceda.NewWriter(f.dataSigner, f.config.MaxBatchSize)
 	return writer, nil, nil
 }
 

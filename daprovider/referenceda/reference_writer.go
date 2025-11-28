@@ -15,15 +15,17 @@ import (
 
 // Writer implements the daprovider.Writer interface for ReferenceDA
 type Writer struct {
-	storage *InMemoryStorage
-	signer  signature.DataSignerFunc
+	storage        *InMemoryStorage
+	signer         signature.DataSignerFunc
+	maxMessageSize int
 }
 
 // NewWriter creates a new ReferenceDA writer
-func NewWriter(signer signature.DataSignerFunc) *Writer {
+func NewWriter(signer signature.DataSignerFunc, maxMessageSize int) *Writer {
 	return &Writer{
-		storage: GetInMemoryStorage(),
-		signer:  signer,
+		storage:        GetInMemoryStorage(),
+		signer:         signer,
+		maxMessageSize: maxMessageSize,
 	}
 }
 
@@ -36,8 +38,7 @@ func (w *Writer) Store(
 }
 
 func (w *Writer) GetMaxMessageSize() containers.PromiseInterface[int] {
-	// Return 0 to indicate use default size limit
-	return containers.NewReadyPromise(0, nil)
+	return containers.NewReadyPromise(w.maxMessageSize, nil)
 }
 
 func (w *Writer) store(
