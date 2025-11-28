@@ -43,13 +43,17 @@ func (b *Bid) ToEIP712Hash(domainSeparator [32]byte) (common.Hash, error) {
 			{Name: "round", Type: "uint64"},
 			{Name: "expressLaneController", Type: "address"},
 			{Name: "amount", Type: "uint256"},
+			{Name: "chainId", Type: "uint256"},
+			{Name: "auctionContractAddress", Type: "address"},
 		},
 	}
 
 	message := apitypes.TypedDataMessage{
-		"round":                 big.NewInt(0).SetUint64(b.Round),
-		"expressLaneController": [20]byte(b.ExpressLaneController),
-		"amount":                b.Amount,
+		"round":                  big.NewInt(0).SetUint64(b.Round),
+		"expressLaneController":  [20]byte(b.ExpressLaneController),
+		"amount":                 b.Amount,
+		"chainId":                b.ChainId,
+		"auctionContractAddress": [20]byte(b.AuctionContractAddress),
 	}
 
 	typedData := apitypes.TypedData{
