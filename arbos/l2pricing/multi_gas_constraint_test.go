@@ -1,4 +1,7 @@
-package constraints
+// Copyright 2025, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
+
+package l2pricing
 
 import (
 	"testing"
@@ -109,7 +112,7 @@ func TestMultiGasConstraintBacklogAggregation(t *testing.T) {
 		multigas.Pair{Kind: multigas.ResourceKindStorageAccess, Amount: 10},
 	)
 
-	require.NoError(t, c.IncrementBacklog(mg))
+	require.NoError(t, c.UpdateBacklog(Grow, mg))
 }
 
 func TestMultiGasConstraintBacklogGrowth(t *testing.T) {
@@ -129,7 +132,7 @@ func TestMultiGasConstraintBacklogGrowth(t *testing.T) {
 		multigas.Pair{Kind: multigas.ResourceKindStorageAccess, Amount: 10},
 	)
 
-	require.NoError(t, c.IncrementBacklog(mg1))
+	require.NoError(t, c.UpdateBacklog(Grow, mg1))
 
 	b1, err := c.Backlog()
 	require.NoError(t, err)
@@ -140,7 +143,7 @@ func TestMultiGasConstraintBacklogGrowth(t *testing.T) {
 		multigas.Pair{Kind: multigas.ResourceKindStorageAccess, Amount: 15},
 	)
 
-	require.NoError(t, c.IncrementBacklog(mg2))
+	require.NoError(t, c.UpdateBacklog(Grow, mg2))
 
 	b2, err := c.Backlog()
 	require.NoError(t, err)
@@ -165,7 +168,7 @@ func TestMultiGasConstraintBacklogDecay(t *testing.T) {
 		multigas.Pair{Kind: multigas.ResourceKindComputation, Amount: 10},
 		multigas.Pair{Kind: multigas.ResourceKindStorageAccess, Amount: 10},
 	)
-	require.NoError(t, c.IncrementBacklog(mgGrow))
+	require.NoError(t, c.UpdateBacklog(Grow, mgGrow))
 
 	b1, err := c.Backlog()
 	require.NoError(t, err)
@@ -176,7 +179,7 @@ func TestMultiGasConstraintBacklogDecay(t *testing.T) {
 		multigas.Pair{Kind: multigas.ResourceKindComputation, Amount: 3},
 		multigas.Pair{Kind: multigas.ResourceKindStorageAccess, Amount: 4},
 	)
-	require.NoError(t, c.DecrementBacklog(mgDecay1))
+	require.NoError(t, c.UpdateBacklog(Shrink, mgDecay1))
 
 	b2, err := c.Backlog()
 	require.NoError(t, err)
@@ -187,7 +190,7 @@ func TestMultiGasConstraintBacklogDecay(t *testing.T) {
 		multigas.Pair{Kind: multigas.ResourceKindComputation, Amount: 50},
 		multigas.Pair{Kind: multigas.ResourceKindStorageAccess, Amount: 50},
 	)
-	require.NoError(t, c.DecrementBacklog(mgDecay2))
+	require.NoError(t, c.UpdateBacklog(Shrink, mgDecay2))
 
 	b3, err := c.Backlog()
 	require.NoError(t, err)

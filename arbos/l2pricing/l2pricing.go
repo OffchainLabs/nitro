@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2025, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package l2pricing
@@ -10,7 +10,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/arbitrum/multigas"
 
-	"github.com/offchainlabs/nitro/arbos/constraints"
 	"github.com/offchainlabs/nitro/arbos/storage"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
@@ -46,8 +45,8 @@ var gasConstraintsKey []byte = []byte{0}
 var multigasConstraintsKey []byte = []byte{1}
 
 const GethBlockGasLimit = 1 << 50
-const gasConstraintsMaxNum = 20
-const multiGasConstraintsMaxNum = 10
+const GasConstraintsMaxNum = 20
+const MultiGasConstraintsMaxNum = 15
 const MaxPricingExponentBips = arbmath.Bips(85_000)
 
 func InitializeL2PricingState(sto *storage.Storage) error {
@@ -233,7 +232,7 @@ func (ps *L2PricingState) AddGasConstraint(target uint64, adjustmentWindow uint6
 	if err != nil {
 		return fmt.Errorf("failed to push constraint: %w", err)
 	}
-	constraint := constraints.OpenGasConstraint(subStorage)
+	constraint := OpenGasConstraint(subStorage)
 	if err := constraint.SetTarget(target); err != nil {
 		return fmt.Errorf("failed to set target: %w", err)
 	}
@@ -250,8 +249,8 @@ func (ps *L2PricingState) GasConstraintsLength() (uint64, error) {
 	return ps.gasConstraints.Length()
 }
 
-func (ps *L2PricingState) OpenGasConstraintAt(i uint64) *constraints.GasConstraint {
-	return constraints.OpenGasConstraint(ps.gasConstraints.At(i))
+func (ps *L2PricingState) OpenGasConstraintAt(i uint64) *GasConstraint {
+	return OpenGasConstraint(ps.gasConstraints.At(i))
 }
 
 func (ps *L2PricingState) ClearGasConstraints() error {
@@ -264,7 +263,7 @@ func (ps *L2PricingState) ClearGasConstraints() error {
 		if err != nil {
 			return err
 		}
-		constraint := constraints.OpenGasConstraint(subStorage)
+		constraint := OpenGasConstraint(subStorage)
 		if err := constraint.Clear(); err != nil {
 			return err
 		}
@@ -272,20 +271,12 @@ func (ps *L2PricingState) ClearGasConstraints() error {
 	return nil
 }
 
-func (ps *L2PricingState) GasConstraintsMaxNum() int {
-	return gasConstraintsMaxNum
-}
-
-func (ps *L2PricingState) MultiGasConstraintsMaxNum() int {
-	return multiGasConstraintsMaxNum
-}
-
 func (ps *L2PricingState) MultiGasConstraintsLength() (uint64, error) {
 	return ps.multigasConstraints.Length()
 }
 
-func (ps *L2PricingState) OpenMultiGasConstraintAt(i uint64) *constraints.MultiGasConstraint {
-	return constraints.OpenMultiGasConstraint(ps.multigasConstraints.At(i))
+func (ps *L2PricingState) OpenMultiGasConstraintAt(i uint64) *MultiGasConstraint {
+	return OpenMultiGasConstraint(ps.multigasConstraints.At(i))
 }
 
 func (ps *L2PricingState) AddMultiGasConstraint(
@@ -299,7 +290,7 @@ func (ps *L2PricingState) AddMultiGasConstraint(
 		return fmt.Errorf("failed to push multi-gas constraint: %w", err)
 	}
 
-	constraint := constraints.OpenMultiGasConstraint(subStorage)
+	constraint := OpenMultiGasConstraint(subStorage)
 	if err := constraint.SetTarget(target); err != nil {
 		return fmt.Errorf("failed to set target: %w", err)
 	}
@@ -325,7 +316,7 @@ func (ps *L2PricingState) ClearMultiGasConstraints() error {
 		if err != nil {
 			return err
 		}
-		constraint := constraints.OpenMultiGasConstraint(subStorage)
+		constraint := OpenMultiGasConstraint(subStorage)
 		if err := constraint.Clear(); err != nil {
 			return err
 		}

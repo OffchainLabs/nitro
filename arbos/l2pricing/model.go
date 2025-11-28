@@ -1,4 +1,4 @@
-// Copyright 2021-2024, Offchain Labs, Inc.
+// Copyright 2021-2025, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package l2pricing
@@ -8,7 +8,6 @@ import (
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/arbitrum/multigas"
-	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos/storage"
@@ -61,52 +60,41 @@ func (ps *L2PricingState) GasModelToUse() (GasModel, error) {
 	return GasModelLegacy, nil
 }
 
-// GrowBacklog increases the backlog for the active pricing model.
-func (ps *L2PricingState) GrowBacklog(usedGas uint64, usedMultiGas multigas.MultiGas) error {
+type BacklogOperation uint8
+
+const (
+	Shrink BacklogOperation = iota
+	Grow
+)
+
+// UpdateBacklog increases the backlog for the active pricing model.
+func (ps *L2PricingState) UpdateBacklog(op BacklogOperation, usedGas uint64, usedMultiGas multigas.MultiGas) error {
 	gasModel, err := ps.GasModelToUse()
 	if err != nil {
 		return err
 	}
 	switch gasModel {
 	case GasModelLegacy:
-		return ps.updateLegacyBacklog(true, usedGas)
+		return ps.updateLegacyBacklog(op, usedGas)
 	case GasModelSingleGasConstraints:
-		return ps.updateSingleGasConstraintsBacklogs(true, usedGas)
+		return ps.updateSingleGasConstraintsBacklogs(op, usedGas)
 	case GasModelMultiGasConstraints:
-		return ps.updateMultiGasConstraintsBacklogs(true, usedGas, usedMultiGas)
+		return ps.updateMultiGasConstraintsBacklogs(op, usedGas, usedMultiGas)
 	default:
 		return fmt.Errorf("can not determine gas model")
 	}
 }
 
-// ShrinkBacklog reduces the backlog for the active pricing model.
-func (ps *L2PricingState) ShrinkBacklog(usedGas uint64, usedMultiGas multigas.MultiGas) error {
-	gasModel, err := ps.GasModelToUse()
-	if err != nil {
-		return err
-	}
-	switch gasModel {
-	case GasModelLegacy:
-		return ps.updateLegacyBacklog(false, usedGas)
-	case GasModelSingleGasConstraints:
-		return ps.updateSingleGasConstraintsBacklogs(false, usedGas)
-	case GasModelMultiGasConstraints:
-		return ps.updateMultiGasConstraintsBacklogs(false, usedGas, usedMultiGas)
-	default:
-		return fmt.Errorf("can not determine gas model")
-	}
-}
-
-func (ps *L2PricingState) updateLegacyBacklog(growBacklog bool, usedGas uint64) error {
+func (ps *L2PricingState) updateLegacyBacklog(op BacklogOperation, usedGas uint64) error {
 	backlog, err := ps.GasBacklog()
 	if err != nil {
 		return err
 	}
-	backlog = applyGasDelta(backlog, growBacklog, usedGas)
+	backlog = applyGasDelta(op, backlog, usedGas)
 	return ps.SetGasBacklog(backlog)
 }
 
-func (ps *L2PricingState) updateSingleGasConstraintsBacklogs(growBacklog bool, usedGas uint64) error {
+func (ps *L2PricingState) updateSingleGasConstraintsBacklogs(op BacklogOperation, usedGas uint64) error {
 	constraintsLength, err := ps.gasConstraints.Length()
 	if err != nil {
 		return err
@@ -117,7 +105,7 @@ func (ps *L2PricingState) updateSingleGasConstraintsBacklogs(growBacklog bool, u
 		if err != nil {
 			return err
 		}
-		err = constraint.SetBacklog(applyGasDelta(backlog, growBacklog, usedGas))
+		err = constraint.SetBacklog(applyGasDelta(op, backlog, usedGas))
 		if err != nil {
 			return err
 		}
@@ -125,38 +113,30 @@ func (ps *L2PricingState) updateSingleGasConstraintsBacklogs(growBacklog bool, u
 	return nil
 }
 
-func (ps *L2PricingState) updateMultiGasConstraintsBacklogs(growBacklog bool, usedGas uint64, usedMultiGas multigas.MultiGas) error {
-	if usedMultiGas.SingleGas() != usedGas {
-		log.Warn("usedGas does not match sum of usedMultiGas", "usedGas", usedGas, "usedMultiGas", usedMultiGas.SingleGas())
-	}
-
+func (ps *L2PricingState) updateMultiGasConstraintsBacklogs(op BacklogOperation, _usedGas uint64, usedMultiGas multigas.MultiGas) error {
 	constraintsLength, err := ps.multigasConstraints.Length()
 	if err != nil {
 		return err
 	}
 	for i := range constraintsLength {
 		constraint := ps.OpenMultiGasConstraintAt(i)
-		if growBacklog {
-			err = constraint.IncrementBacklog(usedMultiGas)
-			if err != nil {
-				return err
-			}
-		} else {
-			err = constraint.DecrementBacklog(usedMultiGas)
-			if err != nil {
-				return err
-			}
+		err = constraint.UpdateBacklog(op, usedMultiGas)
+		if err != nil {
+			return err
 		}
 	}
 	return nil
 }
 
 // applyGasDelta adds delta to backlog if growBacklog=true, otherwise subtracts delta (saturating at zero).
-func applyGasDelta(backlog uint64, growBacklog bool, delta uint64) uint64 {
-	if growBacklog {
+func applyGasDelta(op BacklogOperation, backlog uint64, delta uint64) uint64 {
+	switch op {
+	case Grow:
 		return arbmath.SaturatingUAdd(backlog, delta)
-	} else {
+	case Shrink:
 		return arbmath.SaturatingUSub(backlog, delta)
+	default:
+		panic("invalid backlog operation")
 	}
 }
 
@@ -224,7 +204,7 @@ func (ps *L2PricingState) UpdatePricingModel(timePassed uint64) {
 
 func (ps *L2PricingState) updatePricingModelLegacy(timePassed uint64) {
 	speedLimit, _ := ps.SpeedLimitPerSecond()
-	_ = ps.updateLegacyBacklog(false, arbmath.SaturatingUMul(timePassed, speedLimit))
+	_ = ps.updateLegacyBacklog(Shrink, arbmath.SaturatingUMul(timePassed, speedLimit))
 	inertia, _ := ps.PricingInertia()
 	tolerance, _ := ps.BacklogTolerance()
 	backlog, _ := ps.GasBacklog()
@@ -249,7 +229,7 @@ func (ps *L2PricingState) updatePricingModelSingleConstraints(timePassed uint64)
 		// Pay off backlog
 		backlog, _ := constraint.Backlog()
 		gas := arbmath.SaturatingUMul(timePassed, target)
-		backlog = applyGasDelta(backlog, false, gas)
+		backlog = applyGasDelta(Shrink, backlog, gas)
 		_ = constraint.SetBacklog(backlog)
 
 		// Calculate exponent with the formula backlog/divisor
@@ -276,7 +256,7 @@ func (ps *L2PricingState) updatePricingModelMultiConstraints(timePassed uint64) 
 
 		backlog, _ := constraint.Backlog()
 		gas := arbmath.SaturatingUMul(timePassed, target)
-		backlog = applyGasDelta(backlog, false, gas)
+		backlog = applyGasDelta(Shrink, backlog, gas)
 		_ = constraint.SetBacklog(backlog)
 	}
 

@@ -1,8 +1,7 @@
 // Copyright 2025, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-// The constraints package tracks the multi-dimensional gas usage to apply constraint-based pricing.
-package constraints
+package l2pricing
 
 import (
 	"github.com/ethereum/go-ethereum/arbitrum/multigas"
@@ -93,8 +92,8 @@ func (c *MultiGasConstraint) SetResourceWeights(weights map[uint8]uint64) error 
 	return c.sumWeights.Set(total)
 }
 
-// IncrementBacklog increments the constraint backlog based on multi-dimensional gas usage
-func (c *MultiGasConstraint) IncrementBacklog(multiGas multigas.MultiGas) error {
+// UpdateBacklog increases or decreases the backlog depending on the operation specified.
+func (c *MultiGasConstraint) UpdateBacklog(op BacklogOperation, multiGas multigas.MultiGas) error {
 	totalBacklog, err := c.backlog.Get()
 	if err != nil {
 		return err
@@ -111,34 +110,8 @@ func (c *MultiGasConstraint) IncrementBacklog(multiGas multigas.MultiGas) error 
 
 		resourceAmount := multiGas.Get(multigas.ResourceKind(i))
 		weightedAmount := arbmath.SaturatingUMul(resourceAmount, uint64(weight))
-
-		totalBacklog = arbmath.SaturatingUAdd(totalBacklog, weightedAmount)
+		totalBacklog = applyGasDelta(op, totalBacklog, weightedAmount)
 	}
-	return c.SetBacklog(totalBacklog)
-}
-
-// DecrementBacklog decreases the constraint backlog based on multi-dimensional gas usage
-func (c *MultiGasConstraint) DecrementBacklog(multiGas multigas.MultiGas) error {
-	totalBacklog, err := c.backlog.Get()
-	if err != nil {
-		return err
-	}
-
-	for i := range uint8(multigas.NumResourceKind) {
-		weight, err := c.weightedResources[i].Get()
-		if err != nil {
-			return err
-		}
-		if weight == 0 {
-			continue
-		}
-
-		resourceAmount := multiGas.Get(multigas.ResourceKind(i))
-		weightedAmount := arbmath.SaturatingUMul(resourceAmount, uint64(weight))
-
-		totalBacklog = arbmath.SaturatingUSub(totalBacklog, weightedAmount)
-	}
-
 	return c.SetBacklog(totalBacklog)
 }
 

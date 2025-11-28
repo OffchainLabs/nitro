@@ -468,7 +468,7 @@ func (con ArbOwner) SetGasPricingConstraints(c ctx, evm mech, constraints [][3]u
 	}
 
 	if c.State.ArbOSVersion() >= params.ArbosVersion_MultiConstraintFix {
-		limit := c.State.L2PricingState().GasConstraintsMaxNum()
+		limit := l2pricing.GasConstraintsMaxNum
 		if len(constraints) > limit {
 			return fmt.Errorf("too many constraints. Max: %d", limit)
 		}
@@ -497,7 +497,7 @@ func (con ArbOwner) SetMultiGasPricingConstraints(
 	evm mech,
 	constraints []MultiGasConstraint,
 ) error {
-	limit := c.State.L2PricingState().MultiGasConstraintsMaxNum()
+	limit := l2pricing.MultiGasConstraintsMaxNum
 	if len(constraints) > limit {
 		return fmt.Errorf("too many constraints. Max: %d", limit)
 	}

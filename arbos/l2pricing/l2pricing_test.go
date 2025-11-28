@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2025, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package l2pricing
@@ -27,7 +27,7 @@ func PricingForTest(t *testing.T) *L2PricingState {
 func fakeBlockUpdate(t *testing.T, pricing *L2PricingState, gasUsed uint64, timePassed uint64) {
 	t.Helper()
 
-	pricing.storage.Burner().Restrict(pricing.updateLegacyBacklog(true, gasUsed))
+	pricing.storage.Burner().Restrict(pricing.updateLegacyBacklog(Grow, gasUsed))
 	pricing.updatePricingModelLegacy(timePassed)
 }
 
