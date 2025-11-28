@@ -2,15 +2,44 @@
 name: nitro-go-tests
 on:
   workflow_call:
+    inputs:
+      run-name:
+        required: true
+        type: string
+        description: "The name of the test run. It will be used for labeling artifacts."
+      run-defaults-a:
+        required: false
+        type: boolean
+        default: false
+      run-defaults-b:
+        required: false
+        type: boolean
+        default: false
+      run-flaky:
+        required: false
+        type: boolean
+        default: false
+      run-pathdb:
+        required: false
+        type: boolean
+        default: false
+      run-stylus:
+        required: false
+        type: boolean
+        default: false
+      run-challenge:
+        required: false
+        type: boolean
+        default: false
+      run-l3challenge:
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   go-tests:
-    name: Full Go tests (matrix)
+    name: Go tests
     runs-on: arbitrator-ci
-    strategy:
-      fail-fast: false
-      matrix:
-        test-mode: [defaults-A, defaults-B, flaky, pathdb, challenge, stylus, l3challenge]
     services:
       redis:
         image: redis
@@ -37,13 +66,13 @@ jobs:
       - name: Build
         run: make -j8 build test-go-deps
 
-      - name: Build all lint dependencies
+      - name: Build node dependencies
         run: make -j8 build-node-deps
 
       # --------------------- PATHDB MODE ---------------------
 
       - name: run tests without race detection and path state scheme
-        if: matrix.test-mode == 'pathdb'
+        if: inputs.run-pathdb
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh
           --tags cionly --timeout 90m --cover --test_state_scheme path
@@ -51,7 +80,7 @@ jobs:
       # --------------------- DEFAULTS MODE ---------------------
 
       - name: run tests without race detection and hash state scheme (A-batch)
-        if: matrix.test-mode == 'defaults-A'
+        if: inputs.run-defaults-a
         id: run-tests-defaults-a
         continue-on-error: true
         run: >-
@@ -60,7 +89,7 @@ jobs:
           --junitfile test-results/junit-a.xml --run '^Test[A-L]'
 
       - name: run tests without race detection and hash state scheme (B-batch)
-        if: matrix.test-mode == 'defaults-B'
+        if: inputs.run-defaults-b
         id: run-tests-defaults-b
         continue-on-error: true
         run: >-
@@ -69,30 +98,30 @@ jobs:
           --junitfile test-results/junit-b.xml --skip '^Test[A-L]'
 
       - name: Process JUnit XML logs
-        if: startsWith(matrix.test-mode, 'defaults') && always()
+        if: (inputs.run-defaults-a || inputs.run-defaults-b) && always()
         run: python3 ${{ github.workspace }}/.github/workflows/process_junit.py test-results/
 
       - name: Upload Go test Artifacts
-        if: startsWith(matrix.test-mode, 'defaults') && always()
+        if: (inputs.run-defaults-a || inputs.run-defaults-b) && always()
         uses: actions/upload-artifact@v5
         with:
-          name: junit-reports-go-${{ matrix.test-mode }}
+          name: junit-reports-go-${{ inputs.run-defaults-a && 'defaults-a' || 'defaults-b' }}
           path: test-results/junit*.xml
 
       - name: Fail if tests failed
-        if: (matrix.test-mode == 'defaults-A' && steps.run-tests-defaults-a.outcome == 'failure') || (matrix.test-mode == 'defaults-B' && steps.run-tests-defaults-b.outcome == 'failure')
+        if: (inputs.run-defaults-a && steps.run-tests-defaults-a.outcome == 'failure') || (inputs.run-defaults-b && steps.run-tests-defaults-b.outcome == 'failure')
         run: |
           echo "One or more tests failed."
           exit 1
 
       - name: run redis tests
-        if: matrix.test-mode == 'defaults-A'
+        if: inputs.run-defaults-a
         run: >-
           gotestsum --format short-verbose -- -p 1 -run TestRedis ./arbnode/... ./system_tests/...
           -coverprofile=coverage-redis.txt -covermode=atomic -coverpkg=./... -- --test_redis=redis://localhost:6379/0
 
       - name: Upload coverage to Codecov
-        if: startsWith(matrix.test-mode, 'defaults')
+        if: inputs.run-defaults-a || inputs.run-defaults-b
         uses: codecov/codecov-action@v5
         with:
           fail_ci_if_error: false
@@ -101,21 +130,21 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
 
       - name: create block input json file
-        if: matrix.test-mode == 'defaults-A'
+        if: inputs.run-defaults-a
         run: >-
           gotestsum --format short-verbose -- -run TestProgramStorage$ ./system_tests/... --count 1 --
           --recordBlockInputs.enable=true --recordBlockInputs.WithBaseDir="${{ github.workspace }}/target"
           --recordBlockInputs.WithTimestampDirEnabled=false --recordBlockInputs.WithBlockIdInFileNameEnabled=false
 
       - name: run arbitrator prover on block input json
-        if: matrix.test-mode == 'defaults-A'
+        if: inputs.run-defaults-a
         run: |
           make build-prover-bin
           target/bin/prover target/machines/latest/machine.wavm.br -b \
           --json-inputs="${{ github.workspace }}/target/TestProgramStorage/block_inputs.json"
 
       - name: run jit prover on block input json
-        if: matrix.test-mode == 'defaults-A'
+        if: inputs.run-defaults-a
         run: |
           make build-jit
           if [ -n "$(target/bin/jit \
@@ -129,7 +158,7 @@ jobs:
       # --------------------- FLAKY MODE --------------------------
 
       - name: run flaky tests
-        if: matrix.test-mode == 'flaky'
+        if: inputs.run-flaky
         continue-on-error: true
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh
@@ -138,11 +167,11 @@ jobs:
       # --------------------- CHALLENGE MODES ---------------------
 
       - name: build challenge tests
-        if: matrix.test-mode == 'challenge'
+        if: inputs.run-challenge
         run: go test -tags challengetest ./... -run=^$ -v
 
       - name: run L3 challenge tests
-        if: matrix.test-mode == 'l3challenge'
+        if: inputs.run-l3challenge
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh
           --tags challengetest --run TestL3Challenge --timeout 120m --cover
@@ -150,7 +179,7 @@ jobs:
       # --------------------- CHALLENGE MODES ---------------------
 
       - name: run stylus tests
-        if: matrix.test-mode == 'stylus'
+        if: inputs.run-stylus
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh
           --tags stylustest --run TestProgramArbitrator --timeout 60m --cover
@@ -160,5 +189,5 @@ jobs:
       - name: Archive detailed run log
         uses: actions/upload-artifact@v5
         with:
-          name: ${{ matrix.test-mode }}-full.log
+          name: ${{ inputs.run-name }}-full.log
           path: full.log
