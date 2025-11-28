@@ -372,5 +372,5 @@ func dumpKeyset(args []string) error {
 	fmt.Printf("Keyset: %s\n", hexutil.Encode(keysetBytes))
 	fmt.Printf("KeysetHash: %s\n", hexutil.Encode(keysetHash[:]))
 
-	return err
+	return nil
 }
