@@ -102,21 +102,21 @@ func (h *HashCollectorConfig) String() string {
 	str := ""
 	str += h.AssertionMetadata.WasmModuleRoot.String()
 	str += "/"
-	str += fmt.Sprintf("%d", h.AssertionMetadata.FromState.Batch)
+	str += strconv.FormatUint(h.AssertionMetadata.FromState.Batch, 10)
 	str += "/"
-	str += fmt.Sprintf("%d", h.AssertionMetadata.FromState.PosInBatch)
+	str += strconv.FormatUint(h.AssertionMetadata.FromState.PosInBatch, 10)
 	str += "/"
-	str += fmt.Sprintf("%d", h.BlockChallengeHeight)
+	str += strconv.FormatUint(uint64(h.BlockChallengeHeight), 10)
 	str += "/"
 	for _, height := range h.StepHeights {
-		str += fmt.Sprintf("%d", height)
+		str += strconv.FormatUint(uint64(height), 10)
 		str += "/"
 	}
-	str += fmt.Sprintf("%d", h.NumDesiredHashes)
+	str += strconv.FormatUint(h.NumDesiredHashes, 10)
 	str += "/"
-	str += fmt.Sprintf("%d", h.MachineStartIndex)
+	str += strconv.FormatUint(uint64(h.MachineStartIndex), 10)
 	str += "/"
-	str += fmt.Sprintf("%d", h.StepSize)
+	str += strconv.FormatUint(uint64(h.StepSize), 10)
 	return str
 }
 
