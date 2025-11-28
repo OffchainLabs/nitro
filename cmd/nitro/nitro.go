@@ -910,8 +910,9 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 	l2ChainName := k.String("chain.name")
 	l2ChainInfoFiles := k.Strings("chain.info-files")
 	l2ChainInfoJson := k.String("chain.info-json")
+	l2GenesisJsonFile := k.String("init.genesis-json-file")
 	// #nosec G115
-	err = applyChainParameters(k, uint64(l2ChainId), l2ChainName, l2ChainInfoFiles, l2ChainInfoJson)
+	err = applyChainParameters(k, uint64(l2ChainId), l2ChainName, l2ChainInfoFiles, l2ChainInfoJson, l2GenesisJsonFile)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -979,7 +980,7 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 	return &nodeConfig, &l2DevWallet, nil
 }
 
-func applyChainParameters(k *koanf.Koanf, chainId uint64, chainName string, l2ChainInfoFiles []string, l2ChainInfoJson string) error {
+func applyChainParameters(k *koanf.Koanf, chainId uint64, chainName string, l2ChainInfoFiles []string, l2ChainInfoJson string, l2GenesisJsonFile string) error {
 	chainInfo, err := chaininfo.ProcessChainInfo(chainId, chainName, l2ChainInfoFiles, l2ChainInfoJson)
 	if err != nil {
 		return err
@@ -1023,7 +1024,7 @@ func applyChainParameters(k *koanf.Koanf, chainId uint64, chainName string, l2Ch
 	} else if chainInfo.ChainConfig.ArbitrumChainParams.DataAvailabilityCommittee {
 		chainDefaults["node.data-availability.enable"] = true
 	}
-	if !chainInfo.HasGenesisState {
+	if !chainInfo.HasGenesisState && l2GenesisJsonFile == "" {
 		chainDefaults["init.empty"] = true
 	}
 	if parentChainIsArbitrum {
