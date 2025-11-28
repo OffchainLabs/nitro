@@ -30,7 +30,7 @@ jobs:
     uses: ./.github/workflows/_bold-legacy.yml
     secrets: inherit
 
-
+  # --- Full GO tests ---
   go-tests:
     uses: ./.github/workflows/_standard-go-test-suite.yml
     secrets: inherit
