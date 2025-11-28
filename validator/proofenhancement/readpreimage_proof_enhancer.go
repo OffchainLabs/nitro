@@ -99,9 +99,12 @@ func (e *ReadPreimageProofEnhancer) EnhanceProof(ctx context.Context, messageNum
 	}
 
 	// Get validator for this certificate type
-	validator := e.dapRegistry.GetValidator(certificate)
+	if len(certificate) == 0 {
+		return nil, fmt.Errorf("empty certificate")
+	}
+	validator := e.dapRegistry.GetValidator(certificate[0])
 	if validator == nil {
-		return nil, fmt.Errorf("no validator registered for certificate type %x", certificate[0:min(2, len(certificate))])
+		return nil, fmt.Errorf("no validator registered for certificate type 0x%02x", certificate[0])
 	}
 
 	// Generate custom proof with certificate

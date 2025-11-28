@@ -129,6 +129,7 @@ type BatchPoster struct {
 	postedFirstBatch     bool        // indicates if batch poster has posted the first batch
 	fallbackToEthDA      bool        // use EthDA due to AltDA failure
 	ethDAFallbackCounter int         // counts batches posted in EthDA fallback mode
+	currentWriterIndex   int         // index of DA writer to use (reset to 0 after success)
 
 	accessList   func(SequencerInboxAccs, AfterDelayedMessagesRead uint64) types.AccessList
 	parentChain  *parent.ParentChain
@@ -164,10 +165,6 @@ type BatchPosterConfig struct {
 	MaxCalldataBatchSize int `koanf:"max-calldata-batch-size" reload:"hot"`
 	// Maximum 4844 blob enabled batch size.
 	Max4844BatchSize int `koanf:"max-4844-batch-size" reload:"hot"`
-	// Maximum altDA batch size (for all alternative DA systems: external, AnyTrust).
-	// TODO In future it may be useful for different altDA sytems to have different limits,
-	// and the limits should be determined from the provider using the DA API.
-	MaxAltDABatchSize int `koanf:"max-altda-batch-size" reload:"hot"`
 	// Max batch post delay.
 	MaxDelay time.Duration `koanf:"max-delay" reload:"hot"`
 	// Wait for max BatchPost delay.
@@ -210,7 +207,7 @@ func (c *BatchPosterConfig) Validate() error {
 	}
 	c.gasRefunder = common.HexToAddress(c.GasRefunderAddress)
 	if c.MaxSize != 0 {
-		log.Error("max-size is deprecated, use max-calldata-batch-size instead; max-size will be removed in a future release")
+		log.Error("max-size is deprecated; use max-calldata-batch-size for calldata batches, or data-availability.max-batch-size for AnyTrust; max-size will be removed in a future release")
 		if c.MaxCalldataBatchSize == DefaultBatchPosterConfig.MaxCalldataBatchSize {
 			c.MaxCalldataBatchSize = c.MaxSize
 		}
@@ -248,7 +245,6 @@ func BatchPosterConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Int(prefix+".max-size", DefaultBatchPosterConfig.MaxSize, "DEPRECATED: use "+prefix+".max-calldata-batch-size instead")
 	f.Int(prefix+".max-calldata-batch-size", DefaultBatchPosterConfig.MaxCalldataBatchSize, "maximum estimated compressed calldata batch size")
 	f.Int(prefix+".max-4844-batch-size", DefaultBatchPosterConfig.Max4844BatchSize, "maximum estimated compressed 4844 blob enabled batch size")
-	f.Int(prefix+".max-altda-batch-size", DefaultBatchPosterConfig.MaxAltDABatchSize, "maximum estimated compressed batch size when using alternative data availability (eg Anytrust, external)")
 	f.Duration(prefix+".max-delay", DefaultBatchPosterConfig.MaxDelay, "maximum batch posting delay")
 	f.Bool(prefix+".wait-for-max-delay", DefaultBatchPosterConfig.WaitForMaxDelay, "wait for the max batch delay, even if the batch is full")
 	f.Duration(prefix+".poll-interval", DefaultBatchPosterConfig.PollInterval, "how long to wait after no batches are ready to be posted before checking again")
@@ -286,9 +282,7 @@ var DefaultBatchPosterConfig = BatchPosterConfig{
 	// The Max4844BatchSize should be calculated from the values from L1 chain configs
 	// using the eip4844 utility package from go-ethereum.
 	// The default value of 0 causes the batch poster to use the value from go-ethereum.
-	Max4844BatchSize: 0,
-	// MaxAltDABatchSize is the maximum batch size for all alt DA systems (Anytrust, external)
-	MaxAltDABatchSize:              1_000_000,
+	Max4844BatchSize:               0,
 	PollInterval:                   time.Second * 10,
 	ErrorDelay:                     time.Second * 10,
 	MaxDelay:                       time.Hour,
@@ -327,7 +321,6 @@ var TestBatchPosterConfig = BatchPosterConfig{
 	DisableDapFallbackStoreDataOnChain: true,
 	MaxCalldataBatchSize:               100000,
 	Max4844BatchSize:                   DefaultBatchPosterConfig.Max4844BatchSize,
-	MaxAltDABatchSize:                  DefaultBatchPosterConfig.MaxAltDABatchSize,
 	PollInterval:                       time.Millisecond * 10,
 	ErrorDelay:                         time.Millisecond * 10,
 	MaxDelay:                           0,
@@ -944,7 +937,21 @@ func (b *BatchPoster) newBatchSegments(ctx context.Context, firstDelayed uint64,
 			maxSize = blobs.BlobEncodableData*(int(maxBlobGasPerBlock)/params.BlobTxBlobGasPerBlob)/2 - blobBatchEncodingOverhead
 		}
 	} else if usingAltDA {
-		maxSize = config.MaxAltDABatchSize
+		// Query the currently selected DA writer to get its max batch size
+		if len(b.dapWriters) == 0 {
+			return nil, fmt.Errorf("using AltDA but no DA writers configured")
+		}
+		if b.currentWriterIndex >= len(b.dapWriters) {
+			return nil, fmt.Errorf("currentWriterIndex %d exceeds number of writers %d", b.currentWriterIndex, len(b.dapWriters))
+		}
+		writerMaxSize, err := b.dapWriters[b.currentWriterIndex].GetMaxMessageSize().Await(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get max message size from DA writer %d: %w", b.currentWriterIndex, err)
+		}
+		if writerMaxSize <= 0 {
+			return nil, fmt.Errorf("DA writer %d returned invalid max message size: %d", b.currentWriterIndex, writerMaxSize)
+		}
+		maxSize = writerMaxSize
 	} else {
 		// Using calldata for EthDA
 		if maxSize <= SequencerMessageHeaderSize {
@@ -1743,61 +1750,53 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 			return false, fmt.Errorf("%w: batch position changed from %v to %v while creating batch", storage.ErrStorageRace, batchPosition, actualBatchPosition)
 		}
 
-		// Try each DA writer in order
-		var daSuccess bool
-		var lastErr error
-		var fallbackRequested bool
+		// Try the DA writer at currentWriterIndex
+		writerIndex := b.currentWriterIndex
+		writer := b.dapWriters[writerIndex]
 
-		log.Debug("Attempting to store batch with DA writers", "numWriters", len(b.dapWriters), "batchSize", len(batchData))
-		for i, writer := range b.dapWriters {
-			storeStart := time.Now()
-			log.Debug("Trying DA writer", "writerIndex", i, "totalWriters", len(b.dapWriters))
-			// #nosec G115
-			sequencerMsg, err = writer.Store(batchData, uint64(time.Now().Add(config.DASRetentionPeriod).Unix())).Await(ctx)
-			storeDuration := time.Since(storeStart)
-			if err != nil {
-				lastErr = err
-				if errors.Is(err, daprovider.ErrFallbackRequested) {
-					log.Warn("DA writer explicitly requested fallback", "writerIndex", i, "error", err, "duration", storeDuration)
-					fallbackRequested = true
-					continue // Try next writer
+		log.Debug("Attempting to store batch with DA writer", "writerIndex", writerIndex, "numWriters", len(b.dapWriters), "batchSize", len(batchData))
+		storeStart := time.Now()
+		// #nosec G115
+		sequencerMsg, err = writer.Store(batchData, uint64(time.Now().Add(config.DASRetentionPeriod).Unix())).Await(ctx)
+		storeDuration := time.Since(storeStart)
+
+		if err != nil {
+			if errors.Is(err, daprovider.ErrMessageTooLarge) {
+				log.Info("DA writer reports message too large, will rebuild batch", "writerIndex", writerIndex, "error", err, "duration", storeDuration, "batchSize", len(batchData))
+				b.building = nil
+				return true, nil // Trigger immediate rebuild with same writer
+			}
+			if errors.Is(err, daprovider.ErrFallbackRequested) {
+				log.Warn("DA writer explicitly requested fallback", "writerIndex", writerIndex, "error", err, "duration", storeDuration)
+				// Check if there's a next writer to try
+				if writerIndex+1 < len(b.dapWriters) {
+					b.currentWriterIndex = writerIndex + 1
+					b.building = nil
+					log.Info("Will rebuild batch for next DA writer", "nextWriterIndex", b.currentWriterIndex)
+					return true, nil // Trigger rebuild with next writer's size
 				}
-				// Non-fallback error - fail immediately
-				log.Error("DA writer failed, operator action required", "writerIndex", i, "error", err, "duration", storeDuration)
+				// No more writers - fall back to EthDA
 				batchPosterDAFailureCounter.Inc(1)
-				return false, fmt.Errorf("DA writer %d failed: %w", i, err)
+				if config.DisableDapFallbackStoreDataOnChain {
+					log.Error("DA fallback to EthDA is disabled, cannot post batch", "error", err)
+					return false, fmt.Errorf("all DA writers failed: %w", err)
+				}
+				log.Info("DA writers exhausted, will rebuild for EthDA", "error", err, "batchSize", len(batchData))
+				b.fallbackToEthDA = true
+				b.ethDAFallbackCounter = 0
+				b.currentWriterIndex = 0 // Reset for next batch after EthDA fallback period
+				b.building = nil
+				return true, nil // Trigger rebuild for EthDA
 			}
-
-			log.Info("DA writer succeeded", "writerIndex", i, "duration", storeDuration)
-			daSuccess = true
-			batchPosterDASuccessCounter.Inc(1)
-			batchPosterDALastSuccessfulActionGauge.Update(time.Now().Unix())
-			break
-		}
-
-		// All DA writers failed
-		if !daSuccess {
-			log.Warn("All DA writers failed", "numWriters", len(b.dapWriters), "lastError", lastErr)
+			// Non-fallback error - fail immediately
+			log.Error("DA writer failed, operator action required", "writerIndex", writerIndex, "error", err, "duration", storeDuration)
 			batchPosterDAFailureCounter.Inc(1)
-
-			// Only fall back to EthDA if explicitly requested via ErrFallbackRequested
-			if !fallbackRequested {
-				log.Error("DA writers failed without requesting fallback, operator action required", "error", lastErr)
-				return false, fmt.Errorf("all DA writers failed: %w", lastErr)
-			}
-
-			if config.DisableDapFallbackStoreDataOnChain {
-				log.Error("DA fallback to EthDA is disabled, cannot post batch", "error", lastErr)
-				return false, fmt.Errorf("all DA writers failed: %w", lastErr)
-			}
-
-			// Fall back to EthDA by triggering a rebuild with EthDA size constraints
-			log.Warn("DA writers explicitly requested fallback, will rebuild for EthDA", "lastError", lastErr, "batchSize", len(batchData))
-			b.fallbackToEthDA = true
-			b.ethDAFallbackCounter = 0
-			b.building = nil
-			return true, nil // Trigger immediate rebuild
+			return false, fmt.Errorf("DA writer %d failed: %w", writerIndex, err)
 		}
+
+		log.Debug("DA writer succeeded", "writerIndex", writerIndex, "duration", storeDuration)
+		batchPosterDASuccessCounter.Inc(1)
+		batchPosterDALastSuccessfulActionGauge.Update(time.Now().Unix())
 	} else {
 		// No DA writers or forced to EthDA
 		sequencerMsg = batchData
@@ -1912,16 +1911,15 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 		// These readers can fetch data that was already posted to
 		// external DA systems (eg AnyTrust) before this batch transaction
 		if b.dapReaders != nil {
-			for _, headerBytes := range b.dapReaders.SupportedHeaderBytes() {
+			for _, headerByte := range b.dapReaders.SupportedHeaderBytes() {
 				// Skip blob reader, we'll add simulated reader instead after this loop
-				if len(headerBytes) > 0 && headerBytes[0] == daprovider.BlobHashesHeaderFlag {
+				if headerByte == daprovider.BlobHashesHeaderFlag {
 					continue
 				}
-				// Use the headerBytes itself as the message for lookup (prefix matching will match exactly)
-				reader := b.dapReaders.GetReader(headerBytes)
+				reader := b.dapReaders.GetReader(headerByte)
 				if reader != nil {
-					if err := dapReaders.Register(headerBytes, reader, nil); err != nil {
-						return false, fmt.Errorf("failed to register reader for header bytes %x: %w", headerBytes, err)
+					if err := dapReaders.Register(headerByte, reader, nil); err != nil {
+						return false, fmt.Errorf("failed to register reader for header byte %x: %w", headerByte, err)
 					}
 				}
 			}
@@ -1982,6 +1980,7 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 		return false, err
 	}
 	b.postedFirstBatch = true
+	b.currentWriterIndex = 0 // Reset to first writer after successful batch
 	log.Info(
 		"BatchPoster: batch sent",
 		"sequenceNumber", batchPosition.NextSeqNum,

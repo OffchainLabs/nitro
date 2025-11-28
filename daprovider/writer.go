@@ -19,6 +19,12 @@ import (
 // intervention than automatically falling back.
 var ErrFallbackRequested = errors.New("DA provider requests fallback to next writer")
 
+// ErrMessageTooLarge is returned by a DA provider when the batch is too large
+// for the current backend. When this error is returned, the batch poster will
+// invalidate the current batch, query GetMaxMessageSize again (which may return
+// a smaller size), and rebuild with the new size limit.
+var ErrMessageTooLarge = errors.New("message too large for current DA backend")
+
 type Writer interface {
 	// Store posts the batch data to the invoking DA provider
 	// And returns sequencerMsg which is later used to retrieve the batch data
@@ -26,4 +32,11 @@ type Writer interface {
 		message []byte,
 		timeout uint64,
 	) containers.PromiseInterface[[]byte]
+
+	// GetMaxMessageSize returns the maximum message size the writer can accept.
+	// The batch poster calls this when starting to build a batch to determine
+	// the size limit. A positive value must be returned; returning 0 or negative
+	// will cause an error. This is called every batch since the size may change
+	// dynamically (e.g., due to backend conditions or fallback scenarios).
+	GetMaxMessageSize() containers.PromiseInterface[int]
 }

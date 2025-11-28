@@ -35,6 +35,11 @@ func (w *Writer) Store(
 	return containers.NewReadyPromise(certificate, err)
 }
 
+func (w *Writer) GetMaxMessageSize() containers.PromiseInterface[int] {
+	// Return 0 to indicate use default size limit
+	return containers.NewReadyPromise(0, nil)
+}
+
 func (w *Writer) store(
 	message []byte,
 ) ([]byte, error) {

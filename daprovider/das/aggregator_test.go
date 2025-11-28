@@ -336,7 +336,8 @@ func TestDAS_InsufficientBackendsTriggersFallback(t *testing.T) {
 	Require(t, err)
 
 	// Wrap the aggregator with writerForDAS to test error conversion
-	writer := dasutil.NewWriterForDAS(aggregator)
+	// Use 0 for maxMessageSize to indicate use default
+	writer := dasutil.NewWriterForDAS(aggregator, 0)
 
 	rawMsg := []byte("It's time for you to see the fnords.")
 	promise := writer.Store(rawMsg, 0)

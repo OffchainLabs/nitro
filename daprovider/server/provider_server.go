@@ -31,7 +31,7 @@ import (
 // lint:require-exhaustive-initialization
 type ReaderServer struct {
 	reader      daprovider.Reader
-	headerBytes [][]byte // Supported header byte strings for this provider
+	headerBytes []byte // Supported header bytes for this provider
 }
 
 // lint:require-exhaustive-initialization
@@ -89,7 +89,7 @@ func fetchJWTSecret(fileName string) ([]byte, error) {
 // NewServerWithDAPProvider creates a new server with pre-created reader/writer/validator components.
 // The server supports the Data Stream protocol (see `data_streaming` package). The `verifier` parameter is used for
 // authenticating the sender (`daclient`).
-func NewServerWithDAPProvider(ctx context.Context, config *ServerConfig, reader daprovider.Reader, writer daprovider.Writer, validator daprovider.Validator, headerBytes [][]byte, verifier *data_streaming.PayloadVerifier) (*http.Server, error) {
+func NewServerWithDAPProvider(ctx context.Context, config *ServerConfig, reader daprovider.Reader, writer daprovider.Writer, validator daprovider.Validator, headerBytes []byte, verifier *data_streaming.PayloadVerifier) (*http.Server, error) {
 	listener, err := net.Listen("tcp", fmt.Sprintf("%s:%d", config.Addr, config.Port))
 	if err != nil {
 		return nil, err
@@ -180,13 +180,8 @@ func NewServerWithDAPProvider(ctx context.Context, config *ServerConfig, reader 
 // ReaderServer methods
 
 func (s *ReaderServer) GetSupportedHeaderBytes(ctx context.Context) (*server_api.SupportedHeaderBytesResult, error) {
-	// Convert [][]byte to []hexutil.Bytes
-	headerBytes := make([]hexutil.Bytes, len(s.headerBytes))
-	for i, hb := range s.headerBytes {
-		headerBytes[i] = hexutil.Bytes(hb)
-	}
 	return &server_api.SupportedHeaderBytesResult{
-		HeaderBytes: headerBytes,
+		HeaderBytes: hexutil.Bytes(s.headerBytes),
 	}, nil
 }
 
@@ -266,4 +261,12 @@ func (s *WriterServer) CommitChunkedStore(ctx context.Context, messageId hexutil
 func (s *WriterServer) Store(ctx context.Context, message hexutil.Bytes, timeout hexutil.Uint64) (*server_api.StoreResult, error) {
 	serializedDACert, err := s.writer.Store(message, uint64(timeout)).Await(ctx)
 	return &server_api.StoreResult{SerializedDACert: serializedDACert}, err
+}
+
+func (s *WriterServer) GetMaxMessageSize(ctx context.Context) (*server_api.MaxMessageSizeResult, error) {
+	maxSize, err := s.writer.GetMaxMessageSize().Await(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return &server_api.MaxMessageSizeResult{MaxSize: maxSize}, nil
 }

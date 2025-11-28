@@ -73,7 +73,7 @@ func setupProviderServer(ctx context.Context, t *testing.T) *http.Server {
 	reader := referenceda.NewReader(storage, nil, dummyAddress)
 	writer := referenceda.NewWriter(dataSigner)
 	validator := referenceda.NewValidator(nil, dummyAddress)
-	headerBytes := [][]byte{{daprovider.DACertificateMessageHeaderFlag, referenceda.ReferenceDAProviderType}}
+	headerBytes := []byte{daprovider.DACertificateMessageHeaderFlag}
 
 	providerServer, err := NewServerWithDAPProvider(ctx, &providerServerConfig, reader, writer, validator, headerBytes, data_streaming.PayloadCommitmentVerifier())
 	testhelpers.RequireImpl(t, err)

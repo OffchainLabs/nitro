@@ -158,7 +158,7 @@ func NewClient(ctx context.Context, config *ClientConfig, payloadSigner *data_st
 }
 
 type SupportedHeaderBytesResult struct {
-	HeaderBytes [][]byte
+	HeaderBytes []byte
 }
 
 func (c *Client) GetSupportedHeaderBytes() containers.PromiseInterface[SupportedHeaderBytesResult] {
@@ -167,12 +167,17 @@ func (c *Client) GetSupportedHeaderBytes() containers.PromiseInterface[Supported
 		if err := c.CallContext(ctx, &result, "daprovider_getSupportedHeaderBytes"); err != nil {
 			return SupportedHeaderBytesResult{}, fmt.Errorf("error returned from daprovider_getSupportedHeaderBytes rpc method: %w", err)
 		}
-		// Convert []hexutil.Bytes to [][]byte
-		headerBytes := make([][]byte, len(result.HeaderBytes))
-		for i, hb := range result.HeaderBytes {
-			headerBytes[i] = hb
+		return SupportedHeaderBytesResult{HeaderBytes: result.HeaderBytes}, nil
+	})
+}
+
+func (c *Client) GetMaxMessageSize() containers.PromiseInterface[int] {
+	return containers.DoPromise(context.Background(), func(ctx context.Context) (int, error) {
+		var result server_api.MaxMessageSizeResult
+		if err := c.CallContext(ctx, &result, "daprovider_getMaxMessageSize"); err != nil {
+			return 0, fmt.Errorf("error returned from daprovider_getMaxMessageSize rpc method: %w", err)
 		}
-		return SupportedHeaderBytesResult{HeaderBytes: headerBytes}, nil
+		return result.MaxSize, nil
 	})
 }
 
@@ -232,6 +237,9 @@ func (c *Client) store(ctx context.Context, message []byte, timeout uint64) (*se
 			if strings.Contains(err.Error(), daprovider.ErrFallbackRequested.Error()) {
 				return nil, fmt.Errorf("%w (from external DA provider: %w)", daprovider.ErrFallbackRequested, err)
 			}
+			if strings.Contains(err.Error(), daprovider.ErrMessageTooLarge.Error()) {
+				return nil, fmt.Errorf("%w (from external DA provider: %w)", daprovider.ErrMessageTooLarge, err)
+			}
 			return nil, fmt.Errorf("error returned from daprovider server (single-call store protocol), err: %w", err)
 		}
 		return storeResult, nil
@@ -245,10 +253,12 @@ func (c *Client) store(ctx context.Context, message []byte, timeout uint64) (*se
 		if strings.Contains(err.Error(), daprovider.ErrFallbackRequested.Error()) {
 			return nil, fmt.Errorf("%w (from external DA provider: %w)", daprovider.ErrFallbackRequested, err)
 		}
+		if strings.Contains(err.Error(), daprovider.ErrMessageTooLarge.Error()) {
+			return nil, fmt.Errorf("%w (from external DA provider: %w)", daprovider.ErrMessageTooLarge, err)
+		}
 		return nil, fmt.Errorf("error returned from daprovider server (chunked store protocol), err: %w", err)
-	} else {
-		return storeResult, nil
 	}
+	return storeResult, nil
 }
 
 // GenerateReadPreimageProof generates a proof for a specific preimage at a given offset

@@ -127,7 +127,7 @@ func TestCustomDAProofEnhancement(t *testing.T) {
 
 	// Create DA provider registry and register the mock validator
 	registry := daprovider.NewDAProviderRegistry()
-	err := registry.Register([]byte{0x01, 0xFF}, nil, mockValidator)
+	err := registry.Register(0x01, nil, mockValidator)
 	if err != nil {
 		t.Fatalf("Failed to register mock validator: %v", err)
 	}
@@ -263,7 +263,7 @@ func TestValidateCertificateProofEnhancement(t *testing.T) {
 
 	// Create DA provider registry and register the mock validator
 	registry := daprovider.NewDAProviderRegistry()
-	err := registry.Register([]byte{0x01, 0xFF}, nil, mockValidator)
+	err := registry.Register(0x01, nil, mockValidator)
 	if err != nil {
 		t.Fatalf("Failed to register mock validator: %v", err)
 	}
@@ -356,7 +356,7 @@ func TestNewCustomDAProofEnhancer(t *testing.T) {
 
 	// Create DA provider registry and register the mock validator
 	registry := daprovider.NewDAProviderRegistry()
-	err := registry.Register([]byte{0x01, 0xFF}, nil, mockValidator)
+	err := registry.Register(0x01, nil, mockValidator)
 	if err != nil {
 		t.Fatalf("Failed to register mock validator: %v", err)
 	}
@@ -467,7 +467,7 @@ func TestProofEnhancerErrorCases(t *testing.T) {
 
 		// Create DA provider registry and register the mock validator
 		registry := daprovider.NewDAProviderRegistry()
-		err := registry.Register([]byte{0x01, 0xFF}, nil, validator)
+		err := registry.Register(0x01, nil, validator)
 		if err != nil {
 			t.Fatalf("Failed to register mock validator: %v", err)
 		}
@@ -502,7 +502,7 @@ func TestProofEnhancerErrorCases(t *testing.T) {
 
 		// Create DA provider registry and register the mock validator
 		registry := daprovider.NewDAProviderRegistry()
-		err := registry.Register([]byte{0x01, 0xFF}, nil, validator)
+		err := registry.Register(0x01, nil, validator)
 		if err != nil {
 			t.Fatalf("Failed to register mock validator: %v", err)
 		}
