@@ -10,31 +10,36 @@ on:
       run-defaults-a:
         required: false
         type: boolean
-        default: false
       run-defaults-b:
         required: false
         type: boolean
-        default: false
       run-flaky:
         required: false
         type: boolean
-        default: false
       run-pathdb:
         required: false
         type: boolean
-        default: false
       run-stylus:
         required: false
         type: boolean
-        default: false
       run-challenge:
         required: false
         type: boolean
-        default: false
       run-l3challenge:
         required: false
         type: boolean
-        default: false
+      run-legacy-challenge:
+        required: false
+        type: boolean
+      run-race:
+        required: false
+        type: boolean
+      run-long:
+        required: false
+        type: boolean
+      run-execution-spec-tests:
+        required: false
+        type: boolean
 
 jobs:
   go-tests:
@@ -168,7 +173,9 @@ jobs:
 
       - name: build challenge tests
         if: inputs.run-challenge
-        run: go test -tags challengetest ./... -run=^$ -v
+        run: >-
+          ${{ github.workspace }}/.github/workflows/gotestsum.sh --tags challengetest
+          --run TestChallenge --timeout 120m --cover
 
       - name: run L3 challenge tests
         if: inputs.run-l3challenge
@@ -176,13 +183,42 @@ jobs:
           ${{ github.workspace }}/.github/workflows/gotestsum.sh
           --tags challengetest --run TestL3Challenge --timeout 120m --cover
 
-      # --------------------- CHALLENGE MODES ---------------------
+      - name: run legacy challenge tests
+        if: inputs.run-legacy-challenge
+        run: >-
+          ${{ github.workspace }}/.github/workflows/gotestsum.sh --tags legacychallengetest
+          --run TestChallenge --timeout 60m --cover
+
+      # --------------------- STYLUS MODE ---------------------
 
       - name: run stylus tests
         if: inputs.run-stylus
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh
           --tags stylustest --run TestProgramArbitrator --timeout 60m --cover
+
+      # --------------------- RACE MODE ---------------------
+
+      - name: run race tests
+        if: inputs.run-race
+        run: >-
+          ${{ github.workspace }}/.github/workflows/gotestsum.sh 
+          --race --timeout 90m --test_state_scheme hash
+
+
+      # --------------------- LONG MODE ---------------------
+
+      - name: run long tests
+        if: inputs.run-long
+        run: >-
+          ${{ github.workspace }}/.github/workflows/gotestsum.sh --tags stylustest
+          --run TestProgramLong --timeout 60m --cover
+
+      # --------------------- EXECUTION SPEC MODE ---------------------
+
+      - name: run execution spec tests
+        if: inputs.run-execution-spec-tests
+        run: ${{ github.workspace }}/.github/workflows/runExecutionSpecTests.sh
 
       # --------------------- ARCHIVE LOGS FOR ALL MODES ---------------------
 
