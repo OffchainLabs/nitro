@@ -818,7 +818,7 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
     /// [`Ink and Gas`] for more information on Stylus's compute pricing.
     ///
     /// [`GAS`]: https://www.evm.codes/#5a
-    /// [`Ink and Gas`]: https://developer.arbitrum.io/TODO
+    /// [`Ink and Gas`]: https://docs.arbitrum.io/stylus/concepts/gas-metering#ink-and-gas
     fn evm_ink_left(&mut self) -> Result<Ink, Self::Err> {
         self.buy_ink(hostio::EVM_INK_LEFT_BASE_INK)?;
         let ink = self.ink_ready()?;
