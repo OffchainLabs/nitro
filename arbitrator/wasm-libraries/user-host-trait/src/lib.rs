@@ -976,7 +976,7 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
     /// Gets the price of ink in evm gas basis points. See [`Ink and Gas`] for more information on
     /// Stylus's compute-pricing model.
     ///
-    /// [`Ink and Gas`]: https://developer.arbitrum.io/TODO
+    /// [`Ink and Gas`]: https://docs.arbitrum.io/stylus/concepts/gas-metering#ink-and-gas
     fn tx_ink_price(&mut self) -> Result<u32, Self::Err> {
         self.buy_ink(hostio::TX_INK_PRICE_BASE_INK)?;
         let ink_price = self.pricing().ink_price;
