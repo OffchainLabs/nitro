@@ -19,7 +19,7 @@ import (
 func TestRecreateMissingStates(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithDatabase(rawdb.DBPebble)
 	builder.RequireScheme(t, rawdb.HashScheme)
 	builder.execConfig.Caching.Archive = true
 	builder.execConfig.Caching.MaxNumberOfBlocksToSkipStateSaving = 16
