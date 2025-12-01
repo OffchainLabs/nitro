@@ -139,7 +139,7 @@ pub unsafe extern "C" fn programs__new_program(
 /// consumes module hash
 /// returns true if we should call into program_prepare, false otherwise
 #[no_mangle]
-pub unsafe extern "C" fn programs__program_requires_prepare(module_hash_ptr: GuestPtr) -> u32 {
+pub unsafe extern "C" fn programs__program_requires_prepare(_module_hash_ptr: GuestPtr) -> u32 {
     0
 }
 
@@ -147,13 +147,18 @@ pub unsafe extern "C" fn programs__program_requires_prepare(module_hash_ptr: Gue
 /// consumes activated program module hash and wasm code
 #[no_mangle]
 pub unsafe extern "C" fn programs__program_prepare(
-    module_hash_ptr: GuestPtr,
-    code_ptr: GuestPtr,
+    _state_ptr: GuestPtr,
+    _module_hash_ptr: GuestPtr,
+    _address_for_logging_ptr: GuestPtr,
+    _code_ptr: GuestPtr,
+    _code_size: u64,
     _code_hash_ptr: GuestPtr,
+    _max_wasm_size: u32,
     _page_limit: u32,
-    _arbos_version_for_gas: u32,
-    stylus_version: u32,
-    debug: u32,
+    _time: u64,
+    _debug_mode: u32,
+    _program_ptr: GuestPtr,
+    _run_ctx_ptr: GuestPtr,
 ) {
 }
 
