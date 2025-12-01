@@ -191,24 +191,14 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 	pubkey, _, err := das.GenerateAndStoreKeys(keyDir)
 	Require(t, err)
 
-	serverConfig := das.DataAvailabilityConfig{
-		Enable: true,
-
-		LocalCache: das.TestCacheConfig,
-
-		LocalFileStorage: das.LocalFileStorageConfig{
-			Enable:       true,
-			DataDir:      fileDataDir,
-			MaxRetention: time.Hour * 24 * 30,
-		},
-
-		Key: das.KeyConfig{
-			KeyDir: keyDir,
-		},
-
-		RequestTimeout: 5 * time.Second,
-		// L1NodeURL: normally we would have to set this but we are passing in the already constructed client and addresses to the factory
-	}
+	serverConfig := das.DefaultDataAvailabilityConfig
+	serverConfig.Enable = true
+	serverConfig.LocalCache = das.TestCacheConfig
+	serverConfig.LocalFileStorage.Enable = true
+	serverConfig.LocalFileStorage.DataDir = fileDataDir
+	serverConfig.LocalFileStorage.MaxRetention = time.Hour * 24 * 30
+	serverConfig.Key.KeyDir = keyDir
+	// L1NodeURL: normally we would have to set this but we are passing in the already constructed client and addresses to the factory
 
 	daReader, daWriter, signatureVerifier, daHealthChecker, lifecycleManager, err := das.CreateDAComponentsForDaserver(ctx, &serverConfig, l1Reader, &builder.addresses.SequencerInbox)
 	Require(t, err)
@@ -226,12 +216,9 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 	authorizeDASKeyset(t, ctx, pubkeyA, builder.L1Info, builder.L1.Client)
 
 	//
-	builder.nodeConfig.DataAvailability = das.DataAvailabilityConfig{
-		Enable: true,
-
-		// AggregatorConfig set up below
-		RequestTimeout: 5 * time.Second,
-	}
+	builder.nodeConfig.DataAvailability = das.DefaultDataAvailabilityConfig
+	builder.nodeConfig.DataAvailability.Enable = true
+	// AggregatorConfig set up below
 	beConfigA := das.BackendConfig{
 		URL:    "http://" + rpcLis.Addr().String(),
 		Pubkey: blsPubToBase64(pubkey),
@@ -249,16 +236,10 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 
 	// Create node to sync from chain
 	l1NodeConfigB := arbnode.ConfigDefaultL1NonSequencerTest()
-	l1NodeConfigB.DataAvailability = das.DataAvailabilityConfig{
-		Enable: true,
-
-		// AggregatorConfig set up below
-
-		RequestTimeout: 5 * time.Second,
-	}
-
-	l1NodeConfigB.BlockValidator.Enable = false
+	l1NodeConfigB.DataAvailability = das.DefaultDataAvailabilityConfig
 	l1NodeConfigB.DataAvailability.Enable = true
+	// AggregatorConfig set up below
+	l1NodeConfigB.BlockValidator.Enable = false
 	l1NodeConfigB.DataAvailability.RestAggregator = das.DefaultRestfulClientAggregatorConfig
 	l1NodeConfigB.DataAvailability.RestAggregator.Enable = true
 	l1NodeConfigB.DataAvailability.RestAggregator.Urls = []string{"http://" + restLis.Addr().String()}

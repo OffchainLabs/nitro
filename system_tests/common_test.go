@@ -2072,20 +2072,14 @@ func setupConfigWithDAS(
 	dasSignerKey, _, err := das.GenerateAndStoreKeys(dbPath)
 	Require(t, err)
 
-	dasConfig := &das.DataAvailabilityConfig{
-		Enable: enableDas,
-		Key: das.KeyConfig{
-			KeyDir: dbPath,
-		},
-		LocalFileStorage: das.LocalFileStorageConfig{
-			Enable:       enableFileStorage,
-			DataDir:      dbPath,
-			MaxRetention: time.Hour * 24 * 30,
-		},
-		RequestTimeout:           5 * time.Second,
-		PanicOnError:             true,
-		DisableSignatureChecking: true,
-	}
+	dasConfig := das.DefaultDataAvailabilityConfig
+	dasConfig.Enable = enableDas
+	dasConfig.Key.KeyDir = dbPath
+	dasConfig.LocalFileStorage.Enable = enableFileStorage
+	dasConfig.LocalFileStorage.DataDir = dbPath
+	dasConfig.LocalFileStorage.MaxRetention = time.Hour * 24 * 30
+	dasConfig.PanicOnError = true
+	dasConfig.DisableSignatureChecking = true
 
 	l1NodeConfigA.DataAvailability = das.DefaultDataAvailabilityConfig
 	var lifecycleManager *das.LifecycleManager
@@ -2094,7 +2088,7 @@ func setupConfigWithDAS(
 	var daHealthChecker das.DataAvailabilityServiceHealthChecker
 	var signatureVerifier *das.SignatureVerifier
 	if dasModeString != "onchain" && dasModeString != "referenceda" {
-		daReader, daWriter, signatureVerifier, daHealthChecker, lifecycleManager, err = das.CreateDAComponentsForDaserver(ctx, dasConfig, nil, nil)
+		daReader, daWriter, signatureVerifier, daHealthChecker, lifecycleManager, err = das.CreateDAComponentsForDaserver(ctx, &dasConfig, nil, nil)
 
 		Require(t, err)
 		rpcLis, err := net.Listen("tcp", "localhost:0")

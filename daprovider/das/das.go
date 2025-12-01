@@ -22,6 +22,7 @@ type DataAvailabilityServiceHealthChecker interface {
 }
 
 // This specifically refers to AnyTrust DA Config and will be moved/renamed in future.
+// lint:require-exhaustive-initialization
 type DataAvailabilityConfig struct {
 	Enable bool `koanf:"enable"`
 
@@ -50,12 +51,20 @@ type DataAvailabilityConfig struct {
 }
 
 var DefaultDataAvailabilityConfig = DataAvailabilityConfig{
-	RequestTimeout: 5 * time.Second,
-	Enable:         false,
-	MaxBatchSize:   1_000_000, // 1MB default
-	RestAggregator: DefaultRestfulClientAggregatorConfig,
-	RPCAggregator:  DefaultAggregatorConfig,
-	PanicOnError:   false,
+	Enable:                          false,
+	RequestTimeout:                  5 * time.Second,
+	MaxBatchSize:                    1_000_000, // 1MB default
+	LocalCache:                      DefaultCacheConfig,
+	RedisCache:                      DefaultRedisConfig,
+	LocalFileStorage:                DefaultLocalFileStorageConfig,
+	S3Storage:                       DefaultS3StorageServiceConfig,
+	GoogleCloudStorage:              DefaultGoogleCloudStorageServiceConfig,
+	Key:                             DefaultKeyConfig,
+	RPCAggregator:                   DefaultAggregatorConfig,
+	RestAggregator:                  DefaultRestfulClientAggregatorConfig,
+	ExtraSignatureCheckingPublicKey: "",
+	PanicOnError:                    false,
+	DisableSignatureChecking:        false,
 }
 
 func OptionalAddressFromString(s string) (*common.Address, error) {

@@ -29,17 +29,11 @@ func testDASStoreRetrieveMultipleInstances(t *testing.T, storageType string) {
 		Fail(t, "unknown storage type")
 	}
 
-	config := DataAvailabilityConfig{
-		Enable: true,
-		Key: KeyConfig{
-			KeyDir: dbPath,
-		},
-		LocalFileStorage: LocalFileStorageConfig{
-			Enable:       enableFileStorage,
-			DataDir:      dbPath,
-			MaxRetention: DefaultLocalFileStorageConfig.MaxRetention,
-		},
-	}
+	config := DefaultDataAvailabilityConfig
+	config.Enable = true
+	config.Key.KeyDir = dbPath
+	config.LocalFileStorage.Enable = enableFileStorage
+	config.LocalFileStorage.DataDir = dbPath
 
 	storageService, lifecycleManager, err := CreatePersistentStorageService(firstCtx, &config)
 	Require(t, err)
@@ -108,17 +102,11 @@ func testDASMissingMessage(t *testing.T, storageType string) {
 		Fail(t, "unknown storage type")
 	}
 
-	config := DataAvailabilityConfig{
-		Enable: true,
-		Key: KeyConfig{
-			KeyDir: dbPath,
-		},
-		LocalFileStorage: LocalFileStorageConfig{
-			Enable:       enableFileStorage,
-			DataDir:      dbPath,
-			MaxRetention: DefaultLocalFileStorageConfig.MaxRetention,
-		},
-	}
+	config := DefaultDataAvailabilityConfig
+	config.Enable = true
+	config.Key.KeyDir = dbPath
+	config.LocalFileStorage.Enable = enableFileStorage
+	config.LocalFileStorage.DataDir = dbPath
 
 	storageService, lifecycleManager, err := CreatePersistentStorageService(ctx, &config)
 	Require(t, err)
