@@ -549,7 +549,7 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, 
 	Require(t, err)
 
 	// Create DA writers for both nodes
-	daWriterA := referenceda.NewWriter(dataSigner)
+	daWriterA := referenceda.NewWriter(dataSigner, referenceda.DefaultConfig.MaxBatchSize)
 
 	totalMessagesPosted := int64(0)
 	numMessagesPerBatch := int64(5)
@@ -608,7 +608,7 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, 
 	var certificate2 []byte
 	if evilStrategy == UntrustedSignerCert {
 		// For UntrustedSignerCert, use a writer with untrusted signer
-		daWriterUntrusted := referenceda.NewWriter(untrustedSigner)
+		daWriterUntrusted := referenceda.NewWriter(untrustedSigner, referenceda.DefaultConfig.MaxBatchSize)
 		certificate2, err = daWriterUntrusted.Store(goodBatchData2, 3600).Await(ctx)
 		Require(t, err)
 		t.Log("Created certificate for batch 2 with untrusted signer")

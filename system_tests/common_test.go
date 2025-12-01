@@ -198,6 +198,22 @@ func (tc *TestClient) EnsureTxSucceededWithTimeout(transaction *types.Transactio
 	return EnsureTxSucceededWithTimeout(tc.ctx, tc.Client, transaction, timeout)
 }
 
+func (tc *TestClient) BalanceDifferenceAtBlock(address common.Address, blockNum *big.Int) (*big.Int, error) {
+	if blockNum.Cmp(common.Big1) < 0 {
+		return nil, fmt.Errorf("blocknum must be > 1")
+	}
+	prevBlock := arbmath.BigSub(blockNum, common.Big1)
+	prevBalance, err := tc.Client.BalanceAt(tc.ctx, address, prevBlock)
+	if err != nil {
+		return nil, err
+	}
+	newBalance, err := tc.Client.BalanceAt(tc.ctx, address, blockNum)
+	if err != nil {
+		return nil, err
+	}
+	return arbmath.BigSub(newBalance, prevBalance), nil
+}
+
 var DefaultTestForwarderConfig = gethexec.ForwarderConfig{
 	ConnectionTimeout:     2 * time.Second,
 	IdleConnectionTimeout: 2 * time.Second,
@@ -359,11 +375,11 @@ func (b *NodeBuilder) DefaultConfig(t *testing.T, withL1 bool) *NodeBuilder {
 	b.withL1 = withL1
 	b.parallelise = true
 	b.deployBold = true
+	b.takeOwnership = true
 	if withL1 {
 		b.isSequencer = true
 		b.nodeConfig = arbnode.ConfigDefaultL1Test()
 	} else {
-		b.takeOwnership = true
 		b.nodeConfig = arbnode.ConfigDefaultL2Test()
 	}
 	b.chainConfig = chaininfo.ArbitrumDevTestChainConfig()
@@ -463,6 +479,11 @@ func (b *NodeBuilder) WithL1ClientWrapper(t *testing.T) *NodeBuilder {
 
 func (b *NodeBuilder) TakeOwnership() *NodeBuilder {
 	b.takeOwnership = true
+	return b
+}
+
+func (b *NodeBuilder) WithTakeOwnership(takeOwnership bool) *NodeBuilder {
+	b.takeOwnership = takeOwnership
 	return b
 }
 
@@ -800,7 +821,8 @@ func (b *NodeBuilder) BuildL2OnL1(t *testing.T) func() {
 		b.addresses,
 	)
 
-	if b.takeOwnership {
+	_, hasOwnerAccount := b.L2Info.Accounts["Owner"]
+	if b.takeOwnership && hasOwnerAccount {
 		debugAuth := b.L2Info.GetDefaultTransactOpts("Owner", b.ctx)
 
 		// make auth a chain owner
@@ -812,6 +834,15 @@ func (b *NodeBuilder) BuildL2OnL1(t *testing.T) func() {
 
 		_, err = EnsureTxSucceeded(b.ctx, b.L2.Client, tx)
 		Require(t, err)
+
+		if b.chainConfig.ArbitrumChainParams.InitialArbOSVersion >= params.ArbosVersion_MultiConstraintFix {
+			arbowner, err := precompilesgen.NewArbOwner(common.HexToAddress("70"), b.L2.Client)
+			Require(t, err)
+			tx, err = arbowner.SetGasPricingConstraints(&debugAuth, [][3]uint64{{30_000_000, 102, 800_000}, {15_000_000, 600, 1_600_000}})
+			Require(t, err)
+			_, err = EnsureTxSucceeded(b.ctx, b.L2.Client, tx)
+			Require(t, err)
+		}
 	}
 
 	return func() {
@@ -2087,20 +2118,14 @@ func setupConfigWithDAS(
 	dasSignerKey, _, err := das.GenerateAndStoreKeys(dbPath)
 	Require(t, err)
 
-	dasConfig := &das.DataAvailabilityConfig{
-		Enable: enableDas,
-		Key: das.KeyConfig{
-			KeyDir: dbPath,
-		},
-		LocalFileStorage: das.LocalFileStorageConfig{
-			Enable:       enableFileStorage,
-			DataDir:      dbPath,
-			MaxRetention: time.Hour * 24 * 30,
-		},
-		RequestTimeout:           5 * time.Second,
-		PanicOnError:             true,
-		DisableSignatureChecking: true,
-	}
+	dasConfig := das.DefaultDataAvailabilityConfig
+	dasConfig.Enable = enableDas
+	dasConfig.Key.KeyDir = dbPath
+	dasConfig.LocalFileStorage.Enable = enableFileStorage
+	dasConfig.LocalFileStorage.DataDir = dbPath
+	dasConfig.LocalFileStorage.MaxRetention = time.Hour * 24 * 30
+	dasConfig.PanicOnError = true
+	dasConfig.DisableSignatureChecking = true
 
 	l1NodeConfigA.DataAvailability = das.DefaultDataAvailabilityConfig
 	var lifecycleManager *das.LifecycleManager
@@ -2109,7 +2134,7 @@ func setupConfigWithDAS(
 	var daHealthChecker das.DataAvailabilityServiceHealthChecker
 	var signatureVerifier *das.SignatureVerifier
 	if dasModeString != "onchain" && dasModeString != "referenceda" {
-		daReader, daWriter, signatureVerifier, daHealthChecker, lifecycleManager, err = das.CreateDAComponentsForDaserver(ctx, dasConfig, nil, nil)
+		daReader, daWriter, signatureVerifier, daHealthChecker, lifecycleManager, err = das.CreateDAComponentsForDaserver(ctx, &dasConfig, nil, nil)
 
 		Require(t, err)
 		rpcLis, err := net.Listen("tcp", "localhost:0")
@@ -2178,21 +2203,25 @@ func (w *controllableWriter) Store(msg []byte, timeout uint64) containers.Promis
 	return w.writer.Store(msg, timeout)
 }
 
+func (w *controllableWriter) GetMaxMessageSize() containers.PromiseInterface[int] {
+	return w.writer.GetMaxMessageSize()
+}
+
 // createReferenceDAProviderServer creates and starts a basic ReferenceDA provider server.
 // This is a convenience wrapper around createReferenceDAProviderServerWithControl
 // for tests that don't need runtime control of error injection.
 func createReferenceDAProviderServer(t *testing.T, ctx context.Context, l1Client *ethclient.Client, validatorAddr common.Address, dataSigner signature.DataSignerFunc, port int) (*http.Server, string) {
-	server, url, _, _ := createReferenceDAProviderServerWithControl(t, ctx, l1Client, validatorAddr, dataSigner, port)
+	server, url, _, _ := createReferenceDAProviderServerWithControl(t, ctx, l1Client, validatorAddr, dataSigner, port, referenceda.DefaultConfig.MaxBatchSize)
 	return server, url
 }
 
 // createReferenceDAProviderServerWithControl creates a ReferenceDA provider server with controllable error injection.
 // Returns: server, URL, and control handles (shouldFallback, customError) for direct manipulation in tests.
-func createReferenceDAProviderServerWithControl(t *testing.T, ctx context.Context, l1Client *ethclient.Client, validatorAddr common.Address, dataSigner signature.DataSignerFunc, port int) (*http.Server, string, *atomic.Bool, *atomic.Value) {
+func createReferenceDAProviderServerWithControl(t *testing.T, ctx context.Context, l1Client *ethclient.Client, validatorAddr common.Address, dataSigner signature.DataSignerFunc, port int, maxMessageSize int) (*http.Server, string, *atomic.Bool, *atomic.Value) {
 	// Create ReferenceDA components
 	storage := referenceda.GetInMemoryStorage()
 	reader := referenceda.NewReader(storage, l1Client, validatorAddr)
-	writer := referenceda.NewWriter(dataSigner)
+	writer := referenceda.NewWriter(dataSigner, maxMessageSize)
 	validator := referenceda.NewValidator(l1Client, validatorAddr)
 
 	// Create controllable wrapper
@@ -2216,7 +2245,7 @@ func createReferenceDAProviderServerWithControl(t *testing.T, ctx context.Contex
 	}
 
 	// Create the provider server
-	headerBytes := [][]byte{{daprovider.DACertificateMessageHeaderFlag, 0xFF}}
+	headerBytes := []byte{daprovider.DACertificateMessageHeaderFlag}
 	server, err := dapserver.NewServerWithDAPProvider(ctx, serverConfig, reader, wrappedWriter, validator, headerBytes, data_streaming.PayloadCommitmentVerifier())
 	Require(t, err)
 

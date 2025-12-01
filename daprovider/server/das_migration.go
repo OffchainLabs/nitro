@@ -116,7 +116,7 @@ func NewServerForDAS(
 	// Convert to daprovider interfaces
 	var writer daprovider.Writer
 	if daWriter != nil {
-		writer = dasutil.NewWriterForDAS(daWriter)
+		writer = dasutil.NewWriterForDAS(daWriter, config.DataAvailability.MaxBatchSize)
 	}
 	reader := dasutil.NewReaderForDAS(daReader, dasKeysetFetcher, daprovider.KeysetValidate)
 
@@ -138,9 +138,9 @@ func NewServerForDAS(
 		reader,
 		writer,
 		nil, // DAS doesn't use a validator
-		[][]byte{
-			{daprovider.DASMessageHeaderFlag},
-			{daprovider.DASMessageHeaderFlag | daprovider.TreeDASMessageHeaderFlag},
+		[]byte{
+			daprovider.DASMessageHeaderFlag,
+			daprovider.DASMessageHeaderFlag | daprovider.TreeDASMessageHeaderFlag,
 		},
 		data_streaming.PayloadCommitmentVerifier(),
 	)

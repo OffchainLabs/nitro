@@ -7,9 +7,14 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 )
 
-// SupportedHeaderBytesResult is the result struct that data availability providers should use to respond with their supported header byte strings
+// SupportedHeaderBytesResult is the result struct that data availability providers should use to respond with their supported header bytes
 type SupportedHeaderBytesResult struct {
-	HeaderBytes []hexutil.Bytes `json:"headerBytes,omitempty"`
+	HeaderBytes hexutil.Bytes `json:"headerBytes,omitempty"`
+}
+
+// MaxMessageSizeResult is the result struct for daprovider_getMaxMessageSize
+type MaxMessageSizeResult struct {
+	MaxSize int `json:"maxSize"`
 }
 
 // StoreResult is the result struct that data availability providers should use to respond with a commitment to a Store request for posting batch data to their DA service

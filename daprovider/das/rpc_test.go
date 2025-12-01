@@ -41,17 +41,11 @@ func testRpcImpl(t *testing.T, size, times int, concurrent bool) {
 	pubkey, _, err := GenerateAndStoreKeys(keyDir)
 	testhelpers.RequireImpl(t, err)
 
-	config := DataAvailabilityConfig{
-		Enable: true,
-		Key: KeyConfig{
-			KeyDir: keyDir,
-		},
-		LocalFileStorage: LocalFileStorageConfig{
-			Enable:  true,
-			DataDir: dataDir,
-		},
-		RequestTimeout: 5 * time.Second,
-	}
+	config := DefaultDataAvailabilityConfig
+	config.Enable = true
+	config.Key.KeyDir = keyDir
+	config.LocalFileStorage.Enable = true
+	config.LocalFileStorage.DataDir = dataDir
 
 	storageService, lifecycleManager, err := CreatePersistentStorageService(ctx, &config)
 	testhelpers.RequireImpl(t, err)
@@ -80,18 +74,13 @@ func testRpcImpl(t *testing.T, size, times int, concurrent bool) {
 	}}
 
 	testhelpers.RequireImpl(t, err)
-	aggConf := DataAvailabilityConfig{
-		RPCAggregator: AggregatorConfig{
-			AssumedHonest: 1,
-			Backends:      beConfigs,
-			DASRPCClient: DASRPCClientConfig{
-				EnableChunkedStore: true,
-				DataStream:         data_streaming.TestDataStreamerConfig(DefaultDataStreamRpcMethods),
-				RPC:                rpcclient.TestClientConfig,
-			},
-		},
-		RequestTimeout: time.Minute,
-	}
+	aggConf := DefaultDataAvailabilityConfig
+	aggConf.RPCAggregator.AssumedHonest = 1
+	aggConf.RPCAggregator.Backends = beConfigs
+	aggConf.RPCAggregator.DASRPCClient.EnableChunkedStore = true
+	aggConf.RPCAggregator.DASRPCClient.DataStream = data_streaming.TestDataStreamerConfig(DefaultDataStreamRpcMethods)
+	aggConf.RPCAggregator.DASRPCClient.RPC = rpcclient.TestClientConfig
+	aggConf.RequestTimeout = time.Minute
 	rpcAgg, err := NewRPCAggregator(aggConf, signer)
 	testhelpers.RequireImpl(t, err)
 

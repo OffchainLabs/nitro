@@ -35,12 +35,9 @@ func TestDAS_BasicAggregationLocal(t *testing.T) {
 		privKey, err := blsSignatures.GeneratePrivKeyString()
 		Require(t, err)
 
-		config := DataAvailabilityConfig{
-			Enable: true,
-			Key: KeyConfig{
-				PrivKey: privKey,
-			},
-		}
+		config := DefaultDataAvailabilityConfig
+		config.Enable = true
+		config.Key.PrivKey = privKey
 
 		storageServices = append(storageServices, NewMemoryBackedStorageService(ctx))
 		das, err := NewSignAfterStoreDASWriter(ctx, config, storageServices[i])
@@ -53,7 +50,9 @@ func TestDAS_BasicAggregationLocal(t *testing.T) {
 
 	aggregatorConfig := DefaultAggregatorConfig
 	aggregatorConfig.AssumedHonest = 1
-	aggregator, err := newAggregator(DataAvailabilityConfig{RPCAggregator: aggregatorConfig}, backends)
+	daConfig := DefaultDataAvailabilityConfig
+	daConfig.RPCAggregator = aggregatorConfig
+	aggregator, err := newAggregator(daConfig, backends)
 	Require(t, err)
 
 	rawMsg := []byte("It's time for you to see the fnords.")
@@ -190,12 +189,9 @@ func testConfigurableStorageFailures(t *testing.T, shouldFailAggregation bool) {
 		privKey, err := blsSignatures.GeneratePrivKeyString()
 		Require(t, err)
 
-		config := DataAvailabilityConfig{
-			Enable: true,
-			Key: KeyConfig{
-				PrivKey: privKey,
-			},
-		}
+		config := DefaultDataAvailabilityConfig
+		config.Enable = true
+		config.Key.PrivKey = privKey
 
 		storageServices = append(storageServices, NewMemoryBackedStorageService(ctx))
 		das, err := NewSignAfterStoreDASWriter(ctx, config, storageServices[i])
@@ -208,11 +204,10 @@ func testConfigurableStorageFailures(t *testing.T, shouldFailAggregation bool) {
 
 	aggregatorConfig := DefaultAggregatorConfig
 	aggregatorConfig.AssumedHonest = assumedHonest
-	aggregator, err := newAggregator(
-		DataAvailabilityConfig{
-			RPCAggregator:  aggregatorConfig,
-			RequestTimeout: time.Millisecond * 2000,
-		}, backends)
+	daConfig := DefaultDataAvailabilityConfig
+	daConfig.RPCAggregator = aggregatorConfig
+	daConfig.RequestTimeout = time.Millisecond * 2000
+	aggregator, err := newAggregator(daConfig, backends)
 	Require(t, err)
 
 	rawMsg := []byte("It's time for you to see the fnords.")
@@ -310,12 +305,9 @@ func TestDAS_InsufficientBackendsTriggersFallback(t *testing.T) {
 		privKey, err := blsSignatures.GeneratePrivKeyString()
 		Require(t, err)
 
-		config := DataAvailabilityConfig{
-			Enable: true,
-			Key: KeyConfig{
-				PrivKey: privKey,
-			},
-		}
+		config := DefaultDataAvailabilityConfig
+		config.Enable = true
+		config.Key.PrivKey = privKey
 
 		storageService := NewMemoryBackedStorageService(ctx)
 		das, err := NewSignAfterStoreDASWriter(ctx, config, storageService)
@@ -328,15 +320,15 @@ func TestDAS_InsufficientBackendsTriggersFallback(t *testing.T) {
 
 	aggregatorConfig := DefaultAggregatorConfig
 	aggregatorConfig.AssumedHonest = assumedHonest
-	aggregator, err := newAggregator(
-		DataAvailabilityConfig{
-			RPCAggregator:  aggregatorConfig,
-			RequestTimeout: time.Millisecond * 2000,
-		}, backends)
+	daConfig := DefaultDataAvailabilityConfig
+	daConfig.RPCAggregator = aggregatorConfig
+	daConfig.RequestTimeout = time.Millisecond * 2000
+	aggregator, err := newAggregator(daConfig, backends)
 	Require(t, err)
 
 	// Wrap the aggregator with writerForDAS to test error conversion
-	writer := dasutil.NewWriterForDAS(aggregator)
+	// Use 0 for maxMessageSize to indicate use default
+	writer := dasutil.NewWriterForDAS(aggregator, 0)
 
 	rawMsg := []byte("It's time for you to see the fnords.")
 	promise := writer.Store(rawMsg, 0)

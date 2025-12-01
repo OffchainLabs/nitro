@@ -94,12 +94,16 @@ func (d *readerForDAS) CollectPreimages(
 
 // NewWriterForDAS is generally meant to be only used by nitro.
 // DA Providers should implement methods in the DAProviderWriter interface independently
-func NewWriterForDAS(dasWriter DASWriter) *writerForDAS {
-	return &writerForDAS{dasWriter: dasWriter}
+func NewWriterForDAS(dasWriter DASWriter, maxMessageSize int) *writerForDAS {
+	return &writerForDAS{
+		dasWriter:      dasWriter,
+		maxMessageSize: maxMessageSize,
+	}
 }
 
 type writerForDAS struct {
-	dasWriter DASWriter
+	dasWriter      DASWriter
+	maxMessageSize int
 }
 
 func (d *writerForDAS) Store(message []byte, timeout uint64) containers.PromiseInterface[[]byte] {
@@ -119,6 +123,10 @@ func (d *writerForDAS) Store(message []byte, timeout uint64) containers.PromiseI
 		}
 		return Serialize(cert), nil
 	})
+}
+
+func (d *writerForDAS) GetMaxMessageSize() containers.PromiseInterface[int] {
+	return containers.NewReadyPromise(d.maxMessageSize, nil)
 }
 
 var (

@@ -617,6 +617,12 @@ func getDAProviders(
 
 	// Create AnyTrust DA provider if enabled (can coexist with external DA)
 	if config.DataAvailability.Enable {
+		// Map deprecated BatchPoster.MaxSize to DataAvailability.MaxBatchSize for backward compatibility
+		if config.BatchPoster.MaxSize != 0 && config.DataAvailability.MaxBatchSize == das.DefaultDataAvailabilityConfig.MaxBatchSize {
+			log.Warn("Using deprecated batch-poster.max-size for AnyTrust max batch size; please migrate to data-availability.max-batch-size")
+			config.DataAvailability.MaxBatchSize = config.BatchPoster.MaxSize
+		}
+
 		log.Info("Creating AnyTrust DA provider", "batchPosterEnabled", config.BatchPoster.Enable)
 
 		// Create AnyTrust factory

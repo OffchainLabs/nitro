@@ -429,7 +429,7 @@ func TestMultiWriterFallback_CustomDAToAnyTrustExplicit(t *testing.T) {
 	l1info := builder.L1Info
 	dataSigner := signature.DataSignerFromPrivateKey(l1info.GetInfoWithPrivKey("Sequencer").PrivateKey)
 	validatorAddr := l1info.GetAddress("ReferenceDAProofValidator")
-	customDAServer, customDAURL, shouldFallback, customError := createReferenceDAProviderServerWithControl(t, ctx, builder.L1.Client, validatorAddr, dataSigner, 0)
+	customDAServer, customDAURL, shouldFallback, customError := createReferenceDAProviderServerWithControl(t, ctx, builder.L1.Client, validatorAddr, dataSigner, 0, referenceda.DefaultConfig.MaxBatchSize)
 	defer func() {
 		if err := customDAServer.Shutdown(ctx); err != nil {
 			t.Logf("Error shutting down CustomDA server: %v", err)
@@ -661,7 +661,7 @@ func TestMultiWriterFallback_CustomDAToCalldataWithBatchResizing(t *testing.T) {
 	l1info := builder.L1Info
 	dataSigner := signature.DataSignerFromPrivateKey(l1info.GetInfoWithPrivKey("Sequencer").PrivateKey)
 	validatorAddr := l1info.GetAddress("ReferenceDAProofValidator")
-	customDAServer, customDAURL, shouldFallback, _ := createReferenceDAProviderServerWithControl(t, ctx, builder.L1.Client, validatorAddr, dataSigner, 0)
+	customDAServer, customDAURL, shouldFallback, _ := createReferenceDAProviderServerWithControl(t, ctx, builder.L1.Client, validatorAddr, dataSigner, 0, 10_000)
 	defer func() {
 		if err := customDAServer.Shutdown(ctx); err != nil {
 			t.Logf("Error shutting down CustomDA server: %v", err)
@@ -682,10 +682,9 @@ func TestMultiWriterFallback_CustomDAToCalldataWithBatchResizing(t *testing.T) {
 	builder.nodeConfig.BatchPoster.DisableDapFallbackStoreDataOnChain = false
 
 	// Configure small batch size limits for testing
-	// MaxAltDABatchSize: 10KB - large enough for Phase 1 batch
+	// AltDA batch size: 10KB - large enough for Phase 1 batch (set via maxMessageSize param above)
 	// MaxCalldataBatchSize: 3KB - forces multiple smaller batches in Phase 2
 	// MaxDelay: 60s - safety net (should not be hit, we rely on size-based posting)
-	builder.nodeConfig.BatchPoster.MaxAltDABatchSize = 10_000
 	builder.nodeConfig.BatchPoster.MaxCalldataBatchSize = 3_000
 	builder.nodeConfig.BatchPoster.MaxDelay = 60 * time.Second
 

@@ -22,10 +22,15 @@ type DataAvailabilityServiceHealthChecker interface {
 }
 
 // This specifically refers to AnyTrust DA Config and will be moved/renamed in future.
+// lint:require-exhaustive-initialization
 type DataAvailabilityConfig struct {
 	Enable bool `koanf:"enable"`
 
 	RequestTimeout time.Duration `koanf:"request-timeout"`
+
+	// MaxBatchSize is the maximum batch size for AnyTrust DA. The batch poster
+	// queries this value when building batches to determine the size limit.
+	MaxBatchSize int `koanf:"max-batch-size"`
 
 	LocalCache CacheConfig `koanf:"local-cache"`
 	RedisCache RedisConfig `koanf:"redis-cache"`
@@ -46,11 +51,20 @@ type DataAvailabilityConfig struct {
 }
 
 var DefaultDataAvailabilityConfig = DataAvailabilityConfig{
-	RequestTimeout: 5 * time.Second,
-	Enable:         false,
-	RestAggregator: DefaultRestfulClientAggregatorConfig,
-	RPCAggregator:  DefaultAggregatorConfig,
-	PanicOnError:   false,
+	Enable:                          false,
+	RequestTimeout:                  5 * time.Second,
+	MaxBatchSize:                    1_000_000, // 1MB default
+	LocalCache:                      DefaultCacheConfig,
+	RedisCache:                      DefaultRedisConfig,
+	LocalFileStorage:                DefaultLocalFileStorageConfig,
+	S3Storage:                       DefaultS3StorageServiceConfig,
+	GoogleCloudStorage:              DefaultGoogleCloudStorageServiceConfig,
+	Key:                             DefaultKeyConfig,
+	RPCAggregator:                   DefaultAggregatorConfig,
+	RestAggregator:                  DefaultRestfulClientAggregatorConfig,
+	ExtraSignatureCheckingPublicKey: "",
+	PanicOnError:                    false,
+	DisableSignatureChecking:        false,
 }
 
 func OptionalAddressFromString(s string) (*common.Address, error) {
@@ -107,6 +121,7 @@ func dataAvailabilityConfigAddOptions(prefix string, f *pflag.FlagSet, r role) {
 		// These are only for batch poster
 		AggregatorConfigAddOptions(prefix+".rpc-aggregator", f)
 		f.Duration(prefix+".request-timeout", DefaultDataAvailabilityConfig.RequestTimeout, "Data Availability Service timeout duration for Store requests")
+		f.Int(prefix+".max-batch-size", DefaultDataAvailabilityConfig.MaxBatchSize, "maximum batch size for AnyTrust DA (compressed)")
 	}
 
 	// Both the Nitro node and daserver can use these options.
