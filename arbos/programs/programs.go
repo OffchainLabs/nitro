@@ -304,28 +304,71 @@ func evmMemoryCost(size uint64) uint64 {
 
 func getWasm(statedb vm.StateDB, program common.Address, maxWasmSize uint32) ([]byte, error) {
 	prefixedWasm := statedb.GetCode(program)
-	return getWasmFromContractCode(prefixedWasm, maxWasmSize)
+	return getWasmFromContractCode(statedb, prefixedWasm, maxWasmSize)
 }
 
-func getWasmFromContractCode(prefixedWasm []byte, maxWasmSize uint32) ([]byte, error) {
+func getWasmFromContractCode(statedb vm.StateDB, prefixedWasm []byte, maxWasmSize uint32) ([]byte, error) {
 	if prefixedWasm == nil {
 		return nil, ProgramNotWasmError()
 	}
-	wasm, dictByte, err := state.StripStylusPrefix(prefixedWasm)
-	if err != nil {
-		return nil, err
-	}
+	if state.IsStylusProgram(prefixedWasm) {
+		wasm, dictByte, err := state.StripStylusPrefix(prefixedWasm)
+		if err != nil {
+			return nil, err
+		}
 
-	var dict arbcompress.Dictionary
-	switch dictByte {
-	case 0:
-		dict = arbcompress.EmptyDictionary
-	case 1:
-		dict = arbcompress.StylusProgramDictionary
-	default:
-		return nil, fmt.Errorf("unsupported dictionary %v", dictByte)
+		var dict arbcompress.Dictionary
+		switch dictByte {
+		case 0:
+			dict = arbcompress.EmptyDictionary
+		case 1:
+			dict = arbcompress.StylusProgramDictionary
+		default:
+			return nil, fmt.Errorf("unsupported dictionary %v", dictByte)
+		}
+		return arbcompress.DecompressWithDictionary(wasm, int(maxWasmSize), dict)
 	}
-	return arbcompress.DecompressWithDictionary(wasm, int(maxWasmSize), dict)
+	if state.IsStylusProgramFragment(prefixedWasm) {
+		return nil, errors.New("fragmented stylus programs cannot be activated directly, must be part of a larger stylus program, try activating the root stylus program instead")
+	}
+	if state.IsStylusProgramRoot(prefixedWasm) {
+		rawAddresses, err := state.StripStylusRootPrefix(prefixedWasm)
+		if err != nil {
+			return nil, err
+		}
+
+		var addresses []common.Address
+		for i := 0; i < len(rawAddresses); i += common.AddressLength {
+			addresses = append(addresses, common.BytesToAddress(rawAddresses[i:i+common.AddressLength]))
+		}
+
+		var completedWasm []byte
+		for _, addr := range addresses {
+			currentPrefixedWasm := statedb.GetCode(addr)
+			wasm, dictByte, err := state.StripStylusFragmentPrefix(currentPrefixedWasm)
+			if err != nil {
+				return nil, err
+			}
+
+			var dict arbcompress.Dictionary
+			switch dictByte {
+			case 0:
+				dict = arbcompress.EmptyDictionary
+			case 1:
+				dict = arbcompress.StylusProgramDictionary
+			default:
+				return nil, fmt.Errorf("unsupported dictionary %v", dictByte)
+			}
+			decompressedFragment, err := arbcompress.DecompressWithDictionary(wasm, int(maxWasmSize), dict)
+			if err != nil {
+				return nil, err
+			}
+			completedWasm = append(completedWasm, decompressedFragment...)
+		}
+		return completedWasm, nil
+
+	}
+	return nil, ProgramNotWasmError()
 }
 
 // Gets a program entry, which may be expired or not yet activated.
