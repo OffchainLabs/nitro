@@ -23,7 +23,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        test-mode: [legacychallenge, long, challenge, l3challenge, execution-spec-tests]
+        test-mode: [legacychallenge, long, challenge, l3challenge, execution-spec-tests, pebble]
 
     steps:
       - name: Checkout
@@ -84,6 +84,11 @@ jobs:
       - name: run execution spec tests
         if: matrix.test-mode == 'execution-spec-tests'
         run: ${{ github.workspace }}/.github/workflows/runExecutionSpecTests.sh
+
+      - name: run tests with pebble db
+        if: matrix.test-mode == 'pebble'
+        run: |
+          ${{ github.workspace }}/.github/workflows/gotestsum.sh --timeout 90m --test_database_engine pebble        
 
       - name: Archive detailed run log
         uses: actions/upload-artifact@v5
