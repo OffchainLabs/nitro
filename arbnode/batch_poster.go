@@ -318,6 +318,7 @@ var DefaultBatchPosterL1WalletConfig = genericconf.WalletConfig{
 var TestBatchPosterConfig = BatchPosterConfig{
 	Enable:                             true,
 	DisableDapFallbackStoreDataOnChain: true,
+	EthDAFallbackBatchCount:            1,
 	MaxCalldataBatchSize:               100000,
 	Max4844BatchSize:                   DefaultBatchPosterConfig.Max4844BatchSize,
 	PollInterval:                       time.Millisecond * 10,
