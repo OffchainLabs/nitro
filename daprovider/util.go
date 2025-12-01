@@ -49,6 +49,8 @@ var (
 	ErrSeqMsgValidation      = errors.New("error validating recovered payload from batch")
 )
 
+// KeysetValidationMode controls validation of AnyTrust keysets.
+// Used by the DAS reader to verify keyset signatures.
 type KeysetValidationMode uint8
 
 const KeysetValidate KeysetValidationMode = 0
