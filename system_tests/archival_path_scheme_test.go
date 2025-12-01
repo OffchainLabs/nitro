@@ -14,7 +14,7 @@ import (
 func TestAccessingPathSchemeState(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithDatabase(rawdb.DBPebble)
 
 	// This test is PathScheme specific, it shouldn't be run with HashScheme
 	builder.RequireScheme(t, rawdb.PathScheme)
@@ -56,7 +56,7 @@ func TestAccessingPathSchemeState(t *testing.T) {
 func TestAccessingPathSchemeArchivalState(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithDatabase(rawdb.DBPebble)
 	builder.execConfig.Caching.Archive = true
 	builder.execConfig.Caching.StateHistory = 2
 
