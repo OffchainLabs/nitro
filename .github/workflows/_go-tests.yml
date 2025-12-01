@@ -40,6 +40,9 @@ on:
       run-execution-spec-tests:
         required: false
         type: boolean
+      run-pebble:
+        required: false
+        type: boolean
 
 jobs:
   go-tests:
@@ -219,6 +222,12 @@ jobs:
       - name: run execution spec tests
         if: inputs.run-execution-spec-tests
         run: ${{ github.workspace }}/.github/workflows/runExecutionSpecTests.sh
+
+      # --------------------- PEBBLE MODE ---------------------
+
+      - name: run pebble tests
+        if: inputs.run-pebble
+        run: ${{ github.workspace }}/.github/workflows/gotestsum.sh --timeout 90m --test_database_engine pebble
 
       # --------------------- ARCHIVE LOGS FOR ALL MODES ---------------------
 
