@@ -443,7 +443,7 @@ func testAllowPostingFirstBatchWhenSequencerMessageCountMismatch(t *testing.T, e
 	defer cancel()
 
 	// creates first node with batch poster disabled
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithTakeOwnership(false)
 	builder.nodeConfig.BatchPoster.Enable = false
 	builder.nodeConfig.MessageExtraction.Enable = !enabled // TODO: figure out how to handle AllowPostingFirstBatchWhenSequencerMessageCountMismatch with MEL
 	cleanup := builder.Build(t)
@@ -687,7 +687,8 @@ func TestBatchPosterWithDelayProofsAndBacklog(t *testing.T) {
 	builder := NewNodeBuilder(ctx).
 		DefaultConfig(t, true).
 		WithDelayBuffer(threshold).
-		WithL1ClientWrapper(t)
+		WithL1ClientWrapper(t).
+		WithTakeOwnership(false)
 	builder.nodeConfig.MessageExtraction.Enable = false
 	cleanup := builder.Build(t)
 	defer cleanup()

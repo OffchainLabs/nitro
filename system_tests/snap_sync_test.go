@@ -28,7 +28,8 @@ func TestSnapSync(t *testing.T) {
 	var transferGas = util.NormalizeL2GasForL1GasInitial(800_000, params.GWei) // include room for aggregator L1 costs
 
 	// 1st node with sequencer, stays up all the time.
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).DontParalellise()
+	databaseEngine := rawdb.DBPebble
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).DontParalellise().WithDatabase(databaseEngine)
 	// only supported for hash scheme
 	builder.RequireScheme(t, rawdb.HashScheme)
 	builder.nodeConfig.MessageExtraction.Enable = false
@@ -44,6 +45,7 @@ func TestSnapSync(t *testing.T) {
 	// This node will be stopped in middle and arbitrumdata will be deleted.
 	testDir := t.TempDir()
 	nodeBStack := testhelpers.CreateStackConfigForTest(testDir)
+	nodeBStack.DBEngine = databaseEngine
 	nodeBConfig := builder.nodeConfig
 	nodeBConfig.BatchPoster.Enable = false
 	nodeBParams := &SecondNodeParams{
