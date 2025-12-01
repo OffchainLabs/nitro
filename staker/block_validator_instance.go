@@ -18,6 +18,7 @@ import (
 )
 
 var _ ValidatorInstance = (*BlockValidatorInstance)(nil)
+var _ LegacyValidatorInstance = (*BlockValidatorInstance)(nil)
 
 type BlockValidatorInstance struct {
 	stateless *StatelessBlockValidator
