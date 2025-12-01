@@ -456,7 +456,7 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
     /// `read_return_data` hostio. The semantics are equivalent to that of the EVM's [`CREATE`]
     /// opcode, which notably includes the exact address returned.
     ///
-    /// [`Deploying Stylus Programs`]: https://docs.arbitrum.io/stylus/quickstart#creating-a-stylus-project-with-cargo-stylus
+    /// [`Deploying Stylus Programs`]: https://docs.arbitrum.io/stylus/quickstart#deploying-your-contract
     /// [`CREATE`]: https://www.evm.codes/#f0
     fn create1(
         &mut self,
