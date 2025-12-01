@@ -625,7 +625,7 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, 
 
 	// Configure evil provider with evil data mapping BEFORE posting to L1
 	if evilStrategy == EvilDataGoodCert || evilStrategy == EvilDataEvilCert {
-		evilProvider.SetMapping(dataHash, evilBatchData2)
+		evilProvider.SetEvilData(dataHash, evilBatchData2)
 	}
 
 	// For EvilDataEvilCert strategy, also configure the evil enhancer
