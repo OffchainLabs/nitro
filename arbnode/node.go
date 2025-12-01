@@ -38,7 +38,6 @@ import (
 	"github.com/offchainlabs/nitro/daprovider/daclient"
 	"github.com/offchainlabs/nitro/daprovider/das"
 	"github.com/offchainlabs/nitro/daprovider/data_streaming"
-	"github.com/offchainlabs/nitro/daprovider/factory"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
@@ -626,19 +625,14 @@ func getDAProviders(
 		log.Info("Creating AnyTrust DA provider", "batchPosterEnabled", config.BatchPoster.Enable)
 
 		// Create AnyTrust factory
-		daFactory, err := factory.NewDAProviderFactory(
-			factory.ModeAnyTrust,
+		daFactory := das.NewFactory(
 			&config.DataAvailability,
-			nil, // referencedaConfig
 			dataSigner,
 			l1client,
 			l1Reader,
 			deployInfo.SequencerInbox,
 			config.BatchPoster.Enable,
 		)
-		if err != nil {
-			return nil, nil, nil, err
-		}
 		log.Info("Created AnyTrust DA factory")
 
 		if err := daFactory.ValidateConfig(); err != nil {
