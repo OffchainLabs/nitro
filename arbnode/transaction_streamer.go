@@ -1221,14 +1221,18 @@ func (s *TransactionStreamer) PopulateFeedBacklog(ctx context.Context) error {
 			log.Warn("Error getting blockMetadata byte array from tx streamer", "err", err)
 		}
 
-		feedMessage, err := s.broadcastServer.NewBroadcastFeedMessage(*message, seqNum, blockHash, blockMetadata)
+		messageWithInfo := arbostypes.MessageWithMetadataAndBlockInfo{
+			MessageWithMeta: *message,
+			BlockHash:       blockHash,
+			BlockMetadata:   blockMetadata,
+		}
+		feedMessage, err := s.broadcastServer.NewBroadcastFeedMessage(messageWithInfo, seqNum)
 		if err != nil {
 			return fmt.Errorf("error creating broadcast feed message %v: %w", seqNum, err)
 		}
 		feedMessages = append(feedMessages, feedMessage)
 	}
-	s.broadcastServer.BroadcastFeedMessages(feedMessages)
-	return nil
+	return s.broadcastServer.PopulateFeedBacklog(feedMessages)
 }
 
 func (s *TransactionStreamer) writeMessage(msgIdx arbutil.MessageIndex, msg arbostypes.MessageWithMetadataAndBlockInfo, batch ethdb.Batch) error {
