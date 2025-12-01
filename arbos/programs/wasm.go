@@ -124,14 +124,19 @@ func programRequiresPrepare(
 ) uint32
 
 //go:wasmimport programs program_prepare
-func programPrepare(
+func ProgramPrepare(
+	statedbPtr unsafe.Pointer,
 	moduleHashPtr unsafe.Pointer,
+	addressForLoggingPtr unsafe.Pointer,
 	codePtr unsafe.Pointer,
-	codeHashPtr unsafe.Pointer,
-	pageLimit uint32,
-	arbosVersionForGas uint32,
-	stylusVersion uint32,
-	debug uint32,
+	codeSize uint64,
+	codehashPtr unsafe.Pointer,
+	maxWasmSize uint32,
+	pagelimit uint32,
+	time uint64,
+	debugMode uint32,
+	programPtr unsafe.Pointer,
+	runCtxPtr unsafe.Pointer,
 )
 
 //go:wasmimport programs pop
@@ -155,6 +160,33 @@ func sendResponse(req_id uint32) uint32
 func getCompiledProgram(statedb vm.StateDB, moduleHash common.Hash, addressForLogging common.Address, code []byte, codeHash common.Hash, maxWasmSize uint32, pagelimit uint16, time uint64, debugMode bool, program Program, runCtx *core.MessageRunContext) (map[rawdb.WasmTarget][]byte, error) {
 	// we need to return asm map with an entry for local target to make checks for local target work
 	return map[rawdb.WasmTarget][]byte{rawdb.LocalTarget(): {}}, nil
+}
+
+func handleProgramPrepare(statedb vm.StateDB, moduleHash common.Hash, addressForLogging common.Address, code []byte, codehash common.Hash, maxWasmSize uint32, pagelimit uint16, time uint64, debugMode bool, program Program, runCtx *core.MessageRunContext) {
+	requiresPrepare := programRequiresPrepare(unsafe.Pointer(&moduleHash[0]))
+	if requiresPrepare != 0 {
+		var debugInt uint32
+		if debugMode {
+			debugInt = 1
+		}
+
+		codeSize := uint64(len(code))
+
+		ProgramPrepare(
+			unsafe.Pointer(&statedb),
+			unsafe.Pointer(&moduleHash),
+			unsafe.Pointer(&addressForLogging),
+			unsafe.Pointer(&code),
+			codeSize,
+			unsafe.Pointer(&codehash),
+			maxWasmSize,
+			uint32(pagelimit),
+			time,
+			debugInt,
+			unsafe.Pointer(&program),
+			unsafe.Pointer(runCtx),
+		)
+	}
 }
 
 func callProgram(
@@ -188,24 +220,6 @@ func CallProgramLoop(
 	configHandler := params.createHandler()
 	dataHandler := evmData.createHandler()
 	debug := params.DebugMode
-
-	requiresPrepare := programRequiresPrepare(unsafe.Pointer(&moduleHash[0]))
-	if requiresPrepare != 0 {
-		var debugInt uint32
-		if debug {
-			debugInt = 1
-		}
-
-		programPrepare(
-			unsafe.Pointer(&moduleHash[0]),
-			arbutil.SliceToUnsafePointer(calldata),
-			arbutil.SliceToUnsafePointer(calldata),
-			0,
-			0,
-			uint32(params.Version),
-			debugInt,
-		)
-	}
 
 	module := newProgram(
 		unsafe.Pointer(&moduleHash[0]),

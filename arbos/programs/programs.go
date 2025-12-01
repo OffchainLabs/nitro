@@ -225,6 +225,8 @@ func (p Programs) CallProgram(
 	statedb.AddStylusPages(program.footprint)
 	defer statedb.SetStylusPagesOpen(open)
 
+	handleProgramPrepare(statedb, moduleHash, contract.Address(), contract.Code, contract.CodeHash, params.MaxWasmSize, params.PageLimit, evm.Context.Time, debugMode, program, runCtx)
+
 	asmMap, err := getCompiledProgram(statedb, moduleHash, contract.Address(), contract.Code, contract.CodeHash, params.MaxWasmSize, params.PageLimit, evm.Context.Time, debugMode, program, runCtx)
 	var ok bool
 	var localAsm []byte
