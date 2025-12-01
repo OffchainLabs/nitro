@@ -45,8 +45,12 @@ var gasConstraintsKey []byte = []byte{0}
 var multigasConstraintsKey []byte = []byte{1}
 
 const GethBlockGasLimit = 1 << 50
+
+// TODO(NIT-4152): Number of constraints limited because of retryable redeem gas cost calculation.
 const GasConstraintsMaxNum = 20
 const MultiGasConstraintsMaxNum = 15
+
+// MaxPricingExponentBips caps the basefee growth: exp(8.5) ~= x5,000 min base fee.
 const MaxPricingExponentBips = arbmath.Bips(85_000)
 
 func InitializeL2PricingState(sto *storage.Storage) error {
@@ -197,29 +201,21 @@ func (ps *L2PricingState) setMultiGasConstraintsFromSingleGasConstraints() error
 			return fmt.Errorf("failed to read backlog from constraint %d: %w", i, err)
 		}
 
-		// NOTE: We intentionally set all fee‑relevant resource weights to 1 so the pricing
-		// code treats every resource kind equally. This is used only in tests to verify
-		// that the new model (which normally applies weight normalization) matches the
-		// results of the old single-gas model.
-		//
-		// resourceWeights := make(map[uint8]uint64, len(FeeRelevantResourceKinds))
-		// for _, kind := range FeeRelevantResourceKinds {
-		//     resourceWeights[uint8(kind)] = 1
-		// }
-		resourceWeights := map[uint8]uint64{uint8(multigas.ResourceKindComputation): 1}
+		// Transfer with only computation resource weight to match single-gas constraint scale.
+		weights := map[uint8]uint64{uint8(multigas.ResourceKindComputation): 1}
 
-		var uint32Window uint32
+		var adjustmentWindow uint32
 		if window > math.MaxUint32 {
-			uint32Window = math.MaxUint32
+			adjustmentWindow = math.MaxUint32
 		} else {
-			uint32Window = uint32(window)
+			adjustmentWindow = uint32(window)
 		}
 
 		if err := ps.AddMultiGasConstraint(
 			target,
-			uint32Window,
+			adjustmentWindow,
 			backlog,
-			resourceWeights,
+			weights,
 		); err != nil {
 			return fmt.Errorf("failed to add multi-gas constraint %d: %w", i, err)
 		}
@@ -283,7 +279,7 @@ func (ps *L2PricingState) AddMultiGasConstraint(
 	target uint64,
 	adjustmentWindow uint32,
 	backlog uint64,
-	resourceWeights map[uint8]uint64,
+	weights map[uint8]uint64,
 ) error {
 	subStorage, err := ps.multigasConstraints.Push()
 	if err != nil {
@@ -300,7 +296,7 @@ func (ps *L2PricingState) AddMultiGasConstraint(
 	if err := constraint.SetBacklog(backlog); err != nil {
 		return fmt.Errorf("failed to set backlog: %w", err)
 	}
-	if err := constraint.SetResourceWeights(resourceWeights); err != nil {
+	if err := constraint.SetResourceWeights(weights); err != nil {
 		return fmt.Errorf("failed to set resource weights: %w", err)
 	}
 	return nil

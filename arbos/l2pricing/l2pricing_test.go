@@ -27,7 +27,7 @@ func PricingForTest(t *testing.T) *L2PricingState {
 func fakeBlockUpdate(t *testing.T, pricing *L2PricingState, gasUsed uint64, timePassed uint64) {
 	t.Helper()
 
-	pricing.storage.Burner().Restrict(pricing.updateLegacyBacklog(Grow, gasUsed))
+	pricing.storage.Burner().Restrict(pricing.updateLegacyBacklog(GrowBacklog, gasUsed))
 	pricing.updatePricingModelLegacy(timePassed)
 }
 
@@ -166,13 +166,13 @@ func TestMultiGasConstraints(t *testing.T) {
 
 	const n uint64 = 5
 	for i := range n {
-		resourceWeights := map[uint8]uint64{
+		weights := map[uint8]uint64{
 			uint8(multigas.ResourceKindComputation):   10 + i,
 			uint8(multigas.ResourceKindStorageAccess): 20 + i,
 		}
 		Require(t,
 			// #nosec G115
-			pricing.AddMultiGasConstraint(100*i+1, uint32(100*i+2), 100*i+3, resourceWeights),
+			pricing.AddMultiGasConstraint(100*i+1, uint32(100*i+2), 100*i+3, weights),
 		)
 	}
 

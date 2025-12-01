@@ -63,8 +63,8 @@ func (ps *L2PricingState) GasModelToUse() (GasModel, error) {
 type BacklogOperation uint8
 
 const (
-	Shrink BacklogOperation = iota
-	Grow
+	ShrinkBacklog BacklogOperation = iota
+	GrowBacklog
 )
 
 // UpdateBacklog increases the backlog for the active pricing model.
@@ -128,12 +128,12 @@ func (ps *L2PricingState) updateMultiGasConstraintsBacklogs(op BacklogOperation,
 	return nil
 }
 
-// applyGasDelta adds delta to backlog if growBacklog=true, otherwise subtracts delta (saturating at zero).
+// applyGasDelta adjusts the backlog according to the operation, with saturation on overflow/underflow.
 func applyGasDelta(op BacklogOperation, backlog uint64, delta uint64) uint64 {
 	switch op {
-	case Grow:
+	case GrowBacklog:
 		return arbmath.SaturatingUAdd(backlog, delta)
-	case Shrink:
+	case ShrinkBacklog:
 		return arbmath.SaturatingUSub(backlog, delta)
 	default:
 		panic("invalid backlog operation")
@@ -204,7 +204,7 @@ func (ps *L2PricingState) UpdatePricingModel(timePassed uint64) {
 
 func (ps *L2PricingState) updatePricingModelLegacy(timePassed uint64) {
 	speedLimit, _ := ps.SpeedLimitPerSecond()
-	_ = ps.updateLegacyBacklog(Shrink, arbmath.SaturatingUMul(timePassed, speedLimit))
+	_ = ps.updateLegacyBacklog(ShrinkBacklog, arbmath.SaturatingUMul(timePassed, speedLimit))
 	inertia, _ := ps.PricingInertia()
 	tolerance, _ := ps.BacklogTolerance()
 	backlog, _ := ps.GasBacklog()
@@ -229,7 +229,7 @@ func (ps *L2PricingState) updatePricingModelSingleConstraints(timePassed uint64)
 		// Pay off backlog
 		backlog, _ := constraint.Backlog()
 		gas := arbmath.SaturatingUMul(timePassed, target)
-		backlog = applyGasDelta(Shrink, backlog, gas)
+		backlog = applyGasDelta(ShrinkBacklog, backlog, gas)
 		_ = constraint.SetBacklog(backlog)
 
 		// Calculate exponent with the formula backlog/divisor
@@ -256,7 +256,7 @@ func (ps *L2PricingState) updatePricingModelMultiConstraints(timePassed uint64) 
 
 		backlog, _ := constraint.Backlog()
 		gas := arbmath.SaturatingUMul(timePassed, target)
-		backlog = applyGasDelta(Shrink, backlog, gas)
+		backlog = applyGasDelta(ShrinkBacklog, backlog, gas)
 		_ = constraint.SetBacklog(backlog)
 	}
 
@@ -301,20 +301,6 @@ func (ps *L2PricingState) CalcMultiGasConstraintsExponents() ([multigas.NumResou
 				return [multigas.NumResourceKind]arbmath.Bips{}, err
 			}
 
-			// NOTE: The active divisor follows the multi-dimensional spec:
-			//
-			//     divisor = A_j * T_j * sum(a_j^i)
-			//
-			// With this form, the exponent for each resource is scaled by 1/sumWeights
-			// compared to the legacy single-gas model. In the compatibility tests we
-			// sometimes build a constraint where only ResourceKindComputation has
-			// weight=1 (all other weights are 0); in that case sumWeights=1 and this
-			// reduces to the legacy exponent. The commented alternative below shows the
-			// unnormalized divisor (A_j * T_j) that was used when we wanted to match the
-			// old single-gas behavior exactly:
-			//
-			//     // divisor := arbmath.SaturatingCastToBips(
-			//     //     arbmath.SaturatingUMul(uint64(adjustmentWindow), target))
 			divisor := arbmath.SaturatingCastToBips(
 				arbmath.SaturatingUMul(uint64(adjustmentWindow),
 					arbmath.SaturatingUMul(target, sumWeights)))

@@ -515,16 +515,16 @@ func (con ArbOwner) SetMultiGasPricingConstraints(
 		}
 
 		// Build map of resource weights
-		resourceWeights := make(map[uint8]uint64, len(constraint.Resources))
+		weights := make(map[uint8]uint64, len(constraint.Resources))
 		for _, r := range constraint.Resources {
-			resourceWeights[r.Resource] = r.Weight
+			weights[r.Resource] = r.Weight
 		}
 
 		if err := c.State.L2PricingState().AddMultiGasConstraint(
 			constraint.TargetPerSec,
 			constraint.AdjustmentWindowSecs,
 			constraint.Backlog,
-			resourceWeights,
+			weights,
 		); err != nil {
 			return fmt.Errorf("failed to add multi-gas constraint: %w", err)
 		}

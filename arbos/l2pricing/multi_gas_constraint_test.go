@@ -112,7 +112,7 @@ func TestMultiGasConstraintBacklogAggregation(t *testing.T) {
 		multigas.Pair{Kind: multigas.ResourceKindStorageAccess, Amount: 10},
 	)
 
-	require.NoError(t, c.UpdateBacklog(Grow, mg))
+	require.NoError(t, c.UpdateBacklog(GrowBacklog, mg))
 }
 
 func TestMultiGasConstraintBacklogGrowth(t *testing.T) {
@@ -132,7 +132,7 @@ func TestMultiGasConstraintBacklogGrowth(t *testing.T) {
 		multigas.Pair{Kind: multigas.ResourceKindStorageAccess, Amount: 10},
 	)
 
-	require.NoError(t, c.UpdateBacklog(Grow, mg1))
+	require.NoError(t, c.UpdateBacklog(GrowBacklog, mg1))
 
 	b1, err := c.Backlog()
 	require.NoError(t, err)
@@ -143,7 +143,7 @@ func TestMultiGasConstraintBacklogGrowth(t *testing.T) {
 		multigas.Pair{Kind: multigas.ResourceKindStorageAccess, Amount: 15},
 	)
 
-	require.NoError(t, c.UpdateBacklog(Grow, mg2))
+	require.NoError(t, c.UpdateBacklog(GrowBacklog, mg2))
 
 	b2, err := c.Backlog()
 	require.NoError(t, err)
@@ -168,7 +168,7 @@ func TestMultiGasConstraintBacklogDecay(t *testing.T) {
 		multigas.Pair{Kind: multigas.ResourceKindComputation, Amount: 10},
 		multigas.Pair{Kind: multigas.ResourceKindStorageAccess, Amount: 10},
 	)
-	require.NoError(t, c.UpdateBacklog(Grow, mgGrow))
+	require.NoError(t, c.UpdateBacklog(GrowBacklog, mgGrow))
 
 	b1, err := c.Backlog()
 	require.NoError(t, err)
@@ -179,7 +179,7 @@ func TestMultiGasConstraintBacklogDecay(t *testing.T) {
 		multigas.Pair{Kind: multigas.ResourceKindComputation, Amount: 3},
 		multigas.Pair{Kind: multigas.ResourceKindStorageAccess, Amount: 4},
 	)
-	require.NoError(t, c.UpdateBacklog(Shrink, mgDecay1))
+	require.NoError(t, c.UpdateBacklog(ShrinkBacklog, mgDecay1))
 
 	b2, err := c.Backlog()
 	require.NoError(t, err)
@@ -190,7 +190,7 @@ func TestMultiGasConstraintBacklogDecay(t *testing.T) {
 		multigas.Pair{Kind: multigas.ResourceKindComputation, Amount: 50},
 		multigas.Pair{Kind: multigas.ResourceKindStorageAccess, Amount: 50},
 	)
-	require.NoError(t, c.UpdateBacklog(Shrink, mgDecay2))
+	require.NoError(t, c.UpdateBacklog(ShrinkBacklog, mgDecay2))
 
 	b3, err := c.Backlog()
 	require.NoError(t, err)
