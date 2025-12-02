@@ -129,7 +129,7 @@ func createEvilDAProviderServer(t *testing.T, ctx context.Context, l1Client *eth
 	// Use asserting writer to ensure evil provider is never used for writing.
 	// In this test we call the writers directly to have more control over batch posting.
 	writer := &assertingWriter{}
-	headerBytes := [][]byte{{daprovider.DACertificateMessageHeaderFlag, 0xFF}}
+	headerBytes := []byte{daprovider.DACertificateMessageHeaderFlag}
 	server, err := dapserver.NewServerWithDAPProvider(ctx, serverConfig, evilProvider, writer, evilProvider, headerBytes, data_streaming.PayloadCommitmentVerifier())
 	Require(t, err)
 
@@ -147,6 +147,10 @@ type assertingWriter struct{}
 
 func (w *assertingWriter) Store(message []byte, timeout uint64) containers.PromiseInterface[[]byte] {
 	panic("assertingWriter.Store should never be called - evil provider server should not be used for writing")
+}
+
+func (w *assertingWriter) GetMaxMessageSize() containers.PromiseInterface[int] {
+	panic("assertingWriter.GetMaxMessageSize should never be called - evil provider server should not be used for writing")
 }
 
 // createNodeBWithSharedContracts creates a second node that uses the same contracts as the first node
@@ -182,6 +186,7 @@ func createNodeBWithSharedContracts(
 	nodeConfig.BatchPoster.DataPoster.MaxMempoolTransactions = 18
 	if stackConfig == nil {
 		stackConfig = testhelpers.CreateStackConfigForTest(t.TempDir())
+		stackConfig.DBEngine = rawdb.DBPebble
 	}
 	l2stack, err := node.New(stackConfig)
 	Require(t, err)
