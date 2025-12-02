@@ -209,6 +209,8 @@ func (c *BatchPosterConfig) Validate() error {
 		log.Error("max-size is deprecated; use max-calldata-batch-size for calldata batches, or data-availability.max-batch-size for AnyTrust; max-size will be removed in a future release")
 		if c.MaxCalldataBatchSize == DefaultBatchPosterConfig.MaxCalldataBatchSize {
 			c.MaxCalldataBatchSize = c.MaxSize
+		} else {
+			return errors.New("both max-size (deprecated) and max-calldata-batch-size are set; please use only max-calldata-batch-size")
 		}
 	}
 	if c.MaxCalldataBatchSize <= SequencerMessageHeaderSize {
