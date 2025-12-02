@@ -264,13 +264,12 @@ func (c *Client) store(ctx context.Context, message []byte, timeout uint64) (*se
 // GenerateReadPreimageProof generates a proof for a specific preimage at a given offset
 // This method calls the external DA provider's RPC endpoint to generate the proof
 func (c *Client) GenerateReadPreimageProof(
-	certHash common.Hash,
 	offset uint64,
 	certificate []byte,
 ) containers.PromiseInterface[daprovider.PreimageProofResult] {
 	return containers.DoPromise(context.Background(), func(ctx context.Context) (daprovider.PreimageProofResult, error) {
 		var generateProofResult server_api.GenerateReadPreimageProofResult
-		if err := c.CallContext(ctx, &generateProofResult, "daprovider_generateReadPreimageProof", certHash, hexutil.Uint64(offset), hexutil.Bytes(certificate)); err != nil {
+		if err := c.CallContext(ctx, &generateProofResult, "daprovider_generateReadPreimageProof", hexutil.Uint64(offset), hexutil.Bytes(certificate)); err != nil {
 			return daprovider.PreimageProofResult{}, fmt.Errorf("error returned from daprovider_generateProof rpc method, err: %w", err)
 		}
 		return daprovider.PreimageProofResult{Proof: generateProofResult.Proof}, nil

@@ -34,7 +34,7 @@ func NewValidator(l1Client *ethclient.Client, validatorAddr common.Address) *Val
 // GenerateReadPreimageProof creates a ReadPreimage proof for ReferenceDA
 // The proof enhancer will prepend the standardized header [certKeccak256, offset, certSize, certificate]
 // So we only need to return the custom data: [Version(1), PreimageSize(8), PreimageData]
-func (v *Validator) generateReadPreimageProofInternal(ctx context.Context, certHash common.Hash, offset uint64, certificate []byte) ([]byte, error) {
+func (v *Validator) generateReadPreimageProofInternal(ctx context.Context, offset uint64, certificate []byte) ([]byte, error) {
 	// Deserialize certificate to extract data hash
 	cert, err := Deserialize(certificate)
 	if err != nil {
@@ -66,9 +66,9 @@ func (v *Validator) generateReadPreimageProofInternal(ctx context.Context, certH
 // GenerateReadPreimageProof creates a ReadPreimage proof for ReferenceDA
 // The proof enhancer will prepend the standardized header [certKeccak256, offset, certSize, certificate]
 // So we only need to return the custom data: [Version(1), PreimageSize(8), PreimageData]
-func (v *Validator) GenerateReadPreimageProof(certHash common.Hash, offset uint64, certificate []byte) containers.PromiseInterface[daprovider.PreimageProofResult] {
+func (v *Validator) GenerateReadPreimageProof(offset uint64, certificate []byte) containers.PromiseInterface[daprovider.PreimageProofResult] {
 	return containers.DoPromise(context.Background(), func(ctx context.Context) (daprovider.PreimageProofResult, error) {
-		proof, err := v.generateReadPreimageProofInternal(ctx, certHash, offset, certificate)
+		proof, err := v.generateReadPreimageProofInternal(ctx, offset, certificate)
 		return daprovider.PreimageProofResult{Proof: proof}, err
 	})
 }

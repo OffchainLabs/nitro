@@ -222,7 +222,6 @@ func (e *EvilDAProvider) CollectPreimages(
 
 // GenerateReadPreimageProof generates proof for evil data if configured, otherwise delegates
 func (e *EvilDAProvider) GenerateReadPreimageProof(
-	certHash common.Hash,
 	offset uint64,
 	certificate []byte,
 ) containers.PromiseInterface[daprovider.PreimageProofResult] {
@@ -245,7 +244,6 @@ func (e *EvilDAProvider) GenerateReadPreimageProof(
 			copy(proof[9+certLen+8:], evilData)
 
 			log.Debug("EvilDAProvider generating evil proof",
-				"certHash", certHash.Hex(),
 				"dataHash", common.Hash(cert.DataHash).Hex(),
 				"evilDataSize", len(evilData))
 
@@ -254,7 +252,7 @@ func (e *EvilDAProvider) GenerateReadPreimageProof(
 		}
 
 		// Delegate to underlying validator
-		delegatePromise := e.validator.GenerateReadPreimageProof(certHash, offset, certificate)
+		delegatePromise := e.validator.GenerateReadPreimageProof(offset, certificate)
 		ctx := context.Background()
 		result, err := delegatePromise.Await(ctx)
 		promise.ProduceResult(result, err)
