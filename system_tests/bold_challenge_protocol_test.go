@@ -572,13 +572,6 @@ func setupL1ForBoldProtocol(
 	nodeConfig.BatchPoster.DataPoster.MaxMempoolTransactions = 18
 	withoutClientWrapper := false
 	l1info, l1client, l1backend, l1stack, _, _ = createTestL1BlockChain(t, nil, withoutClientWrapper, testhelpers.CreateStackConfigForTest(""))
-	var l2chainDb ethdb.Database
-	var l2arbDb ethdb.Database
-	var l2blockchain *core.BlockChain
-	l2info = l2infoIn
-	if l2info == nil {
-		l2info = NewArbTestInfo(t, chainConfig.ChainID)
-	}
 
 	var err error
 	if useExternalSigner {
@@ -666,7 +659,10 @@ func createL2NodeForBoldProtocol(
 	stackConfig := testhelpers.CreateStackConfigForTest("")
 	stackConfig.DBEngine = rawdb.DBPebble
 	initMessage := getInitMessage(ctx, t, l1client, addresses)
-	_, l2stack, l2chainDb, l2arbDb, l2blockchain = createNonL1BlockChainWithStackConfig(t, l2info, "", chainConfig, nil, initMessage, stackConfig, execConfig, false)
+	var l2chainDb ethdb.Database
+	var l2arbDb ethdb.Database
+	var l2blockchain *core.BlockChain
+	l2info, l2stack, l2chainDb, l2arbDb, l2blockchain = createNonL1BlockChainWithStackConfig(t, l2infoIn, "", chainConfig, nil, initMessage, stackConfig, execConfig, false)
 	var sequencerTxOptsPtr *bind.TransactOpts
 	var dataSigner signature.DataSignerFunc
 	if isSequencer {
