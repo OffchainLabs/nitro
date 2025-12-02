@@ -658,16 +658,13 @@ func getDAProviders(
 			if writerCleanup != nil {
 				localCleanupFuncs = append(localCleanupFuncs, writerCleanup)
 			}
+			if writer != nil {
+				writers = append(writers, writer)
+				log.Info("Added AnyTrust writer", "writerIndex", len(writers)-1, "totalWriters", len(writers))
+			}
 		}
 
 		headerBytes := daFactory.GetSupportedHeaderBytes()
-
-		// Add AnyTrust writer to writers array if batch poster is enabled
-		if config.BatchPoster.Enable && writer != nil {
-			writers = append(writers, writer)
-			log.Info("Added AnyTrust writer", "writerIndex", len(writers)-1, "totalWriters", len(writers))
-		}
-
 		// Register AnyTrust reader directly (no validator for AnyTrust)
 		for _, hb := range headerBytes {
 			if err := dapRegistry.Register(hb, reader, nil); err != nil {
