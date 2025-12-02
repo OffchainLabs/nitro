@@ -38,7 +38,8 @@ func TestMessageExtractionLayer_SequencerBatchMessageEquivalence(t *testing.T) {
 
 	builder := NewNodeBuilder(ctx).
 		DefaultConfig(t, true).
-		WithDelayBuffer(0)
+		WithDelayBuffer(0).
+		WithTakeOwnership(false)
 	builder.L2Info.GenerateAccount("User2")
 	builder.nodeConfig.BatchPoster.MaxDelay = time.Hour     // set high max-delay so we can test the delay buffer
 	builder.nodeConfig.BatchPoster.PollInterval = time.Hour // set a high poll interval to avoid continuous polling
