@@ -1,0 +1,26 @@
+---
+name: fast-ci-jobs
+on:
+  workflow_call:
+
+jobs:
+  lint-and-build:
+    name: Lint and Build
+    runs-on: arbitrator-ci
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Setup CI
+        uses: ./.github/actions/ci-setup
+
+      - name: Build
+        run: make -j8 build test-go-deps
+
+      - name: Build all lint dependencies
+        run: make -j8 build-node-deps
+
+      - name: Setup CI
+        uses: ./.github/actions/lint-go

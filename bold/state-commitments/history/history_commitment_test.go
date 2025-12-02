@@ -14,7 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 
 	"github.com/offchainlabs/nitro/bold/state-commitments/legacy"
-	prefixproofs "github.com/offchainlabs/nitro/bold/state-commitments/prefix-proofs"
+	"github.com/offchainlabs/nitro/bold/state-commitments/prefix-proofs"
 	"github.com/offchainlabs/nitro/bold/testing/casttest"
 )
 
@@ -332,23 +332,6 @@ func TestInclusionProofEquivalence(t *testing.T) {
 	oldCommit, err := legacy.NewLegacy(leaves)
 	require.NoError(t, err)
 	require.Equal(t, commit.Merkle, oldCommit.Merkle)
-}
-
-func TestHashInto(t *testing.T) {
-	simpleHash := crypto.Keccak256Hash([]byte("foo"))
-	leaves := []common.Hash{
-		simpleHash,
-		simpleHash,
-		simpleHash,
-		simpleHash,
-	}
-	comm := newCommitter()
-	want := crypto.Keccak256Hash(simpleHash[:], simpleHash[:], simpleHash[:], simpleHash[:])
-	var got common.Hash
-	comm.hashInto(&got, &leaves[0], &leaves[1], &leaves[2], &leaves[3])
-	if got != want {
-		t.Errorf("got %s, want %s", got.Hex(), want.Hex())
-	}
 }
 
 func TestLastLeafProofPositions(t *testing.T) {

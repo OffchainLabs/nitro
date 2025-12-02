@@ -19,7 +19,7 @@ import (
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcastclient"
 	"github.com/offchainlabs/nitro/broadcaster"
-	m "github.com/offchainlabs/nitro/broadcaster/message"
+	"github.com/offchainlabs/nitro/broadcaster/message"
 	"github.com/offchainlabs/nitro/util/contracts"
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/util/testhelpers"
@@ -27,24 +27,35 @@ import (
 )
 
 type MockTransactionStreamer struct {
-	messageReceiver chan m.BroadcastFeedMessage
+	messageReceiver chan message.BroadcastFeedMessage
 	chainId         uint64
 	sequencerAddr   *common.Address
 }
 
 func NewMockTransactionStreamer(chainId uint64, sequencerAddr *common.Address) *MockTransactionStreamer {
 	return &MockTransactionStreamer{
-		messageReceiver: make(chan m.BroadcastFeedMessage, 100),
+		messageReceiver: make(chan message.BroadcastFeedMessage, 100),
 		chainId:         chainId,
 		sequencerAddr:   sequencerAddr,
 	}
 }
 
-func (ts *MockTransactionStreamer) AddBroadcastMessages(feedMessages []*m.BroadcastFeedMessage) error {
+func (ts *MockTransactionStreamer) AddBroadcastMessages(feedMessages []*message.BroadcastFeedMessage) error {
 	for _, feedMessage := range feedMessages {
 		ts.messageReceiver <- *feedMessage
 	}
 	return nil
+}
+
+func feedMessage(t *testing.T, b *broadcaster.Broadcaster, seqNum arbutil.MessageIndex) []*message.BroadcastFeedMessage {
+	msg := arbostypes.MessageWithMetadataAndBlockInfo{
+		MessageWithMeta: arbostypes.EmptyTestMessageWithMetadata,
+		BlockHash:       nil,
+		BlockMetadata:   nil,
+	}
+	broadcastMsg, err := b.NewBroadcastFeedMessage(msg, seqNum)
+	Require(t, err)
+	return []*message.BroadcastFeedMessage{broadcastMsg}
 }
 
 // Test that a basic setup of broadcaster and BroadcastClients works
@@ -135,7 +146,8 @@ func TestBasicBroadcastClientSetup(t *testing.T) {
 	// Send messages with sequential sequence numbers
 	for i := 0; i < messageCount; i++ {
 		// #nosec G115
-		Require(t, b.BroadcastSingle(arbostypes.TestMessageWithMetadataAndRequestId, arbutil.MessageIndex(i), nil, nil))
+		err = b.BroadcastFeedMessages(feedMessage(t, b, arbutil.MessageIndex(i)))
+		Require(t, err)
 	}
 
 	wg.Wait()
@@ -282,9 +294,7 @@ func TestPrimaryToSecondaryFailover(t *testing.T) {
 	// Send 5 messages from primary
 	const initialMessageCount = 5
 	for i := 0; i < initialMessageCount; i++ {
-		// #nosec G115
-		seq := arbutil.MessageIndex(i)
-		err := primaryB.BroadcastSingle(arbostypes.TestMessageWithMetadataAndRequestId, seq, nil, nil)
+		err = primaryB.BroadcastFeedMessages(feedMessage(t, primaryB, arbutil.MessageIndex(i))) // #nosec G115
 		Require(t, err)
 		time.Sleep(50 * time.Millisecond)
 	}
@@ -318,9 +328,7 @@ func TestPrimaryToSecondaryFailover(t *testing.T) {
 	t.Logf("Sending %d messages from secondary starting at sequence %d", secondaryMessageCount, startSeq)
 
 	for i := 0; i < secondaryMessageCount; i++ {
-		// #nosec G115
-		seq := arbutil.MessageIndex(startSeq + i)
-		err := secondaryB.BroadcastSingle(arbostypes.TestMessageWithMetadataAndRequestId, seq, nil, nil)
+		err = secondaryB.BroadcastFeedMessages(feedMessage(t, secondaryB, arbutil.MessageIndex(startSeq+i))) // #nosec G115
 		Require(t, err)
 		time.Sleep(50 * time.Millisecond)
 	}

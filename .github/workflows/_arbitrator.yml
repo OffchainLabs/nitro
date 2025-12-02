@@ -1,0 +1,104 @@
+---
+name: nitro-arbitrator
+on:
+  workflow_call:
+
+jobs:
+  arbitrator:
+    name: Run Arbitrator tests
+    runs-on: arbitrator-ci
+    env:
+      RUST_BACKTRACE: 1
+      # RUSTFLAGS: -Dwarnings          # TODO: re-enable after wasmer upgrade
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Setup CI
+        uses: ./.github/actions/ci-setup
+
+      - name: Install custom go-ethereum
+        run: |
+          cd /tmp
+          git clone --branch v1.16.2 --depth 1 https://github.com/ethereum/go-ethereum.git
+          cd go-ethereum
+          go build -o /usr/local/bin/geth ./cmd/geth
+
+      - name: Setup emsdk
+        uses: mymindstorm/setup-emsdk@v14
+        with:
+          # Make sure to set a version number!
+          version: 3.1.6
+          # This is the name of the cache folder.
+          # The cache folder will be placed in the build directory,
+          #  so make sure it doesn't conflict with anything!
+          no-cache: true
+
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@v2
+        with:
+          tool: nextest@0.9
+
+      - name: Create minimal nextest.toml config file
+        run: |
+          cat << EOF > nextest.toml
+          [profile.ci.junit]
+          path = "junit.xml"
+          EOF
+
+      - name: Make arbitrator libraries
+        run: make -j wasm-ci-build
+
+      - name: Clippy check
+        run: cargo clippy --all --manifest-path arbitrator/Cargo.toml -- -D warnings
+
+      - name: Run rust tests
+        id: run-rust-tests
+        continue-on-error: true
+        run: >-
+          cargo nextest run -p arbutil -p prover -p jit -p stylus --release
+          --manifest-path arbitrator/prover/Cargo.toml
+          --profile ci --config-file nextest.toml
+
+      - name: Upload rust test results
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: junit-reports-rust
+          path: ./arbitrator/target/nextest/ci/junit.xml
+
+      - name: Fail if rust tests failed
+        if: steps.run-rust-tests.outcome == 'failure'
+        run: |
+          echo "Rust tests failed. Failing the workflow as required."
+          exit 1
+
+      - name: Check stylus_bechmark
+        run: cargo check --manifest-path arbitrator/tools/stylus_benchmark/Cargo.toml
+
+      - name: Rustfmt
+        run: cargo fmt -p arbutil -p prover -p jit -p stylus --manifest-path arbitrator/Cargo.toml -- --check
+
+      - name: Rustfmt - tools/stylus_benchmark
+        run: cargo fmt --all --manifest-path arbitrator/tools/stylus_benchmark/Cargo.toml -- --check
+
+      - name: Make proofs from test cases
+        run: make -j test-gen-proofs
+
+      - name: Start geth server
+        run: |
+          geth --dev --http --http.port 8545 &
+          sleep 2
+
+      - name: Run proof validation tests
+        run: |
+          npm install --global yarn
+          cd contracts-legacy
+          cp -r ../contracts/test/prover/proofs/* ./test/prover/proofs
+          yarn install
+          yarn build
+          yarn build:forge:yul
+          yarn hardhat --network localhost test test/prover/*.ts

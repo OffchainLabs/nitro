@@ -46,8 +46,6 @@ var (
 
 var assertionCreatedId common.Hash
 
-var defaultBaseGas = int64(500000)
-
 func init() {
 	rollupAbi, err := rollupgen.RollupCoreMetaData.GetAbi()
 	if err != nil {
@@ -663,7 +661,7 @@ func (a *AssertionChain) createAndStakeOnAssertion(
 	})
 	opts := a.GetCallOptsWithDesiredRpcHeadBlockNumber(&bind.CallOpts{Context: ctx})
 	if createErr := handleCreateAssertionError(err, postState.GlobalState.BlockHash); createErr != nil {
-		if strings.Contains(err.Error(), "already exists") {
+		if strings.Contains(createErr.Error(), "already exists") {
 			assertionItem, err2 := a.GetAssertion(ctx, opts, protocol.AssertionHash{Hash: computedHash})
 			if err2 != nil {
 				return nil, err2

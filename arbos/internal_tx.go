@@ -94,9 +94,6 @@ func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.Arbos
 		oldL1BlockNumber, err := state.Blockhashes().L1BlockNumber()
 		state.Restrict(err)
 
-		l2BaseFee, err := state.L2PricingState().BaseFeeWei()
-		state.Restrict(err)
-
 		if l1BlockNumber > oldL1BlockNumber {
 			state.Restrict(state.Blockhashes().RecordNewL1Block(l1BlockNumber-1, prevHash, state.ArbOSVersion()))
 		}
@@ -107,7 +104,7 @@ func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.Arbos
 		_ = state.RetryableState().TryToReapOneRetryable(currentTime, evm, util.TracingDuringEVM)
 		_ = state.RetryableState().TryToReapOneRetryable(currentTime, evm, util.TracingDuringEVM)
 
-		state.L2PricingState().UpdatePricingModel(l2BaseFee, timePassed, false)
+		state.L2PricingState().UpdatePricingModel(timePassed)
 
 		return state.UpgradeArbosVersionIfNecessary(currentTime, evm.StateDB, evm.ChainConfig())
 	case InternalTxBatchPostingReportMethodID:
@@ -117,28 +114,49 @@ func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.Arbos
 		}
 		batchTimestamp := util.SafeMapGet[*big.Int](inputs, "batchTimestamp")
 		batchPosterAddress := util.SafeMapGet[common.Address](inputs, "batchPosterAddress")
+		batchDataGas := util.SafeMapGet[uint64](inputs, "batchDataGas")
+		l1BaseFeeWei := util.SafeMapGet[*big.Int](inputs, "l1BaseFeeWei")
+
+		l1p := state.L1PricingState()
+		perBatchGas, err := l1p.PerBatchGasCost()
+		if err != nil {
+			log.Warn("L1Pricing PerBatchGas failed", "err", err)
+		}
+		gasSpent := arbmath.SaturatingAdd(perBatchGas, arbmath.SaturatingCast[int64](batchDataGas))
+		weiSpent := arbmath.BigMulByUint(l1BaseFeeWei, arbmath.SaturatingUCast[uint64](gasSpent))
+		err = l1p.UpdateForBatchPosterSpending(
+			evm.StateDB,
+			evm,
+			state.ArbOSVersion(),
+			batchTimestamp.Uint64(),
+			evm.Context.Time,
+			batchPosterAddress,
+			weiSpent,
+			l1BaseFeeWei,
+			util.TracingDuringEVM,
+		)
+		if err != nil {
+			log.Warn("L1Pricing UpdateForSequencerSpending failed", "err", err)
+		}
+		return nil
+	case InternalTxBatchPostingReportV2MethodID:
+		inputs, err := util.UnpackInternalTxDataBatchPostingReportV2(tx.Data)
+		if err != nil {
+			return err
+		}
+		batchTimestamp := util.SafeMapGet[*big.Int](inputs, "batchTimestamp")
+		batchPosterAddress := util.SafeMapGet[common.Address](inputs, "batchPosterAddress")
 		batchCalldataLength := util.SafeMapGet[uint64](inputs, "batchCalldataLength")
 		batchCalldataNonZeros := util.SafeMapGet[uint64](inputs, "batchCalldataNonZeros")
-		batchLegacyGas := util.SafeMapGet[uint64](inputs, "batchLegacyGas")
 		batchExtraGas := util.SafeMapGet[uint64](inputs, "batchExtraGas")
 		l1BaseFeeWei := util.SafeMapGet[*big.Int](inputs, "l1BaseFeeWei")
 
-		var gasSpent uint64
-		if batchCalldataLength == ^uint64(0) {
-			if state.ArbOSVersion() >= params.ArbosVersion_50 {
-				return fmt.Errorf("missing batch calldata stats for arbos >= 50")
-			}
-			gasSpent = batchLegacyGas
-		} else {
-			gasSpent = arbostypes.LegacyCostForStats(&arbostypes.BatchDataStats{
-				Length:   batchCalldataLength,
-				NonZeros: batchCalldataNonZeros,
-			})
-			gasSpent = arbmath.SaturatingUAdd(gasSpent, batchExtraGas)
-			if batchLegacyGas != ^uint64(0) && batchLegacyGas != gasSpent {
-				log.Error("legacy gas doesn't fit local compute", "local", gasSpent, "legacy", batchLegacyGas, "timestamp", batchTimestamp)
-			}
-		}
+		gasSpent := arbostypes.LegacyCostForStats(&arbostypes.BatchDataStats{
+			Length:   batchCalldataLength,
+			NonZeros: batchCalldataNonZeros,
+		})
+
+		gasSpent = arbmath.SaturatingUAdd(gasSpent, batchExtraGas)
 
 		l1p := state.L1PricingState()
 
@@ -172,9 +190,10 @@ func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.Arbos
 			util.TracingDuringEVM,
 		)
 		if err != nil {
-			log.Warn("L1Pricing UpdateForSequencerSpending failed", "err", err)
+			log.Warn("L1Pricing UpdateForSequencerSpending failed (v2 report)", "err", err)
 		}
 		return nil
+
 	default:
 		return fmt.Errorf("unknown internal tx method selector: %v", hex.EncodeToString(tx.Data[:4]))
 	}

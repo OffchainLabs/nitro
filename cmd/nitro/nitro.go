@@ -23,7 +23,7 @@ import (
 	"github.com/cockroachdb/pebble"
 	"github.com/knadh/koanf"
 	"github.com/knadh/koanf/providers/confmap"
-	flag "github.com/spf13/pflag"
+	"github.com/spf13/pflag"
 	"github.com/syndtr/goleveldb/leveldb"
 
 	"github.com/ethereum/go-ethereum/accounts"
@@ -246,7 +246,7 @@ func mainImpl() int {
 	if sequencerNeedsKey || nodeConfig.Node.BatchPoster.ParentChainWallet.OnlyCreateKey {
 		l1TransactionOptsBatchPoster, dataSigner, err = util.OpenWallet("l1-batch-poster", &nodeConfig.Node.BatchPoster.ParentChainWallet, new(big.Int).SetUint64(nodeConfig.ParentChain.ID))
 		if err != nil {
-			flag.Usage()
+			pflag.Usage()
 			log.Crit("error opening Batch poster parent chain wallet", "path", nodeConfig.Node.BatchPoster.ParentChainWallet.Pathname, "account", nodeConfig.Node.BatchPoster.ParentChainWallet.Account, "err", err)
 		}
 		if nodeConfig.Node.BatchPoster.ParentChainWallet.OnlyCreateKey {
@@ -256,7 +256,7 @@ func mainImpl() int {
 	if validatorNeedsKey || nodeConfig.Node.Staker.ParentChainWallet.OnlyCreateKey {
 		l1TransactionOptsValidator, _, err = util.OpenWallet("l1-validator", &nodeConfig.Node.Staker.ParentChainWallet, new(big.Int).SetUint64(nodeConfig.ParentChain.ID))
 		if err != nil {
-			flag.Usage()
+			pflag.Usage()
 			log.Crit("error opening Validator parent chain wallet", "path", nodeConfig.Node.Staker.ParentChainWallet.Pathname, "account", nodeConfig.Node.Staker.ParentChainWallet.Account, "err", err)
 		}
 		if nodeConfig.Node.Staker.ParentChainWallet.OnlyCreateKey {
@@ -266,7 +266,7 @@ func mainImpl() int {
 
 	if nodeConfig.Node.Staker.Enable {
 		if !nodeConfig.Node.ParentChainReader.Enable {
-			flag.Usage()
+			pflag.Usage()
 			log.Crit("validator must have the parent chain reader enabled")
 		}
 		strategy, err := legacystaker.ParseStrategy(nodeConfig.Node.Staker.Strategy)
@@ -323,7 +323,7 @@ func mainImpl() int {
 		}
 		if !l1Reader.IsParentChainArbitrum() && !nodeConfig.Node.Dangerous.DisableBlobReader {
 			if nodeConfig.ParentChain.BlobClient.BeaconUrl == "" {
-				flag.Usage()
+				pflag.Usage()
 				log.Crit("a beacon chain RPC URL is required to read batches, but it was not configured (CLI argument: --parent-chain.blob-client.beacon-url [URL])")
 			}
 			blobClient, err := headerreader.NewBlobClient(nodeConfig.ParentChain.BlobClient, l1Client)
@@ -336,11 +336,11 @@ func mainImpl() int {
 
 	if nodeConfig.Node.Staker.OnlyCreateWalletContract {
 		if !nodeConfig.Node.Staker.UseSmartContractWallet {
-			flag.Usage()
+			pflag.Usage()
 			log.Crit("--node.validator.only-create-wallet-contract requires --node.validator.use-smart-contract-wallet")
 		}
 		if l1Reader == nil {
-			flag.Usage()
+			pflag.Usage()
 			log.Crit("--node.validator.only-create-wallet-contract conflicts with --node.dangerous.no-l1-listener")
 		}
 		// Just create validator smart wallet if needed then exit
@@ -371,7 +371,7 @@ func mainImpl() int {
 	}
 
 	if err := resourcemanager.Init(&nodeConfig.Node.ResourceMgmt); err != nil {
-		flag.Usage()
+		pflag.Usage()
 		log.Crit("Failed to start resource management module", "err", err)
 	}
 
@@ -382,13 +382,13 @@ func mainImpl() int {
 	}
 	stack, err := node.New(&stackConf)
 	if err != nil {
-		flag.Usage()
+		pflag.Usage()
 		log.Crit("failed to initialize geth stack", "err", err)
 	}
 	{
 		devAddr, err := addUnlockWallet(stack.AccountManager(), l2DevWallet)
 		if err != nil {
-			flag.Usage()
+			pflag.Usage()
 			log.Crit("error opening L2 dev wallet", "err", err)
 		}
 		if devAddr != (common.Address{}) {
@@ -448,12 +448,12 @@ func mainImpl() int {
 	}
 	deferFuncs = append(deferFuncs, func() { closeDb(chainDb, "chainDb") })
 	if err != nil {
-		flag.Usage()
+		pflag.Usage()
 		log.Error("error initializing database", "err", err)
 		return 1
 	}
 
-	arbDb, err := stack.OpenDatabaseWithOptions("arbitrumdata", node.DatabaseOptions{MetricsNamespace: "arbitrumdata/", PebbleExtraOptions: nodeConfig.Persistent.Pebble.ExtraOptions("arbitrumdata")})
+	arbDb, err := stack.OpenDatabaseWithOptions("arbitrumdata", node.DatabaseOptions{MetricsNamespace: "arbitrumdata/", PebbleExtraOptions: nodeConfig.Persistent.Pebble.ExtraOptions("arbitrumdata"), NoFreezer: true})
 	deferFuncs = append(deferFuncs, func() { closeDb(arbDb, "arbDb") })
 	if err != nil {
 		log.Error("failed to open database", "err", err)
@@ -504,7 +504,7 @@ func mainImpl() int {
 	}
 
 	if l2BlockChain.Config().ArbitrumChainParams.DataAvailabilityCommittee != nodeConfig.Node.DataAvailability.Enable {
-		flag.Usage()
+		pflag.Usage()
 		log.Error(fmt.Sprintf("data availability service usage for this chain is set to %v but --node.data-availability.enable is set to %v", l2BlockChain.Config().ArbitrumChainParams.DataAvailabilityCommittee, nodeConfig.Node.DataAvailability.Enable))
 		return 1
 	}
@@ -528,7 +528,7 @@ func mainImpl() int {
 		chainDb,
 		l2BlockChain,
 		l1Client,
-		func() *gethexec.Config { return &liveNodeConfig.Get().Execution },
+		&ExecutionNodeConfigFetcher{liveNodeConfig},
 		new(big.Int).SetUint64(nodeConfig.ParentChain.ID),
 		liveNodeConfig.Get().Node.TransactionStreamer.SyncTillBlock,
 	)
@@ -553,7 +553,7 @@ func mainImpl() int {
 		execNode,
 		execNode,
 		arbDb,
-		&NodeConfigFetcher{liveNodeConfig},
+		&ConsensusNodeConfigFetcher{liveNodeConfig},
 		l2BlockChain.Config(),
 		l1Client,
 		&rollupAddrs,
@@ -791,7 +791,7 @@ var NodeConfigDefault = NodeConfig{
 	EnsureRollupDeployment: true,
 }
 
-func NodeConfigAddOptions(f *flag.FlagSet) {
+func NodeConfigAddOptions(f *pflag.FlagSet) {
 	genericconf.ConfConfigAddOptions("conf", f)
 	arbnode.ConfigAddOptions("node", f, true, true)
 	gethexec.ConfigAddOptions("execution", f)
@@ -896,7 +896,7 @@ func (c *NodeConfig) GetReloadInterval() time.Duration {
 }
 
 func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.WalletConfig, error) {
-	f := flag.NewFlagSet("", flag.ContinueOnError)
+	f := pflag.NewFlagSet("", pflag.ContinueOnError)
 
 	NodeConfigAddOptions(f)
 
@@ -909,8 +909,9 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 	l2ChainName := k.String("chain.name")
 	l2ChainInfoFiles := k.Strings("chain.info-files")
 	l2ChainInfoJson := k.String("chain.info-json")
+	l2GenesisJsonFile := k.String("init.genesis-json-file")
 	// #nosec G115
-	err = applyChainParameters(k, uint64(l2ChainId), l2ChainName, l2ChainInfoFiles, l2ChainInfoJson)
+	err = applyChainParameters(k, uint64(l2ChainId), l2ChainName, l2ChainInfoFiles, l2ChainInfoJson, l2GenesisJsonFile)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -974,7 +975,7 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 	return &nodeConfig, &l2DevWallet, nil
 }
 
-func applyChainParameters(k *koanf.Koanf, chainId uint64, chainName string, l2ChainInfoFiles []string, l2ChainInfoJson string) error {
+func applyChainParameters(k *koanf.Koanf, chainId uint64, chainName string, l2ChainInfoFiles []string, l2ChainInfoJson string, l2GenesisJsonFile string) error {
 	chainInfo, err := chaininfo.ProcessChainInfo(chainId, chainName, l2ChainInfoFiles, l2ChainInfoJson)
 	if err != nil {
 		return err
@@ -1018,7 +1019,7 @@ func applyChainParameters(k *koanf.Koanf, chainId uint64, chainName string, l2Ch
 	} else if chainInfo.ChainConfig.ArbitrumChainParams.DataAvailabilityCommittee {
 		chainDefaults["node.data-availability.enable"] = true
 	}
-	if !chainInfo.HasGenesisState {
+	if !chainInfo.HasGenesisState && l2GenesisJsonFile == "" {
 		chainDefaults["init.empty"] = true
 	}
 	if parentChainIsArbitrum {
@@ -1087,12 +1088,20 @@ func initReorg(initConfig conf.InitConfig, chainConfig *params.ChainConfig, inbo
 	return inboxTracker.ReorgBatchesTo(batchCount)
 }
 
-type NodeConfigFetcher struct {
+type ConsensusNodeConfigFetcher struct {
 	*genericconf.LiveConfig[*NodeConfig]
 }
 
-func (f *NodeConfigFetcher) Get() *arbnode.Config {
+func (f *ConsensusNodeConfigFetcher) Get() *arbnode.Config {
 	return &f.LiveConfig.Get().Node
+}
+
+type ExecutionNodeConfigFetcher struct {
+	*genericconf.LiveConfig[*NodeConfig]
+}
+
+func (f *ExecutionNodeConfigFetcher) Get() *gethexec.Config {
+	return &f.LiveConfig.Get().Execution
 }
 
 func checkWasmModuleRootCompatibility(ctx context.Context, wasmConfig valnode.WasmConfig, l1Client *ethclient.Client, rollupAddrs chaininfo.RollupAddresses) error {

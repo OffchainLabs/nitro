@@ -41,22 +41,6 @@ func CreatePersistentStorageService(
 		storageServices = append(storageServices, fs)
 	}
 
-	if config.LocalDBStorage.Enable {
-		var s *DBStorageService
-		if config.MigrateLocalDBToFileStorage {
-			s, err = NewDBStorageService(ctx, &config.LocalDBStorage, fs)
-		} else {
-			s, err = NewDBStorageService(ctx, &config.LocalDBStorage, nil)
-		}
-		if err != nil {
-			return nil, nil, err
-		}
-		if s != nil {
-			lifecycleManager.Register(s)
-			storageServices = append(storageServices, s)
-		}
-	}
-
 	if config.S3Storage.Enable {
 		s, err := NewS3StorageService(config.S3Storage)
 		if err != nil {
@@ -168,10 +152,9 @@ func CreateDAComponentsForDaserver(
 	}
 
 	// Check config requirements
-	if !config.LocalDBStorage.Enable &&
-		!config.LocalFileStorage.Enable &&
+	if !config.LocalFileStorage.Enable &&
 		!config.S3Storage.Enable {
-		return nil, nil, nil, nil, nil, errors.New("At least one of --data-availability.(local-db-storage|local-file-storage|s3-storage) must be enabled.")
+		return nil, nil, nil, nil, nil, errors.New("At least one of --data-availability.(local-file-storage|s3-storage) must be enabled.")
 	}
 	// Done checking config requirements
 
@@ -228,30 +211,30 @@ func CreateDAComponentsForDaserver(
 	var signatureVerifier *SignatureVerifier
 
 	if config.Key.KeyDir != "" || config.Key.PrivKey != "" {
-		var seqInboxCaller *bridgegen.SequencerInboxCaller
-		if seqInboxAddress != nil {
-			seqInbox, err := bridgegen.NewSequencerInbox(*seqInboxAddress, (*l1Reader).Client())
-			if err != nil {
-				return nil, nil, nil, nil, nil, err
-			}
-
-			seqInboxCaller = &seqInbox.SequencerInboxCaller
-		}
-		if config.DisableSignatureChecking {
-			seqInboxCaller = nil
-		}
-
 		daWriter, err = NewSignAfterStoreDASWriter(ctx, *config, storageService)
 		if err != nil {
 			return nil, nil, nil, nil, nil, err
 		}
 
-		signatureVerifier, err = NewSignatureVerifierWithSeqInboxCaller(
-			seqInboxCaller,
-			config.ExtraSignatureCheckingPublicKey,
-		)
-		if err != nil {
-			return nil, nil, nil, nil, nil, err
+		// Only create SignatureVerifier if signature checking is enabled
+		if !config.DisableSignatureChecking {
+			var seqInboxCaller *bridgegen.SequencerInboxCaller
+			if seqInboxAddress != nil {
+				seqInbox, err := bridgegen.NewSequencerInbox(*seqInboxAddress, (*l1Reader).Client())
+				if err != nil {
+					return nil, nil, nil, nil, nil, err
+				}
+
+				seqInboxCaller = &seqInbox.SequencerInboxCaller
+			}
+
+			signatureVerifier, err = NewSignatureVerifierWithSeqInboxCaller(
+				seqInboxCaller,
+				config.ExtraSignatureCheckingPublicKey,
+			)
+			if err != nil {
+				return nil, nil, nil, nil, nil, err
+			}
 		}
 	}
 

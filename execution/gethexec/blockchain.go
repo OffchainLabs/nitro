@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	flag "github.com/spf13/pflag"
+	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
@@ -45,9 +45,10 @@ type CachingConfig struct {
 	StateScheme                         string        `koanf:"state-scheme"`
 	StateHistory                        uint64        `koanf:"state-history"`
 	EnablePreimages                     bool          `koanf:"enable-preimages"`
+	PathdbMaxDiffLayers                 int           `koanf:"pathdb-max-diff-layers"`
 }
 
-func CachingConfigAddOptions(prefix string, f *flag.FlagSet) {
+func CachingConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".archive", DefaultCachingConfig.Archive, "retain past block state")
 	f.Uint64(prefix+".block-count", DefaultCachingConfig.BlockCount, "minimum number of recent blocks to keep in memory")
 	f.Duration(prefix+".block-age", DefaultCachingConfig.BlockAge, "minimum age of recent blocks to keep in memory")
@@ -68,6 +69,7 @@ func CachingConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".state-scheme", DefaultCachingConfig.StateScheme, "scheme to use for state trie storage (hash, path)")
 	f.Uint64(prefix+".state-history", DefaultCachingConfig.StateHistory, "number of recent blocks to retain state history for (path state-scheme only)")
 	f.Bool(prefix+".enable-preimages", DefaultCachingConfig.EnablePreimages, "enable recording of preimages")
+	f.Int(prefix+".pathdb-max-diff-layers", DefaultCachingConfig.PathdbMaxDiffLayers, "maximum number of diff layers to keep in pathdb (path state-scheme only)")
 }
 
 func getStateHistory(maxBlockSpeed time.Duration) uint64 {
@@ -94,9 +96,15 @@ var DefaultCachingConfig = CachingConfig{
 	StylusLRUCacheCapacity:              256,
 	StateScheme:                         rawdb.HashScheme,
 	StateHistory:                        getStateHistory(DefaultSequencerConfig.MaxBlockSpeed),
+	EnablePreimages:                     false,
+	PathdbMaxDiffLayers:                 128,
 }
 
 func DefaultCacheConfigFor(cachingConfig *CachingConfig) *core.BlockChainConfig {
+	return DefaultCacheConfigTrieNoFlushFor(cachingConfig, false)
+}
+
+func DefaultCacheConfigTrieNoFlushFor(cachingConfig *CachingConfig, trieNoAsyncFlush bool) *core.BlockChainConfig {
 	baseConf := ethconfig.Defaults
 	if cachingConfig.Archive {
 		baseConf = ethconfig.ArchiveDefaults
@@ -119,6 +127,8 @@ func DefaultCacheConfigFor(cachingConfig *CachingConfig) *core.BlockChainConfig 
 		MaxAmountOfGasToSkipStateSaving:    cachingConfig.MaxAmountOfGasToSkipStateSaving,
 		StateScheme:                        cachingConfig.StateScheme,
 		StateHistory:                       cachingConfig.StateHistory,
+		MaxDiffLayers:                      cachingConfig.PathdbMaxDiffLayers,
+		TrieNoAsyncFlush:                   trieNoAsyncFlush,
 	}
 }
 
@@ -126,8 +136,8 @@ func (c *CachingConfig) validateStateScheme() error {
 	switch c.StateScheme {
 	case rawdb.HashScheme:
 	case rawdb.PathScheme:
-		if c.Archive {
-			return errors.New("archive cannot be set when using path as the state-scheme")
+		if c.Archive && c.StateHistory != 0 {
+			log.Warn("Path scheme archive mode enabled, but state-history is not zero - the persisted state history will be limited to recent blocks", "StateHistory", c.StateHistory)
 		}
 	default:
 		return errors.New("Invalid StateScheme")
@@ -152,11 +162,11 @@ func WriteOrTestGenblock(chainDb ethdb.Database, cacheConfig *core.BlockChainCon
 	if blockNumber > 0 {
 		prevHash = rawdb.ReadCanonicalHash(chainDb, blockNumber-1)
 		if prevHash == EmptyHash {
-			return fmt.Errorf("block number %d not found in database", chainDb)
+			return fmt.Errorf("block number %d not found in database", blockNumber-1)
 		}
 		prevHeader := rawdb.ReadHeader(chainDb, prevHash, blockNumber-1)
 		if prevHeader == nil {
-			return fmt.Errorf("block header for block %d not found in database", chainDb)
+			return fmt.Errorf("block header for block %d not found in database", blockNumber-1)
 		}
 		timestamp = prevHeader.Time
 	}

@@ -1,19 +1,15 @@
+---
 name: Nightly CI
 run-name: Nightly CI tests triggered from @${{ github.actor }} of ${{ github.head_ref }}
 
 on:
   workflow_dispatch:
-  merge_group:
-  pull_request:
-  push:
-    branches:
-      - master
   schedule:
     # Run at 00:00 AM UTC
     - cron: '0 0 * * *'
 
 jobs:
-  # Only run on schedule AND main branch
+  # Only run on schedule
   tests-scheduled:
     name: Scheduled tests
     runs-on: arbitrator-ci
@@ -27,104 +23,25 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        test-mode: [race, legacychallenge, long, challenge, l3challenge, execution-spec-tests]
+        test-mode: [legacychallenge, long, challenge, l3challenge, execution-spec-tests, pebble]
 
-    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'schedule' && github.ref == 'refs/heads/master')
-    
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
         with:
           submodules: recursive
-          
-      - name: Install dependencies
-        run: sudo apt update && sudo apt install -y wabt gotestsum
 
-      - name: Setup nodejs
-        uses: actions/setup-node@v4
-        with:
-          node-version: '24'
-          cache: 'yarn'
-          cache-dependency-path: '**/yarn.lock'
-
-      - name: Install go
-        uses: actions/setup-go@v5
-        with:
-          go-version: 1.24.x
-
-      - name: Install wasm-ld
-        run: |
-          sudo apt-get update && sudo apt-get install -y lld-14
-          sudo ln -s /usr/bin/wasm-ld-14 /usr/local/bin/wasm-ld
-
-      - name: Install rust
-        id: install-rust
-        uses: ./.github/actions/install-rust
-
-      - name: Install Foundry
-        uses: foundry-rs/foundry-toolchain@v1
-        with:
-          cache: false
-          version: v1.0.0
-        
-      - name: Install cbindgen
-        run: cargo install --force cbindgen
-
-      - name: Cache Build Products
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cache/go-build
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-          restore-keys: ${{ runner.os }}-go-
-
-      - name: Cache Rust Build Products
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/
-            arbitrator/target/
-            arbitrator/wasm-libraries/target/
-            arbitrator/wasm-libraries/soft-float/
-            target/etc/initial-machine-cache/
-            /home/runner/.rustup/toolchains/
-          key: ${{ runner.os }}-cargo-${{ steps.install-rust.outputs.version }}-min-${{ hashFiles('arbitrator/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-${{ steps.install-rust.outputs.version }}-
-
-      - name: Cache cbrotli
-        uses: actions/cache@v4
-        id: cache-cbrotli
-        with:
-          path: |
-            target/include/brotli/
-            target/lib-wasm/
-            target/lib/libbrotlicommon-static.a
-            target/lib/libbrotlienc-static.a
-            target/lib/libbrotlidec-static.a
-          key: ${{ runner.os }}-brotli-${{ hashFiles('scripts/build-brotli.sh') }}-${{ hashFiles('.github/workflows/arbitrator-ci.yml') }}
-
-      - name: Build cbrotli-local
-        run: ./scripts/build-brotli.sh -l
-
-      - name: Build cbrotli-wasm in docker
-        run: ./scripts/build-brotli.sh -w -d
+      - name: Setup CI
+        uses: ./.github/actions/ci-setup
 
       - name: Build
-        run: make build test-go-deps -j
+        run: make -j8 build test-go-deps
 
       - name: Build all lint dependencies
-        run: make -j build-node-deps
+        run: make -j8 build-node-deps
 
-      - name: Lint
-        uses: golangci/golangci-lint-action@v8
-        with:
-          version: latest
-          skip-cache: true
-          skip-save-cache: true
-          
-      - name: Custom Lint
-        run: |
-          go run ./linters ./...
+      - name: Setup CI
+        uses: ./.github/actions/lint-go
 
       - name: Set environment variables
         run: |
@@ -142,26 +59,39 @@ jobs:
 
       - name: run challenge tests
         if: matrix.test-mode == 'challenge'
-        run: ${{ github.workspace }}/.github/workflows/gotestsum.sh --tags challengetest --run TestChallenge --timeout 120m --cover
+        run: >-
+          ${{ github.workspace }}/.github/workflows/gotestsum.sh --tags challengetest
+          --run TestChallenge --timeout 120m --cover
 
       - name: run L3 challenge tests
         if: matrix.test-mode == 'l3challenge'
-        run: ${{ github.workspace }}/.github/workflows/gotestsum.sh --tags challengetest --run TestL3Challenge --timeout 120m --cover
+        run: >-
+          ${{ github.workspace }}/.github/workflows/gotestsum.sh --tags challengetest
+          --run TestL3Challenge --timeout 120m --cover
 
       - name: run legacy challenge tests
         if: matrix.test-mode == 'legacychallenge'
-        run: ${{ github.workspace }}/.github/workflows/gotestsum.sh --tags legacychallengetest --run TestChallenge --timeout 60m --cover
+        run: >-
+          ${{ github.workspace }}/.github/workflows/gotestsum.sh --tags legacychallengetest
+          --run TestChallenge --timeout 60m --cover
 
       - name: run long stylus tests
         if: matrix.test-mode == 'long'
-        run: ${{ github.workspace }}/.github/workflows/gotestsum.sh --tags stylustest --run TestProgramLong --timeout 60m --cover
+        run: >-
+          ${{ github.workspace }}/.github/workflows/gotestsum.sh --tags stylustest
+          --run TestProgramLong --timeout 60m --cover
 
       - name: run execution spec tests
         if: matrix.test-mode == 'execution-spec-tests'
-        run: ${{ github.workspace }}/.github/workflows/runExecutionSpecTests.sh 
+        run: ${{ github.workspace }}/.github/workflows/runExecutionSpecTests.sh
+
+      - name: run tests with pebble db
+        if: matrix.test-mode == 'pebble'
+        run: |
+          ${{ github.workspace }}/.github/workflows/gotestsum.sh --timeout 90m --test_database_engine pebble        
 
       - name: Archive detailed run log
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: ${{ matrix.test-mode }}-full.log
           path: full.log
@@ -174,178 +104,13 @@ jobs:
           verbose: false
           token: ${{ secrets.CODECOV_TOKEN }}
 
-
-  # Only run this job if files in bold/legacy/ are modified
-  tests-pr:
-    name: PR modified files tests
-    runs-on: arbitrator-ci
-    if: github.event_name == 'pull_request'
-    
-    permissions:
-      pull-requests: read
-    
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v5
-        with:
-          submodules: recursive
-          fetch-depth: 10           // Will cover most PRs
-          persist-credentials: true // In case changed-files requires deeper depth
-          
-      - name: Check changed files
-        id: changed-files
-        uses: tj-actions/changed-files@v46
-        with:
-          files: bold/legacy/**
-          
-      # Add conditional execution for all subsequent steps
-      - name: Skip tests if no relevant files changed
-        id: check-skip
-        if: steps.changed-files.outputs.any_changed != 'true'
-        run: |
-          echo "No changes detected in bold/legacy/** - skipping challenge tests"
-          exit 0  # Success exit code to pass the job
-      
-      - name: Install dependencies
-        if: steps.changed-files.outputs.any_changed == 'true'
-        run: sudo apt update && sudo apt install -y wabt gotestsum
-
-      - name: Setup nodejs
-        if: steps.changed-files.outputs.any_changed == 'true'
-        uses: actions/setup-node@v4
-        with:
-          node-version: '24'
-          cache: 'yarn'
-          cache-dependency-path: '**/yarn.lock'
-
-      - name: Install go
-        if: steps.changed-files.outputs.any_changed == 'true'
-        uses: actions/setup-go@v5
-        with:
-          go-version: 1.24.x
-
-      - name: Install wasm-ld
-        if: steps.changed-files.outputs.any_changed == 'true'
-        run: |
-          sudo apt-get update && sudo apt-get install -y lld-14
-          sudo ln -s /usr/bin/wasm-ld-14 /usr/local/bin/wasm-ld
-
-      - name: Install rust
-        id: install-rust
-        uses: ./.github/actions/install-rust
-
-      - name: Install Foundry
-        if: steps.changed-files.outputs.any_changed == 'true'
-        uses: foundry-rs/foundry-toolchain@v1
-        with:
-          cache: false
-          version: v1.0.0
-        
-      - name: Install cbindgen
-        if: steps.changed-files.outputs.any_changed == 'true'
-        run: cargo install --force cbindgen
-
-      - name: Cache Build Products
-        if: steps.changed-files.outputs.any_changed == 'true'
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cache/go-build
-          key: ${{ runner.os }}-go-${{ matrix.test-mode }}-${{ hashFiles('**/go.sum') }}
-          restore-keys: ${{ runner.os }}-go-${{ matrix.test-mode }}-
-
-      - name: Cache Rust Build Products
-        if: steps.changed-files.outputs.any_changed == 'true'
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/
-            arbitrator/target/
-            arbitrator/wasm-libraries/target/
-            arbitrator/wasm-libraries/soft-float/
-            target/etc/initial-machine-cache/
-            /home/runner/.rustup/toolchains/
-          key: ${{ runner.os }}-cargo-${{ matrix.test-mode }}-${{ steps.install-rust.outputs.version }}-min-${{ hashFiles('arbitrator/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-${{ matrix.test-mode }}-${{ steps.install-rust.outputs.version }}-
-            ${{ runner.os }}-cargo-${{ steps.install-rust.outputs.version }}-
-
-      - name: Cache cbrotli
-        if: steps.changed-files.outputs.any_changed == 'true'
-        uses: actions/cache@v4
-        id: cache-cbrotli
-        with:
-          path: |
-            target/include/brotli/
-            target/lib-wasm/
-            target/lib/libbrotlicommon-static.a
-            target/lib/libbrotlienc-static.a
-            target/lib/libbrotlidec-static.a
-          key: ${{ runner.os }}-brotli-${{ hashFiles('scripts/build-brotli.sh') }}-${{ hashFiles('.github/workflows/arbitrator-ci.yml') }}
-
-      - name: Build cbrotli-local
-        if: steps.changed-files.outputs.any_changed == 'true' && steps.cache-cbrotli.outputs.cache-hit != 'true'
-        run: ./scripts/build-brotli.sh -l
-
-      - name: Build cbrotli-wasm in docker
-        if: steps.changed-files.outputs.any_changed == 'true' && steps.cache-cbrotli.outputs.cache-hit != 'true'
-        run: ./scripts/build-brotli.sh -w -d
-
-      - name: Build
-        if: steps.changed-files.outputs.any_changed == 'true'
-        run: make build test-go-deps -j
-
-      - name: Build all lint dependencies
-        if: steps.changed-files.outputs.any_changed == 'true'
-        run: make -j build-node-deps
-
-      - name: Lint
-        if: steps.changed-files.outputs.any_changed == 'true'
-        uses: golangci/golangci-lint-action@v8
-        with:
-          version: latest
-          skip-cache: true
-          skip-save-cache: true
-          
-      - name: Custom Lint
-        if: steps.changed-files.outputs.any_changed == 'true'
-        run: |
-          go run ./linters ./...
-
-      - name: Set environment variables
-        if: steps.changed-files.outputs.any_changed == 'true'
-        run: |
-          mkdir -p target/tmp/deadbeefbee
-          echo "TMPDIR=$(pwd)/target/tmp/deadbeefbee" >> "$GITHUB_ENV"
-          echo "GOMEMLIMIT=6GiB" >> "$GITHUB_ENV"
-          echo "GOGC=80" >> "$GITHUB_ENV"
-          echo "GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }}" >> "$GITHUB_ENV"
-
-      - name: run challenge tests
-        if: steps.changed-files.outputs.any_changed == 'true'
-        run: ${{ github.workspace }}/.github/workflows/gotestsum.sh --tags legacychallengetest --run TestChallenge --timeout 60m --cover
-
-      - name: Archive detailed run log
-        if: steps.changed-files.outputs.any_changed == 'true'
-        uses: actions/upload-artifact@v4
-        with:
-          name: full.log
-          path: full.log
-
-      - name: Upload coverage to Codecov
-        if: steps.changed-files.outputs.any_changed == 'true'
-        uses: codecov/codecov-action@v5
-        with:
-          fail_ci_if_error: false
-          files: ./coverage.txt,./coverage-redis.txt
-          verbose: false
-          token: ${{ secrets.CODECOV_TOKEN }}
-
   notify-on-failure:
     name: Notify Slack on failure
     needs: [tests-scheduled]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-4
     if: ${{ failure() }}
+    env:
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
     steps:
       - name: Send Slack notification
         uses: slackapi/slack-github-action@v2.1.1
@@ -354,5 +119,7 @@ jobs:
           method: chat.postMessage
           token: ${{ secrets.SLACK_BOT_TOKEN }}
           payload: |
-            "channel": "${{ secrets.SLACK_CHANNEL_ID }}",
-            "text": "⚠️ CI job failed! ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
+            {
+              "channel": "${{ secrets.SLACK_CHANNEL_ID }}",
+              "text": "⚠️ CI job failed! ${{ env.RUN_URL }}",
+            }

@@ -21,14 +21,14 @@ import (
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
-	protocol "github.com/offchainlabs/nitro/bold/chain-abstraction"
-	solimpl "github.com/offchainlabs/nitro/bold/chain-abstraction/sol-implementation"
-	challengemanager "github.com/offchainlabs/nitro/bold/challenge-manager"
+	"github.com/offchainlabs/nitro/bold/chain-abstraction"
+	"github.com/offchainlabs/nitro/bold/chain-abstraction/sol-implementation"
+	"github.com/offchainlabs/nitro/bold/challenge-manager"
 	modes "github.com/offchainlabs/nitro/bold/challenge-manager/types"
 	"github.com/offchainlabs/nitro/bold/containers/option"
-	l2stateprovider "github.com/offchainlabs/nitro/bold/layer2-state-provider"
+	"github.com/offchainlabs/nitro/bold/layer2-state-provider"
 	"github.com/offchainlabs/nitro/bold/state-commitments/history"
-	butil "github.com/offchainlabs/nitro/bold/util"
+	"github.com/offchainlabs/nitro/bold/util"
 	"github.com/offchainlabs/nitro/solgen/go/challengeV2gen"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
@@ -134,7 +134,7 @@ func testChallengeProtocolBOLDVirtualBlocks(t *testing.T, wrongAtFirstVirtual bo
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithBoldDeployment()
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
 
 	// Block validation requires db hash scheme
 	builder.RequireScheme(t, rawdb.HashScheme)
@@ -330,7 +330,7 @@ func startBoldChallengeManager(t *testing.T, ctx context.Context, builder *NodeB
 		rawdb.NewTable(node.ConsensusNode.ArbDB, storage.StakerPrefix),
 		node.ConsensusNode.L1Reader,
 		&txOpts,
-		NewFetcherFromConfig(builder.nodeConfig),
+		NewCommonConfigFetcher(builder.nodeConfig),
 		node.ConsensusNode.SyncMonitor,
 		builder.L1Info.Signer.ChainID(),
 	)
@@ -341,7 +341,7 @@ func startBoldChallengeManager(t *testing.T, ctx context.Context, builder *NodeB
 		builder.addresses.Rollup,
 		chalManagerAddr,
 		&txOpts,
-		butil.NewBackendWrapper(builder.L1.Client, rpc.LatestBlockNumber),
+		util.NewBackendWrapper(builder.L1.Client, rpc.LatestBlockNumber),
 		bold.NewDataPosterTransactor(dp),
 		solimpl.WithRpcHeadBlockNumber(rpc.LatestBlockNumber),
 	)

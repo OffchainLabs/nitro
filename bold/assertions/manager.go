@@ -29,7 +29,7 @@ import (
 	"github.com/offchainlabs/nitro/bold/containers/threadsafe"
 	l2stateprovider "github.com/offchainlabs/nitro/bold/layer2-state-provider"
 	retry "github.com/offchainlabs/nitro/bold/runtime"
-	"github.com/offchainlabs/nitro/bold/util/stopwaiter"
+	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
 var (

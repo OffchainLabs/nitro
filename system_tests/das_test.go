@@ -22,6 +22,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/daprovider/das"
+	"github.com/offchainlabs/nitro/daprovider/data_streaming"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/headerreader"
@@ -81,11 +82,14 @@ func blsPubToBase64(pubkey *blsSignatures.PublicKey) string {
 
 func aggConfigForBackend(backendConfig das.BackendConfig) das.AggregatorConfig {
 	return das.AggregatorConfig{
-		Enable:                true,
-		AssumedHonest:         1,
-		Backends:              das.BackendConfigList{backendConfig},
-		MaxStoreChunkBodySize: 512 * 1024,
-		EnableChunkedStore:    true,
+		Enable:        true,
+		AssumedHonest: 1,
+		Backends:      das.BackendConfigList{backendConfig},
+		DASRPCClient: das.DASRPCClientConfig{
+			ServerUrl:          backendConfig.URL,
+			EnableChunkedStore: true,
+			DataStream:         data_streaming.TestDataStreamerConfig(das.DefaultDataStreamRpcMethods),
+		},
 	}
 }
 
@@ -205,13 +209,9 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 	l1Reader.Start(ctx)
 	defer l1Reader.StopAndWait()
 
-	keyDir, fileDataDir, dbDataDir := t.TempDir(), t.TempDir(), t.TempDir()
+	keyDir, fileDataDir := t.TempDir(), t.TempDir()
 	pubkey, _, err := das.GenerateAndStoreKeys(keyDir)
 	Require(t, err)
-
-	dbConfig := das.DefaultLocalDBStorageConfig
-	dbConfig.Enable = true
-	dbConfig.DataDir = dbDataDir
 
 	serverConfig := das.DataAvailabilityConfig{
 		Enable: true,
@@ -219,10 +219,10 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 		LocalCache: das.TestCacheConfig,
 
 		LocalFileStorage: das.LocalFileStorageConfig{
-			Enable:  true,
-			DataDir: fileDataDir,
+			Enable:       true,
+			DataDir:      fileDataDir,
+			MaxRetention: time.Hour * 24 * 30,
 		},
-		LocalDBStorage: dbConfig,
 
 		Key: das.KeyConfig{
 			KeyDir: keyDir,
@@ -365,7 +365,8 @@ func TestDASBatchPosterFallback(t *testing.T) {
 	// Enable the DAP fallback and check the transaction on the second node.
 	// (We don't need to restart the node because of the hot-reload.)
 	builder.nodeConfig.BatchPoster.DisableDapFallbackStoreDataOnChain = false
-	_, err = WaitForTx(ctx, l2B.Client, tx.Hash(), time.Second*3)
+	builder.L2.ConsensusConfigFetcher.Set(builder.nodeConfig)
+	_, err = WaitForTx(ctx, l2B.Client, tx.Hash(), time.Second*5)
 	Require(t, err)
 	l2balance, err := l2B.Client.BalanceAt(ctx, l2info.GetAddress("User2"), nil)
 	Require(t, err)

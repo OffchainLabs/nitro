@@ -29,9 +29,9 @@ import (
 	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
-	boldrollup "github.com/offchainlabs/nitro/solgen/go/rollupgen"
+	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/staker"
-	boldstaker "github.com/offchainlabs/nitro/staker/bold"
+	"github.com/offchainlabs/nitro/staker/bold"
 	legacystaker "github.com/offchainlabs/nitro/staker/legacy"
 	multiprotocolstaker "github.com/offchainlabs/nitro/staker/multi_protocol"
 )
@@ -93,7 +93,7 @@ func findImportantRoots(ctx context.Context, chainDb ethdb.Database, stack *node
 	if chainConfig == nil {
 		return nil, errors.New("database doesn't have a chain config (was this node initialized?)")
 	}
-	arbDb, err := stack.OpenDatabaseWithOptions("arbitrumdata", node.DatabaseOptions{MetricsNamespace: "arbitrumdata/", ReadOnly: true, PebbleExtraOptions: persistentConfig.Pebble.ExtraOptions("arbitrumdata")})
+	arbDb, err := stack.OpenDatabaseWithOptions("arbitrumdata", node.DatabaseOptions{MetricsNamespace: "arbitrumdata/", ReadOnly: true, PebbleExtraOptions: persistentConfig.Pebble.ExtraOptions("arbitrumdata"), NoFreezer: true})
 	if err != nil {
 		return nil, err
 	}
@@ -242,7 +242,7 @@ func getLatestConfirmedHash(ctx context.Context, rollupAddrs chaininfo.RollupAdd
 		return common.Hash{}, err
 	}
 	if isBoldActive {
-		rollupUserLogic, err := boldrollup.NewRollupUserLogic(rollupAddress, l1Client)
+		rollupUserLogic, err := rollupgen.NewRollupUserLogic(rollupAddress, l1Client)
 		if err != nil {
 			return common.Hash{}, err
 		}
@@ -250,7 +250,7 @@ func getLatestConfirmedHash(ctx context.Context, rollupAddrs chaininfo.RollupAdd
 		if err != nil {
 			return common.Hash{}, err
 		}
-		assertion, err := boldstaker.ReadBoldAssertionCreationInfo(
+		assertion, err := bold.ReadBoldAssertionCreationInfo(
 			ctx,
 			rollupUserLogic,
 			l1Client,

@@ -5,7 +5,6 @@ package broadcastclient
 
 import (
 	"context"
-	"crypto/ecdsa"
 	"errors"
 	"fmt"
 	"net"
@@ -23,12 +22,23 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcaster"
-	m "github.com/offchainlabs/nitro/broadcaster/message"
+	"github.com/offchainlabs/nitro/broadcaster/message"
 	"github.com/offchainlabs/nitro/util/contracts"
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
+
+func feedMessage(t *testing.T, b *broadcaster.Broadcaster, seqNum arbutil.MessageIndex) []*message.BroadcastFeedMessage {
+	msg := arbostypes.MessageWithMetadataAndBlockInfo{
+		MessageWithMeta: arbostypes.EmptyTestMessageWithMetadata,
+		BlockHash:       nil,
+		BlockMetadata:   nil,
+	}
+	broadcastMsg, err := b.NewBroadcastFeedMessage(msg, seqNum)
+	Require(t, err)
+	return []*message.BroadcastFeedMessage{broadcastMsg}
+}
 
 func TestReceiveMessages(t *testing.T) {
 	t.Parallel()
@@ -92,8 +102,8 @@ func testReceiveMessages(t *testing.T, clientCompression bool, serverCompression
 
 	go func() {
 		for i := 0; i < messageCount; i++ {
-			// #nosec G115
-			Require(t, b.BroadcastSingle(arbostypes.TestMessageWithMetadataAndRequestId, arbutil.MessageIndex(i), nil, nil))
+			err = b.BroadcastFeedMessages(feedMessage(t, b, arbutil.MessageIndex(i))) // #nosec G115
+			Require(t, err)
 		}
 	}()
 
@@ -101,92 +111,21 @@ func testReceiveMessages(t *testing.T, clientCompression bool, serverCompression
 
 }
 
-func TestInvalidSignature(t *testing.T) {
-	t.Parallel()
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	settings := wsbroadcastserver.DefaultTestBroadcasterConfig
-
-	messageCount := 1
-	chainId := uint64(9742)
-
-	privateKey, err := crypto.GenerateKey()
-	Require(t, err)
-	dataSigner := signature.DataSignerFromPrivateKey(privateKey)
-
-	fatalErrChan := make(chan error, 10)
-	b := broadcaster.NewBroadcaster(func() *wsbroadcastserver.BroadcasterConfig { return &settings }, chainId, fatalErrChan, dataSigner)
-
-	Require(t, b.Initialize())
-	Require(t, b.Start(ctx))
-	defer b.StopAndWait()
-
-	badPrivateKey, err := crypto.GenerateKey()
-	Require(t, err)
-	badPublicKey := badPrivateKey.Public()
-	badECDSA, ok := badPublicKey.(*ecdsa.PublicKey)
-	if !ok {
-		t.Fatal("badPublicKey is not an ecdsa.PublicKey")
-	}
-	badSequencerAddr := crypto.PubkeyToAddress(*badECDSA)
-	config := DefaultTestConfig
-
-	ts := NewDummyTransactionStreamer(chainId, &badSequencerAddr)
-	broadcastClient, err := newTestBroadcastClient(
-		config,
-		b.ListenerAddr(),
-		chainId,
-		0,
-		ts,
-		nil,
-		fatalErrChan,
-		&badSequencerAddr,
-		t,
-	)
-	Require(t, err)
-	broadcastClient.Start(ctx)
-
-	go func() {
-		for i := 0; i < messageCount; i++ {
-			// #nosec G115
-			Require(t, b.BroadcastSingle(arbostypes.TestMessageWithMetadataAndRequestId, arbutil.MessageIndex(i), nil, nil))
-		}
-	}()
-
-	timer := time.NewTimer(2 * time.Second)
-	select {
-	case err := <-fatalErrChan:
-		if errors.Is(err, signature.ErrSignatureNotVerified) {
-			t.Log("feed error found as expected")
-			return
-		}
-		t.Errorf("unexpected error occurred: %v", err)
-		return
-	case <-timer.C:
-		t.Error("no feed errors detected")
-		return
-	case <-ctx.Done():
-		timer.Stop()
-		return
-	}
-}
-
 type dummyTransactionStreamer struct {
-	messageReceiver chan m.BroadcastFeedMessage
+	messageReceiver chan message.BroadcastFeedMessage
 	chainId         uint64
 	sequencerAddr   *common.Address
 }
 
-func NewDummyTransactionStreamer(chainId uint64, sequencerAddr *common.Address) *dummyTransactionStreamer {
+func newDummyTransactionStreamer(chainId uint64, sequencerAddr *common.Address) *dummyTransactionStreamer {
 	return &dummyTransactionStreamer{
-		messageReceiver: make(chan m.BroadcastFeedMessage),
+		messageReceiver: make(chan message.BroadcastFeedMessage),
 		chainId:         chainId,
 		sequencerAddr:   sequencerAddr,
 	}
 }
 
-func (ts *dummyTransactionStreamer) AddBroadcastMessages(feedMessages []*m.BroadcastFeedMessage) error {
+func (ts *dummyTransactionStreamer) AddBroadcastMessages(feedMessages []*message.BroadcastFeedMessage) error {
 	for _, feedMessage := range feedMessages {
 		ts.messageReceiver <- *feedMessage
 	}
@@ -207,7 +146,7 @@ func newTestBroadcastClient(config Config, listenerAddress net.Addr, chainId uin
 }
 
 func startMakeBroadcastClient(ctx context.Context, t *testing.T, clientConfig Config, addr net.Addr, index int, expectedCount int, chainId uint64, wg *sync.WaitGroup, sequencerAddr *common.Address) {
-	ts := NewDummyTransactionStreamer(chainId, sequencerAddr)
+	ts := newDummyTransactionStreamer(chainId, sequencerAddr)
 	feedErrChan := make(chan error, 10)
 	broadcastClient, err := newTestBroadcastClient(
 		clientConfig,
@@ -297,7 +236,7 @@ func TestServerClientDisconnect(t *testing.T) {
 	Require(t, b.Start(ctx))
 	defer b.StopAndWait()
 
-	ts := NewDummyTransactionStreamer(chainId, nil)
+	ts := newDummyTransactionStreamer(chainId, nil)
 	broadcastClient, err := newTestBroadcastClient(
 		DefaultTestConfig,
 		b.ListenerAddr(),
@@ -313,7 +252,8 @@ func TestServerClientDisconnect(t *testing.T) {
 	broadcastClient.Start(ctx)
 
 	t.Log("broadcasting seq 0 message")
-	Require(t, b.BroadcastSingle(arbostypes.EmptyTestMessageWithMetadata, 0, nil, nil))
+	err = b.BroadcastFeedMessages(feedMessage(t, b, 0))
+	Require(t, err)
 
 	// Wait for client to receive batch to ensure it is connected
 	timer := time.NewTimer(5 * time.Second)
@@ -369,7 +309,7 @@ func TestBroadcastClientConfirmedMessage(t *testing.T) {
 	defer b.StopAndWait()
 
 	confirmedSequenceNumberListener := make(chan arbutil.MessageIndex, 10)
-	ts := NewDummyTransactionStreamer(chainId, nil)
+	ts := newDummyTransactionStreamer(chainId, nil)
 	broadcastClient, err := newTestBroadcastClient(
 		DefaultTestConfig,
 		b.ListenerAddr(),
@@ -385,7 +325,8 @@ func TestBroadcastClientConfirmedMessage(t *testing.T) {
 	broadcastClient.Start(ctx)
 
 	t.Log("broadcasting seq 0 message")
-	Require(t, b.BroadcastSingle(arbostypes.EmptyTestMessageWithMetadata, 0, nil, nil))
+	err = b.BroadcastFeedMessages(feedMessage(t, b, 0))
+	Require(t, err)
 
 	// Wait for client to receive batch to ensure it is connected
 	timer := time.NewTimer(5 * time.Second)
@@ -441,7 +382,7 @@ func TestServerIncorrectChainId(t *testing.T) {
 	Require(t, b.Start(ctx))
 	defer b.StopAndWait()
 
-	ts := NewDummyTransactionStreamer(chainId, nil)
+	ts := newDummyTransactionStreamer(chainId, nil)
 	badFeedErrChan := make(chan error, 10)
 	badBroadcastClient, err := newTestBroadcastClient(
 		DefaultTestConfig,
@@ -501,7 +442,7 @@ func TestServerMissingChainId(t *testing.T) {
 	clientConfig := DefaultTestConfig
 	clientConfig.RequireChainId = true
 
-	ts := NewDummyTransactionStreamer(chainId, nil)
+	ts := newDummyTransactionStreamer(chainId, nil)
 	badFeedErrChan := make(chan error, 10)
 	badBroadcastClient, err := newTestBroadcastClient(
 		clientConfig,
@@ -559,7 +500,7 @@ func TestServerIncorrectFeedServerVersion(t *testing.T) {
 	Require(t, b.StartWithHeader(ctx, header))
 	defer b.StopAndWait()
 
-	ts := NewDummyTransactionStreamer(chainId, nil)
+	ts := newDummyTransactionStreamer(chainId, nil)
 	badFeedErrChan := make(chan error, 10)
 	badBroadcastClient, err := newTestBroadcastClient(
 		DefaultTestConfig,
@@ -619,7 +560,7 @@ func TestServerMissingFeedServerVersion(t *testing.T) {
 	clientConfig := DefaultTestConfig
 	clientConfig.RequireFeedVersion = true
 
-	ts := NewDummyTransactionStreamer(chainId, nil)
+	ts := newDummyTransactionStreamer(chainId, nil)
 	badFeedErrChan := make(chan error, 10)
 	badBroadcastClient, err := newTestBroadcastClient(
 		clientConfig,
@@ -727,8 +668,10 @@ func TestBroadcasterSendsCachedMessagesOnClientConnect(t *testing.T) {
 	Require(t, b.Start(ctx))
 	defer b.StopAndWait()
 
-	Require(t, b.BroadcastSingle(arbostypes.EmptyTestMessageWithMetadata, 0, nil, nil))
-	Require(t, b.BroadcastSingle(arbostypes.EmptyTestMessageWithMetadata, 1, nil, nil))
+	err = b.BroadcastFeedMessages(feedMessage(t, b, 0))
+	Require(t, err)
+	err = b.BroadcastFeedMessages(feedMessage(t, b, 1))
+	Require(t, err)
 
 	var wg sync.WaitGroup
 	for i := 0; i < 2; i++ {
@@ -785,7 +728,7 @@ func TestBroadcasterSendsCachedMessagesOnClientConnect(t *testing.T) {
 }
 
 func connectAndGetCachedMessages(ctx context.Context, addr net.Addr, chainId uint64, t *testing.T, clientIndex int, feedErrChan chan error, sequencerAddr *common.Address, wg *sync.WaitGroup) {
-	ts := NewDummyTransactionStreamer(chainId, nil)
+	ts := newDummyTransactionStreamer(chainId, nil)
 	broadcastClient, err := newTestBroadcastClient(
 		DefaultTestConfig,
 		addr,

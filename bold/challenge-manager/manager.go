@@ -31,7 +31,7 @@ import (
 	l2stateprovider "github.com/offchainlabs/nitro/bold/layer2-state-provider"
 	retry "github.com/offchainlabs/nitro/bold/runtime"
 	utilTime "github.com/offchainlabs/nitro/bold/time"
-	"github.com/offchainlabs/nitro/bold/util/stopwaiter"
+	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
 var (

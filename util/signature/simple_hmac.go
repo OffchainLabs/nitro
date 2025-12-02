@@ -8,7 +8,7 @@ import (
 	"regexp"
 	"strings"
 
-	flag "github.com/spf13/pflag"
+	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -52,11 +52,11 @@ type SimpleHmacDangerousConfig struct {
 	DisableSignatureVerification bool `koanf:"disable-signature-verification"`
 }
 
-func SimpleHmacDangerousConfigAddOptions(prefix string, f *flag.FlagSet) {
+func SimpleHmacDangerousConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".disable-signature-verification", DefaultSimpleHmacDangerousConfig.DisableSignatureVerification, "disable message signature verification")
 }
 
-func SimpleHmacConfigAddOptions(prefix string, f *flag.FlagSet) {
+func SimpleHmacConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".signing-key", EmptySimpleHmacConfig.SigningKey, "a 32-byte (64-character) hex string used to sign messages, or a path to a file containing it")
 	f.String(prefix+".fallback-verification-key", EmptySimpleHmacConfig.FallbackVerificationKey, "a fallback key used for message verification")
 	SimpleHmacDangerousConfigAddOptions(prefix+".dangerous", f)

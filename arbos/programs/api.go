@@ -8,13 +8,14 @@ import (
 
 	"github.com/holiman/uint256"
 
+	"github.com/ethereum/go-ethereum/arbitrum/multigas"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos/util"
-	am "github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
 type RequestHandler func(req RequestType, input []byte) ([]byte, []byte, uint64)
@@ -69,12 +70,13 @@ func newApiClosures(
 
 	getBytes32 := func(key common.Hash) (common.Hash, uint64) {
 		mgCost := vm.WasmStateLoadCost(db, actingAddress, key)
-		scope.Contract.UsedMultiGas = scope.Contract.UsedMultiGas.SaturatingAdd(mgCost)
+		scope.Contract.UsedMultiGas.SaturatingAddInto(mgCost)
 		return db.GetState(actingAddress, key), mgCost.SingleGas()
 	}
 	setTrieSlots := func(data []byte, gasLeft *uint64) apiStatus {
 		isOutOfGas := false
 		recording := db.Recording()
+		multiGas := multigas.ZeroGas()
 		for len(data) > 0 {
 			key := common.BytesToHash(data[:32])
 			value := common.BytesToHash(data[32:64])
@@ -84,7 +86,8 @@ func newApiClosures(
 				return WriteProtection
 			}
 
-			cost := vm.WasmStateStoreCost(db, actingAddress, key, value)
+			costMultiGas := vm.WasmStateStoreCost(db, actingAddress, key, value)
+			cost := costMultiGas.SingleGas()
 			if cost > *gasLeft {
 				*gasLeft = 0
 				isOutOfGas = true
@@ -94,11 +97,17 @@ func newApiClosures(
 				break
 			}
 			*gasLeft -= cost
+			multiGas.SaturatingAddInto(costMultiGas)
 			db.SetState(actingAddress, key, value)
 		}
 		if isOutOfGas {
-			return OutOfGas
+			if evm.Context.ArbOSVersion < 50 {
+				return Failure
+			} else {
+				return OutOfGas
+			}
 		}
+		scope.Contract.UsedMultiGas.SaturatingAddInto(multiGas)
 		return Success
 	}
 	getTransientBytes32 := func(key common.Hash) common.Hash {
@@ -130,18 +139,19 @@ func newApiClosures(
 		}
 
 		// computes makeCallVariantGasCallEIP2929 and gasCall/gasDelegateCall/gasStaticCall
-		baseCost, err := vm.WasmCallCost(db, contract, value, gasLeft)
+		mgCost, err := vm.WasmCallCost(db, contract, value, gasLeft)
 		if err != nil {
 			return nil, gasLeft, err
 		}
+		baseCost := mgCost.SingleGas()
 
 		// apply the 63/64ths rule
-		startGas := am.SaturatingUSub(gasLeft, baseCost) * 63 / 64
-		gas := am.MinInt(startGas, gasReq)
+		startGas := arbmath.SaturatingUSub(gasLeft, baseCost) * 63 / 64
+		gas := arbmath.MinInt(startGas, gasReq)
 
 		// EVM rule: calls that pay get a stipend (opCall)
 		if value.Sign() != 0 {
-			gas = am.SaturatingUAdd(gas, params.CallStipend)
+			gas = arbmath.SaturatingUAdd(gas, params.CallStipend)
 		}
 
 		// Tracing: emit the call (value transfer is done later in evm.Call)
@@ -149,22 +159,30 @@ func newApiClosures(
 			tracingInfo.CaptureStylusCall(opcode, contract, value, input, gas, startGas, baseCost)
 		}
 
-		var ret []byte
-		var returnGas uint64
+		var (
+			ret            []byte
+			returnGas      uint64
+			returnMultiGas multigas.MultiGas
+		)
 
 		switch opcode {
 		case vm.CALL:
-			ret, returnGas, _, err = evm.Call(scope.Contract.Address(), contract, input, gas, value)
+			ret, returnGas, returnMultiGas, err = evm.Call(scope.Contract.Address(), contract, input, gas, value)
 		case vm.DELEGATECALL:
-			ret, returnGas, _, err = evm.DelegateCall(scope.Contract.Caller(), scope.Contract.Address(), contract, input, gas, scope.Contract.Value())
+			ret, returnGas, returnMultiGas, err = evm.DelegateCall(scope.Contract.Caller(), scope.Contract.Address(), contract, input, gas, scope.Contract.Value())
 		case vm.STATICCALL:
-			ret, returnGas, _, err = evm.StaticCall(scope.Contract.Address(), contract, input, gas)
+			ret, returnGas, returnMultiGas, err = evm.StaticCall(scope.Contract.Address(), contract, input, gas)
 		default:
 			panic("unsupported call type: " + opcode.String())
 		}
 
 		evm.SetReturnData(ret)
-		cost := am.SaturatingUAdd(baseCost, am.SaturatingUSub(gas, returnGas))
+
+		mgCost.SaturatingAddInto(returnMultiGas)
+		scope.Contract.UsedMultiGas.SaturatingAddInto(mgCost)
+
+		cost := arbmath.SaturatingUAdd(baseCost, arbmath.SaturatingUSub(gas, returnGas))
+
 		return ret, cost, err
 	}
 	create := func(code []byte, endowment, salt *u256, gas uint64) (common.Address, []byte, uint64, error) {
@@ -191,32 +209,39 @@ func newApiClosures(
 		// pay for static and dynamic costs (gasCreate and gasCreate2)
 		baseCost := params.CreateGas
 		if opcode == vm.CREATE2 {
-			keccakWords := am.WordsForBytes(uint64(len(code)))
-			keccakCost := am.SaturatingUMul(params.Keccak256WordGas, keccakWords)
-			baseCost = am.SaturatingUAdd(baseCost, keccakCost)
+			keccakWords := arbmath.WordsForBytes(uint64(len(code)))
+			keccakCost := arbmath.SaturatingUMul(params.Keccak256WordGas, keccakWords)
+			baseCost = arbmath.SaturatingUAdd(baseCost, keccakCost)
 		}
 		if gas < baseCost {
 			return zeroAddr, nil, gas, vm.ErrOutOfGas
 		}
 		gas -= baseCost
+		// Charge for contract creation as computation gas
+		scope.Contract.UsedMultiGas.SaturatingAddInto(multigas.ComputationGas(baseCost))
 
 		// apply the 63/64ths rule
 		one64th := gas / 64
 		gas -= one64th
 
-		var res []byte
-		var addr common.Address // zero on failure
-		var returnGas uint64
-		var suberr error
+		var (
+			res            []byte
+			addr           common.Address // zero on failure
+			returnGas      uint64
+			returnMultiGas multigas.MultiGas
+			suberr         error
+		)
 
 		if opcode == vm.CREATE {
-			res, addr, returnGas, _, suberr = evm.Create(contract.Address(), code, gas, endowment)
+			res, addr, returnGas, returnMultiGas, suberr = evm.Create(contract.Address(), code, gas, endowment)
 		} else {
-			res, addr, returnGas, _, suberr = evm.Create2(contract.Address(), code, gas, endowment, salt)
+			res, addr, returnGas, returnMultiGas, suberr = evm.Create2(contract.Address(), code, gas, endowment, salt)
 		}
 		if suberr != nil {
 			addr = zeroAddr
 		}
+		scope.Contract.UsedMultiGas.SaturatingAddInto(returnMultiGas)
+
 		// This matches geth behavior of doing an exact error comparison instead of errors.Is
 		// See e.g. EVM's create method or the opCreate function for references of how geth checks this
 		//nolint:errorlint
@@ -224,13 +249,19 @@ func newApiClosures(
 			res = nil // returnData is only provided in the revert case (opCreate)
 		}
 		evm.SetReturnData(res)
-		cost := am.SaturatingUSub(startGas, returnGas+one64th) // user gets 1/64th back
+		cost := arbmath.SaturatingUSub(startGas, returnGas+one64th) // user gets 1/64th back
 		return addr, res, cost, nil
 	}
 	emitLog := func(topics []common.Hash, data []byte) error {
 		if readOnly {
 			return vm.ErrWriteProtection
 		}
+
+		numTopics := uint64(len(topics))
+		dataBytes := uint64(len(data))
+		mgCost := vm.WasmLogCost(numTopics, dataBytes)
+		scope.Contract.UsedMultiGas.SaturatingAddInto(mgCost)
+
 		event := &types.Log{
 			Address:     actingAddress,
 			Topics:      topics,
@@ -243,25 +274,29 @@ func newApiClosures(
 	}
 	accountBalance := func(address common.Address) (common.Hash, uint64) {
 		cost := vm.WasmAccountTouchCost(chainConfig, evm.StateDB, address, false)
+		scope.Contract.UsedMultiGas.SaturatingAddInto(cost)
 		balance := evm.StateDB.GetBalance(address)
-		return balance.Bytes32(), cost
+		return balance.Bytes32(), cost.SingleGas()
 	}
 	accountCode := func(address common.Address, gas uint64) ([]byte, uint64) {
 		// In the future it'll be possible to know the size of a contract before loading it.
 		// For now, require the worst case before doing the load.
 
 		cost := vm.WasmAccountTouchCost(chainConfig, evm.StateDB, address, true)
-		if gas < cost {
-			return []byte{}, cost
+		scope.Contract.UsedMultiGas.SaturatingAddInto(cost)
+		if gas < cost.SingleGas() {
+			return []byte{}, cost.SingleGas()
 		}
-		return evm.StateDB.GetCode(address), cost
+		return evm.StateDB.GetCode(address), cost.SingleGas()
 	}
 	accountCodehash := func(address common.Address) (common.Hash, uint64) {
 		cost := vm.WasmAccountTouchCost(chainConfig, evm.StateDB, address, false)
-		return evm.StateDB.GetCodeHash(address), cost
+		scope.Contract.UsedMultiGas.SaturatingAddInto(cost)
+		return evm.StateDB.GetCodeHash(address), cost.SingleGas()
 	}
 	addPages := func(pages uint16) uint64 {
 		open, ever := db.AddStylusPages(pages)
+		// addPages WASM computation cost is charged separately in attributeWasmComputation
 		return memoryModel.GasCost(pages, open, ever)
 	}
 	captureHostio := func(name string, args, outs []byte, startInk, endInk uint64) {
@@ -298,16 +333,16 @@ func newApiClosures(
 			return common.BytesToHash(takeInput(32, "expected hash"))
 		}
 		takeU256 := func() *u256 {
-			return am.BytesToUint256(takeInput(32, "expected big"))
+			return arbmath.BytesToUint256(takeInput(32, "expected big"))
 		}
 		takeU64 := func() uint64 {
-			return am.BytesToUint(takeInput(8, "expected u64"))
+			return arbmath.BytesToUint(takeInput(8, "expected u64"))
 		}
 		takeU32 := func() uint32 {
-			return am.BytesToUint32(takeInput(4, "expected u32"))
+			return arbmath.BytesToUint32(takeInput(4, "expected u32"))
 		}
 		takeU16 := func() uint16 {
-			return am.BytesToUint16(takeInput(2, "expected u16"))
+			return arbmath.BytesToUint16(takeInput(2, "expected u16"))
 		}
 		takeFixed := func(needed int) []byte {
 			return takeInput(needed, "expected value with known length")

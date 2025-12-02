@@ -8,13 +8,13 @@ import (
 	"errors"
 	"net"
 
-	flag "github.com/spf13/pflag"
+	"github.com/spf13/pflag"
 
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcastclient"
 	"github.com/offchainlabs/nitro/broadcastclients"
 	"github.com/offchainlabs/nitro/broadcaster"
-	m "github.com/offchainlabs/nitro/broadcaster/message"
+	"github.com/offchainlabs/nitro/broadcaster/message"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
 	"github.com/offchainlabs/nitro/util/sharedmetrics"
@@ -27,14 +27,14 @@ type Relay struct {
 	broadcastClients            *broadcastclients.BroadcastClients
 	broadcaster                 *broadcaster.Broadcaster
 	confirmedSequenceNumberChan chan arbutil.MessageIndex
-	messageChan                 chan m.BroadcastFeedMessage
+	messageChan                 chan message.BroadcastFeedMessage
 }
 
 type MessageQueue struct {
-	queue chan m.BroadcastFeedMessage
+	queue chan message.BroadcastFeedMessage
 }
 
-func (q *MessageQueue) AddBroadcastMessages(feedMessages []*m.BroadcastFeedMessage) error {
+func (q *MessageQueue) AddBroadcastMessages(feedMessages []*message.BroadcastFeedMessage) error {
 	for _, feedMessage := range feedMessages {
 		q.queue <- *feedMessage
 	}
@@ -44,7 +44,7 @@ func (q *MessageQueue) AddBroadcastMessages(feedMessages []*m.BroadcastFeedMessa
 
 func NewRelay(config *Config, feedErrChan chan error) (*Relay, error) {
 
-	q := MessageQueue{make(chan m.BroadcastFeedMessage, config.Queue)}
+	q := MessageQueue{make(chan message.BroadcastFeedMessage, config.Queue)}
 
 	confirmedSequenceNumberListener := make(chan arbutil.MessageIndex, config.Queue)
 
@@ -95,7 +95,9 @@ func (r *Relay) Start(ctx context.Context) error {
 				return
 			case msg := <-r.messageChan:
 				sharedmetrics.UpdateSequenceNumberGauge(msg.SequenceNumber)
-				r.broadcaster.BroadcastSingleFeedMessage(&msg)
+				if err = r.broadcaster.BroadcastFeedMessages([]*message.BroadcastFeedMessage{&msg}); err != nil {
+					return
+				}
 			case cs := <-r.confirmedSequenceNumberChan:
 				r.broadcaster.Confirm(cs)
 			}
@@ -141,7 +143,7 @@ var ConfigDefault = Config{
 	Queue:         1024,
 }
 
-func ConfigAddOptions(f *flag.FlagSet) {
+func ConfigAddOptions(f *pflag.FlagSet) {
 	genericconf.ConfConfigAddOptions("conf", f)
 	L2ConfigAddOptions("chain", f)
 	f.String("log-level", ConfigDefault.LogLevel, "log level, valid values are CRIT, ERROR, WARN, INFO, DEBUG, TRACE")
@@ -162,7 +164,7 @@ var NodeConfigDefault = NodeConfig{
 	Feed: broadcastclient.FeedConfigDefault,
 }
 
-func NodeConfigAddOptions(prefix string, f *flag.FlagSet) {
+func NodeConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	broadcastclient.FeedConfigAddOptions(prefix+".feed", f, true, true)
 }
 
@@ -174,12 +176,12 @@ var L2ConfigDefault = L2Config{
 	ID: 0,
 }
 
-func L2ConfigAddOptions(prefix string, f *flag.FlagSet) {
+func L2ConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Uint64(prefix+".id", L2ConfigDefault.ID, "L2 chain ID")
 }
 
 func ParseRelay(_ context.Context, args []string) (*Config, error) {
-	f := flag.NewFlagSet("", flag.ContinueOnError)
+	f := pflag.NewFlagSet("", pflag.ContinueOnError)
 
 	ConfigAddOptions(f)
 

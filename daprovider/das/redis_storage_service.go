@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
-	flag "github.com/spf13/pflag"
+	"github.com/spf13/pflag"
 	"golang.org/x/crypto/sha3"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -36,11 +36,11 @@ var DefaultRedisConfig = RedisConfig{
 	KeyConfig:  "",
 }
 
-func RedisConfigAddOptions(prefix string, f *flag.FlagSet) {
+func RedisConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultRedisConfig.Enable, "enable Redis caching of sequencer batch data")
 	f.String(prefix+".url", DefaultRedisConfig.Url, "Redis url")
 	f.Duration(prefix+".expiration", DefaultRedisConfig.Expiration, "Redis expiration")
-	f.String(prefix+".key-config", DefaultRedisConfig.KeyConfig, "Redis key config")
+	f.String(prefix+".key-config", DefaultRedisConfig.KeyConfig, "hex-encoded 32-byte signing key used to authenticate cached Redis entries")
 }
 
 type RedisStorageService struct {
@@ -57,7 +57,7 @@ func NewRedisStorageService(redisConfig RedisConfig, baseStorageService StorageS
 	}
 	signingKey := common.HexToHash(redisConfig.KeyConfig)
 	if signingKey == (common.Hash{}) {
-		return nil, errors.New("signing key file contents are not 32 bytes of hex")
+		return nil, errors.New("signing key must be a 32-byte hex value")
 	}
 	return &RedisStorageService{
 		baseStorageService: baseStorageService,

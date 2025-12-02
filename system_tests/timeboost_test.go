@@ -21,6 +21,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/common/math"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/crypto/secp256k1"
@@ -241,11 +242,11 @@ func testAuctionResolutionDuringATie(t *testing.T, multiRuns bool) {
 	}
 }
 
-func TestTimeboostExpressLaneTxsHandlingDuringSequencerSwapDueToPriorities(t *testing.T) {
+func TestTimeboostExpressLaneTxsHandlingDuringSequencerSwapDueToPrioritiesFlaky(t *testing.T) {
 	testTxsHandlingDuringSequencerSwap(t, false)
 }
 
-func TestTimeboostExpressLaneTxsHandlingDuringSequencerSwapDueToActiveSequencerCrashing(t *testing.T) {
+func TestTimeboostExpressLaneTxsHandlingDuringSequencerSwapDueToActiveSequencerCrashingFlaky(t *testing.T) {
 	testTxsHandlingDuringSequencerSwap(t, true)
 }
 
@@ -377,7 +378,7 @@ func testTxsHandlingDuringSequencerSwap(t *testing.T, dueToCrash bool) {
 	}
 }
 
-func TestTimeboostForwardingExpressLaneTxs(t *testing.T) {
+func TestTimeboostForwardingExpressLaneTxsFlaky(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -417,7 +418,7 @@ func TestTimeboostForwardingExpressLaneTxs(t *testing.T) {
 	verifyControllerAdvantage(t, ctx, seqClient, expressLaneClient, seqInfo, "Bob", "Alice")
 }
 
-func TestTimeboostExpressLaneTransactionHandlingComplex(t *testing.T) {
+func TestTimeboostExpressLaneTransactionHandlingComplexFlaky(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -922,7 +923,7 @@ func TestTimeboostBulkBlockMetadataAPI(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, false).DontParalellise()
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false).DontParalellise().WithDatabase(rawdb.DBPebble)
 	builder.nodeConfig.TransactionStreamer.TrackBlockMetadataFrom = 1
 	builder.execConfig.BlockMetadataApiCacheSize = 0 // Caching is disabled
 	cleanup := builder.Build(t)
@@ -1020,9 +1021,18 @@ func TestTimeboostBulkBlockMetadataAPI(t *testing.T) {
 
 	// A Reorg event should clear the cache, hence the data fetched now should be accurate
 	Require(t, builder.L2.ConsensusNode.TxStreamer.ReorgAt(10))
-	err = l2rpc.CallContext(ctx, &result, "arb_getRawBlockMetadata", rpc.BlockNumber(start), rpc.BlockNumber(end))
-	Require(t, err)
-	if !bytes.Equal(updatedBlockMetadata, result[0].RawMetadata) {
+	// Give time for BulkBlockMetadataFetcher to receive the reorg event and clear its cache
+	var succeeded bool
+	for range 10 {
+		err = l2rpc.CallContext(ctx, &result, "arb_getRawBlockMetadata", rpc.BlockNumber(start), rpc.BlockNumber(end))
+		Require(t, err)
+		if bytes.Equal(updatedBlockMetadata, result[0].RawMetadata) {
+			succeeded = true
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if !succeeded {
 		t.Fatal("BlockMetadata should've been fetched from db and not the cache")
 	}
 }
@@ -1128,7 +1138,7 @@ func TestTimeboostBulkBlockMetadataAPI(t *testing.T) {
 // 	verifyControllerChange(winnerRound, aliceOpts.From, bobOpts.From)     // Alice transfers control to Bob before the round begins
 // }
 
-func TestTimeboostSequencerFeed_ExpressLaneAuction_ExpressLaneTxsHaveAdvantage(t *testing.T) {
+func TestTimeboostSequencerFeed_ExpressLaneAuction_ExpressLaneTxsHaveAdvantageFlaky(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -1167,7 +1177,7 @@ func TestTimeboostSequencerFeed_ExpressLaneAuction_ExpressLaneTxsHaveAdvantage(t
 	verifyControllerAdvantage(t, ctx, seqClient, expressLaneClient, seqInfo, "Bob", "Alice")
 }
 
-func TestTimeboostSequencerFeed_ExpressLaneAuction_InnerPayloadNoncesAreRespected_TimeboostedFieldIsCorrect(t *testing.T) {
+func TestTimeboostSequencerFeed_ExpressLaneAuction_InnerPayloadNoncesAreRespected_TimeboostedFieldIsCorrectFlaky(t *testing.T) {
 	logHandler := testhelpers.InitTestLog(t, log.LevelInfo)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -1728,6 +1738,7 @@ func setupExpressLaneAuction(
 
 	expressLaneTracker.Start(ctx)
 	builderSeq.execConfig.Sequencer.Timeboost.Enable = true // Prevents race in sequencer where expressLaneService is read inside publishTransactionToQueue
+	builderSeq.L2.ExecutionConfigFetcher.Set(builderSeq.execConfig)
 
 	// Set up an autonomous auction contract service that runs in the background in this test.
 	redisURL := redisutil.CreateTestRedis(ctx, t)

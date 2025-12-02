@@ -20,12 +20,12 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient/simulated"
 
-	protocol "github.com/offchainlabs/nitro/bold/chain-abstraction"
+	"github.com/offchainlabs/nitro/bold/chain-abstraction"
 	"github.com/offchainlabs/nitro/bold/containers/option"
-	l2stateprovider "github.com/offchainlabs/nitro/bold/layer2-state-provider"
-	prefixproofs "github.com/offchainlabs/nitro/bold/state-commitments/prefix-proofs"
+	"github.com/offchainlabs/nitro/bold/layer2-state-provider"
+	"github.com/offchainlabs/nitro/bold/state-commitments/prefix-proofs"
 	"github.com/offchainlabs/nitro/bold/testing/casttest"
-	statemanager "github.com/offchainlabs/nitro/bold/testing/mocks/state-provider"
+	"github.com/offchainlabs/nitro/bold/testing/mocks/state-provider"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 )
 
@@ -94,7 +94,7 @@ func TestVerifyPrefixProof_GoSolidityEquivalence(t *testing.T) {
 	for i := 0; i < len(hashes); i++ {
 		hashes[i] = crypto.Keccak256Hash([]byte(fmt.Sprintf("%d", i)))
 	}
-	manager, err := statemanager.NewWithMockedStateRoots(hashes)
+	manager, err := stateprovider.NewWithMockedStateRoots(hashes)
 	require.NoError(t, err)
 
 	wasmModuleRoot := common.Hash{}
@@ -123,7 +123,7 @@ func TestVerifyPrefixProof_GoSolidityEquivalence(t *testing.T) {
 	packedProof, err := manager.PrefixProof(ctx, req, fromMessageNumber)
 	require.NoError(t, err)
 
-	data, err := statemanager.ProofArgs.Unpack(packedProof)
+	data, err := stateprovider.ProofArgs.Unpack(packedProof)
 	require.NoError(t, err)
 	preExpansion, ok := data[0].([][32]byte)
 	require.Equal(t, true, ok)
@@ -168,7 +168,7 @@ func TestVerifyPrefixProofWithHeight7_GoSolidityEquivalence1(t *testing.T) {
 	for i := 0; i < len(hashes); i++ {
 		hashes[i] = crypto.Keccak256Hash([]byte(fmt.Sprintf("%d", i)))
 	}
-	manager, err := statemanager.NewWithMockedStateRoots(hashes)
+	manager, err := stateprovider.NewWithMockedStateRoots(hashes)
 	require.NoError(t, err)
 
 	wasmModuleRoot := common.Hash{}
@@ -197,7 +197,7 @@ func TestVerifyPrefixProofWithHeight7_GoSolidityEquivalence1(t *testing.T) {
 	packedProof, err := manager.PrefixProof(ctx, req, fromMessageNumber)
 	require.NoError(t, err)
 
-	data, err := statemanager.ProofArgs.Unpack(packedProof)
+	data, err := stateprovider.ProofArgs.Unpack(packedProof)
 	require.NoError(t, err)
 	preExpansion, ok := data[0].([][32]byte)
 	require.Equal(t, true, ok)
@@ -252,7 +252,7 @@ func FuzzPrefixProof_Verify(f *testing.F) {
 	for i := 0; i < len(hashes); i++ {
 		hashes[i] = crypto.Keccak256Hash([]byte(fmt.Sprintf("%d", i)))
 	}
-	manager, err := statemanager.NewWithMockedStateRoots(hashes)
+	manager, err := stateprovider.NewWithMockedStateRoots(hashes)
 	require.NoError(f, err)
 
 	wasmModuleRoot := common.Hash{}
@@ -283,7 +283,7 @@ func FuzzPrefixProof_Verify(f *testing.F) {
 	packedProof, err := manager.PrefixProof(ctx, req, fromMessageNumber)
 	require.NoError(f, err)
 
-	data, err := statemanager.ProofArgs.Unpack(packedProof)
+	data, err := stateprovider.ProofArgs.Unpack(packedProof)
 	require.NoError(f, err)
 	preExpansion, ok := data[0].([][32]byte)
 	require.Equal(f, true, ok)

@@ -496,7 +496,7 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64, intrinsicGas uint64)
 				return tipReceipient, multigas.ZeroGas(), err
 			}
 			// Reduce the max by intrinsicGas because it was already charged
-			max -= intrinsicGas
+			max = arbmath.SaturatingUSub(max, intrinsicGas)
 		}
 		if *gasRemaining > max {
 			p.computeHoldGas = *gasRemaining - max
@@ -813,4 +813,8 @@ func (p *TxProcessor) IsCalldataPricingIncreaseEnabled() bool {
 		return false
 	}
 	return enabled
+}
+
+func (p *TxProcessor) EVM() *vm.EVM {
+	return p.evm
 }

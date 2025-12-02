@@ -10,7 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	flag "github.com/spf13/pflag"
+	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/txpool"
@@ -69,7 +69,7 @@ var DefaultClientConfig = ClientConfig{
 	WebsocketMessageSizeLimit: 256 * 1024 * 1024,
 }
 
-func RPCClientAddOptions(prefix string, f *flag.FlagSet, defaultConfig *ClientConfig) {
+func RPCClientAddOptions(prefix string, f *pflag.FlagSet, defaultConfig *ClientConfig) {
 	f.String(prefix+".url", defaultConfig.URL, "url of server, use self for loopback websocket, self-auth for loopback with authentication")
 	f.String(prefix+".jwtsecret", defaultConfig.JWTSecret, "path to file with jwtsecret for validation - ignored if url is self or self-auth")
 	f.Duration(prefix+".connection-wait", defaultConfig.ConnectionWait, "how long to wait for initial connection")
@@ -277,6 +277,9 @@ func (c *RpcClient) Start(ctx_in context.Context) error {
 		select {
 		case <-connTimeout:
 			return fmt.Errorf("timeout trying to connect lastError: %w", err)
+		case <-ctx_in.Done():
+			// Respect context cancellation during reconnect wait
+			return ctx_in.Err()
 		case <-time.After(time.Second):
 		}
 	}

@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2025, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package das
@@ -17,6 +17,7 @@ import (
 
 	"github.com/offchainlabs/nitro/blsSignatures"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
+	"github.com/offchainlabs/nitro/daprovider/data_streaming"
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
@@ -31,8 +32,6 @@ func blsPubToBase64(pubkey *blsSignatures.PublicKey) string {
 const sendChunkJSONBoilerplate = "{\"jsonrpc\":\"2.0\",\"id\":4294967295,\"method\":\"das_sendChunked\",\"params\":[\"\"]}"
 
 func testRpcImpl(t *testing.T, size, times int, concurrent bool) {
-	// enableLogging()
-
 	ctx := context.Background()
 	lis, err := net.Listen("tcp", "localhost:0")
 	testhelpers.RequireImpl(t, err)
@@ -83,10 +82,13 @@ func testRpcImpl(t *testing.T, size, times int, concurrent bool) {
 	testhelpers.RequireImpl(t, err)
 	aggConf := DataAvailabilityConfig{
 		RPCAggregator: AggregatorConfig{
-			AssumedHonest:         1,
-			Backends:              beConfigs,
-			MaxStoreChunkBodySize: (chunkSize * 2) + len(sendChunkJSONBoilerplate),
-			EnableChunkedStore:    true,
+			AssumedHonest: 1,
+			Backends:      beConfigs,
+			DASRPCClient: DASRPCClientConfig{
+				ServerUrl:          "",
+				EnableChunkedStore: true,
+				DataStream:         data_streaming.TestDataStreamerConfig(DefaultDataStreamRpcMethods),
+			},
 		},
 		RequestTimeout: time.Minute,
 	}
@@ -97,7 +99,7 @@ func testRpcImpl(t *testing.T, size, times int, concurrent bool) {
 	runStore := func() {
 		defer wg.Done()
 		msg := testhelpers.RandomizeSlice(make([]byte, size))
-		cert, err := rpcAgg.Store(ctx, msg, 0)
+		cert, err := rpcAgg.Store(ctx, msg, testhelpers.RandomUint64(0, uint64(defaultStorageRetention.Seconds()))) // we use random timeouts as a random nonce to differentiate between request signatures to avoid replay-protection issues
 		testhelpers.RequireImpl(t, err)
 
 		retrievedMessage, err := storageService.GetByHash(ctx, cert.DataHash)
@@ -120,7 +122,7 @@ func testRpcImpl(t *testing.T, size, times int, concurrent bool) {
 	wg.Wait()
 }
 
-const chunkSize = 512 * 1024
+const chunkSize = (data_streaming.TestHttpBodyLimit - len(sendChunkJSONBoilerplate)) / 2
 
 func TestRPCStore(t *testing.T) {
 	for _, tc := range []struct {
