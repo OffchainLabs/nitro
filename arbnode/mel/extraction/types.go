@@ -62,7 +62,7 @@ type sequencerMessageParserFunc func(
 	batchNum uint64,
 	batchBlockHash common.Hash,
 	data []byte,
-	dapReaders *daprovider.DAProviderRegistry,
+	dapReaders arbstate.DapReaderSource,
 	keysetValidationMode daprovider.KeysetValidationMode,
 ) (*arbstate.SequencerMessage, error)
 
