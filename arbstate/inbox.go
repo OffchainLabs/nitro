@@ -37,6 +37,36 @@ type InboxBackend interface {
 	ReadDelayedInbox(seqNum uint64) (*arbostypes.L1IncomingMessage, error)
 }
 
+// DapReaderSource provides read access to DA providers by header byte.
+// Both *daprovider.DAProviderRegistry and wrappers like blobReaderOverride satisfy this.
+type DapReaderSource interface {
+	GetReader(headerByte byte) daprovider.Reader
+}
+
+// blobReaderOverride wraps a DapReaderSource and overrides blob reads
+// with a custom reader. This is used for batch correctness checking where
+// we need to use a simulated blob reader for not-yet-posted blobs.
+type blobReaderOverride struct {
+	base       DapReaderSource
+	blobReader daprovider.Reader
+}
+
+func (r *blobReaderOverride) GetReader(headerByte byte) daprovider.Reader {
+	if headerByte == daprovider.BlobHashesHeaderFlag && r.blobReader != nil {
+		return r.blobReader
+	}
+	if r.base == nil {
+		return nil
+	}
+	return r.base.GetReader(headerByte)
+}
+
+// NewBlobReaderOverride returns a DapReaderSource that delegates all reads
+// to base except for blob reads, which use the provided blobReader instead.
+func NewBlobReaderOverride(base DapReaderSource, blobReader daprovider.Reader) DapReaderSource {
+	return &blobReaderOverride{base: base, blobReader: blobReader}
+}
+
 // lint:require-exhaustive-initialization
 type SequencerMessage struct {
 	MinTimestamp         uint64
@@ -51,7 +81,7 @@ const MaxDecompressedLen int = 1024 * 1024 * 16 // 16 MiB
 const maxZeroheavyDecompressedLen = 101*MaxDecompressedLen/100 + 64
 const MaxSegmentsPerSequencerMessage = 100 * 1024
 
-func ParseSequencerMessage(ctx context.Context, batchNum uint64, batchBlockHash common.Hash, data []byte, dapReaders *daprovider.DAProviderRegistry, keysetValidationMode daprovider.KeysetValidationMode) (*SequencerMessage, error) {
+func ParseSequencerMessage(ctx context.Context, batchNum uint64, batchBlockHash common.Hash, data []byte, dapReaders DapReaderSource, keysetValidationMode daprovider.KeysetValidationMode) (*SequencerMessage, error) {
 	if len(data) < 40 {
 		return nil, errors.New("sequencer message missing L1 header")
 	}
@@ -169,7 +199,7 @@ func ParseSequencerMessage(ctx context.Context, batchNum uint64, batchBlockHash 
 type inboxMultiplexer struct {
 	backend                   InboxBackend
 	delayedMessagesRead       uint64
-	dapReaders                *daprovider.DAProviderRegistry
+	dapReaders                DapReaderSource
 	cachedSequencerMessage    *SequencerMessage
 	cachedSequencerMessageNum uint64
 	cachedSegmentNum          uint64
@@ -183,7 +213,7 @@ type inboxMultiplexer struct {
 	keysetValidationMode daprovider.KeysetValidationMode
 }
 
-func NewInboxMultiplexer(backend InboxBackend, delayedMessagesRead uint64, dapReaders *daprovider.DAProviderRegistry, keysetValidationMode daprovider.KeysetValidationMode) arbostypes.InboxMultiplexer {
+func NewInboxMultiplexer(backend InboxBackend, delayedMessagesRead uint64, dapReaders DapReaderSource, keysetValidationMode daprovider.KeysetValidationMode) arbostypes.InboxMultiplexer {
 	return &inboxMultiplexer{
 		backend:                   backend,
 		delayedMessagesRead:       delayedMessagesRead,

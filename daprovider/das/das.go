@@ -50,6 +50,8 @@ type DataAvailabilityConfig struct {
 	DisableSignatureChecking bool `koanf:"disable-signature-checking"`
 }
 
+// DefaultDataAvailabilityConfig includes defaults for daserver-specific fields.
+// For arbnode, use DefaultDataAvailabilityConfigForNode instead.
 var DefaultDataAvailabilityConfig = DataAvailabilityConfig{
 	Enable:                          false,
 	RequestTimeout:                  5 * time.Second,
@@ -60,6 +62,26 @@ var DefaultDataAvailabilityConfig = DataAvailabilityConfig{
 	S3Storage:                       DefaultS3StorageServiceConfig,
 	GoogleCloudStorage:              DefaultGoogleCloudStorageServiceConfig,
 	Key:                             DefaultKeyConfig,
+	RPCAggregator:                   DefaultAggregatorConfig,
+	RestAggregator:                  DefaultRestfulClientAggregatorConfig,
+	ExtraSignatureCheckingPublicKey: "",
+	PanicOnError:                    false,
+	DisableSignatureChecking:        false,
+}
+
+// DefaultDataAvailabilityConfigForNode only sets defaults for fields with CLI
+// flags in node mode. daserver-specific fields (caches, storage) are left at
+// zero values since they have no pflags registered in node mode.
+var DefaultDataAvailabilityConfigForNode = DataAvailabilityConfig{
+	Enable:                          false,
+	RequestTimeout:                  5 * time.Second,
+	MaxBatchSize:                    1_000_000, // 1MB default
+	LocalCache:                      CacheConfig{},
+	RedisCache:                      RedisConfig{},
+	LocalFileStorage:                LocalFileStorageConfig{},
+	S3Storage:                       S3StorageServiceConfig{},
+	GoogleCloudStorage:              GoogleCloudStorageServiceConfig{},
+	Key:                             KeyConfig{},
 	RPCAggregator:                   DefaultAggregatorConfig,
 	RestAggregator:                  DefaultRestfulClientAggregatorConfig,
 	ExtraSignatureCheckingPublicKey: "",

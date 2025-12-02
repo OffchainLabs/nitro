@@ -24,7 +24,6 @@ import (
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/daprovider/das"
 	"github.com/offchainlabs/nitro/daprovider/data_streaming"
-	"github.com/offchainlabs/nitro/daprovider/factory"
 	"github.com/offchainlabs/nitro/daprovider/referenceda"
 	dapserver "github.com/offchainlabs/nitro/daprovider/server"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
@@ -39,7 +38,7 @@ type ParentChainConfig struct {
 }
 
 type Config struct {
-	Mode             factory.DAProviderMode   `koanf:"mode"`
+	Mode             string                   `koanf:"mode"`
 	ProviderServer   dapserver.ServerConfig   `koanf:"provider-server"`
 	WithDataSigner   bool                     `koanf:"with-data-signer"`
 	DataSignerWallet genericconf.WalletConfig `koanf:"data-signer-wallet"`
@@ -208,7 +207,7 @@ func startup() error {
 	var seqInboxAddr common.Address
 	var dataSigner signature.DataSignerFunc
 
-	if config.Mode == factory.ModeAnyTrust {
+	if config.Mode == "anytrust" {
 		if !config.Anytrust.Enable {
 			return errors.New("--anytrust.enable is required to start an AnyTrust provider server")
 		}
@@ -250,7 +249,7 @@ func startup() error {
 				return err
 			}
 		}
-	} else if config.Mode == factory.ModeReferenceDA {
+	} else if config.Mode == "referenceda" {
 		if !config.ReferenceDA.Enable {
 			return errors.New("--referenceda.enable is required to start a ReferenceDA provider server")
 		}
@@ -260,59 +259,77 @@ func startup() error {
 		}
 	}
 
-	// Create DA provider factory based on mode
-	providerFactory, err := factory.NewDAProviderFactory(
-		config.Mode,
-		&config.Anytrust,
-		&config.ReferenceDA,
-		dataSigner,
-		l1Client,
-		l1Reader,
-		seqInboxAddr,
-		config.ProviderServer.EnableDAWriter,
-	)
-	if err != nil {
-		return err
-	}
-
-	if err := providerFactory.ValidateConfig(); err != nil {
-		return err
-	}
-
-	// Create reader/writer/validator using factory
+	// Create reader/writer/validator based on mode
+	var reader daprovider.Reader
+	var writer daprovider.Writer
+	var validator daprovider.Validator
+	var headerBytes []byte
 	var cleanupFuncs []func()
 
-	reader, readerCleanup, err := providerFactory.CreateReader(ctx)
-	if err != nil {
-		return err
-	}
-	if readerCleanup != nil {
-		cleanupFuncs = append(cleanupFuncs, readerCleanup)
-	}
-
-	var writer daprovider.Writer
-	if config.ProviderServer.EnableDAWriter {
-		var writerCleanup func()
-		writer, writerCleanup, err = providerFactory.CreateWriter(ctx)
+	switch config.Mode {
+	case "anytrust":
+		factory := das.NewFactory(
+			&config.Anytrust,
+			dataSigner,
+			l1Client,
+			l1Reader,
+			seqInboxAddr,
+			config.ProviderServer.EnableDAWriter,
+		)
+		if err := factory.ValidateConfig(); err != nil {
+			return err
+		}
+		var readerCleanup func()
+		reader, readerCleanup, err = factory.CreateReader(ctx)
 		if err != nil {
 			return err
 		}
-		if writerCleanup != nil {
-			cleanupFuncs = append(cleanupFuncs, writerCleanup)
+		if readerCleanup != nil {
+			cleanupFuncs = append(cleanupFuncs, readerCleanup)
 		}
-	}
+		if config.ProviderServer.EnableDAWriter {
+			var writerCleanup func()
+			writer, writerCleanup, err = factory.CreateWriter(ctx)
+			if err != nil {
+				return err
+			}
+			if writerCleanup != nil {
+				cleanupFuncs = append(cleanupFuncs, writerCleanup)
+			}
+		}
+		headerBytes = das.SupportedHeaderBytes
 
-	// Create validator (may be nil for AnyTrust mode)
-	validator, validatorCleanup, err := providerFactory.CreateValidator(ctx)
-	if err != nil {
-		return err
-	}
-	if validatorCleanup != nil {
-		cleanupFuncs = append(cleanupFuncs, validatorCleanup)
+	case "referenceda":
+		factory := referenceda.NewFactory(
+			&config.ReferenceDA,
+			dataSigner,
+			l1Client,
+			config.ProviderServer.EnableDAWriter,
+		)
+		if err := factory.ValidateConfig(); err != nil {
+			return err
+		}
+		reader, _, err = factory.CreateReader(ctx)
+		if err != nil {
+			return err
+		}
+		if config.ProviderServer.EnableDAWriter {
+			writer, _, err = factory.CreateWriter(ctx)
+			if err != nil {
+				return err
+			}
+		}
+		validator, _, err = factory.CreateValidator(ctx)
+		if err != nil {
+			return err
+		}
+		headerBytes = []byte{daprovider.DACertificateMessageHeaderFlag}
+
+	default:
+		return fmt.Errorf("unsupported DA provider mode: %s", config.Mode)
 	}
 
 	log.Info("Starting json rpc server", "mode", config.Mode, "addr", config.ProviderServer.Addr, "port", config.ProviderServer.Port)
-	headerBytes := providerFactory.GetSupportedHeaderBytes()
 	providerServer, err := dapserver.NewServerWithDAPProvider(ctx, &config.ProviderServer, reader, writer, validator, headerBytes, data_streaming.PayloadCommitmentVerifier())
 	if err != nil {
 		return err

@@ -38,7 +38,6 @@ import (
 	"github.com/offchainlabs/nitro/daprovider/daclient"
 	"github.com/offchainlabs/nitro/daprovider/das"
 	"github.com/offchainlabs/nitro/daprovider/data_streaming"
-	"github.com/offchainlabs/nitro/daprovider/factory"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
@@ -174,7 +173,7 @@ var ConfigDefault = Config{
 	Staker:                   legacystaker.DefaultL1ValidatorConfig,
 	Bold:                     bold.DefaultBoldConfig,
 	SeqCoordinator:           DefaultSeqCoordinatorConfig,
-	DataAvailability:         das.DefaultDataAvailabilityConfig,
+	DataAvailability:         das.DefaultDataAvailabilityConfigForNode,
 	DA:                       daconfig.DefaultDAConfig,
 	SyncMonitor:              DefaultSyncMonitorConfig,
 	Dangerous:                DefaultDangerousConfig,
@@ -626,19 +625,14 @@ func getDAProviders(
 		log.Info("Creating AnyTrust DA provider", "batchPosterEnabled", config.BatchPoster.Enable)
 
 		// Create AnyTrust factory
-		daFactory, err := factory.NewDAProviderFactory(
-			factory.ModeAnyTrust,
+		daFactory := das.NewFactory(
 			&config.DataAvailability,
-			nil, // referencedaConfig
 			dataSigner,
 			l1client,
 			l1Reader,
 			deployInfo.SequencerInbox,
 			config.BatchPoster.Enable,
 		)
-		if err != nil {
-			return nil, nil, nil, err
-		}
 		log.Info("Created AnyTrust DA factory")
 
 		if err := daFactory.ValidateConfig(); err != nil {
@@ -664,16 +658,13 @@ func getDAProviders(
 			if writerCleanup != nil {
 				localCleanupFuncs = append(localCleanupFuncs, writerCleanup)
 			}
+			if writer != nil {
+				writers = append(writers, writer)
+				log.Info("Added AnyTrust writer", "writerIndex", len(writers)-1, "totalWriters", len(writers))
+			}
 		}
 
 		headerBytes := daFactory.GetSupportedHeaderBytes()
-
-		// Add AnyTrust writer to writers array if batch poster is enabled
-		if config.BatchPoster.Enable && writer != nil {
-			writers = append(writers, writer)
-			log.Info("Added AnyTrust writer", "writerIndex", len(writers)-1, "totalWriters", len(writers))
-		}
-
 		// Register AnyTrust reader directly (no validator for AnyTrust)
 		for _, hb := range headerBytes {
 			if err := dapRegistry.Register(hb, reader, nil); err != nil {

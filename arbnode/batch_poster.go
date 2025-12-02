@@ -209,6 +209,8 @@ func (c *BatchPosterConfig) Validate() error {
 		log.Error("max-size is deprecated; use max-calldata-batch-size for calldata batches, or data-availability.max-batch-size for AnyTrust; max-size will be removed in a future release")
 		if c.MaxCalldataBatchSize == DefaultBatchPosterConfig.MaxCalldataBatchSize {
 			c.MaxCalldataBatchSize = c.MaxSize
+		} else {
+			return errors.New("both max-size (deprecated) and max-calldata-batch-size are set; please use only max-calldata-batch-size")
 		}
 	}
 	if c.MaxCalldataBatchSize <= SequencerMessageHeaderSize {
@@ -1905,38 +1907,13 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 	}
 
 	if config.CheckBatchCorrectness {
-		// Create a new registry for checking batch correctness
-		// We need to copy existing readers and potentially add a simulated blob reader
-		dapReaders := daprovider.NewDAProviderRegistry()
-
-		// Copy all existing readers from the batch poster's registry
-		// These readers can fetch data that was already posted to
-		// external DA systems (eg AnyTrust) before this batch transaction
-		if b.dapReaders != nil {
-			for _, headerByte := range b.dapReaders.SupportedHeaderBytes() {
-				// Skip blob reader, we'll add simulated reader instead after this loop
-				if headerByte == daprovider.BlobHashesHeaderFlag {
-					continue
-				}
-				reader := b.dapReaders.GetReader(headerByte)
-				if reader != nil {
-					if err := dapReaders.Register(headerByte, reader, nil); err != nil {
-						return false, fmt.Errorf("failed to register reader for header byte %x: %w", headerByte, err)
-					}
-				}
-			}
-		}
-
-		// For EIP-4844 blob transactions, the blobs are created locally and will be
-		// included with the L1 transaction itself (as blob sidecars). Since these blobs
-		// don't exist on L1 yet, we need a simulated reader that can "read" from the
-		// local kzgBlobs we just created. This is different from other DA systems where
-		// data is posted externally first and only a reference is included in the L1 tx.
-		if b.building.use4844 {
-			if err := dapReaders.SetupBlobReader(daprovider.NewReaderForBlobReader(&simulatedBlobReader{kzgBlobs})); err != nil {
-				return false, fmt.Errorf("failed to register simulated blob reader: %w", err)
-			}
-		}
+		// For batch correctness checking, we use a wrapper that overrides blob reads
+		// with a simulated reader for the local kzgBlobs (which haven't been posted yet).
+		// All other DA reads pass through to the original registry.
+		dapReaders := arbstate.NewBlobReaderOverride(
+			b.dapReaders,
+			daprovider.NewReaderForBlobReader(&simulatedBlobReader{kzgBlobs}),
+		)
 		seqMsg := binary.BigEndian.AppendUint64([]byte{}, l1BoundMinTimestamp)
 		seqMsg = binary.BigEndian.AppendUint64(seqMsg, l1BoundMaxTimestamp)
 		seqMsg = binary.BigEndian.AppendUint64(seqMsg, l1BoundMinBlockNumber)
