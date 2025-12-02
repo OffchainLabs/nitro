@@ -186,10 +186,15 @@ func (bv *BlockValidatorInstance) LastValidatedCount() (uint64, bool, error) {
 			log.Error("failed reading batch count", "err", err)
 			batchCount = 0
 		}
-		batchMsgCount, err := bv.stateless.inboxTracker.GetBatchMessageCount(batchCount - 1)
-		if err != nil {
-			log.Error("failed reading batchMsgCount", "err", err)
+		var batchMsgCount arbutil.MessageIndex
+		if batchCount == 0 {
 			batchMsgCount = 0
+		} else {
+			batchMsgCount, err = bv.stateless.inboxTracker.GetBatchMessageCount(batchCount - 1)
+			if err != nil {
+				log.Error("failed reading batchMsgCount", "err", err)
+				batchMsgCount = 0
+			}
 		}
 		processedMsgCount, err := bv.stateless.streamer.GetProcessedMessageCount()
 		if err != nil {
