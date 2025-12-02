@@ -135,6 +135,7 @@ func beaconRequest[T interface{}](b *BlobClient, ctx context.Context, beaconPath
 			beaconUrl.RawQuery = queryParams.Encode()
 		}
 		fullUrl := beaconUrl.String()
+		log.Trace("beacon request", "url", fullUrl)
 		req, err := http.NewRequestWithContext(ctx, "GET", fullUrl, http.NoBody)
 		if err != nil {
 			return nil, err

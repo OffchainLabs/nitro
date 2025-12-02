@@ -15,7 +15,9 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto/kzg4844"
+	"github.com/ethereum/go-ethereum/log"
 
+	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
 	"github.com/offchainlabs/nitro/util/blobs"
 	"github.com/offchainlabs/nitro/util/headerreader"
@@ -47,6 +49,7 @@ type FetchConfig struct {
 	VersionedHashes   []string `koanf:"versioned-hashes"`
 	UseLegacyEndpoint bool     `koanf:"use-legacy-endpoint"`
 	CompareEndpoints  bool     `koanf:"compare-endpoints"`
+	LogLevel          string   `koanf:"log-level"`
 }
 
 func parseFetchConfig(args []string) (*FetchConfig, error) {
@@ -56,6 +59,7 @@ func parseFetchConfig(args []string) (*FetchConfig, error) {
 	f.StringSlice("versioned-hashes", []string{}, "Comma-separated list of versioned hashes to fetch (optional - fetches all if not provided)")
 	f.Bool("use-legacy-endpoint", false, "Use the legacy blob_sidecars endpoint")
 	f.Bool("compare-endpoints", false, "Fetch using both endpoints and compare results")
+	f.String("log-level", "info", "Log level (trace, debug, info, warn, error, crit)")
 
 	k, err := confighelpers.BeginCommonParse(f, args)
 	if err != nil {
@@ -82,6 +86,15 @@ func fetchBlobs(args []string) error {
 	if err != nil {
 		return err
 	}
+
+	logLevel, err := genericconf.ToSlogLevel(config.LogLevel)
+	if err != nil {
+		return fmt.Errorf("invalid log level: %w", err)
+	}
+	handler := log.NewTerminalHandler(os.Stderr, false)
+	glogger := log.NewGlogHandler(handler)
+	glogger.Verbosity(logLevel)
+	log.SetDefault(log.NewLogger(glogger))
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
