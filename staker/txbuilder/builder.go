@@ -70,7 +70,7 @@ func NewBuilder(wallet ValidatorWalletInterface, gasRefunder common.Address) (*B
 		}
 		// Append the transaction to the builder's queue of transactions
 		builder.transactions = append(builder.transactions, tx)
-		err = builder.wallet.TestTransactions(context.TODO(), builder.transactions)
+		err = builder.wallet.TestTransactions(context.Background(), builder.transactions)
 		if err != nil {
 			// Remove the bad tx
 			builder.transactions = builder.transactions[:len(builder.transactions)-1]
@@ -83,7 +83,7 @@ func NewBuilder(wallet ValidatorWalletInterface, gasRefunder common.Address) (*B
 			return originalSigner(addr, tx)
 		}
 		// Try to process the transaction on its own
-		ctx := context.TODO()
+		ctx := context.Background()
 		txs := []*types.Transaction{tx}
 		err := builder.wallet.TestTransactions(ctx, txs)
 		if err != nil {
