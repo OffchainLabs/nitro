@@ -173,7 +173,7 @@ var ConfigDefault = Config{
 	Staker:                   legacystaker.DefaultL1ValidatorConfig,
 	Bold:                     bold.DefaultBoldConfig,
 	SeqCoordinator:           DefaultSeqCoordinatorConfig,
-	DataAvailability:         das.DefaultDataAvailabilityConfig,
+	DataAvailability:         das.DefaultDataAvailabilityConfigForNode,
 	DA:                       daconfig.DefaultDAConfig,
 	SyncMonitor:              DefaultSyncMonitorConfig,
 	Dangerous:                DefaultDangerousConfig,
