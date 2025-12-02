@@ -284,7 +284,7 @@ func ExternalSignerTxOpts(ctx context.Context, opts *ExternalSignerCfg) (*bind.T
 	return &bind.TransactOpts{
 		From: sender,
 		Signer: func(address common.Address, tx *types.Transaction) (*types.Transaction, error) {
-			return signer(context.TODO(), address, tx)
+			return signer(context.Background(), address, tx)
 		},
 	}, nil
 }
