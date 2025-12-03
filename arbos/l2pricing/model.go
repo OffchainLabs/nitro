@@ -27,6 +27,8 @@ const InitialPricingInertia = 102
 const InitialBacklogTolerance = 10
 const InitialPerTxGasLimitV50 uint64 = 32 * 1000000
 
+const ArbOS60StaticGasPoolUpdateCost = 15000
+
 type GasModel int
 
 const (
