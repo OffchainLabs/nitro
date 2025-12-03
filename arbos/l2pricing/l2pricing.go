@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"math/big"
 
+	"github.com/ethereum/go-ethereum/params"
+
 	"github.com/offchainlabs/nitro/arbos/constraints"
 	"github.com/offchainlabs/nitro/arbos/storage"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -57,6 +59,18 @@ func InitializeL2PricingState(sto *storage.Storage) error {
 }
 
 func OpenL2PricingState(sto *storage.Storage, arbosVersion uint64) *L2PricingState {
+	var gasConstraints *storage.SubStorageVector
+	var multigasConstraints *storage.SubStorageVector
+
+	if arbosVersion >= params.ArbosVersion_60 {
+		gasConstraints = storage.OpenFreeSubStorageVector(sto.OpenSubStorage(gasConstraintsKey))
+		multigasConstraints = storage.OpenFreeSubStorageVector(sto.OpenSubStorage(multigasConstraintsKey))
+
+	} else {
+		gasConstraints = storage.OpenSubStorageVector(sto.OpenSubStorage(gasConstraintsKey))
+		multigasConstraints = storage.OpenSubStorageVector(sto.OpenSubStorage(multigasConstraintsKey))
+	}
+
 	return &L2PricingState{
 		storage:             sto,
 		speedLimitPerSecond: sto.OpenStorageBackedUint64(speedLimitPerSecondOffset),
@@ -67,8 +81,8 @@ func OpenL2PricingState(sto *storage.Storage, arbosVersion uint64) *L2PricingSta
 		pricingInertia:      sto.OpenStorageBackedUint64(pricingInertiaOffset),
 		backlogTolerance:    sto.OpenStorageBackedUint64(backlogToleranceOffset),
 		perTxGasLimit:       sto.OpenStorageBackedUint64(perTxGasLimitOffset),
-		gasConstraints:      storage.OpenSubStorageVector(sto.OpenSubStorage(gasConstraintsKey)),
-		multigasConstraints: storage.OpenSubStorageVector(sto.OpenSubStorage(multigasConstraintsKey)),
+		gasConstraints:      gasConstraints,
+		multigasConstraints: multigasConstraints,
 		ArbosVersion:        arbosVersion,
 	}
 }
@@ -173,7 +187,7 @@ func (ps *L2PricingState) AddGasConstraint(target uint64, adjustmentWindow uint6
 	if err != nil {
 		return fmt.Errorf("failed to push constraint: %w", err)
 	}
-	constraint := constraints.OpenGasConstraint(subStorage)
+	constraint := constraints.OpenGasConstraint(ps.ArbosVersion, subStorage)
 	if err := constraint.SetTarget(target); err != nil {
 		return fmt.Errorf("failed to set target: %w", err)
 	}
@@ -191,7 +205,7 @@ func (ps *L2PricingState) GasConstraintsLength() (uint64, error) {
 }
 
 func (ps *L2PricingState) OpenGasConstraintAt(i uint64) *constraints.GasConstraint {
-	return constraints.OpenGasConstraint(ps.gasConstraints.At(i))
+	return constraints.OpenGasConstraint(ps.ArbosVersion, ps.gasConstraints.At(i))
 }
 
 func (ps *L2PricingState) ClearGasConstraints() error {
@@ -204,7 +218,7 @@ func (ps *L2PricingState) ClearGasConstraints() error {
 		if err != nil {
 			return err
 		}
-		constraint := constraints.OpenGasConstraint(subStorage)
+		constraint := constraints.OpenGasConstraint(ps.ArbosVersion, subStorage)
 		if err := constraint.Clear(); err != nil {
 			return err
 		}
@@ -221,7 +235,7 @@ func (ps *L2PricingState) MultiGasConstraintsLength() (uint64, error) {
 }
 
 func (ps *L2PricingState) OpenMultiGasConstraintAt(i uint64) *constraints.MultiGasConstraint {
-	return constraints.OpenMultiGasConstraint(ps.multigasConstraints.At(i))
+	return constraints.OpenMultiGasConstraint(ps.ArbosVersion, ps.multigasConstraints.At(i))
 }
 
 func (ps *L2PricingState) AddMultiGasConstraint(
@@ -235,7 +249,7 @@ func (ps *L2PricingState) AddMultiGasConstraint(
 		return fmt.Errorf("failed to push multi-gas constraint: %w", err)
 	}
 
-	constraint := constraints.OpenMultiGasConstraint(subStorage)
+	constraint := constraints.OpenMultiGasConstraint(ps.ArbosVersion, subStorage)
 	if err := constraint.SetTarget(target); err != nil {
 		return fmt.Errorf("failed to set target: %w", err)
 	}
@@ -272,7 +286,7 @@ func (ps *L2PricingState) ClearMultiGasConstraints() error {
 		if err != nil {
 			return err
 		}
-		constraint := constraints.OpenMultiGasConstraint(subStorage)
+		constraint := constraints.OpenMultiGasConstraint(ps.ArbosVersion, subStorage)
 		if err := constraint.Clear(); err != nil {
 			return err
 		}

@@ -26,6 +26,8 @@ const InitialPricingInertia = 102
 const InitialBacklogTolerance = 10
 const InitialPerTxGasLimitV50 uint64 = 32 * 1000000
 
+const ArbOS60StaticGasPoolUpdateCost = 15000
+
 func (ps *L2PricingState) ShouldUseGasConstraints() (bool, error) {
 	if ps.ArbosVersion >= ArbosSingleGasConstraintsVersion {
 		constraintsLength, err := ps.GasConstraintsLength()
