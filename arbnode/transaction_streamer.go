@@ -498,7 +498,7 @@ func (s *TransactionStreamer) GetMessage(msgIdx arbutil.MessageIndex) (*arbostyp
 	}
 
 	var parentChainBlockNumber *uint64
-	if message.DelayedMessagesRead != 0 {
+	if message.DelayedMessagesRead != 0 && s.inboxReader != nil && s.inboxReader.tracker != nil {
 		_, _, localParentChainBlockNumber, err := s.inboxReader.tracker.getRawDelayedMessageAccumulatorAndParentChainBlockNumber(ctx, message.DelayedMessagesRead-1)
 		if err != nil {
 			log.Warn("Failed to fetch parent chain block number for delayed message. Will fall back to BatchMetadata", "idx", message.DelayedMessagesRead-1)
