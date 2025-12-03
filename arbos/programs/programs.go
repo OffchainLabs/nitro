@@ -342,30 +342,34 @@ func getWasmFromContractCode(statedb vm.StateDB, prefixedWasm []byte, maxWasmSiz
 			addresses = append(addresses, common.BytesToAddress(rawAddresses[i:i+common.AddressLength]))
 		}
 
-		var completedWasm []byte
-		for _, addr := range addresses {
+		var completedCompressedWasm []byte
+		var dictByte byte
+		for i, addr := range addresses {
 			currentPrefixedWasm := statedb.GetCode(addr)
-			wasm, dictByte, err := state.StripStylusFragmentPrefix(currentPrefixedWasm)
+			wasm, err := state.StripStylusFragmentPrefix(currentPrefixedWasm)
 			if err != nil {
 				return nil, err
 			}
 
-			var dict arbcompress.Dictionary
-			switch dictByte {
-			case 0:
-				dict = arbcompress.EmptyDictionary
-			case 1:
-				dict = arbcompress.StylusProgramDictionary
-			default:
-				return nil, fmt.Errorf("unsupported dictionary %v", dictByte)
+			// The first fragment includes the dictionary byte
+			if i == 0 {
+				dictByte = wasm[0]
+				wasm = wasm[1:]
 			}
-			decompressedFragment, err := arbcompress.DecompressWithDictionary(wasm, int(maxWasmSize), dict)
-			if err != nil {
-				return nil, err
-			}
-			completedWasm = append(completedWasm, decompressedFragment...)
+
+			completedCompressedWasm = append(completedCompressedWasm, wasm...)
 		}
-		return completedWasm, nil
+
+		var dict arbcompress.Dictionary
+		switch dictByte {
+		case 0:
+			dict = arbcompress.EmptyDictionary
+		case 1:
+			dict = arbcompress.StylusProgramDictionary
+		default:
+			return nil, fmt.Errorf("unsupported dictionary %v", dictByte)
+		}
+		return arbcompress.DecompressWithDictionary(completedCompressedWasm, int(maxWasmSize), dict)
 
 	}
 	return nil, ProgramNotWasmError()
