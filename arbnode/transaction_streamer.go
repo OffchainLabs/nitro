@@ -492,12 +492,37 @@ func (s *TransactionStreamer) GetMessage(msgIdx arbutil.MessageIndex) (*arbostyp
 		return nil, err
 	}
 
-	err = message.Message.FillInBatchGasFields(func(batchNum uint64) ([]byte, error) {
+	ctx, err := s.GetContextSafe()
+	if err != nil {
+		return nil, err
+	}
+
+	var parentChainBlockNumber *uint64
+	if message.DelayedMessagesRead != 0 {
+		_, _, localParentChainBlockNumber, err := s.inboxReader.tracker.getRawDelayedMessageAccumulatorAndParentChainBlockNumber(ctx, message.DelayedMessagesRead-1)
+		if err != nil {
+			log.Warn("Failed to fetch parent chain block number for delayed message. Will fall back to BatchMetadata", "idx", message.DelayedMessagesRead-1)
+		} else {
+			parentChainBlockNumber = &localParentChainBlockNumber
+		}
+	}
+
+	err = message.Message.FillInBatchGasFields(func(batchNum uint64, _parentChainBlockNumber uint64) ([]byte, error) {
 		ctx, err := s.GetContextSafe()
 		if err != nil {
 			return nil, err
 		}
-		data, _, err := s.inboxReader.GetSequencerMessageBytes(ctx, batchNum)
+
+		var data []byte
+		if parentChainBlockNumber != nil {
+			data, _, err = s.inboxReader.GetSequencerMessageBytesForParentBlock(ctx, batchNum, *parentChainBlockNumber)
+		} else {
+			data, _, err = s.inboxReader.GetSequencerMessageBytes(ctx, batchNum)
+		}
+		if err != nil {
+			return nil, err
+		}
+
 		return data, err
 	})
 	if err != nil {

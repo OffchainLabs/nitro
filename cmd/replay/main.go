@@ -127,7 +127,7 @@ func (i WavmInbox) SetPositionWithinMessage(pos uint64) {
 func (i WavmInbox) ReadDelayedInbox(seqNum uint64) (*arbostypes.L1IncomingMessage, error) {
 	log.Info("ReadDelayedMsg", "seqNum", seqNum)
 	data := wavmio.ReadDelayedInboxMessage(seqNum)
-	return arbostypes.ParseIncomingL1Message(bytes.NewReader(data), func(batchNum uint64) ([]byte, error) {
+	return arbostypes.ParseIncomingL1Message(bytes.NewReader(data), func(batchNum uint64, parentChainBlockNumber uint64) ([]byte, error) {
 		return wavmio.ReadInboxMessage(batchNum), nil
 	})
 }
@@ -236,7 +236,7 @@ func main() {
 		panic(fmt.Sprintf("Error opening state db: %v", err.Error()))
 	}
 
-	batchFetcher := func(batchNum uint64) ([]byte, error) {
+	batchFetcher := func(batchNum uint64, parentChainBlockNumber uint64) ([]byte, error) {
 		currentBatch := wavmio.GetInboxPosition()
 		if batchNum > currentBatch {
 			return nil, fmt.Errorf("invalid batch fetch request %d, max %d", batchNum, currentBatch)
