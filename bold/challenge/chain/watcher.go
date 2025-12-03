@@ -2,13 +2,13 @@
 // For license information, see:
 // https://github.com/offchainlabs/nitro/blob/master/LICENSE.md
 
-// Package chainwatcher implements the main monitoring logic for protocol validators.
-// The challenge chainwatcher is a singleton service available to all spawned edge
+// Package chain implements the main monitoring logic for protocol validators.
+// The challenge chain is a singleton service available to all spawned edge
 // trackers and it tracks common information such as the edges' ancestors and an
 // edge's time unrivaled.
 //
 // See: [github.com/offchainlabs/nitro/bold/challenge/edgetracker]
-package chainwatcher
+package chain
 
 import (
 	"context"

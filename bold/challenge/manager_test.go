@@ -14,7 +14,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 
-	"github.com/offchainlabs/nitro/bold/challenge/chainwatcher"
+	"github.com/offchainlabs/nitro/bold/challenge/chain"
 	"github.com/offchainlabs/nitro/bold/challenge/edgetracker"
 	"github.com/offchainlabs/nitro/bold/challenge/testing/mocks"
 	"github.com/offchainlabs/nitro/bold/challenge/testing/setup"
@@ -179,7 +179,7 @@ func setupEdgeTrackersForBisection(
 	require.NoError(t, err)
 	require.Equal(t, false, !hasRival)
 
-	honestWatcher, err := chainwatcher.New(
+	honestWatcher, err := chain.New(
 		honestValidator.chain,
 		honestValidator.stateManager,
 		"alice",
@@ -211,7 +211,7 @@ func setupEdgeTrackersForBisection(
 	)
 	require.NoError(t, err)
 
-	evilWatcher, err := chainwatcher.New(
+	evilWatcher, err := chain.New(
 		evilValidator.chain,
 		evilValidator.stateManager,
 		"bob",

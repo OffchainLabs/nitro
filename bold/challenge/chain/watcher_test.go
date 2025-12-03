@@ -2,7 +2,7 @@
 // For license information, see:
 // https://github.com/offchainlabs/nitro/blob/master/LICENSE.md
 
-package chainwatcher
+package chain
 
 import (
 	"context"

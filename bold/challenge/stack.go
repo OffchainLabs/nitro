@@ -15,7 +15,7 @@ import (
 	"github.com/offchainlabs/nitro/bold/api/db"
 	"github.com/offchainlabs/nitro/bold/api/server"
 	"github.com/offchainlabs/nitro/bold/assertions"
-	"github.com/offchainlabs/nitro/bold/challenge/chainwatcher"
+	"github.com/offchainlabs/nitro/bold/challenge/chain"
 	"github.com/offchainlabs/nitro/bold/challenge/types"
 	"github.com/offchainlabs/nitro/bold/l2stateprovider"
 	"github.com/offchainlabs/nitro/bold/protocol"
@@ -195,7 +195,7 @@ func OverrideAssertionManager(asm *assertions.Manager) StackOpt {
 // NewChallengeStack creates a new ChallengeManager and all of the dependencies
 // wiring them together.
 func NewChallengeStack(
-	chain protocol.AssertionChain,
+	assertionChain protocol.AssertionChain,
 	provider l2stateprovider.Provider,
 	opts ...StackOpt,
 ) (*Manager, error) {
@@ -220,8 +220,8 @@ func NewChallengeStack(
 	}
 
 	// Create the chain watcher.
-	watcher, err := chainwatcher.New(
-		chain,
+	watcher, err := chain.New(
+		assertionChain,
 		provider,
 		params.name,
 		apiDB,
@@ -237,7 +237,7 @@ func NewChallengeStack(
 	// Create the api backend server.
 	var api *server.Server
 	if params.apiAddr != "" {
-		bknd := backend.NewBackend(apiDB, chain, watcher)
+		bknd := backend.NewBackend(apiDB, assertionChain, watcher)
 		api, err = server.New(params.apiAddr, bknd)
 		if err != nil {
 			return nil, err
@@ -272,7 +272,7 @@ func NewChallengeStack(
 			amOpts = append(amOpts, assertions.WithoutAutoAllowanceApproval())
 		}
 		asm, err = assertions.NewManager(
-			chain,
+			assertionChain,
 			provider,
 			params.name,
 			params.mode,
@@ -296,5 +296,5 @@ func NewChallengeStack(
 	if params.apiAddr != "" {
 		cmOpts = append(cmOpts, WithAPIServer(api))
 	}
-	return New(chain, provider, watcher, asm, cmOpts...)
+	return New(assertionChain, provider, watcher, asm, cmOpts...)
 }

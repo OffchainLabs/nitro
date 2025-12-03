@@ -21,7 +21,7 @@ import (
 	"github.com/ethereum/go-ethereum/metrics"
 
 	"github.com/offchainlabs/nitro/bold/api/server"
-	"github.com/offchainlabs/nitro/bold/challenge/chainwatcher"
+	"github.com/offchainlabs/nitro/bold/challenge/chain"
 	"github.com/offchainlabs/nitro/bold/challenge/edgetracker"
 	"github.com/offchainlabs/nitro/bold/challenge/types"
 	"github.com/offchainlabs/nitro/bold/containers/events"
@@ -60,7 +60,7 @@ type Manager struct {
 	stopwaiter.StopWaiter
 	chain                        protocol.Protocol
 	assertionManager             AssertionManager
-	watcher                      *chainwatcher.Watcher
+	watcher                      *chain.Watcher
 	stateManager                 l2stateprovider.Provider
 	name                         string
 	headerProvider               HeaderProvider
@@ -117,7 +117,7 @@ func WithHeaderProvider(provider HeaderProvider) Opt {
 func New(
 	chain protocol.Protocol,
 	stateManager l2stateprovider.Provider,
-	watcher *chainwatcher.Watcher,
+	watcher *chain.Watcher,
 	assertionManager AssertionManager,
 	opts ...Opt,
 ) (*Manager, error) {
@@ -269,7 +269,7 @@ func (m *Manager) getTrackerForEdge(ctx context.Context, edge protocol.VerifiedR
 	})
 }
 
-func (m *Manager) Watcher() *chainwatcher.Watcher {
+func (m *Manager) Watcher() *chain.Watcher {
 	return m.watcher
 }
 
