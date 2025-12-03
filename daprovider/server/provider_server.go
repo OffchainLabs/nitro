@@ -181,7 +181,7 @@ func NewServerWithDAPProvider(ctx context.Context, config *ServerConfig, reader 
 
 func (s *ReaderServer) GetSupportedHeaderBytes(ctx context.Context) (*server_api.SupportedHeaderBytesResult, error) {
 	return &server_api.SupportedHeaderBytesResult{
-		HeaderBytes: s.headerBytes,
+		HeaderBytes: hexutil.Bytes(s.headerBytes),
 	}, nil
 }
 
@@ -261,4 +261,12 @@ func (s *WriterServer) CommitChunkedStore(ctx context.Context, messageId hexutil
 func (s *WriterServer) Store(ctx context.Context, message hexutil.Bytes, timeout hexutil.Uint64) (*server_api.StoreResult, error) {
 	serializedDACert, err := s.writer.Store(message, uint64(timeout)).Await(ctx)
 	return &server_api.StoreResult{SerializedDACert: serializedDACert}, err
+}
+
+func (s *WriterServer) GetMaxMessageSize(ctx context.Context) (*server_api.MaxMessageSizeResult, error) {
+	maxSize, err := s.writer.GetMaxMessageSize().Await(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return &server_api.MaxMessageSizeResult{MaxSize: maxSize}, nil
 }
