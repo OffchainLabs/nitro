@@ -109,7 +109,7 @@ func (v *JitSpawner) Launch(entry *validator.ValidationInput, moduleRoot common.
 	return server_common.NewValRun(promise, moduleRoot)
 }
 
-func (v *JitSpawner) MaxAvailableWorkers() int {
+func (v *JitSpawner) WorkersCapacity() int {
 	avail := v.config().Workers
 	if avail == 0 {
 		avail = util.GoMaxProcs()

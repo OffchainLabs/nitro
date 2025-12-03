@@ -75,8 +75,8 @@ func ValidationClientConfigAddOptions(prefix string, f *pflag.FlagSet) {
 // ValidationClient implements validation client through redis streams.
 type ValidationClient struct {
 	stopwaiter.StopWaiter
-	config              *ValidationClientConfig
-	maxAvailableWorkers int32
+	config          *ValidationClientConfig
+	workersCapacity int
 	// producers stores moduleRoot to producer mapping.
 	producers   map[common.Hash]*pubsub.Producer[*validator.ValidationInput, validator.GoGlobalState]
 	redisClient redis.UniversalClient
@@ -92,10 +92,10 @@ func NewValidationClient(cfg *ValidationClientConfig) (*ValidationClient, error)
 		return nil, err
 	}
 	validationClient := &ValidationClient{
-		config:              cfg,
-		producers:           make(map[common.Hash]*pubsub.Producer[*validator.ValidationInput, validator.GoGlobalState]),
-		redisClient:         redisClient,
-		maxAvailableWorkers: cfg.Room,
+		config:          cfg,
+		producers:       make(map[common.Hash]*pubsub.Producer[*validator.ValidationInput, validator.GoGlobalState]),
+		redisClient:     redisClient,
+		workersCapacity: int(cfg.Room),
 	}
 	return validationClient, nil
 }
@@ -169,6 +169,6 @@ func (c *ValidationClient) StylusArchs() []rawdb.WasmTarget {
 	return stylusArchs
 }
 
-func (c *ValidationClient) MaxAvailableWorkers() int {
-	return int(c.maxAvailableWorkers)
+func (c *ValidationClient) WorkersCapacity() int {
+	return int(c.workersCapacity)
 }

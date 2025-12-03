@@ -56,12 +56,12 @@ var (
 // Uses simple atomic counter - no retry logic, just increment/decrement
 type WorkerThrottler struct {
 	maxWorkers     int
-	currentRunning atomic.Int32
+	currentRunning atomic.Int64
 }
 
 // HasCapacity checks if there's available capacity
 func (t *WorkerThrottler) HasCapacity() bool {
-	return t.currentRunning.Load() < int32(t.maxWorkers)
+	return t.currentRunning.Load() < int64(t.maxWorkers)
 }
 
 func (t *WorkerThrottler) Acquire() {
@@ -80,7 +80,7 @@ type ThrottledValidationSpawner struct {
 func NewThrottledValidationSpawner(spawner validator.ValidationSpawner) *ThrottledValidationSpawner {
 	return &ThrottledValidationSpawner{
 		Spawner:   spawner,
-		Throttler: &WorkerThrottler{maxWorkers: spawner.MaxAvailableWorkers()},
+		Throttler: &WorkerThrottler{maxWorkers: spawner.WorkersCapacity()},
 	}
 }
 
@@ -1357,12 +1357,12 @@ func (v *BlockValidator) Initialize(ctx context.Context) error {
 	for _, root := range moduleRoots {
 		if v.redisValidator != nil && validator.SpawnerSupportsModule(v.redisValidator, root) {
 			v.chosenValidator[root] = NewThrottledValidationSpawner(v.redisValidator)
-			log.Info("validator chosen", "WasmModuleRoot", root, "chosen", "redis", "maxWorkers", v.redisValidator.MaxAvailableWorkers())
+			log.Info("validator chosen", "WasmModuleRoot", root, "chosen", "redis", "maxWorkers", v.redisValidator.WorkersCapacity())
 		} else {
 			for _, spawner := range v.execSpawners {
 				if validator.SpawnerSupportsModule(spawner, root) {
 					v.chosenValidator[root] = NewThrottledValidationSpawner(spawner)
-					log.Info("validator chosen", "WasmModuleRoot", root, "chosen", spawner.Name(), "maxWorkers", spawner.MaxAvailableWorkers())
+					log.Info("validator chosen", "WasmModuleRoot", root, "chosen", spawner.Name(), "maxWorkers", spawner.WorkersCapacity())
 					break
 				}
 			}

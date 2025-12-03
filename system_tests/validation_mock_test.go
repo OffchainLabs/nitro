@@ -30,9 +30,9 @@ import (
 )
 
 type mockSpawner struct {
-	ExecSpawned []uint64
-	LaunchDelay time.Duration
-	MaxWorkers  int // if 0, defaults to 4
+	ExecSpawned     []uint64
+	LaunchDelay     time.Duration
+	workersCapacity int // if 0, defaults to 4
 }
 
 var blockHashKey = common.HexToHash("0x11223344")
@@ -84,8 +84,8 @@ func (s *mockSpawner) Start(context.Context) error {
 }
 func (s *mockSpawner) Stop()        {}
 func (s *mockSpawner) Name() string { return "mock" }
-func (s *mockSpawner) MaxAvailableWorkers() int {
-	return s.MaxWorkers
+func (s *mockSpawner) WorkersCapacity() int {
+	return s.workersCapacity
 }
 
 func (s *mockSpawner) CreateExecutionRun(wasmModuleRoot common.Hash, input *validator.ValidationInput, _ bool) containers.PromiseInterface[validator.ExecutionRun] {

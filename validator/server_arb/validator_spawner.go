@@ -214,7 +214,7 @@ func (v *ArbitratorSpawner) Launch(entry *validator.ValidationInput, moduleRoot 
 	return server_common.NewValRun(promise, moduleRoot)
 }
 
-func (v *ArbitratorSpawner) MaxAvailableWorkers() int {
+func (v *ArbitratorSpawner) WorkersCapacity() int {
 	avail := v.config().Workers
 	if avail == 0 {
 		avail = util.GoMaxProcs()

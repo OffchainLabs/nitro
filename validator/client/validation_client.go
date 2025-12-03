@@ -28,11 +28,11 @@ var executionNodeOfflineCounter = metrics.NewRegisteredCounter("arb/state_provid
 
 type ValidationClient struct {
 	stopwaiter.StopWaiter
-	client              *rpcclient.RpcClient
-	name                string
-	stylusArchs         []rawdb.WasmTarget
-	maxAvailableWorkers int
-	wasmModuleRoots     []common.Hash
+	client          *rpcclient.RpcClient
+	name            string
+	stylusArchs     []rawdb.WasmTarget
+	workersCapacity int
+	wasmModuleRoots []common.Hash
 }
 
 func NewValidationClient(config rpcclient.ClientConfigFetcher, stack *node.Node) *ValidationClient {
@@ -85,7 +85,7 @@ func (c *ValidationClient) Start(ctx context.Context) error {
 		return fmt.Errorf("server reported no wasmModuleRoots")
 	}
 	var maxWorkers int
-	if err := c.client.CallContext(ctx, &maxWorkers, server_api.Namespace+"_maxAvailableWorkers"); err != nil {
+	if err := c.client.CallContext(ctx, &maxWorkers, server_api.Namespace+"_workersCapacity"); err != nil {
 		return err
 	}
 	if maxWorkers < 2 {
@@ -94,7 +94,7 @@ func (c *ValidationClient) Start(ctx context.Context) error {
 	} else {
 		log.Info("connected to validation server", "name", name, "maxWorkers", maxWorkers)
 	}
-	c.maxAvailableWorkers = maxWorkers
+	c.workersCapacity = maxWorkers
 	c.wasmModuleRoots = moduleRoots
 	c.name = name
 	c.stylusArchs = stylusArchs
@@ -127,8 +127,8 @@ func (c *ValidationClient) Name() string {
 	return c.name
 }
 
-func (c *ValidationClient) MaxAvailableWorkers() int {
-	return c.maxAvailableWorkers
+func (c *ValidationClient) WorkersCapacity() int {
+	return c.workersCapacity
 }
 
 type ExecutionClient struct {
