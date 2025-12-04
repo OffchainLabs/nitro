@@ -28,13 +28,13 @@ func (a *ValidationServerAPI) Name() string {
 	return a.spawner.Name()
 }
 
-func (a *ValidationServerAPI) WorkersCapacity() int {
-	return a.spawner.WorkersCapacity()
+func (a *ValidationServerAPI) Capacity() int {
+	return a.spawner.Capacity()
 }
 
 // This is for backwards compatibility, should be removed in the future.
 func (a *ValidationServerAPI) Room() int {
-	return a.spawner.WorkersCapacity()
+	return a.spawner.Capacity()
 }
 
 func (a *ValidationServerAPI) Validate(ctx context.Context, entry *server_api.InputJSON, moduleRoot common.Hash) (validator.GoGlobalState, error) {

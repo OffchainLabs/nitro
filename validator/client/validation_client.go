@@ -31,7 +31,7 @@ type ValidationClient struct {
 	client          *rpcclient.RpcClient
 	name            string
 	stylusArchs     []rawdb.WasmTarget
-	workersCapacity int
+	capacity        int
 	wasmModuleRoots []common.Hash
 }
 
@@ -84,17 +84,21 @@ func (c *ValidationClient) Start(ctx context.Context) error {
 	if len(moduleRoots) == 0 {
 		return fmt.Errorf("server reported no wasmModuleRoots")
 	}
-	var maxWorkers int
-	if err := c.client.CallContext(ctx, &maxWorkers, server_api.Namespace+"_workersCapacity"); err != nil {
-		return err
+	var spawnerCapacity int
+	if err := c.client.CallContext(ctx, &spawnerCapacity, server_api.Namespace+"_capacity"); err != nil {
+		// handle the forward compatibility case where the server doesn't have the capacity method
+		log.Warn("could not get capacity from validation server, use room method instead", "err", err)
+		if err := c.client.CallContext(ctx, &spawnerCapacity, server_api.Namespace+"_room"); err != nil {
+			return err
+		}
 	}
-	if maxWorkers < 2 {
-		log.Warn("validation server not enough workers, overriding to 2", "name", name, "maxWorkers", maxWorkers)
-		maxWorkers = 2
+	if spawnerCapacity < 2 {
+		log.Warn("validation server not enough workers, overriding to 2", "name", name, "maxWorkers", spawnerCapacity)
+		spawnerCapacity = 2
 	} else {
-		log.Info("connected to validation server", "name", name, "maxWorkers", maxWorkers)
+		log.Info("connected to validation server", "name", name, "maxWorkers", spawnerCapacity)
 	}
-	c.workersCapacity = maxWorkers
+	c.capacity = spawnerCapacity
 	c.wasmModuleRoots = moduleRoots
 	c.name = name
 	c.stylusArchs = stylusArchs
@@ -127,8 +131,8 @@ func (c *ValidationClient) Name() string {
 	return c.name
 }
 
-func (c *ValidationClient) WorkersCapacity() int {
-	return c.workersCapacity
+func (c *ValidationClient) Capacity() int {
+	return c.capacity
 }
 
 type ExecutionClient struct {

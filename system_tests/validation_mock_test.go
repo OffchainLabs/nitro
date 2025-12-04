@@ -30,9 +30,9 @@ import (
 )
 
 type mockSpawner struct {
-	ExecSpawned     []uint64
-	LaunchDelay     time.Duration
-	workersCapacity int // if 0, defaults to 4
+	ExecSpawned []uint64
+	LaunchDelay time.Duration
+	capacity    int // if 0, defaults to 4
 }
 
 var blockHashKey = common.HexToHash("0x11223344")
@@ -84,8 +84,11 @@ func (s *mockSpawner) Start(context.Context) error {
 }
 func (s *mockSpawner) Stop()        {}
 func (s *mockSpawner) Name() string { return "mock" }
-func (s *mockSpawner) WorkersCapacity() int {
-	return s.workersCapacity
+func (s *mockSpawner) Capacity() int {
+	if s.capacity == 0 {
+		return 4
+	}
+	return s.capacity
 }
 
 func (s *mockSpawner) CreateExecutionRun(wasmModuleRoot common.Hash, input *validator.ValidationInput, _ bool) containers.PromiseInterface[validator.ExecutionRun] {
@@ -278,6 +281,114 @@ func TestValidationServerAPI(t *testing.T) {
 	Require(t, err)
 	if !bytes.Equal(proof, mockProof) {
 		t.Error("mock proof not expected")
+	}
+}
+
+func TestThrottledValidationSpawner(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	spawner := &mockSpawner{} // capacity defaults to 4
+	throttled := staker.NewThrottledValidationSpawner(spawner)
+
+	// Test initial state - should have full capacity
+	if !throttled.Throttler.HasCapacity() {
+		Fatal(t, "should have capacity initially")
+	}
+
+	hash1 := common.HexToHash("0x11223344556677889900aabbccddeeff")
+	hash2 := common.HexToHash("0x11111111122222223333333444444444")
+
+	startState := validator.GoGlobalState{
+		BlockHash:  hash1,
+		SendRoot:   hash2,
+		Batch:      300,
+		PosInBatch: 3000,
+	}
+	endState := validator.GoGlobalState{
+		BlockHash:  hash2,
+		SendRoot:   hash1,
+		Batch:      3000,
+		PosInBatch: 300,
+	}
+
+	valInput := validator.ValidationInput{
+		Id:            0,
+		HasDelayedMsg: false,
+		DelayedMsgNr:  0,
+		Preimages: daprovider.PreimagesMap{
+			arbutil.Keccak256PreimageType: globalstateToTestPreimages(endState),
+		},
+		UserWasms:  make(map[rawdb.WasmTarget]map[common.Hash][]byte),
+		BatchInfo:  []validator.BatchInfo{},
+		DelayedMsg: []byte{},
+		StartState: startState,
+		DebugChain: false,
+	}
+
+	// Launch 4 validations without delay - they complete immediately
+	valRuns := make([]validator.ValidationRun, 0, 4)
+	for i := 0; i < 4; i++ {
+		if !throttled.Throttler.HasCapacity() {
+			Fatal(t, "should have capacity before launch", i)
+		}
+		throttled.Throttler.Acquire()
+		valRun := throttled.Spawner.Launch(&valInput, mockWasmModuleRoots[0])
+		valRuns = append(valRuns, valRun)
+	}
+
+	// After acquiring 4, should have no capacity
+	if throttled.Throttler.HasCapacity() {
+		Fatal(t, "should NOT have capacity after 4 acquires")
+	}
+
+	// Await and release
+	for i := range valRuns {
+		_, err := valRuns[i].Await(ctx)
+		Require(t, err)
+		throttled.Throttler.Release()
+	}
+
+	// After releasing all, should have capacity again
+	if !throttled.Throttler.HasCapacity() {
+		Fatal(t, "should have capacity after all releases")
+	}
+
+	// Test with delay - validations block so we can observe capacity changes
+	spawner.LaunchDelay = time.Hour
+
+	delayedRuns := make([]validator.ValidationRun, 0, 4)
+	for i := 0; i < 4; i++ {
+		if !throttled.Throttler.HasCapacity() {
+			Fatal(t, "should have capacity before delayed launch", i)
+		}
+		throttled.Throttler.Acquire()
+		// Launch in goroutine since it blocks due to delay
+		go func() {
+			run := throttled.Spawner.Launch(&valInput, mockWasmModuleRoots[0])
+			delayedRuns = append(delayedRuns, run)
+		}()
+	}
+
+	// All 4 slots acquired - should have no capacity
+	if throttled.Throttler.HasCapacity() {
+		Fatal(t, "should NOT have capacity after 4 acquires with delay")
+	}
+
+	// Release one and verify capacity returns
+	throttled.Throttler.Release()
+	if !throttled.Throttler.HasCapacity() {
+		Fatal(t, "should have capacity after one release")
+	}
+
+	// Release remaining 3
+	for i := 0; i < 3; i++ {
+		throttled.Throttler.Release()
+	}
+
+	// Should have full capacity again
+	if !throttled.Throttler.HasCapacity() {
+		Fatal(t, "should have capacity after all releases")
 	}
 }
 

@@ -18,7 +18,7 @@ type ValidationSpawner interface {
 	StylusArchs() []rawdb.WasmTarget
 	// This is a static number representing the maximum number of workers, should not change over time.
 	// block_validator uses this to size its worker pool.
-	WorkersCapacity() int
+	Capacity() int
 }
 
 type ValidationRun interface {

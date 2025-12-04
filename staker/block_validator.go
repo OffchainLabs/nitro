@@ -80,7 +80,7 @@ type ThrottledValidationSpawner struct {
 func NewThrottledValidationSpawner(spawner validator.ValidationSpawner) *ThrottledValidationSpawner {
 	return &ThrottledValidationSpawner{
 		Spawner:   spawner,
-		Throttler: &WorkerThrottler{maxWorkers: spawner.WorkersCapacity()},
+		Throttler: &WorkerThrottler{maxWorkers: spawner.Capacity()},
 	}
 }
 
@@ -1357,12 +1357,12 @@ func (v *BlockValidator) Initialize(ctx context.Context) error {
 	for _, root := range moduleRoots {
 		if v.redisValidator != nil && validator.SpawnerSupportsModule(v.redisValidator, root) {
 			v.chosenValidator[root] = NewThrottledValidationSpawner(v.redisValidator)
-			log.Info("validator chosen", "WasmModuleRoot", root, "chosen", "redis", "maxWorkers", v.redisValidator.WorkersCapacity())
+			log.Info("validator chosen", "WasmModuleRoot", root, "chosen", "redis", "maxWorkers", v.redisValidator.Capacity())
 		} else {
 			for _, spawner := range v.execSpawners {
 				if validator.SpawnerSupportsModule(spawner, root) {
 					v.chosenValidator[root] = NewThrottledValidationSpawner(spawner)
-					log.Info("validator chosen", "WasmModuleRoot", root, "chosen", spawner.Name(), "maxWorkers", spawner.WorkersCapacity())
+					log.Info("validator chosen", "WasmModuleRoot", root, "chosen", spawner.Name(), "maxWorkers", spawner.Capacity())
 					break
 				}
 			}
