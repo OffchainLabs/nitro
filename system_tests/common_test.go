@@ -2202,33 +2202,44 @@ func setupConfigWithDAS(
 	return chainConfig, l1NodeConfigA, lifecycleManager, dbPath, dasSignerKey
 }
 
-// errorHolder wraps an error pointer to allow storing nil in atomic.Value
-type errorHolder struct {
-	err error
+// controllableWriter wraps a DA writer and can be controlled to return specific errors
+type controllableWriter struct {
+	mu             sync.RWMutex
+	writer         daprovider.Writer
+	shouldFallback bool
+	customError    error
 }
 
-// controllableWriter wraps a DA writer and can be controlled via HTTP endpoints to return specific errors
-type controllableWriter struct {
-	writer         daprovider.Writer
-	shouldFallback *atomic.Bool
-	customError    *atomic.Value // stores *errorHolder
+func (w *controllableWriter) SetShouldFallback(val bool) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.shouldFallback = val
+}
+
+func (w *controllableWriter) SetCustomError(err error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.customError = err
 }
 
 func (w *controllableWriter) Store(msg []byte, timeout uint64) containers.PromiseInterface[[]byte] {
-	log.Info("controllableWriter.Store called", "msgLen", len(msg), "timeout", timeout, "shouldFallback", w.shouldFallback.Load())
+	w.mu.RLock()
+	shouldFallback := w.shouldFallback
+	customError := w.customError
+	w.mu.RUnlock()
+
+	log.Info("controllableWriter.Store called", "msgLen", len(msg), "timeout", timeout, "shouldFallback", shouldFallback)
 
 	// Check for custom error first
-	if holder := w.customError.Load(); holder != nil {
-		if eh, ok := holder.(*errorHolder); ok && eh.err != nil {
-			log.Info("controllableWriter returning custom error", "error", eh.err)
-			promise := containers.NewPromise[[]byte](func() {})
-			promise.ProduceError(eh.err)
-			return &promise
-		}
+	if customError != nil {
+		log.Info("controllableWriter returning custom error", "error", customError)
+		promise := containers.NewPromise[[]byte](func() {})
+		promise.ProduceError(customError)
+		return &promise
 	}
 
 	// Check for fallback signal
-	if w.shouldFallback.Load() {
+	if shouldFallback {
 		log.Warn("controllableWriter returning ErrFallbackRequested")
 		promise := containers.NewPromise[[]byte](func() {})
 		promise.ProduceError(daprovider.ErrFallbackRequested)
@@ -2248,13 +2259,13 @@ func (w *controllableWriter) GetMaxMessageSize() containers.PromiseInterface[int
 // This is a convenience wrapper around createReferenceDAProviderServerWithControl
 // for tests that don't need runtime control of error injection.
 func createReferenceDAProviderServer(t *testing.T, ctx context.Context, l1Client *ethclient.Client, validatorAddr common.Address, dataSigner signature.DataSignerFunc, port int) (*http.Server, string) {
-	server, url, _, _ := createReferenceDAProviderServerWithControl(t, ctx, l1Client, validatorAddr, dataSigner, port, referenceda.DefaultConfig.MaxBatchSize)
+	server, url, _ := createReferenceDAProviderServerWithControl(t, ctx, l1Client, validatorAddr, dataSigner, port, referenceda.DefaultConfig.MaxBatchSize)
 	return server, url
 }
 
 // createReferenceDAProviderServerWithControl creates a ReferenceDA provider server with controllable error injection.
-// Returns: server, URL, and control handles (shouldFallback, customError) for direct manipulation in tests.
-func createReferenceDAProviderServerWithControl(t *testing.T, ctx context.Context, l1Client *ethclient.Client, validatorAddr common.Address, dataSigner signature.DataSignerFunc, port int, maxMessageSize int) (*http.Server, string, *atomic.Bool, *atomic.Value) {
+// Returns: server, URL, and controllableWriter for direct manipulation in tests.
+func createReferenceDAProviderServerWithControl(t *testing.T, ctx context.Context, l1Client *ethclient.Client, validatorAddr common.Address, dataSigner signature.DataSignerFunc, port int, maxMessageSize int) (*http.Server, string, *controllableWriter) {
 	// Create ReferenceDA components
 	storage := referenceda.GetInMemoryStorage()
 	reader := referenceda.NewReader(storage, l1Client, validatorAddr)
@@ -2262,13 +2273,8 @@ func createReferenceDAProviderServerWithControl(t *testing.T, ctx context.Contex
 	validator := referenceda.NewValidator(l1Client, validatorAddr)
 
 	// Create controllable wrapper
-	shouldFallback := &atomic.Bool{}
-	customError := &atomic.Value{}
-	customError.Store(&errorHolder{err: nil}) // Initialize with nil error
 	wrappedWriter := &controllableWriter{
-		writer:         writer,
-		shouldFallback: shouldFallback,
-		customError:    customError,
+		writer: writer,
 	}
 
 	// Create server config
@@ -2292,8 +2298,8 @@ func createReferenceDAProviderServerWithControl(t *testing.T, ctx context.Contex
 
 	t.Logf("Started controllable ReferenceDA provider server at %s", serverURL)
 
-	// Return server, URL, and control handles for direct manipulation
-	return server, serverURL, shouldFallback, customError
+	// Return server, URL, and controllable writer for direct manipulation
+	return server, serverURL, wrappedWriter
 }
 
 func getDeadlineTimeout(t *testing.T, defaultTimeout time.Duration) time.Duration {

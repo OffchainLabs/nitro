@@ -429,7 +429,7 @@ func TestMultiWriterFallback_CustomDAToAnyTrustExplicit(t *testing.T) {
 	l1info := builder.L1Info
 	dataSigner := signature.DataSignerFromPrivateKey(l1info.GetInfoWithPrivKey("Sequencer").PrivateKey)
 	validatorAddr := l1info.GetAddress("ReferenceDAProofValidator")
-	customDAServer, customDAURL, shouldFallback, customError := createReferenceDAProviderServerWithControl(t, ctx, builder.L1.Client, validatorAddr, dataSigner, 0, referenceda.DefaultConfig.MaxBatchSize)
+	customDAServer, customDAURL, writerControl := createReferenceDAProviderServerWithControl(t, ctx, builder.L1.Client, validatorAddr, dataSigner, 0, referenceda.DefaultConfig.MaxBatchSize)
 	defer func() {
 		if err := customDAServer.Shutdown(ctx); err != nil {
 			t.Logf("Error shutting down CustomDA server: %v", err)
@@ -507,7 +507,7 @@ func TestMultiWriterFallback_CustomDAToAnyTrustExplicit(t *testing.T) {
 	t.Log("Phase 2: Triggering explicit fallback from CustomDA to AnyTrust")
 
 	// Trigger fallback by setting control handle directly
-	shouldFallback.Store(true)
+	writerControl.SetShouldFallback(true)
 	t.Log("Phase 2: Set fallback flag to true")
 
 	// Record L1 block range for Phase 2
@@ -556,8 +556,8 @@ func TestMultiWriterFallback_CustomDAToAnyTrustExplicit(t *testing.T) {
 	t.Log("Phase 3: Resetting CustomDA, verifying it's used again")
 
 	// Reset by clearing control handles directly
-	shouldFallback.Store(false)
-	customError.Store(&errorHolder{err: nil})
+	writerControl.SetShouldFallback(false)
+	writerControl.SetCustomError(nil)
 	t.Log("Phase 3: Reset fallback flag to false")
 
 	// Record L1 block range for Phase 3
@@ -661,7 +661,7 @@ func TestMultiWriterFallback_CustomDAToCalldataWithBatchResizing(t *testing.T) {
 	l1info := builder.L1Info
 	dataSigner := signature.DataSignerFromPrivateKey(l1info.GetInfoWithPrivKey("Sequencer").PrivateKey)
 	validatorAddr := l1info.GetAddress("ReferenceDAProofValidator")
-	customDAServer, customDAURL, shouldFallback, _ := createReferenceDAProviderServerWithControl(t, ctx, builder.L1.Client, validatorAddr, dataSigner, 0, 10_000)
+	customDAServer, customDAURL, writerControl := createReferenceDAProviderServerWithControl(t, ctx, builder.L1.Client, validatorAddr, dataSigner, 0, 10_000)
 	defer func() {
 		if err := customDAServer.Shutdown(ctx); err != nil {
 			t.Logf("Error shutting down CustomDA server: %v", err)
@@ -798,7 +798,7 @@ func TestMultiWriterFallback_CustomDAToCalldataWithBatchResizing(t *testing.T) {
 	t.Log("Phase 2: Triggering explicit fallback from CustomDA, testing batch resizing fallback to EthDA")
 
 	// Trigger fallback by setting control handle directly
-	shouldFallback.Store(true)
+	writerControl.SetShouldFallback(true)
 	t.Log("Phase 2: Set fallback flag to true")
 
 	// Record L1 block before Phase 2
