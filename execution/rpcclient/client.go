@@ -81,22 +81,6 @@ func (c *ExecutionRPCClient) ResultAtMessageIndex(msgIdx arbutil.MessageIndex) c
 	})
 }
 
-func (c *ExecutionRPCClient) MessageIndexToBlockNumber(messageNum arbutil.MessageIndex) containers.PromiseInterface[uint64] {
-	return stopwaiter.LaunchPromiseThread(c, func(ctx context.Context) (uint64, error) {
-		var res uint64
-		err := c.client.CallContext(ctx, &res, execution.RPCNamespace+"_messageIndexToBlockNumber", messageNum)
-		return res, convertError(err)
-	})
-}
-
-func (c *ExecutionRPCClient) BlockNumberToMessageIndex(blockNum uint64) containers.PromiseInterface[arbutil.MessageIndex] {
-	return stopwaiter.LaunchPromiseThread(c, func(ctx context.Context) (arbutil.MessageIndex, error) {
-		var res arbutil.MessageIndex
-		err := c.client.CallContext(ctx, &res, execution.RPCNamespace+"_blockNumberToMessageIndex", blockNum)
-		return res, convertError(err)
-	})
-}
-
 func (c *ExecutionRPCClient) SetFinalityData(safeFinalityData *arbutil.FinalityData, finalizedFinalityData *arbutil.FinalityData, validatedFinalityData *arbutil.FinalityData) containers.PromiseInterface[struct{}] {
 	return stopwaiter.LaunchPromiseThread(c, func(ctx context.Context) (struct{}, error) {
 		err := c.client.CallContext(ctx, nil, execution.RPCNamespace+"_setFinalityData", safeFinalityData, finalizedFinalityData, validatedFinalityData)
@@ -144,7 +128,7 @@ func (c *ExecutionRPCClient) MaintenanceStatus() containers.PromiseInterface[*ex
 func (c *ExecutionRPCClient) ArbOSVersionForMessageIndex(msgIdx arbutil.MessageIndex) containers.PromiseInterface[uint64] {
 	return stopwaiter.LaunchPromiseThread(c, func(ctx context.Context) (uint64, error) {
 		var res uint64
-		err := c.client.CallContext(ctx, &res, execution.RPCNamespace+"_messageIndexToBlockNumber", msgIdx)
+		err := c.client.CallContext(ctx, &res, execution.RPCNamespace+"_arbOSVersionForMessageIndex", msgIdx)
 		return res, convertError(err)
 	})
 }

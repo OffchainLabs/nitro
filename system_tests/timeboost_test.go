@@ -756,7 +756,7 @@ func TestTimeboostBulkBlockMetadataFetcher(t *testing.T) {
 
 	// Rebuild blockMetadata and cleanup trackers from ArbDB
 	rebuildStartPos := uint64(5)
-	blockMetadataFetcher, err := arbnode.NewBlockMetadataFetcher(ctx, arbnode.BlockMetadataFetcherConfig{Source: rpcclient.ClientConfig{URL: builder.L2.Stack.HTTPEndpoint()}}, arbDb, newNode.ExecNode, rebuildStartPos, builder.chainConfig.ChainID.Uint64())
+	blockMetadataFetcher, err := arbnode.NewBlockMetadataFetcher(ctx, arbnode.BlockMetadataFetcherConfig{Source: rpcclient.ClientConfig{URL: builder.L2.Stack.HTTPEndpoint()}}, arbDb, builder.L2.ExecNode.ExecEngine.GetGenesisBlockNumber(), newNode.ExecNode, rebuildStartPos, builder.chainConfig.ChainID.Uint64())
 	Require(t, err)
 	Require(t, blockMetadataFetcher.InitializeTrackBlockMetadataFrom(ctx))
 	blockMetadataFetcher.Update(ctx)

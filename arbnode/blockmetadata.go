@@ -69,6 +69,7 @@ type BlockMetadataFetcher struct {
 	stopwaiter.StopWaiter
 	config                 BlockMetadataFetcherConfig
 	db                     ethdb.Database
+	genesisBlockNum        uint64
 	client                 *rpcclient.RpcClient
 	exec                   execution.ExecutionClient
 	startBlockNum          uint64
@@ -84,6 +85,7 @@ func NewBlockMetadataFetcher(
 	ctx context.Context,
 	c BlockMetadataFetcherConfig,
 	db ethdb.Database,
+	genesisBlockNum uint64,
 	exec execution.ExecutionClient,
 	startBlockNum uint64,
 	expectedChainId uint64,
@@ -106,6 +108,7 @@ func NewBlockMetadataFetcher(
 	fetcher := &BlockMetadataFetcher{
 		config:              c,
 		db:                  db,
+		genesisBlockNum:     genesisBlockNum,
 		client:              client,
 		exec:                exec,
 		startBlockNum:       startBlockNum,
@@ -145,7 +148,7 @@ func (b *BlockMetadataFetcher) persistBlockMetadata(ctx context.Context, query [
 	batch := b.db.NewBatch()
 	queryMap := util.ArrayToSet(query)
 	for _, elem := range result {
-		pos, err := b.exec.BlockNumberToMessageIndex(elem.BlockNumber).Await(ctx)
+		pos, err := util.BlockNumberToMessageIndex(elem.BlockNumber, b.genesisBlockNum)
 		if err != nil {
 			return err
 		}
@@ -178,16 +181,8 @@ func (b *BlockMetadataFetcher) Update(ctx context.Context) time.Duration {
 	}
 
 	handleQuery := func(query []uint64) bool {
-		fromBlock, err := b.exec.MessageIndexToBlockNumber(arbutil.MessageIndex(query[0])).Await(ctx)
-		if err != nil {
-			log.Error("Error getting fromBlock", "err", err)
-			return false
-		}
-		toBlock, err := b.exec.MessageIndexToBlockNumber(arbutil.MessageIndex(query[len(query)-1])).Await(ctx)
-		if err != nil {
-			log.Error("Error getting toBlock", "err", err)
-			return false
-		}
+		fromBlock := util.MessageIndexToBlockNumber(arbutil.MessageIndex(query[0]), b.genesisBlockNum)
+		toBlock := util.MessageIndexToBlockNumber(arbutil.MessageIndex(query[len(query)-1]), b.genesisBlockNum)
 
 		result, err := b.fetch(
 			ctx,
@@ -244,7 +239,7 @@ func (b *BlockMetadataFetcher) Update(ctx context.Context) time.Duration {
 func (b *BlockMetadataFetcher) InitializeTrackBlockMetadataFrom(ctx context.Context) error {
 	var err error
 	if b.startBlockNum != 0 {
-		b.trackBlockMetadataFrom, err = b.exec.BlockNumberToMessageIndex(b.startBlockNum).Await(ctx)
+		b.trackBlockMetadataFrom, err = util.BlockNumberToMessageIndex(b.startBlockNum, b.genesisBlockNum)
 		if err != nil {
 			return err
 		}

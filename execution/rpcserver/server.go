@@ -32,14 +32,6 @@ func (c *ExecutionRPCServer) ResultAtMessageIndex(ctx context.Context, msgIdx ar
 	return c.executionClient.ResultAtMessageIndex(msgIdx).Await(ctx)
 }
 
-func (c *ExecutionRPCServer) MessageIndexToBlockNumber(ctx context.Context, messageNum arbutil.MessageIndex) (uint64, error) {
-	return c.executionClient.MessageIndexToBlockNumber(messageNum).Await(ctx)
-}
-
-func (c *ExecutionRPCServer) BlockNumberToMessageIndex(ctx context.Context, blockNum uint64) (arbutil.MessageIndex, error) {
-	return c.executionClient.BlockNumberToMessageIndex(blockNum).Await(ctx)
-}
-
 func (c *ExecutionRPCServer) SetFinalityData(ctx context.Context, safeFinalityData *arbutil.FinalityData, finalizedFinalityData *arbutil.FinalityData, validatedFinalityData *arbutil.FinalityData) error {
 	_, err := c.executionClient.SetFinalityData(safeFinalityData, finalizedFinalityData, validatedFinalityData).Await(ctx)
 	return err

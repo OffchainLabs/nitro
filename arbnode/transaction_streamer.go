@@ -35,6 +35,7 @@ import (
 	"github.com/offchainlabs/nitro/broadcaster/message"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/staker"
+	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/sharedmetrics"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
@@ -1499,14 +1500,14 @@ func (s *TransactionStreamer) backfillTrackersForMissingBlockMetadata(ctx contex
 func (s *TransactionStreamer) Start(ctxIn context.Context) error {
 	s.StopWaiter.Start(ctxIn, s)
 	if s.config().TrackBlockMetadataFrom != 0 {
-		trackBlockMetadataFrom, err := s.exec.BlockNumberToMessageIndex(s.config().TrackBlockMetadataFrom).Await(ctxIn)
+		trackBlockMetadataFrom, err := util.BlockNumberToMessageIndex(s.config().TrackBlockMetadataFrom, s.chainConfig.ArbitrumChainParams.GenesisBlockNum)
 		if err != nil {
 			return err
 		}
 		s.trackBlockMetadataFrom = trackBlockMetadataFrom
 	}
 	if s.config().SyncTillBlock != 0 {
-		syncTillMessage, err := s.exec.BlockNumberToMessageIndex(s.config().SyncTillBlock).Await(ctxIn)
+		syncTillMessage, err := util.BlockNumberToMessageIndex(s.config().SyncTillBlock, s.chainConfig.ArbitrumChainParams.GenesisBlockNum)
 		if err != nil {
 			return err
 		}
