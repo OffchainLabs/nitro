@@ -62,6 +62,8 @@ var (
 	expectedSurplusGauge                    = metrics.NewRegisteredGauge("arb/sequencer/expectedsurplus", nil)
 )
 
+const MaxConfigurableTxDataSize = arbostypes.MaxL2MessageSize - 50000
+
 type SequencerConfig struct {
 	Enable                       bool            `koanf:"enable"`
 	MaxBlockSpeed                time.Duration   `koanf:"max-block-speed" reload:"hot"`
@@ -146,8 +148,9 @@ func (c *SequencerConfig) Validate() error {
 	if c.expectedSurplusSoftThreshold < c.expectedSurplusHardThreshold {
 		return errors.New("expected-surplus-soft-threshold cannot be lower than expected-surplus-hard-threshold")
 	}
-	if c.MaxTxDataSize > arbostypes.MaxL2MessageSize-50000 {
-		return errors.New("max-tx-data-size too large for MaxL2MessageSize")
+	maxTxDataSize := uint64(c.MaxTxDataSize) // #nosec G115
+	if err := ValidateMaxTxDataSize(maxTxDataSize); err != nil {
+		return err
 	}
 	if c.Timeboost.Enable {
 		if len(c.Timeboost.AuctionContractAddress) > 0 && !common.IsHexAddress(c.Timeboost.AuctionContractAddress) {
@@ -167,6 +170,13 @@ func (c *SequencerConfig) Validate() error {
 	}
 	if c.ReadFromTxQueueTimeout >= c.MaxBlockSpeed {
 		log.Warn("Sequencer ReadFromTxQueueTimeout is higher than MaxBlockSpeed", "ReadFromTxQueueTimeout", c.ReadFromTxQueueTimeout, "MaxBlockSpeed", c.MaxBlockSpeed)
+	}
+	return nil
+}
+
+func ValidateMaxTxDataSize(maxTxDataSize uint64) error {
+	if maxTxDataSize > MaxConfigurableTxDataSize {
+		return fmt.Errorf("max-tx-data-size %d exceeds maximum allowed value of %d", maxTxDataSize, MaxConfigurableTxDataSize)
 	}
 	return nil
 }
