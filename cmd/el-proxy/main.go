@@ -128,6 +128,7 @@ func NewExpressLaneProxy(
 		auctionContract,
 		auctionContractAddr,
 		&params.ChainConfig{ChainID: big.NewInt(config.ChainId)},
+		config.MaxTxDataSize,
 		0,
 	)
 

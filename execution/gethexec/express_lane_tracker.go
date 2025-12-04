@@ -37,6 +37,7 @@ type ExpressLaneTracker struct {
 	roundTimingInfo timeboost.RoundTimingInfo
 	pollInterval    time.Duration
 	chainConfig     *params.ChainConfig
+	maxTxSize       uint64 // maximum transaction size the sequencer will accept
 
 	headerProvider       HeaderProvider
 	auctionContract      *express_lane_auctiongen.ExpressLaneAuction
@@ -54,6 +55,7 @@ func NewExpressLaneTracker(
 	auctionContract *express_lane_auctiongen.ExpressLaneAuction,
 	auctionContractAddr common.Address,
 	chainConfig *params.ChainConfig,
+	maxTxSize uint64,
 	earlySubmissionGrace time.Duration) *ExpressLaneTracker {
 	return &ExpressLaneTracker{
 		roundTimingInfo:      roundTimingInfo,
@@ -63,6 +65,7 @@ func NewExpressLaneTracker(
 		auctionContractAddr:  auctionContractAddr,
 		earlySubmissionGrace: earlySubmissionGrace,
 		chainConfig:          chainConfig,
+		maxTxSize:            maxTxSize,
 		useLogs:              false, // default to use contract polling
 	}
 }
@@ -92,6 +95,14 @@ func (t *ExpressLaneTracker) RoundController(round uint64) (common.Address, erro
 func (t *ExpressLaneTracker) ValidateExpressLaneTx(msg *timeboost.ExpressLaneSubmission) error {
 	if msg == nil || msg.Transaction == nil || msg.Signature == nil {
 		return timeboost.ErrMalformedData
+	}
+	txBytes, err := msg.Transaction.MarshalBinary()
+	if err != nil {
+		return errors.Wrapf(timeboost.ErrMalformedData, "could not marshal express lane tx: %v", err)
+	}
+	txSize := uint64(len(txBytes))
+	if txSize > t.maxTxSize {
+		return errors.Wrapf(timeboost.ErrOversizedData, "express lane tx size %d exceeds maximum allowed size %d", txSize, t.maxTxSize)
 	}
 	if msg.ChainId.Cmp(t.chainConfig.ChainID) != 0 {
 		return errors.Wrapf(timeboost.ErrWrongChainId, "express lane tx chain ID %d does not match current chain ID %d", msg.ChainId, t.chainConfig.ChainID)

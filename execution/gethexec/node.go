@@ -602,6 +602,7 @@ func (n *ExecutionNode) InitializeTimeboost(ctx context.Context, chainConfig *pa
 			auctionContract,
 			auctionContractAddr,
 			chainConfig,
+			uint64(execNodeConfig.Sequencer.MaxTxDataSize), // #nosec G115
 			execNodeConfig.Sequencer.Timeboost.EarlySubmissionGrace,
 		)
 
