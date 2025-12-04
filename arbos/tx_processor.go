@@ -21,7 +21,6 @@ import (
 
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
-	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbos/retryables"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -633,7 +632,7 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, usedMultiGas multigas.MultiGas, 
 			}
 		}
 		// we've already credited the network fee account, but we didn't charge the gas pool yet
-		p.state.Restrict(p.state.L2PricingState().UpdateBacklog(l2pricing.GrowBacklog, gasUsed, usedMultiGas))
+		p.state.Restrict(p.state.L2PricingState().GrowBacklog(gasUsed, usedMultiGas))
 		return
 	}
 
@@ -698,7 +697,7 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, usedMultiGas multigas.MultiGas, 
 		}
 		// Poster gas added to multiGas in GasChargingHook as L1CalldataGas
 		usedMultiGas = usedMultiGas.SaturatingDecrement(multigas.ResourceKindL1Calldata, p.posterGas)
-		p.state.Restrict(p.state.L2PricingState().UpdateBacklog(l2pricing.GrowBacklog, computeGas, usedMultiGas))
+		p.state.Restrict(p.state.L2PricingState().GrowBacklog(computeGas, usedMultiGas))
 	}
 }
 

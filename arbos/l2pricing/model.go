@@ -63,12 +63,21 @@ func (ps *L2PricingState) GasModelToUse() (GasModel, error) {
 type BacklogOperation uint8
 
 const (
-	ShrinkBacklog BacklogOperation = iota
-	GrowBacklog
+	Shrink BacklogOperation = iota
+	Grow
 )
 
-// UpdateBacklog increases the backlog for the active pricing model.
-func (ps *L2PricingState) UpdateBacklog(op BacklogOperation, usedGas uint64, usedMultiGas multigas.MultiGas) error {
+// ShrinkBacklog reduces the backlog for the active pricing model.
+func (ps *L2PricingState) ShrinkBacklog(usedGas uint64, usedMultiGas multigas.MultiGas) error {
+	return ps.updateBacklog(Shrink, usedGas, usedMultiGas)
+}
+
+// GrowBacklog increases the backlog for the active pricing model.
+func (ps *L2PricingState) GrowBacklog(usedGas uint64, usedMultiGas multigas.MultiGas) error {
+	return ps.updateBacklog(Grow, usedGas, usedMultiGas)
+}
+
+func (ps *L2PricingState) updateBacklog(op BacklogOperation, usedGas uint64, usedMultiGas multigas.MultiGas) error {
 	gasModel, err := ps.GasModelToUse()
 	if err != nil {
 		return err
@@ -120,7 +129,7 @@ func (ps *L2PricingState) updateMultiGasConstraintsBacklogs(op BacklogOperation,
 	}
 	for i := range constraintsLength {
 		constraint := ps.OpenMultiGasConstraintAt(i)
-		err = constraint.UpdateBacklog(op, usedMultiGas)
+		err = constraint.updateBacklog(op, usedMultiGas)
 		if err != nil {
 			return err
 		}
@@ -131,9 +140,9 @@ func (ps *L2PricingState) updateMultiGasConstraintsBacklogs(op BacklogOperation,
 // applyGasDelta adjusts the backlog according to the operation, with saturation on overflow/underflow.
 func applyGasDelta(op BacklogOperation, backlog uint64, delta uint64) uint64 {
 	switch op {
-	case GrowBacklog:
+	case Grow:
 		return arbmath.SaturatingUAdd(backlog, delta)
-	case ShrinkBacklog:
+	case Shrink:
 		return arbmath.SaturatingUSub(backlog, delta)
 	default:
 		panic("invalid backlog operation")
@@ -204,7 +213,7 @@ func (ps *L2PricingState) UpdatePricingModel(timePassed uint64) {
 
 func (ps *L2PricingState) updatePricingModelLegacy(timePassed uint64) {
 	speedLimit, _ := ps.SpeedLimitPerSecond()
-	_ = ps.updateLegacyBacklog(ShrinkBacklog, arbmath.SaturatingUMul(timePassed, speedLimit))
+	_ = ps.updateLegacyBacklog(Shrink, arbmath.SaturatingUMul(timePassed, speedLimit))
 	inertia, _ := ps.PricingInertia()
 	tolerance, _ := ps.BacklogTolerance()
 	backlog, _ := ps.GasBacklog()
@@ -229,7 +238,7 @@ func (ps *L2PricingState) updatePricingModelSingleConstraints(timePassed uint64)
 		// Pay off backlog
 		backlog, _ := constraint.Backlog()
 		gas := arbmath.SaturatingUMul(timePassed, target)
-		backlog = applyGasDelta(ShrinkBacklog, backlog, gas)
+		backlog = applyGasDelta(Shrink, backlog, gas)
 		_ = constraint.SetBacklog(backlog)
 
 		// Calculate exponent with the formula backlog/divisor
@@ -256,7 +265,7 @@ func (ps *L2PricingState) updatePricingModelMultiConstraints(timePassed uint64) 
 
 		backlog, _ := constraint.Backlog()
 		gas := arbmath.SaturatingUMul(timePassed, target)
-		backlog = applyGasDelta(ShrinkBacklog, backlog, gas)
+		backlog = applyGasDelta(Shrink, backlog, gas)
 		_ = constraint.SetBacklog(backlog)
 	}
 

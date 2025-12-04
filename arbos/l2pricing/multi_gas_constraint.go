@@ -92,8 +92,17 @@ func (c *MultiGasConstraint) SetResourceWeights(weights map[uint8]uint64) error 
 	return c.sumWeights.Set(total)
 }
 
-// UpdateBacklog increases or decreases the backlog depending on the operation specified.
-func (c *MultiGasConstraint) UpdateBacklog(op BacklogOperation, multiGas multigas.MultiGas) error {
+// GrowBacklog adds the resource usage in multiGas to this constraint's backlog.
+func (c *MultiGasConstraint) GrowBacklog(multiGas multigas.MultiGas) error {
+	return c.updateBacklog(Grow, multiGas)
+}
+
+// ShrinkBacklog subtracts the resource usage in multiGas from this constraint's backlog.
+func (c *MultiGasConstraint) ShrinkBacklog(multiGas multigas.MultiGas) error {
+	return c.updateBacklog(Shrink, multiGas)
+}
+
+func (c *MultiGasConstraint) updateBacklog(op BacklogOperation, multiGas multigas.MultiGas) error {
 	totalBacklog, err := c.backlog.Get()
 	if err != nil {
 		return err
