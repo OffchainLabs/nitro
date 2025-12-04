@@ -504,17 +504,23 @@ func (p Programs) ProgramTimeLeft(codeHash common.Hash, time uint64, params *Sty
 
 func (p Programs) ProgramInitGas(codeHash common.Hash, time uint64, params *StylusParams) (uint64, uint64, error) {
 	program, err := p.getActiveProgram(codeHash, time, params)
+	if err != nil {
+		return 0, 0, err
+	}
 	cachedGas := program.cachedGas(params)
 	initGas := program.initGas(params)
 	if params.Version > 1 {
 		initGas += cachedGas
 	}
-	return initGas, cachedGas, err
+	return initGas, cachedGas, nil
 }
 
 func (p Programs) ProgramMemoryFootprint(codeHash common.Hash, time uint64, params *StylusParams) (uint16, error) {
 	program, err := p.getActiveProgram(codeHash, time, params)
-	return program.footprint, err
+	if err != nil {
+		return 0, err
+	}
+	return program.footprint, nil
 }
 
 func (p Programs) ProgramAsmSize(codeHash common.Hash, time uint64, params *StylusParams) (uint32, error) {
