@@ -1822,6 +1822,7 @@ func deployOnParentChain(
 			UseBlobs:               chainSupportsBlobs,
 			MinimumAssertionPeriod: 0,
 		}
+
 		if deployConfig.DeployReferenceDA {
 			rollupStackConfig.CustomDAOsp = customOspAddr
 		}

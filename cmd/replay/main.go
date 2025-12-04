@@ -328,6 +328,7 @@ func main() {
 		if err != nil {
 			panic(fmt.Sprintf("Failed to register blob reader: %v", err))
 		}
+
 		err = dapReaders.SetupDACertificateReader(&DACertificatePreimageReader{}, nil)
 		if err != nil {
 			panic(fmt.Sprintf("Failed to register DA Certificate reader: %v", err))

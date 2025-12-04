@@ -1910,8 +1910,13 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 		// For batch correctness checking, we use a wrapper that overrides blob reads
 		// with a simulated reader for the local kzgBlobs (which haven't been posted yet).
 		// All other DA reads pass through to the original registry.
+		// Explicit nil check needed: a typed nil (*DAProviderRegistry) assigned to an interface is not nil.
+		var baseDapReaders arbstate.DapReaderSource
+		if b.dapReaders != nil {
+			baseDapReaders = b.dapReaders
+		}
 		dapReaders := arbstate.NewBlobReaderOverride(
-			b.dapReaders,
+			baseDapReaders,
 			daprovider.NewReaderForBlobReader(&simulatedBlobReader{kzgBlobs}),
 		)
 		seqMsg := binary.BigEndian.AppendUint64([]byte{}, l1BoundMinTimestamp)
