@@ -232,7 +232,7 @@ func (n NodeInterface) ConstructOutboxProof(c ctx, evm mech, size, leaf uint64) 
 
 	currentBlock := n.backend.CurrentBlock()
 	currentBlockInfo := types.DeserializeHeaderExtraInformation(currentBlock)
-	if leaf > currentBlockInfo.SendCount {
+	if leaf >= currentBlockInfo.SendCount {
 		return hash0, hash0, nil, errors.New("leaf does not exist")
 	}
 

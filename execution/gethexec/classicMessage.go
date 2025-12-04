@@ -47,7 +47,7 @@ func (m *ClassicOutboxRetriever) GetMsg(batchNum *big.Int, index uint64) (*Class
 	lowest := uint64(0)
 	var root common.Hash
 	copy(root[:], batchHeader[8:40])
-	if merkleSize < index {
+	if index >= merkleSize {
 		return nil, fmt.Errorf("batch %d only has %d indexes", batchNum, merkleSize)
 	}
 	proofNodes := [][32]byte{}
