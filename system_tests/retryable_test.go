@@ -1296,8 +1296,22 @@ func TestL1FundedUnsignedTransaction(t *testing.T) {
 }
 
 func TestRetryableSubmissionAndRedeemFees(t *testing.T) {
+	testRetryableSubmissionAndRedeemFees(t, nil)
+}
+
+func TestRetryableSubmissionAndRedeemFeesArbOS60(t *testing.T) {
+	version := params.ArbosVersion_60
+	testRetryableSubmissionAndRedeemFees(t, &version)
+}
+
+func testRetryableSubmissionAndRedeemFees(t *testing.T, arbosVersion *uint64) {
+	t.Helper()
+
 	builder, delayedInbox, lookupL2Tx, ctx, teardown := retryableSetup(t, func(b *NodeBuilder) {
 		b.WithDatabase(rawdb.DBPebble)
+		if arbosVersion != nil {
+			b.WithArbOSVersion(*arbosVersion)
+		}
 	})
 	defer teardown()
 	infraFeeAddr, networkFeeAddr := setupFeeAddresses(t, ctx, builder)

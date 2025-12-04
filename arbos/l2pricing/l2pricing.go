@@ -48,10 +48,6 @@ var multiGasBaseFeesKey []byte = []byte{2}
 
 const GethBlockGasLimit = 1 << 50
 
-// TODO(NIT-4152): Number of constraints limited because of retryable redeem gas cost calculation.
-const GasConstraintsMaxNum = 20
-const MultiGasConstraintsMaxNum = 15
-
 // MaxPricingExponentBips caps the basefee growth: exp(8.5) ~= x5,000 min base fee.
 const MaxPricingExponentBips = arbmath.Bips(85_000)
 
