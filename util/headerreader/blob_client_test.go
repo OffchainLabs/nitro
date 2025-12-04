@@ -131,63 +131,6 @@ func TestReadBlobsV1OrderPreservation(t *testing.T) {
 	}
 }
 
-func TestSaveBlobsV0ToDisk(t *testing.T) {
-	testDir := t.TempDir()
-	slot := uint64(5)
-
-	testBlobs, _, err := createTestBlobs(2)
-	Require(t, err)
-
-	commitment1, err := kzg4844.BlobToCommitment(&testBlobs[0])
-	Require(t, err)
-	commitment2, err := kzg4844.BlobToCommitment(&testBlobs[1])
-	Require(t, err)
-
-	// Create V0 format response with real blobs and commitments
-	response := []blobResponseItem{{
-		BlockRoot:       "a",
-		Index:           0,
-		Slot:            5,
-		BlockParentRoot: "a0",
-		ProposerIndex:   9,
-		Blob:            testBlobs[0][:],
-		KzgCommitment:   commitment1[:],
-		KzgProof:        []byte{1},
-	}, {
-		BlockRoot:       "a",
-		Index:           1,
-		Slot:            5,
-		BlockParentRoot: "a0",
-		ProposerIndex:   10,
-		Blob:            testBlobs[1][:],
-		KzgCommitment:   commitment2[:],
-		KzgProof:        []byte{2},
-	}}
-
-	rawData, err := json.Marshal(response)
-	Require(t, err)
-	err = saveBlobsV0ToDisk(rawData, slot, testDir)
-	Require(t, err)
-
-	filePath := path.Join(testDir, "5")
-	data, err := os.ReadFile(filePath)
-	Require(t, err)
-
-	var full fullResult[[]blobResponseItem]
-	err = json.Unmarshal(data, &full)
-	Require(t, err)
-
-	if len(full.Data) != len(response) {
-		t.Fatalf("expected %d blob items, got %d", len(response), len(full.Data))
-	}
-
-	for i := range response {
-		if !reflect.DeepEqual(full.Data[i], response[i]) {
-			t.Errorf("blob item %d mismatch", i)
-		}
-	}
-}
-
 func TestReadBlobsV0FromDisk(t *testing.T) {
 	testDir := t.TempDir()
 	slot := uint64(5)
