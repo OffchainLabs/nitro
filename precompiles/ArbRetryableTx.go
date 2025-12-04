@@ -100,11 +100,12 @@ func (con ArbRetryableTx) Redeem(c ctx, evm mech, ticketId bytes32) (bytes32, er
 	gasCostToReturnResult := params.CopyGas
 
 	// `redeem` must prepay the gas needed by the trailing call to
-	// L2PricingState().AddToGasPool(). GasPoolUpdateCost(ArbOSVersion) returns
+	// L2PricingState().AddToGasPool(). BacklogUpdateCost() returns
 	// that amount based on the storage read/write mix used by AddToGasPool().
 	gasPoolUpdateCost := uint64(0)
 	if c.State.L2PricingState().ArbosVersion >= params.ArbosVersion_60 {
-		gasPoolUpdateCost = l2pricing.ArbOS60StaticGasPoolUpdateCost
+		// Charge static price for any pricer starting from ArbOS 60
+		gasPoolUpdateCost = l2pricing.ArbOS60StaticBacklogUpdateCost
 	} else {
 		gasPoolUpdateCost = c.State.L2PricingState().BacklogUpdateCost()
 	}
