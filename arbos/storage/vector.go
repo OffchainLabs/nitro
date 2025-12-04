@@ -15,6 +15,7 @@ const subStorageVectorLengthOffset uint64 = 0
 type SubStorageVector struct {
 	storage *Storage
 	length  StorageBackedUint64
+	free    bool
 }
 
 // OpenSubStorageVector creates a SubStorageVector in given the root storage.
@@ -22,6 +23,15 @@ func OpenSubStorageVector(sto *Storage) *SubStorageVector {
 	return &SubStorageVector{
 		sto.WithoutCache(),
 		sto.OpenStorageBackedUint64(subStorageVectorLengthOffset),
+		false,
+	}
+}
+
+func OpenFreeSubStorageVector(sto *Storage) *SubStorageVector {
+	return &SubStorageVector{
+		sto.WithoutCache(),
+		sto.OpenFreeStorageBackedUint64(subStorageVectorLengthOffset),
+		true,
 	}
 }
 

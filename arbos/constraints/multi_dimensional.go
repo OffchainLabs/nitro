@@ -6,6 +6,7 @@ package constraints
 
 import (
 	"github.com/ethereum/go-ethereum/arbitrum/multigas"
+	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos/storage"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -37,12 +38,22 @@ type MultiGasConstraint struct {
 }
 
 // OpenMultiGasConstraint opens or initializes a constraint in the given storage subspace.
-func OpenMultiGasConstraint(sto *storage.Storage) *MultiGasConstraint {
-	c := &MultiGasConstraint{
-		target:           sto.OpenStorageBackedUint64(targetOffset),
-		adjustmentWindow: sto.OpenStorageBackedUint32(adjustmentWindowOffset),
-		backlog:          sto.OpenStorageBackedUint64(backlogOffset),
-		sumWeights:       sto.OpenStorageBackedUint64(sumWeightsOffset),
+func OpenMultiGasConstraint(arbosVersion uint64, sto *storage.Storage) *MultiGasConstraint {
+	var c *MultiGasConstraint
+	if arbosVersion >= params.ArbosVersion_60 {
+		c = &MultiGasConstraint{
+			target:           sto.OpenFreeStorageBackedUint64(targetOffset),
+			adjustmentWindow: sto.OpenFreeStorageBackedUint32(adjustmentWindowOffset),
+			backlog:          sto.OpenFreeStorageBackedUint64(backlogOffset),
+			sumWeights:       sto.OpenFreeStorageBackedUint64(sumWeightsOffset),
+		}
+	} else {
+		c = &MultiGasConstraint{
+			target:           sto.OpenStorageBackedUint64(targetOffset),
+			adjustmentWindow: sto.OpenStorageBackedUint32(adjustmentWindowOffset),
+			backlog:          sto.OpenStorageBackedUint64(backlogOffset),
+			sumWeights:       sto.OpenStorageBackedUint64(sumWeightsOffset),
+		}
 	}
 	for i := range int(multigas.NumResourceKind) {
 		// #nosec G115 safe: NumResourceKind < 2^32

@@ -12,6 +12,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
 
+	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbos/retryables"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -101,7 +102,12 @@ func (con ArbRetryableTx) Redeem(c ctx, evm mech, ticketId bytes32) (bytes32, er
 	// `redeem` must prepay the gas needed by the trailing call to
 	// L2PricingState().AddToGasPool(). GasPoolUpdateCost(ArbOSVersion) returns
 	// that amount based on the storage read/write mix used by AddToGasPool().
-	gasPoolUpdateCost := c.State.L2PricingState().GasPoolUpdateCost()
+	gasPoolUpdateCost := uint64(0)
+	if c.State.L2PricingState().ArbosVersion >= params.ArbosVersion_60 {
+		gasPoolUpdateCost = l2pricing.ArbOS60StaticGasPoolUpdateCost
+	} else {
+		gasPoolUpdateCost = c.State.L2PricingState().GasPoolUpdateCost()
+	}
 
 	futureGasCosts := eventCost + gasCostToReturnResult + gasPoolUpdateCost
 	if c.GasLeft() < futureGasCosts {

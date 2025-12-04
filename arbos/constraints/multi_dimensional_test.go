@@ -14,7 +14,7 @@ import (
 
 func TestMultiGasConstraint(t *testing.T) {
 	sto := storage.NewMemoryBacked(burn.NewSystemBurner(nil, false))
-	c := OpenMultiGasConstraint(sto)
+	c := OpenMultiGasConstraint(0, sto)
 
 	require.NoError(t, c.SetTarget(123))
 	require.NoError(t, c.SetAdjustmentWindow(456))
@@ -55,7 +55,7 @@ func TestMultiGasConstraint(t *testing.T) {
 
 func TestMultiGasConstraintResourceWeightsValidation(t *testing.T) {
 	sto := storage.NewMemoryBacked(burn.NewSystemBurner(nil, false))
-	c := OpenMultiGasConstraint(sto)
+	c := OpenMultiGasConstraint(0, sto)
 
 	// invalid kind
 	weights := map[uint8]uint64{
@@ -77,7 +77,7 @@ func TestMultiGasConstraintResourceWeightsValidation(t *testing.T) {
 
 func TestMultiGasConstraintBacklogAggregationAndComputeExponent(t *testing.T) {
 	sto := storage.NewMemoryBacked(burn.NewSystemBurner(nil, false))
-	c := OpenMultiGasConstraint(sto)
+	c := OpenMultiGasConstraint(0, sto)
 
 	require.NoError(t, c.SetTarget(5))
 	require.NoError(t, c.SetAdjustmentWindow(2))
@@ -116,7 +116,7 @@ func TestMultiGasConstraintBacklogAggregationAndComputeExponent(t *testing.T) {
 
 func TestMultiGasConstraintBacklogGrowth(t *testing.T) {
 	sto := storage.NewMemoryBacked(burn.NewSystemBurner(nil, false))
-	c := OpenMultiGasConstraint(sto)
+	c := OpenMultiGasConstraint(0, sto)
 
 	require.NoError(t, c.SetTarget(10))
 	require.NoError(t, c.SetAdjustmentWindow(5))
