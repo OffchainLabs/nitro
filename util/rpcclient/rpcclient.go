@@ -24,11 +24,11 @@ import (
 type ClientConfig struct {
 	URL                       string        `json:"url,omitempty" koanf:"url"`
 	JWTSecret                 string        `json:"jwtsecret,omitempty" koanf:"jwtsecret"`
-	Timeout                   time.Duration `json:"timeout,omitempty" koanf:"timeout" reload:"hot"`
-	Retries                   uint          `json:"retries,omitempty" koanf:"retries" reload:"hot"`
+	Timeout                   time.Duration `json:"timeout,omitempty" koanf:"timeout"`
+	Retries                   uint          `json:"retries,omitempty" koanf:"retries"`
 	ConnectionWait            time.Duration `json:"connection-wait,omitempty" koanf:"connection-wait"`
-	ArgLogLimit               uint          `json:"arg-log-limit,omitempty" koanf:"arg-log-limit" reload:"hot"`
-	RetryErrors               string        `json:"retry-errors,omitempty" koanf:"retry-errors" reload:"hot"`
+	ArgLogLimit               uint          `json:"arg-log-limit,omitempty" koanf:"arg-log-limit"`
+	RetryErrors               string        `json:"retry-errors,omitempty" koanf:"retry-errors"`
 	RetryDelay                time.Duration `json:"retry-delay,omitempty" koanf:"retry-delay"`
 	WebsocketMessageSizeLimit int64         `json:"websocket-message-size-limit,omitempty" koanf:"websocket-message-size-limit"`
 
@@ -63,6 +63,7 @@ var TestClientConfig = ClientConfig{
 var DefaultClientConfig = ClientConfig{
 	URL:                       "self-auth",
 	JWTSecret:                 "",
+	Timeout:                   10 * time.Second,
 	Retries:                   3,
 	RetryErrors:               "websocket: close.*|dial tcp .*|.*i/o timeout|.*connection reset by peer|.*connection refused",
 	ArgLogLimit:               2048,
@@ -93,6 +94,10 @@ func NewRpcClient(config ClientConfigFetcher, stack *node.Node) *RpcClient {
 		config:    config,
 		autoStack: stack,
 	}
+}
+
+func (c *RpcClient) Timeout() time.Duration {
+	return c.config().Timeout
 }
 
 func (c *RpcClient) Close() {

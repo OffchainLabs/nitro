@@ -39,14 +39,14 @@ type InboxTracker struct {
 	txStreamer     *TransactionStreamer
 	mutex          sync.Mutex
 	validator      *staker.BlockValidator
-	dapReaders     *daprovider.ReaderRegistry
+	dapReaders     *daprovider.DAProviderRegistry
 	snapSyncConfig SnapSyncConfig
 
 	batchMetaMutex sync.Mutex
 	batchMeta      *containers.LruCache[uint64, BatchMetadata]
 }
 
-func NewInboxTracker(db ethdb.Database, txStreamer *TransactionStreamer, dapReaders *daprovider.ReaderRegistry, snapSyncConfig SnapSyncConfig) (*InboxTracker, error) {
+func NewInboxTracker(db ethdb.Database, txStreamer *TransactionStreamer, dapReaders *daprovider.DAProviderRegistry, snapSyncConfig SnapSyncConfig) (*InboxTracker, error) {
 	tracker := &InboxTracker{
 		db:             db,
 		txStreamer:     txStreamer,
@@ -233,6 +233,9 @@ func (t *InboxTracker) FindInboxBatchContainingMessage(pos arbutil.MessageIndex)
 	if err != nil {
 		return 0, false, err
 	}
+	if batchCount == 0 {
+		return 0, false, nil
+	}
 	low := uint64(0)
 	high := batchCount - 1
 	lastBatchMessageCount, err := t.GetBatchMessageCount(high)
@@ -290,6 +293,11 @@ func (t *InboxTracker) PopulateFeedBacklog(broadcastServer *broadcaster.Broadcas
 			return fmt.Errorf("error getting batch %v message count: %w", batchIndex, err)
 		}
 	}
+
+	if t.txStreamer == nil {
+		return errors.New("txStreamer is nil")
+	}
+
 	messageCount, err := t.txStreamer.GetMessageCount()
 	if err != nil {
 		return fmt.Errorf("error getting tx streamer message count: %w", err)
@@ -309,10 +317,15 @@ func (t *InboxTracker) PopulateFeedBacklog(broadcastServer *broadcaster.Broadcas
 
 		blockMetadata, err := t.txStreamer.BlockMetadataAtMessageIndex(seqNum)
 		if err != nil {
-			log.Warn("Error getting blockMetadata byte array from tx streamer", "err", err)
+			log.Warn("error getting blockMetadata byte array from tx streamer", "err", err)
 		}
 
-		feedMessage, err := broadcastServer.NewBroadcastFeedMessage(*message, seqNum, blockHash, blockMetadata)
+		messageWithInfo := arbostypes.MessageWithMetadataAndBlockInfo{
+			MessageWithMeta: *message,
+			BlockHash:       blockHash,
+			BlockMetadata:   blockMetadata,
+		}
+		feedMessage, err := broadcastServer.NewBroadcastFeedMessage(messageWithInfo, seqNum)
 		if err != nil {
 			return fmt.Errorf("error creating broadcast feed message %v: %w", seqNum, err)
 		}

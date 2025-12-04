@@ -55,6 +55,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
 	"github.com/offchainlabs/nitro/daprovider"
+	"github.com/offchainlabs/nitro/daprovider/daclient"
 	"github.com/offchainlabs/nitro/daprovider/das"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	_ "github.com/offchainlabs/nitro/execution/nodeInterface"
@@ -614,22 +615,22 @@ func mainImpl() int {
 			return 1
 		}
 	}
-	// If batchPoster is enabled, validate MaxSize to be at least 10kB below the sequencer inbox’s maxDataSize if the data availability service is not enabled.
-	// The 10kB gap is because its possible for the batch poster to exceed its MaxSize limit and produce batches of slightly larger size.
+	// If batchPoster is enabled, validate MaxCalldataBatchSize to be at least 10kB below the sequencer inbox's maxDataSize if the data availability service is not enabled.
+	// The 10kB gap is because its possible for the batch poster to exceed its MaxCalldataBatchSize limit and produce batches of slightly larger size.
 	if nodeConfig.Node.BatchPoster.Enable && !nodeConfig.Node.DataAvailability.Enable {
-		if nodeConfig.Node.BatchPoster.MaxSize > seqInboxMaxDataSize-10000 {
-			log.Error("batchPoster's MaxSize is too large")
+		if nodeConfig.Node.BatchPoster.MaxCalldataBatchSize > seqInboxMaxDataSize-10000 {
+			log.Error("batchPoster's MaxCalldataBatchSize is too large")
 			return 1
 		}
 	}
 
 	if nodeConfig.Execution.Sequencer.Enable {
-		// Validate MaxTxDataSize to be at least 5kB below the batch poster's MaxSize to allow space for headers and such.
-		if nodeConfig.Execution.Sequencer.MaxTxDataSize > nodeConfig.Node.BatchPoster.MaxSize-5000 {
-			log.Error("sequencer's MaxTxDataSize too large compared to the batchPoster's MaxSize")
+		// Validate MaxTxDataSize to be at least 5kB below the batch poster's MaxCalldataBatchSize to allow space for headers and such.
+		if nodeConfig.Execution.Sequencer.MaxTxDataSize > nodeConfig.Node.BatchPoster.MaxCalldataBatchSize-5000 {
+			log.Error("sequencer's MaxTxDataSize too large compared to the batchPoster's MaxCalldataBatchSize")
 			return 1
 		}
-		// Since the batchposter's MaxSize must be at least 10kB below the sequencer inbox’s maxDataSize, then MaxTxDataSize must also be 15kB below the sequencer inbox’s maxDataSize.
+		// Since the batchposter's MaxCalldataBatchSize must be at least 10kB below the sequencer inbox's maxDataSize, then MaxTxDataSize must also be 15kB below the sequencer inbox's maxDataSize.
 		if nodeConfig.Execution.Sequencer.MaxTxDataSize > seqInboxMaxDataSize-15000 && !nodeConfig.Execution.Sequencer.Dangerous.DisableSeqInboxMaxDataSizeCheck {
 			log.Error("sequencer's MaxTxDataSize too large compared to the sequencer inbox's MaxDataSize")
 			return 1
@@ -966,8 +967,9 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 	l2ChainName := k.String("chain.name")
 	l2ChainInfoFiles := k.Strings("chain.info-files")
 	l2ChainInfoJson := k.String("chain.info-json")
+	l2GenesisJsonFile := k.String("init.genesis-json-file")
 	// #nosec G115
-	err = applyChainParameters(k, uint64(l2ChainId), l2ChainName, l2ChainInfoFiles, l2ChainInfoJson)
+	err = applyChainParameters(k, uint64(l2ChainId), l2ChainName, l2ChainInfoFiles, l2ChainInfoJson, l2GenesisJsonFile)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -978,6 +980,10 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 	}
 
 	if err = das.FixKeysetCLIParsing("node.data-availability.rpc-aggregator.backends", k); err != nil {
+		return nil, nil, err
+	}
+
+	if err = daclient.FixExternalProvidersCLIParsing("node.da.external-providers", k); err != nil {
 		return nil, nil, err
 	}
 
@@ -1031,7 +1037,7 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 	return &nodeConfig, &l2DevWallet, nil
 }
 
-func applyChainParameters(k *koanf.Koanf, chainId uint64, chainName string, l2ChainInfoFiles []string, l2ChainInfoJson string) error {
+func applyChainParameters(k *koanf.Koanf, chainId uint64, chainName string, l2ChainInfoFiles []string, l2ChainInfoJson string, l2GenesisJsonFile string) error {
 	chainInfo, err := chaininfo.ProcessChainInfo(chainId, chainName, l2ChainInfoFiles, l2ChainInfoJson)
 	if err != nil {
 		return err
@@ -1075,7 +1081,7 @@ func applyChainParameters(k *koanf.Koanf, chainId uint64, chainName string, l2Ch
 	} else if chainInfo.ChainConfig.ArbitrumChainParams.DataAvailabilityCommittee {
 		chainDefaults["node.data-availability.enable"] = true
 	}
-	if !chainInfo.HasGenesisState {
+	if !chainInfo.HasGenesisState && l2GenesisJsonFile == "" {
 		chainDefaults["init.empty"] = true
 	}
 	if parentChainIsArbitrum {
@@ -1085,14 +1091,14 @@ func applyChainParameters(k *koanf.Koanf, chainId uint64, chainName string, l2Ch
 			return fmt.Errorf("not enough room in parent chain max tx size %v for bufferSpace %v * 2", l2MaxTxSize, bufferSpace)
 		}
 		safeBatchSize := l2MaxTxSize - bufferSpace
-		chainDefaults["node.batch-poster.max-size"] = safeBatchSize
+		chainDefaults["node.batch-poster.max-calldata-batch-size"] = safeBatchSize
 		chainDefaults["execution.sequencer.max-tx-data-size"] = safeBatchSize - bufferSpace
 		// Arbitrum chains produce blocks more quickly, so the inbox reader should read more blocks at once.
 		// Even if this is too large, on error the inbox reader will reset its query size down to the default.
 		chainDefaults["node.inbox-reader.max-blocks-to-read"] = 10_000
 	}
 	if chainInfo.DasIndexUrl != "" {
-		chainDefaults["node.batch-poster.max-size"] = 1_000_000
+		chainDefaults["node.batch-poster.max-calldata-batch-size"] = 1_000_000
 	}
 	// 0 is default for any chain unless specified in the chain_defaults
 	chainDefaults["node.transaction-streamer.track-block-metadata-from"] = chainInfo.TrackBlockMetadataFrom

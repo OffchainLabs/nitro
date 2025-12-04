@@ -12,6 +12,7 @@ tags=""
 run=""
 skip=""
 test_state_scheme=""
+test_database_engine=""
 junitfile=""
 log=true
 race=false
@@ -48,6 +49,12 @@ while [[ $# -gt 0 ]]; do
       shift
       check_missing_value $# "$1" "--test_state_scheme"
       test_state_scheme=$1
+      shift
+      ;;
+    --test_database_engine)
+      shift
+      check_missing_value $# "$1" "--test_database_engine"
+      test_database_engine=$1
       shift
       ;;
     --race)
@@ -137,6 +144,10 @@ fi
 
 if [ "$consensus_execution_in_same_process_use_rpc" == true ]; then
     cmd="$cmd --consensus_execution_in_same_process_use_rpc=true"
+fi
+
+if [ "$test_database_engine" != "" ]; then
+    cmd="$cmd --test_database_engine=$test_database_engine"
 fi
 
 if [ "$log" == true ]; then
