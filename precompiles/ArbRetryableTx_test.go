@@ -120,7 +120,7 @@ func TestRetryableRedeemWithSingleGasConstraints(t *testing.T) {
 	evm := newMockEVMForTesting()
 	precompileCtx := testContext(common.Address{}, evm)
 
-	for i := range l2pricing.GasConstraintsMaxNum {
+	for i := range 20 {
 		// #nosec G115
 		target0 := uint64((i + 1) * 1000000)
 		// #nosec G115
@@ -155,7 +155,7 @@ func TestRetryableRedeemWithMultiGasConstraints(t *testing.T) {
 	err := sto.SetByUint64(versionSlot, common.BigToHash(version))
 	Require(t, err)
 
-	for i := range l2pricing.MultiGasConstraintsMaxNum {
+	for i := range 100 {
 		// #nosec G115
 		target := uint64((i + 1) * 1000000)
 		// #nosec G115
