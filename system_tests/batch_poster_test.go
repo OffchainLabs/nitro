@@ -137,7 +137,7 @@ func testBatchPosterParallel(t *testing.T, useRedis bool, useRedisLock bool) {
 	Require(t, err)
 	seqTxOpts := builder.L1Info.GetDefaultTransactOpts("Sequencer", ctx)
 	builder.nodeConfig.BatchPoster.Enable = true
-	builder.nodeConfig.BatchPoster.MaxSize = len(firstTxData) * 2
+	builder.nodeConfig.BatchPoster.MaxCalldataBatchSize = len(firstTxData) * 2
 	startL1Block, err := builder.L1.Client.BlockNumber(ctx)
 	Require(t, err)
 	parentChainID, err := builder.L1.Client.ChainID(ctx)
@@ -158,7 +158,7 @@ func testBatchPosterParallel(t *testing.T, useRedis bool, useRedisLock bool) {
 				Config:        func() *arbnode.BatchPosterConfig { return &batchPosterConfig },
 				DeployInfo:    builder.L2.ConsensusNode.DeployInfo,
 				TransactOpts:  &seqTxOpts,
-				DAPWriter:     nil,
+				DAPWriters:    nil,
 				ParentChainID: parentChainID,
 			},
 		)
@@ -278,7 +278,7 @@ func TestRedisBatchPosterHandoff(t *testing.T) {
 	Require(t, err)
 	seqTxOpts := builder.L1Info.GetDefaultTransactOpts("Sequencer", ctx)
 	builder.nodeConfig.BatchPoster.Enable = true
-	builder.nodeConfig.BatchPoster.MaxSize = len(firstTxData) * 2
+	builder.nodeConfig.BatchPoster.MaxCalldataBatchSize = len(firstTxData) * 2
 	parentChainID, err := builder.L1.Client.ChainID(ctx)
 	if err != nil {
 		t.Fatalf("Failed to get parent chain id: %v", err)
@@ -298,7 +298,7 @@ func TestRedisBatchPosterHandoff(t *testing.T) {
 				Config:        func() *arbnode.BatchPosterConfig { return &batchPosterConfig },
 				DeployInfo:    builder.L2.ConsensusNode.DeployInfo,
 				TransactOpts:  &seqTxOpts,
-				DAPWriter:     nil,
+				DAPWriters:    nil,
 				ParentChainID: parentChainID,
 			},
 		)
