@@ -174,7 +174,7 @@ func (d *DelayedSequencer) sequenceWithoutLockout(ctx context.Context, lastBlock
 			}
 		}
 		lastDelayedAcc = acc
-		err = msg.FillInBatchGasFields(func(batchNum uint64, _parentChainBlockNumber uint64) ([]byte, error) {
+		err = msg.FillInBatchGasFields(func(batchNum uint64) ([]byte, error) {
 			data, _, err := d.reader.GetSequencerMessageBytesForParentBlock(ctx, batchNum, parentChainBlockNumber)
 			return data, err
 		})

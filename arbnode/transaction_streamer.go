@@ -507,7 +507,7 @@ func (s *TransactionStreamer) GetMessage(msgIdx arbutil.MessageIndex) (*arbostyp
 		}
 	}
 
-	err = message.Message.FillInBatchGasFields(func(batchNum uint64, _parentChainBlockNumber uint64) ([]byte, error) {
+	err = message.Message.FillInBatchGasFields(func(batchNum uint64) ([]byte, error) {
 		ctx, err := s.GetContextSafe()
 		if err != nil {
 			return nil, err

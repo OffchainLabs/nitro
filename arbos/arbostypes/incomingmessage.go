@@ -177,10 +177,10 @@ func LegacyCostForStats(stats *BatchDataStats) uint64 {
 }
 
 func (msg *L1IncomingMessage) FillInBatchGasFields(batchFetcher FallibleBatchFetcher) error {
-	return msg.FillInBatchGasFieldsWithParentBlock(batchFetcher, msg.Header.BlockNumber)
+	return msg.FillInBatchGasFieldsWithParentBlock(FromFallibleBatchFetcher(batchFetcher), msg.Header.BlockNumber)
 }
 
-func (msg *L1IncomingMessage) FillInBatchGasFieldsWithParentBlock(batchFetcher FallibleBatchFetcher, parentChainBlockNumber uint64) error {
+func (msg *L1IncomingMessage) FillInBatchGasFieldsWithParentBlock(batchFetcher FallibleBatchFetcherWithParentBlock, parentChainBlockNumber uint64) error {
 	if batchFetcher == nil || msg.Header.Kind != L1MessageType_BatchPostingReport {
 		return nil
 	}
@@ -281,7 +281,16 @@ func ParseIncomingL1Message(rd io.Reader, batchFetcher FallibleBatchFetcher) (*L
 	return msg, nil
 }
 
-type FallibleBatchFetcher func(batchNum uint64, parentChainBlock uint64) ([]byte, error)
+type FallibleBatchFetcherWithParentBlock func(batchNum uint64, parentChainBlock uint64) ([]byte, error)
+
+type FallibleBatchFetcher func(batchNum uint64) ([]byte, error)
+
+// Wraps FallibleBatchFetcher into FallibleBatchFetcherWithParentBlock to ignore parentChainBlock
+func FromFallibleBatchFetcher(f FallibleBatchFetcher) FallibleBatchFetcherWithParentBlock {
+	return func(batchNum uint64, _ uint64) ([]byte, error) {
+		return f(batchNum)
+	}
+}
 
 type ParsedInitMessage struct {
 	ChainId          *big.Int

@@ -55,7 +55,7 @@ func BuildBlock(
 	delayedMessagesRead = inboxMultiplexer.DelayedMessagesRead()
 	l1Message := message.Message
 
-	batchFetcher := func(uint64, uint64) ([]byte, error) {
+	batchFetcher := func(uint64) ([]byte, error) {
 		return seqBatch, nil
 	}
 	err = l1Message.FillInBatchGasFields(batchFetcher)
