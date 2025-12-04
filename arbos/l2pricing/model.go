@@ -27,7 +27,7 @@ const InitialPricingInertia = 102
 const InitialBacklogTolerance = 10
 const InitialPerTxGasLimitV50 uint64 = 32 * 1000000
 
-const ArbOS60StaticGasPoolUpdateCost = 15000
+const ArbOS60StaticBacklogUpdateCost = 15000
 
 type GasModel int
 
@@ -151,29 +151,9 @@ func applyGasDelta(op BacklogOperation, backlog uint64, delta uint64) uint64 {
 	}
 }
 
-// TODO(NIT-4152): eliminate manual gas calculation
 // BacklogUpdateCost returns the gas cost for updating the backlog in the active pricing model.
 func (ps *L2PricingState) BacklogUpdateCost() uint64 {
 	result := uint64(0)
-
-	// Multi-dimensional pricer overhead (ArbOS 60 and later)
-	if ps.ArbosVersion >= ArbosMultiGasConstraintsVersion {
-		// Read multi-gas constraints length (GasModelToUse)
-		// This overhead applies even when no constraints are configured.
-		result += storage.StorageReadCost
-
-		// updateMultiGasConstraintsBacklogs costs
-		constraintsLength, _ := ps.multiGasConstraints.Length()
-		if constraintsLength > 0 {
-			result += storage.StorageReadCost // read length to traverse
-
-			// DecrementBacklog costs for each multi-dimensional constraint
-			result += constraintsLength * uint64(multigas.NumResourceKind) * storage.StorageReadCost
-			result += constraintsLength * (storage.StorageReadCost + storage.StorageWriteCost)
-			return result
-		}
-		// No return here, fallthrough to single-constraint costs
-	}
 
 	// Single-dimensional constraint pricer costs
 	// This overhead applies even when no constraints are configured.
