@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2025, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package l2pricing
@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/ethereum/go-ethereum/arbitrum/multigas"
+	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbos/storage"
@@ -20,13 +21,13 @@ func PricingForTest(t *testing.T) *L2PricingState {
 	storage := storage.NewMemoryBacked(burn.NewSystemBurner(nil, false))
 	err := InitializeL2PricingState(storage)
 	Require(t, err)
-	return OpenL2PricingState(storage)
+	return OpenL2PricingState(storage, params.MaxDebugArbosVersionSupported)
 }
 
-func fakeBlockUpdate(t *testing.T, pricing *L2PricingState, gasUsed int64, timePassed uint64) {
+func fakeBlockUpdate(t *testing.T, pricing *L2PricingState, gasUsed uint64, timePassed uint64) {
 	t.Helper()
 
-	pricing.storage.Burner().Restrict(pricing.addToGasPoolLegacy(-gasUsed))
+	pricing.storage.Burner().Restrict(pricing.updateLegacyBacklog(Grow, gasUsed))
 	pricing.updatePricingModelLegacy(timePassed)
 }
 
@@ -42,9 +43,9 @@ func TestPricingModelExp(t *testing.T) {
 
 	// show that running at the speed limit with a full pool is a steady-state
 	colors.PrintBlue("full pool & speed limit")
-	for seconds := 0; seconds < 4; seconds++ {
+	for seconds := range uint64(4) {
 		// #nosec G115
-		fakeBlockUpdate(t, pricing, int64(seconds)*int64(limit), uint64(seconds))
+		fakeBlockUpdate(t, pricing, seconds*limit, seconds)
 		if getPrice(t, pricing) != minPrice {
 			Fail(t, "price changed when it shouldn't have")
 		}
@@ -53,9 +54,9 @@ func TestPricingModelExp(t *testing.T) {
 	// show that running at the speed limit with a target pool is close to a steady-state
 	// note that for large enough spans of time the price will rise a minuscule amount due to the pool's avg
 	colors.PrintBlue("pool target & speed limit")
-	for seconds := 0; seconds < 4; seconds++ {
+	for seconds := range uint64(4) {
 		// #nosec G115
-		fakeBlockUpdate(t, pricing, int64(seconds)*int64(limit), uint64(seconds))
+		fakeBlockUpdate(t, pricing, seconds*limit, seconds)
 		if getPrice(t, pricing) != minPrice {
 			Fail(t, "price changed when it shouldn't have")
 		}
@@ -65,7 +66,7 @@ func TestPricingModelExp(t *testing.T) {
 	colors.PrintBlue("exceeding the speed limit")
 	for {
 		// #nosec G115
-		fakeBlockUpdate(t, pricing, 8*int64(limit), 1)
+		fakeBlockUpdate(t, pricing, 8*limit, 1)
 		newPrice := getPrice(t, pricing)
 		if newPrice < price {
 			Fail(t, "the price shouldn't have fallen")
@@ -165,12 +166,13 @@ func TestMultiGasConstraints(t *testing.T) {
 
 	const n uint64 = 5
 	for i := range n {
-		resourceWeights := map[uint8]uint64{
+		weights := map[uint8]uint64{
 			uint8(multigas.ResourceKindComputation):   10 + i,
 			uint8(multigas.ResourceKindStorageAccess): 20 + i,
 		}
 		Require(t,
-			pricing.AddMultiGasConstraint(100*i+1, 100*i+2, 100*i+3, resourceWeights),
+			// #nosec G115
+			pricing.AddMultiGasConstraint(100*i+1, uint32(100*i+2), 100*i+3, weights),
 		)
 	}
 
@@ -191,7 +193,8 @@ func TestMultiGasConstraints(t *testing.T) {
 
 		window, err := c.AdjustmentWindow()
 		Require(t, err)
-		if want := 100*i + 2; window != want {
+		// #nosec G115
+		if want := uint32(100*i + 2); window != want {
 			t.Errorf("wrong window: got %v, want %v", window, want)
 		}
 
@@ -216,6 +219,45 @@ func TestMultiGasConstraints(t *testing.T) {
 	Require(t, err)
 	if length != 0 {
 		t.Fatalf("wrong number of constraints: got %v want 0", length)
+	}
+}
+
+func TestMultiGasConstraintsExponents(t *testing.T) {
+	pricing := PricingForTest(t)
+
+	// backlog=100, target=100, A=10 -> exponent = (100*1)/(10*100*1) = 1000 bips
+	err := pricing.AddMultiGasConstraint(
+		100,
+		10,
+		100,
+		map[uint8]uint64{
+			uint8(multigas.ResourceKindComputation): 1,
+		},
+	)
+	Require(t, err)
+
+	// backlog=200, target=40, A=20 -> exponent = (200*1)/(20*40*1) = 2500 bips
+	err = pricing.AddMultiGasConstraint(
+		40,
+		20,
+		200,
+		map[uint8]uint64{
+			uint8(multigas.ResourceKindStorageAccess): 2,
+		},
+	)
+	Require(t, err)
+
+	exps, err := pricing.CalcMultiGasConstraintsExponents()
+	Require(t, err)
+
+	expected := arbmath.Bips(1000)
+	if exps[multigas.ResourceKindComputation] != expected {
+		t.Fatalf("wrong exponent: got %v, want %v", exps[multigas.ResourceKindComputation], expected)
+	}
+
+	expected = arbmath.Bips(2500)
+	if exps[multigas.ResourceKindStorageAccess] != expected {
+		t.Fatalf("wrong exponent: got %v, want %v", exps[multigas.ResourceKindStorageAccess], expected)
 	}
 }
 
