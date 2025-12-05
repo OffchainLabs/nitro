@@ -248,7 +248,7 @@ func (s *WSBroadcastServer) StartWithHeader(ctx context.Context, header ws.Hands
 		var negotiate func(httphead.Option) (httphead.Option, error)
 		if config.EnableCompression {
 			compress = &wsflate.Extension{
-				Parameters: wsflate.DefaultParameters, // TODO
+				Parameters: wsflate.DefaultParameters,
 			}
 			negotiate = compress.Negotiate
 		}
