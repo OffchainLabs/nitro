@@ -9,7 +9,6 @@ type ArbWasmCache struct {
 	Address addr // 0x72
 
 	UpdateProgramCache        func(ctx, mech, addr, bytes32, bool) error
-	UpdateProgramCacheGasCost func(addr, bytes32, bool) (uint64, error)
 }
 
 // See if the user is a cache manager owner.
