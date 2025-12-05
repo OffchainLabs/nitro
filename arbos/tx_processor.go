@@ -21,6 +21,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
+	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbos/retryables"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -534,6 +535,33 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, usedMultiGas multigas.MultiGas, 
 	}
 	gasUsed := p.msg.GasLimit - gasLeft
 
+	gasModel, err := p.state.L2PricingState().GasModelToUse()
+	p.state.Restrict(err)
+	shouldRefundMultiGas := gasModel == l2pricing.GasModelMultiGasConstraints
+
+	multiGasRefund := func(singleDimCost *big.Int, usedMultiGas multigas.MultiGas, from common.Address) error {
+		correctedCost, err := p.state.L2PricingState().MultiDimensionalPriceForRefund(usedMultiGas)
+		if err != nil {
+			return err
+		}
+
+		amount := new(big.Int).Sub(singleDimCost, correctedCost)
+		if amount.Sign() > 0 {
+			err := util.TransferBalance(
+				&networkFeeAccount,
+				&from,
+				amount,
+				p.evm,
+				scenario,
+				tracing.BalanceChangeTransferNetworkRefund, // TODO: clarify reason
+			)
+			p.state.Restrict(err)
+		} else if amount.Sign() < 0 {
+			log.Warn("multi dimensional gas price exceeded simple gas price", "amount", amount)
+		}
+		return nil
+	}
+
 	if underlyingTx != nil && underlyingTx.Type() == types.ArbitrumRetryTxType {
 		inner, _ := underlyingTx.GetInner().(*types.ArbitrumRetryTx)
 		effectiveBaseFee := inner.GasFeeCap
@@ -553,6 +581,13 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, usedMultiGas multigas.MultiGas, 
 		err := util.BurnBalance(&inner.From, gasRefund, p.evm, scenario, tracing.BalanceDecreaseUndoRefund)
 		if err != nil {
 			log.Error("Uh oh, Geth didn't refund the user", inner.From, gasRefund)
+		}
+
+		// Multi-dimensional refund (retryable tx path)
+		if shouldRefundMultiGas {
+			singleCost := arbmath.BigMulByUint(effectiveBaseFee, gasUsed)
+			err = multiGasRefund(singleCost, usedMultiGas, inner.From)
+			p.state.Restrict(err)
 		}
 
 		maxRefund := new(big.Int).Set(inner.MaxRefund)
@@ -678,6 +713,12 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, usedMultiGas multigas.MultiGas, 
 		if _, err := p.state.L1PricingState().AddToL1FeesAvailable(p.PosterFee); err != nil {
 			log.Error("failed to update L1FeesAvailable: ", "err", err)
 		}
+	}
+
+	// Multi-dimensional refund (normal tx path)
+	if shouldRefundMultiGas {
+		err = multiGasRefund(totalCost, usedMultiGas, p.msg.From)
+		p.state.Restrict(err)
 	}
 
 	if p.msg.GasPrice.Sign() > 0 { // in tests, gas price could be 0
