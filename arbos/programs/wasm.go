@@ -118,6 +118,27 @@ func newProgram(
 	gas uint64,
 ) uint32
 
+//go:wasmimport programs program_requires_prepare
+func programRequiresPrepare(
+	moduleHashPtr unsafe.Pointer,
+) uint32
+
+//go:wasmimport programs program_prepare
+func ProgramPrepare(
+	statedbPtr unsafe.Pointer,
+	moduleHashPtr unsafe.Pointer,
+	addressForLoggingPtr unsafe.Pointer,
+	codePtr unsafe.Pointer,
+	codeSize uint64,
+	codehashPtr unsafe.Pointer,
+	maxWasmSize uint32,
+	pagelimit uint32,
+	time uint64,
+	debugMode uint32,
+	programPtr unsafe.Pointer,
+	runCtxPtr unsafe.Pointer,
+)
+
 //go:wasmimport programs pop
 func popProgram()
 
@@ -139,6 +160,33 @@ func sendResponse(req_id uint32) uint32
 func getCompiledProgram(statedb vm.StateDB, moduleHash common.Hash, addressForLogging common.Address, code []byte, codeHash common.Hash, maxWasmSize uint32, pagelimit uint16, time uint64, debugMode bool, program Program, runCtx *core.MessageRunContext) (map[rawdb.WasmTarget][]byte, error) {
 	// we need to return asm map with an entry for local target to make checks for local target work
 	return map[rawdb.WasmTarget][]byte{rawdb.LocalTarget(): {}}, nil
+}
+
+func handleProgramPrepare(statedb vm.StateDB, moduleHash common.Hash, addressForLogging common.Address, code []byte, codehash common.Hash, maxWasmSize uint32, pagelimit uint16, time uint64, debugMode bool, program Program, runCtx *core.MessageRunContext) {
+	requiresPrepare := programRequiresPrepare(unsafe.Pointer(&moduleHash[0]))
+	if requiresPrepare != 0 {
+		var debugInt uint32
+		if debugMode {
+			debugInt = 1
+		}
+
+		codeSize := uint64(len(code))
+
+		ProgramPrepare(
+			unsafe.Pointer(&statedb),
+			unsafe.Pointer(&moduleHash),
+			unsafe.Pointer(&addressForLogging),
+			unsafe.Pointer(&code),
+			codeSize,
+			unsafe.Pointer(&codehash),
+			maxWasmSize,
+			uint32(pagelimit),
+			time,
+			debugInt,
+			unsafe.Pointer(&program),
+			unsafe.Pointer(runCtx),
+		)
+	}
 }
 
 func callProgram(
