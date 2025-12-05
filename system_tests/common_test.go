@@ -668,6 +668,10 @@ func (b *NodeBuilder) BuildL1(t *testing.T) {
 	b.L1.cleanup = func() { requireClose(t, b.L1.Stack) }
 }
 
+func clientForStackUseHTTP(stackConfig *node.Config) bool {
+	return stackConfig.HTTPHost != ""
+}
+
 func buildOnParentChain(
 	t *testing.T,
 	ctx context.Context,
@@ -742,7 +746,7 @@ func buildOnParentChain(
 	err = chainTestClient.ConsensusNode.Start(ctx)
 	Require(t, err)
 
-	chainTestClient.Client = ClientForStack(t, chainTestClient.Stack)
+	chainTestClient.Client = ClientForStack(t, chainTestClient.Stack, clientForStackUseHTTP(stackConfig))
 
 	StartWatchChanErr(t, ctx, fatalErrChan, chainTestClient.ConsensusNode)
 
@@ -911,7 +915,7 @@ func (b *NodeBuilder) BuildL2(t *testing.T) func() {
 	err = b.L2.ConsensusNode.Start(b.ctx)
 	Require(t, err)
 
-	b.L2.Client = ClientForStack(t, b.L2.Stack)
+	b.L2.Client = ClientForStack(t, b.L2.Stack, clientForStackUseHTTP(b.l2StackConfig))
 
 	if b.takeOwnership {
 		debugAuth := b.L2Info.GetDefaultTransactOpts("Owner", b.ctx)
@@ -970,7 +974,7 @@ func (b *NodeBuilder) RestartL2Node(t *testing.T) {
 	Require(t, err)
 
 	Require(t, currentNode.Start(b.ctx))
-	client := ClientForStack(t, stack)
+	client := ClientForStack(t, stack, clientForStackUseHTTP(b.l2StackConfig))
 
 	StartWatchChanErr(t, b.ctx, feedErrChan, currentNode)
 
@@ -1877,9 +1881,15 @@ func createNonL1BlockChainWithStackConfig(
 	return info, stack, chainDb, arbDb, blockchain
 }
 
-func ClientForStack(t *testing.T, backend *node.Node) *ethclient.Client {
-	rpcClient := backend.Attach()
-	return ethclient.NewClient(rpcClient)
+func ClientForStack(t *testing.T, backend *node.Node, useHTTP bool) *ethclient.Client {
+	if useHTTP {
+		ethClient, err := ethclient.Dial(backend.HTTPEndpoint())
+		if err != nil {
+			t.Fatalf("Failed to create client for stack with HTTP: %v", err)
+		}
+		return ethClient
+	}
+	return ethclient.NewClient(backend.Attach())
 }
 
 func StartWatchChanErr(t *testing.T, ctx context.Context, feedErrChan chan error, node *arbnode.Node) {
@@ -2002,7 +2012,7 @@ func Create2ndNodeWithConfig(
 
 	err = currentNode.Start(ctx)
 	Require(t, err)
-	chainClient := ClientForStack(t, chainStack)
+	chainClient := ClientForStack(t, chainStack, clientForStackUseHTTP(stackConfig))
 
 	StartWatchChanErr(t, ctx, feedErrChan, currentNode)
 

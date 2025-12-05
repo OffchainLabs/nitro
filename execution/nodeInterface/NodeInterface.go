@@ -11,7 +11,6 @@ import (
 	"math/big"
 	"sort"
 
-	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -19,7 +18,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/arbos"
@@ -27,7 +26,6 @@ import (
 	"github.com/offchainlabs/nitro/arbos/retryables"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/offchainlabs/nitro/solgen/go/node_interfacegen"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/merkletree"
 )
@@ -52,6 +50,11 @@ type NodeInterface struct {
 var merkleTopic common.Hash
 var l2ToL1TxTopic common.Hash
 var l2ToL1TransactionTopic common.Hash
+
+var (
+	getL1ConfirmationCallsCounter        = metrics.NewRegisteredCounter("arb/node_interface_get_l1_confirmation_calls", nil)
+	findBatchContainingBlockCallsCounter = metrics.NewRegisteredCounter("arb/node_interface_find_batch_containing_block_calls", nil)
+)
 
 func (n NodeInterface) NitroGenesisBlock(c ctx) (huge, error) {
 	block := n.backend.ChainConfig().ArbitrumChainParams.GenesisBlockNum
@@ -78,35 +81,27 @@ func (n NodeInterface) blockNumToMessageIndex(blockNum uint64) (arbutil.MessageI
 	return msgIndex, true, nil
 }
 
-func (n NodeInterface) msgNumToInboxBatch(msgIndex arbutil.MessageIndex) (uint64, bool, error) {
-	node, err := gethExecFromNodeInterfaceBackend(n.backend)
-	if err != nil {
-		return 0, false, err
-	}
-	fetcher := node.ExecEngine.GetBatchFetcher()
-	if fetcher == nil {
-		return 0, false, errors.New("batch fetcher not set")
-	}
-	inboxBatch, err := fetcher.FindInboxBatchContainingMessage(msgIndex).Await(n.context)
-	return inboxBatch.BatchNum, inboxBatch.Found, err
-}
-
 func (n NodeInterface) FindBatchContainingBlock(c ctx, evm mech, blockNum uint64) (uint64, error) {
-	msgIndex, found, err := n.blockNumToMessageIndex(blockNum)
+	findBatchContainingBlockCallsCounter.Inc(1)
+
+	msgIdx, found, err := n.blockNumToMessageIndex(blockNum)
 	if err != nil {
 		return 0, err
 	}
 	if !found {
 		return 0, fmt.Errorf("block %v is part of genesis", blockNum)
 	}
-	res, found, err := n.msgNumToInboxBatch(msgIndex)
-	if err == nil && !found {
-		return 0, errors.New("block not yet found on any batch")
+
+	node, err := gethExecFromNodeInterfaceBackend(n.backend)
+	if err != nil {
+		return 0, err
 	}
-	return res, err
+	return node.ExecEngine.GetBatchFetcher().FindBatchContainingMessage(msgIdx).Await(n.context)
 }
 
 func (n NodeInterface) GetL1Confirmations(c ctx, evm mech, blockHash bytes32) (uint64, error) {
+	getL1ConfirmationCallsCounter.Inc(1)
+
 	node, err := gethExecFromNodeInterfaceBackend(n.backend)
 	if err != nil {
 		return 0, err
@@ -126,57 +121,8 @@ func (n NodeInterface) GetL1Confirmations(c ctx, evm mech, blockHash bytes32) (u
 	if err != nil {
 		return 0, err
 	}
-	// batches not yet posted have 0 confirmations but no error
-	batchNum, found, err := n.msgNumToInboxBatch(msgNum)
-	if err != nil {
-		return 0, err
-	}
-	if !found {
-		return 0, nil
-	}
-	parentChainBlockNum, err := node.ExecEngine.GetBatchFetcher().GetBatchParentChainBlock(batchNum).Await(n.context)
-	if err != nil {
-		return 0, err
-	}
 
-	if node.ParentChainReader.IsParentChainArbitrum() {
-		parentChainClient := node.ParentChainReader.Client()
-		parentNodeInterface, err := node_interfacegen.NewNodeInterface(types.NodeInterfaceAddress, parentChainClient)
-		if err != nil {
-			return 0, err
-		}
-		parentChainBlock, err := parentChainClient.BlockByNumber(n.context, new(big.Int).SetUint64(parentChainBlockNum))
-		if err != nil {
-			// Hide the parent chain RPC error from the client in case it contains sensitive information.
-			// Likely though, this error is just "not found" because the block got reorg'd.
-			return 0, fmt.Errorf("failed to get parent chain block %v containing batch", parentChainBlockNum)
-		}
-		confs, err := parentNodeInterface.GetL1Confirmations(&bind.CallOpts{Context: n.context}, parentChainBlock.Hash())
-		if err != nil {
-			log.Warn(
-				"Failed to get L1 confirmations from parent chain",
-				"blockNumber", parentChainBlockNum,
-				"blockHash", parentChainBlock.Hash(), "err", err,
-			)
-			return 0, fmt.Errorf("failed to get L1 confirmations from parent chain for block %v", parentChainBlock.Hash())
-		}
-		return confs, nil
-	}
-	if node.ParentChainReader == nil {
-		return 0, nil
-	}
-	latestHeader, err := node.ParentChainReader.LastHeaderWithError()
-	if err != nil {
-		return 0, err
-	}
-	if latestHeader == nil {
-		return 0, errors.New("no headers read from l1")
-	}
-	latestBlockNum := latestHeader.Number.Uint64()
-	if latestBlockNum < parentChainBlockNum {
-		return 0, nil
-	}
-	return (latestBlockNum - parentChainBlockNum), nil
+	return node.ExecEngine.GetBatchFetcher().GetL1Confirmations(msgNum).Await(n.context)
 }
 
 func (n NodeInterface) EstimateRetryableTicket(

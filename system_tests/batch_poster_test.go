@@ -777,11 +777,11 @@ func TestBatchPosterL1SurplusMatchesBatchGasFlaky(t *testing.T) {
 	Require(t, err)
 
 	// wait for this tx to be posted in a batch, and check which batch
-	var batchNum *big.Int
+	var batchNum uint64
 	for {
-		batch, err := builder.L2.ConsensusNode.FindInboxBatchContainingMessage(arbutil.MessageIndex(l2Block.NumberU64())).Await(ctx)
-		if err == nil && batch.Found {
-			batchNum = new(big.Int).SetUint64(batch.BatchNum)
+		var found bool
+		batchNum, found, err = builder.L2.ConsensusNode.InboxTracker.FindInboxBatchContainingMessage(arbutil.MessageIndex(l2Block.NumberU64()))
+		if err == nil && found {
 			break
 		}
 		t.Logf("waiting for tx to be posted in a batch")
@@ -793,7 +793,7 @@ func TestBatchPosterL1SurplusMatchesBatchGasFlaky(t *testing.T) {
 	Require(t, err)
 	var batchTxHash common.Hash
 	for {
-		it, err := seqInboxContract.FilterSequencerBatchDelivered(nil, []*big.Int{batchNum}, nil, nil)
+		it, err := seqInboxContract.FilterSequencerBatchDelivered(nil, []*big.Int{new(big.Int).SetUint64(batchNum)}, nil, nil)
 		if err == nil && it.Next() {
 			batchTxHash = it.Event.Raw.TxHash
 			break
@@ -824,7 +824,7 @@ func TestBatchPosterL1SurplusMatchesBatchGasFlaky(t *testing.T) {
 		block, err := builder.L2.Client.BlockByNumber(ctx, new(big.Int).SetUint64(b))
 		Require(t, err)
 		t.Logf("checking L2 block %d: nonce=%d (looking for %d)", b, block.Nonce(), batchNum)
-		if block.Nonce() == batchNum.Uint64()+1 {
+		if block.Nonce() == batchNum+1 {
 			foundBlock = block.Header().Number.Uint64()
 			break
 		}
