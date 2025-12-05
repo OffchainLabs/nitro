@@ -13,6 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/arbnode/mel"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
@@ -114,7 +115,16 @@ func (m *mockMessageConsumer) PushMessages(ctx context.Context, firstMsgIdx uint
 type mockParentChainReader struct {
 	blocks    map[common.Hash]*types.Block
 	headers   map[common.Hash]*types.Header
+	logs      []*types.Log
 	returnErr error
+}
+
+func (m *mockParentChainReader) HeaderByNumber(ctx context.Context, number *big.Int) (*types.Header, error) {
+	blk, err := m.BlockByNumber(ctx, number)
+	if err != nil {
+		return nil, err
+	}
+	return blk.Header(), err
 }
 
 func (m *mockParentChainReader) BlockByNumber(ctx context.Context, number *big.Int) (*types.Block, error) {
@@ -172,3 +182,18 @@ func (m *mockParentChainReader) TransactionReceipt(ctx context.Context, txHash c
 	// Mock implementation, return a dummy receipt
 	return &types.Receipt{}, nil
 }
+
+func (m *mockParentChainReader) TransactionByHash(ctx context.Context, hash common.Hash) (tx *types.Transaction, isPending bool, err error) {
+	return nil, false, nil
+}
+
+func (m *mockParentChainReader) FilterLogs(ctx context.Context, q ethereum.FilterQuery) ([]types.Log, error) {
+	filteredLogs := types.FilterLogs(m.logs, nil, nil, q.Addresses, q.Topics)
+	var result []types.Log
+	for _, log := range filteredLogs {
+		result = append(result, *log)
+	}
+	return result, nil
+}
+
+func (m *mockParentChainReader) Client() rpc.ClientInterface { return nil }
