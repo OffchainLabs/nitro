@@ -462,6 +462,13 @@ func (con ArbOwner) SetGasBacklog(c ctx, evm mech, backlog uint64) error {
 
 // SetGasPricingConstraints sets the gas pricing constraints used by the multi-constraint pricing model
 func (con ArbOwner) SetGasPricingConstraints(c ctx, evm mech, constraints [][3]uint64) error {
+	if c.State.ArbOSVersion() < params.ArbosVersion_60 {
+		limit := l2pricing.GasConstraintsMaxNum
+		if len(constraints) > limit {
+			return fmt.Errorf("too many constraints. Max: %d", limit)
+		}
+	}
+
 	err := c.State.L2PricingState().ClearGasConstraints()
 	if err != nil {
 		return fmt.Errorf("failed to clear existing constraints: %w", err)

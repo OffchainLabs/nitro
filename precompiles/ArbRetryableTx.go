@@ -100,17 +100,17 @@ func (con ArbRetryableTx) Redeem(c ctx, evm mech, ticketId bytes32) (bytes32, er
 	gasCostToReturnResult := params.CopyGas
 
 	// `redeem` must prepay the gas needed by the trailing call to
-	// L2PricingState().AddToGasPool(). BacklogUpdateCost() returns
-	// that amount based on the storage read/write mix used by AddToGasPool().
-	gasPoolUpdateCost := uint64(0)
+	// L2PricingState().ShrinkBacklog(). BacklogUpdateCost() returns
+	// that amount based on the storage read/write mix used by ShrinkBacklog().
+	backlogUpdateCost := uint64(0)
 	if c.State.L2PricingState().ArbosVersion >= params.ArbosVersion_60 {
 		// Charge static price for any pricer starting from ArbOS 60
-		gasPoolUpdateCost = l2pricing.ArbOS60StaticBacklogUpdateCost
+		backlogUpdateCost = l2pricing.ArbOS60StaticBacklogUpdateCost
 	} else {
-		gasPoolUpdateCost = c.State.L2PricingState().BacklogUpdateCost()
+		backlogUpdateCost = c.State.L2PricingState().BacklogUpdateCost()
 	}
 
-	futureGasCosts := eventCost + gasCostToReturnResult + gasPoolUpdateCost
+	futureGasCosts := eventCost + gasCostToReturnResult + backlogUpdateCost
 	if c.GasLeft() < futureGasCosts {
 		return hash{}, c.Burn(multigas.ResourceKindComputation, futureGasCosts) // this will error
 	}
@@ -139,7 +139,7 @@ func (con ArbRetryableTx) Redeem(c ctx, evm mech, ticketId bytes32) (bytes32, er
 
 	// Add the gasToDonate back to the gas pool: the retryable attempt will then consume it.
 	// This ensures that the gas pool has enough gas to run the retryable attempt.
-	// Starting from ArbOS 60, we don't charge gas for the AddToGasPool call here
+	// Starting from ArbOS 60, we don't charge gas for the ShrinkBacklog call here
 	if c.State.L2PricingState().ArbosVersion >= params.ArbosVersion_60 {
 		err = c.WithUnmeteredGasAccounting(func() error {
 			return c.State.L2PricingState().ShrinkBacklog(gasToDonate, multigas.ComputationGas(gasToDonate))
