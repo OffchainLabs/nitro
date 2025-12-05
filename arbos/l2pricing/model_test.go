@@ -9,6 +9,7 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/ethereum/go-ethereum/arbitrum/multigas"
 	"github.com/ethereum/go-ethereum/params"
 )
 
@@ -122,5 +123,62 @@ func TestCompareSingleGasConstraintsPricingModelWithMultiGasConstraints(t *testi
 				)
 			}
 		}
+	}
+}
+
+func TestMultiDimensionalPriceForRefund(t *testing.T) {
+	pricing := PricingForTest(t)
+	pricing.ArbosVersion = ArbosMultiGasConstraintsVersion
+
+	minPrice, err := pricing.MinBaseFeeWei()
+	Require(t, err)
+
+	multiGas := multigas.MultiGasFromPairs(
+		multigas.Pair{Kind: multigas.ResourceKindComputation, Amount: 50000},
+		multigas.Pair{Kind: multigas.ResourceKindStorageAccess, Amount: 15000},
+	)
+	singleGas := big.NewInt(int64(multiGas.SingleGas()))
+	// Initial price should match minBaseFeeWei * singleGas
+	expectedPrice := minPrice.Mul(minPrice, singleGas)
+	Require(t, err)
+
+	price, err := pricing.MultiDimensionalPriceForRefund(multiGas)
+	Require(t, err)
+	if price.Cmp(expectedPrice) != 0 {
+		t.Errorf("Unexpected initial price: got %v, want %v", price, expectedPrice)
+	}
+
+	// updatePricingModelMultiConstraints() should set multi gas base fees
+	Require(t, pricing.AddMultiGasConstraint(
+		100000,
+		10,
+		20000,
+		map[uint8]uint64{
+			uint8(multigas.ResourceKindComputation):   1,
+			uint8(multigas.ResourceKindStorageAccess): 2,
+		},
+	))
+	Require(t, pricing.AddMultiGasConstraint(
+		50000,
+		5,
+		15000,
+		map[uint8]uint64{
+			uint8(multigas.ResourceKindComputation):   2,
+			uint8(multigas.ResourceKindStorageAccess): 1,
+		},
+	))
+	usedMultiGas := multigas.MultiGasFromPairs(
+		multigas.Pair{Kind: multigas.ResourceKindComputation, Amount: 500000},
+		multigas.Pair{Kind: multigas.ResourceKindStorageAccess, Amount: 1500000},
+	)
+	err = pricing.GrowBacklog(usedMultiGas.SingleGas(), usedMultiGas)
+	Require(t, err)
+
+	pricing.updatePricingModelMultiConstraints(10)
+
+	price, err = pricing.MultiDimensionalPriceForRefund(multiGas)
+	Require(t, err)
+	if price.Cmp(expectedPrice) <= 0 {
+		t.Errorf("Price did not increase after backlog growth: got %v, want > %v", price, expectedPrice)
 	}
 }

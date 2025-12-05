@@ -540,7 +540,7 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, usedMultiGas multigas.MultiGas, 
 	shouldRefundMultiGas := gasModel == l2pricing.GasModelMultiGasConstraints
 
 	multiGasRefund := func(singleDimCost *big.Int, usedMultiGas multigas.MultiGas, from common.Address) error {
-		correctedCost, err := p.state.L2PricingState().MultiDimensionalPriceForGas(usedMultiGas)
+		correctedCost, err := p.state.L2PricingState().MultiDimensionalPriceForRefund(usedMultiGas)
 		if err != nil {
 			return err
 		}
