@@ -252,7 +252,6 @@ func (c *PebbleExperimentalConfig) Validate() error {
 	if c.WALDir != "" && !filepath.IsAbs(c.WALDir) {
 		return fmt.Errorf("invalid .wal-dir directory (%s) - has to be an absolute path", c.WALDir)
 	}
-	// TODO
 	return nil
 }
 
