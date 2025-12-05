@@ -371,7 +371,8 @@ func setupBoldStateProvider(t *testing.T, ctx context.Context, blockChallengeHei
 		nil,
 		sconf,
 		l2info,
-		false,
+		false, // useExternalSigner
+		false, // enableCustomDA
 	)
 
 	valnode.TestValidationConfig.UseJit = false

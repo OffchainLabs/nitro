@@ -70,17 +70,22 @@ import (
 	"github.com/offchainlabs/nitro/daprovider/das"
 	"github.com/offchainlabs/nitro/daprovider/das/dastree"
 	"github.com/offchainlabs/nitro/daprovider/das/dasutil"
+	"github.com/offchainlabs/nitro/daprovider/data_streaming"
+	"github.com/offchainlabs/nitro/daprovider/referenceda"
+	dapserver "github.com/offchainlabs/nitro/daprovider/server"
 	"github.com/offchainlabs/nitro/deploy"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	_ "github.com/offchainlabs/nitro/execution/nodeInterface"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/localgen"
+	"github.com/offchainlabs/nitro/solgen/go/ospgen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/solgen/go/upgrade_executorgen"
 	"github.com/offchainlabs/nitro/statetransfer"
 	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/redisutil"
 	"github.com/offchainlabs/nitro/util/signature"
@@ -1770,6 +1775,44 @@ func deployOnParentChain(
 			NumBigStepLevel:              3,
 			ChallengeGracePeriodBlocks:   3,
 			BufferConfig:                 bufferConfig,
+			DataCostEstimate:             big.NewInt(0),
+		}
+
+		// Deploy custom OSP for ReferenceDA if enabled
+		var customOspAddr common.Address
+		if deployConfig.DeployReferenceDA {
+			refDAValidatorAddr := parentChainInfo.GetAddress("ReferenceDAProofValidator")
+
+			// Deploy custom OneStepProverHostIo with the ReferenceDAProofValidator
+			ospHostIoAddr, tx, _, err := ospgen.DeployOneStepProverHostIo(
+				&parentChainTransactionOpts, parentChainReader.Client(), refDAValidatorAddr)
+			Require(t, err)
+			_, err = EnsureTxSucceeded(ctx, parentChainReader.Client(), tx)
+			Require(t, err)
+
+			// Deploy the other OSP contracts
+			osp0Addr, tx, _, err := ospgen.DeployOneStepProver0(&parentChainTransactionOpts, parentChainReader.Client())
+			Require(t, err)
+			_, err = EnsureTxSucceeded(ctx, parentChainReader.Client(), tx)
+			Require(t, err)
+
+			ospMemAddr, tx, _, err := ospgen.DeployOneStepProverMemory(&parentChainTransactionOpts, parentChainReader.Client())
+			Require(t, err)
+			_, err = EnsureTxSucceeded(ctx, parentChainReader.Client(), tx)
+			Require(t, err)
+
+			ospMathAddr, tx, _, err := ospgen.DeployOneStepProverMath(&parentChainTransactionOpts, parentChainReader.Client())
+			Require(t, err)
+			_, err = EnsureTxSucceeded(ctx, parentChainReader.Client(), tx)
+			Require(t, err)
+
+			// Deploy custom OneStepProofEntry with all the OSP contracts
+			customOspAddr, tx, _, err = ospgen.DeployOneStepProofEntry(
+				&parentChainTransactionOpts, parentChainReader.Client(),
+				osp0Addr, ospMemAddr, ospMathAddr, ospHostIoAddr)
+			Require(t, err)
+			_, err = EnsureTxSucceeded(ctx, parentChainReader.Client(), tx)
+			Require(t, err)
 		}
 
 		wrappedClient := butil.NewBackendWrapper(parentChainReader.Client(), rpc.LatestBlockNumber)
@@ -1778,6 +1821,10 @@ func deployOnParentChain(
 			UseMockOneStepProver:   false,
 			UseBlobs:               chainSupportsBlobs,
 			MinimumAssertionPeriod: 0,
+		}
+
+		if deployConfig.DeployReferenceDA {
+			rollupStackConfig.CustomDAOsp = customOspAddr
 		}
 
 		boldAddresses, err := setup.DeployFullRollupStack(
@@ -2153,6 +2200,100 @@ func setupConfigWithDAS(
 	}
 
 	return chainConfig, l1NodeConfigA, lifecycleManager, dbPath, dasSignerKey
+}
+
+// errorHolder wraps an error pointer to allow storing nil in atomic.Value
+type errorHolder struct {
+	err error
+}
+
+// controllableWriter wraps a DA writer and can be controlled via HTTP endpoints to return specific errors
+type controllableWriter struct {
+	writer         daprovider.Writer
+	shouldFallback *atomic.Bool
+	customError    *atomic.Value // stores *errorHolder
+}
+
+func (w *controllableWriter) Store(msg []byte, timeout uint64) containers.PromiseInterface[[]byte] {
+	log.Info("controllableWriter.Store called", "msgLen", len(msg), "timeout", timeout, "shouldFallback", w.shouldFallback.Load())
+
+	// Check for custom error first
+	if holder := w.customError.Load(); holder != nil {
+		if eh, ok := holder.(*errorHolder); ok && eh.err != nil {
+			log.Info("controllableWriter returning custom error", "error", eh.err)
+			promise := containers.NewPromise[[]byte](func() {})
+			promise.ProduceError(eh.err)
+			return &promise
+		}
+	}
+
+	// Check for fallback signal
+	if w.shouldFallback.Load() {
+		log.Warn("controllableWriter returning ErrFallbackRequested")
+		promise := containers.NewPromise[[]byte](func() {})
+		promise.ProduceError(daprovider.ErrFallbackRequested)
+		return &promise
+	}
+
+	// Normal operation
+	log.Info("controllableWriter delegating to underlying writer")
+	return w.writer.Store(msg, timeout)
+}
+
+func (w *controllableWriter) GetMaxMessageSize() containers.PromiseInterface[int] {
+	return w.writer.GetMaxMessageSize()
+}
+
+// createReferenceDAProviderServer creates and starts a basic ReferenceDA provider server.
+// This is a convenience wrapper around createReferenceDAProviderServerWithControl
+// for tests that don't need runtime control of error injection.
+func createReferenceDAProviderServer(t *testing.T, ctx context.Context, l1Client *ethclient.Client, validatorAddr common.Address, dataSigner signature.DataSignerFunc, port int) (*http.Server, string) {
+	server, url, _, _ := createReferenceDAProviderServerWithControl(t, ctx, l1Client, validatorAddr, dataSigner, port, referenceda.DefaultConfig.MaxBatchSize)
+	return server, url
+}
+
+// createReferenceDAProviderServerWithControl creates a ReferenceDA provider server with controllable error injection.
+// Returns: server, URL, and control handles (shouldFallback, customError) for direct manipulation in tests.
+func createReferenceDAProviderServerWithControl(t *testing.T, ctx context.Context, l1Client *ethclient.Client, validatorAddr common.Address, dataSigner signature.DataSignerFunc, port int, maxMessageSize int) (*http.Server, string, *atomic.Bool, *atomic.Value) {
+	// Create ReferenceDA components
+	storage := referenceda.GetInMemoryStorage()
+	reader := referenceda.NewReader(storage, l1Client, validatorAddr)
+	writer := referenceda.NewWriter(dataSigner, maxMessageSize)
+	validator := referenceda.NewValidator(l1Client, validatorAddr)
+
+	// Create controllable wrapper
+	shouldFallback := &atomic.Bool{}
+	customError := &atomic.Value{}
+	customError.Store(&errorHolder{err: nil}) // Initialize with nil error
+	wrappedWriter := &controllableWriter{
+		writer:         writer,
+		shouldFallback: shouldFallback,
+		customError:    customError,
+	}
+
+	// Create server config
+	serverConfig := &dapserver.ServerConfig{
+		Addr:               "127.0.0.1",
+		Port:               uint64(port), // #nosec G115
+		JWTSecret:          "",
+		EnableDAWriter:     true,
+		ServerTimeouts:     dapserver.DefaultServerConfig.ServerTimeouts,
+		RPCServerBodyLimit: dapserver.DefaultServerConfig.RPCServerBodyLimit,
+	}
+
+	// Create the provider server
+	headerBytes := []byte{daprovider.DACertificateMessageHeaderFlag}
+	server, err := dapserver.NewServerWithDAPProvider(ctx, serverConfig, reader, wrappedWriter, validator, headerBytes, data_streaming.PayloadCommitmentVerifier())
+	Require(t, err)
+
+	// Extract server address
+	serverAddr := strings.TrimPrefix(server.Addr, "http://")
+	serverURL := fmt.Sprintf("http://%s", serverAddr)
+
+	t.Logf("Started controllable ReferenceDA provider server at %s", serverURL)
+
+	// Return server, URL, and control handles for direct manipulation
+	return server, serverURL, shouldFallback, customError
 }
 
 func getDeadlineTimeout(t *testing.T, defaultTimeout time.Duration) time.Duration {
