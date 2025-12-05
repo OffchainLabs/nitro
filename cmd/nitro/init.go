@@ -813,6 +813,34 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 		rawdb.WriteHeadBlockHash(chainDb, targetBlock.Hash())
 		rawdb.WriteHeadFastBlockHash(chainDb, targetBlock.Hash())
 
+		//Fill in freezer db with ancient headers from genesis till target block, so it can restart
+		//This is just an improvement of restartability and is not a complete change
+		//The genesis block doesn't match with actual nitro classic genesis
+		//TODO - migrate actual headers
+		headerArray := []*types.Header{}
+		blockCounter := big.NewInt(1)
+		//add whatever genesis block was created above
+		headerArray = append(headerArray, l2BlockChain.Genesis().Header())
+
+		//important - do not write target block header
+		until := targetBlock.Number()
+		for blockCounter.Cmp(until) < 0 {
+			if blockCounter.Cmp(big.NewInt(1)) > 0 {
+				headerArray = headerArray[:0]
+			}
+			batchSize := int64(10000)
+			toGo := big.NewInt(0).Sub(until, blockCounter)
+			if toGo.Cmp(big.NewInt(batchSize)) < 0 {
+				batchSize = toGo.Int64()
+			}
+			for i := blockCounter.Int64(); i < blockCounter.Int64()+batchSize; i++ {
+				headerArray = append(headerArray, &types.Header{Number: big.NewInt(i)})
+			}
+			log.Info("Writing ancient headers", "from", blockCounter, "to", blockCounter.Int64()+batchSize-1, "len", len(headerArray))
+			_, err = rawdb.WriteAncientHeaderChain(chainDb, headerArray)
+			blockCounter = blockCounter.Add(blockCounter, big.NewInt(batchSize))
+		}
+
 		// Skip wasm rebuilding
 		err = gethexec.WriteToKeyValueStore(wasmDb, gethexec.RebuildingPositionKey,
 			gethexec.RebuildingDone)
