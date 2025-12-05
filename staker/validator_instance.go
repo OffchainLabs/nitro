@@ -23,7 +23,7 @@ type ValidatorInstance interface {
 	IsValidatedGlobalStateNew(gs validator.GoGlobalState) bool
 	LastValidatedGlobalState() validator.GoGlobalState
 	SetLastValidatedGlobalState(gs validator.GoGlobalState)
-	LastValidatedCount() (count uint64, isChainCaughtupToLastValidateCount bool, err error)
+	LastValidatedCount() (count uint64, isChainCaughtupToLastValidatedCount bool, err error)
 	LatestProcessedMessageCount() (uint64, error)                                       // latest processed but not validated message count
 	CountAtValidatedGlobalState(gs validator.GoGlobalState) int64                       // the last validated message count correspoding to a given validated global state
 	PositionsAtCount(count uint64) (beforePos, AfterPos GlobalStatePosition, err error) // returns the globalState position before and after processing message at the specified count
