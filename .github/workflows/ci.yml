@@ -52,10 +52,18 @@ jobs:
       post_comment: true
       upload_report: false
 
+  # --- Ensure changelog is updated (required by can_proceed) ---
+  changelog:
+    needs: changes
+    uses: ./.github/workflows/_changelog.yml
+    secrets: inherit
+    with:
+      changelog_fragments: ${{ needs.changes.outputs.changelog_added }}
+
   can_proceed:
     name: can_proceed
     runs-on: ubuntu-4
-    needs: [fast]
+    needs: [fast, changelog]
     steps:
       - name: OK
         run: exit 0
