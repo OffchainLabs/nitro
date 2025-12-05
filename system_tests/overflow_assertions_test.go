@@ -110,8 +110,14 @@ func TestOverflowAssertions(t *testing.T) {
 	err = stateless.Start(ctx)
 	Require(t, err)
 
-	blockValidator, err := staker.NewBlockValidator(
+	instance := staker.NewBlockValidatorInstance(
 		stateless,
+		StaticFetcherFrom(t, &blockValidatorConfig),
+	)
+	blockValidator, err := staker.NewBlockValidator(
+		instance,
+		instance,
+		stateless.GetRecorder(),
 		l2node.InboxTracker,
 		l2node.TxStreamer,
 		StaticFetcherFrom(t, &blockValidatorConfig),

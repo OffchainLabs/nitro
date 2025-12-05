@@ -770,8 +770,14 @@ func getBlockValidator(
 	var err error
 	var blockValidator *staker.BlockValidator
 	if config.ValidatorRequired() {
-		blockValidator, err = staker.NewBlockValidator(
+		instance := staker.NewBlockValidatorInstance(
 			statelessBlockValidator,
+			func() *staker.BlockValidatorConfig { return &configFetcher.Get().BlockValidator },
+		)
+		blockValidator, err = staker.NewBlockValidator(
+			instance,
+			instance,
+			statelessBlockValidator.GetRecorder(),
 			inboxTracker,
 			txStreamer,
 			func() *staker.BlockValidatorConfig { return &configFetcher.Get().BlockValidator },
