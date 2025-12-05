@@ -101,7 +101,7 @@ func (con ArbRetryableTx) Redeem(c ctx, evm mech, ticketId bytes32) (bytes32, er
 	// `redeem` must prepay the gas needed by the trailing call to
 	// L2PricingState().AddToGasPool(). GasPoolUpdateCost(ArbOSVersion) returns
 	// that amount based on the storage read/write mix used by AddToGasPool().
-	gasPoolUpdateCost := c.State.L2PricingState().GasPoolUpdateCost()
+	gasPoolUpdateCost := c.State.L2PricingState().BacklogUpdateCost()
 
 	futureGasCosts := eventCost + gasCostToReturnResult + gasPoolUpdateCost
 	if c.GasLeft() < futureGasCosts {
@@ -132,7 +132,8 @@ func (con ArbRetryableTx) Redeem(c ctx, evm mech, ticketId bytes32) (bytes32, er
 
 	// Add the gasToDonate back to the gas pool: the retryable attempt will then consume it.
 	// This ensures that the gas pool has enough gas to run the retryable attempt.
-	return retryTxHash, c.State.L2PricingState().AddToGasPool(arbmath.SaturatingCast[int64](gasToDonate))
+	// TODO(NIT-4120): clarify the gas dimension for gasToDonate
+	return retryTxHash, c.State.L2PricingState().ShrinkBacklog(gasToDonate, multigas.ComputationGas(gasToDonate))
 }
 
 // GetLifetime gets the default lifetime period a retryable has at creation

@@ -48,15 +48,15 @@ func nilSigner(_ []byte) ([]byte, error) {
 
 // lint:require-exhaustive-initialization
 type DASRPCClientConfig struct {
-	ServerUrl          string                            `koanf:"server-url"`
 	EnableChunkedStore bool                              `koanf:"enable-chunked-store"`
 	DataStream         data_streaming.DataStreamerConfig `koanf:"data-stream"`
+	RPC                rpcclient.ClientConfig            `koanf:"rpc"`
 }
 
 func DASRPCClientConfigAddOptions(prefix string, f *pflag.FlagSet) {
-	f.String(prefix+".server-url", "", "URL of DAS server to connect to")
 	f.Bool(prefix+".enable-chunked-store", true, "enable data to be sent to DAS in chunks instead of all at once")
 	data_streaming.DataStreamerConfigAddOptions(prefix+".data-stream", f, DefaultDataStreamRpcMethods)
+	rpcclient.RPCClientAddOptions(prefix+".rpc", f, &rpcclient.DefaultClientConfig)
 }
 
 var DefaultDataStreamRpcMethods = data_streaming.DataStreamingRPCMethods{
@@ -76,8 +76,9 @@ func NewDASRPCClient(config *DASRPCClientConfig, signer signature.DataSignerFunc
 		signer = nilSigner
 	}
 
-	clnt, err := rpc.Dial(config.ServerUrl)
+	clnt, err := rpc.Dial(config.RPC.URL)
 	if err != nil {
+		log.Error("Failed to dial DAS RPC server", "url", config.RPC.URL, "err", err)
 		return nil, err
 	}
 
@@ -88,24 +89,24 @@ func NewDASRPCClient(config *DASRPCClientConfig, signer signature.DataSignerFunc
 		})
 
 		rpcClient := rpcclient.NewRpcClient(func() *rpcclient.ClientConfig {
-			rpcConfig := rpcclient.DefaultClientConfig
-			rpcConfig.URL = config.ServerUrl
-			return &rpcConfig
+			return &config.RPC
 		}, nil)
 		err := rpcClient.Start(context.Background())
 		if err != nil {
+			log.Error("Failed to start DAS RPC client", "url", config.RPC.URL, "err", err)
 			return nil, err
 		}
 
 		dataStreamer, err = data_streaming.NewDataStreamer[StoreResult](config.DataStream, payloadSigner, rpcClient)
 		if err != nil {
+			log.Error("Failed to create data streamer", "url", config.RPC.URL, "err", err)
 			return nil, err
 		}
 	}
 
 	return &DASRPCClient{
 		clnt:         clnt,
-		url:          config.ServerUrl,
+		url:          config.RPC.URL,
 		signer:       signer,
 		dataStreamer: dataStreamer,
 	}, nil

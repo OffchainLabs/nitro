@@ -71,7 +71,7 @@ func setupProviderServer(ctx context.Context, t *testing.T) *http.Server {
 	dummyAddress := common.HexToAddress("0x0")
 	storage := referenceda.GetInMemoryStorage()
 	reader := referenceda.NewReader(storage, nil, dummyAddress)
-	writer := referenceda.NewWriter(dataSigner)
+	writer := referenceda.NewWriter(dataSigner, 1_000_000)
 	validator := referenceda.NewValidator(nil, dummyAddress)
 	headerBytes := []byte{daprovider.DACertificateMessageHeaderFlag}
 

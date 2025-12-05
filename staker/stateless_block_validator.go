@@ -44,7 +44,7 @@ type StatelessBlockValidator struct {
 	inboxTracker         InboxTrackerInterface
 	streamer             TransactionStreamerInterface
 	db                   ethdb.Database
-	dapReaders           *daprovider.ReaderRegistry
+	dapReaders           *daprovider.DAProviderRegistry
 	stack                *node.Node
 	latestWasmModuleRoot common.Hash
 }
@@ -237,7 +237,7 @@ func NewStatelessBlockValidator(
 	streamer TransactionStreamerInterface,
 	recorder execution.ExecutionRecorder,
 	arbdb ethdb.Database,
-	dapReaders *daprovider.ReaderRegistry,
+	dapReaders *daprovider.DAProviderRegistry,
 	config func() *BlockValidatorConfig,
 	stack *node.Node,
 	latestWasmModuleRoot common.Hash,
@@ -330,14 +330,17 @@ func (v *StatelessBlockValidator) readFullBatch(ctx context.Context, batchNum ui
 	preimages := make(daprovider.PreimagesMap)
 	if len(postedData) > 40 && v.dapReaders != nil {
 		headerByte := postedData[40]
-		if dapReader, found := v.dapReaders.GetByHeaderByte(headerByte); found {
+		dapReader := v.dapReaders.GetReader(headerByte)
+		if dapReader != nil {
 			promise := dapReader.CollectPreimages(batchNum, batchBlockHash, postedData)
 			result, err := promise.Await(ctx)
 			if err != nil {
 				// Matches the way keyset validation was done inside DAS readers i.e logging the error
 				//  But other daproviders might just want to return the error
-				if strings.Contains(err.Error(), daprovider.ErrSeqMsgValidation.Error()) && daprovider.IsDASMessageHeaderByte(headerByte) {
+				if daprovider.IsDASMessageHeaderByte(headerByte) && strings.Contains(err.Error(), daprovider.ErrSeqMsgValidation.Error()) {
 					log.Error(err.Error())
+				} else if daprovider.IsDACertificateMessageHeaderByte(headerByte) && daprovider.IsCertificateValidationError(err) {
+					log.Warn("Certificate validation of sequencer batch failed, treating it as an empty batch", "batch", batchNum, "error", err)
 				} else {
 					return false, nil, err
 				}

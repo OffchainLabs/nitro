@@ -37,7 +37,7 @@ jobs:
 
   # --- Full GO tests (not required by can_proceed) ---
   go-tests:
-    uses: ./.github/workflows/_go-tests.yml
+    uses: ./.github/workflows/_standard-go-test-suite.yml
     secrets: inherit
 
   # --- Summarize test results (not required by can_proceed) ---
