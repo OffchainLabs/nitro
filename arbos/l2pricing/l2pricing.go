@@ -46,6 +46,10 @@ var multigasConstraintsKey []byte = []byte{1}
 
 const GethBlockGasLimit = 1 << 50
 
+// Number of single-gas constraints limited because of retryable redeem gas cost calculation.
+// The limit is ignored starting from ArbOS version 60.
+const GasConstraintsMaxNum = 20
+
 // MaxPricingExponentBips caps the basefee growth: exp(8.5) ~= x5,000 min base fee.
 const MaxPricingExponentBips = arbmath.Bips(85_000)
 
