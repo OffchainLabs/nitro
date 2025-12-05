@@ -12,6 +12,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
 
+	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbos/retryables"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -99,11 +100,17 @@ func (con ArbRetryableTx) Redeem(c ctx, evm mech, ticketId bytes32) (bytes32, er
 	gasCostToReturnResult := params.CopyGas
 
 	// `redeem` must prepay the gas needed by the trailing call to
-	// L2PricingState().AddToGasPool(). GasPoolUpdateCost(ArbOSVersion) returns
-	// that amount based on the storage read/write mix used by AddToGasPool().
-	gasPoolUpdateCost := c.State.L2PricingState().BacklogUpdateCost()
+	// L2PricingState().ShrinkBacklog(). BacklogUpdateCost() returns
+	// that amount based on the storage read/write mix used by ShrinkBacklog().
+	backlogUpdateCost := uint64(0)
+	if c.State.L2PricingState().ArbosVersion >= params.ArbosVersion_60 {
+		// Charge static price for any pricer starting from ArbOS 60
+		backlogUpdateCost = l2pricing.ArbOS60StaticBacklogUpdateCost
+	} else {
+		backlogUpdateCost = c.State.L2PricingState().BacklogUpdateCost()
+	}
 
-	futureGasCosts := eventCost + gasCostToReturnResult + gasPoolUpdateCost
+	futureGasCosts := eventCost + gasCostToReturnResult + backlogUpdateCost
 	if c.GasLeft() < futureGasCosts {
 		return hash{}, c.Burn(multigas.ResourceKindComputation, futureGasCosts) // this will error
 	}
@@ -132,8 +139,16 @@ func (con ArbRetryableTx) Redeem(c ctx, evm mech, ticketId bytes32) (bytes32, er
 
 	// Add the gasToDonate back to the gas pool: the retryable attempt will then consume it.
 	// This ensures that the gas pool has enough gas to run the retryable attempt.
-	// TODO(NIT-4120): clarify the gas dimension for gasToDonate
-	return retryTxHash, c.State.L2PricingState().ShrinkBacklog(gasToDonate, multigas.ComputationGas(gasToDonate))
+	// Starting from ArbOS 60, we don't charge gas for the ShrinkBacklog call here
+	if c.State.L2PricingState().ArbosVersion >= params.ArbosVersion_60 {
+		err = c.WithUnmeteredGasAccounting(func() error {
+			return c.State.L2PricingState().ShrinkBacklog(gasToDonate, multigas.ComputationGas(gasToDonate))
+		})
+	} else {
+		err = c.State.L2PricingState().ShrinkBacklog(gasToDonate, multigas.ComputationGas(gasToDonate))
+	}
+
+	return retryTxHash, err
 }
 
 // GetLifetime gets the default lifetime period a retryable has at creation
