@@ -146,8 +146,9 @@ func (c *SequencerConfig) Validate() error {
 	if c.expectedSurplusSoftThreshold < c.expectedSurplusHardThreshold {
 		return errors.New("expected-surplus-soft-threshold cannot be lower than expected-surplus-hard-threshold")
 	}
-	if c.MaxTxDataSize > arbostypes.MaxL2MessageSize-50000 {
-		return errors.New("max-tx-data-size too large for MaxL2MessageSize")
+	maxTxDataSize := uint64(c.MaxTxDataSize) // #nosec G115
+	if err := ValidateMaxTxDataSize(maxTxDataSize); err != nil {
+		return err
 	}
 	if c.Timeboost.Enable {
 		if len(c.Timeboost.AuctionContractAddress) > 0 && !common.IsHexAddress(c.Timeboost.AuctionContractAddress) {
@@ -167,6 +168,18 @@ func (c *SequencerConfig) Validate() error {
 	}
 	if c.ReadFromTxQueueTimeout >= c.MaxBlockSpeed {
 		log.Warn("Sequencer ReadFromTxQueueTimeout is higher than MaxBlockSpeed", "ReadFromTxQueueTimeout", c.ReadFromTxQueueTimeout, "MaxBlockSpeed", c.MaxBlockSpeed)
+	}
+	return nil
+}
+
+func ValidateMaxTxDataSize(maxTxDataSize uint64) error {
+	// tighter limit https://github.com/OffchainLabs/nitro/commit/ed015e752d7d24e59ec9e6f894fe1a26ffa19036
+	// The default block gas limit can fit 1523 txs
+	// Each Tx adds an 8-byte of length prefix.
+	// 50K is enoguh to add 1523 times 8 bytes and still stay in an L2 message
+	const maxConfigurableTxDataSize = arbostypes.MaxL2MessageSize - 50000
+	if maxTxDataSize > maxConfigurableTxDataSize {
+		return fmt.Errorf("max-tx-data-size %d exceeds maximum allowed value of %d", maxTxDataSize, maxConfigurableTxDataSize)
 	}
 	return nil
 }
