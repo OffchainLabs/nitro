@@ -42,7 +42,7 @@ use std::{
     path::Path,
     ptr, slice,
     sync::{
-        atomic::{self, AtomicU8},
+        atomic::{self, AtomicBool, AtomicU64, AtomicU8, Ordering},
         Arc, Mutex,
     },
 };
@@ -168,7 +168,9 @@ unsafe fn arbitrator_load_machine_impl(
         Default::default(),
         get_empty_preimage_resolver(),
     )?;
-    Ok(Box::into_raw(Box::new(mach)))
+    let boxed = Box::new(mach);
+    profiler_on_machine_created(&boxed);
+    Ok(Box::into_raw(boxed))
 }
 
 #[no_mangle]
@@ -177,7 +179,11 @@ pub unsafe extern "C" fn arbitrator_load_wavm_binary(binary_path: *const c_char)
     let binary_path = cstr_to_string(binary_path);
     let binary_path = Path::new(&binary_path);
     match Machine::new_from_wavm(binary_path) {
-        Ok(mach) => Box::into_raw(Box::new(mach)),
+        Ok(mach) => {
+            let boxed = Box::new(mach);
+            profiler_on_machine_created(&boxed);
+            Box::into_raw(boxed)
+        }
         Err(err) => {
             eprintln!("Error loading binary: {err}");
             ptr::null_mut()
@@ -188,7 +194,9 @@ pub unsafe extern "C" fn arbitrator_load_wavm_binary(binary_path: *const c_char)
 #[no_mangle]
 #[cfg(feature = "native")]
 pub unsafe extern "C" fn arbitrator_new_finished(gs: GlobalState) -> *mut Machine {
-    Box::into_raw(Box::new(Machine::new_finished(gs)))
+    let boxed = Box::new(Machine::new_finished(gs));
+    profiler_on_machine_created(&boxed);
+    Box::into_raw(boxed)
 }
 
 unsafe fn cstr_to_string(c_str: *const c_char) -> String {
@@ -212,17 +220,142 @@ pub fn str_to_c_string(text: &str) -> *mut libc::c_char {
     }
 }
 
+static PROFILER_ENABLED: AtomicBool = AtomicBool::new(false);
+static MACHINES_CREATED: AtomicU64 = AtomicU64::new(0);
+static MACHINES_FREED: AtomicU64 = AtomicU64::new(0);
+static MACHINES_LIVE: AtomicU64 = AtomicU64::new(0);
+static MEMORY_BYTES_CURRENT: AtomicU64 = AtomicU64::new(0);
+static MEMORY_BYTES_PEAK: AtomicU64 = AtomicU64::new(0);
+static STYLUS_BYTES_CURRENT: AtomicU64 = AtomicU64::new(0);
+static STYLUS_BYTES_PEAK: AtomicU64 = AtomicU64::new(0);
+static INBOX_BYTES_CURRENT: AtomicU64 = AtomicU64::new(0);
+static INBOX_ENTRIES_CURRENT: AtomicU64 = AtomicU64::new(0);
+static LAST_DESTROY_STEPS: AtomicU64 = AtomicU64::new(0);
+static LAST_DESTROY_STATUS: AtomicU64 = AtomicU64::new(0);
+static LAST_DESTROY_MEMORY_BYTES: AtomicU64 = AtomicU64::new(0);
+static LAST_DESTROY_STYLUS_BYTES: AtomicU64 = AtomicU64::new(0);
+static LAST_DESTROY_INBOX_BYTES: AtomicU64 = AtomicU64::new(0);
+
+#[repr(C)]
+pub struct ArbitratorProfilerSnapshot {
+    pub machines_created: u64,
+    pub machines_freed: u64,
+    pub machines_live: u64,
+    pub memory_current_bytes: u64,
+    pub memory_peak_bytes: u64,
+    pub stylus_bytes_current: u64,
+    pub stylus_bytes_peak: u64,
+    pub inbox_bytes_current: u64,
+    pub inbox_entries_current: u64,
+    pub last_destroy_steps: u64,
+    pub last_destroy_status: u64,
+    pub last_destroy_memory_bytes: u64,
+    pub last_destroy_stylus_bytes: u64,
+    pub last_destroy_inbox_bytes: u64,
+}
+
+fn profiler_enabled() -> bool {
+    PROFILER_ENABLED.load(Ordering::Relaxed)
+}
+
+fn update_peak(counter: &AtomicU64, candidate: u64) {
+    let mut current = counter.load(Ordering::Relaxed);
+    while candidate > current {
+        match counter.compare_exchange_weak(
+            current,
+            candidate,
+            Ordering::Relaxed,
+            Ordering::Relaxed,
+        ) {
+            Ok(_) => return,
+            Err(existing) => current = existing,
+        }
+    }
+}
+
+fn profiler_on_machine_created(machine: &Machine) {
+    if !profiler_enabled() {
+        return;
+    }
+    let telemetry = machine.telemetry();
+    MACHINES_CREATED.fetch_add(1, Ordering::Relaxed);
+    MACHINES_LIVE.fetch_add(1, Ordering::Relaxed);
+    let memory_current = MEMORY_BYTES_CURRENT.fetch_add(telemetry.memory_bytes, Ordering::Relaxed)
+        + telemetry.memory_bytes;
+    update_peak(&MEMORY_BYTES_PEAK, memory_current);
+    let stylus_current = STYLUS_BYTES_CURRENT
+        .fetch_add(telemetry.stylus_module_bytes, Ordering::Relaxed)
+        + telemetry.stylus_module_bytes;
+    update_peak(&STYLUS_BYTES_PEAK, stylus_current);
+    INBOX_BYTES_CURRENT.fetch_add(telemetry.inbox_bytes, Ordering::Relaxed);
+    INBOX_ENTRIES_CURRENT.fetch_add(telemetry.inbox_entries, Ordering::Relaxed);
+}
+
+fn profiler_on_machine_destroy(machine: &Machine) {
+    if !profiler_enabled() {
+        return;
+    }
+    let telemetry = machine.telemetry();
+    MACHINES_FREED.fetch_add(1, Ordering::Relaxed);
+    MACHINES_LIVE.fetch_sub(1, Ordering::Relaxed);
+    MEMORY_BYTES_CURRENT.fetch_sub(telemetry.memory_bytes, Ordering::Relaxed);
+    STYLUS_BYTES_CURRENT.fetch_sub(telemetry.stylus_module_bytes, Ordering::Relaxed);
+    INBOX_BYTES_CURRENT.fetch_sub(telemetry.inbox_bytes, Ordering::Relaxed);
+    INBOX_ENTRIES_CURRENT.fetch_sub(telemetry.inbox_entries, Ordering::Relaxed);
+    LAST_DESTROY_STEPS.store(telemetry.steps, Ordering::Relaxed);
+    LAST_DESTROY_STATUS.store(u64::from(telemetry.status), Ordering::Relaxed);
+    LAST_DESTROY_MEMORY_BYTES.store(telemetry.memory_bytes, Ordering::Relaxed);
+    LAST_DESTROY_STYLUS_BYTES.store(telemetry.stylus_module_bytes, Ordering::Relaxed);
+    LAST_DESTROY_INBOX_BYTES.store(telemetry.inbox_bytes, Ordering::Relaxed);
+}
+
+#[no_mangle]
+pub extern "C" fn arbitrator_profiler_set_enabled(enable: bool) {
+    PROFILER_ENABLED.store(enable, Ordering::Relaxed);
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn arbitrator_profiler_snapshot(out: *mut ArbitratorProfilerSnapshot) {
+    if out.is_null() {
+        return;
+    }
+    let snapshot = ArbitratorProfilerSnapshot {
+        machines_created: MACHINES_CREATED.load(Ordering::Relaxed),
+        machines_freed: MACHINES_FREED.load(Ordering::Relaxed),
+        machines_live: MACHINES_LIVE.load(Ordering::Relaxed),
+        memory_current_bytes: MEMORY_BYTES_CURRENT.load(Ordering::Relaxed),
+        memory_peak_bytes: MEMORY_BYTES_PEAK.load(Ordering::Relaxed),
+        stylus_bytes_current: STYLUS_BYTES_CURRENT.load(Ordering::Relaxed),
+        stylus_bytes_peak: STYLUS_BYTES_PEAK.load(Ordering::Relaxed),
+        inbox_bytes_current: INBOX_BYTES_CURRENT.load(Ordering::Relaxed),
+        inbox_entries_current: INBOX_ENTRIES_CURRENT.load(Ordering::Relaxed),
+        last_destroy_steps: LAST_DESTROY_STEPS.load(Ordering::Relaxed),
+        last_destroy_status: LAST_DESTROY_STATUS.load(Ordering::Relaxed),
+        last_destroy_memory_bytes: LAST_DESTROY_MEMORY_BYTES.load(Ordering::Relaxed),
+        last_destroy_stylus_bytes: LAST_DESTROY_STYLUS_BYTES.load(Ordering::Relaxed),
+        last_destroy_inbox_bytes: LAST_DESTROY_INBOX_BYTES.load(Ordering::Relaxed),
+    };
+    out.write(snapshot);
+}
+
 #[no_mangle]
 #[cfg(feature = "native")]
 pub unsafe extern "C" fn arbitrator_free_machine(mach: *mut Machine) {
-    drop(Box::from_raw(mach));
+    if mach.is_null() {
+        return;
+    }
+    let boxed = Box::from_raw(mach);
+    profiler_on_machine_destroy(&boxed);
+    drop(boxed);
 }
 
 #[no_mangle]
 #[cfg(feature = "native")]
 pub unsafe extern "C" fn arbitrator_clone_machine(mach: *mut Machine) -> *mut Machine {
     let new_mach = (*mach).clone();
-    Box::into_raw(Box::new(new_mach))
+    let boxed = Box::new(new_mach);
+    profiler_on_machine_created(&boxed);
+    Box::into_raw(boxed)
 }
 
 /// Go doesn't have this functionality builtin for whatever reason. Uses relaxed ordering.
