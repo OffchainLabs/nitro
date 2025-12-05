@@ -39,14 +39,14 @@ type InboxTracker struct {
 	txStreamer     *TransactionStreamer
 	mutex          sync.Mutex
 	validator      *staker.BlockValidator
-	dapReaders     *daprovider.ReaderRegistry
+	dapReaders     *daprovider.DAProviderRegistry
 	snapSyncConfig SnapSyncConfig
 
 	batchMetaMutex sync.Mutex
 	batchMeta      *containers.LruCache[uint64, BatchMetadata]
 }
 
-func NewInboxTracker(db ethdb.Database, txStreamer *TransactionStreamer, dapReaders *daprovider.ReaderRegistry, snapSyncConfig SnapSyncConfig) (*InboxTracker, error) {
+func NewInboxTracker(db ethdb.Database, txStreamer *TransactionStreamer, dapReaders *daprovider.DAProviderRegistry, snapSyncConfig SnapSyncConfig) (*InboxTracker, error) {
 	tracker := &InboxTracker{
 		db:             db,
 		txStreamer:     txStreamer,
@@ -232,6 +232,9 @@ func (t *InboxTracker) FindInboxBatchContainingMessage(pos arbutil.MessageIndex)
 	batchCount, err := t.GetBatchCount()
 	if err != nil {
 		return 0, false, err
+	}
+	if batchCount == 0 {
+		return 0, false, nil
 	}
 	low := uint64(0)
 	high := batchCount - 1
