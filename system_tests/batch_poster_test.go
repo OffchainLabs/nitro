@@ -971,3 +971,64 @@ func TestBatchPosterPostsReportOnlyBatchAfterMaxEmptyBatchDelay(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, posted, "expected second batch to be posted by MaxEmptyBatchDelay")
 }
+
+func TestBatchSizeLimitIsConfigurable(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).
+		DefaultConfig(t, true).
+		TakeOwnership()
+
+	// Disable automatic background posting
+	builder.nodeConfig.BatchPoster.PollInterval = time.Hour
+	// Set a small initial max batch size. Since we want to exceed it with a single tx,
+	// it must also be smaller than the exec config's max tx data size.
+	builder.chainConfig.ArbitrumChainParams.MaxUncompressedBatchSize = 50_000 // 50 kB
+
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	postBatch := func(expectToPost bool) {
+		posted, err := builder.L2.ConsensusNode.BatchPoster.MaybePostSequencerBatch(ctx)
+		require.NoError(t, err)
+		require.Equal(t, expectToPost, posted)
+	}
+
+	// Force immediate post of first batch in case anything is pending.
+	postBatch(true)
+
+	msgCountBeforeSubmission, err := builder.L2.ConsensusNode.TxStreamer.GetMessageCount()
+	Require(t, err)
+
+	// Post a big tx that itself exceeds the max batch size.
+	bigData := make([]byte, builder.chainConfig.MaxUncompressedBatchSize()+1)
+	tx := builder.L2Info.PrepareTx("Faucet", "Owner", builder.L2Info.TransferGas, common.Big1, bigData)
+	_ = builder.L2.SendWaitTestTransactions(t, []*types.Transaction{tx})
+
+	msgCountAfterSubmission, err := builder.L2.ConsensusNode.TxStreamer.GetMessageCount()
+	Require(t, err)
+
+	// Ensure the message was recorded and made visible to the batch poster.
+	require.Equal(t, msgCountBeforeSubmission+1, msgCountAfterSubmission)
+
+	// Attempt to post batch, should not post due to size limit.
+	postBatch(false)
+
+	// Increase the max batch size to allow posting and restart the L2 node to apply the change.
+	builder.chainConfig.ArbitrumChainParams.MaxUncompressedBatchSize = 100_000
+	builder.RestartL2Node(t)
+
+	msgCountBeforeSubmission, err = builder.L2.ConsensusNode.TxStreamer.GetMessageCount()
+	Require(t, err)
+
+	// Re-submit the big tx that itself exceeds the previous max batch size.
+	_ = builder.L2.SendWaitTestTransactions(t, []*types.Transaction{tx})
+
+	msgCountAfterSubmission, err = builder.L2.ConsensusNode.TxStreamer.GetMessageCount()
+	Require(t, err)
+	require.Equal(t, msgCountBeforeSubmission+1, msgCountAfterSubmission)
+
+	// Attempt to post batch, should post successfully now.
+	postBatch(true)
+}
