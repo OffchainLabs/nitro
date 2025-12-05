@@ -155,6 +155,7 @@ COPY arbitrator/bench/Cargo.toml arbitrator/bench/
 COPY arbitrator/jit/Cargo.toml arbitrator/jit/
 COPY arbitrator/stylus/Cargo.toml arbitrator/stylus/
 COPY arbitrator/tools/wasmer arbitrator/tools/wasmer
+COPY arbitrator/wasm-libraries/forward arbitrator/wasm-libraries/forward
 COPY arbitrator/wasm-libraries/user-host-trait/Cargo.toml arbitrator/wasm-libraries/user-host-trait/Cargo.toml
 RUN bash -c 'mkdir arbitrator/{prover,jit,stylus}/src arbitrator/wasm-libraries/user-host-trait/src'
 RUN echo "fn test() {}" > arbitrator/jit/src/lib.rs && \
