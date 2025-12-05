@@ -350,3 +350,38 @@ func (ps *L2PricingState) calcBaseFeeFromExponent(exponent arbmath.Bips) (*big.I
 		return minBaseFee, nil
 	}
 }
+
+func (ps *L2PricingState) MultiDimensionalPriceForRefund(gasUsed multigas.MultiGas) (*big.Int, error) {
+	if ps.ArbosVersion < ArbosMultiGasConstraintsVersion {
+		return big.NewInt(0), nil
+	}
+	total := new(big.Int)
+
+	minBaseFeeWei, err := ps.MinBaseFeeWei()
+	if err != nil {
+		return nil, err
+	}
+
+	for kind := range multigas.ResourceKind(multigas.NumResourceKind) {
+		baseFee, err := ps.multiGasBaseFees.Get(kind)
+		if err != nil {
+			return nil, err
+		}
+		// Override base fee with minimum if it is zero
+		if baseFee.Cmp(big.NewInt(0)) == 0 {
+			baseFee = minBaseFeeWei
+		}
+
+		amount := gasUsed.Get(kind)
+		if amount == 0 {
+			continue
+		}
+
+		part := new(big.Int).Mul(
+			new(big.Int).SetUint64(amount),
+			baseFee,
+		)
+		total.Add(total, part)
+	}
+	return total, nil
+}
