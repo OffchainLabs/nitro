@@ -536,6 +536,10 @@ func (s *WSBroadcastServer) Broadcast(bm *m.BroadcastMessage) {
 	s.clientManager.Broadcast(bm)
 }
 
+func (s *WSBroadcastServer) PopulateFeedBacklog(bm *m.BroadcastMessage) error {
+	return s.clientManager.populateFeedBacklog(bm)
+}
+
 func (s *WSBroadcastServer) ClientCount() int32 {
 	return s.clientManager.ClientCount()
 }

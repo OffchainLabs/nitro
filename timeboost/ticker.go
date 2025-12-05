@@ -33,10 +33,15 @@ func (t *roundTicker) start(timeBeforeRoundStart time.Duration) {
 			nextTick += t.roundTimingInfo.Round
 		}
 
+		// Use NewTimer instead of time.After to allow cancellation and avoid leaking timers
+		timer := time.NewTimer(nextTick)
 		select {
-		case <-time.After(nextTick):
+		case <-timer.C:
 			t.c <- time.Now()
 		case <-t.done:
+			if !timer.Stop() {
+				<-timer.C
+			}
 			close(t.c)
 			return
 		}

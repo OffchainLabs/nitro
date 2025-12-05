@@ -753,7 +753,7 @@ func (v *BlockValidator) isMemoryLimitExceeded() bool {
 
 func (v *BlockValidator) sendNextRecordRequests(ctx context.Context) (bool, error) {
 	if v.isMemoryLimitExceeded() {
-		log.Warn("sendNextRecordRequests: aborting due to running low on memory")
+		log.Error("sendNextRecordRequests: aborting due to running low on memory")
 		return false, nil
 	}
 	v.reorgMutex.RLock()
@@ -790,7 +790,7 @@ func (v *BlockValidator) sendNextRecordRequests(ctx context.Context) (bool, erro
 	}
 	for pos <= recordUntil {
 		if v.isMemoryLimitExceeded() {
-			log.Warn("sendNextRecordRequests: aborting due to running low on memory")
+			log.Error("sendNextRecordRequests: aborting due to running low on memory")
 			return false, nil
 		}
 		validationStatus, found := v.validations.Load(pos)
@@ -966,7 +966,7 @@ func (v *BlockValidator) sendValidations(ctx context.Context) (*arbutil.MessageI
 			}
 		}
 		if v.isMemoryLimitExceeded() {
-			log.Warn("sendValidations: aborting due to running low on memory")
+			log.Error("sendValidations: aborting due to running low on memory")
 			return nil, nil
 		}
 		replaced := validationStatus.replaceStatus(Prepared, SendingValidation)
@@ -1418,10 +1418,15 @@ func (v *BlockValidator) checkValidatedGSCaughtUp() (bool, error) {
 			log.Error("failed reading batch count", "err", err)
 			batchCount = 0
 		}
-		batchMsgCount, err := v.inboxTracker.GetBatchMessageCount(batchCount - 1)
-		if err != nil {
-			log.Error("failed reading batchMsgCount", "err", err)
+		var batchMsgCount arbutil.MessageIndex
+		if batchCount == 0 {
 			batchMsgCount = 0
+		} else {
+			batchMsgCount, err = v.inboxTracker.GetBatchMessageCount(batchCount - 1)
+			if err != nil {
+				log.Error("failed reading batchMsgCount", "err", err)
+				batchMsgCount = 0
+			}
 		}
 		processedMsgCount, err := v.streamer.GetProcessedMessageCount()
 		if err != nil {

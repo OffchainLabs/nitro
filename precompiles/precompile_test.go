@@ -51,9 +51,8 @@ func TestEvents(t *testing.T) {
 	caller := common.HexToAddress("aaaaaaaabbbbbbbbccccccccdddddddd")
 	number := big.NewInt(0x9364)
 
-	output, gasLeft, err := contract.Call(
+	output, gasLeft, _, err := contract.Call(
 		data,
-		debugContractAddr,
 		debugContractAddr,
 		caller,
 		number,
@@ -183,7 +182,7 @@ func TestPrecompilesPerArbosVersion(t *testing.T) {
 	// Each new precompile contract and each method on new or existing precompile
 	// contracts should be counted.
 	expectedNewEntriesPerArbosVersion := map[uint64]int{
-		0:                      98,
+		0:                      99,
 		params.ArbosVersion_5:  3,
 		params.ArbosVersion_10: 2,
 		params.ArbosVersion_11: 4,
@@ -192,7 +191,8 @@ func TestPrecompilesPerArbosVersion(t *testing.T) {
 		params.ArbosVersion_31: 1,
 		params.ArbosVersion_40: 3,
 		params.ArbosVersion_41: 10,
-		params.ArbosVersion_50: 5,
+		params.ArbosVersion_50: 9,
+		params.ArbosVersion_60: 2,
 	}
 
 	precompiles := Precompiles()

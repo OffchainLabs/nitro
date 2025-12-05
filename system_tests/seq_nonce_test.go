@@ -15,6 +15,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -24,7 +25,7 @@ func TestSequencerParallelNonces(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false).WithDatabase(rawdb.DBPebble)
 	builder.takeOwnership = false
 	builder.execConfig.Sequencer.NonceFailureCacheExpiry = time.Minute
 	cleanup := builder.Build(t)
@@ -127,7 +128,7 @@ func TestSequencerNonceHandling(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithDatabase(rawdb.DBPebble)
 	builder.execConfig.Sequencer.MaxBlockSpeed = time.Second
 	builder.execConfig.Sequencer.NonceFailureCacheExpiry = 4 * time.Second
 	cleanup := builder.Build(t)
@@ -201,11 +202,11 @@ func TestSequencerNonceHandling(t *testing.T) {
 	if blockNumsOfAcceptedTxs[0] != blockNumsOfAcceptedTxs[1] {
 		t.Fatal("first and second valid txs shouldnt have been sequenced in two different blocks")
 	}
-	if blockNumsOfAcceptedTxs[2] != blockNumsOfAcceptedTxs[0]+1 ||
-		blockNumsOfAcceptedTxs[3] != blockNumsOfAcceptedTxs[0]+1 ||
-		blockNumsOfAcceptedTxs[4] != blockNumsOfAcceptedTxs[0]+1 ||
-		blockNumsOfAcceptedTxs[5] != blockNumsOfAcceptedTxs[0]+1 ||
-		blockNumsOfAcceptedTxs[6] != blockNumsOfAcceptedTxs[0]+1 {
-		t.Fatal("all the following valid txs should have been sequenced in the immediate next block")
+	if blockNumsOfAcceptedTxs[2] != blockNumsOfAcceptedTxs[0] ||
+		blockNumsOfAcceptedTxs[3] != blockNumsOfAcceptedTxs[0] ||
+		blockNumsOfAcceptedTxs[4] != blockNumsOfAcceptedTxs[0] ||
+		blockNumsOfAcceptedTxs[5] != blockNumsOfAcceptedTxs[0] ||
+		blockNumsOfAcceptedTxs[6] != blockNumsOfAcceptedTxs[0] {
+		t.Fatal("all the following valid txs should have been sequenced in the same block")
 	}
 }

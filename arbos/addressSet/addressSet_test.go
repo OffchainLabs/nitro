@@ -163,8 +163,9 @@ func TestAddressSetAllMembers(t *testing.T) {
 	Require(t, aset.Remove(addr2, version))
 	checkAllMembers(t, aset, possibleAddresses)
 
-	for i := 0; i < 512; i++ {
+	for range 512 {
 		rem := rand.Intn(2) == 1
+		// #nosec G602 Impossible to panic for slice index
 		addr := possibleAddresses[rand.Intn(len(possibleAddresses))]
 		if rem {
 			fmt.Printf("removing %v\n", addr)

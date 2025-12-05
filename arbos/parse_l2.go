@@ -12,13 +12,15 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
-func ParseL2Transactions(msg *arbostypes.L1IncomingMessage, chainId *big.Int) (types.Transactions, error) {
+// note: lastArbosVersion is arbos version in previous block, not current!
+func ParseL2Transactions(msg *arbostypes.L1IncomingMessage, chainId *big.Int, lastArbosVersion uint64) (types.Transactions, error) {
 	if len(msg.L2msg) > arbostypes.MaxL2MessageSize {
 		// ignore the message if l2msg is too large
 		return nil, errors.New("message too large")
@@ -70,7 +72,7 @@ func ParseL2Transactions(msg *arbostypes.L1IncomingMessage, chainId *big.Int) (t
 		log.Debug("ignoring rollup event message")
 		return types.Transactions{}, nil
 	case arbostypes.L1MessageType_BatchPostingReport:
-		tx, err := parseBatchPostingReportMessage(bytes.NewReader(msg.L2msg), chainId, msg.BatchDataStats, msg.LegacyBatchGasCost)
+		tx, err := createBatchPostingReportTransaction(bytes.NewReader(msg.L2msg), chainId, lastArbosVersion, msg.BatchDataStats, msg.LegacyBatchGasCost)
 		if err != nil {
 			return nil, err
 		}
@@ -180,6 +182,9 @@ func parseL2Message(rd io.Reader, poster common.Address, timestamp uint64, reque
 		return nil, errors.New("L2 message kind SignedCompressedTx is unimplemented")
 	default:
 		// ignore invalid message kind
+		if len(l2KindBuf) == 0 {
+			return nil, errors.New("L2 message kind missing")
+		}
 		return nil, fmt.Errorf("unknown L2 message kind %v", l2KindBuf[0])
 	}
 }
@@ -369,28 +374,47 @@ func parseSubmitRetryableMessage(rd io.Reader, header *arbostypes.L1IncomingMess
 	return types.NewTx(tx), err
 }
 
-func parseBatchPostingReportMessage(rd io.Reader, chainId *big.Int, batchDataStats *arbostypes.BatchDataStats, legacyBatchGas *uint64) (*types.Transaction, error) {
+// if lastArbosVersion is under 50: we'll create a legacy batch-posting report
+// arbos-50+ can parse both legacy and v2 batch posting report, so it's o.k. that we rely on previous block
+func createBatchPostingReportTransaction(rd io.Reader, chainId *big.Int, lastArbosVersion uint64, batchDataStats *arbostypes.BatchDataStats, legacyBatchGas *uint64) (*types.Transaction, error) {
 	batchTimestamp, batchPosterAddr, _, batchNum, l1BaseFee, extraGas, err := arbostypes.ParseBatchPostingReportMessageFields(rd)
 	if err != nil {
 		return nil, err
 	}
-	legacyGas := ^uint64(0)
-	callDataLen := ^uint64(0)
-	callDataNonZeros := ^uint64(0)
-
+	var legacyGas uint64
 	if batchDataStats != nil {
-		callDataLen = batchDataStats.Length
-		callDataNonZeros = batchDataStats.NonZeros
-	}
-	if legacyBatchGas != nil {
+		legacyGas = arbostypes.LegacyCostForStats(batchDataStats)
+		if legacyBatchGas != nil && *legacyBatchGas != legacyGas {
+			log.Error("legacy gas doesn't fit local compute", "local", legacyGas, "legacy", legacyBatchGas, "timestamp", batchTimestamp)
+		}
+	} else {
+		if legacyBatchGas == nil {
+			return nil, fmt.Errorf("no gas data field in a batch posting report")
+		}
 		legacyGas = *legacyBatchGas
 	}
-	data, err := util.PackInternalTxDataBatchPostingReport(
-		batchTimestamp, batchPosterAddr, batchNum, callDataLen, callDataNonZeros, legacyGas, extraGas, l1BaseFee,
-	)
-	if err != nil {
-		return nil, err
+
+	var data []byte
+	if lastArbosVersion < params.ArbosVersion_50 {
+		batchGas := arbmath.SaturatingUAdd(legacyGas, extraGas)
+		data, err = util.PackInternalTxDataBatchPostingReport(
+			batchTimestamp, batchPosterAddr, batchNum, batchGas, l1BaseFee,
+		)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		if batchDataStats == nil {
+			return nil, fmt.Errorf("no gas data stats in a batch posting report post arbos 50")
+		}
+		data, err = util.PackInternalTxDataBatchPostingReportV2(
+			batchTimestamp, batchPosterAddr, batchNum, batchDataStats.Length, batchDataStats.NonZeros, extraGas, l1BaseFee,
+		)
+		if err != nil {
+			return nil, err
+		}
 	}
+
 	return types.NewTx(&types.ArbitrumInternalTx{
 		ChainId: chainId,
 		Data:    data,

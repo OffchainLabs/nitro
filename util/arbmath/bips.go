@@ -68,3 +68,7 @@ func BigDivToBips(dividend, divisor *big.Int) Bips {
 	value.Div(value, divisor)
 	return Bips(BigToIntSaturating(value))
 }
+
+func SaturatingBipsAdd(a, b Bips) Bips {
+	return Bips(SaturatingAdd(int64(a), int64(b)))
+}

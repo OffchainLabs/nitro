@@ -2,7 +2,7 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 use crate::{evm::user::UserOutcomeKind, Bytes20, Bytes32};
-use eyre::Result;
+use eyre::{eyre, Result};
 use num_enum::IntoPrimitive;
 use std::sync::Arc;
 
@@ -15,13 +15,15 @@ pub enum EvmApiStatus {
     WriteProtection,
 }
 
-impl From<u8> for EvmApiStatus {
-    fn from(value: u8) -> Self {
+impl TryFrom<u8> for EvmApiStatus {
+    type Error = eyre::Error;
+    fn try_from(value: u8) -> Result<Self> {
         match value {
-            0 => Self::Success,
-            2 => Self::OutOfGas,
-            3 => Self::WriteProtection,
-            _ => Self::Failure,
+            0 => Ok(Self::Success),
+            1 => Ok(Self::Failure),
+            2 => Ok(Self::OutOfGas),
+            3 => Ok(Self::WriteProtection),
+            _ => Err(eyre!("bad api status value")),
         }
     }
 }
@@ -161,27 +163,34 @@ pub struct Ink(pub u64);
 
 derive_math!(Ink);
 
+pub enum CreateRespone {
+    Succes(Bytes20),
+    Fail(String),
+}
+
+// Note: these functions should not return error unless something is wrong
 pub trait EvmApi<D: DataReader>: Send + 'static {
     /// Reads the 32-byte value in the EVM state trie at offset `key`.
     /// Returns the value and the access cost in gas.
     /// Analogous to `vm.SLOAD`.
-    fn get_bytes32(&mut self, key: Bytes32, evm_api_gas_to_use: Gas) -> (Bytes32, Gas);
+    fn get_bytes32(&mut self, key: Bytes32, evm_api_gas_to_use: Gas) -> Result<(Bytes32, Gas)>;
 
     /// Stores the given value at the given key in Stylus VM's cache of the EVM state trie.
     /// Note that the actual values only get written after calls to `set_trie_slots`.
-    fn cache_bytes32(&mut self, key: Bytes32, value: Bytes32) -> Gas;
+    fn cache_bytes32(&mut self, key: Bytes32, value: Bytes32) -> Result<Gas>;
 
     /// Persists any dirty values in the storage cache to the EVM state trie, dropping the cache entirely if requested.
     /// Analogous to repeated invocations of `vm.SSTORE`.
-    fn flush_storage_cache(&mut self, clear: bool, gas_left: Gas) -> Result<Gas>;
+    fn flush_storage_cache(&mut self, clear: bool, gas_left: Gas)
+        -> Result<(Gas, UserOutcomeKind)>;
 
     /// Reads the 32-byte value in the EVM's transient state trie at offset `key`.
     /// Analogous to `vm.TLOAD`.
-    fn get_transient_bytes32(&mut self, key: Bytes32) -> Bytes32;
+    fn get_transient_bytes32(&mut self, key: Bytes32) -> Result<Bytes32>;
 
     /// Writes the 32-byte value in the EVM's transient state trie at offset `key`.
     /// Analogous to `vm.TSTORE`.
-    fn set_transient_bytes32(&mut self, key: Bytes32, value: Bytes32) -> Result<()>;
+    fn set_transient_bytes32(&mut self, key: Bytes32, value: Bytes32) -> Result<UserOutcomeKind>;
 
     /// Calls the contract at the given address.
     /// Returns the EVM return data's length, the gas cost, and whether the call succeeded.
@@ -193,7 +202,7 @@ pub trait EvmApi<D: DataReader>: Send + 'static {
         gas_left: Gas,
         gas_req: Gas,
         value: Bytes32,
-    ) -> (u32, Gas, UserOutcomeKind);
+    ) -> Result<(u32, Gas, UserOutcomeKind)>;
 
     /// Delegate-calls the contract at the given address.
     /// Returns the EVM return data's length, the gas cost, and whether the call succeeded.
@@ -204,7 +213,7 @@ pub trait EvmApi<D: DataReader>: Send + 'static {
         calldata: &[u8],
         gas_left: Gas,
         gas_req: Gas,
-    ) -> (u32, Gas, UserOutcomeKind);
+    ) -> Result<(u32, Gas, UserOutcomeKind)>;
 
     /// Static-calls the contract at the given address.
     /// Returns the EVM return data's length, the gas cost, and whether the call succeeded.
@@ -215,7 +224,7 @@ pub trait EvmApi<D: DataReader>: Send + 'static {
         calldata: &[u8],
         gas_left: Gas,
         gas_req: Gas,
-    ) -> (u32, Gas, UserOutcomeKind);
+    ) -> Result<(u32, Gas, UserOutcomeKind)>;
 
     /// Deploys a new contract using the init code provided.
     /// Returns the new contract's address on success, or the error reason on failure.
@@ -226,7 +235,7 @@ pub trait EvmApi<D: DataReader>: Send + 'static {
         code: Vec<u8>,
         endowment: Bytes32,
         gas: Gas,
-    ) -> (eyre::Result<Bytes20>, u32, Gas);
+    ) -> Result<(CreateRespone, u32, Gas)>;
 
     /// Deploys a new contract using the init code provided, with an address determined in part by the `salt`.
     /// Returns the new contract's address on success, or the error reason on failure.
@@ -238,7 +247,7 @@ pub trait EvmApi<D: DataReader>: Send + 'static {
         endowment: Bytes32,
         salt: Bytes32,
         gas: Gas,
-    ) -> (eyre::Result<Bytes20>, u32, Gas);
+    ) -> Result<(CreateRespone, u32, Gas)>;
 
     /// Returns the EVM return data.
     /// Analogous to `vm.RETURNDATACOPY`.
@@ -252,21 +261,26 @@ pub trait EvmApi<D: DataReader>: Send + 'static {
     /// Gets the balance of the given account.
     /// Returns the balance and the access cost in gas.
     /// Analogous to `vm.BALANCE`.
-    fn account_balance(&mut self, address: Bytes20) -> (Bytes32, Gas);
+    fn account_balance(&mut self, address: Bytes20) -> Result<(Bytes32, Gas)>;
 
     /// Returns the code and the access cost in gas.
     /// Analogous to `vm.EXTCODECOPY`.
-    fn account_code(&mut self, arbos_version: u64, address: Bytes20, gas_left: Gas) -> (D, Gas);
+    fn account_code(
+        &mut self,
+        arbos_version: u64,
+        address: Bytes20,
+        gas_left: Gas,
+    ) -> Result<(D, Gas)>;
 
     /// Gets the hash of the given address's code.
     /// Returns the hash and the access cost in gas.
     /// Analogous to `vm.EXTCODEHASH`.
-    fn account_codehash(&mut self, address: Bytes20) -> (Bytes32, Gas);
+    fn account_codehash(&mut self, address: Bytes20) -> Result<(Bytes32, Gas)>;
 
     /// Determines the cost in gas of allocating additional wasm pages.
     /// Note: has the side effect of updating Geth's memory usage tracker.
     /// Not analogous to any EVM opcode.
-    fn add_pages(&mut self, pages: u16) -> Gas;
+    fn add_pages(&mut self, pages: u16) -> Result<Gas>;
 
     /// Captures tracing information for hostio invocations during native execution.
     fn capture_hostio(

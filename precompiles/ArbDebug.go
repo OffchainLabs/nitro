@@ -7,6 +7,7 @@ import (
 	"errors"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/tracing"
 )
 
 // All calls to this precompile are authorized by the DebugPrecompile wrapper,
@@ -57,6 +58,11 @@ func (con ArbDebug) CustomRevert(c ctx, number uint64) error {
 // Caller becomes a chain owner
 func (con ArbDebug) BecomeChainOwner(c ctx, evm mech) error {
 	return c.State.ChainOwners().Add(c.caller)
+}
+
+// Overwrite an existing contract's code
+func (con ArbDebug) OverwriteContractCode(c ctx, evm mech, addr addr, code []byte) ([]byte, error) {
+	return c.txProcessor.EVM().StateDB.SetCode(addr, code, tracing.CodeChangeUnspecified), nil
 }
 
 // Halts the chain by panicking in the STF

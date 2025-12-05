@@ -24,7 +24,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/offchainlabs/nitro/bold/chain-abstraction"
+	protocol "github.com/offchainlabs/nitro/bold/chain-abstraction"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/execution/gethexec"
@@ -32,8 +32,8 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/staker/bold"
-	"github.com/offchainlabs/nitro/staker/legacy"
-	"github.com/offchainlabs/nitro/staker/multi_protocol"
+	legacystaker "github.com/offchainlabs/nitro/staker/legacy"
+	multiprotocolstaker "github.com/offchainlabs/nitro/staker/multi_protocol"
 )
 
 type importantRoots struct {
@@ -93,7 +93,7 @@ func findImportantRoots(ctx context.Context, chainDb ethdb.Database, stack *node
 	if chainConfig == nil {
 		return nil, errors.New("database doesn't have a chain config (was this node initialized?)")
 	}
-	arbDb, err := stack.OpenDatabaseWithOptions("arbitrumdata", node.DatabaseOptions{MetricsNamespace: "arbitrumdata/", ReadOnly: true, PebbleExtraOptions: persistentConfig.Pebble.ExtraOptions("arbitrumdata")})
+	arbDb, err := stack.OpenDatabaseWithOptions("arbitrumdata", node.DatabaseOptions{MetricsNamespace: "arbitrumdata/", ReadOnly: true, PebbleExtraOptions: persistentConfig.Pebble.ExtraOptions("arbitrumdata"), NoFreezer: true})
 	if err != nil {
 		return nil, err
 	}

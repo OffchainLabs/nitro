@@ -1,6 +1,5 @@
 // race detection makes things slow and miss timeouts
 //go:build !race
-// +build !race
 
 package arbtest
 

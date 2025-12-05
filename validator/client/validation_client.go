@@ -16,7 +16,6 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/node"
-	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/rpcclient"
@@ -26,7 +25,7 @@ import (
 	"github.com/offchainlabs/nitro/validator/server_common"
 )
 
-var executionNodeOfflineGauge = metrics.NewRegisteredGauge("arb/state_provider/execution_node_offline", nil)
+var executionNodeOfflineCounter = metrics.NewRegisteredCounter("arb/state_provider/execution_node_offline", nil)
 
 type ValidationClient struct {
 	stopwaiter.StopWaiter
@@ -70,12 +69,7 @@ func (c *ValidationClient) Start(ctx context.Context) error {
 	}
 	var stylusArchs []rawdb.WasmTarget
 	if err := c.client.CallContext(ctx, &stylusArchs, server_api.Namespace+"_stylusArchs"); err != nil {
-		var rpcError rpc.Error
-		ok := errors.As(err, &rpcError)
-		if !ok || rpcError.ErrorCode() != -32601 {
-			return fmt.Errorf("could not read stylus arch from server: %w", err)
-		}
-		stylusArchs = []rawdb.WasmTarget{rawdb.WasmTarget("pre-stylus")} // invalid, will fail if trying to validate block with stylus
+		return fmt.Errorf("could not read stylus arch from server: %w", err)
 	} else {
 		if len(stylusArchs) == 0 {
 			return fmt.Errorf("could not read stylus archs from validation server")
@@ -238,7 +232,7 @@ func ctxWithCheckAlive(ctxIn context.Context, execRun validator.ExecutionRun) (c
 				ctxCheckAliveWithTimeout, cancelCheckAliveWithTimeout := context.WithTimeout(ctx, 5*time.Second)
 				err := execRun.CheckAlive(ctxCheckAliveWithTimeout)
 				if err != nil {
-					executionNodeOfflineGauge.Inc(1)
+					executionNodeOfflineCounter.Inc(1)
 					cancelCheckAliveWithTimeout()
 					return
 				}

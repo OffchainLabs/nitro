@@ -3,7 +3,7 @@
 
 use crate::{
     evm::{
-        api::{DataReader, EvmApi, EvmApiMethod, EvmApiStatus},
+        api::{CreateRespone, DataReader, EvmApi, EvmApiMethod, EvmApiStatus},
         storage::{StorageCache, StorageWord},
         user::UserOutcomeKind,
     },
@@ -48,7 +48,7 @@ impl<D: DataReader, H: RequestHandler<D>> EvmApiRequestor<D, H> {
         gas_left: Gas,
         gas_req: Gas,
         value: Bytes32,
-    ) -> (u32, Gas, UserOutcomeKind) {
+    ) -> Result<(u32, Gas, UserOutcomeKind)> {
         let mut request = Vec::with_capacity(20 + 32 + 8 + 8 + input.len());
         request.extend(contract);
         request.extend(value);
@@ -57,10 +57,10 @@ impl<D: DataReader, H: RequestHandler<D>> EvmApiRequestor<D, H> {
         request.extend(input);
 
         let (res, data, cost) = self.request(call_type, &request);
-        let status: UserOutcomeKind = res[0].try_into().expect("unknown outcome");
+        let status: UserOutcomeKind = res[0].try_into()?;
         let data_len = data.slice().len() as u32;
         self.last_return_data = Some(data);
-        (data_len, cost, status)
+        Ok((data_len, cost, status))
     }
 
     pub fn request_handler(&mut self) -> &mut H {
@@ -74,7 +74,7 @@ impl<D: DataReader, H: RequestHandler<D>> EvmApiRequestor<D, H> {
         endowment: Bytes32,
         salt: Option<Bytes32>,
         gas: Gas,
-    ) -> (Result<Bytes20>, u32, Gas) {
+    ) -> Result<(CreateRespone, u32, Gas)> {
         let mut request = Vec::with_capacity(8 + 2 * 32 + code.len());
         request.extend(gas.to_be_bytes());
         request.extend(endowment);
@@ -88,40 +88,50 @@ impl<D: DataReader, H: RequestHandler<D>> EvmApiRequestor<D, H> {
             if !res.is_empty() {
                 res.remove(0);
             }
-            let err_string = String::from_utf8(res).unwrap_or("create_response_malformed".into());
-            return (Err(eyre!(err_string)), 0, cost);
+            let err_string =
+                String::from_utf8(res).unwrap_or("create_response_malformed".to_string());
+            return Ok((CreateRespone::Fail(err_string), 0, cost));
         }
         res.remove(0);
-        let address = res.try_into().unwrap();
+        let address = res.try_into()?;
         let data_len = data.slice().len() as u32;
         self.last_return_data = Some(data);
-        (Ok(address), data_len, cost)
+        Ok((CreateRespone::Succes(address), data_len, cost))
     }
 }
 
 impl<D: DataReader, H: RequestHandler<D>> EvmApi<D> for EvmApiRequestor<D, H> {
-    fn get_bytes32(&mut self, key: Bytes32, evm_api_gas_to_use: Gas) -> (Bytes32, Gas) {
+    fn get_bytes32(&mut self, key: Bytes32, evm_api_gas_to_use: Gas) -> Result<(Bytes32, Gas)> {
         let cache = &mut self.storage_cache;
         let mut cost = cache.read_gas();
 
-        let value = cache.entry(key).or_insert_with(|| {
-            let (res, _, gas) = self.handler.request(EvmApiMethod::GetBytes32, key);
-            cost = cost.saturating_add(gas).saturating_add(evm_api_gas_to_use);
-            StorageWord::known(res.try_into().unwrap())
-        });
-        (value.value, cost)
+        let value = match cache.entry(key) {
+            Entry::Occupied(v) => v.get().value,
+            Entry::Vacant(v) => {
+                let (res, _, gas) = self.handler.request(EvmApiMethod::GetBytes32, key);
+                cost = cost.saturating_add(gas).saturating_add(evm_api_gas_to_use);
+                let value = res.try_into()?;
+                v.insert(StorageWord::known(value));
+                value
+            }
+        };
+        Ok((value, cost))
     }
 
-    fn cache_bytes32(&mut self, key: Bytes32, value: Bytes32) -> Gas {
+    fn cache_bytes32(&mut self, key: Bytes32, value: Bytes32) -> Result<Gas> {
         let cost = self.storage_cache.write_gas();
         match self.storage_cache.entry(key) {
             Entry::Occupied(mut key) => key.get_mut().value = value,
             Entry::Vacant(slot) => drop(slot.insert(StorageWord::unknown(value))),
         };
-        cost
+        Ok(cost)
     }
 
-    fn flush_storage_cache(&mut self, clear: bool, gas_left: Gas) -> Result<Gas> {
+    fn flush_storage_cache(
+        &mut self,
+        clear: bool,
+        gas_left: Gas,
+    ) -> Result<(Gas, UserOutcomeKind)> {
         let mut data = Vec::with_capacity(64 * self.storage_cache.len() + 8);
         data.extend(gas_left.to_be_bytes());
 
@@ -136,40 +146,38 @@ impl<D: DataReader, H: RequestHandler<D>> EvmApi<D> for EvmApiRequestor<D, H> {
             self.storage_cache.clear();
         }
         if data.len() == 8 {
-            return Ok(Gas(0)); // no need to make request
+            return Ok((Gas(0), UserOutcomeKind::Success)); // no need to make request
         }
 
         let (res, _, cost) = self.request(EvmApiMethod::SetTrieSlots, data);
-        let status = res
-            .first()
-            .copied()
-            .map(EvmApiStatus::from)
-            .unwrap_or(EvmApiStatus::Failure);
-        if status != EvmApiStatus::Success {
-            bail!("{:?}", status);
-        }
-        Ok(cost)
+        let status = res.first().copied().ok_or(eyre!("empty result!"))?;
+        let outcome = match status.try_into()? {
+            EvmApiStatus::Success => UserOutcomeKind::Success,
+            EvmApiStatus::WriteProtection => UserOutcomeKind::Revert,
+            EvmApiStatus::OutOfGas => UserOutcomeKind::OutOfInk,
+            _ => bail!("unexpect outcome"),
+        };
+        Ok((cost, outcome))
     }
 
-    fn get_transient_bytes32(&mut self, key: Bytes32) -> Bytes32 {
+    fn get_transient_bytes32(&mut self, key: Bytes32) -> Result<Bytes32> {
         let (res, ..) = self.request(EvmApiMethod::GetTransientBytes32, key);
-        res.try_into().unwrap()
+        Ok(res.try_into()?)
     }
 
-    fn set_transient_bytes32(&mut self, key: Bytes32, value: Bytes32) -> Result<()> {
+    fn set_transient_bytes32(&mut self, key: Bytes32, value: Bytes32) -> Result<UserOutcomeKind> {
         let mut data = Vec::with_capacity(64);
         data.extend(key);
         data.extend(value);
         let (res, ..) = self.request(EvmApiMethod::SetTransientBytes32, data);
-        let status = res
-            .first()
-            .copied()
-            .map(EvmApiStatus::from)
-            .unwrap_or(EvmApiStatus::Failure);
-        if status != EvmApiStatus::Success {
-            bail!("{:?}", status);
-        }
-        Ok(())
+        let status = res.first().copied().ok_or(eyre!("empty result!"))?;
+        let outcome = match status.try_into()? {
+            EvmApiStatus::Success => UserOutcomeKind::Success,
+            EvmApiStatus::WriteProtection => UserOutcomeKind::Revert,
+            _ => bail!("unexpect outcome"),
+        };
+
+        Ok(outcome)
     }
 
     fn contract_call(
@@ -179,7 +187,7 @@ impl<D: DataReader, H: RequestHandler<D>> EvmApi<D> for EvmApiRequestor<D, H> {
         gas_left: Gas,
         gas_req: Gas,
         value: Bytes32,
-    ) -> (u32, Gas, UserOutcomeKind) {
+    ) -> Result<(u32, Gas, UserOutcomeKind)> {
         self.call_request(
             EvmApiMethod::ContractCall,
             contract,
@@ -196,7 +204,7 @@ impl<D: DataReader, H: RequestHandler<D>> EvmApi<D> for EvmApiRequestor<D, H> {
         input: &[u8],
         gas_left: Gas,
         gas_req: Gas,
-    ) -> (u32, Gas, UserOutcomeKind) {
+    ) -> Result<(u32, Gas, UserOutcomeKind)> {
         self.call_request(
             EvmApiMethod::DelegateCall,
             contract,
@@ -213,7 +221,7 @@ impl<D: DataReader, H: RequestHandler<D>> EvmApi<D> for EvmApiRequestor<D, H> {
         input: &[u8],
         gas_left: Gas,
         gas_req: Gas,
-    ) -> (u32, Gas, UserOutcomeKind) {
+    ) -> Result<(u32, Gas, UserOutcomeKind)> {
         self.call_request(
             EvmApiMethod::StaticCall,
             contract,
@@ -229,7 +237,7 @@ impl<D: DataReader, H: RequestHandler<D>> EvmApi<D> for EvmApiRequestor<D, H> {
         code: Vec<u8>,
         endowment: Bytes32,
         gas: Gas,
-    ) -> (Result<Bytes20>, u32, Gas) {
+    ) -> Result<(CreateRespone, u32, Gas)> {
         self.create_request(EvmApiMethod::Create1, code, endowment, None, gas)
     }
 
@@ -239,7 +247,7 @@ impl<D: DataReader, H: RequestHandler<D>> EvmApi<D> for EvmApiRequestor<D, H> {
         endowment: Bytes32,
         salt: Bytes32,
         gas: Gas,
-    ) -> (Result<Bytes20>, u32, Gas) {
+    ) -> Result<(CreateRespone, u32, Gas)> {
         self.create_request(EvmApiMethod::Create2, code, endowment, Some(salt), gas)
     }
 
@@ -260,15 +268,20 @@ impl<D: DataReader, H: RequestHandler<D>> EvmApi<D> for EvmApiRequestor<D, H> {
         Ok(())
     }
 
-    fn account_balance(&mut self, address: Bytes20) -> (Bytes32, Gas) {
+    fn account_balance(&mut self, address: Bytes20) -> Result<(Bytes32, Gas)> {
         let (res, _, cost) = self.request(EvmApiMethod::AccountBalance, address);
-        (res.try_into().unwrap(), cost)
+        Ok((res.try_into()?, cost))
     }
 
-    fn account_code(&mut self, arbos_version: u64, address: Bytes20, gas_left: Gas) -> (D, Gas) {
+    fn account_code(
+        &mut self,
+        arbos_version: u64,
+        address: Bytes20,
+        gas_left: Gas,
+    ) -> Result<(D, Gas)> {
         if let Some((stored_address, data)) = self.last_code.as_ref() {
             if address == *stored_address {
-                return (data.clone(), Gas(0));
+                return Ok((data.clone(), Gas(0)));
             }
         }
         let mut req = Vec::with_capacity(20 + 8);
@@ -281,16 +294,16 @@ impl<D: DataReader, H: RequestHandler<D>> EvmApi<D> for EvmApiRequestor<D, H> {
         {
             self.last_code = Some((address, data.clone()));
         }
-        (data, cost)
+        Ok((data, cost))
     }
 
-    fn account_codehash(&mut self, address: Bytes20) -> (Bytes32, Gas) {
+    fn account_codehash(&mut self, address: Bytes20) -> Result<(Bytes32, Gas)> {
         let (res, _, cost) = self.request(EvmApiMethod::AccountCodeHash, address);
-        (res.try_into().unwrap(), cost)
+        Ok((res.try_into()?, cost))
     }
 
-    fn add_pages(&mut self, pages: u16) -> Gas {
-        self.request(EvmApiMethod::AddPages, pages.to_be_bytes()).2
+    fn add_pages(&mut self, pages: u16) -> Result<Gas> {
+        Ok(self.request(EvmApiMethod::AddPages, pages.to_be_bytes()).2)
     }
 
     fn capture_hostio(

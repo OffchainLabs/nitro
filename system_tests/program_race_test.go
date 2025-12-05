@@ -1,5 +1,4 @@
 //go:build race
-// +build race
 
 // when running with race detection - skip block validation
 

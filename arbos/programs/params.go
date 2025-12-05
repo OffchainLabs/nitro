@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/ethereum/go-ethereum/arbitrum/multigas"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
@@ -37,6 +38,8 @@ const MinCachedGasUnits = 32 /// 32 gas for each unit
 const MinInitGasUnits = 128  // 128 gas for each unit
 const CostScalarPercent = 2  // 2% for each unit
 
+const arbOS50MaxWasmSize = 22000 // Default wasmer stack depth for ArbOS 50
+
 // This struct exists to collect the many Stylus configuration parameters into a single word.
 // The items here must only be modified in ArbOwner precompile methods (or in ArbOS upgrades).
 type StylusParams struct {
@@ -65,7 +68,7 @@ func (p Programs) Params() (*StylusParams, error) {
 	sto := p.backingStorage.OpenCachedSubStorage(paramsKey)
 
 	// assume reads are warm due to the frequency of access
-	if err := sto.Burner().Burn(1 * params.WarmStorageReadCostEIP2929); err != nil {
+	if err := sto.Burner().Burn(multigas.ResourceKindComputation, params.WarmStorageReadCostEIP2929); err != nil {
 		return &StylusParams{}, err
 	}
 
@@ -168,6 +171,14 @@ func (p *StylusParams) UpgradeToVersion(version uint16) error {
 }
 
 func (p *StylusParams) UpgradeToArbosVersion(newArbosVersion uint64) error {
+	if newArbosVersion == params.ArbosVersion_50 {
+		if p.arbosVersion >= params.ArbosVersion_50 {
+			return fmt.Errorf("unexpected arbosVersion upgrade to %d from %d", newArbosVersion, p.arbosVersion)
+		}
+		if p.MaxStackDepth > arbOS50MaxWasmSize {
+			p.MaxStackDepth = arbOS50MaxWasmSize
+		}
+	}
 	if newArbosVersion == params.ArbosVersion_40 {
 		if p.arbosVersion >= params.ArbosVersion_40 {
 			return fmt.Errorf("unexpected arbosVersion upgrade to %d from %d", newArbosVersion, p.arbosVersion)
