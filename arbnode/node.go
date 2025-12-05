@@ -1300,7 +1300,6 @@ func FindBlockContainingBatchCount(ctx context.Context, bridgeAddress common.Add
 }
 
 func (n *Node) OnConfigReload(_ *Config, _ *Config) error {
-	// TODO
 	return nil
 }
 
