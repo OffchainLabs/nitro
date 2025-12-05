@@ -121,7 +121,7 @@ func NewExpressLaneProxy(
 		return nil, err
 	}
 
-	expressLaneTracker := gethexec.NewExpressLaneTracker(
+	expressLaneTracker, err := gethexec.NewExpressLaneTracker(
 		*roundTimingInfo,
 		time.Millisecond*250,
 		&HeaderProviderAdapter{arbClient},
@@ -131,6 +131,9 @@ func NewExpressLaneProxy(
 		config.MaxTxDataSize,
 		0,
 	)
+	if err != nil {
+		return nil, fmt.Errorf("error creating express lane tracker: %w", err)
+	}
 
 	_, dataSignerFunc, err := util.OpenWallet("el-proxy", &config.Wallet, big.NewInt(config.ChainId))
 	if err != nil {

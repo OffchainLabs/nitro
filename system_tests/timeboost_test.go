@@ -1706,7 +1706,7 @@ func setupExpressLaneAuction(
 	roundTimingInfo, err := gethexec.GetRoundTimingInfo(auctionContract)
 	Require(t, err)
 
-	expressLaneTracker := gethexec.NewExpressLaneTracker(
+	expressLaneTracker, err := gethexec.NewExpressLaneTracker(
 		*roundTimingInfo,
 		builderSeq.execConfig.Sequencer.MaxBlockSpeed,
 		builderSeq.L2.ExecNode.Backend.APIBackend(),
@@ -1716,6 +1716,7 @@ func setupExpressLaneAuction(
 		uint64(builderSeq.execConfig.Sequencer.MaxTxDataSize), // #nosec G115
 		builderSeq.execConfig.Sequencer.Timeboost.EarlySubmissionGrace,
 	)
+	Require(t, err)
 
 	err = builderSeq.L2.ExecNode.Sequencer.InitializeExpressLaneService(
 		auctioneerAddr,

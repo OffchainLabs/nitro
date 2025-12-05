@@ -56,7 +56,10 @@ func NewExpressLaneTracker(
 	auctionContractAddr common.Address,
 	chainConfig *params.ChainConfig,
 	maxTxSize uint64,
-	earlySubmissionGrace time.Duration) *ExpressLaneTracker {
+	earlySubmissionGrace time.Duration) (*ExpressLaneTracker, error) {
+	if err := ValidateMaxTxDataSize(maxTxSize); err != nil {
+		return nil, err
+	}
 	return &ExpressLaneTracker{
 		roundTimingInfo:      roundTimingInfo,
 		pollInterval:         pollInterval,
@@ -67,7 +70,7 @@ func NewExpressLaneTracker(
 		chainConfig:          chainConfig,
 		maxTxSize:            maxTxSize,
 		useLogs:              false, // default to use contract polling
-	}
+	}, nil
 }
 
 func (t *ExpressLaneTracker) Start(ctxIn context.Context) {

@@ -595,7 +595,7 @@ func (n *ExecutionNode) InitializeTimeboost(ctx context.Context, chainConfig *pa
 			return err
 		}
 
-		expressLaneTracker := NewExpressLaneTracker(
+		expressLaneTracker, err := NewExpressLaneTracker(
 			*roundTimingInfo,
 			execNodeConfig.Sequencer.MaxBlockSpeed,
 			n.Backend.APIBackend(),
@@ -605,6 +605,9 @@ func (n *ExecutionNode) InitializeTimeboost(ctx context.Context, chainConfig *pa
 			uint64(execNodeConfig.Sequencer.MaxTxDataSize), // #nosec G115
 			execNodeConfig.Sequencer.Timeboost.EarlySubmissionGrace,
 		)
+		if err != nil {
+			return fmt.Errorf("error creating express lane tracker: %w", err)
+		}
 
 		n.TxPreChecker.SetExpressLaneTracker(expressLaneTracker)
 
