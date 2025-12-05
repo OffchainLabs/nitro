@@ -1,7 +1,10 @@
 package message
 
 import (
+	"encoding/binary"
+
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
 
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -11,6 +14,8 @@ const (
 	V1                 = 1
 	TimeboostedVersion = byte(0)
 )
+
+var uniquifyingPrefix = []byte("Arbitrum Nitro Feed:")
 
 // BroadcastMessage is the base message type for messages to send over the network.
 //
@@ -37,7 +42,7 @@ type BroadcastFeedMessage struct {
 	SequenceNumber arbutil.MessageIndex           `json:"sequenceNumber"`
 	Message        arbostypes.MessageWithMetadata `json:"message"`
 	BlockHash      *common.Hash                   `json:"blockHash,omitempty"`
-	Signature      []byte                         `json:"signature"`
+	Signature      []byte                         `json:"signatureV2"`
 	BlockMetadata  common.BlockMetadata           `json:"blockMetadata,omitempty"`
 
 	CumulativeSumMsgSize uint64 `json:"-"`
@@ -52,8 +57,34 @@ func (m *BroadcastFeedMessage) UpdateCumulativeSumMsgSize(val uint64) {
 	m.CumulativeSumMsgSize += val + m.Size()
 }
 
-func (m *BroadcastFeedMessage) Hash(chainId uint64) (common.Hash, error) {
-	return m.Message.Hash(m.SequenceNumber, chainId)
+// SignatureHash creates a hash for the feed message that include all fields that need to
+// be signed. Be aware that changing this function can break compatibility with older clients.
+func (m *BroadcastFeedMessage) SignatureHash(chainId uint64) common.Hash {
+	data := []byte{}
+	data = append(data, uniquifyingPrefix...)
+
+	data = binary.BigEndian.AppendUint64(data, chainId)
+	data = binary.BigEndian.AppendUint64(data, uint64(m.SequenceNumber))
+	if m.BlockHash != nil {
+		data = append(data, m.BlockHash.Bytes()...)
+	}
+	data = append(data, m.BlockMetadata...)
+	data = binary.BigEndian.AppendUint64(data, m.Message.DelayedMessagesRead)
+
+	l1IncomingMessage := m.Message.Message
+	data = append(data, l1IncomingMessage.Header.Kind)
+	data = append(data, l1IncomingMessage.Header.Poster.Bytes()...)
+	data = binary.BigEndian.AppendUint64(data, l1IncomingMessage.Header.BlockNumber)
+	data = binary.BigEndian.AppendUint64(data, l1IncomingMessage.Header.Timestamp)
+	if l1IncomingMessage.Header.RequestId != nil {
+		data = append(data, l1IncomingMessage.Header.RequestId.Bytes()...)
+	}
+	if l1IncomingMessage.Header.L1BaseFee != nil {
+		data = append(data, l1IncomingMessage.Header.L1BaseFee.Bytes()...)
+	}
+	data = append(data, l1IncomingMessage.L2msg...)
+
+	return crypto.Keccak256Hash(data)
 }
 
 type ConfirmedSequenceNumberMessage struct {

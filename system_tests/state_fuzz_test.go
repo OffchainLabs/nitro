@@ -129,6 +129,18 @@ type noopChainContext struct {
 	chainConfig *params.ChainConfig
 }
 
+func (c noopChainContext) CurrentHeader() *types.Header {
+	return nil
+}
+
+func (c noopChainContext) GetHeaderByNumber(number uint64) *types.Header {
+	return nil
+}
+
+func (c noopChainContext) GetHeaderByHash(hash common.Hash) *types.Header {
+	return nil
+}
+
 func (c noopChainContext) Config() *params.ChainConfig {
 	return c.chainConfig
 }

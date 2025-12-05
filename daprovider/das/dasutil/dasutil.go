@@ -94,22 +94,39 @@ func (d *readerForDAS) CollectPreimages(
 
 // NewWriterForDAS is generally meant to be only used by nitro.
 // DA Providers should implement methods in the DAProviderWriter interface independently
-func NewWriterForDAS(dasWriter DASWriter) *writerForDAS {
-	return &writerForDAS{dasWriter: dasWriter}
+func NewWriterForDAS(dasWriter DASWriter, maxMessageSize int) *writerForDAS {
+	return &writerForDAS{
+		dasWriter:      dasWriter,
+		maxMessageSize: maxMessageSize,
+	}
 }
 
 type writerForDAS struct {
-	dasWriter DASWriter
+	dasWriter      DASWriter
+	maxMessageSize int
 }
 
 func (d *writerForDAS) Store(message []byte, timeout uint64) containers.PromiseInterface[[]byte] {
 	return containers.DoPromise(context.Background(), func(ctx context.Context) ([]byte, error) {
 		cert, err := d.dasWriter.Store(ctx, message, timeout)
 		if err != nil {
+			// If the aggregator failed due to insufficient backends, signal explicit fallback
+			// to allow batch poster to try the next DA provider in the chain. The Aggregator
+			// has a loud ERROR if the threshold of failing committee members is approaching,
+			// which should give time to correct any errors to avoid fallback. Otherwise
+			// the operator can set disable-dap-fallback-store-data-on-chain to totally
+			// disable automatic fallback to EthDA.
+			if errors.Is(err, ErrBatchToDasFailed) {
+				return nil, fmt.Errorf("%w: %w", daprovider.ErrFallbackRequested, err)
+			}
 			return nil, err
 		}
 		return Serialize(cert), nil
 	})
+}
+
+func (d *writerForDAS) GetMaxMessageSize() containers.PromiseInterface[int] {
+	return containers.NewReadyPromise(d.maxMessageSize, nil)
 }
 
 var (

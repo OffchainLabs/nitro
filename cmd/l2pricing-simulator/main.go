@@ -10,6 +10,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/ethereum/go-ethereum/arbitrum/multigas"
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos/burn"
@@ -20,13 +21,13 @@ import (
 
 var minBaseFee = big.NewInt(params.GWei)
 
-func newPricingState() (*l2pricing.L2PricingState, error) {
+func newPricingState(arbosVersion uint64) (*l2pricing.L2PricingState, error) {
 	storage := storage.NewMemoryBacked(burn.NewSystemBurner(nil, false))
 	err := l2pricing.InitializeL2PricingState(storage)
 	if err != nil {
 		return nil, err
 	}
-	pricing := l2pricing.OpenL2PricingState(storage)
+	pricing := l2pricing.OpenL2PricingState(storage, arbosVersion)
 	_ = pricing.SetMinBaseFeeWei(minBaseFee)
 	_ = pricing.SetBaseFeeWei(minBaseFee)
 	return pricing, nil
@@ -38,7 +39,7 @@ func runLegacyModel(args []string) error {
 		return err
 	}
 
-	pricing, err := newPricingState()
+	pricing, err := newPricingState(params.ArbosVersion_40)
 	if err != nil {
 		return err
 	}
@@ -53,8 +54,8 @@ func runLegacyModel(args []string) error {
 	for i := range config.Iterations() {
 		baseFee, _ := pricing.BaseFeeWei()
 		gas := gasSimulator.compute(i, baseFee)
-		_ = pricing.AddToGasPool(-arbmath.SaturatingCast[int64](gas), l2pricing.ArbosMultiConstraintsVersion)
-		pricing.UpdatePricingModel(1, l2pricing.ArbosMultiConstraintsVersion)
+		_ = pricing.GrowBacklog(gas, multigas.ComputationGas(gas))
+		pricing.UpdatePricingModel(1)
 		baseFee, _ = pricing.BaseFeeWei()
 		results = append(results, Result{
 			baseFee:  baseFee,
@@ -72,7 +73,7 @@ func runConstraintsModel(args []string) error {
 		return err
 	}
 
-	pricing, err := newPricingState()
+	pricing, err := newPricingState(params.ArbosVersion_MultiConstraintFix)
 	if err != nil {
 		return err
 	}
@@ -87,7 +88,7 @@ func runConstraintsModel(args []string) error {
 		if i < len(config.Backlogs) {
 			backlog = arbmath.SaturatingUCast[uint64](config.Backlogs[i])
 		}
-		if err := pricing.AddConstraint(target, window, backlog); err != nil {
+		if err := pricing.AddGasConstraint(target, window, backlog); err != nil {
 			return fmt.Errorf("failed to add constraint: %w", err)
 		}
 		if window > longTermWindow {
@@ -102,8 +103,8 @@ func runConstraintsModel(args []string) error {
 	for i := range config.Iterations() {
 		baseFee, _ := pricing.BaseFeeWei()
 		gas := gasSimulator.compute(i, baseFee)
-		_ = pricing.AddToGasPool(-arbmath.SaturatingCast[int64](gas), l2pricing.ArbosMultiConstraintsVersion)
-		pricing.UpdatePricingModel(1, l2pricing.ArbosMultiConstraintsVersion)
+		_ = pricing.GrowBacklog(gas, multigas.ComputationGas(gas))
+		pricing.UpdatePricingModel(1)
 		baseFee, _ = pricing.BaseFeeWei()
 		results = append(results, Result{
 			baseFee:  baseFee,
