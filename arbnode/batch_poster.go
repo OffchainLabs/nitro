@@ -643,7 +643,7 @@ func (b *BatchPoster) ParentChainIsUsingEIP7623(ctx context.Context, latestHeade
 
 	// Rather than checking the latest block, we're going to check a recent
 	// block (5 blocks back) to avoid reorgs.
-	targetBlockNumber := latestHeader.Number.Sub(latestHeader.Number, big.NewInt(5))
+	targetBlockNumber := new(big.Int).Sub(latestHeader.Number, big.NewInt(5))
 	targetHeader, err := rpcClient.HeaderByNumber(ctx, targetBlockNumber)
 	if err != nil {
 		return false, err
