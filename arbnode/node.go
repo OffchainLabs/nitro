@@ -1373,9 +1373,8 @@ func CreateConsensusNodeConnectedWithSimpleExecutionClient(
 	parentChainID *big.Int,
 	blobReader daprovider.BlobReader,
 	latestWasmModuleRoot common.Hash,
-	useRPC bool,
 ) (*Node, error) {
-	if useRPC {
+	if configFetcher.Get().ExecutionRPCClient.URL != "" {
 		execConfigFetcher := func() *rpcclient.ClientConfig { return &configFetcher.Get().ExecutionRPCClient }
 		executionClient = executionrpcclient.NewExecutionRPCClient(execConfigFetcher, nil)
 	}
@@ -1406,13 +1405,12 @@ func CreateConsensusNodeConnectedWithFullExecutionClient(
 	parentChainID *big.Int,
 	blobReader daprovider.BlobReader,
 	latestWasmModuleRoot common.Hash,
-	useRPC bool,
 ) (*Node, error) {
 	if fullExecutionClient == nil {
 		return nil, errors.New("full execution client must be non-nil")
 	}
 	var executionClient execution.ExecutionClient
-	if useRPC {
+	if configFetcher.Get().ExecutionRPCClient.URL != "" {
 		execConfigFetcher := func() *rpcclient.ClientConfig { return &configFetcher.Get().ExecutionRPCClient }
 		executionClient = executionrpcclient.NewExecutionRPCClient(execConfigFetcher, nil)
 	} else {

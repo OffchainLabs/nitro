@@ -236,7 +236,7 @@ func (b *BlockMetadataFetcher) Update(ctx context.Context) time.Duration {
 	return b.config.SyncInterval
 }
 
-func (b *BlockMetadataFetcher) InitializeTrackBlockMetadataFrom(ctx context.Context) error {
+func (b *BlockMetadataFetcher) InitializeTrackBlockMetadataFrom() error {
 	var err error
 	if b.startBlockNum != 0 {
 		b.trackBlockMetadataFrom, err = util.BlockNumberToMessageIndex(b.startBlockNum, b.genesisBlockNum)
@@ -249,7 +249,7 @@ func (b *BlockMetadataFetcher) InitializeTrackBlockMetadataFrom(ctx context.Cont
 
 func (b *BlockMetadataFetcher) Start(ctx context.Context) error {
 	b.StopWaiter.Start(ctx, b)
-	if err := b.InitializeTrackBlockMetadataFrom(ctx); err != nil {
+	if err := b.InitializeTrackBlockMetadataFrom(); err != nil {
 		return err
 	}
 	b.CallIteratively(b.Update)
