@@ -75,6 +75,7 @@ type AuctioneerServerConfig struct {
 	AuctionContractAddress    string                   `koanf:"auction-contract-address"`
 	DbDirectory               string                   `koanf:"db-directory"`
 	AuctionResolutionWaitTime time.Duration            `koanf:"auction-resolution-wait-time"`
+	BidsReceiverBufferSize    int                      `koanf:"bids-receiver-buffer-size"`
 	S3Storage                 S3StorageServiceConfig   `koanf:"s3-storage"`
 }
 
@@ -91,6 +92,7 @@ var DefaultAuctioneerServerConfig = AuctioneerServerConfig{
 	ConsumerConfig:            DefaultAuctioneerConsumerConfig,
 	StreamTimeout:             10 * time.Minute,
 	AuctionResolutionWaitTime: 2 * time.Second,
+	BidsReceiverBufferSize:    100_000,
 	S3Storage:                 DefaultS3StorageServiceConfig,
 }
 
@@ -100,6 +102,7 @@ var TestAuctioneerServerConfig = AuctioneerServerConfig{
 	ConsumerConfig:            DefaultAuctioneerConsumerConfig,
 	StreamTimeout:             time.Minute,
 	AuctionResolutionWaitTime: 2 * time.Second,
+	BidsReceiverBufferSize:    100_000,
 }
 
 func AuctioneerServerConfigAddOptions(prefix string, f *pflag.FlagSet) {
@@ -115,6 +118,7 @@ func AuctioneerServerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".auction-contract-address", DefaultAuctioneerServerConfig.AuctionContractAddress, "express lane auction contract address")
 	f.String(prefix+".db-directory", DefaultAuctioneerServerConfig.DbDirectory, "path to database directory for persisting validated bids in a sqlite file")
 	f.Duration(prefix+".auction-resolution-wait-time", DefaultAuctioneerServerConfig.AuctionResolutionWaitTime, "wait time after auction closing before resolving the auction")
+	f.Int(prefix+".bids-receiver-buffer-size", DefaultAuctioneerServerConfig.BidsReceiverBufferSize, "buffer size for the bids receiver channel")
 	S3StorageServiceConfigAddOptions(prefix+".s3-storage", f)
 }
 
@@ -227,6 +231,9 @@ func NewAuctioneerServer(ctx context.Context, configFetcher AuctioneerServerConf
 	if err = roundTimingInfo.ValidateResolutionWaitTime(cfg.AuctionResolutionWaitTime); err != nil {
 		return nil, err
 	}
+	if cfg.BidsReceiverBufferSize <= 0 {
+		return nil, fmt.Errorf("bids receiver buffer size must be positive, got %d", cfg.BidsReceiverBufferSize)
+	}
 
 	// Generate unique ID for this auctioneer instance
 	myId := fmt.Sprintf("auctioneer-%s-%d",
@@ -245,7 +252,7 @@ func NewAuctioneerServer(ctx context.Context, configFetcher AuctioneerServerConf
 		auctionContract:                auctionContract,
 		auctionContractAddr:            auctionContractAddr,
 		auctionContractDomainSeparator: domainSeparator,
-		bidsReceiver:                   make(chan *JsonValidatedBid, 100_000), // TODO(Terence): Is 100k enough? Make this configurable?
+		bidsReceiver:                   make(chan *JsonValidatedBid, 100_000),
 		bidCache:                       newBidCache(domainSeparator),
 		roundTimingInfo:                *roundTimingInfo,
 		auctionResolutionWaitTime:      cfg.AuctionResolutionWaitTime,
