@@ -102,7 +102,7 @@ var TestAuctioneerServerConfig = AuctioneerServerConfig{
 	ConsumerConfig:            DefaultAuctioneerConsumerConfig,
 	StreamTimeout:             time.Minute,
 	AuctionResolutionWaitTime: 2 * time.Second,
-	BidsReceiverBufferSize:    100_000,
+	BidsReceiverBufferSize:    1_000,
 }
 
 func AuctioneerServerConfigAddOptions(prefix string, f *pflag.FlagSet) {
