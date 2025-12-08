@@ -14,6 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
+	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
@@ -466,6 +467,13 @@ func (con ArbOwner) SetGasPricingConstraints(c ctx, evm mech, constraints [][3]u
 		return fmt.Errorf("failed to clear existing constraints: %w", err)
 	}
 
+	if c.State.ArbOSVersion() >= params.ArbosVersion_MultiConstraintFix {
+		limit := l2pricing.GasConstraintsMaxNum
+		if len(constraints) > limit {
+			return fmt.Errorf("too many constraints. Max: %d", limit)
+		}
+	}
+
 	for _, constraint := range constraints {
 		gasTargetPerSecond := constraint[0]
 		adjustmentWindowSeconds := constraint[1]
@@ -489,6 +497,11 @@ func (con ArbOwner) SetMultiGasPricingConstraints(
 	evm mech,
 	constraints []MultiGasConstraint,
 ) error {
+	limit := l2pricing.MultiGasConstraintsMaxNum
+	if len(constraints) > limit {
+		return fmt.Errorf("too many constraints. Max: %d", limit)
+	}
+
 	if err := c.State.L2PricingState().ClearMultiGasConstraints(); err != nil {
 		return fmt.Errorf("failed to clear existing multi-gas constraints: %w", err)
 	}
@@ -502,18 +515,30 @@ func (con ArbOwner) SetMultiGasPricingConstraints(
 		}
 
 		// Build map of resource weights
-		resourceWeights := make(map[uint8]uint64, len(constraint.Resources))
+		weights := make(map[uint8]uint64, len(constraint.Resources))
 		for _, r := range constraint.Resources {
-			resourceWeights[r.Resource] = r.Weight
+			weights[r.Resource] = r.Weight
 		}
 
 		if err := c.State.L2PricingState().AddMultiGasConstraint(
 			constraint.TargetPerSec,
 			constraint.AdjustmentWindowSecs,
 			constraint.Backlog,
-			resourceWeights,
+			weights,
 		); err != nil {
 			return fmt.Errorf("failed to add multi-gas constraint: %w", err)
+		}
+
+		exps, err := c.State.L2PricingState().CalcMultiGasConstraintsExponents()
+		if err != nil {
+			return fmt.Errorf("failed to calculate multi-gas constraint exponents: %w", err)
+		}
+
+		// Ensure no exponent exceeds the maximum allowed value
+		for _, exp := range exps {
+			if exp > l2pricing.MaxPricingExponentBips {
+				return fmt.Errorf("calculated exponent %d exceeds maximum allowed %d", exp, l2pricing.MaxPricingExponentBips)
+			}
 		}
 	}
 	return nil
