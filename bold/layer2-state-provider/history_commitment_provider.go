@@ -297,7 +297,7 @@ func (p *HistoryCommitmentProvider) historyCommitmentImpl(
 				return nil, err
 			}
 			rawStepHeights += strconv.Itoa(hInt)
-			if i != len(rawStepHeights)-1 {
+			if i != len(cfg.StepHeights)-1 {
 				rawStepHeights += ","
 			}
 		}
