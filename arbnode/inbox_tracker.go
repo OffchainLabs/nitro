@@ -41,14 +41,14 @@ type InboxTracker struct {
 	txStreamer     *TransactionStreamer
 	mutex          sync.Mutex
 	validator      *staker.BlockValidator
-	dapReaders     *daprovider.ReaderRegistry
+	dapReaders     *daprovider.DAProviderRegistry
 	snapSyncConfig SnapSyncConfig
 
 	batchMetaMutex sync.Mutex
 	batchMeta      *containers.LruCache[uint64, mel.BatchMetadata]
 }
 
-func NewInboxTracker(db ethdb.Database, txStreamer *TransactionStreamer, dapReaders *daprovider.ReaderRegistry, snapSyncConfig SnapSyncConfig) (*InboxTracker, error) {
+func NewInboxTracker(db ethdb.Database, txStreamer *TransactionStreamer, dapReaders *daprovider.DAProviderRegistry, snapSyncConfig SnapSyncConfig) (*InboxTracker, error) {
 	tracker := &InboxTracker{
 		db:             db,
 		txStreamer:     txStreamer,

@@ -266,6 +266,13 @@ func ExecConfigDefaultTest(t *testing.T, stateScheme string) *gethexec.Config {
 	return &config
 }
 
+// DeployConfig contains options for deployOnParentChain
+type DeployConfig struct {
+	DeployBold           bool
+	DeployReferenceDA    bool
+	DelayBufferThreshold uint64
+}
+
 type NodeBuilder struct {
 	// NodeBuilder configuration
 	ctx           context.Context
@@ -297,6 +304,7 @@ type NodeBuilder struct {
 	withProdConfirmPeriodBlocks bool
 	delayBufferThreshold        uint64
 	withL1ClientWrapper         bool
+	deployReferenceDA           bool
 	TrieNoAsyncFlush            bool
 
 	// Created nodes
@@ -445,6 +453,11 @@ func (b *NodeBuilder) WithExtraArchs(targets []string) *NodeBuilder {
 // Setting the threshold to zero disabled the delay buffer (default behaviour).
 func (b *NodeBuilder) WithDelayBuffer(threshold uint64) *NodeBuilder {
 	b.delayBufferThreshold = threshold
+	return b
+}
+
+func (b *NodeBuilder) WithReferenceDA() *NodeBuilder {
+	b.deployReferenceDA = true
 	return b
 }
 
@@ -651,6 +664,12 @@ func (b *NodeBuilder) BuildL1(t *testing.T) {
 	b.L1Info, b.L1.Client, b.L1.L1Backend, b.L1.Stack, b.L1.ClientWrapper, b.L1.L1BlobReader = createTestL1BlockChain(t, b.L1Info, b.withL1ClientWrapper, b.l1StackConfig)
 	locator, err := server_common.NewMachineLocator(b.valnodeConfig.Wasm.RootPath)
 	Require(t, err)
+	deployConfig := DeployConfig{
+		DeployBold:           b.deployBold,
+		DeployReferenceDA:    b.deployReferenceDA,
+		DelayBufferThreshold: b.delayBufferThreshold,
+	}
+	t.Logf("BuildL1 deployConfig: DeployBold=%v, DeployReferenceDA=%v", deployConfig.DeployBold, deployConfig.DeployReferenceDA)
 	b.addresses, b.initMessage = deployOnParentChain(
 		t,
 		b.ctx,
@@ -661,8 +680,7 @@ func (b *NodeBuilder) BuildL1(t *testing.T) {
 		locator.LatestWasmModuleRoot(),
 		b.withProdConfirmPeriodBlocks,
 		true,
-		b.deployBold,
-		b.delayBufferThreshold,
+		deployConfig,
 	)
 	b.L1.cleanup = func() { requireClose(t, b.L1.Stack) }
 }
@@ -762,6 +780,11 @@ func (b *NodeBuilder) BuildL3OnL2(t *testing.T) func() {
 
 	parentChainReaderConfig := headerreader.TestConfig
 	parentChainReaderConfig.Dangerous.WaitForTxApprovalSafePoll = 0
+	deployConfig := DeployConfig{
+		DeployBold:           b.deployBold,
+		DeployReferenceDA:    false, // L3 doesn't need ReferenceDA
+		DelayBufferThreshold: 0,
+	}
 	b.l3Addresses, b.l3InitMessage = deployOnParentChain(
 		t,
 		b.ctx,
@@ -772,8 +795,7 @@ func (b *NodeBuilder) BuildL3OnL2(t *testing.T) func() {
 		locator.LatestWasmModuleRoot(),
 		b.l3Config.withProdConfirmPeriodBlocks,
 		false,
-		b.deployBold,
-		0,
+		deployConfig,
 	)
 
 	b.L3 = buildOnParentChain(
@@ -1120,6 +1142,48 @@ func SendWaitTestTransactions(t *testing.T, ctx context.Context, client *ethclie
 		Require(t, err)
 	}
 	return receipts
+}
+
+// checkBatchPosting sends a transaction and verifies it gets posted to L1 and syncs to followers.
+//
+// This function works quickly because TestBatchPosterConfig sets MaxDelay=0, which forces
+// the batch poster to post batches immediately rather than waiting (production uses MaxDelay=1 hour).
+// The L1 block creation loop provides additional insurance that the batch posts quickly by:
+//  1. Advancing L1 time to trigger any time-based posting logic
+//  2. Ensuring the sequencer "catches up" to recent L1 state
+//  3. Making the test deterministic and faster
+//
+// Note: In production with MaxDelay=1h, you'd need to wait much longer or have a full batch
+// before posting occurs. This aggressive test configuration (MaxDelay=0, PollInterval=10ms)
+// is designed for fast CI/CD, not realistic production behavior.
+func checkBatchPosting(t *testing.T, ctx context.Context, l1client, l2clientA *ethclient.Client, l1info, l2info info, expectedBalance *big.Int, l2ClientsToCheck ...*ethclient.Client) {
+	t.Helper()
+
+	// Send L2 transaction and wait for execution
+	tx := l2info.PrepareTx("Owner", "User2", l2info.TransferGas, big.NewInt(1e12), nil)
+	err := l2clientA.SendTransaction(ctx, tx)
+	Require(t, err)
+	_, err = EnsureTxSucceeded(ctx, l2clientA, tx)
+	Require(t, err)
+
+	// Brief pause for inbox reader to process the message
+	time.Sleep(time.Millisecond * 100)
+
+	// Create L1 blocks to trigger batch posting (with MaxDelay=0, this ensures immediate posting)
+	AdvanceL1(t, ctx, l1client, l1info, 30)
+
+	// Verify all follower nodes synced the transaction
+	for _, client := range l2ClientsToCheck {
+		_, err = WaitForTx(ctx, client, tx.Hash(), time.Second*30)
+		Require(t, err)
+
+		l2balance, err := client.BalanceAt(ctx, l2info.GetAddress("User2"), nil)
+		Require(t, err)
+
+		if l2balance.Cmp(expectedBalance) != 0 {
+			Fatal(t, "Unexpected balance:", l2balance)
+		}
+	}
 }
 
 func TransferBalance(
@@ -1636,8 +1700,7 @@ func deployOnParentChain(
 	wasmModuleRoot common.Hash,
 	prodConfirmPeriodBlocks bool,
 	chainSupportsBlobs bool,
-	deployBold bool,
-	delayBufferThreshold uint64,
+	deployConfig DeployConfig,
 ) (*chaininfo.RollupAddresses, *arbostypes.ParsedInitMessage) {
 	var fundingTxs []*types.Transaction
 	for _, acct := range DefaultChainAccounts {
@@ -1663,8 +1726,26 @@ func deployOnParentChain(
 
 	nativeToken := common.Address{}
 	maxDataSize := big.NewInt(117964)
+
+	// Deploy ReferenceDA contracts if enabled (needed for both BOLD and legacy)
+	if deployConfig.DeployReferenceDA {
+		t.Logf("Deploying ReferenceDA contracts (deployConfig.DeployReferenceDA = true)")
+		// Deploy ReferenceDAProofValidator with trusted signers
+		// Using Sequencer as the trusted signer since it's the one signing certificates
+		trustedSigners := []common.Address{parentChainInfo.GetAddress("Sequencer")}
+		refDAValidatorAddr, tx, _, err := localgen.DeployReferenceDAProofValidator(
+			&parentChainTransactionOpts, parentChainReader.Client(), trustedSigners)
+		Require(t, err)
+		_, err = EnsureTxSucceeded(ctx, parentChainReader.Client(), tx)
+		Require(t, err)
+
+		// Store the validator address in parentChainInfo
+		parentChainInfo.SetContract("ReferenceDAProofValidator", refDAValidatorAddr)
+		t.Logf("Set ReferenceDAProofValidator contract address: %s", refDAValidatorAddr.Hex())
+	}
+
 	var addresses *chaininfo.RollupAddresses
-	if deployBold {
+	if deployConfig.DeployBold {
 		stakeToken, tx, _, err := localgen.DeployTestWETH9(
 			&parentChainTransactionOpts,
 			parentChainReader.Client(),
@@ -1681,9 +1762,9 @@ func deployOnParentChain(
 			EndHistoryRoot: [32]byte{},
 		}
 		bufferConfig := rollupgen.BufferConfig{
-			Threshold:            delayBufferThreshold, // number of blocks
-			Max:                  14400,                // 2 days of blocks
-			ReplenishRateInBasis: 500,                  // 5%
+			Threshold:            deployConfig.DelayBufferThreshold, // number of blocks
+			Max:                  14400,                             // 2 days of blocks
+			ReplenishRateInBasis: 500,                               // 5%
 		}
 		cfg := rollupgen.Config{
 			MiniStakeValues:        miniStakeValues,
@@ -1713,19 +1794,22 @@ func deployOnParentChain(
 			ChallengeGracePeriodBlocks:   3,
 			BufferConfig:                 bufferConfig,
 		}
+
 		wrappedClient := butil.NewBackendWrapper(parentChainReader.Client(), rpc.LatestBlockNumber)
+		rollupStackConfig := setup.RollupStackConfig{
+			UseMockBridge:          false,
+			UseMockOneStepProver:   false,
+			UseBlobs:               chainSupportsBlobs,
+			MinimumAssertionPeriod: 0,
+		}
+
 		boldAddresses, err := setup.DeployFullRollupStack(
 			ctx,
 			wrappedClient,
 			&parentChainTransactionOpts,
 			parentChainInfo.GetAddress("Sequencer"),
 			cfg,
-			setup.RollupStackConfig{
-				UseMockBridge:          false,
-				UseMockOneStepProver:   false,
-				UseBlobs:               chainSupportsBlobs,
-				MinimumAssertionPeriod: 0,
-			},
+			rollupStackConfig,
 		)
 		Require(t, err)
 		addresses = &chaininfo.RollupAddresses{
@@ -2036,6 +2120,10 @@ func setupConfigWithDAS(
 		chainConfig = chaininfo.ArbitrumDevTestDASChainConfig()
 	case "onchain":
 		enableDas = false
+	case "referenceda":
+		// For referenceda, we use the standard dev chain config (not DAS/AnyTrust)
+		// chainConfig already initialized to ArbitrumDevTestChainConfig() above
+		enableDas = false // We'll use external referenceda provider instead of traditional DAS
 	default:
 		Fatal(t, "unknown storage type")
 	}
@@ -2043,22 +2131,14 @@ func setupConfigWithDAS(
 	dasSignerKey, _, err := das.GenerateAndStoreKeys(dbPath)
 	Require(t, err)
 
-	dasConfig := &das.DataAvailabilityConfig{
-		Enable: enableDas,
-		Key: das.KeyConfig{
-			KeyDir: dbPath,
-		},
-		LocalFileStorage: das.LocalFileStorageConfig{
-			Enable:       enableFileStorage,
-			DataDir:      dbPath,
-			MaxRetention: time.Hour * 24 * 30,
-		},
-		RequestTimeout:           5 * time.Second,
-		ParentChainNodeURL:       "none",
-		SequencerInboxAddress:    "none",
-		PanicOnError:             true,
-		DisableSignatureChecking: true,
-	}
+	dasConfig := das.DefaultDataAvailabilityConfig
+	dasConfig.Enable = enableDas
+	dasConfig.Key.KeyDir = dbPath
+	dasConfig.LocalFileStorage.Enable = enableFileStorage
+	dasConfig.LocalFileStorage.DataDir = dbPath
+	dasConfig.LocalFileStorage.MaxRetention = time.Hour * 24 * 30
+	dasConfig.PanicOnError = true
+	dasConfig.DisableSignatureChecking = true
 
 	l1NodeConfigA.DataAvailability = das.DefaultDataAvailabilityConfig
 	var lifecycleManager *das.LifecycleManager
@@ -2066,8 +2146,8 @@ func setupConfigWithDAS(
 	var daWriter dasutil.DASWriter
 	var daHealthChecker das.DataAvailabilityServiceHealthChecker
 	var signatureVerifier *das.SignatureVerifier
-	if dasModeString != "onchain" {
-		daReader, daWriter, signatureVerifier, daHealthChecker, lifecycleManager, err = das.CreateDAComponentsForDaserver(ctx, dasConfig, nil, nil)
+	if dasModeString != "onchain" && dasModeString != "referenceda" {
+		daReader, daWriter, signatureVerifier, daHealthChecker, lifecycleManager, err = das.CreateDAComponentsForDaserver(ctx, &dasConfig, nil, nil)
 
 		Require(t, err)
 		rpcLis, err := net.Listen("tcp", "localhost:0")
@@ -2088,7 +2168,11 @@ func setupConfigWithDAS(
 		l1NodeConfigA.DataAvailability.RestAggregator = das.DefaultRestfulClientAggregatorConfig
 		l1NodeConfigA.DataAvailability.RestAggregator.Enable = true
 		l1NodeConfigA.DataAvailability.RestAggregator.Urls = []string{"http://" + restLis.Addr().String()}
-		l1NodeConfigA.DataAvailability.ParentChainNodeURL = "none"
+	} else if dasModeString == "referenceda" {
+		// For referenceda mode, we'll use external provider
+		// The URL will be configured after the validator contract is deployed and server is created
+		l1NodeConfigA.DA.ExternalProvider.Enable = true
+		l1NodeConfigA.DataAvailability.Enable = false
 	}
 
 	return chainConfig, l1NodeConfigA, lifecycleManager, dbPath, dasSignerKey

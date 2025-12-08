@@ -99,7 +99,7 @@ type MessageExtractor struct {
 	addrs                    *chaininfo.RollupAddresses
 	melDB                    *Database
 	msgConsumer              mel.MessageConsumer
-	dataProviders            *daprovider.ReaderRegistry
+	dataProviders            *daprovider.DAProviderRegistry
 	fsm                      *fsm.Fsm[action, FSMState]
 	caughtUp                 bool
 	caughtUpChan             chan struct{}
@@ -116,7 +116,7 @@ func NewMessageExtractor(
 	rollupAddrs *chaininfo.RollupAddresses,
 	melDB *Database,
 	msgConsumer mel.MessageConsumer,
-	dataProviders *daprovider.ReaderRegistry,
+	dapRegistry *daprovider.DAProviderRegistry,
 ) (*MessageExtractor, error) {
 	fsm, err := newFSM(Start)
 	if err != nil {
@@ -128,7 +128,7 @@ func NewMessageExtractor(
 		addrs:             rollupAddrs,
 		melDB:             melDB,
 		msgConsumer:       msgConsumer,
-		dataProviders:     dataProviders,
+		dataProviders:     dapRegistry,
 		fsm:               fsm,
 		caughtUpChan:      make(chan struct{}),
 	}, nil
