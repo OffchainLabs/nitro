@@ -49,6 +49,8 @@ var (
 	ErrSeqMsgValidation      = errors.New("error validating recovered payload from batch")
 )
 
+// KeysetValidationMode controls validation of AnyTrust keysets.
+// Used by the DAS reader to verify keyset signatures.
 type KeysetValidationMode uint8
 
 const KeysetValidate KeysetValidationMode = 0
@@ -80,7 +82,7 @@ const BrotliMessageHeaderByte byte = 0
 const DACertificateMessageHeaderFlag byte = 0x01
 
 // KnownHeaderBits is all header bits with known meaning to this nitro version
-const KnownHeaderBits byte = DASMessageHeaderFlag | TreeDASMessageHeaderFlag | L1AuthenticatedMessageHeaderFlag | ZeroheavyMessageHeaderFlag | BlobHashesHeaderFlag | BrotliMessageHeaderByte
+const KnownHeaderBits byte = DASMessageHeaderFlag | TreeDASMessageHeaderFlag | L1AuthenticatedMessageHeaderFlag | ZeroheavyMessageHeaderFlag | BlobHashesHeaderFlag
 
 var DefaultDASRetentionPeriod time.Duration = time.Hour * 24 * 15
 

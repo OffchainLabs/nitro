@@ -1,8 +1,7 @@
 // Copyright 2025, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-// The constraints package tracks the multi-dimensional gas usage to apply constraint-based pricing.
-package constraints
+package l2pricing
 
 import "github.com/offchainlabs/nitro/arbos/storage"
 
