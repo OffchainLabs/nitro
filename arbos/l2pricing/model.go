@@ -152,6 +152,7 @@ func applyGasDelta(op BacklogOperation, backlog uint64, delta uint64) uint64 {
 }
 
 // BacklogUpdateCost returns the gas cost for updating the backlog in the active pricing model.
+// This function won't be called starting from ArbOS 60, where the cost is static (ArbOS60StaticBacklogUpdateCost)
 func (ps *L2PricingState) BacklogUpdateCost() uint64 {
 	result := uint64(0)
 
