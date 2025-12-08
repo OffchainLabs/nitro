@@ -10,11 +10,14 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/ethereum/go-ethereum/arbitrum/multigas"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/vm"
 
 	"github.com/offchainlabs/nitro/arbos/arbosState"
+	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
+	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
 func newMockEVMForTestingWithBaseFee(baseFee *big.Int) *vm.EVM {
@@ -76,4 +79,74 @@ func TestStartTxHookReturnsMultigas(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestEndTxHookMultiGasRefundNormalTx(t *testing.T) {
+	const gasLimit uint64 = 1000000
+	const gasLeft uint64 = 0
+	from := common.HexToAddress("0x1234")
+
+	evm := newMockEVMForTestingWithBaseFee(big.NewInt(l2pricing.InitialBaseFeeWei))
+
+	msg := &core.Message{
+		TxRunContext: core.NewMessageReplayContext(),
+		From:         from,
+		GasLimit:     gasLimit,
+		GasPrice:     big.NewInt(0),
+		GasFeeCap:    big.NewInt(1),
+		GasTipCap:    big.NewInt(0),
+	}
+
+	txProcessor := NewTxProcessor(evm, msg)
+	txProcessor.PosterFee = big.NewInt(0)
+
+	initialBalance := evm.StateDB.GetBalance(from)
+	require.True(t, initialBalance.IsZero())
+
+	gasUsed := gasLimit - gasLeft
+
+	// Distribute used gas equally between computation and storage access.
+	usedMultiGas := multigas.MultiGasFromPairs(
+		multigas.Pair{Kind: multigas.ResourceKindComputation, Amount: gasUsed / 2},
+		multigas.Pair{Kind: multigas.ResourceKindStorageAccess, Amount: gasUsed / 2},
+	)
+
+	// Set up multi-gas constraints and spin model to produce different multi-dimensional cost.
+	txProcessor.state.L2PricingState().ArbosVersion = l2pricing.ArbosMultiGasConstraintsVersion
+
+	Require(t, txProcessor.state.L2PricingState().AddMultiGasConstraint(
+		100000,
+		10,
+		200000000000,
+		map[uint8]uint64{
+			uint8(multigas.ResourceKindComputation):   1,
+			uint8(multigas.ResourceKindStorageGrowth): 10,
+		},
+	))
+	txProcessor.state.L2PricingState().UpdatePricingModel(100)
+
+	baseFee, err := txProcessor.state.L2PricingState().BaseFeeWei()
+	require.NoError(t, err)
+
+	// Align the EVM block basefee with the pricing state's min basefee.
+	evm.Context.BaseFee = new(big.Int).Set(baseFee)
+
+	singleGasCost := new(big.Int).Mul(baseFee, new(big.Int).SetUint64(gasUsed))
+
+	multiDimensionalCost, err := txProcessor.state.L2PricingState().MultiDimensionalPriceForRefund(usedMultiGas)
+	require.NoError(t, err)
+
+	expectedRefund := new(big.Int).Sub(singleGasCost, multiDimensionalCost)
+	require.True(t, expectedRefund.Sign() > 0, "expected refund to be positive", expectedRefund)
+
+	txProcessor.EndTxHook(gasLeft, usedMultiGas, true)
+
+	finalBalance := evm.StateDB.GetBalance(from)
+	require.True(
+		t,
+		arbmath.BigEquals(expectedRefund, finalBalance.ToBig()),
+		"unexpected multi-gas refund amount to sender: got %v, want %v",
+		finalBalance.ToBig(),
+		expectedRefund,
+	)
 }

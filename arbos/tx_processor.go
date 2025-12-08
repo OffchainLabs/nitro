@@ -558,8 +558,8 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, usedMultiGas multigas.MultiGas, 
 			log.Error("Uh oh, Geth didn't refund the user", inner.From, gasRefund)
 		}
 
-		simpleGasCost := arbmath.BigMulByUint(effectiveBaseFee, gasUsed)
-		shouldRefundMultiGas := arbmath.BigGreaterThan(simpleGasCost, multiDimensionalCost)
+		singleGasCost := arbmath.BigMulByUint(effectiveBaseFee, gasUsed)
+		shouldRefundMultiGas := arbmath.BigGreaterThan(singleGasCost, multiDimensionalCost)
 
 		maxRefund := new(big.Int).Set(inner.MaxRefund)
 		refund := func(refundFrom common.Address, amount *big.Int, reason tracing.BalanceChangeReason) {
@@ -607,7 +607,7 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, usedMultiGas multigas.MultiGas, 
 		// Conceptually, the gas charge is taken from the L1 deposit pool if possible.
 		// This continues to use the simple-gas price; any multi-gas discount is handled
 		// as an explicit refund below.
-		takeFunds(maxRefund, simpleGasCost)
+		takeFunds(maxRefund, singleGasCost)
 
 		// Refund any unused gas, without overdrafting the L1 deposit.
 		networkRefund := gasRefund
@@ -628,12 +628,12 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, usedMultiGas multigas.MultiGas, 
 
 		// Multi-dimensional refund (retryable tx path)
 		if shouldRefundMultiGas {
-			amount := arbmath.BigSub(simpleGasCost, multiDimensionalCost)
+			amount := arbmath.BigSub(singleGasCost, multiDimensionalCost)
 			refund(networkFeeAccount, amount, tracing.BalanceChangeMultiGasRefund)
-		} else if arbmath.BigLessThan(simpleGasCost, multiDimensionalCost) {
+		} else if arbmath.BigLessThan(singleGasCost, multiDimensionalCost) {
 			log.Warn(
 				"multi dimensional gas price exceeded simple gas price in retryable path",
-				"simpleGasCost", simpleGasCost,
+				"simpleGasCost", singleGasCost,
 				"multiDimensionalCost", multiDimensionalCost,
 			)
 		}
