@@ -35,7 +35,7 @@ func (r *testPreimageResolver) ResolveTypedPreimage(preimageType arbutil.Preimag
 	return nil, fmt.Errorf("preimage not found for hash: %v", hash)
 }
 
-func TestReadDelayedMessagea(t *testing.T) {
+func TestReadDelayedMessage(t *testing.T) {
 	ctx := context.Background()
 	var delayedMessages []*mel.DelayedInboxMessage
 	numMsgs := uint64(10)
