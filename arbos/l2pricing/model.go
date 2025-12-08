@@ -353,10 +353,18 @@ func (ps *L2PricingState) calcBaseFeeFromExponent(exponent arbmath.Bips) (*big.I
 
 func (ps *L2PricingState) MultiDimensionalPriceForRefund(gasUsed multigas.MultiGas) (*big.Int, error) {
 	if ps.ArbosVersion < ArbosMultiGasConstraintsVersion {
-		return big.NewInt(0), nil
-	}
-	total := new(big.Int)
+		baseFeeWei, err := ps.BaseFeeWei()
+		if err != nil {
+			return nil, err
+		}
 
+		return new(big.Int).Mul(
+			new(big.Int).SetUint64(gasUsed.SingleGas()),
+			baseFeeWei,
+		), nil
+	}
+
+	total := new(big.Int)
 	minBaseFeeWei, err := ps.MinBaseFeeWei()
 	if err != nil {
 		return nil, err
@@ -367,7 +375,8 @@ func (ps *L2PricingState) MultiDimensionalPriceForRefund(gasUsed multigas.MultiG
 		if err != nil {
 			return nil, err
 		}
-		// Override base fee with minimum if it is zero
+		// Override zero with minimum base fee,
+		// it may happen if there is no constraint configured for this resource kind
 		if baseFee.Cmp(big.NewInt(0)) == 0 {
 			baseFee = minBaseFeeWei
 		}
