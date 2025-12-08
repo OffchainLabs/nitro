@@ -136,6 +136,7 @@ func TestMultiDimensionalPriceForRefund(t *testing.T) {
 		multigas.Pair{Kind: multigas.ResourceKindComputation, Amount: 50000},
 		multigas.Pair{Kind: multigas.ResourceKindStorageAccess, Amount: 15000},
 	)
+	// #nosec G115
 	singleGas := big.NewInt(int64(multiGas.SingleGas()))
 	// Initial price should match minBaseFeeWei * singleGas
 	expectedPrice := minPrice.Mul(minPrice, singleGas)
