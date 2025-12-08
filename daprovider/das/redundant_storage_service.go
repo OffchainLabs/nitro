@@ -37,7 +37,7 @@ func (r *RedundantStorageService) GetByHash(ctx context.Context, key common.Hash
 	log.Trace("das.RedundantStorageService.GetByHash", "key", pretty.PrettyHash(key), "this", r)
 	subCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	var anyError error
+	var errs []error
 	responsesExpected := len(r.innerServices)
 	resultChan := make(chan readResponse, responsesExpected)
 	for _, serv := range r.innerServices {
@@ -52,74 +52,74 @@ func (r *RedundantStorageService) GetByHash(ctx context.Context, key common.Hash
 			if resp.err == nil {
 				return resp.data, nil
 			}
-			anyError = resp.err
+			errs = append(errs, resp.err)
 			responsesExpected--
 		case <-ctx.Done():
 			return nil, ctx.Err()
 		}
 	}
-	return nil, anyError
+	return nil, errors.Join(errs...)
 }
 
 func (r *RedundantStorageService) Put(ctx context.Context, data []byte, expirationTime uint64) error {
 	logPut("das.RedundantStorageService.Store", data, expirationTime, r)
 	var wg sync.WaitGroup
 	var errorMutex sync.Mutex
-	var anyError error
+	var errs []error
 	wg.Add(len(r.innerServices))
 	for _, serv := range r.innerServices {
 		go func(s StorageService) {
 			err := s.Put(ctx, data, expirationTime)
 			if err != nil {
 				errorMutex.Lock()
-				anyError = err
+				errs = append(errs, err)
 				errorMutex.Unlock()
 			}
 			wg.Done()
 		}(serv)
 	}
 	wg.Wait()
-	return anyError
+	return errors.Join(errs...)
 }
 
 func (r *RedundantStorageService) Sync(ctx context.Context) error {
 	var wg sync.WaitGroup
 	var errorMutex sync.Mutex
-	var anyError error
+	var errs []error
 	wg.Add(len(r.innerServices))
 	for _, serv := range r.innerServices {
 		go func(s StorageService) {
 			err := s.Sync(ctx)
 			if err != nil {
 				errorMutex.Lock()
-				anyError = err
+				errs = append(errs, err)
 				errorMutex.Unlock()
 			}
 			wg.Done()
 		}(serv)
 	}
 	wg.Wait()
-	return anyError
+	return errors.Join(errs...)
 }
 
 func (r *RedundantStorageService) Close(ctx context.Context) error {
 	var wg sync.WaitGroup
 	var errorMutex sync.Mutex
-	var anyError error
+	var errs []error
 	wg.Add(len(r.innerServices))
 	for _, serv := range r.innerServices {
 		go func(s StorageService) {
 			err := s.Close(ctx)
 			if err != nil {
 				errorMutex.Lock()
-				anyError = err
+				errs = append(errs, err)
 				errorMutex.Unlock()
 			}
 			wg.Done()
 		}(serv)
 	}
 	wg.Wait()
-	return anyError
+	return errors.Join(errs...)
 }
 
 func (r *RedundantStorageService) ExpirationPolicy(ctx context.Context) (dasutil.ExpirationPolicy, error) {
