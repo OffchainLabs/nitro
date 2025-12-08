@@ -2,20 +2,101 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/rlp"
 
 	"github.com/offchainlabs/nitro/arbnode/mel"
+	"github.com/offchainlabs/nitro/arbnode/mel/runner"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
+	"github.com/offchainlabs/nitro/arbutil"
 )
 
 var _ preimageResolver = (*mockPreimageResolver)(nil)
 var _ mel.DelayedMessageDatabase = (*delayedMessageDatabase)(nil)
+
+type testPreimageResolver struct {
+	preimages map[common.Hash][]byte
+}
+
+func (r *testPreimageResolver) ResolveTypedPreimage(preimageType arbutil.PreimageType, hash common.Hash) ([]byte, error) {
+	if preimageType != arbutil.Keccak256PreimageType {
+		return nil, fmt.Errorf("unsupported preimageType: %d", preimageType)
+	}
+	if preimage, ok := r.preimages[hash]; ok {
+		return preimage, nil
+	}
+	return nil, fmt.Errorf("preimage not found for hash: %v", hash)
+}
+
+func TestReadDelayedMessagea(t *testing.T) {
+	ctx := context.Background()
+	var delayedMessages []*mel.DelayedInboxMessage
+	numMsgs := uint64(10)
+	for i := range numMsgs {
+		delayedMessages = append(delayedMessages, &mel.DelayedInboxMessage{
+			ParentChainBlockNumber: i,
+			BlockHash:              common.HexToHash(fmt.Sprintf("msg:%d", i)),
+			Message: &arbostypes.L1IncomingMessage{
+				Header: &arbostypes.L1IncomingMessageHeader{
+					BlockNumber: i,
+					RequestId:   &common.Hash{},
+					L1BaseFee:   common.Big0,
+				},
+			},
+		})
+	}
+	db := rawdb.NewMemoryDatabase()
+	melDb := melrunner.NewDatabase(db)
+	err := melDb.SaveDelayedMessages(ctx, &mel.State{DelayedMessagesSeen: uint64(len(delayedMessages))}, delayedMessages)
+	require.NoError(t, err)
+
+	startBlockNum := uint64(3)
+	state := &mel.State{
+		ParentChainBlockNumber: startBlockNum,
+		DelayedMessagesSeen:    startBlockNum,
+		DelayedMessagesRead:    startBlockNum,
+	}
+	for i := range startBlockNum {
+		require.NoError(t, state.AccumulateDelayedMessage(delayedMessages[i]))
+	}
+	require.NoError(t, state.GenerateDelayedMessagesSeenMerklePartialsAndRoot())
+	require.NoError(t, melDb.SaveState(ctx, state))
+
+	recordingDB := melrunner.NewRecordingDatabase(db)
+	require.NoError(t, recordingDB.Initialize(ctx, state))
+	for i := startBlockNum; i < numMsgs; i++ {
+		require.NoError(t, state.AccumulateDelayedMessage(delayedMessages[i]))
+		state.DelayedMessagesSeen++
+	}
+	require.NoError(t, state.GenerateDelayedMessagesSeenMerklePartialsAndRoot())
+
+	// Simulate reading of delayed Messages in native mode to record preimages
+	numMsgsToRead := uint64(7)
+	for i := startBlockNum; i < numMsgsToRead; i++ {
+		delayed, err := recordingDB.ReadDelayedMessage(ctx, state, i)
+		require.NoError(t, err)
+		require.Equal(t, delayed.Hash(), delayedMessages[i].Hash())
+	}
+
+	// Test reading in wasm mode
+	delayedDb := &delayedMessageDatabase{
+		&testPreimageResolver{
+			preimages: recordingDB.Preimages(),
+		},
+	}
+	for i := startBlockNum; i < numMsgsToRead; i++ {
+		msg, err := delayedDb.ReadDelayedMessage(ctx, state, i)
+		require.NoError(t, err)
+		require.Equal(t, msg.Hash(), delayedMessages[i].Hash())
+	}
+}
 
 func TestReadDelayedMessage(t *testing.T) {
 	ctx := context.Background()
