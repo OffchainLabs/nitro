@@ -1711,6 +1711,46 @@ var (
 	smallStepChallengeLeafHeight = uint64(1 << 10)
 )
 
+// deployCustomDAOSP deploys the OneStepProver contracts configured for custom DA.
+// Returns the address of the custom OneStepProofEntry contract.
+func deployCustomDAOSP(
+	t *testing.T,
+	ctx context.Context,
+	client *ethclient.Client,
+	opts *bind.TransactOpts,
+	refDAValidatorAddr common.Address,
+) common.Address {
+	// Deploy custom OneStepProverHostIo with the ReferenceDAProofValidator
+	ospHostIoAddr, tx, _, err := ospgen.DeployOneStepProverHostIo(opts, client, refDAValidatorAddr)
+	Require(t, err)
+	_, err = EnsureTxSucceeded(ctx, client, tx)
+	Require(t, err)
+
+	// Deploy the other OSP contracts
+	osp0Addr, tx, _, err := ospgen.DeployOneStepProver0(opts, client)
+	Require(t, err)
+	_, err = EnsureTxSucceeded(ctx, client, tx)
+	Require(t, err)
+
+	ospMemAddr, tx, _, err := ospgen.DeployOneStepProverMemory(opts, client)
+	Require(t, err)
+	_, err = EnsureTxSucceeded(ctx, client, tx)
+	Require(t, err)
+
+	ospMathAddr, tx, _, err := ospgen.DeployOneStepProverMath(opts, client)
+	Require(t, err)
+	_, err = EnsureTxSucceeded(ctx, client, tx)
+	Require(t, err)
+
+	// Deploy custom OneStepProofEntry with all the OSP contracts
+	customOspAddr, tx, _, err := ospgen.DeployOneStepProofEntry(opts, client, osp0Addr, ospMemAddr, ospMathAddr, ospHostIoAddr)
+	Require(t, err)
+	_, err = EnsureTxSucceeded(ctx, client, tx)
+	Require(t, err)
+
+	return customOspAddr
+}
+
 func deployOnParentChain(
 	t *testing.T,
 	ctx context.Context,
@@ -1821,37 +1861,8 @@ func deployOnParentChain(
 		var customOspAddr common.Address
 		if deployConfig.DeployReferenceDAContracts {
 			refDAValidatorAddr := parentChainInfo.GetAddress("ReferenceDAProofValidator")
-
-			// Deploy custom OneStepProverHostIo with the ReferenceDAProofValidator
-			ospHostIoAddr, tx, _, err := ospgen.DeployOneStepProverHostIo(
-				&parentChainTransactionOpts, parentChainReader.Client(), refDAValidatorAddr)
-			Require(t, err)
-			_, err = EnsureTxSucceeded(ctx, parentChainReader.Client(), tx)
-			Require(t, err)
-
-			// Deploy the other OSP contracts
-			osp0Addr, tx, _, err := ospgen.DeployOneStepProver0(&parentChainTransactionOpts, parentChainReader.Client())
-			Require(t, err)
-			_, err = EnsureTxSucceeded(ctx, parentChainReader.Client(), tx)
-			Require(t, err)
-
-			ospMemAddr, tx, _, err := ospgen.DeployOneStepProverMemory(&parentChainTransactionOpts, parentChainReader.Client())
-			Require(t, err)
-			_, err = EnsureTxSucceeded(ctx, parentChainReader.Client(), tx)
-			Require(t, err)
-
-			ospMathAddr, tx, _, err := ospgen.DeployOneStepProverMath(&parentChainTransactionOpts, parentChainReader.Client())
-			Require(t, err)
-			_, err = EnsureTxSucceeded(ctx, parentChainReader.Client(), tx)
-			Require(t, err)
-
-			// Deploy custom OneStepProofEntry with all the OSP contracts
-			customOspAddr, tx, _, err = ospgen.DeployOneStepProofEntry(
-				&parentChainTransactionOpts, parentChainReader.Client(),
-				osp0Addr, ospMemAddr, ospMathAddr, ospHostIoAddr)
-			Require(t, err)
-			_, err = EnsureTxSucceeded(ctx, parentChainReader.Client(), tx)
-			Require(t, err)
+			customOspAddr = deployCustomDAOSP(t, ctx, parentChainReader.Client(), &parentChainTransactionOpts, refDAValidatorAddr)
+			t.Logf("Deployed custom OneStepProofEntry at %s", customOspAddr.Hex())
 		}
 
 		wrappedClient := butil.NewBackendWrapper(parentChainReader.Client(), rpc.LatestBlockNumber)

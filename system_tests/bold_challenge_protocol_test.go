@@ -53,7 +53,6 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/challengeV2gen"
 	"github.com/offchainlabs/nitro/solgen/go/localgen"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
-	"github.com/offchainlabs/nitro/solgen/go/ospgen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/staker/bold"
@@ -832,34 +831,8 @@ func deployContractsOnly(
 		// Store the validator address so it can be accessed by tests
 		l1info.SetContract("ReferenceDAProofValidator", refDAValidatorAddr)
 
-		// Deploy custom OneStepProverHostIo with the ReferenceDAProofValidator
-		ospHostIoAddr, tx, _, err := ospgen.DeployOneStepProverHostIo(&l1TransactionOpts, backend, refDAValidatorAddr)
-		Require(t, err)
-		_, err = EnsureTxSucceeded(ctx, backend, tx)
-		Require(t, err)
-		t.Logf("Deployed custom OneStepProverHostIo at %s", ospHostIoAddr.Hex())
-
-		// Deploy the other OSP contracts
-		osp0Addr, tx, _, err := ospgen.DeployOneStepProver0(&l1TransactionOpts, backend)
-		Require(t, err)
-		_, err = EnsureTxSucceeded(ctx, backend, tx)
-		Require(t, err)
-
-		ospMemAddr, tx, _, err := ospgen.DeployOneStepProverMemory(&l1TransactionOpts, backend)
-		Require(t, err)
-		_, err = EnsureTxSucceeded(ctx, backend, tx)
-		Require(t, err)
-
-		ospMathAddr, tx, _, err := ospgen.DeployOneStepProverMath(&l1TransactionOpts, backend)
-		Require(t, err)
-		_, err = EnsureTxSucceeded(ctx, backend, tx)
-		Require(t, err)
-
-		// Deploy custom OneStepProofEntry with all the OSP contracts
-		customOspAddr, tx, _, err := ospgen.DeployOneStepProofEntry(&l1TransactionOpts, backend, osp0Addr, ospMemAddr, ospMathAddr, ospHostIoAddr)
-		Require(t, err)
-		_, err = EnsureTxSucceeded(ctx, backend, tx)
-		Require(t, err)
+		// Deploy custom OSP contracts
+		customOspAddr := deployCustomDAOSP(t, ctx, backend, &l1TransactionOpts, refDAValidatorAddr)
 		t.Logf("Deployed custom OneStepProofEntry at %s", customOspAddr.Hex())
 
 		// Deploy using the custom OSP
