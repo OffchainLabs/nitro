@@ -720,7 +720,7 @@ func getInboxTrackerAndReader(
 	sequencerInbox *SequencerInbox,
 	exec execution.ExecutionSequencer,
 ) (*InboxTracker, *InboxReader, error) {
-	inboxTracker, err := NewInboxTracker(arbDb, txStreamer, dapReaders, config.SnapSyncTest)
+	inboxTracker, err := NewInboxTracker(arbDb, txStreamer, dapReaders, config.SnapSyncTest, exec)
 	if err != nil {
 		return nil, nil, err
 	}

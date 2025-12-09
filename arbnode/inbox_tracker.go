@@ -25,6 +25,7 @@ import (
 	"github.com/offchainlabs/nitro/broadcaster"
 	"github.com/offchainlabs/nitro/broadcaster/message"
 	"github.com/offchainlabs/nitro/daprovider"
+	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/util/containers"
 )
@@ -35,24 +36,26 @@ var (
 )
 
 type InboxTracker struct {
-	db             ethdb.Database
-	txStreamer     *TransactionStreamer
-	mutex          sync.Mutex
-	validator      *staker.BlockValidator
-	dapReaders     *daprovider.DAProviderRegistry
-	snapSyncConfig SnapSyncConfig
+	db                 ethdb.Database
+	txStreamer         *TransactionStreamer
+	mutex              sync.Mutex
+	validator          *staker.BlockValidator
+	dapReaders         *daprovider.DAProviderRegistry
+	snapSyncConfig     SnapSyncConfig
+	arbosVersionGetter execution.ArbOSVersionGetter
 
 	batchMetaMutex sync.Mutex
 	batchMeta      *containers.LruCache[uint64, BatchMetadata]
 }
 
-func NewInboxTracker(db ethdb.Database, txStreamer *TransactionStreamer, dapReaders *daprovider.DAProviderRegistry, snapSyncConfig SnapSyncConfig) (*InboxTracker, error) {
+func NewInboxTracker(db ethdb.Database, txStreamer *TransactionStreamer, dapReaders *daprovider.DAProviderRegistry, snapSyncConfig SnapSyncConfig, arbosVersionGetter execution.ArbOSVersionGetter) (*InboxTracker, error) {
 	tracker := &InboxTracker{
-		db:             db,
-		txStreamer:     txStreamer,
-		dapReaders:     dapReaders,
-		batchMeta:      containers.NewLruCache[uint64, BatchMetadata](1000),
-		snapSyncConfig: snapSyncConfig,
+		db:                 db,
+		txStreamer:         txStreamer,
+		dapReaders:         dapReaders,
+		batchMeta:          containers.NewLruCache[uint64, BatchMetadata](1000),
+		snapSyncConfig:     snapSyncConfig,
+		arbosVersionGetter: arbosVersionGetter,
 	}
 	return tracker, nil
 }
@@ -787,6 +790,7 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client *ethclien
 		t.dapReaders,
 		daprovider.KeysetValidate,
 		t.txStreamer.chainConfig,
+		t.arbosVersionGetter,
 	)
 	batchMessageCounts := make(map[uint64]arbutil.MessageIndex)
 	currentPos := prevbatchmeta.MessageCount + 1
