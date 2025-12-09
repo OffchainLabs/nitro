@@ -644,7 +644,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 					return nil, nil, err
 				}
 
-				// This code block will be removed
+				// This code block will not be included in openExistingExecutionDB
 				err = pruning.PruneChainDb(ctx, chainDb, stack, &config.Init, cacheConfig, persistentConfig, l1Client, rollupAddrs, config.Node.ValidatorRequired())
 				if err != nil {
 					return chainDb, nil, fmt.Errorf("error pruning: %w", err)
@@ -655,13 +655,13 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 					return chainDb, nil, err
 				}
 
-				// This code block will be removed
+				// This code block will not be included in openExistingExecutionDB
 				err = validateBlockChain(l2BlockChain, chainConfig)
 				if err != nil {
 					return chainDb, l2BlockChain, err
 				}
 
-				// This code block will be: func recreateMissingStates(...) error, but will not be called here
+				// This code block will be: func recreateMissingStates(...) error, but will not be included in openExistingExecutionDB
 				if config.Init.RecreateMissingStateFrom > 0 {
 					err = staterecovery.RecreateMissingStates(chainDb, l2BlockChain, cacheConfig, config.Init.RecreateMissingStateFrom)
 					if err != nil {
@@ -803,7 +803,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 	}
 
 	// execution-node=true
-	// With exception of the blocks related to validateGenesisAssertion and getParsedInitMessage, this code block will be: (*ExecutionNode) func initializeL2Blockchain(...) (*core.Blockchain, error).
+	// With exception of the blocks related to validateGenesisAssertion and getParsedInitMessage, this code block will be: func getNewBlockchain(...) (*core.Blockchain, error)
 	var l2BlockChain *core.BlockChain
 	txIndexWg := sync.WaitGroup{}
 	if initDataReader == nil {
@@ -868,9 +868,9 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 		}
 
 		// consensus-node=true
-		// This code block will be: func getParsedInitMessage(...) (*arbostypes.ParsedInitMessage, error).
-		// if config.Node.ParentChainReader.Enable is false then getParsedInitMessage(...) will return (nil, nil).
-		// Consensus will push that parsed init message to Execution, and if Execution receives nil it will build a fake init message based on chainConfig.
+		// This code block will be: func getConsensusParsedInitMessage(...) (*arbostypes.ParsedInitMessage, error).
+		//
+		// For the Task: Enabling execution only mode, getExecutionParsedInitMessage will be created, that will rely only on information available to Execution.
 		var parsedInitMessage *arbostypes.ParsedInitMessage
 		if config.Node.ParentChainReader.Enable {
 			delayedBridge, err := arbnode.NewDelayedBridge(l1Client, rollupAddrs.Bridge, rollupAddrs.DeployedAt)
@@ -932,7 +932,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 		}
 
 		// A func will be created: func getGenesisAssertionCreationInfo(...) (*protocol.AssertionCreatedInfo, error)
-		// Consensus will provide protocol.AssertionCreatedInfo, alongside ParsedInitMessage, to Execution.
+		// validateBlockchain will be modified to do this validation as well.
 		if config.Init.ValidateGenesisAssertion {
 			if err := validateGenesisAssertion(ctx, rollupAddrs.Rollup, l1Client, l2BlockChain.Genesis().Hash(), initDataReaderHasAccounts); err != nil {
 				if !config.Init.Force {
@@ -945,7 +945,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 	txIndexWg.Wait()
 
 	// execution-node=true
-	// This code block will be: (*ExecutionNode) func pruneExecutionDB(...) error.
+	// This code block will be: func pruneChainDB(...) error.
 	err = chainDb.SyncAncient()
 	if err != nil {
 		return chainDb, l2BlockChain, err
@@ -956,14 +956,14 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 	}
 
 	// execution-node=true
-	// This code block will be: (*ExecutionNode) func validateBlockChain(...) error.
+	// This code block will be: func validateBlockChain(...) error.
 	err = validateBlockChain(l2BlockChain, chainConfig)
 	if err != nil {
 		return chainDb, l2BlockChain, err
 	}
 
 	// execution-node=true
-	// This code block will be: (*ExecutionNode) func rebuildLocalWasm(...) error
+	// This code block will be: func rebuildLocalWasm(...) error
 	return rebuildLocalWasm(ctx, &config.Execution, l2BlockChain, chainDb, wasmDb, config.Init.RebuildLocalWasm)
 }
 

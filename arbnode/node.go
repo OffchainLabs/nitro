@@ -1364,7 +1364,6 @@ func (n *Node) Start(ctx context.Context) error {
 		execClient = nil
 	}
 
-	// This code block will be removed
 	if execClient != nil {
 		err := execClient.Initialize(ctx)
 		if err != nil {
@@ -1380,7 +1379,6 @@ func (n *Node) Start(ctx context.Context) error {
 		execClient.SetConsensusClient(n)
 	}
 
-	// This code block will be removed, ExecutionClient.Start will be called by TransactionStreamer
 	err = n.ExecutionClient.Start(ctx)
 	if err != nil {
 		return fmt.Errorf("error starting exec client: %w", err)
