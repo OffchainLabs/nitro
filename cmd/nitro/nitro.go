@@ -536,11 +536,6 @@ func mainImpl() int {
 	var execNode *gethexec.ExecutionNode
 	var consensusNode *arbnode.Node
 	if nodeConfig.Node.ExecutionRPCClient.URL == "" || nodeConfig.Node.ExecutionRPCClient.URL == "self" {
-		if nodeConfig.Node.ExecutionRPCClient.URL == "self" {
-			selfURL := fmt.Sprintf("http://%s:%d", stack.Config().HTTPHost, stack.Config().HTTPPort)
-			nodeConfig.Node.ExecutionRPCClient.URL = selfURL
-			nodeConfig.Execution.ConsensusRPCClient.URL = selfURL
-		}
 		execNode, err = gethexec.CreateExecutionNode(
 			ctx,
 			stack,

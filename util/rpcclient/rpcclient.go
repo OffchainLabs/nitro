@@ -234,13 +234,21 @@ func (c *RpcClient) Start(ctx_in context.Context) error {
 		if c.autoStack == nil {
 			return errors.New("self not supported for this connection")
 		}
-		url = c.autoStack.WSEndpoint()
+		if c.autoStack.Config().WSHost != "" {
+			url = c.autoStack.WSEndpoint()
+		} else if c.autoStack.Config().HTTPHost != "" {
+			url = c.autoStack.HTTPEndpoint()
+		}
 		jwtPath = ""
 	} else if url == "self-auth" {
 		if c.autoStack == nil {
 			return errors.New("self-auth not supported for this connection")
 		}
-		url = c.autoStack.WSAuthEndpoint()
+		if c.autoStack.Config().WSHost != "" {
+			url = c.autoStack.WSAuthEndpoint()
+		} else if c.autoStack.Config().HTTPHost != "" {
+			url = c.autoStack.HTTPAuthEndpoint()
+		}
 		jwtPath = c.autoStack.JWTPath()
 	} else if url == "" {
 		return errors.New("no url provided for this connection")

@@ -418,31 +418,24 @@ func (b *NodeBuilder) DontParalellise() *NodeBuilder {
 	return b
 }
 
-func (b *NodeBuilder) WithConsensusExecutionOverRPC(t *testing.T) *NodeBuilder {
-	configureConsensusExecutionOverRPC(t, b.execConfig, b.nodeConfig, b.l2StackConfig)
+func (b *NodeBuilder) WithConsensusExecutionOverRPC() *NodeBuilder {
+	configureConsensusExecutionOverRPC(b.execConfig, b.nodeConfig, b.l2StackConfig)
 	return b
 }
 
-func configureConsensusExecutionOverRPC(t *testing.T, execConfig *gethexec.Config, nodeConfig *arbnode.Config, l2StackConfig *node.Config) {
-	var httpHost string
-	if l2StackConfig.HTTPHost == "" || l2StackConfig.HTTPHost == "localhost" {
+func configureConsensusExecutionOverRPC(execConfig *gethexec.Config, nodeConfig *arbnode.Config, l2StackConfig *node.Config) {
+	if l2StackConfig.HTTPHost == "" {
 		l2StackConfig.HTTPHost = "localhost"
-		httpHost = "http://127.0.0.1"
-	} else {
-		httpHost = l2StackConfig.HTTPHost
-	}
-	if l2StackConfig.HTTPPort == 0 {
-		l2StackConfig.HTTPPort = getRandomPort(t)
 	}
 	l2StackConfig.HTTPModules = append(l2StackConfig.HTTPModules, consensus.RPCNamespace, execution.RPCNamespace)
 	nodeConfig.RPCServer.Enable = true
 	nodeConfig.RPCServer.Public = true
 	nodeConfig.RPCServer.Authenticated = false
-	nodeConfig.ExecutionRPCClient.URL = fmt.Sprintf("%s:%d", httpHost, l2StackConfig.HTTPPort)
+	nodeConfig.ExecutionRPCClient.URL = "self"
 	execConfig.RPCServer.Enable = true
 	execConfig.RPCServer.Public = true
 	execConfig.RPCServer.Authenticated = false
-	execConfig.ConsensusRPCClient.URL = fmt.Sprintf("%s:%d", httpHost, l2StackConfig.HTTPPort)
+	execConfig.ConsensusRPCClient.URL = "self"
 }
 
 func (b *NodeBuilder) WithArbOSVersion(arbosVersion uint64) *NodeBuilder {
@@ -812,7 +805,7 @@ func (b *NodeBuilder) BuildL3OnL2(t *testing.T) func() {
 	)
 
 	if *testflag.ConsensusExecutionInSameProcessUseRPC {
-		configureConsensusExecutionOverRPC(t, b.l3Config.execConfig, b.l3Config.nodeConfig, b.l3Config.stackConfig)
+		configureConsensusExecutionOverRPC(b.l3Config.execConfig, b.l3Config.nodeConfig, b.l3Config.stackConfig)
 	}
 	b.L3 = buildOnParentChain(
 		t,
@@ -845,7 +838,7 @@ func (b *NodeBuilder) BuildL3OnL2(t *testing.T) func() {
 
 func (b *NodeBuilder) BuildL2OnL1(t *testing.T) func() {
 	if *testflag.ConsensusExecutionInSameProcessUseRPC {
-		b.WithConsensusExecutionOverRPC(t)
+		b.WithConsensusExecutionOverRPC()
 	}
 	b.L2 = buildOnParentChain(
 		t,
@@ -908,7 +901,7 @@ func (b *NodeBuilder) BuildL2OnL1(t *testing.T) func() {
 // Requires precompiles.AllowDebugPrecompiles = true
 func (b *NodeBuilder) BuildL2(t *testing.T) func() {
 	if *testflag.ConsensusExecutionInSameProcessUseRPC {
-		b.WithConsensusExecutionOverRPC(t)
+		b.WithConsensusExecutionOverRPC()
 	}
 	if b.parallelise {
 		b.parallelise = false
@@ -1078,7 +1071,7 @@ func build2ndNode(
 		t.Fatal("The batch poster must use Redis when enabled for multiple nodes")
 	}
 	if *testflag.ConsensusExecutionInSameProcessUseRPC {
-		configureConsensusExecutionOverRPC(t, params.execConfig, params.nodeConfig, params.stackConfig)
+		configureConsensusExecutionOverRPC(params.execConfig, params.nodeConfig, params.stackConfig)
 	}
 
 	var cleanup func()

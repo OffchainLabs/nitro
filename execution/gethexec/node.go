@@ -371,7 +371,7 @@ func CreateExecutionNode(
 
 	if config.ConsensusRPCClient.URL != "" {
 		consensusConfigFetcher := func() *rpcclient.ClientConfig { return &config.ConsensusRPCClient }
-		execNode.consensusRPCClient = consensusrpcclient.NewConsensusRPCClient(consensusConfigFetcher, nil)
+		execNode.consensusRPCClient = consensusrpcclient.NewConsensusRPCClient(consensusConfigFetcher, stack)
 	}
 
 	apis := []rpc.API{{

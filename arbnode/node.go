@@ -1376,7 +1376,7 @@ func CreateConsensusNodeConnectedWithSimpleExecutionClient(
 ) (*Node, error) {
 	if configFetcher.Get().ExecutionRPCClient.URL != "" {
 		execConfigFetcher := func() *rpcclient.ClientConfig { return &configFetcher.Get().ExecutionRPCClient }
-		executionClient = executionrpcclient.NewExecutionRPCClient(execConfigFetcher, nil)
+		executionClient = executionrpcclient.NewExecutionRPCClient(execConfigFetcher, stack)
 	}
 	if executionClient == nil {
 		return nil, errors.New("execution client must be non-nil")
@@ -1412,7 +1412,7 @@ func CreateConsensusNodeConnectedWithFullExecutionClient(
 	var executionClient execution.ExecutionClient
 	if configFetcher.Get().ExecutionRPCClient.URL != "" {
 		execConfigFetcher := func() *rpcclient.ClientConfig { return &configFetcher.Get().ExecutionRPCClient }
-		executionClient = executionrpcclient.NewExecutionRPCClient(execConfigFetcher, nil)
+		executionClient = executionrpcclient.NewExecutionRPCClient(execConfigFetcher, stack)
 	} else {
 		executionClient = fullExecutionClient
 	}
