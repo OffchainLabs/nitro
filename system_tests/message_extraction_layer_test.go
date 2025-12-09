@@ -75,7 +75,7 @@ func TestMessageExtractionLayer_SequencerBatchMessageEquivalence(t *testing.T) {
 		builder.addresses,
 		melDB,
 		mockMsgConsumer,
-		nil, // TODO: Provide da readers here.
+		daprovider.NewDAProviderRegistry(),
 	)
 	Require(t, err)
 	extractor.StopWaiter.Start(ctx, extractor)
@@ -349,7 +349,7 @@ func TestMessageExtractionLayer_DelayedMessageEquivalence_Simple(t *testing.T) {
 		builder.addresses,
 		melDB,
 		mockMsgConsumer,
-		nil, // TODO: Provide da readers here.
+		daprovider.NewDAProviderRegistry(),
 	)
 	Require(t, err)
 	extractor.StopWaiter.Start(ctx, extractor)
