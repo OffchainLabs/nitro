@@ -83,10 +83,10 @@ fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
             if !return_data.is_empty() {
                 console!("Contract {addr} returned {} bytes", return_data.len());
             }
+            output.extend_from_slice(&return_data);
             if kind & 0x8 != 0 {
-                evm::log(Called { addr, count, success, return_data: return_data.clone() })
+                evm::log(Called { addr, count, success, return_data })
             }
-            output.extend(return_data);
         } else if kind & 0xf0 == 0x10  {
             // storage
             let slot = B256::try_from(&curr[..32]).unwrap();
@@ -105,7 +105,7 @@ fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
                 console!("reading slot");
                 write = false;
                 data = StorageCache::get_word(slot.into());
-                output.extend(data.clone());
+                output.extend_from_slice(&data.0);
             } else {
                 panic!("unknown storage kind {kind}")
             }
