@@ -2288,14 +2288,10 @@ func createReferenceDAProviderServerWithControl(t *testing.T, ctx context.Contex
 	server, err := dapserver.NewServerWithDAPProvider(ctx, serverConfig, reader, wrappedWriter, validator, headerBytes, data_streaming.PayloadCommitmentVerifier())
 	Require(t, err)
 
-	// Extract server address
-	serverAddr := strings.TrimPrefix(server.Addr, "http://")
-	serverURL := fmt.Sprintf("http://%s", serverAddr)
-
-	t.Logf("Started controllable ReferenceDA provider server at %s", serverURL)
+	t.Logf("Started controllable ReferenceDA provider server at %s", server.Addr)
 
 	// Return server, URL, and controllable writer for direct manipulation
-	return server, serverURL, wrappedWriter
+	return server, server.Addr, wrappedWriter
 }
 
 func getDeadlineTimeout(t *testing.T, defaultTimeout time.Duration) time.Duration {
