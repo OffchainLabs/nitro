@@ -22,6 +22,16 @@ import (
 	"github.com/offchainlabs/nitro/util/containers"
 )
 
+type EvilStrategy int
+
+const (
+	NoEvil                  EvilStrategy = iota // Normal behavior
+	EvilDataGoodCert                            // Wrong data, correct cert
+	EvilDataEvilCert                            // Wrong data, matching evil cert
+	UntrustedSignerCert                         // Valid format cert signed by untrusted key
+	ValidCertClaimedInvalid                     // Valid cert, but validator claims invalid
+)
+
 const (
 	// ValidityProofValid is the byte value indicating a valid certificate in evil proofs
 	ValidityProofValid = 1

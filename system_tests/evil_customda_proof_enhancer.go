@@ -11,16 +11,6 @@ import (
 	"github.com/offchainlabs/nitro/validator/proofenhancement"
 )
 
-type EvilStrategy int
-
-const (
-	NoEvil                  EvilStrategy = iota // Normal behavior
-	EvilDataGoodCert                            // Wrong data, correct cert
-	EvilDataEvilCert                            // Wrong data, matching evil cert
-	UntrustedSignerCert                         // Valid format cert signed by untrusted key
-	ValidCertClaimedInvalid                     // Valid cert, but validator claims invalid
-)
-
 // EvilCustomDAProofEnhancer wraps the standard ReadPreimageProofEnhancer to inject evil certificates
 type EvilCustomDAProofEnhancer struct {
 	*proofenhancement.ReadPreimageProofEnhancer
