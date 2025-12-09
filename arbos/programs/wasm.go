@@ -12,7 +12,6 @@ import (
 	"github.com/ethereum/go-ethereum/arbitrum/multigas"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
-	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
 
@@ -157,12 +156,7 @@ func startProgram(module uint32) uint32
 //go:wasmimport programs send_response
 func sendResponse(req_id uint32) uint32
 
-func getCompiledProgram(statedb vm.StateDB, moduleHash common.Hash, addressForLogging common.Address, code []byte, codeHash common.Hash, maxWasmSize uint32, pagelimit uint16, time uint64, debugMode bool, program Program, runCtx *core.MessageRunContext) (map[rawdb.WasmTarget][]byte, error) {
-	// we need to return asm map with an entry for local target to make checks for local target work
-	return map[rawdb.WasmTarget][]byte{rawdb.LocalTarget(): {}}, nil
-}
-
-func handleProgramPrepare(statedb vm.StateDB, moduleHash common.Hash, addressForLogging common.Address, code []byte, codehash common.Hash, maxWasmSize uint32, pagelimit uint16, time uint64, debugMode bool, program Program, runCtx *core.MessageRunContext) {
+func handleProgramPrepare(statedb vm.StateDB, moduleHash common.Hash, addressForLogging common.Address, code []byte, codehash common.Hash, maxWasmSize uint32, pagelimit uint16, time uint64, debugMode bool, program Program, runCtx *core.MessageRunContext) []byte {
 	requiresPrepare := programRequiresPrepare(unsafe.Pointer(&moduleHash[0]))
 	if requiresPrepare != 0 {
 		var debugInt uint32
@@ -187,6 +181,8 @@ func handleProgramPrepare(statedb vm.StateDB, moduleHash common.Hash, addressFor
 			unsafe.Pointer(runCtx),
 		)
 	}
+
+	return []byte{}
 }
 
 func callProgram(
