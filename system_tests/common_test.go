@@ -273,9 +273,9 @@ func ExecConfigDefaultTest(t *testing.T, stateScheme string) *gethexec.Config {
 
 // DeployConfig contains options for deployOnParentChain
 type DeployConfig struct {
-	DeployBold           bool
-	DeployReferenceDA    bool
-	DelayBufferThreshold uint64
+	DeployBold                 bool
+	DeployReferenceDAContracts bool
+	DelayBufferThreshold       uint64
 }
 
 type NodeBuilder struct {
@@ -309,8 +309,13 @@ type NodeBuilder struct {
 	withProdConfirmPeriodBlocks bool
 	delayBufferThreshold        uint64
 	withL1ClientWrapper         bool
-	deployReferenceDA           bool
+	deployReferenceDAContracts  bool
+	withReferenceDAProvider     bool
 	TrieNoAsyncFlush            bool
+
+	// ReferenceDA server (created if withReferenceDAProvider is true)
+	referenceDAServer *http.Server
+	referenceDAURL    string
 
 	// Created nodes
 	L1 *TestClient
@@ -460,9 +465,35 @@ func (b *NodeBuilder) WithDelayBuffer(threshold uint64) *NodeBuilder {
 	return b
 }
 
-func (b *NodeBuilder) WithReferenceDA() *NodeBuilder {
-	b.deployReferenceDA = true
+// WithReferenceDAContractsOnly deploys the ReferenceDA proof validator contract on L1
+// but does not create a provider server. Use this when you need manual server setup
+// (e.g., multi-writer tests that combine ReferenceDA with other DA backends).
+func (b *NodeBuilder) WithReferenceDAContractsOnly() *NodeBuilder {
+	b.deployReferenceDAContracts = true
 	return b
+}
+
+// WithReferenceDA enables ReferenceDA with an external provider server.
+// The server is created after L1 is built and configured automatically.
+func (b *NodeBuilder) WithReferenceDA() *NodeBuilder {
+	b.deployReferenceDAContracts = true
+	b.withReferenceDAProvider = true
+	return b
+}
+
+// setupReferenceDAServer creates the ReferenceDA provider server and configures the node.
+// Must be called after BuildL1 completes (needs L1 client and deployed contracts).
+func (b *NodeBuilder) setupReferenceDAServer(t *testing.T) {
+	validatorAddr := b.L1Info.GetAddress("ReferenceDAProofValidator")
+	dataSigner := signature.DataSignerFromPrivateKey(b.L1Info.GetInfoWithPrivKey("Sequencer").PrivateKey)
+
+	b.referenceDAServer, b.referenceDAURL =
+		createReferenceDAProviderServer(t, b.ctx, b.L1.Client, validatorAddr, dataSigner, 0)
+
+	// Configure the node to use the ReferenceDA provider
+	b.nodeConfig.DA.ExternalProvider.Enable = true
+	b.nodeConfig.DA.ExternalProvider.RPC.URL = b.referenceDAURL
+	b.nodeConfig.DA.ExternalProvider.WithWriter = true
 }
 
 func (b *NodeBuilder) RequireScheme(t *testing.T, scheme string) *NodeBuilder {
@@ -511,6 +542,9 @@ func (b *NodeBuilder) Build(t *testing.T) func() {
 	b.CheckConfig(t)
 	if b.withL1 {
 		b.BuildL1(t)
+		if b.withReferenceDAProvider {
+			b.setupReferenceDAServer(t)
+		}
 		return b.BuildL2OnL1(t)
 	}
 	return b.BuildL2(t)
@@ -653,11 +687,11 @@ func (b *NodeBuilder) BuildL1(t *testing.T) {
 	locator, err := server_common.NewMachineLocator(b.valnodeConfig.Wasm.RootPath)
 	Require(t, err)
 	deployConfig := DeployConfig{
-		DeployBold:           b.deployBold,
-		DeployReferenceDA:    b.deployReferenceDA,
-		DelayBufferThreshold: b.delayBufferThreshold,
+		DeployBold:                 b.deployBold,
+		DeployReferenceDAContracts: b.deployReferenceDAContracts,
+		DelayBufferThreshold:       b.delayBufferThreshold,
 	}
-	t.Logf("BuildL1 deployConfig: DeployBold=%v, DeployReferenceDA=%v", deployConfig.DeployBold, deployConfig.DeployReferenceDA)
+	t.Logf("BuildL1 deployConfig: DeployBold=%v, DeployReferenceDAContracts=%v", deployConfig.DeployBold, deployConfig.DeployReferenceDAContracts)
 	b.addresses, b.initMessage = deployOnParentChain(
 		t,
 		b.ctx,
@@ -769,9 +803,9 @@ func (b *NodeBuilder) BuildL3OnL2(t *testing.T) func() {
 	parentChainReaderConfig := headerreader.TestConfig
 	parentChainReaderConfig.Dangerous.WaitForTxApprovalSafePoll = 0
 	deployConfig := DeployConfig{
-		DeployBold:           b.deployBold,
-		DeployReferenceDA:    false, // L3 doesn't need ReferenceDA
-		DelayBufferThreshold: 0,
+		DeployBold:                 b.deployBold,
+		DeployReferenceDAContracts: false, // L3 doesn't need ReferenceDA
+		DelayBufferThreshold:       0,
 	}
 	b.l3Addresses, b.l3InitMessage = deployOnParentChain(
 		t,
@@ -868,6 +902,11 @@ func (b *NodeBuilder) BuildL2OnL1(t *testing.T) func() {
 		b.L2.cleanup()
 		if b.L1 != nil && b.L1.cleanup != nil {
 			b.L1.cleanup()
+		}
+		if b.referenceDAServer != nil {
+			if err := b.referenceDAServer.Shutdown(context.Background()); err != nil {
+				t.Logf("Error shutting down ReferenceDA server: %v", err)
+			}
 		}
 		b.ctxCancel()
 	}
@@ -1710,8 +1749,8 @@ func deployOnParentChain(
 	maxDataSize := big.NewInt(117964)
 
 	// Deploy ReferenceDA contracts if enabled (needed for both BOLD and legacy)
-	if deployConfig.DeployReferenceDA {
-		t.Logf("Deploying ReferenceDA contracts (deployConfig.DeployReferenceDA = true)")
+	if deployConfig.DeployReferenceDAContracts {
+		t.Logf("Deploying ReferenceDA contracts (deployConfig.DeployReferenceDAContracts = true)")
 		// Deploy ReferenceDAProofValidator with trusted signers
 		// Using Sequencer as the trusted signer since it's the one signing certificates
 		trustedSigners := []common.Address{parentChainInfo.GetAddress("Sequencer")}
@@ -1780,7 +1819,7 @@ func deployOnParentChain(
 
 		// Deploy custom OSP for ReferenceDA if enabled
 		var customOspAddr common.Address
-		if deployConfig.DeployReferenceDA {
+		if deployConfig.DeployReferenceDAContracts {
 			refDAValidatorAddr := parentChainInfo.GetAddress("ReferenceDAProofValidator")
 
 			// Deploy custom OneStepProverHostIo with the ReferenceDAProofValidator
@@ -1823,7 +1862,7 @@ func deployOnParentChain(
 			MinimumAssertionPeriod: 0,
 		}
 
-		if deployConfig.DeployReferenceDA {
+		if deployConfig.DeployReferenceDAContracts {
 			rollupStackConfig.CustomDAOsp = customOspAddr
 		}
 

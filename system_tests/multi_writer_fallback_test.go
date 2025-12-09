@@ -37,7 +37,7 @@ func TestMultiWriterFailure_CustomDAShutdownWithAnyTrustAvailable(t *testing.T) 
 	builder.parallelise = false
 
 	// Deploy ReferenceDA validator contract
-	builder.WithReferenceDA()
+	builder.WithReferenceDAContractsOnly()
 
 	builder.BuildL1(t)
 
@@ -177,7 +177,7 @@ func TestMultiWriterFailure_CustomDAShutdownNoFallbackAvailable(t *testing.T) {
 	builder.parallelise = false
 
 	// Deploy ReferenceDA validator contract
-	builder.WithReferenceDA()
+	builder.WithReferenceDAContractsOnly()
 
 	builder.BuildL1(t)
 
@@ -421,7 +421,7 @@ func TestMultiWriterFallback_CustomDAToAnyTrustExplicit(t *testing.T) {
 	builder.parallelise = false
 
 	// Deploy ReferenceDA validator contract
-	builder.WithReferenceDA()
+	builder.WithReferenceDAContractsOnly()
 
 	builder.BuildL1(t)
 
@@ -653,7 +653,7 @@ func TestMultiWriterFallback_CustomDAToCalldataWithBatchResizing(t *testing.T) {
 	builder.parallelise = false
 
 	// Deploy ReferenceDA validator contract
-	builder.WithReferenceDA()
+	builder.WithReferenceDAContractsOnly()
 
 	builder.BuildL1(t)
 
