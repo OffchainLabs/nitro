@@ -17,10 +17,9 @@ import (
 	"github.com/offchainlabs/nitro/arbnode/mel"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbstate"
-	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/daprovider"
-	"github.com/offchainlabs/nitro/util/containers"
+	"github.com/offchainlabs/nitro/execution"
 )
 
 func TestExtractMessages(t *testing.T) {
@@ -155,7 +154,7 @@ func TestExtractMessages(t *testing.T) {
 					nil,
 					txsFetcher,
 					chaininfo.ArbitrumDevTestChainConfig(),
-					&mockedArbosVersionGetter{},
+					&execution.ConstArbosVersionGetter{Version: params.ArbosVersion_50},
 				)
 			} else {
 				// Test the internal extractMessagesImpl function
@@ -175,7 +174,7 @@ func TestExtractMessages(t *testing.T) {
 					tt.extractBatchMessages,
 					tt.parseSequencerMsg,
 					tt.parseReport,
-					&mockedArbosVersionGetter{},
+					&execution.ConstArbosVersionGetter{Version: params.ArbosVersion_50},
 				)
 			}
 
@@ -381,10 +380,4 @@ func failingExtractBatchMessages(
 	delayedMsgDB DelayedMessageDatabase,
 ) ([]*arbostypes.MessageWithMetadata, error) {
 	return nil, errors.New("failed to extract batch messages")
-}
-
-type mockedArbosVersionGetter struct{}
-
-func (m *mockedArbosVersionGetter) ArbOSVersionForMessageIndex(msgIdx arbutil.MessageIndex) containers.PromiseInterface[uint64] {
-	return containers.NewReadyPromise(params.ArbosVersion_50, nil)
 }

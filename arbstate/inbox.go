@@ -223,7 +223,7 @@ type inboxMultiplexer struct {
 	arbOSVersionGetter   execution.ArbOSVersionGetter
 }
 
-func NewInboxMultiplexer(backend InboxBackend, delayedMessagesRead uint64, dapReaders DapReaderSource, keysetValidationMode daprovider.KeysetValidationMode, chainConfig *params.ChainConfig) arbostypes.InboxMultiplexer {
+func NewInboxMultiplexer(backend InboxBackend, delayedMessagesRead uint64, dapReaders DapReaderSource, keysetValidationMode daprovider.KeysetValidationMode, chainConfig *params.ChainConfig, arbosVersionGetter execution.ArbOSVersionGetter) arbostypes.InboxMultiplexer {
 	return &inboxMultiplexer{
 		backend:                   backend,
 		delayedMessagesRead:       delayedMessagesRead,
@@ -236,6 +236,7 @@ func NewInboxMultiplexer(backend InboxBackend, delayedMessagesRead uint64, dapRe
 		cachedSegmentBlockNumber:  0,
 		cachedSubMessageNumber:    0,
 		keysetValidationMode:      keysetValidationMode,
+		arbOSVersionGetter:        arbosVersionGetter,
 	}
 }
 
