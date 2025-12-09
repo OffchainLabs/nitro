@@ -136,7 +136,7 @@ func (b *DelayedBridge) GetAccumulator(ctx context.Context, sequenceNumber uint6
 	return hash, nil
 }
 
-func (b *DelayedBridge) LookupMessagesInRange(ctx context.Context, from, to *big.Int, batchFetcher arbostypes.FallibleBatchFetcher) ([]*mel.DelayedInboxMessage, error) {
+func (b *DelayedBridge) LookupMessagesInRange(ctx context.Context, from, to *big.Int, batchFetcher arbostypes.FallibleBatchFetcherWithParentBlock) ([]*mel.DelayedInboxMessage, error) {
 	query := ethereum.FilterQuery{
 		BlockHash: nil,
 		FromBlock: from,
@@ -165,7 +165,7 @@ func (l sortableMessageList) Less(i, j int) bool {
 	return bytes.Compare(l[i].Message.Header.RequestId.Bytes(), l[j].Message.Header.RequestId.Bytes()) < 0
 }
 
-func (b *DelayedBridge) logsToDeliveredMessages(ctx context.Context, logs []types.Log, batchFetcher arbostypes.FallibleBatchFetcher) ([]*mel.DelayedInboxMessage, error) {
+func (b *DelayedBridge) logsToDeliveredMessages(ctx context.Context, logs []types.Log, batchFetcher arbostypes.FallibleBatchFetcherWithParentBlock) ([]*mel.DelayedInboxMessage, error) {
 	if len(logs) == 0 {
 		return nil, nil
 	}
@@ -239,7 +239,7 @@ func (b *DelayedBridge) logsToDeliveredMessages(ctx context.Context, logs []type
 			},
 			ParentChainBlockNumber: parsedLog.Raw.BlockNumber,
 		}
-		err := msg.Message.FillInBatchGasFields(batchFetcher)
+		err := msg.Message.FillInBatchGasFieldsWithParentBlock(batchFetcher, msg.ParentChainBlockNumber)
 		if err != nil {
 			return nil, err
 		}
