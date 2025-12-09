@@ -11,6 +11,8 @@ import (
 
 	"github.com/ethereum/go-ethereum/arbitrum/multigas"
 	"github.com/ethereum/go-ethereum/params"
+
+	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
 func toGwei(wei *big.Int) string {
@@ -123,6 +125,62 @@ func TestCompareSingleGasConstraintsPricingModelWithMultiGasConstraints(t *testi
 				)
 			}
 		}
+	}
+}
+
+func TestCalcMultiGasConstraintsExponents(t *testing.T) {
+	pricing := PricingForTest(t)
+	pricing.ArbosVersion = ArbosMultiGasConstraintsVersion
+
+	Require(t, pricing.AddMultiGasConstraint(
+		100000,
+		10,
+		20000,
+		map[uint8]uint64{
+			uint8(multigas.ResourceKindComputation):   1,
+			uint8(multigas.ResourceKindStorageAccess): 2,
+		},
+	))
+	Require(t, pricing.AddMultiGasConstraint(
+		50000,
+		5,
+		15000,
+		map[uint8]uint64{
+			uint8(multigas.ResourceKindStorageGrowth): 1,
+		},
+	))
+
+	exponents, err := pricing.CalcMultiGasConstraintsExponents()
+	Require(t, err)
+
+	// From constraint 1:
+	// exp_comp  = floor(20000 * 1 * 10000 / (10 * 100000 * 3)) = 66
+	// exp_store = floor(20000 * 2 * 10000 / (10 * 100000 * 3)) = 133
+	if got, want := exponents[multigas.ResourceKindComputation], arbmath.Bips(66); got != want {
+		t.Errorf("unexpected computation exponent: got %v, want %v", got, want)
+	}
+	if got, want := exponents[multigas.ResourceKindStorageAccess], arbmath.Bips(133); got != want {
+		t.Errorf("unexpected storage-access exponent: got %v, want %v", got, want)
+	}
+
+	// From constraint 2:
+	// exp_storageGrowth = floor(15000 * 1 * 10000 / (5 * 50000 * 1)) = 600
+	if got, want := exponents[multigas.ResourceKindStorageGrowth], arbmath.Bips(600); got != want {
+		t.Errorf("unexpected storage-growth exponent: got %v, want %v", got, want)
+	}
+
+	// All other kinds should be zero
+	if got := exponents[multigas.ResourceKindHistoryGrowth]; got != 0 {
+		t.Errorf("expected zero history-growth exponent, got %v", got)
+	}
+	if got := exponents[multigas.ResourceKindL1Calldata]; got != 0 {
+		t.Errorf("expected zero L1 calldata exponent, got %v", got)
+	}
+	if got := exponents[multigas.ResourceKindL2Calldata]; got != 0 {
+		t.Errorf("expected zero L2 calldata exponent, got %v", got)
+	}
+	if got := exponents[multigas.ResourceKindWasmComputation]; got != 0 {
+		t.Errorf("expected zero wasm computation exponent, got %v", got)
 	}
 }
 
