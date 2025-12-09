@@ -26,7 +26,7 @@ const (
 )
 
 func TestTooBigBatchGetsRejected(t *testing.T) {
-	builder, ctx, cleanup := setUp(t, false)
+	builder, ctx, cleanup := setupNodeForTestingBatchSizeLimit(t, false)
 	defer cleanup()
 
 	checkReceiverAccountBalance(t, ctx, builder, 0)
@@ -40,7 +40,7 @@ func TestTooBigBatchGetsRejected(t *testing.T) {
 }
 
 func TestCanIncreaseBatchSizeLimit(t *testing.T) {
-	builder, ctx, cleanup := setUp(t, true)
+	builder, ctx, cleanup := setupNodeForTestingBatchSizeLimit(t, true)
 	defer cleanup()
 
 	checkReceiverAccountBalance(t, ctx, builder, 0)
@@ -53,10 +53,10 @@ func TestCanIncreaseBatchSizeLimit(t *testing.T) {
 	checkReceiverAccountBalance(t, ctx, builder, TransferAmount)
 }
 
-// setup initializes a test node with the option to set a higher uncompressed batch size limit.
+// setupNodeForTestingBatchSizeLimit initializes a test node with the option to set a higher uncompressed batch size limit.
 // Also, it creates genesis accounts for sender and receiver with appropriate balances.
 // It returns the NodeBuilder and a cleanup function to be called after the test.
-func setUp(t *testing.T, setHighLimit bool) (*NodeBuilder, context.Context, func()) {
+func setupNodeForTestingBatchSizeLimit(t *testing.T, setHighLimit bool) (*NodeBuilder, context.Context, func()) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
