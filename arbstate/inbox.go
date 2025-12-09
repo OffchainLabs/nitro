@@ -257,6 +257,9 @@ func (r *inboxMultiplexer) Pop(ctx context.Context) (*arbostypes.MessageWithMeta
 		}
 		r.cachedSequencerMessageNum = r.backend.GetSequencerInboxPosition()
 
+		if r.arbOSVersionGetter == nil {
+			return nil, errors.New("arbOSVersionGetter is nil")
+		}
 		arbosVersion, err := r.arbOSVersionGetter.ArbOSVersionForMessageIndex(arbutil.MessageIndex(r.cachedSequencerMessageNum)).Await(ctx)
 		if err != nil {
 			return nil, err

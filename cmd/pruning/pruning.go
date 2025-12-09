@@ -184,6 +184,8 @@ func findImportantRoots(ctx context.Context, chainDb ethdb.Database, stack *node
 			return nil, fmt.Errorf("failed to get finalized block: %w", err)
 		}
 		l1BlockNum := l1Block.NumberU64()
+		// It is safe to pass `nil` as `arbosVersionGetter` as we only need inbox tracking for batch count and metadata.
+		// No parsing of messages is done here.
 		tracker, err := arbnode.NewInboxTracker(arbDb, nil, nil, arbnode.DefaultSnapSyncConfig, nil)
 		if err != nil {
 			return nil, err
