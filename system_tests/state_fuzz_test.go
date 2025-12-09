@@ -28,6 +28,7 @@ import (
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/daprovider"
+	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/statetransfer"
 	"github.com/offchainlabs/nitro/util/testhelpers/env"
 )
@@ -50,6 +51,7 @@ func BuildBlock(
 		nil,
 		daprovider.KeysetValidate,
 		getChainConfig(),
+		&execution.ConstArbosVersionGetter{Version: params.ArbosVersion_50},
 	)
 
 	ctx := context.Background()
