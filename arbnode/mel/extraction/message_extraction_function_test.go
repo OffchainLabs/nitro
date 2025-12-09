@@ -17,8 +17,10 @@ import (
 	"github.com/offchainlabs/nitro/arbnode/mel"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/daprovider"
+	"github.com/offchainlabs/nitro/util/containers"
 )
 
 func TestExtractMessages(t *testing.T) {
@@ -33,7 +35,7 @@ func TestExtractMessages(t *testing.T) {
 		lookupDelayedMsgs    func(context.Context, *mel.State, *types.Header, ReceiptFetcher, TransactionsFetcher) ([]*mel.DelayedInboxMessage, error)
 		serializer           func(context.Context, *mel.SequencerInboxBatch, *types.Transaction, uint, ReceiptFetcher) ([]byte, error)
 		parseReport          func(io.Reader) (*big.Int, common.Address, common.Hash, uint64, *big.Int, uint64, error)
-		parseSequencerMsg    func(context.Context, uint64, common.Hash, []byte, arbstate.DapReaderSource, daprovider.KeysetValidationMode, *params.ChainConfig) (*arbstate.SequencerMessage, error)
+		parseSequencerMsg    func(context.Context, uint64, common.Hash, []byte, arbstate.DapReaderSource, daprovider.KeysetValidationMode, *params.ChainConfig, uint64) (*arbstate.SequencerMessage, error)
 		extractBatchMessages func(context.Context, *mel.State, *arbstate.SequencerMessage, DelayedMessageDatabase) ([]*arbostypes.MessageWithMetadata, error)
 		expectedError        string
 		expectedMsgCount     uint64
@@ -153,6 +155,7 @@ func TestExtractMessages(t *testing.T) {
 					nil,
 					txsFetcher,
 					chaininfo.ArbitrumDevTestChainConfig(),
+					&mockedArbosVersionGetter{},
 				)
 			} else {
 				// Test the internal extractMessagesImpl function
@@ -172,6 +175,7 @@ func TestExtractMessages(t *testing.T) {
 					tt.extractBatchMessages,
 					tt.parseSequencerMsg,
 					tt.parseReport,
+					&mockedArbosVersionGetter{},
 				)
 			}
 
@@ -326,6 +330,7 @@ func successfulParseSequencerMsg(
 	dapReaders arbstate.DapReaderSource,
 	keysetValidationMode daprovider.KeysetValidationMode,
 	chainConfig *params.ChainConfig,
+	arbosVersion uint64,
 ) (*arbstate.SequencerMessage, error) {
 	return nil, nil
 }
@@ -338,6 +343,7 @@ func failingParseSequencerMsg(
 	dapReaders arbstate.DapReaderSource,
 	keysetValidationMode daprovider.KeysetValidationMode,
 	chainConfig *params.ChainConfig,
+	arbosVersion uint64,
 ) (*arbstate.SequencerMessage, error) {
 	return nil, errors.New("failed to parse sequencer message")
 }
@@ -375,4 +381,10 @@ func failingExtractBatchMessages(
 	delayedMsgDB DelayedMessageDatabase,
 ) ([]*arbostypes.MessageWithMetadata, error) {
 	return nil, errors.New("failed to extract batch messages")
+}
+
+type mockedArbosVersionGetter struct{}
+
+func (m *mockedArbosVersionGetter) ArbOSVersionForMessageIndex(msgIdx arbutil.MessageIndex) containers.PromiseInterface[uint64] {
+	return containers.NewReadyPromise(params.ArbosVersion_50, nil)
 }

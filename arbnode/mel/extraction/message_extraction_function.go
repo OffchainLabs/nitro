@@ -14,7 +14,9 @@ import (
 	"github.com/offchainlabs/nitro/arbnode/mel"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/daprovider"
+	"github.com/offchainlabs/nitro/execution"
 )
 
 // Defines a method that can read a delayed message from an external database.
@@ -57,6 +59,7 @@ func ExtractMessages(
 	receiptFetcher ReceiptFetcher,
 	txsFetcher TransactionsFetcher,
 	chainConfig *params.ChainConfig,
+	arbosVersionGetter execution.ArbOSVersionGetter,
 ) (*mel.State, []*arbostypes.MessageWithMetadata, []*mel.DelayedInboxMessage, error) {
 	return extractMessagesImpl(
 		ctx,
@@ -74,6 +77,7 @@ func ExtractMessages(
 		messagesFromBatchSegments,
 		arbstate.ParseSequencerMessage,
 		arbostypes.ParseBatchPostingReportMessageFields,
+		arbosVersionGetter,
 	)
 }
 
@@ -96,6 +100,7 @@ func extractMessagesImpl(
 	extractBatchMessages batchMsgExtractionFunc,
 	parseSequencerMessage sequencerMessageParserFunc,
 	parseBatchPostingReport batchPostingReportParserFunc,
+	arbosVersionGetter execution.ArbOSVersionGetter,
 ) (*mel.State, []*arbostypes.MessageWithMetadata, []*mel.DelayedInboxMessage, error) {
 
 	state := inputState.Clone()
@@ -197,6 +202,11 @@ func extractMessagesImpl(
 			return nil, nil, nil, errors.New("encountered initialize message that is not the first delayed message and the first batch ")
 		}
 
+		arbosVersion, err := arbosVersionGetter.ArbOSVersionForMessageIndex(arbutil.MessageIndex(batch.SequenceNumber)).Await(ctx)
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("failed to get Arbos version for message index %d: %w", batch.SequenceNumber, err)
+		}
+
 		rawSequencerMsg, err := parseSequencerMessage(
 			ctx,
 			batch.SequenceNumber,
@@ -205,6 +215,7 @@ func extractMessagesImpl(
 			dataProviders,
 			daprovider.KeysetValidate,
 			chainConfig,
+			arbosVersion,
 		)
 		if err != nil {
 			return nil, nil, nil, err
