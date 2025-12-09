@@ -2233,17 +2233,13 @@ func (w *controllableWriter) Store(msg []byte, timeout uint64) containers.Promis
 	// Check for custom error first
 	if customError != nil {
 		log.Info("controllableWriter returning custom error", "error", customError)
-		promise := containers.NewPromise[[]byte](func() {})
-		promise.ProduceError(customError)
-		return &promise
+		return containers.NewReadyPromise[[]byte](nil, customError)
 	}
 
 	// Check for fallback signal
 	if shouldFallback {
 		log.Warn("controllableWriter returning ErrFallbackRequested")
-		promise := containers.NewPromise[[]byte](func() {})
-		promise.ProduceError(daprovider.ErrFallbackRequested)
-		return &promise
+		return containers.NewReadyPromise[[]byte](nil, daprovider.ErrFallbackRequested)
 	}
 
 	// Normal operation
