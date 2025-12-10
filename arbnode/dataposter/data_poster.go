@@ -16,7 +16,6 @@ import (
 	"net/http"
 	"os"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/Knetic/govaluate"
@@ -45,6 +44,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode/dataposter/noop"
 	redisstorage "github.com/offchainlabs/nitro/arbnode/dataposter/redis"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/slice"
+	"github.com/offchainlabs/nitro/arbnode/dataposter/state"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbnode/parent"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -63,7 +63,7 @@ var (
 	totalQueueWeightGauge         = metrics.NewRegisteredGauge("arb/dataposter/queue/weight", nil)
 )
 
-// Dataposter implements functionality to post transactions on the chain. It
+// DataPoster implements functionality to post transactions on the chain. It
 // is initialized with specified sender/signer and keeps nonce of that address
 // as it posts transactions.
 // Transactions are also saved in the queue when it's being sent, and when
@@ -84,17 +84,7 @@ type DataPoster struct {
 	parentChainID256  *uint256.Int
 	parentChain       *parent.ParentChain
 
-	// These fields are protected by the mutex.
-	// TODO: factor out these fields into separate structure, since now one
-	// needs to make sure call sites of methods that change these values hold
-	// the lock (currently ensured by having comments like:
-	// "the mutex must be held by the caller" above the function).
-	mutex      sync.Mutex
-	lastBlock  *big.Int
-	balance    *big.Int
-	nonce      uint64
-	queue      QueueStorage
-	errorCount map[uint64]int // number of consecutive intermittent errors rbf-ing or sending, per nonce
+	internalState *state.InternalState
 
 	maxFeeCapExpression *govaluate.EvaluableExpression
 }
@@ -118,6 +108,9 @@ type DataPosterOpts struct {
 
 func NewDataPoster(ctx context.Context, opts *DataPosterOpts) (*DataPoster, error) {
 	cfg := opts.Config()
+	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
 	useNoOpStorage := cfg.UseNoOpStorage
 	if opts.HeaderReader.IsParentChainArbitrum() && !cfg.UseNoOpStorage {
 		useNoOpStorage = true
@@ -129,7 +122,7 @@ func NewDataPoster(ctx context.Context, opts *DataPosterOpts) (*DataPoster, erro
 		}
 		return &storage.EncoderDecoder{}
 	}
-	var queue QueueStorage
+	var queue state.QueueStorage
 	switch {
 	case useNoOpStorage:
 		queue = &noop.Storage{}
@@ -164,8 +157,7 @@ func NewDataPoster(ctx context.Context, opts *DataPosterOpts) (*DataPoster, erro
 		config:              opts.Config,
 		usingNoOpStorage:    useNoOpStorage,
 		metadataRetriever:   opts.MetadataRetriever,
-		queue:               queue,
-		errorCount:          make(map[uint64]int),
+		internalState:       state.NewInternalState(queue),
 		maxFeeCapExpression: expression,
 		extraBacklog:        opts.ExtraBacklog,
 		parentChainID:       opts.ParentChainID,
@@ -255,11 +247,13 @@ func TxToSignTxArgs(addr common.Address, tx *types.Transaction) (*apitypes.SendT
 		blobs       []kzg4844.Blob
 		commitments []kzg4844.Commitment
 		proofs      []kzg4844.Proof
+		blobVersion byte
 	)
 	if tx.BlobTxSidecar() != nil {
 		blobs = tx.BlobTxSidecar().Blobs
 		commitments = tx.BlobTxSidecar().Commitments
 		proofs = tx.BlobTxSidecar().Proofs
+		blobVersion = tx.BlobTxSidecar().Version
 	}
 	return &apitypes.SendTxArgs{
 		From:                 common.NewMixedcaseAddress(addr),
@@ -275,9 +269,23 @@ func TxToSignTxArgs(addr common.Address, tx *types.Transaction) (*apitypes.SendT
 		ChainID:              (*hexutil.Big)(tx.ChainId()),
 		BlobFeeCap:           (*hexutil.Big)(tx.BlobGasFeeCap()),
 		BlobHashes:           tx.BlobHashes(),
+		BlobVersion:          blobVersion,
 		Blobs:                blobs,
 		Commitments:          commitments,
 		Proofs:               proofs,
+	}, nil
+}
+
+func ExternalSignerTxOpts(ctx context.Context, opts *ExternalSignerCfg) (*bind.TransactOpts, error) {
+	signer, sender, err := externalSigner(ctx, opts)
+	if err != nil {
+		return nil, err
+	}
+	return &bind.TransactOpts{
+		From: sender,
+		Signer: func(address common.Address, tx *types.Transaction) (*types.Transaction, error) {
+			return signer(context.TODO(), address, tx)
+		},
 	}, nil
 }
 
@@ -357,16 +365,16 @@ var ErrExceedsMaxMempoolSize = errors.New("posting this transaction will exceed 
 
 // Does basic check whether posting transaction with specified nonce would
 // result in exceeding maximum queue length or maximum transactions in mempool.
-func (p *DataPoster) canPostWithNonce(ctx context.Context, nextNonce uint64, thisWeight uint64) error {
+func (p *DataPoster) canPostWithNonce(ctx context.Context, s *state.LockedInternalState, nextNonce uint64, thisWeight uint64) error {
 	cfg := p.config()
 	// If the queue has reached configured max size, don't post a transaction.
 	if cfg.MaxQueuedTransactions > 0 {
-		queueLen, err := p.queue.Length(ctx)
+		queueLen, err := s.Queue.Length(ctx)
 		if err != nil {
 			return fmt.Errorf("getting queue length: %w", err)
 		}
 		if queueLen >= cfg.MaxQueuedTransactions {
-			return fmt.Errorf("posting a transaction with nonce: %d will exceed max allowed dataposter queued transactions: %d, current nonce: %d", nextNonce, cfg.MaxQueuedTransactions, p.nonce)
+			return fmt.Errorf("posting a transaction with nonce: %d will exceed max allowed dataposter queued transactions: %d, current nonce: %d", nextNonce, cfg.MaxQueuedTransactions, s.Nonce)
 		}
 	}
 	// Check that posting a new transaction won't exceed maximum pending
@@ -397,7 +405,7 @@ func (p *DataPoster) canPostWithNonce(ctx context.Context, nextNonce uint64, thi
 
 		var confirmedWeight uint64
 		if unconfirmedNonce > 0 {
-			confirmedMeta, err := p.queue.Get(ctx, unconfirmedNonce-1)
+			confirmedMeta, err := s.Queue.Get(ctx, unconfirmedNonce-1)
 			if err != nil {
 				return err
 			}
@@ -405,7 +413,7 @@ func (p *DataPoster) canPostWithNonce(ctx context.Context, nextNonce uint64, thi
 				confirmedWeight = confirmedMeta.CumulativeWeight()
 			}
 		}
-		previousTxMeta, err := p.queue.FetchLast(ctx)
+		previousTxMeta, err := s.Queue.FetchLast(ctx)
 		if err != nil {
 			return err
 		}
@@ -435,29 +443,28 @@ func (p *DataPoster) waitForL1Finality() bool {
 	return p.config().WaitForL1Finality && !p.headerReader.IsParentChainArbitrum()
 }
 
-// Requires the caller hold the mutex.
 // Returns the next nonce, its metadata if stored, a bool indicating if the metadata is present, the cumulative weight, and an error if present.
 // Unlike GetNextNonceAndMeta, this does not call the metadataRetriever if the metadata is not stored in the queue.
-func (p *DataPoster) getNextNonceAndMaybeMeta(ctx context.Context, thisWeight uint64) (uint64, []byte, bool, uint64, error) {
+func (p *DataPoster) getNextNonceAndMaybeMeta(ctx context.Context, s *state.LockedInternalState, thisWeight uint64) (uint64, []byte, bool, uint64, error) {
 	// Ensure latest finalized block state is available.
 	blockNum, err := p.client.BlockNumber(ctx)
 	if err != nil {
 		return 0, nil, false, 0, err
 	}
-	lastQueueItem, err := p.queue.FetchLast(ctx)
+	lastQueueItem, err := s.Queue.FetchLast(ctx)
 	if err != nil {
 		return 0, nil, false, 0, fmt.Errorf("fetching last element from queue: %w", err)
 	}
 	if lastQueueItem != nil {
 		nextNonce := lastQueueItem.FullTx.Nonce() + 1
-		if err := p.canPostWithNonce(ctx, nextNonce, thisWeight); err != nil {
+		if err := p.canPostWithNonce(ctx, s, nextNonce, thisWeight); err != nil {
 			return 0, nil, false, 0, err
 		}
 		return nextNonce, lastQueueItem.Meta, true, lastQueueItem.CumulativeWeight(), nil
 	}
 
-	if err := p.updateNonce(ctx); err != nil {
-		if !p.queue.IsPersistent() && p.waitForL1Finality() {
+	if err := p.updateNonce(ctx, s); err != nil {
+		if !s.Queue.IsPersistent() && p.waitForL1Finality() {
 			return 0, nil, false, 0, fmt.Errorf("error getting latest finalized nonce (and queue is not persistent): %w", err)
 		}
 		// Fall back to using a recent block to get the nonce. This is safe because there's nothing in the queue.
@@ -467,24 +474,24 @@ func (p *DataPoster) getNextNonceAndMaybeMeta(ctx context.Context, thisWeight ui
 		if err != nil {
 			return 0, nil, false, 0, fmt.Errorf("failed to get nonce at block %v: %w", nonceQueryBlock, err)
 		}
-		p.lastBlock = nonceQueryBlock
-		p.nonce = nonce
+		s.LastBlock = nonceQueryBlock
+		s.Nonce = nonce
 	}
-	return p.nonce, nil, false, p.nonce, nil
+	return s.Nonce, nil, false, s.Nonce, nil
 }
 
 // GetNextNonceAndMeta retrieves generates next nonce, validates that a
 // transaction can be posted with that nonce, and fetches "Meta" either last
 // queued item (if queue isn't empty) or retrieves with last block.
 func (p *DataPoster) GetNextNonceAndMeta(ctx context.Context) (uint64, []byte, error) {
-	p.mutex.Lock()
-	defer p.mutex.Unlock()
-	nonce, meta, hasMeta, _, err := p.getNextNonceAndMaybeMeta(ctx, 1)
+	lockedState := p.internalState.Lock()
+	defer p.internalState.Unlock()
+	nonce, meta, hasMeta, _, err := p.getNextNonceAndMaybeMeta(ctx, lockedState, 1)
 	if err != nil {
 		return 0, nil, err
 	}
 	if !hasMeta {
-		meta, err = p.metadataRetriever(ctx, p.lastBlock)
+		meta, err = p.metadataRetriever(ctx, lockedState.LastBlock)
 	}
 	return nonce, meta, err
 }
@@ -528,8 +535,8 @@ func (p *DataPoster) evalMaxFeeCapExpr(backlogOfBatches uint64, elapsed time.Dur
 
 var big4 = big.NewInt(4)
 
-// The dataPosterBacklog argument should *not* include extraBacklog (it's added in in this function)
-func (p *DataPoster) feeAndTipCaps(ctx context.Context, nonce uint64, gasLimit uint64, numBlobs uint64, lastTx *types.Transaction, dataCreatedAt time.Time, dataPosterBacklog uint64, latestHeader *types.Header) (*big.Int, *big.Int, *big.Int, error) {
+// The dataPosterBacklog argument should *not* include extraBacklog (it's added in this function)
+func (p *DataPoster) feeAndTipCaps(ctx context.Context, s *state.LockedInternalState, nonce uint64, gasLimit uint64, numBlobs uint64, lastTx *types.Transaction, dataCreatedAt time.Time, dataPosterBacklog uint64, latestHeader *types.Header) (*big.Int, *big.Int, *big.Int, error) {
 	config := p.config()
 	dataPosterBacklog += p.extraBacklog()
 
@@ -584,7 +591,7 @@ func (p *DataPoster) feeAndTipCaps(ctx context.Context, nonce uint64, gasLimit u
 
 	maxMempoolWeight := arbmath.MinInt(config.MaxMempoolWeight, config.MaxMempoolTransactions)
 
-	latestBalance := p.balance
+	latestBalance := s.Balance
 	balanceForTx := new(big.Int).Set(latestBalance)
 	weight := arbmath.MaxInt(1, numBlobs)
 	weightRemaining := weight
@@ -718,7 +725,7 @@ func (p *DataPoster) feeAndTipCaps(ctx context.Context, nonce uint64, gasLimit u
 	}
 
 	if lastTx != nil && (arbmath.BigLessThan(newBaseFeeCap, currentNonBlobFee) || (numBlobs > 0 && arbmath.BigLessThan(newBlobFeeCap, currentBlobFee))) {
-		// Make sure our replace by fee can meet the current parent chain fee demands.
+		// Make sure our replacement by fee can meet the current parent chain fee demands.
 		// Without this check, we'd blindly increase each fee component by the min rbf amount each time,
 		// without looking at which component(s) actually need increased.
 		// E.g. instead of 2x basefee and 2x blobfee, we might actually want to 4x basefee and 2x blobfee.
@@ -741,23 +748,22 @@ func (p *DataPoster) feeAndTipCaps(ctx context.Context, nonce uint64, gasLimit u
 }
 
 func (p *DataPoster) PostSimpleTransaction(ctx context.Context, to common.Address, calldata []byte, gasLimit uint64, value *big.Int) (*types.Transaction, error) {
-	p.mutex.Lock()
-	defer p.mutex.Unlock()
-	nonce, _, _, _, err := p.getNextNonceAndMaybeMeta(ctx, 1)
+	lockedState := p.internalState.Lock()
+	defer p.internalState.Unlock()
+	nonce, _, _, _, err := p.getNextNonceAndMaybeMeta(ctx, lockedState, 1)
 	if err != nil {
 		return nil, err
 	}
-	return p.postTransactionWithMutex(ctx, time.Now(), nonce, nil, to, calldata, gasLimit, value, nil, nil)
+	return p.postTransaction(ctx, lockedState, time.Now(), nonce, nil, to, calldata, gasLimit, value, nil, nil)
 }
 
 func (p *DataPoster) PostTransaction(ctx context.Context, dataCreatedAt time.Time, nonce uint64, meta []byte, to common.Address, calldata []byte, gasLimit uint64, value *big.Int, kzgBlobs []kzg4844.Blob, accessList types.AccessList) (*types.Transaction, error) {
-	p.mutex.Lock()
-	defer p.mutex.Unlock()
-	return p.postTransactionWithMutex(ctx, dataCreatedAt, nonce, meta, to, calldata, gasLimit, value, kzgBlobs, accessList)
+	lockedState := p.internalState.Lock()
+	defer p.internalState.Unlock()
+	return p.postTransaction(ctx, lockedState, dataCreatedAt, nonce, meta, to, calldata, gasLimit, value, kzgBlobs, accessList)
 }
 
-func (p *DataPoster) postTransactionWithMutex(ctx context.Context, dataCreatedAt time.Time, nonce uint64, meta []byte, to common.Address, calldata []byte, gasLimit uint64, value *big.Int, kzgBlobs []kzg4844.Blob, accessList types.AccessList) (*types.Transaction, error) {
-
+func (p *DataPoster) postTransaction(ctx context.Context, s *state.LockedInternalState, dataCreatedAt time.Time, nonce uint64, meta []byte, to common.Address, calldata []byte, gasLimit uint64, value *big.Int, kzgBlobs []kzg4844.Blob, accessList types.AccessList) (*types.Transaction, error) {
 	if p.config().DisableNewTx {
 		return nil, fmt.Errorf("posting new transaction is disabled")
 	}
@@ -766,7 +772,7 @@ func (p *DataPoster) postTransactionWithMutex(ctx context.Context, dataCreatedAt
 	if len(kzgBlobs) > 0 {
 		weight = uint64(len(kzgBlobs))
 	}
-	expectedNonce, _, _, lastCumulativeWeight, err := p.getNextNonceAndMaybeMeta(ctx, weight)
+	expectedNonce, _, _, lastCumulativeWeight, err := p.getNextNonceAndMaybeMeta(ctx, s, weight)
 	if err != nil {
 		return nil, err
 	}
@@ -774,7 +780,7 @@ func (p *DataPoster) postTransactionWithMutex(ctx context.Context, dataCreatedAt
 		return nil, fmt.Errorf("%w: data poster expected next transaction to have nonce %v but was requested to post transaction with nonce %v", storage.ErrStorageRace, expectedNonce, nonce)
 	}
 
-	err = p.updateBalance(ctx)
+	err = p.updateBalance(ctx, s)
 	if err != nil {
 		return nil, fmt.Errorf("failed to update data poster balance: %w", err)
 	}
@@ -784,7 +790,7 @@ func (p *DataPoster) postTransactionWithMutex(ctx context.Context, dataCreatedAt
 		return nil, err
 	}
 
-	feeCap, tipCap, blobFeeCap, err := p.feeAndTipCaps(ctx, nonce, gasLimit, uint64(len(kzgBlobs)), nil, dataCreatedAt, 0, latestHeader)
+	feeCap, tipCap, blobFeeCap, err := p.feeAndTipCaps(ctx, s, nonce, gasLimit, uint64(len(kzgBlobs)), nil, dataCreatedAt, 0, latestHeader)
 	if err != nil {
 		return nil, err
 	}
@@ -805,7 +811,7 @@ func (p *DataPoster) postTransactionWithMutex(ctx context.Context, dataCreatedAt
 		if err != nil {
 			return nil, fmt.Errorf("failed to compute KZG commitments: %w", err)
 		}
-		proofs, err := blobs.ComputeBlobProofs(kzgBlobs, commitments)
+		proofs, version, err := blobs.ComputeProofs(kzgBlobs, commitments)
 		if err != nil {
 			return nil, fmt.Errorf("failed to compute KZG proofs: %w", err)
 		}
@@ -816,6 +822,7 @@ func (p *DataPoster) postTransactionWithMutex(ctx context.Context, dataCreatedAt
 			Value: value256,
 			Data:  calldata,
 			Sidecar: &types.BlobTxSidecar{
+				Version:     version,
 				Blobs:       kzgBlobs,
 				Commitments: commitments,
 				Proofs:      proofs,
@@ -857,11 +864,10 @@ func (p *DataPoster) postTransactionWithMutex(ctx context.Context, dataCreatedAt
 		NextReplacement:        time.Now().Add(replacementTimes[0]),
 		StoredCumulativeWeight: &cumulativeWeight,
 	}
-	return fullTx, p.sendTx(ctx, nil, &queuedTx)
+	return fullTx, p.sendTx(ctx, s, nil, &queuedTx)
 }
 
-// the mutex must be held by the caller
-func (p *DataPoster) saveTx(ctx context.Context, prevTx, newTx *storage.QueuedTransaction) error {
+func (p *DataPoster) saveTx(ctx context.Context, s *state.LockedInternalState, prevTx, newTx *storage.QueuedTransaction) error {
 	if prevTx != nil {
 		if prevTx.FullTx.Nonce() != newTx.FullTx.Nonce() {
 			return fmt.Errorf("prevTx nonce %v doesn't match newTx nonce %v", prevTx.FullTx.Nonce(), newTx.FullTx.Nonce())
@@ -881,13 +887,13 @@ func (p *DataPoster) saveTx(ctx context.Context, prevTx, newTx *storage.QueuedTr
 			return nil
 		}
 	}
-	if err := p.queue.Put(ctx, newTx.FullTx.Nonce(), prevTx, newTx); err != nil {
+	if err := s.Queue.Put(ctx, newTx.FullTx.Nonce(), prevTx, newTx); err != nil {
 		return fmt.Errorf("putting new tx in the queue: %w", err)
 	}
 	return nil
 }
 
-func (p *DataPoster) sendTx(ctx context.Context, prevTx *storage.QueuedTransaction, newTx *storage.QueuedTransaction) error {
+func (p *DataPoster) sendTx(ctx context.Context, s *state.LockedInternalState, prevTx *storage.QueuedTransaction, newTx *storage.QueuedTransaction) error {
 	latestHeader, err := p.client.HeaderByNumber(ctx, nil)
 	if err != nil {
 		return err
@@ -918,11 +924,11 @@ func (p *DataPoster) sendTx(ctx context.Context, prevTx *storage.QueuedTransacti
 		)
 	}
 
-	if err := p.saveTx(ctx, prevTx, newTx); err != nil {
+	if err := p.saveTx(ctx, s, prevTx, newTx); err != nil {
 		return err
 	}
 
-	// The following check is to avoid sending transactions of a different type (eg DynamicFeeTxType vs BlobTxType)
+	// The following check is to avoid sending transactions of a different type (e.g. DynamicFeeTxType vs BlobTxType)
 	// to the previous tx if the previous tx is not yet included in a reorg resistant block, in order to avoid issues
 	// where eventual consistency of parent chain mempools causes a tx with higher nonce blocking a tx of a
 	// different type with a lower nonce.
@@ -930,7 +936,7 @@ func (p *DataPoster) sendTx(ctx context.Context, prevTx *storage.QueuedTransacti
 	// The resending/repricing loop in DataPoster.Start will keep trying.
 	previouslySent := newTx.Sent || (prevTx != nil && prevTx.Sent) // if we've previously sent this nonce
 	if !previouslySent && newTx.FullTx.Nonce() > 0 {
-		precedingTx, err := p.queue.Get(ctx, arbmath.SaturatingUSub(newTx.FullTx.Nonce(), 1))
+		precedingTx, err := s.Queue.Get(ctx, arbmath.SaturatingUSub(newTx.FullTx.Nonce(), 1))
 		if err != nil {
 			return fmt.Errorf("couldn't get preceding tx in DataPoster to check if should send tx with nonce %d: %w", newTx.FullTx.Nonce(), err)
 		}
@@ -973,7 +979,7 @@ func (p *DataPoster) sendTx(ctx context.Context, prevTx *storage.QueuedTransacti
 	}
 	newerTx := *newTx
 	newerTx.Sent = true
-	return p.saveTx(ctx, newTx, &newerTx)
+	return p.saveTx(ctx, s, newTx, &newerTx)
 }
 
 func updateTxDataGasCaps(data types.TxData, newFeeCap, newTipCap, newBlobFeeCap *big.Int) error {
@@ -1011,14 +1017,13 @@ func updateGasCaps(tx *types.Transaction, newFeeCap, newTipCap, newBlobFeeCap *b
 	return types.NewTx(data), nil
 }
 
-// The mutex must be held by the caller.
-func (p *DataPoster) replaceTx(ctx context.Context, prevTx *storage.QueuedTransaction, backlogWeight uint64) error {
+func (p *DataPoster) replaceTx(ctx context.Context, s *state.LockedInternalState, prevTx *storage.QueuedTransaction, backlogWeight uint64) error {
 	latestHeader, err := p.headerReader.LastHeader(ctx)
 	if err != nil {
 		return err
 	}
 
-	newFeeCap, newTipCap, newBlobFeeCap, err := p.feeAndTipCaps(ctx, prevTx.FullTx.Nonce(), prevTx.FullTx.Gas(), uint64(len(prevTx.FullTx.BlobHashes())), prevTx.FullTx, prevTx.Created, backlogWeight, latestHeader)
+	newFeeCap, newTipCap, newBlobFeeCap, err := p.feeAndTipCaps(ctx, s, prevTx.FullTx.Nonce(), prevTx.FullTx.Gas(), uint64(len(prevTx.FullTx.BlobHashes())), prevTx.FullTx, prevTx.Created, backlogWeight, latestHeader)
 	if err != nil {
 		return err
 	}
@@ -1042,7 +1047,7 @@ func (p *DataPoster) replaceTx(ctx context.Context, prevTx *storage.QueuedTransa
 			"recommendedBlobFeeCap", newBlobFeeCap,
 		)
 		newTx.NextReplacement = time.Now().Add(time.Minute)
-		return p.sendTx(ctx, prevTx, &newTx)
+		return p.sendTx(ctx, s, prevTx, &newTx)
 	}
 
 	replacementTimes := p.config().ReplacementTimes
@@ -1070,13 +1075,12 @@ func (p *DataPoster) replaceTx(ctx context.Context, prevTx *storage.QueuedTransa
 		return err
 	}
 
-	return p.sendTx(ctx, prevTx, &newTx)
+	return p.sendTx(ctx, s, prevTx, &newTx)
 }
 
 // Gets latest known or finalized block header (depending on config flag),
 // gets the nonce of the dataposter sender and stores it if it has increased.
-// The mutex must be held by the caller.
-func (p *DataPoster) updateNonce(ctx context.Context) error {
+func (p *DataPoster) updateNonce(ctx context.Context, s *state.LockedInternalState) error {
 	var blockNumQuery *big.Int
 	if p.waitForL1Finality() {
 		blockNumQuery = big.NewInt(int64(rpc.FinalizedBlockNumber))
@@ -1085,63 +1089,63 @@ func (p *DataPoster) updateNonce(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to get the latest or finalized L1 header: %w", err)
 	}
-	if p.lastBlock != nil && arbmath.BigEquals(p.lastBlock, header.Number) {
+	if s.LastBlock != nil && arbmath.BigEquals(s.LastBlock, header.Number) {
 		return nil
 	}
 	nonce, err := p.client.NonceAt(ctx, p.Sender(), header.Number)
 	if err != nil {
-		if p.lastBlock != nil {
-			log.Warn("Failed to get current nonce", "lastBlock", p.lastBlock, "newBlock", header.Number, "err", err)
+		if s.LastBlock != nil {
+			log.Warn("Failed to get current nonce", "lastBlock", s.LastBlock, "newBlock", header.Number, "err", err)
 			return nil
 		}
 		return err
 	}
 	// Ignore if nonce hasn't increased.
-	if nonce <= p.nonce {
+	if nonce <= s.Nonce {
 		// Still update last block number.
-		if nonce == p.nonce {
-			p.lastBlock = header.Number
+		if nonce == s.Nonce {
+			s.LastBlock = header.Number
 		}
 		return nil
 	}
 	// #nosec G115
 	latestFinalizedNonceGauge.Update(int64(nonce))
-	log.Info("Data poster transactions confirmed", "previousNonce", p.nonce, "newNonce", nonce, "previousL1Block", p.lastBlock, "newL1Block", header.Number)
-	if len(p.errorCount) > 0 {
-		for x := p.nonce; x < nonce; x++ {
-			delete(p.errorCount, x)
+	log.Info("Data poster transactions confirmed", "previousNonce", s.Nonce, "newNonce", nonce, "previousL1Block", s.LastBlock, "newL1Block", header.Number)
+	if len(s.ErrorCount) > 0 {
+		for x := s.Nonce; x < nonce; x++ {
+			delete(s.ErrorCount, x)
 		}
 	}
 	// We don't prune the most recent transaction in order to ensure that the data poster
 	// always has a reference point in its queue of the latest transaction nonce and metadata.
 	// nonce > 0 is implied by nonce > p.nonce, so this won't underflow.
-	if err := p.queue.Prune(ctx, nonce-1); err != nil {
+	if err := s.Queue.Prune(ctx, nonce-1); err != nil {
 		return err
 	}
 	// We update these two variables together because they should remain in sync even if there's an error.
-	p.lastBlock = header.Number
-	p.nonce = nonce
+	s.LastBlock = header.Number
+	s.Nonce = nonce
 	return nil
 }
 
 // Updates dataposter balance to balance at pending block.
-func (p *DataPoster) updateBalance(ctx context.Context) error {
+func (p *DataPoster) updateBalance(ctx context.Context, s *state.LockedInternalState) error {
 	// Use the pending (represented as -1) balance because we're looking at batches we'd post,
 	// so we want to see how much gas we could afford with our pending state.
 	balance, err := p.client.BalanceAt(ctx, p.Sender(), big.NewInt(-1))
 	if err != nil {
 		return err
 	}
-	p.balance = balance
+	s.Balance = balance
 	return nil
 }
 
 const maxConsecutiveIntermittentErrors = 20
 
-func (p *DataPoster) maybeLogError(err error, tx *storage.QueuedTransaction, msg string) {
+func (p *DataPoster) maybeLogError(err error, s *state.LockedInternalState, tx *storage.QueuedTransaction, msg string) {
 	nonce := tx.FullTx.Nonce()
 	if err == nil {
-		delete(p.errorCount, nonce)
+		delete(s.ErrorCount, nonce)
 		return
 	}
 	logLevel := log.Error
@@ -1149,8 +1153,8 @@ func (p *DataPoster) maybeLogError(err error, tx *storage.QueuedTransaction, msg
 	isFutureReplacePending := strings.Contains(err.Error(), legacypool.ErrFutureReplacePending.Error())
 	isNonceTooHigh := strings.Contains(err.Error(), core.ErrNonceTooHigh.Error())
 	if isStorageRace || isFutureReplacePending || isNonceTooHigh {
-		p.errorCount[nonce]++
-		if p.errorCount[nonce] <= maxConsecutiveIntermittentErrors {
+		s.ErrorCount[nonce]++
+		if s.ErrorCount[nonce] <= maxConsecutiveIntermittentErrors {
 			if isStorageRace {
 				logLevel = log.Debug
 			} else {
@@ -1160,7 +1164,7 @@ func (p *DataPoster) maybeLogError(err error, tx *storage.QueuedTransaction, msg
 			logLevel = log.Warn
 		}
 	} else {
-		delete(p.errorCount, nonce)
+		delete(s.ErrorCount, nonce)
 	}
 	logLevel(msg, "err", err, "nonce", nonce, "feeCap", tx.FullTx.GasFeeCap(), "tipCap", tx.FullTx.GasTipCap(), "blobFeeCap", tx.FullTx.BlobGasFeeCap(), "gas", tx.FullTx.Gas())
 }
@@ -1171,20 +1175,23 @@ const minWait = time.Second * 10
 func (p *DataPoster) Start(ctxIn context.Context) {
 	p.StopWaiter.Start(ctxIn, p)
 	p.CallIteratively(func(ctx context.Context) time.Duration {
-		p.mutex.Lock()
-		defer p.mutex.Unlock()
-		err := p.updateBalance(ctx)
+		lockedState := p.internalState.Lock()
+		defer p.internalState.Unlock()
+		err := p.updateBalance(ctx, lockedState)
 		if err != nil {
 			log.Warn("failed to update tx poster balance", "err", err)
 			return minWait
 		}
-		err = p.updateNonce(ctx)
+		err = p.updateNonce(ctx, lockedState)
 		if err != nil {
 			// This is non-fatal because it's only needed for clearing out old queue items.
 			log.Warn("failed to update tx poster nonce", "err", err)
 		}
 		now := time.Now()
-		nextCheck := now.Add(arbmath.MinInt(p.config().ReplacementTimes[0], p.config().BlobTxReplacementTimes[0]))
+		nextCheck := now.Add(p.config().ReplacementTimes[0])
+		if len(p.config().BlobTxReplacementTimes) > 0 {
+			nextCheck = now.Add(arbmath.MinInt(p.config().ReplacementTimes[0], p.config().BlobTxReplacementTimes[0]))
+		}
 		maxTxsToRbf := p.config().MaxMempoolTransactions
 		if maxTxsToRbf == 0 {
 			maxTxsToRbf = 512
@@ -1199,12 +1206,12 @@ func (p *DataPoster) Start(ctxIn context.Context) {
 		// We use unconfirmedNonce here to replace-by-fee transactions that aren't in a block,
 		// excluding those that are in an unconfirmed block. If a reorg occurs, we'll continue
 		// replacing them by fee.
-		queueContents, err := p.queue.FetchContents(ctx, unconfirmedNonce, maxTxsToRbf)
+		queueContents, err := lockedState.Queue.FetchContents(ctx, unconfirmedNonce, maxTxsToRbf)
 		if err != nil {
 			log.Error("Failed to fetch tx queue contents", "err", err)
 			return minWait
 		}
-		latestQueued, err := p.queue.FetchLast(ctx)
+		latestQueued, err := lockedState.Queue.FetchLast(ctx)
 		if err != nil {
 			log.Error("Failed to fetch last queued tx", "err", err)
 			return minWait
@@ -1215,7 +1222,7 @@ func (p *DataPoster) Start(ctxIn context.Context) {
 			latestNonce = latestQueued.FullTx.Nonce()
 
 			confirmedNonce := unconfirmedNonce - 1
-			confirmedMeta, err := p.queue.Get(ctx, confirmedNonce)
+			confirmedMeta, err := lockedState.Queue.Get(ctx, confirmedNonce)
 			if err == nil && confirmedMeta != nil {
 				// #nosec G115
 				totalQueueWeightGauge.Update(int64(arbmath.SaturatingUSub(latestCumulativeWeight, confirmedMeta.CumulativeWeight())))
@@ -1230,14 +1237,14 @@ func (p *DataPoster) Start(ctxIn context.Context) {
 			if now.After(tx.NextReplacement) {
 				weightBacklog := arbmath.SaturatingUSub(latestCumulativeWeight, tx.CumulativeWeight())
 				nonceBacklog := arbmath.SaturatingUSub(latestNonce, tx.FullTx.Nonce())
-				err := p.replaceTx(ctx, tx, arbmath.MaxInt(nonceBacklog, weightBacklog))
-				p.maybeLogError(err, tx, "failed to replace-by-fee transaction")
+				err := p.replaceTx(ctx, lockedState, tx, arbmath.MaxInt(nonceBacklog, weightBacklog))
+				p.maybeLogError(err, lockedState, tx, "failed to replace-by-fee transaction")
 			} else {
-				err := p.sendTx(ctx, tx, tx)
-				p.maybeLogError(err, tx, "failed to re-send transaction")
+				err := p.sendTx(ctx, lockedState, tx, tx)
+				p.maybeLogError(err, lockedState, tx, "failed to re-send transaction")
 			}
 			nonce := tx.FullTx.Nonce()
-			tx, err = p.queue.Get(ctx, nonce)
+			tx, err = lockedState.Queue.Get(ctx, nonce)
 			if err != nil {
 				log.Error("Failed to fetch tx from queue to check updated status", "nonce", nonce, "err", err)
 				return minWait
@@ -1261,30 +1268,6 @@ func (p *DataPoster) Start(ctxIn context.Context) {
 		}
 		return wait
 	})
-}
-
-// Implements queue-alike storage that can
-// - Insert item at specified index
-// - Update item with the condition that existing value equals assumed value
-// - Delete all the items up to specified index (prune)
-// - Calculate length
-// Note: one of the implementation of this interface (Redis storage) does not
-// support duplicate values.
-type QueueStorage interface {
-	// Returns at most maxResults items starting from specified index.
-	FetchContents(ctx context.Context, startingIndex uint64, maxResults uint64) ([]*storage.QueuedTransaction, error)
-	// Returns the item at index, or nil if not found.
-	Get(ctx context.Context, index uint64) (*storage.QueuedTransaction, error)
-	// Returns item with the biggest index, or nil if the queue is empty.
-	FetchLast(ctx context.Context) (*storage.QueuedTransaction, error)
-	// Prunes items up to (excluding) specified index.
-	Prune(ctx context.Context, until uint64) error
-	// Inserts new item at specified index if previous value matches specified value.
-	Put(ctx context.Context, index uint64, prevItem, newItem *storage.QueuedTransaction) error
-	// Returns the size of a queue.
-	Length(ctx context.Context) (int, error)
-	// Indicates whether queue stored at disk.
-	IsPersistent() bool
 }
 
 type DataPosterConfig struct {
@@ -1358,17 +1341,42 @@ func ExternalSignerTestCfg(addr common.Address, url string) (*ExternalSignerCfg,
 
 type DangerousConfig struct {
 	// This should be used with caution, only when dataposter somehow gets in a
-	// bad state and we require clearing it.
+	// bad state, and we require clearing it.
 	ClearDBStorage bool `koanf:"clear-dbstorage"`
+}
+
+// Validate checks that the DataPosterConfig is valid.
+func (c *DataPosterConfig) Validate() error {
+	if len(c.ReplacementTimes) == 0 {
+		return fmt.Errorf("replacement-times must have at least one value")
+	}
+	if c.Post4844Blobs && len(c.BlobTxReplacementTimes) == 0 {
+		return fmt.Errorf("blob-tx-replacement-times must have at least one value when post-4844-blobs is enabled")
+	}
+	return nil
 }
 
 // ConfigFetcher function type is used instead of directly passing config so
 // that flags can be reloaded dynamically.
 type ConfigFetcher func() *DataPosterConfig
 
-func DataPosterConfigAddOptions(prefix string, f *pflag.FlagSet, defaultDataPosterConfig DataPosterConfig) {
+// DataPosterUsageContext indicates what component is using the DataPoster to determine
+// which config options to expose.
+type DataPosterUsageContext int
+
+const (
+	// DataPosterUsageStaker indicates the DataPoster is being used by the staker/validator.
+	// Staker posts small (~250 byte) assertions, so blob options don't make sense.
+	// Blob reading is also not supported with assertions.
+	DataPosterUsageStaker DataPosterUsageContext = iota
+	// DataPosterUsageBatchPoster indicates the DataPoster is being used by the batch poster.
+	// Note: The enable flag (post-4844-blobs) is NOT exposed here because batch poster
+	// controls that at its own configuration level.
+	DataPosterUsageBatchPoster
+)
+
+func DataPosterConfigAddOptions(prefix string, f *pflag.FlagSet, defaultDataPosterConfig DataPosterConfig, usageContext DataPosterUsageContext) {
 	f.DurationSlice(prefix+".replacement-times", defaultDataPosterConfig.ReplacementTimes, "comma-separated list of durations since first posting to attempt a replace-by-fee")
-	f.DurationSlice(prefix+".blob-tx-replacement-times", defaultDataPosterConfig.BlobTxReplacementTimes, "comma-separated list of durations since first posting a blob transaction to attempt a replace-by-fee")
 	f.Bool(prefix+".wait-for-l1-finality", defaultDataPosterConfig.WaitForL1Finality, "only treat a transaction as confirmed after L1 finality has been achieved (recommended)")
 	f.Uint64(prefix+".max-mempool-transactions", defaultDataPosterConfig.MaxMempoolTransactions, "the maximum number of transactions to have queued in the mempool at once (0 = unlimited)")
 	f.Uint64(prefix+".max-mempool-weight", defaultDataPosterConfig.MaxMempoolWeight, "the maximum number of weight (weight = min(1, tx.blobs)) to have queued in the mempool at once (0 = unlimited)")
@@ -1376,15 +1384,12 @@ func DataPosterConfigAddOptions(prefix string, f *pflag.FlagSet, defaultDataPost
 	f.Float64(prefix+".target-price-gwei", defaultDataPosterConfig.TargetPriceGwei, "the target price to use for maximum fee cap calculation")
 	f.Float64(prefix+".urgency-gwei", defaultDataPosterConfig.UrgencyGwei, "the urgency to use for maximum fee cap calculation")
 	f.Float64(prefix+".min-tip-cap-gwei", defaultDataPosterConfig.MinTipCapGwei, "the minimum tip cap to post transactions at")
-	f.Float64(prefix+".min-blob-tx-tip-cap-gwei", defaultDataPosterConfig.MinBlobTxTipCapGwei, "the minimum tip cap to post EIP-4844 blob carrying transactions at")
 	f.Float64(prefix+".max-tip-cap-gwei", defaultDataPosterConfig.MaxTipCapGwei, "the maximum tip cap to post transactions at")
-	f.Float64(prefix+".max-blob-tx-tip-cap-gwei", defaultDataPosterConfig.MaxBlobTxTipCapGwei, "the maximum tip cap to post EIP-4844 blob carrying transactions at")
 	f.Uint64(prefix+".max-fee-bid-multiple-bips", uint64(defaultDataPosterConfig.MaxFeeBidMultipleBips), "the maximum multiple of the current price to bid for a transaction's fees (may be exceeded due to min rbf increase, 0 = unlimited)")
 	f.Uint64(prefix+".nonce-rbf-soft-confs", defaultDataPosterConfig.NonceRbfSoftConfs, "the maximum probable reorg depth, used to determine when a transaction will no longer likely need replaced-by-fee")
 	f.Bool(prefix+".allocate-mempool-balance", defaultDataPosterConfig.AllocateMempoolBalance, "if true, don't put transactions in the mempool that spend a total greater than the batch poster's balance")
 	f.Bool(prefix+".use-db-storage", defaultDataPosterConfig.UseDBStorage, "uses database storage when enabled")
 	f.Bool(prefix+".use-noop-storage", defaultDataPosterConfig.UseNoOpStorage, "uses noop storage, it doesn't store anything")
-	f.Bool(prefix+".post-4844-blobs", defaultDataPosterConfig.Post4844Blobs, "if the parent chain supports 4844 blobs and they're well priced, post EIP-4844 blobs")
 	f.Bool(prefix+".legacy-storage-encoding", defaultDataPosterConfig.LegacyStorageEncoding, "encodes items in a legacy way (as it was before dropping generics)")
 	f.String(prefix+".max-fee-cap-formula", defaultDataPosterConfig.MaxFeeCapFormula, "mathematical formula to calculate maximum fee cap gwei the result of which would be float64.\n"+
 		"This expression is expected to be evaluated please refer https://github.com/Knetic/govaluate/blob/master/MANUAL.md to find all available mathematical operators.\n"+
@@ -1396,6 +1401,16 @@ func DataPosterConfigAddOptions(prefix string, f *pflag.FlagSet, defaultDataPost
 	addDangerousOptions(prefix+".dangerous", f)
 	addExternalSignerOptions(prefix+".external-signer", f)
 	f.Bool(prefix+".disable-new-tx", defaultDataPosterConfig.DisableNewTx, "disable posting new transactions, data poster will still keep confirming existing batches")
+
+	includeBlobTuning := usageContext != DataPosterUsageStaker
+	if includeBlobTuning {
+		f.DurationSlice(prefix+".blob-tx-replacement-times", defaultDataPosterConfig.BlobTxReplacementTimes, "comma-separated list of durations since first posting a blob transaction to attempt a replace-by-fee")
+		f.Float64(prefix+".min-blob-tx-tip-cap-gwei", defaultDataPosterConfig.MinBlobTxTipCapGwei, "the minimum tip cap to post EIP-4844 blob carrying transactions at")
+		f.Float64(prefix+".max-blob-tx-tip-cap-gwei", defaultDataPosterConfig.MaxBlobTxTipCapGwei, "the maximum tip cap to post EIP-4844 blob carrying transactions at")
+	}
+
+	// We intentionally don't expose an option to configure Post4844Blobs.
+	// Components using DataPoster should set it on DataPoster's config themselves.
 }
 
 func addDangerousOptions(prefix string, f *pflag.FlagSet) {
@@ -1444,6 +1459,10 @@ var DefaultDataPosterConfigForValidator = func() DataPosterConfig {
 	// the validator cannot queue transactions
 	config.MaxMempoolTransactions = 1
 	config.MaxMempoolWeight = 1
+	// Clear blob-related fields since they're not applicable to validator
+	config.BlobTxReplacementTimes = nil
+	config.MinBlobTxTipCapGwei = 0
+	config.MaxBlobTxTipCapGwei = 0
 	return config
 }()
 

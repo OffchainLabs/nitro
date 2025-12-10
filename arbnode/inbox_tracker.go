@@ -39,14 +39,14 @@ type InboxTracker struct {
 	txStreamer     *TransactionStreamer
 	mutex          sync.Mutex
 	validator      *staker.BlockValidator
-	dapReaders     *daprovider.ReaderRegistry
+	dapReaders     *daprovider.DAProviderRegistry
 	snapSyncConfig SnapSyncConfig
 
 	batchMetaMutex sync.Mutex
 	batchMeta      *containers.LruCache[uint64, BatchMetadata]
 }
 
-func NewInboxTracker(db ethdb.Database, txStreamer *TransactionStreamer, dapReaders *daprovider.ReaderRegistry, snapSyncConfig SnapSyncConfig) (*InboxTracker, error) {
+func NewInboxTracker(db ethdb.Database, txStreamer *TransactionStreamer, dapReaders *daprovider.DAProviderRegistry, snapSyncConfig SnapSyncConfig) (*InboxTracker, error) {
 	tracker := &InboxTracker{
 		db:             db,
 		txStreamer:     txStreamer,
@@ -233,6 +233,9 @@ func (t *InboxTracker) FindInboxBatchContainingMessage(pos arbutil.MessageIndex)
 	if err != nil {
 		return 0, false, err
 	}
+	if batchCount == 0 {
+		return 0, false, nil
+	}
 	low := uint64(0)
 	high := batchCount - 1
 	lastBatchMessageCount, err := t.GetBatchMessageCount(high)
@@ -290,6 +293,11 @@ func (t *InboxTracker) PopulateFeedBacklog(broadcastServer *broadcaster.Broadcas
 			return fmt.Errorf("error getting batch %v message count: %w", batchIndex, err)
 		}
 	}
+
+	if t.txStreamer == nil {
+		return errors.New("txStreamer is nil")
+	}
+
 	messageCount, err := t.txStreamer.GetMessageCount()
 	if err != nil {
 		return fmt.Errorf("error getting tx streamer message count: %w", err)
@@ -309,17 +317,21 @@ func (t *InboxTracker) PopulateFeedBacklog(broadcastServer *broadcaster.Broadcas
 
 		blockMetadata, err := t.txStreamer.BlockMetadataAtMessageIndex(seqNum)
 		if err != nil {
-			log.Warn("Error getting blockMetadata byte array from tx streamer", "err", err)
+			log.Warn("error getting blockMetadata byte array from tx streamer", "err", err)
 		}
 
-		feedMessage, err := broadcastServer.NewBroadcastFeedMessage(*message, seqNum, blockHash, blockMetadata)
+		messageWithInfo := arbostypes.MessageWithMetadataAndBlockInfo{
+			MessageWithMeta: *message,
+			BlockHash:       blockHash,
+			BlockMetadata:   blockMetadata,
+		}
+		feedMessage, err := broadcastServer.NewBroadcastFeedMessage(messageWithInfo, seqNum)
 		if err != nil {
 			return fmt.Errorf("error creating broadcast feed message %v: %w", seqNum, err)
 		}
 		feedMessages = append(feedMessages, feedMessage)
 	}
-	broadcastServer.BroadcastFeedMessages(feedMessages)
-	return nil
+	return broadcastServer.PopulateFeedBacklog(feedMessages)
 }
 
 func (t *InboxTracker) legacyGetDelayedMessageAndAccumulator(ctx context.Context, seqNum uint64) (*arbostypes.L1IncomingMessage, common.Hash, error) {
@@ -347,6 +359,25 @@ func (t *InboxTracker) legacyGetDelayedMessageAndAccumulator(ctx context.Context
 }
 
 func (t *InboxTracker) GetDelayedMessageAccumulatorAndParentChainBlockNumber(ctx context.Context, seqNum uint64) (*arbostypes.L1IncomingMessage, common.Hash, uint64, error) {
+	msg, acc, parentChainBlockNumber, err := t.getRawDelayedMessageAccumulatorAndParentChainBlockNumber(ctx, seqNum)
+	if err != nil {
+		return msg, acc, parentChainBlockNumber, err
+	}
+	err = msg.FillInBatchGasFields(func(batchNum uint64) ([]byte, error) {
+		data, _, err := t.txStreamer.inboxReader.GetSequencerMessageBytesForParentBlock(ctx, batchNum, parentChainBlockNumber)
+		return data, err
+	})
+	return msg, acc, parentChainBlockNumber, err
+}
+
+// does not return message, so does not need to fill in batchGasFields
+func (t *InboxTracker) GetParentChainBlockNumberFor(ctx context.Context, seqNum uint64) (uint64, error) {
+	_, _, blockNum, err := t.getRawDelayedMessageAccumulatorAndParentChainBlockNumber(ctx, seqNum)
+	return blockNum, err
+}
+
+// this function will not error
+func (t *InboxTracker) getRawDelayedMessageAccumulatorAndParentChainBlockNumber(ctx context.Context, seqNum uint64) (*arbostypes.L1IncomingMessage, common.Hash, uint64, error) {
 	delayedMessageKey := dbKey(rlpDelayedMessagePrefix, seqNum)
 	exists, err := t.db.Has(delayedMessageKey)
 	if err != nil {
@@ -367,14 +398,6 @@ func (t *InboxTracker) GetDelayedMessageAccumulatorAndParentChainBlockNumber(ctx
 	copy(acc[:], data[:32])
 	var msg *arbostypes.L1IncomingMessage
 	err = rlp.DecodeBytes(data[32:], &msg)
-	if err != nil {
-		return msg, acc, 0, err
-	}
-
-	err = msg.FillInBatchGasFields(func(batchNum uint64) ([]byte, error) {
-		data, _, err := t.txStreamer.inboxReader.GetSequencerMessageBytes(ctx, batchNum)
-		return data, err
-	})
 	if err != nil {
 		return msg, acc, 0, err
 	}

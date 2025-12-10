@@ -74,16 +74,10 @@ func (d *readerForDAS) RecoverPayload(
 	batchBlockHash common.Hash,
 	sequencerMsg []byte,
 ) containers.PromiseInterface[daprovider.PayloadResult] {
-	promise, ctx := containers.NewPromiseWithContext[daprovider.PayloadResult](context.Background())
-	go func() {
+	return containers.DoPromise(context.Background(), func(ctx context.Context) (daprovider.PayloadResult, error) {
 		payload, _, err := d.recoverInternal(ctx, batchNum, sequencerMsg, true, false)
-		if err != nil {
-			promise.ProduceError(err)
-		} else {
-			promise.Produce(daprovider.PayloadResult{Payload: payload})
-		}
-	}()
-	return promise
+		return daprovider.PayloadResult{Payload: payload}, err
+	})
 }
 
 // CollectPreimages collects preimages from the DA provider
@@ -92,41 +86,47 @@ func (d *readerForDAS) CollectPreimages(
 	batchBlockHash common.Hash,
 	sequencerMsg []byte,
 ) containers.PromiseInterface[daprovider.PreimagesResult] {
-	promise, ctx := containers.NewPromiseWithContext[daprovider.PreimagesResult](context.Background())
-	go func() {
+	return containers.DoPromise(context.Background(), func(ctx context.Context) (daprovider.PreimagesResult, error) {
 		_, preimages, err := d.recoverInternal(ctx, batchNum, sequencerMsg, false, true)
-		if err != nil {
-			promise.ProduceError(err)
-		} else {
-			promise.Produce(daprovider.PreimagesResult{Preimages: preimages})
-		}
-	}()
-	return promise
+		return daprovider.PreimagesResult{Preimages: preimages}, err
+	})
 }
 
 // NewWriterForDAS is generally meant to be only used by nitro.
 // DA Providers should implement methods in the DAProviderWriter interface independently
-func NewWriterForDAS(dasWriter DASWriter) *writerForDAS {
-	return &writerForDAS{dasWriter: dasWriter}
+func NewWriterForDAS(dasWriter DASWriter, maxMessageSize int) *writerForDAS {
+	return &writerForDAS{
+		dasWriter:      dasWriter,
+		maxMessageSize: maxMessageSize,
+	}
 }
 
 type writerForDAS struct {
-	dasWriter DASWriter
+	dasWriter      DASWriter
+	maxMessageSize int
 }
 
-func (d *writerForDAS) Store(ctx context.Context, message []byte, timeout uint64, disableFallbackStoreDataOnChain bool) ([]byte, error) {
-	cert, err := d.dasWriter.Store(ctx, message, timeout)
-	if errors.Is(err, ErrBatchToDasFailed) {
-		if disableFallbackStoreDataOnChain {
-			return nil, errors.New("unable to batch to DAS and fallback storing data on chain is disabled")
+func (d *writerForDAS) Store(message []byte, timeout uint64) containers.PromiseInterface[[]byte] {
+	return containers.DoPromise(context.Background(), func(ctx context.Context) ([]byte, error) {
+		cert, err := d.dasWriter.Store(ctx, message, timeout)
+		if err != nil {
+			// If the aggregator failed due to insufficient backends, signal explicit fallback
+			// to allow batch poster to try the next DA provider in the chain. The Aggregator
+			// has a loud ERROR if the threshold of failing committee members is approaching,
+			// which should give time to correct any errors to avoid fallback. Otherwise
+			// the operator can set disable-dap-fallback-store-data-on-chain to totally
+			// disable automatic fallback to EthDA.
+			if errors.Is(err, ErrBatchToDasFailed) {
+				return nil, fmt.Errorf("%w: %w", daprovider.ErrFallbackRequested, err)
+			}
+			return nil, err
 		}
-		log.Warn("Falling back to storing data on chain", "err", err)
-		return message, nil
-	} else if err != nil {
-		return nil, err
-	} else {
 		return Serialize(cert), nil
-	}
+	})
+}
+
+func (d *writerForDAS) GetMaxMessageSize() containers.PromiseInterface[int] {
+	return containers.NewReadyPromise(d.maxMessageSize, nil)
 }
 
 var (

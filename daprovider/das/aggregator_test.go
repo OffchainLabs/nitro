@@ -19,6 +19,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/blsSignatures"
+	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/daprovider/das/dasutil"
 	"github.com/offchainlabs/nitro/util/testhelpers/flag"
 )
@@ -34,13 +35,9 @@ func TestDAS_BasicAggregationLocal(t *testing.T) {
 		privKey, err := blsSignatures.GeneratePrivKeyString()
 		Require(t, err)
 
-		config := DataAvailabilityConfig{
-			Enable: true,
-			Key: KeyConfig{
-				PrivKey: privKey,
-			},
-			ParentChainNodeURL: "none",
-		}
+		config := DefaultDataAvailabilityConfig
+		config.Enable = true
+		config.Key.PrivKey = privKey
 
 		storageServices = append(storageServices, NewMemoryBackedStorageService(ctx))
 		das, err := NewSignAfterStoreDASWriter(ctx, config, storageServices[i])
@@ -51,7 +48,11 @@ func TestDAS_BasicAggregationLocal(t *testing.T) {
 		backends = append(backends, *details)
 	}
 
-	aggregator, err := NewAggregator(ctx, DataAvailabilityConfig{RPCAggregator: AggregatorConfig{AssumedHonest: 1, EnableChunkedStore: true}, ParentChainNodeURL: "none"}, backends)
+	aggregatorConfig := DefaultAggregatorConfig
+	aggregatorConfig.AssumedHonest = 1
+	daConfig := DefaultDataAvailabilityConfig
+	daConfig.RPCAggregator = aggregatorConfig
+	aggregator, err := newAggregator(daConfig, backends)
 	Require(t, err)
 
 	rawMsg := []byte("It's time for you to see the fnords.")
@@ -188,13 +189,9 @@ func testConfigurableStorageFailures(t *testing.T, shouldFailAggregation bool) {
 		privKey, err := blsSignatures.GeneratePrivKeyString()
 		Require(t, err)
 
-		config := DataAvailabilityConfig{
-			Enable: true,
-			Key: KeyConfig{
-				PrivKey: privKey,
-			},
-			ParentChainNodeURL: "none",
-		}
+		config := DefaultDataAvailabilityConfig
+		config.Enable = true
+		config.Key.PrivKey = privKey
 
 		storageServices = append(storageServices, NewMemoryBackedStorageService(ctx))
 		das, err := NewSignAfterStoreDASWriter(ctx, config, storageServices[i])
@@ -205,13 +202,12 @@ func testConfigurableStorageFailures(t *testing.T, shouldFailAggregation bool) {
 		backends = append(backends, *details)
 	}
 
-	aggregator, err := NewAggregator(
-		ctx,
-		DataAvailabilityConfig{
-			RPCAggregator:      AggregatorConfig{AssumedHonest: assumedHonest, EnableChunkedStore: true},
-			ParentChainNodeURL: "none",
-			RequestTimeout:     time.Millisecond * 2000,
-		}, backends)
+	aggregatorConfig := DefaultAggregatorConfig
+	aggregatorConfig.AssumedHonest = assumedHonest
+	daConfig := DefaultDataAvailabilityConfig
+	daConfig.RPCAggregator = aggregatorConfig
+	daConfig.RequestTimeout = time.Millisecond * 2000
+	aggregator, err := newAggregator(daConfig, backends)
 	Require(t, err)
 
 	rawMsg := []byte("It's time for you to see the fnords.")
@@ -287,4 +283,71 @@ func TestDAS_AtLeastHStorageFailures(t *testing.T) {
 			testConfigurableStorageFailures(t, true)
 		})
 	}
+}
+
+func TestDAS_InsufficientBackendsTriggersFallback(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Set up aggregator with 5 backends, AssumedHonest=2
+	// This means we need K=5+1-2=4 successful responses to succeed
+	// We'll inject exactly 2 failures, causing aggregation to fail
+	numBackendDAS := 5
+	assumedHonest := 2
+	nFailures := 2
+	nSuccesses := numBackendDAS - nFailures
+
+	log.Trace(fmt.Sprintf("Testing aggregator fallback with K:%d (K=N+1-H), N:%d, H:%d, and %d successes", numBackendDAS+1-assumedHonest, numBackendDAS, assumedHonest, nSuccesses))
+
+	injectedFailures := newRandomBagOfFailures(t, nSuccesses, nFailures, immediateError)
+	var backends []ServiceDetails
+	for i := 0; i < numBackendDAS; i++ {
+		privKey, err := blsSignatures.GeneratePrivKeyString()
+		Require(t, err)
+
+		config := DefaultDataAvailabilityConfig
+		config.Enable = true
+		config.Key.PrivKey = privKey
+
+		storageService := NewMemoryBackedStorageService(ctx)
+		das, err := NewSignAfterStoreDASWriter(ctx, config, storageService)
+		Require(t, err)
+		signerMask := uint64(1 << i)
+		details, err := NewServiceDetails(&WrapStore{t, injectedFailures, das}, *das.pubKey, signerMask, "service"+strconv.Itoa(i))
+		Require(t, err)
+		backends = append(backends, *details)
+	}
+
+	aggregatorConfig := DefaultAggregatorConfig
+	aggregatorConfig.AssumedHonest = assumedHonest
+	daConfig := DefaultDataAvailabilityConfig
+	daConfig.RPCAggregator = aggregatorConfig
+	daConfig.RequestTimeout = time.Millisecond * 2000
+	aggregator, err := newAggregator(daConfig, backends)
+	Require(t, err)
+
+	// Wrap the aggregator with writerForDAS to test error conversion
+	// Use 0 for maxMessageSize to indicate use default
+	writer := dasutil.NewWriterForDAS(aggregator, 0)
+
+	rawMsg := []byte("It's time for you to see the fnords.")
+	promise := writer.Store(rawMsg, 0)
+
+	// Wait for the promise to complete
+	result, err := promise.Await(ctx)
+	if err == nil {
+		Fail(t, "Expected error from insufficient backends, got nil")
+	}
+
+	// Verify the error contains ErrFallbackRequested
+	if !errors.Is(err, daprovider.ErrFallbackRequested) {
+		Fail(t, fmt.Sprintf("Expected error to contain ErrFallbackRequested, got: %v", err))
+	}
+
+	// Also verify the original error is preserved
+	if !errors.Is(err, dasutil.ErrBatchToDasFailed) {
+		Fail(t, fmt.Sprintf("Expected error to contain ErrBatchToDasFailed, got: %v", err))
+	}
+
+	log.Info("Fallback error correctly returned", "error", err, "result", result)
 }

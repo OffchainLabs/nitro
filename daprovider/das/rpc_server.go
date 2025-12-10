@@ -19,7 +19,7 @@ import (
 	"github.com/offchainlabs/nitro/blsSignatures"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/daprovider/das/dasutil"
-	"github.com/offchainlabs/nitro/daprovider/das/data_streaming"
+	"github.com/offchainlabs/nitro/daprovider/data_streaming"
 	"github.com/offchainlabs/nitro/util/pretty"
 )
 
@@ -32,11 +32,6 @@ var (
 
 	rpcSendChunkSuccessCounter = metrics.NewRegisteredCounter("arb/das/rpc/sendchunk/success", nil)
 	rpcSendChunkFailureCounter = metrics.NewRegisteredCounter("arb/das/rpc/sendchunk/failure", nil)
-)
-
-const (
-	defaultMaxPendingMessages      = 10
-	defaultMessageCollectionExpiry = 1 * time.Minute
 )
 
 // lint:require-exhaustive-initialization
@@ -70,17 +65,27 @@ func StartDASRPCServerOnListener(ctx context.Context, listener net.Listener, rpc
 		rpcServer.SetHTTPBodyLimit(rpcServerBodyLimit)
 	}
 
-	dataStreamPayloadVerifier := data_streaming.CustomPayloadVerifier(func(ctx context.Context, signature []byte, bytes []byte, extras ...uint64) error {
-		return signatureVerifier.verify(ctx, bytes, signature, extras...)
+	var dataStreamPayloadVerifier *data_streaming.PayloadVerifier
+	if signatureVerifier == nil {
+		// When signature checking is disabled, accept any signature without verification
+		dataStreamPayloadVerifier = data_streaming.NoopPayloadVerifier()
+	} else {
+		dataStreamPayloadVerifier = data_streaming.CustomPayloadVerifier(func(ctx context.Context, signature []byte, bytes []byte, extras ...uint64) error {
+			return signatureVerifier.verify(ctx, bytes, signature, extras...)
+		})
+	}
+
+	dataStreamReceiver := data_streaming.NewDataStreamReceiver(dataStreamPayloadVerifier, data_streaming.DefaultMaxPendingMessages, data_streaming.DefaultMessageCollectionExpiry, data_streaming.DefaultRequestValidity, func(id data_streaming.MessageId) {
+		rpcStoreFailureCounter.Inc(1)
 	})
+	dataStreamReceiver.Start(ctx)
+
 	err := rpcServer.RegisterName("das", &DASRPCServer{
-		daReader:          daReader,
-		daWriter:          daWriter,
-		daHealthChecker:   daHealthChecker,
-		signatureVerifier: signatureVerifier,
-		dataStreamReceiver: data_streaming.NewDataStreamReceiver(dataStreamPayloadVerifier, defaultMaxPendingMessages, defaultMessageCollectionExpiry, func(id data_streaming.MessageId) {
-			rpcStoreFailureCounter.Inc(1)
-		}),
+		daReader:           daReader,
+		daWriter:           daWriter,
+		daHealthChecker:    daHealthChecker,
+		signatureVerifier:  signatureVerifier,
+		dataStreamReceiver: dataStreamReceiver,
 	})
 	if err != nil {
 		return nil, err
@@ -102,6 +107,7 @@ func StartDASRPCServerOnListener(ctx context.Context, listener net.Listener, rpc
 	}()
 	go func() {
 		<-ctx.Done()
+		dataStreamReceiver.StopAndWait()
 		_ = srv.Shutdown(context.Background())
 	}()
 	return srv, nil
@@ -133,8 +139,10 @@ func (s *DASRPCServer) Store(ctx context.Context, message hexutil.Bytes, timeout
 		rpcStoreDurationHistogram.Update(time.Since(start).Nanoseconds())
 	}()
 
-	if err := s.signatureVerifier.verify(ctx, message, sig, uint64(timeout)); err != nil {
-		return nil, err
+	if s.signatureVerifier != nil {
+		if err := s.signatureVerifier.verify(ctx, message, sig, uint64(timeout)); err != nil {
+			return nil, err
+		}
 	}
 
 	cert, err := s.daWriter.Store(ctx, message, uint64(timeout))

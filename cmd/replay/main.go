@@ -52,8 +52,28 @@ func getBlockHeaderByHash(hash common.Hash) *types.Header {
 	return header
 }
 
+func getLastBlockHeader() *types.Header {
+	lastBlockHash := wavmio.GetLastBlockHash()
+	if lastBlockHash == (common.Hash{}) {
+		return nil
+	}
+	return getBlockHeaderByHash(lastBlockHash)
+}
+
 type WavmChainContext struct {
 	chainConfig *params.ChainConfig
+}
+
+func (c WavmChainContext) CurrentHeader() *types.Header {
+	return getLastBlockHeader()
+}
+
+func (c WavmChainContext) GetHeaderByNumber(number uint64) *types.Header {
+	panic("GetHeaderByNumber should not be called in WavmChainContext")
+}
+
+func (c WavmChainContext) GetHeaderByHash(hash common.Hash) *types.Header {
+	return getBlockHeaderByHash(hash)
 }
 
 func (c WavmChainContext) Config() *params.ChainConfig {
@@ -240,9 +260,9 @@ func main() {
 		if backend.GetPositionWithinMessage() > 0 {
 			keysetValidationMode = daprovider.KeysetDontValidate
 		}
-		dapReaders := daprovider.NewReaderRegistry()
+		dapReaders := daprovider.NewDAProviderRegistry()
 		if dasReader != nil {
-			err = dapReaders.SetupDASReader(dasutil.NewReaderForDAS(dasReader, dasKeysetFetcher, keysetValidationMode))
+			err = dapReaders.SetupDASReader(dasutil.NewReaderForDAS(dasReader, dasKeysetFetcher, keysetValidationMode), nil)
 			if err != nil {
 				panic(fmt.Sprintf("Failed to register DAS reader: %v", err))
 			}
@@ -251,6 +271,7 @@ func main() {
 		if err != nil {
 			panic(fmt.Sprintf("Failed to register blob reader: %v", err))
 		}
+
 		inboxMultiplexer := arbstate.NewInboxMultiplexer(backend, delayedMessagesRead, dapReaders, keysetValidationMode)
 		ctx := context.Background()
 		message, err := inboxMultiplexer.Pop(ctx)

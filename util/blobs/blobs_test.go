@@ -9,6 +9,7 @@ import (
 	"math/rand"
 	"testing"
 
+	"github.com/ethereum/go-ethereum/crypto/kzg4844"
 	"github.com/ethereum/go-ethereum/params"
 )
 
@@ -48,5 +49,96 @@ outer:
 			t.Errorf("got different decoding for length %v", len(data))
 			continue
 		}
+	}
+}
+
+func TestComputeProofsVersion1(t *testing.T) {
+	testData := []byte("test data for blob proof version 1 with cell proofs")
+	blobs, err := EncodeBlobs(testData)
+	if err != nil {
+		t.Fatalf("failed to encode blobs: %v", err)
+	}
+	if len(blobs) == 0 {
+		t.Fatal("expected at least one blob")
+	}
+	commitments, _, err := ComputeCommitmentsAndHashes(blobs)
+	if err != nil {
+		t.Fatalf("failed to compute commitments: %v", err)
+	}
+
+	proofs, version, err := ComputeProofs(blobs, commitments)
+	if err != nil {
+		t.Fatalf("failed to compute version 1 proofs: %v", err)
+	}
+
+	// Check version
+	if version != 1 {
+		t.Errorf("expected version 1, got %d", version)
+	}
+
+	// Check proof count: should be CellProofsPerBlob (128) proofs per blob
+	expectedProofCount := len(blobs) * kzg4844.CellProofsPerBlob
+	if len(proofs) != expectedProofCount {
+		t.Errorf("expected %d proofs, got %d", expectedProofCount, len(proofs))
+	}
+
+	// Verify the cell proofs are valid
+	err = kzg4844.VerifyCellProofs(blobs, commitments, proofs)
+	if err != nil {
+		t.Errorf("cell proof verification failed: %v", err)
+	}
+}
+
+func TestComputeProofsMismatchedInputs(t *testing.T) {
+	testData := []byte("test data")
+	blobs, err := EncodeBlobs(testData)
+	if err != nil {
+		t.Fatalf("failed to encode blobs: %v", err)
+	}
+
+	_, _, err = ComputeProofs(blobs, []kzg4844.Commitment{})
+	if err == nil {
+		t.Error("expected error for mismatched blobs and commitments, got nil")
+	}
+}
+
+func TestComputeProofsMultipleBlobsVersion1(t *testing.T) {
+	// Create test data large enough to span multiple blobs
+	testData := make([]byte, bytesEncodedPerBlob*2)
+	for i := range testData {
+		testData[i] = byte(i % 256)
+	}
+	multiBlobs, err := EncodeBlobs(testData)
+	if err != nil {
+		t.Fatalf("failed to encode blobs: %v", err)
+	}
+	if len(multiBlobs) < 2 {
+		t.Fatalf("expected at least 2 blobs, got %d", len(multiBlobs))
+	}
+
+	multiCommitments, _, err := ComputeCommitmentsAndHashes(multiBlobs)
+	if err != nil {
+		t.Fatalf("failed to compute commitments: %v", err)
+	}
+
+	proofs, version, err := ComputeProofs(multiBlobs, multiCommitments)
+	if err != nil {
+		t.Fatalf("failed to compute proofs: %v", err)
+	}
+
+	if version != 1 {
+		t.Errorf("expected version 1, got %d", version)
+	}
+
+	// Should be CellProofsPerBlob proofs per blob
+	expectedCount := len(multiBlobs) * kzg4844.CellProofsPerBlob
+	if len(proofs) != expectedCount {
+		t.Errorf("expected %d proofs, got %d", expectedCount, len(proofs))
+	}
+
+	// Verify all cell proofs
+	err = kzg4844.VerifyCellProofs(multiBlobs, multiCommitments, proofs)
+	if err != nil {
+		t.Errorf("cell proof verification failed: %v", err)
 	}
 }

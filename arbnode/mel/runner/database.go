@@ -95,10 +95,10 @@ func (d *Database) State(ctx context.Context, parentChainBlockNumber uint64) (*m
 
 func (d *Database) SaveDelayedMessages(ctx context.Context, state *mel.State, delayedMessages []*mel.DelayedInboxMessage) error {
 	dbBatch := d.db.NewBatch()
-	if state.DelayedMessagedSeen < uint64(len(delayedMessages)) {
-		return fmt.Errorf("mel state's DelayedMessagedSeen: %d is lower than number of delayed messages: %d queued to be added", state.DelayedMessagedSeen, len(delayedMessages))
+	if state.DelayedMessagesSeen < uint64(len(delayedMessages)) {
+		return fmt.Errorf("mel state's DelayedMessagesSeen: %d is lower than number of delayed messages: %d queued to be added", state.DelayedMessagesSeen, len(delayedMessages))
 	}
-	firstPos := state.DelayedMessagedSeen - uint64(len(delayedMessages))
+	firstPos := state.DelayedMessagesSeen - uint64(len(delayedMessages))
 	for i, msg := range delayedMessages {
 		key := dbKey(dbschema.MelDelayedMessagePrefix, firstPos+uint64(i)) // #nosec G115
 		delayedBytes, err := rlp.EncodeToBytes(*msg)

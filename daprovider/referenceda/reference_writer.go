@@ -4,34 +4,45 @@
 package referenceda
 
 import (
-	"context"
 	"fmt"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 
+	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/signature"
 )
 
 // Writer implements the daprovider.Writer interface for ReferenceDA
 type Writer struct {
-	storage *InMemoryStorage
-	signer  signature.DataSignerFunc
+	storage        *InMemoryStorage
+	signer         signature.DataSignerFunc
+	maxMessageSize int
 }
 
 // NewWriter creates a new ReferenceDA writer
-func NewWriter(signer signature.DataSignerFunc) *Writer {
+func NewWriter(signer signature.DataSignerFunc, maxMessageSize int) *Writer {
 	return &Writer{
-		storage: GetInMemoryStorage(),
-		signer:  signer,
+		storage:        GetInMemoryStorage(),
+		signer:         signer,
+		maxMessageSize: maxMessageSize,
 	}
 }
 
 func (w *Writer) Store(
-	ctx context.Context,
 	message []byte,
 	timeout uint64,
-	disableFallbackStoreDataOnChain bool,
+) containers.PromiseInterface[[]byte] {
+	certificate, err := w.store(message)
+	return containers.NewReadyPromise(certificate, err)
+}
+
+func (w *Writer) GetMaxMessageSize() containers.PromiseInterface[int] {
+	return containers.NewReadyPromise(w.maxMessageSize, nil)
+}
+
+func (w *Writer) store(
+	message []byte,
 ) ([]byte, error) {
 	if w.signer == nil {
 		return nil, fmt.Errorf("no signer configured")
@@ -44,7 +55,7 @@ func (w *Writer) Store(
 	}
 
 	// Store the message in the singleton storage
-	err = w.storage.Store(ctx, message)
+	err = w.storage.Store(message)
 	if err != nil {
 		return nil, err
 	}

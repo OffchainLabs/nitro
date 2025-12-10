@@ -9,7 +9,7 @@ jobs:
     runs-on: arbitrator-ci
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
         with:
           submodules: recursive
 
@@ -22,11 +22,5 @@ jobs:
       - name: Build all lint dependencies
         run: make -j8 build-node-deps
 
-      - name: GolangCI Lint
-        uses: golangci/golangci-lint-action@v8
-        with:
-          version: v2.5
-
-      - name: Custom Lint
-        run: |
-          go run ./linters ./...
+      - name: Setup CI
+        uses: ./.github/actions/lint-go

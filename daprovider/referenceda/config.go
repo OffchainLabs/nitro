@@ -11,6 +11,7 @@ type Config struct {
 	Enable            bool             `koanf:"enable"`
 	SigningKey        SigningKeyConfig `koanf:"signing-key"`
 	ValidatorContract string           `koanf:"validator-contract"`
+	MaxBatchSize      int              `koanf:"max-batch-size"`
 }
 
 type SigningKeyConfig struct {
@@ -27,6 +28,7 @@ var DefaultConfig = Config{
 	Enable:            false,
 	SigningKey:        DefaultSigningKeyConfig,
 	ValidatorContract: "",
+	MaxBatchSize:      1_000_000, // 1MB default
 }
 
 func SigningKeyConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -38,4 +40,5 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultConfig.Enable, "enable reference DA provider implementation")
 	SigningKeyConfigAddOptions(prefix+".signing-key", f)
 	f.String(prefix+".validator-contract", DefaultConfig.ValidatorContract, "address of the ReferenceDAProofValidator contract")
+	f.Int(prefix+".max-batch-size", DefaultConfig.MaxBatchSize, "maximum batch size for reference DA")
 }

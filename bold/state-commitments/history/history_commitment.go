@@ -75,7 +75,6 @@ type treePosition struct {
 
 type historyCommitter struct {
 	fillers        []common.Hash
-	keccak         crypto.KeccakState
 	cursor         treePosition
 	lastLeafProver *lastLeafProver
 }
@@ -83,7 +82,6 @@ type historyCommitter struct {
 func newCommitter() *historyCommitter {
 	return &historyCommitter{
 		fillers: make([]common.Hash, 0),
-		keccak:  crypto.NewKeccakState(),
 	}
 }
 
@@ -91,7 +89,7 @@ func newCommitter() *historyCommitter {
 //
 // Without this type, it would be impossible to distinguish between a hash which
 // has not been found and a hash which is the value of common.Hash{}.
-// That's because the lastLeafProver's postions map is initialized with pointers
+// That's because the lastLeafProver's positions map is initialized with pointers
 // to common.Hash{} values in a pre-allocated slice.
 type soughtHash struct {
 	found bool
@@ -145,13 +143,6 @@ func (h *historyCommitter) handle(hash common.Hash) {
 	}
 }
 
-// hash hashes the passed item into a common.Hash.
-func (h *historyCommitter) hash(item ...*common.Hash) common.Hash {
-	var result common.Hash
-	h.hashInto(&result, item...)
-	return result
-}
-
 // proof returns the merkle inclusion proof for the last leaf in a virtual tree.
 //
 // If the proof is not complete (i.e. some sibling nodes are missing), the
@@ -170,16 +161,6 @@ func (h *historyCommitter) lastLeafProof() []common.Hash {
 		return nil
 	}
 	return h.lastLeafProver.proof
-}
-
-// hashInto hashes the concatenation of the passed items into the result.
-// nolint:errcheck
-func (h *historyCommitter) hashInto(result *common.Hash, items ...*common.Hash) {
-	defer h.keccak.Reset()
-	for _, item := range items {
-		h.keccak.Write(item[:]) // #nosec G104 - KeccakState.Write never errors
-	}
-	h.keccak.Read(result[:]) // #nosec G104 - KeccakState.Read never errors
 }
 
 // NewCommitment produces a history commitment from a list of real leaves that
@@ -273,7 +254,7 @@ func (h *historyCommitter) generatePrefixProof(prefixIndex uint64, leaves []comm
 func (h *historyCommitter) hashLeaves(leaves []common.Hash) []common.Hash {
 	hashedLeaves := make([]common.Hash, len(leaves))
 	for i := range leaves {
-		hashedLeaves[i] = h.hash(&leaves[i])
+		hashedLeaves[i] = crypto.Keccak256Hash(leaves[i][:])
 	}
 	return hashedLeaves
 }
@@ -303,17 +284,17 @@ func (h *historyCommitter) hashLeaves(leaves []common.Hash) []common.Hash {
 //  3. If the leaves do not fit in the left half, then both halves are computed
 //     by recursion.
 func (h *historyCommitter) partialRoot(leaves []common.Hash, virtual, limit uint64) (common.Hash, error) {
-	lvLen := uint64(len(leaves))
-	if lvLen == 0 {
+	if len(leaves) == 0 {
 		return emptyHash, errors.New("nil leaves")
 	}
-	if uint64(virtual) < lvLen {
+	lvLen := uint64(len(leaves))
+	if virtual < lvLen {
 		return emptyHash, fmt.Errorf("virtual %d should be >= num leaves %d", virtual, lvLen)
 	}
 	if limit < virtual {
 		return emptyHash, fmt.Errorf("limit %d should be >= virtual %d", limit, virtual)
 	}
-	minFillers := math.Log2Ceil(uint64(virtual))
+	minFillers := math.Log2Ceil(virtual)
 	if len(h.fillers) < minFillers {
 		return emptyHash, fmt.Errorf("insufficient fillers, want %d, got %d", minFillers, len(h.fillers))
 	}
@@ -334,7 +315,7 @@ func (h *historyCommitter) partialRoot(leaves []common.Hash, virtual, limit uint
 	if virtual > mid {
 		// Case 2 or 3: A complete subtree can be computed
 		lVirtual = mid
-		if lvLen > uint64(mid) {
+		if lvLen > mid {
 			// Case 3: A complete pure subtree can be computed
 			lLeaves = leaves[:mid]
 		} else {
@@ -355,16 +336,16 @@ func (h *historyCommitter) partialRoot(leaves []common.Hash, virtual, limit uint
 	h.cursor.index++
 	if virtual > mid {
 		// Case 2 or 3: The virtual size is greater than half the limit
-		if lvLen <= uint64(mid) && virtual == limit {
+		if lvLen <= mid && virtual == limit {
 			// This is a special case of 2 where the entire right subtree is
 			// made purely of virtual nodes, and it is a complete tree.
 			// So, the root of the subtree will be the precomputed filler
 			// at the current layer.
-			right = h.fillers[math.Log2Floor(uint64(mid))]
+			right = h.fillers[math.Log2Floor(mid)]
 			h.handle(right)
 		} else {
 			var rLeaves []common.Hash
-			if lvLen > uint64(mid) {
+			if lvLen > mid {
 				// Case 3: The leaves do not fit in the first half
 				rLeaves = leaves[mid:]
 			} else {
@@ -382,7 +363,7 @@ func (h *historyCommitter) partialRoot(leaves []common.Hash, virtual, limit uint
 		h.handle(right)
 	}
 
-	h.hashInto(&leaves[0], &left, &right)
+	leaves[0] = crypto.Keccak256Hash(left[:], right[:])
 
 	// Restore the cursor layer to the state for this level of recursion
 	h.cursor.index /= 2
@@ -558,7 +539,7 @@ func (h *historyCommitter) populateFillers(leaf *common.Hash, n uint) error {
 	h.fillers = make([]common.Hash, n)
 	copy(h.fillers[0][:], (*leaf)[:])
 	for i := uint(1); i < n; i++ {
-		h.hashInto(&h.fillers[i], &h.fillers[i-1], &h.fillers[i-1])
+		h.fillers[i] = crypto.Keccak256Hash(h.fillers[i-1][:], h.fillers[i-1][:])
 	}
 	return nil
 }
@@ -573,7 +554,7 @@ func lastLeafProofPositions(virtual uint64) ([]treePosition, error) {
 	if virtual == 1 {
 		return []treePosition{}, nil
 	}
-	limit := nextPowerOf2(uint64(virtual))
+	limit := nextPowerOf2(virtual)
 	depth := math.Log2Floor(limit)
 	positions := make([]treePosition, depth)
 	idx := uint64(virtual) - 1

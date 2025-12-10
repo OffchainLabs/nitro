@@ -9,7 +9,7 @@ jobs:
     runs-on: arbitrator-ci
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
         with:
           submodules: recursive
 
@@ -17,13 +17,16 @@ jobs:
       - name: Setup CI
         uses: ./.github/actions/ci-setup
 
+      - name: Build
+        run: make -j8 build test-go-deps
+
       - name: run challenge tests
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh --tags legacychallengetest
           --run TestChallenge --timeout 60m --cover
 
       - name: Archive detailed run log
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: full.log
           path: full.log

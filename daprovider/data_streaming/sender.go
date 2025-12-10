@@ -7,48 +7,72 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
+	"github.com/spf13/pflag"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/ethereum/go-ethereum/common/hexutil"
-	"github.com/ethereum/go-ethereum/rpc"
+
+	"github.com/offchainlabs/nitro/util/rpcclient"
 )
+
+const (
+	DefaultHttpBodyLimit = 5 * 1024 * 1024 // Taken from go-ethereum http.defaultBodyLimit
+	TestHttpBodyLimit    = 1024
+)
+
+// lint:require-exhaustive-initialization
+type DataStreamerConfig struct {
+	MaxStoreChunkBodySize int                     `koanf:"max-store-chunk-body-size"`
+	RpcMethods            DataStreamingRPCMethods `koanf:"rpc-methods"`
+}
+
+func DefaultDataStreamerConfig(rpcMethods DataStreamingRPCMethods) DataStreamerConfig {
+	return DataStreamerConfig{
+		MaxStoreChunkBodySize: DefaultHttpBodyLimit,
+		RpcMethods:            rpcMethods,
+	}
+}
+
+func TestDataStreamerConfig(rpcMethods DataStreamingRPCMethods) DataStreamerConfig {
+	return DataStreamerConfig{
+		MaxStoreChunkBodySize: TestHttpBodyLimit,
+		RpcMethods:            rpcMethods,
+	}
+}
+
+func DataStreamerConfigAddOptions(prefix string, f *pflag.FlagSet, defaultRpcMethods DataStreamingRPCMethods) {
+	f.Int(prefix+".max-store-chunk-body-size", DefaultHttpBodyLimit, "maximum HTTP body size for chunked store requests")
+	DataStreamingRPCMethodsAddOptions(prefix+".rpc-methods", f, defaultRpcMethods)
+}
 
 // DataStreamer allows sending arbitrarily big payloads with JSON RPC. It follows a simple chunk-based protocol.
 // lint:require-exhaustive-initialization
 type DataStreamer[Result any] struct {
-	// rpcClient is the underlying client for making RPC calls to the receiver.
-	rpcClient *rpc.Client
-	// chunkSize is the preconfigured size limit on a single data chunk to be sent.
-	chunkSize uint64
-	// dataSigner is used for sender authentication during the protocol.
+	rpcClient  *rpcclient.RpcClient
+	chunkSize  uint64
 	dataSigner *PayloadSigner
-	// rpcMethods define the actual server API
 	rpcMethods DataStreamingRPCMethods
 }
 
 // DataStreamingRPCMethods configuration specifies names of the protocol's RPC methods on the server side.
 // lint:require-exhaustive-initialization
 type DataStreamingRPCMethods struct {
-	StartStream, StreamChunk, FinalizeStream string
+	StartStream    string `koanf:"start-stream"`
+	StreamChunk    string `koanf:"stream-chunk"`
+	FinalizeStream string `koanf:"finalize-stream"`
 }
 
-// NewDataStreamer creates a new DataStreamer instance.
-//
-// Requirements:
-//   - connecting to `url` must succeed;
-//   - `maxStoreChunkBodySize` must be big enough (it should cover `sendChunkJSONBoilerplate` and leave some space for the data);
-//   - `dataSigner` must not be nil;
-//
-// otherwise an `error` is returned.
-func NewDataStreamer[T any](url string, maxStoreChunkBodySize int, dataSigner *PayloadSigner, rpcMethods DataStreamingRPCMethods) (*DataStreamer[T], error) {
-	rpcClient, err := rpc.Dial(url)
-	if err != nil {
-		return nil, err
-	}
+func DataStreamingRPCMethodsAddOptions(prefix string, f *pflag.FlagSet, defaultRpcMethods DataStreamingRPCMethods) {
+	f.String(prefix+".start-stream", defaultRpcMethods.StartStream, "name of the RPC method to start a chunked data stream")
+	f.String(prefix+".stream-chunk", defaultRpcMethods.StreamChunk, "name of the RPC method to send a chunk of data")
+	f.String(prefix+".finalize-stream", defaultRpcMethods.FinalizeStream, "name of the RPC method to finalize a chunked data stream")
+}
 
-	chunkSize, err := calculateEffectiveChunkSize(maxStoreChunkBodySize, rpcMethods)
+func NewDataStreamer[T any](config DataStreamerConfig, dataSigner *PayloadSigner, rpcClient *rpcclient.RpcClient) (*DataStreamer[T], error) {
+	chunkSize, err := calculateEffectiveChunkSize(config.MaxStoreChunkBodySize, config.RpcMethods)
 	if err != nil {
 		return nil, err
 	}
@@ -61,7 +85,7 @@ func NewDataStreamer[T any](url string, maxStoreChunkBodySize int, dataSigner *P
 		rpcClient:  rpcClient,
 		chunkSize:  chunkSize,
 		dataSigner: dataSigner,
-		rpcMethods: rpcMethods,
+		rpcMethods: config.RpcMethods,
 	}, nil
 }
 
@@ -112,16 +136,9 @@ func (ds *DataStreamer[Result]) startStream(ctx context.Context, params streamPa
 
 func (ds *DataStreamer[Result]) doStream(ctx context.Context, data []byte, messageId MessageId, params streamParams) error {
 	chunkRoutines := new(errgroup.Group)
-	for i := uint64(0); i < params.nChunks; i++ {
-		startIndex := i * ds.chunkSize
-		endIndex := (i + 1) * ds.chunkSize
-		if endIndex > params.dataLen {
-			endIndex = params.dataLen
-		}
-		chunkData := data[startIndex:endIndex]
-
+	for i, chunkData := range slices.Collect(slices.Chunk(data, int(ds.chunkSize))) { //nolint:gosec
 		chunkRoutines.Go(func() error {
-			return ds.sendChunk(ctx, messageId, i, chunkData)
+			return ds.sendChunk(ctx, messageId, uint64(i), chunkData) //nolint:gosec
 		})
 	}
 	return chunkRoutines.Wait()

@@ -51,7 +51,7 @@ func ExtractMessages(
 	ctx context.Context,
 	inputState *mel.State,
 	parentChainHeader *types.Header,
-	dataProviders *daprovider.ReaderRegistry,
+	dataProviders *daprovider.DAProviderRegistry,
 	delayedMsgDatabase DelayedMessageDatabase,
 	receiptFetcher ReceiptFetcher,
 	txsFetcher TransactionsFetcher,
@@ -81,7 +81,7 @@ func extractMessagesImpl(
 	ctx context.Context,
 	inputState *mel.State,
 	parentChainHeader *types.Header,
-	dataProviders *daprovider.ReaderRegistry,
+	dataProviders *daprovider.DAProviderRegistry,
 	delayedMsgDatabase DelayedMessageDatabase,
 	txsFetcher TransactionsFetcher,
 	receiptFetcher ReceiptFetcher,
@@ -144,7 +144,7 @@ func extractMessagesImpl(
 		if err = state.AccumulateDelayedMessage(delayed); err != nil {
 			return nil, nil, nil, err
 		}
-		state.DelayedMessagedSeen += 1
+		state.DelayedMessagesSeen += 1
 	}
 
 	// Batch posting reports are included in the same transaction as a batch, so there should
@@ -189,7 +189,7 @@ func extractMessagesImpl(
 			}
 			// Fill in the batch gas stats into the batch posting report.
 			batchPostReport.Message.BatchDataStats = arbostypes.GetDataStats(serialized)
-		} else if !(inputState.DelayedMessagedSeen == 0 && i == 0 && delayedMessages[i] == batchPostReport) {
+		} else if !(inputState.DelayedMessagesSeen == 0 && i == 0 && delayedMessages[i] == batchPostReport) {
 			return nil, nil, nil, errors.New("encountered initialize message that is not the first delayed message and the first batch ")
 		}
 

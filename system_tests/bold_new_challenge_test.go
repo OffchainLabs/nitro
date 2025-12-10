@@ -296,6 +296,7 @@ func startBoldChallengeManager(t *testing.T, ctx context.Context, builder *NodeB
 		node.ConsensusNode.InboxTracker,
 		node.ConsensusNode.TxStreamer,
 		node.ConsensusNode.InboxReader,
+		nil,
 	)
 	Require(t, err)
 
@@ -330,7 +331,7 @@ func startBoldChallengeManager(t *testing.T, ctx context.Context, builder *NodeB
 		rawdb.NewTable(node.ConsensusNode.ArbDB, storage.StakerPrefix),
 		node.ConsensusNode.L1Reader,
 		&txOpts,
-		NewFetcherFromConfig(builder.nodeConfig),
+		NewCommonConfigFetcher(builder.nodeConfig),
 		node.ConsensusNode.SyncMonitor,
 		builder.L1Info.Signer.ChainID(),
 	)

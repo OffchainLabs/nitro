@@ -9,6 +9,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/ethereum/go-ethereum/core/rawdb"
 )
 
 // TestMultigasDataFromReceipts spins up an L2 node with ancd checks if multigas data is present in receipts
@@ -17,7 +19,6 @@ func TestMultigasDataFromReceipts(t *testing.T) {
 	defer cancel()
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
-	builder.execConfig.ExposeMultiGas = true
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -45,7 +46,7 @@ func TestMultigasDataCanBeDisabled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false).WithDatabase(rawdb.DBPebble)
 	builder.execConfig.ExposeMultiGas = false
 	cleanup := builder.Build(t)
 	defer cleanup()
