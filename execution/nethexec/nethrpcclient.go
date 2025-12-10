@@ -351,3 +351,23 @@ func (c *nethRpcClient) SetConsensusSyncData(ctx context.Context, syncData *exec
 
 	return nil
 }
+
+func (c *nethRpcClient) Synced(ctx context.Context) (bool, error) {
+	log.Debug("Making JSON-RPC call to Synced", "url", c.url)
+	var result bool
+	if err := c.client.CallContext(ctx, &result, "Synced"); err != nil {
+		log.Error("Failed to call Synced", "error", err)
+		return false, fmt.Errorf("failed to call Synced: %w", err)
+	}
+	return result, nil
+}
+
+func (c *nethRpcClient) FullSyncProgressMap(ctx context.Context) (map[string]interface{}, error) {
+	log.Debug("Making JSON-RPC call to FullSyncProgressMap", "url", c.url)
+	var result map[string]interface{}
+	if err := c.client.CallContext(ctx, &result, "FullSyncProgressMap"); err != nil {
+		log.Error("Failed to call FullSyncProgressMap", "error", err)
+		return nil, fmt.Errorf("failed to call FullSyncProgressMap: %w", err)
+	}
+	return result, nil
+}
