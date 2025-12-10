@@ -274,8 +274,9 @@ func main() {
 		}
 
 		arbosVersion := types.DeserializeHeaderExtraInformation(lastBlockHeader).ArbOSFormatVersion
+		arbosVersionGetter := execution.ConstArbosVersionGetter{Version: arbosVersion}
 
-		inboxMultiplexer := arbstate.NewInboxMultiplexer(backend, delayedMessagesRead, dapReaders, keysetValidationMode, chainConfig, &execution.ConstArbosVersionGetter{Version: arbosVersion})
+		inboxMultiplexer := arbstate.NewInboxMultiplexer(backend, delayedMessagesRead, dapReaders, keysetValidationMode, chainConfig, &arbosVersionGetter)
 		ctx := context.Background()
 		message, err := inboxMultiplexer.Pop(ctx)
 		if err != nil {
