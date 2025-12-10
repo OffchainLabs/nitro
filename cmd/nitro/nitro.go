@@ -919,6 +919,9 @@ func (c *NodeConfig) Validate() error {
 		if c.Execution.ConsensusRPCClient.URL != "self" {
 			return errors.New("consensus and execution are configured to communicate over rpc but execution node has consensusRPCClient url not equal to self")
 		}
+		if c.WS.Addr == "" {
+			return errors.New("consensus and execution are configured to communicate over rpc but websocket is not enabled")
+		}
 	} else if c.Node.ExecutionRPCClient.URL != "" {
 		if c.Node.Sequencer || c.Node.BatchPoster.Enable || c.Node.BlockValidator.Enable {
 			return errors.New("sequencing, validation and batch-posting are currently not supported when connecting to an execution client over RPC")

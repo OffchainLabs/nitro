@@ -424,10 +424,10 @@ func (b *NodeBuilder) WithConsensusExecutionOverRPC() *NodeBuilder {
 }
 
 func configureConsensusExecutionOverRPC(execConfig *gethexec.Config, nodeConfig *arbnode.Config, l2StackConfig *node.Config) {
-	if l2StackConfig.HTTPHost == "" {
-		l2StackConfig.HTTPHost = "localhost"
+	if l2StackConfig.WSHost == "" {
+		l2StackConfig.WSHost = "localhost"
 	}
-	l2StackConfig.HTTPModules = append(l2StackConfig.HTTPModules, consensus.RPCNamespace, execution.RPCNamespace)
+	l2StackConfig.WSModules = append(l2StackConfig.HTTPModules, consensus.RPCNamespace, execution.RPCNamespace)
 	nodeConfig.RPCServer.Enable = true
 	nodeConfig.RPCServer.Public = true
 	nodeConfig.RPCServer.Authenticated = false
