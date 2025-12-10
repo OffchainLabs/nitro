@@ -650,6 +650,9 @@ func createL2NodeForBoldProtocol(
 	l2info info, currentNode *arbnode.Node, l2client *ethclient.Client, l2stack *node.Node,
 	assertionChain *solimpl.AssertionChain,
 ) {
+	if nodeConfig == nil {
+		nodeConfig = arbnode.ConfigDefaultL1Test()
+	}
 	fatalErrChan := make(chan error, 10)
 
 	execConfig := ExecConfigDefaultNonSequencerTest(t, rawdb.HashScheme)
