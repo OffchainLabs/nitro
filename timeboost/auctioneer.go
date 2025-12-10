@@ -231,8 +231,14 @@ func NewAuctioneerServer(ctx context.Context, configFetcher AuctioneerServerConf
 	if err = roundTimingInfo.ValidateResolutionWaitTime(cfg.AuctionResolutionWaitTime); err != nil {
 		return nil, err
 	}
-	if cfg.BidsReceiverBufferSize == 0 {
-		return nil, fmt.Errorf("bids receiver buffer size must be positive, got %d", cfg.BidsReceiverBufferSize)
+	
+	bufferSize := cfg.BidsReceiverBufferSize
+	if bufferSize == 0 {
+		bufferSize = 100_000
+	}
+	
+	if bufferSize > uint64(^uint(0)>>1) {
+		return nil, fmt.Errorf("bids receiver buffer size %d exceeds maximum int value", bufferSize)
 	}
 
 	// Generate unique ID for this auctioneer instance
@@ -252,7 +258,7 @@ func NewAuctioneerServer(ctx context.Context, configFetcher AuctioneerServerConf
 		auctionContract:                auctionContract,
 		auctionContractAddr:            auctionContractAddr,
 		auctionContractDomainSeparator: domainSeparator,
-		bidsReceiver:                   make(chan *JsonValidatedBid, cfg.BidsReceiverBufferSize),
+		bidsReceiver:                   make(chan *JsonValidatedBid, int(bufferSize)),
 		bidCache:                       newBidCache(domainSeparator),
 		roundTimingInfo:                *roundTimingInfo,
 		auctionResolutionWaitTime:      cfg.AuctionResolutionWaitTime,
