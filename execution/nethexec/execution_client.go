@@ -65,8 +65,18 @@ func (p *nethermindExecutionClient) SetFinalityData(safeFinalityData *arbutil.Fi
 }
 
 func (p *nethermindExecutionClient) SetConsensusSyncData(syncData *execution.ConsensusSyncData) containers.PromiseInterface[struct{}] {
-	return containers.NewReadyPromise(struct{}{}, fmt.Errorf("SetConsensusSyncData not implemented"))
+	promise := containers.NewPromise[struct{}](nil)
+	go func() {
+		err := p.rpcClient.SetConsensusSyncData(context.Background(), syncData)
+		if err != nil {
+			promise.ProduceError(err)
+			return
+		}
+		promise.Produce(struct{}{})
+	}()
+	return &promise
 }
+
 func (p *nethermindExecutionClient) Reorg(msgIdxOfFirstMsgToAdd arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadataAndBlockInfo, oldMessages []*arbostypes.MessageWithMetadata) containers.PromiseInterface[[]*execution.MessageResult] {
 	promise := containers.NewPromise[[]*execution.MessageResult](nil)
 	go func() {

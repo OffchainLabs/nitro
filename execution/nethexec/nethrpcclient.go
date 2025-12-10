@@ -65,6 +65,13 @@ type InitMessageDigester interface {
 	DigestInitMessage(ctx context.Context, initialL1BaseFee *big.Int, serializedChainConfig []byte) *execution.MessageResult
 }
 
+type setConsensusSyncDataParams struct {
+	Synced          bool                   `json:"synced"`
+	MaxMessageCount uint64                 `json:"maxMessageCount"`
+	SyncProgressMap map[string]interface{} `json:"syncProgressMap,omitempty"`
+	UpdatedAt       time.Time              `json:"updatedAt"`
+}
+
 type fakeRemoteExecutionRpcClient struct{}
 
 func NewFakeRemoteExecutionRpcClient() *fakeRemoteExecutionRpcClient {
@@ -316,4 +323,31 @@ func (c *nethRpcClient) BalanceAt(ctx context.Context, account common.Address, b
 		return nil, err
 	}
 	return (*big.Int)(&result), nil
+}
+
+func (c *nethRpcClient) SetConsensusSyncData(ctx context.Context, syncData *execution.ConsensusSyncData) error {
+	if syncData == nil {
+		return fmt.Errorf("syncData cannot be nil")
+	}
+
+	params := setConsensusSyncDataParams{
+		Synced:          syncData.Synced,
+		MaxMessageCount: uint64(syncData.MaxMessageCount),
+		SyncProgressMap: syncData.SyncProgressMap,
+		UpdatedAt:       syncData.UpdatedAt,
+	}
+
+	log.Debug("Making JSON-RPC call to SetConsensusSyncData",
+		"url", c.url,
+		"synced", syncData.Synced,
+		"maxMessageCount", syncData.MaxMessageCount,
+		"updatedAt", syncData.UpdatedAt)
+
+	var result any
+	if err := c.client.CallContext(ctx, &result, "SetConsensusSyncData", params); err != nil {
+		log.Error("Failed to call SetConsensusSyncData", "error", err)
+		return fmt.Errorf("failed to call SetConsensusSyncData: %w", err)
+	}
+
+	return nil
 }
