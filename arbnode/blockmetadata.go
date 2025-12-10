@@ -148,7 +148,7 @@ func (b *BlockMetadataFetcher) persistBlockMetadata(ctx context.Context, query [
 	batch := b.db.NewBatch()
 	queryMap := util.ArrayToSet(query)
 	for _, elem := range result {
-		pos, err := util.BlockNumberToMessageIndex(elem.BlockNumber, b.genesisBlockNum)
+		pos, err := arbutil.BlockNumberToMessageIndex(elem.BlockNumber, b.genesisBlockNum)
 		if err != nil {
 			return err
 		}
@@ -181,8 +181,8 @@ func (b *BlockMetadataFetcher) Update(ctx context.Context) time.Duration {
 	}
 
 	handleQuery := func(query []uint64) bool {
-		fromBlock := util.MessageIndexToBlockNumber(arbutil.MessageIndex(query[0]), b.genesisBlockNum)
-		toBlock := util.MessageIndexToBlockNumber(arbutil.MessageIndex(query[len(query)-1]), b.genesisBlockNum)
+		fromBlock := arbutil.MessageIndexToBlockNumber(arbutil.MessageIndex(query[0]), b.genesisBlockNum)
+		toBlock := arbutil.MessageIndexToBlockNumber(arbutil.MessageIndex(query[len(query)-1]), b.genesisBlockNum)
 
 		result, err := b.fetch(
 			ctx,
@@ -239,7 +239,7 @@ func (b *BlockMetadataFetcher) Update(ctx context.Context) time.Duration {
 func (b *BlockMetadataFetcher) InitializeTrackBlockMetadataFrom() error {
 	var err error
 	if b.startBlockNum != 0 {
-		b.trackBlockMetadataFrom, err = util.BlockNumberToMessageIndex(b.startBlockNum, b.genesisBlockNum)
+		b.trackBlockMetadataFrom, err = arbutil.BlockNumberToMessageIndex(b.startBlockNum, b.genesisBlockNum)
 		if err != nil {
 			return err
 		}
