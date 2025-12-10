@@ -21,6 +21,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
+	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbos/retryables"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -534,8 +535,12 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, usedMultiGas multigas.MultiGas, 
 	}
 	gasUsed := p.msg.GasLimit - gasLeft
 
-	multiDimensionalCost, err := p.state.L2PricingState().MultiDimensionalPriceForRefund(usedMultiGas)
-	p.state.Restrict(err)
+	var multiDimensionalCost *big.Int
+	var err error
+	if p.state.L2PricingState().ArbosVersion >= l2pricing.ArbosMultiGasConstraintsVersion {
+		multiDimensionalCost, err = p.state.L2PricingState().MultiDimensionalPriceForRefund(usedMultiGas)
+		p.state.Restrict(err)
+	}
 
 	if underlyingTx != nil && underlyingTx.Type() == types.ArbitrumRetryTxType {
 		inner, _ := underlyingTx.GetInner().(*types.ArbitrumRetryTx)
@@ -559,7 +564,7 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, usedMultiGas multigas.MultiGas, 
 		}
 
 		singleGasCost := arbmath.BigMulByUint(effectiveBaseFee, gasUsed)
-		shouldRefundMultiGas := arbmath.BigGreaterThan(singleGasCost, multiDimensionalCost)
+		shouldRefundMultiGas := multiDimensionalCost != nil && arbmath.BigGreaterThan(singleGasCost, multiDimensionalCost)
 
 		maxRefund := new(big.Int).Set(inner.MaxRefund)
 		refund := func(refundFrom common.Address, amount *big.Int, reason tracing.BalanceChangeReason) {
@@ -703,19 +708,21 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, usedMultiGas multigas.MultiGas, 
 	}
 
 	// Multi-dimensional refund (normal tx path)
-	amount := new(big.Int).Sub(totalCost, multiDimensionalCost)
-	if amount.Sign() > 0 {
-		err := util.TransferBalance(
-			&networkFeeAccount,
-			&p.msg.From,
-			amount,
-			p.evm,
-			scenario,
-			tracing.BalanceChangeMultiGasRefund,
-		)
-		p.state.Restrict(err)
-	} else if amount.Sign() < 0 {
-		log.Warn("multi dimensional gas price exceeded simple gas price", "amount", amount)
+	if multiDimensionalCost != nil {
+		amount := new(big.Int).Sub(totalCost, multiDimensionalCost)
+		if amount.Sign() > 0 {
+			err := util.TransferBalance(
+				&networkFeeAccount,
+				&p.msg.From,
+				amount,
+				p.evm,
+				scenario,
+				tracing.BalanceChangeMultiGasRefund,
+			)
+			p.state.Restrict(err)
+		} else if amount.Sign() < 0 {
+			log.Warn("multi dimensional gas price exceeded simple gas price", "amount", amount)
+		}
 	}
 
 	if p.msg.GasPrice.Sign() > 0 { // in tests, gas price could be 0
