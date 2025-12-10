@@ -427,7 +427,7 @@ func configureConsensusExecutionOverRPC(execConfig *gethexec.Config, nodeConfig 
 	if l2StackConfig.WSHost == "" {
 		l2StackConfig.WSHost = "localhost"
 	}
-	l2StackConfig.WSModules = append(l2StackConfig.HTTPModules, consensus.RPCNamespace, execution.RPCNamespace)
+	l2StackConfig.WSModules = append(l2StackConfig.WSModules, consensus.RPCNamespace, execution.RPCNamespace)
 	nodeConfig.RPCServer.Enable = true
 	nodeConfig.RPCServer.Public = true
 	nodeConfig.RPCServer.Authenticated = false
