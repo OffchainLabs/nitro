@@ -229,7 +229,13 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64) 
 		for i := 0; i < len(a.services); i++ {
 			select {
 			case <-ctx.Done():
-				break
+				if returned == 0 {
+					cd := certDetails{}
+					cd.err = ctx.Err()
+					certDetailsChan <- cd
+					returned = 2
+				}
+				return
 			case r := <-responses:
 				if r.err != nil {
 					_ = storeFailures.Add(1)
@@ -270,7 +276,14 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64) 
 		}
 	}()
 
-	cd := <-certDetailsChan
+	var cd certDetails
+	select {
+	case cd = <-certDetailsChan:
+		// Received response from goroutine
+	case <-ctx.Done():
+		// Context was canceled before receiving response
+		return nil, ctx.Err()
+	}
 
 	if cd.err != nil {
 		return nil, cd.err
