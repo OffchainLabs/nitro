@@ -200,17 +200,10 @@ func TestMultiDimensionalPriceForRefund(t *testing.T) {
 	expectedPrice := minPrice.Mul(minPrice, singleGas)
 	Require(t, err)
 
-	// Should use base fee under ArbosMultiGasConstraintsVersion
-	price, err := pricing.MultiDimensionalPriceForRefund(multiGas)
-	Require(t, err)
-	if price.Cmp(expectedPrice) != 0 {
-		t.Errorf("Unexpected initial price: got %v, want %v", price, expectedPrice)
-	}
-
 	pricing.ArbosVersion = ArbosMultiGasConstraintsVersion
 
-	// Should still use base fee before any multi gas constraints are set
-	price, err = pricing.MultiDimensionalPriceForRefund(multiGas)
+	// Initial price check
+	price, err := pricing.MultiDimensionalPriceForRefund(multiGas)
 	Require(t, err)
 	if price.Cmp(expectedPrice) != 0 {
 		t.Errorf("Unexpected initial price: got %v, want %v", price, expectedPrice)
