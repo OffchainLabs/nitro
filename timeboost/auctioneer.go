@@ -6,6 +6,7 @@ package timeboost
 import (
 	"context"
 	"fmt"
+	"math"
 	"math/big"
 	"strconv"
 	"strings"
@@ -44,6 +45,9 @@ const (
 
 	// Auctioneer coordination key for failover
 	AUCTIONEER_CHOSEN_KEY = "auctioneer.chosen"
+
+	// Default buffer size for bids receiver channel
+	DefaultBidsReceiverBufferSize = 100_000
 )
 
 var (
@@ -93,7 +97,7 @@ var DefaultAuctioneerServerConfig = AuctioneerServerConfig{
 	ConsumerConfig:            DefaultAuctioneerConsumerConfig,
 	StreamTimeout:             10 * time.Minute,
 	AuctionResolutionWaitTime: 2 * time.Second,
-	BidsReceiverBufferSize:    100_000,
+	BidsReceiverBufferSize:    DefaultBidsReceiverBufferSize,
 	S3Storage:                 DefaultS3StorageServiceConfig,
 }
 
@@ -119,7 +123,7 @@ func AuctioneerServerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".auction-contract-address", DefaultAuctioneerServerConfig.AuctionContractAddress, "express lane auction contract address")
 	f.String(prefix+".db-directory", DefaultAuctioneerServerConfig.DbDirectory, "path to database directory for persisting validated bids in a sqlite file")
 	f.Duration(prefix+".auction-resolution-wait-time", DefaultAuctioneerServerConfig.AuctionResolutionWaitTime, "wait time after auction closing before resolving the auction")
-	f.Uint64(prefix+".bids-receiver-buffer-size", DefaultAuctioneerServerConfig.BidsReceiverBufferSize, "buffer size for the bids receiver channel")
+	f.Uint64(prefix+".bids-receiver-buffer-size", DefaultAuctioneerServerConfig.BidsReceiverBufferSize, fmt.Sprintf("buffer size for the bids receiver channel (0 = use default of %d)", DefaultBidsReceiverBufferSize))
 	S3StorageServiceConfigAddOptions(prefix+".s3-storage", f)
 }
 
@@ -232,13 +236,13 @@ func NewAuctioneerServer(ctx context.Context, configFetcher AuctioneerServerConf
 	if err = roundTimingInfo.ValidateResolutionWaitTime(cfg.AuctionResolutionWaitTime); err != nil {
 		return nil, err
 	}
-	
+
 	bufferSize := cfg.BidsReceiverBufferSize
 	if bufferSize == 0 {
-		bufferSize = 100_000
+		bufferSize = DefaultBidsReceiverBufferSize
 	}
 	
-	if bufferSize > uint64(^uint(0)>>1) {
+	if bufferSize > uint64(math.MaxInt) {
 		return nil, fmt.Errorf("bids receiver buffer size %d exceeds maximum int value", bufferSize)
 	}
 
