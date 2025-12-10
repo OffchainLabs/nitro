@@ -17,6 +17,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
+	"github.com/offchainlabs/nitro/util/arbmath"
 
 	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
@@ -260,7 +261,8 @@ func (r *inboxMultiplexer) Pop(ctx context.Context) (*arbostypes.MessageWithMeta
 		if r.arbOSVersionGetter == nil {
 			return nil, errors.New("arbOSVersionGetter is nil")
 		}
-		arbosVersion, err := r.arbOSVersionGetter.ArbOSVersionForMessageIndex(arbutil.MessageIndex(r.cachedSequencerMessageNum)).Await(ctx)
+		lastMessageNum := arbmath.SaturatingUSub(r.cachedSequencerMessageNum, 1)
+		arbosVersion, err := r.arbOSVersionGetter.ArbOSVersionForMessageIndex(arbutil.MessageIndex(lastMessageNum)).Await(ctx)
 		if err != nil {
 			return nil, err
 		}
