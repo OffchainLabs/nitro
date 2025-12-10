@@ -241,7 +241,6 @@ func NewAuctioneerServer(ctx context.Context, configFetcher AuctioneerServerConf
 	if bufferSize == 0 {
 		bufferSize = DefaultBidsReceiverBufferSize
 	}
-	
 	if bufferSize > uint64(math.MaxInt) {
 		return nil, fmt.Errorf("bids receiver buffer size %d exceeds maximum int value", bufferSize)
 	}
