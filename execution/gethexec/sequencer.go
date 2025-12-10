@@ -614,7 +614,7 @@ func (s *Sequencer) PublishAuctionResolutionTransaction(ctx context.Context, tx 
 	log.Info("Prioritizing auction resolution transaction from auctioneer", "txHash", tx.Hash().Hex())
 	s.timeboostAuctionResolutionTxQueue <- txQueueItem{
 		tx:              tx,
-		txSize:          int(tx.Size()),
+		txSize:          int(tx.Size()), // #nosec G115
 		options:         nil,
 		resultChan:      make(chan error, 1),
 		returnedResult:  &atomic.Bool{},
@@ -706,7 +706,7 @@ func (s *Sequencer) publishTransactionToQueue(queueCtx context.Context, tx *type
 
 	queueItem := txQueueItem{
 		tx:              tx,
-		txSize:          int(tx.Size()),
+		txSize:          int(tx.Size()), // #nosec G115
 		options:         options,
 		resultChan:      resultChan,
 		returnedResult:  &atomic.Bool{},
