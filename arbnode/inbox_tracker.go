@@ -37,26 +37,28 @@ var (
 )
 
 type InboxTracker struct {
-	db                 ethdb.Database
-	txStreamer         *TransactionStreamer
-	mutex              sync.Mutex
-	validator          *staker.BlockValidator
-	dapReaders         *daprovider.DAProviderRegistry
-	snapSyncConfig     SnapSyncConfig
-	arbosVersionGetter execution.ArbOSVersionGetter
+	db                   ethdb.Database
+	txStreamer           *TransactionStreamer
+	mutex                sync.Mutex
+	validator            *staker.BlockValidator
+	dapReaders           *daprovider.DAProviderRegistry
+	snapSyncConfig       SnapSyncConfig
+	arbosVersionGetter   execution.ArbOSVersionGetter
+	lastSeenArbosVersion uint64
 
 	batchMetaMutex sync.Mutex
 	batchMeta      *containers.LruCache[uint64, BatchMetadata]
 }
 
-func NewInboxTracker(db ethdb.Database, txStreamer *TransactionStreamer, dapReaders *daprovider.DAProviderRegistry, snapSyncConfig SnapSyncConfig, arbosVersionGetter execution.ArbOSVersionGetter) (*InboxTracker, error) {
+func NewInboxTracker(db ethdb.Database, txStreamer *TransactionStreamer, dapReaders *daprovider.DAProviderRegistry, snapSyncConfig SnapSyncConfig, arbosVersionGetter execution.ArbOSVersionGetter, initialArbosVersion uint64) (*InboxTracker, error) {
 	tracker := &InboxTracker{
-		db:                 db,
-		txStreamer:         txStreamer,
-		dapReaders:         dapReaders,
-		batchMeta:          containers.NewLruCache[uint64, BatchMetadata](1000),
-		snapSyncConfig:     snapSyncConfig,
-		arbosVersionGetter: arbosVersionGetter,
+		db:                   db,
+		txStreamer:           txStreamer,
+		dapReaders:           dapReaders,
+		batchMeta:            containers.NewLruCache[uint64, BatchMetadata](1000),
+		snapSyncConfig:       snapSyncConfig,
+		arbosVersionGetter:   arbosVersionGetter,
+		lastSeenArbosVersion: initialArbosVersion,
 	}
 	return tracker, nil
 }
@@ -787,7 +789,9 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client *ethclien
 	}
 	recentArbosVersion, err := t.arbosVersionGetter.ArbOSVersionForMessageIndex(arbmath.SaturatingUSub(prevbatchmeta.MessageCount, 1)).Await(ctx)
 	if err != nil {
-		return err
+		recentArbosVersion = t.lastSeenArbosVersion
+	} else {
+		t.lastSeenArbosVersion = recentArbosVersion
 	}
 	multiplexer := arbstate.NewInboxMultiplexer(
 		backend,

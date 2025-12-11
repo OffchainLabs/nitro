@@ -88,7 +88,7 @@ func (r *importantRoots) addHeader(header *types.Header, overwrite bool) error {
 var hashListRegex = regexp.MustCompile("^(0x)?[0-9a-fA-F]{64}(,(0x)?[0-9a-fA-F]{64})*$")
 
 // Finds important roots to retain while proving
-func findImportantRoots(ctx context.Context, chainDb ethdb.Database, stack *node.Node, initConfig *conf.InitConfig, cacheConfig *core.BlockChainConfig, persistentConfig *conf.PersistentConfig, l1Client *ethclient.Client, rollupAddrs chaininfo.RollupAddresses, validatorRequired bool) ([]common.Hash, error) {
+func findImportantRoots(ctx context.Context, chainDb ethdb.Database, stack *node.Node, initConfig *conf.InitConfig, persistentConfig *conf.PersistentConfig, l1Client *ethclient.Client, rollupAddrs chaininfo.RollupAddresses, validatorRequired bool) ([]common.Hash, error) {
 	chainConfig := gethexec.TryReadStoredChainConfig(chainDb)
 	if chainConfig == nil {
 		return nil, errors.New("database doesn't have a chain config (was this node initialized?)")
@@ -186,7 +186,7 @@ func findImportantRoots(ctx context.Context, chainDb ethdb.Database, stack *node
 		l1BlockNum := l1Block.NumberU64()
 		// It is safe to pass `nil` as `arbosVersionGetter` as we only need inbox tracking for batch count and metadata.
 		// No parsing of messages is done here.
-		tracker, err := arbnode.NewInboxTracker(arbDb, nil, nil, arbnode.DefaultSnapSyncConfig, nil)
+		tracker, err := arbnode.NewInboxTracker(arbDb, nil, nil, arbnode.DefaultSnapSyncConfig, nil, chainConfig.ArbitrumChainParams.InitialArbOSVersion)
 		if err != nil {
 			return nil, err
 		}
@@ -288,7 +288,7 @@ func PruneChainDb(ctx context.Context, chainDb ethdb.Database, stack *node.Node,
 	if initConfig.Prune == "" {
 		return pruner.RecoverPruning(stack.InstanceDir(), chainDb, initConfig.PruneThreads)
 	}
-	root, err := findImportantRoots(ctx, chainDb, stack, initConfig, cacheConfig, persistentConfig, l1Client, rollupAddrs, validatorRequired)
+	root, err := findImportantRoots(ctx, chainDb, stack, initConfig, persistentConfig, l1Client, rollupAddrs, validatorRequired)
 	if err != nil {
 		return fmt.Errorf("failed to find root to retain for pruning: %w", err)
 	}

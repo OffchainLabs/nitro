@@ -17,13 +17,15 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 )
 
+const arbosVersion = params.ArbosVersion_50
+
 func TestSequencerReorgFromDelayed(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	exec, streamer, db, _ := NewTransactionStreamerForTest(t, ctx, common.Address{})
-	arbosVersionGetter := execution.ConstArbosVersionGetter{Version: params.ArbosVersion_50}
-	tracker, err := NewInboxTracker(db, streamer, nil, DefaultSnapSyncConfig, &arbosVersionGetter)
+	arbosVersionGetter := execution.ConstArbosVersionGetter{Version: arbosVersion}
+	tracker, err := NewInboxTracker(db, streamer, nil, DefaultSnapSyncConfig, &arbosVersionGetter, arbosVersion)
 	Require(t, err)
 
 	err = streamer.Start(ctx)
@@ -223,9 +225,9 @@ func TestSequencerReorgFromLastDelayedMsg(t *testing.T) {
 	defer cancel()
 
 	exec, streamer, db, _ := NewTransactionStreamerForTest(t, ctx, common.Address{})
-	arbosVersionGetter := execution.ConstArbosVersionGetter{Version: params.ArbosVersion_50}
+	arbosVersionGetter := execution.ConstArbosVersionGetter{Version: arbosVersion}
 
-	tracker, err := NewInboxTracker(db, streamer, nil, DefaultSnapSyncConfig, &arbosVersionGetter)
+	tracker, err := NewInboxTracker(db, streamer, nil, DefaultSnapSyncConfig, &arbosVersionGetter, arbosVersion)
 	Require(t, err)
 
 	err = streamer.Start(ctx)
