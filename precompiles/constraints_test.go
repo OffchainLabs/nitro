@@ -13,6 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/burn"
@@ -38,7 +39,7 @@ func setupResourceConstraintHandles(
 	state, err := arbosState.OpenArbosState(evm.StateDB, burn.NewSystemBurner(tracer, false))
 	require.NoError(t, err)
 
-	state.L2PricingState().ArbosVersion = l2pricing.ArbosMultiGasConstraintsVersion
+	state.L2PricingState().ArbosVersion = params.ArbosVersion_MultiGasConstraintsVersion
 
 	arbGasInfo := &ArbGasInfo{}
 	arbOwner := &ArbOwner{}

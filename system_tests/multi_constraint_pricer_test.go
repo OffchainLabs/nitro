@@ -12,8 +12,8 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/arbitrum/multigas"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/params"
 
-	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 )
 
@@ -60,7 +60,7 @@ func TestSetAndGetMultiGasPricingConstraints(t *testing.T) {
 
 	builder := NewNodeBuilder(ctx).
 		DefaultConfig(t, false).
-		WithArbOSVersion(l2pricing.ArbosMultiGasConstraintsVersion)
+		WithArbOSVersion(params.ArbosVersion_MultiGasConstraintsVersion)
 
 	cleanup := builder.Build(t)
 	defer cleanup()
