@@ -63,6 +63,7 @@ func setupNodeForTestingBatchSizeLimit(t *testing.T, setHighLimit bool) (*NodeBu
 	builder.nodeConfig.BatchPoster.Enable = false
 	builder.L2Info.GenerateGenesisAccount(SenderAccount, big.NewInt(1e18))
 	builder.L2Info.GenerateGenesisAccount(ReceiverAccount, big.NewInt(0))
+	builder.chainConfig.ArbitrumChainParams.InitialArbOSVersion = params.ArbosVersion_BatchSize
 
 	if setHighLimit {
 		builder.chainConfig.ArbitrumChainParams.MaxUncompressedBatchSize = NewUncompressedSizeLimit
