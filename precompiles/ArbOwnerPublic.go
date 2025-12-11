@@ -93,3 +93,7 @@ func (con ArbOwnerPublic) IsCalldataPriceIncreaseEnabled(c ctx, _ mech) (bool, e
 func (con ArbOwnerPublic) GetParentGasFloorPerToken(c ctx, evm mech) (uint64, error) {
 	return c.State.L1PricingState().ParentGasFloorPerToken()
 }
+
+func (con ArbOwnerPublic) GetMaxStylusContractFragments(c ctx, evm mech) (uint64, error) {
+	return c.State.MaxStylusContractFragments()
+}

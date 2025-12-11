@@ -525,3 +525,7 @@ func (con ArbOwner) SetMultiGasPricingConstraints(
 	}
 	return nil
 }
+
+func (con ArbOwner) SetMaxStylusContractFragments(c ctx, evm mech, maxFragments uint64) error {
+	return c.State.SetMaxStylusContractFragments(maxFragments)
+}
