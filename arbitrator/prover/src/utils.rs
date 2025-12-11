@@ -200,7 +200,7 @@ pub fn hash_preimage(preimage: &[u8], ty: PreimageType) -> Result<[u8; 32]> {
             // but right now only one version is supported by this hash format anyways.
             let blob = Box::new(Blob::from_bytes(preimage)?);
             let commitment = ETHEREUM_KZG_SETTINGS.blob_to_kzg_commitment(&blob)?;
-            let mut commitment_hash: [u8; 32] = Sha256::digest(&*commitment.to_bytes()).into();
+            let mut commitment_hash: [u8; 32] = Sha256::digest(*commitment.to_bytes()).into();
             commitment_hash[0] = 1;
             Ok(commitment_hash)
         }

@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"reflect"
 	"time"
 
@@ -145,8 +146,13 @@ func (c *ValidationNodeConfig) GetReloadInterval() time.Duration {
 }
 
 func (c *ValidationNodeConfig) Validate() error {
-	// TODO
-	return nil
+	if _, err := genericconf.HandlerFromLogType(c.LogType, io.Discard); err != nil {
+		return fmt.Errorf("invalid log-type: %w", err)
+	}
+	if _, err := genericconf.ToSlogLevel(c.LogLevel); err != nil {
+		return fmt.Errorf("invalid log-level: %w", err)
+	}
+	return c.Persistent.Validate()
 }
 
 var DefaultValidationNodeStackConfig = node.Config{

@@ -102,9 +102,12 @@ func mainImpl() error {
 	if err != nil {
 		return fmt.Errorf("failed to generate genesis hash: %w", err)
 	}
+	// To get send root from genesis block, we need to deserialize the header extra information
+	gensisBlockHeader := genesisBlock.Header()
+	gensisBlockHeaderInfo := types.DeserializeHeaderExtraInformation(gensisBlockHeader)
 	globalState := validator.GoGlobalState{
 		BlockHash:  genesisBlock.Hash(),
-		SendRoot:   genesisBlock.Root(),
+		SendRoot:   gensisBlockHeaderInfo.SendRoot,
 		Batch:      1,
 		PosInBatch: 0,
 	}

@@ -2,7 +2,6 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 //go:build stylustest && !race
-// +build stylustest,!race
 
 package arbtest
 

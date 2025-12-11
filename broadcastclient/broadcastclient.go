@@ -196,7 +196,10 @@ func (bc *BroadcastClient) Start(ctxIn context.Context) {
 				errors.Is(err, ErrIncorrectChainId) ||
 				errors.Is(err, ErrMissingFeedServerVersion) ||
 				errors.Is(err, ErrIncorrectFeedServerVersion) {
-				bc.fatalErrChan <- fmt.Errorf("failed connecting to server feed due to %w", err)
+				select {
+				case bc.fatalErrChan <- fmt.Errorf("failed connecting to server feed due to %w", err):
+				case <-ctx.Done():
+				}
 				return
 			}
 			if err == nil {
@@ -462,6 +465,7 @@ func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
 				}
 				if res.Version == 1 {
 					if len(res.Messages) > 0 {
+						isValidSignature := true
 						for _, message := range res.Messages {
 							if message == nil {
 								log.Warn("ignoring nil feed message")
@@ -471,11 +475,15 @@ func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
 							err := bc.isValidSignature(ctx, message)
 							if err != nil {
 								log.Error("error validating feed signature", "error", err, "sequence number", message.SequenceNumber)
-								bc.fatalErrChan <- fmt.Errorf("error validating feed signature %v: %w", message.SequenceNumber, err)
-								continue
+								isValidSignature = false
+								break
 							}
 
 							bc.nextSeqNum = message.SequenceNumber + 1
+						}
+						if !isValidSignature {
+							log.Error("error validating one or more feed signatures, skipping the message")
+							continue
 						}
 						if err := bc.txStreamer.AddBroadcastMessages(res.Messages); err != nil {
 							if errors.Is(err, TransactionStreamerBlockCreationStopped) {
@@ -486,7 +494,11 @@ func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
 						}
 					}
 					if res.ConfirmedSequenceNumberMessage != nil && bc.confirmedSequenceNumberListener != nil {
-						bc.confirmedSequenceNumberListener <- res.ConfirmedSequenceNumberMessage.SequenceNumber
+						select {
+						case bc.confirmedSequenceNumberListener <- res.ConfirmedSequenceNumberMessage.SequenceNumber:
+						case <-ctx.Done():
+							return
+						}
 					}
 				}
 			}
@@ -551,9 +563,6 @@ func (bc *BroadcastClient) isValidSignature(ctx context.Context, message *messag
 		// Verifier disabled
 		return nil
 	}
-	hash, err := message.Hash(bc.chainId)
-	if err != nil {
-		return fmt.Errorf("error getting message hash for sequence number %v: %w", message.SequenceNumber, err)
-	}
+	hash := message.SignatureHash(bc.chainId)
 	return bc.sigVerifier.VerifyHash(ctx, message.Signature, hash)
 }

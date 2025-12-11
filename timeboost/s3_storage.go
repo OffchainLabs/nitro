@@ -75,7 +75,7 @@ type S3StorageService struct {
 }
 
 func NewS3StorageService(config *S3StorageServiceConfig, sqlDB *SqliteDatabase) (*S3StorageService, error) {
-	client, err := s3client.NewS3FullClient(config.AccessKey, config.SecretKey, config.Region)
+	client, err := s3client.NewS3FullClient(context.Background(), config.AccessKey, config.SecretKey, config.Region)
 	if err != nil {
 		return nil, err
 	}

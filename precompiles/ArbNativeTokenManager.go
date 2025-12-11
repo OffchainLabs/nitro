@@ -8,6 +8,7 @@ import (
 
 	"github.com/holiman/uint256"
 
+	"github.com/ethereum/go-ethereum/arbitrum/multigas"
 	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/params"
 )
@@ -29,7 +30,7 @@ func (con ArbNativeTokenManager) MintNativeToken(c ctx, evm mech, amount huge) e
 	if !con.hasAccess(c) {
 		return c.BurnOut()
 	}
-	if err := c.Burn(mintBurnGasCost); err != nil {
+	if err := c.Burn(multigas.ResourceKindStorageAccess, mintBurnGasCost); err != nil {
 		return err
 	}
 
@@ -43,7 +44,7 @@ func (con ArbNativeTokenManager) BurnNativeToken(c ctx, evm mech, amount huge) e
 	if !con.hasAccess(c) {
 		return c.BurnOut()
 	}
-	if err := c.Burn(mintBurnGasCost); err != nil {
+	if err := c.Burn(multigas.ResourceKindStorageAccess, mintBurnGasCost); err != nil {
 		return err
 	}
 

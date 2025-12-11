@@ -30,8 +30,8 @@ type s3Client struct {
 	downloader Downloader
 }
 
-func NewS3FullClient(accessKey, secretKey, region string) (FullClient, error) {
-	cfg, err := awsConfig.LoadDefaultConfig(context.TODO(), awsConfig.WithRegion(region), func(options *awsConfig.LoadOptions) error {
+func NewS3FullClient(ctx context.Context, accessKey, secretKey, region string) (FullClient, error) {
+	cfg, err := awsConfig.LoadDefaultConfig(ctx, awsConfig.WithRegion(region), func(options *awsConfig.LoadOptions) error {
 		// remain backward compatible with accessKey and secretKey credentials provided via cli flags
 		if accessKey != "" && secretKey != "" {
 			options.Credentials = credentials.NewStaticCredentialsProvider(accessKey, secretKey, "")

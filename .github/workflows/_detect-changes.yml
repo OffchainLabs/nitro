@@ -1,0 +1,42 @@
+---
+name: detect-file-changes
+
+on:
+  workflow_call:
+    outputs:
+      arbitrator_changed:
+        description: 'True if Arbitrator or related files changed.'
+        value: ${{ jobs.changes.outputs.arbitrator_changed }}
+      bold_legacy_changed:
+        description: 'True if Bold Legacy or related files changed.'
+        value: ${{ jobs.changes.outputs.bold_legacy_changed }}
+
+jobs:
+  changes:
+    name: Detect file changes
+    runs-on: ubuntu-4
+    outputs:
+      arbitrator_changed: ${{ steps.changed.outputs.arbitrator_any_changed }}
+      bold_legacy_changed: ${{ steps.changed.outputs.bold_legacy_any_changed }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+          fetch-depth: 10            # Will cover most PRs
+          persist-credentials: true  # In case changed-files requires deeper depth
+
+      - name: Determine if Arbitrator or Bold Legacy changed
+        id: changed
+        uses: tj-actions/changed-files@v46.0.5
+        with:
+          files_yaml: |
+            arbitrator:
+              - 'arbitrator/**'
+              - 'contracts/**'
+              - 'Makefile'
+              - '.github/workflows/_arbitrator.yml'
+            bold_legacy:
+              - 'bold/legacy/**'
+              - '.github/workflows/_bold-legacy.yml'

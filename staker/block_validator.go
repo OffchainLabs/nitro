@@ -52,6 +52,38 @@ var (
 	validatorMsgCountLastValidationSentGauge = metrics.NewRegisteredGauge("arb/validator/msg_count_last_validation_sent", nil)
 )
 
+// WorkerThrottler tracks concurrent validation executions for a spawner
+// Uses simple atomic counter - no retry logic, just increment/decrement
+type WorkerThrottler struct {
+	maxWorkers     int
+	currentRunning atomic.Int64
+}
+
+// HasCapacity checks if there's available capacity
+func (t *WorkerThrottler) HasCapacity() bool {
+	return t.currentRunning.Load() < int64(t.maxWorkers)
+}
+
+func (t *WorkerThrottler) Acquire() {
+	t.currentRunning.Add(1)
+}
+
+func (t *WorkerThrottler) Release() {
+	t.currentRunning.Add(-1)
+}
+
+type ThrottledValidationSpawner struct {
+	Spawner   validator.ValidationSpawner
+	Throttler *WorkerThrottler
+}
+
+func NewThrottledValidationSpawner(spawner validator.ValidationSpawner) *ThrottledValidationSpawner {
+	return &ThrottledValidationSpawner{
+		Spawner:   spawner,
+		Throttler: &WorkerThrottler{maxWorkers: spawner.Capacity()},
+	}
+}
+
 type BlockValidator struct {
 	stopwaiter.StopWaiter
 	*StatelessBlockValidator
@@ -90,7 +122,7 @@ type BlockValidator struct {
 	sendValidationsChan     chan struct{}
 	progressValidationsChan chan struct{}
 
-	chosenValidator map[common.Hash]validator.ValidationSpawner
+	chosenValidator map[common.Hash]*ThrottledValidationSpawner
 
 	// wasmModuleRoot
 	moduleMutex           sync.Mutex
@@ -753,7 +785,7 @@ func (v *BlockValidator) isMemoryLimitExceeded() bool {
 
 func (v *BlockValidator) sendNextRecordRequests(ctx context.Context) (bool, error) {
 	if v.isMemoryLimitExceeded() {
-		log.Warn("sendNextRecordRequests: aborting due to running low on memory")
+		log.Error("sendNextRecordRequests: aborting due to running low on memory")
 		return false, nil
 	}
 	v.reorgMutex.RLock()
@@ -790,7 +822,7 @@ func (v *BlockValidator) sendNextRecordRequests(ctx context.Context) (bool, erro
 	}
 	for pos <= recordUntil {
 		if v.isMemoryLimitExceeded() {
-			log.Warn("sendNextRecordRequests: aborting due to running low on memory")
+			log.Error("sendNextRecordRequests: aborting due to running low on memory")
 			return false, nil
 		}
 		validationStatus, found := v.validations.Load(pos)
@@ -954,19 +986,19 @@ func (v *BlockValidator) sendValidations(ctx context.Context) (*arbutil.MessageI
 			return nil, nil
 		}
 		for _, moduleRoot := range wasmRoots {
-			spawner := v.chosenValidator[moduleRoot]
-			if spawner == nil {
+			throttledSpawner := v.chosenValidator[moduleRoot]
+			if throttledSpawner == nil {
 				notFoundErr := fmt.Errorf("did not find spawner for moduleRoot :%v", moduleRoot)
 				v.possiblyFatal(notFoundErr)
 				return nil, notFoundErr
 			}
-			if spawner.Room() == 0 {
-				log.Trace("sendValidations: no more room", "moduleRoot", moduleRoot)
+			if !throttledSpawner.Throttler.HasCapacity() {
+				log.Trace("sendValidations: no more capacity", "moduleRoot", moduleRoot, "spawner", throttledSpawner.Spawner.Name())
 				return nil, nil
 			}
 		}
 		if v.isMemoryLimitExceeded() {
-			log.Warn("sendValidations: aborting due to running low on memory")
+			log.Error("sendValidations: aborting due to running low on memory")
 			return nil, nil
 		}
 		replaced := validationStatus.replaceStatus(Prepared, SendingValidation)
@@ -975,16 +1007,26 @@ func (v *BlockValidator) sendValidations(ctx context.Context) (*arbutil.MessageI
 		}
 		validatorProfileWaitToLaunchHist.Update(validationStatus.profileStep())
 		validatorPendingValidationsGauge.Inc(1)
+		// Acquire workers for all module roots
+		for _, moduleRoot := range wasmRoots {
+			v.chosenValidator[moduleRoot].Throttler.Acquire()
+		}
 		var runs []validator.ValidationRun
 		for _, moduleRoot := range wasmRoots {
-			spawner := retry_wrapper.NewValidationSpawnerRetryWrapper(v.chosenValidator[moduleRoot])
+			throttledSpawner := v.chosenValidator[moduleRoot]
+			spawner := retry_wrapper.NewValidationSpawnerRetryWrapper(throttledSpawner.Spawner)
 			spawner.StopWaiter.Start(ctx, v)
 			input, err := validationStatus.Entry.ToInput(spawner.StylusArchs())
 			if err != nil && ctx.Err() == nil {
 				v.possiblyFatal(fmt.Errorf("%w: error preparing validation", err))
+				throttledSpawner.Throttler.Release()
 				continue
 			}
 			if ctx.Err() != nil {
+				// Release all acquired capacity on cancellation
+				for _, moduleRoot := range wasmRoots {
+					v.chosenValidator[moduleRoot].Throttler.Release()
+				}
 				return nil, ctx.Err()
 			}
 			run := spawner.LaunchWithNAllowedAttempts(input, moduleRoot, v.config().ValidationSpawningAllowedAttempts)
@@ -1004,6 +1046,12 @@ func (v *BlockValidator) sendValidations(ctx context.Context) (*arbutil.MessageI
 		v.LaunchUntrackedThread(func() {
 			defer validatorPendingValidationsGauge.Dec(1)
 			defer cancel()
+			// Release capacity when validations complete
+			defer func() {
+				for _, run := range runs {
+					v.chosenValidator[run.WasmModuleRoot()].Throttler.Release()
+				}
+			}()
 			markSuccess := len(runs) > 0
 
 			// validationStatus might be removed from under us
@@ -1305,16 +1353,16 @@ func (v *BlockValidator) Initialize(ctx context.Context) error {
 			return err
 		}
 	}
-	v.chosenValidator = make(map[common.Hash]validator.ValidationSpawner)
+	v.chosenValidator = make(map[common.Hash]*ThrottledValidationSpawner)
 	for _, root := range moduleRoots {
 		if v.redisValidator != nil && validator.SpawnerSupportsModule(v.redisValidator, root) {
-			v.chosenValidator[root] = v.redisValidator
-			log.Info("validator chosen", "WasmModuleRoot", root, "chosen", "redis")
+			v.chosenValidator[root] = NewThrottledValidationSpawner(v.redisValidator)
+			log.Info("validator chosen", "WasmModuleRoot", root, "chosen", "redis", "maxWorkers", v.redisValidator.Capacity())
 		} else {
 			for _, spawner := range v.execSpawners {
 				if validator.SpawnerSupportsModule(spawner, root) {
-					v.chosenValidator[root] = spawner
-					log.Info("validator chosen", "WasmModuleRoot", root, "chosen", spawner.Name())
+					v.chosenValidator[root] = NewThrottledValidationSpawner(spawner)
+					log.Info("validator chosen", "WasmModuleRoot", root, "chosen", spawner.Name(), "maxWorkers", spawner.Capacity())
 					break
 				}
 			}
@@ -1418,10 +1466,15 @@ func (v *BlockValidator) checkValidatedGSCaughtUp() (bool, error) {
 			log.Error("failed reading batch count", "err", err)
 			batchCount = 0
 		}
-		batchMsgCount, err := v.inboxTracker.GetBatchMessageCount(batchCount - 1)
-		if err != nil {
-			log.Error("failed reading batchMsgCount", "err", err)
+		var batchMsgCount arbutil.MessageIndex
+		if batchCount == 0 {
 			batchMsgCount = 0
+		} else {
+			batchMsgCount, err = v.inboxTracker.GetBatchMessageCount(batchCount - 1)
+			if err != nil {
+				log.Error("failed reading batchMsgCount", "err", err)
+				batchMsgCount = 0
+			}
 		}
 		processedMsgCount, err := v.streamer.GetProcessedMessageCount()
 		if err != nil {

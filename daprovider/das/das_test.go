@@ -21,33 +21,19 @@ func testDASStoreRetrieveMultipleInstances(t *testing.T, storageType string) {
 	_, _, err := GenerateAndStoreKeys(dbPath)
 	Require(t, err)
 
-	enableFileStorage, enableDbStorage := false, false
+	enableFileStorage := false
 	switch storageType {
-	case "db":
-		enableDbStorage = true
 	case "files":
 		enableFileStorage = true
 	default:
 		Fail(t, "unknown storage type")
 	}
 
-	dbConfig := DefaultLocalDBStorageConfig
-	dbConfig.Enable = enableDbStorage
-	dbConfig.DataDir = dbPath
-
-	config := DataAvailabilityConfig{
-		Enable: true,
-		Key: KeyConfig{
-			KeyDir: dbPath,
-		},
-		LocalFileStorage: LocalFileStorageConfig{
-			Enable:       enableFileStorage,
-			DataDir:      dbPath,
-			MaxRetention: DefaultLocalFileStorageConfig.MaxRetention,
-		},
-		LocalDBStorage:     dbConfig,
-		ParentChainNodeURL: "none",
-	}
+	config := DefaultDataAvailabilityConfig
+	config.Enable = true
+	config.Key.KeyDir = dbPath
+	config.LocalFileStorage.Enable = enableFileStorage
+	config.LocalFileStorage.DataDir = dbPath
 
 	storageService, lifecycleManager, err := CreatePersistentStorageService(firstCtx, &config)
 	Require(t, err)
@@ -100,10 +86,6 @@ func TestDASStoreRetrieveMultipleInstancesFiles(t *testing.T) {
 	testDASStoreRetrieveMultipleInstances(t, "files")
 }
 
-func TestDASStoreRetrieveMultipleInstancesDB(t *testing.T) {
-	testDASStoreRetrieveMultipleInstances(t, "db")
-}
-
 func testDASMissingMessage(t *testing.T, storageType string) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -112,33 +94,19 @@ func testDASMissingMessage(t *testing.T, storageType string) {
 	_, _, err := GenerateAndStoreKeys(dbPath)
 	Require(t, err)
 
-	enableFileStorage, enableDbStorage := false, false
+	enableFileStorage := false
 	switch storageType {
-	case "db":
-		enableDbStorage = true
 	case "files":
 		enableFileStorage = true
 	default:
 		Fail(t, "unknown storage type")
 	}
 
-	dbConfig := DefaultLocalDBStorageConfig
-	dbConfig.Enable = enableDbStorage
-	dbConfig.DataDir = dbPath
-
-	config := DataAvailabilityConfig{
-		Enable: true,
-		Key: KeyConfig{
-			KeyDir: dbPath,
-		},
-		LocalFileStorage: LocalFileStorageConfig{
-			Enable:       enableFileStorage,
-			DataDir:      dbPath,
-			MaxRetention: DefaultLocalFileStorageConfig.MaxRetention,
-		},
-		LocalDBStorage:     dbConfig,
-		ParentChainNodeURL: "none",
-	}
+	config := DefaultDataAvailabilityConfig
+	config.Enable = true
+	config.Key.KeyDir = dbPath
+	config.LocalFileStorage.Enable = enableFileStorage
+	config.LocalFileStorage.DataDir = dbPath
 
 	storageService, lifecycleManager, err := CreatePersistentStorageService(ctx, &config)
 	Require(t, err)
@@ -172,10 +140,6 @@ func testDASMissingMessage(t *testing.T, storageType string) {
 
 func TestDASMissingMessageFiles(t *testing.T) {
 	testDASMissingMessage(t, "files")
-}
-
-func TestDASMissingMessageDB(t *testing.T) {
-	testDASMissingMessage(t, "db")
 }
 
 func Require(t *testing.T, err error, printables ...interface{}) {

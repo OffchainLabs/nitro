@@ -42,7 +42,7 @@ func TestMessageExtractor(t *testing.T) {
 		&chaininfo.RollupAddresses{},
 		melDb,
 		messageConsumer,
-		[]daprovider.Reader{},
+		daprovider.NewDAProviderRegistry(),
 		common.Hash{},
 		0,
 	)

@@ -1,0 +1,54 @@
+---
+name: codecov
+on:
+  workflow_call:
+    secrets:
+      CODECOV_TOKEN:
+        required: false
+        description: Token to upload reports to Codecov. Required if `upload_report` is on.
+    inputs:
+      post_comment:
+        description: 'Set to true to post a test summary comment on the PR.'
+        type: boolean
+        required: true
+      upload_report:
+        description: 'Set to true to upload test reports to Codecov.'
+        type: boolean
+        required: true
+      report-name:
+        description: 'Name to use when uploading reports to Codecov.'
+        type: string
+        required: false
+        default: 'CI Test Results'
+
+jobs:
+  report_summary:
+    name: Aggregate test results
+    runs-on: ubuntu-4
+    permissions:
+      pull-requests: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Download JUnit reports
+        uses: actions/download-artifact@v6
+        with:
+          pattern: junit-reports-*
+          path: downloaded-reports/
+
+      - name: Post test summary comment
+        if: ${{ inputs.post_comment }}
+        uses: codecov/basic-test-results@v1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          directory: 'downloaded-reports/'
+
+      - name: Upload test results to Codecov
+        if: ${{ inputs.upload_report }}
+        uses: codecov/test-results-action@v1
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          directory: 'downloaded-reports/'
+          name: ${{ inputs.report-name }}
