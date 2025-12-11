@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2025, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbtest
@@ -28,7 +28,6 @@ import (
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/daprovider"
-	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/statetransfer"
 	"github.com/offchainlabs/nitro/util/testhelpers/env"
 )
@@ -51,7 +50,7 @@ func BuildBlock(
 		nil,
 		daprovider.KeysetValidate,
 		getChainConfig(),
-		&execution.ConstArbosVersionGetter{Version: params.ArbosVersion_50},
+		params.ArbosVersion_50,
 	)
 
 	ctx := context.Background()

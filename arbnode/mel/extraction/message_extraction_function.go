@@ -202,9 +202,9 @@ func extractMessagesImpl(
 			return nil, nil, nil, errors.New("encountered initialize message that is not the first delayed message and the first batch ")
 		}
 
-		arbosVersion, err := arbosVersionGetter.ArbOSVersionForMessageIndex(arbutil.MessageIndex(batch.SequenceNumber)).Await(ctx)
+		arbosVersion, err := arbosVersionGetter.ArbOSVersionForMessageIndex(arbutil.MessageIndex(state.MsgCount)).Await(ctx)
 		if err != nil {
-			return nil, nil, nil, fmt.Errorf("failed to get Arbos version for message index %d: %w", batch.SequenceNumber, err)
+			return nil, nil, nil, fmt.Errorf("failed to get Arbos version for message index %d: %w", state.MsgCount, err)
 		}
 
 		rawSequencerMsg, err := parseSequencerMessage(

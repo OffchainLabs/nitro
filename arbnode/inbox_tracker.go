@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2025, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbnode
@@ -18,6 +18,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/rlp"
+	"github.com/offchainlabs/nitro/util/arbmath"
 
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbstate"
@@ -784,13 +785,17 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client *ethclien
 		ctx:    ctx,
 		client: client,
 	}
+	recentArbosVersion, err := t.arbosVersionGetter.ArbOSVersionForMessageIndex(arbmath.SaturatingUSub(prevbatchmeta.MessageCount, 1)).Await(ctx)
+	if err != nil {
+		return err
+	}
 	multiplexer := arbstate.NewInboxMultiplexer(
 		backend,
 		prevbatchmeta.DelayedMessageCount,
 		t.dapReaders,
 		daprovider.KeysetValidate,
 		t.txStreamer.chainConfig,
-		t.arbosVersionGetter,
+		recentArbosVersion,
 	)
 	batchMessageCounts := make(map[uint64]arbutil.MessageIndex)
 	currentPos := prevbatchmeta.MessageCount + 1

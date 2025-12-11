@@ -17,15 +17,12 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
-	"github.com/offchainlabs/nitro/util/arbmath"
 
 	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
-	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/daprovider"
-	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/zeroheavy"
 )
 
@@ -221,10 +218,15 @@ type inboxMultiplexer struct {
 	// but ParseSequencerMessage still needs this to decide whether to panic or log on validation errors.
 	// In replay mode, this allows proper error handling based on the position within the message.
 	keysetValidationMode daprovider.KeysetValidationMode
-	arbOSVersionGetter   execution.ArbOSVersionGetter
+	// ArbOS version is used to determine a batch size limit from the chain config during sequencer message parsing.
+	// While ideally this would be read directly from the batch series being processed (since the version might be
+	// just upgraded), it is impossible (we would have to execute them on-fly). However, it should be safe to pass
+	// "recent enough" ArbOS version here, since batch size limit is only expected to either stay the same or increase
+	// with time.
+	recentArbOSVersion uint64
 }
 
-func NewInboxMultiplexer(backend InboxBackend, delayedMessagesRead uint64, dapReaders DapReaderSource, keysetValidationMode daprovider.KeysetValidationMode, chainConfig *params.ChainConfig, arbosVersionGetter execution.ArbOSVersionGetter) arbostypes.InboxMultiplexer {
+func NewInboxMultiplexer(backend InboxBackend, delayedMessagesRead uint64, dapReaders DapReaderSource, keysetValidationMode daprovider.KeysetValidationMode, chainConfig *params.ChainConfig, recentArbOSVersion uint64) arbostypes.InboxMultiplexer {
 	return &inboxMultiplexer{
 		backend:                   backend,
 		delayedMessagesRead:       delayedMessagesRead,
@@ -237,7 +239,7 @@ func NewInboxMultiplexer(backend InboxBackend, delayedMessagesRead uint64, dapRe
 		cachedSegmentBlockNumber:  0,
 		cachedSubMessageNumber:    0,
 		keysetValidationMode:      keysetValidationMode,
-		arbOSVersionGetter:        arbosVersionGetter,
+		recentArbOSVersion:        recentArbOSVersion,
 	}
 }
 
@@ -258,16 +260,8 @@ func (r *inboxMultiplexer) Pop(ctx context.Context) (*arbostypes.MessageWithMeta
 		}
 		r.cachedSequencerMessageNum = r.backend.GetSequencerInboxPosition()
 
-		if r.arbOSVersionGetter == nil {
-			return nil, errors.New("arbOSVersionGetter is nil")
-		}
-		lastMessageNum := arbmath.SaturatingUSub(r.cachedSequencerMessageNum, 1)
-		arbosVersion, err := r.arbOSVersionGetter.ArbOSVersionForMessageIndex(arbutil.MessageIndex(lastMessageNum)).Await(ctx)
-		if err != nil {
-			return nil, err
-		}
-
-		r.cachedSequencerMessage, err = ParseSequencerMessage(ctx, r.cachedSequencerMessageNum, batchBlockHash, bytes, r.dapReaders, r.keysetValidationMode, r.chainConfig, arbosVersion)
+		var err error
+		r.cachedSequencerMessage, err = ParseSequencerMessage(ctx, r.cachedSequencerMessageNum, batchBlockHash, bytes, r.dapReaders, r.keysetValidationMode, r.chainConfig, r.recentArbOSVersion)
 		if err != nil {
 			return nil, err
 		}

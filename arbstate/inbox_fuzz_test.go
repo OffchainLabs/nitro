@@ -1,4 +1,4 @@
-// Copyright 2022, Offchain Labs, Inc.
+// Copyright 2022-2025, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbstate
@@ -15,7 +15,6 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/daprovider"
-	"github.com/offchainlabs/nitro/execution"
 )
 
 // lint:require-exhaustive-initialization
@@ -79,7 +78,7 @@ func FuzzInboxMultiplexer(f *testing.F) {
 			nil,
 			daprovider.KeysetValidate,
 			chaininfo.ArbitrumDevTestChainConfig(),
-			&execution.ConstArbosVersionGetter{Version: params.ArbosVersion_50},
+			params.ArbosVersion_50,
 		)
 		_, err := multiplexer.Pop(context.TODO())
 		if err != nil {

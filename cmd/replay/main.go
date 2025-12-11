@@ -35,7 +35,6 @@ import (
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/daprovider/das/dastree"
 	"github.com/offchainlabs/nitro/daprovider/das/dasutil"
-	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/gethhook"
 	"github.com/offchainlabs/nitro/wavmio"
 )
@@ -245,9 +244,10 @@ func main() {
 		return wavmio.ReadInboxMessage(batchNum), nil
 	}
 	readMessage := func(dasEnabled bool, chainConfig *params.ChainConfig) *arbostypes.MessageWithMetadata {
-		var delayedMessagesRead uint64
+		var delayedMessagesRead, arbosVersion uint64
 		if lastBlockHeader != nil {
 			delayedMessagesRead = lastBlockHeader.Nonce.Uint64()
+			arbosVersion = types.DeserializeHeaderExtraInformation(lastBlockHeader).ArbOSFormatVersion
 		}
 		var dasReader dasutil.DASReader
 		var dasKeysetFetcher dasutil.DASKeysetFetcher
@@ -273,10 +273,7 @@ func main() {
 			panic(fmt.Sprintf("Failed to register blob reader: %v", err))
 		}
 
-		arbosVersion := types.DeserializeHeaderExtraInformation(lastBlockHeader).ArbOSFormatVersion
-		arbosVersionGetter := execution.ConstArbosVersionGetter{Version: arbosVersion}
-
-		inboxMultiplexer := arbstate.NewInboxMultiplexer(backend, delayedMessagesRead, dapReaders, keysetValidationMode, chainConfig, &arbosVersionGetter)
+		inboxMultiplexer := arbstate.NewInboxMultiplexer(backend, delayedMessagesRead, dapReaders, keysetValidationMode, chainConfig, arbosVersion)
 		ctx := context.Background()
 		message, err := inboxMultiplexer.Pop(ctx)
 		if err != nil {
