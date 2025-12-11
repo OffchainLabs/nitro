@@ -127,7 +127,7 @@ func TestRetryableRedeemLegacy(t *testing.T) {
 
 func TestRetryableRedeemLegacyArbOS60(t *testing.T) {
 	evm := newMockEVMForTesting()
-	err := overrideStateArbOSVersion(evm, params.ArbosVersion_60)
+	err := overrideStateArbOSVersion(evm, params.ArbosVersion_MultiGasConstraintsVersion)
 	Require(t, err)
 
 	precompileCtx := testContext(common.Address{}, evm)
@@ -167,7 +167,7 @@ func TestRetryableRedeemWithGasConstraints(t *testing.T) {
 
 func TestRetryableRedeemWithGasConstraintsArbOS60(t *testing.T) {
 	evm := newMockEVMForTesting()
-	err := overrideStateArbOSVersion(evm, params.ArbosVersion_60)
+	err := overrideStateArbOSVersion(evm, params.ArbosVersion_MultiGasConstraintsVersion)
 	Require(t, err)
 
 	precompileCtx := testContext(common.Address{}, evm)
@@ -193,7 +193,7 @@ func TestRetryableRedeemWithGasConstraintsArbOS60(t *testing.T) {
 
 func TestRetryableRedeemWithMultiGasConstraints(t *testing.T) {
 	evm := newMockEVMForTesting()
-	err := overrideStateArbOSVersion(evm, l2pricing.ArbosMultiGasConstraintsVersion)
+	err := overrideStateArbOSVersion(evm, params.ArbosVersion_MultiGasConstraintsVersion)
 	Require(t, err)
 
 	precompileCtx := testContext(common.Address{}, evm)

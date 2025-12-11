@@ -67,7 +67,7 @@ func TestSetAndGetMultiGasPricingConstraints(t *testing.T) {
 
 	builder := NewNodeBuilder(ctx).
 		DefaultConfig(t, false).
-		WithArbOSVersion(l2pricing.ArbosMultiGasConstraintsVersion)
+		WithArbOSVersion(params.ArbosVersion_MultiGasConstraintsVersion)
 
 	cleanup := builder.Build(t)
 	defer cleanup()
@@ -150,7 +150,7 @@ func TestMultiGasRefundForNormalTx(t *testing.T) {
 
 	builder := NewNodeBuilder(ctx).
 		DefaultConfig(t, false).
-		WithArbOSVersion(l2pricing.ArbosMultiGasConstraintsVersion)
+		WithArbOSVersion(params.ArbosVersion_MultiGasConstraintsVersion)
 
 	cleanup := builder.Build(t)
 	defer cleanup()
@@ -226,7 +226,7 @@ func TestMultiGasRefundForNormalTx(t *testing.T) {
 
 func TestMultiGasRefundForRetryableTx(t *testing.T) {
 	builder, delayedInbox, lookupL2Tx, ctx, teardown := retryableSetup(t, func(b *NodeBuilder) {
-		b.WithArbOSVersion(l2pricing.ArbosMultiGasConstraintsVersion)
+		b.WithArbOSVersion(params.ArbosVersion_MultiGasConstraintsVersion)
 	})
 	defer teardown()
 

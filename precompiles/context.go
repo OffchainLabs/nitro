@@ -74,17 +74,12 @@ func (c *Context) ReadOnly() bool {
 	return c.readOnly
 }
 
-func (c *Context) Free() bool {
+func (c *Context) UnmeteredGasAccounting() bool {
 	return c.free
 }
 
-func (c *Context) WithUnmeteredGasAccounting(fn func() error) error {
-	prev := c.free
-	c.free = true
-	defer func() {
-		c.free = prev
-	}()
-	return fn()
+func (c *Context) SetUnmeteredGasAccounting(enabled bool) {
+	c.free = enabled
 }
 
 func (c *Context) TracingInfo() *util.TracingInfo {
