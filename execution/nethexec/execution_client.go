@@ -9,6 +9,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/arbnode"
@@ -65,8 +66,18 @@ func (p *nethermindExecutionClient) SetFinalityData(safeFinalityData *arbutil.Fi
 }
 
 func (p *nethermindExecutionClient) SetConsensusSyncData(syncData *execution.ConsensusSyncData) containers.PromiseInterface[struct{}] {
-	return containers.NewReadyPromise(struct{}{}, fmt.Errorf("SetConsensusSyncData not implemented"))
+	promise := containers.NewPromise[struct{}](nil)
+	go func() {
+		err := p.rpcClient.SetConsensusSyncData(context.Background(), syncData)
+		if err != nil {
+			promise.ProduceError(err)
+			return
+		}
+		promise.Produce(struct{}{})
+	}()
+	return &promise
 }
+
 func (p *nethermindExecutionClient) Reorg(msgIdxOfFirstMsgToAdd arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadataAndBlockInfo, oldMessages []*arbostypes.MessageWithMetadata) containers.PromiseInterface[[]*execution.MessageResult] {
 	promise := containers.NewPromise[[]*execution.MessageResult](nil)
 	go func() {
@@ -209,12 +220,21 @@ func (p *nethermindExecutionClient) NextDelayedMessageNumber() (uint64, error) {
 }
 
 func (p *nethermindExecutionClient) Synced(ctx context.Context) bool {
-	// default conservative value until implemented
-	return false
+	synced, err := p.rpcClient.Synced(ctx)
+	if err != nil {
+		log.Error("Failed to get Synced status from Nethermind", "error", err)
+		return false // Conservative default on error
+	}
+	return synced
 }
 
 func (p *nethermindExecutionClient) FullSyncProgressMap(ctx context.Context) map[string]interface{} {
-	return map[string]interface{}{}
+	progressMap, err := p.rpcClient.FullSyncProgressMap(ctx)
+	if err != nil {
+		log.Error("Failed to get FullSyncProgressMap from Nethermind", "error", err)
+		return map[string]interface{}{} // Empty map on error
+	}
+	return progressMap
 }
 
 func (p *nethermindExecutionClient) RecordBlockCreation(ctx context.Context, index arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, wasmTargets []rawdb.WasmTarget) (*execution.RecordResult, error) {

@@ -326,17 +326,32 @@ func (w *compareExecutionClient) NextDelayedMessageNumber() (uint64, error) {
 func (w *compareExecutionClient) Synced(ctx context.Context) bool {
 	start := time.Now()
 	log.Info("CompareExecutionClient: Synced")
-	result := w.gethExecutionClient.Synced(ctx)
-	log.Info("CompareExecutionClient: Synced completed", "result", result, "elapsed", time.Since(start))
-	return result
+
+	internal := w.gethExecutionClient.Synced(ctx)
+	external := w.nethermindExecutionClient.Synced(ctx)
+
+	if internal != external {
+		log.Warn("Synced status mismatch", "geth", internal, "nethermind", external)
+	}
+
+	log.Info("CompareExecutionClient: Synced completed", "geth", internal, "nethermind", external, "elapsed", time.Since(start))
+	return internal // Use Geth as source of truth
 }
 
 func (w *compareExecutionClient) FullSyncProgressMap(ctx context.Context) map[string]interface{} {
 	start := time.Now()
 	log.Info("CompareExecutionClient: FullSyncProgressMap")
-	result := w.gethExecutionClient.FullSyncProgressMap(ctx)
+
+	internal := w.gethExecutionClient.FullSyncProgressMap(ctx)
+	external := w.nethermindExecutionClient.FullSyncProgressMap(ctx)
+
+	// Log any significant differences for observability
+	if len(internal) != len(external) {
+		log.Info("FullSyncProgressMap size difference", "gethKeys", len(internal), "nethermindKeys", len(external))
+	}
+
 	log.Info("CompareExecutionClient: FullSyncProgressMap completed", "elapsed", time.Since(start))
-	return result
+	return internal // Use Geth as source of truth
 }
 
 // ---- execution.ExecutionRecorder interface methods ----

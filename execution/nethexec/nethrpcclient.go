@@ -65,6 +65,13 @@ type InitMessageDigester interface {
 	DigestInitMessage(ctx context.Context, initialL1BaseFee *big.Int, serializedChainConfig []byte) *execution.MessageResult
 }
 
+type setConsensusSyncDataParams struct {
+	Synced          bool                   `json:"synced"`
+	MaxMessageCount uint64                 `json:"maxMessageCount"`
+	SyncProgressMap map[string]interface{} `json:"syncProgressMap,omitempty"`
+	UpdatedAt       time.Time              `json:"updatedAt"`
+}
+
 type fakeRemoteExecutionRpcClient struct{}
 
 func NewFakeRemoteExecutionRpcClient() *fakeRemoteExecutionRpcClient {
@@ -316,4 +323,51 @@ func (c *nethRpcClient) BalanceAt(ctx context.Context, account common.Address, b
 		return nil, err
 	}
 	return (*big.Int)(&result), nil
+}
+
+func (c *nethRpcClient) SetConsensusSyncData(ctx context.Context, syncData *execution.ConsensusSyncData) error {
+	if syncData == nil {
+		return fmt.Errorf("syncData cannot be nil")
+	}
+
+	params := setConsensusSyncDataParams{
+		Synced:          syncData.Synced,
+		MaxMessageCount: uint64(syncData.MaxMessageCount),
+		SyncProgressMap: syncData.SyncProgressMap,
+		UpdatedAt:       syncData.UpdatedAt,
+	}
+
+	log.Debug("Making JSON-RPC call to SetConsensusSyncData",
+		"url", c.url,
+		"synced", syncData.Synced,
+		"maxMessageCount", syncData.MaxMessageCount,
+		"updatedAt", syncData.UpdatedAt)
+
+	var result any
+	if err := c.client.CallContext(ctx, &result, "SetConsensusSyncData", params); err != nil {
+		log.Error("Failed to call SetConsensusSyncData", "error", err)
+		return fmt.Errorf("failed to call SetConsensusSyncData: %w", err)
+	}
+
+	return nil
+}
+
+func (c *nethRpcClient) Synced(ctx context.Context) (bool, error) {
+	log.Debug("Making JSON-RPC call to Synced", "url", c.url)
+	var result bool
+	if err := c.client.CallContext(ctx, &result, "Synced"); err != nil {
+		log.Error("Failed to call Synced", "error", err)
+		return false, fmt.Errorf("failed to call Synced: %w", err)
+	}
+	return result, nil
+}
+
+func (c *nethRpcClient) FullSyncProgressMap(ctx context.Context) (map[string]interface{}, error) {
+	log.Debug("Making JSON-RPC call to FullSyncProgressMap", "url", c.url)
+	var result map[string]interface{}
+	if err := c.client.CallContext(ctx, &result, "FullSyncProgressMap"); err != nil {
+		log.Error("Failed to call FullSyncProgressMap", "error", err)
+		return nil, fmt.Errorf("failed to call FullSyncProgressMap: %w", err)
+	}
+	return result, nil
 }
