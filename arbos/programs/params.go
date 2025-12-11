@@ -24,13 +24,14 @@ const InitialPageGas = 1000           // linear cost per allocation.
 const initialPageRamp = 620674314     // targets 8MB costing 32 million gas, minus the linear term.
 const initialPageLimit = 128          // reject wasms with memories larger than 8MB.
 const initialInkPrice = 10000         // 1 evm gas buys 10k ink.
-const initialMinInitGas = 72          // charge 72 * 128 = 9216 gas.
-const initialMinCachedGas = 11        // charge 11 *  32 = 352 gas.
-const initialInitCostScalar = 50      // scale costs 1:1 (100%)
-const initialCachedCostScalar = 50    // scale costs 1:1 (100%)
-const initialExpiryDays = 365         // deactivate after 1 year.
-const initialKeepaliveDays = 31       // wait a month before allowing reactivation.
-const initialRecentCacheSize = 32     // cache the 32 most recent programs.
+const initialMaxFragmentCount = 2
+const initialMinInitGas = 72       // charge 72 * 128 = 9216 gas.
+const initialMinCachedGas = 11     // charge 11 *  32 = 352 gas.
+const initialInitCostScalar = 50   // scale costs 1:1 (100%)
+const initialCachedCostScalar = 50 // scale costs 1:1 (100%)
+const initialExpiryDays = 365      // deactivate after 1 year.
+const initialKeepaliveDays = 31    // wait a month before allowing reactivation.
+const initialRecentCacheSize = 32  // cache the 32 most recent programs.
 
 const v2MinInitGas = 69 // charge 69 * 128 = 8832 gas (minCachedGas will also be charged in v2).
 
@@ -60,6 +61,7 @@ type StylusParams struct {
 	KeepaliveDays    uint16
 	BlockCacheSize   uint16
 	MaxWasmSize      uint32
+	MaxFragmentCount uint16
 }
 
 // Provides a view of the Stylus parameters. Call Save() to persist.
@@ -110,6 +112,11 @@ func (p Programs) Params() (*StylusParams, error) {
 	} else {
 		stylusParams.MaxWasmSize = initialMaxWasmSize
 	}
+	if p.ArbosVersion >= params.ArbosVersion_StylusContractLimit {
+		stylusParams.MaxFragmentCount = arbmath.BytesToUint16(take(2))
+	} else {
+		stylusParams.MaxFragmentCount = initialMaxFragmentCount
+	}
 	return stylusParams, nil
 }
 
@@ -138,6 +145,10 @@ func (p *StylusParams) Save() error {
 	)
 	if p.arbosVersion >= params.ArbosVersion_40 {
 		data = append(data, arbmath.Uint32ToBytes(p.MaxWasmSize)...)
+	}
+	if p.arbosVersion >= params.ArbosVersion_StylusContractLimit {
+		data = append(data, arbmath.Uint16ToBytes(p.MaxFragmentCount)...)
+
 	}
 
 	slot := uint64(0)
@@ -188,6 +199,12 @@ func (p *StylusParams) UpgradeToArbosVersion(newArbosVersion uint64) error {
 		}
 		p.MaxWasmSize = initialMaxWasmSize
 	}
+	if newArbosVersion == params.ArbosVersion_StylusContractLimit {
+		if p.arbosVersion >= params.ArbosVersion_StylusContractLimit {
+			return fmt.Errorf("unexpected arbosVersion upgrade to %d from %d", newArbosVersion, p.arbosVersion)
+		}
+		p.MaxFragmentCount = initialMaxFragmentCount
+	}
 	p.arbosVersion = newArbosVersion
 	return nil
 }
@@ -214,5 +231,9 @@ func initStylusParams(arbosVersion uint64, sto *storage.Storage) {
 	if arbosVersion >= params.ArbosVersion_40 {
 		stylusParams.MaxWasmSize = initialMaxWasmSize
 	}
+	if arbosVersion >= params.ArbosVersion_StylusContractLimit {
+		stylusParams.MaxFragmentCount = initialMaxFragmentCount
+	}
+
 	_ = stylusParams.Save()
 }
