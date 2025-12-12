@@ -910,6 +910,9 @@ func (c *NodeConfig) Validate() error {
 		return err
 	}
 	if c.Node.ExecutionRPCClient.URL == "self" {
+		if c.Node.Sequencer || c.Node.BatchPoster.Enable || c.Node.BlockValidator.Enable {
+			return errors.New("sequencing, validation and batch-posting are currently not supported when connecting to an execution client over RPC")
+		}
 		if !c.Node.RPCServer.Enable {
 			return errors.New("consensus and execution are configured to communicate over rpc but consensus node has not enabled rpc server")
 		}

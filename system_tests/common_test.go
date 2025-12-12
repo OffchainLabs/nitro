@@ -418,11 +418,6 @@ func (b *NodeBuilder) DontParalellise() *NodeBuilder {
 	return b
 }
 
-func (b *NodeBuilder) WithConsensusExecutionOverRPC() *NodeBuilder {
-	configureConsensusExecutionOverRPC(b.execConfig, b.nodeConfig, b.l2StackConfig)
-	return b
-}
-
 func configureConsensusExecutionOverRPC(execConfig *gethexec.Config, nodeConfig *arbnode.Config, l2StackConfig *node.Config) {
 	if l2StackConfig.WSHost == "" {
 		l2StackConfig.WSHost = "localhost"
@@ -838,7 +833,7 @@ func (b *NodeBuilder) BuildL3OnL2(t *testing.T) func() {
 
 func (b *NodeBuilder) BuildL2OnL1(t *testing.T) func() {
 	if *testflag.ConsensusExecutionInSameProcessUseRPC {
-		b.WithConsensusExecutionOverRPC()
+		configureConsensusExecutionOverRPC(b.execConfig, b.nodeConfig, b.l2StackConfig)
 	}
 	b.L2 = buildOnParentChain(
 		t,
@@ -901,7 +896,7 @@ func (b *NodeBuilder) BuildL2OnL1(t *testing.T) func() {
 // Requires precompiles.AllowDebugPrecompiles = true
 func (b *NodeBuilder) BuildL2(t *testing.T) func() {
 	if *testflag.ConsensusExecutionInSameProcessUseRPC {
-		b.WithConsensusExecutionOverRPC()
+		configureConsensusExecutionOverRPC(b.execConfig, b.nodeConfig, b.l2StackConfig)
 	}
 	if b.parallelise {
 		b.parallelise = false

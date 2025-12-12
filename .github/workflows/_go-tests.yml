@@ -104,7 +104,25 @@ jobs:
           ${{ github.workspace }}/.github/workflows/gotestsum.sh
           --tags cionly --timeout 60m --test_state_scheme hash
           --junitfile test-results/junit-b.xml --skip '^Test[A-L]'
-
+       
+      - name: run tests with consensus and execution nodes connected over json rpc (A-batch)
+        if: inputs.run-defaults-a
+        id: run-tests-defaults-a
+        continue-on-error: true
+        run: >-
+          ${{ github.workspace }}/.github/workflows/gotestsum.sh
+          --tags cionly --timeout 60m --test_state_scheme hash --consensus_execution_in_same_process_use_rpc
+          --junitfile test-results/junit-a.xml --run '^Test[A-L]'
+    
+      - name: run tests with consensus and execution nodes connected over json rpc (B-batch)
+        if: inputs.run-defaults-b
+        id: run-tests-defaults-b
+        continue-on-error: true
+        run: >-
+          ${{ github.workspace }}/.github/workflows/gotestsum.sh
+          --tags cionly --timeout 60m --test_state_scheme hash --consensus_execution_in_same_process_use_rpc
+          --junitfile test-results/junit-b.xml --skip '^Test[A-L]'
+      
       - name: Process JUnit XML logs
         if: (inputs.run-defaults-a || inputs.run-defaults-b) && always()
         run: python3 ${{ github.workspace }}/.github/workflows/process_junit.py test-results/
@@ -122,11 +140,6 @@ jobs:
           echo "One or more tests failed."
           exit 1
 
-      - name: run tests with consensus and execution nodes connected over json rpc
-        if: matrix.test-mode == 'defaults'
-        run: >-
-          ${{ github.workspace }}/.github/workflows/gotestsum.sh 
-          --tags cionly --timeout 60m --test_state_scheme hash --consensus_execution_in_same_process_use_rpc
 
       - name: run redis tests
         if: inputs.run-defaults-a
