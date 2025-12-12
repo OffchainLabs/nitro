@@ -70,7 +70,7 @@ func retryableSetup(t *testing.T, modifyNodeConfig ...func(*NodeBuilder)) (
 
 	builder.execConfig.Sequencer.MaxRevertGasReject = 0
 
-	builder.Build(t)
+	cleanup := builder.Build(t)
 
 	builder.L2Info.GenerateAccount("User2")
 	builder.L2Info.GenerateAccount("Beneficiary")
@@ -135,8 +135,7 @@ func retryableSetup(t *testing.T, modifyNodeConfig ...func(*NodeBuilder)) (
 
 		cancel()
 
-		builder.L2.ConsensusNode.StopAndWait()
-		requireClose(t, builder.L1.Stack)
+		cleanup()
 	}
 	return builder, delayedInbox, lookupL2Tx, ctx, teardown
 }

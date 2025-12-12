@@ -140,24 +140,6 @@ func NewTransactionStreamer(
 	if err != nil {
 		return nil, err
 	}
-	if config().TrackBlockMetadataFrom != 0 {
-		trackBlockMetadataFrom, err := exec.BlockNumberToMessageIndex(config().TrackBlockMetadataFrom).Await(ctx)
-		if err != nil {
-			return nil, err
-		}
-		streamer.trackBlockMetadataFrom = trackBlockMetadataFrom
-	}
-	if config().SyncTillBlock != 0 {
-		syncTillMessage, err := exec.BlockNumberToMessageIndex(config().SyncTillBlock).Await(ctx)
-		if err != nil {
-			return nil, err
-		}
-		streamer.syncTillMessage = syncTillMessage
-		msgCount, err := streamer.GetMessageCount()
-		if err == nil && msgCount >= streamer.syncTillMessage {
-			log.Info("Node has all messages", "sync-till-block", config().SyncTillBlock)
-		}
-	}
 	return streamer, nil
 }
 
@@ -1541,6 +1523,24 @@ func (s *TransactionStreamer) backfillTrackersForMissingBlockMetadata(ctx contex
 
 func (s *TransactionStreamer) Start(ctxIn context.Context) error {
 	s.StopWaiter.Start(ctxIn, s)
+	if s.config().TrackBlockMetadataFrom != 0 {
+		trackBlockMetadataFrom, err := arbutil.BlockNumberToMessageIndex(s.config().TrackBlockMetadataFrom, s.chainConfig.ArbitrumChainParams.GenesisBlockNum)
+		if err != nil {
+			return err
+		}
+		s.trackBlockMetadataFrom = trackBlockMetadataFrom
+	}
+	if s.config().SyncTillBlock != 0 {
+		syncTillMessage, err := arbutil.BlockNumberToMessageIndex(s.config().SyncTillBlock, s.chainConfig.ArbitrumChainParams.GenesisBlockNum)
+		if err != nil {
+			return err
+		}
+		s.syncTillMessage = syncTillMessage
+		msgCount, err := s.GetMessageCount()
+		if err == nil && msgCount >= s.syncTillMessage {
+			log.Info("Node has all messages", "sync-till-block", s.config().SyncTillBlock)
+		}
+	}
 	s.LaunchThread(s.backfillTrackersForMissingBlockMetadata)
 	return stopwaiter.CallIterativelyWith[struct{}](&s.StopWaiterSafe, s.executeMessages, s.newMessageNotifier)
 }
