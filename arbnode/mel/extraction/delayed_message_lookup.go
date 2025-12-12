@@ -156,8 +156,6 @@ func delayedMessageScaffoldsFromLogs(
 
 	// Next, we construct the messages themselves from the parsed logs.
 	for _, parsedLog := range parsedLogs {
-		msgKey := common.BigToHash(parsedLog.MessageIndex)
-		_ = msgKey
 		requestId := common.BigToHash(parsedLog.MessageIndex)
 		msg := &mel.DelayedInboxMessage{
 			BlockHash:      parsedLog.Raw.BlockHash,
