@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2025, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbnode
@@ -104,6 +104,7 @@ type BatchPoster struct {
 	inbox              *InboxTracker
 	streamer           *TransactionStreamer
 	arbOSVersionGetter execution.ArbOSVersionGetter
+	chainConfig        *params.ChainConfig
 	config             BatchPosterConfigFetcher
 	seqInbox           *bridgegen.SequencerInbox
 	syncMonitor        *SyncMonitor
@@ -359,6 +360,7 @@ type BatchPosterOpts struct {
 	DAPWriters    []daprovider.Writer
 	ParentChainID *big.Int
 	DAPReaders    *daprovider.DAProviderRegistry
+	ChainConfig   *params.ChainConfig
 }
 
 func NewBatchPoster(ctx context.Context, opts *BatchPosterOpts) (*BatchPoster, error) {
@@ -405,6 +407,7 @@ func NewBatchPoster(ctx context.Context, opts *BatchPosterOpts) (*BatchPoster, e
 		inbox:              opts.Inbox,
 		streamer:           opts.Streamer,
 		arbOSVersionGetter: opts.VersionGetter,
+		chainConfig:        opts.ChainConfig,
 		syncMonitor:        opts.SyncMonitor,
 		config:             opts.Config,
 		seqInbox:           seqInbox,
@@ -903,6 +906,7 @@ type batchSegments struct {
 	recompressionLevel    int
 	newUncompressedSize   int
 	totalUncompressedSize int
+	maxUncompressedSize   int
 	lastCompressedSize    int
 	trailingHeaders       int // how many trailing segments are headers
 	isDone                bool
@@ -920,7 +924,7 @@ type buildingBatch struct {
 	firstUsefulMsg     *arbostypes.MessageWithMetadata
 }
 
-func (b *BatchPoster) newBatchSegments(ctx context.Context, firstDelayed uint64, use4844 bool, usingAltDA bool) (*batchSegments, error) {
+func (b *BatchPoster) newBatchSegments(ctx context.Context, firstDelayed uint64, use4844 bool, usingAltDA bool, arbosVersion uint64) (*batchSegments, error) {
 	config := b.config()
 	var maxSize int
 
@@ -983,12 +987,13 @@ func (b *BatchPoster) newBatchSegments(ctx context.Context, firstDelayed uint64,
 		recompressionLevel = compressionLevel
 	}
 	return &batchSegments{
-		compressedBuffer:   compressedBuffer,
-		compressedWriter:   brotli.NewWriterLevel(compressedBuffer, compressionLevel),
-		sizeLimit:          maxSize,
-		recompressionLevel: recompressionLevel,
-		rawSegments:        make([][]byte, 0, 128),
-		delayedMsg:         firstDelayed,
+		compressedBuffer:    compressedBuffer,
+		compressedWriter:    brotli.NewWriterLevel(compressedBuffer, compressionLevel),
+		sizeLimit:           maxSize,
+		recompressionLevel:  recompressionLevel,
+		rawSegments:         make([][]byte, 0, 128),
+		delayedMsg:          firstDelayed,
+		maxUncompressedSize: int(b.chainConfig.MaxUncompressedBatchSize(arbosVersion)), // #nosec G115
 	}, nil
 }
 
@@ -1003,8 +1008,8 @@ func (s *batchSegments) recompressAll() error {
 			return err
 		}
 	}
-	if s.totalUncompressedSize > arbstate.MaxDecompressedLen {
-		return fmt.Errorf("batch size %v exceeds maximum decompressed length %v", s.totalUncompressedSize, arbstate.MaxDecompressedLen)
+	if s.totalUncompressedSize > s.maxUncompressedSize {
+		return fmt.Errorf("batch size %v exceeds maximum uncompressed length %v", s.totalUncompressedSize, s.maxUncompressedSize)
 	}
 	if len(s.rawSegments) >= arbstate.MaxSegmentsPerSequencerMessage {
 		return fmt.Errorf("number of raw segments %v excees maximum number %v", len(s.rawSegments), arbstate.MaxSegmentsPerSequencerMessage)
@@ -1014,10 +1019,10 @@ func (s *batchSegments) recompressAll() error {
 
 func (s *batchSegments) testForOverflow(isHeader bool) (bool, error) {
 	// we've reached the max decompressed size
-	if s.totalUncompressedSize > arbstate.MaxDecompressedLen {
-		log.Info("Batch full: max decompressed length exceeded",
+	if s.totalUncompressedSize > s.maxUncompressedSize {
+		log.Info("Batch full: max uncompressed length exceeded",
 			"current", s.totalUncompressedSize,
-			"max", arbstate.MaxDecompressedLen,
+			"max", s.maxUncompressedSize,
 			"isHeader", isHeader)
 		return true, nil
 	}
@@ -1410,6 +1415,11 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 	if dbBatchCount > batchPosition.NextSeqNum {
 		return false, fmt.Errorf("attempting to post batch %v, but the local inbox tracker database already has %v batches", batchPosition.NextSeqNum, dbBatchCount)
 	}
+
+	arbOSVersion, err := b.arbOSVersionGetter.ArbOSVersionForMessageIndex(arbutil.MessageIndex(arbmath.SaturatingUSub(uint64(batchPosition.MessageCount), 1))).Await(ctx)
+	if err != nil {
+		return false, err
+	}
 	if b.building == nil || b.building.startMsgCount != batchPosition.MessageCount {
 		latestHeader, err := b.l1Reader.LastHeader(ctx)
 		if err != nil {
@@ -1423,10 +1433,6 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 			config.Post4844Blobs &&
 			latestHeader.ExcessBlobGas != nil &&
 			latestHeader.BlobGasUsed != nil {
-			arbOSVersion, err := b.arbOSVersionGetter.ArbOSVersionForMessageIndex(arbutil.MessageIndex(arbmath.SaturatingUSub(uint64(batchPosition.MessageCount), 1))).Await(ctx)
-			if err != nil {
-				return false, err
-			}
 			if arbOSVersion >= params.ArbosVersion_20 {
 				if config.IgnoreBlobPrice {
 					use4844 = true
@@ -1483,7 +1489,7 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 		// Only use 4844 batching when posting to EthDA
 		use4844 = use4844 && buildingForEthDA
 		usingAltDA := !buildingForEthDA
-		segments, err := b.newBatchSegments(ctx, batchPosition.DelayedMessageCount, use4844, usingAltDA)
+		segments, err := b.newBatchSegments(ctx, batchPosition.DelayedMessageCount, use4844, usingAltDA, arbOSVersion)
 		if err != nil {
 			return false, err
 		}
@@ -1928,7 +1934,7 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 		b.building.muxBackend.seqMsg = seqMsg
 		b.building.muxBackend.delayedInboxStart = batchPosition.DelayedMessageCount
 		b.building.muxBackend.SetPositionWithinMessage(0)
-		simMux := arbstate.NewInboxMultiplexer(b.building.muxBackend, batchPosition.DelayedMessageCount, dapReaders, daprovider.KeysetValidate)
+		simMux := arbstate.NewInboxMultiplexer(b.building.muxBackend, batchPosition.DelayedMessageCount, dapReaders, daprovider.KeysetValidate, b.chainConfig, arbOSVersion)
 		log.Debug("Begin checking the correctness of batch against inbox multiplexer", "startMsgSeqNum", batchPosition.MessageCount, "endMsgSeqNum", b.building.msgCount-1)
 		for i := batchPosition.MessageCount; i < b.building.msgCount; i++ {
 			msg, err := simMux.Pop(ctx)

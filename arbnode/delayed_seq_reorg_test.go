@@ -10,17 +10,22 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
+	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 )
+
+const arbosVersion = params.ArbosVersion_50
 
 func TestSequencerReorgFromDelayed(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	exec, streamer, db, _ := NewTransactionStreamerForTest(t, ctx, common.Address{})
-	tracker, err := NewInboxTracker(db, streamer, nil, DefaultSnapSyncConfig)
+	arbosVersionGetter := execution.ConstArbosVersionGetter{Version: arbosVersion}
+	tracker, err := NewInboxTracker(db, streamer, nil, DefaultSnapSyncConfig, &arbosVersionGetter, arbosVersion)
 	Require(t, err)
 
 	err = streamer.Start(ctx)
@@ -220,7 +225,9 @@ func TestSequencerReorgFromLastDelayedMsg(t *testing.T) {
 	defer cancel()
 
 	exec, streamer, db, _ := NewTransactionStreamerForTest(t, ctx, common.Address{})
-	tracker, err := NewInboxTracker(db, streamer, nil, DefaultSnapSyncConfig)
+	arbosVersionGetter := execution.ConstArbosVersionGetter{Version: arbosVersion}
+
+	tracker, err := NewInboxTracker(db, streamer, nil, DefaultSnapSyncConfig, &arbosVersionGetter, arbosVersion)
 	Require(t, err)
 
 	err = streamer.Start(ctx)

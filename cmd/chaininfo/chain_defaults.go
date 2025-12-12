@@ -38,6 +38,7 @@ func CopyArbitrumChainParams(arbChainParams params.ArbitrumChainParams) params.A
 		GenesisBlockNum:           arbChainParams.GenesisBlockNum,
 		MaxCodeSize:               arbChainParams.MaxCodeSize,
 		MaxInitCodeSize:           arbChainParams.MaxInitCodeSize,
+		MaxUncompressedBatchSize:  arbChainParams.MaxUncompressedBatchSize,
 	}
 }
 

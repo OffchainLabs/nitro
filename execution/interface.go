@@ -97,6 +97,14 @@ type ArbOSVersionGetter interface {
 	ArbOSVersionForMessageIndex(msgIdx arbutil.MessageIndex) containers.PromiseInterface[uint64]
 }
 
+type ConstArbosVersionGetter struct {
+	Version uint64
+}
+
+func (c *ConstArbosVersionGetter) ArbOSVersionForMessageIndex(msgIdx arbutil.MessageIndex) containers.PromiseInterface[uint64] {
+	return containers.NewReadyPromise(c.Version, nil)
+}
+
 // not implemented in execution, used as input
 // BatchFetcher is required for any execution node
 type BatchFetcher interface {

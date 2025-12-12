@@ -15,6 +15,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
 
 	"github.com/offchainlabs/nitro/arbcompress"
@@ -77,11 +78,9 @@ type SequencerMessage struct {
 	Segments             [][]byte
 }
 
-const MaxDecompressedLen int = 1024 * 1024 * 16 // 16 MiB
-const maxZeroheavyDecompressedLen = 101*MaxDecompressedLen/100 + 64
 const MaxSegmentsPerSequencerMessage = 100 * 1024
 
-func ParseSequencerMessage(ctx context.Context, batchNum uint64, batchBlockHash common.Hash, data []byte, dapReaders DapReaderSource, keysetValidationMode daprovider.KeysetValidationMode) (*SequencerMessage, error) {
+func ParseSequencerMessage(ctx context.Context, batchNum uint64, batchBlockHash common.Hash, data []byte, dapReaders DapReaderSource, keysetValidationMode daprovider.KeysetValidationMode, chainConfig *params.ChainConfig, arbosVersion uint64) (*SequencerMessage, error) {
 	if len(data) < 40 {
 		return nil, errors.New("sequencer message missing L1 header")
 	}
@@ -147,10 +146,17 @@ func ParseSequencerMessage(ctx context.Context, batchNum uint64, batchBlockHash 
 
 	// At this point, `payload` has not been validated by the sequencer inbox at all.
 	// It's not safe to trust any part of the payload from this point onwards.
+	var uncompressedBatchSizeLimit uint64
+	if chainConfig != nil {
+		uncompressedBatchSizeLimit = chainConfig.MaxUncompressedBatchSize(arbosVersion)
+	} else { // In case chainConfig is nil, fall back to params default (e.g. in tests or for the genesis block)
+		uncompressedBatchSizeLimit = params.DefaultMaxUncompressedBatchSize
+	}
 
 	// Stage 2: If enabled, decode the zero heavy payload (saves gas based on calldata charging).
 	if len(payload) > 0 && daprovider.IsZeroheavyEncodedHeaderByte(payload[0]) {
-		pl, err := io.ReadAll(io.LimitReader(zeroheavy.NewZeroheavyDecoder(bytes.NewReader(payload[1:])), int64(maxZeroheavyDecompressedLen)))
+		maxZeroheavyDecompressedLen := 101*uncompressedBatchSizeLimit/100 + 64
+		pl, err := io.ReadAll(io.LimitReader(zeroheavy.NewZeroheavyDecoder(bytes.NewReader(payload[1:])), int64(maxZeroheavyDecompressedLen))) // #nosec G115
 		if err != nil {
 			log.Warn("error reading from zeroheavy decoder", err.Error())
 			return parsedMsg, nil
@@ -160,10 +166,10 @@ func ParseSequencerMessage(ctx context.Context, batchNum uint64, batchBlockHash 
 
 	// Stage 3: Decompress the brotli payload and fill the parsedMsg.segments list.
 	if len(payload) > 0 && daprovider.IsBrotliMessageHeaderByte(payload[0]) {
-		decompressed, err := arbcompress.Decompress(payload[1:], MaxDecompressedLen)
+		decompressed, err := arbcompress.Decompress(payload[1:], int(uncompressedBatchSizeLimit)) // #nosec G115
 		if err == nil {
 			reader := bytes.NewReader(decompressed)
-			stream := rlp.NewStream(reader, uint64(MaxDecompressedLen))
+			stream := rlp.NewStream(reader, 0)
 			for {
 				var segment []byte
 				err := stream.Decode(&segment)
@@ -199,6 +205,7 @@ func ParseSequencerMessage(ctx context.Context, batchNum uint64, batchBlockHash 
 type inboxMultiplexer struct {
 	backend                   InboxBackend
 	delayedMessagesRead       uint64
+	chainConfig               *params.ChainConfig
 	dapReaders                DapReaderSource
 	cachedSequencerMessage    *SequencerMessage
 	cachedSequencerMessageNum uint64
@@ -211,12 +218,19 @@ type inboxMultiplexer struct {
 	// but ParseSequencerMessage still needs this to decide whether to panic or log on validation errors.
 	// In replay mode, this allows proper error handling based on the position within the message.
 	keysetValidationMode daprovider.KeysetValidationMode
+	// ArbOS version is used to determine a batch size limit from the chain config during sequencer message parsing.
+	// While ideally this would be read directly from the batch series being processed (since the version might be
+	// just upgraded), it is impossible (we would have to execute them on-fly). However, it should be safe to pass
+	// "recent enough" ArbOS version here, since batch size limit is only expected to either stay the same or increase
+	// with time.
+	recentArbOSVersion uint64
 }
 
-func NewInboxMultiplexer(backend InboxBackend, delayedMessagesRead uint64, dapReaders DapReaderSource, keysetValidationMode daprovider.KeysetValidationMode) arbostypes.InboxMultiplexer {
+func NewInboxMultiplexer(backend InboxBackend, delayedMessagesRead uint64, dapReaders DapReaderSource, keysetValidationMode daprovider.KeysetValidationMode, chainConfig *params.ChainConfig, recentArbOSVersion uint64) arbostypes.InboxMultiplexer {
 	return &inboxMultiplexer{
 		backend:                   backend,
 		delayedMessagesRead:       delayedMessagesRead,
+		chainConfig:               chainConfig,
 		dapReaders:                dapReaders,
 		cachedSequencerMessage:    nil,
 		cachedSequencerMessageNum: 0,
@@ -225,6 +239,7 @@ func NewInboxMultiplexer(backend InboxBackend, delayedMessagesRead uint64, dapRe
 		cachedSegmentBlockNumber:  0,
 		cachedSubMessageNumber:    0,
 		keysetValidationMode:      keysetValidationMode,
+		recentArbOSVersion:        recentArbOSVersion,
 	}
 }
 
@@ -244,8 +259,9 @@ func (r *inboxMultiplexer) Pop(ctx context.Context) (*arbostypes.MessageWithMeta
 			return nil, realErr
 		}
 		r.cachedSequencerMessageNum = r.backend.GetSequencerInboxPosition()
+
 		var err error
-		r.cachedSequencerMessage, err = ParseSequencerMessage(ctx, r.cachedSequencerMessageNum, batchBlockHash, bytes, r.dapReaders, r.keysetValidationMode)
+		r.cachedSequencerMessage, err = ParseSequencerMessage(ctx, r.cachedSequencerMessageNum, batchBlockHash, bytes, r.dapReaders, r.keysetValidationMode, r.chainConfig, r.recentArbOSVersion)
 		if err != nil {
 			return nil, err
 		}

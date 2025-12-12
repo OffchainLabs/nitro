@@ -243,10 +243,11 @@ func main() {
 		}
 		return wavmio.ReadInboxMessage(batchNum), nil
 	}
-	readMessage := func(dasEnabled bool) *arbostypes.MessageWithMetadata {
-		var delayedMessagesRead uint64
+	readMessage := func(dasEnabled bool, chainConfig *params.ChainConfig) *arbostypes.MessageWithMetadata {
+		var delayedMessagesRead, arbosVersion uint64
 		if lastBlockHeader != nil {
 			delayedMessagesRead = lastBlockHeader.Nonce.Uint64()
+			arbosVersion = types.DeserializeHeaderExtraInformation(lastBlockHeader).ArbOSFormatVersion
 		}
 		var dasReader dasutil.DASReader
 		var dasKeysetFetcher dasutil.DASKeysetFetcher
@@ -272,7 +273,7 @@ func main() {
 			panic(fmt.Sprintf("Failed to register blob reader: %v", err))
 		}
 
-		inboxMultiplexer := arbstate.NewInboxMultiplexer(backend, delayedMessagesRead, dapReaders, keysetValidationMode)
+		inboxMultiplexer := arbstate.NewInboxMultiplexer(backend, delayedMessagesRead, dapReaders, keysetValidationMode, chainConfig, arbosVersion)
 		ctx := context.Background()
 		message, err := inboxMultiplexer.Pop(ctx)
 		if err != nil {
@@ -328,7 +329,7 @@ func main() {
 			}
 		}
 
-		message := readMessage(chainConfig.ArbitrumChainParams.DataAvailabilityCommittee)
+		message := readMessage(chainConfig.ArbitrumChainParams.DataAvailabilityCommittee, chainConfig)
 
 		chainContext := WavmChainContext{chainConfig: chainConfig}
 		newBlock, _, err = arbos.ProduceBlock(message.Message, message.DelayedMessagesRead, lastBlockHeader, statedb, chainContext, false, core.NewMessageReplayContext(), false)
@@ -338,7 +339,9 @@ func main() {
 	} else {
 		// Initialize ArbOS with this init message and create the genesis block.
 
-		message := readMessage(false)
+		// Currently, the only use of `chainConfig` argument is to get a limit on the uncompressed batch size.
+		// However, the init message is never compressed, so we can safely pass nil here.
+		message := readMessage(false, nil)
 
 		initMessage, err := message.Message.ParseInitMessage()
 		if err != nil {
