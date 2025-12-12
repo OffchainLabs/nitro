@@ -201,8 +201,15 @@ func (ps *L2PricingState) setMultiGasConstraintsFromSingleGasConstraints() error
 			return fmt.Errorf("failed to read backlog from constraint %d: %w", i, err)
 		}
 
-		// Transfer with only computation resource weight to match single-gas constraint scale.
-		weights := map[uint8]uint64{uint8(multigas.ResourceKindComputation): 1}
+		// Transfer to multi-gas constraint with equal weights
+		weights := map[uint8]uint64{
+			uint8(multigas.ResourceKindComputation):     1,
+			uint8(multigas.ResourceKindHistoryGrowth):   1,
+			uint8(multigas.ResourceKindStorageAccess):   1,
+			uint8(multigas.ResourceKindStorageGrowth):   1,
+			uint8(multigas.ResourceKindL2Calldata):      1,
+			uint8(multigas.ResourceKindWasmComputation): 1,
+		}
 
 		var adjustmentWindow uint32
 		if window > math.MaxUint32 {
