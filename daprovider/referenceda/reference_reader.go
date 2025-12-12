@@ -139,3 +139,18 @@ func (r *Reader) CollectPreimages(
 		return daprovider.PreimagesResult{Preimages: preimages}, err
 	})
 }
+
+// RecoverPayloadAndPreimages fetches the underlying payload and collects preimages from the DA provider given the batch header information
+func (r *Reader) RecoverPayloadAndPreimages(
+	batchNum uint64,
+	batchBlockHash common.Hash,
+	sequencerMsg []byte,
+) containers.PromiseInterface[daprovider.PayloadAndPreimagesResult] {
+	return containers.DoPromise(context.Background(), func(ctx context.Context) (daprovider.PayloadAndPreimagesResult, error) {
+		payload, preimages, err := r.recoverInternal(ctx, batchNum, batchBlockHash, sequencerMsg, true, true)
+		return daprovider.PayloadAndPreimagesResult{
+			Payload:   payload,
+			Preimages: preimages,
+		}, err
+	})
+}
