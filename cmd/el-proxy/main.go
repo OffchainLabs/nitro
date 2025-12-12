@@ -130,6 +130,7 @@ func NewExpressLaneProxy(
 		&params.ChainConfig{ChainID: big.NewInt(config.ChainId)},
 		config.MaxTxDataSize,
 		0,
+		nil,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("error creating express lane tracker: %w", err)

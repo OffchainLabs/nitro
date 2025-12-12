@@ -46,6 +46,7 @@ type ExpressLaneTracker struct {
 
 	roundControl containers.SyncMap[uint64, common.Address] // thread safe
 	useLogs      bool
+	isActiveFunc func() bool // nil means unknown/not applicable
 }
 
 func NewExpressLaneTracker(
@@ -56,7 +57,9 @@ func NewExpressLaneTracker(
 	auctionContractAddr common.Address,
 	chainConfig *params.ChainConfig,
 	maxTxSize uint64,
-	earlySubmissionGrace time.Duration) (*ExpressLaneTracker, error) {
+	earlySubmissionGrace time.Duration,
+	isActiveFunc func() bool,
+) (*ExpressLaneTracker, error) {
 	if err := ValidateMaxTxDataSize(maxTxSize); err != nil {
 		return nil, err
 	}
@@ -70,6 +73,7 @@ func NewExpressLaneTracker(
 		chainConfig:          chainConfig,
 		maxTxSize:            maxTxSize,
 		useLogs:              false, // default to use contract polling
+		isActiveFunc:         isActiveFunc,
 	}, nil
 }
 
@@ -146,6 +150,13 @@ func (t *ExpressLaneTracker) AuctionContractAddr() common.Address {
 	return t.auctionContractAddr
 }
 
+func (t *ExpressLaneTracker) isActiveSequencer() bool {
+	if t.isActiveFunc == nil {
+		return false
+	}
+	return t.isActiveFunc()
+}
+
 // --- internals ---
 
 func (t *ExpressLaneTracker) startViaLogIterator(ctxIn context.Context) {
@@ -207,6 +218,7 @@ func (t *ExpressLaneTracker) startViaLogIterator(ctxIn context.Context) {
 					"round", it.Event.Round,
 					"controller", it.Event.FirstPriceExpressLaneController,
 					"timeSinceAuctionClose", timeSinceAuctionClose,
+					"isActiveSequencer", t.isActiveSequencer(),
 				)
 
 				t.roundControl.Store(it.Event.Round, it.Event.FirstPriceExpressLaneController)
@@ -262,6 +274,7 @@ func (t *ExpressLaneTracker) startViaContractPolling(ctxIn context.Context) {
 						"round", record.round,
 						"controller", record.controller,
 						"timeSinceAuctionClose", timeSinceAuctionClose,
+						"isActiveSequencer", t.isActiveSequencer(),
 					)
 				}
 
@@ -304,6 +317,7 @@ func (t *ExpressLaneTracker) roundHeartbeatThread() {
 				"round", round,
 				"timestamp", ti,
 				"haveController", ok,
+				"isActiveSequencer", t.isActiveSequencer(),
 			)
 
 			// Cleanup previous round controller data
