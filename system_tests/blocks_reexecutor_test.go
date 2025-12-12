@@ -2,13 +2,12 @@ package arbtest
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
-	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/ethereum/go-ethereum/trie"
 
 	blocksreexecutor "github.com/offchainlabs/nitro/blocks_reexecutor"
@@ -82,6 +81,30 @@ func testBlocksReExecutorModes(t *testing.T, onMultipleRanges bool) {
 	Require(t, err)
 }
 
+func assertStateExistForBlockRange(t *testing.T, bc *core.BlockChain, from, to uint64) {
+	t.Helper()
+	for i := from; i <= to; i++ {
+		header := bc.GetHeaderByNumber(i)
+		_, err := bc.StateAt(header.Root)
+		Require(t, err)
+	}
+}
+
+func assertMissingStateForBlockRange(t *testing.T, bc *core.BlockChain, from, to uint64) {
+	t.Helper()
+	expectedErr := &trie.MissingNodeError{}
+	for blockNum := from; blockNum <= to; blockNum++ {
+		header := bc.GetHeaderByNumber(blockNum)
+		_, err := bc.StateAt(header.Root)
+		if err == nil {
+			Fatal(t, "expeted StateAt to fail for blockNumber:", header.Number)
+		}
+		if !errors.As(err, &expectedErr) {
+			Fatal(t, "getting state failed with unexpected error, root:", header.Root, "blockNumber:", header.Number, "err:", err)
+		}
+	}
+}
+
 func TestBlocksReExecutorCommitState(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -125,43 +148,20 @@ func TestBlocksReExecutorCommitState(t *testing.T) {
 		}
 	}
 
-	// 3. Set 2 blocks as target block tests
 	bc := builder.L2.ExecNode.Backend.ArbInterface().BlockChain()
-	blockNum35 := 35
-	block35 := bc.GetBlockByNumber(uint64(blockNum35))
-	blockRoot35 := block35.Root()
 
-	blockNum150 := 150
-	block150 := bc.GetBlockByNumber(uint64(blockNum150))
-	blockRoot150 := block150.Root()
+	// 3. Assert that some blocks are missing. We can't be too granular here since
+	// statedb might commit to triedb if dirty cache size limit is exhausted
+	assertMissingStateForBlockRange(t, bc, 5, 90)
+	assertMissingStateForBlockRange(t, bc, 110, 190)
+	assertMissingStateForBlockRange(t, bc, 210, 290)
+	assertMissingStateForBlockRange(t, bc, 310, 370)
 
-	// 4. Since we started L1 as a sparse archive we should only expect states to be
-	// present for blocks 100, 200, 300, etc.
-	_, err = bc.StateAt(blockRoot35)
-	expectedErr := &trie.MissingNodeError{}
-	if !errors.As(err, &expectedErr) {
-		Fatal(t, "getting state failed with unexpected error, root:", block35.Root(), "blockNumber:", blockNum35, "blockHash:", block35.Hash(), "err:", err)
-	}
-
-	_, err = bc.StateAt(blockRoot150)
-	expectedErr = &trie.MissingNodeError{}
-	if !errors.As(err, &expectedErr) {
-		Fatal(t, "getting state failed with unexpected error, root:", block150.Root(), "blockNumber:", blockNum150, "blockHash:", block150.Hash(), "err:", err)
-	}
-
-	blockTraceConfig := map[string]interface{}{"tracer": "callTracer"}
-	blockTraceConfig["tracerConfig"] = map[string]interface{}{"onlyTopCall": false}
-
-	l2rpc := builder.L2.Stack.Attach()
-	var blockTrace json.RawMessage
-	err = l2rpc.CallContext(ctx, &blockTrace, "debug_traceBlockByNumber", rpc.BlockNumber(blockNum150), blockTraceConfig)
-	Require(t, err)
-
-	// 5. We first run BlocksReExecutor with ValidateMultiGas set to false to make sure
+	// 4. We first run BlocksReExecutor with ValidateMultiGas set to false to make sure
 	// BlocksReExecutor does not commit state to disk
 	c := blocksreexecutor.TestConfig
 	c.ValidateMultiGas = true
-	c.Blocks = `[[0, 42], [90, 160], [180, 200]]`
+	c.Blocks = `[[0, 42], [110, 160], [180, 200]]`
 	// We don't need to explicit set it to false since default is false, but we want to be explicit
 	c.CommitStateToDisk = false
 
@@ -174,20 +174,14 @@ func TestBlocksReExecutorCommitState(t *testing.T) {
 	err = executorFull.WaitForReExecution(ctx)
 	Require(t, err)
 
-	// 6. Now that we have run Block Re-executor CommitStateToDisk set to false
-	// we should expect state to NOT be present for both of the above blocks
-	_, err = bc.StateAt(blockRoot35)
-	if !errors.As(err, &expectedErr) {
-		Fatal(t, "getting state failed with unexpected error, root:", block35.Root(), "blockNumber:", blockNum35, "blockHash:", block35.Hash(), "err:", err)
-	}
+	// 5. Now that we have run Block Re-executor CommitStateToDisk set to false
+	// we should expect state to NOT be present for those same blocks
+	assertMissingStateForBlockRange(t, bc, 5, 90)
+	assertMissingStateForBlockRange(t, bc, 110, 190)
+	assertMissingStateForBlockRange(t, bc, 210, 290)
+	assertMissingStateForBlockRange(t, bc, 310, 370)
 
-	_, err = bc.StateAt(blockRoot150)
-	expectedErr = &trie.MissingNodeError{}
-	if !errors.As(err, &expectedErr) {
-		Fatal(t, "getting state failed with unexpected error, root:", block150.Root(), "blockNumber:", blockNum150, "blockHash:", block150.Hash(), "err:", err)
-	}
-
-	// 7. Now we run BlocksReExecutor with ValidateMultiGas set to true to make sure
+	// 6. Now we run BlocksReExecutor with ValidateMultiGas set to true to make sure
 	// BlocksReExecutor does indeed commit state of c.Blocks to disk.
 	// We don't set c.Blocks since we want to use the same blocks range
 	c.CommitStateToDisk = true
@@ -198,11 +192,13 @@ func TestBlocksReExecutorCommitState(t *testing.T) {
 	err = executorFullCommit.WaitForReExecution(ctx)
 	Require(t, err)
 
-	// 8. Now that we have run Block Re-executor with CommitStateToDisk set to true
-	// we should expect state to be present for both of the above blocks
-	_, err = bc.StateAt(blockRoot35)
-	Require(t, err)
+	// 6. Now that we have run Block Re-executor with CommitStateToDisk set to true
+	// we should expect state to be present for the ranges we set for c.Blocks
+	assertStateExistForBlockRange(t, bc, 5, 40)
+	assertStateExistForBlockRange(t, bc, 110, 200)
 
-	_, err = bc.StateAt(blockRoot150)
-	Require(t, err)
+	// 7. Finally, make sure we haven't commited state for blocks not specified in c.Blocks range
+	assertMissingStateForBlockRange(t, bc, 45, 90)
+	assertMissingStateForBlockRange(t, bc, 210, 290)
+	assertMissingStateForBlockRange(t, bc, 310, 370)
 }
