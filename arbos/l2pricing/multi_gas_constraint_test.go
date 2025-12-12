@@ -52,9 +52,9 @@ func TestMultiGasConstraint(t *testing.T) {
 	require.Contains(t, used, multigas.ResourceKindComputation)
 	require.Contains(t, used, multigas.ResourceKindStorageAccess)
 
-	weights, err := c.SumWeights()
+	maxWeight, err := c.MaxWeight()
 	require.NoError(t, err)
-	require.Equal(t, uint64(30), weights)
+	require.Equal(t, uint64(20), maxWeight)
 
 	require.NoError(t, c.Clear())
 	target, _ = c.Target()
@@ -68,9 +68,9 @@ func TestMultiGasConstraint(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, used, 0)
 
-	weights, err = c.SumWeights()
+	maxWeight, err = c.MaxWeight()
 	require.NoError(t, err)
-	require.Equal(t, uint64(0), weights)
+	require.Equal(t, uint64(0), maxWeight)
 }
 
 func TestMultiGasConstraintResourceWeightsValidation(t *testing.T) {
@@ -90,9 +90,9 @@ func TestMultiGasConstraintResourceWeightsValidation(t *testing.T) {
 	}
 	require.NoError(t, c.SetResourceWeights(valid))
 
-	total, err := c.sumWeights.Get()
+	maxWeight, err := c.maxWeight.Get()
 	require.NoError(t, err)
-	require.Equal(t, uint64(10), total)
+	require.Equal(t, uint64(7), maxWeight)
 }
 
 func TestMultiGasConstraintBacklogAggregation(t *testing.T) {
