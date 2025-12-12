@@ -40,6 +40,12 @@ type PreimagesResult struct {
 	Preimages PreimagesMap
 }
 
+// PayloadAndPreimagesResult contains both the recovered payload and collected preimages
+type PayloadAndPreimagesResult struct {
+	Payload   []byte
+	Preimages PreimagesMap
+}
+
 type Reader interface {
 	// RecoverPayload fetches the underlying payload from the DA provider given the batch header information
 	RecoverPayload(
@@ -54,6 +60,13 @@ type Reader interface {
 		batchBlockHash common.Hash,
 		sequencerMsg []byte,
 	) containers.PromiseInterface[PreimagesResult]
+
+	// RecoverPayloadAndPreimages fetches the underlying payload and collects preimages from the DA provider given the batch header information
+	RecoverPayloadAndPreimages(
+		batchNum uint64,
+		batchBlockHash common.Hash,
+		sequencerMsg []byte,
+	) containers.PromiseInterface[PayloadAndPreimagesResult]
 }
 
 // NewReaderForBlobReader is generally meant to be only used by nitro.
@@ -132,5 +145,20 @@ func (b *readerForBlobReader) CollectPreimages(
 	return containers.DoPromise(context.Background(), func(ctx context.Context) (PreimagesResult, error) {
 		_, preimages, err := b.recoverInternal(ctx, batchBlockHash, sequencerMsg, false, true)
 		return PreimagesResult{Preimages: preimages}, err
+	})
+}
+
+// RecoverPayloadAndPreimages fetches the underlying payload and collects preimages from the DA provider given the batch header information
+func (b *readerForBlobReader) RecoverPayloadAndPreimages(
+	batchNum uint64,
+	batchBlockHash common.Hash,
+	sequencerMsg []byte,
+) containers.PromiseInterface[PayloadAndPreimagesResult] {
+	return containers.DoPromise(context.Background(), func(ctx context.Context) (PayloadAndPreimagesResult, error) {
+		payload, preimages, err := b.recoverInternal(ctx, batchBlockHash, sequencerMsg, true, true)
+		return PayloadAndPreimagesResult{
+			Payload:   payload,
+			Preimages: preimages,
+		}, err
 	})
 }

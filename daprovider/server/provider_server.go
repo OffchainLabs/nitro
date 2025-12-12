@@ -213,6 +213,20 @@ func (s *ReaderServer) CollectPreimages(
 	return &result, nil
 }
 
+func (s *ReaderServer) RecoverPayloadAndPreimages(
+	ctx context.Context,
+	batchNum hexutil.Uint64,
+	batchBlockHash common.Hash,
+	sequencerMsg hexutil.Bytes,
+) (*daprovider.PayloadAndPreimagesResult, error) {
+	promise := s.reader.RecoverPayloadAndPreimages(uint64(batchNum), batchBlockHash, sequencerMsg)
+	result, err := promise.Await(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
 // ValidatorServer methods
 
 func (s *ValidatorServer) GenerateReadPreimageProof(ctx context.Context, certHash common.Hash, offset hexutil.Uint64, certificate hexutil.Bytes) (*server_api.GenerateReadPreimageProofResult, error) {
