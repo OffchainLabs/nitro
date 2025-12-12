@@ -34,9 +34,13 @@ type Context struct {
 	State       *arbosState.ArbosState
 	tracingInfo *util.TracingInfo
 	readOnly    bool
+	free        bool
 }
 
 func (c *Context) Burn(kind multigas.ResourceKind, amount uint64) error {
+	if c.free {
+		return nil
+	}
 	if c.GasLeft() < amount {
 		return c.BurnOut()
 	}
@@ -68,6 +72,14 @@ func (c *Context) HandleError(err error) error {
 
 func (c *Context) ReadOnly() bool {
 	return c.readOnly
+}
+
+func (c *Context) UnmeteredGasAccounting() bool {
+	return c.free
+}
+
+func (c *Context) SetUnmeteredGasAccounting(enabled bool) {
+	c.free = enabled
 }
 
 func (c *Context) TracingInfo() *util.TracingInfo {
