@@ -197,7 +197,7 @@ func TestBlocksReExecutorCommitState(t *testing.T) {
 	assertStateExistForBlockRange(t, bc, 5, 40)
 	assertStateExistForBlockRange(t, bc, 110, 200)
 
-	// 7. Finally, make sure we haven't commited state for blocks not specified in c.Blocks range
+	// 7. Finally, make sure we haven't committed state for blocks not specified in c.Blocks range
 	assertMissingStateForBlockRange(t, bc, 45, 90)
 	assertMissingStateForBlockRange(t, bc, 210, 290)
 	assertMissingStateForBlockRange(t, bc, 310, 370)
