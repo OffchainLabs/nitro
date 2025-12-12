@@ -13,11 +13,14 @@ import (
 	"github.com/ethereum/go-ethereum/trie"
 	"github.com/ethereum/go-ethereum/trie/trienode"
 	"github.com/ethereum/go-ethereum/triedb"
-	melrunner "github.com/offchainlabs/nitro/arbnode/mel/runner"
 )
 
+type BlockReader interface {
+	BlockByHash(ctx context.Context, hash common.Hash) (*types.Block, error)
+}
+
 type TransactionRecorder struct {
-	parentChainReader    melrunner.ParentChainReader
+	parentChainReader    BlockReader
 	parentChainBlockHash common.Hash
 	preimages            map[common.Hash][]byte
 	txs                  []*types.Transaction
@@ -25,7 +28,7 @@ type TransactionRecorder struct {
 }
 
 func NewTransactionRecorder(
-	parentChainReader melrunner.ParentChainReader,
+	parentChainReader BlockReader,
 	parentChainBlockHash common.Hash,
 	preimages map[common.Hash][]byte,
 ) *TransactionRecorder {
