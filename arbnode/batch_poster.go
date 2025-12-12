@@ -172,8 +172,12 @@ type BatchPosterConfig struct {
 	// Batch post polling interval.
 	PollInterval time.Duration `koanf:"poll-interval" reload:"hot"`
 	// Batch posting error delay.
-	ErrorDelay                     time.Duration               `koanf:"error-delay" reload:"hot"`
-	CompressionLevel               int                         `koanf:"compression-level" reload:"hot"`
+	ErrorDelay time.Duration `koanf:"error-delay" reload:"hot"`
+	// Deprecated: use CompressionLevels instead. This sets a single compression level for all backlog levels.
+	CompressionLevel int `koanf:"compression-level" reload:"hot"`
+	// CompressionLevels defines adaptive compression based on backlog. Each entry specifies the
+	// compression level and recompression level to use when backlog >= the entry's backlog threshold.
+	CompressionLevels              CompressionLevelStepList    `koanf:"compression-levels" reload:"hot"`
 	AnyTrustRetentionPeriod        time.Duration               `koanf:"anytrust-retention-period" reload:"hot"`
 	GasRefunderAddress             string                      `koanf:"gas-refunder-address" reload:"hot"`
 	DataPoster                     dataposter.DataPosterConfig `koanf:"data-poster" reload:"hot"`
@@ -230,6 +234,12 @@ func (c *BatchPosterConfig) Validate() error {
 	} else {
 		return fmt.Errorf("invalid L1 block bound tag \"%v\" (see --help for options)", c.L1BlockBound)
 	}
+	// Resolve compression levels from deprecated and new config fields
+	resolved, err := ResolveCompressionLevels(c.CompressionLevel, c.CompressionLevels)
+	if err != nil {
+		return err
+	}
+	c.CompressionLevels = resolved
 	return nil
 }
 
@@ -251,7 +261,11 @@ func BatchPosterConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".wait-for-max-delay", DefaultBatchPosterConfig.WaitForMaxDelay, "wait for the max batch delay, even if the batch is full")
 	f.Duration(prefix+".poll-interval", DefaultBatchPosterConfig.PollInterval, "how long to wait after no batches are ready to be posted before checking again")
 	f.Duration(prefix+".error-delay", DefaultBatchPosterConfig.ErrorDelay, "how long to delay after error posting batch")
-	f.Int(prefix+".compression-level", DefaultBatchPosterConfig.CompressionLevel, "batch compression level")
+	f.Int(prefix+".compression-level", DefaultBatchPosterConfig.CompressionLevel, "DEPRECATED: use compression-levels instead. batch compression level")
+	f.Var(&parsedCompressionLevelsConf, prefix+".compression-levels",
+		`JSON array of compression level steps. Format: [{"backlog":<int>,"level":<int>,"recompression-level":<int>},...]. `+
+			`First entry must have backlog:0. Both Level and recomp-level must be 0-11, weakly descending. `+
+			`Example: [{"backlog":0,"level":11,"recompression-level":11},{"backlog":21,"level":6,"recompression-level":11}]`)
 	f.Duration(prefix+".anytrust-retention-period", DefaultBatchPosterConfig.AnyTrustRetentionPeriod, "In AnyTrust mode, the period which AnyTrust nodes are requested to retain the stored batches.")
 	f.String(prefix+".gas-refunder-address", DefaultBatchPosterConfig.GasRefunderAddress, "The gas refunder contract address (optional)")
 	f.Uint64(prefix+".extra-batch-gas", DefaultBatchPosterConfig.ExtraBatchGas, "use this much more gas than estimation says is necessary to post batches")
@@ -289,7 +303,7 @@ var DefaultBatchPosterConfig = BatchPosterConfig{
 	ErrorDelay:                     time.Second * 10,
 	MaxDelay:                       time.Hour,
 	WaitForMaxDelay:                false,
-	CompressionLevel:               brotli.BestCompression,
+	CompressionLevel:               0,
 	AnyTrustRetentionPeriod:        daprovider.DefaultAnyTrustRetentionPeriod,
 	GasRefunderAddress:             "",
 	ExtraBatchGas:                  50_000,
@@ -329,6 +343,7 @@ var TestBatchPosterConfig = BatchPosterConfig{
 	MaxDelay:                           0,
 	WaitForMaxDelay:                    false,
 	CompressionLevel:                   2,
+	CompressionLevels:                  CompressionLevelStepList{{Backlog: 0, Level: 2, RecompressionLevel: 2}},
 	AnyTrustRetentionPeriod:            daprovider.DefaultAnyTrustRetentionPeriod,
 	GasRefunderAddress:                 "",
 	ExtraBatchGas:                      10_000,
@@ -963,25 +978,17 @@ func (b *BatchPoster) newBatchSegments(ctx context.Context, firstDelayed uint64,
 		maxSize -= SequencerMessageHeaderSize
 	}
 	compressedBuffer := bytes.NewBuffer(make([]byte, 0, maxSize*2))
-	compressionLevel := b.config().CompressionLevel
-	recompressionLevel := b.config().CompressionLevel
-	if b.GetBacklogEstimate() > 20 {
-		compressionLevel = arbmath.MinInt(compressionLevel, brotli.DefaultCompression)
-	}
-	if b.GetBacklogEstimate() > 40 {
-		recompressionLevel = arbmath.MinInt(recompressionLevel, brotli.DefaultCompression)
-	}
-	if b.GetBacklogEstimate() > 60 {
-		compressionLevel = arbmath.MinInt(compressionLevel, 4)
-	}
-	if recompressionLevel < compressionLevel {
-		// This should never be possible
-		log.Warn(
-			"somehow the recompression level was lower than the compression level",
-			"recompressionLevel", recompressionLevel,
-			"compressionLevel", compressionLevel,
-		)
-		recompressionLevel = compressionLevel
+	// Determine compression levels based on backlog using configured steps
+	compressionLevel := config.CompressionLevels[0].Level
+	recompressionLevel := config.CompressionLevels[0].RecompressionLevel
+	backlog := b.GetBacklogEstimate()
+	for _, step := range config.CompressionLevels {
+		if backlog >= step.Backlog {
+			compressionLevel = step.Level
+			recompressionLevel = step.RecompressionLevel
+		} else {
+			break
+		}
 	}
 	return &batchSegments{
 		compressedBuffer:   compressedBuffer,
