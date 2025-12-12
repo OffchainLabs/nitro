@@ -289,7 +289,7 @@ func (s *BlocksReExecutor) WaitForReExecution(ctx context.Context) error {
 	select {
 	case err := <-s.fatalErrChan:
 		log.Error("shutting BlocksReExecutor down due to fatal error", "err", err)
-		return fmt.Errorf("shutting BlocksReExecutor down due to fatal error %v", err)
+		return fmt.Errorf("shutting BlocksReExecutor down due to fatal error %w", err)
 	case <-s.success:
 	}
 
