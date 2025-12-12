@@ -519,7 +519,7 @@ func TestRegressionInPopulateFeedBacklog(t *testing.T) {
 	Require(t, err)
 
 	// sub in correct batch hash
-	batchData, _, err := builder.L2.ConsensusNode.InboxReader.GetSequencerMessageBytes(ctx, 0)
+	batchData, _, err := builder.L2.ConsensusNode.MessageExtractor.GetSequencerMessageBytes(ctx, 0)
 	Require(t, err)
 	expectedBatchHash := crypto.Keccak256Hash(batchData)
 	copy(data[52:52+32], expectedBatchHash[:])

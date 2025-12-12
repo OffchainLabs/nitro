@@ -246,7 +246,7 @@ func TestMultiWriterFallback_AnyTrustToCalldataOnBackendFailure(t *testing.T) {
 
 	phase1AnyTrustBatches := 0
 	for _, batch := range phase1Batches {
-		serializedBatch, err := batch.Serialize(ctx, builder.L1.Client)
+		serializedBatch, err := arbnode.SerializeSequencerInboxBatch(ctx, batch, builder.L1.Client)
 		Require(t, err)
 
 		if len(serializedBatch) <= 40 {
@@ -292,7 +292,7 @@ func TestMultiWriterFallback_AnyTrustToCalldataOnBackendFailure(t *testing.T) {
 
 	phase2CalldataBatches := 0
 	for _, batch := range phase2Batches {
-		serializedBatch, err := batch.Serialize(ctx, builder.L1.Client)
+		serializedBatch, err := arbnode.SerializeSequencerInboxBatch(ctx, batch, builder.L1.Client)
 		Require(t, err)
 
 		if len(serializedBatch) <= 40 {
