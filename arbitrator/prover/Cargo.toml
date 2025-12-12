@@ -46,6 +46,9 @@ wasmer-types = { workspace = true }
 wasmparser = { workspace = true }
 wat = { workspace = true }
 
+[build-dependencies]
+forward = { path = "../wasm-libraries/forward" }
+
 [dev-dependencies]
 criterion = { workspace = true, features = ["html_reports"] }
 rand = { workspace = true }
