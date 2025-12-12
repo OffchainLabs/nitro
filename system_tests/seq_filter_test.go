@@ -25,7 +25,7 @@ func TestSequencerTxFilter(t *testing.T) {
 	builder, header, txes, hooks, cleanup := setupSequencerFilterTest(t, false)
 	defer cleanup()
 
-	block, err := builder.L2.ExecNode.ExecEngine.SequenceTransactions(header, hooks, nil)
+	_, block, err := builder.L2.ExecNode.ExecEngine.SequenceTransactions(header, hooks, nil)
 	Require(t, err) // There shouldn't be any error in block generation
 	if block == nil {
 		t.Fatal("block should be generated as second tx should pass")
@@ -51,7 +51,7 @@ func TestSequencerBlockFilterReject(t *testing.T) {
 	builder, header, _, hooks, cleanup := setupSequencerFilterTest(t, true)
 	defer cleanup()
 
-	block, err := builder.L2.ExecNode.ExecEngine.SequenceTransactions(header, hooks, nil)
+	_, block, err := builder.L2.ExecNode.ExecEngine.SequenceTransactions(header, hooks, nil)
 	if block != nil {
 		t.Fatal("block shouldn't be generated when all txes have failed")
 	}
@@ -69,7 +69,7 @@ func TestSequencerBlockFilterAccept(t *testing.T) {
 	_, _, err := hooks.NextTxToSequence() // remove first transaction from hooks
 	Require(t, err)
 	hooks.InsertLastTxError(nil)
-	block, err := builder.L2.ExecNode.ExecEngine.SequenceTransactions(header, hooks, nil)
+	_, block, err := builder.L2.ExecNode.ExecEngine.SequenceTransactions(header, hooks, nil)
 	Require(t, err)
 	if block == nil {
 		t.Fatal("block should be generated as the tx should pass")
