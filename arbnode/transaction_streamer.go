@@ -73,6 +73,7 @@ type TransactionStreamer struct {
 	broadcastServer *broadcaster.Broadcaster
 	inboxReader     *InboxReader
 	delayedBridge   *DelayedBridge
+	syncMonitor     *SyncMonitor
 
 	trackBlockMetadataFrom arbutil.MessageIndex
 	syncTillMessage        arbutil.MessageIndex
@@ -84,6 +85,7 @@ type TransactionStreamerConfig struct {
 	ExecuteMessageLoopDelay     time.Duration `koanf:"execute-message-loop-delay" reload:"hot"`
 	SyncTillBlock               uint64        `koanf:"sync-till-block"`
 	TrackBlockMetadataFrom      uint64        `koanf:"track-block-metadata-from"`
+	DisableBroadcastDuringSync  bool          `koanf:"disable-broadcast-during-sync" reload:"hot"`
 	ShutdownOnBlockhashMismatch bool          `koanf:"shutdown-on-blockhash-mismatch"`
 }
 
@@ -95,6 +97,7 @@ var DefaultTransactionStreamerConfig = TransactionStreamerConfig{
 	ExecuteMessageLoopDelay:     time.Millisecond * 100,
 	SyncTillBlock:               0,
 	TrackBlockMetadataFrom:      0,
+	DisableBroadcastDuringSync:  true,
 	ShutdownOnBlockhashMismatch: false,
 }
 
@@ -104,6 +107,7 @@ var TestTransactionStreamerConfig = TransactionStreamerConfig{
 	ExecuteMessageLoopDelay:     time.Millisecond,
 	SyncTillBlock:               0,
 	TrackBlockMetadataFrom:      0,
+	DisableBroadcastDuringSync:  true,
 	ShutdownOnBlockhashMismatch: false,
 }
 
@@ -113,6 +117,7 @@ func TransactionStreamerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Duration(prefix+".execute-message-loop-delay", DefaultTransactionStreamerConfig.ExecuteMessageLoopDelay, "delay when polling calls to execute messages")
 	f.Uint64(prefix+".sync-till-block", DefaultTransactionStreamerConfig.SyncTillBlock, "node will not sync past this block")
 	f.Uint64(prefix+".track-block-metadata-from", DefaultTransactionStreamerConfig.TrackBlockMetadataFrom, "block number to start saving blockmetadata, 0 to disable")
+	f.Bool(prefix+".disable-broadcast-during-sync", DefaultTransactionStreamerConfig.DisableBroadcastDuringSync, "disable broadcasting historical messages during sync to prevent feed flooding")
 	f.Bool(prefix+".shutdown-on-blockhash-mismatch", DefaultTransactionStreamerConfig.ShutdownOnBlockhashMismatch, "if set the node gracefully shuts down upon detecting mismatch in feed and locally computed blockhash. This is turned off by default")
 }
 
@@ -122,6 +127,7 @@ func NewTransactionStreamer(
 	chainConfig *params.ChainConfig,
 	exec execution.ExecutionClient,
 	broadcastServer *broadcaster.Broadcaster,
+	syncMonitor *SyncMonitor,
 	fatalErrChan chan<- error,
 	config TransactionStreamerConfigFetcher,
 	snapSyncConfig *SnapSyncConfig,
@@ -132,6 +138,7 @@ func NewTransactionStreamer(
 		db:                 db,
 		newMessageNotifier: make(chan struct{}, 1),
 		broadcastServer:    broadcastServer,
+		syncMonitor:        syncMonitor,
 		fatalErrChan:       fatalErrChan,
 		config:             config,
 		snapSyncConfig:     snapSyncConfig,
@@ -220,6 +227,15 @@ func (s *TransactionStreamer) ChainConfig() *params.ChainConfig {
 	return s.chainConfig
 }
 
+// updateSyncMonitor pushes the current message counts to the SyncMonitor
+func (s *TransactionStreamer) updateSyncMonitor() {
+	if s.syncMonitor != nil {
+		committed, _ := s.GetMessageCount()
+		feedPending := s.FeedPendingMessageCount()
+		s.syncMonitor.UpdateMessageCount(committed, feedPending)
+	}
+}
+
 func (s *TransactionStreamer) cleanupInconsistentState() error {
 	// If it doesn't exist yet, set the message count to 0
 	hasMessageCount, err := s.db.Has(messageCountKey)
@@ -231,6 +247,7 @@ func (s *TransactionStreamer) cleanupInconsistentState() error {
 		if err != nil {
 			return err
 		}
+		s.updateSyncMonitor()
 	}
 	// TODO remove trailing messageCountToMessage and messageCountToBlockPrefix entries
 	return nil
@@ -251,6 +268,7 @@ func (s *TransactionStreamer) ReorgAtAndEndBatch(batch ethdb.Batch, firstMsgIdxR
 	if err != nil {
 		return err
 	}
+	s.updateSyncMonitor()
 	return nil
 }
 
@@ -416,7 +434,7 @@ func (s *TransactionStreamer) addMessagesAndReorg(batch ethdb.Batch, msgIdxOfFir
 			BlockMetadata:   nil,
 		})
 	}
-	s.broadcastMessages(messagesWithComputedBlockHash, msgIdxOfFirstMsgToAdd)
+	s.broadcastMessages(messagesWithComputedBlockHash, msgIdxOfFirstMsgToAdd, false)
 
 	if s.validator != nil {
 		err = s.validator.Reorg(s.GetContext(), msgIdxOfFirstMsgToAdd)
@@ -706,6 +724,9 @@ func (s *TransactionStreamer) AddBroadcastMessages(feedMessages []*message.Broad
 			s.broadcasterQueuedMessagesActiveReorg = feedReorg
 		}
 	}
+
+	// Update SyncMonitor with feed pending message count changes
+	s.updateSyncMonitor()
 
 	if s.broadcasterQueuedMessagesActiveReorg || len(s.broadcasterQueuedMessages) == 0 {
 		// Broadcaster never triggered reorg or no messages to add
@@ -1155,7 +1176,7 @@ func (s *TransactionStreamer) WriteMessageFromSequencer(
 	if s.trackBlockMetadataFrom == 0 || msgIdx < s.trackBlockMetadataFrom {
 		msgWithBlockInfo.BlockMetadata = nil
 	}
-	s.broadcastMessages([]arbostypes.MessageWithMetadataAndBlockInfo{msgWithBlockInfo}, msgIdx)
+	s.broadcastMessages([]arbostypes.MessageWithMetadataAndBlockInfo{msgWithBlockInfo}, msgIdx, true)
 
 	return nil
 }
@@ -1223,12 +1244,80 @@ func (s *TransactionStreamer) writeMessage(msgIdx arbutil.MessageIndex, msg arbo
 	return nil
 }
 
+// ShouldBroadcastDuringSync determines if messages should be broadcast during sync based on sync
+// state and message position. When not synced, it only allows broadcasting of messages within the
+// last 2 batches to prevent flooding feed clients with historical data during sync.
+// This is split out as a separate function that contains the core decision logic without extra
+// dependencies for testing.
+func ShouldBroadcastDuringSync(
+	synced bool,
+	firstMsgIdx arbutil.MessageIndex,
+	msgCount int,
+	batchCount uint64,
+	batchThresholdMsgCount arbutil.MessageIndex, // Message count at (batchCount - 2)
+	haveBatchMetadata bool, // Whether we successfully got batch metadata
+) bool {
+	if msgCount == 0 {
+		return false
+	}
+
+	if synced {
+		return true
+	}
+
+	// We're not synced, so check if these messages are within the 2 batch backlog threshold.
+	// If we can't determine the threshold (no metadata or not enough batches), fail open and broadcast.
+	if !haveBatchMetadata || batchCount < 2 {
+		return true
+	}
+
+	// Check if the LAST message in this batch is within the backlog threshold
+	// #nosec G115
+	lastMsgIdx := firstMsgIdx + arbutil.MessageIndex(msgCount) - 1
+	return lastMsgIdx >= batchThresholdMsgCount
+}
+
+// shouldBroadcastDuringSync gathers dependency data and calls the pure decision function
+func (s *TransactionStreamer) shouldBroadcastDuringSync(firstMsgIdx arbutil.MessageIndex, msgCount int) bool {
+	// Gather sync status
+	synced := s.syncMonitor == nil || s.syncMonitor.Synced()
+
+	// Gather batch metadata
+	var batchCount uint64
+	var batchThresholdMsgCount arbutil.MessageIndex
+	haveBatchMetadata := false
+
+	if s.inboxReader != nil && s.inboxReader.tracker != nil {
+		count, err := s.inboxReader.tracker.GetBatchCount()
+		if err == nil {
+			batchCount = count
+			if batchCount >= 2 {
+				batchMeta, err := s.inboxReader.tracker.GetBatchMetadata(batchCount - 2)
+				if err == nil {
+					batchThresholdMsgCount = batchMeta.MessageCount
+					haveBatchMetadata = true
+				}
+			}
+		}
+	}
+
+	return ShouldBroadcastDuringSync(synced, firstMsgIdx, msgCount, batchCount, batchThresholdMsgCount, haveBatchMetadata)
+}
+
 func (s *TransactionStreamer) broadcastMessages(
 	msgs []arbostypes.MessageWithMetadataAndBlockInfo,
 	firstMsgIdx arbutil.MessageIndex,
+	force bool,
 ) {
 	if s.broadcastServer == nil {
 		return
+	}
+
+	// Check if we should broadcast during sync
+	if !force && s.config().DisableBroadcastDuringSync {
+		if !s.shouldBroadcastDuringSync(firstMsgIdx, len(msgs)) {
+			return
+		}
 	}
 
 	feedMsgs := make([]*message.BroadcastFeedMessage, 0, len(msgs))
@@ -1272,6 +1361,8 @@ func (s *TransactionStreamer) writeMessages(firstMsgIdx arbutil.MessageIndex, me
 	if err != nil {
 		return err
 	}
+
+	s.updateSyncMonitor()
 
 	select {
 	case s.newMessageNotifier <- struct{}{}:
@@ -1458,7 +1549,7 @@ func (s *TransactionStreamer) ExecuteNextMsg(ctx context.Context) bool {
 		BlockHash:       &msgResult.BlockHash,
 		BlockMetadata:   msgAndBlockInfo.BlockMetadata,
 	}
-	s.broadcastMessages([]arbostypes.MessageWithMetadataAndBlockInfo{msgWithBlockInfo}, msgIdxToExecute)
+	s.broadcastMessages([]arbostypes.MessageWithMetadataAndBlockInfo{msgWithBlockInfo}, msgIdxToExecute, false)
 
 	messageTimer.Update(time.Since(start).Nanoseconds())
 
