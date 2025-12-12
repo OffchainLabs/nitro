@@ -15,6 +15,8 @@ type MerkleAccumulator struct {
 	backingStorage *storage.Storage
 	size           storage.WrappedUint64
 	partials       []*common.Hash // nil if we are using backingStorage (in that case we access partials in backingStorage
+
+	recordPreimages func(common.Hash, []byte)
 }
 
 func InitializeMerkleAccumulator(sto *storage.Storage) {
@@ -23,11 +25,11 @@ func InitializeMerkleAccumulator(sto *storage.Storage) {
 
 func OpenMerkleAccumulator(sto *storage.Storage) *MerkleAccumulator {
 	size := sto.OpenStorageBackedUint64(0)
-	return &MerkleAccumulator{sto, &size, nil}
+	return &MerkleAccumulator{sto, &size, nil, nil}
 }
 
 func NewNonpersistentMerkleAccumulator() *MerkleAccumulator {
-	return &MerkleAccumulator{nil, &storage.MemoryBackedUint64{}, make([]*common.Hash, 0)}
+	return &MerkleAccumulator{nil, &storage.MemoryBackedUint64{}, make([]*common.Hash, 0), nil}
 }
 
 func CalcNumPartials(size uint64) uint64 {
@@ -44,7 +46,13 @@ func NewNonpersistentMerkleAccumulatorFromPartials(partials []*common.Hash) (*Me
 		levelSize *= 2
 	}
 	mbu := &storage.MemoryBackedUint64{}
-	return &MerkleAccumulator{nil, mbu, partials}, mbu.Set(size)
+	return &MerkleAccumulator{nil, mbu, partials, nil}, mbu.Set(size)
+}
+
+func (acc *MerkleAccumulator) RecordPreimagesTo(preimagesMap map[common.Hash][]byte) {
+	acc.recordPreimages = func(key common.Hash, val []byte) {
+		preimagesMap[key] = val
+	}
 }
 
 func (acc *MerkleAccumulator) NonPersistentClone() (*MerkleAccumulator, error) {
@@ -62,7 +70,7 @@ func (acc *MerkleAccumulator) NonPersistentClone() (*MerkleAccumulator, error) {
 		partials[i] = partial
 	}
 	mbu := &storage.MemoryBackedUint64{}
-	return &MerkleAccumulator{nil, mbu, partials}, mbu.Set(size)
+	return &MerkleAccumulator{nil, mbu, partials, nil}, mbu.Set(size)
 }
 
 func (acc *MerkleAccumulator) Keccak(data ...[]byte) ([]byte, error) {
@@ -147,9 +155,16 @@ func (acc *MerkleAccumulator) Append(itemHash common.Hash) ([]MerkleTreeNodeEven
 			err := acc.setPartial(level, &h)
 			return events, err
 		}
+		var val []byte
+		if acc.recordPreimages != nil {
+			val = append(thisLevel.Bytes(), soFar...)
+		}
 		soFar, err = acc.Keccak(thisLevel.Bytes(), soFar)
 		if err != nil {
 			return nil, err
+		}
+		if acc.recordPreimages != nil {
+			acc.recordPreimages(common.BytesToHash(soFar), val)
 		}
 		h := common.Hash{}
 		err = acc.setPartial(level, &h)
@@ -189,12 +204,18 @@ func (acc *MerkleAccumulator) Root() (common.Hash, error) {
 					if err != nil {
 						return common.Hash{}, err
 					}
+					if acc.recordPreimages != nil {
+						acc.recordPreimages(h, append(hashSoFar.Bytes(), make([]byte, 32)...))
+					}
 					hashSoFar = &h
 					capacityInHash *= 2
 				}
 				h, err := acc.KeccakHash(partial.Bytes(), hashSoFar.Bytes())
 				if err != nil {
 					return common.Hash{}, err
+				}
+				if acc.recordPreimages != nil {
+					acc.recordPreimages(h, append(partial.Bytes(), hashSoFar.Bytes()...))
 				}
 				hashSoFar = &h
 				capacityInHash = 2 * capacity

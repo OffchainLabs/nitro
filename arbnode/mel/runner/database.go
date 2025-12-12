@@ -82,13 +82,11 @@ func (d *Database) GetHeadMelStateBlockNum() (uint64, error) {
 }
 
 func (d *Database) State(ctx context.Context, parentChainBlockNumber uint64) (*mel.State, error) {
-	key := dbKey(dbschema.MelStatePrefix, parentChainBlockNumber)
-	data, err := d.db.Get(key)
-	if err != nil {
-		return nil, err
-	}
-	var state mel.State
-	err = rlp.DecodeBytes(data, &state)
+	return getState(ctx, d.db, parentChainBlockNumber)
+}
+
+func getState(ctx context.Context, db ethdb.KeyValueStore, parentChainBlockNumber uint64) (*mel.State, error) {
+	state, err := dbschema.Value[mel.State](db, dbschema.DbKey(dbschema.MelStatePrefix, parentChainBlockNumber))
 	if err != nil {
 		return nil, err
 	}
@@ -168,13 +166,12 @@ func (d *Database) ReadDelayedMessage(ctx context.Context, state *mel.State, ind
 }
 
 func (d *Database) fetchDelayedMessage(index uint64) (*mel.DelayedInboxMessage, error) {
-	key := dbKey(dbschema.MelDelayedMessagePrefix, index)
-	delayedBytes, err := d.db.Get(key)
+	return fetchDelayedMessage(d.db, index)
+}
+
+func fetchDelayedMessage(db ethdb.KeyValueStore, index uint64) (*mel.DelayedInboxMessage, error) {
+	delayed, err := dbschema.Value[mel.DelayedInboxMessage](db, dbschema.DbKey(dbschema.MelDelayedMessagePrefix, index))
 	if err != nil {
-		return nil, err
-	}
-	var delayed mel.DelayedInboxMessage
-	if err = rlp.DecodeBytes(delayedBytes, &delayed); err != nil {
 		return nil, err
 	}
 	return &delayed, nil
