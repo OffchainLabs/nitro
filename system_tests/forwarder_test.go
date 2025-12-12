@@ -35,7 +35,7 @@ func TestSetForwardToWhilePaused(t *testing.T) {
 	defer cancel()
 
 	// creates node A
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithTakeOwnership(false)
 	builder.nodeConfig.BatchPoster.Enable = false
 	builder.execConfig.Sequencer.MaxBlockSpeed = time.Hour // effectively disables sequencing in this node
 	cleanupA := builder.Build(t)
