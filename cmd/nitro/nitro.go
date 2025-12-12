@@ -465,27 +465,23 @@ func mainImpl() int {
 		return 1
 	}
 
-	fatalErrChan := make(chan error, 10)
-
 	if nodeConfig.BlocksReExecutor.Enable && l2BlockChain != nil {
 		if !nodeConfig.Init.ThenQuit {
 			log.Error("blocks-reexecutor cannot be enabled without --init.then-quit")
 			return 1
 		}
-		blocksReExecutor, err := blocksreexecutor.New(&nodeConfig.BlocksReExecutor, l2BlockChain, chainDb, fatalErrChan)
+		blocksReExecutor, err := blocksreexecutor.New(&nodeConfig.BlocksReExecutor, l2BlockChain, chainDb)
 		if err != nil {
 			log.Error("error initializing blocksReExecutor", "err", err)
 			return 1
 		}
-		success := make(chan struct{})
-		blocksReExecutor.Start(ctx, success)
+
+		blocksReExecutor.Start(ctx)
 		deferFuncs = append(deferFuncs, func() { blocksReExecutor.StopAndWait() })
-		select {
-		case err := <-fatalErrChan:
-			log.Error("shutting down due to fatal error", "err", err)
+		err = blocksReExecutor.WaitForReExecution(ctx)
+		if err != nil {
 			defer log.Error("shut down due to fatal error", "err", err)
 			return 1
-		case <-success:
 		}
 	}
 
@@ -508,6 +504,8 @@ func mainImpl() int {
 		log.Error(fmt.Sprintf("AnyTrust DA usage for this chain is set to %v but --node.da.anytrust.enable is set to %v", l2BlockChain.Config().ArbitrumChainParams.DataAvailabilityCommittee, nodeConfig.Node.DA.AnyTrust.Enable))
 		return 1
 	}
+
+	fatalErrChan := make(chan error, 10)
 
 	var valNode *valnode.ValidationNode
 	if sameProcessValidationNodeEnabled {
