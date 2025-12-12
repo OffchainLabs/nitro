@@ -6,7 +6,6 @@ package setup
 
 import (
 	"context"
-	"errors"
 	"math/big"
 	"sync"
 
@@ -16,7 +15,7 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient/simulated"
 	"github.com/ethereum/go-ethereum/rpc"
 
-	"github.com/offchainlabs/nitro/bold/chain-abstraction"
+	protocol "github.com/offchainlabs/nitro/bold/chain-abstraction"
 )
 
 var (
@@ -31,15 +30,8 @@ type SimulatedBackendWrapper struct {
 	desiredBlockNum rpc.BlockNumber
 }
 
-func (s *SimulatedBackendWrapper) HeaderU64(ctx context.Context) (uint64, error) {
-	header, err := s.Backend.Client().HeaderByNumber(ctx, big.NewInt(int64(s.desiredBlockNum)))
-	if err != nil {
-		return 0, err
-	}
-	if !header.Number.IsUint64() {
-		return 0, errors.New("block number is not uint64")
-	}
-	return header.Number.Uint64(), nil
+func (s *SimulatedBackendWrapper) BalanceAt(ctx context.Context, account common.Address, blockNumber *big.Int) (*big.Int, error) {
+	return s.Backend.Client().BalanceAt(ctx, account, blockNumber)
 }
 
 func (s *SimulatedBackendWrapper) ChainID(ctx context.Context) (*big.Int, error) {

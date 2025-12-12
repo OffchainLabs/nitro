@@ -62,7 +62,6 @@ import (
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/blsSignatures"
 	"github.com/offchainlabs/nitro/bold/testing/setup"
-	butil "github.com/offchainlabs/nitro/bold/util"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
@@ -1772,7 +1771,7 @@ func deployOnParentChain(
 			BufferConfig:                 bufferConfig,
 		}
 
-		wrappedClient := butil.NewBackendWrapper(parentChainReader.Client(), rpc.LatestBlockNumber)
+		parentReader := parentChainReader.Client()
 		rollupStackConfig := setup.RollupStackConfig{
 			UseMockBridge:          false,
 			UseMockOneStepProver:   false,
@@ -1782,7 +1781,7 @@ func deployOnParentChain(
 
 		boldAddresses, err := setup.DeployFullRollupStack(
 			ctx,
-			wrappedClient,
+			parentReader,
 			&parentChainTransactionOpts,
 			parentChainInfo.GetAddress("Sequencer"),
 			cfg,

@@ -6,6 +6,7 @@ package endtoend
 
 import (
 	"context"
+	"errors"
 	"math/big"
 	"testing"
 	"time"
@@ -15,6 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	gethtypes "github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/bold/chain-abstraction"
 	"github.com/offchainlabs/nitro/bold/challenge-manager"
@@ -27,6 +29,17 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/challengeV2gen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 )
+
+func headerNumberAsUint64(ctx context.Context, b protocol.ChainBackend) (uint64, error) {
+	header, err := b.HeaderByNumber(ctx, big.NewInt(int64(rpc.LatestBlockNumber)))
+	if err != nil {
+		return 0, err
+	}
+	if !header.Number.IsUint64() {
+		return 0, errors.New("block number is not uint64")
+	}
+	return header.Number.Uint64(), nil
+}
 
 // This test ensures a challenge can complete even if the honest validator crashes mid-challenge.
 // We cancel the honest validator's context after it opens the first subchallenge and prove that it
@@ -284,7 +297,7 @@ func TestEndToEnd_HonestValidatorCrashes(t *testing.T) {
 				honestEssentialRootIds[it.Event.EdgeId] = false
 			}
 			// Wait until all of the honest essential root ids are confirmed.
-			startBlk, err := bk.Client().HeaderU64(neutralCtx)
+			startBlk, err := headerNumberAsUint64(neutralCtx, bk.Client())
 			require.NoError(t, err)
 			chalPeriodBlocks, err := cmBindings.ChallengePeriodBlocks(&bind.CallOpts{})
 			require.NoError(t, err)
@@ -293,7 +306,7 @@ func TestEndToEnd_HonestValidatorCrashes(t *testing.T) {
 			_ = totalPeriod
 			_ = startBlk
 			for confirmedCount < len(honestEssentialRootIds) {
-				latestBlk, err2 := bk.Client().HeaderU64(neutralCtx)
+				latestBlk, err2 := headerNumberAsUint64(neutralCtx, bk.Client())
 				require.NoError(t, err2)
 				numBlocksElapsed := latestBlk - startBlk
 				if numBlocksElapsed > totalPeriod {

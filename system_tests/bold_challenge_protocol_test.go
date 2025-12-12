@@ -46,7 +46,6 @@ import (
 	l2stateprovider "github.com/offchainlabs/nitro/bold/layer2-state-provider"
 	challenge_testing "github.com/offchainlabs/nitro/bold/testing"
 	"github.com/offchainlabs/nitro/bold/testing/setup"
-	butil "github.com/offchainlabs/nitro/bold/util"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
@@ -277,7 +276,7 @@ func testChallengeProtocolBOLD(t *testing.T, useExternalSigner bool, spawnerOpts
 		assertionChain.RollupAddress(),
 		chalManagerAddr.Address(),
 		&evilOpts,
-		butil.NewBackendWrapper(l1client, rpc.LatestBlockNumber),
+		l1client,
 		bold.NewDataPosterTransactor(dp),
 		solimpl.WithRpcHeadBlockNumber(rpc.LatestBlockNumber),
 	)
@@ -697,7 +696,7 @@ func createTestNodeOnL1ForBoldProtocol(
 		addresses.Rollup,
 		chalManagerAddr,
 		dp.Auth(),
-		butil.NewBackendWrapper(l1client, rpc.LatestBlockNumber),
+		l1client,
 		bold.NewDataPosterTransactor(dp),
 		solimpl.WithRpcHeadBlockNumber(rpc.LatestBlockNumber),
 	)
@@ -755,7 +754,7 @@ func deployContractsOnly(
 	cfg.ChainConfig = string(config)
 	addresses, err := setup.DeployFullRollupStack(
 		ctx,
-		butil.NewBackendWrapper(backend, rpc.LatestBlockNumber),
+		backend,
 		&l1TransactionOpts,
 		l1info.GetAddress("Sequencer"),
 		cfg,
@@ -909,7 +908,7 @@ func create2ndNodeWithConfigForBoldProtocol(
 		addresses.Rollup,
 		chalManagerAddr,
 		&evilOpts,
-		butil.NewBackendWrapper(l1client, rpc.LatestBlockNumber),
+		l1client,
 		bold.NewDataPosterTransactor(dp),
 	)
 	Require(t, err)

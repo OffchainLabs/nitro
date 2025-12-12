@@ -18,8 +18,8 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 
-	"github.com/offchainlabs/nitro/bold/chain-abstraction"
-	"github.com/offchainlabs/nitro/bold/chain-abstraction/sol-implementation"
+	protocol "github.com/offchainlabs/nitro/bold/chain-abstraction"
+	solimpl "github.com/offchainlabs/nitro/bold/chain-abstraction/sol-implementation"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 )
 
@@ -134,13 +134,6 @@ func (f *FlakyEthClient) HeaderByNumber(ctx context.Context, number *big.Int) (*
 		return nil, err
 	}
 	return f.ChainBackend.HeaderByNumber(ctx, number)
-}
-
-func (f *FlakyEthClient) HeaderU64(ctx context.Context) (uint64, error) {
-	if err := f.flaky(); err != nil {
-		return 0, err
-	}
-	return f.ChainBackend.HeaderU64(ctx)
 }
 
 func (f *FlakyEthClient) PendingCodeAt(ctx context.Context, account common.Address) ([]byte, error) {
