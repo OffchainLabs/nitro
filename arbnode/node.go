@@ -41,6 +41,7 @@ import (
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
+	"github.com/offchainlabs/nitro/solgen/go/node_interfacegen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/staker/bold"
@@ -53,8 +54,11 @@ import (
 	"github.com/offchainlabs/nitro/util/redisutil"
 	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/signature"
+	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
+
+var FailedToUseArbGetL1ConfirmationsRPCFromParentChainLogMsg = "Failed to get L1 confirmations from parent chain via arb_getL1Confirmations"
 
 type Config struct {
 	Sequencer                bool                           `koanf:"sequencer"`
@@ -1306,11 +1310,18 @@ func (n *Node) OnConfigReload(_ *Config, _ *Config) error {
 
 func registerAPIs(currentNode *Node, stack *node.Node) {
 	var apis []rpc.API
+	apis = append(apis, rpc.API{
+		Namespace: "arb",
+		Version:   "1.0",
+		Service:   NewArbAPI(currentNode),
+		Public:    true,
+	})
+
 	if currentNode.BlockValidator != nil {
 		apis = append(apis, rpc.API{
 			Namespace: "arb",
 			Version:   "1.0",
-			Service:   &BlockValidatorAPI{val: currentNode.BlockValidator},
+			Service:   NewBlockValidatorAPI(currentNode.BlockValidator),
 			Public:    false,
 		})
 	}
@@ -1318,10 +1329,8 @@ func registerAPIs(currentNode *Node, stack *node.Node) {
 		apis = append(apis, rpc.API{
 			Namespace: "arbdebug",
 			Version:   "1.0",
-			Service: &BlockValidatorDebugAPI{
-				val: currentNode.StatelessBlockValidator,
-			},
-			Public: false,
+			Service:   NewBlockValidatorDebugAPI(currentNode.StatelessBlockValidator),
+			Public:    false,
 		})
 	}
 	stack.RegisterAPIs(apis)
@@ -1601,19 +1610,6 @@ func (n *Node) StopAndWait() {
 	}
 }
 
-func (n *Node) FindInboxBatchContainingMessage(message arbutil.MessageIndex) containers.PromiseInterface[execution.InboxBatch] {
-	batchNum, found, err := n.InboxTracker.FindInboxBatchContainingMessage(message)
-	inboxBatch := execution.InboxBatch{
-		BatchNum: batchNum,
-		Found:    found,
-	}
-	return containers.NewReadyPromise(inboxBatch, err)
-}
-
-func (n *Node) GetBatchParentChainBlock(seqNum uint64) containers.PromiseInterface[uint64] {
-	return containers.NewReadyPromise(n.InboxTracker.GetBatchParentChainBlock(seqNum))
-}
-
 func (n *Node) WriteMessageFromSequencer(pos arbutil.MessageIndex, msgWithMeta arbostypes.MessageWithMetadata, msgResult execution.MessageResult, blockMetadata common.BlockMetadata) containers.PromiseInterface[struct{}] {
 	err := n.TxStreamer.WriteMessageFromSequencer(pos, msgWithMeta, msgResult, blockMetadata)
 	return containers.NewReadyPromise(struct{}{}, err)
@@ -1626,4 +1622,76 @@ func (n *Node) ExpectChosenSequencer() containers.PromiseInterface[struct{}] {
 
 func (n *Node) BlockMetadataAtMessageIndex(msgIdx arbutil.MessageIndex) containers.PromiseInterface[common.BlockMetadata] {
 	return containers.NewReadyPromise(n.TxStreamer.BlockMetadataAtMessageIndex(msgIdx))
+}
+
+func (n *Node) GetL1Confirmations(msgIdx arbutil.MessageIndex) containers.PromiseInterface[uint64] {
+	// batches not yet posted have 0 confirmations but no error
+	batchNum, found, err := n.InboxTracker.FindInboxBatchContainingMessage(msgIdx)
+	if err != nil {
+		return containers.NewReadyPromise(uint64(0), err)
+	}
+	if !found {
+		return containers.NewReadyPromise(uint64(0), nil)
+	}
+	parentChainBlockNum, err := n.InboxTracker.GetBatchParentChainBlock(batchNum)
+	if err != nil {
+		return containers.NewReadyPromise(uint64(0), err)
+	}
+
+	if n.L1Reader == nil {
+		return containers.NewReadyPromise(uint64(0), nil)
+	}
+	if n.L1Reader.IsParentChainArbitrum() {
+		return stopwaiter.LaunchPromiseThread(n.L1Reader, func(ctx context.Context) (uint64, error) {
+			parentChainClient := n.L1Reader.Client()
+			parentChainBlock, err := parentChainClient.BlockByNumber(ctx, new(big.Int).SetUint64(parentChainBlockNum))
+			if err != nil {
+				// Hide the parent chain RPC error from the client in case it contains sensitive information.
+				// Likely though, this error is just "not found" because the block got reorg'd.
+				return 0, fmt.Errorf("failed to get parent chain block %v containing batch", parentChainBlockNum)
+			}
+
+			var confs uint64
+			err = parentChainClient.Client().CallContext(ctx, &confs, "arb_getL1Confirmations", parentChainBlock.Number())
+			if err != nil {
+				// falls back to node interface method
+				log.Debug(FailedToUseArbGetL1ConfirmationsRPCFromParentChainLogMsg, "blockNumber", parentChainBlockNum, "blockHash", parentChainBlock.Hash(), "err", err)
+
+				parentNodeInterface, err := node_interfacegen.NewNodeInterface(types.NodeInterfaceAddress, parentChainClient)
+				if err != nil {
+					return 0, err
+				}
+				confs, err = parentNodeInterface.GetL1Confirmations(&bind.CallOpts{Context: ctx}, parentChainBlock.Hash())
+				if err != nil {
+					log.Warn(
+						"Failed to get L1 confirmations from parent chain",
+						"blockNumber", parentChainBlockNum,
+						"blockHash", parentChainBlock.Hash(), "err", err,
+					)
+					return 0, fmt.Errorf("failed to get L1 confirmations from parent chain for block %v", parentChainBlock.Hash())
+				}
+			}
+			return confs, nil
+		})
+	}
+	latestHeader, err := n.L1Reader.LastHeaderWithError()
+	if err != nil {
+		return containers.NewReadyPromise(uint64(0), err)
+	}
+	if latestHeader == nil {
+		return containers.NewReadyPromise(uint64(0), errors.New("no headers read from l1"))
+	}
+	latestBlockNum := latestHeader.Number.Uint64()
+	if latestBlockNum < parentChainBlockNum {
+		return containers.NewReadyPromise(uint64(0), nil)
+	}
+	return containers.NewReadyPromise(latestBlockNum-parentChainBlockNum, nil)
+}
+
+func (n *Node) FindBatchContainingMessage(msgIdx arbutil.MessageIndex) containers.PromiseInterface[uint64] {
+	batchNum, found, err := n.InboxTracker.FindInboxBatchContainingMessage(msgIdx)
+	if err == nil && !found {
+		return containers.NewReadyPromise(uint64(0), errors.New("block not yet found on any batch"))
+	}
+	return containers.NewReadyPromise(batchNum, err)
 }
