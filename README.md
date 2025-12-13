@@ -39,7 +39,7 @@ and compression system to minimize L1 costs.
 Essentially, Nitro runs Geth at layer 2 on top of Ethereum, and can prove fraud over the core engine of Geth
 compiled to WASM.
 
-Arbitrum One successfully migrated from the Classic Arbitrum stack onto Nitro on 8/31/22. (See [state migration](https://developer.arbitrum.io/migration/state-migration) and [dapp migration](https://developer.arbitrum.io/migration/dapp_migration) for more info).
+Arbitrum One successfully migrated from the Classic Arbitrum stack onto Nitro on 8/31/22. (See the [state migration guide](https://docs.arbitrum.io/run-arbitrum-node/nitro/migrate-state-and-history-from-classic) for more info).
 
 ## License
 
