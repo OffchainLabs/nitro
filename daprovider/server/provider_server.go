@@ -215,9 +215,9 @@ func (s *ReaderServer) CollectPreimages(
 
 // ValidatorServer methods
 
-func (s *ValidatorServer) GenerateReadPreimageProof(ctx context.Context, certHash common.Hash, offset hexutil.Uint64, certificate hexutil.Bytes) (*server_api.GenerateReadPreimageProofResult, error) {
+func (s *ValidatorServer) GenerateReadPreimageProof(ctx context.Context, offset hexutil.Uint64, certificate hexutil.Bytes) (*server_api.GenerateReadPreimageProofResult, error) {
 	// #nosec G115
-	promise := s.validator.GenerateReadPreimageProof(certHash, uint64(offset), certificate)
+	promise := s.validator.GenerateReadPreimageProof(uint64(offset), certificate)
 	result, err := promise.Await(ctx)
 	if err != nil {
 		return nil, err

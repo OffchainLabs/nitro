@@ -582,34 +582,30 @@ func getDAProviders(
 	// 1. External DA (if enabled)
 	// 2. AnyTrust (if enabled)
 
-	// Create external DA clients for each configured provider
-	for i := range config.DA.ExternalProviders {
-		providerConfig := &config.DA.ExternalProviders[i]
-		if !providerConfig.Enable {
-			log.Info("Skipping disabled external DA provider", "providerIndex", i)
-			continue
-		}
+	// Create external DA client if enabled
+	if config.DA.ExternalProvider.Enable {
+		providerConfig := &config.DA.ExternalProvider
 
-		log.Info("Creating external DA client", "providerIndex", i, "url", providerConfig.RPC.URL, "withWriter", providerConfig.WithWriter)
+		log.Info("Creating external DA client", "url", providerConfig.RPC.URL, "withWriter", providerConfig.WithWriter)
 		externalDAClient, err := daclient.NewClient(ctx, providerConfig, data_streaming.PayloadCommiter())
 		if err != nil {
-			return nil, nil, nil, fmt.Errorf("failed to create external DA client[%d]: %w", i, err)
+			return nil, nil, nil, fmt.Errorf("failed to create external DA client: %w", err)
 		}
 
 		// Add to writers array if batch poster is enabled and WithWriter is true
 		if providerConfig.WithWriter && config.BatchPoster.Enable {
 			writers = append(writers, externalDAClient)
-			log.Info("Added external DA writer", "providerIndex", i, "writerIndex", len(writers)-1, "totalWriters", len(writers))
+			log.Info("Added external DA writer")
 		}
 
 		// Register external DA client as both reader and validator
 		result, err := externalDAClient.GetSupportedHeaderBytes().Await(ctx)
 		if err != nil {
-			return nil, nil, nil, fmt.Errorf("failed to get supported header bytes from external DA client[%d]: %w", i, err)
+			return nil, nil, nil, fmt.Errorf("failed to get supported header bytes from external DA client: %w", err)
 		}
 		for _, hb := range result.HeaderBytes {
 			if err := dapRegistry.Register(hb, externalDAClient, externalDAClient); err != nil {
-				return nil, nil, nil, fmt.Errorf("failed to register DA provider[%d]: %w", i, err)
+				return nil, nil, nil, fmt.Errorf("failed to register DA provider: %w", err)
 			}
 		}
 	}
