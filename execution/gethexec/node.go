@@ -238,6 +238,9 @@ type ExecutionNode struct {
 }
 
 func CreateExecutionNode(
+	// initDataReader,
+	// chainConfig,
+	// genesisArbOSInit,
 	ctx context.Context,
 	stack *node.Node,
 	chainDB ethdb.Database,
@@ -262,6 +265,7 @@ func CreateExecutionNode(
 	var txPublisher TransactionPublisher
 	var sequencer *Sequencer
 
+	// Everying inside this function, with exception of this block will be moved to Start
 	var parentChainReader *headerreader.HeaderReader
 	if l1client != nil && !reflect.ValueOf(l1client).IsNil() {
 		arbSys, _ := precompilesgen.NewArbSys(types.ArbSysAddress, l1client)
@@ -400,6 +404,7 @@ func (n *ExecutionNode) MarkFeedStart(to arbutil.MessageIndex) containers.Promis
 	return containers.NewReadyPromise(struct{}{}, nil)
 }
 
+// This will be moved to Start
 func (n *ExecutionNode) Initialize(ctx context.Context) error {
 	config := n.configFetcher.Get()
 	err := n.ExecEngine.Initialize(config.Caching.StylusLRUCacheCapacity, &config.StylusTarget)
@@ -424,15 +429,22 @@ func (n *ExecutionNode) Initialize(ctx context.Context) error {
 }
 
 // not thread safe
+// Start will also be a RPC endpoint, and will receive parsedInitMsg and genesisAssertionCreationInfo from Consensus
 func (n *ExecutionNode) Start(ctx context.Context) error {
 	if n.started.Swap(true) {
 		return errors.New("already started")
 	}
-	// TODO after separation
-	// err := n.Stack.Start()
-	// if err != nil {
-	// 	return fmt.Errorf("error starting geth stack: %w", err)
+
+	// Code from CreateExecutionNode will be moved to here
+
+	// if n.l2Blockchain == nil {
+	//		n.l2Blockchain = n.initializeL2Blockchain(...)
+	//		n.validateGenesisAssertion(...)
 	// }
+	// n.pruneExecutionDB(...)
+	// n.validateBlockChain(...)
+	// n.rebuildLocalWasm(...)
+
 	n.ExecEngine.Start(ctx)
 	err := n.TxPublisher.Start(ctx)
 	if err != nil {
