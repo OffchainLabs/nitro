@@ -111,7 +111,7 @@ jobs:
 
       - name: Upload Go test Artifacts
         if: (inputs.run-defaults-a || inputs.run-defaults-b) && always()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: junit-reports-go-${{ inputs.run-defaults-a && 'defaults-a' || 'defaults-b' }}
           path: test-results/junit*.xml
@@ -232,7 +232,7 @@ jobs:
       # --------------------- ARCHIVE LOGS FOR ALL MODES ---------------------
 
       - name: Archive detailed run log
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: ${{ inputs.run-name }}-full.log
           path: full.log
