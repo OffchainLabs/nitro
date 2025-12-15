@@ -25,7 +25,7 @@ import (
 
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
-	"github.com/offchainlabs/nitro/daprovider/das"
+	"github.com/offchainlabs/nitro/daprovider/anytrust"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/headerreader"
 )
@@ -50,7 +50,7 @@ type DAServerConfig struct {
 
 	ParentChain ParentChainConfig `koanf:"parent-chain"`
 
-	DataAvailability das.DataAvailabilityConfig `koanf:"data-availability"`
+	DataAvailability anytrust.DataAvailabilityConfig `koanf:"data-availability"`
 
 	Conf     genericconf.ConfConfig `koanf:"conf"`
 	LogLevel string                 `koanf:"log-level"`
@@ -79,7 +79,7 @@ var DefaultDAServerConfig = DAServerConfig{
 	RESTPort:           9877,
 	RESTServerTimeouts: genericconf.HTTPServerTimeoutConfigDefault,
 	ParentChain:        DefaultParentChainConfig,
-	DataAvailability:   das.DefaultDataAvailabilityConfig,
+	DataAvailability:   anytrust.DefaultDataAvailabilityConfig,
 	Conf:               genericconf.ConfConfigDefault,
 	LogLevel:           "INFO",
 	LogType:            "plaintext",
@@ -126,7 +126,7 @@ func parseDAServer(args []string) (*DAServerConfig, error) {
 	f.Int("parent-chain.connection-attempts", DefaultParentChainConfig.ConnectionAttempts, "parent chain RPC connection attempts (spaced out at least 1 second per attempt, 0 to retry infinitely)")
 	f.String("parent-chain.sequencer-inbox-address", DefaultParentChainConfig.SequencerInboxAddress, "parent chain address of SequencerInbox contract to use for validating requests to store data. Can be set to \"none\" for testing")
 
-	das.DataAvailabilityConfigAddDaserverOptions("data-availability", f)
+	anytrust.DataAvailabilityConfigAddDaserverOptions("data-availability", f)
 	genericconf.ConfConfigAddOptions("conf", f)
 
 	k, err := confighelpers.BeginCommonParse(f, args)
@@ -194,7 +194,7 @@ func startMetrics(cfg *DAServerConfig) error {
 
 func startup() error {
 	// Some different defaults to DAS config in a node.
-	das.DefaultDataAvailabilityConfig.Enable = true
+	anytrust.DefaultDataAvailabilityConfig.Enable = true
 
 	serverConfig, err := parseDAServer(os.Args[1:])
 	if err != nil {
@@ -230,7 +230,7 @@ func startup() error {
 
 	var l1Reader *headerreader.HeaderReader
 	if serverConfig.ParentChain.NodeURL != "" {
-		l1Client, err := das.GetL1Client(ctx, serverConfig.ParentChain.ConnectionAttempts, serverConfig.ParentChain.NodeURL)
+		l1Client, err := anytrust.GetL1Client(ctx, serverConfig.ParentChain.ConnectionAttempts, serverConfig.ParentChain.NodeURL)
 		if err != nil {
 			return err
 		}
@@ -245,7 +245,7 @@ func startup() error {
 	if serverConfig.ParentChain.SequencerInboxAddress == "none" {
 		seqInboxAddress = nil
 	} else if len(serverConfig.ParentChain.SequencerInboxAddress) > 0 {
-		seqInboxAddress, err = das.OptionalAddressFromString(serverConfig.ParentChain.SequencerInboxAddress)
+		seqInboxAddress, err = anytrust.OptionalAddressFromString(serverConfig.ParentChain.SequencerInboxAddress)
 		if err != nil {
 			return err
 		}
@@ -256,7 +256,7 @@ func startup() error {
 		return errors.New("--parent-chain.sequencer-inbox-address must be set to a valid L1 contract address, or 'none'")
 	}
 
-	daReader, daWriter, signatureVerifier, daHealthChecker, dasLifecycleManager, err := das.CreateDAComponentsForDaserver(ctx, &serverConfig.DataAvailability, l1Reader, seqInboxAddress)
+	daReader, daWriter, signatureVerifier, daHealthChecker, dasLifecycleManager, err := anytrust.CreateDAComponentsForDaserver(ctx, &serverConfig.DataAvailability, l1Reader, seqInboxAddress)
 	if err != nil {
 		return err
 	}
@@ -271,17 +271,17 @@ func startup() error {
 	if serverConfig.EnableRPC {
 		log.Info("Starting HTTP-RPC server", "addr", serverConfig.RPCAddr, "port", serverConfig.RPCPort, "revision", vcsRevision, "vcs.time", vcsTime)
 
-		rpcServer, err = das.StartDASRPCServer(ctx, serverConfig.RPCAddr, serverConfig.RPCPort, serverConfig.RPCServerTimeouts, serverConfig.RPCServerBodyLimit, daReader, daWriter, daHealthChecker, signatureVerifier)
+		rpcServer, err = anytrust.StartDASRPCServer(ctx, serverConfig.RPCAddr, serverConfig.RPCPort, serverConfig.RPCServerTimeouts, serverConfig.RPCServerBodyLimit, daReader, daWriter, daHealthChecker, signatureVerifier)
 		if err != nil {
 			return err
 		}
 	}
 
-	var restServer *das.RestfulDasServer
+	var restServer *anytrust.RestfulDasServer
 	if serverConfig.EnableREST {
 		log.Info("Starting REST server", "addr", serverConfig.RESTAddr, "port", serverConfig.RESTPort, "revision", vcsRevision, "vcs.time", vcsTime)
 
-		restServer, err = das.NewRestfulDasServer(serverConfig.RESTAddr, serverConfig.RESTPort, serverConfig.RESTServerTimeouts, daReader, daHealthChecker)
+		restServer, err = anytrust.NewRestfulDasServer(serverConfig.RESTAddr, serverConfig.RESTPort, serverConfig.RESTServerTimeouts, daReader, daHealthChecker)
 		if err != nil {
 			return err
 		}

@@ -34,9 +34,9 @@ import (
 	"github.com/offchainlabs/nitro/broadcaster"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/daprovider"
+	"github.com/offchainlabs/nitro/daprovider/anytrust"
 	daconfig "github.com/offchainlabs/nitro/daprovider/config"
 	"github.com/offchainlabs/nitro/daprovider/daclient"
-	"github.com/offchainlabs/nitro/daprovider/das"
 	"github.com/offchainlabs/nitro/daprovider/data_streaming"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/execution/gethexec"
@@ -57,26 +57,26 @@ import (
 )
 
 type Config struct {
-	Sequencer                bool                           `koanf:"sequencer"`
-	ParentChainReader        headerreader.Config            `koanf:"parent-chain-reader" reload:"hot"`
-	InboxReader              InboxReaderConfig              `koanf:"inbox-reader" reload:"hot"`
-	DelayedSequencer         DelayedSequencerConfig         `koanf:"delayed-sequencer" reload:"hot"`
-	BatchPoster              BatchPosterConfig              `koanf:"batch-poster" reload:"hot"`
-	MessagePruner            MessagePrunerConfig            `koanf:"message-pruner" reload:"hot"`
-	BlockValidator           staker.BlockValidatorConfig    `koanf:"block-validator" reload:"hot"`
-	Feed                     broadcastclient.FeedConfig     `koanf:"feed" reload:"hot"`
-	Staker                   legacystaker.L1ValidatorConfig `koanf:"staker" reload:"hot"`
-	Bold                     bold.BoldConfig                `koanf:"bold"`
-	SeqCoordinator           SeqCoordinatorConfig           `koanf:"seq-coordinator"`
-	DataAvailability         das.DataAvailabilityConfig     `koanf:"data-availability"`
-	DA                       daconfig.DAConfig              `koanf:"da" reload:"hot"`
-	SyncMonitor              SyncMonitorConfig              `koanf:"sync-monitor"`
-	Dangerous                DangerousConfig                `koanf:"dangerous"`
-	TransactionStreamer      TransactionStreamerConfig      `koanf:"transaction-streamer" reload:"hot"`
-	Maintenance              MaintenanceConfig              `koanf:"maintenance" reload:"hot"`
-	ResourceMgmt             resourcemanager.Config         `koanf:"resource-mgmt" reload:"hot"`
-	BlockMetadataFetcher     BlockMetadataFetcherConfig     `koanf:"block-metadata-fetcher" reload:"hot"`
-	ConsensusExecutionSyncer ConsensusExecutionSyncerConfig `koanf:"consensus-execution-syncer"`
+	Sequencer                bool                            `koanf:"sequencer"`
+	ParentChainReader        headerreader.Config             `koanf:"parent-chain-reader" reload:"hot"`
+	InboxReader              InboxReaderConfig               `koanf:"inbox-reader" reload:"hot"`
+	DelayedSequencer         DelayedSequencerConfig          `koanf:"delayed-sequencer" reload:"hot"`
+	BatchPoster              BatchPosterConfig               `koanf:"batch-poster" reload:"hot"`
+	MessagePruner            MessagePrunerConfig             `koanf:"message-pruner" reload:"hot"`
+	BlockValidator           staker.BlockValidatorConfig     `koanf:"block-validator" reload:"hot"`
+	Feed                     broadcastclient.FeedConfig      `koanf:"feed" reload:"hot"`
+	Staker                   legacystaker.L1ValidatorConfig  `koanf:"staker" reload:"hot"`
+	Bold                     bold.BoldConfig                 `koanf:"bold"`
+	SeqCoordinator           SeqCoordinatorConfig            `koanf:"seq-coordinator"`
+	DataAvailability         anytrust.DataAvailabilityConfig `koanf:"data-availability"`
+	DA                       daconfig.DAConfig               `koanf:"da" reload:"hot"`
+	SyncMonitor              SyncMonitorConfig               `koanf:"sync-monitor"`
+	Dangerous                DangerousConfig                 `koanf:"dangerous"`
+	TransactionStreamer      TransactionStreamerConfig       `koanf:"transaction-streamer" reload:"hot"`
+	Maintenance              MaintenanceConfig               `koanf:"maintenance" reload:"hot"`
+	ResourceMgmt             resourcemanager.Config          `koanf:"resource-mgmt" reload:"hot"`
+	BlockMetadataFetcher     BlockMetadataFetcherConfig      `koanf:"block-metadata-fetcher" reload:"hot"`
+	ConsensusExecutionSyncer ConsensusExecutionSyncerConfig  `koanf:"consensus-execution-syncer"`
 	// SnapSyncConfig is only used for testing purposes, these should not be configured in production.
 	SnapSyncTest SnapSyncConfig
 }
@@ -150,7 +150,7 @@ func ConfigAddOptions(prefix string, f *pflag.FlagSet, feedInputEnable bool, fee
 	legacystaker.L1ValidatorConfigAddOptions(prefix+".staker", f)
 	bold.BoldConfigAddOptions(prefix+".bold", f)
 	SeqCoordinatorConfigAddOptions(prefix+".seq-coordinator", f)
-	das.DataAvailabilityConfigAddNodeOptions(prefix+".data-availability", f)
+	anytrust.DataAvailabilityConfigAddNodeOptions(prefix+".data-availability", f)
 	daconfig.DAConfigAddOptions(prefix+".da", f)
 	SyncMonitorConfigAddOptions(prefix+".sync-monitor", f)
 	DangerousConfigAddOptions(prefix+".dangerous", f)
@@ -173,7 +173,7 @@ var ConfigDefault = Config{
 	Staker:                   legacystaker.DefaultL1ValidatorConfig,
 	Bold:                     bold.DefaultBoldConfig,
 	SeqCoordinator:           DefaultSeqCoordinatorConfig,
-	DataAvailability:         das.DefaultDataAvailabilityConfigForNode,
+	DataAvailability:         anytrust.DefaultDataAvailabilityConfigForNode,
 	DA:                       daconfig.DefaultDAConfig,
 	SyncMonitor:              DefaultSyncMonitorConfig,
 	Dangerous:                DefaultDangerousConfig,
@@ -283,7 +283,7 @@ type Node struct {
 	SeqCoordinator           *SeqCoordinator
 	MaintenanceRunner        *MaintenanceRunner
 	providerServerCloseFn    func()
-	DASLifecycleManager      *das.LifecycleManager
+	DASLifecycleManager      *anytrust.LifecycleManager
 	SyncMonitor              *SyncMonitor
 	blockMetadataFetcher     *BlockMetadataFetcher
 	configFetcher            ConfigFetcher
@@ -613,7 +613,7 @@ func getDAProviders(
 	// Create AnyTrust DA provider if enabled (can coexist with external DA)
 	if config.DataAvailability.Enable {
 		// Map deprecated BatchPoster.MaxSize to DataAvailability.MaxBatchSize for backward compatibility
-		if config.BatchPoster.MaxSize != 0 && config.DataAvailability.MaxBatchSize == das.DefaultDataAvailabilityConfig.MaxBatchSize {
+		if config.BatchPoster.MaxSize != 0 && config.DataAvailability.MaxBatchSize == anytrust.DefaultDataAvailabilityConfig.MaxBatchSize {
 			log.Warn("Using deprecated batch-poster.max-size for AnyTrust max batch size; please migrate to data-availability.max-batch-size")
 			config.DataAvailability.MaxBatchSize = config.BatchPoster.MaxSize
 		}
@@ -621,7 +621,7 @@ func getDAProviders(
 		log.Info("Creating AnyTrust DA provider", "batchPosterEnabled", config.BatchPoster.Enable)
 
 		// Create AnyTrust factory
-		daFactory := das.NewFactory(
+		daFactory := anytrust.NewFactory(
 			&config.DataAvailability,
 			dataSigner,
 			l1client,

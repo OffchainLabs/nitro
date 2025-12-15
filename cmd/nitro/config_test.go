@@ -19,7 +19,7 @@ import (
 
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
-	"github.com/offchainlabs/nitro/daprovider/das"
+	"github.com/offchainlabs/nitro/daprovider/anytrust"
 	"github.com/offchainlabs/nitro/util/colors"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
@@ -29,7 +29,7 @@ func TestEmptyCliConfig(t *testing.T) {
 	NodeConfigAddOptions(f)
 	k, err := confighelpers.BeginCommonParse(f, []string{})
 	Require(t, err)
-	err = das.FixKeysetCLIParsing("node.data-availability.rpc-aggregator.backends", k)
+	err = anytrust.FixKeysetCLIParsing("node.data-availability.rpc-aggregator.backends", k)
 	Require(t, err)
 	var emptyCliNodeConfig NodeConfig
 	err = confighelpers.EndCommonParse(k, &emptyCliNodeConfig)

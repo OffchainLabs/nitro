@@ -24,8 +24,8 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
+	"github.com/offchainlabs/nitro/daprovider/anytrust"
 	anytrustutil "github.com/offchainlabs/nitro/daprovider/anytrust/util"
-	"github.com/offchainlabs/nitro/daprovider/das"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/util/metricsutil"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
@@ -70,11 +70,11 @@ type DataAvailabilityCheck struct {
 }
 
 func newDataAvailabilityCheck(ctx context.Context, dataAvailabilityCheckConfig *DataAvailabilityCheckConfig) (*DataAvailabilityCheck, error) {
-	l1Client, err := das.GetL1Client(ctx, dataAvailabilityCheckConfig.L1ConnectionAttempts, dataAvailabilityCheckConfig.L1NodeURL)
+	l1Client, err := anytrust.GetL1Client(ctx, dataAvailabilityCheckConfig.L1ConnectionAttempts, dataAvailabilityCheckConfig.L1NodeURL)
 	if err != nil {
 		return nil, err
 	}
-	seqInboxAddress, err := das.OptionalAddressFromString(dataAvailabilityCheckConfig.SequencerInboxAddress)
+	seqInboxAddress, err := anytrust.OptionalAddressFromString(dataAvailabilityCheckConfig.SequencerInboxAddress)
 	if err != nil {
 		return nil, err
 	}
@@ -82,13 +82,13 @@ func newDataAvailabilityCheck(ctx context.Context, dataAvailabilityCheckConfig *
 	if err != nil {
 		return nil, err
 	}
-	onlineUrls, err := das.RestfulServerURLsFromList(ctx, dataAvailabilityCheckConfig.OnlineUrlList)
+	onlineUrls, err := anytrust.RestfulServerURLsFromList(ctx, dataAvailabilityCheckConfig.OnlineUrlList)
 	if err != nil {
 		return nil, err
 	}
 	urlToReaderMap := make(map[string]anytrustutil.DASReader, len(onlineUrls))
 	for _, url := range onlineUrls {
-		reader, err := das.NewRestfulDasClientFromURL(url)
+		reader, err := anytrust.NewRestfulDasClientFromURL(url)
 		if err != nil {
 			return nil, err
 		}
@@ -177,7 +177,7 @@ func (d *DataAvailabilityCheck) checkDataAvailabilityForNewHashInBlockRange(ctx 
 			FromBlock: new(big.Int).SetUint64(currentBlock - d.config.L1BlocksPerRead),
 			ToBlock:   new(big.Int).SetUint64(currentBlock),
 			Addresses: []common.Address{*d.inboxAddr},
-			Topics:    [][]common.Hash{{das.BatchDeliveredID}},
+			Topics:    [][]common.Hash{{anytrust.BatchDeliveredID}},
 		}
 		logs, err := d.l1Client.FilterLogs(ctx, query)
 		if err != nil {
@@ -204,7 +204,7 @@ func (d *DataAvailabilityCheck) checkDataAvailabilityForOldHashInBlockRange(ctx 
 			FromBlock: new(big.Int).SetUint64(currentBlock),
 			ToBlock:   new(big.Int).SetUint64(currentBlock + d.config.L1BlocksPerRead),
 			Addresses: []common.Address{*d.inboxAddr},
-			Topics:    [][]common.Hash{{das.BatchDeliveredID}},
+			Topics:    [][]common.Hash{{anytrust.BatchDeliveredID}},
 		}
 		logs, err := d.l1Client.FilterLogs(ctx, query)
 		if err != nil {
@@ -231,7 +231,7 @@ func (d *DataAvailabilityCheck) checkDataAvailability(ctx context.Context, deliv
 	if err != nil {
 		return false, err
 	}
-	data, err := das.FindDASDataFromLog(ctx, d.inboxContract, deliveredEvent, *d.inboxAddr, d.l1Client, deliveredLog)
+	data, err := anytrust.FindDASDataFromLog(ctx, d.inboxContract, deliveredEvent, *d.inboxAddr, d.l1Client, deliveredLog)
 	if err != nil {
 		return false, err
 	}

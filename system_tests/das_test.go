@@ -20,7 +20,7 @@ import (
 	"github.com/offchainlabs/nitro/blsSignatures"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
-	"github.com/offchainlabs/nitro/daprovider/das"
+	"github.com/offchainlabs/nitro/daprovider/anytrust"
 	"github.com/offchainlabs/nitro/daprovider/data_streaming"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
@@ -35,33 +35,33 @@ func startLocalDASServer(
 	dataDir string,
 	l1client *ethclient.Client,
 	seqInboxAddress common.Address,
-) (*http.Server, *blsSignatures.PublicKey, das.BackendConfig, *das.RestfulDasServer, string) {
+) (*http.Server, *blsSignatures.PublicKey, anytrust.BackendConfig, *anytrust.RestfulDasServer, string) {
 	keyDir := t.TempDir()
-	pubkey, _, err := das.GenerateAndStoreKeys(keyDir)
+	pubkey, _, err := anytrust.GenerateAndStoreKeys(keyDir)
 	Require(t, err)
 
-	config := das.DefaultDataAvailabilityConfig
+	config := anytrust.DefaultDataAvailabilityConfig
 	config.Enable = true
-	config.Key = das.KeyConfig{KeyDir: keyDir}
-	config.LocalFileStorage = das.DefaultLocalFileStorageConfig
+	config.Key = anytrust.KeyConfig{KeyDir: keyDir}
+	config.LocalFileStorage = anytrust.DefaultLocalFileStorageConfig
 	config.LocalFileStorage.Enable = true
 	config.LocalFileStorage.DataDir = dataDir
 
-	storageService, lifecycleManager, err := das.CreatePersistentStorageService(ctx, &config)
+	storageService, lifecycleManager, err := anytrust.CreatePersistentStorageService(ctx, &config)
 	_ = lifecycleManager // Caller should manage lifecycle if needed
 	Require(t, err)
 	seqInboxCaller, err := bridgegen.NewSequencerInboxCaller(seqInboxAddress, l1client)
 	Require(t, err)
-	daWriter, err := das.NewSignAfterStoreDASWriter(ctx, config, storageService)
+	daWriter, err := anytrust.NewSignAfterStoreDASWriter(ctx, config, storageService)
 	Require(t, err)
-	signatureVerifier, err := das.NewSignatureVerifierWithSeqInboxCaller(seqInboxCaller, "")
+	signatureVerifier, err := anytrust.NewSignatureVerifierWithSeqInboxCaller(seqInboxCaller, "")
 	Require(t, err)
 	rpcLis, err := net.Listen("tcp", "localhost:0")
 	Require(t, err)
 	rpcAddr := rpcLis.Addr().String()
 	t.Logf("DAS RPC listener created at: %s", rpcAddr)
 
-	rpcServer, err := das.StartDASRPCServerOnListener(ctx, rpcLis, genericconf.HTTPServerTimeoutConfigDefault, genericconf.HTTPServerBodyLimitDefault, storageService, daWriter, storageService, signatureVerifier)
+	rpcServer, err := anytrust.StartDASRPCServerOnListener(ctx, rpcLis, genericconf.HTTPServerTimeoutConfigDefault, genericconf.HTTPServerBodyLimitDefault, storageService, daWriter, storageService, signatureVerifier)
 	Require(t, err)
 	t.Logf("DAS RPC server started and listening on: %s", rpcAddr)
 
@@ -70,11 +70,11 @@ func startLocalDASServer(
 	restAddr := restLis.Addr().String()
 	t.Logf("DAS REST listener created at: %s", restAddr)
 
-	restServer, err := das.NewRestfulDasServerOnListener(restLis, genericconf.HTTPServerTimeoutConfigDefault, storageService, storageService)
+	restServer, err := anytrust.NewRestfulDasServerOnListener(restLis, genericconf.HTTPServerTimeoutConfigDefault, storageService, storageService)
 	Require(t, err)
 	t.Logf("DAS REST server started and listening on: %s", restAddr)
 
-	beConfig := das.BackendConfig{
+	beConfig := anytrust.BackendConfig{
 		URL:    "http://" + rpcAddr,
 		Pubkey: blsPubToBase64(pubkey),
 	}
@@ -89,17 +89,17 @@ func blsPubToBase64(pubkey *blsSignatures.PublicKey) string {
 	return string(encodedPubkey)
 }
 
-func aggConfigForBackend(backendConfig das.BackendConfig) das.AggregatorConfig {
+func aggConfigForBackend(backendConfig anytrust.BackendConfig) anytrust.AggregatorConfig {
 	rpcConfig := rpcclient.DefaultClientConfig
 	rpcConfig.Timeout = 2 * time.Second // Short timeout for tests to fail fast
 	rpcConfig.URL = backendConfig.URL
-	return das.AggregatorConfig{
+	return anytrust.AggregatorConfig{
 		Enable:        true,
 		AssumedHonest: 1,
-		Backends:      das.BackendConfigList{backendConfig},
-		DASRPCClient: das.DASRPCClientConfig{
+		Backends:      anytrust.BackendConfigList{backendConfig},
+		DASRPCClient: anytrust.DASRPCClientConfig{
 			EnableChunkedStore: true,
-			DataStream:         data_streaming.TestDataStreamerConfig(das.DefaultDataStreamRpcMethods),
+			DataStream:         data_streaming.TestDataStreamerConfig(anytrust.DefaultDataStreamRpcMethods),
 			RPC:                rpcConfig,
 		},
 	}
@@ -123,7 +123,7 @@ func TestDASRekey(t *testing.T) {
 		// Setup DAS config
 		builder.nodeConfig.DataAvailability.Enable = true
 		builder.nodeConfig.DataAvailability.RPCAggregator = aggConfigForBackend(backendConfigA)
-		builder.nodeConfig.DataAvailability.RestAggregator = das.DefaultRestfulClientAggregatorConfig
+		builder.nodeConfig.DataAvailability.RestAggregator = anytrust.DefaultRestfulClientAggregatorConfig
 		builder.nodeConfig.DataAvailability.RestAggregator.Enable = true
 		builder.nodeConfig.DataAvailability.RestAggregator.Urls = []string{restServerUrlA}
 
@@ -134,7 +134,7 @@ func TestDASRekey(t *testing.T) {
 		// Setup second node
 		l1NodeConfigB.BlockValidator.Enable = false
 		l1NodeConfigB.DataAvailability.Enable = true
-		l1NodeConfigB.DataAvailability.RestAggregator = das.DefaultRestfulClientAggregatorConfig
+		l1NodeConfigB.DataAvailability.RestAggregator = anytrust.DefaultRestfulClientAggregatorConfig
 		l1NodeConfigB.DataAvailability.RestAggregator.Enable = true
 		l1NodeConfigB.DataAvailability.RestAggregator.Urls = []string{restServerUrlA}
 		nodeBParams := SecondNodeParams{
@@ -188,43 +188,43 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 	defer l1Reader.StopAndWait()
 
 	keyDir, fileDataDir := t.TempDir(), t.TempDir()
-	pubkey, _, err := das.GenerateAndStoreKeys(keyDir)
+	pubkey, _, err := anytrust.GenerateAndStoreKeys(keyDir)
 	Require(t, err)
 
-	serverConfig := das.DefaultDataAvailabilityConfig
+	serverConfig := anytrust.DefaultDataAvailabilityConfig
 	serverConfig.Enable = true
-	serverConfig.LocalCache = das.TestCacheConfig
+	serverConfig.LocalCache = anytrust.TestCacheConfig
 	serverConfig.LocalFileStorage.Enable = true
 	serverConfig.LocalFileStorage.DataDir = fileDataDir
 	serverConfig.LocalFileStorage.MaxRetention = time.Hour * 24 * 30
 	serverConfig.Key.KeyDir = keyDir
 	// L1NodeURL: normally we would have to set this but we are passing in the already constructed client and addresses to the factory
 
-	daReader, daWriter, signatureVerifier, daHealthChecker, lifecycleManager, err := das.CreateDAComponentsForDaserver(ctx, &serverConfig, l1Reader, &builder.addresses.SequencerInbox)
+	daReader, daWriter, signatureVerifier, daHealthChecker, lifecycleManager, err := anytrust.CreateDAComponentsForDaserver(ctx, &serverConfig, l1Reader, &builder.addresses.SequencerInbox)
 	Require(t, err)
 	defer lifecycleManager.StopAndWaitUntil(time.Second)
 	rpcLis, err := net.Listen("tcp", "localhost:0")
 	Require(t, err)
-	_, err = das.StartDASRPCServerOnListener(ctx, rpcLis, genericconf.HTTPServerTimeoutConfigDefault, genericconf.HTTPServerBodyLimitDefault, daReader, daWriter, daHealthChecker, signatureVerifier)
+	_, err = anytrust.StartDASRPCServerOnListener(ctx, rpcLis, genericconf.HTTPServerTimeoutConfigDefault, genericconf.HTTPServerBodyLimitDefault, daReader, daWriter, daHealthChecker, signatureVerifier)
 	Require(t, err)
 	restLis, err := net.Listen("tcp", "localhost:0")
 	Require(t, err)
-	restServer, err := das.NewRestfulDasServerOnListener(restLis, genericconf.HTTPServerTimeoutConfigDefault, daReader, daHealthChecker)
+	restServer, err := anytrust.NewRestfulDasServerOnListener(restLis, genericconf.HTTPServerTimeoutConfigDefault, daReader, daHealthChecker)
 	Require(t, err)
 
 	pubkeyA := pubkey
 	authorizeDASKeyset(t, ctx, pubkeyA, builder.L1Info, builder.L1.Client)
 
 	//
-	builder.nodeConfig.DataAvailability = das.DefaultDataAvailabilityConfig
+	builder.nodeConfig.DataAvailability = anytrust.DefaultDataAvailabilityConfig
 	builder.nodeConfig.DataAvailability.Enable = true
 	// AggregatorConfig set up below
-	beConfigA := das.BackendConfig{
+	beConfigA := anytrust.BackendConfig{
 		URL:    "http://" + rpcLis.Addr().String(),
 		Pubkey: blsPubToBase64(pubkey),
 	}
 	builder.nodeConfig.DataAvailability.RPCAggregator = aggConfigForBackend(beConfigA)
-	builder.nodeConfig.DataAvailability.RestAggregator = das.DefaultRestfulClientAggregatorConfig
+	builder.nodeConfig.DataAvailability.RestAggregator = anytrust.DefaultRestfulClientAggregatorConfig
 	builder.nodeConfig.DataAvailability.RestAggregator.Enable = true
 	builder.nodeConfig.DataAvailability.RestAggregator.Urls = []string{"http://" + restLis.Addr().String()}
 
@@ -236,11 +236,11 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 
 	// Create node to sync from chain
 	l1NodeConfigB := arbnode.ConfigDefaultL1NonSequencerTest()
-	l1NodeConfigB.DataAvailability = das.DefaultDataAvailabilityConfig
+	l1NodeConfigB.DataAvailability = anytrust.DefaultDataAvailabilityConfig
 	l1NodeConfigB.DataAvailability.Enable = true
 	// AggregatorConfig set up below
 	l1NodeConfigB.BlockValidator.Enable = false
-	l1NodeConfigB.DataAvailability.RestAggregator = das.DefaultRestfulClientAggregatorConfig
+	l1NodeConfigB.DataAvailability.RestAggregator = anytrust.DefaultRestfulClientAggregatorConfig
 	l1NodeConfigB.DataAvailability.RestAggregator.Enable = true
 	l1NodeConfigB.DataAvailability.RestAggregator.Urls = []string{"http://" + restLis.Addr().String()}
 	nodeBParams := SecondNodeParams{

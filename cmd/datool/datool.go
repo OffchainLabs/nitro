@@ -26,9 +26,9 @@ import (
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
+	"github.com/offchainlabs/nitro/daprovider/anytrust"
 	"github.com/offchainlabs/nitro/daprovider/anytrust/tree"
 	anytrustutil "github.com/offchainlabs/nitro/daprovider/anytrust/util"
-	"github.com/offchainlabs/nitro/daprovider/das"
 	"github.com/offchainlabs/nitro/util/signature"
 )
 
@@ -84,13 +84,13 @@ func startClient(args []string) error {
 // datool client rpc store
 
 type ClientStoreConfig struct {
-	Message               string                 `koanf:"message"`
-	RandomMessageSize     int                    `koanf:"random-message-size"`
-	DASRetentionPeriod    time.Duration          `koanf:"das-retention-period"`
-	SigningKey            string                 `koanf:"signing-key"`
-	SigningWallet         string                 `koanf:"signing-wallet"`
-	SigningWalletPassword string                 `koanf:"signing-wallet-password"`
-	DASRPCClient          das.DASRPCClientConfig `koanf:"das-rpc-client"`
+	Message               string                      `koanf:"message"`
+	RandomMessageSize     int                         `koanf:"random-message-size"`
+	DASRetentionPeriod    time.Duration               `koanf:"das-retention-period"`
+	SigningKey            string                      `koanf:"signing-key"`
+	SigningWallet         string                      `koanf:"signing-wallet"`
+	SigningWalletPassword string                      `koanf:"signing-wallet-password"`
+	DASRPCClient          anytrust.DASRPCClientConfig `koanf:"das-rpc-client"`
 }
 
 func parseClientStoreConfig(args []string) (*ClientStoreConfig, error) {
@@ -101,7 +101,7 @@ func parseClientStoreConfig(args []string) (*ClientStoreConfig, error) {
 	f.String("signing-wallet", "", "wallet containing ecdsa key to sign the message with")
 	f.String("signing-wallet-password", genericconf.PASSWORD_NOT_SET, "password to unlock the wallet, if not specified the user is prompted for the password")
 	f.Duration("das-retention-period", 24*time.Hour, "The period which DASes are requested to retain the stored batches.")
-	das.DASRPCClientConfigAddOptions("das-rpc-client", f)
+	anytrust.DASRPCClientConfigAddOptions("das-rpc-client", f)
 
 	k, err := confighelpers.BeginCommonParse(f, args)
 	if err != nil {
@@ -150,7 +150,7 @@ func startClientStore(args []string) error {
 		}
 	}
 
-	client, err := das.NewDASRPCClient(&config.DASRPCClient, signer)
+	client, err := anytrust.NewDASRPCClient(&config.DASRPCClient, signer)
 	if err != nil {
 		return err
 	}
@@ -214,7 +214,7 @@ func startRESTClientGetByHash(args []string) error {
 		return err
 	}
 
-	client, err := das.NewRestfulDasClientFromURL(config.URL)
+	client, err := anytrust.NewRestfulDasClientFromURL(config.URL)
 	if err != nil {
 		return err
 	}
@@ -277,13 +277,13 @@ func startKeyGen(args []string) error {
 	}
 
 	if !config.ECDSA {
-		_, _, err = das.GenerateAndStoreKeys(config.Dir)
+		_, _, err = anytrust.GenerateAndStoreKeys(config.Dir)
 		if err != nil {
 			return err
 		}
 		return nil
 	} else if !config.Wallet {
-		return das.GenerateAndStoreECDSAKeys(config.Dir)
+		return anytrust.GenerateAndStoreECDSAKeys(config.Dir)
 	} else {
 		walletConf := &genericconf.WalletConfig{
 			Pathname:      config.Dir,
@@ -308,7 +308,7 @@ func generateHash(message string) error {
 func parseDumpKeyset(args []string) (*DumpKeysetConfig, error) {
 	f := pflag.NewFlagSet("dump keyset", pflag.ContinueOnError)
 
-	das.AggregatorConfigAddOptions("keyset", f)
+	anytrust.AggregatorConfigAddOptions("keyset", f)
 	genericconf.ConfConfigAddOptions("conf", f)
 
 	k, err := confighelpers.BeginCommonParse(f, args)
@@ -316,7 +316,7 @@ func parseDumpKeyset(args []string) (*DumpKeysetConfig, error) {
 		return nil, err
 	}
 
-	if err = das.FixKeysetCLIParsing("keyset.backends", k); err != nil {
+	if err = anytrust.FixKeysetCLIParsing("keyset.backends", k); err != nil {
 		return nil, err
 	}
 
@@ -348,8 +348,8 @@ func parseDumpKeyset(args []string) (*DumpKeysetConfig, error) {
 // das keygen
 
 type DumpKeysetConfig struct {
-	Keyset das.AggregatorConfig   `koanf:"keyset"`
-	Conf   genericconf.ConfConfig `koanf:"conf"`
+	Keyset anytrust.AggregatorConfig `koanf:"keyset"`
+	Conf   genericconf.ConfConfig    `koanf:"conf"`
 }
 
 func dumpKeyset(args []string) error {
@@ -358,13 +358,13 @@ func dumpKeyset(args []string) error {
 		return err
 	}
 
-	services, err := das.ParseServices(config.Keyset, nil)
+	services, err := anytrust.ParseServices(config.Keyset, nil)
 	if err != nil {
 		return err
 	}
 
 	// #nosec G115
-	keysetHash, keysetBytes, err := das.KeysetHashFromServices(services, uint64(config.Keyset.AssumedHonest))
+	keysetHash, keysetBytes, err := anytrust.KeysetHashFromServices(services, uint64(config.Keyset.AssumedHonest))
 	if err != nil {
 		return err
 	}
