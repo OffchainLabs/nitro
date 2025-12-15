@@ -26,7 +26,7 @@ jobs:
           --run TestChallenge --timeout 60m --cover
 
       - name: Archive detailed run log
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: full.log
           path: full.log
