@@ -19,7 +19,7 @@ import (
 var ErrNotFound = errors.New("not found")
 
 type StorageService interface {
-	anytrustutil.DASReader
+	anytrustutil.Reader
 	Put(ctx context.Context, data []byte, expirationTime uint64) error
 	Sync(ctx context.Context) error
 	Closer

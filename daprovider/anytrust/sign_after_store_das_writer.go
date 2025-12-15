@@ -57,13 +57,13 @@ func KeyConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".priv-key", DefaultKeyConfig.PrivKey, "the base64 BLS private key to use for signing DAS certificates; if using any of the DAS storage types exactly one of key-dir or priv-key must be specified")
 }
 
-// SignAfterStoreDASWriter provides DAS signature functionality over a StorageService
+// SignAfterStoreWriter provides DAS signature functionality over a StorageService
 // by adapting DataAvailabilityServiceWriter.Store(...) to StorageService.Put(...).
 // There are two different signature functionalities it provides:
 //
-// 1) SignAfterStoreDASWriter.Store(...) assembles the returned hash into a
+// 1) SignAfterStoreWriter.Store(...) assembles the returned hash into a
 // DataAvailabilityCertificate and signs it with its BLS private key.
-type SignAfterStoreDASWriter struct {
+type SignAfterStoreWriter struct {
 	privKey        blsSignatures.PrivateKey
 	pubKey         *blsSignatures.PublicKey
 	keysetHash     [32]byte
@@ -71,7 +71,7 @@ type SignAfterStoreDASWriter struct {
 	storageService StorageService
 }
 
-func NewSignAfterStoreDASWriter(ctx context.Context, config DataAvailabilityConfig, storageService StorageService) (*SignAfterStoreDASWriter, error) {
+func NewSignAfterStoreWriter(ctx context.Context, config DataAvailabilityConfig, storageService StorageService) (*SignAfterStoreWriter, error) {
 	privKey, err := config.Key.BLSPrivKey()
 	if err != nil {
 		return nil, err
@@ -96,7 +96,7 @@ func NewSignAfterStoreDASWriter(ctx context.Context, config DataAvailabilityConf
 		return nil, err
 	}
 
-	return &SignAfterStoreDASWriter{
+	return &SignAfterStoreWriter{
 		privKey:        privKey,
 		pubKey:         &publicKey,
 		keysetHash:     ksHash,
@@ -105,9 +105,9 @@ func NewSignAfterStoreDASWriter(ctx context.Context, config DataAvailabilityConf
 	}, nil
 }
 
-func (d *SignAfterStoreDASWriter) Store(ctx context.Context, message []byte, timeout uint64) (c *anytrustutil.DataAvailabilityCertificate, err error) {
+func (d *SignAfterStoreWriter) Store(ctx context.Context, message []byte, timeout uint64) (c *anytrustutil.DataAvailabilityCertificate, err error) {
 	// #nosec G115
-	log.Trace("das.SignAfterStoreDASWriter.Store", "message", pretty.FirstFewBytes(message), "timeout", time.Unix(int64(timeout), 0), "this", d)
+	log.Trace("das.SignAfterStoreWriter.Store", "message", pretty.FirstFewBytes(message), "timeout", time.Unix(int64(timeout), 0), "this", d)
 	c = &anytrustutil.DataAvailabilityCertificate{
 		Timeout:     timeout,
 		DataHash:    tree.Hash(message),
@@ -135,6 +135,6 @@ func (d *SignAfterStoreDASWriter) Store(ctx context.Context, message []byte, tim
 	return c, nil
 }
 
-func (d *SignAfterStoreDASWriter) String() string {
-	return fmt.Sprintf("SignAfterStoreDASWriter{%v}", hexutil.Encode(blsSignatures.PublicKeyToBytes(*d.pubKey)))
+func (d *SignAfterStoreWriter) String() string {
+	return fmt.Sprintf("SignAfterStoreWriter{%v}", hexutil.Encode(blsSignatures.PublicKeyToBytes(*d.pubKey)))
 }

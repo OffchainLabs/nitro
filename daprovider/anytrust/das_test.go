@@ -38,9 +38,9 @@ func testDASStoreRetrieveMultipleInstances(t *testing.T, storageType string) {
 	storageService, lifecycleManager, err := CreatePersistentStorageService(firstCtx, &config)
 	Require(t, err)
 	defer lifecycleManager.StopAndWaitUntil(time.Second)
-	daWriter, err := NewSignAfterStoreDASWriter(firstCtx, config, storageService)
+	daWriter, err := NewSignAfterStoreWriter(firstCtx, config, storageService)
 	Require(t, err, "no das")
-	var daReader anytrustutil.DASReader = storageService
+	var daReader anytrustutil.Reader = storageService
 
 	// #nosec G115
 	timeout := uint64(time.Now().Add(time.Hour * 24).Unix())
@@ -67,7 +67,7 @@ func testDASStoreRetrieveMultipleInstances(t *testing.T, storageType string) {
 	storageService2, lifecycleManager, err := CreatePersistentStorageService(secondCtx, &config)
 	Require(t, err)
 	defer lifecycleManager.StopAndWaitUntil(time.Second)
-	var daReader2 anytrustutil.DASReader = storageService2
+	var daReader2 anytrustutil.Reader = storageService2
 
 	messageRetrieved2, err := daReader2.GetByHash(secondCtx, cert.DataHash)
 	Require(t, err, "Failed to retrieve message")
@@ -111,9 +111,9 @@ func testDASMissingMessage(t *testing.T, storageType string) {
 	storageService, lifecycleManager, err := CreatePersistentStorageService(ctx, &config)
 	Require(t, err)
 	defer lifecycleManager.StopAndWaitUntil(time.Second)
-	daWriter, err := NewSignAfterStoreDASWriter(ctx, config, storageService)
+	daWriter, err := NewSignAfterStoreWriter(ctx, config, storageService)
 	Require(t, err, "no das")
-	var daReader anytrustutil.DASReader = storageService
+	var daReader anytrustutil.Reader = storageService
 
 	messageSaved := []byte("hello world")
 	// #nosec G115

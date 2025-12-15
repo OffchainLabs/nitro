@@ -15,18 +15,18 @@ import (
 )
 
 type WriterPanicWrapper struct {
-	anytrustutil.DASWriter
+	anytrustutil.Writer
 }
 
-func NewWriterPanicWrapper(dataAvailabilityService anytrustutil.DASWriter) anytrustutil.DASWriter {
-	return &WriterPanicWrapper{DASWriter: dataAvailabilityService}
+func NewWriterPanicWrapper(dataAvailabilityService anytrustutil.Writer) anytrustutil.Writer {
+	return &WriterPanicWrapper{Writer: dataAvailabilityService}
 }
 func (w *WriterPanicWrapper) String() string {
-	return fmt.Sprintf("WriterPanicWrapper{%v}", w.DASWriter)
+	return fmt.Sprintf("WriterPanicWrapper{%v}", w.Writer)
 }
 
 func (w *WriterPanicWrapper) Store(ctx context.Context, message []byte, timeout uint64) (*anytrustutil.DataAvailabilityCertificate, error) {
-	cert, err := w.DASWriter.Store(ctx, message, timeout)
+	cert, err := w.Writer.Store(ctx, message, timeout)
 	if err != nil {
 		panic(fmt.Sprintf("panic wrapper Store: %v", err))
 	}
@@ -34,20 +34,20 @@ func (w *WriterPanicWrapper) Store(ctx context.Context, message []byte, timeout 
 }
 
 type ReaderPanicWrapper struct {
-	anytrustutil.DASReader
+	anytrustutil.Reader
 }
 
-func NewReaderPanicWrapper(dataAvailabilityService anytrustutil.DASReader) anytrustutil.DASReader {
+func NewReaderPanicWrapper(dataAvailabilityService anytrustutil.Reader) anytrustutil.Reader {
 	return &ReaderPanicWrapper{
-		DASReader: dataAvailabilityService,
+		Reader: dataAvailabilityService,
 	}
 }
 func (w *ReaderPanicWrapper) String() string {
-	return fmt.Sprintf("ReaderPanicWrapper{%v}", w.DASReader)
+	return fmt.Sprintf("ReaderPanicWrapper{%v}", w.Reader)
 }
 
 func (w *ReaderPanicWrapper) GetByHash(ctx context.Context, hash common.Hash) ([]byte, error) {
-	data, err := w.DASReader.GetByHash(ctx, hash)
+	data, err := w.Reader.GetByHash(ctx, hash)
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
 			log.Error("DAS hash lookup failed from cancelled context")

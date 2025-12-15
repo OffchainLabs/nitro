@@ -15,17 +15,17 @@ import (
 
 type ReaderTimeoutWrapper struct {
 	t time.Duration
-	anytrustutil.DASReader
+	anytrustutil.Reader
 }
 
 type TimeoutWrapper struct {
 	ReaderTimeoutWrapper
 }
 
-func NewReaderTimeoutWrapper(dataAvailabilityServiceReader anytrustutil.DASReader, t time.Duration) anytrustutil.DASReader {
+func NewReaderTimeoutWrapper(dataAvailabilityServiceReader anytrustutil.Reader, t time.Duration) anytrustutil.Reader {
 	return &ReaderTimeoutWrapper{
-		t:         t,
-		DASReader: dataAvailabilityServiceReader,
+		t:      t,
+		Reader: dataAvailabilityServiceReader,
 	}
 }
 
@@ -34,9 +34,9 @@ func (w *ReaderTimeoutWrapper) GetByHash(ctx context.Context, hash common.Hash) 
 	// For GetByHash we want fast cancellation of all goroutines started by
 	// the aggregator as soon as one returns.
 	defer cancel()
-	return w.DASReader.GetByHash(deadlineCtx, hash)
+	return w.Reader.GetByHash(deadlineCtx, hash)
 }
 
 func (w *ReaderTimeoutWrapper) String() string {
-	return fmt.Sprintf("ReaderTimeoutWrapper{%v}", w.DASReader)
+	return fmt.Sprintf("ReaderTimeoutWrapper{%v}", w.Reader)
 }

@@ -23,40 +23,40 @@ import (
 	"github.com/offchainlabs/nitro/util/containers"
 )
 
-type DASReader interface {
+type Reader interface {
 	GetByHash(ctx context.Context, hash common.Hash) ([]byte, error)
 	ExpirationPolicy(ctx context.Context) (ExpirationPolicy, error)
 	fmt.Stringer
 }
 
-type DASWriter interface {
+type Writer interface {
 	// Store requests that the message be stored until timeout (UTC time in unix epoch seconds).
 	Store(ctx context.Context, message []byte, timeout uint64) (*DataAvailabilityCertificate, error)
 	fmt.Stringer
 }
 
-type DASKeysetFetcher interface {
+type KeysetFetcher interface {
 	GetKeysetByHash(context.Context, common.Hash) ([]byte, error)
 }
 
-// NewReaderForDAS is generally meant to be only used by nitro.
+// NewReader is generally meant to be only used by nitro.
 // DA Providers should implement methods in the Reader interface independently
-func NewReaderForDAS(dasReader DASReader, keysetFetcher DASKeysetFetcher, validationMode daprovider.KeysetValidationMode) *readerForDAS {
-	return &readerForDAS{
+func NewReader(dasReader Reader, keysetFetcher KeysetFetcher, validationMode daprovider.KeysetValidationMode) *reader {
+	return &reader{
 		dasReader:      dasReader,
 		keysetFetcher:  keysetFetcher,
 		validationMode: validationMode,
 	}
 }
 
-type readerForDAS struct {
-	dasReader      DASReader
-	keysetFetcher  DASKeysetFetcher
+type reader struct {
+	dasReader      Reader
+	keysetFetcher  KeysetFetcher
 	validationMode daprovider.KeysetValidationMode
 }
 
 // recoverInternal is the shared implementation for both RecoverPayload and CollectPreimages
-func (d *readerForDAS) recoverInternal(
+func (d *reader) recoverInternal(
 	ctx context.Context,
 	batchNum uint64,
 	sequencerMsg []byte,
@@ -65,11 +65,11 @@ func (d *readerForDAS) recoverInternal(
 ) ([]byte, daprovider.PreimagesMap, error) {
 	// Convert validation mode to boolean for the internal function
 	validateSeqMsg := d.validationMode != daprovider.KeysetDontValidate
-	return recoverPayloadFromDasBatchInternal(ctx, batchNum, sequencerMsg, d.dasReader, d.keysetFetcher, validateSeqMsg, needPayload, needPreimages)
+	return recoverPayloadFromBatchInternal(ctx, batchNum, sequencerMsg, d.dasReader, d.keysetFetcher, validateSeqMsg, needPayload, needPreimages)
 }
 
 // RecoverPayload fetches the underlying payload from the DA provider
-func (d *readerForDAS) RecoverPayload(
+func (d *reader) RecoverPayload(
 	batchNum uint64,
 	batchBlockHash common.Hash,
 	sequencerMsg []byte,
@@ -81,7 +81,7 @@ func (d *readerForDAS) RecoverPayload(
 }
 
 // CollectPreimages collects preimages from the DA provider
-func (d *readerForDAS) CollectPreimages(
+func (d *reader) CollectPreimages(
 	batchNum uint64,
 	batchBlockHash common.Hash,
 	sequencerMsg []byte,
@@ -92,21 +92,21 @@ func (d *readerForDAS) CollectPreimages(
 	})
 }
 
-// NewWriterForDAS is generally meant to be only used by nitro.
+// NewWriter is generally meant to be only used by nitro.
 // DA Providers should implement methods in the DAProviderWriter interface independently
-func NewWriterForDAS(dasWriter DASWriter, maxMessageSize int) *writerForDAS {
-	return &writerForDAS{
+func NewWriter(dasWriter Writer, maxMessageSize int) *writer {
+	return &writer{
 		dasWriter:      dasWriter,
 		maxMessageSize: maxMessageSize,
 	}
 }
 
-type writerForDAS struct {
-	dasWriter      DASWriter
+type writer struct {
+	dasWriter      Writer
 	maxMessageSize int
 }
 
-func (d *writerForDAS) Store(message []byte, timeout uint64) containers.PromiseInterface[[]byte] {
+func (d *writer) Store(message []byte, timeout uint64) containers.PromiseInterface[[]byte] {
 	return containers.DoPromise(context.Background(), func(ctx context.Context) ([]byte, error) {
 		cert, err := d.dasWriter.Store(ctx, message, timeout)
 		if err != nil {
@@ -116,7 +116,7 @@ func (d *writerForDAS) Store(message []byte, timeout uint64) containers.PromiseI
 			// which should give time to correct any errors to avoid fallback. Otherwise
 			// the operator can set disable-dap-fallback-store-data-on-chain to totally
 			// disable automatic fallback to EthDA.
-			if errors.Is(err, ErrBatchToDasFailed) {
+			if errors.Is(err, ErrBatchFailed) {
 				return nil, fmt.Errorf("%w: %w", daprovider.ErrFallbackRequested, err)
 			}
 			return nil, err
@@ -125,29 +125,29 @@ func (d *writerForDAS) Store(message []byte, timeout uint64) containers.PromiseI
 	})
 }
 
-func (d *writerForDAS) GetMaxMessageSize() containers.PromiseInterface[int] {
+func (d *writer) GetMaxMessageSize() containers.PromiseInterface[int] {
 	return containers.NewReadyPromise(d.maxMessageSize, nil)
 }
 
 var (
-	ErrHashMismatch     = errors.New("result does not match expected hash")
-	ErrBatchToDasFailed = errors.New("unable to batch to DAS")
+	ErrHashMismatch = errors.New("result does not match expected hash")
+	ErrBatchFailed  = errors.New("unable to batch to DAS")
 )
 
 const MinLifetimeSecondsForDataAvailabilityCert = 7 * 24 * 60 * 60 // one week
 
-// RecoverPayloadFromDasBatch is deprecated, use recoverPayloadFromDasBatchInternal
-func RecoverPayloadFromDasBatch(
+// RecoverPayloadFromBatch is deprecated, use recoverPayloadFromBatchInternal
+func RecoverPayloadFromBatch(
 	ctx context.Context,
 	batchNum uint64,
 	sequencerMsg []byte,
-	dasReader DASReader,
-	keysetFetcher DASKeysetFetcher,
+	dasReader Reader,
+	keysetFetcher KeysetFetcher,
 	preimages daprovider.PreimagesMap,
 	validateSeqMsg bool,
 ) ([]byte, daprovider.PreimagesMap, error) {
 	needPreimages := preimages != nil
-	payload, recoveredPreimages, err := recoverPayloadFromDasBatchInternal(ctx, batchNum, sequencerMsg, dasReader, keysetFetcher, validateSeqMsg, true, needPreimages)
+	payload, recoveredPreimages, err := recoverPayloadFromBatchInternal(ctx, batchNum, sequencerMsg, dasReader, keysetFetcher, validateSeqMsg, true, needPreimages)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -166,13 +166,13 @@ func RecoverPayloadFromDasBatch(
 	return payload, recoveredPreimages, nil
 }
 
-// recoverPayloadFromDasBatchInternal is the shared implementation
-func recoverPayloadFromDasBatchInternal(
+// recoverPayloadFromBatchInternal is the shared implementation
+func recoverPayloadFromBatchInternal(
 	ctx context.Context,
 	batchNum uint64,
 	sequencerMsg []byte,
-	dasReader DASReader,
-	keysetFetcher DASKeysetFetcher,
+	dasReader Reader,
+	keysetFetcher KeysetFetcher,
 	validateSeqMsg bool,
 	needPayload bool,
 	needPreimages bool,
@@ -183,7 +183,7 @@ func recoverPayloadFromDasBatchInternal(
 		preimages = make(daprovider.PreimagesMap)
 		preimageRecorder = daprovider.RecordPreimagesTo(preimages)
 	}
-	cert, err := DeserializeDASCertFrom(bytes.NewReader(sequencerMsg[40:]))
+	cert, err := DeserializeCertFrom(bytes.NewReader(sequencerMsg[40:]))
 	if err != nil {
 		log.Error("Failed to deserialize DAS message", "err", err)
 		return nil, nil, nil
@@ -281,7 +281,7 @@ type DataAvailabilityCertificate struct {
 	Version     uint8
 }
 
-func DeserializeDASCertFrom(rd io.Reader) (c *DataAvailabilityCertificate, err error) {
+func DeserializeCertFrom(rd io.Reader) (c *DataAvailabilityCertificate, err error) {
 	r := bufio.NewReader(rd)
 	c = &DataAvailabilityCertificate{}
 
@@ -356,7 +356,7 @@ func (c *DataAvailabilityCertificate) SerializeSignableFields() []byte {
 
 func (c *DataAvailabilityCertificate) RecoverKeyset(
 	ctx context.Context,
-	da DASReader,
+	da Reader,
 	assumeKeysetValid bool,
 ) (*DataAvailabilityKeyset, error) {
 	keysetBytes, err := da.GetByHash(ctx, c.KeysetHash)

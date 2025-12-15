@@ -133,29 +133,29 @@ func (i WavmInbox) ReadDelayedInbox(seqNum uint64) (*arbostypes.L1IncomingMessag
 	})
 }
 
-type PreimageDASReader struct {
+type AnyTrustPreimageReader struct {
 }
 
-func (*PreimageDASReader) String() string {
-	return "PreimageDASReader"
+func (*AnyTrustPreimageReader) String() string {
+	return "AnyTrustPreimageReader"
 }
 
-func (dasReader *PreimageDASReader) GetByHash(ctx context.Context, hash common.Hash) ([]byte, error) {
+func (r *AnyTrustPreimageReader) GetByHash(ctx context.Context, hash common.Hash) ([]byte, error) {
 	oracle := func(hash common.Hash) ([]byte, error) {
 		return wavmio.ResolveTypedPreimage(arbutil.Keccak256PreimageType, hash)
 	}
 	return tree.Content(hash, oracle)
 }
 
-func (dasReader *PreimageDASReader) GetKeysetByHash(ctx context.Context, hash common.Hash) ([]byte, error) {
-	return dasReader.GetByHash(ctx, hash)
+func (r *AnyTrustPreimageReader) GetKeysetByHash(ctx context.Context, hash common.Hash) ([]byte, error) {
+	return r.GetByHash(ctx, hash)
 }
 
-func (dasReader *PreimageDASReader) HealthCheck(ctx context.Context) error {
+func (r *AnyTrustPreimageReader) HealthCheck(ctx context.Context) error {
 	return nil
 }
 
-func (dasReader *PreimageDASReader) ExpirationPolicy(ctx context.Context) (anytrustutil.ExpirationPolicy, error) {
+func (r *AnyTrustPreimageReader) ExpirationPolicy(ctx context.Context) (anytrustutil.ExpirationPolicy, error) {
 	return anytrustutil.DiscardImmediately, nil
 }
 
@@ -305,12 +305,12 @@ func main() {
 		if lastBlockHeader != nil {
 			delayedMessagesRead = lastBlockHeader.Nonce.Uint64()
 		}
-		var dasReader anytrustutil.DASReader
-		var dasKeysetFetcher anytrustutil.DASKeysetFetcher
+		var dasReader anytrustutil.Reader
+		var dasKeysetFetcher anytrustutil.KeysetFetcher
 		if dasEnabled {
-			// DAS batch and keysets are all together in the same preimage binary.
-			dasReader = &PreimageDASReader{}
-			dasKeysetFetcher = &PreimageDASReader{}
+			// AnyTrust batch and keysets are all together in the same preimage binary.
+			dasReader = &AnyTrustPreimageReader{}
+			dasKeysetFetcher = &AnyTrustPreimageReader{}
 		}
 		backend := WavmInbox{}
 		var keysetValidationMode = daprovider.KeysetPanicIfInvalid
@@ -319,9 +319,9 @@ func main() {
 		}
 		dapReaders := daprovider.NewDAProviderRegistry()
 		if dasReader != nil {
-			err = dapReaders.SetupDASReader(anytrustutil.NewReaderForDAS(dasReader, dasKeysetFetcher, keysetValidationMode), nil)
+			err = dapReaders.SetupAnyTrustReader(anytrustutil.NewReader(dasReader, dasKeysetFetcher, keysetValidationMode), nil)
 			if err != nil {
-				panic(fmt.Sprintf("Failed to register DAS reader: %v", err))
+				panic(fmt.Sprintf("Failed to register AnyTrust reader: %v", err))
 			}
 		}
 		err = dapReaders.SetupBlobReader(daprovider.NewReaderForBlobReader(&BlobPreimageReader{}))

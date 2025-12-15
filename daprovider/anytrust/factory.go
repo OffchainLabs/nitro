@@ -108,7 +108,7 @@ func CreateDAReaderAndWriter(
 	dataSigner signature.DataSignerFunc,
 	l1Reader *ethclient.Client,
 	sequencerInboxAddr common.Address,
-) (anytrustutil.DASWriter, anytrustutil.DASReader, *KeysetFetcher, *LifecycleManager, error) {
+) (anytrustutil.Writer, anytrustutil.Reader, *KeysetFetcher, *LifecycleManager, error) {
 	if !config.Enable {
 		return nil, nil, nil, nil, nil
 	}
@@ -119,7 +119,7 @@ func CreateDAReaderAndWriter(
 	}
 	// Done checking config requirements
 
-	var daWriter anytrustutil.DASWriter
+	var daWriter anytrustutil.Writer
 	daWriter, err := NewRPCAggregator(*config, dataSigner)
 	if err != nil {
 		return nil, nil, nil, nil, err
@@ -132,7 +132,7 @@ func CreateDAReaderAndWriter(
 	restAgg.Start(ctx)
 	var lifecycleManager LifecycleManager
 	lifecycleManager.Register(restAgg)
-	var daReader anytrustutil.DASReader = restAgg
+	var daReader anytrustutil.Reader = restAgg
 	keysetFetcher, err := NewKeysetFetcher(l1Reader, sequencerInboxAddr)
 	if err != nil {
 		return nil, nil, nil, nil, err
@@ -146,7 +146,7 @@ func CreateDAComponentsForDaserver(
 	config *DataAvailabilityConfig,
 	l1Reader *headerreader.HeaderReader,
 	seqInboxAddress *common.Address,
-) (anytrustutil.DASReader, anytrustutil.DASWriter, *SignatureVerifier, DataAvailabilityServiceHealthChecker, *LifecycleManager, error) {
+) (anytrustutil.Reader, anytrustutil.Writer, *SignatureVerifier, DataAvailabilityServiceHealthChecker, *LifecycleManager, error) {
 	if !config.Enable {
 		return nil, nil, nil, nil, nil, nil
 	}
@@ -205,13 +205,13 @@ func CreateDAComponentsForDaserver(
 
 	}
 
-	var daWriter anytrustutil.DASWriter
-	var daReader anytrustutil.DASReader = storageService
+	var daWriter anytrustutil.Writer
+	var daReader anytrustutil.Reader = storageService
 	var daHealthChecker DataAvailabilityServiceHealthChecker = storageService
 	var signatureVerifier *SignatureVerifier
 
 	if config.Key.KeyDir != "" || config.Key.PrivKey != "" {
-		daWriter, err = NewSignAfterStoreDASWriter(ctx, *config, storageService)
+		daWriter, err = NewSignAfterStoreWriter(ctx, *config, storageService)
 		if err != nil {
 			return nil, nil, nil, nil, nil, err
 		}
@@ -246,7 +246,7 @@ func CreateDAReader(
 	config *DataAvailabilityConfig,
 	l1Reader *headerreader.HeaderReader,
 	seqInboxAddress *common.Address,
-) (anytrustutil.DASReader, *KeysetFetcher, *LifecycleManager, error) {
+) (anytrustutil.Reader, *KeysetFetcher, *LifecycleManager, error) {
 	if !config.Enable {
 		return nil, nil, nil, nil
 	}
@@ -262,9 +262,9 @@ func CreateDAReader(
 	// Done checking config requirements
 
 	var lifecycleManager LifecycleManager
-	var daReader anytrustutil.DASReader
+	var daReader anytrustutil.Reader
 	if config.RestAggregator.Enable {
-		var restAgg *SimpleDASReaderAggregator
+		var restAgg *SimpleReaderAggregator
 		restAgg, err := NewRestfulClientAggregator(ctx, &config.RestAggregator)
 		if err != nil {
 			return nil, nil, nil, err

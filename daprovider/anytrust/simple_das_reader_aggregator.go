@@ -23,7 +23,7 @@ import (
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
-// Most of the time we will use the SimpleDASReaderAggregator only to  aggregate
+// Most of the time we will use the SimpleReaderAggregator only to  aggregate
 // RestfulDasClients, so the configuration and factory function are given more
 // specific names.
 type RestfulClientAggregatorConfig struct {
@@ -79,10 +79,10 @@ func SimpleExploreExploitStrategyConfigAddOptions(prefix string, f *pflag.FlagSe
 	f.Uint32(prefix+".exploit-iterations", DefaultSimpleExploreExploitStrategyConfig.ExploitIterations, "number of consecutive GetByHash calls to the aggregator where each call will cause it to select from REST endpoints in order of best latency and success rate, before switching to explore mode")
 }
 
-func NewRestfulClientAggregator(ctx context.Context, config *RestfulClientAggregatorConfig) (*SimpleDASReaderAggregator, error) {
-	a := SimpleDASReaderAggregator{
+func NewRestfulClientAggregator(ctx context.Context, config *RestfulClientAggregatorConfig) (*SimpleReaderAggregator, error) {
+	a := SimpleReaderAggregator{
 		config: config,
-		stats:  make(map[anytrustutil.DASReader]readerStats),
+		stats:  make(map[anytrustutil.Reader]readerStats),
 	}
 
 	combinedUrls := make(map[string]bool)
@@ -162,28 +162,28 @@ type readerStat struct {
 
 type readerStatMessage struct {
 	readerStat
-	reader anytrustutil.DASReader
+	reader anytrustutil.Reader
 }
 
-type SimpleDASReaderAggregator struct {
+type SimpleReaderAggregator struct {
 	stopwaiter.StopWaiter
 
 	config *RestfulClientAggregatorConfig
 
 	readersMutex sync.RWMutex
 	// readers and stats are only to be updated by the stats goroutine
-	readers []anytrustutil.DASReader
-	stats   map[anytrustutil.DASReader]readerStats
+	readers []anytrustutil.Reader
+	stats   map[anytrustutil.Reader]readerStats
 
 	strategy aggregatorStrategy
 
 	statMessages chan readerStatMessage
 }
 
-func (a *SimpleDASReaderAggregator) GetByHash(ctx context.Context, hash common.Hash) ([]byte, error) {
+func (a *SimpleReaderAggregator) GetByHash(ctx context.Context, hash common.Hash) ([]byte, error) {
 	a.readersMutex.RLock()
 	defer a.readersMutex.RUnlock()
-	log.Trace("das.SimpleDASReaderAggregator.GetByHash", "key", pretty.PrettyHash(hash), "this", a)
+	log.Trace("das.SimpleReaderAggregator.GetByHash", "key", pretty.PrettyHash(hash), "this", a)
 
 	type dataErrorPair struct {
 		data []byte
@@ -201,7 +201,7 @@ func (a *SimpleDASReaderAggregator) GetByHash(ctx context.Context, hash common.H
 			waitChan := make(chan interface{})
 			for _, reader := range readers {
 				wg.Add(1)
-				go func(reader anytrustutil.DASReader) {
+				go func(reader anytrustutil.Reader) {
 					defer wg.Done()
 					data, err := a.tryGetByHash(subCtx, hash, reader)
 					if err != nil && errors.Is(ctx.Err(), context.Canceled) {
@@ -244,8 +244,8 @@ func (a *SimpleDASReaderAggregator) GetByHash(ctx context.Context, hash common.H
 	return nil, fmt.Errorf("data wasn't able to be retrieved from any DAS Reader: %v", errorCollection)
 }
 
-func (a *SimpleDASReaderAggregator) tryGetByHash(
-	ctx context.Context, hash common.Hash, reader anytrustutil.DASReader,
+func (a *SimpleReaderAggregator) tryGetByHash(
+	ctx context.Context, hash common.Hash, reader anytrustutil.Reader,
 ) ([]byte, error) {
 	stat := readerStatMessage{reader: reader}
 	stat.success = false
@@ -256,7 +256,7 @@ func (a *SimpleDASReaderAggregator) tryGetByHash(
 		if tree.ValidHash(hash, result) {
 			stat.success = true
 		} else {
-			err = fmt.Errorf("SimpleDASReaderAggregator got result from reader(%v) not matching hash", reader)
+			err = fmt.Errorf("SimpleReaderAggregator got result from reader(%v) not matching hash", reader)
 		}
 	}
 	stat.latency = time.Since(start)
@@ -265,13 +265,13 @@ func (a *SimpleDASReaderAggregator) tryGetByHash(
 	case a.statMessages <- stat:
 		// Non-blocking write to stat channel
 	default:
-		log.Warn("SimpleDASReaderAggregator stats processing goroutine is backed up, dropping", "dropped stats", stat)
+		log.Warn("SimpleReaderAggregator stats processing goroutine is backed up, dropping", "dropped stats", stat)
 	}
 
 	return result, err
 }
 
-func (a *SimpleDASReaderAggregator) Start(ctx context.Context) {
+func (a *SimpleReaderAggregator) Start(ctx context.Context) {
 	a.StopWaiter.Start(ctx, a)
 	onlineUrlsChan := StartRestfulServerListFetchDaemon(a.StopWaiter.GetContext(), a.config.OnlineUrlList, a.config.OnlineUrlListFetchInterval)
 
@@ -280,7 +280,7 @@ func (a *SimpleDASReaderAggregator) Start(ctx context.Context) {
 		defer a.readersMutex.Unlock()
 		combinedUrls := a.config.Urls
 		combinedUrls = append(combinedUrls, urls...)
-		combinedReaders := make(map[anytrustutil.DASReader]bool)
+		combinedReaders := make(map[anytrustutil.Reader]bool)
 		for _, url := range combinedUrls {
 			reader, err := NewRestfulDasClientFromURL(url)
 			if err != nil {
@@ -288,7 +288,7 @@ func (a *SimpleDASReaderAggregator) Start(ctx context.Context) {
 			}
 			combinedReaders[reader] = true
 		}
-		a.readers = make([]anytrustutil.DASReader, 0, len(combinedUrls))
+		a.readers = make([]anytrustutil.Reader, 0, len(combinedUrls))
 		// Update reader and add newly added stats
 		for reader := range combinedReaders {
 			a.readers = append(a.readers, reader)
@@ -330,7 +330,7 @@ func (a *SimpleDASReaderAggregator) Start(ctx context.Context) {
 	})
 }
 
-func (a *SimpleDASReaderAggregator) Close(ctx context.Context) error {
+func (a *SimpleReaderAggregator) Close(ctx context.Context) error {
 	a.StopWaiter.StopOnly()
 	waitChan, err := a.StopWaiter.GetWaitChannel()
 	if err != nil {
@@ -344,15 +344,15 @@ func (a *SimpleDASReaderAggregator) Close(ctx context.Context) error {
 	}
 }
 
-func (a *SimpleDASReaderAggregator) String() string {
-	return fmt.Sprintf("das.SimpleDASReaderAggregator{%v}", a.config.Urls)
+func (a *SimpleReaderAggregator) String() string {
+	return fmt.Sprintf("das.SimpleReaderAggregator{%v}", a.config.Urls)
 }
 
-func (a *SimpleDASReaderAggregator) HealthCheck(ctx context.Context) error {
+func (a *SimpleReaderAggregator) HealthCheck(ctx context.Context) error {
 	return nil
 }
 
-func (a *SimpleDASReaderAggregator) ExpirationPolicy(ctx context.Context) (anytrustutil.ExpirationPolicy, error) {
+func (a *SimpleReaderAggregator) ExpirationPolicy(ctx context.Context) (anytrustutil.ExpirationPolicy, error) {
 	a.readersMutex.RLock()
 	defer a.readersMutex.RUnlock()
 	if len(a.readers) == 0 {

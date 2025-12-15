@@ -50,7 +50,7 @@ func testRpcImpl(t *testing.T, size, times int, concurrent bool) {
 	storageService, lifecycleManager, err := CreatePersistentStorageService(ctx, &config)
 	testhelpers.RequireImpl(t, err)
 	defer lifecycleManager.StopAndWaitUntil(time.Second)
-	localDas, err := NewSignAfterStoreDASWriter(ctx, config, storageService)
+	localDas, err := NewSignAfterStoreWriter(ctx, config, storageService)
 	testhelpers.RequireImpl(t, err)
 
 	testPrivateKey, err := crypto.GenerateKey()

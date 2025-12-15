@@ -12,7 +12,7 @@ import (
 	"github.com/offchainlabs/nitro/util/pretty"
 )
 
-func logPut(store string, data []byte, timeout uint64, reader anytrustutil.DASReader, more ...interface{}) {
+func logPut(store string, data []byte, timeout uint64, reader anytrustutil.Reader, more ...interface{}) {
 	if len(more) == 0 {
 		// #nosec G115
 		log.Trace(

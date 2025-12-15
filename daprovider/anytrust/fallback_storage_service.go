@@ -19,7 +19,7 @@ import (
 
 type FallbackStorageService struct {
 	StorageService
-	backup                     anytrustutil.DASReader
+	backup                     anytrustutil.Reader
 	backupHealthChecker        DataAvailabilityServiceHealthChecker
 	backupRetentionSeconds     uint64
 	ignoreRetentionWriteErrors bool
@@ -33,7 +33,7 @@ type FallbackStorageService struct {
 // a successful GetByHash result from the backup is Put into the primary.
 func NewFallbackStorageService(
 	primary StorageService,
-	backup anytrustutil.DASReader,
+	backup anytrustutil.Reader,
 	backupHealthChecker DataAvailabilityServiceHealthChecker,
 	backupRetentionSeconds uint64, // how long to retain data that we copy in from the backup (MaxUint64 means forever)
 	ignoreRetentionWriteErrors bool, // if true, don't return error if write of retention data to primary fails

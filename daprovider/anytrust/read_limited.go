@@ -16,12 +16,12 @@ import (
 // it is a programming error in the code setting up the node or daserver if a non-writeable object
 // is used in a writeable context.
 
-func NewReadLimitedStorageService(reader anytrustutil.DASReader) *readLimitedStorageService {
+func NewReadLimitedStorageService(reader anytrustutil.Reader) *readLimitedStorageService {
 	return &readLimitedStorageService{reader}
 }
 
 type readLimitedStorageService struct {
-	anytrustutil.DASReader
+	anytrustutil.Reader
 }
 
 func (s *readLimitedStorageService) Put(ctx context.Context, data []byte, expiration uint64) error {
@@ -37,15 +37,15 @@ func (s *readLimitedStorageService) Close(ctx context.Context) error {
 }
 
 func (s *readLimitedStorageService) String() string {
-	return fmt.Sprintf("readLimitedStorageService(%v)", s.DASReader)
+	return fmt.Sprintf("readLimitedStorageService(%v)", s.Reader)
 
 }
 
 type readLimitedDataAvailabilityService struct {
-	anytrustutil.DASReader
+	anytrustutil.Reader
 }
 
-func NewReadLimitedDataAvailabilityService(da anytrustutil.DASReader) *readLimitedDataAvailabilityService {
+func NewReadLimitedDataAvailabilityService(da anytrustutil.Reader) *readLimitedDataAvailabilityService {
 	return &readLimitedDataAvailabilityService{da}
 }
 
@@ -54,5 +54,5 @@ func (*readLimitedDataAvailabilityService) Store(ctx context.Context, message []
 }
 
 func (s *readLimitedDataAvailabilityService) String() string {
-	return fmt.Sprintf("ReadLimitedDataAvailabilityService(%v)", s.DASReader)
+	return fmt.Sprintf("ReadLimitedDataAvailabilityService(%v)", s.Reader)
 }

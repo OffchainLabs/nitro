@@ -52,7 +52,7 @@ func startLocalDASServer(
 	Require(t, err)
 	seqInboxCaller, err := bridgegen.NewSequencerInboxCaller(seqInboxAddress, l1client)
 	Require(t, err)
-	daWriter, err := anytrust.NewSignAfterStoreDASWriter(ctx, config, storageService)
+	daWriter, err := anytrust.NewSignAfterStoreWriter(ctx, config, storageService)
 	Require(t, err)
 	signatureVerifier, err := anytrust.NewSignatureVerifierWithSeqInboxCaller(seqInboxCaller, "")
 	Require(t, err)

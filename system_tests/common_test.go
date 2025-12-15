@@ -2216,8 +2216,8 @@ func setupConfigWithDAS(
 
 	l1NodeConfigA.DataAvailability = anytrust.DefaultDataAvailabilityConfig
 	var lifecycleManager *anytrust.LifecycleManager
-	var daReader anytrustutil.DASReader
-	var daWriter anytrustutil.DASWriter
+	var daReader anytrustutil.Reader
+	var daWriter anytrustutil.Writer
 	var daHealthChecker anytrust.DataAvailabilityServiceHealthChecker
 	var signatureVerifier *anytrust.SignatureVerifier
 	if dasModeString != "onchain" && dasModeString != "referenceda" {

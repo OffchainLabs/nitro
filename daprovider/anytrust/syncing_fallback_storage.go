@@ -96,7 +96,7 @@ type l1SyncService struct {
 
 	config        SyncToStorageConfig
 	syncTo        StorageService
-	dataSource    anytrustutil.DASReader
+	dataSource    anytrustutil.Reader
 	keysetFetcher *KeysetFetcher
 
 	l1Reader      *headerreader.HeaderReader
@@ -166,7 +166,7 @@ func writeSyncState(syncDir string, blockNr uint64) error {
 	return os.Rename(f.Name(), path)
 }
 
-func newl1SyncService(config *SyncToStorageConfig, syncTo StorageService, dataSource anytrustutil.DASReader, l1Reader *headerreader.HeaderReader, inboxAddr common.Address) (*l1SyncService, error) {
+func newl1SyncService(config *SyncToStorageConfig, syncTo StorageService, dataSource anytrustutil.Reader, l1Reader *headerreader.HeaderReader, inboxAddr common.Address) (*l1SyncService, error) {
 	l1Client := l1Reader.Client()
 	inboxContract, err := bridgegen.NewSequencerInbox(inboxAddr, l1Client)
 	if err != nil {
@@ -219,7 +219,7 @@ func (s *l1SyncService) processBatchDelivered(ctx context.Context, batchDelivere
 
 	data = append(header, data...)
 	var payload []byte
-	if payload, _, err = anytrustutil.RecoverPayloadFromDasBatch(ctx, deliveredEvent.BatchSequenceNumber.Uint64(), data, s.dataSource, s.keysetFetcher, nil, true); err != nil {
+	if payload, _, err = anytrustutil.RecoverPayloadFromBatch(ctx, deliveredEvent.BatchSequenceNumber.Uint64(), data, s.dataSource, s.keysetFetcher, nil, true); err != nil {
 		log.Error("recover payload failed", "txhash", batchDeliveredLog.TxHash, "data", data)
 		return err
 	}
@@ -415,7 +415,7 @@ type SyncingFallbackStorageService struct {
 
 func NewSyncingFallbackStorageService(ctx context.Context,
 	primary StorageService,
-	backup anytrustutil.DASReader,
+	backup anytrustutil.Reader,
 	backupHealthChecker DataAvailabilityServiceHealthChecker,
 	l1Reader *headerreader.HeaderReader,
 	inboxAddr common.Address,

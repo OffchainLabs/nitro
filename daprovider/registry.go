@@ -78,13 +78,13 @@ func (r *DAProviderRegistry) SupportedHeaderBytes() []byte {
 	return result
 }
 
-// SetupDASReader registers a DAS reader and validator for the DAS header bytes (with and without Tree flag)
-func (r *DAProviderRegistry) SetupDASReader(reader Reader, validator Validator) error {
-	// Register for DAS without tree flag (0x80)
+// SetupAnyTrustReader registers an AnyTrust reader and validator for the AnyTrust header bytes (with and without Tree flag)
+func (r *DAProviderRegistry) SetupAnyTrustReader(reader Reader, validator Validator) error {
+	// Register for AnyTrust without tree flag (0x80)
 	if err := r.Register(DASMessageHeaderFlag, reader, validator); err != nil {
 		return err
 	}
-	// Register for DAS with tree flag (0x88 = 0x80 | 0x08)
+	// Register for AnyTrust with tree flag (0x88 = 0x80 | 0x08)
 	return r.Register(DASMessageHeaderFlag|TreeDASMessageHeaderFlag, reader, validator)
 }
 

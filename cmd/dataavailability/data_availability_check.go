@@ -65,7 +65,7 @@ type DataAvailabilityCheck struct {
 	config         *DataAvailabilityCheckConfig
 	inboxAddr      *common.Address
 	inboxContract  *bridgegen.SequencerInbox
-	urlToReaderMap map[string]anytrustutil.DASReader
+	urlToReaderMap map[string]anytrustutil.Reader
 	checkInterval  time.Duration
 }
 
@@ -86,7 +86,7 @@ func newDataAvailabilityCheck(ctx context.Context, dataAvailabilityCheckConfig *
 	if err != nil {
 		return nil, err
 	}
-	urlToReaderMap := make(map[string]anytrustutil.DASReader, len(onlineUrls))
+	urlToReaderMap := make(map[string]anytrustutil.Reader, len(onlineUrls))
 	for _, url := range onlineUrls {
 		reader, err := anytrust.NewRestfulDasClientFromURL(url)
 		if err != nil {
@@ -238,7 +238,7 @@ func (d *DataAvailabilityCheck) checkDataAvailability(ctx context.Context, deliv
 	if data == nil {
 		return false, nil
 	}
-	cert, err := anytrustutil.DeserializeDASCertFrom(bytes.NewReader(data))
+	cert, err := anytrustutil.DeserializeCertFrom(bytes.NewReader(data))
 	if err != nil {
 		return true, err
 	}

@@ -40,7 +40,7 @@ func TestDAS_BasicAggregationLocal(t *testing.T) {
 		config.Key.PrivKey = privKey
 
 		storageServices = append(storageServices, NewMemoryBackedStorageService(ctx))
-		das, err := NewSignAfterStoreDASWriter(ctx, config, storageServices[i])
+		das, err := NewSignAfterStoreWriter(ctx, config, storageServices[i])
 		Require(t, err)
 		signerMask := uint64(1 << i)
 		details, err := NewServiceDetails(das, *das.pubKey, signerMask, "service"+strconv.Itoa(i))
@@ -122,20 +122,20 @@ func (b *randomBagOfFailures) shouldFail() failureType {
 type WrapStore struct {
 	t        *testing.T
 	injector failureInjector
-	anytrustutil.DASWriter
+	anytrustutil.Writer
 }
 
 func (w *WrapStore) Store(ctx context.Context, message []byte, timeout uint64) (*anytrustutil.DataAvailabilityCertificate, error) {
 	switch w.injector.shouldFail() {
 	case success:
-		return w.DASWriter.Store(ctx, message, timeout)
+		return w.Writer.Store(ctx, message, timeout)
 	case immediateError:
 		return nil, errors.New("expected Store failure")
 	case tooSlow:
 		<-ctx.Done()
 		return nil, ctx.Err()
 	case dataCorruption:
-		cert, err := w.DASWriter.Store(ctx, message, timeout)
+		cert, err := w.Writer.Store(ctx, message, timeout)
 		if err != nil {
 			return nil, err
 		}
@@ -194,7 +194,7 @@ func testConfigurableStorageFailures(t *testing.T, shouldFailAggregation bool) {
 		config.Key.PrivKey = privKey
 
 		storageServices = append(storageServices, NewMemoryBackedStorageService(ctx))
-		das, err := NewSignAfterStoreDASWriter(ctx, config, storageServices[i])
+		das, err := NewSignAfterStoreWriter(ctx, config, storageServices[i])
 		Require(t, err)
 		signerMask := uint64(1 << i)
 		details, err := NewServiceDetails(&WrapStore{t, injectedFailures, das}, *das.pubKey, signerMask, "service"+strconv.Itoa(i))
@@ -310,7 +310,7 @@ func TestDAS_InsufficientBackendsTriggersFallback(t *testing.T) {
 		config.Key.PrivKey = privKey
 
 		storageService := NewMemoryBackedStorageService(ctx)
-		das, err := NewSignAfterStoreDASWriter(ctx, config, storageService)
+		das, err := NewSignAfterStoreWriter(ctx, config, storageService)
 		Require(t, err)
 		signerMask := uint64(1 << i)
 		details, err := NewServiceDetails(&WrapStore{t, injectedFailures, das}, *das.pubKey, signerMask, "service"+strconv.Itoa(i))
@@ -326,9 +326,9 @@ func TestDAS_InsufficientBackendsTriggersFallback(t *testing.T) {
 	aggregator, err := newAggregator(daConfig, backends)
 	Require(t, err)
 
-	// Wrap the aggregator with writerForDAS to test error conversion
+	// Wrap the aggregator with writer to test error conversion
 	// Use 0 for maxMessageSize to indicate use default
-	writer := anytrustutil.NewWriterForDAS(aggregator, 0)
+	writer := anytrustutil.NewWriter(aggregator, 0)
 
 	rawMsg := []byte("It's time for you to see the fnords.")
 	promise := writer.Store(rawMsg, 0)
@@ -345,8 +345,8 @@ func TestDAS_InsufficientBackendsTriggersFallback(t *testing.T) {
 	}
 
 	// Also verify the original error is preserved
-	if !errors.Is(err, anytrustutil.ErrBatchToDasFailed) {
-		Fail(t, fmt.Sprintf("Expected error to contain ErrBatchToDasFailed, got: %v", err))
+	if !errors.Is(err, anytrustutil.ErrBatchFailed) {
+		Fail(t, fmt.Sprintf("Expected error to contain ErrBatchFailed, got: %v", err))
 	}
 
 	log.Info("Fallback error correctly returned", "error", err, "result", result)

@@ -19,7 +19,7 @@ import (
 	anytrustutil "github.com/offchainlabs/nitro/daprovider/anytrust/util"
 )
 
-// RestfulDasClient implements anytrustutil.DASReader
+// RestfulDasClient implements anytrustutil.Reader
 type RestfulDasClient struct {
 	url string
 }

@@ -74,7 +74,7 @@ type Aggregator struct {
 }
 
 type ServiceDetails struct {
-	service     anytrustutil.DASWriter
+	service     anytrustutil.Writer
 	pubKey      blsSignatures.PublicKey
 	signersMask uint64
 	metricName  string
@@ -84,7 +84,7 @@ func (s *ServiceDetails) String() string {
 	return fmt.Sprintf("ServiceDetails{service: %v, signersMask %d}", s.service, s.signersMask)
 }
 
-func NewServiceDetails(service anytrustutil.DASWriter, pubKey blsSignatures.PublicKey, signersMask uint64, metricName string) (*ServiceDetails, error) {
+func NewServiceDetails(service anytrustutil.Writer, pubKey blsSignatures.PublicKey, signersMask uint64, metricName string) (*ServiceDetails, error) {
 	if bits.OnesCount64(signersMask) != 1 {
 		return nil, fmt.Errorf("tried to configure backend DAS %v with invalid signersMask %X", service, signersMask)
 	}
@@ -257,7 +257,7 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64) 
 					returned = 1
 				} else if int(storeFailures.Load()) > a.maxAllowedServiceStoreFailures {
 					cd := certDetails{}
-					cd.err = fmt.Errorf("aggregator failed to store message to at least %d out of %d DASes (assuming %d are honest). %w", a.requiredServicesForStore, len(a.services), a.config.AssumedHonest, anytrustutil.ErrBatchToDasFailed)
+					cd.err = fmt.Errorf("aggregator failed to store message to at least %d out of %d DASes (assuming %d are honest). %w", a.requiredServicesForStore, len(a.services), a.config.AssumedHonest, anytrustutil.ErrBatchFailed)
 					certDetailsChan <- cd
 					returned = 2
 				}
@@ -288,10 +288,10 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64) 
 	verified, err := blsSignatures.VerifySignature(aggCert.Sig, aggCert.SerializeSignableFields(), aggPubKey)
 	if err != nil {
 		//nolint:errorlint
-		return nil, fmt.Errorf("%s. %w", err.Error(), anytrustutil.ErrBatchToDasFailed)
+		return nil, fmt.Errorf("%s. %w", err.Error(), anytrustutil.ErrBatchFailed)
 	}
 	if !verified {
-		return nil, fmt.Errorf("failed aggregate signature check. %w", anytrustutil.ErrBatchToDasFailed)
+		return nil, fmt.Errorf("failed aggregate signature check. %w", anytrustutil.ErrBatchFailed)
 	}
 
 	if storeFailures.Load() == 0 {

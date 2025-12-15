@@ -15,7 +15,7 @@ import (
 	"github.com/offchainlabs/nitro/daprovider/anytrust/tree"
 )
 
-func TestSimpleDASReaderAggregator(t *testing.T) { //nolint
+func TestSimpleReaderAggregator(t *testing.T) { //nolint
 	initTest(t)
 
 	ctx, cancel := context.WithCancel(context.Background())

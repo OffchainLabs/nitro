@@ -36,8 +36,8 @@ func (*dummyReader) ExpirationPolicy(ctx context.Context) (anytrustutil.Expirati
 }
 
 func TestDAS_SimpleExploreExploit(t *testing.T) {
-	readers := []anytrustutil.DASReader{&dummyReader{0}, &dummyReader{1}, &dummyReader{2}, &dummyReader{3}, &dummyReader{4}, &dummyReader{5}}
-	stats := make(map[anytrustutil.DASReader]readerStats)
+	readers := []anytrustutil.Reader{&dummyReader{0}, &dummyReader{1}, &dummyReader{2}, &dummyReader{3}, &dummyReader{4}, &dummyReader{5}}
+	stats := make(map[anytrustutil.Reader]readerStats)
 	stats[readers[0]] = []readerStat{ // weighted avg 10s
 		{10 * time.Second, true},
 	}
@@ -62,7 +62,7 @@ func TestDAS_SimpleExploreExploit(t *testing.T) {
 		{8 * time.Second, true},
 	}
 
-	expectedOrdering := []anytrustutil.DASReader{readers[1], readers[2], readers[5], readers[4], readers[0], readers[3]}
+	expectedOrdering := []anytrustutil.Reader{readers[1], readers[2], readers[5], readers[4], readers[0], readers[3]}
 
 	expectedExploreIterations, expectedExploitIterations := uint32(5), uint32(5)
 	strategy := simpleExploreExploitStrategy{
@@ -71,7 +71,7 @@ func TestDAS_SimpleExploreExploit(t *testing.T) {
 	}
 	strategy.update(readers, stats)
 
-	checkMatch := func(expected, was []anytrustutil.DASReader, doMatch bool) {
+	checkMatch := func(expected, was []anytrustutil.Reader, doMatch bool) {
 		if len(expected) != len(was) {
 			Fail(t, fmt.Sprintf("Incorrect number of nextReaders %d, expected %d", len(was), len(expected)))
 		}
