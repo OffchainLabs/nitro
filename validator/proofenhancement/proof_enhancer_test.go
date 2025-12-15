@@ -60,7 +60,7 @@ type mockValidator struct {
 	err                             error
 }
 
-func (m *mockValidator) GenerateReadPreimageProof(certHash common.Hash, offset uint64, certificate []byte) containers.PromiseInterface[daprovider.PreimageProofResult] {
+func (m *mockValidator) GenerateReadPreimageProof(offset uint64, certificate []byte) containers.PromiseInterface[daprovider.PreimageProofResult] {
 	if m.err != nil {
 		return containers.NewReadyPromise(daprovider.PreimageProofResult{}, m.err)
 	}
