@@ -81,11 +81,11 @@ func (r *DAProviderRegistry) SupportedHeaderBytes() []byte {
 // SetupAnyTrustReader registers an AnyTrust reader and validator for the AnyTrust header bytes (with and without Tree flag)
 func (r *DAProviderRegistry) SetupAnyTrustReader(reader Reader, validator Validator) error {
 	// Register for AnyTrust without tree flag (0x80)
-	if err := r.Register(DASMessageHeaderFlag, reader, validator); err != nil {
+	if err := r.Register(AnyTrustMessageHeaderFlag, reader, validator); err != nil {
 		return err
 	}
 	// Register for AnyTrust with tree flag (0x88 = 0x80 | 0x08)
-	return r.Register(DASMessageHeaderFlag|TreeDASMessageHeaderFlag, reader, validator)
+	return r.Register(AnyTrustMessageHeaderFlag|AnyTrustTreeMessageHeaderFlag, reader, validator)
 }
 
 // SetupBlobReader registers a blob reader for the blob header byte (no validator)

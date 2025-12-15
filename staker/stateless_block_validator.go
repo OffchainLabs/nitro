@@ -333,7 +333,7 @@ func (v *StatelessBlockValidator) readFullBatch(ctx context.Context, batchNum ui
 			if err != nil {
 				// Matches the way keyset validation was done inside DAS readers i.e logging the error
 				//  But other daproviders might just want to return the error
-				if daprovider.IsDASMessageHeaderByte(headerByte) && strings.Contains(err.Error(), daprovider.ErrSeqMsgValidation.Error()) {
+				if daprovider.IsAnyTrustMessageHeaderByte(headerByte) && strings.Contains(err.Error(), daprovider.ErrSeqMsgValidation.Error()) {
 					log.Error(err.Error())
 				} else if daprovider.IsDACertificateMessageHeaderByte(headerByte) && daprovider.IsCertificateValidationError(err) {
 					log.Warn("Certificate validation of sequencer batch failed, treating it as an empty batch", "batch", batchNum, "error", err)
@@ -345,7 +345,7 @@ func (v *StatelessBlockValidator) readFullBatch(ctx context.Context, batchNum ui
 			}
 		} else {
 			// No reader found for this header byte - check if it's a known type
-			if daprovider.IsDASMessageHeaderByte(headerByte) {
+			if daprovider.IsAnyTrustMessageHeaderByte(headerByte) {
 				log.Error("No DAS Reader configured for DAS message", "headerByte", fmt.Sprintf("0x%02x", headerByte))
 			} else if daprovider.IsBlobHashesHeaderByte(headerByte) {
 				log.Error("No Blob Reader configured for blob message", "headerByte", fmt.Sprintf("0x%02x", headerByte))

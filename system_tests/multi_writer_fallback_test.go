@@ -539,7 +539,7 @@ func TestMultiWriterFallback_CustomDAToAnyTrustExplicit(t *testing.T) {
 		}
 
 		headerByte := serializedBatch[40]
-		if daprovider.IsDASMessageHeaderByte(headerByte) {
+		if daprovider.IsAnyTrustMessageHeaderByte(headerByte) {
 			t.Logf("Phase 2: Found AnyTrust batch (header byte: 0x%02x)", headerByte)
 			phase2AnyTrustFound = true
 			break
@@ -975,7 +975,7 @@ func TestMultiWriterFallback_AnyTrustToCalldataOnBackendFailure(t *testing.T) {
 		}
 
 		headerByte := serializedBatch[40]
-		if daprovider.IsDASMessageHeaderByte(headerByte) {
+		if daprovider.IsAnyTrustMessageHeaderByte(headerByte) {
 			phase1AnyTrustBatches++
 			t.Logf("Phase 1: Found AnyTrust batch (header=0x%02x)", headerByte)
 		}

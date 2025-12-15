@@ -115,7 +115,7 @@ func ParseSequencerMessage(ctx context.Context, batchNum uint64, batchBlockHash 
 			if err != nil {
 				// Matches the way keyset validation was done inside DAS readers i.e logging the error
 				//  But other daproviders might just want to return the error
-				if daprovider.IsDASMessageHeaderByte(payload[0]) && strings.Contains(err.Error(), daprovider.ErrSeqMsgValidation.Error()) {
+				if daprovider.IsAnyTrustMessageHeaderByte(payload[0]) && strings.Contains(err.Error(), daprovider.ErrSeqMsgValidation.Error()) {
 					if keysetValidationMode == daprovider.KeysetPanicIfInvalid {
 						panic(err.Error())
 					} else {
@@ -134,7 +134,7 @@ func ParseSequencerMessage(ctx context.Context, batchNum uint64, batchBlockHash 
 			}
 		} else {
 			// No reader found for this header byte - check if it's a known type
-			if daprovider.IsDASMessageHeaderByte(payload[0]) {
+			if daprovider.IsAnyTrustMessageHeaderByte(payload[0]) {
 				return nil, fmt.Errorf("no DAS reader configured for DAS message (header byte 0x%02x)", payload[0])
 			} else if daprovider.IsBlobHashesHeaderByte(payload[0]) {
 				return nil, daprovider.ErrNoBlobReader

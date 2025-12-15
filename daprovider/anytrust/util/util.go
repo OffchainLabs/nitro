@@ -289,7 +289,7 @@ func DeserializeCertFrom(rd io.Reader) (c *DataAvailabilityCertificate, err erro
 	if err != nil {
 		return nil, err
 	}
-	if !daprovider.IsDASMessageHeaderByte(header) {
+	if !daprovider.IsAnyTrustMessageHeaderByte(header) {
 		return nil, errors.New("tried to deserialize a message that doesn't have the DAS header")
 	}
 
@@ -310,7 +310,7 @@ func DeserializeCertFrom(rd io.Reader) (c *DataAvailabilityCertificate, err erro
 	}
 	c.Timeout = binary.BigEndian.Uint64(timeoutBuf[:])
 
-	if daprovider.IsTreeDASMessageHeaderByte(header) {
+	if daprovider.IsAnyTrustTreeMessageHeaderByte(header) {
 		var versionBuf [1]byte
 		_, err = io.ReadFull(r, versionBuf[:])
 		if err != nil {
@@ -508,9 +508,9 @@ func StringToExpirationPolicy(s string) (ExpirationPolicy, error) {
 
 func Serialize(c *DataAvailabilityCertificate) []byte {
 
-	flags := daprovider.DASMessageHeaderFlag
+	flags := daprovider.AnyTrustMessageHeaderFlag
 	if c.Version != 0 {
-		flags |= daprovider.TreeDASMessageHeaderFlag
+		flags |= daprovider.AnyTrustTreeMessageHeaderFlag
 	}
 
 	buf := make([]byte, 0)

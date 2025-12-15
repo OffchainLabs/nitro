@@ -28,8 +28,8 @@ type Factory struct {
 
 // SupportedHeaderBytes are the header bytes supported by AnyTrust DA.
 var SupportedHeaderBytes = []byte{
-	daprovider.DASMessageHeaderFlag,
-	daprovider.DASMessageHeaderFlag | daprovider.TreeDASMessageHeaderFlag,
+	daprovider.AnyTrustMessageHeaderFlag,
+	daprovider.AnyTrustMessageHeaderFlag | daprovider.AnyTrustTreeMessageHeaderFlag,
 }
 
 // NewFactory creates a new AnyTrust DA provider factory.
@@ -53,8 +53,8 @@ func NewFactory(
 
 func (f *Factory) GetSupportedHeaderBytes() []byte {
 	return []byte{
-		daprovider.DASMessageHeaderFlag,
-		daprovider.DASMessageHeaderFlag | daprovider.TreeDASMessageHeaderFlag,
+		daprovider.AnyTrustMessageHeaderFlag,
+		daprovider.AnyTrustMessageHeaderFlag | daprovider.AnyTrustTreeMessageHeaderFlag,
 	}
 }
 

@@ -72,7 +72,7 @@ type SyncToStorageConfig struct {
 var DefaultSyncToStorageConfig = SyncToStorageConfig{
 	Eager:                    false,
 	EagerLowerBoundBlock:     0,
-	RetentionPeriod:          daprovider.DefaultDASRetentionPeriod,
+	RetentionPeriod:          daprovider.DefaultAnyTrustRetentionPeriod,
 	DelayOnError:             time.Second,
 	IgnoreWriteErrors:        true,
 	ParentChainBlocksPerRead: 100,
@@ -289,7 +289,7 @@ func FindDASDataFromLog(
 		log.Warn("BatchDelivered - no data found", "data", data)
 		return nil, nil
 	}
-	if !daprovider.IsDASMessageHeaderByte(data[0]) {
+	if !daprovider.IsAnyTrustMessageHeaderByte(data[0]) {
 		log.Warn("BatchDelivered - data not DAS")
 		return nil, nil
 	}
