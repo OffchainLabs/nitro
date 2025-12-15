@@ -13,7 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 
-	"github.com/offchainlabs/nitro/daprovider/das/dastree"
+	"github.com/offchainlabs/nitro/daprovider/anytrust/tree"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/util/pretty"
 )
@@ -91,7 +91,7 @@ func (c *KeysetFetcher) GetKeysetByHash(ctx context.Context, hash common.Hash) (
 		return nil, err
 	}
 	for iter.Next() {
-		if dastree.ValidHash(hash, iter.Event.KeysetBytes) {
+		if tree.ValidHash(hash, iter.Event.KeysetBytes) {
 			cache.put(hash, iter.Event.KeysetBytes)
 			return iter.Event.KeysetBytes, nil
 		}

@@ -15,7 +15,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 
 	"github.com/offchainlabs/nitro/cmd/genericconf"
-	"github.com/offchainlabs/nitro/daprovider/das/dastree"
+	"github.com/offchainlabs/nitro/daprovider/anytrust/tree"
 )
 
 type mockS3FullClient struct {
@@ -71,8 +71,8 @@ func TestS3StorageService(t *testing.T) {
 	Require(t, err)
 
 	val1 := []byte("The first value")
-	val1CorrectKey := dastree.Hash(val1)
-	val2IncorrectKey := dastree.Hash(append(val1, 0))
+	val1CorrectKey := tree.Hash(val1)
+	val2IncorrectKey := tree.Hash(append(val1, 0))
 
 	_, err = s3Service.GetByHash(ctx, val1CorrectKey)
 	if !errors.Is(err, ErrNotFound) {

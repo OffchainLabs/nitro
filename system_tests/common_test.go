@@ -67,9 +67,9 @@ import (
 	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/daprovider"
+	"github.com/offchainlabs/nitro/daprovider/anytrust/tree"
 	anytrustutil "github.com/offchainlabs/nitro/daprovider/anytrust/util"
 	"github.com/offchainlabs/nitro/daprovider/das"
-	"github.com/offchainlabs/nitro/daprovider/das/dastree"
 	"github.com/offchainlabs/nitro/daprovider/data_streaming"
 	"github.com/offchainlabs/nitro/daprovider/referenceda"
 	dapserver "github.com/offchainlabs/nitro/daprovider/server"
@@ -2154,7 +2154,7 @@ func authorizeDASKeyset(
 
 	// Wait for the keyset event to be queryable via eth_getLogs
 	// This prevents race conditions where batch posting happens before L1 indexing completes
-	keysetHash := dastree.Hash(keysetBytes)
+	keysetHash := tree.Hash(keysetBytes)
 	seqInbox, err := bridgegen.NewSequencerInbox(l1info.Accounts["SequencerInbox"].Address, l1client)
 	Require(t, err, "unable to bind sequencer inbox")
 

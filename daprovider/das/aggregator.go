@@ -18,8 +18,8 @@ import (
 	"github.com/ethereum/go-ethereum/metrics"
 
 	"github.com/offchainlabs/nitro/blsSignatures"
+	"github.com/offchainlabs/nitro/daprovider/anytrust/tree"
 	anytrustutil "github.com/offchainlabs/nitro/daprovider/anytrust/util"
-	"github.com/offchainlabs/nitro/daprovider/das/dastree"
 	"github.com/offchainlabs/nitro/daprovider/data_streaming"
 	"github.com/offchainlabs/nitro/util/pretty"
 	"github.com/offchainlabs/nitro/util/rpcclient"
@@ -152,7 +152,7 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64) 
 
 	responses := make(chan storeResponse, len(a.services))
 
-	expectedHash := dastree.Hash(message)
+	expectedHash := tree.Hash(message)
 	for _, d := range a.services {
 		go func(ctx context.Context, d ServiceDetails) {
 			storeCtx, cancel := context.WithTimeout(ctx, a.requestTimeout)

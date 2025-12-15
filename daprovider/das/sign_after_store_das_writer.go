@@ -17,8 +17,8 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/blsSignatures"
+	"github.com/offchainlabs/nitro/daprovider/anytrust/tree"
 	anytrustutil "github.com/offchainlabs/nitro/daprovider/anytrust/util"
-	"github.com/offchainlabs/nitro/daprovider/das/dastree"
 	"github.com/offchainlabs/nitro/util/pretty"
 )
 
@@ -110,7 +110,7 @@ func (d *SignAfterStoreDASWriter) Store(ctx context.Context, message []byte, tim
 	log.Trace("das.SignAfterStoreDASWriter.Store", "message", pretty.FirstFewBytes(message), "timeout", time.Unix(int64(timeout), 0), "this", d)
 	c = &anytrustutil.DataAvailabilityCertificate{
 		Timeout:     timeout,
-		DataHash:    dastree.Hash(message),
+		DataHash:    tree.Hash(message),
 		Version:     1,
 		SignersMask: 1, // The aggregator will override this if we're part of a committee.
 	}

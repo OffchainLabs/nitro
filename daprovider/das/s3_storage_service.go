@@ -17,8 +17,8 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 
+	"github.com/offchainlabs/nitro/daprovider/anytrust/tree"
 	anytrustutil "github.com/offchainlabs/nitro/daprovider/anytrust/util"
-	"github.com/offchainlabs/nitro/daprovider/das/dastree"
 	"github.com/offchainlabs/nitro/util/pretty"
 	"github.com/offchainlabs/nitro/util/s3client"
 )
@@ -83,7 +83,7 @@ func (s3s *S3StorageService) Put(ctx context.Context, value []byte, _ uint64) er
 	logPut("das.S3StorageService.Store", value, 0, s3s)
 	putObjectInput := s3.PutObjectInput{
 		Bucket: aws.String(s3s.bucket),
-		Key:    aws.String(s3s.objectPrefix + EncodeStorageServiceKey(dastree.Hash(value))),
+		Key:    aws.String(s3s.objectPrefix + EncodeStorageServiceKey(tree.Hash(value))),
 		Body:   bytes.NewReader(value)}
 	_, err := s3s.client.Upload(ctx, &putObjectInput)
 	if err != nil {

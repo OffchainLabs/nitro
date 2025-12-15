@@ -16,8 +16,8 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 
+	"github.com/offchainlabs/nitro/daprovider/anytrust/tree"
 	anytrustutil "github.com/offchainlabs/nitro/daprovider/anytrust/util"
-	"github.com/offchainlabs/nitro/daprovider/das/dastree"
 	"github.com/offchainlabs/nitro/util/pretty"
 )
 
@@ -37,7 +37,7 @@ func (g *GoogleCloudStorageClient) Bucket(name string) *googlestorage.BucketHand
 }
 
 func (g *GoogleCloudStorageClient) Upload(ctx context.Context, bucket, objectPrefix string, value []byte, discardAfterTimeout bool, timeout uint64) error {
-	obj := g.client.Bucket(bucket).Object(objectPrefix + EncodeStorageServiceKey(dastree.Hash(value)))
+	obj := g.client.Bucket(bucket).Object(objectPrefix + EncodeStorageServiceKey(tree.Hash(value)))
 	w := obj.NewWriter(ctx)
 
 	if discardAfterTimeout && timeout <= math.MaxInt64 {

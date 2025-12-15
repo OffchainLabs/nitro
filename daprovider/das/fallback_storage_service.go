@@ -11,8 +11,8 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 
+	"github.com/offchainlabs/nitro/daprovider/anytrust/tree"
 	anytrustutil "github.com/offchainlabs/nitro/daprovider/anytrust/util"
-	"github.com/offchainlabs/nitro/daprovider/das/dastree"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/pretty"
 )
@@ -84,7 +84,7 @@ func (f *FallbackStorageService) GetByHash(ctx context.Context, key common.Hash)
 		if err != nil {
 			return nil, err
 		}
-		if dastree.ValidHash(key, data) {
+		if tree.ValidHash(key, data) {
 			putErr := f.StorageService.Put(
 				// #nosec G115
 				ctx, data, arbmath.SaturatingUAdd(uint64(time.Now().Unix()), f.backupRetentionSeconds),

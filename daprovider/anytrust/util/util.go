@@ -19,7 +19,7 @@ import (
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/blsSignatures"
 	"github.com/offchainlabs/nitro/daprovider"
-	"github.com/offchainlabs/nitro/daprovider/das/dastree"
+	"github.com/offchainlabs/nitro/daprovider/anytrust/tree"
 	"github.com/offchainlabs/nitro/util/containers"
 )
 
@@ -198,7 +198,7 @@ func recoverPayloadFromDasBatchInternal(
 	getByHash := func(ctx context.Context, hash common.Hash) ([]byte, error) {
 		newHash := hash
 		if version == 0 {
-			newHash = dastree.FlatHashToTreeHash(hash)
+			newHash = tree.FlatHashToTreeHash(hash)
 		}
 
 		preimage, err := dasReader.GetByHash(ctx, newHash)
@@ -213,7 +213,7 @@ func recoverPayloadFromDasBatchInternal(
 		switch {
 		case version == 0 && crypto.Keccak256Hash(preimage) != hash:
 			fallthrough
-		case version == 1 && dastree.Hash(preimage) != hash:
+		case version == 1 && tree.Hash(preimage) != hash:
 			log.Error(
 				"preimage mismatch for hash",
 				"hash", hash, "err", ErrHashMismatch, "version", version,
@@ -229,7 +229,7 @@ func recoverPayloadFromDasBatchInternal(
 		return nil, nil, err
 	}
 	if preimageRecorder != nil {
-		dastree.RecordHash(preimageRecorder, keysetPreimage)
+		tree.RecordHash(preimageRecorder, keysetPreimage)
 	}
 
 	keyset, err := DeserializeKeyset(bytes.NewReader(keysetPreimage), !validateSeqMsg)
@@ -261,11 +261,11 @@ func recoverPayloadFromDasBatchInternal(
 
 	if preimageRecorder != nil && payload != nil {
 		if version == 0 {
-			treeLeaf := dastree.FlatHashToTreeLeaf(dataHash)
+			treeLeaf := tree.FlatHashToTreeLeaf(dataHash)
 			preimageRecorder(dataHash, payload, arbutil.Keccak256PreimageType)
 			preimageRecorder(crypto.Keccak256Hash(treeLeaf), treeLeaf, arbutil.Keccak256PreimageType)
 		} else {
-			dastree.RecordHash(preimageRecorder, payload)
+			tree.RecordHash(preimageRecorder, payload)
 		}
 	}
 
@@ -363,7 +363,7 @@ func (c *DataAvailabilityCertificate) RecoverKeyset(
 	if err != nil {
 		return nil, err
 	}
-	if !dastree.ValidHash(c.KeysetHash, keysetBytes) {
+	if !tree.ValidHash(c.KeysetHash, keysetBytes) {
 		return nil, errors.New("keyset hash does not match cert")
 	}
 	return DeserializeKeyset(bytes.NewReader(keysetBytes), assumeKeysetValid)
@@ -397,10 +397,10 @@ func (keyset *DataAvailabilityKeyset) Hash() (common.Hash, error) {
 	if err := keyset.Serialize(wr); err != nil {
 		return common.Hash{}, err
 	}
-	if wr.Len() > dastree.BinSize {
+	if wr.Len() > tree.BinSize {
 		return common.Hash{}, errors.New("keyset too large")
 	}
-	return dastree.Hash(wr.Bytes()), nil
+	return tree.Hash(wr.Bytes()), nil
 }
 
 func DeserializeKeyset(rd io.Reader, assumeKeysetValid bool) (*DataAvailabilityKeyset, error) {

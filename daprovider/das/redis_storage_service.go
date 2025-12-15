@@ -17,8 +17,8 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 
+	"github.com/offchainlabs/nitro/daprovider/anytrust/tree"
 	anytrustutil "github.com/offchainlabs/nitro/daprovider/anytrust/util"
-	"github.com/offchainlabs/nitro/daprovider/das/dastree"
 	"github.com/offchainlabs/nitro/util/pretty"
 	"github.com/offchainlabs/nitro/util/redisutil"
 )
@@ -127,7 +127,7 @@ func (rs *RedisStorageService) Put(ctx context.Context, value []byte, timeout ui
 		return err
 	}
 	err = rs.client.Set(
-		ctx, string(dastree.Hash(value).Bytes()), rs.signMessage(value), rs.redisConfig.Expiration,
+		ctx, string(tree.Hash(value).Bytes()), rs.signMessage(value), rs.redisConfig.Expiration,
 	).Err()
 	if err != nil {
 		log.Error("das.RedisStorageService.Store", "err", err)

@@ -26,8 +26,8 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 
+	"github.com/offchainlabs/nitro/daprovider/anytrust/tree"
 	anytrustutil "github.com/offchainlabs/nitro/daprovider/anytrust/util"
-	"github.com/offchainlabs/nitro/daprovider/das/dastree"
 	"github.com/offchainlabs/nitro/util/pretty"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
@@ -146,7 +146,7 @@ func (s *LocalFileStorageService) Put(ctx context.Context, data []byte, expiry u
 		return fmt.Errorf("requested expiry time (%v) exceeds current time plus maximum allowed retention period(%v)", expiryTime, currentTimePlusRetention)
 	}
 
-	key := dastree.Hash(data)
+	key := tree.Hash(data)
 	var batchPath string
 	if !s.enableLegacyLayout {
 		s.layout.writeMutex.Lock()
@@ -248,7 +248,7 @@ func (s *LocalFileStorageService) HealthCheck(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	res, err := s.GetByHash(ctx, dastree.Hash(testData))
+	res, err := s.GetByHash(ctx, tree.Hash(testData))
 	if err != nil {
 		return err
 	}

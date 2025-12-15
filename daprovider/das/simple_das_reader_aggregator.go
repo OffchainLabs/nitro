@@ -17,8 +17,8 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 
+	"github.com/offchainlabs/nitro/daprovider/anytrust/tree"
 	anytrustutil "github.com/offchainlabs/nitro/daprovider/anytrust/util"
-	"github.com/offchainlabs/nitro/daprovider/das/dastree"
 	"github.com/offchainlabs/nitro/util/pretty"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
@@ -253,7 +253,7 @@ func (a *SimpleDASReaderAggregator) tryGetByHash(
 	start := time.Now()
 	result, err := reader.GetByHash(ctx, hash)
 	if err == nil {
-		if dastree.ValidHash(hash, result) {
+		if tree.ValidHash(hash, result) {
 			stat.success = true
 		} else {
 			err = fmt.Errorf("SimpleDASReaderAggregator got result from reader(%v) not matching hash", reader)

@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/offchainlabs/nitro/daprovider/das/dastree"
+	"github.com/offchainlabs/nitro/daprovider/anytrust/tree"
 )
 
 const NumServices = 3
@@ -27,8 +27,8 @@ func TestRedundantStorageService(t *testing.T) {
 	Require(t, err)
 
 	val1 := []byte("The first value")
-	key1 := dastree.Hash(val1)
-	key2 := dastree.Hash(append(val1, 0))
+	key1 := tree.Hash(val1)
+	key2 := tree.Hash(append(val1, 0))
 
 	_, err = redundantService.GetByHash(ctx, key1)
 	if !errors.Is(err, ErrNotFound) {

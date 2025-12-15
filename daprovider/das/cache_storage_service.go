@@ -13,8 +13,8 @@ import (
 	"github.com/ethereum/go-ethereum/common/lru"
 	"github.com/ethereum/go-ethereum/log"
 
+	"github.com/offchainlabs/nitro/daprovider/anytrust/tree"
 	anytrustutil "github.com/offchainlabs/nitro/daprovider/anytrust/util"
-	"github.com/offchainlabs/nitro/daprovider/das/dastree"
 	"github.com/offchainlabs/nitro/util/pretty"
 )
 
@@ -71,7 +71,7 @@ func (c *CacheStorageService) Put(ctx context.Context, value []byte, timeout uin
 	if err != nil {
 		return err
 	}
-	c.cache.Add(common.Hash(dastree.Hash(value)), value)
+	c.cache.Add(common.Hash(tree.Hash(value)), value)
 	return nil
 }
 

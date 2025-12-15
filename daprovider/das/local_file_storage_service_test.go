@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/offchainlabs/nitro/daprovider/das/dastree"
+	"github.com/offchainlabs/nitro/daprovider/anytrust/tree"
 )
 
 func getByHashAndCheck(t *testing.T, s *LocalFileStorageService, xs ...string) {
@@ -23,7 +23,7 @@ func getByHashAndCheck(t *testing.T, s *LocalFileStorageService, xs ...string) {
 	ctx := context.Background()
 
 	for _, x := range xs {
-		actual, err := s.GetByHash(ctx, dastree.Hash([]byte(x)))
+		actual, err := s.GetByHash(ctx, tree.Hash([]byte(x)))
 		Require(t, err)
 		if !bytes.Equal([]byte(x), actual) {
 			Fail(t, "unexpected result")

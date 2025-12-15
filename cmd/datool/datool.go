@@ -26,9 +26,9 @@ import (
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
+	"github.com/offchainlabs/nitro/daprovider/anytrust/tree"
 	anytrustutil "github.com/offchainlabs/nitro/daprovider/anytrust/util"
 	"github.com/offchainlabs/nitro/daprovider/das"
-	"github.com/offchainlabs/nitro/daprovider/das/dastree"
 	"github.com/offchainlabs/nitro/util/signature"
 )
 
@@ -301,7 +301,7 @@ func startKeyGen(args []string) error {
 }
 
 func generateHash(message string) error {
-	fmt.Printf("Hex Encoded Data Hash: %s\n", hexutil.Encode(dastree.HashBytes([]byte(message))))
+	fmt.Printf("Hex Encoded Data Hash: %s\n", hexutil.Encode(tree.HashBytes([]byte(message))))
 	return nil
 }
 

@@ -84,7 +84,7 @@ COPY ./cmd/chaininfo ./cmd/chaininfo
 COPY ./cmd/replay ./cmd/replay
 COPY ./daprovider ./daprovider
 COPY ./daprovider/anytrust/util ./daprovider/anytrust/util
-COPY ./daprovider/das/dastree ./daprovider/das/dastree
+COPY ./daprovider/anytrust/tree ./daprovider/anytrust/tree
 COPY ./precompiles ./precompiles
 COPY ./statetransfer ./statetransfer
 COPY ./util ./util

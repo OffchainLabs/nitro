@@ -11,7 +11,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 
-	"github.com/offchainlabs/nitro/daprovider/das/dastree"
+	"github.com/offchainlabs/nitro/daprovider/anytrust/tree"
 )
 
 type mockGCSClient struct {
@@ -35,7 +35,7 @@ func (c *mockGCSClient) Close(ctx context.Context) error {
 }
 
 func (c *mockGCSClient) Upload(ctx context.Context, bucket, objectPrefix string, value []byte, discardAfterTimeout bool, timeout uint64) error {
-	key := objectPrefix + EncodeStorageServiceKey(dastree.Hash(value))
+	key := objectPrefix + EncodeStorageServiceKey(tree.Hash(value))
 	c.storage[key] = value
 	return nil
 }
@@ -61,8 +61,8 @@ func TestNewGoogleCloudStorageService(t *testing.T) {
 	Require(t, err)
 
 	val1 := []byte("The first value")
-	val1CorrectKey := dastree.Hash(val1)
-	val2IncorrectKey := dastree.Hash(append(val1, 0))
+	val1CorrectKey := tree.Hash(val1)
+	val2IncorrectKey := tree.Hash(append(val1, 0))
 
 	_, err = googleCloudService.GetByHash(ctx, val1CorrectKey)
 	if !errors.Is(err, ErrNotFound) {

@@ -11,8 +11,8 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 
+	"github.com/offchainlabs/nitro/daprovider/anytrust/tree"
 	anytrustutil "github.com/offchainlabs/nitro/daprovider/anytrust/util"
-	"github.com/offchainlabs/nitro/daprovider/das/dastree"
 )
 
 type MemoryBackedStorageService struct { // intended for testing and debugging
@@ -50,7 +50,7 @@ func (m *MemoryBackedStorageService) Put(ctx context.Context, data []byte, expir
 	if m.closed {
 		return ErrClosed
 	}
-	m.contents[dastree.Hash(data)] = append([]byte{}, data...)
+	m.contents[tree.Hash(data)] = append([]byte{}, data...)
 	return nil
 }
 

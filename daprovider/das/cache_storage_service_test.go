@@ -9,7 +9,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/offchainlabs/nitro/daprovider/das/dastree"
+	"github.com/offchainlabs/nitro/daprovider/anytrust/tree"
 )
 
 func TestCacheStorageService(t *testing.T) {
@@ -18,8 +18,8 @@ func TestCacheStorageService(t *testing.T) {
 	cacheService := NewCacheStorageService(TestCacheConfig, baseStorageService)
 
 	val1 := []byte("The first value")
-	val1CorrectKey := dastree.Hash(val1)
-	val1IncorrectKey := dastree.Hash(append(val1, 0))
+	val1CorrectKey := tree.Hash(val1)
+	val1IncorrectKey := tree.Hash(append(val1, 0))
 
 	_, err := cacheService.GetByHash(ctx, val1CorrectKey)
 	if !errors.Is(err, ErrNotFound) {
@@ -41,8 +41,8 @@ func TestCacheStorageService(t *testing.T) {
 
 	// For Case where the value is present in the base storage but not present in the cache.
 	val2 := []byte("The Second value")
-	val2CorrectKey := dastree.Hash(val2)
-	val2IncorrectKey := dastree.Hash(append(val2, 0))
+	val2CorrectKey := tree.Hash(val2)
+	val2IncorrectKey := tree.Hash(append(val2, 0))
 
 	err = baseStorageService.Put(ctx, val2, 1)
 	Require(t, err)

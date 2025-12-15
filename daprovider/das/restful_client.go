@@ -15,8 +15,8 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 
+	"github.com/offchainlabs/nitro/daprovider/anytrust/tree"
 	anytrustutil "github.com/offchainlabs/nitro/daprovider/anytrust/util"
-	"github.com/offchainlabs/nitro/daprovider/das/dastree"
 )
 
 // RestfulDasClient implements anytrustutil.DASReader
@@ -71,7 +71,7 @@ func (c *RestfulDasClient) GetByHash(ctx context.Context, hash common.Hash) ([]b
 	if err != nil {
 		return nil, err
 	}
-	if !dastree.ValidHash(hash, decodedBytes) {
+	if !tree.ValidHash(hash, decodedBytes) {
 		return nil, anytrustutil.ErrHashMismatch
 	}
 

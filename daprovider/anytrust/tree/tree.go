@@ -1,7 +1,7 @@
 // Copyright 2022, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-package dastree
+package tree
 
 import (
 	"encoding/binary"
@@ -105,7 +105,7 @@ func HashBytes(preimage ...[]byte) []byte {
 }
 
 func FlatHashToTreeHash(flat bytes32) bytes32 {
-	// Forms a degenerate dastree that's just a single leaf
+	// Forms a degenerate tree that's just a single leaf
 	// note: the inner preimage may be larger than the 64 kB standard
 	return arbmath.FlipBit(crypto.Keccak256Hash(FlatHashToTreeLeaf(flat)), 0)
 }
@@ -130,8 +130,8 @@ func ValidHash(hash bytes32, preimage []byte) bool {
 // This function also checks that the size-data is consistent and that the hash is canonical.
 //
 // Notes
-//  1. Because we accept degenerate dastrees, we can't check that single-leaf trees are canonical.
-//  2. For any canonical dastree, there exists a degenerate single-leaf equivalent that we accept.
+//  1. Because we accept degenerate trees, we can't check that single-leaf trees are canonical.
+//  2. For any canonical tree, there exists a degenerate single-leaf equivalent that we accept.
 //  3. We also accept old-style flat hashes
 //  4. Only the committee can produce trees unwrapped by this function
 //  5. When the replay binary calls this, the oracle function must be infallible.

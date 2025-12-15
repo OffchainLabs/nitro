@@ -9,7 +9,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 
-	"github.com/offchainlabs/nitro/daprovider/das/dastree"
+	"github.com/offchainlabs/nitro/daprovider/anytrust/tree"
 	"github.com/offchainlabs/nitro/util/signature"
 )
 
@@ -34,5 +34,5 @@ func dasStoreHash(data []byte, extraFields ...uint64) []byte {
 		buf = binary.BigEndian.AppendUint64(buf, field)
 	}
 
-	return dastree.HashBytes(uniquifyingPrefix, buf, data)
+	return tree.HashBytes(uniquifyingPrefix, buf, data)
 }

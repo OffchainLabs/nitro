@@ -10,7 +10,7 @@ import (
 	"math"
 	"testing"
 
-	"github.com/offchainlabs/nitro/daprovider/das/dastree"
+	"github.com/offchainlabs/nitro/daprovider/anytrust/tree"
 )
 
 func TestFallbackStorageService(t *testing.T) {
@@ -18,9 +18,9 @@ func TestFallbackStorageService(t *testing.T) {
 	defer cancel()
 
 	val1 := []byte("First value")
-	hash1 := dastree.Hash(val1)
+	hash1 := tree.Hash(val1)
 	val2 := []byte("Second value")
-	hash2 := dastree.Hash(val2)
+	hash2 := tree.Hash(val2)
 
 	primary := NewMemoryBackedStorageService(ctx)
 	err := primary.Put(ctx, val1, math.MaxUint64)
@@ -54,7 +54,7 @@ func TestFallbackStorageServiceRecursive(t *testing.T) {
 	defer cancel()
 
 	val1 := []byte("First value")
-	hash1 := dastree.Hash(val1)
+	hash1 := tree.Hash(val1)
 
 	ss := NewMemoryBackedStorageService(ctx)
 	fss := NewFallbackStorageService(ss, ss, ss, 60*60, true, true)

@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"github.com/offchainlabs/nitro/cmd/genericconf"
-	"github.com/offchainlabs/nitro/daprovider/das/dastree"
+	"github.com/offchainlabs/nitro/daprovider/anytrust/tree"
 )
 
 const LocalServerAddressForTest = "localhost"
@@ -43,7 +43,7 @@ func TestRestfulClientServer(t *testing.T) {
 
 	storage := NewMemoryBackedStorageService(ctx)
 	data := []byte("Testing a restful server now.")
-	dataHash := dastree.Hash(data)
+	dataHash := tree.Hash(data)
 
 	server, port, err := NewRestfulDasServerOnRandomPort(LocalServerAddressForTest, storage)
 	Require(t, err)
@@ -61,7 +61,7 @@ func TestRestfulClientServer(t *testing.T) {
 		Fail(t, fmt.Sprintf("Returned data '%s' does not match expected '%s'", returnedData, data))
 	}
 
-	_, err = client.GetByHash(ctx, dastree.Hash([]byte("absent data")))
+	_, err = client.GetByHash(ctx, tree.Hash([]byte("absent data")))
 	if err == nil || !strings.Contains(err.Error(), "404") {
 		Fail(t, "Expected a 404 error")
 	}
