@@ -36,16 +36,17 @@ var (
 )
 
 type AggregatorConfig struct {
-	Enable        bool               `koanf:"enable"`
-	AssumedHonest int                `koanf:"assumed-honest"`
-	Backends      BackendConfigList  `koanf:"backends"`
-	DASRPCClient  DASRPCClientConfig `koanf:"das-rpc-client"`
+	Enable        bool              `koanf:"enable"`
+	AssumedHonest int               `koanf:"assumed-honest"`
+	Backends      BackendConfigList `koanf:"backends"`
+	// TODO: Rename to RPCClient with koanf:"rpc-client" after CLI flag migration
+	DASRPCClient RPCClientConfig `koanf:"das-rpc-client"`
 }
 
 var DefaultAggregatorConfig = AggregatorConfig{
 	AssumedHonest: 0,
 	Backends:      nil,
-	DASRPCClient: DASRPCClientConfig{
+	DASRPCClient: RPCClientConfig{
 		EnableChunkedStore: true,
 		DataStream:         data_streaming.DefaultDataStreamerConfig(DefaultDataStreamRpcMethods),
 		RPC:                rpcclient.DefaultClientConfig,
@@ -58,7 +59,7 @@ func AggregatorConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultAggregatorConfig.Enable, "enable storage of sequencer batch data from a list of RPC endpoints; this should only be used by the batch poster and not in combination with other DAS storage types")
 	f.Int(prefix+".assumed-honest", DefaultAggregatorConfig.AssumedHonest, "Number of assumed honest backends (H). If there are N backends, K=N+1-H valid responses are required to consider an Store request to be successful.")
 	f.Var(&parsedBackendsConf, prefix+".backends", "JSON RPC backend configuration. This can be specified on the command line as a JSON array, eg: [{\"url\": \"...\", \"pubkey\": \"...\"},...], or as a JSON array in the config file.")
-	DASRPCClientConfigAddOptions(prefix+".das-rpc-client", f)
+	RPCClientConfigAddOptions(prefix+".rpc-client", f)
 }
 
 type Aggregator struct {
@@ -97,7 +98,7 @@ func NewServiceDetails(service anytrustutil.Writer, pubKey blsSignatures.PublicK
 }
 
 func newAggregator(
-	config DataAvailabilityConfig,
+	config Config,
 	services []ServiceDetails,
 ) (*Aggregator, error) {
 

@@ -47,8 +47,8 @@ type Config struct {
 	ParentChain ParentChainConfig `koanf:"parent-chain"`
 
 	// Mode-specific configs
-	Anytrust    anytrust.DataAvailabilityConfig `koanf:"anytrust"`
-	ReferenceDA referenceda.Config              `koanf:"referenceda"`
+	Anytrust    anytrust.Config    `koanf:"anytrust"`
+	ReferenceDA referenceda.Config `koanf:"referenceda"`
 
 	Conf     genericconf.ConfConfig `koanf:"conf"`
 	LogLevel string                 `koanf:"log-level"`
@@ -72,7 +72,7 @@ var DefaultConfig = Config{
 	WithDataSigner:   false,
 	DataSignerWallet: arbnode.DefaultBatchPosterL1WalletConfig,
 	ParentChain:      DefaultParentChainConfig,
-	Anytrust:         anytrust.DefaultDataAvailabilityConfig,
+	Anytrust:         anytrust.DefaultConfig,
 	ReferenceDA:      referenceda.DefaultConfig,
 	Conf:             genericconf.ConfConfigDefault,
 	LogLevel:         "INFO",
@@ -111,7 +111,7 @@ func parseDAProvider(args []string) (*Config, error) {
 	f.String("parent-chain.sequencer-inbox-address", DefaultParentChainConfig.SequencerInboxAddress, "parent chain address of SequencerInbox contract")
 
 	// Add mode-specific options
-	anytrust.DataAvailabilityConfigAddDaserverOptions("anytrust", f)
+	anytrust.ConfigAddServerOptions("anytrust", f)
 	referenceda.ConfigAddOptions("referenceda", f)
 
 	genericconf.ConfConfigAddOptions("conf", f)
@@ -159,7 +159,7 @@ func main() {
 
 func startup() error {
 	// Some different defaults to DAS config in a node.
-	anytrust.DefaultDataAvailabilityConfig.Enable = true
+	anytrust.DefaultConfig.Enable = true
 
 	config, err := parseDAProvider(os.Args[1:])
 	if err != nil {

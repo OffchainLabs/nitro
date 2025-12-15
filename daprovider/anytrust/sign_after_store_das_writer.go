@@ -71,7 +71,7 @@ type SignAfterStoreWriter struct {
 	storageService StorageService
 }
 
-func NewSignAfterStoreWriter(ctx context.Context, config DataAvailabilityConfig, storageService StorageService) (*SignAfterStoreWriter, error) {
+func NewSignAfterStoreWriter(ctx context.Context, config Config, storageService StorageService) (*SignAfterStoreWriter, error) {
 	privKey, err := config.Key.BLSPrivKey()
 	if err != nil {
 		return nil, err

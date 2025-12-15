@@ -107,7 +107,7 @@ type SecondNodeParams struct {
 	nodeConfig             *arbnode.Config
 	execConfig             *gethexec.Config
 	stackConfig            *node.Config
-	dasConfig              *anytrust.DataAvailabilityConfig
+	dasConfig              *anytrust.Config
 	initData               *statetransfer.ArbosInitializationInfo
 	addresses              *chaininfo.RollupAddresses
 	useExecutionClientOnly bool
@@ -2205,7 +2205,7 @@ func setupConfigWithDAS(
 	dasSignerKey, _, err := anytrust.GenerateAndStoreKeys(dbPath)
 	Require(t, err)
 
-	dasConfig := anytrust.DefaultDataAvailabilityConfig
+	dasConfig := anytrust.DefaultConfig
 	dasConfig.Enable = enableDas
 	dasConfig.Key.KeyDir = dbPath
 	dasConfig.LocalFileStorage.Enable = enableFileStorage
@@ -2214,11 +2214,11 @@ func setupConfigWithDAS(
 	dasConfig.PanicOnError = true
 	dasConfig.DisableSignatureChecking = true
 
-	l1NodeConfigA.DataAvailability = anytrust.DefaultDataAvailabilityConfig
+	l1NodeConfigA.DataAvailability = anytrust.DefaultConfig
 	var lifecycleManager *anytrust.LifecycleManager
 	var daReader anytrustutil.Reader
 	var daWriter anytrustutil.Writer
-	var daHealthChecker anytrust.DataAvailabilityServiceHealthChecker
+	var daHealthChecker anytrust.ServiceHealthChecker
 	var signatureVerifier *anytrust.SignatureVerifier
 	if dasModeString != "onchain" && dasModeString != "referenceda" {
 		daReader, daWriter, signatureVerifier, daHealthChecker, lifecycleManager, err = anytrust.CreateDAComponentsForDaserver(ctx, &dasConfig, nil, nil)
@@ -2228,9 +2228,9 @@ func setupConfigWithDAS(
 		Require(t, err)
 		restLis, err := net.Listen("tcp", "localhost:0")
 		Require(t, err)
-		_, err = anytrust.StartDASRPCServerOnListener(ctx, rpcLis, genericconf.HTTPServerTimeoutConfigDefault, genericconf.HTTPServerBodyLimitDefault, daReader, daWriter, daHealthChecker, signatureVerifier)
+		_, err = anytrust.StartRPCServerOnListener(ctx, rpcLis, genericconf.HTTPServerTimeoutConfigDefault, genericconf.HTTPServerBodyLimitDefault, daReader, daWriter, daHealthChecker, signatureVerifier)
 		Require(t, err)
-		_, err = anytrust.NewRestfulDasServerOnListener(restLis, genericconf.HTTPServerTimeoutConfigDefault, daReader, daHealthChecker)
+		_, err = anytrust.NewRestfulServerOnListener(restLis, genericconf.HTTPServerTimeoutConfigDefault, daReader, daHealthChecker)
 		Require(t, err)
 
 		beConfigA := anytrust.BackendConfig{

@@ -35,7 +35,7 @@ var (
 )
 
 // lint:require-exhaustive-initialization
-type DASRPCClient struct { // implements DataAvailabilityService
+type RPCClient struct {
 	clnt         *rpc.Client
 	url          string
 	signer       signature.DataSignerFunc
@@ -47,13 +47,13 @@ func nilSigner(_ []byte) ([]byte, error) {
 }
 
 // lint:require-exhaustive-initialization
-type DASRPCClientConfig struct {
+type RPCClientConfig struct {
 	EnableChunkedStore bool                              `koanf:"enable-chunked-store"`
 	DataStream         data_streaming.DataStreamerConfig `koanf:"data-stream"`
 	RPC                rpcclient.ClientConfig            `koanf:"rpc"`
 }
 
-func DASRPCClientConfigAddOptions(prefix string, f *pflag.FlagSet) {
+func RPCClientConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".enable-chunked-store", true, "enable data to be sent to DAS in chunks instead of all at once")
 	data_streaming.DataStreamerConfigAddOptions(prefix+".data-stream", f, DefaultDataStreamRpcMethods)
 	rpcclient.RPCClientAddOptions(prefix+".rpc", f, &rpcclient.DefaultClientConfig)
@@ -65,7 +65,7 @@ var DefaultDataStreamRpcMethods = data_streaming.DataStreamingRPCMethods{
 	FinalizeStream: "das_commitChunkedStore",
 }
 
-func NewDASRPCClient(config *DASRPCClientConfig, signer signature.DataSignerFunc) (*DASRPCClient, error) {
+func NewRPCClient(config *RPCClientConfig, signer signature.DataSignerFunc) (*RPCClient, error) {
 	// Chunked store requires a valid signer for replay protection.
 	// The signature is used as a unique request identifier, so nil/empty signatures would cause all requests to be blocked after the first one.
 	if config.EnableChunkedStore && signer == nil {
@@ -104,7 +104,7 @@ func NewDASRPCClient(config *DASRPCClientConfig, signer signature.DataSignerFunc
 		}
 	}
 
-	return &DASRPCClient{
+	return &RPCClient{
 		clnt:         clnt,
 		url:          config.RPC.URL,
 		signer:       signer,
@@ -112,7 +112,7 @@ func NewDASRPCClient(config *DASRPCClientConfig, signer signature.DataSignerFunc
 	}, nil
 }
 
-func (c *DASRPCClient) Store(ctx context.Context, message []byte, timeout uint64) (*anytrustutil.DataAvailabilityCertificate, error) {
+func (c *RPCClient) Store(ctx context.Context, message []byte, timeout uint64) (*anytrustutil.DataAvailabilityCertificate, error) {
 	rpcClientStoreRequestCounter.Inc(1)
 	start := time.Now()
 	success := false
@@ -157,9 +157,9 @@ func (c *DASRPCClient) Store(ctx context.Context, message []byte, timeout uint64
 	}, nil
 }
 
-func (c *DASRPCClient) legacyStore(ctx context.Context, message []byte, timeout uint64) (*anytrustutil.DataAvailabilityCertificate, error) {
+func (c *RPCClient) legacyStore(ctx context.Context, message []byte, timeout uint64) (*anytrustutil.DataAvailabilityCertificate, error) {
 	// #nosec G115
-	log.Trace("das.DASRPCClient.Store(...)", "message", pretty.FirstFewBytes(message), "timeout", time.Unix(int64(timeout), 0), "this", *c)
+	log.Trace("anytrust.RPCClient.Store(...)", "message", pretty.FirstFewBytes(message), "timeout", time.Unix(int64(timeout), 0), "this", *c)
 
 	reqSig, err := applyDasSigner(c.signer, message, timeout)
 	if err != nil {
@@ -184,15 +184,15 @@ func (c *DASRPCClient) legacyStore(ctx context.Context, message []byte, timeout 
 	}, nil
 }
 
-func (c *DASRPCClient) String() string {
-	return fmt.Sprintf("DASRPCClient{url:%s}", c.url)
+func (c *RPCClient) String() string {
+	return fmt.Sprintf("RPCClient{url:%s}", c.url)
 }
 
-func (c *DASRPCClient) HealthCheck(ctx context.Context) error {
+func (c *RPCClient) HealthCheck(ctx context.Context) error {
 	return c.clnt.CallContext(ctx, nil, "das_healthCheck")
 }
 
-func (c *DASRPCClient) ExpirationPolicy(ctx context.Context) (anytrustutil.ExpirationPolicy, error) {
+func (c *RPCClient) ExpirationPolicy(ctx context.Context) (anytrustutil.ExpirationPolicy, error) {
 	var res string
 	err := c.clnt.CallContext(ctx, &res, "das_expirationPolicy")
 	if err != nil {

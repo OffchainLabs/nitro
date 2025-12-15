@@ -52,7 +52,7 @@ type DAServerConfig struct {
 
 	ParentChain ParentChainConfig `koanf:"parent-chain"`
 
-	DataAvailability anytrust.DataAvailabilityConfig `koanf:"data-availability"`
+	DataAvailability anytrust.Config `koanf:"data-availability"`
 
 	Conf     genericconf.ConfConfig `koanf:"conf"`
 	LogLevel string                 `koanf:"log-level"`
@@ -81,7 +81,7 @@ var DefaultDAServerConfig = DAServerConfig{
 	RESTPort:           9877,
 	RESTServerTimeouts: genericconf.HTTPServerTimeoutConfigDefault,
 	ParentChain:        DefaultParentChainConfig,
-	DataAvailability:   anytrust.DefaultDataAvailabilityConfig,
+	DataAvailability:   anytrust.DefaultConfig,
 	Conf:               genericconf.ConfConfigDefault,
 	LogLevel:           "INFO",
 	LogType:            "plaintext",
@@ -131,7 +131,7 @@ func parseDAServer(args []string) (*DAServerConfig, error) {
 	f.Int("parent-chain.connection-attempts", DefaultParentChainConfig.ConnectionAttempts, "parent chain RPC connection attempts (spaced out at least 1 second per attempt, 0 to retry infinitely)")
 	f.String("parent-chain.sequencer-inbox-address", DefaultParentChainConfig.SequencerInboxAddress, "parent chain address of SequencerInbox contract to use for validating requests to store data. Can be set to \"none\" for testing")
 
-	anytrust.DataAvailabilityConfigAddDaserverOptions("data-availability", f)
+	anytrust.ConfigAddServerOptions("data-availability", f)
 	genericconf.ConfConfigAddOptions("conf", f)
 
 	k, err := confighelpers.BeginCommonParse(f, args)
@@ -199,7 +199,7 @@ func startMetrics(cfg *DAServerConfig) error {
 
 func startup() error {
 	// Some different defaults to DAS config in a node.
-	anytrust.DefaultDataAvailabilityConfig.Enable = true
+	anytrust.DefaultConfig.Enable = true
 
 	serverConfig, err := parseDAServer(os.Args[1:])
 	if err != nil {
@@ -276,17 +276,17 @@ func startup() error {
 	if serverConfig.EnableRPC {
 		log.Info("Starting HTTP-RPC server", "addr", serverConfig.RPCAddr, "port", serverConfig.RPCPort, "revision", vcsRevision, "vcs.time", vcsTime)
 
-		rpcServer, err = anytrust.StartDASRPCServer(ctx, serverConfig.RPCAddr, serverConfig.RPCPort, serverConfig.RPCServerTimeouts, serverConfig.RPCServerBodyLimit, daReader, daWriter, daHealthChecker, signatureVerifier)
+		rpcServer, err = anytrust.StartRPCServer(ctx, serverConfig.RPCAddr, serverConfig.RPCPort, serverConfig.RPCServerTimeouts, serverConfig.RPCServerBodyLimit, daReader, daWriter, daHealthChecker, signatureVerifier)
 		if err != nil {
 			return err
 		}
 	}
 
-	var restServer *anytrust.RestfulDasServer
+	var restServer *anytrust.RestfulServer
 	if serverConfig.EnableREST {
 		log.Info("Starting REST server", "addr", serverConfig.RESTAddr, "port", serverConfig.RESTPort, "revision", vcsRevision, "vcs.time", vcsTime)
 
-		restServer, err = anytrust.NewRestfulDasServer(serverConfig.RESTAddr, serverConfig.RESTPort, serverConfig.RESTServerTimeouts, daReader, daHealthChecker)
+		restServer, err = anytrust.NewRestfulServer(serverConfig.RESTAddr, serverConfig.RESTPort, serverConfig.RESTServerTimeouts, daReader, daHealthChecker)
 		if err != nil {
 			return err
 		}

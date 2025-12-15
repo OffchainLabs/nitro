@@ -18,7 +18,7 @@ import (
 
 // lint:require-exhaustive-initialization
 type Factory struct {
-	config       *DataAvailabilityConfig
+	config       *Config
 	dataSigner   signature.DataSignerFunc
 	l1Client     *ethclient.Client
 	l1Reader     *headerreader.HeaderReader
@@ -34,7 +34,7 @@ var SupportedHeaderBytes = []byte{
 
 // NewFactory creates a new AnyTrust DA provider factory.
 func NewFactory(
-	config *DataAvailabilityConfig,
+	config *Config,
 	dataSigner signature.DataSignerFunc,
 	l1Client *ethclient.Client,
 	l1Reader *headerreader.HeaderReader,

@@ -19,32 +19,32 @@ import (
 	anytrustutil "github.com/offchainlabs/nitro/daprovider/anytrust/util"
 )
 
-// RestfulDasClient implements anytrustutil.Reader
-type RestfulDasClient struct {
+// RestfulClient implements anytrustutil.Reader
+type RestfulClient struct {
 	url string
 }
 
-func (c *RestfulDasClient) String() string {
+func (c *RestfulClient) String() string {
 	return fmt.Sprintf("Restful DAS client for %s", c.url)
 }
 
-func NewRestfulDasClient(protocol string, host string, port int) *RestfulDasClient {
-	return &RestfulDasClient{
+func NewRestfulClient(protocol string, host string, port int) *RestfulClient {
+	return &RestfulClient{
 		url: fmt.Sprintf("%s://%s:%d", protocol, host, port),
 	}
 }
 
-func NewRestfulDasClientFromURL(url string) (*RestfulDasClient, error) {
+func NewRestfulClientFromURL(url string) (*RestfulClient, error) {
 	if !(strings.HasPrefix(url, "http://") || strings.HasPrefix(url, "https://")) {
-		return nil, fmt.Errorf("protocol prefix 'http://' or 'https://' must be specified for RestfulDasClient; got '%s'", url)
+		return nil, fmt.Errorf("protocol prefix 'http://' or 'https://' must be specified for RestfulClient; got '%s'", url)
 
 	}
-	return &RestfulDasClient{
+	return &RestfulClient{
 		url: url,
 	}, nil
 }
 
-func (c *RestfulDasClient) GetByHash(ctx context.Context, hash common.Hash) ([]byte, error) {
+func (c *RestfulClient) GetByHash(ctx context.Context, hash common.Hash) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, "GET", c.url+getByHashRequestPath+EncodeStorageServiceKey(hash), nil)
 	if err != nil {
 		return nil, err
@@ -61,7 +61,7 @@ func (c *RestfulDasClient) GetByHash(ctx context.Context, hash common.Hash) ([]b
 	}
 
 	jsonDecoder := json.NewDecoder(res.Body)
-	var response RestfulDasServerResponse
+	var response RestfulServerResponse
 	if err := jsonDecoder.Decode(&response); err != nil {
 		return nil, err
 	}
@@ -78,7 +78,7 @@ func (c *RestfulDasClient) GetByHash(ctx context.Context, hash common.Hash) ([]b
 	return decodedBytes, nil
 }
 
-func (c *RestfulDasClient) HealthCheck(ctx context.Context) error {
+func (c *RestfulClient) HealthCheck(ctx context.Context) error {
 	res, err := http.Get(c.url + healthRequestPath)
 	if err != nil {
 		return err
@@ -90,7 +90,7 @@ func (c *RestfulDasClient) HealthCheck(ctx context.Context) error {
 	return nil
 }
 
-func (c *RestfulDasClient) ExpirationPolicy(ctx context.Context) (anytrustutil.ExpirationPolicy, error) {
+func (c *RestfulClient) ExpirationPolicy(ctx context.Context) (anytrustutil.ExpirationPolicy, error) {
 	res, err := http.Get(c.url + expirationPolicyRequestPath)
 	if err != nil {
 		return -1, err
@@ -104,7 +104,7 @@ func (c *RestfulDasClient) ExpirationPolicy(ctx context.Context) (anytrustutil.E
 		return -1, fmt.Errorf("failed to read response body: %w", err)
 	}
 
-	var response RestfulDasServerResponse
+	var response RestfulServerResponse
 	err = json.Unmarshal(body, &response)
 	if err != nil {
 		return -1, err

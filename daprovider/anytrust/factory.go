@@ -21,7 +21,7 @@ import (
 // and group them together into a RedundantStorage instance if there is more than one.
 func CreatePersistentStorageService(
 	ctx context.Context,
-	config *DataAvailabilityConfig,
+	config *Config,
 ) (StorageService, *LifecycleManager, error) {
 	storageServices := make([]StorageService, 0, 10)
 	var lifecycleManager LifecycleManager
@@ -79,7 +79,7 @@ func CreatePersistentStorageService(
 
 func WrapStorageWithCache(
 	ctx context.Context,
-	config *DataAvailabilityConfig,
+	config *Config,
 	storageService StorageService,
 	lifecycleManager *LifecycleManager) (StorageService, error) {
 	if storageService == nil {
@@ -104,7 +104,7 @@ func WrapStorageWithCache(
 
 func CreateDAReaderAndWriter(
 	ctx context.Context,
-	config *DataAvailabilityConfig,
+	config *Config,
 	dataSigner signature.DataSignerFunc,
 	l1Reader *ethclient.Client,
 	sequencerInboxAddr common.Address,
@@ -143,10 +143,10 @@ func CreateDAReaderAndWriter(
 
 func CreateDAComponentsForDaserver(
 	ctx context.Context,
-	config *DataAvailabilityConfig,
+	config *Config,
 	l1Reader *headerreader.HeaderReader,
 	seqInboxAddress *common.Address,
-) (anytrustutil.Reader, anytrustutil.Writer, *SignatureVerifier, DataAvailabilityServiceHealthChecker, *LifecycleManager, error) {
+) (anytrustutil.Reader, anytrustutil.Writer, *SignatureVerifier, ServiceHealthChecker, *LifecycleManager, error) {
 	if !config.Enable {
 		return nil, nil, nil, nil, nil, nil
 	}
@@ -207,7 +207,7 @@ func CreateDAComponentsForDaserver(
 
 	var daWriter anytrustutil.Writer
 	var daReader anytrustutil.Reader = storageService
-	var daHealthChecker DataAvailabilityServiceHealthChecker = storageService
+	var daHealthChecker ServiceHealthChecker = storageService
 	var signatureVerifier *SignatureVerifier
 
 	if config.Key.KeyDir != "" || config.Key.PrivKey != "" {
@@ -243,7 +243,7 @@ func CreateDAComponentsForDaserver(
 
 func CreateDAReader(
 	ctx context.Context,
-	config *DataAvailabilityConfig,
+	config *Config,
 	l1Reader *headerreader.HeaderReader,
 	seqInboxAddress *common.Address,
 ) (anytrustutil.Reader, *KeysetFetcher, *LifecycleManager, error) {

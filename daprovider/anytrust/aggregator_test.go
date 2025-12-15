@@ -35,7 +35,7 @@ func TestDAS_BasicAggregationLocal(t *testing.T) {
 		privKey, err := blsSignatures.GeneratePrivKeyString()
 		Require(t, err)
 
-		config := DefaultDataAvailabilityConfig
+		config := DefaultConfig
 		config.Enable = true
 		config.Key.PrivKey = privKey
 
@@ -50,7 +50,7 @@ func TestDAS_BasicAggregationLocal(t *testing.T) {
 
 	aggregatorConfig := DefaultAggregatorConfig
 	aggregatorConfig.AssumedHonest = 1
-	daConfig := DefaultDataAvailabilityConfig
+	daConfig := DefaultConfig
 	daConfig.RPCAggregator = aggregatorConfig
 	aggregator, err := newAggregator(daConfig, backends)
 	Require(t, err)
@@ -189,7 +189,7 @@ func testConfigurableStorageFailures(t *testing.T, shouldFailAggregation bool) {
 		privKey, err := blsSignatures.GeneratePrivKeyString()
 		Require(t, err)
 
-		config := DefaultDataAvailabilityConfig
+		config := DefaultConfig
 		config.Enable = true
 		config.Key.PrivKey = privKey
 
@@ -204,7 +204,7 @@ func testConfigurableStorageFailures(t *testing.T, shouldFailAggregation bool) {
 
 	aggregatorConfig := DefaultAggregatorConfig
 	aggregatorConfig.AssumedHonest = assumedHonest
-	daConfig := DefaultDataAvailabilityConfig
+	daConfig := DefaultConfig
 	daConfig.RPCAggregator = aggregatorConfig
 	daConfig.RequestTimeout = time.Millisecond * 2000
 	aggregator, err := newAggregator(daConfig, backends)
@@ -305,7 +305,7 @@ func TestDAS_InsufficientBackendsTriggersFallback(t *testing.T) {
 		privKey, err := blsSignatures.GeneratePrivKeyString()
 		Require(t, err)
 
-		config := DefaultDataAvailabilityConfig
+		config := DefaultConfig
 		config.Enable = true
 		config.Key.PrivKey = privKey
 
@@ -320,7 +320,7 @@ func TestDAS_InsufficientBackendsTriggersFallback(t *testing.T) {
 
 	aggregatorConfig := DefaultAggregatorConfig
 	aggregatorConfig.AssumedHonest = assumedHonest
-	daConfig := DefaultDataAvailabilityConfig
+	daConfig := DefaultConfig
 	daConfig.RPCAggregator = aggregatorConfig
 	daConfig.RequestTimeout = time.Millisecond * 2000
 	aggregator, err := newAggregator(daConfig, backends)

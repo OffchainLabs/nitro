@@ -71,7 +71,7 @@ func FixKeysetCLIParsing(path string, k *koanf.Koanf) error {
 	return nil
 }
 
-func NewRPCAggregator(config DataAvailabilityConfig, signer signature.DataSignerFunc) (*Aggregator, error) {
+func NewRPCAggregator(config Config, signer signature.DataSignerFunc) (*Aggregator, error) {
 	services, err := ParseServices(config.RPCAggregator, signer)
 	if err != nil {
 		return nil, err
@@ -91,7 +91,7 @@ func ParseServices(config AggregatorConfig, signer signature.DataSignerFunc) ([]
 
 		clientConfig := config.DASRPCClient
 		clientConfig.RPC.URL = b.URL
-		service, err := NewDASRPCClient(&clientConfig, signer)
+		service, err := NewRPCClient(&clientConfig, signer)
 		if err != nil {
 			return nil, err
 		}

@@ -41,7 +41,7 @@ func testRpcImpl(t *testing.T, size, times int, concurrent bool) {
 	pubkey, _, err := GenerateAndStoreKeys(keyDir)
 	testhelpers.RequireImpl(t, err)
 
-	config := DefaultDataAvailabilityConfig
+	config := DefaultConfig
 	config.Enable = true
 	config.Key.KeyDir = keyDir
 	config.LocalFileStorage.Enable = true
@@ -60,7 +60,7 @@ func testRpcImpl(t *testing.T, size, times int, concurrent bool) {
 	testhelpers.RequireImpl(t, err)
 	signer := signature.DataSignerFromPrivateKey(testPrivateKey)
 
-	dasServer, err := StartDASRPCServerOnListener(ctx, lis, genericconf.HTTPServerTimeoutConfigDefault, genericconf.HTTPServerBodyLimitDefault, storageService, localDas, storageService, signatureVerifier)
+	dasServer, err := StartRPCServerOnListener(ctx, lis, genericconf.HTTPServerTimeoutConfigDefault, genericconf.HTTPServerBodyLimitDefault, storageService, localDas, storageService, signatureVerifier)
 
 	defer func() {
 		if err := dasServer.Shutdown(ctx); err != nil {
@@ -74,7 +74,7 @@ func testRpcImpl(t *testing.T, size, times int, concurrent bool) {
 	}}
 
 	testhelpers.RequireImpl(t, err)
-	aggConf := DefaultDataAvailabilityConfig
+	aggConf := DefaultConfig
 	aggConf.RPCAggregator.AssumedHonest = 1
 	aggConf.RPCAggregator.Backends = beConfigs
 	aggConf.RPCAggregator.DASRPCClient.EnableChunkedStore = true

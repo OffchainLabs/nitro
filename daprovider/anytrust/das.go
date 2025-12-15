@@ -17,13 +17,12 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 )
 
-type DataAvailabilityServiceHealthChecker interface {
+type ServiceHealthChecker interface {
 	HealthCheck(ctx context.Context) error
 }
 
-// This specifically refers to AnyTrust DA Config and will be moved/renamed in future.
 // lint:require-exhaustive-initialization
-type DataAvailabilityConfig struct {
+type Config struct {
 	Enable bool `koanf:"enable"`
 
 	RequestTimeout time.Duration `koanf:"request-timeout"`
@@ -50,9 +49,9 @@ type DataAvailabilityConfig struct {
 	DisableSignatureChecking bool `koanf:"disable-signature-checking"`
 }
 
-// DefaultDataAvailabilityConfig includes defaults for daserver-specific fields.
-// For arbnode, use DefaultDataAvailabilityConfigForNode instead.
-var DefaultDataAvailabilityConfig = DataAvailabilityConfig{
+// DefaultConfig includes defaults for daserver-specific fields.
+// For arbnode, use DefaultConfigForNode instead.
+var DefaultConfig = Config{
 	Enable:                          false,
 	RequestTimeout:                  5 * time.Second,
 	MaxBatchSize:                    1_000_000, // 1MB default
@@ -69,10 +68,10 @@ var DefaultDataAvailabilityConfig = DataAvailabilityConfig{
 	DisableSignatureChecking:        false,
 }
 
-// DefaultDataAvailabilityConfigForNode only sets defaults for fields with CLI
+// DefaultConfigForNode only sets defaults for fields with CLI
 // flags in node mode. daserver-specific fields (caches, storage) are left at
 // zero values since they have no pflags registered in node mode.
-var DefaultDataAvailabilityConfigForNode = DataAvailabilityConfig{
+var DefaultConfigForNode = Config{
 	Enable:                          false,
 	RequestTimeout:                  5 * time.Second,
 	MaxBatchSize:                    1_000_000, // 1MB default
@@ -103,12 +102,12 @@ func OptionalAddressFromString(s string) (*common.Address, error) {
 	return &addr, nil
 }
 
-func DataAvailabilityConfigAddNodeOptions(prefix string, f *pflag.FlagSet) {
-	dataAvailabilityConfigAddOptions(prefix, f, roleNode)
+func ConfigAddNodeOptions(prefix string, f *pflag.FlagSet) {
+	configAddOptions(prefix, f, roleNode)
 }
 
-func DataAvailabilityConfigAddDaserverOptions(prefix string, f *pflag.FlagSet) {
-	dataAvailabilityConfigAddOptions(prefix, f, roleDaserver)
+func ConfigAddServerOptions(prefix string, f *pflag.FlagSet) {
+	configAddOptions(prefix, f, roleDaserver)
 }
 
 type role int
@@ -118,12 +117,12 @@ const (
 	roleDaserver
 )
 
-func dataAvailabilityConfigAddOptions(prefix string, f *pflag.FlagSet, r role) {
-	f.Bool(prefix+".enable", DefaultDataAvailabilityConfig.Enable, "enable Anytrust Data Availability mode")
-	f.Bool(prefix+".panic-on-error", DefaultDataAvailabilityConfig.PanicOnError, "whether the Data Availability Service should fail immediately on errors (not recommended)")
+func configAddOptions(prefix string, f *pflag.FlagSet, r role) {
+	f.Bool(prefix+".enable", DefaultConfig.Enable, "enable Anytrust Data Availability mode")
+	f.Bool(prefix+".panic-on-error", DefaultConfig.PanicOnError, "whether the Data Availability Service should fail immediately on errors (not recommended)")
 
 	if r == roleDaserver {
-		f.Bool(prefix+".disable-signature-checking", DefaultDataAvailabilityConfig.DisableSignatureChecking, "disables signature checking on Data Availability Store requests (DANGEROUS, FOR TESTING ONLY)")
+		f.Bool(prefix+".disable-signature-checking", DefaultConfig.DisableSignatureChecking, "disables signature checking on Data Availability Store requests (DANGEROUS, FOR TESTING ONLY)")
 
 		// Cache options
 		CacheConfigAddOptions(prefix+".local-cache", f)
@@ -137,13 +136,13 @@ func dataAvailabilityConfigAddOptions(prefix string, f *pflag.FlagSet, r role) {
 		// Key config for storage
 		KeyConfigAddOptions(prefix+".key", f)
 
-		f.String(prefix+".extra-signature-checking-public-key", DefaultDataAvailabilityConfig.ExtraSignatureCheckingPublicKey, "public key to use to validate Data Availability Store requests in addition to the Sequencer's public key determined using sequencer-inbox-address, can be a file or the hex-encoded public key beginning with 0x; useful for testing")
+		f.String(prefix+".extra-signature-checking-public-key", DefaultConfig.ExtraSignatureCheckingPublicKey, "public key to use to validate Data Availability Store requests in addition to the Sequencer's public key determined using sequencer-inbox-address, can be a file or the hex-encoded public key beginning with 0x; useful for testing")
 	}
 	if r == roleNode {
 		// These are only for batch poster
 		AggregatorConfigAddOptions(prefix+".rpc-aggregator", f)
-		f.Duration(prefix+".request-timeout", DefaultDataAvailabilityConfig.RequestTimeout, "Data Availability Service timeout duration for Store requests")
-		f.Int(prefix+".max-batch-size", DefaultDataAvailabilityConfig.MaxBatchSize, "maximum batch size for AnyTrust DA (compressed)")
+		f.Duration(prefix+".request-timeout", DefaultConfig.RequestTimeout, "Data Availability Service timeout duration for Store requests")
+		f.Int(prefix+".max-batch-size", DefaultConfig.MaxBatchSize, "maximum batch size for AnyTrust DA (compressed)")
 	}
 
 	// Both the Nitro node and daserver can use these options.

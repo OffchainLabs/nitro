@@ -29,7 +29,7 @@ func testDASStoreRetrieveMultipleInstances(t *testing.T, storageType string) {
 		Fail(t, "unknown storage type")
 	}
 
-	config := DefaultDataAvailabilityConfig
+	config := DefaultConfig
 	config.Enable = true
 	config.Key.KeyDir = dbPath
 	config.LocalFileStorage.Enable = enableFileStorage
@@ -102,7 +102,7 @@ func testDASMissingMessage(t *testing.T, storageType string) {
 		Fail(t, "unknown storage type")
 	}
 
-	config := DefaultDataAvailabilityConfig
+	config := DefaultConfig
 	config.Enable = true
 	config.Key.KeyDir = dbPath
 	config.LocalFileStorage.Enable = enableFileStorage

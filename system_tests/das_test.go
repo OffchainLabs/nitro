@@ -35,12 +35,12 @@ func startLocalDASServer(
 	dataDir string,
 	l1client *ethclient.Client,
 	seqInboxAddress common.Address,
-) (*http.Server, *blsSignatures.PublicKey, anytrust.BackendConfig, *anytrust.RestfulDasServer, string) {
+) (*http.Server, *blsSignatures.PublicKey, anytrust.BackendConfig, *anytrust.RestfulServer, string) {
 	keyDir := t.TempDir()
 	pubkey, _, err := anytrust.GenerateAndStoreKeys(keyDir)
 	Require(t, err)
 
-	config := anytrust.DefaultDataAvailabilityConfig
+	config := anytrust.DefaultConfig
 	config.Enable = true
 	config.Key = anytrust.KeyConfig{KeyDir: keyDir}
 	config.LocalFileStorage = anytrust.DefaultLocalFileStorageConfig
@@ -61,7 +61,7 @@ func startLocalDASServer(
 	rpcAddr := rpcLis.Addr().String()
 	t.Logf("DAS RPC listener created at: %s", rpcAddr)
 
-	rpcServer, err := anytrust.StartDASRPCServerOnListener(ctx, rpcLis, genericconf.HTTPServerTimeoutConfigDefault, genericconf.HTTPServerBodyLimitDefault, storageService, daWriter, storageService, signatureVerifier)
+	rpcServer, err := anytrust.StartRPCServerOnListener(ctx, rpcLis, genericconf.HTTPServerTimeoutConfigDefault, genericconf.HTTPServerBodyLimitDefault, storageService, daWriter, storageService, signatureVerifier)
 	Require(t, err)
 	t.Logf("DAS RPC server started and listening on: %s", rpcAddr)
 
@@ -70,7 +70,7 @@ func startLocalDASServer(
 	restAddr := restLis.Addr().String()
 	t.Logf("DAS REST listener created at: %s", restAddr)
 
-	restServer, err := anytrust.NewRestfulDasServerOnListener(restLis, genericconf.HTTPServerTimeoutConfigDefault, storageService, storageService)
+	restServer, err := anytrust.NewRestfulServerOnListener(restLis, genericconf.HTTPServerTimeoutConfigDefault, storageService, storageService)
 	Require(t, err)
 	t.Logf("DAS REST server started and listening on: %s", restAddr)
 
@@ -97,7 +97,7 @@ func aggConfigForBackend(backendConfig anytrust.BackendConfig) anytrust.Aggregat
 		Enable:        true,
 		AssumedHonest: 1,
 		Backends:      anytrust.BackendConfigList{backendConfig},
-		DASRPCClient: anytrust.DASRPCClientConfig{
+		DASRPCClient: anytrust.RPCClientConfig{
 			EnableChunkedStore: true,
 			DataStream:         data_streaming.TestDataStreamerConfig(anytrust.DefaultDataStreamRpcMethods),
 			RPC:                rpcConfig,
@@ -191,7 +191,7 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 	pubkey, _, err := anytrust.GenerateAndStoreKeys(keyDir)
 	Require(t, err)
 
-	serverConfig := anytrust.DefaultDataAvailabilityConfig
+	serverConfig := anytrust.DefaultConfig
 	serverConfig.Enable = true
 	serverConfig.LocalCache = anytrust.TestCacheConfig
 	serverConfig.LocalFileStorage.Enable = true
@@ -205,18 +205,18 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 	defer lifecycleManager.StopAndWaitUntil(time.Second)
 	rpcLis, err := net.Listen("tcp", "localhost:0")
 	Require(t, err)
-	_, err = anytrust.StartDASRPCServerOnListener(ctx, rpcLis, genericconf.HTTPServerTimeoutConfigDefault, genericconf.HTTPServerBodyLimitDefault, daReader, daWriter, daHealthChecker, signatureVerifier)
+	_, err = anytrust.StartRPCServerOnListener(ctx, rpcLis, genericconf.HTTPServerTimeoutConfigDefault, genericconf.HTTPServerBodyLimitDefault, daReader, daWriter, daHealthChecker, signatureVerifier)
 	Require(t, err)
 	restLis, err := net.Listen("tcp", "localhost:0")
 	Require(t, err)
-	restServer, err := anytrust.NewRestfulDasServerOnListener(restLis, genericconf.HTTPServerTimeoutConfigDefault, daReader, daHealthChecker)
+	restServer, err := anytrust.NewRestfulServerOnListener(restLis, genericconf.HTTPServerTimeoutConfigDefault, daReader, daHealthChecker)
 	Require(t, err)
 
 	pubkeyA := pubkey
 	authorizeDASKeyset(t, ctx, pubkeyA, builder.L1Info, builder.L1.Client)
 
 	//
-	builder.nodeConfig.DataAvailability = anytrust.DefaultDataAvailabilityConfig
+	builder.nodeConfig.DataAvailability = anytrust.DefaultConfig
 	builder.nodeConfig.DataAvailability.Enable = true
 	// AggregatorConfig set up below
 	beConfigA := anytrust.BackendConfig{
@@ -236,7 +236,7 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 
 	// Create node to sync from chain
 	l1NodeConfigB := arbnode.ConfigDefaultL1NonSequencerTest()
-	l1NodeConfigB.DataAvailability = anytrust.DefaultDataAvailabilityConfig
+	l1NodeConfigB.DataAvailability = anytrust.DefaultConfig
 	l1NodeConfigB.DataAvailability.Enable = true
 	// AggregatorConfig set up below
 	l1NodeConfigB.BlockValidator.Enable = false

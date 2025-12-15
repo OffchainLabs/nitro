@@ -89,13 +89,14 @@ func startClient(args []string) error {
 // datool client rpc store
 
 type ClientStoreConfig struct {
-	Message               string                      `koanf:"message"`
-	RandomMessageSize     int                         `koanf:"random-message-size"`
-	DASRetentionPeriod    time.Duration               `koanf:"das-retention-period"`
-	SigningKey            string                      `koanf:"signing-key"`
-	SigningWallet         string                      `koanf:"signing-wallet"`
-	SigningWalletPassword string                      `koanf:"signing-wallet-password"`
-	DASRPCClient          anytrust.DASRPCClientConfig `koanf:"das-rpc-client"`
+	Message               string        `koanf:"message"`
+	RandomMessageSize     int           `koanf:"random-message-size"`
+	DASRetentionPeriod    time.Duration `koanf:"das-retention-period"`
+	SigningKey            string        `koanf:"signing-key"`
+	SigningWallet         string        `koanf:"signing-wallet"`
+	SigningWalletPassword string        `koanf:"signing-wallet-password"`
+	// TODO: Rename to RPCClient with koanf:"rpc-client" after CLI flag migration
+	DASRPCClient anytrust.RPCClientConfig `koanf:"das-rpc-client"`
 }
 
 func parseClientStoreConfig(args []string) (*ClientStoreConfig, error) {
@@ -106,7 +107,7 @@ func parseClientStoreConfig(args []string) (*ClientStoreConfig, error) {
 	f.String("signing-wallet", "", "wallet containing ecdsa key to sign the message with")
 	f.String("signing-wallet-password", genericconf.PASSWORD_NOT_SET, "password to unlock the wallet, if not specified the user is prompted for the password")
 	f.Duration("das-retention-period", 24*time.Hour, "The period which DASes are requested to retain the stored batches.")
-	anytrust.DASRPCClientConfigAddOptions("das-rpc-client", f)
+	anytrust.RPCClientConfigAddOptions("das-rpc-client", f)
 
 	k, err := confighelpers.BeginCommonParse(f, args)
 	if err != nil {
@@ -155,7 +156,7 @@ func startClientStore(args []string) error {
 		}
 	}
 
-	client, err := anytrust.NewDASRPCClient(&config.DASRPCClient, signer)
+	client, err := anytrust.NewRPCClient(&config.DASRPCClient, signer)
 	if err != nil {
 		return err
 	}
@@ -219,7 +220,7 @@ func startRESTClientGetByHash(args []string) error {
 		return err
 	}
 
-	client, err := anytrust.NewRestfulDasClientFromURL(config.URL)
+	client, err := anytrust.NewRestfulClientFromURL(config.URL)
 	if err != nil {
 		return err
 	}

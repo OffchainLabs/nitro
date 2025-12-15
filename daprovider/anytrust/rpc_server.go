@@ -35,25 +35,25 @@ var (
 )
 
 // lint:require-exhaustive-initialization
-type DASRPCServer struct {
+type RPCServer struct {
 	daReader        anytrustutil.Reader
 	daWriter        anytrustutil.Writer
-	daHealthChecker DataAvailabilityServiceHealthChecker
+	daHealthChecker ServiceHealthChecker
 
 	signatureVerifier *SignatureVerifier
 
 	dataStreamReceiver *data_streaming.DataStreamReceiver
 }
 
-func StartDASRPCServer(ctx context.Context, addr string, portNum uint64, rpcServerTimeouts genericconf.HTTPServerTimeoutConfig, rpcServerBodyLimit int, daReader anytrustutil.Reader, daWriter anytrustutil.Writer, daHealthChecker DataAvailabilityServiceHealthChecker, signatureVerifier *SignatureVerifier) (*http.Server, error) {
+func StartRPCServer(ctx context.Context, addr string, portNum uint64, rpcServerTimeouts genericconf.HTTPServerTimeoutConfig, rpcServerBodyLimit int, daReader anytrustutil.Reader, daWriter anytrustutil.Writer, daHealthChecker ServiceHealthChecker, signatureVerifier *SignatureVerifier) (*http.Server, error) {
 	listener, err := net.Listen("tcp", fmt.Sprintf("%s:%d", addr, portNum))
 	if err != nil {
 		return nil, err
 	}
-	return StartDASRPCServerOnListener(ctx, listener, rpcServerTimeouts, rpcServerBodyLimit, daReader, daWriter, daHealthChecker, signatureVerifier)
+	return StartRPCServerOnListener(ctx, listener, rpcServerTimeouts, rpcServerBodyLimit, daReader, daWriter, daHealthChecker, signatureVerifier)
 }
 
-func StartDASRPCServerOnListener(ctx context.Context, listener net.Listener, rpcServerTimeouts genericconf.HTTPServerTimeoutConfig, rpcServerBodyLimit int, daReader anytrustutil.Reader, daWriter anytrustutil.Writer, daHealthChecker DataAvailabilityServiceHealthChecker, signatureVerifier *SignatureVerifier) (*http.Server, error) {
+func StartRPCServerOnListener(ctx context.Context, listener net.Listener, rpcServerTimeouts genericconf.HTTPServerTimeoutConfig, rpcServerBodyLimit int, daReader anytrustutil.Reader, daWriter anytrustutil.Writer, daHealthChecker ServiceHealthChecker, signatureVerifier *SignatureVerifier) (*http.Server, error) {
 	if daWriter == nil {
 		return nil, errors.New("No writer backend was configured for DAS RPC server. Has the BLS signing key been set up (--data-availability.key.key-dir or --data-availability.key.priv-key options)?")
 	}
@@ -80,7 +80,7 @@ func StartDASRPCServerOnListener(ctx context.Context, listener net.Listener, rpc
 	})
 	dataStreamReceiver.Start(ctx)
 
-	err := rpcServer.RegisterName("das", &DASRPCServer{
+	err := rpcServer.RegisterName("das", &RPCServer{
 		daReader:           daReader,
 		daWriter:           daWriter,
 		daHealthChecker:    daHealthChecker,
@@ -124,9 +124,9 @@ type StoreResult struct {
 }
 
 // The legacy storing API.
-func (s *DASRPCServer) Store(ctx context.Context, message hexutil.Bytes, timeout hexutil.Uint64, sig hexutil.Bytes) (*StoreResult, error) {
+func (s *RPCServer) Store(ctx context.Context, message hexutil.Bytes, timeout hexutil.Uint64, sig hexutil.Bytes) (*StoreResult, error) {
 	// #nosec G115
-	log.Trace("dasRpc.DASRPCServer.Store", "message", pretty.FirstFewBytes(message), "message length", len(message), "timeout", time.Unix(int64(timeout), 0), "sig", pretty.FirstFewBytes(sig), "this", s)
+	log.Trace("anytrust.RPCServer.Store", "message", pretty.FirstFewBytes(message), "message length", len(message), "timeout", time.Unix(int64(timeout), 0), "sig", pretty.FirstFewBytes(sig), "this", s)
 	rpcStoreRequestCounter.Inc(1)
 	start := time.Now()
 	success := false
@@ -166,7 +166,7 @@ var (
 	legacyDASStoreAPIOnly = false
 )
 
-func (s *DASRPCServer) StartChunkedStore(ctx context.Context, timestamp, nChunks, chunkSize, totalSize, timeout hexutil.Uint64, sig hexutil.Bytes) (*data_streaming.StartStreamingResult, error) {
+func (s *RPCServer) StartChunkedStore(ctx context.Context, timestamp, nChunks, chunkSize, totalSize, timeout hexutil.Uint64, sig hexutil.Bytes) (*data_streaming.StartStreamingResult, error) {
 	rpcStoreRequestCounter.Inc(1)
 	failed := true
 	defer func() {
@@ -184,7 +184,7 @@ func (s *DASRPCServer) StartChunkedStore(ctx context.Context, timestamp, nChunks
 	return result, nil
 }
 
-func (s *DASRPCServer) SendChunk(ctx context.Context, messageId, chunkId hexutil.Uint64, chunk hexutil.Bytes, sig hexutil.Bytes) error {
+func (s *RPCServer) SendChunk(ctx context.Context, messageId, chunkId hexutil.Uint64, chunk hexutil.Bytes, sig hexutil.Bytes) error {
 	success := false
 	defer func() {
 		if success {
@@ -202,7 +202,7 @@ func (s *DASRPCServer) SendChunk(ctx context.Context, messageId, chunkId hexutil
 	return nil
 }
 
-func (s *DASRPCServer) CommitChunkedStore(ctx context.Context, messageId hexutil.Uint64, sig hexutil.Bytes) (*StoreResult, error) {
+func (s *RPCServer) CommitChunkedStore(ctx context.Context, messageId hexutil.Uint64, sig hexutil.Bytes) (*StoreResult, error) {
 	message, timeout, startTime, err := s.dataStreamReceiver.FinalizeReceiving(ctx, data_streaming.MessageId(messageId), sig)
 	if err != nil {
 		return nil, err
@@ -233,11 +233,11 @@ func (s *DASRPCServer) CommitChunkedStore(ctx context.Context, messageId hexutil
 	}, nil
 }
 
-func (s *DASRPCServer) HealthCheck(ctx context.Context) error {
+func (s *RPCServer) HealthCheck(ctx context.Context) error {
 	return s.daHealthChecker.HealthCheck(ctx)
 }
 
-func (s *DASRPCServer) ExpirationPolicy(ctx context.Context) (string, error) {
+func (s *RPCServer) ExpirationPolicy(ctx context.Context) (string, error) {
 	expirationPolicy, err := s.daReader.ExpirationPolicy(ctx)
 	if err != nil {
 		return "", err

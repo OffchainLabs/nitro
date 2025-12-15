@@ -19,7 +19,7 @@ import (
 
 const LocalServerAddressForTest = "localhost"
 
-func NewRestfulDasServerOnRandomPort(address string, storageService StorageService) (*RestfulDasServer, int, error) {
+func NewRestfulServerOnRandomPort(address string, storageService StorageService) (*RestfulServer, int, error) {
 	listener, err := net.Listen("tcp", fmt.Sprintf("%s:0", address))
 	if err != nil {
 		return nil, 0, err
@@ -28,7 +28,7 @@ func NewRestfulDasServerOnRandomPort(address string, storageService StorageServi
 	if !ok {
 		return nil, 0, errors.New("attempt to listen on TCP returned non-TCP address")
 	}
-	rds, err := NewRestfulDasServerOnListener(listener, genericconf.HTTPServerTimeoutConfigDefault, storageService, storageService)
+	rds, err := NewRestfulServerOnListener(listener, genericconf.HTTPServerTimeoutConfigDefault, storageService, storageService)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -45,7 +45,7 @@ func TestRestfulClientServer(t *testing.T) {
 	data := []byte("Testing a restful server now.")
 	dataHash := tree.Hash(data)
 
-	server, port, err := NewRestfulDasServerOnRandomPort(LocalServerAddressForTest, storage)
+	server, port, err := NewRestfulServerOnRandomPort(LocalServerAddressForTest, storage)
 	Require(t, err)
 
 	// #nosec G115
@@ -54,7 +54,7 @@ func TestRestfulClientServer(t *testing.T) {
 
 	time.Sleep(100 * time.Millisecond)
 
-	client := NewRestfulDasClient("http", LocalServerAddressForTest, port)
+	client := NewRestfulClient("http", LocalServerAddressForTest, port)
 	returnedData, err := client.GetByHash(ctx, dataHash)
 	Require(t, err)
 	if !bytes.Equal(data, returnedData) {

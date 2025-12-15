@@ -24,7 +24,7 @@ import (
 )
 
 // Most of the time we will use the SimpleReaderAggregator only to  aggregate
-// RestfulDasClients, so the configuration and factory function are given more
+// RestfulClients, so the configuration and factory function are given more
 // specific names.
 type RestfulClientAggregatorConfig struct {
 	Enable                       bool                               `koanf:"enable"`
@@ -110,7 +110,7 @@ func NewRestfulClientAggregator(ctx context.Context, config *RestfulClientAggreg
 	log.Info("REST Aggregator URLs", "urls", urls)
 
 	for _, url := range urls {
-		reader, err := NewRestfulDasClientFromURL(url)
+		reader, err := NewRestfulClientFromURL(url)
 		if err != nil {
 			return nil, err
 		}
@@ -275,14 +275,14 @@ func (a *SimpleReaderAggregator) Start(ctx context.Context) {
 	a.StopWaiter.Start(ctx, a)
 	onlineUrlsChan := StartRestfulServerListFetchDaemon(a.StopWaiter.GetContext(), a.config.OnlineUrlList, a.config.OnlineUrlListFetchInterval)
 
-	updateRestfulDasClients := func(urls []string) {
+	updateRestfulClients := func(urls []string) {
 		a.readersMutex.Lock()
 		defer a.readersMutex.Unlock()
 		combinedUrls := a.config.Urls
 		combinedUrls = append(combinedUrls, urls...)
 		combinedReaders := make(map[anytrustutil.Reader]bool)
 		for _, url := range combinedUrls {
-			reader, err := NewRestfulDasClientFromURL(url)
+			reader, err := NewRestfulClientFromURL(url)
 			if err != nil {
 				return
 			}
@@ -324,7 +324,7 @@ func (a *SimpleReaderAggregator) Start(ctx context.Context) {
 				// to avoid needing extra synchronization.
 				a.strategy.update(a.readers, a.stats)
 			case onlineUrls := <-onlineUrlsChan:
-				updateRestfulDasClients(onlineUrls)
+				updateRestfulClients(onlineUrls)
 			}
 		}
 	})

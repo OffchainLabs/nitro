@@ -88,7 +88,7 @@ func newDataAvailabilityCheck(ctx context.Context, dataAvailabilityCheckConfig *
 	}
 	urlToReaderMap := make(map[string]anytrustutil.Reader, len(onlineUrls))
 	for _, url := range onlineUrls {
-		reader, err := anytrust.NewRestfulDasClientFromURL(url)
+		reader, err := anytrust.NewRestfulClientFromURL(url)
 		if err != nil {
 			return nil, err
 		}

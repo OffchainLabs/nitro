@@ -31,25 +31,25 @@ var (
 	restGetByHashDurationHistogram    = metrics.NewRegisteredHistogram("arb/das/rest/getbyhash/duration", nil, metrics.NewBoundedHistogramSample())
 )
 
-type RestfulDasServer struct {
+type RestfulServer struct {
 	server               *http.Server
 	daReader             anytrustutil.Reader
-	daHealthChecker      DataAvailabilityServiceHealthChecker
+	daHealthChecker      ServiceHealthChecker
 	httpServerExitedChan chan interface{}
 	httpServerError      error
 }
 
-func NewRestfulDasServer(address string, port uint64, restServerTimeouts genericconf.HTTPServerTimeoutConfig, daReader anytrustutil.Reader, daHealthChecker DataAvailabilityServiceHealthChecker) (*RestfulDasServer, error) {
+func NewRestfulServer(address string, port uint64, restServerTimeouts genericconf.HTTPServerTimeoutConfig, daReader anytrustutil.Reader, daHealthChecker ServiceHealthChecker) (*RestfulServer, error) {
 	listener, err := net.Listen("tcp", fmt.Sprintf("%s:%d", address, port))
 	if err != nil {
 		return nil, err
 	}
-	return NewRestfulDasServerOnListener(listener, restServerTimeouts, daReader, daHealthChecker)
+	return NewRestfulServerOnListener(listener, restServerTimeouts, daReader, daHealthChecker)
 }
 
-func NewRestfulDasServerOnListener(listener net.Listener, restServerTimeouts genericconf.HTTPServerTimeoutConfig, daReader anytrustutil.Reader, daHealthChecker DataAvailabilityServiceHealthChecker) (*RestfulDasServer, error) {
+func NewRestfulServerOnListener(listener net.Listener, restServerTimeouts genericconf.HTTPServerTimeoutConfig, daReader anytrustutil.Reader, daHealthChecker ServiceHealthChecker) (*RestfulServer, error) {
 
-	ret := &RestfulDasServer{
+	ret := &RestfulServer{
 		daReader:             daReader,
 		daHealthChecker:      daHealthChecker,
 		httpServerExitedChan: make(chan interface{}),
@@ -74,7 +74,7 @@ func NewRestfulDasServerOnListener(listener net.Listener, restServerTimeouts gen
 	return ret, nil
 }
 
-type RestfulDasServerResponse struct {
+type RestfulServerResponse struct {
 	Data             string `json:"data,omitempty"`
 	ExpirationPolicy string `json:"expirationPolicy,omitempty"`
 }
@@ -87,7 +87,7 @@ const healthRequestPath = "/health"
 const expirationPolicyRequestPath = "/expiration-policy/"
 const getByHashRequestPath = "/get-by-hash/"
 
-func (rds *RestfulDasServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (rds *RestfulServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header()[cacheControlKey] = []string{cacheControlValueDefault}
 	requestPath := path.Clean(r.URL.Path)
 	log.Debug("Got request", "requestPath", requestPath)
@@ -106,7 +106,7 @@ func (rds *RestfulDasServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 // HealthHandler implements health requests for remote health-checks
-func (rds *RestfulDasServer) HealthHandler(w http.ResponseWriter, r *http.Request, requestPath string) {
+func (rds *RestfulServer) HealthHandler(w http.ResponseWriter, r *http.Request, requestPath string) {
 	err := rds.daHealthChecker.HealthCheck(r.Context())
 	if err != nil {
 		log.Warn("Unhealthy service", "path", requestPath, "err", err)
@@ -116,7 +116,7 @@ func (rds *RestfulDasServer) HealthHandler(w http.ResponseWriter, r *http.Reques
 	w.WriteHeader(http.StatusOK)
 }
 
-func (rds *RestfulDasServer) ExpirationPolicyHandler(w http.ResponseWriter, r *http.Request, requestPath string) {
+func (rds *RestfulServer) ExpirationPolicyHandler(w http.ResponseWriter, r *http.Request, requestPath string) {
 	expirationPolicy, err := rds.daReader.ExpirationPolicy(r.Context())
 	if err != nil {
 		log.Warn("Error retrieving expiration policy", "path", requestPath, "err", err)
@@ -129,7 +129,7 @@ func (rds *RestfulDasServer) ExpirationPolicyHandler(w http.ResponseWriter, r *h
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-	err = json.NewEncoder(w).Encode(RestfulDasServerResponse{ExpirationPolicy: expirationPolicyString})
+	err = json.NewEncoder(w).Encode(RestfulServerResponse{ExpirationPolicy: expirationPolicyString})
 	if err != nil {
 		log.Warn("Failed encoding and writing response", "path", requestPath, "err", err)
 		w.WriteHeader(http.StatusInternalServerError)
@@ -138,7 +138,7 @@ func (rds *RestfulDasServer) ExpirationPolicyHandler(w http.ResponseWriter, r *h
 	w.WriteHeader(http.StatusOK)
 }
 
-func (rds *RestfulDasServer) GetByHashHandler(w http.ResponseWriter, r *http.Request, requestPath string) {
+func (rds *RestfulServer) GetByHashHandler(w http.ResponseWriter, r *http.Request, requestPath string) {
 	log.Debug("Got request", "requestPath", requestPath)
 	restGetByHashRequestCounter.Inc(1)
 	start := time.Now()
@@ -170,11 +170,11 @@ func (rds *RestfulDasServer) GetByHashHandler(w http.ResponseWriter, r *http.Req
 		w.WriteHeader(http.StatusNotFound)
 		return
 	}
-	log.Trace("RestfulDasServer.ServeHTTP returning", "message", pretty.FirstFewBytes(responseData), "message length", len(responseData))
+	log.Trace("RestfulServer.ServeHTTP returning", "message", pretty.FirstFewBytes(responseData), "message length", len(responseData))
 
 	encodedResponseData := make([]byte, base64.StdEncoding.EncodedLen(len(responseData)))
 	base64.StdEncoding.Encode(encodedResponseData, responseData)
-	var response RestfulDasServerResponse
+	var response RestfulServerResponse
 	response.Data = string(encodedResponseData)
 	restGetByHashReturnedBytesCounter.Inc(int64(len(response.Data)))
 
@@ -188,16 +188,16 @@ func (rds *RestfulDasServer) GetByHashHandler(w http.ResponseWriter, r *http.Req
 	success = true
 }
 
-func (rds *RestfulDasServer) GetServerExitedChan() <-chan interface{} { // channel will close when server terminates
+func (rds *RestfulServer) GetServerExitedChan() <-chan interface{} { // channel will close when server terminates
 	return rds.httpServerExitedChan
 }
 
-func (rds *RestfulDasServer) WaitForShutdown() error {
+func (rds *RestfulServer) WaitForShutdown() error {
 	<-rds.httpServerExitedChan
 	return rds.httpServerError
 }
 
-func (rds *RestfulDasServer) Shutdown() error {
+func (rds *RestfulServer) Shutdown() error {
 	err := rds.server.Close()
 	if err != nil {
 		return err

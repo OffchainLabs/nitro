@@ -20,7 +20,7 @@ import (
 type FallbackStorageService struct {
 	StorageService
 	backup                     anytrustutil.Reader
-	backupHealthChecker        DataAvailabilityServiceHealthChecker
+	backupHealthChecker        ServiceHealthChecker
 	backupRetentionSeconds     uint64
 	ignoreRetentionWriteErrors bool
 	preventRecursiveGets       bool
@@ -34,7 +34,7 @@ type FallbackStorageService struct {
 func NewFallbackStorageService(
 	primary StorageService,
 	backup anytrustutil.Reader,
-	backupHealthChecker DataAvailabilityServiceHealthChecker,
+	backupHealthChecker ServiceHealthChecker,
 	backupRetentionSeconds uint64, // how long to retain data that we copy in from the backup (MaxUint64 means forever)
 	ignoreRetentionWriteErrors bool, // if true, don't return error if write of retention data to primary fails
 	preventRecursiveGets bool, // if true, return NotFound on simultaneous calls to Gets that miss in primary (prevents infinite recursion)

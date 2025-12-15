@@ -26,11 +26,11 @@ func TestSimpleReaderAggregator(t *testing.T) { //nolint
 	data1 := []byte("Testing a restful server now.")
 	dataHash1 := tree.Hash(data1)
 
-	server1, port1, err := NewRestfulDasServerOnRandomPort(LocalServerAddressForTest, storage1)
+	server1, port1, err := NewRestfulServerOnRandomPort(LocalServerAddressForTest, storage1)
 	Require(t, err)
-	server2, port2, err := NewRestfulDasServerOnRandomPort(LocalServerAddressForTest, storage2)
+	server2, port2, err := NewRestfulServerOnRandomPort(LocalServerAddressForTest, storage2)
 	Require(t, err)
-	server3, port3, err := NewRestfulDasServerOnRandomPort(LocalServerAddressForTest, storage3)
+	server3, port3, err := NewRestfulServerOnRandomPort(LocalServerAddressForTest, storage3)
 	Require(t, err)
 
 	// #nosec G115
