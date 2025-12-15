@@ -89,13 +89,13 @@ func startClient(args []string) error {
 // datool client rpc store
 
 type ClientStoreConfig struct {
-	Message               string                   `koanf:"message"`
-	RandomMessageSize     int                      `koanf:"random-message-size"`
-	DASRetentionPeriod    time.Duration            `koanf:"das-retention-period"`
-	SigningKey            string                   `koanf:"signing-key"`
-	SigningWallet         string                   `koanf:"signing-wallet"`
-	SigningWalletPassword string                   `koanf:"signing-wallet-password"`
-	RPCClient             anytrust.RPCClientConfig `koanf:"rpc-client"`
+	Message                 string                   `koanf:"message"`
+	RandomMessageSize       int                      `koanf:"random-message-size"`
+	AnyTrustRetentionPeriod time.Duration            `koanf:"anytrust-retention-period"`
+	SigningKey              string                   `koanf:"signing-key"`
+	SigningWallet           string                   `koanf:"signing-wallet"`
+	SigningWalletPassword   string                   `koanf:"signing-wallet-password"`
+	RPCClient               anytrust.RPCClientConfig `koanf:"rpc-client"`
 }
 
 func parseClientStoreConfig(args []string) (*ClientStoreConfig, error) {
@@ -105,7 +105,7 @@ func parseClientStoreConfig(args []string) (*ClientStoreConfig, error) {
 	f.String("signing-key", "", "ecdsa private key to sign the message with, treated as a hex string if prefixed with 0x otherwise treated as a file; if not specified the message is not signed")
 	f.String("signing-wallet", "", "wallet containing ecdsa key to sign the message with")
 	f.String("signing-wallet-password", genericconf.PASSWORD_NOT_SET, "password to unlock the wallet, if not specified the user is prompted for the password")
-	f.Duration("das-retention-period", 24*time.Hour, "The period which DASes are requested to retain the stored batches.")
+	f.Duration("anytrust-retention-period", 24*time.Hour, "The period which AnyTrust nodes are requested to retain the stored batches.")
 	anytrust.RPCClientConfigAddOptions("rpc-client", f)
 
 	k, err := confighelpers.BeginCommonParse(f, args)
@@ -170,10 +170,10 @@ func startClientStore(args []string) error {
 			return err
 		}
 		// #nosec G115
-		cert, err = client.Store(ctx, message, uint64(time.Now().Add(config.DASRetentionPeriod).Unix()))
+		cert, err = client.Store(ctx, message, uint64(time.Now().Add(config.AnyTrustRetentionPeriod).Unix()))
 	} else if len(config.Message) > 0 {
 		// #nosec G115
-		cert, err = client.Store(ctx, []byte(config.Message), uint64(time.Now().Add(config.DASRetentionPeriod).Unix()))
+		cert, err = client.Store(ctx, []byte(config.Message), uint64(time.Now().Add(config.AnyTrustRetentionPeriod).Unix()))
 	} else {
 		return errors.New("--message or --random-message-size must be specified")
 	}

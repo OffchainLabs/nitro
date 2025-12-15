@@ -295,7 +295,7 @@ type Node struct {
 	SeqCoordinator           *SeqCoordinator
 	MaintenanceRunner        *MaintenanceRunner
 	providerServerCloseFn    func()
-	DASLifecycleManager      *anytrust.LifecycleManager
+	AnyTrustLifecycleManager *anytrust.LifecycleManager
 	SyncMonitor              *SyncMonitor
 	blockMetadataFetcher     *BlockMetadataFetcher
 	configFetcher            ConfigFetcher

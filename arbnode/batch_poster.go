@@ -174,7 +174,7 @@ type BatchPosterConfig struct {
 	// Batch posting error delay.
 	ErrorDelay                     time.Duration               `koanf:"error-delay" reload:"hot"`
 	CompressionLevel               int                         `koanf:"compression-level" reload:"hot"`
-	DASRetentionPeriod             time.Duration               `koanf:"das-retention-period" reload:"hot"`
+	AnyTrustRetentionPeriod        time.Duration               `koanf:"anytrust-retention-period" reload:"hot"`
 	GasRefunderAddress             string                      `koanf:"gas-refunder-address" reload:"hot"`
 	DataPoster                     dataposter.DataPosterConfig `koanf:"data-poster" reload:"hot"`
 	RedisUrl                       string                      `koanf:"redis-url"`
@@ -252,7 +252,7 @@ func BatchPosterConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Duration(prefix+".poll-interval", DefaultBatchPosterConfig.PollInterval, "how long to wait after no batches are ready to be posted before checking again")
 	f.Duration(prefix+".error-delay", DefaultBatchPosterConfig.ErrorDelay, "how long to delay after error posting batch")
 	f.Int(prefix+".compression-level", DefaultBatchPosterConfig.CompressionLevel, "batch compression level")
-	f.Duration(prefix+".das-retention-period", DefaultBatchPosterConfig.DASRetentionPeriod, "In AnyTrust mode, the period which DASes are requested to retain the stored batches.")
+	f.Duration(prefix+".anytrust-retention-period", DefaultBatchPosterConfig.AnyTrustRetentionPeriod, "In AnyTrust mode, the period which AnyTrust nodes are requested to retain the stored batches.")
 	f.String(prefix+".gas-refunder-address", DefaultBatchPosterConfig.GasRefunderAddress, "The gas refunder contract address (optional)")
 	f.Uint64(prefix+".extra-batch-gas", DefaultBatchPosterConfig.ExtraBatchGas, "use this much more gas than estimation says is necessary to post batches")
 	f.Bool(prefix+".post-4844-blobs", DefaultBatchPosterConfig.Post4844Blobs, "if the parent chain supports 4844 blobs and they're well priced, post EIP-4844 blobs")
@@ -290,7 +290,7 @@ var DefaultBatchPosterConfig = BatchPosterConfig{
 	MaxDelay:                       time.Hour,
 	WaitForMaxDelay:                false,
 	CompressionLevel:               brotli.BestCompression,
-	DASRetentionPeriod:             daprovider.DefaultAnyTrustRetentionPeriod,
+	AnyTrustRetentionPeriod:        daprovider.DefaultAnyTrustRetentionPeriod,
 	GasRefunderAddress:             "",
 	ExtraBatchGas:                  50_000,
 	Post4844Blobs:                  false,
@@ -329,7 +329,7 @@ var TestBatchPosterConfig = BatchPosterConfig{
 	MaxDelay:                           0,
 	WaitForMaxDelay:                    false,
 	CompressionLevel:                   2,
-	DASRetentionPeriod:                 daprovider.DefaultAnyTrustRetentionPeriod,
+	AnyTrustRetentionPeriod:            daprovider.DefaultAnyTrustRetentionPeriod,
 	GasRefunderAddress:                 "",
 	ExtraBatchGas:                      10_000,
 	Post4844Blobs:                      false,
@@ -1763,7 +1763,7 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 		log.Debug("Attempting to store batch with DA writer", "writerIndex", writerIndex, "numWriters", len(b.dapWriters), "batchSize", len(batchData))
 		storeStart := time.Now()
 		// #nosec G115
-		sequencerMsg, err = writer.Store(batchData, uint64(time.Now().Add(config.DASRetentionPeriod).Unix())).Await(ctx)
+		sequencerMsg, err = writer.Store(batchData, uint64(time.Now().Add(config.AnyTrustRetentionPeriod).Unix())).Await(ctx)
 		storeDuration := time.Since(storeStart)
 
 		if err != nil {
