@@ -333,7 +333,8 @@ COPY --from=node-builder  /workspace/target/bin/daprovider  /usr/local/bin/
 COPY --from=node-builder  /workspace/target/bin/autonomous-auctioneer  /usr/local/bin/
 COPY --from=node-builder  /workspace/target/bin/bidder-client  /usr/local/bin/
 COPY --from=node-builder  /workspace/target/bin/el-proxy  /usr/local/bin/
-COPY --from=node-builder  /workspace/target/bin/datool    /usr/local/bin/
+COPY --from=node-builder  /workspace/target/bin/anytrusttool    /usr/local/bin/
+RUN ln -s /usr/local/bin/anytrusttool /usr/local/bin/datool
 COPY --from=node-builder  /workspace/target/bin/genesis-generator  /usr/local/bin/
 COPY --from=contracts-builder  /workspace/contracts/  /contracts/
 COPY --from=contracts-builder  /workspace/contracts-local/  /contracts-local/

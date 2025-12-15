@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -22,6 +23,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/util"
@@ -33,9 +35,12 @@ import (
 )
 
 func main() {
+	if strings.Contains(filepath.Base(os.Args[0]), "datool") {
+		log.Error("DEPRECATED: 'datool' binary has been renamed to 'anytrusttool' and will be removed in a future release. Please update your scripts and configurations.")
+	}
 	args := os.Args
 	if len(args) < 2 {
-		panic("Usage: datool [client|keygen|generatehash|dumpkeyset] ...")
+		panic("Usage: anytrusttool [client|keygen|generatehash|dumpkeyset] ...")
 	}
 
 	var err error
