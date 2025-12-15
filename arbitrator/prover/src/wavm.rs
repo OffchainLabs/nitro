@@ -1113,7 +1113,11 @@ pub fn wasm_to_wavm(
                     I16x8RelaxedQ15mulrS, I16x8RelaxedDotI8x16I7x16S, I32x4RelaxedDotI8x16I7x16AddS
                 )
             ) => bail!("SIMD extension not supported {unsupported:?}"),
-            _ => bail!("extension {op:?} not supported"),
+            // `wasmparser::Operator` is marked `non_exhaustive`, so we must
+            // include a wildcard arm even though we handle all known variants.
+            // If a new variant appears that we don't explicitly map yet, panic
+            // so that it is noticed and added with a proper opcode.
+            _ => bail!("reached unsupported opcode {op:?}"),
         };
     }
     Ok(())
