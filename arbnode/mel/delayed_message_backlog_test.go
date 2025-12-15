@@ -1,7 +1,6 @@
 package mel
 
 import (
-	"context"
 	"reflect"
 	"strings"
 	"testing"
@@ -10,10 +9,7 @@ import (
 )
 
 func TestDelayedMessageBacklog(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	backlog, err := NewDelayedMessageBacklog(ctx, 1, func(ctx context.Context) (uint64, error) { return 0, nil }, WithUnboundedCapacity)
+	backlog, err := NewDelayedMessageBacklog(100, func() (uint64, error) { return 0, nil })
 	require.NoError(t, err)
 
 	// Verify handling of dirties
@@ -64,8 +60,8 @@ func TestDelayedMessageBacklog(t *testing.T) {
 
 	// Verify that advancing the finalizedAndRead will trim the delayedMessageBacklogEntry while keeping the unread ones
 	finalizedAndRead := uint64(7)
-	backlog.finalizedAndReadIndexFetcher = func(context.Context) (uint64, error) { return finalizedAndRead, nil }
-	require.NoError(t, backlog.clear())
+	backlog.finalizedAndReadIndexFetcher = func() (uint64, error) { return finalizedAndRead, nil }
+	backlog.trimFinalizedAndReadEntries()
 	require.True(t, len(backlog.entries) == int(numEntries-finalizedAndRead)) // #nosec G115
 	require.True(t, backlog.entries[0].Index == finalizedAndRead)
 

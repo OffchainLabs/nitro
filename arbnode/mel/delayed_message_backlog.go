@@ -1,7 +1,6 @@
 package mel
 
 import (
-	"context"
 	"errors"
 	"fmt"
 
@@ -21,40 +20,30 @@ type DelayedMessageBacklogEntry struct {
 // also contains compact witnesses of a Merkle tree representing all seen delayed messages. To prove that a delayed message is part of
 // this Merkle tree, this data structure can be used to verify Merkle proofs against the MEL state.
 type DelayedMessageBacklog struct {
-	ctx                          context.Context
-	capacity                     int
+	targetBufferSize             int
 	entries                      []*DelayedMessageBacklogEntry
 	dirtiesStartPos              int // represents the starting point of dirties in the entries list, items added while processing a state
 	initMessage                  *DelayedInboxMessage
-	finalizedAndReadIndexFetcher func(context.Context) (uint64, error)
+	finalizedAndReadIndexFetcher func() (uint64, error)
 }
 
-func NewDelayedMessageBacklog(ctx context.Context, capacity int, finalizedAndReadIndexFetcher func(context.Context) (uint64, error), opts ...func(*DelayedMessageBacklog)) (*DelayedMessageBacklog, error) {
-	if capacity == 0 {
-		return nil, fmt.Errorf("capacity of DelayedMessageBacklog cannot be zero")
+func NewDelayedMessageBacklog(targetBufferSize int, finalizedAndReadIndexFetcher func() (uint64, error)) (*DelayedMessageBacklog, error) {
+	if targetBufferSize == 0 {
+		return nil, fmt.Errorf("targetBufferSize of DelayedMessageBacklog cannot be zero")
 	}
 	if finalizedAndReadIndexFetcher == nil {
 		return nil, fmt.Errorf("finalizedAndReadIndexFetcher of DelayedMessageBacklog cannot be nil")
 	}
 	backlog := &DelayedMessageBacklog{
-		ctx:                          ctx,
-		capacity:                     capacity,
+		targetBufferSize:             targetBufferSize,
 		entries:                      make([]*DelayedMessageBacklogEntry, 0),
 		initMessage:                  nil,
 		finalizedAndReadIndexFetcher: finalizedAndReadIndexFetcher,
 	}
-	for _, opt := range opts {
-		opt(backlog)
-	}
 	return backlog, nil
 }
 
-func WithUnboundedCapacity(d *DelayedMessageBacklog) {
-	d.capacity = 0
-	d.finalizedAndReadIndexFetcher = nil
-}
-
-// Add takes values of a DelayedMessageBacklogEntry and adds it to the backlog given the entry succeeds validation. It also attempts trimming of backlog if capacity is reached
+// Add takes values of a DelayedMessageBacklogEntry and adds it to the backlog given the entry succeeds validation. It also attempts trimming of backlog if targetBufferSize is reached
 func (d *DelayedMessageBacklog) Add(entry *DelayedMessageBacklogEntry) error {
 	if len(d.entries) > 0 {
 		expectedIndex := d.entries[0].Index + uint64(len(d.entries))
@@ -63,7 +52,11 @@ func (d *DelayedMessageBacklog) Add(entry *DelayedMessageBacklogEntry) error {
 		}
 	}
 	d.entries = append(d.entries, entry)
-	return d.clear()
+	if len(d.entries) <= d.targetBufferSize {
+		return nil
+	}
+	d.trimFinalizedAndReadEntries()
+	return nil
 }
 
 func (d *DelayedMessageBacklog) Get(index uint64) (*DelayedMessageBacklogEntry, error) {
@@ -86,27 +79,24 @@ func (d *DelayedMessageBacklog) Len() int                            { return le
 func (d *DelayedMessageBacklog) GetInitMsg() *DelayedInboxMessage    { return d.initMessage }
 func (d *DelayedMessageBacklog) setInitMsg(msg *DelayedInboxMessage) { d.initMessage = msg }
 
-// clear removes from backlog (if exceeds capacity) the entries that correspond to the delayed messages that are both READ and belong to finalized parent chain blocks
-func (d *DelayedMessageBacklog) clear() error {
-	if len(d.entries) <= d.capacity {
-		return nil
-	}
+// trimFinalizedAndReadEntries removes from backlog (if exceeds targetBufferSize) the entries that correspond to the delayed messages that are both READ
+// and belong to finalized parent chain blocks. We should not interrupt delayed messages accumulation if we cannot trim the backlog, since its not high priority
+func (d *DelayedMessageBacklog) trimFinalizedAndReadEntries() {
 	if d.finalizedAndReadIndexFetcher != nil && d.dirtiesStartPos > 0 { // if all entries are currently dirty we dont trim the finalized ones
-		finalizedDelayedMessagesRead, err := d.finalizedAndReadIndexFetcher(d.ctx)
+		finalizedDelayedMessagesRead, err := d.finalizedAndReadIndexFetcher()
 		if err != nil {
 			log.Error("Unable to trim finalized and read delayed messages from DelayedMessageBacklog, will be retried later", "err", err)
-			return nil // we should not interrupt delayed messages accumulation if we cannot trim the backlog, since its not high priority
+			return
 		}
 		if finalizedDelayedMessagesRead > d.entries[0].Index {
 			leftTrimPos := min(finalizedDelayedMessagesRead-d.entries[0].Index, uint64(len(d.entries)))
 			// #nosec G115
-			leftTrimPos = min(leftTrimPos, uint64(d.dirtiesStartPos)) // cannot clear dirties yet, they will be cleared out in the next attempt
+			leftTrimPos = min(leftTrimPos, uint64(d.dirtiesStartPos)) // cannot trim dirties yet, they will be trimmed out in the next attempt
 			d.entries = d.entries[leftTrimPos:]
 			// #nosec G115
 			d.dirtiesStartPos -= int(leftTrimPos) // adjust start position of dirties
 		}
 	}
-	return nil
 }
 
 // Reorg removes from backlog the entries that corresponded to the reorged out parent chain blocks
@@ -120,7 +110,7 @@ func (d *DelayedMessageBacklog) reorg(newDelayedMessagedSeen uint64) error {
 	if newDelayedMessagedSeen >= d.entries[0].Index {
 		rightTrimPos := newDelayedMessagedSeen - d.entries[0].Index
 		if rightTrimPos > uint64(len(d.entries)) {
-			return fmt.Errorf("newDelayedMessagedSeen: %d durign a reorg is greater (by more than 1) than the greatest delayed message index stored in backlog: %d", newDelayedMessagedSeen, d.entries[len(d.entries)-1].Index)
+			return fmt.Errorf("newDelayedMessagedSeen: %d during a reorg is greater (by more than 1) than the greatest delayed message index stored in backlog: %d", newDelayedMessagedSeen, d.entries[len(d.entries)-1].Index)
 		}
 		d.entries = d.entries[:rightTrimPos]
 	} else {
