@@ -141,7 +141,7 @@ func CreateDAReaderAndWriter(
 	return daWriter, daReader, keysetFetcher, &lifecycleManager, nil
 }
 
-func CreateDAComponentsForDaserver(
+func CreateDAComponentsForAnyTrustServer(
 	ctx context.Context,
 	config *Config,
 	l1Reader *headerreader.HeaderReader,

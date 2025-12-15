@@ -261,7 +261,7 @@ func startup() error {
 		return errors.New("--parent-chain.sequencer-inbox-address must be set to a valid L1 contract address, or 'none'")
 	}
 
-	daReader, daWriter, signatureVerifier, daHealthChecker, dasLifecycleManager, err := anytrust.CreateDAComponentsForDaserver(ctx, &serverConfig.DataAvailability, l1Reader, seqInboxAddress)
+	daReader, daWriter, signatureVerifier, daHealthChecker, dasLifecycleManager, err := anytrust.CreateDAComponentsForAnyTrustServer(ctx, &serverConfig.DataAvailability, l1Reader, seqInboxAddress)
 	if err != nil {
 		return err
 	}

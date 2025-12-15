@@ -2221,7 +2221,7 @@ func setupConfigWithDAS(
 	var daHealthChecker anytrust.ServiceHealthChecker
 	var signatureVerifier *anytrust.SignatureVerifier
 	if dasModeString != "onchain" && dasModeString != "referenceda" {
-		daReader, daWriter, signatureVerifier, daHealthChecker, lifecycleManager, err = anytrust.CreateDAComponentsForDaserver(ctx, &dasConfig, nil, nil)
+		daReader, daWriter, signatureVerifier, daHealthChecker, lifecycleManager, err = anytrust.CreateDAComponentsForAnyTrustServer(ctx, &dasConfig, nil, nil)
 
 		Require(t, err)
 		rpcLis, err := net.Listen("tcp", "localhost:0")

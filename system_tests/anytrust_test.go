@@ -200,7 +200,7 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 	serverConfig.Key.KeyDir = keyDir
 	// L1NodeURL: normally we would have to set this but we are passing in the already constructed client and addresses to the factory
 
-	daReader, daWriter, signatureVerifier, daHealthChecker, lifecycleManager, err := anytrust.CreateDAComponentsForDaserver(ctx, &serverConfig, l1Reader, &builder.addresses.SequencerInbox)
+	daReader, daWriter, signatureVerifier, daHealthChecker, lifecycleManager, err := anytrust.CreateDAComponentsForAnyTrustServer(ctx, &serverConfig, l1Reader, &builder.addresses.SequencerInbox)
 	Require(t, err)
 	defer lifecycleManager.StopAndWaitUntil(time.Second)
 	rpcLis, err := net.Listen("tcp", "localhost:0")
