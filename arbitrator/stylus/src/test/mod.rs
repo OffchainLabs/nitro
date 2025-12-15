@@ -18,8 +18,10 @@ use prover::{
 use rand::prelude::*;
 use std::{collections::HashMap, path::Path, sync::Arc};
 use wasmer::{
-    imports, wasmparser::Operator, CompilerConfig, Function, FunctionEnv, Imports, Instance,
-    Module, Store, Target,
+    imports,
+    sys::{CompilerConfig, EngineBuilder, Target},
+    wasmparser::Operator,
+    Function, FunctionEnv, Imports, Instance, Module, Store,
 };
 use wasmer_compiler_singlepass::Singlepass;
 
@@ -61,7 +63,10 @@ impl TestInstance {
         compiler.canonicalize_nans(true);
         compiler.enable_verifier();
 
-        let mut store = Store::new(compiler);
+        // Build a Wasmer engine from the singlepass compiler config using the
+        // re-exported `EngineBuilder`, then create a store from that engine.
+        let engine = wasmer::Engine::from(EngineBuilder::new(compiler));
+        let mut store = Store::new(engine);
         let wat = std::fs::read(path)?;
         let module = Module::new(&store, wat)?;
         let instance = Instance::new(&mut store, &module, &Imports::new())?;

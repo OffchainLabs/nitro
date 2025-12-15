@@ -14,7 +14,7 @@ use eyre::Result;
 use parking_lot::Mutex;
 use prover::programs::{memory::MemoryModel, prelude::*};
 use std::{collections::HashMap, sync::Arc};
-use wasmer::Target;
+use wasmer::sys::Target;
 
 use super::TestInstance;
 

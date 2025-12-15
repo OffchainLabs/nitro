@@ -501,6 +501,7 @@ impl FuncDepthChecker<'_> {
                         I16x8RelaxedQ15mulrS, I16x8RelaxedDotI8x16I7x16S, I32x4RelaxedDotI8x16I7x16AddS
                     )
                 ) => bail!("SIMD extension not supported {unsupported:?}"),
+                _ => bail!("extension {op:?} not supported"),
             };
         }
 

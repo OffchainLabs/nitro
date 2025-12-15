@@ -59,7 +59,7 @@ var notFoundError = errors.New("file not found")
 
 // taken from wasmer's lib/types/src/serialize.rs: MetadataHeader::CURRENT_VERSION
 // 8 is a bug (should have been 6) but we're skipping the real version 8 so it does not matter
-const WasmerSerializeVersion = 8
+const WasmerSerializeVersion = 12
 const InitialWasmerSerializeVersion = 8
 
 func initializeAndDownloadInit(ctx context.Context, initConfig *conf.InitConfig, stack *node.Node) (string, func(), error) {

@@ -497,7 +497,7 @@ impl Module {
         }
 
         for data in &bin.datas {
-            let (memory_index, mut init) = match data.kind {
+            let (memory_index, mut init) = match &data.kind {
                 DataKind::Active {
                     memory_index,
                     offset_expr,
@@ -505,7 +505,7 @@ impl Module {
                 _ => continue,
             };
             ensure!(
-                memory_index == 0,
+                *memory_index == 0,
                 "Attempted to write to nonexistant memory"
             );
 
@@ -540,7 +540,7 @@ impl Module {
         }
 
         for elem in &bin.elements {
-            let (t, mut init) = match elem.kind {
+            let (t, mut init) = match &elem.kind {
                 ElementKind::Active {
                     table_index,
                     offset_expr,

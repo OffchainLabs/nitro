@@ -16,6 +16,8 @@ use wasmer_types::{
     entity::EntityRef, FunctionIndex, GlobalIndex, GlobalInit, ImportIndex, LocalFunctionIndex,
     SignatureIndex, Type,
 };
+
+#[cfg(not(feature = "native"))]
 use wasmparser::{Operator, ValType};
 
 #[cfg(feature = "native")]
@@ -23,7 +25,9 @@ use {
     super::value,
     std::marker::PhantomData,
     wasmer::{
-        ExportIndex, FunctionMiddleware, GlobalType, MiddlewareError, ModuleMiddleware, Mutability,
+        sys::{FunctionMiddleware, MiddlewareError, ModuleMiddleware},
+        wasmparser::{Operator, ValType},
+        ExportIndex, GlobalType, Mutability,
     },
     wasmer_types::{MemoryIndex, ModuleInfo},
 };
@@ -127,7 +131,7 @@ where
     fn generate_function_middleware<'a>(
         &self,
         local_function_index: LocalFunctionIndex,
-    ) -> Box<dyn wasmer::FunctionMiddleware<'a> + 'a> {
+    ) -> Box<dyn wasmer::sys::FunctionMiddleware<'a> + 'a> {
         let worker = self.0.instrument(local_function_index).unwrap();
         Box::new(FuncMiddlewareWrapper(worker, PhantomData))
     }
@@ -154,7 +158,7 @@ where
     fn feed(
         &mut self,
         op: Operator<'a>,
-        out: &mut wasmer::MiddlewareReaderState<'a>,
+        out: &mut wasmer::sys::MiddlewareReaderState<'a>,
     ) -> Result<(), MiddlewareError> {
         let name = self.0.name().red();
         let error = |err| MiddlewareError::new(name, format!("{err:?}"));

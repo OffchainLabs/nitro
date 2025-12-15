@@ -19,7 +19,7 @@ use std::{
 };
 use thiserror::Error;
 use wasmer::{
-    imports, CompilerConfig, Function, FunctionEnv, FunctionEnvMut, Instance, Memory, Module,
+    imports, sys::CompilerConfig, Function, FunctionEnv, FunctionEnvMut, Instance, Memory, Module,
     Pages, RuntimeError, Store,
 };
 use wasmer_compiler_cranelift::Cranelift;

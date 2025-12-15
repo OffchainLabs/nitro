@@ -7,10 +7,10 @@
     (export "memory" (memory 0))
     (type $void (func (param) (result)))
     (func $start (export "move_me") (type $void)
-        get_global $status
+        global.get $status
         i32.const 1
         i32.add
-        set_global $status ;; increment the global
+        global.set $status ;; increment the global
     )
     (func (export "user_entrypoint") (param $args_len i32) (result i32)
         (i32.const 0)

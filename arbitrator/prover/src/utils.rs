@@ -110,8 +110,10 @@ mod remote_convert {
 pub struct RemoteTableType {
     #[serde(with = "remote_convert")]
     pub element_type: RefType,
-    pub initial: u32,
-    pub maximum: Option<u32>,
+    pub initial: u64,
+    pub maximum: Option<u64>,
+    pub table64: bool,
+    pub shared: bool,
 }
 
 impl Drop for CBytes {

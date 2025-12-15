@@ -24,8 +24,8 @@ use serde::{Deserialize, Serialize};
 use std::{convert::TryInto, fmt::Debug, hash::Hash, mem, path::Path, str::FromStr};
 use wasmer_types::{entity::EntityRef, ExportIndex, FunctionIndex, LocalFunctionIndex};
 use wasmparser::{
-    Data, Element, ExternalKind, MemoryType, Name, NameSectionReader, Naming, Operator, Parser,
-    Payload, TableType, TypeRef, ValType, Validator, WasmFeatures,
+    BinaryReader, Data, Element, ExternalKind, MemoryType, Name, NameSectionReader, Naming,
+    Operator, Parser, Payload, TableType, TypeRef, ValType, Validator, WasmFeatures,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -255,6 +255,7 @@ impl From<ExportIndex> for ExportKind {
             E::Table(_) => Self::Table,
             E::Memory(_) => Self::Memory,
             E::Global(_) => Self::Global,
+            E::Tag(_) => Self::Tag,
         }
     }
 }
@@ -301,29 +302,29 @@ pub struct WasmBinary<'a> {
 }
 
 pub fn parse<'a>(input: &'a [u8], path: &'_ Path) -> Result<WasmBinary<'a>> {
-    let features = WasmFeatures {
-        mutable_global: true,
-        saturating_float_to_int: true,
-        sign_extension: true,
-        reference_types: false,
-        multi_value: true,
-        bulk_memory: true, // not all ops supported yet
-        simd: false,
-        relaxed_simd: false,
-        threads: false,
-        tail_call: false,
-        floats: true,
-        multi_memory: false,
-        exceptions: false,
-        memory64: false,
-        extended_const: false,
-        component_model: false,
-        function_references: false,
-        memory_control: false,
-        gc: false,
-        component_model_values: false,
-        component_model_nested_names: false,
-    };
+    let mut features = WasmFeatures::default();
+    features.set(WasmFeatures::MUTABLE_GLOBAL, true);
+    features.set(WasmFeatures::SATURATING_FLOAT_TO_INT, true);
+    features.set(WasmFeatures::SIGN_EXTENSION, true);
+    features.set(WasmFeatures::REFERENCE_TYPES, false);
+    features.set(WasmFeatures::MULTI_VALUE, true);
+    features.set(WasmFeatures::BULK_MEMORY, true); // not all ops supported yet
+    features.set(WasmFeatures::SIMD, false);
+    features.set(WasmFeatures::RELAXED_SIMD, false);
+    features.set(WasmFeatures::THREADS, false);
+    features.set(WasmFeatures::TAIL_CALL, false);
+    features.set(WasmFeatures::FLOATS, true);
+    features.set(WasmFeatures::MULTI_MEMORY, false);
+    features.set(WasmFeatures::EXCEPTIONS, false);
+    features.set(WasmFeatures::MEMORY64, false);
+    features.set(WasmFeatures::EXTENDED_CONST, false);
+    features.set(WasmFeatures::COMPONENT_MODEL, false);
+    features.set(WasmFeatures::FUNCTION_REFERENCES, false);
+    features.set(WasmFeatures::MEMORY_CONTROL, false);
+    features.set(WasmFeatures::GC, false);
+    features.set(WasmFeatures::COMPONENT_MODEL_VALUES, false);
+    features.set(WasmFeatures::COMPONENT_MODEL_NESTED_NAMES, false);
+    features.set(WasmFeatures::GC_TYPES, true);
     Validator::new_with_features(features)
         .validate_all(input)
         .wrap_err_with(|| eyre!("failed to validate {}", path.to_string_lossy().red()))?;
@@ -429,7 +430,8 @@ pub fn parse<'a>(input: &'a [u8], path: &'_ Path) -> Result<WasmBinary<'a>> {
                 }
 
                 // CHECK: maybe reader.data_offset()
-                let name_reader = NameSectionReader::new(reader.data(), 0);
+                let name_reader =
+                    NameSectionReader::new(BinaryReader::new(reader.data(), reader.data_offset()));
 
                 for name in name_reader {
                     match name? {

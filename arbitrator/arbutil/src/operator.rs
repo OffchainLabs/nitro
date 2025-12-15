@@ -1178,6 +1178,11 @@ impl From<&Operator<'_>> for OperatorCode {
             O::I16x8RelaxedQ15mulrS { .. } => 0xfd111,
             O::I16x8RelaxedDotI8x16I7x16S { .. } => 0xfd112,
             O::I32x4RelaxedDotI8x16I7x16AddS { .. } => 0xfd113,
+            // `wasmparser::Operator` is marked `non_exhaustive`, so we must
+            // include a wildcard arm even though we handle all known variants.
+            // If a new variant appears that we don't explicitly map yet, panic
+            // so that it is noticed and added with a proper opcode.
+            _ => unreachable!("unhandled Operator variant: {:?}", op),
         })
     }
 }

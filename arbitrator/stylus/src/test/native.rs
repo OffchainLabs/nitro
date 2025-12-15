@@ -34,7 +34,10 @@ use prover::{
 };
 use std::{collections::HashMap, path::Path, sync::Arc, time::Instant};
 use wasmer::wasmparser::Operator;
-use wasmer::{CompilerConfig, ExportIndex, Imports, Pages, Store};
+use wasmer::{
+    sys::{CompilerConfig, EngineBuilder},
+    ExportIndex, Imports, Pages, Store,
+};
 use wasmer_compiler_singlepass::Singlepass;
 
 #[test]
@@ -154,8 +157,11 @@ fn test_count() -> Result<()> {
     compiler.push_middleware(Arc::new(MiddlewareWrapper::new(starter)));
     compiler.push_middleware(Arc::new(MiddlewareWrapper::new(counter)));
 
+    // Build a Wasmer engine from the singlepass compiler config using the
+    // re-exported `EngineBuilder`, then create a store from that engine.
+    let engine = wasmer::Engine::from(EngineBuilder::new(compiler));
     let mut instance =
-        TestInstance::new_from_store("tests/clz.wat", Store::new(compiler), Imports::new())?;
+        TestInstance::new_from_store("tests/clz.wat", Store::new(engine), Imports::new())?;
 
     let starter = instance.get_start()?;
     starter.call(&mut instance.store)?;
