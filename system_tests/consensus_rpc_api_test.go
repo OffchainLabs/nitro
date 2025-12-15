@@ -44,9 +44,15 @@ func testGetL1Confirmations(
 	parentChainTestClientSecondNode *TestClient,
 	parentChainInfo info,
 ) {
-	// Wait so ConsensusNode.L1Reader has some time to read parent chain headers,
-	// which is needed for the RPC GetL1Confirmations call to work.
-	time.Sleep(time.Second)
+	// RPC GetL1Confirmations call needs to read parent chain headers.
+	// This select makes sure that the L1Reader read at least one header before we call GetL1Confirmations RPC API.
+	headerCh, unsubscribe := childChainTestClient.ConsensusNode.L1Reader.Subscribe(true)
+	defer unsubscribe()
+	select {
+	case <-headerCh:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout waiting for L1Reader to read a header")
+	}
 
 	nodeInterface, err := node_interfacegen.NewNodeInterface(types.NodeInterfaceAddress, childChainTestClient.Client)
 	Require(t, err)
