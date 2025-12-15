@@ -18,7 +18,6 @@ import (
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
-	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/daprovider"
 )
 
@@ -70,32 +69,10 @@ func TestInboxReaderBlobFailureWithDelayedMessage(t *testing.T) {
 	cleanup := builder.Build(t)
 	defer cleanup()
 
-	// Send L2 transaction to trigger batch posting
-	tx := builder.L2Info.PrepareTx("Owner", "Owner", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
-	err := builder.L2.Client.SendTransaction(ctx, tx)
-	Require(t, err)
-	_, err = builder.L2.EnsureTxSucceeded(tx)
-	Require(t, err)
+	l2nodeB, bCleanup := builder.Build2ndNode(t, &SecondNodeParams{})
+	defer bCleanup()
 
-	// Advance L1 to trigger batch posting and delayed message processing
-	AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, 30)
-
-	// Wait for batch to be posted
-	txReceipt, err := builder.L2.Client.TransactionReceipt(ctx, tx.Hash())
-	Require(t, err)
-	l2Block, err := builder.L2.Client.BlockByHash(ctx, txReceipt.BlockHash)
-	Require(t, err)
-
-	var batchNum uint64
-	for i := 0; i < 30; i++ {
-		batchInfo, err := builder.L2.ConsensusNode.FindInboxBatchContainingMessage(arbutil.MessageIndex(l2Block.NumberU64())).Await(ctx)
-		Require(t, err)
-		if batchInfo.Found {
-			batchNum = batchInfo.BatchNum
-			break
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
+	checkBatchPosting(t, ctx, builder, l2nodeB.Client)
 
 	// Advance L1 more for batch-posting-report finality
 	AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, 5)
@@ -172,37 +149,8 @@ func TestInboxReaderBlobFailureWithDelayedMessage(t *testing.T) {
 	wrappedBlobReader.returnErr = nil
 	t.Log("Re-enabled blob fetching")
 
-	// Send new transaction on sequencer
-	verifyTx := builder.L2Info.PrepareTx("Owner", "Owner", builder.L2Info.TransferGas, big.NewInt(2e12), nil)
-	err = builder.L2.Client.SendTransaction(ctx, verifyTx)
-	Require(t, err)
-	_, err = builder.L2.EnsureTxSucceeded(verifyTx)
-	Require(t, err)
-
-	// Advance L1 to post batch
-	AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, 30)
-
-	// Wait for batch and advance for finality
-	for i := 0; i < 30; i++ {
-		verifyReceipt, _ := builder.L2.Client.TransactionReceipt(ctx, verifyTx.Hash())
-		if verifyReceipt != nil {
-			verifyBlock, _ := builder.L2.Client.BlockByHash(ctx, verifyReceipt.BlockHash)
-			batchInfo, err := builder.L2.ConsensusNode.FindInboxBatchContainingMessage(arbutil.MessageIndex(verifyBlock.NumberU64())).Await(ctx)
-			if err == nil && batchInfo.Found {
-				break
-			}
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
-	AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, 5)
-
-	// Check if follower synced the new transaction
-	time.Sleep(3 * time.Second)
-	follVerifyReceipt, err := WaitForTx(ctx, testClientB.Client, verifyTx.Hash(), 3*time.Second)
-	if err != nil || follVerifyReceipt == nil {
-		t.Fatal("Follower did not sync new transaction after re-enabling blobs")
-	}
-	t.Logf("Follower synced new transaction")
+	// Send new transaction on sequencer and ensure the second node catches up
+	checkBatchPosting(t, ctx, builder, testClientB.Client)
 
 	// Send delayed message via L1
 	delayedTx := builder.L2Info.PrepareTx("Owner", "Owner", builder.L2Info.TransferGas, big.NewInt(3e12), nil)
@@ -250,9 +198,6 @@ func TestInboxReaderBlobFailureWithDelayedMessage(t *testing.T) {
 	} else {
 		t.Logf("PASS: Follower is fully synced")
 	}
-
-	// Prevent unused variable warning
-	_ = batchNum
 }
 
 // Build2ndNodeWithBlobReader builds a second node with a custom blob reader.

@@ -141,7 +141,7 @@ func TestDASRekey(t *testing.T) {
 			initData:   &builder.L2Info.ArbInitData,
 		}
 		l2B, cleanupB := builder.Build2ndNode(t, &nodeBParams)
-		checkBatchPosting(t, ctx, builder, builder.L2, l2B.Client)
+		checkBatchPosting(t, ctx, builder, l2B.Client)
 
 		builder.L2.cleanup()
 		cleanupB()
@@ -168,7 +168,7 @@ func TestDASRekey(t *testing.T) {
 	}
 	l2B, cleanup := builder.Build2ndNode(t, &nodeBParams)
 	defer cleanup()
-	checkBatchPosting(t, ctx, builder, builder.L2, l2B.Client)
+	checkBatchPosting(t, ctx, builder, l2B.Client)
 }
 
 func TestDASComplexConfigAndRestMirror(t *testing.T) {
@@ -249,7 +249,7 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 	l2B, cleanupB := builder.Build2ndNode(t, &nodeBParams)
 	defer cleanupB()
 
-	checkBatchPosting(t, ctx, builder, builder.L2, l2B.Client)
+	checkBatchPosting(t, ctx, builder, l2B.Client)
 
 	err = restServer.Shutdown()
 	Require(t, err)

@@ -1177,7 +1177,7 @@ func SendWaitTestTransactions(t *testing.T, ctx context.Context, client *ethclie
 // Note: In production with MaxDelay=1h, you'd need to wait much longer or have a full batch
 // before posting occurs. This aggressive test configuration (MaxDelay=0, PollInterval=10ms)
 // is designed for fast CI/CD, not realistic production behavior.
-func checkBatchPosting(t *testing.T, ctx context.Context, builder *NodeBuilder, l2nodeA *TestClient, l2clientB *ethclient.Client) {
+func checkBatchPosting(t *testing.T, ctx context.Context, builder *NodeBuilder, l2clientB *ethclient.Client) {
 	t.Helper()
 
 	// Prepare transfer transaction on L2
@@ -1190,7 +1190,7 @@ func checkBatchPosting(t *testing.T, ctx context.Context, builder *NodeBuilder, 
 	Require(t, err)
 
 	// Send L2 transaction and wait for execution
-	l2nodeA.SendWaitTestTransactions(t, []*types.Transaction{tx})
+	builder.L2.SendWaitTestTransactions(t, []*types.Transaction{tx})
 
 	// Brief pause for inbox reader to process the message
 	time.Sleep(time.Millisecond * 100)
