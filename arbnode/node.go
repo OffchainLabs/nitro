@@ -1621,6 +1621,10 @@ func (n *Node) BlockMetadataAtMessageIndex(msgIdx arbutil.MessageIndex) containe
 }
 
 func (n *Node) GetL1Confirmations(msgIdx arbutil.MessageIndex) containers.PromiseInterface[uint64] {
+	if n.L1Reader == nil {
+		return containers.NewReadyPromise(uint64(0), nil)
+	}
+
 	// batches not yet posted have 0 confirmations but no error
 	batchNum, found, err := n.InboxTracker.FindInboxBatchContainingMessage(msgIdx)
 	if err != nil {
@@ -1634,9 +1638,6 @@ func (n *Node) GetL1Confirmations(msgIdx arbutil.MessageIndex) containers.Promis
 		return containers.NewReadyPromise(uint64(0), err)
 	}
 
-	if n.L1Reader == nil {
-		return containers.NewReadyPromise(uint64(0), nil)
-	}
 	if n.L1Reader.IsParentChainArbitrum() {
 		return stopwaiter.LaunchPromiseThread(n.L1Reader, func(ctx context.Context) (uint64, error) {
 			parentChainClient := n.L1Reader.Client()
