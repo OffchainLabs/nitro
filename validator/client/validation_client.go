@@ -251,6 +251,7 @@ func (r *ExecutionClientRun) SendKeepAlive(ctx context.Context) time.Duration {
 		log.Error("execution run keepalive failed", "err", err)
 	}
 	return r.client.client.ExecKeepAliveInterval()
+}
 
 func (r *ExecutionClientRun) CheckAlive(ctx context.Context) error {
 	return r.client.client.CallContext(ctx, nil, server_api.Namespace+"_checkAlive", r.id)
