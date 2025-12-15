@@ -564,7 +564,9 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, usedMultiGas multigas.MultiGas, 
 		}
 
 		singleGasCost := arbmath.BigMulByUint(effectiveBaseFee, gasUsed)
-		shouldRefundMultiGas := multiDimensionalCost != nil && arbmath.BigGreaterThan(singleGasCost, multiDimensionalCost)
+		shouldRefundMultiGas := multiDimensionalCost != nil &&
+			arbmath.BigGreaterThan(singleGasCost, multiDimensionalCost) &&
+			effectiveBaseFee.Cmp(p.evm.Context.BaseFee) == 0 // don't refund retryable estimation
 
 		maxRefund := new(big.Int).Set(inner.MaxRefund)
 		refund := func(refundFrom common.Address, amount *big.Int, reason tracing.BalanceChangeReason) {
@@ -635,12 +637,6 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, usedMultiGas multigas.MultiGas, 
 		if shouldRefundMultiGas {
 			amount := arbmath.BigSub(singleGasCost, multiDimensionalCost)
 			refund(networkFeeAccount, amount, tracing.BalanceChangeMultiGasRefund)
-		} else if arbmath.BigLessThan(singleGasCost, multiDimensionalCost) {
-			log.Warn(
-				"multi dimensional gas price exceeded simple gas price in retryable path",
-				"simpleGasCost", singleGasCost,
-				"multiDimensionalCost", multiDimensionalCost,
-			)
 		}
 
 		if success {
@@ -720,8 +716,6 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, usedMultiGas multigas.MultiGas, 
 				tracing.BalanceChangeMultiGasRefund,
 			)
 			p.state.Restrict(err)
-		} else if amount.Sign() < 0 {
-			log.Warn("multi dimensional gas price exceeded simple gas price", "amount", amount)
 		}
 	}
 

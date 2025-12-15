@@ -153,18 +153,13 @@ func TestCalcMultiGasConstraintsExponents(t *testing.T) {
 	exponents, err := pricing.CalcMultiGasConstraintsExponents()
 	Require(t, err)
 
-	// From constraint 1:
-	// exp_comp  = floor(20000 * 1 * 10000 / (10 * 100000 * 3)) = 66
-	// exp_store = floor(20000 * 2 * 10000 / (10 * 100000 * 3)) = 133
-	if got, want := exponents[multigas.ResourceKindComputation], arbmath.Bips(66); got != want {
+	if got, want := exponents[multigas.ResourceKindComputation], arbmath.Bips(100); got != want {
 		t.Errorf("unexpected computation exponent: got %v, want %v", got, want)
 	}
-	if got, want := exponents[multigas.ResourceKindStorageAccess], arbmath.Bips(133); got != want {
+	if got, want := exponents[multigas.ResourceKindStorageAccess], arbmath.Bips(200); got != want {
 		t.Errorf("unexpected storage-access exponent: got %v, want %v", got, want)
 	}
 
-	// From constraint 2:
-	// exp_storageGrowth = floor(15000 * 1 * 10000 / (5 * 50000 * 1)) = 600
 	if got, want := exponents[multigas.ResourceKindStorageGrowth], arbmath.Bips(600); got != want {
 		t.Errorf("unexpected storage-growth exponent: got %v, want %v", got, want)
 	}

@@ -269,6 +269,9 @@ func (ps *L2PricingState) updatePricingModelMultiConstraints(timePassed uint64) 
 		_ = constraint.SetBacklog(backlog)
 	}
 
+	// Commit previous block's base fees
+	_ = ps.CommitCurrentMultiGasFees()
+
 	// Calculate exponents per resource kind for all constraints
 	exponentPerKind, _ := ps.CalcMultiGasConstraintsExponents()
 
@@ -278,12 +281,11 @@ func (ps *L2PricingState) updatePricingModelMultiConstraints(timePassed uint64) 
 		baseFee, _ := ps.calcBaseFeeFromExponent(exp)
 
 		// #nosec G115 safe: kind < multigas.NumResourceKind
-		_ = ps.multiGasBaseFees.Set(multigas.ResourceKind(kind), baseFee)
+		_ = ps.multiGasFees.SetCurrent(multigas.ResourceKind(kind), baseFee)
 
 		if baseFee.Cmp(maxBaseFee) > 0 {
 			maxBaseFee = baseFee
 		}
-
 	}
 	_ = ps.SetBaseFeeWei(maxBaseFee)
 }
@@ -360,7 +362,7 @@ func (ps *L2PricingState) MultiDimensionalPriceForRefund(gasUsed multigas.MultiG
 
 	total := new(big.Int)
 	for kind := range multigas.ResourceKind(multigas.NumResourceKind) {
-		baseFee, err := ps.multiGasBaseFees.Get(kind)
+		baseFee, err := ps.multiGasFees.GetLast(kind)
 		if err != nil {
 			return nil, err
 		}
@@ -381,4 +383,8 @@ func (ps *L2PricingState) MultiDimensionalPriceForRefund(gasUsed multigas.MultiG
 		total.Add(total, part)
 	}
 	return total, nil
+}
+
+func (ps *L2PricingState) CommitCurrentMultiGasFees() error {
+	return ps.multiGasFees.CommitCurrentToLast()
 }
