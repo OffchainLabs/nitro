@@ -1177,33 +1177,37 @@ func SendWaitTestTransactions(t *testing.T, ctx context.Context, client *ethclie
 // Note: In production with MaxDelay=1h, you'd need to wait much longer or have a full batch
 // before posting occurs. This aggressive test configuration (MaxDelay=0, PollInterval=10ms)
 // is designed for fast CI/CD, not realistic production behavior.
-func checkBatchPosting(t *testing.T, ctx context.Context, l1client, l2clientA *ethclient.Client, l1info, l2info info, expectedBalance *big.Int, l2ClientsToCheck ...*ethclient.Client) {
+func checkBatchPosting(t *testing.T, ctx context.Context, builder *NodeBuilder, l2nodeA *TestClient, l2clientB *ethclient.Client) {
 	t.Helper()
 
+	// Prepare transfer transaction on L2
+	transferAmount := big.NewInt(1e12)
+	recipient := builder.L2Info.GetAddress("User2")
+	tx := builder.L2Info.PrepareTxTo("Owner", &recipient, builder.L2Info.TransferGas, transferAmount, nil)
+
+	// Check recipient balance before transfer
+	recipientBalanceBefore, err := l2clientB.BalanceAt(ctx, recipient, nil)
+	Require(t, err)
+
 	// Send L2 transaction and wait for execution
-	tx := l2info.PrepareTx("Owner", "User2", l2info.TransferGas, big.NewInt(1e12), nil)
-	err := l2clientA.SendTransaction(ctx, tx)
-	Require(t, err)
-	_, err = EnsureTxSucceeded(ctx, l2clientA, tx)
-	Require(t, err)
+	l2nodeA.SendWaitTestTransactions(t, []*types.Transaction{tx})
 
 	// Brief pause for inbox reader to process the message
 	time.Sleep(time.Millisecond * 100)
 
 	// Create L1 blocks to trigger batch posting (with MaxDelay=0, this ensures immediate posting)
-	AdvanceL1(t, ctx, l1client, l1info, 30)
+	AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, 30)
 
-	// Verify all follower nodes synced the transaction
-	for _, client := range l2ClientsToCheck {
-		_, err = WaitForTx(ctx, client, tx.Hash(), time.Second*30)
-		Require(t, err)
+	// Ensure the second node successfully processed the batch
+	_, err = WaitForTx(ctx, l2clientB, tx.Hash(), time.Second*30)
+	Require(t, err)
 
-		l2balance, err := client.BalanceAt(ctx, l2info.GetAddress("User2"), nil)
-		Require(t, err)
+	recipientBalanceAfter, err := l2clientB.BalanceAt(ctx, recipient, nil)
+	Require(t, err)
 
-		if l2balance.Cmp(expectedBalance) != 0 {
-			Fatal(t, "Unexpected balance:", l2balance)
-		}
+	expectedBalance := big.NewInt(0).Add(recipientBalanceBefore, transferAmount)
+	if recipientBalanceAfter.Cmp(expectedBalance) != 0 {
+		Fatal(t, "Unexpected balance:", recipientBalanceAfter)
 	}
 }
 
