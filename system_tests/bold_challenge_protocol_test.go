@@ -39,14 +39,13 @@ import (
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbstate"
-	protocol "github.com/offchainlabs/nitro/bold/chain-abstraction"
-	solimpl "github.com/offchainlabs/nitro/bold/chain-abstraction/sol-implementation"
-	challengemanager "github.com/offchainlabs/nitro/bold/challenge-manager"
+	"github.com/offchainlabs/nitro/bold/chain-abstraction"
+	"github.com/offchainlabs/nitro/bold/chain-abstraction/sol-implementation"
+	"github.com/offchainlabs/nitro/bold/challenge-manager"
 	modes "github.com/offchainlabs/nitro/bold/challenge-manager/types"
-	l2stateprovider "github.com/offchainlabs/nitro/bold/layer2-state-provider"
+	"github.com/offchainlabs/nitro/bold/layer2-state-provider"
 	challenge_testing "github.com/offchainlabs/nitro/bold/testing"
 	"github.com/offchainlabs/nitro/bold/testing/setup"
-	butil "github.com/offchainlabs/nitro/bold/util"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
@@ -280,7 +279,7 @@ func testChallengeProtocolBOLD(t *testing.T, useExternalSigner bool, spawnerOpts
 		assertionChain.RollupAddress(),
 		chalManagerAddr.Address(),
 		&evilOpts,
-		butil.NewBackendWrapper(l1client, rpc.LatestBlockNumber),
+		l1client,
 		bold.NewDataPosterTransactor(dp),
 		solimpl.WithRpcHeadBlockNumber(rpc.LatestBlockNumber),
 	)
@@ -726,7 +725,7 @@ func createL2NodeForBoldProtocol(
 		addresses.Rollup,
 		chalManagerAddr,
 		dp.Auth(),
-		butil.NewBackendWrapper(l1client, rpc.LatestBlockNumber),
+		l1client,
 		bold.NewDataPosterTransactor(dp),
 		solimpl.WithRpcHeadBlockNumber(rpc.LatestBlockNumber),
 	)
@@ -842,7 +841,7 @@ func deployContractsOnly(
 		rollupStackConf.CustomDAOsp = customOspAddr
 		addresses, err = setup.DeployFullRollupStack(
 			ctx,
-			butil.NewBackendWrapper(backend, rpc.LatestBlockNumber),
+			backend,
 			&l1TransactionOpts,
 			l1info.GetAddress("Sequencer"),
 			cfg,
@@ -854,7 +853,7 @@ func deployContractsOnly(
 	} else {
 		addresses, err = setup.DeployFullRollupStack(
 			ctx,
-			butil.NewBackendWrapper(backend, rpc.LatestBlockNumber),
+			backend,
 			&l1TransactionOpts,
 			l1info.GetAddress("Sequencer"),
 			cfg,
@@ -1010,7 +1009,7 @@ func create2ndNodeWithConfigForBoldProtocol(
 		addresses.Rollup,
 		chalManagerAddr,
 		&evilOpts,
-		butil.NewBackendWrapper(l1client, rpc.LatestBlockNumber),
+		l1client,
 		bold.NewDataPosterTransactor(dp),
 	)
 	Require(t, err)
