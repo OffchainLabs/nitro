@@ -16,8 +16,8 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 
+	anytrustutil "github.com/offchainlabs/nitro/daprovider/anytrust/util"
 	"github.com/offchainlabs/nitro/daprovider/das/dastree"
-	"github.com/offchainlabs/nitro/daprovider/das/dasutil"
 	"github.com/offchainlabs/nitro/util/pretty"
 )
 
@@ -137,11 +137,11 @@ func (gcs *GoogleCloudStorageService) GetByHash(ctx context.Context, key common.
 	return buf, nil
 }
 
-func (gcs *GoogleCloudStorageService) ExpirationPolicy(ctx context.Context) (dasutil.ExpirationPolicy, error) {
+func (gcs *GoogleCloudStorageService) ExpirationPolicy(ctx context.Context) (anytrustutil.ExpirationPolicy, error) {
 	if gcs.discardAfterTimeout {
-		return dasutil.DiscardAfterDataTimeout, nil
+		return anytrustutil.DiscardAfterDataTimeout, nil
 	}
-	return dasutil.KeepForever, nil
+	return anytrustutil.KeepForever, nil
 }
 
 func (gcs *GoogleCloudStorageService) Sync(ctx context.Context) error {

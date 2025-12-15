@@ -17,8 +17,8 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 
+	anytrustutil "github.com/offchainlabs/nitro/daprovider/anytrust/util"
 	"github.com/offchainlabs/nitro/daprovider/das/dastree"
-	"github.com/offchainlabs/nitro/daprovider/das/dasutil"
 	"github.com/offchainlabs/nitro/util/pretty"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
@@ -82,7 +82,7 @@ func SimpleExploreExploitStrategyConfigAddOptions(prefix string, f *pflag.FlagSe
 func NewRestfulClientAggregator(ctx context.Context, config *RestfulClientAggregatorConfig) (*SimpleDASReaderAggregator, error) {
 	a := SimpleDASReaderAggregator{
 		config: config,
-		stats:  make(map[dasutil.DASReader]readerStats),
+		stats:  make(map[anytrustutil.DASReader]readerStats),
 	}
 
 	combinedUrls := make(map[string]bool)
@@ -162,7 +162,7 @@ type readerStat struct {
 
 type readerStatMessage struct {
 	readerStat
-	reader dasutil.DASReader
+	reader anytrustutil.DASReader
 }
 
 type SimpleDASReaderAggregator struct {
@@ -172,8 +172,8 @@ type SimpleDASReaderAggregator struct {
 
 	readersMutex sync.RWMutex
 	// readers and stats are only to be updated by the stats goroutine
-	readers []dasutil.DASReader
-	stats   map[dasutil.DASReader]readerStats
+	readers []anytrustutil.DASReader
+	stats   map[anytrustutil.DASReader]readerStats
 
 	strategy aggregatorStrategy
 
@@ -201,7 +201,7 @@ func (a *SimpleDASReaderAggregator) GetByHash(ctx context.Context, hash common.H
 			waitChan := make(chan interface{})
 			for _, reader := range readers {
 				wg.Add(1)
-				go func(reader dasutil.DASReader) {
+				go func(reader anytrustutil.DASReader) {
 					defer wg.Done()
 					data, err := a.tryGetByHash(subCtx, hash, reader)
 					if err != nil && errors.Is(ctx.Err(), context.Canceled) {
@@ -245,7 +245,7 @@ func (a *SimpleDASReaderAggregator) GetByHash(ctx context.Context, hash common.H
 }
 
 func (a *SimpleDASReaderAggregator) tryGetByHash(
-	ctx context.Context, hash common.Hash, reader dasutil.DASReader,
+	ctx context.Context, hash common.Hash, reader anytrustutil.DASReader,
 ) ([]byte, error) {
 	stat := readerStatMessage{reader: reader}
 	stat.success = false
@@ -280,7 +280,7 @@ func (a *SimpleDASReaderAggregator) Start(ctx context.Context) {
 		defer a.readersMutex.Unlock()
 		combinedUrls := a.config.Urls
 		combinedUrls = append(combinedUrls, urls...)
-		combinedReaders := make(map[dasutil.DASReader]bool)
+		combinedReaders := make(map[anytrustutil.DASReader]bool)
 		for _, url := range combinedUrls {
 			reader, err := NewRestfulDasClientFromURL(url)
 			if err != nil {
@@ -288,7 +288,7 @@ func (a *SimpleDASReaderAggregator) Start(ctx context.Context) {
 			}
 			combinedReaders[reader] = true
 		}
-		a.readers = make([]dasutil.DASReader, 0, len(combinedUrls))
+		a.readers = make([]anytrustutil.DASReader, 0, len(combinedUrls))
 		// Update reader and add newly added stats
 		for reader := range combinedReaders {
 			a.readers = append(a.readers, reader)
@@ -352,7 +352,7 @@ func (a *SimpleDASReaderAggregator) HealthCheck(ctx context.Context) error {
 	return nil
 }
 
-func (a *SimpleDASReaderAggregator) ExpirationPolicy(ctx context.Context) (dasutil.ExpirationPolicy, error) {
+func (a *SimpleDASReaderAggregator) ExpirationPolicy(ctx context.Context) (anytrustutil.ExpirationPolicy, error) {
 	a.readersMutex.RLock()
 	defer a.readersMutex.RUnlock()
 	if len(a.readers) == 0 {
@@ -370,7 +370,7 @@ func (a *SimpleDASReaderAggregator) ExpirationPolicy(ctx context.Context) (dasut
 			return -1, err
 		}
 		if ep != expectedExpirationPolicy {
-			return dasutil.MixedTimeout, nil
+			return anytrustutil.MixedTimeout, nil
 		}
 	}
 	return expectedExpirationPolicy, nil

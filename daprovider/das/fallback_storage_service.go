@@ -11,15 +11,15 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 
+	anytrustutil "github.com/offchainlabs/nitro/daprovider/anytrust/util"
 	"github.com/offchainlabs/nitro/daprovider/das/dastree"
-	"github.com/offchainlabs/nitro/daprovider/das/dasutil"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/pretty"
 )
 
 type FallbackStorageService struct {
 	StorageService
-	backup                     dasutil.DASReader
+	backup                     anytrustutil.DASReader
 	backupHealthChecker        DataAvailabilityServiceHealthChecker
 	backupRetentionSeconds     uint64
 	ignoreRetentionWriteErrors bool
@@ -33,7 +33,7 @@ type FallbackStorageService struct {
 // a successful GetByHash result from the backup is Put into the primary.
 func NewFallbackStorageService(
 	primary StorageService,
-	backup dasutil.DASReader,
+	backup anytrustutil.DASReader,
 	backupHealthChecker DataAvailabilityServiceHealthChecker,
 	backupRetentionSeconds uint64, // how long to retain data that we copy in from the backup (MaxUint64 means forever)
 	ignoreRetentionWriteErrors bool, // if true, don't return error if write of retention data to primary fails

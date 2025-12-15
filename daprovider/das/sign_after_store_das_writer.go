@@ -17,8 +17,8 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/blsSignatures"
+	anytrustutil "github.com/offchainlabs/nitro/daprovider/anytrust/util"
 	"github.com/offchainlabs/nitro/daprovider/das/dastree"
-	"github.com/offchainlabs/nitro/daprovider/das/dasutil"
 	"github.com/offchainlabs/nitro/util/pretty"
 )
 
@@ -83,7 +83,7 @@ func NewSignAfterStoreDASWriter(ctx context.Context, config DataAvailabilityConf
 	}
 	log.Info("DAS public key used for signing", "key", hexutil.Encode(blsSignatures.PublicKeyToBytes(publicKey)))
 
-	keyset := &dasutil.DataAvailabilityKeyset{
+	keyset := &anytrustutil.DataAvailabilityKeyset{
 		AssumedHonest: 1,
 		PubKeys:       []blsSignatures.PublicKey{publicKey},
 	}
@@ -105,10 +105,10 @@ func NewSignAfterStoreDASWriter(ctx context.Context, config DataAvailabilityConf
 	}, nil
 }
 
-func (d *SignAfterStoreDASWriter) Store(ctx context.Context, message []byte, timeout uint64) (c *dasutil.DataAvailabilityCertificate, err error) {
+func (d *SignAfterStoreDASWriter) Store(ctx context.Context, message []byte, timeout uint64) (c *anytrustutil.DataAvailabilityCertificate, err error) {
 	// #nosec G115
 	log.Trace("das.SignAfterStoreDASWriter.Store", "message", pretty.FirstFewBytes(message), "timeout", time.Unix(int64(timeout), 0), "this", d)
-	c = &dasutil.DataAvailabilityCertificate{
+	c = &anytrustutil.DataAvailabilityCertificate{
 		Timeout:     timeout,
 		DataHash:    dastree.Hash(message),
 		Version:     1,

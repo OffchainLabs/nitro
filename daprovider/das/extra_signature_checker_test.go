@@ -12,11 +12,11 @@ import (
 
 	"github.com/ethereum/go-ethereum/crypto"
 
-	"github.com/offchainlabs/nitro/daprovider/das/dasutil"
+	anytrustutil "github.com/offchainlabs/nitro/daprovider/anytrust/util"
 	"github.com/offchainlabs/nitro/util/signature"
 )
 
-func checkSig(keyDir string, message []byte, timeout uint64, sig []byte) (*dasutil.DataAvailabilityCertificate, error) {
+func checkSig(keyDir string, message []byte, timeout uint64, sig []byte) (*anytrustutil.DataAvailabilityCertificate, error) {
 	pubkeyEncoded, err := ioutil.ReadFile(keyDir + "/ecdsa.pub")
 	if err != nil {
 		return nil, err

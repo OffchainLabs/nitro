@@ -15,11 +15,11 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 
+	anytrustutil "github.com/offchainlabs/nitro/daprovider/anytrust/util"
 	"github.com/offchainlabs/nitro/daprovider/das/dastree"
-	"github.com/offchainlabs/nitro/daprovider/das/dasutil"
 )
 
-// RestfulDasClient implements dasutil.DASReader
+// RestfulDasClient implements anytrustutil.DASReader
 type RestfulDasClient struct {
 	url string
 }
@@ -72,7 +72,7 @@ func (c *RestfulDasClient) GetByHash(ctx context.Context, hash common.Hash) ([]b
 		return nil, err
 	}
 	if !dastree.ValidHash(hash, decodedBytes) {
-		return nil, dasutil.ErrHashMismatch
+		return nil, anytrustutil.ErrHashMismatch
 	}
 
 	return decodedBytes, nil
@@ -90,7 +90,7 @@ func (c *RestfulDasClient) HealthCheck(ctx context.Context) error {
 	return nil
 }
 
-func (c *RestfulDasClient) ExpirationPolicy(ctx context.Context) (dasutil.ExpirationPolicy, error) {
+func (c *RestfulDasClient) ExpirationPolicy(ctx context.Context) (anytrustutil.ExpirationPolicy, error) {
 	res, err := http.Get(c.url + expirationPolicyRequestPath)
 	if err != nil {
 		return -1, err
@@ -110,5 +110,5 @@ func (c *RestfulDasClient) ExpirationPolicy(ctx context.Context) (dasutil.Expira
 		return -1, err
 	}
 
-	return dasutil.StringToExpirationPolicy(response.ExpirationPolicy)
+	return anytrustutil.StringToExpirationPolicy(response.ExpirationPolicy)
 }

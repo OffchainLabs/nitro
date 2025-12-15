@@ -18,8 +18,8 @@ import (
 	"github.com/ethereum/go-ethereum/metrics"
 
 	"github.com/offchainlabs/nitro/blsSignatures"
+	anytrustutil "github.com/offchainlabs/nitro/daprovider/anytrust/util"
 	"github.com/offchainlabs/nitro/daprovider/das/dastree"
-	"github.com/offchainlabs/nitro/daprovider/das/dasutil"
 	"github.com/offchainlabs/nitro/daprovider/data_streaming"
 	"github.com/offchainlabs/nitro/util/pretty"
 	"github.com/offchainlabs/nitro/util/rpcclient"
@@ -74,7 +74,7 @@ type Aggregator struct {
 }
 
 type ServiceDetails struct {
-	service     dasutil.DASWriter
+	service     anytrustutil.DASWriter
 	pubKey      blsSignatures.PublicKey
 	signersMask uint64
 	metricName  string
@@ -84,7 +84,7 @@ func (s *ServiceDetails) String() string {
 	return fmt.Sprintf("ServiceDetails{service: %v, signersMask %d}", s.service, s.signersMask)
 }
 
-func NewServiceDetails(service dasutil.DASWriter, pubKey blsSignatures.PublicKey, signersMask uint64, metricName string) (*ServiceDetails, error) {
+func NewServiceDetails(service anytrustutil.DASWriter, pubKey blsSignatures.PublicKey, signersMask uint64, metricName string) (*ServiceDetails, error) {
 	if bits.OnesCount64(signersMask) != 1 {
 		return nil, fmt.Errorf("tried to configure backend DAS %v with invalid signersMask %X", service, signersMask)
 	}
@@ -137,7 +137,7 @@ type storeResponse struct {
 //
 // If Store gets not enough successful responses by the time its context is canceled
 // (eg via TimeoutWrapper) then it also returns an error.
-func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64) (*dasutil.DataAvailabilityCertificate, error) {
+func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64) (*anytrustutil.DataAvailabilityCertificate, error) {
 	// #nosec G115
 	log.Trace("das.Aggregator.Store", "message", pretty.FirstFewBytes(message), "timeout", time.Unix(int64(timeout), 0))
 
@@ -208,7 +208,7 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64) 
 		}(ctx, d)
 	}
 
-	var aggCert dasutil.DataAvailabilityCertificate
+	var aggCert anytrustutil.DataAvailabilityCertificate
 
 	type certDetails struct {
 		pubKeys        []blsSignatures.PublicKey
@@ -257,7 +257,7 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64) 
 					returned = 1
 				} else if int(storeFailures.Load()) > a.maxAllowedServiceStoreFailures {
 					cd := certDetails{}
-					cd.err = fmt.Errorf("aggregator failed to store message to at least %d out of %d DASes (assuming %d are honest). %w", a.requiredServicesForStore, len(a.services), a.config.AssumedHonest, dasutil.ErrBatchToDasFailed)
+					cd.err = fmt.Errorf("aggregator failed to store message to at least %d out of %d DASes (assuming %d are honest). %w", a.requiredServicesForStore, len(a.services), a.config.AssumedHonest, anytrustutil.ErrBatchToDasFailed)
 					certDetailsChan <- cd
 					returned = 2
 				}
@@ -288,10 +288,10 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64) 
 	verified, err := blsSignatures.VerifySignature(aggCert.Sig, aggCert.SerializeSignableFields(), aggPubKey)
 	if err != nil {
 		//nolint:errorlint
-		return nil, fmt.Errorf("%s. %w", err.Error(), dasutil.ErrBatchToDasFailed)
+		return nil, fmt.Errorf("%s. %w", err.Error(), anytrustutil.ErrBatchToDasFailed)
 	}
 	if !verified {
-		return nil, fmt.Errorf("failed aggregate signature check. %w", dasutil.ErrBatchToDasFailed)
+		return nil, fmt.Errorf("failed aggregate signature check. %w", anytrustutil.ErrBatchToDasFailed)
 	}
 
 	if storeFailures.Load() == 0 {

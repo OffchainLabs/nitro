@@ -33,8 +33,8 @@ import (
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/daprovider"
+	anytrustutil "github.com/offchainlabs/nitro/daprovider/anytrust/util"
 	"github.com/offchainlabs/nitro/daprovider/das/dastree"
-	"github.com/offchainlabs/nitro/daprovider/das/dasutil"
 	"github.com/offchainlabs/nitro/gethhook"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/wavmio"
@@ -155,8 +155,8 @@ func (dasReader *PreimageDASReader) HealthCheck(ctx context.Context) error {
 	return nil
 }
 
-func (dasReader *PreimageDASReader) ExpirationPolicy(ctx context.Context) (dasutil.ExpirationPolicy, error) {
-	return dasutil.DiscardImmediately, nil
+func (dasReader *PreimageDASReader) ExpirationPolicy(ctx context.Context) (anytrustutil.ExpirationPolicy, error) {
+	return anytrustutil.DiscardImmediately, nil
 }
 
 type BlobPreimageReader struct {
@@ -305,8 +305,8 @@ func main() {
 		if lastBlockHeader != nil {
 			delayedMessagesRead = lastBlockHeader.Nonce.Uint64()
 		}
-		var dasReader dasutil.DASReader
-		var dasKeysetFetcher dasutil.DASKeysetFetcher
+		var dasReader anytrustutil.DASReader
+		var dasKeysetFetcher anytrustutil.DASKeysetFetcher
 		if dasEnabled {
 			// DAS batch and keysets are all together in the same preimage binary.
 			dasReader = &PreimageDASReader{}
@@ -319,7 +319,7 @@ func main() {
 		}
 		dapReaders := daprovider.NewDAProviderRegistry()
 		if dasReader != nil {
-			err = dapReaders.SetupDASReader(dasutil.NewReaderForDAS(dasReader, dasKeysetFetcher, keysetValidationMode), nil)
+			err = dapReaders.SetupDASReader(anytrustutil.NewReaderForDAS(dasReader, dasKeysetFetcher, keysetValidationMode), nil)
 			if err != nil {
 				panic(fmt.Sprintf("Failed to register DAS reader: %v", err))
 			}

@@ -17,8 +17,8 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 
+	anytrustutil "github.com/offchainlabs/nitro/daprovider/anytrust/util"
 	"github.com/offchainlabs/nitro/daprovider/das/dastree"
-	"github.com/offchainlabs/nitro/daprovider/das/dasutil"
 	"github.com/offchainlabs/nitro/util/pretty"
 	"github.com/offchainlabs/nitro/util/s3client"
 )
@@ -100,11 +100,11 @@ func (s3s *S3StorageService) Close(ctx context.Context) error {
 	return nil
 }
 
-func (s3s *S3StorageService) ExpirationPolicy(ctx context.Context) (dasutil.ExpirationPolicy, error) {
+func (s3s *S3StorageService) ExpirationPolicy(ctx context.Context) (anytrustutil.ExpirationPolicy, error) {
 	// Expiration of data uploaded to S3 bucket is handled directly via LifeCycle configuration of the bucket. Users can choose to add a
 	// Lifecycle configuration rule with an expiration action that causes objects with a specific prefix to expire certain days after creation.
 	// ref=https://docs.aws.amazon.com/AmazonS3/latest/userguide/lifecycle-expire-general-considerations.html
-	return dasutil.KeepForever, nil
+	return anytrustutil.KeepForever, nil
 }
 
 func (s3s *S3StorageService) String() string {

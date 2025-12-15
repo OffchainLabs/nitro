@@ -11,7 +11,7 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 
 	"github.com/offchainlabs/nitro/daprovider"
-	"github.com/offchainlabs/nitro/daprovider/das/dasutil"
+	anytrustutil "github.com/offchainlabs/nitro/daprovider/anytrust/util"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/signature"
 )
@@ -80,7 +80,7 @@ func (f *Factory) ValidateConfig() error {
 }
 
 func (f *Factory) CreateReader(ctx context.Context) (daprovider.Reader, func(), error) {
-	var daReader dasutil.DASReader
+	var daReader anytrustutil.DASReader
 	var keysetFetcher *KeysetFetcher
 	var lifecycleManager *LifecycleManager
 	var err error
@@ -102,7 +102,7 @@ func (f *Factory) CreateReader(ctx context.Context) (daprovider.Reader, func(), 
 		daReader = NewReaderPanicWrapper(daReader)
 	}
 
-	reader := dasutil.NewReaderForDAS(daReader, keysetFetcher, daprovider.KeysetValidate)
+	reader := anytrustutil.NewReaderForDAS(daReader, keysetFetcher, daprovider.KeysetValidate)
 	cleanupFn := func() {
 		if lifecycleManager != nil {
 			lifecycleManager.StopAndWaitUntil(0)
@@ -126,7 +126,7 @@ func (f *Factory) CreateWriter(ctx context.Context) (daprovider.Writer, func(), 
 		daWriter = NewWriterPanicWrapper(daWriter)
 	}
 
-	writer := dasutil.NewWriterForDAS(daWriter, f.config.MaxBatchSize)
+	writer := anytrustutil.NewWriterForDAS(daWriter, f.config.MaxBatchSize)
 	cleanupFn := func() {
 		if lifecycleManager != nil {
 			lifecycleManager.StopAndWaitUntil(0)

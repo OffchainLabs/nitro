@@ -20,7 +20,7 @@ import (
 
 	"github.com/offchainlabs/nitro/blsSignatures"
 	"github.com/offchainlabs/nitro/daprovider"
-	"github.com/offchainlabs/nitro/daprovider/das/dasutil"
+	anytrustutil "github.com/offchainlabs/nitro/daprovider/anytrust/util"
 	"github.com/offchainlabs/nitro/util/testhelpers/flag"
 )
 
@@ -122,10 +122,10 @@ func (b *randomBagOfFailures) shouldFail() failureType {
 type WrapStore struct {
 	t        *testing.T
 	injector failureInjector
-	dasutil.DASWriter
+	anytrustutil.DASWriter
 }
 
-func (w *WrapStore) Store(ctx context.Context, message []byte, timeout uint64) (*dasutil.DataAvailabilityCertificate, error) {
+func (w *WrapStore) Store(ctx context.Context, message []byte, timeout uint64) (*anytrustutil.DataAvailabilityCertificate, error) {
 	switch w.injector.shouldFail() {
 	case success:
 		return w.DASWriter.Store(ctx, message, timeout)
@@ -328,7 +328,7 @@ func TestDAS_InsufficientBackendsTriggersFallback(t *testing.T) {
 
 	// Wrap the aggregator with writerForDAS to test error conversion
 	// Use 0 for maxMessageSize to indicate use default
-	writer := dasutil.NewWriterForDAS(aggregator, 0)
+	writer := anytrustutil.NewWriterForDAS(aggregator, 0)
 
 	rawMsg := []byte("It's time for you to see the fnords.")
 	promise := writer.Store(rawMsg, 0)
@@ -345,7 +345,7 @@ func TestDAS_InsufficientBackendsTriggersFallback(t *testing.T) {
 	}
 
 	// Also verify the original error is preserved
-	if !errors.Is(err, dasutil.ErrBatchToDasFailed) {
+	if !errors.Is(err, anytrustutil.ErrBatchToDasFailed) {
 		Fail(t, fmt.Sprintf("Expected error to contain ErrBatchToDasFailed, got: %v", err))
 	}
 

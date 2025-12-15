@@ -83,7 +83,7 @@ COPY ./blsSignatures ./blsSignatures
 COPY ./cmd/chaininfo ./cmd/chaininfo
 COPY ./cmd/replay ./cmd/replay
 COPY ./daprovider ./daprovider
-COPY ./daprovider/das/dasutil ./daprovider/das/dasutil
+COPY ./daprovider/anytrust/util ./daprovider/anytrust/util
 COPY ./daprovider/das/dastree ./daprovider/das/dastree
 COPY ./precompiles ./precompiles
 COPY ./statetransfer ./statetransfer

@@ -7,7 +7,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/offchainlabs/nitro/daprovider/das/dasutil"
+	anytrustutil "github.com/offchainlabs/nitro/daprovider/anytrust/util"
 )
 
 // These classes are wrappers implementing das.StorageService and das.DataAvailabilityService.
@@ -16,12 +16,12 @@ import (
 // it is a programming error in the code setting up the node or daserver if a non-writeable object
 // is used in a writeable context.
 
-func NewReadLimitedStorageService(reader dasutil.DASReader) *readLimitedStorageService {
+func NewReadLimitedStorageService(reader anytrustutil.DASReader) *readLimitedStorageService {
 	return &readLimitedStorageService{reader}
 }
 
 type readLimitedStorageService struct {
-	dasutil.DASReader
+	anytrustutil.DASReader
 }
 
 func (s *readLimitedStorageService) Put(ctx context.Context, data []byte, expiration uint64) error {
@@ -42,14 +42,14 @@ func (s *readLimitedStorageService) String() string {
 }
 
 type readLimitedDataAvailabilityService struct {
-	dasutil.DASReader
+	anytrustutil.DASReader
 }
 
-func NewReadLimitedDataAvailabilityService(da dasutil.DASReader) *readLimitedDataAvailabilityService {
+func NewReadLimitedDataAvailabilityService(da anytrustutil.DASReader) *readLimitedDataAvailabilityService {
 	return &readLimitedDataAvailabilityService{da}
 }
 
-func (*readLimitedDataAvailabilityService) Store(ctx context.Context, message []byte, timeout uint64, sig []byte) (*dasutil.DataAvailabilityCertificate, error) {
+func (*readLimitedDataAvailabilityService) Store(ctx context.Context, message []byte, timeout uint64, sig []byte) (*anytrustutil.DataAvailabilityCertificate, error) {
 	panic("Logic error: readLimitedDataAvailabilityService.Store shouldn't be called.")
 }
 

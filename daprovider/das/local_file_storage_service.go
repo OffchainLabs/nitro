@@ -26,8 +26,8 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 
+	anytrustutil "github.com/offchainlabs/nitro/daprovider/anytrust/util"
 	"github.com/offchainlabs/nitro/daprovider/das/dastree"
-	"github.com/offchainlabs/nitro/daprovider/das/dasutil"
 	"github.com/offchainlabs/nitro/util/pretty"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
@@ -224,11 +224,11 @@ func (s *LocalFileStorageService) Sync(ctx context.Context) error {
 	return nil
 }
 
-func (s *LocalFileStorageService) ExpirationPolicy(ctx context.Context) (dasutil.ExpirationPolicy, error) {
+func (s *LocalFileStorageService) ExpirationPolicy(ctx context.Context) (anytrustutil.ExpirationPolicy, error) {
 	if s.config.EnableExpiry {
-		return dasutil.DiscardAfterDataTimeout, nil
+		return anytrustutil.DiscardAfterDataTimeout, nil
 	}
-	return dasutil.KeepForever, nil
+	return anytrustutil.KeepForever, nil
 }
 
 func (s *LocalFileStorageService) String() string {

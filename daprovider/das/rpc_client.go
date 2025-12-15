@@ -19,7 +19,7 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/blsSignatures"
-	"github.com/offchainlabs/nitro/daprovider/das/dasutil"
+	anytrustutil "github.com/offchainlabs/nitro/daprovider/anytrust/util"
 	"github.com/offchainlabs/nitro/daprovider/data_streaming"
 	"github.com/offchainlabs/nitro/util/pretty"
 	"github.com/offchainlabs/nitro/util/rpcclient"
@@ -112,7 +112,7 @@ func NewDASRPCClient(config *DASRPCClientConfig, signer signature.DataSignerFunc
 	}, nil
 }
 
-func (c *DASRPCClient) Store(ctx context.Context, message []byte, timeout uint64) (*dasutil.DataAvailabilityCertificate, error) {
+func (c *DASRPCClient) Store(ctx context.Context, message []byte, timeout uint64) (*anytrustutil.DataAvailabilityCertificate, error) {
 	rpcClientStoreRequestCounter.Inc(1)
 	start := time.Now()
 	success := false
@@ -147,7 +147,7 @@ func (c *DASRPCClient) Store(ctx context.Context, message []byte, timeout uint64
 	rpcClientStoreStoredBytesCounter.Inc(int64(len(message)))
 	success = true
 
-	return &dasutil.DataAvailabilityCertificate{
+	return &anytrustutil.DataAvailabilityCertificate{
 		DataHash:    common.BytesToHash(storeResult.DataHash),
 		Timeout:     uint64(storeResult.Timeout),
 		SignersMask: uint64(storeResult.SignersMask),
@@ -157,7 +157,7 @@ func (c *DASRPCClient) Store(ctx context.Context, message []byte, timeout uint64
 	}, nil
 }
 
-func (c *DASRPCClient) legacyStore(ctx context.Context, message []byte, timeout uint64) (*dasutil.DataAvailabilityCertificate, error) {
+func (c *DASRPCClient) legacyStore(ctx context.Context, message []byte, timeout uint64) (*anytrustutil.DataAvailabilityCertificate, error) {
 	// #nosec G115
 	log.Trace("das.DASRPCClient.Store(...)", "message", pretty.FirstFewBytes(message), "timeout", time.Unix(int64(timeout), 0), "this", *c)
 
@@ -174,7 +174,7 @@ func (c *DASRPCClient) legacyStore(ctx context.Context, message []byte, timeout 
 	if err != nil {
 		return nil, err
 	}
-	return &dasutil.DataAvailabilityCertificate{
+	return &anytrustutil.DataAvailabilityCertificate{
 		DataHash:    common.BytesToHash(ret.DataHash),
 		Timeout:     uint64(ret.Timeout),
 		SignersMask: uint64(ret.SignersMask),
@@ -192,11 +192,11 @@ func (c *DASRPCClient) HealthCheck(ctx context.Context) error {
 	return c.clnt.CallContext(ctx, nil, "das_healthCheck")
 }
 
-func (c *DASRPCClient) ExpirationPolicy(ctx context.Context) (dasutil.ExpirationPolicy, error) {
+func (c *DASRPCClient) ExpirationPolicy(ctx context.Context) (anytrustutil.ExpirationPolicy, error) {
 	var res string
 	err := c.clnt.CallContext(ctx, &res, "das_expirationPolicy")
 	if err != nil {
 		return -1, err
 	}
-	return dasutil.StringToExpirationPolicy(res)
+	return anytrustutil.StringToExpirationPolicy(res)
 }

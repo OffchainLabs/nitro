@@ -10,19 +10,19 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 
-	"github.com/offchainlabs/nitro/daprovider/das/dasutil"
+	anytrustutil "github.com/offchainlabs/nitro/daprovider/anytrust/util"
 )
 
 type ReaderTimeoutWrapper struct {
 	t time.Duration
-	dasutil.DASReader
+	anytrustutil.DASReader
 }
 
 type TimeoutWrapper struct {
 	ReaderTimeoutWrapper
 }
 
-func NewReaderTimeoutWrapper(dataAvailabilityServiceReader dasutil.DASReader, t time.Duration) dasutil.DASReader {
+func NewReaderTimeoutWrapper(dataAvailabilityServiceReader anytrustutil.DASReader, t time.Duration) anytrustutil.DASReader {
 	return &ReaderTimeoutWrapper{
 		t:         t,
 		DASReader: dataAvailabilityServiceReader,

@@ -19,7 +19,7 @@ import (
 	"github.com/ethereum/go-ethereum/metrics"
 
 	"github.com/offchainlabs/nitro/cmd/genericconf"
-	"github.com/offchainlabs/nitro/daprovider/das/dasutil"
+	anytrustutil "github.com/offchainlabs/nitro/daprovider/anytrust/util"
 	"github.com/offchainlabs/nitro/util/pretty"
 )
 
@@ -33,13 +33,13 @@ var (
 
 type RestfulDasServer struct {
 	server               *http.Server
-	daReader             dasutil.DASReader
+	daReader             anytrustutil.DASReader
 	daHealthChecker      DataAvailabilityServiceHealthChecker
 	httpServerExitedChan chan interface{}
 	httpServerError      error
 }
 
-func NewRestfulDasServer(address string, port uint64, restServerTimeouts genericconf.HTTPServerTimeoutConfig, daReader dasutil.DASReader, daHealthChecker DataAvailabilityServiceHealthChecker) (*RestfulDasServer, error) {
+func NewRestfulDasServer(address string, port uint64, restServerTimeouts genericconf.HTTPServerTimeoutConfig, daReader anytrustutil.DASReader, daHealthChecker DataAvailabilityServiceHealthChecker) (*RestfulDasServer, error) {
 	listener, err := net.Listen("tcp", fmt.Sprintf("%s:%d", address, port))
 	if err != nil {
 		return nil, err
@@ -47,7 +47,7 @@ func NewRestfulDasServer(address string, port uint64, restServerTimeouts generic
 	return NewRestfulDasServerOnListener(listener, restServerTimeouts, daReader, daHealthChecker)
 }
 
-func NewRestfulDasServerOnListener(listener net.Listener, restServerTimeouts genericconf.HTTPServerTimeoutConfig, daReader dasutil.DASReader, daHealthChecker DataAvailabilityServiceHealthChecker) (*RestfulDasServer, error) {
+func NewRestfulDasServerOnListener(listener net.Listener, restServerTimeouts genericconf.HTTPServerTimeoutConfig, daReader anytrustutil.DASReader, daHealthChecker DataAvailabilityServiceHealthChecker) (*RestfulDasServer, error) {
 
 	ret := &RestfulDasServer{
 		daReader:             daReader,

@@ -8,11 +8,11 @@ import (
 
 	"github.com/ethereum/go-ethereum/log"
 
-	"github.com/offchainlabs/nitro/daprovider/das/dasutil"
+	anytrustutil "github.com/offchainlabs/nitro/daprovider/anytrust/util"
 	"github.com/offchainlabs/nitro/util/pretty"
 )
 
-func logPut(store string, data []byte, timeout uint64, reader dasutil.DASReader, more ...interface{}) {
+func logPut(store string, data []byte, timeout uint64, reader anytrustutil.DASReader, more ...interface{}) {
 	if len(more) == 0 {
 		// #nosec G115
 		log.Trace(

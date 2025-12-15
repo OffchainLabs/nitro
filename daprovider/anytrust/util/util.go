@@ -1,6 +1,6 @@
 // Copyright 2021-2025, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
-package dasutil
+package util
 
 import (
 	"bufio"
@@ -15,7 +15,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 
-	"github.com/offchainlabs/nitro/arbos/util"
+	arbosutil "github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/blsSignatures"
 	"github.com/offchainlabs/nitro/daprovider"
@@ -375,10 +375,10 @@ type DataAvailabilityKeyset struct {
 }
 
 func (keyset *DataAvailabilityKeyset) Serialize(wr io.Writer) error {
-	if err := util.Uint64ToWriter(keyset.AssumedHonest, wr); err != nil {
+	if err := arbosutil.Uint64ToWriter(keyset.AssumedHonest, wr); err != nil {
 		return err
 	}
-	if err := util.Uint64ToWriter(uint64(len(keyset.PubKeys)), wr); err != nil {
+	if err := arbosutil.Uint64ToWriter(uint64(len(keyset.PubKeys)), wr); err != nil {
 		return err
 	}
 	for _, pk := range keyset.PubKeys {
@@ -404,11 +404,11 @@ func (keyset *DataAvailabilityKeyset) Hash() (common.Hash, error) {
 }
 
 func DeserializeKeyset(rd io.Reader, assumeKeysetValid bool) (*DataAvailabilityKeyset, error) {
-	assumedHonest, err := util.Uint64FromReader(rd)
+	assumedHonest, err := arbosutil.Uint64FromReader(rd)
 	if err != nil {
 		return nil, err
 	}
-	numKeys, err := util.Uint64FromReader(rd)
+	numKeys, err := arbosutil.Uint64FromReader(rd)
 	if err != nil {
 		return nil, err
 	}

@@ -13,13 +13,13 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 
-	"github.com/offchainlabs/nitro/daprovider/das/dasutil"
+	anytrustutil "github.com/offchainlabs/nitro/daprovider/anytrust/util"
 )
 
 var ErrNotFound = errors.New("not found")
 
 type StorageService interface {
-	dasutil.DASReader
+	anytrustutil.DASReader
 	Put(ctx context.Context, data []byte, expirationTime uint64) error
 	Sync(ctx context.Context) error
 	Closer

@@ -11,8 +11,8 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 
+	anytrustutil "github.com/offchainlabs/nitro/daprovider/anytrust/util"
 	"github.com/offchainlabs/nitro/daprovider/das/dastree"
-	"github.com/offchainlabs/nitro/daprovider/das/dasutil"
 )
 
 type MemoryBackedStorageService struct { // intended for testing and debugging
@@ -70,8 +70,8 @@ func (m *MemoryBackedStorageService) Close(ctx context.Context) error {
 	return nil
 }
 
-func (m *MemoryBackedStorageService) ExpirationPolicy(ctx context.Context) (dasutil.ExpirationPolicy, error) {
-	return dasutil.KeepForever, nil
+func (m *MemoryBackedStorageService) ExpirationPolicy(ctx context.Context) (anytrustutil.ExpirationPolicy, error) {
+	return anytrustutil.KeepForever, nil
 }
 
 func (m *MemoryBackedStorageService) String() string {

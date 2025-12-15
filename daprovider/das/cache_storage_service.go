@@ -13,8 +13,8 @@ import (
 	"github.com/ethereum/go-ethereum/common/lru"
 	"github.com/ethereum/go-ethereum/log"
 
+	anytrustutil "github.com/offchainlabs/nitro/daprovider/anytrust/util"
 	"github.com/offchainlabs/nitro/daprovider/das/dastree"
-	"github.com/offchainlabs/nitro/daprovider/das/dasutil"
 	"github.com/offchainlabs/nitro/util/pretty"
 )
 
@@ -83,7 +83,7 @@ func (c *CacheStorageService) Close(ctx context.Context) error {
 	return c.baseStorageService.Close(ctx)
 }
 
-func (c *CacheStorageService) ExpirationPolicy(ctx context.Context) (dasutil.ExpirationPolicy, error) {
+func (c *CacheStorageService) ExpirationPolicy(ctx context.Context) (anytrustutil.ExpirationPolicy, error) {
 	return c.baseStorageService.ExpirationPolicy(ctx)
 }
 

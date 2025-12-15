@@ -11,27 +11,27 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/offchainlabs/nitro/daprovider/das/dasutil"
+	anytrustutil "github.com/offchainlabs/nitro/daprovider/anytrust/util"
 )
 
 var ErrNoReadersResponded = errors.New("no DAS readers responded successfully")
 
 type aggregatorStrategy interface {
 	newInstance() aggregatorStrategyInstance
-	update([]dasutil.DASReader, map[dasutil.DASReader]readerStats)
+	update([]anytrustutil.DASReader, map[anytrustutil.DASReader]readerStats)
 }
 
 type abstractAggregatorStrategy struct {
 	sync.RWMutex
-	readers []dasutil.DASReader
-	stats   map[dasutil.DASReader]readerStats
+	readers []anytrustutil.DASReader
+	stats   map[anytrustutil.DASReader]readerStats
 }
 
-func (s *abstractAggregatorStrategy) update(readers []dasutil.DASReader, stats map[dasutil.DASReader]readerStats) {
+func (s *abstractAggregatorStrategy) update(readers []anytrustutil.DASReader, stats map[anytrustutil.DASReader]readerStats) {
 	s.Lock()
 	defer s.Unlock()
 
-	s.readers = make([]dasutil.DASReader, len(readers))
+	s.readers = make([]anytrustutil.DASReader, len(readers))
 	copy(s.readers, readers)
 
 	s.stats = maps.Clone(stats)
@@ -49,11 +49,11 @@ type simpleExploreExploitStrategy struct {
 func (s *simpleExploreExploitStrategy) newInstance() aggregatorStrategyInstance {
 	iterations := s.iterations.Add(1)
 
-	readerSets := make([][]dasutil.DASReader, 0)
+	readerSets := make([][]anytrustutil.DASReader, 0)
 	s.RLock()
 	defer s.RUnlock()
 
-	readers := make([]dasutil.DASReader, len(s.readers))
+	readers := make([]anytrustutil.DASReader, len(s.readers))
 	copy(readers, s.readers)
 
 	if iterations%(s.exploreIterations+s.exploitIterations) < s.exploreIterations {
@@ -68,7 +68,7 @@ func (s *simpleExploreExploitStrategy) newInstance() aggregatorStrategyInstance 
 	}
 
 	for i, maxTake := 0, 1; i < len(readers); maxTake = maxTake * 2 {
-		readerSet := make([]dasutil.DASReader, 0, maxTake)
+		readerSet := make([]anytrustutil.DASReader, 0, maxTake)
 		for taken := 0; taken < maxTake && i < len(readers); i, taken = i+1, taken+1 {
 			readerSet = append(readerSet, readers[i])
 		}
@@ -89,7 +89,7 @@ func (s *testingSequentialStrategy) newInstance() aggregatorStrategyInstance {
 
 	si := basicStrategyInstance{}
 	for _, reader := range s.readers {
-		si.readerSets = append(si.readerSets, []dasutil.DASReader{reader})
+		si.readerSets = append(si.readerSets, []anytrustutil.DASReader{reader})
 	}
 
 	return &si
@@ -97,14 +97,14 @@ func (s *testingSequentialStrategy) newInstance() aggregatorStrategyInstance {
 
 // Instance of a strategy that returns readers in an order according to the strategy
 type aggregatorStrategyInstance interface {
-	nextReaders() []dasutil.DASReader
+	nextReaders() []anytrustutil.DASReader
 }
 
 type basicStrategyInstance struct {
-	readerSets [][]dasutil.DASReader
+	readerSets [][]anytrustutil.DASReader
 }
 
-func (si *basicStrategyInstance) nextReaders() []dasutil.DASReader {
+func (si *basicStrategyInstance) nextReaders() []anytrustutil.DASReader {
 	if len(si.readerSets) == 0 {
 		return nil
 	}

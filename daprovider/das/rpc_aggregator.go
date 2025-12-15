@@ -15,7 +15,7 @@ import (
 	"github.com/knadh/koanf/providers/confmap"
 
 	"github.com/offchainlabs/nitro/blsSignatures"
-	"github.com/offchainlabs/nitro/daprovider/das/dasutil"
+	anytrustutil "github.com/offchainlabs/nitro/daprovider/anytrust/util"
 	"github.com/offchainlabs/nitro/util/metricsutil"
 	"github.com/offchainlabs/nitro/util/signature"
 )
@@ -126,7 +126,7 @@ func KeysetHashFromServices(services []ServiceDetails, assumedHonest uint64) ([3
 		return [32]byte{}, nil, errors.New("at least two signers share a mask")
 	}
 
-	keyset := &dasutil.DataAvailabilityKeyset{
+	keyset := &anytrustutil.DataAvailabilityKeyset{
 		AssumedHonest: uint64(assumedHonest),
 		PubKeys:       pubKeys,
 	}

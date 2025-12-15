@@ -17,8 +17,8 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 
+	anytrustutil "github.com/offchainlabs/nitro/daprovider/anytrust/util"
 	"github.com/offchainlabs/nitro/daprovider/das/dastree"
-	"github.com/offchainlabs/nitro/daprovider/das/dasutil"
 	"github.com/offchainlabs/nitro/util/pretty"
 	"github.com/offchainlabs/nitro/util/redisutil"
 )
@@ -147,7 +147,7 @@ func (rs *RedisStorageService) Close(ctx context.Context) error {
 	return rs.baseStorageService.Close(ctx)
 }
 
-func (rs *RedisStorageService) ExpirationPolicy(ctx context.Context) (dasutil.ExpirationPolicy, error) {
+func (rs *RedisStorageService) ExpirationPolicy(ctx context.Context) (anytrustutil.ExpirationPolicy, error) {
 	return rs.baseStorageService.ExpirationPolicy(ctx)
 }
 

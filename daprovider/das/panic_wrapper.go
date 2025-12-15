@@ -11,21 +11,21 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 
-	"github.com/offchainlabs/nitro/daprovider/das/dasutil"
+	anytrustutil "github.com/offchainlabs/nitro/daprovider/anytrust/util"
 )
 
 type WriterPanicWrapper struct {
-	dasutil.DASWriter
+	anytrustutil.DASWriter
 }
 
-func NewWriterPanicWrapper(dataAvailabilityService dasutil.DASWriter) dasutil.DASWriter {
+func NewWriterPanicWrapper(dataAvailabilityService anytrustutil.DASWriter) anytrustutil.DASWriter {
 	return &WriterPanicWrapper{DASWriter: dataAvailabilityService}
 }
 func (w *WriterPanicWrapper) String() string {
 	return fmt.Sprintf("WriterPanicWrapper{%v}", w.DASWriter)
 }
 
-func (w *WriterPanicWrapper) Store(ctx context.Context, message []byte, timeout uint64) (*dasutil.DataAvailabilityCertificate, error) {
+func (w *WriterPanicWrapper) Store(ctx context.Context, message []byte, timeout uint64) (*anytrustutil.DataAvailabilityCertificate, error) {
 	cert, err := w.DASWriter.Store(ctx, message, timeout)
 	if err != nil {
 		panic(fmt.Sprintf("panic wrapper Store: %v", err))
@@ -34,10 +34,10 @@ func (w *WriterPanicWrapper) Store(ctx context.Context, message []byte, timeout 
 }
 
 type ReaderPanicWrapper struct {
-	dasutil.DASReader
+	anytrustutil.DASReader
 }
 
-func NewReaderPanicWrapper(dataAvailabilityService dasutil.DASReader) dasutil.DASReader {
+func NewReaderPanicWrapper(dataAvailabilityService anytrustutil.DASReader) anytrustutil.DASReader {
 	return &ReaderPanicWrapper{
 		DASReader: dataAvailabilityService,
 	}
