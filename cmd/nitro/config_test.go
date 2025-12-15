@@ -31,6 +31,8 @@ func TestEmptyCliConfig(t *testing.T) {
 	Require(t, err)
 	err = anytrust.FixKeysetCLIParsing("node.data-availability.rpc-aggregator.backends", k)
 	Require(t, err)
+	err = anytrust.FixKeysetCLIParsing("node.da.anytrust.rpc-aggregator.backends", k)
+	Require(t, err)
 	var emptyCliNodeConfig NodeConfig
 	err = confighelpers.EndCommonParse(k, &emptyCliNodeConfig)
 	Require(t, err)
@@ -70,10 +72,33 @@ func TestInvalidCachingStateSchemeForValidator(t *testing.T) {
 	}
 }
 
+// TestAggregatorConfig tests the deprecated --node.data-availability.* flags
+// to ensure backward compatibility. These flags are deprecated in favor of
+// --node.da.anytrust.* but must continue to work.
 func TestAggregatorConfig(t *testing.T) {
 	args := strings.Split("--persistent.chain /tmp/data --init.dev-init --node.parent-chain-reader.enable=false --parent-chain.id 5 --chain.id 421613 --node.batch-poster.parent-chain-wallet.pathname /l1keystore --node.batch-poster.parent-chain-wallet.password passphrase --http.addr 0.0.0.0 --ws.addr 0.0.0.0 --node.sequencer --execution.sequencer.enable --node.feed.output.enable --node.feed.output.port 9642 --node.data-availability.enable --node.data-availability.rpc-aggregator.backends [{\"url\":\"http://localhost:8547\",\"pubkey\":\"abc==\"}] --node.transaction-streamer.track-block-metadata-from=10", " ")
-	_, _, err := ParseNode(context.Background(), args)
+	nodeConfig, _, err := ParseNode(context.Background(), args)
 	Require(t, err)
+	// Verify migration copied config to new location
+	if !nodeConfig.Node.DA.AnyTrust.Enable {
+		Fail(t, "deprecated --node.data-availability.enable should migrate to Node.DA.AnyTrust.Enable")
+	}
+	if len(nodeConfig.Node.DA.AnyTrust.RPCAggregator.Backends) != 1 {
+		Fail(t, "deprecated --node.data-availability.rpc-aggregator.backends should migrate to Node.DA.AnyTrust.RPCAggregator.Backends")
+	}
+}
+
+// TestAggregatorConfigNewFlags tests the new --node.da.anytrust.* flags
+func TestAggregatorConfigNewFlags(t *testing.T) {
+	args := strings.Split("--persistent.chain /tmp/data --init.dev-init --node.parent-chain-reader.enable=false --parent-chain.id 5 --chain.id 421613 --node.batch-poster.parent-chain-wallet.pathname /l1keystore --node.batch-poster.parent-chain-wallet.password passphrase --http.addr 0.0.0.0 --ws.addr 0.0.0.0 --node.sequencer --execution.sequencer.enable --node.feed.output.enable --node.feed.output.port 9642 --node.da.anytrust.enable --node.da.anytrust.rpc-aggregator.backends [{\"url\":\"http://localhost:8547\",\"pubkey\":\"abc==\"}] --node.transaction-streamer.track-block-metadata-from=10", " ")
+	nodeConfig, _, err := ParseNode(context.Background(), args)
+	Require(t, err)
+	if !nodeConfig.Node.DA.AnyTrust.Enable {
+		Fail(t, "--node.da.anytrust.enable should set Node.DA.AnyTrust.Enable")
+	}
+	if len(nodeConfig.Node.DA.AnyTrust.RPCAggregator.Backends) != 1 {
+		Fail(t, "--node.da.anytrust.rpc-aggregator.backends should set Node.DA.AnyTrust.RPCAggregator.Backends")
+	}
 }
 
 func TestExternalProviderSingularConfig(t *testing.T) {

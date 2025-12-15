@@ -89,7 +89,7 @@ func ParseServices(config AggregatorConfig, signer signature.DataSignerFunc) ([]
 		}
 		metricName := metricsutil.CanonicalizeMetricName(url.Hostname())
 
-		clientConfig := config.DASRPCClient
+		clientConfig := config.RPCClient
 		clientConfig.RPC.URL = b.URL
 		service, err := NewRPCClient(&clientConfig, signer)
 		if err != nil {

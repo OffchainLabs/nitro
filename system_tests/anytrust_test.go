@@ -97,7 +97,7 @@ func aggConfigForBackend(backendConfig anytrust.BackendConfig) anytrust.Aggregat
 		Enable:        true,
 		AssumedHonest: 1,
 		Backends:      anytrust.BackendConfigList{backendConfig},
-		DASRPCClient: anytrust.RPCClientConfig{
+		RPCClient: anytrust.RPCClientConfig{
 			EnableChunkedStore: true,
 			DataStream:         data_streaming.TestDataStreamerConfig(anytrust.DefaultDataStreamRpcMethods),
 			RPC:                rpcConfig,
@@ -121,11 +121,11 @@ func TestDASRekey(t *testing.T) {
 		authorizeDASKeyset(t, ctx, pubkeyA, builder.L1Info, builder.L1.Client)
 
 		// Setup DAS config
-		builder.nodeConfig.DataAvailability.Enable = true
-		builder.nodeConfig.DataAvailability.RPCAggregator = aggConfigForBackend(backendConfigA)
-		builder.nodeConfig.DataAvailability.RestAggregator = anytrust.DefaultRestfulClientAggregatorConfig
-		builder.nodeConfig.DataAvailability.RestAggregator.Enable = true
-		builder.nodeConfig.DataAvailability.RestAggregator.Urls = []string{restServerUrlA}
+		builder.nodeConfig.DA.AnyTrust.Enable = true
+		builder.nodeConfig.DA.AnyTrust.RPCAggregator = aggConfigForBackend(backendConfigA)
+		builder.nodeConfig.DA.AnyTrust.RestAggregator = anytrust.DefaultRestfulClientAggregatorConfig
+		builder.nodeConfig.DA.AnyTrust.RestAggregator.Enable = true
+		builder.nodeConfig.DA.AnyTrust.RestAggregator.Urls = []string{restServerUrlA}
 
 		// Setup L2 chain
 		builder.L2Info.GenerateAccount("User2")
@@ -133,10 +133,10 @@ func TestDASRekey(t *testing.T) {
 
 		// Setup second node
 		l1NodeConfigB.BlockValidator.Enable = false
-		l1NodeConfigB.DataAvailability.Enable = true
-		l1NodeConfigB.DataAvailability.RestAggregator = anytrust.DefaultRestfulClientAggregatorConfig
-		l1NodeConfigB.DataAvailability.RestAggregator.Enable = true
-		l1NodeConfigB.DataAvailability.RestAggregator.Urls = []string{restServerUrlA}
+		l1NodeConfigB.DA.AnyTrust.Enable = true
+		l1NodeConfigB.DA.AnyTrust.RestAggregator = anytrust.DefaultRestfulClientAggregatorConfig
+		l1NodeConfigB.DA.AnyTrust.RestAggregator.Enable = true
+		l1NodeConfigB.DA.AnyTrust.RestAggregator.Urls = []string{restServerUrlA}
 		nodeBParams := SecondNodeParams{
 			nodeConfig: l1NodeConfigB,
 			initData:   &builder.L2Info.ArbInitData,
@@ -158,7 +158,7 @@ func TestDASRekey(t *testing.T) {
 	authorizeDASKeyset(t, ctx, pubkeyB, builder.L1Info, builder.L1.Client)
 
 	// Restart the node on the new keyset against the new DAS server running on the same disk as the first with new keys
-	builder.nodeConfig.DataAvailability.RPCAggregator = aggConfigForBackend(backendConfigB)
+	builder.nodeConfig.DA.AnyTrust.RPCAggregator = aggConfigForBackend(backendConfigB)
 	builder.l2StackConfig = testhelpers.CreateStackConfigForTest(builder.dataDir)
 	cleanup := builder.BuildL2OnL1(t)
 	defer cleanup()
@@ -216,17 +216,17 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 	authorizeDASKeyset(t, ctx, pubkeyA, builder.L1Info, builder.L1.Client)
 
 	//
-	builder.nodeConfig.DataAvailability = anytrust.DefaultConfig
-	builder.nodeConfig.DataAvailability.Enable = true
+	builder.nodeConfig.DA.AnyTrust = anytrust.DefaultConfig
+	builder.nodeConfig.DA.AnyTrust.Enable = true
 	// AggregatorConfig set up below
 	beConfigA := anytrust.BackendConfig{
 		URL:    "http://" + rpcLis.Addr().String(),
 		Pubkey: blsPubToBase64(pubkey),
 	}
-	builder.nodeConfig.DataAvailability.RPCAggregator = aggConfigForBackend(beConfigA)
-	builder.nodeConfig.DataAvailability.RestAggregator = anytrust.DefaultRestfulClientAggregatorConfig
-	builder.nodeConfig.DataAvailability.RestAggregator.Enable = true
-	builder.nodeConfig.DataAvailability.RestAggregator.Urls = []string{"http://" + restLis.Addr().String()}
+	builder.nodeConfig.DA.AnyTrust.RPCAggregator = aggConfigForBackend(beConfigA)
+	builder.nodeConfig.DA.AnyTrust.RestAggregator = anytrust.DefaultRestfulClientAggregatorConfig
+	builder.nodeConfig.DA.AnyTrust.RestAggregator.Enable = true
+	builder.nodeConfig.DA.AnyTrust.RestAggregator.Urls = []string{"http://" + restLis.Addr().String()}
 
 	// Setup L2 chain
 	builder.L2Info = NewArbTestInfo(t, builder.chainConfig.ChainID)
@@ -236,13 +236,13 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 
 	// Create node to sync from chain
 	l1NodeConfigB := arbnode.ConfigDefaultL1NonSequencerTest()
-	l1NodeConfigB.DataAvailability = anytrust.DefaultConfig
-	l1NodeConfigB.DataAvailability.Enable = true
+	l1NodeConfigB.DA.AnyTrust = anytrust.DefaultConfig
+	l1NodeConfigB.DA.AnyTrust.Enable = true
 	// AggregatorConfig set up below
 	l1NodeConfigB.BlockValidator.Enable = false
-	l1NodeConfigB.DataAvailability.RestAggregator = anytrust.DefaultRestfulClientAggregatorConfig
-	l1NodeConfigB.DataAvailability.RestAggregator.Enable = true
-	l1NodeConfigB.DataAvailability.RestAggregator.Urls = []string{"http://" + restLis.Addr().String()}
+	l1NodeConfigB.DA.AnyTrust.RestAggregator = anytrust.DefaultRestfulClientAggregatorConfig
+	l1NodeConfigB.DA.AnyTrust.RestAggregator.Enable = true
+	l1NodeConfigB.DA.AnyTrust.RestAggregator.Urls = []string{"http://" + restLis.Addr().String()}
 	nodeBParams := SecondNodeParams{
 		nodeConfig: l1NodeConfigB,
 		initData:   &builder.L2Info.ArbInitData,

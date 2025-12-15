@@ -39,14 +39,13 @@ type AggregatorConfig struct {
 	Enable        bool              `koanf:"enable"`
 	AssumedHonest int               `koanf:"assumed-honest"`
 	Backends      BackendConfigList `koanf:"backends"`
-	// TODO: Rename to RPCClient with koanf:"rpc-client" after CLI flag migration
-	DASRPCClient RPCClientConfig `koanf:"das-rpc-client"`
+	RPCClient     RPCClientConfig   `koanf:"rpc-client"`
 }
 
 var DefaultAggregatorConfig = AggregatorConfig{
 	AssumedHonest: 0,
 	Backends:      nil,
-	DASRPCClient: RPCClientConfig{
+	RPCClient: RPCClientConfig{
 		EnableChunkedStore: true,
 		DataStream:         data_streaming.DefaultDataStreamerConfig(DefaultDataStreamRpcMethods),
 		RPC:                rpcclient.DefaultClientConfig,

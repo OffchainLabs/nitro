@@ -1054,7 +1054,7 @@ func build2ndNode(
 		params.nodeConfig = arbnode.ConfigDefaultL1NonSequencerTest()
 	}
 	if params.dasConfig != nil {
-		params.nodeConfig.DataAvailability = *params.dasConfig
+		params.nodeConfig.DA.AnyTrust = *params.dasConfig
 	}
 	if params.stackConfig == nil {
 		params.stackConfig = firstNodeStackConfig
@@ -2214,7 +2214,7 @@ func setupConfigWithDAS(
 	dasConfig.PanicOnError = true
 	dasConfig.DisableSignatureChecking = true
 
-	l1NodeConfigA.DataAvailability = anytrust.DefaultConfig
+	l1NodeConfigA.DA.AnyTrust = anytrust.DefaultConfig
 	var lifecycleManager *anytrust.LifecycleManager
 	var daReader anytrustutil.Reader
 	var daWriter anytrustutil.Writer
@@ -2237,16 +2237,16 @@ func setupConfigWithDAS(
 			URL:    "http://" + rpcLis.Addr().String(),
 			Pubkey: blsPubToBase64(dasSignerKey),
 		}
-		l1NodeConfigA.DataAvailability.RPCAggregator = aggConfigForBackend(beConfigA)
-		l1NodeConfigA.DataAvailability.Enable = true
-		l1NodeConfigA.DataAvailability.RestAggregator = anytrust.DefaultRestfulClientAggregatorConfig
-		l1NodeConfigA.DataAvailability.RestAggregator.Enable = true
-		l1NodeConfigA.DataAvailability.RestAggregator.Urls = []string{"http://" + restLis.Addr().String()}
+		l1NodeConfigA.DA.AnyTrust.RPCAggregator = aggConfigForBackend(beConfigA)
+		l1NodeConfigA.DA.AnyTrust.Enable = true
+		l1NodeConfigA.DA.AnyTrust.RestAggregator = anytrust.DefaultRestfulClientAggregatorConfig
+		l1NodeConfigA.DA.AnyTrust.RestAggregator.Enable = true
+		l1NodeConfigA.DA.AnyTrust.RestAggregator.Urls = []string{"http://" + restLis.Addr().String()}
 	} else if dasModeString == "referenceda" {
 		// For referenceda mode, we'll use external provider
 		// The URL will be configured after the validator contract is deployed and server is created
 		l1NodeConfigA.DA.ExternalProvider.Enable = true
-		l1NodeConfigA.DataAvailability.Enable = false
+		l1NodeConfigA.DA.AnyTrust.Enable = false
 	}
 
 	return chainConfig, l1NodeConfigA, lifecycleManager, dbPath, dasSignerKey

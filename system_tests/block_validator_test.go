@@ -102,11 +102,11 @@ func testBlockValidatorSimple(t *testing.T, opts Options) {
 		// For external referenceda, configure the validator to use external provider
 		validatorConfig.DA.ExternalProvider.Enable = true
 		validatorConfig.DA.ExternalProvider.RPC.URL = builder.referenceDAURL
-		validatorConfig.DataAvailability.Enable = false
+		validatorConfig.DA.AnyTrust.Enable = false
 	} else {
 		// For traditional DAS, copy DataAvailability configuration
-		validatorConfig.DataAvailability = l1NodeConfigA.DataAvailability
-		validatorConfig.DataAvailability.RPCAggregator.Enable = false
+		validatorConfig.DA.AnyTrust = l1NodeConfigA.DA.AnyTrust
+		validatorConfig.DA.AnyTrust.RPCAggregator.Enable = false
 	}
 	redisURL := ""
 	if opts.useRedisStreams {

@@ -214,8 +214,8 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 	// The lying sequencer
 	nodeConfigC := arbnode.ConfigDefaultL1Test()
 	nodeConfigC.BatchPoster.Enable = false
-	nodeConfigC.DataAvailability = nodeConfigA.DataAvailability
-	nodeConfigC.DataAvailability.RPCAggregator.Enable = false
+	nodeConfigC.DA.AnyTrust = nodeConfigA.DA.AnyTrust
+	nodeConfigC.DA.AnyTrust.RPCAggregator.Enable = false
 	nodeConfigC.Feed.Output = *newBroadcasterConfigTest()
 	testClientC, cleanupC := builder.Build2ndNode(t, &SecondNodeParams{nodeConfig: nodeConfigC})
 	defer cleanupC()
@@ -227,8 +227,8 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 	nodeConfigB := arbnode.ConfigDefaultL1NonSequencerTest()
 	nodeConfigB.Feed.Output.Enable = false
 	nodeConfigB.Feed.Input = *newBroadcastClientConfigTest(port)
-	nodeConfigB.DataAvailability = nodeConfigA.DataAvailability
-	nodeConfigB.DataAvailability.RPCAggregator.Enable = false
+	nodeConfigB.DA.AnyTrust = nodeConfigA.DA.AnyTrust
+	nodeConfigB.DA.AnyTrust.RPCAggregator.Enable = false
 	testClientB, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{nodeConfig: nodeConfigB})
 	defer cleanupB()
 	l2clientB := testClientB.Client

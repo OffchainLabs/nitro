@@ -27,7 +27,7 @@ func testTwoNodesSimple(t *testing.T, dasModeStr string) {
 	defer cleanup()
 
 	authorizeDASKeyset(t, ctx, dasSignerKey, builder.L1Info, builder.L1.Client)
-	l1NodeConfigBDataAvailability := l1NodeConfigA.DataAvailability
+	l1NodeConfigBDataAvailability := l1NodeConfigA.DA.AnyTrust
 	l1NodeConfigBDataAvailability.RPCAggregator.Enable = false
 	testClientB, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{dasConfig: &l1NodeConfigBDataAvailability})
 	defer cleanupB()

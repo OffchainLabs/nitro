@@ -273,7 +273,7 @@ func (b *NodeBuilder) Build2ndNodeWithBlobReader(t *testing.T, params *SecondNod
 		params.nodeConfig = arbnode.ConfigDefaultL1NonSequencerTest()
 	}
 	if params.dasConfig != nil {
-		params.nodeConfig.DataAvailability = *params.dasConfig
+		params.nodeConfig.DA.AnyTrust = *params.dasConfig
 	}
 	if params.stackConfig == nil {
 		params.stackConfig = b.l2StackConfig

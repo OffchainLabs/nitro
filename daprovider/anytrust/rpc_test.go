@@ -77,9 +77,9 @@ func testRpcImpl(t *testing.T, size, times int, concurrent bool) {
 	aggConf := DefaultConfig
 	aggConf.RPCAggregator.AssumedHonest = 1
 	aggConf.RPCAggregator.Backends = beConfigs
-	aggConf.RPCAggregator.DASRPCClient.EnableChunkedStore = true
-	aggConf.RPCAggregator.DASRPCClient.DataStream = data_streaming.TestDataStreamerConfig(DefaultDataStreamRpcMethods)
-	aggConf.RPCAggregator.DASRPCClient.RPC = rpcclient.TestClientConfig
+	aggConf.RPCAggregator.RPCClient.EnableChunkedStore = true
+	aggConf.RPCAggregator.RPCClient.DataStream = data_streaming.TestDataStreamerConfig(DefaultDataStreamRpcMethods)
+	aggConf.RPCAggregator.RPCClient.RPC = rpcclient.TestClientConfig
 	aggConf.RequestTimeout = time.Minute
 	rpcAgg, err := NewRPCAggregator(aggConf, signer)
 	testhelpers.RequireImpl(t, err)

@@ -78,11 +78,11 @@ func TestMultiWriterFailure_CustomDAShutdownWithAnyTrustAvailable(t *testing.T) 
 	builder.nodeConfig.DA.ExternalProvider.RPC.URL = customDAURL
 	builder.nodeConfig.DA.ExternalProvider.WithWriter = true
 
-	builder.nodeConfig.DataAvailability.Enable = true
-	builder.nodeConfig.DataAvailability.RPCAggregator = aggConfigForBackend(backendConfig)
-	builder.nodeConfig.DataAvailability.RestAggregator = anytrust.DefaultRestfulClientAggregatorConfig
-	builder.nodeConfig.DataAvailability.RestAggregator.Enable = true
-	builder.nodeConfig.DataAvailability.RestAggregator.Urls = []string{restServerUrl}
+	builder.nodeConfig.DA.AnyTrust.Enable = true
+	builder.nodeConfig.DA.AnyTrust.RPCAggregator = aggConfigForBackend(backendConfig)
+	builder.nodeConfig.DA.AnyTrust.RestAggregator = anytrust.DefaultRestfulClientAggregatorConfig
+	builder.nodeConfig.DA.AnyTrust.RestAggregator.Enable = true
+	builder.nodeConfig.DA.AnyTrust.RestAggregator.Urls = []string{restServerUrl}
 
 	// Enable fallback to on-chain
 	builder.nodeConfig.BatchPoster.DisableDapFallbackStoreDataOnChain = false
@@ -102,10 +102,10 @@ func TestMultiWriterFailure_CustomDAShutdownWithAnyTrustAvailable(t *testing.T) 
 	nodeConfigB.DA.ExternalProvider.RPC.URL = customDAURL
 
 	// AnyTrust config
-	nodeConfigB.DataAvailability.Enable = true
-	nodeConfigB.DataAvailability.RestAggregator = anytrust.DefaultRestfulClientAggregatorConfig
-	nodeConfigB.DataAvailability.RestAggregator.Enable = true
-	nodeConfigB.DataAvailability.RestAggregator.Urls = []string{restServerUrl}
+	nodeConfigB.DA.AnyTrust.Enable = true
+	nodeConfigB.DA.AnyTrust.RestAggregator = anytrust.DefaultRestfulClientAggregatorConfig
+	nodeConfigB.DA.AnyTrust.RestAggregator.Enable = true
+	nodeConfigB.DA.AnyTrust.RestAggregator.Urls = []string{restServerUrl}
 
 	nodeBParams := SecondNodeParams{
 		nodeConfig: nodeConfigB,
@@ -200,7 +200,7 @@ func TestMultiWriterFailure_CustomDAShutdownNoFallbackAvailable(t *testing.T) {
 	builder.nodeConfig.DA.ExternalProvider.WithWriter = true
 
 	// Disable AnyTrust
-	builder.nodeConfig.DataAvailability.Enable = false
+	builder.nodeConfig.DA.AnyTrust.Enable = false
 
 	// Enable fallback to on-chain
 	builder.nodeConfig.BatchPoster.DisableDapFallbackStoreDataOnChain = false
@@ -220,7 +220,7 @@ func TestMultiWriterFailure_CustomDAShutdownNoFallbackAvailable(t *testing.T) {
 	nodeConfigB.DA.ExternalProvider.RPC.URL = customDAURL
 
 	// Disable AnyTrust
-	nodeConfigB.DataAvailability.Enable = false
+	nodeConfigB.DA.AnyTrust.Enable = false
 
 	nodeBParams := SecondNodeParams{
 		nodeConfig: nodeConfigB,
@@ -322,11 +322,11 @@ func TestMultiWriterFailure_AnyTrustShutdownFallbackDisabled(t *testing.T) {
 	builder.nodeConfig.DA.ExternalProvider.Enable = false
 
 	// Enable AnyTrust
-	builder.nodeConfig.DataAvailability.Enable = true
-	builder.nodeConfig.DataAvailability.RPCAggregator = aggConfigForBackend(backendConfig)
-	builder.nodeConfig.DataAvailability.RestAggregator = anytrust.DefaultRestfulClientAggregatorConfig
-	builder.nodeConfig.DataAvailability.RestAggregator.Enable = true
-	builder.nodeConfig.DataAvailability.RestAggregator.Urls = []string{restServerUrl}
+	builder.nodeConfig.DA.AnyTrust.Enable = true
+	builder.nodeConfig.DA.AnyTrust.RPCAggregator = aggConfigForBackend(backendConfig)
+	builder.nodeConfig.DA.AnyTrust.RestAggregator = anytrust.DefaultRestfulClientAggregatorConfig
+	builder.nodeConfig.DA.AnyTrust.RestAggregator.Enable = true
+	builder.nodeConfig.DA.AnyTrust.RestAggregator.Urls = []string{restServerUrl}
 
 	// Disable fallback to on-chain (operator choice to prevent automatic expensive fallback)
 	builder.nodeConfig.BatchPoster.DisableDapFallbackStoreDataOnChain = true
@@ -345,10 +345,10 @@ func TestMultiWriterFailure_AnyTrustShutdownFallbackDisabled(t *testing.T) {
 	nodeConfigB.DA.ExternalProvider.Enable = false
 
 	// Enable AnyTrust
-	nodeConfigB.DataAvailability.Enable = true
-	nodeConfigB.DataAvailability.RestAggregator = anytrust.DefaultRestfulClientAggregatorConfig
-	nodeConfigB.DataAvailability.RestAggregator.Enable = true
-	nodeConfigB.DataAvailability.RestAggregator.Urls = []string{restServerUrl}
+	nodeConfigB.DA.AnyTrust.Enable = true
+	nodeConfigB.DA.AnyTrust.RestAggregator = anytrust.DefaultRestfulClientAggregatorConfig
+	nodeConfigB.DA.AnyTrust.RestAggregator.Enable = true
+	nodeConfigB.DA.AnyTrust.RestAggregator.Urls = []string{restServerUrl}
 
 	nodeBParams := SecondNodeParams{
 		nodeConfig: nodeConfigB,
@@ -462,11 +462,11 @@ func TestMultiWriterFallback_CustomDAToAnyTrustExplicit(t *testing.T) {
 	builder.nodeConfig.DA.ExternalProvider.RPC.URL = customDAURL
 	builder.nodeConfig.DA.ExternalProvider.WithWriter = true
 
-	builder.nodeConfig.DataAvailability.Enable = true
-	builder.nodeConfig.DataAvailability.RPCAggregator = aggConfigForBackend(backendConfig)
-	builder.nodeConfig.DataAvailability.RestAggregator = anytrust.DefaultRestfulClientAggregatorConfig
-	builder.nodeConfig.DataAvailability.RestAggregator.Enable = true
-	builder.nodeConfig.DataAvailability.RestAggregator.Urls = []string{restServerUrl}
+	builder.nodeConfig.DA.AnyTrust.Enable = true
+	builder.nodeConfig.DA.AnyTrust.RPCAggregator = aggConfigForBackend(backendConfig)
+	builder.nodeConfig.DA.AnyTrust.RestAggregator = anytrust.DefaultRestfulClientAggregatorConfig
+	builder.nodeConfig.DA.AnyTrust.RestAggregator.Enable = true
+	builder.nodeConfig.DA.AnyTrust.RestAggregator.Urls = []string{restServerUrl}
 
 	// Enable fallback to on-chain
 	builder.nodeConfig.BatchPoster.DisableDapFallbackStoreDataOnChain = false
@@ -486,10 +486,10 @@ func TestMultiWriterFallback_CustomDAToAnyTrustExplicit(t *testing.T) {
 	nodeConfigB.DA.ExternalProvider.RPC.URL = customDAURL
 
 	// AnyTrust config
-	nodeConfigB.DataAvailability.Enable = true
-	nodeConfigB.DataAvailability.RestAggregator = anytrust.DefaultRestfulClientAggregatorConfig
-	nodeConfigB.DataAvailability.RestAggregator.Enable = true
-	nodeConfigB.DataAvailability.RestAggregator.Urls = []string{restServerUrl}
+	nodeConfigB.DA.AnyTrust.Enable = true
+	nodeConfigB.DA.AnyTrust.RestAggregator = anytrust.DefaultRestfulClientAggregatorConfig
+	nodeConfigB.DA.AnyTrust.RestAggregator.Enable = true
+	nodeConfigB.DA.AnyTrust.RestAggregator.Urls = []string{restServerUrl}
 
 	nodeBParams := SecondNodeParams{
 		nodeConfig: nodeConfigB,
@@ -676,7 +676,7 @@ func TestMultiWriterFallback_CustomDAToCalldataWithBatchResizing(t *testing.T) {
 	builder.nodeConfig.DA.ExternalProvider.WithWriter = true
 
 	// Disable AnyTrust
-	builder.nodeConfig.DataAvailability.Enable = false
+	builder.nodeConfig.DA.AnyTrust.Enable = false
 
 	// Enable fallback to on-chain
 	builder.nodeConfig.BatchPoster.DisableDapFallbackStoreDataOnChain = false
@@ -703,7 +703,7 @@ func TestMultiWriterFallback_CustomDAToCalldataWithBatchResizing(t *testing.T) {
 	nodeConfigB.DA.ExternalProvider.RPC.URL = customDAURL
 
 	// Disable AnyTrust
-	nodeConfigB.DataAvailability.Enable = false
+	nodeConfigB.DA.AnyTrust.Enable = false
 
 	nodeBParams := SecondNodeParams{
 		nodeConfig: nodeConfigB,
@@ -911,11 +911,11 @@ func TestMultiWriterFallback_AnyTrustToCalldataOnBackendFailure(t *testing.T) {
 	builder.nodeConfig.DA.ExternalProvider.Enable = false
 
 	// Enable AnyTrust
-	builder.nodeConfig.DataAvailability.Enable = true
-	builder.nodeConfig.DataAvailability.RPCAggregator = aggConfigForBackend(backendConfig)
-	builder.nodeConfig.DataAvailability.RestAggregator = anytrust.DefaultRestfulClientAggregatorConfig
-	builder.nodeConfig.DataAvailability.RestAggregator.Enable = true
-	builder.nodeConfig.DataAvailability.RestAggregator.Urls = []string{restServerUrl}
+	builder.nodeConfig.DA.AnyTrust.Enable = true
+	builder.nodeConfig.DA.AnyTrust.RPCAggregator = aggConfigForBackend(backendConfig)
+	builder.nodeConfig.DA.AnyTrust.RestAggregator = anytrust.DefaultRestfulClientAggregatorConfig
+	builder.nodeConfig.DA.AnyTrust.RestAggregator.Enable = true
+	builder.nodeConfig.DA.AnyTrust.RestAggregator.Urls = []string{restServerUrl}
 
 	// Enable fallback to Calldata when AnyTrust fails
 	builder.nodeConfig.BatchPoster.DisableDapFallbackStoreDataOnChain = false
@@ -934,10 +934,10 @@ func TestMultiWriterFallback_AnyTrustToCalldataOnBackendFailure(t *testing.T) {
 	nodeConfigB.DA.ExternalProvider.Enable = false
 
 	// Enable AnyTrust so follower can read Phase 1 batches
-	nodeConfigB.DataAvailability.Enable = true
-	nodeConfigB.DataAvailability.RestAggregator = anytrust.DefaultRestfulClientAggregatorConfig
-	nodeConfigB.DataAvailability.RestAggregator.Enable = true
-	nodeConfigB.DataAvailability.RestAggregator.Urls = []string{restServerUrl}
+	nodeConfigB.DA.AnyTrust.Enable = true
+	nodeConfigB.DA.AnyTrust.RestAggregator = anytrust.DefaultRestfulClientAggregatorConfig
+	nodeConfigB.DA.AnyTrust.RestAggregator.Enable = true
+	nodeConfigB.DA.AnyTrust.RestAggregator.Urls = []string{restServerUrl}
 
 	nodeBParams := SecondNodeParams{
 		nodeConfig: nodeConfigB,
