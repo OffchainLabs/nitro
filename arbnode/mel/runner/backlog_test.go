@@ -73,7 +73,7 @@ func TestDelayedMessageBacklogInitialization(t *testing.T) {
 
 	require.True(t, state.DelayedMessagesSeen == uint64(numMelStates)*5+1) // #nosec G115
 	require.True(t, state.DelayedMessagesRead == 1)
-	delayedMessageBacklog, err := mel.NewDelayedMessageBacklog(ctx, 1, func(ctx context.Context) (uint64, error) { return 0, nil }, mel.WithUnboundedCapacity)
+	delayedMessageBacklog, err := mel.NewDelayedMessageBacklog(100, func() (uint64, error) { return 0, nil })
 	require.NoError(t, err)
 	require.NoError(t, InitializeDelayedMessageBacklog(ctx, delayedMessageBacklog, melDb, state, nil))
 	require.True(t, delayedMessageBacklog.Len() == 25)
@@ -108,7 +108,7 @@ func TestDelayedMessageBacklogInitialization(t *testing.T) {
 	// delayedMessageBacklogEntry for indexes below the DelayedMessagesRead as those have not been finalized yet!
 	newState, err := melDb.GetHeadMelState(ctx)
 	require.NoError(t, err)
-	newDelayedMessageBacklog, err := mel.NewDelayedMessageBacklog(ctx, 1, func(ctx context.Context) (uint64, error) { return 0, nil }, mel.WithUnboundedCapacity)
+	newDelayedMessageBacklog, err := mel.NewDelayedMessageBacklog(100, func() (uint64, error) { return 0, nil })
 	require.NoError(t, err)
 	require.NoError(t, InitializeDelayedMessageBacklog(ctx, newDelayedMessageBacklog, melDb, newState, func(context.Context) (uint64, error) { return 7, nil }))
 	// Notice that instead of having seenUnread list from delayed index 13 to 25 inclusive we will have it from 7 to 25 as only till block=7 the chain has finalized and that block has DelayedMessagesRead=7

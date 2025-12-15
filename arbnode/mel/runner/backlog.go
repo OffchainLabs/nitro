@@ -9,7 +9,7 @@ import (
 
 // InitializeDelayedMessageBacklog is to be only called by the Start fsm step of MEL. This function fills the backlog based on the seen and read count from the given mel state
 func InitializeDelayedMessageBacklog(ctx context.Context, d *mel.DelayedMessageBacklog, db *Database, state *mel.State, finalizedAndReadIndexFetcher func(context.Context) (uint64, error)) error {
-	if state.DelayedMessagesSeen == 0 && state.DelayedMessagesRead == 0 { // this is the first mel state so no need to initialize backlog even if the state isnt finalized yet
+	if state.DelayedMessagesSeen == 0 && state.DelayedMessagesRead == 0 { // this is the first mel state so no need to initialize backlog even if the state isn't finalized yet
 		return nil
 	}
 	finalizedDelayedMessagesRead := state.DelayedMessagesRead // Assume to be finalized, then update if needed
@@ -31,7 +31,7 @@ func InitializeDelayedMessageBacklog(ctx context.Context, d *mel.DelayedMessageB
 		return err
 	}
 	if uint64(len(delayedMsgIndexToParentChainBlockNum)) < state.DelayedMessagesSeen-targetDelayedMessagesRead {
-		return fmt.Errorf("number of mappings from index to ParentChainBlockNum: %d are insufficient, needed atleast: %d", uint64(len(delayedMsgIndexToParentChainBlockNum)), state.DelayedMessagesSeen-targetDelayedMessagesRead)
+		return fmt.Errorf("number of mappings from index to ParentChainBlockNum: %d are insufficient, needed atleast: %d", len(delayedMsgIndexToParentChainBlockNum), state.DelayedMessagesSeen-targetDelayedMessagesRead)
 	}
 
 	// Create DelayedMessageBacklogEntry for all the delayed messages that are seen but not read

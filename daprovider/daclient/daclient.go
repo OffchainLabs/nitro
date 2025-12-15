@@ -5,12 +5,9 @@ package daclient
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 
-	"github.com/knadh/koanf"
-	"github.com/knadh/koanf/providers/confmap"
 	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -73,32 +70,6 @@ var DefaultStreamRpcMethods = data_streaming.DataStreamingRPCMethods{
 
 var DefaultStoreRpcMethod = "daprovider_store"
 
-type ExternalProviderConfigList []ClientConfig
-
-func (l *ExternalProviderConfigList) String() string {
-	b, _ := json.Marshal(*l)
-	return string(b)
-}
-
-func (l *ExternalProviderConfigList) Set(value string) error {
-	return l.UnmarshalJSON([]byte(value))
-}
-
-func (l *ExternalProviderConfigList) UnmarshalJSON(data []byte) error {
-	var tmp []ClientConfig
-	if err := json.Unmarshal(data, &tmp); err != nil {
-		return err
-	}
-	*l = tmp
-	return nil
-}
-
-func (l *ExternalProviderConfigList) Type() string {
-	return "externalProviderConfigList"
-}
-
-var parsedExternalProvidersConf ExternalProviderConfigList
-
 func ClientConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultClientConfig.Enable, "enable daprovider client")
 	f.Bool(prefix+".with-writer", DefaultClientConfig.WithWriter, "implies if the daprovider rpc server supports writer interface")
@@ -106,32 +77,6 @@ func ClientConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".use-data-streaming", DefaultClientConfig.UseDataStreaming, "use data streaming protocol for storing large payloads")
 	data_streaming.DataStreamerConfigAddOptions(prefix+".data-stream", f, DefaultStreamRpcMethods)
 	f.String(prefix+".store-rpc-method", DefaultClientConfig.StoreRpcMethod, "name of the store rpc method on the daprovider server (used when data streaming is disabled)")
-}
-
-func ExternalProviderConfigAddPluralOptions(prefix string, f *pflag.FlagSet) {
-	f.Var(&parsedExternalProvidersConf, prefix+"s", "JSON array of external DA provider configurations. This can be specified on the command line as a JSON array, eg: [{\"rpc\":{\"url\":\"...\"},\"with-writer\":true},...], or as a JSON array in the config file.")
-}
-
-func FixExternalProvidersCLIParsing(path string, k *koanf.Koanf) error {
-	// Reset global variable at start to avoid test pollution
-	parsedExternalProvidersConf = nil
-
-	rawProviders := k.Get(path)
-	if providers, ok := rawProviders.(string); ok {
-		err := parsedExternalProvidersConf.UnmarshalJSON([]byte(providers))
-		if err != nil {
-			return err
-		}
-
-		tempMap := map[string]interface{}{
-			path: parsedExternalProvidersConf,
-		}
-
-		if err = k.Load(confmap.Provider(tempMap, "."), nil); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 func NewClient(ctx context.Context, config *ClientConfig, payloadSigner *data_streaming.PayloadSigner) (*Client, error) {
@@ -280,13 +225,12 @@ func (c *Client) store(ctx context.Context, message []byte, timeout uint64) (*se
 // GenerateReadPreimageProof generates a proof for a specific preimage at a given offset
 // This method calls the external DA provider's RPC endpoint to generate the proof
 func (c *Client) GenerateReadPreimageProof(
-	certHash common.Hash,
 	offset uint64,
 	certificate []byte,
 ) containers.PromiseInterface[daprovider.PreimageProofResult] {
 	return containers.DoPromise(context.Background(), func(ctx context.Context) (daprovider.PreimageProofResult, error) {
 		var generateProofResult server_api.GenerateReadPreimageProofResult
-		if err := c.CallContext(ctx, &generateProofResult, "daprovider_generateReadPreimageProof", certHash, hexutil.Uint64(offset), hexutil.Bytes(certificate)); err != nil {
+		if err := c.CallContext(ctx, &generateProofResult, "daprovider_generateReadPreimageProof", hexutil.Uint64(offset), hexutil.Bytes(certificate)); err != nil {
 			return daprovider.PreimageProofResult{}, fmt.Errorf("error returned from daprovider_generateProof rpc method, err: %w", err)
 		}
 		return daprovider.PreimageProofResult{Proof: generateProofResult.Proof}, nil
