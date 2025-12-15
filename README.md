@@ -39,7 +39,6 @@ cd nitro-testnode
 ./test-node.bash --init    # First time (downloads images, initializes chain)
 ./test-node.bash           # Subsequent runs (preserves data) 
 
-
 The Nitro stack is built on several innovations. At its core is a new prover, which can do Arbitrum’s classic
 interactive fraud proofs over WASM code. That means the L2 Arbitrum engine can be written and compiled using
 standard languages and tools, replacing the custom-designed language and compiler used in previous Arbitrum
