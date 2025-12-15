@@ -21,6 +21,8 @@ import (
 	"github.com/offchainlabs/nitro/util/signature"
 )
 
+const DefaultExecKeepAliveInterval = time.Minute
+
 type ClientConfig struct {
 	URL                       string        `json:"url,omitempty" koanf:"url"`
 	JWTSecret                 string        `json:"jwtsecret,omitempty" koanf:"jwtsecret"`
@@ -59,7 +61,7 @@ var TestClientConfig = ClientConfig{
 	URL:                       "self",
 	JWTSecret:                 "",
 	WebsocketMessageSizeLimit: 256 * 1024 * 1024,
-	ExecKeepAliveInterval:     time.Minute,
+	ExecKeepAliveInterval:     DefaultExecKeepAliveInterval,
 }
 
 var DefaultClientConfig = ClientConfig{
@@ -70,7 +72,7 @@ var DefaultClientConfig = ClientConfig{
 	RetryErrors:               "websocket: close.*|dial tcp .*|.*i/o timeout|.*connection reset by peer|.*connection refused",
 	ArgLogLimit:               2048,
 	WebsocketMessageSizeLimit: 256 * 1024 * 1024,
-	ExecKeepAliveInterval:     time.Minute,
+	ExecKeepAliveInterval:     DefaultExecKeepAliveInterval,
 }
 
 func RPCClientAddOptions(prefix string, f *pflag.FlagSet, defaultConfig *ClientConfig) {
@@ -107,7 +109,7 @@ func (c *RpcClient) Timeout() time.Duration {
 func (c *RpcClient) ExecKeepAliveInterval() time.Duration {
 	interval := c.config().ExecKeepAliveInterval
 	if interval == 0 {
-		return time.Minute
+		return DefaultExecKeepAliveInterval
 	}
 	return interval
 }
