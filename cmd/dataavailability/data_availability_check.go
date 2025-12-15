@@ -231,7 +231,7 @@ func (d *DataAvailabilityCheck) checkDataAvailability(ctx context.Context, deliv
 	if err != nil {
 		return false, err
 	}
-	data, err := anytrust.FindDASDataFromLog(ctx, d.inboxContract, deliveredEvent, *d.inboxAddr, d.l1Client, deliveredLog)
+	data, err := anytrust.FindAnyTrustDataFromLog(ctx, d.inboxContract, deliveredEvent, *d.inboxAddr, d.l1Client, deliveredLog)
 	if err != nil {
 		return false, err
 	}

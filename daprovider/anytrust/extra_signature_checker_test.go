@@ -26,7 +26,7 @@ func checkSig(keyDir string, message []byte, timeout uint64, sig []byte) (*anytr
 		return nil, err
 	}
 
-	verified := crypto.VerifySignature(pubkey, dasStoreHash(message, timeout), sig[:64])
+	verified := crypto.VerifySignature(pubkey, anyTrustStoreHash(message, timeout), sig[:64])
 	if !verified {
 		return nil, errors.New("signature verification failed")
 	}
@@ -44,7 +44,7 @@ func TestExtraSignatureCheck(t *testing.T) {
 
 	msg := []byte("Hello world")
 	timeout := uint64(1234)
-	sig, err := applyDasSigner(signer, msg, timeout)
+	sig, err := applyAnyTrustSigner(signer, msg, timeout)
 	Require(t, err)
 	_, err = checkSig(keyDir, msg, timeout, sig)
 	Require(t, err)

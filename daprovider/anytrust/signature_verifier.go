@@ -56,7 +56,7 @@ func NewSignatureVerifierWithSeqInboxCaller(
 		}
 		extraBpVerifier = func(message []byte, sig []byte, extraFields ...uint64) bool {
 			if len(sig) >= 64 {
-				return crypto.VerifySignature(pubkey, dasStoreHash(message, extraFields...), sig[:64])
+				return crypto.VerifySignature(pubkey, anyTrustStoreHash(message, extraFields...), sig[:64])
 			}
 			return false
 		}
@@ -81,7 +81,7 @@ func (v *SignatureVerifier) verify(
 	}
 
 	if !verified && v.addrVerifier != nil {
-		actualSigner, err := DasRecoverSigner(message, sig, extraFields...)
+		actualSigner, err := AnyTrustRecoverSigner(message, sig, extraFields...)
 		if err != nil {
 			return err
 		}

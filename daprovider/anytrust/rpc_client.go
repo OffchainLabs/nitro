@@ -85,7 +85,7 @@ func NewRPCClient(config *RPCClientConfig, signer signature.DataSignerFunc) (*RP
 	var dataStreamer *data_streaming.DataStreamer[StoreResult]
 	if config.EnableChunkedStore {
 		payloadSigner := data_streaming.CustomPayloadSigner(func(bytes []byte, extras ...uint64) ([]byte, error) {
-			return applyDasSigner(signer, bytes, extras...)
+			return applyAnyTrustSigner(signer, bytes, extras...)
 		})
 
 		rpcClient := rpcclient.NewRpcClient(func() *rpcclient.ClientConfig {
@@ -161,7 +161,7 @@ func (c *RPCClient) legacyStore(ctx context.Context, message []byte, timeout uin
 	// #nosec G115
 	log.Trace("anytrust.RPCClient.Store(...)", "message", pretty.FirstFewBytes(message), "timeout", time.Unix(int64(timeout), 0), "this", *c)
 
-	reqSig, err := applyDasSigner(c.signer, message, timeout)
+	reqSig, err := applyAnyTrustSigner(c.signer, message, timeout)
 	if err != nil {
 		return nil, err
 	}

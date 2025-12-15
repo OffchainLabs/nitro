@@ -202,7 +202,7 @@ func (s *l1SyncService) processBatchDelivered(ctx context.Context, batchDelivere
 		// old batch - no need to store
 		return nil
 	}
-	data, err := FindDASDataFromLog(ctx, s.inboxContract, deliveredEvent, s.inboxAddr, s.l1Reader.Client(), batchDeliveredLog)
+	data, err := FindAnyTrustDataFromLog(ctx, s.inboxContract, deliveredEvent, s.inboxAddr, s.l1Reader.Client(), batchDeliveredLog)
 	if err != nil {
 		return err
 	}
@@ -242,7 +242,7 @@ func (s *l1SyncService) processBatchDelivered(ctx context.Context, batchDelivere
 	return nil
 }
 
-func FindDASDataFromLog(
+func FindAnyTrustDataFromLog(
 	ctx context.Context,
 	inboxContract *bridgegen.SequencerInbox,
 	deliveredEvent *bridgegen.SequencerInboxSequencerBatchDelivered,
