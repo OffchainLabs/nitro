@@ -216,7 +216,7 @@ jobs:
 
       - name: Upload Go test Artifacts
         if: always()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: junit-reports-go-${{ inputs.run-name }}
           path: test-results/junit*.xml
@@ -233,7 +233,7 @@ jobs:
 
       - name: Archive detailed run log
         if: always()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: ${{ inputs.run-name }}-full.log
           path: full.log
