@@ -21,6 +21,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/common/math"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/crypto/secp256k1"
@@ -922,7 +923,7 @@ func TestTimeboostBulkBlockMetadataAPI(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, false).DontParalellise()
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false).DontParalellise().WithDatabase(rawdb.DBPebble)
 	builder.nodeConfig.TransactionStreamer.TrackBlockMetadataFrom = 1
 	builder.execConfig.BlockMetadataApiCacheSize = 0 // Caching is disabled
 	cleanup := builder.Build(t)
@@ -1705,15 +1706,17 @@ func setupExpressLaneAuction(
 	roundTimingInfo, err := gethexec.GetRoundTimingInfo(auctionContract)
 	Require(t, err)
 
-	expressLaneTracker := gethexec.NewExpressLaneTracker(
+	expressLaneTracker, err := gethexec.NewExpressLaneTracker(
 		*roundTimingInfo,
 		builderSeq.execConfig.Sequencer.MaxBlockSpeed,
 		builderSeq.L2.ExecNode.Backend.APIBackend(),
 		auctionContract,
 		proxyAddr,
 		builderSeq.chainConfig,
+		uint64(builderSeq.execConfig.Sequencer.MaxTxDataSize), // #nosec G115
 		builderSeq.execConfig.Sequencer.Timeboost.EarlySubmissionGrace,
 	)
+	Require(t, err)
 
 	err = builderSeq.L2.ExecNode.Sequencer.InitializeExpressLaneService(
 		auctioneerAddr,

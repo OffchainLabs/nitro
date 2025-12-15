@@ -30,6 +30,12 @@ import (
 	"github.com/offchainlabs/nitro/util/headerreader"
 )
 
+type ParentChainConfig struct {
+	NodeURL               string `koanf:"node-url"`
+	ConnectionAttempts    int    `koanf:"connection-attempts"`
+	SequencerInboxAddress string `koanf:"sequencer-inbox-address"`
+}
+
 type DAServerConfig struct {
 	EnableRPC          bool                                `koanf:"enable-rpc"`
 	RPCAddr            string                              `koanf:"rpc-addr"`
@@ -41,6 +47,8 @@ type DAServerConfig struct {
 	RESTAddr           string                              `koanf:"rest-addr"`
 	RESTPort           uint64                              `koanf:"rest-port"`
 	RESTServerTimeouts genericconf.HTTPServerTimeoutConfig `koanf:"rest-server-timeouts"`
+
+	ParentChain ParentChainConfig `koanf:"parent-chain"`
 
 	DataAvailability das.DataAvailabilityConfig `koanf:"data-availability"`
 
@@ -54,6 +62,12 @@ type DAServerConfig struct {
 	PprofCfg      genericconf.PProf               `koanf:"pprof-cfg"`
 }
 
+var DefaultParentChainConfig = ParentChainConfig{
+	NodeURL:               "",
+	ConnectionAttempts:    15,
+	SequencerInboxAddress: "",
+}
+
 var DefaultDAServerConfig = DAServerConfig{
 	EnableRPC:          false,
 	RPCAddr:            "localhost",
@@ -64,6 +78,7 @@ var DefaultDAServerConfig = DAServerConfig{
 	RESTAddr:           "localhost",
 	RESTPort:           9877,
 	RESTServerTimeouts: genericconf.HTTPServerTimeoutConfigDefault,
+	ParentChain:        DefaultParentChainConfig,
 	DataAvailability:   das.DefaultDataAvailabilityConfig,
 	Conf:               genericconf.ConfConfigDefault,
 	LogLevel:           "INFO",
@@ -106,6 +121,10 @@ func parseDAServer(args []string) (*DAServerConfig, error) {
 
 	f.String("log-level", DefaultDAServerConfig.LogLevel, "log level, valid values are CRIT, ERROR, WARN, INFO, DEBUG, TRACE")
 	f.String("log-type", DefaultDAServerConfig.LogType, "log type (plaintext or json)")
+
+	f.String("parent-chain.node-url", DefaultParentChainConfig.NodeURL, "URL for parent chain node")
+	f.Int("parent-chain.connection-attempts", DefaultParentChainConfig.ConnectionAttempts, "parent chain RPC connection attempts (spaced out at least 1 second per attempt, 0 to retry infinitely)")
+	f.String("parent-chain.sequencer-inbox-address", DefaultParentChainConfig.SequencerInboxAddress, "parent chain address of SequencerInbox contract to use for validating requests to store data. Can be set to \"none\" for testing")
 
 	das.DataAvailabilityConfigAddDaserverOptions("data-availability", f)
 	genericconf.ConfConfigAddOptions("conf", f)
@@ -210,8 +229,8 @@ func startup() error {
 	defer cancel()
 
 	var l1Reader *headerreader.HeaderReader
-	if serverConfig.DataAvailability.ParentChainNodeURL != "" && serverConfig.DataAvailability.ParentChainNodeURL != "none" {
-		l1Client, err := das.GetL1Client(ctx, serverConfig.DataAvailability.ParentChainConnectionAttempts, serverConfig.DataAvailability.ParentChainNodeURL)
+	if serverConfig.ParentChain.NodeURL != "" {
+		l1Client, err := das.GetL1Client(ctx, serverConfig.ParentChain.ConnectionAttempts, serverConfig.ParentChain.NodeURL)
 		if err != nil {
 			return err
 		}
@@ -223,18 +242,18 @@ func startup() error {
 	}
 
 	var seqInboxAddress *common.Address
-	if serverConfig.DataAvailability.SequencerInboxAddress == "none" {
+	if serverConfig.ParentChain.SequencerInboxAddress == "none" {
 		seqInboxAddress = nil
-	} else if len(serverConfig.DataAvailability.SequencerInboxAddress) > 0 {
-		seqInboxAddress, err = das.OptionalAddressFromString(serverConfig.DataAvailability.SequencerInboxAddress)
+	} else if len(serverConfig.ParentChain.SequencerInboxAddress) > 0 {
+		seqInboxAddress, err = das.OptionalAddressFromString(serverConfig.ParentChain.SequencerInboxAddress)
 		if err != nil {
 			return err
 		}
 		if seqInboxAddress == nil {
-			return errors.New("must provide data-availability.sequencer-inbox-address set to a valid contract address or 'none'")
+			return errors.New("must provide --parent-chain.sequencer-inbox-address set to a valid contract address or 'none'")
 		}
 	} else {
-		return errors.New("sequencer-inbox-address must be set to a valid L1 URL and contract address, or 'none'")
+		return errors.New("--parent-chain.sequencer-inbox-address must be set to a valid L1 contract address, or 'none'")
 	}
 
 	daReader, daWriter, signatureVerifier, daHealthChecker, dasLifecycleManager, err := das.CreateDAComponentsForDaserver(ctx, &serverConfig.DataAvailability, l1Reader, seqInboxAddress)

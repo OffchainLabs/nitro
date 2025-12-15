@@ -75,6 +75,10 @@ func TestArbOSVersion50(t *testing.T) {
 	testPrecompiles(t, params.ArbosVersion_50, kzgPointEvaluation.Included(), bls12381G1Add.Included(), bls12381G1MultiExp.Included())
 }
 
+func TestArbOSVersion60(t *testing.T) {
+	testPrecompiles(t, params.ArbosVersion_60, kzgPointEvaluation.Included(), bls12381G1Add.Included(), bls12381G1MultiExp.Included())
+}
+
 func testPrecompiles(t *testing.T, arbosVersion uint64, cases ...precompileCase) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

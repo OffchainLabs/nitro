@@ -76,6 +76,12 @@ func TestAggregatorConfig(t *testing.T) {
 	Require(t, err)
 }
 
+func TestExternalProviderSingularConfig(t *testing.T) {
+	args := strings.Split("--persistent.chain /tmp/data --init.dev-init --node.parent-chain-reader.enable=false --parent-chain.id 5 --chain.id 421613 --node.batch-poster.parent-chain-wallet.pathname /l1keystore --node.batch-poster.parent-chain-wallet.password passphrase --http.addr 0.0.0.0 --ws.addr 0.0.0.0 --node.sequencer --execution.sequencer.enable --node.feed.output.enable --node.feed.output.port 9642 --node.da.external-provider.rpc.url http://localhost:8547 --node.da.external-provider.with-writer=true --node.transaction-streamer.track-block-metadata-from=10", " ")
+	_, _, err := ParseNode(context.Background(), args)
+	Require(t, err)
+}
+
 func TestReloads(t *testing.T) {
 	var check func(node reflect.Value, cold bool, path string)
 	check = func(node reflect.Value, cold bool, path string) {
@@ -102,7 +108,7 @@ func TestReloads(t *testing.T) {
 
 	config := NodeConfigDefault
 	update := NodeConfigDefault
-	update.Node.BatchPoster.MaxSize++
+	update.Node.BatchPoster.MaxCalldataBatchSize++
 
 	check(reflect.ValueOf(config), false, "config")
 	Require(t, config.CanReload(&config))
@@ -147,8 +153,8 @@ func TestLiveNodeConfig(t *testing.T) {
 	// check updating the config
 	update := config.ShallowClone()
 	expected := config.ShallowClone()
-	update.Node.BatchPoster.MaxSize += 100
-	expected.Node.BatchPoster.MaxSize += 100
+	update.Node.BatchPoster.MaxCalldataBatchSize += 100
+	expected.Node.BatchPoster.MaxCalldataBatchSize += 100
 	Require(t, liveConfig.Set(update))
 	if !reflect.DeepEqual(liveConfig.Get(), expected) {
 		Fail(t, "failed to set config")
@@ -183,19 +189,19 @@ func TestLiveNodeConfig(t *testing.T) {
 
 	// change the config file
 	expected = config.ShallowClone()
-	expected.Node.BatchPoster.MaxSize += 100
-	jsonConfig = fmt.Sprintf("{\"node\":{\"batch-poster\":{\"max-size\":\"%d\"}}, \"chain\":{\"id\":421613}}", expected.Node.BatchPoster.MaxSize)
+	expected.Node.BatchPoster.MaxCalldataBatchSize += 100
+	jsonConfig = fmt.Sprintf("{\"node\":{\"batch-poster\":{\"max-calldata-batch-size\":\"%d\"}}, \"chain\":{\"id\":421613}}", expected.Node.BatchPoster.MaxCalldataBatchSize)
 	Require(t, WriteToConfigFile(configFile, jsonConfig))
 
 	// trigger LiveConfig reload
 	Require(t, syscall.Kill(syscall.Getpid(), syscall.SIGUSR1))
 
 	if !PollLiveConfigUntilEqual(liveConfig, expected) {
-		Fail(t, "failed to update config", config.Node.BatchPoster.MaxSize, update.Node.BatchPoster.MaxSize)
+		Fail(t, "failed to update config", config.Node.BatchPoster.MaxCalldataBatchSize, update.Node.BatchPoster.MaxCalldataBatchSize)
 	}
 
 	// change chain.id in the config file (currently non-reloadable)
-	jsonConfig = fmt.Sprintf("{\"node\":{\"batch-poster\":{\"max-size\":\"%d\"}}, \"chain\":{\"id\":421703}}", expected.Node.BatchPoster.MaxSize)
+	jsonConfig = fmt.Sprintf("{\"node\":{\"batch-poster\":{\"max-calldata-batch-size\":\"%d\"}}, \"chain\":{\"id\":421703}}", expected.Node.BatchPoster.MaxCalldataBatchSize)
 	Require(t, WriteToConfigFile(configFile, jsonConfig))
 
 	// trigger LiveConfig reload

@@ -18,7 +18,7 @@ func TestExperimentalBenchSequencer(t *testing.T) {
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
 	// we don't want any txes sent during NodeBuilder.Build as they will hang and timeout due to no blocks beeing created automatically
-	builder = builder.DontSendL2SetupTxes()
+	builder = builder.WithTakeOwnership(false)
 	builder.execConfig.Dangerous.BenchSequencer.Enable = true
 
 	cleanup := builder.Build(t)

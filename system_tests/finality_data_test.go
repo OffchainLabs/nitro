@@ -36,7 +36,7 @@ func TestFinalizedBlocksMovedToAncients(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithDatabase(rawdb.DBPebble)
 	// The procedure that periodically pushes finality data, from consensus to execution,
 	// will not be able to get finalized/safe block numbers since UseFinalityData is false.
 	// Therefore, with UseFinalityData set to false, ExecutionEngine will not be able to move data to ancients by itself,

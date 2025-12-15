@@ -21,6 +21,7 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/arbnode/dataposter/externalsignertest"
+	"github.com/offchainlabs/nitro/arbnode/dataposter/state"
 	"github.com/offchainlabs/nitro/arbnode/parent"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
@@ -121,6 +122,7 @@ func TestMaxFeeCapFormulaCalculation(t *testing.T) {
 	config.TargetPriceGwei = 0
 	p := &DataPoster{
 		config:              func() *DataPosterConfig { return &config },
+		internalState:       state.NewInternalState(nil),
 		maxFeeCapExpression: expression,
 	}
 	result, err := p.evalMaxFeeCapExpr(0, 0)
@@ -199,7 +201,7 @@ func TestFeeAndTipCaps_EnoughBalance_NoBacklog_NoUnconfirmed_BlobTx(t *testing.T
 	p := DataPoster{
 		config:           conf,
 		extraBacklog:     func() uint64 { return 0 },
-		balance:          big.NewInt(0).Mul(big.NewInt(params.Ether), big.NewInt(10)),
+		internalState:    state.NewInternalState(nil),
 		usingNoOpStorage: false,
 		client: ethclient.NewClient(&stubL1ClientInner{
 			senderNonce:        1,
@@ -232,7 +234,12 @@ func TestFeeAndTipCaps_EnoughBalance_NoBacklog_NoUnconfirmed_BlobTx(t *testing.T
 		ExcessBlobGas: &excessBlobGas,
 	}
 
-	newGasFeeCap, newTipCap, newBlobFeeCap, err := p.feeAndTipCaps(ctx, nonce, gasLimit, numBlobs, lastTx, dataCreatedAt, dataPosterBacklog, &latestHeader)
+	lockedState := p.internalState.Lock()
+	defer p.internalState.Unlock()
+
+	lockedState.Balance = big.NewInt(0).Mul(big.NewInt(params.Ether), big.NewInt(10))
+
+	newGasFeeCap, newTipCap, newBlobFeeCap, err := p.feeAndTipCaps(ctx, lockedState, nonce, gasLimit, numBlobs, lastTx, dataCreatedAt, dataPosterBacklog, &latestHeader)
 	if err != nil {
 		t.Fatalf("%s", err)
 	}
@@ -281,7 +288,7 @@ func TestFeeAndTipCaps_EnoughBalance_NoBacklog_NoUnconfirmed_BlobTx(t *testing.T
 		ExcessBlobGas: &excessBlobGas,
 	}
 
-	newGasFeeCap, newTipCap, newBlobFeeCap, err = p.feeAndTipCaps(ctx, nonce, gasLimit, numBlobs, lastTx, retconnedCreationTime, dataPosterBacklog, &latestHeader)
+	newGasFeeCap, newTipCap, newBlobFeeCap, err = p.feeAndTipCaps(ctx, lockedState, nonce, gasLimit, numBlobs, lastTx, retconnedCreationTime, dataPosterBacklog, &latestHeader)
 	_, _, _, _ = newGasFeeCap, newTipCap, newBlobFeeCap, err
 	/*
 		// I think we expect an increase by *2 due to rbf rules for blob txs,
@@ -335,7 +342,7 @@ func TestFeeAndTipCaps_RBF_RisingBlobFee_FallingBaseFee(t *testing.T) {
 	p := DataPoster{
 		config:           conf,
 		extraBacklog:     func() uint64 { return 0 },
-		balance:          big.NewInt(0).Mul(big.NewInt(params.Ether), big.NewInt(10)),
+		internalState:    state.NewInternalState(nil),
 		usingNoOpStorage: false,
 		client: ethclient.NewClient(&stubL1ClientInner{
 			senderNonce:        1,
@@ -368,7 +375,12 @@ func TestFeeAndTipCaps_RBF_RisingBlobFee_FallingBaseFee(t *testing.T) {
 		ExcessBlobGas: &excessBlobGas,
 	}
 
-	newGasFeeCap, newTipCap, newBlobFeeCap, err := p.feeAndTipCaps(ctx, nonce, gasLimit, numBlobs, lastTx, dataCreatedAt, dataPosterBacklog, &latestHeader)
+	lockedState := p.internalState.Lock()
+	defer p.internalState.Unlock()
+
+	lockedState.Balance = big.NewInt(0).Mul(big.NewInt(params.Ether), big.NewInt(10))
+
+	newGasFeeCap, newTipCap, newBlobFeeCap, err := p.feeAndTipCaps(ctx, lockedState, nonce, gasLimit, numBlobs, lastTx, dataCreatedAt, dataPosterBacklog, &latestHeader)
 	if err != nil {
 		t.Fatalf("%s", err)
 	}
@@ -419,7 +431,7 @@ func TestFeeAndTipCaps_RBF_RisingBlobFee_FallingBaseFee(t *testing.T) {
 		ExcessBlobGas: &excessBlobGas,
 	}
 
-	newGasFeeCap, newTipCap, newBlobFeeCap, err = p.feeAndTipCaps(ctx, nonce, gasLimit, numBlobs, lastTx, retconnedCreationTime, dataPosterBacklog, &latestHeader)
+	newGasFeeCap, newTipCap, newBlobFeeCap, err = p.feeAndTipCaps(ctx, lockedState, nonce, gasLimit, numBlobs, lastTx, retconnedCreationTime, dataPosterBacklog, &latestHeader)
 
 	t.Log("newGasFeeCap", newGasFeeCap, "newTipCap", newTipCap, "newBlobFeeCap", newBlobFeeCap, "err", err)
 	if arbmath.BigEquals(expectedGasFeeCap, newGasFeeCap) {

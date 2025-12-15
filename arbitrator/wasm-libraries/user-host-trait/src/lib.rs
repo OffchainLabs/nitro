@@ -456,7 +456,7 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
     /// `read_return_data` hostio. The semantics are equivalent to that of the EVM's [`CREATE`]
     /// opcode, which notably includes the exact address returned.
     ///
-    /// [`Deploying Stylus Programs`]: https://developer.arbitrum.io/TODO
+    /// [`Deploying Stylus Programs`]: https://docs.arbitrum.io/stylus/quickstart#deploying-your-contract
     /// [`CREATE`]: https://www.evm.codes/#f0
     fn create1(
         &mut self,
@@ -511,7 +511,7 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
     /// via the `read_return_data` hostio. The semantics are equivalent to that of the EVM's
     /// `[CREATE2`] opcode, which notably includes the exact address returned.
     ///
-    /// [`Deploying Stylus Programs`]: https://developer.arbitrum.io/TODO
+    /// [`Deploying Stylus Programs`]: https://docs.arbitrum.io/stylus/quickstart#deploying-your-contract
     /// [`CREATE2`]: https://www.evm.codes/#f5
     fn create2(
         &mut self,
@@ -818,7 +818,7 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
     /// [`Ink and Gas`] for more information on Stylus's compute pricing.
     ///
     /// [`GAS`]: https://www.evm.codes/#5a
-    /// [`Ink and Gas`]: https://developer.arbitrum.io/TODO
+    /// [`Ink and Gas`]: https://docs.arbitrum.io/stylus/concepts/gas-metering#ink-and-gas
     fn evm_ink_left(&mut self) -> Result<Ink, Self::Err> {
         self.buy_ink(hostio::EVM_INK_LEFT_BASE_INK)?;
         let ink = self.ink_ready()?;
@@ -976,7 +976,7 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
     /// Gets the price of ink in evm gas basis points. See [`Ink and Gas`] for more information on
     /// Stylus's compute-pricing model.
     ///
-    /// [`Ink and Gas`]: https://developer.arbitrum.io/TODO
+    /// [`Ink and Gas`]: https://docs.arbitrum.io/stylus/concepts/gas-metering#ink-and-gas
     fn tx_ink_price(&mut self) -> Result<u32, Self::Err> {
         self.buy_ink(hostio::TX_INK_PRICE_BASE_INK)?;
         let ink_price = self.pricing().ink_price;

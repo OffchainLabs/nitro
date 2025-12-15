@@ -15,6 +15,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -24,7 +25,7 @@ func TestSequencerParallelNonces(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false).WithDatabase(rawdb.DBPebble)
 	builder.takeOwnership = false
 	builder.execConfig.Sequencer.NonceFailureCacheExpiry = time.Minute
 	cleanup := builder.Build(t)
@@ -127,7 +128,7 @@ func TestSequencerNonceHandling(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithDatabase(rawdb.DBPebble)
 	builder.execConfig.Sequencer.MaxBlockSpeed = time.Second
 	builder.execConfig.Sequencer.NonceFailureCacheExpiry = 4 * time.Second
 	cleanup := builder.Build(t)

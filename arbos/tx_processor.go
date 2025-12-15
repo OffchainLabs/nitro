@@ -523,7 +523,7 @@ func (p *TxProcessor) HeldGas() uint64 {
 	return p.computeHoldGas
 }
 
-func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
+func (p *TxProcessor) EndTxHook(gasLeft uint64, usedMultiGas multigas.MultiGas, success bool) {
 
 	underlyingTx := p.msg.Tx
 	networkFeeAccount, _ := p.state.NetworkFeeAccount()
@@ -632,7 +632,7 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 			}
 		}
 		// we've already credited the network fee account, but we didn't charge the gas pool yet
-		p.state.Restrict(p.state.L2PricingState().AddToGasPool(-arbmath.SaturatingCast[int64](gasUsed), p.state.ArbOSVersion()))
+		p.state.Restrict(p.state.L2PricingState().GrowBacklog(gasUsed, usedMultiGas))
 		return
 	}
 
@@ -695,7 +695,9 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 			log.Error("total gas used < poster gas component", "gasUsed", gasUsed, "posterGas", p.posterGas)
 			computeGas = gasUsed
 		}
-		p.state.Restrict(p.state.L2PricingState().AddToGasPool(-arbmath.SaturatingCast[int64](computeGas), p.state.ArbOSVersion()))
+		// Poster gas added to multiGas in GasChargingHook as L1CalldataGas
+		usedMultiGas = usedMultiGas.SaturatingDecrement(multigas.ResourceKindL1Calldata, p.posterGas)
+		p.state.Restrict(p.state.L2PricingState().GrowBacklog(computeGas, usedMultiGas))
 	}
 }
 

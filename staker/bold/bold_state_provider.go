@@ -24,6 +24,7 @@ import (
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/staker/challenge-cache"
 	"github.com/offchainlabs/nitro/validator"
+	"github.com/offchainlabs/nitro/validator/proofenhancement"
 	"github.com/offchainlabs/nitro/validator/server_arb"
 )
 
@@ -43,6 +44,7 @@ type BOLDStateProvider struct {
 	inboxTracker             staker.InboxTrackerInterface
 	inboxStreamer            staker.TransactionStreamerInterface
 	inboxReader              staker.InboxReaderInterface
+	proofEnhancer            proofenhancement.ProofEnhancer
 	sync.RWMutex
 }
 
@@ -55,6 +57,7 @@ func NewBOLDStateProvider(
 	inboxTracker staker.InboxTrackerInterface,
 	inboxStreamer staker.TransactionStreamerInterface,
 	inboxReader staker.InboxReaderInterface,
+	proofEnhancer proofenhancement.ProofEnhancer,
 ) (*BOLDStateProvider, error) {
 	historyCache, err := challengecache.New(machineHashesCachePath)
 	if err != nil {
@@ -69,6 +72,7 @@ func NewBOLDStateProvider(
 		inboxTracker:             inboxTracker,
 		inboxStreamer:            inboxStreamer,
 		inboxReader:              inboxReader,
+		proofEnhancer:            proofEnhancer,
 	}
 	return sp, nil
 }
@@ -503,10 +507,20 @@ func (s *BOLDStateProvider) CollectProof(
 		"machineIndex", machineIndex,
 		"startState", fmt.Sprintf("%+v", input.StartState),
 	)
-	return s.statelessValidator.BOLDExecutionSpawners()[0].GetProofAt(
+	baseProof, err := s.statelessValidator.BOLDExecutionSpawners()[0].GetProofAt(
 		ctx,
 		assertionMetadata.WasmModuleRoot,
 		input,
 		uint64(machineIndex),
 	)
+	if err != nil {
+		return nil, err
+	}
+
+	// Apply proof enhancement if configured
+	if s.proofEnhancer != nil {
+		return s.proofEnhancer.EnhanceProof(ctx, messageNum, baseProof)
+	}
+
+	return baseProof, nil
 }
