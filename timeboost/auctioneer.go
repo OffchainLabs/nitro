@@ -18,11 +18,11 @@ import (
 	"github.com/pkg/errors"
 	"github.com/redis/go-redis/v9"
 	"github.com/spf13/pflag"
-	"golang.org/x/crypto/sha3"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
@@ -58,7 +58,7 @@ var (
 )
 
 func init() {
-	hash := sha3.NewLegacyKeccak256()
+	hash := crypto.NewLegacyKeccak256()
 	hash.Write([]byte("TIMEBOOST_BID"))
 	domainValue = hash.Sum(nil)
 }
