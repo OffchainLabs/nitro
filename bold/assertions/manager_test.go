@@ -18,10 +18,10 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 
 	"github.com/offchainlabs/nitro/bold/assertions"
-	"github.com/offchainlabs/nitro/bold/chain-abstraction"
-	"github.com/offchainlabs/nitro/bold/challenge-manager"
-	"github.com/offchainlabs/nitro/bold/challenge-manager/types"
-	"github.com/offchainlabs/nitro/bold/runtime"
+	"github.com/offchainlabs/nitro/bold/challenge"
+	"github.com/offchainlabs/nitro/bold/challenge/types"
+	"github.com/offchainlabs/nitro/bold/protocol"
+	"github.com/offchainlabs/nitro/bold/retry"
 	"github.com/offchainlabs/nitro/bold/testing"
 	"github.com/offchainlabs/nitro/bold/testing/casttest"
 	"github.com/offchainlabs/nitro/bold/testing/mocks/state-provider"
@@ -82,11 +82,11 @@ func TestSkipsProcessingAssertionFromEvilFork(t *testing.T) {
 	bobStateManager, err := stateprovider.NewForSimpleMachine(t, stateManagerOpts...)
 	require.NoError(t, err)
 
-	aliceChalManager, err := challengemanager.NewChallengeStack(
+	aliceChalManager, err := challenge.NewChallengeStack(
 		aliceChain,
 		aliceStateManager,
-		challengemanager.StackWithMode(types.DefensiveMode),
-		challengemanager.StackWithName("alice"),
+		challenge.StackWithMode(types.DefensiveMode),
+		challenge.StackWithName("alice"),
 	)
 	require.NoError(t, err)
 	aliceChalManager.Start(ctx)
@@ -312,12 +312,12 @@ func TestComplexAssertionForkScenario(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	chalManager, err := challengemanager.NewChallengeStack(
+	chalManager, err := challenge.NewChallengeStack(
 		charlieChain,
 		charlieStateManager,
-		challengemanager.OverrideAssertionManager(charlieAssertionManager),
-		challengemanager.StackWithMode(types.DefensiveMode),
-		challengemanager.StackWithName("charlie"),
+		challenge.OverrideAssertionManager(charlieAssertionManager),
+		challenge.StackWithMode(types.DefensiveMode),
+		challenge.StackWithName("charlie"),
 	)
 	require.NoError(t, err)
 	chalManager.Start(ctx)
@@ -385,12 +385,12 @@ func TestFastConfirmation(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	chalManager, err := challengemanager.NewChallengeStack(
+	chalManager, err := challenge.NewChallengeStack(
 		aliceChain,
 		stateManager,
-		challengemanager.OverrideAssertionManager(assertionManager),
-		challengemanager.StackWithMode(types.ResolveMode),
-		challengemanager.StackWithName("alice"),
+		challenge.OverrideAssertionManager(assertionManager),
+		challenge.StackWithMode(types.ResolveMode),
+		challenge.StackWithName("alice"),
 	)
 	require.NoError(t, err)
 	chalManager.Start(ctx)
@@ -462,12 +462,12 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	chalManagerAlice, err := challengemanager.NewChallengeStack(
+	chalManagerAlice, err := challenge.NewChallengeStack(
 		aliceChain,
 		stateManager,
-		challengemanager.OverrideAssertionManager(assertionManagerAlice),
-		challengemanager.StackWithMode(types.ResolveMode),
-		challengemanager.StackWithName("alice"),
+		challenge.OverrideAssertionManager(assertionManagerAlice),
+		challenge.StackWithMode(types.ResolveMode),
+		challenge.StackWithName("alice"),
 	)
 	require.NoError(t, err)
 	chalManagerAlice.Start(ctx)
@@ -506,12 +506,12 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	chalManagerBob, err := challengemanager.NewChallengeStack(
+	chalManagerBob, err := challenge.NewChallengeStack(
 		bobChain,
 		stateManager,
-		challengemanager.OverrideAssertionManager(assertionManagerBob),
-		challengemanager.StackWithMode(types.ResolveMode),
-		challengemanager.StackWithName("bob"),
+		challenge.OverrideAssertionManager(assertionManagerBob),
+		challenge.StackWithMode(types.ResolveMode),
+		challenge.StackWithName("bob"),
 	)
 	require.NoError(t, err)
 	chalManagerBob.Start(ctx)
