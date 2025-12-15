@@ -25,6 +25,7 @@ import (
 	"github.com/offchainlabs/nitro/util/rpcclient"
 )
 
+// Metric path keeps "das" for backward compatibility with existing dashboards
 const metricBase string = "arb/das/rpc/aggregator/store"
 
 var (
