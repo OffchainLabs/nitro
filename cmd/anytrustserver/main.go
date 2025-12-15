@@ -11,6 +11,8 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -90,6 +92,9 @@ var DefaultDAServerConfig = DAServerConfig{
 }
 
 func main() {
+	if strings.Contains(filepath.Base(os.Args[0]), "daserver") {
+		log.Error("DEPRECATED: 'daserver' binary has been renamed to 'anytrustserver' and will be removed in a future release. Please update your scripts and configurations.")
+	}
 	if err := startup(); err != nil {
 		log.Error("Error running DAServer", "err", err)
 	}

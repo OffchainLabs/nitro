@@ -327,7 +327,8 @@ FROM offchainlabs/nitro-node:v3.7.6-c0fe95e AS nitro-legacy
 FROM nitro-node-slim AS nitro-node
 USER root
 COPY --from=prover-export /bin/jit                        /usr/local/bin/
-COPY --from=node-builder  /workspace/target/bin/daserver  /usr/local/bin/
+COPY --from=node-builder  /workspace/target/bin/anytrustserver  /usr/local/bin/
+RUN ln -s /usr/local/bin/anytrustserver /usr/local/bin/daserver
 COPY --from=node-builder  /workspace/target/bin/daprovider  /usr/local/bin/
 COPY --from=node-builder  /workspace/target/bin/autonomous-auctioneer  /usr/local/bin/
 COPY --from=node-builder  /workspace/target/bin/bidder-client  /usr/local/bin/
