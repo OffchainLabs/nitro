@@ -1182,8 +1182,9 @@ func checkBatchPosting(t *testing.T, ctx context.Context, builder *NodeBuilder, 
 
 	// Prepare transfer transaction on L2
 	transferAmount := big.NewInt(1e12)
-	builder.L2Info.GenerateAccount("Recipient")
-	recipient := builder.L2Info.GetAddress("Recipient")
+	recipientName := fmt.Sprintf("Recipient_%d", testhelpers.RandomUint32(0, 1<<30))
+	builder.L2Info.GenerateAccount(recipientName)
+	recipient := builder.L2Info.GetAddress(recipientName)
 	tx := builder.L2Info.PrepareTxTo("Owner", &recipient, builder.L2Info.TransferGas, transferAmount, nil)
 
 	// Check recipient balance before transfer
