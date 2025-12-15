@@ -13,6 +13,7 @@ import (
 	"github.com/offchainlabs/nitro/util/signature"
 )
 
+// uniquifyingPrefix keeps "DAS" for protocol compatibility - changing this would break signature verification
 var uniquifyingPrefix = []byte("Arbitrum Nitro DAS API Store:")
 
 func applyDasSigner(signer signature.DataSignerFunc, data []byte, extraFields ...uint64) ([]byte, error) {

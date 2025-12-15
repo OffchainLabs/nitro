@@ -107,7 +107,7 @@ func NewSignAfterStoreWriter(ctx context.Context, config Config, storageService 
 
 func (d *SignAfterStoreWriter) Store(ctx context.Context, message []byte, timeout uint64) (c *anytrustutil.DataAvailabilityCertificate, err error) {
 	// #nosec G115
-	log.Trace("das.SignAfterStoreWriter.Store", "message", pretty.FirstFewBytes(message), "timeout", time.Unix(int64(timeout), 0), "this", d)
+	log.Trace("anytrust.SignAfterStoreWriter.Store", "message", pretty.FirstFewBytes(message), "timeout", time.Unix(int64(timeout), 0), "this", d)
 	c = &anytrustutil.DataAvailabilityCertificate{
 		Timeout:     timeout,
 		DataHash:    tree.Hash(message),

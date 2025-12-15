@@ -160,7 +160,7 @@ func GetL1Client(ctx context.Context, maxConnectionAttempts int, l1URL string) (
 		if err == nil {
 			return l1Client, nil
 		}
-		log.Warn("error connecting to L1 from DAS", "l1URL", l1URL, "err", err)
+		log.Warn("error connecting to L1 from AnyTrust", "l1URL", l1URL, "err", err)
 
 		timer := time.NewTimer(time.Second * 1)
 		select {

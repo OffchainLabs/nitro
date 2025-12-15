@@ -85,7 +85,7 @@ func (rs *RedisStorageService) verifyMessageSignature(data []byte) ([]byte, erro
 func (rs *RedisStorageService) getVerifiedData(ctx context.Context, key common.Hash) ([]byte, error) {
 	data, err := rs.client.Get(ctx, string(key.Bytes())).Bytes()
 	if err != nil {
-		log.Error("das.RedisStorageService.getVerifiedData", "err", err)
+		log.Error("anytrust.RedisStorageService.getVerifiedData", "err", err)
 		return nil, err
 	}
 	data, err = rs.verifyMessageSignature(data)
@@ -102,7 +102,7 @@ func (rs *RedisStorageService) signMessage(message []byte) []byte {
 }
 
 func (rs *RedisStorageService) GetByHash(ctx context.Context, key common.Hash) ([]byte, error) {
-	log.Trace("das.RedisStorageService.GetByHash", "key", pretty.PrettyHash(key), "this", rs)
+	log.Trace("anytrust.RedisStorageService.GetByHash", "key", pretty.PrettyHash(key), "this", rs)
 	ret, err := rs.getVerifiedData(ctx, key)
 	if err != nil {
 		ret, err = rs.baseStorageService.GetByHash(ctx, key)
@@ -121,7 +121,7 @@ func (rs *RedisStorageService) GetByHash(ctx context.Context, key common.Hash) (
 }
 
 func (rs *RedisStorageService) Put(ctx context.Context, value []byte, timeout uint64) error {
-	logPut("das.RedisStorageService.Store", value, timeout, rs)
+	logPut("anytrust.RedisStorageService.Store", value, timeout, rs)
 	err := rs.baseStorageService.Put(ctx, value, timeout)
 	if err != nil {
 		return err
@@ -130,7 +130,7 @@ func (rs *RedisStorageService) Put(ctx context.Context, value []byte, timeout ui
 		ctx, string(tree.Hash(value).Bytes()), rs.signMessage(value), rs.redisConfig.Expiration,
 	).Err()
 	if err != nil {
-		log.Error("das.RedisStorageService.Store", "err", err)
+		log.Error("anytrust.RedisStorageService.Store", "err", err)
 	}
 	return err
 }

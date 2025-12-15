@@ -50,7 +50,7 @@ func (w *ReaderPanicWrapper) GetByHash(ctx context.Context, hash common.Hash) ([
 	data, err := w.Reader.GetByHash(ctx, hash)
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
-			log.Error("DAS hash lookup failed from cancelled context")
+			log.Error("AnyTrust hash lookup failed from cancelled context")
 			return nil, err
 		}
 		panic(fmt.Sprintf("panic wrapper GetByHash: %v", err))

@@ -140,7 +140,7 @@ type storeResponse struct {
 // (eg via TimeoutWrapper) then it also returns an error.
 func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64) (*anytrustutil.DataAvailabilityCertificate, error) {
 	// #nosec G115
-	log.Trace("das.Aggregator.Store", "message", pretty.FirstFewBytes(message), "timeout", time.Unix(int64(timeout), 0))
+	log.Trace("anytrust.Aggregator.Store", "message", pretty.FirstFewBytes(message), "timeout", time.Unix(int64(timeout), 0))
 
 	allBackendsSucceeded := false
 	defer func() {
@@ -234,7 +234,7 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64) 
 			case r := <-responses:
 				if r.err != nil {
 					_ = storeFailures.Add(1)
-					log.Warn("das.Aggregator: Error from backend", "backend", r.details.service, "signerMask", r.details.signersMask, "err", r.err)
+					log.Warn("anytrust.Aggregator: Error from backend", "backend", r.details.service, "signerMask", r.details.signersMask, "err", r.err)
 				} else {
 					pubKeys = append(pubKeys, r.details.pubKey)
 					sigs = append(sigs, r.sig)
@@ -267,7 +267,7 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64) 
 		if returned == 1 &&
 			a.maxAllowedServiceStoreFailures > 0 && // Ignore the case where AssumedHonest = 1, probably a testnet
 			int(storeFailures.Load())+1 > a.maxAllowedServiceStoreFailures {
-			log.Error("das.Aggregator: storing the batch data succeeded to enough DAS committee members to generate the Data Availability Cert, but if one more had failed then the cert would not have been able to be generated. Look for preceding logs with \"Error from backend\"")
+			log.Error("anytrust.Aggregator: storing the batch data succeeded to enough DAS committee members to generate the Data Availability Cert, but if one more had failed then the cert would not have been able to be generated. Look for preceding logs with \"Error from backend\"")
 		}
 	}()
 
@@ -304,7 +304,7 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64) 
 
 func (a *Aggregator) String() string {
 	var b bytes.Buffer
-	b.WriteString("das.Aggregator{")
+	b.WriteString("anytrust.Aggregator{")
 	first := true
 	for _, d := range a.services {
 		if !first {

@@ -69,7 +69,7 @@ func NewS3StorageService(config S3StorageServiceConfig) (StorageService, error) 
 }
 
 func (s3s *S3StorageService) GetByHash(ctx context.Context, key common.Hash) ([]byte, error) {
-	log.Trace("das.S3StorageService.GetByHash", "key", pretty.PrettyHash(key), "this", s3s)
+	log.Trace("anytrust.S3StorageService.GetByHash", "key", pretty.PrettyHash(key), "this", s3s)
 
 	buf := manager.NewWriteAtBuffer([]byte{})
 	_, err := s3s.client.Download(ctx, buf, &s3.GetObjectInput{
@@ -80,14 +80,14 @@ func (s3s *S3StorageService) GetByHash(ctx context.Context, key common.Hash) ([]
 }
 
 func (s3s *S3StorageService) Put(ctx context.Context, value []byte, _ uint64) error {
-	logPut("das.S3StorageService.Store", value, 0, s3s)
+	logPut("anytrust.S3StorageService.Store", value, 0, s3s)
 	putObjectInput := s3.PutObjectInput{
 		Bucket: aws.String(s3s.bucket),
 		Key:    aws.String(s3s.objectPrefix + EncodeStorageServiceKey(tree.Hash(value))),
 		Body:   bytes.NewReader(value)}
 	_, err := s3s.client.Upload(ctx, &putObjectInput)
 	if err != nil {
-		log.Error("das.S3StorageService.Store", "err", err)
+		log.Error("anytrust.S3StorageService.Store", "err", err)
 	}
 	return err
 }

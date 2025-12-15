@@ -118,20 +118,20 @@ func NewGoogleCloudStorageService(config GoogleCloudStorageServiceConfig) (Stora
 }
 
 func (gcs *GoogleCloudStorageService) Put(ctx context.Context, value []byte, timeout uint64) error {
-	logPut("das.GoogleCloudStorageService.Store", value, timeout, gcs)
+	logPut("anytrust.GoogleCloudStorageService.Store", value, timeout, gcs)
 
 	if err := gcs.operator.Upload(ctx, gcs.bucket, gcs.objectPrefix, value, gcs.discardAfterTimeout, timeout); err != nil {
-		log.Error("das.GoogleCloudStorageService.Store", "err", err)
+		log.Error("anytrust.GoogleCloudStorageService.Store", "err", err)
 		return err
 	}
 	return nil
 }
 
 func (gcs *GoogleCloudStorageService) GetByHash(ctx context.Context, key common.Hash) ([]byte, error) {
-	log.Trace("das.GoogleCloudStorageService.GetByHash", "key", pretty.PrettyHash(key), "this", gcs)
+	log.Trace("anytrust.GoogleCloudStorageService.GetByHash", "key", pretty.PrettyHash(key), "this", gcs)
 	buf, err := gcs.operator.Download(ctx, gcs.bucket, gcs.objectPrefix, key)
 	if err != nil {
-		log.Error("das.GoogleCloudStorageService.GetByHash", "err", err)
+		log.Error("anytrust.GoogleCloudStorageService.GetByHash", "err", err)
 		return nil, err
 	}
 	return buf, nil

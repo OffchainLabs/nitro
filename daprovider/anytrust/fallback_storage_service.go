@@ -52,7 +52,7 @@ func NewFallbackStorageService(
 }
 
 func (f *FallbackStorageService) GetByHash(ctx context.Context, key common.Hash) ([]byte, error) {
-	log.Trace("das.FallbackStorageService.GetByHash", "key", pretty.PrettyHash(key), "this", f)
+	log.Trace("anytrust.FallbackStorageService.GetByHash", "key", pretty.PrettyHash(key), "this", f)
 	if f.preventRecursiveGets {
 		f.currentlyFetchingMutex.RLock()
 		if f.currentlyFetching[key] {
@@ -74,7 +74,7 @@ func (f *FallbackStorageService) GetByHash(ctx context.Context, key common.Hash)
 			}
 			f.currentlyFetchingMutex.Unlock()
 		}
-		log.Trace("das.FallbackStorageService.GetByHash trying fallback")
+		log.Trace("anytrust.FallbackStorageService.GetByHash trying fallback")
 		data, err = f.backup.GetByHash(ctx, key)
 		if doDelete {
 			f.currentlyFetchingMutex.Lock()

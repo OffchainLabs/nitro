@@ -49,7 +49,7 @@ func NewCacheStorageService(cacheConfig CacheConfig, baseStorageService StorageS
 }
 
 func (c *CacheStorageService) GetByHash(ctx context.Context, key common.Hash) ([]byte, error) {
-	log.Trace("das.CacheStorageService.GetByHash", "key", pretty.PrettyHash(key), "this", c)
+	log.Trace("anytrust.CacheStorageService.GetByHash", "key", pretty.PrettyHash(key), "this", c)
 
 	if val, wasCached := c.cache.Get(key); wasCached {
 		return val, nil
@@ -66,7 +66,7 @@ func (c *CacheStorageService) GetByHash(ctx context.Context, key common.Hash) ([
 }
 
 func (c *CacheStorageService) Put(ctx context.Context, value []byte, timeout uint64) error {
-	logPut("das.CacheStorageService.Put", value, timeout, c)
+	logPut("anytrust.CacheStorageService.Put", value, timeout, c)
 	err := c.baseStorageService.Put(ctx, value, timeout)
 	if err != nil {
 		return err

@@ -183,7 +183,7 @@ type SimpleReaderAggregator struct {
 func (a *SimpleReaderAggregator) GetByHash(ctx context.Context, hash common.Hash) ([]byte, error) {
 	a.readersMutex.RLock()
 	defer a.readersMutex.RUnlock()
-	log.Trace("das.SimpleReaderAggregator.GetByHash", "key", pretty.PrettyHash(hash), "this", a)
+	log.Trace("anytrust.SimpleReaderAggregator.GetByHash", "key", pretty.PrettyHash(hash), "this", a)
 
 	type dataErrorPair struct {
 		data []byte
@@ -345,7 +345,7 @@ func (a *SimpleReaderAggregator) Close(ctx context.Context) error {
 }
 
 func (a *SimpleReaderAggregator) String() string {
-	return fmt.Sprintf("das.SimpleReaderAggregator{%v}", a.config.Urls)
+	return fmt.Sprintf("anytrust.SimpleReaderAggregator{%v}", a.config.Urls)
 }
 
 func (a *SimpleReaderAggregator) HealthCheck(ctx context.Context) error {

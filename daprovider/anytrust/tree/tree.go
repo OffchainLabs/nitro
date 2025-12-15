@@ -96,7 +96,7 @@ func RecordHash(record func(bytes32, []byte, arbutil.PreimageType), preimage ...
 }
 
 func Hash(preimage ...[]byte) bytes32 {
-	// Merkelizes without recording anything. All but the validator's DAS will call this
+	// Merkelizes without recording anything. All but the validator's AnyTrust server will call this
 	return RecordHash(func(bytes32, []byte, arbutil.PreimageType) {}, preimage...)
 }
 

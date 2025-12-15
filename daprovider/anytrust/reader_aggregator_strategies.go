@@ -14,7 +14,7 @@ import (
 	anytrustutil "github.com/offchainlabs/nitro/daprovider/anytrust/util"
 )
 
-var ErrNoReadersResponded = errors.New("no DAS readers responded successfully")
+var ErrNoReadersResponded = errors.New("no AnyTrust readers responded successfully")
 
 type aggregatorStrategy interface {
 	newInstance() aggregatorStrategyInstance

@@ -30,7 +30,7 @@ func NewMemoryBackedStorageService(ctx context.Context) StorageService {
 }
 
 func (m *MemoryBackedStorageService) GetByHash(ctx context.Context, key common.Hash) ([]byte, error) {
-	log.Trace("das.MemoryBackedStorageService.GetByHash", "key", key, "this", m)
+	log.Trace("anytrust.MemoryBackedStorageService.GetByHash", "key", key, "this", m)
 	m.rwmutex.RLock()
 	defer m.rwmutex.RUnlock()
 	if m.closed {
@@ -44,7 +44,7 @@ func (m *MemoryBackedStorageService) GetByHash(ctx context.Context, key common.H
 }
 
 func (m *MemoryBackedStorageService) Put(ctx context.Context, data []byte, expirationTime uint64) error {
-	logPut("das.MemoryBackedStorageService.Store", data, expirationTime, m)
+	logPut("anytrust.MemoryBackedStorageService.Store", data, expirationTime, m)
 	m.rwmutex.Lock()
 	defer m.rwmutex.Unlock()
 	if m.closed {

@@ -112,7 +112,7 @@ func (s *LocalFileStorageService) Close(ctx context.Context) error {
 }
 
 func (s *LocalFileStorageService) GetByHash(ctx context.Context, key common.Hash) ([]byte, error) {
-	log.Trace("das.LocalFileStorageService.GetByHash", "key", pretty.PrettyHash(key), "this", s)
+	log.Trace("anytrust.LocalFileStorageService.GetByHash", "key", pretty.PrettyHash(key), "this", s)
 
 	legacyBatchPath := s.legacyLayout.batchPath(key)
 	batchPath := s.layout.batchPath(key)
@@ -135,7 +135,7 @@ func (s *LocalFileStorageService) GetByHash(ctx context.Context, key common.Hash
 }
 
 func (s *LocalFileStorageService) Put(ctx context.Context, data []byte, expiry uint64) error {
-	logPut("das.LocalFileStorageService.Store", data, expiry, s)
+	logPut("anytrust.LocalFileStorageService.Store", data, expiry, s)
 	if expiry > math.MaxInt64 {
 		return fmt.Errorf("request expiry time (%v) exceeds max int64", expiry)
 	}

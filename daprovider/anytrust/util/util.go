@@ -131,7 +131,8 @@ func (d *writer) GetMaxMessageSize() containers.PromiseInterface[int] {
 
 var (
 	ErrHashMismatch = errors.New("result does not match expected hash")
-	ErrBatchFailed  = errors.New("unable to batch to DAS")
+	// ErrBatchFailed keeps "DAS" for backward compatibility with external systems that may match on this string
+	ErrBatchFailed = errors.New("unable to batch to DAS")
 )
 
 const MinLifetimeSecondsForDataAvailabilityCert = 7 * 24 * 60 * 60 // one week
@@ -185,7 +186,7 @@ func recoverPayloadFromBatchInternal(
 	}
 	cert, err := DeserializeCertFrom(bytes.NewReader(sequencerMsg[40:]))
 	if err != nil {
-		log.Error("Failed to deserialize DAS message", "err", err)
+		log.Error("Failed to deserialize AnyTrust message", "err", err)
 		return nil, nil, nil
 	}
 	version := cert.Version
@@ -238,7 +239,7 @@ func recoverPayloadFromBatchInternal(
 	}
 	err = keyset.VerifySignature(cert.SignersMask, cert.SerializeSignableFields(), cert.Sig)
 	if err != nil {
-		log.Error("Bad signature on DAS batch", "err", err)
+		log.Error("Bad signature on AnyTrust batch", "err", err)
 		return nil, nil, nil
 	}
 
@@ -254,7 +255,7 @@ func recoverPayloadFromBatchInternal(
 	if needPayload || needPreimages {
 		payload, err = getByHash(ctx, dataHash)
 		if err != nil {
-			log.Error("Couldn't fetch DAS batch contents", "err", err)
+			log.Error("Couldn't fetch AnyTrust batch contents", "err", err)
 			return nil, nil, err
 		}
 	}
@@ -290,7 +291,7 @@ func DeserializeCertFrom(rd io.Reader) (c *DataAvailabilityCertificate, err erro
 		return nil, err
 	}
 	if !daprovider.IsAnyTrustMessageHeaderByte(header) {
-		return nil, errors.New("tried to deserialize a message that doesn't have the DAS header")
+		return nil, errors.New("tried to deserialize a message that doesn't have the AnyTrust header")
 	}
 
 	_, err = io.ReadFull(r, c.KeysetHash[:])

@@ -34,7 +34,7 @@ type readResponse struct {
 }
 
 func (r *RedundantStorageService) GetByHash(ctx context.Context, key common.Hash) ([]byte, error) {
-	log.Trace("das.RedundantStorageService.GetByHash", "key", pretty.PrettyHash(key), "this", r)
+	log.Trace("anytrust.RedundantStorageService.GetByHash", "key", pretty.PrettyHash(key), "this", r)
 	subCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	var anyError error
@@ -62,7 +62,7 @@ func (r *RedundantStorageService) GetByHash(ctx context.Context, key common.Hash
 }
 
 func (r *RedundantStorageService) Put(ctx context.Context, data []byte, expirationTime uint64) error {
-	logPut("das.RedundantStorageService.Store", data, expirationTime, r)
+	logPut("anytrust.RedundantStorageService.Store", data, expirationTime, r)
 	var wg sync.WaitGroup
 	var errorMutex sync.Mutex
 	var anyError error

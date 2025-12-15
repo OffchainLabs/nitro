@@ -31,7 +31,7 @@ func (m *LifecycleManager) StopAndWaitUntil(t time.Duration) {
 		for _, c := range m.toClose {
 			err := c.Close(ctx)
 			if err != nil {
-				log.Warn("Failed to Close DAS component", "err", err)
+				log.Warn("Failed to Close AnyTrust component", "err", err)
 			}
 		}
 	}

@@ -10,8 +10,8 @@ import (
 	anytrustutil "github.com/offchainlabs/nitro/daprovider/anytrust/util"
 )
 
-// These classes are wrappers implementing das.StorageService and das.DataAvailabilityService.
-// They are needed to make the DAS factory function uniform for all allowed configurations.
+// These classes are wrappers implementing StorageService.
+// They are needed to make the AnyTrust factory function uniform for all allowed configurations.
 // The wrappers panic if they are used in a situation where writes are needed; panic is used because
 // it is a programming error in the code setting up the node or daserver if a non-writeable object
 // is used in a writeable context.
