@@ -59,26 +59,26 @@ func startLocalAnyTrustServer(
 	rpcLis, err := net.Listen("tcp", "localhost:0")
 	Require(t, err)
 	rpcAddr := rpcLis.Addr().String()
-	t.Logf("DAS RPC listener created at: %s", rpcAddr)
+	t.Logf("AnyTrust RPC listener created at: %s", rpcAddr)
 
 	rpcServer, err := anytrust.StartRPCServerOnListener(ctx, rpcLis, genericconf.HTTPServerTimeoutConfigDefault, genericconf.HTTPServerBodyLimitDefault, storageService, daWriter, storageService, signatureVerifier)
 	Require(t, err)
-	t.Logf("DAS RPC server started and listening on: %s", rpcAddr)
+	t.Logf("AnyTrust RPC server started and listening on: %s", rpcAddr)
 
 	restLis, err := net.Listen("tcp", "localhost:0")
 	Require(t, err)
 	restAddr := restLis.Addr().String()
-	t.Logf("DAS REST listener created at: %s", restAddr)
+	t.Logf("AnyTrust REST listener created at: %s", restAddr)
 
 	restServer, err := anytrust.NewRestfulServerOnListener(restLis, genericconf.HTTPServerTimeoutConfigDefault, storageService, storageService)
 	Require(t, err)
-	t.Logf("DAS REST server started and listening on: %s", restAddr)
+	t.Logf("AnyTrust REST server started and listening on: %s", restAddr)
 
 	beConfig := anytrust.BackendConfig{
 		URL:    "http://" + rpcAddr,
 		Pubkey: blsPubToBase64(pubkey),
 	}
-	t.Logf("DAS backend config created with URL: %s", beConfig.URL)
+	t.Logf("AnyTrust backend config created with URL: %s", beConfig.URL)
 	return rpcServer, pubkey, beConfig, restServer, "http://" + restAddr
 }
 
@@ -113,14 +113,14 @@ func TestAnyTrustRekey(t *testing.T) {
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
 	builder.BuildL1(t)
 
-	// Setup DAS servers
-	dasDataDir := t.TempDir()
-	dasRpcServerA, pubkeyA, backendConfigA, _, restServerUrlA := startLocalAnyTrustServer(t, ctx, dasDataDir, builder.L1.Client, builder.addresses.SequencerInbox)
+	// Setup AnyTrust servers
+	anyTrustDataDir := t.TempDir()
+	anyTrustRpcServerA, pubkeyA, backendConfigA, _, restServerUrlA := startLocalAnyTrustServer(t, ctx, anyTrustDataDir, builder.L1.Client, builder.addresses.SequencerInbox)
 	l1NodeConfigB := arbnode.ConfigDefaultL1NonSequencerTest()
 	{
 		authorizeAnyTrustKeyset(t, ctx, pubkeyA, builder.L1Info, builder.L1.Client)
 
-		// Setup DAS config
+		// Setup AnyTrust config
 		builder.nodeConfig.DA.AnyTrust.Enable = true
 		builder.nodeConfig.DA.AnyTrust.RPCAggregator = aggConfigForBackend(backendConfigA)
 		builder.nodeConfig.DA.AnyTrust.RestAggregator = anytrust.DefaultRestfulClientAggregatorConfig
@@ -148,16 +148,16 @@ func TestAnyTrustRekey(t *testing.T) {
 		cleanupB()
 	}
 
-	err := dasRpcServerA.Shutdown(ctx)
+	err := anyTrustRpcServerA.Shutdown(ctx)
 	Require(t, err)
-	dasRpcServerB, pubkeyB, backendConfigB, _, _ := startLocalAnyTrustServer(t, ctx, dasDataDir, builder.L1.Client, builder.addresses.SequencerInbox)
+	anyTrustRpcServerB, pubkeyB, backendConfigB, _, _ := startLocalAnyTrustServer(t, ctx, anyTrustDataDir, builder.L1.Client, builder.addresses.SequencerInbox)
 	defer func() {
-		err = dasRpcServerB.Shutdown(ctx)
+		err = anyTrustRpcServerB.Shutdown(ctx)
 		Require(t, err)
 	}()
 	authorizeAnyTrustKeyset(t, ctx, pubkeyB, builder.L1Info, builder.L1.Client)
 
-	// Restart the node on the new keyset against the new DAS server running on the same disk as the first with new keys
+	// Restart the node on the new keyset against the new AnyTrust server running on the same disk as the first with new keys
 	builder.nodeConfig.DA.AnyTrust.RPCAggregator = aggConfigForBackend(backendConfigB)
 	builder.l2StackConfig = testhelpers.CreateStackConfigForTest(builder.dataDir)
 	cleanup := builder.BuildL2OnL1(t)

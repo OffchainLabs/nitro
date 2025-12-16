@@ -54,13 +54,13 @@ func TestMultiWriterFailure_CustomDAShutdownWithAnyTrustAvailable(t *testing.T) 
 
 	t.Logf("CustomDA server running at: %s", customDAURL)
 
-	// 3. Setup AnyTrust/DAS server
-	dasDataDir := t.TempDir()
-	dasRpcServer, pubkey, backendConfig, restServer, restServerUrl := startLocalAnyTrustServer(
-		t, ctx, dasDataDir, builder.L1.Client, builder.addresses.SequencerInbox)
+	// 3. Setup AnyTrust server
+	anyTrustDataDir := t.TempDir()
+	anyTrustRpcServer, pubkey, backendConfig, restServer, restServerUrl := startLocalAnyTrustServer(
+		t, ctx, anyTrustDataDir, builder.L1.Client, builder.addresses.SequencerInbox)
 	defer func() {
-		if err := dasRpcServer.Shutdown(ctx); err != nil {
-			t.Logf("Error shutting down DAS RPC server: %v", err)
+		if err := anyTrustRpcServer.Shutdown(ctx); err != nil {
+			t.Logf("Error shutting down AnyTrust RPC server: %v", err)
 		}
 	}()
 	defer func() {
@@ -71,7 +71,7 @@ func TestMultiWriterFailure_CustomDAShutdownWithAnyTrustAvailable(t *testing.T) 
 
 	authorizeAnyTrustKeyset(t, ctx, pubkey, builder.L1Info, builder.L1.Client)
 
-	t.Logf("AnyTrust DAS server running at: RPC=%s REST=%s", backendConfig.URL, restServerUrl)
+	t.Logf("AnyTrust server running at: RPC=%s REST=%s", backendConfig.URL, restServerUrl)
 
 	// 4. Configure sequencer node with both CustomDA and AnyTrust
 	builder.nodeConfig.DA.ExternalProvider.Enable = true
@@ -172,7 +172,7 @@ func TestMultiWriterFailure_CustomDAShutdownNoFallbackAvailable(t *testing.T) {
 
 	// 1. Setup L1 chain and contracts
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
-	// Use standard dev test config (not DAS) since we're not using AnyTrust
+	// Use standard dev test config (not AnyTrust) since we're not using AnyTrust
 	builder.chainConfig = chaininfo.ArbitrumDevTestChainConfig()
 	builder.parallelise = false
 
@@ -293,13 +293,13 @@ func TestMultiWriterFailure_AnyTrustShutdownFallbackDisabled(t *testing.T) {
 
 	builder.BuildL1(t)
 
-	// 2. Setup AnyTrust/DAS server
-	dasDataDir := t.TempDir()
-	dasRpcServer, pubkey, backendConfig, restServer, restServerUrl := startLocalAnyTrustServer(
-		t, ctx, dasDataDir, builder.L1.Client, builder.addresses.SequencerInbox)
+	// 2. Setup AnyTrust server
+	anyTrustDataDir := t.TempDir()
+	anyTrustRpcServer, pubkey, backendConfig, restServer, restServerUrl := startLocalAnyTrustServer(
+		t, ctx, anyTrustDataDir, builder.L1.Client, builder.addresses.SequencerInbox)
 	defer func() {
-		if err := dasRpcServer.Shutdown(ctx); err != nil {
-			t.Logf("Error shutting down DAS RPC server: %v", err)
+		if err := anyTrustRpcServer.Shutdown(ctx); err != nil {
+			t.Logf("Error shutting down AnyTrust RPC server: %v", err)
 		}
 	}()
 	defer func() {
@@ -315,7 +315,7 @@ func TestMultiWriterFailure_AnyTrustShutdownFallbackDisabled(t *testing.T) {
 	// at least one more block after the keyset transaction.
 	TransferBalance(t, "Faucet", "User", big.NewInt(1), builder.L1Info, builder.L1.Client, ctx)
 
-	t.Logf("AnyTrust DAS server running at: RPC=%s REST=%s", backendConfig.URL, restServerUrl)
+	t.Logf("AnyTrust server running at: RPC=%s REST=%s", backendConfig.URL, restServerUrl)
 
 	// 3. Configure sequencer node with AnyTrust only (no CustomDA)
 	// Disable CustomDA
@@ -364,12 +364,12 @@ func TestMultiWriterFailure_AnyTrustShutdownFallbackDisabled(t *testing.T) {
 
 	// Phase 2: Shutdown AnyTrust and verify batch posting fails
 	t.Log("Phase 2: Shutting down AnyTrust, expecting batch posting to fail")
-	err := dasRpcServer.Shutdown(ctx)
+	err := anyTrustRpcServer.Shutdown(ctx)
 	Require(t, err)
-	t.Logf("Phase 2: AnyTrust DAS RPC server shut down successfully")
+	t.Logf("Phase 2: AnyTrust RPC server shut down successfully")
 	err = restServer.Shutdown()
 	Require(t, err)
-	t.Logf("Phase 2: AnyTrust DAS REST server shut down successfully")
+	t.Logf("Phase 2: AnyTrust REST server shut down successfully")
 
 	// Record the follower's current block before generating transactions
 	followerBlockBefore, err := l2B.Client.BlockNumber(ctx)
@@ -438,13 +438,13 @@ func TestMultiWriterFallback_CustomDAToAnyTrustExplicit(t *testing.T) {
 
 	t.Logf("CustomDA server with control running at: %s", customDAURL)
 
-	// 3. Setup AnyTrust/DAS server
-	dasDataDir := t.TempDir()
-	dasRpcServer, pubkey, backendConfig, restServer, restServerUrl := startLocalAnyTrustServer(
-		t, ctx, dasDataDir, builder.L1.Client, builder.addresses.SequencerInbox)
+	// 3. Setup AnyTrust server
+	anyTrustDataDir := t.TempDir()
+	anyTrustRpcServer, pubkey, backendConfig, restServer, restServerUrl := startLocalAnyTrustServer(
+		t, ctx, anyTrustDataDir, builder.L1.Client, builder.addresses.SequencerInbox)
 	defer func() {
-		if err := dasRpcServer.Shutdown(ctx); err != nil {
-			t.Logf("Error shutting down DAS RPC server: %v", err)
+		if err := anyTrustRpcServer.Shutdown(ctx); err != nil {
+			t.Logf("Error shutting down AnyTrust RPC server: %v", err)
 		}
 	}()
 	defer func() {
@@ -455,7 +455,7 @@ func TestMultiWriterFallback_CustomDAToAnyTrustExplicit(t *testing.T) {
 
 	authorizeAnyTrustKeyset(t, ctx, pubkey, builder.L1Info, builder.L1.Client)
 
-	t.Logf("AnyTrust DAS server running at: RPC=%s REST=%s", backendConfig.URL, restServerUrl)
+	t.Logf("AnyTrust server running at: RPC=%s REST=%s", backendConfig.URL, restServerUrl)
 
 	// 4. Configure sequencer node with both CustomDA and AnyTrust
 	builder.nodeConfig.DA.ExternalProvider.Enable = true
@@ -884,13 +884,13 @@ func TestMultiWriterFallback_AnyTrustToCalldataOnBackendFailure(t *testing.T) {
 
 	builder.BuildL1(t)
 
-	// 2. Setup AnyTrust/DAS server
-	dasDataDir := t.TempDir()
-	dasRpcServer, pubkey, backendConfig, restServer, restServerUrl := startLocalAnyTrustServer(
-		t, ctx, dasDataDir, builder.L1.Client, builder.addresses.SequencerInbox)
+	// 2. Setup AnyTrust server
+	anyTrustDataDir := t.TempDir()
+	anyTrustRpcServer, pubkey, backendConfig, restServer, restServerUrl := startLocalAnyTrustServer(
+		t, ctx, anyTrustDataDir, builder.L1.Client, builder.addresses.SequencerInbox)
 	defer func() {
-		if err := dasRpcServer.Shutdown(ctx); err != nil {
-			t.Logf("Error shutting down DAS RPC server: %v", err)
+		if err := anyTrustRpcServer.Shutdown(ctx); err != nil {
+			t.Logf("Error shutting down AnyTrust RPC server: %v", err)
 		}
 	}()
 	defer func() {
@@ -904,7 +904,7 @@ func TestMultiWriterFallback_AnyTrustToCalldataOnBackendFailure(t *testing.T) {
 	// Mine L1 blocks to ensure keyset logs are queryable
 	TransferBalance(t, "Faucet", "User", big.NewInt(1), builder.L1Info, builder.L1.Client, ctx)
 
-	t.Logf("AnyTrust DAS server running at: RPC=%s REST=%s", backendConfig.URL, restServerUrl)
+	t.Logf("AnyTrust server running at: RPC=%s REST=%s", backendConfig.URL, restServerUrl)
 
 	// 3. Configure sequencer node with AnyTrust → Calldata fallback
 	// Disable CustomDA
@@ -989,12 +989,12 @@ func TestMultiWriterFallback_AnyTrustToCalldataOnBackendFailure(t *testing.T) {
 	// Phase 2: Shut down AnyTrust backends and verify fallback to Calldata
 	t.Log("Phase 2: Shutting down AnyTrust backends, expecting fallback to Calldata")
 
-	err = dasRpcServer.Shutdown(ctx)
+	err = anyTrustRpcServer.Shutdown(ctx)
 	Require(t, err)
-	t.Logf("Phase 2: AnyTrust DAS RPC server shut down")
+	t.Logf("Phase 2: AnyTrust RPC server shut down")
 	err = restServer.Shutdown()
 	Require(t, err)
-	t.Logf("Phase 2: AnyTrust DAS REST server shut down")
+	t.Logf("Phase 2: AnyTrust REST server shut down")
 
 	// Record L1 block range for Phase 2
 	phase2StartBlock, err := builder.L1.Client.BlockNumber(ctx)

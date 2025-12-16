@@ -89,7 +89,7 @@ func testBlockValidatorSimple(t *testing.T, opts Options) {
 	cleanup := builder.Build(t)
 	defer cleanup()
 
-	// Only authorize DAS keyset if we're using traditional DAS
+	// Only authorize AnyTrust keyset if we're using AnyTrust
 	if opts.daModeString != "onchain" && opts.daModeString != "referenceda" && anyTrustSignerKey != nil {
 		authorizeAnyTrustKeyset(t, ctx, anyTrustSignerKey, builder.L1Info, builder.L1.Client)
 	}
@@ -104,7 +104,7 @@ func testBlockValidatorSimple(t *testing.T, opts Options) {
 		validatorConfig.DA.ExternalProvider.RPC.URL = builder.referenceDAURL
 		validatorConfig.DA.AnyTrust.Enable = false
 	} else {
-		// For traditional DAS, copy DataAvailability configuration
+		// For AnyTrust, copy DataAvailability configuration
 		validatorConfig.DA.AnyTrust = l1NodeConfigA.DA.AnyTrust
 		validatorConfig.DA.AnyTrust.RPCAggregator.Enable = false
 	}

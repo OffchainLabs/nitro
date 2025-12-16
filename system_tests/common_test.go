@@ -2134,7 +2134,7 @@ func authorizeAnyTrustKeyset(
 	}
 	wr := bytes.NewBuffer([]byte{})
 	err := keyset.Serialize(wr)
-	Require(t, err, "unable to serialize DAS keyset")
+	Require(t, err, "unable to serialize AnyTrust keyset")
 	keysetBytes := wr.Bytes()
 
 	sequencerInboxABI, err := abi.JSON(strings.NewReader(bridgegen.SequencerInboxABI))
@@ -2187,17 +2187,17 @@ func setupConfigWithAnyTrust(
 	var dbPath string
 	var err error
 
-	enableFileStorage, enableDas := false, true
+	enableFileStorage, enableAnyTrust := false, true
 	switch daModeString {
 	case "files":
 		enableFileStorage = true
 		chainConfig = chaininfo.ArbitrumDevTestAnyTrustChainConfig()
 	case "onchain":
-		enableDas = false
+		enableAnyTrust = false
 	case "referenceda":
-		// For referenceda, we use the standard dev chain config (not DAS/AnyTrust)
+		// For referenceda, we use the standard dev chain config (not AnyTrust)
 		// chainConfig already initialized to ArbitrumDevTestChainConfig() above
-		enableDas = false // We'll use external referenceda provider instead of traditional DAS
+		enableAnyTrust = false // We'll use external referenceda provider instead of AnyTrust
 	default:
 		Fatal(t, "unknown storage type")
 	}
@@ -2206,7 +2206,7 @@ func setupConfigWithAnyTrust(
 	Require(t, err)
 
 	anyTrustConfig := anytrust.DefaultConfig
-	anyTrustConfig.Enable = enableDas
+	anyTrustConfig.Enable = enableAnyTrust
 	anyTrustConfig.Key.KeyDir = dbPath
 	anyTrustConfig.LocalFileStorage.Enable = enableFileStorage
 	anyTrustConfig.LocalFileStorage.DataDir = dbPath
