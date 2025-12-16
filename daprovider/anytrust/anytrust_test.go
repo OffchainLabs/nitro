@@ -39,7 +39,7 @@ func testAnyTrustStoreRetrieveMultipleInstances(t *testing.T, storageType string
 	Require(t, err)
 	defer lifecycleManager.StopAndWaitUntil(time.Second)
 	daWriter, err := NewSignAfterStoreWriter(firstCtx, config, storageService)
-	Require(t, err, "no das")
+	Require(t, err, "no AnyTrust writer")
 	var daReader anytrustutil.Reader = storageService
 
 	// #nosec G115
@@ -60,7 +60,7 @@ func testAnyTrustStoreRetrieveMultipleInstances(t *testing.T, storageType string
 	firstCancel()
 	time.Sleep(500 * time.Millisecond)
 
-	// 2nd das instance can read keys from disk
+	// 2nd AnyTrust instance can read keys from disk
 	secondCtx, secondCancel := context.WithCancel(context.Background())
 	defer secondCancel()
 
@@ -112,7 +112,7 @@ func testAnyTrustMissingMessage(t *testing.T, storageType string) {
 	Require(t, err)
 	defer lifecycleManager.StopAndWaitUntil(time.Second)
 	daWriter, err := NewSignAfterStoreWriter(ctx, config, storageService)
-	Require(t, err, "no das")
+	Require(t, err, "no AnyTrust writer")
 	var daReader anytrustutil.Reader = storageService
 
 	messageSaved := []byte("hello world")

@@ -107,21 +107,21 @@ func ConfigAddNodeOptions(prefix string, f *pflag.FlagSet) {
 }
 
 func ConfigAddServerOptions(prefix string, f *pflag.FlagSet) {
-	configAddOptions(prefix, f, roleDaserver)
+	configAddOptions(prefix, f, roleAnyTrustServer)
 }
 
 type role int
 
 const (
 	roleNode role = iota
-	roleDaserver
+	roleAnyTrustServer
 )
 
 func configAddOptions(prefix string, f *pflag.FlagSet, r role) {
 	f.Bool(prefix+".enable", DefaultConfig.Enable, "enable Anytrust Data Availability mode")
 	f.Bool(prefix+".panic-on-error", DefaultConfig.PanicOnError, "whether the Data Availability Service should fail immediately on errors (not recommended)")
 
-	if r == roleDaserver {
+	if r == roleAnyTrustServer {
 		f.Bool(prefix+".disable-signature-checking", DefaultConfig.DisableSignatureChecking, "disables signature checking on Data Availability Store requests (DANGEROUS, FOR TESTING ONLY)")
 
 		// Cache options

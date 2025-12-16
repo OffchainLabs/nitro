@@ -258,7 +258,7 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64) 
 					returned = 1
 				} else if int(storeFailures.Load()) > a.maxAllowedServiceStoreFailures {
 					cd := certDetails{}
-					cd.err = fmt.Errorf("aggregator failed to store message to at least %d out of %d DASes (assuming %d are honest). %w", a.requiredServicesForStore, len(a.services), a.config.AssumedHonest, anytrustutil.ErrBatchFailed)
+					cd.err = fmt.Errorf("aggregator failed to store message to at least %d out of %d AnyTrust backends (assuming %d are honest). %w", a.requiredServicesForStore, len(a.services), a.config.AssumedHonest, anytrustutil.ErrBatchFailed)
 					certDetailsChan <- cd
 					returned = 2
 				}
