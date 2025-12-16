@@ -15,7 +15,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/storage"
 )
 
-func TestMultiGasFeesCommitCurrentToLast(t *testing.T) {
+func TestMultiGasFeesCommitNextToCurrent(t *testing.T) {
 	sto := storage.NewMemoryBacked(burn.NewSystemBurner(nil, false))
 	baseFees := OpenMultiGasFees(sto)
 
@@ -23,23 +23,23 @@ func TestMultiGasFeesCommitCurrentToLast(t *testing.T) {
 		// #nosec G115 safe: NumResourceKind < 2^32
 		kind := multigas.ResourceKind(i)
 
-		cur, err := baseFees.GetCurrent(kind)
+		next, err := baseFees.GetNextBlockFee(kind)
 		require.NoError(t, err)
-		require.Zero(t, cur.Sign())
+		require.Zero(t, next.Sign())
 
-		last, err := baseFees.GetLast(kind)
+		current, err := baseFees.GetCurrentBlockFee(kind)
 		require.NoError(t, err)
-		require.Zero(t, last.Sign())
+		require.Zero(t, current.Sign())
 	}
 
 	for i := range int(multigas.NumResourceKind) {
 		// #nosec G115 safe: NumResourceKind < 2^32
 		kind := multigas.ResourceKind(i)
-		err := baseFees.SetCurrent(kind, big.NewInt(int64(i+1)))
+		err := baseFees.SetNextBlockFee(kind, big.NewInt(int64(i+1)))
 		require.NoError(t, err)
 	}
 
-	err := baseFees.CommitCurrentToLast()
+	err := baseFees.CommitNextToCurrent()
 	require.NoError(t, err)
 
 	// Re-open to ensure values are persisted.
@@ -49,29 +49,9 @@ func TestMultiGasFeesCommitCurrentToLast(t *testing.T) {
 		// #nosec G115 safe: NumResourceKind < 2^32
 		kind := multigas.ResourceKind(i)
 
-		cur, err := baseFees.GetCurrent(kind)
-		require.NoError(t, err)
-		require.Zero(t, cur.Sign())
-
-		last, err := baseFees.GetLast(kind)
+		current, err := baseFees.GetCurrentBlockFee(kind)
 		require.NoError(t, err)
 		expected := big.NewInt(int64(i + 1))
-		require.Zero(t, last.Cmp(expected))
-	}
-
-	err = baseFees.CommitCurrentToLast()
-	require.NoError(t, err)
-
-	for i := range int(multigas.NumResourceKind) {
-		// #nosec G115 safe: NumResourceKind < 2^32
-		kind := multigas.ResourceKind(i)
-
-		cur, err := baseFees.GetCurrent(kind)
-		require.NoError(t, err)
-		require.Zero(t, cur.Sign())
-
-		last, err := baseFees.GetLast(kind)
-		require.NoError(t, err)
-		require.Zero(t, last.Sign())
+		require.Zero(t, current.Cmp(expected))
 	}
 }

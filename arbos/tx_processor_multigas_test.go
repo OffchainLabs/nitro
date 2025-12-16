@@ -127,7 +127,7 @@ func TestEndTxHookMultiGasRefundNormalTx(t *testing.T) {
 		},
 	))
 	txProcessor.state.L2PricingState().UpdatePricingModel(100)
-	err := txProcessor.state.L2PricingState().CommitCurrentMultiGasFees()
+	err := txProcessor.state.L2PricingState().CommitMultiGasFees()
 	require.NoError(t, err)
 
 	baseFee, err := txProcessor.state.L2PricingState().BaseFeeWei()
@@ -200,7 +200,7 @@ func TestEndTxHookMultiGasRefundRetryableTx(t *testing.T) {
 		},
 	))
 	pricing.UpdatePricingModel(100)
-	err := txProcessor.state.L2PricingState().CommitCurrentMultiGasFees()
+	err := txProcessor.state.L2PricingState().CommitMultiGasFees()
 	require.NoError(t, err)
 
 	baseFee, err := pricing.BaseFeeWei()

@@ -12,14 +12,14 @@ import (
 )
 
 const (
-	currentBlockFeesOffset uint64 = iota * uint64(multigas.NumResourceKind)
-	lastBlockFeesOffset
+	nextBlockFeesOffset uint64 = iota * uint64(multigas.NumResourceKind)
+	currentBlockFeesOffset
 )
 
 // MultiGasFees tracks per–resource-kind base fees for current and last blocks.
 type MultiGasFees struct {
+	next    [multigas.NumResourceKind]storage.StorageBackedBigInt
 	current [multigas.NumResourceKind]storage.StorageBackedBigInt
-	last    [multigas.NumResourceKind]storage.StorageBackedBigInt
 }
 
 // OpenMultiGasFees opens or initializes base fees in the given storage subspace.
@@ -27,31 +27,31 @@ func OpenMultiGasFees(sto *storage.Storage) *MultiGasFees {
 	r := &MultiGasFees{}
 	for offset := range uint64(multigas.NumResourceKind) {
 		// #nosec G115 safe: NumResourceKind < 2^32
+		r.next[offset] = sto.OpenStorageBackedBigInt(nextBlockFeesOffset + offset)
 		r.current[offset] = sto.OpenStorageBackedBigInt(currentBlockFeesOffset + offset)
-		r.last[offset] = sto.OpenStorageBackedBigInt(lastBlockFeesOffset + offset)
 	}
 	return r
 }
 
-// GetLast returns the last-committed base fee for the given resource kind.
-func (bf *MultiGasFees) GetLast(kind multigas.ResourceKind) (*big.Int, error) {
-	return bf.last[kind].Get()
-}
-
-// GetCurrent returns the current-block base fee for the given resource kind.
-func (bf *MultiGasFees) GetCurrent(kind multigas.ResourceKind) (*big.Int, error) {
+// GetCurrentBlockFee returns the current-block base fee for the given resource kind.
+func (bf *MultiGasFees) GetCurrentBlockFee(kind multigas.ResourceKind) (*big.Int, error) {
 	return bf.current[kind].Get()
 }
 
-// SetCurrent sets the current-block base fee for the given resource kind.
-func (bf *MultiGasFees) SetCurrent(kind multigas.ResourceKind, v *big.Int) error {
-	return bf.current[kind].SetChecked(v)
+// GetNextBlockFee returns the next-block base fee for the given resource kind.
+func (bf *MultiGasFees) GetNextBlockFee(kind multigas.ResourceKind) (*big.Int, error) {
+	return bf.next[kind].Get()
 }
 
-// CommitCurrentToLast rotates current-block fees into last-block fees and clears current-block fees.
-func (bf *MultiGasFees) CommitCurrentToLast() error {
+// SetNextBlockFee sets the next-block base fee for the given resource kind.
+func (bf *MultiGasFees) SetNextBlockFee(kind multigas.ResourceKind, v *big.Int) error {
+	return bf.next[kind].SetChecked(v)
+}
+
+// CommitNextToCurrent rotates next-block fees into current-block fees.
+func (bf *MultiGasFees) CommitNextToCurrent() error {
 	for i := range int(multigas.NumResourceKind) {
-		cur, err := bf.current[i].Get()
+		cur, err := bf.next[i].Get()
 		if err != nil {
 			return err
 		}
@@ -59,13 +59,7 @@ func (bf *MultiGasFees) CommitCurrentToLast() error {
 			cur = big.NewInt(0)
 		}
 
-		// Set current to last.
-		if err := bf.last[i].SetChecked(cur); err != nil {
-			return err
-		}
-
-		// Zeroize current.
-		if err := bf.current[i].SetChecked(big.NewInt(0)); err != nil {
+		if err := bf.current[i].SetChecked(cur); err != nil {
 			return err
 		}
 	}
