@@ -107,7 +107,7 @@ type SecondNodeParams struct {
 	nodeConfig             *arbnode.Config
 	execConfig             *gethexec.Config
 	stackConfig            *node.Config
-	dasConfig              *anytrust.Config
+	anyTrustConfig         *anytrust.Config
 	initData               *statetransfer.ArbosInitializationInfo
 	addresses              *chaininfo.RollupAddresses
 	useExecutionClientOnly bool
@@ -1053,8 +1053,8 @@ func build2ndNode(
 	if params.nodeConfig == nil {
 		params.nodeConfig = arbnode.ConfigDefaultL1NonSequencerTest()
 	}
-	if params.dasConfig != nil {
-		params.nodeConfig.DA.AnyTrust = *params.dasConfig
+	if params.anyTrustConfig != nil {
+		params.nodeConfig.DA.AnyTrust = *params.anyTrustConfig
 	}
 	if params.stackConfig == nil {
 		params.stackConfig = firstNodeStackConfig
@@ -2121,16 +2121,16 @@ func requireClose(t *testing.T, s *node.Node, text ...interface{}) {
 func authorizeAnyTrustKeyset(
 	t *testing.T,
 	ctx context.Context,
-	dasSignerKey *blsSignatures.PublicKey,
+	anyTrustSignerKey *blsSignatures.PublicKey,
 	l1info info,
 	l1client *ethclient.Client,
 ) {
-	if dasSignerKey == nil {
+	if anyTrustSignerKey == nil {
 		return
 	}
 	keyset := &anytrustutil.DataAvailabilityKeyset{
 		AssumedHonest: 1,
-		PubKeys:       []blsSignatures.PublicKey{*dasSignerKey},
+		PubKeys:       []blsSignatures.PublicKey{*anyTrustSignerKey},
 	}
 	wr := bytes.NewBuffer([]byte{})
 	err := keyset.Serialize(wr)
@@ -2180,7 +2180,7 @@ func authorizeAnyTrustKeyset(
 }
 
 func setupConfigWithAnyTrust(
-	t *testing.T, ctx context.Context, dasModeString string,
+	t *testing.T, ctx context.Context, daModeString string,
 ) (*params.ChainConfig, *arbnode.Config, *anytrust.LifecycleManager, string, *blsSignatures.PublicKey) {
 	l1NodeConfigA := arbnode.ConfigDefaultL1Test()
 	chainConfig := chaininfo.ArbitrumDevTestChainConfig()
@@ -2188,7 +2188,7 @@ func setupConfigWithAnyTrust(
 	var err error
 
 	enableFileStorage, enableDas := false, true
-	switch dasModeString {
+	switch daModeString {
 	case "files":
 		enableFileStorage = true
 		chainConfig = chaininfo.ArbitrumDevTestDASChainConfig()
@@ -2202,17 +2202,17 @@ func setupConfigWithAnyTrust(
 		Fatal(t, "unknown storage type")
 	}
 	dbPath = t.TempDir()
-	dasSignerKey, _, err := anytrust.GenerateAndStoreKeys(dbPath)
+	anyTrustSignerKey, _, err := anytrust.GenerateAndStoreKeys(dbPath)
 	Require(t, err)
 
-	dasConfig := anytrust.DefaultConfig
-	dasConfig.Enable = enableDas
-	dasConfig.Key.KeyDir = dbPath
-	dasConfig.LocalFileStorage.Enable = enableFileStorage
-	dasConfig.LocalFileStorage.DataDir = dbPath
-	dasConfig.LocalFileStorage.MaxRetention = time.Hour * 24 * 30
-	dasConfig.PanicOnError = true
-	dasConfig.DisableSignatureChecking = true
+	anyTrustConfig := anytrust.DefaultConfig
+	anyTrustConfig.Enable = enableDas
+	anyTrustConfig.Key.KeyDir = dbPath
+	anyTrustConfig.LocalFileStorage.Enable = enableFileStorage
+	anyTrustConfig.LocalFileStorage.DataDir = dbPath
+	anyTrustConfig.LocalFileStorage.MaxRetention = time.Hour * 24 * 30
+	anyTrustConfig.PanicOnError = true
+	anyTrustConfig.DisableSignatureChecking = true
 
 	l1NodeConfigA.DA.AnyTrust = anytrust.DefaultConfig
 	var lifecycleManager *anytrust.LifecycleManager
@@ -2220,8 +2220,8 @@ func setupConfigWithAnyTrust(
 	var daWriter anytrustutil.Writer
 	var daHealthChecker anytrust.ServiceHealthChecker
 	var signatureVerifier *anytrust.SignatureVerifier
-	if dasModeString != "onchain" && dasModeString != "referenceda" {
-		daReader, daWriter, signatureVerifier, daHealthChecker, lifecycleManager, err = anytrust.CreateDAComponentsForAnyTrustServer(ctx, &dasConfig, nil, nil)
+	if daModeString != "onchain" && daModeString != "referenceda" {
+		daReader, daWriter, signatureVerifier, daHealthChecker, lifecycleManager, err = anytrust.CreateDAComponentsForAnyTrustServer(ctx, &anyTrustConfig, nil, nil)
 
 		Require(t, err)
 		rpcLis, err := net.Listen("tcp", "localhost:0")
@@ -2235,21 +2235,21 @@ func setupConfigWithAnyTrust(
 
 		beConfigA := anytrust.BackendConfig{
 			URL:    "http://" + rpcLis.Addr().String(),
-			Pubkey: blsPubToBase64(dasSignerKey),
+			Pubkey: blsPubToBase64(anyTrustSignerKey),
 		}
 		l1NodeConfigA.DA.AnyTrust.RPCAggregator = aggConfigForBackend(beConfigA)
 		l1NodeConfigA.DA.AnyTrust.Enable = true
 		l1NodeConfigA.DA.AnyTrust.RestAggregator = anytrust.DefaultRestfulClientAggregatorConfig
 		l1NodeConfigA.DA.AnyTrust.RestAggregator.Enable = true
 		l1NodeConfigA.DA.AnyTrust.RestAggregator.Urls = []string{"http://" + restLis.Addr().String()}
-	} else if dasModeString == "referenceda" {
+	} else if daModeString == "referenceda" {
 		// For referenceda mode, we'll use external provider
 		// The URL will be configured after the validator contract is deployed and server is created
 		l1NodeConfigA.DA.ExternalProvider.Enable = true
 		l1NodeConfigA.DA.AnyTrust.Enable = false
 	}
 
-	return chainConfig, l1NodeConfigA, lifecycleManager, dbPath, dasSignerKey
+	return chainConfig, l1NodeConfigA, lifecycleManager, dbPath, anyTrustSignerKey
 }
 
 // controllableWriter wraps a DA writer and can be controlled to return specific errors

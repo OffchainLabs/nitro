@@ -190,12 +190,12 @@ func compareAllMsgResultsFromConsensusAndExecution(
 	return lastResult
 }
 
-func testLyingSequencer(t *testing.T, dasModeStr string) {
+func testLyingSequencer(t *testing.T, daModeStr string) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	// The truthful sequencer
-	chainConfig, nodeConfigA, lifecycleManager, _, dasSignerKey := setupConfigWithAnyTrust(t, ctx, dasModeStr)
+	chainConfig, nodeConfigA, lifecycleManager, _, anyTrustSignerKey := setupConfigWithAnyTrust(t, ctx, daModeStr)
 	defer lifecycleManager.StopAndWaitUntil(time.Second)
 
 	nodeConfigA.BatchPoster.Enable = true
@@ -209,7 +209,7 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 
 	l2clientA := builder.L2.Client
 
-	authorizeAnyTrustKeyset(t, ctx, dasSignerKey, builder.L1Info, builder.L1.Client)
+	authorizeAnyTrustKeyset(t, ctx, anyTrustSignerKey, builder.L1Info, builder.L1.Client)
 
 	// The lying sequencer
 	nodeConfigC := arbnode.ConfigDefaultL1Test()
