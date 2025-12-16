@@ -8,7 +8,6 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"sync/atomic"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -16,7 +15,6 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/node"
-	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/rpcclient"
@@ -33,7 +31,7 @@ type ValidationClient struct {
 	client          *rpcclient.RpcClient
 	name            string
 	stylusArchs     []rawdb.WasmTarget
-	room            atomic.Int32
+	capacity        int
 	wasmModuleRoots []common.Hash
 }
 
@@ -46,12 +44,10 @@ func NewValidationClient(config rpcclient.ClientConfigFetcher, stack *node.Node)
 }
 
 func (c *ValidationClient) Launch(entry *validator.ValidationInput, moduleRoot common.Hash) validator.ValidationRun {
-	c.room.Add(-1)
 	promise := stopwaiter.LaunchPromiseThread[validator.GoGlobalState](c, func(ctx context.Context) (validator.GoGlobalState, error) {
 		input := server_api.ValidationInputToJson(entry)
 		var res validator.GoGlobalState
 		err := c.client.CallContext(ctx, &res, server_api.Namespace+"_validate", input, moduleRoot)
-		c.room.Add(1)
 		return res, err
 	})
 	return server_common.NewValRun(promise, moduleRoot)
@@ -70,12 +66,7 @@ func (c *ValidationClient) Start(ctx context.Context) error {
 	}
 	var stylusArchs []rawdb.WasmTarget
 	if err := c.client.CallContext(ctx, &stylusArchs, server_api.Namespace+"_stylusArchs"); err != nil {
-		var rpcError rpc.Error
-		ok := errors.As(err, &rpcError)
-		if !ok || rpcError.ErrorCode() != -32601 {
-			return fmt.Errorf("could not read stylus arch from server: %w", err)
-		}
-		stylusArchs = []rawdb.WasmTarget{rawdb.WasmTarget("pre-stylus")} // invalid, will fail if trying to validate block with stylus
+		return fmt.Errorf("could not read stylus arch from server: %w", err)
 	} else {
 		if len(stylusArchs) == 0 {
 			return fmt.Errorf("could not read stylus archs from validation server")
@@ -93,18 +84,21 @@ func (c *ValidationClient) Start(ctx context.Context) error {
 	if len(moduleRoots) == 0 {
 		return fmt.Errorf("server reported no wasmModuleRoots")
 	}
-	var room int
-	if err := c.client.CallContext(ctx, &room, server_api.Namespace+"_room"); err != nil {
-		return err
+	var spawnerCapacity int
+	if err := c.client.CallContext(ctx, &spawnerCapacity, server_api.Namespace+"_capacity"); err != nil {
+		// handle the forward compatibility case where the server doesn't have the capacity method
+		log.Warn("could not get capacity from validation server, use room method instead", "err", err)
+		if err := c.client.CallContext(ctx, &spawnerCapacity, server_api.Namespace+"_room"); err != nil {
+			return err
+		}
 	}
-	if room < 2 {
-		log.Warn("validation server not enough room, overriding to 2", "name", name, "room", room)
-		room = 2
+	if spawnerCapacity < 2 {
+		log.Warn("validation server not enough workers, overriding to 2", "name", name, "maxWorkers", spawnerCapacity)
+		spawnerCapacity = 2
 	} else {
-		log.Info("connected to validation server", "name", name, "room", room)
+		log.Info("connected to validation server", "name", name, "maxWorkers", spawnerCapacity)
 	}
-	// #nosec G115
-	c.room.Store(int32(room))
+	c.capacity = spawnerCapacity
 	c.wasmModuleRoots = moduleRoots
 	c.name = name
 	c.stylusArchs = stylusArchs
@@ -137,12 +131,8 @@ func (c *ValidationClient) Name() string {
 	return c.name
 }
 
-func (c *ValidationClient) Room() int {
-	room32 := c.room.Load()
-	if room32 < 0 {
-		return 0
-	}
-	return int(room32)
+func (c *ValidationClient) Capacity() int {
+	return c.capacity
 }
 
 type ExecutionClient struct {

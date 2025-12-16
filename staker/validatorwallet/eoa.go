@@ -39,6 +39,10 @@ func (w *EOA) Initialize(ctx context.Context) error {
 	return nil
 }
 
+func (w *EOA) InitializeAndCreateSCW(ctx context.Context) error {
+	return nil
+}
+
 func (w *EOA) Address() *common.Address {
 	return &w.auth.From
 }

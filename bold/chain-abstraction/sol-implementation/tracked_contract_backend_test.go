@@ -81,8 +81,8 @@ func Test_median(t *testing.T) {
 
 type MockContractBackend struct{}
 
-func (m *MockContractBackend) HeaderU64(ctx context.Context) (uint64, error) {
-	return 0, nil
+func (m *MockContractBackend) BalanceAt(ctx context.Context, account common.Address, blockNumber *big.Int) (*big.Int, error) {
+	return big.NewInt(1000000000), nil
 }
 
 func (m *MockContractBackend) ChainID(ctx context.Context) (*big.Int, error) {

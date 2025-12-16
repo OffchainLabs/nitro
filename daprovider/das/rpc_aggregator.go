@@ -5,7 +5,6 @@ package das
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,12 +14,8 @@ import (
 	"github.com/knadh/koanf"
 	"github.com/knadh/koanf/providers/confmap"
 
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/ethclient"
-
 	"github.com/offchainlabs/nitro/blsSignatures"
 	"github.com/offchainlabs/nitro/daprovider/das/dasutil"
-	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/util/metricsutil"
 	"github.com/offchainlabs/nitro/util/signature"
 )
@@ -76,28 +71,12 @@ func FixKeysetCLIParsing(path string, k *koanf.Koanf) error {
 	return nil
 }
 
-func NewRPCAggregator(ctx context.Context, config DataAvailabilityConfig, signer signature.DataSignerFunc) (*Aggregator, error) {
+func NewRPCAggregator(config DataAvailabilityConfig, signer signature.DataSignerFunc) (*Aggregator, error) {
 	services, err := ParseServices(config.RPCAggregator, signer)
 	if err != nil {
 		return nil, err
 	}
-	return NewAggregator(ctx, config, services)
-}
-
-func NewRPCAggregatorWithL1Info(config DataAvailabilityConfig, l1client *ethclient.Client, seqInboxAddress common.Address, signer signature.DataSignerFunc) (*Aggregator, error) {
-	services, err := ParseServices(config.RPCAggregator, signer)
-	if err != nil {
-		return nil, err
-	}
-	return NewAggregatorWithL1Info(config, services, l1client, seqInboxAddress)
-}
-
-func NewRPCAggregatorWithSeqInboxCaller(config DataAvailabilityConfig, seqInboxCaller *bridgegen.SequencerInboxCaller, signer signature.DataSignerFunc) (*Aggregator, error) {
-	services, err := ParseServices(config.RPCAggregator, signer)
-	if err != nil {
-		return nil, err
-	}
-	return NewAggregatorWithSeqInboxCaller(config, services, seqInboxCaller)
+	return newAggregator(config, services)
 }
 
 func ParseServices(config AggregatorConfig, signer signature.DataSignerFunc) ([]ServiceDetails, error) {
@@ -110,7 +89,9 @@ func ParseServices(config AggregatorConfig, signer signature.DataSignerFunc) ([]
 		}
 		metricName := metricsutil.CanonicalizeMetricName(url.Hostname())
 
-		service, err := NewDASRPCClient(b.URL, signer, config.MaxStoreChunkBodySize, config.EnableChunkedStore)
+		clientConfig := config.DASRPCClient
+		clientConfig.RPC.URL = b.URL
+		service, err := NewDASRPCClient(&clientConfig, signer)
 		if err != nil {
 			return nil, err
 		}

@@ -18,9 +18,11 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/rpc"
 
-	"github.com/offchainlabs/nitro/bold/chain-abstraction"
+	protocol "github.com/offchainlabs/nitro/bold/chain-abstraction"
 	"github.com/offchainlabs/nitro/bold/containers"
 )
+
+const FUSAKA_MAX_GAS = 1 << 24 // Fusaka hard fork adds a max cap for transactions of 2**24 gas.
 
 // ChainCommitter defines a type of chain backend that supports
 // committing changes via a direct method, such as a simulated backend
@@ -86,12 +88,10 @@ func (a *AssertionChain) transact(
 		return nil, errors.Wrapf(err, "gas estimation errored for tx with hash %s", containers.Trunc(tx.Hash().Bytes()))
 	}
 
-	// Now, we send the tx with the estimated gas.
-	defaultGasUint64, err := safecast.ToUint64(defaultBaseGas)
-	if err != nil {
-		return nil, errors.Wrap(err, "could not convert default base gas to uint64")
+	if gas >= FUSAKA_MAX_GAS {
+		return nil, errors.Errorf("gas estimation received from ethclient too high: %d >= %d", gas, FUSAKA_MAX_GAS)
 	}
-	opts.GasLimit = gas + defaultGasUint64
+	opts.GasLimit = gas
 	tx, err = a.transactor.SendTransaction(ctx, fn, opts, gas)
 	if err != nil {
 		return nil, err

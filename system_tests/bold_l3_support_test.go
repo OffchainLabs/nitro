@@ -21,11 +21,10 @@ import (
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
-	"github.com/offchainlabs/nitro/bold/chain-abstraction/sol-implementation"
-	"github.com/offchainlabs/nitro/bold/challenge-manager"
+	solimpl "github.com/offchainlabs/nitro/bold/chain-abstraction/sol-implementation"
+	challengemanager "github.com/offchainlabs/nitro/bold/challenge-manager"
 	modes "github.com/offchainlabs/nitro/bold/challenge-manager/types"
-	"github.com/offchainlabs/nitro/bold/layer2-state-provider"
-	"github.com/offchainlabs/nitro/bold/util"
+	l2stateprovider "github.com/offchainlabs/nitro/bold/layer2-state-provider"
 	"github.com/offchainlabs/nitro/solgen/go/challengeV2gen"
 	"github.com/offchainlabs/nitro/solgen/go/localgen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
@@ -41,7 +40,6 @@ func TestL3ChallengeProtocolBOLD(t *testing.T) {
 
 	// Block validation requires db hash scheme.
 	builder.execConfig.Caching.StateScheme = rawdb.HashScheme
-	builder.execConfig.RPC.StateScheme = rawdb.HashScheme
 	builder.nodeConfig.BlockValidator.Enable = true
 	builder.nodeConfig.Staker.Enable = true
 	builder.nodeConfig.Staker.Strategy = "MakeNodes"
@@ -54,7 +52,6 @@ func TestL3ChallengeProtocolBOLD(t *testing.T) {
 	defer cleanupL1AndL2()
 
 	builder.l3Config.execConfig.Caching.StateScheme = rawdb.HashScheme
-	builder.l3Config.execConfig.RPC.StateScheme = rawdb.HashScheme
 	builder.l3Config.nodeConfig.Staker.Enable = true
 	builder.l3Config.nodeConfig.BlockValidator.Enable = true
 	builder.l3Config.nodeConfig.Staker.Strategy = "MakeNodes"
@@ -217,6 +214,7 @@ func startL3BoldChallengeManager(t *testing.T, ctx context.Context, builder *Nod
 		node.ConsensusNode.InboxTracker,
 		node.ConsensusNode.TxStreamer,
 		node.ConsensusNode.InboxReader,
+		nil,
 	)
 	Require(t, err)
 
@@ -251,7 +249,7 @@ func startL3BoldChallengeManager(t *testing.T, ctx context.Context, builder *Nod
 		rawdb.NewTable(node.ConsensusNode.ArbDB, storage.StakerPrefix),
 		builder.L3.ConsensusNode.L1Reader,
 		&txOpts,
-		NewFetcherFromConfig(builder.nodeConfig),
+		NewCommonConfigFetcher(builder.nodeConfig),
 		node.ConsensusNode.SyncMonitor,
 		builder.L2Info.Signer.ChainID(),
 	)
@@ -262,7 +260,7 @@ func startL3BoldChallengeManager(t *testing.T, ctx context.Context, builder *Nod
 		builder.l3Addresses.Rollup,
 		chalManagerAddr,
 		&txOpts,
-		util.NewBackendWrapper(builder.L2.Client, rpc.LatestBlockNumber),
+		builder.L2.Client,
 		bold.NewDataPosterTransactor(dp),
 		solimpl.WithRpcHeadBlockNumber(rpc.LatestBlockNumber),
 	)

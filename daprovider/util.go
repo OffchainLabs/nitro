@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2025, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package daprovider
@@ -49,6 +49,8 @@ var (
 	ErrSeqMsgValidation      = errors.New("error validating recovered payload from batch")
 )
 
+// KeysetValidationMode controls validation of AnyTrust keysets.
+// Used by the DAS reader to verify keyset signatures.
 type KeysetValidationMode uint8
 
 const KeysetValidate KeysetValidationMode = 0
@@ -75,8 +77,12 @@ const BlobHashesHeaderFlag byte = L1AuthenticatedMessageHeaderFlag | 0x10 // 0x5
 // BrotliMessageHeaderByte indicates that the message is brotli-compressed.
 const BrotliMessageHeaderByte byte = 0
 
+// DACertificateMessageHeaderFlag indicates that this message uses a custom data availability system.
+// Anytrust uses the legacy TreeDASMessageHeaderFlag instead despite also having a certificate.
+const DACertificateMessageHeaderFlag byte = 0x01
+
 // KnownHeaderBits is all header bits with known meaning to this nitro version
-const KnownHeaderBits byte = DASMessageHeaderFlag | TreeDASMessageHeaderFlag | L1AuthenticatedMessageHeaderFlag | ZeroheavyMessageHeaderFlag | BlobHashesHeaderFlag | BrotliMessageHeaderByte
+const KnownHeaderBits byte = DASMessageHeaderFlag | TreeDASMessageHeaderFlag | L1AuthenticatedMessageHeaderFlag | ZeroheavyMessageHeaderFlag | BlobHashesHeaderFlag | DACertificateMessageHeaderFlag
 
 var DefaultDASRetentionPeriod time.Duration = time.Hour * 24 * 15
 
@@ -103,6 +109,10 @@ func IsZeroheavyEncodedHeaderByte(header byte) bool {
 
 func IsBlobHashesHeaderByte(header byte) bool {
 	return hasBits(header, BlobHashesHeaderFlag)
+}
+
+func IsDACertificateMessageHeaderByte(header byte) bool {
+	return header == DACertificateMessageHeaderFlag
 }
 
 func IsBrotliMessageHeaderByte(b uint8) bool {

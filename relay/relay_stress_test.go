@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
@@ -44,7 +46,7 @@ func (r *DummyUpStream) Start(ctx context.Context) error {
 	return nil
 }
 
-func (r *DummyUpStream) PopulateFeedBacklogByNumber(ctx context.Context, backlogSize, l2MsgSize int) {
+func (r *DummyUpStream) PopulateFeedBacklogByNumber(t *testing.T, backlogSize, l2MsgSize int) {
 	was := r.broadcaster.GetCachedMessageCount()
 	var seqNums []arbutil.MessageIndex
 	for i := was; i < was+backlogSize; i++ {
@@ -64,7 +66,8 @@ func (r *DummyUpStream) PopulateFeedBacklogByNumber(ctx context.Context, backlog
 		}
 		messages = append(messages, broadcastMessage)
 	}
-	r.broadcaster.BroadcastFeedMessages(messages)
+	err := r.broadcaster.BroadcastFeedMessages(messages)
+	require.NoError(t, err)
 	waitForBacklog(r.broadcaster, was, was+backlogSize)
 }
 
@@ -113,7 +116,7 @@ func largeBacklogRelayTestImpl(t *testing.T, numClients, backlogSize, l2MsgSize 
 		t.Fatalf("error starting relay's broadcast client %v", err)
 	}
 	defer upStream.StopOnly()
-	upStream.PopulateFeedBacklogByNumber(ctx, backlogSize, l2MsgSize)
+	upStream.PopulateFeedBacklogByNumber(t, backlogSize, l2MsgSize)
 
 	relayConfig := &ConfigDefault
 	relayConfig.Node.Feed.Input.URL = []string{"ws://127.0.0.1:" + upStreamPort}

@@ -28,7 +28,7 @@ import (
 	"github.com/offchainlabs/nitro/bold/challenge-manager"
 	"github.com/offchainlabs/nitro/bold/challenge-manager/types"
 	"github.com/offchainlabs/nitro/bold/layer2-state-provider"
-	"github.com/offchainlabs/nitro/bold/util"
+	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/solgen/go/challengeV2gen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/staker"
@@ -37,6 +37,7 @@ import (
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
+	"github.com/offchainlabs/nitro/validator/proofenhancement"
 )
 
 var (
@@ -195,7 +196,7 @@ type BOLDStaker struct {
 	blockValidator     *staker.BlockValidator
 	rollupAddress      common.Address
 	l1Reader           *headerreader.HeaderReader
-	client             *util.BackendWrapper
+	client             protocol.ChainBackend
 	callOpts           bind.CallOpts
 	wallet             legacystaker.ValidatorWalletInterface
 	stakedNotifiers    []legacystaker.LatestStakedNotifier
@@ -223,13 +224,21 @@ func NewBOLDStaker(
 	inboxTracker staker.InboxTrackerInterface,
 	inboxStreamer staker.TransactionStreamerInterface,
 	inboxReader staker.InboxReaderInterface,
+	dapRegistry *daprovider.DAProviderRegistry,
 	fatalErr chan<- error,
 ) (*BOLDStaker, error) {
 	if err := config.Validate(); err != nil {
 		return nil, err
 	}
-	wrappedClient := util.NewBackendWrapper(l1Reader.Client(), rpc.LatestBlockNumber)
-	manager, err := newBOLDChallengeManager(ctx, stack, rollupAddress, txOpts, l1Reader, wrappedClient, blockValidator, statelessBlockValidator, config, strategy, dataPoster, inboxTracker, inboxStreamer, inboxReader)
+
+	// Create proof enhancer if registry is available
+	var proofEnhancer proofenhancement.ProofEnhancer
+	if dapRegistry != nil {
+		proofEnhancer = proofenhancement.NewCustomDAProofEnhancer(dapRegistry, inboxTracker, inboxReader)
+	}
+
+	l1reader := l1Reader.Client()
+	manager, err := newBOLDChallengeManager(ctx, stack, rollupAddress, txOpts, l1Reader, l1reader, blockValidator, statelessBlockValidator, config, strategy, dataPoster, inboxTracker, inboxStreamer, inboxReader, proofEnhancer)
 	if err != nil {
 		return nil, err
 	}
@@ -240,7 +249,7 @@ func NewBOLDStaker(
 		blockValidator:     blockValidator,
 		rollupAddress:      rollupAddress,
 		l1Reader:           l1Reader,
-		client:             wrappedClient,
+		client:             l1reader,
 		callOpts:           callOpts,
 		wallet:             wallet,
 		stakedNotifiers:    stakedNotifiers,
@@ -462,6 +471,7 @@ func newBOLDChallengeManager(
 	inboxTracker staker.InboxTrackerInterface,
 	inboxStreamer staker.TransactionStreamerInterface,
 	inboxReader staker.InboxReaderInterface,
+	proofEnhancer proofenhancement.ProofEnhancer,
 ) (*challengemanager.Manager, error) {
 	// Initializes the BOLD contract bindings and the assertion chain abstraction.
 	rollupBindings, err := rollupgen.NewRollupUserLogic(rollupAddress, client)
@@ -555,6 +565,7 @@ func newBOLDChallengeManager(
 		inboxTracker,
 		inboxStreamer,
 		inboxReader,
+		proofEnhancer,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("could not create state manager: %w", err)

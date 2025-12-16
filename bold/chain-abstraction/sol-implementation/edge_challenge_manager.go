@@ -167,7 +167,7 @@ func (e *specEdge) UpperChild(ctx context.Context) (option.Option[protocol.EdgeI
 	if err != nil {
 		return option.None[protocol.EdgeId](), err
 	}
-	if edge.LowerChildId == ([32]byte{}) {
+	if edge.UpperChildId == ([32]byte{}) {
 		return option.None[protocol.EdgeId](), nil
 	}
 	return option.Some(protocol.EdgeId{

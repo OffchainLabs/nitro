@@ -6,6 +6,7 @@ package main
 import (
 	"golang.org/x/tools/go/analysis/multichecker"
 
+	"github.com/offchainlabs/nitro/linters/jsonneverempty"
 	"github.com/offchainlabs/nitro/linters/koanf"
 	"github.com/offchainlabs/nitro/linters/namedfieldsinit"
 	"github.com/offchainlabs/nitro/linters/pointercheck"
@@ -20,5 +21,6 @@ func main() {
 		pointercheck.Analyzer,
 		rightshift.Analyzer,
 		structinit.Analyzer,
+		jsonneverempty.Analyzer,
 	)
 }

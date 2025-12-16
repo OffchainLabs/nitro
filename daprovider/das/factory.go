@@ -120,7 +120,7 @@ func CreateDAReaderAndWriter(
 	// Done checking config requirements
 
 	var daWriter dasutil.DASWriter
-	daWriter, err := NewRPCAggregator(ctx, *config, dataSigner)
+	daWriter, err := NewRPCAggregator(*config, dataSigner)
 	if err != nil {
 		return nil, nil, nil, nil, err
 	}
@@ -211,30 +211,30 @@ func CreateDAComponentsForDaserver(
 	var signatureVerifier *SignatureVerifier
 
 	if config.Key.KeyDir != "" || config.Key.PrivKey != "" {
-		var seqInboxCaller *bridgegen.SequencerInboxCaller
-		if seqInboxAddress != nil {
-			seqInbox, err := bridgegen.NewSequencerInbox(*seqInboxAddress, (*l1Reader).Client())
-			if err != nil {
-				return nil, nil, nil, nil, nil, err
-			}
-
-			seqInboxCaller = &seqInbox.SequencerInboxCaller
-		}
-		if config.DisableSignatureChecking {
-			seqInboxCaller = nil
-		}
-
 		daWriter, err = NewSignAfterStoreDASWriter(ctx, *config, storageService)
 		if err != nil {
 			return nil, nil, nil, nil, nil, err
 		}
 
-		signatureVerifier, err = NewSignatureVerifierWithSeqInboxCaller(
-			seqInboxCaller,
-			config.ExtraSignatureCheckingPublicKey,
-		)
-		if err != nil {
-			return nil, nil, nil, nil, nil, err
+		// Only create SignatureVerifier if signature checking is enabled
+		if !config.DisableSignatureChecking {
+			var seqInboxCaller *bridgegen.SequencerInboxCaller
+			if seqInboxAddress != nil {
+				seqInbox, err := bridgegen.NewSequencerInbox(*seqInboxAddress, (*l1Reader).Client())
+				if err != nil {
+					return nil, nil, nil, nil, nil, err
+				}
+
+				seqInboxCaller = &seqInbox.SequencerInboxCaller
+			}
+
+			signatureVerifier, err = NewSignatureVerifierWithSeqInboxCaller(
+				seqInboxCaller,
+				config.ExtraSignatureCheckingPublicKey,
+			)
+			if err != nil {
+				return nil, nil, nil, nil, nil, err
+			}
 		}
 	}
 

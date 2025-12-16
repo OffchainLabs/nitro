@@ -21,10 +21,16 @@ type DataAvailabilityServiceHealthChecker interface {
 	HealthCheck(ctx context.Context) error
 }
 
+// This specifically refers to AnyTrust DA Config and will be moved/renamed in future.
+// lint:require-exhaustive-initialization
 type DataAvailabilityConfig struct {
 	Enable bool `koanf:"enable"`
 
 	RequestTimeout time.Duration `koanf:"request-timeout"`
+
+	// MaxBatchSize is the maximum batch size for AnyTrust DA. The batch poster
+	// queries this value when building batches to determine the size limit.
+	MaxBatchSize int `koanf:"max-batch-size"`
 
 	LocalCache CacheConfig `koanf:"local-cache"`
 	RedisCache RedisConfig `koanf:"redis-cache"`
@@ -38,22 +44,49 @@ type DataAvailabilityConfig struct {
 	RPCAggregator  AggregatorConfig              `koanf:"rpc-aggregator"`
 	RestAggregator RestfulClientAggregatorConfig `koanf:"rest-aggregator"`
 
-	ParentChainNodeURL              string `koanf:"parent-chain-node-url"`
-	ParentChainConnectionAttempts   int    `koanf:"parent-chain-connection-attempts"`
-	SequencerInboxAddress           string `koanf:"sequencer-inbox-address"`
 	ExtraSignatureCheckingPublicKey string `koanf:"extra-signature-checking-public-key"`
 
 	PanicOnError             bool `koanf:"panic-on-error"`
 	DisableSignatureChecking bool `koanf:"disable-signature-checking"`
 }
 
+// DefaultDataAvailabilityConfig includes defaults for daserver-specific fields.
+// For arbnode, use DefaultDataAvailabilityConfigForNode instead.
 var DefaultDataAvailabilityConfig = DataAvailabilityConfig{
-	RequestTimeout:                5 * time.Second,
-	Enable:                        false,
-	RestAggregator:                DefaultRestfulClientAggregatorConfig,
-	RPCAggregator:                 DefaultAggregatorConfig,
-	ParentChainConnectionAttempts: 15,
-	PanicOnError:                  false,
+	Enable:                          false,
+	RequestTimeout:                  5 * time.Second,
+	MaxBatchSize:                    1_000_000, // 1MB default
+	LocalCache:                      DefaultCacheConfig,
+	RedisCache:                      DefaultRedisConfig,
+	LocalFileStorage:                DefaultLocalFileStorageConfig,
+	S3Storage:                       DefaultS3StorageServiceConfig,
+	GoogleCloudStorage:              DefaultGoogleCloudStorageServiceConfig,
+	Key:                             DefaultKeyConfig,
+	RPCAggregator:                   DefaultAggregatorConfig,
+	RestAggregator:                  DefaultRestfulClientAggregatorConfig,
+	ExtraSignatureCheckingPublicKey: "",
+	PanicOnError:                    false,
+	DisableSignatureChecking:        false,
+}
+
+// DefaultDataAvailabilityConfigForNode only sets defaults for fields with CLI
+// flags in node mode. daserver-specific fields (caches, storage) are left at
+// zero values since they have no pflags registered in node mode.
+var DefaultDataAvailabilityConfigForNode = DataAvailabilityConfig{
+	Enable:                          false,
+	RequestTimeout:                  5 * time.Second,
+	MaxBatchSize:                    1_000_000, // 1MB default
+	LocalCache:                      CacheConfig{},
+	RedisCache:                      RedisConfig{},
+	LocalFileStorage:                LocalFileStorageConfig{},
+	S3Storage:                       S3StorageServiceConfig{},
+	GoogleCloudStorage:              GoogleCloudStorageServiceConfig{},
+	Key:                             KeyConfig{},
+	RPCAggregator:                   DefaultAggregatorConfig,
+	RestAggregator:                  DefaultRestfulClientAggregatorConfig,
+	ExtraSignatureCheckingPublicKey: "",
+	PanicOnError:                    false,
+	DisableSignatureChecking:        false,
 }
 
 func OptionalAddressFromString(s string) (*common.Address, error) {
@@ -110,14 +143,11 @@ func dataAvailabilityConfigAddOptions(prefix string, f *pflag.FlagSet, r role) {
 		// These are only for batch poster
 		AggregatorConfigAddOptions(prefix+".rpc-aggregator", f)
 		f.Duration(prefix+".request-timeout", DefaultDataAvailabilityConfig.RequestTimeout, "Data Availability Service timeout duration for Store requests")
+		f.Int(prefix+".max-batch-size", DefaultDataAvailabilityConfig.MaxBatchSize, "maximum batch size for AnyTrust DA (compressed)")
 	}
 
 	// Both the Nitro node and daserver can use these options.
 	RestfulClientAggregatorConfigAddOptions(prefix+".rest-aggregator", f)
-
-	f.String(prefix+".parent-chain-node-url", DefaultDataAvailabilityConfig.ParentChainNodeURL, "URL for parent chain node, only used in standalone daserver and daprovider; when running as part of a node that node's L1 configuration is used")
-	f.Int(prefix+".parent-chain-connection-attempts", DefaultDataAvailabilityConfig.ParentChainConnectionAttempts, "parent chain RPC connection attempts (spaced out at least 1 second per attempt, 0 to retry infinitely), only used in standalone daserver; when running as part of a node that node's parent chain configuration is used")
-	f.String(prefix+".sequencer-inbox-address", DefaultDataAvailabilityConfig.SequencerInboxAddress, "parent chain address of SequencerInbox contract")
 }
 
 func GetL1Client(ctx context.Context, maxConnectionAttempts int, l1URL string) (*ethclient.Client, error) {

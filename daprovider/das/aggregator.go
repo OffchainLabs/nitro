@@ -14,16 +14,15 @@ import (
 
 	"github.com/spf13/pflag"
 
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 
 	"github.com/offchainlabs/nitro/blsSignatures"
 	"github.com/offchainlabs/nitro/daprovider/das/dastree"
 	"github.com/offchainlabs/nitro/daprovider/das/dasutil"
-	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
+	"github.com/offchainlabs/nitro/daprovider/data_streaming"
 	"github.com/offchainlabs/nitro/util/pretty"
+	"github.com/offchainlabs/nitro/util/rpcclient"
 )
 
 const metricBase string = "arb/das/rpc/aggregator/store"
@@ -37,18 +36,20 @@ var (
 )
 
 type AggregatorConfig struct {
-	Enable                bool              `koanf:"enable"`
-	AssumedHonest         int               `koanf:"assumed-honest"`
-	Backends              BackendConfigList `koanf:"backends"`
-	MaxStoreChunkBodySize int               `koanf:"max-store-chunk-body-size"`
-	EnableChunkedStore    bool              `koanf:"enable-chunked-store"`
+	Enable        bool               `koanf:"enable"`
+	AssumedHonest int                `koanf:"assumed-honest"`
+	Backends      BackendConfigList  `koanf:"backends"`
+	DASRPCClient  DASRPCClientConfig `koanf:"das-rpc-client"`
 }
 
 var DefaultAggregatorConfig = AggregatorConfig{
-	AssumedHonest:         0,
-	Backends:              nil,
-	MaxStoreChunkBodySize: 512 * 1024,
-	EnableChunkedStore:    true,
+	AssumedHonest: 0,
+	Backends:      nil,
+	DASRPCClient: DASRPCClientConfig{
+		EnableChunkedStore: true,
+		DataStream:         data_streaming.DefaultDataStreamerConfig(DefaultDataStreamRpcMethods),
+		RPC:                rpcclient.DefaultClientConfig,
+	},
 }
 
 var parsedBackendsConf BackendConfigList
@@ -57,8 +58,7 @@ func AggregatorConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultAggregatorConfig.Enable, "enable storage of sequencer batch data from a list of RPC endpoints; this should only be used by the batch poster and not in combination with other DAS storage types")
 	f.Int(prefix+".assumed-honest", DefaultAggregatorConfig.AssumedHonest, "Number of assumed honest backends (H). If there are N backends, K=N+1-H valid responses are required to consider an Store request to be successful.")
 	f.Var(&parsedBackendsConf, prefix+".backends", "JSON RPC backend configuration. This can be specified on the command line as a JSON array, eg: [{\"url\": \"...\", \"pubkey\": \"...\"},...], or as a JSON array in the config file.")
-	f.Int(prefix+".max-store-chunk-body-size", DefaultAggregatorConfig.MaxStoreChunkBodySize, "maximum HTTP POST body size to use for individual batch chunks, including JSON RPC overhead and an estimated overhead of 512B of headers")
-	f.Bool(prefix+".enable-chunked-store", DefaultAggregatorConfig.EnableChunkedStore, "enable data to be sent to DAS in chunks instead of all at once")
+	DASRPCClientConfigAddOptions(prefix+".das-rpc-client", f)
 }
 
 type Aggregator struct {
@@ -96,41 +96,9 @@ func NewServiceDetails(service dasutil.DASWriter, pubKey blsSignatures.PublicKey
 	}, nil
 }
 
-func NewAggregator(ctx context.Context, config DataAvailabilityConfig, services []ServiceDetails) (*Aggregator, error) {
-	if config.ParentChainNodeURL == "none" {
-		return NewAggregatorWithSeqInboxCaller(config, services, nil)
-	}
-	l1client, err := GetL1Client(ctx, config.ParentChainConnectionAttempts, config.ParentChainNodeURL)
-	if err != nil {
-		return nil, err
-	}
-	seqInboxAddress, err := OptionalAddressFromString(config.SequencerInboxAddress)
-	if err != nil {
-		return nil, err
-	}
-	if seqInboxAddress == nil {
-		return NewAggregatorWithSeqInboxCaller(config, services, nil)
-	}
-	return NewAggregatorWithL1Info(config, services, l1client, *seqInboxAddress)
-}
-
-func NewAggregatorWithL1Info(
+func newAggregator(
 	config DataAvailabilityConfig,
 	services []ServiceDetails,
-	l1client *ethclient.Client,
-	seqInboxAddress common.Address,
-) (*Aggregator, error) {
-	seqInboxCaller, err := bridgegen.NewSequencerInboxCaller(seqInboxAddress, l1client)
-	if err != nil {
-		return nil, err
-	}
-	return NewAggregatorWithSeqInboxCaller(config, services, seqInboxCaller)
-}
-
-func NewAggregatorWithSeqInboxCaller(
-	config DataAvailabilityConfig,
-	services []ServiceDetails,
-	seqInboxCaller *bridgegen.SequencerInboxCaller,
 ) (*Aggregator, error) {
 
 	// #nosec G115

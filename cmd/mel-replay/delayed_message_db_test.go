@@ -22,7 +22,7 @@ func TestReadDelayedMessage(t *testing.T) {
 	t.Run("message index out of range", func(t *testing.T) {
 		db := &delayedMessageDatabase{}
 		state := &mel.State{
-			DelayedMessagedSeen: 5,
+			DelayedMessagesSeen: 5,
 		}
 		_, err := db.ReadDelayedMessage(ctx, state, 5)
 		require.ErrorContains(t, err, "index 5 out of range, total delayed messages seen: 5")
@@ -40,7 +40,7 @@ func TestReadDelayedMessage(t *testing.T) {
 		resolver := &mockPreimageResolver{preimages: preimages}
 		db := &delayedMessageDatabase{preimageResolver: resolver}
 		state := &mel.State{
-			DelayedMessagedSeen:     1,
+			DelayedMessagesSeen:     1,
 			DelayedMessagesSeenRoot: root,
 		}
 
@@ -69,7 +69,7 @@ func TestReadDelayedMessage(t *testing.T) {
 		resolver := &mockPreimageResolver{preimages: preimages}
 		db := &delayedMessageDatabase{preimageResolver: resolver}
 		state := &mel.State{
-			DelayedMessagedSeen:     2,
+			DelayedMessagesSeen:     2,
 			DelayedMessagesSeenRoot: root,
 		}
 
@@ -102,7 +102,7 @@ func TestReadDelayedMessage(t *testing.T) {
 		resolver := &mockPreimageResolver{preimages: preimages}
 		db := &delayedMessageDatabase{preimageResolver: resolver}
 		state := &mel.State{
-			DelayedMessagedSeen:     3,
+			DelayedMessagesSeen:     3,
 			DelayedMessagesSeenRoot: root,
 		}
 

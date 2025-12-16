@@ -17,6 +17,8 @@ import (
 
 	"github.com/offchainlabs/nitro/blsSignatures"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
+	"github.com/offchainlabs/nitro/daprovider/data_streaming"
+	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
@@ -31,8 +33,6 @@ func blsPubToBase64(pubkey *blsSignatures.PublicKey) string {
 const sendChunkJSONBoilerplate = "{\"jsonrpc\":\"2.0\",\"id\":4294967295,\"method\":\"das_sendChunked\",\"params\":[\"\"]}"
 
 func testRpcImpl(t *testing.T, size, times int, concurrent bool) {
-	// enableLogging()
-
 	ctx := context.Background()
 	lis, err := net.Listen("tcp", "localhost:0")
 	testhelpers.RequireImpl(t, err)
@@ -41,18 +41,11 @@ func testRpcImpl(t *testing.T, size, times int, concurrent bool) {
 	pubkey, _, err := GenerateAndStoreKeys(keyDir)
 	testhelpers.RequireImpl(t, err)
 
-	config := DataAvailabilityConfig{
-		Enable: true,
-		Key: KeyConfig{
-			KeyDir: keyDir,
-		},
-		LocalFileStorage: LocalFileStorageConfig{
-			Enable:  true,
-			DataDir: dataDir,
-		},
-		ParentChainNodeURL: "none",
-		RequestTimeout:     5 * time.Second,
-	}
+	config := DefaultDataAvailabilityConfig
+	config.Enable = true
+	config.Key.KeyDir = keyDir
+	config.LocalFileStorage.Enable = true
+	config.LocalFileStorage.DataDir = dataDir
 
 	storageService, lifecycleManager, err := CreatePersistentStorageService(ctx, &config)
 	testhelpers.RequireImpl(t, err)
@@ -81,23 +74,21 @@ func testRpcImpl(t *testing.T, size, times int, concurrent bool) {
 	}}
 
 	testhelpers.RequireImpl(t, err)
-	aggConf := DataAvailabilityConfig{
-		RPCAggregator: AggregatorConfig{
-			AssumedHonest:         1,
-			Backends:              beConfigs,
-			MaxStoreChunkBodySize: (chunkSize * 2) + len(sendChunkJSONBoilerplate),
-			EnableChunkedStore:    true,
-		},
-		RequestTimeout: time.Minute,
-	}
-	rpcAgg, err := NewRPCAggregatorWithSeqInboxCaller(aggConf, nil, signer)
+	aggConf := DefaultDataAvailabilityConfig
+	aggConf.RPCAggregator.AssumedHonest = 1
+	aggConf.RPCAggregator.Backends = beConfigs
+	aggConf.RPCAggregator.DASRPCClient.EnableChunkedStore = true
+	aggConf.RPCAggregator.DASRPCClient.DataStream = data_streaming.TestDataStreamerConfig(DefaultDataStreamRpcMethods)
+	aggConf.RPCAggregator.DASRPCClient.RPC = rpcclient.TestClientConfig
+	aggConf.RequestTimeout = time.Minute
+	rpcAgg, err := NewRPCAggregator(aggConf, signer)
 	testhelpers.RequireImpl(t, err)
 
 	var wg sync.WaitGroup
 	runStore := func() {
 		defer wg.Done()
 		msg := testhelpers.RandomizeSlice(make([]byte, size))
-		cert, err := rpcAgg.Store(ctx, msg, 0)
+		cert, err := rpcAgg.Store(ctx, msg, testhelpers.RandomUint64(0, uint64(defaultStorageRetention.Seconds()))) // we use random timeouts as a random nonce to differentiate between request signatures to avoid replay-protection issues
 		testhelpers.RequireImpl(t, err)
 
 		retrievedMessage, err := storageService.GetByHash(ctx, cert.DataHash)
@@ -120,7 +111,7 @@ func testRpcImpl(t *testing.T, size, times int, concurrent bool) {
 	wg.Wait()
 }
 
-const chunkSize = 512 * 1024
+const chunkSize = (data_streaming.TestHttpBodyLimit - len(sendChunkJSONBoilerplate)) / 2
 
 func TestRPCStore(t *testing.T) {
 	for _, tc := range []struct {
