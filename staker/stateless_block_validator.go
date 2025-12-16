@@ -346,7 +346,7 @@ func (v *StatelessBlockValidator) readFullBatch(ctx context.Context, batchNum ui
 		} else {
 			// No reader found for this header byte - check if it's a known type
 			if daprovider.IsAnyTrustMessageHeaderByte(headerByte) {
-				log.Error("No DAS Reader configured for DAS message", "headerByte", fmt.Sprintf("0x%02x", headerByte))
+				log.Error("No AnyTrust Reader configured for AnyTrust message", "headerByte", fmt.Sprintf("0x%02x", headerByte))
 			} else if daprovider.IsBlobHashesHeaderByte(headerByte) {
 				log.Error("No Blob Reader configured for blob message", "headerByte", fmt.Sprintf("0x%02x", headerByte))
 			} else if daprovider.IsDACertificateMessageHeaderByte(headerByte) {

@@ -62,9 +62,9 @@ var DefaultSimpleExploreExploitStrategyConfig = SimpleExploreExploitStrategyConf
 }
 
 func RestfulClientAggregatorConfigAddOptions(prefix string, f *pflag.FlagSet) {
-	f.Bool(prefix+".enable", DefaultRestfulClientAggregatorConfig.Enable, "enable retrieval of sequencer batch data from a list of remote REST endpoints; if other DAS storage types are enabled, this mode is used as a fallback")
-	f.StringSlice(prefix+".urls", DefaultRestfulClientAggregatorConfig.Urls, "list of URLs including 'http://' or 'https://' prefixes and port numbers to REST DAS endpoints; additive with the online-url-list option")
-	f.String(prefix+".online-url-list", DefaultRestfulClientAggregatorConfig.OnlineUrlList, "a URL to a list of URLs of REST das endpoints that is checked at startup; additive with the url option")
+	f.Bool(prefix+".enable", DefaultRestfulClientAggregatorConfig.Enable, "enable retrieval of sequencer batch data from a list of remote REST endpoints; if other AnyTrust storage types are enabled, this mode is used as a fallback")
+	f.StringSlice(prefix+".urls", DefaultRestfulClientAggregatorConfig.Urls, "list of URLs including 'http://' or 'https://' prefixes and port numbers to REST AnyTrust endpoints; additive with the online-url-list option")
+	f.String(prefix+".online-url-list", DefaultRestfulClientAggregatorConfig.OnlineUrlList, "a URL to a list of URLs of REST AnyTrust endpoints that is checked at startup; additive with the url option")
 	f.Duration(prefix+".online-url-list-fetch-interval", DefaultRestfulClientAggregatorConfig.OnlineUrlListFetchInterval, "time interval to periodically fetch url list from online-url-list")
 	f.String(prefix+".strategy", DefaultRestfulClientAggregatorConfig.Strategy, "strategy to use to determine order and parallelism of calling REST endpoint URLs; valid options are 'simple-explore-exploit'")
 	f.Duration(prefix+".strategy-update-interval", DefaultRestfulClientAggregatorConfig.StrategyUpdateInterval, "how frequently to update the strategy with endpoint latency and error rate data")
@@ -241,7 +241,7 @@ func (a *SimpleReaderAggregator) GetByHash(ctx context.Context, hash common.Hash
 		}
 	}
 
-	return nil, fmt.Errorf("data wasn't able to be retrieved from any DAS Reader: %v", errorCollection)
+	return nil, fmt.Errorf("data wasn't able to be retrieved from any AnyTrust Reader: %v", errorCollection)
 }
 
 func (a *SimpleReaderAggregator) tryGetByHash(

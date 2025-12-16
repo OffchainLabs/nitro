@@ -198,7 +198,7 @@ type RESTClientGetByHashConfig struct {
 
 func parseRESTClientGetByHashConfig(args []string) (*RESTClientGetByHashConfig, error) {
 	f := pflag.NewFlagSet("datool client retrieve", pflag.ContinueOnError)
-	f.String("url", "http://localhost:9877", "URL of DAS server to connect to.")
+	f.String("url", "http://localhost:9877", "URL of AnyTrust server to connect to.")
 	f.String("data-hash", "", "hash of the message to retrieve, if starts with '0x' it's treated as hex encoded, otherwise base64 encoded")
 
 	k, err := confighelpers.BeginCommonParse(f, args)

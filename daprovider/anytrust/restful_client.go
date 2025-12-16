@@ -25,7 +25,7 @@ type RestfulClient struct {
 }
 
 func (c *RestfulClient) String() string {
-	return fmt.Sprintf("Restful DAS client for %s", c.url)
+	return fmt.Sprintf("Restful AnyTrust client for %s", c.url)
 }
 
 func NewRestfulClient(protocol string, host string, port int) *RestfulClient {

@@ -53,8 +53,8 @@ func (c *KeyConfig) BLSPrivKey() (blsSignatures.PrivateKey, error) {
 var DefaultKeyConfig = KeyConfig{}
 
 func KeyConfigAddOptions(prefix string, f *pflag.FlagSet) {
-	f.String(prefix+".key-dir", DefaultKeyConfig.KeyDir, fmt.Sprintf("the directory to read the bls keypair ('%s' and '%s') from; if using any of the DAS storage types exactly one of key-dir or priv-key must be specified", DefaultPubKeyFilename, DefaultPrivKeyFilename))
-	f.String(prefix+".priv-key", DefaultKeyConfig.PrivKey, "the base64 BLS private key to use for signing DAS certificates; if using any of the DAS storage types exactly one of key-dir or priv-key must be specified")
+	f.String(prefix+".key-dir", DefaultKeyConfig.KeyDir, fmt.Sprintf("the directory to read the bls keypair ('%s' and '%s') from; if using any of the AnyTrust storage types exactly one of key-dir or priv-key must be specified", DefaultPubKeyFilename, DefaultPrivKeyFilename))
+	f.String(prefix+".priv-key", DefaultKeyConfig.PrivKey, "the base64 BLS private key to use for signing AnyTrust certificates; if using any of the AnyTrust storage types exactly one of key-dir or priv-key must be specified")
 }
 
 // SignAfterStoreWriter provides AnyTrust signature functionality over a StorageService
@@ -81,7 +81,7 @@ func NewSignAfterStoreWriter(ctx context.Context, config Config, storageService 
 	if err != nil {
 		return nil, err
 	}
-	log.Info("DAS public key used for signing", "key", hexutil.Encode(blsSignatures.PublicKeyToBytes(publicKey)))
+	log.Info("AnyTrust public key used for signing", "key", hexutil.Encode(blsSignatures.PublicKeyToBytes(publicKey)))
 
 	keyset := &anytrustutil.DataAvailabilityKeyset{
 		AssumedHonest: 1,

@@ -55,7 +55,7 @@ func StartRPCServer(ctx context.Context, addr string, portNum uint64, rpcServerT
 
 func StartRPCServerOnListener(ctx context.Context, listener net.Listener, rpcServerTimeouts genericconf.HTTPServerTimeoutConfig, rpcServerBodyLimit int, daReader anytrustutil.Reader, daWriter anytrustutil.Writer, daHealthChecker ServiceHealthChecker, signatureVerifier *SignatureVerifier) (*http.Server, error) {
 	if daWriter == nil {
-		return nil, errors.New("No writer backend was configured for DAS RPC server. Has the BLS signing key been set up (--data-availability.key.key-dir or --data-availability.key.priv-key options)?")
+		return nil, errors.New("No writer backend was configured for AnyTrust RPC server. Has the BLS signing key been set up (--data-availability.key.key-dir or --data-availability.key.priv-key options)?")
 	}
 	rpcServer := rpc.NewServer()
 	if legacyDASStoreAPIOnly {

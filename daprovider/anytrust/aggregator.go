@@ -56,7 +56,7 @@ var DefaultAggregatorConfig = AggregatorConfig{
 var parsedBackendsConf BackendConfigList
 
 func AggregatorConfigAddOptions(prefix string, f *pflag.FlagSet) {
-	f.Bool(prefix+".enable", DefaultAggregatorConfig.Enable, "enable storage of sequencer batch data from a list of RPC endpoints; this should only be used by the batch poster and not in combination with other DAS storage types")
+	f.Bool(prefix+".enable", DefaultAggregatorConfig.Enable, "enable storage of sequencer batch data from a list of RPC endpoints; this should only be used by the batch poster and not in combination with other AnyTrust storage types")
 	f.Int(prefix+".assumed-honest", DefaultAggregatorConfig.AssumedHonest, "Number of assumed honest backends (H). If there are N backends, K=N+1-H valid responses are required to consider an Store request to be successful.")
 	f.Var(&parsedBackendsConf, prefix+".backends", "JSON RPC backend configuration. This can be specified on the command line as a JSON array, eg: [{\"url\": \"...\", \"pubkey\": \"...\"},...], or as a JSON array in the config file.")
 	RPCClientConfigAddOptions(prefix+".rpc-client", f)
@@ -167,7 +167,7 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64) 
 			cert, err := d.service.Store(storeCtx, message, timeout)
 			if err != nil {
 				incFailureMetric()
-				log.Warn("DAS Aggregator failed to store batch to backend", "backend", d.metricName, "err", err)
+				log.Warn("AnyTrust Aggregator failed to store batch to backend", "backend", d.metricName, "err", err)
 				responses <- storeResponse{d, nil, err}
 				return
 			}
@@ -177,13 +177,13 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64) 
 			)
 			if err != nil {
 				incFailureMetric()
-				log.Warn("DAS Aggregator couldn't parse backend's store response signature", "backend", d.metricName, "err", err)
+				log.Warn("AnyTrust Aggregator couldn't parse backend's store response signature", "backend", d.metricName, "err", err)
 				responses <- storeResponse{d, nil, err}
 				return
 			}
 			if !verified {
 				incFailureMetric()
-				log.Warn("DAS Aggregator failed to verify backend's store response signature", "backend", d.metricName, "err", err)
+				log.Warn("AnyTrust Aggregator failed to verify backend's store response signature", "backend", d.metricName, "err", err)
 				responses <- storeResponse{d, nil, errors.New("signature verification failed")}
 				return
 			}
@@ -192,13 +192,13 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64) 
 
 			if cert.DataHash != expectedHash {
 				incFailureMetric()
-				log.Warn("DAS Aggregator got a store response with a data hash not matching the expected hash", "backend", d.metricName, "dataHash", cert.DataHash, "expectedHash", expectedHash, "err", err)
+				log.Warn("AnyTrust Aggregator got a store response with a data hash not matching the expected hash", "backend", d.metricName, "dataHash", cert.DataHash, "expectedHash", expectedHash, "err", err)
 				responses <- storeResponse{d, nil, errors.New("hash verification failed")}
 				return
 			}
 			if cert.Timeout != timeout {
 				incFailureMetric()
-				log.Warn("DAS Aggregator got a store response with any expiry time not matching the expected expiry time", "backend", d.metricName, "dataHash", cert.DataHash, "expectedHash", expectedHash, "err", err)
+				log.Warn("AnyTrust Aggregator got a store response with an expiry time not matching the expected expiry time", "backend", d.metricName, "dataHash", cert.DataHash, "expectedHash", expectedHash, "err", err)
 				responses <- storeResponse{d, nil, fmt.Errorf("timeout was %d, expected %d", cert.Timeout, timeout)}
 				return
 			}

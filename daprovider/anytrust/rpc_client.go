@@ -54,7 +54,7 @@ type RPCClientConfig struct {
 }
 
 func RPCClientConfigAddOptions(prefix string, f *pflag.FlagSet) {
-	f.Bool(prefix+".enable-chunked-store", true, "enable data to be sent to DAS in chunks instead of all at once")
+	f.Bool(prefix+".enable-chunked-store", true, "enable data to be sent to AnyTrust in chunks instead of all at once")
 	data_streaming.DataStreamerConfigAddOptions(prefix+".data-stream", f, DefaultDataStreamRpcMethods)
 	rpcclient.RPCClientAddOptions(prefix+".rpc", f, &rpcclient.DefaultClientConfig)
 }
@@ -78,7 +78,7 @@ func NewRPCClient(config *RPCClientConfig, signer signature.DataSignerFunc) (*RP
 
 	clnt, err := rpc.Dial(config.RPC.URL)
 	if err != nil {
-		log.Error("Failed to dial DAS RPC server", "url", config.RPC.URL, "err", err)
+		log.Error("Failed to dial AnyTrust RPC server", "url", config.RPC.URL, "err", err)
 		return nil, err
 	}
 
@@ -93,7 +93,7 @@ func NewRPCClient(config *RPCClientConfig, signer signature.DataSignerFunc) (*RP
 		}, nil)
 		err := rpcClient.Start(context.Background())
 		if err != nil {
-			log.Error("Failed to start DAS RPC client", "url", config.RPC.URL, "err", err)
+			log.Error("Failed to start AnyTrust RPC client", "url", config.RPC.URL, "err", err)
 			return nil, err
 		}
 
@@ -126,14 +126,14 @@ func (c *RPCClient) Store(ctx context.Context, message []byte, timeout uint64) (
 	}()
 
 	if c.dataStreamer == nil {
-		log.Debug("Legacy store is being force-used by the DAS client", "url", c.url)
+		log.Debug("Legacy store is being force-used by the AnyTrust client", "url", c.url)
 		return c.legacyStore(ctx, message, timeout)
 	}
 
 	storeResult, err := c.dataStreamer.StreamData(ctx, message, timeout)
 	if err != nil {
 		if strings.Contains(err.Error(), "the method das_startChunkedStore does not exist") {
-			log.Info("Legacy store is used by the DAS client", "url", c.url)
+			log.Info("Legacy store is used by the AnyTrust client", "url", c.url)
 			return c.legacyStore(ctx, message, timeout)
 		}
 		return nil, err
