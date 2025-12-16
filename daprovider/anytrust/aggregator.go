@@ -87,7 +87,7 @@ func (s *ServiceDetails) String() string {
 
 func NewServiceDetails(service anytrustutil.Writer, pubKey blsSignatures.PublicKey, signersMask uint64, metricName string) (*ServiceDetails, error) {
 	if bits.OnesCount64(signersMask) != 1 {
-		return nil, fmt.Errorf("tried to configure backend DAS %v with invalid signersMask %X", service, signersMask)
+		return nil, fmt.Errorf("tried to configure backend AnyTrust service %v with invalid signersMask %X", service, signersMask)
 	}
 	return &ServiceDetails{
 		service:     service,
@@ -125,9 +125,9 @@ type storeResponse struct {
 	err     error
 }
 
-// Store calls Store on each backend DAS in parallel and collects responses.
+// Store calls Store on each backend AnyTrust service in parallel and collects responses.
 // If there were at least K responses then it aggregates the signatures and
-// signersMasks from each DAS together into the DataAvailabilityCertificate
+// signersMasks from each service together into the DataAvailabilityCertificate
 // then Store returns immediately. If there were any backend Store subroutines
 // that were still running when Aggregator.Store returns, they are allowed to
 // continue running until the context is canceled (eg via TimeoutWrapper),

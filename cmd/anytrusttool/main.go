@@ -247,7 +247,7 @@ func startRESTClientGetByHash(args []string) error {
 	return nil
 }
 
-// das keygen
+// anytrust keygen
 
 type KeyGenConfig struct {
 	Dir string
@@ -350,7 +350,7 @@ func parseDumpKeyset(args []string) (*DumpKeysetConfig, error) {
 	return &config, nil
 }
 
-// das keygen
+// anytrust keygen
 
 type DumpKeysetConfig struct {
 	Keyset anytrust.AggregatorConfig `koanf:"keyset"`

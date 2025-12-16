@@ -331,7 +331,7 @@ func (v *StatelessBlockValidator) readFullBatch(ctx context.Context, batchNum ui
 			promise := dapReader.CollectPreimages(batchNum, batchBlockHash, postedData)
 			result, err := promise.Await(ctx)
 			if err != nil {
-				// Matches the way keyset validation was done inside DAS readers i.e logging the error
+				// Matches the way keyset validation was done inside AnyTrust readers i.e logging the error
 				//  But other daproviders might just want to return the error
 				if daprovider.IsAnyTrustMessageHeaderByte(headerByte) && strings.Contains(err.Error(), daprovider.ErrSeqMsgValidation.Error()) {
 					log.Error(err.Error())

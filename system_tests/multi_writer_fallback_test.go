@@ -33,7 +33,7 @@ func TestMultiWriterFailure_CustomDAShutdownWithAnyTrustAvailable(t *testing.T) 
 
 	// 1. Setup L1 chain and contracts
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
-	builder.chainConfig = chaininfo.ArbitrumDevTestDASChainConfig()
+	builder.chainConfig = chaininfo.ArbitrumDevTestAnyTrustChainConfig()
 	builder.parallelise = false
 
 	// Deploy ReferenceDA validator contract
@@ -288,7 +288,7 @@ func TestMultiWriterFailure_AnyTrustShutdownFallbackDisabled(t *testing.T) {
 
 	// 1. Setup L1 chain and contracts
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
-	builder.chainConfig = chaininfo.ArbitrumDevTestDASChainConfig()
+	builder.chainConfig = chaininfo.ArbitrumDevTestAnyTrustChainConfig()
 	builder.parallelise = false
 
 	builder.BuildL1(t)
@@ -417,7 +417,7 @@ func TestMultiWriterFallback_CustomDAToAnyTrustExplicit(t *testing.T) {
 
 	// 1. Setup L1 chain and contracts
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
-	builder.chainConfig = chaininfo.ArbitrumDevTestDASChainConfig()
+	builder.chainConfig = chaininfo.ArbitrumDevTestAnyTrustChainConfig()
 	builder.parallelise = false
 
 	// Deploy ReferenceDA validator contract
@@ -879,7 +879,7 @@ func TestMultiWriterFallback_AnyTrustToCalldataOnBackendFailure(t *testing.T) {
 
 	// 1. Setup L1 chain and contracts
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
-	builder.chainConfig = chaininfo.ArbitrumDevTestDASChainConfig()
+	builder.chainConfig = chaininfo.ArbitrumDevTestAnyTrustChainConfig()
 	builder.parallelise = false
 
 	builder.BuildL1(t)

@@ -50,7 +50,7 @@ var (
 )
 
 // KeysetValidationMode controls validation of AnyTrust keysets.
-// Used by the DAS reader to verify keyset signatures.
+// Used by the AnyTrust reader to verify keyset signatures.
 type KeysetValidationMode uint8
 
 const KeysetValidate KeysetValidationMode = 0
@@ -61,7 +61,7 @@ const KeysetDontValidate KeysetValidationMode = 2
 // which will retrieve the full batch data.
 const AnyTrustMessageHeaderFlag byte = 0x80
 
-// AnyTrustTreeMessageHeaderFlag indicates that this DAS certificate data employs the new merkelization strategy.
+// AnyTrustTreeMessageHeaderFlag indicates that this AnyTrust certificate data employs the new merkelization strategy.
 // Ignored when AnyTrustMessageHeaderFlag is not set.
 const AnyTrustTreeMessageHeaderFlag byte = 0x08
 

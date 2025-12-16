@@ -198,7 +198,7 @@ func startMetrics(cfg *DAServerConfig) error {
 }
 
 func startup() error {
-	// Some different defaults to DAS config in a node.
+	// Some different defaults to AnyTrust config in a node.
 	anytrust.DefaultConfig.Enable = true
 
 	serverConfig, err := parseDAServer(os.Args[1:])

@@ -2191,7 +2191,7 @@ func setupConfigWithAnyTrust(
 	switch daModeString {
 	case "files":
 		enableFileStorage = true
-		chainConfig = chaininfo.ArbitrumDevTestDASChainConfig()
+		chainConfig = chaininfo.ArbitrumDevTestAnyTrustChainConfig()
 	case "onchain":
 		enableDas = false
 	case "referenceda":

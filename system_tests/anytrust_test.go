@@ -178,7 +178,7 @@ func TestAnyTrustComplexConfigAndRestMirror(t *testing.T) {
 
 	// Setup L1 chain and contracts
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
-	builder.chainConfig = chaininfo.ArbitrumDevTestDASChainConfig()
+	builder.chainConfig = chaininfo.ArbitrumDevTestAnyTrustChainConfig()
 	builder.BuildL1(t)
 
 	arbSys, _ := precompilesgen.NewArbSys(types.ArbSysAddress, builder.L1.Client)

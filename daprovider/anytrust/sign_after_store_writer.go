@@ -57,7 +57,7 @@ func KeyConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".priv-key", DefaultKeyConfig.PrivKey, "the base64 BLS private key to use for signing DAS certificates; if using any of the DAS storage types exactly one of key-dir or priv-key must be specified")
 }
 
-// SignAfterStoreWriter provides DAS signature functionality over a StorageService
+// SignAfterStoreWriter provides AnyTrust signature functionality over a StorageService
 // by adapting DataAvailabilityServiceWriter.Store(...) to StorageService.Put(...).
 // There are two different signature functionalities it provides:
 //
