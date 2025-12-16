@@ -24,7 +24,7 @@ import (
 	"github.com/offchainlabs/nitro/util/testhelpers/flag"
 )
 
-func TestDAS_BasicAggregationLocal(t *testing.T) {
+func TestAnyTrust_BasicAggregationLocal(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -264,7 +264,7 @@ func initTest(t *testing.T) int {
 	return runs
 }
 
-func TestDAS_LessThanHStorageFailures(t *testing.T) {
+func TestAnyTrust_LessThanHStorageFailures(t *testing.T) {
 	runs := initTest(t)
 
 	for i := 0; i < min(runs, 20); i++ {
@@ -275,7 +275,7 @@ func TestDAS_LessThanHStorageFailures(t *testing.T) {
 	}
 }
 
-func TestDAS_AtLeastHStorageFailures(t *testing.T) {
+func TestAnyTrust_AtLeastHStorageFailures(t *testing.T) {
 	runs := initTest(t)
 	for i := 0; i < min(runs, 10); i++ {
 		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
@@ -285,7 +285,7 @@ func TestDAS_AtLeastHStorageFailures(t *testing.T) {
 	}
 }
 
-func TestDAS_InsufficientBackendsTriggersFallback(t *testing.T) {
+func TestAnyTrust_InsufficientBackendsTriggersFallback(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 

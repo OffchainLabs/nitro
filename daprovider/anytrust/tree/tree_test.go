@@ -16,7 +16,7 @@ import (
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
-func TestDASTree(t *testing.T) {
+func TestAnyTrustTree(t *testing.T) {
 	store := make(map[bytes32][]byte)
 	tests := [][]byte{
 		{}, {0x32}, crypto.Keccak256(),

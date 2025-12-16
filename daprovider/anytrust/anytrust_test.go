@@ -14,7 +14,7 @@ import (
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
-func testDASStoreRetrieveMultipleInstances(t *testing.T, storageType string) {
+func testAnyTrustStoreRetrieveMultipleInstances(t *testing.T, storageType string) {
 	firstCtx, firstCancel := context.WithCancel(context.Background())
 
 	dbPath := t.TempDir()
@@ -82,11 +82,11 @@ func testDASStoreRetrieveMultipleInstances(t *testing.T, storageType string) {
 	}
 }
 
-func TestDASStoreRetrieveMultipleInstancesFiles(t *testing.T) {
-	testDASStoreRetrieveMultipleInstances(t, "files")
+func TestAnyTrustStoreRetrieveMultipleInstancesFiles(t *testing.T) {
+	testAnyTrustStoreRetrieveMultipleInstances(t, "files")
 }
 
-func testDASMissingMessage(t *testing.T, storageType string) {
+func testAnyTrustMissingMessage(t *testing.T, storageType string) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -138,8 +138,8 @@ func testDASMissingMessage(t *testing.T, storageType string) {
 	}
 }
 
-func TestDASMissingMessageFiles(t *testing.T) {
-	testDASMissingMessage(t, "files")
+func TestAnyTrustMissingMessageFiles(t *testing.T) {
+	testAnyTrustMissingMessage(t, "files")
 }
 
 func Require(t *testing.T, err error, printables ...interface{}) {

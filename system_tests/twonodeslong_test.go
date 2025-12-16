@@ -190,6 +190,6 @@ func TestTwoNodesLong(t *testing.T) {
 	testTwoNodesLong(t, "onchain")
 }
 
-func TestTwoNodesLongLocalDAS(t *testing.T) {
+func TestTwoNodesLongLocalAnyTrust(t *testing.T) {
 	testTwoNodesLong(t, "files")
 }

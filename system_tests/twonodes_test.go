@@ -67,6 +67,6 @@ func TestTwoNodesSimple(t *testing.T) {
 	testTwoNodesSimple(t, "onchain")
 }
 
-func TestTwoNodesSimpleLocalDAS(t *testing.T) {
+func TestTwoNodesSimpleLocalAnyTrust(t *testing.T) {
 	testTwoNodesSimple(t, "files")
 }

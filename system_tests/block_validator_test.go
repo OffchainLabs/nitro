@@ -376,7 +376,7 @@ func TestBlockValidatorSimpleOnchainWithRedisStreams(t *testing.T) {
 	testBlockValidatorSimple(t, opts)
 }
 
-func TestBlockValidatorSimpleLocalDAS(t *testing.T) {
+func TestBlockValidatorSimpleLocalAnyTrust(t *testing.T) {
 	opts := Options{
 		dasModeString: "files",
 		workloadLoops: 1,

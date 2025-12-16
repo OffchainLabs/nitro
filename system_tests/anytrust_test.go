@@ -105,7 +105,7 @@ func aggConfigForBackend(backendConfig anytrust.BackendConfig) anytrust.Aggregat
 	}
 }
 
-func TestDASRekey(t *testing.T) {
+func TestAnyTrustRekey(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -172,7 +172,7 @@ func TestDASRekey(t *testing.T) {
 	checkBatchPosting(t, ctx, builder.L1.Client, builder.L2.Client, builder.L1Info, builder.L2Info, big.NewInt(2e12), l2B.Client)
 }
 
-func TestDASComplexConfigAndRestMirror(t *testing.T) {
+func TestAnyTrustComplexConfigAndRestMirror(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 

@@ -332,7 +332,7 @@ func TestLyingSequencer(t *testing.T) {
 	testLyingSequencer(t, "onchain")
 }
 
-func TestLyingSequencerLocalDAS(t *testing.T) {
+func TestLyingSequencerLocalAnyTrust(t *testing.T) {
 	testLyingSequencer(t, "files")
 }
 
