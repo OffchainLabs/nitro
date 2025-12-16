@@ -150,6 +150,12 @@ func extractMessagesImpl(
 		}
 		state.DelayedMessagesSeen += 1
 	}
+	if len(delayedMessages) > 0 {
+		// Only need to calculate partials once, after all the delayed messages are `seen`
+		if err := state.GenerateDelayedMessagesSeenMerklePartialsAndRoot(); err != nil {
+			return nil, nil, nil, nil, err
+		}
+	}
 
 	// Batch posting reports are included in the same transaction as a batch, so there should
 	// always be the same number of reports as there are batches.

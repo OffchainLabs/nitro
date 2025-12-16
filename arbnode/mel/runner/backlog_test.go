@@ -110,7 +110,7 @@ func TestDelayedMessageBacklogInitialization(t *testing.T) {
 	require.NoError(t, err)
 	newDelayedMessageBacklog, err := mel.NewDelayedMessageBacklog(100, func() (uint64, error) { return 0, nil })
 	require.NoError(t, err)
-	require.NoError(t, InitializeDelayedMessageBacklog(ctx, newDelayedMessageBacklog, melDb, newState, func(context.Context) (uint64, error) { return 7, nil }))
+	require.NoError(t, InitializeDelayedMessageBacklog(ctx, newDelayedMessageBacklog, melDb, newState, func() (uint64, error) { return 7, nil }))
 	// Notice that instead of having seenUnread list from delayed index 13 to 25 inclusive we will have it from 7 to 25 as only till block=7 the chain has finalized and that block has DelayedMessagesRead=7
 	require.True(t, newDelayedMessageBacklog.Len() == 19)
 	newState.SetDelayedMessageBacklog(newDelayedMessageBacklog)

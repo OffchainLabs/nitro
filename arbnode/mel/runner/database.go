@@ -70,16 +70,7 @@ func (d *Database) setHeadMelStateBlockNum(batch ethdb.KeyValueWriter, parentCha
 }
 
 func (d *Database) GetHeadMelStateBlockNum() (uint64, error) {
-	parentChainBlockNumberBytes, err := d.db.Get(schema.HeadMelStateBlockNumKey)
-	if err != nil {
-		return 0, err
-	}
-	var parentChainBlockNumber uint64
-	err = rlp.DecodeBytes(parentChainBlockNumberBytes, &parentChainBlockNumber)
-	if err != nil {
-		return 0, err
-	}
-	return parentChainBlockNumber, nil
+	return read.Value[uint64](d.db, schema.HeadMelStateBlockNumKey)
 }
 
 func (d *Database) State(ctx context.Context, parentChainBlockNumber uint64) (*mel.State, error) {
@@ -116,13 +107,8 @@ func (d *Database) SaveBatchMetas(ctx context.Context, state *mel.State, batchMe
 }
 
 func (d *Database) fetchBatchMetadata(seqNum uint64) (*mel.BatchMetadata, error) {
-	key := read.Key(schema.MelSequencerBatchMetaPrefix, seqNum)
-	batchMetadataBytes, err := d.db.Get(key)
+	batchMetadata, err := read.Value[mel.BatchMetadata](d.db, read.Key(schema.MelSequencerBatchMetaPrefix, seqNum))
 	if err != nil {
-		return nil, err
-	}
-	var batchMetadata mel.BatchMetadata
-	if err = rlp.DecodeBytes(batchMetadataBytes, &batchMetadata); err != nil {
 		return nil, err
 	}
 	return &batchMetadata, nil
