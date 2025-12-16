@@ -31,14 +31,14 @@ import (
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
-// Data availability check is done to as to make sure that the data that is being stored by DAS is available at all time.
-// This done by taking the latest stored hash and an old stored hash (12 days) and it is checked if these two hashes are
-// present across all the DAS provided in the list, if a DAS does not have these hashes an error is thrown.
+// Data availability check is done to make sure that data stored by AnyTrust nodes is available at all times.
+// This is done by taking the latest stored hash and an old stored hash (12 days) and checking if these two hashes are
+// present across all the AnyTrust nodes provided in the list. If a node does not have these hashes, an error is thrown.
 // This approach does not guarantee 100% data availability, but it's an efficient and easy heuristic for our use case.
 //
-// This can be used in following manner (not an exhaustive list)
+// This can be used in the following manner (not an exhaustive list)
 // 1. Continuously call the function by exposing a REST API and create alert if error is returned.
-// 2. Call the function in an adhoc manner to check if the provided DAS is live and functioning properly.
+// 2. Call the function in an adhoc manner to check if the provided AnyTrust node is live and functioning properly.
 
 const metricBaseOldHash = "arb/das/dataavailability/oldhash/"
 const metricBaseNewHash = "arb/das/dataavailability/oldhash/"
@@ -106,7 +106,7 @@ func newDataAvailabilityCheck(ctx context.Context, dataAvailabilityCheckConfig *
 
 func parseDataAvailabilityCheckConfig(args []string) (*DataAvailabilityCheckConfig, error) {
 	f := pflag.NewFlagSet("dataavailabilitycheck", pflag.ContinueOnError)
-	f.String("online-url-list", DefaultDataAvailabilityCheckConfig.OnlineUrlList, "a URL to a list of URLs of REST das endpoints that is checked for data availability")
+	f.String("online-url-list", DefaultDataAvailabilityCheckConfig.OnlineUrlList, "a URL to a list of URLs of REST AnyTrust endpoints that is checked for data availability")
 	f.String("l1-node-url", DefaultDataAvailabilityCheckConfig.L1NodeURL, "URL for L1 node")
 	f.Int("l1-connection-attempts", DefaultDataAvailabilityCheckConfig.L1ConnectionAttempts, "layer 1 RPC connection attempts (spaced out at least 1 second per attempt, 0 to retry infinitely)")
 	f.String("sequencer-inbox-address", DefaultDataAvailabilityCheckConfig.SequencerInboxAddress, "L1 address of SequencerInbox contract")
@@ -184,17 +184,17 @@ func (d *DataAvailabilityCheck) checkDataAvailabilityForNewHashInBlockRange(ctx 
 			return err
 		}
 		for _, deliveredLog := range logs {
-			isDasMessage, err := d.checkDataAvailability(ctx, deliveredLog, metricBaseNewHash)
+			isAnyTrustMessage, err := d.checkDataAvailability(ctx, deliveredLog, metricBaseNewHash)
 			if err != nil {
 				return err
 			}
-			if isDasMessage {
+			if isAnyTrustMessage {
 				return nil
 			}
 		}
 		currentBlock = currentBlock - d.config.L1BlocksPerRead
 	}
-	return fmt.Errorf("no das message found between block %d and block %d", latestBlock, oldBlock)
+	return fmt.Errorf("no AnyTrust message found between block %d and block %d", latestBlock, oldBlock)
 }
 
 func (d *DataAvailabilityCheck) checkDataAvailabilityForOldHashInBlockRange(ctx context.Context, oldBlock uint64, latestBlock uint64) error {
@@ -211,20 +211,20 @@ func (d *DataAvailabilityCheck) checkDataAvailabilityForOldHashInBlockRange(ctx 
 			return err
 		}
 		for _, deliveredLog := range logs {
-			isDasMessage, err := d.checkDataAvailability(ctx, deliveredLog, metricBaseOldHash)
+			isAnyTrustMessage, err := d.checkDataAvailability(ctx, deliveredLog, metricBaseOldHash)
 			if err != nil {
 				return err
 			}
-			if isDasMessage {
+			if isAnyTrustMessage {
 				return nil
 			}
 		}
 		currentBlock = currentBlock + d.config.L1BlocksPerRead
 	}
-	return fmt.Errorf("no das message found between block %d and block %d", oldBlock, latestBlock)
+	return fmt.Errorf("no AnyTrust message found between block %d and block %d", oldBlock, latestBlock)
 }
 
-// Tries to find if DAS message is present in the given log and if present
+// Tries to find if AnyTrust message is present in the given log and if present
 // returns true and validates if the data is available in the storage service.
 func (d *DataAvailabilityCheck) checkDataAvailability(ctx context.Context, deliveredLog types.Log, metricBase string) (bool, error) {
 	deliveredEvent, err := d.inboxContract.ParseSequencerBatchDelivered(deliveredLog)
@@ -255,7 +255,7 @@ func (d *DataAvailabilityCheck) checkDataAvailability(ctx context.Context, deliv
 		}
 	}
 	if len(dataNotFound) > 0 {
-		return true, fmt.Errorf("data with hash: %s not found for das:%s", common.Hash(cert.DataHash).String(), dataNotFound)
+		return true, fmt.Errorf("data with hash: %s not found for AnyTrust nodes: %s", common.Hash(cert.DataHash).String(), dataNotFound)
 	}
 	return true, nil
 }
