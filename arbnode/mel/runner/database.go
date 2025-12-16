@@ -70,7 +70,7 @@ func (d *Database) setHeadMelStateBlockNum(batch ethdb.KeyValueWriter, parentCha
 }
 
 func (d *Database) GetHeadMelStateBlockNum() (uint64, error) {
-	return schema.Value[uint64](d.db, schema.HeadMelStateBlockNumKey)
+	return read.Value[uint64](d.db, schema.HeadMelStateBlockNumKey)
 }
 
 func (d *Database) State(ctx context.Context, parentChainBlockNumber uint64) (*mel.State, error) {
