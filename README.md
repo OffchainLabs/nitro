@@ -24,7 +24,6 @@ See the live docs-site [here](https://developer.arbitrum.io/) (or [here](https:/
 
 See [here](https://docs.arbitrum.io/audit-reports) for security audit reports.
 
-
 ## Running a Local Nitro Node (December 2025)
 
 Stylus is enabled by default in recent releases. Docker and Docker Compose are required for most setups.
@@ -38,6 +37,8 @@ git clone -b release --recurse-submodules https://github.com/OffchainLabs/nitro-
 cd nitro-testnode
 ./test-node.bash --init   # First time (downloads images, initializes chain)
 ./test-node.bash          # Subsequent runs (preserves data)
+```
+### Nitro Architecture
 
 The Nitro stack is built on several innovations. At its core is a new prover, which can do Arbitrum’s classic
 interactive fraud proofs over WASM code. That means the L2 Arbitrum engine can be written and compiled using
