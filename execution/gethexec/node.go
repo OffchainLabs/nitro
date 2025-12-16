@@ -598,8 +598,8 @@ func (n *ExecutionNode) InitializeTimeboost(ctx context.Context, chainConfig *pa
 		var isActiveFunc func() bool
 		if n.Sequencer != nil {
 			isActiveFunc = func() bool {
-				_, forwarder := n.Sequencer.GetPauseAndForwarder()
-				return forwarder == nil
+				pause, forwarder := n.Sequencer.GetPauseAndForwarder()
+				return pause == nil && forwarder == nil
 			}
 		}
 
