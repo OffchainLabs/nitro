@@ -123,6 +123,7 @@ func ParseSequencerMessage(ctx context.Context, batchNum uint64, batchBlockHash 
 					}
 				} else if daprovider.IsDACertificateMessageHeaderByte(payload[0]) && daprovider.IsCertificateValidationError(err) {
 					log.Warn("Certificate validation of sequencer batch failed, treating it as an empty batch", "batch", batchNum, "error", err)
+					payload = nil
 				} else {
 					return nil, err
 				}
