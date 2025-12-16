@@ -127,7 +127,7 @@ func TestRPCStore(t *testing.T) {
 		{desc: "new client falls back to old api for old server", totalSize: (5*1024*1024)/2 - len(sendChunkJSONBoilerplate) - 100 /* geth counts headers too */, times: 5, concurrent: true, legacyAPIOnly: true},
 	} {
 		t.Run(tc.desc, func(t *testing.T) {
-			legacyDASStoreAPIOnly = tc.legacyAPIOnly
+			legacyAnyTrustStoreAPIOnly = tc.legacyAPIOnly
 			testRpcImpl(t, tc.totalSize, tc.times, tc.concurrent)
 		})
 	}
