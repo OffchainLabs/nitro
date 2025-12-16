@@ -26,7 +26,6 @@ import (
 	"github.com/offchainlabs/nitro/bold/chain-abstraction"
 	"github.com/offchainlabs/nitro/bold/testing"
 	"github.com/offchainlabs/nitro/bold/testing/setup"
-	"github.com/offchainlabs/nitro/bold/util"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 )
@@ -134,8 +133,7 @@ func (a *AnvilLocal) Start(ctx context.Context) error {
 		c, err := rpc.DialContext(dctx, "http://localhost:8686")
 		cancelDial()
 		if err == nil {
-			ethc := ethclient.NewClient(c)
-			backend := util.NewBackendWrapper(ethc, rpc.LatestBlockNumber)
+			backend := ethclient.NewClient(c)
 			qctx, cancelQuery := context.WithTimeout(ctx, 500*time.Millisecond)
 			cid, qerr := backend.ChainID(qctx)
 			cancelQuery()
@@ -144,7 +142,7 @@ func (a *AnvilLocal) Start(ctx context.Context) error {
 				break
 			}
 			lastErr = qerr
-			ethc.Close()
+			backend.Close()
 		} else {
 			lastErr = err
 		}
