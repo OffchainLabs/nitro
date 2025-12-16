@@ -195,7 +195,7 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 	defer cancel()
 
 	// The truthful sequencer
-	chainConfig, nodeConfigA, lifecycleManager, _, dasSignerKey := setupConfigWithDAS(t, ctx, dasModeStr)
+	chainConfig, nodeConfigA, lifecycleManager, _, dasSignerKey := setupConfigWithAnyTrust(t, ctx, dasModeStr)
 	defer lifecycleManager.StopAndWaitUntil(time.Second)
 
 	nodeConfigA.BatchPoster.Enable = true
@@ -209,7 +209,7 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 
 	l2clientA := builder.L2.Client
 
-	authorizeDASKeyset(t, ctx, dasSignerKey, builder.L1Info, builder.L1.Client)
+	authorizeAnyTrustKeyset(t, ctx, dasSignerKey, builder.L1Info, builder.L1.Client)
 
 	// The lying sequencer
 	nodeConfigC := arbnode.ConfigDefaultL1Test()

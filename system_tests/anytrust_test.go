@@ -29,7 +29,7 @@ import (
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
-func startLocalDASServer(
+func startLocalAnyTrustServer(
 	t *testing.T,
 	ctx context.Context,
 	dataDir string,
@@ -115,10 +115,10 @@ func TestDASRekey(t *testing.T) {
 
 	// Setup DAS servers
 	dasDataDir := t.TempDir()
-	dasRpcServerA, pubkeyA, backendConfigA, _, restServerUrlA := startLocalDASServer(t, ctx, dasDataDir, builder.L1.Client, builder.addresses.SequencerInbox)
+	dasRpcServerA, pubkeyA, backendConfigA, _, restServerUrlA := startLocalAnyTrustServer(t, ctx, dasDataDir, builder.L1.Client, builder.addresses.SequencerInbox)
 	l1NodeConfigB := arbnode.ConfigDefaultL1NonSequencerTest()
 	{
-		authorizeDASKeyset(t, ctx, pubkeyA, builder.L1Info, builder.L1.Client)
+		authorizeAnyTrustKeyset(t, ctx, pubkeyA, builder.L1Info, builder.L1.Client)
 
 		// Setup DAS config
 		builder.nodeConfig.DA.AnyTrust.Enable = true
@@ -150,12 +150,12 @@ func TestDASRekey(t *testing.T) {
 
 	err := dasRpcServerA.Shutdown(ctx)
 	Require(t, err)
-	dasRpcServerB, pubkeyB, backendConfigB, _, _ := startLocalDASServer(t, ctx, dasDataDir, builder.L1.Client, builder.addresses.SequencerInbox)
+	dasRpcServerB, pubkeyB, backendConfigB, _, _ := startLocalAnyTrustServer(t, ctx, dasDataDir, builder.L1.Client, builder.addresses.SequencerInbox)
 	defer func() {
 		err = dasRpcServerB.Shutdown(ctx)
 		Require(t, err)
 	}()
-	authorizeDASKeyset(t, ctx, pubkeyB, builder.L1Info, builder.L1.Client)
+	authorizeAnyTrustKeyset(t, ctx, pubkeyB, builder.L1Info, builder.L1.Client)
 
 	// Restart the node on the new keyset against the new DAS server running on the same disk as the first with new keys
 	builder.nodeConfig.DA.AnyTrust.RPCAggregator = aggConfigForBackend(backendConfigB)
@@ -213,7 +213,7 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 	Require(t, err)
 
 	pubkeyA := pubkey
-	authorizeDASKeyset(t, ctx, pubkeyA, builder.L1Info, builder.L1.Client)
+	authorizeAnyTrustKeyset(t, ctx, pubkeyA, builder.L1Info, builder.L1.Client)
 
 	//
 	builder.nodeConfig.DA.AnyTrust = anytrust.DefaultConfig

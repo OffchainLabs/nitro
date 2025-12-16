@@ -37,7 +37,7 @@ func testTwoNodesLong(t *testing.T, dasModeStr string) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	chainConfig, l1NodeConfigA, lifecycleManager, _, dasSignerKey := setupConfigWithDAS(t, ctx, dasModeStr)
+	chainConfig, l1NodeConfigA, lifecycleManager, _, dasSignerKey := setupConfigWithAnyTrust(t, ctx, dasModeStr)
 	defer lifecycleManager.StopAndWaitUntil(time.Second)
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
@@ -47,7 +47,7 @@ func testTwoNodesLong(t *testing.T, dasModeStr string) {
 	builder.Build(t)
 	defer requireClose(t, builder.L1.Stack)
 
-	authorizeDASKeyset(t, ctx, dasSignerKey, builder.L1Info, builder.L1.Client)
+	authorizeAnyTrustKeyset(t, ctx, dasSignerKey, builder.L1Info, builder.L1.Client)
 
 	l1NodeConfigBDataAvailability := l1NodeConfigA.DA.AnyTrust
 	l1NodeConfigBDataAvailability.RPCAggregator.Enable = false

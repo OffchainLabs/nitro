@@ -56,7 +56,7 @@ func testBlockValidatorSimple(t *testing.T, opts Options) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	chainConfig, l1NodeConfigA, lifecycleManager, _, dasSignerKey := setupConfigWithDAS(t, ctx, opts.dasModeString)
+	chainConfig, l1NodeConfigA, lifecycleManager, _, dasSignerKey := setupConfigWithAnyTrust(t, ctx, opts.dasModeString)
 	if lifecycleManager != nil {
 		defer lifecycleManager.StopAndWaitUntil(time.Second)
 	}
@@ -91,7 +91,7 @@ func testBlockValidatorSimple(t *testing.T, opts Options) {
 
 	// Only authorize DAS keyset if we're using traditional DAS
 	if opts.dasModeString != "onchain" && opts.dasModeString != "referenceda" && dasSignerKey != nil {
-		authorizeDASKeyset(t, ctx, dasSignerKey, builder.L1Info, builder.L1.Client)
+		authorizeAnyTrustKeyset(t, ctx, dasSignerKey, builder.L1Info, builder.L1.Client)
 	}
 
 	validatorConfig := arbnode.ConfigDefaultL1NonSequencerTest()

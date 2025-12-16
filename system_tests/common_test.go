@@ -2118,7 +2118,7 @@ func requireClose(t *testing.T, s *node.Node, text ...interface{}) {
 	Require(t, s.Close(), text...)
 }
 
-func authorizeDASKeyset(
+func authorizeAnyTrustKeyset(
 	t *testing.T,
 	ctx context.Context,
 	dasSignerKey *blsSignatures.PublicKey,
@@ -2179,7 +2179,7 @@ func authorizeDASKeyset(
 	}
 }
 
-func setupConfigWithDAS(
+func setupConfigWithAnyTrust(
 	t *testing.T, ctx context.Context, dasModeString string,
 ) (*params.ChainConfig, *arbnode.Config, *anytrust.LifecycleManager, string, *blsSignatures.PublicKey) {
 	l1NodeConfigA := arbnode.ConfigDefaultL1Test()

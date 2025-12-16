@@ -56,7 +56,7 @@ func TestMultiWriterFailure_CustomDAShutdownWithAnyTrustAvailable(t *testing.T) 
 
 	// 3. Setup AnyTrust/DAS server
 	dasDataDir := t.TempDir()
-	dasRpcServer, pubkey, backendConfig, restServer, restServerUrl := startLocalDASServer(
+	dasRpcServer, pubkey, backendConfig, restServer, restServerUrl := startLocalAnyTrustServer(
 		t, ctx, dasDataDir, builder.L1.Client, builder.addresses.SequencerInbox)
 	defer func() {
 		if err := dasRpcServer.Shutdown(ctx); err != nil {
@@ -69,7 +69,7 @@ func TestMultiWriterFailure_CustomDAShutdownWithAnyTrustAvailable(t *testing.T) 
 		}
 	}()
 
-	authorizeDASKeyset(t, ctx, pubkey, builder.L1Info, builder.L1.Client)
+	authorizeAnyTrustKeyset(t, ctx, pubkey, builder.L1Info, builder.L1.Client)
 
 	t.Logf("AnyTrust DAS server running at: RPC=%s REST=%s", backendConfig.URL, restServerUrl)
 
@@ -295,7 +295,7 @@ func TestMultiWriterFailure_AnyTrustShutdownFallbackDisabled(t *testing.T) {
 
 	// 2. Setup AnyTrust/DAS server
 	dasDataDir := t.TempDir()
-	dasRpcServer, pubkey, backendConfig, restServer, restServerUrl := startLocalDASServer(
+	dasRpcServer, pubkey, backendConfig, restServer, restServerUrl := startLocalAnyTrustServer(
 		t, ctx, dasDataDir, builder.L1.Client, builder.addresses.SequencerInbox)
 	defer func() {
 		if err := dasRpcServer.Shutdown(ctx); err != nil {
@@ -308,7 +308,7 @@ func TestMultiWriterFailure_AnyTrustShutdownFallbackDisabled(t *testing.T) {
 		}
 	}()
 
-	authorizeDASKeyset(t, ctx, pubkey, builder.L1Info, builder.L1.Client)
+	authorizeAnyTrustKeyset(t, ctx, pubkey, builder.L1Info, builder.L1.Client)
 
 	// Mine L1 blocks to ensure keyset logs are queryable.
 	// The keyset fetcher queries from blockNum to blockNum+1, so we need
@@ -440,7 +440,7 @@ func TestMultiWriterFallback_CustomDAToAnyTrustExplicit(t *testing.T) {
 
 	// 3. Setup AnyTrust/DAS server
 	dasDataDir := t.TempDir()
-	dasRpcServer, pubkey, backendConfig, restServer, restServerUrl := startLocalDASServer(
+	dasRpcServer, pubkey, backendConfig, restServer, restServerUrl := startLocalAnyTrustServer(
 		t, ctx, dasDataDir, builder.L1.Client, builder.addresses.SequencerInbox)
 	defer func() {
 		if err := dasRpcServer.Shutdown(ctx); err != nil {
@@ -453,7 +453,7 @@ func TestMultiWriterFallback_CustomDAToAnyTrustExplicit(t *testing.T) {
 		}
 	}()
 
-	authorizeDASKeyset(t, ctx, pubkey, builder.L1Info, builder.L1.Client)
+	authorizeAnyTrustKeyset(t, ctx, pubkey, builder.L1Info, builder.L1.Client)
 
 	t.Logf("AnyTrust DAS server running at: RPC=%s REST=%s", backendConfig.URL, restServerUrl)
 
@@ -886,7 +886,7 @@ func TestMultiWriterFallback_AnyTrustToCalldataOnBackendFailure(t *testing.T) {
 
 	// 2. Setup AnyTrust/DAS server
 	dasDataDir := t.TempDir()
-	dasRpcServer, pubkey, backendConfig, restServer, restServerUrl := startLocalDASServer(
+	dasRpcServer, pubkey, backendConfig, restServer, restServerUrl := startLocalAnyTrustServer(
 		t, ctx, dasDataDir, builder.L1.Client, builder.addresses.SequencerInbox)
 	defer func() {
 		if err := dasRpcServer.Shutdown(ctx); err != nil {
@@ -899,7 +899,7 @@ func TestMultiWriterFallback_AnyTrustToCalldataOnBackendFailure(t *testing.T) {
 		}
 	}()
 
-	authorizeDASKeyset(t, ctx, pubkey, builder.L1Info, builder.L1.Client)
+	authorizeAnyTrustKeyset(t, ctx, pubkey, builder.L1Info, builder.L1.Client)
 
 	// Mine L1 blocks to ensure keyset logs are queryable
 	TransferBalance(t, "Faucet", "User", big.NewInt(1), builder.L1Info, builder.L1.Client, ctx)
