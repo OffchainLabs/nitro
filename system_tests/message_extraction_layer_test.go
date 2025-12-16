@@ -716,7 +716,7 @@ func TestMessageExtractionLayer_UseArbDBForStoringDelayedMessages(t *testing.T) 
 	if newInitialState.ParentChainBlockHash != lastState.ParentChainBlockHash {
 		t.Fatalf("head mel state ParentChainBlockHash mismatch. Want: %s, Have: %s", lastState.ParentChainBlockHash, newInitialState.ParentChainBlockHash)
 	}
-	delayedMessageBacklog, err := mel.NewDelayedMessageBacklog(ctx, 100, extractor.GetFinalizedDelayedMessagesRead)
+	delayedMessageBacklog, err := mel.NewDelayedMessageBacklog(100, extractor.GetFinalizedDelayedMessagesRead)
 	Require(t, err)
 	err = melrunner.InitializeDelayedMessageBacklog(ctx, delayedMessageBacklog, melDB, newInitialState, extractor.GetFinalizedDelayedMessagesRead)
 	Require(t, err)
