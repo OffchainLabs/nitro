@@ -76,7 +76,10 @@ func (b *readerForBlobReader) recoverInternal(
 ) ([]byte, PreimagesMap, error) {
 	blobHashes := sequencerMsg[41:]
 	if len(blobHashes)%len(common.Hash{}) != 0 {
-		return nil, nil, ErrInvalidBlobDataFormat
+		// Invalid sequencer message data results in an empty batch rather than
+		// propagating the error to avoid halting the chain on malformed data.
+		log.Warn("Invalid blob data format in sequencer message", "length", len(blobHashes))
+		return nil, nil, nil
 	}
 	versionedHashes := make([]common.Hash, len(blobHashes)/len(common.Hash{}))
 	for i := 0; i*32 < len(blobHashes); i += 1 {
@@ -103,6 +106,8 @@ func (b *readerForBlobReader) recoverInternal(
 	if needPayload {
 		payload, err = blobs.DecodeBlobs(kzgBlobs)
 		if err != nil {
+			// Blob decode failures result in an empty batch rather than propagating
+			// the error to avoid halting the chain on malformed data.
 			log.Warn("Failed to decode blobs", "batchBlockHash", batchBlockHash, "versionedHashes", versionedHashes, "err", err)
 			return nil, nil, nil
 		}
