@@ -26,7 +26,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
-	dbschema "github.com/offchainlabs/nitro/arbnode/db-schema"
+	"github.com/offchainlabs/nitro/arbnode/db/schema"
 	"github.com/offchainlabs/nitro/arbnode/mel"
 	melrunner "github.com/offchainlabs/nitro/arbnode/mel/runner"
 	"github.com/offchainlabs/nitro/arbnode/resourcemanager"
@@ -331,18 +331,18 @@ type ConfigFetcher interface {
 
 func checkArbDbSchemaVersion(arbDb ethdb.Database) error {
 	var version uint64
-	hasVersion, err := arbDb.Has(dbschema.DbSchemaVersion)
+	hasVersion, err := arbDb.Has(schema.DbSchemaVersion)
 	if err != nil {
 		return err
 	}
 	if hasVersion {
-		versionBytes, err := arbDb.Get(dbschema.DbSchemaVersion)
+		versionBytes, err := arbDb.Get(schema.DbSchemaVersion)
 		if err != nil {
 			return err
 		}
 		version = binary.BigEndian.Uint64(versionBytes)
 	}
-	for version != dbschema.CurrentDbSchemaVersion {
+	for version != schema.CurrentDbSchemaVersion {
 		batch := arbDb.NewBatch()
 		switch version {
 		case 0:
@@ -361,7 +361,7 @@ func checkArbDbSchemaVersion(arbDb ethdb.Database) error {
 		version++
 		versionBytes := make([]uint8, 8)
 		binary.BigEndian.PutUint64(versionBytes, version)
-		err = batch.Put(dbschema.DbSchemaVersion, versionBytes)
+		err = batch.Put(schema.DbSchemaVersion, versionBytes)
 		if err != nil {
 			return err
 		}

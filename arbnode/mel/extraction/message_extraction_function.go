@@ -152,7 +152,7 @@ func extractMessagesImpl(
 	}
 	if len(delayedMessages) > 0 {
 		// Only need to calculate partials once, after all the delayed messages are `seen`
-		if err := state.GenerateDelayedMessageMerklePartials(); err != nil {
+		if err := state.GenerateDelayedMessagesSeenMerklePartialsAndRoot(); err != nil {
 			return nil, nil, nil, nil, err
 		}
 	}

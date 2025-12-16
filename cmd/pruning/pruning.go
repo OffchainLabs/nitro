@@ -22,7 +22,7 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
-	"github.com/offchainlabs/nitro/arbnode/db-schema"
+	"github.com/offchainlabs/nitro/arbnode/db/read"
 	"github.com/offchainlabs/nitro/arbnode/mel"
 	"github.com/offchainlabs/nitro/arbutil"
 	protocol "github.com/offchainlabs/nitro/bold/chain-abstraction"
@@ -187,9 +187,9 @@ func findImportantRoots(ctx context.Context, chainDb ethdb.Database, stack *node
 		l1BlockNum := l1Block.NumberU64()
 		var batch uint64
 		if melEnabled {
-			batch, err = dbschema.GetMelSequencerBatchCount(arbDb)
+			batch, err = read.MELSequencerBatchCount(arbDb)
 		} else {
-			batch, err = dbschema.GetSequencerBatchCount(arbDb)
+			batch, err = read.SequencerBatchCount(arbDb)
 		}
 		if err != nil {
 			return nil, err
@@ -205,9 +205,9 @@ func findImportantRoots(ctx context.Context, chainDb ethdb.Database, stack *node
 			batch -= 1
 			var meta mel.BatchMetadata
 			if melEnabled {
-				meta, err = dbschema.GetMelBatchMetadata(arbDb, batch)
+				meta, err = read.MELBatchMetadata(arbDb, batch)
 			} else {
-				meta, err = dbschema.GetBatchMetadata(arbDb, batch)
+				meta, err = read.BatchMetadata(arbDb, batch)
 			}
 			if err != nil {
 				return nil, err
