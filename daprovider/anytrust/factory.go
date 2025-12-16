@@ -158,12 +158,12 @@ func CreateDAComponentsForAnyTrustServer(
 	}
 	// Done checking config requirements
 
-	storageService, dasLifecycleManager, err := CreatePersistentStorageService(ctx, config)
+	storageService, anyTrustLifecycleManager, err := CreatePersistentStorageService(ctx, config)
 	if err != nil {
 		return nil, nil, nil, nil, nil, err
 	}
 
-	storageService, err = WrapStorageWithCache(ctx, config, storageService, dasLifecycleManager)
+	storageService, err = WrapStorageWithCache(ctx, config, storageService, anyTrustLifecycleManager)
 	if err != nil {
 		return nil, nil, nil, nil, nil, err
 	}
@@ -176,7 +176,7 @@ func CreateDAComponentsForAnyTrustServer(
 			return nil, nil, nil, nil, nil, err
 		}
 		restAgg.Start(ctx)
-		dasLifecycleManager.Register(restAgg)
+		anyTrustLifecycleManager.Register(restAgg)
 
 		syncConf := &config.RestAggregator.SyncToStorage
 		retentionPeriodSeconds := uint64(syncConf.RetentionPeriod.Seconds())
@@ -193,14 +193,14 @@ func CreateDAComponentsForAnyTrustServer(
 				l1Reader,
 				*seqInboxAddress,
 				syncConf)
-			dasLifecycleManager.Register(storageService)
+			anyTrustLifecycleManager.Register(storageService)
 			if err != nil {
 				return nil, nil, nil, nil, nil, err
 			}
 		} else {
 			storageService = NewFallbackStorageService(storageService, restAgg, restAgg,
 				retentionPeriodSeconds, syncConf.IgnoreWriteErrors, true)
-			dasLifecycleManager.Register(storageService)
+			anyTrustLifecycleManager.Register(storageService)
 		}
 
 	}
@@ -238,7 +238,7 @@ func CreateDAComponentsForAnyTrustServer(
 		}
 	}
 
-	return daReader, daWriter, signatureVerifier, daHealthChecker, dasLifecycleManager, nil
+	return daReader, daWriter, signatureVerifier, daHealthChecker, anyTrustLifecycleManager, nil
 }
 
 func CreateDAReader(

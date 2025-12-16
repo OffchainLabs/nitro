@@ -41,16 +41,16 @@ type KeysetFetcher interface {
 
 // NewReader is generally meant to be only used by nitro.
 // DA Providers should implement methods in the Reader interface independently
-func NewReader(dasReader Reader, keysetFetcher KeysetFetcher, validationMode daprovider.KeysetValidationMode) *reader {
+func NewReader(anyTrustReader Reader, keysetFetcher KeysetFetcher, validationMode daprovider.KeysetValidationMode) *reader {
 	return &reader{
-		dasReader:      dasReader,
+		anyTrustReader: anyTrustReader,
 		keysetFetcher:  keysetFetcher,
 		validationMode: validationMode,
 	}
 }
 
 type reader struct {
-	dasReader      Reader
+	anyTrustReader Reader
 	keysetFetcher  KeysetFetcher
 	validationMode daprovider.KeysetValidationMode
 }
@@ -65,7 +65,7 @@ func (d *reader) recoverInternal(
 ) ([]byte, daprovider.PreimagesMap, error) {
 	// Convert validation mode to boolean for the internal function
 	validateSeqMsg := d.validationMode != daprovider.KeysetDontValidate
-	return recoverPayloadFromBatchInternal(ctx, batchNum, sequencerMsg, d.dasReader, d.keysetFetcher, validateSeqMsg, needPayload, needPreimages)
+	return recoverPayloadFromBatchInternal(ctx, batchNum, sequencerMsg, d.anyTrustReader, d.keysetFetcher, validateSeqMsg, needPayload, needPreimages)
 }
 
 // RecoverPayload fetches the underlying payload from the DA provider
@@ -94,21 +94,21 @@ func (d *reader) CollectPreimages(
 
 // NewWriter is generally meant to be only used by nitro.
 // DA Providers should implement methods in the DAProviderWriter interface independently
-func NewWriter(dasWriter Writer, maxMessageSize int) *writer {
+func NewWriter(anyTrustWriter Writer, maxMessageSize int) *writer {
 	return &writer{
-		dasWriter:      dasWriter,
+		anyTrustWriter: anyTrustWriter,
 		maxMessageSize: maxMessageSize,
 	}
 }
 
 type writer struct {
-	dasWriter      Writer
+	anyTrustWriter Writer
 	maxMessageSize int
 }
 
 func (d *writer) Store(message []byte, timeout uint64) containers.PromiseInterface[[]byte] {
 	return containers.DoPromise(context.Background(), func(ctx context.Context) ([]byte, error) {
-		cert, err := d.dasWriter.Store(ctx, message, timeout)
+		cert, err := d.anyTrustWriter.Store(ctx, message, timeout)
 		if err != nil {
 			// If the aggregator failed due to insufficient backends, signal explicit fallback
 			// to allow batch poster to try the next DA provider in the chain. The Aggregator
@@ -142,13 +142,13 @@ func RecoverPayloadFromBatch(
 	ctx context.Context,
 	batchNum uint64,
 	sequencerMsg []byte,
-	dasReader Reader,
+	anyTrustReader Reader,
 	keysetFetcher KeysetFetcher,
 	preimages daprovider.PreimagesMap,
 	validateSeqMsg bool,
 ) ([]byte, daprovider.PreimagesMap, error) {
 	needPreimages := preimages != nil
-	payload, recoveredPreimages, err := recoverPayloadFromBatchInternal(ctx, batchNum, sequencerMsg, dasReader, keysetFetcher, validateSeqMsg, true, needPreimages)
+	payload, recoveredPreimages, err := recoverPayloadFromBatchInternal(ctx, batchNum, sequencerMsg, anyTrustReader, keysetFetcher, validateSeqMsg, true, needPreimages)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -172,7 +172,7 @@ func recoverPayloadFromBatchInternal(
 	ctx context.Context,
 	batchNum uint64,
 	sequencerMsg []byte,
-	dasReader Reader,
+	anyTrustReader Reader,
 	keysetFetcher KeysetFetcher,
 	validateSeqMsg bool,
 	needPayload bool,
@@ -202,10 +202,10 @@ func recoverPayloadFromBatchInternal(
 			newHash = tree.FlatHashToTreeHash(hash)
 		}
 
-		preimage, err := dasReader.GetByHash(ctx, newHash)
+		preimage, err := anyTrustReader.GetByHash(ctx, newHash)
 		if err != nil && hash != newHash {
 			log.Debug("error fetching new style hash, trying old", "new", newHash, "old", hash, "err", err)
-			preimage, err = dasReader.GetByHash(ctx, hash)
+			preimage, err = anyTrustReader.GetByHash(ctx, hash)
 		}
 		if err != nil {
 			return nil, err

@@ -300,17 +300,17 @@ func main() {
 		}
 		return wavmio.ReadInboxMessage(batchNum), nil
 	}
-	readMessage := func(dasEnabled bool) *arbostypes.MessageWithMetadata {
+	readMessage := func(anyTrustEnabled bool) *arbostypes.MessageWithMetadata {
 		var delayedMessagesRead uint64
 		if lastBlockHeader != nil {
 			delayedMessagesRead = lastBlockHeader.Nonce.Uint64()
 		}
-		var dasReader anytrustutil.Reader
-		var dasKeysetFetcher anytrustutil.KeysetFetcher
-		if dasEnabled {
+		var anyTrustReader anytrustutil.Reader
+		var anyTrustKeysetFetcher anytrustutil.KeysetFetcher
+		if anyTrustEnabled {
 			// AnyTrust batch and keysets are all together in the same preimage binary.
-			dasReader = &AnyTrustPreimageReader{}
-			dasKeysetFetcher = &AnyTrustPreimageReader{}
+			anyTrustReader = &AnyTrustPreimageReader{}
+			anyTrustKeysetFetcher = &AnyTrustPreimageReader{}
 		}
 		backend := WavmInbox{}
 		var keysetValidationMode = daprovider.KeysetPanicIfInvalid
@@ -318,8 +318,8 @@ func main() {
 			keysetValidationMode = daprovider.KeysetDontValidate
 		}
 		dapReaders := daprovider.NewDAProviderRegistry()
-		if dasReader != nil {
-			err = dapReaders.SetupAnyTrustReader(anytrustutil.NewReader(dasReader, dasKeysetFetcher, keysetValidationMode), nil)
+		if anyTrustReader != nil {
+			err = dapReaders.SetupAnyTrustReader(anytrustutil.NewReader(anyTrustReader, anyTrustKeysetFetcher, keysetValidationMode), nil)
 			if err != nil {
 				panic(fmt.Sprintf("Failed to register AnyTrust reader: %v", err))
 			}

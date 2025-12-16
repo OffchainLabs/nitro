@@ -261,14 +261,14 @@ func startup() error {
 		return errors.New("--parent-chain.sequencer-inbox-address must be set to a valid L1 contract address, or 'none'")
 	}
 
-	daReader, daWriter, signatureVerifier, daHealthChecker, dasLifecycleManager, err := anytrust.CreateDAComponentsForAnyTrustServer(ctx, &serverConfig.DataAvailability, l1Reader, seqInboxAddress)
+	daReader, daWriter, signatureVerifier, daHealthChecker, anyTrustLifecycleManager, err := anytrust.CreateDAComponentsForAnyTrustServer(ctx, &serverConfig.DataAvailability, l1Reader, seqInboxAddress)
 	if err != nil {
 		return err
 	}
 
 	if l1Reader != nil {
 		l1Reader.Start(ctx)
-		dasLifecycleManager.Register(&L1ReaderCloser{l1Reader})
+		anyTrustLifecycleManager.Register(&L1ReaderCloser{l1Reader})
 	}
 
 	vcsRevision, _, vcsTime := confighelpers.GetVersion()
@@ -293,7 +293,7 @@ func startup() error {
 	}
 
 	<-sigint
-	dasLifecycleManager.StopAndWaitUntil(2 * time.Second)
+	anyTrustLifecycleManager.StopAndWaitUntil(2 * time.Second)
 
 	var err1, err2 error
 	if rpcServer != nil {
