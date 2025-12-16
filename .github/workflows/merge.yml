@@ -41,6 +41,8 @@ jobs:
     if: always()
     uses: ./.github/workflows/_codecov.yml
     secrets: inherit
+    permissions:
+      pull-requests: write
     with:
       post_comment: false
       upload_report: true
