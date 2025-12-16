@@ -29,7 +29,7 @@ See [here](https://docs.arbitrum.io/audit-reports) for security audit reports.
 
 Stylus is enabled by default in recent releases. Docker and Docker Compose are required for most setups.
 
-### Recommended: Full Local Chain Simulation (L1 + L2 with Sequencer, Poster, Validator)
+## Recommended: Full Local Chain Simulation (L1 + L2 with Sequencer, Poster, Validator)
 
 For complete development/testing (cross-layer messaging, Stylus support):
 
