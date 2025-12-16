@@ -362,10 +362,17 @@ func TestValidationServerAPIWithBoldValidationConsumerProducer(t *testing.T) {
 	}
 
 	valInput := validator.ValidationInput{
-		StartState: startState,
+		Id:            0,
+		HasDelayedMsg: false,
+		DelayedMsgNr:  0,
 		Preimages: map[arbutil.PreimageType]map[common.Hash][]byte{
 			arbutil.Keccak256PreimageType: globalstateToTestPreimages(endState),
 		},
+		UserWasms:  make(map[rawdb.WasmTarget]map[common.Hash][]byte),
+		BatchInfo:  []validator.BatchInfo{},
+		DelayedMsg: []byte{},
+		StartState: startState,
+		DebugChain: false,
 	}
 	proof, err := client.GetProofAt(ctx, mockWasmModuleRoots[0], &valInput, 0)
 	Require(t, err)
