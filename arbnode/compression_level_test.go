@@ -4,6 +4,7 @@
 package arbnode
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/andybalholm/brotli"
@@ -137,26 +138,12 @@ func TestCompressionLevelStepListValidation(t *testing.T) {
 			} else {
 				if err == nil {
 					t.Errorf("Validate() expected error containing %q, got nil", tt.wantErr)
-				} else if !containsSubstring(err.Error(), tt.wantErr) {
+				} else if !strings.Contains(err.Error(), tt.wantErr) {
 					t.Errorf("Validate() expected error containing %q, got %q", tt.wantErr, err.Error())
 				}
 			}
 		})
 	}
-}
-
-func containsSubstring(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(substr) == 0 ||
-		(len(s) > 0 && len(substr) > 0 && searchSubstring(s, substr)))
-}
-
-func searchSubstring(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
 }
 
 func TestCompressionLevelStepListJSONRoundTrip(t *testing.T) {

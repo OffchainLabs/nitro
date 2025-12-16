@@ -44,7 +44,7 @@ func (l *CompressionLevelStepList) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-func (_ *CompressionLevelStepList) Type() string {
+func (*CompressionLevelStepList) Type() string {
 	return "CompressionLevelStepList"
 }
 
@@ -101,8 +101,10 @@ func FixCompressionLevelsCLIParsing(path string, k *koanf.Koanf) error {
 		if err := k.Load(confmap.Provider(tempMap, "."), nil); err != nil {
 			return err
 		}
+	} else {
+		return fmt.Errorf("CompressionLevels config not found in %s", path)
 	}
-	return fmt.Errorf("CompressionLevels config not found in %s", path)
+	return nil
 }
 
 // DefaultCompressionLevels replicates the previous hardcoded adaptive compression behavior:
