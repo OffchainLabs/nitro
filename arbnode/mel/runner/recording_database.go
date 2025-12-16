@@ -13,6 +13,8 @@ import (
 	"github.com/offchainlabs/nitro/arbos/merkleAccumulator"
 )
 
+// RecordingDatabase holds an ethdb.KeyValueStore that contains delayed messages stored by native MEL and implements DelayedMessageDatabase
+// interface defined in 'mel'. It is solely used for recording of preimages relating to delayed messages needed for MEL validation
 type RecordingDatabase struct {
 	db        ethdb.KeyValueStore
 	preimages map[common.Hash][]byte
