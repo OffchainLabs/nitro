@@ -158,7 +158,7 @@ func main() {
 }
 
 func startup() error {
-	// Some different defaults to DAS config in a node.
+	// Some different defaults to AnyTrust config in a node.
 	anytrust.DefaultConfig.Enable = true
 
 	config, err := parseDAProvider(os.Args[1:])

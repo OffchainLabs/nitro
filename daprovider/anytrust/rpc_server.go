@@ -58,7 +58,7 @@ func StartRPCServerOnListener(ctx context.Context, listener net.Listener, rpcSer
 		return nil, errors.New("No writer backend was configured for AnyTrust RPC server. Has the BLS signing key been set up (--data-availability.key.key-dir or --data-availability.key.priv-key options)?")
 	}
 	rpcServer := rpc.NewServer()
-	if legacyDASStoreAPIOnly {
+	if legacyAnyTrustStoreAPIOnly {
 		rpcServer.ApplyAPIFilter(map[string]bool{"das_store": true})
 	}
 	if rpcServerBodyLimit > 0 {
@@ -163,7 +163,7 @@ func (s *RPCServer) Store(ctx context.Context, message hexutil.Bytes, timeout he
 
 // exposed global for test control
 var (
-	legacyDASStoreAPIOnly = false
+	legacyAnyTrustStoreAPIOnly = false
 )
 
 func (s *RPCServer) StartChunkedStore(ctx context.Context, timestamp, nChunks, chunkSize, totalSize, timeout hexutil.Uint64, sig hexutil.Bytes) (*data_streaming.StartStreamingResult, error) {

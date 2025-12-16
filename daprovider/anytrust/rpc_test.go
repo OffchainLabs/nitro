@@ -50,7 +50,7 @@ func testRpcImpl(t *testing.T, size, times int, concurrent bool) {
 	storageService, lifecycleManager, err := CreatePersistentStorageService(ctx, &config)
 	testhelpers.RequireImpl(t, err)
 	defer lifecycleManager.StopAndWaitUntil(time.Second)
-	localDas, err := NewSignAfterStoreWriter(ctx, config, storageService)
+	localAnyTrust, err := NewSignAfterStoreWriter(ctx, config, storageService)
 	testhelpers.RequireImpl(t, err)
 
 	testPrivateKey, err := crypto.GenerateKey()
@@ -60,10 +60,10 @@ func testRpcImpl(t *testing.T, size, times int, concurrent bool) {
 	testhelpers.RequireImpl(t, err)
 	signer := signature.DataSignerFromPrivateKey(testPrivateKey)
 
-	dasServer, err := StartRPCServerOnListener(ctx, lis, genericconf.HTTPServerTimeoutConfigDefault, genericconf.HTTPServerBodyLimitDefault, storageService, localDas, storageService, signatureVerifier)
+	anyTrustServer, err := StartRPCServerOnListener(ctx, lis, genericconf.HTTPServerTimeoutConfigDefault, genericconf.HTTPServerBodyLimitDefault, storageService, localAnyTrust, storageService, signatureVerifier)
 
 	defer func() {
-		if err := dasServer.Shutdown(ctx); err != nil {
+		if err := anyTrustServer.Shutdown(ctx); err != nil {
 			panic(err)
 		}
 	}()

@@ -38,7 +38,7 @@ type ParentChainConfig struct {
 	SequencerInboxAddress string `koanf:"sequencer-inbox-address"`
 }
 
-type DAServerConfig struct {
+type AnyTrustServerConfig struct {
 	EnableRPC          bool                                `koanf:"enable-rpc"`
 	RPCAddr            string                              `koanf:"rpc-addr"`
 	RPCPort            uint64                              `koanf:"rpc-port"`
@@ -70,7 +70,7 @@ var DefaultParentChainConfig = ParentChainConfig{
 	SequencerInboxAddress: "",
 }
 
-var DefaultDAServerConfig = DAServerConfig{
+var DefaultAnyTrustServerConfig = AnyTrustServerConfig{
 	EnableRPC:          false,
 	RPCAddr:            "localhost",
 	RPCPort:            9876,
@@ -96,7 +96,7 @@ func main() {
 		log.Error("DEPRECATED: 'daserver' binary has been renamed to 'anytrustserver' and will be removed in a future release. Please update your scripts and configurations.")
 	}
 	if err := startup(); err != nil {
-		log.Error("Error running DAServer", "err", err)
+		log.Error("Error running AnyTrust Server", "err", err)
 	}
 }
 
@@ -105,27 +105,27 @@ func printSampleUsage(progname string) {
 	fmt.Printf("Sample usage:                  %s --help \n", progname)
 }
 
-func parseDAServer(args []string) (*DAServerConfig, error) {
-	f := pflag.NewFlagSet("daserver", pflag.ContinueOnError)
-	f.Bool("enable-rpc", DefaultDAServerConfig.EnableRPC, "enable the HTTP-RPC server listening on rpc-addr and rpc-port")
-	f.String("rpc-addr", DefaultDAServerConfig.RPCAddr, "HTTP-RPC server listening interface")
-	f.Uint64("rpc-port", DefaultDAServerConfig.RPCPort, "HTTP-RPC server listening port")
-	f.Int("rpc-server-body-limit", DefaultDAServerConfig.RPCServerBodyLimit, "HTTP-RPC server maximum request body size in bytes; the default (0) uses geth's 5MB limit")
+func parseAnyTrustServer(args []string) (*AnyTrustServerConfig, error) {
+	f := pflag.NewFlagSet("anytrustserver", pflag.ContinueOnError)
+	f.Bool("enable-rpc", DefaultAnyTrustServerConfig.EnableRPC, "enable the HTTP-RPC server listening on rpc-addr and rpc-port")
+	f.String("rpc-addr", DefaultAnyTrustServerConfig.RPCAddr, "HTTP-RPC server listening interface")
+	f.Uint64("rpc-port", DefaultAnyTrustServerConfig.RPCPort, "HTTP-RPC server listening port")
+	f.Int("rpc-server-body-limit", DefaultAnyTrustServerConfig.RPCServerBodyLimit, "HTTP-RPC server maximum request body size in bytes; the default (0) uses geth's 5MB limit")
 	genericconf.HTTPServerTimeoutConfigAddOptions("rpc-server-timeouts", f)
 
-	f.Bool("enable-rest", DefaultDAServerConfig.EnableREST, "enable the REST server listening on rest-addr and rest-port")
-	f.String("rest-addr", DefaultDAServerConfig.RESTAddr, "REST server listening interface")
-	f.Uint64("rest-port", DefaultDAServerConfig.RESTPort, "REST server listening port")
+	f.Bool("enable-rest", DefaultAnyTrustServerConfig.EnableREST, "enable the REST server listening on rest-addr and rest-port")
+	f.String("rest-addr", DefaultAnyTrustServerConfig.RESTAddr, "REST server listening interface")
+	f.Uint64("rest-port", DefaultAnyTrustServerConfig.RESTPort, "REST server listening port")
 	genericconf.HTTPServerTimeoutConfigAddOptions("rest-server-timeouts", f)
 
-	f.Bool("metrics", DefaultDAServerConfig.Metrics, "enable metrics")
+	f.Bool("metrics", DefaultAnyTrustServerConfig.Metrics, "enable metrics")
 	genericconf.MetricsServerAddOptions("metrics-server", f)
 
-	f.Bool("pprof", DefaultDAServerConfig.PProf, "enable pprof")
+	f.Bool("pprof", DefaultAnyTrustServerConfig.PProf, "enable pprof")
 	genericconf.PProfAddOptions("pprof-cfg", f)
 
-	f.String("log-level", DefaultDAServerConfig.LogLevel, "log level, valid values are CRIT, ERROR, WARN, INFO, DEBUG, TRACE")
-	f.String("log-type", DefaultDAServerConfig.LogType, "log type (plaintext or json)")
+	f.String("log-level", DefaultAnyTrustServerConfig.LogLevel, "log level, valid values are CRIT, ERROR, WARN, INFO, DEBUG, TRACE")
+	f.String("log-type", DefaultAnyTrustServerConfig.LogType, "log type (plaintext or json)")
 
 	f.String("parent-chain.node-url", DefaultParentChainConfig.NodeURL, "URL for parent chain node")
 	f.Int("parent-chain.connection-attempts", DefaultParentChainConfig.ConnectionAttempts, "parent chain RPC connection attempts (spaced out at least 1 second per attempt, 0 to retry infinitely)")
@@ -139,7 +139,7 @@ func parseDAServer(args []string) (*DAServerConfig, error) {
 		return nil, err
 	}
 
-	var serverConfig DAServerConfig
+	var serverConfig AnyTrustServerConfig
 	if err := confighelpers.EndCommonParse(k, &serverConfig); err != nil {
 		return nil, err
 	}
@@ -179,7 +179,7 @@ func (c *L1ReaderCloser) String() string {
 // Checks metrics and PProf flag, runs them if enabled.
 // Note: they are separate so one can enable/disable them as they wish, the only
 // requirement is that they can't run on the same address and port.
-func startMetrics(cfg *DAServerConfig) error {
+func startMetrics(cfg *AnyTrustServerConfig) error {
 	mAddr := fmt.Sprintf("%v:%v", cfg.MetricsServer.Addr, cfg.MetricsServer.Port)
 	pAddr := fmt.Sprintf("%v:%v", cfg.PprofCfg.Addr, cfg.PprofCfg.Port)
 	if cfg.Metrics && cfg.PProf && mAddr == pAddr {
@@ -201,7 +201,7 @@ func startup() error {
 	// Some different defaults to AnyTrust config in a node.
 	anytrust.DefaultConfig.Enable = true
 
-	serverConfig, err := parseDAServer(os.Args[1:])
+	serverConfig, err := parseAnyTrustServer(os.Args[1:])
 	if err != nil {
 		confighelpers.PrintErrorAndExit(err, printSampleUsage)
 	}

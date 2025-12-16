@@ -117,7 +117,7 @@ func KeysetHashFromServices(services []ServiceDetails, assumedHonest uint64) ([3
 	pubKeys := []blsSignatures.PublicKey{}
 	for _, d := range services {
 		if bits.OnesCount64(d.signersMask) != 1 {
-			return [32]byte{}, nil, fmt.Errorf("tried to configure backend DAS %v with invalid signersMask %X", d.service, d.signersMask)
+			return [32]byte{}, nil, fmt.Errorf("tried to configure backend AnyTrust %v with invalid signersMask %X", d.service, d.signersMask)
 		}
 		aggSignersMask |= d.signersMask
 		pubKeys = append(pubKeys, d.pubKey)

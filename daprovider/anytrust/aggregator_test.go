@@ -28,10 +28,10 @@ func TestAnyTrust_BasicAggregationLocal(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	numBackendDAS := 10
+	numBackendAnyTrust := 10
 	var backends []ServiceDetails
 	var storageServices []StorageService
-	for i := 0; i < numBackendDAS; i++ {
+	for i := 0; i < numBackendAnyTrust; i++ {
 		privKey, err := blsSignatures.GeneratePrivKeyString()
 		Require(t, err)
 
@@ -171,21 +171,21 @@ func testConfigurableStorageFailures(t *testing.T, shouldFailAggregation bool) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	numBackendDAS := (rand.Int() % 20) + 1
-	assumedHonest := (rand.Int() % numBackendDAS) + 1
+	numBackendAnyTrust := (rand.Int() % 20) + 1
+	assumedHonest := (rand.Int() % numBackendAnyTrust) + 1
 	var nFailures int
 	if shouldFailAggregation {
-		nFailures = max(assumedHonest, rand.Int()%(numBackendDAS+1))
+		nFailures = max(assumedHonest, rand.Int()%(numBackendAnyTrust+1))
 	} else {
-		nFailures = min(assumedHonest-1, rand.Int()%(numBackendDAS+1))
+		nFailures = min(assumedHonest-1, rand.Int()%(numBackendAnyTrust+1))
 	}
-	nSuccesses := numBackendDAS - nFailures
-	log.Trace(fmt.Sprintf("Testing aggregator with K:%d with K=N+1-H, N:%d, H:%d, and %d successes", numBackendDAS+1-assumedHonest, numBackendDAS, assumedHonest, nSuccesses))
+	nSuccesses := numBackendAnyTrust - nFailures
+	log.Trace(fmt.Sprintf("Testing aggregator with K:%d with K=N+1-H, N:%d, H:%d, and %d successes", numBackendAnyTrust+1-assumedHonest, numBackendAnyTrust, assumedHonest, nSuccesses))
 
 	injectedFailures := newRandomBagOfFailures(t, nSuccesses, nFailures, dataCorruption)
 	var backends []ServiceDetails
 	var storageServices []StorageService
-	for i := 0; i < numBackendDAS; i++ {
+	for i := 0; i < numBackendAnyTrust; i++ {
 		privKey, err := blsSignatures.GeneratePrivKeyString()
 		Require(t, err)
 
@@ -292,16 +292,16 @@ func TestAnyTrust_InsufficientBackendsTriggersFallback(t *testing.T) {
 	// Set up aggregator with 5 backends, AssumedHonest=2
 	// This means we need K=5+1-2=4 successful responses to succeed
 	// We'll inject exactly 2 failures, causing aggregation to fail
-	numBackendDAS := 5
+	numBackendAnyTrust := 5
 	assumedHonest := 2
 	nFailures := 2
-	nSuccesses := numBackendDAS - nFailures
+	nSuccesses := numBackendAnyTrust - nFailures
 
-	log.Trace(fmt.Sprintf("Testing aggregator fallback with K:%d (K=N+1-H), N:%d, H:%d, and %d successes", numBackendDAS+1-assumedHonest, numBackendDAS, assumedHonest, nSuccesses))
+	log.Trace(fmt.Sprintf("Testing aggregator fallback with K:%d (K=N+1-H), N:%d, H:%d, and %d successes", numBackendAnyTrust+1-assumedHonest, numBackendAnyTrust, assumedHonest, nSuccesses))
 
 	injectedFailures := newRandomBagOfFailures(t, nSuccesses, nFailures, immediateError)
 	var backends []ServiceDetails
-	for i := 0; i < numBackendDAS; i++ {
+	for i := 0; i < numBackendAnyTrust; i++ {
 		privKey, err := blsSignatures.GeneratePrivKeyString()
 		Require(t, err)
 
