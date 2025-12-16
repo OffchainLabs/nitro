@@ -192,7 +192,7 @@ func TestMultiDimensionalPriceForRefund(t *testing.T) {
 	// #nosec G115
 	singleGas := big.NewInt(int64(multiGas.SingleGas()))
 	// Initial price should match minBaseFeeWei * singleGas
-	expectedPrice := minPrice.Mul(minPrice, singleGas)
+	singlePrice := minPrice.Mul(minPrice, singleGas)
 	Require(t, err)
 
 	pricing.ArbosVersion = ArbosMultiGasConstraintsVersion
@@ -200,8 +200,8 @@ func TestMultiDimensionalPriceForRefund(t *testing.T) {
 	// Initial price check
 	price, err := pricing.MultiDimensionalPriceForRefund(multiGas)
 	Require(t, err)
-	if price.Cmp(expectedPrice) != 0 {
-		t.Errorf("Unexpected initial price: got %v, want %v", price, expectedPrice)
+	if price.Cmp(singlePrice) != 0 {
+		t.Errorf("Unexpected initial price: got %v, want %v", price, singlePrice)
 	}
 
 	// updatePricingModelMultiConstraints() should set multi gas base fees
@@ -232,9 +232,41 @@ func TestMultiDimensionalPriceForRefund(t *testing.T) {
 
 	pricing.updatePricingModelMultiConstraints(10)
 
+	// Compute the expected price
+	err = pricing.CommitMultiGasFees()
+	Require(t, err)
+
+	exponentPerKind, err := pricing.CalcMultiGasConstraintsExponents()
+	Require(t, err)
+
+	baseFeeWei, err := pricing.BaseFeeWei()
+	Require(t, err)
+
+	expectedPrice := new(big.Int)
+	for k := 0; k < int(multigas.NumResourceKind); k++ {
+		// #nosec G115
+		kind := multigas.ResourceKind(k)
+
+		baseFeeKind, err := pricing.calcBaseFeeFromExponent(exponentPerKind[kind])
+		Require(t, err)
+
+		// Same override logic as MultiDimensionalPriceForRefund
+		if kind == multigas.ResourceKindL1Calldata || baseFeeKind.Sign() == 0 {
+			baseFeeKind = baseFeeWei
+		}
+
+		amount := multiGas.Get(kind)
+		if amount == 0 {
+			continue
+		}
+
+		part := new(big.Int).Mul(new(big.Int).SetUint64(amount), baseFeeKind)
+		expectedPrice.Add(expectedPrice, part)
+	}
+
 	price, err = pricing.MultiDimensionalPriceForRefund(multiGas)
 	Require(t, err)
-	if price.Cmp(expectedPrice) <= 0 {
+	if price.Cmp(expectedPrice) != 0 {
 		t.Errorf("Price did not increase after backlog growth: got %v, want > %v", price, expectedPrice)
 	}
 }

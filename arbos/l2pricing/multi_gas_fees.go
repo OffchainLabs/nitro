@@ -16,7 +16,9 @@ const (
 	currentBlockFeesOffset
 )
 
-// MultiGasFees tracks per–resource-kind base fees for current and last blocks.
+// MultiGasFees tracks per–resource-kind base fees.
+// The `next` field is the base fee for future blocks. It is updated alongside l2pricing.baseFee whenever `updateMultiGasConstraintsBacklogs` is called.
+// The `current` field is the base-fee for the current block, and it is updated in `arbos.ProduceBlockAdvanced` before executing transactions.
 type MultiGasFees struct {
 	next    [multigas.NumResourceKind]storage.StorageBackedBigInt
 	current [multigas.NumResourceKind]storage.StorageBackedBigInt

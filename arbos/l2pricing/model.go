@@ -383,5 +383,12 @@ func (ps *L2PricingState) MultiDimensionalPriceForRefund(gasUsed multigas.MultiG
 }
 
 func (ps *L2PricingState) CommitMultiGasFees() error {
+	gasModel, err := ps.GasModelToUse()
+	if err != nil {
+		return err
+	}
+	if gasModel != GasModelMultiGasConstraints {
+		return nil
+	}
 	return ps.multiGasFees.CommitNextToCurrent()
 }
