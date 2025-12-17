@@ -203,6 +203,7 @@ func TestInboxReaderBlobFailureWithDelayedMessage(t *testing.T) {
 		t.Fatal("Follower did not sync new transaction after re-enabling blobs")
 	}
 	t.Logf("Follower synced new transaction")
+	AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, 5)
 
 	// Send delayed message via L1
 	delayedTx := builder.L2Info.PrepareTx("Owner", "Owner", builder.L2Info.TransferGas, big.NewInt(3e12), nil)
