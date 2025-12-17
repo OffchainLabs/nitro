@@ -113,13 +113,13 @@ func TestBlocksReExecutorCommitState(t *testing.T) {
 	// For now PathDB is not supported
 	builder.RequireScheme(t, rawdb.HashScheme)
 
-	maxNumberOfBlocksToSkipStateSaving := 150
+	maxNumberOfBlocksToSkipStateSaving := uint32(150)
 
 	// 1. Setup builder to be run in sparse archive mode
 	builder.execConfig.Caching.Archive = true
 	builder.execConfig.Caching.SnapshotCache = 0 // disable snapshots
 	builder.execConfig.Caching.BlockAge = 0
-	builder.execConfig.Caching.MaxNumberOfBlocksToSkipStateSaving = uint32(maxNumberOfBlocksToSkipStateSaving)
+	builder.execConfig.Caching.MaxNumberOfBlocksToSkipStateSaving = maxNumberOfBlocksToSkipStateSaving
 	builder.execConfig.Caching.MaxAmountOfGasToSkipStateSaving = 0
 
 	maxRecreateStateDepth := int64(100 * 1000 * 1000)
