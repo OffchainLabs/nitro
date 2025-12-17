@@ -191,13 +191,13 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64) 
 
 			if cert.DataHash != expectedHash {
 				incFailureMetric()
-				log.Warn("DAS Aggregator got a store response with a data hash not matching the expected hash", "backend", d.metricName, "dataHash", cert.DataHash, "expectedHash", expectedHash, "err", err)
+				log.Warn("DAS Aggregator got a store response with a data hash not matching the expected hash", "backend", d.metricName, "dataHash", cert.DataHash, "expectedHash", expectedHash)
 				responses <- storeResponse{d, nil, errors.New("hash verification failed")}
 				return
 			}
 			if cert.Timeout != timeout {
 				incFailureMetric()
-				log.Warn("DAS Aggregator got a store response with any expiry time not matching the expected expiry time", "backend", d.metricName, "dataHash", cert.DataHash, "expectedHash", expectedHash, "err", err)
+				log.Warn("DAS Aggregator got a store response with any expiry time not matching the expected expiry time", "backend", d.metricName, "timeout", cert.Timeout, "expectedTimeout", timeout)
 				responses <- storeResponse{d, nil, fmt.Errorf("timeout was %d, expected %d", cert.Timeout, timeout)}
 				return
 			}
@@ -228,8 +228,6 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64) 
 		var returned int // 0-no status, 1-succeeded, 2-failed
 		for i := 0; i < len(a.services); i++ {
 			select {
-			case <-ctx.Done():
-				break
 			case r := <-responses:
 				if r.err != nil {
 					_ = storeFailures.Add(1)
@@ -270,7 +268,14 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64) 
 		}
 	}()
 
-	cd := <-certDetailsChan
+	var cd certDetails
+	select {
+	case cd = <-certDetailsChan:
+		// Received response from goroutine
+	case <-ctx.Done():
+		// Context was canceled before receiving response
+		return nil, ctx.Err()
+	}
 
 	if cd.err != nil {
 		return nil, cd.err
