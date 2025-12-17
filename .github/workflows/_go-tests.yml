@@ -43,6 +43,9 @@ on:
       run-pebble:
         required: false
         type: boolean
+      run-experimental:
+        required: false,
+        type: boolean
 
 jobs:
   go-tests:
@@ -228,6 +231,13 @@ jobs:
           files: ./coverage.txt,./coverage-redis.txt
           verbose: false
           token: ${{ secrets.CODECOV_TOKEN }}
+
+        # --------------------- EXPERIMENTAL MODE --------------------
+      - name: run experimental tooling tests
+        if: inputs.run-experimental
+        run: >-
+          ${{ github.workspace }}/.github/workflows/gotestsum.sh
+          --tags debugblock --run TestExperimental --timeout 60m --cover
 
       # --------------------- ARCHIVE LOGS FOR ALL MODES ---------------------
 

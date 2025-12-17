@@ -37,6 +37,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/execution"
+	"github.com/offchainlabs/nitro/experimental/debugblock"
 	"github.com/offchainlabs/nitro/timeboost"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/containers"
@@ -63,30 +64,30 @@ var (
 )
 
 type SequencerConfig struct {
-	Enable                       bool            `koanf:"enable"`
-	MaxBlockSpeed                time.Duration   `koanf:"max-block-speed" reload:"hot"`
-	ReadFromTxQueueTimeout       time.Duration   `koanf:"read-from-tx-queue-timeout" reload:"hot"`
-	MaxRevertGasReject           uint64          `koanf:"max-revert-gas-reject" reload:"hot"`
-	MaxAcceptableTimestampDelta  time.Duration   `koanf:"max-acceptable-timestamp-delta" reload:"hot"`
-	SenderWhitelist              []string        `koanf:"sender-whitelist"`
-	Forwarder                    ForwarderConfig `koanf:"forwarder"`
-	QueueSize                    int             `koanf:"queue-size"`
-	QueueTimeout                 time.Duration   `koanf:"queue-timeout" reload:"hot"`
-	NonceCacheSize               int             `koanf:"nonce-cache-size" reload:"hot"`
-	MaxTxDataSize                int             `koanf:"max-tx-data-size" reload:"hot"`
-	NonceFailureCacheSize        int             `koanf:"nonce-failure-cache-size" reload:"hot"`
-	NonceFailureCacheExpiry      time.Duration   `koanf:"nonce-failure-cache-expiry" reload:"hot"`
-	ExpectedSurplusGasPriceMode  string          `koanf:"expected-surplus-gas-price-mode"`
-	ExpectedSurplusSoftThreshold string          `koanf:"expected-surplus-soft-threshold" reload:"hot"`
-	ExpectedSurplusHardThreshold string          `koanf:"expected-surplus-hard-threshold" reload:"hot"`
-	EnableProfiling              bool            `koanf:"enable-profiling" reload:"hot"`
-	Timeboost                    TimeboostConfig `koanf:"timeboost"`
-	Dangerous                    DangerousConfig `koanf:"dangerous"`
+	Enable                       bool                     `koanf:"enable"`
+	MaxBlockSpeed                time.Duration            `koanf:"max-block-speed" reload:"hot"`
+	ReadFromTxQueueTimeout       time.Duration            `koanf:"read-from-tx-queue-timeout" reload:"hot"`
+	MaxRevertGasReject           uint64                   `koanf:"max-revert-gas-reject" reload:"hot"`
+	MaxAcceptableTimestampDelta  time.Duration            `koanf:"max-acceptable-timestamp-delta" reload:"hot"`
+	SenderWhitelist              []string                 `koanf:"sender-whitelist"`
+	Forwarder                    ForwarderConfig          `koanf:"forwarder"`
+	QueueSize                    int                      `koanf:"queue-size"`
+	QueueTimeout                 time.Duration            `koanf:"queue-timeout" reload:"hot"`
+	NonceCacheSize               int                      `koanf:"nonce-cache-size" reload:"hot"`
+	MaxTxDataSize                int                      `koanf:"max-tx-data-size" reload:"hot"`
+	NonceFailureCacheSize        int                      `koanf:"nonce-failure-cache-size" reload:"hot"`
+	NonceFailureCacheExpiry      time.Duration            `koanf:"nonce-failure-cache-expiry" reload:"hot"`
+	ExpectedSurplusGasPriceMode  string                   `koanf:"expected-surplus-gas-price-mode"`
+	ExpectedSurplusSoftThreshold string                   `koanf:"expected-surplus-soft-threshold" reload:"hot"`
+	ExpectedSurplusHardThreshold string                   `koanf:"expected-surplus-hard-threshold" reload:"hot"`
+	EnableProfiling              bool                     `koanf:"enable-profiling" reload:"hot"`
+	Timeboost                    TimeboostConfig          `koanf:"timeboost"`
+	Dangerous                    SequencerDangerousConfig `koanf:"dangerous"`
 	expectedSurplusSoftThreshold int
 	expectedSurplusHardThreshold int
 }
 
-type DangerousConfig struct {
+type SequencerDangerousConfig struct {
 	DisableSeqInboxMaxDataSizeCheck bool `koanf:"disable-seq-inbox-max-data-size-check"`
 	DisableBlobBaseFeeCheck         bool `koanf:"disable-blob-base-fee-check"`
 }
@@ -207,10 +208,10 @@ var DefaultSequencerConfig = SequencerConfig{
 	ExpectedSurplusHardThreshold: "default",
 	EnableProfiling:              false,
 	Timeboost:                    DefaultTimeboostConfig,
-	Dangerous:                    DefaultDangerousConfig,
+	Dangerous:                    DefaultSequencerDangerousConfig,
 }
 
-var DefaultDangerousConfig = DangerousConfig{
+var DefaultSequencerDangerousConfig = SequencerDangerousConfig{
 	DisableSeqInboxMaxDataSizeCheck: false,
 }
 
@@ -224,7 +225,7 @@ func SequencerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	AddOptionsForSequencerForwarderConfig(prefix+".forwarder", f)
 	TimeboostAddOptions(prefix+".timeboost", f)
 
-	DangerousAddOptions(prefix+".dangerous", f)
+	SequencerDangerousAddOptions(prefix+".dangerous", f)
 	f.Int(prefix+".queue-size", DefaultSequencerConfig.QueueSize, "size of the pending tx queue")
 	f.Duration(prefix+".queue-timeout", DefaultSequencerConfig.QueueTimeout, "maximum amount of time transaction can wait in queue")
 	f.Int(prefix+".nonce-cache-size", DefaultSequencerConfig.NonceCacheSize, "size of the tx sender nonce cache")
@@ -250,9 +251,9 @@ func TimeboostAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Uint64(prefix+".queue-timeout-in-blocks", DefaultTimeboostConfig.QueueTimeoutInBlocks, "maximum amount of time (measured in blocks) that Express Lane transactions can wait in the sequencer's queue")
 }
 
-func DangerousAddOptions(prefix string, f *pflag.FlagSet) {
-	f.Bool(prefix+".disable-seq-inbox-max-data-size-check", DefaultDangerousConfig.DisableSeqInboxMaxDataSizeCheck, "DANGEROUS! disables nitro checks on sequencer MaxTxDataSize against the sequencer inbox MaxDataSize")
-	f.Bool(prefix+".disable-blob-base-fee-check", DefaultDangerousConfig.DisableBlobBaseFeeCheck, "DANGEROUS! disables nitro checks on sequencer for blob base fee")
+func SequencerDangerousAddOptions(prefix string, f *pflag.FlagSet) {
+	f.Bool(prefix+".disable-seq-inbox-max-data-size-check", DefaultSequencerDangerousConfig.DisableSeqInboxMaxDataSizeCheck, "DANGEROUS! disables nitro checks on sequencer MaxTxDataSize against the sequencer inbox MaxDataSize")
+	f.Bool(prefix+".disable-blob-base-fee-check", DefaultSequencerDangerousConfig.DisableBlobBaseFeeCheck, "DANGEROUS! disables nitro checks on sequencer for blob base fee")
 }
 
 type txQueueItem struct {
@@ -1225,6 +1226,22 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 
 	var startOfReadingFromTxQueue time.Time
 
+	if s.execEngine.bc.Config().DebugMode() {
+		chainConfig := s.execEngine.bc.Config()
+		if lastBlock.Number.Uint64()+1 == chainConfig.ArbitrumChainParams.DebugBlock {
+			// publish transaction to trigger next block
+			tx := debugblock.PrepareDebugTransaction(chainConfig, lastBlock)
+			if tx != nil {
+				go func() {
+					if err := s.PublishTransaction(ctx, tx, nil); err != nil {
+						log.Error("debug block: failed to publish tx", "err", err)
+					} else {
+						log.Warn("published dangerous debug block tx", "txHash", tx.Hash())
+					}
+				}()
+			}
+		}
+	}
 	for {
 		if len(queueItems) == 1 {
 			startOfReadingFromTxQueue = time.Now()
