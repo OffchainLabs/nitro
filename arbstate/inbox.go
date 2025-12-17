@@ -80,7 +80,7 @@ type SequencerMessage struct {
 
 const MaxSegmentsPerSequencerMessage = 100 * 1024
 
-func ParseSequencerMessage(ctx context.Context, batchNum uint64, batchBlockHash common.Hash, data []byte, dapReaders DapReaderSource, keysetValidationMode daprovider.KeysetValidationMode, chainConfig *params.ChainConfig, arbosVersion uint64) (*SequencerMessage, error) {
+func ParseSequencerMessage(ctx context.Context, batchNum uint64, batchBlockHash common.Hash, data []byte, dapReaders DapReaderSource, keysetValidationMode daprovider.KeysetValidationMode, chainConfig *params.ChainConfig) (*SequencerMessage, error) {
 	if len(data) < 40 {
 		return nil, errors.New("sequencer message missing L1 header")
 	}
@@ -148,7 +148,7 @@ func ParseSequencerMessage(ctx context.Context, batchNum uint64, batchBlockHash 
 	// It's not safe to trust any part of the payload from this point onwards.
 	var uncompressedBatchSizeLimit uint64
 	if chainConfig != nil {
-		uncompressedBatchSizeLimit = chainConfig.MaxUncompressedBatchSize(arbosVersion)
+		uncompressedBatchSizeLimit = chainConfig.MaxUncompressedBatchSize()
 	} else { // In case chainConfig is nil, fall back to params default (e.g. in tests or for the genesis block)
 		uncompressedBatchSizeLimit = params.DefaultMaxUncompressedBatchSize
 	}
@@ -218,15 +218,9 @@ type inboxMultiplexer struct {
 	// but ParseSequencerMessage still needs this to decide whether to panic or log on validation errors.
 	// In replay mode, this allows proper error handling based on the position within the message.
 	keysetValidationMode daprovider.KeysetValidationMode
-	// ArbOS version is used to determine a batch size limit from the chain config during sequencer message parsing.
-	// While ideally this would be read directly from the batch series being processed (since the version might be
-	// just upgraded), it is impossible (we would have to execute them on-fly). However, it should be safe to pass
-	// "recent enough" ArbOS version here, since batch size limit is only expected to either stay the same or increase
-	// with time.
-	recentArbOSVersion uint64
 }
 
-func NewInboxMultiplexer(backend InboxBackend, delayedMessagesRead uint64, dapReaders DapReaderSource, keysetValidationMode daprovider.KeysetValidationMode, chainConfig *params.ChainConfig, recentArbOSVersion uint64) arbostypes.InboxMultiplexer {
+func NewInboxMultiplexer(backend InboxBackend, delayedMessagesRead uint64, dapReaders DapReaderSource, keysetValidationMode daprovider.KeysetValidationMode, chainConfig *params.ChainConfig) arbostypes.InboxMultiplexer {
 	return &inboxMultiplexer{
 		backend:                   backend,
 		delayedMessagesRead:       delayedMessagesRead,
@@ -239,7 +233,6 @@ func NewInboxMultiplexer(backend InboxBackend, delayedMessagesRead uint64, dapRe
 		cachedSegmentBlockNumber:  0,
 		cachedSubMessageNumber:    0,
 		keysetValidationMode:      keysetValidationMode,
-		recentArbOSVersion:        recentArbOSVersion,
 	}
 }
 
@@ -261,7 +254,7 @@ func (r *inboxMultiplexer) Pop(ctx context.Context) (*arbostypes.MessageWithMeta
 		r.cachedSequencerMessageNum = r.backend.GetSequencerInboxPosition()
 
 		var err error
-		r.cachedSequencerMessage, err = ParseSequencerMessage(ctx, r.cachedSequencerMessageNum, batchBlockHash, bytes, r.dapReaders, r.keysetValidationMode, r.chainConfig, r.recentArbOSVersion)
+		r.cachedSequencerMessage, err = ParseSequencerMessage(ctx, r.cachedSequencerMessageNum, batchBlockHash, bytes, r.dapReaders, r.keysetValidationMode, r.chainConfig)
 		if err != nil {
 			return nil, err
 		}

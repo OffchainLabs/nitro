@@ -50,7 +50,6 @@ func BuildBlock(
 		nil,
 		daprovider.KeysetValidate,
 		getChainConfig(),
-		params.ArbosVersion_50,
 	)
 
 	ctx := context.Background()

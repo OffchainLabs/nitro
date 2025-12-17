@@ -66,7 +66,6 @@ type sequencerMessageParserFunc func(
 	dapReaders arbstate.DapReaderSource,
 	keysetValidationMode daprovider.KeysetValidationMode,
 	chainConfig *params.ChainConfig,
-	arbosVersion uint64,
 ) (*arbstate.SequencerMessage, error)
 
 // Defines a function that can extract messages from a batch.

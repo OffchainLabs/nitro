@@ -25,9 +25,7 @@ import (
 	"github.com/offchainlabs/nitro/broadcaster"
 	"github.com/offchainlabs/nitro/broadcaster/message"
 	"github.com/offchainlabs/nitro/daprovider"
-	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/staker"
-	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/containers"
 )
 
@@ -37,28 +35,24 @@ var (
 )
 
 type InboxTracker struct {
-	db                   ethdb.Database
-	txStreamer           *TransactionStreamer
-	mutex                sync.Mutex
-	validator            *staker.BlockValidator
-	dapReaders           *daprovider.DAProviderRegistry
-	snapSyncConfig       SnapSyncConfig
-	arbosVersionGetter   execution.ArbOSVersionGetter
-	lastSeenArbosVersion uint64
+	db             ethdb.Database
+	txStreamer     *TransactionStreamer
+	mutex          sync.Mutex
+	validator      *staker.BlockValidator
+	dapReaders     *daprovider.DAProviderRegistry
+	snapSyncConfig SnapSyncConfig
 
 	batchMetaMutex sync.Mutex
 	batchMeta      *containers.LruCache[uint64, BatchMetadata]
 }
 
-func NewInboxTracker(db ethdb.Database, txStreamer *TransactionStreamer, dapReaders *daprovider.DAProviderRegistry, snapSyncConfig SnapSyncConfig, arbosVersionGetter execution.ArbOSVersionGetter, initialArbosVersion uint64) (*InboxTracker, error) {
+func NewInboxTracker(db ethdb.Database, txStreamer *TransactionStreamer, dapReaders *daprovider.DAProviderRegistry, snapSyncConfig SnapSyncConfig) (*InboxTracker, error) {
 	tracker := &InboxTracker{
-		db:                   db,
-		txStreamer:           txStreamer,
-		dapReaders:           dapReaders,
-		batchMeta:            containers.NewLruCache[uint64, BatchMetadata](1000),
-		snapSyncConfig:       snapSyncConfig,
-		arbosVersionGetter:   arbosVersionGetter,
-		lastSeenArbosVersion: initialArbosVersion,
+		db:             db,
+		txStreamer:     txStreamer,
+		dapReaders:     dapReaders,
+		batchMeta:      containers.NewLruCache[uint64, BatchMetadata](1000),
+		snapSyncConfig: snapSyncConfig,
 	}
 	return tracker, nil
 }
@@ -787,19 +781,12 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client *ethclien
 		ctx:    ctx,
 		client: client,
 	}
-	recentArbosVersion, err := t.arbosVersionGetter.ArbOSVersionForMessageIndex(arbmath.SaturatingUSub(prevbatchmeta.MessageCount, 1)).Await(ctx)
-	if err != nil {
-		recentArbosVersion = t.lastSeenArbosVersion
-	} else {
-		t.lastSeenArbosVersion = recentArbosVersion
-	}
 	multiplexer := arbstate.NewInboxMultiplexer(
 		backend,
 		prevbatchmeta.DelayedMessageCount,
 		t.dapReaders,
 		daprovider.KeysetValidate,
 		t.txStreamer.chainConfig,
-		recentArbosVersion,
 	)
 	batchMessageCounts := make(map[uint64]arbutil.MessageIndex)
 	currentPos := prevbatchmeta.MessageCount + 1

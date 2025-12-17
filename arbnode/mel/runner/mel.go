@@ -18,7 +18,6 @@ import (
 	"github.com/offchainlabs/nitro/bold/containers/fsm"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/daprovider"
-	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
@@ -40,7 +39,6 @@ type MessageExtractor struct {
 	stopwaiter.StopWaiter
 	parentChainReader         ParentChainReader
 	chainConfig               *params.ChainConfig
-	arbosVersionGetter        execution.ArbOSVersionGetter
 	addrs                     *chaininfo.RollupAddresses
 	melDB                     *Database
 	msgConsumer               mel.MessageConsumer
@@ -230,7 +228,6 @@ func (m *MessageExtractor) Act(ctx context.Context) (time.Duration, error) {
 			receiptFetcher,
 			txsFetcher,
 			m.chainConfig,
-			m.arbosVersionGetter,
 		)
 		if err != nil {
 			return m.retryInterval, err

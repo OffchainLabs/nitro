@@ -715,10 +715,8 @@ func getInboxTrackerAndReader(
 	delayedBridge *DelayedBridge,
 	sequencerInbox *SequencerInbox,
 	exec execution.ExecutionSequencer,
-	arbOSVersionGetter execution.ArbOSVersionGetter,
-	initialArbosVersion uint64,
 ) (*InboxTracker, *InboxReader, error) {
-	inboxTracker, err := NewInboxTracker(arbDb, txStreamer, dapReaders, config.SnapSyncTest, arbOSVersionGetter, initialArbosVersion)
+	inboxTracker, err := NewInboxTracker(arbDb, txStreamer, dapReaders, config.SnapSyncTest)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -1186,7 +1184,7 @@ func createNodeImpl(
 		return nil, err
 	}
 
-	inboxTracker, inboxReader, err := getInboxTrackerAndReader(ctx, arbDb, txStreamer, dapRegistry, config, configFetcher, l1client, l1Reader, deployInfo, delayedBridge, sequencerInbox, executionSequencer, arbOSVersionGetter, l2Config.ArbitrumChainParams.InitialArbOSVersion)
+	inboxTracker, inboxReader, err := getInboxTrackerAndReader(ctx, arbDb, txStreamer, dapRegistry, config, configFetcher, l1client, l1Reader, deployInfo, delayedBridge, sequencerInbox, executionSequencer)
 	if err != nil {
 		return nil, err
 	}

@@ -924,7 +924,7 @@ type buildingBatch struct {
 	firstUsefulMsg     *arbostypes.MessageWithMetadata
 }
 
-func (b *BatchPoster) newBatchSegments(ctx context.Context, firstDelayed uint64, use4844 bool, usingAltDA bool, arbosVersion uint64) (*batchSegments, error) {
+func (b *BatchPoster) newBatchSegments(ctx context.Context, firstDelayed uint64, use4844 bool, usingAltDA bool) (*batchSegments, error) {
 	config := b.config()
 	var maxSize int
 
@@ -993,7 +993,7 @@ func (b *BatchPoster) newBatchSegments(ctx context.Context, firstDelayed uint64,
 		recompressionLevel:  recompressionLevel,
 		rawSegments:         make([][]byte, 0, 128),
 		delayedMsg:          firstDelayed,
-		maxUncompressedSize: int(b.chainConfig.MaxUncompressedBatchSize(arbosVersion)), // #nosec G115
+		maxUncompressedSize: int(b.chainConfig.MaxUncompressedBatchSize()), // #nosec G115
 	}, nil
 }
 
@@ -1415,11 +1415,6 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 	if dbBatchCount > batchPosition.NextSeqNum {
 		return false, fmt.Errorf("attempting to post batch %v, but the local inbox tracker database already has %v batches", batchPosition.NextSeqNum, dbBatchCount)
 	}
-
-	arbOSVersion, err := b.arbOSVersionGetter.ArbOSVersionForMessageIndex(arbutil.MessageIndex(arbmath.SaturatingUSub(uint64(batchPosition.MessageCount), 1))).Await(ctx)
-	if err != nil {
-		return false, err
-	}
 	if b.building == nil || b.building.startMsgCount != batchPosition.MessageCount {
 		latestHeader, err := b.l1Reader.LastHeader(ctx)
 		if err != nil {
@@ -1433,6 +1428,10 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 			config.Post4844Blobs &&
 			latestHeader.ExcessBlobGas != nil &&
 			latestHeader.BlobGasUsed != nil {
+			arbOSVersion, err := b.arbOSVersionGetter.ArbOSVersionForMessageIndex(arbutil.MessageIndex(arbmath.SaturatingUSub(uint64(batchPosition.MessageCount), 1))).Await(ctx)
+			if err != nil {
+				return false, err
+			}
 			if arbOSVersion >= params.ArbosVersion_20 {
 				if config.IgnoreBlobPrice {
 					use4844 = true
@@ -1489,7 +1488,7 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 		// Only use 4844 batching when posting to EthDA
 		use4844 = use4844 && buildingForEthDA
 		usingAltDA := !buildingForEthDA
-		segments, err := b.newBatchSegments(ctx, batchPosition.DelayedMessageCount, use4844, usingAltDA, arbOSVersion)
+		segments, err := b.newBatchSegments(ctx, batchPosition.DelayedMessageCount, use4844, usingAltDA)
 		if err != nil {
 			return false, err
 		}
@@ -1934,7 +1933,7 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 		b.building.muxBackend.seqMsg = seqMsg
 		b.building.muxBackend.delayedInboxStart = batchPosition.DelayedMessageCount
 		b.building.muxBackend.SetPositionWithinMessage(0)
-		simMux := arbstate.NewInboxMultiplexer(b.building.muxBackend, batchPosition.DelayedMessageCount, dapReaders, daprovider.KeysetValidate, b.chainConfig, arbOSVersion)
+		simMux := arbstate.NewInboxMultiplexer(b.building.muxBackend, batchPosition.DelayedMessageCount, dapReaders, daprovider.KeysetValidate, b.chainConfig)
 		log.Debug("Begin checking the correctness of batch against inbox multiplexer", "startMsgSeqNum", batchPosition.MessageCount, "endMsgSeqNum", b.building.msgCount-1)
 		for i := batchPosition.MessageCount; i < b.building.msgCount; i++ {
 			msg, err := simMux.Pop(ctx)

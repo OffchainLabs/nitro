@@ -10,7 +10,6 @@ import (
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
@@ -78,7 +77,6 @@ func FuzzInboxMultiplexer(f *testing.F) {
 			nil,
 			daprovider.KeysetValidate,
 			chaininfo.ArbitrumDevTestChainConfig(),
-			params.ArbosVersion_50,
 		)
 		_, err := multiplexer.Pop(context.TODO())
 		if err != nil {

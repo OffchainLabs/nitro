@@ -301,10 +301,9 @@ func main() {
 		return wavmio.ReadInboxMessage(batchNum), nil
 	}
 	readMessage := func(dasEnabled bool, chainConfig *params.ChainConfig) *arbostypes.MessageWithMetadata {
-		var delayedMessagesRead, arbosVersion uint64
+		var delayedMessagesRead uint64
 		if lastBlockHeader != nil {
 			delayedMessagesRead = lastBlockHeader.Nonce.Uint64()
-			arbosVersion = types.DeserializeHeaderExtraInformation(lastBlockHeader).ArbOSFormatVersion
 		}
 		var dasReader dasutil.DASReader
 		var dasKeysetFetcher dasutil.DASKeysetFetcher
@@ -335,7 +334,7 @@ func main() {
 			panic(fmt.Sprintf("Failed to register DA Certificate reader: %v", err))
 		}
 
-		inboxMultiplexer := arbstate.NewInboxMultiplexer(backend, delayedMessagesRead, dapReaders, keysetValidationMode, chainConfig, arbosVersion)
+		inboxMultiplexer := arbstate.NewInboxMultiplexer(backend, delayedMessagesRead, dapReaders, keysetValidationMode, chainConfig)
 		ctx := context.Background()
 		message, err := inboxMultiplexer.Pop(ctx)
 		if err != nil {
