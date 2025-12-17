@@ -1,7 +1,7 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-package dbschema
+package schema
 
 var (
 	MessagePrefix                       []byte = []byte("m") // maps a message sequence number to a message
@@ -15,7 +15,8 @@ var (
 	SequencerBatchMetaPrefix            []byte = []byte("s") // maps a batch sequence number to BatchMetadata
 	DelayedSequencedPrefix              []byte = []byte("a") // maps a delayed message count to the first sequencer batch sequence number with this delayed count
 	MelStatePrefix                      []byte = []byte("l") // maps a parent chain block number to its computed MEL state
-	MelDelayedMessagePrefix             []byte = []byte("y") // maps a delayed sequence number to an accumulator and an RLP encoded message [Note: might need to replace or be replaced by RlpDelayedMessagePrefix]
+	MelDelayedMessagePrefix             []byte = []byte("y") // maps a delayed sequence number to an accumulator and an RLP encoded message [TODO(NIT-4209): might need to replace or be replaced by RlpDelayedMessagePrefix]
+	MelSequencerBatchMetaPrefix         []byte = []byte("q") // maps a batch sequence number to BatchMetadata [TODO(NIT-4209): might need to replace or be replaced by SequencerBatchMetaPrefix]
 
 	MessageCountKey             []byte = []byte("_messageCount")                // contains the current message count
 	LastPrunedMessageKey        []byte = []byte("_lastPrunedMessageKey")        // contains the last pruned message key

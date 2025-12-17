@@ -35,13 +35,10 @@ type ChainBackend interface {
 	ReceiptFetcher
 	TxFetcher
 	HeadSubscriber
+	BalanceAt(ctx context.Context, account common.Address, blockNumber *big.Int) (*big.Int, error)
 	ChainID(ctx context.Context) (*big.Int, error)
 	Close()
 	Client() rpc.ClientInterface
-	// HeaderU64 returns either latest, safe, or finalized block number from
-	// the current canonical chain, depending on how the underlying implementation
-	// of ChainBackend is configured.
-	HeaderU64(ctx context.Context) (uint64, error)
 }
 
 // ReceiptFetcher defines the ability to retrieve transactions receipts from the chain.

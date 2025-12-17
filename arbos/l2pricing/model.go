@@ -305,14 +305,14 @@ func (ps *L2PricingState) CalcMultiGasConstraintsExponents() ([multigas.NumResou
 			if err != nil {
 				return [multigas.NumResourceKind]arbmath.Bips{}, err
 			}
-			sumWeights, err := constraint.SumWeights()
+			maxWeight, err := constraint.MaxWeight()
 			if err != nil {
 				return [multigas.NumResourceKind]arbmath.Bips{}, err
 			}
 
 			divisor := arbmath.SaturatingCastToBips(
 				arbmath.SaturatingUMul(uint64(adjustmentWindow),
-					arbmath.SaturatingUMul(target, sumWeights)))
+					arbmath.SaturatingUMul(target, maxWeight)))
 
 			usedResources, err := constraint.UsedResources()
 			if err != nil {
