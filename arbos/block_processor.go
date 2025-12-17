@@ -196,7 +196,7 @@ func ProduceBlockAdvanced(
 	exposeMultiGas bool,
 ) (*types.Block, types.Receipts, error) {
 
-	arbState, err := arbosState.OpenSystemArbosState(statedb, nil, true)
+	arbState, err := arbosState.OpenSystemArbosState(statedb, nil, false)
 	if err != nil {
 		return nil, nil, err
 	}
