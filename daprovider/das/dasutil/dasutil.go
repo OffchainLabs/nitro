@@ -92,6 +92,21 @@ func (d *readerForDAS) CollectPreimages(
 	})
 }
 
+// RecoverPayloadAndPreimages fetches the underlying payload and collects preimages from the DA provider given the batch header information
+func (d *readerForDAS) RecoverPayloadAndPreimages(
+	batchNum uint64,
+	batchBlockHash common.Hash,
+	sequencerMsg []byte,
+) containers.PromiseInterface[daprovider.PayloadAndPreimagesResult] {
+	return containers.DoPromise(context.Background(), func(ctx context.Context) (daprovider.PayloadAndPreimagesResult, error) {
+		payload, preimages, err := d.recoverInternal(ctx, batchNum, sequencerMsg, true, true)
+		return daprovider.PayloadAndPreimagesResult{
+			Payload:   payload,
+			Preimages: preimages,
+		}, err
+	})
+}
+
 // NewWriterForDAS is generally meant to be only used by nitro.
 // DA Providers should implement methods in the DAProviderWriter interface independently
 func NewWriterForDAS(dasWriter DASWriter, maxMessageSize int) *writerForDAS {
