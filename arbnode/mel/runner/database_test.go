@@ -12,7 +12,8 @@ import (
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/rlp"
 
-	dbschema "github.com/offchainlabs/nitro/arbnode/db-schema"
+	"github.com/offchainlabs/nitro/arbnode/db/read"
+	"github.com/offchainlabs/nitro/arbnode/db/schema"
 	"github.com/offchainlabs/nitro/arbnode/mel"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 )
@@ -161,7 +162,7 @@ func TestMelDelayedMessagesAccumulation(t *testing.T) {
 	corruptIndex := uint64(3)
 	corruptDelayed := delayedMsgs[corruptIndex]
 	corruptDelayed.Message.L2msg = []byte("corrupt")
-	key := dbKey(dbschema.MelDelayedMessagePrefix, corruptIndex) // #nosec G115
+	key := read.Key(schema.MelDelayedMessagePrefix, corruptIndex) // #nosec G115
 	delayedBytes, err := rlp.EncodeToBytes(*corruptDelayed)
 	require.NoError(t, err)
 	require.NoError(t, arbDb.Put(key, delayedBytes))
