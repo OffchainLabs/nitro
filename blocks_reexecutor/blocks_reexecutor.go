@@ -202,7 +202,7 @@ func New(c *Config, blockchain *core.BlockChain, ethDb ethdb.Database) (*BlocksR
 		stateFor:     stateForFunc,
 		blocks:       blocks,
 		done:         make(chan struct{}, c.Room),
-		fatalErrChan: make(chan error, 10),
+		fatalErrChan: make(chan error, c.Room),
 		success:      make(chan struct{}),
 		mutex:        sync.Mutex{},
 	}
