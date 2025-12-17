@@ -144,8 +144,8 @@ func (c *Config) ValidatorRequired() bool {
 // transitioning to the new --node.da.anytrust.* flags.
 func (c *Config) MigrateDeprecatedConfig() {
 	if c.DataAvailability.Enable {
-		log.Error("DEPRECATED: --node.data-availability.* flags are deprecated; " +
-			"please migrate to --node.da.anytrust.*")
+		log.Error("DEPRECATED: --node.data-availability.* flags are deprecated and will " +
+			"overwrite any --node.da.anytrust.* settings; please migrate to --node.da.anytrust.*")
 		c.DA.AnyTrust = c.DataAvailability
 	}
 }
