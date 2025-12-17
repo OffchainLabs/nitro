@@ -116,8 +116,7 @@ func TestMultiWriterFailure_CustomDAShutdownWithAnyTrustAvailable(t *testing.T) 
 
 	// Phase 1: Normal CustomDA operation
 	t.Log("Phase 1: Testing normal CustomDA operation")
-	checkBatchPosting(t, ctx, builder.L1.Client, builder.L2.Client,
-		builder.L1Info, builder.L2Info, big.NewInt(1e12), l2B.Client)
+	checkBatchPosting(t, ctx, builder, l2B.Client)
 
 	// Phase 2: Shutdown CustomDA and verify batch posting fails
 	t.Log("Phase 2: Shutting down CustomDA, expecting batch posting to fail")
@@ -231,8 +230,7 @@ func TestMultiWriterFailure_CustomDAShutdownNoFallbackAvailable(t *testing.T) {
 
 	// Phase 1: Normal CustomDA operation
 	t.Log("Phase 1: Testing normal CustomDA operation")
-	checkBatchPosting(t, ctx, builder.L1.Client, builder.L2.Client,
-		builder.L1Info, builder.L2Info, big.NewInt(1e12), l2B.Client)
+	checkBatchPosting(t, ctx, builder, l2B.Client)
 
 	// Phase 2: Shutdown CustomDA and verify batch posting fails
 	t.Log("Phase 2: Shutting down CustomDA, expecting batch posting to fail")
@@ -359,8 +357,7 @@ func TestMultiWriterFailure_AnyTrustShutdownFallbackDisabled(t *testing.T) {
 
 	// Phase 1: Normal AnyTrust operation
 	t.Log("Phase 1: Testing normal AnyTrust operation")
-	checkBatchPosting(t, ctx, builder.L1.Client, builder.L2.Client,
-		builder.L1Info, builder.L2Info, big.NewInt(1e12), l2B.Client)
+	checkBatchPosting(t, ctx, builder, l2B.Client)
 
 	// Phase 2: Shutdown AnyTrust and verify batch posting fails
 	t.Log("Phase 2: Shutting down AnyTrust, expecting batch posting to fail")
@@ -500,8 +497,7 @@ func TestMultiWriterFallback_CustomDAToAnyTrustExplicit(t *testing.T) {
 
 	// Phase 1: Normal CustomDA operation
 	t.Log("Phase 1: Testing normal CustomDA operation")
-	checkBatchPosting(t, ctx, builder.L1.Client, builder.L2.Client,
-		builder.L1Info, builder.L2Info, big.NewInt(1e12), l2B.Client)
+	checkBatchPosting(t, ctx, builder, l2B.Client)
 
 	// Phase 2: Trigger explicit fallback and verify AnyTrust is used
 	t.Log("Phase 2: Triggering explicit fallback from CustomDA to AnyTrust")
@@ -515,8 +511,7 @@ func TestMultiWriterFallback_CustomDAToAnyTrustExplicit(t *testing.T) {
 	Require(t, err)
 
 	// Post a batch that should fall back to AnyTrust
-	checkBatchPosting(t, ctx, builder.L1.Client, builder.L2.Client,
-		builder.L1Info, builder.L2Info, big.NewInt(2e12), l2B.Client)
+	checkBatchPosting(t, ctx, builder, l2B.Client)
 
 	phase2EndBlock, err := builder.L1.Client.BlockNumber(ctx)
 	Require(t, err)
@@ -565,8 +560,7 @@ func TestMultiWriterFallback_CustomDAToAnyTrustExplicit(t *testing.T) {
 	Require(t, err)
 
 	// Post another batch that should use CustomDA again
-	checkBatchPosting(t, ctx, builder.L1.Client, builder.L2.Client,
-		builder.L1Info, builder.L2Info, big.NewInt(3e12), l2B.Client)
+	checkBatchPosting(t, ctx, builder, l2B.Client)
 
 	phase3EndBlock, err := builder.L1.Client.BlockNumber(ctx)
 	Require(t, err)
@@ -952,9 +946,7 @@ func TestMultiWriterFallback_AnyTrustToCalldataOnBackendFailure(t *testing.T) {
 	phase1StartBlock, err := builder.L1.Client.BlockNumber(ctx)
 	Require(t, err)
 
-	checkBatchPosting(t, ctx, builder.L1.Client, builder.L2.Client,
-		builder.L1Info, builder.L2Info, big.NewInt(1e12), l2B.Client)
-
+	checkBatchPosting(t, ctx, builder, l2B.Client)
 	phase1EndBlock, err := builder.L1.Client.BlockNumber(ctx)
 	Require(t, err)
 
@@ -1001,8 +993,7 @@ func TestMultiWriterFallback_AnyTrustToCalldataOnBackendFailure(t *testing.T) {
 	Require(t, err)
 
 	// Post a batch that should fall back to Calldata
-	checkBatchPosting(t, ctx, builder.L1.Client, builder.L2.Client,
-		builder.L1Info, builder.L2Info, big.NewInt(2e12), l2B.Client)
+	checkBatchPosting(t, ctx, builder, l2B.Client)
 
 	phase2EndBlock, err := builder.L1.Client.BlockNumber(ctx)
 	Require(t, err)
