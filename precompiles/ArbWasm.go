@@ -213,7 +213,7 @@ func (con ArbWasm) ProgramMemoryFootprint(c ctx, evm mech, program addr) (uint16
 	return c.State.Programs().ProgramMemoryFootprint(codehash, evm.Context.Time, params)
 }
 
-// Gets returns the amount of time remaining until the program expires
+// ProgramTimeLeft returns the amount of time remaining until the program expires
 func (con ArbWasm) ProgramTimeLeft(c ctx, evm mech, program addr) (uint64, error) {
 	codehash, params, err := con.getCodeHash(c, program)
 	if err != nil {

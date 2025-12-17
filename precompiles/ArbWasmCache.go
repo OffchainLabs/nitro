@@ -12,12 +12,12 @@ type ArbWasmCache struct {
 	UpdateProgramCacheGasCost func(addr, bytes32, bool) (uint64, error)
 }
 
-// See if the user is a cache manager owner.
+// IsCacheManager checks if the user is a cache manager owner.
 func (con ArbWasmCache) IsCacheManager(c ctx, _ mech, addr addr) (bool, error) {
 	return c.State.Programs().CacheManagers().IsMember(addr)
 }
 
-// Retrieve all authorized address managers.
+// AllCacheManagers retrieves all authorized address managers.
 func (con ArbWasmCache) AllCacheManagers(c ctx, _ mech) ([]addr, error) {
 	return c.State.Programs().CacheManagers().AllMembers(65536)
 }

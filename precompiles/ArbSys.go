@@ -51,7 +51,7 @@ func (con *ArbSys) ArbBlockHash(c ctx, evm mech, arbBlockNumber *big.Int) (bytes
 		if c.State.ArbOSVersion() >= params.ArbosVersion_11 {
 			return common.Hash{}, con.InvalidBlockNumberError(arbBlockNumber, evm.Context.BlockNumber)
 		}
-		return common.Hash{}, errors.New("invalid block number for ArbBlockHAsh")
+		return common.Hash{}, errors.New("invalid block number for ArbBlockHash")
 	}
 
 	return evm.Context.GetHash(requestedBlockNum), nil
