@@ -3,6 +3,7 @@ package melrunner
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -16,15 +17,16 @@ import (
 // RecordingDatabase holds an ethdb.KeyValueStore that contains delayed messages stored by native MEL and implements DelayedMessageDatabase
 // interface defined in 'mel'. It is solely used for recording of preimages relating to delayed messages needed for MEL validation
 type RecordingDatabase struct {
-	db        ethdb.KeyValueStore
-	preimages map[common.Hash][]byte
+	db          ethdb.KeyValueStore
+	preimages   map[common.Hash][]byte
+	initialized bool
 }
 
 func NewRecordingDatabase(db ethdb.KeyValueStore) *RecordingDatabase {
-	return &RecordingDatabase{db, make(map[common.Hash][]byte)}
+	return &RecordingDatabase{db, make(map[common.Hash][]byte), false}
 }
 
-func (r *RecordingDatabase) Initialize(ctx context.Context, state *mel.State) error {
+func (r *RecordingDatabase) initialize(ctx context.Context, state *mel.State) error {
 	var acc *merkleAccumulator.MerkleAccumulator
 	for i := state.ParentChainBlockNumber; i > 0; i-- {
 		seenState, err := getState(ctx, r.db, i)
@@ -85,6 +87,12 @@ func (r *RecordingDatabase) ReadDelayedMessage(ctx context.Context, state *mel.S
 	if index == 0 { // Init message
 		// This message cannot be found in the database as it is supposed to be seen and read in the same block, so we persist that in DelayedMessageBacklog
 		return state.GetDelayedMessageBacklog().GetInitMsg(), nil
+	}
+	if !r.initialized {
+		if err := r.initialize(ctx, state); err != nil {
+			return nil, fmt.Errorf("error initializing recording database for MEL validation: %w", err)
+		}
+		r.initialized = true
 	}
 	delayed, err := fetchDelayedMessage(r.db, index)
 	if err != nil {
