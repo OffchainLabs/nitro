@@ -50,20 +50,20 @@ var (
 )
 
 // KeysetValidationMode controls validation of AnyTrust keysets.
-// Used by the DAS reader to verify keyset signatures.
+// Used by the AnyTrust reader to verify keyset signatures.
 type KeysetValidationMode uint8
 
 const KeysetValidate KeysetValidationMode = 0
 const KeysetPanicIfInvalid KeysetValidationMode = 1
 const KeysetDontValidate KeysetValidationMode = 2
 
-// DASMessageHeaderFlag indicates that this data is a certificate for the data availability service,
+// AnyTrustMessageHeaderFlag indicates that this data is a certificate for the data availability service,
 // which will retrieve the full batch data.
-const DASMessageHeaderFlag byte = 0x80
+const AnyTrustMessageHeaderFlag byte = 0x80
 
-// TreeDASMessageHeaderFlag indicates that this DAS certificate data employs the new merkelization strategy.
-// Ignored when DASMessageHeaderFlag is not set.
-const TreeDASMessageHeaderFlag byte = 0x08
+// AnyTrustTreeMessageHeaderFlag indicates that this AnyTrust certificate data employs the new merkelization strategy.
+// Ignored when AnyTrustMessageHeaderFlag is not set.
+const AnyTrustTreeMessageHeaderFlag byte = 0x08
 
 // L1AuthenticatedMessageHeaderFlag indicates that this message was authenticated by L1. Currently unused.
 const L1AuthenticatedMessageHeaderFlag byte = 0x40
@@ -78,13 +78,13 @@ const BlobHashesHeaderFlag byte = L1AuthenticatedMessageHeaderFlag | 0x10 // 0x5
 const BrotliMessageHeaderByte byte = 0
 
 // DACertificateMessageHeaderFlag indicates that this message uses a custom data availability system.
-// Anytrust uses the legacy TreeDASMessageHeaderFlag instead despite also having a certificate.
+// Anytrust uses the legacy AnyTrustTreeMessageHeaderFlag instead despite also having a certificate.
 const DACertificateMessageHeaderFlag byte = 0x01
 
 // KnownHeaderBits is all header bits with known meaning to this nitro version
-const KnownHeaderBits byte = DASMessageHeaderFlag | TreeDASMessageHeaderFlag | L1AuthenticatedMessageHeaderFlag | ZeroheavyMessageHeaderFlag | BlobHashesHeaderFlag | DACertificateMessageHeaderFlag
+const KnownHeaderBits byte = AnyTrustMessageHeaderFlag | AnyTrustTreeMessageHeaderFlag | L1AuthenticatedMessageHeaderFlag | ZeroheavyMessageHeaderFlag | BlobHashesHeaderFlag | DACertificateMessageHeaderFlag
 
-var DefaultDASRetentionPeriod time.Duration = time.Hour * 24 * 15
+var DefaultAnyTrustRetentionPeriod time.Duration = time.Hour * 24 * 15
 
 // hasBits returns true if `checking` has all `bits`
 func hasBits(checking byte, bits byte) bool {
@@ -95,12 +95,12 @@ func IsL1AuthenticatedMessageHeaderByte(header byte) bool {
 	return hasBits(header, L1AuthenticatedMessageHeaderFlag)
 }
 
-func IsDASMessageHeaderByte(header byte) bool {
-	return hasBits(header, DASMessageHeaderFlag)
+func IsAnyTrustMessageHeaderByte(header byte) bool {
+	return hasBits(header, AnyTrustMessageHeaderFlag)
 }
 
-func IsTreeDASMessageHeaderByte(header byte) bool {
-	return hasBits(header, TreeDASMessageHeaderFlag)
+func IsAnyTrustTreeMessageHeaderByte(header byte) bool {
+	return hasBits(header, AnyTrustTreeMessageHeaderFlag)
 }
 
 func IsZeroheavyEncodedHeaderByte(header byte) bool {
