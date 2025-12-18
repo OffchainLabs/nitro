@@ -434,7 +434,7 @@ func TestOpenInitializeExecutionDbIncompatibleStateScheme(t *testing.T) {
 	l1Client := ethclient.NewClient(stack.Attach())
 
 	// opening for the first time doesn't error
-	executionDb, blockchain, err := openInitializeExecutionDb(
+	executionDB, blockchain, err := openInitializeExecutionDb(
 		ctx,
 		stack,
 		&nodeConfig,
@@ -448,11 +448,11 @@ func TestOpenInitializeExecutionDbIncompatibleStateScheme(t *testing.T) {
 	)
 	Require(t, err)
 	blockchain.Stop()
-	err = executionDb.Close()
+	err = executionDB.Close()
 	Require(t, err)
 
 	// opening for the second time doesn't error
-	executionDb, blockchain, err = openInitializeExecutionDb(
+	executionDB, blockchain, err = openInitializeExecutionDb(
 		ctx,
 		stack,
 		&nodeConfig,
@@ -466,7 +466,7 @@ func TestOpenInitializeExecutionDbIncompatibleStateScheme(t *testing.T) {
 	)
 	Require(t, err)
 	blockchain.Stop()
-	err = executionDb.Close()
+	err = executionDB.Close()
 	Require(t, err)
 
 	// opening with a different state scheme errors
@@ -700,7 +700,7 @@ func TestOpenInitializeExecutionDbEmptyInit(t *testing.T) {
 
 	l1Client := ethclient.NewClient(stack.Attach())
 
-	executionDb, blockchain, err := openInitializeExecutionDb(
+	executionDB, blockchain, err := openInitializeExecutionDb(
 		ctx,
 		stack,
 		&nodeConfig,
@@ -714,7 +714,7 @@ func TestOpenInitializeExecutionDbEmptyInit(t *testing.T) {
 	)
 	Require(t, err)
 	blockchain.Stop()
-	err = executionDb.Close()
+	err = executionDB.Close()
 	Require(t, err)
 }
 

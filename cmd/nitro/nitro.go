@@ -442,11 +442,11 @@ func mainImpl() int {
 		return 1
 	}
 
-	executionDb, l2BlockChain, err := openInitializeExecutionDb(ctx, stack, nodeConfig, new(big.Int).SetUint64(nodeConfig.Chain.ID), gethexec.DefaultCacheConfigFor(&nodeConfig.Execution.Caching), &nodeConfig.Execution.StylusTarget, tracer, &nodeConfig.Persistent, l1Client, rollupAddrs)
+	executionDB, l2BlockChain, err := openInitializeExecutionDb(ctx, stack, nodeConfig, new(big.Int).SetUint64(nodeConfig.Chain.ID), gethexec.DefaultCacheConfigFor(&nodeConfig.Execution.Caching), &nodeConfig.Execution.StylusTarget, tracer, &nodeConfig.Persistent, l1Client, rollupAddrs)
 	if l2BlockChain != nil {
 		deferFuncs = append(deferFuncs, func() { l2BlockChain.Stop() })
 	}
-	deferFuncs = append(deferFuncs, func() { closeDb(executionDb, "executionDb") })
+	deferFuncs = append(deferFuncs, func() { closeDb(executionDB, "executionDB") })
 	if err != nil {
 		pflag.Usage()
 		log.Error("error initializing database", "err", err)
@@ -470,7 +470,7 @@ func mainImpl() int {
 			log.Error("blocks-reexecutor cannot be enabled without --init.then-quit")
 			return 1
 		}
-		blocksReExecutor, err := blocksreexecutor.New(&nodeConfig.BlocksReExecutor, l2BlockChain, executionDb)
+		blocksReExecutor, err := blocksreexecutor.New(&nodeConfig.BlocksReExecutor, l2BlockChain, executionDB)
 		if err != nil {
 			log.Error("error initializing blocksReExecutor", "err", err)
 			return 1
@@ -523,7 +523,7 @@ func mainImpl() int {
 	execNode, err := gethexec.CreateExecutionNode(
 		ctx,
 		stack,
-		executionDb,
+		executionDB,
 		l2BlockChain,
 		l1Client,
 		&ExecutionNodeConfigFetcher{liveNodeConfig},

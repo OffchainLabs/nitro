@@ -115,7 +115,7 @@ func mainImpl() error {
 	return nil
 }
 
-func generateGenesisBlock(executionDb ethdb.Database, cacheConfig *core.BlockChainConfig, initData statetransfer.InitDataReader, chainConfig *params.ChainConfig, genesisArbOSInit *params.ArbOSInit, initMessage *arbostypes.ParsedInitMessage, accountsPerSync uint) (*types.Block, error) {
+func generateGenesisBlock(executionDB ethdb.Database, cacheConfig *core.BlockChainConfig, initData statetransfer.InitDataReader, chainConfig *params.ChainConfig, genesisArbOSInit *params.ArbOSInit, initMessage *arbostypes.ParsedInitMessage, accountsPerSync uint) (*types.Block, error) {
 	EmptyHash := common.Hash{}
 	prevHash := EmptyHash
 	blockNumber, err := initData.GetNextBlockNumber()
@@ -124,17 +124,17 @@ func generateGenesisBlock(executionDb ethdb.Database, cacheConfig *core.BlockCha
 	}
 	timestamp := uint64(0)
 	if blockNumber > 0 {
-		prevHash = rawdb.ReadCanonicalHash(executionDb, blockNumber-1)
+		prevHash = rawdb.ReadCanonicalHash(executionDB, blockNumber-1)
 		if prevHash == EmptyHash {
-			return nil, fmt.Errorf("block number %d not found in database", executionDb)
+			return nil, fmt.Errorf("block number %d not found in database", executionDB)
 		}
-		prevHeader := rawdb.ReadHeader(executionDb, prevHash, blockNumber-1)
+		prevHeader := rawdb.ReadHeader(executionDB, prevHash, blockNumber-1)
 		if prevHeader == nil {
-			return nil, fmt.Errorf("block header for block %d not found in database", executionDb)
+			return nil, fmt.Errorf("block header for block %d not found in database", executionDB)
 		}
 		timestamp = prevHeader.Time
 	}
-	stateRoot, err := arbosState.InitializeArbosInDatabase(executionDb, cacheConfig, initData, chainConfig, genesisArbOSInit, initMessage, timestamp, accountsPerSync)
+	stateRoot, err := arbosState.InitializeArbosInDatabase(executionDB, cacheConfig, initData, chainConfig, genesisArbOSInit, initMessage, timestamp, accountsPerSync)
 	if err != nil {
 		return nil, err
 	}

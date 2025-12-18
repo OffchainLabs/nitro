@@ -78,10 +78,10 @@ func testPruning(t *testing.T, mode string, pruneParallelStorageTraversal bool) 
 		stack, err := node.New(builder.l2StackConfig)
 		Require(t, err)
 		defer stack.Close()
-		chainData, err := stack.OpenDatabaseWithOptions("l2chaindata", node.DatabaseOptions{MetricsNamespace: "l2chaindata/", PebbleExtraOptions: conf.PersistentConfigDefault.Pebble.ExtraOptions("l2chaindata")})
+		chainDB, err := stack.OpenDatabaseWithOptions("l2chaindata", node.DatabaseOptions{MetricsNamespace: "l2chaindata/", PebbleExtraOptions: conf.PersistentConfigDefault.Pebble.ExtraOptions("l2chaindata")})
 		Require(t, err)
-		defer chainData.Close()
-		executionDbEntriesBeforePruning := countStateEntries(chainData)
+		defer chainDB.Close()
+		executionDbEntriesBeforePruning := countStateEntries(chainDB)
 
 		prand := testhelpers.NewPseudoRandomDataSource(t, 1)
 		var testKeys [][]byte
@@ -90,11 +90,11 @@ func testPruning(t *testing.T, mode string, pruneParallelStorageTraversal bool) 
 			testKeys = append(testKeys, prand.GetHash().Bytes())
 		}
 		for _, key := range testKeys {
-			err = chainData.Put(key, common.FromHex("0xdeadbeef"))
+			err = chainDB.Put(key, common.FromHex("0xdeadbeef"))
 			Require(t, err)
 		}
 		for _, key := range testKeys {
-			if has, _ := chainData.Has(key); !has {
+			if has, _ := chainDB.Has(key); !has {
 				Fatal(t, "internal test error - failed to check existence of test key")
 			}
 		}
@@ -104,16 +104,16 @@ func testPruning(t *testing.T, mode string, pruneParallelStorageTraversal bool) 
 		initConfig.PruneParallelStorageTraversal = pruneParallelStorageTraversal
 		coreCacheConfig := gethexec.DefaultCacheConfigFor(&builder.execConfig.Caching)
 		persistentConfig := conf.PersistentConfigDefault
-		err = pruning.PruneExecutionDb(ctx, chainData, stack, &initConfig, coreCacheConfig, &persistentConfig, builder.L1.Client, *builder.L2.ConsensusNode.DeployInfo, false, false)
+		err = pruning.PruneExecutionDb(ctx, chainDB, stack, &initConfig, coreCacheConfig, &persistentConfig, builder.L1.Client, *builder.L2.ConsensusNode.DeployInfo, false, false)
 		Require(t, err)
 
 		for _, key := range testKeys {
-			if has, _ := chainData.Has(key); has {
+			if has, _ := chainDB.Has(key); has {
 				Fatal(t, "test key hasn't been pruned as expected")
 			}
 		}
 
-		executionDbEntriesAfterPruning := countStateEntries(chainData)
+		executionDbEntriesAfterPruning := countStateEntries(chainDB)
 		t.Log("db entries pre-pruning:", executionDbEntriesBeforePruning)
 		t.Log("db entries post-pruning:", executionDbEntriesAfterPruning)
 

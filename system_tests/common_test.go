@@ -735,10 +735,10 @@ func buildOnParentChain(
 
 	chainTestClient := NewTestClient(ctx)
 
-	var executionDb ethdb.Database
+	var executionDB ethdb.Database
 	var consensusDb ethdb.Database
 	var blockchain *core.BlockChain
-	_, chainTestClient.Stack, executionDb, consensusDb, blockchain = createNonL1BlockChainWithStackConfig(
+	_, chainTestClient.Stack, executionDB, consensusDb, blockchain = createNonL1BlockChainWithStackConfig(
 		t, chainInfo, dataDir, chainConfig, arbOSInit, initMessage, stackConfig, execConfig, trieNoAsyncFlush)
 
 	var sequencerTxOptsPtr *bind.TransactOpts
@@ -763,7 +763,7 @@ func buildOnParentChain(
 	AddValNodeIfNeeded(t, ctx, nodeConfig, true, "", valnodeConfig.Wasm.RootPath)
 
 	execConfigFetcher := NewCommonConfigFetcher(execConfig)
-	execNode, err := gethexec.CreateExecutionNode(ctx, chainTestClient.Stack, executionDb, blockchain, parentChainTestClient.Client, execConfigFetcher, parentChainId, 0)
+	execNode, err := gethexec.CreateExecutionNode(ctx, chainTestClient.Stack, executionDB, blockchain, parentChainTestClient.Client, execConfigFetcher, parentChainId, 0)
 	Require(t, err)
 	chainTestClient.ExecutionConfigFetcher = execConfigFetcher
 
@@ -926,14 +926,14 @@ func (b *NodeBuilder) BuildL2(t *testing.T) func() {
 
 	AddValNodeIfNeeded(t, b.ctx, b.nodeConfig, true, "", b.valnodeConfig.Wasm.RootPath)
 
-	var executionDb ethdb.Database
+	var executionDB ethdb.Database
 	var consensusDb ethdb.Database
 	var blockchain *core.BlockChain
-	b.L2Info, b.L2.Stack, executionDb, consensusDb, blockchain = createNonL1BlockChainWithStackConfig(
+	b.L2Info, b.L2.Stack, executionDB, consensusDb, blockchain = createNonL1BlockChainWithStackConfig(
 		t, b.L2Info, b.dataDir, b.chainConfig, b.arbOSInit, nil, b.l2StackConfig, b.execConfig, b.TrieNoAsyncFlush)
 
 	execConfigFetcher := NewCommonConfigFetcher(b.execConfig)
-	execNode, err := gethexec.CreateExecutionNode(b.ctx, b.L2.Stack, executionDb, blockchain, nil, execConfigFetcher, big.NewInt(1337), 0)
+	execNode, err := gethexec.CreateExecutionNode(b.ctx, b.L2.Stack, executionDB, blockchain, nil, execConfigFetcher, big.NewInt(1337), 0)
 	Require(t, err)
 	b.L2.ExecutionConfigFetcher = execConfigFetcher
 
@@ -987,10 +987,10 @@ func (b *NodeBuilder) RestartL2Node(t *testing.T) {
 	}
 	b.L2.cleanup()
 
-	l2info, stack, executionDb, consensusDb, blockchain := createNonL1BlockChainWithStackConfig(t, b.L2Info, b.dataDir, b.chainConfig, b.arbOSInit, b.initMessage, b.l2StackConfig, b.execConfig, b.TrieNoAsyncFlush)
+	l2info, stack, executionDB, consensusDb, blockchain := createNonL1BlockChainWithStackConfig(t, b.L2Info, b.dataDir, b.chainConfig, b.arbOSInit, b.initMessage, b.l2StackConfig, b.execConfig, b.TrieNoAsyncFlush)
 
 	execConfigFetcher := NewCommonConfigFetcher(b.execConfig)
-	execNode, err := gethexec.CreateExecutionNode(b.ctx, stack, executionDb, blockchain, nil, execConfigFetcher, big.NewInt(1337), 0)
+	execNode, err := gethexec.CreateExecutionNode(b.ctx, stack, executionDB, blockchain, nil, execConfigFetcher, big.NewInt(1337), 0)
 	Require(t, err)
 
 	feedErrChan := make(chan error, 10)
@@ -1954,7 +1954,7 @@ func createNonL1BlockChainWithStackConfig(
 		Require(t, err)
 	}
 
-	executionDb := rawdb.WrapDatabaseWithWasm(chainData, wasmData)
+	executionDB := rawdb.WrapDatabaseWithWasm(chainData, wasmData)
 	consensusDb := rawdb.NewMemoryDatabase()
 	if stack.Config().DBEngine != env.MemoryDB {
 		consensusDb, err = stack.OpenDatabaseWithOptions("arbitrumdata", node.DatabaseOptions{MetricsNamespace: "arbitrumdata/", PebbleExtraOptions: conf.PersistentConfigDefault.Pebble.ExtraOptions("arbitrumdata"), NoFreezer: true})
@@ -1973,10 +1973,10 @@ func createNonL1BlockChainWithStackConfig(
 		}
 	}
 	coreCacheConfig := gethexec.DefaultCacheConfigTrieNoFlushFor(&execConfig.Caching, trieNoAsyncFlush)
-	blockchain, err := gethexec.WriteOrTestBlockChain(executionDb, coreCacheConfig, initReader, chainConfig, arbOSInit, nil, initMessage, &gethexec.ConfigDefault.TxIndexer, 0)
+	blockchain, err := gethexec.WriteOrTestBlockChain(executionDB, coreCacheConfig, initReader, chainConfig, arbOSInit, nil, initMessage, &gethexec.ConfigDefault.TxIndexer, 0)
 	Require(t, err)
 
-	return info, stack, executionDb, consensusDb, blockchain
+	return info, stack, executionDB, consensusDb, blockchain
 }
 
 func ClientForStack(t *testing.T, backend *node.Node) *ethclient.Client {
@@ -2059,7 +2059,7 @@ func Create2ndNodeWithConfig(
 		wasmData, err = chainStack.OpenDatabaseWithOptions("wasm", node.DatabaseOptions{MetricsNamespace: "wasm/", PebbleExtraOptions: conf.PersistentConfigDefault.Pebble.ExtraOptions("wasm"), NoFreezer: true})
 		Require(t, err)
 	}
-	executionDb := rawdb.WrapDatabaseWithWasm(chainData, wasmData)
+	executionDB := rawdb.WrapDatabaseWithWasm(chainData, wasmData)
 
 	consensusDb := rawdb.NewMemoryDatabase()
 	if chainStack.Config().DBEngine != env.MemoryDB {
@@ -2081,13 +2081,13 @@ func Create2ndNodeWithConfig(
 		tracer, err = tracers.LiveDirectory.New(execConfig.VmTrace.TracerName, json.RawMessage(execConfig.VmTrace.JSONConfig))
 		Require(t, err)
 	}
-	blockchain, err := gethexec.WriteOrTestBlockChain(executionDb, coreCacheConfig, initReader, chainConfig, nil, tracer, initMessage, &execConfig.TxIndexer, 0)
+	blockchain, err := gethexec.WriteOrTestBlockChain(executionDB, coreCacheConfig, initReader, chainConfig, nil, tracer, initMessage, &execConfig.TxIndexer, 0)
 	Require(t, err)
 
 	AddValNodeIfNeeded(t, ctx, nodeConfig, true, "", valnodeConfig.Wasm.RootPath)
 
 	execConfigFetcher := NewCommonConfigFetcher(execConfig)
-	currentExec, err := gethexec.CreateExecutionNode(ctx, chainStack, executionDb, blockchain, parentChainClient, execConfigFetcher, big.NewInt(1337), 0)
+	currentExec, err := gethexec.CreateExecutionNode(ctx, chainStack, executionDB, blockchain, parentChainClient, execConfigFetcher, big.NewInt(1337), 0)
 	Require(t, err)
 
 	var currentNode *arbnode.Node
