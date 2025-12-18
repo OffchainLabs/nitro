@@ -12,11 +12,11 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 )
 
-func testTwoNodesSimple(t *testing.T, dasModeStr string) {
+func testTwoNodesSimple(t *testing.T, daModeStr string) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	chainConfig, l1NodeConfigA, lifecycleManager, _, dasSignerKey := setupConfigWithDAS(t, ctx, dasModeStr)
+	chainConfig, l1NodeConfigA, lifecycleManager, _, anyTrustSignerKey := setupConfigWithAnyTrust(t, ctx, daModeStr)
 	defer lifecycleManager.StopAndWaitUntil(time.Second)
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
@@ -26,10 +26,10 @@ func testTwoNodesSimple(t *testing.T, dasModeStr string) {
 	cleanup := builder.Build(t)
 	defer cleanup()
 
-	authorizeDASKeyset(t, ctx, dasSignerKey, builder.L1Info, builder.L1.Client)
-	l1NodeConfigBDataAvailability := l1NodeConfigA.DataAvailability
+	authorizeAnyTrustKeyset(t, ctx, anyTrustSignerKey, builder.L1Info, builder.L1.Client)
+	l1NodeConfigBDataAvailability := l1NodeConfigA.DA.AnyTrust
 	l1NodeConfigBDataAvailability.RPCAggregator.Enable = false
-	testClientB, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{dasConfig: &l1NodeConfigBDataAvailability})
+	testClientB, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{anyTrustConfig: &l1NodeConfigBDataAvailability})
 	defer cleanupB()
 
 	builder.L2Info.GenerateAccount("User2")
@@ -67,6 +67,6 @@ func TestTwoNodesSimple(t *testing.T) {
 	testTwoNodesSimple(t, "onchain")
 }
 
-func TestTwoNodesSimpleLocalDAS(t *testing.T) {
+func TestTwoNodesSimpleLocalAnyTrust(t *testing.T) {
 	testTwoNodesSimple(t, "files")
 }

@@ -10,6 +10,9 @@ on:
       bold_legacy_changed:
         description: 'True if Bold Legacy or related files changed.'
         value: ${{ jobs.changes.outputs.bold_legacy_changed }}
+      changelog_added:
+        description: 'New changelog fragments.'
+        value: ${{ jobs.changes.outputs.changelog_added }}
 
 jobs:
   changes:
@@ -18,6 +21,7 @@ jobs:
     outputs:
       arbitrator_changed: ${{ steps.changed.outputs.arbitrator_any_changed }}
       bold_legacy_changed: ${{ steps.changed.outputs.bold_legacy_any_changed }}
+      changelog_added: ${{ steps.changed.outputs.changelog_added_files }}
 
     steps:
       - name: Checkout
@@ -27,7 +31,7 @@ jobs:
           fetch-depth: 10            # Will cover most PRs
           persist-credentials: true  # In case changed-files requires deeper depth
 
-      - name: Determine if Arbitrator or Bold Legacy changed
+      - name: Detect changes
         id: changed
         uses: tj-actions/changed-files@v46.0.5
         with:
@@ -40,3 +44,5 @@ jobs:
             bold_legacy:
               - 'bold/legacy/**'
               - '.github/workflows/_bold-legacy.yml'
+            changelog:
+              - 'changelog/**.md'

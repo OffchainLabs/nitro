@@ -68,7 +68,7 @@ func ServerConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".addr", DefaultServerConfig.Addr, "JSON rpc server listening interface")
 	f.Uint64(prefix+".port", DefaultServerConfig.Port, "JSON rpc server listening port")
 	f.String(prefix+".jwtsecret", DefaultServerConfig.JWTSecret, "path to file with jwtsecret for validation")
-	f.Bool(prefix+".enable-da-writer", DefaultServerConfig.EnableDAWriter, "implies if the das server supports daprovider's writer interface")
+	f.Bool(prefix+".enable-da-writer", DefaultServerConfig.EnableDAWriter, "implies if the DA server supports daprovider's writer interface")
 	f.Int(prefix+".rpc-server-body-limit", DefaultServerConfig.RPCServerBodyLimit, "HTTP-RPC server maximum request body size in bytes; the default (0) uses geth's 5MB limit")
 	genericconf.HTTPServerTimeoutConfigAddOptions(prefix+".server-timeouts", f)
 }
