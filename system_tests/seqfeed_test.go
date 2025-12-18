@@ -19,7 +19,7 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 
 	"github.com/offchainlabs/nitro/arbnode"
-	dbschema "github.com/offchainlabs/nitro/arbnode/db-schema"
+	"github.com/offchainlabs/nitro/arbnode/db/schema"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbos/util"
@@ -542,7 +542,7 @@ func TestRegressionInPopulateFeedBacklog(t *testing.T) {
 	if err != nil {
 		panic(fmt.Sprintf("error getting tx streamer message count: %v", err))
 	}
-	key := dbKey(dbschema.MessagePrefix, uint64(messageCount-1))
+	key := dbKey(schema.MessagePrefix, uint64(messageCount-1))
 	msgBytes, err := rlp.EncodeToBytes(dummyMessage)
 	if err != nil {
 		panic(fmt.Sprintf("error encoding dummy message: %v", err))

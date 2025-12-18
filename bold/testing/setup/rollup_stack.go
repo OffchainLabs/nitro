@@ -24,10 +24,10 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rpc"
 
-	"github.com/offchainlabs/nitro/bold/chain-abstraction"
-	"github.com/offchainlabs/nitro/bold/chain-abstraction/sol-implementation"
-	"github.com/offchainlabs/nitro/bold/layer2-state-provider"
-	"github.com/offchainlabs/nitro/bold/runtime"
+	"github.com/offchainlabs/nitro/bold/protocol"
+	"github.com/offchainlabs/nitro/bold/protocol/sol"
+	"github.com/offchainlabs/nitro/bold/retry"
+	"github.com/offchainlabs/nitro/bold/state"
 	"github.com/offchainlabs/nitro/bold/testing"
 	"github.com/offchainlabs/nitro/bold/testing/mocks/state-provider"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
@@ -47,11 +47,11 @@ type Committer interface {
 type CreatedValidatorFork struct {
 	Leaf1              protocol.Assertion
 	Leaf2              protocol.Assertion
-	Chains             []*solimpl.AssertionChain
+	Chains             []*sol.AssertionChain
 	Accounts           []*TestAccount
 	Backend            *SimulatedBackendWrapper
-	HonestStateManager l2stateprovider.Provider
-	EvilStateManager   l2stateprovider.Provider
+	HonestStateManager state.Provider
+	EvilStateManager   state.Provider
 	Addrs              *RollupAddresses
 }
 
@@ -163,7 +163,7 @@ func CreateTwoValidatorFork(
 }
 
 type ChainSetup struct {
-	Chains                     []*solimpl.AssertionChain
+	Chains                     []*sol.AssertionChain
 	Accounts                   []*TestAccount
 	Addrs                      *RollupAddresses
 	Backend                    *SimulatedBackendWrapper
@@ -413,7 +413,7 @@ func ChainsWithEdgeChallengeManager(opts ...Opt) (*ChainSetup, error) {
 		return nil, err
 	}
 
-	chains := make([]*solimpl.AssertionChain, 0)
+	chains := make([]*sol.AssertionChain, 0)
 	for _, acc := range accs[1:] {
 		var assertionChainBinding *rollupgen.RollupUserLogic
 		assertionChainBinding, err = rollupgen.NewRollupUserLogic(
@@ -429,19 +429,19 @@ func ChainsWithEdgeChallengeManager(opts ...Opt) (*ChainSetup, error) {
 		if err != nil {
 			return nil, err
 		}
-		assertionChainOpts := []solimpl.Opt{
-			solimpl.WithRpcHeadBlockNumber(rpc.LatestBlockNumber),
+		assertionChainOpts := []sol.Opt{
+			sol.WithRpcHeadBlockNumber(rpc.LatestBlockNumber),
 		}
 		if setp.EnableSafeFastConfirmation || (setp.EnableFastConfirmation && acc.AccountAddr == cfgOpts.AnyTrustFastConfirmer) {
-			assertionChainOpts = append(assertionChainOpts, solimpl.WithFastConfirmation())
+			assertionChainOpts = append(assertionChainOpts, sol.WithFastConfirmation())
 		}
-		chain, chainErr := solimpl.NewAssertionChain(
+		chain, chainErr := sol.NewAssertionChain(
 			ctx,
 			addresses.Rollup,
 			challengeManagerAddr,
 			acc.TxOpts,
 			backend,
-			solimpl.NewChainBackendTransactor(backend),
+			sol.NewChainBackendTransactor(backend),
 			assertionChainOpts...,
 		)
 		if chainErr != nil {
