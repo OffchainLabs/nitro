@@ -139,7 +139,6 @@ type BroadcastClient struct {
 
 	retryCount atomic.Int64
 
-	retrying                        bool
 	shuttingDown                    bool
 	firstReconnectAttempt           bool
 	confirmedSequenceNumberListener chan arbutil.MessageIndex
@@ -519,7 +518,6 @@ func (bc *BroadcastClient) isShuttingDown() bool {
 func (bc *BroadcastClient) retryConnect(ctx context.Context) io.Reader {
 	maxWaitDuration := 15 * time.Second
 	var waitDuration time.Duration = 0 // Don't wait for first reconnect
-	bc.retrying = true
 
 	for !bc.isShuttingDown() {
 		timer := time.NewTimer(waitDuration)
@@ -533,7 +531,6 @@ func (bc *BroadcastClient) retryConnect(ctx context.Context) io.Reader {
 		bc.retryCount.Add(1)
 		earlyFrameData, err := bc.connect(ctx, bc.nextSeqNum)
 		if err == nil {
-			bc.retrying = false
 			return earlyFrameData
 		}
 
