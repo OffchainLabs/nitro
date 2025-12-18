@@ -534,7 +534,7 @@ func mainImpl() int {
 
 	var execNode *gethexec.ExecutionNode
 	var consensusNode *arbnode.Node
-	if nodeConfig.Node.ExecutionRPCClient.URL == "" || nodeConfig.Node.ExecutionRPCClient.URL == "self" {
+	if nodeConfig.Node.ExecutionRPCClient.URL == "" || nodeConfig.Node.ExecutionRPCClient.URL == "self" || nodeConfig.Node.ExecutionRPCClient.URL == "self-auth" {
 		execNode, err = gethexec.CreateExecutionNode(
 			ctx,
 			stack,
@@ -908,7 +908,7 @@ func (c *NodeConfig) Validate() error {
 	if err := c.Execution.Validate(); err != nil {
 		return err
 	}
-	if c.Node.ExecutionRPCClient.URL == "self" {
+	if c.Node.ExecutionRPCClient.URL == "self" || c.Node.ExecutionRPCClient.URL == "self-auth" {
 		if c.Node.Sequencer || c.Node.BatchPoster.Enable || c.Node.BlockValidator.Enable {
 			return errors.New("sequencing, validation and batch-posting are currently not supported when connecting to an execution client over RPC")
 		}
