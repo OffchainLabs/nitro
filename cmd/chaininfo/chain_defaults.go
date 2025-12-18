@@ -149,7 +149,7 @@ func ArbitrumRollupGoerliTestnetParams() params.ArbitrumChainParams {
 func ArbitrumDevTestParams() params.ArbitrumChainParams {
 	return fetchArbitrumChainParams("arb-dev-test")
 }
-func ArbitrumDevTestDASParams() params.ArbitrumChainParams {
+func ArbitrumDevTestAnyTrustParams() params.ArbitrumChainParams {
 	return fetchArbitrumChainParams("anytrust-dev-test")
 }
 
@@ -173,6 +173,6 @@ func ArbitrumRollupGoerliTestnetChainConfig() *params.ChainConfig {
 func ArbitrumDevTestChainConfig() *params.ChainConfig {
 	return fetchChainConfig("arb-dev-test")
 }
-func ArbitrumDevTestDASChainConfig() *params.ChainConfig {
+func ArbitrumDevTestAnyTrustChainConfig() *params.ChainConfig {
 	return fetchChainConfig("anytrust-dev-test")
 }
