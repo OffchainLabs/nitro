@@ -60,7 +60,7 @@ func WriteToKeyValueStore[T any](store ethdb.KeyValueStore, key []byte, val T) e
 // It also stores a special value that is only set once when rebuilding commenced in RebuildingStartBlockHashKey as the block
 // time of the latest block when rebuilding was first called, this is used to avoid recomputing of assembly and module of
 // contracts that were created after rebuilding commenced since they would anyway already be added during sync.
-func RebuildWasmStore(ctx context.Context, wasmStore ethdb.KeyValueStore, chainDb ethdb.Database, maxRecreateStateDepth int64, targetConfig *StylusTargetConfig, l2Blockchain *core.BlockChain, position, rebuildingStartBlockHash common.Hash) error {
+func RebuildWasmStore(ctx context.Context, wasmStore ethdb.KeyValueStore, executionDb ethdb.Database, maxRecreateStateDepth int64, targetConfig *StylusTargetConfig, l2Blockchain *core.BlockChain, position, rebuildingStartBlockHash common.Hash) error {
 	var err error
 	var stateDb *state.StateDB
 
@@ -72,10 +72,10 @@ func RebuildWasmStore(ctx context.Context, wasmStore ethdb.KeyValueStore, chainD
 	latestHeader := l2Blockchain.CurrentBlock()
 	// Attempt to get state at the start block when rebuilding commenced, if not available (in case of non-archival nodes) use latest state
 	rebuildingStartHeader := l2Blockchain.GetHeaderByHash(rebuildingStartBlockHash)
-	stateDb, _, err = arbitrum.StateAndHeaderFromHeader(ctx, chainDb, l2Blockchain, maxRecreateStateDepth, rebuildingStartHeader, nil, nil)
+	stateDb, _, err = arbitrum.StateAndHeaderFromHeader(ctx, executionDb, l2Blockchain, maxRecreateStateDepth, rebuildingStartHeader, nil, nil)
 	if err != nil {
 		log.Info("Error getting state at start block of rebuilding wasm store, attempting rebuilding with latest state", "err", err)
-		stateDb, _, err = arbitrum.StateAndHeaderFromHeader(ctx, chainDb, l2Blockchain, maxRecreateStateDepth, latestHeader, nil, nil)
+		stateDb, _, err = arbitrum.StateAndHeaderFromHeader(ctx, executionDb, l2Blockchain, maxRecreateStateDepth, latestHeader, nil, nil)
 		if err != nil {
 			return fmt.Errorf("error getting state at latest block, aborting rebuilding: %w", err)
 		}

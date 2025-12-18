@@ -219,7 +219,7 @@ type ConfigFetcher interface {
 }
 
 type ExecutionNode struct {
-	ChainDB                  ethdb.Database
+	ExecutionDB              ethdb.Database
 	Backend                  *arbitrum.Backend
 	FilterSystem             *filters.FilterSystem
 	ArbInterface             *ArbInterface
@@ -240,7 +240,7 @@ type ExecutionNode struct {
 func CreateExecutionNode(
 	ctx context.Context,
 	stack *node.Node,
-	chainDB ethdb.Database,
+	executionDB ethdb.Database,
 	l2BlockChain *core.BlockChain,
 	l1client *ethclient.Client,
 	configFetcher ConfigFetcher,
@@ -258,7 +258,7 @@ func CreateExecutionNode(
 	if err != nil {
 		return nil, err
 	}
-	recorder := NewBlockRecorder(&config.RecordingDatabase, execEngine, chainDB)
+	recorder := NewBlockRecorder(&config.RecordingDatabase, execEngine, executionDB)
 	var txPublisher TransactionPublisher
 	var sequencer *Sequencer
 
@@ -303,7 +303,7 @@ func CreateExecutionNode(
 		LogCacheSize: config.RPC.FilterLogCacheSize,
 		Timeout:      config.RPC.FilterTimeout,
 	}
-	backend, filterSystem, err := arbitrum.NewBackend(stack, &config.RPC, chainDB, arbInterface, filterConfig, config.Caching.StateScheme)
+	backend, filterSystem, err := arbitrum.NewBackend(stack, &config.RPC, executionDB, arbInterface, filterConfig, config.Caching.StateScheme)
 	if err != nil {
 		return nil, err
 	}
@@ -370,14 +370,14 @@ func CreateExecutionNode(
 	})
 	apis = append(apis, rpc.API{
 		Namespace: "debug",
-		Service:   eth.NewDebugAPI(eth.NewArbEthereum(l2BlockChain, chainDB)),
+		Service:   eth.NewDebugAPI(eth.NewArbEthereum(l2BlockChain, executionDB)),
 		Public:    false,
 	})
 
 	stack.RegisterAPIs(apis)
 
 	return &ExecutionNode{
-		ChainDB:                  chainDB,
+		ExecutionDB:              executionDB,
 		Backend:                  backend,
 		FilterSystem:             filterSystem,
 		ArbInterface:             arbInterface,

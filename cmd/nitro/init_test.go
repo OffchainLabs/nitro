@@ -411,7 +411,7 @@ func defaultStylusTargetConfigForTest(t *testing.T) *gethexec.StylusTargetConfig
 	return &targetConfig
 }
 
-func TestOpenInitializeChainDbIncompatibleStateScheme(t *testing.T) {
+func TestOpenInitializeExecutionDbIncompatibleStateScheme(t *testing.T) {
 	t.Parallel()
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -434,7 +434,7 @@ func TestOpenInitializeChainDbIncompatibleStateScheme(t *testing.T) {
 	l1Client := ethclient.NewClient(stack.Attach())
 
 	// opening for the first time doesn't error
-	chainDb, blockchain, err := openInitializeChainDb(
+	executionDb, blockchain, err := openInitializeExecutionDb(
 		ctx,
 		stack,
 		&nodeConfig,
@@ -448,11 +448,11 @@ func TestOpenInitializeChainDbIncompatibleStateScheme(t *testing.T) {
 	)
 	Require(t, err)
 	blockchain.Stop()
-	err = chainDb.Close()
+	err = executionDb.Close()
 	Require(t, err)
 
 	// opening for the second time doesn't error
-	chainDb, blockchain, err = openInitializeChainDb(
+	executionDb, blockchain, err = openInitializeExecutionDb(
 		ctx,
 		stack,
 		&nodeConfig,
@@ -466,12 +466,12 @@ func TestOpenInitializeChainDbIncompatibleStateScheme(t *testing.T) {
 	)
 	Require(t, err)
 	blockchain.Stop()
-	err = chainDb.Close()
+	err = executionDb.Close()
 	Require(t, err)
 
 	// opening with a different state scheme errors
 	nodeConfig.Execution.Caching.StateScheme = rawdb.HashScheme
-	_, _, err = openInitializeChainDb(
+	_, _, err = openInitializeExecutionDb(
 		ctx,
 		stack,
 		&nodeConfig,
@@ -679,7 +679,7 @@ func TestPurgeVersion0WasmStoreEntries(t *testing.T) {
 	checkKeys(t, db, otherKeys, true)
 }
 
-func TestOpenInitializeChainDbEmptyInit(t *testing.T) {
+func TestOpenInitializeExecutionDbEmptyInit(t *testing.T) {
 	t.Parallel()
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -700,7 +700,7 @@ func TestOpenInitializeChainDbEmptyInit(t *testing.T) {
 
 	l1Client := ethclient.NewClient(stack.Attach())
 
-	chainDb, blockchain, err := openInitializeChainDb(
+	executionDb, blockchain, err := openInitializeExecutionDb(
 		ctx,
 		stack,
 		&nodeConfig,
@@ -714,7 +714,7 @@ func TestOpenInitializeChainDbEmptyInit(t *testing.T) {
 	)
 	Require(t, err)
 	blockchain.Stop()
-	err = chainDb.Close()
+	err = executionDb.Close()
 	Require(t, err)
 }
 

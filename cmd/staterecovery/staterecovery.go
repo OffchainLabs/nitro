@@ -14,7 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum/triedb/hashdb"
 )
 
-func RecreateMissingStates(chainDb ethdb.Database, bc *core.BlockChain, cacheConfig *core.BlockChainConfig, startBlock uint64) error {
+func RecreateMissingStates(executionDb ethdb.Database, bc *core.BlockChain, cacheConfig *core.BlockChainConfig, startBlock uint64) error {
 	start := time.Now()
 	currentHeader := bc.CurrentBlock()
 	if currentHeader == nil {
@@ -43,7 +43,7 @@ func RecreateMissingStates(chainDb ethdb.Database, bc *core.BlockChain, cacheCon
 		HashDB:    &hashConfig,
 	}
 
-	database := state.NewDatabase(triedb.NewDatabase(chainDb, trieConfig), nil)
+	database := state.NewDatabase(triedb.NewDatabase(executionDb, trieConfig), nil)
 	defer database.TrieDB().Close()
 	previousState, err := state.New(previousBlock.Root(), database)
 	if err != nil {

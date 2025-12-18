@@ -36,7 +36,7 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/rollup_legacy_gen"
 	"github.com/offchainlabs/nitro/solgen/go/upgrade_executorgen"
 	"github.com/offchainlabs/nitro/staker"
-	"github.com/offchainlabs/nitro/staker/legacy"
+	legacystaker "github.com/offchainlabs/nitro/staker/legacy"
 	"github.com/offchainlabs/nitro/staker/validatorwallet"
 	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/validator/server_common"
@@ -224,7 +224,7 @@ func setupFastConfirmation(ctx context.Context, t *testing.T) (*NodeBuilder, *le
 	}
 	dp, err := arbnode.StakerDataposter(
 		ctx,
-		rawdb.NewTable(l2node.ArbDB, storage.StakerPrefix),
+		rawdb.NewTable(l2node.ConsensusDB, storage.StakerPrefix),
 		l2node.L1Reader,
 		&l1auth, NewCommonConfigFetcher(arbnode.ConfigDefaultL1NonSequencerTest()),
 		nil,
@@ -270,7 +270,7 @@ func setupFastConfirmation(ctx context.Context, t *testing.T) (*NodeBuilder, *le
 		l2node.InboxTracker,
 		l2node.TxStreamer,
 		execNode,
-		l2node.ArbDB,
+		l2node.ConsensusDB,
 		nil,
 		StaticFetcherFrom(t, &blockValidatorConfig),
 		valStack,
@@ -418,7 +418,7 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 	}
 	dpA, err := arbnode.StakerDataposter(
 		ctx,
-		rawdb.NewTable(l2nodeB.ArbDB, storage.StakerPrefix),
+		rawdb.NewTable(l2nodeB.ConsensusDB, storage.StakerPrefix),
 		l2nodeA.L1Reader,
 		&l1authA, NewCommonConfigFetcher(arbnode.ConfigDefaultL1NonSequencerTest()),
 		nil,
@@ -465,7 +465,7 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 		l2nodeA.InboxTracker,
 		l2nodeA.TxStreamer,
 		execNodeA,
-		l2nodeA.ArbDB,
+		l2nodeA.ConsensusDB,
 		nil,
 		StaticFetcherFrom(t, &blockValidatorConfig),
 		valStack,
@@ -503,7 +503,7 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 	cfg.Staker.DataPoster.ExternalSigner = *signerCfg
 	dpB, err := arbnode.StakerDataposter(
 		ctx,
-		rawdb.NewTable(l2nodeB.ArbDB, storage.StakerPrefix),
+		rawdb.NewTable(l2nodeB.ConsensusDB, storage.StakerPrefix),
 		l2nodeB.L1Reader,
 		&l1authB, NewCommonConfigFetcher(cfg),
 		nil,
@@ -522,7 +522,7 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 		l2nodeB.InboxTracker,
 		l2nodeB.TxStreamer,
 		execNodeB,
-		l2nodeB.ArbDB,
+		l2nodeB.ConsensusDB,
 		nil,
 		StaticFetcherFrom(t, &blockValidatorConfig),
 		valStack,

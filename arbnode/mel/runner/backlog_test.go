@@ -23,8 +23,8 @@ func TestDelayedMessageBacklogInitialization(t *testing.T) {
 	defer cancel()
 
 	// Create database
-	arbDb := rawdb.NewMemoryDatabase()
-	melDb := NewDatabase(arbDb)
+	consensusDb := rawdb.NewMemoryDatabase()
+	melDb := NewDatabase(consensusDb)
 
 	// Add genesis melState
 	genesis := &mel.State{

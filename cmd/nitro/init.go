@@ -561,7 +561,7 @@ func validateOrUpgradeWasmStoreSchemaVersion(db ethdb.Database) error {
 	return nil
 }
 
-func rebuildLocalWasm(ctx context.Context, config *gethexec.Config, l2BlockChain *core.BlockChain, chainDb, wasmDb ethdb.Database, rebuildMode string) (ethdb.Database, *core.BlockChain, error) {
+func rebuildLocalWasm(ctx context.Context, config *gethexec.Config, l2BlockChain *core.BlockChain, executionDb, wasmDb ethdb.Database, rebuildMode string) (ethdb.Database, *core.BlockChain, error) {
 	var err error
 	latestBlock := l2BlockChain.CurrentBlock()
 	if latestBlock == nil || latestBlock.Number.Uint64() <= l2BlockChain.Config().ArbitrumChainParams.GenesisBlockNum ||
@@ -598,15 +598,15 @@ func rebuildLocalWasm(ctx context.Context, config *gethexec.Config, l2BlockChain
 				startBlockHash = latestBlock.Hash()
 			}
 			log.Info("Starting or continuing rebuilding of wasm store", "codeHash", position, "startBlockHash", startBlockHash)
-			if err := gethexec.RebuildWasmStore(ctx, wasmDb, chainDb, config.RPC.MaxRecreateStateDepth, &config.StylusTarget, l2BlockChain, position, startBlockHash); err != nil {
+			if err := gethexec.RebuildWasmStore(ctx, wasmDb, executionDb, config.RPC.MaxRecreateStateDepth, &config.StylusTarget, l2BlockChain, position, startBlockHash); err != nil {
 				return nil, nil, fmt.Errorf("error rebuilding of wasm store: %w", err)
 			}
 		}
 	}
-	return chainDb, l2BlockChain, nil
+	return executionDb, l2BlockChain, nil
 }
 
-func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeConfig, chainId *big.Int, cacheConfig *core.BlockChainConfig, targetConfig *gethexec.StylusTargetConfig, tracer *tracing.Hooks, persistentConfig *conf.PersistentConfig, l1Client *ethclient.Client, rollupAddrs chaininfo.RollupAddresses) (ethdb.Database, *core.BlockChain, error) {
+func openInitializeExecutionDb(ctx context.Context, stack *node.Node, config *NodeConfig, chainId *big.Int, cacheConfig *core.BlockChainConfig, targetConfig *gethexec.StylusTargetConfig, tracer *tracing.Hooks, persistentConfig *conf.PersistentConfig, l1Client *ethclient.Client, rollupAddrs chaininfo.RollupAddresses) (ethdb.Database, *core.BlockChain, error) {
 	if !config.Init.Force {
 		if readOnlyDb, err := stack.OpenDatabaseWithOptions("l2chaindata", node.DatabaseOptions{AncientsDirectory: config.Persistent.Ancient, MetricsNamespace: "l2chaindata/", ReadOnly: true, PebbleExtraOptions: persistentConfig.Pebble.ExtraOptions("l2chaindata")}); err == nil {
 			if chainConfig := gethexec.TryReadStoredChainConfig(readOnlyDb); chainConfig != nil {
@@ -634,30 +634,30 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 				if err := dbutil.UnfinishedConversionCheck(wasmDb); err != nil {
 					return nil, nil, fmt.Errorf("wasm unfinished database conversion check error: %w", err)
 				}
-				chainDb := rawdb.WrapDatabaseWithWasm(chainData, wasmDb)
-				_, err = rawdb.ParseStateScheme(cacheConfig.StateScheme, chainDb)
+				executionDb := rawdb.WrapDatabaseWithWasm(chainData, wasmDb)
+				_, err = rawdb.ParseStateScheme(cacheConfig.StateScheme, executionDb)
 				if err != nil {
 					return nil, nil, err
 				}
-				err = pruning.PruneChainDb(ctx, chainDb, stack, &config.Init, cacheConfig, persistentConfig, l1Client, rollupAddrs, config.Node.ValidatorRequired(), false)
+				err = pruning.PruneExecutionDb(ctx, executionDb, stack, &config.Init, cacheConfig, persistentConfig, l1Client, rollupAddrs, config.Node.ValidatorRequired(), false)
 				if err != nil {
-					return chainDb, nil, fmt.Errorf("error pruning: %w", err)
+					return executionDb, nil, fmt.Errorf("error pruning: %w", err)
 				}
-				l2BlockChain, err := gethexec.GetBlockChain(chainDb, cacheConfig, chainConfig, tracer, &config.Execution.TxIndexer)
+				l2BlockChain, err := gethexec.GetBlockChain(executionDb, cacheConfig, chainConfig, tracer, &config.Execution.TxIndexer)
 				if err != nil {
-					return chainDb, nil, err
+					return executionDb, nil, err
 				}
 				err = validateBlockChain(l2BlockChain, chainConfig)
 				if err != nil {
-					return chainDb, l2BlockChain, err
+					return executionDb, l2BlockChain, err
 				}
 				if config.Init.RecreateMissingStateFrom > 0 {
-					err = staterecovery.RecreateMissingStates(chainDb, l2BlockChain, cacheConfig, config.Init.RecreateMissingStateFrom)
+					err = staterecovery.RecreateMissingStates(executionDb, l2BlockChain, cacheConfig, config.Init.RecreateMissingStateFrom)
 					if err != nil {
-						return chainDb, l2BlockChain, fmt.Errorf("failed to recreate missing states: %w", err)
+						return executionDb, l2BlockChain, fmt.Errorf("failed to recreate missing states: %w", err)
 					}
 				}
-				return rebuildLocalWasm(ctx, &config.Execution, l2BlockChain, chainDb, wasmDb, config.Init.RebuildLocalWasm)
+				return rebuildLocalWasm(ctx, &config.Execution, l2BlockChain, executionDb, wasmDb, config.Init.RebuildLocalWasm)
 			}
 			readOnlyDb.Close()
 		} else if !dbutil.IsNotExistError(err) {
@@ -710,8 +710,8 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 	if err := validateOrUpgradeWasmStoreSchemaVersion(wasmDb); err != nil {
 		return nil, nil, err
 	}
-	chainDb := rawdb.WrapDatabaseWithWasm(chainData, wasmDb)
-	_, err = rawdb.ParseStateScheme(cacheConfig.StateScheme, chainDb)
+	executionDb := rawdb.WrapDatabaseWithWasm(chainData, wasmDb)
+	_, err = rawdb.ParseStateScheme(cacheConfig.StateScheme, executionDb)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -726,12 +726,12 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 	if config.Init.ImportFile != "" {
 		initDataReader, err = statetransfer.NewJsonInitDataReader(config.Init.ImportFile)
 		if err != nil {
-			return chainDb, nil, fmt.Errorf("error reading import file: %w", err)
+			return executionDb, nil, fmt.Errorf("error reading import file: %w", err)
 		}
 	}
 	if config.Init.Empty {
 		if initDataReader != nil {
-			return chainDb, nil, errors.New("multiple init methods supplied")
+			return executionDb, nil, errors.New("multiple init methods supplied")
 		}
 		initData := statetransfer.ArbosInitializationInfo{
 			NextBlockNumber: 0,
@@ -740,7 +740,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 	}
 	if config.Init.DevInit {
 		if initDataReader != nil {
-			return chainDb, nil, errors.New("multiple init methods supplied")
+			return executionDb, nil, errors.New("multiple init methods supplied")
 		}
 		initData := statetransfer.ArbosInitializationInfo{
 			NextBlockNumber: config.Init.DevInitBlockNum,
@@ -761,15 +761,15 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 
 	if config.Init.GenesisJsonFile != "" {
 		if initDataReader != nil {
-			return chainDb, nil, errors.New("multiple init methods supplied")
+			return executionDb, nil, errors.New("multiple init methods supplied")
 		}
 		genesisJson, err := os.ReadFile(config.Init.GenesisJsonFile)
 		if err != nil {
-			return chainDb, nil, err
+			return executionDb, nil, err
 		}
 		var gen core.Genesis
 		if err := json.Unmarshal(genesisJson, &gen); err != nil {
-			return chainDb, nil, err
+			return executionDb, nil, err
 		}
 		var accounts []statetransfer.AccountInitializationInfo
 		for address, account := range gen.Alloc {
@@ -793,13 +793,13 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 	var l2BlockChain *core.BlockChain
 	txIndexWg := sync.WaitGroup{}
 	if initDataReader == nil {
-		chainConfig = gethexec.TryReadStoredChainConfig(chainDb)
+		chainConfig = gethexec.TryReadStoredChainConfig(executionDb)
 		if chainConfig == nil {
-			return chainDb, nil, errors.New("no --init.* mode supplied and chain data not in expected directory")
+			return executionDb, nil, errors.New("no --init.* mode supplied and chain data not in expected directory")
 		}
-		l2BlockChain, err = gethexec.GetBlockChain(chainDb, cacheConfig, chainConfig, tracer, &config.Execution.TxIndexer)
+		l2BlockChain, err = gethexec.GetBlockChain(executionDb, cacheConfig, chainConfig, tracer, &config.Execution.TxIndexer)
 		if err != nil {
-			return chainDb, nil, err
+			return executionDb, nil, err
 		}
 		genesisBlockNr := chainConfig.ArbitrumChainParams.GenesisBlockNum
 		genesisBlock := l2BlockChain.GetBlockByNumber(genesisBlockNr)
@@ -809,42 +809,42 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 			// The node will probably die later, but might as well not kill it here?
 			log.Error("database missing genesis block", "number", genesisBlockNr)
 		}
-		testUpdateTxIndex(chainDb, chainConfig, &txIndexWg)
+		testUpdateTxIndex(executionDb, chainConfig, &txIndexWg)
 	} else {
 		var initDataReaderHasAccounts bool
 		if config.Init.ValidateGenesisAssertion {
 			accountsReader, err := initDataReader.GetAccountDataReader()
 			if err != nil {
-				return chainDb, nil, err
+				return executionDb, nil, err
 			}
 			initDataReaderHasAccounts = accountsReader.More()
 		}
 		genesisBlockNr, err := initDataReader.GetNextBlockNumber()
 		if err != nil {
-			return chainDb, nil, err
+			return executionDb, nil, err
 		}
 		if chainConfig == nil {
 			chainConfig, err = chaininfo.GetChainConfig(new(big.Int).SetUint64(config.Chain.ID), config.Chain.Name, genesisBlockNr, config.Chain.InfoFiles, config.Chain.InfoJson)
 			if err != nil {
-				return chainDb, nil, err
+				return executionDb, nil, err
 			}
 		}
 		if config.Init.DevInit && config.Init.DevMaxCodeSize != 0 {
 			chainConfig.ArbitrumChainParams.MaxCodeSize = config.Init.DevMaxCodeSize
 		}
-		testUpdateTxIndex(chainDb, chainConfig, &txIndexWg)
-		ancients, err := chainDb.Ancients()
+		testUpdateTxIndex(executionDb, chainConfig, &txIndexWg)
+		ancients, err := executionDb.Ancients()
 		if err != nil {
-			return chainDb, nil, err
+			return executionDb, nil, err
 		}
 		if ancients < genesisBlockNr {
-			return chainDb, nil, fmt.Errorf("%v pre-init blocks required, but only %v found", genesisBlockNr, ancients)
+			return executionDb, nil, fmt.Errorf("%v pre-init blocks required, but only %v found", genesisBlockNr, ancients)
 		}
 		if ancients > genesisBlockNr {
-			storedGenHash := rawdb.ReadCanonicalHash(chainDb, genesisBlockNr)
-			storedGenBlock := rawdb.ReadBlock(chainDb, storedGenHash, genesisBlockNr)
+			storedGenHash := rawdb.ReadCanonicalHash(executionDb, genesisBlockNr)
+			storedGenBlock := rawdb.ReadBlock(executionDb, storedGenHash, genesisBlockNr)
 			if storedGenBlock.Header().Root == (common.Hash{}) {
-				return chainDb, nil, fmt.Errorf("attempting to init genesis block %x, but this block is in database with no state root", genesisBlockNr)
+				return executionDb, nil, fmt.Errorf("attempting to init genesis block %x, but this block is in database with no state root", genesisBlockNr)
 			}
 			log.Warn("Re-creating genesis though it seems to exist in database", "blockNr", genesisBlockNr)
 		}
@@ -856,12 +856,12 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 		if config.Node.ParentChainReader.Enable {
 			delayedBridge, err := arbnode.NewDelayedBridge(l1Client, rollupAddrs.Bridge, rollupAddrs.DeployedAt)
 			if err != nil {
-				return chainDb, nil, fmt.Errorf("failed creating delayed bridge while attempting to get serialized chain config from init message: %w", err)
+				return executionDb, nil, fmt.Errorf("failed creating delayed bridge while attempting to get serialized chain config from init message: %w", err)
 			}
 			deployedAt := new(big.Int).SetUint64(rollupAddrs.DeployedAt)
 			delayedMessages, err := delayedBridge.LookupMessagesInRange(ctx, deployedAt, deployedAt, nil)
 			if err != nil {
-				return chainDb, nil, fmt.Errorf("failed getting delayed messages while attempting to get serialized chain config from init message: %w", err)
+				return executionDb, nil, fmt.Errorf("failed getting delayed messages while attempting to get serialized chain config from init message: %w", err)
 			}
 			var initMessage *arbostypes.L1IncomingMessage
 			for _, msg := range delayedMessages {
@@ -871,25 +871,25 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 				}
 			}
 			if initMessage == nil {
-				return chainDb, nil, fmt.Errorf("failed to get init message while attempting to get serialized chain config")
+				return executionDb, nil, fmt.Errorf("failed to get init message while attempting to get serialized chain config")
 			}
 			parsedInitMessage, err = initMessage.ParseInitMessage()
 			if err != nil {
-				return chainDb, nil, err
+				return executionDb, nil, err
 			}
 			if parsedInitMessage.ChainId.Cmp(chainId) != 0 {
-				return chainDb, nil, fmt.Errorf("expected L2 chain ID %v but read L2 chain ID %v from init message in L1 inbox", chainId, parsedInitMessage.ChainId)
+				return executionDb, nil, fmt.Errorf("expected L2 chain ID %v but read L2 chain ID %v from init message in L1 inbox", chainId, parsedInitMessage.ChainId)
 			}
 			if parsedInitMessage.ChainConfig != nil {
 				if err := parsedInitMessage.ChainConfig.CheckCompatible(chainConfig, chainConfig.ArbitrumChainParams.GenesisBlockNum, 0); err != nil {
-					return chainDb, nil, fmt.Errorf("incompatible chain config read from init message in L1 inbox: %w", err)
+					return executionDb, nil, fmt.Errorf("incompatible chain config read from init message in L1 inbox: %w", err)
 				}
 			}
 			log.Info("Read serialized chain config from init message", "json", string(parsedInitMessage.SerializedChainConfig))
 		} else {
 			serializedChainConfig, err := json.Marshal(chainConfig)
 			if err != nil {
-				return chainDb, nil, err
+				return executionDb, nil, err
 			}
 			parsedInitMessage = &arbostypes.ParsedInitMessage{
 				ChainId:               chainConfig.ChainID,
@@ -900,18 +900,18 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 			log.Warn("Created fake init message as L1Reader is disabled and serialized chain config from init message is not available", "json", string(serializedChainConfig))
 		}
 
-		emptyBlockChain := rawdb.ReadHeadHeader(chainDb) == nil
+		emptyBlockChain := rawdb.ReadHeadHeader(executionDb) == nil
 		if !emptyBlockChain && (cacheConfig.StateScheme == rawdb.PathScheme) && config.Init.Force {
-			return chainDb, nil, errors.New("It is not possible to force init with non-empty blockchain when using path scheme")
+			return executionDb, nil, errors.New("It is not possible to force init with non-empty blockchain when using path scheme")
 		}
-		l2BlockChain, err = gethexec.WriteOrTestBlockChain(chainDb, cacheConfig, initDataReader, chainConfig, genesisArbOSInit, tracer, parsedInitMessage, &config.Execution.TxIndexer, config.Init.AccountsPerSync)
+		l2BlockChain, err = gethexec.WriteOrTestBlockChain(executionDb, cacheConfig, initDataReader, chainConfig, genesisArbOSInit, tracer, parsedInitMessage, &config.Execution.TxIndexer, config.Init.AccountsPerSync)
 		if err != nil {
-			return chainDb, nil, err
+			return executionDb, nil, err
 		}
 		if config.Init.ValidateGenesisAssertion {
 			if err := validateGenesisAssertion(ctx, rollupAddrs.Rollup, l1Client, l2BlockChain.Genesis(), initDataReaderHasAccounts); err != nil {
 				if !config.Init.Force {
-					return chainDb, nil, fmt.Errorf("error testing genesis assertion: %w", err)
+					return executionDb, nil, fmt.Errorf("error testing genesis assertion: %w", err)
 				}
 				log.Error("Error testing genesis assertions", "err", err)
 			}
@@ -919,22 +919,22 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 	}
 
 	txIndexWg.Wait()
-	err = chainDb.SyncAncient()
+	err = executionDb.SyncAncient()
 	if err != nil {
-		return chainDb, l2BlockChain, err
+		return executionDb, l2BlockChain, err
 	}
 
-	err = pruning.PruneChainDb(ctx, chainDb, stack, &config.Init, cacheConfig, persistentConfig, l1Client, rollupAddrs, config.Node.ValidatorRequired(), false)
+	err = pruning.PruneExecutionDb(ctx, executionDb, stack, &config.Init, cacheConfig, persistentConfig, l1Client, rollupAddrs, config.Node.ValidatorRequired(), false)
 	if err != nil {
-		return chainDb, nil, fmt.Errorf("error pruning: %w", err)
+		return executionDb, nil, fmt.Errorf("error pruning: %w", err)
 	}
 
 	err = validateBlockChain(l2BlockChain, chainConfig)
 	if err != nil {
-		return chainDb, l2BlockChain, err
+		return executionDb, l2BlockChain, err
 	}
 
-	return rebuildLocalWasm(ctx, &config.Execution, l2BlockChain, chainDb, wasmDb, config.Init.RebuildLocalWasm)
+	return rebuildLocalWasm(ctx, &config.Execution, l2BlockChain, executionDb, wasmDb, config.Init.RebuildLocalWasm)
 }
 
 func validateGenesisAssertion(ctx context.Context, rollupAddress common.Address, l1Client *ethclient.Client, genesis *types.Block, initDataReaderHasAccounts bool) error {
@@ -996,16 +996,16 @@ func validateGenesisAssertion(ctx context.Context, rollupAddress common.Address,
 	return nil
 }
 
-func testTxIndexUpdated(chainDb ethdb.Database, lastBlock uint64) bool {
+func testTxIndexUpdated(executionDb ethdb.Database, lastBlock uint64) bool {
 	var transactions types.Transactions
-	blockHash := rawdb.ReadCanonicalHash(chainDb, lastBlock)
-	_, reReadNumberFound := rawdb.ReadHeaderNumber(chainDb, blockHash)
+	blockHash := rawdb.ReadCanonicalHash(executionDb, lastBlock)
+	_, reReadNumberFound := rawdb.ReadHeaderNumber(executionDb, blockHash)
 	if !reReadNumberFound {
 		return false
 	}
 	for ; ; lastBlock-- {
-		blockHash := rawdb.ReadCanonicalHash(chainDb, lastBlock)
-		block := rawdb.ReadBlock(chainDb, blockHash, lastBlock)
+		blockHash := rawdb.ReadCanonicalHash(executionDb, lastBlock)
+		block := rawdb.ReadBlock(executionDb, blockHash, lastBlock)
 		transactions = block.Transactions()
 		if len(transactions) == 0 {
 			if lastBlock == 0 {
@@ -1013,12 +1013,12 @@ func testTxIndexUpdated(chainDb ethdb.Database, lastBlock uint64) bool {
 			}
 			continue
 		}
-		entry := rawdb.ReadTxLookupEntry(chainDb, transactions[len(transactions)-1].Hash())
+		entry := rawdb.ReadTxLookupEntry(executionDb, transactions[len(transactions)-1].Hash())
 		return entry != nil
 	}
 }
 
-func testUpdateTxIndex(chainDb ethdb.Database, chainConfig *params.ChainConfig, globalWg *sync.WaitGroup) {
+func testUpdateTxIndex(executionDb ethdb.Database, chainConfig *params.ChainConfig, globalWg *sync.WaitGroup) {
 	lastBlock := chainConfig.ArbitrumChainParams.GenesisBlockNum
 	if lastBlock == 0 {
 		// no Tx, no need to update index
@@ -1026,7 +1026,7 @@ func testUpdateTxIndex(chainDb ethdb.Database, chainConfig *params.ChainConfig, 
 	}
 
 	lastBlock -= 1
-	if testTxIndexUpdated(chainDb, lastBlock) {
+	if testTxIndexUpdated(executionDb, lastBlock) {
 		return
 	}
 
@@ -1038,12 +1038,12 @@ func testUpdateTxIndex(chainDb ethdb.Database, chainConfig *params.ChainConfig, 
 		thread := thread
 		localWg.Add(1)
 		go func() {
-			batch := chainDb.NewBatch()
+			batch := executionDb.NewBatch()
 			// #nosec G115
 			for blockNum := uint64(thread); blockNum <= lastBlock; blockNum += uint64(threads) {
-				blockHash := rawdb.ReadCanonicalHash(chainDb, blockNum)
-				block := rawdb.ReadBlock(chainDb, blockHash, blockNum)
-				receipts := rawdb.ReadRawReceipts(chainDb, blockHash, blockNum)
+				blockHash := rawdb.ReadCanonicalHash(executionDb, blockNum)
+				block := rawdb.ReadBlock(executionDb, blockHash, blockNum)
+				receipts := rawdb.ReadRawReceipts(executionDb, blockHash, blockNum)
 				for i, receipt := range receipts {
 					// receipt.TxHash isn't populated as we used ReadRawReceipts
 					txHash := block.Transactions()[i].Hash()
@@ -1081,9 +1081,9 @@ func testUpdateTxIndex(chainDb ethdb.Database, chainConfig *params.ChainConfig, 
 	globalWg.Add(1)
 	go func() {
 		localWg.Wait()
-		batch := chainDb.NewBatch()
+		batch := executionDb.NewBatch()
 		for txHash, blockNum := range failedTxIndicies {
-			if rawdb.ReadTxLookupEntry(chainDb, txHash) == nil {
+			if rawdb.ReadTxLookupEntry(executionDb, txHash) == nil {
 				rawdb.WriteTxLookupEntries(batch, blockNum, []common.Hash{txHash})
 			}
 			if batch.ValueSize() >= ethdb.IdealBatchSize {

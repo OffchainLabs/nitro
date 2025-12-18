@@ -38,9 +38,9 @@ import (
 )
 
 type importantRoots struct {
-	chainDb ethdb.Database
-	roots   []common.Hash
-	heights []uint64
+	executionDb ethdb.Database
+	roots       []common.Hash
+	heights     []uint64
 }
 
 // The minimum block distance between two important roots
@@ -56,7 +56,7 @@ func (r *importantRoots) addHeader(header *types.Header, overwrite bool) error {
 			log.Error("missing state of pruning target", "blockNum", targetBlockNum)
 			return nil
 		}
-		exists, err := r.chainDb.Has(header.Root.Bytes())
+		exists, err := r.executionDb.Has(header.Root.Bytes())
 		if err != nil {
 			return err
 		}
@@ -68,7 +68,7 @@ func (r *importantRoots) addHeader(header *types.Header, overwrite bool) error {
 			log.Info("looking for old block with state to keep", "current", num, "target", targetBlockNum)
 		}
 		// An underflow is fine here because it'll just return nil due to not found
-		header = rawdb.ReadHeader(r.chainDb, header.ParentHash, num-1)
+		header = rawdb.ReadHeader(r.executionDb, header.ParentHash, num-1)
 	}
 	height := header.Number.Uint64()
 	for len(r.heights) > 0 && r.heights[len(r.heights)-1] > height {
@@ -89,27 +89,27 @@ func (r *importantRoots) addHeader(header *types.Header, overwrite bool) error {
 var hashListRegex = regexp.MustCompile("^(0x)?[0-9a-fA-F]{64}(,(0x)?[0-9a-fA-F]{64})*$")
 
 // Finds important roots to retain while proving
-func findImportantRoots(ctx context.Context, chainDb ethdb.Database, stack *node.Node, initConfig *conf.InitConfig, cacheConfig *core.BlockChainConfig, persistentConfig *conf.PersistentConfig, l1Client *ethclient.Client, rollupAddrs chaininfo.RollupAddresses, validatorRequired, melEnabled bool) ([]common.Hash, error) {
-	chainConfig := gethexec.TryReadStoredChainConfig(chainDb)
+func findImportantRoots(ctx context.Context, executionDb ethdb.Database, stack *node.Node, initConfig *conf.InitConfig, cacheConfig *core.BlockChainConfig, persistentConfig *conf.PersistentConfig, l1Client *ethclient.Client, rollupAddrs chaininfo.RollupAddresses, validatorRequired, melEnabled bool) ([]common.Hash, error) {
+	chainConfig := gethexec.TryReadStoredChainConfig(executionDb)
 	if chainConfig == nil {
 		return nil, errors.New("database doesn't have a chain config (was this node initialized?)")
 	}
-	arbDb, err := stack.OpenDatabaseWithOptions("arbitrumdata", node.DatabaseOptions{MetricsNamespace: "arbitrumdata/", ReadOnly: true, PebbleExtraOptions: persistentConfig.Pebble.ExtraOptions("arbitrumdata"), NoFreezer: true})
+	consensusDb, err := stack.OpenDatabaseWithOptions("arbitrumdata", node.DatabaseOptions{MetricsNamespace: "arbitrumdata/", ReadOnly: true, PebbleExtraOptions: persistentConfig.Pebble.ExtraOptions("arbitrumdata"), NoFreezer: true})
 	if err != nil {
 		return nil, err
 	}
 	defer func() {
-		err := arbDb.Close()
+		err := consensusDb.Close()
 		if err != nil {
 			log.Warn("failed to close arbitrum database after finding pruning targets", "err", err)
 		}
 	}()
 	roots := importantRoots{
-		chainDb: chainDb,
+		executionDb: executionDb,
 	}
 	genesisNum := chainConfig.ArbitrumChainParams.GenesisBlockNum
-	genesisHash := rawdb.ReadCanonicalHash(chainDb, genesisNum)
-	genesisHeader := rawdb.ReadHeader(chainDb, genesisHash, genesisNum)
+	genesisHash := rawdb.ReadCanonicalHash(executionDb, genesisNum)
+	genesisHeader := rawdb.ReadHeader(executionDb, genesisHash, genesisNum)
 	if genesisHeader == nil {
 		return nil, errors.New("missing L2 genesis block header")
 	}
@@ -125,10 +125,10 @@ func findImportantRoots(ctx context.Context, chainDb ethdb.Database, stack *node
 		if err != nil {
 			return nil, err
 		}
-		confirmedNumber, found := rawdb.ReadHeaderNumber(chainDb, confirmedHash)
+		confirmedNumber, found := rawdb.ReadHeaderNumber(executionDb, confirmedHash)
 		var confirmedHeader *types.Header
 		if found {
-			confirmedHeader = rawdb.ReadHeader(chainDb, confirmedHash, confirmedNumber)
+			confirmedHeader = rawdb.ReadHeader(executionDb, confirmedHash, confirmedNumber)
 		}
 		if confirmedHeader != nil {
 			err = roots.addHeader(confirmedHeader, false)
@@ -139,16 +139,16 @@ func findImportantRoots(ctx context.Context, chainDb ethdb.Database, stack *node
 			log.Warn("missing latest confirmed block", "hash", confirmedHash)
 		}
 
-		validatorDb := rawdb.NewTable(arbDb, storage.BlockValidatorPrefix)
+		validatorDb := rawdb.NewTable(consensusDb, storage.BlockValidatorPrefix)
 		lastValidated, err := staker.ReadLastValidatedInfo(validatorDb)
 		if err != nil {
 			return nil, err
 		}
 		if lastValidated != nil {
 			var lastValidatedHeader *types.Header
-			headerNum, found := rawdb.ReadHeaderNumber(chainDb, lastValidated.GlobalState.BlockHash)
+			headerNum, found := rawdb.ReadHeaderNumber(executionDb, lastValidated.GlobalState.BlockHash)
 			if found {
-				lastValidatedHeader = rawdb.ReadHeader(chainDb, lastValidated.GlobalState.BlockHash, headerNum)
+				lastValidatedHeader = rawdb.ReadHeader(executionDb, lastValidated.GlobalState.BlockHash, headerNum)
 			}
 			if lastValidatedHeader != nil {
 				err = roots.addHeader(lastValidatedHeader, false)
@@ -187,9 +187,9 @@ func findImportantRoots(ctx context.Context, chainDb ethdb.Database, stack *node
 		l1BlockNum := l1Block.NumberU64()
 		var batch uint64
 		if melEnabled {
-			batch, err = read.MELSequencerBatchCount(arbDb)
+			batch, err = read.MELSequencerBatchCount(consensusDb)
 		} else {
-			batch, err = read.SequencerBatchCount(arbDb)
+			batch, err = read.SequencerBatchCount(consensusDb)
 		}
 		if err != nil {
 			return nil, err
@@ -205,9 +205,9 @@ func findImportantRoots(ctx context.Context, chainDb ethdb.Database, stack *node
 			batch -= 1
 			var meta mel.BatchMetadata
 			if melEnabled {
-				meta, err = read.MELBatchMetadata(arbDb, batch)
+				meta, err = read.MELBatchMetadata(consensusDb, batch)
 			} else {
-				meta, err = read.BatchMetadata(arbDb, batch)
+				meta, err = read.BatchMetadata(consensusDb, batch)
 			}
 			if err != nil {
 				return nil, err
@@ -216,8 +216,8 @@ func findImportantRoots(ctx context.Context, chainDb ethdb.Database, stack *node
 				signedBlockNum := arbutil.MessageCountToBlockNumber(meta.MessageCount, genesisNum)
 				// #nosec G115
 				blockNum := uint64(signedBlockNum)
-				l2Hash := rawdb.ReadCanonicalHash(chainDb, blockNum)
-				l2Header := rawdb.ReadHeader(chainDb, l2Hash, blockNum)
+				l2Hash := rawdb.ReadCanonicalHash(executionDb, blockNum)
+				l2Header := rawdb.ReadHeader(executionDb, l2Hash, blockNum)
 				if l2Header == nil {
 					log.Warn("latest finalized L2 block is unknown", "blockNum", signedBlockNum)
 					break
@@ -285,20 +285,20 @@ func getLatestConfirmedHash(ctx context.Context, rollupAddrs chaininfo.RollupAdd
 	}
 }
 
-func PruneChainDb(ctx context.Context, chainDb ethdb.Database, stack *node.Node, initConfig *conf.InitConfig, cacheConfig *core.BlockChainConfig, persistentConfig *conf.PersistentConfig, l1Client *ethclient.Client, rollupAddrs chaininfo.RollupAddresses, validatorRequired, melEnabled bool) error {
+func PruneExecutionDb(ctx context.Context, executionDb ethdb.Database, stack *node.Node, initConfig *conf.InitConfig, cacheConfig *core.BlockChainConfig, persistentConfig *conf.PersistentConfig, l1Client *ethclient.Client, rollupAddrs chaininfo.RollupAddresses, validatorRequired, melEnabled bool) error {
 	if cacheConfig.StateScheme == rawdb.PathScheme {
 		return nil
 	}
 
 	if initConfig.Prune == "" {
-		return pruner.RecoverPruning(stack.InstanceDir(), chainDb, initConfig.PruneThreads)
+		return pruner.RecoverPruning(stack.InstanceDir(), executionDb, initConfig.PruneThreads)
 	}
-	root, err := findImportantRoots(ctx, chainDb, stack, initConfig, cacheConfig, persistentConfig, l1Client, rollupAddrs, validatorRequired, melEnabled)
+	root, err := findImportantRoots(ctx, executionDb, stack, initConfig, cacheConfig, persistentConfig, l1Client, rollupAddrs, validatorRequired, melEnabled)
 	if err != nil {
 		return fmt.Errorf("failed to find root to retain for pruning: %w", err)
 	}
 
-	pruner, err := pruner.NewPruner(chainDb, pruner.Config{Datadir: stack.InstanceDir(), BloomSize: initConfig.PruneBloomSize, Threads: initConfig.PruneThreads, CleanCacheSize: initConfig.PruneTrieCleanCache, ParallelStorageTraversal: initConfig.PruneParallelStorageTraversal})
+	pruner, err := pruner.NewPruner(executionDb, pruner.Config{Datadir: stack.InstanceDir(), BloomSize: initConfig.PruneBloomSize, Threads: initConfig.PruneThreads, CleanCacheSize: initConfig.PruneTrieCleanCache, ParallelStorageTraversal: initConfig.PruneParallelStorageTraversal})
 	if err != nil {
 		return err
 	}

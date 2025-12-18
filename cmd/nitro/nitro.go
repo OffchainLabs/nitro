@@ -442,25 +442,25 @@ func mainImpl() int {
 		return 1
 	}
 
-	chainDb, l2BlockChain, err := openInitializeChainDb(ctx, stack, nodeConfig, new(big.Int).SetUint64(nodeConfig.Chain.ID), gethexec.DefaultCacheConfigFor(&nodeConfig.Execution.Caching), &nodeConfig.Execution.StylusTarget, tracer, &nodeConfig.Persistent, l1Client, rollupAddrs)
+	executionDb, l2BlockChain, err := openInitializeExecutionDb(ctx, stack, nodeConfig, new(big.Int).SetUint64(nodeConfig.Chain.ID), gethexec.DefaultCacheConfigFor(&nodeConfig.Execution.Caching), &nodeConfig.Execution.StylusTarget, tracer, &nodeConfig.Persistent, l1Client, rollupAddrs)
 	if l2BlockChain != nil {
 		deferFuncs = append(deferFuncs, func() { l2BlockChain.Stop() })
 	}
-	deferFuncs = append(deferFuncs, func() { closeDb(chainDb, "chainDb") })
+	deferFuncs = append(deferFuncs, func() { closeDb(executionDb, "executionDb") })
 	if err != nil {
 		pflag.Usage()
 		log.Error("error initializing database", "err", err)
 		return 1
 	}
 
-	arbDb, err := stack.OpenDatabaseWithOptions("arbitrumdata", node.DatabaseOptions{MetricsNamespace: "arbitrumdata/", PebbleExtraOptions: nodeConfig.Persistent.Pebble.ExtraOptions("arbitrumdata"), NoFreezer: true})
-	deferFuncs = append(deferFuncs, func() { closeDb(arbDb, "arbDb") })
+	consensusDb, err := stack.OpenDatabaseWithOptions("arbitrumdata", node.DatabaseOptions{MetricsNamespace: "arbitrumdata/", PebbleExtraOptions: nodeConfig.Persistent.Pebble.ExtraOptions("arbitrumdata"), NoFreezer: true})
+	deferFuncs = append(deferFuncs, func() { closeDb(consensusDb, "consensusDb") })
 	if err != nil {
 		log.Error("failed to open database", "err", err)
 		log.Error("database is corrupt; delete it and try again", "database-directory", stack.InstanceDir())
 		return 1
 	}
-	if err := dbutil.UnfinishedConversionCheck(arbDb); err != nil {
+	if err := dbutil.UnfinishedConversionCheck(consensusDb); err != nil {
 		log.Error("arbitrumdata unfinished conversion check error", "err", err)
 		return 1
 	}
@@ -470,7 +470,7 @@ func mainImpl() int {
 			log.Error("blocks-reexecutor cannot be enabled without --init.then-quit")
 			return 1
 		}
-		blocksReExecutor, err := blocksreexecutor.New(&nodeConfig.BlocksReExecutor, l2BlockChain, chainDb)
+		blocksReExecutor, err := blocksreexecutor.New(&nodeConfig.BlocksReExecutor, l2BlockChain, executionDb)
 		if err != nil {
 			log.Error("error initializing blocksReExecutor", "err", err)
 			return 1
@@ -523,7 +523,7 @@ func mainImpl() int {
 	execNode, err := gethexec.CreateExecutionNode(
 		ctx,
 		stack,
-		chainDb,
+		executionDb,
 		l2BlockChain,
 		l1Client,
 		&ExecutionNodeConfigFetcher{liveNodeConfig},
@@ -550,7 +550,7 @@ func mainImpl() int {
 		execNode,
 		execNode,
 		execNode,
-		arbDb,
+		consensusDb,
 		&ConsensusNodeConfigFetcher{liveNodeConfig},
 		l2BlockChain.Config(),
 		l1Client,

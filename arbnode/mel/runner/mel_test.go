@@ -35,8 +35,8 @@ func TestMessageExtractor(t *testing.T) {
 			{}: {},
 		},
 	}
-	arbDb := rawdb.NewMemoryDatabase()
-	melDb := NewDatabase(arbDb)
+	consensusDb := rawdb.NewMemoryDatabase()
+	melDb := NewDatabase(consensusDb)
 	messageConsumer := &mockMessageConsumer{}
 	extractor, err := NewMessageExtractor(
 		parentChainReader,
