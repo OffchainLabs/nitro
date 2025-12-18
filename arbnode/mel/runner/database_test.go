@@ -26,28 +26,28 @@ func TestMelDatabase(t *testing.T) {
 
 	// Create database
 	consensusDB := rawdb.NewMemoryDatabase()
-	melDb := NewDatabase(consensusDB)
+	melDB := NewDatabase(consensusDB)
 
 	headMelState := &mel.State{
 		ParentChainBlockNumber: 2,
 		ParentChainBlockHash:   common.MaxHash,
 		BatchCount:             1,
 	}
-	require.NoError(t, melDb.SaveState(ctx, headMelState))
+	require.NoError(t, melDB.SaveState(ctx, headMelState))
 	want := &mel.BatchMetadata{
 		Accumulator:         common.MaxHash,
 		MessageCount:        1,
 		DelayedMessageCount: 10,
 		ParentChainBlock:    2,
 	}
-	require.NoError(t, melDb.SaveBatchMetas(ctx, headMelState, []*mel.BatchMetadata{want}))
-	have, err := melDb.fetchBatchMetadata(0)
+	require.NoError(t, melDB.SaveBatchMetas(ctx, headMelState, []*mel.BatchMetadata{want}))
+	have, err := melDB.fetchBatchMetadata(0)
 	require.NoError(t, err)
 	if !reflect.DeepEqual(have, want) {
 		t.Fatal("BatchMetadata mismatch")
 	}
 
-	headMelStateBlockNum, err := melDb.GetHeadMelStateBlockNum()
+	headMelStateBlockNum, err := melDB.GetHeadMelStateBlockNum()
 	require.NoError(t, err)
 	require.True(t, headMelStateBlockNum == headMelState.ParentChainBlockNumber)
 
@@ -58,7 +58,7 @@ func TestMelDatabase(t *testing.T) {
 			t.Fatal("unexpected melState retrieved via GetState using parentChainBlockHash")
 		}
 	}
-	melState, err = melDb.State(ctx, headMelState.ParentChainBlockNumber)
+	melState, err = melDB.State(ctx, headMelState.ParentChainBlockNumber)
 	checkMelState()
 }
 
@@ -72,7 +72,7 @@ func TestMelDatabaseReadAndWriteDelayedMessages(t *testing.T) {
 	// Init
 	// Create database
 	consensusDB := rawdb.NewMemoryDatabase()
-	melDb := NewDatabase(consensusDB)
+	melDB := NewDatabase(consensusDB)
 
 	delayedRequestId := common.BigToHash(common.Big1)
 	delayedMsg := &mel.DelayedInboxMessage{
@@ -93,8 +93,8 @@ func TestMelDatabaseReadAndWriteDelayedMessages(t *testing.T) {
 	require.NoError(t, state.AccumulateDelayedMessage(delayedMsg)) // Initialize delayedMessageBacklog
 	state.DelayedMessagesSeen++
 
-	require.NoError(t, melDb.SaveDelayedMessages(ctx, state, []*mel.DelayedInboxMessage{delayedMsg}))
-	have, err := melDb.ReadDelayedMessage(ctx, state, 0)
+	require.NoError(t, melDB.SaveDelayedMessages(ctx, state, []*mel.DelayedInboxMessage{delayedMsg}))
+	have, err := melDB.ReadDelayedMessage(ctx, state, 0)
 	require.NoError(t, err)
 
 	if !reflect.DeepEqual(have, delayedMsg) {
@@ -110,14 +110,14 @@ func TestMelDelayedMessagesAccumulation(t *testing.T) {
 
 	// Create database
 	consensusDB := rawdb.NewMemoryDatabase()
-	melDb := NewDatabase(consensusDB)
+	melDB := NewDatabase(consensusDB)
 
 	// Add genesis melState
 	var err error
 	genesis := &mel.State{
 		ParentChainBlockNumber: 1,
 	}
-	require.NoError(t, melDb.SaveState(ctx, genesis))
+	require.NoError(t, melDB.SaveState(ctx, genesis))
 
 	numDelayed := 5
 	var delayedMsgs []*mel.DelayedInboxMessage
@@ -150,11 +150,11 @@ func TestMelDelayedMessagesAccumulation(t *testing.T) {
 		require.NoError(t, state.AccumulateDelayedMessage(delayedMsgs[i]))
 		state.DelayedMessagesSeen++
 	}
-	require.NoError(t, melDb.SaveDelayedMessages(ctx, state, delayedMsgs[:numDelayed]))
+	require.NoError(t, melDB.SaveDelayedMessages(ctx, state, delayedMsgs[:numDelayed]))
 	// We can read all of these and prove that they are correct, by checking that ReadDelayedMessage doesnt error
 	// #nosec G115
 	for i := uint64(0); i < uint64(numDelayed); i++ {
-		have, err := melDb.ReadDelayedMessage(ctx, state, i)
+		have, err := melDB.ReadDelayedMessage(ctx, state, i)
 		require.NoError(t, err)
 		require.True(t, reflect.DeepEqual(have, delayedMsgs[i]))
 	}
@@ -167,6 +167,6 @@ func TestMelDelayedMessagesAccumulation(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, consensusDB.Put(key, delayedBytes))
 	// ReadDelayedMessage should fail with not part of accumulator error
-	_, err = melDb.ReadDelayedMessage(ctx, state, corruptIndex)
+	_, err = melDB.ReadDelayedMessage(ctx, state, corruptIndex)
 	require.True(t, err.Error() == "delayed message message not part of the mel state accumulator")
 }
