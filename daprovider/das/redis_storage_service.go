@@ -10,12 +10,11 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/redis/go-redis/v9"
 	"github.com/spf13/pflag"
 	"golang.org/x/crypto/sha3"
-
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/daprovider/das/dastree"
 	"github.com/offchainlabs/nitro/daprovider/das/dasutil"
@@ -84,10 +83,14 @@ func (rs *RedisStorageService) verifyMessageSignature(data []byte) ([]byte, erro
 
 func (rs *RedisStorageService) getVerifiedData(ctx context.Context, key common.Hash) ([]byte, error) {
 	data, err := rs.client.Get(ctx, string(key.Bytes())).Bytes()
-	if err != nil {
-		log.Error("das.RedisStorageService.getVerifiedData", "err", err)
-		return nil, err
-	}
+    if errors.Is(err, redis.Nil) {
+        // Cache miss is expected and should not be logged as an error
+        return nil, err
+    }
+    if err != nil {
+        log.Error("das.RedisStorageService.getVerifiedData", "err", err)
+        return nil, err
+    }
 	data, err = rs.verifyMessageSignature(data)
 	if err != nil {
 		return nil, err
