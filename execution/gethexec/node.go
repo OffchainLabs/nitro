@@ -566,7 +566,11 @@ func (n *ExecutionNode) SetFinalityData(
 	validatedFinalityData *arbutil.FinalityData,
 ) containers.PromiseInterface[struct{}] {
 	err := n.SyncMonitor.SetFinalityData(safeFinalityData, finalizedFinalityData, validatedFinalityData)
-	return containers.NewReadyPromise(struct{}{}, err)
+	if err != nil {
+		return containers.NewReadyPromise(struct{}{}, err)
+	}
+	n.Recorder.MarkValid(validatedFinalityData.MsgIdx, validatedFinalityData.BlockHash)
+	return containers.NewReadyPromise(struct{}{}, nil)
 }
 
 func (n *ExecutionNode) SetConsensusSyncData(syncData *execution.ConsensusSyncData) containers.PromiseInterface[struct{}] {
