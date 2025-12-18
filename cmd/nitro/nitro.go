@@ -919,7 +919,7 @@ func (c *NodeConfig) Validate() error {
 			return errors.New("consensus and execution are configured to communicate over rpc but execution node has not enabled rpc server")
 		}
 		if c.Execution.ConsensusRPCClient.URL != c.Node.ExecutionRPCClient.URL {
-			return errors.New("consensus and execution are configured to communicate over rpc but execution node has consensusRPCClient url not equal to self")
+			return errors.New("consensus and execution are configured to communicate over rpc but execution node has consensusRPCClient url not equal to that of execution (self or self-auth)")
 		}
 		if c.WS.Addr == "" {
 			return errors.New("consensus and execution are configured to communicate over rpc but websocket is not enabled")
