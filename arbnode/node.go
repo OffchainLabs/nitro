@@ -160,7 +160,7 @@ func ConfigAddOptions(prefix string, f *pflag.FlagSet, feedInputEnable bool, fee
 	BlockMetadataFetcherConfigAddOptions(prefix+".block-metadata-fetcher", f)
 	ConsensusExecutionSyncerConfigAddOptions(prefix+".consensus-execution-syncer", f)
 }
-
+// lint:require-exhaustive-initialization
 var ConfigDefault = Config{
 	Sequencer:                false,
 	ParentChainReader:        headerreader.DefaultConfig,
