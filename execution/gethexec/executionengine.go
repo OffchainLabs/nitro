@@ -777,12 +777,9 @@ func (s *ExecutionEngine) appendBlock(block *types.Block, statedb *state.StateDB
 			return err
 		}
 	} else {
-		status, err := s.bc.WriteBlockAndSetHeadWithTime(block, receipts, logs, statedb, true, duration)
+		_, err := s.bc.WriteBlockAndSetHeadWithTime(block, receipts, logs, statedb, true, duration)
 		if err != nil {
 			return err
-		}
-		if status == core.SideStatTy { // TODO: This check can be removed as this WriteStatus is never returned when setting head
-			return errors.New("geth rejected block as non-canonical")
 		}
 	}
 	blockWriteToDbTimer.Update(time.Since(startTime).Nanoseconds())
