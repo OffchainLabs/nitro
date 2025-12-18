@@ -502,9 +502,6 @@ func (n *ExecutionNode) RecordBlockCreation(
 ) (*execution.RecordResult, error) {
 	return n.Recorder.RecordBlockCreation(ctx, pos, msg, wasmTargets)
 }
-func (n *ExecutionNode) MarkValid(pos arbutil.MessageIndex, resultHash common.Hash) {
-	n.Recorder.MarkValid(pos, resultHash)
-}
 func (n *ExecutionNode) PrepareForRecord(ctx context.Context, start, end arbutil.MessageIndex) error {
 	return n.Recorder.PrepareForRecord(ctx, start, end)
 }
