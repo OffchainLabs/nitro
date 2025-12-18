@@ -38,6 +38,7 @@ import (
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/timeboost"
+	"github.com/offchainlabs/nitro/txfilter"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/headerreader"
@@ -440,6 +441,7 @@ type Sequencer struct {
 	expressLaneService *expressLaneService
 	onForwarderSet     chan struct{}
 	parentChain        *parent.ParentChain
+	addressFilter      txfilter.AddressFilter
 
 	L1BlockAndTimeMutex sync.Mutex
 	l1BlockNumber       atomic.Uint64
@@ -748,6 +750,23 @@ func (s *Sequencer) postTxFilter(header *types.Header, statedb *state.StateDB, _
 	if statedb.IsTxFiltered() {
 		return state.ErrArbTxFilter
 	}
+
+	// Address filtering check
+	if s.addressFilter != nil && s.addressFilter.Enabled() {
+		// Add explicit from/to addresses
+		statedb.AddTouchedAddress(sender)
+		if tx.To() != nil {
+			statedb.AddTouchedAddress(*tx.To())
+		}
+
+		// Check all collected addresses
+		for _, addr := range statedb.GetTouchedAddresses() {
+			if s.addressFilter.IsFiltered(addr) {
+				return ErrAddressFiltered
+			}
+		}
+	}
+
 	if result.Err != nil && result.UsedGas > dataGas && result.UsedGas-dataGas <= s.config().MaxRevertGasReject {
 		return arbitrum.NewRevertReason(result)
 	}
@@ -912,7 +931,10 @@ func (s *Sequencer) handleInactive(ctx context.Context, queueItems []txQueueItem
 	return true
 }
 
-var sequencerInternalError = errors.New("sequencer internal error")
+var (
+	sequencerInternalError = errors.New("sequencer internal error")
+	ErrAddressFiltered     = errors.New("transaction touches filtered address")
+)
 
 type FullSequencingHooks struct {
 	queueItems               []txQueueItem
@@ -1748,4 +1770,8 @@ func (s *Sequencer) StopAndWait() {
 		}
 		wg.Wait()
 	}
+}
+
+func (s *Sequencer) SetAddressFilter(filter txfilter.AddressFilter) {
+	s.addressFilter = filter
 }
