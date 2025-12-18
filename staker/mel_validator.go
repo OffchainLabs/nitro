@@ -58,7 +58,6 @@ func (mv *MELValidator) CreateNextValidationEntry(ctx context.Context, startPosi
 		if state.Hash() != wantState.Hash() {
 			return nil, fmt.Errorf("calculated MEL state hash in recording mode doesn't match the one computed in native mode, parentchainBlocknumber: %d", i)
 		}
-		// Currently we are ending recording as soon
 		if mel.WasMessageExtracted(preState, state) {
 			break
 		}
