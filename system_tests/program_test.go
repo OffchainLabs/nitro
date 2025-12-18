@@ -76,8 +76,8 @@ func keccakTest(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder)) {
 	defer cleanup()
 	programAddress := deployWasm(t, ctx, auth, l2client, rustFile("keccak"))
 
-	wasmDb := builder.L2.ExecNode.Backend.ArbInterface().BlockChain().StateCache().WasmStore()
-	checkWasmStoreContent(t, wasmDb, builder.execConfig.StylusTarget.WasmTargets(), 1)
+	wasmDB := builder.L2.ExecNode.Backend.ArbInterface().BlockChain().StateCache().WasmStore()
+	checkWasmStoreContent(t, wasmDB, builder.execConfig.StylusTarget.WasmTargets(), 1)
 
 	wasm, _ := readWasmFile(t, rustFile("keccak"))
 	otherAddressSameCode := deployContract(t, ctx, auth, l2client, wasm)
@@ -90,7 +90,7 @@ func keccakTest(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder)) {
 			Fatal(t, "activate should have failed with ProgramUpToDate", err)
 		}
 	})
-	checkWasmStoreContent(t, wasmDb, builder.execConfig.StylusTarget.WasmTargets(), 1)
+	checkWasmStoreContent(t, wasmDB, builder.execConfig.StylusTarget.WasmTargets(), 1)
 
 	if programAddress == otherAddressSameCode {
 		Fatal(t, "expected to deploy at two separate program addresses")
@@ -206,8 +206,8 @@ func testActivateTwice(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder)
 
 	multiAddr := deployWasm(t, ctx, auth, l2client, rustFile("multicall"))
 
-	wasmDb := builder.L2.ExecNode.Backend.ArbInterface().BlockChain().StateCache().WasmStore()
-	checkWasmStoreContent(t, wasmDb, builder.execConfig.StylusTarget.WasmTargets(), 1)
+	wasmDB := builder.L2.ExecNode.Backend.ArbInterface().BlockChain().StateCache().WasmStore()
+	checkWasmStoreContent(t, wasmDB, builder.execConfig.StylusTarget.WasmTargets(), 1)
 
 	preimage := []byte("it's time to du-du-du-du d-d-d-d-d-d-d de-duplicate")
 
@@ -232,7 +232,7 @@ func testActivateTwice(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder)
 
 	// Calling the contract pre-activation should fail.
 	checkReverts()
-	checkWasmStoreContent(t, wasmDb, builder.execConfig.StylusTarget.WasmTargets(), 1)
+	checkWasmStoreContent(t, wasmDB, builder.execConfig.StylusTarget.WasmTargets(), 1)
 
 	// mechanisms for creating calldata
 	activateProgram, _ := util.NewCallParser(precompilesgen.ArbWasmABI, "activateProgram")
@@ -255,7 +255,7 @@ func testActivateTwice(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder)
 
 	// Ensure the revert also reverted keccak's activation
 	checkReverts()
-	checkWasmStoreContent(t, wasmDb, builder.execConfig.StylusTarget.WasmTargets(), 1)
+	checkWasmStoreContent(t, wasmDB, builder.execConfig.StylusTarget.WasmTargets(), 1)
 
 	// Activate keccak program A, then call into B, which should succeed due to being the same codehash
 	args = argsForMulticall(vm.CALL, types.ArbWasmAddress, oneEth, pack(activateProgram(keccakA)))
@@ -263,7 +263,7 @@ func testActivateTwice(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder)
 
 	tx = l2info.PrepareTxTo("Owner", &multiAddr, 1e9, oneEth, args)
 	ensure(tx, l2client.SendTransaction(ctx, tx))
-	checkWasmStoreContent(t, wasmDb, builder.execConfig.StylusTarget.WasmTargets(), 2)
+	checkWasmStoreContent(t, wasmDB, builder.execConfig.StylusTarget.WasmTargets(), 2)
 
 	validateBlocks(t, 7, jit, builder)
 }
@@ -1967,8 +1967,8 @@ func testWasmRecreate(t *testing.T, builder *NodeBuilder, targetsBefore, targets
 	if !bytes.Equal(result, want) {
 		t.Fatalf("got wrong value, got %x, want %x", result, want)
 	}
-	wasmDb := nodeB.ExecNode.Backend.ArbInterface().BlockChain().StateCache().WasmStore()
-	checkWasmStoreContent(t, wasmDb, nodeBExecConfigBefore.StylusTarget.WasmTargets(), numModules)
+	wasmDB := nodeB.ExecNode.Backend.ArbInterface().BlockChain().StateCache().WasmStore()
+	checkWasmStoreContent(t, wasmDB, nodeBExecConfigBefore.StylusTarget.WasmTargets(), numModules)
 	// close nodeB
 	cleanupB()
 
@@ -2008,8 +2008,8 @@ func testWasmRecreate(t *testing.T, builder *NodeBuilder, targetsBefore, targets
 	_, err = EnsureTxSucceeded(ctx, nodeB.Client, loadTx)
 	Require(t, err)
 
-	wasmDb = nodeB.ExecNode.Backend.ArbInterface().BlockChain().StateCache().WasmStore()
-	checkWasmStoreContent(t, wasmDb, nodeBExecConfigAfter.StylusTarget.WasmTargets(), numModules)
+	wasmDB = nodeB.ExecNode.Backend.ArbInterface().BlockChain().StateCache().WasmStore()
+	checkWasmStoreContent(t, wasmDB, nodeBExecConfigAfter.StylusTarget.WasmTargets(), numModules)
 
 	cleanupB()
 	dirContents, err := os.ReadDir(wasmPath)
@@ -2190,12 +2190,12 @@ func TestWasmStoreRebuilding(t *testing.T) {
 		Fatal(t, "got wrong value")
 	}
 
-	wasmDb := nodeB.ExecNode.Backend.ArbInterface().BlockChain().StateCache().WasmStore()
+	wasmDB := nodeB.ExecNode.Backend.ArbInterface().BlockChain().StateCache().WasmStore()
 
-	storeMap, err := createMapFromDb(wasmDb)
+	storeMap, err := createMapFromDb(wasmDB)
 	Require(t, err)
 
-	checkWasmStoreContent(t, wasmDb, builder.execConfig.StylusTarget.WasmTargets(), 1)
+	checkWasmStoreContent(t, wasmDB, builder.execConfig.StylusTarget.WasmTargets(), 1)
 	// close nodeB
 	cleanupB()
 
@@ -2256,10 +2256,10 @@ func TestWasmStoreRebuilding(t *testing.T) {
 	cleanupB()
 }
 
-func readModuleHashes(t *testing.T, wasmDb ethdb.KeyValueStore) []common.Hash {
+func readModuleHashes(t *testing.T, wasmDB ethdb.KeyValueStore) []common.Hash {
 	modulesSet := make(map[common.Hash]struct{})
 	asmPrefix := []byte{0x00, 'w'}
-	it := wasmDb.NewIterator(asmPrefix, nil)
+	it := wasmDB.NewIterator(asmPrefix, nil)
 	defer it.Release()
 	for it.Next() {
 		key := it.Key()
@@ -2279,9 +2279,9 @@ func readModuleHashes(t *testing.T, wasmDb ethdb.KeyValueStore) []common.Hash {
 	return modules
 }
 
-func checkWasmStoreContent(t *testing.T, wasmDb ethdb.KeyValueStore, expectedTargets []rawdb.WasmTarget, numModules int) {
+func checkWasmStoreContent(t *testing.T, wasmDB ethdb.KeyValueStore, expectedTargets []rawdb.WasmTarget, numModules int) {
 	t.Helper()
-	modules := readModuleHashes(t, wasmDb)
+	modules := readModuleHashes(t, wasmDB)
 	if len(modules) != numModules {
 		t.Fatalf("Unexpected number of module hashes found in wasm store, want: %d, have: %d", numModules, len(modules))
 	}
@@ -2297,7 +2297,7 @@ func checkWasmStoreContent(t *testing.T, wasmDb ethdb.KeyValueStore, expectedTar
 					t.Fatalf("Failed to read activated asm for target: %v, module: %v", target, module)
 				}
 			}()
-			return rawdb.ReadActivatedAsm(wasmDb, wasmTarget, module)
+			return rawdb.ReadActivatedAsm(wasmDB, wasmTarget, module)
 		}()
 	}
 	for _, module := range modules {

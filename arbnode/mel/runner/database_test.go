@@ -25,8 +25,8 @@ func TestMelDatabase(t *testing.T) {
 	defer cancel()
 
 	// Create database
-	consensusDb := rawdb.NewMemoryDatabase()
-	melDb := NewDatabase(consensusDb)
+	consensusDB := rawdb.NewMemoryDatabase()
+	melDb := NewDatabase(consensusDB)
 
 	headMelState := &mel.State{
 		ParentChainBlockNumber: 2,
@@ -71,8 +71,8 @@ func TestMelDatabaseReadAndWriteDelayedMessages(t *testing.T) {
 
 	// Init
 	// Create database
-	consensusDb := rawdb.NewMemoryDatabase()
-	melDb := NewDatabase(consensusDb)
+	consensusDB := rawdb.NewMemoryDatabase()
+	melDb := NewDatabase(consensusDB)
 
 	delayedRequestId := common.BigToHash(common.Big1)
 	delayedMsg := &mel.DelayedInboxMessage{
@@ -109,8 +109,8 @@ func TestMelDelayedMessagesAccumulation(t *testing.T) {
 	defer cancel()
 
 	// Create database
-	consensusDb := rawdb.NewMemoryDatabase()
-	melDb := NewDatabase(consensusDb)
+	consensusDB := rawdb.NewMemoryDatabase()
+	melDb := NewDatabase(consensusDB)
 
 	// Add genesis melState
 	var err error
@@ -165,7 +165,7 @@ func TestMelDelayedMessagesAccumulation(t *testing.T) {
 	key := read.Key(schema.MelDelayedMessagePrefix, corruptIndex) // #nosec G115
 	delayedBytes, err := rlp.EncodeToBytes(*corruptDelayed)
 	require.NoError(t, err)
-	require.NoError(t, consensusDb.Put(key, delayedBytes))
+	require.NoError(t, consensusDB.Put(key, delayedBytes))
 	// ReadDelayedMessage should fail with not part of accumulator error
 	_, err = melDb.ReadDelayedMessage(ctx, state, corruptIndex)
 	require.True(t, err.Error() == "delayed message message not part of the mel state accumulator")

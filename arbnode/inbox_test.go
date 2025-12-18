@@ -139,7 +139,7 @@ func NewTransactionStreamerForTest(t *testing.T, ctx context.Context, ownerAddre
 	}
 
 	executionDB := rawdb.NewMemoryDatabase()
-	consensusDb := rawdb.NewMemoryDatabase()
+	consensusDB := rawdb.NewMemoryDatabase()
 	initReader := statetransfer.NewMemoryInitDataReader(&initData)
 
 	options := core.DefaultConfig().WithStateScheme(env.GetTestStateScheme())
@@ -160,7 +160,7 @@ func NewTransactionStreamerForTest(t *testing.T, ctx context.Context, ownerAddre
 		Fail(t, err)
 	}
 	execSeq := &execClientWrapper{execEngine, t}
-	inbox, err := NewTransactionStreamer(ctx, consensusDb, bc.Config(), execSeq, nil, make(chan error, 1), transactionStreamerConfigFetcher, &DefaultSnapSyncConfig)
+	inbox, err := NewTransactionStreamer(ctx, consensusDB, bc.Config(), execSeq, nil, make(chan error, 1), transactionStreamerConfigFetcher, &DefaultSnapSyncConfig)
 	if err != nil {
 		Fail(t, err)
 	}
@@ -171,7 +171,7 @@ func NewTransactionStreamerForTest(t *testing.T, ctx context.Context, ownerAddre
 		Fail(t, err)
 	}
 
-	return execEngine, inbox, consensusDb, bc
+	return execEngine, inbox, consensusDB, bc
 }
 
 type blockTestState struct {

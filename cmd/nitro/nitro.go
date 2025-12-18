@@ -453,14 +453,14 @@ func mainImpl() int {
 		return 1
 	}
 
-	consensusDb, err := stack.OpenDatabaseWithOptions("arbitrumdata", node.DatabaseOptions{MetricsNamespace: "arbitrumdata/", PebbleExtraOptions: nodeConfig.Persistent.Pebble.ExtraOptions("arbitrumdata"), NoFreezer: true})
-	deferFuncs = append(deferFuncs, func() { closeDb(consensusDb, "consensusDb") })
+	consensusDB, err := stack.OpenDatabaseWithOptions("arbitrumdata", node.DatabaseOptions{MetricsNamespace: "arbitrumdata/", PebbleExtraOptions: nodeConfig.Persistent.Pebble.ExtraOptions("arbitrumdata"), NoFreezer: true})
+	deferFuncs = append(deferFuncs, func() { closeDb(consensusDB, "consensusDB") })
 	if err != nil {
 		log.Error("failed to open database", "err", err)
 		log.Error("database is corrupt; delete it and try again", "database-directory", stack.InstanceDir())
 		return 1
 	}
-	if err := dbutil.UnfinishedConversionCheck(consensusDb); err != nil {
+	if err := dbutil.UnfinishedConversionCheck(consensusDB); err != nil {
 		log.Error("arbitrumdata unfinished conversion check error", "err", err)
 		return 1
 	}
@@ -550,7 +550,7 @@ func mainImpl() int {
 		execNode,
 		execNode,
 		execNode,
-		consensusDb,
+		consensusDB,
 		&ConsensusNodeConfigFetcher{liveNodeConfig},
 		l2BlockChain.Config(),
 		l1Client,

@@ -94,12 +94,12 @@ func findImportantRoots(ctx context.Context, executionDB ethdb.Database, stack *
 	if chainConfig == nil {
 		return nil, errors.New("database doesn't have a chain config (was this node initialized?)")
 	}
-	consensusDb, err := stack.OpenDatabaseWithOptions("arbitrumdata", node.DatabaseOptions{MetricsNamespace: "arbitrumdata/", ReadOnly: true, PebbleExtraOptions: persistentConfig.Pebble.ExtraOptions("arbitrumdata"), NoFreezer: true})
+	consensusDB, err := stack.OpenDatabaseWithOptions("arbitrumdata", node.DatabaseOptions{MetricsNamespace: "arbitrumdata/", ReadOnly: true, PebbleExtraOptions: persistentConfig.Pebble.ExtraOptions("arbitrumdata"), NoFreezer: true})
 	if err != nil {
 		return nil, err
 	}
 	defer func() {
-		err := consensusDb.Close()
+		err := consensusDB.Close()
 		if err != nil {
 			log.Warn("failed to close arbitrum database after finding pruning targets", "err", err)
 		}
@@ -139,7 +139,7 @@ func findImportantRoots(ctx context.Context, executionDB ethdb.Database, stack *
 			log.Warn("missing latest confirmed block", "hash", confirmedHash)
 		}
 
-		validatorDb := rawdb.NewTable(consensusDb, storage.BlockValidatorPrefix)
+		validatorDb := rawdb.NewTable(consensusDB, storage.BlockValidatorPrefix)
 		lastValidated, err := staker.ReadLastValidatedInfo(validatorDb)
 		if err != nil {
 			return nil, err
@@ -187,9 +187,9 @@ func findImportantRoots(ctx context.Context, executionDB ethdb.Database, stack *
 		l1BlockNum := l1Block.NumberU64()
 		var batch uint64
 		if melEnabled {
-			batch, err = read.MELSequencerBatchCount(consensusDb)
+			batch, err = read.MELSequencerBatchCount(consensusDB)
 		} else {
-			batch, err = read.SequencerBatchCount(consensusDb)
+			batch, err = read.SequencerBatchCount(consensusDB)
 		}
 		if err != nil {
 			return nil, err
@@ -205,9 +205,9 @@ func findImportantRoots(ctx context.Context, executionDB ethdb.Database, stack *
 			batch -= 1
 			var meta mel.BatchMetadata
 			if melEnabled {
-				meta, err = read.MELBatchMetadata(consensusDb, batch)
+				meta, err = read.MELBatchMetadata(consensusDB, batch)
 			} else {
-				meta, err = read.BatchMetadata(consensusDb, batch)
+				meta, err = read.BatchMetadata(consensusDB, batch)
 			}
 			if err != nil {
 				return nil, err
