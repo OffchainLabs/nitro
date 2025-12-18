@@ -18,7 +18,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/daprovider"
-	"github.com/offchainlabs/nitro/daprovider/das"
+	"github.com/offchainlabs/nitro/daprovider/anytrust"
 	"github.com/offchainlabs/nitro/daprovider/referenceda"
 	"github.com/offchainlabs/nitro/util/signature"
 )
@@ -33,7 +33,7 @@ func TestMultiWriterFailure_CustomDAShutdownWithAnyTrustAvailable(t *testing.T) 
 
 	// 1. Setup L1 chain and contracts
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
-	builder.chainConfig = chaininfo.ArbitrumDevTestDASChainConfig()
+	builder.chainConfig = chaininfo.ArbitrumDevTestAnyTrustChainConfig()
 	builder.parallelise = false
 
 	// Deploy ReferenceDA validator contract
@@ -54,13 +54,13 @@ func TestMultiWriterFailure_CustomDAShutdownWithAnyTrustAvailable(t *testing.T) 
 
 	t.Logf("CustomDA server running at: %s", customDAURL)
 
-	// 3. Setup AnyTrust/DAS server
-	dasDataDir := t.TempDir()
-	dasRpcServer, pubkey, backendConfig, restServer, restServerUrl := startLocalDASServer(
-		t, ctx, dasDataDir, builder.L1.Client, builder.addresses.SequencerInbox)
+	// 3. Setup AnyTrust server
+	anyTrustDataDir := t.TempDir()
+	anyTrustRpcServer, pubkey, backendConfig, restServer, restServerUrl := startLocalAnyTrustServer(
+		t, ctx, anyTrustDataDir, builder.L1.Client, builder.addresses.SequencerInbox)
 	defer func() {
-		if err := dasRpcServer.Shutdown(ctx); err != nil {
-			t.Logf("Error shutting down DAS RPC server: %v", err)
+		if err := anyTrustRpcServer.Shutdown(ctx); err != nil {
+			t.Logf("Error shutting down AnyTrust RPC server: %v", err)
 		}
 	}()
 	defer func() {
@@ -69,20 +69,20 @@ func TestMultiWriterFailure_CustomDAShutdownWithAnyTrustAvailable(t *testing.T) 
 		}
 	}()
 
-	authorizeDASKeyset(t, ctx, pubkey, builder.L1Info, builder.L1.Client)
+	authorizeAnyTrustKeyset(t, ctx, pubkey, builder.L1Info, builder.L1.Client)
 
-	t.Logf("AnyTrust DAS server running at: RPC=%s REST=%s", backendConfig.URL, restServerUrl)
+	t.Logf("AnyTrust server running at: RPC=%s REST=%s", backendConfig.URL, restServerUrl)
 
 	// 4. Configure sequencer node with both CustomDA and AnyTrust
 	builder.nodeConfig.DA.ExternalProvider.Enable = true
 	builder.nodeConfig.DA.ExternalProvider.RPC.URL = customDAURL
 	builder.nodeConfig.DA.ExternalProvider.WithWriter = true
 
-	builder.nodeConfig.DataAvailability.Enable = true
-	builder.nodeConfig.DataAvailability.RPCAggregator = aggConfigForBackend(backendConfig)
-	builder.nodeConfig.DataAvailability.RestAggregator = das.DefaultRestfulClientAggregatorConfig
-	builder.nodeConfig.DataAvailability.RestAggregator.Enable = true
-	builder.nodeConfig.DataAvailability.RestAggregator.Urls = []string{restServerUrl}
+	builder.nodeConfig.DA.AnyTrust.Enable = true
+	builder.nodeConfig.DA.AnyTrust.RPCAggregator = aggConfigForBackend(backendConfig)
+	builder.nodeConfig.DA.AnyTrust.RestAggregator = anytrust.DefaultRestfulClientAggregatorConfig
+	builder.nodeConfig.DA.AnyTrust.RestAggregator.Enable = true
+	builder.nodeConfig.DA.AnyTrust.RestAggregator.Urls = []string{restServerUrl}
 
 	// Enable fallback to on-chain
 	builder.nodeConfig.BatchPoster.DisableDapFallbackStoreDataOnChain = false
@@ -102,10 +102,10 @@ func TestMultiWriterFailure_CustomDAShutdownWithAnyTrustAvailable(t *testing.T) 
 	nodeConfigB.DA.ExternalProvider.RPC.URL = customDAURL
 
 	// AnyTrust config
-	nodeConfigB.DataAvailability.Enable = true
-	nodeConfigB.DataAvailability.RestAggregator = das.DefaultRestfulClientAggregatorConfig
-	nodeConfigB.DataAvailability.RestAggregator.Enable = true
-	nodeConfigB.DataAvailability.RestAggregator.Urls = []string{restServerUrl}
+	nodeConfigB.DA.AnyTrust.Enable = true
+	nodeConfigB.DA.AnyTrust.RestAggregator = anytrust.DefaultRestfulClientAggregatorConfig
+	nodeConfigB.DA.AnyTrust.RestAggregator.Enable = true
+	nodeConfigB.DA.AnyTrust.RestAggregator.Urls = []string{restServerUrl}
 
 	nodeBParams := SecondNodeParams{
 		nodeConfig: nodeConfigB,
@@ -171,7 +171,7 @@ func TestMultiWriterFailure_CustomDAShutdownNoFallbackAvailable(t *testing.T) {
 
 	// 1. Setup L1 chain and contracts
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
-	// Use standard dev test config (not DAS) since we're not using AnyTrust
+	// Use standard dev test config (not AnyTrust) since we're not using AnyTrust
 	builder.chainConfig = chaininfo.ArbitrumDevTestChainConfig()
 	builder.parallelise = false
 
@@ -199,7 +199,7 @@ func TestMultiWriterFailure_CustomDAShutdownNoFallbackAvailable(t *testing.T) {
 	builder.nodeConfig.DA.ExternalProvider.WithWriter = true
 
 	// Disable AnyTrust
-	builder.nodeConfig.DataAvailability.Enable = false
+	builder.nodeConfig.DA.AnyTrust.Enable = false
 
 	// Enable fallback to on-chain
 	builder.nodeConfig.BatchPoster.DisableDapFallbackStoreDataOnChain = false
@@ -219,7 +219,7 @@ func TestMultiWriterFailure_CustomDAShutdownNoFallbackAvailable(t *testing.T) {
 	nodeConfigB.DA.ExternalProvider.RPC.URL = customDAURL
 
 	// Disable AnyTrust
-	nodeConfigB.DataAvailability.Enable = false
+	nodeConfigB.DA.AnyTrust.Enable = false
 
 	nodeBParams := SecondNodeParams{
 		nodeConfig: nodeConfigB,
@@ -286,18 +286,18 @@ func TestMultiWriterFailure_AnyTrustShutdownFallbackDisabled(t *testing.T) {
 
 	// 1. Setup L1 chain and contracts
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
-	builder.chainConfig = chaininfo.ArbitrumDevTestDASChainConfig()
+	builder.chainConfig = chaininfo.ArbitrumDevTestAnyTrustChainConfig()
 	builder.parallelise = false
 
 	builder.BuildL1(t)
 
-	// 2. Setup AnyTrust/DAS server
-	dasDataDir := t.TempDir()
-	dasRpcServer, pubkey, backendConfig, restServer, restServerUrl := startLocalDASServer(
-		t, ctx, dasDataDir, builder.L1.Client, builder.addresses.SequencerInbox)
+	// 2. Setup AnyTrust server
+	anyTrustDataDir := t.TempDir()
+	anyTrustRpcServer, pubkey, backendConfig, restServer, restServerUrl := startLocalAnyTrustServer(
+		t, ctx, anyTrustDataDir, builder.L1.Client, builder.addresses.SequencerInbox)
 	defer func() {
-		if err := dasRpcServer.Shutdown(ctx); err != nil {
-			t.Logf("Error shutting down DAS RPC server: %v", err)
+		if err := anyTrustRpcServer.Shutdown(ctx); err != nil {
+			t.Logf("Error shutting down AnyTrust RPC server: %v", err)
 		}
 	}()
 	defer func() {
@@ -306,25 +306,25 @@ func TestMultiWriterFailure_AnyTrustShutdownFallbackDisabled(t *testing.T) {
 		}
 	}()
 
-	authorizeDASKeyset(t, ctx, pubkey, builder.L1Info, builder.L1.Client)
+	authorizeAnyTrustKeyset(t, ctx, pubkey, builder.L1Info, builder.L1.Client)
 
 	// Mine L1 blocks to ensure keyset logs are queryable.
 	// The keyset fetcher queries from blockNum to blockNum+1, so we need
 	// at least one more block after the keyset transaction.
 	TransferBalance(t, "Faucet", "User", big.NewInt(1), builder.L1Info, builder.L1.Client, ctx)
 
-	t.Logf("AnyTrust DAS server running at: RPC=%s REST=%s", backendConfig.URL, restServerUrl)
+	t.Logf("AnyTrust server running at: RPC=%s REST=%s", backendConfig.URL, restServerUrl)
 
 	// 3. Configure sequencer node with AnyTrust only (no CustomDA)
 	// Disable CustomDA
 	builder.nodeConfig.DA.ExternalProvider.Enable = false
 
 	// Enable AnyTrust
-	builder.nodeConfig.DataAvailability.Enable = true
-	builder.nodeConfig.DataAvailability.RPCAggregator = aggConfigForBackend(backendConfig)
-	builder.nodeConfig.DataAvailability.RestAggregator = das.DefaultRestfulClientAggregatorConfig
-	builder.nodeConfig.DataAvailability.RestAggregator.Enable = true
-	builder.nodeConfig.DataAvailability.RestAggregator.Urls = []string{restServerUrl}
+	builder.nodeConfig.DA.AnyTrust.Enable = true
+	builder.nodeConfig.DA.AnyTrust.RPCAggregator = aggConfigForBackend(backendConfig)
+	builder.nodeConfig.DA.AnyTrust.RestAggregator = anytrust.DefaultRestfulClientAggregatorConfig
+	builder.nodeConfig.DA.AnyTrust.RestAggregator.Enable = true
+	builder.nodeConfig.DA.AnyTrust.RestAggregator.Urls = []string{restServerUrl}
 
 	// Disable fallback to on-chain (operator choice to prevent automatic expensive fallback)
 	builder.nodeConfig.BatchPoster.DisableDapFallbackStoreDataOnChain = true
@@ -343,10 +343,10 @@ func TestMultiWriterFailure_AnyTrustShutdownFallbackDisabled(t *testing.T) {
 	nodeConfigB.DA.ExternalProvider.Enable = false
 
 	// Enable AnyTrust
-	nodeConfigB.DataAvailability.Enable = true
-	nodeConfigB.DataAvailability.RestAggregator = das.DefaultRestfulClientAggregatorConfig
-	nodeConfigB.DataAvailability.RestAggregator.Enable = true
-	nodeConfigB.DataAvailability.RestAggregator.Urls = []string{restServerUrl}
+	nodeConfigB.DA.AnyTrust.Enable = true
+	nodeConfigB.DA.AnyTrust.RestAggregator = anytrust.DefaultRestfulClientAggregatorConfig
+	nodeConfigB.DA.AnyTrust.RestAggregator.Enable = true
+	nodeConfigB.DA.AnyTrust.RestAggregator.Urls = []string{restServerUrl}
 
 	nodeBParams := SecondNodeParams{
 		nodeConfig: nodeConfigB,
@@ -361,12 +361,12 @@ func TestMultiWriterFailure_AnyTrustShutdownFallbackDisabled(t *testing.T) {
 
 	// Phase 2: Shutdown AnyTrust and verify batch posting fails
 	t.Log("Phase 2: Shutting down AnyTrust, expecting batch posting to fail")
-	err := dasRpcServer.Shutdown(ctx)
+	err := anyTrustRpcServer.Shutdown(ctx)
 	Require(t, err)
-	t.Logf("Phase 2: AnyTrust DAS RPC server shut down successfully")
+	t.Logf("Phase 2: AnyTrust RPC server shut down successfully")
 	err = restServer.Shutdown()
 	Require(t, err)
-	t.Logf("Phase 2: AnyTrust DAS REST server shut down successfully")
+	t.Logf("Phase 2: AnyTrust REST server shut down successfully")
 
 	// Record the follower's current block before generating transactions
 	followerBlockBefore, err := l2B.Client.BlockNumber(ctx)
@@ -414,7 +414,7 @@ func TestMultiWriterFallback_CustomDAToAnyTrustExplicit(t *testing.T) {
 
 	// 1. Setup L1 chain and contracts
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
-	builder.chainConfig = chaininfo.ArbitrumDevTestDASChainConfig()
+	builder.chainConfig = chaininfo.ArbitrumDevTestAnyTrustChainConfig()
 	builder.parallelise = false
 
 	// Deploy ReferenceDA validator contract
@@ -435,13 +435,13 @@ func TestMultiWriterFallback_CustomDAToAnyTrustExplicit(t *testing.T) {
 
 	t.Logf("CustomDA server with control running at: %s", customDAURL)
 
-	// 3. Setup AnyTrust/DAS server
-	dasDataDir := t.TempDir()
-	dasRpcServer, pubkey, backendConfig, restServer, restServerUrl := startLocalDASServer(
-		t, ctx, dasDataDir, builder.L1.Client, builder.addresses.SequencerInbox)
+	// 3. Setup AnyTrust server
+	anyTrustDataDir := t.TempDir()
+	anyTrustRpcServer, pubkey, backendConfig, restServer, restServerUrl := startLocalAnyTrustServer(
+		t, ctx, anyTrustDataDir, builder.L1.Client, builder.addresses.SequencerInbox)
 	defer func() {
-		if err := dasRpcServer.Shutdown(ctx); err != nil {
-			t.Logf("Error shutting down DAS RPC server: %v", err)
+		if err := anyTrustRpcServer.Shutdown(ctx); err != nil {
+			t.Logf("Error shutting down AnyTrust RPC server: %v", err)
 		}
 	}()
 	defer func() {
@@ -450,20 +450,20 @@ func TestMultiWriterFallback_CustomDAToAnyTrustExplicit(t *testing.T) {
 		}
 	}()
 
-	authorizeDASKeyset(t, ctx, pubkey, builder.L1Info, builder.L1.Client)
+	authorizeAnyTrustKeyset(t, ctx, pubkey, builder.L1Info, builder.L1.Client)
 
-	t.Logf("AnyTrust DAS server running at: RPC=%s REST=%s", backendConfig.URL, restServerUrl)
+	t.Logf("AnyTrust server running at: RPC=%s REST=%s", backendConfig.URL, restServerUrl)
 
 	// 4. Configure sequencer node with both CustomDA and AnyTrust
 	builder.nodeConfig.DA.ExternalProvider.Enable = true
 	builder.nodeConfig.DA.ExternalProvider.RPC.URL = customDAURL
 	builder.nodeConfig.DA.ExternalProvider.WithWriter = true
 
-	builder.nodeConfig.DataAvailability.Enable = true
-	builder.nodeConfig.DataAvailability.RPCAggregator = aggConfigForBackend(backendConfig)
-	builder.nodeConfig.DataAvailability.RestAggregator = das.DefaultRestfulClientAggregatorConfig
-	builder.nodeConfig.DataAvailability.RestAggregator.Enable = true
-	builder.nodeConfig.DataAvailability.RestAggregator.Urls = []string{restServerUrl}
+	builder.nodeConfig.DA.AnyTrust.Enable = true
+	builder.nodeConfig.DA.AnyTrust.RPCAggregator = aggConfigForBackend(backendConfig)
+	builder.nodeConfig.DA.AnyTrust.RestAggregator = anytrust.DefaultRestfulClientAggregatorConfig
+	builder.nodeConfig.DA.AnyTrust.RestAggregator.Enable = true
+	builder.nodeConfig.DA.AnyTrust.RestAggregator.Urls = []string{restServerUrl}
 
 	// Enable fallback to on-chain
 	builder.nodeConfig.BatchPoster.DisableDapFallbackStoreDataOnChain = false
@@ -483,10 +483,10 @@ func TestMultiWriterFallback_CustomDAToAnyTrustExplicit(t *testing.T) {
 	nodeConfigB.DA.ExternalProvider.RPC.URL = customDAURL
 
 	// AnyTrust config
-	nodeConfigB.DataAvailability.Enable = true
-	nodeConfigB.DataAvailability.RestAggregator = das.DefaultRestfulClientAggregatorConfig
-	nodeConfigB.DataAvailability.RestAggregator.Enable = true
-	nodeConfigB.DataAvailability.RestAggregator.Urls = []string{restServerUrl}
+	nodeConfigB.DA.AnyTrust.Enable = true
+	nodeConfigB.DA.AnyTrust.RestAggregator = anytrust.DefaultRestfulClientAggregatorConfig
+	nodeConfigB.DA.AnyTrust.RestAggregator.Enable = true
+	nodeConfigB.DA.AnyTrust.RestAggregator.Urls = []string{restServerUrl}
 
 	nodeBParams := SecondNodeParams{
 		nodeConfig: nodeConfigB,
@@ -534,7 +534,7 @@ func TestMultiWriterFallback_CustomDAToAnyTrustExplicit(t *testing.T) {
 		}
 
 		headerByte := serializedBatch[40]
-		if daprovider.IsDASMessageHeaderByte(headerByte) {
+		if daprovider.IsAnyTrustMessageHeaderByte(headerByte) {
 			t.Logf("Phase 2: Found AnyTrust batch (header byte: 0x%02x)", headerByte)
 			phase2AnyTrustFound = true
 			break
@@ -670,7 +670,7 @@ func TestMultiWriterFallback_CustomDAToCalldataWithBatchResizing(t *testing.T) {
 	builder.nodeConfig.DA.ExternalProvider.WithWriter = true
 
 	// Disable AnyTrust
-	builder.nodeConfig.DataAvailability.Enable = false
+	builder.nodeConfig.DA.AnyTrust.Enable = false
 
 	// Enable fallback to on-chain
 	builder.nodeConfig.BatchPoster.DisableDapFallbackStoreDataOnChain = false
@@ -697,7 +697,7 @@ func TestMultiWriterFallback_CustomDAToCalldataWithBatchResizing(t *testing.T) {
 	nodeConfigB.DA.ExternalProvider.RPC.URL = customDAURL
 
 	// Disable AnyTrust
-	nodeConfigB.DataAvailability.Enable = false
+	nodeConfigB.DA.AnyTrust.Enable = false
 
 	nodeBParams := SecondNodeParams{
 		nodeConfig: nodeConfigB,
@@ -873,18 +873,18 @@ func TestMultiWriterFallback_AnyTrustToCalldataOnBackendFailure(t *testing.T) {
 
 	// 1. Setup L1 chain and contracts
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
-	builder.chainConfig = chaininfo.ArbitrumDevTestDASChainConfig()
+	builder.chainConfig = chaininfo.ArbitrumDevTestAnyTrustChainConfig()
 	builder.parallelise = false
 
 	builder.BuildL1(t)
 
-	// 2. Setup AnyTrust/DAS server
-	dasDataDir := t.TempDir()
-	dasRpcServer, pubkey, backendConfig, restServer, restServerUrl := startLocalDASServer(
-		t, ctx, dasDataDir, builder.L1.Client, builder.addresses.SequencerInbox)
+	// 2. Setup AnyTrust server
+	anyTrustDataDir := t.TempDir()
+	anyTrustRpcServer, pubkey, backendConfig, restServer, restServerUrl := startLocalAnyTrustServer(
+		t, ctx, anyTrustDataDir, builder.L1.Client, builder.addresses.SequencerInbox)
 	defer func() {
-		if err := dasRpcServer.Shutdown(ctx); err != nil {
-			t.Logf("Error shutting down DAS RPC server: %v", err)
+		if err := anyTrustRpcServer.Shutdown(ctx); err != nil {
+			t.Logf("Error shutting down AnyTrust RPC server: %v", err)
 		}
 	}()
 	defer func() {
@@ -893,23 +893,23 @@ func TestMultiWriterFallback_AnyTrustToCalldataOnBackendFailure(t *testing.T) {
 		}
 	}()
 
-	authorizeDASKeyset(t, ctx, pubkey, builder.L1Info, builder.L1.Client)
+	authorizeAnyTrustKeyset(t, ctx, pubkey, builder.L1Info, builder.L1.Client)
 
 	// Mine L1 blocks to ensure keyset logs are queryable
 	TransferBalance(t, "Faucet", "User", big.NewInt(1), builder.L1Info, builder.L1.Client, ctx)
 
-	t.Logf("AnyTrust DAS server running at: RPC=%s REST=%s", backendConfig.URL, restServerUrl)
+	t.Logf("AnyTrust server running at: RPC=%s REST=%s", backendConfig.URL, restServerUrl)
 
 	// 3. Configure sequencer node with AnyTrust → Calldata fallback
 	// Disable CustomDA
 	builder.nodeConfig.DA.ExternalProvider.Enable = false
 
 	// Enable AnyTrust
-	builder.nodeConfig.DataAvailability.Enable = true
-	builder.nodeConfig.DataAvailability.RPCAggregator = aggConfigForBackend(backendConfig)
-	builder.nodeConfig.DataAvailability.RestAggregator = das.DefaultRestfulClientAggregatorConfig
-	builder.nodeConfig.DataAvailability.RestAggregator.Enable = true
-	builder.nodeConfig.DataAvailability.RestAggregator.Urls = []string{restServerUrl}
+	builder.nodeConfig.DA.AnyTrust.Enable = true
+	builder.nodeConfig.DA.AnyTrust.RPCAggregator = aggConfigForBackend(backendConfig)
+	builder.nodeConfig.DA.AnyTrust.RestAggregator = anytrust.DefaultRestfulClientAggregatorConfig
+	builder.nodeConfig.DA.AnyTrust.RestAggregator.Enable = true
+	builder.nodeConfig.DA.AnyTrust.RestAggregator.Urls = []string{restServerUrl}
 
 	// Enable fallback to Calldata when AnyTrust fails
 	builder.nodeConfig.BatchPoster.DisableDapFallbackStoreDataOnChain = false
@@ -928,10 +928,10 @@ func TestMultiWriterFallback_AnyTrustToCalldataOnBackendFailure(t *testing.T) {
 	nodeConfigB.DA.ExternalProvider.Enable = false
 
 	// Enable AnyTrust so follower can read Phase 1 batches
-	nodeConfigB.DataAvailability.Enable = true
-	nodeConfigB.DataAvailability.RestAggregator = das.DefaultRestfulClientAggregatorConfig
-	nodeConfigB.DataAvailability.RestAggregator.Enable = true
-	nodeConfigB.DataAvailability.RestAggregator.Urls = []string{restServerUrl}
+	nodeConfigB.DA.AnyTrust.Enable = true
+	nodeConfigB.DA.AnyTrust.RestAggregator = anytrust.DefaultRestfulClientAggregatorConfig
+	nodeConfigB.DA.AnyTrust.RestAggregator.Enable = true
+	nodeConfigB.DA.AnyTrust.RestAggregator.Urls = []string{restServerUrl}
 
 	nodeBParams := SecondNodeParams{
 		nodeConfig: nodeConfigB,
@@ -967,7 +967,7 @@ func TestMultiWriterFallback_AnyTrustToCalldataOnBackendFailure(t *testing.T) {
 		}
 
 		headerByte := serializedBatch[40]
-		if daprovider.IsDASMessageHeaderByte(headerByte) {
+		if daprovider.IsAnyTrustMessageHeaderByte(headerByte) {
 			phase1AnyTrustBatches++
 			t.Logf("Phase 1: Found AnyTrust batch (header=0x%02x)", headerByte)
 		}
@@ -981,12 +981,12 @@ func TestMultiWriterFallback_AnyTrustToCalldataOnBackendFailure(t *testing.T) {
 	// Phase 2: Shut down AnyTrust backends and verify fallback to Calldata
 	t.Log("Phase 2: Shutting down AnyTrust backends, expecting fallback to Calldata")
 
-	err = dasRpcServer.Shutdown(ctx)
+	err = anyTrustRpcServer.Shutdown(ctx)
 	Require(t, err)
-	t.Logf("Phase 2: AnyTrust DAS RPC server shut down")
+	t.Logf("Phase 2: AnyTrust RPC server shut down")
 	err = restServer.Shutdown()
 	Require(t, err)
-	t.Logf("Phase 2: AnyTrust DAS REST server shut down")
+	t.Logf("Phase 2: AnyTrust REST server shut down")
 
 	// Record L1 block range for Phase 2
 	phase2StartBlock, err := builder.L1.Client.BlockNumber(ctx)
