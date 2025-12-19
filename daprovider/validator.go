@@ -4,8 +4,6 @@
 package daprovider
 
 import (
-	"github.com/ethereum/go-ethereum/common"
-
 	"github.com/offchainlabs/nitro/util/containers"
 )
 
@@ -25,8 +23,7 @@ type Validator interface {
 	// GenerateReadPreimageProof generates a proof for a specific preimage at a given offset.
 	// The proof format depends on the implementation and must be compatible with the Solidity
 	// IDACertificateValidator contract.
-	// certHash is the keccak256 hash of the certificate.
-	GenerateReadPreimageProof(certHash common.Hash, offset uint64, certificate []byte) containers.PromiseInterface[PreimageProofResult]
+	GenerateReadPreimageProof(offset uint64, certificate []byte) containers.PromiseInterface[PreimageProofResult]
 
 	// GenerateCertificateValidityProof returns a proof of whether the certificate
 	// is valid according to the DA system's rules.

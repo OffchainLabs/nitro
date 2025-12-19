@@ -1715,6 +1715,7 @@ func setupExpressLaneAuction(
 		builderSeq.chainConfig,
 		uint64(builderSeq.execConfig.Sequencer.MaxTxDataSize), // #nosec G115
 		builderSeq.execConfig.Sequencer.Timeboost.EarlySubmissionGrace,
+		nil,
 	)
 	Require(t, err)
 

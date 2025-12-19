@@ -123,7 +123,7 @@ func (ps *L2PricingState) updateSingleGasConstraintsBacklogs(op BacklogOperation
 }
 
 func (ps *L2PricingState) updateMultiGasConstraintsBacklogs(op BacklogOperation, _usedGas uint64, usedMultiGas multigas.MultiGas) error {
-	constraintsLength, err := ps.multigasConstraints.Length()
+	constraintsLength, err := ps.multiGasConstraints.Length()
 	if err != nil {
 		return err
 	}
@@ -161,7 +161,7 @@ func (ps *L2PricingState) BacklogUpdateCost() uint64 {
 		result += storage.StorageReadCost
 
 		// updateMultiGasConstraintsBacklogs costs
-		constraintsLength, _ := ps.multigasConstraints.Length()
+		constraintsLength, _ := ps.multiGasConstraints.Length()
 		if constraintsLength > 0 {
 			result += storage.StorageReadCost // read length to traverse
 
@@ -272,17 +272,19 @@ func (ps *L2PricingState) updatePricingModelMultiConstraints(timePassed uint64) 
 	// Calculate exponents per resource kind for all constraints
 	exponentPerKind, _ := ps.CalcMultiGasConstraintsExponents()
 
-	// Choose the most congested resource
-	maxExponent := arbmath.Bips(0)
-	for _, exp := range exponentPerKind {
-		if exp > maxExponent {
-			maxExponent = exp
+	// Compute base fee per resource kind, store and choose the most congested resource
+	maxBaseFee, _ := ps.MinBaseFeeWei()
+	for kind, exp := range exponentPerKind {
+		baseFee, _ := ps.calcBaseFeeFromExponent(exp)
+
+		// #nosec G115 safe: kind < multigas.NumResourceKind
+		_ = ps.multiGasFees.SetNextBlockFee(multigas.ResourceKind(kind), baseFee)
+
+		if baseFee.Cmp(maxBaseFee) > 0 {
+			maxBaseFee = baseFee
 		}
 	}
-
-	// Compute base fee
-	baseFee, _ := ps.calcBaseFeeFromExponent(maxExponent)
-	_ = ps.SetBaseFeeWei(baseFee)
+	_ = ps.SetBaseFeeWei(maxBaseFee)
 }
 
 // CalcMultiGasConstraintsExponents calculates the exponents for each resource kind
@@ -305,14 +307,14 @@ func (ps *L2PricingState) CalcMultiGasConstraintsExponents() ([multigas.NumResou
 			if err != nil {
 				return [multigas.NumResourceKind]arbmath.Bips{}, err
 			}
-			sumWeights, err := constraint.SumWeights()
+			maxWeight, err := constraint.MaxWeight()
 			if err != nil {
 				return [multigas.NumResourceKind]arbmath.Bips{}, err
 			}
 
 			divisor := arbmath.SaturatingCastToBips(
 				arbmath.SaturatingUMul(uint64(adjustmentWindow),
-					arbmath.SaturatingUMul(target, sumWeights)))
+					arbmath.SaturatingUMul(target, maxWeight)))
 
 			usedResources, err := constraint.UsedResources()
 			if err != nil {
@@ -346,4 +348,47 @@ func (ps *L2PricingState) calcBaseFeeFromExponent(exponent arbmath.Bips) (*big.I
 	} else {
 		return minBaseFee, nil
 	}
+}
+
+func (ps *L2PricingState) MultiDimensionalPriceForRefund(gasUsed multigas.MultiGas) (*big.Int, error) {
+	// Base fee is max of per-resource-kind base fees
+	baseFeeWei, err := ps.BaseFeeWei()
+	if err != nil {
+		return nil, err
+	}
+
+	total := new(big.Int)
+	for kind := range multigas.ResourceKind(multigas.NumResourceKind) {
+		baseFee, err := ps.multiGasFees.GetCurrentBlockFee(kind)
+		if err != nil {
+			return nil, err
+		}
+		// Force L1 calldata (and the unlikely zero-basefee case) to use the max base fee.
+		if kind == multigas.ResourceKindL1Calldata || baseFee.Cmp(big.NewInt(0)) == 0 {
+			baseFee = baseFeeWei
+		}
+
+		amount := gasUsed.Get(kind)
+		if amount == 0 {
+			continue
+		}
+
+		part := new(big.Int).Mul(
+			new(big.Int).SetUint64(amount),
+			baseFee,
+		)
+		total.Add(total, part)
+	}
+	return total, nil
+}
+
+func (ps *L2PricingState) CommitMultiGasFees() error {
+	gasModel, err := ps.GasModelToUse()
+	if err != nil {
+		return err
+	}
+	if gasModel != GasModelMultiGasConstraints {
+		return nil
+	}
+	return ps.multiGasFees.CommitNextToCurrent()
 }

@@ -83,8 +83,8 @@ COPY ./blsSignatures ./blsSignatures
 COPY ./cmd/chaininfo ./cmd/chaininfo
 COPY ./cmd/replay ./cmd/replay
 COPY ./daprovider ./daprovider
-COPY ./daprovider/das/dasutil ./daprovider/das/dasutil
-COPY ./daprovider/das/dastree ./daprovider/das/dastree
+COPY ./daprovider/anytrust/util ./daprovider/anytrust/util
+COPY ./daprovider/anytrust/tree ./daprovider/anytrust/tree
 COPY ./precompiles ./precompiles
 COPY ./statetransfer ./statetransfer
 COPY ./util ./util
@@ -327,12 +327,14 @@ FROM offchainlabs/nitro-node:v3.7.6-c0fe95e AS nitro-legacy
 FROM nitro-node-slim AS nitro-node
 USER root
 COPY --from=prover-export /bin/jit                        /usr/local/bin/
-COPY --from=node-builder  /workspace/target/bin/daserver  /usr/local/bin/
+COPY --from=node-builder  /workspace/target/bin/anytrustserver  /usr/local/bin/
+RUN ln -s /usr/local/bin/anytrustserver /usr/local/bin/daserver
 COPY --from=node-builder  /workspace/target/bin/daprovider  /usr/local/bin/
 COPY --from=node-builder  /workspace/target/bin/autonomous-auctioneer  /usr/local/bin/
 COPY --from=node-builder  /workspace/target/bin/bidder-client  /usr/local/bin/
 COPY --from=node-builder  /workspace/target/bin/el-proxy  /usr/local/bin/
-COPY --from=node-builder  /workspace/target/bin/datool    /usr/local/bin/
+COPY --from=node-builder  /workspace/target/bin/anytrusttool    /usr/local/bin/
+RUN ln -s /usr/local/bin/anytrusttool /usr/local/bin/datool
 COPY --from=node-builder  /workspace/target/bin/genesis-generator  /usr/local/bin/
 COPY --from=contracts-builder  /workspace/contracts/  /contracts/
 COPY --from=contracts-builder  /workspace/contracts-local/  /contracts-local/
