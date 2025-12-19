@@ -221,8 +221,9 @@ func (m *MessageExtractor) GetFinalizedMsgCount(ctx context.Context) (arbutil.Me
 	return arbutil.MessageIndex(state.MsgCount), nil
 }
 
-func (m *MessageExtractor) GetFinalizedDelayedMessagesRead(ctx context.Context) (uint64, error) {
-	state, err := m.getStateByRPCBlockNum(ctx, rpc.FinalizedBlockNumber)
+// GetFinalizedDelayedMessagesRead uses MessageExtractor's context for calls to parentChainReader
+func (m *MessageExtractor) GetFinalizedDelayedMessagesRead() (uint64, error) {
+	state, err := m.getStateByRPCBlockNum(m.GetContext(), rpc.FinalizedBlockNumber)
 	if err != nil {
 		return 0, err
 	}

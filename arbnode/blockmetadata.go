@@ -14,7 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rpc"
 
-	dbschema "github.com/offchainlabs/nitro/arbnode/db-schema"
+	"github.com/offchainlabs/nitro/arbnode/db/schema"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/execution/gethexec"
@@ -157,10 +157,10 @@ func (b *BlockMetadataFetcher) persistBlockMetadata(ctx context.Context, query [
 			return err
 		}
 		if _, ok := queryMap[uint64(pos)]; ok {
-			if err := batch.Put(dbKey(dbschema.BlockMetadataInputFeedPrefix, uint64(pos)), elem.RawMetadata); err != nil {
+			if err := batch.Put(dbKey(schema.BlockMetadataInputFeedPrefix, uint64(pos)), elem.RawMetadata); err != nil {
 				return err
 			}
-			if err := batch.Delete(dbKey(dbschema.MissingBlockMetadataInputFeedPrefix, uint64(pos))); err != nil {
+			if err := batch.Delete(dbKey(schema.MissingBlockMetadataInputFeedPrefix, uint64(pos))); err != nil {
 				return err
 			}
 			// If we reached the ideal batch size, commit and reset
@@ -215,11 +215,11 @@ func (b *BlockMetadataFetcher) Update(ctx context.Context) time.Duration {
 	if b.trackBlockMetadataFrom != 0 {
 		start = uint64ToKey(uint64(b.trackBlockMetadataFrom))
 	}
-	iter := b.db.NewIterator(dbschema.MissingBlockMetadataInputFeedPrefix, start)
+	iter := b.db.NewIterator(schema.MissingBlockMetadataInputFeedPrefix, start)
 	defer iter.Release()
 	var query []uint64
 	for iter.Next() {
-		keyBytes := bytes.TrimPrefix(iter.Key(), dbschema.MissingBlockMetadataInputFeedPrefix)
+		keyBytes := bytes.TrimPrefix(iter.Key(), schema.MissingBlockMetadataInputFeedPrefix)
 		query = append(query, binary.BigEndian.Uint64(keyBytes))
 		end := len(query) - 1
 		if query[end]-query[0]+1 >= uint64(b.config.APIBlocksLimit) {

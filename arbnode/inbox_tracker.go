@@ -19,7 +19,7 @@ import (
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/rlp"
 
-	dbschema "github.com/offchainlabs/nitro/arbnode/db-schema"
+	"github.com/offchainlabs/nitro/arbnode/db/schema"
 	"github.com/offchainlabs/nitro/arbnode/mel"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbstate"
@@ -66,7 +66,7 @@ func (t *InboxTracker) SetBlockValidator(validator *staker.BlockValidator) {
 func (t *InboxTracker) Initialize() error {
 	batch := t.db.NewBatch()
 
-	hasKey, err := t.db.Has(dbschema.DelayedMessageCountKey)
+	hasKey, err := t.db.Has(schema.DelayedMessageCountKey)
 	if err != nil {
 		return err
 	}
@@ -75,13 +75,13 @@ func (t *InboxTracker) Initialize() error {
 		if err != nil {
 			return err
 		}
-		err = batch.Put(dbschema.DelayedMessageCountKey, value)
+		err = batch.Put(schema.DelayedMessageCountKey, value)
 		if err != nil {
 			return err
 		}
 	}
 
-	hasKey, err = t.db.Has(dbschema.SequencerBatchCountKey)
+	hasKey, err = t.db.Has(schema.SequencerBatchCountKey)
 	if err != nil {
 		return err
 	}
@@ -90,7 +90,7 @@ func (t *InboxTracker) Initialize() error {
 		if err != nil {
 			return err
 		}
-		err = batch.Put(dbschema.SequencerBatchCountKey, value)
+		err = batch.Put(schema.SequencerBatchCountKey, value)
 		if err != nil {
 			return err
 		}
@@ -110,7 +110,7 @@ var AccumulatorNotFoundErr = errors.New("accumulator not found")
 func (t *InboxTracker) deleteBatchMetadataStartingAt(dbBatch ethdb.Batch, startIndex uint64) error {
 	t.batchMetaMutex.Lock()
 	defer t.batchMetaMutex.Unlock()
-	iter := t.db.NewIterator(dbschema.SequencerBatchMetaPrefix, uint64ToKey(startIndex))
+	iter := t.db.NewIterator(schema.SequencerBatchMetaPrefix, uint64ToKey(startIndex))
 	defer iter.Release()
 	for iter.Next() {
 		curKey := iter.Key()
@@ -118,20 +118,20 @@ func (t *InboxTracker) deleteBatchMetadataStartingAt(dbBatch ethdb.Batch, startI
 		if err != nil {
 			return err
 		}
-		curIndex := binary.BigEndian.Uint64(bytes.TrimPrefix(curKey, dbschema.SequencerBatchMetaPrefix))
+		curIndex := binary.BigEndian.Uint64(bytes.TrimPrefix(curKey, schema.SequencerBatchMetaPrefix))
 		t.batchMeta.Remove(curIndex)
 	}
 	return iter.Error()
 }
 
 func (t *InboxTracker) GetDelayedAcc(seqNum uint64) (common.Hash, error) {
-	key := dbKey(dbschema.RlpDelayedMessagePrefix, seqNum)
+	key := dbKey(schema.RlpDelayedMessagePrefix, seqNum)
 	hasKey, err := t.db.Has(key)
 	if err != nil {
 		return common.Hash{}, err
 	}
 	if !hasKey {
-		key = dbKey(dbschema.LegacyDelayedMessagePrefix, seqNum)
+		key = dbKey(schema.LegacyDelayedMessagePrefix, seqNum)
 		hasKey, err = t.db.Has(key)
 		if err != nil {
 			return common.Hash{}, err
@@ -153,7 +153,7 @@ func (t *InboxTracker) GetDelayedAcc(seqNum uint64) (common.Hash, error) {
 }
 
 func (t *InboxTracker) GetDelayedCount() (uint64, error) {
-	data, err := t.db.Get(dbschema.DelayedMessageCountKey)
+	data, err := t.db.Get(schema.DelayedMessageCountKey)
 	if err != nil {
 		return 0, err
 	}
@@ -172,7 +172,7 @@ func (t *InboxTracker) GetBatchMetadata(seqNum uint64) (mel.BatchMetadata, error
 	if exist {
 		return metadata, nil
 	}
-	key := dbKey(dbschema.SequencerBatchMetaPrefix, seqNum)
+	key := dbKey(schema.SequencerBatchMetaPrefix, seqNum)
 	hasKey, err := t.db.Has(key)
 	if err != nil {
 		return mel.BatchMetadata{}, err
@@ -209,7 +209,7 @@ func (t *InboxTracker) GetBatchAcc(seqNum uint64) (common.Hash, error) {
 }
 
 func (t *InboxTracker) GetBatchCount() (uint64, error) {
-	data, err := t.db.Get(dbschema.SequencerBatchCountKey)
+	data, err := t.db.Get(schema.SequencerBatchCountKey)
 	if err != nil {
 		return 0, err
 	}
@@ -330,7 +330,7 @@ func (t *InboxTracker) PopulateFeedBacklog(broadcastServer *broadcaster.Broadcas
 }
 
 func (t *InboxTracker) legacyGetDelayedMessageAndAccumulator(ctx context.Context, seqNum uint64) (*arbostypes.L1IncomingMessage, common.Hash, error) {
-	key := dbKey(dbschema.LegacyDelayedMessagePrefix, seqNum)
+	key := dbKey(schema.LegacyDelayedMessagePrefix, seqNum)
 	data, err := t.db.Get(key)
 	if err != nil {
 		return nil, common.Hash{}, err
@@ -354,15 +354,15 @@ func (t *InboxTracker) legacyGetDelayedMessageAndAccumulator(ctx context.Context
 }
 
 func (t *InboxTracker) GetDelayedMessageAccumulatorAndParentChainBlockNumber(ctx context.Context, seqNum uint64) (*arbostypes.L1IncomingMessage, common.Hash, uint64, error) {
-	msg, acc, blockNum, err := t.getRawDelayedMessageAccumulatorAndParentChainBlockNumber(ctx, seqNum)
+	msg, acc, parentChainBlockNumber, err := t.getRawDelayedMessageAccumulatorAndParentChainBlockNumber(ctx, seqNum)
 	if err != nil {
-		return msg, acc, blockNum, err
+		return msg, acc, parentChainBlockNumber, err
 	}
 	err = msg.FillInBatchGasFields(func(batchNum uint64) ([]byte, error) {
-		data, _, err := t.txStreamer.inboxReader.GetSequencerMessageBytes(ctx, batchNum)
+		data, _, err := t.txStreamer.inboxReader.GetSequencerMessageBytesForParentBlock(ctx, batchNum, parentChainBlockNumber)
 		return data, err
 	})
-	return msg, acc, blockNum, err
+	return msg, acc, parentChainBlockNumber, err
 }
 
 // does not return message, so does not need to fill in batchGasFields
@@ -373,7 +373,7 @@ func (t *InboxTracker) GetParentChainBlockNumberFor(ctx context.Context, seqNum 
 
 // this function will not error
 func (t *InboxTracker) getRawDelayedMessageAccumulatorAndParentChainBlockNumber(ctx context.Context, seqNum uint64) (*arbostypes.L1IncomingMessage, common.Hash, uint64, error) {
-	delayedMessageKey := dbKey(dbschema.RlpDelayedMessagePrefix, seqNum)
+	delayedMessageKey := dbKey(schema.RlpDelayedMessagePrefix, seqNum)
 	exists, err := t.db.Has(delayedMessageKey)
 	if err != nil {
 		return nil, common.Hash{}, 0, err
@@ -397,7 +397,7 @@ func (t *InboxTracker) getRawDelayedMessageAccumulatorAndParentChainBlockNumber(
 		return msg, acc, 0, err
 	}
 
-	parentChainBlockNumberKey := dbKey(dbschema.ParentChainBlockNumberPrefix, seqNum)
+	parentChainBlockNumberKey := dbKey(schema.ParentChainBlockNumberPrefix, seqNum)
 	exists, err = t.db.Has(parentChainBlockNumberKey)
 	if err != nil {
 		return msg, acc, 0, err
@@ -518,7 +518,7 @@ func (t *InboxTracker) AddDelayedMessages(messages []*mel.DelayedInboxMessage) e
 			}
 		}
 
-		delayedMsgKey := dbKey(dbschema.RlpDelayedMessagePrefix, seqNum)
+		delayedMsgKey := dbKey(schema.RlpDelayedMessagePrefix, seqNum)
 
 		msgData, err := rlp.EncodeToBytes(message.Message)
 		if err != nil {
@@ -532,7 +532,7 @@ func (t *InboxTracker) AddDelayedMessages(messages []*mel.DelayedInboxMessage) e
 		}
 
 		if message.ParentChainBlockNumber != message.Message.Header.BlockNumber {
-			parentChainBlockNumberKey := dbKey(dbschema.ParentChainBlockNumberPrefix, seqNum)
+			parentChainBlockNumberKey := dbKey(schema.ParentChainBlockNumberPrefix, seqNum)
 			parentChainBlockNumberByte := make([]byte, 8)
 			binary.BigEndian.PutUint64(parentChainBlockNumberByte, message.ParentChainBlockNumber)
 			err = batch.Put(parentChainBlockNumberKey, parentChainBlockNumberByte)
@@ -554,15 +554,15 @@ func (t *InboxTracker) setDelayedCountReorgAndWriteBatch(batch ethdb.Batch, firs
 	if firstNewDelayedMessagePos > newDelayedCount {
 		return fmt.Errorf("firstNewDelayedMessagePos %v is after newDelayedCount %v", firstNewDelayedMessagePos, newDelayedCount)
 	}
-	err := deleteStartingAt(t.db, batch, dbschema.RlpDelayedMessagePrefix, uint64ToKey(newDelayedCount))
+	err := deleteStartingAt(t.db, batch, schema.RlpDelayedMessagePrefix, uint64ToKey(newDelayedCount))
 	if err != nil {
 		return err
 	}
-	err = deleteStartingAt(t.db, batch, dbschema.ParentChainBlockNumberPrefix, uint64ToKey(newDelayedCount))
+	err = deleteStartingAt(t.db, batch, schema.ParentChainBlockNumberPrefix, uint64ToKey(newDelayedCount))
 	if err != nil {
 		return err
 	}
-	err = deleteStartingAt(t.db, batch, dbschema.LegacyDelayedMessagePrefix, uint64ToKey(newDelayedCount))
+	err = deleteStartingAt(t.db, batch, schema.LegacyDelayedMessagePrefix, uint64ToKey(newDelayedCount))
 	if err != nil {
 		return err
 	}
@@ -571,12 +571,12 @@ func (t *InboxTracker) setDelayedCountReorgAndWriteBatch(batch ethdb.Batch, firs
 	if err != nil {
 		return err
 	}
-	err = batch.Put(dbschema.DelayedMessageCountKey, countData)
+	err = batch.Put(schema.DelayedMessageCountKey, countData)
 	if err != nil {
 		return err
 	}
 
-	seqBatchIter := t.db.NewIterator(dbschema.DelayedSequencedPrefix, uint64ToKey(firstNewDelayedMessagePos+1))
+	seqBatchIter := t.db.NewIterator(schema.DelayedSequencedPrefix, uint64ToKey(firstNewDelayedMessagePos+1))
 	defer seqBatchIter.Release()
 	var reorgSeqBatchesToCount *uint64
 	for seqBatchIter.Next() {
@@ -616,7 +616,7 @@ func (t *InboxTracker) setDelayedCountReorgAndWriteBatch(batch ethdb.Batch, firs
 	if err != nil {
 		return err
 	}
-	if err := batch.Put(dbschema.SequencerBatchCountKey, countData); err != nil {
+	if err := batch.Put(schema.SequencerBatchCountKey, countData); err != nil {
 		return err
 	}
 	log.Warn("InboxTracker delayed message reorg is causing a sequencer batch reorg", "sequencerBatchCount", count, "delayedCount", newDelayedCount)
@@ -731,7 +731,7 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client *ethclien
 	}
 
 	dbBatch := t.db.NewBatch()
-	err := deleteStartingAt(t.db, dbBatch, dbschema.DelayedSequencedPrefix, uint64ToKey(prevbatchmeta.DelayedMessageCount+1))
+	err := deleteStartingAt(t.db, dbBatch, schema.DelayedSequencedPrefix, uint64ToKey(prevbatchmeta.DelayedMessageCount+1))
 	if err != nil {
 		return err
 	}
@@ -807,7 +807,7 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client *ethclien
 		if err != nil {
 			return err
 		}
-		err = dbBatch.Put(dbKey(dbschema.SequencerBatchMetaPrefix, batch.SequenceNumber), metaBytes)
+		err = dbBatch.Put(dbKey(schema.SequencerBatchMetaPrefix, batch.SequenceNumber), metaBytes)
 		if err != nil {
 			return err
 		}
@@ -820,7 +820,7 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client *ethclien
 			return errors.New("batch delayed message count went backwards")
 		}
 		if batch.AfterDelayedCount > lastBatchMeta.DelayedMessageCount {
-			err = dbBatch.Put(dbKey(dbschema.DelayedSequencedPrefix, batch.AfterDelayedCount), seqNumData)
+			err = dbBatch.Put(dbKey(schema.DelayedSequencedPrefix, batch.AfterDelayedCount), seqNumData)
 			if err != nil {
 				return err
 			}
@@ -836,7 +836,7 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client *ethclien
 	if err != nil {
 		return err
 	}
-	err = dbBatch.Put(dbschema.SequencerBatchCountKey, countData)
+	err = dbBatch.Put(schema.SequencerBatchCountKey, countData)
 	if err != nil {
 		return err
 	}
@@ -937,7 +937,7 @@ func (t *InboxTracker) ReorgBatchesTo(count uint64) error {
 
 	dbBatch := t.db.NewBatch()
 
-	err := deleteStartingAt(t.db, dbBatch, dbschema.DelayedSequencedPrefix, uint64ToKey(prevBatchMeta.DelayedMessageCount+1))
+	err := deleteStartingAt(t.db, dbBatch, schema.DelayedSequencedPrefix, uint64ToKey(prevBatchMeta.DelayedMessageCount+1))
 	if err != nil {
 		return err
 	}
@@ -949,7 +949,7 @@ func (t *InboxTracker) ReorgBatchesTo(count uint64) error {
 	if err != nil {
 		return err
 	}
-	err = dbBatch.Put(dbschema.SequencerBatchCountKey, countData)
+	err = dbBatch.Put(schema.SequencerBatchCountKey, countData)
 	if err != nil {
 		return err
 	}

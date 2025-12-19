@@ -9,12 +9,14 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rlp"
 
-	"github.com/offchainlabs/nitro/arbnode/db-schema"
+	"github.com/offchainlabs/nitro/arbnode/db/read"
+	"github.com/offchainlabs/nitro/arbnode/db/schema"
 	"github.com/offchainlabs/nitro/arbnode/mel"
 	"github.com/offchainlabs/nitro/arbos/merkleAccumulator"
 )
 
-// Database holds an ethdb.Database underneath and implements StateDatabase interface defined in 'mel'
+// Database holds an ethdb.KeyValueStore underneath and implements StateDatabase interface defined in 'mel'. It implements
+// reading of delayed messages in native mode by also verifying if the read delayed message is part of the delayed msgs seen root
 type Database struct {
 	db ethdb.KeyValueStore
 }
@@ -44,7 +46,7 @@ func (d *Database) SaveState(ctx context.Context, state *mel.State) error {
 }
 
 func (d *Database) setMelState(batch ethdb.KeyValueWriter, parentChainBlockNumber uint64, state mel.State) error {
-	key := dbschema.DbKey(dbschema.MelStatePrefix, parentChainBlockNumber)
+	key := read.Key(schema.MelStatePrefix, parentChainBlockNumber)
 	melStateBytes, err := rlp.EncodeToBytes(state)
 	if err != nil {
 		return err
@@ -60,7 +62,7 @@ func (d *Database) setHeadMelStateBlockNum(batch ethdb.KeyValueWriter, parentCha
 	if err != nil {
 		return err
 	}
-	err = batch.Put(dbschema.HeadMelStateBlockNumKey, parentChainBlockNumberBytes)
+	err = batch.Put(schema.HeadMelStateBlockNumKey, parentChainBlockNumberBytes)
 	if err != nil {
 		return err
 	}
@@ -68,11 +70,15 @@ func (d *Database) setHeadMelStateBlockNum(batch ethdb.KeyValueWriter, parentCha
 }
 
 func (d *Database) GetHeadMelStateBlockNum() (uint64, error) {
-	return dbschema.Value[uint64](d.db, dbschema.HeadMelStateBlockNumKey)
+	return read.Value[uint64](d.db, schema.HeadMelStateBlockNumKey)
 }
 
 func (d *Database) State(ctx context.Context, parentChainBlockNumber uint64) (*mel.State, error) {
-	state, err := dbschema.Value[mel.State](d.db, dbschema.DbKey(dbschema.MelStatePrefix, parentChainBlockNumber))
+	return getState(ctx, d.db, parentChainBlockNumber)
+}
+
+func getState(ctx context.Context, db ethdb.KeyValueStore, parentChainBlockNumber uint64) (*mel.State, error) {
+	state, err := read.Value[mel.State](db, read.Key(schema.MelStatePrefix, parentChainBlockNumber))
 	if err != nil {
 		return nil, err
 	}
@@ -86,7 +92,7 @@ func (d *Database) SaveBatchMetas(ctx context.Context, state *mel.State, batchMe
 	}
 	firstPos := state.BatchCount - uint64(len(batchMetas))
 	for i, batchMetadata := range batchMetas {
-		key := dbschema.DbKey(dbschema.MelSequencerBatchMetaPrefix, firstPos+uint64(i)) // #nosec G115
+		key := read.Key(schema.MelSequencerBatchMetaPrefix, firstPos+uint64(i)) // #nosec G115
 		batchMetadataBytes, err := rlp.EncodeToBytes(*batchMetadata)
 		if err != nil {
 			return err
@@ -101,7 +107,7 @@ func (d *Database) SaveBatchMetas(ctx context.Context, state *mel.State, batchMe
 }
 
 func (d *Database) fetchBatchMetadata(seqNum uint64) (*mel.BatchMetadata, error) {
-	batchMetadata, err := dbschema.Value[mel.BatchMetadata](d.db, dbschema.DbKey(dbschema.MelSequencerBatchMetaPrefix, seqNum))
+	batchMetadata, err := read.Value[mel.BatchMetadata](d.db, read.Key(schema.MelSequencerBatchMetaPrefix, seqNum))
 	if err != nil {
 		return nil, err
 	}
@@ -115,7 +121,7 @@ func (d *Database) SaveDelayedMessages(ctx context.Context, state *mel.State, de
 	}
 	firstPos := state.DelayedMessagesSeen - uint64(len(delayedMessages))
 	for i, msg := range delayedMessages {
-		key := dbschema.DbKey(dbschema.MelDelayedMessagePrefix, firstPos+uint64(i)) // #nosec G115
+		key := read.Key(schema.MelDelayedMessagePrefix, firstPos+uint64(i)) // #nosec G115
 		delayedBytes, err := rlp.EncodeToBytes(*msg)
 		if err != nil {
 			return err
@@ -147,7 +153,11 @@ func (d *Database) ReadDelayedMessage(ctx context.Context, state *mel.State, ind
 }
 
 func (d *Database) fetchDelayedMessage(index uint64) (*mel.DelayedInboxMessage, error) {
-	delayed, err := dbschema.Value[mel.DelayedInboxMessage](d.db, dbschema.DbKey(dbschema.MelDelayedMessagePrefix, index))
+	return fetchDelayedMessage(d.db, index)
+}
+
+func fetchDelayedMessage(db ethdb.KeyValueStore, index uint64) (*mel.DelayedInboxMessage, error) {
+	delayed, err := read.Value[mel.DelayedInboxMessage](db, read.Key(schema.MelDelayedMessagePrefix, index))
 	if err != nil {
 		return nil, err
 	}

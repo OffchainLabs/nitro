@@ -75,7 +75,7 @@ func TestMessageExtractionLayer_SequencerBatchMessageEquivalence(t *testing.T) {
 		builder.addresses,
 		melDB,
 		mockMsgConsumer,
-		nil, // TODO: Provide da readers here.
+		daprovider.NewDAProviderRegistry(),
 	)
 	Require(t, err)
 	extractor.StopWaiter.Start(ctx, extractor)
@@ -349,7 +349,7 @@ func TestMessageExtractionLayer_DelayedMessageEquivalence_Simple(t *testing.T) {
 		builder.addresses,
 		melDB,
 		mockMsgConsumer,
-		nil, // TODO: Provide da readers here.
+		daprovider.NewDAProviderRegistry(),
 	)
 	Require(t, err)
 	extractor.StopWaiter.Start(ctx, extractor)
@@ -416,7 +416,7 @@ func TestMessageExtractionLayer_DelayedMessageEquivalence_Simple(t *testing.T) {
 		builder.addresses,
 		melDB,
 		mockMsgConsumer,
-		nil,
+		daprovider.NewDAProviderRegistry(),
 	)
 	Require(t, err)
 	newExtractor.StopWaiter.Start(ctx, extractor)
@@ -672,7 +672,7 @@ func TestMessageExtractionLayer_UseArbDBForStoringDelayedMessages(t *testing.T) 
 		builder.addresses,
 		melDB,
 		mockMsgConsumer,
-		nil, // TODO: Provide da readers here.
+		daprovider.NewDAProviderRegistry(),
 	)
 	Require(t, err)
 	extractor.StopWaiter.Start(ctx, extractor)
@@ -716,7 +716,7 @@ func TestMessageExtractionLayer_UseArbDBForStoringDelayedMessages(t *testing.T) 
 	if newInitialState.ParentChainBlockHash != lastState.ParentChainBlockHash {
 		t.Fatalf("head mel state ParentChainBlockHash mismatch. Want: %s, Have: %s", lastState.ParentChainBlockHash, newInitialState.ParentChainBlockHash)
 	}
-	delayedMessageBacklog, err := mel.NewDelayedMessageBacklog(ctx, 100, extractor.GetFinalizedDelayedMessagesRead)
+	delayedMessageBacklog, err := mel.NewDelayedMessageBacklog(100, extractor.GetFinalizedDelayedMessagesRead)
 	Require(t, err)
 	err = melrunner.InitializeDelayedMessageBacklog(ctx, delayedMessageBacklog, melDB, newInitialState, extractor.GetFinalizedDelayedMessagesRead)
 	Require(t, err)

@@ -1,16 +1,7 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-package dbschema
-
-import (
-	"encoding/binary"
-
-	"github.com/ethereum/go-ethereum/ethdb"
-	"github.com/ethereum/go-ethereum/rlp"
-
-	"github.com/offchainlabs/nitro/arbnode/mel"
-)
+package schema
 
 var (
 	MessagePrefix                       []byte = []byte("m") // maps a message sequence number to a message
@@ -24,8 +15,8 @@ var (
 	SequencerBatchMetaPrefix            []byte = []byte("s") // maps a batch sequence number to BatchMetadata
 	DelayedSequencedPrefix              []byte = []byte("a") // maps a delayed message count to the first sequencer batch sequence number with this delayed count
 	MelStatePrefix                      []byte = []byte("l") // maps a parent chain block number to its computed MEL state
-	MelDelayedMessagePrefix             []byte = []byte("y") // maps a delayed sequence number to an accumulator and an RLP encoded message [TODO: might need to replace or be replaced by RlpDelayedMessagePrefix]
-	MelSequencerBatchMetaPrefix         []byte = []byte("q") // maps a batch sequence number to BatchMetadata [TODO: might need to replace or be replaced by SequencerBatchMetaPrefix
+	MelDelayedMessagePrefix             []byte = []byte("y") // maps a delayed sequence number to an accumulator and an RLP encoded message [TODO(NIT-4209): might need to replace or be replaced by RlpDelayedMessagePrefix]
+	MelSequencerBatchMetaPrefix         []byte = []byte("q") // maps a batch sequence number to BatchMetadata [TODO(NIT-4209): might need to replace or be replaced by SequencerBatchMetaPrefix]
 
 	MessageCountKey             []byte = []byte("_messageCount")                // contains the current message count
 	LastPrunedMessageKey        []byte = []byte("_lastPrunedMessageKey")        // contains the last pruned message key
@@ -37,50 +28,3 @@ var (
 )
 
 const CurrentDbSchemaVersion uint64 = 2
-
-func GetMelSequencerBatchCount(db ethdb.KeyValueStore) (uint64, error) {
-	headStateBlockNum, err := Value[uint64](db, HeadMelStateBlockNumKey)
-	if err != nil {
-		return 0, err
-	}
-	headState, err := Value[mel.State](db, DbKey(MelStatePrefix, headStateBlockNum))
-	if err != nil {
-		return 0, err
-	}
-	return headState.BatchCount, nil
-}
-
-func GetSequencerBatchCount(db ethdb.KeyValueStore) (uint64, error) {
-	return Value[uint64](db, SequencerBatchCountKey)
-}
-
-func GetMelBatchMetadata(db ethdb.KeyValueStore, seqNum uint64) (mel.BatchMetadata, error) {
-	return Value[mel.BatchMetadata](db, DbKey(MelSequencerBatchMetaPrefix, seqNum))
-}
-
-func GetBatchMetadata(db ethdb.KeyValueStore, seqNum uint64) (mel.BatchMetadata, error) {
-	return Value[mel.BatchMetadata](db, DbKey(SequencerBatchMetaPrefix, seqNum))
-}
-
-func DbKey(prefix []byte, pos uint64) []byte {
-	var key []byte
-	key = append(key, prefix...)
-	data := make([]byte, 8)
-	binary.BigEndian.PutUint64(data, pos)
-	key = append(key, data...)
-	return key
-}
-
-func Value[T any](db ethdb.KeyValueStore, key []byte) (T, error) {
-	var empty T
-	data, err := db.Get(key)
-	if err != nil {
-		return empty, err
-	}
-	var val T
-	err = rlp.DecodeBytes(data, &val)
-	if err != nil {
-		return empty, err
-	}
-	return val, nil
-}
