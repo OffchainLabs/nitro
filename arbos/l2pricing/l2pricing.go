@@ -25,7 +25,8 @@ type L2PricingState struct {
 	backlogTolerance    storage.StorageBackedUint64
 	perTxGasLimit       storage.StorageBackedUint64
 	gasConstraints      *storage.SubStorageVector
-	multigasConstraints *storage.SubStorageVector
+	multiGasConstraints *storage.SubStorageVector
+	multiGasFees        *MultiGasFees
 
 	ArbosVersion uint64
 }
@@ -42,7 +43,8 @@ const (
 )
 
 var gasConstraintsKey []byte = []byte{0}
-var multigasConstraintsKey []byte = []byte{1}
+var multiGasConstraintsKey []byte = []byte{1}
+var multiGasBaseFeesKey []byte = []byte{2}
 
 const GethBlockGasLimit = 1 << 50
 
@@ -75,7 +77,8 @@ func OpenL2PricingState(sto *storage.Storage, arbosVersion uint64) *L2PricingSta
 		backlogTolerance:    sto.OpenStorageBackedUint64(backlogToleranceOffset),
 		perTxGasLimit:       sto.OpenStorageBackedUint64(perTxGasLimitOffset),
 		gasConstraints:      storage.OpenSubStorageVector(sto.OpenSubStorage(gasConstraintsKey)),
-		multigasConstraints: storage.OpenSubStorageVector(sto.OpenSubStorage(multigasConstraintsKey)),
+		multiGasConstraints: storage.OpenSubStorageVector(sto.OpenSubStorage(multiGasConstraintsKey)),
+		multiGasFees:        OpenMultiGasFees(sto.OpenSubStorage(multiGasBaseFeesKey)),
 		ArbosVersion:        arbosVersion,
 	}
 }
@@ -201,8 +204,15 @@ func (ps *L2PricingState) setMultiGasConstraintsFromSingleGasConstraints() error
 			return fmt.Errorf("failed to read backlog from constraint %d: %w", i, err)
 		}
 
-		// Transfer with only computation resource weight to match single-gas constraint scale.
-		weights := map[uint8]uint64{uint8(multigas.ResourceKindComputation): 1}
+		// Transfer to multi-gas constraint with equal weights
+		weights := map[uint8]uint64{
+			uint8(multigas.ResourceKindComputation):     1,
+			uint8(multigas.ResourceKindHistoryGrowth):   1,
+			uint8(multigas.ResourceKindStorageAccess):   1,
+			uint8(multigas.ResourceKindStorageGrowth):   1,
+			uint8(multigas.ResourceKindL2Calldata):      1,
+			uint8(multigas.ResourceKindWasmComputation): 1,
+		}
 
 		var adjustmentWindow uint32
 		if window > math.MaxUint32 {
@@ -268,11 +278,11 @@ func (ps *L2PricingState) ClearGasConstraints() error {
 }
 
 func (ps *L2PricingState) MultiGasConstraintsLength() (uint64, error) {
-	return ps.multigasConstraints.Length()
+	return ps.multiGasConstraints.Length()
 }
 
 func (ps *L2PricingState) OpenMultiGasConstraintAt(i uint64) *MultiGasConstraint {
-	return OpenMultiGasConstraint(ps.multigasConstraints.At(i))
+	return OpenMultiGasConstraint(ps.multiGasConstraints.At(i))
 }
 
 func (ps *L2PricingState) AddMultiGasConstraint(
@@ -281,7 +291,7 @@ func (ps *L2PricingState) AddMultiGasConstraint(
 	backlog uint64,
 	weights map[uint8]uint64,
 ) error {
-	subStorage, err := ps.multigasConstraints.Push()
+	subStorage, err := ps.multiGasConstraints.Push()
 	if err != nil {
 		return fmt.Errorf("failed to push multi-gas constraint: %w", err)
 	}
@@ -308,7 +318,7 @@ func (ps *L2PricingState) ClearMultiGasConstraints() error {
 		return err
 	}
 	for range length {
-		subStorage, err := ps.multigasConstraints.Pop()
+		subStorage, err := ps.multiGasConstraints.Pop()
 		if err != nil {
 			return err
 		}
