@@ -12,18 +12,18 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 
-	"github.com/offchainlabs/nitro/bold/chain-abstraction"
 	"github.com/offchainlabs/nitro/bold/containers/option"
-	"github.com/offchainlabs/nitro/bold/layer2-state-provider"
+	"github.com/offchainlabs/nitro/bold/protocol"
+	"github.com/offchainlabs/nitro/bold/state"
 )
 
 var (
-	_ l2stateprovider.L2MessageStateCollector = (*L2StateBackend)(nil)
-	_ l2stateprovider.MachineHashCollector    = (*L2StateBackend)(nil)
+	_ state.L2MessageStateCollector = (*L2StateBackend)(nil)
+	_ state.MachineHashCollector    = (*L2StateBackend)(nil)
 )
 
-func simpleAssertionMetadata() *l2stateprovider.AssociatedAssertionMetadata {
-	return &l2stateprovider.AssociatedAssertionMetadata{
+func simpleAssertionMetadata() *state.AssociatedAssertionMetadata {
+	return &state.AssociatedAssertionMetadata{
 		WasmModuleRoot: common.Hash{},
 		FromState: protocol.GoGlobalState{
 			Batch:      0,
@@ -35,7 +35,7 @@ func simpleAssertionMetadata() *l2stateprovider.AssociatedAssertionMetadata {
 
 func TestHistoryCommitment(t *testing.T) {
 	ctx := context.Background()
-	challengeLeafHeights := []l2stateprovider.Height{
+	challengeLeafHeights := []state.Height{
 		1 << 2,
 		1 << 3,
 		1 << 4,
@@ -51,7 +51,7 @@ func TestHistoryCommitment(t *testing.T) {
 	require.NoError(t, err)
 	stateBackend.challengeLeafHeights = challengeLeafHeights
 
-	provider := l2stateprovider.NewHistoryCommitmentProvider(
+	provider := state.NewHistoryCommitmentProvider(
 		stateBackend,
 		stateBackend,
 		stateBackend,
@@ -62,10 +62,10 @@ func TestHistoryCommitment(t *testing.T) {
 	t.Run("produces a block challenge commitment with height equal to leaf height const", func(t *testing.T) {
 		got, err := provider.HistoryCommitment(
 			ctx,
-			&l2stateprovider.HistoryCommitmentRequest{
+			&state.HistoryCommitmentRequest{
 				AssertionMetadata:           simpleAssertionMetadata(),
-				UpperChallengeOriginHeights: []l2stateprovider.Height{},
-				UpToHeight:                  option.None[l2stateprovider.Height](),
+				UpperChallengeOriginHeights: []state.Height{},
+				UpToHeight:                  option.None[state.Height](),
 			},
 		)
 		require.NoError(t, err)
@@ -74,10 +74,10 @@ func TestHistoryCommitment(t *testing.T) {
 	t.Run("produces a block challenge commitment with height up to", func(t *testing.T) {
 		got, err := provider.HistoryCommitment(
 			ctx,
-			&l2stateprovider.HistoryCommitmentRequest{
+			&state.HistoryCommitmentRequest{
 				AssertionMetadata:           simpleAssertionMetadata(),
-				UpperChallengeOriginHeights: []l2stateprovider.Height{},
-				UpToHeight:                  option.Some(l2stateprovider.Height(2)),
+				UpperChallengeOriginHeights: []state.Height{},
+				UpToHeight:                  option.Some(state.Height(2)),
 			},
 		)
 		require.NoError(t, err)
@@ -86,20 +86,20 @@ func TestHistoryCommitment(t *testing.T) {
 	t.Run("produces a subchallenge history commitment with claims matching higher level start end leaves", func(t *testing.T) {
 		blockChallengeCommit, err := provider.HistoryCommitment(
 			ctx,
-			&l2stateprovider.HistoryCommitmentRequest{
+			&state.HistoryCommitmentRequest{
 				AssertionMetadata:           simpleAssertionMetadata(),
-				UpperChallengeOriginHeights: []l2stateprovider.Height{},
-				UpToHeight:                  option.Some(l2stateprovider.Height(1)),
+				UpperChallengeOriginHeights: []state.Height{},
+				UpToHeight:                  option.Some(state.Height(1)),
 			},
 		)
 		require.NoError(t, err)
 
 		subChallengeCommit, err := provider.HistoryCommitment(
 			ctx,
-			&l2stateprovider.HistoryCommitmentRequest{
+			&state.HistoryCommitmentRequest{
 				AssertionMetadata:           simpleAssertionMetadata(),
-				UpperChallengeOriginHeights: []l2stateprovider.Height{0},
-				UpToHeight:                  option.None[l2stateprovider.Height](),
+				UpperChallengeOriginHeights: []state.Height{0},
+				UpToHeight:                  option.None[state.Height](),
 			},
 		)
 		require.NoError(t, err)
@@ -111,20 +111,20 @@ func TestHistoryCommitment(t *testing.T) {
 	t.Run("produces a small step challenge commit", func(t *testing.T) {
 		blockChallengeCommit, err := provider.HistoryCommitment(
 			ctx,
-			&l2stateprovider.HistoryCommitmentRequest{
+			&state.HistoryCommitmentRequest{
 				AssertionMetadata:           simpleAssertionMetadata(),
-				UpperChallengeOriginHeights: []l2stateprovider.Height{},
-				UpToHeight:                  option.Some(l2stateprovider.Height(1)),
+				UpperChallengeOriginHeights: []state.Height{},
+				UpToHeight:                  option.Some(state.Height(1)),
 			},
 		)
 		require.NoError(t, err)
 
 		smallStepSubchallengeCommit, err := provider.HistoryCommitment(
 			ctx,
-			&l2stateprovider.HistoryCommitmentRequest{
+			&state.HistoryCommitmentRequest{
 				AssertionMetadata:           simpleAssertionMetadata(),
-				UpperChallengeOriginHeights: []l2stateprovider.Height{0, 0},
-				UpToHeight:                  option.None[l2stateprovider.Height](),
+				UpperChallengeOriginHeights: []state.Height{0, 0},
+				UpToHeight:                  option.None[state.Height](),
 			},
 		)
 		require.NoError(t, err)
