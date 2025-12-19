@@ -9,7 +9,10 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/ethereum/go-ethereum/arbitrum/multigas"
 	"github.com/ethereum/go-ethereum/params"
+
+	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
 func toGwei(wei *big.Int) string {
@@ -122,5 +125,148 @@ func TestCompareSingleGasConstraintsPricingModelWithMultiGasConstraints(t *testi
 				)
 			}
 		}
+	}
+}
+
+func TestCalcMultiGasConstraintsExponents(t *testing.T) {
+	pricing := PricingForTest(t)
+	pricing.ArbosVersion = ArbosMultiGasConstraintsVersion
+
+	Require(t, pricing.AddMultiGasConstraint(
+		100000,
+		10,
+		20000,
+		map[uint8]uint64{
+			uint8(multigas.ResourceKindComputation):   1,
+			uint8(multigas.ResourceKindStorageAccess): 2,
+		},
+	))
+	Require(t, pricing.AddMultiGasConstraint(
+		50000,
+		5,
+		15000,
+		map[uint8]uint64{
+			uint8(multigas.ResourceKindStorageGrowth): 1,
+		},
+	))
+
+	exponents, err := pricing.CalcMultiGasConstraintsExponents()
+	Require(t, err)
+
+	if got, want := exponents[multigas.ResourceKindComputation], arbmath.Bips(100); got != want {
+		t.Errorf("unexpected computation exponent: got %v, want %v", got, want)
+	}
+	if got, want := exponents[multigas.ResourceKindStorageAccess], arbmath.Bips(200); got != want {
+		t.Errorf("unexpected storage-access exponent: got %v, want %v", got, want)
+	}
+
+	if got, want := exponents[multigas.ResourceKindStorageGrowth], arbmath.Bips(600); got != want {
+		t.Errorf("unexpected storage-growth exponent: got %v, want %v", got, want)
+	}
+
+	// All other kinds should be zero
+	if got := exponents[multigas.ResourceKindHistoryGrowth]; got != 0 {
+		t.Errorf("expected zero history-growth exponent, got %v", got)
+	}
+	if got := exponents[multigas.ResourceKindL1Calldata]; got != 0 {
+		t.Errorf("expected zero L1 calldata exponent, got %v", got)
+	}
+	if got := exponents[multigas.ResourceKindL2Calldata]; got != 0 {
+		t.Errorf("expected zero L2 calldata exponent, got %v", got)
+	}
+	if got := exponents[multigas.ResourceKindWasmComputation]; got != 0 {
+		t.Errorf("expected zero wasm computation exponent, got %v", got)
+	}
+}
+
+func TestMultiDimensionalPriceForRefund(t *testing.T) {
+	pricing := PricingForTest(t)
+
+	minPrice, err := pricing.MinBaseFeeWei()
+	Require(t, err)
+
+	multiGas := multigas.MultiGasFromPairs(
+		multigas.Pair{Kind: multigas.ResourceKindComputation, Amount: 50000},
+		multigas.Pair{Kind: multigas.ResourceKindStorageAccess, Amount: 15000},
+	)
+	// #nosec G115
+	singleGas := big.NewInt(int64(multiGas.SingleGas()))
+	// Initial price should match minBaseFeeWei * singleGas
+	singlePrice := minPrice.Mul(minPrice, singleGas)
+	Require(t, err)
+
+	pricing.ArbosVersion = ArbosMultiGasConstraintsVersion
+
+	// Initial price check
+	price, err := pricing.MultiDimensionalPriceForRefund(multiGas)
+	Require(t, err)
+	if price.Cmp(singlePrice) != 0 {
+		t.Errorf("Unexpected initial price: got %v, want %v", price, singlePrice)
+	}
+
+	// updatePricingModelMultiConstraints() should set multi gas base fees
+	Require(t, pricing.AddMultiGasConstraint(
+		100000,
+		10,
+		20000,
+		map[uint8]uint64{
+			uint8(multigas.ResourceKindComputation):   1,
+			uint8(multigas.ResourceKindStorageAccess): 2,
+		},
+	))
+	Require(t, pricing.AddMultiGasConstraint(
+		50000,
+		5,
+		15000,
+		map[uint8]uint64{
+			uint8(multigas.ResourceKindComputation):   2,
+			uint8(multigas.ResourceKindStorageAccess): 1,
+		},
+	))
+	usedMultiGas := multigas.MultiGasFromPairs(
+		multigas.Pair{Kind: multigas.ResourceKindComputation, Amount: 500000},
+		multigas.Pair{Kind: multigas.ResourceKindStorageAccess, Amount: 1500000},
+	)
+	err = pricing.GrowBacklog(usedMultiGas.SingleGas(), usedMultiGas)
+	Require(t, err)
+
+	pricing.updatePricingModelMultiConstraints(10)
+
+	// Compute the expected price
+	err = pricing.CommitMultiGasFees()
+	Require(t, err)
+
+	exponentPerKind, err := pricing.CalcMultiGasConstraintsExponents()
+	Require(t, err)
+
+	baseFeeWei, err := pricing.BaseFeeWei()
+	Require(t, err)
+
+	expectedPrice := new(big.Int)
+	for k := 0; k < int(multigas.NumResourceKind); k++ {
+		// #nosec G115
+		kind := multigas.ResourceKind(k)
+
+		baseFeeKind, err := pricing.calcBaseFeeFromExponent(exponentPerKind[kind])
+		Require(t, err)
+
+		// Same override logic as MultiDimensionalPriceForRefund
+		if kind == multigas.ResourceKindL1Calldata || baseFeeKind.Sign() == 0 {
+			baseFeeKind = baseFeeWei
+		}
+
+		amount := multiGas.Get(kind)
+		if amount == 0 {
+			continue
+		}
+
+		part := new(big.Int).Mul(new(big.Int).SetUint64(amount), baseFeeKind)
+		expectedPrice.Add(expectedPrice, part)
+	}
+
+	price, err = pricing.MultiDimensionalPriceForRefund(multiGas)
+	Require(t, err)
+	if price.Cmp(expectedPrice) != 0 {
+		t.Errorf("Price did not increase after backlog growth: got %v, want > %v", price, expectedPrice)
 	}
 }
