@@ -205,13 +205,6 @@ func (s *State) ReorgTo(newState *State) error {
 	return nil
 }
 
-func WasMessageExtracted(preState, postState *State) bool {
-	return preState.MsgCount != postState.MsgCount ||
-		preState.BatchCount != postState.BatchCount || // TODO: can BatchCount increase without MsgCount increasing?
-		preState.DelayedMessagesSeen != postState.DelayedMessagesSeen || // TODO: should seen count increment be considered a message extraction?
-		preState.DelayedMessagesRead != postState.DelayedMessagesRead // TODO: maybe not needed? as MsgCount would anyway increase
-}
-
 func ToPtrSlice[T any](list []T) []*T {
 	var ptrs []*T
 	for _, item := range list {
