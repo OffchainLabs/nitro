@@ -44,7 +44,6 @@ func (c *Context) Burn(kind multigas.ResourceKind, amount uint64) error {
 	return nil
 }
 
-//nolint:unused
 func (c *Context) Burned() uint64 {
 	return c.gasUsed.SingleGas()
 }
