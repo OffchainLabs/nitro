@@ -4,8 +4,6 @@
 package precompiles
 
 import (
-	"math/big"
-
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/params"
 )
@@ -92,6 +90,6 @@ func (con ArbOwnerPublic) IsCalldataPriceIncreaseEnabled(c ctx, _ mech) (bool, e
 }
 
 // Get how much L1 charges per non-zero byte of calldata
-func (con ArbOwnerPublic) GetL1CalldataPrice(c ctx, evm mech) (*big.Int, error) {
-	return c.State.L1PricingState().CalldataPrice()
+func (con ArbOwnerPublic) GetParentGasFloorPerToken(c ctx, evm mech) (uint64, error) {
+	return c.State.L1PricingState().ParentGasFloorPerToken()
 }

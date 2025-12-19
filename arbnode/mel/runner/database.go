@@ -2,23 +2,26 @@ package melrunner
 
 import (
 	"context"
-	"encoding/binary"
 	"errors"
 	"fmt"
 
 	"github.com/ethereum/go-ethereum/ethdb"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rlp"
 
-	dbschema "github.com/offchainlabs/nitro/arbnode/db-schema"
+	"github.com/offchainlabs/nitro/arbnode/db/read"
+	"github.com/offchainlabs/nitro/arbnode/db/schema"
 	"github.com/offchainlabs/nitro/arbnode/mel"
+	"github.com/offchainlabs/nitro/arbos/merkleAccumulator"
 )
 
-// Database holds an ethdb.Database underneath and implements StateDatabase interface defined in 'mel'
+// Database holds an ethdb.KeyValueStore underneath and implements StateDatabase interface defined in 'mel'. It implements
+// reading of delayed messages in native mode by also verifying if the read delayed message is part of the delayed msgs seen root
 type Database struct {
-	db ethdb.Database
+	db ethdb.KeyValueStore
 }
 
-func NewDatabase(db ethdb.Database) *Database {
+func NewDatabase(db ethdb.KeyValueStore) *Database {
 	return &Database{db}
 }
 
@@ -43,7 +46,7 @@ func (d *Database) SaveState(ctx context.Context, state *mel.State) error {
 }
 
 func (d *Database) setMelState(batch ethdb.KeyValueWriter, parentChainBlockNumber uint64, state mel.State) error {
-	key := dbKey(dbschema.MelStatePrefix, parentChainBlockNumber)
+	key := read.Key(schema.MelStatePrefix, parentChainBlockNumber)
 	melStateBytes, err := rlp.EncodeToBytes(state)
 	if err != nil {
 		return err
@@ -59,7 +62,7 @@ func (d *Database) setHeadMelStateBlockNum(batch ethdb.KeyValueWriter, parentCha
 	if err != nil {
 		return err
 	}
-	err = batch.Put(dbschema.HeadMelStateBlockNumKey, parentChainBlockNumberBytes)
+	err = batch.Put(schema.HeadMelStateBlockNumKey, parentChainBlockNumberBytes)
 	if err != nil {
 		return err
 	}
@@ -67,7 +70,7 @@ func (d *Database) setHeadMelStateBlockNum(batch ethdb.KeyValueWriter, parentCha
 }
 
 func (d *Database) GetHeadMelStateBlockNum() (uint64, error) {
-	parentChainBlockNumberBytes, err := d.db.Get(dbschema.HeadMelStateBlockNumKey)
+	parentChainBlockNumberBytes, err := d.db.Get(schema.HeadMelStateBlockNumKey)
 	if err != nil {
 		return 0, err
 	}
@@ -80,27 +83,59 @@ func (d *Database) GetHeadMelStateBlockNum() (uint64, error) {
 }
 
 func (d *Database) State(ctx context.Context, parentChainBlockNumber uint64) (*mel.State, error) {
-	key := dbKey(dbschema.MelStatePrefix, parentChainBlockNumber)
-	data, err := d.db.Get(key)
-	if err != nil {
-		return nil, err
-	}
-	var state mel.State
-	err = rlp.DecodeBytes(data, &state)
+	return getState(ctx, d.db, parentChainBlockNumber)
+}
+
+func getState(ctx context.Context, db ethdb.KeyValueStore, parentChainBlockNumber uint64) (*mel.State, error) {
+	state, err := read.Value[mel.State](db, read.Key(schema.MelStatePrefix, parentChainBlockNumber))
 	if err != nil {
 		return nil, err
 	}
 	return &state, nil
 }
 
+func (d *Database) SaveBatchMetas(ctx context.Context, state *mel.State, batchMetas []*mel.BatchMetadata) error {
+	dbBatch := d.db.NewBatch()
+	if state.BatchCount < uint64(len(batchMetas)) {
+		return fmt.Errorf("mel state's BatchCount: %d is lower than number of batchMetadata: %d queued to be added", state.BatchCount, len(batchMetas))
+	}
+	firstPos := state.BatchCount - uint64(len(batchMetas))
+	for i, batchMetadata := range batchMetas {
+		key := read.Key(schema.MelSequencerBatchMetaPrefix, firstPos+uint64(i)) // #nosec G115
+		batchMetadataBytes, err := rlp.EncodeToBytes(*batchMetadata)
+		if err != nil {
+			return err
+		}
+		err = dbBatch.Put(key, batchMetadataBytes)
+		if err != nil {
+			return err
+		}
+
+	}
+	return dbBatch.Write()
+}
+
+func (d *Database) fetchBatchMetadata(seqNum uint64) (*mel.BatchMetadata, error) {
+	key := read.Key(schema.MelSequencerBatchMetaPrefix, seqNum)
+	batchMetadataBytes, err := d.db.Get(key)
+	if err != nil {
+		return nil, err
+	}
+	var batchMetadata mel.BatchMetadata
+	if err = rlp.DecodeBytes(batchMetadataBytes, &batchMetadata); err != nil {
+		return nil, err
+	}
+	return &batchMetadata, nil
+}
+
 func (d *Database) SaveDelayedMessages(ctx context.Context, state *mel.State, delayedMessages []*mel.DelayedInboxMessage) error {
 	dbBatch := d.db.NewBatch()
-	if state.DelayedMessagedSeen < uint64(len(delayedMessages)) {
-		return fmt.Errorf("mel state's DelayedMessagedSeen: %d is lower than number of delayed messages: %d queued to be added", state.DelayedMessagedSeen, len(delayedMessages))
+	if state.DelayedMessagesSeen < uint64(len(delayedMessages)) {
+		return fmt.Errorf("mel state's DelayedMessagesSeen: %d is lower than number of delayed messages: %d queued to be added", state.DelayedMessagesSeen, len(delayedMessages))
 	}
-	firstPos := state.DelayedMessagedSeen - uint64(len(delayedMessages))
+	firstPos := state.DelayedMessagesSeen - uint64(len(delayedMessages))
 	for i, msg := range delayedMessages {
-		key := dbKey(dbschema.MelDelayedMessagePrefix, firstPos+uint64(i)) // #nosec G115
+		key := read.Key(schema.MelDelayedMessagePrefix, firstPos+uint64(i)) // #nosec G115
 		delayedBytes, err := rlp.EncodeToBytes(*msg)
 		if err != nil {
 			return err
@@ -116,8 +151,8 @@ func (d *Database) SaveDelayedMessages(ctx context.Context, state *mel.State, de
 
 func (d *Database) ReadDelayedMessage(ctx context.Context, state *mel.State, index uint64) (*mel.DelayedInboxMessage, error) {
 	if index == 0 { // Init message
-		// TODO: to be implemented
-		return nil, nil
+		// This message cannot be found in the database as it is supposed to be seen and read in the same block, so we persist that in DelayedMessageBacklog
+		return state.GetDelayedMessageBacklog().GetInitMsg(), nil
 	}
 	delayed, err := d.fetchDelayedMessage(index)
 	if err != nil {
@@ -132,28 +167,93 @@ func (d *Database) ReadDelayedMessage(ctx context.Context, state *mel.State, ind
 }
 
 func (d *Database) fetchDelayedMessage(index uint64) (*mel.DelayedInboxMessage, error) {
-	key := dbKey(dbschema.MelDelayedMessagePrefix, index)
-	delayedBytes, err := d.db.Get(key)
+	return fetchDelayedMessage(d.db, index)
+}
+
+func fetchDelayedMessage(db ethdb.KeyValueStore, index uint64) (*mel.DelayedInboxMessage, error) {
+	delayed, err := read.Value[mel.DelayedInboxMessage](db, read.Key(schema.MelDelayedMessagePrefix, index))
 	if err != nil {
-		return nil, err
-	}
-	var delayed mel.DelayedInboxMessage
-	if err = rlp.DecodeBytes(delayedBytes, &delayed); err != nil {
 		return nil, err
 	}
 	return &delayed, nil
 }
 
+// checkAgainstAccumulator is used to validate the fetched delayed inbox message from the database that is currently being READ. We do this by first checking
+// if the message has already been pre-read via state.GetReadCountFromBacklog(), if it is then we simply check that the message hashes match. Else, we create a new
+// merkle accumulator that has accumulated messages till the position 'index' and then accumulate all the messages in the backlog i.e pre-reading them and we
+// update the readCountFromBacklog of the state accordingly. The optimization is done as it is unfeasible to store merkle partials for each delayed inbox message
+// and accumulate all the future seen but not read messages every single time
 func (d *Database) checkAgainstAccumulator(ctx context.Context, state *mel.State, msg *mel.DelayedInboxMessage, index uint64) (bool, error) {
-	// TODO: to be implemented
-	return true, nil
-}
-
-func dbKey(prefix []byte, pos uint64) []byte {
-	var key []byte
-	key = append(key, prefix...)
-	data := make([]byte, 8)
-	binary.BigEndian.PutUint64(data, pos)
-	key = append(key, data...)
-	return key
+	delayedMessageBacklog := state.GetDelayedMessageBacklog()
+	delayedMeta, err := delayedMessageBacklog.Get(index)
+	if err != nil {
+		return false, err
+	}
+	preReadCount := state.GetReadCountFromBacklog()
+	if index < preReadCount {
+		// Delayed message has already been verified with a merkle root, we just need to verify that the hash matches
+		if msg.Hash() != delayedMeta.MsgHash {
+			return false, nil
+		}
+		return true, nil
+	}
+	targetState, err := d.State(ctx, delayedMeta.MelStateParentChainBlockNum-1)
+	if err != nil {
+		return false, err
+	}
+	acc, err := merkleAccumulator.NewNonpersistentMerkleAccumulatorFromPartials(
+		mel.ToPtrSlice(targetState.DelayedMessageMerklePartials),
+	)
+	if err != nil {
+		return false, err
+	}
+	for i := targetState.DelayedMessagesSeen; i < index; i++ {
+		delayed, err := d.fetchDelayedMessage(i)
+		if err != nil {
+			return false, err
+		}
+		_, err = acc.Append(delayed.Hash())
+		if err != nil {
+			return false, err
+		}
+	}
+	// Accumulate this message
+	_, err = acc.Append(msg.Hash())
+	if err != nil {
+		return false, err
+	}
+	// Accumulate rest of the message-hashes in backlog
+	for i := index + 1; i < state.DelayedMessagesSeen; i++ {
+		backlogEntry, err := delayedMessageBacklog.Get(i)
+		if err != nil {
+			return false, err
+		}
+		_, err = acc.Append(backlogEntry.MsgHash)
+		if err != nil {
+			return false, err
+		}
+	}
+	have, err := acc.Root()
+	if err != nil {
+		return false, err
+	}
+	seenAcc := state.GetSeenDelayedMsgsAcc()
+	if seenAcc == nil {
+		log.Debug("Initializing MelState's seenDelayedMsgsAcc, needed for validation")
+		// This is very low cost hence better to reconstruct seenDelayedMsgsAcc from fresh partals instead of risking using a dirty acc
+		seenAcc, err = merkleAccumulator.NewNonpersistentMerkleAccumulatorFromPartials(mel.ToPtrSlice(state.DelayedMessageMerklePartials))
+		if err != nil {
+			return false, err
+		}
+		state.SetSeenDelayedMsgsAcc(seenAcc)
+	}
+	want, err := seenAcc.Root()
+	if err != nil {
+		return false, err
+	}
+	if have == want {
+		state.SetReadCountFromBacklog(state.DelayedMessagesSeen) // meaning all messages from index to state.DelayedMessagesSeen-1 inclusive have been pre-read
+		return true, nil
+	}
+	return false, nil
 }

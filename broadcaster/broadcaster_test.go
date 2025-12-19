@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
+	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/broadcaster/message"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
@@ -52,6 +54,17 @@ func (p *messageCountPredicate) Error() string {
 	return fmt.Sprintf("Expected %d, was %d: %s", p.expected, p.was, p.contextMessage)
 }
 
+func feedMessage(t *testing.T, b *Broadcaster, seqNum arbutil.MessageIndex) []*message.BroadcastFeedMessage {
+	msg := arbostypes.MessageWithMetadataAndBlockInfo{
+		MessageWithMeta: arbostypes.EmptyTestMessageWithMetadata,
+		BlockHash:       nil,
+		BlockMetadata:   nil,
+	}
+	broadcastMsg, err := b.NewBroadcastFeedMessage(msg, seqNum)
+	Require(t, err)
+	return []*message.BroadcastFeedMessage{broadcastMsg}
+}
+
 func TestBroadcasterMessagesRemovedOnConfirmation(t *testing.T) {
 	ctx, cancelFunc := context.WithCancel(context.Background())
 	defer cancelFunc()
@@ -70,18 +83,24 @@ func TestBroadcasterMessagesRemovedOnConfirmation(t *testing.T) {
 	}
 
 	// Normal broadcasting and confirming
-	Require(t, b.BroadcastSingle(arbostypes.EmptyTestMessageWithMetadata, 1, nil, nil))
+	err := b.BroadcastFeedMessages(feedMessage(t, b, 1))
+	Require(t, err)
 	waitUntilUpdated(t, expectMessageCount(1, "after 1 message"))
-	Require(t, b.BroadcastSingle(arbostypes.EmptyTestMessageWithMetadata, 2, nil, nil))
+	err = b.BroadcastFeedMessages(feedMessage(t, b, 2))
+	Require(t, err)
 	waitUntilUpdated(t, expectMessageCount(2, "after 2 messages"))
-	Require(t, b.BroadcastSingle(arbostypes.EmptyTestMessageWithMetadata, 3, nil, nil))
+	err = b.BroadcastFeedMessages(feedMessage(t, b, 3))
+	Require(t, err)
 	waitUntilUpdated(t, expectMessageCount(3, "after 3 messages"))
-	Require(t, b.BroadcastSingle(arbostypes.EmptyTestMessageWithMetadata, 4, nil, nil))
+	err = b.BroadcastFeedMessages(feedMessage(t, b, 4))
+	Require(t, err)
 	waitUntilUpdated(t, expectMessageCount(4, "after 4 messages"))
-	Require(t, b.BroadcastSingle(arbostypes.EmptyTestMessageWithMetadata, 5, nil, nil))
-	waitUntilUpdated(t, expectMessageCount(5, "after 4 messages"))
-	Require(t, b.BroadcastSingle(arbostypes.EmptyTestMessageWithMetadata, 6, nil, nil))
-	waitUntilUpdated(t, expectMessageCount(6, "after 4 messages"))
+	err = b.BroadcastFeedMessages(feedMessage(t, b, 5))
+	Require(t, err)
+	waitUntilUpdated(t, expectMessageCount(5, "after 5 messages"))
+	err = b.BroadcastFeedMessages(feedMessage(t, b, 6))
+	Require(t, err)
+	waitUntilUpdated(t, expectMessageCount(6, "after 6 messages"))
 
 	b.Confirm(4)
 	waitUntilUpdated(t, expectMessageCount(2,
@@ -96,7 +115,8 @@ func TestBroadcasterMessagesRemovedOnConfirmation(t *testing.T) {
 		"nothing changed because confirmed sequence number before cache"))
 
 	b.Confirm(5)
-	Require(t, b.BroadcastSingle(arbostypes.EmptyTestMessageWithMetadata, 7, nil, nil))
+	err = b.BroadcastFeedMessages(feedMessage(t, b, 7))
+	Require(t, err)
 	waitUntilUpdated(t, expectMessageCount(2,
 		"after 7 messages, 5 cleared by confirm"))
 
@@ -109,9 +129,4 @@ func TestBroadcasterMessagesRemovedOnConfirmation(t *testing.T) {
 func Require(t *testing.T, err error, printables ...interface{}) {
 	t.Helper()
 	testhelpers.RequireImpl(t, err, printables...)
-}
-
-func Fail(t *testing.T, printables ...interface{}) {
-	t.Helper()
-	testhelpers.FailImpl(t, printables...)
 }

@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"syscall"
 
-	flag "github.com/spf13/pflag"
+	"github.com/spf13/pflag"
 
 	_ "github.com/ethereum/go-ethereum/eth/tracers/js"
 	_ "github.com/ethereum/go-ethereum/eth/tracers/native"
@@ -57,17 +57,20 @@ func mainImpl() int {
 	stackConf.Version = strippedRevision
 
 	pathResolver := func(workdir string) func(string) string {
-		if workdir == "" {
-			workdir, err = os.Getwd()
+		resolvedWorkdir := workdir
+		if resolvedWorkdir == "" {
+			var err error
+			resolvedWorkdir, err = os.Getwd()
 			if err != nil {
 				log.Warn("Failed to get workdir", "err", err)
+				resolvedWorkdir = "."
 			}
 		}
 		return func(path string) string {
 			if filepath.IsAbs(path) {
 				return path
 			}
-			return filepath.Join(workdir, path)
+			return filepath.Join(resolvedWorkdir, path)
 		}
 	}
 
@@ -89,7 +92,6 @@ func mainImpl() int {
 
 	liveNodeConfig := genericconf.NewLiveConfig[*ValidationNodeConfig](args, nodeConfig, ParseNode)
 	liveNodeConfig.SetOnReloadHook(func(oldCfg *ValidationNodeConfig, newCfg *ValidationNodeConfig) error {
-
 		return genericconf.InitLog(newCfg.LogType, newCfg.LogLevel, &newCfg.FileLogging, pathResolver(nodeConfig.Persistent.LogDir))
 	})
 
@@ -97,7 +99,7 @@ func mainImpl() int {
 
 	stack, err := node.New(&stackConf)
 	if err != nil {
-		flag.Usage()
+		pflag.Usage()
 		log.Crit("failed to initialize geth stack", "err", err)
 	}
 
@@ -159,7 +161,7 @@ func mainImpl() int {
 }
 
 func ParseNode(ctx context.Context, args []string) (*ValidationNodeConfig, error) {
-	f := flag.NewFlagSet("", flag.ContinueOnError)
+	f := pflag.NewFlagSet("", pflag.ContinueOnError)
 
 	ValidationNodeConfigAddOptions(f)
 

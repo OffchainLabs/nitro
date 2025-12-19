@@ -80,11 +80,14 @@ func (w *execClientWrapper) FullSyncProgressMap(ctx context.Context) map[string]
 	return nil
 }
 func (w *execClientWrapper) SetFinalityData(
-	ctx context.Context,
 	safeFinalityData *arbutil.FinalityData,
 	finalizedFinalityData *arbutil.FinalityData,
 	validatedFinalityData *arbutil.FinalityData,
 ) containers.PromiseInterface[struct{}] {
+	return containers.NewReadyPromise(struct{}{}, nil)
+}
+
+func (w *execClientWrapper) SetConsensusSyncData(syncData *execution.ConsensusSyncData) containers.PromiseInterface[struct{}] {
 	return containers.NewReadyPromise(struct{}{}, nil)
 }
 
@@ -116,6 +119,10 @@ func (w *execClientWrapper) BlockNumberToMessageIndex(blockNum uint64) container
 	return containers.NewReadyPromise(w.ExecutionEngine.BlockNumberToMessageIndex(blockNum))
 }
 
+func (w *execClientWrapper) ArbOSVersionForMessageIndex(msgIdx arbutil.MessageIndex) containers.PromiseInterface[uint64] {
+	return w.ExecutionEngine.ArbOSVersionForMessageIndex(msgIdx)
+}
+
 func (w *execClientWrapper) StopAndWait() {
 }
 
@@ -143,7 +150,7 @@ func NewTransactionStreamerForTest(t *testing.T, ctx context.Context, ownerAddre
 	}
 
 	transactionStreamerConfigFetcher := func() *TransactionStreamerConfig { return &DefaultTransactionStreamerConfig }
-	execEngine, err := gethexec.NewExecutionEngine(bc, 0)
+	execEngine, err := gethexec.NewExecutionEngine(bc, 0, false)
 	if err != nil {
 		Fail(t, err)
 	}

@@ -58,7 +58,7 @@ func BuildBlock(
 	batchFetcher := func(uint64) ([]byte, error) {
 		return seqBatch, nil
 	}
-	err = l1Message.FillInBatchGasCost(batchFetcher)
+	err = l1Message.FillInBatchGasFields(batchFetcher)
 	if err != nil {
 		// skip malformed batch posting report
 		// nolint:nilerr
@@ -66,7 +66,7 @@ func BuildBlock(
 	}
 
 	block, _, err := arbos.ProduceBlock(
-		l1Message, delayedMessagesRead, lastBlockHeader, statedb, chainContext, false, runCtx,
+		l1Message, delayedMessagesRead, lastBlockHeader, statedb, chainContext, false, runCtx, false,
 	)
 	return block, err
 }
@@ -121,6 +121,18 @@ func (b *inboxBackend) ReadDelayedInbox(seqNum uint64) (*arbostypes.L1IncomingMe
 // A chain context with no information
 type noopChainContext struct {
 	chainConfig *params.ChainConfig
+}
+
+func (c noopChainContext) CurrentHeader() *types.Header {
+	return nil
+}
+
+func (c noopChainContext) GetHeaderByNumber(number uint64) *types.Header {
+	return nil
+}
+
+func (c noopChainContext) GetHeaderByHash(hash common.Hash) *types.Header {
+	return nil
 }
 
 func (c noopChainContext) Config() *params.ChainConfig {

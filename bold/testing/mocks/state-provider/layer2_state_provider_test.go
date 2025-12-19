@@ -17,9 +17,9 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 
-	protocol "github.com/offchainlabs/nitro/bold/chain-abstraction"
-	l2stateprovider "github.com/offchainlabs/nitro/bold/layer2-state-provider"
-	challenge_testing "github.com/offchainlabs/nitro/bold/testing"
+	"github.com/offchainlabs/nitro/bold/protocol"
+	"github.com/offchainlabs/nitro/bold/state"
+	"github.com/offchainlabs/nitro/bold/testing"
 )
 
 func mockMachineAtBlock(_ context.Context, block uint64) (Machine, error) {
@@ -91,7 +91,7 @@ func newTestingMachine(
 			return nil, errors.New("state manager created with NewWithAssertionStates() cannot provide machines")
 		},
 		numBigSteps: 1,
-		challengeLeafHeights: []l2stateprovider.Height{
+		challengeLeafHeights: []state.Height{
 			challenge_testing.LevelZeroBlockEdgeHeight,
 			challenge_testing.LevelZeroBigStepEdgeHeight,
 			challenge_testing.LevelZeroSmallStepEdgeHeight,

@@ -3,7 +3,6 @@
 
 // race detection makes things slow and miss timeouts
 //go:build !race
-// +build !race
 
 package arbtest
 
@@ -37,7 +36,7 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/rollup_legacy_gen"
 	"github.com/offchainlabs/nitro/solgen/go/upgrade_executorgen"
 	"github.com/offchainlabs/nitro/staker"
-	legacystaker "github.com/offchainlabs/nitro/staker/legacy"
+	"github.com/offchainlabs/nitro/staker/legacy"
 	"github.com/offchainlabs/nitro/staker/validatorwallet"
 	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/validator/server_common"
@@ -175,7 +174,7 @@ func setupFastConfirmation(ctx context.Context, t *testing.T) (*NodeBuilder, *le
 	}()
 	var transferGas = util.NormalizeL2GasForL1GasInitial(800_000, params.GWei) // include room for aggregator L1 costs
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithProdConfirmPeriodBlocks().DontParalellise()
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithPreBoldDeployment().WithProdConfirmPeriodBlocks().DontParalellise()
 	builder.L2Info = NewBlockChainTestInfo(
 		t,
 		types.NewArbitrumSigner(types.NewLondonSigner(builder.chainConfig.ChainID)), big.NewInt(l2pricing.InitialBaseFeeWei*2),
@@ -227,7 +226,7 @@ func setupFastConfirmation(ctx context.Context, t *testing.T) (*NodeBuilder, *le
 		ctx,
 		rawdb.NewTable(l2node.ArbDB, storage.StakerPrefix),
 		l2node.L1Reader,
-		&l1auth, NewFetcherFromConfig(arbnode.ConfigDefaultL1NonSequencerTest()),
+		&l1auth, NewCommonConfigFetcher(arbnode.ConfigDefaultL1NonSequencerTest()),
 		nil,
 		parentChainID,
 	)
@@ -345,7 +344,7 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 	var transferGas = util.NormalizeL2GasForL1GasInitial(800_000, params.GWei) // include room for aggregator L1 costs
 
 	// Create a node with a large confirm period to ensure that the staker can't confirm without the fast confirmer.
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithProdConfirmPeriodBlocks()
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithPreBoldDeployment().WithProdConfirmPeriodBlocks()
 	builder.L2Info = NewBlockChainTestInfo(
 		t,
 		types.NewArbitrumSigner(types.NewLondonSigner(builder.chainConfig.ChainID)), big.NewInt(l2pricing.InitialBaseFeeWei*2),
@@ -421,7 +420,7 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 		ctx,
 		rawdb.NewTable(l2nodeB.ArbDB, storage.StakerPrefix),
 		l2nodeA.L1Reader,
-		&l1authA, NewFetcherFromConfig(arbnode.ConfigDefaultL1NonSequencerTest()),
+		&l1authA, NewCommonConfigFetcher(arbnode.ConfigDefaultL1NonSequencerTest()),
 		nil,
 		parentChainID,
 	)
@@ -506,7 +505,7 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 		ctx,
 		rawdb.NewTable(l2nodeB.ArbDB, storage.StakerPrefix),
 		l2nodeB.L1Reader,
-		&l1authB, NewFetcherFromConfig(cfg),
+		&l1authB, NewCommonConfigFetcher(cfg),
 		nil,
 		parentChainID,
 	)

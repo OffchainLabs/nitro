@@ -18,11 +18,11 @@ import (
 	gethtypes "github.com/ethereum/go-ethereum/core/types"
 
 	"github.com/offchainlabs/nitro/bold/assertions"
-	protocol "github.com/offchainlabs/nitro/bold/chain-abstraction"
-	cm "github.com/offchainlabs/nitro/bold/challenge-manager"
-	"github.com/offchainlabs/nitro/bold/challenge-manager/types"
-	challenge_testing "github.com/offchainlabs/nitro/bold/testing"
-	statemanager "github.com/offchainlabs/nitro/bold/testing/mocks/state-provider"
+	"github.com/offchainlabs/nitro/bold/challenge"
+	"github.com/offchainlabs/nitro/bold/challenge/types"
+	"github.com/offchainlabs/nitro/bold/protocol"
+	"github.com/offchainlabs/nitro/bold/testing"
+	"github.com/offchainlabs/nitro/bold/testing/mocks/state-provider"
 	"github.com/offchainlabs/nitro/bold/testing/setup"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
@@ -131,7 +131,7 @@ func TestPostAssertion(t *testing.T) {
 	require.Equal(t, 1, totalTransfers, "Expected only one deposit event by the staker")
 }
 
-func setupAssertionPosting(t *testing.T) (*setup.ChainSetup, *cm.Manager, *assertions.Manager, *statemanager.L2StateBackend) {
+func setupAssertionPosting(t *testing.T) (*setup.ChainSetup, *challenge.Manager, *assertions.Manager, *stateprovider.L2StateBackend) {
 	setup, err := setup.ChainsWithEdgeChallengeManager(
 		setup.WithMockOneStepProver(),
 		setup.WithAutoDeposit(),
@@ -153,9 +153,9 @@ func setupAssertionPosting(t *testing.T) (*setup.ChainSetup, *cm.Manager, *asser
 	stateManagerOpts := setup.StateManagerOpts
 	stateManagerOpts = append(
 		stateManagerOpts,
-		statemanager.WithNumBatchesRead(5),
+		stateprovider.WithNumBatchesRead(5),
 	)
-	stateManager, err := statemanager.NewForSimpleMachine(t, stateManagerOpts...)
+	stateManager, err := stateprovider.NewForSimpleMachine(t, stateManagerOpts...)
 	require.NoError(t, err)
 	// Set MinimumGapToBlockCreationTime as 1 second to verify that a new assertion is only posted after 1 sec has passed
 	// from parent assertion creation. This will make the test run for ~19 seconds as the parent assertion time is
@@ -170,12 +170,12 @@ func setupAssertionPosting(t *testing.T) (*setup.ChainSetup, *cm.Manager, *asser
 		assertions.WithMinimumGapToParentAssertion(time.Second),
 	)
 	require.NoError(t, err)
-	chalManager, err := cm.NewChallengeStack(
+	chalManager, err := challenge.NewChallengeStack(
 		aliceChain,
 		stateManager,
-		cm.StackWithMode(types.DefensiveMode),
-		cm.StackWithName("alice"),
-		cm.OverrideAssertionManager(assertionManager),
+		challenge.StackWithMode(types.DefensiveMode),
+		challenge.StackWithName("alice"),
+		challenge.OverrideAssertionManager(assertionManager),
 	)
 	require.NoError(t, err)
 	return setup, chalManager, assertionManager, stateManager

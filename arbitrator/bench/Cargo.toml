@@ -1,21 +1,23 @@
 [package]
 name = "bench"
 version = "0.1.0"
-edition = "2021"
+authors.workspace = true
+edition.workspace = true
+homepage.workspace = true
+license.workspace = true
+publish.workspace = true
+repository.workspace = true
+rust-version.workspace = true
 
 [[bin]]
 name = "benchbin"
 path = "src/bin.rs"
 
 [dependencies]
-hex = { version = "0.4.3", features = ["serde"] }
-eyre = "0.6.5"
-prover = { path = "../prover" }
-arbutil = { path = "../arbutil" }
-clap = { version = "4.4.8", features = ["derive"] }
-gperftools = { version = "0.2.0", optional = true }
-serde = { version = "1.0.130", features = ["derive", "rc"] }
-serde_json = "1.0.67"
+clap = { workspace = true, features = ["derive"] }
+eyre = { workspace = true }
+gperftools = { workspace = true, optional = true }
+prover = { workspace = true }
 
 [features]
 counters = []

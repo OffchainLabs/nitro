@@ -9,7 +9,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 
-	protocol "github.com/offchainlabs/nitro/bold/chain-abstraction"
+	"github.com/offchainlabs/nitro/bold/protocol"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 )
 
@@ -113,6 +113,7 @@ func GenerateRollupConfig(
 		AnyTrustFastConfirmer:        anyTrustFastConfirmer,
 		NumBigStepLevel:              1,
 		ChallengeGracePeriodBlocks:   gracePeriod,
+		DataCostEstimate:             big.NewInt(0),
 	}
 	for _, o := range opts {
 		o(&cfg)

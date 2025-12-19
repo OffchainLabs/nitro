@@ -10,6 +10,7 @@ import (
 	"math/big"
 	"sync/atomic"
 
+	"github.com/ethereum/go-ethereum/arbitrum/multigas"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/lru"
 	"github.com/ethereum/go-ethereum/core/rawdb"
@@ -126,7 +127,7 @@ func (s *Storage) Account() common.Address {
 }
 
 func (s *Storage) Get(key common.Hash) (common.Hash, error) {
-	err := s.burner.Burn(StorageReadCost)
+	err := s.burner.Burn(multigas.ResourceKindStorageAccess, StorageReadCost)
 	if err != nil {
 		return common.Hash{}, err
 	}
@@ -163,7 +164,7 @@ func (s *Storage) Set(key common.Hash, value common.Hash) error {
 		log.Error("Read-only burner attempted to mutate state", "key", key, "value", value)
 		return vm.ErrWriteProtection
 	}
-	err := s.burner.Burn(writeCost(value))
+	err := s.burner.Burn(multigas.ResourceKindStorageAccess, writeCost(value))
 	if err != nil {
 		return err
 	}
@@ -312,7 +313,7 @@ func (s *Storage) ClearBytes() error {
 }
 
 func (s *Storage) GetCodeHash(address common.Address) (common.Hash, error) {
-	err := s.burner.Burn(StorageCodeHashCost)
+	err := s.burner.Burn(multigas.ResourceKindStorageAccess, StorageCodeHashCost)
 	if err != nil {
 		return common.Hash{}, err
 	}
@@ -329,7 +330,7 @@ func (s *Storage) Keccak(data ...[]byte) ([]byte, error) {
 		byteCount += uint64(len(part))
 	}
 	cost := 30 + 6*arbmath.WordsForBytes(byteCount)
-	if err := s.burner.Burn(cost); err != nil {
+	if err := s.burner.Burn(multigas.ResourceKindComputation, cost); err != nil {
 		return nil, err
 	}
 	return crypto.Keccak256(data...), nil
@@ -373,7 +374,7 @@ func (s *Storage) NewSlot(offset uint64) StorageSlot {
 }
 
 func (ss *StorageSlot) Get() (common.Hash, error) {
-	err := ss.burner.Burn(StorageReadCost)
+	err := ss.burner.Burn(multigas.ResourceKindStorageAccess, StorageReadCost)
 	if err != nil {
 		return common.Hash{}, err
 	}
@@ -388,7 +389,7 @@ func (ss *StorageSlot) Set(value common.Hash) error {
 		log.Error("Read-only burner attempted to mutate state", "value", value)
 		return vm.ErrWriteProtection
 	}
-	err := ss.burner.Burn(writeCost(value))
+	err := ss.burner.Burn(multigas.ResourceKindStorageAccess, writeCost(value))
 	if err != nil {
 		return err
 	}
@@ -524,6 +525,10 @@ func (sbu *StorageBackedUint32) Get() (uint32, error) {
 func (sbu *StorageBackedUint32) Set(value uint32) error {
 	bigValue := new(big.Int).SetUint64(uint64(value))
 	return sbu.StorageSlot.Set(common.BigToHash(bigValue))
+}
+
+func (sbu *StorageBackedUint32) Clear() error {
+	return sbu.Set(0)
 }
 
 type StorageBackedUint64 struct {

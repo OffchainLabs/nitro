@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
-	flag "github.com/spf13/pflag"
+	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/log"
 
@@ -41,7 +41,7 @@ type SimpleCfg struct {
 
 type SimpleCfgFetcher func() *SimpleCfg
 
-func AddConfigOptions(prefix string, f *flag.FlagSet) {
+func AddConfigOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultCfg.Enable, "if false, always treat this as locked and don't write the lock to redis")
 	f.String(prefix+".my-id", "", "this node's id prefix when acquiring the lock (optional)")
 	f.Duration(prefix+".lockout-duration", DefaultCfg.LockoutDuration, "how long lock is held")
@@ -146,7 +146,8 @@ func (l *Simple) AttemptLockAndPeriodicallyRefreshIt(ctx context.Context, releas
 
 	refreshLock := func() {
 		defer l.Release(ctx)
-		refreshTick := time.Tick(l.config().RefreshDuration)
+		ticker := time.NewTicker(l.config().RefreshDuration)
+		defer ticker.Stop()
 		for {
 			select {
 			case <-release:
@@ -159,7 +160,7 @@ func (l *Simple) AttemptLockAndPeriodicallyRefreshIt(ctx context.Context, releas
 					return
 				case <-ctx.Done():
 					return
-				case <-refreshTick:
+				case <-ticker.C:
 					gotLock, err := l.attemptLock(ctx)
 					if err != nil {
 						log.Error("attemptLock returned error during refresh: %w", err)

@@ -3,10 +3,9 @@ package server_jit
 import (
 	"context"
 	"fmt"
-	"sync/atomic"
 	"time"
 
-	flag "github.com/spf13/pflag"
+	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
@@ -37,7 +36,7 @@ var DefaultJitSpawnerConfig = JitSpawnerConfig{
 	JitPath:              "", // Empty string means use default path resolution
 }
 
-func JitSpawnerConfigAddOptions(prefix string, f *flag.FlagSet) {
+func JitSpawnerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Int(prefix+".workers", DefaultJitSpawnerConfig.Workers, "number of concurrent validation threads")
 	f.Bool(prefix+".cranelift", DefaultJitSpawnerConfig.Cranelift, "use Cranelift instead of LLVM when validating blocks using the jit-accelerated block validator")
 	f.Int(prefix+".wasm-memory-usage-limit", DefaultJitSpawnerConfig.WasmMemoryUsageLimit, "if memory used by a jit wasm exceeds this limit, a warning is logged")
@@ -47,7 +46,6 @@ func JitSpawnerConfigAddOptions(prefix string, f *flag.FlagSet) {
 
 type JitSpawner struct {
 	stopwaiter.StopWaiter
-	count         atomic.Int32
 	locator       *server_common.MachineLocator
 	machineLoader *JitMachineLoader
 	config        JitSpawnerConfigFecher
@@ -105,15 +103,13 @@ func (s *JitSpawner) Name() string {
 }
 
 func (v *JitSpawner) Launch(entry *validator.ValidationInput, moduleRoot common.Hash) validator.ValidationRun {
-	v.count.Add(1)
 	promise := stopwaiter.LaunchPromiseThread[validator.GoGlobalState](v, func(ctx context.Context) (validator.GoGlobalState, error) {
-		defer v.count.Add(-1)
 		return v.execute(ctx, entry, moduleRoot)
 	})
 	return server_common.NewValRun(promise, moduleRoot)
 }
 
-func (v *JitSpawner) Room() int {
+func (v *JitSpawner) Capacity() int {
 	avail := v.config().Workers
 	if avail == 0 {
 		avail = util.GoMaxProcs()

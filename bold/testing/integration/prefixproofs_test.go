@@ -2,7 +2,7 @@
 // For license information, see:
 // https://github.com/offchainlabs/nitro/blob/master/LICENSE.md
 
-package prefixproofs
+package prefix
 
 import (
 	"context"
@@ -19,12 +19,12 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient/simulated"
 
-	protocol "github.com/offchainlabs/nitro/bold/chain-abstraction"
+	"github.com/offchainlabs/nitro/bold/commitment/history"
+	"github.com/offchainlabs/nitro/bold/commitment/proof/prefix"
 	"github.com/offchainlabs/nitro/bold/containers/option"
-	l2stateprovider "github.com/offchainlabs/nitro/bold/layer2-state-provider"
-	"github.com/offchainlabs/nitro/bold/state-commitments/history"
-	prefixproofs "github.com/offchainlabs/nitro/bold/state-commitments/prefix-proofs"
-	statemanager "github.com/offchainlabs/nitro/bold/testing/mocks/state-provider"
+	"github.com/offchainlabs/nitro/bold/protocol"
+	"github.com/offchainlabs/nitro/bold/state"
+	"github.com/offchainlabs/nitro/bold/testing/mocks/state-provider"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 )
 
@@ -45,7 +45,7 @@ func TestPrefixProofGeneration(t *testing.T) {
 			copy(r[:], computed.proof[i][:])
 			proofRaw[i] = r
 		}
-		err := prefixproofs.VerifyPrefixProof(&prefixproofs.VerifyPrefixProofConfig{
+		err := prefix.VerifyPrefixProof(&prefix.VerifyPrefixProofConfig{
 			PreRoot:      computed.prefixRoot,
 			PreSize:      computed.prefixTotalLeaves,
 			PostRoot:     computed.fullRoot,
@@ -150,14 +150,14 @@ func computeLegacyPrefixProof(t *testing.T, ctx context.Context, numHashes uint6
 	for i := 0; i < len(hashes); i++ {
 		hashes[i] = simpleHash
 	}
-	manager, err := statemanager.NewWithMockedStateRoots(hashes)
+	manager, err := stateprovider.NewWithMockedStateRoots(hashes)
 	require.NoError(t, err)
 
 	wasmModuleRoot := common.Hash{}
-	startMessageNumber := l2stateprovider.Height(0)
-	fromMessageNumber := l2stateprovider.Height(prefixIndex)
-	req := &l2stateprovider.HistoryCommitmentRequest{
-		AssertionMetadata: &l2stateprovider.AssociatedAssertionMetadata{
+	startMessageNumber := state.Height(0)
+	fromMessageNumber := state.Height(prefixIndex)
+	req := &state.HistoryCommitmentRequest{
+		AssertionMetadata: &state.AssociatedAssertionMetadata{
 			WasmModuleRoot: wasmModuleRoot,
 			FromState: protocol.GoGlobalState{
 				Batch:      0,
@@ -165,20 +165,20 @@ func computeLegacyPrefixProof(t *testing.T, ctx context.Context, numHashes uint6
 			},
 			BatchLimit: 10,
 		},
-		UpperChallengeOriginHeights: []l2stateprovider.Height{},
-		UpToHeight:                  option.Some(l2stateprovider.Height(fromMessageNumber)),
+		UpperChallengeOriginHeights: []state.Height{},
+		UpToHeight:                  option.Some(state.Height(fromMessageNumber)),
 	}
 	loCommit, err := manager.HistoryCommitment(ctx, req)
 	require.NoError(t, err)
 
-	req.UpToHeight = option.Some(l2stateprovider.Height(numHashes - 1))
+	req.UpToHeight = option.Some(state.Height(numHashes - 1))
 	hiCommit, err := manager.HistoryCommitment(ctx, req)
 	require.NoError(t, err)
 
 	packedProof, err := manager.PrefixProof(ctx, req, fromMessageNumber)
 	require.NoError(t, err)
 
-	data, err := statemanager.ProofArgs.Unpack(packedProof)
+	data, err := stateprovider.ProofArgs.Unpack(packedProof)
 	require.NoError(t, err)
 	preExpansion, ok := data[0].([][32]byte)
 	require.Equal(t, true, ok)

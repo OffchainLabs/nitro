@@ -11,7 +11,7 @@ import (
 	"path/filepath"
 	"time"
 
-	flag "github.com/spf13/pflag"
+	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/ethdb/pebble"
@@ -39,7 +39,7 @@ var PersistentConfigDefault = PersistentConfig{
 	Pebble:       PebbleConfigDefault,
 }
 
-func PersistentConfigAddOptions(prefix string, f *flag.FlagSet) {
+func PersistentConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".global-config", PersistentConfigDefault.GlobalConfig, "directory to store global config")
 	f.String(prefix+".chain", PersistentConfigDefault.Chain, "directory to store chain state")
 	f.String(prefix+".log-dir", PersistentConfigDefault.LogDir, "directory to store log file")
@@ -132,7 +132,7 @@ var PebbleConfigDefault = PebbleConfig{
 	Experimental:             PebbleExperimentalConfigDefault,
 }
 
-func PebbleConfigAddOptions(prefix string, f *flag.FlagSet, defaultConfig *PebbleConfig) {
+func PebbleConfigAddOptions(prefix string, f *pflag.FlagSet, defaultConfig *PebbleConfig) {
 	f.Bool(prefix+".sync-mode", defaultConfig.SyncMode, "if true sync mode is used (data needs to be written to WAL before the write is marked as completed)")
 	f.Int(prefix+".max-concurrent-compactions", defaultConfig.MaxConcurrentCompactions, "maximum number of concurrent compactions")
 	PebbleExperimentalConfigAddOptions(prefix+".experimental", f, &defaultConfig.Experimental)
@@ -223,7 +223,7 @@ var PebbleExperimentalConfigDefault = PebbleExperimentalConfig{
 	ForceWriterParallelism:    false,
 }
 
-func PebbleExperimentalConfigAddOptions(prefix string, f *flag.FlagSet, defaultConfig *PebbleExperimentalConfig) {
+func PebbleExperimentalConfigAddOptions(prefix string, f *pflag.FlagSet, defaultConfig *PebbleExperimentalConfig) {
 	f.Int(prefix+".bytes-per-sync", defaultConfig.BytesPerSync, "number of bytes to write to a SSTable before calling Sync on it in the background")
 	f.Int(prefix+".l0-compaction-file-threshold", defaultConfig.L0CompactionFileThreshold, "count of L0 files necessary to trigger an L0 compaction")
 	f.Int(prefix+".l0-compaction-threshold", defaultConfig.L0CompactionThreshold, "amount of L0 read-amplification necessary to trigger an L0 compaction")

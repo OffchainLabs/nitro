@@ -5,8 +5,9 @@ import (
 	"fmt"
 	"math/big"
 	"os"
+	"strings"
 
-	flag "github.com/spf13/pflag"
+	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
@@ -33,7 +34,7 @@ func main() {
 
 func mainImpl() error {
 	args := os.Args[1:]
-	f := flag.NewFlagSet("", flag.ContinueOnError)
+	f := pflag.NewFlagSet("", pflag.ContinueOnError)
 
 	ConfigAddOptions(f)
 
@@ -59,6 +60,10 @@ func mainImpl() error {
 	if err != nil {
 		return fmt.Errorf("failed to read genesis JSON file %s: %w", config.GenesisJsonFile, err)
 	}
+	serializedChainConfig, err := extractSerializedChainConfigFromJSON(genesisJson)
+	if err != nil {
+		return fmt.Errorf("failed to extract serialized chain config from genesis JSON: %w", err)
+	}
 	var gen core.Genesis
 	if err := json.Unmarshal(genesisJson, &gen); err != nil {
 		return fmt.Errorf("failed to unmarshal genesis JSON: %w", err)
@@ -80,10 +85,6 @@ func mainImpl() error {
 	})
 	chainConfig := gen.Config
 	genesisArbOSInit := gen.ArbOSInit
-	serializedChainConfig, err := json.Marshal(chainConfig)
-	if err != nil {
-		return fmt.Errorf("failed to serialize chain config: %w", err)
-	}
 	parsedInitMessage := &arbostypes.ParsedInitMessage{
 		ChainId:               chainConfig.ChainID,
 		InitialL1BaseFee:      big.NewInt(config.InitialL1BaseFee),
@@ -101,9 +102,12 @@ func mainImpl() error {
 	if err != nil {
 		return fmt.Errorf("failed to generate genesis hash: %w", err)
 	}
+	// To get send root from genesis block, we need to deserialize the header extra information
+	gensisBlockHeader := genesisBlock.Header()
+	gensisBlockHeaderInfo := types.DeserializeHeaderExtraInformation(gensisBlockHeader)
 	globalState := validator.GoGlobalState{
 		BlockHash:  genesisBlock.Hash(),
-		SendRoot:   genesisBlock.Root(),
+		SendRoot:   gensisBlockHeaderInfo.SendRoot,
 		Batch:      1,
 		PosInBatch: 0,
 	}
@@ -138,6 +142,25 @@ func generateGenesisBlock(chainDb ethdb.Database, cacheConfig *core.BlockChainCo
 	return arbosState.MakeGenesisBlock(prevHash, blockNumber, timestamp, stateRoot, chainConfig), nil
 }
 
+func extractSerializedChainConfigFromJSON(genesisJson []byte) ([]byte, error) {
+	jsonStr := string(genesisJson)
+	// Decode with json.NewDecoder
+	decoder := json.NewDecoder(strings.NewReader(jsonStr))
+
+	// Set decoded json feilds to map
+	var result map[string]json.RawMessage
+	if err := decoder.Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode JSON: %w", err)
+	}
+
+	serializedChainConfig, exists := result["config"]
+	if !exists {
+		return nil, fmt.Errorf("config field not found")
+	}
+
+	return serializedChainConfig, nil
+}
+
 type Config struct {
 	Caching          gethexec.CachingConfig `koanf:"caching"`
 	GenesisJsonFile  string                 `koanf:"genesis-json-file"`
@@ -152,7 +175,7 @@ var ConfigDefault = Config{
 	InitialL1BaseFee: arbostypes.DefaultInitialL1BaseFee.Int64(),
 }
 
-func ConfigAddOptions(f *flag.FlagSet) {
+func ConfigAddOptions(f *pflag.FlagSet) {
 	gethexec.CachingConfigAddOptions("caching", f)
 	f.String("genesis-json-file", ConfigDefault.GenesisJsonFile, "path for genesis json file")
 	f.Uint("accounts-per-sync", ConfigDefault.AccountsPerSync, "during init - sync database every X accounts. Lower value for low-memory systems. 0 disables.")

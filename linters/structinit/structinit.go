@@ -28,17 +28,7 @@ const linterTip = "// lint:require-exhaustive-initialization"
 var Analyzer = &analysis.Analyzer{
 	Name:       "structinit",
 	Doc:        "check for struct field initializations",
-	Run:        func(p *analysis.Pass) (interface{}, error) { return run(false, p) },
-	ResultType: reflect.TypeOf([]structError{}),
-	FactTypes:  []analysis.Fact{new(fieldCounts)},
-}
-
-// Test version of the analyzer - errors that will be found during the package analysis
-// will not be reported as test failures.
-var analyzerForTests = &analysis.Analyzer{
-	Name:       "teststructinit",
-	Doc:        "check for struct field initializations",
-	Run:        func(p *analysis.Pass) (interface{}, error) { return run(true, p) },
+	Run:        run,
 	ResultType: reflect.TypeOf([]structError{}),
 	FactTypes:  []analysis.Fact{new(fieldCounts)},
 }
@@ -58,7 +48,7 @@ type structError struct {
 }
 
 // Analyzer logic entrypoint.
-func run(dryRun bool, pass *analysis.Pass) (interface{}, error) {
+func run(pass *analysis.Pass) (interface{}, error) {
 	// Firstly, gather all field counts from the current package and all its dependencies.
 	var markedStructs = countFieldsInPackageAndItsDeps(pass)
 
@@ -80,15 +70,12 @@ func run(dryRun bool, pass *analysis.Pass) (interface{}, error) {
 		})
 	}
 
-	// For tests, do not _report_ errors. We will just _return_ them.
-	if !dryRun {
-		for _, err := range foundErrors {
-			pass.Report(analysis.Diagnostic{
-				Pos:      err.Pos,
-				Message:  err.Message,
-				Category: "structinit",
-			})
-		}
+	for _, err := range foundErrors {
+		pass.Report(analysis.Diagnostic{
+			Pos:      err.Pos,
+			Message:  err.Message,
+			Category: "structinit",
+		})
 	}
 
 	return foundErrors, nil

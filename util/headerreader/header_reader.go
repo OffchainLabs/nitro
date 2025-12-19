@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	flag "github.com/spf13/pflag"
+	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -107,7 +107,7 @@ var DefaultConfig = Config{
 	},
 }
 
-func AddOptions(prefix string, f *flag.FlagSet) {
+func AddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultConfig.Enable, "enable reader connection")
 	f.Bool(prefix+".poll-only", DefaultConfig.PollOnly, "do not attempt to subscribe to header events")
 	f.Bool(prefix+".use-finality-data", DefaultConfig.UseFinalityData, "use l1 data about finalized/safe blocks")
@@ -119,7 +119,7 @@ func AddOptions(prefix string, f *flag.FlagSet) {
 	AddDangerousOptions(prefix+".dangerous", f)
 }
 
-func AddDangerousOptions(prefix string, f *flag.FlagSet) {
+func AddDangerousOptions(prefix string, f *pflag.FlagSet) {
 	f.Duration(prefix+".wait-for-tx-approval-safe-poll", DefaultConfig.Dangerous.WaitForTxApprovalSafePoll, "Dangerous! only meant to be used by system tests")
 }
 

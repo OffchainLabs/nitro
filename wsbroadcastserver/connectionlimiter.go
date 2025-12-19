@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	flag "github.com/spf13/pflag"
+	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
@@ -34,7 +34,7 @@ var DefaultConnectionLimiterConfig = ConnectionLimiterConfig{
 	ReconnectCooldownPeriod: 0,
 }
 
-func ConnectionLimiterConfigAddOptions(prefix string, f *flag.FlagSet) {
+func ConnectionLimiterConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultConnectionLimiterConfig.Enable, "enable broadcaster per-client connection limiting")
 	f.Int(prefix+".per-ip-limit", DefaultConnectionLimiterConfig.PerIpLimit, "limit clients, as identified by IPv4/v6 address, to this many connections to this relay")
 	f.Int(prefix+".per-ipv6-cidr-48-limit", DefaultConnectionLimiterConfig.PerIpv6Cidr48Limit, "limit ipv6 clients, as identified by IPv6 address masked with /48, to this many connections to this relay")
@@ -85,7 +85,7 @@ func (l *ConnectionLimiter) getIpStringsAndLimits(ip net.IP) []ipStringAndLimit 
 	}
 
 	config := l.config()
-	result = append(result, ipStringAndLimit{string(ip), config.PerIpLimit})
+	result = append(result, ipStringAndLimit{ip.String(), config.PerIpLimit})
 
 	if isIpv6(ip) {
 		ipv6Slash48 := ip.Mask(net.CIDRMask(48, 128))

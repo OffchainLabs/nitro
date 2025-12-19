@@ -31,7 +31,24 @@ fn target_from_string(input: String) -> Result<Target> {
     for flag in parts {
         features.insert(CpuFeature::from_str(flag)?);
     }
-
+    if features.contains(CpuFeature::AVX2) {
+        features.insert(CpuFeature::AVX);
+    }
+    if features.contains(CpuFeature::AVX) {
+        features.insert(CpuFeature::SSE42);
+    }
+    if features.contains(CpuFeature::SSE42) {
+        features.insert(CpuFeature::SSE41);
+    }
+    if features.contains(CpuFeature::SSE41) {
+        features.insert(CpuFeature::SSSE3);
+    }
+    if features.contains(CpuFeature::SSSE3) {
+        features.insert(CpuFeature::SSE3);
+    }
+    if features.contains(CpuFeature::SSE3) {
+        features.insert(CpuFeature::SSE2);
+    }
     Ok(Target::new(triple, features))
 }
 

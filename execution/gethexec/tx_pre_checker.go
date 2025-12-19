@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"time"
 
-	flag "github.com/spf13/pflag"
+	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/arbitrum_types"
 	"github.com/ethereum/go-ethereum/common"
@@ -53,7 +53,7 @@ var DefaultTxPreCheckerConfig = TxPreCheckerConfig{
 	RequiredStateMaxBlocks: 4,
 }
 
-func TxPreCheckerConfigAddOptions(prefix string, f *flag.FlagSet) {
+func TxPreCheckerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Uint(prefix+".strictness", DefaultTxPreCheckerConfig.Strictness, "how strict to be when checking txs before forwarding them. 0 = accept anything, "+
 		"10 = should never reject anything that'd succeed, 20 = likely won't reject anything that'd succeed, "+
 		"30 = full validation which may reject txs that would succeed")

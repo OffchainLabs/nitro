@@ -3,26 +3,28 @@
 
 package arbnode
 
-import dbschema "github.com/offchainlabs/nitro/arbnode/db-schema"
-
-var (
-	messagePrefix                       = dbschema.MessagePrefix
-	blockHashInputFeedPrefix            = dbschema.BlockHashInputFeedPrefix
-	blockMetadataInputFeedPrefix        = dbschema.BlockMetadataInputFeedPrefix
-	missingBlockMetadataInputFeedPrefix = dbschema.MissingBlockMetadataInputFeedPrefix
-	messageResultPrefix                 = dbschema.MessageResultPrefix
-	legacyDelayedMessagePrefix          = dbschema.LegacyDelayedMessagePrefix
-	rlpDelayedMessagePrefix             = dbschema.RlpDelayedMessagePrefix
-	parentChainBlockNumberPrefix        = dbschema.ParentChainBlockNumberPrefix
-	sequencerBatchMetaPrefix            = dbschema.SequencerBatchMetaPrefix
-	delayedSequencedPrefix              = dbschema.DelayedSequencedPrefix
-
-	messageCountKey             = dbschema.MessageCountKey
-	lastPrunedMessageKey        = dbschema.LastPrunedMessageKey
-	lastPrunedDelayedMessageKey = dbschema.LastPrunedDelayedMessageKey
-	delayedMessageCountKey      = dbschema.DelayedMessageCountKey
-	sequencerBatchCountKey      = dbschema.SequencerBatchCountKey
-	dbSchemaVersion             = dbschema.DbSchemaVersion
+import (
+	"github.com/offchainlabs/nitro/arbnode/db/schema"
 )
 
-const currentDbSchemaVersion uint64 = dbschema.CurrentDbSchemaVersion
+var (
+	messagePrefix                       = schema.MessagePrefix
+	blockHashInputFeedPrefix            = schema.BlockHashInputFeedPrefix
+	blockMetadataInputFeedPrefix        = schema.BlockMetadataInputFeedPrefix
+	missingBlockMetadataInputFeedPrefix = schema.MissingBlockMetadataInputFeedPrefix
+	messageResultPrefix                 = schema.MessageResultPrefix
+	legacyDelayedMessagePrefix          = schema.LegacyDelayedMessagePrefix
+	rlpDelayedMessagePrefix             = schema.RlpDelayedMessagePrefix
+	parentChainBlockNumberPrefix        = schema.ParentChainBlockNumberPrefix
+	sequencerBatchMetaPrefix            = schema.SequencerBatchMetaPrefix
+	delayedSequencedPrefix              = schema.DelayedSequencedPrefix
+
+	messageCountKey             = schema.MessageCountKey
+	lastPrunedMessageKey        = schema.LastPrunedMessageKey
+	lastPrunedDelayedMessageKey = schema.LastPrunedDelayedMessageKey
+	delayedMessageCountKey      = schema.DelayedMessageCountKey
+	sequencerBatchCountKey      = schema.SequencerBatchCountKey
+	dbSchemaVersion             = schema.DbSchemaVersion
+)
+
+const currentDbSchemaVersion uint64 = schema.CurrentDbSchemaVersion

@@ -1,0 +1,92 @@
+---
+name: Merge CI
+run-name: Merge CI triggered from @${{ github.actor }} of ${{ github.head_ref }}
+
+on:
+  merge_group:
+
+jobs:
+  # --- Determine which files have changed ---
+  changes:
+    uses: ./.github/workflows/_detect-changes.yml
+    secrets: inherit
+
+  # --- Fast: Build + Lint only ---
+  fast:
+    uses: ./.github/workflows/_fast.yml
+    secrets: inherit
+
+  # --- Run Arbitrator tests ---
+  arbitrator:
+    needs: changes
+    if: needs.changes.outputs.arbitrator_changed == 'true'
+    uses: ./.github/workflows/_arbitrator.yml
+    secrets: inherit
+
+  # --- Run Bold Legacy challenge tests ---
+  bold-legacy:
+    needs: changes
+    if: needs.changes.outputs.bold_legacy_changed == 'true'
+    uses: ./.github/workflows/_bold-legacy.yml
+    secrets: inherit
+
+  # --- Full GO tests ---
+  go-tests:
+    uses: ./.github/workflows/_standard-go-test-suite.yml
+    secrets: inherit
+
+  # --- Summarize test results ---
+  codecov:
+    needs: [go-tests, arbitrator]
+    if: always()
+    uses: ./.github/workflows/_codecov.yml
+    secrets: inherit
+    permissions:
+      pull-requests: write
+    with:
+      post_comment: false
+      upload_report: true
+
+  can_proceed:
+    runs-on: ubuntu-4
+    needs: [fast, arbitrator, bold-legacy, go-tests]
+    if: always()
+    steps:
+      - name: Aggregate results
+        run: |
+          fast_result="${{ needs.fast.result }}"
+          go_tests_result="${{ needs['go-tests'].result }}"
+          arbitrator_result="${{ needs.arbitrator.result }}"
+          bold_legacy_result="${{ needs['bold-legacy'].result }}"
+          ok=1
+          if [ "$fast_result" != "success" ]; then
+            ok=0
+            echo "Fast job failed or was skipped"
+          fi
+          if [ "$go_tests_result" != "success" ]; then
+            ok=0
+            echo "Go tests job failed or was skipped"
+          fi
+          if [ "$arbitrator_result" != "success" ] && [ "$arbitrator_result" != "skipped" ]; then
+            ok=0
+            echo "Arbitrator job failed"
+          fi
+          if [ "$bold_legacy_result" != "success" ] && [ "$bold_legacy_result" != "skipped" ]; then
+            ok=0
+            echo "Bold Legacy job failed"
+          fi
+          if [ $ok -eq 1 ]; then
+            echo "All required jobs passed or were skipped"
+            exit 0
+          else
+            echo "One or more required jobs failed"
+            exit 1
+          fi
+
+  can_see_status:
+    # This job is just to make sure that the "can_proceed" job's status is visible
+    # on the pull request page, even if it is skipped due to all its dependencies being
+    # skipped. It does not depend on any other jobs, so it always runs.
+    runs-on: ubuntu-4
+    steps:
+      - run: true
