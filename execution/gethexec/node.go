@@ -569,7 +569,9 @@ func (n *ExecutionNode) SetFinalityData(
 	if err != nil {
 		return containers.NewReadyPromise(struct{}{}, err)
 	}
-	n.Recorder.MarkValid(validatedFinalityData.MsgIdx, validatedFinalityData.BlockHash)
+	if n.Recorder != nil && validatedFinalityData != nil {
+		n.Recorder.MarkValid(validatedFinalityData.MsgIdx, validatedFinalityData.BlockHash)
+	}
 	return containers.NewReadyPromise(struct{}{}, nil)
 }
 
