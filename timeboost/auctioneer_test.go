@@ -477,6 +477,8 @@ func TestAuctioneerFailoverMessageReprocessing(t *testing.T) {
 	testConsumerConfig := pubsub.ConsumerConfig{
 		IdletimeToAutoclaim:  300 * time.Millisecond,
 		ResponseEntryTimeout: time.Minute,
+		Retry:                true,
+		MaxRetryCount:        -1,
 	}
 
 	// Create primary auctioneer instance

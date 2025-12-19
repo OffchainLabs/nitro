@@ -21,6 +21,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
+	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbos/retryables"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -523,7 +524,7 @@ func (p *TxProcessor) HeldGas() uint64 {
 	return p.computeHoldGas
 }
 
-func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
+func (p *TxProcessor) EndTxHook(gasLeft uint64, usedMultiGas multigas.MultiGas, success bool) {
 
 	underlyingTx := p.msg.Tx
 	networkFeeAccount, _ := p.state.NetworkFeeAccount()
@@ -533,6 +534,13 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 		panic("Tx somehow refunds gas after computation")
 	}
 	gasUsed := p.msg.GasLimit - gasLeft
+
+	var multiDimensionalCost *big.Int
+	var err error
+	if p.state.L2PricingState().ArbosVersion >= l2pricing.ArbosMultiGasConstraintsVersion {
+		multiDimensionalCost, err = p.state.L2PricingState().MultiDimensionalPriceForRefund(usedMultiGas)
+		p.state.Restrict(err)
+	}
 
 	if underlyingTx != nil && underlyingTx.Type() == types.ArbitrumRetryTxType {
 		inner, _ := underlyingTx.GetInner().(*types.ArbitrumRetryTx)
@@ -554,6 +562,11 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 		if err != nil {
 			log.Error("Uh oh, Geth didn't refund the user", inner.From, gasRefund)
 		}
+
+		singleGasCost := arbmath.BigMulByUint(effectiveBaseFee, gasUsed)
+		shouldRefundMultiGas := multiDimensionalCost != nil &&
+			arbmath.BigGreaterThan(singleGasCost, multiDimensionalCost) &&
+			effectiveBaseFee.Cmp(p.evm.Context.BaseFee) == 0 // don't refund retryable estimation
 
 		maxRefund := new(big.Int).Set(inner.MaxRefund)
 		refund := func(refundFrom common.Address, amount *big.Int, reason tracing.BalanceChangeReason) {
@@ -597,8 +610,12 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 			// The submission fee is still taken from the L1 deposit earlier, even if it's not refunded.
 			takeFunds(maxRefund, inner.SubmissionFeeRefund)
 		}
+
 		// Conceptually, the gas charge is taken from the L1 deposit pool if possible.
-		takeFunds(maxRefund, arbmath.BigMulByUint(effectiveBaseFee, gasUsed))
+		// This continues to use the simple-gas price; any multi-gas discount is handled
+		// as an explicit refund below.
+		takeFunds(maxRefund, singleGasCost)
+
 		// Refund any unused gas, without overdrafting the L1 deposit.
 		networkRefund := gasRefund
 		if p.state.ArbOSVersion() >= params.ArbosVersion_11 {
@@ -616,6 +633,12 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 		}
 		refund(networkFeeAccount, networkRefund, tracing.BalanceChangeTransferNetworkRefund)
 
+		// Multi-dimensional refund (retryable tx path)
+		if shouldRefundMultiGas {
+			amount := arbmath.BigSub(singleGasCost, multiDimensionalCost)
+			refund(networkFeeAccount, amount, tracing.BalanceChangeMultiGasRefund)
+		}
+
 		if success {
 			// we don't want to charge for this
 			tracingInfo := util.NewTracingInfo(p.evm, arbosAddress, p.msg.From, scenario)
@@ -632,7 +655,7 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 			}
 		}
 		// we've already credited the network fee account, but we didn't charge the gas pool yet
-		p.state.Restrict(p.state.L2PricingState().AddToGasPool(-arbmath.SaturatingCast[int64](gasUsed)))
+		p.state.Restrict(p.state.L2PricingState().GrowBacklog(gasUsed, usedMultiGas))
 		return
 	}
 
@@ -680,6 +703,22 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 		}
 	}
 
+	// Multi-dimensional refund (normal tx path)
+	if multiDimensionalCost != nil {
+		amount := new(big.Int).Sub(totalCost, multiDimensionalCost)
+		if amount.Sign() > 0 {
+			err := util.TransferBalance(
+				&networkFeeAccount,
+				&p.msg.From,
+				amount,
+				p.evm,
+				scenario,
+				tracing.BalanceChangeMultiGasRefund,
+			)
+			p.state.Restrict(err)
+		}
+	}
+
 	if p.msg.GasPrice.Sign() > 0 { // in tests, gas price could be 0
 		// ArbOS's gas pool is meant to enforce the computational speed-limit.
 		// We don't want to remove from the pool the poster's L1 costs (as expressed in L2 gas in this func)
@@ -695,7 +734,9 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 			log.Error("total gas used < poster gas component", "gasUsed", gasUsed, "posterGas", p.posterGas)
 			computeGas = gasUsed
 		}
-		p.state.Restrict(p.state.L2PricingState().AddToGasPool(-arbmath.SaturatingCast[int64](computeGas)))
+		// Poster gas added to multiGas in GasChargingHook as L1CalldataGas
+		usedMultiGas = usedMultiGas.SaturatingDecrement(multigas.ResourceKindL1Calldata, p.posterGas)
+		p.state.Restrict(p.state.L2PricingState().GrowBacklog(computeGas, usedMultiGas))
 	}
 }
 

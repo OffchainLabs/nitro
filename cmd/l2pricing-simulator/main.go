@@ -10,6 +10,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/ethereum/go-ethereum/arbitrum/multigas"
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos/burn"
@@ -53,7 +54,7 @@ func runLegacyModel(args []string) error {
 	for i := range config.Iterations() {
 		baseFee, _ := pricing.BaseFeeWei()
 		gas := gasSimulator.compute(i, baseFee)
-		_ = pricing.AddToGasPool(-arbmath.SaturatingCast[int64](gas))
+		_ = pricing.GrowBacklog(gas, multigas.ComputationGas(gas))
 		pricing.UpdatePricingModel(1)
 		baseFee, _ = pricing.BaseFeeWei()
 		results = append(results, Result{
@@ -102,7 +103,7 @@ func runConstraintsModel(args []string) error {
 	for i := range config.Iterations() {
 		baseFee, _ := pricing.BaseFeeWei()
 		gas := gasSimulator.compute(i, baseFee)
-		_ = pricing.AddToGasPool(-arbmath.SaturatingCast[int64](gas))
+		_ = pricing.GrowBacklog(gas, multigas.ComputationGas(gas))
 		pricing.UpdatePricingModel(1)
 		baseFee, _ = pricing.BaseFeeWei()
 		results = append(results, Result{

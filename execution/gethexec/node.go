@@ -601,15 +601,28 @@ func (n *ExecutionNode) InitializeTimeboost(ctx context.Context, chainConfig *pa
 			return err
 		}
 
-		expressLaneTracker := NewExpressLaneTracker(
+		var isActiveFunc func() bool
+		if n.Sequencer != nil {
+			isActiveFunc = func() bool {
+				pause, forwarder := n.Sequencer.GetPauseAndForwarder()
+				return pause == nil && forwarder == nil
+			}
+		}
+
+		expressLaneTracker, err := NewExpressLaneTracker(
 			*roundTimingInfo,
 			execNodeConfig.Sequencer.MaxBlockSpeed,
 			n.Backend.APIBackend(),
 			auctionContract,
 			auctionContractAddr,
 			chainConfig,
+			uint64(execNodeConfig.Sequencer.MaxTxDataSize), // #nosec G115
 			execNodeConfig.Sequencer.Timeboost.EarlySubmissionGrace,
+			isActiveFunc,
 		)
+		if err != nil {
+			return fmt.Errorf("error creating express lane tracker: %w", err)
+		}
 
 		n.TxPreChecker.SetExpressLaneTracker(expressLaneTracker)
 

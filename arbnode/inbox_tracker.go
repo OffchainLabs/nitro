@@ -39,14 +39,14 @@ type InboxTracker struct {
 	txStreamer     *TransactionStreamer
 	mutex          sync.Mutex
 	validator      *staker.BlockValidator
-	dapReaders     *daprovider.ReaderRegistry
+	dapReaders     *daprovider.DAProviderRegistry
 	snapSyncConfig SnapSyncConfig
 
 	batchMetaMutex sync.Mutex
 	batchMeta      *containers.LruCache[uint64, BatchMetadata]
 }
 
-func NewInboxTracker(db ethdb.Database, txStreamer *TransactionStreamer, dapReaders *daprovider.ReaderRegistry, snapSyncConfig SnapSyncConfig) (*InboxTracker, error) {
+func NewInboxTracker(db ethdb.Database, txStreamer *TransactionStreamer, dapReaders *daprovider.DAProviderRegistry, snapSyncConfig SnapSyncConfig) (*InboxTracker, error) {
 	tracker := &InboxTracker{
 		db:             db,
 		txStreamer:     txStreamer,
@@ -233,6 +233,9 @@ func (t *InboxTracker) FindInboxBatchContainingMessage(pos arbutil.MessageIndex)
 	if err != nil {
 		return 0, false, err
 	}
+	if batchCount == 0 {
+		return 0, false, nil
+	}
 	low := uint64(0)
 	high := batchCount - 1
 	lastBatchMessageCount, err := t.GetBatchMessageCount(high)
@@ -356,15 +359,15 @@ func (t *InboxTracker) legacyGetDelayedMessageAndAccumulator(ctx context.Context
 }
 
 func (t *InboxTracker) GetDelayedMessageAccumulatorAndParentChainBlockNumber(ctx context.Context, seqNum uint64) (*arbostypes.L1IncomingMessage, common.Hash, uint64, error) {
-	msg, acc, blockNum, err := t.getRawDelayedMessageAccumulatorAndParentChainBlockNumber(ctx, seqNum)
+	msg, acc, parentChainBlockNumber, err := t.getRawDelayedMessageAccumulatorAndParentChainBlockNumber(ctx, seqNum)
 	if err != nil {
-		return msg, acc, blockNum, err
+		return msg, acc, parentChainBlockNumber, err
 	}
 	err = msg.FillInBatchGasFields(func(batchNum uint64) ([]byte, error) {
-		data, _, err := t.txStreamer.inboxReader.GetSequencerMessageBytes(ctx, batchNum)
+		data, _, err := t.txStreamer.inboxReader.GetSequencerMessageBytesForParentBlock(ctx, batchNum, parentChainBlockNumber)
 		return data, err
 	})
-	return msg, acc, blockNum, err
+	return msg, acc, parentChainBlockNumber, err
 }
 
 // does not return message, so does not need to fill in batchGasFields

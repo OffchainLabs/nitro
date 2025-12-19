@@ -137,7 +137,7 @@ func testBatchPosterParallel(t *testing.T, useRedis bool, useRedisLock bool) {
 	Require(t, err)
 	seqTxOpts := builder.L1Info.GetDefaultTransactOpts("Sequencer", ctx)
 	builder.nodeConfig.BatchPoster.Enable = true
-	builder.nodeConfig.BatchPoster.MaxSize = len(firstTxData) * 2
+	builder.nodeConfig.BatchPoster.MaxCalldataBatchSize = len(firstTxData) * 2
 	startL1Block, err := builder.L1.Client.BlockNumber(ctx)
 	Require(t, err)
 	parentChainID, err := builder.L1.Client.ChainID(ctx)
@@ -158,7 +158,7 @@ func testBatchPosterParallel(t *testing.T, useRedis bool, useRedisLock bool) {
 				Config:        func() *arbnode.BatchPosterConfig { return &batchPosterConfig },
 				DeployInfo:    builder.L2.ConsensusNode.DeployInfo,
 				TransactOpts:  &seqTxOpts,
-				DAPWriter:     nil,
+				DAPWriters:    nil,
 				ParentChainID: parentChainID,
 			},
 		)
@@ -278,7 +278,7 @@ func TestRedisBatchPosterHandoff(t *testing.T) {
 	Require(t, err)
 	seqTxOpts := builder.L1Info.GetDefaultTransactOpts("Sequencer", ctx)
 	builder.nodeConfig.BatchPoster.Enable = true
-	builder.nodeConfig.BatchPoster.MaxSize = len(firstTxData) * 2
+	builder.nodeConfig.BatchPoster.MaxCalldataBatchSize = len(firstTxData) * 2
 	parentChainID, err := builder.L1.Client.ChainID(ctx)
 	if err != nil {
 		t.Fatalf("Failed to get parent chain id: %v", err)
@@ -298,7 +298,7 @@ func TestRedisBatchPosterHandoff(t *testing.T) {
 				Config:        func() *arbnode.BatchPosterConfig { return &batchPosterConfig },
 				DeployInfo:    builder.L2.ConsensusNode.DeployInfo,
 				TransactOpts:  &seqTxOpts,
-				DAPWriter:     nil,
+				DAPWriters:    nil,
 				ParentChainID: parentChainID,
 			},
 		)
@@ -869,21 +869,12 @@ func TestBatchPosterActuallyPostsBlobsToL1(t *testing.T) {
 	testClientB, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{})
 	defer cleanupB()
 
+	// Post batch and record L1 heights before and after
 	l1HeightBeforeBatch, err := builder.L1.Client.BlockNumber(ctx)
 	require.NoError(t, err)
 
-	// Do some L2 action (to become the batch content)
-	tx := builder.L2Info.PrepareTx("Faucet", "Owner", builder.L2Info.TransferGas, common.Big1, nil)
-	_ = builder.L2.SendWaitTestTransactions(t, []*types.Transaction{tx})[0]
+	checkBatchPosting(t, ctx, builder, testClientB.Client)
 
-	// Advance L1 enough to ensure everything is synced
-	AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, 30)
-
-	// Wait for the batch to be posted and processed by node B
-	_, err = WaitForTx(ctx, testClientB.Client, tx.Hash(), 5*time.Second)
-	Require(t, err)
-
-	// We assume that `builder.L1.Client` has the L1 block that made `testClientB.Client` notice `tx`.
 	l1HeightAfterBatch, err := builder.L1.Client.BlockNumber(ctx)
 	require.NoError(t, err)
 
