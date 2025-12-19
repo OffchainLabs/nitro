@@ -12,24 +12,43 @@ import (
 	"github.com/knadh/koanf/parsers/json"
 	"github.com/spf13/pflag"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
-	"github.com/offchainlabs/nitro/daprovider/das"
-	"github.com/offchainlabs/nitro/daprovider/das/dasserver"
+	"github.com/offchainlabs/nitro/daprovider"
+	"github.com/offchainlabs/nitro/daprovider/anytrust"
+	"github.com/offchainlabs/nitro/daprovider/data_streaming"
+	"github.com/offchainlabs/nitro/daprovider/referenceda"
+	dapserver "github.com/offchainlabs/nitro/daprovider/server"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/signature"
 )
 
+type ParentChainConfig struct {
+	NodeURL               string `koanf:"node-url"`
+	ConnectionAttempts    int    `koanf:"connection-attempts"`
+	SequencerInboxAddress string `koanf:"sequencer-inbox-address"`
+}
+
 type Config struct {
-	DASServer        dasserver.ServerConfig   `koanf:"das-server"`
+	Mode             string                   `koanf:"mode"`
+	ProviderServer   dapserver.ServerConfig   `koanf:"provider-server"`
 	WithDataSigner   bool                     `koanf:"with-data-signer"`
 	DataSignerWallet genericconf.WalletConfig `koanf:"data-signer-wallet"`
+
+	// Shared parent chain connection config
+	ParentChain ParentChainConfig `koanf:"parent-chain"`
+
+	// Mode-specific configs
+	Anytrust    anytrust.Config    `koanf:"anytrust"`
+	ReferenceDA referenceda.Config `koanf:"referenceda"`
 
 	Conf     genericconf.ConfConfig `koanf:"conf"`
 	LogLevel string                 `koanf:"log-level"`
@@ -41,10 +60,20 @@ type Config struct {
 	PprofCfg      genericconf.PProf               `koanf:"pprof-cfg"`
 }
 
+var DefaultParentChainConfig = ParentChainConfig{
+	NodeURL:               "",
+	ConnectionAttempts:    15,
+	SequencerInboxAddress: "",
+}
+
 var DefaultConfig = Config{
-	DASServer:        dasserver.DefaultServerConfig,
+	Mode:             "", // Must be explicitly set
+	ProviderServer:   dapserver.DefaultServerConfig,
 	WithDataSigner:   false,
 	DataSignerWallet: arbnode.DefaultBatchPosterL1WalletConfig,
+	ParentChain:      DefaultParentChainConfig,
+	Anytrust:         anytrust.DefaultConfig,
+	ReferenceDA:      referenceda.DefaultConfig,
 	Conf:             genericconf.ConfConfigDefault,
 	LogLevel:         "INFO",
 	LogType:          "plaintext",
@@ -61,6 +90,7 @@ func printSampleUsage(progname string) {
 
 func parseDAProvider(args []string) (*Config, error) {
 	f := pflag.NewFlagSet("daprovider", pflag.ContinueOnError)
+	f.String("mode", string(DefaultConfig.Mode), "DA provider mode (anytrust or referenceda) - REQUIRED")
 	f.Bool("with-data-signer", DefaultConfig.WithDataSigner, "set to enable data signing when processing store requests. If enabled requires data-signer-wallet config")
 	genericconf.WalletConfigAddOptions("data-signer-wallet", f, DefaultConfig.DataSignerWallet.Pathname)
 
@@ -73,7 +103,17 @@ func parseDAProvider(args []string) (*Config, error) {
 	f.String("log-level", DefaultConfig.LogLevel, "log level, valid values are CRIT, ERROR, WARN, INFO, DEBUG, TRACE")
 	f.String("log-type", DefaultConfig.LogType, "log type (plaintext or json)")
 
-	dasserver.ServerConfigAddOptions("das-server", f)
+	dapserver.ServerConfigAddOptions("provider-server", f)
+
+	// Add shared parent chain connection options
+	f.String("parent-chain.node-url", DefaultParentChainConfig.NodeURL, "URL for parent chain node")
+	f.Int("parent-chain.connection-attempts", DefaultParentChainConfig.ConnectionAttempts, "parent chain RPC connection attempts (spaced out at least 1 second per attempt, 0 to retry infinitely)")
+	f.String("parent-chain.sequencer-inbox-address", DefaultParentChainConfig.SequencerInboxAddress, "parent chain address of SequencerInbox contract")
+
+	// Add mode-specific options
+	anytrust.ConfigAddServerOptions("anytrust", f)
+	referenceda.ConfigAddOptions("referenceda", f)
+
 	genericconf.ConfConfigAddOptions("conf", f)
 
 	k, err := confighelpers.BeginCommonParse(f, args)
@@ -81,7 +121,7 @@ func parseDAProvider(args []string) (*Config, error) {
 		return nil, err
 	}
 
-	if err = das.FixKeysetCLIParsing("das-server.data-availability.rpc-aggregator.backends", k); err != nil {
+	if err = anytrust.FixKeysetCLIParsing("anytrust.rpc-aggregator.backends", k); err != nil {
 		return nil, err
 	}
 
@@ -92,7 +132,8 @@ func parseDAProvider(args []string) (*Config, error) {
 
 	if config.Conf.Dump {
 		err = confighelpers.DumpConfig(k, map[string]interface{}{
-			"das-server.data-availability.key.priv-key": "",
+			"anytrust.key.priv-key":               "",
+			"referenceda.signing-key.private-key": "",
 		})
 		if err != nil {
 			return nil, fmt.Errorf("error removing extra parameters before dump: %w", err)
@@ -117,13 +158,19 @@ func main() {
 }
 
 func startup() error {
-	// Some different defaults to DAS config in a node.
-	das.DefaultDataAvailabilityConfig.Enable = true
+	// Some different defaults to AnyTrust config in a node.
+	anytrust.DefaultConfig.Enable = true
 
 	config, err := parseDAProvider(os.Args[1:])
 	if err != nil {
 		confighelpers.PrintErrorAndExit(err, printSampleUsage)
 	}
+
+	// Validate mode
+	if config.Mode == "" {
+		return errors.New("--mode must be explicitly specified (anytrust or referenceda)")
+	}
+
 	logLevel, err := genericconf.ToSlogLevel(config.LogLevel)
 	if err != nil {
 		confighelpers.PrintErrorAndExit(err, printSampleUsage)
@@ -154,50 +201,136 @@ func startup() error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	if !config.DASServer.DataAvailability.Enable {
-		return errors.New("--das-server.data-availability.enable is a required to start a das-server")
-	}
-
-	if config.DASServer.DataAvailability.ParentChainNodeURL == "" || config.DASServer.DataAvailability.ParentChainNodeURL == "none" {
-		return errors.New("--das-server.data-availability.parent-chain-node-url is a required to start a das-server")
-	}
-
-	if config.DASServer.DataAvailability.SequencerInboxAddress == "" || config.DASServer.DataAvailability.SequencerInboxAddress == "none" {
-		return errors.New("sequencer-inbox-address must be set to a valid L1 URL and contract address")
-	}
-
-	l1Client, err := das.GetL1Client(ctx, config.DASServer.DataAvailability.ParentChainConnectionAttempts, config.DASServer.DataAvailability.ParentChainNodeURL)
-	if err != nil {
-		return err
-	}
-
-	arbSys, _ := precompilesgen.NewArbSys(types.ArbSysAddress, l1Client)
-	l1Reader, err := headerreader.New(ctx, l1Client, func() *headerreader.Config { return &headerreader.DefaultConfig }, arbSys)
-	if err != nil {
-		return err
-	}
-
-	seqInboxAddr, err := das.OptionalAddressFromString(config.DASServer.DataAvailability.SequencerInboxAddress)
-	if err != nil {
-		return err
-	}
-	if seqInboxAddr == nil {
-		return errors.New("must provide --das-server.data-availability.sequencer-inbox-address set to a valid contract address or 'none'")
-	}
-
+	// Mode-specific validation and setup
+	var l1Client *ethclient.Client
+	var l1Reader *headerreader.HeaderReader
+	var seqInboxAddr common.Address
 	var dataSigner signature.DataSignerFunc
-	if config.WithDataSigner && config.DASServer.EnableDAWriter {
-		l1ChainId, err := l1Client.ChainID(ctx)
-		if err != nil {
-			return fmt.Errorf("couldn't read L1 chainid: %w", err)
+
+	if config.Mode == "anytrust" {
+		if !config.Anytrust.Enable {
+			return errors.New("--anytrust.enable is required to start an AnyTrust provider server")
 		}
-		if _, dataSigner, err = util.OpenWallet("data-signer", &config.DataSignerWallet, l1ChainId); err != nil {
+
+		if config.ParentChain.NodeURL == "" {
+			return errors.New("--parent-chain.node-url is required to start an AnyTrust provider server")
+		}
+
+		if config.ParentChain.SequencerInboxAddress == "" {
+			return errors.New("--parent-chain.sequencer-inbox-address must be set to a valid L1 contract address")
+		}
+
+		l1Client, err = anytrust.GetL1Client(ctx, config.ParentChain.ConnectionAttempts, config.ParentChain.NodeURL)
+		if err != nil {
+			return err
+		}
+
+		arbSys, _ := precompilesgen.NewArbSys(types.ArbSysAddress, l1Client)
+		l1Reader, err = headerreader.New(ctx, l1Client, func() *headerreader.Config { return &headerreader.DefaultConfig }, arbSys)
+		if err != nil {
+			return err
+		}
+
+		seqInboxAddrPtr, err := anytrust.OptionalAddressFromString(config.ParentChain.SequencerInboxAddress)
+		if err != nil {
+			return err
+		}
+		if seqInboxAddrPtr == nil {
+			return errors.New("must provide --parent-chain.sequencer-inbox-address set to a valid contract address")
+		}
+		seqInboxAddr = *seqInboxAddrPtr
+
+		if config.WithDataSigner && config.ProviderServer.EnableDAWriter {
+			l1ChainId, err := l1Client.ChainID(ctx)
+			if err != nil {
+				return fmt.Errorf("couldn't read L1 chainid: %w", err)
+			}
+			if _, dataSigner, err = util.OpenWallet("data-signer", &config.DataSignerWallet, l1ChainId); err != nil {
+				return err
+			}
+		}
+	} else if config.Mode == "referenceda" {
+		if !config.ReferenceDA.Enable {
+			return errors.New("--referenceda.enable is required to start a ReferenceDA provider server")
+		}
+		l1Client, err = anytrust.GetL1Client(ctx, config.ParentChain.ConnectionAttempts, config.ParentChain.NodeURL)
+		if err != nil {
 			return err
 		}
 	}
 
-	log.Info("Starting json rpc server", "addr", config.DASServer.Addr, "port", config.DASServer.Port)
-	dasServer, closeFn, err := dasserver.NewServer(ctx, &config.DASServer, dataSigner, l1Client, l1Reader, *seqInboxAddr)
+	// Create reader/writer/validator based on mode
+	var reader daprovider.Reader
+	var writer daprovider.Writer
+	var validator daprovider.Validator
+	var headerBytes []byte
+	var cleanupFuncs []func()
+
+	switch config.Mode {
+	case "anytrust":
+		factory := anytrust.NewFactory(
+			&config.Anytrust,
+			dataSigner,
+			l1Client,
+			l1Reader,
+			seqInboxAddr,
+			config.ProviderServer.EnableDAWriter,
+		)
+		if err := factory.ValidateConfig(); err != nil {
+			return err
+		}
+		var readerCleanup func()
+		reader, readerCleanup, err = factory.CreateReader(ctx)
+		if err != nil {
+			return err
+		}
+		if readerCleanup != nil {
+			cleanupFuncs = append(cleanupFuncs, readerCleanup)
+		}
+		if config.ProviderServer.EnableDAWriter {
+			var writerCleanup func()
+			writer, writerCleanup, err = factory.CreateWriter(ctx)
+			if err != nil {
+				return err
+			}
+			if writerCleanup != nil {
+				cleanupFuncs = append(cleanupFuncs, writerCleanup)
+			}
+		}
+		headerBytes = anytrust.SupportedHeaderBytes
+
+	case "referenceda":
+		factory := referenceda.NewFactory(
+			&config.ReferenceDA,
+			dataSigner,
+			l1Client,
+			config.ProviderServer.EnableDAWriter,
+		)
+		if err := factory.ValidateConfig(); err != nil {
+			return err
+		}
+		reader, _, err = factory.CreateReader(ctx)
+		if err != nil {
+			return err
+		}
+		if config.ProviderServer.EnableDAWriter {
+			writer, _, err = factory.CreateWriter(ctx)
+			if err != nil {
+				return err
+			}
+		}
+		validator, _, err = factory.CreateValidator(ctx)
+		if err != nil {
+			return err
+		}
+		headerBytes = []byte{daprovider.DACertificateMessageHeaderFlag}
+
+	default:
+		return fmt.Errorf("unsupported DA provider mode: %s", config.Mode)
+	}
+
+	log.Info("Starting json rpc server", "mode", config.Mode, "addr", config.ProviderServer.Addr, "port", config.ProviderServer.Port)
+	providerServer, err := dapserver.NewServerWithDAPProvider(ctx, &config.ProviderServer, reader, writer, validator, headerBytes, data_streaming.PayloadCommitmentVerifier())
 	if err != nil {
 		return err
 	}
@@ -208,12 +341,15 @@ func startup() error {
 
 	<-sigint
 
-	if err = dasServer.Shutdown(ctx); err != nil {
+	if err = providerServer.Shutdown(ctx); err != nil {
 		return err
 	}
-	if closeFn != nil {
-		closeFn()
+
+	// Call all cleanup functions
+	for _, cleanup := range cleanupFuncs {
+		cleanup()
 	}
+
 	if l1Reader != nil && l1Reader.Started() {
 		l1Reader.StopAndWait()
 	}

@@ -165,7 +165,7 @@ all: build build-replay-env test-gen-proofs
 	@touch .make/all
 
 .PHONY: build
-build: $(patsubst %,$(output_root)/bin/%, nitro deploy relay daprovider daserver autonomous-auctioneer bidder-client datool el-proxy mockexternalsigner seq-coordinator-invalidate nitro-val seq-coordinator-manager dbconv genesis-generator)
+build: $(patsubst %,$(output_root)/bin/%, nitro deploy relay daprovider anytrustserver autonomous-auctioneer bidder-client anytrusttool blobtool el-proxy mockexternalsigner seq-coordinator-invalidate nitro-val seq-coordinator-manager dbconv genesis-generator)
 	@printf $(done)
 
 .PHONY: build-node-deps
@@ -315,8 +315,8 @@ $(output_root)/bin/relay: $(DEP_PREDICATE) build-node-deps
 $(output_root)/bin/daprovider: $(DEP_PREDICATE) build-node-deps
 	go build $(GOLANG_PARAMS) -o $@ "$(CURDIR)/cmd/daprovider"
 
-$(output_root)/bin/daserver: $(DEP_PREDICATE) build-node-deps
-	go build $(GOLANG_PARAMS) -o $@ "$(CURDIR)/cmd/daserver"
+$(output_root)/bin/anytrustserver: $(DEP_PREDICATE) build-node-deps
+	go build $(GOLANG_PARAMS) -o $@ "$(CURDIR)/cmd/anytrustserver"
 
 $(output_root)/bin/autonomous-auctioneer: $(DEP_PREDICATE) build-node-deps
 	go build $(GOLANG_PARAMS) -o $@ "$(CURDIR)/cmd/autonomous-auctioneer"
@@ -327,8 +327,11 @@ $(output_root)/bin/bidder-client: $(DEP_PREDICATE) build-node-deps
 $(output_root)/bin/el-proxy: $(DEP_PREDICATE) build-node-deps
 	go build $(GOLANG_PARAMS) -o $@ "$(CURDIR)/cmd/el-proxy"
 
-$(output_root)/bin/datool: $(DEP_PREDICATE) build-node-deps
-	go build $(GOLANG_PARAMS) -o $@ "$(CURDIR)/cmd/datool"
+$(output_root)/bin/anytrusttool: $(DEP_PREDICATE) build-node-deps
+	go build $(GOLANG_PARAMS) -o $@ "$(CURDIR)/cmd/anytrusttool"
+
+$(output_root)/bin/blobtool: $(DEP_PREDICATE) build-node-deps
+	go build $(GOLANG_PARAMS) -o $@ "$(CURDIR)/cmd/blobtool"
 
 $(output_root)/bin/genesis-generator: $(DEP_PREDICATE) build-node-deps
 	go build $(GOLANG_PARAMS) -o $@ "$(CURDIR)/cmd/genesis-generator"
@@ -609,14 +612,14 @@ contracts/test/prover/proofs/%.json: $(arbitrator_cases)/%.wasm $(prover_bin)
 	yarn --cwd contracts build:forge:yul
 	yarn --cwd contracts-legacy build
 	yarn --cwd contracts-legacy build:forge:yul
-	make -C contracts-local build
+	+make -C contracts-local build
 	@touch $@
 
 .make/yarndeps: $(DEP_PREDICATE) */package.json */yarn.lock $(ORDER_ONLY_PREDICATE) .make
 	npm --prefix safe-smart-account install
 	yarn --cwd contracts install
 	yarn --cwd contracts-legacy install
-	make -C contracts-local install
+	+make -C contracts-local install
 	@touch $@
 
 .make/cbrotli-lib: $(DEP_PREDICATE) $(ORDER_ONLY_PREDICATE) .make

@@ -527,6 +527,10 @@ func (sbu *StorageBackedUint32) Set(value uint32) error {
 	return sbu.StorageSlot.Set(common.BigToHash(bigValue))
 }
 
+func (sbu *StorageBackedUint32) Clear() error {
+	return sbu.Set(0)
+}
+
 type StorageBackedUint64 struct {
 	StorageSlot
 }

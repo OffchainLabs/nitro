@@ -16,10 +16,10 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/bold/api"
-	"github.com/offchainlabs/nitro/bold/chain-abstraction"
 	"github.com/offchainlabs/nitro/bold/containers/option"
-	"github.com/offchainlabs/nitro/bold/layer2-state-provider"
-	"github.com/offchainlabs/nitro/bold/runtime"
+	"github.com/offchainlabs/nitro/bold/protocol"
+	"github.com/offchainlabs/nitro/bold/retry"
+	"github.com/offchainlabs/nitro/bold/state"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 )
 
@@ -286,7 +286,7 @@ func (m *Manager) findCanonicalAssertionBranch(
 			agreedWithAssertion, err := retry.UntilSucceeds(ctx, func() (bool, error) {
 				expectedState, err := m.ExecutionStateAfterParent(ctx, fullInfo.parent)
 				switch {
-				case errors.Is(err, l2stateprovider.ErrChainCatchingUp):
+				case errors.Is(err, state.ErrChainCatchingUp):
 					// Otherwise, we return the error that we are still catching up to the
 					// execution state claimed by the assertion, and this function will be retried
 					// by the caller if wrapped in a retryable call.
@@ -295,12 +295,15 @@ func (m *Manager) findCanonicalAssertionBranch(
 						"will reattempt processing when caught up", "err", err)
 					// If the chain is catching up, we wait for a bit and try again.
 					time.Sleep(m.times.avgBlockTime / 10)
-					return false, l2stateprovider.ErrChainCatchingUp
+					return false, state.ErrChainCatchingUp
 				case err != nil:
 					return false, err
 				}
 				return expectedState.Equals(protocol.GoExecutionStateFromSolidity(assertion.AfterState)), nil
-			}, func(rc *retry.RetryConfig) { rc.LevelWarningError = "could not check if we have result at count" })
+			}, func(rc *retry.RetryConfig) {
+				rc.LevelWarningError = "could not check if we have result at count"
+				rc.LevelInfoError = state.ErrChainCatchingUp.Error()
+			})
 			if err != nil {
 				return errors.New("could not check for assertion agreements")
 			}

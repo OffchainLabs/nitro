@@ -12,6 +12,7 @@ type BatchInfo struct {
 	Data   []byte
 }
 
+// lint:require-exhaustive-initialization
 type ValidationInput struct {
 	Id            uint64
 	HasDelayedMsg bool

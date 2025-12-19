@@ -48,20 +48,20 @@ import (
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbnode/resourcemanager"
 	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/offchainlabs/nitro/blocks_reexecutor"
+	blocksreexecutor "github.com/offchainlabs/nitro/blocks_reexecutor"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
 	"github.com/offchainlabs/nitro/daprovider"
-	"github.com/offchainlabs/nitro/daprovider/das"
+	"github.com/offchainlabs/nitro/daprovider/anytrust"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	_ "github.com/offchainlabs/nitro/execution/nodeInterface"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
-	"github.com/offchainlabs/nitro/staker/legacy"
+	legacystaker "github.com/offchainlabs/nitro/staker/legacy"
 	"github.com/offchainlabs/nitro/staker/validatorwallet"
 	nitroutil "github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/colors"
@@ -228,7 +228,7 @@ func mainImpl() int {
 	// If sequencer and signing is enabled or batchposter is enabled without
 	// external signing sequencer will need a key.
 	sequencerNeedsKey := (nodeConfig.Node.Sequencer && nodeConfig.Node.Feed.Output.Signed) ||
-		(nodeConfig.Node.BatchPoster.Enable && (nodeConfig.Node.BatchPoster.DataPoster.ExternalSigner.URL == "" || nodeConfig.Node.DataAvailability.Enable))
+		(nodeConfig.Node.BatchPoster.Enable && (nodeConfig.Node.BatchPoster.DataPoster.ExternalSigner.URL == "" || nodeConfig.Node.DA.AnyTrust.Enable))
 	validatorNeedsKey := nodeConfig.Node.Staker.OnlyCreateWalletContract ||
 		(nodeConfig.Node.Staker.Enable && !strings.EqualFold(nodeConfig.Node.Staker.Strategy, "watchtower") && nodeConfig.Node.Staker.DataPoster.ExternalSigner.URL == "")
 
@@ -453,7 +453,7 @@ func mainImpl() int {
 		return 1
 	}
 
-	arbDb, err := stack.OpenDatabaseWithOptions("arbitrumdata", node.DatabaseOptions{MetricsNamespace: "arbitrumdata/", PebbleExtraOptions: nodeConfig.Persistent.Pebble.ExtraOptions("arbitrumdata")})
+	arbDb, err := stack.OpenDatabaseWithOptions("arbitrumdata", node.DatabaseOptions{MetricsNamespace: "arbitrumdata/", PebbleExtraOptions: nodeConfig.Persistent.Pebble.ExtraOptions("arbitrumdata"), NoFreezer: true})
 	deferFuncs = append(deferFuncs, func() { closeDb(arbDb, "arbDb") })
 	if err != nil {
 		log.Error("failed to open database", "err", err)
@@ -503,9 +503,9 @@ func mainImpl() int {
 		return 1
 	}
 
-	if l2BlockChain.Config().ArbitrumChainParams.DataAvailabilityCommittee != nodeConfig.Node.DataAvailability.Enable {
+	if l2BlockChain.Config().ArbitrumChainParams.DataAvailabilityCommittee != nodeConfig.Node.DA.AnyTrust.Enable {
 		pflag.Usage()
-		log.Error(fmt.Sprintf("data availability service usage for this chain is set to %v but --node.data-availability.enable is set to %v", l2BlockChain.Config().ArbitrumChainParams.DataAvailabilityCommittee, nodeConfig.Node.DataAvailability.Enable))
+		log.Error(fmt.Sprintf("AnyTrust DA usage for this chain is set to %v but --node.da.anytrust.enable is set to %v", l2BlockChain.Config().ArbitrumChainParams.DataAvailabilityCommittee, nodeConfig.Node.DA.AnyTrust.Enable))
 		return 1
 	}
 
@@ -528,7 +528,7 @@ func mainImpl() int {
 		chainDb,
 		l2BlockChain,
 		l1Client,
-		func() *gethexec.Config { return &liveNodeConfig.Get().Execution },
+		&ExecutionNodeConfigFetcher{liveNodeConfig},
 		new(big.Int).SetUint64(nodeConfig.ParentChain.ID),
 		liveNodeConfig.Get().Node.TransactionStreamer.SyncTillBlock,
 	)
@@ -553,7 +553,7 @@ func mainImpl() int {
 		execNode,
 		execNode,
 		arbDb,
-		&NodeConfigFetcher{liveNodeConfig},
+		&ConsensusNodeConfigFetcher{liveNodeConfig},
 		l2BlockChain.Config(),
 		l1Client,
 		&rollupAddrs,
@@ -587,22 +587,22 @@ func mainImpl() int {
 			return 1
 		}
 	}
-	// If batchPoster is enabled, validate MaxSize to be at least 10kB below the sequencer inbox’s maxDataSize if the data availability service is not enabled.
-	// The 10kB gap is because its possible for the batch poster to exceed its MaxSize limit and produce batches of slightly larger size.
-	if nodeConfig.Node.BatchPoster.Enable && !nodeConfig.Node.DataAvailability.Enable {
-		if nodeConfig.Node.BatchPoster.MaxSize > seqInboxMaxDataSize-10000 {
-			log.Error("batchPoster's MaxSize is too large")
+	// If batchPoster is enabled, validate MaxCalldataBatchSize to be at least 10kB below the sequencer inbox's maxDataSize if AnyTrust DA is not enabled.
+	// The 10kB gap is because its possible for the batch poster to exceed its MaxCalldataBatchSize limit and produce batches of slightly larger size.
+	if nodeConfig.Node.BatchPoster.Enable && !nodeConfig.Node.DA.AnyTrust.Enable {
+		if nodeConfig.Node.BatchPoster.MaxCalldataBatchSize > seqInboxMaxDataSize-10000 {
+			log.Error("batchPoster's MaxCalldataBatchSize is too large")
 			return 1
 		}
 	}
 
 	if nodeConfig.Execution.Sequencer.Enable {
-		// Validate MaxTxDataSize to be at least 5kB below the batch poster's MaxSize to allow space for headers and such.
-		if nodeConfig.Execution.Sequencer.MaxTxDataSize > nodeConfig.Node.BatchPoster.MaxSize-5000 {
-			log.Error("sequencer's MaxTxDataSize too large compared to the batchPoster's MaxSize")
+		// Validate MaxTxDataSize to be at least 5kB below the batch poster's MaxCalldataBatchSize to allow space for headers and such.
+		if nodeConfig.Execution.Sequencer.MaxTxDataSize > nodeConfig.Node.BatchPoster.MaxCalldataBatchSize-5000 {
+			log.Error("sequencer's MaxTxDataSize too large compared to the batchPoster's MaxCalldataBatchSize")
 			return 1
 		}
-		// Since the batchposter's MaxSize must be at least 10kB below the sequencer inbox’s maxDataSize, then MaxTxDataSize must also be 15kB below the sequencer inbox’s maxDataSize.
+		// Since the batchposter's MaxCalldataBatchSize must be at least 10kB below the sequencer inbox's maxDataSize, then MaxTxDataSize must also be 15kB below the sequencer inbox's maxDataSize.
 		if nodeConfig.Execution.Sequencer.MaxTxDataSize > seqInboxMaxDataSize-15000 && !nodeConfig.Execution.Sequencer.Dangerous.DisableSeqInboxMaxDataSizeCheck {
 			log.Error("sequencer's MaxTxDataSize too large compared to the sequencer inbox's MaxDataSize")
 			return 1
@@ -909,8 +909,9 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 	l2ChainName := k.String("chain.name")
 	l2ChainInfoFiles := k.Strings("chain.info-files")
 	l2ChainInfoJson := k.String("chain.info-json")
+	l2GenesisJsonFile := k.String("init.genesis-json-file")
 	// #nosec G115
-	err = applyChainParameters(k, uint64(l2ChainId), l2ChainName, l2ChainInfoFiles, l2ChainInfoJson)
+	err = applyChainParameters(k, uint64(l2ChainId), l2ChainName, l2ChainInfoFiles, l2ChainInfoJson, l2GenesisJsonFile)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -920,7 +921,10 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 		return nil, nil, err
 	}
 
-	if err = das.FixKeysetCLIParsing("node.data-availability.rpc-aggregator.backends", k); err != nil {
+	if err = anytrust.FixKeysetCLIParsing("node.data-availability.rpc-aggregator.backends", k); err != nil {
+		return nil, nil, err
+	}
+	if err = anytrust.FixKeysetCLIParsing("node.da.anytrust.rpc-aggregator.backends", k); err != nil {
 		return nil, nil, err
 	}
 
@@ -928,6 +932,9 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 	if err := confighelpers.EndCommonParse(k, &nodeConfig); err != nil {
 		return nil, nil, err
 	}
+
+	// Migrate deprecated --node.data-availability.* to --node.da.anytrust.*
+	nodeConfig.Node.MigrateDeprecatedConfig()
 
 	// Don't print wallet passwords
 	if nodeConfig.Conf.Dump {
@@ -974,7 +981,7 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 	return &nodeConfig, &l2DevWallet, nil
 }
 
-func applyChainParameters(k *koanf.Koanf, chainId uint64, chainName string, l2ChainInfoFiles []string, l2ChainInfoJson string) error {
+func applyChainParameters(k *koanf.Koanf, chainId uint64, chainName string, l2ChainInfoFiles []string, l2ChainInfoJson string, l2GenesisJsonFile string) error {
 	chainInfo, err := chaininfo.ProcessChainInfo(chainId, chainName, l2ChainInfoFiles, l2ChainInfoJson)
 	if err != nil {
 		return err
@@ -1012,13 +1019,15 @@ func applyChainParameters(k *koanf.Koanf, chainId uint64, chainName string, l2Ch
 		chainDefaults["node.feed.input.verify.dangerous.accept-missing"] = false
 	}
 	if chainInfo.DasIndexUrl != "" {
-		chainDefaults["node.data-availability.enable"] = true
-		chainDefaults["node.data-availability.rest-aggregator.enable"] = true
-		chainDefaults["node.data-availability.rest-aggregator.online-url-list"] = chainInfo.DasIndexUrl
+		// Set defaults at the new AnyTrust config path only
+		// Users of old --node.data-availability.* flags will be migrated
+		chainDefaults["node.da.anytrust.enable"] = true
+		chainDefaults["node.da.anytrust.rest-aggregator.enable"] = true
+		chainDefaults["node.da.anytrust.rest-aggregator.online-url-list"] = chainInfo.DasIndexUrl
 	} else if chainInfo.ChainConfig.ArbitrumChainParams.DataAvailabilityCommittee {
-		chainDefaults["node.data-availability.enable"] = true
+		chainDefaults["node.da.anytrust.enable"] = true
 	}
-	if !chainInfo.HasGenesisState {
+	if !chainInfo.HasGenesisState && l2GenesisJsonFile == "" {
 		chainDefaults["init.empty"] = true
 	}
 	if parentChainIsArbitrum {
@@ -1028,14 +1037,14 @@ func applyChainParameters(k *koanf.Koanf, chainId uint64, chainName string, l2Ch
 			return fmt.Errorf("not enough room in parent chain max tx size %v for bufferSpace %v * 2", l2MaxTxSize, bufferSpace)
 		}
 		safeBatchSize := l2MaxTxSize - bufferSpace
-		chainDefaults["node.batch-poster.max-size"] = safeBatchSize
+		chainDefaults["node.batch-poster.max-calldata-batch-size"] = safeBatchSize
 		chainDefaults["execution.sequencer.max-tx-data-size"] = safeBatchSize - bufferSpace
 		// Arbitrum chains produce blocks more quickly, so the inbox reader should read more blocks at once.
 		// Even if this is too large, on error the inbox reader will reset its query size down to the default.
 		chainDefaults["node.inbox-reader.max-blocks-to-read"] = 10_000
 	}
 	if chainInfo.DasIndexUrl != "" {
-		chainDefaults["node.batch-poster.max-size"] = 1_000_000
+		chainDefaults["node.batch-poster.max-calldata-batch-size"] = 1_000_000
 	}
 	// 0 is default for any chain unless specified in the chain_defaults
 	chainDefaults["node.transaction-streamer.track-block-metadata-from"] = chainInfo.TrackBlockMetadataFrom
@@ -1087,12 +1096,20 @@ func initReorg(initConfig conf.InitConfig, chainConfig *params.ChainConfig, inbo
 	return inboxTracker.ReorgBatchesTo(batchCount)
 }
 
-type NodeConfigFetcher struct {
+type ConsensusNodeConfigFetcher struct {
 	*genericconf.LiveConfig[*NodeConfig]
 }
 
-func (f *NodeConfigFetcher) Get() *arbnode.Config {
+func (f *ConsensusNodeConfigFetcher) Get() *arbnode.Config {
 	return &f.LiveConfig.Get().Node
+}
+
+type ExecutionNodeConfigFetcher struct {
+	*genericconf.LiveConfig[*NodeConfig]
+}
+
+func (f *ExecutionNodeConfigFetcher) Get() *gethexec.Config {
+	return &f.LiveConfig.Get().Execution
 }
 
 func checkWasmModuleRootCompatibility(ctx context.Context, wasmConfig valnode.WasmConfig, l1Client *ethclient.Client, rollupAddrs chaininfo.RollupAddresses) error {

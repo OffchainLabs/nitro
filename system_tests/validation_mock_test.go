@@ -32,6 +32,7 @@ import (
 type mockSpawner struct {
 	ExecSpawned []uint64
 	LaunchDelay time.Duration
+	capacity    int // if 0, defaults to 4
 }
 
 var blockHashKey = common.HexToHash("0x11223344")
@@ -83,7 +84,12 @@ func (s *mockSpawner) Start(context.Context) error {
 }
 func (s *mockSpawner) Stop()        {}
 func (s *mockSpawner) Name() string { return "mock" }
-func (s *mockSpawner) Room() int    { return 4 }
+func (s *mockSpawner) Capacity() int {
+	if s.capacity == 0 {
+		return 4
+	}
+	return s.capacity
+}
 
 func (s *mockSpawner) CreateExecutionRun(wasmModuleRoot common.Hash, input *validator.ValidationInput, _ bool) containers.PromiseInterface[validator.ExecutionRun] {
 	s.ExecSpawned = append(s.ExecSpawned, input.Id)
@@ -238,10 +244,17 @@ func TestValidationServerAPI(t *testing.T) {
 	}
 
 	valInput := validator.ValidationInput{
-		StartState: startState,
+		Id:            0,
+		HasDelayedMsg: false,
+		DelayedMsgNr:  0,
 		Preimages: daprovider.PreimagesMap{
 			arbutil.Keccak256PreimageType: globalstateToTestPreimages(endState),
 		},
+		UserWasms:  make(map[rawdb.WasmTarget]map[common.Hash][]byte),
+		BatchInfo:  []validator.BatchInfo{},
+		DelayedMsg: []byte{},
+		StartState: startState,
+		DebugChain: false,
 	}
 	valRun := client.Launch(&valInput, mockWasmModuleRoots[0])
 	res, err := valRun.Await(ctx)
@@ -271,16 +284,16 @@ func TestValidationServerAPI(t *testing.T) {
 	}
 }
 
-func TestValidationClientRoom(t *testing.T) {
+func TestThrottledValidationSpawner(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	mockSpawner, spawnerStack := createMockValidationNode(t, ctx, nil)
-	client := client.NewExecutionClient(StaticFetcherFrom(t, &rpcclient.TestClientConfig), spawnerStack)
-	err := client.Start(ctx)
-	Require(t, err)
 
-	if client.Room() != 4 {
-		Fatal(t, "wrong initial room ", client.Room())
+	spawner := &mockSpawner{} // capacity defaults to 4
+	throttled := staker.NewThrottledValidationSpawner(spawner)
+
+	// Test initial state - should have full capacity
+	if !throttled.Throttler.HasCapacity() {
+		Fatal(t, "should have capacity initially")
 	}
 
 	hash1 := common.HexToHash("0x11223344556677889900aabbccddeeff")
@@ -300,52 +313,82 @@ func TestValidationClientRoom(t *testing.T) {
 	}
 
 	valInput := validator.ValidationInput{
-		StartState: startState,
+		Id:            0,
+		HasDelayedMsg: false,
+		DelayedMsgNr:  0,
 		Preimages: daprovider.PreimagesMap{
 			arbutil.Keccak256PreimageType: globalstateToTestPreimages(endState),
 		},
+		UserWasms:  make(map[rawdb.WasmTarget]map[common.Hash][]byte),
+		BatchInfo:  []validator.BatchInfo{},
+		DelayedMsg: []byte{},
+		StartState: startState,
+		DebugChain: false,
 	}
 
+	// Launch 4 validations without delay - they complete immediately
 	valRuns := make([]validator.ValidationRun, 0, 4)
-
 	for i := 0; i < 4; i++ {
-		valRun := client.Launch(&valInput, mockWasmModuleRoots[0])
+		if !throttled.Throttler.HasCapacity() {
+			Fatal(t, "should have capacity before launch", i)
+		}
+		throttled.Throttler.Acquire()
+		valRun := throttled.Spawner.Launch(&valInput, mockWasmModuleRoots[0])
 		valRuns = append(valRuns, valRun)
 	}
 
+	// After acquiring 4, should have no capacity
+	if throttled.Throttler.HasCapacity() {
+		Fatal(t, "should NOT have capacity after 4 acquires")
+	}
+
+	// Await and release
 	for i := range valRuns {
 		_, err := valRuns[i].Await(ctx)
 		Require(t, err)
+		throttled.Throttler.Release()
 	}
 
-	if client.Room() != 4 {
-		Fatal(t, "wrong room after launch", client.Room())
+	// After releasing all, should have capacity again
+	if !throttled.Throttler.HasCapacity() {
+		Fatal(t, "should have capacity after all releases")
 	}
 
-	mockSpawner.LaunchDelay = time.Hour
+	// Test with delay - validations block so we can observe capacity changes
+	spawner.LaunchDelay = time.Hour
 
-	valRuns = make([]validator.ValidationRun, 0, 3)
-
+	delayedRuns := make([]validator.ValidationRun, 0, 4)
 	for i := 0; i < 4; i++ {
-		valRun := client.Launch(&valInput, mockWasmModuleRoots[0])
-		valRuns = append(valRuns, valRun)
-		room := client.Room()
-		if room != 3-i {
-			Fatal(t, "wrong room after launch ", room, " expected: ", 4-i)
+		if !throttled.Throttler.HasCapacity() {
+			Fatal(t, "should have capacity before delayed launch", i)
 		}
+		throttled.Throttler.Acquire()
+		// Launch in goroutine since it blocks due to delay
+		go func() {
+			run := throttled.Spawner.Launch(&valInput, mockWasmModuleRoots[0])
+			delayedRuns = append(delayedRuns, run)
+		}()
 	}
 
-	for i := range valRuns {
-		valRuns[i].Cancel()
-		_, err := valRuns[i].Await(ctx)
-		if err == nil {
-			Fatal(t, "no error returned after cancel i:", i)
-		}
+	// All 4 slots acquired - should have no capacity
+	if throttled.Throttler.HasCapacity() {
+		Fatal(t, "should NOT have capacity after 4 acquires with delay")
 	}
 
-	room := client.Room()
-	if room != 4 {
-		Fatal(t, "wrong room after canceling runs: ", room)
+	// Release one and verify capacity returns
+	throttled.Throttler.Release()
+	if !throttled.Throttler.HasCapacity() {
+		Fatal(t, "should have capacity after one release")
+	}
+
+	// Release remaining 3
+	for i := 0; i < 3; i++ {
+		throttled.Throttler.Release()
+	}
+
+	// Should have full capacity again
+	if !throttled.Throttler.HasCapacity() {
+		Fatal(t, "should have capacity after all releases")
 	}
 }
 
@@ -365,7 +408,17 @@ func TestExecutionKeepAlive(t *testing.T) {
 	err = clientShortTO.Start(ctx)
 	Require(t, err)
 
-	valInput := validator.ValidationInput{}
+	valInput := validator.ValidationInput{
+		Id:            0,
+		HasDelayedMsg: false,
+		DelayedMsgNr:  0,
+		Preimages:     daprovider.PreimagesMap{},
+		UserWasms:     make(map[rawdb.WasmTarget]map[common.Hash][]byte),
+		BatchInfo:     []validator.BatchInfo{},
+		DelayedMsg:    []byte{},
+		StartState:    validator.GoGlobalState{},
+		DebugChain:    false,
+	}
 	runDefault, err := clientDefault.CreateExecutionRun(mockWasmModuleRoots[0], &valInput, false).Await(ctx)
 	Require(t, err)
 	runShortTO, err := clientShortTO.CreateExecutionRun(mockWasmModuleRoots[0], &valInput, false).Await(ctx)

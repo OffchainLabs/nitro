@@ -9,10 +9,10 @@ import (
 
 	"github.com/ethereum/go-ethereum/core/types"
 
-	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
+	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
@@ -79,7 +79,7 @@ func TestBlockGasLimit(t *testing.T) {
 		RequestId:   nil,
 		L1BaseFee:   nil,
 	}
-	hooks := arbos.NoopSequencingHooks(txes)
+	hooks := gethexec.MakeZeroTxSizeSequencingHooksForTesting(txes, nil, nil, nil)
 	_, err = b.L2.ExecNode.ExecEngine.SequenceTransactions(header, hooks, nil)
 	Require(t, err)
 

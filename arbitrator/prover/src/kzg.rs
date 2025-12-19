@@ -41,7 +41,7 @@ pub fn prove_kzg_preimage(
     let commitment = ETHEREUM_KZG_SETTINGS
         .blob_to_kzg_commitment(&blob)
         .wrap_err("Failed to generate KZG commitment from blob")?;
-    let mut expected_hash: Bytes32 = Sha256::digest(&*commitment).into();
+    let mut expected_hash: Bytes32 = Sha256::digest(*commitment).into();
     expected_hash[0] = 1;
     ensure!(
         hash == expected_hash,

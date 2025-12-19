@@ -80,11 +80,14 @@ func (w *execClientWrapper) FullSyncProgressMap(ctx context.Context) map[string]
 	return nil
 }
 func (w *execClientWrapper) SetFinalityData(
-	ctx context.Context,
 	safeFinalityData *arbutil.FinalityData,
 	finalizedFinalityData *arbutil.FinalityData,
 	validatedFinalityData *arbutil.FinalityData,
 ) containers.PromiseInterface[struct{}] {
+	return containers.NewReadyPromise(struct{}{}, nil)
+}
+
+func (w *execClientWrapper) SetConsensusSyncData(syncData *execution.ConsensusSyncData) containers.PromiseInterface[struct{}] {
 	return containers.NewReadyPromise(struct{}{}, nil)
 }
 
@@ -114,6 +117,10 @@ func (w *execClientWrapper) MessageIndexToBlockNumber(messageNum arbutil.Message
 
 func (w *execClientWrapper) BlockNumberToMessageIndex(blockNum uint64) containers.PromiseInterface[arbutil.MessageIndex] {
 	return containers.NewReadyPromise(w.ExecutionEngine.BlockNumberToMessageIndex(blockNum))
+}
+
+func (w *execClientWrapper) ArbOSVersionForMessageIndex(msgIdx arbutil.MessageIndex) containers.PromiseInterface[uint64] {
+	return w.ExecutionEngine.ArbOSVersionForMessageIndex(msgIdx)
 }
 
 func (w *execClientWrapper) StopAndWait() {
