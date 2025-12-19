@@ -274,3 +274,45 @@ func TestAddressFilterCreate(t *testing.T) {
 	_, err = builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
 }
+
+func TestAddressFilterSelfdestruct(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	builder.isSequencer = true
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	// Deploy contract that will selfdestruct
+	_, contract := deployAddressFilterTestContract(t, ctx, builder)
+
+	// Create a target address to be filtered (the selfdestruct beneficiary)
+	builder.L2Info.GenerateAccount("FilteredBeneficiary")
+	filteredAddr := builder.L2Info.GetAddress("FilteredBeneficiary")
+
+	// Set up filter to block the beneficiary
+	filter := txfilter.NewStaticFilter([]common.Address{filteredAddr})
+	builder.L2.ExecNode.Sequencer.SetAddressFilter(filter)
+
+	// Test: SELFDESTRUCT to filtered beneficiary should fail
+	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
+	_, err := contract.SelfDestructTo(&auth, filteredAddr)
+	if err == nil {
+		t.Fatal("expected SELFDESTRUCT to filtered beneficiary to be rejected")
+	}
+	if !strings.Contains(err.Error(), "filtered") {
+		t.Fatalf("expected filtered error, got: %v", err)
+	}
+
+	// Deploy another contract and test with non-filtered beneficiary
+	_, contract2 := deployAddressFilterTestContract(t, ctx, builder)
+	builder.L2Info.GenerateAccount("CleanBeneficiary")
+	cleanAddr := builder.L2Info.GetAddress("CleanBeneficiary")
+
+	auth = builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
+	tx, err := contract2.SelfDestructTo(&auth, cleanAddr)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+}

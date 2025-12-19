@@ -53,4 +53,9 @@ contract AddressFilterTest {
         bytes32 hash = keccak256(abi.encodePacked(bytes1(0xff), address(this), salt, keccak256(bytecode)));
         return address(uint160(uint256(hash)));
     }
+
+    /// @notice Selfdestructs this contract and sends balance to beneficiary
+    function selfDestructTo(address payable beneficiary) external {
+        selfdestruct(beneficiary);
+    }
 }
