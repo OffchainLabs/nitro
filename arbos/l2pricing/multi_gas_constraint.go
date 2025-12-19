@@ -21,7 +21,7 @@ const (
 	targetOffset uint64 = iota
 	adjustmentWindowOffset
 	backlogOffset
-	sumWeightsOffset
+	maxWeightOffset
 	weightedResourcesBaseOffset
 )
 
@@ -31,7 +31,7 @@ type MultiGasConstraint struct {
 	target            storage.StorageBackedUint64
 	adjustmentWindow  storage.StorageBackedUint32
 	backlog           storage.StorageBackedUint64
-	sumWeights        storage.StorageBackedUint64
+	maxWeight         storage.StorageBackedUint64
 	weightedResources [multigas.NumResourceKind]storage.StorageBackedUint64
 }
 
@@ -41,7 +41,7 @@ func OpenMultiGasConstraint(sto *storage.Storage) *MultiGasConstraint {
 		target:           sto.OpenStorageBackedUint64(targetOffset),
 		adjustmentWindow: sto.OpenStorageBackedUint32(adjustmentWindowOffset),
 		backlog:          sto.OpenStorageBackedUint64(backlogOffset),
-		sumWeights:       sto.OpenStorageBackedUint64(sumWeightsOffset),
+		maxWeight:        sto.OpenStorageBackedUint64(maxWeightOffset),
 	}
 	for i := range int(multigas.NumResourceKind) {
 		// #nosec G115 safe: NumResourceKind < 2^32
@@ -62,7 +62,7 @@ func (c *MultiGasConstraint) Clear() error {
 	if err := c.backlog.Clear(); err != nil {
 		return err
 	}
-	if err := c.sumWeights.Clear(); err != nil {
+	if err := c.maxWeight.Clear(); err != nil {
 		return err
 	}
 	for i := range int(multigas.NumResourceKind) {
@@ -75,12 +75,14 @@ func (c *MultiGasConstraint) Clear() error {
 
 // SetResourceWeights assigns per-resource weight multipliers for this constraint.
 func (c *MultiGasConstraint) SetResourceWeights(weights map[uint8]uint64) error {
-	var total uint64
+	var maxWeight uint64
 	for kind, weight := range weights {
 		if _, err := multigas.CheckResourceKind(kind); err != nil {
 			return err
 		}
-		total = arbmath.SaturatingUAdd(total, weight)
+		if weight > maxWeight {
+			maxWeight = weight
+		}
 	}
 	for i := range int(multigas.NumResourceKind) {
 		// #nosec G115 safe: NumResourceKind < 2^32
@@ -89,7 +91,7 @@ func (c *MultiGasConstraint) SetResourceWeights(weights map[uint8]uint64) error 
 			return err
 		}
 	}
-	return c.sumWeights.Set(total)
+	return c.maxWeight.Set(maxWeight)
 }
 
 // GrowBacklog adds the resource usage in multiGas to this constraint's backlog.
@@ -156,8 +158,8 @@ func (c *MultiGasConstraint) ResourceWeight(kind uint8) (uint64, error) {
 	return c.weightedResources[kind].Get()
 }
 
-func (c *MultiGasConstraint) SumWeights() (uint64, error) {
-	return c.sumWeights.Get()
+func (c *MultiGasConstraint) MaxWeight() (uint64, error) {
+	return c.maxWeight.Get()
 }
 
 func (c *MultiGasConstraint) ResourcesWithWeights() (map[multigas.ResourceKind]uint64, error) {

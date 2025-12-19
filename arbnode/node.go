@@ -34,9 +34,9 @@ import (
 	"github.com/offchainlabs/nitro/broadcaster"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/daprovider"
+	"github.com/offchainlabs/nitro/daprovider/anytrust"
 	daconfig "github.com/offchainlabs/nitro/daprovider/config"
 	"github.com/offchainlabs/nitro/daprovider/daclient"
-	"github.com/offchainlabs/nitro/daprovider/das"
 	"github.com/offchainlabs/nitro/daprovider/data_streaming"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/execution/gethexec"
@@ -57,18 +57,19 @@ import (
 )
 
 type Config struct {
-	Sequencer                bool                           `koanf:"sequencer"`
-	ParentChainReader        headerreader.Config            `koanf:"parent-chain-reader" reload:"hot"`
-	InboxReader              InboxReaderConfig              `koanf:"inbox-reader" reload:"hot"`
-	DelayedSequencer         DelayedSequencerConfig         `koanf:"delayed-sequencer" reload:"hot"`
-	BatchPoster              BatchPosterConfig              `koanf:"batch-poster" reload:"hot"`
-	MessagePruner            MessagePrunerConfig            `koanf:"message-pruner" reload:"hot"`
-	BlockValidator           staker.BlockValidatorConfig    `koanf:"block-validator" reload:"hot"`
-	Feed                     broadcastclient.FeedConfig     `koanf:"feed" reload:"hot"`
-	Staker                   legacystaker.L1ValidatorConfig `koanf:"staker" reload:"hot"`
-	Bold                     bold.BoldConfig                `koanf:"bold"`
-	SeqCoordinator           SeqCoordinatorConfig           `koanf:"seq-coordinator"`
-	DataAvailability         das.DataAvailabilityConfig     `koanf:"data-availability"`
+	Sequencer         bool                           `koanf:"sequencer"`
+	ParentChainReader headerreader.Config            `koanf:"parent-chain-reader" reload:"hot"`
+	InboxReader       InboxReaderConfig              `koanf:"inbox-reader" reload:"hot"`
+	DelayedSequencer  DelayedSequencerConfig         `koanf:"delayed-sequencer" reload:"hot"`
+	BatchPoster       BatchPosterConfig              `koanf:"batch-poster" reload:"hot"`
+	MessagePruner     MessagePrunerConfig            `koanf:"message-pruner" reload:"hot"`
+	BlockValidator    staker.BlockValidatorConfig    `koanf:"block-validator" reload:"hot"`
+	Feed              broadcastclient.FeedConfig     `koanf:"feed" reload:"hot"`
+	Staker            legacystaker.L1ValidatorConfig `koanf:"staker" reload:"hot"`
+	Bold              bold.BoldConfig                `koanf:"bold"`
+	SeqCoordinator    SeqCoordinatorConfig           `koanf:"seq-coordinator"`
+	// Deprecated: Use DA.AnyTrust instead. Will be removed in a future release.
+	DataAvailability         anytrust.Config                `koanf:"data-availability"`
 	DA                       daconfig.DAConfig              `koanf:"da" reload:"hot"`
 	SyncMonitor              SyncMonitorConfig              `koanf:"sync-monitor"`
 	Dangerous                DangerousConfig                `koanf:"dangerous"`
@@ -138,6 +139,17 @@ func (c *Config) ValidatorRequired() bool {
 	return false
 }
 
+// MigrateDeprecatedConfig migrates deprecated DataAvailability config to DA.AnyTrust.
+// This allows operators to continue using --node.data-availability.* flags while
+// transitioning to the new --node.da.anytrust.* flags.
+func (c *Config) MigrateDeprecatedConfig() {
+	if c.DataAvailability.Enable {
+		log.Error("DEPRECATED: --node.data-availability.* flags are deprecated and will " +
+			"overwrite any --node.da.anytrust.* settings; please migrate to --node.da.anytrust.*")
+		c.DA.AnyTrust = c.DataAvailability
+	}
+}
+
 func ConfigAddOptions(prefix string, f *pflag.FlagSet, feedInputEnable bool, feedOutputEnable bool) {
 	f.Bool(prefix+".sequencer", ConfigDefault.Sequencer, "enable sequencer")
 	headerreader.AddOptions(prefix+".parent-chain-reader", f)
@@ -150,7 +162,7 @@ func ConfigAddOptions(prefix string, f *pflag.FlagSet, feedInputEnable bool, fee
 	legacystaker.L1ValidatorConfigAddOptions(prefix+".staker", f)
 	bold.BoldConfigAddOptions(prefix+".bold", f)
 	SeqCoordinatorConfigAddOptions(prefix+".seq-coordinator", f)
-	das.DataAvailabilityConfigAddNodeOptions(prefix+".data-availability", f)
+	anytrust.ConfigAddNodeOptions(prefix+".data-availability", f)
 	daconfig.DAConfigAddOptions(prefix+".da", f)
 	SyncMonitorConfigAddOptions(prefix+".sync-monitor", f)
 	DangerousConfigAddOptions(prefix+".dangerous", f)
@@ -173,7 +185,7 @@ var ConfigDefault = Config{
 	Staker:                   legacystaker.DefaultL1ValidatorConfig,
 	Bold:                     bold.DefaultBoldConfig,
 	SeqCoordinator:           DefaultSeqCoordinatorConfig,
-	DataAvailability:         das.DefaultDataAvailabilityConfigForNode,
+	DataAvailability:         anytrust.DefaultConfigForNode,
 	DA:                       daconfig.DefaultDAConfig,
 	SyncMonitor:              DefaultSyncMonitorConfig,
 	Dangerous:                DefaultDangerousConfig,
@@ -284,7 +296,7 @@ type Node struct {
 	SeqCoordinator           *SeqCoordinator
 	MaintenanceRunner        *MaintenanceRunner
 	providerServerCloseFn    func()
-	DASLifecycleManager      *das.LifecycleManager
+	AnyTrustLifecycleManager *anytrust.LifecycleManager
 	SyncMonitor              *SyncMonitor
 	blockMetadataFetcher     *BlockMetadataFetcher
 	configFetcher            ConfigFetcher
@@ -583,51 +595,47 @@ func getDAProviders(
 	// 1. External DA (if enabled)
 	// 2. AnyTrust (if enabled)
 
-	// Create external DA clients for each configured provider
-	for i := range config.DA.ExternalProviders {
-		providerConfig := &config.DA.ExternalProviders[i]
-		if !providerConfig.Enable {
-			log.Info("Skipping disabled external DA provider", "providerIndex", i)
-			continue
-		}
+	// Create external DA client if enabled
+	if config.DA.ExternalProvider.Enable {
+		providerConfig := &config.DA.ExternalProvider
 
-		log.Info("Creating external DA client", "providerIndex", i, "url", providerConfig.RPC.URL, "withWriter", providerConfig.WithWriter)
+		log.Info("Creating external DA client", "url", providerConfig.RPC.URL, "withWriter", providerConfig.WithWriter)
 		externalDAClient, err := daclient.NewClient(ctx, providerConfig, data_streaming.PayloadCommiter())
 		if err != nil {
-			return nil, nil, nil, fmt.Errorf("failed to create external DA client[%d]: %w", i, err)
+			return nil, nil, nil, fmt.Errorf("failed to create external DA client: %w", err)
 		}
 
 		// Add to writers array if batch poster is enabled and WithWriter is true
 		if providerConfig.WithWriter && config.BatchPoster.Enable {
 			writers = append(writers, externalDAClient)
-			log.Info("Added external DA writer", "providerIndex", i, "writerIndex", len(writers)-1, "totalWriters", len(writers))
+			log.Info("Added external DA writer")
 		}
 
 		// Register external DA client as both reader and validator
 		result, err := externalDAClient.GetSupportedHeaderBytes().Await(ctx)
 		if err != nil {
-			return nil, nil, nil, fmt.Errorf("failed to get supported header bytes from external DA client[%d]: %w", i, err)
+			return nil, nil, nil, fmt.Errorf("failed to get supported header bytes from external DA client: %w", err)
 		}
 		for _, hb := range result.HeaderBytes {
 			if err := dapRegistry.Register(hb, externalDAClient, externalDAClient); err != nil {
-				return nil, nil, nil, fmt.Errorf("failed to register DA provider[%d]: %w", i, err)
+				return nil, nil, nil, fmt.Errorf("failed to register DA provider: %w", err)
 			}
 		}
 	}
 
 	// Create AnyTrust DA provider if enabled (can coexist with external DA)
-	if config.DataAvailability.Enable {
-		// Map deprecated BatchPoster.MaxSize to DataAvailability.MaxBatchSize for backward compatibility
-		if config.BatchPoster.MaxSize != 0 && config.DataAvailability.MaxBatchSize == das.DefaultDataAvailabilityConfig.MaxBatchSize {
-			log.Warn("Using deprecated batch-poster.max-size for AnyTrust max batch size; please migrate to data-availability.max-batch-size")
-			config.DataAvailability.MaxBatchSize = config.BatchPoster.MaxSize
+	if config.DA.AnyTrust.Enable {
+		// Map deprecated BatchPoster.MaxSize to DA.AnyTrust.MaxBatchSize for backward compatibility
+		if config.BatchPoster.MaxSize != 0 && config.DA.AnyTrust.MaxBatchSize == anytrust.DefaultConfig.MaxBatchSize {
+			log.Warn("Using deprecated batch-poster.max-size for AnyTrust max batch size; please migrate to da.anytrust.max-batch-size")
+			config.DA.AnyTrust.MaxBatchSize = config.BatchPoster.MaxSize
 		}
 
 		log.Info("Creating AnyTrust DA provider", "batchPosterEnabled", config.BatchPoster.Enable)
 
 		// Create AnyTrust factory
-		daFactory := das.NewFactory(
-			&config.DataAvailability,
+		daFactory := anytrust.NewFactory(
+			&config.DA.AnyTrust,
 			dataSigner,
 			l1client,
 			l1Reader,
@@ -682,11 +690,11 @@ func getDAProviders(
 		cleanupFuncs = append(cleanupFuncs, anytrustCleanup)
 	}
 
-	// Check if chain requires Anytrust but none is configured
+	// Check if chain requires AnyTrust but none is configured
 	// We support a nil txStreamer for the pruning code
 	if txStreamer != nil && txStreamer.chainConfig.ArbitrumChainParams.DataAvailabilityCommittee {
-		if !config.DataAvailability.Enable {
-			return nil, nil, nil, errors.New("data availability service required but unconfigured")
+		if !config.DA.AnyTrust.Enable {
+			return nil, nil, nil, errors.New("AnyTrust DA service required but unconfigured")
 		}
 	}
 
