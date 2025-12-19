@@ -9,6 +9,7 @@ import (
 var (
 	fs                                            = flag.NewFlagSet("test", flag.ExitOnError)
 	StateSchemeFlag                               = fs.String("test_state_scheme", "", "State scheme to use for tests")
+	DatabaseEngineFlag                            = fs.String("test_database_engine", "", "Database engine to use for tests")
 	RedisFlag                                     = fs.String("test_redis", "", "Redis URL for testing")
 	RecordBlockInputsEnable                       = fs.Bool("recordBlockInputs.enable", false, "Whether to record block inputs as a json file")
 	RecordBlockInputsWithSlug                     = fs.String("recordBlockInputs.WithSlug", "", "Slug directory for validationInputsWriter")

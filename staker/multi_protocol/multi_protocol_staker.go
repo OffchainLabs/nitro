@@ -11,6 +11,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
 
+	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/staker"
@@ -52,6 +53,7 @@ type MultiProtocolStaker struct {
 	inboxTracker            staker.InboxTrackerInterface
 	inboxStreamer           staker.TransactionStreamerInterface
 	inboxReader             staker.InboxReaderInterface
+	dapRegistry             *daprovider.DAProviderRegistry
 	fatalErr                chan<- error
 }
 
@@ -73,6 +75,7 @@ func NewMultiProtocolStaker(
 	inboxStreamer staker.TransactionStreamerInterface,
 	inboxTracker staker.InboxTrackerInterface,
 	inboxReader staker.InboxReaderInterface,
+	dapRegistry *daprovider.DAProviderRegistry,
 	fatalErr chan<- error,
 ) (*MultiProtocolStaker, error) {
 	if err := legacyConfig().Validate(); err != nil {
@@ -122,6 +125,7 @@ func NewMultiProtocolStaker(
 		inboxTracker:            inboxTracker,
 		inboxStreamer:           inboxStreamer,
 		inboxReader:             inboxReader,
+		dapRegistry:             dapRegistry,
 		fatalErr:                fatalErr,
 	}, nil
 }
@@ -265,6 +269,7 @@ func (m *MultiProtocolStaker) setupBoldStaker(
 		m.inboxTracker,
 		m.inboxStreamer,
 		m.inboxReader,
+		m.dapRegistry,
 		m.fatalErr,
 	)
 	if err != nil {

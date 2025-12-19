@@ -37,6 +37,7 @@ type ExpressLaneTracker struct {
 	roundTimingInfo timeboost.RoundTimingInfo
 	pollInterval    time.Duration
 	chainConfig     *params.ChainConfig
+	maxTxSize       uint64 // maximum transaction size the sequencer will accept
 
 	headerProvider       HeaderProvider
 	auctionContract      *express_lane_auctiongen.ExpressLaneAuction
@@ -45,6 +46,7 @@ type ExpressLaneTracker struct {
 
 	roundControl containers.SyncMap[uint64, common.Address] // thread safe
 	useLogs      bool
+	isActiveFunc func() bool // nil means unknown/not applicable
 }
 
 func NewExpressLaneTracker(
@@ -54,7 +56,13 @@ func NewExpressLaneTracker(
 	auctionContract *express_lane_auctiongen.ExpressLaneAuction,
 	auctionContractAddr common.Address,
 	chainConfig *params.ChainConfig,
-	earlySubmissionGrace time.Duration) *ExpressLaneTracker {
+	maxTxSize uint64,
+	earlySubmissionGrace time.Duration,
+	isActiveFunc func() bool,
+) (*ExpressLaneTracker, error) {
+	if err := ValidateMaxTxDataSize(maxTxSize); err != nil {
+		return nil, err
+	}
 	return &ExpressLaneTracker{
 		roundTimingInfo:      roundTimingInfo,
 		pollInterval:         pollInterval,
@@ -63,8 +71,10 @@ func NewExpressLaneTracker(
 		auctionContractAddr:  auctionContractAddr,
 		earlySubmissionGrace: earlySubmissionGrace,
 		chainConfig:          chainConfig,
+		maxTxSize:            maxTxSize,
 		useLogs:              false, // default to use contract polling
-	}
+		isActiveFunc:         isActiveFunc,
+	}, nil
 }
 
 func (t *ExpressLaneTracker) Start(ctxIn context.Context) {
@@ -92,6 +102,10 @@ func (t *ExpressLaneTracker) RoundController(round uint64) (common.Address, erro
 func (t *ExpressLaneTracker) ValidateExpressLaneTx(msg *timeboost.ExpressLaneSubmission) error {
 	if msg == nil || msg.Transaction == nil || msg.Signature == nil {
 		return timeboost.ErrMalformedData
+	}
+	txSize := msg.Transaction.Size()
+	if txSize > t.maxTxSize {
+		return errors.Wrapf(timeboost.ErrOversizedData, "express lane tx size %d exceeds maximum allowed size %d", txSize, t.maxTxSize)
 	}
 	if msg.ChainId.Cmp(t.chainConfig.ChainID) != 0 {
 		return errors.Wrapf(timeboost.ErrWrongChainId, "express lane tx chain ID %d does not match current chain ID %d", msg.ChainId, t.chainConfig.ChainID)
@@ -134,6 +148,13 @@ func (t *ExpressLaneTracker) ValidateExpressLaneTx(msg *timeboost.ExpressLaneSub
 
 func (t *ExpressLaneTracker) AuctionContractAddr() common.Address {
 	return t.auctionContractAddr
+}
+
+func (t *ExpressLaneTracker) isActiveSequencer() bool {
+	if t.isActiveFunc == nil {
+		return false
+	}
+	return t.isActiveFunc()
 }
 
 // --- internals ---
@@ -197,6 +218,7 @@ func (t *ExpressLaneTracker) startViaLogIterator(ctxIn context.Context) {
 					"round", it.Event.Round,
 					"controller", it.Event.FirstPriceExpressLaneController,
 					"timeSinceAuctionClose", timeSinceAuctionClose,
+					"isActiveSequencer", t.isActiveSequencer(),
 				)
 
 				t.roundControl.Store(it.Event.Round, it.Event.FirstPriceExpressLaneController)
@@ -252,6 +274,7 @@ func (t *ExpressLaneTracker) startViaContractPolling(ctxIn context.Context) {
 						"round", record.round,
 						"controller", record.controller,
 						"timeSinceAuctionClose", timeSinceAuctionClose,
+						"isActiveSequencer", t.isActiveSequencer(),
 					)
 				}
 
@@ -294,6 +317,7 @@ func (t *ExpressLaneTracker) roundHeartbeatThread() {
 				"round", round,
 				"timestamp", ti,
 				"haveController", ok,
+				"isActiveSequencer", t.isActiveSequencer(),
 			)
 
 			// Cleanup previous round controller data

@@ -37,7 +37,7 @@
         "DataAvailabilityCommittee": false,
         "InitialArbOSVersion": 6,
         "InitialChainOwner": "0xd345e41ae2cb00311956aa7109fc801ae8c81a52",
-        "GenesisBlockNum": 0
+        "GenesisBlockNum": 22207818
       }
     },
     "rollup": {
@@ -173,7 +173,7 @@
         "EnableArbOS": true,
         "AllowDebugPrecompiles": true,
         "DataAvailabilityCommittee": false,
-        "InitialArbOSVersion": 50,
+        "InitialArbOSVersion": 51,
         "InitialChainOwner": "0x0000000000000000000000000000000000000000",
         "GenesisBlockNum": 0
       }

@@ -70,7 +70,7 @@ func NewProofEnhancementManager() *ProofEnhancementManager {
 //
 // For testing or custom configurations, use NewProofEnhancementManager and RegisterEnhancer directly.
 func NewCustomDAProofEnhancer(
-	daValidator daprovider.Validator,
+	dapRegistry *daprovider.DAProviderRegistry,
 	inboxTracker staker.InboxTrackerInterface,
 	inboxReader staker.InboxReaderInterface,
 ) *ProofEnhancementManager {
@@ -79,11 +79,11 @@ func NewCustomDAProofEnhancer(
 	// Register both CustomDA enhancers
 	manager.RegisterEnhancer(
 		MarkerCustomDAReadPreimage,
-		NewReadPreimageProofEnhancer(daValidator, inboxTracker, inboxReader),
+		NewReadPreimageProofEnhancer(dapRegistry, inboxTracker, inboxReader),
 	)
 	manager.RegisterEnhancer(
 		MarkerCustomDAValidateCertificate,
-		NewValidateCertificateProofEnhancer(daValidator, inboxTracker, inboxReader),
+		NewValidateCertificateProofEnhancer(dapRegistry, inboxTracker, inboxReader),
 	)
 
 	return manager

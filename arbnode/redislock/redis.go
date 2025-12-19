@@ -146,7 +146,8 @@ func (l *Simple) AttemptLockAndPeriodicallyRefreshIt(ctx context.Context, releas
 
 	refreshLock := func() {
 		defer l.Release(ctx)
-		refreshTick := time.Tick(l.config().RefreshDuration)
+		ticker := time.NewTicker(l.config().RefreshDuration)
+		defer ticker.Stop()
 		for {
 			select {
 			case <-release:
@@ -159,7 +160,7 @@ func (l *Simple) AttemptLockAndPeriodicallyRefreshIt(ctx context.Context, releas
 					return
 				case <-ctx.Done():
 					return
-				case <-refreshTick:
+				case <-ticker.C:
 					gotLock, err := l.attemptLock(ctx)
 					if err != nil {
 						log.Error("attemptLock returned error during refresh: %w", err)

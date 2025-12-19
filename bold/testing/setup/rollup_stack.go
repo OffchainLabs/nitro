@@ -24,10 +24,10 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rpc"
 
-	"github.com/offchainlabs/nitro/bold/chain-abstraction"
-	"github.com/offchainlabs/nitro/bold/chain-abstraction/sol-implementation"
-	"github.com/offchainlabs/nitro/bold/layer2-state-provider"
-	"github.com/offchainlabs/nitro/bold/runtime"
+	"github.com/offchainlabs/nitro/bold/protocol"
+	"github.com/offchainlabs/nitro/bold/protocol/sol"
+	"github.com/offchainlabs/nitro/bold/retry"
+	"github.com/offchainlabs/nitro/bold/state"
 	"github.com/offchainlabs/nitro/bold/testing"
 	"github.com/offchainlabs/nitro/bold/testing/mocks/state-provider"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
@@ -47,11 +47,11 @@ type Committer interface {
 type CreatedValidatorFork struct {
 	Leaf1              protocol.Assertion
 	Leaf2              protocol.Assertion
-	Chains             []*solimpl.AssertionChain
+	Chains             []*sol.AssertionChain
 	Accounts           []*TestAccount
 	Backend            *SimulatedBackendWrapper
-	HonestStateManager l2stateprovider.Provider
-	EvilStateManager   l2stateprovider.Provider
+	HonestStateManager state.Provider
+	EvilStateManager   state.Provider
 	Addrs              *RollupAddresses
 }
 
@@ -163,7 +163,7 @@ func CreateTwoValidatorFork(
 }
 
 type ChainSetup struct {
-	Chains                     []*solimpl.AssertionChain
+	Chains                     []*sol.AssertionChain
 	Accounts                   []*TestAccount
 	Addrs                      *RollupAddresses
 	Backend                    *SimulatedBackendWrapper
@@ -413,7 +413,7 @@ func ChainsWithEdgeChallengeManager(opts ...Opt) (*ChainSetup, error) {
 		return nil, err
 	}
 
-	chains := make([]*solimpl.AssertionChain, 0)
+	chains := make([]*sol.AssertionChain, 0)
 	for _, acc := range accs[1:] {
 		var assertionChainBinding *rollupgen.RollupUserLogic
 		assertionChainBinding, err = rollupgen.NewRollupUserLogic(
@@ -429,19 +429,19 @@ func ChainsWithEdgeChallengeManager(opts ...Opt) (*ChainSetup, error) {
 		if err != nil {
 			return nil, err
 		}
-		assertionChainOpts := []solimpl.Opt{
-			solimpl.WithRpcHeadBlockNumber(rpc.LatestBlockNumber),
+		assertionChainOpts := []sol.Opt{
+			sol.WithRpcHeadBlockNumber(rpc.LatestBlockNumber),
 		}
 		if setp.EnableSafeFastConfirmation || (setp.EnableFastConfirmation && acc.AccountAddr == cfgOpts.AnyTrustFastConfirmer) {
-			assertionChainOpts = append(assertionChainOpts, solimpl.WithFastConfirmation())
+			assertionChainOpts = append(assertionChainOpts, sol.WithFastConfirmation())
 		}
-		chain, chainErr := solimpl.NewAssertionChain(
+		chain, chainErr := sol.NewAssertionChain(
 			ctx,
 			addresses.Rollup,
 			challengeManagerAddr,
 			acc.TxOpts,
 			backend,
-			solimpl.NewChainBackendTransactor(backend),
+			sol.NewChainBackendTransactor(backend),
 			assertionChainOpts...,
 		)
 		if chainErr != nil {
@@ -529,6 +529,7 @@ type RollupStackConfig struct {
 	UseMockOneStepProver   bool
 	UseBlobs               bool
 	MinimumAssertionPeriod int64
+	CustomDAOsp            common.Address
 }
 
 func DeployFullRollupStack(
@@ -558,6 +559,8 @@ func DeployFullRollupStack(
 				MaxFeePerGasForRetryables: big.NewInt(0),
 				BatchPosters:              []common.Address{},
 				BatchPosterManager:        common.Address{},
+				FeeTokenPricer:            common.Address{},
+				CustomOsp:                 stackConf.CustomDAOsp,
 			},
 		)
 		if creationErr != nil {
@@ -864,35 +867,6 @@ func deployBridgeCreator(
 		return common.Address{}, err
 	}
 
-	log.Info("Updating bridge creator templates")
-	_, err = retry.UntilSucceeds(ctx, func() (*types.Transaction, error) {
-		tx, err2 := result.bridgeCreator.UpdateTemplates(auth, ethTemplates)
-		if err2 != nil {
-			return nil, err2
-		}
-		err2 = challenge_testing.TxSucceeded(ctx, tx, result.bridgeCreatorAddr, backend, err2)
-		if err2 != nil {
-			return nil, err2
-		}
-		return tx, nil
-	})
-	if err != nil {
-		return common.Address{}, err
-	}
-	_, err = retry.UntilSucceeds(ctx, func() (*types.Transaction, error) {
-		tx, err2 := result.bridgeCreator.UpdateERC20Templates(auth, erc20Templates)
-		if err2 != nil {
-			return nil, err2
-		}
-		err2 = challenge_testing.TxSucceeded(ctx, tx, result.bridgeCreatorAddr, backend, err2)
-		if err2 != nil {
-			return nil, err2
-		}
-		return tx, nil
-	})
-	if err != nil {
-		return common.Address{}, err
-	}
 	return result.bridgeCreatorAddr, nil
 }
 
@@ -945,7 +919,7 @@ func deployChallengeFactory(
 		}
 		log.Info("Deploying ospHostIo")
 		ospHostIo, err := retry.UntilSucceeds(ctx, func() (common.Address, error) {
-			ospHostIoAddr, _, _, err2 := ospgen.DeployOneStepProverHostIo(auth, backend)
+			ospHostIoAddr, _, _, err2 := ospgen.DeployOneStepProverHostIo(auth, backend, common.Address{})
 			if err2 != nil {
 				return common.Address{}, err2
 			}
@@ -1032,27 +1006,6 @@ func deployRollupCreator(
 		return nil, common.Address{}, common.Address{}, common.Address{}, common.Address{}, err
 	}
 
-	type creatorResult struct {
-		rollupCreatorAddress common.Address
-		rollupCreator        *rollupgen.RollupCreator
-	}
-
-	log.Info("Deploying rollup creator contract")
-	result, err := retry.UntilSucceeds(ctx, func() (*creatorResult, error) {
-		rollupCreatorAddress, tx, rollupCreator, err2 := rollupgen.DeployRollupCreator(auth, backend)
-		if err2 != nil {
-			return nil, err2
-		}
-		err2 = challenge_testing.TxSucceeded(ctx, tx, rollupCreatorAddress, backend, err2)
-		if err2 != nil {
-			return nil, err2
-		}
-		return &creatorResult{rollupCreatorAddress: rollupCreatorAddress, rollupCreator: rollupCreator}, nil
-	})
-	if err != nil {
-		return nil, common.Address{}, common.Address{}, common.Address{}, common.Address{}, err
-	}
-
 	log.Info("Deploying validator wallet creator contract")
 	validatorWalletCreator, err := retry.UntilSucceeds(ctx, func() (common.Address, error) {
 		validatorWalletCreatorAddr, tx, _, err2 := rollupgen.DeployValidatorWalletCreator(auth, backend)
@@ -1085,10 +1038,17 @@ func deployRollupCreator(
 		return nil, common.Address{}, common.Address{}, common.Address{}, common.Address{}, err
 	}
 
-	log.Info("Setting rollup templates")
-	_, err = retry.UntilSucceeds(ctx, func() (*types.Transaction, error) {
-		tx, err2 := result.rollupCreator.SetTemplates(
+	type creatorResult struct {
+		rollupCreatorAddress common.Address
+		rollupCreator        *rollupgen.RollupCreator
+	}
+
+	log.Info("Deploying rollup creator contract")
+	result, err := retry.UntilSucceeds(ctx, func() (*creatorResult, error) {
+		rollupCreatorAddress, tx, rollupCreator, err2 := rollupgen.DeployRollupCreator(
 			auth,
+			backend,
+			auth.From, // initialOwner
 			bridgeCreator,
 			ospEntryAddr,
 			challengeManagerAddr,
@@ -1096,19 +1056,21 @@ func deployRollupCreator(
 			rollupUserLogic,
 			upgradeExecutor,
 			validatorWalletCreator,
-			common.Address{},
+			common.Address{}, // l2FactoriesDeployer - zero address for now
 		)
 		if err2 != nil {
 			return nil, err2
 		}
-		if err2 := challenge_testing.WaitForTx(ctx, backend, tx); err2 != nil {
+		err2 = challenge_testing.TxSucceeded(ctx, tx, rollupCreatorAddress, backend, err2)
+		if err2 != nil {
 			return nil, err2
 		}
-		return tx, nil
+		return &creatorResult{rollupCreatorAddress: rollupCreatorAddress, rollupCreator: rollupCreator}, nil
 	})
 	if err != nil {
 		return nil, common.Address{}, common.Address{}, common.Address{}, common.Address{}, err
 	}
+
 	return result.rollupCreator, rollupUserLogic, result.rollupCreatorAddress, common.Address{}, validatorWalletCreator, nil
 }
 

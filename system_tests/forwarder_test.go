@@ -16,6 +16,7 @@ import (
 
 	"github.com/alicebob/miniredis/v2"
 
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/ethclient"
 
 	"github.com/offchainlabs/nitro/arbnode"
@@ -299,7 +300,7 @@ func TestRedisForwarderFallbackNoRedis(t *testing.T) {
 			ipcPath:              fallbackIpcPath,
 			redisUrl:             redisUrl,
 			enableSecCoordinator: false,
-		})
+		}).WithDatabase(rawdb.DBPebble)
 	cleanup := builder.Build(t)
 	defer cleanup()
 	fallbackClient := builder.L2.Client

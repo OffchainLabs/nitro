@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2025, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package broadcaster
@@ -11,7 +11,6 @@ import (
 
 	"github.com/gobwas/ws"
 
-	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
@@ -21,6 +20,8 @@ import (
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
+
+const SupportedBroadcastVersion = m.V1
 
 type Broadcaster struct {
 	server     *wsbroadcastserver.WSBroadcastServer
@@ -40,17 +41,15 @@ func NewBroadcaster(config wsbroadcastserver.BroadcasterConfigFetcher, chainId u
 }
 
 func (b *Broadcaster) NewBroadcastFeedMessage(
-	message arbostypes.MessageWithMetadata,
+	message arbostypes.MessageWithMetadataAndBlockInfo,
 	sequenceNumber arbutil.MessageIndex,
-	blockHash *common.Hash,
-	blockMetadata common.BlockMetadata,
 ) (*m.BroadcastFeedMessage, error) {
 	feedMessage := m.BroadcastFeedMessage{
 		SequenceNumber: sequenceNumber,
-		Message:        message,
-		BlockHash:      blockHash,
+		Message:        message.MessageWithMeta,
+		BlockHash:      message.BlockHash,
 		Signature:      []byte{},
-		BlockMetadata:  blockMetadata,
+		BlockMetadata:  message.BlockMetadata,
 	}
 	if b.dataSigner != nil {
 		hash := feedMessage.SignatureHash(b.chainId)
@@ -63,80 +62,34 @@ func (b *Broadcaster) NewBroadcastFeedMessage(
 	return &feedMessage, nil
 }
 
-func (b *Broadcaster) BroadcastSingle(
-	msg arbostypes.MessageWithMetadata,
-	msgIdx arbutil.MessageIndex,
-	blockHash *common.Hash,
-	blockMetadata common.BlockMetadata,
-) (err error) {
+func (b *Broadcaster) BroadcastFeedMessages(messages []*m.BroadcastFeedMessage) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			log.Error("recovered error in BroadcastSingle", "recover", r, "backtrace", string(debug.Stack()))
+			log.Error("recovered error in BroadcastFeedMessages", "recover", r, "backtrace", string(debug.Stack()))
 			err = errors.New("panic in BroadcastSingle")
 		}
 	}()
-	bfm, err := b.NewBroadcastFeedMessage(msg, msgIdx, blockHash, blockMetadata)
-	if err != nil {
-		return err
-	}
 
-	b.BroadcastSingleFeedMessage(bfm)
-	return nil
-}
-
-func (b *Broadcaster) BroadcastSingleFeedMessage(bfm *m.BroadcastFeedMessage) {
-	broadcastFeedMessages := make([]*m.BroadcastFeedMessage, 0, 1)
-
-	broadcastFeedMessages = append(broadcastFeedMessages, bfm)
-
-	b.BroadcastFeedMessages(broadcastFeedMessages)
-}
-
-func (b *Broadcaster) BroadcastMessages(
-	messagesWithBlockInfo []arbostypes.MessageWithMetadataAndBlockInfo,
-	firstMsgIdx arbutil.MessageIndex,
-) (err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			log.Error("recovered error in BroadcastMessages", "recover", r, "backtrace", string(debug.Stack()))
-			err = errors.New("panic in BroadcastMessages")
-		}
-	}()
-	var feedMessages []*m.BroadcastFeedMessage
-	for i, msg := range messagesWithBlockInfo {
-		// #nosec G115
-		bfm, err := b.NewBroadcastFeedMessage(msg.MessageWithMeta, firstMsgIdx+arbutil.MessageIndex(i), msg.BlockHash, msg.BlockMetadata)
-		if err != nil {
-			return err
-		}
-		feedMessages = append(feedMessages, bfm)
-	}
-
-	b.BroadcastFeedMessages(feedMessages)
-
-	return nil
-}
-
-func (b *Broadcaster) BroadcastFeedMessages(messages []*m.BroadcastFeedMessage) {
 	bm := &m.BroadcastMessage{
-		Version:  1,
+		Version:  SupportedBroadcastVersion,
 		Messages: messages,
 	}
 	b.server.Broadcast(bm)
+	return
 }
 
-func (s *Broadcaster) PopulateFeedBacklog(messages []*m.BroadcastFeedMessage) error {
+func (b *Broadcaster) PopulateFeedBacklog(messages []*m.BroadcastFeedMessage) error {
 	bm := &m.BroadcastMessage{
-		Version:  1,
+		Version:  SupportedBroadcastVersion,
 		Messages: messages,
 	}
-	return s.server.PopulateFeedBacklog(bm)
+	return b.server.PopulateFeedBacklog(bm)
 }
 
 func (b *Broadcaster) Confirm(msgIdx arbutil.MessageIndex) {
 	log.Debug("confirming msgIdx", "msgIdx", msgIdx)
 	b.server.Broadcast(&m.BroadcastMessage{
-		Version: 1,
+		Version: SupportedBroadcastVersion,
 		ConfirmedSequenceNumberMessage: &m.ConfirmedSequenceNumberMessage{
 			SequenceNumber: msgIdx,
 		},

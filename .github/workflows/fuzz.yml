@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-4
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
         with:
           submodules: recursive
 
@@ -40,7 +40,7 @@ jobs:
         include: ${{fromJson(needs.list.outputs.fuzz-tests)}}
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - uses: actions/setup-go@v6
         with:
           go-version-file: "go.mod"

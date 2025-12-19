@@ -26,7 +26,6 @@ import (
 
 	"github.com/offchainlabs/nitro/util/blobs"
 	"github.com/offchainlabs/nitro/util/jsonapi"
-	"github.com/offchainlabs/nitro/util/pretty"
 )
 
 type BlobClient struct {
@@ -35,7 +34,6 @@ type BlobClient struct {
 	secondaryBeaconUrl *url.URL
 	httpClient         atomic.Pointer[http.Client]
 	authorization      string
-	useLegacyEndpoint  bool
 
 	// Filled in in Initialize()
 	genesisTime    uint64
@@ -57,7 +55,6 @@ type BlobClientConfig struct {
 	SecondaryBeaconUrl string                    `koanf:"secondary-beacon-url"`
 	BlobDirectory      string                    `koanf:"blob-directory"`
 	Authorization      string                    `koanf:"authorization"`
-	UseLegacyEndpoint  bool                      `koanf:"use-legacy-endpoint"`
 	Dangerous          BlobClientDangerousConfig `koanf:"dangerous"`
 }
 
@@ -70,7 +67,6 @@ var DefaultBlobClientConfig = BlobClientConfig{
 	SecondaryBeaconUrl: "",
 	BlobDirectory:      "",
 	Authorization:      "",
-	UseLegacyEndpoint:  false,
 	Dangerous:          DefaultDangerousConfig,
 }
 
@@ -79,7 +75,6 @@ func BlobClientAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".secondary-beacon-url", DefaultBlobClientConfig.SecondaryBeaconUrl, "Backup beacon Chain RPC URL to use for fetching blobs (normally on port 3500) when unable to fetch from primary")
 	f.String(prefix+".blob-directory", DefaultBlobClientConfig.BlobDirectory, "Full path of the directory to save fetched blobs")
 	f.String(prefix+".authorization", DefaultBlobClientConfig.Authorization, "Value to send with the HTTP Authorization: header for Beacon REST requests, must include both scheme and scheme parameters")
-	f.Bool(prefix+".use-legacy-endpoint", DefaultBlobClientConfig.UseLegacyEndpoint, "Use the legacy blob_sidecars endpoint instead of the blobs endpoint")
 	BlobClientDangerousAddOptions(prefix+".dangerous", f)
 }
 
@@ -114,7 +109,6 @@ func NewBlobClient(config BlobClientConfig, ec *ethclient.Client) (*BlobClient, 
 		beaconUrl:                 beaconUrl,
 		secondaryBeaconUrl:        secondaryBeaconUrl,
 		authorization:             config.Authorization,
-		useLegacyEndpoint:         config.UseLegacyEndpoint,
 		blobDirectory:             config.BlobDirectory,
 		skipBlobProofVerification: config.Dangerous.SkipBlobProofVerification,
 	}
@@ -203,22 +197,13 @@ func (b *BlobClient) GetBlobsBySlot(ctx context.Context, slot uint64, versionedH
 		return nil, errors.New("BlobClient hasn't been initialized")
 	}
 
-	var blobs []kzg4844.Blob
-	var err error
-	if b.useLegacyEndpoint {
-		blobs, err = b.blobSidecars(ctx, slot, versionedHashes)
-	} else {
-		blobs, err = b.getBlobs(ctx, slot, versionedHashes)
-	}
+	blobs, err := b.getBlobs(ctx, slot, versionedHashes)
 	if err != nil {
 		// Create a new HTTP client with a dedicated transport that disables connection reuse.
 		// With the default client (nil Transport), Go reuses the global DefaultTransport and its connection pool,
 		// which may keep using the same problematic backend connection. Disabling keep-alives forces a fresh TCP
 		// connection on the next request, increasing the chance of hitting a healthy backend behind a load balancer.
 		b.httpClient.Store(&http.Client{Transport: &http.Transport{DisableKeepAlives: true}})
-
-		b.useLegacyEndpoint = !b.useLegacyEndpoint
-
 		return nil, fmt.Errorf("error fetching blobs for slot %d: %w", slot, err)
 	}
 	return blobs, nil
@@ -303,93 +288,8 @@ type blobStorageV1 struct {
 	Data    map[string]hexutil.Bytes `json:"data"`
 }
 
-func (b *BlobClient) blobSidecars(ctx context.Context, slot uint64, versionedHashes []common.Hash) ([]kzg4844.Blob, error) {
-	beaconPath := fmt.Sprintf("/eth/v1/beacon/blob_sidecars/%d", slot)
-
-	// Construct the full URL for error reporting
-	fullUrl := *b.beaconUrl
-	fullUrl.Path = path.Join(fullUrl.Path, beaconPath)
-
-	rawData, err := beaconRequest[json.RawMessage](b, ctx, beaconPath, nil)
-	if err != nil || len(rawData) == 0 {
-		// blobs are pruned after 4096 epochs (1 epoch = 32 slots), we determine if the requested slot was to be pruned by a non-archive endpoint
-		// #nosec G115
-		roughAgeOfSlot := uint64(time.Now().Unix()) - (b.genesisTime + slot*b.secondsPerSlot)
-		if roughAgeOfSlot > b.secondsPerSlot*32*4096 {
-			return nil, fmt.Errorf("beacon client in blobSidecars got error or empty response fetching older blobs in slot: %d, url: %s, an archive endpoint is required, please refer to https://docs.arbitrum.io/run-arbitrum-node/l1-ethereum-beacon-chain-rpc-providers, err: %w", slot, fullUrl.String(), err)
-		} else {
-			return nil, fmt.Errorf("beacon client in blobSidecars got error or empty response fetching non-expired blobs in slot: %d, url: %s, if using a Prysm endpoint, try --enable-experimental-backfill flag, err: %w", slot, fullUrl.String(), err)
-		}
-	}
-	var response []blobResponseItem
-	if err := json.Unmarshal(rawData, &response); err != nil {
-		rawDataStr := string(rawData)
-		log.Debug("response from beacon URL cannot be unmarshalled into array of blobResponseItem in blobSidecars", "slot", slot, "responseLength", len(rawDataStr), "response", rawDataStr)
-		return nil, fmt.Errorf("error unmarshalling response from beacon URL into array of blobResponseItem in blobSidecars: %w. Response: %s", err, rawDataStr)
-	}
-
-	if len(response) < len(versionedHashes) {
-		return nil, fmt.Errorf("expected at least %d blobs for slot %d but only got %d", len(versionedHashes), slot, len(response))
-	}
-
-	output := make([]kzg4844.Blob, len(versionedHashes))
-	outputsFound := make([]bool, len(versionedHashes))
-
-	for _, blobItem := range response {
-		var commitment kzg4844.Commitment
-		copy(commitment[:], blobItem.KzgCommitment)
-		versionedHash := blobs.CommitmentToVersionedHash(commitment)
-
-		// The versioned hashes of the blob commitments are produced in the by HASH_OPCODE_BYTE,
-		// presumably in the order they were added to the tx. The spec is unclear if the blobs
-		// need to be returned in any particular order from the beacon API, so we put them back in
-		// the order from the tx.
-		var outputIdx int
-		var found bool
-		for outputIdx = range versionedHashes {
-			if versionedHashes[outputIdx] == versionedHash {
-				if outputsFound[outputIdx] {
-					// Duplicate, skip this one
-					break
-				}
-				found = true
-				outputsFound[outputIdx] = true
-				break
-			}
-		}
-		if !found {
-			continue
-		}
-
-		copy(output[outputIdx][:], blobItem.Blob)
-
-		if !b.skipBlobProofVerification {
-			var proof kzg4844.Proof
-			copy(proof[:], blobItem.KzgProof)
-
-			err = kzg4844.VerifyBlobProof(&output[outputIdx], commitment, proof)
-			if err != nil {
-				return nil, fmt.Errorf("failed to verify blob proof for blob at slot(%d) at index(%d), blob(%s)", slot, blobItem.Index, pretty.FirstFewChars(blobItem.Blob.String()))
-			}
-		}
-	}
-
-	for i, found := range outputsFound {
-		if !found {
-			return nil, fmt.Errorf("missing blob %v in slot %v, can't reconstruct batch payload", versionedHashes[i], slot)
-		}
-	}
-
-	if b.blobDirectory != "" {
-		if err := saveBlobsV0ToDisk(rawData, slot, b.blobDirectory); err != nil {
-			return nil, err
-		}
-	}
-
-	return output, nil
-}
-
-// saveBlobsV0ToDisk saves blobs in version 0 format (legacy blob_sidecars format)
+// saveBlobsV0ToDisk saves blobs in version 0 format (legacy blob_sidecars format).
+// This is kept for test purposes to create V0 format files for testing backwards compatibility.
 func saveBlobsV0ToDisk(rawData json.RawMessage, slot uint64, blobDirectory string) error {
 	filePath := path.Join(blobDirectory, fmt.Sprint(slot))
 	file, err := os.Create(filePath)

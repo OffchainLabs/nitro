@@ -17,7 +17,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/bold/api/backend"
-	"github.com/offchainlabs/nitro/bold/util/stopwaiter"
+	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
 var apiVersion = "/api/v1"

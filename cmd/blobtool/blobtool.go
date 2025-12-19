@@ -1,7 +1,7 @@
 // Copyright 2025, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-// This is a command line tool for testing beacon/blobs and blob_sidecars endpoints.
+// This is a command line tool for testing beacon/blobs endpoint.
 package main
 
 import (
@@ -42,11 +42,9 @@ func main() {
 }
 
 type FetchConfig struct {
-	BeaconURL         string   `koanf:"beacon-url"`
-	Slot              uint64   `koanf:"slot"`
-	VersionedHashes   []string `koanf:"versioned-hashes"`
-	UseLegacyEndpoint bool     `koanf:"use-legacy-endpoint"`
-	CompareEndpoints  bool     `koanf:"compare-endpoints"`
+	BeaconURL       string   `koanf:"beacon-url"`
+	Slot            uint64   `koanf:"slot"`
+	VersionedHashes []string `koanf:"versioned-hashes"`
 }
 
 func parseFetchConfig(args []string) (*FetchConfig, error) {
@@ -54,8 +52,6 @@ func parseFetchConfig(args []string) (*FetchConfig, error) {
 	f.String("beacon-url", "", "Beacon Chain RPC URL. For example with --beacon-url=http://localhost, an RPC call will be made to http://localhost/eth/v1/beacon/blobs")
 	f.Uint64("slot", 0, "Beacon chain slot number to fetch blobs from")
 	f.StringSlice("versioned-hashes", []string{}, "Comma-separated list of versioned hashes to fetch (optional - fetches all if not provided)")
-	f.Bool("use-legacy-endpoint", false, "Use the legacy blob_sidecars endpoint")
-	f.Bool("compare-endpoints", false, "Fetch using both endpoints and compare results")
 
 	k, err := confighelpers.BeginCommonParse(f, args)
 	if err != nil {
@@ -94,20 +90,8 @@ func fetchBlobs(args []string) error {
 		versionedHashes[i] = common.HexToHash(hashStr)
 	}
 
-	if config.UseLegacyEndpoint && len(versionedHashes) == 0 {
-		return fmt.Errorf("--versioned-hashes is required when using --use-legacy-endpoint")
-	}
-
-	if config.CompareEndpoints {
-		if len(versionedHashes) == 0 {
-			return fmt.Errorf("--versioned-hashes is required when using --compare-endpoints")
-		}
-		return compareEndpoints(ctx, config, versionedHashes)
-	}
-
 	blobClientConfig := headerreader.BlobClientConfig{
-		BeaconUrl:         config.BeaconURL,
-		UseLegacyEndpoint: config.UseLegacyEndpoint,
+		BeaconUrl: config.BeaconURL,
 	}
 
 	blobClient, err := headerreader.NewBlobClient(blobClientConfig, nil)
@@ -119,15 +103,10 @@ func fetchBlobs(args []string) error {
 		return fmt.Errorf("failed to initialize blob client: %w", err)
 	}
 
-	endpointType := "new blobs"
-	if config.UseLegacyEndpoint {
-		endpointType = "legacy blob_sidecars"
-	}
-
 	if len(versionedHashes) > 0 {
-		fmt.Printf("Fetching %d blobs for slot %d using %s endpoint...\n", len(versionedHashes), config.Slot, endpointType)
+		fmt.Printf("Fetching %d blobs for slot %d...\n", len(versionedHashes), config.Slot)
 	} else {
-		fmt.Printf("Fetching all blobs for slot %d using %s endpoint...\n", config.Slot, endpointType)
+		fmt.Printf("Fetching all blobs for slot %d...\n", config.Slot)
 	}
 
 	startTime := time.Now()
@@ -149,85 +128,6 @@ func fetchBlobs(args []string) error {
 		} else {
 			fmt.Printf("Blob %d: versioned_hash=%s, size=%d bytes\n", i, hashes[0].Hex(), len(blob))
 		}
-	}
-
-	return nil
-}
-
-func compareEndpoints(ctx context.Context, config *FetchConfig, versionedHashes []common.Hash) error {
-	fmt.Println("Comparing legacy blob_sidecars and new blobs endpoints...")
-	fmt.Println()
-
-	legacyConfig := headerreader.BlobClientConfig{
-		BeaconUrl:         config.BeaconURL,
-		UseLegacyEndpoint: true,
-	}
-	legacyClient, err := headerreader.NewBlobClient(legacyConfig, nil)
-	if err != nil {
-		return fmt.Errorf("failed to create legacy blob client: %w", err)
-	}
-	if err := legacyClient.Initialize(ctx); err != nil {
-		return fmt.Errorf("failed to initialize legacy blob client: %w", err)
-	}
-
-	fmt.Println("Fetching with legacy blob_sidecars endpoint...")
-	legacyStart := time.Now()
-	legacyBlobs, err := legacyClient.GetBlobsBySlot(ctx, config.Slot, versionedHashes)
-	legacyDuration := time.Since(legacyStart)
-	if err != nil {
-		return fmt.Errorf("failed to fetch blobs with legacy endpoint: %w", err)
-	}
-	fmt.Printf("✓ Legacy endpoint: fetched %d blobs in %v\n", len(legacyBlobs), legacyDuration)
-	fmt.Println()
-
-	newConfig := headerreader.BlobClientConfig{
-		BeaconUrl:         config.BeaconURL,
-		UseLegacyEndpoint: false,
-	}
-	newClient, err := headerreader.NewBlobClient(newConfig, nil)
-	if err != nil {
-		return fmt.Errorf("failed to create new blob client: %w", err)
-	}
-	if err := newClient.Initialize(ctx); err != nil {
-		return fmt.Errorf("failed to initialize new blob client: %w", err)
-	}
-
-	fmt.Println("Fetching with new blobs endpoint...")
-	newStart := time.Now()
-	newBlobs, err := newClient.GetBlobsBySlot(ctx, config.Slot, versionedHashes)
-	newDuration := time.Since(newStart)
-	if err != nil {
-		return fmt.Errorf("failed to fetch blobs with new endpoint: %w", err)
-	}
-	fmt.Printf("✓ New endpoint: fetched %d blobs in %v\n", len(newBlobs), newDuration)
-	fmt.Println()
-
-	if len(legacyBlobs) != len(newBlobs) {
-		return fmt.Errorf("blob count mismatch: legacy=%d, new=%d", len(legacyBlobs), len(newBlobs))
-	}
-
-	fmt.Println("Comparing blob data...")
-	for i := range legacyBlobs {
-		if legacyBlobs[i] != newBlobs[i] {
-			return fmt.Errorf("blob %d data mismatch", i)
-		}
-		_, hashes, err := blobs.ComputeCommitmentsAndHashes([]kzg4844.Blob{legacyBlobs[i]})
-		if err != nil {
-			return fmt.Errorf("failed to compute hash for blob %d: %w", i, err)
-		}
-		fmt.Printf("  Blob %d: ✓ identical (%s)\n", i, hashes[0].Hex())
-	}
-
-	fmt.Println()
-	fmt.Printf("Performance comparison:\n")
-	fmt.Printf("  Legacy endpoint: %v\n", legacyDuration)
-	fmt.Printf("  New endpoint:    %v\n", newDuration)
-	if newDuration < legacyDuration {
-		improvement := float64(legacyDuration-newDuration) / float64(legacyDuration) * 100
-		fmt.Printf("  New endpoint is %.1f%% faster\n", improvement)
-	} else {
-		slower := float64(newDuration-legacyDuration) / float64(legacyDuration) * 100
-		fmt.Printf("  New endpoint is %.1f%% slower\n", slower)
 	}
 
 	return nil

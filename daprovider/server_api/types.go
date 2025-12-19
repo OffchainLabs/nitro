@@ -12,6 +12,11 @@ type SupportedHeaderBytesResult struct {
 	HeaderBytes hexutil.Bytes `json:"headerBytes,omitempty"`
 }
 
+// MaxMessageSizeResult is the result struct for daprovider_getMaxMessageSize
+type MaxMessageSizeResult struct {
+	MaxSize int `json:"maxSize"`
+}
+
 // StoreResult is the result struct that data availability providers should use to respond with a commitment to a Store request for posting batch data to their DA service
 type StoreResult struct {
 	SerializedDACert hexutil.Bytes `json:"serialized-da-cert,omitempty"`
