@@ -21,6 +21,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
+	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbos/retryables"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -534,6 +535,13 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, usedMultiGas multigas.MultiGas, 
 	}
 	gasUsed := p.msg.GasLimit - gasLeft
 
+	var multiDimensionalCost *big.Int
+	var err error
+	if p.state.L2PricingState().ArbosVersion >= l2pricing.ArbosMultiGasConstraintsVersion {
+		multiDimensionalCost, err = p.state.L2PricingState().MultiDimensionalPriceForRefund(usedMultiGas)
+		p.state.Restrict(err)
+	}
+
 	if underlyingTx != nil && underlyingTx.Type() == types.ArbitrumRetryTxType {
 		inner, _ := underlyingTx.GetInner().(*types.ArbitrumRetryTx)
 		effectiveBaseFee := inner.GasFeeCap
@@ -554,6 +562,11 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, usedMultiGas multigas.MultiGas, 
 		if err != nil {
 			log.Error("Uh oh, Geth didn't refund the user", inner.From, gasRefund)
 		}
+
+		singleGasCost := arbmath.BigMulByUint(effectiveBaseFee, gasUsed)
+		shouldRefundMultiGas := multiDimensionalCost != nil &&
+			arbmath.BigGreaterThan(singleGasCost, multiDimensionalCost) &&
+			effectiveBaseFee.Cmp(p.evm.Context.BaseFee) == 0 // don't refund retryable estimation
 
 		maxRefund := new(big.Int).Set(inner.MaxRefund)
 		refund := func(refundFrom common.Address, amount *big.Int, reason tracing.BalanceChangeReason) {
@@ -597,8 +610,12 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, usedMultiGas multigas.MultiGas, 
 			// The submission fee is still taken from the L1 deposit earlier, even if it's not refunded.
 			takeFunds(maxRefund, inner.SubmissionFeeRefund)
 		}
+
 		// Conceptually, the gas charge is taken from the L1 deposit pool if possible.
-		takeFunds(maxRefund, arbmath.BigMulByUint(effectiveBaseFee, gasUsed))
+		// This continues to use the simple-gas price; any multi-gas discount is handled
+		// as an explicit refund below.
+		takeFunds(maxRefund, singleGasCost)
+
 		// Refund any unused gas, without overdrafting the L1 deposit.
 		networkRefund := gasRefund
 		if p.state.ArbOSVersion() >= params.ArbosVersion_11 {
@@ -615,6 +632,12 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, usedMultiGas multigas.MultiGas, 
 			}
 		}
 		refund(networkFeeAccount, networkRefund, tracing.BalanceChangeTransferNetworkRefund)
+
+		// Multi-dimensional refund (retryable tx path)
+		if shouldRefundMultiGas {
+			amount := arbmath.BigSub(singleGasCost, multiDimensionalCost)
+			refund(networkFeeAccount, amount, tracing.BalanceChangeMultiGasRefund)
+		}
 
 		if success {
 			// we don't want to charge for this
@@ -677,6 +700,22 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, usedMultiGas multigas.MultiGas, 
 	if p.state.ArbOSVersion() >= params.ArbosVersion_10 {
 		if _, err := p.state.L1PricingState().AddToL1FeesAvailable(p.PosterFee); err != nil {
 			log.Error("failed to update L1FeesAvailable: ", "err", err)
+		}
+	}
+
+	// Multi-dimensional refund (normal tx path)
+	if multiDimensionalCost != nil {
+		amount := new(big.Int).Sub(totalCost, multiDimensionalCost)
+		if amount.Sign() > 0 {
+			err := util.TransferBalance(
+				&networkFeeAccount,
+				&p.msg.From,
+				amount,
+				p.evm,
+				scenario,
+				tracing.BalanceChangeMultiGasRefund,
+			)
+			p.state.Restrict(err)
 		}
 	}
 

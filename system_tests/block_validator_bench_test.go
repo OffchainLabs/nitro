@@ -12,7 +12,7 @@ import (
 
 func TestBlockValidatorBenchmark(t *testing.T) {
 	opts := Options{
-		dasModeString: "onchain",
+		daModeString:  "onchain",
 		workloadLoops: 1,
 		workload:      depleteGas,
 		arbitrator:    true,

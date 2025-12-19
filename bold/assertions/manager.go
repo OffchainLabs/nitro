@@ -24,11 +24,11 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/bold/api/db"
-	protocol "github.com/offchainlabs/nitro/bold/chain-abstraction"
-	"github.com/offchainlabs/nitro/bold/challenge-manager/types"
+	"github.com/offchainlabs/nitro/bold/challenge/types"
 	"github.com/offchainlabs/nitro/bold/containers/threadsafe"
-	l2stateprovider "github.com/offchainlabs/nitro/bold/layer2-state-provider"
-	retry "github.com/offchainlabs/nitro/bold/runtime"
+	"github.com/offchainlabs/nitro/bold/protocol"
+	"github.com/offchainlabs/nitro/bold/retry"
+	"github.com/offchainlabs/nitro/bold/state"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
@@ -73,7 +73,7 @@ type Manager struct {
 	stopwaiter.StopWaiter
 	chain                       protocol.AssertionChain
 	backend                     protocol.ChainBackend
-	execProvider                l2stateprovider.ExecutionProvider
+	execProvider                state.ExecutionProvider
 	times                       timings
 	rollupAddr                  common.Address
 	validatorName               string
@@ -218,7 +218,7 @@ func WithMinimumGapToParentAssertion(t time.Duration) Opt {
 // NewManager creates a manager from the required dependencies.
 func NewManager(
 	chain protocol.AssertionChain,
-	execProvider l2stateprovider.ExecutionProvider,
+	execProvider state.ExecutionProvider,
 	validatorName string,
 	mode types.Mode,
 	opts ...Opt,

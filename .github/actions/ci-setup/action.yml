@@ -43,13 +43,13 @@ runs:
       shell: bash
 
     - name: Cache Go build
-      uses: actions/cache@v4
+      uses: actions/cache@v5
       with:
         path: ~/.cache/go-build
         key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
 
     - name: Cache Rust build
-      uses: actions/cache@v4
+      uses: actions/cache@v5
       with:
         path: |
           ~/.cargo/
@@ -62,7 +62,7 @@ runs:
 
     - name: Cache cbrotli
       id: cache-cbrotli
-      uses: actions/cache@v4
+      uses: actions/cache@v5
       with:
         path: |
           target/include/brotli/

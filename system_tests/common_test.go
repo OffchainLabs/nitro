@@ -62,25 +62,29 @@ import (
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/blsSignatures"
 	"github.com/offchainlabs/nitro/bold/testing/setup"
-	butil "github.com/offchainlabs/nitro/bold/util"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/daprovider"
-	"github.com/offchainlabs/nitro/daprovider/das"
-	"github.com/offchainlabs/nitro/daprovider/das/dastree"
-	"github.com/offchainlabs/nitro/daprovider/das/dasutil"
+	"github.com/offchainlabs/nitro/daprovider/anytrust"
+	"github.com/offchainlabs/nitro/daprovider/anytrust/tree"
+	anytrustutil "github.com/offchainlabs/nitro/daprovider/anytrust/util"
+	"github.com/offchainlabs/nitro/daprovider/data_streaming"
+	"github.com/offchainlabs/nitro/daprovider/referenceda"
+	dapserver "github.com/offchainlabs/nitro/daprovider/server"
 	"github.com/offchainlabs/nitro/deploy"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	_ "github.com/offchainlabs/nitro/execution/nodeInterface"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/localgen"
+	"github.com/offchainlabs/nitro/solgen/go/ospgen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/solgen/go/upgrade_executorgen"
 	"github.com/offchainlabs/nitro/statetransfer"
 	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/redisutil"
 	"github.com/offchainlabs/nitro/util/signature"
@@ -102,7 +106,7 @@ type SecondNodeParams struct {
 	nodeConfig             *arbnode.Config
 	execConfig             *gethexec.Config
 	stackConfig            *node.Config
-	dasConfig              *das.DataAvailabilityConfig
+	anyTrustConfig         *anytrust.Config
 	initData               *statetransfer.ArbosInitializationInfo
 	addresses              *chaininfo.RollupAddresses
 	useExecutionClientOnly bool
@@ -268,9 +272,9 @@ func ExecConfigDefaultTest(t *testing.T, stateScheme string) *gethexec.Config {
 
 // DeployConfig contains options for deployOnParentChain
 type DeployConfig struct {
-	DeployBold           bool
-	DeployReferenceDA    bool
-	DelayBufferThreshold uint64
+	DeployBold                 bool
+	DeployReferenceDAContracts bool
+	DelayBufferThreshold       uint64
 }
 
 type NodeBuilder struct {
@@ -304,8 +308,13 @@ type NodeBuilder struct {
 	withProdConfirmPeriodBlocks bool
 	delayBufferThreshold        uint64
 	withL1ClientWrapper         bool
-	deployReferenceDA           bool
+	deployReferenceDAContracts  bool
+	withReferenceDAProvider     bool
 	TrieNoAsyncFlush            bool
+
+	// ReferenceDA server (created if withReferenceDAProvider is true)
+	referenceDAServer *http.Server
+	referenceDAURL    string
 
 	// Created nodes
 	L1 *TestClient
@@ -455,9 +464,35 @@ func (b *NodeBuilder) WithDelayBuffer(threshold uint64) *NodeBuilder {
 	return b
 }
 
-func (b *NodeBuilder) WithReferenceDA() *NodeBuilder {
-	b.deployReferenceDA = true
+// WithReferenceDAContractsOnly deploys the ReferenceDA proof validator contract on L1
+// but does not create a provider server. Use this when you need manual server setup
+// (e.g., multi-writer tests that combine ReferenceDA with other DA backends).
+func (b *NodeBuilder) WithReferenceDAContractsOnly() *NodeBuilder {
+	b.deployReferenceDAContracts = true
 	return b
+}
+
+// WithReferenceDA enables ReferenceDA with an external provider server.
+// The server is created after L1 is built and configured automatically.
+func (b *NodeBuilder) WithReferenceDA() *NodeBuilder {
+	b.deployReferenceDAContracts = true
+	b.withReferenceDAProvider = true
+	return b
+}
+
+// setupReferenceDAServer creates the ReferenceDA provider server and configures the node.
+// Must be called after BuildL1 completes (needs L1 client and deployed contracts).
+func (b *NodeBuilder) setupReferenceDAServer(t *testing.T) {
+	validatorAddr := b.L1Info.GetAddress("ReferenceDAProofValidator")
+	dataSigner := signature.DataSignerFromPrivateKey(b.L1Info.GetInfoWithPrivKey("Sequencer").PrivateKey)
+
+	b.referenceDAServer, b.referenceDAURL =
+		createReferenceDAProviderServer(t, b.ctx, b.L1.Client, validatorAddr, dataSigner, 0)
+
+	// Configure the node to use the ReferenceDA provider
+	b.nodeConfig.DA.ExternalProvider.Enable = true
+	b.nodeConfig.DA.ExternalProvider.RPC.URL = b.referenceDAURL
+	b.nodeConfig.DA.ExternalProvider.WithWriter = true
 }
 
 func (b *NodeBuilder) RequireScheme(t *testing.T, scheme string) *NodeBuilder {
@@ -506,6 +541,9 @@ func (b *NodeBuilder) Build(t *testing.T) func() {
 	b.CheckConfig(t)
 	if b.withL1 {
 		b.BuildL1(t)
+		if b.withReferenceDAProvider {
+			b.setupReferenceDAServer(t)
+		}
 		return b.BuildL2OnL1(t)
 	}
 	return b.BuildL2(t)
@@ -648,11 +686,11 @@ func (b *NodeBuilder) BuildL1(t *testing.T) {
 	locator, err := server_common.NewMachineLocator(b.valnodeConfig.Wasm.RootPath)
 	Require(t, err)
 	deployConfig := DeployConfig{
-		DeployBold:           b.deployBold,
-		DeployReferenceDA:    b.deployReferenceDA,
-		DelayBufferThreshold: b.delayBufferThreshold,
+		DeployBold:                 b.deployBold,
+		DeployReferenceDAContracts: b.deployReferenceDAContracts,
+		DelayBufferThreshold:       b.delayBufferThreshold,
 	}
-	t.Logf("BuildL1 deployConfig: DeployBold=%v, DeployReferenceDA=%v", deployConfig.DeployBold, deployConfig.DeployReferenceDA)
+	t.Logf("BuildL1 deployConfig: DeployBold=%v, DeployReferenceDAContracts=%v", deployConfig.DeployBold, deployConfig.DeployReferenceDAContracts)
 	b.addresses, b.initMessage = deployOnParentChain(
 		t,
 		b.ctx,
@@ -764,9 +802,9 @@ func (b *NodeBuilder) BuildL3OnL2(t *testing.T) func() {
 	parentChainReaderConfig := headerreader.TestConfig
 	parentChainReaderConfig.Dangerous.WaitForTxApprovalSafePoll = 0
 	deployConfig := DeployConfig{
-		DeployBold:           b.deployBold,
-		DeployReferenceDA:    false, // L3 doesn't need ReferenceDA
-		DelayBufferThreshold: 0,
+		DeployBold:                 b.deployBold,
+		DeployReferenceDAContracts: false, // L3 doesn't need ReferenceDA
+		DelayBufferThreshold:       0,
 	}
 	b.l3Addresses, b.l3InitMessage = deployOnParentChain(
 		t,
@@ -863,6 +901,11 @@ func (b *NodeBuilder) BuildL2OnL1(t *testing.T) func() {
 		b.L2.cleanup()
 		if b.L1 != nil && b.L1.cleanup != nil {
 			b.L1.cleanup()
+		}
+		if b.referenceDAServer != nil {
+			if err := b.referenceDAServer.Shutdown(context.Background()); err != nil {
+				t.Logf("Error shutting down ReferenceDA server: %v", err)
+			}
 		}
 		b.ctxCancel()
 	}
@@ -1009,8 +1052,8 @@ func build2ndNode(
 	if params.nodeConfig == nil {
 		params.nodeConfig = arbnode.ConfigDefaultL1NonSequencerTest()
 	}
-	if params.dasConfig != nil {
-		params.nodeConfig.DataAvailability = *params.dasConfig
+	if params.anyTrustConfig != nil {
+		params.nodeConfig.DA.AnyTrust = *params.anyTrustConfig
 	}
 	if params.stackConfig == nil {
 		params.stackConfig = firstNodeStackConfig
@@ -1133,33 +1176,39 @@ func SendWaitTestTransactions(t *testing.T, ctx context.Context, client *ethclie
 // Note: In production with MaxDelay=1h, you'd need to wait much longer or have a full batch
 // before posting occurs. This aggressive test configuration (MaxDelay=0, PollInterval=10ms)
 // is designed for fast CI/CD, not realistic production behavior.
-func checkBatchPosting(t *testing.T, ctx context.Context, l1client, l2clientA *ethclient.Client, l1info, l2info info, expectedBalance *big.Int, l2ClientsToCheck ...*ethclient.Client) {
+func checkBatchPosting(t *testing.T, ctx context.Context, builder *NodeBuilder, l2clientB *ethclient.Client) {
 	t.Helper()
 
+	// Prepare transfer transaction on L2
+	transferAmount := big.NewInt(1e12)
+	recipientName := fmt.Sprintf("Recipient_%d", testhelpers.RandomUint32(0, 1<<30))
+	builder.L2Info.GenerateAccount(recipientName)
+	recipient := builder.L2Info.GetAddress(recipientName)
+	tx := builder.L2Info.PrepareTxTo("Owner", &recipient, builder.L2Info.TransferGas, transferAmount, nil)
+
+	// Check recipient balance before transfer
+	recipientBalanceBefore, err := l2clientB.BalanceAt(ctx, recipient, nil)
+	Require(t, err)
+
 	// Send L2 transaction and wait for execution
-	tx := l2info.PrepareTx("Owner", "User2", l2info.TransferGas, big.NewInt(1e12), nil)
-	err := l2clientA.SendTransaction(ctx, tx)
-	Require(t, err)
-	_, err = EnsureTxSucceeded(ctx, l2clientA, tx)
-	Require(t, err)
+	builder.L2.SendWaitTestTransactions(t, []*types.Transaction{tx})
 
 	// Brief pause for inbox reader to process the message
 	time.Sleep(time.Millisecond * 100)
 
 	// Create L1 blocks to trigger batch posting (with MaxDelay=0, this ensures immediate posting)
-	AdvanceL1(t, ctx, l1client, l1info, 30)
+	AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, 30)
 
-	// Verify all follower nodes synced the transaction
-	for _, client := range l2ClientsToCheck {
-		_, err = WaitForTx(ctx, client, tx.Hash(), time.Second*30)
-		Require(t, err)
+	// Ensure the second node successfully processed the batch
+	_, err = WaitForTx(ctx, l2clientB, tx.Hash(), time.Second*30)
+	Require(t, err)
 
-		l2balance, err := client.BalanceAt(ctx, l2info.GetAddress("User2"), nil)
-		Require(t, err)
+	recipientBalanceAfter, err := l2clientB.BalanceAt(ctx, recipient, nil)
+	Require(t, err)
 
-		if l2balance.Cmp(expectedBalance) != 0 {
-			Fatal(t, "Unexpected balance:", l2balance)
-		}
+	expectedBalance := big.NewInt(0).Add(recipientBalanceBefore, transferAmount)
+	if recipientBalanceAfter.Cmp(expectedBalance) != 0 {
+		Fatal(t, "Unexpected balance:", recipientBalanceAfter)
 	}
 }
 
@@ -1667,6 +1716,46 @@ var (
 	smallStepChallengeLeafHeight = uint64(1 << 10)
 )
 
+// deployCustomDAOSP deploys the OneStepProver contracts configured for custom DA.
+// Returns the address of the custom OneStepProofEntry contract.
+func deployCustomDAOSP(
+	t *testing.T,
+	ctx context.Context,
+	client *ethclient.Client,
+	opts *bind.TransactOpts,
+	refDAValidatorAddr common.Address,
+) common.Address {
+	// Deploy custom OneStepProverHostIo with the ReferenceDAProofValidator
+	ospHostIoAddr, tx, _, err := ospgen.DeployOneStepProverHostIo(opts, client, refDAValidatorAddr)
+	Require(t, err)
+	_, err = EnsureTxSucceeded(ctx, client, tx)
+	Require(t, err)
+
+	// Deploy the other OSP contracts
+	osp0Addr, tx, _, err := ospgen.DeployOneStepProver0(opts, client)
+	Require(t, err)
+	_, err = EnsureTxSucceeded(ctx, client, tx)
+	Require(t, err)
+
+	ospMemAddr, tx, _, err := ospgen.DeployOneStepProverMemory(opts, client)
+	Require(t, err)
+	_, err = EnsureTxSucceeded(ctx, client, tx)
+	Require(t, err)
+
+	ospMathAddr, tx, _, err := ospgen.DeployOneStepProverMath(opts, client)
+	Require(t, err)
+	_, err = EnsureTxSucceeded(ctx, client, tx)
+	Require(t, err)
+
+	// Deploy custom OneStepProofEntry with all the OSP contracts
+	customOspAddr, tx, _, err := ospgen.DeployOneStepProofEntry(opts, client, osp0Addr, ospMemAddr, ospMathAddr, ospHostIoAddr)
+	Require(t, err)
+	_, err = EnsureTxSucceeded(ctx, client, tx)
+	Require(t, err)
+
+	return customOspAddr
+}
+
 func deployOnParentChain(
 	t *testing.T,
 	ctx context.Context,
@@ -1705,8 +1794,8 @@ func deployOnParentChain(
 	maxDataSize := big.NewInt(117964)
 
 	// Deploy ReferenceDA contracts if enabled (needed for both BOLD and legacy)
-	if deployConfig.DeployReferenceDA {
-		t.Logf("Deploying ReferenceDA contracts (deployConfig.DeployReferenceDA = true)")
+	if deployConfig.DeployReferenceDAContracts {
+		t.Logf("Deploying ReferenceDA contracts (deployConfig.DeployReferenceDAContracts = true)")
 		// Deploy ReferenceDAProofValidator with trusted signers
 		// Using Sequencer as the trusted signer since it's the one signing certificates
 		trustedSigners := []common.Address{parentChainInfo.GetAddress("Sequencer")}
@@ -1770,9 +1859,18 @@ func deployOnParentChain(
 			NumBigStepLevel:              3,
 			ChallengeGracePeriodBlocks:   3,
 			BufferConfig:                 bufferConfig,
+			DataCostEstimate:             big.NewInt(0),
 		}
 
-		wrappedClient := butil.NewBackendWrapper(parentChainReader.Client(), rpc.LatestBlockNumber)
+		// Deploy custom OSP for ReferenceDA if enabled
+		var customOspAddr common.Address
+		if deployConfig.DeployReferenceDAContracts {
+			refDAValidatorAddr := parentChainInfo.GetAddress("ReferenceDAProofValidator")
+			customOspAddr = deployCustomDAOSP(t, ctx, parentChainReader.Client(), &parentChainTransactionOpts, refDAValidatorAddr)
+			t.Logf("Deployed custom OneStepProofEntry at %s", customOspAddr.Hex())
+		}
+
+		parentReader := parentChainReader.Client()
 		rollupStackConfig := setup.RollupStackConfig{
 			UseMockBridge:          false,
 			UseMockOneStepProver:   false,
@@ -1780,9 +1878,13 @@ func deployOnParentChain(
 			MinimumAssertionPeriod: 0,
 		}
 
+		if deployConfig.DeployReferenceDAContracts {
+			rollupStackConfig.CustomDAOsp = customOspAddr
+		}
+
 		boldAddresses, err := setup.DeployFullRollupStack(
 			ctx,
-			wrappedClient,
+			parentReader,
 			&parentChainTransactionOpts,
 			parentChainInfo.GetAddress("Sequencer"),
 			cfg,
@@ -2021,23 +2123,23 @@ func requireClose(t *testing.T, s *node.Node, text ...interface{}) {
 	Require(t, s.Close(), text...)
 }
 
-func authorizeDASKeyset(
+func authorizeAnyTrustKeyset(
 	t *testing.T,
 	ctx context.Context,
-	dasSignerKey *blsSignatures.PublicKey,
+	anyTrustSignerKey *blsSignatures.PublicKey,
 	l1info info,
 	l1client *ethclient.Client,
 ) {
-	if dasSignerKey == nil {
+	if anyTrustSignerKey == nil {
 		return
 	}
-	keyset := &dasutil.DataAvailabilityKeyset{
+	keyset := &anytrustutil.DataAvailabilityKeyset{
 		AssumedHonest: 1,
-		PubKeys:       []blsSignatures.PublicKey{*dasSignerKey},
+		PubKeys:       []blsSignatures.PublicKey{*anyTrustSignerKey},
 	}
 	wr := bytes.NewBuffer([]byte{})
 	err := keyset.Serialize(wr)
-	Require(t, err, "unable to serialize DAS keyset")
+	Require(t, err, "unable to serialize AnyTrust keyset")
 	keysetBytes := wr.Bytes()
 
 	sequencerInboxABI, err := abi.JSON(strings.NewReader(bridgegen.SequencerInboxABI))
@@ -2057,7 +2159,7 @@ func authorizeDASKeyset(
 
 	// Wait for the keyset event to be queryable via eth_getLogs
 	// This prevents race conditions where batch posting happens before L1 indexing completes
-	keysetHash := dastree.Hash(keysetBytes)
+	keysetHash := tree.Hash(keysetBytes)
 	seqInbox, err := bridgegen.NewSequencerInbox(l1info.Accounts["SequencerInbox"].Address, l1client)
 	Require(t, err, "unable to bind sequencer inbox")
 
@@ -2082,77 +2184,169 @@ func authorizeDASKeyset(
 	}
 }
 
-func setupConfigWithDAS(
-	t *testing.T, ctx context.Context, dasModeString string,
-) (*params.ChainConfig, *arbnode.Config, *das.LifecycleManager, string, *blsSignatures.PublicKey) {
+func setupConfigWithAnyTrust(
+	t *testing.T, ctx context.Context, daModeString string,
+) (*params.ChainConfig, *arbnode.Config, *anytrust.LifecycleManager, string, *blsSignatures.PublicKey) {
 	l1NodeConfigA := arbnode.ConfigDefaultL1Test()
 	chainConfig := chaininfo.ArbitrumDevTestChainConfig()
 	var dbPath string
 	var err error
 
-	enableFileStorage, enableDas := false, true
-	switch dasModeString {
+	enableFileStorage, enableAnyTrust := false, true
+	switch daModeString {
 	case "files":
 		enableFileStorage = true
-		chainConfig = chaininfo.ArbitrumDevTestDASChainConfig()
+		chainConfig = chaininfo.ArbitrumDevTestAnyTrustChainConfig()
 	case "onchain":
-		enableDas = false
+		enableAnyTrust = false
 	case "referenceda":
-		// For referenceda, we use the standard dev chain config (not DAS/AnyTrust)
+		// For referenceda, we use the standard dev chain config (not AnyTrust)
 		// chainConfig already initialized to ArbitrumDevTestChainConfig() above
-		enableDas = false // We'll use external referenceda provider instead of traditional DAS
+		enableAnyTrust = false // We'll use external referenceda provider instead of AnyTrust
 	default:
 		Fatal(t, "unknown storage type")
 	}
 	dbPath = t.TempDir()
-	dasSignerKey, _, err := das.GenerateAndStoreKeys(dbPath)
+	anyTrustSignerKey, _, err := anytrust.GenerateAndStoreKeys(dbPath)
 	Require(t, err)
 
-	dasConfig := das.DefaultDataAvailabilityConfig
-	dasConfig.Enable = enableDas
-	dasConfig.Key.KeyDir = dbPath
-	dasConfig.LocalFileStorage.Enable = enableFileStorage
-	dasConfig.LocalFileStorage.DataDir = dbPath
-	dasConfig.LocalFileStorage.MaxRetention = time.Hour * 24 * 30
-	dasConfig.PanicOnError = true
-	dasConfig.DisableSignatureChecking = true
+	anyTrustConfig := anytrust.DefaultConfig
+	anyTrustConfig.Enable = enableAnyTrust
+	anyTrustConfig.Key.KeyDir = dbPath
+	anyTrustConfig.LocalFileStorage.Enable = enableFileStorage
+	anyTrustConfig.LocalFileStorage.DataDir = dbPath
+	anyTrustConfig.LocalFileStorage.MaxRetention = time.Hour * 24 * 30
+	anyTrustConfig.PanicOnError = true
+	anyTrustConfig.DisableSignatureChecking = true
 
-	l1NodeConfigA.DataAvailability = das.DefaultDataAvailabilityConfig
-	var lifecycleManager *das.LifecycleManager
-	var daReader dasutil.DASReader
-	var daWriter dasutil.DASWriter
-	var daHealthChecker das.DataAvailabilityServiceHealthChecker
-	var signatureVerifier *das.SignatureVerifier
-	if dasModeString != "onchain" && dasModeString != "referenceda" {
-		daReader, daWriter, signatureVerifier, daHealthChecker, lifecycleManager, err = das.CreateDAComponentsForDaserver(ctx, &dasConfig, nil, nil)
+	l1NodeConfigA.DA.AnyTrust = anytrust.DefaultConfig
+	var lifecycleManager *anytrust.LifecycleManager
+	var daReader anytrustutil.Reader
+	var daWriter anytrustutil.Writer
+	var daHealthChecker anytrust.ServiceHealthChecker
+	var signatureVerifier *anytrust.SignatureVerifier
+	if daModeString != "onchain" && daModeString != "referenceda" {
+		daReader, daWriter, signatureVerifier, daHealthChecker, lifecycleManager, err = anytrust.CreateDAComponentsForAnyTrustServer(ctx, &anyTrustConfig, nil, nil)
 
 		Require(t, err)
 		rpcLis, err := net.Listen("tcp", "localhost:0")
 		Require(t, err)
 		restLis, err := net.Listen("tcp", "localhost:0")
 		Require(t, err)
-		_, err = das.StartDASRPCServerOnListener(ctx, rpcLis, genericconf.HTTPServerTimeoutConfigDefault, genericconf.HTTPServerBodyLimitDefault, daReader, daWriter, daHealthChecker, signatureVerifier)
+		_, err = anytrust.StartRPCServerOnListener(ctx, rpcLis, genericconf.HTTPServerTimeoutConfigDefault, genericconf.HTTPServerBodyLimitDefault, daReader, daWriter, daHealthChecker, signatureVerifier)
 		Require(t, err)
-		_, err = das.NewRestfulDasServerOnListener(restLis, genericconf.HTTPServerTimeoutConfigDefault, daReader, daHealthChecker)
+		_, err = anytrust.NewRestfulServerOnListener(restLis, genericconf.HTTPServerTimeoutConfigDefault, daReader, daHealthChecker)
 		Require(t, err)
 
-		beConfigA := das.BackendConfig{
+		beConfigA := anytrust.BackendConfig{
 			URL:    "http://" + rpcLis.Addr().String(),
-			Pubkey: blsPubToBase64(dasSignerKey),
+			Pubkey: blsPubToBase64(anyTrustSignerKey),
 		}
-		l1NodeConfigA.DataAvailability.RPCAggregator = aggConfigForBackend(beConfigA)
-		l1NodeConfigA.DataAvailability.Enable = true
-		l1NodeConfigA.DataAvailability.RestAggregator = das.DefaultRestfulClientAggregatorConfig
-		l1NodeConfigA.DataAvailability.RestAggregator.Enable = true
-		l1NodeConfigA.DataAvailability.RestAggregator.Urls = []string{"http://" + restLis.Addr().String()}
-	} else if dasModeString == "referenceda" {
+		l1NodeConfigA.DA.AnyTrust.RPCAggregator = aggConfigForBackend(beConfigA)
+		l1NodeConfigA.DA.AnyTrust.Enable = true
+		l1NodeConfigA.DA.AnyTrust.RestAggregator = anytrust.DefaultRestfulClientAggregatorConfig
+		l1NodeConfigA.DA.AnyTrust.RestAggregator.Enable = true
+		l1NodeConfigA.DA.AnyTrust.RestAggregator.Urls = []string{"http://" + restLis.Addr().String()}
+	} else if daModeString == "referenceda" {
 		// For referenceda mode, we'll use external provider
 		// The URL will be configured after the validator contract is deployed and server is created
 		l1NodeConfigA.DA.ExternalProvider.Enable = true
-		l1NodeConfigA.DataAvailability.Enable = false
+		l1NodeConfigA.DA.AnyTrust.Enable = false
 	}
 
-	return chainConfig, l1NodeConfigA, lifecycleManager, dbPath, dasSignerKey
+	return chainConfig, l1NodeConfigA, lifecycleManager, dbPath, anyTrustSignerKey
+}
+
+// controllableWriter wraps a DA writer and can be controlled to return specific errors
+type controllableWriter struct {
+	mu             sync.RWMutex
+	writer         daprovider.Writer
+	shouldFallback bool
+	customError    error
+}
+
+func (w *controllableWriter) SetShouldFallback(val bool) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.shouldFallback = val
+}
+
+func (w *controllableWriter) SetCustomError(err error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.customError = err
+}
+
+func (w *controllableWriter) Store(msg []byte, timeout uint64) containers.PromiseInterface[[]byte] {
+	w.mu.RLock()
+	shouldFallback := w.shouldFallback
+	customError := w.customError
+	w.mu.RUnlock()
+
+	log.Info("controllableWriter.Store called", "msgLen", len(msg), "timeout", timeout, "shouldFallback", shouldFallback)
+
+	// Check for custom error first
+	if customError != nil {
+		log.Info("controllableWriter returning custom error", "error", customError)
+		return containers.NewReadyPromise[[]byte](nil, customError)
+	}
+
+	// Check for fallback signal
+	if shouldFallback {
+		log.Warn("controllableWriter returning ErrFallbackRequested")
+		return containers.NewReadyPromise[[]byte](nil, daprovider.ErrFallbackRequested)
+	}
+
+	// Normal operation
+	log.Info("controllableWriter delegating to underlying writer")
+	return w.writer.Store(msg, timeout)
+}
+
+func (w *controllableWriter) GetMaxMessageSize() containers.PromiseInterface[int] {
+	return w.writer.GetMaxMessageSize()
+}
+
+// createReferenceDAProviderServer creates and starts a basic ReferenceDA provider server.
+// This is a convenience wrapper around createReferenceDAProviderServerWithControl
+// for tests that don't need runtime control of error injection.
+func createReferenceDAProviderServer(t *testing.T, ctx context.Context, l1Client *ethclient.Client, validatorAddr common.Address, dataSigner signature.DataSignerFunc, port int) (*http.Server, string) {
+	server, url, _ := createReferenceDAProviderServerWithControl(t, ctx, l1Client, validatorAddr, dataSigner, port, referenceda.DefaultConfig.MaxBatchSize)
+	return server, url
+}
+
+// createReferenceDAProviderServerWithControl creates a ReferenceDA provider server with controllable error injection.
+// Returns: server, URL, and controllableWriter for direct manipulation in tests.
+func createReferenceDAProviderServerWithControl(t *testing.T, ctx context.Context, l1Client *ethclient.Client, validatorAddr common.Address, dataSigner signature.DataSignerFunc, port int, maxMessageSize int) (*http.Server, string, *controllableWriter) {
+	// Create ReferenceDA components
+	storage := referenceda.GetInMemoryStorage()
+	reader := referenceda.NewReader(storage, l1Client, validatorAddr)
+	writer := referenceda.NewWriter(dataSigner, maxMessageSize)
+	validator := referenceda.NewValidator(l1Client, validatorAddr)
+
+	// Create controllable wrapper
+	wrappedWriter := &controllableWriter{
+		writer: writer,
+	}
+
+	// Create server config
+	serverConfig := &dapserver.ServerConfig{
+		Addr:               "127.0.0.1",
+		Port:               uint64(port), // #nosec G115
+		JWTSecret:          "",
+		EnableDAWriter:     true,
+		ServerTimeouts:     dapserver.DefaultServerConfig.ServerTimeouts,
+		RPCServerBodyLimit: dapserver.DefaultServerConfig.RPCServerBodyLimit,
+	}
+
+	// Create the provider server
+	headerBytes := []byte{daprovider.DACertificateMessageHeaderFlag}
+	server, err := dapserver.NewServerWithDAPProvider(ctx, serverConfig, reader, wrappedWriter, validator, headerBytes, data_streaming.PayloadCommitmentVerifier())
+	Require(t, err)
+
+	t.Logf("Started controllable ReferenceDA provider server at %s", server.Addr)
+
+	// Return server, URL, and controllable writer for direct manipulation
+	return server, server.Addr, wrappedWriter
 }
 
 func getDeadlineTimeout(t *testing.T, defaultTimeout time.Duration) time.Duration {

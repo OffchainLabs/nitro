@@ -51,6 +51,7 @@ func defaultTestRoundTimingInfo(offset time.Time) timeboost.RoundTimingInfo {
 }
 
 func Test_expressLaneService_validateExpressLaneTx(t *testing.T) {
+	validSubmission := buildValidSubmission(t, common.HexToAddress("0x2Aef36410182881a4b13664a1E079762D7F716e6"), testPriv, 0)
 	tests := []struct {
 		name        string
 		t           *ExpressLaneTracker
@@ -62,13 +63,13 @@ func Test_expressLaneService_validateExpressLaneTx(t *testing.T) {
 		{
 			name:        "nil msg",
 			sub:         nil,
-			t:           &ExpressLaneTracker{},
+			t:           defaultTestTracker(),
 			expectedErr: timeboost.ErrMalformedData,
 		},
 		{
 			name:        "nil tx",
 			sub:         &timeboost.ExpressLaneSubmission{},
-			t:           &ExpressLaneTracker{},
+			t:           defaultTestTracker(),
 			expectedErr: timeboost.ErrMalformedData,
 		},
 		{
@@ -76,67 +77,54 @@ func Test_expressLaneService_validateExpressLaneTx(t *testing.T) {
 			sub: &timeboost.ExpressLaneSubmission{
 				Transaction: &types.Transaction{},
 			},
-			t:           &ExpressLaneTracker{},
+			t:           defaultTestTracker(),
 			expectedErr: timeboost.ErrMalformedData,
 		},
 		{
+			name: "oversized data",
+			sub: func() *timeboost.ExpressLaneSubmission {
+				submission := cloneSubmission(validSubmission)
+				submission.Transaction = types.NewTransaction(0, common.Address{}, big.NewInt(0), 0, big.NewInt(0), make([]byte, DefaultSequencerConfig.MaxTxDataSize))
+				return submission
+			}(),
+			t:           defaultTestTracker(),
+			expectedErr: timeboost.ErrOversizedData,
+		},
+		{
 			name: "wrong chain id",
-			t: &ExpressLaneTracker{
-				chainConfig: &params.ChainConfig{
-					ChainID: big.NewInt(1),
-				},
-			},
-			sub: &timeboost.ExpressLaneSubmission{
-				ChainId:     big.NewInt(2),
-				Transaction: &types.Transaction{},
-				Signature:   []byte{'a'},
-			},
+			t:    defaultTestTrackerWithChainID(1),
+			sub: func() *timeboost.ExpressLaneSubmission {
+				submission := cloneSubmission(validSubmission)
+				submission.ChainId = big.NewInt(2)
+				return submission
+			}(),
 			expectedErr: timeboost.ErrWrongChainId,
 		},
 		{
 			name: "wrong auction contract",
-			t: &ExpressLaneTracker{
-				auctionContractAddr: common.Address{'a'},
-				chainConfig: &params.ChainConfig{
-					ChainID: big.NewInt(1),
-				},
-			},
-			sub: &timeboost.ExpressLaneSubmission{
-				ChainId:                big.NewInt(1),
-				AuctionContractAddress: common.Address{'b'},
-				Transaction:            &types.Transaction{},
-				Signature:              []byte{'b'},
-			},
+			t:    defaultTestTrackerWithConfig(common.Address{'a'}, defaultTestRoundTimingInfo(time.Now())),
+			sub: func() *timeboost.ExpressLaneSubmission {
+				submission := cloneSubmission(validSubmission)
+				submission.AuctionContractAddress = common.Address{'b'}
+				return submission
+			}(),
 			expectedErr: timeboost.ErrWrongAuctionContract,
 		},
 		{
-			name: "bad round number",
-			t: &ExpressLaneTracker{
-				auctionContractAddr: common.Address{'a'},
-				roundTimingInfo:     defaultTestRoundTimingInfo(time.Now()),
-				chainConfig: &params.ChainConfig{
-					ChainID: big.NewInt(1),
-				},
-			},
+			name:       "bad round number",
+			t:          defaultTestTrackerWithConfig(common.Address{'a'}, defaultTestRoundTimingInfo(time.Now())),
 			controller: common.Address{'b'},
-			sub: &timeboost.ExpressLaneSubmission{
-				ChainId:                big.NewInt(1),
-				AuctionContractAddress: common.Address{'a'},
-				Transaction:            &types.Transaction{},
-				Signature:              []byte{'b'},
-				Round:                  100,
-			},
+			sub: func() *timeboost.ExpressLaneSubmission {
+				submission := cloneSubmission(validSubmission)
+				submission.AuctionContractAddress = common.Address{'a'}
+				submission.Round = 100
+				return submission
+			}(),
 			expectedErr: timeboost.ErrBadRoundNumber,
 		},
 		{
-			name: "malformed signature",
-			t: &ExpressLaneTracker{
-				auctionContractAddr: common.Address{'a'},
-				roundTimingInfo:     defaultTestRoundTimingInfo(time.Now()),
-				chainConfig: &params.ChainConfig{
-					ChainID: big.NewInt(1),
-				},
-			},
+			name:       "malformed signature",
+			t:          defaultTestTrackerWithConfig(common.Address{'a'}, defaultTestRoundTimingInfo(time.Now())),
 			controller: common.Address{'b'},
 
 			sub: &timeboost.ExpressLaneSubmission{
@@ -149,14 +137,8 @@ func Test_expressLaneService_validateExpressLaneTx(t *testing.T) {
 			expectedErr: timeboost.ErrMalformedData,
 		},
 		{
-			name: "wrong signature",
-			t: &ExpressLaneTracker{
-				auctionContractAddr: common.HexToAddress("0x2Aef36410182881a4b13664a1E079762D7F716e6"),
-				roundTimingInfo:     defaultTestRoundTimingInfo(time.Now()),
-				chainConfig: &params.ChainConfig{
-					ChainID: big.NewInt(1),
-				},
-			},
+			name:        "wrong signature",
+			t:           defaultTestTrackerWithConfig(common.HexToAddress("0x2Aef36410182881a4b13664a1E079762D7F716e6"), defaultTestRoundTimingInfo(time.Now())),
 			controller:  common.Address{'b'},
 			sub:         buildInvalidSignatureSubmission(t, common.HexToAddress("0x2Aef36410182881a4b13664a1E079762D7F716e6")),
 			expectedErr: timeboost.ErrNotExpressLaneController,
@@ -164,45 +146,26 @@ func Test_expressLaneService_validateExpressLaneTx(t *testing.T) {
 
 		{
 			name: "no onchain controller",
-			t: &ExpressLaneTracker{
-				auctionContractAddr: common.Address{'a'},
-				roundTimingInfo:     defaultTestRoundTimingInfo(time.Now()),
-				chainConfig: &params.ChainConfig{
-					ChainID: big.NewInt(1),
-				},
-			},
-			sub: &timeboost.ExpressLaneSubmission{
-				ChainId:                big.NewInt(1),
-				AuctionContractAddress: common.Address{'a'},
-				Transaction:            &types.Transaction{},
-				Signature:              []byte{'b'},
-			},
+			t:    defaultTestTrackerWithConfig(common.Address{'a'}, defaultTestRoundTimingInfo(time.Now())),
+			sub: func() *timeboost.ExpressLaneSubmission {
+				submission := cloneSubmission(validSubmission)
+				submission.AuctionContractAddress = common.Address{'a'}
+				return submission
+			}(),
 			expectedErr: timeboost.ErrNoOnchainController,
 		},
 		{
-			name: "not express lane controller",
-			t: &ExpressLaneTracker{
-				auctionContractAddr: common.HexToAddress("0x2Aef36410182881a4b13664a1E079762D7F716e6"),
-				roundTimingInfo:     defaultTestRoundTimingInfo(time.Now()),
-				chainConfig: &params.ChainConfig{
-					ChainID: big.NewInt(1),
-				},
-			},
+			name:        "not express lane controller",
+			t:           defaultTestTrackerWithConfig(common.HexToAddress("0x2Aef36410182881a4b13664a1E079762D7F716e6"), defaultTestRoundTimingInfo(time.Now())),
 			controller:  common.Address{'b'},
-			sub:         buildValidSubmission(t, common.HexToAddress("0x2Aef36410182881a4b13664a1E079762D7F716e6"), testPriv, 0),
+			sub:         validSubmission,
 			expectedErr: timeboost.ErrNotExpressLaneController,
 		},
 		{
-			name: "OK",
-			t: &ExpressLaneTracker{
-				auctionContractAddr: common.HexToAddress("0x2Aef36410182881a4b13664a1E079762D7F716e6"),
-				roundTimingInfo:     defaultTestRoundTimingInfo(time.Now()),
-				chainConfig: &params.ChainConfig{
-					ChainID: big.NewInt(1),
-				},
-			},
+			name:       "OK",
+			t:          defaultTestTrackerWithConfig(common.HexToAddress("0x2Aef36410182881a4b13664a1E079762D7F716e6"), defaultTestRoundTimingInfo(time.Now())),
 			controller: crypto.PubkeyToAddress(testPriv.PublicKey),
-			sub:        buildValidSubmission(t, common.HexToAddress("0x2Aef36410182881a4b13664a1E079762D7F716e6"), testPriv, 0),
+			sub:        validSubmission,
 			valid:      true,
 		},
 	}
@@ -225,18 +188,12 @@ func Test_expressLaneService_validateExpressLaneTx(t *testing.T) {
 
 func Test_expressLaneService_validateExpressLaneTx_gracePeriod(t *testing.T) {
 	auctionContractAddr := common.HexToAddress("0x2Aef36410182881a4b13664a1E079762D7F716e6")
-	tr := &ExpressLaneTracker{
-		auctionContractAddr: auctionContractAddr,
-		roundTimingInfo: timeboost.RoundTimingInfo{
-			Offset:         time.Now(),
-			Round:          time.Second * 10,
-			AuctionClosing: time.Second * 5,
-		},
-		earlySubmissionGrace: time.Second * 2,
-		chainConfig: &params.ChainConfig{
-			ChainID: big.NewInt(1),
-		},
-	}
+	tr := defaultTestTrackerWithConfig(common.HexToAddress("0x2Aef36410182881a4b13664a1E079762D7F716e6"), timeboost.RoundTimingInfo{
+		Offset:         time.Now(),
+		Round:          time.Second * 10,
+		AuctionClosing: time.Second * 5,
+	})
+	tr.earlySubmissionGrace = time.Second * 2
 	tr.roundControl.Store(0, crypto.PubkeyToAddress(testPriv.PublicKey))
 	tr.roundControl.Store(1, crypto.PubkeyToAddress(testPriv2.PublicKey))
 
@@ -293,7 +250,7 @@ func (s *stubPublisher) PublishTimeboostedTransaction(parentCtx context.Context,
 func Test_expressLaneService_sequenceExpressLaneSubmission_nonceTooLow(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	tr := &ExpressLaneTracker{}
+	tr := defaultTestTracker()
 	tr.roundControl.Store(0, crypto.PubkeyToAddress(testPriv.PublicKey))
 	els := &expressLaneService{
 		roundInfo: containers.NewLruCache[uint64, *expressLaneRoundInfo](8),
@@ -314,7 +271,7 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_duplicateNonce(t *tes
 	defer cancel()
 	redisUrl := redisutil.CreateTestRedis(ctx, t)
 	timingInfo := defaultTestRoundTimingInfo(time.Now())
-	tr := &ExpressLaneTracker{}
+	tr := defaultTestTracker()
 	tr.roundControl.Store(0, crypto.PubkeyToAddress(testPriv.PublicKey))
 	els := &expressLaneService{
 		roundInfo:       containers.NewLruCache[uint64, *expressLaneRoundInfo](8),
@@ -361,7 +318,7 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_outOfOrder(t *testing
 	defer cancel()
 	redisUrl := redisutil.CreateTestRedis(ctx, t)
 	timingInfo := defaultTestRoundTimingInfo(time.Now())
-	tr := &ExpressLaneTracker{}
+	tr := defaultTestTracker()
 	tr.roundControl.Store(0, crypto.PubkeyToAddress(testPriv.PublicKey))
 	els := &expressLaneService{
 		roundInfo:       containers.NewLruCache[uint64, *expressLaneRoundInfo](8),
@@ -422,7 +379,7 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_erroredTx(t *testing.
 	defer cancel()
 	redisUrl := redisutil.CreateTestRedis(ctx, t)
 	timingInfo := defaultTestRoundTimingInfo(time.Now())
-	tr := &ExpressLaneTracker{}
+	tr := defaultTestTracker()
 	tr.roundControl.Store(0, crypto.PubkeyToAddress(testPriv.PublicKey))
 	els := &expressLaneService{
 		roundInfo:       containers.NewLruCache[uint64, *expressLaneRoundInfo](8),
@@ -465,7 +422,7 @@ func Test_expressLaneService_syncFromRedis(t *testing.T) {
 	defer cancel()
 	redisUrl := redisutil.CreateTestRedis(ctx, t)
 	timingInfo := defaultTestRoundTimingInfo(time.Now())
-	tr := &ExpressLaneTracker{}
+	tr := defaultTestTracker()
 	tr.roundControl.Store(0, crypto.PubkeyToAddress(testPriv.PublicKey))
 	els1 := &expressLaneService{
 		roundInfo:       containers.NewLruCache[uint64, *expressLaneRoundInfo](8),
@@ -506,7 +463,7 @@ func Test_expressLaneService_syncFromRedis(t *testing.T) {
 
 	time.Sleep(time.Second) // wait for parallel redis update threads to complete
 
-	tr2 := &ExpressLaneTracker{}
+	tr2 := defaultTestTracker()
 	tr2.roundControl.Store(0, crypto.PubkeyToAddress(testPriv.PublicKey))
 	els2 := &expressLaneService{
 		roundInfo:       containers.NewLruCache[uint64, *expressLaneRoundInfo](8),
@@ -609,7 +566,7 @@ func Test_expressLaneService_dontCareSequence(t *testing.T) {
 	defer cancel()
 
 	timingInfo := defaultTestRoundTimingInfo(time.Now())
-	tr := &ExpressLaneTracker{}
+	tr := defaultTestTracker()
 	tr.roundControl.Store(0, crypto.PubkeyToAddress(testPriv.PublicKey))
 
 	mp := &struct {
@@ -653,7 +610,7 @@ func Test_expressLaneService_mixedSequenceNumbersDontCareFirst(t *testing.T) {
 	defer cancel()
 
 	timingInfo := defaultTestRoundTimingInfo(time.Now())
-	tr := &ExpressLaneTracker{}
+	tr := defaultTestTracker()
 	tr.roundControl.Store(0, crypto.PubkeyToAddress(testPriv.PublicKey))
 
 	publishedTxs := []*types.Transaction{}
@@ -724,7 +681,7 @@ func Test_expressLaneService_mixedSequenceNumbersNormalFirst(t *testing.T) {
 	defer cancel()
 
 	timingInfo := defaultTestRoundTimingInfo(time.Now())
-	tr := &ExpressLaneTracker{}
+	tr := defaultTestTracker()
 	tr.roundControl.Store(0, crypto.PubkeyToAddress(testPriv.PublicKey))
 
 	publishedTxs := []*types.Transaction{}
@@ -795,7 +752,7 @@ func Test_expressLaneService_mixedSequenceNumbersIntermixed(t *testing.T) {
 	defer cancel()
 
 	timingInfo := defaultTestRoundTimingInfo(time.Now())
-	tr := &ExpressLaneTracker{}
+	tr := defaultTestTracker()
 	tr.roundControl.Store(0, crypto.PubkeyToAddress(testPriv.PublicKey))
 
 	publishedTxs := []*types.Transaction{}
@@ -870,7 +827,7 @@ func Test_expressLaneService_dontCareWithQueuedTransactions(t *testing.T) {
 	defer cancel()
 
 	timingInfo := defaultTestRoundTimingInfo(time.Now())
-	tr := &ExpressLaneTracker{}
+	tr := defaultTestTracker()
 	tr.roundControl.Store(0, crypto.PubkeyToAddress(testPriv.PublicKey))
 
 	publishedTxs := []*types.Transaction{}
@@ -949,13 +906,7 @@ func Test_expressLaneService_dontCareWithQueuedTransactions(t *testing.T) {
 func Benchmark_expressLaneService_validateExpressLaneTx(b *testing.B) {
 	b.StopTimer()
 	addr := crypto.PubkeyToAddress(testPriv.PublicKey)
-	tr := &ExpressLaneTracker{
-		auctionContractAddr: common.HexToAddress("0x2Aef36410182881a4b13664a1E079762D7F716e6"),
-		roundTimingInfo:     defaultTestRoundTimingInfo(time.Now()),
-		chainConfig: &params.ChainConfig{
-			ChainID: big.NewInt(1),
-		},
-	}
+	tr := defaultTestTrackerWithConfig(common.HexToAddress("0x2Aef36410182881a4b13664a1E079762D7F716e6"), defaultTestRoundTimingInfo(time.Now()))
 	tr.roundControl.Store(0, addr)
 
 	sub := buildValidSubmission(b, common.HexToAddress("0x2Aef36410182881a4b13664a1E079762D7F716e6"), testPriv, 0)
@@ -1044,4 +995,44 @@ func buildValidSubmissionWithSeqAndTx(
 	require.NoError(t, err)
 	b.Signature = signature
 	return b
+}
+
+func cloneSubmission(original *timeboost.ExpressLaneSubmission) *timeboost.ExpressLaneSubmission {
+	return &timeboost.ExpressLaneSubmission{
+		ChainId:                new(big.Int).Set(original.ChainId),
+		AuctionContractAddress: original.AuctionContractAddress,
+		Transaction:            original.Transaction,
+		Signature:              append([]byte{}, original.Signature...),
+		Round:                  original.Round,
+		SequenceNumber:         original.SequenceNumber,
+	}
+}
+
+func defaultTestTracker() *ExpressLaneTracker {
+	return &ExpressLaneTracker{
+		maxTxSize: uint64(DefaultSequencerConfig.MaxTxDataSize), // #nosec G115
+	}
+}
+
+func defaultTestTrackerWithConfig(
+	auctionAddr common.Address,
+	roundTimingInfo timeboost.RoundTimingInfo,
+) *ExpressLaneTracker {
+	return &ExpressLaneTracker{
+		auctionContractAddr: auctionAddr,
+		roundTimingInfo:     roundTimingInfo,
+		chainConfig: &params.ChainConfig{
+			ChainID: big.NewInt(1),
+		},
+		maxTxSize: uint64(DefaultSequencerConfig.MaxTxDataSize), // #nosec G115
+	}
+}
+
+func defaultTestTrackerWithChainID(chainID int64) *ExpressLaneTracker {
+	return &ExpressLaneTracker{
+		chainConfig: &params.ChainConfig{
+			ChainID: big.NewInt(chainID),
+		},
+		maxTxSize: uint64(DefaultSequencerConfig.MaxTxDataSize), // #nosec G115
+	}
 }

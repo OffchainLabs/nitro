@@ -8,7 +8,6 @@ import (
 	"encoding/binary"
 	"fmt"
 
-	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 
 	"github.com/offchainlabs/nitro/arbutil"
@@ -108,7 +107,7 @@ func (e *ReadPreimageProofEnhancer) EnhanceProof(ctx context.Context, messageNum
 	}
 
 	// Generate custom proof with certificate
-	promise := validator.GenerateReadPreimageProof(common.BytesToHash(certKeccak256[:]), offset, certificate)
+	promise := validator.GenerateReadPreimageProof(offset, certificate)
 	result, err := promise.Await(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate custom DA proof: %w", err)

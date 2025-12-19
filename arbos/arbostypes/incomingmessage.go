@@ -13,6 +13,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos/util"
@@ -176,6 +177,10 @@ func LegacyCostForStats(stats *BatchDataStats) uint64 {
 }
 
 func (msg *L1IncomingMessage) FillInBatchGasFields(batchFetcher FallibleBatchFetcher) error {
+	return msg.FillInBatchGasFieldsWithParentBlock(FromFallibleBatchFetcher(batchFetcher), msg.Header.BlockNumber)
+}
+
+func (msg *L1IncomingMessage) FillInBatchGasFieldsWithParentBlock(batchFetcher FallibleBatchFetcherWithParentBlock, parentChainBlockNumber uint64) error {
 	if batchFetcher == nil || msg.Header.Kind != L1MessageType_BatchPostingReport {
 		return nil
 	}
@@ -187,16 +192,21 @@ func (msg *L1IncomingMessage) FillInBatchGasFields(batchFetcher FallibleBatchFet
 		if err != nil {
 			return fmt.Errorf("failed to parse batch posting report: %w", err)
 		}
-		batchData, err := batchFetcher(batchNum)
+		batchData, err := batchFetcher(batchNum, parentChainBlockNumber)
 		if err != nil {
-			return fmt.Errorf("failed to fetch batch mentioned by batch posting report: %w", err)
+			if msg.LegacyBatchGasCost == nil {
+				return fmt.Errorf("failed to fetch batch mentioned by batch posting report: %w", err)
+			}
+			log.Warn("Failed reading batch data for filling message - leaving BatchDataStats empty")
+		} else {
+			gotHash := crypto.Keccak256Hash(batchData)
+			if gotHash != batchHash {
+				return fmt.Errorf("batch fetcher returned incorrect data hash %v (wanted %v for batch %v)", gotHash, batchHash, batchNum)
+			}
+			msg.BatchDataStats = GetDataStats(batchData)
 		}
-		gotHash := crypto.Keccak256Hash(batchData)
-		if gotHash != batchHash {
-			return fmt.Errorf("batch fetcher returned incorrect data hash %v (wanted %v for batch %v)", gotHash, batchHash, batchNum)
-		}
-		msg.BatchDataStats = GetDataStats(batchData)
 	}
+
 	legacyCost := LegacyCostForStats(msg.BatchDataStats)
 	msg.LegacyBatchGasCost = &legacyCost
 	return nil
@@ -271,7 +281,16 @@ func ParseIncomingL1Message(rd io.Reader, batchFetcher FallibleBatchFetcher) (*L
 	return msg, nil
 }
 
+type FallibleBatchFetcherWithParentBlock func(batchNum uint64, parentChainBlock uint64) ([]byte, error)
+
 type FallibleBatchFetcher func(batchNum uint64) ([]byte, error)
+
+// Wraps FallibleBatchFetcher into FallibleBatchFetcherWithParentBlock to ignore parentChainBlock
+func FromFallibleBatchFetcher(f FallibleBatchFetcher) FallibleBatchFetcherWithParentBlock {
+	return func(batchNum uint64, _ uint64) ([]byte, error) {
+		return f(batchNum)
+	}
+}
 
 type ParsedInitMessage struct {
 	ChainId          *big.Int

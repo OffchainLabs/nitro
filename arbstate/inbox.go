@@ -104,8 +104,8 @@ func ParseSequencerMessage(ctx context.Context, batchNum uint64, batchBlockHash 
 	}
 
 	// Stage 1: Extract the payload from any data availability header.
-	// It's important that multiple DAS strategies can't both be invoked in the same batch,
-	// as these headers are validated by the sequencer inbox and not other DASs.
+	// It's important that multiple DA strategies can't both be invoked in the same batch,
+	// as these headers are validated by the sequencer inbox and not other DA providers.
 	// Use the registry to find the appropriate reader for the header byte
 	if len(payload) > 0 && dapReaders != nil {
 		dapReader := dapReaders.GetReader(payload[0])
@@ -113,9 +113,9 @@ func ParseSequencerMessage(ctx context.Context, batchNum uint64, batchBlockHash 
 			promise := dapReader.RecoverPayload(batchNum, batchBlockHash, data)
 			result, err := promise.Await(ctx)
 			if err != nil {
-				// Matches the way keyset validation was done inside DAS readers i.e logging the error
+				// Matches the way keyset validation was done inside AnyTrust readers i.e logging the error
 				//  But other daproviders might just want to return the error
-				if daprovider.IsDASMessageHeaderByte(payload[0]) && strings.Contains(err.Error(), daprovider.ErrSeqMsgValidation.Error()) {
+				if daprovider.IsAnyTrustMessageHeaderByte(payload[0]) && strings.Contains(err.Error(), daprovider.ErrSeqMsgValidation.Error()) {
 					if keysetValidationMode == daprovider.KeysetPanicIfInvalid {
 						panic(err.Error())
 					} else {
@@ -123,6 +123,7 @@ func ParseSequencerMessage(ctx context.Context, batchNum uint64, batchBlockHash 
 					}
 				} else if daprovider.IsDACertificateMessageHeaderByte(payload[0]) && daprovider.IsCertificateValidationError(err) {
 					log.Warn("Certificate validation of sequencer batch failed, treating it as an empty batch", "batch", batchNum, "error", err)
+					payload = nil
 				} else {
 					return nil, err
 				}
@@ -134,8 +135,8 @@ func ParseSequencerMessage(ctx context.Context, batchNum uint64, batchBlockHash 
 			}
 		} else {
 			// No reader found for this header byte - check if it's a known type
-			if daprovider.IsDASMessageHeaderByte(payload[0]) {
-				return nil, fmt.Errorf("no DAS reader configured for DAS message (header byte 0x%02x)", payload[0])
+			if daprovider.IsAnyTrustMessageHeaderByte(payload[0]) {
+				return nil, fmt.Errorf("no AnyTrust reader configured for AnyTrust message (header byte 0x%02x)", payload[0])
 			} else if daprovider.IsBlobHashesHeaderByte(payload[0]) {
 				return nil, daprovider.ErrNoBlobReader
 			} else if daprovider.IsDACertificateMessageHeaderByte(payload[0]) {

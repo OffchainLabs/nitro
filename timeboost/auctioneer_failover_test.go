@@ -21,6 +21,8 @@ import (
 var testCoordinationConfig = pubsub.ConsumerConfig{
 	IdletimeToAutoclaim:  300 * time.Millisecond,
 	ResponseEntryTimeout: time.Minute,
+	Retry:                true,
+	MaxRetryCount:        -1,
 }
 
 // Helper function to create and start an auctioneer for testing
