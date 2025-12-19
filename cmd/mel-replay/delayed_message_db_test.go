@@ -86,13 +86,13 @@ func TestRecordingPreimagesForReadDelayedMessage(t *testing.T) {
 	}
 
 	// Test reading in wasm mode
-	delayedDb := &delayedMessageDatabase{
+	delayedDB := &delayedMessageDatabase{
 		&testPreimageResolver{
 			preimages: recordingDB.Preimages(),
 		},
 	}
 	for i := startBlockNum; i < numMsgsToRead; i++ {
-		msg, err := delayedDb.ReadDelayedMessage(ctx, state, i)
+		msg, err := delayedDB.ReadDelayedMessage(ctx, state, i)
 		require.NoError(t, err)
 		require.Equal(t, msg.Hash(), delayedMessages[i].Hash())
 	}

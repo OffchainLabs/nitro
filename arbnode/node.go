@@ -328,7 +328,7 @@ type ConfigFetcher interface {
 	Started() bool
 }
 
-func checkConsensusDbSchemaVersion(consensusDB ethdb.Database) error {
+func checkConsensusDBSchemaVersion(consensusDB ethdb.Database) error {
 	var version uint64
 	hasVersion, err := consensusDB.Has(dbSchemaVersion)
 	if err != nil {
@@ -1135,7 +1135,7 @@ func createNodeImpl(
 ) (*Node, error) {
 	config := configFetcher.Get()
 
-	err := checkConsensusDbSchemaVersion(consensusDB)
+	err := checkConsensusDBSchemaVersion(consensusDB)
 	if err != nil {
 		return nil, err
 	}

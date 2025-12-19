@@ -313,17 +313,17 @@ func CreateExecutionNode(
 	var classicOutbox *ClassicOutboxRetriever
 
 	if l2BlockChain.Config().ArbitrumChainParams.GenesisBlockNum > 0 {
-		classicMsgDb, err := stack.OpenDatabase("classic-msg", 0, 0, "classicmsg/", true)
+		classicMsgDB, err := stack.OpenDatabase("classic-msg", 0, 0, "classicmsg/", true)
 		if dbutil.IsNotExistError(err) {
 			log.Warn("Classic Msg Database not found", "err", err)
 			classicOutbox = nil
 		} else if err != nil {
 			return nil, fmt.Errorf("Failed to open classic-msg database: %w", err)
 		} else {
-			if err := dbutil.UnfinishedConversionCheck(classicMsgDb); err != nil {
+			if err := dbutil.UnfinishedConversionCheck(classicMsgDB); err != nil {
 				return nil, fmt.Errorf("classic-msg unfinished database conversion check error: %w", err)
 			}
-			classicOutbox = NewClassicOutboxRetriever(classicMsgDb)
+			classicOutbox = NewClassicOutboxRetriever(classicMsgDB)
 		}
 	}
 

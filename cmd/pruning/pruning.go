@@ -139,8 +139,8 @@ func findImportantRoots(ctx context.Context, executionDB ethdb.Database, stack *
 			log.Warn("missing latest confirmed block", "hash", confirmedHash)
 		}
 
-		validatorDb := rawdb.NewTable(consensusDB, storage.BlockValidatorPrefix)
-		lastValidated, err := staker.ReadLastValidatedInfo(validatorDb)
+		validatorDB := rawdb.NewTable(consensusDB, storage.BlockValidatorPrefix)
+		lastValidated, err := staker.ReadLastValidatedInfo(validatorDB)
 		if err != nil {
 			return nil, err
 		}
@@ -285,7 +285,7 @@ func getLatestConfirmedHash(ctx context.Context, rollupAddrs chaininfo.RollupAdd
 	}
 }
 
-func PruneExecutionDb(ctx context.Context, executionDB ethdb.Database, stack *node.Node, initConfig *conf.InitConfig, cacheConfig *core.BlockChainConfig, persistentConfig *conf.PersistentConfig, l1Client *ethclient.Client, rollupAddrs chaininfo.RollupAddresses, validatorRequired, melEnabled bool) error {
+func PruneExecutionDB(ctx context.Context, executionDB ethdb.Database, stack *node.Node, initConfig *conf.InitConfig, cacheConfig *core.BlockChainConfig, persistentConfig *conf.PersistentConfig, l1Client *ethclient.Client, rollupAddrs chaininfo.RollupAddresses, validatorRequired, melEnabled bool) error {
 	if cacheConfig.StateScheme == rawdb.PathScheme {
 		return nil
 	}

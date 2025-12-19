@@ -442,7 +442,7 @@ func mainImpl() int {
 		return 1
 	}
 
-	executionDB, l2BlockChain, err := openInitializeExecutionDb(ctx, stack, nodeConfig, new(big.Int).SetUint64(nodeConfig.Chain.ID), gethexec.DefaultCacheConfigFor(&nodeConfig.Execution.Caching), &nodeConfig.Execution.StylusTarget, tracer, &nodeConfig.Persistent, l1Client, rollupAddrs)
+	executionDB, l2BlockChain, err := openInitializeExecutionDB(ctx, stack, nodeConfig, new(big.Int).SetUint64(nodeConfig.Chain.ID), gethexec.DefaultCacheConfigFor(&nodeConfig.Execution.Caching), &nodeConfig.Execution.StylusTarget, tracer, &nodeConfig.Persistent, l1Client, rollupAddrs)
 	if l2BlockChain != nil {
 		deferFuncs = append(deferFuncs, func() { l2BlockChain.Stop() })
 	}

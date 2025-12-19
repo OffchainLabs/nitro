@@ -426,7 +426,7 @@ func databaseIsEmpty(db ethdb.Database) bool {
 	return !it.Next()
 }
 
-func isWasmDb(path string) bool {
+func isWasmDB(path string) bool {
 	path = strings.ToLower(path) // lowers the path to handle case-insensitive file systems
 	path = filepath.Clean(path)
 	parts := strings.Split(path, string(filepath.Separator))
@@ -453,7 +453,7 @@ func extractSnapshot(archive string, location string, importWasm bool) error {
 	var rename extract.Renamer
 	if !importWasm {
 		rename = func(path string) string {
-			if isWasmDb(path) {
+			if isWasmDB(path) {
 				return "" // do not extract wasm files
 			}
 			return path
@@ -606,11 +606,11 @@ func rebuildLocalWasm(ctx context.Context, config *gethexec.Config, l2BlockChain
 	return executionDB, l2BlockChain, nil
 }
 
-func openInitializeExecutionDb(ctx context.Context, stack *node.Node, config *NodeConfig, chainId *big.Int, cacheConfig *core.BlockChainConfig, targetConfig *gethexec.StylusTargetConfig, tracer *tracing.Hooks, persistentConfig *conf.PersistentConfig, l1Client *ethclient.Client, rollupAddrs chaininfo.RollupAddresses) (ethdb.Database, *core.BlockChain, error) {
+func openInitializeExecutionDB(ctx context.Context, stack *node.Node, config *NodeConfig, chainId *big.Int, cacheConfig *core.BlockChainConfig, targetConfig *gethexec.StylusTargetConfig, tracer *tracing.Hooks, persistentConfig *conf.PersistentConfig, l1Client *ethclient.Client, rollupAddrs chaininfo.RollupAddresses) (ethdb.Database, *core.BlockChain, error) {
 	if !config.Init.Force {
-		if readOnlyDb, err := stack.OpenDatabaseWithOptions("l2chaindata", node.DatabaseOptions{AncientsDirectory: config.Persistent.Ancient, MetricsNamespace: "l2chaindata/", ReadOnly: true, PebbleExtraOptions: persistentConfig.Pebble.ExtraOptions("l2chaindata")}); err == nil {
-			if chainConfig := gethexec.TryReadStoredChainConfig(readOnlyDb); chainConfig != nil {
-				readOnlyDb.Close()
+		if readOnlyDB, err := stack.OpenDatabaseWithOptions("l2chaindata", node.DatabaseOptions{AncientsDirectory: config.Persistent.Ancient, MetricsNamespace: "l2chaindata/", ReadOnly: true, PebbleExtraOptions: persistentConfig.Pebble.ExtraOptions("l2chaindata")}); err == nil {
+			if chainConfig := gethexec.TryReadStoredChainConfig(readOnlyDB); chainConfig != nil {
+				readOnlyDB.Close()
 				if !arbmath.BigEquals(chainConfig.ChainID, chainId) {
 					return nil, nil, fmt.Errorf("database has chain ID %v but config has chain ID %v (are you sure this database is for the right chain?)", chainConfig.ChainID, chainId)
 				}
@@ -639,7 +639,7 @@ func openInitializeExecutionDb(ctx context.Context, stack *node.Node, config *No
 				if err != nil {
 					return nil, nil, err
 				}
-				err = pruning.PruneExecutionDb(ctx, executionDB, stack, &config.Init, cacheConfig, persistentConfig, l1Client, rollupAddrs, config.Node.ValidatorRequired(), false)
+				err = pruning.PruneExecutionDB(ctx, executionDB, stack, &config.Init, cacheConfig, persistentConfig, l1Client, rollupAddrs, config.Node.ValidatorRequired(), false)
 				if err != nil {
 					return executionDB, nil, fmt.Errorf("error pruning: %w", err)
 				}
@@ -659,7 +659,7 @@ func openInitializeExecutionDb(ctx context.Context, stack *node.Node, config *No
 				}
 				return rebuildLocalWasm(ctx, &config.Execution, l2BlockChain, executionDB, wasmDB, config.Init.RebuildLocalWasm)
 			}
-			readOnlyDb.Close()
+			readOnlyDB.Close()
 		} else if !dbutil.IsNotExistError(err) {
 			// we only want to continue if the database does not exist
 			return nil, nil, fmt.Errorf("Failed to open database: %w", err)
@@ -924,7 +924,7 @@ func openInitializeExecutionDb(ctx context.Context, stack *node.Node, config *No
 		return executionDB, l2BlockChain, err
 	}
 
-	err = pruning.PruneExecutionDb(ctx, executionDB, stack, &config.Init, cacheConfig, persistentConfig, l1Client, rollupAddrs, config.Node.ValidatorRequired(), false)
+	err = pruning.PruneExecutionDB(ctx, executionDB, stack, &config.Init, cacheConfig, persistentConfig, l1Client, rollupAddrs, config.Node.ValidatorRequired(), false)
 	if err != nil {
 		return executionDB, nil, fmt.Errorf("error pruning: %w", err)
 	}

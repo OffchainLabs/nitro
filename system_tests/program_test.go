@@ -1941,7 +1941,7 @@ func formatTime(duration time.Duration) string {
 	return fmt.Sprintf("%.2f%s", span, units[unit])
 }
 
-func testWasmRecreate(t *testing.T, builder *NodeBuilder, targetsBefore, targetsAfter []string, numModules int, removeWasmDbBetween bool, storeTx, loadTx *types.Transaction, want []byte, databaseEngine string) {
+func testWasmRecreate(t *testing.T, builder *NodeBuilder, targetsBefore, targetsAfter []string, numModules int, removeWasmDBBetween bool, storeTx, loadTx *types.Transaction, want []byte, databaseEngine string) {
 	ctx := builder.ctx
 	l2info := builder.L2Info
 	l2client := builder.L2.Client
@@ -1973,7 +1973,7 @@ func testWasmRecreate(t *testing.T, builder *NodeBuilder, targetsBefore, targets
 	cleanupB()
 
 	wasmPath := filepath.Join(testDir, nodeBStack.Name, "wasm")
-	if removeWasmDbBetween {
+	if removeWasmDBBetween {
 		// remove wasm dir of nodeB
 		dirContents, err := os.ReadDir(wasmPath)
 		Require(t, err)
@@ -2023,55 +2023,55 @@ func testWasmRecreate(t *testing.T, builder *NodeBuilder, targetsBefore, targets
 func TestWasmRecreate(t *testing.T) {
 	testCases := []struct {
 		name                string
-		removeWasmDbBetween bool
+		removeWasmDBBetween bool
 		targetsBefore       []string
 		targetsAfter        []string
 	}{
 		{
 			name:                "with local target only with wasmdb removal",
-			removeWasmDbBetween: true,
+			removeWasmDBBetween: true,
 			targetsBefore:       localTargetOnly,
 			targetsAfter:        localTargetOnly,
 		},
 		{
 			name:                "with local target only without wasmdb removal",
-			removeWasmDbBetween: false,
+			removeWasmDBBetween: false,
 			targetsBefore:       localTargetOnly,
 			targetsAfter:        localTargetOnly,
 		},
 		{
 			name:                "with all targets with wasmdb removal",
-			removeWasmDbBetween: true,
+			removeWasmDBBetween: true,
 			targetsBefore:       allWasmTargets,
 			targetsAfter:        allWasmTargets,
 		},
 		{
 			name:                "with all targets without wasmdb removal",
-			removeWasmDbBetween: false,
+			removeWasmDBBetween: false,
 			targetsBefore:       allWasmTargets,
 			targetsAfter:        allWasmTargets,
 		},
 		{
 			name:                "more targets to recreate with wasmdb removal",
-			removeWasmDbBetween: true,
+			removeWasmDBBetween: true,
 			targetsBefore:       localTargetOnly,
 			targetsAfter:        allWasmTargets,
 		},
 		{
 			name:                "more targets to recreate without wasmdb removal",
-			removeWasmDbBetween: false,
+			removeWasmDBBetween: false,
 			targetsBefore:       localTargetOnly,
 			targetsAfter:        allWasmTargets,
 		},
 		{
 			name:                "less targets to recreate with wasmdb removal",
-			removeWasmDbBetween: true,
+			removeWasmDBBetween: true,
 			targetsBefore:       allWasmTargets,
 			targetsAfter:        localTargetOnly,
 		},
 		{
 			name:                "less targets to recreate without wasmdb removal",
-			removeWasmDbBetween: false,
+			removeWasmDBBetween: false,
 			targetsBefore:       allWasmTargets,
 			targetsAfter:        localTargetOnly,
 		},
@@ -2079,15 +2079,15 @@ func TestWasmRecreate(t *testing.T) {
 	databaseEngine := rawdb.DBPebble
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			testWasmRecreateWithCall(t, tc.targetsBefore, tc.targetsAfter, tc.removeWasmDbBetween, databaseEngine)
+			testWasmRecreateWithCall(t, tc.targetsBefore, tc.targetsAfter, tc.removeWasmDBBetween, databaseEngine)
 		})
 		t.Run(tc.name+" with delegate call", func(t *testing.T) {
-			testWasmRecreateWithDelegatecall(t, tc.targetsBefore, tc.targetsAfter, tc.removeWasmDbBetween, databaseEngine)
+			testWasmRecreateWithDelegatecall(t, tc.targetsBefore, tc.targetsAfter, tc.removeWasmDBBetween, databaseEngine)
 		})
 	}
 }
 
-func testWasmRecreateWithCall(t *testing.T, targetsBefore, targetsAfter []string, removeWasmDbBetween bool, databaseEngine string) {
+func testWasmRecreateWithCall(t *testing.T, targetsBefore, targetsAfter []string, removeWasmDBBetween bool, databaseEngine string) {
 	builder, auth, cleanup := setupProgramTest(t, true, func(b *NodeBuilder) {
 		b.WithDatabase(rawdb.DBPebble)
 	})
@@ -2107,7 +2107,7 @@ func testWasmRecreateWithCall(t *testing.T, targetsBefore, targetsAfter []string
 	testWasmRecreate(t, builder, localTargetOnly, allWasmTargets, 1, false, storeTx, loadTx, val[:], databaseEngine)
 }
 
-func testWasmRecreateWithDelegatecall(t *testing.T, targetsBefore, targetsAfter []string, removeWasmDbBetween bool, databaseEngine string) {
+func testWasmRecreateWithDelegatecall(t *testing.T, targetsBefore, targetsAfter []string, removeWasmDBBetween bool, databaseEngine string) {
 	builder, auth, cleanup := setupProgramTest(t, true, func(b *NodeBuilder) {
 		b.WithDatabase(rawdb.DBPebble)
 	})
@@ -2212,8 +2212,8 @@ func TestWasmStoreRebuilding(t *testing.T) {
 	nodeB, cleanupB = builder.Build2ndNode(t, &SecondNodeParams{stackConfig: nodeBStack})
 	bc := nodeB.ExecNode.Backend.ArbInterface().BlockChain()
 
-	wasmDbAfterDelete := nodeB.ExecNode.Backend.ArbInterface().BlockChain().StateCache().WasmStore()
-	storeMapAfterDelete, err := createMapFromDb(wasmDbAfterDelete)
+	wasmDBAfterDelete := nodeB.ExecNode.Backend.ArbInterface().BlockChain().StateCache().WasmStore()
+	storeMapAfterDelete, err := createMapFromDb(wasmDBAfterDelete)
 	Require(t, err)
 	if len(storeMapAfterDelete) != 0 {
 		Fatal(t, "non-empty wasm store after it was previously deleted")
@@ -2222,20 +2222,20 @@ func TestWasmStoreRebuilding(t *testing.T) {
 	// Start rebuilding and wait for it to finish
 	log.Info("starting rebuilding of wasm store")
 	execConfig := builder.execConfig
-	Require(t, gethexec.RebuildWasmStore(ctx, wasmDbAfterDelete, nodeB.ExecNode.ExecutionDB, execConfig.RPC.MaxRecreateStateDepth, &execConfig.StylusTarget, bc, common.Hash{}, bc.CurrentBlock().Hash()))
+	Require(t, gethexec.RebuildWasmStore(ctx, wasmDBAfterDelete, nodeB.ExecNode.ExecutionDB, execConfig.RPC.MaxRecreateStateDepth, &execConfig.StylusTarget, bc, common.Hash{}, bc.CurrentBlock().Hash()))
 
-	wasmDbAfterRebuild := nodeB.ExecNode.Backend.ArbInterface().BlockChain().StateCache().WasmStore()
+	wasmDBAfterRebuild := nodeB.ExecNode.Backend.ArbInterface().BlockChain().StateCache().WasmStore()
 
 	// Before comparing, check if rebuilding was set to done and then delete the keys that are used to track rebuilding status
-	status, err := gethexec.ReadFromKeyValueStore[common.Hash](wasmDbAfterRebuild, gethexec.RebuildingPositionKey)
+	status, err := gethexec.ReadFromKeyValueStore[common.Hash](wasmDBAfterRebuild, gethexec.RebuildingPositionKey)
 	Require(t, err)
 	if status != gethexec.RebuildingDone {
 		Fatal(t, "rebuilding was not set to done after successful completion")
 	}
-	Require(t, wasmDbAfterRebuild.Delete(gethexec.RebuildingPositionKey))
-	Require(t, wasmDbAfterRebuild.Delete(gethexec.RebuildingStartBlockHashKey))
+	Require(t, wasmDBAfterRebuild.Delete(gethexec.RebuildingPositionKey))
+	Require(t, wasmDBAfterRebuild.Delete(gethexec.RebuildingStartBlockHashKey))
 
-	rebuiltStoreMap, err := createMapFromDb(wasmDbAfterRebuild)
+	rebuiltStoreMap, err := createMapFromDb(wasmDBAfterRebuild)
 	Require(t, err)
 
 	// Check if rebuilding worked
@@ -2252,7 +2252,7 @@ func TestWasmStoreRebuilding(t *testing.T) {
 		}
 	}
 
-	checkWasmStoreContent(t, wasmDbAfterRebuild, builder.execConfig.StylusTarget.WasmTargets(), 1)
+	checkWasmStoreContent(t, wasmDBAfterRebuild, builder.execConfig.StylusTarget.WasmTargets(), 1)
 	cleanupB()
 }
 

@@ -81,7 +81,7 @@ func testPruning(t *testing.T, mode string, pruneParallelStorageTraversal bool) 
 		chainDB, err := stack.OpenDatabaseWithOptions("l2chaindata", node.DatabaseOptions{MetricsNamespace: "l2chaindata/", PebbleExtraOptions: conf.PersistentConfigDefault.Pebble.ExtraOptions("l2chaindata")})
 		Require(t, err)
 		defer chainDB.Close()
-		executionDbEntriesBeforePruning := countStateEntries(chainDB)
+		executionDBEntriesBeforePruning := countStateEntries(chainDB)
 
 		prand := testhelpers.NewPseudoRandomDataSource(t, 1)
 		var testKeys [][]byte
@@ -104,7 +104,7 @@ func testPruning(t *testing.T, mode string, pruneParallelStorageTraversal bool) 
 		initConfig.PruneParallelStorageTraversal = pruneParallelStorageTraversal
 		coreCacheConfig := gethexec.DefaultCacheConfigFor(&builder.execConfig.Caching)
 		persistentConfig := conf.PersistentConfigDefault
-		err = pruning.PruneExecutionDb(ctx, chainDB, stack, &initConfig, coreCacheConfig, &persistentConfig, builder.L1.Client, *builder.L2.ConsensusNode.DeployInfo, false, false)
+		err = pruning.PruneExecutionDB(ctx, chainDB, stack, &initConfig, coreCacheConfig, &persistentConfig, builder.L1.Client, *builder.L2.ConsensusNode.DeployInfo, false, false)
 		Require(t, err)
 
 		for _, key := range testKeys {
@@ -113,12 +113,12 @@ func testPruning(t *testing.T, mode string, pruneParallelStorageTraversal bool) 
 			}
 		}
 
-		executionDbEntriesAfterPruning := countStateEntries(chainDB)
-		t.Log("db entries pre-pruning:", executionDbEntriesBeforePruning)
-		t.Log("db entries post-pruning:", executionDbEntriesAfterPruning)
+		executionDBEntriesAfterPruning := countStateEntries(chainDB)
+		t.Log("db entries pre-pruning:", executionDBEntriesBeforePruning)
+		t.Log("db entries post-pruning:", executionDBEntriesAfterPruning)
 
-		if executionDbEntriesAfterPruning >= executionDbEntriesBeforePruning {
-			Fatal(t, "The db doesn't have less entries after pruning then before. Before:", executionDbEntriesBeforePruning, "After:", executionDbEntriesAfterPruning)
+		if executionDBEntriesAfterPruning >= executionDBEntriesBeforePruning {
+			Fatal(t, "The db doesn't have less entries after pruning then before. Before:", executionDBEntriesBeforePruning, "After:", executionDBEntriesAfterPruning)
 		}
 	}()
 
