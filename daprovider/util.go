@@ -44,9 +44,8 @@ func RecordPreimagesTo(preimages PreimagesMap) PreimageRecorder {
 }
 
 var (
-	ErrNoBlobReader          = errors.New("blob batch payload was encountered but no BlobReader was configured")
-	ErrInvalidBlobDataFormat = errors.New("blob batch data is not a list of hashes as expected")
-	ErrSeqMsgValidation      = errors.New("error validating recovered payload from batch")
+	ErrNoBlobReader     = errors.New("blob batch payload was encountered but no BlobReader was configured")
+	ErrSeqMsgValidation = errors.New("error validating recovered payload from batch")
 )
 
 // KeysetValidationMode controls validation of AnyTrust keysets.
