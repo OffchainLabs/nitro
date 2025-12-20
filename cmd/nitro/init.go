@@ -933,7 +933,24 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 	if err != nil {
 		return chainDb, l2BlockChain, err
 	}
+    
+	if config.Init.ReorgToBlockBatch > 0 {
+		targetBatch := config.Init.ReorgToBlockBatch
+		targetHash := rawdb.ReadCanonicalHash(chainDb, targetBatch)
+		
+		if targetHash == (common.Hash{}) {
+			log.Crit("Reorg safety check failed: target batch hash not found", "batch", targetBatch)
+			return chainDb, l2BlockChain, fmt.Errorf("reorg target batch %d missing from database", targetBatch)
+		}
 
+		if block := rawdb.ReadBlock(chainDb, targetHash, targetBatch); block == nil {
+			log.Crit("Reorg safety check failed: state data missing for target batch", "batch", targetBatch)
+			return chainDb, l2BlockChain, fmt.Errorf("block data for batch %d is corrupted or missing", targetBatch)
+		}
+		log.Info("Reorg target validated successfully", "batch", targetBatch, "hash", targetHash)
+	}
+
+	return rebuildLocalWasm(ctx, &config.Execution, l2BlockChain, chainDb, wasmDb, config.Init.RebuildLocalWasm)
 	return rebuildLocalWasm(ctx, &config.Execution, l2BlockChain, chainDb, wasmDb, config.Init.RebuildLocalWasm)
 }
 
