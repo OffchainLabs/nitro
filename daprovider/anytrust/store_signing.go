@@ -1,0 +1,39 @@
+// Copyright 2022, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
+
+package anytrust
+
+import (
+	"encoding/binary"
+
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
+
+	"github.com/offchainlabs/nitro/daprovider/anytrust/tree"
+	"github.com/offchainlabs/nitro/util/signature"
+)
+
+// uniquifyingPrefix keeps "DAS" for protocol compatibility - changing this would break signature verification
+var uniquifyingPrefix = []byte("Arbitrum Nitro DAS API Store:")
+
+func applyAnyTrustSigner(signer signature.DataSignerFunc, data []byte, extraFields ...uint64) ([]byte, error) {
+	return signer(anyTrustStoreHash(data, extraFields...))
+}
+
+func AnyTrustRecoverSigner(data []byte, sig []byte, extraFields ...uint64) (common.Address, error) {
+	pk, err := crypto.SigToPub(anyTrustStoreHash(data, extraFields...), sig)
+	if err != nil {
+		return common.Address{}, err
+	}
+	return crypto.PubkeyToAddress(*pk), nil
+}
+
+func anyTrustStoreHash(data []byte, extraFields ...uint64) []byte {
+	var buf []byte
+
+	for _, field := range extraFields {
+		buf = binary.BigEndian.AppendUint64(buf, field)
+	}
+
+	return tree.HashBytes(uniquifyingPrefix, buf, data)
+}

@@ -33,8 +33,8 @@ import (
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/daprovider"
-	"github.com/offchainlabs/nitro/daprovider/das/dastree"
-	"github.com/offchainlabs/nitro/daprovider/das/dasutil"
+	"github.com/offchainlabs/nitro/daprovider/anytrust/tree"
+	anytrustutil "github.com/offchainlabs/nitro/daprovider/anytrust/util"
 	"github.com/offchainlabs/nitro/gethhook"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/wavmio"
@@ -133,30 +133,30 @@ func (i WavmInbox) ReadDelayedInbox(seqNum uint64) (*arbostypes.L1IncomingMessag
 	})
 }
 
-type PreimageDASReader struct {
+type AnyTrustPreimageReader struct {
 }
 
-func (*PreimageDASReader) String() string {
-	return "PreimageDASReader"
+func (*AnyTrustPreimageReader) String() string {
+	return "AnyTrustPreimageReader"
 }
 
-func (dasReader *PreimageDASReader) GetByHash(ctx context.Context, hash common.Hash) ([]byte, error) {
+func (r *AnyTrustPreimageReader) GetByHash(ctx context.Context, hash common.Hash) ([]byte, error) {
 	oracle := func(hash common.Hash) ([]byte, error) {
 		return wavmio.ResolveTypedPreimage(arbutil.Keccak256PreimageType, hash)
 	}
-	return dastree.Content(hash, oracle)
+	return tree.Content(hash, oracle)
 }
 
-func (dasReader *PreimageDASReader) GetKeysetByHash(ctx context.Context, hash common.Hash) ([]byte, error) {
-	return dasReader.GetByHash(ctx, hash)
+func (r *AnyTrustPreimageReader) GetKeysetByHash(ctx context.Context, hash common.Hash) ([]byte, error) {
+	return r.GetByHash(ctx, hash)
 }
 
-func (dasReader *PreimageDASReader) HealthCheck(ctx context.Context) error {
+func (r *AnyTrustPreimageReader) HealthCheck(ctx context.Context) error {
 	return nil
 }
 
-func (dasReader *PreimageDASReader) ExpirationPolicy(ctx context.Context) (dasutil.ExpirationPolicy, error) {
-	return dasutil.DiscardImmediately, nil
+func (r *AnyTrustPreimageReader) ExpirationPolicy(ctx context.Context) (anytrustutil.ExpirationPolicy, error) {
+	return anytrustutil.DiscardImmediately, nil
 }
 
 type BlobPreimageReader struct {
@@ -300,17 +300,17 @@ func main() {
 		}
 		return wavmio.ReadInboxMessage(batchNum), nil
 	}
-	readMessage := func(dasEnabled bool) *arbostypes.MessageWithMetadata {
+	readMessage := func(anyTrustEnabled bool, chainConfig *params.ChainConfig) *arbostypes.MessageWithMetadata {
 		var delayedMessagesRead uint64
 		if lastBlockHeader != nil {
 			delayedMessagesRead = lastBlockHeader.Nonce.Uint64()
 		}
-		var dasReader dasutil.DASReader
-		var dasKeysetFetcher dasutil.DASKeysetFetcher
-		if dasEnabled {
-			// DAS batch and keysets are all together in the same preimage binary.
-			dasReader = &PreimageDASReader{}
-			dasKeysetFetcher = &PreimageDASReader{}
+		var anyTrustReader anytrustutil.Reader
+		var anyTrustKeysetFetcher anytrustutil.KeysetFetcher
+		if anyTrustEnabled {
+			// AnyTrust batch and keysets are all together in the same preimage binary.
+			anyTrustReader = &AnyTrustPreimageReader{}
+			anyTrustKeysetFetcher = &AnyTrustPreimageReader{}
 		}
 		backend := WavmInbox{}
 		var keysetValidationMode = daprovider.KeysetPanicIfInvalid
@@ -318,10 +318,10 @@ func main() {
 			keysetValidationMode = daprovider.KeysetDontValidate
 		}
 		dapReaders := daprovider.NewDAProviderRegistry()
-		if dasReader != nil {
-			err = dapReaders.SetupDASReader(dasutil.NewReaderForDAS(dasReader, dasKeysetFetcher, keysetValidationMode), nil)
+		if anyTrustReader != nil {
+			err = dapReaders.SetupAnyTrustReader(anytrustutil.NewReader(anyTrustReader, anyTrustKeysetFetcher, keysetValidationMode), nil)
 			if err != nil {
-				panic(fmt.Sprintf("Failed to register DAS reader: %v", err))
+				panic(fmt.Sprintf("Failed to register AnyTrust reader: %v", err))
 			}
 		}
 		err = dapReaders.SetupBlobReader(daprovider.NewReaderForBlobReader(&BlobPreimageReader{}))
@@ -334,7 +334,7 @@ func main() {
 			panic(fmt.Sprintf("Failed to register DA Certificate reader: %v", err))
 		}
 
-		inboxMultiplexer := arbstate.NewInboxMultiplexer(backend, delayedMessagesRead, dapReaders, keysetValidationMode)
+		inboxMultiplexer := arbstate.NewInboxMultiplexer(backend, delayedMessagesRead, dapReaders, keysetValidationMode, chainConfig)
 		ctx := context.Background()
 		message, err := inboxMultiplexer.Pop(ctx)
 		if err != nil {
@@ -390,7 +390,7 @@ func main() {
 			}
 		}
 
-		message := readMessage(chainConfig.ArbitrumChainParams.DataAvailabilityCommittee)
+		message := readMessage(chainConfig.ArbitrumChainParams.DataAvailabilityCommittee, chainConfig)
 
 		chainContext := WavmChainContext{chainConfig: chainConfig}
 		newBlock, _, err = arbos.ProduceBlock(message.Message, message.DelayedMessagesRead, lastBlockHeader, statedb, chainContext, false, core.NewMessageReplayContext(), false)
@@ -400,7 +400,9 @@ func main() {
 	} else {
 		// Initialize ArbOS with this init message and create the genesis block.
 
-		message := readMessage(false)
+		// Currently, the only use of `chainConfig` argument is to get a limit on the uncompressed batch size.
+		// However, the init message is never compressed, so we can safely pass nil here.
+		message := readMessage(false, nil)
 
 		initMessage, err := message.Message.ParseInitMessage()
 		if err != nil {
