@@ -975,7 +975,7 @@ func (a *AssertionChain) GetAssertionCreationParentBlock(ctx context.Context, as
 		return 0, errors.Wrapf(err, "could not get assertion creation block for assertion hash %#x", assertionHash)
 	}
 	if !createdAtBlock.IsUint64() {
-		return 0, errors.New(fmt.Sprintf("for assertion hash %#x, createdAtBlock was not a uint64", assertionHash))
+		return 0, errors.Errorf("for assertion hash %#x, createdAtBlock was not a uint64", assertionHash)
 
 	}
 	return createdAtBlock.Uint64(), nil
