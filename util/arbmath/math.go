@@ -118,7 +118,7 @@ func BigToUintSaturating(value *big.Int) uint64 {
 	return value.Uint64()
 }
 
-// BigToUintSaturating casts a huge to an int, saturating if out of bounds
+// BigToIntSaturating casts a huge to an int, saturating if out of bounds
 func BigToIntSaturating(value *big.Int) int64 {
 	if !value.IsInt64() {
 		if value.Sign() < 0 {
@@ -216,7 +216,7 @@ func BigAddByUint(augend *big.Int, addend uint64) *big.Int {
 	return new(big.Int).Add(augend, UintToBig(addend))
 }
 
-// BigSub subtracts a uint from a huge
+// BigSubByUint subtracts a uint from a huge
 func BigSubByUint(minuend *big.Int, subtrahend uint64) *big.Int {
 	return new(big.Int).Sub(minuend, UintToBig(subtrahend))
 }
@@ -403,7 +403,7 @@ func DivCeil[T Unsigned](value, divisor T) T {
 // ApproxExpBasisPoints return the Maclaurin series approximation of e^x, where
 // x is denominated in basis points.
 // The 4th degree Maclaurin series (for example) is:
-// b*(1 + (x/b) +(x/b)^2 / 2! + (x/b)^3 / 6! + (x/b)^4/4!)
+// b*(1 + (x/b) + (x/b)^2 / 2! + (x/b)^3 / 3! + (x/b)^4 / 4!)
 // The quartic polynomial (accuracy = 4) will underestimate e^x by about 5% as
 // x approaches 20000 bips.
 func ApproxExpBasisPoints(value Bips, accuracy uint64) Bips {
