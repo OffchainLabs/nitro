@@ -443,7 +443,7 @@ func mainImpl() int {
 		return 1
 	}
 
-	executionDB, l2BlockChain, err := openInitializeExecutionDB(ctx, stack, nodeConfig, new(big.Int).SetUint64(nodeConfig.Chain.ID), gethexec.DefaultCacheConfigFor(&nodeConfig.Execution.Caching), &nodeConfig.Execution.StylusTarget, tracer, &nodeConfig.Persistent, l1Client, rollupAddrs)
+	executionDB, l2BlockChain, err := openInitializeExecutionDB(ctx, stack, nodeConfig, new(big.Int).SetUint64(nodeConfig.Chain.ID), gethexec.DefaultCacheConfigFor(&nodeConfig.Execution.Caching), tracer, &nodeConfig.Persistent, l1Client, rollupAddrs)
 	if l2BlockChain != nil {
 		deferFuncs = append(deferFuncs, func() { l2BlockChain.Stop() })
 	}
@@ -454,15 +454,24 @@ func mainImpl() int {
 		return 1
 	}
 
-	consensusDB, err := stack.OpenDatabaseWithOptions("arbitrumdata", node.DatabaseOptions{MetricsNamespace: "arbitrumdata/", PebbleExtraOptions: nodeConfig.Persistent.Pebble.ExtraOptions("arbitrumdata"), NoFreezer: true})
-	deferFuncs = append(deferFuncs, func() { closeDb(consensusDB, "consensusDB") })
-	if err != nil {
-		log.Error("failed to open database", "err", err)
-		log.Error("database is corrupt; delete it and try again", "database-directory", stack.InstanceDir())
-		return 1
-	}
+	// Task: Refactor openInitializeChainDb
+	// consensus-node=true
+	// This code block will be changed to something like:
+	// if consensus-node=true {
+	//		arbDb = openExistingConsensusDB(...)
+	//		if arbDb == nil {
+	//			downloadDB(...)
+	//			arbDb = openDownloadedConsensusDB(...)
+	//		}
+	// }
+
+	// TODO: Have something similar to the Execution side where we first call
+	// openExistingExecutionDB() and if that fails we call downloadDB(). In
+	// this case we would be calling openExistingConsensusDB() and if that
+	// fails we would either call downloadDB() or downloadConsensusDB() which
+	// is yet to be implemented
+	consensusDB, err := openDownloadedConsensusDB(stack, nodeConfig, &deferFuncs)
 	if err := dbutil.UnfinishedConversionCheck(consensusDB); err != nil {
-		log.Error("arbitrumdata unfinished conversion check error", "err", err)
 		return 1
 	}
 
