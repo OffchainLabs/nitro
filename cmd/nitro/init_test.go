@@ -895,17 +895,6 @@ func TestGetConsensusParsedInitMessage(t *testing.T) {
 	}
 }
 
-func TestGetGenesisAssertionCreationInfo(t *testing.T) {
-	// TODO
-	// Testing getGenesisAssertionCreationInfo is the similar to if we call openInitializeChainDb
-	// with nodeConfig.Init.ValidateGenesisAssertion set to true so we might need a full node
-}
-
-func TestOpenExistingExecutionDB(t *testing.T) {
-	// TODO: both executionDB and wasmDb are nil from openExistingExecutionDB in test environment since l2chaindata doesn't exist.
-	// What's the best way to test openExistingExecutionDB()
-}
-
 func TestDownloadDBNoSnapshot(t *testing.T) {
 	t.Parallel()
 
@@ -926,11 +915,6 @@ func TestDownloadDBNoSnapshot(t *testing.T) {
 
 	err = downloadDB(ctx, stack, &nodeConfig)
 	Require(t, err)
-}
-
-// TODO: Implement more downloadDB tests with other configuration
-func TestDownloadDBWithSnapshot(t *testing.T) {
-	// TODO
 }
 
 func TestOpenDownloadedExecutionDB(t *testing.T) {
@@ -965,22 +949,18 @@ func TestOpenDownloadedExecutionDB(t *testing.T) {
 	for _, key := range testKeys {
 		err = executionDB.Put(key, common.FromHex("0xdeadbeef"))
 		Require(t, err)
+		wasmDB.Put(key, common.FromHex("0xdeadbeef"))
+		Require(t, err)
 	}
 	for _, key := range testKeys {
 		if has, _ := executionDB.Has(key); !has {
 			t.Fatal(t, "internal test error - failed to check existence of test key")
 		}
+
+		if has, _ := wasmDB.Has(key); !has {
+			t.Fatal(t, "internal test error - failed to check existence of test key")
+		}
 	}
-
-	// TODO
-
-	// if executionDB == nil {
-	// 	t.Fatal("executionDB is nil1!!!!!!")
-	// }
-
-	// if wasmDb == nil {
-	// 	t.Fatal("wasmDb is nil1!!!!!!")
-	// }
 }
 
 func TestSimpleGetInit(t *testing.T) {
@@ -1202,20 +1182,4 @@ func TestGetInitWithGenesis(t *testing.T) {
 
 	err = initDataReader.Close()
 	Require(t, err)
-}
-
-func TestGetNewBlockchain(t *testing.T) {
-	// TODO
-}
-
-func TestValidateBlockChain(t *testing.T) {
-	// TODO
-}
-
-func TestRebuildLocalWasm(t *testing.T) {
-	// TODO
-}
-
-func TestOpenDownloadedConsensusDB(t *testing.T) {
-	// TODO
 }
