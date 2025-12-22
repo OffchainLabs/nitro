@@ -949,7 +949,7 @@ func TestOpenDownloadedExecutionDB(t *testing.T) {
 	for _, key := range testKeys {
 		err = executionDB.Put(key, common.FromHex("0xdeadbeef"))
 		Require(t, err)
-		wasmDB.Put(key, common.FromHex("0xdeadbeef"))
+		err = wasmDB.Put(key, common.FromHex("0xdeadbeef"))
 		Require(t, err)
 	}
 	for _, key := range testKeys {
