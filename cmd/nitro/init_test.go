@@ -890,7 +890,7 @@ func TestGetConsensusParsedInitMessage(t *testing.T) {
 	parsedInitMessage, err := getConsensusParsedInitMsg(ctx, &nodeConfig, chainID, l1Client, chaininfo.RollupAddresses{}, &chainConfig)
 	Require(t, err)
 
-	if parsedInitMessage.ChainId != chainID {
+	if parsedInitMessage.ChainId.Uint64() != chainID.Uint64() {
 		t.Fatalf("parsedInitMessage.ChainId = %d; want: %d", parsedInitMessage.ChainId, chainID)
 	}
 }
@@ -991,8 +991,8 @@ func TestSimpleGetInit(t *testing.T) {
 		t.Fatalf("Expected nil chainConfig but got  = %v", chainConfig)
 	}
 
-	if arbOsInit.NativeTokenSupplyManagementEnabled {
-		t.Fatalf("arbOsInit.NativeTokenSupplyManagementEnabled hould have been false")
+	if arbOsInit != nil {
+		t.Fatalf("Expected nil arbOsInit but got  = %v", chainConfig)
 	}
 
 	chainOwner, err := initDataReader.GetChainOwner()
@@ -1042,8 +1042,8 @@ func TestGetInitWithEmpty(t *testing.T) {
 		t.Fatalf("Expected nil chainConfig but got  = %v", chainConfig)
 	}
 
-	if arbOsInit.NativeTokenSupplyManagementEnabled {
-		t.Fatalf("arbOsInit.NativeTokenSupplyManagementEnabled hould have been false")
+	if arbOsInit != nil {
+		t.Fatalf("Expected nil arbOsInit but got  = %v", arbOsInit)
 	}
 
 	chainOwner, err := initDataReader.GetChainOwner()
@@ -1095,8 +1095,8 @@ func TestGetInitWithImportFile(t *testing.T) {
 		t.Fatalf("Expected nil chainConfig but got  = %v", chainConfig)
 	}
 
-	if arbOsInit.NativeTokenSupplyManagementEnabled {
-		t.Fatalf("arbOsInit.NativeTokenSupplyManagementEnabled hould have been false")
+	if arbOsInit != nil {
+		t.Fatalf("Expected nil arbOsInit but got  = %v", chainConfig)
 	}
 
 	chainOwner, err := initDataReader.GetChainOwner()
