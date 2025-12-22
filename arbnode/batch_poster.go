@@ -664,14 +664,22 @@ func (b *BatchPoster) ParentChainIsUsingEIP7623(ctx context.Context, latestHeade
 
 	gas1, err := estimateGas(rpcClient.Client(), ctx, gasParams, blockHex)
 	if err != nil {
-		log.Warn("Failed to estimate gas for EIP-7623 check 1", "err", err)
+		log.Warn(
+			"Failed to estimate gas for EIP-7623 check 1",
+			"err", err,
+			"targetBlock", targetBlockNumber,
+		)
 		return false, err
 	}
 
 	gasParams.Data = append(gasParams.Data, 1)
 	gas2, err := estimateGas(rpcClient.Client(), ctx, gasParams, blockHex)
 	if err != nil {
-		log.Warn("Failed to estimate gas for EIP-7623 check 2", "err", err)
+		log.Warn(
+			"Failed to estimate gas for EIP-7623 check 2",
+			"err", err,
+			"targetBlock", targetBlockNumber,
+		)
 		return false, err
 	}
 
