@@ -327,7 +327,7 @@ func startBoldChallengeManager(t *testing.T, ctx context.Context, builder *NodeB
 
 	dp, err := arbnode.StakerDataposter(
 		ctx,
-		rawdb.NewTable(node.ConsensusNode.ArbDB, storage.StakerPrefix),
+		rawdb.NewTable(node.ConsensusNode.ConsensusDB, storage.StakerPrefix),
 		node.ConsensusNode.L1Reader,
 		&txOpts,
 		NewCommonConfigFetcher(builder.nodeConfig),

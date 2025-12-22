@@ -64,7 +64,7 @@ func testBlocksReExecutorModes(t *testing.T, onMultipleRanges bool) {
 	// Reexecute blocks at mode full
 	c.MinBlocksPerThread = 10
 	Require(t, c.Validate())
-	executorFull, err := blocksreexecutor.New(&c, blockchain, builder.L2.ExecNode.ChainDB)
+	executorFull, err := blocksreexecutor.New(&c, blockchain, builder.L2.ExecNode.ExecutionDB)
 	Require(t, err)
 	executorFull.Start(ctx)
 	err = executorFull.WaitForReExecution(ctx)
@@ -74,7 +74,7 @@ func testBlocksReExecutorModes(t *testing.T, onMultipleRanges bool) {
 	c.Mode = "random"
 	c.MinBlocksPerThread = 20
 	Require(t, c.Validate())
-	executorRandom, err := blocksreexecutor.New(&c, blockchain, builder.L2.ExecNode.ChainDB)
+	executorRandom, err := blocksreexecutor.New(&c, blockchain, builder.L2.ExecNode.ExecutionDB)
 	Require(t, err)
 	executorRandom.Start(ctx)
 	err = executorFull.WaitForReExecution(ctx)
@@ -171,7 +171,7 @@ func TestBlocksReExecutorCommitState(t *testing.T) {
 	// Reexecute blocks at mode full
 	c.MinBlocksPerThread = 10
 	Require(t, c.Validate())
-	executorFull, err := blocksreexecutor.New(&c, blockchain, builder.L2.ExecNode.ChainDB)
+	executorFull, err := blocksreexecutor.New(&c, blockchain, builder.L2.ExecNode.ExecutionDB)
 	Require(t, err)
 	executorFull.Start(ctx)
 	err = executorFull.WaitForReExecution(ctx)
@@ -190,7 +190,7 @@ func TestBlocksReExecutorCommitState(t *testing.T) {
 	// We don't set c.Blocks since we want to use the same blocks range
 	c.CommitStateToDisk = true
 	Require(t, c.Validate())
-	executorFullCommit, err := blocksreexecutor.New(&c, blockchain, builder.L2.ExecNode.ChainDB)
+	executorFullCommit, err := blocksreexecutor.New(&c, blockchain, builder.L2.ExecNode.ExecutionDB)
 	Require(t, err)
 	executorFullCommit.Start(ctx)
 	err = executorFullCommit.WaitForReExecution(ctx)
