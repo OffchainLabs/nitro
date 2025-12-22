@@ -442,50 +442,46 @@ func mainImpl() int {
 		return 1
 	}
 
-	chainDb, l2BlockChain, err := openInitializeChainDb(ctx, stack, nodeConfig, new(big.Int).SetUint64(nodeConfig.Chain.ID), gethexec.DefaultCacheConfigFor(&nodeConfig.Execution.Caching), &nodeConfig.Execution.StylusTarget, tracer, &nodeConfig.Persistent, l1Client, rollupAddrs)
+	executionDB, l2BlockChain, err := openInitializeExecutionDB(ctx, stack, nodeConfig, new(big.Int).SetUint64(nodeConfig.Chain.ID), gethexec.DefaultCacheConfigFor(&nodeConfig.Execution.Caching), &nodeConfig.Execution.StylusTarget, tracer, &nodeConfig.Persistent, l1Client, rollupAddrs)
 	if l2BlockChain != nil {
 		deferFuncs = append(deferFuncs, func() { l2BlockChain.Stop() })
 	}
-	deferFuncs = append(deferFuncs, func() { closeDb(chainDb, "chainDb") })
+	deferFuncs = append(deferFuncs, func() { closeDb(executionDB, "executionDB") })
 	if err != nil {
 		pflag.Usage()
 		log.Error("error initializing database", "err", err)
 		return 1
 	}
 
-	arbDb, err := stack.OpenDatabaseWithOptions("arbitrumdata", node.DatabaseOptions{MetricsNamespace: "arbitrumdata/", PebbleExtraOptions: nodeConfig.Persistent.Pebble.ExtraOptions("arbitrumdata"), NoFreezer: true})
-	deferFuncs = append(deferFuncs, func() { closeDb(arbDb, "arbDb") })
+	consensusDB, err := stack.OpenDatabaseWithOptions("arbitrumdata", node.DatabaseOptions{MetricsNamespace: "arbitrumdata/", PebbleExtraOptions: nodeConfig.Persistent.Pebble.ExtraOptions("arbitrumdata"), NoFreezer: true})
+	deferFuncs = append(deferFuncs, func() { closeDb(consensusDB, "consensusDB") })
 	if err != nil {
 		log.Error("failed to open database", "err", err)
 		log.Error("database is corrupt; delete it and try again", "database-directory", stack.InstanceDir())
 		return 1
 	}
-	if err := dbutil.UnfinishedConversionCheck(arbDb); err != nil {
+	if err := dbutil.UnfinishedConversionCheck(consensusDB); err != nil {
 		log.Error("arbitrumdata unfinished conversion check error", "err", err)
 		return 1
 	}
-
-	fatalErrChan := make(chan error, 10)
 
 	if nodeConfig.BlocksReExecutor.Enable && l2BlockChain != nil {
 		if !nodeConfig.Init.ThenQuit {
 			log.Error("blocks-reexecutor cannot be enabled without --init.then-quit")
 			return 1
 		}
-		blocksReExecutor, err := blocksreexecutor.New(&nodeConfig.BlocksReExecutor, l2BlockChain, chainDb, fatalErrChan)
+		blocksReExecutor, err := blocksreexecutor.New(&nodeConfig.BlocksReExecutor, l2BlockChain, executionDB)
 		if err != nil {
 			log.Error("error initializing blocksReExecutor", "err", err)
 			return 1
 		}
-		success := make(chan struct{})
-		blocksReExecutor.Start(ctx, success)
+
+		blocksReExecutor.Start(ctx)
 		deferFuncs = append(deferFuncs, func() { blocksReExecutor.StopAndWait() })
-		select {
-		case err := <-fatalErrChan:
-			log.Error("shutting down due to fatal error", "err", err)
+		err = blocksReExecutor.WaitForReExecution(ctx)
+		if err != nil {
 			defer log.Error("shut down due to fatal error", "err", err)
 			return 1
-		case <-success:
 		}
 	}
 
@@ -509,6 +505,8 @@ func mainImpl() int {
 		return 1
 	}
 
+	fatalErrChan := make(chan error, 10)
+
 	var valNode *valnode.ValidationNode
 	if sameProcessValidationNodeEnabled {
 		valNode, err = valnode.CreateValidationNode(
@@ -525,7 +523,7 @@ func mainImpl() int {
 	execNode, err := gethexec.CreateExecutionNode(
 		ctx,
 		stack,
-		chainDb,
+		executionDB,
 		l2BlockChain,
 		l1Client,
 		&ExecutionNodeConfigFetcher{liveNodeConfig},
@@ -552,7 +550,7 @@ func mainImpl() int {
 		execNode,
 		execNode,
 		execNode,
-		arbDb,
+		consensusDB,
 		&ConsensusNodeConfigFetcher{liveNodeConfig},
 		l2BlockChain.Config(),
 		l1Client,

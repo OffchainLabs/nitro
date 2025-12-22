@@ -59,7 +59,7 @@ func TestFinalizedBlocksMovedToAncients(t *testing.T) {
 		t.Fatalf("Test should be adjusted to generate less blocks. Current head: %d", headOfTheChain)
 	}
 
-	ancients, err := builder.L2.ExecNode.ChainDB.Ancients()
+	ancients, err := builder.L2.ExecNode.ExecutionDB.Ancients()
 	Require(t, err)
 	if ancients != 0 {
 		t.Fatalf("Ancients should be 0, but got %d", ancients)
@@ -77,18 +77,18 @@ func TestFinalizedBlocksMovedToAncients(t *testing.T) {
 	// Wait for freeze operation to be executed
 	time.Sleep(65 * time.Second)
 
-	ancients, err = builder.L2.ExecNode.ChainDB.Ancients()
+	ancients, err = builder.L2.ExecNode.ExecutionDB.Ancients()
 	Require(t, err)
 	// ancients must be finalizedBlock+1 since only blocks in [0, finalizedBlock] must be included in ancients.
 	if ancients != finalizedBlockNumber+1 {
 		t.Fatalf("Ancients should be %d, but got %d", finalizedBlockNumber+1, ancients)
 	}
 
-	ancient, err := builder.L2.ExecNode.ChainDB.Ancient(rawdb.ChainFreezerHeaderTable, 8)
+	ancient, err := builder.L2.ExecNode.ExecutionDB.Ancient(rawdb.ChainFreezerHeaderTable, 8)
 	if err != nil || ancient == nil {
 		t.Fatalf("Ancient should exist")
 	}
-	_, err = builder.L2.ExecNode.ChainDB.Ancient(rawdb.ChainFreezerHeaderTable, 15)
+	_, err = builder.L2.ExecNode.ExecutionDB.Ancient(rawdb.ChainFreezerHeaderTable, 15)
 	if err == nil {
 		t.Fatalf("Ancient should not exist")
 	}
