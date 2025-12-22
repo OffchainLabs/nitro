@@ -14,12 +14,10 @@ use wasmparser::Operator;
 #[cfg(feature = "native")]
 use {
     super::{
-        counter::Counter, depth::DepthChecker, dynamic::DynamicMeter, heap::HeapBound,
-        meter::Meter, start::StartMover, MiddlewareWrapper,
+        MiddlewareWrapper, counter::Counter, depth::DepthChecker, dynamic::DynamicMeter,
+        heap::HeapBound, meter::Meter, start::StartMover,
     },
     std::sync::Arc,
-    wasmer::{Cranelift, CraneliftOptLevel, Engine, Store, Target},
-    wasmer_compiler_singlepass::Singlepass,
 };
 
 #[derive(Clone, Copy, Debug)]
@@ -177,8 +175,16 @@ impl CompileConfig {
 
         config
     }
+}
 
-    #[cfg(feature = "native")]
+#[cfg(all(feature = "native", not(feature = "sp1")))]
+use {
+    wasmer::{Cranelift, CraneliftOptLevel, Engine, Store, Target},
+    wasmer_compiler_singlepass::Singlepass,
+};
+
+#[cfg(all(feature = "native", not(feature = "sp1")))]
+impl CompileConfig {
     fn engine_type(&self, target: Target, cranelift: bool) -> Engine {
         use wasmer::sys::EngineBuilder;
 
@@ -217,13 +223,11 @@ impl CompileConfig {
             .into()
     }
 
-    #[cfg(feature = "native")]
     // cranelift only matters for compilation and not usually needed
     pub fn engine(&self, target: Target) -> Engine {
         self.engine_type(target, true)
     }
 
-    #[cfg(feature = "native")]
     pub fn store(&self, target: Target, cranelift: bool) -> Store {
         Store::new(self.engine_type(target, cranelift))
     }

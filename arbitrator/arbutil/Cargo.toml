@@ -21,3 +21,7 @@ serde = { workspace = true, features = ["derive", "rc"] }
 siphasher = { workspace = true }
 tiny-keccak = { workspace = true, features = ["keccak"] }
 wasmparser = { workspace = true }
+
+[features]
+default = []
+sp1 = []

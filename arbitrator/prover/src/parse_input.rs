@@ -1,9 +1,9 @@
 use arbutil::Bytes32;
 use serde::Deserialize;
 use serde_json;
-use serde_with::base64::Base64;
 use serde_with::As;
 use serde_with::DisplayFromStr;
+use serde_with::base64::Base64;
 use std::{
     collections::HashMap,
     io::{self, BufRead},
@@ -54,10 +54,19 @@ impl AsRef<[u8]> for UserWasm {
 }
 
 /// The Vec<u8> is compressed using brotli, and must be decompressed before use.
+#[cfg(not(feature = "sp1"))]
 impl From<Vec<u8>> for UserWasm {
     fn from(data: Vec<u8>) -> Self {
         let decompressed = brotli::decompress(&data, brotli::Dictionary::Empty).unwrap();
         Self(decompressed)
+    }
+}
+
+/// Due to alignment reason, we will do the decompression elsewhere in SP1.
+#[cfg(feature = "sp1")]
+impl From<Vec<u8>> for UserWasm {
+    fn from(data: Vec<u8>) -> Self {
+        Self(data)
     }
 }
 

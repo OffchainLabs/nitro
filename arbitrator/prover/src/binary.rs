@@ -3,16 +3,16 @@
 
 use crate::{
     programs::{
+        FuncMiddleware, Middleware, ModuleMod, STYLUS_ENTRY_POINT, StylusData,
         config::CompileConfig, counter::Counter, depth::DepthChecker, dynamic::DynamicMeter,
-        heap::HeapBound, meter::Meter, start::StartMover, FuncMiddleware, Middleware, ModuleMod,
-        StylusData, STYLUS_ENTRY_POINT,
+        heap::HeapBound, meter::Meter, start::StartMover,
     },
     value::{ArbValueType, FunctionType, IntegerValType, Value},
 };
 use arbutil::{
-    evm::ARBOS_VERSION_STYLUS_CHARGING_FIXES, math::SaturatingSum, Bytes32, Color, DebugColor,
+    Bytes32, Color, DebugColor, evm::ARBOS_VERSION_STYLUS_CHARGING_FIXES, math::SaturatingSum,
 };
-use eyre::{bail, ensure, eyre, Result, WrapErr};
+use eyre::{Result, WrapErr, bail, ensure, eyre};
 use fnv::{FnvHashMap as HashMap, FnvHashSet as HashSet};
 use nom::{
     branch::alt,
@@ -22,7 +22,7 @@ use nom::{
 };
 use serde::{Deserialize, Serialize};
 use std::{convert::TryInto, fmt::Debug, hash::Hash, mem, path::Path, str::FromStr};
-use wasmer_types::{entity::EntityRef, ExportIndex, FunctionIndex, LocalFunctionIndex};
+use wasmer_types::{ExportIndex, FunctionIndex, LocalFunctionIndex, entity::EntityRef};
 use wasmparser::{
     Data, Element, ExternalKind, MemoryType, Name, NameSectionReader, Naming, Operator, Parser,
     Payload, TableType, TypeRef, ValType, Validator, WasmFeatures,
@@ -255,6 +255,8 @@ impl From<ExportIndex> for ExportKind {
             E::Table(_) => Self::Table,
             E::Memory(_) => Self::Memory,
             E::Global(_) => Self::Global,
+            #[cfg(feature = "sp1")]
+            E::Tag(_) => Self::Tag,
         }
     }
 }
@@ -301,6 +303,7 @@ pub struct WasmBinary<'a> {
 }
 
 pub fn parse<'a>(input: &'a [u8], path: &'_ Path) -> Result<WasmBinary<'a>> {
+    #[cfg(not(feature = "sp1"))]
     let features = WasmFeatures {
         mutable_global: true,
         saturating_float_to_int: true,
@@ -323,6 +326,17 @@ pub fn parse<'a>(input: &'a [u8], path: &'_ Path) -> Result<WasmBinary<'a>> {
         gc: false,
         component_model_values: false,
         component_model_nested_names: false,
+    };
+    #[cfg(feature = "sp1")]
+    let features = {
+        let mut features = WasmFeatures::empty();
+        features.set(WasmFeatures::MUTABLE_GLOBAL, true);
+        features.set(WasmFeatures::SATURATING_FLOAT_TO_INT, true);
+        features.set(WasmFeatures::SIGN_EXTENSION, true);
+        features.set(WasmFeatures::MULTI_VALUE, true);
+        features.set(WasmFeatures::BULK_MEMORY, true); // not all ops supported yet
+        features.set(WasmFeatures::FLOATS, true);
+        features
     };
     Validator::new_with_features(features)
         .validate_all(input)
@@ -429,7 +443,11 @@ pub fn parse<'a>(input: &'a [u8], path: &'_ Path) -> Result<WasmBinary<'a>> {
                 }
 
                 // CHECK: maybe reader.data_offset()
+                #[cfg(not(feature = "sp1"))]
                 let name_reader = NameSectionReader::new(reader.data(), 0);
+                #[cfg(feature = "sp1")]
+                let name_reader =
+                    NameSectionReader::new(wasmparser::BinaryReader::new(reader.data(), 0));
 
                 for name in name_reader {
                     match name? {

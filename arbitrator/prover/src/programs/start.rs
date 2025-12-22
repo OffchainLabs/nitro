@@ -5,7 +5,7 @@ use crate::{
     binary::ExportKind,
     programs::{DefaultFuncMiddleware, Middleware, ModuleMod, STYLUS_ENTRY_POINT},
 };
-use eyre::{bail, Result};
+use eyre::{Result, bail};
 use fnv::FnvHashMap as HashMap;
 use lazy_static::lazy_static;
 use wasmer_types::LocalFunctionIndex;

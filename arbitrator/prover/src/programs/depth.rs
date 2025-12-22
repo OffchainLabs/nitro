@@ -2,13 +2,13 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 use super::{
-    config::{CompileMemoryParams, SigMap},
     FuncMiddleware, Middleware, ModuleMod,
+    config::{CompileMemoryParams, SigMap},
 };
-use crate::{host::InternalFunc, value::FunctionType, Machine};
+use crate::value::{FunctionType, InternalFunc};
 
 use arbutil::Color;
-use eyre::{bail, Result};
+use eyre::{Result, bail};
 use fnv::FnvHashMap as HashMap;
 use parking_lot::RwLock;
 use std::sync::Arc;
@@ -501,6 +501,9 @@ impl FuncDepthChecker<'_> {
                         I16x8RelaxedQ15mulrS, I16x8RelaxedDotI8x16I7x16S, I32x4RelaxedDotI8x16I7x16AddS
                     )
                 ) => bail!("SIMD extension not supported {unsupported:?}"),
+
+                #[cfg(feature = "sp1")]
+                _ => todo!("New operator not covered yet by nitro!")
             };
         }
 
@@ -529,7 +532,8 @@ pub trait DepthCheckedMachine {
     fn set_stack(&mut self, size: u32);
 }
 
-impl DepthCheckedMachine for Machine {
+#[cfg(not(feature = "sp1"))]
+impl DepthCheckedMachine for crate::Machine {
     fn stack_left(&mut self) -> u32 {
         let global = self.get_global(STYLUS_STACK_LEFT).unwrap();
         global.try_into().expect("instrumentation type mismatch")
