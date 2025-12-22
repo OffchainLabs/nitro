@@ -71,7 +71,6 @@ type ExecutionRecorder interface {
 		msg *arbostypes.MessageWithMetadata,
 		wasmTargets []rawdb.WasmTarget,
 	) (*RecordResult, error)
-	MarkValid(pos arbutil.MessageIndex, resultHash common.Hash)
 	PrepareForRecord(ctx context.Context, start, end arbutil.MessageIndex) error
 }
 

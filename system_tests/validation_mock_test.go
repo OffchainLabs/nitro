@@ -468,7 +468,6 @@ func (m *mockBlockRecorder) RecordBlockCreation(
 	}, nil
 }
 
-func (m *mockBlockRecorder) MarkValid(pos arbutil.MessageIndex, resultHash common.Hash) {}
 func (m *mockBlockRecorder) PrepareForRecord(ctx context.Context, start, end arbutil.MessageIndex) error {
 	return nil
 }

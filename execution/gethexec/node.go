@@ -546,9 +546,6 @@ func (n *ExecutionNode) RecordBlockCreation(
 ) (*execution.RecordResult, error) {
 	return n.Recorder.RecordBlockCreation(ctx, pos, msg, wasmTargets)
 }
-func (n *ExecutionNode) MarkValid(pos arbutil.MessageIndex, resultHash common.Hash) {
-	n.Recorder.MarkValid(pos, resultHash)
-}
 func (n *ExecutionNode) PrepareForRecord(ctx context.Context, start, end arbutil.MessageIndex) error {
 	return n.Recorder.PrepareForRecord(ctx, start, end)
 }
@@ -616,7 +613,13 @@ func (n *ExecutionNode) SetFinalityData(
 	validatedFinalityData *arbutil.FinalityData,
 ) containers.PromiseInterface[struct{}] {
 	err := n.SyncMonitor.SetFinalityData(safeFinalityData, finalizedFinalityData, validatedFinalityData)
-	return containers.NewReadyPromise(struct{}{}, err)
+	if err != nil {
+		return containers.NewReadyPromise(struct{}{}, err)
+	}
+	if n.Recorder != nil && validatedFinalityData != nil {
+		n.Recorder.MarkValid(validatedFinalityData.MsgIdx, validatedFinalityData.BlockHash)
+	}
+	return containers.NewReadyPromise(struct{}{}, nil)
 }
 
 func (n *ExecutionNode) SetConsensusSyncData(syncData *execution.ConsensusSyncData) containers.PromiseInterface[struct{}] {
