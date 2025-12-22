@@ -2,21 +2,24 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 #![allow(clippy::needless_lifetimes)]
 
+#[cfg(feature = "sp1")]
+use crate::operator::OperatorInfo;
 use crate::{
     programs::{
-        config::{CompilePricingParams, PricingParams, SigMap},
         FuncMiddleware, Middleware, ModuleMod,
+        config::{CompilePricingParams, PricingParams, SigMap},
     },
     value::FunctionType,
-    Machine,
 };
+#[cfg(not(feature = "sp1"))]
+use arbutil::operator::OperatorInfo;
 use arbutil::{
+    Bytes32,
     evm::{
         self,
         api::{Gas, Ink},
     },
-    operator::OperatorInfo,
-    pricing, Bytes32,
+    pricing,
 };
 use derivative::Derivative;
 use eyre::Result;
@@ -333,12 +336,11 @@ pub trait GasMeteredMachine: MeteredMachine {
     }
 }
 
-impl MeteredMachine for Machine {
+#[cfg(not(feature = "sp1"))]
+impl MeteredMachine for crate::Machine {
     fn ink_left(&self) -> MachineMeter {
         macro_rules! convert {
-            ($global:expr) => {{
-                $global.unwrap().try_into().expect("type mismatch")
-            }};
+            ($global:expr) => {{ $global.unwrap().try_into().expect("type mismatch") }};
         }
 
         let ink = || Ink(convert!(self.get_global(STYLUS_INK_LEFT)));
@@ -518,6 +520,9 @@ pub fn pricing_v1(op: &Operator, tys: &HashMap<SignatureIndex, FunctionType>) ->
             I64x2RelaxedLaneselect, F32x4RelaxedMin, F32x4RelaxedMax, F64x2RelaxedMin, F64x2RelaxedMax,
             I16x8RelaxedQ15mulrS, I16x8RelaxedDotI8x16I7x16S, I32x4RelaxedDotI8x16I7x16AddS
         ) => u64::MAX,
+
+        #[cfg(feature = "sp1")]
+        _ => todo!("New operator not covered yet by nitro!")
     };
     ink
 }

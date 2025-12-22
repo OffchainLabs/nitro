@@ -2,11 +2,11 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 use super::{
+    FuncMiddleware, Middleware, ModuleMod,
     config::CompilePricingParams,
     meter::{STYLUS_INK_LEFT, STYLUS_INK_STATUS},
-    FuncMiddleware, Middleware, ModuleMod,
 };
-use eyre::{bail, Result};
+use eyre::{Result, bail};
 use parking_lot::RwLock;
 use wasmer_types::{GlobalIndex, GlobalInit, LocalFunctionIndex, Type};
 use wasmparser::{BlockType, Operator};

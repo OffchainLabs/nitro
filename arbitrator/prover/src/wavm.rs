@@ -3,8 +3,7 @@
 
 use crate::{
     binary::FloatInstruction,
-    host::InternalFunc,
-    value::{ArbValueType, FunctionType, IntegerValType},
+    value::{ArbValueType, FunctionType, IntegerValType, InternalFunc},
 };
 use arbutil::{Bytes32, Color, DebugColor};
 use digest::Digest;

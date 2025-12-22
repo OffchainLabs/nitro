@@ -2,10 +2,12 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 use super::{FuncMiddleware, Middleware, ModuleMod};
-use crate::Machine;
 
+#[cfg(feature = "sp1")]
+use crate::operator::{OperatorCode, OperatorInfo};
+#[cfg(not(feature = "sp1"))]
 use arbutil::operator::{OperatorCode, OperatorInfo};
-use eyre::{eyre, Result};
+use eyre::{Result, eyre};
 use fnv::FnvHashMap as HashMap;
 use lazy_static::lazy_static;
 use parking_lot::Mutex;
@@ -139,7 +141,8 @@ pub trait CountingMachine {
     fn operator_counts(&mut self) -> Result<BTreeMap<OperatorCode, u64>>;
 }
 
-impl CountingMachine for Machine {
+#[cfg(not(feature = "sp1"))]
+impl CountingMachine for crate::Machine {
     fn operator_counts(&mut self) -> Result<BTreeMap<OperatorCode, u64>> {
         let mut counts = BTreeMap::new();
 

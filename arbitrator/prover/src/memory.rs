@@ -7,7 +7,7 @@ use crate::{
 };
 use arbutil::Bytes32;
 use digest::Digest;
-use eyre::{bail, ErrReport, Result};
+use eyre::{bail, Result};
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use sha3::Keccak256;
@@ -15,8 +15,6 @@ use std::{borrow::Cow, collections::HashSet, convert::TryFrom};
 
 #[cfg(feature = "counters")]
 use std::sync::atomic::{AtomicUsize, Ordering};
-
-use wasmer_types::Pages;
 
 #[cfg(feature = "rayon")]
 use rayon::prelude::*;
@@ -35,34 +33,6 @@ pub fn print_counters() {
         "Memory hash count: {}",
         MEM_HASH_COUNTER.load(Ordering::Relaxed)
     );
-}
-
-pub struct MemoryType {
-    pub min: Pages,
-    pub max: Option<Pages>,
-}
-
-impl MemoryType {
-    pub fn new(min: Pages, max: Option<Pages>) -> Self {
-        Self { min, max }
-    }
-}
-
-impl From<&wasmer_types::MemoryType> for MemoryType {
-    fn from(value: &wasmer_types::MemoryType) -> Self {
-        Self::new(value.minimum, value.maximum)
-    }
-}
-
-impl TryFrom<&wasmparser::MemoryType> for MemoryType {
-    type Error = ErrReport;
-
-    fn try_from(value: &wasmparser::MemoryType) -> std::result::Result<Self, Self::Error> {
-        Ok(Self {
-            min: Pages(value.initial.try_into()?),
-            max: value.maximum.map(|x| x.try_into()).transpose()?.map(Pages),
-        })
-    }
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]

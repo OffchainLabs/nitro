@@ -1178,6 +1178,8 @@ impl From<&Operator<'_>> for OperatorCode {
             O::I16x8RelaxedQ15mulrS { .. } => 0xfd111,
             O::I16x8RelaxedDotI8x16I7x16S { .. } => 0xfd112,
             O::I32x4RelaxedDotI8x16I7x16AddS { .. } => 0xfd113,
+            #[cfg(feature = "sp1")]
+            _ => todo!(),
         })
     }
 }

@@ -2,9 +2,8 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 use crate::{
-    host::InternalFunc,
     machine::Module,
-    value::{FunctionType, Value},
+    value::{FunctionType, InternalFunc, Value},
     wavm::{self, Opcode},
 };
 use arbutil::Color;

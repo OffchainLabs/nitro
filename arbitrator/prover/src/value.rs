@@ -4,15 +4,17 @@
 use crate::binary::FloatType;
 use arbutil::{Bytes32, Color};
 use digest::Digest;
-use eyre::{bail, ErrReport, Result};
+use eyre::{ErrReport, Result, bail};
+use num_derive::FromPrimitive;
 use serde::{Deserialize, Serialize};
-use serde_with::{serde_as, TryFromInto};
+use serde_with::{TryFromInto, serde_as};
 use sha3::Keccak256;
 use std::{
     convert::{TryFrom, TryInto},
     fmt::Display,
     ops::Add,
 };
+use wasmer_types::Pages;
 use wasmparser::{FuncType, RefType, ValType};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash, Serialize, Deserialize)]
@@ -87,6 +89,8 @@ pub fn parser_type(ty: &wasmer::Type) -> wasmer::wasmparser::ValType {
         wasmer::Type::V128 => wasmer::wasmparser::ValType::V128,
         wasmer::Type::ExternRef => wasmer::wasmparser::ValType::Ref(RefType::EXTERNREF),
         wasmer::Type::FuncRef => wasmer::wasmparser::ValType::Ref(RefType::FUNCREF),
+        #[cfg(feature = "sp1")]
+        _ => todo!(),
     }
 }
 
@@ -285,9 +289,7 @@ impl Display for Value {
         let rparem = ")".grey();
 
         macro_rules! single {
-            ($ty:expr, $value:expr) => {{
-                write!(f, "{}{}{}{}", $ty.grey(), lparem, $value, rparem)
-            }};
+            ($ty:expr, $value:expr) => {{ write!(f, "{}{}{}{}", $ty.grey(), lparem, $value, rparem) }};
         }
         macro_rules! pair {
             ($ty:expr, $left:expr, $right:expr) => {{
@@ -493,5 +495,78 @@ impl Display for ArbValueType {
             FuncRef => write!(f, "func"),
             InternalRef => write!(f, "internal"),
         }
+    }
+}
+
+/// Represents the internal hostio functions a module may have.
+#[derive(Clone, Copy, Debug, FromPrimitive)]
+#[repr(u64)]
+pub enum InternalFunc {
+    WavmCallerLoad8,
+    WavmCallerLoad32,
+    WavmCallerStore8,
+    WavmCallerStore32,
+    MemoryFill,
+    MemoryCopy,
+    UserInkLeft,
+    UserInkStatus,
+    UserSetInk,
+    UserStackLeft,
+    UserSetStack,
+    UserMemorySize,
+    CallMain,
+}
+
+impl InternalFunc {
+    pub fn ty(&self) -> FunctionType {
+        use ArbValueType::*;
+        use InternalFunc::*;
+        macro_rules! func {
+            ([$($args:expr),*], [$($outs:expr),*]) => {
+                FunctionType::new(vec![$($args),*], vec![$($outs),*])
+            };
+        }
+        #[rustfmt::skip]
+        let ty = match self {
+            WavmCallerLoad8  | WavmCallerLoad32  => func!([I32], [I32]),
+            WavmCallerStore8 | WavmCallerStore32 => func!([I32, I32], []),
+            MemoryFill       | MemoryCopy        => func!([I32, I32, I32], []),
+            UserInkLeft    => func!([], [I64]),      // λ() → ink_left
+            UserInkStatus  => func!([], [I32]),      // λ() → ink_status
+            UserSetInk     => func!([I64, I32], []), // λ(ink_left, ink_status)
+            UserStackLeft  => func!([], [I32]),      // λ() → stack_left
+            UserSetStack   => func!([I32], []),      // λ(stack_left)
+            UserMemorySize => func!([], [I32]),      // λ() → memory_size
+            CallMain       => func!([I32], [I32]),   // λ(args_len) → status
+        };
+        ty
+    }
+}
+
+pub struct MemoryType {
+    pub min: Pages,
+    pub max: Option<Pages>,
+}
+
+impl MemoryType {
+    pub fn new(min: Pages, max: Option<Pages>) -> Self {
+        Self { min, max }
+    }
+}
+
+impl From<&wasmer_types::MemoryType> for MemoryType {
+    fn from(value: &wasmer_types::MemoryType) -> Self {
+        Self::new(value.minimum, value.maximum)
+    }
+}
+
+impl TryFrom<&wasmparser::MemoryType> for MemoryType {
+    type Error = ErrReport;
+
+    fn try_from(value: &wasmparser::MemoryType) -> std::result::Result<Self, Self::Error> {
+        Ok(Self {
+            min: Pages(value.initial.try_into()?),
+            max: value.maximum.map(|x| x.try_into()).transpose()?.map(Pages),
+        })
     }
 }
