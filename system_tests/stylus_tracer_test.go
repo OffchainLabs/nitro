@@ -152,6 +152,8 @@ func TestStylusTracer(t *testing.T) {
 			tx := l2info.PrepareTxTo("Owner", &to, l2info.TransferGas, nil, testCase.args)
 			err := l2client.SendTransaction(ctx, tx)
 			Require(t, err, "send transaction")
+			_, err = builder.L2.EnsureTxSucceeded(tx)
+			Require(t, err)
 
 			nativeResult := traceTransaction(tx.Hash(), "stylusTracer")
 			normalizeHostioTrace(nativeResult)

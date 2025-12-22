@@ -2562,3 +2562,21 @@ func populateMachineDir(t *testing.T, cr *github.ConsensusRelease) string {
 	Require(t, err)
 	return machineDir
 }
+
+func sequenceTransactions(
+	t *testing.T,
+	builder *NodeBuilder,
+	header *arbostypes.L1IncomingMessageHeader,
+	hooks *gethexec.FullSequencingHooks,
+	timeboostedTxs map[common.Hash]struct{},
+) {
+	sequencedMsg, _, err := builder.L2.ExecNode.ExecEngine.SequenceTransactions(header, hooks, nil)
+	Require(t, err)
+	if sequencedMsg == nil {
+		Fatal(t, "sequencedMsg is nil")
+	}
+	err = builder.L2.ConsensusNode.TxStreamer.WriteSequencedMsg(sequencedMsg)
+	Require(t, err)
+	err = builder.L2.ExecNode.AppendLastSequencedBlock()
+	Require(t, err)
+}

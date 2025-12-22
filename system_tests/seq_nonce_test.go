@@ -51,6 +51,9 @@ func TestSequencerParallelNonces(t *testing.T) {
 	}
 	wg.Wait()
 
+	// wait so every transaction can be processed
+	time.Sleep(time.Second)
+
 	addr := builder.L2Info.GetAddress("Destination")
 	balance, err := builder.L2.Client.BalanceAt(ctx, addr, nil)
 	Require(t, err)

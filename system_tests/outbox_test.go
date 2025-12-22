@@ -9,7 +9,6 @@ import (
 	"math/big"
 	"math/rand"
 	"testing"
-	"time"
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -88,53 +87,36 @@ func TestOutboxProofs(t *testing.T) {
 
 	provables := make([]proofPair, 0)
 	roots := make([]proofRoot, 0)
-	txns := []common.Hash{}
 
 	for i := int64(0); i < txnCount; i++ {
 		auth.Value = big.NewInt(i * 1000000000)
 		auth.Nonce = big.NewInt(i + 1)
 		tx, err := arbSys.WithdrawEth(&auth, common.Address{})
 		Require(t, err, "ArbSys failed")
-		txns = append(txns, tx.Hash())
+		receipt, err := builder.L2.EnsureTxSucceeded(tx)
+		Require(t, err)
 
-		time.Sleep(4 * time.Millisecond) // Geth takes a few ms for the receipt to show up
-		_, err = builder.L2.Client.TransactionReceipt(ctx, tx.Hash())
-		if err == nil {
-			merkleState, err := arbSys.SendMerkleTreeState(&bind.CallOpts{})
-			Require(t, err, "could not get merkle root")
-
-			root := proofRoot{
-				root: merkleState.Root,          // we assume the user knows the root and size
-				size: merkleState.Size.Uint64(), //
-			}
-			roots = append(roots, root)
-		}
-	}
-
-	for _, tx := range txns {
-		var receipt *types.Receipt
-		receipt, err = builder.L2.Client.TransactionReceipt(ctx, tx)
-		Require(t, err, "No receipt for txn")
-
-		if receipt.Status != types.ReceiptStatusSuccessful {
-			Fatal(t, "Tx failed with status code:", receipt)
-		}
 		if len(receipt.Logs) == 0 {
 			Fatal(t, "Tx didn't emit any logs")
 		}
-
 		for _, log := range receipt.Logs {
-
 			if log.Topics[0] == withdrawTopic {
 				parsedLog, err := arbSys.ParseL2ToL1Tx(*log)
 				Require(t, err, "Failed to parse log")
-
 				provables = append(provables, proofPair{
 					hash: common.BigToHash(parsedLog.Hash),
 					leaf: parsedLog.Position.Uint64(),
 				})
 			}
 		}
+
+		merkleState, err := arbSys.SendMerkleTreeState(&bind.CallOpts{})
+		Require(t, err, "could not get merkle root")
+		root := proofRoot{
+			root: merkleState.Root,          // we assume the user knows the root and size
+			size: merkleState.Size.Uint64(), //
+		}
+		roots = append(roots, root)
 	}
 
 	t.Log("Proving against", len(roots), "historical roots among the", txnCount, "ever")
