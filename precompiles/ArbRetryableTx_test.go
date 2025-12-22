@@ -14,7 +14,6 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos"
-	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbos/storage"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
@@ -103,14 +102,6 @@ func testRetryableRedeem(t *testing.T, evm *vm.EVM, precompileCtx *Context) {
 	}
 }
 
-func overrideStateArbOSVersion(evm *vm.EVM, arbosVersion uint64) error {
-	versionSlot := uint64(0)
-	version := new(big.Int).SetUint64(arbosVersion)
-	burner := burn.NewSystemBurner(nil, false)
-	sto := storage.NewGeth(evm.StateDB, burner)
-	return sto.SetByUint64(versionSlot, common.BigToHash(version))
-}
-
 func TestRetryableRedeemLegacy(t *testing.T) {
 	evm := newMockEVMForTesting()
 	precompileCtx := testContext(common.Address{}, evm)
@@ -126,10 +117,8 @@ func TestRetryableRedeemLegacy(t *testing.T) {
 }
 
 func TestRetryableRedeemLegacyArbOS60(t *testing.T) {
-	evm := newMockEVMForTesting()
-	err := overrideStateArbOSVersion(evm, params.ArbosVersion_MultiGasConstraintsVersion)
-	Require(t, err)
-
+	arbosVersion := params.ArbosVersion_MultiGasConstraintsVersion
+	evm := newMockEVMForTestingWithVersion(&arbosVersion)
 	precompileCtx := testContext(common.Address{}, evm)
 
 	model, err := precompileCtx.State.L2PricingState().GasModelToUse()
@@ -165,12 +154,11 @@ func TestRetryableRedeemWithGasConstraints(t *testing.T) {
 	testRetryableRedeem(t, evm, precompileCtx)
 }
 
-func TestRetryableRedeemWithGasConstraintsArbOS60(t *testing.T) {
-	evm := newMockEVMForTesting()
-	err := overrideStateArbOSVersion(evm, params.ArbosVersion_MultiGasConstraintsVersion)
-	Require(t, err)
+func TestRetryableRedeemWithGasConstraintsArbOSMultiGasConstraintsVersion(t *testing.T) {
+	arbosVersion := params.ArbosVersion_MultiGasConstraintsVersion
+	evm := newMockEVMForTestingWithVersion(&arbosVersion)
 
-	precompileCtx := testContext(common.Address{}, evm)
+	precompileCtx := testContextWithVersion(common.Address{}, evm, arbosVersion)
 
 	for i := range uint64(100) {
 		target := (i + 1) * 1000000
@@ -192,11 +180,10 @@ func TestRetryableRedeemWithGasConstraintsArbOS60(t *testing.T) {
 }
 
 func TestRetryableRedeemWithMultiGasConstraints(t *testing.T) {
-	evm := newMockEVMForTesting()
-	err := overrideStateArbOSVersion(evm, params.ArbosVersion_MultiGasConstraintsVersion)
-	Require(t, err)
+	arbosVersion := params.ArbosVersion_MultiGasConstraintsVersion
+	evm := newMockEVMForTestingWithVersion(&arbosVersion)
 
-	precompileCtx := testContext(common.Address{}, evm)
+	precompileCtx := testContextWithVersion(common.Address{}, evm, arbosVersion)
 
 	for i := range 100 {
 		// #nosec G115
@@ -215,7 +202,7 @@ func TestRetryableRedeemWithMultiGasConstraints(t *testing.T) {
 			uint8(multigas.ResourceKindWasmComputation): 6,
 		}
 
-		err = precompileCtx.State.L2PricingState().AddMultiGasConstraint(target, window, backlog, weights)
+		err := precompileCtx.State.L2PricingState().AddMultiGasConstraint(target, window, backlog, weights)
 		Require(t, err)
 	}
 
