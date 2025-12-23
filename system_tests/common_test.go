@@ -384,6 +384,7 @@ func (b *NodeBuilder) DefaultConfig(t *testing.T, withL1 bool) *NodeBuilder {
 	if withL1 {
 		b.isSequencer = true
 		b.nodeConfig = arbnode.ConfigDefaultL1Test()
+		b.nodeConfig.MessageExtraction.Enable = true
 	} else {
 		b.nodeConfig = arbnode.ConfigDefaultL2Test()
 	}
@@ -533,6 +534,17 @@ func (b *NodeBuilder) WithTakeOwnership(takeOwnership bool) *NodeBuilder {
 	return b
 }
 
+func (b *NodeBuilder) waitForMelToReadInitMsg(t *testing.T, tc *TestClient) {
+	for {
+		count, err := tc.ConsensusNode.TxStreamer.GetMessageCount()
+		Require(t, err)
+		if count > 0 {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+}
+
 func (b *NodeBuilder) Build(t *testing.T) func() {
 	if b.parallelise {
 		b.parallelise = false
@@ -544,9 +556,11 @@ func (b *NodeBuilder) Build(t *testing.T) func() {
 		if b.withReferenceDAProvider {
 			b.setupReferenceDAServer(t)
 		}
-		return b.BuildL2OnL1(t)
+		cleanup := b.BuildL2OnL1(t)
+		return cleanup
 	}
-	return b.BuildL2(t)
+	cleanup := b.BuildL2(t)
+	return cleanup
 }
 
 type testCollection struct {
@@ -669,6 +683,9 @@ func (b *NodeBuilder) CheckConfig(t *testing.T) {
 		} else {
 			b.execConfig.RPC.MaxRecreateStateDepth = arbitrum.DefaultNonArchiveNodeMaxRecreateStateDepth
 		}
+	}
+	if b.nodeConfig.BlockValidator.Enable {
+		b.nodeConfig.MessageExtraction.Enable = false // Skip running in MEL mode for block validator tests
 	}
 }
 
@@ -897,6 +914,9 @@ func (b *NodeBuilder) BuildL2OnL1(t *testing.T) func() {
 		}
 	}
 
+	if b.nodeConfig.MessageExtraction.Enable {
+		b.waitForMelToReadInitMsg(t, b.L2)
+	}
 	return func() {
 		b.L2.cleanup()
 		if b.L1 != nil && b.L1.cleanup != nil {
@@ -974,6 +994,9 @@ func (b *NodeBuilder) BuildL2(t *testing.T) func() {
 
 	b.L2.ExecNode = getExecNode(t, b.L2.ConsensusNode)
 	b.L2.cleanup = func() { b.L2.ConsensusNode.StopAndWait() }
+	if b.nodeConfig.MessageExtraction.Enable {
+		b.waitForMelToReadInitMsg(t, b.L2)
+	}
 	return func() {
 		b.L2.cleanup()
 		b.ctxCancel()
