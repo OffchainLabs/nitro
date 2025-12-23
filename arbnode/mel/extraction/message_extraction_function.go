@@ -57,7 +57,7 @@ func ExtractMessages(
 	ctx context.Context,
 	inputState *mel.State,
 	parentChainHeader *types.Header,
-	dataProviders *daprovider.DAProviderRegistry,
+	dapReaders arbstate.DapReaderSource,
 	delayedMsgDatabase DelayedMessageDatabase,
 	txFetcher TransactionFetcher,
 	logsFetcher LogsFetcher,
@@ -68,7 +68,7 @@ func ExtractMessages(
 		inputState,
 		parentChainHeader,
 		chainConfig,
-		dataProviders,
+		dapReaders,
 		delayedMsgDatabase,
 		txFetcher,
 		logsFetcher,
@@ -90,7 +90,7 @@ func extractMessagesImpl(
 	inputState *mel.State,
 	parentChainHeader *types.Header,
 	chainConfig *params.ChainConfig,
-	dataProviders *daprovider.DAProviderRegistry,
+	dapReaders arbstate.DapReaderSource,
 	delayedMsgDatabase DelayedMessageDatabase,
 	txFetcher TransactionFetcher,
 	logsFetcher LogsFetcher,
@@ -154,6 +154,12 @@ func extractMessagesImpl(
 		}
 		state.DelayedMessagesSeen += 1
 	}
+	if len(delayedMessages) > 0 {
+		// Only need to calculate partials once, after all the delayed messages are `seen`
+		if err := state.GenerateDelayedMessagesSeenMerklePartialsAndRoot(); err != nil {
+			return nil, nil, nil, nil, err
+		}
+	}
 
 	// Batch posting reports are included in the same transaction as a batch, so there should
 	// always be the same number of reports as there are batches.
@@ -207,7 +213,7 @@ func extractMessagesImpl(
 			batch.SequenceNumber,
 			batch.BlockHash,
 			serialized,
-			dataProviders,
+			dapReaders,
 			daprovider.KeysetValidate,
 			chainConfig,
 		)

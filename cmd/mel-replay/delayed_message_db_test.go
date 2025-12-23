@@ -13,6 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 
 	"github.com/offchainlabs/nitro/arbnode/mel"
+	melrecording "github.com/offchainlabs/nitro/arbnode/mel/recording"
 	"github.com/offchainlabs/nitro/arbnode/mel/runner"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -69,8 +70,7 @@ func TestRecordingPreimagesForReadDelayedMessage(t *testing.T) {
 	require.NoError(t, state.GenerateDelayedMessagesSeenMerklePartialsAndRoot())
 	require.NoError(t, melDB.SaveState(ctx, state))
 
-	recordingDB := melrunner.NewRecordingDatabase(db)
-	require.NoError(t, recordingDB.Initialize(ctx, state))
+	recordingDB := melrecording.NewDelayedMsgDatabase(db)
 	for i := startBlockNum; i < numMsgs; i++ {
 		require.NoError(t, state.AccumulateDelayedMessage(delayedMessages[i]))
 		state.DelayedMessagesSeen++
