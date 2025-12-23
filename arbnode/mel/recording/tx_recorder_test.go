@@ -1,4 +1,4 @@
-package recording
+package melrecording
 
 import (
 	"context"
@@ -8,6 +8,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/trie"
+	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/stretchr/testify/require"
 )
 
@@ -28,10 +29,10 @@ func TestTransactionByLog(t *testing.T) {
 	toAddr := common.HexToAddress("0x0000000000000000000000000000000000DeaDBeef")
 	blockHeader := &types.Header{}
 	txs := make([]*types.Transaction, 0)
-	for i := 1; i < 10; i++ {
+	for i := uint64(1); i < 10; i++ {
 		txData := &types.DynamicFeeTx{
 			To:        &toAddr,
-			Nonce:     1,
+			Nonce:     i,
 			GasFeeCap: big.NewInt(1),
 			GasTipCap: big.NewInt(1),
 			Gas:       1,
@@ -56,7 +57,7 @@ func TestTransactionByLog(t *testing.T) {
 			block.Hash(): block,
 		},
 	}
-	preimages := make(map[common.Hash][]byte)
+	preimages := make(daprovider.PreimagesMap)
 	recorder := NewTransactionRecorder(blockReader, block.Hash(), preimages)
 	require.NoError(t, recorder.Initialize(ctx))
 
@@ -65,5 +66,9 @@ func TestTransactionByLog(t *testing.T) {
 	}
 	tx, err := recorder.TransactionByLog(ctx, log)
 	require.NoError(t, err)
-	require.Equal(t, txs[5], tx)
+	have, err := tx.MarshalJSON()
+	require.NoError(t, err)
+	want, err := block.Transactions()[5].MarshalJSON()
+	require.NoError(t, err)
+	require.Equal(t, want, have)
 }
