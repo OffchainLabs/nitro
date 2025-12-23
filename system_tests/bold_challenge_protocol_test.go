@@ -689,7 +689,7 @@ func createL2NodeForBoldProtocol(
 
 	Require(t, err)
 	locator, err := server_common.NewMachineLocator("")
-	Require(t, err)s
+	Require(t, err)
 	currentNode, err = arbnode.CreateConsensusNodeConnectedWithFullExecutionClient(
 		ctx, l2stack, execNode, l2consensusDB, NewCommonConfigFetcher(nodeConfig), l2blockchain.Config(), l1client,
 		addresses, sequencerTxOptsPtr, sequencerTxOptsPtr, dataSigner, fatalErrChan, parentChainId,
