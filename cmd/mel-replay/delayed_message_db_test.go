@@ -70,7 +70,7 @@ func TestRecordingPreimagesForReadDelayedMessage(t *testing.T) {
 	require.NoError(t, state.GenerateDelayedMessagesSeenMerklePartialsAndRoot())
 	require.NoError(t, melDB.SaveState(ctx, state))
 
-	recordingDB := melrecording.NewRecordingDatabase(db)
+	recordingDB := melrecording.NewDelayedMsgDatabase(db)
 	for i := startBlockNum; i < numMsgs; i++ {
 		require.NoError(t, state.AccumulateDelayedMessage(delayedMessages[i]))
 		state.DelayedMessagesSeen++

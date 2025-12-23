@@ -16,19 +16,19 @@ import (
 	"github.com/offchainlabs/nitro/arbos/merkleAccumulator"
 )
 
-// RecordingDatabase holds an ethdb.KeyValueStore that contains delayed messages stored by native MEL and implements DelayedMessageDatabase
+// DelayedMsgDatabase holds an ethdb.KeyValueStore that contains delayed messages stored by native MEL and implements DelayedMessageDatabase
 // interface defined in 'mel'. It is solely used for recording of preimages relating to delayed messages needed for MEL validation
-type RecordingDatabase struct {
+type DelayedMsgDatabase struct {
 	db          ethdb.KeyValueStore
 	preimages   map[common.Hash][]byte
 	initialized bool
 }
 
-func NewRecordingDatabase(db ethdb.KeyValueStore) *RecordingDatabase {
-	return &RecordingDatabase{db, make(map[common.Hash][]byte), false}
+func NewDelayedMsgDatabase(db ethdb.KeyValueStore) *DelayedMsgDatabase {
+	return &DelayedMsgDatabase{db, make(map[common.Hash][]byte), false}
 }
 
-func (r *RecordingDatabase) initialize(ctx context.Context, state *mel.State) error {
+func (r *DelayedMsgDatabase) initialize(ctx context.Context, state *mel.State) error {
 	var acc *merkleAccumulator.MerkleAccumulator
 	for i := state.ParentChainBlockNumber; i > 0; i-- {
 		seenState, err := getState(ctx, r.db, i)
@@ -83,9 +83,9 @@ func (r *RecordingDatabase) initialize(ctx context.Context, state *mel.State) er
 	return nil
 }
 
-func (r *RecordingDatabase) Preimages() map[common.Hash][]byte { return r.preimages }
+func (r *DelayedMsgDatabase) Preimages() map[common.Hash][]byte { return r.preimages }
 
-func (r *RecordingDatabase) ReadDelayedMessage(ctx context.Context, state *mel.State, index uint64) (*mel.DelayedInboxMessage, error) {
+func (r *DelayedMsgDatabase) ReadDelayedMessage(ctx context.Context, state *mel.State, index uint64) (*mel.DelayedInboxMessage, error) {
 	if index == 0 { // Init message
 		// This message cannot be found in the database as it is supposed to be seen and read in the same block, so we persist that in DelayedMessageBacklog
 		return state.GetDelayedMessageBacklog().GetInitMsg(), nil
