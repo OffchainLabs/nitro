@@ -13,6 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/trie"
 	"github.com/ethereum/go-ethereum/trie/trienode"
 	"github.com/ethereum/go-ethereum/triedb"
+
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/daprovider"
 )
@@ -53,6 +54,7 @@ func (tr *TransactionRecorder) Initialize(ctx context.Context) error {
 	txsTrie := trie.NewEmpty(tdb)
 	txs := block.Body().Transactions
 	for i, tx := range txs {
+		// #nosec G115
 		indexBytes, err := rlp.EncodeToBytes(uint64(i))
 		if err != nil {
 			return fmt.Errorf("failed to encode index %d: %w", i, err)
@@ -91,6 +93,7 @@ func (tr *TransactionRecorder) TransactionByLog(ctx context.Context, log *types.
 	if log == nil {
 		return nil, errors.New("transactionByLog got nil log value")
 	}
+	// #nosec G115
 	if int(log.TxIndex) >= len(tr.txs) {
 		return nil, fmt.Errorf("index out of range: %d", log.TxIndex)
 	}
