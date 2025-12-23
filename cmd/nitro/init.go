@@ -954,10 +954,11 @@ func resolveInitialL1BaseFee(genesisArbOSInit *params.ArbOSInit, chainConfig *co
 	if genesisArbOSInit == nil {
 		return chainConfig.InitialL1BaseFeeParsed(), nil
 	}
-	if chainConfig.InitialL1BaseFee != "" && genesisArbOSInit.InitialL1BaseFee.Cmp(chainConfig.InitialL1BaseFeeParsed()) != 0 {
-		return nil, fmt.Errorf("initial l1 base fee is configured to be %s but genesis configures it to be %s", chainConfig.InitialL1BaseFee, genesisArbOSInit.InitialL1BaseFee.String())
+	genesisFee := genesisArbOSInit.GetInitialL1BaseFee()
+	if chainConfig.InitialL1BaseFee != "" && genesisArbOSInit.GetInitialL1BaseFee().Cmp(genesisFee) != 0 {
+		return nil, fmt.Errorf("initial l1 base fee is configured to be %s but genesis configures it to be %s", chainConfig.InitialL1BaseFee, genesisFee.String())
 	}
-	return genesisArbOSInit.InitialL1BaseFee, nil
+	return genesisFee, nil
 }
 
 func validateGenesisAssertion(ctx context.Context, rollupAddress common.Address, l1Client *ethclient.Client, genesis *types.Block, initDataReaderHasAccounts bool) error {

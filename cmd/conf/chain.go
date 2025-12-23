@@ -10,7 +10,8 @@ import (
 	"github.com/google/martian/v3/log"
 	"github.com/spf13/pflag"
 
-	"github.com/offchainlabs/nitro/arbos/arbostypes"
+	"github.com/ethereum/go-ethereum/params"
+
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/rpcclient"
@@ -67,13 +68,13 @@ type L2Config struct {
 
 func (c *L2Config) InitialL1BaseFeeParsed() *big.Int {
 	if c.InitialL1BaseFee == "" {
-		return arbostypes.DefaultInitialL1BaseFee
+		return params.DefaultInitialL1BaseFee
 	}
 
 	parsed, success := big.NewInt(0).SetString(c.InitialL1BaseFee, 10)
 	if !success {
 		log.Errorf("Failed to parse L1 BaseFee for L2 config: %v", c.InitialL1BaseFee)
-		return arbostypes.DefaultInitialL1BaseFee
+		return params.DefaultInitialL1BaseFee
 	}
 	return parsed
 }
@@ -83,7 +84,7 @@ var L2ConfigDefault = L2Config{
 	Name:             "",
 	InfoFiles:        []string{}, // Default file used is chaininfo/arbitrum_chain_info.json, stored in DefaultChainInfo in chain_info.go
 	InfoJson:         "",
-	InitialL1BaseFee: arbostypes.DefaultInitialL1BaseFee.String(),
+	InitialL1BaseFee: params.DefaultInitialL1BaseFee.String(),
 	DevWallet:        genericconf.WalletConfigDefault,
 }
 

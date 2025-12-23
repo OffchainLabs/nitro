@@ -16,7 +16,6 @@ import (
 	"github.com/ethereum/go-ethereum/eth/gasestimator"
 	"github.com/ethereum/go-ethereum/params"
 
-	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/solgen/go/localgen"
 	"github.com/offchainlabs/nitro/solgen/go/node_interfacegen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
@@ -207,7 +206,7 @@ func TestComponentEstimate(t *testing.T) {
 	cleanup := builder.Build(t)
 	defer cleanup()
 
-	l1BaseFee := new(big.Int).Set(arbostypes.DefaultInitialL1BaseFee)
+	l1BaseFee := new(big.Int).Set(params.DefaultInitialL1BaseFee)
 	l2BaseFee := builder.L2.GetBaseFee(t)
 
 	colors.PrintGrey("l1 basefee ", l1BaseFee)

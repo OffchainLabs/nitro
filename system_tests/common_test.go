@@ -1967,7 +1967,7 @@ func createNonL1BlockChainWithStackConfig(
 		Require(t, err)
 		initMessage = &arbostypes.ParsedInitMessage{
 			ChainId:               chainConfig.ChainID,
-			InitialL1BaseFee:      arbostypes.DefaultInitialL1BaseFee,
+			InitialL1BaseFee:      params.DefaultInitialL1BaseFee,
 			ChainConfig:           chainConfig,
 			SerializedChainConfig: serializedChainConfig,
 		}
