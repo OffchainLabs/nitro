@@ -55,7 +55,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
 	"github.com/offchainlabs/nitro/daprovider"
-	"github.com/offchainlabs/nitro/daprovider/das"
+	"github.com/offchainlabs/nitro/daprovider/anytrust"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	_ "github.com/offchainlabs/nitro/execution/nodeInterface"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
@@ -228,7 +228,7 @@ func mainImpl() int {
 	// If sequencer and signing is enabled or batchposter is enabled without
 	// external signing sequencer will need a key.
 	sequencerNeedsKey := (nodeConfig.Node.Sequencer && nodeConfig.Node.Feed.Output.Signed) ||
-		(nodeConfig.Node.BatchPoster.Enable && (nodeConfig.Node.BatchPoster.DataPoster.ExternalSigner.URL == "" || nodeConfig.Node.DataAvailability.Enable))
+		(nodeConfig.Node.BatchPoster.Enable && (nodeConfig.Node.BatchPoster.DataPoster.ExternalSigner.URL == "" || nodeConfig.Node.DA.AnyTrust.Enable))
 	validatorNeedsKey := nodeConfig.Node.Staker.OnlyCreateWalletContract ||
 		(nodeConfig.Node.Staker.Enable && !strings.EqualFold(nodeConfig.Node.Staker.Strategy, "watchtower") && nodeConfig.Node.Staker.DataPoster.ExternalSigner.URL == "")
 
@@ -442,50 +442,46 @@ func mainImpl() int {
 		return 1
 	}
 
-	chainDb, l2BlockChain, err := openInitializeChainDb(ctx, stack, nodeConfig, new(big.Int).SetUint64(nodeConfig.Chain.ID), gethexec.DefaultCacheConfigFor(&nodeConfig.Execution.Caching), &nodeConfig.Execution.StylusTarget, tracer, &nodeConfig.Persistent, l1Client, rollupAddrs)
+	executionDB, l2BlockChain, err := openInitializeExecutionDB(ctx, stack, nodeConfig, new(big.Int).SetUint64(nodeConfig.Chain.ID), gethexec.DefaultCacheConfigFor(&nodeConfig.Execution.Caching), &nodeConfig.Execution.StylusTarget, tracer, &nodeConfig.Persistent, l1Client, rollupAddrs)
 	if l2BlockChain != nil {
 		deferFuncs = append(deferFuncs, func() { l2BlockChain.Stop() })
 	}
-	deferFuncs = append(deferFuncs, func() { closeDb(chainDb, "chainDb") })
+	deferFuncs = append(deferFuncs, func() { closeDb(executionDB, "executionDB") })
 	if err != nil {
 		pflag.Usage()
 		log.Error("error initializing database", "err", err)
 		return 1
 	}
 
-	arbDb, err := stack.OpenDatabaseWithOptions("arbitrumdata", node.DatabaseOptions{MetricsNamespace: "arbitrumdata/", PebbleExtraOptions: nodeConfig.Persistent.Pebble.ExtraOptions("arbitrumdata"), NoFreezer: true})
-	deferFuncs = append(deferFuncs, func() { closeDb(arbDb, "arbDb") })
+	consensusDB, err := stack.OpenDatabaseWithOptions("arbitrumdata", node.DatabaseOptions{MetricsNamespace: "arbitrumdata/", PebbleExtraOptions: nodeConfig.Persistent.Pebble.ExtraOptions("arbitrumdata"), NoFreezer: true})
+	deferFuncs = append(deferFuncs, func() { closeDb(consensusDB, "consensusDB") })
 	if err != nil {
 		log.Error("failed to open database", "err", err)
 		log.Error("database is corrupt; delete it and try again", "database-directory", stack.InstanceDir())
 		return 1
 	}
-	if err := dbutil.UnfinishedConversionCheck(arbDb); err != nil {
+	if err := dbutil.UnfinishedConversionCheck(consensusDB); err != nil {
 		log.Error("arbitrumdata unfinished conversion check error", "err", err)
 		return 1
 	}
-
-	fatalErrChan := make(chan error, 10)
 
 	if nodeConfig.BlocksReExecutor.Enable && l2BlockChain != nil {
 		if !nodeConfig.Init.ThenQuit {
 			log.Error("blocks-reexecutor cannot be enabled without --init.then-quit")
 			return 1
 		}
-		blocksReExecutor, err := blocksreexecutor.New(&nodeConfig.BlocksReExecutor, l2BlockChain, chainDb, fatalErrChan)
+		blocksReExecutor, err := blocksreexecutor.New(&nodeConfig.BlocksReExecutor, l2BlockChain, executionDB)
 		if err != nil {
 			log.Error("error initializing blocksReExecutor", "err", err)
 			return 1
 		}
-		success := make(chan struct{})
-		blocksReExecutor.Start(ctx, success)
+
+		blocksReExecutor.Start(ctx)
 		deferFuncs = append(deferFuncs, func() { blocksReExecutor.StopAndWait() })
-		select {
-		case err := <-fatalErrChan:
-			log.Error("shutting down due to fatal error", "err", err)
+		err = blocksReExecutor.WaitForReExecution(ctx)
+		if err != nil {
 			defer log.Error("shut down due to fatal error", "err", err)
 			return 1
-		case <-success:
 		}
 	}
 
@@ -503,11 +499,13 @@ func mainImpl() int {
 		return 1
 	}
 
-	if l2BlockChain.Config().ArbitrumChainParams.DataAvailabilityCommittee != nodeConfig.Node.DataAvailability.Enable {
+	if l2BlockChain.Config().ArbitrumChainParams.DataAvailabilityCommittee != nodeConfig.Node.DA.AnyTrust.Enable {
 		pflag.Usage()
-		log.Error(fmt.Sprintf("data availability service usage for this chain is set to %v but --node.data-availability.enable is set to %v", l2BlockChain.Config().ArbitrumChainParams.DataAvailabilityCommittee, nodeConfig.Node.DataAvailability.Enable))
+		log.Error(fmt.Sprintf("AnyTrust DA usage for this chain is set to %v but --node.da.anytrust.enable is set to %v", l2BlockChain.Config().ArbitrumChainParams.DataAvailabilityCommittee, nodeConfig.Node.DA.AnyTrust.Enable))
 		return 1
 	}
+
+	fatalErrChan := make(chan error, 10)
 
 	var valNode *valnode.ValidationNode
 	if sameProcessValidationNodeEnabled {
@@ -525,7 +523,7 @@ func mainImpl() int {
 	execNode, err := gethexec.CreateExecutionNode(
 		ctx,
 		stack,
-		chainDb,
+		executionDB,
 		l2BlockChain,
 		l1Client,
 		&ExecutionNodeConfigFetcher{liveNodeConfig},
@@ -552,7 +550,7 @@ func mainImpl() int {
 		execNode,
 		execNode,
 		execNode,
-		arbDb,
+		consensusDB,
 		&ConsensusNodeConfigFetcher{liveNodeConfig},
 		l2BlockChain.Config(),
 		l1Client,
@@ -587,9 +585,9 @@ func mainImpl() int {
 			return 1
 		}
 	}
-	// If batchPoster is enabled, validate MaxCalldataBatchSize to be at least 10kB below the sequencer inbox's maxDataSize if the data availability service is not enabled.
+	// If batchPoster is enabled, validate MaxCalldataBatchSize to be at least 10kB below the sequencer inbox's maxDataSize if AnyTrust DA is not enabled.
 	// The 10kB gap is because its possible for the batch poster to exceed its MaxCalldataBatchSize limit and produce batches of slightly larger size.
-	if nodeConfig.Node.BatchPoster.Enable && !nodeConfig.Node.DataAvailability.Enable {
+	if nodeConfig.Node.BatchPoster.Enable && !nodeConfig.Node.DA.AnyTrust.Enable {
 		if nodeConfig.Node.BatchPoster.MaxCalldataBatchSize > seqInboxMaxDataSize-10000 {
 			log.Error("batchPoster's MaxCalldataBatchSize is too large")
 			return 1
@@ -921,7 +919,10 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 		return nil, nil, err
 	}
 
-	if err = das.FixKeysetCLIParsing("node.data-availability.rpc-aggregator.backends", k); err != nil {
+	if err = anytrust.FixKeysetCLIParsing("node.data-availability.rpc-aggregator.backends", k); err != nil {
+		return nil, nil, err
+	}
+	if err = anytrust.FixKeysetCLIParsing("node.da.anytrust.rpc-aggregator.backends", k); err != nil {
 		return nil, nil, err
 	}
 
@@ -929,6 +930,9 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 	if err := confighelpers.EndCommonParse(k, &nodeConfig); err != nil {
 		return nil, nil, err
 	}
+
+	// Migrate deprecated --node.data-availability.* to --node.da.anytrust.*
+	nodeConfig.Node.MigrateDeprecatedConfig()
 
 	// Don't print wallet passwords
 	if nodeConfig.Conf.Dump {
@@ -1013,11 +1017,13 @@ func applyChainParameters(k *koanf.Koanf, chainId uint64, chainName string, l2Ch
 		chainDefaults["node.feed.input.verify.dangerous.accept-missing"] = false
 	}
 	if chainInfo.DasIndexUrl != "" {
-		chainDefaults["node.data-availability.enable"] = true
-		chainDefaults["node.data-availability.rest-aggregator.enable"] = true
-		chainDefaults["node.data-availability.rest-aggregator.online-url-list"] = chainInfo.DasIndexUrl
+		// Set defaults at the new AnyTrust config path only
+		// Users of old --node.data-availability.* flags will be migrated
+		chainDefaults["node.da.anytrust.enable"] = true
+		chainDefaults["node.da.anytrust.rest-aggregator.enable"] = true
+		chainDefaults["node.da.anytrust.rest-aggregator.online-url-list"] = chainInfo.DasIndexUrl
 	} else if chainInfo.ChainConfig.ArbitrumChainParams.DataAvailabilityCommittee {
-		chainDefaults["node.data-availability.enable"] = true
+		chainDefaults["node.da.anytrust.enable"] = true
 	}
 	if !chainInfo.HasGenesisState && l2GenesisJsonFile == "" {
 		chainDefaults["init.empty"] = true

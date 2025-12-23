@@ -33,6 +33,7 @@ func TestMessageExtractorStallTriggersMetric(t *testing.T) {
 	extractor, err := NewMessageExtractor(
 		cfg,
 		&mockParentChainReader{},
+		chaininfo.ArbitrumDevTestChainConfig(),
 		&chaininfo.RollupAddresses{},
 		NewDatabase(rawdb.NewMemoryDatabase()),
 		&mockMessageConsumer{},
@@ -65,14 +66,15 @@ func TestMessageExtractor(t *testing.T) {
 	parentChainReader.blocks[common.BigToHash(common.Big1)] = emptyblk0
 	parentChainReader.blocks[common.BigToHash(common.Big2)] = emptyblk1
 	parentChainReader.blocks[common.BigToHash(common.Big3)] = emptyblk2
-	arbDb := rawdb.NewMemoryDatabase()
-	melDb := NewDatabase(arbDb)
+	consensusDB := rawdb.NewMemoryDatabase()
+	melDB := NewDatabase(consensusDB)
 	messageConsumer := &mockMessageConsumer{}
 	extractor, err := NewMessageExtractor(
 		DefaultMessageExtractionConfig,
 		parentChainReader,
+		chaininfo.ArbitrumDevTestChainConfig(),
 		&chaininfo.RollupAddresses{},
-		melDb,
+		melDB,
 		messageConsumer,
 		daprovider.NewDAProviderRegistry(),
 	)
@@ -93,7 +95,7 @@ func TestMessageExtractor(t *testing.T) {
 			ParentChainBlockNumber: 1,
 			ParentChainBlockHash:   emptyblk0.Hash(),
 		}
-		require.NoError(t, melDb.SaveState(ctx, melState))
+		require.NoError(t, melDB.SaveState(ctx, melState))
 
 		parentChainReader.returnErr = errors.New("oops")
 		_, err := extractor.Act(ctx)
@@ -140,7 +142,7 @@ func TestMessageExtractor(t *testing.T) {
 		parentChainReader.blocks[common.BigToHash(big.NewInt(1))] = types.NewBlock(
 			&types.Header{ParentHash: common.MaxHash}, nil, nil, nil,
 		)
-		headMelStateBlockNum, err := melDb.GetHeadMelStateBlockNum()
+		headMelStateBlockNum, err := melDB.GetHeadMelStateBlockNum()
 		require.NoError(t, err)
 		require.True(t, headMelStateBlockNum == 2)
 

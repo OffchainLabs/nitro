@@ -22,10 +22,10 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
-	protocol "github.com/offchainlabs/nitro/bold/chain-abstraction"
-	challengemanager "github.com/offchainlabs/nitro/bold/challenge-manager"
-	modes "github.com/offchainlabs/nitro/bold/challenge-manager/types"
-	l2stateprovider "github.com/offchainlabs/nitro/bold/layer2-state-provider"
+	"github.com/offchainlabs/nitro/bold/challenge"
+	modes "github.com/offchainlabs/nitro/bold/challenge/types"
+	"github.com/offchainlabs/nitro/bold/protocol"
+	"github.com/offchainlabs/nitro/bold/state"
 	"github.com/offchainlabs/nitro/bold/testing/setup"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/execution/gethexec"
@@ -100,7 +100,7 @@ func TestOverflowAssertions(t *testing.T) {
 		l2node.InboxTracker,
 		l2node.TxStreamer,
 		l2node.ExecutionRecorder,
-		l2node.ArbDB,
+		l2node.ConsensusDB,
 		nil,
 		StaticFetcherFrom(t, &blockValidatorConfig),
 		valStack,
@@ -124,7 +124,7 @@ func TestOverflowAssertions(t *testing.T) {
 	stateManager, err := bold.NewBOLDStateProvider(
 		blockValidator,
 		stateless,
-		l2stateprovider.Height(blockChallengeLeafHeight),
+		state.Height(blockChallengeLeafHeight),
 		&bold.StateProviderConfig{
 			ValidatorName:          "good",
 			MachineLeavesCachePath: goodDir,
@@ -215,29 +215,29 @@ func TestOverflowAssertions(t *testing.T) {
 		time.Sleep(time.Millisecond * 200)
 	}
 
-	provider := l2stateprovider.NewHistoryCommitmentProvider(
+	provider := state.NewHistoryCommitmentProvider(
 		stateManager,
 		stateManager,
 		stateManager,
-		[]l2stateprovider.Height{
-			l2stateprovider.Height(blockChallengeLeafHeight),
-			l2stateprovider.Height(bigStepChallengeLeafHeight),
-			l2stateprovider.Height(smallStepChallengeLeafHeight),
+		[]state.Height{
+			state.Height(blockChallengeLeafHeight),
+			state.Height(bigStepChallengeLeafHeight),
+			state.Height(smallStepChallengeLeafHeight),
 		},
 		stateManager,
 		nil, // Api db
 	)
 
-	stackOpts := []challengemanager.StackOpt{
-		challengemanager.StackWithName("default"),
-		challengemanager.StackWithMode(modes.MakeMode),
-		challengemanager.StackWithPostingInterval(time.Second),
-		challengemanager.StackWithPollingInterval(time.Millisecond * 500),
-		challengemanager.StackWithAverageBlockCreationTime(time.Second),
-		challengemanager.StackWithMinimumGapToParentAssertion(0),
+	stackOpts := []challenge.StackOpt{
+		challenge.StackWithName("default"),
+		challenge.StackWithMode(modes.MakeMode),
+		challenge.StackWithPostingInterval(time.Second),
+		challenge.StackWithPollingInterval(time.Millisecond * 500),
+		challenge.StackWithAverageBlockCreationTime(time.Second),
+		challenge.StackWithMinimumGapToParentAssertion(0),
 	}
 
-	manager, err := challengemanager.NewChallengeStack(
+	manager, err := challenge.NewChallengeStack(
 		assertionChain,
 		provider,
 		stackOpts...,

@@ -15,6 +15,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/arbnode/mel"
@@ -95,6 +96,7 @@ type MessageExtractor struct {
 	stopwaiter.StopWaiter
 	config                   MessageExtractionConfig
 	parentChainReader        ParentChainReader
+	chainConfig              *params.ChainConfig
 	logsAndHeadersPreFetcher *logsAndHeadersFetcher
 	addrs                    *chaininfo.RollupAddresses
 	melDB                    *Database
@@ -113,6 +115,7 @@ type MessageExtractor struct {
 func NewMessageExtractor(
 	config MessageExtractionConfig,
 	parentChainReader ParentChainReader,
+	chainConfig *params.ChainConfig,
 	rollupAddrs *chaininfo.RollupAddresses,
 	melDB *Database,
 	msgConsumer mel.MessageConsumer,
@@ -125,6 +128,7 @@ func NewMessageExtractor(
 	return &MessageExtractor{
 		config:            config,
 		parentChainReader: parentChainReader,
+		chainConfig:       chainConfig,
 		addrs:             rollupAddrs,
 		melDB:             melDB,
 		msgConsumer:       msgConsumer,

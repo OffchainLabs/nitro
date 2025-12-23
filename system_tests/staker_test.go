@@ -33,7 +33,7 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/rollup_legacy_gen"
 	"github.com/offchainlabs/nitro/solgen/go/upgrade_executorgen"
 	"github.com/offchainlabs/nitro/staker"
-	legacystaker "github.com/offchainlabs/nitro/staker/legacy"
+	"github.com/offchainlabs/nitro/staker/legacy"
 	"github.com/offchainlabs/nitro/staker/validatorwallet"
 	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -157,7 +157,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	}
 	dpA, err := arbnode.StakerDataposter(
 		ctx,
-		rawdb.NewTable(l2nodeB.ArbDB, storage.StakerPrefix),
+		rawdb.NewTable(l2nodeB.ConsensusDB, storage.StakerPrefix),
 		l2nodeA.L1Reader,
 		&l1authA, NewCommonConfigFetcher(arbnode.ConfigDefaultL1NonSequencerTest()),
 		nil,
@@ -200,7 +200,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		l2nodeA.InboxTracker,
 		l2nodeA.TxStreamer,
 		execNodeA,
-		l2nodeA.ArbDB,
+		l2nodeA.ConsensusDB,
 		nil,
 		StaticFetcherFrom(t, &blockValidatorConfig),
 		valStack,
@@ -240,7 +240,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	cfg.Staker.DataPoster.ExternalSigner = *signerCfg
 	dpB, err := arbnode.StakerDataposter(
 		ctx,
-		rawdb.NewTable(l2nodeB.ArbDB, storage.StakerPrefix),
+		rawdb.NewTable(l2nodeB.ConsensusDB, storage.StakerPrefix),
 		l2nodeB.L1Reader,
 		nil,
 		NewCommonConfigFetcher(cfg),
@@ -259,7 +259,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		l2nodeB.InboxTracker,
 		l2nodeB.TxStreamer,
 		execNodeB,
-		l2nodeB.ArbDB,
+		l2nodeB.ConsensusDB,
 		nil,
 		StaticFetcherFrom(t, &blockValidatorConfig),
 		valStack,

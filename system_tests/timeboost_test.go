@@ -676,7 +676,7 @@ func TestTimeboostBulkBlockMetadataFetcher(t *testing.T) {
 	defer cleanupSeq()
 
 	// Generate blocks until current block is > 20
-	arbDb := builder.L2.ConsensusNode.ArbDB
+	consensusDB := builder.L2.ConsensusNode.ConsensusDB
 	builder.L2Info.GenerateAccount("User")
 	user := builder.L2Info.GetDefaultTransactOpts("User", ctx)
 	var latestL2 uint64
@@ -696,7 +696,7 @@ func TestTimeboostBulkBlockMetadataFetcher(t *testing.T) {
 		blockMetadata := []byte{0, uint8(i)}
 		sampleBulkData = append(sampleBulkData, blockMetadata)
 		// #nosec G115
-		Require(t, arbDb.Put(dbKey(schema.BlockMetadataInputFeedPrefix, uint64(i)), blockMetadata))
+		Require(t, consensusDB.Put(dbKey(schema.BlockMetadataInputFeedPrefix, uint64(i)), blockMetadata))
 	}
 
 	nodecfg := arbnode.ConfigDefaultL1NonSequencerTest()
@@ -712,17 +712,17 @@ func TestTimeboostBulkBlockMetadataFetcher(t *testing.T) {
 	_, err = WaitForTx(ctx, newNode.Client, lastTx.Hash(), time.Second*5)
 	Require(t, err)
 
-	arbDb = newNode.ConsensusNode.ArbDB
+	consensusDB = newNode.ConsensusNode.ConsensusDB
 
 	// Introduce fragmentation
 	blocksWithBlockMetadata := []uint64{8, 9, 10, 14, 16}
 	for _, key := range blocksWithBlockMetadata {
-		Require(t, arbDb.Put(dbKey(schema.BlockMetadataInputFeedPrefix, key), sampleBulkData[key-1]))
-		Require(t, arbDb.Delete(dbKey(schema.MissingBlockMetadataInputFeedPrefix, key)))
+		Require(t, consensusDB.Put(dbKey(schema.BlockMetadataInputFeedPrefix, key), sampleBulkData[key-1]))
+		Require(t, consensusDB.Delete(dbKey(schema.MissingBlockMetadataInputFeedPrefix, key)))
 	}
 
 	// Check if all block numbers with schema.MissingBlockMetadataInputFeedPrefix are present as keys in arbDB and that no keys with schema.BlockMetadataInputFeedPrefix
-	iter := arbDb.NewIterator(schema.BlockMetadataInputFeedPrefix, nil)
+	iter := consensusDB.NewIterator(schema.BlockMetadataInputFeedPrefix, nil)
 	pos := uint64(0)
 	for iter.Next() {
 		keyBytes := bytes.TrimPrefix(iter.Key(), schema.BlockMetadataInputFeedPrefix)
@@ -732,7 +732,7 @@ func TestTimeboostBulkBlockMetadataFetcher(t *testing.T) {
 		pos++
 	}
 	iter.Release()
-	iter = arbDb.NewIterator(schema.MissingBlockMetadataInputFeedPrefix, nil)
+	iter = consensusDB.NewIterator(schema.MissingBlockMetadataInputFeedPrefix, nil)
 	pos = trackBlockMetadataFrom
 	i := 0
 	for iter.Next() {
@@ -752,16 +752,16 @@ func TestTimeboostBulkBlockMetadataFetcher(t *testing.T) {
 	}
 	iter.Release()
 
-	// Rebuild blockMetadata and cleanup trackers from ArbDB
+	// Rebuild blockMetadata and cleanup trackers from ConsensusDB
 	rebuildStartPos := uint64(5)
-	blockMetadataFetcher, err := arbnode.NewBlockMetadataFetcher(ctx, arbnode.BlockMetadataFetcherConfig{Source: rpcclient.ClientConfig{URL: builder.L2.Stack.HTTPEndpoint()}}, arbDb, newNode.ExecNode, rebuildStartPos, builder.chainConfig.ChainID.Uint64())
+	blockMetadataFetcher, err := arbnode.NewBlockMetadataFetcher(ctx, arbnode.BlockMetadataFetcherConfig{Source: rpcclient.ClientConfig{URL: builder.L2.Stack.HTTPEndpoint()}}, consensusDB, newNode.ExecNode, rebuildStartPos, builder.chainConfig.ChainID.Uint64())
 	Require(t, err)
 	blockMetadataFetcher.Update(ctx)
 
 	// Check if all blockMetadata starting from rebuildStartPos was synced from bulk BlockMetadata API via the blockMetadataFetcher and that trackers for missing blockMetadata were cleared
 	// Note that trackers for missing blockMetadata below rebuildStartPos won't be cleared and that is expected since we give user choice to only sync from a certain target instead of syncing
 	// all the missing blockMetadata. Currently this target is set by node to the same value as TrackBlockMetadataFrom flag
-	iter = arbDb.NewIterator(schema.BlockMetadataInputFeedPrefix, nil)
+	iter = consensusDB.NewIterator(schema.BlockMetadataInputFeedPrefix, nil)
 	pos = rebuildStartPos
 	for iter.Next() {
 		keyBytes := bytes.TrimPrefix(iter.Key(), schema.BlockMetadataInputFeedPrefix)
@@ -777,7 +777,7 @@ func TestTimeboostBulkBlockMetadataFetcher(t *testing.T) {
 		t.Fatalf("number of keys with schema.BlockMetadataInputFeedPrefix doesn't match expected value. Want: %d, Got: %d", latestL2, pos-1)
 	}
 	iter.Release()
-	iter = arbDb.NewIterator(schema.MissingBlockMetadataInputFeedPrefix, nil)
+	iter = consensusDB.NewIterator(schema.MissingBlockMetadataInputFeedPrefix, nil)
 	pos = trackBlockMetadataFrom
 	for iter.Next() {
 		keyBytes := bytes.TrimPrefix(iter.Key(), schema.MissingBlockMetadataInputFeedPrefix)
@@ -803,7 +803,7 @@ func TestTimeboostedFieldInReceiptsObject(t *testing.T) {
 	defer cleanup()
 
 	// Generate blocks until current block is totalBlocks
-	arbDb := builder.L2.ConsensusNode.ArbDB
+	consensusDB := builder.L2.ConsensusNode.ConsensusDB
 	blockNum := big.NewInt(2)
 	builder.L2Info.GenerateAccount("User")
 	user := builder.L2Info.GetDefaultTransactOpts("User", ctx)
@@ -819,8 +819,8 @@ func TestTimeboostedFieldInReceiptsObject(t *testing.T) {
 	}
 
 	for i := uint64(1); i < latestL2; i++ {
-		// Clean BlockMetadata from arbDB so that we can modify it at will
-		Require(t, arbDb.Delete(dbKey([]byte("t"), i)))
+		// Clean BlockMetadata from consensusDB so that we can modify it at will
+		Require(t, consensusDB.Delete(dbKey([]byte("t"), i)))
 	}
 
 	block, err := builder.L2.Client.BlockByNumber(ctx, blockNum)
@@ -830,7 +830,7 @@ func TestTimeboostedFieldInReceiptsObject(t *testing.T) {
 	}
 
 	// Set first tx (internal tx anyway) to not timeboosted and Second one to timeboosted- BlockMetadata (in bits)-> 00000000 00000010
-	Require(t, arbDb.Put(dbKey([]byte("t"), blockNum.Uint64()), []byte{0, 2}))
+	Require(t, consensusDB.Put(dbKey([]byte("t"), blockNum.Uint64()), []byte{0, 2}))
 	l2rpc := builder.L2.Stack.Attach()
 	// Extra timeboosted field in pointer form to check for its existence
 	type timeboostedFromReceipt struct {
@@ -927,7 +927,7 @@ func TestTimeboostBulkBlockMetadataAPI(t *testing.T) {
 	cleanup := builder.Build(t)
 	defer cleanup()
 
-	arbDb := builder.L2.ConsensusNode.ArbDB
+	consensusDB := builder.L2.ConsensusNode.ConsensusDB
 
 	// Generate blocks until current block is end
 	start := 1
@@ -938,8 +938,8 @@ func TestTimeboostBulkBlockMetadataAPI(t *testing.T) {
 		builder.L2.TransferBalanceTo(t, "Owner", util.RemapL1Address(user.From), big.NewInt(1e18), builder.L2Info)
 		latestL2, err := builder.L2.Client.BlockNumber(ctx)
 		Require(t, err)
-		// Clean BlockMetadata from arbDB so that we can modify it at will
-		Require(t, arbDb.Delete(dbKey([]byte("t"), latestL2)))
+		// Clean BlockMetadata from consensusDB so that we can modify it at will
+		Require(t, consensusDB.Delete(dbKey([]byte("t"), latestL2)))
 		// #nosec G115
 		if latestL2 > uint64(end)+10 {
 			break
@@ -954,7 +954,7 @@ func TestTimeboostBulkBlockMetadataAPI(t *testing.T) {
 			RawMetadata: []byte{0, uint8(i)},
 		}
 		sampleBulkData = append(sampleBulkData, sampleData)
-		Require(t, arbDb.Put(dbKey([]byte("t"), sampleData.BlockNumber), sampleData.RawMetadata))
+		Require(t, consensusDB.Put(dbKey([]byte("t"), sampleData.BlockNumber), sampleData.RawMetadata))
 	}
 
 	l2rpc := builder.L2.Stack.Attach()
@@ -974,9 +974,9 @@ func TestTimeboostBulkBlockMetadataAPI(t *testing.T) {
 		}
 	}
 
-	// Test that without cache the result returned is always in sync with ArbDB
+	// Test that without cache the result returned is always in sync with ConsensusDB
 	sampleBulkData[0].RawMetadata = []byte{1, 11}
-	Require(t, arbDb.Put(dbKey([]byte("t"), 1), sampleBulkData[0].RawMetadata))
+	Require(t, consensusDB.Put(dbKey([]byte("t"), 1), sampleBulkData[0].RawMetadata))
 
 	err = l2rpc.CallContext(ctx, &result, "arb_getRawBlockMetadata", rpc.BlockNumber(1), rpc.BlockNumber(1))
 	Require(t, err)
@@ -984,7 +984,7 @@ func TestTimeboostBulkBlockMetadataAPI(t *testing.T) {
 		t.Fatal("result returned with more than one entry")
 	}
 	if !bytes.Equal(sampleBulkData[0].RawMetadata, result[0].RawMetadata) {
-		t.Fatal("BlockMetadata gotten from API doesn't match the latest entry in ArbDB")
+		t.Fatal("BlockMetadata gotten from API doesn't match the latest entry in ConsensusDB")
 	}
 
 	// Test that LRU caching works
@@ -995,9 +995,9 @@ func TestTimeboostBulkBlockMetadataAPI(t *testing.T) {
 	err = l2rpc.CallContext(ctx, &result, "arb_getRawBlockMetadata", rpc.BlockNumber(start), rpc.BlockNumber(end))
 	Require(t, err)
 
-	arbDb = builder.L2.ConsensusNode.ArbDB
+	consensusDB = builder.L2.ConsensusNode.ConsensusDB
 	updatedBlockMetadata := []byte{2, 12}
-	Require(t, arbDb.Put(dbKey([]byte("t"), 1), updatedBlockMetadata))
+	Require(t, consensusDB.Put(dbKey([]byte("t"), 1), updatedBlockMetadata))
 
 	err = l2rpc.CallContext(ctx, &result, "arb_getRawBlockMetadata", rpc.BlockNumber(1), rpc.BlockNumber(1))
 	Require(t, err)
@@ -1713,6 +1713,7 @@ func setupExpressLaneAuction(
 		builderSeq.chainConfig,
 		uint64(builderSeq.execConfig.Sequencer.MaxTxDataSize), // #nosec G115
 		builderSeq.execConfig.Sequencer.Timeboost.EarlySubmissionGrace,
+		nil,
 	)
 	Require(t, err)
 
