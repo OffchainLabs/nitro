@@ -241,7 +241,7 @@ type ConfigFetcher interface {
 }
 
 type ExecutionNode struct {
-	ChainDB                  ethdb.Database
+	ExecutionDB              ethdb.Database
 	Backend                  *arbitrum.Backend
 	FilterSystem             *filters.FilterSystem
 	ArbInterface             *ArbInterface
@@ -263,7 +263,7 @@ type ExecutionNode struct {
 func CreateExecutionNode(
 	ctx context.Context,
 	stack *node.Node,
-	chainDB ethdb.Database,
+	executionDB ethdb.Database,
 	l2BlockChain *core.BlockChain,
 	l1client *ethclient.Client,
 	configFetcher ConfigFetcher,
@@ -281,7 +281,7 @@ func CreateExecutionNode(
 	if err != nil {
 		return nil, err
 	}
-	recorder := NewBlockRecorder(&config.RecordingDatabase, execEngine, chainDB)
+	recorder := NewBlockRecorder(&config.RecordingDatabase, execEngine, executionDB)
 	var txPublisher TransactionPublisher
 	var sequencer *Sequencer
 
@@ -326,7 +326,7 @@ func CreateExecutionNode(
 		LogCacheSize: config.RPC.FilterLogCacheSize,
 		Timeout:      config.RPC.FilterTimeout,
 	}
-	backend, filterSystem, err := arbitrum.NewBackend(stack, &config.RPC, chainDB, arbInterface, filterConfig, config.Caching.StateScheme)
+	backend, filterSystem, err := arbitrum.NewBackend(stack, &config.RPC, executionDB, arbInterface, filterConfig, config.Caching.StateScheme)
 	if err != nil {
 		return nil, err
 	}
@@ -336,24 +336,24 @@ func CreateExecutionNode(
 	var classicOutbox *ClassicOutboxRetriever
 
 	if l2BlockChain.Config().ArbitrumChainParams.GenesisBlockNum > 0 {
-		classicMsgDb, err := stack.OpenDatabase("classic-msg", 0, 0, "classicmsg/", true)
+		classicMsgDB, err := stack.OpenDatabase("classic-msg", 0, 0, "classicmsg/", true)
 		if dbutil.IsNotExistError(err) {
 			log.Warn("Classic Msg Database not found", "err", err)
 			classicOutbox = nil
 		} else if err != nil {
 			return nil, fmt.Errorf("Failed to open classic-msg database: %w", err)
 		} else {
-			if err := dbutil.UnfinishedConversionCheck(classicMsgDb); err != nil {
+			if err := dbutil.UnfinishedConversionCheck(classicMsgDB); err != nil {
 				return nil, fmt.Errorf("classic-msg unfinished database conversion check error: %w", err)
 			}
-			classicOutbox = NewClassicOutboxRetriever(classicMsgDb)
+			classicOutbox = NewClassicOutboxRetriever(classicMsgDB)
 		}
 	}
 
 	bulkBlockMetadataFetcher := NewBulkBlockMetadataFetcher(l2BlockChain, execEngine, config.BlockMetadataApiCacheSize, config.BlockMetadataApiBlocksLimit)
 
 	execNode := &ExecutionNode{
-		ChainDB:                  chainDB,
+		ExecutionDB:              executionDB,
 		Backend:                  backend,
 		FilterSystem:             filterSystem,
 		ArbInterface:             arbInterface,
@@ -415,7 +415,7 @@ func CreateExecutionNode(
 	})
 	apis = append(apis, rpc.API{
 		Namespace: "debug",
-		Service:   eth.NewDebugAPI(eth.NewArbEthereum(l2BlockChain, chainDB)),
+		Service:   eth.NewDebugAPI(eth.NewArbEthereum(l2BlockChain, executionDB)),
 		Public:    false,
 	})
 	if config.RPCServer.Enable {

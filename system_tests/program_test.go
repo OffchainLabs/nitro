@@ -76,8 +76,8 @@ func keccakTest(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder)) {
 	defer cleanup()
 	programAddress := deployWasm(t, ctx, auth, l2client, rustFile("keccak"))
 
-	wasmDb := builder.L2.ExecNode.Backend.ArbInterface().BlockChain().StateCache().WasmStore()
-	checkWasmStoreContent(t, wasmDb, builder.execConfig.StylusTarget.WasmTargets(), 1)
+	wasmDB := builder.L2.ExecNode.Backend.ArbInterface().BlockChain().StateCache().WasmStore()
+	checkWasmStoreContent(t, wasmDB, builder.execConfig.StylusTarget.WasmTargets(), 1)
 
 	wasm, _ := readWasmFile(t, rustFile("keccak"))
 	otherAddressSameCode := deployContract(t, ctx, auth, l2client, wasm)
@@ -90,7 +90,7 @@ func keccakTest(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder)) {
 			Fatal(t, "activate should have failed with ProgramUpToDate", err)
 		}
 	})
-	checkWasmStoreContent(t, wasmDb, builder.execConfig.StylusTarget.WasmTargets(), 1)
+	checkWasmStoreContent(t, wasmDB, builder.execConfig.StylusTarget.WasmTargets(), 1)
 
 	if programAddress == otherAddressSameCode {
 		Fatal(t, "expected to deploy at two separate program addresses")
@@ -206,8 +206,8 @@ func testActivateTwice(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder)
 
 	multiAddr := deployWasm(t, ctx, auth, l2client, rustFile("multicall"))
 
-	wasmDb := builder.L2.ExecNode.Backend.ArbInterface().BlockChain().StateCache().WasmStore()
-	checkWasmStoreContent(t, wasmDb, builder.execConfig.StylusTarget.WasmTargets(), 1)
+	wasmDB := builder.L2.ExecNode.Backend.ArbInterface().BlockChain().StateCache().WasmStore()
+	checkWasmStoreContent(t, wasmDB, builder.execConfig.StylusTarget.WasmTargets(), 1)
 
 	preimage := []byte("it's time to du-du-du-du d-d-d-d-d-d-d de-duplicate")
 
@@ -232,7 +232,7 @@ func testActivateTwice(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder)
 
 	// Calling the contract pre-activation should fail.
 	checkReverts()
-	checkWasmStoreContent(t, wasmDb, builder.execConfig.StylusTarget.WasmTargets(), 1)
+	checkWasmStoreContent(t, wasmDB, builder.execConfig.StylusTarget.WasmTargets(), 1)
 
 	// mechanisms for creating calldata
 	activateProgram, _ := util.NewCallParser(precompilesgen.ArbWasmABI, "activateProgram")
@@ -255,7 +255,7 @@ func testActivateTwice(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder)
 
 	// Ensure the revert also reverted keccak's activation
 	checkReverts()
-	checkWasmStoreContent(t, wasmDb, builder.execConfig.StylusTarget.WasmTargets(), 1)
+	checkWasmStoreContent(t, wasmDB, builder.execConfig.StylusTarget.WasmTargets(), 1)
 
 	// Activate keccak program A, then call into B, which should succeed due to being the same codehash
 	args = argsForMulticall(vm.CALL, types.ArbWasmAddress, oneEth, pack(activateProgram(keccakA)))
@@ -263,7 +263,7 @@ func testActivateTwice(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder)
 
 	tx = l2info.PrepareTxTo("Owner", &multiAddr, 1e9, oneEth, args)
 	ensure(tx, l2client.SendTransaction(ctx, tx))
-	checkWasmStoreContent(t, wasmDb, builder.execConfig.StylusTarget.WasmTargets(), 2)
+	checkWasmStoreContent(t, wasmDB, builder.execConfig.StylusTarget.WasmTargets(), 2)
 
 	validateBlocks(t, 7, jit, builder)
 }
@@ -1943,7 +1943,7 @@ func formatTime(duration time.Duration) string {
 	return fmt.Sprintf("%.2f%s", span, units[unit])
 }
 
-func testWasmRecreate(t *testing.T, builder *NodeBuilder, targetsBefore, targetsAfter []string, numModules int, removeWasmDbBetween bool, storeTx, loadTx *types.Transaction, want []byte, databaseEngine string) {
+func testWasmRecreate(t *testing.T, builder *NodeBuilder, targetsBefore, targetsAfter []string, numModules int, removeWasmDBBetween bool, storeTx, loadTx *types.Transaction, want []byte, databaseEngine string) {
 	ctx := builder.ctx
 	l2info := builder.L2Info
 	l2client := builder.L2.Client
@@ -1969,13 +1969,13 @@ func testWasmRecreate(t *testing.T, builder *NodeBuilder, targetsBefore, targets
 	if !bytes.Equal(result, want) {
 		t.Fatalf("got wrong value, got %x, want %x", result, want)
 	}
-	wasmDb := nodeB.ExecNode.Backend.ArbInterface().BlockChain().StateCache().WasmStore()
-	checkWasmStoreContent(t, wasmDb, nodeBExecConfigBefore.StylusTarget.WasmTargets(), numModules)
+	wasmDB := nodeB.ExecNode.Backend.ArbInterface().BlockChain().StateCache().WasmStore()
+	checkWasmStoreContent(t, wasmDB, nodeBExecConfigBefore.StylusTarget.WasmTargets(), numModules)
 	// close nodeB
 	cleanupB()
 
 	wasmPath := filepath.Join(testDir, nodeBStack.Name, "wasm")
-	if removeWasmDbBetween {
+	if removeWasmDBBetween {
 		// remove wasm dir of nodeB
 		dirContents, err := os.ReadDir(wasmPath)
 		Require(t, err)
@@ -2010,8 +2010,8 @@ func testWasmRecreate(t *testing.T, builder *NodeBuilder, targetsBefore, targets
 	_, err = EnsureTxSucceeded(ctx, nodeB.Client, loadTx)
 	Require(t, err)
 
-	wasmDb = nodeB.ExecNode.Backend.ArbInterface().BlockChain().StateCache().WasmStore()
-	checkWasmStoreContent(t, wasmDb, nodeBExecConfigAfter.StylusTarget.WasmTargets(), numModules)
+	wasmDB = nodeB.ExecNode.Backend.ArbInterface().BlockChain().StateCache().WasmStore()
+	checkWasmStoreContent(t, wasmDB, nodeBExecConfigAfter.StylusTarget.WasmTargets(), numModules)
 
 	cleanupB()
 	dirContents, err := os.ReadDir(wasmPath)
@@ -2025,55 +2025,55 @@ func testWasmRecreate(t *testing.T, builder *NodeBuilder, targetsBefore, targets
 func TestWasmRecreate(t *testing.T) {
 	testCases := []struct {
 		name                string
-		removeWasmDbBetween bool
+		removeWasmDBBetween bool
 		targetsBefore       []string
 		targetsAfter        []string
 	}{
 		{
 			name:                "with local target only with wasmdb removal",
-			removeWasmDbBetween: true,
+			removeWasmDBBetween: true,
 			targetsBefore:       localTargetOnly,
 			targetsAfter:        localTargetOnly,
 		},
 		{
 			name:                "with local target only without wasmdb removal",
-			removeWasmDbBetween: false,
+			removeWasmDBBetween: false,
 			targetsBefore:       localTargetOnly,
 			targetsAfter:        localTargetOnly,
 		},
 		{
 			name:                "with all targets with wasmdb removal",
-			removeWasmDbBetween: true,
+			removeWasmDBBetween: true,
 			targetsBefore:       allWasmTargets,
 			targetsAfter:        allWasmTargets,
 		},
 		{
 			name:                "with all targets without wasmdb removal",
-			removeWasmDbBetween: false,
+			removeWasmDBBetween: false,
 			targetsBefore:       allWasmTargets,
 			targetsAfter:        allWasmTargets,
 		},
 		{
 			name:                "more targets to recreate with wasmdb removal",
-			removeWasmDbBetween: true,
+			removeWasmDBBetween: true,
 			targetsBefore:       localTargetOnly,
 			targetsAfter:        allWasmTargets,
 		},
 		{
 			name:                "more targets to recreate without wasmdb removal",
-			removeWasmDbBetween: false,
+			removeWasmDBBetween: false,
 			targetsBefore:       localTargetOnly,
 			targetsAfter:        allWasmTargets,
 		},
 		{
 			name:                "less targets to recreate with wasmdb removal",
-			removeWasmDbBetween: true,
+			removeWasmDBBetween: true,
 			targetsBefore:       allWasmTargets,
 			targetsAfter:        localTargetOnly,
 		},
 		{
 			name:                "less targets to recreate without wasmdb removal",
-			removeWasmDbBetween: false,
+			removeWasmDBBetween: false,
 			targetsBefore:       allWasmTargets,
 			targetsAfter:        localTargetOnly,
 		},
@@ -2081,15 +2081,15 @@ func TestWasmRecreate(t *testing.T) {
 	databaseEngine := rawdb.DBPebble
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			testWasmRecreateWithCall(t, tc.targetsBefore, tc.targetsAfter, tc.removeWasmDbBetween, databaseEngine)
+			testWasmRecreateWithCall(t, tc.targetsBefore, tc.targetsAfter, tc.removeWasmDBBetween, databaseEngine)
 		})
 		t.Run(tc.name+" with delegate call", func(t *testing.T) {
-			testWasmRecreateWithDelegatecall(t, tc.targetsBefore, tc.targetsAfter, tc.removeWasmDbBetween, databaseEngine)
+			testWasmRecreateWithDelegatecall(t, tc.targetsBefore, tc.targetsAfter, tc.removeWasmDBBetween, databaseEngine)
 		})
 	}
 }
 
-func testWasmRecreateWithCall(t *testing.T, targetsBefore, targetsAfter []string, removeWasmDbBetween bool, databaseEngine string) {
+func testWasmRecreateWithCall(t *testing.T, targetsBefore, targetsAfter []string, removeWasmDBBetween bool, databaseEngine string) {
 	builder, auth, cleanup := setupProgramTest(t, true, func(b *NodeBuilder) {
 		b.WithDatabase(rawdb.DBPebble)
 	})
@@ -2109,7 +2109,7 @@ func testWasmRecreateWithCall(t *testing.T, targetsBefore, targetsAfter []string
 	testWasmRecreate(t, builder, localTargetOnly, allWasmTargets, 1, false, storeTx, loadTx, val[:], databaseEngine)
 }
 
-func testWasmRecreateWithDelegatecall(t *testing.T, targetsBefore, targetsAfter []string, removeWasmDbBetween bool, databaseEngine string) {
+func testWasmRecreateWithDelegatecall(t *testing.T, targetsBefore, targetsAfter []string, removeWasmDBBetween bool, databaseEngine string) {
 	builder, auth, cleanup := setupProgramTest(t, true, func(b *NodeBuilder) {
 		b.WithDatabase(rawdb.DBPebble)
 	})
@@ -2192,12 +2192,12 @@ func TestWasmStoreRebuilding(t *testing.T) {
 		Fatal(t, "got wrong value")
 	}
 
-	wasmDb := nodeB.ExecNode.Backend.ArbInterface().BlockChain().StateCache().WasmStore()
+	wasmDB := nodeB.ExecNode.Backend.ArbInterface().BlockChain().StateCache().WasmStore()
 
-	storeMap, err := createMapFromDb(wasmDb)
+	storeMap, err := createMapFromDb(wasmDB)
 	Require(t, err)
 
-	checkWasmStoreContent(t, wasmDb, builder.execConfig.StylusTarget.WasmTargets(), 1)
+	checkWasmStoreContent(t, wasmDB, builder.execConfig.StylusTarget.WasmTargets(), 1)
 	// close nodeB
 	cleanupB()
 
@@ -2214,8 +2214,8 @@ func TestWasmStoreRebuilding(t *testing.T) {
 	nodeB, cleanupB = builder.Build2ndNode(t, &SecondNodeParams{stackConfig: nodeBStack})
 	bc := nodeB.ExecNode.Backend.ArbInterface().BlockChain()
 
-	wasmDbAfterDelete := nodeB.ExecNode.Backend.ArbInterface().BlockChain().StateCache().WasmStore()
-	storeMapAfterDelete, err := createMapFromDb(wasmDbAfterDelete)
+	wasmDBAfterDelete := nodeB.ExecNode.Backend.ArbInterface().BlockChain().StateCache().WasmStore()
+	storeMapAfterDelete, err := createMapFromDb(wasmDBAfterDelete)
 	Require(t, err)
 	if len(storeMapAfterDelete) != 0 {
 		Fatal(t, "non-empty wasm store after it was previously deleted")
@@ -2224,20 +2224,20 @@ func TestWasmStoreRebuilding(t *testing.T) {
 	// Start rebuilding and wait for it to finish
 	log.Info("starting rebuilding of wasm store")
 	execConfig := builder.execConfig
-	Require(t, gethexec.RebuildWasmStore(ctx, wasmDbAfterDelete, nodeB.ExecNode.ChainDB, execConfig.RPC.MaxRecreateStateDepth, &execConfig.StylusTarget, bc, common.Hash{}, bc.CurrentBlock().Hash()))
+	Require(t, gethexec.RebuildWasmStore(ctx, wasmDBAfterDelete, nodeB.ExecNode.ExecutionDB, execConfig.RPC.MaxRecreateStateDepth, &execConfig.StylusTarget, bc, common.Hash{}, bc.CurrentBlock().Hash()))
 
-	wasmDbAfterRebuild := nodeB.ExecNode.Backend.ArbInterface().BlockChain().StateCache().WasmStore()
+	wasmDBAfterRebuild := nodeB.ExecNode.Backend.ArbInterface().BlockChain().StateCache().WasmStore()
 
 	// Before comparing, check if rebuilding was set to done and then delete the keys that are used to track rebuilding status
-	status, err := gethexec.ReadFromKeyValueStore[common.Hash](wasmDbAfterRebuild, gethexec.RebuildingPositionKey)
+	status, err := gethexec.ReadFromKeyValueStore[common.Hash](wasmDBAfterRebuild, gethexec.RebuildingPositionKey)
 	Require(t, err)
 	if status != gethexec.RebuildingDone {
 		Fatal(t, "rebuilding was not set to done after successful completion")
 	}
-	Require(t, wasmDbAfterRebuild.Delete(gethexec.RebuildingPositionKey))
-	Require(t, wasmDbAfterRebuild.Delete(gethexec.RebuildingStartBlockHashKey))
+	Require(t, wasmDBAfterRebuild.Delete(gethexec.RebuildingPositionKey))
+	Require(t, wasmDBAfterRebuild.Delete(gethexec.RebuildingStartBlockHashKey))
 
-	rebuiltStoreMap, err := createMapFromDb(wasmDbAfterRebuild)
+	rebuiltStoreMap, err := createMapFromDb(wasmDBAfterRebuild)
 	Require(t, err)
 
 	// Check if rebuilding worked
@@ -2254,14 +2254,14 @@ func TestWasmStoreRebuilding(t *testing.T) {
 		}
 	}
 
-	checkWasmStoreContent(t, wasmDbAfterRebuild, builder.execConfig.StylusTarget.WasmTargets(), 1)
+	checkWasmStoreContent(t, wasmDBAfterRebuild, builder.execConfig.StylusTarget.WasmTargets(), 1)
 	cleanupB()
 }
 
-func readModuleHashes(t *testing.T, wasmDb ethdb.KeyValueStore) []common.Hash {
+func readModuleHashes(t *testing.T, wasmDB ethdb.KeyValueStore) []common.Hash {
 	modulesSet := make(map[common.Hash]struct{})
 	asmPrefix := []byte{0x00, 'w'}
-	it := wasmDb.NewIterator(asmPrefix, nil)
+	it := wasmDB.NewIterator(asmPrefix, nil)
 	defer it.Release()
 	for it.Next() {
 		key := it.Key()
@@ -2281,9 +2281,9 @@ func readModuleHashes(t *testing.T, wasmDb ethdb.KeyValueStore) []common.Hash {
 	return modules
 }
 
-func checkWasmStoreContent(t *testing.T, wasmDb ethdb.KeyValueStore, expectedTargets []rawdb.WasmTarget, numModules int) {
+func checkWasmStoreContent(t *testing.T, wasmDB ethdb.KeyValueStore, expectedTargets []rawdb.WasmTarget, numModules int) {
 	t.Helper()
-	modules := readModuleHashes(t, wasmDb)
+	modules := readModuleHashes(t, wasmDB)
 	if len(modules) != numModules {
 		t.Fatalf("Unexpected number of module hashes found in wasm store, want: %d, have: %d", numModules, len(modules))
 	}
@@ -2299,7 +2299,7 @@ func checkWasmStoreContent(t *testing.T, wasmDb ethdb.KeyValueStore, expectedTar
 					t.Fatalf("Failed to read activated asm for target: %v, module: %v", target, module)
 				}
 			}()
-			return rawdb.ReadActivatedAsm(wasmDb, wasmTarget, module)
+			return rawdb.ReadActivatedAsm(wasmDB, wasmTarget, module)
 		}()
 	}
 	for _, module := range modules {

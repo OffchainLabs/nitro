@@ -63,8 +63,8 @@ func checkMetadataBackendChainId(ctx context.Context, client *rpcclient.RpcClien
 }
 
 // BlockMetadataFetcher looks for missing blockMetadata of block numbers starting from trackBlockMetadataFrom (config option of tx streamer)
-// and adds them to arbDB. BlockMetadata is fetched by querying the source's bulk blockMetadata fetching API "arb_getRawBlockMetadata".
-// Missing trackers are removed after their corresponding blockMetadata are added to the arbDB
+// and adds them to consensusDB. BlockMetadata is fetched by querying the source's bulk blockMetadata fetching API "arb_getRawBlockMetadata".
+// Missing trackers are removed after their corresponding blockMetadata are added to the consensusDB
 type BlockMetadataFetcher struct {
 	stopwaiter.StopWaiter
 	config                 BlockMetadataFetcherConfig
@@ -194,7 +194,7 @@ func (b *BlockMetadataFetcher) Update(ctx context.Context) time.Duration {
 			return false
 		}
 		if err = b.persistBlockMetadata(ctx, query, result); err != nil {
-			log.Error("Error committing result from bulk blockMetadata API to ArbDB", "err", err)
+			log.Error("Error committing result from bulk blockMetadata API to ConsensusDB", "err", err)
 			return false
 		}
 		return true
