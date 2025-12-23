@@ -23,6 +23,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
+	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
@@ -527,6 +528,7 @@ func TestArbNativeTokenManagerThroughSolidityContract(t *testing.T) {
 
 	arbOSInit := &params.ArbOSInit{
 		NativeTokenSupplyManagementEnabled: true,
+		InitialL1BaseFee:                   arbostypes.DefaultInitialL1BaseFee,
 	}
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, false).WithArbOSInit(arbOSInit).WithArbOSVersion(params.ArbosVersion_50)
 	cleanup := builder.Build(t)
@@ -588,6 +590,7 @@ func TestArbNativeTokenManager(t *testing.T) {
 	// The chain being tested will have the feature enabled.
 	arbOSInit := &params.ArbOSInit{
 		NativeTokenSupplyManagementEnabled: true,
+		InitialL1BaseFee:                   arbostypes.DefaultInitialL1BaseFee,
 	}
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, false).WithArbOSInit(arbOSInit).WithArbOSVersion(params.ArbosVersion_50)

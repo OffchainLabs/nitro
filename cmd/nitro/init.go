@@ -790,6 +790,11 @@ func openInitializeExecutionDB(ctx context.Context, stack *node.Node, config *No
 		genesisArbOSInit = gen.ArbOSInit
 	}
 
+	configuredInitialL1BaseFee, err := resolveInitialL1BaseFee(genesisArbOSInit, &config.Chain)
+	if err != nil {
+		return executionDB, nil, err
+	}
+
 	var l2BlockChain *core.BlockChain
 	txIndexWg := sync.WaitGroup{}
 	if initDataReader == nil {
@@ -885,6 +890,9 @@ func openInitializeExecutionDB(ctx context.Context, stack *node.Node, config *No
 					return executionDB, nil, fmt.Errorf("incompatible chain config read from init message in L1 inbox: %w", err)
 				}
 			}
+			if configuredInitialL1BaseFee.Cmp(parsedInitMessage.InitialL1BaseFee) != 0 {
+				log.Error("Initial L1 base fee from init message does not match configured initial L1 base fee", "configured", configuredInitialL1BaseFee.String(), "fromInitMessage", parsedInitMessage.InitialL1BaseFee.String())
+			}
 			log.Info("Read serialized chain config from init message", "json", string(parsedInitMessage.SerializedChainConfig))
 		} else {
 			serializedChainConfig, err := json.Marshal(chainConfig)
@@ -893,7 +901,7 @@ func openInitializeExecutionDB(ctx context.Context, stack *node.Node, config *No
 			}
 			parsedInitMessage = &arbostypes.ParsedInitMessage{
 				ChainId:               chainConfig.ChainID,
-				InitialL1BaseFee:      arbostypes.DefaultInitialL1BaseFee,
+				InitialL1BaseFee:      configuredInitialL1BaseFee,
 				ChainConfig:           chainConfig,
 				SerializedChainConfig: serializedChainConfig,
 			}
@@ -935,6 +943,21 @@ func openInitializeExecutionDB(ctx context.Context, stack *node.Node, config *No
 	}
 
 	return rebuildLocalWasm(ctx, &config.Execution, l2BlockChain, executionDB, wasmDB, config.Init.RebuildLocalWasm)
+}
+
+// resolveInitialL1BaseFee reads the initial L1 base fee according to the following rules:
+// 1. If there is no genesisArbOSInit, return the value from chainConfig (in case it is not set either, it should fall back to default).
+// 2. If there is a genesisArbOSInit, and chainConfig.InitialL1BaseFee is set, ensure they match.
+// 3. If there is a genesisArbOSInit, and chainConfig.InitialL1BaseFee is not set, return the value from genesisArbOSInit.
+// Assumes that chainConfig is not nil.
+func resolveInitialL1BaseFee(genesisArbOSInit *params.ArbOSInit, chainConfig *conf.L2Config) (*big.Int, error) {
+	if genesisArbOSInit == nil {
+		return chainConfig.InitialL1BaseFeeParsed(), nil
+	}
+	if chainConfig.InitialL1BaseFee != "" && genesisArbOSInit.InitialL1BaseFee.Cmp(chainConfig.InitialL1BaseFeeParsed()) != 0 {
+		return nil, fmt.Errorf("initial l1 base fee is configured to be %s but genesis configures it to be %s", chainConfig.InitialL1BaseFee, genesisArbOSInit.InitialL1BaseFee.String())
+	}
+	return genesisArbOSInit.InitialL1BaseFee, nil
 }
 
 func validateGenesisAssertion(ctx context.Context, rollupAddress common.Address, l1Client *ethclient.Client, genesis *types.Block, initDataReaderHasAccounts bool) error {
