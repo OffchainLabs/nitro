@@ -206,6 +206,7 @@ func TestInboxReaderBlobFailureWithDelayedMessage(t *testing.T) {
 		t.Fatal("Follower did not sync new transaction after re-enabling blobs")
 	}
 	t.Logf("Follower synced new transaction")
+	AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, 5)
 
 	// Send delayed message via L1
 	delayedTx := builder.L2Info.PrepareTx("Owner", "Owner", builder.L2Info.TransferGas, big.NewInt(3e12), nil)
@@ -275,8 +276,8 @@ func (b *NodeBuilder) Build2ndNodeWithBlobReader(t *testing.T, params *SecondNod
 	if params.nodeConfig == nil {
 		params.nodeConfig = arbnode.ConfigDefaultL1NonSequencerTest()
 	}
-	if params.dasConfig != nil {
-		params.nodeConfig.DataAvailability = *params.dasConfig
+	if params.anyTrustConfig != nil {
+		params.nodeConfig.DA.AnyTrust = *params.anyTrustConfig
 	}
 	if params.stackConfig == nil {
 		params.stackConfig = b.l2StackConfig

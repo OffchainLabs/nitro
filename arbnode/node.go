@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2025, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbnode
@@ -37,9 +37,9 @@ import (
 	"github.com/offchainlabs/nitro/broadcaster"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/daprovider"
+	"github.com/offchainlabs/nitro/daprovider/anytrust"
 	daconfig "github.com/offchainlabs/nitro/daprovider/config"
 	"github.com/offchainlabs/nitro/daprovider/daclient"
-	"github.com/offchainlabs/nitro/daprovider/das"
 	"github.com/offchainlabs/nitro/daprovider/data_streaming"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/execution/gethexec"
@@ -60,27 +60,28 @@ import (
 )
 
 type Config struct {
-	Sequencer                bool                              `koanf:"sequencer"`
-	ParentChainReader        headerreader.Config               `koanf:"parent-chain-reader" reload:"hot"`
-	InboxReader              InboxReaderConfig                 `koanf:"inbox-reader" reload:"hot"`
-	DelayedSequencer         DelayedSequencerConfig            `koanf:"delayed-sequencer" reload:"hot"`
-	BatchPoster              BatchPosterConfig                 `koanf:"batch-poster" reload:"hot"`
-	MessagePruner            MessagePrunerConfig               `koanf:"message-pruner" reload:"hot"`
-	MessageExtraction        melrunner.MessageExtractionConfig `koanf:"message-extraction" reload:"hot"`
-	BlockValidator           staker.BlockValidatorConfig       `koanf:"block-validator" reload:"hot"`
-	Feed                     broadcastclient.FeedConfig        `koanf:"feed" reload:"hot"`
-	Staker                   legacystaker.L1ValidatorConfig    `koanf:"staker" reload:"hot"`
-	Bold                     bold.BoldConfig                   `koanf:"bold"`
-	SeqCoordinator           SeqCoordinatorConfig              `koanf:"seq-coordinator"`
-	DataAvailability         das.DataAvailabilityConfig        `koanf:"data-availability"`
-	DA                       daconfig.DAConfig                 `koanf:"da" reload:"hot"`
-	SyncMonitor              SyncMonitorConfig                 `koanf:"sync-monitor"`
-	Dangerous                DangerousConfig                   `koanf:"dangerous"`
-	TransactionStreamer      TransactionStreamerConfig         `koanf:"transaction-streamer" reload:"hot"`
-	Maintenance              MaintenanceConfig                 `koanf:"maintenance" reload:"hot"`
-	ResourceMgmt             resourcemanager.Config            `koanf:"resource-mgmt" reload:"hot"`
-	BlockMetadataFetcher     BlockMetadataFetcherConfig        `koanf:"block-metadata-fetcher" reload:"hot"`
-	ConsensusExecutionSyncer ConsensusExecutionSyncerConfig    `koanf:"consensus-execution-syncer"`
+	Sequencer         bool                              `koanf:"sequencer"`
+	ParentChainReader headerreader.Config               `koanf:"parent-chain-reader" reload:"hot"`
+	InboxReader       InboxReaderConfig                 `koanf:"inbox-reader" reload:"hot"`
+	DelayedSequencer  DelayedSequencerConfig            `koanf:"delayed-sequencer" reload:"hot"`
+	BatchPoster       BatchPosterConfig                 `koanf:"batch-poster" reload:"hot"`
+	MessagePruner     MessagePrunerConfig               `koanf:"message-pruner" reload:"hot"`
+	MessageExtraction melrunner.MessageExtractionConfig `koanf:"message-extraction" reload:"hot"`
+	BlockValidator    staker.BlockValidatorConfig       `koanf:"block-validator" reload:"hot"`
+	Feed              broadcastclient.FeedConfig        `koanf:"feed" reload:"hot"`
+	Staker            legacystaker.L1ValidatorConfig    `koanf:"staker" reload:"hot"`
+	Bold              bold.BoldConfig                   `koanf:"bold"`
+	SeqCoordinator    SeqCoordinatorConfig              `koanf:"seq-coordinator"`
+	// Deprecated: Use DA.AnyTrust instead. Will be removed in a future release.
+	DataAvailability         anytrust.Config                `koanf:"data-availability"`
+	DA                       daconfig.DAConfig              `koanf:"da" reload:"hot"`
+	SyncMonitor              SyncMonitorConfig              `koanf:"sync-monitor"`
+	Dangerous                DangerousConfig                `koanf:"dangerous"`
+	TransactionStreamer      TransactionStreamerConfig      `koanf:"transaction-streamer" reload:"hot"`
+	Maintenance              MaintenanceConfig              `koanf:"maintenance" reload:"hot"`
+	ResourceMgmt             resourcemanager.Config         `koanf:"resource-mgmt" reload:"hot"`
+	BlockMetadataFetcher     BlockMetadataFetcherConfig     `koanf:"block-metadata-fetcher" reload:"hot"`
+	ConsensusExecutionSyncer ConsensusExecutionSyncerConfig `koanf:"consensus-execution-syncer"`
 	// SnapSyncConfig is only used for testing purposes, these should not be configured in production.
 	SnapSyncTest SnapSyncConfig
 }
@@ -145,6 +146,17 @@ func (c *Config) ValidatorRequired() bool {
 	return false
 }
 
+// MigrateDeprecatedConfig migrates deprecated DataAvailability config to DA.AnyTrust.
+// This allows operators to continue using --node.data-availability.* flags while
+// transitioning to the new --node.da.anytrust.* flags.
+func (c *Config) MigrateDeprecatedConfig() {
+	if c.DataAvailability.Enable {
+		log.Error("DEPRECATED: --node.data-availability.* flags are deprecated and will " +
+			"overwrite any --node.da.anytrust.* settings; please migrate to --node.da.anytrust.*")
+		c.DA.AnyTrust = c.DataAvailability
+	}
+}
+
 func ConfigAddOptions(prefix string, f *pflag.FlagSet, feedInputEnable bool, feedOutputEnable bool) {
 	f.Bool(prefix+".sequencer", ConfigDefault.Sequencer, "enable sequencer")
 	headerreader.AddOptions(prefix+".parent-chain-reader", f)
@@ -158,7 +170,7 @@ func ConfigAddOptions(prefix string, f *pflag.FlagSet, feedInputEnable bool, fee
 	legacystaker.L1ValidatorConfigAddOptions(prefix+".staker", f)
 	bold.BoldConfigAddOptions(prefix+".bold", f)
 	SeqCoordinatorConfigAddOptions(prefix+".seq-coordinator", f)
-	das.DataAvailabilityConfigAddNodeOptions(prefix+".data-availability", f)
+	anytrust.ConfigAddNodeOptions(prefix+".data-availability", f)
 	daconfig.DAConfigAddOptions(prefix+".da", f)
 	SyncMonitorConfigAddOptions(prefix+".sync-monitor", f)
 	DangerousConfigAddOptions(prefix+".dangerous", f)
@@ -182,7 +194,7 @@ var ConfigDefault = Config{
 	MessageExtraction:        melrunner.DefaultMessageExtractionConfig,
 	Bold:                     bold.DefaultBoldConfig,
 	SeqCoordinator:           DefaultSeqCoordinatorConfig,
-	DataAvailability:         das.DefaultDataAvailabilityConfigForNode,
+	DataAvailability:         anytrust.DefaultConfigForNode,
 	DA:                       daconfig.DefaultDAConfig,
 	SyncMonitor:              DefaultSyncMonitorConfig,
 	Dangerous:                DefaultDangerousConfig,
@@ -272,7 +284,7 @@ func DangerousConfigAddOptions(prefix string, f *pflag.FlagSet) {
 }
 
 type Node struct {
-	ArbDB                    ethdb.Database
+	ConsensusDB              ethdb.Database
 	Stack                    *node.Node
 	ExecutionClient          execution.ExecutionClient
 	ExecutionSequencer       execution.ExecutionSequencer
@@ -295,7 +307,7 @@ type Node struct {
 	SeqCoordinator           *SeqCoordinator
 	MaintenanceRunner        *MaintenanceRunner
 	providerServerCloseFn    func()
-	DASLifecycleManager      *das.LifecycleManager
+	AnyTrustLifecycleManager *anytrust.LifecycleManager
 	SyncMonitor              *SyncMonitor
 	blockMetadataFetcher     *BlockMetadataFetcher
 	configFetcher            ConfigFetcher
@@ -329,21 +341,21 @@ type ConfigFetcher interface {
 	Started() bool
 }
 
-func checkArbDbSchemaVersion(arbDb ethdb.Database) error {
+func checkConsensusDBSchemaVersion(consensusDB ethdb.Database) error {
 	var version uint64
-	hasVersion, err := arbDb.Has(schema.DbSchemaVersion)
+	hasVersion, err := consensusDB.Has(schema.DbSchemaVersion)
 	if err != nil {
 		return err
 	}
 	if hasVersion {
-		versionBytes, err := arbDb.Get(schema.DbSchemaVersion)
+		versionBytes, err := consensusDB.Get(schema.DbSchemaVersion)
 		if err != nil {
 			return err
 		}
 		version = binary.BigEndian.Uint64(versionBytes)
 	}
 	for version != schema.CurrentDbSchemaVersion {
-		batch := arbDb.NewBatch()
+		batch := consensusDB.NewBatch()
 		switch version {
 		case 0:
 			// No database updates are necessary for database format version 0->1.
@@ -539,7 +551,7 @@ func getBroadcastClients(
 func getBlockMetadataFetcher(
 	ctx context.Context,
 	configFetcher ConfigFetcher,
-	arbDb ethdb.Database,
+	consensusDB ethdb.Database,
 	exec execution.ExecutionClient,
 	expectedChainId uint64,
 ) (*BlockMetadataFetcher, error) {
@@ -548,7 +560,7 @@ func getBlockMetadataFetcher(
 	var blockMetadataFetcher *BlockMetadataFetcher
 	if config.BlockMetadataFetcher.Enable {
 		var err error
-		blockMetadataFetcher, err = NewBlockMetadataFetcher(ctx, config.BlockMetadataFetcher, arbDb, exec, config.TransactionStreamer.TrackBlockMetadataFrom, expectedChainId)
+		blockMetadataFetcher, err = NewBlockMetadataFetcher(ctx, config.BlockMetadataFetcher, consensusDB, exec, config.TransactionStreamer.TrackBlockMetadataFrom, expectedChainId)
 		if err != nil {
 			return nil, err
 		}
@@ -624,18 +636,18 @@ func getDAProviders(
 	}
 
 	// Create AnyTrust DA provider if enabled (can coexist with external DA)
-	if config.DataAvailability.Enable {
-		// Map deprecated BatchPoster.MaxSize to DataAvailability.MaxBatchSize for backward compatibility
-		if config.BatchPoster.MaxSize != 0 && config.DataAvailability.MaxBatchSize == das.DefaultDataAvailabilityConfig.MaxBatchSize {
-			log.Warn("Using deprecated batch-poster.max-size for AnyTrust max batch size; please migrate to data-availability.max-batch-size")
-			config.DataAvailability.MaxBatchSize = config.BatchPoster.MaxSize
+	if config.DA.AnyTrust.Enable {
+		// Map deprecated BatchPoster.MaxSize to DA.AnyTrust.MaxBatchSize for backward compatibility
+		if config.BatchPoster.MaxSize != 0 && config.DA.AnyTrust.MaxBatchSize == anytrust.DefaultConfig.MaxBatchSize {
+			log.Warn("Using deprecated batch-poster.max-size for AnyTrust max batch size; please migrate to da.anytrust.max-batch-size")
+			config.DA.AnyTrust.MaxBatchSize = config.BatchPoster.MaxSize
 		}
 
 		log.Info("Creating AnyTrust DA provider", "batchPosterEnabled", config.BatchPoster.Enable)
 
 		// Create AnyTrust factory
-		daFactory := das.NewFactory(
-			&config.DataAvailability,
+		daFactory := anytrust.NewFactory(
+			&config.DA.AnyTrust,
 			dataSigner,
 			l1client,
 			l1Reader,
@@ -690,11 +702,11 @@ func getDAProviders(
 		cleanupFuncs = append(cleanupFuncs, anytrustCleanup)
 	}
 
-	// Check if chain requires Anytrust but none is configured
+	// Check if chain requires AnyTrust but none is configured
 	// We support a nil txStreamer for the pruning code
 	if txStreamer != nil && txStreamer.chainConfig.ArbitrumChainParams.DataAvailabilityCommittee {
-		if !config.DataAvailability.Enable {
-			return nil, nil, nil, errors.New("data availability service required but unconfigured")
+		if !config.DA.AnyTrust.Enable {
+			return nil, nil, nil, errors.New("AnyTrust DA service required but unconfigured")
 		}
 	}
 
@@ -717,7 +729,7 @@ func getDAProviders(
 
 func getInboxTrackerAndReader(
 	ctx context.Context,
-	arbDb ethdb.Database,
+	consensusDB ethdb.Database,
 	txStreamer *TransactionStreamer,
 	dapReaders *daprovider.DAProviderRegistry,
 	config *Config,
@@ -732,7 +744,7 @@ func getInboxTrackerAndReader(
 	if config.MessageExtraction.Enable {
 		return nil, nil, nil
 	}
-	inboxTracker, err := NewInboxTracker(arbDb, txStreamer, dapReaders, config.SnapSyncTest)
+	inboxTracker, err := NewInboxTracker(consensusDB, txStreamer, dapReaders, config.SnapSyncTest)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -774,6 +786,7 @@ func getInboxTrackerAndReader(
 func getMessageExtractor(
 	ctx context.Context,
 	config *Config,
+	l2Config *params.ChainConfig,
 	l1client *ethclient.Client,
 	deployInfo *chaininfo.RollupAddresses,
 	arbDb ethdb.Database,
@@ -796,6 +809,7 @@ func getMessageExtractor(
 	msgExtractor, err := melrunner.NewMessageExtractor(
 		config.MessageExtraction,
 		l1client,
+		l2Config,
 		deployInfo,
 		melDB,
 		txStreamer,
@@ -868,7 +882,7 @@ func getStaker(
 	ctx context.Context,
 	config *Config,
 	configFetcher ConfigFetcher,
-	arbDb ethdb.Database,
+	consensusDB ethdb.Database,
 	l1Reader *headerreader.HeaderReader,
 	txOptsValidator *bind.TransactOpts,
 	syncMonitor *SyncMonitor,
@@ -891,7 +905,7 @@ func getStaker(
 	if config.Staker.Enable {
 		dp, err := StakerDataposter(
 			ctx,
-			rawdb.NewTable(arbDb, storage.StakerPrefix),
+			rawdb.NewTable(consensusDB, storage.StakerPrefix),
 			l1Reader,
 			txOptsValidator,
 			configFetcher,
@@ -963,7 +977,7 @@ func getStaker(
 
 func getTransactionStreamer(
 	ctx context.Context,
-	arbDb ethdb.Database,
+	consensusDB ethdb.Database,
 	l2Config *params.ChainConfig,
 	exec execution.ExecutionClient,
 	broadcastServer *broadcaster.Broadcaster,
@@ -971,7 +985,7 @@ func getTransactionStreamer(
 	fatalErrChan chan error,
 ) (*TransactionStreamer, error) {
 	transactionStreamerConfigFetcher := func() *TransactionStreamerConfig { return &configFetcher.Get().TransactionStreamer }
-	txStreamer, err := NewTransactionStreamer(ctx, arbDb, l2Config, exec, broadcastServer, fatalErrChan, transactionStreamerConfigFetcher, &configFetcher.Get().SnapSyncTest)
+	txStreamer, err := NewTransactionStreamer(ctx, consensusDB, l2Config, exec, broadcastServer, fatalErrChan, transactionStreamerConfigFetcher, &configFetcher.Get().SnapSyncTest)
 	if err != nil {
 		return nil, err
 	}
@@ -1010,7 +1024,7 @@ func getStatelessBlockValidator(
 	inboxTracker *InboxTracker,
 	txStreamer *TransactionStreamer,
 	exec execution.ExecutionRecorder,
-	arbDb ethdb.Database,
+	consensusDB ethdb.Database,
 	dapReaders *daprovider.DAProviderRegistry,
 	stack *node.Node,
 	latestWasmModuleRoot common.Hash,
@@ -1027,7 +1041,7 @@ func getStatelessBlockValidator(
 			inboxTracker,
 			txStreamer,
 			exec,
-			rawdb.NewTable(arbDb, storage.BlockValidatorPrefix),
+			rawdb.NewTable(consensusDB, storage.BlockValidatorPrefix),
 			dapReaders,
 			func() *staker.BlockValidatorConfig { return &configFetcher.Get().BlockValidator },
 			stack,
@@ -1051,6 +1065,7 @@ func getBatchPoster(
 	ctx context.Context,
 	config *Config,
 	configFetcher ConfigFetcher,
+	l2Config *params.ChainConfig,
 	txOptsBatchPoster *bind.TransactOpts,
 	dapWriters []daprovider.Writer,
 	l1Reader *headerreader.HeaderReader,
@@ -1058,7 +1073,7 @@ func getBatchPoster(
 	msgExtractor *melrunner.MessageExtractor,
 	txStreamer *TransactionStreamer,
 	arbOSVersionGetter execution.ArbOSVersionGetter,
-	arbDb ethdb.Database,
+	consensusDB ethdb.Database,
 	syncMonitor *SyncMonitor,
 	deployInfo *chaininfo.RollupAddresses,
 	parentChainID *big.Int,
@@ -1079,7 +1094,7 @@ func getBatchPoster(
 		}
 		var err error
 		batchPoster, err = NewBatchPoster(ctx, &BatchPosterOpts{
-			DataPosterDB:  rawdb.NewTable(arbDb, storage.BatchPosterPrefix),
+			DataPosterDB:  rawdb.NewTable(consensusDB, storage.BatchPosterPrefix),
 			L1Reader:      l1Reader,
 			Inbox:         inboxTracker,
 			MsgExtractor:  msgExtractor,
@@ -1092,6 +1107,7 @@ func getBatchPoster(
 			DAPWriters:    dapWriters,
 			ParentChainID: parentChainID,
 			DAPReaders:    dapReaders,
+			ChainConfig:   l2Config,
 		})
 		if err != nil {
 			return nil, err
@@ -1132,7 +1148,7 @@ func getDelayedSequencer(
 
 func getNodeParentChainReaderDisabled(
 	ctx context.Context,
-	arbDb ethdb.Database,
+	consensusDB ethdb.Database,
 	stack *node.Node,
 	executionClient execution.ExecutionClient,
 	executionSequencer execution.ExecutionSequencer,
@@ -1162,7 +1178,7 @@ func getNodeParentChainReaderDisabled(
 	)
 
 	return &Node{
-		ArbDB:                    arbDb,
+		ConsensusDB:              consensusDB,
 		Stack:                    stack,
 		ExecutionClient:          executionClient,
 		ExecutionSequencer:       executionSequencer,
@@ -1198,7 +1214,7 @@ func createNodeImpl(
 	executionSequencer execution.ExecutionSequencer,
 	executionRecorder execution.ExecutionRecorder,
 	arbOSVersionGetter execution.ArbOSVersionGetter,
-	arbDb ethdb.Database,
+	consensusDB ethdb.Database,
 	configFetcher ConfigFetcher,
 	l2Config *params.ChainConfig,
 	l1client *ethclient.Client,
@@ -1213,7 +1229,7 @@ func createNodeImpl(
 ) (*Node, error) {
 	config := configFetcher.Get()
 
-	err := checkArbDbSchemaVersion(arbDb)
+	err := checkConsensusDBSchemaVersion(consensusDB)
 	if err != nil {
 		return nil, err
 	}
@@ -1230,7 +1246,7 @@ func createNodeImpl(
 		return nil, err
 	}
 
-	txStreamer, err := getTransactionStreamer(ctx, arbDb, l2Config, executionClient, broadcastServer, configFetcher, fatalErrChan)
+	txStreamer, err := getTransactionStreamer(ctx, consensusDB, l2Config, executionClient, broadcastServer, configFetcher, fatalErrChan)
 	if err != nil {
 		return nil, err
 	}
@@ -1255,13 +1271,13 @@ func createNodeImpl(
 		return nil, err
 	}
 
-	blockMetadataFetcher, err := getBlockMetadataFetcher(ctx, configFetcher, arbDb, executionClient, l2Config.ChainID.Uint64())
+	blockMetadataFetcher, err := getBlockMetadataFetcher(ctx, configFetcher, consensusDB, executionClient, l2Config.ChainID.Uint64())
 	if err != nil {
 		return nil, err
 	}
 
 	if !config.ParentChainReader.Enable {
-		return getNodeParentChainReaderDisabled(ctx, arbDb, stack, executionClient, executionSequencer, executionRecorder, txStreamer, blobReader, broadcastServer, broadcastClients, coordinator, maintenanceRunner, syncMonitor, configFetcher, blockMetadataFetcher), nil
+		return getNodeParentChainReaderDisabled(ctx, consensusDB, stack, executionClient, executionSequencer, executionRecorder, txStreamer, blobReader, broadcastServer, broadcastClients, coordinator, maintenanceRunner, syncMonitor, configFetcher, blockMetadataFetcher), nil
 	}
 
 	delayedBridge, sequencerInbox, err := getDelayedBridgeAndSequencerInbox(deployInfo, l1client)
@@ -1274,17 +1290,17 @@ func createNodeImpl(
 		return nil, err
 	}
 
-	inboxTracker, inboxReader, err := getInboxTrackerAndReader(ctx, arbDb, txStreamer, dapRegistry, config, configFetcher, l1client, l1Reader, deployInfo, delayedBridge, sequencerInbox, executionSequencer)
+	inboxTracker, inboxReader, err := getInboxTrackerAndReader(ctx, consensusDB, txStreamer, dapRegistry, config, configFetcher, l1client, l1Reader, deployInfo, delayedBridge, sequencerInbox, executionSequencer)
 	if err != nil {
 		return nil, err
 	}
 
-	messageExtractor, err := getMessageExtractor(ctx, config, l1client, deployInfo, arbDb, txStreamer, dapRegistry)
+	messageExtractor, err := getMessageExtractor(ctx, config, l2Config, l1client, deployInfo, consensusDB, txStreamer, dapRegistry)
 	if err != nil {
 		return nil, err
 	}
 
-	statelessBlockValidator, err := getStatelessBlockValidator(config, configFetcher, inboxReader, inboxTracker, txStreamer, executionRecorder, arbDb, dapRegistry, stack, latestWasmModuleRoot)
+	statelessBlockValidator, err := getStatelessBlockValidator(config, configFetcher, inboxReader, inboxTracker, txStreamer, executionRecorder, consensusDB, dapRegistry, stack, latestWasmModuleRoot)
 	if err != nil {
 		return nil, err
 	}
@@ -1294,12 +1310,12 @@ func createNodeImpl(
 		return nil, err
 	}
 
-	stakerObj, messagePruner, stakerAddr, err := getStaker(ctx, config, configFetcher, arbDb, l1Reader, txOptsValidator, syncMonitor, parentChainID, l1client, deployInfo, txStreamer, inboxTracker, inboxReader, stack, fatalErrChan, statelessBlockValidator, blockValidator, dapRegistry)
+	stakerObj, messagePruner, stakerAddr, err := getStaker(ctx, config, configFetcher, consensusDB, l1Reader, txOptsValidator, syncMonitor, parentChainID, l1client, deployInfo, txStreamer, inboxTracker, inboxReader, stack, fatalErrChan, statelessBlockValidator, blockValidator, dapRegistry)
 	if err != nil {
 		return nil, err
 	}
 
-	batchPoster, err := getBatchPoster(ctx, config, configFetcher, txOptsBatchPoster, dapWriters, l1Reader, inboxTracker, messageExtractor, txStreamer, arbOSVersionGetter, arbDb, syncMonitor, deployInfo, parentChainID, dapRegistry, stakerAddr)
+	batchPoster, err := getBatchPoster(ctx, config, configFetcher, l2Config, txOptsBatchPoster, dapWriters, l1Reader, inboxTracker, messageExtractor, txStreamer, arbOSVersionGetter, consensusDB, syncMonitor, deployInfo, parentChainID, dapRegistry, stakerAddr)
 	if err != nil {
 		return nil, err
 	}
@@ -1315,7 +1331,7 @@ func createNodeImpl(
 	consensusExecutionSyncer := NewConsensusExecutionSyncer(consensusExecutionSyncerConfigFetcher, inboxReader, messageExtractor, executionClient, blockValidator, txStreamer, syncMonitor)
 
 	return &Node{
-		ArbDB:                    arbDb,
+		ConsensusDB:              consensusDB,
 		Stack:                    stack,
 		ExecutionClient:          executionClient,
 		ExecutionSequencer:       executionSequencer,
@@ -1426,7 +1442,7 @@ func CreateNodeExecutionClient(
 	ctx context.Context,
 	stack *node.Node,
 	executionClient execution.ExecutionClient,
-	arbDb ethdb.Database,
+	consensusDB ethdb.Database,
 	configFetcher ConfigFetcher,
 	l2Config *params.ChainConfig,
 	l1client *ethclient.Client,
@@ -1442,7 +1458,7 @@ func CreateNodeExecutionClient(
 	if executionClient == nil {
 		return nil, errors.New("execution client must be non-nil")
 	}
-	currentNode, err := createNodeImpl(ctx, stack, executionClient, nil, nil, nil, arbDb, configFetcher, l2Config, l1client, deployInfo, txOptsValidator, txOptsBatchPoster, dataSigner, fatalErrChan, parentChainID, blobReader, latestWasmModuleRoot)
+	currentNode, err := createNodeImpl(ctx, stack, executionClient, nil, nil, executionClient, consensusDB, configFetcher, l2Config, l1client, deployInfo, txOptsValidator, txOptsBatchPoster, dataSigner, fatalErrChan, parentChainID, blobReader, latestWasmModuleRoot)
 	if err != nil {
 		return nil, err
 	}
@@ -1457,7 +1473,7 @@ func CreateNodeFullExecutionClient(
 	executionSequencer execution.ExecutionSequencer,
 	executionRecorder execution.ExecutionRecorder,
 	arbOSVersionGetter execution.ArbOSVersionGetter,
-	arbDb ethdb.Database,
+	consensusDB ethdb.Database,
 	configFetcher ConfigFetcher,
 	l2Config *params.ChainConfig,
 	l1client *ethclient.Client,
@@ -1473,7 +1489,7 @@ func CreateNodeFullExecutionClient(
 	if (executionClient == nil) || (executionSequencer == nil) || (executionRecorder == nil) || (arbOSVersionGetter == nil) {
 		return nil, errors.New("execution client, sequencer, recorder, and ArbOS version getter must be non-nil")
 	}
-	currentNode, err := createNodeImpl(ctx, stack, executionClient, executionSequencer, executionRecorder, arbOSVersionGetter, arbDb, configFetcher, l2Config, l1client, deployInfo, txOptsValidator, txOptsBatchPoster, dataSigner, fatalErrChan, parentChainID, blobReader, latestWasmModuleRoot)
+	currentNode, err := createNodeImpl(ctx, stack, executionClient, executionSequencer, executionRecorder, arbOSVersionGetter, consensusDB, configFetcher, l2Config, l1client, deployInfo, txOptsValidator, txOptsBatchPoster, dataSigner, fatalErrChan, parentChainID, blobReader, latestWasmModuleRoot)
 	if err != nil {
 		return nil, err
 	}

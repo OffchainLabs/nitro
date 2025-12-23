@@ -21,14 +21,14 @@ func TestTimeboostBackfillingsTrackersForMissingBlockMetadata(t *testing.T) {
 
 	messageCount := uint64(20)
 
-	// Create arbDB with fragmented blockMetadata across blocks
-	arbDb := rawdb.NewMemoryDatabase()
+	// Create consensusDB with fragmented blockMetadata across blocks
+	consensusDB := rawdb.NewMemoryDatabase()
 	countBytes, err := rlp.EncodeToBytes(messageCount)
 	Require(t, err)
-	Require(t, arbDb.Put(schema.MessageCountKey, countBytes))
+	Require(t, consensusDB.Put(schema.MessageCountKey, countBytes))
 	addKeys := func(start, end uint64, prefix []byte) {
 		for i := start; i <= end; i++ {
-			Require(t, arbDb.Put(dbKey(prefix, i), []byte{}))
+			Require(t, consensusDB.Put(dbKey(prefix, i), []byte{}))
 		}
 	}
 	// 12, 13, 14, 18 have block metadata
@@ -39,13 +39,13 @@ func TestTimeboostBackfillingsTrackersForMissingBlockMetadata(t *testing.T) {
 	addKeys(19, 19, schema.MissingBlockMetadataInputFeedPrefix)
 
 	// Create tx streamer
-	txStreamer := &TransactionStreamer{db: arbDb}
+	txStreamer := &TransactionStreamer{db: consensusDB}
 	txStreamer.StopWaiter.Start(ctx, txStreamer)
 
 	backfillAndVerifyCorrectness := func(trackBlockMetadataFrom arbutil.MessageIndex, missingTrackers []uint64) {
 		txStreamer.trackBlockMetadataFrom = trackBlockMetadataFrom
 		txStreamer.backfillTrackersForMissingBlockMetadata(ctx)
-		iter := arbDb.NewIterator([]byte("x"), nil)
+		iter := consensusDB.NewIterator([]byte("x"), nil)
 		pos := 0
 		for iter.Next() {
 			keyBytes := bytes.TrimPrefix(iter.Key(), schema.MissingBlockMetadataInputFeedPrefix)

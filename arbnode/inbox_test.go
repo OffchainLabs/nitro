@@ -138,12 +138,12 @@ func NewTransactionStreamerForTest(t *testing.T, ctx context.Context, ownerAddre
 		},
 	}
 
-	chainDb := rawdb.NewMemoryDatabase()
-	arbDb := rawdb.NewMemoryDatabase()
+	executionDB := rawdb.NewMemoryDatabase()
+	consensusDB := rawdb.NewMemoryDatabase()
 	initReader := statetransfer.NewMemoryInitDataReader(&initData)
 
 	options := core.DefaultConfig().WithStateScheme(env.GetTestStateScheme())
-	bc, err := gethexec.WriteOrTestBlockChain(chainDb, options, initReader, chainConfig, nil, nil, arbostypes.TestInitMessage, &gethexec.ConfigDefault.TxIndexer, 0)
+	bc, err := gethexec.WriteOrTestBlockChain(executionDB, options, initReader, chainConfig, nil, nil, arbostypes.TestInitMessage, &gethexec.ConfigDefault.TxIndexer, 0)
 
 	if err != nil {
 		Fail(t, err)
@@ -160,7 +160,7 @@ func NewTransactionStreamerForTest(t *testing.T, ctx context.Context, ownerAddre
 		Fail(t, err)
 	}
 	execSeq := &execClientWrapper{execEngine, t}
-	inbox, err := NewTransactionStreamer(ctx, arbDb, bc.Config(), execSeq, nil, make(chan error, 1), transactionStreamerConfigFetcher, &DefaultSnapSyncConfig)
+	inbox, err := NewTransactionStreamer(ctx, consensusDB, bc.Config(), execSeq, nil, make(chan error, 1), transactionStreamerConfigFetcher, &DefaultSnapSyncConfig)
 	if err != nil {
 		Fail(t, err)
 	}
@@ -171,7 +171,7 @@ func NewTransactionStreamerForTest(t *testing.T, ctx context.Context, ownerAddre
 		Fail(t, err)
 	}
 
-	return execEngine, inbox, arbDb, bc
+	return execEngine, inbox, consensusDB, bc
 }
 
 type blockTestState struct {

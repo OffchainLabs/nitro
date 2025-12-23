@@ -1429,7 +1429,7 @@ func (s *TransactionStreamer) checkResult(msgIdx arbutil.MessageIndex, msgResult
 			"expected", msgAndBlockInfo.BlockHash,
 			"actual", msgResult.BlockHash,
 		)
-		// Try deleting the existing blockMetadata for this block in arbDB and set it as missing
+		// Try deleting the existing blockMetadata for this block in consensusDB and set it as missing
 		if msgAndBlockInfo.BlockMetadata != nil &&
 			s.trackBlockMetadataFrom != 0 && msgIdx >= s.trackBlockMetadataFrom {
 			batch := s.db.NewBatch()
@@ -1438,7 +1438,7 @@ func (s *TransactionStreamer) checkResult(msgIdx arbutil.MessageIndex, msgResult
 				return
 			}
 			if err := batch.Put(dbKey(schema.MissingBlockMetadataInputFeedPrefix, uint64(msgIdx)), nil); err != nil {
-				log.Error("error marking deleted blockMetadata as missing in arbDB for a block whose BlockHash from feed doesn't match locally computed hash", "msgIdx", msgIdx, "err", err)
+				log.Error("error marking deleted blockMetadata as missing in consensusDB for a block whose BlockHash from feed doesn't match locally computed hash", "msgIdx", msgIdx, "err", err)
 				return
 			}
 			if err := batch.Write(); err != nil {
@@ -1564,7 +1564,7 @@ func (s *TransactionStreamer) backfillTrackersForMissingBlockMetadata(ctx contex
 	}
 	msgCount, err := s.GetMessageCount()
 	if err != nil {
-		log.Error("Error getting message count from arbDB", "err", err)
+		log.Error("Error getting message count from consensusDB", "err", err)
 		return
 	}
 	if s.trackBlockMetadataFrom >= msgCount {
@@ -1579,7 +1579,7 @@ func (s *TransactionStreamer) backfillTrackersForMissingBlockMetadata(ctx contex
 				return true
 			}
 			if !rawdb.IsDbErrNotFound(err) {
-				log.Error("Error reading key in arbDB while back-filling trackers for missing blockMetadata", "key", key, "err", err)
+				log.Error("Error reading key in consensusDB while back-filling trackers for missing blockMetadata", "key", key, "err", err)
 			}
 			return false
 		}

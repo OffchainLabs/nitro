@@ -9,6 +9,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbnode/mel"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
@@ -56,16 +57,18 @@ func ExtractMessages(
 	ctx context.Context,
 	inputState *mel.State,
 	parentChainHeader *types.Header,
-	dataProviders *daprovider.DAProviderRegistry,
+	dapReaders arbstate.DapReaderSource,
 	delayedMsgDatabase DelayedMessageDatabase,
 	txFetcher TransactionFetcher,
 	logsFetcher LogsFetcher,
+	chainConfig *params.ChainConfig,
 ) (*mel.State, []*arbostypes.MessageWithMetadata, []*mel.DelayedInboxMessage, []*mel.BatchMetadata, error) {
 	return extractMessagesImpl(
 		ctx,
 		inputState,
 		parentChainHeader,
-		dataProviders,
+		chainConfig,
+		dapReaders,
 		delayedMsgDatabase,
 		txFetcher,
 		logsFetcher,
@@ -86,7 +89,8 @@ func extractMessagesImpl(
 	ctx context.Context,
 	inputState *mel.State,
 	parentChainHeader *types.Header,
-	dataProviders *daprovider.DAProviderRegistry,
+	chainConfig *params.ChainConfig,
+	dapReaders arbstate.DapReaderSource,
 	delayedMsgDatabase DelayedMessageDatabase,
 	txFetcher TransactionFetcher,
 	logsFetcher LogsFetcher,
@@ -209,8 +213,9 @@ func extractMessagesImpl(
 			batch.SequenceNumber,
 			batch.BlockHash,
 			serialized,
-			dataProviders,
+			dapReaders,
 			daprovider.KeysetValidate,
+			chainConfig,
 		)
 		if err != nil {
 			return nil, nil, nil, nil, err

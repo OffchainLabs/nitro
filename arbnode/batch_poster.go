@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2025, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbnode
@@ -70,6 +70,7 @@ var (
 
 	batchPosterEstimatedBatchBacklogGauge = metrics.NewRegisteredGauge("arb/batchposter/estimated_batch_backlog", nil)
 
+	// Metric names keep "da" prefix for backward compatibility with existing dashboards
 	batchPosterDALastSuccessfulActionGauge = metrics.NewRegisteredGauge("arb/batchPoster/action/da_last_success", nil)
 	batchPosterDASuccessCounter            = metrics.NewRegisteredCounter("arb/batchPoster/action/da_success", nil)
 	batchPosterDAFailureCounter            = metrics.NewRegisteredCounter("arb/batchPoster/action/da_failure", nil)
@@ -107,6 +108,7 @@ type BatchPoster struct {
 	msgExtractor       *melrunner.MessageExtractor
 	streamer           *TransactionStreamer
 	arbOSVersionGetter execution.ArbOSVersionGetter
+	chainConfig        *params.ChainConfig
 	config             BatchPosterConfigFetcher
 	seqInbox           *bridgegen.SequencerInbox
 	syncMonitor        *SyncMonitor
@@ -176,7 +178,7 @@ type BatchPosterConfig struct {
 	// Batch posting error delay.
 	ErrorDelay                     time.Duration               `koanf:"error-delay" reload:"hot"`
 	CompressionLevel               int                         `koanf:"compression-level" reload:"hot"`
-	DASRetentionPeriod             time.Duration               `koanf:"das-retention-period" reload:"hot"`
+	AnyTrustRetentionPeriod        time.Duration               `koanf:"anytrust-retention-period" reload:"hot"`
 	GasRefunderAddress             string                      `koanf:"gas-refunder-address" reload:"hot"`
 	DataPoster                     dataposter.DataPosterConfig `koanf:"data-poster" reload:"hot"`
 	RedisUrl                       string                      `koanf:"redis-url"`
@@ -254,7 +256,7 @@ func BatchPosterConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Duration(prefix+".poll-interval", DefaultBatchPosterConfig.PollInterval, "how long to wait after no batches are ready to be posted before checking again")
 	f.Duration(prefix+".error-delay", DefaultBatchPosterConfig.ErrorDelay, "how long to delay after error posting batch")
 	f.Int(prefix+".compression-level", DefaultBatchPosterConfig.CompressionLevel, "batch compression level")
-	f.Duration(prefix+".das-retention-period", DefaultBatchPosterConfig.DASRetentionPeriod, "In AnyTrust mode, the period which DASes are requested to retain the stored batches.")
+	f.Duration(prefix+".anytrust-retention-period", DefaultBatchPosterConfig.AnyTrustRetentionPeriod, "In AnyTrust mode, the period which AnyTrust nodes are requested to retain the stored batches.")
 	f.String(prefix+".gas-refunder-address", DefaultBatchPosterConfig.GasRefunderAddress, "The gas refunder contract address (optional)")
 	f.Uint64(prefix+".extra-batch-gas", DefaultBatchPosterConfig.ExtraBatchGas, "use this much more gas than estimation says is necessary to post batches")
 	f.Bool(prefix+".post-4844-blobs", DefaultBatchPosterConfig.Post4844Blobs, "if the parent chain supports 4844 blobs and they're well priced, post EIP-4844 blobs")
@@ -292,7 +294,7 @@ var DefaultBatchPosterConfig = BatchPosterConfig{
 	MaxDelay:                       time.Hour,
 	WaitForMaxDelay:                false,
 	CompressionLevel:               brotli.BestCompression,
-	DASRetentionPeriod:             daprovider.DefaultDASRetentionPeriod,
+	AnyTrustRetentionPeriod:        daprovider.DefaultAnyTrustRetentionPeriod,
 	GasRefunderAddress:             "",
 	ExtraBatchGas:                  50_000,
 	Post4844Blobs:                  false,
@@ -331,7 +333,7 @@ var TestBatchPosterConfig = BatchPosterConfig{
 	MaxDelay:                           0,
 	WaitForMaxDelay:                    false,
 	CompressionLevel:                   2,
-	DASRetentionPeriod:                 daprovider.DefaultDASRetentionPeriod,
+	AnyTrustRetentionPeriod:            daprovider.DefaultAnyTrustRetentionPeriod,
 	GasRefunderAddress:                 "",
 	ExtraBatchGas:                      10_000,
 	Post4844Blobs:                      false,
@@ -363,6 +365,7 @@ type BatchPosterOpts struct {
 	DAPWriters    []daprovider.Writer
 	ParentChainID *big.Int
 	DAPReaders    *daprovider.DAProviderRegistry
+	ChainConfig   *params.ChainConfig
 }
 
 func NewBatchPoster(ctx context.Context, opts *BatchPosterOpts) (*BatchPoster, error) {
@@ -410,6 +413,7 @@ func NewBatchPoster(ctx context.Context, opts *BatchPosterOpts) (*BatchPoster, e
 		msgExtractor:       opts.MsgExtractor,
 		streamer:           opts.Streamer,
 		arbOSVersionGetter: opts.VersionGetter,
+		chainConfig:        opts.ChainConfig,
 		syncMonitor:        opts.SyncMonitor,
 		config:             opts.Config,
 		seqInbox:           seqInbox,
@@ -912,6 +916,7 @@ type batchSegments struct {
 	recompressionLevel    int
 	newUncompressedSize   int
 	totalUncompressedSize int
+	maxUncompressedSize   int
 	lastCompressedSize    int
 	trailingHeaders       int // how many trailing segments are headers
 	isDone                bool
@@ -992,12 +997,13 @@ func (b *BatchPoster) newBatchSegments(ctx context.Context, firstDelayed uint64,
 		recompressionLevel = compressionLevel
 	}
 	return &batchSegments{
-		compressedBuffer:   compressedBuffer,
-		compressedWriter:   brotli.NewWriterLevel(compressedBuffer, compressionLevel),
-		sizeLimit:          maxSize,
-		recompressionLevel: recompressionLevel,
-		rawSegments:        make([][]byte, 0, 128),
-		delayedMsg:         firstDelayed,
+		compressedBuffer:    compressedBuffer,
+		compressedWriter:    brotli.NewWriterLevel(compressedBuffer, compressionLevel),
+		sizeLimit:           maxSize,
+		recompressionLevel:  recompressionLevel,
+		rawSegments:         make([][]byte, 0, 128),
+		delayedMsg:          firstDelayed,
+		maxUncompressedSize: int(b.chainConfig.MaxUncompressedBatchSize()), // #nosec G115
 	}, nil
 }
 
@@ -1012,8 +1018,8 @@ func (s *batchSegments) recompressAll() error {
 			return err
 		}
 	}
-	if s.totalUncompressedSize > arbstate.MaxDecompressedLen {
-		return fmt.Errorf("batch size %v exceeds maximum decompressed length %v", s.totalUncompressedSize, arbstate.MaxDecompressedLen)
+	if s.totalUncompressedSize > s.maxUncompressedSize {
+		return fmt.Errorf("batch size %v exceeds maximum uncompressed length %v", s.totalUncompressedSize, s.maxUncompressedSize)
 	}
 	if len(s.rawSegments) >= arbstate.MaxSegmentsPerSequencerMessage {
 		return fmt.Errorf("number of raw segments %v excees maximum number %v", len(s.rawSegments), arbstate.MaxSegmentsPerSequencerMessage)
@@ -1023,10 +1029,10 @@ func (s *batchSegments) recompressAll() error {
 
 func (s *batchSegments) testForOverflow(isHeader bool) (bool, error) {
 	// we've reached the max decompressed size
-	if s.totalUncompressedSize > arbstate.MaxDecompressedLen {
-		log.Info("Batch full: max decompressed length exceeded",
+	if s.totalUncompressedSize > s.maxUncompressedSize {
+		log.Info("Batch full: max uncompressed length exceeded",
 			"current", s.totalUncompressedSize,
-			"max", arbstate.MaxDecompressedLen,
+			"max", s.maxUncompressedSize,
 			"isHeader", isHeader)
 		return true, nil
 	}
@@ -1776,7 +1782,7 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 		log.Debug("Attempting to store batch with DA writer", "writerIndex", writerIndex, "numWriters", len(b.dapWriters), "batchSize", len(batchData))
 		storeStart := time.Now()
 		// #nosec G115
-		sequencerMsg, err = writer.Store(batchData, uint64(time.Now().Add(config.DASRetentionPeriod).Unix())).Await(ctx)
+		sequencerMsg, err = writer.Store(batchData, uint64(time.Now().Add(config.AnyTrustRetentionPeriod).Unix())).Await(ctx)
 		storeDuration := time.Since(storeStart)
 
 		if err != nil {
@@ -1942,7 +1948,7 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 		b.building.muxBackend.seqMsg = seqMsg
 		b.building.muxBackend.delayedInboxStart = batchPosition.DelayedMessageCount
 		b.building.muxBackend.SetPositionWithinMessage(0)
-		simMux := arbstate.NewInboxMultiplexer(b.building.muxBackend, batchPosition.DelayedMessageCount, dapReaders, daprovider.KeysetValidate)
+		simMux := arbstate.NewInboxMultiplexer(b.building.muxBackend, batchPosition.DelayedMessageCount, dapReaders, daprovider.KeysetValidate, b.chainConfig)
 		log.Debug("Begin checking the correctness of batch against inbox multiplexer", "startMsgSeqNum", batchPosition.MessageCount, "endMsgSeqNum", b.building.msgCount-1)
 		for i := batchPosition.MessageCount; i < b.building.msgCount; i++ {
 			msg, err := simMux.Pop(ctx)

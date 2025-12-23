@@ -190,12 +190,12 @@ func compareAllMsgResultsFromConsensusAndExecution(
 	return lastResult
 }
 
-func testLyingSequencer(t *testing.T, dasModeStr string) {
+func testLyingSequencer(t *testing.T, daModeStr string) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	// The truthful sequencer
-	chainConfig, nodeConfigA, lifecycleManager, _, dasSignerKey := setupConfigWithDAS(t, ctx, dasModeStr)
+	chainConfig, nodeConfigA, lifecycleManager, _, anyTrustSignerKey := setupConfigWithAnyTrust(t, ctx, daModeStr)
 	defer lifecycleManager.StopAndWaitUntil(time.Second)
 
 	nodeConfigA.BatchPoster.Enable = true
@@ -209,13 +209,13 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 
 	l2clientA := builder.L2.Client
 
-	authorizeDASKeyset(t, ctx, dasSignerKey, builder.L1Info, builder.L1.Client)
+	authorizeAnyTrustKeyset(t, ctx, anyTrustSignerKey, builder.L1Info, builder.L1.Client)
 
 	// The lying sequencer
 	nodeConfigC := arbnode.ConfigDefaultL1Test()
 	nodeConfigC.BatchPoster.Enable = false
-	nodeConfigC.DataAvailability = nodeConfigA.DataAvailability
-	nodeConfigC.DataAvailability.RPCAggregator.Enable = false
+	nodeConfigC.DA.AnyTrust = nodeConfigA.DA.AnyTrust
+	nodeConfigC.DA.AnyTrust.RPCAggregator.Enable = false
 	nodeConfigC.Feed.Output = *newBroadcasterConfigTest()
 	testClientC, cleanupC := builder.Build2ndNode(t, &SecondNodeParams{nodeConfig: nodeConfigC})
 	defer cleanupC()
@@ -227,8 +227,8 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 	nodeConfigB := arbnode.ConfigDefaultL1NonSequencerTest()
 	nodeConfigB.Feed.Output.Enable = false
 	nodeConfigB.Feed.Input = *newBroadcastClientConfigTest(port)
-	nodeConfigB.DataAvailability = nodeConfigA.DataAvailability
-	nodeConfigB.DataAvailability.RPCAggregator.Enable = false
+	nodeConfigB.DA.AnyTrust = nodeConfigA.DA.AnyTrust
+	nodeConfigB.DA.AnyTrust.RPCAggregator.Enable = false
 	testClientB, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{nodeConfig: nodeConfigB})
 	defer cleanupB()
 	l2clientB := testClientB.Client
@@ -332,7 +332,7 @@ func TestLyingSequencer(t *testing.T) {
 	testLyingSequencer(t, "onchain")
 }
 
-func TestLyingSequencerLocalDAS(t *testing.T) {
+func TestLyingSequencerLocalAnyTrust(t *testing.T) {
 	testLyingSequencer(t, "files")
 }
 
@@ -547,7 +547,7 @@ func TestRegressionInPopulateFeedBacklog(t *testing.T) {
 	if err != nil {
 		panic(fmt.Sprintf("error encoding dummy message: %v", err))
 	}
-	batch := builder.L2.ConsensusNode.ArbDB.NewBatch()
+	batch := builder.L2.ConsensusNode.ConsensusDB.NewBatch()
 	if err := batch.Put(key, msgBytes); err != nil {
 		panic(fmt.Sprintf("error putting dummy message to db: %v", err))
 	}

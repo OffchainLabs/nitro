@@ -80,6 +80,7 @@ func (m *MessageExtractor) processNextBlock(ctx context.Context, current *fsm.Cu
 		m.melDB,
 		&txByLogFetcher{m.parentChainReader},
 		m.logsAndHeadersPreFetcher,
+		m.chainConfig,
 	)
 	if err != nil {
 		return m.config.RetryInterval, err

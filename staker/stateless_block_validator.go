@@ -206,7 +206,7 @@ func newValidationEntry(
 	}
 	valBatches = append(valBatches, prevBatches...)
 
-	copyPreimagesInto(preimages, fullBatchInfo.Preimages)
+	daprovider.CopyPreimagesInto(preimages, fullBatchInfo.Preimages)
 
 	hasDelayed := false
 	var delayedNum uint64
@@ -236,7 +236,7 @@ func NewStatelessBlockValidator(
 	inbox InboxTrackerInterface,
 	streamer TransactionStreamerInterface,
 	recorder execution.ExecutionRecorder,
-	arbdb ethdb.Database,
+	consensusDB ethdb.Database,
 	dapReaders *daprovider.DAProviderRegistry,
 	config func() *BlockValidatorConfig,
 	stack *node.Node,
@@ -278,7 +278,7 @@ func NewStatelessBlockValidator(
 		inboxReader:          inboxReader,
 		inboxTracker:         inbox,
 		streamer:             streamer,
-		db:                   arbdb,
+		db:                   consensusDB,
 		dapReaders:           dapReaders,
 		execSpawners:         executionSpawners,
 		boldExecSpawners:     boldExecutionSpawners,
@@ -331,9 +331,9 @@ func (v *StatelessBlockValidator) readFullBatch(ctx context.Context, batchNum ui
 			promise := dapReader.CollectPreimages(batchNum, batchBlockHash, postedData)
 			result, err := promise.Await(ctx)
 			if err != nil {
-				// Matches the way keyset validation was done inside DAS readers i.e logging the error
+				// Matches the way keyset validation was done inside AnyTrust readers i.e logging the error
 				//  But other daproviders might just want to return the error
-				if daprovider.IsDASMessageHeaderByte(headerByte) && strings.Contains(err.Error(), daprovider.ErrSeqMsgValidation.Error()) {
+				if daprovider.IsAnyTrustMessageHeaderByte(headerByte) && strings.Contains(err.Error(), daprovider.ErrSeqMsgValidation.Error()) {
 					log.Error(err.Error())
 				} else if daprovider.IsDACertificateMessageHeaderByte(headerByte) && daprovider.IsCertificateValidationError(err) {
 					log.Warn("Certificate validation of sequencer batch failed, treating it as an empty batch", "batch", batchNum, "error", err)
@@ -345,8 +345,8 @@ func (v *StatelessBlockValidator) readFullBatch(ctx context.Context, batchNum ui
 			}
 		} else {
 			// No reader found for this header byte - check if it's a known type
-			if daprovider.IsDASMessageHeaderByte(headerByte) {
-				log.Error("No DAS Reader configured for DAS message", "headerByte", fmt.Sprintf("0x%02x", headerByte))
+			if daprovider.IsAnyTrustMessageHeaderByte(headerByte) {
+				log.Error("No AnyTrust Reader configured for AnyTrust message", "headerByte", fmt.Sprintf("0x%02x", headerByte))
 			} else if daprovider.IsBlobHashesHeaderByte(headerByte) {
 				log.Error("No Blob Reader configured for blob message", "headerByte", fmt.Sprintf("0x%02x", headerByte))
 			} else if daprovider.IsDACertificateMessageHeaderByte(headerByte) {
@@ -361,17 +361,6 @@ func (v *StatelessBlockValidator) readFullBatch(ctx context.Context, batchNum ui
 		Preimages:  preimages,
 	}
 	return true, &fullInfo, nil
-}
-
-func copyPreimagesInto(dest, source map[arbutil.PreimageType]map[common.Hash][]byte) {
-	for piType, piMap := range source {
-		if dest[piType] == nil {
-			dest[piType] = make(map[common.Hash][]byte, len(piMap))
-		}
-		for hash, preimage := range piMap {
-			dest[piType][hash] = preimage
-		}
-	}
 }
 
 func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *validationEntry, wasmTargets ...rawdb.WasmTarget) error {
@@ -394,7 +383,7 @@ func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *
 			recordingPreimages := map[arbutil.PreimageType]map[common.Hash][]byte{
 				arbutil.Keccak256PreimageType: recording.Preimages,
 			}
-			copyPreimagesInto(e.Preimages, recordingPreimages)
+			daprovider.CopyPreimagesInto(e.Preimages, recordingPreimages)
 		}
 		e.UserWasms = recording.UserWasms
 	}
