@@ -54,8 +54,8 @@ func TestRecordingPreimagesForReadDelayedMessage(t *testing.T) {
 		})
 	}
 	db := rawdb.NewMemoryDatabase()
-	melDb := melrunner.NewDatabase(db)
-	err := melDb.SaveDelayedMessages(ctx, &mel.State{DelayedMessagesSeen: uint64(len(delayedMessages))}, delayedMessages)
+	melDB := melrunner.NewDatabase(db)
+	err := melDB.SaveDelayedMessages(ctx, &mel.State{DelayedMessagesSeen: uint64(len(delayedMessages))}, delayedMessages)
 	require.NoError(t, err)
 
 	startBlockNum := uint64(3)
@@ -68,7 +68,7 @@ func TestRecordingPreimagesForReadDelayedMessage(t *testing.T) {
 		require.NoError(t, state.AccumulateDelayedMessage(delayedMessages[i]))
 	}
 	require.NoError(t, state.GenerateDelayedMessagesSeenMerklePartialsAndRoot())
-	require.NoError(t, melDb.SaveState(ctx, state))
+	require.NoError(t, melDB.SaveState(ctx, state))
 
 	recordingDB := melrecording.NewRecordingDatabase(db)
 	for i := startBlockNum; i < numMsgs; i++ {
@@ -86,13 +86,13 @@ func TestRecordingPreimagesForReadDelayedMessage(t *testing.T) {
 	}
 
 	// Test reading in wasm mode
-	delayedDb := &delayedMessageDatabase{
+	delayedDB := &delayedMessageDatabase{
 		&testPreimageResolver{
 			preimages: recordingDB.Preimages(),
 		},
 	}
 	for i := startBlockNum; i < numMsgsToRead; i++ {
-		msg, err := delayedDb.ReadDelayedMessage(ctx, state, i)
+		msg, err := delayedDB.ReadDelayedMessage(ctx, state, i)
 		require.NoError(t, err)
 		require.Equal(t, msg.Hash(), delayedMessages[i].Hash())
 	}

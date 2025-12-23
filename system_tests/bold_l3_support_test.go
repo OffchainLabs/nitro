@@ -246,7 +246,7 @@ func startL3BoldChallengeManager(t *testing.T, ctx context.Context, builder *Nod
 
 	dp, err := arbnode.StakerDataposter(
 		ctx,
-		rawdb.NewTable(node.ConsensusNode.ArbDB, storage.StakerPrefix),
+		rawdb.NewTable(node.ConsensusNode.ConsensusDB, storage.StakerPrefix),
 		builder.L3.ConsensusNode.L1Reader,
 		&txOpts,
 		NewCommonConfigFetcher(builder.nodeConfig),

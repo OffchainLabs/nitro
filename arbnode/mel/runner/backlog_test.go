@@ -23,8 +23,8 @@ func TestDelayedMessageBacklogInitialization(t *testing.T) {
 	defer cancel()
 
 	// Create database
-	arbDb := rawdb.NewMemoryDatabase()
-	melDb := NewDatabase(arbDb)
+	consensusDB := rawdb.NewMemoryDatabase()
+	melDB := NewDatabase(consensusDB)
 
 	// Add genesis melState
 	genesis := &mel.State{
@@ -32,7 +32,7 @@ func TestDelayedMessageBacklogInitialization(t *testing.T) {
 		DelayedMessagesSeen:    1,
 		DelayedMessagesRead:    1,
 	}
-	require.NoError(t, melDb.SaveState(ctx, genesis))
+	require.NoError(t, melDB.SaveState(ctx, genesis))
 
 	numMelStates := 5
 	var delayedMsgs []*mel.DelayedInboxMessage
@@ -64,25 +64,25 @@ func TestDelayedMessageBacklogInitialization(t *testing.T) {
 			DelayedMessagesSeen:    head.DelayedMessagesSeen + 5,
 			DelayedMessagesRead:    1,
 		}
-		require.NoError(t, melDb.SaveDelayedMessages(ctx, state, delayedMsgs[(i)*5:(i+1)*5]))
-		require.NoError(t, melDb.SaveState(ctx, state))
+		require.NoError(t, melDB.SaveDelayedMessages(ctx, state, delayedMsgs[(i)*5:(i+1)*5]))
+		require.NoError(t, melDB.SaveState(ctx, state))
 		head = state
 	}
-	state, err := melDb.GetHeadMelState(ctx)
+	state, err := melDB.GetHeadMelState(ctx)
 	require.NoError(t, err)
 
 	require.True(t, state.DelayedMessagesSeen == uint64(numMelStates)*5+1) // #nosec G115
 	require.True(t, state.DelayedMessagesRead == 1)
 	delayedMessageBacklog, err := mel.NewDelayedMessageBacklog(100, func() (uint64, error) { return 0, nil })
 	require.NoError(t, err)
-	require.NoError(t, InitializeDelayedMessageBacklog(ctx, delayedMessageBacklog, melDb, state, nil))
+	require.NoError(t, InitializeDelayedMessageBacklog(ctx, delayedMessageBacklog, melDB, state, nil))
 	require.True(t, delayedMessageBacklog.Len() == 25)
 	state.SetDelayedMessageBacklog(delayedMessageBacklog)
 	state.SetReadCountFromBacklog(state.DelayedMessagesSeen) // skip checking against accumulator- not the purpose of this test
 
 	// Lets read the delayed messages and verify that they match with what we stored
 	for i, wantDelayed := range delayedMsgs {
-		haveDelayed, err := melDb.ReadDelayedMessage(ctx, state, uint64(i+1)) // #nosec G115
+		haveDelayed, err := melDB.ReadDelayedMessage(ctx, state, uint64(i+1)) // #nosec G115
 		require.NoError(t, err)
 		require.True(t, reflect.DeepEqual(haveDelayed, wantDelayed))
 	}
@@ -94,7 +94,7 @@ func TestDelayedMessageBacklogInitialization(t *testing.T) {
 		DelayedMessagesSeen:    26,
 		DelayedMessagesRead:    7,
 	}
-	require.NoError(t, melDb.SaveState(ctx, state))
+	require.NoError(t, melDB.SaveState(ctx, state))
 
 	// Advance head state indicating that we have read 10 delayed messages
 	newHeadState := &mel.State{
@@ -103,14 +103,14 @@ func TestDelayedMessageBacklogInitialization(t *testing.T) {
 		DelayedMessagesSeen:    26,
 		DelayedMessagesRead:    13,
 	}
-	require.NoError(t, melDb.SaveState(ctx, newHeadState))
+	require.NoError(t, melDB.SaveState(ctx, newHeadState))
 	// We provide InitializeDelayedMessageBacklog the current finalized block as 7 and verify that the delayedMessageBacklog has
 	// delayedMessageBacklogEntry for indexes below the DelayedMessagesRead as those have not been finalized yet!
-	newState, err := melDb.GetHeadMelState(ctx)
+	newState, err := melDB.GetHeadMelState(ctx)
 	require.NoError(t, err)
 	newDelayedMessageBacklog, err := mel.NewDelayedMessageBacklog(100, func() (uint64, error) { return 0, nil })
 	require.NoError(t, err)
-	require.NoError(t, InitializeDelayedMessageBacklog(ctx, newDelayedMessageBacklog, melDb, newState, func() (uint64, error) { return 7, nil }))
+	require.NoError(t, InitializeDelayedMessageBacklog(ctx, newDelayedMessageBacklog, melDB, newState, func() (uint64, error) { return 7, nil }))
 	// Notice that instead of having seenUnread list from delayed index 13 to 25 inclusive we will have it from 7 to 25 as only till block=7 the chain has finalized and that block has DelayedMessagesRead=7
 	require.True(t, newDelayedMessageBacklog.Len() == 19)
 	newState.SetDelayedMessageBacklog(newDelayedMessageBacklog)
