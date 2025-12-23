@@ -54,10 +54,12 @@ func (c *ClientConfig) UnmarshalJSON(data []byte) error {
 
 type ClientConfigFetcher func() *ClientConfig
 
+const DefaultWebsocketMessageSizeLimit = 256 * 1024 * 1024
+
 var TestClientConfig = ClientConfig{
 	URL:                       "self",
 	JWTSecret:                 "",
-	WebsocketMessageSizeLimit: 256 * 1024 * 1024,
+	WebsocketMessageSizeLimit: DefaultWebsocketMessageSizeLimit,
 }
 
 var DefaultClientConfig = ClientConfig{
@@ -67,7 +69,7 @@ var DefaultClientConfig = ClientConfig{
 	Retries:                   3,
 	RetryErrors:               "websocket: close.*|dial tcp .*|.*i/o timeout|.*connection reset by peer|.*connection refused",
 	ArgLogLimit:               2048,
-	WebsocketMessageSizeLimit: 256 * 1024 * 1024,
+	WebsocketMessageSizeLimit: DefaultWebsocketMessageSizeLimit,
 }
 
 func RPCClientAddOptions(prefix string, f *pflag.FlagSet, defaultConfig *ClientConfig) {
