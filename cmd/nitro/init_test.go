@@ -895,7 +895,7 @@ func TestGetConsensusParsedInitMessage(t *testing.T) {
 	}
 }
 
-func TestDownloadDBNoSnapshot(t *testing.T) {
+func TestCheckAndDownloadDBNoSnapshot(t *testing.T) {
 	t.Parallel()
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -913,7 +913,7 @@ func TestDownloadDBNoSnapshot(t *testing.T) {
 	nodeConfig.Node = *arbnode.ConfigDefaultL2Test()
 	nodeConfig.Init.ValidateGenesisAssertion = false
 
-	err = downloadDB(ctx, stack, &nodeConfig)
+	err = checkAndDownloadDB(ctx, stack, &nodeConfig)
 	Require(t, err)
 }
 
@@ -995,7 +995,11 @@ func TestSimpleGetInit(t *testing.T) {
 		t.Fatalf("Expected nil arbOsInit but got  = %v", chainConfig)
 	}
 
-	chainOwner, err := initDataReader.GetChainOwner()
+	if initDataReader == nil {
+		t.Fatalf("initDataReader shouldn't be nil")
+	}
+
+	chainOwner, err := (*initDataReader).GetChainOwner()
 	Require(t, err)
 
 	expectedOwnerAddress := common.HexToAddress(ownerAdress)
@@ -1003,14 +1007,14 @@ func TestSimpleGetInit(t *testing.T) {
 		t.Fatalf("chainOwner address %s does not match expected address: %s", chainOwner.Hex(), expectedOwnerAddress.Hex())
 	}
 
-	blockNumber, err := initDataReader.GetNextBlockNumber()
+	blockNumber, err := (*initDataReader).GetNextBlockNumber()
 	Require(t, err)
 
 	if blockNumber != 0 {
 		t.Fatalf("GetNextBlockNumber expected to return 0 but returned: %d", blockNumber)
 	}
 
-	err = initDataReader.Close()
+	err = (*initDataReader).Close()
 	Require(t, err)
 }
 
@@ -1046,7 +1050,11 @@ func TestGetInitWithEmpty(t *testing.T) {
 		t.Fatalf("Expected nil arbOsInit but got  = %v", arbOsInit)
 	}
 
-	chainOwner, err := initDataReader.GetChainOwner()
+	if initDataReader == nil {
+		t.Fatalf("initDataReader shouldn't be nil")
+	}
+
+	chainOwner, err := (*initDataReader).GetChainOwner()
 	Require(t, err)
 
 	// Even though we set ownerAdress we set Init.Empty to true so we should expect an empty address
@@ -1056,14 +1064,14 @@ func TestGetInitWithEmpty(t *testing.T) {
 		t.Fatalf("chainOwner address %s does not match expected empty address: %s", chainOwner.Hex(), expectedOwnerAddress.Hex())
 	}
 
-	blockNumber, err := initDataReader.GetNextBlockNumber()
+	blockNumber, err := (*initDataReader).GetNextBlockNumber()
 	Require(t, err)
 
 	if blockNumber != 0 {
 		t.Fatalf("GetNextBlockNumber expected to return 0 but returned: %d", blockNumber)
 	}
 
-	err = initDataReader.Close()
+	err = (*initDataReader).Close()
 	Require(t, err)
 }
 
@@ -1099,7 +1107,11 @@ func TestGetInitWithImportFile(t *testing.T) {
 		t.Fatalf("Expected nil arbOsInit but got  = %v", chainConfig)
 	}
 
-	chainOwner, err := initDataReader.GetChainOwner()
+	if initDataReader == nil {
+		t.Fatalf("initDataReader shouldn't be nil")
+	}
+
+	chainOwner, err := (*initDataReader).GetChainOwner()
 	Require(t, err)
 
 	// Even though we set ownerAdress we set Init.Empty to true so we should expect an empty address
@@ -1109,14 +1121,14 @@ func TestGetInitWithImportFile(t *testing.T) {
 		t.Fatalf("chainOwner address %s does not match expected empty address: %s", chainOwner.Hex(), expectedOwnerAddress.Hex())
 	}
 
-	blockNumber, err := initDataReader.GetNextBlockNumber()
+	blockNumber, err := (*initDataReader).GetNextBlockNumber()
 	Require(t, err)
 
 	if blockNumber != 100 {
 		t.Fatalf("GetNextBlockNumber expected to return 100 but returned: %d", blockNumber)
 	}
 
-	err = initDataReader.Close()
+	err = (*initDataReader).Close()
 	Require(t, err)
 }
 
@@ -1163,7 +1175,11 @@ func TestGetInitWithGenesis(t *testing.T) {
 		t.Fatalf("arbOsInit expected to be nil")
 	}
 
-	chainOwner, err := initDataReader.GetChainOwner()
+	if initDataReader == nil {
+		t.Fatalf("initDataReader shouldn't be nil")
+	}
+
+	chainOwner, err := (*initDataReader).GetChainOwner()
 	Require(t, err)
 
 	// Even though we set ownerAdress we set Init.Empty to true so we should expect an empty address
@@ -1173,13 +1189,13 @@ func TestGetInitWithGenesis(t *testing.T) {
 		t.Fatalf("chainOwner address %s does not match expected empty address: %s", chainOwner.Hex(), expectedOwnerAddress.Hex())
 	}
 
-	blockNumber, err := initDataReader.GetNextBlockNumber()
+	blockNumber, err := (*initDataReader).GetNextBlockNumber()
 	Require(t, err)
 
 	if blockNumber != 0 {
 		t.Fatalf("GetNextBlockNumber expected to return 0 but returned: %d", blockNumber)
 	}
 
-	err = initDataReader.Close()
+	err = (*initDataReader).Close()
 	Require(t, err)
 }
