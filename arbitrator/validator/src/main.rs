@@ -2,7 +2,7 @@ use crate::config::LoggingFormat;
 use anyhow::{anyhow, Result};
 use axum::{
     routing::{get, post},
-    Router
+    Router,
 };
 use clap::Parser;
 use std::{env, io};

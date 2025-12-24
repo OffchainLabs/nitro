@@ -1,7 +1,6 @@
 //! Endpoints related to the `ValidationSpawner` Go interface and used by the nitro's validation
 //! client.
 
-use anyhow::anyhow;
 use arbutil::{Bytes32, PreimageType};
 use axum::response::IntoResponse;
 use axum::Json;
@@ -30,7 +29,7 @@ pub async fn stylus_archs() -> impl IntoResponse {
 pub async fn validate(Json(request): Json<ValidationRequest>) -> impl IntoResponse {
     // TODO: Implement actual validation logic
     serde_json::to_string(&request.start_state)
-        .map_err(|e| format!("Failed to serialize state: {}", e.to_string()))
+        .map_err(|e| format!("Failed to serialize state: {e}",))
 }
 
 pub async fn wasm_module_roots() -> impl IntoResponse {
