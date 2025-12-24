@@ -7,9 +7,9 @@ import (
 	"math/big"
 	"time"
 
-	"github.com/google/martian/v3/log"
 	"github.com/spf13/pflag"
 
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/cmd/genericconf"
@@ -73,7 +73,7 @@ func (c *L2Config) InitialL1BaseFeeParsed() *big.Int {
 
 	parsed, success := big.NewInt(0).SetString(c.InitialL1BaseFee, 10)
 	if !success {
-		log.Errorf("Failed to parse L1 BaseFee for L2 config: %v", c.InitialL1BaseFee)
+		log.Error("Failed to parse L1 BaseFee for L2 config", "config", c.InitialL1BaseFee)
 		return params.DefaultInitialL1BaseFee
 	}
 	return parsed
