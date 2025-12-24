@@ -382,6 +382,7 @@ func ProduceBlockAdvanced(
 				// Ignore this transaction if it's invalid under the state transition function
 				statedb.RevertToSnapshot(snap)
 				statedb.ClearTxFilter()
+				statedb.ClearTouchedAddresses()
 				return nil, nil, err
 			}
 
@@ -389,6 +390,7 @@ func ProduceBlockAdvanced(
 			if err = extraPostTxFilter(chainConfig, header, statedb, arbState, tx, options, sender, l1Info, result); err != nil {
 				statedb.RevertToSnapshot(snap)
 				statedb.ClearTxFilter()
+				statedb.ClearTouchedAddresses()
 				return nil, nil, err
 			}
 
