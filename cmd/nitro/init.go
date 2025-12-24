@@ -654,6 +654,10 @@ func openInitializeExecutionDB(ctx context.Context, stack *node.Node, config *No
 		}
 	}
 
+	if chainConfig == nil {
+		return executionDB, nil, fmt.Errorf("chainConfig should not have been nil")
+	}
+
 	err = PruneExecutionDB(ctx, executionDB, stack, config, cacheConfig, persistentConfig, l1Client, rollupAddrs)
 	if err != nil {
 		return executionDB, nil, fmt.Errorf("error pruning: %w", err)
