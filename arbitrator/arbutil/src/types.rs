@@ -15,6 +15,7 @@ use std::{
 // and the if statement in `contracts/src/osp/OneStepProverHostIo.sol` (search for "UNKNOWN_PREIMAGE_TYPE").
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, TryFromPrimitive, IntoPrimitive,
+    Serialize, Deserialize,
 )]
 #[repr(u8)]
 pub enum PreimageType {
