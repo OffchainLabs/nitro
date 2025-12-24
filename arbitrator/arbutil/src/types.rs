@@ -14,8 +14,18 @@ use std::{
 // These values must be kept in sync with `arbutil/preimage_type.go`,
 // and the if statement in `contracts/src/osp/OneStepProverHostIo.sol` (search for "UNKNOWN_PREIMAGE_TYPE").
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, TryFromPrimitive, IntoPrimitive,
-    Serialize, Deserialize,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    TryFromPrimitive,
+    IntoPrimitive,
+    Serialize,
+    Deserialize,
 )]
 #[repr(u8)]
 pub enum PreimageType {
