@@ -124,6 +124,7 @@ COPY arbitrator/prover arbitrator/prover
 COPY arbitrator/wasm-libraries arbitrator/wasm-libraries
 COPY arbitrator/jit arbitrator/jit
 COPY arbitrator/stylus arbitrator/stylus
+COPY arbitrator/validator arbitrator/validator
 COPY arbitrator/tools/wasmer arbitrator/tools/wasmer
 COPY --from=brotli-wasm-export / target/
 COPY scripts/build-brotli.sh scripts/
@@ -157,7 +158,7 @@ COPY arbitrator/stylus/Cargo.toml arbitrator/stylus/
 COPY arbitrator/validator/Cargo.toml arbitrator/validator/
 COPY arbitrator/tools/wasmer arbitrator/tools/wasmer
 COPY arbitrator/wasm-libraries/user-host-trait/Cargo.toml arbitrator/wasm-libraries/user-host-trait/Cargo.toml
-RUN bash -c 'mkdir arbitrator/{prover,jit,stylus}/src arbitrator/wasm-libraries/user-host-trait/src'
+RUN bash -c 'mkdir arbitrator/{prover,jit,stylus,validator}/src arbitrator/wasm-libraries/user-host-trait/src'
 RUN echo "fn test() {}" > arbitrator/jit/src/lib.rs && \
     echo "fn test() {}" > arbitrator/prover/src/lib.rs && \
     echo "fn test() {}" > arbitrator/bench/src/lib.rs && \
