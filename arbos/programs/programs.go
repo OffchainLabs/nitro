@@ -317,9 +317,11 @@ func getWasmFromContractCode(statedb vm.StateDB, prefixedWasm []byte, params *St
 	}
 
 	if params.arbosVersion >= gethParams.ArbosVersion_StylusContractLimit {
+		fmt.Println("bluebird 1-1")
 		if state.IsStylusProgramRoot(prefixedWasm) {
 			return handleRootStylus(statedb, prefixedWasm, params.MaxWasmSize, params.MaxFragmentCount)
 		}
+		fmt.Println("bluebird 1-2")
 
 		if state.IsStylusProgramFragment(prefixedWasm) {
 			return nil, errors.New("fragmented stylus programs cannot be activated directly; activate the root program instead")
@@ -344,30 +346,30 @@ func handleClassicStylus(data []byte, maxSize uint32) ([]byte, error) {
 }
 
 func handleRootStylus(statedb vm.StateDB, data []byte, maxSize uint32, maxFragments uint16) ([]byte, error) {
-	rawAddresses, decompressedLength, err := state.StripStylusRootPrefix(data)
+	rawAddresses, dictByte, decompressedLength, err := state.StripStylusRootPrefix(data)
+	fmt.Println("bluebird 2-1")
 	if err != nil {
+		fmt.Println("bluebird 2-1.1", err)
 		return nil, err
 	}
-
+	fmt.Println("bluebird 2-2")
 	if decompressedLength > maxSize {
 		return nil, fmt.Errorf("invalid wasm: decompressedLength %d is greater then MaxWasmSize %d", decompressedLength, maxSize)
 	}
-
+	fmt.Println("bluebird 2-3")
 	if len(rawAddresses)/common.AddressLength > int(maxFragments) {
 		return nil, fmt.Errorf("invalid wasm: fragment count exceeds limit of %d", maxFragments)
 	}
 
-	var (
-		compressedWasm []byte
-		dictByte       byte
-	)
-
+	var compressedWasm []byte
+	fmt.Println("bluebird 2-4")
 	for i := 0; i < len(rawAddresses); i += common.AddressLength {
 		addr := common.BytesToAddress(rawAddresses[i : i+common.AddressLength])
 
 		fragCode := statedb.GetCode(addr)
 		payload, err := state.StripStylusFragmentPrefix(fragCode)
 		if err != nil {
+			fmt.Println("bluebird 2-5")
 			return nil, err
 		}
 
@@ -375,18 +377,15 @@ func handleRootStylus(statedb vm.StateDB, data []byte, maxSize uint32, maxFragme
 			continue
 		}
 
-		if i == 0 {
-			dictByte = payload[0]
-			payload = payload[1:]
-		}
-
 		compressedWasm = append(compressedWasm, payload...)
 	}
 
 	dict, err := getStylusCompressionDict(dictByte)
 	if err != nil {
+		fmt.Println("bluebird 2-6")
 		return nil, err
 	}
+	fmt.Println("bluebird 2-7")
 
 	return arbcompress.DecompressWithDictionary(compressedWasm, int(decompressedLength), dict)
 }
