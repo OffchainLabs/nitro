@@ -15,6 +15,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/burn"
+	"github.com/offchainlabs/nitro/arbos/storage"
 	"github.com/offchainlabs/nitro/arbos/util"
 )
 
@@ -34,9 +35,13 @@ type Context struct {
 	State       *arbosState.ArbosState
 	tracingInfo *util.TracingInfo
 	readOnly    bool
+	free        bool
 }
 
 func (c *Context) Burn(kind multigas.ResourceKind, amount uint64) error {
+	if c.free {
+		return nil
+	}
 	if c.GasLeft() < amount {
 		return c.BurnOut()
 	}
@@ -70,6 +75,14 @@ func (c *Context) ReadOnly() bool {
 	return c.readOnly
 }
 
+func (c *Context) UnmeteredGasAccounting() bool {
+	return c.free
+}
+
+func (c *Context) SetUnmeteredGasAccounting(enabled bool) {
+	c.free = enabled
+}
+
 func (c *Context) TracingInfo() *util.TracingInfo {
 	return c.tracingInfo
 }
@@ -87,6 +100,7 @@ func testContext(caller addr, evm mech) *Context {
 		tracingInfo: tracingInfo,
 		readOnly:    false,
 	}
+
 	state, err := arbosState.OpenArbosState(evm.StateDB, burn.NewSystemBurner(tracingInfo, false))
 	if err != nil {
 		panic("unable to open arbos state :" + err.Error())
@@ -98,6 +112,16 @@ func testContext(caller addr, evm mech) *Context {
 		panic("must have tx processor")
 	}
 	return ctx
+}
+
+func testContextWithVersion(caller addr, evm mech, version uint64) *Context {
+	versionOffset := uint64(0)
+	versionValue := new(big.Int).SetUint64(version)
+	burner := burn.NewSystemBurner(nil, false)
+	backingStorage := storage.NewGeth(evm.StateDB, burner)
+	_ = backingStorage.SetByUint64(versionOffset, common.BigToHash(versionValue))
+
+	return testContext(caller, evm)
 }
 
 func makeContext(p *Precompile, method *PrecompileMethod, caller common.Address, gas uint64, evm *vm.EVM) (*Context, error) {
