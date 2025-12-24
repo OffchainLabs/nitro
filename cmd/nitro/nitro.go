@@ -461,22 +461,18 @@ func mainImpl() int {
 		return 1
 	}
 
-	// Task: Refactor openInitializeChainDb
-	// consensus-node=true
-	// This code block will be changed to something like:
-	// if consensus-node=true {
-	//		arbDb = openExistingConsensusDB(...)
-	//		if arbDb == nil {
-	//			downloadDB(...)
-	//			arbDb = openDownloadedConsensusDB(...)
-	//		}
-	// }
-
 	// TODO: Have something similar to the Execution side where we first call
 	// openExistingExecutionDB() and if that fails we call downloadDB(). In
 	// this case we would be calling openExistingConsensusDB() and if that
 	// fails we would either call downloadDB() or downloadConsensusDB() which
-	// is yet to be implemented
+	// is yet to be implemented:
+	// if consensus-node=true {
+	//		arbDb = openExistingConsensusDB(...)
+	//		if arbDb == nil {
+	//			downloadConsensusDB(...)
+	//			arbDb = openDownloadedConsensusDB(...)
+	//		}
+	// }
 	consensusDB, err := openDownloadedConsensusDB(stack, nodeConfig, &deferFuncs)
 	if err := dbutil.UnfinishedConversionCheck(consensusDB); err != nil {
 		return 1
