@@ -358,6 +358,11 @@ func dumpKeyset(args []string) error {
 		return err
 	}
 
+	// Disable chunked store since dumpKeyset doesn't need to store data,
+	// it only needs to read public keys to compute the keyset hash.
+	// Chunked store requires a signer which is not available here.
+	config.Keyset.DASRPCClient.EnableChunkedStore = false
+
 	services, err := das.ParseServices(config.Keyset, nil)
 	if err != nil {
 		return err
