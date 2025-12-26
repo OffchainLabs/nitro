@@ -121,6 +121,8 @@ pub fn create(opts: &Opts, env: WasmEnv) -> (Instance, FunctionEnv<WasmEnv>, Sto
             "fd_fdstat_set_flags" => func!(wasip1_stub::fd_fdstat_set_flags),
         },
         "programs" => {
+            "program_prepare" => func!(program::program_prepare),
+            "program_requires_prepare" => func!(program::program_requires_prepare),
             "new_program" => func!(program::new_program),
             "pop" => func!(program::pop),
             "set_response" => func!(program::set_response),
