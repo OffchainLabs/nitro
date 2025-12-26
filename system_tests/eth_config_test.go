@@ -59,7 +59,7 @@ func TestEthConfig(t *testing.T) {
 				"ArbGasInfo":                     common.HexToAddress("0x000000000000000000000000000000000000006c"),
 				"ArbInfo":                        common.HexToAddress("0x0000000000000000000000000000000000000065"),
 				"ArbNativeTokenManager":          common.HexToAddress("0x0000000000000000000000000000000000000073"),
-				"ArbCensoredTransactionsManager": common.HexToAddress("0x0000000000000000000000000000000000000074"),
+				"ArbFilteredTransactionsManager": common.HexToAddress("0x0000000000000000000000000000000000000074"),
 				"ArbOwner":                       common.HexToAddress("0x0000000000000000000000000000000000000070"),
 				"ArbOwnerPublic":                 common.HexToAddress("0x000000000000000000000000000000000000006b"),
 				"ArbRetryableTx":                 common.HexToAddress("0x000000000000000000000000000000000000006e"),
