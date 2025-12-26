@@ -4,10 +4,10 @@
 package precompiles
 
 import (
-	"errors"
-
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/vm"
+
+	"github.com/offchainlabs/nitro/arbos/censored_transactions"
 )
 
 // ArbCensoredTransactionsManager precompile enables ability to censor transactions by authorized callers.
@@ -25,7 +25,9 @@ func (con ArbCensoredTransactionsManager) AddCensoredTransaction(c *Context, evm
 	if !hasAccess {
 		return c.BurnOut()
 	}
-	return errors.New("ArbCensoredTransactionsManager precompile is not yet implemented")
+
+	censoredState := censored_transactions.Open(evm.StateDB, c)
+	return censoredState.Add(txHash)
 }
 
 // Deletes a transaction hash from the censored transactions list
@@ -37,7 +39,9 @@ func (con ArbCensoredTransactionsManager) DeleteCensoredTransaction(c *Context, 
 	if !hasAccess {
 		return c.BurnOut()
 	}
-	return errors.New("ArbCensoredTransactionsManager precompile is not yet implemented")
+
+	censoredState := censored_transactions.Open(evm.StateDB, c)
+	return censoredState.Delete(txHash)
 }
 
 // Checks if a transaction hash is in the censored transactions list
@@ -49,7 +53,8 @@ func (con ArbCensoredTransactionsManager) IsTransactionCensored(c *Context, evm 
 	if !hasAccess {
 		return false, c.BurnOut()
 	}
-	return false, errors.New("ArbCensoredTransactionsManager precompile is not yet implemented")
+	censoredState := censored_transactions.Open(evm.StateDB, c)
+	return censoredState.IsCensored(txHash)
 }
 
 func (con ArbCensoredTransactionsManager) hasAccess(c *Context) (bool, error) {
