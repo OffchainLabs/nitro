@@ -122,7 +122,7 @@ func (con ArbOwner) GetAllNativeTokenOwners(c ctx, evm mech) ([]common.Address, 
 	return c.State.NativeTokenOwners().AllMembers(65536)
 }
 
-// AddTransactionCensor adds account as a transaction censor (authorized to use ArbCensoredTransactionsManager)
+// AddTransactionCensor adds account as a transaction censor (authorized to use ArbFilteredTransactionsManager)
 func (con ArbOwner) AddTransactionCensor(c ctx, _ mech, censor addr) error {
 	member, err := con.IsTransactionCensor(c, nil, censor)
 	if err != nil {

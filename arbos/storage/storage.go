@@ -85,9 +85,9 @@ func NewGeth(statedb vm.StateDB, burner burn.Burner) *Storage {
 	return KVStorage(statedb, burner, types.ArbosStateAddress)
 }
 
-// CensoredTransactionsStorage creates an evm key-value store backed by the dedicated censored tx state account.
-func CensoredTransactionsStorage(statedb vm.StateDB, burner burn.Burner) *Storage {
-	return KVStorage(statedb, burner, types.CensoredTransactionsStateAddress)
+// FilteredTransactionsStorage creates an evm key-value store backed by the dedicated filtered tx state account.
+func FilteredTransactionsStorage(statedb vm.StateDB, burner burn.Burner) *Storage {
+	return KVStorage(statedb, burner, types.FilteredTransactionsStateAddress)
 }
 
 // NewMemoryBacked uses Geth's memory-backed database to create an evm key-value store.
