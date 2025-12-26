@@ -1,3 +1,3 @@
 ### Added
-- Add new precompile ArbCensoredTransactionsManager to manage censored transactions
-- Add transaction censors to ArbOs and ArbOwner to limit access to ArbCensoredTransactionsManager
+- Add new precompile ArbFilteredTransactionsManager to manage filtered transactions
+- Add transaction censors to ArbOwner to limit access to ArbFilteredTransactionsManager
