@@ -53,6 +53,7 @@ type ArbosState struct {
 	addressTable           *addressTable.AddressTable
 	chainOwners            *addressSet.AddressSet
 	nativeTokenOwners      *addressSet.AddressSet
+	transactionCensors     *addressSet.AddressSet
 	sendMerkle             *merkleAccumulator.MerkleAccumulator
 	programs               *programs.Programs
 	features               *features.Features
@@ -90,6 +91,7 @@ func OpenArbosState(stateDB vm.StateDB, burner burn.Burner) (*ArbosState, error)
 		addressTable:           addressTable.Open(backingStorage.OpenCachedSubStorage(addressTableSubspace)),
 		chainOwners:            addressSet.OpenAddressSet(backingStorage.OpenCachedSubStorage(chainOwnerSubspace)),
 		nativeTokenOwners:      addressSet.OpenAddressSet(backingStorage.OpenCachedSubStorage(nativeTokenOwnerSubspace)),
+		transactionCensors:     addressSet.OpenAddressSet(backingStorage.OpenCachedSubStorage(transactionCensorSubspace)),
 		sendMerkle:             merkleAccumulator.OpenMerkleAccumulator(backingStorage.OpenCachedSubStorage(sendMerkleSubspace)),
 		programs:               programs.Open(arbosVersion, backingStorage.OpenSubStorage(programsSubspace)),
 		features:               features.Open(backingStorage.OpenSubStorage(featuresSubspace)),
@@ -176,17 +178,18 @@ const (
 type SubspaceID []byte
 
 var (
-	l1PricingSubspace        SubspaceID = []byte{0}
-	l2PricingSubspace        SubspaceID = []byte{1}
-	retryablesSubspace       SubspaceID = []byte{2}
-	addressTableSubspace     SubspaceID = []byte{3}
-	chainOwnerSubspace       SubspaceID = []byte{4}
-	sendMerkleSubspace       SubspaceID = []byte{5}
-	blockhashesSubspace      SubspaceID = []byte{6}
-	chainConfigSubspace      SubspaceID = []byte{7}
-	programsSubspace         SubspaceID = []byte{8}
-	featuresSubspace         SubspaceID = []byte{9}
-	nativeTokenOwnerSubspace SubspaceID = []byte{10}
+	l1PricingSubspace         SubspaceID = []byte{0}
+	l2PricingSubspace         SubspaceID = []byte{1}
+	retryablesSubspace        SubspaceID = []byte{2}
+	addressTableSubspace      SubspaceID = []byte{3}
+	chainOwnerSubspace        SubspaceID = []byte{4}
+	sendMerkleSubspace        SubspaceID = []byte{5}
+	blockhashesSubspace       SubspaceID = []byte{6}
+	chainConfigSubspace       SubspaceID = []byte{7}
+	programsSubspace          SubspaceID = []byte{8}
+	featuresSubspace          SubspaceID = []byte{9}
+	nativeTokenOwnerSubspace  SubspaceID = []byte{10}
+	transactionCensorSubspace SubspaceID = []byte{11}
 )
 
 var PrecompileMinArbOSVersions = make(map[common.Address]uint64)
@@ -304,6 +307,12 @@ func InitializeArbosState(stateDB vm.StateDB, burner burn.Burner, chainConfig *p
 
 	nativeTokenOwnersStorage := sto.OpenCachedSubStorage(nativeTokenOwnerSubspace)
 	err = addressSet.Initialize(nativeTokenOwnersStorage)
+	if err != nil {
+		return nil, err
+	}
+
+	transactionCensorsStorage := sto.OpenCachedSubStorage(transactionCensorSubspace)
+	err = addressSet.Initialize(transactionCensorsStorage)
 	if err != nil {
 		return nil, err
 	}
@@ -560,6 +569,10 @@ func (state *ArbosState) SetNativeTokenManagementFromTime(val uint64) error {
 
 func (state *ArbosState) NativeTokenOwners() *addressSet.AddressSet {
 	return state.nativeTokenOwners
+}
+
+func (state *ArbosState) TransactionCensors() *addressSet.AddressSet {
+	return state.transactionCensors
 }
 
 func (state *ArbosState) SendMerkleAccumulator() *merkleAccumulator.MerkleAccumulator {
