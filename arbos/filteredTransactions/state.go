@@ -11,6 +11,8 @@ import (
 	"github.com/offchainlabs/nitro/arbos/storage"
 )
 
+var presentHash = common.BytesToHash([]byte{1})
+
 type FilteredTransactionsState struct {
 	store *storage.Storage
 }
@@ -22,7 +24,7 @@ func Open(statedb vm.StateDB, burner burn.Burner) *FilteredTransactionsState {
 }
 
 func (s *FilteredTransactionsState) Add(txHash common.Hash) error {
-	return s.store.SetUint64(txHash, 1)
+	return s.store.Set(txHash, presentHash)
 }
 
 func (s *FilteredTransactionsState) Delete(txHash common.Hash) error {
@@ -30,9 +32,9 @@ func (s *FilteredTransactionsState) Delete(txHash common.Hash) error {
 }
 
 func (s *FilteredTransactionsState) IsFiltered(txHash common.Hash) (bool, error) {
-	v, err := s.store.GetUint64(txHash)
+	value, err := s.store.Get(txHash)
 	if err != nil {
 		return false, err
 	}
-	return v != 0, nil
+	return value == presentHash, nil
 }
