@@ -122,6 +122,40 @@ func (con ArbOwner) GetAllNativeTokenOwners(c ctx, evm mech) ([]common.Address, 
 	return c.State.NativeTokenOwners().AllMembers(65536)
 }
 
+// AddTransactionCensor adds account as a transaction censor (authorized to use ArbCensoredTransactionsManager)
+func (con ArbOwner) AddTransactionCensor(c ctx, _ mech, censor addr) error {
+	member, err := con.IsTransactionCensor(c, nil, censor)
+	if err != nil {
+		return err
+	}
+	if member {
+		return errors.New("tried to add existing transaction censor")
+	}
+	return c.State.TransactionCensors().Add(censor)
+}
+
+// RemoveTransactionCensor removes account from the list of transaction censors
+func (con ArbOwner) RemoveTransactionCensor(c ctx, _ mech, censor addr) error {
+	member, err := con.IsTransactionCensor(c, nil, censor)
+	if err != nil {
+		return err
+	}
+	if !member {
+		return errors.New("tried to remove non existing transaction censor")
+	}
+	return c.State.TransactionCensors().Remove(censor, c.State.ArbOSVersion())
+}
+
+// IsTransactionCensor checks if the account is a transaction censor
+func (con ArbOwner) IsTransactionCensor(c ctx, _ mech, censor addr) (bool, error) {
+	return c.State.TransactionCensors().IsMember(censor)
+}
+
+// GetAllTransactionCensors retrieves the list of transaction censors
+func (con ArbOwner) GetAllTransactionCensors(c ctx, evm mech) ([]common.Address, error) {
+	return c.State.TransactionCensors().AllMembers(65536)
+}
+
 // SetL1BaseFeeEstimateInertia sets how slowly ArbOS updates its estimate of the L1 basefee
 func (con ArbOwner) SetL1BaseFeeEstimateInertia(c ctx, evm mech, inertia uint64) error {
 	return c.State.L1PricingState().SetInertia(inertia)

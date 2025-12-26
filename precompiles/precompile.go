@@ -654,6 +654,11 @@ func Precompiles() map[addr]ArbosPrecompile {
 	ArbOwner.methodsByName["SetParentGasFloorPerToken"].arbosVersion = params.ArbosVersion_50
 	ArbOwner.methodsByName["SetMaxBlockGasLimit"].arbosVersion = params.ArbosVersion_50
 
+	ArbOwner.methodsByName["AddTransactionCensor"].arbosVersion = params.ArbosVersion_60
+	ArbOwner.methodsByName["RemoveTransactionCensor"].arbosVersion = params.ArbosVersion_60
+	ArbOwner.methodsByName["IsTransactionCensor"].arbosVersion = params.ArbosVersion_60
+	ArbOwner.methodsByName["GetAllTransactionCensors"].arbosVersion = params.ArbosVersion_60
+
 	ArbOwnerPublic.methodsByName["GetNativeTokenManagementFrom"].arbosVersion = params.ArbosVersion_50
 
 	ArbNativeTokenManager := insert(MakePrecompile(precompilesgen.ArbNativeTokenManagerMetaData, &ArbNativeTokenManager{Address: types.ArbNativeTokenManagerAddress}))
