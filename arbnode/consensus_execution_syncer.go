@@ -103,7 +103,12 @@ func (c *ConsensusExecutionSyncer) getFinalityData(
 		log.Error("Error getting message result", "msgIdx", msgIdx, "err", err)
 		return nil, err
 	}
-
+	if msgResult == nil {
+		return nil, fmt.Errorf(
+			"execution result missing for message index %d", msgIdx,
+		)
+	}
+	
 	finalityData := &arbutil.FinalityData{
 		MsgIdx:    msgIdx,
 		BlockHash: msgResult.BlockHash,
