@@ -59,7 +59,7 @@ jobs:
         id: run-rust-tests
         continue-on-error: true
         run: >-
-          cargo nextest run -p arbutil -p prover -p jit -p stylus --release
+          cargo nextest run -p arbutil -p prover -p jit -p stylus -p validator --release
           --manifest-path arbitrator/prover/Cargo.toml
           --profile ci --config-file nextest.toml
 
@@ -80,7 +80,7 @@ jobs:
         run: cargo check --manifest-path arbitrator/tools/stylus_benchmark/Cargo.toml
 
       - name: Rustfmt
-        run: cargo fmt -p arbutil -p prover -p jit -p stylus --manifest-path arbitrator/Cargo.toml -- --check
+        run: cargo fmt -p arbutil -p prover -p jit -p stylus -p validator --manifest-path arbitrator/Cargo.toml -- --check
 
       - name: Rustfmt - tools/stylus_benchmark
         run: cargo fmt --all --manifest-path arbitrator/tools/stylus_benchmark/Cargo.toml -- --check
