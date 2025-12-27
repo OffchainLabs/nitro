@@ -1,2 +1,2 @@
 ### Ignored
-Fixing nightly failures by removing a panic.
+- Fixing nightly failures by removing a panic.
