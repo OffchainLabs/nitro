@@ -374,10 +374,13 @@ func TestMultiGasConstraintsStorage(t *testing.T) {
 	require.Equal(t, uint64(7_000_000), results[0].TargetPerSec)
 	require.Equal(t, uint64(50_000_000), results[0].Backlog)
 	require.Equal(t, 2, len(results[0].Resources))
-	require.Equal(t, uint8(multigas.ResourceKindComputation), results[0].Resources[0].Resource)
-	require.Equal(t, uint64(5), results[0].Resources[0].Weight)
-	require.Equal(t, uint8(multigas.ResourceKindStorageAccess), results[0].Resources[1].Resource)
-	require.Equal(t, uint64(7), results[0].Resources[1].Weight)
+
+	gotWeights := make(map[uint8]uint64, len(results[0].Resources))
+	for _, r := range results[0].Resources {
+		gotWeights[r.Resource] = r.Weight
+	}
+	require.Equal(t, uint64(5), gotWeights[uint8(multigas.ResourceKindComputation)])
+	require.Equal(t, uint64(7), gotWeights[uint8(multigas.ResourceKindStorageAccess)])
 }
 
 func TestMultiGasConstraintsCantExceedLimit(t *testing.T) {
