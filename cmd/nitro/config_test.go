@@ -285,16 +285,8 @@ func TestPeriodicReloadOfLiveNodeConfig(t *testing.T) {
 func TestInitialL1BaseFeeResolution(t *testing.T) {
 	fee := big.NewInt(10)
 	genesisConfig := &params.ArbOSInit{
-		InitialL1BaseFee: fee,
-	}
-	l2ConfigNotConfigured := &conf.L2Config{
-		InitialL1BaseFee: "",
-	}
-	l2ConfigConfiguredDifferently := &conf.L2Config{
-		InitialL1BaseFee: "11",
-	}
-	l2ConfigConsistent := &conf.L2Config{
-		InitialL1BaseFee: fee.String(),
+		InitialL1BaseFee:                   fee,
+		NativeTokenSupplyManagementEnabled: false,
 	}
 
 	testCases := []struct {
@@ -307,28 +299,28 @@ func TestInitialL1BaseFeeResolution(t *testing.T) {
 		{
 			name:          "No genesis config, no direct flag",
 			genesisConfig: nil,
-			l2Config:      l2ConfigNotConfigured,
+			l2Config:      l2ConfigWithFee(""),
 			expected:      params.DefaultInitialL1BaseFee,
 		},
 		{
 			name:          "No genesis config, direct flag set",
 			genesisConfig: nil,
-			l2Config:      l2ConfigConsistent,
+			l2Config:      l2ConfigWithFee(fee.String()),
 			expected:      fee,
 		}, {
 			name:          "Genesis config set, no direct flag",
 			genesisConfig: genesisConfig,
-			l2Config:      l2ConfigNotConfigured,
+			l2Config:      l2ConfigWithFee(""),
 			expected:      fee,
 		}, {
 			name:          "Genesis config and direct flag consistent",
 			genesisConfig: genesisConfig,
-			l2Config:      l2ConfigConsistent,
+			l2Config:      l2ConfigWithFee(fee.String()),
 			expected:      fee,
 		}, {
 			name:          "Genesis config and direct flag inconsistent",
 			genesisConfig: genesisConfig,
-			l2Config:      l2ConfigConfiguredDifferently,
+			l2Config:      l2ConfigWithFee("11"),
 			shouldErr:     true,
 		},
 	}
@@ -346,6 +338,17 @@ func TestInitialL1BaseFeeResolution(t *testing.T) {
 				Fail(t, "expected fee", tc.expected, "but resolved to", resolvedFee)
 			}
 		})
+	}
+}
+
+func l2ConfigWithFee (feeStr string) *conf.L2Config {
+	return &conf.L2Config{
+		ID:               0,
+		Name:             "",
+		InfoFiles:        nil,
+		InfoJson:         "",
+		InitialL1BaseFee: feeStr,
+		DevWallet:        genericconf.WalletConfig{},
 	}
 }
 
