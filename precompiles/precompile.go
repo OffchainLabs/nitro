@@ -666,11 +666,15 @@ func Precompiles() map[addr]ArbosPrecompile {
 	ArbNativeTokenManager.methodsByName["MintNativeToken"].arbosVersion = params.ArbosVersion_41
 	ArbNativeTokenManager.methodsByName["BurnNativeToken"].arbosVersion = params.ArbosVersion_41
 
-	ArbFilteredTransactionsManager := insert(MakePrecompile(precompilesgen.ArbFilteredTransactionsManagerMetaData, &ArbFilteredTransactionsManager{Address: types.ArbFilteredTransactionsManagerAddress}))
+	ArbFilteredTransactionsManagerImpl := &ArbFilteredTransactionsManager{Address: types.ArbFilteredTransactionsManagerAddress}
+
+	_, ArbFilteredTransactionsManager := MakePrecompile(precompilesgen.ArbFilteredTransactionsManagerMetaData, &ArbFilteredTransactionsManager{Address: types.ArbFilteredTransactionsManagerAddress})
 	ArbFilteredTransactionsManager.arbosVersion = params.ArbosVersion_60
 	ArbFilteredTransactionsManager.methodsByName["AddFilteredTransaction"].arbosVersion = params.ArbosVersion_60
 	ArbFilteredTransactionsManager.methodsByName["DeleteFilteredTransaction"].arbosVersion = params.ArbosVersion_60
 	ArbFilteredTransactionsManager.methodsByName["IsTransactionFiltered"].arbosVersion = params.ArbosVersion_60
+
+	insert(censorOnly(ArbFilteredTransactionsManagerImpl.Address, ArbFilteredTransactionsManager))
 
 	// this should be executed after all precompiles have been inserted
 	for _, contract := range contracts {
