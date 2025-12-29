@@ -4,6 +4,7 @@
 package conf
 
 import (
+	"errors"
 	"math/big"
 	"time"
 
@@ -66,17 +67,17 @@ type L2Config struct {
 	DevWallet        genericconf.WalletConfig `koanf:"dev-wallet"`
 }
 
-func (c *L2Config) InitialL1BaseFeeParsed() *big.Int {
+func (c *L2Config) InitialL1BaseFeeParsed() (*big.Int, error) {
 	if c.InitialL1BaseFee == "" {
-		return params.DefaultInitialL1BaseFee
+		return params.DefaultInitialL1BaseFee, nil
 	}
 
 	parsed, success := big.NewInt(0).SetString(c.InitialL1BaseFee, 10)
 	if !success {
-		log.Error("Failed to parse L1 BaseFee for L2 config", "config", c.InitialL1BaseFee)
-		return params.DefaultInitialL1BaseFee
+		log.Error("Failed to parse L1 BaseFee for L2 config (passed with `initial-l1base-fee`)", "config", c.InitialL1BaseFee)
+		return nil, errors.New("failed to parse initial L1 base fee")
 	}
-	return parsed
+	return parsed, nil
 }
 
 var L2ConfigDefault = L2Config{

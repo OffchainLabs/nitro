@@ -952,7 +952,7 @@ func openInitializeExecutionDB(ctx context.Context, stack *node.Node, config *No
 // Assumes that chainConfig is not nil.
 func resolveInitialL1BaseFee(genesisArbOSInit *params.ArbOSInit, chainConfig *conf.L2Config) (*big.Int, error) {
 	if genesisArbOSInit == nil {
-		return chainConfig.InitialL1BaseFeeParsed(), nil
+		return chainConfig.InitialL1BaseFeeParsed()
 	}
 	genesisFee := genesisArbOSInit.GetInitialL1BaseFee()
 	if chainConfig.InitialL1BaseFee != "" && genesisArbOSInit.GetInitialL1BaseFee().Cmp(genesisFee) != 0 {
