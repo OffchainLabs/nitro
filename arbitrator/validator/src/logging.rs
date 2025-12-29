@@ -5,7 +5,7 @@ use tracing_subscriber::EnvFilter;
 
 /// Initialize `tracing` logging based on the specified format. By default, the logging level is set
 /// to "info" unless overridden by the `RUST_LOG` environment variable.
-pub fn init(format: LoggingFormat) -> anyhow::Result<()> {
+pub fn init_logging(format: LoggingFormat) -> anyhow::Result<()> {
     const LOG_CONFIGURATION_ENVVAR: &str = "RUST_LOG";
 
     let filter = EnvFilter::new(
