@@ -94,7 +94,7 @@ func L2ConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".name", L2ConfigDefault.Name, "L2 chain name (determines Arbitrum network)")
 	f.StringSlice(prefix+".info-files", L2ConfigDefault.InfoFiles, "L2 chain info json files")
 	f.String(prefix+".info-json", L2ConfigDefault.InfoJson, "L2 chain info in json string format")
-	f.String(prefix+".initial-l1base-fee", L2ConfigDefault.InitialL1BaseFee, "Initial L1 base fee for the L2 chain")
+	f.String(prefix+".initial-l1base-fee", L2ConfigDefault.InitialL1BaseFee, "Initial L1 base fee for genesis block")
 
 	// Dev wallet does not exist unless specified
 	genericconf.WalletConfigAddOptions(prefix+".dev-wallet", f, "")
