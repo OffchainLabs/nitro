@@ -945,11 +945,6 @@ func openInitializeExecutionDB(ctx context.Context, stack *node.Node, config *No
 	return rebuildLocalWasm(ctx, &config.Execution, l2BlockChain, executionDB, wasmDB, config.Init.RebuildLocalWasm)
 }
 
-// resolveInitialL1BaseFee reads the initial L1 base fee according to the following rules:
-// 1. If there is no genesisArbOSInit, return the value from chainConfig (in case it is not set either, it should fall back to default).
-// 2. If there is a genesisArbOSInit, and chainConfig.InitialL1BaseFee is set, ensure they match.
-// 3. If there is a genesisArbOSInit, and chainConfig.InitialL1BaseFee is not set, return the value from genesisArbOSInit.
-// Assumes that chainConfig is not nil.
 func resolveInitialL1BaseFee(genesisArbOSInit *params.ArbOSInit, chainConfig *conf.L2Config) (*big.Int, error) {
 	if genesisArbOSInit == nil {
 		return chainConfig.InitialL1BaseFeeParsed()
