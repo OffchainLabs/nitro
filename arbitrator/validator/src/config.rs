@@ -2,7 +2,7 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 use clap::{Parser, ValueEnum};
-use std::str::FromStr;
+use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Parser)]
 pub struct ServerConfig {
@@ -19,23 +19,12 @@ pub struct ServerConfig {
     pub logging_format: LoggingFormat,
 }
 
-#[derive(Copy, Clone, Eq, PartialEq, Debug, Default, ValueEnum)]
+#[derive(Copy, Clone, Eq, PartialEq, Debug, Default, ValueEnum, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
 pub enum LoggingFormat {
     #[default]
     Text,
     Json,
-}
-
-impl FromStr for LoggingFormat {
-    type Err = ();
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.to_lowercase().as_str() {
-            "text" => Ok(Self::Text),
-            "json" => Ok(Self::Json),
-            _ => Err(()),
-        }
-    }
 }
 
 #[cfg(test)]
