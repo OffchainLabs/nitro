@@ -18,11 +18,7 @@ type ArbFilteredTransactionsManager struct {
 
 // Adds a transaction hash to the filtered transactions list
 func (con ArbFilteredTransactionsManager) AddFilteredTransaction(c *Context, evm *vm.EVM, txHash common.Hash) error {
-	hasAccess, err := con.hasAccess(c)
-	if err != nil {
-		return err
-	}
-	if !hasAccess {
+	if !con.hasAccess(c) {
 		return c.BurnOut()
 	}
 
@@ -32,11 +28,7 @@ func (con ArbFilteredTransactionsManager) AddFilteredTransaction(c *Context, evm
 
 // Deletes a transaction hash from the filtered transactions list
 func (con ArbFilteredTransactionsManager) DeleteFilteredTransaction(c *Context, evm *vm.EVM, txHash common.Hash) error {
-	hasAccess, err := con.hasAccess(c)
-	if err != nil {
-		return err
-	}
-	if !hasAccess {
+	if !con.hasAccess(c) {
 		return c.BurnOut()
 	}
 
@@ -46,17 +38,14 @@ func (con ArbFilteredTransactionsManager) DeleteFilteredTransaction(c *Context, 
 
 // Checks if a transaction hash is in the filtered transactions list
 func (con ArbFilteredTransactionsManager) IsTransactionFiltered(c *Context, evm *vm.EVM, txHash common.Hash) (bool, error) {
-	hasAccess, err := con.hasAccess(c)
-	if err != nil {
-		return false, err
-	}
-	if !hasAccess {
+	if !con.hasAccess(c) {
 		return false, c.BurnOut()
 	}
 	filteredState := filteredTransactions.Open(evm.StateDB, c)
 	return filteredState.IsFiltered(txHash)
 }
 
-func (con ArbFilteredTransactionsManager) hasAccess(c *Context) (bool, error) {
-	return c.State.TransactionCensors().IsMember(c.caller)
+func (con ArbFilteredTransactionsManager) hasAccess(c *Context) bool {
+	manager, err := c.State.TransactionCensors().IsMember(c.caller)
+	return manager && err == nil
 }
