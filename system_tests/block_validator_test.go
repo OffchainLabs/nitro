@@ -23,7 +23,6 @@ import (
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/solgen/go/localgen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -272,10 +271,7 @@ func testBlockValidatorSimple(t *testing.T, opts Options) {
 	if !testClientB.ConsensusNode.BlockValidator.WaitForPos(t, ctx, arbutil.MessageIndex(lastBlock.NumberU64()), timeout) {
 		Fatal(t, "did not validate all blocks")
 	}
-	gethExec, ok := testClientB.ConsensusNode.ExecutionClient.(*gethexec.ExecutionNode)
-	if !ok {
-		t.Fail()
-	}
+	gethExec := testClientB.ExecNode
 	gethExec.Recorder.TrimAllPrepared(t)
 	finalRefCount := gethExec.Recorder.RecordingDBReferenceCount()
 	lastBlockNow, err := testClientB.Client.BlockByNumber(ctx, nil)
