@@ -66,7 +66,6 @@ import (
 	"github.com/offchainlabs/nitro/staker/validatorwallet"
 	nitroutil "github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/colors"
-	"github.com/offchainlabs/nitro/util/dbutil"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/iostat"
 	"github.com/offchainlabs/nitro/util/rpcclient"
@@ -461,20 +460,11 @@ func mainImpl() int {
 		return 1
 	}
 
-	// TODO: Have something similar to the Execution side where we first call
-	// openExistingExecutionDB() and if that fails we call downloadDB(). In
-	// this case we would be calling openExistingConsensusDB() and if that
-	// fails we would either call downloadDB() or downloadConsensusDB() which
-	// is yet to be implemented:
-	// if consensus-node=true {
-	//		arbDb = openExistingConsensusDB(...)
-	//		if arbDb == nil {
-	//			downloadConsensusDB(...)
-	//			arbDb = openDownloadedConsensusDB(...)
-	//		}
-	// }
-	consensusDB, err := openDownloadedConsensusDB(stack, nodeConfig, &deferFuncs)
-	if err := dbutil.UnfinishedConversionCheck(consensusDB); err != nil {
+	consensusDB, err := openConsensusDB(stack, nodeConfig)
+	if consensusDB != nil {
+		deferFuncs = append(deferFuncs, func() { closeDb(consensusDB, "consensusDB") })
+	}
+	if err != nil {
 		return 1
 	}
 
