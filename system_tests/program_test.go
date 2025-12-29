@@ -1909,7 +1909,9 @@ func watFile(name string) string {
 
 func waitForSequencer(t *testing.T, builder *NodeBuilder, block uint64) {
 	t.Helper()
-	msgCount := arbutil.BlockNumberToMessageCount(block, 0)
+	msgIndex, err := arbutil.BlockNumberToMessageIndex(block, 0)
+	Require(t, err)
+	msgCount := msgIndex + 1
 	doUntil(t, 20*time.Millisecond, 500, func() bool {
 		batchCount, err := builder.L2.ConsensusNode.InboxTracker.GetBatchCount()
 		Require(t, err)
