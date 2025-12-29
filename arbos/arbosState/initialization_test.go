@@ -69,14 +69,14 @@ func tryMarshalUnmarshal(input *statetransfer.ArbosInitializationInfo, t *testin
 	stateroot, err := InitializeArbosInDatabase(raw, options, initReader, chainConfig, nil, arbostypes.TestInitMessage, 0, 0)
 	Require(t, err)
 	triedbConfig := options.TriedbConfig()
-	stateDb, err := state.New(stateroot, state.NewDatabase(triedb.NewDatabase(raw, triedbConfig), nil))
+	stateDB, err := state.New(stateroot, state.NewDatabase(triedb.NewDatabase(raw, triedbConfig), nil))
 	Require(t, err)
 
-	arbState, err := OpenArbosState(stateDb, &burn.SystemBurner{})
+	arbState, err := OpenArbosState(stateDB, &burn.SystemBurner{})
 	Require(t, err)
 	checkAddressTable(arbState, input.AddressTableContents, t)
 	checkRetryables(arbState, input.RetryableData, t)
-	checkAccounts(stateDb, arbState, input.Accounts, t)
+	checkAccounts(stateDB, arbState, input.Accounts, t)
 	checkFeatures(t, arbState)
 }
 

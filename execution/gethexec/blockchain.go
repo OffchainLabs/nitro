@@ -149,28 +149,28 @@ func (c *CachingConfig) Validate() error {
 	return c.validateStateScheme()
 }
 
-func WriteOrTestGenblock(chainDb ethdb.Database, cacheConfig *core.BlockChainConfig, initData statetransfer.InitDataReader, chainConfig *params.ChainConfig, genesisArbOSInit *params.ArbOSInit, initMessage *arbostypes.ParsedInitMessage, accountsPerSync uint) error {
+func WriteOrTestGenblock(executionDB ethdb.Database, cacheConfig *core.BlockChainConfig, initData statetransfer.InitDataReader, chainConfig *params.ChainConfig, genesisArbOSInit *params.ArbOSInit, initMessage *arbostypes.ParsedInitMessage, accountsPerSync uint) error {
 	EmptyHash := common.Hash{}
 	prevHash := EmptyHash
 	blockNumber, err := initData.GetNextBlockNumber()
 	if err != nil {
 		return err
 	}
-	storedGenHash := rawdb.ReadCanonicalHash(chainDb, blockNumber)
+	storedGenHash := rawdb.ReadCanonicalHash(executionDB, blockNumber)
 	// #nosec G115
 	timestamp := uint64(0)
 	if blockNumber > 0 {
-		prevHash = rawdb.ReadCanonicalHash(chainDb, blockNumber-1)
+		prevHash = rawdb.ReadCanonicalHash(executionDB, blockNumber-1)
 		if prevHash == EmptyHash {
 			return fmt.Errorf("block number %d not found in database", blockNumber-1)
 		}
-		prevHeader := rawdb.ReadHeader(chainDb, prevHash, blockNumber-1)
+		prevHeader := rawdb.ReadHeader(executionDB, prevHash, blockNumber-1)
 		if prevHeader == nil {
 			return fmt.Errorf("block header for block %d not found in database", blockNumber-1)
 		}
 		timestamp = prevHeader.Time
 	}
-	stateRoot, err := arbosState.InitializeArbosInDatabase(chainDb, cacheConfig, initData, chainConfig, genesisArbOSInit, initMessage, timestamp, accountsPerSync)
+	stateRoot, err := arbosState.InitializeArbosInDatabase(executionDB, cacheConfig, initData, chainConfig, genesisArbOSInit, initMessage, timestamp, accountsPerSync)
 	if err != nil {
 		return err
 	}
@@ -179,8 +179,8 @@ func WriteOrTestGenblock(chainDb ethdb.Database, cacheConfig *core.BlockChainCon
 	blockHash := genBlock.Hash()
 
 	if storedGenHash == EmptyHash {
-		// chainDb did not have genesis block. Initialize it.
-		batch := chainDb.NewBatch()
+		// executionDB did not have genesis block. Initialize it.
+		batch := executionDB.NewBatch()
 		core.WriteHeadBlock(batch, genBlock)
 		err = batch.Write()
 		if err != nil {
@@ -196,29 +196,29 @@ func WriteOrTestGenblock(chainDb ethdb.Database, cacheConfig *core.BlockChainCon
 	return nil
 }
 
-func TryReadStoredChainConfig(chainDb ethdb.Database) *params.ChainConfig {
+func TryReadStoredChainConfig(executionDB ethdb.Database) *params.ChainConfig {
 	EmptyHash := common.Hash{}
 
-	block0Hash := rawdb.ReadCanonicalHash(chainDb, 0)
+	block0Hash := rawdb.ReadCanonicalHash(executionDB, 0)
 	if block0Hash == EmptyHash {
 		return nil
 	}
-	return rawdb.ReadChainConfig(chainDb, block0Hash)
+	return rawdb.ReadChainConfig(executionDB, block0Hash)
 }
 
-func WriteOrTestChainConfig(chainDb ethdb.Database, config *params.ChainConfig) error {
+func WriteOrTestChainConfig(executionDB ethdb.Database, config *params.ChainConfig) error {
 	EmptyHash := common.Hash{}
 
-	block0Hash := rawdb.ReadCanonicalHash(chainDb, 0)
+	block0Hash := rawdb.ReadCanonicalHash(executionDB, 0)
 	if block0Hash == EmptyHash {
 		return errors.New("block 0 not found")
 	}
-	storedConfig := rawdb.ReadChainConfig(chainDb, block0Hash)
+	storedConfig := rawdb.ReadChainConfig(executionDB, block0Hash)
 	if storedConfig == nil {
-		rawdb.WriteChainConfig(chainDb, block0Hash, config)
+		rawdb.WriteChainConfig(executionDB, block0Hash, config)
 		return nil
 	}
-	height, found := rawdb.ReadHeaderNumber(chainDb, rawdb.ReadHeadHeaderHash(chainDb))
+	height, found := rawdb.ReadHeaderNumber(executionDB, rawdb.ReadHeadHeaderHash(executionDB))
 	if !found {
 		return errors.New("non empty chain config but empty chain")
 	}
@@ -226,12 +226,12 @@ func WriteOrTestChainConfig(chainDb ethdb.Database, config *params.ChainConfig) 
 	if err != nil {
 		return err
 	}
-	rawdb.WriteChainConfig(chainDb, block0Hash, config)
+	rawdb.WriteChainConfig(executionDB, block0Hash, config)
 	return nil
 }
 
 func GetBlockChain(
-	chainDb ethdb.Database,
+	executionDB ethdb.Database,
 	cacheConfig *core.BlockChainConfig,
 	chainConfig *params.ChainConfig,
 	tracer *tracing.Hooks,
@@ -256,11 +256,11 @@ func GetBlockChain(
 		}
 	}
 	cacheConfig.TxIndexer = coreTxIndexerConfig
-	return core.NewBlockChain(chainDb, chainConfig, nil, engine, cacheConfig)
+	return core.NewBlockChain(executionDB, chainConfig, nil, engine, cacheConfig)
 }
 
 func WriteOrTestBlockChain(
-	chainDb ethdb.Database,
+	executionDB ethdb.Database,
 	cacheConfig *core.BlockChainConfig,
 	initData statetransfer.InitDataReader,
 	chainConfig *params.ChainConfig,
@@ -270,23 +270,23 @@ func WriteOrTestBlockChain(
 	txIndexerConfig *TxIndexerConfig,
 	accountsPerSync uint,
 ) (*core.BlockChain, error) {
-	emptyBlockChain := rawdb.ReadHeadHeader(chainDb) == nil
+	emptyBlockChain := rawdb.ReadHeadHeader(executionDB) == nil
 	if !emptyBlockChain && (cacheConfig.StateScheme == rawdb.PathScheme) {
 		// When using path scheme, and the stored state trie is not empty,
 		// WriteOrTestGenBlock is not able to recover EmptyRootHash state trie node.
 		// In that case Nitro doesn't test genblock, but just returns the BlockChain.
-		return GetBlockChain(chainDb, cacheConfig, chainConfig, tracer, txIndexerConfig)
+		return GetBlockChain(executionDB, cacheConfig, chainConfig, tracer, txIndexerConfig)
 	}
 
-	err := WriteOrTestGenblock(chainDb, cacheConfig, initData, chainConfig, genesisArbOSInit, initMessage, accountsPerSync)
+	err := WriteOrTestGenblock(executionDB, cacheConfig, initData, chainConfig, genesisArbOSInit, initMessage, accountsPerSync)
 	if err != nil {
 		return nil, err
 	}
-	err = WriteOrTestChainConfig(chainDb, chainConfig)
+	err = WriteOrTestChainConfig(executionDB, chainConfig)
 	if err != nil {
 		return nil, err
 	}
-	return GetBlockChain(chainDb, cacheConfig, chainConfig, tracer, txIndexerConfig)
+	return GetBlockChain(executionDB, cacheConfig, chainConfig, tracer, txIndexerConfig)
 }
 
 func init() {
