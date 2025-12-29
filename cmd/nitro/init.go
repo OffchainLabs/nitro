@@ -426,7 +426,7 @@ func databaseIsEmpty(db ethdb.Database) bool {
 	return !it.Next()
 }
 
-func isWasmDb(path string) bool {
+func isWasmDB(path string) bool {
 	path = strings.ToLower(path) // lowers the path to handle case-insensitive file systems
 	path = filepath.Clean(path)
 	parts := strings.Split(path, string(filepath.Separator))
@@ -453,7 +453,7 @@ func extractSnapshot(archive string, location string, importWasm bool) error {
 	var rename extract.Renamer
 	if !importWasm {
 		rename = func(path string) string {
-			if isWasmDb(path) {
+			if isWasmDB(path) {
 				return "" // do not extract wasm files
 			}
 			return path
@@ -623,32 +623,25 @@ func openInitializeExecutionDB(ctx context.Context, stack *node.Node, config *No
 			return nil, nil, err
 		}
 
-		var initDataReader *statetransfer.InitDataReader
+		var initDataReader statetransfer.InitDataReader
 		var genesisArbOSInit *params.ArbOSInit
 
-		initDataReader, chainConfig, genesisArbOSInit, err = getInit(config)
+		initDataReader, chainConfig, genesisArbOSInit, err = getInit(config, executionDB)
 		if err != nil {
 			return executionDB, nil, err
-		}
-
-		if chainConfig == nil {
-			chainConfig, err = getChainConfig(config, initDataReader, executionDB)
-			if err != nil {
-				return nil, nil, err
-			}
 		}
 
 		parsedInitMessage, err := getConsensusParsedInitMsg(ctx, config, chainId, l1Client, rollupAddrs, chainConfig)
 		if err != nil {
-			return nil, nil, err
+			return executionDB, nil, err
 		}
 
-		l2BlockChain, chainConfig, err = getNewBlockchain(parsedInitMessage, config, initDataReader, chainConfig, genesisArbOSInit, executionDB, cacheConfig, tracer)
+		l2BlockChain, chainConfig, err = getNewBlockchain(parsedInitMessage, config, &initDataReader, chainConfig, genesisArbOSInit, executionDB, cacheConfig, tracer)
 		if err != nil {
 			return executionDB, nil, err
 		}
 
-		err = getAndValidateGenesisAssertion(ctx, config, l2BlockChain, initDataReader, &rollupAddrs, l1Client)
+		err = getAndValidateGenesisAssertion(ctx, config, l2BlockChain, &initDataReader, &rollupAddrs, l1Client)
 		if err != nil {
 			return executionDB, nil, err
 		}
@@ -658,7 +651,7 @@ func openInitializeExecutionDB(ctx context.Context, stack *node.Node, config *No
 		return executionDB, nil, fmt.Errorf("chainConfig should not have been nil")
 	}
 
-	err = PruneExecutionDB(ctx, executionDB, stack, config, cacheConfig, persistentConfig, l1Client, rollupAddrs)
+	err = pruneExecutionDB(ctx, executionDB, stack, config, cacheConfig, persistentConfig, l1Client, rollupAddrs)
 	if err != nil {
 		return executionDB, nil, fmt.Errorf("error pruning: %w", err)
 	}
@@ -686,7 +679,7 @@ func recreateMissingStates(config *NodeConfig, executionDB ethdb.Database, l2Blo
 	return nil
 }
 
-func PruneExecutionDB(ctx context.Context, executionDB ethdb.Database, stack *node.Node, config *NodeConfig, cacheConfig *core.BlockChainConfig, persistentConfig *conf.PersistentConfig, l1Client *ethclient.Client, rollupAddrs chaininfo.RollupAddresses) error {
+func pruneExecutionDB(ctx context.Context, executionDB ethdb.Database, stack *node.Node, config *NodeConfig, cacheConfig *core.BlockChainConfig, persistentConfig *conf.PersistentConfig, l1Client *ethclient.Client, rollupAddrs chaininfo.RollupAddresses) error {
 	err := executionDB.SyncAncient()
 	if err != nil {
 		return err
@@ -695,7 +688,7 @@ func PruneExecutionDB(ctx context.Context, executionDB ethdb.Database, stack *no
 	return pruning.PruneExecutionDB(ctx, executionDB, stack, &config.Init, cacheConfig, persistentConfig, l1Client, rollupAddrs, config.Node.ValidatorRequired(), false)
 }
 
-func getInit(config *NodeConfig) (*statetransfer.InitDataReader, *params.ChainConfig, *params.ArbOSInit, error) {
+func getInit(config *NodeConfig, executionDB ethdb.Database) (statetransfer.InitDataReader, *params.ChainConfig, *params.ArbOSInit, error) {
 	var (
 		initDataReader   statetransfer.InitDataReader
 		chainConfig      *params.ChainConfig
@@ -706,12 +699,12 @@ func getInit(config *NodeConfig) (*statetransfer.InitDataReader, *params.ChainCo
 	if config.Init.ImportFile != "" {
 		initDataReader, err = statetransfer.NewJsonInitDataReader(config.Init.ImportFile)
 		if err != nil {
-			return &initDataReader, chainConfig, genesisArbOSInit, fmt.Errorf("error reading import file: %w", err)
+			return nil, nil, nil, fmt.Errorf("error reading import file: %w", err)
 		}
 	}
 	if config.Init.Empty {
 		if initDataReader != nil {
-			return &initDataReader, chainConfig, genesisArbOSInit, errors.New("multiple init methods supplied")
+			return nil, nil, nil, errors.New("multiple init methods supplied")
 		}
 		initData := statetransfer.ArbosInitializationInfo{
 			NextBlockNumber: 0,
@@ -720,7 +713,7 @@ func getInit(config *NodeConfig) (*statetransfer.InitDataReader, *params.ChainCo
 	}
 	if config.Init.DevInit {
 		if initDataReader != nil {
-			return &initDataReader, chainConfig, genesisArbOSInit, errors.New("multiple init methods supplied")
+			return nil, nil, nil, errors.New("multiple init methods supplied")
 		}
 		initData := statetransfer.ArbosInitializationInfo{
 			NextBlockNumber: config.Init.DevInitBlockNum,
@@ -738,15 +731,15 @@ func getInit(config *NodeConfig) (*statetransfer.InitDataReader, *params.ChainCo
 
 	if config.Init.GenesisJsonFile != "" {
 		if initDataReader != nil {
-			return &initDataReader, chainConfig, genesisArbOSInit, errors.New("multiple init methods supplied")
+			return nil, nil, nil, errors.New("multiple init methods supplied")
 		}
 		genesisJson, err := os.ReadFile(config.Init.GenesisJsonFile)
 		if err != nil {
-			return &initDataReader, chainConfig, genesisArbOSInit, err
+			return nil, nil, nil, err
 		}
 		var gen core.Genesis
 		if err := json.Unmarshal(genesisJson, &gen); err != nil {
-			return &initDataReader, chainConfig, genesisArbOSInit, err
+			return nil, nil, nil, err
 		}
 		var accounts []statetransfer.AccountInitializationInfo
 		for address, account := range gen.Alloc {
@@ -765,9 +758,14 @@ func getInit(config *NodeConfig) (*statetransfer.InitDataReader, *params.ChainCo
 		})
 		chainConfig = gen.Config
 		genesisArbOSInit = gen.ArbOSInit
+	} else {
+		chainConfig, err = getChainConfig(config, &initDataReader, executionDB)
+		if err != nil {
+			return nil, nil, nil, err
+		}
 	}
 
-	return &initDataReader, chainConfig, genesisArbOSInit, nil
+	return initDataReader, chainConfig, genesisArbOSInit, nil
 }
 
 func getChainConfig(config *NodeConfig, initDataReader *statetransfer.InitDataReader, executionDB ethdb.Database) (*params.ChainConfig, error) {
@@ -799,9 +797,6 @@ func getChainConfig(config *NodeConfig, initDataReader *statetransfer.InitDataRe
 func getNewBlockchain(parsedInitMessage *arbostypes.ParsedInitMessage, config *NodeConfig, initDataReader *statetransfer.InitDataReader, chainConfig *params.ChainConfig, genesisArbOSInit *params.ArbOSInit, executionDB ethdb.Database, cacheConfig *core.BlockChainConfig, tracer *tracing.Hooks) (*core.BlockChain, *params.ChainConfig, error) {
 	var l2BlockChain *core.BlockChain
 	txIndexWg := sync.WaitGroup{}
-	if chainConfig == nil {
-		return nil, nil, errors.New("can't get blockchain with nil chainConfig")
-	}
 
 	if initDataReader == nil {
 		l2BlockChain, err := gethexec.GetBlockChain(executionDB, cacheConfig, chainConfig, tracer, &config.Execution.TxIndexer)
@@ -821,9 +816,6 @@ func getNewBlockchain(parsedInitMessage *arbostypes.ParsedInitMessage, config *N
 		genesisBlockNr, err := (*initDataReader).GetNextBlockNumber()
 		if err != nil {
 			return nil, nil, err
-		}
-		if config.Init.DevInit && config.Init.DevMaxCodeSize != 0 {
-			chainConfig.ArbitrumChainParams.MaxCodeSize = config.Init.DevMaxCodeSize
 		}
 		testUpdateTxIndex(executionDB, chainConfig, &txIndexWg)
 		ancients, err := executionDB.Ancients()
@@ -862,7 +854,7 @@ func getNewBlockchain(parsedInitMessage *arbostypes.ParsedInitMessage, config *N
 }
 
 func checkAndDownloadDB(ctx context.Context, stack *node.Node, config *NodeConfig) error {
-	err := checkDBDir(stack)
+	err := checkDBDir(stack, config)
 	if err != nil {
 		return err
 	}
@@ -870,7 +862,11 @@ func checkAndDownloadDB(ctx context.Context, stack *node.Node, config *NodeConfi
 	return downloadDB(ctx, stack, config)
 }
 
-func checkDBDir(stack *node.Node) error {
+func checkDBDir(stack *node.Node, config *NodeConfig) error {
+	if err := checkEmptyDatabaseDir(stack.InstanceDir(), config.Init.Force); err != nil {
+		return err
+	}
+
 	const errorFmt = "database was not found in %s, but it was found in %s (have you placed the database in the wrong directory?)"
 	parentDir := filepath.Dir(stack.InstanceDir())
 	if dirExists(path.Join(parentDir, "l2chaindata")) {
@@ -884,12 +880,6 @@ func checkDBDir(stack *node.Node) error {
 	return nil
 }
 
-// Current snapshots from OCL includes Consensus (consensusDB) and
-// Execution (executionDB) in a single snapshot construct.
-// Later snapshots will be split into two snapshots, and there will
-// be two functions:
-// - func downloadExecutionDB(...)
-// - func downloadConsensusDB(...)
 func downloadDB(ctx context.Context, stack *node.Node, config *NodeConfig) error {
 	if err := checkEmptyDatabaseDir(stack.InstanceDir(), config.Init.Force); err != nil {
 		return err
@@ -915,11 +905,7 @@ func downloadDB(ctx context.Context, stack *node.Node, config *NodeConfig) error
 }
 
 func openDownloadedExecutionDB(stack *node.Node, config *NodeConfig, cacheConfig *core.BlockChainConfig, persistentConfig *conf.PersistentConfig) (ethdb.Database, ethdb.Database, error) {
-	chainData, err := stack.OpenDatabaseWithOptions("l2chaindata", node.DatabaseOptions{AncientsDirectory: config.Persistent.Ancient, MetricsNamespace: "l2chaindata/", Cache: config.Execution.Caching.DatabaseCache, Handles: config.Persistent.Handles, PebbleExtraOptions: persistentConfig.Pebble.ExtraOptions("l2chaindata")})
-	if err != nil {
-		return nil, nil, err
-	}
-	executionDB, wasmDB, err := openExecutionDB(stack, config, &chainData, cacheConfig, persistentConfig)
+	executionDB, wasmDB, err := openExecutionDB(stack, config, cacheConfig, persistentConfig)
 	if err != nil {
 		return nil, nil, fmt.Errorf("unable to set codehash position in rebuilding of wasm store to done: %w", err)
 	}
@@ -934,9 +920,8 @@ func openDownloadedExecutionDB(stack *node.Node, config *NodeConfig, cacheConfig
 	return executionDB, wasmDB, nil
 }
 
-func openDownloadedConsensusDB(stack *node.Node, config *NodeConfig, deferFuncs *[]func()) (ethdb.Database, error) {
+func openConsensusDB(stack *node.Node, config *NodeConfig) (ethdb.Database, error) {
 	consensusDB, err := stack.OpenDatabaseWithOptions("arbitrumdata", node.DatabaseOptions{MetricsNamespace: "arbitrumdata/", PebbleExtraOptions: config.Persistent.Pebble.ExtraOptions("arbitrumdata"), NoFreezer: true})
-	*deferFuncs = append(*deferFuncs, func() { closeDb(consensusDB, "consensusDB") })
 	if err != nil {
 		log.Error("failed to open database", "err", err)
 		log.Error("database is corrupt; delete it and try again", "database-directory", stack.InstanceDir())
@@ -950,7 +935,15 @@ func openDownloadedConsensusDB(stack *node.Node, config *NodeConfig, deferFuncs 
 	return consensusDB, nil
 }
 
-func openExecutionDB(stack *node.Node, config *NodeConfig, chainData *ethdb.Database, cacheConfig *core.BlockChainConfig, persistentConfig *conf.PersistentConfig) (ethdb.Database, ethdb.Database, error) {
+func openExecutionDB(stack *node.Node, config *NodeConfig, cacheConfig *core.BlockChainConfig, persistentConfig *conf.PersistentConfig) (ethdb.Database, ethdb.Database, error) {
+	chainData, err := stack.OpenDatabaseWithOptions("l2chaindata", node.DatabaseOptions{AncientsDirectory: config.Persistent.Ancient, MetricsNamespace: "l2chaindata/", Cache: config.Execution.Caching.DatabaseCache, Handles: config.Persistent.Handles, PebbleExtraOptions: persistentConfig.Pebble.ExtraOptions("l2chaindata")})
+	if err != nil {
+		return nil, nil, err
+	}
+	if err := dbutil.UnfinishedConversionCheck(chainData); err != nil {
+		return nil, nil, fmt.Errorf("l2chaindata unfinished database conversion check error: %w", err)
+	}
+
 	wasmDB, err := stack.OpenDatabaseWithOptions("wasm", node.DatabaseOptions{Cache: config.Execution.Caching.DatabaseCache, Handles: config.Persistent.Handles, MetricsNamespace: "wasm/", PebbleExtraOptions: persistentConfig.Pebble.ExtraOptions("wasm"), NoFreezer: true})
 	if err != nil {
 		return nil, wasmDB, err
@@ -964,7 +957,7 @@ func openExecutionDB(stack *node.Node, config *NodeConfig, chainData *ethdb.Data
 	if err := dbutil.UnfinishedConversionCheck(wasmDB); err != nil {
 		return nil, wasmDB, fmt.Errorf("wasm unfinished database conversion check error: %w", err)
 	}
-	executionDB := rawdb.WrapDatabaseWithWasm(*chainData, wasmDB)
+	executionDB := rawdb.WrapDatabaseWithWasm(chainData, wasmDB)
 	_, err = rawdb.ParseStateScheme(cacheConfig.StateScheme, executionDB)
 	if err != nil {
 		return nil, wasmDB, err
@@ -981,14 +974,8 @@ func openExistingExecutionDB(stack *node.Node, config *NodeConfig, chainId *big.
 				if !arbmath.BigEquals(chainConfig.ChainID, chainId) {
 					return nil, nil, nil, chainConfig, fmt.Errorf("database has chain ID %v but config has chain ID %v (are you sure this database is for the right chain?)", chainConfig.ChainID, chainId)
 				}
-				chainData, err := stack.OpenDatabaseWithOptions("l2chaindata", node.DatabaseOptions{AncientsDirectory: config.Persistent.Ancient, MetricsNamespace: "l2chaindata/", Cache: config.Execution.Caching.DatabaseCache, Handles: config.Persistent.Handles, PebbleExtraOptions: persistentConfig.Pebble.ExtraOptions("l2chaindata")})
-				if err != nil {
-					return nil, nil, nil, chainConfig, err
-				}
-				if err := dbutil.UnfinishedConversionCheck(chainData); err != nil {
-					return nil, nil, nil, chainConfig, fmt.Errorf("l2chaindata unfinished database conversion check error: %w", err)
-				}
-				executionDB, wasmDB, err := openExecutionDB(stack, config, &chainData, cacheConfig, persistentConfig)
+
+				executionDB, wasmDB, err := openExecutionDB(stack, config, cacheConfig, persistentConfig)
 				if err != nil {
 					return nil, nil, nil, chainConfig, err
 				}
@@ -1065,30 +1052,24 @@ func getConsensusParsedInitMsg(ctx context.Context, config *NodeConfig, chainId 
 	return parsedInitMessage, nil
 }
 
-func getGenesisAssertionCreationInfo(ctx context.Context, initDataReader *statetransfer.InitDataReader, rollupAddress common.Address, l1Client *ethclient.Client, genesis *types.Block) (*protocol.AssertionCreatedInfo, [32]byte, bool, error) {
+func getGenesisAssertionCreationInfo(ctx context.Context, rollupAddress common.Address, l1Client *ethclient.Client, genesis *types.Block) (*protocol.AssertionCreatedInfo, [32]byte, error) {
 	var assertionHash [32]byte
 
 	if l1Client == nil {
-		return nil, assertionHash, false, fmt.Errorf("no l1 client")
+		return nil, assertionHash, fmt.Errorf("no l1 client")
 	}
-
-	accountsReader, err := (*initDataReader).GetAccountDataReader()
-	if err != nil {
-		return nil, assertionHash, false, err
-	}
-	initDataReaderHasAccounts := accountsReader.More()
 
 	userLogic, err := rollupgen.NewRollupUserLogic(rollupAddress, l1Client)
 	if err != nil {
-		return nil, assertionHash, false, err
+		return nil, assertionHash, err
 	}
 	_, err = userLogic.ChallengeGracePeriodBlocks(&bind.CallOpts{Context: ctx})
 	if err != nil {
 		if !headerreader.IsExecutionReverted(err) {
-			return nil, assertionHash, false, err
+			return nil, assertionHash, err
 		}
 		log.Warn("Genesis Assertion is not tested") // not a bold chain
-		return nil, assertionHash, false, nil
+		return nil, assertionHash, nil
 	}
 
 	genesisGlobalState := protocol.GoGlobalState{
@@ -1108,7 +1089,7 @@ func getGenesisAssertionCreationInfo(ctx context.Context, initDataReader *statet
 
 	assertionHash, err = userLogic.ComputeAssertionHash(&bind.CallOpts{Context: ctx}, common.Hash{}, genesisAssertionState, common.Hash{})
 	if err != nil {
-		return nil, assertionHash, false, err
+		return nil, assertionHash, err
 	}
 
 	genesisAssertionCreationInfo, err := bold.ReadBoldAssertionCreationInfo(ctx, userLogic, l1Client, rollupAddress, assertionHash)
@@ -1116,23 +1097,28 @@ func getGenesisAssertionCreationInfo(ctx context.Context, initDataReader *statet
 	if err != nil {
 		assertionHash, err = userLogic.GenesisAssertionHash(&bind.CallOpts{Context: context.Background()})
 		if err != nil {
-			return nil, assertionHash, false, err
+			return nil, assertionHash, err
 		}
 
 		genesisAssertionCreationInfo, err = bold.ReadBoldAssertionCreationInfo(ctx, userLogic, l1Client, rollupAddress, assertionHash)
 	}
 
-	return genesisAssertionCreationInfo, assertionHash, initDataReaderHasAccounts, err
+	return genesisAssertionCreationInfo, assertionHash, err
 }
 
 func getAndValidateGenesisAssertion(ctx context.Context, config *NodeConfig, l2BlockChain *core.BlockChain, initDataReader *statetransfer.InitDataReader, rollupAddrs *chaininfo.RollupAddresses, l1Client *ethclient.Client) error {
 	if config.Init.ValidateGenesisAssertion {
-		genesisAssertionCreationInfo, genesisAssertionHash, initDataReaderHasAccounts, err := getGenesisAssertionCreationInfo(ctx, initDataReader, rollupAddrs.Rollup, l1Client, l2BlockChain.Genesis())
+		genesisAssertionCreationInfo, genesisAssertionHash, err := getGenesisAssertionCreationInfo(ctx, rollupAddrs.Rollup, l1Client, l2BlockChain.Genesis())
 		if err != nil {
 			return err
 		}
 
-		if err := validateGenesisAssertion(genesisAssertionCreationInfo, genesisAssertionHash, l2BlockChain.Genesis(), initDataReaderHasAccounts); err != nil {
+		accountsReader, err := (*initDataReader).GetAccountDataReader()
+		if err != nil {
+			return err
+		}
+
+		if err := validateGenesisAssertion(genesisAssertionCreationInfo, genesisAssertionHash, l2BlockChain.Genesis(), accountsReader.More()); err != nil {
 			if !config.Init.Force {
 				return fmt.Errorf("error testing genesis assertion: %w", err)
 			}
