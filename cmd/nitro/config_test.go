@@ -341,7 +341,7 @@ func TestInitialL1BaseFeeResolution(t *testing.T) {
 	}
 }
 
-func l2ConfigWithFee (feeStr string) *conf.L2Config {
+func l2ConfigWithFee(feeStr string) *conf.L2Config {
 	return &conf.L2Config{
 		ID:               0,
 		Name:             "",
