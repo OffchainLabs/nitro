@@ -956,7 +956,7 @@ func resolveInitialL1BaseFee(genesisArbOSInit *params.ArbOSInit, l2Config *conf.
 	}
 	genesisFee := genesisArbOSInit.GetInitialL1BaseFee()
 	if l2Config.InitialL1BaseFee != "" && parsedInitialL1BaseFee.Cmp(genesisFee) != 0 {
-		return nil, fmt.Errorf("initial l1 base fee is configured to be %s but genesis configures it to be %s", l2Config.InitialL1BaseFee, genesisFee.String())
+		return nil, fmt.Errorf("initial l1 base fee configuration mismatch: `genesis-json-file` sets the value to %s, while `initial-l1base-fee` was set to %s", genesisFee.String(), l2Config.InitialL1BaseFee)
 	}
 	return genesisFee, nil
 }
