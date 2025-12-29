@@ -946,11 +946,16 @@ func openInitializeExecutionDB(ctx context.Context, stack *node.Node, config *No
 }
 
 func resolveInitialL1BaseFee(genesisArbOSInit *params.ArbOSInit, l2Config *conf.L2Config) (*big.Int, error) {
+	parsedInitialL1BaseFee, err := l2Config.InitialL1BaseFeeParsed()
+	if err != nil {
+		return nil, err
+	}
+
 	if genesisArbOSInit == nil {
-		return l2Config.InitialL1BaseFeeParsed()
+		return parsedInitialL1BaseFee, nil
 	}
 	genesisFee := genesisArbOSInit.GetInitialL1BaseFee()
-	if l2Config.InitialL1BaseFee != "" && genesisArbOSInit.GetInitialL1BaseFee().Cmp(genesisFee) != 0 {
+	if l2Config.InitialL1BaseFee != "" && parsedInitialL1BaseFee.Cmp(genesisFee) != 0 {
 		return nil, fmt.Errorf("initial l1 base fee is configured to be %s but genesis configures it to be %s", l2Config.InitialL1BaseFee, genesisFee.String())
 	}
 	return genesisFee, nil
