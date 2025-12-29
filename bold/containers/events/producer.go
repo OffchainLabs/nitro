@@ -101,13 +101,29 @@ func (ep *Producer[T]) Subscribe() *Subscription[T] {
 // to all consumers. Broadcast should be used if not all consumers are expected to consume the event,
 // within a reasonable time, or if the configured broadcast timeout is short enough.
 func (ep *Producer[T]) Broadcast(ctx context.Context, event T) {
+	// Copy the list of subscriptions and timeout under lock to avoid race conditions.
+	// This ensures that goroutines work with a snapshot of subscriptions, preventing
+	// issues when subscriptions are removed concurrently.
 	ep.RLock()
-	defer ep.RUnlock()
-	for _, sub := range ep.subs {
+	subs := make([]*Subscription[T], len(ep.subs))
+	copy(subs, ep.subs)
+	timeout := ep.broadcastTimeout
+	ep.RUnlock()
+
+	// Launch goroutines for the copied list outside the lock to minimize lock contention.
+	for _, sub := range subs {
 		go func(listener *Subscription[T]) {
+			// Recover from panic that can occur if the channel was closed concurrently
+			// (e.g., when Next() cancels the subscription and closes the channel).
+			defer func() {
+				if r := recover(); r != nil {
+					// Ignore panic from sending on closed channel - this is expected
+					// when a subscription is cancelled concurrently with Broadcast.
+				}
+			}()
 			select {
 			case listener.events <- event:
-			case <-time.After(ep.broadcastTimeout):
+			case <-time.After(timeout):
 			case <-ctx.Done():
 			}
 		}(sub)
