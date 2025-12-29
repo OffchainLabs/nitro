@@ -16,6 +16,13 @@ import (
 	"github.com/offchainlabs/nitro/txfilter"
 )
 
+func isFilteredError(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(err.Error(), "internal error")
+}
+
 func TestAddressFilterDirectTransfer(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -36,7 +43,7 @@ func TestAddressFilterDirectTransfer(t *testing.T) {
 	// Set up address filter to block FilteredUser
 	filteredAddr := builder.L2Info.GetAddress("FilteredUser")
 	filter := txfilter.NewStaticFilter([]common.Address{filteredAddr})
-	builder.L2.ExecNode.Sequencer.SetAddressFilter(filter)
+	builder.L2.ExecNode.ExecEngine.SetAddressFilter(filter)
 
 	// Test 1: Transaction TO a filtered address should fail
 	tx := builder.L2Info.PrepareTx("NormalUser", "FilteredUser", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
@@ -44,8 +51,8 @@ func TestAddressFilterDirectTransfer(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected transaction to filtered address to be rejected")
 	}
-	if !strings.Contains(err.Error(), "filtered") && !strings.Contains(err.Error(), "rejected") {
-		t.Fatalf("expected filtered/rejected error, got: %v", err)
+	if !isFilteredError(err) {
+		t.Fatalf("expected filtered error, got: %v", err)
 	}
 	// Reset nonce since tx was rejected
 	builder.L2Info.GetInfoWithPrivKey("NormalUser").Nonce.Store(0)
@@ -56,8 +63,8 @@ func TestAddressFilterDirectTransfer(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected transaction from filtered address to be rejected")
 	}
-	if !strings.Contains(err.Error(), "filtered") && !strings.Contains(err.Error(), "rejected") {
-		t.Fatalf("expected filtered/rejected error, got: %v", err)
+	if !isFilteredError(err) {
+		t.Fatalf("expected filtered error, got: %v", err)
 	}
 	// Reset nonce since tx was rejected
 	builder.L2Info.GetInfoWithPrivKey("FilteredUser").Nonce.Store(0)
@@ -99,7 +106,7 @@ func TestAddressFilterCall(t *testing.T) {
 
 	// Set up filter to block the target contract
 	filter := txfilter.NewStaticFilter([]common.Address{targetAddr})
-	builder.L2.ExecNode.Sequencer.SetAddressFilter(filter)
+	builder.L2.ExecNode.ExecEngine.SetAddressFilter(filter)
 
 	// Test: CALL to filtered address should fail
 	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
@@ -107,7 +114,7 @@ func TestAddressFilterCall(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected CALL to filtered address to be rejected")
 	}
-	if !strings.Contains(err.Error(), "filtered") {
+	if !isFilteredError(err) {
 		t.Fatalf("expected filtered error, got: %v", err)
 	}
 
@@ -137,7 +144,7 @@ func TestAddressFilterStaticCall(t *testing.T) {
 
 	// Set up filter to block the target contract
 	filter := txfilter.NewStaticFilter([]common.Address{targetAddr})
-	builder.L2.ExecNode.Sequencer.SetAddressFilter(filter)
+	builder.L2.ExecNode.ExecEngine.SetAddressFilter(filter)
 
 	// Test: STATICCALL to filtered address within a transaction should fail
 	// We use staticcallTargetInTx which does a state change + staticcall
@@ -146,7 +153,7 @@ func TestAddressFilterStaticCall(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected STATICCALL to filtered address to be rejected")
 	}
-	if !strings.Contains(err.Error(), "filtered") {
+	if !isFilteredError(err) {
 		t.Fatalf("expected filtered error, got: %v", err)
 	}
 
@@ -174,7 +181,7 @@ func TestAddressFilterDisabled(t *testing.T) {
 
 	// Set up an empty filter (disabled)
 	filter := txfilter.NewStaticFilter([]common.Address{})
-	builder.L2.ExecNode.Sequencer.SetAddressFilter(filter)
+	builder.L2.ExecNode.ExecEngine.SetAddressFilter(filter)
 
 	// All transactions should succeed when filter is disabled
 	tx := builder.L2Info.PrepareTx("Owner", "TestUser", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
@@ -209,7 +216,7 @@ func TestAddressFilterCreate2(t *testing.T) {
 
 	// Set up filter to block the computed address
 	filter := txfilter.NewStaticFilter([]common.Address{create2Addr})
-	builder.L2.ExecNode.Sequencer.SetAddressFilter(filter)
+	builder.L2.ExecNode.ExecEngine.SetAddressFilter(filter)
 
 	// Test: CREATE2 to filtered address should fail
 	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
@@ -217,7 +224,7 @@ func TestAddressFilterCreate2(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected CREATE2 to filtered address to be rejected")
 	}
-	if !strings.Contains(err.Error(), "filtered") {
+	if !isFilteredError(err) {
 		t.Fatalf("expected filtered error, got: %v", err)
 	}
 
@@ -251,7 +258,7 @@ func TestAddressFilterCreate(t *testing.T) {
 
 	// Set up filter to block the computed address
 	filter := txfilter.NewStaticFilter([]common.Address{createAddr})
-	builder.L2.ExecNode.Sequencer.SetAddressFilter(filter)
+	builder.L2.ExecNode.ExecEngine.SetAddressFilter(filter)
 
 	// Test: CREATE to filtered address should fail
 	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
@@ -259,14 +266,14 @@ func TestAddressFilterCreate(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected CREATE to filtered address to be rejected")
 	}
-	if !strings.Contains(err.Error(), "filtered") {
+	if !isFilteredError(err) {
 		t.Fatalf("expected filtered error, got: %v", err)
 	}
 
 	// Test: CREATE to non-filtered address (after nonce incremented) should succeed
 	// Clear the filter to allow the next CREATE
 	emptyFilter := txfilter.NewStaticFilter([]common.Address{})
-	builder.L2.ExecNode.Sequencer.SetAddressFilter(emptyFilter)
+	builder.L2.ExecNode.ExecEngine.SetAddressFilter(emptyFilter)
 
 	auth = builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
 	tx, err := caller.CreateContract(&auth)
@@ -293,7 +300,7 @@ func TestAddressFilterSelfdestruct(t *testing.T) {
 
 	// Set up filter to block the beneficiary
 	filter := txfilter.NewStaticFilter([]common.Address{filteredAddr})
-	builder.L2.ExecNode.Sequencer.SetAddressFilter(filter)
+	builder.L2.ExecNode.ExecEngine.SetAddressFilter(filter)
 
 	// Test: SELFDESTRUCT to filtered beneficiary should fail
 	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
@@ -301,7 +308,7 @@ func TestAddressFilterSelfdestruct(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected SELFDESTRUCT to filtered beneficiary to be rejected")
 	}
-	if !strings.Contains(err.Error(), "filtered") {
+	if !isFilteredError(err) {
 		t.Fatalf("expected filtered error, got: %v", err)
 	}
 

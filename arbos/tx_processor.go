@@ -82,8 +82,8 @@ func (p *TxProcessor) PushContract(contract *vm.Contract) {
 	}
 
 	// Record touched addresses for tx filtering
-	p.evm.StateDB.AddTouchedAddress(contract.Address())
-	p.evm.StateDB.AddTouchedAddress(contract.Caller())
+	p.evm.StateDB.TouchAddress(contract.Address())
+	p.evm.StateDB.TouchAddress(contract.Caller())
 }
 
 func (p *TxProcessor) PopContract() {
