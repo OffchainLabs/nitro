@@ -1,3 +1,6 @@
+// Copyright 2025-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
+
 //! Endpoints related to the `ValidationSpawner` Go interface and used by the nitro's validation
 //! client.
 

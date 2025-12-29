@@ -1,3 +1,6 @@
+// Copyright 2025-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
+
 use crate::config::LoggingFormat;
 use anyhow::anyhow;
 use std::{env, io};
