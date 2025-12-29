@@ -21,6 +21,9 @@
     "terminalTotalDifficulty": 131072,
     "depositContractAddress": "0x0000000000000000000000000000000000000000",
     "ethash": {},
+    "arbitrum": {
+      "InitialArbOSVersion": 6
+    },
     "blobSchedule": {
       "cancun": {
         "target": 3,
