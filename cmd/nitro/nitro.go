@@ -58,6 +58,7 @@ import (
 	"github.com/offchainlabs/nitro/daprovider/anytrust"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	_ "github.com/offchainlabs/nitro/execution/nodeInterface"
+	"github.com/offchainlabs/nitro/execution_consensus"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
@@ -442,50 +443,46 @@ func mainImpl() int {
 		return 1
 	}
 
-	chainDb, l2BlockChain, err := openInitializeChainDb(ctx, stack, nodeConfig, new(big.Int).SetUint64(nodeConfig.Chain.ID), gethexec.DefaultCacheConfigFor(&nodeConfig.Execution.Caching), &nodeConfig.Execution.StylusTarget, tracer, &nodeConfig.Persistent, l1Client, rollupAddrs)
+	executionDB, l2BlockChain, err := openInitializeExecutionDB(ctx, stack, nodeConfig, new(big.Int).SetUint64(nodeConfig.Chain.ID), gethexec.DefaultCacheConfigFor(&nodeConfig.Execution.Caching), &nodeConfig.Execution.StylusTarget, tracer, &nodeConfig.Persistent, l1Client, rollupAddrs)
 	if l2BlockChain != nil {
 		deferFuncs = append(deferFuncs, func() { l2BlockChain.Stop() })
 	}
-	deferFuncs = append(deferFuncs, func() { closeDb(chainDb, "chainDb") })
+	deferFuncs = append(deferFuncs, func() { closeDb(executionDB, "executionDB") })
 	if err != nil {
 		pflag.Usage()
 		log.Error("error initializing database", "err", err)
 		return 1
 	}
 
-	arbDb, err := stack.OpenDatabaseWithOptions("arbitrumdata", node.DatabaseOptions{MetricsNamespace: "arbitrumdata/", PebbleExtraOptions: nodeConfig.Persistent.Pebble.ExtraOptions("arbitrumdata"), NoFreezer: true})
-	deferFuncs = append(deferFuncs, func() { closeDb(arbDb, "arbDb") })
+	consensusDB, err := stack.OpenDatabaseWithOptions("arbitrumdata", node.DatabaseOptions{MetricsNamespace: "arbitrumdata/", PebbleExtraOptions: nodeConfig.Persistent.Pebble.ExtraOptions("arbitrumdata"), NoFreezer: true})
+	deferFuncs = append(deferFuncs, func() { closeDb(consensusDB, "consensusDB") })
 	if err != nil {
 		log.Error("failed to open database", "err", err)
 		log.Error("database is corrupt; delete it and try again", "database-directory", stack.InstanceDir())
 		return 1
 	}
-	if err := dbutil.UnfinishedConversionCheck(arbDb); err != nil {
+	if err := dbutil.UnfinishedConversionCheck(consensusDB); err != nil {
 		log.Error("arbitrumdata unfinished conversion check error", "err", err)
 		return 1
 	}
-
-	fatalErrChan := make(chan error, 10)
 
 	if nodeConfig.BlocksReExecutor.Enable && l2BlockChain != nil {
 		if !nodeConfig.Init.ThenQuit {
 			log.Error("blocks-reexecutor cannot be enabled without --init.then-quit")
 			return 1
 		}
-		blocksReExecutor, err := blocksreexecutor.New(&nodeConfig.BlocksReExecutor, l2BlockChain, chainDb, fatalErrChan)
+		blocksReExecutor, err := blocksreexecutor.New(&nodeConfig.BlocksReExecutor, l2BlockChain, executionDB)
 		if err != nil {
 			log.Error("error initializing blocksReExecutor", "err", err)
 			return 1
 		}
-		success := make(chan struct{})
-		blocksReExecutor.Start(ctx, success)
+
+		blocksReExecutor.Start(ctx)
 		deferFuncs = append(deferFuncs, func() { blocksReExecutor.StopAndWait() })
-		select {
-		case err := <-fatalErrChan:
-			log.Error("shutting down due to fatal error", "err", err)
+		err = blocksReExecutor.WaitForReExecution(ctx)
+		if err != nil {
 			defer log.Error("shut down due to fatal error", "err", err)
 			return 1
-		case <-success:
 		}
 	}
 
@@ -509,6 +506,8 @@ func mainImpl() int {
 		return 1
 	}
 
+	fatalErrChan := make(chan error, 10)
+
 	var valNode *valnode.ValidationNode
 	if sameProcessValidationNodeEnabled {
 		valNode, err = valnode.CreateValidationNode(
@@ -522,20 +521,6 @@ func mainImpl() int {
 		}
 	}
 
-	execNode, err := gethexec.CreateExecutionNode(
-		ctx,
-		stack,
-		chainDb,
-		l2BlockChain,
-		l1Client,
-		&ExecutionNodeConfigFetcher{liveNodeConfig},
-		new(big.Int).SetUint64(nodeConfig.ParentChain.ID),
-		liveNodeConfig.Get().Node.TransactionStreamer.SyncTillBlock,
-	)
-	if err != nil {
-		log.Error("failed to create execution node", "err", err)
-		return 1
-	}
 	var wasmModuleRoot common.Hash
 	if liveNodeConfig.Get().Node.ValidatorRequired() {
 		locator, err := server_common.NewMachineLocator(liveNodeConfig.Get().Validation.Wasm.RootPath)
@@ -545,31 +530,67 @@ func mainImpl() int {
 		wasmModuleRoot = locator.LatestWasmModuleRoot()
 	}
 
-	currentNode, err := arbnode.CreateNodeFullExecutionClient(
-		ctx,
-		stack,
-		execNode,
-		execNode,
-		execNode,
-		execNode,
-		arbDb,
-		&ConsensusNodeConfigFetcher{liveNodeConfig},
-		l2BlockChain.Config(),
-		l1Client,
-		&rollupAddrs,
-		l1TransactionOptsValidator,
-		l1TransactionOptsBatchPoster,
-		dataSigner,
-		fatalErrChan,
-		new(big.Int).SetUint64(nodeConfig.ParentChain.ID),
-		blobReader,
-		wasmModuleRoot,
-	)
-	if err != nil {
-		log.Error("failed to create node", "err", err)
-		return 1
+	var execNode *gethexec.ExecutionNode
+	var consensusNode *arbnode.Node
+	if nodeConfig.Node.ExecutionRPCClient.URL == "" || nodeConfig.Node.ExecutionRPCClient.URL == "self" || nodeConfig.Node.ExecutionRPCClient.URL == "self-auth" {
+		execNode, err = gethexec.CreateExecutionNode(
+			ctx,
+			stack,
+			executionDB,
+			l2BlockChain,
+			l1Client,
+			&ExecutionNodeConfigFetcher{liveNodeConfig},
+			new(big.Int).SetUint64(nodeConfig.ParentChain.ID),
+			liveNodeConfig.Get().Node.TransactionStreamer.SyncTillBlock,
+		)
+		if err != nil {
+			log.Error("failed to create execution node", "err", err)
+			return 1
+		}
+		consensusNode, err = arbnode.CreateConsensusNodeConnectedWithFullExecutionClient(
+			ctx,
+			stack,
+			execNode,
+			consensusDB,
+			&ConsensusNodeConfigFetcher{liveNodeConfig},
+			l2BlockChain.Config(),
+			l1Client,
+			&rollupAddrs,
+			l1TransactionOptsValidator,
+			l1TransactionOptsBatchPoster,
+			dataSigner,
+			fatalErrChan,
+			new(big.Int).SetUint64(nodeConfig.ParentChain.ID),
+			blobReader,
+			wasmModuleRoot,
+		)
+		if err != nil {
+			log.Error("failed to create consensus node", "err", err)
+			return 1
+		}
+	} else {
+		consensusNode, err = arbnode.CreateConsensusNodeConnectedWithSimpleExecutionClient(
+			ctx,
+			stack,
+			nil,
+			consensusDB,
+			&ConsensusNodeConfigFetcher{liveNodeConfig},
+			l2BlockChain.Config(),
+			l1Client,
+			&rollupAddrs,
+			l1TransactionOptsValidator,
+			l1TransactionOptsBatchPoster,
+			dataSigner,
+			fatalErrChan,
+			new(big.Int).SetUint64(nodeConfig.ParentChain.ID),
+			blobReader,
+			wasmModuleRoot,
+		)
+		if err != nil {
+			log.Error("failed to create consensus node", "err", err)
+			return 1
+		}
 	}
-
 	// Validate sequencer's MaxTxDataSize and batchPoster's MaxSize params.
 	// SequencerInbox's maxDataSize is defaulted to 117964 which is 90% of Geth's 128KB tx size limit, leaving ~13KB for proving.
 	seqInboxMaxDataSize := 117964
@@ -613,19 +634,19 @@ func mainImpl() int {
 		if err := genericconf.InitLog(newCfg.LogType, newCfg.LogLevel, &newCfg.FileLogging, pathResolver(nodeConfig.Persistent.LogDir)); err != nil {
 			return fmt.Errorf("failed to re-init logging: %w", err)
 		}
-		return currentNode.OnConfigReload(&oldCfg.Node, &newCfg.Node)
+		return consensusNode.OnConfigReload(&oldCfg.Node, &newCfg.Node)
 	})
 
 	if nodeConfig.Node.Dangerous.NoL1Listener && nodeConfig.Init.DevInit {
 		// If we don't have any messages, we're not connected to the L1, and we're using a dev init,
 		// we should create our own fake init message.
-		count, err := currentNode.TxStreamer.GetMessageCount()
+		count, err := consensusNode.TxStreamer.GetMessageCount()
 		if err != nil {
 			log.Warn("Getmessagecount failed. Assuming new database", "err", err)
 			count = 0
 		}
 		if count == 0 {
-			err = currentNode.TxStreamer.AddFakeInitMessage()
+			err = consensusNode.TxStreamer.AddFakeInitMessage()
 			if err != nil {
 				panic(err)
 			}
@@ -676,7 +697,7 @@ func mainImpl() int {
 	}
 
 	gqlConf := nodeConfig.GraphQL
-	if gqlConf.Enable {
+	if execNode != nil && gqlConf.Enable {
 		if err := graphql.New(stack, execNode.Backend.APIBackend(), execNode.FilterSystem, gqlConf.CORSDomain, gqlConf.VHosts); err != nil {
 			log.Error("failed to register the GraphQL service", "err", err)
 			return 1
@@ -693,19 +714,20 @@ func mainImpl() int {
 		}
 	}
 	if err == nil {
-		err = currentNode.Start(ctx)
+		cleanup, err := execution_consensus.InitAndStartExecutionAndConsensusNodes(ctx, stack, execNode, consensusNode)
 		if err != nil {
-			fatalErrChan <- fmt.Errorf("error starting node: %w", err)
+			log.Error("Error initializing and starting execution and consensus", "err", err)
+			return 1
 		}
 		// remove previous deferFuncs, StopAndWait closes database and blockchain.
-		deferFuncs = []func(){func() { currentNode.StopAndWait() }}
+		deferFuncs = []func(){cleanup}
 	}
 
 	sigint := make(chan os.Signal, 1)
 	signal.Notify(sigint, os.Interrupt, syscall.SIGTERM)
 
 	if err == nil && nodeConfig.Init.IsReorgRequested() {
-		err = initReorg(nodeConfig.Init, chainInfo.ChainConfig, currentNode.InboxTracker)
+		err = initReorg(nodeConfig.Init, chainInfo.ChainConfig, consensusNode.InboxTracker)
 		if err != nil {
 			fatalErrChan <- fmt.Errorf("error reorging per init config: %w", err)
 		} else if nodeConfig.Init.ThenQuit {
@@ -713,9 +735,11 @@ func mainImpl() int {
 		}
 	}
 
-	err = execNode.InitializeTimeboost(ctx, chainInfo.ChainConfig)
-	if err != nil {
-		fatalErrChan <- fmt.Errorf("error initializing timeboost: %w", err)
+	if execNode != nil {
+		err = execNode.InitializeTimeboost(ctx, chainInfo.ChainConfig)
+		if err != nil {
+			fatalErrChan <- fmt.Errorf("error initializing timeboost: %w", err)
+		}
 	}
 
 	err = nil
@@ -881,6 +905,29 @@ func (c *NodeConfig) Validate() error {
 	}
 	if err := c.Execution.Validate(); err != nil {
 		return err
+	}
+	if c.Node.ExecutionRPCClient.URL == "self" || c.Node.ExecutionRPCClient.URL == "self-auth" {
+		if c.Node.Sequencer || c.Node.BatchPoster.Enable || c.Node.BlockValidator.Enable {
+			return errors.New("sequencing, validation and batch-posting are currently not supported when connecting to an execution client over RPC")
+		}
+		if !c.Node.RPCServer.Enable {
+			return errors.New("consensus and execution are configured to communicate over rpc but consensus node has not enabled rpc server")
+		}
+		if !c.Execution.RPCServer.Enable {
+			return errors.New("consensus and execution are configured to communicate over rpc but execution node has not enabled rpc server")
+		}
+		if c.Execution.ConsensusRPCClient.URL != c.Node.ExecutionRPCClient.URL {
+			return errors.New("consensus and execution are configured to communicate over rpc but execution node has consensusRPCClient url not equal to that of execution (self or self-auth)")
+		}
+		if c.WS.Addr == "" {
+			return errors.New("consensus and execution are configured to communicate over rpc but websocket is not enabled")
+		}
+	} else if c.Node.ExecutionRPCClient.URL != "" {
+		if c.Node.Sequencer || c.Node.BatchPoster.Enable || c.Node.BlockValidator.Enable {
+			return errors.New("sequencing, validation and batch-posting are currently not supported when connecting to an execution client over RPC")
+		}
+	} else if c.Execution.ConsensusRPCClient.URL != "" {
+		return errors.New("consensus is connecting directly to execution but execution is connecting to consensus over an rpc- invalid case")
 	}
 	if err := c.BlocksReExecutor.Validate(); err != nil {
 		return err
@@ -1052,6 +1099,7 @@ func applyChainParameters(k *koanf.Koanf, chainId uint64, chainName string, l2Ch
 	if chainInfo.TrackBlockMetadataFrom > 0 && chainInfo.BlockMetadataUrl != "" {
 		chainDefaults["node.block-metadata-fetcher.enable"] = true
 	}
+
 	err = k.Load(confmap.Provider(chainDefaults, "."), nil)
 	if err != nil {
 		return err

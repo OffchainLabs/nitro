@@ -29,13 +29,18 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/consensus"
+	"github.com/offchainlabs/nitro/consensus/consensusrpcclient"
 	"github.com/offchainlabs/nitro/execution"
+	"github.com/offchainlabs/nitro/execution/executionrpcserver"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/dbutil"
 	"github.com/offchainlabs/nitro/util/headerreader"
+	"github.com/offchainlabs/nitro/util/rpcclient"
+	"github.com/offchainlabs/nitro/util/rpcserver"
 )
 
 type StylusTargetConfig struct {
@@ -110,23 +115,25 @@ func TxIndexerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 }
 
 type Config struct {
-	ParentChainReader           headerreader.Config `koanf:"parent-chain-reader" reload:"hot"`
-	Sequencer                   SequencerConfig     `koanf:"sequencer" reload:"hot"`
-	RecordingDatabase           BlockRecorderConfig `koanf:"recording-database"`
-	TxPreChecker                TxPreCheckerConfig  `koanf:"tx-pre-checker" reload:"hot"`
-	Forwarder                   ForwarderConfig     `koanf:"forwarder"`
-	ForwardingTarget            string              `koanf:"forwarding-target"`
-	SecondaryForwardingTarget   []string            `koanf:"secondary-forwarding-target"`
-	Caching                     CachingConfig       `koanf:"caching"`
-	RPC                         arbitrum.Config     `koanf:"rpc"`
-	TxIndexer                   TxIndexerConfig     `koanf:"tx-indexer"`
-	EnablePrefetchBlock         bool                `koanf:"enable-prefetch-block"`
-	SyncMonitor                 SyncMonitorConfig   `koanf:"sync-monitor"`
-	StylusTarget                StylusTargetConfig  `koanf:"stylus-target"`
-	BlockMetadataApiCacheSize   uint64              `koanf:"block-metadata-api-cache-size"`
-	BlockMetadataApiBlocksLimit uint64              `koanf:"block-metadata-api-blocks-limit"`
-	VmTrace                     LiveTracingConfig   `koanf:"vmtrace"`
-	ExposeMultiGas              bool                `koanf:"expose-multi-gas"`
+	ParentChainReader           headerreader.Config    `koanf:"parent-chain-reader" reload:"hot"`
+	Sequencer                   SequencerConfig        `koanf:"sequencer" reload:"hot"`
+	RecordingDatabase           BlockRecorderConfig    `koanf:"recording-database"`
+	TxPreChecker                TxPreCheckerConfig     `koanf:"tx-pre-checker" reload:"hot"`
+	Forwarder                   ForwarderConfig        `koanf:"forwarder"`
+	ForwardingTarget            string                 `koanf:"forwarding-target"`
+	SecondaryForwardingTarget   []string               `koanf:"secondary-forwarding-target"`
+	Caching                     CachingConfig          `koanf:"caching"`
+	RPC                         arbitrum.Config        `koanf:"rpc"`
+	TxIndexer                   TxIndexerConfig        `koanf:"tx-indexer"`
+	EnablePrefetchBlock         bool                   `koanf:"enable-prefetch-block"`
+	SyncMonitor                 SyncMonitorConfig      `koanf:"sync-monitor"`
+	StylusTarget                StylusTargetConfig     `koanf:"stylus-target"`
+	BlockMetadataApiCacheSize   uint64                 `koanf:"block-metadata-api-cache-size"`
+	BlockMetadataApiBlocksLimit uint64                 `koanf:"block-metadata-api-blocks-limit"`
+	VmTrace                     LiveTracingConfig      `koanf:"vmtrace"`
+	ExposeMultiGas              bool                   `koanf:"expose-multi-gas"`
+	RPCServer                   rpcserver.Config       `koanf:"rpc-server"`
+	ConsensusRPCClient          rpcclient.ClientConfig `koanf:"consensus-rpc-client" reload:"hot"`
 
 	forwardingTarget string
 }
@@ -155,6 +162,9 @@ func (c *Config) Validate() error {
 	if err := c.RPC.Validate(); err != nil {
 		return err
 	}
+	if err := c.ConsensusRPCClient.Validate(); err != nil {
+		return fmt.Errorf("error validating ConsensusRPCClient config: %w", err)
+	}
 	return nil
 }
 
@@ -176,6 +186,8 @@ func ConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Uint64(prefix+".block-metadata-api-blocks-limit", ConfigDefault.BlockMetadataApiBlocksLimit, "maximum number of blocks allowed to be queried for blockMetadata per arb_getRawBlockMetadata query. Enabled by default, set 0 to disable the limit")
 	f.Bool(prefix+".expose-multi-gas", false, "experimental: expose multi-dimensional gas in transaction receipts")
 	LiveTracingConfigAddOptions(prefix+".vmtrace", f)
+	rpcserver.ConfigAddOptions(prefix+".rpc-server", "execution", f)
+	rpcclient.RPCClientAddOptions(prefix+".consensus-rpc-client", f, &ConfigDefault.ConsensusRPCClient)
 }
 
 type LiveTracingConfig struct {
@@ -212,6 +224,16 @@ var ConfigDefault = Config{
 	BlockMetadataApiBlocksLimit: 100,
 	VmTrace:                     DefaultLiveTracingConfig,
 	ExposeMultiGas:              false,
+
+	RPCServer: rpcserver.DefaultConfig,
+	ConsensusRPCClient: rpcclient.ClientConfig{
+		URL:                       "",
+		JWTSecret:                 "",
+		Retries:                   3,
+		RetryErrors:               "websocket: close.*|dial tcp .*|.*i/o timeout|.*connection reset by peer|.*connection refused",
+		ArgLogLimit:               2048,
+		WebsocketMessageSizeLimit: 256 * 1024 * 1024,
+	},
 }
 
 type ConfigFetcher interface {
@@ -219,7 +241,7 @@ type ConfigFetcher interface {
 }
 
 type ExecutionNode struct {
-	ChainDB                  ethdb.Database
+	ExecutionDB              ethdb.Database
 	Backend                  *arbitrum.Backend
 	FilterSystem             *filters.FilterSystem
 	ArbInterface             *ArbInterface
@@ -235,12 +257,13 @@ type ExecutionNode struct {
 	ClassicOutbox            *ClassicOutboxRetriever
 	started                  atomic.Bool
 	bulkBlockMetadataFetcher *BulkBlockMetadataFetcher
+	consensusRPCClient       *consensusrpcclient.ConsensusRPCClient
 }
 
 func CreateExecutionNode(
 	ctx context.Context,
 	stack *node.Node,
-	chainDB ethdb.Database,
+	executionDB ethdb.Database,
 	l2BlockChain *core.BlockChain,
 	l1client *ethclient.Client,
 	configFetcher ConfigFetcher,
@@ -258,7 +281,7 @@ func CreateExecutionNode(
 	if err != nil {
 		return nil, err
 	}
-	recorder := NewBlockRecorder(&config.RecordingDatabase, execEngine, chainDB)
+	recorder := NewBlockRecorder(&config.RecordingDatabase, execEngine, executionDB)
 	var txPublisher TransactionPublisher
 	var sequencer *Sequencer
 
@@ -303,7 +326,7 @@ func CreateExecutionNode(
 		LogCacheSize: config.RPC.FilterLogCacheSize,
 		Timeout:      config.RPC.FilterTimeout,
 	}
-	backend, filterSystem, err := arbitrum.NewBackend(stack, &config.RPC, chainDB, arbInterface, filterConfig, config.Caching.StateScheme)
+	backend, filterSystem, err := arbitrum.NewBackend(stack, &config.RPC, executionDB, arbInterface, filterConfig, config.Caching.StateScheme)
 	if err != nil {
 		return nil, err
 	}
@@ -313,21 +336,43 @@ func CreateExecutionNode(
 	var classicOutbox *ClassicOutboxRetriever
 
 	if l2BlockChain.Config().ArbitrumChainParams.GenesisBlockNum > 0 {
-		classicMsgDb, err := stack.OpenDatabase("classic-msg", 0, 0, "classicmsg/", true)
+		classicMsgDB, err := stack.OpenDatabase("classic-msg", 0, 0, "classicmsg/", true)
 		if dbutil.IsNotExistError(err) {
 			log.Warn("Classic Msg Database not found", "err", err)
 			classicOutbox = nil
 		} else if err != nil {
 			return nil, fmt.Errorf("Failed to open classic-msg database: %w", err)
 		} else {
-			if err := dbutil.UnfinishedConversionCheck(classicMsgDb); err != nil {
+			if err := dbutil.UnfinishedConversionCheck(classicMsgDB); err != nil {
 				return nil, fmt.Errorf("classic-msg unfinished database conversion check error: %w", err)
 			}
-			classicOutbox = NewClassicOutboxRetriever(classicMsgDb)
+			classicOutbox = NewClassicOutboxRetriever(classicMsgDB)
 		}
 	}
 
 	bulkBlockMetadataFetcher := NewBulkBlockMetadataFetcher(l2BlockChain, execEngine, config.BlockMetadataApiCacheSize, config.BlockMetadataApiBlocksLimit)
+
+	execNode := &ExecutionNode{
+		ExecutionDB:              executionDB,
+		Backend:                  backend,
+		FilterSystem:             filterSystem,
+		ArbInterface:             arbInterface,
+		ExecEngine:               execEngine,
+		Recorder:                 recorder,
+		Sequencer:                sequencer,
+		TxPreChecker:             txPreChecker,
+		TxPublisher:              txPublisher,
+		configFetcher:            configFetcher,
+		SyncMonitor:              syncMon,
+		ParentChainReader:        parentChainReader,
+		ClassicOutbox:            classicOutbox,
+		bulkBlockMetadataFetcher: bulkBlockMetadataFetcher,
+	}
+
+	if config.ConsensusRPCClient.URL != "" {
+		consensusConfigFetcher := func() *rpcclient.ClientConfig { return &config.ConsensusRPCClient }
+		execNode.consensusRPCClient = consensusrpcclient.NewConsensusRPCClient(consensusConfigFetcher, stack)
+	}
 
 	apis := []rpc.API{{
 		Namespace: "arb",
@@ -370,28 +415,22 @@ func CreateExecutionNode(
 	})
 	apis = append(apis, rpc.API{
 		Namespace: "debug",
-		Service:   eth.NewDebugAPI(eth.NewArbEthereum(l2BlockChain, chainDB)),
+		Service:   eth.NewDebugAPI(eth.NewArbEthereum(l2BlockChain, executionDB)),
 		Public:    false,
 	})
+	if config.RPCServer.Enable {
+		apis = append(apis, rpc.API{
+			Namespace:     execution.RPCNamespace,
+			Version:       "1.0",
+			Service:       executionrpcserver.NewExecutionRPCServer(execNode),
+			Public:        config.RPCServer.Public,
+			Authenticated: config.RPCServer.Authenticated,
+		})
+	}
 
 	stack.RegisterAPIs(apis)
 
-	return &ExecutionNode{
-		ChainDB:                  chainDB,
-		Backend:                  backend,
-		FilterSystem:             filterSystem,
-		ArbInterface:             arbInterface,
-		ExecEngine:               execEngine,
-		Recorder:                 recorder,
-		Sequencer:                sequencer,
-		TxPreChecker:             txPreChecker,
-		TxPublisher:              txPublisher,
-		configFetcher:            configFetcher,
-		SyncMonitor:              syncMon,
-		ParentChainReader:        parentChainReader,
-		ClassicOutbox:            classicOutbox,
-		bulkBlockMetadataFetcher: bulkBlockMetadataFetcher,
-	}, nil
+	return execNode, nil
 
 }
 
@@ -427,6 +466,11 @@ func (n *ExecutionNode) Initialize(ctx context.Context) error {
 func (n *ExecutionNode) Start(ctx context.Context) error {
 	if n.started.Swap(true) {
 		return errors.New("already started")
+	}
+	if n.consensusRPCClient != nil {
+		if err := n.consensusRPCClient.Start(ctx); err != nil {
+			return fmt.Errorf("error starting consensus rpc client: %w", err)
+		}
 	}
 	// TODO after separation
 	// err := n.Stack.Start()
@@ -526,7 +570,10 @@ func (n *ExecutionNode) ForwardTo(url string) error {
 	}
 }
 
-func (n *ExecutionNode) SetConsensusClient(consensus execution.FullConsensusClient) {
+func (n *ExecutionNode) SetConsensusClient(consensus consensus.FullConsensusClient) {
+	if n.consensusRPCClient != nil {
+		consensus = n.consensusRPCClient
+	}
 	n.ExecEngine.SetConsensus(consensus)
 	n.SyncMonitor.SetConsensusInfo(consensus)
 }

@@ -1,0 +1,2 @@
+### Added
+- Add a new lightweight package to go-ethereum (`arbkeccak`) that unifies how the Keccak state is created. Makes it easier to substitute the hashing for wasm target. There are no changes for the native execution. 

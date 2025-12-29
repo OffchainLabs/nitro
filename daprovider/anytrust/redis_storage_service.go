@@ -12,8 +12,8 @@ import (
 
 	"github.com/redis/go-redis/v9"
 	"github.com/spf13/pflag"
-	"golang.org/x/crypto/sha3"
 
+	"github.com/ethereum/go-ethereum/arbcrypto"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 
@@ -73,7 +73,7 @@ func (rs *RedisStorageService) verifyMessageSignature(data []byte) ([]byte, erro
 	}
 	message := data[:len(data)-32]
 	haveHmac := common.BytesToHash(data[len(data)-32:])
-	mac := hmac.New(sha3.NewLegacyKeccak256, rs.signingKey[:])
+	mac := hmac.New(arbcrypto.NewLegacyKeccak256, rs.signingKey[:])
 	mac.Write(message)
 	expectHmac := mac.Sum(nil)
 	if !hmac.Equal(haveHmac[:], expectHmac) {
@@ -96,7 +96,7 @@ func (rs *RedisStorageService) getVerifiedData(ctx context.Context, key common.H
 }
 
 func (rs *RedisStorageService) signMessage(message []byte) []byte {
-	mac := hmac.New(sha3.NewLegacyKeccak256, rs.signingKey[:])
+	mac := hmac.New(arbcrypto.NewLegacyKeccak256, rs.signingKey[:])
 	mac.Write(message)
 	return mac.Sum(message)
 }
