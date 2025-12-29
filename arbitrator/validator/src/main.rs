@@ -19,7 +19,7 @@ async fn main() -> Result<()> {
     init_logging(config.logging_format)?;
     info!("Starting validator server with config: {:#?}", config);
 
-    let listener = TcpListener::bind(format!("{}:{}", config.host, config.port)).await?;
+    let listener = TcpListener::bind(config.address).await?;
     axum::serve(listener, create_router())
         .await
         .map_err(Into::into)

@@ -3,16 +3,13 @@
 
 use clap::{Parser, ValueEnum};
 use serde::{Deserialize, Serialize};
+use std::net::SocketAddr;
 
 #[derive(Clone, Debug, Parser)]
 pub struct ServerConfig {
-    /// Host where the server should be run.
-    #[clap(long, default_value = "0.0.0.0")]
-    pub host: String,
-
-    /// Port where the server should be run.
-    #[clap(long, default_value_t = 4141)]
-    pub port: u16,
+    /// Socket address where the server should be run.
+    #[clap(long, default_value = "0.0.0.0:4141")]
+    pub address: SocketAddr,
 
     /// Logging format configuration.
     #[clap(long, value_enum, default_value_t = LoggingFormat::Text)]
