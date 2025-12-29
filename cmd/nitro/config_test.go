@@ -6,6 +6,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"math/big"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -17,6 +18,9 @@ import (
 	"github.com/r3labs/diff/v3"
 	"github.com/spf13/pflag"
 
+	"github.com/ethereum/go-ethereum/params"
+
+	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
 	"github.com/offchainlabs/nitro/daprovider/anytrust"
@@ -275,6 +279,73 @@ func TestPeriodicReloadOfLiveNodeConfig(t *testing.T) {
 	time.Sleep(80 * time.Millisecond)
 	if reflect.DeepEqual(liveConfig.Get(), expected) {
 		Fail(t, "failed to disable periodic reload")
+	}
+}
+
+func TestInitialL1BaseFeeResolution(t *testing.T) {
+	fee := big.NewInt(10)
+	genesisConfig := &params.ArbOSInit{
+		InitialL1BaseFee: fee,
+	}
+	l2ConfigNotConfigured := &conf.L2Config{
+		InitialL1BaseFee: "",
+	}
+	l2ConfigConfiguredDifferently := &conf.L2Config{
+		InitialL1BaseFee: "11",
+	}
+	l2ConfigConsistent := &conf.L2Config{
+		InitialL1BaseFee: fee.String(),
+	}
+
+	testCases := []struct {
+		name          string
+		genesisConfig *params.ArbOSInit
+		l2Config      *conf.L2Config
+		expected      *big.Int
+		shouldErr     bool
+	}{
+		{
+			name:          "No genesis config, no direct flag",
+			genesisConfig: nil,
+			l2Config:      l2ConfigNotConfigured,
+			expected:      params.DefaultInitialL1BaseFee,
+		},
+		{
+			name:          "No genesis config, direct flag set",
+			genesisConfig: nil,
+			l2Config:      l2ConfigConsistent,
+			expected:      fee,
+		}, {
+			name:          "Genesis config set, no direct flag",
+			genesisConfig: genesisConfig,
+			l2Config:      l2ConfigNotConfigured,
+			expected:      fee,
+		}, {
+			name:          "Genesis config and direct flag consistent",
+			genesisConfig: genesisConfig,
+			l2Config:      l2ConfigConsistent,
+			expected:      fee,
+		}, {
+			name:          "Genesis config and direct flag inconsistent",
+			genesisConfig: genesisConfig,
+			l2Config:      l2ConfigConfiguredDifferently,
+			shouldErr:     true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			resolvedFee, err := resolveInitialL1BaseFee(tc.genesisConfig, tc.l2Config)
+			if tc.shouldErr && err == nil {
+				Fail(t, "expected error but got none")
+			}
+			if !tc.shouldErr && err != nil {
+				Fail(t, "unexpected error:", err)
+			}
+			if resolvedFee.Cmp(tc.expected) != 0 {
+				Fail(t, "expected fee", tc.expected, "but resolved to", resolvedFee)
+			}
+		})
 	}
 }
 
