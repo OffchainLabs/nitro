@@ -3,6 +3,9 @@
 
 //! Endpoints related to the `ValidationSpawner` Go interface and used by the nitro's validation
 //! client.
+//! Some of the data structures here are counterparts of Go structs defined in the `validator`
+//! package. Their serialization is configured to match the Go side (by using `PascalCase` for
+//! field names).
 
 use arbutil::{Bytes32, PreimageType};
 use axum::response::IntoResponse;
@@ -43,11 +46,12 @@ type Hash = Bytes32;
 
 /// Counterpart for Go struct `validator.ValidationInput`.
 #[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(rename_all = "PascalCase")] // Match Go struct field names
+#[serde(rename_all = "PascalCase")]
 pub struct ValidationRequest {
     id: u64,
     has_delayed_msg: bool,
-    delayed_msg_nr: u64,
+    #[serde(rename = "DelayedMsgNr")]
+    delayed_msg_number: u64,
     preimages: HashMap<PreimageType, Hash>,
     user_wasms: HashMap<String, HashMap<Hash, Vec<u8>>>,
     batch_info: Vec<BatchInfo>,
@@ -58,7 +62,7 @@ pub struct ValidationRequest {
 
 /// Counterpart for Go struct `validator.BatchInfo`.
 #[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(rename_all = "PascalCase")] // Match Go struct field names
+#[serde(rename_all = "PascalCase")]
 pub struct BatchInfo {
     number: u64,
     data: Vec<u8>,
@@ -66,7 +70,7 @@ pub struct BatchInfo {
 
 /// Counterpart for Go struct `validator.GoGlobalState`.
 #[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(rename_all = "PascalCase")] // Match Go struct field names
+#[serde(rename_all = "PascalCase")]
 pub struct GlobalState {
     block_hash: Hash,
     send_root: Hash,
