@@ -441,18 +441,17 @@ type mockBlockRecorder struct {
 }
 
 func (m *mockBlockRecorder) RecordBlockCreation(
-	ctx context.Context,
 	pos arbutil.MessageIndex,
 	msg *arbostypes.MessageWithMetadata,
 	wasmTargets []rawdb.WasmTarget,
-) (*execution.RecordResult, error) {
+) containers.PromiseInterface[*execution.RecordResult] {
 	_, globalpos, err := m.validator.GlobalStatePositionsAtCount(pos + 1)
 	if err != nil {
-		return nil, err
+		return containers.NewReadyPromise[*execution.RecordResult](nil, err)
 	}
 	res, err := m.streamer.ResultAtMessageIndex(pos)
 	if err != nil {
-		return nil, err
+		return containers.NewReadyPromise[*execution.RecordResult](nil, err)
 	}
 	globalState := validator.GoGlobalState{
 		Batch:      globalpos.BatchNumber,
@@ -460,16 +459,17 @@ func (m *mockBlockRecorder) RecordBlockCreation(
 		BlockHash:  res.BlockHash,
 		SendRoot:   res.SendRoot,
 	}
-	return &execution.RecordResult{
+	r := execution.RecordResult{
 		Pos:       pos,
 		BlockHash: res.BlockHash,
 		Preimages: globalstateToTestPreimages(globalState),
 		UserWasms: make(state.UserWasms),
-	}, nil
+	}
+	return containers.NewReadyPromise(&r, err)
 }
 
-func (m *mockBlockRecorder) PrepareForRecord(ctx context.Context, start, end arbutil.MessageIndex) error {
-	return nil
+func (m *mockBlockRecorder) PrepareForRecord(start, end arbutil.MessageIndex) containers.PromiseInterface[struct{}] {
+	return containers.NewReadyPromise[struct{}](struct{}{}, nil)
 }
 
 func newMockRecorder(validator *staker.StatelessBlockValidator, streamer *arbnode.TransactionStreamer) *mockBlockRecorder {
