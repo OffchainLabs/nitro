@@ -946,19 +946,19 @@ func openInitializeExecutionDB(ctx context.Context, stack *node.Node, config *No
 }
 
 func resolveInitialL1BaseFee(genesisArbOSInit *params.ArbOSInit, l2Config *conf.L2Config) (*big.Int, error) {
-	parsedInitialL1BaseFee, err := l2Config.InitialL1BaseFeeParsed()
+	feeCLIFlag, err := l2Config.InitialL1BaseFeeParsed()
 	if err != nil {
 		return nil, err
 	}
 
 	if genesisArbOSInit == nil {
-		return parsedInitialL1BaseFee, nil
+		return feeCLIFlag, nil
 	}
-	genesisFee := genesisArbOSInit.GetInitialL1BaseFee()
-	if l2Config.InitialL1BaseFee != "" && parsedInitialL1BaseFee.Cmp(genesisFee) != 0 {
-		return nil, fmt.Errorf("initial l1 base fee configuration mismatch: `genesis-json-file` sets the value to %s, while `initial-l1base-fee` was set to %s", genesisFee.String(), l2Config.InitialL1BaseFee)
+	feeGenesisJSON := genesisArbOSInit.GetInitialL1BaseFee()
+	if l2Config.InitialL1BaseFee != "" && feeCLIFlag.Cmp(feeGenesisJSON) != 0 {
+		return nil, fmt.Errorf("initial l1 base fee configuration mismatch: `genesis-json-file` sets the value to %s, while `initial-l1base-fee` was set to %s", feeGenesisJSON.String(), l2Config.InitialL1BaseFee)
 	}
-	return genesisFee, nil
+	return feeGenesisJSON, nil
 }
 
 func validateGenesisAssertion(ctx context.Context, rollupAddress common.Address, l1Client *ethclient.Client, genesis *types.Block, initDataReaderHasAccounts bool) error {
