@@ -107,7 +107,7 @@ var TestTransactionStreamerConfig = TransactionStreamerConfig{
 	ExecuteMessageLoopDelay:     time.Millisecond,
 	SyncTillBlock:               0,
 	TrackBlockMetadataFrom:      0,
-	DisableBroadcastDuringSync:  true,
+	DisableBroadcastDuringSync:  false,
 	ShutdownOnBlockhashMismatch: false,
 }
 
