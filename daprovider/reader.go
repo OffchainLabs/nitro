@@ -103,6 +103,13 @@ func (b *readerForBlobReader) recoverInternal(
 	if needPayload {
 		payload, err = blobs.DecodeBlobs(kzgBlobs)
 		if err != nil {
+			// Blob decode failures are treated as empty batches rather than propagating
+			// the error. The KZG commitment proves the blob data was posted correctly to
+			// L1, but doesn't guarantee the content is valid batch data. A malicious or
+			// buggy sequencer could post data that passes KZG verification but fails RLP
+			// decoding. Propagating this error would halt chain processing, creating a
+			// denial-of-service vector. Instead, we log the failure and return an empty
+			// batch, allowing the chain to continue.
 			log.Warn("Failed to decode blobs", "batchBlockHash", batchBlockHash, "versionedHashes", versionedHashes, "err", err)
 			return nil, nil, nil
 		}
