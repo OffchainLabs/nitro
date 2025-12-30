@@ -98,7 +98,7 @@ func (tr *TransactionRecorder) TransactionByLog(ctx context.Context, log *types.
 	if int(log.TxIndex) >= len(tr.txs) {
 		return nil, fmt.Errorf("index out of range: %d", log.TxIndex)
 	}
-	recordingDB := &TxAndLogsDatabase{
+	recordingDB := &TxsAndReceiptsDatabase{
 		underlying: tr.trieDB,
 		recorder:   daprovider.RecordPreimagesTo(tr.preimages), // RecordingDB will record relevant preimages into tr.preimages
 	}

@@ -101,7 +101,7 @@ func (lr *ReceiptRecorder) LogsForTxIndex(ctx context.Context, parentChainBlockH
 	if int(txIndex) >= len(lr.receipts) {
 		return nil, fmt.Errorf("index out of range: %d", txIndex)
 	}
-	recordingDB := &TxAndLogsDatabase{
+	recordingDB := &TxsAndReceiptsDatabase{
 		underlying: lr.trieDB,
 		recorder:   daprovider.RecordPreimagesTo(lr.preimages), // RecordingDB will record relevant preimages into tr.preimages
 	}
