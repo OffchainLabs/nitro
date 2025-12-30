@@ -218,6 +218,15 @@ func (s *TransactionStreamer) updateSyncMonitor() {
 	}
 }
 
+// updateSyncMonitorLocked is like updateSyncMonitor but for use when insertionMutex is already held.
+func (s *TransactionStreamer) updateSyncMonitorLocked() {
+	if s.syncMonitor != nil {
+		committed, _ := s.GetMessageCount()
+		feedPending := s.feedPendingMessageCountImpl()
+		s.syncMonitor.UpdateMessageCount(committed, feedPending)
+	}
+}
+
 func (s *TransactionStreamer) cleanupInconsistentState() error {
 	// If it doesn't exist yet, set the message count to 0
 	hasMessageCount, err := s.db.Has(messageCountKey)
@@ -250,7 +259,7 @@ func (s *TransactionStreamer) ReorgAtAndEndBatch(batch ethdb.Batch, firstMsgIdxR
 	if err != nil {
 		return err
 	}
-	s.updateSyncMonitor()
+	s.updateSyncMonitorLocked()
 	return nil
 }
 
@@ -620,7 +629,13 @@ func (s *TransactionStreamer) FeedPendingMessageCount() arbutil.MessageIndex {
 
 	s.insertionMutex.Lock()
 	defer s.insertionMutex.Unlock()
-	firstMsgIdx = s.broadcasterQueuedMessagesFirstMsgIdx.Load()
+	return s.feedPendingMessageCountImpl()
+}
+
+// feedPendingMessageCountImpl returns feed pending count without locking.
+// Caller must hold insertionMutex.
+func (s *TransactionStreamer) feedPendingMessageCountImpl() arbutil.MessageIndex {
+	firstMsgIdx := s.broadcasterQueuedMessagesFirstMsgIdx.Load()
 	if firstMsgIdx == 0 {
 		return 0
 	}
@@ -708,7 +723,7 @@ func (s *TransactionStreamer) AddBroadcastMessages(feedMessages []*message.Broad
 	}
 
 	// Update SyncMonitor with feed pending message count changes
-	s.updateSyncMonitor()
+	s.updateSyncMonitorLocked()
 
 	if s.broadcasterQueuedMessagesActiveReorg || len(s.broadcasterQueuedMessages) == 0 {
 		// Broadcaster never triggered reorg or no messages to add
@@ -1344,7 +1359,7 @@ func (s *TransactionStreamer) writeMessages(firstMsgIdx arbutil.MessageIndex, me
 		return err
 	}
 
-	s.updateSyncMonitor()
+	s.updateSyncMonitorLocked()
 
 	select {
 	case s.newMessageNotifier <- struct{}{}:
