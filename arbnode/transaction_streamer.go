@@ -85,7 +85,7 @@ type TransactionStreamerConfig struct {
 	ExecuteMessageLoopDelay     time.Duration `koanf:"execute-message-loop-delay" reload:"hot"`
 	SyncTillBlock               uint64        `koanf:"sync-till-block"`
 	TrackBlockMetadataFrom      uint64        `koanf:"track-block-metadata-from"`
-	DisableBroadcastDuringSync  bool          `koanf:"disable-broadcast-during-sync" reload:"hot"`
+	BroadcastDuringSync         bool          `koanf:"broadcast-during-sync" reload:"hot"`
 	ShutdownOnBlockhashMismatch bool          `koanf:"shutdown-on-blockhash-mismatch"`
 }
 
@@ -97,7 +97,7 @@ var DefaultTransactionStreamerConfig = TransactionStreamerConfig{
 	ExecuteMessageLoopDelay:     time.Millisecond * 100,
 	SyncTillBlock:               0,
 	TrackBlockMetadataFrom:      0,
-	DisableBroadcastDuringSync:  true,
+	BroadcastDuringSync:         false,
 	ShutdownOnBlockhashMismatch: false,
 }
 
@@ -107,7 +107,7 @@ var TestTransactionStreamerConfig = TransactionStreamerConfig{
 	ExecuteMessageLoopDelay:     time.Millisecond,
 	SyncTillBlock:               0,
 	TrackBlockMetadataFrom:      0,
-	DisableBroadcastDuringSync:  false,
+	BroadcastDuringSync:         false,
 	ShutdownOnBlockhashMismatch: false,
 }
 
@@ -117,7 +117,7 @@ func TransactionStreamerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Duration(prefix+".execute-message-loop-delay", DefaultTransactionStreamerConfig.ExecuteMessageLoopDelay, "delay when polling calls to execute messages")
 	f.Uint64(prefix+".sync-till-block", DefaultTransactionStreamerConfig.SyncTillBlock, "node will not sync past this block")
 	f.Uint64(prefix+".track-block-metadata-from", DefaultTransactionStreamerConfig.TrackBlockMetadataFrom, "block number to start saving blockmetadata, 0 to disable")
-	f.Bool(prefix+".disable-broadcast-during-sync", DefaultTransactionStreamerConfig.DisableBroadcastDuringSync, "disable broadcasting historical messages during sync to prevent feed flooding")
+	f.Bool(prefix+".broadcast-during-sync", DefaultTransactionStreamerConfig.BroadcastDuringSync, "if true, broadcast all messages during sync; not recommended as it can flood feed clients with historical data")
 	f.Bool(prefix+".shutdown-on-blockhash-mismatch", DefaultTransactionStreamerConfig.ShutdownOnBlockhashMismatch, "if set the node gracefully shuts down upon detecting mismatch in feed and locally computed blockhash. This is turned off by default")
 }
 
@@ -1311,7 +1311,7 @@ func (s *TransactionStreamer) broadcastMessages(
 	}
 
 	// Check if we should broadcast during sync
-	if !force && s.config().DisableBroadcastDuringSync {
+	if !force && !s.config().BroadcastDuringSync {
 		if !s.shouldBroadcastDuringSync(firstMsgIdx, len(msgs)) {
 			return
 		}
