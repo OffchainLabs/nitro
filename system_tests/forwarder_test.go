@@ -10,7 +10,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -180,22 +179,6 @@ func waitForSequencerLockout(ctx context.Context, node *arbnode.Node, duration t
 			time.Sleep(100 * time.Millisecond)
 		}
 	}
-}
-
-// stopNodes blocks and waits until all nodes are stopped.
-func stopNodes(nodes []*arbnode.Node) {
-	var wg sync.WaitGroup
-	for _, node := range nodes {
-		if node != nil {
-			wg.Add(1)
-			n := node
-			go func() {
-				n.StopAndWait()
-				wg.Done()
-			}()
-		}
-	}
-	wg.Wait()
 }
 
 func user(suffix string, idx int) string {
