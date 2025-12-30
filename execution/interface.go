@@ -14,6 +14,8 @@ import (
 	"github.com/offchainlabs/nitro/util/containers"
 )
 
+const RPCNamespace = "nitroexecution"
+
 type MaintenanceStatus struct {
 	IsRunning bool `json:"isRunning"`
 }
@@ -28,11 +30,6 @@ type RecordResult struct {
 	BlockHash common.Hash
 	Preimages map[common.Hash][]byte
 	UserWasms state.UserWasms
-}
-
-type InboxBatch struct {
-	BatchNum uint64
-	Found    bool
 }
 
 // ConsensusSyncData contains sync status information pushed from consensus to execution
@@ -54,8 +51,6 @@ type ExecutionClient interface {
 	Reorg(msgIdxOfFirstMsgToAdd arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadataAndBlockInfo, oldMessages []*arbostypes.MessageWithMetadata) containers.PromiseInterface[[]*MessageResult]
 	HeadMessageIndex() containers.PromiseInterface[arbutil.MessageIndex]
 	ResultAtMessageIndex(msgIdx arbutil.MessageIndex) containers.PromiseInterface[*MessageResult]
-	MessageIndexToBlockNumber(messageNum arbutil.MessageIndex) containers.PromiseInterface[uint64]
-	BlockNumberToMessageIndex(blockNum uint64) containers.PromiseInterface[arbutil.MessageIndex]
 	SetFinalityData(safeFinalityData *arbutil.FinalityData, finalizedFinalityData *arbutil.FinalityData, validatedFinalityData *arbutil.FinalityData) containers.PromiseInterface[struct{}]
 	SetConsensusSyncData(syncData *ConsensusSyncData) containers.PromiseInterface[struct{}]
 	MarkFeedStart(to arbutil.MessageIndex) containers.PromiseInterface[struct{}]
@@ -76,7 +71,6 @@ type ExecutionRecorder interface {
 		msg *arbostypes.MessageWithMetadata,
 		wasmTargets []rawdb.WasmTarget,
 	) (*RecordResult, error)
-	MarkValid(pos arbutil.MessageIndex, resultHash common.Hash)
 	PrepareForRecord(ctx context.Context, start, end arbutil.MessageIndex) error
 }
 
@@ -97,24 +91,8 @@ type ArbOSVersionGetter interface {
 	ArbOSVersionForMessageIndex(msgIdx arbutil.MessageIndex) containers.PromiseInterface[uint64]
 }
 
-// not implemented in execution, used as input
-// BatchFetcher is required for any execution node
-type BatchFetcher interface {
-	FindInboxBatchContainingMessage(message arbutil.MessageIndex) containers.PromiseInterface[InboxBatch]
-	GetBatchParentChainBlock(seqNum uint64) containers.PromiseInterface[uint64]
-}
-
-type ConsensusInfo interface {
-	BlockMetadataAtMessageIndex(msgIdx arbutil.MessageIndex) containers.PromiseInterface[common.BlockMetadata]
-}
-
-type ConsensusSequencer interface {
-	WriteMessageFromSequencer(msgIdx arbutil.MessageIndex, msgWithMeta arbostypes.MessageWithMetadata, msgResult MessageResult, blockMetadata common.BlockMetadata) containers.PromiseInterface[struct{}]
-	ExpectChosenSequencer() containers.PromiseInterface[struct{}]
-}
-
-type FullConsensusClient interface {
-	BatchFetcher
-	ConsensusInfo
-	ConsensusSequencer
+type FullExecutionClient interface {
+	ExecutionClient
+	ExecutionSequencer
+	ExecutionRecorder
 }

@@ -147,24 +147,6 @@ func NewTransactionStreamer(
 	if err != nil {
 		return nil, err
 	}
-	if config().TrackBlockMetadataFrom != 0 {
-		trackBlockMetadataFrom, err := exec.BlockNumberToMessageIndex(config().TrackBlockMetadataFrom).Await(ctx)
-		if err != nil {
-			return nil, err
-		}
-		streamer.trackBlockMetadataFrom = trackBlockMetadataFrom
-	}
-	if config().SyncTillBlock != 0 {
-		syncTillMessage, err := exec.BlockNumberToMessageIndex(config().SyncTillBlock).Await(ctx)
-		if err != nil {
-			return nil, err
-		}
-		streamer.syncTillMessage = syncTillMessage
-		msgCount, err := streamer.GetMessageCount()
-		if err == nil && msgCount >= streamer.syncTillMessage {
-			log.Info("Node has all messages", "sync-till-block", config().SyncTillBlock)
-		}
-	}
 	return streamer, nil
 }
 
@@ -1437,7 +1419,7 @@ func (s *TransactionStreamer) checkResult(msgIdx arbutil.MessageIndex, msgResult
 			"expected", msgAndBlockInfo.BlockHash,
 			"actual", msgResult.BlockHash,
 		)
-		// Try deleting the existing blockMetadata for this block in arbDB and set it as missing
+		// Try deleting the existing blockMetadata for this block in consensusDB and set it as missing
 		if msgAndBlockInfo.BlockMetadata != nil &&
 			s.trackBlockMetadataFrom != 0 && msgIdx >= s.trackBlockMetadataFrom {
 			batch := s.db.NewBatch()
@@ -1446,7 +1428,7 @@ func (s *TransactionStreamer) checkResult(msgIdx arbutil.MessageIndex, msgResult
 				return
 			}
 			if err := batch.Put(dbKey(missingBlockMetadataInputFeedPrefix, uint64(msgIdx)), nil); err != nil {
-				log.Error("error marking deleted blockMetadata as missing in arbDB for a block whose BlockHash from feed doesn't match locally computed hash", "msgIdx", msgIdx, "err", err)
+				log.Error("error marking deleted blockMetadata as missing in consensusDB for a block whose BlockHash from feed doesn't match locally computed hash", "msgIdx", msgIdx, "err", err)
 				return
 			}
 			if err := batch.Write(); err != nil {
@@ -1572,7 +1554,7 @@ func (s *TransactionStreamer) backfillTrackersForMissingBlockMetadata(ctx contex
 	}
 	msgCount, err := s.GetMessageCount()
 	if err != nil {
-		log.Error("Error getting message count from arbDB", "err", err)
+		log.Error("Error getting message count from consensusDB", "err", err)
 		return
 	}
 	if s.trackBlockMetadataFrom >= msgCount {
@@ -1587,7 +1569,7 @@ func (s *TransactionStreamer) backfillTrackersForMissingBlockMetadata(ctx contex
 				return true
 			}
 			if !rawdb.IsDbErrNotFound(err) {
-				log.Error("Error reading key in arbDB while back-filling trackers for missing blockMetadata", "key", key, "err", err)
+				log.Error("Error reading key in consensusDB while back-filling trackers for missing blockMetadata", "key", key, "err", err)
 			}
 			return false
 		}
@@ -1632,6 +1614,24 @@ func (s *TransactionStreamer) backfillTrackersForMissingBlockMetadata(ctx contex
 
 func (s *TransactionStreamer) Start(ctxIn context.Context) error {
 	s.StopWaiter.Start(ctxIn, s)
+	if s.config().TrackBlockMetadataFrom != 0 {
+		trackBlockMetadataFrom, err := arbutil.BlockNumberToMessageIndex(s.config().TrackBlockMetadataFrom, s.chainConfig.ArbitrumChainParams.GenesisBlockNum)
+		if err != nil {
+			return err
+		}
+		s.trackBlockMetadataFrom = trackBlockMetadataFrom
+	}
+	if s.config().SyncTillBlock != 0 {
+		syncTillMessage, err := arbutil.BlockNumberToMessageIndex(s.config().SyncTillBlock, s.chainConfig.ArbitrumChainParams.GenesisBlockNum)
+		if err != nil {
+			return err
+		}
+		s.syncTillMessage = syncTillMessage
+		msgCount, err := s.GetMessageCount()
+		if err == nil && msgCount >= s.syncTillMessage {
+			log.Info("Node has all messages", "sync-till-block", s.config().SyncTillBlock)
+		}
+	}
 	s.LaunchThread(s.backfillTrackersForMissingBlockMetadata)
 	return stopwaiter.CallIterativelyWith[struct{}](&s.StopWaiterSafe, s.executeMessages, s.newMessageNotifier)
 }

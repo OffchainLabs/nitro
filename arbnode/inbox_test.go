@@ -111,14 +111,6 @@ func (w *execClientWrapper) Start(ctx context.Context) error {
 	return nil
 }
 
-func (w *execClientWrapper) MessageIndexToBlockNumber(messageNum arbutil.MessageIndex) containers.PromiseInterface[uint64] {
-	return containers.NewReadyPromise(w.ExecutionEngine.MessageIndexToBlockNumber(messageNum), nil)
-}
-
-func (w *execClientWrapper) BlockNumberToMessageIndex(blockNum uint64) containers.PromiseInterface[arbutil.MessageIndex] {
-	return containers.NewReadyPromise(w.ExecutionEngine.BlockNumberToMessageIndex(blockNum))
-}
-
 func (w *execClientWrapper) ArbOSVersionForMessageIndex(msgIdx arbutil.MessageIndex) containers.PromiseInterface[uint64] {
 	return w.ExecutionEngine.ArbOSVersionForMessageIndex(msgIdx)
 }
@@ -138,12 +130,12 @@ func NewTransactionStreamerForTest(t *testing.T, ctx context.Context, ownerAddre
 		},
 	}
 
-	chainDb := rawdb.NewMemoryDatabase()
-	arbDb := rawdb.NewMemoryDatabase()
+	executionDB := rawdb.NewMemoryDatabase()
+	consensusDB := rawdb.NewMemoryDatabase()
 	initReader := statetransfer.NewMemoryInitDataReader(&initData)
 
 	options := core.DefaultConfig().WithStateScheme(env.GetTestStateScheme())
-	bc, err := gethexec.WriteOrTestBlockChain(chainDb, options, initReader, chainConfig, nil, nil, arbostypes.TestInitMessage, &gethexec.ConfigDefault.TxIndexer, 0)
+	bc, err := gethexec.WriteOrTestBlockChain(executionDB, options, initReader, chainConfig, nil, nil, arbostypes.TestInitMessage, &gethexec.ConfigDefault.TxIndexer, 0)
 
 	if err != nil {
 		Fail(t, err)
@@ -160,7 +152,7 @@ func NewTransactionStreamerForTest(t *testing.T, ctx context.Context, ownerAddre
 		Fail(t, err)
 	}
 	execSeq := &execClientWrapper{execEngine, t}
-	inbox, err := NewTransactionStreamer(ctx, arbDb, bc.Config(), execSeq, nil, nil, make(chan error, 1), transactionStreamerConfigFetcher, &DefaultSnapSyncConfig)
+	inbox, err := NewTransactionStreamer(ctx, consensusDB, bc.Config(), execSeq, nil, nil, make(chan error, 1), transactionStreamerConfigFetcher, &DefaultSnapSyncConfig)
 	if err != nil {
 		Fail(t, err)
 	}
@@ -171,7 +163,7 @@ func NewTransactionStreamerForTest(t *testing.T, ctx context.Context, ownerAddre
 		Fail(t, err)
 	}
 
-	return execEngine, inbox, arbDb, bc
+	return execEngine, inbox, consensusDB, bc
 }
 
 type blockTestState struct {

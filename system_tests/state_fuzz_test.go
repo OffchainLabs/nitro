@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2025, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbtest
@@ -44,7 +44,13 @@ func BuildBlock(
 	if lastBlockHeader != nil {
 		delayedMessagesRead = lastBlockHeader.Nonce.Uint64()
 	}
-	inboxMultiplexer := arbstate.NewInboxMultiplexer(inbox, delayedMessagesRead, nil, daprovider.KeysetValidate)
+	inboxMultiplexer := arbstate.NewInboxMultiplexer(
+		inbox,
+		delayedMessagesRead,
+		nil,
+		daprovider.KeysetValidate,
+		getChainConfig(),
+	)
 
 	ctx := context.Background()
 	message, err := inboxMultiplexer.Pop(ctx)
@@ -152,7 +158,7 @@ func FuzzStateTransition(f *testing.F) {
 		if len(seqMsg) > 0 && daprovider.IsL1AuthenticatedMessageHeaderByte(seqMsg[0]) {
 			return
 		}
-		chainDb := rawdb.NewMemoryDatabase()
+		executionDB := rawdb.NewMemoryDatabase()
 		chainConfig := chaininfo.ArbitrumDevTestChainConfig()
 		serializedChainConfig, err := json.Marshal(chainConfig)
 		if err != nil {
@@ -166,7 +172,7 @@ func FuzzStateTransition(f *testing.F) {
 		}
 		options := core.DefaultConfig().WithStateScheme(env.GetTestStateScheme())
 		stateRoot, err := arbosState.InitializeArbosInDatabase(
-			chainDb,
+			executionDB,
 			options,
 			statetransfer.NewMemoryInitDataReader(&statetransfer.ArbosInitializationInfo{}),
 			chainConfig,
@@ -179,7 +185,7 @@ func FuzzStateTransition(f *testing.F) {
 			panic(err)
 		}
 		trieDBConfig := options.TriedbConfig()
-		statedb, err := state.New(stateRoot, state.NewDatabase(triedb.NewDatabase(chainDb, trieDBConfig), nil))
+		statedb, err := state.New(stateRoot, state.NewDatabase(triedb.NewDatabase(executionDB, trieDBConfig), nil))
 		if err != nil {
 			panic(err)
 		}
@@ -243,11 +249,15 @@ func FuzzStateTransition(f *testing.F) {
 			runCtx = core.NewMessageGasEstimationContext()
 		}
 
-		_, err = BuildBlock(statedb, genesis.Header(), noopChainContext{chainConfig: chaininfo.ArbitrumDevTestChainConfig()}, inbox, seqBatch, runCtx)
+		_, err = BuildBlock(statedb, genesis.Header(), noopChainContext{chainConfig: getChainConfig()}, inbox, seqBatch, runCtx)
 		if err != nil {
 			// With the fixed header it shouldn't be possible to read a delayed message,
 			// and no other type of error should be possible.
 			panic(err)
 		}
 	})
+}
+
+func getChainConfig() *params.ChainConfig {
+	return chaininfo.ArbitrumDevTestChainConfig()
 }
