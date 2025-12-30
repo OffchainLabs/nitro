@@ -2,6 +2,7 @@ package melrecording
 
 import (
 	"context"
+	"fmt"
 	"math/big"
 	"testing"
 
@@ -14,31 +15,15 @@ import (
 	"github.com/offchainlabs/nitro/daprovider"
 )
 
-type mockBlockReader struct {
-	blocks          map[common.Hash]*types.Block
-	receiptByTxHash map[common.Hash]*types.Receipt
-}
-
-func (mbr *mockBlockReader) BlockByHash(ctx context.Context, hash common.Hash) (*types.Block, error) {
-	block, exists := mbr.blocks[hash]
-	if !exists {
-		return nil, nil
-	}
-	return block, nil
-}
-
-func (mbr *mockBlockReader) TransactionReceipt(ctx context.Context, txHash common.Hash) (*types.Receipt, error) {
-	receipt, exists := mbr.receiptByTxHash[txHash]
-	if !exists {
-		return nil, nil
-	}
-	return receipt, nil
-}
-
-func TestTransactionByLog(t *testing.T) {
+func TestLogsForTxIndex(t *testing.T) {
 	ctx := context.Background()
+	blockReader := &mockBlockReader{
+		blocks:          make(map[common.Hash]*types.Block),
+		receiptByTxHash: map[common.Hash]*types.Receipt{},
+	}
 	toAddr := common.HexToAddress("0x0000000000000000000000000000000000DeaDBeef")
 	blockHeader := &types.Header{}
+	receipts := []*types.Receipt{}
 	txs := make([]*types.Transaction, 0)
 	for i := uint64(1); i < 10; i++ {
 		txData := &types.DynamicFeeTx{
@@ -52,34 +37,45 @@ func TestTransactionByLog(t *testing.T) {
 		}
 		tx := types.NewTx(txData)
 		txs = append(txs, tx)
+		receipt := &types.Receipt{
+			TxHash:           tx.Hash(),
+			TransactionIndex: uint(i - 1),
+			Type:             types.DynamicFeeTxType,
+			Logs: []*types.Log{
+				{
+					// Consensus fields:
+					Address: common.HexToAddress("sample"),
+					Topics:  []common.Hash{common.HexToHash("topic1"), common.HexToHash("topic2")},
+					Data:    common.Hex2Bytes(fmt.Sprintf("data:%d", i)),
+
+					// Derived Fields:
+					TxIndex: uint(i - 1),
+				},
+			},
+		}
+		receipts = append(receipts, receipt)
+		blockReader.receiptByTxHash[tx.Hash()] = receipt
 	}
 	blockBody := &types.Body{
 		Transactions: txs,
 	}
-	receipts := []*types.Receipt{}
 	block := types.NewBlock(
 		blockHeader,
 		blockBody,
 		receipts,
 		trie.NewStackTrie(nil),
 	)
-	blockReader := &mockBlockReader{
-		blocks: map[common.Hash]*types.Block{
-			block.Hash(): block,
-		},
-	}
+	blockReader.blocks[block.Hash()] = block
 	preimages := make(daprovider.PreimagesMap)
-	recorder := NewTransactionRecorder(blockReader, block.Hash(), preimages)
+	recorder := NewReceiptRecorder(blockReader, block.Hash(), preimages)
 	require.NoError(t, recorder.Initialize(ctx))
 
-	log := &types.Log{
-		TxIndex: 5,
-	}
-	tx, err := recorder.TransactionByLog(ctx, log)
+	txIndex := uint(3)
+	logs, err := recorder.LogsForTxIndex(ctx, block.Hash(), txIndex)
 	require.NoError(t, err)
-	have, err := tx.MarshalJSON()
+	have, err := logs[0].MarshalJSON()
 	require.NoError(t, err)
-	want, err := block.Transactions()[5].MarshalJSON()
+	want, err := receipts[txIndex].Logs[0].MarshalJSON()
 	require.NoError(t, err)
 	require.Equal(t, want, have)
 }

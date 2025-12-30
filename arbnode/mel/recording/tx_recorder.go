@@ -20,6 +20,7 @@ import (
 
 type BlockReader interface {
 	BlockByHash(ctx context.Context, hash common.Hash) (*types.Block, error)
+	TransactionReceipt(ctx context.Context, txHash common.Hash) (*types.Receipt, error)
 }
 
 type TransactionRecorder struct {
