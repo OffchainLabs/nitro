@@ -242,10 +242,15 @@ func TestRedisForwarder(t *testing.T) {
 	var seqClients []*ethclient.Client
 	for _, path := range nodePaths {
 		testClientSeq, _ := createSequencer(t, builder, path, redisUrl)
+		node := testClientSeq.ConsensusNode
+
+		t.Cleanup(func() {
+			node.StopAndWait()
+		})
+
 		seqNodes = append(seqNodes, testClientSeq.ConsensusNode)
 		seqClients = append(seqClients, testClientSeq.Client)
 	}
-	defer stopNodes(seqNodes)
 
 	for i := range seqClients {
 		userA := user("A", i)
