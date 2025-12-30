@@ -4,13 +4,12 @@
 package conf
 
 import (
-	"errors"
+	"fmt"
 	"math/big"
 	"time"
 
 	"github.com/spf13/pflag"
 
-	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/cmd/genericconf"
@@ -74,8 +73,7 @@ func (c *L2Config) InitialL1BaseFeeParsed() (*big.Int, error) {
 
 	parsed, success := big.NewInt(0).SetString(c.InitialL1BaseFee, 10)
 	if !success {
-		log.Error("Failed to parse L1 BaseFee for L2 config (passed with `initial-l1base-fee`)", "config", c.InitialL1BaseFee)
-		return nil, errors.New("failed to parse initial L1 base fee")
+		return nil, fmt.Errorf("failed to parse L1 BaseFee for L2 config: `%s` (passed with `initial-l1base-fee` flag)", c.InitialL1BaseFee)
 	}
 	return parsed, nil
 }
