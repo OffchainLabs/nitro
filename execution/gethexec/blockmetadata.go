@@ -52,7 +52,7 @@ func NewBulkBlockMetadataFetcher(bc *core.BlockChain, fetcher BlockMetadataFetch
 	}
 }
 
-// Fetch won't include block numbers for whom consensus (arbDB) doesn't have blockMetadata, it stores recently fetched blockMetadata into an LRU
+// Fetch won't include block numbers for whom consensus (consensusDB) doesn't have blockMetadata, it stores recently fetched blockMetadata into an LRU
 // which is cleared in the events of reorg in order to provide accurate blockMetadata
 func (b *BulkBlockMetadataFetcher) Fetch(ctx context.Context, fromBlock, toBlock rpc.BlockNumber) ([]NumberAndBlockMetadata, error) {
 	fromBlock, _ = b.bc.ClipToPostNitroGenesis(fromBlock)
