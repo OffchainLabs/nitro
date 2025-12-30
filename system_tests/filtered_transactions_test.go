@@ -77,7 +77,21 @@ func TestManageTransactionCensors(t *testing.T) {
 	// User filters the tx
 	tx, err = arbFilteredTxs.AddFilteredTransaction(&userTxOpts, txHash)
 	require.NoError(t, err)
-	require.NotNil(t, tx)
+	receipt, err := bind.WaitMined(ctx, builder.L2.Client, tx)
+	require.NoError(t, err)
+	require.Equal(t, types.ReceiptStatusSuccessful, receipt.Status)
+
+	foundAdded := false
+	for _, lg := range receipt.Logs {
+		ev, parseErr := arbFilteredTxs.ParseFilteredTransactionAdded(*lg)
+		if parseErr != nil {
+			continue
+		}
+		require.Equal(t, txHash, common.BytesToHash(ev.TxHash[:]))
+		foundAdded = true
+		break
+	}
+	require.True(t, foundAdded)
 
 	filtered, err = arbFilteredTxs.IsTransactionFiltered(userCallOpts, txHash)
 	require.NoError(t, err)
@@ -86,7 +100,21 @@ func TestManageTransactionCensors(t *testing.T) {
 	// User unfilters the tx
 	tx, err = arbFilteredTxs.DeleteFilteredTransaction(&userTxOpts, txHash)
 	require.NoError(t, err)
-	require.NotNil(t, tx)
+	receipt, err = bind.WaitMined(ctx, builder.L2.Client, tx)
+	require.NoError(t, err)
+	require.Equal(t, types.ReceiptStatusSuccessful, receipt.Status)
+
+	foundDeleted := false
+	for _, lg := range receipt.Logs {
+		ev, parseErr := arbFilteredTxs.ParseFilteredTransactionDeleted(*lg)
+		if parseErr != nil {
+			continue
+		}
+		require.Equal(t, txHash, common.BytesToHash(ev.TxHash[:]))
+		foundDeleted = true
+		break
+	}
+	require.True(t, foundDeleted)
 
 	filtered, err = arbFilteredTxs.IsTransactionFiltered(userCallOpts, txHash)
 	require.NoError(t, err)

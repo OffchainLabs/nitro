@@ -14,18 +14,32 @@ import (
 // Authorized callers are added/removed through ArbOwner precompile.
 type ArbFilteredTransactionsManager struct {
 	Address addr // 0x74
+
+	FilteredTransactionAdded        func(ctx, mech, common.Hash) error
+	FilteredTransactionAddedGasCost func(common.Hash) (uint64, error)
+
+	FilteredTransactionDeleted        func(ctx, mech, common.Hash) error
+	FilteredTransactionDeletedGasCost func(common.Hash) (uint64, error)
 }
 
 // Adds a transaction hash to the filtered transactions list
 func (con ArbFilteredTransactionsManager) AddFilteredTransaction(c *Context, evm *vm.EVM, txHash common.Hash) error {
 	filteredState := filteredTransactions.Open(evm.StateDB, c)
-	return filteredState.Add(txHash)
+	if err := filteredState.Add(txHash); err != nil {
+		return err
+	}
+
+	return con.FilteredTransactionAdded(c, evm, txHash)
 }
 
 // Deletes a transaction hash from the filtered transactions list
 func (con ArbFilteredTransactionsManager) DeleteFilteredTransaction(c *Context, evm *vm.EVM, txHash common.Hash) error {
 	filteredState := filteredTransactions.Open(evm.StateDB, c)
-	return filteredState.Delete(txHash)
+	if err := filteredState.Delete(txHash); err != nil {
+		return err
+	}
+
+	return con.FilteredTransactionDeleted(c, evm, txHash)
 }
 
 // Checks if a transaction hash is in the filtered transactions list
