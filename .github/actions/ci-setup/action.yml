@@ -53,12 +53,12 @@ runs:
       with:
         path: |
           ~/.cargo/
-          arbitrator/target/
-          arbitrator/wasm-libraries/target/
-          arbitrator/wasm-libraries/soft-float/
+          crates/target/
+          crates/wasm-libraries/target/
+          crates/wasm-libraries/soft-float/
           target/etc/initial-machine-cache/
           /home/runner/.rustup/toolchains/
-        key: ${{ runner.os }}-cargo-${{ steps.install-rust.outputs.version }}-${{ hashFiles('arbitrator/Cargo.lock') }}
+        key: ${{ runner.os }}-cargo-${{ steps.install-rust.outputs.version }}-${{ hashFiles('crates/Cargo.lock') }}
 
     - name: Cache cbrotli
       id: cache-cbrotli
