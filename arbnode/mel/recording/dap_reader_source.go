@@ -8,6 +8,7 @@ import (
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/util/containers"
+	"github.com/offchainlabs/nitro/validator"
 )
 
 // RecordingDAPReader implements recording of preimages when melextraction.ExtractMessages function is called by MEL validator for creation
@@ -25,7 +26,7 @@ func (r *RecordingDAPReader) RecoverPayload(batchNum uint64, batchBlockHash comm
 	if err != nil {
 		return containers.NewReadyPromise(daprovider.PayloadResult{}, err)
 	}
-	daprovider.CopyPreimagesInto(r.preimages, result.Preimages)
+	validator.CopyPreimagesInto(r.preimages, result.Preimages)
 	return containers.NewReadyPromise(daprovider.PayloadResult{Payload: result.Payload}, nil)
 }
 

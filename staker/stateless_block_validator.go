@@ -206,7 +206,7 @@ func newValidationEntry(
 	}
 	valBatches = append(valBatches, prevBatches...)
 
-	daprovider.CopyPreimagesInto(preimages, fullBatchInfo.Preimages)
+	validator.CopyPreimagesInto(preimages, fullBatchInfo.Preimages)
 
 	hasDelayed := false
 	var delayedNum uint64
@@ -383,7 +383,7 @@ func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *
 			recordingPreimages := map[arbutil.PreimageType]map[common.Hash][]byte{
 				arbutil.Keccak256PreimageType: recording.Preimages,
 			}
-			daprovider.CopyPreimagesInto(e.Preimages, recordingPreimages)
+			validator.CopyPreimagesInto(e.Preimages, recordingPreimages)
 		}
 		e.UserWasms = recording.UserWasms
 	}
