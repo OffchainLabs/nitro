@@ -110,7 +110,7 @@ func (b *readerForBlobReader) recoverInternal(
 			// decoding. Propagating this error would halt chain processing, creating a
 			// denial-of-service vector. Instead, we log the failure and return an empty
 			// batch, allowing the chain to continue.
-			log.Warn("Failed to decode blobs", "batchBlockHash", batchBlockHash, "versionedHashes", versionedHashes, "err", err)
+			log.Error("Failed to decode blobs", "batchBlockHash", batchBlockHash, "versionedHashes", versionedHashes, "err", err)
 			return nil, nil, nil
 		}
 	}
