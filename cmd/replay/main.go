@@ -243,6 +243,18 @@ func (r *DACertificatePreimageReader) CollectPreimages(
 	})
 }
 
+func (r *DACertificatePreimageReader) RecoverPayloadAndPreimages(
+	batchNum uint64,
+	batchBlockHash common.Hash,
+	sequencerMsg []byte,
+) containers.PromiseInterface[daprovider.PayloadAndPreimagesResult] {
+	return containers.DoPromise(context.Background(), func(ctx context.Context) (daprovider.PayloadAndPreimagesResult, error) {
+		// Stub implementation: RecoverPayloadAndPreimages is only called
+		// by the MEL validator to gather preimages before validation
+		return daprovider.PayloadAndPreimagesResult{Preimages: make(daprovider.PreimagesMap), Payload: nil}, nil
+	})
+}
+
 // To generate:
 // key, _ := crypto.HexToECDSA("0000000000000000000000000000000000000000000000000000000000000001")
 // sig, _ := crypto.Sign(make([]byte, 32), key)
