@@ -53,12 +53,10 @@ func TestBlockGasLimit(t *testing.T) {
 	// set block gas-limit to 1.5 times the transaction limit
 	arbOwner, err := precompilesgen.NewArbOwner(types.ArbOwnerAddress, b.L2.Client)
 	Require(t, err)
-	_ = arbOwner // TODO: Remove when SetMaxBlockGasLimit is available
-	// TODO: SetMaxBlockGasLimit was removed in ArbOS 50, need to use multi-constraint API
-	// ownerTx, err := arbOwner.SetMaxBlockGasLimit(&auth, l2pricing.InitialPerTxGasLimitV50*3/2)
-	// Require(t, err)
-	// _, err = EnsureTxSucceeded(ctx, b.L2.Client, ownerTx)
-	// Require(t, err)
+	ownerTx, err := arbOwner.SetMaxBlockGasLimit(&auth, l2pricing.InitialPerTxGasLimitV50*3/2)
+	Require(t, err)
+	_, err = EnsureTxSucceeded(ctx, b.L2.Client, ownerTx)
+	Require(t, err)
 
 	// create a successful transaction that consumes a little less than 32M gas
 	toAddSuccesfull := big.NewInt(1420)

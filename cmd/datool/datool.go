@@ -101,7 +101,7 @@ func parseClientStoreConfig(args []string) (*ClientStoreConfig, error) {
 	f.String("signing-wallet", "", "wallet containing ecdsa key to sign the message with")
 	f.String("signing-wallet-password", genericconf.PASSWORD_NOT_SET, "password to unlock the wallet, if not specified the user is prompted for the password")
 	f.Duration("das-retention-period", 24*time.Hour, "The period which DASes are requested to retain the stored batches.")
-	das.DASRPCClientConfigAddOptions("", f)
+	das.DASRPCClientConfigAddOptions("das-rpc-client", f)
 
 	k, err := confighelpers.BeginCommonParse(f, args)
 	if err != nil {

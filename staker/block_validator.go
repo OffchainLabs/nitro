@@ -753,7 +753,7 @@ func (v *BlockValidator) isMemoryLimitExceeded() bool {
 
 func (v *BlockValidator) sendNextRecordRequests(ctx context.Context) (bool, error) {
 	if v.isMemoryLimitExceeded() {
-		log.Warn("sendNextRecordRequests: aborting due to running low on memory")
+		log.Error("sendNextRecordRequests: aborting due to running low on memory")
 		return false, nil
 	}
 	v.reorgMutex.RLock()
@@ -790,7 +790,7 @@ func (v *BlockValidator) sendNextRecordRequests(ctx context.Context) (bool, erro
 	}
 	for pos <= recordUntil {
 		if v.isMemoryLimitExceeded() {
-			log.Warn("sendNextRecordRequests: aborting due to running low on memory")
+			log.Error("sendNextRecordRequests: aborting due to running low on memory")
 			return false, nil
 		}
 		validationStatus, found := v.validations.Load(pos)
@@ -966,7 +966,7 @@ func (v *BlockValidator) sendValidations(ctx context.Context) (*arbutil.MessageI
 			}
 		}
 		if v.isMemoryLimitExceeded() {
-			log.Warn("sendValidations: aborting due to running low on memory")
+			log.Error("sendValidations: aborting due to running low on memory")
 			return nil, nil
 		}
 		replaced := validationStatus.replaceStatus(Prepared, SendingValidation)

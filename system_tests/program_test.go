@@ -30,6 +30,7 @@ import (
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
+
 	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos/programs"
@@ -152,7 +153,6 @@ func keccakTest(t *testing.T, jit bool, executionClientMode *ExecutionClientMode
 
 	// do a mutating call for proving's sake
 	_, tx, mock, err := localgen.DeployProgramTest(&auth, l2client)
-
 	ensure(tx, err)
 	ensure(mock.CallKeccak(&auth, programAddress, args))
 	ensure(mock.CallKeccak(&auth, otherAddressSameCode, args))
@@ -1186,8 +1186,7 @@ func testMemory(t *testing.T, jit bool) {
 	Require(t, err)
 
 	ensure(arbOwner.SetInkPrice(&auth, 1e4))
-	// TODO: SetMaxBlockGasLimit not in generated bindings yet
-	// ensure(arbOwner.SetMaxBlockGasLimit(&auth, 34000000))
+	ensure(arbOwner.SetMaxBlockGasLimit(&auth, 34000000))
 	ensure(arbOwner.SetMaxTxGasLimit(&auth, 34000000))
 
 	memoryAddr := deployWasm(t, ctx, auth, l2client, watFile("memory"))
@@ -1233,8 +1232,7 @@ func testMemory(t *testing.T, jit bool) {
 	}
 
 	// check that we'd normally run out of gas
-	// TODO: SetMaxBlockGasLimit not in generated bindings yet
-	// ensure(arbOwner.SetMaxBlockGasLimit(&auth, 32000000))
+	ensure(arbOwner.SetMaxBlockGasLimit(&auth, 32000000))
 	ensure(arbOwner.SetMaxTxGasLimit(&auth, 32000000))
 	expectFailure(multiAddr, args, oneEth)
 

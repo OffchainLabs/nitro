@@ -80,11 +80,10 @@ func (c *KeysetFetcher) GetKeysetByHash(ctx context.Context, hash common.Hash) (
 		return nil, errors.New("block number too large")
 	}
 	blockNum := blockNumBig.Uint64()
-	blockNumPlus1 := blockNum + 1
 
 	filterOpts := &bind.FilterOpts{
 		Start:   blockNum,
-		End:     &blockNumPlus1,
+		End:     &blockNum,
 		Context: ctx,
 	}
 	iter, err := seqInboxFilterer.FilterSetValidKeyset(filterOpts, [][32]byte{hash})

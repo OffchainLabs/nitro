@@ -74,7 +74,7 @@ jobs:
 
       - name: Upload Go test Artifacts
         if: startsWith(matrix.test-mode, 'defaults') && always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: junit-reports-go-${{ matrix.test-mode }}
           path: test-results/junit*.xml
@@ -158,7 +158,7 @@ jobs:
       # --------------------- ARCHIVE LOGS FOR ALL MODES ---------------------
 
       - name: Archive detailed run log
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: ${{ matrix.test-mode }}-full.log
           path: full.log

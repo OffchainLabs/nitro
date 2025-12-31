@@ -70,14 +70,6 @@ func TestInvalidCachingStateSchemeForValidator(t *testing.T) {
 	}
 }
 
-func TestInvalidArchiveConfig(t *testing.T) {
-	args := strings.Split("--execution.caching.archive --execution.caching.state-scheme path --persistent.chain /tmp/data --init.dev-init --node.parent-chain-reader.enable=false --parent-chain.id 5 --chain.id 421613 --node.staker.parent-chain-wallet.pathname /l1keystore --node.staker.parent-chain-wallet.password passphrase --http.addr 0.0.0.0 --ws.addr 0.0.0.0 --node.staker.enable --node.staker.strategy MakeNodes --node.staker.staker-interval 10s --execution.forwarding-target null", " ")
-	_, _, err := ParseNode(context.Background(), args)
-	if !strings.Contains(err.Error(), "archive cannot be set when using path as the state-scheme") {
-		Fail(t, "failed to detect invalid state scheme for archive")
-	}
-}
-
 func TestAggregatorConfig(t *testing.T) {
 	args := strings.Split("--persistent.chain /tmp/data --init.dev-init --node.parent-chain-reader.enable=false --parent-chain.id 5 --chain.id 421613 --node.batch-poster.parent-chain-wallet.pathname /l1keystore --node.batch-poster.parent-chain-wallet.password passphrase --http.addr 0.0.0.0 --ws.addr 0.0.0.0 --node.sequencer --execution.sequencer.enable --node.feed.output.enable --node.feed.output.port 9642 --node.data-availability.enable --node.data-availability.rpc-aggregator.backends [{\"url\":\"http://localhost:8547\",\"pubkey\":\"abc==\"}] --node.transaction-streamer.track-block-metadata-from=10", " ")
 	_, _, err := ParseNode(context.Background(), args)

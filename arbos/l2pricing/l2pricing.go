@@ -74,6 +74,8 @@ type L2PricingState struct {
 	backlogTolerance    storage.StorageBackedUint64
 	perTxGasLimit       storage.StorageBackedUint64
 	constraints         *storage.SubStorageVector
+
+	ArbosVersion uint64
 }
 
 const (
@@ -90,6 +92,7 @@ const (
 var constraintsKey []byte = []byte{0}
 
 const GethBlockGasLimit = 1 << 50
+const gasConstraintsMaxNum = 20
 
 func InitializeL2PricingState(sto *storage.Storage) error {
 	_ = sto.SetUint64ByUint64(speedLimitPerSecondOffset, InitialSpeedLimitPerSecondV0)
@@ -101,7 +104,7 @@ func InitializeL2PricingState(sto *storage.Storage) error {
 	return sto.SetUint64ByUint64(minBaseFeeWeiOffset, InitialMinimumBaseFeeWei)
 }
 
-func OpenL2PricingState(sto *storage.Storage) *L2PricingState {
+func OpenL2PricingState(sto *storage.Storage, arbosVersion uint64) *L2PricingState {
 	return &L2PricingState{
 		storage:             sto,
 		speedLimitPerSecond: sto.OpenStorageBackedUint64(speedLimitPerSecondOffset),
@@ -113,6 +116,7 @@ func OpenL2PricingState(sto *storage.Storage) *L2PricingState {
 		backlogTolerance:    sto.OpenStorageBackedUint64(backlogToleranceOffset),
 		perTxGasLimit:       sto.OpenStorageBackedUint64(perTxGasLimitOffset),
 		constraints:         storage.OpenSubStorageVector(sto.OpenSubStorage(constraintsKey)),
+		ArbosVersion:        arbosVersion,
 	}
 }
 
@@ -253,4 +257,8 @@ func (ps *L2PricingState) ClearConstraints() error {
 		}
 	}
 	return nil
+}
+
+func (ps *L2PricingState) GasConstraintsMaxNum() int {
+	return gasConstraintsMaxNum
 }
