@@ -65,6 +65,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
+	"github.com/offchainlabs/nitro/cmd/nitro/config"
 	"github.com/offchainlabs/nitro/consensus"
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/daprovider/anytrust"
@@ -1726,19 +1727,13 @@ func createTestL1BlockChain(t *testing.T, l1info info, withClientWrapper bool, s
 	return l1info, l1Client, l1backend, stack, clientWrapper, simBeacon
 }
 
-func getInitMessage(ctx context.Context, t *testing.T, parentChainClient *ethclient.Client, addresses *chaininfo.RollupAddresses) *arbostypes.ParsedInitMessage {
-	bridge, err := arbnode.NewDelayedBridge(parentChainClient, addresses.Bridge, addresses.DeployedAt)
-	Require(t, err)
-	deployedAtBig := arbmath.UintToBig(addresses.DeployedAt)
-	messages, err := bridge.LookupMessagesInRange(ctx, deployedAtBig, deployedAtBig, nil)
-	Require(t, err)
-	if len(messages) == 0 {
-		Fatal(t, "No delayed messages found at rollup creation block")
-	}
-	initMessage, err := messages[0].Message.ParseInitMessage()
-	Require(t, err, "Failed to parse rollup init message")
+func getInitMessage(ctx context.Context, t *testing.T, chainId *big.Int, parentChainClient *ethclient.Client, addresses *chaininfo.RollupAddresses, chainConfig *params.ChainConfig) (*arbostypes.ParsedInitMessage, error) {
+	nodeConfig := config.NodeConfigDefault
+	nodeConfig.Node.ParentChainReader.Enable = true
+	nodeConfig.Chain.ID = chainId.Uint64()
+	initMessage, err := config.GetConsensusParsedInitMsg(ctx, &nodeConfig, chainId, parentChainClient, *addresses, chainConfig)
 
-	return initMessage
+	return initMessage, err
 }
 
 var (
@@ -1953,7 +1948,9 @@ func deployOnParentChain(
 	parentChainInfo.SetContract("SequencerInbox", addresses.SequencerInbox)
 	parentChainInfo.SetContract("Inbox", addresses.Inbox)
 	parentChainInfo.SetContract("UpgradeExecutor", addresses.UpgradeExecutor)
-	initMessage := getInitMessage(ctx, t, parentChainClient, addresses)
+	initMessage, err := getInitMessage(ctx, t, chainConfig.ChainID, parentChainClient, addresses, chainConfig)
+	Require(t, err)
+
 	return addresses, initMessage
 }
 
