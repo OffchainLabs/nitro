@@ -9,6 +9,7 @@ import (
 var (
 	fs                                            = flag.NewFlagSet("test", flag.ExitOnError)
 	StateSchemeFlag                               = fs.String("test_state_scheme", "", "State scheme to use for tests")
+	ArbOSVersionFlag                              = fs.Uint64("arbos_version", 51, "ArbOS version to use in tests (default: 40)")
 	RedisFlag                                     = fs.String("test_redis", "", "Redis URL for testing")
 	RecordBlockInputsEnable                       = fs.Bool("recordBlockInputs.enable", false, "Whether to record block inputs as a json file")
 	RecordBlockInputsWithSlug                     = fs.String("recordBlockInputs.WithSlug", "", "Slug directory for validationInputsWriter")

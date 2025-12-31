@@ -613,6 +613,9 @@ func (b *NodeBuilder) CheckConfig(t *testing.T) {
 	if b.chainConfig == nil {
 		b.chainConfig = chaininfo.ArbitrumDevTestChainConfig()
 	}
+	if *testflag.ArbOSVersionFlag != 0 {
+		b.chainConfig.ArbitrumChainParams.InitialArbOSVersion = *testflag.ArbOSVersionFlag
+	}
 	if b.nodeConfig == nil {
 		b.nodeConfig = arbnode.ConfigDefaultL1Test()
 	}
