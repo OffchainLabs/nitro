@@ -70,24 +70,11 @@ func (d *Database) setHeadMelStateBlockNum(batch ethdb.KeyValueWriter, parentCha
 }
 
 func (d *Database) GetHeadMelStateBlockNum() (uint64, error) {
-	parentChainBlockNumberBytes, err := d.db.Get(schema.HeadMelStateBlockNumKey)
-	if err != nil {
-		return 0, err
-	}
-	var parentChainBlockNumber uint64
-	err = rlp.DecodeBytes(parentChainBlockNumberBytes, &parentChainBlockNumber)
-	if err != nil {
-		return 0, err
-	}
-	return parentChainBlockNumber, nil
+	return read.Value[uint64](d.db, schema.HeadMelStateBlockNumKey)
 }
 
 func (d *Database) State(ctx context.Context, parentChainBlockNumber uint64) (*mel.State, error) {
-	return getState(ctx, d.db, parentChainBlockNumber)
-}
-
-func getState(ctx context.Context, db ethdb.KeyValueStore, parentChainBlockNumber uint64) (*mel.State, error) {
-	state, err := read.Value[mel.State](db, read.Key(schema.MelStatePrefix, parentChainBlockNumber))
+	state, err := read.Value[mel.State](d.db, read.Key(schema.MelStatePrefix, parentChainBlockNumber))
 	if err != nil {
 		return nil, err
 	}
@@ -116,13 +103,8 @@ func (d *Database) SaveBatchMetas(ctx context.Context, state *mel.State, batchMe
 }
 
 func (d *Database) fetchBatchMetadata(seqNum uint64) (*mel.BatchMetadata, error) {
-	key := read.Key(schema.MelSequencerBatchMetaPrefix, seqNum)
-	batchMetadataBytes, err := d.db.Get(key)
+	batchMetadata, err := read.Value[mel.BatchMetadata](d.db, read.Key(schema.MelSequencerBatchMetaPrefix, seqNum))
 	if err != nil {
-		return nil, err
-	}
-	var batchMetadata mel.BatchMetadata
-	if err = rlp.DecodeBytes(batchMetadataBytes, &batchMetadata); err != nil {
 		return nil, err
 	}
 	return &batchMetadata, nil
@@ -167,11 +149,7 @@ func (d *Database) ReadDelayedMessage(ctx context.Context, state *mel.State, ind
 }
 
 func (d *Database) fetchDelayedMessage(index uint64) (*mel.DelayedInboxMessage, error) {
-	return fetchDelayedMessage(d.db, index)
-}
-
-func fetchDelayedMessage(db ethdb.KeyValueStore, index uint64) (*mel.DelayedInboxMessage, error) {
-	delayed, err := read.Value[mel.DelayedInboxMessage](db, read.Key(schema.MelDelayedMessagePrefix, index))
+	delayed, err := read.Value[mel.DelayedInboxMessage](d.db, read.Key(schema.MelDelayedMessagePrefix, index))
 	if err != nil {
 		return nil, err
 	}
