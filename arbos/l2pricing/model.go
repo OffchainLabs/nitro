@@ -350,14 +350,14 @@ func (ps *L2PricingState) calcBaseFeeFromExponent(exponent arbmath.Bips) (*big.I
 	}
 }
 
-func (ps *L2PricingState) MultiDimensionalPriceForRefund(gasUsed multigas.MultiGas) (*big.Int, error) {
+func (ps *L2PricingState) GetMultiGasBaseFeePerResource() ([]*big.Int, error) {
 	// Base fee is max of per-resource-kind base fees
 	baseFeeWei, err := ps.BaseFeeWei()
 	if err != nil {
 		return nil, err
 	}
 
-	total := new(big.Int)
+	fees := make([]*big.Int, multigas.NumResourceKind)
 	for kind := range multigas.ResourceKind(multigas.NumResourceKind) {
 		baseFee, err := ps.multiGasFees.GetCurrentBlockFee(kind)
 		if err != nil {
@@ -367,6 +367,21 @@ func (ps *L2PricingState) MultiDimensionalPriceForRefund(gasUsed multigas.MultiG
 		if kind == multigas.ResourceKindL1Calldata || baseFee.Cmp(big.NewInt(0)) == 0 {
 			baseFee = baseFeeWei
 		}
+		fees[kind] = baseFee
+	}
+	return fees, nil
+}
+
+func (ps *L2PricingState) MultiDimensionalPriceForRefund(gasUsed multigas.MultiGas) (*big.Int, error) {
+	fees, err := ps.GetMultiGasBaseFeePerResource()
+	if err != nil {
+		return nil, err
+	}
+
+	total := new(big.Int)
+	for i, baseFee := range fees {
+		// #nosec G115 safe: NumResourceKind < 2^32
+		kind := multigas.ResourceKind(i)
 
 		amount := gasUsed.Get(kind)
 		if amount == 0 {

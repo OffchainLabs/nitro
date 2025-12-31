@@ -538,6 +538,7 @@ func Precompiles() map[addr]ArbosPrecompile {
 	ArbGasInfo.methodsByName["GetMaxBlockGasLimit"].arbosVersion = params.ArbosVersion_50
 	ArbGasInfo.methodsByName["GetGasPricingConstraints"].arbosVersion = params.ArbosVersion_50
 	ArbGasInfo.methodsByName["GetMultiGasPricingConstraints"].arbosVersion = params.ArbosVersion_60
+	ArbGasInfo.methodsByName["GetMultiGasBaseFee"].arbosVersion = params.ArbosVersion_60
 	insert(MakePrecompile(precompilesgen.ArbAggregatorMetaData, &ArbAggregator{Address: types.ArbAggregatorAddress}))
 	insert(MakePrecompile(precompilesgen.ArbStatisticsMetaData, &ArbStatistics{Address: types.ArbStatisticsAddress}))
 
