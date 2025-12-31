@@ -1296,6 +1296,8 @@ func TestL1FundedUnsignedTransaction(t *testing.T) {
 }
 
 func TestRetryableSubmissionAndRedeemFees(t *testing.T) {
+	t.Helper()
+
 	builder, delayedInbox, lookupL2Tx, ctx, teardown := retryableSetup(t, func(b *NodeBuilder) {
 		b.WithDatabase(rawdb.DBPebble)
 	})

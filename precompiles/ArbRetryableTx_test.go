@@ -11,9 +11,9 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos"
-	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbos/storage"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
@@ -102,7 +102,7 @@ func testRetryableRedeem(t *testing.T, evm *vm.EVM, precompileCtx *Context) {
 	}
 }
 
-func TestRetryableRedeem(t *testing.T) {
+func TestRetryableRedeemLegacy(t *testing.T) {
 	evm := newMockEVMForTesting()
 	precompileCtx := testContext(common.Address{}, evm)
 
@@ -116,19 +116,56 @@ func TestRetryableRedeem(t *testing.T) {
 	testRetryableRedeem(t, evm, precompileCtx)
 }
 
-func TestRetryableRedeemWithSingleGasConstraints(t *testing.T) {
+func TestRetryableRedeemLegacyArbOS60(t *testing.T) {
+	arbosVersion := params.ArbosVersion_MultiGasConstraintsVersion
+	evm := newMockEVMForTestingWithVersion(&arbosVersion)
+	precompileCtx := testContext(common.Address{}, evm)
+
+	model, err := precompileCtx.State.L2PricingState().GasModelToUse()
+	Require(t, err)
+
+	if model != l2pricing.GasModelLegacy {
+		Fail(t, "should use legacy model")
+	}
+
+	testRetryableRedeem(t, evm, precompileCtx)
+}
+
+func TestRetryableRedeemWithGasConstraints(t *testing.T) {
 	evm := newMockEVMForTesting()
 	precompileCtx := testContext(common.Address{}, evm)
 
-	for i := range l2pricing.GasConstraintsMaxNum {
-		// #nosec G115
-		target0 := uint64((i + 1) * 1000000)
-		// #nosec G115
-		window0 := uint64((i + 1) * 10)
-		// #nosec G115
-		backlog0 := uint64((i + 1) * 500000)
+	for i := range uint64(l2pricing.GasConstraintsMaxNum) {
+		target := (i + 1) * 1000000
+		window := (i + 1) * 10
+		backlog := (i + 1) * 500000
 
-		err := precompileCtx.State.L2PricingState().AddGasConstraint(target0, window0, backlog0)
+		err := precompileCtx.State.L2PricingState().AddGasConstraint(target, window, backlog)
+		Require(t, err)
+	}
+
+	model, err := precompileCtx.State.L2PricingState().GasModelToUse()
+	Require(t, err)
+
+	if model != l2pricing.GasModelSingleGasConstraints {
+		Fail(t, "should use single-gas constraints model")
+	}
+
+	testRetryableRedeem(t, evm, precompileCtx)
+}
+
+func TestRetryableRedeemWithGasConstraintsArbOSMultiGasConstraintsVersion(t *testing.T) {
+	arbosVersion := params.ArbosVersion_MultiGasConstraintsVersion
+	evm := newMockEVMForTestingWithVersion(&arbosVersion)
+
+	precompileCtx := testContextWithVersion(common.Address{}, evm, arbosVersion)
+
+	for i := range uint64(100) {
+		target := (i + 1) * 1000000
+		window := (i + 1) * 10
+		backlog := (i + 1) * 500000
+
+		err := precompileCtx.State.L2PricingState().AddGasConstraint(target, window, backlog)
 		Require(t, err)
 	}
 
@@ -143,19 +180,12 @@ func TestRetryableRedeemWithSingleGasConstraints(t *testing.T) {
 }
 
 func TestRetryableRedeemWithMultiGasConstraints(t *testing.T) {
-	evm := newMockEVMForTesting()
-	precompileCtx := testContext(common.Address{}, evm)
-	precompileCtx.State.L2PricingState().ArbosVersion = l2pricing.ArbosMultiGasConstraintsVersion
+	arbosVersion := params.ArbosVersion_MultiGasConstraintsVersion
+	evm := newMockEVMForTestingWithVersion(&arbosVersion)
 
-	// Override default ArbOS varsion in the database
-	versionSlot := uint64(0)
-	version := new(big.Int).SetUint64(l2pricing.ArbosMultiGasConstraintsVersion)
-	burner := burn.NewSystemBurner(nil, false)
-	sto := storage.NewGeth(evm.StateDB, burner)
-	err := sto.SetByUint64(versionSlot, common.BigToHash(version))
-	Require(t, err)
+	precompileCtx := testContextWithVersion(common.Address{}, evm, arbosVersion)
 
-	for i := range l2pricing.MultiGasConstraintsMaxNum {
+	for i := range 100 {
 		// #nosec G115
 		target := uint64((i + 1) * 1000000)
 		// #nosec G115
@@ -172,7 +202,7 @@ func TestRetryableRedeemWithMultiGasConstraints(t *testing.T) {
 			uint8(multigas.ResourceKindWasmComputation): 6,
 		}
 
-		err = precompileCtx.State.L2PricingState().AddMultiGasConstraint(target, window, backlog, weights)
+		err := precompileCtx.State.L2PricingState().AddMultiGasConstraint(target, window, backlog, weights)
 		Require(t, err)
 	}
 

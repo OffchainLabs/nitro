@@ -130,7 +130,7 @@ func TestCompareSingleGasConstraintsPricingModelWithMultiGasConstraints(t *testi
 
 func TestCalcMultiGasConstraintsExponents(t *testing.T) {
 	pricing := PricingForTest(t)
-	pricing.ArbosVersion = ArbosMultiGasConstraintsVersion
+	pricing.ArbosVersion = params.ArbosVersion_MultiGasConstraintsVersion
 
 	Require(t, pricing.AddMultiGasConstraint(
 		100000,
@@ -195,7 +195,7 @@ func TestMultiDimensionalPriceForRefund(t *testing.T) {
 	singlePrice := minPrice.Mul(minPrice, singleGas)
 	Require(t, err)
 
-	pricing.ArbosVersion = ArbosMultiGasConstraintsVersion
+	pricing.ArbosVersion = params.ArbosVersion_MultiGasConstraintsVersion
 
 	// Initial price check
 	price, err := pricing.MultiDimensionalPriceForRefund(multiGas)
