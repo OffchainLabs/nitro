@@ -3215,9 +3215,10 @@ impl Machine {
 
                 // Check if this is a DACertificate ValidateCertificate that needs enhancement
                 let preimage_type = value_stack.last().unwrap().assume_u32();
-                if let Ok(preimage_ty) =
-                    PreimageType::try_from(u8::try_from(preimage_type).unwrap_or(255))
-                {
+                if let Ok(preimage_ty) = PreimageType::try_from(
+                    u8::try_from(preimage_type)
+                        .expect("ValidateCertificate preimage_type is out of range for u8"),
+                ) {
                     if preimage_ty == PreimageType::DACertificate {
                         // We do something special here; we don't create the final proof.
                         // For DACertificate preimages, signal that this proof needs enhancement
