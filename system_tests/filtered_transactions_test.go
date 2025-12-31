@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/arbitrum/multigas"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
@@ -42,6 +43,11 @@ func TestManageTransactionCensors(t *testing.T) {
 
 	arbOwner, err := precompilesgen.NewArbOwner(types.ArbOwnerAddress, builder.L2.Client)
 	require.NoError(t, err)
+
+	filteredTransactionsManagerABI, err := precompilesgen.ArbFilteredTransactionsManagerMetaData.GetAbi()
+	Require(t, err)
+	addedTopic := filteredTransactionsManagerABI.Events["FilteredTransactionAdded"].ID
+	deletedTopic := filteredTransactionsManagerABI.Events["FilteredTransactionDeleted"].ID
 
 	arbFilteredTxs, err := precompilesgen.NewArbFilteredTransactionsManager(
 		types.ArbFilteredTransactionsManagerAddress,
@@ -77,12 +83,14 @@ func TestManageTransactionCensors(t *testing.T) {
 	// User filters the tx
 	tx, err = arbFilteredTxs.AddFilteredTransaction(&userTxOpts, txHash)
 	require.NoError(t, err)
-	receipt, err := bind.WaitMined(ctx, builder.L2.Client, tx)
+	receipt, err := builder.L2.EnsureTxSucceeded(tx)
 	require.NoError(t, err)
-	require.Equal(t, types.ReceiptStatusSuccessful, receipt.Status)
 
 	foundAdded := false
 	for _, lg := range receipt.Logs {
+		if lg.Topics[0] != addedTopic {
+			continue
+		}
 		ev, parseErr := arbFilteredTxs.ParseFilteredTransactionAdded(*lg)
 		if parseErr != nil {
 			continue
@@ -100,12 +108,14 @@ func TestManageTransactionCensors(t *testing.T) {
 	// User unfilters the tx
 	tx, err = arbFilteredTxs.DeleteFilteredTransaction(&userTxOpts, txHash)
 	require.NoError(t, err)
-	receipt, err = bind.WaitMined(ctx, builder.L2.Client, tx)
+	receipt, err = builder.L2.EnsureTxSucceeded(tx)
 	require.NoError(t, err)
-	require.Equal(t, types.ReceiptStatusSuccessful, receipt.Status)
 
 	foundDeleted := false
 	for _, lg := range receipt.Logs {
+		if lg.Topics[0] != deletedTopic {
+			continue
+		}
 		ev, parseErr := arbFilteredTxs.ParseFilteredTransactionDeleted(*lg)
 		if parseErr != nil {
 			continue
@@ -132,4 +142,58 @@ func TestManageTransactionCensors(t *testing.T) {
 	// User is no longer authorised
 	_, err = arbFilteredTxs.IsTransactionFiltered(userCallOpts, txHash)
 	require.Error(t, err)
+}
+
+func TestFilteredTransactionsManagerFreeOps(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).
+		DefaultConfig(t, false).
+		WithArbOSVersion(params.ArbosVersion_60)
+
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	ownerTxOpts := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
+
+	censorName := "Censor"
+	builder.L2Info.GenerateAccount(censorName)
+
+	builder.L2.TransferBalance(t, "Owner", censorName, big.NewInt(1e16), builder.L2Info)
+	censorTxOpts := builder.L2Info.GetDefaultTransactOpts(censorName, ctx)
+	censorTxOpts.GasLimit = 32000000
+
+	txHash := common.BytesToHash([]byte{1, 2, 3, 4, 5})
+
+	arbOwner, err := precompilesgen.NewArbOwner(types.ArbOwnerAddress, builder.L2.Client)
+	require.NoError(t, err)
+
+	arbFilteredTxs, err := precompilesgen.NewArbFilteredTransactionsManager(
+		types.ArbFilteredTransactionsManagerAddress,
+		builder.L2.Client,
+	)
+	require.NoError(t, err)
+
+	tx, err := arbOwner.AddTransactionCensor(&ownerTxOpts, censorTxOpts.From)
+	require.NoError(t, err)
+	require.NotNil(t, tx)
+
+	// Censor filters the tx
+	tx, err = arbFilteredTxs.AddFilteredTransaction(&censorTxOpts, txHash)
+	require.NoError(t, err)
+	receipt, err := builder.L2.EnsureTxSucceeded(tx)
+	require.NoError(t, err)
+
+	// AddFilteredTransaction use storage set, but it should be free for censors
+	require.Equal(t, uint64(0), receipt.MultiGasUsed.Get(multigas.ResourceKindStorageAccess))
+
+	// Censor unfilters the tx
+	tx, err = arbFilteredTxs.DeleteFilteredTransaction(&censorTxOpts, txHash)
+	require.NoError(t, err)
+	receipt, err = builder.L2.EnsureTxSucceeded(tx)
+	require.NoError(t, err)
+
+	// DeleteFilteredTransaction use storage clear, but it should be free for censors
+	require.Equal(t, uint64(0), receipt.MultiGasUsed.Get(multigas.ResourceKindStorageAccess))
 }
