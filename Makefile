@@ -359,17 +359,17 @@ $(replay_wasm): $(DEP_PREDICATE) $(go_source) .make/solgen
 
 $(prover_bin): $(DEP_PREDICATE) $(rust_prover_files)
 	mkdir -p `dirname $(prover_bin)`
-	cargo build --manifest-path crates/Cargo.toml --release --bin prover ${CARGOFLAGS}
+	cargo build --release --bin prover ${CARGOFLAGS}
 	install crates/target/release/prover $@
 
 $(arbitrator_stylus_lib): $(DEP_PREDICATE) $(stylus_files)
 	mkdir -p `dirname $(arbitrator_stylus_lib)`
-	cargo build --manifest-path crates/Cargo.toml --release --lib -p stylus ${CARGOFLAGS}
+	cargo build --release --lib -p stylus ${CARGOFLAGS}
 	install crates/target/release/libstylus.a $@
 
 $(arbitrator_jit): $(DEP_PREDICATE) $(jit_files)
 	mkdir -p `dirname $(arbitrator_jit)`
-	cargo build --manifest-path crates/Cargo.toml --release -p jit ${CARGOFLAGS}
+	cargo build --release -p jit ${CARGOFLAGS}
 	install crates/target/release/jit $@
 
 $(arbitrator_cases)/rust/$(wasm32_wasi)/%.wasm: $(arbitrator_cases)/rust/src/bin/%.rs $(arbitrator_cases)/rust/src/lib.rs $(arbitrator_cases)/rust/.cargo/config.toml
@@ -588,7 +588,7 @@ contracts/test/prover/proofs/%.json: $(arbitrator_cases)/%.wasm $(prover_bin)
 
 .make/fmt: $(DEP_PREDICATE) build-node-deps .make/yarndeps $(ORDER_ONLY_PREDICATE) .make
 	golangci-lint fmt
-	cargo fmt -p arbutil -p prover -p jit -p stylus --manifest-path crates/Cargo.toml -- --check
+	cargo fmt -p arbutil -p prover -p jit -p stylus -- --check
 	cargo fmt --all --manifest-path crates/wasm-testsuite/Cargo.toml -- --check
 	forge fmt --root contracts-local
 	@touch $@
@@ -598,7 +598,7 @@ contracts/test/prover/proofs/%.json: $(arbitrator_cases)/%.wasm $(prover_bin)
 	@touch $@
 
 .make/test-rust: $(DEP_PREDICATE) wasm-ci-build $(ORDER_ONLY_PREDICATE) .make
-	cargo test --manifest-path crates/Cargo.toml --release
+	cargo test --release
 	@touch $@
 
 .make/solgen: $(DEP_PREDICATE) solgen/gen.go .make/solidity $(ORDER_ONLY_PREDICATE) .make

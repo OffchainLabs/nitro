@@ -58,7 +58,7 @@ runs:
           crates/wasm-libraries/soft-float/
           target/etc/initial-machine-cache/
           /home/runner/.rustup/toolchains/
-        key: ${{ runner.os }}-cargo-${{ steps.install-rust.outputs.version }}-${{ hashFiles('crates/Cargo.lock') }}
+        key: ${{ runner.os }}-cargo-${{ steps.install-rust.outputs.version }}-${{ hashFiles('Cargo.lock') }}
 
     - name: Cache cbrotli
       id: cache-cbrotli

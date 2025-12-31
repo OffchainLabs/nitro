@@ -52,7 +52,7 @@ RUN apt-get update && \
     # pinned rust 1.88.0
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.88.0 --target x86_64-unknown-linux-gnu,wasm32-unknown-unknown,wasm32-wasip1
 COPY ./Makefile ./
-COPY crates/Cargo.* crates/
+COPY Cargo.* ./
 COPY crates/arbutil crates/arbutil
 COPY crates/brotli crates/brotli
 COPY crates/caller-env crates/caller-env
@@ -114,7 +114,7 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
     apt-get install -y make clang wabt && \
     cargo install --force cbindgen --version 0.24.3
-COPY crates/Cargo.* crates/
+COPY Cargo.* ./
 COPY ./Makefile ./
 COPY crates/arbutil crates/arbutil
 COPY crates/bench crates/bench
@@ -145,7 +145,7 @@ RUN wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add - && \
     apt-get update && \
     apt-get install -y llvm-15-dev libclang-common-15-dev
 COPY --from=brotli-library-export / target/
-COPY crates/Cargo.* crates/
+COPY Cargo.* ./
 COPY crates/arbutil crates/arbutil
 COPY crates/bench crates/bench
 COPY crates/brotli crates/brotli
@@ -166,7 +166,7 @@ RUN echo "fn test() {}" > crates/jit/src/lib.rs && \
     echo "fn test() {}" > crates/stylus/src/lib.rs && \
     echo "fn test() {}" > crates/validator/src/lib.rs && \
     echo "fn test() {}" > crates/wasm-libraries/user-host-trait/src/lib.rs && \
-    cargo build --manifest-path crates/Cargo.toml --release --lib && \
+    cargo build --release --lib && \
     rm crates/prover/src/lib.rs crates/jit/src/lib.rs crates/stylus/src/lib.rs && \
     rm crates/wasm-libraries/user-host-trait/src/lib.rs && \
     rm crates/prover/benches/merkle_bench.rs && \
