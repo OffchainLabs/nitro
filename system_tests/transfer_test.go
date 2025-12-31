@@ -108,7 +108,7 @@ func TestTransferExternal(t *testing.T) {
 }
 
 func TestTransferComparison(t *testing.T) {
-	testTransfer(t, ExecutionClientModeExternal)
+	testTransfer(t, ExecutionClientModeComparison)
 }
 
 // getExpectedP256Result returns the expected result for P256Verify based on ArbOS version
