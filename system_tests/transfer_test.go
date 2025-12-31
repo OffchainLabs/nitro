@@ -20,36 +20,13 @@ import (
 func testTransfer(t *testing.T, executionClientMode ExecutionClientMode) {
 	ctx := t.Context()
 
-	// For External/Comparison modes, we need L1 for the replica
-	withL1 := executionClientMode != ExecutionClientModeInternal
-
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, withL1)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
 	cleanup := builder.Build(t)
 	defer cleanup()
 
 	builder.L2Info.GenerateAccount("User2")
 	tx := builder.L2Info.PrepareTx("Owner", "User2", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
 
-	// For Internal mode, test on primary node only
-	if executionClientMode == ExecutionClientModeInternal {
-		err := builder.L2.Client.SendTransaction(ctx, tx)
-		Require(t, err)
-		_, err = builder.L2.EnsureTxSucceeded(tx)
-		Require(t, err)
-
-		bal, err := builder.L2.Client.BalanceAt(ctx, builder.L2Info.GetAddress("Owner"), nil)
-		Require(t, err)
-		fmt.Println("Owner balance is: ", bal)
-
-		bal2, err := builder.L2.Client.BalanceAt(ctx, builder.L2Info.GetAddress("User2"), nil)
-		Require(t, err)
-		if bal2.Cmp(big.NewInt(1e12)) != 0 {
-			Fatal(t, "Unexpected recipient balance: ", bal2)
-		}
-		return
-	}
-
-	// For External/Comparison modes, test on replica
 	replicaConfig := arbnode.ConfigDefaultL1NonSequencerTest()
 	replicaParams := &SecondNodeParams{
 		nodeConfig:             replicaConfig,
@@ -125,7 +102,6 @@ func getExpectedP256Result(version uint64) []byte {
 func testP256Verify(t *testing.T, executionClientMode ExecutionClientMode) {
 	ctx := t.Context()
 
-	// Use the version from the flag
 	initialVersion := *testflag.ArbOSVersionFlag
 	want := getExpectedP256Result(initialVersion)
 
@@ -135,9 +111,8 @@ func testP256Verify(t *testing.T, executionClientMode ExecutionClientMode) {
 		t.Logf("Testing P256Verify on ArbOS %d - expecting precompile to be enabled (success response)", initialVersion)
 	}
 
-	withL1 := executionClientMode != ExecutionClientModeInternal
-
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, withL1).DontParalellise()
+	// Build with L1 for all modes
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).DontParalellise()
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -150,17 +125,7 @@ func testP256Verify(t *testing.T, executionClientMode ExecutionClientMode) {
 		Value: big.NewInt(1e12),
 	}
 
-	if executionClientMode == ExecutionClientModeInternal {
-		got, err := builder.L2.Client.CallContract(ctx, callMsg, nil)
-		if err != nil {
-			t.Fatalf("CallContract() unexpected error: %v", err)
-		}
-		if !bytes.Equal(got, want) {
-			t.Errorf("P256Verify() = %v, want: %v (testing ArbOS version %d)", got, want, initialVersion)
-		}
-		return
-	}
-
+	// Build replica for all execution modes
 	replicaConfig := arbnode.ConfigDefaultL1NonSequencerTest()
 	replicaParams := &SecondNodeParams{
 		nodeConfig:             replicaConfig,
@@ -183,7 +148,7 @@ func testP256Verify(t *testing.T, executionClientMode ExecutionClientMode) {
 	}
 }
 
-func TestP256VerifyInternal(t *testing.T) {
+func TestP256Verify(t *testing.T) {
 	testP256Verify(t, ExecutionClientModeInternal)
 }
 
