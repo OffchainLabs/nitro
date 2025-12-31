@@ -74,7 +74,7 @@ func testCompileArch(store bool, cranelift bool) error {
 		}
 	}
 
-	source, err := os.ReadFile("../../arbitrator/stylus/tests/add.wat")
+	source, err := os.ReadFile("../../crates/stylus/tests/add.wat")
 	if err != nil {
 		return fmt.Errorf("failed reading stylus contract: %w", err)
 	}

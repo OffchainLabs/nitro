@@ -37,7 +37,7 @@ jobs:
         with:
           files_yaml: |
             arbitrator:
-              - 'arbitrator/**'
+              - 'crates/**'
               - 'contracts/**'
               - 'Makefile'
               - '.github/workflows/_arbitrator.yml'

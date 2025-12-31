@@ -36,7 +36,7 @@ func TestEntriesAreDeletedFromPreimageResolversGlobalMap(t *testing.T) {
 	}
 
 	_, filename, _, _ := runtime.Caller(0)
-	wasmDir := path.Join(path.Dir(filename), "../../arbitrator/prover/test-cases/")
+	wasmDir := path.Join(path.Dir(filename), "../../crates/prover/test-cases/")
 	wasmPath := path.Join(wasmDir, "global-state.wasm")
 	modulePaths := []string{path.Join(wasmDir, "global-state-wrapper.wasm")}
 
