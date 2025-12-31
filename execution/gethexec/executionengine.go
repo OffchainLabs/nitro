@@ -115,7 +115,7 @@ type ExecutionEngine struct {
 
 	runningMaintenance atomic.Bool
 
-	addressFilter state.AddressFilter
+	addressChecker state.AddressChecker
 }
 
 func NewL1PriceData() *L1PriceData {
@@ -528,8 +528,8 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 	if err != nil {
 		return nil, err
 	}
-	if s.addressFilter != nil {
-		statedb.SetAddressFilter(s.addressFilter)
+	if s.addressChecker != nil {
+		statedb.SetAddressChecker(s.addressChecker)
 	}
 	lastBlock := s.bc.GetBlock(lastBlockHeader.Hash(), lastBlockHeader.Number.Uint64())
 	if lastBlock == nil {
@@ -1135,6 +1135,6 @@ func (s *ExecutionEngine) MaintenanceStatus() *execution.MaintenanceStatus {
 	}
 }
 
-func (s *ExecutionEngine) SetAddressFilter(filter state.AddressFilter) {
-	s.addressFilter = filter
+func (s *ExecutionEngine) SetAddressChecker(checker state.AddressChecker) {
+	s.addressChecker = checker
 }

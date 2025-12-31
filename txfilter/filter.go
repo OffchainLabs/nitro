@@ -3,27 +3,60 @@
 
 package txfilter
 
-import "github.com/ethereum/go-ethereum/common"
+import (
+	"sync"
 
-// NoopFilter is a stub that filters nothing.
-type NoopFilter struct{}
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/state"
+)
 
-func (f *NoopFilter) IsFiltered(addr common.Address) bool { return false }
+// NoopChecker is a stub that filters nothing.
+type NoopChecker struct{}
 
-// StaticFilter filters a fixed set of addresses (for testing).
-type StaticFilter struct {
+func (c *NoopChecker) NewTxState() state.AddressCheckerState {
+	return &noopState{}
+}
+
+type noopState struct{}
+
+func (s *noopState) TouchAddress(addr common.Address) {}
+func (s *noopState) IsFiltered() bool                 { return false }
+
+// StaticAsyncChecker filters a fixed set of addresses (for testing).
+// Checks addresses asynchronously using goroutines to demonstrate the async pattern.
+type StaticAsyncChecker struct {
 	addresses map[common.Address]struct{}
 }
 
-func NewStaticFilter(addrs []common.Address) *StaticFilter {
+func NewStaticAsyncChecker(addrs []common.Address) *StaticAsyncChecker {
 	m := make(map[common.Address]struct{}, len(addrs))
 	for _, addr := range addrs {
 		m[addr] = struct{}{}
 	}
-	return &StaticFilter{addresses: m}
+	return &StaticAsyncChecker{addresses: m}
 }
 
-func (f *StaticFilter) IsFiltered(addr common.Address) bool {
-	_, ok := f.addresses[addr]
-	return ok
+func (c *StaticAsyncChecker) NewTxState() state.AddressCheckerState {
+	return &staticAsyncState{checker: c}
+}
+
+type staticAsyncState struct {
+	checker       *StaticAsyncChecker
+	filtered      bool
+	pendingChecks sync.WaitGroup
+}
+
+func (s *staticAsyncState) TouchAddress(addr common.Address) {
+	s.pendingChecks.Add(1)
+	go func() {
+		defer s.pendingChecks.Done()
+		if _, found := s.checker.addresses[addr]; found {
+			s.filtered = true
+		}
+	}()
+}
+
+func (s *staticAsyncState) IsFiltered() bool {
+	s.pendingChecks.Wait()
+	return s.filtered
 }

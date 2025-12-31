@@ -745,14 +745,14 @@ func (s *Sequencer) preTxFilter(_ *params.ChainConfig, header *types.Header, sta
 	if tx.To() != nil {
 		statedb.TouchAddress(*tx.To())
 	}
-	if statedb.IsTxFiltered() {
+	if statedb.IsTxFiltered() || statedb.IsAddressFiltered() {
 		return state.ErrArbTxFilter
 	}
 	return nil
 }
 
 func (s *Sequencer) postTxFilter(header *types.Header, statedb *state.StateDB, _ *arbosState.ArbosState, tx *types.Transaction, sender common.Address, dataGas uint64, result *core.ExecutionResult) error {
-	if statedb.IsTxFiltered() {
+	if statedb.IsTxFiltered() || statedb.IsAddressFiltered() {
 		return state.ErrArbTxFilter
 	}
 
