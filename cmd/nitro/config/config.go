@@ -11,10 +11,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ethereum/go-ethereum/core/rawdb"
-	"github.com/ethereum/go-ethereum/log"
 	"github.com/knadh/koanf"
 	"github.com/knadh/koanf/providers/confmap"
+	"github.com/spf13/pflag"
+
+	"github.com/ethereum/go-ethereum/core/rawdb"
+	"github.com/ethereum/go-ethereum/log"
+
 	"github.com/offchainlabs/nitro/arbnode"
 	blocksreexecutor "github.com/offchainlabs/nitro/blocks_reexecutor"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
@@ -25,7 +28,6 @@ import (
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/util/colors"
 	"github.com/offchainlabs/nitro/validator/valnode"
-	"github.com/spf13/pflag"
 )
 
 type NodeConfig struct {
