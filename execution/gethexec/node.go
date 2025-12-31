@@ -539,15 +539,14 @@ func (n *ExecutionNode) ArbOSVersionForMessageIndex(msgIdx arbutil.MessageIndex)
 }
 
 func (n *ExecutionNode) RecordBlockCreation(
-	ctx context.Context,
 	pos arbutil.MessageIndex,
 	msg *arbostypes.MessageWithMetadata,
 	wasmTargets []rawdb.WasmTarget,
-) (*execution.RecordResult, error) {
-	return n.Recorder.RecordBlockCreation(ctx, pos, msg, wasmTargets)
+) containers.PromiseInterface[*execution.RecordResult] {
+	return n.Recorder.RecordBlockCreation(pos, msg, wasmTargets)
 }
-func (n *ExecutionNode) PrepareForRecord(ctx context.Context, start, end arbutil.MessageIndex) error {
-	return n.Recorder.PrepareForRecord(ctx, start, end)
+func (n *ExecutionNode) PrepareForRecord(start, end arbutil.MessageIndex) containers.PromiseInterface[struct{}] {
+	return n.Recorder.PrepareForRecord(start, end)
 }
 
 func (n *ExecutionNode) Pause() {
