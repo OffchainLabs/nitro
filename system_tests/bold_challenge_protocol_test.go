@@ -663,7 +663,9 @@ func createL2NodeForBoldProtocol(
 	Require(t, execConfig.Validate())
 	stackConfig := testhelpers.CreateStackConfigForTest("")
 	stackConfig.DBEngine = rawdb.DBPebble
-	initMessage := getInitMessage(ctx, t, l1client, addresses)
+	initMessage, err := getInitMessage(ctx, t, l2infoIn.Signer.ChainID(), l1client, addresses, chainConfig)
+	Require(t, err)
+
 	var l2executionDB ethdb.Database
 	var l2consensusDB ethdb.Database
 	var l2blockchain *core.BlockChain
@@ -972,7 +974,8 @@ func create2ndNodeWithConfigForBoldProtocol(
 	txOpts := l1info.GetDefaultTransactOpts("Sequencer", ctx)
 
 	initReader := statetransfer.NewMemoryInitDataReader(l2InitData)
-	initMessage := getInitMessage(ctx, t, l1client, first.DeployInfo)
+	initMessage, err := getInitMessage(ctx, t, chainConfig.ChainID, l1client, first.DeployInfo, chainConfig)
+	Require(t, err)
 
 	execConfig := ExecConfigDefaultNonSequencerTest(t, rawdb.HashScheme)
 	Require(t, execConfig.Validate())

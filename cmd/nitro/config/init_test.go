@@ -1,7 +1,7 @@
 // Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-package main
+package config
 
 import (
 	"archive/tar"
@@ -432,7 +432,7 @@ func TestOpenInitializeExecutionDBIncompatibleStateScheme(t *testing.T) {
 	l1Client := ethclient.NewClient(stack.Attach())
 
 	// opening for the first time doesn't error
-	executionDB, blockchain, err := openInitializeExecutionDB(
+	executionDB, blockchain, err := OpenInitializeExecutionDB(
 		ctx,
 		stack,
 		&nodeConfig,
@@ -449,7 +449,7 @@ func TestOpenInitializeExecutionDBIncompatibleStateScheme(t *testing.T) {
 	Require(t, err)
 
 	// opening for the second time doesn't error
-	executionDB, blockchain, err = openInitializeExecutionDB(
+	executionDB, blockchain, err = OpenInitializeExecutionDB(
 		ctx,
 		stack,
 		&nodeConfig,
@@ -467,7 +467,7 @@ func TestOpenInitializeExecutionDBIncompatibleStateScheme(t *testing.T) {
 
 	// opening with a different state scheme errors
 	nodeConfig.Execution.Caching.StateScheme = rawdb.HashScheme
-	_, _, err = openInitializeExecutionDB(
+	_, _, err = OpenInitializeExecutionDB(
 		ctx,
 		stack,
 		&nodeConfig,
@@ -695,7 +695,7 @@ func TestOpenInitializeExecutionDbEmptyInit(t *testing.T) {
 
 	l1Client := ethclient.NewClient(stack.Attach())
 
-	executionDB, blockchain, err := openInitializeExecutionDB(
+	executionDB, blockchain, err := OpenInitializeExecutionDB(
 		ctx,
 		stack,
 		&nodeConfig,
@@ -884,7 +884,7 @@ func TestGetConsensusParsedInitMessage(t *testing.T) {
 	chainConfig := params.ChainConfig{}
 	chainConfig.ChainID = chainID
 
-	parsedInitMessage, err := getConsensusParsedInitMsg(ctx, &nodeConfig, chainID, nil, chaininfo.RollupAddresses{}, &chainConfig)
+	parsedInitMessage, err := GetConsensusParsedInitMsg(ctx, &nodeConfig, chainID, nil, chaininfo.RollupAddresses{}, &chainConfig)
 	Require(t, err)
 
 	if parsedInitMessage.ChainId.Uint64() != chainConfig.ChainID.Uint64() {
@@ -1060,7 +1060,7 @@ func getInitHelper(t *testing.T, ownerAdress string, emptyState bool, importFile
 
 	l1Client := ethclient.NewClient(stack.Attach())
 
-	executionDB, _, err := openInitializeExecutionDB(
+	executionDB, _, err := OpenInitializeExecutionDB(
 		ctx,
 		stack,
 		&nodeConfig,
@@ -1075,7 +1075,7 @@ func getInitHelper(t *testing.T, ownerAdress string, emptyState bool, importFile
 
 	// We already call getInit once inside openInitializeExecutionDB but calling a
 	// second time is okay since we're just loading configs
-	return getInit(&nodeConfig, executionDB)
+	return GetInit(&nodeConfig, executionDB)
 
 }
 
