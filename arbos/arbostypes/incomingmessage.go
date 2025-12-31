@@ -301,12 +301,9 @@ type ParsedInitMessage struct {
 	SerializedChainConfig []byte
 }
 
-// The initial L1 pricing basefee starts at 50 GWei unless set in the init message
-var DefaultInitialL1BaseFee = big.NewInt(50 * params.GWei)
-
 var TestInitMessage = &ParsedInitMessage{
 	ChainId:          chaininfo.ArbitrumDevTestChainConfig().ChainID,
-	InitialL1BaseFee: DefaultInitialL1BaseFee,
+	InitialL1BaseFee: params.DefaultInitialL1BaseFee,
 }
 
 // ParseInitMessage returns the chain id on success
@@ -314,7 +311,7 @@ func (msg *L1IncomingMessage) ParseInitMessage() (*ParsedInitMessage, error) {
 	if msg.Header.Kind != L1MessageType_Initialize {
 		return nil, fmt.Errorf("invalid init message kind %v", msg.Header.Kind)
 	}
-	basefee := new(big.Int).Set(DefaultInitialL1BaseFee)
+	basefee := new(big.Int).Set(params.DefaultInitialL1BaseFee)
 	var chainConfig params.ChainConfig
 	var chainId *big.Int
 	if len(msg.L2msg) == 32 {

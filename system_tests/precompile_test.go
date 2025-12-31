@@ -527,6 +527,7 @@ func TestArbNativeTokenManagerThroughSolidityContract(t *testing.T) {
 
 	arbOSInit := &params.ArbOSInit{
 		NativeTokenSupplyManagementEnabled: true,
+		InitialL1BaseFee:                   params.DefaultInitialL1BaseFee,
 	}
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, false).WithArbOSInit(arbOSInit).WithArbOSVersion(params.ArbosVersion_50)
 	cleanup := builder.Build(t)
@@ -588,6 +589,7 @@ func TestArbNativeTokenManager(t *testing.T) {
 	// The chain being tested will have the feature enabled.
 	arbOSInit := &params.ArbOSInit{
 		NativeTokenSupplyManagementEnabled: true,
+		InitialL1BaseFee:                   params.DefaultInitialL1BaseFee,
 	}
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, false).WithArbOSInit(arbOSInit).WithArbOSVersion(params.ArbosVersion_50)

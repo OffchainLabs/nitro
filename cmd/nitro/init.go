@@ -790,6 +790,11 @@ func openInitializeExecutionDB(ctx context.Context, stack *node.Node, config *No
 		genesisArbOSInit = gen.ArbOSInit
 	}
 
+	configuredInitialL1BaseFee, err := resolveInitialL1BaseFee(genesisArbOSInit, &config.Chain)
+	if err != nil {
+		return executionDB, nil, err
+	}
+
 	var l2BlockChain *core.BlockChain
 	txIndexWg := sync.WaitGroup{}
 	if initDataReader == nil {
@@ -885,6 +890,9 @@ func openInitializeExecutionDB(ctx context.Context, stack *node.Node, config *No
 					return executionDB, nil, fmt.Errorf("incompatible chain config read from init message in L1 inbox: %w", err)
 				}
 			}
+			if configuredInitialL1BaseFee.Cmp(parsedInitMessage.InitialL1BaseFee) != 0 {
+				log.Error("Initial L1 base fee from init message does not match configured initial L1 base fee", "configured", configuredInitialL1BaseFee.String(), "fromInitMessage", parsedInitMessage.InitialL1BaseFee.String())
+			}
 			log.Info("Read serialized chain config from init message", "json", string(parsedInitMessage.SerializedChainConfig))
 		} else {
 			serializedChainConfig, err := json.Marshal(chainConfig)
@@ -893,7 +901,7 @@ func openInitializeExecutionDB(ctx context.Context, stack *node.Node, config *No
 			}
 			parsedInitMessage = &arbostypes.ParsedInitMessage{
 				ChainId:               chainConfig.ChainID,
-				InitialL1BaseFee:      arbostypes.DefaultInitialL1BaseFee,
+				InitialL1BaseFee:      configuredInitialL1BaseFee,
 				ChainConfig:           chainConfig,
 				SerializedChainConfig: serializedChainConfig,
 			}
@@ -935,6 +943,22 @@ func openInitializeExecutionDB(ctx context.Context, stack *node.Node, config *No
 	}
 
 	return rebuildLocalWasm(ctx, &config.Execution, l2BlockChain, executionDB, wasmDB, config.Init.RebuildLocalWasm)
+}
+
+func resolveInitialL1BaseFee(genesisArbOSInit *params.ArbOSInit, l2Config *conf.L2Config) (*big.Int, error) {
+	feeCLIFlag, err := l2Config.InitialL1BaseFeeParsed()
+	if err != nil {
+		return nil, err
+	}
+
+	if genesisArbOSInit == nil {
+		return feeCLIFlag, nil
+	}
+	feeGenesisJSON := genesisArbOSInit.GetInitialL1BaseFee()
+	if l2Config.InitialL1BaseFee != "" && feeCLIFlag.Cmp(feeGenesisJSON) != 0 {
+		return nil, fmt.Errorf("initial l1 base fee configuration mismatch: `genesis-json-file` sets the value to %s, while `initial-l1base-fee` flag was set to %s", feeGenesisJSON.String(), l2Config.InitialL1BaseFee)
+	}
+	return feeGenesisJSON, nil
 }
 
 func validateGenesisAssertion(ctx context.Context, rollupAddress common.Address, l1Client *ethclient.Client, genesis *types.Block, initDataReaderHasAccounts bool) error {
