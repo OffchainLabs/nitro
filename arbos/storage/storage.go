@@ -16,6 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/tracing"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
@@ -67,10 +68,9 @@ const storageKeyCacheSize = 1024
 var storageHashCache = lru.NewCache[string, []byte](storageKeyCacheSize)
 var cacheFullLogged atomic.Bool
 
-// NewGeth uses a Geth database to create an evm key-value store
-func NewGeth(statedb vm.StateDB, burner burn.Burner) *Storage {
-	account := common.HexToAddress("0xA4B05FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF")
-	statedb.SetNonce(account, 1, tracing.NonceChangeUnspecified) // setting the nonce ensures Geth won't treat ArbOS as empty
+// KVStorage uses a Geth database to create an evm key-value store for an arbitrary account.
+func KVStorage(statedb vm.StateDB, burner burn.Burner, account common.Address) *Storage {
+	statedb.SetNonce(account, 1, tracing.NonceChangeUnspecified) // ensures Geth won't treat the account as empty
 	return &Storage{
 		account:    account,
 		db:         statedb,
@@ -78,6 +78,16 @@ func NewGeth(statedb vm.StateDB, burner burn.Burner) *Storage {
 		burner:     burner,
 		hashCache:  storageHashCache,
 	}
+}
+
+// NewGeth uses a Geth database to create an evm key-value store backed by the ArbOS state account.
+func NewGeth(statedb vm.StateDB, burner burn.Burner) *Storage {
+	return KVStorage(statedb, burner, types.ArbosStateAddress)
+}
+
+// FilteredTransactionsStorage creates an evm key-value store backed by the dedicated filtered tx state account.
+func FilteredTransactionsStorage(statedb vm.StateDB, burner burn.Burner) *Storage {
+	return KVStorage(statedb, burner, types.FilteredTransactionsStateAddress)
 }
 
 // NewMemoryBacked uses Geth's memory-backed database to create an evm key-value store.

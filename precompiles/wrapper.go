@@ -132,3 +132,61 @@ func (wrapper *OwnerPrecompile) Precompile() *Precompile {
 func (wrapper *OwnerPrecompile) Name() string {
 	return wrapper.precompile.Name()
 }
+
+// CensorPrecompile is a precompile wrapper for those only transaction censors may use.
+type CensorPrecompile struct {
+	precompile ArbosPrecompile
+}
+
+func censorOnly(address addr, impl ArbosPrecompile) (addr, ArbosPrecompile) {
+	return address, &CensorPrecompile{precompile: impl}
+}
+
+func (wrapper *CensorPrecompile) Address() common.Address {
+	return wrapper.precompile.Address()
+}
+
+func (wrapper *CensorPrecompile) Call(
+	input []byte,
+	actingAsAddress common.Address,
+	caller common.Address,
+	value *big.Int,
+	readOnly bool,
+	gasSupplied uint64,
+	evm *vm.EVM,
+) ([]byte, uint64, multigas.MultiGas, error) {
+	con := wrapper.precompile
+
+	burner := &Context{
+		gasSupplied: gasSupplied,
+		gasUsed:     multigas.ZeroGas(),
+		tracingInfo: util.NewTracingInfo(evm, caller, wrapper.precompile.Address(), util.TracingDuringEVM),
+	}
+	state, err := arbosState.OpenArbosState(evm.StateDB, burner)
+	if err != nil {
+		return nil, burner.GasLeft(), burner.gasUsed, err
+	}
+
+	censors := state.TransactionCensors()
+	isCensor, err := censors.IsMember(caller)
+	if err != nil {
+		return nil, burner.GasLeft(), burner.gasUsed, err
+	}
+	if !isCensor {
+		return nil, burner.GasLeft(), burner.gasUsed, errors.New("unauthorized caller to access-controlled method")
+	}
+
+	output, _, _, err := con.Call(input, actingAsAddress, caller, value, readOnly, gasSupplied, evm)
+	if err != nil {
+		return output, gasSupplied, multigas.ZeroGas(), err
+	}
+	return output, gasSupplied, multigas.ZeroGas(), nil
+}
+
+func (wrapper *CensorPrecompile) Precompile() *Precompile {
+	return wrapper.precompile.Precompile()
+}
+
+func (wrapper *CensorPrecompile) Name() string {
+	return wrapper.precompile.Name()
+}
