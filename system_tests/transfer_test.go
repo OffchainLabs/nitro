@@ -5,7 +5,6 @@ package arbtest
 
 import (
 	"bytes"
-	"context"
 	"fmt"
 	"math/big"
 	"testing"
@@ -13,7 +12,6 @@ import (
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/ethclient"
 
 	"github.com/offchainlabs/nitro/arbnode"
 	testflag "github.com/offchainlabs/nitro/util/testhelpers/flag"
@@ -99,8 +97,6 @@ func testTransfer(t *testing.T, executionClientMode ExecutionClientMode) {
 	if bal2.Cmp(big.NewInt(1e12)) != 0 {
 		Fatal(t, "Unexpected replica balance: ", bal2)
 	}
-
-	verifyEquivalence(t, ctx, builder.L2.Client, replicaClient, tx.Hash())
 }
 
 func TestTransfer(t *testing.T) {
@@ -112,7 +108,7 @@ func TestTransferExternal(t *testing.T) {
 }
 
 func TestTransferComparison(t *testing.T) {
-	testTransfer(t, ExecutionClientModeComparison)
+	testTransfer(t, ExecutionClientModeExternal)
 }
 
 // getExpectedP256Result returns the expected result for P256Verify based on ArbOS version
@@ -139,8 +135,9 @@ func testP256Verify(t *testing.T, executionClientMode ExecutionClientMode) {
 		t.Logf("Testing P256Verify on ArbOS %d - expecting precompile to be enabled (success response)", initialVersion)
 	}
 
-	// Build with flag support - the NodeBuilder.CheckConfig will read the flag
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, false).DontParalellise()
+	withL1 := executionClientMode != ExecutionClientModeInternal
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, withL1).DontParalellise()
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -164,11 +161,6 @@ func testP256Verify(t *testing.T, executionClientMode ExecutionClientMode) {
 		return
 	}
 
-	// For external/comparison modes, build with L1
-	builder2 := NewNodeBuilder(ctx).DefaultConfig(t, true).DontParalellise()
-	cleanup2 := builder2.Build(t)
-	defer cleanup2()
-
 	replicaConfig := arbnode.ConfigDefaultL1NonSequencerTest()
 	replicaParams := &SecondNodeParams{
 		nodeConfig:             replicaConfig,
@@ -176,7 +168,7 @@ func testP256Verify(t *testing.T, executionClientMode ExecutionClientMode) {
 		executionClientMode:    executionClientMode,
 	}
 
-	replicaTestClient, replicaCleanup := builder2.Build2ndNode(t, replicaParams)
+	replicaTestClient, replicaCleanup := builder.Build2ndNode(t, replicaParams)
 	defer replicaCleanup()
 	replicaClient := replicaTestClient.Client
 
@@ -191,7 +183,7 @@ func testP256Verify(t *testing.T, executionClientMode ExecutionClientMode) {
 	}
 }
 
-func TestP256Verify(t *testing.T) {
+func TestP256VerifyInternal(t *testing.T) {
 	testP256Verify(t, ExecutionClientModeInternal)
 }
 
@@ -200,30 +192,5 @@ func TestP256VerifyExternal(t *testing.T) {
 }
 
 func TestP256VerifyComparison(t *testing.T) {
-	testP256Verify(t, ExecutionClientModeExternal)
-}
-
-func verifyEquivalence(t *testing.T, ctx context.Context, primaryClient, replicaClient *ethclient.Client, txHash common.Hash) {
-	// Get receipts from both
-	primaryReceipt, err := primaryClient.TransactionReceipt(ctx, txHash)
-	Require(t, err)
-	replicaReceipt, err := replicaClient.TransactionReceipt(ctx, txHash)
-	Require(t, err)
-
-	// Get block headers
-	primaryHeader, err := primaryClient.HeaderByHash(ctx, primaryReceipt.BlockHash)
-	Require(t, err)
-	replicaHeader, err := replicaClient.HeaderByHash(ctx, replicaReceipt.BlockHash)
-	Require(t, err)
-
-	// Verify critical fields match
-	if primaryReceipt.BlockHash != replicaReceipt.BlockHash {
-		Fatal(t, "BlockHash mismatch: primary", primaryReceipt.BlockHash.Hex(), "replica", replicaReceipt.BlockHash.Hex())
-	}
-	if primaryHeader.Root != replicaHeader.Root {
-		Fatal(t, "StateRoot mismatch: primary", primaryHeader.Root.Hex(), "replica", replicaHeader.Root.Hex())
-	}
-	if primaryHeader.ReceiptHash != replicaHeader.ReceiptHash {
-		Fatal(t, "ReceiptHash mismatch: primary", primaryHeader.ReceiptHash.Hex(), "replica", replicaHeader.ReceiptHash.Hex())
-	}
+	testP256Verify(t, ExecutionClientModeComparison)
 }

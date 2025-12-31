@@ -23,16 +23,6 @@ func testBlockHash(t *testing.T, executionClientMode ExecutionClientMode) {
 
 	auth := builder.L2Info.GetDefaultTransactOpts("Faucet", ctx)
 
-	// For Internal mode, just test on primary node (original behavior)
-	if executionClientMode == ExecutionClientModeInternal {
-		_, _, simple, err := localgen.DeploySimple(&auth, builder.L2.Client)
-		Require(t, err)
-		_, err = simple.CheckBlockHashes(&bind.CallOpts{Context: ctx})
-		Require(t, err)
-		return
-	}
-
-	// For External/Comparison modes, test on replica
 	replicaConfig := arbnode.ConfigDefaultL1NonSequencerTest()
 	replicaParams := &SecondNodeParams{
 		nodeConfig:             replicaConfig,
@@ -61,7 +51,7 @@ func testBlockHash(t *testing.T, executionClientMode ExecutionClientMode) {
 	Require(t, err)
 }
 
-func TestBlockHash(t *testing.T) {
+func TestBlockHashInternal(t *testing.T) {
 	testBlockHash(t, ExecutionClientModeInternal)
 }
 
