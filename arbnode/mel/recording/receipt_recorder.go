@@ -1,6 +1,7 @@
 package melrecording
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -18,25 +19,28 @@ import (
 	"github.com/offchainlabs/nitro/daprovider"
 )
 
+// maps to an array of uints representing the relevant txIndexes of receipts needed for message extraction
+var RELEVANT_LOGS_TXINDEXES_KEY common.Hash = common.HexToHash("123534")
+
 type ReceiptRecorder struct {
-	parentChainReader    BlockReader
-	parentChainBlockHash common.Hash
-	preimages            daprovider.PreimagesMap
-	receipts             []*types.Receipt
-	logs                 []*types.Log
-	trieDB               *triedb.Database
-	blockReceiptHash     common.Hash
+	parentChainReader     BlockReader
+	parentChainBlockHash  common.Hash
+	preimages             daprovider.PreimagesMap
+	receipts              []*types.Receipt
+	logs                  []*types.Log
+	relevantLogsTxIndexes []uint
+	trieDB                *triedb.Database
+	blockReceiptHash      common.Hash
 }
 
 func NewReceiptRecorder(
 	parentChainReader BlockReader,
 	parentChainBlockHash common.Hash,
-	preimages daprovider.PreimagesMap,
 ) *ReceiptRecorder {
 	return &ReceiptRecorder{
 		parentChainReader:    parentChainReader,
 		parentChainBlockHash: parentChainBlockHash,
-		preimages:            preimages,
+		preimages:            make(daprovider.PreimagesMap),
 	}
 }
 
@@ -134,6 +138,7 @@ func (lr *ReceiptRecorder) LogsForTxIndex(ctx context.Context, parentChainBlockH
 	for _, log := range receipt.Logs {
 		log.TxIndex = txIndex
 	}
+	lr.relevantLogsTxIndexes = append(lr.relevantLogsTxIndexes, txIndex)
 	return receipt.Logs, nil
 }
 
@@ -147,4 +152,11 @@ func (lr *ReceiptRecorder) LogsForBlockHash(ctx context.Context, parentChainBloc
 	return lr.logs, nil
 }
 
-func (tr *ReceiptRecorder) GetPreimages() daprovider.PreimagesMap { return tr.preimages }
+func (tr *ReceiptRecorder) GetPreimages() (daprovider.PreimagesMap, error) {
+	var buf bytes.Buffer
+	if err := rlp.Encode(&buf, tr.relevantLogsTxIndexes); err != nil {
+		return nil, err
+	}
+	tr.preimages[arbutil.Keccak256PreimageType][RELEVANT_LOGS_TXINDEXES_KEY] = buf.Bytes()
+	return tr.preimages, nil
+}
