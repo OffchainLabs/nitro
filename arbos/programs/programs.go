@@ -309,10 +309,10 @@ func evmMemoryCost(size uint64) uint64 {
 
 func getWasm(statedb vm.StateDB, program common.Address, params *StylusParams) ([]byte, error) {
 	prefixedWasm := statedb.GetCode(program)
-	return getWasmFromContractCode(statedb, prefixedWasm, params)
+	return getWasmFromContractCode(statedb, prefixedWasm, params, true)
 }
 
-func getWasmFromContractCode(statedb vm.StateDB, prefixedWasm []byte, params *StylusParams) ([]byte, error) {
+func getWasmFromContractCode(statedb vm.StateDB, prefixedWasm []byte, params *StylusParams, isActivation bool) ([]byte, error) {
 	if len(prefixedWasm) == 0 {
 		return nil, ProgramNotWasmError()
 	}
@@ -323,7 +323,7 @@ func getWasmFromContractCode(statedb vm.StateDB, prefixedWasm []byte, params *St
 
 	if params.arbosVersion >= gethParams.ArbosVersion_StylusContractLimit {
 		if state.IsStylusProgramRoot(prefixedWasm) {
-			return handleRootStylus(statedb, prefixedWasm, params.MaxWasmSize, params.MaxFragmentCount)
+			return handleRootStylus(statedb, prefixedWasm, params.MaxWasmSize, params.MaxFragmentCount, isActivation)
 		}
 
 		if state.IsStylusProgramFragment(prefixedWasm) {
@@ -348,25 +348,23 @@ func handleClassicStylus(data []byte, maxSize uint32) ([]byte, error) {
 	return arbcompress.DecompressWithDictionary(wasm, int(maxSize), dict)
 }
 
-func handleRootStylus(statedb vm.StateDB, data []byte, maxSize uint32, maxFragments uint16) ([]byte, error) {
-	rawAddresses, decompressedLength, err := state.StripStylusRootPrefix(data)
+func handleRootStylus(statedb vm.StateDB, data []byte, maxSize uint32, maxFragments uint16, isActivation bool) ([]byte, error) {
+	rawAddresses, dictByte, decompressedLength, err := state.StripStylusRootPrefix(data)
 	if err != nil {
 		return nil, err
 	}
-
-	if decompressedLength > maxSize {
+	if isActivation && decompressedLength > maxSize {
 		return nil, fmt.Errorf("invalid wasm: decompressedLength %d is greater then MaxWasmSize %d", decompressedLength, maxSize)
 	}
-
-	if len(rawAddresses)/common.AddressLength > int(maxFragments) {
+	if isActivation && len(rawAddresses)/common.AddressLength > int(maxFragments) {
 		return nil, fmt.Errorf("invalid wasm: fragment count exceeds limit of %d", maxFragments)
 	}
 
-	var (
-		compressedWasm []byte
-		dictByte       byte
-	)
+	if isActivation && len(rawAddresses)/common.AddressLength == 0 {
+		return nil, fmt.Errorf("invalid wasm: fragment count cannot be zero")
+	}
 
+	var compressedWasm []byte
 	for i := 0; i < len(rawAddresses); i += common.AddressLength {
 		addr := common.BytesToAddress(rawAddresses[i : i+common.AddressLength])
 
@@ -380,11 +378,6 @@ func handleRootStylus(statedb vm.StateDB, data []byte, maxSize uint32, maxFragme
 			continue
 		}
 
-		if i == 0 {
-			dictByte = payload[0]
-			payload = payload[1:]
-		}
-
 		compressedWasm = append(compressedWasm, payload...)
 	}
 
@@ -393,7 +386,17 @@ func handleRootStylus(statedb vm.StateDB, data []byte, maxSize uint32, maxFragme
 		return nil, err
 	}
 
-	return arbcompress.DecompressWithDictionary(compressedWasm, int(decompressedLength), dict)
+	wasm, err := arbcompress.DecompressWithDictionary(compressedWasm, int(decompressedLength), dict)
+
+	if err != nil {
+		return nil, err
+	}
+
+	if len(wasm) != int(decompressedLength) {
+		return nil, fmt.Errorf("invalid wasm: decompressed length %d does not match expected length %d", len(wasm), decompressedLength)
+	}
+
+	return wasm, nil
 }
 
 // Named return parameters allow us to return the zero-value for 'dict' implicitly on error
