@@ -33,8 +33,6 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/ethereum/go-ethereum/metrics"
-	"github.com/ethereum/go-ethereum/metrics/exp"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
@@ -55,28 +53,6 @@ func printSampleUsage(name string) {
 
 func main() {
 	os.Exit(mainImpl())
-}
-
-// Checks metrics and PProf flag, runs them if enabled.
-// Note: they are separate so one can enable/disable them as they wish, the only
-// requirement is that they can't run on the same address and port.
-func startMetrics(cfg *ExpressLaneProxyConfig) error {
-	mAddr := fmt.Sprintf("%v:%v", cfg.MetricsServer.Addr, cfg.MetricsServer.Port)
-	pAddr := fmt.Sprintf("%v:%v", cfg.PprofCfg.Addr, cfg.PprofCfg.Port)
-	if cfg.Metrics && !metrics.Enabled() {
-		return fmt.Errorf("metrics must be enabled via command line by adding --metrics, json config has no effect")
-	}
-	if cfg.Metrics && cfg.PProf && mAddr == pAddr {
-		return fmt.Errorf("metrics and pprof cannot be enabled on the same address:port: %s", mAddr)
-	}
-	if cfg.Metrics {
-		go metrics.CollectProcessMetrics(time.Second)
-		exp.Setup(fmt.Sprintf("%v:%v", cfg.MetricsServer.Addr, cfg.MetricsServer.Port))
-	}
-	if cfg.PProf {
-		genericconf.StartPprof(pAddr)
-	}
-	return nil
 }
 
 type ExpressLaneProxy struct {
@@ -373,7 +349,7 @@ func mainImpl() int {
 		return genericconf.InitLog(newCfg.LogType, newCfg.LogLevel, &newCfg.FileLogging, pathResolver(expressLaneProxyConfig.Persistent.LogDir))
 	})
 
-	if err := startMetrics(expressLaneProxyConfig); err != nil {
+	if err := util.StartMetrics(expressLaneProxyConfig.Metrics, expressLaneProxyConfig.PProf, &expressLaneProxyConfig.MetricsServer, &expressLaneProxyConfig.PprofCfg); err != nil {
 		log.Error("Error starting metrics", "error", err)
 		return 1
 	}
