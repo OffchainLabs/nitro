@@ -914,6 +914,10 @@ func (b *NodeBuilder) BuildL2OnL1(t *testing.T) func() {
 		b.TrieNoAsyncFlush,
 	)
 
+	if b.nodeConfig.MessageExtraction.Enable {
+		b.waitForMelToReadInitMsg(t, b.L2)
+	}
+
 	_, hasOwnerAccount := b.L2Info.Accounts["Owner"]
 	if b.takeOwnership && hasOwnerAccount {
 		debugAuth := b.L2Info.GetDefaultTransactOpts("Owner", b.ctx)
@@ -938,9 +942,6 @@ func (b *NodeBuilder) BuildL2OnL1(t *testing.T) func() {
 		}
 	}
 
-	if b.nodeConfig.MessageExtraction.Enable {
-		b.waitForMelToReadInitMsg(t, b.L2)
-	}
 	return func() {
 		b.L2.cleanup()
 		if b.L1 != nil && b.L1.cleanup != nil {
