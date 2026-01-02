@@ -15,6 +15,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/consensus"
 	"github.com/offchainlabs/nitro/execution"
 )
 
@@ -103,7 +104,7 @@ func SyncMonitorConfigAddOptions(prefix string, f *pflag.FlagSet) {
 
 type SyncMonitor struct {
 	config    *SyncMonitorConfig
-	consensus execution.ConsensusInfo
+	consensus consensus.ConsensusInfo
 	exec      *ExecutionEngine
 
 	consensusSyncData atomic.Pointer[execution.ConsensusSyncData]
@@ -216,7 +217,7 @@ func (s *SyncMonitor) Synced(ctx context.Context) bool {
 	return built+1 >= syncTarget
 }
 
-func (s *SyncMonitor) SetConsensusInfo(consensus execution.ConsensusInfo) {
+func (s *SyncMonitor) SetConsensusInfo(consensus consensus.ConsensusInfo) {
 	s.consensus = consensus
 }
 
