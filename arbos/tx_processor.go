@@ -80,6 +80,10 @@ func (p *TxProcessor) PushContract(contract *vm.Contract) {
 	if !contract.IsDelegateOrCallcode() {
 		p.Programs[contract.Address()]++
 	}
+
+	// Record touched addresses for tx filtering
+	p.evm.StateDB.TouchAddress(contract.Address())
+	p.evm.StateDB.TouchAddress(contract.Caller())
 }
 
 func (p *TxProcessor) PopContract() {
