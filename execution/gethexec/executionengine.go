@@ -670,7 +670,7 @@ func (s *ExecutionEngine) sequenceDelayedMessageWithBlockMutex(message *arbostyp
 	}
 
 	startTime := time.Now()
-	block, statedb, receipts, err := s.createBlockFromNextMessage(&messageWithMeta, false)
+	block, statedb, receipts, err := s.createBlockFromNextMessage(&messageWithMeta, false, true)
 	if err != nil {
 		return nil, err
 	}
@@ -715,7 +715,13 @@ func (s *ExecutionEngine) MessageIndexToBlockNumber(msgIdx arbutil.MessageIndex)
 }
 
 // must hold createBlockMutex
-func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWithMetadata, isMsgForPrefetch bool) (*types.Block, *state.StateDB, types.Receipts, error) {
+// applyAddressFilter controls whether address filtering is applied during block production.
+// Set to true when sequencing (delayed messages), false when digesting (non-sequencer replay).
+func (s *ExecutionEngine) createBlockFromNextMessage(
+	msg *arbostypes.MessageWithMetadata,
+	isMsgForPrefetch bool,
+	applyAddressFilter bool,
+) (*types.Block, *state.StateDB, types.Receipts, error) {
 	currentHeader := s.bc.CurrentBlock()
 	if currentHeader == nil {
 		return nil, nil, nil, errors.New("failed to get current block header")
@@ -734,6 +740,9 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 	statedb, err := s.bc.StateAt(currentHeader.Root)
 	if err != nil {
 		return nil, nil, nil, err
+	}
+	if s.addressChecker != nil {
+		statedb.SetAddressChecker(s.addressChecker)
 	}
 	var witness *stateless.Witness
 	var witnessStats *stateless.WitnessStats
@@ -755,18 +764,36 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 	} else {
 		runCtx = core.NewMessageCommitContext(s.wasmTargets)
 	}
-	block, receipts, err := arbos.ProduceBlock(
-		msg.Message,
+
+	chainConfig := s.bc.Config()
+	lastArbosVersion := types.DeserializeHeaderExtraInformation(currentHeader).ArbOSFormatVersion
+	txes, err := arbos.ParseL2Transactions(msg.Message, chainConfig.ChainID, lastArbosVersion)
+	if err != nil {
+		log.Warn("error parsing incoming message", "err", err)
+		txes = types.Transactions{}
+	}
+	var hooks arbos.SequencingHooks
+	if applyAddressFilter {
+		hooks = arbos.NewFilteringSequencingHooks(txes)
+	} else {
+		hooks = arbos.NewNoopSequencingHooks(txes)
+	}
+
+	block, receipts, err := arbos.ProduceBlockAdvanced(
+		msg.Message.Header,
 		msg.DelayedMessagesRead,
 		currentHeader,
 		statedb,
 		s.bc,
+		hooks,
 		isMsgForPrefetch,
 		runCtx,
 		s.exposeMultiGas,
 	)
-
-	return block, statedb, receipts, err
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	return block, statedb, receipts, nil
 }
 
 // must hold createBlockMutex
@@ -950,14 +977,14 @@ func (s *ExecutionEngine) digestMessageWithBlockMutex(msgIdxToDigest arbutil.Mes
 	startTime := time.Now()
 	if s.prefetchBlock && msgForPrefetch != nil {
 		go func() {
-			_, _, _, err := s.createBlockFromNextMessage(msgForPrefetch, true)
+			_, _, _, err := s.createBlockFromNextMessage(msgForPrefetch, true, false)
 			if err != nil {
 				return
 			}
 		}()
 	}
 
-	block, statedb, receipts, err := s.createBlockFromNextMessage(msg, false)
+	block, statedb, receipts, err := s.createBlockFromNextMessage(msg, false, false)
 	if err != nil {
 		return nil, err
 	}

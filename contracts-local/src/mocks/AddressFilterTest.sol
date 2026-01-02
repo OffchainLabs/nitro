@@ -58,4 +58,7 @@ contract AddressFilterTest {
     function selfDestructTo(address payable beneficiary) external {
         selfdestruct(beneficiary);
     }
+
+    /// @notice Allow contract to receive ETH
+    receive() external payable {}
 }
