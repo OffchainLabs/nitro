@@ -159,6 +159,38 @@ func NewNoopSequencingHooks(txes types.Transactions) *NoopSequencingHooks {
 	return &NoopSequencingHooks{txs: txes}
 }
 
+// FilteringSequencingHooks extends NoopSequencingHooks with address filtering.
+// It touches sender/recipient addresses in PreTxFilter and checks IsAddressFiltered
+// in PostTxFilter to support address-based transaction filtering.
+type FilteringSequencingHooks struct {
+	NoopSequencingHooks
+}
+
+func NewFilteringSequencingHooks(txes types.Transactions) *FilteringSequencingHooks {
+	return &FilteringSequencingHooks{NoopSequencingHooks{txs: txes}}
+}
+
+func (f *FilteringSequencingHooks) PreTxFilter(config *params.ChainConfig, header *types.Header, db *state.StateDB, a *arbosState.ArbosState, transaction *types.Transaction, options *arbitrum_types.ConditionalOptions, sender common.Address, info *L1Info) error {
+	db.TouchAddress(sender)
+	if transaction.To() != nil {
+		db.TouchAddress(*transaction.To())
+	}
+	if db.IsAddressFiltered() {
+		return state.ErrArbTxFilter
+	}
+	return nil
+}
+
+func (f *FilteringSequencingHooks) PostTxFilter(header *types.Header, db *state.StateDB, a *arbosState.ArbosState, transaction *types.Transaction, sender common.Address, dataGas uint64, result *core.ExecutionResult) error {
+	if db.IsAddressFiltered() {
+		return state.ErrArbTxFilter
+	}
+	return nil
+}
+
+// ProduceBlock creates a block from an L1 incoming message using NoopSequencingHooks.
+// This is used for replay, validation, and non-sequencer block production where
+// no transaction filtering is applied.
 func ProduceBlock(
 	message *arbostypes.L1IncomingMessage,
 	delayedMessagesRead uint64,
