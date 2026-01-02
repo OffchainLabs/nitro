@@ -35,12 +35,11 @@ type TransactionRecorder struct {
 func NewTransactionRecorder(
 	parentChainReader BlockReader,
 	parentChainBlockHash common.Hash,
-	preimages daprovider.PreimagesMap,
 ) *TransactionRecorder {
 	return &TransactionRecorder{
 		parentChainReader:    parentChainReader,
 		parentChainBlockHash: parentChainBlockHash,
-		preimages:            preimages,
+		preimages:            make(daprovider.PreimagesMap),
 	}
 }
 

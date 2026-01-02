@@ -4,162 +4,149 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/rlp"
+	"github.com/ethereum/go-ethereum/trie"
+	"github.com/ethereum/go-ethereum/triedb"
 
 	"github.com/offchainlabs/nitro/arbutil"
 )
+
+// maps to an array of uints representing the relevant txIndexes of receipts needed for message extraction
+var RELEVANT_LOGS_TXINDEXES_KEY common.Hash = common.HexToHash("123534")
 
 type receiptFetcherForBlock struct {
 	header           *types.Header
 	preimageResolver preimageResolver
 }
 
-// ReceiptForTransactionIndex fetches a receipt for a specific transaction index by walking
+// LogsForTxIndex fetches logs for a specific transaction index by walking
 // the receipt trie of the block header. It uses the preimage resolver to fetch the preimages
 // of the trie nodes as needed.
-func (rf *receiptFetcherForBlock) ReceiptForTransactionIndex(
-	ctx context.Context,
-	txIndex uint,
-) (*types.Receipt, error) {
-	return fetchReceiptFromBlock(rf.header.ReceiptHash, txIndex, rf.preimageResolver)
-}
-
-// Fetches a specific receipt index from a block's receipt trie by navigating its
-// Merkle Patricia Trie structure. It uses the preimage resolver to fetch preimages
-// of trie nodes as needed, and determines how to navigate depending on the structure of the trie nodes.
-func fetchReceiptFromBlock(
-	receiptsRoot common.Hash,
-	receiptIndex uint,
-	preimageResolver preimageResolver,
-) (*types.Receipt, error) {
-	currentNodeHash := receiptsRoot
-	currentPath := []byte{} // Track nibbles consumed so far.
-	receiptKey, err := rlp.EncodeToBytes(receiptIndex)
+func (rf *receiptFetcherForBlock) LogsForTxIndex(ctx context.Context, parentChainBlockHash common.Hash, txIndex uint) ([]*types.Log, error) {
+	if rf.header.Hash() != parentChainBlockHash {
+		return nil, errors.New("parentChainBlockHash mismatch")
+	}
+	receipt, err := fetchObjectFromTrie[types.Receipt](rf.header.ReceiptHash, txIndex, rf.preimageResolver)
 	if err != nil {
 		return nil, err
 	}
-	targetNibbles := keyToNibbles(receiptKey)
-	for {
-		nodeData, err := preimageResolver.ResolveTypedPreimage(arbutil.Keccak256PreimageType, currentNodeHash)
+	// This is needed to enable fetching corresponding tx from the txFetcher
+	for _, log := range receipt.Logs {
+		log.TxIndex = txIndex
+	}
+	return receipt.Logs, nil
+}
+
+// LogsForBlockHash first gets the txIndexes corresponding to the relevant logs by reading
+// RELEVANT_LOGS_TXINDEXES_KEY from the preimages and then fetches logs for each of these txIndexes
+func (rf *receiptFetcherForBlock) LogsForBlockHash(ctx context.Context, parentChainBlockHash common.Hash) ([]*types.Log, error) {
+	if rf.header.Hash() != parentChainBlockHash {
+		return nil, errors.New("parentChainBlockHash mismatch")
+	}
+	txIndexData, err := rf.preimageResolver.ResolveTypedPreimage(arbutil.Keccak256PreimageType, RELEVANT_LOGS_TXINDEXES_KEY)
+	if err != nil {
+		return nil, err
+	}
+	var txIndexes []uint
+	if err := rlp.DecodeBytes(txIndexData, &txIndexes); err != nil {
+		return nil, err
+	}
+	var relevantLogs []*types.Log
+	for _, txIndex := range txIndexes {
+		logs, err := rf.LogsForTxIndex(ctx, parentChainBlockHash, txIndex)
 		if err != nil {
 			return nil, err
 		}
-		var node []any
-		if err = rlp.DecodeBytes(nodeData, &node); err != nil {
-			return nil, fmt.Errorf("failed to decode RLP node: %w", err)
-		}
-		switch len(node) {
-		case 17:
-			// We hit a branch node, which has 16 children and a value.
-			if len(currentPath) == len(targetNibbles) {
-				// A branch node's 17th item could be the value, so we check if it contains the receipt.
-				if valueBytes, ok := node[16].([]byte); ok && len(valueBytes) > 0 {
-					// This branch node has the actual value as the last item, so we decode the receipt
-					return decodeReceipt(valueBytes)
-				}
-				return nil, fmt.Errorf("no receipt found at target key")
-			}
-			// Get the next nibble to follow.
-			targetNibble := targetNibbles[len(currentPath)]
-			childData, ok := node[targetNibble].([]byte)
-			if !ok || len(childData) == 0 {
-				return nil, fmt.Errorf("no child at nibble %d", targetNibble)
-			}
-			// Move to the child node, which is the next hash we have to navigate.
-			currentNodeHash = common.BytesToHash(childData)
-			currentPath = append(currentPath, targetNibble)
-		case 2:
-			keyPath, ok := node[0].([]byte)
-			if !ok {
-				return nil, fmt.Errorf("invalid key path in node")
-			}
-			key := extractKeyNibbles(keyPath)
-			expectedPath := make([]byte, 0)
-			expectedPath = append(expectedPath, currentPath...)
-			expectedPath = append(expectedPath, key...)
-
-			// Check if it is a leaf or extension node.
-			leaf, err := isLeaf(keyPath)
-			if err != nil {
-				return nil, err
-			}
-			if leaf {
-				// Check that the keyPath matches the target nibbles,
-				// otherwise, the receipt does not exist in the trie.
-				if !bytes.Equal(expectedPath, targetNibbles) {
-					return nil, fmt.Errorf("leaf key does not match target nibbles")
-				}
-				rawData, ok := node[1].([]byte)
-				if !ok {
-					return nil, fmt.Errorf("invalid receipt data in leaf node")
-				}
-				return decodeReceipt(rawData)
-			}
-			// If the node is not a leaf node, it is an extension node.
-			// Check if our target key matches this extension path.
-			if len(expectedPath) > len(targetNibbles) || !bytes.Equal(expectedPath, targetNibbles[:len(expectedPath)]) {
-				return nil, fmt.Errorf("extension path mismatch")
-			}
-			nextNodeBytes, ok := node[1].([]byte)
-			if !ok {
-				return nil, fmt.Errorf("invalid next node in extension")
-			}
-			// We navigate to the next node in the trie.
-			currentNodeHash = common.BytesToHash(nextNodeBytes)
-			currentPath = expectedPath
-		default:
-			return nil, fmt.Errorf("invalid node structure: unexpected length %d", len(node))
-		}
+		relevantLogs = append(relevantLogs, logs...)
 	}
+	return relevantLogs, nil
 }
 
-// Converts a byte slice key into a slice of nibbles (4-bit values).
-// Keys are encoded in big endian format, which is required by Ethereum MPTs.
-func keyToNibbles(key []byte) []byte {
-	nibbles := make([]byte, len(key)*2)
-	for i, b := range key {
-		nibbles[i*2] = b >> 4
-		nibbles[i*2+1] = b & 0x0f
+// LogsForBlockHashAllLogs is kept, in case we go with an implementation of returning all logs present in a block
+func (rf *receiptFetcherForBlock) LogsForBlockHashAllLogs(ctx context.Context, parentChainBlockHash common.Hash) ([]*types.Log, error) {
+	if rf.header.Hash() != parentChainBlockHash {
+		return nil, errors.New("parentChainBlockHash mismatch")
 	}
-	return nibbles
-}
-
-// Extracts the key nibbles from a key path, handling odd/even length cases.
-func extractKeyNibbles(keyPath []byte) []byte {
-	if len(keyPath) == 0 {
-		return nil
+	preimageDB := &DB{
+		resolver: rf.preimageResolver,
 	}
-	nibbles := keyToNibbles(keyPath)
-	if nibbles[0]&1 != 0 {
-		return nibbles[1:]
-	}
-	return nibbles[2:]
-}
-
-func isLeaf(keyPath []byte) (bool, error) {
-	firstByte := keyPath[0]
-	firstNibble := firstByte >> 4
-	// 2 or 3 indicates leaf, while 0 or 1 indicates extension nodes in the Ethereum MPT specification.
-	if firstNibble > 3 {
-		return false, errors.New("first nibble cannot be greater than 3")
-	}
-	return firstNibble >= 2, nil
-}
-
-func decodeReceipt(data []byte) (*types.Receipt, error) {
-	if len(data) == 0 {
-		return nil, errors.New("empty data cannot be decoded into receipt")
-	}
-	rpt := new(types.Receipt)
-	if err := rpt.UnmarshalBinary(data); err != nil {
+	tdb := triedb.NewDatabase(preimageDB, nil)
+	receiptsTrie, err := trie.New(trie.TrieID(rf.header.ReceiptHash), tdb)
+	if err != nil {
 		return nil, err
 	}
-	return rpt, nil
+	entries, indices := collectTrieEntries(receiptsTrie)
+	fmt.Println("indices ", indices, len(entries))
+	rawReceipts := reconstructOrderedData(entries, indices)
+	receipts, err := decodeReceiptsData(rawReceipts)
+	if err != nil {
+		return nil, err
+	}
+	var relevantLogs []*types.Log
+	for _, receipt := range receipts {
+		relevantLogs = append(relevantLogs, receipt.Logs...)
+	}
+	return relevantLogs, nil
+}
+
+func collectTrieEntries(txTrie *trie.Trie) ([][]byte, []uint64) {
+	nodeIterator, iterErr := txTrie.NodeIterator(nil)
+	if iterErr != nil {
+		panic(iterErr)
+	}
+
+	var rawValues [][]byte
+	var indexKeys []uint64
+
+	for nodeIterator.Next(true) {
+		if !nodeIterator.Leaf() {
+			continue
+		}
+
+		leafKey := nodeIterator.LeafKey()
+		var decodedIndex uint64
+
+		decodeErr := rlp.DecodeBytes(leafKey, &decodedIndex)
+		if decodeErr != nil {
+			panic(fmt.Errorf("key decoding error: %w", decodeErr))
+		}
+
+		indexKeys = append(indexKeys, decodedIndex)
+		rawValues = append(rawValues, nodeIterator.LeafBlob())
+	}
+
+	return rawValues, indexKeys
+}
+
+func reconstructOrderedData(rawValues [][]byte, indices []uint64) []hexutil.Bytes {
+	orderedData := make([]hexutil.Bytes, len(rawValues))
+	for position, index := range indices {
+		if index >= uint64(len(rawValues)) {
+			panic(fmt.Sprintf("index out of bounds: %d", index-1))
+		}
+		if orderedData[index] != nil {
+			panic(fmt.Sprintf("index collision detected: %d", index-1))
+		}
+		orderedData[index] = rawValues[position]
+	}
+	return orderedData
+}
+
+func decodeReceiptsData(encodedData []hexutil.Bytes) (types.Receipts, error) {
+	receiptList := make(types.Receipts, 0, len(encodedData))
+	for _, encodedReceipt := range encodedData {
+		decodedReceipt := new(types.Receipt)
+		if decodeErr := decodedReceipt.UnmarshalBinary(encodedReceipt); decodeErr != nil {
+			return nil, fmt.Errorf("receipt decoding failed: %w", decodeErr)
+		}
+		receiptList = append(receiptList, decodedReceipt)
+	}
+	return receiptList, nil
 }
