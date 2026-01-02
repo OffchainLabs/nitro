@@ -360,7 +360,7 @@ func handleRootStylus(statedb vm.StateDB, data []byte, maxSize uint32, maxFragme
 		return nil, fmt.Errorf("invalid wasm: fragment count exceeds limit of %d", maxFragments)
 	}
 
-	if isActivation && len(rawAddresses)/common.AddressLength == 0 {
+	if len(rawAddresses)/common.AddressLength == 0 {
 		return nil, fmt.Errorf("invalid wasm: fragment count cannot be zero")
 	}
 
