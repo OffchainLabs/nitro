@@ -1,9 +1,12 @@
 ---
 name: Close trivial PRs
 
-on:
-  pull_request_target:
-    types: [labeled]
+# NOTE: Automatic workflow runs disabled - fork version doesn't support these workflows
+# To re-enable, uncomment the triggers below
+# on:
+#   pull_request_target:
+#     types: [labeled]
+on: []
 
 jobs:
   close-trivial-pr:

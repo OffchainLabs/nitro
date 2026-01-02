@@ -2,11 +2,14 @@
 name: Nightly CI
 run-name: Nightly CI tests triggered from @${{ github.actor }} of ${{ github.head_ref }}
 
-on:
-  workflow_dispatch:
-  schedule:
-    # Run at 00:00 AM UTC
-    - cron: '0 0 * * *'
+# NOTE: Automatic workflow runs disabled - fork version doesn't support these workflows
+# To re-enable, uncomment the triggers below
+# on:
+#   workflow_dispatch:
+#   schedule:
+#     # Run at 00:00 AM UTC
+#     - cron: '0 0 * * *'
+on: []
 
 jobs:
   # Only run on schedule

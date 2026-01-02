@@ -1,7 +1,10 @@
 name: Build docker container
 
-on:
-  workflow_dispatch:
+# NOTE: Automatic workflow runs disabled - fork version doesn't support these workflows
+# To re-enable, uncomment the triggers below
+# on:
+#   workflow_dispatch:
+on: []
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}

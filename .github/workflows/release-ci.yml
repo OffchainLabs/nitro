@@ -2,8 +2,11 @@
 name: Release CI
 run-name: Release CI triggered from @${{ github.actor }} of ${{ github.head_ref }}
 
-on:
-  workflow_dispatch:
+# NOTE: Automatic workflow runs disabled - fork version doesn't support these workflows
+# To re-enable, uncomment the triggers below
+# on:
+#   workflow_dispatch:
+on: []
 
 jobs:
   build_and_run:

@@ -1,10 +1,13 @@
 ---
 name: Fuzz Tests
 
-on:
-  workflow_dispatch:
-  schedule:
-    - cron: "36 2 * * 1,4"
+# NOTE: Automatic workflow runs disabled - fork version doesn't support these workflows
+# To re-enable, uncomment the triggers below
+# on:
+#   workflow_dispatch:
+#   schedule:
+#     - cron: "36 2 * * 1,4"
+on: []
 
 permissions:
   contents: write

@@ -1,11 +1,14 @@
 ---
 name: Check Design Approved
 
-on:
-  merge_group:
-  pull_request_target:
-    branches: [master, main]
-    types: [synchronize, opened, reopened, labeled, unlabeled]
+# NOTE: Automatic workflow runs disabled - fork version doesn't support these workflows
+# To re-enable, uncomment the triggers below
+# on:
+#   merge_group:
+#   pull_request_target:
+#     branches: [master, main]
+#     types: [synchronize, opened, reopened, labeled, unlabeled]
+on: []
 
 permissions:
   statuses: write

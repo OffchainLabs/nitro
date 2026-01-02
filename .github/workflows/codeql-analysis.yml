@@ -5,13 +5,16 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}-${{ github.ref }}
   cancel-in-progress: true
 
-on:
-  merge_group:
-    branches: [master, main]
-  pull_request:
-    branches: [master, main]
-  schedule:
-    - cron: '18 21 * * 5'
+# NOTE: Automatic workflow runs disabled - fork version doesn't support these workflows
+# To re-enable, uncomment the triggers below
+# on:
+#   merge_group:
+#     branches: [master, main]
+#   pull_request:
+#     branches: [master, main]
+#   schedule:
+#     - cron: '18 21 * * 5'
+on: []
 
 jobs:
   analyze:
