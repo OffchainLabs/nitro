@@ -337,6 +337,7 @@ func (v *StatelessBlockValidator) readFullBatch(ctx context.Context, batchNum ui
 					log.Error(err.Error())
 				} else if daprovider.IsDACertificateMessageHeaderByte(headerByte) && daprovider.IsCertificateValidationError(err) {
 					log.Warn("Certificate validation of sequencer batch failed, treating it as an empty batch", "batch", batchNum, "error", err)
+					postedData = nil
 				} else {
 					return false, nil, err
 				}
