@@ -659,6 +659,9 @@ func Precompiles() map[addr]ArbosPrecompile {
 	ArbNativeTokenManager.methodsByName["MintNativeToken"].arbosVersion = params.ArbosVersion_41
 	ArbNativeTokenManager.methodsByName["BurnNativeToken"].arbosVersion = params.ArbosVersion_41
 
+	// ArbMinter precompile for educational purposes
+	insert(MakePrecompile(precompilesgen.ArbMinterMetaData, &ArbMinter{Address: types.ArbMinterAddress}))
+
 	// this should be executed after all precompiles have been inserted
 	for _, contract := range contracts {
 		precompile := contract.Precompile()
