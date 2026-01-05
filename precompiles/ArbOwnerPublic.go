@@ -52,6 +52,12 @@ func (con ArbOwnerPublic) GetNativeTokenManagementFrom(c ctx, evm mech) (uint64,
 	return c.State.NativeTokenManagementFromTime()
 }
 
+// TransactionCensorshipFromTime returns the time in epoch seconds when the
+// transaction censorship feature becomes enabled
+func (con ArbOwnerPublic) GetTransactionCensorshipFromTime(c ctx, evm mech) (uint64, error) {
+	return c.State.TransactionCensorshipFromTime()
+}
+
 // GetNetworkFeeAccount gets the network fee collector
 func (con ArbOwnerPublic) GetNetworkFeeAccount(c ctx, evm mech) (addr, error) {
 	return c.State.NetworkFeeAccount()
