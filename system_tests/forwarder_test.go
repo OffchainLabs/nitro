@@ -10,7 +10,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -182,22 +181,6 @@ func waitForSequencerLockout(ctx context.Context, node *arbnode.Node, duration t
 	}
 }
 
-// stopNodes blocks and waits until all nodes are stopped.
-func stopNodes(nodes []*arbnode.Node) {
-	var wg sync.WaitGroup
-	for _, node := range nodes {
-		if node != nil {
-			wg.Add(1)
-			n := node
-			go func() {
-				n.StopAndWait()
-				wg.Done()
-			}()
-		}
-	}
-	wg.Wait()
-}
-
 func user(suffix string, idx int) string {
 	return fmt.Sprintf("User%s_%d", suffix, idx)
 }
@@ -242,10 +225,15 @@ func TestRedisForwarder(t *testing.T) {
 	var seqClients []*ethclient.Client
 	for _, path := range nodePaths {
 		testClientSeq, _ := createSequencer(t, builder, path, redisUrl)
+		node := testClientSeq.ConsensusNode
+
+		t.Cleanup(func() {
+			node.StopAndWait()
+		})
+
 		seqNodes = append(seqNodes, testClientSeq.ConsensusNode)
 		seqClients = append(seqClients, testClientSeq.Client)
 	}
-	defer stopNodes(seqNodes)
 
 	for i := range seqClients {
 		userA := user("A", i)
