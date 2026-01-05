@@ -16,6 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/arbnode/mel/extraction"
+	"github.com/offchainlabs/nitro/arbnode/mel/recording"
 	"github.com/offchainlabs/nitro/arbnode/mel/runner"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -130,8 +131,8 @@ func (mv *MELValidator) CreateNextValidationEntry(ctx context.Context, lastValid
 	if preState.MsgCount >= toValidateMsgExtractionCount {
 		return nil, nil
 	}
-	delayedMsgRecordingDB := melrunner.NewRecordingDatabase(mv.arbDb)
-	recordingDAPReaders := melrunner.NewRecordingDAPReaderSource(ctx, mv.dapReaders)
+	delayedMsgRecordingDB := melrecording.NewDelayedMsgDatabase(mv.arbDb)
+	recordingDAPReaders := melrecording.NewDAPReaderSource(ctx, mv.dapReaders)
 	for i := lastValidatedParentChainBlock + 1; ; i++ {
 		header, err := mv.l1client.HeaderByNumber(ctx, new(big.Int).SetUint64(i))
 		if err != nil {
@@ -139,7 +140,7 @@ func (mv *MELValidator) CreateNextValidationEntry(ctx context.Context, lastValid
 		}
 		// Awaiting recording implementations of logsFetcher and txsFetcher
 		txsAndLogsFetcher := &DummyTxsAndLogsFetcher{L1client: mv.l1client}
-		state, _, _, _, err := melextraction.ExtractMessages(ctx, preState, header, recordingDAPReaders, delayedMsgRecordingDB, txsAndLogsFetcher, txsAndLogsFetcher)
+		state, _, _, _, err := melextraction.ExtractMessages(ctx, preState, header, recordingDAPReaders, delayedMsgRecordingDB, txsAndLogsFetcher, txsAndLogsFetcher, nil)
 		if err != nil {
 			return nil, fmt.Errorf("error calling melextraction.ExtractMessages in recording mode: %w", err)
 		}

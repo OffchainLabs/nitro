@@ -16,7 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 
 	"github.com/offchainlabs/nitro/arbnode/mel"
-	melextraction "github.com/offchainlabs/nitro/arbnode/mel/extraction"
+	"github.com/offchainlabs/nitro/arbnode/mel/extraction"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/staker"
@@ -62,7 +62,7 @@ func TestMELValidator_Recording_Preimages(t *testing.T) {
 	// MEL Validator: create validation entry
 	blobReaderRegistry := daprovider.NewDAProviderRegistry()
 	Require(t, blobReaderRegistry.SetupBlobReader(daprovider.NewReaderForBlobReader(builder.L1.L1BlobReader)))
-	melValidator := staker.NewMELValidator(builder.L2.ConsensusNode.ArbDB, builder.L1.Client, builder.L2.ConsensusNode.MessageExtractor, blobReaderRegistry)
+	melValidator := staker.NewMELValidator(builder.L2.ConsensusNode.ConsensusDB, builder.L1.Client, builder.L2.ConsensusNode.MessageExtractor, blobReaderRegistry)
 	extractedMsgCount, err := builder.L2.ConsensusNode.TxStreamer.GetMessageCount()
 	Require(t, err)
 	entry, err := melValidator.CreateNextValidationEntry(ctx, startBlock, uint64(extractedMsgCount))
@@ -83,7 +83,7 @@ func TestMELValidator_Recording_Preimages(t *testing.T) {
 		Require(t, err)
 		// Awaiting recording implementations of logsFetcher and txsFetcher
 		txsAndLogsFetcher := &staker.DummyTxsAndLogsFetcher{L1client: builder.L1.Client}
-		postState, _, _, _, err := melextraction.ExtractMessages(ctx, state, header, preimagesBasedDapReaders, preimagesBasedDelayedDb, txsAndLogsFetcher, txsAndLogsFetcher)
+		postState, _, _, _, err := melextraction.ExtractMessages(ctx, state, header, preimagesBasedDapReaders, preimagesBasedDelayedDb, txsAndLogsFetcher, txsAndLogsFetcher, nil)
 		Require(t, err)
 		wantState, err := builder.L2.ConsensusNode.MessageExtractor.GetState(ctx, state.ParentChainBlockNumber+1)
 		Require(t, err)
