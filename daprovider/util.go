@@ -43,17 +43,6 @@ func RecordPreimagesTo(preimages PreimagesMap) PreimageRecorder {
 	}
 }
 
-func CopyPreimagesInto(dest, source PreimagesMap) {
-	for piType, piMap := range source {
-		if dest[piType] == nil {
-			dest[piType] = make(map[common.Hash][]byte, len(piMap))
-		}
-		for hash, preimage := range piMap {
-			dest[piType][hash] = preimage
-		}
-	}
-}
-
 var (
 	ErrNoBlobReader          = errors.New("blob batch payload was encountered but no BlobReader was configured")
 	ErrInvalidBlobDataFormat = errors.New("blob batch data is not a list of hashes as expected")
