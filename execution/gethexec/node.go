@@ -41,6 +41,7 @@ import (
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/rpcserver"
+	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
 type StylusTargetConfig struct {
@@ -543,10 +544,15 @@ func (n *ExecutionNode) RecordBlockCreation(
 	msg *arbostypes.MessageWithMetadata,
 	wasmTargets []rawdb.WasmTarget,
 ) containers.PromiseInterface[*execution.RecordResult] {
-	return n.Recorder.RecordBlockCreation(pos, msg, wasmTargets)
+	return stopwaiter.LaunchPromiseThread(n.ExecEngine, func(ctx context.Context) (*execution.RecordResult, error) {
+		return n.Recorder.RecordBlockCreation(ctx, pos, msg, wasmTargets)
+	})
 }
+
 func (n *ExecutionNode) PrepareForRecord(start, end arbutil.MessageIndex) containers.PromiseInterface[struct{}] {
-	return n.Recorder.PrepareForRecord(start, end)
+	return stopwaiter.LaunchPromiseThread(n.ExecEngine, func(ctx context.Context) (struct{}, error) {
+		return struct{}{}, n.Recorder.PrepareForRecord(ctx, start, end)
+	})
 }
 
 func (n *ExecutionNode) Pause() {
