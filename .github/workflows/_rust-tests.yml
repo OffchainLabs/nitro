@@ -67,7 +67,7 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           name: junit-reports-rust
-          path: ./crates/target/nextest/ci/junit.xml
+          path: ./target/nextest/ci/junit.xml
 
       - name: Fail if rust tests failed
         if: steps.run-rust-tests.outcome == 'failure'

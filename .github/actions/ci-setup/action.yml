@@ -53,7 +53,7 @@ runs:
       with:
         path: |
           ~/.cargo/
-          crates/target/
+          target/
           crates/wasm-libraries/target/
           crates/wasm-libraries/soft-float/
           target/etc/initial-machine-cache/

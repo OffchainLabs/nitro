@@ -27,8 +27,6 @@ crates/tools/module_roots
 crates/tools/pricer
 
 # Rust outputs
-crates/target/**/*
-crates/target
 crates/stylus/tests/*/target/
 crates/wasm-testsuite/target/
 crates/wasm-libraries/target/
