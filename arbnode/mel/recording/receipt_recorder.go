@@ -138,7 +138,7 @@ func (rr *ReceiptRecorder) LogsForTxIndex(ctx context.Context, parentChainBlockH
 	for _, log := range receipt.Logs {
 		log.TxIndex = txIndex
 	}
-	lr.relevantLogsTxIndexes = append(lr.relevantLogsTxIndexes, txIndex)
+	rr.relevantLogsTxIndexes = append(rr.relevantLogsTxIndexes, txIndex)
 	return receipt.Logs, nil
 }
 
@@ -152,11 +152,17 @@ func (rr *ReceiptRecorder) LogsForBlockHash(ctx context.Context, parentChainBloc
 	return rr.logs, nil
 }
 
-func (tr *ReceiptRecorder) GetPreimages() (daprovider.PreimagesMap, error) {
+func (rr *ReceiptRecorder) GetPreimages() (daprovider.PreimagesMap, error) {
+	if len(rr.relevantLogsTxIndexes) == 0 {
+		return nil, nil
+	}
 	var buf bytes.Buffer
-	if err := rlp.Encode(&buf, tr.relevantLogsTxIndexes); err != nil {
+	if err := rlp.Encode(&buf, rr.relevantLogsTxIndexes); err != nil {
 		return nil, err
 	}
-	tr.preimages[arbutil.Keccak256PreimageType][RELEVANT_LOGS_TXINDEXES_KEY] = buf.Bytes()
-	return tr.preimages, nil
+	if _, ok := rr.preimages[arbutil.Keccak256PreimageType]; !ok {
+		rr.preimages[arbutil.Keccak256PreimageType] = make(map[common.Hash][]byte)
+	}
+	rr.preimages[arbutil.Keccak256PreimageType][RELEVANT_LOGS_TXINDEXES_KEY] = buf.Bytes()
+	return rr.preimages, nil
 }
