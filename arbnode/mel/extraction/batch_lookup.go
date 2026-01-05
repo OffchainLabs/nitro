@@ -58,6 +58,11 @@ func ParseBatchesFromBlock(
 			return nil, nil, fmt.Errorf("error fetching tx by hash: %v in ParseBatchesFromBlock: %w ", log.TxHash, err)
 		}
 
+		// Record this log for MEL validation
+		if _, err := logsFetcher.LogsForTxIndex(ctx, parentChainHeader.Hash(), log.TxIndex); err != nil {
+			return nil, nil, fmt.Errorf("error recording relevant logs: %w", err)
+		}
+
 		batch := &mel.SequencerInboxBatch{
 			BlockHash:              log.BlockHash,
 			ParentChainBlockNumber: log.BlockNumber,

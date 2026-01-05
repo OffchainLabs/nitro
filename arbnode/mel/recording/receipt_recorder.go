@@ -20,14 +20,15 @@ import (
 )
 
 type ReceiptRecorder struct {
-	parentChainReader     BlockReader
-	parentChainBlockHash  common.Hash
-	preimages             daprovider.PreimagesMap
-	receipts              []*types.Receipt
-	logs                  []*types.Log
-	relevantLogsTxIndexes []uint
-	trieDB                *triedb.Database
-	blockReceiptHash      common.Hash
+	parentChainReader      BlockReader
+	parentChainBlockHash   common.Hash
+	parentChainBlockNumber uint64
+	preimages              daprovider.PreimagesMap
+	receipts               []*types.Receipt
+	logs                   []*types.Log
+	relevantLogsTxIndexes  map[uint]struct{}
+	trieDB                 *triedb.Database
+	blockReceiptHash       common.Hash
 }
 
 func NewReceiptRecorder(
@@ -35,9 +36,10 @@ func NewReceiptRecorder(
 	parentChainBlockHash common.Hash,
 ) *ReceiptRecorder {
 	return &ReceiptRecorder{
-		parentChainReader:    parentChainReader,
-		parentChainBlockHash: parentChainBlockHash,
-		preimages:            make(daprovider.PreimagesMap),
+		parentChainReader:     parentChainReader,
+		parentChainBlockHash:  parentChainBlockHash,
+		preimages:             make(daprovider.PreimagesMap),
+		relevantLogsTxIndexes: make(map[uint]struct{}),
 	}
 }
 
@@ -88,6 +90,7 @@ func (rr *ReceiptRecorder) Initialize(ctx context.Context) error {
 	rr.receipts = receipts
 	rr.trieDB = tdb
 	rr.blockReceiptHash = root
+	rr.parentChainBlockNumber = block.NumberU64()
 	return nil
 }
 
@@ -97,6 +100,9 @@ func (rr *ReceiptRecorder) LogsForTxIndex(ctx context.Context, parentChainBlockH
 	}
 	if rr.parentChainBlockHash != parentChainBlockHash {
 		return nil, fmt.Errorf("parentChainBlockHash mismatch. expected: %v got: %v", rr.parentChainBlockHash, parentChainBlockHash)
+	}
+	if _, recorded := rr.relevantLogsTxIndexes[txIndex]; recorded {
+		return rr.receipts[txIndex].Logs, nil
 	}
 	// #nosec G115
 	if int(txIndex) >= len(rr.receipts) {
@@ -134,8 +140,10 @@ func (rr *ReceiptRecorder) LogsForTxIndex(ctx context.Context, parentChainBlockH
 	// We use this same trick in validation as well in order to link a tx with its logs
 	for _, log := range receipt.Logs {
 		log.TxIndex = txIndex
+		log.BlockHash = parentChainBlockHash
+		log.BlockNumber = rr.parentChainBlockNumber
 	}
-	rr.relevantLogsTxIndexes = append(rr.relevantLogsTxIndexes, txIndex)
+	rr.relevantLogsTxIndexes[txIndex] = struct{}{}
 	return receipt.Logs, nil
 }
 
@@ -153,8 +161,12 @@ func (rr *ReceiptRecorder) LogsForBlockHash(ctx context.Context, parentChainBloc
 // to the preimages map as a value to the key represented by parentChainBlockHash.
 // TODO: If we use parentChainBlockHash as the key for header- then we need to modify this implementation
 func (rr *ReceiptRecorder) GetPreimages() (daprovider.PreimagesMap, error) {
+	var relevantLogsTxIndexes []uint
+	for k := range rr.relevantLogsTxIndexes {
+		relevantLogsTxIndexes = append(relevantLogsTxIndexes, k)
+	}
 	var buf bytes.Buffer
-	if err := rlp.Encode(&buf, rr.relevantLogsTxIndexes); err != nil {
+	if err := rlp.Encode(&buf, relevantLogsTxIndexes); err != nil {
 		return nil, err
 	}
 	if _, ok := rr.preimages[arbutil.Keccak256PreimageType]; !ok {
