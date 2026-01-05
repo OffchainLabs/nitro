@@ -75,6 +75,13 @@ func TestRecordingOfReceiptPreimagesAndFetchingLogsFromPreimages(t *testing.T) {
 	blockBody := &types.Body{Transactions: txs}
 	block := types.NewBlock(blockHeader, blockBody, receipts, trie.NewStackTrie(nil))
 	blockReader.blocks[block.Hash()] = block
+	// Fill in blockHash and BlockNumber fields of the logs
+	for _, receipt := range receipts {
+		for _, log := range receipt.Logs {
+			log.BlockHash = block.Hash()
+			log.BlockNumber = block.NumberU64()
+		}
+	}
 	recorder := melrecording.NewReceiptRecorder(blockReader, block.Hash())
 	require.NoError(t, recorder.Initialize(ctx))
 
