@@ -281,7 +281,6 @@ clean:
 	rm -rf $(output_root)
 	rm -f contracts/test/prover/proofs/*.json contracts/test/prover/spec-proofs/*.json
 	rm -f contracts-legacy/test/prover/proofs/*.json contracts-legacy/test/prover/spec-proofs/*.json
-	rm -rf crates/target
 	rm -rf crates/wasm-libraries/target
 	rm -f crates/wasm-libraries/soft-float/soft-float.wasm
 	rm -f crates/wasm-libraries/soft-float/*.o
@@ -360,17 +359,17 @@ $(replay_wasm): $(DEP_PREDICATE) $(go_source) .make/solgen
 $(prover_bin): $(DEP_PREDICATE) $(rust_prover_files)
 	mkdir -p `dirname $(prover_bin)`
 	cargo build --release --bin prover ${CARGOFLAGS}
-	install crates/target/release/prover $@
+	install target/release/prover $@
 
 $(arbitrator_stylus_lib): $(DEP_PREDICATE) $(stylus_files)
 	mkdir -p `dirname $(arbitrator_stylus_lib)`
 	cargo build --release --lib -p stylus ${CARGOFLAGS}
-	install crates/target/release/libstylus.a $@
+	install target/release/libstylus.a $@
 
 $(arbitrator_jit): $(DEP_PREDICATE) $(jit_files)
 	mkdir -p `dirname $(arbitrator_jit)`
 	cargo build --release -p jit ${CARGOFLAGS}
-	install crates/target/release/jit $@
+	install target/release/jit $@
 
 $(arbitrator_cases)/rust/$(wasm32_wasi)/%.wasm: $(arbitrator_cases)/rust/src/bin/%.rs $(arbitrator_cases)/rust/src/lib.rs $(arbitrator_cases)/rust/.cargo/config.toml
 	cargo build --manifest-path $(arbitrator_cases)/rust/Cargo.toml --release --target wasm32-wasip1 --config $(arbitrator_cases)/rust/.cargo/config.toml --bin $(patsubst $(arbitrator_cases)/rust/$(wasm32_wasi)/%.wasm,%, $@)
