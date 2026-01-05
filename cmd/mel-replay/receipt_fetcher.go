@@ -83,7 +83,6 @@ func (rf *receiptFetcherForBlock) LogsForBlockHashAllLogs(ctx context.Context, p
 		return nil, err
 	}
 	entries, indices := collectTrieEntries(receiptsTrie)
-	fmt.Println("indices ", indices, len(entries))
 	rawReceipts := reconstructOrderedData(entries, indices)
 	receipts, err := decodeReceiptsData(rawReceipts)
 	if err != nil {
