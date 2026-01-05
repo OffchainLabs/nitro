@@ -44,8 +44,8 @@ func NewReceiptRecorder(
 	}
 }
 
-func (lr *ReceiptRecorder) Initialize(ctx context.Context) error {
-	block, err := lr.parentChainReader.BlockByHash(ctx, lr.parentChainBlockHash)
+func (rr *ReceiptRecorder) Initialize(ctx context.Context) error {
+	block, err := rr.parentChainReader.BlockByHash(ctx, rr.parentChainBlockHash)
 	if err != nil {
 		return err
 	}
@@ -56,12 +56,12 @@ func (lr *ReceiptRecorder) Initialize(ctx context.Context) error {
 	var receipts []*types.Receipt
 	txs := block.Body().Transactions
 	for i, tx := range txs {
-		receipt, err := lr.parentChainReader.TransactionReceipt(ctx, tx.Hash())
+		receipt, err := rr.parentChainReader.TransactionReceipt(ctx, tx.Hash())
 		if err != nil {
 			return fmt.Errorf("error fetching receipt for tx: %v", tx.Hash())
 		}
 		receipts = append(receipts, receipt)
-		lr.logs = append(lr.logs, receipt.Logs...)
+		rr.logs = append(rr.logs, receipt.Logs...)
 		// #nosec G115
 		indexBytes, err := rlp.EncodeToBytes(uint64(i))
 		if err != nil {
@@ -88,29 +88,29 @@ func (lr *ReceiptRecorder) Initialize(ctx context.Context) error {
 	if err := tdb.Commit(root, false); err != nil {
 		return fmt.Errorf("failed to commit database: %w", err)
 	}
-	lr.receipts = receipts
-	lr.trieDB = tdb
-	lr.blockReceiptHash = root
+	rr.receipts = receipts
+	rr.trieDB = tdb
+	rr.blockReceiptHash = root
 	return nil
 }
 
-func (lr *ReceiptRecorder) LogsForTxIndex(ctx context.Context, parentChainBlockHash common.Hash, txIndex uint) ([]*types.Log, error) {
-	if lr.trieDB == nil {
+func (rr *ReceiptRecorder) LogsForTxIndex(ctx context.Context, parentChainBlockHash common.Hash, txIndex uint) ([]*types.Log, error) {
+	if rr.trieDB == nil {
 		return nil, errors.New("TransactionRecorder not initialized")
 	}
-	if lr.parentChainBlockHash != parentChainBlockHash {
-		return nil, fmt.Errorf("parentChainBlockHash mismatch. expected: %v got: %v", lr.parentChainBlockHash, parentChainBlockHash)
+	if rr.parentChainBlockHash != parentChainBlockHash {
+		return nil, fmt.Errorf("parentChainBlockHash mismatch. expected: %v got: %v", rr.parentChainBlockHash, parentChainBlockHash)
 	}
 	// #nosec G115
-	if int(txIndex) >= len(lr.receipts) {
+	if int(txIndex) >= len(rr.receipts) {
 		return nil, fmt.Errorf("index out of range: %d", txIndex)
 	}
 	recordingDB := &TxsAndReceiptsDatabase{
-		underlying: lr.trieDB,
-		recorder:   daprovider.RecordPreimagesTo(lr.preimages), // RecordingDB will record relevant preimages into tr.preimages
+		underlying: rr.trieDB,
+		recorder:   daprovider.RecordPreimagesTo(rr.preimages), // RecordingDB will record relevant preimages into tr.preimages
 	}
 	recordingTDB := triedb.NewDatabase(recordingDB, nil)
-	receiptsTrie, err := trie.New(trie.TrieID(lr.blockReceiptHash), recordingTDB)
+	receiptsTrie, err := trie.New(trie.TrieID(rr.blockReceiptHash), recordingTDB)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create trie: %w", err)
 	}
@@ -127,10 +127,10 @@ func (lr *ReceiptRecorder) LogsForTxIndex(ctx context.Context, parentChainBlockH
 		return nil, fmt.Errorf("failed to unmarshal receipt: %w", err)
 	}
 	// Add the receipt marshaled binary by hash to the preimages map
-	if _, ok := lr.preimages[arbutil.Keccak256PreimageType]; !ok {
-		lr.preimages[arbutil.Keccak256PreimageType] = make(map[common.Hash][]byte)
+	if _, ok := rr.preimages[arbutil.Keccak256PreimageType]; !ok {
+		rr.preimages[arbutil.Keccak256PreimageType] = make(map[common.Hash][]byte)
 	}
-	lr.preimages[arbutil.Keccak256PreimageType][crypto.Keccak256Hash(receiptBytes)] = receiptBytes
+	rr.preimages[arbutil.Keccak256PreimageType][crypto.Keccak256Hash(receiptBytes)] = receiptBytes
 	// Fill in the TxIndex (give as input to this method) into the logs so that Tx recording
 	// is possible. This field is one of the derived fields of Log hence won't be stored in trie.
 	//
@@ -138,25 +138,31 @@ func (lr *ReceiptRecorder) LogsForTxIndex(ctx context.Context, parentChainBlockH
 	for _, log := range receipt.Logs {
 		log.TxIndex = txIndex
 	}
-	lr.relevantLogsTxIndexes = append(lr.relevantLogsTxIndexes, txIndex)
+	rr.relevantLogsTxIndexes = append(rr.relevantLogsTxIndexes, txIndex)
 	return receipt.Logs, nil
 }
 
-func (lr *ReceiptRecorder) LogsForBlockHash(ctx context.Context, parentChainBlockHash common.Hash) ([]*types.Log, error) {
-	if lr.trieDB == nil {
+func (rr *ReceiptRecorder) LogsForBlockHash(ctx context.Context, parentChainBlockHash common.Hash) ([]*types.Log, error) {
+	if rr.trieDB == nil {
 		return nil, errors.New("TransactionRecorder not initialized")
 	}
-	if lr.parentChainBlockHash == parentChainBlockHash {
-		return nil, fmt.Errorf("parentChainBlockHash mismatch. expected: %v got: %v", lr.parentChainBlockHash, parentChainBlockHash)
+	if rr.parentChainBlockHash != parentChainBlockHash {
+		return nil, fmt.Errorf("parentChainBlockHash mismatch. expected: %v got: %v", rr.parentChainBlockHash, parentChainBlockHash)
 	}
-	return lr.logs, nil
+	return rr.logs, nil
 }
 
-func (tr *ReceiptRecorder) GetPreimages() (daprovider.PreimagesMap, error) {
+func (rr *ReceiptRecorder) GetPreimages() (daprovider.PreimagesMap, error) {
+	if len(rr.relevantLogsTxIndexes) == 0 {
+		return nil, nil
+	}
 	var buf bytes.Buffer
-	if err := rlp.Encode(&buf, tr.relevantLogsTxIndexes); err != nil {
+	if err := rlp.Encode(&buf, rr.relevantLogsTxIndexes); err != nil {
 		return nil, err
 	}
-	tr.preimages[arbutil.Keccak256PreimageType][RELEVANT_LOGS_TXINDEXES_KEY] = buf.Bytes()
-	return tr.preimages, nil
+	if _, ok := rr.preimages[arbutil.Keccak256PreimageType]; !ok {
+		rr.preimages[arbutil.Keccak256PreimageType] = make(map[common.Hash][]byte)
+	}
+	rr.preimages[arbutil.Keccak256PreimageType][RELEVANT_LOGS_TXINDEXES_KEY] = buf.Bytes()
+	return rr.preimages, nil
 }
