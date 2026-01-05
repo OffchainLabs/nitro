@@ -37,6 +37,10 @@ func parseDelayedMessagesFromBlock(
 		// On Arbitrum One, this is the bridge contract which emits a MessageDelivered event.
 		if log.Address == melState.DelayedMessagePostingTargetAddress {
 			relevantLogs = append(relevantLogs, log)
+			// Record this log for MEL validation
+			if _, err := logsFetcher.LogsForTxIndex(ctx, parentChainHeader.Hash(), log.TxIndex); err != nil {
+				return nil, fmt.Errorf("error recording relevant logs: %w", err)
+			}
 		}
 	}
 	if len(relevantLogs) > 0 {
@@ -76,6 +80,10 @@ func parseDelayedMessagesFromBlock(
 			return nil, err
 		}
 		messageData[common.BigToHash(msgNum)] = msg
+		// Record this log for MEL validation
+		if _, err := logsFetcher.LogsForTxIndex(ctx, parentChainHeader.Hash(), inboxMsgLog.TxIndex); err != nil {
+			return nil, fmt.Errorf("error recording relevant logs: %w", err)
+		}
 	}
 	for i, parsedLog := range messageDeliveredEvents {
 		msgKey := common.BigToHash(parsedLog.MessageIndex)
