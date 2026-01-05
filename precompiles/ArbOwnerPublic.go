@@ -52,6 +52,12 @@ func (con ArbOwnerPublic) GetNativeTokenManagementFrom(c ctx, evm mech) (uint64,
 	return c.State.NativeTokenManagementFromTime()
 }
 
+// TransactionFilteringFrom returns the time in epoch seconds when the
+// transaction filtering feature becomes enabled
+func (con ArbOwnerPublic) GetTransactionFilteringFrom(c ctx, evm mech) (uint64, error) {
+	return c.State.TransactionFilteringFromTime()
+}
+
 // GetNetworkFeeAccount gets the network fee collector
 func (con ArbOwnerPublic) GetNetworkFeeAccount(c ctx, evm mech) (addr, error) {
 	return c.State.NetworkFeeAccount()
