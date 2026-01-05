@@ -286,6 +286,9 @@ func mainImpl() int {
 			nodeConfig.Execution.RPC.MaxRecreateStateDepth = arbitrum.DefaultNonArchiveNodeMaxRecreateStateDepth
 		}
 	}
+	if nodeConfig.Execution.Caching.Archive {
+		nodeConfig.Execution.Caching.StateHistory = 0
+	}
 	liveNodeConfig := genericconf.NewLiveConfig[*NodeConfig](args, nodeConfig, func(ctx context.Context, args []string) (*NodeConfig, error) {
 		nodeConfig, _, err := ParseNode(ctx, args)
 		return nodeConfig, err
