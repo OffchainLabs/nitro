@@ -213,7 +213,8 @@ func findImportantRoots(ctx context.Context, executionDB ethdb.Database, stack *
 				return nil, err
 			}
 			if meta.ParentChainBlock <= l1BlockNum {
-				signedBlockNum := arbutil.MessageCountToBlockNumber(meta.MessageCount, genesisNum)
+				// #nosec G115
+				signedBlockNum := int64(arbutil.MessageIndexToBlockNumber(meta.MessageCount, genesisNum)) - 1
 				// #nosec G115
 				blockNum := uint64(signedBlockNum)
 				l2Hash := rawdb.ReadCanonicalHash(executionDB, blockNum)

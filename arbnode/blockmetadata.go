@@ -70,8 +70,10 @@ type BlockMetadataFetcher struct {
 	stopwaiter.StopWaiter
 	config                 BlockMetadataFetcherConfig
 	db                     ethdb.Database
+	genesisBlockNum        uint64
 	client                 *rpcclient.RpcClient
 	exec                   execution.ExecutionClient
+	startBlockNum          uint64
 	trackBlockMetadataFrom arbutil.MessageIndex
 	expectedChainId        uint64
 
@@ -84,18 +86,12 @@ func NewBlockMetadataFetcher(
 	ctx context.Context,
 	c BlockMetadataFetcherConfig,
 	db ethdb.Database,
+	genesisBlockNum uint64,
 	exec execution.ExecutionClient,
-	startPos uint64,
+	startBlockNum uint64,
 	expectedChainId uint64,
 ) (*BlockMetadataFetcher, error) {
-	var trackBlockMetadataFrom arbutil.MessageIndex
 	var err error
-	if startPos != 0 {
-		trackBlockMetadataFrom, err = exec.BlockNumberToMessageIndex(startPos).Await(ctx)
-		if err != nil {
-			return nil, err
-		}
-	}
 	client := rpcclient.NewRpcClient(func() *rpcclient.ClientConfig { return &c.Source }, nil)
 	if err = client.Start(ctx); err != nil {
 		return nil, err
@@ -111,14 +107,15 @@ func NewBlockMetadataFetcher(
 	}
 
 	fetcher := &BlockMetadataFetcher{
-		config:                 c,
-		db:                     db,
-		client:                 client,
-		exec:                   exec,
-		trackBlockMetadataFrom: trackBlockMetadataFrom,
-		expectedChainId:        expectedChainId,
-		chainIdChecked:         chainIdChecked,
-		currentSyncInterval:    c.SyncInterval,
+		config:              c,
+		db:                  db,
+		genesisBlockNum:     genesisBlockNum,
+		client:              client,
+		exec:                exec,
+		startBlockNum:       startBlockNum,
+		expectedChainId:     expectedChainId,
+		chainIdChecked:      chainIdChecked,
+		currentSyncInterval: c.SyncInterval,
 	}
 	return fetcher, nil
 }
@@ -152,7 +149,7 @@ func (b *BlockMetadataFetcher) persistBlockMetadata(ctx context.Context, query [
 	batch := b.db.NewBatch()
 	queryMap := util.ArrayToSet(query)
 	for _, elem := range result {
-		pos, err := b.exec.BlockNumberToMessageIndex(elem.BlockNumber).Await(ctx)
+		pos, err := arbutil.BlockNumberToMessageIndex(elem.BlockNumber, b.genesisBlockNum)
 		if err != nil {
 			return err
 		}
@@ -185,16 +182,8 @@ func (b *BlockMetadataFetcher) Update(ctx context.Context) time.Duration {
 	}
 
 	handleQuery := func(query []uint64) bool {
-		fromBlock, err := b.exec.MessageIndexToBlockNumber(arbutil.MessageIndex(query[0])).Await(ctx)
-		if err != nil {
-			log.Error("Error getting fromBlock", "err", err)
-			return false
-		}
-		toBlock, err := b.exec.MessageIndexToBlockNumber(arbutil.MessageIndex(query[len(query)-1])).Await(ctx)
-		if err != nil {
-			log.Error("Error getting toBlock", "err", err)
-			return false
-		}
+		fromBlock := arbutil.MessageIndexToBlockNumber(arbutil.MessageIndex(query[0]), b.genesisBlockNum)
+		toBlock := arbutil.MessageIndexToBlockNumber(arbutil.MessageIndex(query[len(query)-1]), b.genesisBlockNum)
 
 		result, err := b.fetch(
 			ctx,
@@ -248,9 +237,24 @@ func (b *BlockMetadataFetcher) Update(ctx context.Context) time.Duration {
 	return b.config.SyncInterval
 }
 
-func (b *BlockMetadataFetcher) Start(ctx context.Context) {
+func (b *BlockMetadataFetcher) InitializeTrackBlockMetadataFrom() error {
+	var err error
+	if b.startBlockNum != 0 {
+		b.trackBlockMetadataFrom, err = arbutil.BlockNumberToMessageIndex(b.startBlockNum, b.genesisBlockNum)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (b *BlockMetadataFetcher) Start(ctx context.Context) error {
 	b.StopWaiter.Start(ctx, b)
+	if err := b.InitializeTrackBlockMetadataFrom(); err != nil {
+		return err
+	}
 	b.CallIteratively(b.Update)
+	return nil
 }
 
 func (b *BlockMetadataFetcher) StopAndWait() {
