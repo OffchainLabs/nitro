@@ -561,6 +561,7 @@ func Precompiles() map[addr]ArbosPrecompile {
 	ArbOwnerPublic.methodsByName["IsNativeTokenOwner"].arbosVersion = params.ArbosVersion_41
 	ArbOwnerPublic.methodsByName["GetAllNativeTokenOwners"].arbosVersion = params.ArbosVersion_41
 	ArbOwnerPublic.methodsByName["GetParentGasFloorPerToken"].arbosVersion = params.ArbosVersion_50
+	ArbOwnerPublic.methodsByName["GetTransactionFilteringFrom"].arbosVersion = params.ArbosVersion_60
 
 	ArbWasmImpl := &ArbWasm{Address: types.ArbWasmAddress}
 	ArbWasm := insert(MakePrecompile(precompilesgen.ArbWasmMetaData, ArbWasmImpl))
@@ -659,6 +660,7 @@ func Precompiles() map[addr]ArbosPrecompile {
 	ArbOwner.methodsByName["RemoveTransactionCensor"].arbosVersion = params.ArbosVersion_60
 	ArbOwner.methodsByName["IsTransactionCensor"].arbosVersion = params.ArbosVersion_60
 	ArbOwner.methodsByName["GetAllTransactionCensors"].arbosVersion = params.ArbosVersion_60
+	ArbOwner.methodsByName["SetTransactionFilteringFrom"].arbosVersion = params.ArbosVersion_60
 
 	ArbOwnerPublic.methodsByName["GetNativeTokenManagementFrom"].arbosVersion = params.ArbosVersion_50
 
