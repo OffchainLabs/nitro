@@ -1,11 +1,11 @@
 ---
-name: nitro-arbitrator
+name: nitro-rust
 on:
   workflow_call:
 
 jobs:
-  arbitrator:
-    name: Run Arbitrator tests
+  rust:
+    name: Run Rust tests
     runs-on: arbitrator-ci
     env:
       RUST_BACKTRACE: 1
