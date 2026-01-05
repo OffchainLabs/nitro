@@ -18,9 +18,6 @@ import (
 	"github.com/offchainlabs/nitro/arbutil"
 )
 
-// maps to an array of uints representing the relevant txIndexes of receipts needed for message extraction
-var RELEVANT_LOGS_TXINDEXES_KEY common.Hash = common.HexToHash("123534")
-
 type receiptFetcherForBlock struct {
 	header           *types.Header
 	preimageResolver preimageResolver
@@ -45,12 +42,12 @@ func (rf *receiptFetcherForBlock) LogsForTxIndex(ctx context.Context, parentChai
 }
 
 // LogsForBlockHash first gets the txIndexes corresponding to the relevant logs by reading
-// RELEVANT_LOGS_TXINDEXES_KEY from the preimages and then fetches logs for each of these txIndexes
+// the key `parentChainBlockHash` from the preimages and then fetches logs for each of these txIndexes
 func (rf *receiptFetcherForBlock) LogsForBlockHash(ctx context.Context, parentChainBlockHash common.Hash) ([]*types.Log, error) {
 	if rf.header.Hash() != parentChainBlockHash {
 		return nil, errors.New("parentChainBlockHash mismatch")
 	}
-	txIndexData, err := rf.preimageResolver.ResolveTypedPreimage(arbutil.Keccak256PreimageType, RELEVANT_LOGS_TXINDEXES_KEY)
+	txIndexData, err := rf.preimageResolver.ResolveTypedPreimage(arbutil.Keccak256PreimageType, rf.header.Hash())
 	if err != nil {
 		return nil, err
 	}
