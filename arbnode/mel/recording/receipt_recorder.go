@@ -19,9 +19,6 @@ import (
 	"github.com/offchainlabs/nitro/daprovider"
 )
 
-// maps to an array of uints representing the relevant txIndexes of receipts needed for message extraction
-var RELEVANT_LOGS_TXINDEXES_KEY common.Hash = common.HexToHash("123534")
-
 type ReceiptRecorder struct {
 	parentChainReader     BlockReader
 	parentChainBlockHash  common.Hash
@@ -152,10 +149,10 @@ func (rr *ReceiptRecorder) LogsForBlockHash(ctx context.Context, parentChainBloc
 	return rr.logs, nil
 }
 
+// GetPreimages returns the preimages of recorded receipts, and also adds the array of relevant tx indexes
+// to the preimages map as a value to the key represented by parentChainBlockHash.
+// TODO: If we use parentChainBlockHash as the key for header- then we need to modify this implementation
 func (rr *ReceiptRecorder) GetPreimages() (daprovider.PreimagesMap, error) {
-	if len(rr.relevantLogsTxIndexes) == 0 {
-		return nil, nil
-	}
 	var buf bytes.Buffer
 	if err := rlp.Encode(&buf, rr.relevantLogsTxIndexes); err != nil {
 		return nil, err
@@ -163,6 +160,6 @@ func (rr *ReceiptRecorder) GetPreimages() (daprovider.PreimagesMap, error) {
 	if _, ok := rr.preimages[arbutil.Keccak256PreimageType]; !ok {
 		rr.preimages[arbutil.Keccak256PreimageType] = make(map[common.Hash][]byte)
 	}
-	rr.preimages[arbutil.Keccak256PreimageType][RELEVANT_LOGS_TXINDEXES_KEY] = buf.Bytes()
+	rr.preimages[arbutil.Keccak256PreimageType][rr.parentChainBlockHash] = buf.Bytes()
 	return rr.preimages, nil
 }
