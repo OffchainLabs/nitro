@@ -9,11 +9,9 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind/v2"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/arbnode/mel/extraction"
 	"github.com/offchainlabs/nitro/arbnode/mel/recording"
@@ -23,46 +21,14 @@ import (
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
+	"github.com/offchainlabs/nitro/validator"
 )
-
-// dummyTxsAndLogsFetcher is for testing purposes. TODO: remove once we have preimages recorder implementations
-type DummyTxsAndLogsFetcher struct {
-	L1client *ethclient.Client
-	receipts types.Receipts
-}
-
-func (d *DummyTxsAndLogsFetcher) LogsForBlockHash(ctx context.Context, parentChainBlockHash common.Hash) ([]*types.Log, error) {
-	receipts, err := d.L1client.BlockReceipts(ctx, rpc.BlockNumberOrHashWithHash(parentChainBlockHash, false))
-	if err != nil {
-		return nil, err
-	}
-	var logs []*types.Log
-	for _, receipt := range receipts {
-		logs = append(logs, receipt.Logs...)
-	}
-	d.receipts = receipts
-	return logs, nil
-}
-
-func (d *DummyTxsAndLogsFetcher) LogsForTxIndex(ctx context.Context, parentChainBlockHash common.Hash, txIndex uint) ([]*types.Log, error) {
-	// #nosec G115
-	if d.receipts.Len() < int(txIndex+1) {
-		return nil, fmt.Errorf("insufficient number of receipts: %d, txIndex: %d", d.receipts.Len(), txIndex)
-	}
-	receipt := d.receipts[txIndex]
-	return receipt.Logs, nil
-}
-
-func (d *DummyTxsAndLogsFetcher) TransactionByLog(ctx context.Context, log *types.Log) (*types.Transaction, error) {
-	tx, _, err := d.L1client.TransactionByHash(ctx, log.TxHash)
-	return tx, err
-}
 
 type MELValidator struct {
 	stopwaiter.StopWaiter
 
 	arbDb    ethdb.KeyValueStore
-	l1client *ethclient.Client
+	l1Client *ethclient.Client
 
 	boldStakerAddr common.Address
 	rollupAddr     common.Address
@@ -74,10 +40,10 @@ type MELValidator struct {
 	lastValidatedParentChainBlock uint64
 }
 
-func NewMELValidator(arbDb ethdb.KeyValueStore, l1client *ethclient.Client, messageExtractor *melrunner.MessageExtractor, dapReaders arbstate.DapReaderSource) *MELValidator {
+func NewMELValidator(arbDb ethdb.KeyValueStore, l1Client *ethclient.Client, messageExtractor *melrunner.MessageExtractor, dapReaders arbstate.DapReaderSource) *MELValidator {
 	return &MELValidator{
 		arbDb:            arbDb,
-		l1client:         l1client,
+		l1Client:         l1Client,
 		messageExtractor: messageExtractor,
 		dapReaders:       dapReaders,
 	}
@@ -90,7 +56,7 @@ func (mv *MELValidator) Start(ctx context.Context) {
 			log.Error("MEL validator: Error fetching latest staked assertion hash", "err", err)
 			return 0
 		}
-		latestStakedAssertion, err := ReadBoldAssertionCreationInfo(ctx, mv.rollup, mv.l1client, mv.rollupAddr, latestStaked)
+		latestStakedAssertion, err := ReadBoldAssertionCreationInfo(ctx, mv.rollup, mv.l1Client, mv.rollupAddr, latestStaked)
 		if err != nil {
 			log.Error("MEL validator: Error fetching latest staked assertion creation info", "err", err)
 			return 0
@@ -133,14 +99,21 @@ func (mv *MELValidator) CreateNextValidationEntry(ctx context.Context, lastValid
 	}
 	delayedMsgRecordingDB := melrecording.NewDelayedMsgDatabase(mv.arbDb)
 	recordingDAPReaders := melrecording.NewDAPReaderSource(ctx, mv.dapReaders)
+	txsAndReceiptsPreimages := make(daprovider.PreimagesMap)
 	for i := lastValidatedParentChainBlock + 1; ; i++ {
-		header, err := mv.l1client.HeaderByNumber(ctx, new(big.Int).SetUint64(i))
+		header, err := mv.l1Client.HeaderByNumber(ctx, new(big.Int).SetUint64(i))
 		if err != nil {
 			return nil, err
 		}
-		// Awaiting recording implementations of logsFetcher and txsFetcher
-		txsAndLogsFetcher := &DummyTxsAndLogsFetcher{L1client: mv.l1client}
-		state, _, _, _, err := melextraction.ExtractMessages(ctx, preState, header, recordingDAPReaders, delayedMsgRecordingDB, txsAndLogsFetcher, txsAndLogsFetcher, nil)
+		txsRecorder := melrecording.NewTransactionRecorder(mv.l1Client, header.Hash())
+		if err := txsRecorder.Initialize(ctx); err != nil {
+			return nil, err
+		}
+		receiptsRecorder := melrecording.NewReceiptRecorder(mv.l1Client, header.Hash())
+		if err := receiptsRecorder.Initialize(ctx); err != nil {
+			return nil, err
+		}
+		state, _, _, _, err := melextraction.ExtractMessages(ctx, preState, header, recordingDAPReaders, delayedMsgRecordingDB, txsRecorder, receiptsRecorder, nil)
 		if err != nil {
 			return nil, fmt.Errorf("error calling melextraction.ExtractMessages in recording mode: %w", err)
 		}
@@ -151,6 +124,12 @@ func (mv *MELValidator) CreateNextValidationEntry(ctx context.Context, lastValid
 		if state.Hash() != wantState.Hash() {
 			return nil, fmt.Errorf("calculated MEL state hash in recording mode doesn't match the one computed in native mode, parentchainBlocknumber: %d", i)
 		}
+		validator.CopyPreimagesInto(txsAndReceiptsPreimages, txsRecorder.GetPreimages())
+		receiptsPreimages, err := receiptsRecorder.GetPreimages()
+		if err != nil {
+			return nil, err
+		}
+		validator.CopyPreimagesInto(txsAndReceiptsPreimages, receiptsPreimages)
 		if state.MsgCount >= toValidateMsgExtractionCount {
 			break
 		}
@@ -160,7 +139,8 @@ func (mv *MELValidator) CreateNextValidationEntry(ctx context.Context, lastValid
 	delayedPreimages := daprovider.PreimagesMap{
 		arbutil.Keccak256PreimageType: delayedMsgRecordingDB.Preimages(),
 	}
-	daprovider.CopyPreimagesInto(preimages, delayedPreimages)
+	validator.CopyPreimagesInto(preimages, delayedPreimages)
+	validator.CopyPreimagesInto(preimages, txsAndReceiptsPreimages)
 	return &validationEntry{
 		Preimages: preimages,
 	}, nil

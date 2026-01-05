@@ -149,6 +149,11 @@ func (f *logsAndHeadersFetcher) fetchDelayedMessageLogs(ctx context.Context, fro
 		}
 		for _, log := range logs {
 			f.logsByBlockHash[log.BlockHash] = append(f.logsByBlockHash[log.BlockHash], &log)
+			// Not necessary in native mode but needed to make the behavior consistent with recording mode
+			if _, ok := f.logsByTxIndex[log.BlockHash]; !ok {
+				f.logsByTxIndex[log.BlockHash] = make(map[uint][]*types.Log)
+			}
+			f.logsByTxIndex[log.BlockHash][log.TxIndex] = append(f.logsByTxIndex[log.BlockHash][log.TxIndex], &log)
 		}
 		return nil
 	}

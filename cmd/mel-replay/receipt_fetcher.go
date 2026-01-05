@@ -37,6 +37,8 @@ func (rf *receiptFetcherForBlock) LogsForTxIndex(ctx context.Context, parentChai
 	// This is needed to enable fetching corresponding tx from the txFetcher
 	for _, log := range receipt.Logs {
 		log.TxIndex = txIndex
+		log.BlockHash = rf.header.Hash()
+		log.BlockNumber = rf.header.Number.Uint64()
 	}
 	return receipt.Logs, nil
 }

@@ -4,10 +4,12 @@ import (
 	"context"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/merkleAccumulator"
+	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
 // State defines the main struct describing the results of processing a single parent
@@ -77,7 +79,26 @@ type MessageConsumer interface {
 }
 
 func (s *State) Hash() common.Hash {
-	return common.Hash{}
+	var delayedMerklePartialsBytes []byte
+	for _, partials := range s.DelayedMessageMerklePartials {
+		delayedMerklePartialsBytes = append(delayedMerklePartialsBytes, partials.Bytes()...)
+	}
+	hash := crypto.Keccak256(
+		arbmath.Uint16ToBytes(s.Version),
+		arbmath.UintToBytes(s.ParentChainId),
+		arbmath.UintToBytes(s.ParentChainBlockNumber),
+		s.BatchPostingTargetAddress.Bytes(),
+		s.DelayedMessagePostingTargetAddress.Bytes(),
+		s.ParentChainBlockHash.Bytes(),
+		s.ParentChainPreviousBlockHash.Bytes(),
+		s.MessageAccumulator.Bytes(),
+		s.DelayedMessagesSeenRoot.Bytes(),
+		arbmath.UintToBytes(s.MsgCount),
+		arbmath.UintToBytes(s.BatchCount),
+		arbmath.UintToBytes(s.DelayedMessagesRead),
+		arbmath.UintToBytes(s.DelayedMessagesSeen),
+	)
+	return crypto.Keccak256Hash(hash, delayedMerklePartialsBytes)
 }
 
 // Performs a deep clone of the state struct to prevent any unintended
