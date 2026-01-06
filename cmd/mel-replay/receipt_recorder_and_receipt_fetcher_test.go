@@ -16,8 +16,9 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/trie"
 
-	melrecording "github.com/offchainlabs/nitro/arbnode/mel/recording"
+	"github.com/offchainlabs/nitro/arbnode/mel/recording"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/daprovider"
 )
 
 type mockPreimageResolver struct {
@@ -82,7 +83,9 @@ func TestRecordingOfReceiptPreimagesAndFetchingLogsFromPreimages(t *testing.T) {
 			log.BlockNumber = block.NumberU64()
 		}
 	}
-	recorder := melrecording.NewReceiptRecorder(blockReader, block.Hash())
+	preimages := make(daprovider.PreimagesMap)
+	recorder, err := melrecording.NewReceiptRecorder(blockReader, block.Hash(), preimages)
+	require.NoError(t, err)
 	require.NoError(t, recorder.Initialize(ctx))
 
 	// Test recording of preimages
@@ -99,7 +102,7 @@ func TestRecordingOfReceiptPreimagesAndFetchingLogsFromPreimages(t *testing.T) {
 	}
 
 	// Test reading of logs from the recorded preimages
-	preimages, err := recorder.GetPreimages()
+	require.NoError(t, recorder.CollectTxIndicesPreimage())
 	require.NoError(t, err)
 	receiptFetcher := &receiptFetcherForBlock{
 		header: block.Header(),
