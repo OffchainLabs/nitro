@@ -16,6 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/cmd/genericconf"
+	"github.com/offchainlabs/nitro/cmd/tx-filterer-manager/server"
 	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
 )
@@ -122,7 +123,7 @@ func startup() error {
 
 	vcsRevision, _, vcsTime := confighelpers.GetVersion()
 	log.Info("Starting HTTP-RPC server", "addr", config.RPCAddr, "port", config.RPCPort, "revision", vcsRevision, "vcs.time", vcsTime)
-	rpcServer, err := startRPCServer(ctx, config.RPCAddr, config.RPCPort, config.RPCServerTimeouts)
+	rpcServer, err := server.StartRPCServer(ctx, config.RPCAddr, config.RPCPort, config.RPCServerTimeouts)
 	if err != nil {
 		return err
 	}
