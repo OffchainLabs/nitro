@@ -18,31 +18,41 @@ mod wavmio;
 
 #[derive(Clone, Debug, Parser)]
 pub struct Opts {
+    /// General validator configuration
     #[command(flatten)]
     pub validator: ValidatorOpts,
+    /// How the validation inputs are provided
     #[command(subcommand)]
     pub input_mode: InputMode,
 }
 
 #[derive(Clone, Debug, Args)]
 pub struct ValidatorOpts {
+    /// Path to the `replay.wasm` binary
     #[clap(short, long)]
     pub binary: PathBuf,
+    /// Use Cranelift backend
     #[clap(long)]
     pub cranelift: bool,
+    /// Enable debug output
     #[clap(long)]
     pub debug: bool,
+    /// Require that the validation succeeds
     #[clap(long)]
     pub require_success: bool,
 }
 
 #[derive(Clone, Debug, Subcommand)]
 pub enum InputMode {
+    /// Use a local JSON file containing the inputs
     Json {
+        /// Path to the JSON input file
         #[clap(long)]
         inputs: PathBuf,
     },
+    /// Use flag values and local files for inputs
     Local(LocalInput),
+    /// Continuously read new inputs from TCP connections
     Continuous,
 }
 
