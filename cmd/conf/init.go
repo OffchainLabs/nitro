@@ -2,6 +2,7 @@ package conf
 
 import (
 	"fmt"
+	"math/big"
 	"slices"
 	"strings"
 	"time"
@@ -9,6 +10,7 @@ import (
 	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/util"
 )
@@ -42,6 +44,7 @@ type InitConfig struct {
 	ReorgToMessageBatch           int64         `koanf:"reorg-to-message-batch"`
 	ReorgToBlockBatch             int64         `koanf:"reorg-to-block-batch"`
 	ValidateGenesisAssertion      bool          `koanf:"validate-genesis-assertion"`
+	InitialL1BaseFee              string        `koanf:"initial-l1base-fee"`
 }
 
 var InitConfigDefault = InitConfig{
@@ -73,6 +76,7 @@ var InitConfigDefault = InitConfig{
 	ReorgToMessageBatch:           -1,
 	ReorgToBlockBatch:             -1,
 	ValidateGenesisAssertion:      true,
+	InitialL1BaseFee:              params.DefaultInitialL1BaseFee.String(),
 }
 
 func InitConfigAddOptions(prefix string, f *pflag.FlagSet) {
@@ -108,6 +112,7 @@ func InitConfigAddOptions(prefix string, f *pflag.FlagSet) {
 		"\"false\"- do not rebuild on startup",
 	)
 	f.Bool(prefix+".validate-genesis-assertion", InitConfigDefault.ValidateGenesisAssertion, "tests genesis assertion posted on parent chain against the genesis block created on init")
+	f.String(prefix+".initial-l1base-fee", InitConfigDefault.InitialL1BaseFee, "initial L1 base fee for genesis block")
 }
 
 func (c *InitConfig) Validate() error {
@@ -136,7 +141,22 @@ func (c *InitConfig) Validate() error {
 	if c.RebuildLocalWasm != "auto" && c.RebuildLocalWasm != "force" && c.RebuildLocalWasm != "false" {
 		return fmt.Errorf("invalid value of rebuild-local-wasm, want: auto or force or false, got: %s", c.RebuildLocalWasm)
 	}
+	if _, success := big.NewInt(0).SetString(c.InitialL1BaseFee, 10); !success {
+		return fmt.Errorf("failed to parse L1 BaseFee for L2 config: `%s`", c.InitialL1BaseFee)
+	}
 	return nil
+}
+
+func (c *InitConfig) InitialL1BaseFeeParsed() (*big.Int, error) {
+	if c.InitialL1BaseFee == "" {
+		return params.DefaultInitialL1BaseFee, nil
+	}
+
+	parsed, success := big.NewInt(0).SetString(c.InitialL1BaseFee, 10)
+	if !success {
+		return nil, fmt.Errorf("failed to parse L1 BaseFee for L2 config: `%s` (passed with `initial-l1base-fee` flag)", c.InitialL1BaseFee)
+	}
+	return parsed, nil
 }
 
 func (c *InitConfig) IsReorgRequested() bool {

@@ -790,7 +790,7 @@ func openInitializeExecutionDB(ctx context.Context, stack *node.Node, config *No
 		genesisArbOSInit = gen.ArbOSInit
 	}
 
-	configuredInitialL1BaseFee, err := resolveInitialL1BaseFee(genesisArbOSInit, &config.Chain)
+	configuredInitialL1BaseFee, err := resolveInitialL1BaseFee(genesisArbOSInit, &config.Init)
 	if err != nil {
 		return executionDB, nil, err
 	}
@@ -945,8 +945,8 @@ func openInitializeExecutionDB(ctx context.Context, stack *node.Node, config *No
 	return rebuildLocalWasm(ctx, &config.Execution, l2BlockChain, executionDB, wasmDB, config.Init.RebuildLocalWasm)
 }
 
-func resolveInitialL1BaseFee(genesisArbOSInit *params.ArbOSInit, l2Config *conf.L2Config) (*big.Int, error) {
-	feeCLIFlag, err := l2Config.InitialL1BaseFeeParsed()
+func resolveInitialL1BaseFee(genesisArbOSInit *params.ArbOSInit, initConfig *conf.InitConfig) (*big.Int, error) {
+	feeCLIFlag, err := initConfig.InitialL1BaseFeeParsed()
 	if err != nil {
 		return nil, err
 	}
@@ -955,8 +955,8 @@ func resolveInitialL1BaseFee(genesisArbOSInit *params.ArbOSInit, l2Config *conf.
 		return feeCLIFlag, nil
 	}
 	feeGenesisJSON := genesisArbOSInit.GetInitialL1BaseFee()
-	if l2Config.InitialL1BaseFee != "" && feeCLIFlag.Cmp(feeGenesisJSON) != 0 {
-		return nil, fmt.Errorf("initial l1 base fee configuration mismatch: `genesis-json-file` sets the value to %s, while `initial-l1base-fee` flag was set to %s", feeGenesisJSON.String(), l2Config.InitialL1BaseFee)
+	if initConfig.InitialL1BaseFee != "" && feeCLIFlag.Cmp(feeGenesisJSON) != 0 {
+		return nil, fmt.Errorf("initial l1 base fee configuration mismatch: `genesis-json-file` sets the value to %s, while `initial-l1base-fee` flag was set to %s", feeGenesisJSON.String(), initConfig.InitialL1BaseFee)
 	}
 	return feeGenesisJSON, nil
 }
