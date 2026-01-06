@@ -242,6 +242,7 @@ type ConfigFetcher interface {
 }
 
 type ExecutionNode struct {
+	stopwaiter.StopWaiter
 	ExecutionDB              ethdb.Database
 	Backend                  *arbitrum.Backend
 	FilterSystem             *filters.FilterSystem
@@ -465,6 +466,7 @@ func (n *ExecutionNode) Initialize(ctx context.Context) error {
 
 // not thread safe
 func (n *ExecutionNode) Start(ctx context.Context) error {
+	n.StopWaiter.Start(ctx, n)
 	if n.started.Swap(true) {
 		return errors.New("already started")
 	}
@@ -515,6 +517,7 @@ func (n *ExecutionNode) StopAndWait() {
 	// if err := n.Stack.Close(); err != nil {
 	// 	log.Error("error on stak close", "err", err)
 	// }
+	n.StopWaiter.StopAndWait()
 }
 
 func (n *ExecutionNode) DigestMessage(num arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, msgForPrefetch *arbostypes.MessageWithMetadata) containers.PromiseInterface[*execution.MessageResult] {
@@ -544,13 +547,13 @@ func (n *ExecutionNode) RecordBlockCreation(
 	msg *arbostypes.MessageWithMetadata,
 	wasmTargets []rawdb.WasmTarget,
 ) containers.PromiseInterface[*execution.RecordResult] {
-	return stopwaiter.LaunchPromiseThread(n.ExecEngine, func(ctx context.Context) (*execution.RecordResult, error) {
+	return stopwaiter.LaunchPromiseThread(n, func(ctx context.Context) (*execution.RecordResult, error) {
 		return n.Recorder.RecordBlockCreation(ctx, pos, msg, wasmTargets)
 	})
 }
 
 func (n *ExecutionNode) PrepareForRecord(start, end arbutil.MessageIndex) containers.PromiseInterface[struct{}] {
-	return stopwaiter.LaunchPromiseThread(n.ExecEngine, func(ctx context.Context) (struct{}, error) {
+	return stopwaiter.LaunchPromiseThread(n, func(ctx context.Context) (struct{}, error) {
 		return struct{}{}, n.Recorder.PrepareForRecord(ctx, start, end)
 	})
 }
