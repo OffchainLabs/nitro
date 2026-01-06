@@ -8,7 +8,7 @@ use prover::parse_input::FileData;
 use std::env;
 use std::fs::File;
 use std::io::BufReader;
-use std::path::PathBuf;
+use std::path::Path;
 
 // local_target matches rawdb.LocalTarget() on the go side.
 // While generating json_inputs file, one should make sure user_wasms map
@@ -25,7 +25,7 @@ pub fn local_target() -> String {
     }
 }
 
-pub fn prepare_env(json_inputs: PathBuf, debug: bool) -> eyre::Result<WasmEnv> {
+pub fn prepare_env_from_json(json_inputs: &Path, debug: bool) -> eyre::Result<WasmEnv> {
     let file = File::open(json_inputs)?;
     let reader = BufReader::new(file);
 

@@ -10,14 +10,11 @@ use jit::Opts;
 
 fn main() -> Result<()> {
     let opts = Opts::parse();
-    let env = match WasmEnv::cli(&opts) {
-        Ok(env) => env,
-        Err(err) => panic!("{err}"),
-    };
+    let env = WasmEnv::try_from(&opts)?;
 
     let (instance, env, mut store) = machine::create(&opts, env);
 
-    let main = instance.exports.get_function("_start").unwrap();
+    let main = instance.exports.get_function("_start")?;
     let outcome = main.call(&mut store, &[]);
     let escape = match outcome {
         Ok(outcome) => {
@@ -38,12 +35,7 @@ fn main() -> Result<()> {
         }
     };
 
-    let memory_used = instance
-        .exports
-        .get_memory("memory")
-        .unwrap()
-        .view(&store)
-        .size();
+    let memory_used = instance.exports.get_memory("memory")?.view(&store).size();
 
     let env = env.as_mut(&mut store);
     let user = env.process.socket.is_none();
@@ -60,7 +52,7 @@ fn main() -> Result<()> {
         None => (false, "Machine exited prematurely".to_owned()),
     };
 
-    if opts.debug || !success {
+    if opts.validator.debug || !success {
         println!("{message}");
     }
 
@@ -71,13 +63,13 @@ fn main() -> Result<()> {
 
     env.send_results(error, memory_used);
 
-    if !success && opts.require_success {
+    if !success && opts.validator.require_success {
         std::process::exit(1);
     }
     Ok(())
 }
 
-// require a usize be at least 32 bits wide
+// require an usize be at least 32 bits wide
 #[cfg(not(any(target_pointer_width = "32", target_pointer_width = "64")))]
 compile_error!(
     "Unsupported target pointer width (only 32 bit and 64 bit architectures are supported)"
