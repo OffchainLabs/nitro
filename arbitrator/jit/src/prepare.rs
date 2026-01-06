@@ -32,7 +32,7 @@ pub fn prepare_env_from_json(json_inputs: &Path, debug: bool) -> eyre::Result<Wa
     let data = FileData::from_reader(reader)?;
 
     let mut env = WasmEnv::default();
-    env.process.forks = false; // Should be set to false when using json_inputs
+    env.process.already_has_input = true;
     env.process.debug = debug;
 
     let block_hash: [u8; 32] = data.start_state.block_hash.try_into().unwrap();

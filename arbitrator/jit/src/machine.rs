@@ -171,7 +171,7 @@ impl Escape {
         Err(Self::Exit(code))
     }
 
-    pub fn hostio<T, S: std::convert::AsRef<str>>(message: S) -> Result<T, Escape> {
+    pub fn hostio<T, S: AsRef<str>>(message: S) -> Result<T, Escape> {
         Err(Self::HostIO(message.as_ref().to_string()))
     }
 }
@@ -230,6 +230,8 @@ impl TryFrom<&Opts> for WasmEnv {
 }
 
 fn prepare_env_from_files(mut env: WasmEnv, input: &LocalInput) -> Result<WasmEnv> {
+    env.process.already_has_input = true;
+
     let mut inbox_position = input.inbox_position;
     let mut delayed_position = input.delayed_inbox_position;
 
@@ -310,8 +312,8 @@ impl WasmEnv {
 }
 
 pub struct ProcessEnv {
-    /// Whether to create child processes to handle execution
-    pub forks: bool,
+    /// Whether the validation input is already available or do we have to fork and read it
+    pub already_has_input: bool,
     /// Whether to print debugging info
     pub debug: bool,
     /// Mechanism for asking for preimages and returning results
@@ -325,7 +327,7 @@ pub struct ProcessEnv {
 impl Default for ProcessEnv {
     fn default() -> Self {
         Self {
-            forks: false,
+            already_has_input: false,
             debug: false,
             socket: None,
             timestamp: Instant::now(),
