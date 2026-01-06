@@ -6,8 +6,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"net"
-	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -15,9 +13,7 @@ import (
 	"github.com/knadh/koanf/parsers/json"
 	"github.com/spf13/pflag"
 
-	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/util"
@@ -102,48 +98,6 @@ func parseTxFiltererManagerConfig(args []string) (*TxFiltererManagerConfig, erro
 func printSampleUsage(progname string) {
 	fmt.Printf("\n")
 	fmt.Printf("Sample usage:                  %s --help \n", progname)
-}
-
-type RPCServer struct {
-}
-
-func (r *RPCServer) FilterTx(ctx context.Context, txHash common.Hash) error {
-	log.Info("Received request to filter transaction", "txHash", txHash.Hex())
-	return nil
-}
-
-func startRPCServer(ctx context.Context, addr string, portNum uint64, rpcServerTimeouts genericconf.HTTPServerTimeoutConfig) (*http.Server, error) {
-	listener, err := net.Listen("tcp", fmt.Sprintf("%s:%d", addr, portNum))
-	if err != nil {
-		return nil, err
-	}
-
-	rpcServer := rpc.NewServer()
-
-	err = rpcServer.RegisterName("tx-filterer-manager", &RPCServer{})
-	if err != nil {
-		return nil, err
-	}
-
-	srv := &http.Server{
-		Handler:           rpcServer,
-		ReadTimeout:       rpcServerTimeouts.ReadTimeout,
-		ReadHeaderTimeout: rpcServerTimeouts.ReadHeaderTimeout,
-		WriteTimeout:      rpcServerTimeouts.WriteTimeout,
-		IdleTimeout:       rpcServerTimeouts.IdleTimeout,
-	}
-
-	go func() {
-		err := srv.Serve(listener)
-		if err != nil {
-			return
-		}
-	}()
-	go func() {
-		<-ctx.Done()
-		_ = srv.Shutdown(context.Background())
-	}()
-	return srv, nil
 }
 
 func startup() error {
