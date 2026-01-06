@@ -4,6 +4,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -895,7 +896,7 @@ func openInitializeExecutionDB(ctx context.Context, stack *node.Node, config *No
 			}
 			log.Info("Read serialized chain config from init message", "json", string(parsedInitMessage.SerializedChainConfig))
 		} else {
-			serializedChainConfig, err := json.Marshal(chainConfig)
+			serializedChainConfig, err := resolveSerializedChainConfig(genesisArbOSInit, &config.Init, chainConfig)
 			if err != nil {
 				return executionDB, nil, err
 			}
@@ -963,6 +964,27 @@ func resolveInitialL1BaseFee(genesisArbOSInit *params.ArbOSInit, initConfig *con
 		return nil, fmt.Errorf("initial l1 base fee configuration mismatch: `genesis-json-file` sets the value to %s, while `initial-l1base-fee` flag was set to %s", feeGenesisJSON.String(), initConfig.InitialL1BaseFee)
 	}
 	return feeGenesisJSON, nil
+}
+
+func resolveSerializedChainConfig(arbosInit *params.ArbOSInit, initConfig *conf.InitConfig, chainConfig *params.ChainConfig) ([]byte, error) {
+	var fromGenesisJSON, fromCLIFlag []byte
+	if arbosInit != nil && len(arbosInit.SerializedChainConfig) != 0 {
+		fromGenesisJSON = arbosInit.SerializedChainConfig
+	}
+	if initConfig != nil && len(initConfig.SerializedChainConfig) != 0 {
+		fromCLIFlag = common.FromHex(initConfig.SerializedChainConfig)
+	}
+
+	if fromGenesisJSON != nil && fromCLIFlag != nil && !bytes.Equal(fromGenesisJSON, fromCLIFlag) {
+		return nil, errors.New("serialized chain config configuration mismatch between `genesis-json-file` and `serialized-chain-config` flag")
+	}
+	if fromGenesisJSON != nil {
+		return fromGenesisJSON, nil
+	}
+	if fromCLIFlag != nil {
+		return fromCLIFlag, nil
+	}
+	return json.Marshal(chainConfig)
 }
 
 func validateGenesisAssertion(ctx context.Context, rollupAddress common.Address, l1Client *ethclient.Client, genesis *types.Block, initDataReaderHasAccounts bool) error {

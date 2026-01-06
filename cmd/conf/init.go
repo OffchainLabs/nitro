@@ -45,6 +45,7 @@ type InitConfig struct {
 	ReorgToBlockBatch             int64         `koanf:"reorg-to-block-batch"`
 	ValidateGenesisAssertion      bool          `koanf:"validate-genesis-assertion"`
 	InitialL1BaseFee              string        `koanf:"initial-l1base-fee"`
+	SerializedChainConfig         string        `koanf:"serialized-chain-config"`
 }
 
 var InitConfigDefault = InitConfig{
@@ -77,6 +78,7 @@ var InitConfigDefault = InitConfig{
 	ReorgToBlockBatch:             -1,
 	ValidateGenesisAssertion:      true,
 	InitialL1BaseFee:              arbostypes.DefaultInitialL1BaseFee.String(),
+	SerializedChainConfig:         "",
 }
 
 func InitConfigAddOptions(prefix string, f *pflag.FlagSet) {
@@ -113,6 +115,7 @@ func InitConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	)
 	f.Bool(prefix+".validate-genesis-assertion", InitConfigDefault.ValidateGenesisAssertion, "tests genesis assertion posted on parent chain against the genesis block created on init")
 	f.String(prefix+".initial-l1base-fee", InitConfigDefault.InitialL1BaseFee, "initial L1 base fee for genesis block")
+	f.String(prefix+".serialized-chain-config", InitConfigDefault.SerializedChainConfig, "serialized chain config to use for initialization")
 }
 
 func (c *InitConfig) Validate() error {
