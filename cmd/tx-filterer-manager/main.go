@@ -6,7 +6,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"io"
 	"net"
 	"net/http"
 	"os"
@@ -158,19 +157,10 @@ func startup() error {
 		confighelpers.PrintErrorAndExit(err, printSampleUsage)
 	}
 
-	logLevel, err := genericconf.ToSlogLevel(config.LogLevel)
+	err = util.SetLogger(config.LogLevel, config.LogType)
 	if err != nil {
-		confighelpers.PrintErrorAndExit(err, printSampleUsage)
+		return err
 	}
-
-	handler, err := genericconf.HandlerFromLogType(config.LogType, io.Writer(os.Stderr))
-	if err != nil {
-		pflag.Usage()
-		return fmt.Errorf("error parsing log type when creating handler: %w", err)
-	}
-	glogger := log.NewGlogHandler(handler)
-	glogger.Verbosity(logLevel)
-	log.SetDefault(log.NewLogger(glogger))
 
 	if err := util.StartMetrics(config.Metrics, config.PProf, &config.MetricsServer, &config.PprofCfg); err != nil {
 		return err
@@ -201,6 +191,6 @@ func startup() error {
 
 func main() {
 	if err := startup(); err != nil {
-		log.Error("Error running TxFiltererManager", "err", err)
+		log.Error("Error running tx-filterer-manager", "err", err)
 	}
 }

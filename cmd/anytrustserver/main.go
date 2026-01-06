@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"os/signal"
@@ -187,19 +186,10 @@ func startup() error {
 		confighelpers.PrintErrorAndExit(errors.New("please specify at least one of --enable-rest or --enable-rpc"), printSampleUsage)
 	}
 
-	logLevel, err := genericconf.ToSlogLevel(serverConfig.LogLevel)
+	err = util.SetLogger(serverConfig.LogLevel, serverConfig.LogType)
 	if err != nil {
-		confighelpers.PrintErrorAndExit(err, printSampleUsage)
+		return err
 	}
-
-	handler, err := genericconf.HandlerFromLogType(serverConfig.LogType, io.Writer(os.Stderr))
-	if err != nil {
-		pflag.Usage()
-		return fmt.Errorf("error parsing log type when creating handler: %w", err)
-	}
-	glogger := log.NewGlogHandler(handler)
-	glogger.Verbosity(logLevel)
-	log.SetDefault(log.NewLogger(glogger))
 
 	if err := util.StartMetrics(serverConfig.Metrics, serverConfig.PProf, &serverConfig.MetricsServer, &serverConfig.PprofCfg); err != nil {
 		return err
