@@ -18,7 +18,7 @@ import (
 type RPCServer struct {
 }
 
-func (r *RPCServer) FilterTx(ctx context.Context, txHash common.Hash) error {
+func (r *RPCServer) Filter(ctx context.Context, txHash common.Hash) error {
 	log.Info("Received request to filter transaction", "txHash", txHash.Hex())
 	return nil
 }
@@ -31,7 +31,7 @@ func startRPCServer(ctx context.Context, addr string, portNum uint64, rpcServerT
 
 	rpcServer := rpc.NewServer()
 
-	err = rpcServer.RegisterName("tx-filterer-manager", &RPCServer{})
+	err = rpcServer.RegisterName("txfilterermanager", &RPCServer{})
 	if err != nil {
 		return nil, err
 	}

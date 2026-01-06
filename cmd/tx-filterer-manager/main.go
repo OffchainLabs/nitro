@@ -52,7 +52,6 @@ func parseTxFiltererManagerConfig(args []string) (*TxFiltererManagerConfig, erro
 	f := pflag.NewFlagSet("tx-filterer-signer", pflag.ContinueOnError)
 	f.String("rpc-addr", DefaultTxFiltererManagerConfig.RPCAddr, "HTTP-RPC server listening interface")
 	f.Uint64("rpc-port", DefaultTxFiltererManagerConfig.RPCPort, "HTTP-RPC server listening port")
-	f.Int("rpc-server-body-limit", DefaultTxFiltererManagerConfig.RPCServerBodyLimit, "HTTP-RPC server maximum request body size in bytes; the default (0) uses geth's 5MB limit")
 	genericconf.HTTPServerTimeoutConfigAddOptions("rpc-server-timeouts", f)
 
 	f.Bool("metrics", DefaultTxFiltererManagerConfig.Metrics, "enable metrics")
