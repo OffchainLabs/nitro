@@ -465,8 +465,13 @@ func (n *ExecutionNode) Initialize(ctx context.Context) error {
 }
 
 // not thread safe
-func (n *ExecutionNode) Start(ctx context.Context) error {
-	n.StopWaiter.Start(ctx, n)
+func (n *ExecutionNode) Start(ctxIn context.Context) error {
+	n.StopWaiter.Start(ctxIn, n)
+	ctx, err := n.GetContextSafe()
+	if err != nil {
+		return err
+	}
+
 	if n.started.Swap(true) {
 		return errors.New("already started")
 	}
@@ -481,7 +486,7 @@ func (n *ExecutionNode) Start(ctx context.Context) error {
 	// 	return fmt.Errorf("error starting geth stack: %w", err)
 	// }
 	n.ExecEngine.Start(ctx)
-	err := n.TxPublisher.Start(ctx)
+	err = n.TxPublisher.Start(ctx)
 	if err != nil {
 		return fmt.Errorf("error starting transaction puiblisher: %w", err)
 	}
