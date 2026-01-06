@@ -17,6 +17,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/daprovider"
+	"github.com/offchainlabs/nitro/mel-replay"
 )
 
 // ReceiptRecorder records preimages corresponding to the receipts of a parent chain block
@@ -178,6 +179,7 @@ func (rr *ReceiptRecorder) CollectTxIndicesPreimage() error {
 	if err := rlp.Encode(&buf, relevantLogsTxIndexes); err != nil {
 		return err
 	}
-	rr.recordPreimages(rr.parentChainBlockHash, buf.Bytes(), arbutil.Keccak256PreimageType)
+	relevantTxIndicesKey := melreplay.RelevantTxIndexesKey(rr.parentChainBlockHash)
+	rr.recordPreimages(relevantTxIndicesKey, buf.Bytes(), arbutil.Keccak256PreimageType)
 	return nil
 }
