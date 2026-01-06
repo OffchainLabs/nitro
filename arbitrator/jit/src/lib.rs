@@ -1,8 +1,8 @@
 // Copyright 2021-2024, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use std::path::PathBuf;
 use clap::Parser;
+use std::path::PathBuf;
 
 mod arbcompress;
 mod caller_env;

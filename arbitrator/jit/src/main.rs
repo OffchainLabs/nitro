@@ -1,8 +1,8 @@
 // Copyright 2022-2024, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use clap::Parser;
 use arbutil::{color, Color};
+use clap::Parser;
 use eyre::Result;
 use jit::machine;
 use jit::machine::{Escape, WasmEnv};
