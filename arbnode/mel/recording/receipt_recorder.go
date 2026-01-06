@@ -18,28 +18,39 @@ import (
 	"github.com/offchainlabs/nitro/daprovider"
 )
 
+// ReceiptRecorder records preimages corresponding to the receipts of a parent chain block
+// needed during the message extraction. These preimages are needed for MEL validation and
+// is used in creation of the validation entries by the MEL validator
 type ReceiptRecorder struct {
 	parentChainReader    BlockReader
 	parentChainBlockHash common.Hash
-	preimages            daprovider.PreimagesMap
+	recordPreimages      daprovider.PreimageRecorder
 	receipts             []*types.Receipt
 	logs                 []*types.Log
 	trieDB               *triedb.Database
 	blockReceiptHash     common.Hash
 }
 
+// NewReceiptRecorder returns ReceiptRecorder that records
+// the receipt preimages into the given preimages map
 func NewReceiptRecorder(
 	parentChainReader BlockReader,
 	parentChainBlockHash common.Hash,
 	preimages daprovider.PreimagesMap,
-) *ReceiptRecorder {
+) (*ReceiptRecorder, error) {
+	if preimages == nil {
+		return nil, errors.New("preimages recording destination cannot be nil")
+	}
 	return &ReceiptRecorder{
 		parentChainReader:    parentChainReader,
 		parentChainBlockHash: parentChainBlockHash,
-		preimages:            preimages,
-	}
+		recordPreimages:      daprovider.RecordPreimagesTo(preimages),
+	}, nil
 }
 
+// Initialize must be called first to setup the recording trie database and store all the
+// block receipts into the triedb. Without this, preimage recording is not possible and
+// the other functions will error out if called beforehand
 func (rr *ReceiptRecorder) Initialize(ctx context.Context) error {
 	block, err := rr.parentChainReader.BlockByHash(ctx, rr.parentChainBlockHash)
 	if err != nil {
@@ -54,7 +65,7 @@ func (rr *ReceiptRecorder) Initialize(ctx context.Context) error {
 	for i, tx := range txs {
 		receipt, err := rr.parentChainReader.TransactionReceipt(ctx, tx.Hash())
 		if err != nil {
-			return fmt.Errorf("error fetching receipt for tx: %v", tx.Hash())
+			return fmt.Errorf("error fetching receipt for tx: %v, blockHash: %v", tx.Hash(), block.Hash())
 		}
 		receipts = append(receipts, receipt)
 		rr.logs = append(rr.logs, receipt.Logs...)
@@ -103,7 +114,7 @@ func (rr *ReceiptRecorder) LogsForTxIndex(ctx context.Context, parentChainBlockH
 	}
 	recordingDB := &TxsAndReceiptsDatabase{
 		underlying: rr.trieDB,
-		recorder:   daprovider.RecordPreimagesTo(rr.preimages), // RecordingDB will record relevant preimages into tr.preimages
+		recorder:   rr.recordPreimages, // RecordingDB will record relevant preimages into the given preimagesmap
 	}
 	recordingTDB := triedb.NewDatabase(recordingDB, nil)
 	receiptsTrie, err := trie.New(trie.TrieID(rr.blockReceiptHash), recordingTDB)
@@ -123,10 +134,7 @@ func (rr *ReceiptRecorder) LogsForTxIndex(ctx context.Context, parentChainBlockH
 		return nil, fmt.Errorf("failed to unmarshal receipt: %w", err)
 	}
 	// Add the receipt marshaled binary by hash to the preimages map
-	if _, ok := rr.preimages[arbutil.Keccak256PreimageType]; !ok {
-		rr.preimages[arbutil.Keccak256PreimageType] = make(map[common.Hash][]byte)
-	}
-	rr.preimages[arbutil.Keccak256PreimageType][crypto.Keccak256Hash(receiptBytes)] = receiptBytes
+	rr.recordPreimages(crypto.Keccak256Hash(receiptBytes), receiptBytes, arbutil.Keccak256PreimageType)
 	// Fill in the TxIndex (give as input to this method) into the logs so that Tx recording
 	// is possible. This field is one of the derived fields of Log hence won't be stored in trie.
 	//
@@ -146,5 +154,3 @@ func (rr *ReceiptRecorder) LogsForBlockHash(ctx context.Context, parentChainBloc
 	}
 	return rr.logs, nil
 }
-
-func (tr *ReceiptRecorder) GetPreimages() daprovider.PreimagesMap { return tr.preimages }

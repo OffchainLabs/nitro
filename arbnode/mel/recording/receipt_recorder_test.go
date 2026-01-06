@@ -67,7 +67,8 @@ func TestLogsForTxIndex(t *testing.T) {
 	)
 	blockReader.blocks[block.Hash()] = block
 	preimages := make(daprovider.PreimagesMap)
-	recorder := NewReceiptRecorder(blockReader, block.Hash(), preimages)
+	recorder, err := NewReceiptRecorder(blockReader, block.Hash(), preimages)
+	require.NoError(t, err)
 	require.NoError(t, recorder.Initialize(ctx))
 
 	txIndex := uint(3)
