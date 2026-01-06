@@ -1,2 +1,2 @@
 ### Changed
- - TODO
+ - Reorganize and refactor JIT validator CLI configuration.
