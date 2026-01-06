@@ -65,7 +65,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
-	"github.com/offchainlabs/nitro/cmd/nitro/config"
+	"github.com/offchainlabs/nitro/cmd/nitro/init"
 	"github.com/offchainlabs/nitro/consensus"
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/daprovider/anytrust"
@@ -1727,15 +1727,6 @@ func createTestL1BlockChain(t *testing.T, l1info info, withClientWrapper bool, s
 	return l1info, l1Client, l1backend, stack, clientWrapper, simBeacon
 }
 
-func getInitMessage(ctx context.Context, t *testing.T, chainId *big.Int, parentChainClient *ethclient.Client, addresses *chaininfo.RollupAddresses, chainConfig *params.ChainConfig) (*arbostypes.ParsedInitMessage, error) {
-	nodeConfig := config.NodeConfigDefault
-	nodeConfig.Node.ParentChainReader.Enable = true
-	nodeConfig.Chain.ID = chainId.Uint64()
-	initMessage, err := config.GetConsensusParsedInitMsg(ctx, &nodeConfig, chainId, parentChainClient, *addresses, chainConfig)
-
-	return initMessage, err
-}
-
 var (
 	blockChallengeLeafHeight     = uint64(1 << 5) // 32
 	bigStepChallengeLeafHeight   = uint64(1 << 10)
@@ -1948,7 +1939,7 @@ func deployOnParentChain(
 	parentChainInfo.SetContract("SequencerInbox", addresses.SequencerInbox)
 	parentChainInfo.SetContract("Inbox", addresses.Inbox)
 	parentChainInfo.SetContract("UpgradeExecutor", addresses.UpgradeExecutor)
-	initMessage, err := getInitMessage(ctx, t, chainConfig.ChainID, parentChainClient, addresses, chainConfig)
+	initMessage, err := nitroinit.GetConsensusParsedInitMsg(ctx, true, chainConfig.ChainID, parentChainClient, *addresses, chainConfig)
 	Require(t, err)
 
 	return addresses, initMessage

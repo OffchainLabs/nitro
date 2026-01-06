@@ -3,17 +3,17 @@ package arbtest
 import (
 	"context"
 	"math/big"
+	"reflect"
 	"testing"
-	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/node"
 
-	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/nitro/config"
+	"github.com/offchainlabs/nitro/cmd/nitro/init"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 )
 
@@ -31,63 +31,40 @@ func prepareL1AndL2(t *testing.T, ctx context.Context, withL1 bool) (*NodeBuilde
 		txs = append(txs, tx)
 	}
 	receipts := builder.L2.SendWaitTestTransactions(t, txs)
-	lastBlockNumber := receipts[len(receipts)-1].BlockNumber.Uint64()
-	block, err := builder.L2.Client.BlockByNumber(ctx, nil)
-	Require(t, err)
-	deadline := time.After(5 * time.Second)
-	// make sure we get the last block in case API has a delayed view
-	for block.NumberU64() < lastBlockNumber {
-		select {
-		case <-time.After(20 * time.Millisecond):
-			block, err = builder.L2.Client.BlockByNumber(ctx, nil)
-			Require(t, err)
-		case <-deadline:
-			t.Fatal("deadline exceeded while waiting for last block")
-		}
-	}
 
 	return builder, receipts
 }
 
 func TestGetConsensusParsedInitMsgNoParentChain(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
-	builder, _ := prepareL1AndL2(t, ctx, false)
+	defer cancel()
 
-	defer func() {
-		cancel()
-		builder.L2.cleanup()
-		builder.ctxCancel()
-	}()
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	cleanup := builder.Build(t)
+	defer cleanup()
 
 	nodeConfig := config.NodeConfigDefault
 	nodeConfig.Node.ParentChainReader.Enable = false
-	initMessage, err := config.GetConsensusParsedInitMsg(ctx, &nodeConfig, builder.chainConfig.ChainID, nil, chaininfo.RollupAddresses{}, builder.chainConfig)
+	initMessage, err := nitroinit.GetConsensusParsedInitMsg(ctx, nodeConfig.Node.ParentChainReader.Enable, builder.chainConfig.ChainID, nil, chaininfo.RollupAddresses{}, builder.chainConfig)
 	Require(t, err)
 
-	if initMessage.InitialL1BaseFee.Cmp(arbostypes.DefaultInitialL1BaseFee) != 0 {
-		t.Fatalf("initMessage InitialL1BaseFee: %d, does not match expected DefaultInitialL1BaseFee: %d", initMessage.InitialL1BaseFee, arbostypes.DefaultInitialL1BaseFee)
-	}
+	reflect.DeepEqual(initMessage, builder.initMessage)
 }
 
 func TestGetConsensusParsedInitMsg(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
-	builder, _ := prepareL1AndL2(t, ctx, true)
+	defer cancel()
 
-	defer func() {
-		cancel()
-		builder.L2.cleanup()
-		builder.L1.cleanup()
-		builder.ctxCancel()
-	}()
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	cleanup := builder.Build(t)
+	defer cleanup()
 
 	nodeConfig := config.NodeConfigDefault
 	nodeConfig.Node.ParentChainReader.Enable = true
-	initMessage, err := config.GetConsensusParsedInitMsg(ctx, &nodeConfig, builder.chainConfig.ChainID, builder.L1.Client, *builder.addresses, builder.chainConfig)
+	initMessage, err := nitroinit.GetConsensusParsedInitMsg(ctx, nodeConfig.Node.ParentChainReader.Enable, builder.chainConfig.ChainID, builder.L1.Client, *builder.addresses, builder.chainConfig)
 	Require(t, err)
 
-	if initMessage.InitialL1BaseFee.Cmp(big.NewInt(1)) != 0 {
-		t.Fatalf("initMessage InitialL1BaseFee: %d, does not match expected DefaultInitialL1BaseFee: %d", initMessage.InitialL1BaseFee, arbostypes.DefaultInitialL1BaseFee)
-	}
+	reflect.DeepEqual(initMessage, builder.initMessage)
 }
 
 func TestOpenExistingExecutionDB(t *testing.T) {
@@ -110,11 +87,8 @@ func TestOpenExistingExecutionDB(t *testing.T) {
 	nodeConfig.Execution.Caching.StateScheme = rawdb.PathScheme
 	nodeConfig.Chain.ID = builder.chainConfig.ChainID.Uint64()
 	nodeConfig.Node = *builder.nodeConfig
-	nodeConfig.Init.DevInit = true
-	nodeConfig.Init.DevInitAddress = "0x3f1Eae7D46d88F08fc2F8ed27FCb2AB183EB2d0E"
-	nodeConfig.Init.ValidateGenesisAssertion = false
 
-	executionDB, _, _, _, err := config.OpenExistingExecutionDB(
+	executionDB, _, _, _, err := nitroinit.OpenExistingExecutionDB(
 		stack,
 		&nodeConfig,
 		new(big.Int).SetUint64(nodeConfig.Chain.ID),
@@ -124,7 +98,7 @@ func TestOpenExistingExecutionDB(t *testing.T) {
 	)
 	Require(t, err)
 
-	// Get a receipt from a random transaction to make sure executionDB contains the correct information
+	// Get a receipt from an arbitrary transaction to make sure executionDB contains the correct information
 	targetReceipt := receipts[40]
 	blockHash := rawdb.ReadCanonicalHash(executionDB, targetReceipt.BlockNumber.Uint64())
 	if blockHash != targetReceipt.BlockHash {
