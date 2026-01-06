@@ -16,6 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum/triedb"
 
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/mel-replay"
 )
 
 type receiptFetcherForBlock struct {
@@ -49,7 +50,8 @@ func (rf *receiptFetcherForBlock) LogsForBlockHash(ctx context.Context, parentCh
 	if rf.header.Hash() != parentChainBlockHash {
 		return nil, errors.New("parentChainBlockHash mismatch")
 	}
-	txIndexData, err := rf.preimageResolver.ResolveTypedPreimage(arbutil.Keccak256PreimageType, rf.header.Hash())
+	relevantTxIndicesKey := melreplay.RelevantTxIndexesKey(rf.header.Hash())
+	txIndexData, err := rf.preimageResolver.ResolveTypedPreimage(arbutil.Keccak256PreimageType, relevantTxIndicesKey)
 	if err != nil {
 		return nil, err
 	}
@@ -68,7 +70,7 @@ func (rf *receiptFetcherForBlock) LogsForBlockHash(ctx context.Context, parentCh
 	return relevantLogs, nil
 }
 
-// LogsForBlockHashAllLogs is kept, in case we go with an implementation of returning all logs present in a block
+// TODO: LogsForBlockHashAllLogs is kept, in case we go with an implementation of returning all logs present in a block
 func (rf *receiptFetcherForBlock) LogsForBlockHashAllLogs(ctx context.Context, parentChainBlockHash common.Hash) ([]*types.Log, error) {
 	if rf.header.Hash() != parentChainBlockHash {
 		return nil, errors.New("parentChainBlockHash mismatch")
