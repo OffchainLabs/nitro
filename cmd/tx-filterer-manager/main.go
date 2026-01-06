@@ -25,10 +25,9 @@ import (
 )
 
 type TxFiltererManagerConfig struct {
-	RPCAddr            string                              `koanf:"rpc-addr"`
-	RPCPort            uint64                              `koanf:"rpc-port"`
-	RPCServerTimeouts  genericconf.HTTPServerTimeoutConfig `koanf:"rpc-server-timeouts"`
-	RPCServerBodyLimit int                                 `koanf:"rpc-server-body-limit"`
+	RPCAddr           string                              `koanf:"rpc-addr"`
+	RPCPort           uint64                              `koanf:"rpc-port"`
+	RPCServerTimeouts genericconf.HTTPServerTimeoutConfig `koanf:"rpc-server-timeouts"`
 
 	Conf     genericconf.ConfConfig `koanf:"conf"`
 	LogLevel string                 `koanf:"log-level"`
@@ -41,17 +40,16 @@ type TxFiltererManagerConfig struct {
 }
 
 var DefaultTxFiltererManagerConfig = TxFiltererManagerConfig{
-	RPCAddr:            "localhost",
-	RPCPort:            9876,
-	RPCServerTimeouts:  genericconf.HTTPServerTimeoutConfigDefault,
-	RPCServerBodyLimit: genericconf.HTTPServerBodyLimitDefault,
-	Conf:               genericconf.ConfConfigDefault,
-	LogLevel:           "INFO",
-	LogType:            "plaintext",
-	Metrics:            false,
-	MetricsServer:      genericconf.MetricsServerConfigDefault,
-	PProf:              false,
-	PprofCfg:           genericconf.PProfDefault,
+	RPCAddr:           "localhost",
+	RPCPort:           9876,
+	RPCServerTimeouts: genericconf.HTTPServerTimeoutConfigDefault,
+	Conf:              genericconf.ConfConfigDefault,
+	LogLevel:          "INFO",
+	LogType:           "plaintext",
+	Metrics:           false,
+	MetricsServer:     genericconf.MetricsServerConfigDefault,
+	PProf:             false,
+	PprofCfg:          genericconf.PProfDefault,
 }
 
 func parseTxFiltererManagerConfig(args []string) (*TxFiltererManagerConfig, error) {
@@ -114,16 +112,13 @@ func (r *RPCServer) FilterTx(ctx context.Context, txHash common.Hash) error {
 	return nil
 }
 
-func startRPCServer(ctx context.Context, addr string, portNum uint64, rpcServerTimeouts genericconf.HTTPServerTimeoutConfig, rpcServerBodyLimit int) (*http.Server, error) {
+func startRPCServer(ctx context.Context, addr string, portNum uint64, rpcServerTimeouts genericconf.HTTPServerTimeoutConfig) (*http.Server, error) {
 	listener, err := net.Listen("tcp", fmt.Sprintf("%s:%d", addr, portNum))
 	if err != nil {
 		return nil, err
 	}
 
 	rpcServer := rpc.NewServer()
-	if rpcServerBodyLimit > 0 {
-		rpcServer.SetHTTPBodyLimit(rpcServerBodyLimit)
-	}
 
 	err = rpcServer.RegisterName("tx-filterer-manager", &RPCServer{})
 	if err != nil {
@@ -174,7 +169,7 @@ func startup() error {
 
 	vcsRevision, _, vcsTime := confighelpers.GetVersion()
 	log.Info("Starting HTTP-RPC server", "addr", config.RPCAddr, "port", config.RPCPort, "revision", vcsRevision, "vcs.time", vcsTime)
-	rpcServer, err := startRPCServer(ctx, config.RPCAddr, config.RPCPort, config.RPCServerTimeouts, config.RPCServerBodyLimit)
+	rpcServer, err := startRPCServer(ctx, config.RPCAddr, config.RPCPort, config.RPCServerTimeouts)
 	if err != nil {
 		return err
 	}
