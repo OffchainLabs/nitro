@@ -10,8 +10,8 @@ import (
 	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/ethereum/go-ethereum/params"
 
+	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/util"
 )
 
@@ -76,7 +76,7 @@ var InitConfigDefault = InitConfig{
 	ReorgToMessageBatch:           -1,
 	ReorgToBlockBatch:             -1,
 	ValidateGenesisAssertion:      true,
-	InitialL1BaseFee:              params.DefaultInitialL1BaseFee.String(),
+	InitialL1BaseFee:              arbostypes.DefaultInitialL1BaseFee.String(),
 }
 
 func InitConfigAddOptions(prefix string, f *pflag.FlagSet) {
@@ -149,7 +149,7 @@ func (c *InitConfig) Validate() error {
 
 func (c *InitConfig) InitialL1BaseFeeParsed() (*big.Int, error) {
 	if c.InitialL1BaseFee == "" {
-		return params.DefaultInitialL1BaseFee, nil
+		return arbostypes.DefaultInitialL1BaseFee, nil
 	}
 
 	parsed, success := big.NewInt(0).SetString(c.InitialL1BaseFee, 10)

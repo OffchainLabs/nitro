@@ -172,7 +172,7 @@ var ConfigDefault = Config{
 	Caching:          gethexec.DefaultCachingConfig,
 	GenesisJsonFile:  "",
 	AccountsPerSync:  100000,
-	InitialL1BaseFee: params.DefaultInitialL1BaseFee.Int64(),
+	InitialL1BaseFee: arbostypes.DefaultInitialL1BaseFee.Int64(),
 }
 
 func ConfigAddOptions(f *pflag.FlagSet) {

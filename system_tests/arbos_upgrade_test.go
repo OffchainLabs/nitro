@@ -18,6 +18,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
+	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/solgen/go/localgen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
@@ -206,7 +207,7 @@ func TestArbNativeTokenManagerInArbos32To41Upgrade(t *testing.T) {
 
 	arbOSInit := &params.ArbOSInit{
 		NativeTokenSupplyManagementEnabled: true,
-		InitialL1BaseFee:                   params.DefaultInitialL1BaseFee,
+		InitialL1BaseFee:                   arbostypes.DefaultInitialL1BaseFee,
 	}
 	builder := NewNodeBuilder(ctx).
 		DefaultConfig(t, true).

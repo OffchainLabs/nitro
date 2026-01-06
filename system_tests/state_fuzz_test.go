@@ -166,7 +166,7 @@ func FuzzStateTransition(f *testing.F) {
 		}
 		initMessage := &arbostypes.ParsedInitMessage{
 			ChainId:               chainConfig.ChainID,
-			InitialL1BaseFee:      params.DefaultInitialL1BaseFee,
+			InitialL1BaseFee:      arbostypes.DefaultInitialL1BaseFee,
 			ChainConfig:           chainConfig,
 			SerializedChainConfig: serializedChainConfig,
 		}

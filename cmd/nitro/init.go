@@ -954,7 +954,11 @@ func resolveInitialL1BaseFee(genesisArbOSInit *params.ArbOSInit, initConfig *con
 	if genesisArbOSInit == nil {
 		return feeCLIFlag, nil
 	}
-	feeGenesisJSON := genesisArbOSInit.GetInitialL1BaseFee()
+	feeGenesisJSON := genesisArbOSInit.InitialL1BaseFee
+	if feeGenesisJSON == nil {
+		feeGenesisJSON = arbostypes.DefaultInitialL1BaseFee
+	}
+
 	if initConfig.InitialL1BaseFee != "" && feeCLIFlag.Cmp(feeGenesisJSON) != 0 {
 		return nil, fmt.Errorf("initial l1 base fee configuration mismatch: `genesis-json-file` sets the value to %s, while `initial-l1base-fee` flag was set to %s", feeGenesisJSON.String(), initConfig.InitialL1BaseFee)
 	}

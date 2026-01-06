@@ -20,6 +20,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/params"
 
+	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
@@ -300,7 +301,7 @@ func TestInitialL1BaseFeeResolution(t *testing.T) {
 			name:          "No genesis config, no direct flag",
 			genesisConfig: nil,
 			initConfig:    initConfigWithFee(""),
-			expected:      params.DefaultInitialL1BaseFee,
+			expected:      arbostypes.DefaultInitialL1BaseFee,
 		},
 		{
 			name:          "No genesis config, direct flag set",
