@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math/big"
 	"os"
@@ -346,6 +347,76 @@ func TestInitialL1BaseFeeResolution(t *testing.T) {
 func initConfigWithFee(feeStr string) *conf.InitConfig {
 	return &conf.InitConfig{
 		InitialL1BaseFee: feeStr,
+	}
+}
+
+func TestSerializedChainConfigResolution(t *testing.T) {
+	chainConfig := &params.ChainConfig{ChainID: big.NewInt(0)}
+	chainConfigSerialized, _ := json.Marshal(chainConfig)
+	chainConfigSerialized1 := []byte(`{"chainId":1}`)
+	chainConfigSerialized2 := []byte(`{"chainId":2}`)
+
+	genesisConfig := &params.ArbOSInit{
+		InitialL1BaseFee:                   nil,
+		NativeTokenSupplyManagementEnabled: false,
+		SerializedChainConfig:              chainConfigSerialized1,
+	}
+
+	testCases := []struct {
+		name          string
+		genesisConfig *params.ArbOSInit
+		initConfig    *conf.InitConfig
+		expected      []byte
+		shouldErr     bool
+	}{
+		{
+			name:          "No genesis config, no direct config",
+			genesisConfig: nil,
+			initConfig:    initConfigWithChainConfig(""),
+			expected:      chainConfigSerialized,
+		},
+		{
+			name:          "No genesis config, direct config set",
+			genesisConfig: nil,
+			initConfig:    initConfigWithChainConfig(string(chainConfigSerialized2)),
+			expected:      chainConfigSerialized2,
+		}, {
+			name:          "Genesis config set, no direct config",
+			genesisConfig: genesisConfig,
+			initConfig:    initConfigWithChainConfig(""),
+			expected:      chainConfigSerialized1,
+		}, {
+			name:          "Genesis config and direct config consistent",
+			genesisConfig: genesisConfig,
+			initConfig:    initConfigWithChainConfig(string(chainConfigSerialized1)),
+			expected:      chainConfigSerialized1,
+		}, {
+			name:          "Genesis config and direct config inconsistent",
+			genesisConfig: genesisConfig,
+			initConfig:    initConfigWithChainConfig(string(chainConfigSerialized2)),
+			shouldErr:     true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			resolvedConfig, err := resolveSerializedChainConfig(tc.genesisConfig, tc.initConfig, chainConfig)
+			if tc.shouldErr && err == nil {
+				Fail(t, "expected error but got none")
+			}
+			if !tc.shouldErr && err != nil {
+				Fail(t, "unexpected error:", err)
+			}
+			if !reflect.DeepEqual(resolvedConfig, tc.expected) {
+				Fail(t, "expected config", string(tc.expected), "but resolved to", string(resolvedConfig))
+			}
+		})
+	}
+}
+
+func initConfigWithChainConfig(configStr string) *conf.InitConfig {
+	return &conf.InitConfig{
+		SerializedChainConfig: configStr,
 	}
 }
 

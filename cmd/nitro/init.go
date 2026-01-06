@@ -972,7 +972,7 @@ func resolveSerializedChainConfig(arbosInit *params.ArbOSInit, initConfig *conf.
 		fromGenesisJSON = arbosInit.SerializedChainConfig
 	}
 	if initConfig != nil && len(initConfig.SerializedChainConfig) != 0 {
-		fromCLIFlag = common.FromHex(initConfig.SerializedChainConfig)
+		fromCLIFlag = []byte(initConfig.SerializedChainConfig)
 	}
 
 	if fromGenesisJSON != nil && fromCLIFlag != nil && !bytes.Equal(fromGenesisJSON, fromCLIFlag) {
