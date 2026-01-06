@@ -69,7 +69,8 @@ func TestTransactionByLog(t *testing.T) {
 		},
 	}
 	preimages := make(daprovider.PreimagesMap)
-	recorder := NewTransactionRecorder(blockReader, block.Hash(), preimages)
+	recorder, err := NewTransactionRecorder(blockReader, block.Hash(), preimages)
+	require.NoError(t, err)
 	require.NoError(t, recorder.Initialize(ctx))
 
 	log := &types.Log{
