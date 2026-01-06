@@ -46,6 +46,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/nitro/config"
+	"github.com/offchainlabs/nitro/cmd/nitro/init"
 	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
 	"github.com/offchainlabs/nitro/daprovider"
@@ -441,7 +442,7 @@ func mainImpl() int {
 		return 1
 	}
 
-	executionDB, l2BlockChain, err := config.OpenInitializeExecutionDB(ctx, stack, nodeConfig, new(big.Int).SetUint64(nodeConfig.Chain.ID), gethexec.DefaultCacheConfigFor(&nodeConfig.Execution.Caching), tracer, &nodeConfig.Persistent, l1Client, rollupAddrs)
+	executionDB, initDataReader, l2BlockChain, err := nitroinit.OpenInitializeExecutionDB(ctx, stack, nodeConfig, new(big.Int).SetUint64(nodeConfig.Chain.ID), gethexec.DefaultCacheConfigFor(&nodeConfig.Execution.Caching), tracer, &nodeConfig.Persistent, l1Client, rollupAddrs)
 	if l2BlockChain != nil {
 		deferFuncs = append(deferFuncs, func() { l2BlockChain.Stop() })
 	}
@@ -452,18 +453,15 @@ func mainImpl() int {
 		return 1
 	}
 
-	initDataReader, _, _, err := config.GetInit(nodeConfig, executionDB)
-	if err != nil {
-		log.Error("error fetching initDataReader a second time", "err", err)
-		return 1
-	}
-	err = config.GetAndValidateGenesisAssertion(ctx, nodeConfig, l2BlockChain, initDataReader, &rollupAddrs, l1Client)
-	if err != nil {
-		log.Error("error trying to validate genesis assertion", "err", err)
-		return 1
+	if initDataReader != nil {
+		err = nitroinit.GetAndValidateGenesisAssertion(ctx, nodeConfig, l2BlockChain, initDataReader, &rollupAddrs, l1Client)
+		if err != nil {
+			log.Error("error trying to validate genesis assertion", "err", err)
+			return 1
+		}
 	}
 
-	consensusDB, err := config.OpenConsensusDB(stack, nodeConfig)
+	consensusDB, err := nitroinit.OpenConsensusDB(stack, nodeConfig)
 	if consensusDB != nil {
 		deferFuncs = append(deferFuncs, func() { closeDb(consensusDB, "consensusDB") })
 	}
@@ -500,7 +498,7 @@ func mainImpl() int {
 		log.Error("error processing l2 chain info", "err", err)
 		return 1
 	}
-	if err := config.ValidateBlockChain(l2BlockChain, chainInfo.ChainConfig); err != nil {
+	if err := nitroinit.ValidateBlockChain(l2BlockChain, chainInfo.ChainConfig); err != nil {
 		log.Error("user provided chain config is not compatible with onchain chain config", "err", err)
 		return 1
 	}
@@ -732,7 +730,7 @@ func mainImpl() int {
 	signal.Notify(sigint, os.Interrupt, syscall.SIGTERM)
 
 	if err == nil && nodeConfig.Init.IsReorgRequested() {
-		err = config.InitReorg(nodeConfig.Init, chainInfo.ChainConfig, consensusNode.InboxTracker)
+		err = nitroinit.InitReorg(nodeConfig.Init, chainInfo.ChainConfig, consensusNode.InboxTracker)
 		if err != nil {
 			fatalErrChan <- fmt.Errorf("error reorging per init config: %w", err)
 		} else if nodeConfig.Init.ThenQuit {

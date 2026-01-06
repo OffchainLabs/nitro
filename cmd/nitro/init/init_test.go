@@ -1,7 +1,7 @@
 // Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-package config
+package nitroinit
 
 import (
 	"archive/tar"
@@ -36,6 +36,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/conf"
+	"github.com/offchainlabs/nitro/cmd/nitro/config"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/statetransfer"
 	"github.com/offchainlabs/nitro/util/testhelpers"
@@ -421,7 +422,7 @@ func TestOpenInitializeExecutionDBIncompatibleStateScheme(t *testing.T) {
 	Require(t, err)
 	defer stack.Close()
 
-	nodeConfig := NodeConfigDefault
+	nodeConfig := config.NodeConfigDefault
 	nodeConfig.Execution.Caching.StateScheme = rawdb.PathScheme
 	nodeConfig.Chain.ID = 42161
 	nodeConfig.Node = *arbnode.ConfigDefaultL2Test()
@@ -432,7 +433,7 @@ func TestOpenInitializeExecutionDBIncompatibleStateScheme(t *testing.T) {
 	l1Client := ethclient.NewClient(stack.Attach())
 
 	// opening for the first time doesn't error
-	executionDB, blockchain, err := OpenInitializeExecutionDB(
+	executionDB, _, blockchain, err := OpenInitializeExecutionDB(
 		ctx,
 		stack,
 		&nodeConfig,
@@ -449,7 +450,7 @@ func TestOpenInitializeExecutionDBIncompatibleStateScheme(t *testing.T) {
 	Require(t, err)
 
 	// opening for the second time doesn't error
-	executionDB, blockchain, err = OpenInitializeExecutionDB(
+	executionDB, _, blockchain, err = OpenInitializeExecutionDB(
 		ctx,
 		stack,
 		&nodeConfig,
@@ -467,7 +468,7 @@ func TestOpenInitializeExecutionDBIncompatibleStateScheme(t *testing.T) {
 
 	// opening with a different state scheme errors
 	nodeConfig.Execution.Caching.StateScheme = rawdb.HashScheme
-	_, _, err = OpenInitializeExecutionDB(
+	_, _, _, err = OpenInitializeExecutionDB(
 		ctx,
 		stack,
 		&nodeConfig,
@@ -531,7 +532,7 @@ func TestPurgeIncompatibleWasmerSerializeVersionEntries(t *testing.T) {
 		t.Fatalf("Failed to create test stack: %v", err)
 	}
 	defer stack.Close()
-	db, err := stack.OpenDatabaseWithOptions("wasm", node.DatabaseOptions{MetricsNamespace: "wasm/", Cache: NodeConfigDefault.Execution.Caching.DatabaseCache, Handles: NodeConfigDefault.Persistent.Handles, NoFreezer: true})
+	db, err := stack.OpenDatabaseWithOptions("wasm", node.DatabaseOptions{MetricsNamespace: "wasm/", Cache: config.NodeConfigDefault.Execution.Caching.DatabaseCache, Handles: config.NodeConfigDefault.Persistent.Handles, NoFreezer: true})
 	if err != nil {
 		t.Fatalf("Failed to open test db: %v", err)
 	}
@@ -612,7 +613,7 @@ func TestPurgeVersion0WasmStoreEntries(t *testing.T) {
 		t.Fatalf("Failed to create test stack: %v", err)
 	}
 	defer stack.Close()
-	db, err := stack.OpenDatabaseWithOptions("wasm", node.DatabaseOptions{MetricsNamespace: "wasm/", Cache: NodeConfigDefault.Execution.Caching.DatabaseCache, Handles: NodeConfigDefault.Persistent.Handles, NoFreezer: true})
+	db, err := stack.OpenDatabaseWithOptions("wasm", node.DatabaseOptions{MetricsNamespace: "wasm/", Cache: config.NodeConfigDefault.Execution.Caching.DatabaseCache, Handles: config.NodeConfigDefault.Persistent.Handles, NoFreezer: true})
 	if err != nil {
 		t.Fatalf("Failed to open test db: %v", err)
 	}
@@ -686,7 +687,7 @@ func TestOpenInitializeExecutionDbEmptyInit(t *testing.T) {
 	Require(t, err)
 	defer stack.Close()
 
-	nodeConfig := NodeConfigDefault
+	nodeConfig := config.NodeConfigDefault
 	nodeConfig.Execution.Caching.StateScheme = env.GetTestStateScheme()
 	nodeConfig.Chain.ID = 42161
 	nodeConfig.Node = *arbnode.ConfigDefaultL2Test()
@@ -695,7 +696,7 @@ func TestOpenInitializeExecutionDbEmptyInit(t *testing.T) {
 
 	l1Client := ethclient.NewClient(stack.Attach())
 
-	executionDB, blockchain, err := OpenInitializeExecutionDB(
+	executionDB, _, blockchain, err := OpenInitializeExecutionDB(
 		ctx,
 		stack,
 		&nodeConfig,
@@ -861,37 +862,6 @@ func TestIsWasmDb(t *testing.T) {
 	}
 }
 
-func TestGetConsensusParsedInitMessage(t *testing.T) {
-	t.Parallel()
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	stackConfig := testhelpers.CreateStackConfigForTest(t.TempDir())
-	stackConfig.DBEngine = rawdb.DBPebble
-	stack, err := node.New(stackConfig)
-	Require(t, err)
-	defer stack.Close()
-
-	nodeConfig := NodeConfigDefault
-	nodeConfig.Node = *arbnode.ConfigDefaultL2Test()
-	nodeConfig.Init.ValidateGenesisAssertion = false
-	nodeConfig.Execution.ParentChainReader.Enable = true
-
-	chainID := new(big.Int).SetUint64(nodeConfig.Chain.ID)
-
-	// Create dummy chainConfig with chainID
-	chainConfig := params.ChainConfig{}
-	chainConfig.ChainID = chainID
-
-	parsedInitMessage, err := GetConsensusParsedInitMsg(ctx, &nodeConfig, chainID, nil, chaininfo.RollupAddresses{}, &chainConfig)
-	Require(t, err)
-
-	if parsedInitMessage.ChainId.Uint64() != chainConfig.ChainID.Uint64() {
-		t.Fatalf("parsedInitMessage.ChainId = %d; want: %d", parsedInitMessage.ChainId, chainID)
-	}
-}
-
 func TestSimpleCheckDBDir(t *testing.T) {
 	t.Parallel()
 
@@ -904,7 +874,7 @@ func TestSimpleCheckDBDir(t *testing.T) {
 	Require(t, err)
 	defer stack.Close()
 
-	nodeConfig := NodeConfigDefault
+	nodeConfig := config.NodeConfigDefault
 
 	err = checkDBDir(stack, &nodeConfig)
 	Require(t, err)
@@ -921,7 +891,6 @@ func TestCheckDBDirReturnsErrorOnNoDir(t *testing.T) {
 	targetDir := filepath.Join(rootTargetDir, "do_not_exist")
 
 	stackConfig := testhelpers.CreateStackConfigForTest(targetDir)
-	// stackConfig.DBEngine = rawdb.DBPebble
 	stack, err := node.New(stackConfig)
 	Require(t, err)
 	defer stack.Close()
@@ -931,7 +900,7 @@ func TestCheckDBDirReturnsErrorOnNoDir(t *testing.T) {
 	err = os.RemoveAll(rootTargetDir)
 	Require(t, err)
 
-	nodeConfig := NodeConfigDefault
+	nodeConfig := config.NodeConfigDefault
 
 	err = checkDBDir(stack, &nodeConfig)
 	require.Error(t, err)
@@ -949,7 +918,6 @@ func TestCheckDBDirReturnsErrorOnl2chaindataWrongDir(t *testing.T) {
 	targetDir := filepath.Join(rootTargetDir, "do_not_exist")
 
 	stackConfig := testhelpers.CreateStackConfigForTest(targetDir)
-	// stackConfig.DBEngine = rawdb.DBPebble
 	stack, err := node.New(stackConfig)
 	Require(t, err)
 	defer stack.Close()
@@ -959,7 +927,7 @@ func TestCheckDBDirReturnsErrorOnl2chaindataWrongDir(t *testing.T) {
 	err = os.MkdirAll(instdir, 0700)
 	Require(t, err)
 
-	nodeConfig := NodeConfigDefault
+	nodeConfig := config.NodeConfigDefault
 
 	err = checkDBDir(stack, &nodeConfig)
 	require.Error(t, err)
@@ -977,53 +945,10 @@ func TestCheckAndDownloadDBNoSnapshot(t *testing.T) {
 	Require(t, err)
 	defer stack.Close()
 
-	nodeConfig := NodeConfigDefault
+	nodeConfig := config.NodeConfigDefault
 
 	err = checkAndDownloadDB(ctx, stack, &nodeConfig)
 	Require(t, err)
-}
-
-func TestOpenDownloadedExecutionDB(t *testing.T) {
-	t.Parallel()
-
-	_, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	stackConfig := testhelpers.CreateStackConfigForTest(t.TempDir())
-	stackConfig.DBEngine = rawdb.DBPebble
-	stack, err := node.New(stackConfig)
-	Require(t, err)
-	defer stack.Close()
-
-	nodeConfig := NodeConfigDefault
-	nodeConfig.Node = *arbnode.ConfigDefaultL2Test()
-	nodeConfig.Init.DevInit = true
-	nodeConfig.Init.DevInitAddress = "0x3f1Eae7D46d88F08fc2F8ed27FCb2AB183EB2d0E"
-
-	executionDB, wasmDB, err := openDownloadedExecutionDB(stack, &nodeConfig, gethexec.DefaultCacheConfigFor(&nodeConfig.Execution.Caching), &nodeConfig.Persistent)
-	Require(t, err)
-
-	prand := testhelpers.NewPseudoRandomDataSource(t, 1)
-	var testKeys [][]byte
-	for i := 0; i < 100; i++ {
-		// generate test keys with length of hash to emulate legacy state trie nodes
-		testKeys = append(testKeys, prand.GetHash().Bytes())
-	}
-	for _, key := range testKeys {
-		err = executionDB.Put(key, common.FromHex("0xdeadbeef"))
-		Require(t, err)
-		err = wasmDB.Put(key, common.FromHex("0xdeadbeef"))
-		Require(t, err)
-	}
-	for _, key := range testKeys {
-		if has, _ := executionDB.Has(key); !has {
-			t.Fatal(t, "internal test error - failed to check existence of test key")
-		}
-
-		if has, _ := wasmDB.Has(key); !has {
-			t.Fatal(t, "internal test error - failed to check existence of test key")
-		}
-	}
 }
 
 func getInitHelper(t *testing.T, ownerAdress string, emptyState bool, importFile, genesisJsonFile string) (statetransfer.InitDataReader, *params.ChainConfig, *params.ArbOSInit, error) {
@@ -1036,7 +961,7 @@ func getInitHelper(t *testing.T, ownerAdress string, emptyState bool, importFile
 	Require(t, err)
 	defer stack.Close()
 
-	nodeConfig := NodeConfigDefault
+	nodeConfig := config.NodeConfigDefault
 	nodeConfig.Execution.Caching.StateScheme = rawdb.PathScheme
 	nodeConfig.Chain.ID = 42161
 	nodeConfig.Node = *arbnode.ConfigDefaultL2Test()
@@ -1060,7 +985,7 @@ func getInitHelper(t *testing.T, ownerAdress string, emptyState bool, importFile
 
 	l1Client := ethclient.NewClient(stack.Attach())
 
-	executionDB, _, err := OpenInitializeExecutionDB(
+	executionDB, _, _, err := OpenInitializeExecutionDB(
 		ctx,
 		stack,
 		&nodeConfig,
@@ -1247,4 +1172,9 @@ func TestGetInitWithGenesis(t *testing.T) {
 
 	err = initDataReader.Close()
 	Require(t, err)
+}
+
+func Require(t *testing.T, err error, text ...interface{}) {
+	t.Helper()
+	testhelpers.RequireImpl(t, err, text...)
 }
