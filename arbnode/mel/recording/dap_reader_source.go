@@ -2,6 +2,7 @@ package melrecording
 
 import (
 	"context"
+	"errors"
 
 	"github.com/ethereum/go-ethereum/common"
 
@@ -47,12 +48,17 @@ type DAPReaderSource struct {
 	preimages    daprovider.PreimagesMap
 }
 
-func NewDAPReaderSource(validatorCtx context.Context, dapReaders arbstate.DapReaderSource) *DAPReaderSource {
+// NewDAPReaderSource returns DAPReaderSource that records preimages
+// related to sequencer batches posted to DA into the given preimages map
+func NewDAPReaderSource(validatorCtx context.Context, dapReaders arbstate.DapReaderSource, preimages daprovider.PreimagesMap) (*DAPReaderSource, error) {
+	if preimages == nil {
+		return nil, errors.New("preimages recording destination cannot be nil")
+	}
 	return &DAPReaderSource{
 		validatorCtx: validatorCtx,
 		dapReaders:   dapReaders,
-		preimages:    make(daprovider.PreimagesMap),
-	}
+		preimages:    preimages,
+	}, nil
 }
 
 func (s *DAPReaderSource) GetReader(headerByte byte) daprovider.Reader {
@@ -63,5 +69,3 @@ func (s *DAPReaderSource) GetReader(headerByte byte) daprovider.Reader {
 		preimages:    s.preimages,
 	}
 }
-
-func (s *DAPReaderSource) Preimages() daprovider.PreimagesMap { return s.preimages }
