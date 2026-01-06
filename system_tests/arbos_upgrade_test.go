@@ -208,6 +208,7 @@ func TestArbNativeTokenManagerInArbos32To41Upgrade(t *testing.T) {
 	arbOSInit := &params.ArbOSInit{
 		NativeTokenSupplyManagementEnabled: true,
 		InitialL1BaseFee:                   arbostypes.DefaultInitialL1BaseFee,
+		SerializedChainConfig:              nil,
 	}
 	builder := NewNodeBuilder(ctx).
 		DefaultConfig(t, true).
