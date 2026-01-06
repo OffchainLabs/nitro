@@ -1,15 +1,15 @@
 // Copyright 2022-2024, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
+use clap::Parser;
 use arbutil::{color, Color};
 use eyre::Result;
 use jit::machine;
 use jit::machine::{Escape, WasmEnv};
 use jit::Opts;
-use structopt::StructOpt;
 
 fn main() -> Result<()> {
-    let opts = Opts::from_args();
+    let opts = Opts::parse();
     let env = match WasmEnv::cli(&opts) {
         Ok(env) => env,
         Err(err) => panic!("{err}"),
