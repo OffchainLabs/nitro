@@ -17,11 +17,9 @@ import (
 	"github.com/offchainlabs/nitro/arbnode/mel/recording"
 	"github.com/offchainlabs/nitro/arbnode/mel/runner"
 	"github.com/offchainlabs/nitro/arbstate"
-	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
-	"github.com/offchainlabs/nitro/validator"
 )
 
 type MELValidator struct {
@@ -97,19 +95,31 @@ func (mv *MELValidator) CreateNextValidationEntry(ctx context.Context, lastValid
 	if preState.MsgCount >= toValidateMsgExtractionCount {
 		return nil, nil
 	}
-	delayedMsgRecordingDB := melrecording.NewDelayedMsgDatabase(mv.arbDb)
-	recordingDAPReaders := melrecording.NewDAPReaderSource(ctx, mv.dapReaders)
-	txsAndReceiptsPreimages := make(daprovider.PreimagesMap)
+	preimages := make(daprovider.PreimagesMap)
+	delayedMsgRecordingDB, err := melrecording.NewDelayedMsgDatabase(mv.arbDb, preimages)
+	if err != nil {
+		return nil, err
+	}
+	recordingDAPReaders, err := melrecording.NewDAPReaderSource(ctx, mv.dapReaders, preimages)
+	if err != nil {
+		return nil, err
+	}
 	for i := lastValidatedParentChainBlock + 1; ; i++ {
 		header, err := mv.l1Client.HeaderByNumber(ctx, new(big.Int).SetUint64(i))
 		if err != nil {
 			return nil, err
 		}
-		txsRecorder := melrecording.NewTransactionRecorder(mv.l1Client, header.Hash())
+		txsRecorder, err := melrecording.NewTransactionRecorder(mv.l1Client, header.Hash(), preimages)
+		if err != nil {
+			return nil, err
+		}
 		if err := txsRecorder.Initialize(ctx); err != nil {
 			return nil, err
 		}
-		receiptsRecorder := melrecording.NewReceiptRecorder(mv.l1Client, header.Hash())
+		receiptsRecorder, err := melrecording.NewReceiptRecorder(mv.l1Client, header.Hash(), preimages)
+		if err != nil {
+			return nil, err
+		}
 		if err := receiptsRecorder.Initialize(ctx); err != nil {
 			return nil, err
 		}
@@ -124,23 +134,14 @@ func (mv *MELValidator) CreateNextValidationEntry(ctx context.Context, lastValid
 		if state.Hash() != wantState.Hash() {
 			return nil, fmt.Errorf("calculated MEL state hash in recording mode doesn't match the one computed in native mode, parentchainBlocknumber: %d", i)
 		}
-		validator.CopyPreimagesInto(txsAndReceiptsPreimages, txsRecorder.GetPreimages())
-		receiptsPreimages, err := receiptsRecorder.GetPreimages()
-		if err != nil {
+		if err := receiptsRecorder.CollectTxIndicesPreimage(); err != nil {
 			return nil, err
 		}
-		validator.CopyPreimagesInto(txsAndReceiptsPreimages, receiptsPreimages)
 		if state.MsgCount >= toValidateMsgExtractionCount {
 			break
 		}
 		preState = state
 	}
-	preimages := recordingDAPReaders.Preimages()
-	delayedPreimages := daprovider.PreimagesMap{
-		arbutil.Keccak256PreimageType: delayedMsgRecordingDB.Preimages(),
-	}
-	validator.CopyPreimagesInto(preimages, delayedPreimages)
-	validator.CopyPreimagesInto(preimages, txsAndReceiptsPreimages)
 	return &validationEntry{
 		Preimages: preimages,
 	}, nil

@@ -2,15 +2,19 @@ package arbtest
 
 import (
 	"context"
+	"fmt"
 	"math/big"
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/crypto/kzg4844"
 
 	"github.com/offchainlabs/nitro/arbnode/mel/extraction"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/daprovider"
+	"github.com/offchainlabs/nitro/mel-replay"
 	"github.com/offchainlabs/nitro/staker"
 )
 
@@ -61,22 +65,27 @@ func TestMELValidator_Recording_Preimages(t *testing.T) {
 	Require(t, err)
 
 	// Represents running of MEL validation using preimages in wasm mode. TODO: remove this once we have validation wired
-	preimageResolver := &testPreimageResolver{
-		preimages: entry.Preimages[arbutil.Keccak256PreimageType],
-	}
+	preimageResolver := melreplay.NewTypeBasedPreimageResolver(
+		arbutil.Keccak256PreimageType,
+		entry.Preimages,
+	)
 	state, err := builder.L2.ConsensusNode.MessageExtractor.GetState(ctx, startBlock)
 	Require(t, err)
-	preimagesBasedDelayedDb := &delayedMessageDatabase{
-		preimageResolver: preimageResolver,
-	}
+	preimagesBasedDelayedDb := melreplay.NewDelayedMessageDatabase(preimageResolver)
 	preimagesBasedDapReaders := daprovider.NewDAProviderRegistry()
-	Require(t, preimagesBasedDapReaders.SetupBlobReader(daprovider.NewReaderForBlobReader(&blobPreimageReader{entry.Preimages})))
+	blobReader := &blobPreimageReader{
+		melreplay.NewTypeBasedPreimageResolver(
+			arbutil.EthVersionedHashPreimageType,
+			entry.Preimages,
+		),
+	}
+	Require(t, preimagesBasedDapReaders.SetupBlobReader(daprovider.NewReaderForBlobReader(blobReader)))
 	for state.MsgCount < uint64(extractedMsgCount) {
 		header, err := builder.L1.Client.HeaderByNumber(ctx, new(big.Int).SetUint64(state.ParentChainBlockNumber+1))
 		Require(t, err)
-		preimagesBasedTxsFetcher := &txFetcherForBlock{header, preimageResolver}
-		preimagesBasedReceiptsFetcher := &receiptFetcherForBlock{header, preimageResolver}
-		postState, _, _, _, err := melextraction.ExtractMessages(ctx, state, header, preimagesBasedDapReaders, preimagesBasedDelayedDb, preimagesBasedTxsFetcher, preimagesBasedReceiptsFetcher, nil)
+		preimagesBasedTxsFetcher := melreplay.NewTransactionFetcher(header, preimageResolver)
+		preimagesBasedLogsFetcher := melreplay.NewLogsFetcher(header, preimageResolver)
+		postState, _, _, _, err := melextraction.ExtractMessages(ctx, state, header, preimagesBasedDapReaders, preimagesBasedDelayedDb, preimagesBasedTxsFetcher, preimagesBasedLogsFetcher, nil)
 		Require(t, err)
 		wantState, err := builder.L2.ConsensusNode.MessageExtractor.GetState(ctx, state.ParentChainBlockNumber+1)
 		Require(t, err)
@@ -85,4 +94,31 @@ func TestMELValidator_Recording_Preimages(t *testing.T) {
 		}
 		state = postState
 	}
+}
+
+type blobPreimageReader struct {
+	preimageResolver melreplay.PreimageResolver
+}
+
+func (b *blobPreimageReader) Initialize(ctx context.Context) error { return nil }
+
+func (b *blobPreimageReader) GetBlobs(
+	ctx context.Context,
+	batchBlockHash common.Hash,
+	versionedHashes []common.Hash,
+) ([]kzg4844.Blob, error) {
+	var blobs []kzg4844.Blob
+	for _, h := range versionedHashes {
+		var blob kzg4844.Blob
+		preimage, err := b.preimageResolver.ResolveTypedPreimage(arbutil.EthVersionedHashPreimageType, h)
+		if err != nil {
+			return nil, err
+		}
+		if len(preimage) != len(blob) {
+			return nil, fmt.Errorf("for blob %v got back preimage of length %v but expected blob length %v", h, len(preimage), len(blob))
+		}
+		copy(blob[:], preimage)
+		blobs = append(blobs, blob)
+	}
+	return blobs, nil
 }
