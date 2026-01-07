@@ -212,7 +212,9 @@ func rpcClient(ctx context.Context, opts *ExternalSignerCfg) (*rpc.Client, error
 			return nil, fmt.Errorf("error reading external signer root CA: %w", err)
 		}
 		rootCertPool := x509.NewCertPool()
-		rootCertPool.AppendCertsFromPEM(rootCrt)
+		if ok := rootCertPool.AppendCertsFromPEM(rootCrt); !ok {
+			return nil, fmt.Errorf("external signer root CA does not contain any valid PEM certificates: %s", opts.RootCA)
+		}
 		tlsCfg.RootCAs = rootCertPool
 	}
 
