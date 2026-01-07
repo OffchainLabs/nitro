@@ -6,6 +6,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"net"
 	"os"
 	"os/signal"
 	"syscall"
@@ -123,7 +124,11 @@ func startup() error {
 
 	vcsRevision, _, vcsTime := confighelpers.GetVersion()
 	log.Info("Starting HTTP-RPC server", "addr", config.RPCAddr, "port", config.RPCPort, "revision", vcsRevision, "vcs.time", vcsTime)
-	rpcServer, err := server.StartRPCServer(ctx, config.RPCAddr, config.RPCPort, config.RPCServerTimeouts)
+	listener, err := net.Listen("tcp", fmt.Sprintf("%s:%d", config.RPCAddr, config.RPCPort))
+	if err != nil {
+		return err
+	}
+	rpcServer, err := server.StartRPCServer(ctx, listener, config.RPCServerTimeouts)
 	if err != nil {
 		return err
 	}
