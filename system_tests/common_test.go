@@ -333,7 +333,7 @@ type NodeBuilder struct {
 	withProdConfirmPeriodBlocks bool
 	delayBufferThreshold        uint64
 	withL1ClientWrapper         bool
-	executionClientMode         ExecutionClientMode // ADD THIS
+	executionClientMode         ExecutionClientMode
 
 	// Created nodes
 	L1 *TestClient
