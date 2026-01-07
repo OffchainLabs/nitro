@@ -107,9 +107,10 @@ func TestRecordingOfReceiptPreimagesAndFetchingLogsFromPreimages(t *testing.T) {
 	require.NoError(t, err)
 	receiptFetcher := melreplay.NewLogsFetcher(
 		block.Header(),
-		&testPreimageResolver{
-			preimages: preimages[arbutil.Keccak256PreimageType],
-		},
+		melreplay.NewTypeBasedPreimageResolver(
+			arbutil.Keccak256PreimageType,
+			preimages,
+		),
 	)
 	// Test LogsForBlockHash
 	logs, err := receiptFetcher.LogsForBlockHash(ctx, block.Hash())
