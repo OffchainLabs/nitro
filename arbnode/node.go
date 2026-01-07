@@ -41,7 +41,7 @@ import (
 	"github.com/offchainlabs/nitro/daprovider/daclient"
 	"github.com/offchainlabs/nitro/daprovider/data_streaming"
 	"github.com/offchainlabs/nitro/execution"
-	"github.com/offchainlabs/nitro/execution/executionrpcclient"
+	executionrpcclient "github.com/offchainlabs/nitro/execution/rpcclient"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/staker"

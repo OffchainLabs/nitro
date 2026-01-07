@@ -1,4 +1,4 @@
-package executionrpcclient
+package rpcclient
 
 import (
 	"context"
