@@ -16,6 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
 
+	"github.com/offchainlabs/nitro/precompiles"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 )
 
@@ -24,7 +25,7 @@ func TestManageTransactionCensors(t *testing.T) {
 	defer cancel()
 
 	builder := NewNodeBuilder(ctx).
-		DefaultConfig(t, false).
+		DefaultConfig(t, true).
 		WithArbOSVersion(params.ArbosVersion_60)
 
 	cleanup := builder.Build(t)
@@ -33,6 +34,7 @@ func TestManageTransactionCensors(t *testing.T) {
 	ownerTxOpts := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
 
 	builder.L2Info.GenerateAccount("User")
+	builder.L2Info.GenerateAccount("User2") // For time warp
 	builder.L2.TransferBalance(t, "Owner", "User", big.NewInt(1e16), builder.L2Info)
 	userTxOpts := builder.L2Info.GetDefaultTransactOpts("User", ctx)
 
@@ -62,10 +64,27 @@ func TestManageTransactionCensors(t *testing.T) {
 	_, err = arbFilteredTxs.IsTransactionFiltered(userCallOpts, txHash)
 	require.Error(t, err)
 
-	// Owner grants user transaction censor role
-	tx, err := arbOwner.AddTransactionCensor(&ownerTxOpts, userTxOpts.From)
+	// Adding a censor should be disabled by default by ArbCensoredTransactionManagerFromTime
+	_, err = arbOwner.AddTransactionCensor(&ownerTxOpts, userTxOpts.From)
+	require.Error(t, err)
+
+	// Enable transaction filtering feature 7 days in the future and warp time forward
+	hdr, err := builder.L2.Client.HeaderByNumber(ctx, nil)
 	require.NoError(t, err)
-	require.NotNil(t, tx)
+	enableAt := hdr.Time + precompiles.TransactionFilteringEnableDelay
+
+	tx, err := arbOwner.SetTransactionFilteringFrom(&ownerTxOpts, enableAt)
+	require.NoError(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	require.NoError(t, err)
+
+	warpL1Time(t, builder, ctx, hdr.Time, precompiles.TransactionFilteringEnableDelay+1)
+
+	// Owner grants user transaction censor role
+	tx, err = arbOwner.AddTransactionCensor(&ownerTxOpts, userTxOpts.From)
+	require.NoError(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	require.NoError(t, err)
 
 	isCensor, err := arbOwner.IsTransactionCensor(ownerCallOpts, userTxOpts.From)
 	require.NoError(t, err)
@@ -142,6 +161,12 @@ func TestManageTransactionCensors(t *testing.T) {
 	// User is no longer authorised
 	_, err = arbFilteredTxs.IsTransactionFiltered(userCallOpts, txHash)
 	require.Error(t, err)
+
+	// Disable transaction filtering feature again
+	tx, err = arbOwner.SetTransactionFilteringFrom(&ownerTxOpts, 0)
+	require.NoError(t, err)
+	receipt, err = builder.L2.EnsureTxSucceeded(tx)
+	require.NoError(t, err)
 }
 
 func TestFilteredTransactionsManagerFreeOps(t *testing.T) {
@@ -149,7 +174,7 @@ func TestFilteredTransactionsManagerFreeOps(t *testing.T) {
 	defer cancel()
 
 	builder := NewNodeBuilder(ctx).
-		DefaultConfig(t, false).
+		DefaultConfig(t, true).
 		WithArbOSVersion(params.ArbosVersion_60)
 
 	cleanup := builder.Build(t)
@@ -159,6 +184,7 @@ func TestFilteredTransactionsManagerFreeOps(t *testing.T) {
 
 	censorName := "Censor"
 	builder.L2Info.GenerateAccount(censorName)
+	builder.L2Info.GenerateAccount("User2") // For time warp
 
 	builder.L2.TransferBalance(t, "Owner", censorName, big.NewInt(1e16), builder.L2Info)
 	censorTxOpts := builder.L2Info.GetDefaultTransactOpts(censorName, ctx)
@@ -175,7 +201,20 @@ func TestFilteredTransactionsManagerFreeOps(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	tx, err := arbOwner.AddTransactionCensor(&ownerTxOpts, censorTxOpts.From)
+	// Enable transaction filtering feature 7 days in the future and warp time forward
+	hdr, err := builder.L2.Client.HeaderByNumber(ctx, nil)
+	require.NoError(t, err)
+	enableAt := hdr.Time + precompiles.TransactionFilteringEnableDelay
+
+	tx, err := arbOwner.SetTransactionFilteringFrom(&ownerTxOpts, enableAt)
+	require.NoError(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	require.NoError(t, err)
+
+	warpL1Time(t, builder, ctx, hdr.Time, precompiles.TransactionFilteringEnableDelay+1)
+
+	// Owner grants censor transaction censor role
+	tx, err = arbOwner.AddTransactionCensor(&ownerTxOpts, censorTxOpts.From)
 	require.NoError(t, err)
 	require.NotNil(t, tx)
 
