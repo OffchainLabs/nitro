@@ -6,6 +6,8 @@ package melreplay
 import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
+
+	"github.com/offchainlabs/nitro/arbutil"
 )
 
 // RELEVANT_TX_INDEXES_PREFIX represents the prefix appended to a blockHash and the hash of the resulting string
@@ -14,4 +16,8 @@ const RELEVANT_TX_INDEXES_PREFIX string = "TX_INDEX_DATA"
 
 func RelevantTxIndexesKey(parentChainBlockHash common.Hash) common.Hash {
 	return crypto.Keccak256Hash([]byte(RELEVANT_TX_INDEXES_PREFIX), parentChainBlockHash.Bytes())
+}
+
+type PreimageResolver interface {
+	ResolveTypedPreimage(preimageType arbutil.PreimageType, hash common.Hash) ([]byte, error)
 }

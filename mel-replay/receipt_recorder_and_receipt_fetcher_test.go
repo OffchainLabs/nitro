@@ -1,7 +1,7 @@
 // Copyright 2025-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-package main
+package melreplay_test
 
 import (
 	"context"
@@ -19,6 +19,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode/mel/recording"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/daprovider"
+	"github.com/offchainlabs/nitro/mel-replay"
 )
 
 type mockPreimageResolver struct {
@@ -104,12 +105,12 @@ func TestRecordingOfReceiptPreimagesAndFetchingLogsFromPreimages(t *testing.T) {
 	// Test reading of logs from the recorded preimages
 	require.NoError(t, recorder.CollectTxIndicesPreimage())
 	require.NoError(t, err)
-	receiptFetcher := &receiptFetcherForBlock{
-		header: block.Header(),
-		preimageResolver: &testPreimageResolver{
+	receiptFetcher := melreplay.NewLogsFetcher(
+		block.Header(),
+		&testPreimageResolver{
 			preimages: preimages[arbutil.Keccak256PreimageType],
 		},
-	}
+	)
 	// Test LogsForBlockHash
 	logs, err := receiptFetcher.LogsForBlockHash(ctx, block.Hash())
 	require.NoError(t, err)

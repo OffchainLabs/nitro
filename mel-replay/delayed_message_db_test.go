@@ -1,4 +1,4 @@
-package main
+package melreplay_test
 
 import (
 	"context"
@@ -18,10 +18,10 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/daprovider"
+	"github.com/offchainlabs/nitro/mel-replay"
 )
 
-var _ preimageResolver = (*mockPreimageResolver)(nil)
-var _ mel.DelayedMessageDatabase = (*delayedMessageDatabase)(nil)
+var _ melreplay.PreimageResolver = (*mockPreimageResolver)(nil)
 
 type testPreimageResolver struct {
 	preimages map[common.Hash][]byte
@@ -89,11 +89,11 @@ func TestRecordingPreimagesForReadDelayedMessage(t *testing.T) {
 	}
 
 	// Test reading in wasm mode
-	delayedDB := &delayedMessageDatabase{
+	delayedDB := melreplay.NewDelayedMessageDatabase(
 		&testPreimageResolver{
 			preimages: preimages[arbutil.Keccak256PreimageType],
 		},
-	}
+	)
 	for i := startBlockNum; i < numMsgsToRead; i++ {
 		msg, err := delayedDB.ReadDelayedMessage(ctx, state, i)
 		require.NoError(t, err)
@@ -104,7 +104,7 @@ func TestRecordingPreimagesForReadDelayedMessage(t *testing.T) {
 func TestReadDelayedMessage(t *testing.T) {
 	ctx := context.Background()
 	t.Run("message index out of range", func(t *testing.T) {
-		db := &delayedMessageDatabase{}
+		db := melreplay.NewDelayedMessageDatabase(nil)
 		state := &mel.State{
 			DelayedMessagesSeen: 5,
 		}
@@ -122,7 +122,7 @@ func TestReadDelayedMessage(t *testing.T) {
 		preimages, root := buildMerkleTree(t, messages)
 
 		resolver := &mockPreimageResolver{preimages: preimages}
-		db := &delayedMessageDatabase{preimageResolver: resolver}
+		db := melreplay.NewDelayedMessageDatabase(resolver)
 		state := &mel.State{
 			DelayedMessagesSeen:     1,
 			DelayedMessagesSeenRoot: root,
@@ -151,7 +151,7 @@ func TestReadDelayedMessage(t *testing.T) {
 		preimages, root := buildMerkleTree(t, messages)
 
 		resolver := &mockPreimageResolver{preimages: preimages}
-		db := &delayedMessageDatabase{preimageResolver: resolver}
+		db := melreplay.NewDelayedMessageDatabase(resolver)
 		state := &mel.State{
 			DelayedMessagesSeen:     2,
 			DelayedMessagesSeenRoot: root,
@@ -184,7 +184,7 @@ func TestReadDelayedMessage(t *testing.T) {
 		preimages, root := buildMerkleTree(t, messages)
 
 		resolver := &mockPreimageResolver{preimages: preimages}
-		db := &delayedMessageDatabase{preimageResolver: resolver}
+		db := melreplay.NewDelayedMessageDatabase(resolver)
 		state := &mel.State{
 			DelayedMessagesSeen:     3,
 			DelayedMessagesSeenRoot: root,
@@ -218,7 +218,7 @@ func TestNextPowerOfTwo(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		result := nextPowerOfTwo(tc.input)
+		result := melreplay.NextPowerOfTwo(tc.input)
 		if result != tc.expected {
 			t.Errorf("nextPowerOfTwo(%d) = %d, expected %d", tc.input, result, tc.expected)
 		}
