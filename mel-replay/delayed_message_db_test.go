@@ -23,20 +23,6 @@ import (
 
 var _ melreplay.PreimageResolver = (*mockPreimageResolver)(nil)
 
-type testPreimageResolver struct {
-	preimages map[common.Hash][]byte
-}
-
-func (r *testPreimageResolver) ResolveTypedPreimage(preimageType arbutil.PreimageType, hash common.Hash) ([]byte, error) {
-	if preimageType != arbutil.Keccak256PreimageType {
-		return nil, fmt.Errorf("unsupported preimageType: %d", preimageType)
-	}
-	if preimage, ok := r.preimages[hash]; ok {
-		return preimage, nil
-	}
-	return nil, fmt.Errorf("preimage not found for hash: %v", hash)
-}
-
 func TestRecordingPreimagesForReadDelayedMessage(t *testing.T) {
 	ctx := context.Background()
 	var delayedMessages []*mel.DelayedInboxMessage
@@ -90,9 +76,10 @@ func TestRecordingPreimagesForReadDelayedMessage(t *testing.T) {
 
 	// Test reading in wasm mode
 	delayedDB := melreplay.NewDelayedMessageDatabase(
-		&testPreimageResolver{
-			preimages: preimages[arbutil.Keccak256PreimageType],
-		},
+		melreplay.NewTypeBasedPreimageResolver(
+			arbutil.Keccak256PreimageType,
+			preimages,
+		),
 	)
 	for i := startBlockNum; i < numMsgsToRead; i++ {
 		msg, err := delayedDB.ReadDelayedMessage(ctx, state, i)

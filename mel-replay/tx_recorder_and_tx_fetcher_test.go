@@ -86,9 +86,10 @@ func TestRecordingOfTxPreimagesAndFetchingTxsFromPreimages(t *testing.T) {
 	// Test reading of txs from the recorded preimages
 	txsFetcher := melreplay.NewTransactionFetcher(
 		block.Header(),
-		&testPreimageResolver{
-			preimages: preimages[arbutil.Keccak256PreimageType],
-		},
+		melreplay.NewTypeBasedPreimageResolver(
+			arbutil.Keccak256PreimageType,
+			preimages,
+		),
 	)
 	for i := recordStart; i <= recordEnd; i++ {
 		tx, err := txsFetcher.TransactionByLog(ctx, &types.Log{TxIndex: i})
