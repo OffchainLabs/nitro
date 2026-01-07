@@ -23,26 +23,38 @@ type BlockReader interface {
 	TransactionReceipt(ctx context.Context, txHash common.Hash) (*types.Receipt, error)
 }
 
+// TransactionRecorder records preimages corresponding to the transactions of a parent chain block
+// needed during the message extraction. These preimages are needed for MEL validation and
+// is used in creation of the validation entries by the MEL validator
 type TransactionRecorder struct {
 	parentChainReader    BlockReader
 	parentChainBlockHash common.Hash
-	preimages            daprovider.PreimagesMap
+	recordPreimages      daprovider.PreimageRecorder
 	txs                  []*types.Transaction
 	trieDB               *triedb.Database
 	blockTxHash          common.Hash
 }
 
+// NewTransactionRecorder returns TransactionRecorder that records
+// the transaction preimages into the given preimages map
 func NewTransactionRecorder(
 	parentChainReader BlockReader,
 	parentChainBlockHash common.Hash,
-) *TransactionRecorder {
+	preimages daprovider.PreimagesMap,
+) (*TransactionRecorder, error) {
+	if preimages == nil {
+		return nil, errors.New("preimages recording destination cannot be nil")
+	}
 	return &TransactionRecorder{
 		parentChainReader:    parentChainReader,
 		parentChainBlockHash: parentChainBlockHash,
-		preimages:            make(daprovider.PreimagesMap),
-	}
+		recordPreimages:      daprovider.RecordPreimagesTo(preimages),
+	}, nil
 }
 
+// Initialize must be called first to setup the recording trie database and store all the
+// transactions into the triedb. Without this, preimage recording is not possible and
+// the other functions will error out if called beforehand
 func (tr *TransactionRecorder) Initialize(ctx context.Context) error {
 	block, err := tr.parentChainReader.BlockByHash(ctx, tr.parentChainBlockHash)
 	if err != nil {
@@ -99,7 +111,7 @@ func (tr *TransactionRecorder) TransactionByLog(ctx context.Context, log *types.
 	}
 	recordingDB := &TxsAndReceiptsDatabase{
 		underlying: tr.trieDB,
-		recorder:   daprovider.RecordPreimagesTo(tr.preimages), // RecordingDB will record relevant preimages into tr.preimages
+		recorder:   tr.recordPreimages, // RecordingDB will record relevant preimages into the given preimagesmap
 	}
 	recordingTDB := triedb.NewDatabase(recordingDB, nil)
 	txsTrie, err := trie.New(trie.TrieID(tr.blockTxHash), recordingTDB)
@@ -120,11 +132,6 @@ func (tr *TransactionRecorder) TransactionByLog(ctx context.Context, log *types.
 		return nil, fmt.Errorf("failed to unmarshal transaction: %w", err)
 	}
 	// Add the tx marshaled binary by hash to the preimages map
-	if _, ok := tr.preimages[arbutil.Keccak256PreimageType]; !ok {
-		tr.preimages[arbutil.Keccak256PreimageType] = make(map[common.Hash][]byte)
-	}
-	tr.preimages[arbutil.Keccak256PreimageType][crypto.Keccak256Hash(txBytes)] = txBytes
+	tr.recordPreimages(crypto.Keccak256Hash(txBytes), txBytes, arbutil.Keccak256PreimageType)
 	return tx, nil
 }
-
-func (tr *TransactionRecorder) GetPreimages() daprovider.PreimagesMap { return tr.preimages }

@@ -14,6 +14,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbnode/mel/recording"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/daprovider"
 )
 
 type mockBlockReader struct {
@@ -63,7 +64,9 @@ func TestRecordingOfTxPreimagesAndFetchingTxsFromPreimages(t *testing.T) {
 			block.Hash(): block,
 		},
 	}
-	recorder := melrecording.NewTransactionRecorder(blockReader, block.Hash())
+	preimages := make(daprovider.PreimagesMap)
+	recorder, err := melrecording.NewTransactionRecorder(blockReader, block.Hash(), preimages)
+	require.NoError(t, err)
 	require.NoError(t, recorder.Initialize(ctx))
 
 	// Test recording of preimages
@@ -80,7 +83,6 @@ func TestRecordingOfTxPreimagesAndFetchingTxsFromPreimages(t *testing.T) {
 	}
 
 	// Test reading of txs from the recorded preimages
-	preimages := recorder.GetPreimages()
 	txsFetcher := &txFetcherForBlock{
 		header: block.Header(),
 		preimageResolver: &testPreimageResolver{
@@ -98,7 +100,7 @@ func TestRecordingOfTxPreimagesAndFetchingTxsFromPreimages(t *testing.T) {
 	}
 
 	// Tx fetching should fail for not recorded ones
-	_, err := txsFetcher.TransactionByLog(ctx, &types.Log{TxIndex: recordStart - 1})
+	_, err = txsFetcher.TransactionByLog(ctx, &types.Log{TxIndex: recordStart - 1})
 	if err == nil || !strings.Contains(err.Error(), "preimage not found for hash") {
 		t.Fatalf("failed with unexpected error: %v", err)
 	}

@@ -2,6 +2,7 @@ package melrecording
 
 import (
 	"context"
+	"errors"
 
 	"github.com/ethereum/go-ethereum/common"
 
@@ -11,9 +12,9 @@ import (
 	"github.com/offchainlabs/nitro/validator"
 )
 
-// DAPReader implements recording of preimages when melextraction.ExtractMessages function is called by MEL validator for creation
-// of validation entry. Since ExtractMessages function would use daprovider.Reader interface to fetch the sequencer batch via RecoverPayload
-// we implement collecting of preimages as well in the same method and record it
+// DAPReader implements recording of data avaialability preimages when melextraction.ExtractMessages function is called by
+// MEL validator for creation of validation entry. Since ExtractMessages function would use daprovider.Reader interface to
+// fetch the sequencer batch via RecoverPayload we implement collecting of preimages as well in the same method and record it
 type DAPReader struct {
 	validatorCtx context.Context
 	reader       daprovider.Reader
@@ -47,12 +48,17 @@ type DAPReaderSource struct {
 	preimages    daprovider.PreimagesMap
 }
 
-func NewDAPReaderSource(validatorCtx context.Context, dapReaders arbstate.DapReaderSource) *DAPReaderSource {
+// NewDAPReaderSource returns DAPReaderSource that records preimages
+// related to sequencer batches posted to DA into the given preimages map
+func NewDAPReaderSource(validatorCtx context.Context, dapReaders arbstate.DapReaderSource, preimages daprovider.PreimagesMap) (*DAPReaderSource, error) {
+	if preimages == nil {
+		return nil, errors.New("preimages recording destination cannot be nil")
+	}
 	return &DAPReaderSource{
 		validatorCtx: validatorCtx,
 		dapReaders:   dapReaders,
-		preimages:    make(daprovider.PreimagesMap),
-	}
+		preimages:    preimages,
+	}, nil
 }
 
 func (s *DAPReaderSource) GetReader(headerByte byte) daprovider.Reader {
@@ -63,5 +69,3 @@ func (s *DAPReaderSource) GetReader(headerByte byte) daprovider.Reader {
 		preimages:    s.preimages,
 	}
 }
-
-func (s *DAPReaderSource) Preimages() daprovider.PreimagesMap { return s.preimages }
