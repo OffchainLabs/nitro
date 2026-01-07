@@ -136,7 +136,7 @@ func startProgram(module uint32) uint32
 //go:wasmimport programs send_response
 func sendResponse(req_id uint32) uint32
 
-func getCompiledProgram(statedb vm.StateDB, moduleHash common.Hash, addressForLogging common.Address, code []byte, codeHash common.Hash, maxWasmSize uint32, pagelimit uint16, time uint64, debugMode bool, program Program, runCtx *core.MessageRunContext) (map[rawdb.WasmTarget][]byte, error) {
+func getCompiledProgram(statedb vm.StateDB, moduleHash common.Hash, addressForLogging common.Address, code []byte, codeHash common.Hash, stylusParams *StylusParams, time uint64, debugMode bool, program Program, runCtx *core.MessageRunContext) (map[rawdb.WasmTarget][]byte, error) {
 	// we need to return asm map with an entry for local target to make checks for local target work
 	return map[rawdb.WasmTarget][]byte{rawdb.LocalTarget(): {}}, nil
 }

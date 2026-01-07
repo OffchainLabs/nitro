@@ -2,7 +2,6 @@ package arbtest
 
 import (
 	"context"
-	"fmt"
 	"math/big"
 	"testing"
 
@@ -71,7 +70,6 @@ func TestAccessingPathSchemeArchivalState(t *testing.T) {
 
 	// Build a node with history past the 128 block diff threshold
 	cancelNode := buildWithHistory(t, ctx, builder, 150)
-	fmt.Println("bluebird 5-3", builder.execConfig.Caching.StateScheme)
 	execNode, l2client := builder.L2.ExecNode, builder.L2.Client
 	defer cancelNode()
 	bc := execNode.Backend.ArbInterface().BlockChain()
