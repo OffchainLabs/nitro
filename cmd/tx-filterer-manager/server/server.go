@@ -5,7 +5,6 @@ package server
 
 import (
 	"context"
-	"fmt"
 	"net"
 	"net/http"
 
@@ -23,15 +22,10 @@ func (r *RPCServer) Filter(ctx context.Context, txHash common.Hash) error {
 	return nil
 }
 
-func StartRPCServer(ctx context.Context, addr string, portNum uint64, rpcServerTimeouts genericconf.HTTPServerTimeoutConfig) (*http.Server, error) {
-	listener, err := net.Listen("tcp", fmt.Sprintf("%s:%d", addr, portNum))
-	if err != nil {
-		return nil, err
-	}
-
+func StartRPCServer(ctx context.Context, listener net.Listener, rpcServerTimeouts genericconf.HTTPServerTimeoutConfig) (*http.Server, error) {
 	rpcServer := rpc.NewServer()
 
-	err = rpcServer.RegisterName("txfilterermanager", &RPCServer{})
+	err := rpcServer.RegisterName("txfilterermanager", &RPCServer{})
 	if err != nil {
 		return nil, err
 	}
