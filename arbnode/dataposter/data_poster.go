@@ -736,18 +736,6 @@ func (p *DataPoster) feeAndTipCaps(ctx context.Context, nonce uint64, gasLimit u
 		}
 	}
 
-	if lastTx != nil && (arbmath.BigLessThan(newBaseFeeCap, currentNonBlobFee) || (numBlobs > 0 && arbmath.BigLessThan(newBlobFeeCap, currentBlobFee))) {
-		// Make sure our replace by fee can meet the current parent chain fee demands.
-		// Without this check, we'd blindly increase each fee component by the min rbf amount each time,
-		// without looking at which component(s) actually need increased.
-		// E.g. instead of 2x basefee and 2x blobfee, we might actually want to 4x basefee and 2x blobfee.
-		// This check lets us hold off on the rbf until we are actually meet the current fee requirements,
-		// which lets us move in a particular direction (biasing towards either basefee or blobfee).
-		log.Info("can't meet current parent chain fees with current target max cost", logFields...)
-		// wait until we have a higher target max cost to replace by fee
-		return lastTx.GasFeeCap(), lastTx.GasTipCap(), lastTx.BlobGasFeeCap(), nil
-	}
-
 	// Ensure we bid at least 1 wei to prevent division by zero
 	if newBaseFeeCap.Sign() == 0 {
 		newBaseFeeCap = big.NewInt(1)
