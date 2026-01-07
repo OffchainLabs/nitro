@@ -184,7 +184,14 @@ func (con ArbOwner) GetAllNativeTokenOwners(c ctx, evm mech) ([]common.Address, 
 }
 
 // AddTransactionCensor adds account as a transaction censor (authorized to use ArbFilteredTransactionsManager)
-func (con ArbOwner) AddTransactionCensor(c ctx, _ mech, censor addr) error {
+func (con ArbOwner) AddTransactionCensor(c ctx, evm mech, censor addr) error {
+	enabledTime, err := c.State.TransactionFilteringFromTime()
+	if err != nil {
+		return err
+	}
+	if enabledTime == 0 || enabledTime > evm.Context.Time {
+		return errors.New("transaction filtering feature is not enabled yet")
+	}
 	member, err := con.IsTransactionCensor(c, nil, censor)
 	if err != nil {
 		return err
