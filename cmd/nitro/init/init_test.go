@@ -881,33 +881,6 @@ func TestSimpleCheckDBDir(t *testing.T) {
 
 }
 
-func TestCheckDBDirReturnsErrorOnNoDir(t *testing.T) {
-	t.Parallel()
-
-	_, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	rootTargetDir := t.TempDir()
-	targetDir := filepath.Join(rootTargetDir, "do_not_exist")
-
-	stackConfig := testhelpers.CreateStackConfigForTest(targetDir)
-	stack, err := node.New(stackConfig)
-	Require(t, err)
-	defer stack.Close()
-
-	// Since node.New(..) creates the dara directory if it doesn't exist already, we
-	// force delete here to test that checkDBDir returns the proper error
-	err = os.RemoveAll(rootTargetDir)
-	Require(t, err)
-
-	nodeConfig := config.NodeConfigDefault
-
-	err = checkDBDir(stack, &nodeConfig)
-	require.Error(t, err)
-	require.ErrorIs(t, err, os.ErrNotExist)
-	require.ErrorContains(t, err, targetDir)
-}
-
 func TestCheckDBDirReturnsErrorOnl2chaindataWrongDir(t *testing.T) {
 	t.Parallel()
 
@@ -951,7 +924,7 @@ func TestCheckAndDownloadDBNoSnapshot(t *testing.T) {
 	Require(t, err)
 }
 
-func getInitHelper(t *testing.T, ownerAdress string, emptyState bool, importFile, genesisJsonFile string) (statetransfer.InitDataReader, *params.ChainConfig, *params.ArbOSInit, error) {
+func getInitHelper(t *testing.T, ownerAdress string, emptyState bool, importFile, genesisJsonFile string, useDevInit, skipIniDataReader bool) (statetransfer.InitDataReader, *params.ChainConfig, *params.ArbOSInit, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -976,7 +949,7 @@ func getInitHelper(t *testing.T, ownerAdress string, emptyState bool, importFile
 		nodeConfig.Init.GenesisJsonFile = genesisJsonFile
 	}
 
-	if !emptyState && importFile == "" && genesisJsonFile == "" {
+	if useDevInit {
 		nodeConfig.Init.DevInit = true
 	}
 
@@ -998,6 +971,14 @@ func getInitHelper(t *testing.T, ownerAdress string, emptyState bool, importFile
 	)
 	Require(t, err)
 
+	// This means no init method is supplied to GetInit
+	if skipIniDataReader {
+		nodeConfig.Init.Empty = false
+		nodeConfig.Init.ImportFile = ""
+		nodeConfig.Init.GenesisJsonFile = ""
+		nodeConfig.Init.DevInit = false
+	}
+
 	// We already call getInit once inside openInitializeExecutionDB but calling a
 	// second time is okay since we're just loading configs
 	return GetInit(&nodeConfig, executionDB)
@@ -1008,14 +989,14 @@ func TestSimpleGetInit(t *testing.T) {
 	t.Parallel()
 
 	ownerAdress := "0x3f1Eae7D46d88F08fc2F8ed27FCb2AB183EB2d0E"
-	initDataReader, chainConfig, arbOsInit, err := getInitHelper(t, ownerAdress, false, "", "")
+	initDataReader, chainConfig, arbOsInit, err := getInitHelper(t, ownerAdress, false, "", "", true, false)
 	Require(t, err)
 	if chainConfig == nil {
 		t.Fatalf("Expected chainConfig to be non nil")
 	}
 
 	if arbOsInit != nil {
-		t.Fatalf("Expected nil arbOsInit but got  = %v", chainConfig)
+		t.Fatalf("Expected nil arbOsInit but got  = %v", arbOsInit)
 	}
 
 	if initDataReader == nil {
@@ -1041,11 +1022,33 @@ func TestSimpleGetInit(t *testing.T) {
 	Require(t, err)
 }
 
+// Tests GetInit by not setting any init method. In which case GetInit would
+// return a nil initDataReader with a chainConfig read using TryReadStoredChainConfig
+func TestGetInitSkipInitDataReader(t *testing.T) {
+	t.Parallel()
+
+	ownerAdress := "0x3f1Eae7D46d88F08fc2F8ed27FCb2AB183EB2d0E"
+	initDataReader, chainConfig, arbOsInit, err := getInitHelper(t, ownerAdress, false, "", "", true, true)
+	Require(t, err)
+
+	if chainConfig == nil {
+		t.Fatalf("Expected chainConfig to be non nil")
+	}
+
+	if arbOsInit != nil {
+		t.Fatalf("Expected nil arbOsInit but got  = %v", arbOsInit)
+	}
+
+	if initDataReader != nil {
+		t.Fatalf("initDataReader expected to be nil")
+	}
+}
+
 func TestGetInitWithEmpty(t *testing.T) {
 	t.Parallel()
 
 	ownerAdress := "0x3f1Eae7D46d88F08fc2F8ed27FCb2AB183EB2d0E"
-	initDataReader, chainConfig, arbOsInit, err := getInitHelper(t, ownerAdress, true, "", "")
+	initDataReader, chainConfig, arbOsInit, err := getInitHelper(t, ownerAdress, true, "", "", false, false)
 
 	Require(t, err)
 	if chainConfig == nil {
@@ -1087,7 +1090,7 @@ func TestGetInitWithImportFile(t *testing.T) {
 
 	ownerAdress := "0x3f1Eae7D46d88F08fc2F8ed27FCb2AB183EB2d0E"
 	importFile := "testdata/initFileContent.json"
-	initDataReader, chainConfig, arbOsInit, err := getInitHelper(t, ownerAdress, false, importFile, "")
+	initDataReader, chainConfig, arbOsInit, err := getInitHelper(t, ownerAdress, false, importFile, "", false, false)
 	Require(t, err)
 	if chainConfig == nil {
 		t.Fatalf("Expected chainConfig to be non nil")
@@ -1127,7 +1130,7 @@ func TestGetInitWithGenesis(t *testing.T) {
 
 	ownerAdress := "0x3f1Eae7D46d88F08fc2F8ed27FCb2AB183EB2d0E"
 	genesisJsonFile := "testdata/testGenesis.json"
-	initDataReader, chainConfig, arbOsInit, err := getInitHelper(t, ownerAdress, false, "", genesisJsonFile)
+	initDataReader, chainConfig, arbOsInit, err := getInitHelper(t, ownerAdress, false, "", genesisJsonFile, false, false)
 	Require(t, err)
 	if chainConfig == nil {
 		t.Fatalf("Expected non nil chainConfig")

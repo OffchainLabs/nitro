@@ -985,9 +985,9 @@ func OpenExistingExecutionDB(stack *node.Node, config *config.NodeConfig, chainI
 	return nil, nil, nil, nil, nil
 }
 
-func GetConsensusParsedInitMsg(ctx context.Context, enableParentChainReader bool, chainId *big.Int, l1Client *ethclient.Client, rollupAddrs chaininfo.RollupAddresses, chainConfig *params.ChainConfig) (*arbostypes.ParsedInitMessage, error) {
+func GetConsensusParsedInitMsg(ctx context.Context, parentChainReaderEnabled bool, chainId *big.Int, l1Client *ethclient.Client, rollupAddrs chaininfo.RollupAddresses, chainConfig *params.ChainConfig) (*arbostypes.ParsedInitMessage, error) {
 	var parsedInitMessage *arbostypes.ParsedInitMessage
-	if enableParentChainReader {
+	if parentChainReaderEnabled {
 		delayedBridge, err := arbnode.NewDelayedBridge(l1Client, rollupAddrs.Bridge, rollupAddrs.DeployedAt)
 		if err != nil {
 			return nil, fmt.Errorf("failed creating delayed bridge while attempting to get serialized chain config from init message: %w", err)
