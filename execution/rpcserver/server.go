@@ -1,4 +1,4 @@
-package executionrpcserver
+package rpcserver
 
 import (
 	"context"
