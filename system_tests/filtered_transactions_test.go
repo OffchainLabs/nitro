@@ -68,11 +68,15 @@ func TestManageTransactionCensors(t *testing.T) {
 	_, err = arbOwner.AddTransactionCensor(&ownerTxOpts, userTxOpts.From)
 	require.Error(t, err)
 
-	// Enable transaction filtering feature 7 days in the future and warp time forward
+	// Make sure transaction filtering can not be enabled before one week delay
 	hdr, err := builder.L2.Client.HeaderByNumber(ctx, nil)
 	require.NoError(t, err)
-	enableAt := hdr.Time + precompiles.TransactionFilteringEnableDelay
+	tryEnableAt := hdr.Time + (5 * 24 * 60 * 60) // 5 days in the future
+	_, err = arbOwner.SetTransactionFilteringFrom(&ownerTxOpts, tryEnableAt)
+	require.Error(t, err)
 
+	// Enable transaction filtering feature 7 days in the future and warp time forward
+	enableAt := hdr.Time + precompiles.TransactionFilteringEnableDelay
 	tx, err := arbOwner.SetTransactionFilteringFrom(&ownerTxOpts, enableAt)
 	require.NoError(t, err)
 	_, err = builder.L2.EnsureTxSucceeded(tx)
@@ -105,6 +109,7 @@ func TestManageTransactionCensors(t *testing.T) {
 	receipt, err := builder.L2.EnsureTxSucceeded(tx)
 	require.NoError(t, err)
 
+	// Check that the FilteredTransactionAdded event was emitted
 	foundAdded := false
 	for _, lg := range receipt.Logs {
 		if lg.Topics[0] != addedTopic {
@@ -130,6 +135,7 @@ func TestManageTransactionCensors(t *testing.T) {
 	receipt, err = builder.L2.EnsureTxSucceeded(tx)
 	require.NoError(t, err)
 
+	// Check that the FilteredTransactionDeleted event was emitted
 	foundDeleted := false
 	for _, lg := range receipt.Logs {
 		if lg.Topics[0] != deletedTopic {
@@ -189,7 +195,6 @@ func TestFilteredTransactionsManagerFreeOps(t *testing.T) {
 
 	censorName := "Censor"
 	builder.L2Info.GenerateAccount(censorName)
-	builder.L2Info.GenerateAccount("User2") // For time warp
 
 	builder.L2.TransferBalance(t, "Owner", censorName, big.NewInt(1e16), builder.L2Info)
 	censorTxOpts := builder.L2Info.GetDefaultTransactOpts(censorName, ctx)
