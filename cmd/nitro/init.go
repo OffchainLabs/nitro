@@ -791,11 +791,6 @@ func openInitializeExecutionDB(ctx context.Context, stack *node.Node, config *No
 		genesisArbOSInit = gen.ArbOSInit
 	}
 
-	configuredInitialL1BaseFee, err := resolveInitialL1BaseFee(genesisArbOSInit, &config.Init)
-	if err != nil {
-		return executionDB, nil, err
-	}
-
 	var l2BlockChain *core.BlockChain
 	txIndexWg := sync.WaitGroup{}
 	if initDataReader == nil {
@@ -891,22 +886,12 @@ func openInitializeExecutionDB(ctx context.Context, stack *node.Node, config *No
 					return executionDB, nil, fmt.Errorf("incompatible chain config read from init message in L1 inbox: %w", err)
 				}
 			}
-			if configuredInitialL1BaseFee.Cmp(parsedInitMessage.InitialL1BaseFee) != 0 {
-				log.Error("Initial L1 base fee from init message does not match configured initial L1 base fee", "configured", configuredInitialL1BaseFee.String(), "fromInitMessage", parsedInitMessage.InitialL1BaseFee.String())
-			}
 			log.Info("Read serialized chain config from init message", "json", string(parsedInitMessage.SerializedChainConfig))
 		} else {
-			serializedChainConfig, err := resolveSerializedChainConfig(genesisArbOSInit, &config.Init, chainConfig)
+			parsedInitMessage, err = getExecutionParsedInitMessage(genesisArbOSInit, &config.Init, chainConfig)
 			if err != nil {
 				return executionDB, nil, err
 			}
-			parsedInitMessage = &arbostypes.ParsedInitMessage{
-				ChainId:               chainConfig.ChainID,
-				InitialL1BaseFee:      configuredInitialL1BaseFee,
-				ChainConfig:           chainConfig,
-				SerializedChainConfig: serializedChainConfig,
-			}
-			log.Warn("Created fake init message as L1Reader is disabled and serialized chain config from init message is not available", "json", string(serializedChainConfig))
 		}
 
 		emptyBlockChain := rawdb.ReadHeadHeader(executionDB) == nil
@@ -944,6 +929,27 @@ func openInitializeExecutionDB(ctx context.Context, stack *node.Node, config *No
 	}
 
 	return rebuildLocalWasm(ctx, &config.Execution, l2BlockChain, executionDB, wasmDB, config.Init.RebuildLocalWasm)
+}
+
+func getExecutionParsedInitMessage(
+	genesisArbOSInit *params.ArbOSInit,
+	initConfig *conf.InitConfig,
+	chainConfig *params.ChainConfig,
+) (*arbostypes.ParsedInitMessage, error) {
+	initialL1BaseFee, err := resolveInitialL1BaseFee(genesisArbOSInit, initConfig)
+	if err != nil {
+		return nil, err
+	}
+	serializedChainConfig, err := resolveSerializedChainConfig(genesisArbOSInit, initConfig, chainConfig)
+	if err != nil {
+		return nil, err
+	}
+	return &arbostypes.ParsedInitMessage{
+		ChainId:               chainConfig.ChainID,
+		InitialL1BaseFee:      initialL1BaseFee,
+		ChainConfig:           chainConfig,
+		SerializedChainConfig: serializedChainConfig,
+	}, err
 }
 
 func resolveInitialL1BaseFee(genesisArbOSInit *params.ArbOSInit, initConfig *conf.InitConfig) (*big.Int, error) {
