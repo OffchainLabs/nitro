@@ -114,6 +114,8 @@ type ExecutionEngine struct {
 	exposeMultiGas bool
 
 	runningMaintenance atomic.Bool
+
+	addressChecker state.AddressChecker
 }
 
 func NewL1PriceData() *L1PriceData {
@@ -525,6 +527,9 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 	statedb, err := s.bc.StateAt(lastBlockHeader.Root)
 	if err != nil {
 		return nil, err
+	}
+	if s.addressChecker != nil {
+		statedb.SetAddressChecker(s.addressChecker)
 	}
 	lastBlock := s.bc.GetBlock(lastBlockHeader.Hash(), lastBlockHeader.Number.Uint64())
 	if lastBlock == nil {
@@ -1128,4 +1133,8 @@ func (s *ExecutionEngine) MaintenanceStatus() *execution.MaintenanceStatus {
 	return &execution.MaintenanceStatus{
 		IsRunning: s.runningMaintenance.Load(),
 	}
+}
+
+func (s *ExecutionEngine) SetAddressChecker(checker state.AddressChecker) {
+	s.addressChecker = checker
 }
