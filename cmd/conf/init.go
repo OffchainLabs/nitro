@@ -145,7 +145,7 @@ func (c *InitConfig) Validate() error {
 		return fmt.Errorf("invalid value of rebuild-local-wasm, want: auto or force or false, got: %s", c.RebuildLocalWasm)
 	}
 	if _, success := big.NewInt(0).SetString(c.InitialL1BaseFee, 10); !success {
-		return fmt.Errorf("failed to parse L1 BaseFee for L2 config: `%s`", c.InitialL1BaseFee)
+		return fmt.Errorf("failed to parse L1 BaseFee for init config: `%s` (passed with `initial-l1base-fee` flag)", c.InitialL1BaseFee)
 	}
 	return nil
 }
@@ -157,7 +157,7 @@ func (c *InitConfig) InitialL1BaseFeeParsed() (*big.Int, error) {
 
 	parsed, success := big.NewInt(0).SetString(c.InitialL1BaseFee, 10)
 	if !success {
-		return nil, fmt.Errorf("failed to parse L1 BaseFee for L2 config: `%s` (passed with `initial-l1base-fee` flag)", c.InitialL1BaseFee)
+		return nil, fmt.Errorf("failed to parse L1 BaseFee for init config: `%s` (passed with `initial-l1base-fee` flag)", c.InitialL1BaseFee)
 	}
 	return parsed, nil
 }
