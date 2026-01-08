@@ -167,7 +167,7 @@ func createNodeBWithSharedContracts(
 	stakeTokenAddr common.Address,
 	l1client *ethclient.Client,
 	assertionChain *sol.AssertionChain,
-) (*ethclient.Client, *arbnode.Node, *gethexec.ExecutionNode, *node.Node) {
+) (*arbnode.Node, *gethexec.ExecutionNode, *node.Node) {
 	fatalErrChan := make(chan error, 10)
 
 	firstExec, ok := first.ExecutionClient.(*gethexec.ExecutionNode)
@@ -221,11 +221,9 @@ func createNodeBWithSharedContracts(
 	l2node, err := arbnode.CreateConsensusNodeConnectedWithFullExecutionClient(ctx, l2stack, execNode, l2consensusDB, NewCommonConfigFetcher(nodeConfig), l2blockchain.Config(), l1client, addresses, &txOpts, &txOpts, dataSigner, fatalErrChan, l1ChainId, nil /* blob reader */, locator.LatestWasmModuleRoot())
 	Require(t, err)
 
-	l2client := ClientForStack(t, l2stack)
-
 	StartWatchChanErr(t, ctx, fatalErrChan, l2node)
 
-	return l2client, l2node, execNode, l2stack
+	return l2node, execNode, l2stack
 }
 
 func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, spawnerOpts ...server_arb.SpawnerOption) {
@@ -340,7 +338,7 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, 
 	l2nodeConfig.DA.ExternalProvider.RPC.URL = providerURLNodeB
 
 	// Create node B using the same contracts as node A
-	l2clientB, l2nodeB, l2execNodeB, l2stackB := createNodeBWithSharedContracts(
+	l2nodeB, l2execNodeB, l2stackB := createNodeBWithSharedContracts(
 		t,
 		ctx,
 		l2nodeA,
@@ -355,7 +353,6 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, 
 		assertionChain,
 	)
 	defer l2nodeB.StopAndWait()
-	_ = l2clientB // suppress unused variable warning
 
 	genesisA, err := l2nodeA.ExecutionClient.ResultAtMessageIndex(0).Await(ctx)
 	Require(t, err)
