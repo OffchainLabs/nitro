@@ -29,8 +29,8 @@ type ArbOwner struct {
 	OwnerActsGasCost func(bytes4, addr, []byte) (uint64, error)
 }
 
-const NativeTokenEnableDelay = 7 * 24 * 60 * 60
-const TransactionFilteringEnableDelay = 7 * 24 * 60 * 60
+const NativeTokenEnableDelay = 7 * 24 * 60 * 60          // one week
+const TransactionFilteringEnableDelay = 7 * 24 * 60 * 60 // one week
 
 var (
 	ErrOutOfBounds                  = errors.New("value out of bounds")
@@ -64,13 +64,8 @@ func (con ArbOwner) GetAllChainOwners(c ctx, evm mech) ([]common.Address, error)
 	return c.State.ChainOwners().AllMembers(65536)
 }
 
-// validateFeatureFromTimeUpdate enforces the exact scheduling rules used by
-// SetNativeTokenManagementFrom (and other similar "FromTime" gates).
-//
-// Assumptions:
-// - timestamp != 0 (0 is handled by the caller as "disable").
-// - delay is in seconds.
-// - now is evm.Context.Time.
+// validateFeatureFromTimeUpdate enforces the scheduling rules used by
+// SetNativeTokenManagementFrom and SetTransactionFilteringFrom
 func validateFeatureFromTimeUpdate(
 	stored uint64,
 	now uint64,
