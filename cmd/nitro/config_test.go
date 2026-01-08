@@ -4,6 +4,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -407,7 +408,7 @@ func TestSerializedChainConfigResolution(t *testing.T) {
 			if !tc.shouldErr && err != nil {
 				Fail(t, "unexpected error:", err)
 			}
-			if !reflect.DeepEqual(resolvedConfig, tc.expected) {
+			if !bytes.Equal(resolvedConfig, tc.expected) {
 				Fail(t, "expected config", string(tc.expected), "but resolved to", string(resolvedConfig))
 			}
 		})
