@@ -286,8 +286,12 @@ func mainImpl() int {
 			nodeConfig.Execution.RPC.MaxRecreateStateDepth = arbitrum.DefaultNonArchiveNodeMaxRecreateStateDepth
 		}
 	}
-	if nodeConfig.Execution.Caching.Archive {
-		nodeConfig.Execution.Caching.StateHistory = 0
+	if nodeConfig.Execution.Caching.StateHistory == gethexec.UninitializedStateHistory {
+		if nodeConfig.Execution.Caching.Archive {
+			nodeConfig.Execution.Caching.StateHistory = gethexec.DefaultArchiveNodeStateHistory
+		} else {
+			nodeConfig.Execution.Caching.StateHistory = gethexec.GetStateHistory(gethexec.DefaultSequencerConfig.MaxBlockSpeed)
+		}
 	}
 	liveNodeConfig := genericconf.NewLiveConfig[*NodeConfig](args, nodeConfig, func(ctx context.Context, args []string) (*NodeConfig, error) {
 		nodeConfig, _, err := ParseNode(ctx, args)
