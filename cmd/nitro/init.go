@@ -947,23 +947,28 @@ func openInitializeExecutionDB(ctx context.Context, stack *node.Node, config *No
 }
 
 func resolveInitialL1BaseFee(genesisArbOSInit *params.ArbOSInit, initConfig *conf.InitConfig) (*big.Int, error) {
-	feeCLIFlag, err := initConfig.InitialL1BaseFeeParsed()
-	if err != nil {
-		return nil, err
+	var fromGenesisJSON, fromCLIFlag *big.Int
+	if genesisArbOSInit != nil && genesisArbOSInit.InitialL1BaseFee != nil {
+		fromGenesisJSON = genesisArbOSInit.InitialL1BaseFee
+	}
+	if initConfig.InitialL1BaseFee != "" {
+		var err error
+		fromCLIFlag, err = initConfig.InitialL1BaseFeeParsed()
+		if err != nil {
+			return nil, err
+		}
 	}
 
-	if genesisArbOSInit == nil {
-		return feeCLIFlag, nil
+	if fromGenesisJSON != nil && fromCLIFlag != nil && fromGenesisJSON.Cmp(fromCLIFlag) != 0 {
+		return nil, fmt.Errorf("initial l1 base fee configuration mismatch: `genesis-json-file` sets the value to %s, while `initial-l1base-fee` flag was set to %s", fromGenesisJSON.String(), initConfig.InitialL1BaseFee)
 	}
-	feeGenesisJSON := genesisArbOSInit.InitialL1BaseFee
-	if feeGenesisJSON == nil {
-		feeGenesisJSON = arbostypes.DefaultInitialL1BaseFee
+	if fromGenesisJSON != nil {
+		return fromGenesisJSON, nil
 	}
-
-	if initConfig.InitialL1BaseFee != "" && feeCLIFlag.Cmp(feeGenesisJSON) != 0 {
-		return nil, fmt.Errorf("initial l1 base fee configuration mismatch: `genesis-json-file` sets the value to %s, while `initial-l1base-fee` flag was set to %s", feeGenesisJSON.String(), initConfig.InitialL1BaseFee)
+	if fromCLIFlag != nil {
+		return fromCLIFlag, nil
 	}
-	return feeGenesisJSON, nil
+	return arbostypes.DefaultInitialL1BaseFee, nil
 }
 
 func resolveSerializedChainConfig(arbosInit *params.ArbOSInit, initConfig *conf.InitConfig, chainConfig *params.ChainConfig) ([]byte, error) {
