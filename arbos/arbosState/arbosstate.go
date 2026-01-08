@@ -235,6 +235,16 @@ func InitializeArbosState(stateDB vm.StateDB, burner burn.Burner, chainConfig *p
 		return nil, err
 	}
 
+	transactionFilteringEnabledFromTime := uint64(0)
+	if genesisArbOSInit != nil && genesisArbOSInit.TransactionFilteringEnabled {
+		// Same logic as for native token management above
+		transactionFilteringEnabledFromTime = uint64(1)
+	}
+	err = sto.SetUint64ByUint64(uint64(transactionFilteringEnabledFromTimeOffset), transactionFilteringEnabledFromTime)
+	if err != nil {
+		return nil, err
+	}
+
 	err = sto.SetUint64ByUint64(uint64(versionOffset), 1) // initialize to version 1; upgrade at end of this func if needed
 	if err != nil {
 		return nil, err

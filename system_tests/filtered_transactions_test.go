@@ -173,9 +173,14 @@ func TestFilteredTransactionsManagerFreeOps(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	arbOSInit := &params.ArbOSInit{
+		TransactionFilteringEnabled: true,
+	}
+
 	builder := NewNodeBuilder(ctx).
 		DefaultConfig(t, true).
-		WithArbOSVersion(params.ArbosVersion_60)
+		WithArbOSVersion(params.ArbosVersion_60).
+		WithArbOSInit(arbOSInit)
 
 	cleanup := builder.Build(t)
 	defer cleanup()
@@ -201,20 +206,8 @@ func TestFilteredTransactionsManagerFreeOps(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	// Enable transaction filtering feature 7 days in the future and warp time forward
-	hdr, err := builder.L2.Client.HeaderByNumber(ctx, nil)
-	require.NoError(t, err)
-	enableAt := hdr.Time + precompiles.TransactionFilteringEnableDelay
-
-	tx, err := arbOwner.SetTransactionFilteringFrom(&ownerTxOpts, enableAt)
-	require.NoError(t, err)
-	_, err = builder.L2.EnsureTxSucceeded(tx)
-	require.NoError(t, err)
-
-	warpL1Time(t, builder, ctx, hdr.Time, precompiles.TransactionFilteringEnableDelay+1)
-
 	// Owner grants censor transaction censor role
-	tx, err = arbOwner.AddTransactionCensor(&ownerTxOpts, censorTxOpts.From)
+	tx, err := arbOwner.AddTransactionCensor(&ownerTxOpts, censorTxOpts.From)
 	require.NoError(t, err)
 	require.NotNil(t, tx)
 
