@@ -354,13 +354,13 @@ func initConfigWithFee(feeStr string) *conf.InitConfig {
 func TestSerializedChainConfigResolution(t *testing.T) {
 	chainConfig := &params.ChainConfig{ChainID: big.NewInt(0)}
 	chainConfigSerialized, _ := json.Marshal(chainConfig)
-	chainConfigSerialized1 := []byte(`{"chainId":1}`)
-	chainConfigSerialized2 := []byte(`{"chainId":2}`)
+	chainConfigGenesisJSON := []byte(`{"chainId":1}`)
+	chainConfigInitFlag := []byte(`{"chainId":2}`)
 
 	genesisConfig := &params.ArbOSInit{
 		InitialL1BaseFee:                   nil,
 		NativeTokenSupplyManagementEnabled: false,
-		SerializedChainConfig:              chainConfigSerialized1,
+		SerializedChainConfig:              chainConfigGenesisJSON,
 	}
 
 	testCases := []struct {
@@ -379,22 +379,22 @@ func TestSerializedChainConfigResolution(t *testing.T) {
 		{
 			name:          "No genesis config, direct config set",
 			genesisConfig: nil,
-			initConfig:    initConfigWithChainConfig(string(chainConfigSerialized2)),
-			expected:      chainConfigSerialized2,
+			initConfig:    initConfigWithChainConfig(string(chainConfigInitFlag)),
+			expected:      chainConfigInitFlag,
 		}, {
 			name:          "Genesis config set, no direct config",
 			genesisConfig: genesisConfig,
 			initConfig:    initConfigWithChainConfig(""),
-			expected:      chainConfigSerialized1,
+			expected:      chainConfigGenesisJSON,
 		}, {
 			name:          "Genesis config and direct config consistent",
 			genesisConfig: genesisConfig,
-			initConfig:    initConfigWithChainConfig(string(chainConfigSerialized1)),
-			expected:      chainConfigSerialized1,
+			initConfig:    initConfigWithChainConfig(string(chainConfigGenesisJSON)),
+			expected:      chainConfigGenesisJSON,
 		}, {
 			name:          "Genesis config and direct config inconsistent",
 			genesisConfig: genesisConfig,
-			initConfig:    initConfigWithChainConfig(string(chainConfigSerialized2)),
+			initConfig:    initConfigWithChainConfig(string(chainConfigInitFlag)),
 			shouldErr:     true,
 		},
 	}
