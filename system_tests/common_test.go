@@ -688,6 +688,13 @@ func (b *NodeBuilder) CheckConfig(t *testing.T) {
 			b.execConfig.RPC.MaxRecreateStateDepth = arbitrum.DefaultNonArchiveNodeMaxRecreateStateDepth
 		}
 	}
+	if b.execConfig.Caching.StateHistory == gethexec.UninitializedStateHistory {
+		if b.execConfig.Caching.Archive {
+			b.execConfig.Caching.StateHistory = gethexec.DefaultArchiveNodeStateHistory
+		} else {
+			b.execConfig.Caching.StateHistory = gethexec.GetStateHistory(gethexec.DefaultSequencerConfig.MaxBlockSpeed)
+		}
+	}
 }
 
 func (b *NodeBuilder) BuildL1(t *testing.T) {
