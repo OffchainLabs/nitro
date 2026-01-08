@@ -35,6 +35,8 @@ type TxFiltererManagerConfig struct {
 	MetricsServer genericconf.MetricsServerConfig `koanf:"metrics-server"`
 	PProf         bool                            `koanf:"pprof"`
 	PprofCfg      genericconf.PProf               `koanf:"pprof-cfg"`
+
+	Wallet genericconf.WalletConfig `koanf:"wallet"`
 }
 
 var DefaultTxFiltererManagerConfig = TxFiltererManagerConfig{
@@ -65,6 +67,8 @@ func parseTxFiltererManagerConfig(args []string) (*TxFiltererManagerConfig, erro
 	f.String("log-level", DefaultTxFiltererManagerConfig.LogLevel, "log level, valid values are CRIT, ERROR, WARN, INFO, DEBUG, TRACE")
 	f.String("log-type", DefaultTxFiltererManagerConfig.LogType, "log type (plaintext or json)")
 
+	genericconf.WalletConfigAddOptions("wallet", f, "")
+
 	genericconf.ConfConfigAddOptions("conf", f)
 
 	k, err := confighelpers.BeginCommonParse(f, args)
@@ -78,7 +82,8 @@ func parseTxFiltererManagerConfig(args []string) (*TxFiltererManagerConfig, erro
 	}
 	if config.Conf.Dump {
 		err = confighelpers.DumpConfig(k, map[string]interface{}{
-			// "data-availability.key.priv-key": "",
+			"wallet.password":    "",
+			"wallet.private-key": "",
 		})
 		if err != nil {
 			return nil, fmt.Errorf("error removing extra parameters before dump: %w", err)
