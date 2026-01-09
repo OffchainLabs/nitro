@@ -9,7 +9,6 @@ import (
 	"math/big"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
@@ -19,7 +18,6 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/params"
 
-	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
@@ -113,46 +111,23 @@ func testContractDeploymentSuite(t *testing.T, executionClientMode ExecutionClie
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Always build with L1 for comparison mode (needed for replica sync)
-	withL1 := executionClientMode == ExecutionClientModeComparison
-
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, withL1)
-
-	builder = builder.WithExecutionClientMode(executionClientMode)
-
+	// Primary always built with L1 (for replica sync)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
 	cleanup := builder.Build(t)
 	defer cleanup()
 
-	var replicaClient *ethclient.Client
-
-	if executionClientMode == ExecutionClientModeComparison {
-		// Build replica with External (Nethermind)
-		replicaConfig := arbnode.ConfigDefaultL1NonSequencerTest()
-		replicaParams := &SecondNodeParams{
-			nodeConfig:          replicaConfig,
-			executionClientMode: ExecutionClientModeComparison,
-		}
-		replica, replicaCleanup := builder.Build2ndNode(t, replicaParams)
-		defer replicaCleanup()
-		replicaClient = replica.Client
-
-		// Wait for replica to sync
-		time.Sleep(time.Second * 2)
-	}
+	// Build replica with specified execution mode
+	replica, replicaCleanup := BuildReplicaWithExecutionMode(t, builder, executionClientMode)
+	defer replicaCleanup()
+	replicaClient := replica.Client
 
 	// Run test on primary
 	account := builder.L2Info.GetInfoWithPrivKey("Faucet")
 	for _, size := range []int{0, 1, 1000, 20000, params.DefaultMaxCodeSize} {
 		testContractDeployment(t, ctx, builder.L2.Client, makeContractOfLength(size), account, nil)
 
-		// If comparison mode, verify replica has same blocks
-		if replicaClient != nil {
-			time.Sleep(time.Millisecond * 100) // Let replica catch up
-			// Verify block exists on replica
-			block, err := replicaClient.BlockNumber(ctx)
-			Require(t, err)
-			_ = block // Add actual verification
-		}
+		// Wait for replica to catch up
+		WaitForReplicaSync(ctx, t, builder.L2.Client, replicaClient, 60)
 	}
 
 	testContractDeployment(t, ctx, builder.L2.Client, makeContractOfLength(40000), account, vm.ErrMaxCodeSizeExceeded)
@@ -175,48 +150,25 @@ func testExtendedContractDeploymentSuite(t *testing.T, executionClientMode Execu
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Build with L1 for comparison mode (needed for replica sync)
-	withL1 := executionClientMode == ExecutionClientModeComparison
-
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, withL1)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
 	builder.chainConfig.ArbitrumChainParams.MaxCodeSize = params.DefaultMaxCodeSize * 3
 	builder.chainConfig.ArbitrumChainParams.MaxInitCodeSize = params.DefaultMaxInitCodeSize * 3
-
-	builder = builder.WithExecutionClientMode(executionClientMode)
 
 	cleanup := builder.Build(t)
 	defer cleanup()
 
-	var replicaClient *ethclient.Client
-
-	if executionClientMode == ExecutionClientModeComparison {
-		// Build replica with External (Nethermind)
-		replicaConfig := arbnode.ConfigDefaultL1NonSequencerTest()
-		replicaParams := &SecondNodeParams{
-			nodeConfig:          replicaConfig,
-			executionClientMode: ExecutionClientModeComparison,
-		}
-		replica, replicaCleanup := builder.Build2ndNode(t, replicaParams)
-		defer replicaCleanup()
-		replicaClient = replica.Client
-
-		// Wait for replica to sync
-		time.Sleep(time.Second * 2)
-	}
+	// Build replica with specified execution mode
+	replica, replicaCleanup := BuildReplicaWithExecutionMode(t, builder, executionClientMode)
+	defer replicaCleanup()
+	replicaClient := replica.Client
 
 	// Run tests on primary
 	account := builder.L2Info.GetInfoWithPrivKey("Faucet")
 	for _, size := range []int{0, 1, 1000, 20000, 30000, 40000, 60000, params.DefaultMaxCodeSize * 3} {
 		testContractDeployment(t, ctx, builder.L2.Client, makeContractOfLength(size), account, nil)
 
-		// If comparison mode, verify replica caught up
-		if replicaClient != nil {
-			time.Sleep(time.Millisecond * 100)
-			// Verify block exists on replica
-			block, err := replicaClient.BlockNumber(ctx)
-			Require(t, err)
-			_ = block
-		}
+		// Wait for replica to catch up
+		WaitForReplicaSync(ctx, t, builder.L2.Client, replicaClient, 60)
 	}
 
 	testContractDeployment(t, ctx, builder.L2.Client, makeContractOfLength(100000), account, vm.ErrMaxCodeSizeExceeded)
