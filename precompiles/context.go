@@ -4,8 +4,6 @@
 package precompiles
 
 import (
-	"math/big"
-
 	"github.com/ethereum/go-ethereum/arbitrum/multigas"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -20,11 +18,6 @@ import (
 
 type addr = common.Address
 type mech = *vm.EVM
-type huge = *big.Int
-type hash = common.Hash
-type bytes4 = [4]byte
-type bytes32 = [32]byte
-type ctx = *Context
 
 type Context struct {
 	caller      addr
@@ -44,7 +37,6 @@ func (c *Context) Burn(kind multigas.ResourceKind, amount uint64) error {
 	return nil
 }
 
-//nolint:unused
 func (c *Context) Burned() uint64 {
 	return c.gasUsed.SingleGas()
 }
