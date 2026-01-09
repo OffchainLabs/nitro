@@ -41,6 +41,7 @@ benchmark = []
 timings = []
 singlepass_rayon = ["prover/singlepass_rayon", "wasmer-compiler-singlepass/rayon"]
 rayon = ["prover/rayon"]
+cc_brotli = ["brotli/cc_brotli"]
 
 [lib]
 crate-type = ["lib", "staticlib"]
