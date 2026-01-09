@@ -7,12 +7,14 @@ import (
 	"bytes"
 	"context"
 	"testing"
+	"time"
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/params"
 
+	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/execution/gethexec"
+	testflag "github.com/offchainlabs/nitro/util/testhelpers/flag"
 )
 
 var (
@@ -59,40 +61,117 @@ var (
 	}
 )
 
-func TestVersion11(t *testing.T) {
-	testPrecompiles(t, params.ArbosVersion_11, ecrecover.Included(), bn256AddByzantium.Included(), blake2F.Included(), kzgPointEvaluation.NotIncluded(), p256Verify.NotIncluded(), bls12381G1Add.NotIncluded(), bls12381G1MultiExp.NotIncluded())
-}
-
-func TestVersion30(t *testing.T) {
-	testPrecompiles(t, params.ArbosVersion_30, ecrecover.Included(), bn256AddByzantium.Included(), kzgPointEvaluation.Included(), p256Verify.Included(), bls12381G1Add.NotIncluded(), bls12381G1MultiExp.NotIncluded())
-}
-
-func TestVersion40(t *testing.T) {
-	testPrecompiles(t, params.ArbosVersion_40, bn256AddByzantium.Included(), kzgPointEvaluation.Included(), p256Verify.Included(), bls12381G1Add.NotIncluded(), bls12381G1MultiExp.NotIncluded())
-}
-
-func TestArbOSVersion50(t *testing.T) {
-	testPrecompiles(t, params.ArbosVersion_50, kzgPointEvaluation.Included(), bls12381G1Add.Included(), bls12381G1MultiExp.Included())
-}
-
-func testPrecompiles(t *testing.T, arbosVersion uint64, cases ...precompileCase) {
+func testPrecompiles(t *testing.T, executionClientMode ExecutionClientMode) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	arbosVersion := *testflag.ArbOSVersionFlag
+
+	// Determine which precompile cases to test based on ArbOS version
+	var cases []precompileCase
+	switch {
+	case arbosVersion >= 60:
+		// Version 60+: KZG + BLS precompiles
+		cases = []precompileCase{
+			kzgPointEvaluation.Included(),
+			bls12381G1Add.Included(),
+			bls12381G1MultiExp.Included(),
+		}
+	case arbosVersion >= 50:
+		// Version 50+: KZG + BLS precompiles
+		cases = []precompileCase{
+			kzgPointEvaluation.Included(),
+			bls12381G1Add.Included(),
+			bls12381G1MultiExp.Included(),
+		}
+	case arbosVersion >= 40:
+		// Version 40+: bn256Add, KZG, P256 (no BLS)
+		cases = []precompileCase{
+			bn256AddByzantium.Included(),
+			kzgPointEvaluation.Included(),
+			p256Verify.Included(),
+			bls12381G1Add.NotIncluded(),
+			bls12381G1MultiExp.NotIncluded(),
+		}
+	case arbosVersion >= 30:
+		// Version 30+: ecrecover, bn256Add, KZG, P256 (no BLS)
+		cases = []precompileCase{
+			ecrecover.Included(),
+			bn256AddByzantium.Included(),
+			kzgPointEvaluation.Included(),
+			p256Verify.Included(),
+			bls12381G1Add.NotIncluded(),
+			bls12381G1MultiExp.NotIncluded(),
+		}
+	case arbosVersion >= 11:
+		// Version 11+: ecrecover, bn256Add, blake2F (no KZG, P256, BLS)
+		cases = []precompileCase{
+			ecrecover.Included(),
+			bn256AddByzantium.Included(),
+			blake2F.Included(),
+			kzgPointEvaluation.NotIncluded(),
+			p256Verify.NotIncluded(),
+			bls12381G1Add.NotIncluded(),
+			bls12381G1MultiExp.NotIncluded(),
+		}
+	default:
+		t.Fatalf("Unsupported ArbOS version: %d", arbosVersion)
+	}
+
 	builder := NewNodeBuilder(ctx).
-		DefaultConfig(t, false).
+		DefaultConfig(t, true).
 		WithArbOSVersion(arbosVersion)
 	builder.execConfig.TxPreChecker.Strictness = gethexec.TxPreCheckerStrictnessLikelyCompatible
 	cleanup := builder.Build(t)
 	defer cleanup()
+
+	// Build replica with specified execution mode
+	replicaConfig := arbnode.ConfigDefaultL1NonSequencerTest()
+	replicaParams := &SecondNodeParams{
+		nodeConfig:             replicaConfig,
+		useExecutionClientOnly: true,
+		executionClientMode:    executionClientMode,
+	}
+
+	replicaTestClient, replicaCleanup := builder.Build2ndNode(t, replicaParams)
+	defer replicaCleanup()
+	replicaClient := replicaTestClient.Client
+
+	// Wait for replica to initialize and sync
+	time.Sleep(time.Second * 3)
+
+	// Wait for replica to catch up to primary
+	primaryBlock, err := builder.L2.Client.BlockNumber(ctx)
+	Require(t, err)
+	for i := 0; i < 30; i++ {
+		replicaBlock, err := replicaClient.BlockNumber(ctx)
+		Require(t, err)
+		if replicaBlock >= primaryBlock {
+			break
+		}
+		time.Sleep(time.Second)
+	}
+
+	// Test precompiles on replica
 	for _, c := range cases {
-		res, err := builder.L2.Client.CallContract(context.Background(), ethereum.CallMsg{To: &c.addr, Data: c.in}, nil)
+		res, err := replicaClient.CallContract(context.Background(), ethereum.CallMsg{To: &c.addr, Data: c.in}, nil)
 		Require(t, err)
 		if !bytes.Equal(res, c.out) {
 			t.Errorf("Expected %v [%d], got %v [%d]", c.out, len(c.out), res, len(res))
 		}
 	}
+}
 
+func TestPrecompilesInternal(t *testing.T) {
+	testPrecompiles(t, ExecutionClientModeInternal)
+}
+
+func TestPrecompilesExternal(t *testing.T) {
+	testPrecompiles(t, ExecutionClientModeExternal)
+}
+
+func TestPrecompilesComparison(t *testing.T) {
+	testPrecompiles(t, ExecutionClientModeComparison)
 }
 
 type precompileCase struct {
