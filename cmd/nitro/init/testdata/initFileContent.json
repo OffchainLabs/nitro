@@ -1,0 +1,6 @@
+{
+    "NextBlockNumber": 0,
+    "AddressTableContentsPath": "./data/address_table.json",
+    "RetryableDataPath": "./data/retryables.dat",
+    "AccountsPath": "./data/accounts.json"
+  }

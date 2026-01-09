@@ -47,6 +47,7 @@ import (
 	challenge_testing "github.com/offchainlabs/nitro/bold/testing"
 	"github.com/offchainlabs/nitro/bold/testing/setup"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
+	"github.com/offchainlabs/nitro/cmd/nitro/init"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/execution_consensus"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
@@ -663,7 +664,9 @@ func createL2NodeForBoldProtocol(
 	Require(t, execConfig.Validate())
 	stackConfig := testhelpers.CreateStackConfigForTest("")
 	stackConfig.DBEngine = rawdb.DBPebble
-	initMessage := getInitMessage(ctx, t, l1client, addresses)
+	initMessage, err := nitroinit.GetConsensusParsedInitMsg(ctx, true, l2infoIn.Signer.ChainID(), l1client, *addresses, chainConfig)
+	Require(t, err)
+
 	var l2executionDB ethdb.Database
 	var l2consensusDB ethdb.Database
 	var l2blockchain *core.BlockChain
@@ -972,7 +975,8 @@ func create2ndNodeWithConfigForBoldProtocol(
 	txOpts := l1info.GetDefaultTransactOpts("Sequencer", ctx)
 
 	initReader := statetransfer.NewMemoryInitDataReader(l2InitData)
-	initMessage := getInitMessage(ctx, t, l1client, first.DeployInfo)
+	initMessage, err := nitroinit.GetConsensusParsedInitMsg(ctx, true, chainConfig.ChainID, l1client, *first.DeployInfo, chainConfig)
+	Require(t, err)
 
 	execConfig := ExecConfigDefaultNonSequencerTest(t, rawdb.HashScheme)
 	Require(t, execConfig.Validate())
