@@ -907,11 +907,11 @@ func (b *NodeBuilder) BuildL2(t *testing.T) func() {
 
 	case ExecutionClientModeExternal:
 		// External Nethermind
-		nethermindUrl := os.Getenv("PR_NETH_RPC_CLIENT_URL")
+		nethermindUrl := b.execConfig.NethermindUrl
 		if nethermindUrl == "" {
 			nethermindUrl = "http://localhost:20545"
 		}
-		nethermindWsUrl := os.Getenv("PR_NETH_WS_URL")
+		nethermindWsUrl := b.execConfig.NethermindWsUrl
 		if nethermindWsUrl == "" {
 			nethermindWsUrl = "ws://localhost:28551"
 		}
@@ -939,11 +939,11 @@ func (b *NodeBuilder) BuildL2(t *testing.T) func() {
 		gethExec, err := gethexec.CreateExecutionNode(b.ctx, b.L2.Stack, chainDb, blockchain, nil, execConfigFetcher, big.NewInt(1337), 0)
 		Require(t, err)
 
-		nethermindUrl := os.Getenv("PR_NETH_RPC_CLIENT_URL")
+		nethermindUrl := b.execConfig.NethermindUrl
 		if nethermindUrl == "" {
 			nethermindUrl = "http://localhost:20545"
 		}
-		nethermindWsUrl := os.Getenv("PR_NETH_WS_URL")
+		nethermindWsUrl := b.execConfig.NethermindWsUrl
 		if nethermindWsUrl == "" {
 			nethermindWsUrl = "ws://localhost:28551"
 		}
@@ -987,7 +987,7 @@ func (b *NodeBuilder) BuildL2(t *testing.T) func() {
 	switch b.executionClientMode {
 	case ExecutionClientModeExternal:
 		// For external execution client, connect directly to Nethermind for RPC calls
-		nethRpcUrl := os.Getenv("PR_NETH_RPC_CLIENT_URL")
+		nethRpcUrl := b.execConfig.NethermindUrl
 		if nethRpcUrl == "" {
 			nethRpcUrl = "http://localhost:20545"
 		}
@@ -2012,11 +2012,11 @@ func Create2ndNodeWithConfig(
 
 	case ExecutionClientModeExternal:
 		// Create external Nethermind execution client
-		nethermindUrl := os.Getenv("PR_NETH_RPC_CLIENT_URL")
+		nethermindUrl := execConfig.NethermindUrl
 		if nethermindUrl == "" {
 			nethermindUrl = "http://localhost:20545"
 		}
-		nethermindWsUrl := os.Getenv("PR_NETH_WS_URL")
+		nethermindWsUrl := execConfig.NethermindWsUrl
 		if nethermindWsUrl == "" {
 			nethermindWsUrl = "ws://localhost:28551"
 		}
@@ -2037,11 +2037,11 @@ func Create2ndNodeWithConfig(
 		gethExecClient, err := gethexec.CreateExecutionNode(ctx, chainStack, chainDb, blockchain, parentChainClient, execConfigFetcher, big.NewInt(1337), 0)
 		Require(t, err)
 
-		nethermindUrl := os.Getenv("PR_NETH_RPC_CLIENT_URL")
+		nethermindUrl := execConfig.NethermindUrl
 		if nethermindUrl == "" {
 			nethermindUrl = "http://localhost:20545"
 		}
-		nethermindWsUrl := os.Getenv("PR_NETH_WS_URL")
+		nethermindWsUrl := execConfig.NethermindWsUrl
 		if nethermindWsUrl == "" {
 			nethermindWsUrl = "ws://localhost:28551"
 		}
@@ -2079,7 +2079,7 @@ func Create2ndNodeWithConfig(
 	switch executionClientMode {
 	case ExecutionClientModeExternal:
 		// For external execution client, connect directly to Nethermind for RPC calls
-		nethRpcUrl := os.Getenv("PR_NETH_RPC_CLIENT_URL")
+		nethRpcUrl := execConfig.NethermindUrl
 		if nethRpcUrl == "" {
 			nethRpcUrl = "http://localhost:20545"
 		}
