@@ -20,7 +20,7 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 )
 
-func TestManageTransactionCensors(t *testing.T) {
+func TestManageTransactionFilterers(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -64,8 +64,8 @@ func TestManageTransactionCensors(t *testing.T) {
 	_, err = arbFilteredTxs.IsTransactionFiltered(userCallOpts, txHash)
 	require.Error(t, err)
 
-	// Adding a censor should be disabled by default by ArbCensoredTransactionManagerFromTime
-	_, err = arbOwner.AddTransactionCensor(&ownerTxOpts, userTxOpts.From)
+	// Adding a filterer should be disabled by default by ArbFiltereredTransactionManagerFromTime
+	_, err = arbOwner.AddTransactionFilterer(&ownerTxOpts, userTxOpts.From)
 	require.Error(t, err)
 
 	// Make sure transaction filtering can not be enabled before one week delay
@@ -84,17 +84,17 @@ func TestManageTransactionCensors(t *testing.T) {
 
 	warpL1Time(t, builder, ctx, hdr.Time, precompiles.TransactionFilteringEnableDelay+1)
 
-	// Owner grants user transaction censor role
-	tx, err = arbOwner.AddTransactionCensor(&ownerTxOpts, userTxOpts.From)
+	// Owner grants user transaction filterer role
+	tx, err = arbOwner.AddTransactionFilterer(&ownerTxOpts, userTxOpts.From)
 	require.NoError(t, err)
 	_, err = builder.L2.EnsureTxSucceeded(tx)
 	require.NoError(t, err)
 
-	isCensor, err := arbOwner.IsTransactionCensor(ownerCallOpts, userTxOpts.From)
+	isFilterer, err := arbOwner.IsTransactionFilterer(ownerCallOpts, userTxOpts.From)
 	require.NoError(t, err)
-	require.True(t, isCensor)
+	require.True(t, isFilterer)
 
-	// Owner is still not a censor, so owner still cannot call the manager
+	// Owner is still not a filterer, so owner still cannot call the manager
 	_, err = arbFilteredTxs.IsTransactionFiltered(ownerCallOpts, txHash)
 	require.Error(t, err)
 
@@ -156,13 +156,13 @@ func TestManageTransactionCensors(t *testing.T) {
 	require.False(t, filtered)
 
 	// Owner revokes the role
-	tx, err = arbOwner.RemoveTransactionCensor(&ownerTxOpts, userTxOpts.From)
+	tx, err = arbOwner.RemoveTransactionFilterer(&ownerTxOpts, userTxOpts.From)
 	require.NoError(t, err)
 	require.NotNil(t, tx)
 
-	isCensor, err = arbOwner.IsTransactionCensor(ownerCallOpts, userTxOpts.From)
+	isFilterer, err = arbOwner.IsTransactionFilterer(ownerCallOpts, userTxOpts.From)
 	require.NoError(t, err)
-	require.False(t, isCensor)
+	require.False(t, isFilterer)
 
 	// User is no longer authorised
 	_, err = arbFilteredTxs.IsTransactionFiltered(userCallOpts, txHash)
@@ -193,12 +193,12 @@ func TestFilteredTransactionsManagerFreeOps(t *testing.T) {
 
 	ownerTxOpts := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
 
-	censorName := "Censor"
-	builder.L2Info.GenerateAccount(censorName)
+	filtererName := "Filterer"
+	builder.L2Info.GenerateAccount(filtererName)
 
-	builder.L2.TransferBalance(t, "Owner", censorName, big.NewInt(1e16), builder.L2Info)
-	censorTxOpts := builder.L2Info.GetDefaultTransactOpts(censorName, ctx)
-	censorTxOpts.GasLimit = 32000000
+	builder.L2.TransferBalance(t, "Owner", filtererName, big.NewInt(1e16), builder.L2Info)
+	filtererTxOpts := builder.L2Info.GetDefaultTransactOpts(filtererName, ctx)
+	filtererTxOpts.GasLimit = 32000000
 
 	txHash := common.BytesToHash([]byte{1, 2, 3, 4, 5})
 
@@ -211,26 +211,26 @@ func TestFilteredTransactionsManagerFreeOps(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	// Owner grants censor transaction censor role
-	tx, err := arbOwner.AddTransactionCensor(&ownerTxOpts, censorTxOpts.From)
+	// Owner grants filterer transaction filterer role
+	tx, err := arbOwner.AddTransactionFilterer(&ownerTxOpts, filtererTxOpts.From)
 	require.NoError(t, err)
 	require.NotNil(t, tx)
 
-	// Censor filters the tx
-	tx, err = arbFilteredTxs.AddFilteredTransaction(&censorTxOpts, txHash)
+	// Filterer filters the tx
+	tx, err = arbFilteredTxs.AddFilteredTransaction(&filtererTxOpts, txHash)
 	require.NoError(t, err)
 	receipt, err := builder.L2.EnsureTxSucceeded(tx)
 	require.NoError(t, err)
 
-	// AddFilteredTransaction use storage set, but it should be free for censors
+	// AddFilteredTransaction use storage set, but it should be free for filterers
 	require.Equal(t, uint64(0), receipt.MultiGasUsed.Get(multigas.ResourceKindStorageAccess))
 
-	// Censor unfilters the tx
-	tx, err = arbFilteredTxs.DeleteFilteredTransaction(&censorTxOpts, txHash)
+	// Filterer unfilters the tx
+	tx, err = arbFilteredTxs.DeleteFilteredTransaction(&filtererTxOpts, txHash)
 	require.NoError(t, err)
 	receipt, err = builder.L2.EnsureTxSucceeded(tx)
 	require.NoError(t, err)
 
-	// DeleteFilteredTransaction use storage clear, but it should be free for censors
+	// DeleteFilteredTransaction use storage clear, but it should be free for filterers
 	require.Equal(t, uint64(0), receipt.MultiGasUsed.Get(multigas.ResourceKindStorageAccess))
 }

@@ -10,7 +10,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/filteredTransactions"
 )
 
-// ArbFilteredTransactionsManager precompile enables ability to censor transactions by authorized callers.
+// ArbFilteredTransactionsManager precompile enables ability to filter transactions by authorized callers.
 // Authorized callers are added/removed through ArbOwner precompile.
 type ArbFilteredTransactionsManager struct {
 	Address addr // 0x74
