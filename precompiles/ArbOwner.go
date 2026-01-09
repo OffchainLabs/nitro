@@ -33,11 +33,9 @@ const NativeTokenEnableDelay = 7 * 24 * 60 * 60          // one week
 const TransactionFilteringEnableDelay = 7 * 24 * 60 * 60 // one week
 
 var (
-	ErrOutOfBounds                  = errors.New("value out of bounds")
-	ErrNativeTokenDelay             = errors.New("native token feature must be enabled at least 7 days in the future")
-	ErrNativeTokenBackward          = errors.New("native token feature cannot be updated to a time earlier than the current time at which it is scheduled to be enabled")
-	ErrTransactionFilteringDelay    = errors.New("transaction filtering feature must be enabled at least 7 days in the future")
-	ErrTransactionFilteringBackward = errors.New("transaction filtering feature cannot be updated to a time earlier than the current time at which it is scheduled to be enabled")
+	ErrOutOfBounds = errors.New("value out of bounds")
+	ErrDelay       = errors.New("feature must be enabled at least 7 days in the future")
+	ErrBackward    = errors.New("feature cannot be updated to a time earlier than the current scheduled enable time")
 )
 
 // AddChainOwner adds account as a chain owner
@@ -71,8 +69,6 @@ func validateFeatureFromTimeUpdate(
 	now uint64,
 	timestamp uint64,
 	delay uint64,
-	errDelay error,
-	errBackward error,
 ) error {
 	// If the feature is disabled, then the time must be at least 7 days in the
 	// future.
@@ -81,12 +77,12 @@ func validateFeatureFromTimeUpdate(
 	// in the future.
 	if (stored == 0 && timestamp < now+delay) ||
 		(stored > now+delay && timestamp < now+delay) {
-		return errDelay
+		return ErrDelay
 	}
 	// If the feature is scheduled to be enabled earlier than the minimum delay,
 	// then the new time to enable it must be only further in the future.
 	if stored > now && stored <= now+delay && timestamp < stored {
-		return errBackward
+		return ErrBackward
 	}
 	return nil
 }
@@ -110,8 +106,6 @@ func (con ArbOwner) SetNativeTokenManagementFrom(c ctx, evm mech, timestamp uint
 		now,
 		timestamp,
 		NativeTokenEnableDelay,
-		ErrNativeTokenDelay,
-		ErrNativeTokenBackward,
 	); err != nil {
 		return err
 	}
@@ -138,8 +132,6 @@ func (con ArbOwner) SetTransactionFilteringFrom(c ctx, evm mech, timestamp uint6
 		now,
 		timestamp,
 		TransactionFilteringEnableDelay,
-		ErrTransactionFilteringDelay,
-		ErrTransactionFilteringBackward,
 	); err != nil {
 		return err
 	}
@@ -178,8 +170,8 @@ func (con ArbOwner) GetAllNativeTokenOwners(c ctx, evm mech) ([]common.Address, 
 	return c.State.NativeTokenOwners().AllMembers(65536)
 }
 
-// AddTransactionCensor adds account as a transaction censor (authorized to use ArbFilteredTransactionsManager)
-func (con ArbOwner) AddTransactionCensor(c ctx, evm mech, censor addr) error {
+// AddTransactionFilterer adds account as a transaction filterer (authorized to use ArbFilteredTransactionsManager)
+func (con ArbOwner) AddTransactionFilterer(c ctx, evm mech, filterer addr) error {
 	enabledTime, err := c.State.TransactionFilteringFromTime()
 	if err != nil {
 		return err
@@ -187,36 +179,29 @@ func (con ArbOwner) AddTransactionCensor(c ctx, evm mech, censor addr) error {
 	if enabledTime == 0 || enabledTime > evm.Context.Time {
 		return errors.New("transaction filtering feature is not enabled yet")
 	}
-	member, err := con.IsTransactionCensor(c, nil, censor)
-	if err != nil {
-		return err
-	}
-	if member {
-		return errors.New("tried to add existing transaction censor")
-	}
-	return c.State.TransactionCensors().Add(censor)
+	return c.State.TransactionFilterers().Add(filterer)
 }
 
-// RemoveTransactionCensor removes account from the list of transaction censors
-func (con ArbOwner) RemoveTransactionCensor(c ctx, _ mech, censor addr) error {
-	member, err := con.IsTransactionCensor(c, nil, censor)
+// RemoveTransactionFilterer removes account from the list of transaction filterers
+func (con ArbOwner) RemoveTransactionFilterer(c ctx, _ mech, filterer addr) error {
+	member, err := con.IsTransactionFilterer(c, nil, filterer)
 	if err != nil {
 		return err
 	}
 	if !member {
-		return errors.New("tried to remove non existing transaction censor")
+		return errors.New("tried to remove non existing transaction filterer")
 	}
-	return c.State.TransactionCensors().Remove(censor, c.State.ArbOSVersion())
+	return c.State.TransactionFilterers().Remove(filterer, c.State.ArbOSVersion())
 }
 
-// IsTransactionCensor checks if the account is a transaction censor
-func (con ArbOwner) IsTransactionCensor(c ctx, _ mech, censor addr) (bool, error) {
-	return c.State.TransactionCensors().IsMember(censor)
+// IsTransactionFilterer checks if the account is a transaction filterer
+func (con ArbOwner) IsTransactionFilterer(c ctx, _ mech, filterer addr) (bool, error) {
+	return c.State.TransactionFilterers().IsMember(filterer)
 }
 
-// GetAllTransactionCensors retrieves the list of transaction censors
-func (con ArbOwner) GetAllTransactionCensors(c ctx, evm mech) ([]common.Address, error) {
-	return c.State.TransactionCensors().AllMembers(65536)
+// GetAllTransactionFilterers retrieves the list of transaction filterers
+func (con ArbOwner) GetAllTransactionFilterers(c ctx, evm mech) ([]common.Address, error) {
+	return c.State.TransactionFilterers().AllMembers(65536)
 }
 
 // SetL1BaseFeeEstimateInertia sets how slowly ArbOS updates its estimate of the L1 basefee

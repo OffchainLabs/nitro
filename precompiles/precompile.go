@@ -656,10 +656,10 @@ func Precompiles() map[addr]ArbosPrecompile {
 	ArbOwner.methodsByName["SetParentGasFloorPerToken"].arbosVersion = params.ArbosVersion_50
 	ArbOwner.methodsByName["SetMaxBlockGasLimit"].arbosVersion = params.ArbosVersion_50
 
-	ArbOwner.methodsByName["AddTransactionCensor"].arbosVersion = params.ArbosVersion_60
-	ArbOwner.methodsByName["RemoveTransactionCensor"].arbosVersion = params.ArbosVersion_60
-	ArbOwner.methodsByName["IsTransactionCensor"].arbosVersion = params.ArbosVersion_60
-	ArbOwner.methodsByName["GetAllTransactionCensors"].arbosVersion = params.ArbosVersion_60
+	ArbOwner.methodsByName["AddTransactionFilterer"].arbosVersion = params.ArbosVersion_60
+	ArbOwner.methodsByName["RemoveTransactionFilterer"].arbosVersion = params.ArbosVersion_60
+	ArbOwner.methodsByName["IsTransactionFilterer"].arbosVersion = params.ArbosVersion_60
+	ArbOwner.methodsByName["GetAllTransactionFilterers"].arbosVersion = params.ArbosVersion_60
 	ArbOwner.methodsByName["SetTransactionFilteringFrom"].arbosVersion = params.ArbosVersion_60
 
 	ArbOwnerPublic.methodsByName["GetNativeTokenManagementFrom"].arbosVersion = params.ArbosVersion_50
@@ -677,7 +677,7 @@ func Precompiles() map[addr]ArbosPrecompile {
 	ArbFilteredTransactionsManager.methodsByName["DeleteFilteredTransaction"].arbosVersion = params.ArbosVersion_60
 	ArbFilteredTransactionsManager.methodsByName["IsTransactionFiltered"].arbosVersion = params.ArbosVersion_60
 
-	insert(censorOnly(ArbFilteredTransactionsManagerImpl.Address, ArbFilteredTransactionsManager))
+	insert(filtererOnly(ArbFilteredTransactionsManagerImpl.Address, ArbFilteredTransactionsManager))
 
 	// this should be executed after all precompiles have been inserted
 	for _, contract := range contracts {

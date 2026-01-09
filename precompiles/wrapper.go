@@ -133,20 +133,22 @@ func (wrapper *OwnerPrecompile) Name() string {
 	return wrapper.precompile.Name()
 }
 
-// CensorPrecompile is a precompile wrapper for those only transaction censors may use.
-type CensorPrecompile struct {
+// TransactionFilterPrecompile is a precompile wrapper for those only transaction filterers may use.
+type TransactionFilterPrecompile struct {
 	precompile ArbosPrecompile
 }
 
-func censorOnly(address addr, impl ArbosPrecompile) (addr, ArbosPrecompile) {
-	return address, &CensorPrecompile{precompile: impl}
+func filtererOnly(address addr, impl ArbosPrecompile) (addr, ArbosPrecompile) {
+	return address, &TransactionFilterPrecompile{precompile: impl}
 }
 
-func (wrapper *CensorPrecompile) Address() common.Address {
+func (wrapper *TransactionFilterPrecompile) Address() common.Address {
 	return wrapper.precompile.Address()
 }
 
-func (wrapper *CensorPrecompile) Call(
+// Call is overridden to enforce the transaction-filterer permission and to keep the
+// underlying state reads/writes free for authorised callers (no StorageAccess multigas).
+func (wrapper *TransactionFilterPrecompile) Call(
 	input []byte,
 	actingAsAddress common.Address,
 	caller common.Address,
@@ -167,12 +169,12 @@ func (wrapper *CensorPrecompile) Call(
 		return nil, burner.GasLeft(), burner.gasUsed, err
 	}
 
-	censors := state.TransactionCensors()
-	isCensor, err := censors.IsMember(caller)
+	filterers := state.TransactionFilterers()
+	isFilterer, err := filterers.IsMember(caller)
 	if err != nil {
 		return nil, burner.GasLeft(), burner.gasUsed, err
 	}
-	if !isCensor {
+	if !isFilterer {
 		return nil, burner.GasLeft(), burner.gasUsed, errors.New("unauthorized caller to access-controlled method")
 	}
 
@@ -183,10 +185,10 @@ func (wrapper *CensorPrecompile) Call(
 	return output, gasSupplied, multigas.ZeroGas(), nil
 }
 
-func (wrapper *CensorPrecompile) Precompile() *Precompile {
+func (wrapper *TransactionFilterPrecompile) Precompile() *Precompile {
 	return wrapper.precompile.Precompile()
 }
 
-func (wrapper *CensorPrecompile) Name() string {
+func (wrapper *TransactionFilterPrecompile) Name() string {
 	return wrapper.precompile.Name()
 }
