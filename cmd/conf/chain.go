@@ -52,6 +52,7 @@ func (c *ParentChainConfig) Validate() error {
 	return c.Connection.Validate()
 }
 
+// lint:require-exhaustive-initialization
 type L2Config struct {
 	ID        uint64                   `koanf:"id"`
 	Name      string                   `koanf:"name"`

@@ -4,8 +4,11 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"math/big"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -17,6 +20,10 @@ import (
 	"github.com/r3labs/diff/v3"
 	"github.com/spf13/pflag"
 
+	"github.com/ethereum/go-ethereum/params"
+
+	"github.com/offchainlabs/nitro/arbos/arbostypes"
+	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
 	"github.com/offchainlabs/nitro/daprovider/anytrust"
@@ -275,6 +282,142 @@ func TestPeriodicReloadOfLiveNodeConfig(t *testing.T) {
 	time.Sleep(80 * time.Millisecond)
 	if reflect.DeepEqual(liveConfig.Get(), expected) {
 		Fail(t, "failed to disable periodic reload")
+	}
+}
+
+func TestInitialL1BaseFeeResolution(t *testing.T) {
+	fee := big.NewInt(10)
+	genesisConfig := &params.ArbOSInit{
+		InitialL1BaseFee:                   fee,
+		NativeTokenSupplyManagementEnabled: false,
+		SerializedChainConfig:              nil,
+	}
+
+	testCases := []struct {
+		name          string
+		genesisConfig *params.ArbOSInit
+		initConfig    *conf.InitConfig
+		expected      *big.Int
+		shouldErr     bool
+	}{
+		{
+			name:          "No genesis config, no direct flag",
+			genesisConfig: nil,
+			initConfig:    initConfigWithFee(""),
+			expected:      arbostypes.DefaultInitialL1BaseFee,
+		},
+		{
+			name:          "No genesis config, direct flag set",
+			genesisConfig: nil,
+			initConfig:    initConfigWithFee(fee.String()),
+			expected:      fee,
+		}, {
+			name:          "Genesis config set, no direct flag",
+			genesisConfig: genesisConfig,
+			initConfig:    initConfigWithFee(""),
+			expected:      fee,
+		}, {
+			name:          "Genesis config and direct flag consistent",
+			genesisConfig: genesisConfig,
+			initConfig:    initConfigWithFee(fee.String()),
+			expected:      fee,
+		}, {
+			name:          "Genesis config and direct flag inconsistent",
+			genesisConfig: genesisConfig,
+			initConfig:    initConfigWithFee("11"),
+			shouldErr:     true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			resolvedFee, err := resolveInitialL1BaseFee(tc.genesisConfig, tc.initConfig)
+			if tc.shouldErr && err == nil {
+				Fail(t, "expected error but got none")
+			}
+			if !tc.shouldErr && err != nil {
+				Fail(t, "unexpected error:", err)
+			}
+			if resolvedFee.Cmp(tc.expected) != 0 {
+				Fail(t, "expected fee", tc.expected, "but resolved to", resolvedFee)
+			}
+		})
+	}
+}
+
+func initConfigWithFee(feeStr string) *conf.InitConfig {
+	return &conf.InitConfig{
+		InitialL1BaseFee: feeStr,
+	}
+}
+
+func TestSerializedChainConfigResolution(t *testing.T) {
+	chainConfig := &params.ChainConfig{ChainID: big.NewInt(0)}
+	chainConfigSerialized, _ := json.Marshal(chainConfig)
+	chainConfigGenesisJSON := []byte(`{"chainId":1}`)
+	chainConfigInitFlag := []byte(`{"chainId":2}`)
+
+	genesisConfig := &params.ArbOSInit{
+		InitialL1BaseFee:                   nil,
+		NativeTokenSupplyManagementEnabled: false,
+		SerializedChainConfig:              chainConfigGenesisJSON,
+	}
+
+	testCases := []struct {
+		name          string
+		genesisConfig *params.ArbOSInit
+		initConfig    *conf.InitConfig
+		expected      []byte
+		shouldErr     bool
+	}{
+		{
+			name:          "No genesis config, no direct config",
+			genesisConfig: nil,
+			initConfig:    initConfigWithChainConfig(""),
+			expected:      chainConfigSerialized,
+		},
+		{
+			name:          "No genesis config, direct config set",
+			genesisConfig: nil,
+			initConfig:    initConfigWithChainConfig(string(chainConfigInitFlag)),
+			expected:      chainConfigInitFlag,
+		}, {
+			name:          "Genesis config set, no direct config",
+			genesisConfig: genesisConfig,
+			initConfig:    initConfigWithChainConfig(""),
+			expected:      chainConfigGenesisJSON,
+		}, {
+			name:          "Genesis config and direct config consistent",
+			genesisConfig: genesisConfig,
+			initConfig:    initConfigWithChainConfig(string(chainConfigGenesisJSON)),
+			expected:      chainConfigGenesisJSON,
+		}, {
+			name:          "Genesis config and direct config inconsistent",
+			genesisConfig: genesisConfig,
+			initConfig:    initConfigWithChainConfig(string(chainConfigInitFlag)),
+			shouldErr:     true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			resolvedConfig, err := resolveSerializedChainConfig(tc.genesisConfig, tc.initConfig, chainConfig)
+			if tc.shouldErr && err == nil {
+				Fail(t, "expected error but got none")
+			}
+			if !tc.shouldErr && err != nil {
+				Fail(t, "unexpected error:", err)
+			}
+			if !bytes.Equal(resolvedConfig, tc.expected) {
+				Fail(t, "expected config", string(tc.expected), "but resolved to", string(resolvedConfig))
+			}
+		})
+	}
+}
+
+func initConfigWithChainConfig(configStr string) *conf.InitConfig {
+	return &conf.InitConfig{
+		SerializedChainConfig: configStr,
 	}
 }
 
