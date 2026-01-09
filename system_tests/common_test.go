@@ -460,6 +460,11 @@ func (b *NodeBuilder) WithExtraArchs(targets []string) *NodeBuilder {
 	return b
 }
 
+func (b *NodeBuilder) WithExecutionClientMode(mode ExecutionClientMode) *NodeBuilder {
+	b.executionClientMode = mode
+	return b
+}
+
 // WithDelayBuffer sets the delay-buffer threshold, which is the number of blocks the batch-poster
 // is allowed to delay a batch with a delayed message.
 // Setting the threshold to zero disabled the delay buffer (default behaviour).
@@ -503,11 +508,6 @@ func (b *NodeBuilder) TakeOwnership() *NodeBuilder {
 
 func (b *NodeBuilder) WithTakeOwnership(takeOwnership bool) *NodeBuilder {
 	b.takeOwnership = takeOwnership
-	return b
-}
-
-func (b *NodeBuilder) WithExecutionClientMode(mode ExecutionClientMode) *NodeBuilder {
-	b.executionClientMode = mode
 	return b
 }
 
@@ -966,8 +966,6 @@ func (b *NodeBuilder) BuildL2(t *testing.T) func() {
 
 		execNode = nethexec.NewCompareExecutionClient(gethExec, nethExec, fatalErrChan)
 	}
-
-	b.L2.ExecutionConfigFetcher = execConfigFetcher
 
 	locator, err := server_common.NewMachineLocator(b.valnodeConfig.Wasm.RootPath)
 	Require(t, err)
@@ -2458,4 +2456,61 @@ func populateMachineDir(t *testing.T, cr *github.ConsensusRelease) string {
 	_, err = io.Copy(replayFile, replayResp.Body)
 	Require(t, err)
 	return machineDir
+}
+
+// BuildReplicaWithExecutionMode builds a replica node with the specified execution client mode
+// Returns the replica's test client and cleanup function
+func BuildReplicaWithExecutionMode(t *testing.T, builder *NodeBuilder, executionClientMode ExecutionClientMode) (*TestClient, func()) {
+	replicaConfig := arbnode.ConfigDefaultL1NonSequencerTest()
+	replicaParams := &SecondNodeParams{
+		nodeConfig:             replicaConfig,
+		useExecutionClientOnly: true,
+		executionClientMode:    executionClientMode,
+	}
+	replica, cleanup := builder.Build2ndNode(t, replicaParams)
+
+	// Wait for replica to initialize
+	time.Sleep(time.Second * 2)
+
+	return replica, cleanup
+}
+
+// WaitForReplicaSync waits for replica to catch up to primary's block number
+// Returns an error if replica fails to sync within the timeout
+func WaitForReplicaSync(ctx context.Context, t *testing.T, primaryClient, replicaClient *ethclient.Client, maxAttempts int) {
+	primaryBlock, err := primaryClient.BlockNumber(ctx)
+	Require(t, err)
+
+	for i := 0; i < maxAttempts; i++ {
+		replicaBlock, err := replicaClient.BlockNumber(ctx)
+		Require(t, err)
+		if replicaBlock >= primaryBlock {
+			return
+		}
+		time.Sleep(time.Millisecond * 100)
+	}
+
+	// Final check and fail if not synced
+	replicaBlock, err := replicaClient.BlockNumber(ctx)
+	Require(t, err)
+	if replicaBlock < primaryBlock {
+		Fatal(t, "Replica at block", replicaBlock, "failed to catch up to primary at block", primaryBlock)
+	}
+}
+
+// ReplicaTestFunc is a test function that takes an execution client mode parameter
+type ReplicaTestFunc func(t *testing.T, executionClientMode ExecutionClientMode)
+
+// CreateReplicaTestVariants generates Internal, External, and Comparison test functions
+// from a single test implementation
+func CreateReplicaTestVariants(testFunc ReplicaTestFunc) (internal, external, comparison func(*testing.T)) {
+	return func(t *testing.T) {
+			testFunc(t, ExecutionClientModeInternal)
+		},
+		func(t *testing.T) {
+			testFunc(t, ExecutionClientModeExternal)
+		},
+		func(t *testing.T) {
+			testFunc(t, ExecutionClientModeComparison)
+		}
 }
