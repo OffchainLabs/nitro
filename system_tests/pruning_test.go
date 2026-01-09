@@ -48,6 +48,9 @@ func testPruning(t *testing.T, mode string, pruneParallelStorageTraversal bool) 
 	// PathScheme prunes the state trie by itself, so only HashScheme should be tested
 	builder.RequireScheme(t, rawdb.HashScheme)
 
+	// Needed to create safe blocks; hence forcing SetFinalityData call
+	builder.nodeConfig.ParentChainReader.UseFinalityData = true
+
 	_ = builder.Build(t)
 	l2cleanupDone := false
 	defer func() {
@@ -70,6 +73,14 @@ func testPruning(t *testing.T, mode string, pruneParallelStorageTraversal bool) 
 	}
 	lastBlock, err := builder.L2.Client.BlockNumber(ctx)
 	Require(t, err)
+
+	// Cache both validated and finalized block hashes for l2 executionDB to later
+	// add to the new executionDB below
+	data, err := builder.L2.ExecNode.ExecutionDB.Get(gethexec.ValidatedBlockHashKey)
+	Require(t, err)
+	validatedBlockHash := common.BytesToHash(data)
+	finalizedBlockHash := rawdb.ReadFinalizedBlockHash(builder.L2.ExecNode.ExecutionDB)
+
 	l2cleanupDone = true
 	builder.L2.cleanup()
 	t.Log("stopped l2 node")
@@ -78,10 +89,16 @@ func testPruning(t *testing.T, mode string, pruneParallelStorageTraversal bool) 
 		stack, err := node.New(builder.l2StackConfig)
 		Require(t, err)
 		defer stack.Close()
-		chainDB, err := stack.OpenDatabaseWithOptions("l2chaindata", node.DatabaseOptions{MetricsNamespace: "l2chaindata/", PebbleExtraOptions: conf.PersistentConfigDefault.Pebble.ExtraOptions("l2chaindata")})
+		executionDB, err := stack.OpenDatabaseWithOptions("l2chaindata", node.DatabaseOptions{MetricsNamespace: "l2chaindata/", PebbleExtraOptions: conf.PersistentConfigDefault.Pebble.ExtraOptions("l2chaindata")})
 		Require(t, err)
-		defer chainDB.Close()
-		executionDBEntriesBeforePruning := countStateEntries(chainDB)
+		defer executionDB.Close()
+		executionDBEntriesBeforePruning := countStateEntries(executionDB)
+
+		// Since we're dealing with a new executionDB we store both validatedBlockHash and
+		// finalized blocks back into this new executionDB.
+		err = executionDB.Put(gethexec.ValidatedBlockHashKey, validatedBlockHash.Bytes())
+		Require(t, err)
+		rawdb.WriteFinalizedBlockHash(executionDB, finalizedBlockHash)
 
 		prand := testhelpers.NewPseudoRandomDataSource(t, 1)
 		var testKeys [][]byte
@@ -90,11 +107,11 @@ func testPruning(t *testing.T, mode string, pruneParallelStorageTraversal bool) 
 			testKeys = append(testKeys, prand.GetHash().Bytes())
 		}
 		for _, key := range testKeys {
-			err = chainDB.Put(key, common.FromHex("0xdeadbeef"))
+			err = executionDB.Put(key, common.FromHex("0xdeadbeef"))
 			Require(t, err)
 		}
 		for _, key := range testKeys {
-			if has, _ := chainDB.Has(key); !has {
+			if has, _ := executionDB.Has(key); !has {
 				Fatal(t, "internal test error - failed to check existence of test key")
 			}
 		}
@@ -104,16 +121,16 @@ func testPruning(t *testing.T, mode string, pruneParallelStorageTraversal bool) 
 		initConfig.PruneParallelStorageTraversal = pruneParallelStorageTraversal
 		coreCacheConfig := gethexec.DefaultCacheConfigFor(&builder.execConfig.Caching)
 		persistentConfig := conf.PersistentConfigDefault
-		err = pruning.PruneExecutionDB(ctx, chainDB, stack, &initConfig, coreCacheConfig, &persistentConfig, builder.L1.Client, *builder.L2.ConsensusNode.DeployInfo, false, false)
+		err = pruning.PruneExecutionDB(ctx, executionDB, stack, &initConfig, coreCacheConfig, &persistentConfig, builder.L1.Client, *builder.L2.ConsensusNode.DeployInfo, false, false)
 		Require(t, err)
 
 		for _, key := range testKeys {
-			if has, _ := chainDB.Has(key); has {
+			if has, _ := executionDB.Has(key); has {
 				Fatal(t, "test key hasn't been pruned as expected")
 			}
 		}
 
-		executionDBEntriesAfterPruning := countStateEntries(chainDB)
+		executionDBEntriesAfterPruning := countStateEntries(executionDB)
 		t.Log("db entries pre-pruning:", executionDBEntriesBeforePruning)
 		t.Log("db entries post-pruning:", executionDBEntriesAfterPruning)
 
