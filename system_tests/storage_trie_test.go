@@ -22,6 +22,7 @@ func TestStorageTrie(t *testing.T) {
 
 	var withL1 = true
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, withL1)
+	builder.nodeConfig.MessageExtraction.Enable = false
 
 	// This test tests validates blocks at the end.
 	// For now, validation only works with HashScheme set.

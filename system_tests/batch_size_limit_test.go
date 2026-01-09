@@ -147,7 +147,7 @@ func checkReceiverAccountBalance(t *testing.T, ctx context.Context, builder *Nod
 // ensureBatchWasProcessed waits until a particular batch has been processed by the L2 node.
 func ensureBatchWasProcessed(t *testing.T, builder *NodeBuilder, batchNum uint64) {
 	require.Eventuallyf(t, func() bool {
-		_, err := builder.L2.ConsensusNode.InboxTracker.GetBatchMetadata(batchNum)
+		_, err := builder.L2.ConsensusNode.MessageExtractor.GetBatchMetadata(batchNum)
 		return err == nil
 	}, 5*time.Second, time.Second, "Batch %d was not processed in time", batchNum)
 }
