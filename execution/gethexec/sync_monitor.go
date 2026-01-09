@@ -294,7 +294,10 @@ func (s *SyncMonitor) SetFinalityData(
 
 	if executionDB != nil && finalizedBlockHeader != nil {
 		finalizedBlockHash := finalizedBlockHeader.Hash()
-		executionDB.Put(ValidatedBlockHashKey, finalizedBlockHash.Bytes())
+		err := executionDB.Put(ValidatedBlockHashKey, finalizedBlockHash.Bytes())
+		if err != nil {
+			return err
+		}
 	}
 
 	safeBlockHeader, err := s.getFinalityBlockHeader(
