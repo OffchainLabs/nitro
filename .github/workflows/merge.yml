@@ -16,11 +16,11 @@ jobs:
     uses: ./.github/workflows/_fast.yml
     secrets: inherit
 
-  # --- Run Arbitrator tests ---
-  arbitrator:
+  # --- Run Rust tests ---
+  rust-tests:
     needs: changes
-    if: needs.changes.outputs.arbitrator_changed == 'true'
-    uses: ./.github/workflows/_arbitrator.yml
+    if: needs.changes.outputs.rust_changed == 'true'
+    uses: ./.github/workflows/_rust-tests.yml
     secrets: inherit
 
   # --- Run Bold Legacy challenge tests ---
@@ -37,7 +37,7 @@ jobs:
 
   # --- Summarize test results ---
   codecov:
-    needs: [go-tests, arbitrator]
+    needs: [go-tests, rust-tests]
     if: always()
     uses: ./.github/workflows/_codecov.yml
     secrets: inherit
@@ -49,14 +49,14 @@ jobs:
 
   can_proceed:
     runs-on: ubuntu-4
-    needs: [fast, arbitrator, bold-legacy, go-tests]
+    needs: [fast, rust-tests, bold-legacy, go-tests]
     if: always()
     steps:
       - name: Aggregate results
         run: |
           fast_result="${{ needs.fast.result }}"
           go_tests_result="${{ needs['go-tests'].result }}"
-          arbitrator_result="${{ needs.arbitrator.result }}"
+          rust_tests_result="${{ needs['rust-tests'].result }}"
           bold_legacy_result="${{ needs['bold-legacy'].result }}"
           ok=1
           if [ "$fast_result" != "success" ]; then
@@ -67,9 +67,9 @@ jobs:
             ok=0
             echo "Go tests job failed or was skipped"
           fi
-          if [ "$arbitrator_result" != "success" ] && [ "$arbitrator_result" != "skipped" ]; then
+          if [ "$rust_tests_result" != "success" ] && [ "$rust_tests_result" != "skipped" ]; then
             ok=0
-            echo "Arbitrator job failed"
+            echo "Rust job failed"
           fi
           if [ "$bold_legacy_result" != "success" ] && [ "$bold_legacy_result" != "skipped" ]; then
             ok=0

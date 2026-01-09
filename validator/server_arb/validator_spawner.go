@@ -22,7 +22,7 @@ import (
 	"github.com/offchainlabs/nitro/validator/valnode/redis"
 )
 
-var arbitratorValidationSteps = metrics.NewRegisteredHistogram("arbitrator/validation/steps", nil, metrics.NewBoundedHistogramSample())
+var arbitratorValidationSteps = metrics.NewRegisteredHistogram("crates/validation/steps", nil, metrics.NewBoundedHistogramSample())
 
 type ArbitratorSpawnerConfig struct {
 	Workers                     int                          `koanf:"workers" reload:"hot"`

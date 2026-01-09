@@ -1,20 +1,20 @@
 [workspace]
 members = [
-    "arbutil",
-    "bench",
-    "brotli",
-    "caller-env",
-    "jit",
-    "prover",
-    "stylus",
-    "validator",
+    "crates/arbutil",
+    "crates/bench",
+    "crates/brotli",
+    "crates/caller-env",
+    "crates/jit",
+    "crates/prover",
+    "crates/stylus",
+    "crates/validator",
 ]
 exclude = [
-    "langs",
-    "stylus/tests",
-    "tools",
-    "wasm-libraries",
-    "wasm-testsuite",
+    "crates/langs",
+    "crates/stylus/tests",
+    "crates/tools",
+    "crates/wasm-libraries",
+    "crates/wasm-testsuite",
 ]
 resolver = "2"
 
@@ -76,18 +76,18 @@ tracing-subscriber = { version = "0.3.22" }
 wasmparser = { version = "0.121" }
 wat = { version = "1.0.56" }
 
-arbutil = { path = "arbutil" }
-brotli = { path = "brotli" }
-caller-env = { path = "caller-env" }
-prover = { path = "prover", default-features = false }
-stylus = { path = "stylus", default-features = false }
-user-host-trait = { path = "wasm-libraries/user-host-trait" }
-wasmer = { path = "tools/wasmer/lib/api" }
-wasmer-compiler-cranelift = { path = "tools/wasmer/lib/compiler-cranelift" }
-wasmer-compiler-llvm = { path = "tools/wasmer/lib/compiler-llvm" }
-wasmer-compiler-singlepass = { path = "tools/wasmer/lib/compiler-singlepass", default-features = false }
-wasmer-types = { path = "tools/wasmer/lib/types" }
-wasmer-vm = { path = "tools/wasmer/lib/vm" }
+arbutil = { path = "crates/arbutil" }
+brotli = { path = "crates/brotli" }
+caller-env = { path = "crates/caller-env" }
+prover = { path = "crates/prover", default-features = false }
+stylus = { path = "crates/stylus", default-features = false }
+user-host-trait = { path = "crates/wasm-libraries/user-host-trait" }
+wasmer = { path = "crates/tools/wasmer/lib/api" }
+wasmer-compiler-cranelift = { path = "crates/tools/wasmer/lib/compiler-cranelift" }
+wasmer-compiler-llvm = { path = "crates/tools/wasmer/lib/compiler-llvm" }
+wasmer-compiler-singlepass = { path = "crates/tools/wasmer/lib/compiler-singlepass", default-features = false }
+wasmer-types = { path = "crates/tools/wasmer/lib/types" }
+wasmer-vm = { path = "crates/tools/wasmer/lib/vm" }
 
 [profile.release]
 debug = true

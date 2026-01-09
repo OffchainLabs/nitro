@@ -21,11 +21,11 @@ jobs:
     uses: ./.github/workflows/_fast.yml
     secrets: inherit
 
-  # --- Run Arbitrator tests (not required by can_proceed) ---
-  arbitrator:
+  # --- Run Rust tests (not required by can_proceed) ---
+  rust-tests:
     needs: changes
-    if: needs.changes.outputs.arbitrator_changed == 'true'
-    uses: ./.github/workflows/_arbitrator.yml
+    if: needs.changes.outputs.rust_changed == 'true'
+    uses: ./.github/workflows/_rust-tests.yml
     secrets: inherit
 
   # --- Run Bold Legacy challenge tests (not required by can_proceed) ---
@@ -42,7 +42,7 @@ jobs:
 
   # --- Summarize test results (not required by can_proceed) ---
   codecov:
-    needs: [go-tests, arbitrator]
+    needs: [go-tests, rust-tests]
     if: always()
     uses: ./.github/workflows/_codecov.yml
     secrets: inherit
