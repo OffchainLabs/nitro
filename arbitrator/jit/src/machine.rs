@@ -2,11 +2,11 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 use crate::{
-    arbcompress, caller_env::GoRuntimeState, prepare::prepare_env, program, socket,
-    stylus_backend::CothreadHandler, wasip1_stub, wavmio, Opts,
+    arbcompress, caller_env::GoRuntimeState, prepare::prepare_env_from_json, program, socket,
+    stylus_backend::CothreadHandler, wasip1_stub, wavmio, InputMode, LocalInput, Opts,
 };
 use arbutil::{Bytes32, Color, PreimageType};
-use eyre::{bail, ErrReport, Result, WrapErr};
+use eyre::{bail, ErrReport, Report, Result};
 use sha3::{Digest, Keccak256};
 use std::{
     collections::{BTreeMap, HashMap},
@@ -25,14 +25,14 @@ use wasmer::{
 use wasmer_compiler_cranelift::Cranelift;
 
 pub fn create(opts: &Opts, env: WasmEnv) -> (Instance, FunctionEnv<WasmEnv>, Store) {
-    let file = &opts.binary;
+    let file = &opts.validator.binary;
 
     let wasm = match std::fs::read(file) {
         Ok(wasm) => wasm,
         Err(err) => panic!("failed to read {}: {err}", file.to_string_lossy()),
     };
 
-    let mut store = match opts.cranelift {
+    let mut store = match opts.validator.cranelift {
         true => {
             let mut compiler = Cranelift::new();
             compiler.canonicalize_nans(true);
@@ -171,7 +171,7 @@ impl Escape {
         Err(Self::Exit(code))
     }
 
-    pub fn hostio<T, S: std::convert::AsRef<str>>(message: S) -> Result<T, Escape> {
+    pub fn hostio<T, S: AsRef<str>>(message: S) -> Result<T, Escape> {
         Err(Self::HostIO(message.as_ref().to_string()))
     }
 }
@@ -214,80 +214,71 @@ pub struct WasmEnv {
     pub threads: Vec<CothreadHandler>,
 }
 
-impl WasmEnv {
-    pub fn cli(opts: &Opts) -> Result<Self> {
-        if let Some(json_inputs) = opts.json_inputs.clone() {
-            prepare_env(json_inputs, opts.debug)
-        } else {
-            let mut env = WasmEnv::default();
-            env.process.forks = opts.forks;
-            env.process.debug = opts.debug;
+impl TryFrom<&Opts> for WasmEnv {
+    type Error = Report;
 
-            let mut inbox_position = opts.inbox_position;
-            let mut delayed_position = opts.delayed_inbox_position;
+    fn try_from(opts: &Opts) -> Result<Self> {
+        let mut env = Self::default();
+        env.process.debug = opts.validator.debug;
 
-            for path in &opts.inbox {
-                let mut msg = vec![];
-                File::open(path)?.read_to_end(&mut msg)?;
-                env.sequencer_messages.insert(inbox_position, msg);
-                inbox_position += 1;
+        match &opts.input_mode {
+            InputMode::Json { inputs } => prepare_env_from_json(inputs, opts.validator.debug),
+            InputMode::Local(local) => prepare_env_from_files(env, local),
+            InputMode::Continuous => Ok(env),
+        }
+    }
+}
+
+fn prepare_env_from_files(mut env: WasmEnv, input: &LocalInput) -> Result<WasmEnv> {
+    env.process.already_has_input = true;
+
+    let mut inbox_position = input.inbox_position;
+    let mut delayed_position = input.delayed_inbox_position;
+
+    for path in &input.inbox {
+        let mut msg = vec![];
+        File::open(path)?.read_to_end(&mut msg)?;
+        env.sequencer_messages.insert(inbox_position, msg);
+        inbox_position += 1;
+    }
+    for path in &input.delayed_inbox {
+        let mut msg = vec![];
+        File::open(path)?.read_to_end(&mut msg)?;
+        env.delayed_messages.insert(delayed_position, msg);
+        delayed_position += 1;
+    }
+
+    if let Some(path) = &input.preimages {
+        let mut file = BufReader::new(File::open(path)?);
+        let mut preimages = Vec::new();
+        let filename = path.to_string_lossy();
+        loop {
+            let mut size_buf = [0u8; 8];
+            match file.read_exact(&mut size_buf) {
+                Ok(()) => {}
+                Err(err) if err.kind() == ErrorKind::UnexpectedEof => break,
+                Err(err) => bail!("Failed to parse {filename}: {}", err),
             }
-            for path in &opts.delayed_inbox {
-                let mut msg = vec![];
-                File::open(path)?.read_to_end(&mut msg)?;
-                env.delayed_messages.insert(delayed_position, msg);
-                delayed_position += 1;
-            }
-
-            if let Some(path) = &opts.preimages {
-                let mut file = BufReader::new(File::open(path)?);
-                let mut preimages = Vec::new();
-                let filename = path.to_string_lossy();
-                loop {
-                    let mut size_buf = [0u8; 8];
-                    match file.read_exact(&mut size_buf) {
-                        Ok(()) => {}
-                        Err(err) if err.kind() == ErrorKind::UnexpectedEof => break,
-                        Err(err) => bail!("Failed to parse {filename}: {}", err),
-                    }
-                    let size = u64::from_le_bytes(size_buf) as usize;
-                    let mut buf = vec![0u8; size];
-                    file.read_exact(&mut buf)?;
-                    preimages.push(buf);
-                }
-                let keccak_preimages = env.preimages.entry(PreimageType::Keccak256).or_default();
-                for preimage in preimages {
-                    let mut hasher = Keccak256::new();
-                    hasher.update(&preimage);
-                    let hash = hasher.finalize().into();
-                    keccak_preimages.insert(hash, preimage);
-                }
-            }
-
-            fn parse_hex(arg: &Option<String>, name: &str) -> Result<Bytes32> {
-                match arg {
-                    Some(arg) => {
-                        let mut arg = arg.as_str();
-                        if arg.starts_with("0x") {
-                            arg = &arg[2..];
-                        }
-                        let mut bytes32 = [0u8; 32];
-                        hex::decode_to_slice(arg, &mut bytes32)
-                            .wrap_err_with(|| format!("failed to parse {name} contents"))?;
-                        Ok(bytes32.into())
-                    }
-                    None => Ok(Bytes32::default()),
-                }
-            }
-
-            let last_block_hash = parse_hex(&opts.last_block_hash, "--last-block-hash")?;
-            let last_send_root = parse_hex(&opts.last_send_root, "--last-send-root")?;
-            env.small_globals = [opts.inbox_position, opts.position_within_message];
-            env.large_globals = [last_block_hash, last_send_root];
-            Ok(env)
+            let size = u64::from_le_bytes(size_buf) as usize;
+            let mut buf = vec![0u8; size];
+            file.read_exact(&mut buf)?;
+            preimages.push(buf);
+        }
+        let keccak_preimages = env.preimages.entry(PreimageType::Keccak256).or_default();
+        for preimage in preimages {
+            let mut hasher = Keccak256::new();
+            hasher.update(&preimage);
+            let hash = hasher.finalize().into();
+            keccak_preimages.insert(hash, preimage);
         }
     }
 
+    env.small_globals = [input.inbox_position, input.position_within_message];
+    env.large_globals = [input.last_block_hash, input.last_send_root];
+    Ok(env)
+}
+
+impl WasmEnv {
     pub fn send_results(&mut self, error: Option<String>, memory_used: Pages) {
         let writer = match &mut self.process.socket {
             Some((writer, _)) => writer,
@@ -321,8 +312,8 @@ impl WasmEnv {
 }
 
 pub struct ProcessEnv {
-    /// Whether to create child processes to handle execution
-    pub forks: bool,
+    /// Whether the validation input is already available or do we have to fork and read it
+    pub already_has_input: bool,
     /// Whether to print debugging info
     pub debug: bool,
     /// Mechanism for asking for preimages and returning results
@@ -336,7 +327,7 @@ pub struct ProcessEnv {
 impl Default for ProcessEnv {
     fn default() -> Self {
         Self {
-            forks: false,
+            already_has_input: false,
             debug: false,
             socket: None,
             timestamp: Instant::now(),

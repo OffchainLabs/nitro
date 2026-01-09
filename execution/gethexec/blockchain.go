@@ -46,6 +46,7 @@ type CachingConfig struct {
 	StateHistory                        uint64        `koanf:"state-history"`
 	EnablePreimages                     bool          `koanf:"enable-preimages"`
 	PathdbMaxDiffLayers                 int           `koanf:"pathdb-max-diff-layers"`
+	StateSizeTracking                   bool          `koanf:"state-size-tracking"`
 }
 
 func CachingConfigAddOptions(prefix string, f *pflag.FlagSet) {
@@ -70,6 +71,7 @@ func CachingConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Uint64(prefix+".state-history", DefaultCachingConfig.StateHistory, "number of recent blocks to retain state history for (path state-scheme only)")
 	f.Bool(prefix+".enable-preimages", DefaultCachingConfig.EnablePreimages, "enable recording of preimages")
 	f.Int(prefix+".pathdb-max-diff-layers", DefaultCachingConfig.PathdbMaxDiffLayers, "maximum number of diff layers to keep in pathdb (path state-scheme only)")
+	f.Bool(prefix+".state-size-tracking", DefaultCachingConfig.StateSizeTracking, "enable tracking of state size over time")
 }
 
 func getStateHistory(maxBlockSpeed time.Duration) uint64 {
@@ -98,6 +100,7 @@ var DefaultCachingConfig = CachingConfig{
 	StateHistory:                        getStateHistory(DefaultSequencerConfig.MaxBlockSpeed),
 	EnablePreimages:                     false,
 	PathdbMaxDiffLayers:                 128,
+	StateSizeTracking:                   false,
 }
 
 func DefaultCacheConfigFor(cachingConfig *CachingConfig) *core.BlockChainConfig {
@@ -129,6 +132,7 @@ func DefaultCacheConfigTrieNoFlushFor(cachingConfig *CachingConfig, trieNoAsyncF
 		StateHistory:                       cachingConfig.StateHistory,
 		MaxDiffLayers:                      cachingConfig.PathdbMaxDiffLayers,
 		TrieNoAsyncFlush:                   trieNoAsyncFlush,
+		StateSizeTracking:                  cachingConfig.StateSizeTracking,
 	}
 }
 
