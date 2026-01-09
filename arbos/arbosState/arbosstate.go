@@ -446,7 +446,10 @@ func (state *ArbosState) UpgradeArbosVersion(
 			// these versions are left to Orbit chains for custom upgrades.
 
 		case params.ArbosVersion_60:
-			// no change state needed
+			p, err := state.Programs().Params()
+			ensure(err)
+			ensure(p.UpgradeToArbosVersion(nextArbosVersion))
+			ensure(p.Save())
 		default:
 			return fmt.Errorf(
 				"the chain is upgrading to unsupported ArbOS version %v, %w",
