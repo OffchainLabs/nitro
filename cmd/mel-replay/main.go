@@ -3,15 +3,5 @@
 
 package main
 
-import (
-	"github.com/ethereum/go-ethereum/common"
-
-	"github.com/offchainlabs/nitro/arbutil"
-)
-
-type preimageResolver interface {
-	ResolveTypedPreimage(preimageType arbutil.PreimageType, hash common.Hash) ([]byte, error)
-}
-
 func main() {
 }

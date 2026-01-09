@@ -238,6 +238,10 @@ func (m *MessageExtractor) GetHeadState(ctx context.Context) (*mel.State, error)
 	return m.melDB.GetHeadMelState(ctx)
 }
 
+func (m *MessageExtractor) GetState(ctx context.Context, parentchainBlocknumber uint64) (*mel.State, error) {
+	return m.melDB.State(ctx, parentchainBlocknumber)
+}
+
 func (m *MessageExtractor) GetMsgCount(ctx context.Context) (arbutil.MessageIndex, error) {
 	headState, err := m.melDB.GetHeadMelState(ctx)
 	if err != nil {

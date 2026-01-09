@@ -1,4 +1,4 @@
-package main
+package melreplay
 
 import (
 	"errors"
@@ -14,7 +14,7 @@ import (
 var _ ethdb.Database = (*DB)(nil)
 
 type DB struct {
-	resolver preimageResolver
+	resolver PreimageResolver
 }
 
 func (d *DB) Get(key []byte) ([]byte, error) {

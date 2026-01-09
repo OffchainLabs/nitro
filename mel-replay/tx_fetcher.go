@@ -1,14 +1,20 @@
-package main
+package melreplay
 
 import (
 	"context"
 
 	"github.com/ethereum/go-ethereum/core/types"
+
+	"github.com/offchainlabs/nitro/arbnode/mel/extraction"
 )
 
 type txFetcherForBlock struct {
 	header           *types.Header
-	preimageResolver preimageResolver
+	preimageResolver PreimageResolver
+}
+
+func NewTransactionFetcher(header *types.Header, preimageResolver PreimageResolver) melextraction.TransactionFetcher {
+	return &txFetcherForBlock{header, preimageResolver}
 }
 
 // TransactionByLog fetches the tx for a specific transaction index by walking
