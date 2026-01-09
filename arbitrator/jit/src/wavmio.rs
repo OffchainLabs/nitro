@@ -237,7 +237,7 @@ fn ready_hostio(env: &mut WasmEnv) -> MaybeEscape {
         env.process.reached_wavmio = true;
     }
 
-    if !env.process.forks {
+    if env.process.already_has_input {
         return Ok(());
     }
 
@@ -328,6 +328,6 @@ fn ready_hostio(env: &mut WasmEnv) -> MaybeEscape {
 
     let writer = BufWriter::new(socket);
     env.process.socket = Some((writer, reader));
-    env.process.forks = false;
+    env.process.already_has_input = true;
     Ok(())
 }
