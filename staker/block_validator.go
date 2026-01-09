@@ -50,6 +50,7 @@ var (
 	validatorMsgCountRecordSentGauge         = metrics.NewRegisteredGauge("arb/validator/msg_count_record_sent", nil)
 	validatorMsgCountValidatedGauge          = metrics.NewRegisteredGauge("arb/validator/msg_count_validated", nil)
 	validatorMsgCountLastValidationSentGauge = metrics.NewRegisteredGauge("arb/validator/msg_count_last_validation_sent", nil)
+	validatorMemoryLimitExceededGuage        = metrics.NewRegisteredGauge("arb/validator/memory/limit_exceeded", nil)
 )
 
 // WorkerThrottler tracks concurrent validation executions for a spawner
@@ -139,6 +140,7 @@ type BlockValidator struct {
 	fatalErr chan<- error
 
 	MemoryFreeLimitChecker resourcemanager.LimitChecker
+	memoryLimitExceeded    atomic.Bool
 }
 
 type BlockValidatorConfig struct {
@@ -745,6 +747,15 @@ func (v *BlockValidator) isMemoryLimitExceeded() bool {
 	exceeded, err := v.MemoryFreeLimitChecker.IsLimitExceeded()
 	if err != nil {
 		log.Error("error checking if free-memory limit exceeded using MemoryFreeLimitChecker", "err", err)
+	}
+	if exceeded && !v.memoryLimitExceeded.Load() {
+		// If we just exceeded the limit, update the metric and store the state
+		validatorMemoryLimitExceededGuage.Update(1)
+		v.memoryLimitExceeded.Store(true)
+	} else if !exceeded && v.memoryLimitExceeded.Load() {
+		// If we are no longer exceeding the limit, update the metric and store the state
+		validatorMemoryLimitExceededGuage.Update(0)
+		v.memoryLimitExceeded.Store(false)
 	}
 	return exceeded
 }

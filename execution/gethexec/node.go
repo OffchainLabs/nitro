@@ -32,7 +32,7 @@ import (
 	"github.com/offchainlabs/nitro/consensus"
 	"github.com/offchainlabs/nitro/consensus/consensusrpcclient"
 	"github.com/offchainlabs/nitro/execution"
-	"github.com/offchainlabs/nitro/execution/executionrpcserver"
+	executionrpcserver "github.com/offchainlabs/nitro/execution/rpcserver"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -422,7 +422,7 @@ func CreateExecutionNode(
 		apis = append(apis, rpc.API{
 			Namespace:     execution.RPCNamespace,
 			Version:       "1.0",
-			Service:       executionrpcserver.NewExecutionRPCServer(execNode),
+			Service:       executionrpcserver.NewServer(execNode),
 			Public:        config.RPCServer.Public,
 			Authenticated: config.RPCServer.Authenticated,
 		})
