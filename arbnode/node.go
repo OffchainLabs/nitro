@@ -44,7 +44,7 @@ import (
 	"github.com/offchainlabs/nitro/daprovider/daclient"
 	"github.com/offchainlabs/nitro/daprovider/data_streaming"
 	"github.com/offchainlabs/nitro/execution"
-	"github.com/offchainlabs/nitro/execution/executionrpcclient"
+	executionrpcclient "github.com/offchainlabs/nitro/execution/rpcclient"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/staker"
@@ -133,7 +133,7 @@ func (c *Config) Validate() error {
 		log.Warn("track-block-metadata-from is set but blockMetadata fetcher is not enabled")
 	}
 	if err := c.ExecutionRPCClient.Validate(); err != nil {
-		return fmt.Errorf("error validating ExecutionRPCClient config: %w", err)
+		return fmt.Errorf("error validating Client config: %w", err)
 	}
 	// Check that sync-interval is not more than msg-lag / 2
 	if c.ConsensusExecutionSyncer.SyncInterval > c.SyncMonitor.MsgLag/2 {
@@ -1487,7 +1487,7 @@ func CreateConsensusNodeConnectedWithSimpleExecutionClient(
 ) (*Node, error) {
 	if configFetcher.Get().ExecutionRPCClient.URL != "" {
 		execConfigFetcher := func() *rpcclient.ClientConfig { return &configFetcher.Get().ExecutionRPCClient }
-		executionClient = executionrpcclient.NewExecutionRPCClient(execConfigFetcher, stack)
+		executionClient = executionrpcclient.NewClient(execConfigFetcher, stack)
 	}
 	if executionClient == nil {
 		return nil, errors.New("execution client must be non-nil")
@@ -1523,7 +1523,7 @@ func CreateConsensusNodeConnectedWithFullExecutionClient(
 	var executionClient execution.ExecutionClient
 	if configFetcher.Get().ExecutionRPCClient.URL != "" {
 		execConfigFetcher := func() *rpcclient.ClientConfig { return &configFetcher.Get().ExecutionRPCClient }
-		executionClient = executionrpcclient.NewExecutionRPCClient(execConfigFetcher, stack)
+		executionClient = executionrpcclient.NewClient(execConfigFetcher, stack)
 	} else {
 		executionClient = fullExecutionClient
 	}
@@ -1537,7 +1537,7 @@ func CreateConsensusNodeConnectedWithFullExecutionClient(
 
 func (n *Node) Start(ctx context.Context) error {
 	var err error
-	if execRPCClient, ok := n.ExecutionClient.(*executionrpcclient.ExecutionRPCClient); ok {
+	if execRPCClient, ok := n.ExecutionClient.(*executionrpcclient.Client); ok {
 		if err = execRPCClient.Start(ctx); err != nil {
 			return fmt.Errorf("error starting exec rpc client: %w", err)
 		}
@@ -1743,7 +1743,7 @@ func (n *Node) StopAndWait() {
 		n.providerServerCloseFn()
 	}
 	if n.ExecutionClient != nil {
-		if _, ok := n.ExecutionClient.(*executionrpcclient.ExecutionRPCClient); ok {
+		if _, ok := n.ExecutionClient.(*executionrpcclient.Client); ok {
 			n.ExecutionClient.StopAndWait()
 		}
 	}
