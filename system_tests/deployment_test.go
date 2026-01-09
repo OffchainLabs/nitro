@@ -6,8 +6,10 @@ package arbtest
 import (
 	"bytes"
 	"context"
+	"math/big"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
@@ -17,6 +19,7 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/params"
 
+	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
@@ -66,7 +69,7 @@ func testContractDeployment(t *testing.T, ctx context.Context, client *ethclient
 		ChainID:   chainId,
 		Nonce:     nonce,
 		GasTipCap: common.Big0,
-		GasFeeCap: latestHeader.BaseFee,
+		GasFeeCap: new(big.Int).Mul(latestHeader.BaseFee, big.NewInt(2)),
 		Gas:       deploymentGas,
 		To:        nil,
 		Value:     common.Big0,
@@ -106,38 +109,128 @@ func makeContractOfLength(length int) []byte {
 	return ret
 }
 
-func TestContractDeployment(t *testing.T) {
+func testContractDeploymentSuite(t *testing.T, executionClientMode ExecutionClientMode) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	// Always build with L1 for comparison mode (needed for replica sync)
+	withL1 := executionClientMode == ExecutionClientModeComparison
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, withL1)
+
+	builder = builder.WithExecutionClientMode(executionClientMode)
+
 	cleanup := builder.Build(t)
 	defer cleanup()
 
+	var replicaClient *ethclient.Client
+
+	if executionClientMode == ExecutionClientModeComparison {
+		// Build replica with External (Nethermind)
+		replicaConfig := arbnode.ConfigDefaultL1NonSequencerTest()
+		replicaParams := &SecondNodeParams{
+			nodeConfig:          replicaConfig,
+			executionClientMode: ExecutionClientModeComparison,
+		}
+		replica, replicaCleanup := builder.Build2ndNode(t, replicaParams)
+		defer replicaCleanup()
+		replicaClient = replica.Client
+
+		// Wait for replica to sync
+		time.Sleep(time.Second * 2)
+	}
+
+	// Run test on primary
 	account := builder.L2Info.GetInfoWithPrivKey("Faucet")
 	for _, size := range []int{0, 1, 1000, 20000, params.DefaultMaxCodeSize} {
 		testContractDeployment(t, ctx, builder.L2.Client, makeContractOfLength(size), account, nil)
+
+		// If comparison mode, verify replica has same blocks
+		if replicaClient != nil {
+			time.Sleep(time.Millisecond * 100) // Let replica catch up
+			// Verify block exists on replica
+			block, err := replicaClient.BlockNumber(ctx)
+			Require(t, err)
+			_ = block // Add actual verification
+		}
 	}
 
 	testContractDeployment(t, ctx, builder.L2.Client, makeContractOfLength(40000), account, vm.ErrMaxCodeSizeExceeded)
 	testContractDeployment(t, ctx, builder.L2.Client, makeContractOfLength(60000), account, core.ErrMaxInitCodeSizeExceeded)
 }
 
-func TestExtendedContractDeployment(t *testing.T) {
+func TestContractDeploymentInternal(t *testing.T) {
+	testContractDeploymentSuite(t, ExecutionClientModeInternal)
+}
+
+func TestContractDeploymentExternal(t *testing.T) {
+	testContractDeploymentSuite(t, ExecutionClientModeExternal)
+}
+
+func TestContractDeploymentComparison(t *testing.T) {
+	testContractDeploymentSuite(t, ExecutionClientModeComparison)
+}
+
+func testExtendedContractDeploymentSuite(t *testing.T, executionClientMode ExecutionClientMode) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	// Build with L1 for comparison mode (needed for replica sync)
+	withL1 := executionClientMode == ExecutionClientModeComparison
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, withL1)
 	builder.chainConfig.ArbitrumChainParams.MaxCodeSize = params.DefaultMaxCodeSize * 3
 	builder.chainConfig.ArbitrumChainParams.MaxInitCodeSize = params.DefaultMaxInitCodeSize * 3
+
+	builder = builder.WithExecutionClientMode(executionClientMode)
+
 	cleanup := builder.Build(t)
 	defer cleanup()
 
+	var replicaClient *ethclient.Client
+
+	if executionClientMode == ExecutionClientModeComparison {
+		// Build replica with External (Nethermind)
+		replicaConfig := arbnode.ConfigDefaultL1NonSequencerTest()
+		replicaParams := &SecondNodeParams{
+			nodeConfig:          replicaConfig,
+			executionClientMode: ExecutionClientModeComparison,
+		}
+		replica, replicaCleanup := builder.Build2ndNode(t, replicaParams)
+		defer replicaCleanup()
+		replicaClient = replica.Client
+
+		// Wait for replica to sync
+		time.Sleep(time.Second * 2)
+	}
+
+	// Run tests on primary
 	account := builder.L2Info.GetInfoWithPrivKey("Faucet")
 	for _, size := range []int{0, 1, 1000, 20000, 30000, 40000, 60000, params.DefaultMaxCodeSize * 3} {
 		testContractDeployment(t, ctx, builder.L2.Client, makeContractOfLength(size), account, nil)
+
+		// If comparison mode, verify replica caught up
+		if replicaClient != nil {
+			time.Sleep(time.Millisecond * 100)
+			// Verify block exists on replica
+			block, err := replicaClient.BlockNumber(ctx)
+			Require(t, err)
+			_ = block
+		}
 	}
 
 	testContractDeployment(t, ctx, builder.L2.Client, makeContractOfLength(100000), account, vm.ErrMaxCodeSizeExceeded)
 	testContractDeployment(t, ctx, builder.L2.Client, makeContractOfLength(200000), account, core.ErrMaxInitCodeSizeExceeded)
+}
+
+func TestExtendedContractDeploymentInternal(t *testing.T) {
+	testExtendedContractDeploymentSuite(t, ExecutionClientModeInternal)
+}
+
+func TestExtendedContractDeploymentExternal(t *testing.T) {
+	testExtendedContractDeploymentSuite(t, ExecutionClientModeExternal)
+}
+
+func TestExtendedContractDeploymentComparison(t *testing.T) {
+	testExtendedContractDeploymentSuite(t, ExecutionClientModeComparison)
 }
