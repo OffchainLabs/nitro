@@ -12,12 +12,15 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/consensus"
 	"github.com/offchainlabs/nitro/execution"
 )
+
+var ValidatedBlockHashKey = []byte("LastValidatedBlockHashKey")
 
 type syncDataEntry struct {
 	maxMessageCount arbutil.MessageIndex
@@ -274,6 +277,7 @@ func (s *SyncMonitor) getFinalityBlockHeader(
 }
 
 func (s *SyncMonitor) SetFinalityData(
+	executionDB ethdb.Database,
 	safeFinalityData *arbutil.FinalityData,
 	finalizedFinalityData *arbutil.FinalityData,
 	validatedFinalityData *arbutil.FinalityData,
@@ -287,6 +291,11 @@ func (s *SyncMonitor) SetFinalityData(
 		return err
 	}
 	s.exec.bc.SetFinalized(finalizedBlockHeader)
+
+	if executionDB != nil && finalizedBlockHeader != nil {
+		finalizedBlockHash := finalizedBlockHeader.Hash()
+		executionDB.Put(ValidatedBlockHashKey, finalizedBlockHash.Bytes())
+	}
 
 	safeBlockHeader, err := s.getFinalityBlockHeader(
 		s.config.SafeBlockWaitForBlockValidator,
