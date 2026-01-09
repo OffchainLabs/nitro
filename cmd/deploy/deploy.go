@@ -93,10 +93,13 @@ func main() {
 		panic(err)
 	}
 
-	if !common.IsHexAddress(*sequencerAddressString) && len(*sequencerAddressString) > 0 {
-		panic("specified sequencer address is invalid")
+	var sequencerAddress common.Address
+	if len(*sequencerAddressString) > 0 {
+		if !common.IsHexAddress(*sequencerAddressString) {
+			panic("specified sequencer address is invalid")
+		}
+		sequencerAddress = common.HexToAddress(*sequencerAddressString)
 	}
-	sequencerAddress := common.HexToAddress(*sequencerAddressString)
 
 	if !common.IsHexAddress(*ownerAddressString) {
 		panic("please specify a valid rollup owner address")
