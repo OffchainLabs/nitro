@@ -21,17 +21,12 @@ import (
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/rpc"
 
-	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
-	"github.com/offchainlabs/nitro/arbnode/db/read"
-	"github.com/offchainlabs/nitro/arbnode/mel"
-	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/bold/protocol"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
-	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/staker/bold"
 	legacystaker "github.com/offchainlabs/nitro/staker/legacy"
 	multiprotocolstaker "github.com/offchainlabs/nitro/staker/multi_protocol"
@@ -94,16 +89,6 @@ func findImportantRoots(ctx context.Context, executionDB ethdb.Database, stack *
 	if chainConfig == nil {
 		return nil, errors.New("database doesn't have a chain config (was this node initialized?)")
 	}
-	consensusDB, err := stack.OpenDatabaseWithOptions("arbitrumdata", node.DatabaseOptions{MetricsNamespace: "arbitrumdata/", ReadOnly: true, PebbleExtraOptions: persistentConfig.Pebble.ExtraOptions("arbitrumdata"), NoFreezer: true})
-	if err != nil {
-		return nil, err
-	}
-	defer func() {
-		err := consensusDB.Close()
-		if err != nil {
-			log.Warn("failed to close arbitrum database after finding pruning targets", "err", err)
-		}
-	}()
 	roots := importantRoots{
 		executionDB: executionDB,
 	}
@@ -113,7 +98,7 @@ func findImportantRoots(ctx context.Context, executionDB ethdb.Database, stack *
 	if genesisHeader == nil {
 		return nil, errors.New("missing L2 genesis block header")
 	}
-	err = roots.addHeader(genesisHeader, false)
+	err := roots.addHeader(genesisHeader, false)
 	if err != nil {
 		return nil, err
 	}
@@ -139,16 +124,17 @@ func findImportantRoots(ctx context.Context, executionDB ethdb.Database, stack *
 			log.Warn("missing latest confirmed block", "hash", confirmedHash)
 		}
 
-		validatorDB := rawdb.NewTable(consensusDB, storage.BlockValidatorPrefix)
-		lastValidated, err := staker.ReadLastValidatedInfo(validatorDB)
+		data, err := executionDB.Get(gethexec.ValidatedBlockHashKey)
 		if err != nil {
 			return nil, err
 		}
-		if lastValidated != nil {
+		lastValidatedBlockHash := common.BytesToHash(data)
+
+		if lastValidatedBlockHash != (common.Hash{}) {
 			var lastValidatedHeader *types.Header
-			headerNum, found := rawdb.ReadHeaderNumber(executionDB, lastValidated.GlobalState.BlockHash)
+			headerNum, found := rawdb.ReadHeaderNumber(executionDB, lastValidatedBlockHash)
 			if found {
-				lastValidatedHeader = rawdb.ReadHeader(executionDB, lastValidated.GlobalState.BlockHash, headerNum)
+				lastValidatedHeader = rawdb.ReadHeader(executionDB, lastValidatedBlockHash, headerNum)
 			}
 			if lastValidatedHeader != nil {
 				err = roots.addHeader(lastValidatedHeader, false)
@@ -156,7 +142,7 @@ func findImportantRoots(ctx context.Context, executionDB ethdb.Database, stack *
 					return nil, err
 				}
 			} else {
-				log.Warn("missing latest validated block", "hash", lastValidated.GlobalState.BlockHash)
+				log.Warn("missing latest validated block", "hash", lastValidatedBlockHash)
 			}
 		}
 	} else if initConfig.Prune == "full" || initConfig.Prune == "minimal" {
@@ -179,55 +165,20 @@ func findImportantRoots(ctx context.Context, executionDB ethdb.Database, stack *
 		return nil, fmt.Errorf("unknown pruning mode: \"%v\"", initConfig.Prune)
 	}
 	if initConfig.Prune != "minimal" && l1Client != nil {
-		// in pruning modes other then "minimal", find the latest finalized block and add it as a pruning target
-		l1Block, err := l1Client.BlockByNumber(ctx, big.NewInt(int64(rpc.FinalizedBlockNumber)))
-		if err != nil {
-			return nil, fmt.Errorf("failed to get finalized block: %w", err)
+		// in pruning modes other than "minimal", get the latest finalized block and add it as a pruning target
+		finalizedBlockHash := rawdb.ReadFinalizedBlockHash(executionDB)
+		finalizedBlockNumber, ok := rawdb.ReadHeaderNumber(executionDB, finalizedBlockHash)
+		if !ok {
+			return nil, errors.New("Number of finalized block is missing")
 		}
-		l1BlockNum := l1Block.NumberU64()
-		var batch uint64
-		if melEnabled {
-			batch, err = read.MELSequencerBatchCount(consensusDB)
+
+		l2Header := rawdb.ReadHeader(executionDB, finalizedBlockHash, finalizedBlockNumber)
+		if l2Header == nil {
+			log.Warn("latest finalized L2 block is unknown", "blockNum", finalizedBlockNumber)
 		} else {
-			batch, err = read.SequencerBatchCount(consensusDB)
-		}
-		if err != nil {
-			return nil, err
-		}
-		for {
-			if ctx.Err() != nil {
-				return nil, ctx.Err()
-			}
-			if batch == 0 {
-				// No batch has been finalized
-				break
-			}
-			batch -= 1
-			var meta mel.BatchMetadata
-			if melEnabled {
-				meta, err = read.MELBatchMetadata(consensusDB, batch)
-			} else {
-				meta, err = read.BatchMetadata(consensusDB, batch)
-			}
+			err = roots.addHeader(l2Header, false)
 			if err != nil {
 				return nil, err
-			}
-			if meta.ParentChainBlock <= l1BlockNum {
-				// #nosec G115
-				signedBlockNum := int64(arbutil.MessageIndexToBlockNumber(meta.MessageCount, genesisNum)) - 1
-				// #nosec G115
-				blockNum := uint64(signedBlockNum)
-				l2Hash := rawdb.ReadCanonicalHash(executionDB, blockNum)
-				l2Header := rawdb.ReadHeader(executionDB, l2Hash, blockNum)
-				if l2Header == nil {
-					log.Warn("latest finalized L2 block is unknown", "blockNum", signedBlockNum)
-					break
-				}
-				err = roots.addHeader(l2Header, false)
-				if err != nil {
-					return nil, err
-				}
-				break
 			}
 		}
 	}
