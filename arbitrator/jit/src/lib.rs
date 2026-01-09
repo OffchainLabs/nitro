@@ -1,8 +1,9 @@
 // Copyright 2021-2024, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
+use arbutil::Bytes32;
+use clap::{Args, Parser, Subcommand};
 use std::path::PathBuf;
-use structopt::StructOpt;
 
 mod arbcompress;
 mod caller_env;
@@ -15,37 +16,75 @@ mod test;
 mod wasip1_stub;
 mod wavmio;
 
-#[derive(StructOpt)]
-#[structopt(name = "jit-prover")]
+#[derive(Clone, Debug, Parser)]
 pub struct Opts {
-    #[structopt(short, long)]
-    binary: PathBuf,
-    #[structopt(long, default_value = "0")]
-    inbox_position: u64,
-    #[structopt(long, default_value = "0")]
-    delayed_inbox_position: u64,
-    #[structopt(long, default_value = "0")]
-    position_within_message: u64,
-    #[structopt(long)]
-    last_block_hash: Option<String>,
-    #[structopt(long)]
-    last_send_root: Option<String>,
-    #[structopt(long)]
-    inbox: Vec<PathBuf>,
-    #[structopt(long)]
-    delayed_inbox: Vec<PathBuf>,
-    #[structopt(long)]
-    preimages: Option<PathBuf>,
-    #[structopt(long)]
-    cranelift: bool,
-    #[structopt(long)]
-    forks: bool,
-    #[structopt(long)]
+    /// General validator configuration
+    #[command(flatten)]
+    pub validator: ValidatorOpts,
+    /// How the validation inputs are provided
+    #[command(subcommand)]
+    pub input_mode: InputMode,
+}
+
+#[derive(Clone, Debug, Args)]
+pub struct ValidatorOpts {
+    /// Path to the `replay.wasm` binary
+    #[clap(short, long)]
+    pub binary: PathBuf,
+    /// Use Cranelift backend
+    #[clap(long)]
+    pub cranelift: bool,
+    /// Enable debug output
+    #[clap(long)]
     pub debug: bool,
-    #[structopt(long)]
+    /// Require that the validation succeeds
+    #[clap(long)]
     pub require_success: bool,
-    // JSON inputs supercede any of the command-line inputs which could
-    // be specified in the JSON file.
-    #[structopt(long)]
-    json_inputs: Option<PathBuf>,
+}
+
+#[derive(Clone, Debug, Subcommand)]
+pub enum InputMode {
+    /// Use a local JSON file containing the inputs
+    Json {
+        /// Path to the JSON input file
+        #[clap(long)]
+        inputs: PathBuf,
+    },
+    /// Use flag values and local files for inputs
+    Local(LocalInput),
+    /// Continuously read new inputs from TCP connections
+    Continuous,
+}
+
+#[derive(Clone, Debug, Args)]
+pub struct LocalInput {
+    #[clap(long, default_value = "0")]
+    inbox_position: u64,
+    #[clap(long, default_value = "0")]
+    delayed_inbox_position: u64,
+    #[clap(long, default_value = "0")]
+    position_within_message: u64,
+    #[clap(long, value_parser = cli_parsing::parse_hex)]
+    last_block_hash: Bytes32,
+    #[clap(long, value_parser = cli_parsing::parse_hex)]
+    last_send_root: Bytes32,
+    #[clap(long)]
+    inbox: Vec<PathBuf>,
+    #[clap(long)]
+    delayed_inbox: Vec<PathBuf>,
+    #[clap(long)]
+    preimages: Option<PathBuf>,
+}
+
+mod cli_parsing {
+    use arbutil::Bytes32;
+
+    pub fn parse_hex(mut arg: &str) -> eyre::Result<Bytes32> {
+        if arg.starts_with("0x") {
+            arg = &arg[2..];
+        }
+        let mut bytes32 = [0u8; 32];
+        hex::decode_to_slice(arg, &mut bytes32)?;
+        Ok(bytes32.into())
+    }
 }
