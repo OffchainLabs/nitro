@@ -66,12 +66,11 @@ type ExecutionClient interface {
 // needed for validators / stakers
 type ExecutionRecorder interface {
 	RecordBlockCreation(
-		ctx context.Context,
 		pos arbutil.MessageIndex,
 		msg *arbostypes.MessageWithMetadata,
 		wasmTargets []rawdb.WasmTarget,
-	) (*RecordResult, error)
-	PrepareForRecord(ctx context.Context, start, end arbutil.MessageIndex) error
+	) containers.PromiseInterface[*RecordResult]
+	PrepareForRecord(start, end arbutil.MessageIndex) containers.PromiseInterface[struct{}]
 }
 
 // needed for sequencer
