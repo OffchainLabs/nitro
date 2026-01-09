@@ -13,7 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/arbnode/mel"
-	melextraction "github.com/offchainlabs/nitro/arbnode/mel/extraction"
+	"github.com/offchainlabs/nitro/arbnode/mel/extraction"
 )
 
 type logsAndHeadersFetcher struct {
@@ -149,6 +149,10 @@ func (f *logsAndHeadersFetcher) fetchDelayedMessageLogs(ctx context.Context, fro
 		}
 		for _, log := range logs {
 			f.logsByBlockHash[log.BlockHash] = append(f.logsByBlockHash[log.BlockHash], &log)
+			if _, ok := f.logsByTxIndex[log.BlockHash]; !ok {
+				f.logsByTxIndex[log.BlockHash] = make(map[uint][]*types.Log)
+			}
+			f.logsByTxIndex[log.BlockHash][log.TxIndex] = append(f.logsByTxIndex[log.BlockHash][log.TxIndex], &log)
 		}
 		return nil
 	}
