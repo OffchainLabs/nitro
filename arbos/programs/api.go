@@ -100,7 +100,7 @@ func newApiClosures(
 			multiGas.SaturatingAddInto(costMultiGas)
 			db.SetState(actingAddress, key, value)
 		}
-		if isOutOfGas {
+		if isOutOfGas || *gasLeft == 0 {
 			if evm.Context.ArbOSVersion < 50 {
 				return Failure
 			} else {
