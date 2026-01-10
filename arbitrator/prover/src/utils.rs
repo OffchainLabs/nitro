@@ -184,9 +184,10 @@ pub fn file_bytes(path: &Path) -> Result<Vec<u8>> {
 }
 
 pub fn split_import(qualified: &str) -> Result<(&str, &str)> {
-    let parts: Vec<_> = qualified.split("__").collect();
-    let parts = parts.try_into().map_err(|_| eyre!("bad import"))?;
-    let [module, name]: [&str; 2] = parts;
+    let (module, name) = qualified.split_once("__").ok_or_else(|| eyre!("bad import"))?;
+    if name.contains("__") {
+        return Err(eyre!("bad import"));
+    }
     Ok((module, name))
 }
 
