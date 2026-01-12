@@ -26,6 +26,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/execution/nethexec"
 	"github.com/offchainlabs/nitro/util/colors"
 	"github.com/redis/go-redis/v9"
@@ -333,6 +334,7 @@ type NodeBuilder struct {
 	withProdConfirmPeriodBlocks bool
 	delayBufferThreshold        uint64
 	withL1ClientWrapper         bool
+	executionClientMode         ExecutionClientMode
 
 	// Created nodes
 	L1 *TestClient
@@ -456,6 +458,11 @@ func (b *NodeBuilder) WithWasmRootDir(wasmRootDir string) *NodeBuilder {
 
 func (b *NodeBuilder) WithExtraArchs(targets []string) *NodeBuilder {
 	b.execConfig.StylusTarget.ExtraArchs = targets
+	return b
+}
+
+func (b *NodeBuilder) WithExecutionClientMode(mode ExecutionClientMode) *NodeBuilder {
+	b.executionClientMode = mode
 	return b
 }
 
@@ -888,11 +895,51 @@ func (b *NodeBuilder) BuildL2(t *testing.T) func() {
 		t, b.L2Info, b.dataDir, b.chainConfig, b.arbOSInit, nil, b.l2StackConfig, b.execConfig)
 
 	execConfigFetcher := NewCommonConfigFetcher(b.execConfig)
-	execNode, err := gethexec.CreateExecutionNode(b.ctx, b.L2.Stack, chainDb, blockchain, nil, execConfigFetcher, big.NewInt(1337), 0)
-	Require(t, err)
-	b.L2.ExecutionConfigFetcher = execConfigFetcher
 
+	// Create execution client based on mode
+	var execNode nethexec.FullExecutionClient
 	fatalErrChan := make(chan error, 10)
+
+	var initMessage *arbostypes.ParsedInitMessage
+	if b.executionClientMode == ExecutionClientModeExternal ||
+		b.executionClientMode == ExecutionClientModeComparison {
+		serializedChainConfig, err := json.Marshal(b.chainConfig)
+		Require(t, err)
+		initMessage = &arbostypes.ParsedInitMessage{
+			ChainId:               b.chainConfig.ChainID,
+			InitialL1BaseFee:      arbostypes.DefaultInitialL1BaseFee,
+			ChainConfig:           b.chainConfig,
+			SerializedChainConfig: serializedChainConfig,
+		}
+	}
+
+	switch b.executionClientMode {
+	case ExecutionClientModeInternal, 0: // 0 for default/unset
+		// Original behavior - internal geth
+		execNode, err = gethexec.CreateExecutionNode(b.ctx, b.L2.Stack, chainDb, blockchain, nil, execConfigFetcher, big.NewInt(1337), 0)
+		Require(t, err)
+
+	case ExecutionClientModeExternal:
+		// External Nethermind
+		nethermindUrl, nethermindWsUrl := getNethermindURLsFromConfig(b.execConfig)
+		nethermindExecClient, err := nethexec.NewNethermindExecutionClient(nethermindUrl, nethermindWsUrl)
+		Require(t, err)
+		Require(t, initializeExternalClient(b.ctx, nethermindExecClient, initMessage))
+		execNode = nethermindExecClient
+
+	case ExecutionClientModeComparison:
+		// Both - create comparison client
+		gethExec, err := gethexec.CreateExecutionNode(b.ctx, b.L2.Stack, chainDb, blockchain, nil, execConfigFetcher, big.NewInt(1337), 0)
+		Require(t, err)
+
+		nethermindUrl, nethermindWsUrl := getNethermindURLsFromConfig(b.execConfig)
+		nethExec, err := nethexec.NewNethermindExecutionClient(nethermindUrl, nethermindWsUrl)
+		Require(t, err)
+		Require(t, initializeExternalClient(b.ctx, nethExec, initMessage))
+
+		execNode = nethexec.NewCompareExecutionClient(gethExec, nethExec, fatalErrChan)
+	}
+
 	locator, err := server_common.NewMachineLocator(b.valnodeConfig.Wasm.RootPath)
 	Require(t, err)
 	consensusConfigFetcher := NewCommonConfigFetcher(b.nodeConfig)
@@ -909,7 +956,21 @@ func (b *NodeBuilder) BuildL2(t *testing.T) func() {
 	err = b.L2.ConsensusNode.Start(b.ctx)
 	Require(t, err)
 
-	b.L2.Client = ClientForStack(t, b.L2.Stack)
+	// Set client based on execution mode
+	switch b.executionClientMode {
+	case ExecutionClientModeExternal:
+		// For external execution client, connect directly to Nethermind for RPC calls
+		nethRpcUrl := b.execConfig.NethermindUrl
+		if nethRpcUrl == "" {
+			nethRpcUrl = "http://localhost:20545"
+		}
+		externalRpcClient, err := rpc.Dial(nethRpcUrl)
+		Require(t, err)
+		b.L2.Client = ethclient.NewClient(externalRpcClient)
+	default:
+		// For internal and comparison modes, use internal geth client
+		b.L2.Client = ClientForStack(t, b.L2.Stack)
+	}
 
 	if b.takeOwnership {
 		debugAuth := b.L2Info.GetDefaultTransactOpts("Owner", b.ctx)
@@ -927,7 +988,11 @@ func (b *NodeBuilder) BuildL2(t *testing.T) func() {
 
 	StartWatchChanErr(t, b.ctx, fatalErrChan, b.L2.ConsensusNode)
 
-	b.L2.ExecNode = getExecNode(t, b.L2.ConsensusNode)
+	// Only set ExecNode if it's internal geth
+	if b.executionClientMode == ExecutionClientModeInternal || b.executionClientMode == 0 {
+		b.L2.ExecNode = getExecNode(t, b.L2.ConsensusNode)
+	}
+
 	b.L2.cleanup = func() { b.L2.ConsensusNode.StopAndWait() }
 	return func() {
 		b.L2.cleanup()
@@ -1919,54 +1984,30 @@ func Create2ndNodeWithConfig(
 		Require(t, err)
 
 	case ExecutionClientModeExternal:
-		// Create external Nethermind execution client
-		nethermindUrl := os.Getenv("PR_NETH_RPC_CLIENT_URL")
-		if nethermindUrl == "" {
-			nethermindUrl = "http://localhost:20545"
-		}
-		nethermindWsUrl := os.Getenv("PR_NETH_WS_URL")
-		if nethermindWsUrl == "" {
-			nethermindWsUrl = "ws://localhost:28551"
-		}
+		nethermindUrl, nethermindWsUrl := getNethermindURLsFromConfig(execConfig)
 		nethermindExecClient, err := nethexec.NewNethermindExecutionClient(nethermindUrl, nethermindWsUrl)
 		Require(t, err)
 
-		// Call DigestInitMessage to initialize the external execution client with genesis block
-		if initMessage != nil {
-			result := nethermindExecClient.DigestInitMessage(ctx, initMessage.InitialL1BaseFee, initMessage.SerializedChainConfig)
-			if result == nil {
-				t.Fatal("DigestInitMessage returned nil for external execution client")
-			}
+		err = initializeExternalClient(ctx, nethermindExecClient, initMessage)
+		if err != nil {
+			t.Fatal(err)
 		}
 		currentExec = nethermindExecClient
 
 	case ExecutionClientModeComparison:
-		// Create both internal geth and external Nethermind execution clients
 		gethExecClient, err := gethexec.CreateExecutionNode(ctx, chainStack, chainDb, blockchain, parentChainClient, execConfigFetcher, big.NewInt(1337), 0)
 		Require(t, err)
 
-		nethermindUrl := os.Getenv("PR_NETH_RPC_CLIENT_URL")
-		if nethermindUrl == "" {
-			nethermindUrl = "http://localhost:20545"
-		}
-		nethermindWsUrl := os.Getenv("PR_NETH_WS_URL")
-		if nethermindWsUrl == "" {
-			nethermindWsUrl = "ws://localhost:28551"
-		}
+		nethermindUrl, nethermindWsUrl := getNethermindURLsFromConfig(execConfig)
 		nethermindExecClient, err := nethexec.NewNethermindExecutionClient(nethermindUrl, nethermindWsUrl)
 		Require(t, err)
 
-		// Call DigestInitMessage to initialize the external execution client with genesis block
-		if initMessage != nil {
-			result := nethermindExecClient.DigestInitMessage(ctx, initMessage.InitialL1BaseFee, initMessage.SerializedChainConfig)
-			if result == nil {
-				t.Fatal("DigestInitMessage returned nil for external execution client")
-			}
+		err = initializeExternalClient(ctx, nethermindExecClient, initMessage)
+		if err != nil {
+			t.Fatal(err)
 		}
 
-		// Wrap both in comparison client
 		currentExec = nethexec.NewCompareExecutionClient(gethExecClient, nethermindExecClient, feedErrChan)
-
 	default:
 		t.Fatalf("unsupported execution client mode: %v", executionClientMode)
 	}
@@ -1987,7 +2028,7 @@ func Create2ndNodeWithConfig(
 	switch executionClientMode {
 	case ExecutionClientModeExternal:
 		// For external execution client, connect directly to Nethermind for RPC calls
-		nethRpcUrl := os.Getenv("PR_NETH_RPC_CLIENT_URL")
+		nethRpcUrl := execConfig.NethermindUrl
 		if nethRpcUrl == "" {
 			nethRpcUrl = "http://localhost:20545"
 		}
@@ -2364,4 +2405,90 @@ func populateMachineDir(t *testing.T, cr *github.ConsensusRelease) string {
 	_, err = io.Copy(replayFile, replayResp.Body)
 	Require(t, err)
 	return machineDir
+}
+
+// BuildReplicaWithExecutionMode builds a replica node with the specified execution client mode
+// Returns the replica's test client and cleanup function
+func BuildReplicaWithExecutionMode(t *testing.T, builder *NodeBuilder, executionClientMode ExecutionClientMode) (*TestClient, func()) {
+	replicaConfig := arbnode.ConfigDefaultL1NonSequencerTest()
+	replicaParams := &SecondNodeParams{
+		nodeConfig:             replicaConfig,
+		useExecutionClientOnly: true,
+		executionClientMode:    executionClientMode,
+	}
+	replica, cleanup := builder.Build2ndNode(t, replicaParams)
+
+	// Wait for replica to initialize
+	time.Sleep(time.Second * 2)
+
+	return replica, cleanup
+}
+
+// WaitForReplicaSync waits for replica to catch up to primary's block number
+// Returns an error if replica fails to sync within the timeout
+func WaitForReplicaSync(ctx context.Context, t *testing.T, primaryClient, replicaClient *ethclient.Client, maxAttempts int) {
+	primaryBlock, err := primaryClient.BlockNumber(ctx)
+	Require(t, err)
+
+	for i := 0; i < maxAttempts; i++ {
+		replicaBlock, err := replicaClient.BlockNumber(ctx)
+		Require(t, err)
+		if replicaBlock >= primaryBlock {
+			return
+		}
+		time.Sleep(time.Millisecond * 100)
+	}
+
+	// Final check and fail if not synced
+	replicaBlock, err := replicaClient.BlockNumber(ctx)
+	Require(t, err)
+	if replicaBlock < primaryBlock {
+		Fatal(t, "Replica at block", replicaBlock, "failed to catch up to primary at block", primaryBlock)
+	}
+}
+
+// ReplicaTestFunc is a test function that takes an execution client mode parameter
+type ReplicaTestFunc func(t *testing.T, executionClientMode ExecutionClientMode)
+
+// CreateReplicaTestVariants generates Internal, External, and Comparison test functions
+// from a single test implementation
+func CreateReplicaTestVariants(testFunc ReplicaTestFunc) (internal, external, comparison func(*testing.T)) {
+	return func(t *testing.T) {
+			testFunc(t, ExecutionClientModeInternal)
+		},
+		func(t *testing.T) {
+			testFunc(t, ExecutionClientModeExternal)
+		},
+		func(t *testing.T) {
+			testFunc(t, ExecutionClientModeComparison)
+		}
+}
+
+func getNethermindURLsFromConfig(execConfig *gethexec.Config) (rpcUrl string, wsUrl string) {
+	rpcUrl = execConfig.NethermindUrl
+	if rpcUrl == "" {
+		rpcUrl = "http://localhost:20545"
+	}
+	wsUrl = execConfig.NethermindWsUrl
+	if wsUrl == "" {
+		wsUrl = "ws://localhost:28551"
+	}
+	return
+}
+
+func initializeExternalClient(
+	ctx context.Context,
+	client interface {
+		DigestInitMessage(context.Context, *big.Int, []byte) *execution.MessageResult
+	},
+	initMessage *arbostypes.ParsedInitMessage,
+) error {
+	if initMessage == nil {
+		return nil
+	}
+	result := client.DigestInitMessage(ctx, initMessage.InitialL1BaseFee, initMessage.SerializedChainConfig)
+	if result == nil {
+		return fmt.Errorf("DigestInitMessage returned nil")
+	}
+	return nil
 }
