@@ -1,9 +1,9 @@
 // Copyright 2021-2024, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use std::collections::HashMap;
 use arbutil::{Bytes32, PreimageType};
 use clap::{Args, Parser, Subcommand};
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 mod arbcompress;

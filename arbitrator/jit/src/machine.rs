@@ -1,7 +1,11 @@
 // Copyright 2022-2024, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use crate::{arbcompress, caller_env::GoRuntimeState, prepare::prepare_env_from_json, program, socket, stylus_backend::CothreadHandler, wasip1_stub, wavmio, InputMode, LocalInput, NativeInput, Opts, SequencerMessage};
+use crate::{
+    arbcompress, caller_env::GoRuntimeState, prepare::prepare_env_from_json, program, socket,
+    stylus_backend::CothreadHandler, wasip1_stub, wavmio, InputMode, LocalInput, NativeInput, Opts,
+    SequencerMessage,
+};
 use arbutil::{Bytes32, Color, PreimageType};
 use eyre::{bail, ErrReport, Report, Result};
 use sha3::{Digest, Keccak256};
@@ -227,7 +231,7 @@ impl TryFrom<&Opts> for WasmEnv {
     }
 }
 
-fn prepare_env_from_files(mut env: WasmEnv, input: &LocalInput) -> Result<WasmEnv> {
+fn prepare_env_from_files(env: WasmEnv, input: &LocalInput) -> Result<WasmEnv> {
     let mut native = NativeInput {
         old_state: input.old_state.clone(),
         inbox: vec![],
@@ -241,13 +245,19 @@ fn prepare_env_from_files(mut env: WasmEnv, input: &LocalInput) -> Result<WasmEn
     for path in &input.inbox {
         let mut msg = vec![];
         File::open(path)?.read_to_end(&mut msg)?;
-        native.inbox.push(SequencerMessage { number: inbox_position, data: msg });
+        native.inbox.push(SequencerMessage {
+            number: inbox_position,
+            data: msg,
+        });
         inbox_position += 1;
     }
     for path in &input.delayed_inbox {
         let mut msg = vec![];
         File::open(path)?.read_to_end(&mut msg)?;
-        native.delayed_inbox.push(SequencerMessage { number: delayed_position, data: msg });
+        native.delayed_inbox.push(SequencerMessage {
+            number: delayed_position,
+            data: msg,
+        });
         delayed_position += 1;
     }
 
@@ -296,8 +306,14 @@ fn prepare_env_from_native(mut env: WasmEnv, input: &NativeInput) -> Result<Wasm
         }
     }
 
-    env.small_globals = [input.old_state.inbox_position, input.old_state.position_within_message];
-    env.large_globals = [input.old_state.last_block_hash, input.old_state.last_send_root];
+    env.small_globals = [
+        input.old_state.inbox_position,
+        input.old_state.position_within_message,
+    ];
+    env.large_globals = [
+        input.old_state.last_block_hash,
+        input.old_state.last_send_root,
+    ];
     Ok(env)
 }
 
