@@ -58,22 +58,28 @@ pub enum InputMode {
 
 #[derive(Clone, Debug, Args)]
 pub struct LocalInput {
-    #[clap(long, default_value = "0")]
-    inbox_position: u64,
+    #[clap(flatten)]
+    old_state: GlobalState,
     #[clap(long, default_value = "0")]
     delayed_inbox_position: u64,
-    #[clap(long, default_value = "0")]
-    position_within_message: u64,
-    #[clap(long, value_parser = cli_parsing::parse_hex)]
-    last_block_hash: Bytes32,
-    #[clap(long, value_parser = cli_parsing::parse_hex)]
-    last_send_root: Bytes32,
     #[clap(long)]
     inbox: Vec<PathBuf>,
     #[clap(long)]
     delayed_inbox: Vec<PathBuf>,
     #[clap(long)]
     preimages: Option<PathBuf>,
+}
+
+#[derive(Clone, Debug, Args)]
+pub struct GlobalState {
+    #[clap(long, value_parser = cli_parsing::parse_hex)]
+    last_block_hash: Bytes32,
+    #[clap(long, value_parser = cli_parsing::parse_hex)]
+    last_send_root: Bytes32,
+    #[clap(long, default_value = "0")]
+    inbox_position: u64,
+    #[clap(long, default_value = "0")]
+    position_within_message: u64,
 }
 
 mod cli_parsing {

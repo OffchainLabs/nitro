@@ -232,7 +232,7 @@ impl TryFrom<&Opts> for WasmEnv {
 fn prepare_env_from_files(mut env: WasmEnv, input: &LocalInput) -> Result<WasmEnv> {
     env.process.already_has_input = true;
 
-    let mut inbox_position = input.inbox_position;
+    let mut inbox_position = input.old_state.inbox_position;
     let mut delayed_position = input.delayed_inbox_position;
 
     for path in &input.inbox {
@@ -273,8 +273,8 @@ fn prepare_env_from_files(mut env: WasmEnv, input: &LocalInput) -> Result<WasmEn
         }
     }
 
-    env.small_globals = [input.inbox_position, input.position_within_message];
-    env.large_globals = [input.last_block_hash, input.last_send_root];
+    env.small_globals = [input.old_state.inbox_position, input.old_state.position_within_message];
+    env.large_globals = [input.old_state.last_block_hash, input.old_state.last_send_root];
     Ok(env)
 }
 
