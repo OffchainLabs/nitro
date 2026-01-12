@@ -151,10 +151,6 @@ func (c *InitConfig) Validate() error {
 }
 
 func (c *InitConfig) InitialL1BaseFeeParsed() (*big.Int, error) {
-	if c.InitialL1BaseFee == "" {
-		return arbostypes.DefaultInitialL1BaseFee, nil
-	}
-
 	parsed, success := big.NewInt(0).SetString(c.InitialL1BaseFee, 10)
 	if !success {
 		return nil, fmt.Errorf("failed to parse L1 BaseFee for init config: `%s` (passed with `initial-l1base-fee` flag)", c.InitialL1BaseFee)
