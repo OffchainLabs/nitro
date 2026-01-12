@@ -4,9 +4,7 @@
 package main
 
 import (
-	"context"
 	"fmt"
-	"net"
 	"os"
 	"os/signal"
 	"syscall"
@@ -15,48 +13,99 @@ import (
 	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/node"
+	"github.com/ethereum/go-ethereum/p2p"
+	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/cmd/genericconf"
-	"github.com/offchainlabs/nitro/cmd/tx-filterer-manager/server"
+	"github.com/offchainlabs/nitro/cmd/tx-filterer-manager/api"
 	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
 )
 
 type TxFiltererManagerConfig struct {
-	RPCAddr           string                              `koanf:"rpc-addr"`
-	RPCPort           uint64                              `koanf:"rpc-port"`
-	RPCServerTimeouts genericconf.HTTPServerTimeoutConfig `koanf:"rpc-server-timeouts"`
+	Conf genericconf.ConfConfig `koanf:"conf"`
 
-	Conf     genericconf.ConfConfig `koanf:"conf"`
-	LogLevel string                 `koanf:"log-level"`
-	LogType  string                 `koanf:"log-type"`
+	FileLogging genericconf.FileLoggingConfig `koanf:"file-logging" reload:"hot"`
+	LogLevel    string                        `koanf:"log-level"`
+	LogType     string                        `koanf:"log-type"`
 
 	Metrics       bool                            `koanf:"metrics"`
 	MetricsServer genericconf.MetricsServerConfig `koanf:"metrics-server"`
-	PProf         bool                            `koanf:"pprof"`
-	PprofCfg      genericconf.PProf               `koanf:"pprof-cfg"`
+
+	PProf    bool              `koanf:"pprof"`
+	PprofCfg genericconf.PProf `koanf:"pprof-cfg"`
+
+	HTTP genericconf.HTTPConfig `koanf:"http"`
+	WS   genericconf.WSConfig   `koanf:"ws"`
+	IPC  genericconf.IPCConfig  `koanf:"ipc"`
 
 	Wallet genericconf.WalletConfig `koanf:"wallet"`
 }
 
-var DefaultTxFiltererManagerConfig = TxFiltererManagerConfig{
-	RPCAddr:           "localhost",
-	RPCPort:           9876,
-	RPCServerTimeouts: genericconf.HTTPServerTimeoutConfigDefault,
-	Conf:              genericconf.ConfConfigDefault,
-	LogLevel:          "INFO",
-	LogType:           "plaintext",
-	Metrics:           false,
-	MetricsServer:     genericconf.MetricsServerConfigDefault,
-	PProf:             false,
-	PprofCfg:          genericconf.PProfDefault,
+var HTTPConfigDefault = genericconf.HTTPConfig{
+	Addr:           "",
+	Port:           genericconf.HTTPConfigDefault.Port,
+	API:            []string{},
+	RPCPrefix:      genericconf.HTTPConfigDefault.RPCPrefix,
+	CORSDomain:     genericconf.HTTPConfigDefault.CORSDomain,
+	VHosts:         genericconf.HTTPConfigDefault.VHosts,
+	ServerTimeouts: genericconf.HTTPConfigDefault.ServerTimeouts,
 }
 
-func parseTxFiltererManagerConfig(args []string) (*TxFiltererManagerConfig, error) {
-	f := pflag.NewFlagSet("tx-filterer-signer", pflag.ContinueOnError)
-	f.String("rpc-addr", DefaultTxFiltererManagerConfig.RPCAddr, "HTTP-RPC server listening interface")
-	f.Uint64("rpc-port", DefaultTxFiltererManagerConfig.RPCPort, "HTTP-RPC server listening port")
-	genericconf.HTTPServerTimeoutConfigAddOptions("rpc-server-timeouts", f)
+var WSConfigDefault = genericconf.WSConfig{
+	Addr:      "",
+	Port:      genericconf.WSConfigDefault.Port,
+	API:       []string{},
+	RPCPrefix: genericconf.WSConfigDefault.RPCPrefix,
+	Origins:   genericconf.WSConfigDefault.Origins,
+	ExposeAll: genericconf.WSConfigDefault.ExposeAll,
+}
+
+var IPCConfigDefault = genericconf.IPCConfig{
+	Path: "",
+}
+
+var DefaultTxFiltererManagerConfig = TxFiltererManagerConfig{
+	Conf:          genericconf.ConfConfigDefault,
+	LogLevel:      "INFO",
+	LogType:       "plaintext",
+	Metrics:       false,
+	MetricsServer: genericconf.MetricsServerConfigDefault,
+	PProf:         false,
+	PprofCfg:      genericconf.PProfDefault,
+	HTTP:          HTTPConfigDefault,
+	WS:            WSConfigDefault,
+	IPC:           IPCConfigDefault,
+}
+
+var DefaultStackConfig = node.Config{
+	DataDir:             node.DefaultDataDir(),
+	HTTPPort:            node.DefaultHTTPPort,
+	AuthAddr:            node.DefaultAuthHost,
+	AuthPort:            node.DefaultAuthPort,
+	AuthVirtualHosts:    node.DefaultAuthVhosts,
+	HTTPModules:         []string{"txfilterermanager"},
+	HTTPHost:            "localhost",
+	HTTPVirtualHosts:    []string{"localhost"},
+	HTTPTimeouts:        rpc.DefaultHTTPTimeouts,
+	WSHost:              "localhost",
+	WSPort:              node.DefaultWSPort,
+	WSModules:           []string{"txfilterermanager"},
+	GraphQLVirtualHosts: []string{"localhost"},
+	P2P: p2p.Config{
+		ListenAddr:  "",
+		NoDiscovery: true,
+		NoDial:      true,
+	},
+}
+
+func addFlags(f *pflag.FlagSet) {
+	genericconf.ConfConfigAddOptions("conf", f)
+
+	genericconf.FileLoggingConfigAddOptions("file-logging", f)
+	f.String("log-level", DefaultTxFiltererManagerConfig.LogLevel, "log level, valid values are CRIT, ERROR, WARN, INFO, DEBUG, TRACE")
+	f.String("log-type", DefaultTxFiltererManagerConfig.LogType, "log type (plaintext or json)")
 
 	f.Bool("metrics", DefaultTxFiltererManagerConfig.Metrics, "enable metrics")
 	genericconf.MetricsServerAddOptions("metrics-server", f)
@@ -64,12 +113,17 @@ func parseTxFiltererManagerConfig(args []string) (*TxFiltererManagerConfig, erro
 	f.Bool("pprof", DefaultTxFiltererManagerConfig.PProf, "enable pprof")
 	genericconf.PProfAddOptions("pprof-cfg", f)
 
-	f.String("log-level", DefaultTxFiltererManagerConfig.LogLevel, "log level, valid values are CRIT, ERROR, WARN, INFO, DEBUG, TRACE")
-	f.String("log-type", DefaultTxFiltererManagerConfig.LogType, "log type (plaintext or json)")
+	genericconf.HTTPConfigAddOptions("http", f)
+	genericconf.WSConfigAddOptions("ws", f)
+	genericconf.IPCConfigAddOptions("ipc", f)
 
 	genericconf.WalletConfigAddOptions("wallet", f, "")
+}
 
-	genericconf.ConfConfigAddOptions("conf", f)
+func parseConfig(args []string) (*TxFiltererManagerConfig, error) {
+	f := pflag.NewFlagSet("", pflag.ContinueOnError)
+
+	addFlags(f)
 
 	k, err := confighelpers.BeginCommonParse(f, args)
 	if err != nil {
@@ -107,10 +161,21 @@ func printSampleUsage(progname string) {
 }
 
 func startup() error {
-	config, err := parseTxFiltererManagerConfig(os.Args[1:])
+	config, err := parseConfig(os.Args[1:])
 	if err != nil {
 		confighelpers.PrintErrorAndExit(err, printSampleUsage)
 	}
+
+	stackConf := DefaultStackConfig
+	stackConf.DataDir = "" // ephemeral
+	config.HTTP.Apply(&stackConf)
+	config.WS.Apply(&stackConf)
+	config.IPC.Apply(&stackConf)
+	stackConf.P2P.ListenAddr = ""
+	stackConf.P2P.NoDial = true
+	stackConf.P2P.NoDiscovery = true
+	_, strippedRevision, _ := confighelpers.GetVersion()
+	stackConf.Version = strippedRevision
 
 	err = util.SetLogger(config.LogLevel, config.LogType)
 	if err != nil {
@@ -121,29 +186,22 @@ func startup() error {
 		return err
 	}
 
+	stack, err := node.New(&stackConf)
+	if err != nil {
+		return err
+	}
+	api.RegisterAPI(stack)
+
 	sigint := make(chan os.Signal, 1)
 	signal.Notify(sigint, os.Interrupt, syscall.SIGTERM)
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	vcsRevision, _, vcsTime := confighelpers.GetVersion()
-	log.Info("Starting HTTP-RPC server", "addr", config.RPCAddr, "port", config.RPCPort, "revision", vcsRevision, "vcs.time", vcsTime)
-	listener, err := net.Listen("tcp", fmt.Sprintf("%s:%d", config.RPCAddr, config.RPCPort))
+	err = stack.Start()
 	if err != nil {
 		return err
 	}
-	rpcServer, err := server.StartRPCServer(ctx, listener, config.RPCServerTimeouts)
-	if err != nil {
-		return err
-	}
+	defer stack.Close()
 
 	<-sigint
-
-	err = rpcServer.Shutdown(ctx)
-	if err != nil {
-		return err
-	}
 
 	return nil
 }
