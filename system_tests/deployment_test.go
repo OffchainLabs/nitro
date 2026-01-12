@@ -106,38 +106,82 @@ func makeContractOfLength(length int) []byte {
 	return ret
 }
 
-func TestContractDeployment(t *testing.T) {
+func testContractDeploymentSuite(t *testing.T, executionClientMode ExecutionClientMode) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	// Primary always built with L1 (for replica sync)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
 	cleanup := builder.Build(t)
 	defer cleanup()
 
+	// Build replica with specified execution mode
+	replica, replicaCleanup := BuildReplicaWithExecutionMode(t, builder, executionClientMode)
+	defer replicaCleanup()
+	replicaClient := replica.Client
+
+	// Run test on primary
 	account := builder.L2Info.GetInfoWithPrivKey("Faucet")
 	for _, size := range []int{0, 1, 1000, 20000, params.DefaultMaxCodeSize} {
 		testContractDeployment(t, ctx, builder.L2.Client, makeContractOfLength(size), account, nil)
+
+		// Wait for replica to catch up
+		WaitForReplicaSync(ctx, t, builder.L2.Client, replicaClient, 60)
 	}
 
 	testContractDeployment(t, ctx, builder.L2.Client, makeContractOfLength(40000), account, vm.ErrMaxCodeSizeExceeded)
 	testContractDeployment(t, ctx, builder.L2.Client, makeContractOfLength(60000), account, core.ErrMaxInitCodeSizeExceeded)
 }
 
-func TestExtendedContractDeployment(t *testing.T) {
+func TestContractDeploymentInternal(t *testing.T) {
+	testContractDeploymentSuite(t, ExecutionClientModeInternal)
+}
+
+func TestContractDeploymentExternal(t *testing.T) {
+	testContractDeploymentSuite(t, ExecutionClientModeExternal)
+}
+
+func TestContractDeploymentComparison(t *testing.T) {
+	testContractDeploymentSuite(t, ExecutionClientModeComparison)
+}
+
+func testExtendedContractDeploymentSuite(t *testing.T, executionClientMode ExecutionClientMode) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
 	builder.chainConfig.ArbitrumChainParams.MaxCodeSize = params.DefaultMaxCodeSize * 3
 	builder.chainConfig.ArbitrumChainParams.MaxInitCodeSize = params.DefaultMaxInitCodeSize * 3
+
 	cleanup := builder.Build(t)
 	defer cleanup()
 
+	// Build replica with specified execution mode
+	replica, replicaCleanup := BuildReplicaWithExecutionMode(t, builder, executionClientMode)
+	defer replicaCleanup()
+	replicaClient := replica.Client
+
+	// Run tests on primary
 	account := builder.L2Info.GetInfoWithPrivKey("Faucet")
 	for _, size := range []int{0, 1, 1000, 20000, 30000, 40000, 60000, params.DefaultMaxCodeSize * 3} {
 		testContractDeployment(t, ctx, builder.L2.Client, makeContractOfLength(size), account, nil)
+
+		// Wait for replica to catch up
+		WaitForReplicaSync(ctx, t, builder.L2.Client, replicaClient, 60)
 	}
 
 	testContractDeployment(t, ctx, builder.L2.Client, makeContractOfLength(100000), account, vm.ErrMaxCodeSizeExceeded)
 	testContractDeployment(t, ctx, builder.L2.Client, makeContractOfLength(200000), account, core.ErrMaxInitCodeSizeExceeded)
+}
+
+func TestExtendedContractDeploymentInternal(t *testing.T) {
+	testExtendedContractDeploymentSuite(t, ExecutionClientModeInternal)
+}
+
+func TestExtendedContractDeploymentExternal(t *testing.T) {
+	testExtendedContractDeploymentSuite(t, ExecutionClientModeExternal)
+}
+
+func TestExtendedContractDeploymentComparison(t *testing.T) {
+	testExtendedContractDeploymentSuite(t, ExecutionClientModeComparison)
 }
