@@ -50,7 +50,7 @@ pub struct ValidationRequest {
     has_delayed_msg: bool,
     #[serde(rename = "DelayedMsgNr")]
     delayed_msg_number: u64,
-    preimages: HashMap<PreimageType, Bytes32>,
+    preimages: HashMap<PreimageType, HashMap<Bytes32, Vec<u8>>>,
     user_wasms: HashMap<String, HashMap<Bytes32, Vec<u8>>>,
     batch_info: Vec<BatchInfo>,
     delayed_msg: Vec<u8>,
