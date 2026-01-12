@@ -35,9 +35,10 @@ type TxFiltererManagerConfig struct {
 	PProf    bool              `koanf:"pprof"`
 	PprofCfg genericconf.PProf `koanf:"pprof-cfg"`
 
-	HTTP genericconf.HTTPConfig `koanf:"http"`
-	WS   genericconf.WSConfig   `koanf:"ws"`
-	IPC  genericconf.IPCConfig  `koanf:"ipc"`
+	HTTP genericconf.HTTPConfig    `koanf:"http"`
+	WS   genericconf.WSConfig      `koanf:"ws"`
+	IPC  genericconf.IPCConfig     `koanf:"ipc"`
+	Auth genericconf.AuthRPCConfig `koanf:"auth"`
 
 	Wallet genericconf.WalletConfig `koanf:"wallet"`
 }
@@ -76,6 +77,7 @@ var DefaultTxFiltererManagerConfig = TxFiltererManagerConfig{
 	HTTP:          HTTPConfigDefault,
 	WS:            WSConfigDefault,
 	IPC:           IPCConfigDefault,
+	Auth:          genericconf.AuthRPCConfigDefault,
 }
 
 func addFlags(f *pflag.FlagSet) {
@@ -149,8 +151,17 @@ func startup() error {
 	config.HTTP.Apply(&stackConf)
 	config.WS.Apply(&stackConf)
 	config.IPC.Apply(&stackConf)
+	config.Auth.Apply(&stackConf)
 	_, strippedRevision, _ := confighelpers.GetVersion()
 	stackConf.Version = strippedRevision
+
+	if stackConf.JWTSecret == "" && stackConf.AuthAddr != "" {
+		filename := genericconf.DefaultPathResolver(config.Persistent.GlobalConfig)("jwtsecret")
+		if err := genericconf.TryCreatingJWTSecret(filename); err != nil {
+			return fmt.Errorf("Failed to prepare jwt secret file: %w", err)
+		}
+		stackConf.JWTSecret = filename
+	}
 
 	err = genericconf.InitLog(config.LogType, config.LogLevel, &config.FileLogging, genericconf.DefaultPathResolver(config.Persistent.LogDir))
 	if err != nil {
