@@ -13,9 +13,6 @@ import (
 	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/ethereum/go-ethereum/node"
-	"github.com/ethereum/go-ethereum/p2p"
-	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
@@ -79,27 +76,6 @@ var DefaultTxFiltererManagerConfig = TxFiltererManagerConfig{
 	HTTP:          HTTPConfigDefault,
 	WS:            WSConfigDefault,
 	IPC:           IPCConfigDefault,
-}
-
-var DefaultStackConfig = node.Config{
-	DataDir:             node.DefaultDataDir(),
-	HTTPPort:            node.DefaultHTTPPort,
-	AuthAddr:            node.DefaultAuthHost,
-	AuthPort:            node.DefaultAuthPort,
-	AuthVirtualHosts:    node.DefaultAuthVhosts,
-	HTTPModules:         []string{"txfilterermanager"},
-	HTTPHost:            "localhost",
-	HTTPVirtualHosts:    []string{"localhost"},
-	HTTPTimeouts:        rpc.DefaultHTTPTimeouts,
-	WSHost:              "localhost",
-	WSPort:              node.DefaultWSPort,
-	WSModules:           []string{"txfilterermanager"},
-	GraphQLVirtualHosts: []string{"localhost"},
-	P2P: p2p.Config{
-		ListenAddr:  "",
-		NoDiscovery: true,
-		NoDial:      true,
-	},
 }
 
 func addFlags(f *pflag.FlagSet) {
@@ -169,14 +145,10 @@ func startup() error {
 		confighelpers.PrintErrorAndExit(err, printSampleUsage)
 	}
 
-	stackConf := DefaultStackConfig
-	stackConf.DataDir = "" // ephemeral
+	stackConf := api.DefaultStackConfig
 	config.HTTP.Apply(&stackConf)
 	config.WS.Apply(&stackConf)
 	config.IPC.Apply(&stackConf)
-	stackConf.P2P.ListenAddr = ""
-	stackConf.P2P.NoDial = true
-	stackConf.P2P.NoDiscovery = true
 	_, strippedRevision, _ := confighelpers.GetVersion()
 	stackConf.Version = strippedRevision
 
@@ -189,14 +161,10 @@ func startup() error {
 		return err
 	}
 
-	stack, err := node.New(&stackConf)
+	stack, err := api.NewStack(&stackConf)
 	if err != nil {
 		return err
 	}
-	api.RegisterAPI(stack)
-
-	sigint := make(chan os.Signal, 1)
-	signal.Notify(sigint, os.Interrupt, syscall.SIGTERM)
 
 	err = stack.Start()
 	if err != nil {
@@ -204,6 +172,8 @@ func startup() error {
 	}
 	defer stack.Close()
 
+	sigint := make(chan os.Signal, 1)
+	signal.Notify(sigint, os.Interrupt, syscall.SIGTERM)
 	<-sigint
 
 	return nil

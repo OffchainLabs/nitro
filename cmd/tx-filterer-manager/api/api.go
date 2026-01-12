@@ -9,8 +9,11 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
+	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/ethereum/go-ethereum/rpc"
 )
+
+const namespace = "txfilterermanager"
 
 type TxFiltererManagerAPI struct {
 }
@@ -20,13 +23,41 @@ func (t *TxFiltererManagerAPI) Filter(ctx context.Context, txHash common.Hash) e
 	return nil
 }
 
-func RegisterAPI(stack *node.Node) {
+var DefaultStackConfig = node.Config{
+	DataDir:             "", // ephemeral
+	HTTPPort:            node.DefaultHTTPPort,
+	AuthAddr:            node.DefaultAuthHost,
+	AuthPort:            node.DefaultAuthPort,
+	AuthVirtualHosts:    node.DefaultAuthVhosts,
+	HTTPModules:         []string{namespace},
+	HTTPHost:            node.DefaultHTTPHost,
+	HTTPVirtualHosts:    []string{"localhost"},
+	HTTPTimeouts:        rpc.DefaultHTTPTimeouts,
+	WSHost:              node.DefaultWSHost,
+	WSPort:              node.DefaultWSPort,
+	WSModules:           []string{namespace},
+	GraphQLVirtualHosts: []string{"localhost"},
+	P2P: p2p.Config{
+		ListenAddr:  "",
+		NoDiscovery: true,
+		NoDial:      true,
+	},
+}
+
+func NewStack(stackConfig *node.Config) (*node.Node, error) {
+	stack, err := node.New(stackConfig)
+	if err != nil {
+		return nil, err
+	}
+
 	api := &TxFiltererManagerAPI{}
 	apis := []rpc.API{{
-		Namespace: "txfilterermanager",
+		Namespace: namespace,
 		Version:   "1.0",
 		Service:   api,
 		Public:    true,
 	}}
 	stack.RegisterAPIs(apis)
+
+	return stack, nil
 }
