@@ -935,13 +935,13 @@ func openInitializeExecutionDB(ctx context.Context, stack *node.Node, config *No
 func getExecutionParsedInitMessage(
 	genesisArbOSInit *params.ArbOSInit,
 	initConfig *conf.InitConfig,
-	chainConfig *params.ChainConfig,
+	fallbackChainConfig *params.ChainConfig,
 ) (*arbostypes.ParsedInitMessage, error) {
 	initialL1BaseFee, err := resolveInitialL1BaseFee(genesisArbOSInit, initConfig)
 	if err != nil {
 		return nil, err
 	}
-	serializedChainConfig, err := resolveSerializedChainConfig(genesisArbOSInit, initConfig, chainConfig)
+	serializedChainConfig, err := resolveSerializedChainConfig(genesisArbOSInit, initConfig, fallbackChainConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -984,10 +984,10 @@ func resolveInitialL1BaseFee(genesisArbOSInit *params.ArbOSInit, initConfig *con
 	return arbostypes.DefaultInitialL1BaseFee, nil
 }
 
-func resolveSerializedChainConfig(arbosInit *params.ArbOSInit, initConfig *conf.InitConfig, chainConfig *params.ChainConfig) ([]byte, error) {
+func resolveSerializedChainConfig(genesisArbOSInit *params.ArbOSInit, initConfig *conf.InitConfig, fallbackChainConfig *params.ChainConfig) ([]byte, error) {
 	var fromGenesisJSON, fromCLIFlag []byte
-	if arbosInit != nil && len(arbosInit.SerializedChainConfig) != 0 {
-		fromGenesisJSON = arbosInit.SerializedChainConfig
+	if genesisArbOSInit != nil && len(genesisArbOSInit.SerializedChainConfig) != 0 {
+		fromGenesisJSON = genesisArbOSInit.SerializedChainConfig
 	}
 	if initConfig != nil && len(initConfig.SerializedChainConfig) != 0 {
 		fromCLIFlag = []byte(initConfig.SerializedChainConfig)
@@ -1002,7 +1002,7 @@ func resolveSerializedChainConfig(arbosInit *params.ArbOSInit, initConfig *conf.
 	if fromCLIFlag != nil {
 		return fromCLIFlag, nil
 	}
-	return json.Marshal(chainConfig)
+	return json.Marshal(fallbackChainConfig)
 }
 
 func validateGenesisAssertion(ctx context.Context, rollupAddress common.Address, l1Client *ethclient.Client, genesis *types.Block, initDataReaderHasAccounts bool) error {
