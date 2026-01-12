@@ -133,7 +133,8 @@ func (wrapper *OwnerPrecompile) Name() string {
 	return wrapper.precompile.Name()
 }
 
-// TransactionFilterPrecompile is a precompile wrapper for those only transaction filterers may use.
+// TransactionFilterPrecompile wraps ArbFilteredTransactionsManager to preserve free storage access for filterers.
+// Access control is NOT enforced here.
 type TransactionFilterPrecompile struct {
 	precompile ArbosPrecompile
 }
@@ -146,8 +147,7 @@ func (wrapper *TransactionFilterPrecompile) Address() common.Address {
 	return wrapper.precompile.Address()
 }
 
-// Call is overridden to enforce the transaction-filterer permission and to keep the
-// underlying state reads/writes free for authorised callers (no StorageAccess multigas).
+// Call decides gas charging based on caller role, but always forwards the call.
 func (wrapper *TransactionFilterPrecompile) Call(
 	input []byte,
 	actingAsAddress common.Address,
@@ -174,15 +174,25 @@ func (wrapper *TransactionFilterPrecompile) Call(
 	if err != nil {
 		return nil, burner.GasLeft(), burner.gasUsed, err
 	}
-	if !isFilterer {
-		return nil, burner.GasLeft(), burner.gasUsed, errors.New("unauthorized caller to access-controlled method")
-	}
 
-	output, _, _, err := con.Call(input, actingAsAddress, caller, value, readOnly, gasSupplied, evm)
+	output, _, _, err := con.Call(
+		input,
+		actingAsAddress,
+		caller,
+		value,
+		readOnly,
+		gasSupplied,
+		evm,
+	)
 	if err != nil {
 		return output, gasSupplied, multigas.ZeroGas(), err
 	}
-	return output, gasSupplied, multigas.ZeroGas(), nil
+
+	// Gas charging decision
+	if isFilterer {
+		return output, gasSupplied, multigas.ZeroGas(), nil
+	}
+	return output, burner.GasLeft(), burner.gasUsed, nil
 }
 
 func (wrapper *TransactionFilterPrecompile) Precompile() *Precompile {

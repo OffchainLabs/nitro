@@ -57,13 +57,6 @@ func TestManageTransactionFilterers(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	// Initially neither owner nor user can access the filtered tx manager
-	_, err = arbFilteredTxs.IsTransactionFiltered(ownerCallOpts, txHash)
-	require.Error(t, err)
-
-	_, err = arbFilteredTxs.IsTransactionFiltered(userCallOpts, txHash)
-	require.Error(t, err)
-
 	// Adding a filterer should be disabled by default by ArbFiltereredTransactionManagerFromTime
 	_, err = arbOwner.AddTransactionFilterer(&ownerTxOpts, userTxOpts.From)
 	require.Error(t, err)
@@ -84,6 +77,18 @@ func TestManageTransactionFilterers(t *testing.T) {
 
 	warpL1Time(t, builder, ctx, hdr.Time, precompiles.TransactionFilteringEnableDelay+1)
 
+	// Initially neither owner nor user can modify filtered transactions,
+	// but both can read (get) filtered status
+	_, err = arbFilteredTxs.IsTransactionFiltered(ownerCallOpts, txHash)
+	require.NoError(t, err)
+	_, err = arbFilteredTxs.AddFilteredTransaction(&ownerTxOpts, txHash)
+	require.Error(t, err)
+
+	_, err = arbFilteredTxs.IsTransactionFiltered(userCallOpts, txHash)
+	require.NoError(t, err)
+	_, err = arbFilteredTxs.AddFilteredTransaction(&userTxOpts, txHash)
+	require.Error(t, err)
+
 	// Owner grants user transaction filterer role
 	tx, err = arbOwner.AddTransactionFilterer(&ownerTxOpts, userTxOpts.From)
 	require.NoError(t, err)
@@ -95,7 +100,7 @@ func TestManageTransactionFilterers(t *testing.T) {
 	require.True(t, isFilterer)
 
 	// Owner is still not a filterer, so owner still cannot call the manager
-	_, err = arbFilteredTxs.IsTransactionFiltered(ownerCallOpts, txHash)
+	_, err = arbFilteredTxs.AddFilteredTransaction(&ownerTxOpts, txHash)
 	require.Error(t, err)
 
 	// User can call the manager and the tx is initially not filtered
@@ -165,7 +170,7 @@ func TestManageTransactionFilterers(t *testing.T) {
 	require.False(t, isFilterer)
 
 	// User is no longer authorised
-	_, err = arbFilteredTxs.IsTransactionFiltered(userCallOpts, txHash)
+	_, err = arbFilteredTxs.DeleteFilteredTransaction(&userTxOpts, txHash)
 	require.Error(t, err)
 
 	// Disable transaction filtering feature again
