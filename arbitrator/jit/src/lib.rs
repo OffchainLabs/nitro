@@ -33,7 +33,7 @@ pub struct ValidatorOpts {
     #[clap(short, long)]
     pub binary: PathBuf,
     /// Use Cranelift backend
-    #[clap(long)]
+    #[clap(long, default_value_t = true)]
     pub cranelift: bool,
     /// Enable debug output
     #[clap(long)]
