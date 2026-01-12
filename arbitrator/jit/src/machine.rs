@@ -237,6 +237,7 @@ fn prepare_env_from_files(env: WasmEnv, input: &LocalInput) -> Result<WasmEnv> {
         inbox: vec![],
         delayed_inbox: vec![],
         preimages: HashMap::new(),
+        programs: HashMap::new(),
     };
 
     let mut inbox_position = input.old_state.inbox_position;
@@ -304,6 +305,10 @@ fn prepare_env_from_native(mut env: WasmEnv, input: &NativeInput) -> Result<Wasm
         for (hash, preimage) in preimages_map {
             type_map.insert(*hash, preimage.clone());
         }
+    }
+
+    for (hash, program) in &input.programs {
+        env.module_asms.insert(*hash, Arc::from(program.as_slice()));
     }
 
     env.small_globals = [

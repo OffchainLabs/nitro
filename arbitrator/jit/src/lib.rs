@@ -98,6 +98,7 @@ pub struct NativeInput {
     pub inbox: Vec<SequencerMessage>,
     pub delayed_inbox: Vec<SequencerMessage>,
     pub preimages: HashMap<PreimageType, HashMap<Bytes32, Vec<u8>>>,
+    pub programs: HashMap<Bytes32, Vec<u8>>,
 }
 
 mod cli_parsing {
