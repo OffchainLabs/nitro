@@ -7,6 +7,7 @@ import (
 	"context"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/p2p"
@@ -16,6 +17,7 @@ import (
 const namespace = "transactionfilterer"
 
 type TransactionFiltererAPI struct {
+	sequencerClient *ethclient.Client
 }
 
 func (t *TransactionFiltererAPI) Filter(ctx context.Context, txHash common.Hash) error {
@@ -44,13 +46,19 @@ var DefaultStackConfig = node.Config{
 	},
 }
 
-func NewStack(stackConfig *node.Config) (*node.Node, error) {
+func NewStack(
+	ctx context.Context,
+	stackConfig *node.Config,
+	sequencerClient *ethclient.Client,
+) (*node.Node, error) {
 	stack, err := node.New(stackConfig)
 	if err != nil {
 		return nil, err
 	}
 
-	api := &TransactionFiltererAPI{}
+	api := &TransactionFiltererAPI{
+		sequencerClient: sequencerClient,
+	}
 	apis := []rpc.API{{
 		Namespace: namespace,
 		Version:   "1.0",

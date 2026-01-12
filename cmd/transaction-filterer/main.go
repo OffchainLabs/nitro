@@ -4,6 +4,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/signal"
@@ -12,6 +13,7 @@ import (
 	"github.com/knadh/koanf/parsers/json"
 	"github.com/spf13/pflag"
 
+	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/cmd/conf"
@@ -19,6 +21,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/transaction-filterer/api"
 	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
+	"github.com/offchainlabs/nitro/util/rpcclient"
 )
 
 type TransactionFiltererConfig struct {
@@ -40,7 +43,8 @@ type TransactionFiltererConfig struct {
 	IPC  genericconf.IPCConfig     `koanf:"ipc"`
 	Auth genericconf.AuthRPCConfig `koanf:"auth"`
 
-	Wallet genericconf.WalletConfig `koanf:"wallet"`
+	Wallet    genericconf.WalletConfig `koanf:"wallet"`
+	Sequencer rpcclient.ClientConfig   `koanf:"sequencer"`
 }
 
 var HTTPConfigDefault = genericconf.HTTPConfig{
@@ -78,6 +82,7 @@ var DefaultTransactionFiltererConfig = TransactionFiltererConfig{
 	WS:            WSConfigDefault,
 	IPC:           IPCConfigDefault,
 	Auth:          genericconf.AuthRPCConfigDefault,
+	Sequencer:     rpcclient.DefaultClientConfig,
 }
 
 func addFlags(f *pflag.FlagSet) {
@@ -99,6 +104,7 @@ func addFlags(f *pflag.FlagSet) {
 	genericconf.IPCConfigAddOptions("ipc", f)
 
 	genericconf.WalletConfigAddOptions("wallet", f, "")
+	rpcclient.RPCClientAddOptions("sequencer", f, &DefaultTransactionFiltererConfig.Sequencer)
 }
 
 func parseConfig(args []string) (*TransactionFiltererConfig, error) {
@@ -142,6 +148,9 @@ func printSampleUsage(progname string) {
 }
 
 func startup() error {
+	ctx, cancelFunc := context.WithCancel(context.Background())
+	defer cancelFunc()
+
 	config, err := parseConfig(os.Args[1:])
 	if err != nil {
 		confighelpers.PrintErrorAndExit(err, printSampleUsage)
@@ -172,7 +181,15 @@ func startup() error {
 		return err
 	}
 
-	stack, err := api.NewStack(&stackConf)
+	sequencerRPCConfigFetcher := func() *rpcclient.ClientConfig { return &config.Sequencer }
+	sequencerRPCClient := rpcclient.NewRpcClient(sequencerRPCConfigFetcher, nil)
+	err = sequencerRPCClient.Start(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to start sequencer rpc client: %w", err)
+	}
+	sequencerClient := ethclient.NewClient(sequencerRPCClient)
+
+	stack, err := api.NewStack(ctx, &stackConf, sequencerClient)
 	if err != nil {
 		return err
 	}

@@ -15,27 +15,32 @@ import (
 func TestTransactionFiltererCmd(t *testing.T) {
 	ctx := t.Context()
 
-	stackConf := api.DefaultStackConfig
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	transactionFiltererStackConf := api.DefaultStackConfig
 	// use a random available port
-	stackConf.HTTPPort = 0
-	stackConf.WSPort = 0
-	stackConf.AuthPort = 0
+	transactionFiltererStackConf.HTTPPort = 0
+	transactionFiltererStackConf.WSPort = 0
+	transactionFiltererStackConf.AuthPort = 0
 
-	stack, err := api.NewStack(&stackConf)
+	transactionFiltererStack, err := api.NewStack(ctx, &transactionFiltererStackConf, builder.L2.Client)
 	Require(t, err)
-	err = stack.Start()
+	err = transactionFiltererStack.Start()
 	Require(t, err)
-	defer stack.Close()
+	defer transactionFiltererStack.Close()
 
-	rpcClientConfigFetcher := func() *rpcclient.ClientConfig {
+	transactionFiltererRPCClientConfigFetcher := func() *rpcclient.ClientConfig {
 		config := rpcclient.DefaultClientConfig
-		config.URL = stack.HTTPEndpoint()
+		config.URL = transactionFiltererStack.HTTPEndpoint()
 		return &config
 	}
-	rpcClient := rpcclient.NewRpcClient(rpcClientConfigFetcher, nil)
-	err = rpcClient.Start(ctx)
+	transactionFiltererRPCClient := rpcclient.NewRpcClient(transactionFiltererRPCClientConfigFetcher, nil)
+	err = transactionFiltererRPCClient.Start(ctx)
 	Require(t, err)
+
 	txHash := common.Hash{}
-	err = rpcClient.CallContext(ctx, nil, "transactionfilterer_filter", txHash)
+	err = transactionFiltererRPCClient.CallContext(ctx, nil, "transactionfilterer_filter", txHash)
 	Require(t, err)
 }
