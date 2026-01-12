@@ -4,6 +4,8 @@
 package precompiles
 
 import (
+	"errors"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/params"
 )
@@ -108,4 +110,9 @@ func (con ArbOwnerPublic) IsCalldataPriceIncreaseEnabled(c ctx, _ mech) (bool, e
 // Get how much L1 charges per non-zero byte of calldata
 func (con ArbOwnerPublic) GetParentGasFloorPerToken(c ctx, evm mech) (uint64, error) {
 	return c.State.L1PricingState().ParentGasFloorPerToken()
+}
+
+func (con ArbOwnerPublic) GetMaxStylusContractFragments(c ctx, evm mech) (uint16, error) {
+	// NOTE: waits https://github.com/OffchainLabs/nitro/pull/4193
+	return 0, errors.New("GetMaxStylusContractFragments is not yet implemented")
 }

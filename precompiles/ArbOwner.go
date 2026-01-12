@@ -194,8 +194,8 @@ func (con ArbOwner) AddTransactionFilterer(c ctx, evm mech, filterer addr) error
 }
 
 // RemoveTransactionFilterer removes account from the list of transaction filterers
-func (con ArbOwner) RemoveTransactionFilterer(c ctx, _ mech, filterer addr) error {
-	member, err := con.IsTransactionFilterer(c, nil, filterer)
+func (con ArbOwner) RemoveTransactionFilterer(c ctx, evm mech, filterer addr) error {
+	member, err := con.IsTransactionFilterer(c, evm, filterer)
 	if err != nil {
 		return err
 	}
@@ -206,7 +206,7 @@ func (con ArbOwner) RemoveTransactionFilterer(c ctx, _ mech, filterer addr) erro
 	if err := c.State.TransactionFilterers().Remove(filterer, c.State.ArbOSVersion()); err != nil {
 		return err
 	}
-	return con.TransactionFiltererRemoved(c, nil, filterer)
+	return con.TransactionFiltererRemoved(c, evm, filterer)
 }
 
 // IsTransactionFilterer checks if the account is a transaction filterer
@@ -639,4 +639,9 @@ func (con ArbOwner) SetMultiGasPricingConstraints(
 		}
 	}
 	return nil
+}
+
+func (con ArbOwner) SetMaxStylusContractFragments(c ctx, evm mech, maxFragments uint16) error {
+	// NOTE: waits https://github.com/OffchainLabs/nitro/pull/4193
+	return errors.New("SetMaxStylusContractFragments is not yet implemented")
 }
