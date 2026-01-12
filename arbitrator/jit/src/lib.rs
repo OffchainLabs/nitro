@@ -88,8 +88,8 @@ pub struct GlobalState {
 
 #[derive(Clone, Debug)]
 pub struct SequencerMessage {
-    number: u64,
-    data: Vec<u8>,
+    pub number: u64,
+    pub data: Vec<u8>,
 }
 
 #[derive(Clone, Debug)]
