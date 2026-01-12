@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"syscall"
 
 	"github.com/spf13/pflag"
@@ -50,28 +49,13 @@ func mainImpl() int {
 	vcsRevision, strippedRevision, vcsTime := confighelpers.GetVersion()
 	stackConf.Version = strippedRevision
 
-	pathResolver := func(workdir string) func(string) string {
-		if workdir == "" {
-			workdir, err = os.Getwd()
-			if err != nil {
-				log.Warn("Failed to get workdir", "err", err)
-			}
-		}
-		return func(path string) string {
-			if filepath.IsAbs(path) {
-				return path
-			}
-			return filepath.Join(workdir, path)
-		}
-	}
-
-	err = genericconf.InitLog(nodeConfig.LogType, nodeConfig.LogLevel, &nodeConfig.FileLogging, pathResolver(nodeConfig.Persistent.LogDir))
+	err = genericconf.InitLog(nodeConfig.LogType, nodeConfig.LogLevel, &nodeConfig.FileLogging, genericconf.DefaultPathResolver(nodeConfig.Persistent.LogDir))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error initializing logging: %v\n", err)
 		return 1
 	}
 	if stackConf.JWTSecret == "" && stackConf.AuthAddr != "" {
-		filename := pathResolver(nodeConfig.Persistent.GlobalConfig)("jwtsecret")
+		filename := genericconf.DefaultPathResolver(nodeConfig.Persistent.GlobalConfig)("jwtsecret")
 		if err := genericconf.TryCreatingJWTSecret(filename); err != nil {
 			log.Error("Failed to prepare jwt secret file", "err", err)
 			return 1
@@ -82,7 +66,7 @@ func mainImpl() int {
 	liveNodeConfig := genericconf.NewLiveConfig[*AutonomousAuctioneerConfig](args, nodeConfig, parseAuctioneerArgs)
 	liveNodeConfig.SetOnReloadHook(func(oldCfg *AutonomousAuctioneerConfig, newCfg *AutonomousAuctioneerConfig) error {
 
-		return genericconf.InitLog(newCfg.LogType, newCfg.LogLevel, &newCfg.FileLogging, pathResolver(nodeConfig.Persistent.LogDir))
+		return genericconf.InitLog(newCfg.LogType, newCfg.LogLevel, &newCfg.FileLogging, genericconf.DefaultPathResolver(nodeConfig.Persistent.LogDir))
 	})
 
 	timeboost.EnsureBidValidatorExposedViaRPC(&stackConf)

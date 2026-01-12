@@ -5,7 +5,6 @@ package main
 
 import (
 	"fmt"
-	"io"
 	"os"
 	"os/signal"
 	"syscall"
@@ -18,6 +17,7 @@ import (
 	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/ethereum/go-ethereum/rpc"
 
+	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/tx-filterer-manager/api"
 	"github.com/offchainlabs/nitro/cmd/util"
@@ -25,7 +25,8 @@ import (
 )
 
 type TxFiltererManagerConfig struct {
-	Conf genericconf.ConfConfig `koanf:"conf"`
+	Conf       genericconf.ConfConfig `koanf:"conf"`
+	Persistent conf.PersistentConfig  `koanf:"persistent"`
 
 	FileLogging genericconf.FileLoggingConfig `koanf:"file-logging" reload:"hot"`
 	LogLevel    string                        `koanf:"log-level"`
@@ -103,6 +104,7 @@ var DefaultStackConfig = node.Config{
 
 func addFlags(f *pflag.FlagSet) {
 	genericconf.ConfConfigAddOptions("conf", f)
+	conf.PersistentConfigAddOptions("persistent", f)
 
 	genericconf.FileLoggingConfigAddOptions("file-logging", f)
 	f.String("log-level", DefaultTxFiltererManagerConfig.LogLevel, "log level, valid values are CRIT, ERROR, WARN, INFO, DEBUG, TRACE")
@@ -178,19 +180,10 @@ func startup() error {
 	_, strippedRevision, _ := confighelpers.GetVersion()
 	stackConf.Version = strippedRevision
 
-	logLevel, err := genericconf.ToSlogLevel(config.LogLevel)
+	err = genericconf.InitLog(config.LogType, config.LogLevel, &config.FileLogging, genericconf.DefaultPathResolver(config.Persistent.LogDir))
 	if err != nil {
-		confighelpers.PrintErrorAndExit(err, printSampleUsage)
+		return fmt.Errorf("error initializing log: %w", err)
 	}
-
-	handler, err := genericconf.HandlerFromLogType(config.LogType, io.Writer(os.Stderr))
-	if err != nil {
-		pflag.Usage()
-		return fmt.Errorf("error parsing log type when creating handler: %w", err)
-	}
-	glogger := log.NewGlogHandler(handler)
-	glogger.Verbosity(logLevel)
-	log.SetDefault(log.NewLogger(glogger))
 
 	if err := util.StartMetrics(config.Metrics, config.PProf, &config.MetricsServer, &config.PprofCfg); err != nil {
 		return err

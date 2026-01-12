@@ -21,7 +21,6 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"syscall"
 	"time"
 
@@ -314,28 +313,13 @@ func mainImpl() int {
 	vcsRevision, strippedRevision, vcsTime := confighelpers.GetVersion()
 	stackConf.Version = strippedRevision
 
-	pathResolver := func(workdir string) func(string) string {
-		if workdir == "" {
-			workdir, err = os.Getwd()
-			if err != nil {
-				log.Warn("Failed to get workdir", "err", err)
-			}
-		}
-		return func(path string) string {
-			if filepath.IsAbs(path) {
-				return path
-			}
-			return filepath.Join(workdir, path)
-		}
-	}
-
-	err = genericconf.InitLog(expressLaneProxyConfig.LogType, expressLaneProxyConfig.LogLevel, &expressLaneProxyConfig.FileLogging, pathResolver(expressLaneProxyConfig.Persistent.LogDir))
+	err = genericconf.InitLog(expressLaneProxyConfig.LogType, expressLaneProxyConfig.LogLevel, &expressLaneProxyConfig.FileLogging, genericconf.DefaultPathResolver(expressLaneProxyConfig.Persistent.LogDir))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error initializing logging: %v\n", err)
 		return 1
 	}
 	if stackConf.JWTSecret == "" && stackConf.AuthAddr != "" {
-		filename := pathResolver(expressLaneProxyConfig.Persistent.GlobalConfig)("jwtsecret")
+		filename := genericconf.DefaultPathResolver(expressLaneProxyConfig.Persistent.GlobalConfig)("jwtsecret")
 		if err := genericconf.TryCreatingJWTSecret(filename); err != nil {
 			log.Error("Failed to prepare jwt secret file", "err", err)
 			return 1
@@ -346,7 +330,7 @@ func mainImpl() int {
 	liveNodeConfig := genericconf.NewLiveConfig[*ExpressLaneProxyConfig](args, expressLaneProxyConfig, parseExpressLaneProxyArgs)
 	liveNodeConfig.SetOnReloadHook(func(oldCfg *ExpressLaneProxyConfig, newCfg *ExpressLaneProxyConfig) error {
 
-		return genericconf.InitLog(newCfg.LogType, newCfg.LogLevel, &newCfg.FileLogging, pathResolver(expressLaneProxyConfig.Persistent.LogDir))
+		return genericconf.InitLog(newCfg.LogType, newCfg.LogLevel, &newCfg.FileLogging, genericconf.DefaultPathResolver(expressLaneProxyConfig.Persistent.LogDir))
 	})
 
 	if err := util.StartMetrics(expressLaneProxyConfig.Metrics, expressLaneProxyConfig.PProf, &expressLaneProxyConfig.MetricsServer, &expressLaneProxyConfig.PprofCfg); err != nil {
