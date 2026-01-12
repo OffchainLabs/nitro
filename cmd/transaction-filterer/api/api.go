@@ -13,12 +13,12 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 )
 
-const namespace = "txfilterermanager"
+const namespace = "transactionfilterer"
 
-type TxFiltererManagerAPI struct {
+type TransactionFiltererAPI struct {
 }
 
-func (t *TxFiltererManagerAPI) Filter(ctx context.Context, txHash common.Hash) error {
+func (t *TransactionFiltererAPI) Filter(ctx context.Context, txHash common.Hash) error {
 	log.Info("Received request to filter transaction", "txHash", txHash.Hex())
 	return nil
 }
@@ -50,7 +50,7 @@ func NewStack(stackConfig *node.Config) (*node.Node, error) {
 		return nil, err
 	}
 
-	api := &TxFiltererManagerAPI{}
+	api := &TransactionFiltererAPI{}
 	apis := []rpc.API{{
 		Namespace: namespace,
 		Version:   "1.0",

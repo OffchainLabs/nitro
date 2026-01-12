@@ -8,11 +8,11 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 
-	"github.com/offchainlabs/nitro/cmd/tx-filterer-manager/api"
+	"github.com/offchainlabs/nitro/cmd/transaction-filterer/api"
 	"github.com/offchainlabs/nitro/util/rpcclient"
 )
 
-func TestTxFiltererManagerCmd(t *testing.T) {
+func TestTransactionFiltererCmd(t *testing.T) {
 	ctx := t.Context()
 
 	stackConf := api.DefaultStackConfig
@@ -36,6 +36,6 @@ func TestTxFiltererManagerCmd(t *testing.T) {
 	err = rpcClient.Start(ctx)
 	Require(t, err)
 	txHash := common.Hash{}
-	err = rpcClient.CallContext(ctx, nil, "txfilterermanager_filter", txHash)
+	err = rpcClient.CallContext(ctx, nil, "transactionfilterer_filter", txHash)
 	Require(t, err)
 }

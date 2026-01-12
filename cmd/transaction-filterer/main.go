@@ -16,12 +16,12 @@ import (
 
 	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
-	"github.com/offchainlabs/nitro/cmd/tx-filterer-manager/api"
+	"github.com/offchainlabs/nitro/cmd/transaction-filterer/api"
 	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
 )
 
-type TxFiltererManagerConfig struct {
+type TransactionFiltererConfig struct {
 	Conf       genericconf.ConfConfig `koanf:"conf"`
 	Persistent conf.PersistentConfig  `koanf:"persistent"`
 
@@ -66,7 +66,7 @@ var IPCConfigDefault = genericconf.IPCConfig{
 	Path: "",
 }
 
-var DefaultTxFiltererManagerConfig = TxFiltererManagerConfig{
+var DefaultTransactionFiltererConfig = TransactionFiltererConfig{
 	Conf:          genericconf.ConfConfigDefault,
 	LogLevel:      "INFO",
 	LogType:       "plaintext",
@@ -85,13 +85,13 @@ func addFlags(f *pflag.FlagSet) {
 	conf.PersistentConfigAddOptions("persistent", f)
 
 	genericconf.FileLoggingConfigAddOptions("file-logging", f)
-	f.String("log-level", DefaultTxFiltererManagerConfig.LogLevel, "log level, valid values are CRIT, ERROR, WARN, INFO, DEBUG, TRACE")
-	f.String("log-type", DefaultTxFiltererManagerConfig.LogType, "log type (plaintext or json)")
+	f.String("log-level", DefaultTransactionFiltererConfig.LogLevel, "log level, valid values are CRIT, ERROR, WARN, INFO, DEBUG, TRACE")
+	f.String("log-type", DefaultTransactionFiltererConfig.LogType, "log type (plaintext or json)")
 
-	f.Bool("metrics", DefaultTxFiltererManagerConfig.Metrics, "enable metrics")
+	f.Bool("metrics", DefaultTransactionFiltererConfig.Metrics, "enable metrics")
 	genericconf.MetricsServerAddOptions("metrics-server", f)
 
-	f.Bool("pprof", DefaultTxFiltererManagerConfig.PProf, "enable pprof")
+	f.Bool("pprof", DefaultTransactionFiltererConfig.PProf, "enable pprof")
 	genericconf.PProfAddOptions("pprof-cfg", f)
 
 	genericconf.HTTPConfigAddOptions("http", f)
@@ -101,7 +101,7 @@ func addFlags(f *pflag.FlagSet) {
 	genericconf.WalletConfigAddOptions("wallet", f, "")
 }
 
-func parseConfig(args []string) (*TxFiltererManagerConfig, error) {
+func parseConfig(args []string) (*TransactionFiltererConfig, error) {
 	f := pflag.NewFlagSet("", pflag.ContinueOnError)
 
 	addFlags(f)
@@ -111,7 +111,7 @@ func parseConfig(args []string) (*TxFiltererManagerConfig, error) {
 		return nil, err
 	}
 
-	var config TxFiltererManagerConfig
+	var config TransactionFiltererConfig
 	if err := confighelpers.EndCommonParse(k, &config); err != nil {
 		return nil, err
 	}
@@ -192,6 +192,6 @@ func startup() error {
 
 func main() {
 	if err := startup(); err != nil {
-		log.Error("Error running TxFiltererManager", "err", err)
+		log.Error("Error running TransactionFilterer", "err", err)
 	}
 }
