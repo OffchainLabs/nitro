@@ -1,7 +1,7 @@
 // Copyright 2022-2024, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use crate::{arbcompress, caller_env::GoRuntimeState, prepare::prepare_env_from_json, program, socket, stylus_backend::CothreadHandler, wasip1_stub, wavmio, InputMode, LocalInput, NativeInput, Opts};
+use crate::{arbcompress, caller_env::GoRuntimeState, prepare::prepare_env_from_json, program, socket, stylus_backend::CothreadHandler, wasip1_stub, wavmio, InputMode, LocalInput, NativeInput, Opts, SequencerMessage};
 use arbutil::{Bytes32, Color, PreimageType};
 use eyre::{bail, ErrReport, Report, Result};
 use sha3::{Digest, Keccak256};
@@ -228,7 +228,12 @@ impl TryFrom<&Opts> for WasmEnv {
 }
 
 fn prepare_env_from_files(mut env: WasmEnv, input: &LocalInput) -> Result<WasmEnv> {
-    env.process.already_has_input = true;
+    let mut native = NativeInput {
+        old_state: input.old_state.clone(),
+        inbox: vec![],
+        delayed_inbox: vec![],
+        preimages: HashMap::new(),
+    };
 
     let mut inbox_position = input.old_state.inbox_position;
     let mut delayed_position = input.delayed_inbox_position;
@@ -236,13 +241,13 @@ fn prepare_env_from_files(mut env: WasmEnv, input: &LocalInput) -> Result<WasmEn
     for path in &input.inbox {
         let mut msg = vec![];
         File::open(path)?.read_to_end(&mut msg)?;
-        env.sequencer_messages.insert(inbox_position, msg);
+        native.inbox.push(SequencerMessage { number: inbox_position, data: msg });
         inbox_position += 1;
     }
     for path in &input.delayed_inbox {
         let mut msg = vec![];
         File::open(path)?.read_to_end(&mut msg)?;
-        env.delayed_messages.insert(delayed_position, msg);
+        native.delayed_inbox.push(SequencerMessage { number: delayed_position, data: msg });
         delayed_position += 1;
     }
 
@@ -262,7 +267,7 @@ fn prepare_env_from_files(mut env: WasmEnv, input: &LocalInput) -> Result<WasmEn
             file.read_exact(&mut buf)?;
             preimages.push(buf);
         }
-        let keccak_preimages = env.preimages.entry(PreimageType::Keccak256).or_default();
+        let keccak_preimages = native.preimages.entry(PreimageType::Keccak256).or_default();
         for preimage in preimages {
             let mut hasher = Keccak256::new();
             hasher.update(&preimage);
@@ -271,9 +276,7 @@ fn prepare_env_from_files(mut env: WasmEnv, input: &LocalInput) -> Result<WasmEn
         }
     }
 
-    env.small_globals = [input.old_state.inbox_position, input.old_state.position_within_message];
-    env.large_globals = [input.old_state.last_block_hash, input.old_state.last_send_root];
-    Ok(env)
+    prepare_env_from_native(env, &native)
 }
 
 fn prepare_env_from_native(mut env: WasmEnv, input: &NativeInput) -> Result<WasmEnv> {
