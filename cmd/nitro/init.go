@@ -892,6 +892,7 @@ func openInitializeExecutionDB(ctx context.Context, stack *node.Node, config *No
 			if err != nil {
 				return executionDB, nil, err
 			}
+			log.Warn("Created fake init message as L1Reader is disabled and serialized chain config from init message is not available", "json", string(parsedInitMessage.SerializedChainConfig))
 		}
 
 		emptyBlockChain := rawdb.ReadHeadHeader(executionDB) == nil
